@@ -652,11 +652,11 @@ const GATE = path.join(SCRIPTS, 'e2e-gate.sh');
 const conAncla = (ev, ancla) => ({ ...ev, ancla });
 
 /** Un humo de verdad, por `smoke-run.sh`, con una carpeta personal propia para el espejo. Devuelve la línea del registro. */
-function humoReal(f, story, acs = '1') {
+function humoReal(f, story, acs = '1', extra = []) {
   const home = path.join(f.ws, 'home');
   fs.mkdirSync(home, { recursive: true });
   const dod = path.join(f.esp, '.advisors', 'dod-runtime');
-  const r = spawnSync('bash', [SMOKE, dod, story, '--acs', acs, '--pass-if', 'contesta', '--', 'node', '-e', 'console.log("contesta")'],
+  const r = spawnSync('bash', [SMOKE, dod, story, '--acs', acs, ...extra, '--pass-if', 'contesta', '--', 'node', '-e', 'console.log("contesta")'],
     { cwd: f.esp, encoding: 'utf8', env: { ...entornoGit(), HOME: home } });
   assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
   const lineas = fs.readFileSync(path.join(dod, '5.28-smoke-ledger.jsonl'), 'utf8').split('\n').filter(Boolean);
@@ -675,6 +675,21 @@ test('T17 Humo_AnotaElAncla_RegistroYEspejo @story-8.192 @ac-17', () => {
     const blob = git(f.back, ['hash-object', 'src/Feature.cs']);
     const sucio = humoReal(f, conRuta ? f.storyPath : '5.28').linea.target.hermanos[0];
     assert.deepEqual(sucio, { repo: 'Back', commit: commitLimpio, huellas: { 'src/Feature.cs': blob } });
+  }
+});
+
+test('T79g Humo_Exercises_RegistroYEspejo_ConLaFormaQueLeeLaMatriz', () => {
+  const f = labMatriz();
+  const h = humoReal(f, '5.28', '1', ['--exercises', 'Back,Front-2']);
+  assert.deepEqual(h.linea.exercises, ['Back', 'Front-2']);
+  // la matriz busca en el espejo exactamente esta forma
+  assert.ok(fs.readFileSync(h.gates, 'utf8').includes('"exercises":["Back","Front-2"]'), 'también en el espejo');
+  const dod = path.join(f.esp, '.advisors', 'dod-runtime');
+  for (const mal of ['Back;x', 'Back,', '']) {
+    const r = spawnSync('bash', [SMOKE, dod, '5.28', '--acs', '1', '--exercises', mal, '--pass-if', 'x', '--', 'true'],
+      { cwd: f.esp, encoding: 'utf8', env: { ...entornoGit(), HOME: path.join(f.ws, 'home') } });
+    assert.equal(r.status, 2, `«${mal}»: ${r.stderr}`);
+    assert.match(r.stderr, /--exercises necesita/);
   }
 });
 
@@ -1071,4 +1086,72 @@ test('T58 Gate_EscribeElAnclaDondeLaLeeLaMatriz @story-8.192 @ac-18', () => {
     { encoding: 'utf8', env }).stdout;
   const espejo = fs.readFileSync(path.join(lee, 'gates.log'), 'utf8');
   assert.match(espejo, /"type":"e2e-gate-anchor".*"story":"5\.28"/, espejo);
+});
+
+// ---------------------------------------------------------------- cuántas veces se le pregunta a git
+
+/** Un `correrGit` que anota cada pregunta (la carpeta y los argumentos) y la pasa al git de verdad. */
+function contador() {
+  const preguntas = [];
+  const correrGit = (carpetaDeGit, args, env) => { preguntas.push({ carpeta: carpetaDeGit, args }); return juezLib.correrGitDeVerdad(carpetaDeGit, args, env); };
+  return { preguntas, correrGit };
+}
+
+// 🔴 Falla con: el juez le hace a git la misma pregunta una vez por carpeta, aunque la respuesta sea la del repo. Con
+// cuarenta archivos en veinte carpetas, una firma tarda más que el reloj del freno y no sale.
+test('T61 Juez_PreguntaSinRutas_UnaVezPorRepo — lo que no depende de la carpeta se pregunta una vez por repo', () => {
+  const l = lab();
+  const ev = codigoEvidenciaFusion(l);
+  fusionar(l.back, 'feature/5-28-carga', T0 + 200);
+  const c = contador();
+  const juez = juezLib.crearJuez({ historia: historia(), correrGit: c.correrGit });
+  for (const archivo of [l.archivo, l.prueba]) juez.vigencia({ archivo, mtimeMs: Date.now(), evidencia: ev });
+  assert.ok(new Set(c.preguntas.map((p) => p.carpeta)).size > 1, 'el caso tiene que preguntar desde más de una carpeta');
+  // sin rutas: ni `--` ni una revisión con su archivo («HEAD:ruta»); la raíz del repo se pregunta por carpeta, a propósito
+  const sinRutas = (args) => !args.includes('--') && !args.some((a) => a.includes(':')) && args.join(' ') !== 'rev-parse --show-toplevel';
+  const raices = new Map();
+  const raiz = (d) => { if (!raices.has(d)) raices.set(d, fs.realpathSync(git(d, ['rev-parse', '--show-toplevel']))); return raices.get(d); };
+  const vistas = new Map();
+  for (const p of c.preguntas.filter((x) => sinRutas(x.args))) {
+    const k = `${raiz(p.carpeta)}\0${p.args.join(' ')}`;
+    vistas.set(k, (vistas.get(k) || 0) + 1);
+  }
+  assert.ok(vistas.size > 0, 'el caso no hizo ninguna pregunta sin rutas');
+  const repetidas = [...vistas].filter(([, n]) => n > 1).map(([k, n]) => `${n}x ${k.split('\0')[1]}`);
+  assert.deepStrictEqual(repetidas, [], 'la misma pregunta al mismo repo, una vez por carpeta');
+});
+
+// 🔴 Falla con: la ventana de un criterio mide todas las constancias de la historia. En una historia con decenas de
+// humos, la firma de un criterio tarda más que el reloj del freno y no sale.
+test('T62 Matriz_SoloLosCriteriosPedidos_NoMideLasConstanciasDeOtros — un criterio sale igual, sin medir los humos de otros', () => {
+  const f = labMatriz();
+  // dos criterios: el 1 con su humo, el 2 con los suyos; el código cambió después de los humos, así que cada uno se le
+  // pregunta a git
+  fs.writeFileSync(f.storyPath, ['---', 'story: 5.28', 'status: in-progress', 'files_to_modify:', '  - Back/src/Feature.cs', '---', '',
+    '## Acceptance Criteria', '', '1. **Given** algo, **When** pasa, **Then** resultado.', '2. **Given** otra cosa, **When** pasa, **Then** otro.', '',
+    '### Tests', '', '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|',
+    '| E1 | `curl la pantalla` | 1 | e2e | x | y |', '| E2 | `curl la otra` | 2 | e2e | x | y |', ''].join('\n'));
+  commit(f.esp, 'dos criterios', f.ahora - 800);
+  rama(f.back, 'feature/5-28-carga');
+  escribir(f.back, 'src/Feature.cs', '// v2\n');
+  commit(f.back, 'codigo', f.ahora - 100);
+  const humoDe = (ac, ts) => {
+    ledgerLine.append({ dodDir: f.dod, gatesLog: f.gatesLog, story: '5.28', acs: [ac], ts: new Date(ts * 1000).toISOString().replace(/\.\d+Z$/, 'Z'), cmd: 'curl -s http://localhost:5000/pantalla', mirror: true });
+    commit(f.esp, `evidencia ${ac} ${ts}`, ts + 5);
+  };
+  humoDe(1, f.ahora - 60);
+  humoDe(2, f.ahora - 50);
+  const pocos = contador();
+  const solo = f.calcular({ soloAcs: [1], correrGit: pocos.correrGit });
+  assert.ok(pocos.preguntas.length > 0, 'la matriz no le preguntó a git por el contador');
+  assert.deepStrictEqual(solo.parcial, [1], 'la matriz medida para un criterio no lo dice');
+  // más humos del criterio 2: la matriz del criterio 1 no pregunta más
+  for (let i = 0; i < 4; i++) humoDe(2, f.ahora - 40 + i);
+  const muchos = contador();
+  const otraVez = f.calcular({ soloAcs: [1], correrGit: muchos.correrGit });
+  assert.strictEqual(muchos.preguntas.length, pocos.preguntas.length, 'los humos del criterio 2 se midieron igual');
+  // y el criterio pedido sale como en la matriz entera
+  const entera = f.calcular();
+  for (const campo of ['verdict', 'declReason', 'coveredBy', 'text', 'medida']) assert.deepStrictEqual(otraVez.perAc[1][campo], entera.perAc[1][campo], campo);
+  assert.strictEqual(entera.parcial, undefined, 'la matriz entera no es parcial');
 });

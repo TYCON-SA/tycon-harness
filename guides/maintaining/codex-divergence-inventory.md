@@ -300,6 +300,10 @@ El hook reconoce Codex por el `turn_id` del payload (mismo criterio que `on-skil
 se consulta producción desde Codex». Caso del banco: `codex-frena-tambien-la-puerta`
 (`40-prod-access-guard.json`), y la divergencia está declarada en `adapters/codex/hooks.json`.
 
+**Un freno que falla, en Codex, deja pasar.** Codex llama al freno directo (`node …/prod-access-guard.js`), sin el
+lanzador ni su reloj de 7 s, y no tiene `onFailure`. Si el freno se cae o se cuelga, el comando corre; en Claude Code el
+mismo fallo frena. Dicho en `guides/produccion-con-permiso.md`, «Los límites, dichos antes».
+
 **El firewall de la puerta** (`--open-firewall` / `--close-firewall`): en Codex tampoco se abre una regla.
 Además del cuadro, le falta un evento de fin de sesión (sus hooks son PreToolUse, PostToolUse,
 SessionStart, Stop y UserPromptSubmit, y `Stop` es fin de turno, no de sesión), así que nadie cerraría la
@@ -441,3 +445,16 @@ en Codex).
 **Lo que Codex NO cubre, dicho y no prometido**: que una persona diga que sí desde la sesión antes de que el pull
 request preparado salga. En Codex no sale: lo saca la persona desde su terminal. Casos: T18 y
 `Pedido_EnCodex_NiegaConLaPreguntaYComoAprobarlo` de `skills/tycon-pipeline/scripts/tests/save-brake.test.js`.
+
+## El tope por defecto de un gancho — tomado de la documentación (2026-11-21)
+
+Cuánto espera cada herramienta a un gancho sin `timeout` en su registro, y qué pasa al vencer. Tomado de la
+documentación de cada una el 2026-11-21, no medido con una corrida: la medición en vivo va en este mismo inventario cuando
+se corra. Lo usa la prueba de que el reloj propio de un freno vence antes (`hook-failure-critical.test.js`).
+
+| Herramienta | Tope por defecto | Al vencer, antes de una herramienta | Fuente |
+|---|---|---|---|
+| Claude Code | tope_s: 600 | la herramienta corre igual, salvo con `onFailure: block` | https://code.claude.com/docs/en/hooks («Defaults: 600 for `command`…») |
+| Codex | tope_s: 600 | NO MEDIDO (no documentado) | https://learn.chatgpt.com/docs/hooks («Codex uses `600` seconds for most hooks») |
+
+Codex acepta un `timeout` por gancho, en segundos.

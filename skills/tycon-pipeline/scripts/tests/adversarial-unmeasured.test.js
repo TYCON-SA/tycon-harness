@@ -102,6 +102,8 @@ const o = Array.isArray(r) ? { findings: r } : r;
 const findings = o.findings || [];
 const resp = { lens: lente.key, base: o.base === undefined ? cfg.base : o.base, findings };
 if (resp.base === null) delete resp.base;
+if (o.base_existe !== undefined) resp.base_existe = o.base_existe;
+if (o.git_rechazado !== undefined) resp.git_rechazado = o.git_rechazado;
 const suya = path.join(cfg.runDir, 'step-05b-probes', 'caza-' + lente.key);
 if (o.probe === 'vacia') resp.probe_dir = '';
 else if (o.probe === 'ajena') resp.probe_dir = path.join(cfg.runDir, 'step-05b-probes', 'caza-otra');
@@ -171,6 +173,42 @@ test('T3 8.56-LentesLimpias_Medido @story-8.56 @ac-2 @ac-7', () => {
   assert.equal(r.result.lentes.length, 6);
   assert.ok(r.result.lentes.every((l) => l.estado === 'medida' && l.count === 0));
   assert.deepEqual(r.result.lentes_sin_medir, []);
+});
+
+// 🔴 Falla con: tomar «sin hallazgos» de un cazador que no encontró la base en el repo como una lente medida (un hash
+// mal escrito daba un pase limpio sin comparar nada)
+test('BaseInexistente_NoEsLimpio: con la base que no existe en el repo, ninguna lente cuenta y el pase sale NO MEDIDO', () => {
+  const dir = tmp('adv-base-');
+  const { env, prompts } = doble(dir, { hunt: { default: { findings: [], base_existe: false } } });
+  const r = correrPase(dir, env);
+  assert.equal(r.status, 3, `sale 3 con un pase no medido\n${r.stderr}`);
+  assert.equal(r.result.medido, false);
+  assert.equal(r.result.lentes_sin_medir.length, 6);
+  assert.ok(r.result.lentes.every((l) => l.estado === 'sin-medir' && /no existe en el repo/.test(l.motivo)), JSON.stringify(r.result.lentes));
+  assert.doesNotMatch(r.stderr, /lentes limpias/);
+  // el pedido le dice al cazador cómo comprobarla antes de revisar
+  const pedido = fs.readFileSync(path.join(prompts, `hunt-${LENTES[0].key}.txt`), 'utf8');
+  assert.ok(pedido.includes(`cat-file -e ${BASE}^{commit}`), pedido.slice(0, 400));
+  // con la base confirmada, el mismo pase sale medido
+  const dir2 = tmp('adv-base-ok-');
+  const d2 = doble(dir2, { hunt: { default: { findings: [], base_existe: true } } });
+  assert.equal(correrPase(dir2, d2.env).result.medido, true);
+});
+
+// 🔴 Falla con: el cazador de una sesión aislada en otra carpeta corría `git … ; echo rc=$?`, la herramienta lo
+// rechazaba sin correrlo, y el cazador devolvía base_existe = false: la lente salía «la base no existe» y el pase entero
+// se repetía buscando un commit que sí estaba (fila 137).
+test('GitRechazado_SinMedirConSuMotivo: si la sesión no deja correr git, la lente sale sin medir con ese motivo; el pedido pide comandos simples', () => {
+  const dir = tmp('adv-rechazo-');
+  const { env, prompts } = doble(dir, { hunt: { default: { findings: [], base_existe: false, git_rechazado: 'This session is isolated in the worktree /x, but this command names git in a form too complex to verify' } } });
+  const r = correrPase(dir, env);
+  assert.equal(r.status, 3, `sale 3 con un pase no medido\n${r.stderr}`);
+  assert.equal(r.result.medido, false);
+  assert.ok(r.result.lentes.every((l) => l.estado === 'sin-medir' && /git no pudo correr en esta sesión/.test(l.motivo) && /isolated in the worktree/.test(l.motivo) && !/no existe/.test(l.motivo)),
+    JSON.stringify(r.result.lentes));
+  const pedido = fs.readFileSync(path.join(prompts, `hunt-${LENTES[0].key}.txt`), 'utf8');
+  assert.match(pedido, /de a uno, en su forma simple/, 'pide git sin ; && ni tubos');
+  assert.match(pedido, /git_rechazado/, 'dice cómo informar un rechazo');
 });
 
 test('T4 8.56-VerificadorMuerto_SinVeredicto @story-8.56 @ac-3 @ac-4', () => {
@@ -617,7 +655,7 @@ test('T20 8.56-Bordes_SinArchivos_SinLanzamiento_PortonLow_Tablero @story-8.56 @
 // El aviso del marcador era la receta con que el agente apagaba el pase solo: «Abandonarlo es una decisión:
 // TYCON_NO_DEEP_REVIEW=1 marker.js mark-adversarial-skipped …». Abandonarlo lo decide la persona con su frase.
 test('T8 AvisosDelMarcador_NoRecetanElApagado @story-8.104 @ac-2', () => {
-  const src = fs.readFileSync(MARKER, 'utf8');
+  const src = require('./lib/marker-source.js')(SCRIPTS);
   const avisos = src.split('\n').filter((l) => /Abandonarlo/.test(l));
   assert.equal(avisos.length, 3, `los tres avisos: el del pase no medido, el del pase sin resultado y el del salteo con el pase lanzado — ${avisos.length}`);
   // abandonarlo lo firma el dueño: ni la receta de la variable ni la frase de la persona
@@ -903,8 +941,9 @@ test('T27 8.215-CazadorGuardaSuPrueba_ElGanchoNoLoFrena @story-8.215 @ac-2', () 
     const r = gancho(cmd);
     assert.equal(r.status, 0, `${cmd}\n${r.stdout}${r.stderr}`);
   }
-  // un enlace simbólico a una carpeta que no se ve sigue frenando (el gancho no sabe qué trae)
-  assert.equal(gancho('L=$(mktemp -d /tmp/probe.XXXXXX); mkdir -p $L/run/step-05b-probes/caza-a; ln -s run $L/runlink').status, 2);
+  // un enlace simbólico en una carpeta que no se ve sigue frenando (el gancho no sabe qué trae). Una carpeta de
+  // `mktemp` sí se ve (lib/command-vars.js `carpetaDeMktemp`), como una ruta literal en /tmp: la que no se ve es un `$(…)`
+  assert.equal(gancho('L=$(echo /tmp/probe.abc); mkdir -p $L/run/step-05b-probes/caza-a; ln -s run $L/runlink').status, 2);
 });
 
 test('T24 8.215-Revision_ConResultado_MiraLasPruebas @story-8.215 @ac-6', () => {

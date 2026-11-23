@@ -43,7 +43,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 
-const { SIGNATURES, FIRMAS_DE_ARCHIVO, ONLY_IN_TERMINAL, SOBRE_CUPO, LOST_RUN_PARTICION, DELEGABLE_EXCEPTIONS, firmaDelPedidoAdhoc } = require('./signatures.js');
+const { SIGNATURES, FIRMAS_DE_ARCHIVO, ONLY_IN_TERMINAL, SOBRE_CUPO, LOST_RUN_PARTICION, DELEGABLE_EXCEPTIONS, PARA_OTRA_SESION_SIN_DELEGAR, firmaDelPedidoAdhoc } = require('./signatures.js');
 const { approverOf } = require('./approver.js');
 const { casaDeLaCuenta } = require('./real-home.js');
 
@@ -948,6 +948,17 @@ function formaCanonica(palabras, { historia } = {}) {
   return [...prefijo, ...orden.flatMap((x) => x.p)];
 }
 
+/** La ruta resuelta del archivo de una firma sobre un archivo (`sign-file <firma> <archivo>`), o null. */
+function archivoDelPedido(firma, palabras, cwd) {
+  if (!String(firma).startsWith('escape:') || !FIRMAS_DE_ARCHIVO.includes(firma.slice('escape:'.length)) || !palabras) return null;
+  const i = palabras.indexOf('sign-file');
+  const archivo = i >= 0 ? palabras[i + 2] : undefined;
+  if (!archivo || archivo.startsWith('--')) return null;
+  // una ruta relativa sin la carpeta del pedido no se resuelve contra la de quien dibuja el cuadro: el mismo pedido daría
+  // otro sello en cada proceso. Queda el texto, marcado, y el click no vale para el pedido con carpeta
+  return path.isAbsolute(archivo) || cwd ? rutaReal(archivo, cwd) : `sin-carpeta:${archivo}`;
+}
+
 /**
  * El cuadro de opciones de una firma, armado por este módulo y no por el agente (owner-approvals.js `cuadroDe`). El mismo
  * pedido da el mismo cuadro: la huella y el comando que se muestra salen de su forma canónica (`formaCanonica`), sin la
@@ -972,7 +983,7 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
   // criterios, y las lee del comando sin envolturas (envuelto, la fuente no tiene qué mostrar y no hay cuadro)
   const palabrasDeLaFuente = palabras || (firma === 'escape:rojo-esperado-de-la-matriz' || firma === PEDIDO_DE_AFUERA ? canonica(comando) : null);
   // el cuadro dice el tope con la misma lectura que usa el freno para decidir
-  let partes = fuentes.partesDe({ firma, palabras: palabrasDeLaFuente, cwd, marcador: m, estado: casa === undefined ? null : stateDir(casa), destino, topes: topesDelCaminoCorto(casa), casa });
+  let partes = fuentes.partesDe({ firma, palabras: palabrasDeLaFuente, comando, cwd, marcador: m, estado: casa === undefined ? null : stateDir(casa), destino, topes: topesDelCaminoCorto(casa), casa });
   // una fuente que dice que no hay nada que firmar: sin cuadro, el pedido se niega
   if (partes && partes.error) return { error: partes.error };
   if (firma === 'runtime-waiver') {
@@ -989,10 +1000,12 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
     partes = { queHace: [d.linea], fuente: '' };
     delComando = d.detalle;
   }
-  // la huella ata el click a lo que se mostró: el pedido y la fuente de la pregunta
-  const huella = sha256(`${delPedido}\0${partes.fuente || ''}`).slice(0, 8);
+  // la huella ata el click a lo que se mostró: el pedido y la fuente de la pregunta. Una firma sobre un archivo suma la
+  // ruta resuelta: una ruta relativa desde otra carpeta es otro archivo, y el click dado a uno no vale para el otro
+  const real = archivoDelPedido(firma, sinDestino, cwd);
+  const huella = sha256(`${delPedido}\0${partes.fuente || ''}${real ? `\0${real}` : ''}`).slice(0, 8);
   const q = require('./owner-approvals.js').cuadroDe({ firma, destino, que: partes.que || s.approves, historia: fuentes.historiaDe(m), criterios: partes.criterios, queHace: partes.queHaceALaVista || partes.queHace, todoQueHace: !!partes.todoQueHace, nota: partes.nota, archivos: partes.archivos,
-    completo: partes.completo, completoEnPalabras: partes.completoEnPalabras, revision: partes.revision, siSaleMal: s.ifWrong, cita: partes.cita, huella, soloClick: s.soloClick, clickDelDueno: s.clickDelDueno, descripciones: s.descripciones,
+    completo: partes.completo, completoEnPalabras: partes.completoEnPalabras, revision: partes.revision, siSaleMal: partes.siSaleMal || s.ifWrong, cita: partes.cita, huella, soloClick: s.soloClick, clickDelDueno: s.clickDelDueno, descripciones: s.descripciones,
     // sólo la fuente que lee la explicación del cambio la trae (null si la leyó y no hay): las demás, el cuadro de siempre
     ...(partes.explica !== undefined ? { explica: partes.explica } : {}),
     comando: comandoDelDetalle(sinDestino && [base(sinDestino[0]), ...sinDestino.slice(1)], texto) });
@@ -1028,6 +1041,21 @@ function comandoDelDetalle(palabras, texto) {
 }
 
 /**
+ * ¿Hay algún click o «aprobado» anotado sin vencer en la sesión del pedido o en la coordinadora confirmada? Sólo dice si
+ * vale la pena armar el cuadro antes de la firma de trámite; la que decide es `aprobacionExplicita`. Con las aprobaciones
+ * inyectadas (las pruebas), o si no se puede leer, se mira igual.
+ */
+function hayAprobacionesAnotadas({ aprobaciones, casa, sesion, ahora = Date.now() }) {
+  if (aprobaciones) return true;
+  try {
+    const oa = require('./owner-approvals.js');
+    const vence = oa.VENCE_MIN * 60000;
+    const sesiones = [...new Set([sesion, oa.coordinadoraConfirmada(casa)].filter((s) => s && SESION.test(s)))];
+    return sesiones.some((s) => oa.leerSesion(casa, s).some((r) => { const e = ahora - Date.parse(r.ts); return e >= 0 && e <= vence; }));
+  } catch (_) { return true; }
+}
+
+/**
  * La aprobación explícita de la persona para la firma pedida (owner-approvals.js): `{ ok, aprobacion, via }` o
  * `{ ok: false, motivo }`. Una por firma: un comando que pide dos no la usa. Lo irreversible no la acepta.
  */
@@ -1045,9 +1073,10 @@ function aprobacionExplicita({ pendientes, sesion, destino, casa, ahora, cwd, ap
  * La negativa donde la ventana no llega: trae el cuadro armado, que es el camino por defecto, y después las otras dos
  * formas de aprobarlo. Lo irreversible, sólo la terminal. `anotado`: ya quedó en la lista de firmas y una coordinadora
  * viva se lo va a pasar a la persona (`anotarNegativa`): la sesión sólo espera el aviso para repetir el comando.
+ * `sinLista`: por qué el pedido de una sesión que abrió la coordinadora no le llega a su lista (`porQueSinLista`).
  */
-function negarSinVentana(motivo, ids, sesion, cuadro = null, deFondo = false, anotado = false, coordinadora = null) {
-  const r = negarConElCuadro(motivo, ids, sesion, cuadro, deFondo, anotado, coordinadora);
+function negarSinVentana(motivo, ids, sesion, cuadro = null, deFondo = false, anotado = false, coordinadora = null, sinLista = null) {
+  const r = negarConElCuadro(motivo, ids, sesion, cuadro, deFondo, anotado, coordinadora, sinLista);
   // donde va la pregunta, va también lo que la acompaña: el detalle (aparte, nunca dentro del cuadro de opciones) y el
   // renglón del tope del teléfono. Se mira el texto sin el sello: también lo trae la rama que muestra sólo `texto`
   if (!cuadro || cuadro.error || !cuadro.texto || !String(r.texto || '').includes(cuadro.texto)) return r;
@@ -1055,7 +1084,7 @@ function negarSinVentana(motivo, ids, sesion, cuadro = null, deFondo = false, an
   return notas.length ? { ...r, texto: `${r.texto}\n${notas.join('\n')}` } : r;
 }
 
-function negarConElCuadro(motivo, ids, sesion, cuadro = null, deFondo = false, anotado = false, coordinadora = null) {
+function negarConElCuadro(motivo, ids, sesion, cuadro = null, deFondo = false, anotado = false, coordinadora = null, sinLista = null) {
   if (vaATerminal(ids)) return negarCon(motivo, ids, sesion);
   if (cuadro && cuadro.error && esDeControl(ids)) return negarSinCuadroDeControl(motivo, ids);
   const t = terminalDe(ids, sesion);
@@ -1063,18 +1092,19 @@ function negarConElCuadro(motivo, ids, sesion, cuadro = null, deFondo = false, a
   // una sesión que abrió la coordinadora no le muestra el cuadro a la persona (scripts/hooks/background-question-guard.js):
   // se lo manda a la coordinadora, que lo muestra en su pestaña
   const aQuien = coordinadora ? `«${coordinadora.name}» (${coordinadora.sid})` : null;
-  if (aQuien && cuadro && cuadro.soloClick) {
-    return { decision: 'deny', firmas: ids, cuadro, texto: `${motivo}. Esta sesión la abrió la coordinadora y esta firma sólo la aprueba un click en la pestaña que trabaja: no muestres el cuadro. `
-      + `Queda la terminal del dueño (${t || 'el mismo comando con --terminal'}): mandale eso a ${aQuien} por SendMessage, con lo que se decide en tres renglones, y esperá su aviso.` };
+  // la de sólo click vale únicamente en esta pestaña: el cuadro se muestra acá aunque la sesión la haya abierto la
+  // coordinadora, y ella se entera para que el dueño entre (o la abra por control remoto). La terminal queda de emergencia
+  if (aQuien && cuadro && cuadro.soloClick && !cuadro.error) {
+    return { decision: 'deny', firmas: ids, cuadro, texto: `${motivo}. Esto lo elige la persona con un click en el cuadro de opciones de esta pestaña, aunque la sesión la haya abierto la coordinadora: mostrale AskUserQuestion con una sola pregunta, sin cambiarle una letra: «${cuadro.pregunta}», y las opciones «${cuadro.opciones[0]}», con la descripción «${cuadro.descripciones[0]}», y «${cuadro.opciones[1]}», con la descripción «${cuadro.descripciones[1]}». `
+      + `Antes, avisale a ${aQuien} por SendMessage que hay un cuadro esperando en esta pestaña, con lo que se decide en tres renglones: el dueño lo contesta acá o por control remoto. Con su click, repetí el mismo comando. Un mensaje escrito no vale, ni un click en otra pestaña. ${otraForma}` };
   }
-  if (aQuien && !anotado && cuadro && !cuadro.error && ids.length === 1) {
-    return { decision: 'deny', firmas: ids, cuadro, texto: `${motivo}. Esta sesión la abrió la coordinadora: no le muestres el cuadro a la persona. `
-      + `Mandale a ${aQuien} por SendMessage esta pregunta exacta, sin cambiarle una letra: «${cuadro.pregunta}», con las opciones «${cuadro.opciones[0]}» y «${cuadro.opciones[1]}», el comando y lo que se decide en tres renglones. `
-      + `Ella la muestra en su pestaña; cuando te avise, repetí el mismo comando. ${otraForma}` };
-  }
+  // sin la lista, el cuadro no le llega entero a la coordinadora: copiado por dos agentes no queda igual y el click no
+  // vale. La firma va a la terminal, y la sesión espera el aviso en lugar de repetir
   if (aQuien && !anotado) {
-    return { decision: 'deny', firmas: ids, texto: `${motivo}. Esta sesión la abrió la coordinadora: no le muestres nada a la persona. Corré cada firma sola, en su forma exacta: `
-      + `este freno te da la pregunta de cada una, y se la mandás a ${aQuien} por SendMessage con el comando y lo que se decide en tres renglones. ${otraForma}` };
+    const firmas = cuadro && !cuadro.error && ids.length === 1 ? '' : 'Corré cada firma sola, en su forma exacta. ';
+    return { decision: 'deny', firmas: ids, ...(firmas ? {} : { cuadro }), texto: `${motivo}. Esta sesión la abrió la coordinadora: no le muestres el cuadro a la persona, ni le mandes la pregunta para que la copie: copiada a mano no queda igual y el click no vale. `
+      + `El pedido no le llega a su lista de firmas${sinLista ? ` (${sinLista})` : ''}, así que esta firma la da el dueño en su terminal: ${t || 'el mismo comando con --terminal'}. ${firmas}`
+      + `Avisale a ${aQuien} por SendMessage, en tres renglones, qué se decide y ese comando de la terminal. No repitas el comando hasta que te avise que firmó: repetirlo antes no usa ninguna firma.` };
   }
   if (cuadro && cuadro.clickDelDueno && !anotado && !cuadro.error) {
     return { decision: 'deny', firmas: ids, cuadro, texto: `${motivo}. Esto lo aprueba sólo el click del dueño: mostrale AskUserQuestion con una sola pregunta, sin cambiarle una letra: «${cuadro.pregunta}», y las opciones «${cuadro.opciones[0]}» y «${cuadro.opciones[1]}». `
@@ -1085,7 +1115,7 @@ function negarConElCuadro(motivo, ids, sesion, cuadro = null, deFondo = false, a
       + `Con su click, repetí el mismo comando. Un mensaje escrito no vale, ni un click en otra pestaña. ${deFondo ? 'Si nadie mira esta sesión de fondo, queda la terminal. ' : ''}${otraForma}` };
   }
   if (!cuadro || cuadro.error || ids.length !== 1) return { decision: 'deny', firmas: ids, texto: `${motivo}. Esto lo aprueba la persona: corré cada firma sola, en su forma exacta, y este freno te da el cuadro de opciones para mostrarle. ${otraForma}` };
-  if (anotado) return { decision: 'deny', firmas: ids, cuadro, texto: `${motivo}. Esto lo aprueba la persona y ya quedó anotado en su lista: no muestres el cuadro ni mandes un mensaje. Cuando te avisen, repetí el mismo comando. ${otraForma}` };
+  if (anotado) return { decision: 'deny', firmas: ids, cuadro, texto: `${motivo}. Esto lo aprueba la persona y ya quedó anotado en su lista: no muestres el cuadro ni mandes un mensaje. No repitas el comando hasta que te avisen: repetirlo antes no usa ninguna firma. Cuando te avisen, repetí el mismo comando. ${otraForma}` };
   return { decision: 'deny', firmas: ids, cuadro, texto: `${motivo}. Esto lo aprueba la persona, sin terminal, con el cuadro de opciones: mostrale AskUserQuestion con una sola pregunta, sin cambiarle una letra: «${cuadro.pregunta}», y las opciones «${cuadro.opciones[0]}» y «${cuadro.opciones[1]}». `
     + `Con su click, repetí el mismo comando. ${deFondo ? 'Si esta sesión corre de fondo, pasale el texto y el comando a la coordinadora: lo muestra en su pestaña, y con el click repetís el comando acá. ' : ''}`
     + `No se lo pidas por el chat salvo que el cuadro no se pueda mostrar: en ese caso, tu último mensaje trae «${cuadro.sello}» y ella contesta «aprobado». ${otraForma}` };
@@ -1130,6 +1160,27 @@ function retiraA(palabras, propia) {
 function tituloDeLaFirma(firma, palabras, propia) {
   if (firma === 'designation-withdraw' && retiraA(palabras, propia)) return require('./signature-sources.js').RETIRAR_OTRA;
   return (firmaDe(firma) || {}).approves || firma;
+}
+
+/**
+ * Por qué el pedido de una sesión que abrió la coordinadora no le llega a su lista de firmas: la lista apagada en la
+ * máquina (y cómo se prende), la llave que no se pudo leer o, con la lista prendida, lo del pedido que no se anota
+ * (`anotarNegativa`: varias firmas juntas, otra sesión destino, un cuadro que no se armó) antes que la coordinadora.
+ * `arnes` y `env`, para las pruebas.
+ */
+function porQueSinLista({ casa, arnes, env, pendientes = null, destino = null, sesion = null, cuadro = null } = {}) {
+  const L = require('./signature-list.js');
+  let k;
+  try { k = L.llave({ casa, arnes, env }); } catch (e) { return `no pude leer la llave de la lista (${una(e.message, 120)})`; }
+  if (!k.encendida && k.problema) return `no pude leer approvals.signature_list (${una(k.problema, 120)})`;
+  if (!k.encendida) return 'la lista de firmas está apagada en esta máquina; se prende con approvals.signature_list: on, y con ella la coordinadora muestra el cuadro exacto';
+  if (Array.isArray(pendientes) && pendientes.length !== 1) return 'la lista está prendida, pero un comando con varias firmas no se anota: corré cada una sola';
+  if (destino && sesion && destino !== sesion) return 'la lista está prendida, pero el pedido es para otra sesión';
+  if (!cuadro || cuadro.error) return 'la lista está prendida, pero el cuadro de esta firma no se pudo armar';
+  let viva = null;
+  try { viva = L.coordinadoraViva(casa); } catch (_) { viva = null; }
+  if (!viva) return 'la lista está prendida, pero no da a la coordinadora por confirmada y viva';
+  return 'la lista está prendida, pero este pedido no quedó anotado en ella';
 }
 
 function anotarNegativa({ casa, sesion, destino, guion, pendientes, comando, palabras, cuadro, cwd, ahora, deFondo, lista = {} }) {
@@ -1277,19 +1328,42 @@ const PLAZO_DEL_CHEQUEO = { save: 240000 };
 // el de las demás: menos que los 20 s del freno entero, que antes calcula los criterios y después valida el click. Si el
 // guion no contesta a tiempo, la ventana se abre como siempre y el guion vuelve a comprobar todo al firmar
 const PLAZO_DEL_PRECHEQUEO_MS = 12000;
+// Con la máquina cargada, lo que corre antes del chequeo puede comerse buena parte de los 20 s, y un chequeo con su plazo
+// entero haría que el reloj del freno corte el comando sin abrir la ventana. Por eso, cuando lo consulta el freno de
+// seguridad (que pone en TYCON_SAFETY_DEADLINE_S el segundo en que lo corta su reloj), el chequeo usa sólo lo que le
+// queda, menos un margen para lo que viene después (armar la ventana, el registro, contestar). Si no queda ni el mínimo,
+// no se corre: la ventana se abre como siempre, la firma la sigue dando el dueño y el guion comprueba todo al firmar.
+const MARGEN_DEL_FRENO_MS = 3000;
+const MINIMO_DEL_CHEQUEO_MS = 1000;
+
+/** El plazo del chequeo de `firma`, en ms: el suyo, acotado por lo que le queda al freno; 0 = no hay tiempo. */
+function plazoDelChequeo(firma, env, ahora = Date.now()) {
+  const propio = PLAZO_DEL_CHEQUEO[firma] || PLAZO_DEL_PRECHEQUEO_MS;
+  env = env || process.env;
+  const tope = String(env.TYCON_SAFETY_DEADLINE_S || '');
+  if (!/^[1-9][0-9]{8,11}$/.test(tope)) return propio;
+  const queda = Number(tope) * 1000 - ahora - MARGEN_DEL_FRENO_MS;
+  return queda < MINIMO_DEL_CHEQUEO_MS ? 0 : Math.min(propio, queda);
+}
 
 /**
  * Corre en modo de chequeo el guion de este mismo árbol que nombran las `palabras` (las de la forma canónica), en la
  * carpeta del evento, con la sesión del evento y la casa de la cuenta: `{ ok: true }` si el guion llegó a la firma con todo en regla,
  * `{ niega: <lo que dijo> }` si se negó antes, null si no contestó (y la ventana se abre como siempre).
+ * `{ sinRespuesta: <por qué> }` si no quedó tiempo para correrlo o no terminó en su plazo: para la ventana es lo mismo
+ * que null, pero la firma automática y el desvío a la coordinadora, que no tienen a una persona mirando, no siguen sin
+ * él: la firma va a la ventana y la da el dueño.
  */
 function comprobarConElGuion({ firma, palabras, cwd, sesion, casa, env, via = null }) {
   // el de los controles de la base vive en scripts/ci y es de la consola; los demás, al lado del pipeline y de node
   const nombre = base(palabras[0]);
   const sh = nombre.endsWith('.sh');
   const guion = sh ? path.join(__dirname, '..', 'ci', nombre) : path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', nombre);
-  const r = require('child_process').spawnSync(sh ? 'bash' : process.execPath, [guion, ...palabras.slice(1)], { windowsHide: true, cwd: cwd || process.cwd(), encoding: 'utf8', timeout: PLAZO_DEL_CHEQUEO[firma] || PLAZO_DEL_PRECHEQUEO_MS,
+  const plazo = plazoDelChequeo(firma, env);
+  if (!plazo) return { sinRespuesta: 'no quedó tiempo para el chequeo del guion antes de que corte el freno' };
+  const r = require('child_process').spawnSync(sh ? 'bash' : process.execPath, [guion, ...palabras.slice(1)], { windowsHide: true, cwd: cwd || process.cwd(), encoding: 'utf8', timeout: plazo,
     env: { ...(env || process.env), ...(casa ? { HOME: casa, USERPROFILE: casa } : {}), [PRECHEQUEO]: '1', [PRECHEQUEO_VIA]: via || '', ...(sesion ? { CLAUDE_CODE_SESSION_ID: sesion } : {}) } });
+  if (r.error && r.error.code === 'ETIMEDOUT') return { sinRespuesta: `el chequeo del guion no terminó en ${Math.round(plazo / 1000)} s` };
   if (r.error || r.status === null) return null;
   if (r.status === 0) return String(r.stdout).split('\n').includes(PRECHEQUEO_OK) ? { ok: true } : null;
   // lo que dijo, sin los renglones informativos («ℹ️ …»): el cuadro tiene lugar para el motivo del rechazo, no para avisos
@@ -1577,13 +1651,23 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   // conoce recién acá. Pasa por lo mismo que lo que sale sin persona: el cupo del camino corto y el control previo del
   // guion; lo que eso niega va a una persona, con los controles del árbol de siempre
   if (!automatica.ok && firmaGuion === REFIRMA && !escapes.length) automatica = deTramite(pendientes);
+  // un click o un «aprobado» de la persona a ESTE pedido (el cuadro de este comando, con su sello) gana a la firma de
+  // trámite: si la persona aprobó, la firma es suya y queda con su vía. Acá sólo se mira; se gasta más abajo, donde se
+  // gastan todas. El cuadro se arma sólo si hay alguna aprobación anotada sin vencer: sin ella, el trámite sigue igual
+  let aprobadaAntes = null;
+  if (automatica.ok && guion && pendientes.length === 1 && hayAprobacionesAnotadas({ aprobaciones, casa, sesion, ahora })) {
+    const cuadro = cuadroPara({ firma: pendientes[0], comando, palabras: can && can.palabras, destino, cwd: evento.cwd, casa, sesion, memo: criterios });
+    const a = aprobacionExplicita({ pendientes, sesion, destino, casa, ahora, cwd: evento.cwd, aprobaciones, herramienta: { pid: tool.pid, inicio: tool.inicio }, cuadro: cuadro || {}, arbol });
+    if (a.ok) { aprobadaAntes = a; automatica = { ok: false, motivo: null }; }
+  }
   if (automatica.ok && guion && pendientes.length === 1) {
     const cupo = firmaGuion === 'adhoc-lane' ? rutinaSinPermisos({ guion: firmaGuion, pendientes, palabras: can && can.palabras, destino, casa, topes, cwd: evento.cwd || null, sesion }) : { ok: true };
     if (!cupo.ok) automatica = { ok: false, motivo: cupo.motivo };
     else if (CON_PRECHEQUEO.has(firmaGuion)) {
       let c = null;
       try { c = comprobar({ firma: firmaGuion, palabras: can.palabras, cwd: evento.cwd, sesion, casa, via: 'automatica' }); } catch (e) { c = { niega: `no pude correr el chequeo del guion (${e.message})` }; }
-      if (c && c.niega) automatica = { ok: false, motivo: una(c.niega, 300) };
+      // sin el chequeo no se firma sola: va a la ventana y la da el dueño
+      if (c && (c.niega || c.sinRespuesta)) automatica = { ok: false, motivo: una(c.niega || c.sinRespuesta, 300) };
     }
     // la máquina donde se firmó, como en la delegación: la constancia de la refirma la exige (run-base-controls.sh)
     let maquina = null;
@@ -1618,7 +1702,8 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   // delega con la misma condición (el guardado ajeno; el freno de los datos, nunca: delegated-signing.js)
   const clickDelDueno = pendientes.length === 1 && !!(firmaDe(pendientes[0]) || {}).clickDelDueno;
   // una firma de click que no es de esas no llega a preguntarle a la delegación, diga lo que diga el perfil
-  const clickDelegable = !(soloClick || clickDelDueno) || DELEGABLE_EXCEPTIONS.includes(pendientes[0]);
+  // y la que es sólo del dueño aunque se pida para otra sesión no le pregunta nunca, diga lo que diga la delegación
+  const clickDelegable = (!(soloClick || clickDelDueno) || DELEGABLE_EXCEPTIONS.includes(pendientes[0])) && !pendientes.some((id) => PARA_OTRA_SESION_SIN_DELEGAR.includes(id));
   if (!enWindows && clickDelegable) try {
     const estado = stateDir(casa);
     const rs = pendientes.map((id) => delegacion({ firma: id, sesion, destino, home: casa, estado, cwd: evento.cwd, repo: repoDe(can && can.palabras), pendiente: pendienteDe(can && can.palabras) }));
@@ -1665,6 +1750,8 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
           let c = null;
           try { c = comprobar({ firma: firmaGuion, palabras: can.palabras, cwd: evento.cwd, sesion, casa, via: null }); } catch (e) { chequeo = `no pude correr el chequeo del guion (${e.message})`; }
           if (c && c.niega) return { decision: 'deny', firmas: pendientes, texto: `No te la desvié a la coordinadora: el comando se iba a negar antes de usar la firma. Lo que dijo: ${una(c.niega, 800)}. Arreglá eso y volvé a pedirla` };
+          // sin el chequeo no se desvía: la firma va a la ventana y la da el dueño
+          if (c && c.sinRespuesta) chequeo = c.sinRespuesta;
         }
         let anotada = null;
         if (chequeo) sinDesvio = chequeo;
@@ -1696,9 +1783,10 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
     try { permiso = require(path.join(LIB, 'autonomy-decision.js')).permisoVigente(stateDir(casa), destino); } catch (_) { permiso = null; }
     if (permiso) return { decision: 'none', firmas: [] };
   }
-  if (delegada || sinVentana || deFondo || enWindows || soloClick || clickDelDueno) {
+  if (aprobadaAntes || delegada || sinVentana || deFondo || enWindows || soloClick || clickDelDueno) {
     const cuadro = pendientes.length === 1 ? cuadroPara({ firma: pendientes[0], comando, palabras: can && can.palabras, destino, cwd: evento.cwd, casa, sesion, memo: criterios }) : null;
-    const a = aprobacionExplicita({ pendientes, sesion, destino, casa, ahora, cwd: evento.cwd, aprobaciones, herramienta: { pid: tool.pid, inicio: tool.inicio }, cuadro: cuadro || {}, arbol });
+    // la que ganó a la firma de trámite ya se buscó con este mismo cuadro
+    const a = aprobadaAntes || aprobacionExplicita({ pendientes, sesion, destino, casa, ahora, cwd: evento.cwd, aprobaciones, herramienta: { pid: tool.pid, inicio: tool.inicio }, cuadro: cuadro || {}, arbol });
     if (a.ok) { aprobada = a; delegada = null; }
     else if (delegada) sinAprobacion = a.motivo;
     else {
@@ -1725,7 +1813,9 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
             try { fs.appendFileSync(path.join(stateDir(casa), 'hook-errors.log'), `[${new Date().toISOString()}] owner-window: no cargué el freno de preguntas (${e.message}): el texto de siempre\n\n`); } catch (_) { /* sin registro tampoco */ }
           }
         }
-        return negarSinVentana(`${donde}${rutina.motivo && !enWindows ? `, y ${rutina.motivo}` : ''}; ${a.motivo}${noSeDesvio ? `. ${noSeDesvio}` : ''}`, pendientes, paraTerminal, cuadro, deFondo, anotado, coordinadora);
+        // sin la lista, la negativa dice por qué el pedido no le llega a la coordinadora
+        const sinLista = coordinadora && !anotado ? porQueSinLista({ casa, pendientes, destino, sesion, cuadro }) : null;
+        return negarSinVentana(`${donde}${rutina.motivo && !enWindows ? `, y ${rutina.motivo}` : ''}; ${a.motivo}${noSeDesvio ? `. ${noSeDesvio}` : ''}`, pendientes, paraTerminal, cuadro, deFondo, anotado, coordinadora, sinLista);
       }
     }
   }
@@ -2221,12 +2311,17 @@ function formasDeFirmar(firma, archivo, sesion, { casa } = {}) {
   const ventana = comoSeFirma(firma, archivo, { casa });
   const terminal = comoSeFirmaEnLaTerminal(firma, archivo, sesion, { casa });
   const sinCita = sinFormaDeTerminal(archivo, { casa });
+  // la que la coordinadora pide para esta sesión sin delegarla: el dueño la aprueba en la pestaña de ella
+  const desdeLaCoordinadora = PARA_OTRA_SESION_SIN_DELEGAR.includes(`escape:${firma}`) && SESION.test(String(sesion || '')) && sesion !== SIN_SESION
+    ? `${ventana} --for-session ${sesion}` : null;
   return {
     ventana,
     terminal,
+    desdeLaCoordinadora,
     renglones: [
       `en la ventana de permiso (la corre el agente y vos decís que sí): ${ventana}`,
       terminal ? `o en tu terminal: ${terminal}` : `o en tu terminal: ${sinCita || SIN_SESION_TERMINAL}`,
+      ...(desdeLaCoordinadora ? [`o desde la pestaña de la coordinadora, que la pide para esta sesión y vos la aprobás ahí (nunca por delegación): ${desdeLaCoordinadora}`] : []),
     ],
   };
 }
@@ -2443,9 +2538,9 @@ function quienFirmo({ via, sesion, automatica } = {}, persona) {
   return { tipo: 'manual', quien: persona, via: via === 'terminal' ? 'terminal' : 'ventana' };
 }
 
-module.exports = { detalleDe, retiraA, tituloDeLaFirma, avisarFirmaADistancia, renglonALaVista, textoDeLosCriterios, formaCanonica, historiaDelPedido, claveDelPedido, carpetaDelPedido, VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
+module.exports = { plazoDelChequeo, detalleDe, retiraA, tituloDeLaFirma, avisarFirmaADistancia, renglonALaVista, textoDeLosCriterios, formaCanonica, historiaDelPedido, claveDelPedido, carpetaDelPedido, VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, padres, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
   rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, comoSeFirmaEnLaTerminal, enLaTerminal, formasDeFirmar, sinFormaDeTerminal, noPasaEnWindows, ofrecerEnWindows, ofreceTrasDecidir, markerEstable,
-  SIN_SESION_TERMINAL, esAnfitrionDeFondoDe, negarSinVentana, CHEQUEO_ANTES_DEL_CUADRO, pasaDelCupoDelegado, rutinaSinPermisos, lanzarAvisoDeFirma, correrAvisoDeFirma, salirTrasElAviso };
+  SIN_SESION_TERMINAL, esAnfitrionDeFondoDe, negarSinVentana, porQueSinLista, CHEQUEO_ANTES_DEL_CUADRO, pasaDelCupoDelegado, rutinaSinPermisos, lanzarAvisoDeFirma, correrAvisoDeFirma, salirTrasElAviso };
 
 if (require.main === module) {
   const argv = process.argv.slice(2);

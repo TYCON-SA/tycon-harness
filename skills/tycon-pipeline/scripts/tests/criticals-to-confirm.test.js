@@ -40,7 +40,7 @@ const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
  * Una corrida de juguete en la vuelta 2: la vuelta 1 corrió, `reportes` dice qué reportó cada revisor y `hallazgos` es
  * `findings.json`. El cambio de la vuelta 2 es `cambio` (por defecto, código).
  */
-function lab({ reportes = [], hallazgos = null, cambio = { 'a.js': 'module.exports = 2;\n' }, registroRoto = false, foto = false } = {}) {
+function lab({ reportes = [], hallazgos = null, cambio = { 'a.js': 'module.exports = 2;\n' }, registroRoto = false, foto = false, pases = null } = {}) {
   const base = tmp('ctc-');
   const repo = path.join(base, 'repo');
   const home = path.join(base, 'home');
@@ -72,6 +72,8 @@ function lab({ reportes = [], hallazgos = null, cambio = { 'a.js': 'module.expor
     stepsCompleted: ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests'], stepsPending: ['reviewers', 'findings', 'live-check', 'prepare-commit'],
     iter: 1, iterations: { 1: { snapshotAt: vuelta1 } }, filesTouched: [path.join(repo, 'a.js')],
     fileEvents: Object.keys(cambio).map((rel) => ({ path: path.join(repo, rel), ts: at(-60), code: /\.js$/.test(rel) })),
+    // los pases adversariales anotados (mark-adversarial-result los escribe en el marcador)
+    ...(pases ? { adversarialPasses: pases } : {}),
   };
   fs.writeFileSync(path.join(state, 'active', `${SID}.json`), JSON.stringify(marker, null, 2));
   fs.writeFileSync(path.join(state, 'advisor-runs', `${SID}.jsonl`), `${JSON.stringify({ ts: at(-600), event: 'step5-start', expected: [DEFTR, TESTS], iter: 1 })}\n`);
@@ -379,4 +381,40 @@ test('Set_SinCodigo_MismaReglaConDestino_SeCuentaPorInstancia', () => {
   assert.ok(r.j, salida(r));
   assert.strictEqual(r.j.no_code_delta, true, salida(r));
   assert.deepStrictEqual(r.j.mech_confirmed, ['ACCOV-C5'], salida(r));
+});
+
+// Un crítico del pase adversarial (ADV) arreglado con su prueba no espera a nadie: el pase no se repite y ningún revisor
+// lo tiene asignado, así que una vuelta sin código lo dejaba abierto para siempre y trababa el cierre. Su prueba, que
+// write-findings exige para el `fixed` de un hallazgo reproducido, es lo que lo confirma.
+// El firmante del pase lo puede escribir cualquiera en findings.json: lo que lo ata al pase es su anotación en el marcador
+// (mark-adversarial-result), que dice cuántos confirmados quedaron con su prueba. Y la prueba tiene que estar en el repo.
+// 🔴 Falla con: un ADV `fixed` con prueba que deja abierta la vuelta sin código; o uno sin prueba, todavía abierto, con la
+//    misma regla firmada también por un revisor, sin un pase anotado, con más críticos del pase que pruebas anotadas, o con
+//    una prueba que no existe, que la cierra.
+test('Set_SinCodigo_CriticoDelPaseConPrueba_SeCierra', () => {
+  const ADV = (extra = {}) => ({ rule_id: 'ADV-1', severity: 'CRITICAL', disposition: 'fixed', file: 'a.js', title: 'x', advisor: 'adversarial-verify:bordes', test: 'tests/a.test.js::el borde', ...extra });
+  const PASE = { tipo: '5b', confirmados: 1, pruebas: 0, propias: 1, diferidos: 0, veredicto: 'no-listo' };
+  const vuelta = (hallazgos, { pases = [PASE], conPrueba = true } = {}) => {
+    const L = lab({ hallazgos, cambio: { 'notas.md': 'otras\n' }, foto: true, pases });
+    if (conPrueba) { fs.mkdirSync(path.join(L.repo, 'tests'), { recursive: true }); fs.writeFileSync(path.join(L.repo, 'tests', 'a.test.js'), '// la prueba\n'); }
+    const r = L.reloop();
+    assert.ok(r.j, salida(r));
+    return r;
+  };
+  const cerrada = vuelta([ADV()]);
+  assert.strictEqual(cerrada.j.no_code_delta, true, `la vuelta sin código quedó abierta por un ADV arreglado con prueba: ${salida(cerrada)}`);
+  assert.deepStrictEqual(cerrada.j.mech_confirmed, ['ADV-1'], salida(cerrada));
+  // nombrado en castellano, igual
+  assert.strictEqual(vuelta([ADV({ advisor: 'pase adversarial (2 lentes)' })]).j.no_code_delta, true);
+  // sin prueba, todavía abierto, con otro firmante en la misma regla, sin pase anotado, con un pase no medido, con más
+  // críticos firmados por el pase que pruebas anotadas (un crítico de mech-check reetiquetado), o con la prueba que no está
+  for (const [caso, hallazgos, op] of [['sin prueba', [ADV({ test: '' })]], ['abierto', [ADV({ disposition: 'open' })]],
+    ['otro firmante en la misma regla', [ADV(), ADV({ advisor: 'tycon-silent-failure-hunter', test: '' })]],
+    ['sin pase anotado', [ADV()], { pases: null }], ['pase no medido', [ADV()], { pases: [{ ...PASE, veredicto: 'no-medido' }] }],
+    ['más críticos que pruebas del pase', [ADV(), ADV({ rule_id: 'ACCOV-C5', file: 'specs/x.md' })]],
+    ['la prueba no está en el repo', [ADV()], { conPrueba: false }]]) {
+    const r = vuelta(hallazgos, op);
+    assert.notStrictEqual(r.j.no_code_delta, true, `${caso}: la vuelta se cerró sola · ${salida(r)}`);
+    assert.ok((r.j.mech_still_open || []).some((m) => m.rule === 'ADV-1' || m.rule === 'ACCOV-C5'), `${caso} · ${salida(r)}`);
+  }
 });

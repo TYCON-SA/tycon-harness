@@ -1765,3 +1765,101 @@ test('T4 RunSuites_Reactivated_PastFiltersOrAbsent @story-8.299 @ac-3 @ac-4 @ac-
   assert.deepEqual(res.ausentes, []);
   assert.doesNotMatch(r.stdout, /VUELVE|zz\.test\.js/);
 });
+
+// 🔴 mutación: el tope sin piso (guard-record, de 27 s, se cortaría a los 2 min con la máquina cargada), sin techo, con
+// los tiempos de otra suite, o tomando un valor que no es un número entero de segundos.
+test('TopeDeSuite_CincoVecesLoMasLento_EntrePisoYTecho (fila 126 c)', () => {
+  const { topeDeSuite, TOPE_PISO_MS, TOPE_TECHO_MS } = require(RUNNER);
+  assert.deepStrictEqual([TOPE_PISO_MS, TOPE_TECHO_MS], [10 * 60000, 60 * 60000]);
+  const runs = [
+    { suites: [{ s: 'tests/guard-record.test.sh', ms: 11000 }, { s: 'tests/lenta.test.sh', ms: 6 * 60000 }] },
+    { suites: [{ s: 'tests/guard-record.test.sh', ms: 27000 }, { s: 'tests/eterna.test.sh', ms: 20 * 60000 }] },
+  ];
+  assert.deepStrictEqual(topeDeSuite('tests/nueva.test.sh', runs, {}), { ms: TOPE_TECHO_MS, por: 'sin medición en esta máquina: el techo (entre 10 y 60 min)' });
+  assert.strictEqual(topeDeSuite('tests/guard-record.test.sh', runs, {}).ms, TOPE_PISO_MS, '5 × 27 s queda en el piso');
+  assert.match(topeDeSuite('tests/guard-record.test.sh', runs, {}).por, /^5 veces lo más que tardó en esta máquina \(27 s\), entre 10 y 60 min$/);
+  assert.strictEqual(topeDeSuite('tests/lenta.test.sh', runs, {}).ms, 30 * 60000, '5 × 6 min');
+  assert.strictEqual(topeDeSuite('tests/eterna.test.sh', runs, {}).ms, TOPE_TECHO_MS, '5 × 20 min queda en el techo');
+  assert.strictEqual(topeDeSuite('tests/x.test.sh', [null, { suites: [null, { s: 'tests/x.test.sh', ms: 'roto' }] }], {}).ms, TOPE_TECHO_MS, 'lo ilegible no cuenta');
+  // la variable lo fija para todas; 0 lo saca; lo que no es un entero de segundos no cuenta
+  assert.deepStrictEqual(topeDeSuite('tests/eterna.test.sh', runs, { TYCON_SUITE_MAX_SECONDS: ' 90 ' }), { ms: 90000, por: 'fijado con TYCON_SUITE_MAX_SECONDS' });
+  assert.strictEqual(topeDeSuite('tests/eterna.test.sh', runs, { TYCON_SUITE_MAX_SECONDS: '0' }).ms, null);
+  for (const v of ['', 'abc', '1.5', '-3']) assert.strictEqual(topeDeSuite('tests/lenta.test.sh', runs, { TYCON_SUITE_MAX_SECONDS: v }).ms, 30 * 60000, `«${v}» no cuenta`);
+  // más de lo que acepta un reloj de Node lo dispararía al instante: queda en ese máximo
+  assert.strictEqual(topeDeSuite('tests/lenta.test.sh', runs, { TYCON_SUITE_MAX_SECONDS: '3000000' }).ms, 2 ** 31 - 1);
+});
+
+// 🔴 mutación: leer el historial de otro archivo que el que anota el portón (TYCON_SUITE_TIMES), o tirar sin registro.
+test('TopeDeSuite_ElHistorialEsElQueAnotaElPorton (fila 126 c)', () => {
+  const { historialDeTiempos } = require(RUNNER);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'suites-json-tiempos-'));
+  const file = path.join(dir, 'tiempos.jsonl');
+  fs.writeFileSync(file, `${JSON.stringify({ ts: '2026-11-23T10:00:00.000Z', suites: [{ s: 'tests/guard-record.test.sh', ms: 27000, exit: 0 }] })}\n`);
+  const runs = historialDeTiempos({ TYCON_SUITE_TIMES: file });
+  assert.deepStrictEqual(runs.flatMap((r) => r.suites.map((s) => [s.s, s.ms])), [['tests/guard-record.test.sh', 27000]]);
+  assert.deepStrictEqual(historialDeTiempos({ TYCON_SUITE_TIMES: path.join(dir, 'no-esta.jsonl') }), []);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+// 🔴 mutación: no cortar la suite que pasa su tope, cortar sólo su proceso y no su grupo (el nieto queda vivo), no
+// rematar con SIGKILL a la que ignora el SIGTERM, contar verde a la que lo atiende y sale 0, esperar para siempre a la
+// que dejó un nieto fuera de su grupo con la salida abierta, callar el motivo, o anotar su tiempo en el registro.
+test('TopeDeSuite_LaQuePasaSuTopeSeCortaConSuGrupoYCuentaRoja (fila 126 c)', () => {
+  const f = armar({ diarias: [
+    { raiz: 'arnes', ruta: 'tests/colgada.test.sh' },
+    { raiz: 'arnes', ruta: 'tests/sorda.test.js' },
+    { raiz: 'arnes', ruta: 'tests/educada.test.js' },
+    { raiz: 'arnes', ruta: 'tests/fugada.test.js' },
+    { raiz: 'arnes', ruta: 'tests/rapida.test.js' },
+  ] });
+  const nieto = path.join(f.root, 'nieto.pid');
+  const fugado = path.join(f.root, 'fugado.pid');
+  // la colgada deja un nieto que duerme; la sorda ignora el SIGTERM; la educada lo atiende y sale 0; la fugada deja un
+  // nieto en otro grupo con su salida abierta (el cierre de la suite no llega nunca)
+  f.escribir('arnes', 'tests/colgada.test.sh', `sleep 300 &\necho $! > ${JSON.stringify(nieto)}\nwait\n`);
+  f.escribir('arnes', 'tests/sorda.test.js', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);");
+  f.escribir('arnes', 'tests/educada.test.js', "process.on('SIGTERM', () => process.exit(0)); setInterval(() => {}, 1000);");
+  f.escribir('arnes', 'tests/fugada.test.js', [
+    "const n = require('child_process').spawn('sleep', ['300'], { detached: true, windowsHide: true, stdio: ['ignore', 'inherit', 'inherit'] });",
+    `require('fs').writeFileSync(${JSON.stringify(fugado)}, String(n.pid));`,
+    'setInterval(() => {}, 1000);',
+  ].join('\n'));
+  f.escribir('arnes', 'tests/rapida.test.js', 'process.exit(0)');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'suites-json-casa-'));
+  // el registro de tiempos, en un archivo propio: el de la carpeta de estado depende del entorno de quien corre la prueba
+  const tiempos = path.join(home, 'tiempos.jsonl');
+  const env = { ...process.env, HOME: home, USERPROFILE: home, TYCON_HOME: path.join(home, '.tycon'), TYCON_SUITE_MAX_SECONDS: '2', TYCON_SUITE_TIMES: tiempos };
+  delete env.NODE_TEST_CONTEXT;
+  const out = path.join(f.root, 'out.json');
+  // stable-data: el reloj mide cuánto tarda la corrida, que es lo que se prueba; ninguna fecha entra en el resultado
+  const t0 = Date.now();
+  const r = spawnSync(process.execPath, [RUNNER, f.repo, out, '--skills', f.skills], { encoding: 'utf8', env, timeout: 60000 });
+  const ms = Date.now() - t0;
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  // tope de 2 s, y la gracia con un tope tan corto es de 1 s: la fugada se suelta a los ~4 s
+  assert.ok(ms < 20000, `no espera a las colgadas (${ms} ms)`);
+  const res = JSON.parse(fs.readFileSync(out, 'utf8'));
+  assert.equal(res.verdes, 1, 'la rápida sigue verde');
+  const fallas = new Map(res.fallas.map((x) => [path.basename(x.ruta), x]));
+  // el fugado no es de la suite: lo mata la prueba, pase lo que pase
+  try { process.kill(Number(fs.readFileSync(fugado, 'utf8').trim()), 'SIGKILL'); } catch { /* ya no estaba */ }
+  for (const n of ['colgada.test.sh', 'sorda.test.js', 'educada.test.js', 'fugada.test.js']) {
+    const x = fallas.get(n);
+    assert.ok(x, `${n} cuenta roja`);
+    assert.equal(x.exit, 124, n);
+    assert.deepStrictEqual(x.casos, ['❌ cortada por tiempo: pasó su tope de 2 s (fijado con TYCON_SUITE_MAX_SECONDS)'], n);
+  }
+  assert.match(r.stdout, /ROJO\(124\) .*colgada\.test\.sh — cortada por tiempo \(tope 2 s\)/);
+  // el nieto murió con su grupo
+  const pid = Number(fs.readFileSync(nieto, 'utf8').trim());
+  let vivo = true;
+  for (let i = 0; i < 20 && vivo; i++) {
+    try { process.kill(pid, 0); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100); } catch (e) { vivo = e.code !== 'ESRCH'; }
+  }
+  assert.ok(!vivo, `el nieto ${pid} sigue vivo`);
+  // el registro de tiempos anota la rápida y no las cortadas
+  assert.ok(fs.existsSync(tiempos), 'el corredor anota sus tiempos');
+  const anotadas = fs.readFileSync(tiempos, 'utf8').trim().split('\n').flatMap((l) => JSON.parse(l).suites.map((s) => s.s));
+  assert.deepStrictEqual(anotadas, ['tests/rapida.test.js']);
+  fs.rmSync(home, { recursive: true, force: true });
+});
