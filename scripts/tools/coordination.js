@@ -22,10 +22,13 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *                            abre una sesión de fondo con ese nombre; nunca reintenta. Sin --name (o con --name auto)
  *                            toma el primero libre de `coordination.session_names` (el lector de configuración);
  *                            sin esa configuración, no la abre
- *   open --name <n> --repo <repo> [--branch <rama>] [--slot] -- <encargo>
+ *   open --name <n> --repo <repo> [--branch <rama>] [--slot] [--reuse] -- <encargo>
  *                            lo mismo, en una copia hermana nueva del repo (`<principal>--wt-<nombre>`, desde
  *                            origin/main), en la rama del trabajo (wt/<nombre> sin rama); con --slot, en un puesto fijo
- *                            libre (scripts/tools/work-slots.js). Si Claude Code no la abre, borra lo que creó
+ *                            libre (scripts/tools/work-slots.js). Si Claude Code no la abre, borra lo que creó, salvo
+ *                            si contesta que la carpeta no está aprobada: la deja, con su rama, para que una persona la
+ *                            apruebe, y con --reuse la reintenta en esa misma carpeta (la copia de ese nombre, o el
+ *                            puesto que está en esa rama)
  *   close --name <n>         cierra una sesión de fondo si quedó limpia; si falta algo, o no pudo mirarlo, no cierra y dice
  *                            qué. A una interactiva la verifica y avisa
  *   stop --name <n>          para una sesión de fondo con el id que anotó (claude stop no la encuentra por el nombre ni
@@ -536,11 +539,24 @@ function stateFiles(home, problems) {
 // sesión, manda él: el permiso está abierto sólo si la da esperando. Una negación (Esc o «No») corta el turno sin Stop ni
 // PostToolUse y la deja quieta con `permission` todavía anotado: no está trabada. Sin estado de Claude, el archivo de estado.
 // `key` identifica la espera para no anunciarla dos veces: la hora del permiso anotado, o la de Claude sin él.
+// El permiso que pide un agente de la sesión no la pone esperando: Claude Code la sigue dando ocupada (espera a su
+// agente). Se anuncia si está ocupada desde antes del pedido y la sesión lleva QUIETA_MS sin moverse: el final de la
+// herramienta pedida borra el permiso, y el de otra lo anota en `movedAt` (hooks/session-state.js, una vez por minuto).
+// El plazo pasa el tope de un comando de consola en primer plano (10 minutos): uno aprobado que todavía corre no sale.
+const QUIETA_MS = 11 * 60 * 1000;
+function porUnAgente(s, p, now) {
+  if (!p || s.status !== 'busy') return false;
+  const pSince = Date.parse(p.since);
+  if (!Number.isFinite(pSince) || !Number.isFinite(s.statusAt) || s.statusAt > pSince) return false;
+  const movio = Date.parse(p.movedAt);
+  return now - (Number.isFinite(movio) && movio > pSince ? movio : pSince) >= QUIETA_MS;
+}
 function stalledOf(s, f, now) {
   const p = f && f.permission && typeof f.permission === 'object' ? f.permission : null;
   const waits = s.status === 'waiting';
   const known = typeof s.status === 'string' && s.status !== '';
-  if (!((waits && (/permission/i.test(String(s.waitingFor || '')) || p)) || (p && !known))) return null;
+  const agente = porUnAgente(s, p, now);
+  if (!((waits && (/permission/i.test(String(s.waitingFor || '')) || p)) || (p && !known) || agente)) return null;
   const pSince = p ? Date.parse(p.since) : NaN;
   const since = Number.isFinite(pSince) ? pSince : (Number.isFinite(s.statusAt) ? s.statusAt : now);
   // el gancho ya lo anota tapado; se tapa otra vez por los archivos escritos antes de que una forma existiera
@@ -558,7 +574,7 @@ function stalledOf(s, f, now) {
   // de un permiso que se resolvió por otro camino (lo cortó un freno, o se destrabó) y que queda hasta el cierre del
   // turno: el aviso no la da por abierta. Esperando sin decir qué, se toma por el permiso, como siempre
   const confirmed = waits && (!s.waitingFor || /permission/i.test(String(s.waitingFor)));
-  return { tool: p ? label(p.tool) : null, detail, since, key: Number.isFinite(pSince) ? `p:${pSince}` : 'claude', confirmed, ...(forma ? { forma } : {}) };
+  return { tool: p ? label(p.tool) : null, detail, since, key: Number.isFinite(pSince) ? `p:${pSince}` : 'claude', confirmed, ...(agente ? { agente: true } : {}), ...(forma ? { forma } : {}) };
 }
 
 // La espera que el archivo de estado anota cuando una sesión abre un cuadro o pide aprobar su plan (hooks/session-state.js).
@@ -622,10 +638,33 @@ function swapLine(s) {
   return `Memoria de intercambio casi llena: ${sw.pct} % libre. Claude Code puede cerrar sesiones quietas${names.length ? `: ${names.join(' · ')}` : ' (no hay quietas)'}. Antes de lanzar algo pesado, cerrá las quietas que no esperan nada (guides/coordination.md, «La memoria de intercambio»).`;
 }
 
+// Los procesos del usuario cerca del tope (desde este porcentaje): con el tope no arranca ningún comando, ni los ganchos ni
+// los frenos. Pasó con varios pases adversariales a la vez y una prueba colgada.
+const PROCS_HIGH_PCT = 70;
+// Lo que lee de más el comando `status`: la memoria de intercambio y los procesos. El aviso de cada turno y el freno del
+// cierre no corren `sysctl` ni `ps`.
+const STATUS_READS = Object.freeze({ swap: true, procs: true });
+// La lectura de los procesos del usuario para `status`: `{ used, max, pct, why }`. Como la memoria de intercambio, sólo la
+// pide el comando `status` (`opts.procs`).
+function procsOf(opts) {
+  if (!opts.procs && !opts.readProcs) return null;
+  try { return (opts.readProcs || require('./heavy-turn.js').userProcs)() || { used: null, max: null, pct: null, why: 'sin respuesta' }; } catch (e) { return { used: null, max: null, pct: null, why: oneLine(e.message) }; }
+}
+// La línea de los procesos, o null: medidos y lejos del tope no dice nada.
+function procsLine(s) {
+  const p = s.procs;
+  if (!p) return null;
+  // `ps` no pudo arrancar por falta de procesos: ése es el tope, no una medición que falló
+  if (p.pct == null && /EAGAIN|temporarily unavailable/i.test(String(p.why))) return 'Procesos del usuario en el tope: no pude arrancar ni `ps` para contarlos (EAGAIN). Ningún comando arranca, ni los ganchos ni los frenos: pedí que frenen los pases y los guiones de fondo (guides/coordination.md, «Los procesos del usuario»).';
+  if (p.pct == null) return `Procesos del usuario: no medidos (${oneLine(p.why || 'sin motivo').slice(0, 120)})`;
+  if (p.pct < PROCS_HIGH_PCT) return null;
+  return `Procesos del usuario cerca del tope: ${p.used} de ${p.max} (${p.pct} %). Con el tope no arranca ningún comando, ni los ganchos ni los frenos. Antes de lanzar algo pesado (un pase, mutantes, una suite), pedí que frenen los pases y los guiones de fondo que no hacen falta (guides/coordination.md, «Los procesos del usuario»).`;
+}
+
 const permissionText = (x) => [x.tool || 'un permiso', x.detail].filter(Boolean).join(' ');
 const gateText = (g) => `el portón acotado de ${g.session || 'una sesión sin nombre'} (${g.what}, desde las ${hhmm(g.since)})`;
 // La línea de una sesión trabada para la coordinadora, y la de una que cerró Claude Code.
-const stalledLine = (x) => `${x.session} ${x.confirmed === false ? `tiene un permiso anotado desde las ${hhmm(x.since)}, sin confirmar que siga abierto` : `espera un permiso desde las ${hhmm(x.since)}`}: ${permissionText(x)}.${x.forma ? ` Lo pidió el chequeo de borrados de Claude Code: ${x.forma}.` : ''}${x.relay ? ` No te llegó como cuadro: ${x.relay}.` : ''} Para entrar: claude attach ${x.session}`;
+const stalledLine = (x) => `${x.session} ${x.agente ? `espera un permiso desde las ${hhmm(x.since)} que pidió un agente suyo (la sesión figura ocupada y no se movió desde entonces)` : x.confirmed === false ? `tiene un permiso anotado desde las ${hhmm(x.since)}, sin confirmar que siga abierto` : `espera un permiso desde las ${hhmm(x.since)}`}: ${permissionText(x)}.${x.forma ? ` Lo pidió el chequeo de borrados de Claude Code: ${x.forma}.` : ''}${x.relay ? ` No te llegó como cuadro: ${x.relay}.` : ''} Para entrar: claude attach ${x.session}`;
 
 // Por qué el permiso de la sesión no le llegó a la coordinadora como cuadro, o dejó de esperarlo: lo anota el gancho de
 // permisos (scripts/hooks/permission-relay.js) en `coordination/permission-relay/<sesión>.json`, con la hora en que llegó
@@ -817,7 +856,7 @@ function status(opts = {}) {
     now, working, waiting, quiet, agentSilent, busySilent, backgroundStalled, passWaiting, suiteWaiting, outsideWaiting, stopped, cap: r.max_working, storiesCap: r.max_stories_in_cycle, adversarial, stalled, asking,
     // lo que espera revisión, de la foto del arranque: para mostrar, nunca para decidir
     review: RL.leerFoto(stateDir(home), now), reviewCap: r.max_awaiting_review,
-    retired: gone.retired, retiredMeasured: gone.measured, retiredWhy: gone.why, idle, swap: swapOf(opts),
+    retired: gone.retired, retiredMeasured: gone.measured, retiredWhy: gone.why, idle, swap: swapOf(opts), procs: procsOf(opts),
     suite: suiteRow, suites: suiteRows, secondTurn, heavyTurn, gates,
     signatures, plansWaiting: planWaits, pendingDesignation,
     unnamed, problems,
@@ -844,6 +883,8 @@ function statusText(s) {
   else if (s.retired && s.retired.length) lines.push(`Cerradas por Claude Code: ${s.retired.map(retiredLine).join(' · ')}`);
   const swap = swapLine(s);
   if (swap) lines.push(swap);
+  const procs = procsLine(s);
+  if (procs) lines.push(procs);
   const passText = (a) => `pase adversarial de ${a.storyId ? `la ${a.storyId}` : 'una sesión sin story'} (${a.session}, desde las ${hhmm(a.since)})`;
   const h = s.heavyTurn;
   // con una ejecución grande, si entra la segunda; con dos, las dos
@@ -1200,10 +1241,30 @@ function ownerWaitTurn(opts, a, lines, { home, me, stalled, now }) {
   for (const [sid, prev] of Object.entries(o.esperas)) {
     if (ahora.has(sid)) continue;
     // la que pasó a la lista o a un permiso sigue esperando: tiene su aviso por otro lado
-    if (!fuera.has(sid)) lines.push(`${quoted(prev.quien, LABEL_MAX)} ya no espera a la persona`);
+    if (!fuera.has(sid)) {
+      // la oficina saca de «Tu firma» a la sesión ocupada (le llegó un mensaje, corre un comando) aunque su plan siga sin
+      // aprobar: esa espera se retira sólo con el plan aprobado o la corrida cerrada
+      if (prev.espera === PLAN_WAIT && planStillUnapproved(home, sid)) continue;
+      lines.push(`${quoted(prev.quien, LABEL_MAX)} ya no espera a la persona`);
+    }
     delete o.esperas[sid];
   }
   return true;
+}
+
+// lo que la oficina dice que espera una sesión en «Aprobar el plan» (work-in-progress.js realState)
+const PLAN_WAIT = 'que apruebes el plan';
+
+/**
+ * ¿El plan de la corrida de `sid` sigue sin aprobar? Sí con su marcador abierto sin «Aprobar el plan» hecho, y en duda
+ * (un marcador que no se lee); no sin marcador (la corrida se cerró) o con el plan aprobado.
+ */
+function planStillUnapproved(home, sid) {
+  if (!SAFE_SID.test(String(sid))) return true;
+  let m;
+  try { m = JSON.parse(fs.readFileSync(path.join(stateDir(home), 'active', `${sid}.json`), 'utf8')); } catch (e) { return !e || e.code !== 'ENOENT'; }
+  if (!m || typeof m !== 'object' || Array.isArray(m)) return true;
+  return !require(path.join(SKILL_LIB, 'steps.js')).isDone(m, 'approve-plan');
 }
 
 /**
@@ -2914,6 +2975,75 @@ function mainOf(repo) {
   return realDir(path.basename(common.out) === '.git' ? path.dirname(common.out) : common.out);
 }
 
+// Lo que se muestra, en caracteres, de la línea de Claude Code cuando contesta que la carpeta no está aprobada.
+const UNTRUSTED_SAID_MAX = 200;
+// Las secuencias de terminal enteras: títulos y enlaces (OSC), colores y movimientos (CSI) y las de dos caracteres.
+const TERMINAL_SEQ = /\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|(?:\x1b\[|\x9b)[0-?]*[ -/]*[@-~]|\x1b[@-_]/g;
+
+/**
+ * La línea de Claude Code que se cita cuando contesta que la carpeta no está aprobada: la que lo dice (si ninguna, la
+ * primera con algo), sin secuencias de terminal ni caracteres de control, en una línea y recortada sin partir un
+ * carácter. La próxima versión puede decirlo distinto: la cita deja ver cómo.
+ */
+function untrustedSaid(out) {
+  const lines = String(out == null ? '' : out).split(/\r\n|\r|\n/).map((l) => oneLine(l.replace(TERMINAL_SEQ, ''))).filter(Boolean);
+  const chars = Array.from(lines.find((l) => /not trusted/i.test(l)) || lines[0] || '');
+  return chars.length > UNTRUSTED_SAID_MAX ? `${chars.slice(0, UNTRUSTED_SAID_MAX).join('')}…` : chars.join('');
+}
+
+// Un valor para pegar en la terminal: entre comillas simples, con las de adentro escapadas (PowerShell las dobla).
+const pasteQuote = (s) => (process.platform === 'win32'
+  ? `'${String(s).split("'").join("''")}'`
+  : `'${String(s).split("'").join("'\\''")}'`);
+
+// Cómo soltar el puesto o sacar la copia que quedó, si no se va a usar.
+function leftBehind({ slot, copy }) {
+  return slot
+    ? `El puesto queda tomado, en la rama ${slot.branch}; si no se va a usar, soltalo: node ${pasteQuote(path.join(__dirname, 'work-slots.js'))} release ${pasteQuote(slot.path)}.`
+    : `La copia queda, en la rama ${copy.branch}; si no se va a usar, sacala: git -C ${pasteQuote(copy.main)} worktree remove ${pasteQuote(copy.path)}.`;
+}
+
+/**
+ * La carpeta que dejó una apertura que Claude Code no aceptó por no estar aprobada, para reintentar ahí (`--reuse`): la
+ * copia `<principal>--wt-<nombre>` en la rama del trabajo, o el puesto que está en esa rama. No reusa una carpeta con
+ * una sesión viva adentro: la persona que la aprobó pudo dejar claude abierto ahí. `{ ok, slot, copy }` o
+ * `{ ok: false, message }`.
+ */
+function reusable({ home, env, arnes, repo, name, branch, slot, live }) {
+  const no = (message) => ({ ok: false, message });
+  const main = mainOf(repo);
+  if (!main) return no(`No pude ver el repo ${repo}: no la abrí.`);
+  let found;
+  if (slot) {
+    const l = workSlots.list({ home, env, arnes, repo });
+    if (!l.ok) return no(`${l.message.replace(/\.$/, '')}; no la abrí.`);
+    const s = l.slots.find((x) => x.branch === branch);
+    if (!s) return no(`Ningún puesto de ${main} está en la rama ${branch}: no hay qué reusar; no la abrí. Sin --reuse toma un puesto libre.`);
+    found = { slot: { ok: true, path: s.path, n: s.n, branch, created: false }, copy: null, where: s.path };
+  } else {
+    const p = `${main}--wt-${name}`;
+    if (!fs.existsSync(p)) return no(`La copia ${p} no existe: no hay qué reusar; no la abrí. Sin --reuse crea una nueva.`);
+    if (mainOf(p) !== main) return no(`${p} no es una copia de ${main}: no la reuso; no la abrí.`);
+    const at = gitIn(p, ['symbolic-ref', '-q', '--short', 'HEAD']).out;
+    if (at !== branch) return no(`La copia ${p} está en ${at ? `la rama ${at}` : 'un commit suelto'}, no en ${branch}: no la reuso; no la abrí.`);
+    found = { slot: null, copy: { ok: true, path: p, main, branch, created: false }, where: p };
+  }
+  const here = realDir(found.where);
+  if (live.some((x) => x.cwd && realDir(x.cwd) === here)) {
+    return no(`Hay una sesión viva en ${found.where} (¿quedó abierta la que la aprobó?): que la cierren con /exit y volvé a probar; no la abrí.`);
+  }
+  return { ok: true, slot: found.slot, copy: found.copy };
+}
+
+// El mensaje cuando Claude Code no abrió una copia o un puesto por no estar aprobado: la carpeta queda, y dice cómo
+// aprobarla, cómo reintentar ahí y cómo soltarla si no se va a usar.
+function untrustedFolder({ name, repo, branch, slot, copy, where, said }) {
+  const kind = slot ? `un puesto de ${repo}` : `una copia de ${repo}`;
+  const q = pasteQuote;
+  const retry = `node ${q(__filename)} open --name ${q(name)} --repo ${q(repo)}${branch ? ` --branch ${q(branch)}` : ''}${slot ? ' --slot' : ''} --reuse -- <el mismo encargo>`;
+  return `Claude Code no abrió la sesión: la carpeta ${where} (${kind}) no está aprobada en esta versión de Claude Code, que pide aprobar cada copia y cada puesto aparte, aunque la principal lo esté.${said} La aprueba una persona una vez: cd ${q(where)} y claude, aceptá si pregunta y salí con /exit. Después volvé a abrir la sesión en esa misma carpeta: ${retry}. ${leftBehind({ slot, copy })} No reintenté.`;
+}
+
 /**
  * Abre una sesión de fondo con nombre y encargo. Nunca reintenta; sólo una apertura que salió bien queda anotada. Sin
  * nombre (o con «auto»), toma el primero libre de `coordination.session_names`.
@@ -2936,11 +3066,13 @@ function openNow(opts) {
   const s = capCheck({ ...opts, home, env, now });
   // Sin leer todo no se sabe el tope ni qué nombres están tomados: no se abre a ciegas.
   if (s.problems.length) return no(`No pude leer todo el estado de la máquina (${s.problems[0]}): no la abrí.`);
-  const taken = new Set([...sessionsBySid(path.join(claudeDir(home), 'sessions'), [], path.join(claudeDir(home), 'projects')).values()]
-    .filter((x) => x.alive && x.name).map((x) => x.name));
+  const live = [...sessionsBySid(path.join(claudeDir(home), 'sessions'), [], path.join(claudeDir(home), 'projects')).values()].filter((x) => x.alive);
+  const taken = new Set(live.filter((x) => x.name).map((x) => x.name));
   const openedProblems = [];
   for (const o of recentOpened(home, now, openedProblems)) taken.add(o.name);
   if (openedProblems.length) return no(`No pude saber qué sesiones se abrieron recién (${openedProblems[0]}): no la abrí.`);
+  if (opts.reuse && !opts.repo) return no('--reuse va con --repo (reusa la copia o el puesto de ese repo que quedó sin aprobar): no la abrí.');
+  if (opts.reuse && auto) return no('--reuse va con --name, el de la apertura que quedó sin aprobar: no la abrí.');
   if (auto) {
     const names = sessionNames.namesOf(recipe({ home, arnes: opts.arnes, env }).session_names.value);
     // sin lista, como siempre: el nombre lo pone quien abre
@@ -2972,15 +3104,19 @@ function openNow(opts) {
   // los mensajes de las demás. Sin saberlo, no se abre a ciegas.
   const pm = callerPermissionMode({ home, env });
   if (pm.problem) return no(`No pude saber en qué modo de permisos estás (${pm.problem}): no la abrí.`);
-  // Con el repo, la sesión va a una copia hermana nueva (`<principal>--wt-<nombre>`): Claude Code no pide aprobar una
-  // copia de un repo cuya carpeta principal ya está aprobada (medido con 2.1.312). Con `--slot`, a un puesto fijo
-  // (scripts/tools/work-slots.js), como antes.
+  // Con el repo, la sesión va a una copia hermana nueva (`<principal>--wt-<nombre>`); con `--slot`, a un puesto fijo
+  // (scripts/tools/work-slots.js). Con 2.1.312 una copia de un repo con la principal aprobada no pedía aprobación; con
+  // 2.1.330 la sesión de fondo la pide para cada copia y cada puesto: la carpeta queda y `--reuse` la reintenta ahí.
   let slot = null;
   let copy = null;
   if (opts.repo) {
     if (!path.isAbsolute(opts.repo)) return no('El repo va con su ruta absoluta: no la abrí.');
     const branch = opts.branch || `wt/${name}`;
-    if (opts.slot) {
+    if (opts.reuse) {
+      const u = reusable({ home, env, arnes: opts.arnes, repo: opts.repo, name, branch, slot: opts.slot, live });
+      if (!u.ok) return no(u.message);
+      ({ slot, copy } = u);
+    } else if (opts.slot) {
       const tk = workSlots.take({ home, env, arnes: opts.arnes, repo: opts.repo, branch });
       if (!tk.ok) return no(`${tk.message.replace(/\.$/, '')}; no la abrí.`);
       slot = tk;
@@ -2993,8 +3129,10 @@ function openNow(opts) {
   const where = slot ? slot.path : copy ? copy.path : cwd;
   if (!where || !path.isAbsolute(where)) return no('Falta la carpeta de la sesión, absoluta: no la abrí.');
   if (!fs.existsSync(where)) return no(`La carpeta ${where} no existe: no la abrí.`);
-  // Si no abrió, el puesto vuelve a quedar libre, la copia se borra, y la rama que se creó para el trabajo no queda.
+  // Si no abrió, el puesto vuelve a quedar libre, la copia se borra, y la rama que se creó para el trabajo no queda. Lo
+  // que se reusó ya estaba: queda como estaba.
   const fail = (message) => {
+    if (opts.reuse) return no(`${message} La ${slot ? 'carpeta del puesto' : 'copia'} ${where} queda como estaba.`);
     if (slot) {
       workSlots.release({ home, env, slot: slot.path });
       if (slot.created) spawnSync('git', ['-C', slot.path, 'branch', '-d', slot.branch], { encoding: 'utf8', windowsHide: true });
@@ -3023,15 +3161,20 @@ function openNow(opts) {
   });
   if (r.error && r.error.code === 'ENOENT') return fail(`Claude Code no está instalado en esta máquina (no encontré ${launcher.bin}): no abrí la sesión.`);
   // sin respuesta no se sabe si abrió: el puesto queda tomado, mejor que dos sesiones en la misma carpeta
-  if (r.error && r.error.code === 'ETIMEDOUT') return no(`El lanzador no volvió en ${Math.round(timeoutMs / 1000)} s: no sé si abrió la sesión y no reintenté. Mirá con /wip.`);
+  if (r.error && r.error.code === 'ETIMEDOUT') {
+    const left = (slot || copy) && !opts.reuse ? ` Si no abrió: ${leftBehind({ slot, copy })}` : '';
+    return no(`El lanzador no volvió en ${Math.round(timeoutMs / 1000)} s: no sé si abrió la sesión y no reintenté. Mirá con /wip.${left}`);
+  }
   if (r.error) return fail(`El lanzador falló (${r.error.code || r.error.message}): no abrí la sesión.`);
   if (r.status !== 0) {
     const out = `${r.stderr || ''}\n${r.stdout || ''}`;
-    // con la copia no se sabe si falta aprobar la principal o si esta versión de Claude Code pide aprobar cada copia: no
-    // se lee ~/.claude.json para distinguirlo, se dicen las dos salidas
-    if (/not trusted/i.test(out) && copy) return fail(`Claude Code no abrió la copia: falta aprobar la carpeta principal ${copy.main}. Abrila una vez (cd "${copy.main}" y claude) y aceptá; si ya está aprobada, la versión instalada de Claude Code no acepta copias sin aprobar: abrí con --slot.`);
-    if (/not trusted/i.test(out)) return fail(`La carpeta ${where} todavía no está aprobada para Claude Code: la abre el dueño una vez${slot ? ' (los puestos sin aprobar los lista work-slots.js pending-trust)' : ''}. Mientras tanto, la sesión la abre el dueño y yo le doy el encargo.`);
     const first = out.split('\n').map((l) => l.trim()).find(Boolean);
+    if (/not trusted/i.test(out)) {
+      const line = untrustedSaid(out);
+      const said = line ? ` Claude Code dijo: «${line}».` : '';
+      if (!slot && !copy) return fail(`La carpeta ${where} todavía no está aprobada para Claude Code: la abre el dueño una vez. Mientras tanto, la sesión la abre el dueño y yo le doy el encargo.${said}`);
+      return no(untrustedFolder({ name, repo: opts.repo, branch: opts.branch, slot, copy, where, said }));
+    }
     return fail(`El lanzador falló: ${first || (r.signal ? `lo cortó la señal ${r.signal}` : `salió con código ${r.status}`)}. No reintenté.`);
   }
   const opened = `Abrí «${name}» en ${where}. Para entrar: claude attach ${name}, o desde claude.ai/code (control remoto «${name}»)`;
@@ -3512,7 +3655,7 @@ function relaunch(opts = {}) {
 // ── La línea de comandos ──
 
 // las opciones que no llevan valor: las demás `--x` toman el argumento siguiente
-const SWITCHES = new Set(['json', 'slot']);
+const SWITCHES = new Set(['json', 'slot', 'reuse']);
 // ── pr-wait: el vigilante de sólo lectura de un pedido ──
 // Repite sólo la lectura del pedido por la capa de plataforma (`change-request.read`: el conector de cada plataforma sabe
 // cómo se lee; el núcleo no nombra ninguna herramienta), y termina cuando el pedido deja de estar abierto. Es la forma
@@ -3584,8 +3727,7 @@ function main(argv) {
   try { f = flags(more); } catch (e) { process.stderr.write(`coordination.js: ${e.message}\n`); return 2; }
   const base = { env: process.env };
   if (cmd === 'status') {
-    // sólo acá se lee la memoria de intercambio: el aviso de cada turno y el freno del cierre no corren `sysctl`
-    const s = status({ ...base, swap: true });
+    const s = status({ ...base, ...STATUS_READS });
     process.stdout.write(f.json ? `${JSON.stringify(s, null, 2)}\n` : `${statusText(s)}\n`);
     return 0;
   }
@@ -3645,7 +3787,7 @@ function main(argv) {
       process.stderr.write('coordination.js: open no elige el modo de permisos: copia el de la sesión que lo llama.\n');
       return 2;
     }
-    const r = open({ ...base, name: f.name, cwd: f.cwd, repo: f.repo, branch: f.branch, slot: f.slot === true, task: f.rest.join(' '), timeoutMs: f['timeout-ms'] ? Number(f['timeout-ms']) : undefined });
+    const r = open({ ...base, name: f.name, cwd: f.cwd, repo: f.repo, branch: f.branch, slot: f.slot === true, reuse: f.reuse === true, task: f.rest.join(' '), timeoutMs: f['timeout-ms'] ? Number(f['timeout-ms']) : undefined });
     process.stdout.write(`${r.message}\n`);
     return r.ok ? 0 : 1;
   }
@@ -3692,6 +3834,6 @@ if (require.main === module) {
   else process.exitCode = code;
 }
 
-module.exports = { LAUNCH_TIMEOUT_MS, relaunch, flags, plansWaiting, planWaitLines, ownerNextPlans, planAwayLines, reviewAskLines, questionRelays, questionRelay, questionRelayLines, questionRelaysFile, planRequestLines, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, launchedMatches, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, ownerWaitAlive, permissionTurn, relayNoteOf, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN, reviewVerdict, fullSessionName, ownerReplyLines,
+module.exports = { LAUNCH_TIMEOUT_MS, relaunch, STATUS_READS, flags, plansWaiting, planWaitLines, ownerNextPlans, planAwayLines, reviewAskLines, questionRelays, questionRelay, questionRelayLines, questionRelaysFile, planRequestLines, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, launchedMatches, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, ownerWaitAlive, permissionTurn, relayNoteOf, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN, reviewVerdict, fullSessionName, ownerReplyLines,
   // la oficina cuenta las historias en curso con las mismas ejecuciones y las mismas sesiones vivas que la coordinadora
   stoppedRuns, markersBySid, codexThreads, CODEX_IDLE_MS };

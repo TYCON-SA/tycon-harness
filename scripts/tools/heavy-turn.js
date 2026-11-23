@@ -609,6 +609,25 @@ function swapFree({ platform = process.platform, run } = {}) {
 }
 
 /**
+ * Los procesos del usuario contra su tope: `{ used, max, pct, why }`. Con el tope no arranca ningún comando, ni los
+ * ganchos ni los frenos. En macOS, `sysctl -n kern.maxprocperuid` y `ps -U <uid>`; `run(cmd, args)` reemplaza la consola
+ * en las pruebas. En otro sistema no se mide: `pct` null con el motivo.
+ */
+function userProcs({ platform = process.platform, run, uid = typeof process.getuid === 'function' ? process.getuid() : null } = {}) {
+  const none = (why) => ({ used: null, max: null, pct: null, why });
+  if (platform !== 'darwin') return none(`no sé medirlos en ${platform}`);
+  try {
+    const exec = run || ((cmd, args) => require('child_process').execFileSync(cmd, args, { encoding: 'utf8', timeout: 5000, windowsHide: true }));
+    const max = Number(String(exec('sysctl', ['-n', 'kern.maxprocperuid'])).trim());
+    if (!Number.isInteger(max) || max <= 0) return none('sysctl kern.maxprocperuid no dio un número');
+    const used = String(exec('ps', ['-U', String(uid), '-o', 'pid='])).split('\n').filter((l) => /^\s*\d+\s*$/.test(l)).length;
+    if (!used) return none('ps no listó ningún proceso del usuario');
+    // hacia abajo: un 69,9 % no es el 70 %
+    return { used, max, pct: Math.floor((used / max) * 100), why: null };
+  } catch (e) { return none(oneLine(e.message)); }
+}
+
+/**
  * Si un portón acotado de `suites` suites puede correr ahora: `{ ok, message, pass, note }`. Sin coordinadora, o sin un
  * pase en vuelo, sí, y la memoria no se mira. Con un pase en vuelo, sólo si son `BESIDE_PASS_MAX_SUITES` o menos, no
  * hay otro portón al lado y la memoria libre llega al piso. `pass` es el pase al lado, para la relectura.
@@ -711,4 +730,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { take, release, holder, holders, coordinator, secondTurnFloor, grant, reserve, releaseReserve, grantInForce, lastGrant, reserveInForce, readWait, swapFree, GRANT_MS, RESERVE_MS, describe, turnFile, slotFiles, SECOND_HEAVY_MIN_FREE_PCT, clearWait, gateStarted, gateEnded, gatesRunning, runningSids, isTurnWait, besidePass, besideRecheck, freeMemory, suitesOf, describeGate, BUSY_EXIT, BESIDE_PASS_MAX_SUITES, BESIDE_PASS_MIN_FREE_PCT };
+module.exports = { take, release, holder, holders, coordinator, secondTurnFloor, grant, reserve, releaseReserve, grantInForce, lastGrant, reserveInForce, readWait, swapFree, userProcs, GRANT_MS, RESERVE_MS, describe, turnFile, slotFiles, SECOND_HEAVY_MIN_FREE_PCT, clearWait, gateStarted, gateEnded, gatesRunning, runningSids, isTurnWait, besidePass, besideRecheck, freeMemory, suitesOf, describeGate, BUSY_EXIT, BESIDE_PASS_MAX_SUITES, BESIDE_PASS_MIN_FREE_PCT };

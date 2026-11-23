@@ -124,15 +124,19 @@ toward the cap.
 
 **With `--repo <repo>` instead of `--cwd`, `open` sets up the folder itself.** It creates a sibling copy of the repo,
 `<repo>--wt-<name>`, from the tip of `origin/main`, on the branch `wt/<name>` (or the one in `--branch`), and opens the
-session there. Claude Code accepts it without asking if the repo's main folder is already approved: the owner approves
-each repo once, not each folder. It goes beside the repo, not inside, because of a **measured limit**: approving a
-folder does not cover the folders inside it, so each new worktree asks for its own approval. If the copy or the branch already exist, `open` refuses in one line and does not
-overwrite what is there. If it cannot fetch `main` or create the copy, it says the first line of the error and does not
-open: it never starts from an old tip without saying so. If the launcher answers that the folder is not approved, `open`
-removes the copy and the branch it just created, names the main folder to open once and adds that, if it is already
-approved, the session can be opened with `--slot`. The task tells the session to leave everything committed, pushed and
-with its request open when it is done. The copy is not removed when the session closes: the copy sweep takes it out,
-like any other, once its branch got into `main`.
+session there. Claude Code 2.1.312 accepted it without asking if the main folder was approved; since Claude Code 2.1.330
+the background session asks to approve each copy separately, even with the main folder approved. It goes beside the
+repo, not inside, because of a **measured limit**: approving a folder does not cover the folders inside it, so
+each new worktree asks for its own approval. If the copy or the branch already exist, `open` refuses in one line and
+does not overwrite what is there. If it cannot fetch `main` or create the copy, it says the first line of the error and
+does not open: it never starts from an old tip without saying so. If the launcher answers that the folder is not
+approved, `open` keeps the copy and its branch, and says in one line that this copy (not the main folder) is not
+approved, with what Claude Code answered: a person approves it once (`cd` to the copy and `claude`) and the session is
+opened again there with the same name and `--reuse`. With `--reuse`, `open` creates nothing: it reuses the copy with
+that name on the job's branch, and does not open if a live session is inside it. Any other launcher failure removes the
+copy and the branch it just created. The task tells the session to leave everything committed, pushed and with its
+request open when it is done. The copy is not removed when the session closes: the copy sweep takes it out, like any
+other, once its branch got into `main`.
 
 To get a machine ready before the first opening, `node scripts/tools/prepare-machine.js --repo <repo>` says one at a
 time what is missing (the main folder not approved, an old guard, the coordinator's confirmation) and with which
@@ -168,14 +172,16 @@ With Codex, the owner opens the sessions: Codex has no launcher for named backgr
 
 ### The `--slot` option: fixed work slots
 
-A Claude Code version that asks to approve each copy, even with the main folder approved, leaves `open --repo` unable to
-open. For that case there is `open --repo <repo> --slot`: instead of creating a copy, it takes a free fixed slot of the
-repo and opens the session there, on the job's branch. There are as many slots as the cap and they are always the same
-folders, so the owner approves them only once: `node scripts/tools/work-slots.js pending-trust` lists the missing ones,
-each with its `cd`, and leaves out those of a repo whose main folder is already approved. With no free slot,
-`open --slot` says so and does not open. The task tells the session how to release the slot when it is done; if the
-launcher fails, the slot is free again. On closing, a slot is released, not deleted. Nothing creates slots unless asked.
-What they are: `guides/git-worktrees.md` §8.
+Claude Code 2.1.330 asks to approve each copy, even with the main folder approved. To avoid approving a new folder for
+each job there is `open --repo <repo> --slot`: instead of creating a copy, it takes a free fixed slot of the repo and
+opens the session there, on the job's branch. There are as many slots as the cap and they are always the same folders,
+so the owner approves them only once: `node scripts/tools/work-slots.js pending-trust` lists, each with its `cd`, those
+without their own recorded approval; the main folder's does not count, and since Claude Code 2.1.330 does not record the
+slots' approval, it says it does not know instead of taking them as approved. With no free slot, `open --slot` says so
+and does not open. The task tells the session how to release the slot when it is done. If the launcher answers that the
+slot is not approved, the slot stays taken with its branch and is retried with `--slot --reuse`, or released with
+`release`; on any other failure it is free again. On closing, a slot is released, not deleted. Nothing creates slots
+unless asked. What they are: `guides/git-worktrees.md` §8.
 
 ## Closing a session
 
@@ -409,6 +415,16 @@ that fails) it says «no medida» and assumes nothing. Only the `status` command
 closing brake do not measure it. A session Claude Code already closed shows in «Cerradas por Claude Code» with what it was
 waiting for (its `marker.js doing --waiting-for` note) and since when, above the others, with its `coordination.js relaunch --id`.
 
+### The user's processes
+
+Each user has a process cap (on macOS, `kern.maxprocperuid`; on the Mac mini, 2666). At the cap no command starts: not
+the hooks, not the brakes. It happened on 23/11 at 05:45, with several adversarial passes at
+once and a hung test, and the Telegram MCP went down. `coordination.js status` counts the user's processes (`ps -U`): from 70 % of the cap it says how
+many there are and what the cap is. What to do: before launching anything heavy (a pass, mutants, a suite), ask for the
+passes and background scripts that are not needed to stop. If they cannot be counted (another platform, a command that
+fails) it says «no medidos» and assumes nothing; if `ps` cannot start for lack of processes, it says it is at the
+cap. Like swap memory, only the `status` command counts them.
+
 ## The automatic reviews: what the coordinator does
 
 When each review runs is set by the organization's configuration (`guides/automatic-reviews.en.md`). In each one,
@@ -426,7 +442,9 @@ the coordinator:
   launches itself approves the routine plan without a click: it is enough in both cases. With `person`, a routine plan
   is always signed by a person. Rejected or without a verdict, the plan waits. A delicate plan, and its mockup, are signed
   only by the owner with a click or an «approved» (also in the coordinator's tab), even if the profile names
-  `plan-approval:delicada`. **The plan she approves is a part's plan**: if the run recorded its batch (`set-batch`) and the part is valid
+  `plan-approval:delicada`. From that tab the command carries the quote: `marker.js complete-step approve-plan
+  --approved '<the person's quote>' --for-session <session>`; without it nothing is signed and no box is shown.
+  **The plan she approves is a part's plan**: if the run recorded its batch (`set-batch`) and the part is valid
   (with its `files:` or, without `files:`, with the files the story ties to it plus those it ties to no batch),
   «delicate» is measured on the part, and the plan stays tied to its list: editing code outside it stops, and at the
   close the whole diff is measured; if it comes out delicate, the plan goes back to the owner. The adversarial pass
@@ -523,6 +541,10 @@ turned on in the profile, or on the machine to try it out.
 - **How they go through, with a coordinator.** If the coordinator is confirmed and alive, it passes them all. The background
   session does not show the box or send messages: the brake tells it to wait for the notice. When the person writes, the
   coordinator gets a notice: answer what the person wrote and run `coordination.js owner-next`.
+- **Without the list, with a coordinator.** The background session does not send the coordinator the question to copy:
+  copied by hand it does not stay the same, and the click does not count. The brake says why the request does not reach
+  her list (the list is off, or there is no confirmed, live coordinator) and gives the terminal command. The session tells
+  her what is being decided and that command, and does not repeat its command until she says the owner signed.
 - **How they go through, without a coordinator.** The target session gets the same notice, once per row, and runs `owner-next`.
   If the person already answered «aprobado» to that box, it does not ask again.
 - **What `owner-next` gives.** One row, the oldest: a box to show without changing a letter, with a label («Firma 2/5»), and the

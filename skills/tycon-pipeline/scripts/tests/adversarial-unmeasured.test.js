@@ -103,6 +103,7 @@ const findings = o.findings || [];
 const resp = { lens: lente.key, base: o.base === undefined ? cfg.base : o.base, findings };
 if (resp.base === null) delete resp.base;
 if (o.base_existe !== undefined) resp.base_existe = o.base_existe;
+if (o.git_rechazado !== undefined) resp.git_rechazado = o.git_rechazado;
 const suya = path.join(cfg.runDir, 'step-05b-probes', 'caza-' + lente.key);
 if (o.probe === 'vacia') resp.probe_dir = '';
 else if (o.probe === 'ajena') resp.probe_dir = path.join(cfg.runDir, 'step-05b-probes', 'caza-otra');
@@ -192,6 +193,22 @@ test('BaseInexistente_NoEsLimpio: con la base que no existe en el repo, ninguna 
   const dir2 = tmp('adv-base-ok-');
   const d2 = doble(dir2, { hunt: { default: { findings: [], base_existe: true } } });
   assert.equal(correrPase(dir2, d2.env).result.medido, true);
+});
+
+// 🔴 Falla con: el cazador de una sesión aislada en otra carpeta corría `git … ; echo rc=$?`, la herramienta lo
+// rechazaba sin correrlo, y el cazador devolvía base_existe = false: la lente salía «la base no existe» y el pase entero
+// se repetía buscando un commit que sí estaba (fila 137).
+test('GitRechazado_SinMedirConSuMotivo: si la sesión no deja correr git, la lente sale sin medir con ese motivo; el pedido pide comandos simples', () => {
+  const dir = tmp('adv-rechazo-');
+  const { env, prompts } = doble(dir, { hunt: { default: { findings: [], base_existe: false, git_rechazado: 'This session is isolated in the worktree /x, but this command names git in a form too complex to verify' } } });
+  const r = correrPase(dir, env);
+  assert.equal(r.status, 3, `sale 3 con un pase no medido\n${r.stderr}`);
+  assert.equal(r.result.medido, false);
+  assert.ok(r.result.lentes.every((l) => l.estado === 'sin-medir' && /git no pudo correr en esta sesión/.test(l.motivo) && /isolated in the worktree/.test(l.motivo) && !/no existe/.test(l.motivo)),
+    JSON.stringify(r.result.lentes));
+  const pedido = fs.readFileSync(path.join(prompts, `hunt-${LENTES[0].key}.txt`), 'utf8');
+  assert.match(pedido, /de a uno, en su forma simple/, 'pide git sin ; && ni tubos');
+  assert.match(pedido, /git_rechazado/, 'dice cómo informar un rechazo');
 });
 
 test('T4 8.56-VerificadorMuerto_SinVeredicto @story-8.56 @ac-3 @ac-4', () => {

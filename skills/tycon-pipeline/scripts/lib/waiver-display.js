@@ -87,15 +87,20 @@ function leerMarcador(stateDir, sessionId) {
  * Sin marcador, `batch` (el `--batch` de una firma sin corrida abierta) mide esa tanda como la mide una corrida con
  * tanda, con lo que cambió la rama en lugar de lo que cambió la corrida (`cambiosDeLaRama`). El guion y el cuadro la
  * calculan acá: así lo que se muestra es lo que se firma.
+ *
+ * `acs`: los criterios que se van a mostrar. Con ellos, la matriz mide sólo esos (`parcial`): el freno la arma antes de
+ * la ventana y tiene que alcanzar a decidir dentro de su reloj. Vale junto con la tanda: la tanda decide qué criterios
+ * entran y `acs` qué humos se miden, y el veredicto de un criterio pedido sale igual que en la matriz de la tanda.
  */
-function matrixForSignature(storyPath, marker, { batch = null } = {}) {
+function matrixForSignature(storyPath, marker, { batch = null, acs = null } = {}) {
   const rm = require('../runtime-matrix.js');
-  if (!marker && batch != null) return rm.compute({ storyPath, batch: String(batch), changed: cambiosDeLaRama(storyPath) });
+  const solo = Array.isArray(acs) && acs.length ? { soloAcs: acs } : {};
+  if (!marker && batch != null) return rm.compute({ storyPath, batch: String(batch), changed: cambiosDeLaRama(storyPath), ...solo });
   const delMarcador = marker && marker.storyPath
     ? { ...marker, storyPath: path.isAbsolute(marker.storyPath) ? marker.storyPath : path.join(marker.repoPath || process.cwd(), marker.storyPath) }
     : null;
   const op = rm.opcionesDeTandaDelMarcador(delMarcador, storyPath);
-  return rm.compute({ storyPath, ...(op.batch ? op : {}) });
+  return rm.compute({ storyPath, ...(op.batch ? op : {}), ...solo });
 }
 
 /**
@@ -131,9 +136,13 @@ function pistaDeSesion({ stateDir, storyPath }) {
   return `Si la corrida es de una tanda, la firma por terminal mide esa tanda con --for-session ${quien}.`;
 }
 
-/** Los datos de cada criterio pedido que está pendiente de firma (declarado imposible), con la huella de su declaración. */
+/**
+ * Los datos de cada criterio pedido que está pendiente de firma (declarado imposible), con la huella de su declaración.
+ * Sin matriz calculada, la de los criterios pedidos: la ventana de safety-guard la arma dentro del reloj de su freno.
+ * Sin criterios pedidos, la entera.
+ */
 function criteriosDe(storyPath, acs, calculada = null) {
-  const matrix = calculada || require('../runtime-matrix.js').compute({ storyPath });
+  const matrix = calculada || require('../runtime-matrix.js').compute({ storyPath, ...(acs.length ? { soloAcs: acs } : {}) });
   if (matrix.structuralError) return { error: matrix.structuralError };
   const pend = new Set(matrix.notVerifiable || []);
   const lista = [];
@@ -167,7 +176,7 @@ function preparar({ sessionId, stateDir, storyPath, acs }) {
   if (!marker || !marker.storyId) return null;
   const abs = path.isAbsolute(storyPath) ? storyPath : path.join(marker.repoPath || process.cwd(), storyPath);
   if (!fs.existsSync(abs) || !esLaDelMarcador(abs, marker)) return null;
-  const c = criteriosDe(abs, acs, matrixForSignature(abs, marker));
+  const c = criteriosDe(abs, acs, matrixForSignature(abs, marker, { acs }));
   if (c.error) return { reminder: `no pude armar los criterios para mostrarlos (la matriz no computa: ${c.error}): así no se pueden firmar hasta arreglarlo.` };
   const storyId = String(c.matrix.sid || marker.storyId);
   const faltan = c.lista.filter((x) => { const v = mostrado({ stateDir, sessionId, storyId, ac: x.ac, sha: x.sha }); return !v || v.error; });

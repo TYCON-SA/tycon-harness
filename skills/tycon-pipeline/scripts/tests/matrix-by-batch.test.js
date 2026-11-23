@@ -1132,3 +1132,32 @@ test('F154-8 Cuadro_SinCorrida_Batch_MismosCriteriosQueElGuion — el cuadro nom
   assert.strictEqual(r.status, 0, salida(r));
   assert.deepStrictEqual(firmas(E).map((f) => f.acs), [[1]]);
 });
+
+test('F154-9 Cuadro_SinCorrida_BatchYAcs_MismaHuellaQueElGuion — con --batch y --acs, la tanda y sólo esos criterios: el criterio sale igual', () => {
+  const E = entorno();
+  sinCorrida(E, historiaConDosFirmas());
+  const wd = require(path.join(SCRIPTS, 'lib', 'waiver-display.js'));
+  // las dos opciones valen juntas: la tanda decide qué criterios entran y `acs` qué humos se miden
+  const parcial = wd.matrixForSignature(E.story, null, { batch: A, acs: [1] });
+  assert.ok(!parcial.structuralError, parcial.structuralError);
+  assert.strictEqual(parcial.batch, A);
+  assert.deepStrictEqual(parcial.parcial, [1]);
+  assert.strictEqual(parcial.hash, null);
+  // lo que mide el guion: la matriz entera de la tanda; el criterio pedido sale con la misma huella
+  const entera = wd.matrixForSignature(E.story, null, { batch: A });
+  assert.strictEqual(entera.batch, A);
+  assert.ok(entera.hash, 'la matriz que firma tiene huella');
+  const enCuadro = wd.criteriosDe(E.story, [1], parcial).lista;
+  const enGuion = wd.criteriosDe(E.story, [1], entera).lista;
+  assert.strictEqual(enCuadro.length, 1);
+  assert.deepStrictEqual(enCuadro, enGuion);
+  // el cuadro con las dos muestra lo que firma el guion, y un criterio de otra tanda se niega igual
+  const q = cuadro(E, ['--batch', A, '--acs', '1'], 's-f9');
+  assert.ok(!q.error, q.error);
+  assert.match(q.pregunta, new RegExp(`tanda ${A}`), q.pregunta);
+  const otra = cuadro(E, ['--batch', A, '--acs', '2'], 's-f9');
+  assert.match(String(otra.error), /no es de la tanda/, String(otra.error));
+  const r = firmar(E, ['--batch', A, '--acs', '1'], 's-f9');
+  assert.strictEqual(r.status, 0, salida(r));
+  assert.deepStrictEqual(firmas(E).map((f) => f.acs), [[1]]);
+});
