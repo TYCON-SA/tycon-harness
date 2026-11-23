@@ -98,7 +98,8 @@ Los dos racks del fondo muestran la carga de la máquina: el más cercano al pan
 los turnos pesados); el otro, el procesador. Cada uno enciende, de abajo para arriba, las filas de su porcentaje: verde
 por debajo de 60 %, ámbar hasta 84 % y rojo desde 85 %. Las encendidas titilan más rápido cuantas más sesiones trabajan.
 Con el mouse encima, o al tocarlo, un rack dice su número («Memoria en uso: 62 %»). Un rack todo en gris claro es una
-medida que no se pudo leer: no se inventa ni se muestra la anterior.
+medida que no se pudo leer: no se inventa ni se muestra la anterior. Si corre una ejecución grande de pruebas, la etiqueta
+suma un renglón por cada una: «Turno de tarea pesada: <sesión>, 120 suites».
 
 ## Escribirle a una sesión
 
@@ -109,7 +110,10 @@ vos»: lo que le escribiste en su pestaña o desde acá, con sus respuestas.
 
 Le llega por un vigilante de fondo que cada sesión arma al arrancar y al cerrar cada turno (`office-inbox-watch.js`): la
 despierta si está quieta, o lo lee al terminar el paso si está trabajando. La herramienta lo anota como aviso del sistema,
-nunca como la persona, y la sesión lo comprueba con `office-message.js verify` antes de actuar. Por eso **un mensaje de la
+nunca como la persona, y la sesión lo comprueba con `office-message.js verify` antes de actuar. Al contestar, la sesión
+empieza citando lo que le escribiste («Me escribiste desde la oficina: …»), en un párrafo aparte: en su pestaña, sobre
+todo en la extensión de VS Code, el aviso no se ve. Desde esa cita, nada de ese mensaje cuenta como lo que hace la
+sesión: tu texto no aparece en su tarjeta ni viaja al sitio. Por eso **un mensaje de la
 oficina nunca firma, aprueba ni contesta un cuadro**, ni siquiera un «aprobado»: la ventana avisa antes de mandarlo, y un
 cuadro abierto sigue esperando tu click. Reciben las sesiones de terminal, las de fondo y las de la extensión de VS Code;
 `claude -p` y el SDK no, porque esperan al vigilante para salir, y otro editor tampoco mientras no esté medido. Lo que no

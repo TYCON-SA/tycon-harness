@@ -298,9 +298,10 @@ quita la fricción, no la trazabilidad.
   firmando como `orquestador`, ni con «hacé lo que recomiendes». Dos caminos:
   1. **La ventana de permiso** (el principal). Corré
      `marker.js waive-critical --rule <regla> --file <archivo> --reason "<por qué>" --approved-by "<el dev>"`, sin
-     `--quote` ni `--relayed-by`. La herramienta le abre al dev la ventana de permiso con el comando: ahí ve la regla,
-     el archivo y tu motivo, y lo aprueba o no. El guion comprueba que lo lanzó la herramienta con ese comando; si no
-     pasó por la ventana, frena y dice cómo firmarlo en la terminal. Lo que el dev escriba en el chat, o lo que reenvíe
+     `--quote` ni `--relayed-by`, solo y en su forma exacta. Si la pestaña pide permisos, el dev lo aprueba en la
+     ventana: ahí ve la regla, el archivo y tu motivo. Si no, el freno lo niega y te da un cuadro de opciones:
+     mostráselo sin cambiarle nada y, con su click, repetí el mismo comando. La negativa no es un fracaso: es el paso
+     que le pide la firma. Lo que el dev escriba en el chat, o lo que reenvíe
      otra sesión, ya no exime: el comando con `--quote` o `--relayed-by` se niega. Queda manual, a nombre del dev, con
      `via: ventana`.
   2. **Desde su terminal**, si el dev prefiere o la herramienta no tiene ventana: `marker.js waive-critical … --terminal`

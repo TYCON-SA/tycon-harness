@@ -14,7 +14,8 @@
  * decir lo mismo sale roja, a propósito.
  *
  * LAS REGLAS (un id por regla; una línea por regla rota). Las trece primeras dicen POR QUÉ algo está mal:
- *   triggers             corre en `pull_request`, en `merge_group` (la cola de merge) y en `push` a `main`, y en nada más
+ *   triggers             corre en `pull_request`, en `merge_group` (la cola de merge) y en `push` a `main`, y en nada más;
+ *                        el pedido, también al salir del borrador (`ready_for_review`)
  *   pull-request-target  `pull_request_target` no aparece en ninguna parte (ni en un comentario)
  *   secrets              no lee ningún secreto: ni el contexto de secretos ni el token por otro camino (ni en un comentario)
  *   uses-by-sha          cada `uses:` va fijado por el sha completo (40 hex) de su commit, con el tag como comentario
@@ -36,7 +37,9 @@
  *   after-queue          cada job se saltea en el push a main que hace la cola de merge, y SÓLO en ése: la cola ya probó
  *                        ese commit. La condición es exacta: una que saltea más (todo push, o un pedido) deja
  *                        sin correr un merge directo de un administrador —la salida de urgencia—; el job `public-ci` la
- *                        suma detrás de `always()`, que en los demás eventos sigue mandando
+ *                        suma detrás de `always()`, que en los demás eventos sigue mandando. Los demás jobs además no
+ *                        corren en un pedido en borrador (`github.event.pull_request.draft != true`, que fuera de un
+ *                        pedido es verdadera: la cola nunca se saltea); `public-ci` sí corre ahí, y sale rojo
  * …y la decimocuarta es la red:
  *   shape                las líneas de código del archivo son EXACTAMENTE las de `SHAPE` (abajo), en ese orden
  *
@@ -82,12 +85,27 @@ const INVOCATION = /\bbash\s+(?:scripts\/ci\/public-ci\.sh\b|"\$\{RUNNER_TEMP\}\
  * (quien empuja es su bot). Ese commit ya lo probó la cola; cualquier otro push a main corre entero.
  */
 const AFTER_QUEUE = "github.event_name != 'push' || github.actor != 'github-merge-queue[bot]'";
+/**
+ * La condición de cada job que trabaja (todos menos `public-ci`): la de la cola, y además no corre en un pedido en
+ * borrador. Fuera de un pedido (`push`, `merge_group`) no hay pedido y la primera mitad es verdadera: la cola nunca se
+ * saltea. `public-ci` no la lleva: en un borrador corre y sale rojo, porque un chequeo salteado cuenta como aprobado.
+ */
+const NOT_DRAFT = 'github.event.pull_request.draft != true';
+const JOB_IF = `${NOT_DRAFT} && (${AFTER_QUEUE})`;
+/** El disparador de un pedido: los de siempre más `ready_for_review`, que corre todo al sacarlo del borrador. */
+const PR_TYPES = ['opened', 'synchronize', 'reopened', 'ready_for_review'];
 
 /**
  * El freno de un pedido sin el guion de la revisión en la base: rojo «no pude correr», nunca los controles del pedido.
  * Está en la forma y la regla `base-controls` lo exige; con la sangría con que va en el paso.
  */
 const BASE_SCRIPT_GUARD = '            git cat-file -e "${BASE}:scripts/ci/run-base-controls.sh" || { echo "::error::no pude correr: la base no trae scripts/ci/run-base-controls.sh; los controles de un pedido salen de la base, nunca del pedido"; exit 1; }';
+
+/**
+ * La primera línea de cada paso del ensayo de Windows: en un pull request termina al instante, verde, y lo dice. Está en
+ * la forma y la regla `windows` la exige; sin la sangría.
+ */
+const WINDOWS_PR_EXIT = 'if ($env:GITHUB_EVENT_NAME -eq \'pull_request\') { Write-Output "en un pedido no corre el ensayo de Windows: corre en la cola de merge"; exit 0 }';
 
 /** Una línea `uses:` de la forma: la acción es fija; el sha completo y el tag del comentario son un patrón. */
 const pinned = (prefix, action) => ({
@@ -103,6 +121,7 @@ const SHAPE = [
   'name: public-ci',
   'on:',
   '  pull_request:',
+  `    types: [${PR_TYPES.join(', ')}]`,
   '  push:',
   '    branches: [main]',
   '  merge_group:',
@@ -114,7 +133,7 @@ const SHAPE = [
   'jobs:',
   '  checks:',
   '    name: Node ${{ matrix.node }} · ${{ matrix.part }}',
-  `    if: ${AFTER_QUEUE}`,
+  `    if: ${JOB_IF}`,
   '    runs-on: ubuntu-latest',
   '    timeout-minutes: 90',
   '    strategy:',
@@ -137,6 +156,10 @@ const SHAPE = [
   '          BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}',
   '          BASE_SHA: ${{ github.event.merge_group.base_sha }}',
   '        run: |',
+  '          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${TYCON_PUBLIC_CI_PART}" = "controls-bench-base" ]; then',
+  '            echo "en un pedido no corre la parte controls-bench-base: corre en la cola de merge"',
+  '            exit 0',
+  '          fi',
   '          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] || [ "${GITHUB_EVENT_NAME}" = "merge_group" ]; then',
   '            BASE="${BASE_SHA:-$(git rev-parse --verify "origin/${BASE_REF#refs/heads/}^{commit}")}" || exit 1',
   '            git cat-file -e "${BASE}^{commit}" || exit 1',
@@ -167,7 +190,7 @@ const SHAPE = [
   '          done',
   '  installer-floor:',
   '    name: Node 22 · installer-floor',
-  `    if: ${AFTER_QUEUE}`,
+  `    if: ${JOB_IF}`,
   '    runs-on: ubuntu-latest',
   '    timeout-minutes: 60',
   '    steps:',
@@ -184,7 +207,7 @@ const SHAPE = [
   '          TYCON_PUBLIC_CI_PART: installer-floor',
   '        run: |',
   '          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then',
-  '            echo "en un pedido corren sólo las partes checks, controls-bench y controls-bench-base: installer-floor corre en la cola de merge"',
+  '            echo "en un pedido no corre installer-floor: corre en la cola de merge"',
   '            exit 0',
   '          fi',
   '          bash scripts/ci/public-ci.sh --clean-machine',
@@ -201,7 +224,7 @@ const SHAPE = [
   '          done',
   '  windows:',
   '    name: Windows · ${{ matrix.scenario }}',
-  `    if: ${AFTER_QUEUE}`,
+  `    if: ${JOB_IF}`,
   '    runs-on: windows-latest',
   '    timeout-minutes: 150',
   '    strategy:',
@@ -215,6 +238,7 @@ const SHAPE = [
   '          persist-credentials: false',
   '      - name: Los comandos de la ejecución perdida en las tres consolas de Windows',
   '        run: |',
+  `          ${WINDOWS_PR_EXIT}`,
   '          node --test --test-name-pattern "T13 " skills/tycon-pipeline/scripts/tests/lost-run-loop.test.js',
   '          exit $LASTEXITCODE',
   '      - name: El ensayo de Windows de este escenario',
@@ -222,6 +246,7 @@ const SHAPE = [
   '          SCENARIO: ${{ matrix.scenario }}',
   '          WORK: ${{ runner.workspace }}\\tycon-rehearsal',
   '        run: |',
+  `          ${WINDOWS_PR_EXIT}`,
   '          node scripts/ci/windows-rehearsal.js --scenario "$env:SCENARIO" --work "$env:WORK"',
   '          exit $LASTEXITCODE',
   '  public-ci:',
@@ -233,7 +258,9 @@ const SHAPE = [
   '      - name: Todos los jobs terminaron bien',
   '        env:',
   "          RESULTS: ${{ join(needs.*.result, ' ') }}",
+  '          DRAFT: ${{ github.event.pull_request.draft == true }}',
   '        run: |',
+  '          if [ "${DRAFT}" = "true" ]; then echo "::error::pedido en borrador: la CI no corrió; corre entera al sacarlo del borrador"; exit 1; fi',
   '          echo "resultados: ${RESULTS}"',
   '          [ -n "${RESULTS}" ] || exit 1',
   '          for r in ${RESULTS}; do',
@@ -500,6 +527,12 @@ const RULES = [
       const kids = childrenOf(blockOf(lines, i));
       const names = kids.map((l) => l.body.replace(/\s*:.*$/, '')).sort();
       if (names.join(',') !== 'merge_group,pull_request,push') return `los disparadores son pull_request, merge_group y push, y hay: ${names.join(', ') || 'ninguno'}`;
+      // el pedido, con `ready_for_review`: sin él, sacar un pedido del borrador no corre nada y queda con el rojo del borrador
+      const pr = lines.indexOf(kids.find((l) => l.body.startsWith('pull_request')));
+      const inPr = childrenOf(blockOf(lines, pr));
+      if (inPr.map((l) => l.body.replace(/\s*:.*$/, '')).join(',') !== 'types') return `\`pull_request\` lleva sólo \`types: [${PR_TYPES.join(', ')}]\` (línea ${lines[pr].n})`;
+      const types = listAt(lines, lines.indexOf(inPr[0]));
+      if (types.join(',') !== PR_TYPES.join(',')) return `\`pull_request\` corre en ${PR_TYPES.join(', ')}, y dice: ${types.join(', ') || 'nada'} (línea ${inPr[0].n})`;
       const push = lines.indexOf(kids.find((l) => l.body.startsWith('push')));
       const inPush = childrenOf(blockOf(lines, push));
       const keys = inPush.map((l) => l.body.replace(/\s*:.*$/, ''));
@@ -698,10 +731,10 @@ const RULES = [
       const bad = jobs.filter((job) => {
         const id = unquote(job.body.replace(/\s*:.*$/, ''));
         const cond = childrenOf(blockOf(lines, lines.indexOf(job))).find((l) => /^if\s*:/.test(l.body));
-        const want = id === 'public-ci' ? `always() && (${AFTER_QUEUE})` : AFTER_QUEUE;
+        const want = id === 'public-ci' ? `always() && (${AFTER_QUEUE})` : JOB_IF;
         return !cond || valueOf(cond.body) !== want;
       });
-      return bad.length ? `el job ${bad.map((l) => `\`${unquote(l.body.replace(/\s*:.*$/, ''))}\``).join(', ')} no lleva \`if: ${AFTER_QUEUE}\` (en \`public-ci\`, detrás de \`always() && \`): se saltea sólo el push a main de la cola, que ya probó ese commit (línea ${at(bad)})` : null;
+      return bad.length ? `el job ${bad.map((l) => `\`${unquote(l.body.replace(/\s*:.*$/, ''))}\``).join(', ')} no lleva \`if: ${JOB_IF}\` (\`public-ci\`, \`if: always() && (${AFTER_QUEUE})\`): se saltea sólo el push a main de la cola, que ya probó ese commit, y un pedido en borrador; \`public-ci\` corre siempre (línea ${at(bad)})` : null;
     },
   },
   {
@@ -719,6 +752,11 @@ const RULES = [
       // los comandos de la ejecución perdida en las tres consolas (8.318, AC 12), con el código de la prueba
       const consolas = job.findIndex((l) => l.body === 'node --test --test-name-pattern "T13 " skills/tycon-pipeline/scripts/tests/lost-run-loop.test.js');
       if (consolas < 0 || !job[consolas + 1] || job[consolas + 1].body !== 'exit $LASTEXITCODE') return 'el job `windows` corre la T13 de `lost-run-loop.test.js` (los comandos de la ejecución perdida en PowerShell 5.1, PowerShell 7 y cmd) y sale con su código';
+      // en un pedido cada paso termina al instante, y SÓLO en un pedido: en la cola y en el push a main corre entero
+      const ensayo = job.findIndex((l) => /^node scripts\/ci\/windows-rehearsal\.js /.test(l.body));
+      const evento = job.filter((l) => /GITHUB_EVENT_NAME|github\.event_name/.test(l.body) && !/^if\s*:/.test(l.body));
+      const sale = (k) => k > 0 && job[k - 1].body === WINDOWS_PR_EXIT;
+      if (!sale(consolas) || !sale(ensayo) || evento.length !== 2) return `cada paso del job \`windows\` empieza con \`${WINDOWS_PR_EXIT}\` y no mira el evento en otra línea: en un pedido termina al instante, y en la cola y en el push a main corre entero${evento.length ? ` (línea ${at(evento)})` : ''}`;
       return null;
     },
   },

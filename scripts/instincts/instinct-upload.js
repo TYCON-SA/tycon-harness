@@ -29,6 +29,7 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const crypto = require('crypto');
+const { sanitize } = require(path.join(__dirname, '..', '..', 'integrations', 'instincts', 'scripts', 'instinct-observe.js'));
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const MONTH_FILE = /^(\d{4}-\d{2})\.jsonl$/;
@@ -165,7 +166,10 @@ function prepareDays({ obsDir, outDir, seal, org, today, folder = null, uploaded
         const d = days.get(day);
         const why = dropReason(line, key);
         if (why) { d.filtradas[why] += 1; continue; }
-        d.lines.push(JSON.stringify(Object.fromEntries(FIELDS.map((f) => [f, line[f] === undefined ? null : line[f]]))));
+        // el resumen pasa otra vez por el saneado de la grabadora: una línea grabada antes de un arreglo no sale tal cual
+        const proyectada = Object.fromEntries(FIELDS.map((f) => [f, line[f] === undefined ? null : line[f]]));
+        if (typeof proyectada.summary === 'string') proyectada.summary = sanitize(proyectada.summary, null);
+        d.lines.push(JSON.stringify(proyectada));
       }
     }
   }

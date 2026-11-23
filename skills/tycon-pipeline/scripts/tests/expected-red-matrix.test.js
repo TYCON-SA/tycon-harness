@@ -221,6 +221,34 @@ test('T3 PrepareCommit_UnsignedNotVerifiable_Blocks @story-8.252 @ac-3 — un cr
   assert.doesNotMatch(salida(r), /Sin evidencia en vivo:/);
 });
 
+// 🔴 Falla con: la exención de humo rechazada porque quedan criterios «sin correr» que el rojo esperado vigente de la deuda
+// ya cubre: la deuda pide la exención firmada y la exención pide que no quede nada sin correr, y se frenan entre sí.
+test('RuntimeWaiver_EnDeuda_LoQueCubreElRojoEsperadoNoCuentaComoSinCorrer — sólo los fuera de la deuda la rechazan', () => {
+  const E = entorno({ archivos: ['runtime_not_verifiable:', '  - ac: 4', '    reason: "el equipo de pruebas no existe"', '    covered_by: "T4"'] });
+  E.arrancar('s-rw');
+  hastaPrepararElCommit(E, 's-rw');
+  E.humo([4], { cmd: 'node --test tests/a.test.js' });
+  const waiver = () => E.correr('marker.js', ['runtime-waiver', E.story, '--acs', '4'], 's-rw');
+  // la deuda cubre los AC 1 a 3: la exención del 4 no se rechaza por ellos
+  enDeuda(E, 's-rw');
+  let r = waiver();
+  assert.doesNotMatch(salida(r), /SIN CORRER/, salida(r));
+  // la lista del rojo esperado deja afuera el AC 3: ése sí la rechaza, y sólo ése
+  enDeuda(E, 's-rw', { pruebas: ['T1', 'T2'] });
+  r = waiver();
+  assert.match(salida(r), /SIN CORRER[^\n]*: AC #3\. /, salida(r));
+  // vencida, no cubre nada
+  enDeuda(E, 's-rw', { hasta: fecha(-1) });
+  r = waiver();
+  assert.match(salida(r), /SIN CORRER[^\n]*: AC #1, #2, #3\. /, salida(r));
+  // sin deuda, igual que hoy
+  const m = E.leer('s-rw');
+  delete m.cierre; delete m.expectedRed;
+  E.escribir('s-rw', m);
+  r = waiver();
+  assert.match(salida(r), /SIN CORRER[^\n]*: AC #1, #2, #3\. /, salida(r));
+});
+
 test('T4 PrepareCommit_NoDebt_SameAsToday @story-8.252 @ac-4 — sin deuda, o en deuda sin rojo esperado de la matriz, frena con los mensajes de hoy', () => {
   // el bloque del control de la matriz, sin las rutas temporales: lo que se compara entre las dos ejecuciones
   const bloque = (r, E) => salida(r).split('\n').filter((l) => /DODRT-C6|SIN CORRER|imposibles-declarados|waiveados|Corrélos|declaralos/.test(l))

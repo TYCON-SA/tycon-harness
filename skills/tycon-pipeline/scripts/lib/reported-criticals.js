@@ -48,6 +48,46 @@ const registryDir = (stateDir) => path.join(stateDir, DIR);
 const registryFile = (stateDir, sessionKey) => path.join(registryDir(stateDir), `${String(sessionKey).replace(/[/\\]/g, '_')}.jsonl`);
 const hashOf = (text) => crypto.createHash('sha256').update(String(text || '')).digest('hex');
 
+// la parte del renglón de veredicto con lo que el revisor confirma resuelto de su vuelta anterior: «· resueltos (SPEC-C3)»
+const RE_RESOLVED = /·\s*resueltos\s*\(([^)]*)\)/i;
+
+/** Cada código de un texto con cuántas veces aparece. */
+function codesIn(text) {
+  const here = new Map();
+  RE_LOOSE.lastIndex = 0;
+  let m;
+  while ((m = RE_LOOSE.exec(text))) here.set(m[1], (here.get(m[1]) || 0) + 1);
+  return here;
+}
+
+/** Los renglones de veredicto del texto, cada uno entero aunque venga partido hasta cerrar sus paréntesis. */
+function verdictLines(text) {
+  const out = [];
+  const lines = String(text || '').split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+    if (!RE_VERDICT_LINE.test(line)) continue;
+    const start = i;
+    if (/hallazgos\s*\(/i.test(line) && !/\)/.test(line.slice(line.search(/hallazgos\s*\(/i)))) {
+      while (i + 1 < lines.length && !/\)/.test(line.slice(line.search(/hallazgos\s*\(/i)))) line += ` ${lines[++i]}`;
+    }
+    out.push({ i: start, j: i, line });
+  }
+  return out;
+}
+
+/**
+ * Lo que el revisor confirma resuelto de su vuelta anterior: `[{ rule, count }]`, de la parte «resueltos (…)» del último renglón
+ * de veredicto. Sólo cuenta ahí: en otro renglón es prosa.
+ */
+function extractResolved(text) {
+  // sólo el último renglón de veredicto, el que cierra el reporte: uno citado de la vuelta anterior no confirma nada
+  const todos = verdictLines(text);
+  const ultimo = todos.length ? todos[todos.length - 1].line : '';
+  const m = RE_RESOLVED.exec(ultimo);
+  return m ? [...codesIn(m[1])].map(([rule, count]) => ({ rule, count })) : [];
+}
+
 /**
  * Los críticos del texto: `[{ rule, count }]`. La cuenta sale de los renglones de veredicto (la regla repetida una vez por
  * hallazgo; con varios renglones, el mayor); una regla entre corchetes en otro renglón asegura al menos uno.
@@ -56,25 +96,22 @@ function extractCriticals(text) {
   const counts = new Map();
   const mentioned = new Set();
   const lines = String(text || '').split(/\r?\n/);
+  const tapados = new Set();
+  for (const v of verdictLines(text)) {
+    // un veredicto partido en varios renglones sigue hasta el paréntesis que lo cierra; lo que confirma resuelto no es
+    // un hallazgo
+    for (const [rule, n] of codesIn(v.line.replace(RE_RESOLVED, ''))) counts.set(rule, Math.max(counts.get(rule) || 0, n));
+    for (let k = v.i; k <= v.j; k++) tapados.add(k);
+  }
   for (let i = 0; i < lines.length; i++) {
-    let line = lines[i];
-    if (RE_VERDICT_LINE.test(line)) {
-      // un veredicto partido en varios renglones sigue hasta el paréntesis que lo cierra
-      if (/hallazgos\s*\(/i.test(line) && !/\)/.test(line.slice(line.indexOf('(')))) {
-        while (i + 1 < lines.length && !/\)/.test(line)) line += ` ${lines[++i]}`;
-      }
-      const here = new Map();
-      RE_LOOSE.lastIndex = 0;
-      let m;
-      while ((m = RE_LOOSE.exec(line))) here.set(m[1], (here.get(m[1]) || 0) + 1);
-      for (const [rule, n] of here) counts.set(rule, Math.max(counts.get(rule) || 0, n));
-      continue;
-    }
+    const line = lines[i];
+    if (tapados.has(i)) continue;
     RE_BRACKETED.lastIndex = 0;
     let m;
     while ((m = RE_BRACKETED.exec(line))) mentioned.add(m[1]);
   }
-  for (const rule of mentioned) if (!counts.has(rule)) counts.set(rule, 1);
+  const resueltos = new Set(extractResolved(text).map((r) => r.rule));
+  for (const rule of mentioned) if (!counts.has(rule) && !resueltos.has(rule)) counts.set(rule, 1);
   return [...counts].map(([rule, count]) => ({ rule, count }));
 }
 
@@ -161,6 +198,8 @@ function recordReport(o) {
     hash: o.text ? hashOf(o.text) : null,
     // un reporte que no se lee entero igual deja sus críticos: del lado seguro
     criticals: extractCriticals(o.text),
+    // lo que confirma resuelto de su vuelta anterior (fila 55): sólo si lo dice
+    ...(extractResolved(o.text).length ? { resolved: extractResolved(o.text) } : {}),
   });
 }
 
@@ -290,6 +329,46 @@ function waiverFor({ runDir, rule, reviewer, ownerOnly, home, story }) {
  * Cuánto comprueban los reportes posteriores de una regla crítica: `{ revisores, bajada }`. `revisores`, los que la
  * reportaron; `bajada`, lo que bajó la cuenta en un reporte legible posterior al pico, en el revisor que menos bajó.
  */
+/** Los reportes legibles de un revisor, el último de cada vuelta, en orden: dos de la misma vuelta no suman dos veces. */
+function porVuelta(suyos) {
+  const leidos = suyos.filter((r) => r.readable).sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
+  const ultimo = new Map();
+  leidos.forEach((r, i) => ultimo.set(r.iter != null ? `v${r.iter}` : `r${i}`, r));
+  return [...ultimo.values()].sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
+}
+
+/**
+ * Cuántos críticos de la regla tiene que traer findings.json por lo que dijo un revisor: los que su último reporte
+ * legible sigue viendo más los que confirmó resueltos (un hallazgo nuevo con el mismo código no es el mismo). Así un
+ * «resueltos» nunca tapa uno abierto.
+ */
+function requeridosDe(reports, rule) {
+  let max = 0;
+  for (const a of new Set(reports.filter((r) => countIn(r, rule) > 0).map((r) => r.advisor))) {
+    const ordenados = porVuelta(reports.filter((r) => r.advisor === a));
+    if (!ordenados.length) continue;
+    let resueltos = 0;
+    ordenados.forEach((r, i) => { if (i) resueltos += Math.min(resolvedIn(r, rule), countIn(ordenados[i - 1], rule)); });
+    max = Math.max(max, countIn(ordenados[ordenados.length - 1], rule) + resueltos);
+  }
+  return max;
+}
+
+/** Lo que sigue viendo el último reporte legible de cada revisor que reportó la regla: el mayor. */
+function abiertosDe(reports, rule) {
+  let max = 0;
+  for (const a of new Set(reports.filter((r) => countIn(r, rule) > 0).map((r) => r.advisor))) {
+    const ordenados = porVuelta(reports.filter((r) => r.advisor === a));
+    if (ordenados.length) max = Math.max(max, countIn(ordenados[ordenados.length - 1], rule));
+  }
+  return max;
+}
+
+function resolvedIn(r, rule) {
+  const c = (r && Array.isArray(r.resolved) ? r.resolved : []).find((x) => x && x.rule === rule);
+  return c && Number.isInteger(c.count) && c.count > 0 ? c.count : 0;
+}
+
 function comprobadoDe(reports, rule) {
   const revisores = [...new Set(reports.filter((r) => countIn(r, rule) > 0).map((r) => r.advisor))];
   const bajadas = revisores.map((a) => {
@@ -298,8 +377,20 @@ function comprobadoDe(reports, rule) {
     // el último reporte con la cuenta más alta; lo que vino después y se leyó dice cuánto bajó
     const picoTs = suyos.filter((r) => countIn(r, rule) === pico).map((r) => String(r.ts)).sort().pop();
     const despues = suyos.filter((r) => r.readable && String(r.ts) > picoTs);
-    if (!despues.length) return 0;
-    return Math.max(0, pico - countIn(despues[despues.length - 1], rule));
+    const porCuenta = despues.length ? Math.max(0, pico - countIn(despues[despues.length - 1], rule)) : 0;
+    // lo que confirma resuelto en un reporte legible, hasta lo que reportó en su reporte legible anterior: un hallazgo
+    // nuevo con el mismo código no tapa el arreglo de uno viejo, y repetir una confirmación no suma
+    // lo que confirma en las vueltas después de la cuenta más alta ya lo puede decir la bajada: se descuenta de ella
+    const ordenados = porVuelta(suyos);
+    let porResueltos = 0;
+    let despuesDelPico = 0;
+    ordenados.forEach((r, i) => {
+      if (!i) return;
+      const n = Math.min(resolvedIn(r, rule), countIn(ordenados[i - 1], rule));
+      porResueltos += n;
+      if (String(r.ts) > picoTs) despuesDelPico += n;
+    });
+    return porResueltos + Math.max(0, porCuenta - despuesDelPico);
   });
   return { revisores, bajada: Math.min(...bajadas), bajadas };
 }
@@ -368,6 +459,7 @@ function cross(o) {
     }
   }
   for (const c of porRegla.values()) {
+    c.count = Math.max(c.count, requeridosDe(reports, c.rule));
     const de = quien(c.rep.advisor, c.rep.iter);
     const misma = findings.filter((f) => ruleOf(f) === c.rule);
     const criticos = misma.filter((f) => sevOf(f) === 'CRITICAL');
@@ -391,7 +483,10 @@ function cross(o) {
     const arreglados = criticos.filter((f) => dispOf(f) === 'fixed').length;
     if (!arreglados) continue;
     const { bajada } = comprobadoDe(reports, c.rule);
-    if (arreglados <= bajada) continue;
+    // y nunca más arreglados de los que deja lo que el último reporte del revisor todavía ve: ni un «resueltos» ni una
+    // cuenta que bajó tapan un hallazgo abierto
+    const abiertos = abiertosDe(reports, c.rule);
+    if (arreglados <= bajada && criticos.length - arreglados >= abiertos) continue;
     if (waiverFor({ runDir: o.runDir, rule: c.rule, ownerOnly: true, home: o.home, story: o.story })) continue;
     problemas.push({ tipo: 'arreglado-sin-comprobar', rule: c.rule, advisor: c.rep.advisor, iter: c.rep.iter,
       texto: `${c.rule}: ${arreglados} figura(n) como arreglado(s) y una vuelta posterior del mismo revisor comprueba ${bajada} (lo reportó ${de}): `
@@ -429,7 +524,7 @@ function renglones(r, { marker }) {
       out.push(`   Primero, a ${sinPedir.map((p) => p.advisor).join(', ')}: continuá al mismo agente con un mensaje que pida sólo el renglón de veredicto`
         + ' («Veredicto: limpio» o «Veredicto: hallazgos (REGLA, REGLA) · bloquea: sí|no»), sin cambiar su revisión.');
     }
-    out.push(`   ${sinPedir.length ? 'Si no lo da, una' : 'Una'} persona lo exime:`);
+    out.push(`   ${sinPedir.length ? 'Si no lo da, lo exime una' : 'Lo exime una'} persona: corré esto solo, y ella lo aprueba en la ventana o en el cuadro que da el freno:`);
     for (const p of sinReporte) out.push(`     node ${marker} waive-critical --rule ${NO_REPORT_RULE} --file ${p.advisor} --reason '<por qué>'`);
   }
   if (r.problemas.length > sinReporte.length) {
@@ -525,7 +620,7 @@ function spawnsOf(stateDir, { story, since, run, sessionKeys }) {
 }
 
 module.exports = {
-  DIR, NO_REPORT_RULE, NO_REGISTRY_NOTE, VERDICT_REQUEST, registryDir, registryFile, hashOf, extractCriticals, unreadableReason,
+  DIR, NO_REPORT_RULE, NO_REGISTRY_NOTE, VERDICT_REQUEST, registryDir, registryFile, hashOf, extractCriticals, extractResolved, unreadableReason,
   recordLaunched, recordLaunchAgent, recordReport, recordVerdictRetry, yaSePidio, readSession, readAll, linesOfRun, launchFor, cross, porConfirmar, checkRun, renglones, waiverFor,
   spawnsOf, UNREADABLE_REGISTRY, readSessionStrict, esDeLaCorrida, corridaDelMarcador,
 };
