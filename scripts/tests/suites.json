@@ -656,6 +656,12 @@
       "requiere": []
     },
     {
+      "__nota": "el plan de una historia delicada lo aprueba una persona aunque el perfil liste plan-approval:delicada (delegada o de trámite), y el click o el «aprobado» del dueño a ESTE pedido gana a la firma de trámite; el de otro pedido no. El freno en proceso y los guiones de verdad en una casa de juguete, con el perfil del caso en la copia del arnés; unos quince segundos.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/delegated-approval-person.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la revisión del plan se lanza sobre el plan cerrado: con «Armar el plan» abierto o con una pregunta sin contestar a la persona no se prepara, y un plan o una historia que cambian mientras corre se relanzan una sola vez entre los dos.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/plan-review-closed.test.js",
