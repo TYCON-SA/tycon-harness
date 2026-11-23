@@ -17,7 +17,9 @@
  *     arranque) y SÍ marca esa misma HOME. Sacarlo del arranque no es apagarlo;
  *   · lo mismo por el AMBIENTE: un dev que deja exportada una variable que el propio arnés le recomienda subir
  *     (`TYCON_STORY_SCAN_BUDGET_MS`, «subilo si el repo es grande») no voltea la suite. `story-discovery.test.js` no
- *     lee el presupuesto «por defecto» del ambiente.
+ *     lee el presupuesto «por defecto» del ambiente;
+ *   · lo mismo por el LUGAR: con las skills en un clon aparte (sólo skills/, agents/ y packs/, sin las guías ni los
+ *     guiones del arnés), la suite rápida pasa. Una que lee algo de afuera daría rojo en cada arranque de esas máquinas.
  */
 
 const test = require('node:test');
@@ -99,6 +101,28 @@ test('espejo: el caso de las configuraciones reales sigue vivo fuera del arranqu
     assert.notEqual(r.status, 0, 'con una llave desconocida en un proyecto, el caso de las configuraciones reales tiene que fallar');
     assert.match(r.stdout || '', /ProyectoViejo/, 'el rojo tiene que nombrar la configuración que lo dispara');
   } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('la suite rápida del arranque pasa con las skills en un clon aparte, sin el resto del arnés al lado', () => {
+  // Un clon de skills aparte trae skills/, agents/ y packs/, y nada más: ni las guías ni los guiones del arnés. Una suite
+  // rápida que lee algo de afuera (una guía, un guion de scripts/) da rojo en cada arranque de esas máquinas, y la
+  // instalación queda a medias.
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'quick-suite-clon-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'quick-suite-home-'));
+  try {
+    const clon = path.join(base, 'agent-skills');
+    for (const d of ['skills', 'agents', 'packs']) {
+      if (fs.existsSync(path.join(RAIZ, d))) fs.cpSync(path.join(RAIZ, d), path.join(clon, d), { recursive: true });
+    }
+    const suites = quickSuites().map((r) => path.join(clon, path.relative(RAIZ, r)));
+    const r = correr(suites, home, { TYCON_SKILLS_DIR: path.join(clon, 'skills') });
+    assert.equal(r.status, 0,
+      'la suite rápida falló con las skills en un clon aparte: alguna lee algo de fuera de las skills\n'
+      + (r.stdout || '').split('\n').filter((l) => /not ok|✖|ENOENT|Cannot find/.test(l)).slice(0, 8).join('\n'));
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
