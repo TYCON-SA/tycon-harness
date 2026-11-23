@@ -122,14 +122,18 @@ tope.
 
 **Con `--repo <repo>` en lugar de `--cwd`, `open` arma la carpeta solo.** Crea una copia hermana del repo,
 `<repo>--wt-<nombre>`, desde la punta de `origin/main`, en la rama `wt/<nombre>` (o la de `--branch`), y abre la sesión
-ahí. Claude Code la acepta sin pedir nada si la carpeta principal del repo ya está aprobada: el dueño aprueba una vez
-cada repo, no cada carpeta. Va al lado y no adentro por un **límite medido**: la aprobación de una carpeta no cubre las
-de adentro, así que cada worktree nuevo pide su propia aprobación. Si la copia o la rama ya existen, `open` se niega en una línea y no pisa lo que hay. Si no
-puede traer `main` o crear la copia, dice el primer renglón del error y no abre: nunca arranca desde una punta vieja sin
-decirlo. Si el lanzador contesta que la carpeta no está aprobada, `open` borra la copia y la rama que acaba de crear,
-nombra la carpeta principal para abrirla una vez y agrega que, si ya está aprobada, se puede abrir con `--slot`. El
-encargo le dice a la sesión que, al terminar, deje todo commiteado, empujado y con su pedido abierto. La copia no se
-borra al cerrar la sesión: la saca el barrido de copias, como a cualquier otra, cuando su rama ya entró a `main`.
+ahí. Con Claude Code 2.1.312 la aceptaba sin pedir nada si la carpeta principal estaba aprobada; desde Claude Code
+2.1.330 la sesión de fondo pide aprobar cada copia aparte, aunque la principal lo esté. Va al lado y no adentro por un
+**límite medido**: la aprobación de una carpeta no cubre las de adentro, así que
+cada worktree nuevo pide su propia aprobación. Si la copia o la rama ya existen, `open` se niega en una línea y no pisa
+lo que hay. Si no puede traer `main` o crear la copia, dice el primer renglón del error y no abre: nunca arranca desde
+una punta vieja sin decirlo. Si el lanzador contesta que la carpeta no está aprobada, `open` deja la copia y su rama, y
+dice en una línea que esa copia (no la principal) no está aprobada, con lo que contestó Claude Code: la aprueba una
+persona una vez (`cd` a la copia y `claude`) y la sesión se vuelve a abrir ahí con el mismo nombre y `--reuse`. Con
+`--reuse`, `open` no crea nada: reusa la copia de ese nombre en la rama del trabajo, y no abre si hay una sesión viva
+adentro. Cualquier otra falla del lanzador borra la copia y la rama que acaba de crear. El encargo le dice a la sesión
+que, al terminar, deje todo commiteado, empujado y con su pedido abierto. La copia no se borra al cerrar la sesión: la
+saca el barrido de copias, como a cualquier otra, cuando su rama ya entró a `main`.
 
 Para dejar lista una máquina antes de la primera apertura, `node scripts/tools/prepare-machine.js --repo <repo>` dice de
 a una qué falta (la carpeta principal sin aprobar, el freno viejo, la confirmación de la coordinadora) y con qué
@@ -161,15 +165,32 @@ caracteres entre corchetes) sirven, y contestan que no la encuentran (medido el 
 
 Con Codex, las sesiones las abre el dueño: Codex no tiene un lanzador de sesiones de fondo con nombre.
 
+### Lo que la coordinadora ve de Codex
+
+Medido con Codex 0.162.1. La coordinadora va en Claude Code; desde ahí:
+
+- **Ve las sesiones de Codex por su actividad**, de la base de Codex. No sabe si una espera un permiso: con el cuadro
+  de permiso abierto, Codex no lo anota en la base ni en el registro de la sesión. Por eso `status` dice «no sé si
+  espera un permiso» en cada sesión de Codex. `codex agents` es una pantalla para una persona: no se lee desde un comando.
+- **Les puede dejar un mensaje** con `codex queue --thread <id> --message <texto>`. Queda en la cola de Codex. Que una
+  sesión abierta lo lea no se midió. A una sesión terminada también le contesta «Queued», sin error.
+- **El permiso de una sesión de Codex no le llega**: se contesta en la pestaña de Codex. Lo que Codex trae para eso
+  (`exec_permission_approvals`, `request_permissions_tool`) está en desarrollo y apagado. Las firmas de Codex siguen
+  por terminal.
+- **La revisión automática de permisos** (`approvals_reviewer = "auto_review"`) no se pudo comparar con el modo
+  automático de Claude: en la prueba, Codex no pidió permiso y el aislamiento negó el comando.
+
 ### La opción `--slot`: los puestos fijos
 
-Una versión de Claude Code que pida aprobar cada copia, aunque la principal ya esté aprobada, deja a `open --repo` sin
-abrir. Para ese caso queda `open --repo <repo> --slot`: en lugar de crear una copia, toma un puesto fijo libre del repo
-y abre la sesión ahí, en la rama del trabajo. Hay tantos puestos como el tope y siempre son las mismas carpetas, así que
-el dueño los aprueba una sola vez: `node scripts/tools/work-slots.js pending-trust` lista los que faltan, cada uno con
-su `cd`, y no lista los de un repo cuya carpeta principal ya está aprobada. Sin puesto libre, `open --slot` lo dice y no
-abre. El encargo le dice a la sesión cómo soltar el puesto al terminar; si el lanzador falla, el puesto vuelve a quedar
-libre. Al cerrar, un puesto se suelta, no se borra. Nada crea puestos si no se piden. Cómo son:
+Claude Code 2.1.330 pide aprobar cada copia, aunque la principal ya esté aprobada. Para no aprobar una carpeta nueva por
+trabajo queda `open --repo <repo> --slot`: en lugar de crear una copia, toma un puesto fijo libre del repo y abre la
+sesión ahí, en la rama del trabajo. Hay tantos puestos como el tope y siempre son las mismas carpetas, así que el dueño
+los aprueba una sola vez: `node scripts/tools/work-slots.js pending-trust` lista, cada uno con su `cd`, los que no
+tienen su propia aprobación anotada; la de la principal no cuenta, y como Claude Code 2.1.330 no anota la de los
+puestos, dice que no sabe en lugar de darlos por aprobados. Sin puesto libre, `open --slot` lo dice y no abre. El
+encargo le dice a la sesión cómo soltar el puesto al terminar. Si el lanzador contesta que el puesto no está aprobado,
+el puesto queda tomado con su rama y se reintenta con `--slot --reuse`, o se suelta con `release`; ante otra falla
+vuelve a quedar libre. Al cerrar, un puesto se suelta, no se borra. Nada crea puestos si no se piden. Cómo son:
 `guides/git-worktrees.md` §8.
 
 ## Cerrar una sesión

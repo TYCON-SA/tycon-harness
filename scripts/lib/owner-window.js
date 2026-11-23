@@ -824,6 +824,19 @@ function criteriosSinMemo(palabras, cwd, { casa, destino, sesion }) {
     try { m = marcadorEn(path.join(stateDir(casa), 'active', `${destino}.json`)); } catch (e) { return { error: e.message }; }
     if (!m) return { error: `la sesión ${destino} no tiene una ejecución abierta` };
   }
+  // `--batch <tanda>` vale sólo sin corrida abierta en la sesión de la firma: con una, el guion mide la tanda de la corrida
+  const k = palabras.indexOf('--batch');
+  const tanda = k >= 0 ? String(palabras[k + 1] || '') : null;
+  if (tanda !== null && (!tanda || tanda.startsWith('-'))) return { error: '--batch no dice qué tanda: sin ella no sé qué criterios se firman' };
+  if (tanda !== null) {
+    // la corrida de la sesión de la firma, como la lee el guion (un marcador con su historia)
+    const quien = destino || sesion;
+    let abierta = m;
+    if (!abierta && quien && SESION.test(quien)) {
+      try { abierta = marcadorEn(path.join(stateDir(casa), 'active', `${quien}.json`)); } catch (e) { return { error: e.message }; }
+    }
+    if (abierta && abierta.storyId) return { error: `hay una ejecución abierta en la sesión ${quien}, y manda la tanda de la ejecución: pedila sin --batch` };
+  }
   const abs = path.isAbsolute(story) ? story : path.resolve((m && m.repoPath) || cwd || process.cwd(), story);
   if (!fs.existsSync(abs)) return { error: `no encuentro la historia ${una(abs, 200)}: sin sus criterios a la vista no se firma` };
   if (m && !wd.esLaDelMarcador(abs, m)) return { error: `${path.basename(abs)} no es la historia de la ejecución de la sesión ${destino}` };
@@ -831,35 +844,44 @@ function criteriosSinMemo(palabras, cwd, { casa, destino, sesion }) {
   // en orden: la fuente de la huella y la pregunta no cambian con el orden en que se escribieron
   const pedidos = i >= 0 ? [...new Set(String(palabras[i + 1] || '').split(',').map((x) => Number(x.trim())).filter((n) => Number.isInteger(n) && n > 0))].sort((a, b) => a - b) : null;
   if (pedidos && !pedidos.length) return { error: '--acs no dice qué criterios: sin ellos a la vista no se firma' };
-  // la matriz que mide el guion: con la ejecución de la historia a la vista, la de su tanda; si no, la historia entera.
-  // Una sola vez por consulta: los criterios y los sin correr salen de ella
+  // la matriz que mide el guion: con --batch, la de esa tanda; con la ejecución de la historia a la vista, la de su tanda;
+  // si no, la historia entera. Con --acs, sólo los humos de esos criterios, para decidir dentro del reloj del freno: el
+  // criterio sale igual que en el guion, y los demás criterios no se miden. Una sola vez por consulta
   let mm = m;
   if (!mm && sesion) { try { mm = marcadorEn(path.join(stateDir(casa), 'active', `${sesion}.json`)); } catch (_) { mm = null; } }
   if (mm && !wd.esLaDelMarcador(abs, mm)) mm = null;
   let c;
   let matriz;
   try {
-    matriz = wd.matrixForSignature(abs, mm);
+    matriz = tanda ? wd.matrixForSignature(abs, null, { batch: tanda, acs: pedidos }) : wd.matrixForSignature(abs, mm, { acs: pedidos });
+    if (tanda && !matriz.structuralError && !matriz.batch) {
+      const porQue = (matriz.warnings || []).find((w) => /mido todas las tandas/.test(w));
+      return { error: `no pude medir sólo la tanda ${tanda}${porQue ? ` (${una(porQue, 200)})` : ''}` };
+    }
+    const deOtra = tanda && !matriz.structuralError ? (pedidos || []).filter((n) => !(matriz.acs || []).includes(n)) : [];
+    if (deOtra.length) return { error: `el AC ${deOtra.join(', ')} no es de la tanda ${tanda}: se firma con la suya` };
     c = wd.criteriosDe(abs, pedidos || (matriz.notVerifiable || []), matriz);
   } catch (e) { return { error: `no pude armar los criterios (${una((e && e.message) || String(e), 200)})` }; }
   if (c.error) return { error: `no pude armar los criterios: la matriz no computa (${una(c.error, 200)})` };
   const faltan = (pedidos || []).filter((n) => !c.lista.some((x) => x.ac === n));
-  // con criterios sin correr el guion rechaza la firma por eso, pida los criterios que pida, con la lista entera: la
-  // ventana niega antes del cuadro con el mismo motivo (el click no se gasta), no con «no está pendiente de firma». En
-  // deuda, los que cubre su rojo esperado vigente no cuentan: la misma cuenta del guion
+  // con criterios sin correr el guion rechaza la firma por eso, con la lista entera: la ventana niega antes del cuadro con
+  // el mismo motivo (el click no se gasta), no con «no está pendiente de firma». En deuda, los que cubre su rojo esperado
+  // vigente no cuentan: la misma cuenta del guion. Con --acs cuenta sólo los pedidos: los demás no se midieron, y la
+  // matriz los daría por sin correr
   let sinCorrer = matriz.notRun || [];
   if (sinCorrer.length && mm && mm.cierre && mm.cierre.estado === 'deuda') {
     try { sinCorrer = require(path.join(LIB, 'marker-signatures.js')).sinCorrerFueraDeLaDeuda(mm, matriz); } catch (e) {
       return { error: `no pude contar los criterios sin correr de la deuda (${una((e && e.message) || String(e), 200)})` };
     }
   }
+  if (pedidos) sinCorrer = sinCorrer.filter((n) => pedidos.includes(n));
   if (sinCorrer.length) {
     const otros = faltan.filter((n) => !sinCorrer.includes(n));
     return { error: `hay criterios SIN CORRER que no se pueden eximir: AC ${sinCorrer.map((n) => `#${n}`).join(', ')}. Los corre el agente${otros.length ? `; además, el AC ${otros.join(', ')} no es un criterio pendiente de firma` : ''}` };
   }
   if (faltan.length) return { error: `el AC ${faltan.join(', ')} no es un criterio pendiente de firma en ${path.basename(abs)}` };
-  if (!c.lista.length) return { error: `${path.basename(abs)} no tiene criterios pendientes de firma` };
-  return { lista: c.lista, historia: abs, texto: textoDeLosCriterios(c.lista) };
+  if (!c.lista.length) return { error: `${path.basename(abs)} no tiene criterios pendientes de firma${tanda ? ` en la tanda ${tanda}` : ''}` };
+  return { lista: c.lista, historia: abs, texto: textoDeLosCriterios(c.lista), ...(tanda ? { tanda: c.matrix.batch } : {}) };
 }
 
 // lo medido y la cota de un criterio con cota (`medida`, de waiver-display.js); nada en uno sin marca
@@ -889,11 +911,12 @@ const LARGO_DE_LO_QUE_SE_APRUEBA = 200;
 /**
  * Lo que se aprueba en el cuadro de `runtime-waiver`, con la razón que declararon sus criterios: la que comparten todos,
  * o que cada uno tiene la suya. La razón se recorta antes que el cuadro, así el corte no se come la comilla que la cierra.
+ * Con `tanda` (la firma sin corrida con `--batch`), la nombra: sus criterios son los que se miden.
  */
-function queDeLaExcepcion(lista) {
+function queDeLaExcepcion(lista, tanda = null) {
   const nums = [...new Set(lista.map((x) => x.ac))].sort((a, b) => a - b);
   const acs = nums.length > 1 ? `los AC ${nums.slice(0, -1).join(', ')} y ${nums[nums.length - 1]}` : `el AC ${nums[0]}`;
-  const inicio = `aceptar sin prueba en vivo ${acs.length > 80 ? `${nums.length} criterios` : acs}`;
+  const inicio = `aceptar sin prueba en vivo ${acs.length > 80 ? `${nums.length} criterios` : acs}${tanda ? ` de la tanda ${una(tanda, 60)}` : ''}`;
   const razones = [...new Set(lista.map(razonDeclarada))];
   if (razones.length > 1) return `${inicio}, cada uno por la razón que declaró`;
   if (razones[0] === null) return `${inicio}, sin razón declarada`;
@@ -1009,9 +1032,11 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
     const c = criteriosDelPedido(palabras, cwd, { casa, destino, sesion, memo });
     if (c.error) return { error: c.error };
     const lineas = c.lista.map(renglonDeLaExcepcion);
-    // la fuente, con el renglón de siempre; lo que se ve, sin cortes por campo (el cuadro corta el renglón entero)
+    // la fuente, con el renglón de siempre; lo que se ve, sin cortes por campo (el cuadro corta el renglón entero). Con
+    // tanda, la fuente la suma: el click dado a una tanda no vale para otra
     partes = { criterios: c.lista.map((x) => x.ac), queHace: lineas, queHaceALaVista: c.lista.map(renglonALaVista), completo: c.historia,
-      completoEnPalabras: m && m.storyId ? fuentes.laHistoria(m) : `la historia ${path.basename(c.historia)}`, fuente: lineas.join('\n'), que: queDeLaExcepcion(c.lista) };
+      completoEnPalabras: m && m.storyId ? fuentes.laHistoria(m) : `la historia ${path.basename(c.historia)}`,
+      fuente: [...(c.tanda ? [`la tanda: ${c.tanda}`] : []), ...lineas].join('\n'), que: queDeLaExcepcion(c.lista, c.tanda) };
   }
   let delComando = [];
   if (!partes) {
@@ -2570,8 +2595,9 @@ if (require.main === module) {
     const escapes = [];
     for (let k = 1; k < argv.length; k++) if (argv[k] === '--escape' && argv[k + 1]) escapes.push(argv[++k]);
     let r;
+    let evento = null;
     try {
-      const evento = JSON.parse(fs.readFileSync(0, 'utf8').replace(/^﻿/, ''));
+      evento = JSON.parse(fs.readFileSync(0, 'utf8').replace(/^﻿/, ''));
       // antes de decidir, los pedidos anteriores de la sesión vencen: un pedido vive sólo hasta el próximo comando
       vencerPedidos(casaDeLaCuenta(), evento.session_id);
       r = decidir({ evento, escapes });
@@ -2580,7 +2606,8 @@ if (require.main === module) {
     } catch (e) { r = negarCon(`no pude decidir la firma (${e.message})`, escapes.filter((id) => firmaDe(id))); }
     // el aviso del período antes del corte le llega a la persona en el mensaje del gancho; al agente se lo dice el lector
     const aviso = r.aviso ? { systemMessage: `⚠️ ${r.aviso}` } : {};
-    const json = r.decision === 'ask' ? JSON.stringify({ ...aviso, hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: r.texto } })
+    // la pregunta sale por la salida común de los ganchos: en Codex, como negativa (`decidir` ya la niega allí)
+    const json = r.decision === 'ask' ? require('./hook-ask.js').salidaDePregunta({ evento, texto: r.texto, extra: aviso })
       : r.decision === 'allow' && r.aviso ? JSON.stringify(aviso) : undefined;
     lineas({ decision: r.decision, firma: (r.firmas || [])[0], via: r.via, relevo: r.relevo, avisos: (r.avisos || []).join(' ') || undefined, texto: r.texto, ofrece: r.ofrece || undefined, json });
     salirTrasElAviso();

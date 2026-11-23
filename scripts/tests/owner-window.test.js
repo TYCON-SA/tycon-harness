@@ -480,22 +480,37 @@ function casaEnDeuda(t, { repo, story, until }) {
   return casa;
 }
 
-// 🔴 Falla con: los criterios pedidos pendientes de firma, otro criterio de la historia sin correr, y la ventana que arma
-//    el cuadro y pregunta: después el guion niega la firma por el sin correr y el click del dueño no sirve.
+// 🔴 Falla con: sin --acs (todos los pendientes), otro criterio de la historia sin correr, y la ventana que arma el cuadro
+//    y pregunta: después el guion niega la firma por el sin correr y el click del dueño no sirve.
 test('OwnerWindow_RuntimeWaiver_OtroSinCorrer_NiegaAntesDelCuadro', (t) => {
   const { story } = historiaConCriterio(t, { sinCorrer: true });
-  for (const cmd of [`node ${MARKER} runtime-waiver ${story} --acs 1`, `node ${MARKER} runtime-waiver ${story}`]) {
-    const r = pedir(casaNueva(t), cmd);
-    assert.strictEqual(r.decision, 'deny', `${cmd}: ${r.texto}`);
-    assert.match(r.texto, /hay criterios SIN CORRER que no se pueden eximir: AC #2\. Los corre el agente/, r.texto);
-    assert.doesNotMatch(r.texto, /no es un criterio pendiente de firma/, r.texto);
-    assert.ok(!r.cuadro || r.cuadro.error, `${cmd}: sin cuadro`);
-  }
+  const cmd = `node ${MARKER} runtime-waiver ${story}`;
+  let r = pedir(casaNueva(t), cmd);
+  assert.strictEqual(r.decision, 'deny', `${cmd}: ${r.texto}`);
+  assert.match(r.texto, /hay criterios SIN CORRER que no se pueden eximir: AC #2\. Los corre el agente/, r.texto);
+  assert.doesNotMatch(r.texto, /no es un criterio pendiente de firma/, r.texto);
+  assert.ok(!r.cuadro || r.cuadro.error, `${cmd}: sin cuadro`);
   // con la misma regla que el guion: en deuda vigente, el sin correr que cubre su rojo esperado no frena el cuadro
   const h = historiaEnDeuda(t);
-  const r = pedir(casaEnDeuda(t, { ...h, until: '2099-12-31' }), `node ${MARKER} runtime-waiver ${h.story} --acs 1`);
+  r = pedir(casaEnDeuda(t, { ...h, until: '2099-12-31' }), `node ${MARKER} runtime-waiver ${h.story}`);
   assert.strictEqual(r.decision, 'ask', r.texto);
   assert.match(r.texto, /AC 1: .*el criterio: Given un pedido/, r.texto);
+});
+
+// 🔴 Falla con: la ventana que con --acs arma la matriz de toda la historia (con decenas de humos pasa el reloj de 20 s
+//    del freno y la firma no sale): con --acs mide sólo esos criterios, y sin --acs, la historia entera.
+test('OwnerWindow_RuntimeWaiver_ConAcs_MideSoloEsosCriterios', (t) => {
+  const { story } = historiaConCriterio(t, { sinCorrer: true });
+  const rmx = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'runtime-matrix.js'));
+  const original = rmx.compute;
+  let medidas = [];
+  rmx.compute = (opts, ...resto) => { medidas.push(opts && opts.soloAcs ? [...opts.soloAcs] : 'entera'); return original.call(rmx, opts, ...resto); };
+  t.after(() => { rmx.compute = original; });
+  pedir(casaNueva(t), `node ${MARKER} runtime-waiver ${story} --acs 1`);
+  assert.deepStrictEqual(medidas, [[1]]);
+  medidas = [];
+  pedir(casaNueva(t), `node ${MARKER} runtime-waiver ${story}`);
+  assert.deepStrictEqual(medidas, ['entera']);
 });
 
 // 🔴 Falla con: la ejecución en deuda cuyo rojo esperado vigente cubre el criterio sin correr, y la ventana que niega

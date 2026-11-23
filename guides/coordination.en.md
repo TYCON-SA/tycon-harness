@@ -124,15 +124,19 @@ toward the cap.
 
 **With `--repo <repo>` instead of `--cwd`, `open` sets up the folder itself.** It creates a sibling copy of the repo,
 `<repo>--wt-<name>`, from the tip of `origin/main`, on the branch `wt/<name>` (or the one in `--branch`), and opens the
-session there. Claude Code accepts it without asking if the repo's main folder is already approved: the owner approves
-each repo once, not each folder. It goes beside the repo, not inside, because of a **measured limit**: approving a
-folder does not cover the folders inside it, so each new worktree asks for its own approval. If the copy or the branch already exist, `open` refuses in one line and does not
-overwrite what is there. If it cannot fetch `main` or create the copy, it says the first line of the error and does not
-open: it never starts from an old tip without saying so. If the launcher answers that the folder is not approved, `open`
-removes the copy and the branch it just created, names the main folder to open once and adds that, if it is already
-approved, the session can be opened with `--slot`. The task tells the session to leave everything committed, pushed and
-with its request open when it is done. The copy is not removed when the session closes: the copy sweep takes it out,
-like any other, once its branch got into `main`.
+session there. Claude Code 2.1.312 accepted it without asking if the main folder was approved; since Claude Code 2.1.330
+the background session asks to approve each copy separately, even with the main folder approved. It goes beside the
+repo, not inside, because of a **measured limit**: approving a folder does not cover the folders inside it, so
+each new worktree asks for its own approval. If the copy or the branch already exist, `open` refuses in one line and
+does not overwrite what is there. If it cannot fetch `main` or create the copy, it says the first line of the error and
+does not open: it never starts from an old tip without saying so. If the launcher answers that the folder is not
+approved, `open` keeps the copy and its branch, and says in one line that this copy (not the main folder) is not
+approved, with what Claude Code answered: a person approves it once (`cd` to the copy and `claude`) and the session is
+opened again there with the same name and `--reuse`. With `--reuse`, `open` creates nothing: it reuses the copy with
+that name on the job's branch, and does not open if a live session is inside it. Any other launcher failure removes the
+copy and the branch it just created. The task tells the session to leave everything committed, pushed and with its
+request open when it is done. The copy is not removed when the session closes: the copy sweep takes it out, like any
+other, once its branch got into `main`.
 
 To get a machine ready before the first opening, `node scripts/tools/prepare-machine.js --repo <repo>` says one at a
 time what is missing (the main folder not approved, an old guard, the coordinator's confirmation) and with which
@@ -166,16 +170,34 @@ signatures»).
 
 With Codex, the owner opens the sessions: Codex has no launcher for named background sessions.
 
+### What the coordinator sees of Codex
+
+Measured with Codex 0.162.1. The coordinator runs in Claude Code; from there:
+
+- **It sees Codex sessions by their activity**, from the Codex database. It does not know whether one is waiting for a
+  permission: with the permission prompt open, Codex writes it neither in the database nor in the session's log. So
+  `status` says "no sé si espera un permiso" (I don't know whether it waits for a permission) on every Codex session.
+  `codex agents` is a screen for a person: a command cannot read it.
+- **It can leave them a message** with `codex queue --thread <id> --message <text>`. It stays in the Codex queue.
+  Whether an open session reads it was not measured. A finished session also answers "Queued", without an error.
+- **A Codex session's permission does not reach it**: it is answered in the Codex tab. What Codex brings for that
+  (`exec_permission_approvals`, `request_permissions_tool`) is under development and off. Codex signatures still go
+  through the terminal.
+- **Codex's automatic permission review** (`approvals_reviewer = "auto_review"`) could not be compared with Claude's
+  automatic mode: in the test, Codex did not ask for permission and the sandbox denied the command.
+
 ### The `--slot` option: fixed work slots
 
-A Claude Code version that asks to approve each copy, even with the main folder approved, leaves `open --repo` unable to
-open. For that case there is `open --repo <repo> --slot`: instead of creating a copy, it takes a free fixed slot of the
-repo and opens the session there, on the job's branch. There are as many slots as the cap and they are always the same
-folders, so the owner approves them only once: `node scripts/tools/work-slots.js pending-trust` lists the missing ones,
-each with its `cd`, and leaves out those of a repo whose main folder is already approved. With no free slot,
-`open --slot` says so and does not open. The task tells the session how to release the slot when it is done; if the
-launcher fails, the slot is free again. On closing, a slot is released, not deleted. Nothing creates slots unless asked.
-What they are: `guides/git-worktrees.md` §8.
+Claude Code 2.1.330 asks to approve each copy, even with the main folder approved. To avoid approving a new folder for
+each job there is `open --repo <repo> --slot`: instead of creating a copy, it takes a free fixed slot of the repo and
+opens the session there, on the job's branch. There are as many slots as the cap and they are always the same folders,
+so the owner approves them only once: `node scripts/tools/work-slots.js pending-trust` lists, each with its `cd`, those
+without their own recorded approval; the main folder's does not count, and since Claude Code 2.1.330 does not record the
+slots' approval, it says it does not know instead of taking them as approved. With no free slot, `open --slot` says so
+and does not open. The task tells the session how to release the slot when it is done. If the launcher answers that the
+slot is not approved, the slot stays taken with its branch and is retried with `--slot --reuse`, or released with
+`release`; on any other failure it is free again. On closing, a slot is released, not deleted. Nothing creates slots
+unless asked. What they are: `guides/git-worktrees.md` §8.
 
 ## Closing a session
 

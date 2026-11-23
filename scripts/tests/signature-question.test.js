@@ -232,10 +232,7 @@ test('SignatureQuestion_ControlChange_FileShowsTheSignedVersion', (t) => {
 // 🔴 Falla con: una exención o una vuelta extra que no dice qué exime ni dónde está lo completo.
 test('SignatureQuestion_WaiversAndExtraRound_FromTheirSource (T37)', (t) => {
   const c = corrida(t, { extraHistoria: ['runtime_not_verifiable:', '  - ac: 1', '    reason: "el servicio externo no tiene ambiente de prueba"', '    covered_by: T1'] });
-  // la exención, sobre una historia sin otro criterio sin correr: con uno, la ventana niega antes del cuadro
-  const cw = corrida(t, { extraHistoria: ['runtime_not_verifiable:', '  - ac: 1', '    reason: "el servicio externo no tiene ambiente de prueba"', '    covered_by: T1'],
-    criterios: [{ n: 1, texto: '**Given** un pedido **Then** el aviso queda en el servicio externo.' }] });
-  const rw = conFirma('runtime-waiver')(cw, `node ${MARKER} runtime-waiver ${cw.ruta} --acs 1`).pregunta;
+  const rw = conFirma('runtime-waiver')(c, `node ${MARKER} runtime-waiver ${c.ruta} --acs 1`).pregunta;
   assert.match(rw, /Qué hace: AC 1: .*servicio externo/);
   // 8.275: «Completo en» en palabras; la ruta, en el detalle
   assert.ok(rw.includes('Completo en: la historia 9.99.'), rw);
@@ -955,7 +952,7 @@ test('8.176-SinCuadro_VariasFirmasConUnaDeControl_NoMandaAPending (T10b) @story-
   const r = pedirControl(c, `node ${MARKER} runtime-waiver ${c.ruta} --acs 1`, { sesion: 'ses-a' });
   assert.strictEqual(r.decision, 'deny', r.texto);
   assert.deepStrictEqual(r.firmas, ['runtime-waiver']);
-  assert.match(r.texto, /hay criterios SIN CORRER que no se pueden eximir: AC #1, #2/, r.texto);
+  assert.match(r.texto, /hay criterios SIN CORRER que no se pueden eximir: AC #1\. Los corre el agente/, r.texto);
   assert.doesNotMatch(r.texto, /run-base-controls\.sh pending/, r.texto);
   // con dos firmas, la ventana dice las dos: no la pregunta de la primera
   const dos = ['escape:TYCON_TEST_GATE', 'escape:TYCON_STATUS_GATE'];
@@ -1327,24 +1324,27 @@ test('SignatureQuestion_SameSealBeforeAndAfter (T12) @story-8.275 @ac-14 @story-
   // distinta en cada corrida; abajo, el mismo código por ruta relativa y absoluta, y nunca el de antes de la 8.296
   const ANTES = { 'adhoc-lane': '26eeb534', save: '0925a02b', 'lost-run': 'e089182e', 'designation-set': '03b92ba0' };
   const c = corrida(t, { titulo: 'x', extraHistoria: ['runtime_not_verifiable:', '  - ac: 1', '    reason: "el servicio externo no tiene ambiente de prueba"', '    covered_by: T1'] });
-  const de = (firma, cmd, cwd = c.repo, cc = c) => ow.cuadroPara({ firma, comando: cmd, palabras: ow.canonica(cmd), destino: 'ses-a', sesion: 'ses-a', cwd, casa: cc.casa });
-  // la exención, sobre una historia sin otro criterio sin correr: con uno, la ventana niega antes del cuadro
-  const cw = corrida(t, { titulo: 'x', extraHistoria: ['runtime_not_verifiable:', '  - ac: 1', '    reason: "el servicio externo no tiene ambiente de prueba"', '    covered_by: T1'],
-    criterios: [{ n: 1, texto: '**Given** un pedido **Then** el aviso queda en el servicio externo.' }] });
+  const de = (firma, cmd, cwd = c.repo) => ow.cuadroPara({ firma, comando: cmd, palabras: ow.canonica(cmd), destino: 'ses-a', sesion: 'ses-a', cwd, casa: c.casa });
+  // el cuadro de nombrar depende del rol del perfil (sin él dice que la sesión sólo ordena): el fijo es el del perfil con
+  // el rol, y el de sin perfil tiene otro sello
+  const cw = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'critical-waivers.js'));
+  const leerRol = cw.sesionQueReenvia;
+  const nombrar = (valor) => { cw.sesionQueReenvia = () => ({ valor }); try { return de('designation-set', `node ${MARKER} designate-relay`, '/r/repo'); } finally { cw.sesionQueReenvia = leerRol; } };
   const ahora = {
     'adhoc-lane': de('adhoc-lane', `node ${MARKER} adhoc set '{"reason":"arreglar el aviso","maxFiles":3}'`),
     save: de('save', `node ${MARKER} approve-save`),
     'lost-run': de('lost-run', `node ${MARKER} clear-session ses-b --lost`),
-    'runtime-waiver': de('runtime-waiver', `node ${MARKER} runtime-waiver specs/story-9.99-prueba.md --acs 1`, cw.repo, cw),
-    'designation-set': de('designation-set', `node ${MARKER} designate-relay`, '/r/repo'),
+    'runtime-waiver': de('runtime-waiver', `node ${MARKER} runtime-waiver specs/story-9.99-prueba.md --acs 1`),
+    'designation-set': nombrar('coordinadora'),
   };
+  assert.notStrictEqual(nombrar(null).sello, ahora['designation-set'].sello, 'sin el rol en el perfil, otro cuadro');
   const distintos = Object.entries(ahora).filter(([firma]) => ANTES[firma])
     .filter(([firma, q]) => q.sello !== `firma ${firma} · sesión ses-a · código ${ANTES[firma]}`)
     .map(([firma, q]) => `${firma}: ${q.error || q.sello}`);
   assert.deepStrictEqual(distintos, []);
   const rw = ahora['runtime-waiver'];
   assert.ok(!rw.error, rw.error);
-  assert.strictEqual(rw.sello, de('runtime-waiver', `node ${MARKER} runtime-waiver ${path.join(cw.repo, 'specs', 'story-9.99-prueba.md')} --acs 1`, cw.repo, cw).sello);
+  assert.strictEqual(rw.sello, de('runtime-waiver', `node ${MARKER} runtime-waiver ${path.join(c.repo, 'specs', 'story-9.99-prueba.md')} --acs 1`).sello);
   assert.notStrictEqual(rw.sello, 'firma runtime-waiver · sesión ses-a · código c2042686');
 });
 
