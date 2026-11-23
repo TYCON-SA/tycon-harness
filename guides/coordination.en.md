@@ -24,7 +24,9 @@ How she is named: on each machine, the owner asks the chosen session, in their o
 the profile, that session runs `marker.js designate-relay` with no sentence: the guard gives a box with "Sí" and "No"
 that says which session it is and in which folder, and with the owner's click it is named and confirmed. The harness
 does not read the sentence. To stop being it, `marker.js withdraw-relay`, with its own box. Both signatures belong only
-to the owner, with a click in that session's tab: they are never delegated. Where the click cannot be checked, the
+to the owner, with a click in that session's tab: they are never delegated. If another coordinator opened that session
+in the background (`coordination.js open`), the box is still shown in its tab and the session tells the coordinator
+that opened it: the owner answers there or through remote control. Where the click cannot be checked, the
 command says why and gives the fallbacks: the owner's terminal (`designate-relay --terminal`) or the sentence
 (`--quote`, then `confirm-designation`). Without a profile, for now she is named with the sentence
 (`designate-relay --approved-by '<the dev>' --quote '<their sentence>'`).
@@ -151,9 +153,10 @@ mode or if the coordinator is in plan mode (the new session would wait for someo
 from the coordinator's conversation, which records it with each of the person's messages. **Known limit:** if someone
 changes its mode with Shift+Tab and sends no message afterwards, `open` copies the previous mode. A session opened by
 hand, or before this change, that got stuck like that, the coordinator stops and relaunches:
-`claude --bg --resume <id> -n <name> --permission-mode <its mode> --remote-control <name> -- <task>`. To stop a
+`claude --bg --resume <id> -n <name> --permission-mode <its mode> --remote-control <name> -- <task>` (relaunched that
+way it is not recorded as opened by the coordinator). To stop a
 background session, use `coordination.js stop --name <name>`: it looks up the background id that the session recorded
-and runs `claude stop` with it. It removes nothing, and the session is resumed with `claude respawn <id>`. By hand,
+and runs `claude stop` with it. It removes nothing, and the session is resumed with `coordination.js relaunch --id <id>`. By hand,
 `claude stop <id>` and `claude rm <id>` need the id that `claude agents` shows: neither the name nor the ref that
 ListAgents shows (the six characters in brackets) works, and they answer that they cannot find it (measured on
 2026-11-01 and 2026-11-15).
@@ -192,7 +195,9 @@ with the session's id.
 **An interactive session is not closed.** It is checked all the same and it says so: a person closes that tab.
 
 **Stopping is not closing.** `coordination.js stop --name <name>` stops a background session without checking whether
-it is clean and without removing it; the same rule on who can. It is resumed with `claude respawn <id>`.
+it is clean and without removing it; the same rule on who can. It is resumed with `coordination.js relaunch --id <id>`: it
+runs `claude respawn`, waits to see it alive and records it as opened by the coordinator, like `open`. Relaunched by hand
+with `claude respawn <id>`, it is not recorded, and its routine signatures fall into the owner's list.
 
 **Limits.** It looks at the folder the session is in now: it does not see another worktree the session left behind, nor
 what was kept with `git stash`. A branch deleted without merging is no longer seen. A branch squashed into one commit
@@ -231,6 +236,19 @@ The cap is `coordination.max_working`, from 1 to 20. The team profile gives the 
 Configuration tab, "The sessions on each machine"), and each machine can change it for itself, because how much it
 can take depends on the machine. With no value anywhere, the cap is 3. `coordination.js status` shows who is working,
 who is waiting and why, and the cap with where it comes from.
+
+**The second cap: what is waiting for the person's review.** The first cap measures what the machine can take; this one,
+what a person can review. It counts four things, only reading: the signatures waiting for the person (not the delegated
+ones), the runs and shortcut paths finished without closing, the folders with uncommitted changes and no session (except
+the test copies of a background job, under `~/.claude/jobs/`) and the pull requests stuck for an hour or more (not a
+draft, unless it has conflicts). A live session waiting for the person does not add on its own: it is already in one of
+those. The cap is `coordination.max_awaiting_review`, from 1 to 50, in the same order as the others; with no value
+anywhere, 8. It comes in **warning mode**: with the review load at the cap, `open` and the background-session brake still
+open, say so and leave a `review-cap` line in `gates.log`, so moving to a brake is decided with numbers; moving to a brake
+is a commit that changes a constant, no variable changes it. What could not be read (because of the 4 s time limit, or a
+broken source) does not add up and does not stop anything. The brake that does not leave the machine empty does not push
+to open with the review full. The snapshot each session start leaves is shown by `status`, `/wip` and the coordinator's
+notice, with its age; deciding counts again, never from the snapshot.
 
 ### How many stories at once, who launches the heavy work and when the owner is written to
 
@@ -273,6 +291,10 @@ The same notice carries two more things:
 - **Background sessions sitting idle.** A background session that has gone more than 15 minutes without working shows up
   as "X has been idle for N min: close it or give it work". Not one waiting for its adversarial pass, one that recently
   noted what it is doing (`marker.js doing`), or the one holding the machine's full suite.
+- **The session that says it is working and does not write.** A "working" session that has not taken a step of its own in an
+  hour (a message reaching it does not count), has no background command running and runs no agent (none wrote in 20 minutes) shows up as "X dice que trabaja, pero no escribe hace N min y no
+  corre nada (su último paso: …): ¿trabada?". `owner-wait` says it once per session. Why: a command does not go past 10
+  minutes, so an hour of silence with no agents is a stuck session, and in the office it looked the same as one at work.
 - **Ready requests nobody queued, on GitHub.** An open, clean request (no conflict and no required checks pending) with no
   auto-merge and outside the queue, unchanged for more than 10 minutes, shows up with the command to queue it. Why: nobody is
   going to merge it, and everyone thinks it already went in. It comes from the last saved reading, less than an hour old: the
@@ -335,16 +357,67 @@ The harness controls this, not anyone's memory:
   (session, suites and time of each gate), and the line saying who holds the place. Beside a single gate of up to 40
   suites, with free memory, the pass launches. The pass of a closed session does not count.
 - **How each one frees up.** The large run releases its turn when it ends; the turn of a dead process, or one older than
-  three hours, frees itself. The pass has no turn file: it holds the machine from its launch until its session notes the
-  result (`marker.js mark-adversarial-result`, with any verdict, `no-medido` too) or the skip
+  three hours, frees itself. That is why `heavy-turn.js take` asks for `--process <pid>`, the process that runs the heavy
+  work (in a script, `$$`): without it, the turn would be tied to the command's shell, which ends right away, and it
+  would free itself with nobody noticing. `release` asks for the same one. The pass has no turn file: it holds the
+  machine from its launch until its session notes the result (`marker.js mark-adversarial-result`, with any verdict, `no-medido` too) or the skip
   (`marker.js mark-adversarial-skipped`). Relaunched, it holds it again. A session that closed frees it, and after an hour
   it no longer stops anything, because it may be finished or stuck, and that is said.
+- **A free turn is not taken on its own: the «arrancá».** With a coordinator designated and alive, a gate that got a
+  «wait» (its 77) is noted in the queue (`coordination/suite-waits/<session>.json`) and, when the turn frees up, does not
+  take it on its next try: it waits for the «arrancá». Why: on 13/11 a waiting gate took the turn as soon as it freed
+  up, on top of reviewers the coordinator had already launched. The «arrancá» is a command, `heavy-turn.js grant --to
+  <session>` (the id, its start or the session's name), and only the coordinator gives it; the notice's queue line
+  carries it whole. It holds for both places of the turn. While it is in force no other session takes the free turn; it
+  expires after 10 minutes if its session does not take it, or when that session closes, and the queue moves to the next
+  one. A session that never got a «wait» takes a free turn as always. A noted wait lasts three hours. The startup quick
+  suite is not a gate: it is not noted and does not spend its session's «arrancá». If the coordinator closes or stops
+  being designated, everything goes back to as always: the waiting gate takes the free turn.
+- **The reservation, for what asks for no turn.** Reviewers and the pass are launched by the coordinator and have no
+  process that takes the turn. Before launching them, `heavy-turn.js reserve --for "<what>"` takes the turn in that
+  name: a gate that asks for it gets the «wait» with the reservation's name. With a large run going it does not reserve
+  (it exits 77 and says who holds it). `heavy-turn.js release --reserve` frees it; it expires after 90 minutes (a round of
+  reviewers or a pass; the three hours are a suite's) and, if the coordinator's session closed, after 10. With
+  `--to <session>`, the reservation belongs to that session: it launches what was reserved (its pass without the
+  pipeline, the next point) and its gate takes the turn with no separate «go», even if it was in the queue. It is for
+  one thing at a time: if its gate is already running, the pass hook warns; with the pass in flight nothing stops its
+  gate, so the session does not run it until the pass ends. Other sessions wait until it is released.
+- **The pass without the pipeline also asks for the turn.** A session without a pipeline run (one the coordinator
+  opened for a fix, or a loose one) launches its pass with the Agent or Workflow tool, with no marker to count it. On
+  23/11 at 05:45, with several of those at once, the machine ran out of processes. The `agile-pass-turn.js` hook looks
+  at each launch: every Workflow (the fan-out of agents that fills the machine) and an Agent whose description or type
+  says adversarial (small reviewers and searches do not count; the request text is not read). If the session has neither the «go» (`grant --to`) nor a
+  reservation for it (`reserve --for "<what>" --to <session>`), or if its gate already runs with that reservation, it
+  warns the session and the person who holds the turn, and logs it in `gates.log` (`agile-pass-turn`). Today it only warns: whether it blocks is the owner's call, with that
+  measurement (`MODO` in the hook). It does not look without a coordinator, at the coordinator itself, or at a pipeline
+  session. `TYCON_AGILE_PASS_TURN=0` turns it off.
 
 `coordination.js status` shows a single line, «Turno de tarea pesada», with who holds it and what it is; with one large
 run, whether the second turn is free or closed, with the memory and the floor; with two, both. `heavy-turn.js holders`
 lists them. A scoped gate running beside a pass says so in its own line, with how many suites. With no coordinator designated, everything answers as
 always: in CI and in the cloud there is no turn. `TYCON_SUITE_TURN=0` turns off the suite's, and `TYCON_SUITE_TURN=1` asks for
 it even with no coordinator: it can only stop too much.
+
+### Swap memory
+
+Claude Code closes idle sessions when it runs out of swap memory, even when the system's free memory looks ample: on
+14/11 it closed two with the machine at 65 % free and 0.9 GB free of 8 GB of swap. `coordination.js status` reads it
+(`sysctl vm.swapusage`, on macOS): with less than 15 % free it says how much is left and names the live sessions that
+are not working, those waiting for something first, since those are the ones that get lost. What to do: before
+launching anything heavy, close the idle ones that wait for nothing. If it cannot be read (another platform, a command
+that fails) it says «no medida» and assumes nothing. Only the `status` command reads it: the per-turn notice and the
+closing brake do not measure it. A session Claude Code already closed shows in «Cerradas por Claude Code» with what it was
+waiting for (its `marker.js doing --waiting-for` note) and since when, above the others, with its `coordination.js relaunch --id`.
+
+### The user's processes
+
+Each user has a process cap (on macOS, `kern.maxprocperuid`; on the Mac mini, 2666). At the cap no command starts: not
+the hooks, not the brakes. It happened on 23/11 at 05:45, with several adversarial passes at
+once and a hung test, and the Telegram MCP went down. `coordination.js status` counts the user's processes (`ps -U`): from 70 % of the cap it says how
+many there are and what the cap is. What to do: before launching anything heavy (a pass, mutants, a suite), ask for the
+passes and background scripts that are not needed to stop. If they cannot be counted (another platform, a command that
+fails) it says «no medidos» and assumes nothing; if `ps` cannot start for lack of processes, it says it is at the
+cap. Like swap memory, only the `status` command counts them.
 
 ## The automatic reviews: what the coordinator does
 
@@ -361,16 +434,18 @@ the coordinator:
 - **Approves on the owner's behalf only with «approved»** on that same plan, with `plan_review.routine_approval` (O4)
   on `review` and `plan-approval` delegated. Without a coordinator, that same «approved» of the review the session
   launches itself approves the routine plan without a click: it is enough in both cases. With `person`, a routine plan
-  is always signed by a person. Rejected or without a verdict, the plan waits. A delicate plan is signed by the owner, unless
-  the profile delegates `plan-approval:delicada`: then the coordinator approves it with that same «approved» from the
-  review she launched. **The plan she approves is a part's plan**: if the run recorded its batch (`set-batch`) and the part is valid
+  is always signed by a person. Rejected or without a verdict, the plan waits. A delicate plan, and its mockup, are signed
+  only by the owner with a click or an «approved» (also in the coordinator's tab), even if the profile names
+  `plan-approval:delicada`. From that tab the command carries the quote: `marker.js complete-step approve-plan
+  --approved '<the person's quote>' --for-session <session>`; without it nothing is signed and no box is shown.
+  **The plan she approves is a part's plan**: if the run recorded its batch (`set-batch`) and the part is valid
   (with its `files:` or, without `files:`, with the files the story ties to it plus those it ties to no batch),
   «delicate» is measured on the part, and the plan stays tied to its list: editing code outside it stops, and at the
   close the whole diff is measured; if it comes out delicate, the plan goes back to the owner. The adversarial pass
   still goes by the whole story.
-- **Gives the code pass its turn.** She launches nothing for the code: with the owner away, she answers the question on
-  the owner's behalf according to the cell (`review-answer --for-session`, with «owner away» as the reason), and the
-  session itself launches the pass with its turn, as always.
+- **Gives the code pass its turn.** She launches nothing for the code: with the owner away, she answers on the owner's
+  behalf the question whose cell says `review` (`review-answer --for-session`, with «owner away» as the reason), and the
+  session itself launches the pass with its turn, as always. Having `skip` and `wait` ask for the owner's click is row 113.
 - **Sets the away mark** when the owner says they are leaving («go on autonomously», «I'm off», «see you tomorrow» or
   similar): `marker.js owner-away set --phrase "<what they said>"`. She judges it, not a list of phrases. The mark clears
   itself when the owner comes back: a message of theirs, a verified office message, a signature of theirs, or after 24
@@ -461,6 +536,10 @@ turned on in the profile, or on the machine to try it out.
 - **How they go through, with a coordinator.** If the coordinator is confirmed and alive, it passes them all. The background
   session does not show the box or send messages: the brake tells it to wait for the notice. When the person writes, the
   coordinator gets a notice: answer what the person wrote and run `coordination.js owner-next`.
+- **Without the list, with a coordinator.** The background session does not send the coordinator the question to copy:
+  copied by hand it does not stay the same, and the click does not count. The brake says why the request does not reach
+  her list (the list is off, or there is no confirmed, live coordinator) and gives the terminal command. The session tells
+  her what is being decided and that command, and does not repeat its command until she says the owner signed.
 - **How they go through, without a coordinator.** The target session gets the same notice, once per row, and runs `owner-next`.
   If the person already answered «aprobado» to that box, it does not ask again.
 - **What `owner-next` gives.** One row, the oldest: a box to show without changing a letter, with a label («Firma 2/5»), and the
@@ -476,7 +555,8 @@ turned on in the profile, or on the machine to try it out.
   notice and the session repeats the same command within 30 minutes. With an unused click, `owner-next` skips that row and says
   the repetition is missing.
 - **On a «No»:** `coordination.js owner-reject <id>` removes the row and names the session to tell. A box that closes or
-  resolves by itself leaves the row, and the pass stops there.
+  resolves by itself leaves the row, and the pass stops there. A background session's permission is different: on «Sí»
+  nothing is run, and on «No» its hook denies it by itself ("A background session's permission, as a box", below).
 - **What the coordinator signs by delegation.** Since the harness gives the routine signatures, only what is delegable
   and not routine reaches the coordinator. A delegable signature that the working session asked for itself does not
   reach the person: the gate routes it to the coordinator (`guides/firmas-del-arnes.md`, «Aprobar en nombre del dueño»).
@@ -649,13 +729,49 @@ is the only background console with which the owner can still sign with a click.
   permission, in the session's tab or with `claude attach`.
 - "<session> siguió: el permiso ya no está abierto" or "<session> se cerró con un permiso abierto": the owner is told if
   they had been asked.
-- "<session>: la cerró Claude Code a las HH:MM por falta de memoria, quieta N min. Para levantarla: claude respawn <id>":
+- "<session>: la cerró Claude Code a las HH:MM por falta de memoria, quieta N min. Para levantarla: coordination.js relaunch --id <id>":
   Claude Code closes quiet background sessions on its own when the machine runs out of memory, and the harness cannot
   prevent it. The coordinator decides whether to bring it back: that uses memory again and counts for the cap.
+
+- "un permiso para la persona: «<session>» pide «<tool>» en «<folder>» (<row>). Te da el cuadro owner-next…": a
+  background session's permission arrived as a box (the next section). Each row is announced once.
 
 There is one per machine, and without a confirmed coordinator it exits at once. If it is not running, the notice of each
 turn says so with the command. `coordination.js status` shows the stuck sessions ("Trabadas") and the ones Claude Code
 closed ("Cerradas por Claude Code").
+
+### A background session's permission, as a box
+
+With the list on, a confirmed and alive coordinator and her `owner-wait` running, **the permission a background session
+in normal mode asks for reaches the person as a box, in the coordinator's tab** (`scripts/hooks/permission-relay.js`).
+The hook writes the whole request in the list and waits; `owner-wait` announces it and `owner-next` gives the box, which
+goes first: "¿Aprobás este pedido de <tool>? (permiso <id> · sesión <id> · código <fingerprint>) Carpeta: <folder>.
+Pedido:" and the whole request, with its line breaks. In Edit, Write, NotebookEdit and WebFetch each line of free text
+carries the mark "│ ", so nothing written inside is taken for a label, and the code is the fingerprint of the request's
+fields: two different requests never look the same nor share a click. The coordinator shows it without changing a
+letter, with «Sí, aprobar» and «No».
+
+- **On «Sí, aprobar», nothing is run.** The hook sees the person's click, spends it and lets that request run once,
+  with no permanent rule. The same request later carries another id and asks for another click.
+- **On «No»:** `coordination.js owner-reject <id>`. The hook denies it and the session is told the person said no.
+  Rejecting only denies: it never approves.
+- **Only the person approves it, with a click in the coordinator's tab.** Never the coordinator: not by delegation
+  (`approvals.delegated_signing` does not cover it), not with a typed «aprobado», not by touching the list.
+- **With no answer within `coordination.permission_wait_minutes`** (10 with no value, from 1 to 30), the hook leaves
+  without deciding: the usual window comes back in that session, which stays among the stuck ones ("Trabadas") with the
+  reason, and a late click approves nothing. The same if the coordinator dies or stops being the designated one while it
+  waits.
+- **Not carried, and the usual window comes at once:** an open tab, another mode (auto, no permissions, accept edits,
+  plan), no confirmed and alive coordinator, no `owner-wait`, the list off, the coordinator herself, Codex, and on
+  Windows a PowerShell command. Neither is a request that cannot be shown whole (over 1500 characters, characters that
+  are not seen or look blank, a line break in a path or an address, data the box does not show): the session stays
+  stuck with that reason. The tools it carries are Bash,
+  PowerShell, Edit, Write, NotebookEdit and WebFetch; the question box and the plan, never.
+- **If the person answers in the session's window** or the session closes, the hook dies and its row closes by itself:
+  a click is never asked for a request that no longer waits.
+
+What happened with each request stays in `gates.log` (`permission-relay`), without the request's text. It is turned off
+with `TYCON_PERMISSION_RELAY=0`.
 
 **What happens in other tabs reaches the coordinator on her turn**, and the working session sees nothing:
 
@@ -750,7 +866,9 @@ says so once under «No se pudo leer». A badly written row is not saved: `board
 
 - `pendientes`: a list; each item has `id` (its number, `T-41`: the command sets it), `titulo`, `estado` (`hecho`, `curso`,
   `firma`, `riesgo`, `entrando`, `sin-empezar`, or `espera`, which goes to «Sin sesión»; `curso` and `riesgo` go to «En
-  curso» only if a live session is doing it, and otherwise also to «Sin sesión»), `grupo` (`Hoy`, `Esta semana`, `La semana
+  curso» only if a live session is doing it, and otherwise also to «Sin sesión»; a `firma` whose `quien` is a session name
+  (one word, like «Tero-2») that is no longer in the office goes to «Sin sesión», with «la sesión que la esperaba ya no está»: it does not wait for
+  the owner), `grupo` (`Hoy`, `Esta semana`, `La semana
   que viene` or `Más adelante`), `orden`, `quien`, `nota`, and its time: `pronosticoIso` (local time, `YYYY-MM-DDTHH:MM`),
   or `termina` with its own text. A done item carries `realIso`. `estimadaIso` is not allowed. `ultimoHecho` is written
   only by the board when it moves on its own.
@@ -961,7 +1079,7 @@ They come from a whole day of coordinating several sessions. Each says what to d
 - **With a long suite queue, no session is opened to program.** If more than two sessions are waiting for the suite or
   gate turn, a new session is opened only for work that does not need the suite: writing a story, reviewing or
   researching. Those that only wait for their turn can be closed and resumed with the same conversation when their turn
-  comes (`claude respawn <id>`), with the order written down. Why: the suite runs one at a time; one more session does not
+  comes (`coordination.js relaunch --id <id>`), with the order written down. Why: the suite runs one at a time; one more session does not
   speed anything up, it lengthens the queue and takes memory.
 - **A red is not left behind, even if it is not from your own change.** Report it and fix it before going on. Why: tolerated
   reds hide the new ones.
@@ -980,6 +1098,44 @@ They come from a whole day of coordinating several sessions. Each says what to d
 - **A change that promises speed is measured before and after on a loaded day.** Not only with the machine idle. Why:
   with the machine idle everything is fast, and the difference shows when several things run at once.
 
+## How the coordinator works with the owner
+
+They come from a whole day in which the coordinator worked with the owner away. They apply to any coordinator, also a
+product's. Each one, with its why.
+
+- **A question's box carries its context inside.** What happens today, what the problem is, what changes and what it
+  implies. Why: the owner sees only the box, not the conversation that explains it.
+- **The record of a control change is asked for at the end.** Only with the rest of the CI green and after the pull
+  requests that touch the same files are in. Why: a record asked for earlier expires with the next change, and has to
+  be asked for again.
+- **Stories are closed in hours.** The quick smoke checks that have a script are run. A criterion impossible to test
+  live goes by its waiver: the coordinator signs it with `marker.js runtime-waiver <story> --acs <n> --for-session <D>`
+  if the team profile delegates it, and otherwise the owner does. Waiving the whole story is a signature only the owner
+  gives. Why: a finished story that waits days for its closing takes up the queue without adding anything.
+- **First what blocks everyone.** A red CI or a brake that does not let anyone work. After that, the order of the
+  product's plan: the sprint's stories and what its owner decides. What is already approved is handed out in the same
+  pulse, without waiting for the owner to ask. Why: a free session is lost machine time, and the owner does not have to
+  hand out what is already approved.
+- **Each pending item has written down who has it and in which pull request, before it is assigned.** Why: without
+  that note the same fix is done twice; in a single day there were four duplicates.
+- **One push per pull request, with everything together.** After that, only the fix of a red or of what a review asked
+  for. Each push launches about 14 CI jobs, and GitHub runs about 20 at a time. If `main` does not move, the waiting
+  jobs are counted before blaming a pull request. Why: extra pushes fill everyone's queue, and a pull request that waits
+  is not a broken one.
+- **A turn is never closed with «shall we go on?».** A session that waits gets work. Why: with the owner away, nobody
+  answers that question and the session stays stopped.
+- **With the owner away, no box is opened.** The owner is told through the team's notice channel, and the coordinator
+  waits for them to write. Why: a box opened in the middle of the night left the coordinator stopped for six hours, and
+  the sessions without work.
+- **Before running the signature command of another session that asked for the owner's yes, the owner is asked.**
+  Why: a signature the profile delegates to the coordinator goes through on its own when the command runs, without
+  the owner seeing it.
+- **The record is asked for with the folder still.** Before the command, the session confirms it touches nothing until
+  the owner signs. Why: if the folder changes during the box, the record no longer matches and the click is lost.
+- **The record is signed with the script from the installed copy of the harness** (`scripts/ci/run-base-controls.sh`),
+  not the one in the pull request's folder. Why: an old copy of the script does not write the fingerprint, and the owner
+  has to click twice.
+
 ## What measures each rule
 
 | Rule | Measured by | Why |
@@ -989,6 +1145,7 @@ They come from a whole day of coordinating several sessions. Each says what to d
 | The coordinator settles details with the safest option | nadie | It is a judgment call, and it is written down for the owner to see. |
 | Every session with a name a person gave it | aviso | `/coordinate` lists the ones whose name the tool made up. |
 | No more sessions working than the cap | freno | `open` does not open at the cap. Nothing stops a session the owner opens by hand; `status` counts it and, on reaching the cap or a change in the count, so does the coordinator's notice. |
+| Do not open more when what waits for the person's review reaches its cap | aviso | `open` and the background-session brake still open, say so and log the `review-cap` line; what was not measured does not stop anything. It becomes a brake with a commit, when the lines justify it. |
 | With a long suite queue, no sessions are opened to program | nadie | Which work needs the suite is a judgment call; `status` shows who is waiting for the turn. |
 | One full suite at a time | freno | The suite runner and the whole portable run do not start with the turn held by another live process, and they say who holds it. A suite someone runs another way is not seen. |
 | Adversarial passes one at a time | freno | The pass's gate exits 3 and `next` asks to wait with another in flight. Nothing stops launching the pass without asking the gate, and a quick fix's pass is not noted as in flight. After an hour, it only warns. |
@@ -1035,6 +1192,17 @@ They come from a whole day of coordinating several sessions. Each says what to d
 | A plan for the owner first goes through a separate reviewer | nadie | It is a judgment call: no data separates a plan from any other message. |
 | State only what was checked, and measure use before removing something | nadie | It is the coordinator's judgment call. |
 | Measure a speed change on a loaded day | nadie | Which change promises speed is said in the message, not in a piece of data. |
+| A question's box carries its context inside | nadie | It is the shape of the message: no data on the machine sees it. |
+| The record of a control change, at the end | nadie | The session decides when to ask for it; an expired record is stopped by its control, not by when it was asked for. |
+| Stories are closed in hours | nadie | It is a judgment call: the session sees which smoke check has a script. |
+| First what blocks everyone, then the product's plan | nadie | What blocks everyone is judgment; the quiet sessions are counted by the notice of each turn. |
+| Each pending item with who has it and in which pull request | nadie | The note goes in the coordinator's list, which does not go through a control. |
+| One push per pull request | nadie | Nothing stops an extra push: the CI queue shows it. |
+| Never close a turn with «shall we go on?» | nadie | It is the shape of the message; the coordinator with room and ready work is already stopped by the end-of-turn hook. |
+| With the owner away, no box is opened | nadie | Whether the owner is away is the coordinator's judgment; nothing stops a box for that. |
+| Ask the owner before running another session's signature | nadie | No control tells a delegated signature the owner wanted to see from a routine one. |
+| The record, with the folder still | nadie | The session confirms it in a message; a record that no longer matches is stopped by its control. |
+| The record, with the script from the installed copy | nadie | Which copy of the script runs is chosen by whoever writes the command. |
 
 The "Measured by" column keeps the Spanish words the harness uses everywhere: **aviso** (a notice), **freno** (a brake)
 and **nadie** (nobody).

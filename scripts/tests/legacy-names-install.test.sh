@@ -344,12 +344,15 @@ EOF
   inst_ln() { ( fake_home_create "$H4" --installer && env PATH="$T/bin-ln:$PATH" LN_LAB="$1" TYCON_PROFILE=0 TYCON_CODEX=0 TYCON_NO_CLAUDEMD_SYNC=1 \
       TYCON_NO_COMMANDS_SYNC=1 TYCON_NO_GIT_HOOKS=1 TYCON_NO_SQLITE_CHECK=1 TYCON_NO_THREAD_RESCUE=1 TYCON_NO_COLLECT_FINDINGS=1 \
       TYCON_STAGE_METRICS=0 TYCON_BENCH_DAILY=0 TYCON_NO_CANONICAL_PATH=1 TYCON_NO_BOOTSTRAP_HEAL=1 TYCON_THIRD_PARTY=0 \
-      TYCON_MAILBOX_URL_BASE=http://127.0.0.1:9 bash "$SH_I" ) 2>/dev/null; }
-  o="$(inst_ln cae)"
+      TYCON_MAILBOX_URL_BASE=http://127.0.0.1:9 bash "$SH_I" ) 2>"$T/inst-err"; }
+  # si el instalador se corta antes de la migración, la salida queda vacía: el rojo lleva su código y su salida de
+  # errores, que es lo único que dice por qué
+  sin_aviso() { echo "salida=«$(grep -i 'nombres viejos' <<<"$1" | head -2)» instalador rc=$2 · errores: $(tail -5 "$T/inst-err" | tr '\n' ' ')"; }
+  o="$(inst_ln cae)"; rc=$?
   grep -q 'la migración de nombres viejos falló.*lab-caida' <<<"$o" && ok "T26 .sh: una migración que se cae se dice con su mensaje" \
-    || mal "T26 .sh caída: $(grep -i 'nombres viejos' <<<"$o" | head -2)"
-  o="$(inst_ln nota)"
-  grep -q 'lab-nota' <<<"$o" && ok "T26 .sh: una nota de la migración se muestra aunque no haya reescrito nada" || mal "T26 .sh nota perdida"
+    || mal "T26 .sh caída: $(sin_aviso "$o" "$rc")"
+  o="$(inst_ln nota)"; rc=$?
+  grep -q 'lab-nota' <<<"$o" && ok "T26 .sh: una nota de la migración se muestra aunque no haya reescrito nada" || mal "T26 .sh nota perdida: $(sin_aviso "$o" "$rc")"
   # el .ps1: su bloque de migración corrido con pwsh (el instalador entero es de Windows), con el mismo node de mentira
   if command -v pwsh >/dev/null 2>&1; then
     mkdir -p "$T/ps/lib"; : > "$T/ps/lib/legacy-names.js"
@@ -360,7 +363,9 @@ EOF
       printf '%s\n' '$LegacyNames = Join-Path (Join-Path $PSScriptRoot "lib") "legacy-names.js"' \
         '$lnArgs = @("--migrate-machine", "--guides", (Split-Path -Parent $PSScriptRoot), "--skills", $AgentSkillsRepo)'
       sed -n '/^# ── La tanda de Node ─/,/^# ── fin de la tanda de Node/p' "$PS_I"
-      sed -n '/^# ── Los nombres viejos (espejo/,/^# Load settings.json/p' "$PS_I" | sed '$d'
+      # hasta la sección siguiente, la de los hooks de settings.json: sólo el bloque de la migración (la marca de antes,
+      # «Load settings.json», ya no existe en el instalador, y el recorte llegaba hasta el final del archivo)
+      sed -n '/^# ── Los nombres viejos (espejo/,/^# Los hooks de settings.json/p' "$PS_I" | sed '$d'
     } > "$T/ps/frag.ps1"
     for caso in cae:lab-caida nota:lab-nota; do
       o="$(env PATH="$T/bin-ln:$PATH" LN_LAB="${caso%%:*}" pwsh -NoProfile -File "$T/ps/frag.ps1" 2>&1)"

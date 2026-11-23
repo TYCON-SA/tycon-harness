@@ -133,7 +133,11 @@ constancia() { # $1 = regla  $2 = veredicto
   local lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/guard-record.js"
   [[ -f "$lib" ]] || return 0
   command -v "$HNODE" >/dev/null 2>&1 || return 0
-  printf '%s' "$CMD" | "$HNODE" "$lib" --guard test-scope-guard --rule "$1" --verdict "$2" --cmd-stdin >/dev/null 2>&1 || true
+  # la sesión del evento del gancho; guard-record.js descarta una de otra forma y la línea sale igual, sin ella
+  local ses extra=()
+  ses="$(read_field session_id 2>/dev/null)" || ses=""
+  [[ -n "$ses" ]] && extra+=(--session "$ses")
+  printf '%s' "$CMD" | "$HNODE" "$lib" --guard test-scope-guard --rule "$1" --verdict "$2" ${extra[@]+"${extra[@]}"} --cmd-stdin >/dev/null 2>&1 || true
   return 0
 }
 
