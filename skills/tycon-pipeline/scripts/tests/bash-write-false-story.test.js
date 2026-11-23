@@ -164,3 +164,101 @@ test('Programa_QuePuedeCorrerElTexto_Frena — el pase adversarial: otro intérp
     `cd ${c.lab} && NODE_OPTIONS=--require=./pre.js node -e 'const t="${sed}"'`,
   ]) assert.ok(frenaComoHistoria(juzgar(c, cmd)), `el texto puede correr: frena: ${cmd}`);
 });
+
+// ── perl -pi con un programa que sólo sustituye ──────────────────────────────────────────────────────────────────────
+
+// PerlEnLugar_SoloSustituye_NoEsHistoria: `perl -pi -e` con un programa que es sólo sustituciones `s///` escribe sólo los
+// archivos que nombra, como un `sed -i`: la carpeta del `cd` no cuenta por las historias que tiene
+test('PerlEnLugar_SoloSustituye_NoEsHistoria — sobre un .sh, con la carpeta del cd llena de historias', () => {
+  const c = carpeta();
+  for (const cmd of [
+    `cd ${c.lab} && perl -pi -e 's/x/y/g' medir.sh`,
+    `cd ${c.lab} && perl -i -pe 's/PROG=x/PROG=y/' medir.sh`,
+    `cd ${c.lab} && perl -pi.bak -e 's#a#b#g; s/c/d/' scripts/tests/guard.test.sh`,
+    `cd ${c.lab} && perl -0777 -pi -e 's/\\n+/\\n/g' medir.sh`,
+    // las palabras del programa no son destinos: un espacio, un punto suelto, una historia nombrada en el texto
+    `cd ${c.lab} && perl -pi -e 's/^ *//' scripts/tests/guard.test.sh`,
+    `cd ${c.lab} && perl -pi -e 's/fin . x/fin. x/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/ver s9001.md antes/ver s9002.md antes/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/"plantillas"/"modelos"/' medir.sh`,
+  ]) {
+    const r = juzgar(c, cmd);
+    assert.ok(!frenaComoHistoria(r), `${cmd}: ${r && r.block}`);
+  }
+});
+
+test('PerlEnLugar_CambiaEstadoDeHistoria_Frena', () => {
+  const c = carpeta();
+  for (const cmd of [
+    `cd ${c.lab} && perl -pi -e 's/ready-for-dev/done/' s9001.md`,
+    `cd ${c.lab} && perl -pi -e 's/x/y/' medir.sh; perl -pi -e 's/ready-for-dev/done/' s9001.md`,
+  ]) assert.ok(frenaComoHistoria(juzgar(c, cmd)), `un perl que cambia el estado de una historia frena: ${cmd}`);
+});
+
+// PerlEnLugar_ProgramaQuePuedeHacerOtraCosa_Frena: lo que no es una sustitución cerrada se lee como siempre, y la carpeta
+// del cd cuenta por sus historias: código en BEGIN, la bandera e, código adentro del texto o de la expresión, otra orden,
+// una opción que carga código, la trampa de -pie (sufijo «e» y el programa leído de un archivo), una variable, $(…) o
+// comillas invertidas
+test('PerlEnLugar_ProgramaQuePuedeHacerOtraCosa_Frena — con la carpeta del cd llena de historias', () => {
+  const c = carpeta();
+  for (const cmd of [
+    `cd ${c.lab} && perl -pi -e 'BEGIN{@ARGV=glob "*.md"} s/a/b/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/a/b/e' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/a/@{[system "touch s9001.md"]}/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/(?{ system "x" })a/b/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 'open F,">","s9001.md"' medir.sh`,
+    `cd ${c.lab} && perl -pi -Mstrict -e 's/a/b/' medir.sh`,
+    `cd ${c.lab} && perl -pie 's/a/b/' medir.sh`,
+    `X=done; cd ${c.lab} && perl -pi -e "s/a/$X/" medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/a/b/' $(ls)`,
+    `cd ${c.lab} && perl -pi -e 's/a/\`touch s9001.md\`/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/a/$x[system "touch s9001.md"]/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/a/$1[unlink "s9001.md"]/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/a/$x->[0]/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/a/b/' -e 's/c/d/' medir.sh`,
+    `cd ${c.lab} && perl -ni -e 's/a/b/' medir.sh`,
+    `cd ${c.lab} && perl -pi -Ilib -e 's/a/b/' medir.sh`,
+    `cd ${c.lab} && perl -i.md -pe 's/a/b/' medir.sh`,
+    `cd ${c.lab} && PERL5OPT=-Mstrict perl -pi -e 's/a/b/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/a/b/'\nperl -pi -e 's/c/d/' medir.sh`,
+    // lo que confirmó el pase adversarial: variables especiales con un índice que perl calcula
+    `cd ${c.lab} && perl -pi -e 's/x/$)[system q(perl -pi -e s,ready-for-dev,done, s9001.md)]/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/x/$![unlink q(s9001.md)]/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/x/$,[unlink q(s9001.md)]/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's#x#$/[unlink q(s9001.md)]#' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/x/$::x[unlink q(s9001.md)]/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/x/$12[unlink q(s9001.md)]/' medir.sh`,
+    // el ambiente de perl, con el nombre armado al sacar las comillas, y otro programa que se llama perl
+    `export PERL5""OPT='-M5;unlink(q(s9001.md))'; cd ${c.lab} && perl -pi -e 's/x/y/' medir.sh`,
+    `export PERL5\\OPT='-M5;unlink(q(s9001.md))'; cd ${c.lab} && perl -pi -e 's/x/y/' medir.sh`,
+    `cd ${c.lab} && PATH=./bin:$PATH perl -pi -e 's/x/y/' medir.sh`,
+    `cd ${c.lab} && ./perl -pi -e 's/x/y/' medir.sh`,
+    `perl() { rm s9001.md; }; cd ${c.lab} && perl -pi -e 's/x/y/' medir.sh`,
+    // un archivo en una variable (puede valer \`-e\`) y una redirección que cambia lo que se lee del programa
+    `X=-e; cd ${c.lab} && perl -pi -e 's/a/b/' $X medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/a/b/>"@[system q(x)]"' medir.sh`,
+    // lo que confirmó la segunda vuelta: el ambiente cambiado con el comando escrito de otra forma, y en zsh
+    `\\export PERL5\\OPT='-M5;@ARGV=(q(s9001.md))'; cd ${c.lab} && perl -pi -e 's/ready-for-dev/done/' medir.sh`,
+    `cd ${c.lab} && echo \\'; export PERL5OPT=-M5\\;@ARGV=\\(q\\(s9001.md\\)\\); echo \\'; perl -pi -e 's/ready-for-dev/done/' medir.sh`,
+    `cd ${c.lab} && functions[perl]='rm s9001.md'; perl -pi -e 's/x/y/' medir.sh`,
+    `cd ${c.lab} && path[1,0]=$PWD/bin; perl -pi -e 's/x/y/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/x/y/' medir.sh; rm s9001.md`,
+    `cd ${c.lab} && perl -pi -e 's/x/y/' *.sh`,
+  ]) assert.ok(frenaComoHistoria(juzgar(c, cmd)), `frena: ${cmd}`);
+});
+
+// PerlEnLugar_NombraHistoria_FrenaSinCorrerSuPrograma: un perl que nombra una historia no se ensaya, porque ensayarlo
+// sería correr su programa adentro del freno. La historia cuenta como escrita aunque el programa parezca no cambiarle el
+// estado (las variables especiales valen distinto leyendo la entrada que editando el archivo), y el programa no corre
+test('PerlEnLugar_NombraHistoria_FrenaSinCorrerSuPrograma', () => {
+  const c = carpeta();
+  const marca = path.join(c.lab, 'CORRIO');
+  for (const cmd of [
+    `cd ${c.lab} && perl -pi -e 's/Cuerpo/Texto/' s9001.md`,
+    `cd ${c.lab} && perl -pi -e 's/rea[^$~]y-for-dev/done/i' s9001.md`,
+    `cd ${c.lab} && perl -pi -e 's/ready-for-dev(?!$!)/done/' s9001.md`,
+    `cd ${c.lab} && perl -pi -e 's/zzz/zzz/' s9001.md; perl -pi -e 's/ready-for-dev/ready-for-dev!/' ./s9001.md; perl -pi -e 's/ready-for-dev!/done/' s9001.md`,
+    `cd ${c.lab} && perl -pi -e 's/Cuerpo/$)[system q(touch ${marca})]/' s9001.md`,
+  ]) assert.ok(frenaComoHistoria(juzgar(c, cmd)), `frena: ${cmd}`);
+  assert.ok(!fs.existsSync(marca), 'el freno corrió el programa de perl');
+});

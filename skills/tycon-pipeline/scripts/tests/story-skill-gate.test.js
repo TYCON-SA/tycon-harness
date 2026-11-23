@@ -599,11 +599,12 @@ function frenoDeCd(h, comando, extra = {}) {
 test('T1 CdAntesDelEditor_CasoReal_Pasa', () => {
   const h = repoDeCd();
   // el carril de código (editar código sin ejecución abierta) es otro control: apagado, queda sólo el de las historias
-  for (const c of ["cd <repo> && sed -i '' -e 's/a/b/' scripts/a.sh", "cd . && sed -i -e 's/a/b/' a.sh"]) {
+  // un `perl -pi -e` que sólo sustituye escribe sólo lo que nombra, como un `sed`
+  for (const c of ["cd <repo> && sed -i '' -e 's/a/b/' scripts/a.sh", "cd . && sed -i -e 's/a/b/' a.sh", "cd <repo> && perl -pi -e 's/a/b/' a.sh"]) {
     assert.deepStrictEqual(frenoDeCd(h, c, { TYCON_STORY_GATE: 'off' }), { exit: 0, titulo: '' }, c);
   }
-  // perl no es la forma exacta: un `perl -e` puede armar y escribir sus archivos desde adentro
-  const c = "cd <repo> && perl -pi -e 's/a/b/' a.sh";
+  // un `perl -e` con otro programa puede armar y escribir sus archivos desde adentro
+  const c = "cd <repo> && perl -pi -e 'BEGIN{@ARGV=glob \"*.md\"} s/a/b/' a.sh";
   assert.deepStrictEqual(frenoDeCd(h, c, { TYCON_STORY_GATE: 'off' }), { exit: 2, titulo: HISTORIA_POR_CONSOLA }, c);
 });
 
