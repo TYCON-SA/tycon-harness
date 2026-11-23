@@ -1466,7 +1466,12 @@ function computeValidadores({ story, repo, todos = false, deprecados = true }) {
   let validadores = ['tycon-story-validator', ...lanzamientos.map((l) => l.agente)];
   let validacionPrevia = null;
   if (!todos) {
-    const leida = validationRecord.readRecord(os.homedir(), story);
+    let leida = validationRecord.readRecord(os.homedir(), story);
+    // cambiada sólo en lo técnico después de un plan rechazado: la revalida la vuelta siguiente del plan
+    if (leida.estado === 'stale') {
+      const pr = require('./lib/story-revalidation.js').porRevalidar({ home: os.homedir(), storyPath: story });
+      if (pr.aplica) leida = pr.validacion;
+    }
     const v = validationRecord.omitirVigentes({ validadores, lanzamientos }, leida);
     validadores = v.validadores;
     lanzamientos.splice(0, lanzamientos.length, ...v.lanzamientos);
@@ -1599,7 +1604,26 @@ function criticosMecanicos(args) {
     conDestino[r] = (h.lista || []).filter((f) => String(f.rule_id || f.rule) === r && String(f.severity || '').toUpperCase() === 'CRITICAL'
       && ['deferred', 'refuted', 'waived'].includes(String(f.disposition || '').toLowerCase())).length;
   }
-  return { ...vacio, reglas, conDestino };
+  // Las reglas del pase adversarial ya arregladas con su prueba: el pase no se repite y ningún revisor las tiene, así que
+  // su prueba es lo que las confirma. Todas sus instancias vivas tienen que ser del pase, `fixed` y con una prueba que
+  // está en el repo. El firmante del pase lo puede escribir cualquiera en findings.json: lo que lo ata al pase es su
+  // anotación en el marcador (mark-adversarial-result), medida, que dice cuántos confirmados quedaron con su prueba. Si
+  // hay más críticos firmados por el pase que esos, ninguno cuenta (uno de ellos no es del pase).
+  const delPase = /^(adversarial-verify|pase adversarial)(\s|:|\(|-|$)/i;
+  const raiz = marker.repoPath || args.repo || process.cwd();
+  const pruebaEnElRepo = (f) => {
+    const p = String(f.test || f.prueba || '').trim().split('::')[0].trim();
+    if (!p || path.isAbsolute(p) || p.split(/[\\/]/).includes('..')) return false;
+    try { return fs.statSync(path.join(raiz, p)).isFile(); } catch { return false; }
+  };
+  const pase = (Array.isArray(marker.adversarialPasses) ? marker.adversarialPasses : [])
+    .filter((p) => p && p.tipo === '5b' && p.veredicto !== 'no-medido').pop();
+  const cupo = pase ? (Number(pase.pruebas) || 0) + (Number(pase.propias) || 0) : 0;
+  const firmadosPorElPase = vivos.filter((f) => delPase.test(String(f.advisor || '').trim()));
+  const candidatas = reglas.filter((r) => vivos.filter((f) => String(f.rule_id || f.rule) === r).every((f) => delPase.test(String(f.advisor || '').trim())
+    && String(f.disposition || '').toLowerCase() === 'fixed' && pruebaEnElRepo(f)));
+  const conPruebaDelPase = firmadosPorElPase.length <= cupo ? candidatas : [];
+  return { ...vacio, reglas, conDestino, conPruebaDelPase };
 }
 
 // Las reglas que mech-check mira siempre sobre la historia, haga lo que haga el cambio: su ausencia en una vuelta quiere
@@ -2184,14 +2208,23 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   }
 
   const marker = readSessionMarker();
-  const prevSnapshot = at(at(at(marker, 'iterations'), String(iter - 1)), 'filesSnapshot');
+  // La vuelta de antes es la última que dejó foto: una vuelta sin agentes (todos salteados, o cerrada sola porque el cambio
+  // no traía código) no la deja, y caer al set completo relanzaba a todos los revisores. Comparar contra una foto
+  // anterior sólo suma lo cambiado desde ella: nunca saltea a un revisor que tenga algo nuevo para ver.
+  let prev = iter - 1;
+  while (prev > 1 && !at(at(at(marker, 'iterations'), String(prev)), 'filesSnapshot')) prev -= 1;
+  // se dice: una vuelta que sí lanzó revisores y no guardó su foto también cae acá, y no tiene que pasar callada
+  if (prev < iter - 1 && at(at(at(marker, 'iterations'), String(prev)), 'filesSnapshot')) {
+    process.stderr.write(`⚠️  la vuelta ${iter - 1} no dejó foto (sin agentes, o sin 'marker.js snapshot-iter ${iter - 1}'): mido lo cambiado desde la foto de la vuelta ${prev}.\n`);
+  }
+  const prevSnapshot = at(at(at(marker, 'iterations'), String(prev)), 'filesSnapshot');
   if (!prevSnapshot) {
     const out = {
       ...fullSet,
       iter,
       mode: 'no-prev-snapshot-fallback',
-      warning: `no hay marker.iterations[${iter - 1}].filesSnapshot — fallback a set completo. ` +
-               `Llamá 'marker.js snapshot-iter ${iter - 1}' después de invocar advisors de esa iter.`,
+      warning: `no hay marker.iterations[${prev}].filesSnapshot — fallback a set completo. ` +
+               `Llamá 'marker.js snapshot-iter ${prev}' después de invocar advisors de esa iter.`,
       rerun: fullSet.all,
       skipped: [],
       delta_files: [],
@@ -2237,7 +2270,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   // reportó el finding NUNCA re-auditaría su propio fix.
   // marker.fileEvents (escritos por on-edit.js directo; marker.js append-file existe como CLI manual)
   // conserva cada edición con ts; delta = ediciones POSTERIORES al snapshot previo.
-  const prevTs = marker.iterations[String(iter - 1)].ts;
+  const prevTs = marker.iterations[String(prev)].ts;
   // ── SEGUNDA CAPA: el corte es el ÚLTIMO REVISOR, no la hora de la foto ────────────
   // La hora de la foto es justamente el dato que puede estar mal: si fecha la foto de una iteración a las 17:03 con
   // un arreglo de las 16:58 adentro, el delta de la siguiente
@@ -2255,7 +2288,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   } catch { /* sin registro de spawns → el corte sigue siendo la foto, y la vista por revisor no se mide */ }
   try {
     const { ultimoRevisorDeLaRonda } = require('./lib/late-snapshot.js');
-    const ur = ultimoRevisorDeLaRonda(lineasRegistro || [], iter - 1);
+    const ur = ultimoRevisorDeLaRonda(lineasRegistro || [], prev);
     if (Number.isFinite(ur.ts)) ultimoRevisorMs = ur.ts;
   } catch { /* ídem */ }
   // El PRIMER revisor de la vuelta: un arreglo hecho después de que salió el primero y antes del
@@ -2265,7 +2298,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   let primerRevisorMs = null;
   try {
     const ls = require('./lib/late-snapshot.js');
-    const v = ls.vistaPorRevisor(lineasRegistro || [], iter - 1);
+    const v = ls.vistaPorRevisor(lineasRegistro || [], prev);
     for (const [adv, t] of v.lanzamientos || []) if (ls.esRevisor(adv) && Number.isFinite(t) && (primerRevisorMs === null || t < primerRevisorMs)) primerRevisorMs = t;
   } catch { /* sin registro, el corte es la foto o el último revisor, como antes */ }
   // Delta = UNIÓN de TRES fuentes (si fileEvents y mtime fueran either/or,
@@ -2379,7 +2412,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   //     vio: se re-corre por las dudas, y se dice.
   let vista;
   try {
-    vista = require('./lib/late-snapshot.js').vistaPorRevisor(lineasRegistro || [], iter - 1);
+    vista = require('./lib/late-snapshot.js').vistaPorRevisor(lineasRegistro || [], prev);
   } catch (e) {
     vista = { medible: false, motivo: `no se pudo leer el registro de lanzamientos (${(e && e.message) || e})` };
   }
@@ -2411,7 +2444,30 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
     const lanzado = vista.lanzamientos.get(adv);
     return noVistosDesde(lanzado !== undefined ? lanzado : vista.inicioMs).some((f) => pideVuelta(f) && advisorAffectedByDelta(adv, [f]).affected);
   };
-  if (delta.length && !delta.some(pideVuelta) && !(vista.medible && fullSet.all.some(tieneCodigoSinVer))) {
+  // Lo que cambió adentro de cada archivo desde la última vuelta cerrada, contra su sello (lib/change-kind.js): sólo
+  // comentarios no pide vuelta, y sólo textos pide la vuelta chica (lib/review-change-policy.js). Lo que no se pudo
+  // mirar cuenta como código. Comparar contra el sello vale sólo si cada revisor de la vuelta leyó ese sello: consta el
+  // lanzamiento de cada uno y todos se lanzaron después de sellarla (pedir el set otra vez a mitad de la vuelta la vuelve
+  // a sellar con un arreglo que los primeros no vieron). Si no, todo archivo de código cuenta como código, como antes.
+  const politica = require('./lib/review-change-policy.js');
+  let selloMs = NaN;
+  try {
+    const sellada = require('./lib/frozen-tree.js').vueltaCerradaDeLosRevisores(marker, STEPS_TABLE.reviewersClose(marker));
+    if (sellada) selloMs = Date.parse(sellada.ts);
+  } catch { /* sin sello: como antes */ }
+  const deLaVuelta = vista.medible ? [...vista.esperados].filter((a) => require('./lib/late-snapshot.js').esRevisor(a)) : [];
+  const todosLeyeronElSello = Number.isFinite(selloMs) && deLaVuelta.length > 0
+    && deLaVuelta.every((a) => { const t = vista.lanzamientos.get(a); return Number.isFinite(t) && t >= selloMs; });
+  let tipos = new Map();
+  const porRuta = delta.filter(pideVuelta);
+  if (porRuta.length && todosLeyeronElSello) {
+    try {
+      tipos = require('./lib/frozen-tree.js').tiposDesdeLaVuelta({ marker, cierre: STEPS_TABLE.reviewersClose(marker), archivos: porRuta.map((f) => path.resolve(f)) });
+    } catch { /* sin mirar: todo cuenta como código */ }
+  }
+  const tipoDe = (f) => (tipos.get(path.resolve(f)) || {}).tipo || 'codigo';
+  const pideVueltaAdentro = (f) => pideVuelta(f) && politica.pideVuelta(tipoDe(f));
+  if (delta.length && !delta.some(pideVueltaAdentro) && !(vista.medible && fullSet.all.some(tieneCodigoSinVer))) {
     logGate({ repoPath: repo, name: 'smart-reloop', check: 'smart-reloop-sin-codigo', status: 'closed', iter, delta });
     return {
       ...fullSet,
@@ -2429,6 +2485,34 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
     };
   }
 
+  // ── Sólo textos: la vuelta chica ──────────────────────────────────────────────────────
+  // Si todo lo que pide la vuelta son textos (y a ningún revisor le queda código sin ver), vuelven sólo los revisores de
+  // la vuelta chica: una cadena puede ser una consulta o una ruta. Pasa el tope sin firma (topeDeVueltas).
+  const conCodigo = delta.filter(pideVueltaAdentro);
+  if (conCodigo.length && conCodigo.every((f) => tipoDe(f) === 'textos') && !(vista.medible && fullSet.all.some(tieneCodigoSinVer))) {
+    const chicos = fullSet.all.filter((a) => politica.REVISORES_DE_LA_VUELTA_CHICA.includes(a));
+    if (chicos.length) {
+      logGate({ repoPath: repo, name: 'smart-reloop', check: 'small-round', status: 'small', iter, textos: conCodigo.length });
+      const nombres = conCodigo.slice(0, 3).map((f) => path.basename(f)).join(', ') + (conCodigo.length > 3 ? ` y ${conCodigo.length - 3} más` : '');
+      return {
+        ...fullSet,
+        iter,
+        mode: 'small-round',
+        all_iter1: fullSet.all,
+        rerun_count: chicos.length,
+        rerun: chicos,
+        rerun_reasons: chicos.map((name) => ({ name, reason: 'sólo cambiaron textos: una cadena puede ser una consulta o una ruta' })),
+        skipped_count: fullSet.all.length - chicos.length,
+        skipped: fullSet.all.filter((a) => !chicos.includes(a)).map((name) => ({ name, reason: 'sólo cambiaron textos: los revisa la vuelta chica' })),
+        delta_files: delta,
+        delta_source: deltaSource,
+        small_round: true,
+        textos: conCodigo,
+        note: `vuelta chica: en ${nombres} sólo cambiaron textos desde la última vuelta; re-corre ${chicos.join(', ')}.`,
+      };
+    }
+  }
+
   const noVistosPorRevisor = {};       // revisor → archivos de su alcance editados después de su lanzamiento
   const sinVista = [];                 // revisores re-corridos porque no se sabe qué versión vieron
 
@@ -2443,7 +2527,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
       const sinVer = delta.filter((f) => { const t = ultimaEdicion.get(f); return !(Number.isFinite(t) && t <= lanzadoAdv); });
       if (!advisorAffectedByDelta(adv, sinVer).affected) {
         affected = false;
-        reason = `ya vio lo que cambió: se lanzó en la vuelta ${iter - 1} (${new Date(lanzadoAdv).toISOString()}) después de la última edición de su alcance`;
+        reason = `ya vio lo que cambió: se lanzó en la vuelta ${prev} (${new Date(lanzadoAdv).toISOString()}) después de la última edición de su alcance`;
       } else {
         // lo de su alcance que se editó después de su lanzamiento y quedó adentro de la foto: no lo vio
         const tapados = sinVer.filter((f) => { const t = ultimaEdicion.get(f); return Number.isFinite(t) && t <= prevTsMs && advisorAffectedByDelta(adv, [f]).affected; });
@@ -2452,13 +2536,13 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
     }
     if (!affected && !vista.medible) {
       affected = true;
-      reason = `no se sabe qué versión del cambio vio en la vuelta ${iter - 1} (${vista.motivo}) → se re-corre por las dudas`;
+      reason = `no se sabe qué versión del cambio vio en la vuelta ${prev} (${vista.motivo}) → se re-corre por las dudas`;
       sinVista.push(adv);
     } else if (!affected) {
       const lanzado = vista.lanzamientos.get(adv);
       if (lanzado === undefined && vista.esperados.has(adv)) {
         affected = true;
-        reason = `estaba en la vuelta ${iter - 1} y no consta su lanzamiento → no se sabe qué vio: se re-corre por las dudas`;
+        reason = `estaba en la vuelta ${prev} y no consta su lanzamiento → no se sabe qué vio: se re-corre por las dudas`;
         sinVista.push(adv);
       } else {
         const desde = lanzado !== undefined ? lanzado : vista.inicioMs;
@@ -2467,8 +2551,8 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
           affected = true;
           noVistosPorRevisor[adv] = enSuAlcance;
           reason = lanzado !== undefined
-            ? `'${enSuAlcance[0]}' se editó después de su lanzamiento en la vuelta ${iter - 1} (${new Date(lanzado).toISOString()}): no lo vio`
-            : `'${enSuAlcance[0]}' se editó durante la vuelta ${iter - 1}, que lo había salteado: no lo vio`;
+            ? `'${enSuAlcance[0]}' se editó después de su lanzamiento en la vuelta ${prev} (${new Date(lanzado).toISOString()}): no lo vio`
+            : `'${enSuAlcance[0]}' se editó durante la vuelta ${prev}, que lo había salteado: no lo vio`;
         }
       }
     }
@@ -2508,7 +2592,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
     : [];
   if (lateSnapshotFiles.length) {
     process.stderr.write(
-      `⚠ la foto de la iteración ${iter - 1} se fechó DESPUÉS del último revisor y tapó ` +
+      `⚠ la foto de la iteración ${prev} se fechó DESPUÉS del último revisor y tapó ` +
       `${lateSnapshotFiles.length} archivo(s) de código que nadie auditó: ` +
       `${lateSnapshotFiles.slice(0, 10).map((f) => path.basename(f)).join(', ')}` +
       `${lateSnapshotFiles.length > 10 ? ` y ${lateSnapshotFiles.length - 10} más` : ''}.\n` +
@@ -2521,7 +2605,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   const revisoresNoVieron = Object.keys(noVistosPorRevisor);
   if (revisoresNoVieron.length) {
     process.stderr.write(
-      `⚠ ${revisoresNoVieron.length} revisor(es) de la vuelta ${iter - 1} no vieron un arreglo hecho después de ` +
+      `⚠ ${revisoresNoVieron.length} revisor(es) de la vuelta ${prev} no vieron un arreglo hecho después de ` +
       `lanzarse (quedó adentro de la foto): ` +
       `${revisoresNoVieron.map((a) => `${a} (${noVistosPorRevisor[a].slice(0, 3).map((f) => path.basename(f)).join(', ')})`).join('; ')}.\n` +
       `   ESTA vuelta los re-corre.\n`,
@@ -2529,7 +2613,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   }
   if (sinVista.length) {
     process.stderr.write(
-      `⚠ no se sabe qué versión del cambio vieron ${sinVista.length} revisor(es) en la vuelta ${iter - 1}` +
+      `⚠ no se sabe qué versión del cambio vieron ${sinVista.length} revisor(es) en la vuelta ${prev}` +
       `${vista.medible ? ' (estaban en la vuelta y no consta su lanzamiento)' : ` (${vista.motivo})`}: ` +
       `se re-corren por las dudas — ${sinVista.join(', ')}.\n`,
     );
@@ -2538,7 +2622,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   const suspectEmptyDelta = delta.length === 0;
   const emptyDeltaWarning = suspectEmptyDelta
     ? `⚠ DELTA VACÍO en un re-loop (iter ${iter}) — un re-loop sigue a fixes, así que un delta vacío ` +
-      `casi siempre = 'snapshot-iter ${iter - 1}' tomado DESPUÉS de los fixes (debe tomarse al cierre ` +
+      `casi siempre = 'snapshot-iter ${prev}' tomado DESPUÉS de los fixes (debe tomarse al cierre ` +
       `de la tanda de advisors, ANTES de fixear). NO tomes el "todo skip por surface" como legítimo. ` +
       `Acción: re-snapshotear en el momento correcto la próxima iteración; para ESTA, --force-full-reloop.`
     : null;
@@ -2559,7 +2643,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
     ...(lateSnapshotFiles.length ? {
       suspect_late_snapshot: true,
       late_snapshot_files: lateSnapshotFiles,
-      late_snapshot_note: `la foto de iter ${iter - 1} se fechó después del último lanzamiento de revisores: ` +
+      late_snapshot_note: `la foto de iter ${prev} se fechó después del último lanzamiento de revisores: ` +
         `el delta se cortó por el último revisor y esos archivos entraron igual. La foto se toma SOLA al ` +
         `lanzar el último revisor — no la repitas a mano después de arreglar.`,
     } : {}),
@@ -2569,7 +2653,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
       ? { medible: true, ...(sinVista.length ? { sin_vista: sinVista } : {}) }
       : { medible: false, motivo: vista.motivo, sin_vista: sinVista },
     note: !vista.medible && sinVista.length
-      ? `no se sabe qué versión del cambio vio cada revisor en la vuelta ${iter - 1} (${vista.motivo}): se re-corren todos los que el delta no traía. Ver vista_por_revisor.`
+      ? `no se sabe qué versión del cambio vio cada revisor en la vuelta ${prev} (${vista.motivo}): se re-corren todos los que el delta no traía. Ver vista_por_revisor.`
       : suspectEmptyDelta
       ? `delta vacío en un re-loop → ver "warning": snapshot probablemente post-fixes. NO degradar a "todo skip" en silencio.`
       : skipped.length > 0
@@ -3370,7 +3454,8 @@ function computeNext() {
     }
     const round = s.id === 'reviewers' && reloop ? reloop.round : undefined;
     const entry = { step: s.id, number: s.number, name: STEPS_TABLE.stepName(s.id, round), file: path.join(STEPS_DIR, s.file), done, ...(skip ? { skip_mechanical: skip } : {}),
-      ...(round ? { to_review: reloop.archivos } : {}), ...(s.id === 'prepare-commit' && ultimoViejo ? { again: 'los revisores cerraron después: lo preparado ya no es lo revisado' } : {}) };
+      ...(round ? { to_review: reloop.archivos } : {}), ...(round && reloop.chica ? { small_round: true } : {}),
+      ...(s.id === 'prepare-commit' && ultimoViejo ? { again: 'los revisores cerraron después: lo preparado ya no es lo revisado' } : {}) };
     stepState.push(entry);
     if (!nextStep && !done) nextStep = { ...entry, ...(round ? { round } : {}) };
   }
@@ -3379,6 +3464,7 @@ function computeNext() {
   // lo que falta revisar, por su nombre (hasta cinco), o por qué se prepara el commit otra vez
   const faltaRevisar = nextStep && nextStep.to_review
     ? ` Falta revisar lo cambiado después de los revisores: ${nextStep.to_review.slice(0, 5).join(', ')}${nextStep.to_review.length > 5 ? ` y ${nextStep.to_review.length - 5} más` : ''}.`
+      + (nextStep.small_round ? ' Sólo cambiaron textos: es una vuelta chica (smart-reloop devuelve sólo el revisor de seguridad, sin firma aunque se haya pasado el tope).' : '')
     : nextStep && nextStep.again ? ` Otra vez: ${nextStep.again}.` : '';
 
   // Pre-condiciones del next conocidas por el script.
@@ -3780,14 +3866,20 @@ function computeStart(args) {
         // con tanda, la otra sesión que entrega otra tanda de la paraguas no choca; la misma tanda, o sin tanda, sí
         if (tanda && m.batch && String(m.batch) !== tanda.nombre) continue;
         others.push({ sessionId: m.sessionId, lastTouch: m.lastTouch, stepsCompleted: m.stepsCompleted, repoPath: m.repoPath || null });
-      } catch { /* ignore */ }
+      } catch (e) {
+        // un marcador que no se lee puede ser de esta misma historia: no lo veo para el choque, y se dice
+        actions.push(`PIPE-C0: no pude leer el marcador de otra sesión (${f}: ${String((e && (e.code || e.message)) || e).split('\n')[0].slice(0, 120)}): si es de la story ${storyId}, no lo veo.`);
+      }
     }
-  } catch { /* ignore */ }
+  } catch (e) {
+    actions.push(`PIPE-C0: no pude listar los marcadores de las otras sesiones (${String((e && (e.code || e.message)) || e).split('\n')[0].slice(0, 120)}): no sé si otra sesión trabaja la story ${storyId}.`);
+  }
   // PIPE-C0 por hechos: la otra sesión de la misma story en OTRA copia del repo (otra raíz git) y en OTRA rama es otra
   // tanda que trabaja en paralelo, no un choque: no pausa y queda dicho (`parallelWith` en el marcador). La misma copia,
   // o la misma rama en otra copia, pausa como siempre; si no se puede leer la rama de la otra, pausa y lo dice.
   let parallelWith = null;
   let ramaSinLeer = null;
+  let ramaPropiaSinLeer = false;
   if (others.length) {
     const gitDe = (dir, ...a) => {
       try { return execFileSync('git', ['-C', dir, ...a], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null; } catch { return null; }
@@ -3801,7 +3893,8 @@ function computeStart(args) {
     });
     const sinLeer = vistas.filter((v) => !v.raiz || !v.rama);
     if (!miRaiz || !miRama) {
-      ramaSinLeer = `la de esta sesión (${repo})`;
+      ramaSinLeer = repo;
+      ramaPropiaSinLeer = true;
     } else if (sinLeer.length) {
       ramaSinLeer = sinLeer.map((v) => `${v.sessionId} (${v.repoPath || 'sin repo en su marcador'})`).join(', ');
     } else if (vistas.every((v) => real(v.raiz) !== real(miRaiz) && v.rama !== miRama)) {
@@ -3815,7 +3908,7 @@ function computeStart(args) {
     pauses.push({
       id: 'PIPE-C0-cross-session',
       detail: `Story ${storyId} YA tiene pipeline activo en otra sesión: ${JSON.stringify(others)}`
-        + (ramaSinLeer ? `. No pude leer la rama de la otra sesión (${ramaSinLeer}): ante la duda, pauso.` : ''),
+        + (ramaSinLeer ? `. No pude leer la rama de ${ramaPropiaSinLeer ? 'esta sesión' : 'la otra sesión'} (${ramaSinLeer}): ante la duda, pauso.` : ''),
       options: 'retomar con `marker.js adopt-session <sid>` (copia el estado completo) / clear-session / trabajarla en otra copia del repo y otra rama / cancelar',
     });
   }
@@ -4585,6 +4678,16 @@ function computeStoryReviewGate({ story, env = process.env, home = os.homedir() 
       run: false, record: estado, riesgo: record.riesgo,
       linea: `revisión previa vigente: ${record.resultado}, ${record.hallazgos.length} hallazgos, ${record.modelo || 'sin modelo'}`,
     };
+  }
+  // cambiada sólo en lo técnico después de un plan rechazado: la revalida la vuelta siguiente del plan, que ve el cambio
+  if (estado === 'stale' && record.resultado !== 'saltado') {
+    const pr = require('./lib/story-revalidation.js').porRevalidar({ home, storyPath: story });
+    if (pr.aplica) {
+      return {
+        run: false, record: 'por-revalidar', riesgo: record.riesgo, por_revalidar: true,
+        linea: `revisión previa a revalidar por la vuelta del plan: la historia cambió sólo en ${pr.cambios.map((c) => c.parte).join('; ')} después del plan rechazado (${pr.rechazo.ts})`,
+      };
+    }
   }
   const rc = computeRiskClass({ story });
   if (env.TYCON_STORY_REVIEW === '0') {
@@ -6463,10 +6566,19 @@ function paraOtraSesion(cmd, args, argv) {
   return null;
 }
 
+// ¿La vuelta extra es una firma de trámite? Lo es si el perfil del equipo la lista en `approvals.delegated_signing`
+// (scripts/lib/automatic-signing.js): la da el arnés solo, sin ventana ni cuadro, y el cartel no puede decir que la
+// aprueba una persona. Sin poder leer el perfil, no lo es.
+function vueltaExtraDeTramite() {
+  try {
+    return !!require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'automatic-signing.js')).esDeTramite({ firma: 'extra-round' }).ok;
+  } catch (_) { return false; }
+}
+
 // El tope de vueltas de revisores (lib/review-rounds.js): null si la vuelta `iter` puede servirse, o el mensaje llano de
 // por qué no. Al tope con algo abierto, un crítico de seguridad o de datos lo decide una persona (una vuelta extra con su
 // ok, que se anota en gates.log, o eximirlo); lo demás queda como deuda visible y el recorrido sigue sin otra vuelta.
-function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId }) {
+function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica = false }) {
   const tope = rr.tope({ repo: repoAbs });
   const stateDir = stateDirOf(os.homedir());
   const anotar = (g) => { fs.mkdirSync(stateDir, { recursive: true }); fs.appendFileSync(path.join(stateDir, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), story: storyId, iter, ...g })}\n`); };
@@ -6495,15 +6607,30 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId }) {
   const de = { maquina: 'de esta máquina', repo: 'del repo', organizacion: 'de la organización', fabrica: 'de fábrica' }[tope.source] || '';
   // «no pude mirar» no es «no quedó nada abierto»
   const noMirado = h.error || (!runDir ? 'no encontré la carpeta de la corrida' : null);
+  // sólo textos desde la última vuelta: la vuelta chica pasa el tope sin firma (lib/review-change-policy.js). No con un
+  // crítico de seguridad o de datos abierto, ni sin poder mirar lo abierto: eso lo sigue decidiendo una persona
+  if (vueltaChica && !paraOtra && !noMirado && !bloquean.length) {
+    if (args.extraRound) return `🛑 La vuelta ${iter} es una vuelta chica (sólo cambiaron textos): pasa el tope sin la vuelta extra ni la firma. Pedí el set sin --extra-round.\n`;
+    anotar({ name: 'small-round', status: 'ok', tope: tope.value });
+    process.stderr.write(`ℹ️  La vuelta ${iter} pasa el tope de ${tope.value} como vuelta chica: desde la última vuelta sólo cambiaron textos, y la revisan ${require('./lib/review-change-policy.js').REVISORES_DE_LA_VUELTA_CHICA.join(', ')}, sin firma.\n`);
+    return null;
+  }
   const avisos = [...tope.problems, ...pre.problems].map((p) => `   ⚠️  ${p}`);
+  const tramite = vueltaExtraDeTramite();
   if (args.extraRound && args.delegated) {
-    return `🛑 No se autorizó la vuelta extra ${iter}: --delegated ya no la autoriza. Va el mismo comando sin --delegated: la persona lo aprueba en la ventana de permiso, o lo deja correr sin ventana la delegación del perfil del equipo.\n`;
+    const quien = tramite ? 'es una firma de trámite del perfil del equipo y la da el arnés solo, sin ventana'
+      : 'la persona lo aprueba en la ventana de permiso, o lo deja correr sin ventana la delegación del perfil del equipo';
+    return `🛑 No se autorizó la vuelta extra ${iter}: --delegated ya no la autoriza. Va el mismo comando sin --delegated: ${quien}.\n`;
   }
   if (args.extraRound) {
     // la aprueba la persona en la ventana de permiso (o con --terminal), después del aviso del tope de ESTA vuelta
     const aviso = rr.avisoDelTope({ stateDir, story: storyId, iter });
     if (!aviso || !aviso.ts) return `🛑 No se autorizó la vuelta extra ${iter}: todavía no se avisó el tope de esta vuelta. Pedí el set sin --extra-round, el arnés dice qué quedó abierto, y recién ahí vale la aprobación.\n`;
-    if (args.quote) return `🛑 No se autorizó la vuelta extra ${iter}: la cita ya no la autoriza. La aprueba la persona en la ventana de permiso (este comando sin --quote) o en su terminal (--terminal).\n`;
+    if (args.quote) {
+      const quien = tramite ? 'Es una firma de trámite del perfil del equipo: el mismo comando sin --quote, y la da el arnés solo'
+        : 'La aprueba la persona en la ventana de permiso (este comando sin --quote) o en su terminal (--terminal)';
+      return `🛑 No se autorizó la vuelta extra ${iter}: la cita ya no la autoriza. ${quien}.\n`;
+    }
     // desde la tercera vuelta, la nota de repensar se pide antes de gastar la firma: sin ella el set no se sirve igual
     const rt = require('./lib/rethink.js');
     const antes = () => {
@@ -6528,9 +6655,14 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId }) {
   if (bloquean.length) {
     renglones.push(`   Quedó abierto algo de seguridad o de datos (${bloquean.length}): lo decide una persona. Mostrale esto y preguntale qué hace:`);
     for (const l of rr.resumen(bloquean)) renglones.push(`     · ${l}`);
-    renglones.push('   (a) Una vuelta más para arreglarlo: el mismo comando con --extra-round, y la persona lo aprueba en la ventana de permiso');
-    renglones.push('       (o lo corre en su terminal con --terminal); si el perfil del equipo la delega, la sesión designada lo corre con');
-    renglones.push('       --for-session desde su pestaña, sin ventana.');
+    if (tramite) {
+      renglones.push('   (a) Una vuelta más para arreglarlo: el mismo comando con --extra-round. Es una firma de trámite del perfil del equipo');
+      renglones.push('       (approvals.delegated_signing): la da el arnés solo, sin ventana ni cuadro; no la firma una persona.');
+    } else {
+      renglones.push('   (a) Una vuelta más para arreglarlo: el mismo comando con --extra-round, y la persona lo aprueba en la ventana de permiso');
+      renglones.push('       (o lo corre en su terminal con --terminal); si el perfil del equipo la delega, la sesión designada lo corre con');
+      renglones.push('       --for-session desde su pestaña, sin ventana.');
+    }
     renglones.push('   (b) Eximirlo: marker.js waive-critical --rule <regla> --file <archivo> --reason "<por qué>" (la persona lo aprueba en la ventana de permiso).');
   }
   if (deuda.length) {
@@ -6584,7 +6716,9 @@ function emptyWorkGate(args) {
 // El freno de la tercera vuelta de `smart-reloop` y `advisors`: null si puede seguir, o el mensaje llano de por qué no.
 // Si sigue, anota la vuelta servida en la carpeta de la corrida (rethink/served.json). La corrida se busca como en el
 // resto del pipeline (`resolveRunDir`); sin story o sin carpeta no hay nota posible. Ante la duda, frena.
-function rethinkGate(args) {
+// `vueltaChica`: el re-loop ya calculó que desde la última vuelta sólo cambiaron textos. Esa vuelta pasa el tope sin firma
+// y no pide la nota de repensar: no es un arreglo que se repite.
+function rethinkGate(args, { vueltaChica = false } = {}) {
   const rt = require('./lib/rethink.js');
   // La vuelta que vale es la MAYOR entre la que declara quien llama, la que cuenta el marcador (las fotos de iteración
   // guardadas: la última + 1, o el `iter` que lleve alguna) y la de la propia carpeta de la corrida: si ya se sirvió alguna
@@ -6646,9 +6780,9 @@ function rethinkGate(args) {
   const ultimaLanzada = servidas.last > 0 && (!marcadorConStory || rr.lanzada(marcador, servidas.last));
   const iter = servidas.last > 0 ? Math.max(pedida, ultimaLanzada ? servidas.last + 1 : servidas.last) : pedida;
   // El tope de vueltas: más allá, sólo una vuelta extra que autorizó una persona.
-  const bloqueoDelTope = topeDeVueltas({ args, iter, rr, marcador, runDir, repoAbs, storyId });
+  const bloqueoDelTope = topeDeVueltas({ args, iter, rr, marcador, runDir, repoAbs, storyId, vueltaChica });
   if (bloqueoDelTope) return bloqueoDelTope;
-  if (iter >= rt.FIRST_ITER) {
+  if (iter >= rt.FIRST_ITER && !vueltaChica) {
     const dice = [];
     if (iter !== declarada) {
       dice.push(`Pediste la vuelta ${args.iter === undefined ? '(sin --iter)' : declarada}, pero ${iter === pedida
@@ -7079,7 +7213,7 @@ function writeFindings(args) {
       const lineas = [`Un crítico lo decide una persona: ${faltan.length} CRITICAL marcado(s) como waived sin el ok de una persona:`];
       lineas.push(...cw.renglonesDeFaltantes(rev));
       lineas.push('Arreglalo, o que el dev lo exima antes de escribir los hallazgos. Los caminos:');
-      for (const f of faltan) lineas.push(...cw.caminos({ marker, ruleId: f.rule_id, file: f.file || '<archivo>' }));
+      for (const f of cw.agrupar(faltan)) lineas.push(...cw.caminos({ marker, ruleId: f.rule_id, file: f.file || '<archivo>' }));
       return { error: lineas.join('\n'), criticos_sin_ok: faltan, run_dir: runDir,
         note: 'No se escribió nada: el findings.json se escribe entero o no se escribe.' };
     }
@@ -7706,12 +7840,13 @@ function main() {
     if (filesErr) { process.stderr.write(filesErr); process.exit(2); }
     const emptyWork = emptyWorkGate(args);
     if (emptyWork) { process.stderr.write(emptyWork); process.exit(2); }
-    const rethinkBlock = rethinkGate(args);
+    // el set se calcula antes del freno de vueltas: una vuelta chica (sólo textos) pasa el tope sin firma
+    const conModelos = conModelosDeLaCorrida(args);
+    const result = computeSmartReloop(conModelos);
+    const rethinkBlock = rethinkGate(args, { vueltaChica: result.mode === 'small-round' });
     if (rethinkBlock) { process.stderr.write(rethinkBlock); process.exit(3); }
     // el chequeo antes de la ventana termina en la firma (owner-window.js): si llegó acá sin pasar por ella, no dice que sí
     if (process.env[PRECHEQUEO] === '1') process.exit(0);
-    const conModelos = conModelosDeLaCorrida(args);
-    const result = computeSmartReloop(conModelos);
     const avisosModelos = result._avisos || [];
     // El descuento aplica también al subset rerun del re-loop. Sin poder leer los críticos de la corrida, no se descuenta.
     const pc = revisoresPorConfirmar(args);
@@ -7743,6 +7878,7 @@ function main() {
         const ambiguas = new Set(disc.mech_ambiguous_rules || []);
         const abiertos = [];
         for (const rule of cm.reglas) {
+          if (cm.conPruebaDelPase.includes(rule)) continue;
           if (!REGLAS_QUE_MECH_COMPRUEBA.has(rule)) abiertos.push({ rule, reason: 'mech-check no la evalúa: no la puedo comprobar sin un revisor' });
           else if (ambiguas.has(rule)) abiertos.push({ rule, reason: 'mech-check la deja ambigua: no la puedo comprobar sin un revisor' });
           else if (vivos(rule) > (cm.conDestino[rule] || 0)) abiertos.push({ rule, reason: 'findings.json lo da por arreglado y mech-check lo sigue reportando' });

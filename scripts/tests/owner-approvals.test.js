@@ -407,6 +407,28 @@ test('Click_OpcionesQueNoSonLasDelGuion_NoVale', (t) => {
   assert.deepStrictEqual(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), click(), { pregunta: PIDE, opciones: CUADRO.opciones }), { ok: true });
 });
 
+// La exención de comparación con main (Producto A, 20/11): la sesión mostró el cuadro con la pregunta y las etiquetas del
+// guion, pero con descripciones propias en cada opción. Sólo un cuadro de sólo click fija sus descripciones; éste no.
+test('T2 CompareWaiver_OwnDescriptions_ClickStillCounts — ni las descripciones propias ni dos preguntas en un cuadro invalidan el click', (t) => {
+  const casa = casaNueva(t);
+  const c = require('../lib/owner-window.js').cuadroPara({ firma: 'compare-waiver', palabras: ['marker.js', 'compare-waiver', '--story', '/r/stories/story-9.99.md',
+    '--command', 'ProdForms/build-form.js', '--reason', 'usa la red'], destino: 'ses-a', casa, sesion: 'ses-a' });
+  assert.ok(!c.error, c.error);
+  assert.strictEqual(c.descripciones, undefined, 'la exención no es de sólo click: no fija descripciones');
+  const conDescripciones = (preguntas) => ({ ...respuesta('toolu_1', { pregunta: c.pregunta, opciones: c.opciones }),
+    toolUseResult: { questions: preguntas, answers: { [c.pregunta]: 'Sí, aprobar' } } });
+  const mostrada = { question: c.pregunta, options: [{ label: c.opciones[0], description: 'Exime build-form.js de la comparación con main.' },
+    { label: c.opciones[1], description: 'No se exime; el commit queda frenado.' }] };
+  const unClick = { ...click(), pregunta: c.pregunta };
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1', c.pregunta), conDescripciones([mostrada])]);
+  const ctx = { pregunta: c.pregunta, opciones: c.opciones, descripciones: c.descripciones, sello: c.sello, casa };
+  assert.deepStrictEqual(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), unClick, ctx), { ok: true });
+  // las dos exenciones en un mismo cuadro: la respuesta va atada a su pregunta, así que el «Sí» a ésta cuenta
+  const otra = { ...mostrada, question: c.pregunta.replace('build-form.js', 'jest.config.cjs') };
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1', c.pregunta), conDescripciones([mostrada, otra])]);
+  assert.deepStrictEqual(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), unClick, ctx), { ok: true });
+});
+
 // La negativa por pregunta distinta deja dónde difería: sin eso, el click se pierde y nadie sabe por qué
 const OTRA_EN_57 = (p) => `${p.slice(0, 57)}${p[57] === 'X' ? 'Y' : 'X'}${p.slice(58)}`;
 const registroDeErrores = (casa) => path.join(require('../../skills/tycon-pipeline/scripts/lib/state-dir.js').stateDir(casa), 'hook-errors.log');
@@ -1313,4 +1335,72 @@ test('T13 GanchoDeAprobacion_AnotaElControlRemotoAlContestar @story-8.304 @ac-8'
   registroDeSesion(casa, {});
   assert.strictEqual(oa.leerSesion(casa, 'ses-r')[0].control_remoto, true);
   assert.strictEqual(conElProceso({ tipo: 'mensaje', sesion: 'ses-r', ts: DIEZ }, { pid: 100, inicio: 'x' }, casa).control_remoto, false);
+});
+
+// Un solo cuadro con varias firmas, una pregunta por firma con su texto y su código: cada respuesta vale para su firma, y
+// sólo para la suya. Cada pregunta se mira como si fuera un cuadro de una sola firma.
+test('CuadroConVariasFirmas_CadaRespuestaValeSoloParaLaSuya', (t) => {
+  const { registrosDe } = require('../hooks/owner-approval-record.js');
+  const A = CUADRO;
+  // cada firma con su texto: con el mismo, la pregunta de A con el código de B sería la de B
+  const conTexto = (firma, que, huella) => oa.cuadroDe({ firma, destino: 'ses-a', que, queHace: [`el comando: marker.js ${firma}`], siSaleMal: 'se revierte el commit', huella });
+  const B = conTexto('control-change', 'cambiar un control', 'ff00ff00');
+  const C = conTexto('extra-round', 'pedir otra vuelta de revisión', '0f0f0f0f');
+  const SI = 'Sí, aprobar';
+  const opcionesDe = (c) => c.opciones.map((label) => ({ label }));
+  // la salida real del cuadro: todas las preguntas, con sus opciones, y la respuesta de cada una
+  const salida = (pares, extra = {}) => ({ questions: pares.map(([c]) => ({ question: c.pregunta, options: opcionesDe(c) })),
+    answers: Object.fromEntries(pares.map(([c, op]) => [c.pregunta, op])), ...extra });
+  const multi = (id, s, { decision = { decision: 'accept', source: 'user_temporary' }, ts = hace(1) } = {}) => ({
+    type: 'user', timestamp: ts, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }] }, toolUseResult: s, permissionDecision: decision });
+  const evento = (s) => ({ hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', session_id: 'ses-a', tool_use_id: 'toolu_9', tool_response: s });
+  // la casa con la transcripción y lo que anotó el gancho; por firma, si buscar la da por aprobada
+  const pasar = (s, { respuestaDe = multi } = {}) => {
+    const casa = casaNueva(t);
+    transcripcion(casa, 'ses-a', [cuadro('toolu_9', A.pregunta, hace(2)), respuestaDe('toolu_9', s)]);
+    for (const r of registrosDe(evento(s), { ahora: AHORA - 60000 })) oa.anotar(casa, r);
+    return [A, B, C].map((c) => {
+      const r = oa.buscar({ casa, sesion: 'ses-a', cuadro: c, ahora: AHORA });
+      if (r.ok) assert.ok(oa.consumir(casa, r.aprobacion, { ahora: AHORA, firma: c.sello, sesion: 'ses-a' }).ok, 'cada aprobación se usa una vez');
+      return r.ok;
+    });
+  };
+
+  // las tres aprobadas en un cuadro: las tres cuentan, cada una con su propio renglón
+  const todas = salida([[A, SI], [B, SI], [C, SI]]);
+  assert.strictEqual(registrosDe(evento(todas), { ahora: AHORA }).length, 3, 'un renglón por pregunta aprobada');
+  assert.deepStrictEqual(pasar(todas), [true, true, true]);
+
+  // una aprueba y otra rechaza: sólo cuenta la aprobada
+  assert.deepStrictEqual(pasar(salida([[A, SI], [B, 'No'], [C, SI]])), [true, false, true]);
+
+  // el código de B puesto en la pregunta de A (el texto de una firma con el código de otra): no es la de ninguna
+  const cruzada = A.pregunta.replace(A.sello, B.sello);
+  const alReves = B.pregunta.replace(B.sello, A.sello);
+  assert.ok(![A.pregunta, B.pregunta].includes(cruzada) && ![A.pregunta, B.pregunta].includes(alReves));
+  const conCruce = { questions: [{ question: cruzada, options: opcionesDe(A) }, { question: alReves, options: opcionesDe(B) }, { question: C.pregunta, options: opcionesDe(C) }],
+    answers: { [cruzada]: SI, [alReves]: SI, [C.pregunta]: SI } };
+  assert.deepStrictEqual(pasar(conCruce), [false, false, true]);
+
+  // una respuesta «Other» con texto libre que no aprueba: no cuenta
+  assert.deepStrictEqual(pasar(salida([[A, 'Sí, pero cambiá el título'], [B, SI]])), [false, true, false]);
+
+  // lo que se exige a un cuadro de una firma se exige igual: contestado por un gancho, de otra hora, resuelto por ausencia
+  // o con una pregunta sin contestar, no cuenta ninguna
+  const GANCHO = { decision: 'accept', source: 'hook', reasonType: 'hook' };
+  assert.deepStrictEqual(pasar(todas, { respuestaDe: (id, s) => multi(id, s, { decision: GANCHO }) }), [false, false, false]);
+  assert.deepStrictEqual(pasar(todas, { respuestaDe: (id, s) => multi(id, s, { ts: hace(60) }) }), [false, false, false]);
+  assert.deepStrictEqual(pasar(salida([[A, SI], [B, SI]], { afkTimeoutMs: 60000 })), [false, false, false]);
+  assert.deepStrictEqual(pasar(salida([[A, SI], [B, SI]], { annotations: { [B.pregunta]: { unanswered: 'dismissed' } } })), [false, false, false]);
+
+  // el renglón anotado para A no sirve para B aunque se lo adultere: la transcripción dice qué contestó cada pregunta
+  const casa = casaNueva(t);
+  const s = salida([[A, SI], [B, 'No']]);
+  transcripcion(casa, 'ses-a', [cuadro('toolu_9', A.pregunta, hace(2)), multi('toolu_9', s)]);
+  const [deA] = registrosDe(evento(s), { ahora: AHORA - 60000 });
+  oa.anotar(casa, { ...deA, pregunta: B.pregunta });
+  assert.ok(!oa.buscar({ casa, sesion: 'ses-a', cuadro: B, ahora: AHORA }).ok, 'el «No» de B no se vuelve un «Sí»');
+
+  // una sola pregunta sigue como hoy
+  assert.deepStrictEqual(oa.respuestaDelCuadro({ answers: { [A.pregunta]: SI } }), { ok: true, pregunta: A.pregunta, respuesta: SI });
 });

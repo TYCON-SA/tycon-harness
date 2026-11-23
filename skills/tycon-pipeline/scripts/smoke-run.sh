@@ -74,6 +74,7 @@ fi
 
 ACS=""
 MUTATES=0
+ENTORNO=""
 # --compare (historia 8.167): además del humo de siempre, el comando se corre con main y con el cambio, aislados y sin
 # red, y el resultado queda en compare-previous.json de la corrida. --covers <archivo>[:<subcomando>],…: los
 # candidatos que cubre un humo que corre un laboratorio con {raiz}; va sólo con --compare.
@@ -100,6 +101,14 @@ while true; do
       fi
       ACS="$2"; shift 2 ;;
     --mutates) MUTATES=1; shift ;;
+    # Contra qué entorno corrió el humo (`staging`): un criterio con una prueba de Nivel `staging` lo pide para pasar a
+    # done. Va al registro y al espejo, como `--mutates`. Sólo minúsculas, números y guiones.
+    --environment)
+      if [ $# -lt 2 ] || ! [[ "$2" =~ ^[a-z][a-z0-9-]*$ ]]; then
+        echo "smoke-run.sh: --environment necesita el nombre del entorno en minúsculas (ej: --environment staging)" >&2
+        exit 2
+      fi
+      ENTORNO="$2"; shift 2 ;;
     --compare) COMPARE=1; shift ;;
     --covers)
       if [ $# -lt 2 ] || [ "$2" = "--" ]; then
@@ -259,7 +268,22 @@ GUARDAR_SALIDA=0
 # motivo; el código de salida y el resto, como siempre.
 MEASURES_JS="$(cd "$(dirname "$0")" && pwd)/lib/smoke-measures.js"
 reloj(){ [ -f "$MEASURES_JS" ] && node "$MEASURES_JS" clock 2>/dev/null; }
-trap '[ -n "$SALIDA_TMP" ] && rm -f "$SALIDA_TMP" "$SALIDA_TMP.rc"' EXIT
+# La entrada del humo comparado: un gancho lee su evento por la entrada, y sin ella la comparación mira sólo la entrada
+# vacía. Una entrada que viene de un archivo (`< evento.json`) se copia y la reciben el comando y los dos lados de la
+# comparación. Una tubería no se lee: si nunca se cierra, copiarla colgaría el humo; se dice que la comparación corre sin
+# entrada.
+ENTRADA_TMP=""
+if [ "$COMPARE" = 1 ]; then
+  if [ -f /dev/stdin ]; then
+    ENTRADA_TMP="$(mktemp "${TMPDIR:-/tmp}/smoke-run-entrada.XXXXXX" 2>/dev/null)" || ENTRADA_TMP=""
+    if [ -n "$ENTRADA_TMP" ] && cat > "$ENTRADA_TMP"; then exec 0< "$ENTRADA_TMP"
+    else echo "[smoke-run] ⚠️ no pude copiar la entrada: la comparación corre sin ella." >&2; ENTRADA_TMP=""; fi
+  # una tubería o un socket (Node pasa así `input:` en macOS): no se lee, se avisa
+  elif [ -p /dev/stdin ] || [ -S /dev/stdin ]; then
+    echo "[smoke-run] ⚠️ la entrada viene de una tubería o un socket: la comparación corre sin ella. Para compararla, pasala desde un archivo (< evento.json)." >&2
+  fi
+fi
+trap '[ -n "$SALIDA_TMP" ] && rm -f "$SALIDA_TMP" "$SALIDA_TMP.rc"; [ -n "$ENTRADA_TMP" ] && rm -f "$ENTRADA_TMP"' EXIT
 # Todo comando que lanza un humo lleva la marca de prueba: con ella el tablero y la designación de la coordinadora se
 # niegan a escribir el estado real (historia 8.314). La heredan también las corridas de la comparación.
 export TYCON_TEST_RUN=1
@@ -310,6 +334,7 @@ fi
 ACS_JSON="[$(echo "$ACS" | tr ',' '\n' | grep -E '^[0-9]+$' | paste -sd, -)]"
 MUT_FIELD=""
 if [ "$MUTATES" = "1" ]; then MUT_FIELD=',"mutates":true'; fi
+if [ -n "$ENTORNO" ]; then MUT_FIELD="$MUT_FIELD,\"environment\":\"$ENTORNO\""; fi
 
 # ── El `cmd` se TAPA antes de escribirlo ──
 # El ledger vive en `<repo>/.advisors/dod-runtime/`, que el .gitignore canónico deja VIAJAR por
@@ -436,6 +461,8 @@ echo "[smoke-run] story=$STORY_ID acs=$ACS exit=$EXIT mutates=$MUTATES → ledge
 # Después del humo de siempre, que es la evidencia: el comando con main y con el cambio, aislados. Su resultado no cambia
 # la salida de este humo; lo juzga «Preparar el commit».
 if [ "$COMPARE" = 1 ]; then
-  node "$COMPARE_JS" humo --covers "$COVERS" --cmd-json "$CMD_JSON" -- "$@" || echo "[smoke-run] ⚠️ la comparación no pudo correr: el humo queda sin comparar." >&2
+  CON_ENTRADA=()
+  [ -n "$ENTRADA_TMP" ] && CON_ENTRADA=(--stdin-file "$ENTRADA_TMP")
+  node "$COMPARE_JS" humo --covers "$COVERS" --cmd-json "$CMD_JSON" ${CON_ENTRADA[@]+"${CON_ENTRADA[@]}"} -- "$@" || echo "[smoke-run] ⚠️ la comparación no pudo correr: el humo queda sin comparar." >&2
 fi
 exit $EXIT

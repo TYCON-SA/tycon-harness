@@ -608,7 +608,7 @@ test('T21 CommentGuard_OnlyPublishedTree — en el repo del equipo no aplica; en
   }
 
   // el tramo del control del commit: sólo llama al freno si el repo trae su guion
-  assert.match(hookBlock(), /INTERNAL_HISTORY="\$REPO_ROOT\/scripts\/publishing\/internal-history\.js"/);
+  assert.match(hookBlock(), /INTERNAL_HISTORY="\$\{TCG:-\$REPO_ROOT\}\/scripts\/publishing\/internal-history\.js"/);
   const p = publicLab();
   stage(p.repo, { 'src/app.js': `// ${RED.date}\n` });
   const run = runHookBlock(p, { withGuard: false });

@@ -1001,3 +1001,18 @@ test('Regresion_ResultadosIlegibles_SeRegistran @story-8.234 @ac-27 — la carpe
     assert.ok(!sinCarpeta.some((l) => /actualización del sitio/.test(l)), 'sin la carpeta no hay nada que decir');
   } finally { try { fs.chmodSync(dir, 0o755); } catch { /* ya no está */ } fs.rmSync(raiz, { recursive: true, force: true }); }
 });
+
+// «esperando la huella» dice a qué hora vuelve a mirar el buzón (T52 de site-config.test.js mira el texto); acá, el número
+// con las fuentes de verdad: antes de leer no hay hora, y al arrancar es el reloj del sitio más `site.refresh_minutes`
+test('ProximaLectura_ConLasFuentesReales_EsElRelojMasLosMinutos @story-8.171 @ac-29', { skip: SIN_BACKEND }, async () => {
+  const config = { version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'], refresh_minutes: 20, mailbox: { provider: 'azure-blob', account: 'acmeruns', container: 'runs' } } };
+  const m = await montar({ config });
+  try {
+    assert.strictEqual(m.fuentes.proximaLectura(), null, 'antes de la primera lectura no hay hora');
+    m.fuentes.arrancar();
+    const desde = Date.now();
+    while (m.fuentes.proximaLectura() === null && Date.now() - desde < 20000) await new Promise((r) => setTimeout(r, 50));
+    assert.strictEqual(m.fuentes.estado().cargado, true);
+    assert.strictEqual(m.fuentes.proximaLectura(), T0 + 20 * 60000);
+  } finally { await m.cerrar(); }
+});

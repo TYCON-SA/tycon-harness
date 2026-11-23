@@ -1264,6 +1264,41 @@ function extra(por, ctx, cfg) {
     });
   });
 
+  // ── Lo rehecho al lado de lo entregado, mes por mes ─────────────────────────────
+  //
+  // Dos conteos del mismo mes, no un porcentaje: lo rehecho en un mes rehace entregas de otros meses. Sale del snapshot
+  // ya contado: las causas son las claves que trae el archivo del día, la que va aparte la nombra el propio archivo
+  // (`causa_aparte`) y el mes en curso es el que el archivo marca con `en_curso` — el tablero no usa su reloj.
+  // El número de la ficha es la suma de «rehechas sin deuda» de los meses de la serie.
+  m.rework_por_mes = desde(sdlc, (d) => {
+    const x = d.global && d.global.rework_por_mes;
+    if (!x || !Array.isArray(x.meses) || !x.meses.length) {
+      return noMedida('el snapshot no trae lo rehecho por mes: es de antes de que el medidor lo contara, o ningún repo lo pudo medir');
+    }
+    const aparte = typeof x.causa_aparte === 'string' ? x.causa_aparte : null;
+    const suma = (o) => Object.values(o || {}).reduce((a, n) => a + (Number.isFinite(n) ? n : 0), 0);
+    const filas = x.meses.map((f) => {
+      const r = f.rehechas || {};
+      const conteo = r.conteo || {};
+      const causas = Object.keys(conteo).map((k) => ({ clave: k, n: Number.isFinite(conteo[k]) ? conteo[k] : 0 }));
+      const deuda = aparte && Number.isFinite(conteo[aparte]) ? conteo[aparte] : 0;
+      const sinDeclarar = Number.isFinite(r.sin_declarar) ? r.sin_declarar : 0;
+      const fuera = suma(r.fuera_de_vocabulario);
+      const sinDeuda = suma(conteo) - deuda + sinDeclarar + fuera;
+      return { mes: String(f.mes), en_curso: f.en_curso === true, entregadas: Number.isFinite(f.entregadas) ? f.entregadas : 0,
+        causas, sin_declarar: sinDeclarar, fuera_de_vocabulario: fuera, deuda, sin_deuda: sinDeuda, con_deuda: sinDeuda + deuda };
+    });
+    const valor = filas.reduce((a, f) => a + f.sin_deuda, 0);
+    const fv = x.fuera_de_ventana || {};
+    return medida(valor, valor, valor, {
+      unidad: 'conteo',
+      den_etiqueta: `rehechas sin deuda en ${filas.length} meses · ${x.repos_medidos} de ${x.repos_total} repos`,
+      filas, causa_aparte: aparte,
+      sin_fecha: Number.isFinite(x.sin_fecha) ? x.sin_fecha : 0,
+      fuera_de_ventana: { entregadas: Number.isFinite(fv.entregadas) ? fv.entregadas : 0, rehechas: Number.isFinite(fv.rehechas) ? fv.rehechas : 0 },
+    });
+  });
+
   // ── El reproceso por CARRIL ─────────────────────────────────────────────────────
   // 🔴 La hipótesis y el mínimo se LEEN de `scripts/metrics/lane-hypothesis.json`, commiteado antes
   //    de mirar un número. Sin ese archivo (o con un mínimo que no es un entero ≥ 1) no se dibuja.
@@ -1457,6 +1492,33 @@ function barrasCausa(m) {
   }).join('')}</div>`;
 }
 
+/**
+ * La tabla de «lo rehecho al lado de lo entregado»: una fila por mes, con las entregadas, cada causa (menos la que va
+ * aparte), las sin declarar, las rehechas sin deuda, la deuda declarada en su columna y las rehechas con deuda. Las
+ * etiquetas se derivan de las claves, como en `barrasCausa`. La columna «fuera del vocabulario» aparece sólo si algún mes
+ * la tiene.
+ */
+function tablaPorMes(m) {
+  const fs = Array.isArray(m.filas) ? m.filas : [];
+  if (!fs.length) return '';
+  const legible = (k) => { const s = String(k).replace(/-/g, ' '); return s.charAt(0).toUpperCase() + s.slice(1); };
+  const claves = fs[0].causas.map((c) => c.clave).filter((k) => k !== m.causa_aparte);
+  const conFuera = fs.some((f) => f.fuera_de_vocabulario > 0);
+  const th = (t) => `<th>${esc(t)}</th>`;
+  const cab = [th('Mes'), th('entregadas'), ...claves.map((k) => th(legible(k))), th('Sin declarar'),
+    ...(conFuera ? [th('Fuera del vocabulario')] : []), th('rehechas sin deuda'),
+    ...(m.causa_aparte ? [th(legible(m.causa_aparte))] : []), th('rehechas con deuda')].join('');
+  const filas = fs.map((f) => {
+    const n = (k) => { const c = f.causas.find((x) => x.clave === k); return c ? c.n : 0; };
+    const td = (col, v) => `<td data-col="${col}">${v}</td>`;
+    return `<tr class="mes-fila" data-mes="${esc(f.mes)}"><td>${esc(f.mes)}${f.en_curso ? ' · en curso' : ''}</td>`
+      + td('entregadas', f.entregadas) + claves.map((k) => td(esc(k), n(k))).join('') + td('sin-declarar', f.sin_declarar)
+      + (conFuera ? td('fuera', f.fuera_de_vocabulario) : '') + td('sin-deuda', f.sin_deuda)
+      + (m.causa_aparte ? td('deuda', f.deuda) : '') + td('con-deuda', f.con_deuda) + '</tr>';
+  }).join('');
+  return `<table class="por-mes"><thead><tr>${cab}</tr></thead><tbody>${filas}</tbody></table>`;
+}
+
 function filaFuente(f) {
   const est = !f.leida ? 'bad' : !f.vigente ? 'warn' : 'ok';
   const palabra = !f.leida ? 'no se pudo leer' : !f.vigente ? 'dato viejo' : 'al día';
@@ -1588,6 +1650,21 @@ function render(d) {
       + (fuera ? ` Fuera del vocabulario: ${fuera} — se publican con su nombre, no se cuentan como causa.` : '');
   })();
 
+  // ── el pie de «lo rehecho al lado de lo entregado» ──────────────────────────────
+  // La tabla va en el pie por la misma razón que las barras de la ficha anterior. Sin medir, el pie es vacío: una tabla
+  // de ceros se leería como «no se rehizo nada».
+  const pieMes = (() => {
+    const c = E.rework_por_mes;
+    if (!c || c.estado !== 'medido') return null;
+    const fv = c.fuera_de_ventana;
+    return `${tablaPorMes(c)}<b>Son dos conteos del mismo mes; no es un porcentaje:</b> lo rehecho en un mes rehace entregas de otros meses. `
+      + 'La entrega cuenta en el mes en que se cerró; la rehecha, en el mes en que se escribió. '
+      + '<b>La señal a mirar, fila por fila: cambio-de-requisito subiendo mientras defecto-propio baja.</b> '
+      + (c.causa_aparte ? `La ${esc(c.causa_aparte.replace(/-/g, ' '))} va en su columna y no suma a «rehechas sin deuda»: es el plan funcionando. ` : '')
+      + `${c.sin_fecha} sin fecha (su historial no se pudo leer entero) y ${fv.entregadas + fv.rehechas} fuera de la ventana `
+      + `(${fv.entregadas} entregadas y ${fv.rehechas} rehechas fechadas antes del primer mes o después del último): no entran a ninguna fila.`;
+  })();
+
   // ── trabajo contra espera, al pie de la ficha de la corrida ───────────────────────
   const te = L.trabajo_espera;
   const pieTiempos = !te ? null : te.estado !== 'medido'
@@ -1623,6 +1700,9 @@ ${CSS_BASE}
 .causa-barra .cn{color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .causa-barra .cb{height:9px;background:var(--line);border-radius:5px;overflow:hidden}
 .causa-barra .cb i{display:block;height:100%;background:var(--accent);border-radius:5px}
+.por-mes{margin-top:10px;border-collapse:collapse;font-size:11.5px;font-variant-numeric:tabular-nums;width:100%;display:block;overflow-x:auto}
+.por-mes th,.por-mes td{padding:3px 6px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+.por-mes th:first-child,.por-mes td:first-child{text-align:left}.por-mes th{color:var(--ink-3);font-weight:500}
 .causa-barra.sd .cb i{background:repeating-linear-gradient(45deg,var(--ink-3),var(--ink-3) 3px,transparent 3px,transparent 6px)}
 .causa-barra .cv{text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--ink)}
 ${CSS_CHIPS}
@@ -1687,6 +1767,7 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-si
     ${F('dod', 'Cierres que dejaron prueba de que la cosa anda corriendo', M.dod, pct, { bad: 'rojo', warn: 'atención', ok: 'bien' }, E.repos_en_cero_dod && E.repos_en_cero_dod.estado === 'medido' && E.repos_en_cero_dod.valor > 0 ? `<b>${E.repos_en_cero_dod.valor} de ${E.repos_en_cero_dod.total} repos en cero</b>: ${esc(E.repos_en_cero_dod.detalle)}. No es que estén rotos: es que de esos cierres no queda constancia.` : null)}
     ${F('rework', 'Lo que vuelve: stories con un seguimiento posterior', M.rework, pct, { bad: 'concentrado', warn: 'atención', ok: 'bien' }, reworkTop ? `Los que más vuelven: ${reworkTop}.` : null)}
     ${F('', 'Por qué volvió: defecto nuestro contra cambio de requisito', E.rework_por_causa, entero, {}, pieCausas)}
+    ${F('', 'Lo rehecho al lado de lo entregado, mes por mes', E.rework_por_mes, entero, {}, pieMes)}
     ${F('', '¿Vuelve menos lo que pasó por el pipeline? Por repo, con ejecución contra sin constancia', E.rework_por_carril, entero, {}, `La hipótesis y el mínimo por grupo se escribieron <b>antes</b> de mirar un número (<code>scripts/metrics/lane-hypothesis.json</code>) y el resultado se publica aunque salga en contra del pipeline. «Sin constancia» no quiere decir «a mano»: una ejecución que no se guardó en el repo cae ahí. Nunca se suma entre productos.`)}
     ${F('', dInc && dInc.titulo ? dInc.titulo : 'Incidentes de producción detectados por una máquina', dInc, entero, {}, 'Es un dato <b>declarado</b> por una persona, no producido por un registro: se muestra, no se juzga, y vence.')}
   </div>

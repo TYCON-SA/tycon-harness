@@ -185,6 +185,8 @@ test('T1b Pedido_NumeroEnLasFormasDeAz_YSinNumeroNoFrena: un pedido creado no es
     ['pullRequestId 6758 active\n', 6758],
     [JSON.stringify({ id: 6788, draft: true, status: 'active' }, null, 2), 6788],
     ['6756\n', 6756],
+    // el caso del 21/11 (pedido 6913): `git rev-parse --short … && az repos pr create … --query pullRequestId -o tsv`
+    ['1f131d0\n6913\n', 6913],
     [`cat: /tmp/x/pr-body.md: No such file or directory\n${JSON.stringify({ id: 6778, merge: 'succeeded', status: 'active' }, null, 2)}`, 6778],
   ];
   for (const [salida, numero] of formas) {

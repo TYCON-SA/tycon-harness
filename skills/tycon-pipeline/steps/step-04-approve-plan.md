@@ -60,16 +60,25 @@ aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
 4. **Los cuatro resultados.**
    - **4a. Aprobado** (o aprobado con notas), en una story de rutina con `plan_review.routine_approval: review`. Con
      coordinadora y `plan-approval` delegado, ella firma `complete-step approve-plan --for-session <sesión> --approved
-     "<la revisión>"` (vía `review` en el registro de firmas) y al dueño no le llega nada. Sin coordinadora, la sesión
+     revisión` (vía `review` en el registro de firmas) y al dueño no le llega nada. El texto de la aprobación lo arma el
+     arnés con quién lanzó la revisión y su veredicto: por la revisión, cualquier otro texto en `--approved` se rechaza,
+     porque podría atribuir una firma que nadie dio. Sin coordinadora, la sesión
      cierra con `complete-step approve-plan` sin `--approved`: el guion vuelve a comprobar la revisión (la misma corrida,
      la misma huella del plan, de la story y de la parte) y aprueba sin click, a nombre de «revisión automática»; si el
      plan cambió después de la revisión, frena y hay que volver a lanzarla. Con `person`, sin delegación o en una
      delicada, le llega al dueño con «revisado, sin hallazgos» (o con sus notas).
    - **4b. Rechazado.** `pipeline.js next` le muestra los hallazgos a la sesión (`plan_review`). La sesión corrige el
-     plan y lo vuelve a cerrar, y la revisión vuelve a correr. No llega al dueño mientras siga rechazado, salvo con
+     plan y lo vuelve a cerrar, y la revisión vuelve a correr. Si el hallazgo pide corregir la historia y el arreglo es
+     técnico (las pruebas, las tareas, las notas de desarrollo o la lista de archivos del encabezado), no se vuelve a
+     «Validar la historia»: la vuelta siguiente ve el cambio y, si aprueba, deja las constancias de validación y de
+     revisión adversarial al día (`lib/story-revalidation.js`). Un criterio o lo que la historia hace sí vuelven a
+     validarse completos. No llega al dueño mientras siga rechazado, salvo con
      `plan_review.rejected_reaches_owner` en sí o al llegar al tope de rechazos seguidos (`review.max_rounds`, de
      fábrica 3): entonces llega con los hallazgos y «rechazado N veces seguidas», y el dueño decide partir la historia o
-     firmar una vuelta extra.
+     firmar una vuelta extra. Un plan delicado con su revisión en rechazo no se aprueba por la delegación, por la
+     terminal ni con un «aprobado» escrito: se corrige el plan y la revisión vuelve a correr. Sólo el dueño puede
+     aprobarlo igual, con su click en el cuadro; el texto lo arma el arnés («rechazo vencido por decisión de la persona, con su click», con
+     el veredicto que se pisa).
    - **4c. Sin veredicto.** Llega al dueño con «no se pudo revisar: <motivo>». Si el motivo es que el plan o la historia
      cambiaron mientras corría, se reintenta una sola vez sobre el plan cerrado; la segunda vez llega al dueño. No se
      relanza por cada cambio: se juntan todos, y se relanza cuando el plan y la historia quedaron como van a quedar.
@@ -91,9 +100,9 @@ aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
 **Un plan delicado espera al dev.** `pipeline.js risk-class --story <story_path>` dice si la story es **delicada**
 (`delicate`): rutas sensibles en la story o en el plan, la superficie compartida, producción, el portón de CI, el
 instalador, una migración, la constancia de controles, o `sensible:` en el frontmatter; en duda, delicada. Su plan es
-nivel 2: lo aprueba el dev, también de noche. La revisión corre sobre él, pero sólo ataca y avisa. La única salida sin
-el dev: el perfil del equipo delega `plan-approval:delicada`, y entonces lo aprueba la coordinadora con el «aprobado» de
-la revisión que ella lanzó sobre ese mismo plan (nunca la revisión de la propia sesión).
+nivel 2: lo aprueba el dev con su click o su «aprobado», también de noche, y su maqueta lo mismo. La revisión corre
+sobre él, pero sólo ataca y avisa. No hay salida sin el dev: ni la coordinadora, ni la firma de trámite, ni la revisión
+de la propia sesión, aunque el perfil nombre `plan-approval:delicada`.
 
 **El cuadro de la firma dice el resultado.** La pregunta de `plan-approval` trae una línea «Revisión automática: …» con
 el resultado de la revisión de ese mismo plan, y si el plan cambió después, que la revisión es de otra versión.
@@ -190,17 +199,27 @@ compara lo construido contra ella.
    capa. Sólo la contradice una story que diga literalmente «en la página» o «no modal»; entonces se
    corrige la maqueta y se aprueba de nuevo. Palabras como «panel» o «sección» no la contradicen: un panel puede abrirse
    encima. La prueba en vivo lo comprueba (capa 12).
-3. **Presentarla con el plan, en el chat**: la ruta del archivo y la lista de `mockup.js texts <ruta>` por pantalla. El
-   navegador puede no abrirse (sesión remota, Linux sin escritorio, la jaula de Codex) o estar en otra máquina: la lista
-   en el chat es lo que se aprueba seguro.
-4. **La pregunta**: va en el mismo momento que la del plan. Con `AskUserQuestion` si está; sin ella (Codex), en texto
+3. **Mirarla antes de mostrarla**: `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/mockup.js shots <ruta>`
+   la abre con el navegador sin pantalla del arnés (el Playwright fijado, `scripts/lib/pinned-playwright.js`) a 1440 y a
+   390 px. Guarda una captura de cada ancho al lado de la maqueta (`<clave>-mockup-1440.png`, `<clave>-mockup-390.png`) y
+   un informe (`<clave>-mockup-review.json`). Busca textos que se pisan, una página más ancha que la ventana y palabras
+   partidas. Con un hallazgo sale 1: se arregla el modelo y se vuelve a mirar. «Aprobar el plan» no cierra sin el
+   informe de esa misma maqueta y sin hallazgos. Sin el Playwright fijado sale 2 y lo dice: se instala con
+   `node scripts/lib/pinned-playwright.js install`. Lo nuevo se marca con fondo y borde de zona, y lo explica la
+   leyenda de arriba; nada se dibuja encima del contenido.
+4. **Presentarla con el plan, en el chat**: **las dos capturas, mandadas a la conversación de quien aprueba** (no sólo
+   su ruta), la ruta del archivo y la lista de `mockup.js texts <ruta>` por pantalla. El navegador puede no abrirse
+   (sesión remota, Linux sin escritorio, la jaula de Codex) o estar en otra máquina: las capturas y la lista en el chat
+   son lo que se aprueba seguro.
+5. **La pregunta**: va en el mismo momento que la del plan. Con `AskUserQuestion` si está; sin ella (Codex), en texto
    con opciones numeradas: «1. Apruebo la maqueta · 2. Cambiá esto: … · 3. Cancelar». Aunque el riesgo sea LOW,
    la respuesta sobre la maqueta se espera igual.
-5. **Quién la aprueba**: quien aprueba el plan. Es el dueño o, si el dueño dejó el modo autónomo, quien tenga su
+6. **Quién la aprueba**: quien aprueba el plan. Es el dueño o, si el dueño dejó el modo autónomo, quien tenga su
    **delegación** (la coordinadora). La cita dice quién aprobó y por qué vía, por ejemplo «aprobada por la
    coordinadora, por delegación del dueño». El guion no valida quién es: la cita es la constancia.
-6. **Cierre**: `complete-step approve-plan --approved "<cita del plan>" --mockup-approved "<cita de la maqueta>"`. Sin la maqueta, con una maqueta que no pasa
-   `mockup.js check`, o sin `--mockup-approved`, «Aprobar el plan» no cierra. Queda la huella en el marcador y en
+7. **Cierre**: `complete-step approve-plan --approved "<cita del plan>" --mockup-approved "<cita de la maqueta>"`. Sin la maqueta, con una maqueta que no pasa
+   `mockup.js check`, sin su revisión con navegador limpia (`mockup.js shots`), o sin `--mockup-approved`, «Aprobar el
+   plan» no cierra. Queda la huella en el marcador y en
    `<clave>-mockup-approval.json` (sin la cita), que va en el commit con la maqueta.
 
 Si la maqueta cambia después (un arreglo de legibilidad cambió un texto), se le muestra de nuevo a quien la aprueba y
@@ -286,8 +305,9 @@ Antes de presentar el plan, con cualquier stack:
 ```bash
 # HITL — el user aprobó con palabras claras de proceder:
 node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step approve-plan --approved "<cita textual de la aprobación>"
-# La coordinadora, para otra sesión, sólo con el «aprobado» de su revisión automática (§Quién aprueba el plan):
-node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step approve-plan --for-session <sesión> --approved "<la revisión>"
+# La coordinadora, para otra sesión, sólo con el «aprobado» de su revisión automática (§Quién aprueba el plan). El texto
+# de la aprobación lo arma el arnés; otro texto en --approved se rechaza:
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step approve-plan --for-session <sesión> --approved revisión
 # Story con pantalla: además la aprobación de la maqueta (§La maqueta):
 #   … --mockup-approved "<cita: quién aprobó la maqueta y por qué vía>"
 ```

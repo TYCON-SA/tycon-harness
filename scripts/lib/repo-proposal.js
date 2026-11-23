@@ -47,6 +47,7 @@ const TEXTOS = {
   'rp.sinPolitica': { es: 'el repo no tiene una política que pida revisión en {rama}: sin ella, la identidad del sitio podría escribir {rama}', en: 'the repo has no policy that requires review on {rama}: without it, the site\'s identity could write to {rama}' },
   'rp.autorAprueba': { es: 'la política de {rama} deja que quien crea el pull request lo apruebe, y el pull request lo crea la identidad del sitio: apagá «Allow requestors to approve their own changes» en esa política', en: "the policy of {rama} lets the request's creator approve it, and the request is created by the site's identity: turn off \"Allow requestors to approve their own changes\" in that policy" },
   'rp.noCubre': { es: 'la política de {rama} no cubre {archivo}: su filtro de ruta no lo incluye, y sin revisión la identidad del sitio podría completar el pull request', en: 'the policy of {rama} does not cover {archivo}: its path filter does not include it, and without review the site\'s identity could complete the request' },
+  'rp.seCompletaSolo': { es: 'Aprobado por el sitio. La plataforma todavía está evaluando la revisión: el pull request se completa solo cuando termine de evaluar, sin saltear ninguna política. {enlace}', en: 'Approved by the site. The platform is still evaluating the review: the pull request completes on its own when it finishes, without bypassing any policy. {enlace}' },
   'rp.sinEvaluar': { es: 'No se pudo aplicar solo: la plataforma todavía no terminó de evaluar la revisión después del voto del sitio. El pull request queda para aprobar: {enlace}', en: "It could not be applied automatically: the platform has not finished evaluating the review after the site's vote. The request is waiting for approval: {enlace}" },
   'rp.pideMas': { es: 'No se pudo aplicar solo: además del voto del sitio, la rama principal pide {nombres}. El pull request queda para aprobar: {enlace}', en: "It could not be applied automatically: in addition to the site's vote, the main branch requires {nombres}. The request is waiting for approval: {enlace}" },
   'rp.aplicado': { es: 'Aplicado: el cambio entró en la rama principal. Pull request: {enlace}', en: 'Applied: the change went into the main branch. Request: {enlace}' },
@@ -544,8 +545,13 @@ async function aplicarPedido({ remote, cred, urlBase, fetch: f, secretos, pedido
     soloRevisores = pendientes.length > 0 && pendientes.every((e) => ['queued', 'running'].includes(e.status) && [TIPO_REVISORES_AZURE, TIPO_REQUERIDOS_AZURE].includes(((e.configuration || {}).type || {}).displayName));
     if (!soloRevisores) break;
   }
-  // la revisión todavía evaluándose no es «la rama pide algo más»: puede ser sólo lentitud
-  if (soloRevisores) return { ok: true, codigo: 'no_aplica_solo', rama, enlace, message: M('rp.sinEvaluar', { enlace }) };
+  // la revisión todavía evaluándose no es «la rama pide algo más»: puede ser sólo lentitud. El sitio deja prendido el
+  // completar automático de la plataforma, que espera a que se cumplan todas las políticas (sin saltear ninguna)
+  if (soloRevisores) {
+    const auto = await llamar({ method: 'PATCH', url: `${rutaPedido}?${API_AZURE}`, remote, cred, fetch: f, secretos, cuerpo: { autoCompleteSetBy: { id: pedido.creador }, completionOptions: { deleteSourceBranch: true, mergeCommitMessage: `${titulo} (aplicado por el sitio)` } } });
+    if (auto.status !== 200) return { ok: true, codigo: 'no_aplica_solo', rama, enlace, message: M('rp.sinEvaluar', { enlace }) };
+    return { ok: true, codigo: 'no_aplica_solo', autoCompletar: true, rama, enlace, message: M('rp.seCompletaSolo', { enlace }) };
+  }
   if (pendientes.length) {
     const nombres = [...new Set(pendientes.map((e) => ((e.configuration || {}).type || {}).displayName || 'una política sin nombre'))];
     return { ok: true, codigo: 'no_aplica_solo', rama, enlace, message: M('rp.pideMas', { nombres: nombres.map((x) => `«${x}»`).join(', '), enlace }) };

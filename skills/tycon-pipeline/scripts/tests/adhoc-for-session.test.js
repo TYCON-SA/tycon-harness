@@ -5,8 +5,9 @@
 // La coordinadora pide `adhoc set --for-session S` desde su propia carpeta. La lista va en rutas relativas (la lista no
 // acepta absolutas), y se resolvían contra la carpeta de la coordinadora: el carril quedaba con archivos que S nunca
 // toca. Ahora se resuelven contra la carpeta de trabajo de S, que sale de su transcripción (el `cwd` del último renglón
-// que lo trae); sin ella, el pedido sale 2. La terminal de una persona y el pedido de la propia sesión siguen con la
-// carpeta del proceso. El freno mira el riesgo alto de la lista con la misma carpeta.
+// que lo trae); sin ella, el pedido sale 2. El pedido de la propia sesión sigue con la
+// carpeta del proceso; la terminal con --for-session de otra sesión, la de esa sesión (o frena y pide --repo). El freno
+// mira el riesgo alto de la lista con la misma carpeta.
 //
 // Corre el guion real en una HOME de juguete, en el chequeo previo (no firma ni escribe nada).
 //
@@ -105,7 +106,7 @@ test('T4 AdhocSet_ForSession_UnknownFolder_Exit2 @story-8.276 @ac-5', () => {
     assert.strictEqual(LISTA.carpetaDeLaSesion({ casa: E.home, sesion: sid }), null, sid);
     const r = E.pedir(E.ajena, 'ses-coord', ['--file', 'a/b.js', '--for-session', sid]);
     assert.strictEqual(r.status, 2, `${sid}: ${r.stderr}`);
-    assert.match(r.stderr, new RegExp(`no sé la carpeta de la sesión ${sid}: que lo pida esa sesión, o una persona desde su terminal en esa carpeta`), sid);
+    assert.match(r.stderr, new RegExp(`no sé la carpeta de la sesión ${sid}: que lo pida esa sesión, o pedilo con --repo <carpeta>`), sid);
     assert.doesNotMatch(r.stderr, /la lista \(/, `${sid}: sin lista`);
     assert.doesNotMatch(r.stdout, /tycon-sign-precheck: ok/, sid);
   }
@@ -134,4 +135,50 @@ test('T5 AdhocSet_AbsoluteOrOwnSession_AsToday @story-8.276 @ac-6 @ac-7', () => 
   const fuera = E.pedir(E.ajena, 'ses-sola', ['--file', 'a/b.js']);
   assert.strictEqual(fuera.status, 0, fuera.stderr);
   assert.match(fuera.stderr, SIN_REPO);
+});
+
+test('T6 AdhocSet_TerminalForSession_AnchorsInSessionFolder', () => {
+  const E = entorno();
+  E.transcripcion('ses-d', [{ type: 'user', cwd: E.destino }]);
+  // la terminal de la persona, sin sesión propia, parada en otra carpeta: la lista cae en la carpeta de la sesión destino
+  const terminal = (cwd, args) => E.pedir(cwd, null, [...args, '--terminal']);
+  const r = terminal(E.ajena, ['--file', 'a/b.js', '--for-session', 'ses-d']);
+  assert.strictEqual(r.status, 0, r.stderr + r.stdout);
+  assert.match(r.stdout, /tycon-sign-precheck: ok/);
+  assert.doesNotMatch(r.stderr, SIN_REPO, 'anclada en la carpeta de la terminal');
+  assert.match(r.stderr, /la lista \(1 archivos\): a\/b\.js/);
+  // la carpeta de la sesión manda aunque la terminal esté en otro repo que también tiene ese archivo
+  const otro = path.join(path.dirname(E.destino), 'otro-repo');
+  fs.mkdirSync(path.join(otro, 'a'), { recursive: true });
+  fs.writeFileSync(path.join(otro, 'a', 'b.js'), '1\n');
+  execFileSync('git', ['init', '-q', otro]);
+  assert.strictEqual(ow.carpetaDelPedido({ palabras: [MARKER, 'adhoc', 'set', '{}', '--terminal', '--for-session', 'ses-d'], cwd: otro, casa: E.home, sesion: null }), E.destino);
+  // sesión sin carpeta conocida (id inventado, ajena sin transcripción): frena y pide --repo, nunca la de la terminal
+  for (const cwd of [E.ajena, E.destino]) {
+    const x = terminal(cwd, ['--file', 'a/b.js', '--for-session', 'ses-inventada']);
+    assert.strictEqual(x.status, 2, x.stderr + x.stdout);
+    assert.match(x.stderr, /no sé la carpeta de la sesión ses-inventada: .*--repo <carpeta>/);
+    assert.doesNotMatch(x.stderr, /la lista \(/);
+    assert.doesNotMatch(x.stdout, /tycon-sign-precheck: ok/);
+  }
+  // la carpeta de la sesión ya no existe: frena igual, sin caer en la de la terminal
+  const borrada = path.join(path.dirname(E.destino), 'borrada');
+  E.transcripcion('ses-borrada', [{ type: 'user', cwd: borrada }]);
+  const b = terminal(E.destino, ['--file', 'a/b.js', '--for-session', 'ses-borrada']);
+  assert.strictEqual(b.status, 2, b.stderr + b.stdout);
+  assert.match(b.stderr, /no sé la carpeta de la sesión ses-borrada \(la última que usó, .*borrada, ya no es una carpeta que se pueda abrir\): .*--repo <carpeta>/);
+  assert.doesNotMatch(b.stderr, /la lista \(/);
+  // --repo manda aunque la sesión tenga carpeta conocida: la lista queda en el repo dicho, no en el de la sesión
+  fs.mkdirSync(path.join(otro, 'solo-aca'), { recursive: true });
+  fs.writeFileSync(path.join(otro, 'solo-aca', 'c.js'), '1\n');
+  // en la carpeta de la sesión ese nombre es una carpeta: resuelta ahí, la lista se negaría
+  fs.mkdirSync(path.join(E.destino, 'solo-aca', 'c.js'), { recursive: true });
+  const gana = terminal(E.ajena, ['--file', 'solo-aca/c.js', '--for-session', 'ses-d', '--repo', otro]);
+  assert.strictEqual(gana.status, 0, gana.stderr + gana.stdout);
+  assert.doesNotMatch(gana.stderr, /es una carpeta|no caen dentro/, 'resuelta contra la carpeta de la sesión, no contra --repo');
+  assert.match(gana.stderr, /la lista \(1 archivos\): solo-aca\/c\.js/);
+  // con --repo, la carpeta dicha manda, como hoy
+  const conRepo = terminal(E.ajena, ['--file', 'a/b.js', '--for-session', 'ses-inventada', '--repo', E.destino]);
+  assert.strictEqual(conRepo.status, 0, conRepo.stderr + conRepo.stdout);
+  assert.doesNotMatch(conRepo.stderr, SIN_REPO);
 });
