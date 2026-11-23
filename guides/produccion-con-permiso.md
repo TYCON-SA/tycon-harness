@@ -26,7 +26,13 @@ Dos causas, y las dos se arreglan con lo mismo:
 - **Un freno** prohíbe todo otro camino a esa base: `sqlcmd` directo, `az sql`, una cadena de
   conexión, leer la clave del Llavero, escribir el catálogo, o invocar la puerta de cualquier forma
   que no sea la canónica. También mira adentro de los guiones que el comando corre, aunque ya
-  estuvieran en el disco, y de lo que corren `npm run` y `make`.
+  estuvieran en el disco, y de lo que corren `npm run` y `make`. Nombrar la puerta para leerla o buscarla
+  (`cat`, `grep`, `less`, `git log`) no es invocarla; con un programa que puede correrla sí lo es: `find -exec`,
+  `rg --pre`, `sort --compress-program`, `git -c core.pager=…` o un subcomando de git que corre algo (`difftool`,
+  `rebase --exec`, `grep -O`), `less +!…`, `awk`, `sed`, `open`, una variable delante del programa que no sea de
+  idioma, zona o colores (`GIT_PAGER=<programa>`), `env -S` o `time -p` con la puerta, un `$( … )` que la corre
+  (`echo "$(<puerta> …)"`), un `<( … )` o `>( … )`, o un tubo a algo que no es un lector (`| sh`, `| xargs`,
+  `| python3`, `| awk`). Para leerla, `cat`, `head`, `grep` o `git show`; `sed` y `awk` no.
 - **Un catálogo por proyecto** (`<repo>/.tycon/production.json`) dice qué servidores son de
   producción. **Lo que nadie declaró se trata como producción**, así que un servidor nuevo se frena
   hasta que alguien lo declare.
