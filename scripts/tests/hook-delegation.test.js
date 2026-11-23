@@ -24,6 +24,14 @@ const { spawnSync } = require('child_process');
 
 const RAIZ = path.resolve(__dirname, '..', '..');
 const HOOK = path.join(RAIZ, '.githooks', 'pre-commit-checks');
+/** ¿El gancho de `raiz` es la copia propia de otro repo? Lo declara su `.tycon/internal-forms.json` (`own`). */
+function copiaPropiaEn(raiz) {
+  try { const f = JSON.parse(fs.readFileSync(path.join(raiz, '.tycon', 'internal-forms.json'), 'utf8')); return Boolean(f && f.own && f.own['.githooks/pre-commit-checks']); } catch { return false; }
+}
+// En el árbol armado de la CI del privado, el gancho de la raíz es la copia propia del privado: el gancho público no
+// está, y lo prueba la CI del público. Las pruebas del gancho público lo dicen en vez de leer la copia
+const SIN_GANCHO_PUBLICO = copiaPropiaEn(RAIZ)
+  && 'NO MEDIDO: en este árbol el gancho es la copia propia de otro repo (.tycon/internal-forms.json); el gancho público lo prueba la CI del público';
 const RBC = path.join(RAIZ, 'scripts', 'ci', 'run-base-controls.sh');
 const ENV = {
   ...process.env,
@@ -66,7 +74,7 @@ function correHook(cwd, hook, env) {
   return { status: r.status, out: `${r.stdout || ''}${r.stderr || ''}` };
 }
 
-test('PublicHook_ChecksOnly_RunsOnlyRequested', () => {
+test('PublicHook_ChecksOnly_RunsOnlyRequested', { skip: SIN_GANCHO_PUBLICO }, () => {
   const arnes = tmpdir('delegacion-arnes-');
   put(arnes, 'scripts/ci/tool-names.js', marca('tool-names-arnes', 1));
   put(arnes, 'scripts/ci/vocabulary.js', marca('vocabulary-arnes'));
@@ -94,7 +102,7 @@ test('PublicHook_ChecksOnly_RunsOnlyRequested', () => {
   assert.deepStrictEqual(marcas(m), ['vocabulary-arnes']);
 });
 
-test('PublicHook_ChecksOnly_UnknownControlBlocks', () => {
+test('PublicHook_ChecksOnly_UnknownControlBlocks', { skip: SIN_GANCHO_PUBLICO }, () => {
   const arnes = tmpdir('delegacion-arnes-');
   put(arnes, 'scripts/ci/vocabulary.js', marca('vocabulary-arnes'));
   const m = path.join(tmpdir('delegacion-marcas-'), 'marcas');
@@ -105,7 +113,7 @@ test('PublicHook_ChecksOnly_UnknownControlBlocks', () => {
 });
 
 // el mismo detector que el inventario: cada guion que un tramo del gancho llama está en el filtro de ese tramo
-test('PublicHook_EveryControlHasItsFilter', () => {
+test('PublicHook_EveryControlHasItsFilter', { skip: SIN_GANCHO_PUBLICO }, () => {
   const texto = fs.readFileSync(HOOK, 'utf8');
   const llama = /\$\{?(?:REPO_ROOT|TCG)\}?\/([\w.@/-]+?\.(?:js|sh))(?![\w.])/g;
   const publicacion = /harness_publishing\s+([\w.-]+\.js)\b/g;
@@ -125,7 +133,7 @@ test('PublicHook_EveryControlHasItsFilter', () => {
   assert.deepStrictEqual(sinFiltro, [], 'un control sin su filtro correría aunque la copia pidiera otros');
 });
 
-test('PublicHook_OwnRepo_IgnoresChecksOnly', () => {
+test('PublicHook_OwnRepo_IgnoresChecksOnly', { skip: SIN_GANCHO_PUBLICO }, () => {
   const otro = tmpdir('delegacion-otro-');
   put(otro, 'scripts/ci/tool-names.js', marca('tool-names-otro'));
   put(otro, 'scripts/ci/vocabulary.js', marca('vocabulary-otro'));
@@ -296,4 +304,20 @@ test('PublicBase_DeclarationBroughtByPr_NotAccepted', () => {
   });
   assert.strictEqual(r.status, 1, r.out);
   assert.match(r.out, /ningún paso corre scripts\/ci\/a\.sh/);
+});
+
+test('ArmedTree_OwnCopyDeclared_PublicHookNotMeasured — en el árbol armado, las pruebas del gancho público dicen que no miden', () => {
+  // el árbol armado del privado declara el gancho como copia propia: ahí el gancho de la raíz no es el público
+  const armado = tmpdir('delegacion-armado-');
+  put(armado, '.tycon/internal-forms.json', JSON.stringify({ layout: 'thin', own: { '.githooks/pre-commit-checks': 'el suyo' }, mirror: {} }));
+  assert.strictEqual(copiaPropiaEn(armado), true);
+  // sin la declaración, con otro archivo propio o con el archivo roto, el gancho de la raíz es el público
+  const publico = tmpdir('delegacion-publico-');
+  assert.strictEqual(copiaPropiaEn(publico), false);
+  put(publico, '.tycon/internal-forms.json', JSON.stringify({ layout: 'thin', own: { 'pipelines/x.yml': 'otro' } }));
+  assert.strictEqual(copiaPropiaEn(publico), false);
+  put(publico, '.tycon/internal-forms.json', '{ roto');
+  assert.strictEqual(copiaPropiaEn(publico), false);
+  // en este árbol, lo que vale para las pruebas del gancho público sale de la misma lectura
+  assert.strictEqual(Boolean(SIN_GANCHO_PUBLICO), copiaPropiaEn(RAIZ));
 });
