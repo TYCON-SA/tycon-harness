@@ -443,8 +443,9 @@ terminal). La usan el freno de guardar y la ventana del dueño (`owner-window.js
 en Codex).
 
 **Lo que Codex NO cubre, dicho y no prometido**: que una persona diga que sí desde la sesión antes de que el pull
-request preparado salga. En Codex no sale: lo saca la persona desde su terminal. Casos: T18 y
-`Pedido_EnCodex_NiegaConLaPreguntaYComoAprobarlo` de `skills/tycon-pipeline/scripts/tests/save-brake.test.js`.
+request preparado salga. En Codex no sale: lo saca la persona desde su terminal. Casos: T18 de
+`skills/tycon-pipeline/scripts/tests/save-brake.test.js` y `Pedido_EnCodex_NiegaConLaPreguntaYComoAprobarlo` de
+`skills/tycon-pipeline/scripts/tests/hook-ask-codex.test.js`.
 
 ## El tope por defecto de un gancho — tomado de la documentación (2026-11-21)
 
