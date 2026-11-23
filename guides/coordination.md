@@ -289,6 +289,10 @@ El mismo aviso trae dos cosas más:
   y cuyo archivo (`<conversación>/subagents/agent-<id>.jsonl`) no cambió en 20 minutos, sale como «X espera a su agente Y,
   que no escribe hace N min (su último paso: …)». `owner-wait` lo dice una vez por agente. Por qué: un comando del agente
   que nunca vuelve, o un permiso que no le sale a nadie, deja a la sesión esperando para siempre.
+- **La sesión que dice que trabaja y no escribe.** Una sesión «trabajando» que no dio un paso suyo en una hora (un mensaje que le
+  llega no cuenta), que no tiene un comando de fondo corriendo y que no corre ningún agente (ninguno escribió en 20 minutos) sale como «X dice que trabaja, pero no escribe hace N min y no corre
+  nada (su último paso: …): ¿trabada?». `owner-wait` lo dice una vez por sesión. Por qué: un comando no pasa de 10 minutos,
+  así que una hora callada sin agentes es una sesión trabada, y en la oficina se veía igual que una que trabaja.
 - **Los pedidos listos que nadie encoló, en GitHub.** Un pedido abierto y limpio (sin choque ni controles obligatorios
   pendientes), sin auto-merge y fuera de la cola, igual por más de 10 minutos, sale con el comando para encolarlo. Por qué:
   nadie lo va a mergear, y todos creen que ya entró. Sale de la última lectura guardada, de menos de una hora: el aviso no
@@ -368,7 +372,18 @@ examen son llamadas al modelo y no piden turno. Lo controla el arnés, no la mem
   que tome el turno. Antes de lanzarlos, `heavy-turn.js reserve --for "<qué>"` toma el turno a nombre de eso: un portón
   que lo pide recibe el «esperá» con el nombre de la reserva. Con una ejecución grande corriendo no reserva (sale 77 y dice
   quién la tiene). Se suelta con `heavy-turn.js release --reserve`, vence a los 90 minutos (una tanda de revisores o un
-  pase; las tres horas son las de una suite) y, si la sesión de la coordinadora se cerró, a los 10.
+  pase; las tres horas son las de una suite) y, si la sesión de la coordinadora se cerró, a los 10. Con
+  `--to <sesión>`, la reserva dice qué sesión lanza lo reservado (su pase sin el pipeline, el punto que sigue). Es
+  para el pase, no para sus suites: el portón de esa sesión espera como el de cualquiera hasta que se suelte.
+- **El pase sin el pipeline también pide turno.** Una sesión sin una ejecución del pipeline (la que abrió la coordinadora para
+  un arreglo, o una suelta) lanza su pase con la herramienta Agent o Workflow, sin marcador que lo cuente. El 23/11 a las
+  05:45, con varios de esos a la vez, la máquina se quedó sin procesos. El gancho `agile-pass-turn.js` mira cada
+  lanzamiento: todo Workflow (el abanico de agentes que llena la máquina) y un Agent cuya descripción o tipo dice
+  adversarial (los revisores chicos y las búsquedas no; el pedido no se mira). Si la sesión no tiene el «arrancá» (`grant --to`) ni una reserva para ella
+  (`reserve --for "<qué>" --to <sesión>`), avisa a la sesión y a la persona con quién tiene el turno, y lo anota en
+  `gates.log` (`agile-pass-turn`). Hoy sólo avisa: si pasa a frenar lo decide el dueño con esa medición (`MODO` en el
+  gancho). No mira sin coordinadora, en la coordinadora misma ni en una sesión del pipeline. `TYCON_AGILE_PASS_TURN=0` lo
+  apaga.
 
 `coordination.js status` muestra un solo renglón, «Turno de tarea pesada», con quién lo tiene y qué es; con una ejecución
 grande, si el segundo turno está libre o cerrado, con la memoria y el piso; con dos, las dos. `heavy-turn.js holders` las
@@ -408,9 +423,9 @@ una, la coordinadora:
   `files:` o, sin `files:`, con los archivos que la historia le ata a la tanda más los que no ata a ninguna), la delicada
   se mide por la parte, y el plan queda atado a su lista: editar código fuera de ella frena, y al cerrar se mide el diff
   entero; si sale delicado, el plan vuelve al dueño. El pase adversarial sigue por la historia entera.
-- **Da el turno del pase del código.** Del código no lanza nada: con el dueño ausente, contesta la pregunta en su
-  nombre según la celda (`review-answer --for-session`, con «dueño ausente» como motivo), y el pase lo lanza la propia
-  sesión con su turno, como siempre.
+- **Da el turno del pase del código.** Del código no lanza nada: con el dueño ausente, contesta en su nombre la pregunta
+  cuya celda dice `review` (`review-answer --for-session`, con «dueño ausente» como motivo), y el pase lo lanza la
+  propia sesión con su turno, como siempre. Que `skip` y `wait` pidan el click del dueño es la fila 113.
 - **Pone la marca de ausente** cuando el dueño dice que se va («seguí en autónomo», «me voy», «hasta mañana» o algo
   parecido): `marker.js owner-away set --phrase "<lo que dijo>"`. Lo juzga ella, no una lista de frases. La marca se borra
   sola cuando el dueño vuelve: un mensaje suyo, un mensaje de la oficina verificado, una firma suya o a las 24 horas. La
@@ -1040,7 +1055,8 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
 
 ## Cómo trabaja la coordinadora con el dueño
 
-Salen de un día entero en que la coordinadora trabajó con el dueño ausente. Cada una, con su porqué.
+Salen de un día entero en que la coordinadora trabajó con el dueño ausente. Valen para cualquier coordinadora, también
+la de un producto. Cada una, con su porqué.
 
 - **El cuadro de una pregunta lleva el contexto adentro.** Qué pasa hoy, cuál es el problema, qué cambia y qué implica.
   Por qué: el dueño ve sólo el cuadro, no la conversación que lo explica.
@@ -1051,11 +1067,10 @@ Salen de un día entero en que la coordinadora trabajó con el dueño ausente. C
   en vivo va por su exención: la firma la coordinadora con `marker.js runtime-waiver <historia> --acs <n> --for-session
   <D>` si el perfil del equipo se la delega, y si no, el dueño. Eximir la historia entera es firma sólo del dueño. Por
   qué: una historia terminada que espera días su cierre ocupa la fila sin aportar nada.
-- **Foco en el arnés.** Lo que toca un producto no se mide ni se propone sin pedido. Por qué: un producto tiene su
-  propio equipo y sus tiempos, y una propuesta que nadie pidió le cae encima.
-- **Primero lo que rompe o demora.** Cuando no queda nada de eso libre, se reparte en el mismo pulso el resto
-  (menores, mantenimiento, mediciones, mejoras aprobadas), sin esperar a que el dueño lo pida. Por qué: una sesión
-  libre es tiempo de máquina perdido, y el dueño no tiene que repartir lo ya aprobado.
+- **Primero lo que traba a todos.** La CI en rojo o un freno que no deja trabajar. Después, el orden del plan del
+  producto: las historias del sprint y lo que decida su dueño. Lo ya aprobado se reparte en el mismo pulso, sin esperar
+  a que el dueño lo pida. Por qué: una sesión libre es tiempo de máquina perdido, y el dueño no tiene que repartir lo ya
+  aprobado.
 - **Cada pendiente lleva anotado quién lo tiene y en qué pedido, antes de asignarlo.** Por qué: sin esa anotación el
   mismo arreglo se hace dos veces; en un solo día hubo cuatro duplicados.
 - **Un solo empuje por pedido, con todo junto.** Después, sólo el arreglo de un rojo o de lo que pidió una revisión.
@@ -1064,6 +1079,16 @@ Salen de un día entero en que la coordinadora trabajó con el dueño ausente. C
   espera no es un pedido roto.
 - **Nunca se cierra un turno con «¿seguimos?».** Una sesión que espera recibe trabajo. Por qué: con el dueño ausente,
   esa pregunta no la contesta nadie y la sesión queda parada.
+- **Con el dueño ausente no se abre un cuadro.** Se le avisa por el canal de avisos del equipo y se espera a que
+  escriba. Por qué: un cuadro abierto de madrugada dejó a la coordinadora seis horas parada, y a las sesiones sin
+  trabajo.
+- **Antes de correr el comando de firma de otra sesión que pidió el sí del dueño, se le pregunta al dueño.** Por qué: una
+  firma que el perfil le delega a la coordinadora sale sola al correr el comando, sin que el dueño la vea.
+- **La constancia se pide con la carpeta quieta.** Antes del comando, la sesión confirma que no toca nada hasta que
+  el dueño firme. Por qué: si la carpeta cambia durante el cuadro, la constancia ya no corresponde y el click se pierde.
+- **La constancia se firma con el guion de la copia instalada del arnés** (`scripts/ci/run-base-controls.sh`), no con
+  el de la carpeta del pedido. Por qué: una copia vieja del guion no anota la huella, y el dueño tiene que clickear dos
+  veces.
 
 ## Qué mide cada regla
 
@@ -1124,8 +1149,11 @@ Salen de un día entero en que la coordinadora trabajó con el dueño ausente. C
 | El cuadro de una pregunta lleva el contexto adentro | nadie | Es la forma del mensaje: ningún dato de la máquina la ve. |
 | La constancia de un cambio de control, al final | nadie | Cuándo la pide lo decide la sesión; la constancia vencida la frena su control, no el momento en que se pidió. |
 | Las historias se cierran en horas | nadie | Es criterio: cuál humo tiene guion lo ve la sesión. |
-| Foco en el arnés | nadie | Es criterio de la coordinadora. |
-| Primero lo que rompe o demora, y después el resto en el mismo pulso | nadie | Qué rompe o demora es criterio; las sesiones quietas las cuenta el aviso de cada turno. |
+| Primero lo que traba a todos, después el plan del producto | nadie | Qué traba a todos es criterio; las sesiones quietas las cuenta el aviso de cada turno. |
 | Cada pendiente con quién lo tiene y en qué pedido | nadie | La anotación va en la lista de la coordinadora, que no pasa por un control. |
 | Un solo empuje por pedido | nadie | Un empuje de más no lo frena nada: lo ve la cola de la CI. |
 | Nunca cerrar un turno con «¿seguimos?» | nadie | Es la forma del mensaje; la coordinadora con lugar y trabajo listo ya la frena el gancho del cierre del turno. |
+| Con el dueño ausente no se abre un cuadro | nadie | Que el dueño está ausente lo juzga la coordinadora; nada frena un cuadro por eso. |
+| Preguntarle al dueño antes de correr la firma de otra sesión | nadie | Ningún control separa una firma delegada que el dueño quería ver de una de rutina. |
+| La constancia, con la carpeta quieta | nadie | Lo confirma la sesión en un mensaje; una constancia que ya no corresponde la frena su control. |
+| La constancia, con el guion de la copia instalada | nadie | Qué copia del guion corre lo elige quien escribe el comando. |

@@ -159,6 +159,13 @@ las sesiones de la máquina sin consola. En `on-bash-write-gate.js`, en Windows 
 análisis trabado en una llamada del sistema tampoco se corta: pasa a los 600 s. Un programa que el análisis haya
 lanzado puede seguir corriendo después de que el freno frenó.
 
+**Cuando `safety-guard-pre.sh` corta por su reloj, se mide qué paso tardó.** Con `TYCON_SAFETY_TRACE=1` (en el `env` de
+`settings.json`, o en la terminal desde donde se abre la herramienta) el freno anota en `safety-guard-times.jsonl`, en
+la carpeta de los registros sueltos, un renglón por cada node que lanza (y lo que lanzan ellos): cuándo arrancó y cuánto
+tardó. También anota su propio total al salir. Un node que no llegó a terminar porque lo cortó el reloj deja sólo su
+arranque: ése se comió el tiempo. Anota el guion y su subcomando, nunca los valores del comando, y no cambia ninguna
+decisión. Con una ruta en vez de `1`, anota ahí.
+
 ## Saltear el freno: lo decide la persona
 
 Cada salteo es una firma de la persona, con su comando; la lista entera está en

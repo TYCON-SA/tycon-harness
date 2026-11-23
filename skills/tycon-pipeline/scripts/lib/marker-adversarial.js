@@ -37,7 +37,8 @@ const {
  */
 function congelarPase(marker, etiqueta, quien) {
   const ft = require('./frozen-tree.js');
-  const rutas = ft.reposDe([resolveStoryPath(marker.storyPath, marker) || marker.storyPath, marker.repoPath]);
+  // el pase mira también el código de los repos hermanos: se sellan con los de la vuelta
+  const rutas = ft.reposDelPase({ story: resolveStoryPath(marker.storyPath, marker) || marker.storyPath, repo: marker.repoPath });
   const congelada = rutas.error ? rutas
     : rutas.repos.length ? ft.sealAndFreeze({ stateDir: STATE_DIR, sid: estado.SID, etiqueta, repos: rutas.repos, tipo: 'pase', story: marker.storyId || null })
       : { repos: [] };
@@ -408,6 +409,21 @@ function cmdMarkAdversarialResult(countRaw) {
           process.exit(2);
         }
       }
+      // El código de los repos hermanos (los sellados que no son la historia ni el repo de la corrida) no puede haber
+      // cambiado desde el lanzamiento: el pase daría por bueno algo que no miró. Las pruebas propias que este cierre
+      // declara (`--in`) se escriben a propósito después del pase y no cuentan.
+      const principales = ft.reposDe([resolveStoryPath(corrida.storyPath, corrida) || corrida.storyPath, corrida.repoPath]);
+      const hermanos = principales.error ? Object.keys(lanzado.sellos) : Object.keys(lanzado.sellos).filter((r) => !principales.repos.includes(r));
+      const iIn = argv.indexOf('--in');
+      const permitidos = rutasDeLasPropias(iIn >= 0 ? String(nn(argv[iIn + 1], '')).split(',').map((s) => s.trim()).filter(Boolean) : [], corrida);
+      const cambiados = ft.hermanosCambiados({ sellos: lanzado.sellos, hermanos, permitidos });
+      if (cambiados.length) {
+        appendLog('gates.log', { name: 'frozen-sibling', status: 'blocked', quien: 'mark-adversarial-result', repos: cambiados.map((x) => x.repo) });
+        console.error('marker.js mark-adversarial-result BLOQUEADO — el código de un repo hermano cambió después de lanzar el pase: el pase no miró esto.');
+        for (const x of cambiados) console.error(`   · ${path.basename(x.repo)}: ${x.error || x.files.join(', ')}`);
+        console.error('  Relanzá el pase sobre lo de ahora (freeze-adversarial y mark-adversarial-launched --relaunch). No se anotó nada.');
+        process.exit(2);
+      }
     }
     const lanz = lanzado ? Date.parse(lanzado.launchedAt) : NaN;
     // la prueba de cada lente limpia se mira en disco: junto al resultado, de este pase (desde su lanzamiento)
@@ -572,6 +588,28 @@ function cmdMarkAdversarialResult(countRaw) {
     if (tipo === '5b' && corrida.deepReviewDone && !require('./adversarial-skip.js').firmasDelSalteo(corrida).length) quitarSalteoDelRegistro(corrida);
   }
   process.stdout.write(JSON.stringify({ storyId, ...pase }, null, 2) + '\n');
+}
+
+/**
+ * Las rutas absolutas de las pruebas propias que declara `--in`, resueltas como las resuelve `verificarPruebasPropias`:
+ * relativas al repo de la corrida, o `(<repo>) <ruta>` dentro de ese repo. Una que no resuelve queda tal cual: no libera
+ * nada, y `verificarPruebasPropias` la rechaza con su motivo.
+ */
+function rutasDeLasPropias(rutas, marker) {
+  let base = (marker && marker.repoPath) || null;
+  if (!base) {
+    try { base = require('./repo-attrib.js').gitRoot(process.cwd()); } catch (_e) { base = null; }
+  }
+  base = base || process.cwd();
+  const companionLib = require('./companion-repos.js');
+  let hermanos = null;
+  return rutas.map((ruta) => {
+    const conRepo = companionLib.parseRepoPrefixed(ruta);
+    if (!conRepo) return path.resolve(base, ruta);
+    if (!hermanos) hermanos = companionLib.companionRoots(base, marker && marker.storyPath);
+    const { root } = companionLib.resolveRepoRef(conRepo.ref, base, hermanos);
+    return root ? path.resolve(root, conRepo.rest) : ruta;
+  });
 }
 
 /**

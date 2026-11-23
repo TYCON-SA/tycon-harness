@@ -1116,3 +1116,39 @@ test('Turno_ReservaDeLaCoordinadora_FrenaAlPorton (T11) @story-8.274 @ac-13 @ac-
   assert.strictEqual(cli(COORD, 'grant', '--to', 's-uma').status, 0);
   assert.strictEqual(cli('s-uma', 'grant', '--to', 's-uma').status, 2);
 });
+
+// 🔴 mutación: guardar la reserva sin la sesión que lanza lo reservado (agile-pass-turn.js no la reconoce), o aceptar una
+// sesión que no está viva.
+test('Turno_ReservaConSesion_DiceDeQuienEs (fila 126 a)', () => {
+  const m = toy();
+  const r = HT.reserve({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: COORD }, what: 'el pase de Uma', to: 's-uma' });
+  assert.strictEqual(r.ok, true, r.message);
+  assert.match(r.message, /turno reservado para «el pase de Uma» de Uma/);
+  const guardada = JSON.parse(fs.readFileSync(coordFile(m, 'suite-reserve.json'), 'utf8'));
+  assert.deepStrictEqual([guardada.sid, guardada.to, guardada.toSession], [COORD, 's-uma', 'Uma']);
+  assert.strictEqual(HT.reserveInForce({ home: m.home }).to, 's-uma');
+  assert.strictEqual(HT.releaseReserve({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: COORD } }), true);
+  // una sesión que no está viva no recibe la reserva, y no queda nada reservado
+  const nadie = HT.reserve({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: COORD }, what: 'x', to: 'nadie-vivo' });
+  assert.deepStrictEqual([nadie.ok, nadie.code], [false, 2]);
+  assert.ok(!fs.existsSync(coordFile(m, 'suite-reserve.json')));
+  // sin --to, como siempre: sin sesión
+  assert.strictEqual(HT.reserve({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: COORD }, what: 'revisores' }).ok, true);
+  assert.strictEqual(HT.reserveInForce({ home: m.home }).to, undefined);
+  // por la línea de comandos
+  HT.releaseReserve({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: COORD } });
+  installed(m);
+  const cli = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js'), 'reserve', '--for', 'pase', '--to', 's-uma'],
+    { env: { ...machineEnv(m), CLAUDE_CODE_SESSION_ID: COORD }, encoding: 'utf8' });
+  assert.strictEqual(cli.status, 0, cli.stderr);
+  assert.strictEqual(JSON.parse(fs.readFileSync(coordFile(m, 'suite-reserve.json'), 'utf8')).to, 's-uma');
+  HT.releaseReserve({ home: m.home, arnes: m.arnes, env: { CLAUDE_CODE_SESSION_ID: COORD } });
+  // `--to` sin su sesión, al final o seguido de otra opción, falla y no reserva: no es una reserva sin sesión
+  for (const args of [['--for', 'pase', '--to'], ['--to', '--for', 'pase']]) {
+    const sin = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js'), 'reserve', ...args],
+      { env: { ...machineEnv(m), CLAUDE_CODE_SESSION_ID: COORD }, encoding: 'utf8' });
+    assert.strictEqual(sin.status, 2, `${args.join(' ')}: ${sin.stdout}${sin.stderr}`);
+    assert.match(sin.stderr, /falta --to <sesión>/);
+    assert.ok(!fs.existsSync(coordFile(m, 'suite-reserve.json')), args.join(' '));
+  }
+});
