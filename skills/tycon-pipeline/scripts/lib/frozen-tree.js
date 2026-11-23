@@ -206,9 +206,40 @@ function reposDe(rutas) {
 }
 
 /**
+ * ¿El bloque `evidence:` del repo dice a propósito que no hay hermanos? Sí con el bloque vacío o con sólo sus llaves
+ * vacías (`companion_repos: []`, o la llave sin valor). Cualquier otra cosa de la que el lector de la configuración
+ * (lib/evidence-config.js) no sacó ningún hermano es un bloque que no se pudo leer. Lee el mismo archivo que ese lector.
+ */
+function evidenciaSinHermanos(repo) {
+  let txt = null;
+  for (const nombre of ['advisors.yaml', 'advisors.yml']) {
+    try { txt = fs.readFileSync(path.join(repo, '.tycon', nombre), 'utf8'); break; } catch (_) { /* el siguiente */ }
+  }
+  if (txt === null) return false;
+  let adentro = false;
+  let sangria = 0;
+  for (const linea of txt.split(/\r?\n/)) {
+    if (/^\s*#/.test(linea) || linea.trim() === '') continue;
+    const s = linea.length - linea.trimStart().length;
+    if (!adentro) {
+      const m = linea.match(/^evidence\s*:(.*)$/);
+      if (!m) continue;
+      // `evidence: {…}` en el mismo renglón: el lector no lo entiende
+      if (m[1].replace(/\s+#.*$/, '').trim()) return false;
+      adentro = true;
+      sangria = s;
+      continue;
+    }
+    if (s <= sangria) break;
+    if (!/^\s*(?:companion_repos|fe_paths)\s*:\s*(?:\[\s*\])?\s*(?:#.*)?$/.test(linea)) return false;
+  }
+  return adentro;
+}
+
+/**
  * Los repos del pase adversarial: los de la vuelta (la historia y el repo del código) más cada repo hermano declarado
  * (`.tycon/advisors.yaml → evidence.companion_repos`, con la misma lista que usa el portón de pruebas). `{ repos, hermanos }`
- * o `{ error }`: una configuración que no se deja leer no es «sin hermanos».
+ * o `{ error }`: una configuración que no se deja leer no es «sin hermanos», y un hermano que no se puede sellar tampoco.
  */
 function reposDelPase({ story, repo }) {
   const base = reposDe([story, repo]);
@@ -220,11 +251,18 @@ function reposDelPase({ story, repo }) {
     for (const r of base.repos) {
       const cfg = parseEvidenceConfig(r);
       if (cfg.missing.length) return { error: `${r} declara repos hermanos que no están en disco: ${cfg.missing.join(', ')}` };
-      if (cfg.blockPresent && !cfg.roots.length && !cfg.fePaths.length) return { error: `${r} tiene el bloque evidence: y no pude leer de él ningún repo hermano` };
+      if (cfg.blockPresent && !cfg.roots.length && !cfg.fePaths.length && !evidenciaSinHermanos(r)) return { error: `${r} tiene el bloque evidence: y no pude leer de él ningún repo hermano` };
     }
     hermanos = require('./companion-repos.js').companionRoots(repo, story || null);
   } catch (e) {
     return { error: `no pude leer los repos hermanos de ${repo}: ${unaLinea(e.message)}` };
+  }
+  // un hermano que está en disco y no es un repo git no tiene árbol que sellar: su código quedaría sin mirar
+  const so = require('./save-ok.js');
+  for (const h of hermanos) {
+    let raiz;
+    try { raiz = so.raizDe(path.resolve(h)); } catch (e) { return { error: `no pude saber el repo del hermano ${h}: ${unaLinea(e.message)}` }; }
+    if (!raiz) return { error: `el repo hermano ${h} está en disco pero no es un repo git: su código no se puede sellar` };
   }
   const todos = reposDe([...base.repos, ...hermanos]);
   if (todos.error) return todos;
@@ -232,10 +270,48 @@ function reposDelPase({ story, repo }) {
 }
 
 /**
+ * La ruta canónica, como la compara `verificarPruebasPropias` (lib/marker-adversarial.js): la real del sistema
+ * (`.native` resuelve enlaces y, donde el disco no distingue mayúsculas, las del archivo en disco); si no existe, la real
+ * del ancestro que sí existe más el resto tal cual. Otro error que «no existe» deja la ruta como vino.
+ */
+function canonica(p) {
+  let actual = path.resolve(p);
+  const resto = [];
+  for (;;) {
+    try { return path.join(fs.realpathSync.native(actual), ...resto); } catch (e) {
+      if (!e || (e.code !== 'ENOENT' && e.code !== 'ENOTDIR')) return path.join(actual, ...resto);
+    }
+    const padre = path.dirname(actual);
+    if (padre === actual) return path.join(actual, ...resto);
+    resto.unshift(path.basename(actual));
+    actual = padre;
+  }
+}
+
+/** La ruta con su carpeta canónica y el último tramo tal cual: un enlace en ese tramo no se sigue. */
+const conCarpetaCanonica = (p) => { const abs = path.resolve(p); return path.join(canonica(path.dirname(abs)), path.basename(abs)); };
+
+/**
+ * ¿Dos rutas (ya con la carpeta canónica) son el mismo archivo? La misma ruta, o el mismo nombre con otras mayúsculas en la
+ * misma carpeta cuando el disco las toma por el mismo archivo (mismo dispositivo e inodo, sin seguir enlaces).
+ */
+function mismoArchivo(a, b) {
+  if (a === b) return true;
+  if (path.dirname(a) !== path.dirname(b) || path.basename(a).toLowerCase() !== path.basename(b).toLowerCase()) return false;
+  try {
+    const x = fs.lstatSync(a, { bigint: true });
+    const y = fs.lstatSync(b, { bigint: true });
+    return x.dev === y.dev && x.ino === y.ino;
+  } catch (_) { return false; }
+}
+
+/**
  * ¿Cambió el código de algún hermano desde que se lanzó el pase? Se vuelve a sellar cada hermano de la carpeta viva y se
  * compara con su sello del lanzamiento. `permitidos`: las pruebas propias que el cierre declara (`--own --in`), escritas
- * a propósito después del pase; no cuentan. Devuelve `[{ repo, files }]` o `[{ repo, error }]` por cada hermano que no se
- * puede dar por igual; `[]` si todos siguen iguales.
+ * a propósito después del pase; no cuentan. Se comparan como `verificarPruebasPropias`: una prueba declarada con otras
+ * mayúsculas libera el mismo archivo donde el disco no las distingue. Una declarada que es un enlace no libera nada: un
+ * enlace de una prueba al código es justo lo que el cierre tiene que ver. Devuelve `[{ repo, files }]` o
+ * `[{ repo, error }]` por cada hermano que no se puede dar por igual; `[]` si todos siguen iguales.
  */
 function hermanosCambiados({ sellos, hermanos, permitidos = [] }) {
   const out = [];
@@ -247,9 +323,11 @@ function hermanosCambiados({ sellos, hermanos, permitidos = [] }) {
     if (ahora.tree === tree) continue;
     const c = changed(repo, tree, ahora.tree, {});
     if (c.error) { out.push({ repo, error: c.error }); continue; }
-    const raiz = real(repo);
-    const libres = new Set(permitidos.map((p) => real(path.resolve(repo, p))));
-    const files = [...c.files, ...(c.papeleo || [])].filter((f) => !libres.has(path.join(raiz, f))).sort();
+    const libres = permitidos.map((p) => path.resolve(repo, p))
+      .filter((p) => { try { return !fs.lstatSync(p).isSymbolicLink(); } catch (_) { return true; } })
+      .map(conCarpetaCanonica);
+    const files = [...c.files, ...(c.papeleo || [])]
+      .filter((f) => { const k = conCarpetaCanonica(path.join(repo, f)); return !libres.some((l) => mismoArchivo(l, k)); }).sort();
     if (files.length) out.push({ repo, files });
   }
   return out;
