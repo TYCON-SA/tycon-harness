@@ -425,6 +425,16 @@ that fails) it says «no medida» and assumes nothing. Only the `status` command
 closing brake do not measure it. A session Claude Code already closed shows in «Cerradas por Claude Code» with what it was
 waiting for (its `marker.js doing --waiting-for` note) and since when, above the others, with its `coordination.js relaunch --id`.
 
+### The user's processes
+
+Each user has a process cap (on macOS, `kern.maxprocperuid`; on the Mac mini, 2666). At the cap no command starts: not
+the hooks, not the brakes. It happened on 23/11 at 05:45, with several adversarial passes at
+once and a hung test, and the Telegram MCP went down. `coordination.js status` counts the user's processes (`ps -U`): from 70 % of the cap it says how
+many there are and what the cap is. What to do: before launching anything heavy (a pass, mutants, a suite), ask for the
+passes and background scripts that are not needed to stop. If they cannot be counted (another platform, a command that
+fails) it says «no medidos» and assumes nothing; if `ps` cannot start for lack of processes, it says it is at the
+cap. Like swap memory, only the `status` command counts them.
+
 ## The automatic reviews: what the coordinator does
 
 When each review runs is set by the organization's configuration (`guides/automatic-reviews.en.md`). In each one,
@@ -442,7 +452,9 @@ the coordinator:
   launches itself approves the routine plan without a click: it is enough in both cases. With `person`, a routine plan
   is always signed by a person. Rejected or without a verdict, the plan waits. A delicate plan, and its mockup, are signed
   only by the owner with a click or an «approved» (also in the coordinator's tab), even if the profile names
-  `plan-approval:delicada`. **The plan she approves is a part's plan**: if the run recorded its batch (`set-batch`) and the part is valid
+  `plan-approval:delicada`. From that tab the command carries the quote: `marker.js complete-step approve-plan
+  --approved '<the person's quote>' --for-session <session>`; without it nothing is signed and no box is shown.
+  **The plan she approves is a part's plan**: if the run recorded its batch (`set-batch`) and the part is valid
   (with its `files:` or, without `files:`, with the files the story ties to it plus those it ties to no batch),
   «delicate» is measured on the part, and the plan stays tied to its list: editing code outside it stops, and at the
   close the whole diff is measured; if it comes out delicate, the plan goes back to the owner. The adversarial pass
@@ -539,6 +551,10 @@ turned on in the profile, or on the machine to try it out.
 - **How they go through, with a coordinator.** If the coordinator is confirmed and alive, it passes them all. The background
   session does not show the box or send messages: the brake tells it to wait for the notice. When the person writes, the
   coordinator gets a notice: answer what the person wrote and run `coordination.js owner-next`.
+- **Without the list, with a coordinator.** The background session does not send the coordinator the question to copy:
+  copied by hand it does not stay the same, and the click does not count. The brake says why the request does not reach
+  her list (the list is off, or there is no confirmed, live coordinator) and gives the terminal command. The session tells
+  her what is being decided and that command, and does not repeat its command until she says the owner signed.
 - **How they go through, without a coordinator.** The target session gets the same notice, once per row, and runs `owner-next`.
   If the person already answered «aprobado» to that box, it does not ask again.
 - **What `owner-next` gives.** One row, the oldest: a box to show without changing a letter, with a label («Firma 2/5»), and the

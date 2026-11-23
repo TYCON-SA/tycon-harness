@@ -424,6 +424,17 @@ no supone nada. Sólo la lee el comando `status`: el aviso de cada turno y el fr
 que Claude Code ya cerró sale en «Cerradas por Claude Code» con lo que esperaba (su nota de `marker.js doing
 --waiting-for`) y desde cuándo, arriba de las demás, con su `coordination.js relaunch --id`.
 
+### Los procesos del usuario
+
+Cada usuario tiene un tope de procesos (en macOS, `kern.maxprocperuid`; en la Mac mini, 2666). Con el tope no arranca
+ningún comando: ni los ganchos ni los frenos. Pasó el 23/11 a las 05:45, con varios pases
+adversariales a la vez y una prueba colgada, y se cayó el MCP de Telegram. `coordination.js status` cuenta los procesos del usuario (`ps -U`): desde el
+70 % del tope dice cuántos hay y de cuánto es el tope. Qué hacer: antes de lanzar algo pesado (un pase, mutantes, una
+suite), pedí que frenen los pases y los guiones de fondo que no hacen falta. Si no se pueden contar (otra plataforma, un
+comando que falla) dice «no medidos» y no supone nada; si `ps` no arranca por falta de procesos, dice que está en el
+tope. Como la memoria de intercambio, sólo los cuenta el comando
+`status`.
+
 ## Las revisiones automáticas: qué hace la coordinadora
 
 Cuándo corre cada revisión lo dice la configuración de la organización (`guides/automatic-reviews.md`). En cada
@@ -441,6 +452,8 @@ una, la coordinadora:
   aprueba el plan de rutina sin click: alcanza en los dos casos. Con `person`, el plan de rutina lo firma siempre una
   persona. Rechazado o sin veredicto, el plan espera. Un plan delicado, y su maqueta, los firma sólo el dueño con su
   click o su «aprobado» (también en la pestaña de la coordinadora), aunque el perfil nombre `plan-approval:delicada`.
+  Desde esa pestaña el comando lleva la cita: `marker.js complete-step approve-plan --approved '<la cita de la persona>'
+  --for-session <sesión>`; sin ella no se firma ni se arma el cuadro.
   **El plan que aprueba es el de una parte**: si la ejecución anotó su tanda (`set-batch`) y la parte vale (con su
   `files:` o, sin `files:`, con los archivos que la historia le ata a la tanda más los que no ata a ninguna), la delicada
   se mide por la parte, y el plan queda atado a su lista: editar código fuera de ella frena, y al cerrar se mide el diff
@@ -532,6 +545,10 @@ probarla.
 - **Cómo se pasan, con coordinadora.** Si está confirmada y viva, pasa todas ella. La sesión de fondo no muestra el cuadro ni
   manda mensajes: el freno le dice que espere el aviso. Cuando la persona escribe, a la coordinadora le llega un aviso: que
   conteste lo que escribió y corra `coordination.js owner-next`.
+- **Sin la lista, con coordinadora.** La sesión de fondo no le manda la pregunta para que la copie: copiada a mano no
+  queda igual y el click no vale. El freno dice por qué el pedido no le llega a su lista (la lista apagada, o sin una
+  coordinadora confirmada y viva) y da el comando de la terminal. La sesión le avisa qué se decide y ese comando, y no
+  repite el suyo hasta que ella le avise que el dueño firmó.
 - **Cómo se pasan, sin coordinadora.** Le llega el mismo aviso a la sesión destino, una vez por renglón, y ella corre
   `owner-next`. Si la persona ya contestó «aprobado» a ese cuadro, no se pregunta de nuevo.
 - **Qué da `owner-next`.** Un renglón, el más viejo: un cuadro para mostrar sin cambiarle una letra, con un rótulo («Firma 2/5»),
@@ -717,6 +734,10 @@ click. Mira cada 2 segundos y termina con una línea por novedad, y terminar la 
 - «<sesión> espera un permiso desde las HH:MM: <herramienta> <qué pide>. Para entrar: claude attach <sesión>»: se lo
   pasa al dueño con la sesión, qué pide y su recomendación. El permiso lo contesta una persona, en la pestaña de la
   sesión o con `claude attach`.
+- «… que pidió un agente suyo (la sesión figura ocupada y no se movió desde entonces)»: el permiso lo pidió un agente
+  de la sesión. Claude Code la sigue dando ocupada, porque espera a su agente; sale si está ocupada desde antes del
+  pedido y lleva 11 minutos sin moverse (más que lo que puede correr un comando aprobado). Se trata igual que el de
+  arriba.
 - «<sesión> siguió: el permiso ya no está abierto» o «<sesión> se cerró con un permiso abierto»: se le avisa al dueño si
   se lo había pedido.
 - «<sesión>: la cerró Claude Code a las HH:MM por falta de memoria, quieta N min. Para levantarla: coordination.js relaunch --id <id>»:
@@ -751,7 +772,8 @@ coordinadora lo muestra sin cambiarle una letra, con «Sí, aprobar» y «No».
   mismo si la coordinadora muere o deja de ser la designada mientras espera.
 - **No se lleva, y sale la ventana de siempre sin demora:** una pestaña abierta, otro modo (automático, sin permisos,
   aceptar ediciones, plan), sin coordinadora confirmada y viva, sin `owner-wait`, la lista apagada, la propia
-  coordinadora, Codex, y en Windows un comando por PowerShell. Tampoco un pedido que no se puede mostrar entero (más de
+  coordinadora, Codex, y en Windows un comando por PowerShell. En una sesión de fondo, el motivo queda en «Trabadas» y
+  en `gates.log`, así una espera de toda la noche no pasa sin rastro. Tampoco un pedido que no se puede mostrar entero (más de
   1500 caracteres, caracteres que no se ven o se ven en blanco, un salto de línea en una ruta o una dirección, datos que
   el cuadro no muestra): la sesión queda trabada con ese motivo.
   Las herramientas que lleva son Bash, PowerShell, Edit, Write, NotebookEdit y WebFetch; el cuadro de preguntas y el

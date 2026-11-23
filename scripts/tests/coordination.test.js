@@ -1849,6 +1849,66 @@ test('T7 OwnerWait_UnaVezCadaDosMinutosYEntreProcesos @story-8.219 @ac-7: owner-
   }
 });
 
+test('OwnerWait_PlanSinFirmar_NoDiceYaNoEspera: una sesión ocupada con el plan sin aprobar sigue esperando a la persona, con la lista apagada y encendida', () => {
+  const OA = require(path.join(ROOT, 'scripts', 'lib', 'owner-approvals.js'));
+  const DS = require(path.join(ROOT, 'scripts', 'lib', 'delegated-signing.js'));
+  const { buildOffice, ownerWaitsOf } = require(path.join(ROOT, 'scripts', 'tools', 'office.js'));
+  const COORD_SID = 's-coord';
+  const DORA = 's-dora';
+  // lo que pone la oficina de verdad en «Tu firma» para Dora en el paso del plan: quieta, espera el plan; ocupada (le
+  // llegó un mensaje, corre un comando), sale de «Tu firma» aunque el plan siga sin aprobar
+  const oficina = (status) => {
+    const wip = { rows: [{ work: 'Historia 9.1', state: 'en curso', end: '15:00', session: 'Dora', folder: 'repo' }],
+      details: [{ sid: DORA, status, statusAt: NOW - 60000 }], extra: [{ kind: 'pipeline', current: 'approve-plan', storyId: '9.1', title: '9.1 Algo' }],
+      free: [], halfway: [], unreadable: [] };
+    return { esperas: ownerWaitsOf(buildOffice({ wip, nowMs: NOW }).data), problemas: [] };
+  };
+  assert.deepStrictEqual(oficina('idle').esperas.map((w) => [w.sid, w.espera]), [[DORA, PLAN]], 'quieta, espera el plan');
+  assert.deepStrictEqual(oficina('busy').esperas, [], 'ocupada, la oficina no la pone en «Tu firma»');
+  const confirmada = OA.coordinadoraConfirmada;
+  try {
+    for (const lista of ['off', 'on']) {
+      // la lista de firmas sale de la llave de la máquina: sin signatureDestinos inyectado, se lee el registro de verdad
+      const t = toy({ machine: { approvals: { signature_list: lista } } });
+      fs.writeFileSync(path.join(t.arnes, 'team-profile.json'), JSON.stringify({ approvals: { relay_session: 'coordinadora' } }));
+      const d = { name: 'relay-designation', status: 'ok', ts: new Date(NOW).toISOString(), sesion: COORD_SID, rol: 'coordinadora', quien: 'el dueño', cita: 'Esta sesión es la coordinadora' };
+      fs.writeFileSync(path.join(t.state, 'gates.log'), `${JSON.stringify(d)}\n${JSON.stringify(DS.confirmationRecord(d, new Date(NOW).toISOString()))}\n`);
+      session(t, COORD_SID, 'Coordinadora', { status: 'busy' });
+      session(t, DORA, 'Dora', { status: 'busy' });
+      OA.coordinadoraConfirmada = (casa, o = {}) => confirmada(casa, { arnes: t.arnes, ...o });
+      // la corrida de Dora, abierta por la coordinadora, en «Aprobar el plan» sin aprobar
+      const plan = { stepScheme: 2, stepsCompleted: ['start', 'validate-story', 'plan'], stepsPending: ['approve-plan', 'implement'] };
+      marker(t, DORA, plan);
+      let lectura = oficina('idle');
+      const vuelta = (seg) => C.ownerWaitOnce({ ...t.opts, sessionId: COORD_SID, now: NOW + seg * 1000, ownerWaits: () => lectura }).lines;
+      assert.deepStrictEqual(vuelta(0), ['«Dora» («9.1 Algo») espera de la persona: «que apruebes el plan»'], `lista ${lista}`);
+      lectura = oficina('busy');
+      assert.deepStrictEqual(vuelta(120), [], `lista ${lista}: ocupada con el plan sin aprobar, no «ya no espera»`);
+      assert.ok(C.readAnnounced(t.home).owner.esperas[DORA], `lista ${lista}: la espera sigue anunciada`);
+      // vuelve a quedar quieta: ya estaba anunciada, no se repite
+      lectura = oficina('idle');
+      assert.deepStrictEqual(vuelta(240), [], `lista ${lista}: la misma espera no se anuncia dos veces`);
+      // un marcador que no se lee: en duda, sigue esperando
+      lectura = oficina('busy');
+      fs.writeFileSync(path.join(t.state, 'active', `${DORA}.json`), '{ no es json');
+      assert.deepStrictEqual(vuelta(360), [], `lista ${lista}: con el marcador ilegible, sigue esperando`);
+      // el plan aprobado: ahora sí ya no espera
+      marker(t, DORA, { ...plan, stepsCompleted: [...plan.stepsCompleted, 'approve-plan'], stepsPending: ['implement'] });
+      assert.deepStrictEqual(vuelta(480), ['«Dora» ya no espera a la persona'], `lista ${lista}: con el plan aprobado, sí lo dice`);
+      // la espera cerrada de verdad: la corrida que se cierra sin aprobar el plan también lo dice
+      lectura = oficina('idle');
+      marker(t, DORA, plan);
+      assert.deepStrictEqual(vuelta(600), ['«Dora» («9.1 Algo») espera de la persona: «que apruebes el plan»'], `lista ${lista}`);
+      lectura = oficina('busy');
+      fs.rmSync(path.join(t.state, 'active', `${DORA}.json`));
+      assert.deepStrictEqual(vuelta(720), ['«Dora» ya no espera a la persona'], `lista ${lista}: sin la corrida, ya no espera`);
+      fs.rmSync(t.root, { recursive: true, force: true });
+    }
+  } finally {
+    OA.coordinadoraConfirmada = confirmada;
+  }
+});
+
 // ── One heavy-work turn per machine: the pass and the large test run share it ────────────────────────────────────
 
 // The turn file of a large test run held by this process, as heavy-turn.js publishes it.
