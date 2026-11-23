@@ -6290,6 +6290,30 @@
       "exit": 0,
       "stdout_empty": true
      }
+    },
+    {
+     "id": "programa-por-la-entrada-de-xargs-se-frena",
+     "type": "must-block",
+     "__doc": "Lo que xargs le pasa a un intérprete puede ser su programa: `echo '<programa que borra la memoria>' | xargs -I{} python3 -c {}` borra la memoria de producción aunque el comando no la nombre como un nombre suelto. Se busca con la misma regla de mención que un programa escrito. ROJO PREVIO: exit 0.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "echo 'import os; os.remove(\"~/.claude/.tycon-pipeline/production-memory.json\")' | xargs -I{} python3 -c {}"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "ESCRIBE"
+      ]
+     }
     }
    ]
   }

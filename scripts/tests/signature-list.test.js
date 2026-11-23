@@ -255,18 +255,19 @@ test('OwnerNext_SinDistincion_YTerminal (T12) — @story-8.153 @ac-12', (t) => {
   designar(toy.casa);
   sesion(toy.casa, 'ses-coord');
   sesion(toy.casa, 'ses-a');
-  // `adversarial-skip` no se corre desde otra pestaña: se da igual, y lo repite su sesión
+  // `adversarial-skip` no se corre desde otra pestaña y no se delega: a la coordinadora no le da cuadro, le da la pestaña
+  // de su sesión y la terminal (@story-8.319 AC 4)
   const cmd = `node ${MARKER} sign-adversarial-skip --story s --reason porque`;
   firma(toy, { firmaId: 'adversarial-skip', comando: cmd, titulo: 'saltear el pase adversarial con constancia' });
   const r = sl.siguiente(opts(toy, { sesion: 'ses-coord', validar: () => ({ ok: false }) }));
-  assert.strictEqual(r.tipo, 'firma', JSON.stringify(r));
+  assert.strictEqual(r.tipo, 'via', JSON.stringify(r));
   assert.strictEqual(r.destino, 'ses-a');
-  assert.match(r.aviso, /sign-adversarial-skip/);
-  assert.doesNotMatch(r.aviso, /--for-session/);
+  assert.strictEqual(r.pregunta, undefined);
+  assert.match(r.texto, /sign-adversarial-skip/);
   // un renglón de la terminal sale al final, sin cuadro
   const crudo = crudas(toy);
   fs.writeFileSync(sl.archivo(toy.casa), JSON.stringify([{ id: 't1', key: 'k', file: '/f/t1.command', kind: 'x', title: 'por la terminal', at: antes(100) }, ...crudo]));
-  assert.strictEqual(sl.siguiente(opts(toy, { sesion: 'ses-coord', validar: () => ({ ok: false }) })).tipo, 'firma', 'va después de la firma, aunque es más vieja');
+  assert.strictEqual(sl.siguiente(opts(toy, { sesion: 'ses-coord', validar: () => ({ ok: false }) })).tipo, 'via', 'va después de la firma, aunque es más vieja');
   const t2 = sl.siguiente(opts(toy, { sesion: 'ses-coord', after: r.id, validar: () => ({ ok: false }) }));
   assert.strictEqual(t2.tipo, 'terminal');
   assert.strictEqual(t2.archivo, '/f/t1.command');
@@ -611,6 +612,37 @@ test('OwnerNext_LineaDeComandos (T11, la orden) — @story-8.153 @ac-11', (t) =>
   // con HOME cambiado sigue leyendo la casa donde anota el freno
   const vacia = fs.mkdtempSync(path.join(toy.raiz, 'otra-'));
   assert.match(linea(toy, ['owner-next'], { home: vacia }).stdout, /«Firma 1\/1»/);
+});
+
+// con la marca de ausente, owner-next no arma el cuadro: dice que el dueño está ausente, que se le avise por los canales de
+// los avisos y que se espere a que escriba. El renglón queda igual. Vencida la marca, el cuadro de siempre
+test('OwnerNext_DuenoAusente_SinCuadro — fila 71', (t) => {
+  const OA = require('../lib/owner-away.js');
+  const toy = casaNueva(t);
+  sesion(toy.casa, 'ses-a');
+  firma(toy, { ahora: Date.now() });
+  const antesDe = JSON.stringify(crudas(toy));
+  OA.set({ estado: estado(toy.casa), quien: 'ses-coord', frase: 'me voy a dormir' });
+  const r = linea(toy, ['owner-next']);
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stdout, /AskUserQuestion/);
+  assert.doesNotMatch(r.stdout, /«Firma 1\/1»/);
+  assert.match(r.stdout, /El dueño está ausente/);
+  assert.match(r.stdout, /canales de los avisos/);
+  assert.match(r.stdout, /notify\.js" --side session/);
+  assert.match(r.stdout, /esperá a que escriba/);
+  assert.strictEqual(JSON.stringify(crudas(toy)), antesDe, 'el renglón queda sin cambios');
+  // la marca vencida (24 horas) no cuenta: el cuadro de siempre
+  OA.set({ estado: estado(toy.casa), quien: 'ses-coord', frase: 'me voy', ahora: Date.now() - OA.VENCE_MS - 60000 });
+  const vencida = linea(toy, ['owner-next']);
+  assert.match(vencida.stdout, /AskUserQuestion/);
+  assert.match(vencida.stdout, /«Firma 1\/1»/);
+  // el permiso tampoco abre el cuadro con la marca; sin marca, igual que siempre
+  const permiso = { tipo: 'permiso', id: 'p1', destino: 'ses-a', nombre: 'Alma', rotulo: 'Permiso 1/1', pregunta: 'p', opciones: ['Sí', 'No'], faltaRepetir: [], problemas: [] };
+  const conMarca = C.ownerNextText(permiso, 'ses-coord', null, { setAt: '2026-11-22T03:00:00.000Z' });
+  assert.doesNotMatch(conMarca, /AskUserQuestion/);
+  assert.match(conMarca, /desde 2026-11-22T03:00:00.000Z/);
+  assert.match(C.ownerNextText(permiso, 'ses-coord'), /AskUserQuestion/);
 });
 
 // ── lo que encontró el pase adversarial ─────────────────────────────────────────────────────────────────────────────────

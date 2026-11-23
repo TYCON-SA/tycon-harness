@@ -570,6 +570,8 @@ function main() {
     repo,
     merge_commit: merge,
     story,
+    // el nombre del formato 2.0 que lee el tablero (lib/dashboard-metrics.js); `story` queda para los lectores de siempre
+    story_id: story,
     run_dir: runDirDe(repo, story, merge),
     // un campo del registro, no una ruta: no cambia con el renombre, así la serie de .dashboard/ sigue
     // siendo una sola. Se arma por partes para que no se lea como la ruta vieja del archivo.

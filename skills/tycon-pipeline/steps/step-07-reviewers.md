@@ -35,7 +35,7 @@ El script además:
   `~/.claude/.tycon-pipeline/advisor-context/<sid>-iter<N>.md`. Es el **INPUT PRIMARIO**
   de cada advisor — pasalo en el prompt en vez de hacer que cada subagente re-lea todo.
 - **`frozen`**: lo que se revisa, congelado (historia 8.161). Al lanzar la vuelta, `advisors` y `smart-reloop` sellan el
-  repo de la historia y el del código y arman una copia de sólo lectura de cada uno en la carpeta de estado del
+  repo de la historia, el del código y cada repo hermano declarado, y arman una copia de sólo lectura de cada uno en la carpeta de estado del
   pipeline: `[{ repo, tree, copy }]`. El `context_file` nombra cada copia y su sello: **los revisores leen la copia, no
   la carpeta viva**. Si no se puede sellar o copiar, la vuelta no se lanza (sale 2 con el motivo). La foto de la vuelta
   (`snapshot-iter`) guarda ese sello, y «Preparar el commit» compara lo que se guarda contra él.
@@ -365,7 +365,18 @@ enumeres lo que revisaste y salió bien. El ÚLTIMO renglón es SIEMPRE el vered
 ni negrita adelante, con la regla de cada hallazgo UNA VEZ POR HALLAZGO (dos del mismo tipo, dos veces):
 Veredicto: limpio
 Veredicto: hallazgos (SEC-C1, SEC-C1, SEC-W2) · bloquea: sí
+Si el prompt trae lo que reportaste en la vuelta anterior, sumá al renglón los críticos de esa vuelta que confirmás
+arreglados, una vez por hallazgo, aunque hoy reportes otro con el mismo código:
+Veredicto: hallazgos (SEC-C1) · bloquea: sí · resueltos (SEC-C1, SEC-C3)
+Veredicto: limpio · resueltos (SEC-C1)
 ```
+
+**En la vuelta 2 en adelante, el prompt de cada revisor que vuelve trae su veredicto de la vuelta anterior y el detalle
+de esos críticos** (archivo y qué era), del archivo donde el orquestador dejó lo que devolvió. Sin eso no puede
+confirmar nada. La parte «resueltos (…)» la lee el arnés como comprobación del arreglo, igual que una cuenta que baja:
+sale del revisor, nunca del agente. Sin ella, un hallazgo nuevo con el mismo código deja el arreglo de la vuelta
+anterior «sin comprobar», y eso cuesta otra vuelta o la exención del dueño. El arnés cuenta, por revisor, hasta lo que
+ese mismo revisor reportó en su reporte anterior: no confirma lo que no reportó, ni más de lo que reportó.
 
 **El renglón de veredicto lo lee el arnés** (`lib/reported-criticals.js`): al terminar cada revisor, el gancho del fin
 del subagente (`on-advisor-done.js`) lee sus palabras de su propia transcripción y anota cada regla crítica con cuántas
@@ -542,7 +553,12 @@ Pasar a «Hallazgos» (`step-09-findings.md`) para consolidar. Si después de «
 
 Es la vuelta N de este mismo paso. `pipeline.js next` la pide («Revisores, vuelta N») sólo cuando hay ediciones de código posteriores al último cierre de los revisores con «Hallazgos» ya cerrado, y nombra esos archivos («Falta revisar lo cambiado después de los revisores: …»). Cada vuelta cierra igual: `marker.js run-check advisors -- pipeline.js check-count …` y `marker.js complete-step reviewers` (el marcador cuenta las vueltas).
 
-Un `.js`, `.cjs` o `.mjs` que quedó igual a lo revisado, salvo el lugar de sus comentarios, no pide otra vuelta (lo decide `lib/comment-only.js` contra el sello de la última vuelta cerrada); un texto de comentario cambiado, una directiva movida o cualquier duda la piden.
+Lo que cambió adentro de un archivo de código (`.js`, `.ts`, `.tsx`, `.cs`) lo decide `lib/change-kind.js` contra el sello de la última vuelta cerrada, con la regla de `lib/review-change-policy.js`:
+- **sólo comentarios o espacios** no pide otra vuelta; una directiva (`eslint-disable`, `@ts-ignore`) que cambia o se mueve, sí;
+- **sólo textos** (una cadena, una plantilla, el texto de JSX) pide la **vuelta chica**: `smart-reloop` devuelve sólo el revisor de seguridad (`mode: "small-round"`), pasa el tope sin vuelta extra ni firma y no pide la nota de repensar. Una cadena puede ser una consulta o una ruta: alguien la mira;
+- **código**, o cualquier duda, pide la vuelta de siempre; pasado el tope, la vuelta extra con su firma.
+
+Que los textos lleven la vuelta chica, o ninguna, lo decide el dueño: es una línea de `lib/review-change-policy.js`.
 
 Una prueba o un texto no piden otra vuelta: lo decide `lib/reloop-code.js`. Una prueba es lo que `isTestPath` (`lib/atdd-order.js`) reconoce en la ruta desde la raíz de su repo (la carpeta con `.git` más cercana): `*.test.ts`, `*.spec.ts`, `test_*.py`, `*Tests.cs`, el código dentro de una carpeta de pruebas. Un texto es lo que no es código (un `.md`, un `.json`). Un archivo sin raíz de repo cuenta como código: ante la duda, se revisa. Con un arreglo de código y uno de prueba, la vuelta mira el de código. El re-loop reducido (`smart-reloop`) usa la misma regla: un delta de sólo pruebas no repite revisores.
 
@@ -582,7 +598,9 @@ tope, `smart-reloop` no devuelve el set y dice qué quedó abierto:
 - **un crítico de seguridad o de datos** (reglas SEC, TENANT, AUTH, NEXTSEC, SIGNALR-C, MIGRATION, DRIZZLE, y las que
   sume la organización; también si lo confirmó el pase adversarial): lo decide una persona. Mostrale el resumen y
   preguntale: una vuelta más (`smart-reloop … --extra-round --approved-by "<la persona>"`, que la persona aprueba en
-  la ventana de permiso, o con `--terminal`; la cita ya no la autoriza), o eximirlo (`marker.js waive-critical`).
+  la ventana de permiso, o con `--terminal`; la cita ya no la autoriza), o eximirlo (`marker.js waive-critical`). Si
+  el perfil del equipo lista la vuelta extra como trámite (`approvals.delegated_signing`), la da el arnés solo, sin
+  ventana, y el aviso del tope lo dice: no la firma una persona. Eximir el crítico sigue siendo de una persona.
   Sin eso, `complete-step prepare-commit` no cierra.
 - **lo demás** queda como deuda visible y el recorrido sigue sin otra vuelta: en `findings.json` con
   `"disposition": "deferred"` y `"deuda": "tope"` (`write-findings`), después `write-followups`.

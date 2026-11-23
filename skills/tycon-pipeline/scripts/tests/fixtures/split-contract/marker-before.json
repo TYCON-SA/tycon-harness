@@ -1,0 +1,879 @@
+{
+  "nota": "salida de cada caso con el marker.js sin partir; grabada con SPLIT_CONTRACT_RECORD=1",
+  "casos": {
+    "set-sin-json": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js set: invalid JSON payload — Expected property name or '}' in JSON at position 1 (line 1 column 2)\n",
+      "archivos": {}
+    },
+    "set-ok": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\n  \"storyId\": \"9.1\",\n  \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"repoPath\": \"<RAIZ>/repo\",\n  \"evidenceDir\": null,\n  \"baseSha\": null,\n  \"runDir\": null,\n  \"sprint\": null,\n  \"sessionId\": \"ses-contrato-8163\",\n  \"startedAt\": \"<FECHA>\",\n  \"lastTouch\": \"<FECHA>\",\n  \"stepsCompleted\": [],\n  \"stepsPending\": [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9\n  ],\n  \"filesTouched\": [],\n  \"filesTouchedAt\": {},\n  \"iterations\": {},\n  \"fileEvents\": [],\n  \"stepTimings\": {\n    \"0\": {\n      \"startedAt\": \"<FECHA>\"\n    }\n  },\n  \"sesiones\": [\n    {\n      \"id\": \"ses-contrato-8163\",\n      \"nombre\": null,\n      \"visto\": \"<FECHA>\"\n    }\n  ]\n}",
+      "stderr": "",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/active/ses-contrato-8163.json": "{\n  \"storyId\": \"9.1\",\n  \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"repoPath\": \"<RAIZ>/repo\",\n  \"evidenceDir\": null,\n  \"baseSha\": null,\n  \"runDir\": null,\n  \"sprint\": null,\n  \"sessionId\": \"ses-contrato-8163\",\n  \"startedAt\": \"<FECHA>\",\n  \"lastTouch\": \"<FECHA>\",\n  \"stepsCompleted\": [],\n  \"stepsPending\": [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9\n  ],\n  \"filesTouched\": [],\n  \"filesTouchedAt\": {},\n  \"iterations\": {},\n  \"fileEvents\": [],\n  \"stepTimings\": {\n    \"0\": {\n      \"startedAt\": \"<FECHA>\"\n    }\n  },\n  \"sesiones\": [\n    {\n      \"id\": \"ses-contrato-8163\",\n      \"nombre\": null,\n      \"visto\": \"<FECHA>\"\n    }\n  ]\n}\n"
+      }
+    },
+    "get": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\n  \"storyId\": \"9.1\",\n  \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"repoPath\": \"<RAIZ>/repo\",\n  \"evidenceDir\": null,\n  \"baseSha\": null,\n  \"runDir\": null,\n  \"sprint\": null,\n  \"sessionId\": \"ses-contrato-8163\",\n  \"startedAt\": \"<FECHA>\",\n  \"lastTouch\": \"<FECHA>\",\n  \"stepsCompleted\": [],\n  \"stepsPending\": [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9\n  ],\n  \"filesTouched\": [],\n  \"filesTouchedAt\": {},\n  \"iterations\": {},\n  \"fileEvents\": [],\n  \"stepTimings\": {\n    \"0\": {\n      \"startedAt\": \"<FECHA>\"\n    }\n  },\n  \"sesiones\": [\n    {\n      \"id\": \"ses-contrato-8163\",\n      \"nombre\": null,\n      \"visto\": \"<FECHA>\"\n    }\n  ]\n}",
+      "stderr": "",
+      "archivos": {}
+    },
+    "get-sin-marcador": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{}",
+      "stderr": "",
+      "archivos": {}
+    },
+    "touch": {
+      "status": 0,
+      "signal": null,
+      "stdout": "",
+      "stderr": "",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/active/ses-contrato-8163.json": "{\n  \"storyId\": \"9.1\",\n  \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"repoPath\": \"<RAIZ>/repo\",\n  \"evidenceDir\": null,\n  \"baseSha\": null,\n  \"runDir\": null,\n  \"sprint\": null,\n  \"sessionId\": \"ses-contrato-8163\",\n  \"startedAt\": \"<FECHA>\",\n  \"lastTouch\": \"<FECHA>\",\n  \"stepsCompleted\": [],\n  \"stepsPending\": [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9\n  ],\n  \"filesTouched\": [],\n  \"filesTouchedAt\": {},\n  \"iterations\": {},\n  \"fileEvents\": [],\n  \"stepTimings\": {\n    \"0\": {\n      \"startedAt\": \"<FECHA>\"\n    }\n  },\n  \"sesiones\": [\n    {\n      \"id\": \"ses-contrato-8163\",\n      \"nombre\": null,\n      \"visto\": \"<FECHA>\"\n    }\n  ]\n}\n"
+      }
+    },
+    "complete-step-sin-paso": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js complete-step: «» no es un paso. Los pasos: start, validate-story, plan, approve-plan, implement, run-tests, reviewers, adversarial-pass, findings, live-check, prepare-commit, close-work-item.\n",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/gates.log": "{\"ts\":\"<FECHA>\",\"sessionId\":\"ses-contrato-8163\",\"repoPath\":\"<RAIZ>/repo\",\"storyPath\":\"<RAIZ>/repo/specs/story-9.1-juguete.md\",\"name\":\"step-arg\",\"status\":\"blocked\",\"story\":\"9.1\",\"arg\":\"undefined\"}\n"
+      }
+    },
+    "complete-step-numero": {
+      "status": 1,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js complete-step 3 BLOQUEADO — step(s) 1, 2 todavía pendiente(s).\n  El pipeline se recorre EN ORDEN: `pipeline.js next` te dice cuál va. Cerrá ese primero (con su evidencia).\n  Escape consciente (raro — p.ej. retomando una corrida que ya los hizo): --out-of-order (queda en bypass.log).\n",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/gates.log": "{\"ts\":\"<FECHA>\",\"sessionId\":\"ses-contrato-8163\",\"repoPath\":\"<RAIZ>/repo\",\"storyPath\":\"<RAIZ>/repo/specs/story-9.1-juguete.md\",\"name\":\"step-order\",\"status\":\"blocked\",\"story\":\"9.1\",\"step\":\"3\",\"pendingBefore\":[\"1\",\"2\"]}\n"
+      }
+    },
+    "complete-step-plan-sin-validar": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\n  \"storyId\": \"9.1\",\n  \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"repoPath\": \"<RAIZ>/repo\",\n  \"evidenceDir\": null,\n  \"baseSha\": null,\n  \"runDir\": null,\n  \"sprint\": null,\n  \"sessionId\": \"ses-contrato-8163\",\n  \"startedAt\": \"<FECHA>\",\n  \"lastTouch\": \"<FECHA>\",\n  \"stepsCompleted\": [\n    2\n  ],\n  \"stepsPending\": [\n    0,\n    1,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9\n  ],\n  \"filesTouched\": [],\n  \"filesTouchedAt\": {},\n  \"iterations\": {},\n  \"fileEvents\": [],\n  \"stepTimings\": {\n    \"0\": {\n      \"startedAt\": \"<FECHA>\"\n    },\n    \"2\": {\n      \"completedAt\": \"<FECHA>\"\n    }\n  },\n  \"sesiones\": [\n    {\n      \"id\": \"ses-contrato-8163\",\n      \"nombre\": null,\n      \"visto\": \"<FECHA>\"\n    }\n  ]\n}",
+      "stderr": "",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/active/ses-contrato-8163.json": "{\n  \"storyId\": \"9.1\",\n  \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"repoPath\": \"<RAIZ>/repo\",\n  \"evidenceDir\": null,\n  \"baseSha\": null,\n  \"runDir\": null,\n  \"sprint\": null,\n  \"sessionId\": \"ses-contrato-8163\",\n  \"startedAt\": \"<FECHA>\",\n  \"lastTouch\": \"<FECHA>\",\n  \"stepsCompleted\": [\n    2\n  ],\n  \"stepsPending\": [\n    0,\n    1,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9\n  ],\n  \"filesTouched\": [],\n  \"filesTouchedAt\": {},\n  \"iterations\": {},\n  \"fileEvents\": [],\n  \"stepTimings\": {\n    \"0\": {\n      \"startedAt\": \"<FECHA>\"\n    },\n    \"2\": {\n      \"completedAt\": \"<FECHA>\"\n    }\n  },\n  \"sesiones\": [\n    {\n      \"id\": \"ses-contrato-8163\",\n      \"nombre\": null,\n      \"visto\": \"<FECHA>\"\n    }\n  ]\n}\n"
+      }
+    },
+    "start-step": {
+      "status": 0,
+      "signal": null,
+      "stdout": "",
+      "stderr": "",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/active/ses-contrato-8163.json": "{\n  \"storyId\": \"9.1\",\n  \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"repoPath\": \"<RAIZ>/repo\",\n  \"evidenceDir\": null,\n  \"baseSha\": null,\n  \"runDir\": null,\n  \"sprint\": null,\n  \"sessionId\": \"ses-contrato-8163\",\n  \"startedAt\": \"<FECHA>\",\n  \"lastTouch\": \"<FECHA>\",\n  \"stepsCompleted\": [],\n  \"stepsPending\": [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9\n  ],\n  \"filesTouched\": [],\n  \"filesTouchedAt\": {},\n  \"iterations\": {},\n  \"fileEvents\": [],\n  \"stepTimings\": {\n    \"0\": {\n      \"startedAt\": \"<FECHA>\"\n    },\n    \"1\": {\n      \"startedAt\": \"<FECHA>\"\n    }\n  },\n  \"sesiones\": [\n    {\n      \"id\": \"ses-contrato-8163\",\n      \"nombre\": null,\n      \"visto\": \"<FECHA>\"\n    }\n  ]\n}\n"
+      }
+    },
+    "append-file": {
+      "status": 0,
+      "signal": null,
+      "stdout": "",
+      "stderr": "",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/active/ses-contrato-8163.json": "{\n  \"storyId\": \"9.1\",\n  \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"repoPath\": \"<RAIZ>/repo\",\n  \"evidenceDir\": null,\n  \"baseSha\": null,\n  \"runDir\": null,\n  \"sprint\": null,\n  \"sessionId\": \"ses-contrato-8163\",\n  \"startedAt\": \"<FECHA>\",\n  \"lastTouch\": \"<FECHA>\",\n  \"stepsCompleted\": [],\n  \"stepsPending\": [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9\n  ],\n  \"filesTouched\": [\n    \"<RAIZ>/repo/src/a.js\"\n  ],\n  \"filesTouchedAt\": {},\n  \"iterations\": {},\n  \"fileEvents\": [\n    {\n      \"path\": \"<RAIZ>/repo/src/a.js\",\n      \"ts\": \"<FECHA>\",\n      \"code\": true\n    }\n  ],\n  \"stepTimings\": {\n    \"0\": {\n      \"startedAt\": \"<FECHA>\"\n    }\n  },\n  \"sesiones\": [\n    {\n      \"id\": \"ses-contrato-8163\",\n      \"nombre\": null,\n      \"visto\": \"<FECHA>\"\n    }\n  ]\n}\n"
+      }
+    },
+    "clear": {
+      "status": 0,
+      "signal": null,
+      "stdout": "",
+      "stderr": "[marker] el volcado de tiempos va suelto a <RAIZ>/repo/.advisors/pipeline-runs: no encontré la carpeta de la corrida de la story 9.1.\n[marker] timing dump archivado: timing-history/9.1-<FECHA>.json\n[marker] repo: no pude ver si tiene commits sin pedido anotado (git no contestó)\n[marker] la oferta de la instalación completa no se evaluó: no pude leer el estado de la instalación (no pude leer <RAIZ>/home/.claude/.tycon-pipeline/harness-state.json (ENOENT))\n",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/gates.log": "{\"ts\":\"<FECHA>\",\"sessionId\":\"ses-contrato-8163\",\"repoPath\":\"<RAIZ>/repo\",\"storyPath\":\"<RAIZ>/repo/specs/story-9.1-juguete.md\",\"name\":\"run-close\",\"sesion\":\"ses-contrato-8163\",\"story\":\"9.1\",\"runDir\":null,\"estado\":\"abortada\",\"motivo\":\"sin correr: reviewers, run-tests, implement, approve-plan, validate-story, plan; sin constancia de quién autorizó cerrar\",\"via\":\"sin-registro\"}\n",
+        "HOME/.claude/.tycon-pipeline/timing-history/9.1-<FECHA>.json": "{\n  \"archivedAt\": \"<FECHA>\",\n  \"marker\": {\n    \"storyId\": \"9.1\",\n    \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n    \"repoPath\": \"<RAIZ>/repo\",\n    \"evidenceDir\": null,\n    \"baseSha\": null,\n    \"runDir\": null,\n    \"sprint\": null,\n    \"sessionId\": \"ses-contrato-8163\",\n    \"startedAt\": \"<FECHA>\",\n    \"lastTouch\": \"<FECHA>\",\n    \"stepsCompleted\": [],\n    \"stepsPending\": [\n      0,\n      1,\n      2,\n      3,\n      4,\n      5,\n      6,\n      7,\n      8,\n      9\n    ],\n    \"filesTouched\": [],\n    \"filesTouchedAt\": {},\n    \"iterations\": {},\n    \"fileEvents\": [],\n    \"stepTimings\": {\n      \"0\": {\n        \"startedAt\": \"<FECHA>\"\n      }\n    },\n    \"sesiones\": [\n      {\n        \"id\": \"ses-contrato-8163\",\n        \"nombre\": null,\n        \"visto\": \"<FECHA>\"\n      }\n    ],\n    \"cierre\": {\n      \"estado\": \"abortada\",\n      \"motivo\": \"sin correr: reviewers, run-tests, implement, approve-plan, validate-story, plan; sin constancia de quién autorizó cerrar\",\n      \"via\": \"sin-registro\",\n      \"at\": \"<FECHA>\"\n    }\n  },\n  \"gates\": [],\n  \"costo\": {\n    \"spawns\": 0,\n    \"adhoc\": 0,\n    \"adhoc_pre_step5\": 0,\n    \"iteraciones\": 0,\n    \"por_tipo\": {},\n    \"sin_hora\": 0\n  },\n  \"repo\": {\n    \"path\": \"<RAIZ>/repo\",\n    \"remote\": null\n  },\n  \"revision_previa\": null,\n  \"revision_previa_nota\": \"sin revisión previa\",\n  \"firmas\": {\n    \"estado\": \"no_medido\",\n    \"motivo\": \"⚠️ tycon: no encuentro el arnés — busqué TYCON_GUIDES_DIR: sin definir · el enlace <RAIZ>/home/.claude/tycon-harness: falta. Corré scripts/install-tycon-hooks.sh del arnés (crea el lugar ~/.claude/tycon-harness) o definí TYCON_GUIDES_DIR=<ruta del clon>.: las firmas no se subieron\"\n  },\n  \"consumo\": {\n    \"estado\": \"no_medido\",\n    \"motivo\": \"⚠️ tycon: no encuentro el arnés — busqué TYCON_GUIDES_DIR: sin definir · el enlace <RAIZ>/home/.claude/tycon-harness: falta. Corré scripts/install-tycon-hooks.sh del arnés (crea el lugar ~/.claude/tycon-harness) o definí TYCON_GUIDES_DIR=<ruta del clon>. — la corrida se archivó igual\",\n    \"medido_en\": \"<FECHA>\"\n  },\n  \"cambio\": {\n    \"estado\": \"no_medido\",\n    \"repos\": 0,\n    \"archivos\": 0,\n    \"motivo\": \"⚠️ tycon: no encuentro el arnés — busqué TYCON_GUIDES_DIR: sin definir · el enlace <RAIZ>/home/.claude/tycon-harness: falta. Corré scripts/install-tycon-hooks.sh del arnés (crea el lugar ~/.claude/tycon-harness) o definí TYCON_GUIDES_DIR=<ruta del clon>. — la corrida se archivó igual\"\n  }\n}",
+        "REPO/.advisors/pipeline-runs/timing-dump-<FECHA>.json": "{\n  \"archivedAt\": \"<FECHA>\",\n  \"marker\": {\n    \"storyId\": \"9.1\",\n    \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n    \"repoPath\": \"<RAIZ>/repo\",\n    \"evidenceDir\": null,\n    \"baseSha\": null,\n    \"runDir\": null,\n    \"sprint\": null,\n    \"sessionId\": \"ses-contrato-8163\",\n    \"startedAt\": \"<FECHA>\",\n    \"lastTouch\": \"<FECHA>\",\n    \"stepsCompleted\": [],\n    \"stepsPending\": [\n      0,\n      1,\n      2,\n      3,\n      4,\n      5,\n      6,\n      7,\n      8,\n      9\n    ],\n    \"filesTouched\": [],\n    \"filesTouchedAt\": {},\n    \"iterations\": {},\n    \"fileEvents\": [],\n    \"stepTimings\": {\n      \"0\": {\n        \"startedAt\": \"<FECHA>\"\n      }\n    },\n    \"sesiones\": [\n      {\n        \"id\": \"ses-contrato-8163\",\n        \"nombre\": null,\n        \"visto\": \"<FECHA>\"\n      }\n    ],\n    \"cierre\": {\n      \"estado\": \"abortada\",\n      \"motivo\": \"sin correr: reviewers, run-tests, implement, approve-plan, validate-story, plan; sin constancia de quién autorizó cerrar\",\n      \"via\": \"sin-registro\",\n      \"at\": \"<FECHA>\"\n    }\n  },\n  \"gates\": [],\n  \"costo\": {\n    \"spawns\": 0,\n    \"adhoc\": 0,\n    \"adhoc_pre_step5\": 0,\n    \"iteraciones\": 0,\n    \"por_tipo\": {},\n    \"sin_hora\": 0\n  },\n  \"repo\": {\n    \"path\": \"<RAIZ>/repo\",\n    \"remote\": null\n  },\n  \"revision_previa\": null,\n  \"revision_previa_nota\": \"sin revisión previa\",\n  \"firmas\": {\n    \"estado\": \"no_medido\",\n    \"motivo\": \"⚠️ tycon: no encuentro el arnés — busqué TYCON_GUIDES_DIR: sin definir · el enlace <RAIZ>/home/.claude/tycon-harness: falta. Corré scripts/install-tycon-hooks.sh del arnés (crea el lugar ~/.claude/tycon-harness) o definí TYCON_GUIDES_DIR=<ruta del clon>.: las firmas no se subieron\"\n  },\n  \"consumo\": {\n    \"estado\": \"no_medido\",\n    \"motivo\": \"⚠️ tycon: no encuentro el arnés — busqué TYCON_GUIDES_DIR: sin definir · el enlace <RAIZ>/home/.claude/tycon-harness: falta. Corré scripts/install-tycon-hooks.sh del arnés (crea el lugar ~/.claude/tycon-harness) o definí TYCON_GUIDES_DIR=<ruta del clon>. — la corrida se archivó igual\",\n    \"medido_en\": \"<FECHA>\"\n  },\n  \"cambio\": {\n    \"estado\": \"no_medido\",\n    \"repos\": 0,\n    \"archivos\": 0,\n    \"motivo\": \"⚠️ tycon: no encuentro el arnés — busqué TYCON_GUIDES_DIR: sin definir · el enlace <RAIZ>/home/.claude/tycon-harness: falta. Corré scripts/install-tycon-hooks.sh del arnés (crea el lugar ~/.claude/tycon-harness) o definí TYCON_GUIDES_DIR=<ruta del clon>. — la corrida se archivó igual\"\n  }\n}",
+        "HOME/.claude/.tycon-pipeline/active/ses-contrato-8163.json": "<BORRADO>"
+      }
+    },
+    "is-active": {
+      "status": 0,
+      "signal": null,
+      "stdout": "9.1",
+      "stderr": "",
+      "archivos": {}
+    },
+    "list-all": {
+      "status": 0,
+      "signal": null,
+      "stdout": "[\n  {\n    \"storyId\": \"9.1\",\n    \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n    \"repoPath\": \"<RAIZ>/repo\",\n    \"evidenceDir\": null,\n    \"baseSha\": null,\n    \"runDir\": null,\n    \"sprint\": null,\n    \"sessionId\": \"ses-contrato-8163\",\n    \"startedAt\": \"<FECHA>\",\n    \"lastTouch\": \"<FECHA>\",\n    \"stepsCompleted\": [],\n    \"stepsPending\": [\n      0,\n      1,\n      2,\n      3,\n      4,\n      5,\n      6,\n      7,\n      8,\n      9\n    ],\n    \"filesTouched\": [],\n    \"filesTouchedAt\": {},\n    \"iterations\": {},\n    \"fileEvents\": [],\n    \"stepTimings\": {\n      \"0\": {\n        \"startedAt\": \"<FECHA>\"\n      }\n    },\n    \"sesiones\": [\n      {\n        \"id\": \"ses-contrato-8163\",\n        \"nombre\": null,\n        \"visto\": \"<FECHA>\"\n      }\n    ]\n  }\n]",
+      "stderr": "",
+      "archivos": {}
+    },
+    "find-by-story": {
+      "status": 0,
+      "signal": null,
+      "stdout": "[\n  {\n    \"storyId\": \"9.1\",\n    \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n    \"repoPath\": \"<RAIZ>/repo\",\n    \"evidenceDir\": null,\n    \"baseSha\": null,\n    \"runDir\": null,\n    \"sprint\": null,\n    \"sessionId\": \"ses-contrato-8163\",\n    \"startedAt\": \"<FECHA>\",\n    \"lastTouch\": \"<FECHA>\",\n    \"stepsCompleted\": [],\n    \"stepsPending\": [\n      0,\n      1,\n      2,\n      3,\n      4,\n      5,\n      6,\n      7,\n      8,\n      9\n    ],\n    \"filesTouched\": [],\n    \"filesTouchedAt\": {},\n    \"iterations\": {},\n    \"fileEvents\": [],\n    \"stepTimings\": {\n      \"0\": {\n        \"startedAt\": \"<FECHA>\"\n      }\n    },\n    \"sesiones\": [\n      {\n        \"id\": \"ses-contrato-8163\",\n        \"nombre\": null,\n        \"visto\": \"<FECHA>\"\n      }\n    ]\n  }\n]",
+      "stderr": "",
+      "archivos": {}
+    },
+    "clear-session-sin-id": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js clear-session: sessionId requerido\n",
+      "archivos": {}
+    },
+    "restore-sin-id": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js restore: sessionId requerido\n",
+      "archivos": {}
+    },
+    "restore-desconocida": {
+      "status": 1,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js restore ses-que-no-existe: la sesión ses-que-no-existe no tiene una ejecución abierta (ni apertura en el registro ni copia en este repo): no hay nada que restaurar.\n",
+      "archivos": {}
+    },
+    "adopt-session-sin-id": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js adopt-session: sessionId requerido\n",
+      "archivos": {}
+    },
+    "update-story-status": {
+      "status": 0,
+      "signal": null,
+      "stdout": "status: review\n",
+      "stderr": "",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/gates.log": "{\"ts\":\"<FECHA>\",\"sessionId\":\"ses-contrato-8163\",\"repoPath\":\"<RAIZ>/repo\",\"storyPath\":\"<RAIZ>/repo/specs/story-9.1-juguete.md\",\"name\":\"story-status\",\"status\":\"review\",\"storyRel\":\"specs/story-9.1-juguete.md\",\"repoCommon\":\"<RAIZ>/repo/.git\"}\n",
+        "REPO/specs/story-9.1-juguete.md": "---\nepic: 9\nstory: \"9.1\"\ntitle: \"Historia de juguete del contrato\"\nstatus: review\npipelines:\n  - name: A-una\n    title: \"una\"\n    status: in-progress\n    acs_pending: [1]\n    tasks_pending: [1]\n    tests_pending: [T1]\n---\n\n# Story 9.1: Historia de juguete del contrato\n\nStatus: review\n\n## Acceptance Criteria\n\n1. **Given** algo **When** pasa **Then** se ve.\n\n### Tests (1 verificación)\n\n| # | Test | AC | Nivel | Escenario | Resultado esperado |\n|---|------|----|-------|-----------|--------------------|\n| T1 | `Algo_Pasa_SeVe` | 1 | unit | algo | se ve |\n\n## Tasks / Subtasks\n\n- [ ] Task 1: algo (AC: 1)\n"
+      }
+    },
+    "update-story-status-invalido": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js update-story-status: status inválido 'cualquiera' — valores: ready-for-dev | in-progress | review | done | blocked | abandoned\n",
+      "archivos": {}
+    },
+    "update-pipeline-status": {
+      "status": 0,
+      "signal": null,
+      "stdout": "A-una: blocked\n",
+      "stderr": "",
+      "archivos": {
+        "REPO/specs/story-9.1-juguete.md": "---\nepic: 9\nstory: \"9.1\"\ntitle: \"Historia de juguete del contrato\"\nstatus: in-progress\npipelines:\n  - name: A-una\n    title: \"una\"\n    status: blocked\n    acs_pending: [1]\n    tasks_pending: [1]\n    tests_pending: [T1]\n---\n\n# Story 9.1: Historia de juguete del contrato\n\nStatus: in-progress\n\n## Acceptance Criteria\n\n1. **Given** algo **When** pasa **Then** se ve.\n\n### Tests (1 verificación)\n\n| # | Test | AC | Nivel | Escenario | Resultado esperado |\n|---|------|----|-------|-----------|--------------------|\n| T1 | `Algo_Pasa_SeVe` | 1 | unit | algo | se ve |\n\n## Tasks / Subtasks\n\n- [ ] Task 1: algo (AC: 1)\n"
+      }
+    },
+    "mark-dod-runtime-checked-sin-json": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js mark-dod-runtime-checked: payload JSON invalido: Expected property name or '}' in JSON at position 1 (line 1 column 2)\n",
+      "archivos": {}
+    },
+    "set-autonomous": {
+      "status": 0,
+      "signal": null,
+      "stdout": "autonomous: false\n",
+      "stderr": "",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/active/ses-contrato-8163.json": "{\n  \"storyId\": \"9.1\",\n  \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"repoPath\": \"<RAIZ>/repo\",\n  \"evidenceDir\": null,\n  \"baseSha\": null,\n  \"runDir\": null,\n  \"sprint\": null,\n  \"sessionId\": \"ses-contrato-8163\",\n  \"startedAt\": \"<FECHA>\",\n  \"lastTouch\": \"<FECHA>\",\n  \"stepsCompleted\": [],\n  \"stepsPending\": [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9\n  ],\n  \"filesTouched\": [],\n  \"filesTouchedAt\": {},\n  \"iterations\": {},\n  \"fileEvents\": [],\n  \"stepTimings\": {\n    \"0\": {\n      \"startedAt\": \"<FECHA>\"\n    }\n  },\n  \"sesiones\": [\n    {\n      \"id\": \"ses-contrato-8163\",\n      \"nombre\": null,\n      \"visto\": \"<FECHA>\"\n    }\n  ],\n  \"autonomous\": false\n}\n"
+      }
+    },
+    "set-batch": {
+      "status": 0,
+      "signal": null,
+      "stdout": "batch: A-una\nbatch: la parte no vale para medir el riesgo (la parte A-una no declara files: y ningún archivo atado a la tanda A-una): el plan se mide por la historia entera\n",
+      "stderr": "",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/gates.log": "{\"ts\":\"<FECHA>\",\"sessionId\":\"ses-contrato-8163\",\"repoPath\":\"<RAIZ>/repo\",\"storyPath\":\"<RAIZ>/repo/specs/story-9.1-juguete.md\",\"name\":\"set-batch\",\"story\":\"9.1\",\"batch\":\"A-una\",\"valid\":false,\"reason\":\"la parte A-una no declara files: y ningún archivo atado a la tanda A-una\"}\n",
+        "HOME/.claude/.tycon-pipeline/active/ses-contrato-8163.json": "{\n  \"storyId\": \"9.1\",\n  \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"repoPath\": \"<RAIZ>/repo\",\n  \"evidenceDir\": null,\n  \"baseSha\": null,\n  \"runDir\": null,\n  \"sprint\": null,\n  \"sessionId\": \"ses-contrato-8163\",\n  \"startedAt\": \"<FECHA>\",\n  \"lastTouch\": \"<FECHA>\",\n  \"stepsCompleted\": [],\n  \"stepsPending\": [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9\n  ],\n  \"filesTouched\": [],\n  \"filesTouchedAt\": {},\n  \"iterations\": {},\n  \"fileEvents\": [],\n  \"stepTimings\": {\n    \"0\": {\n      \"startedAt\": \"<FECHA>\"\n    }\n  },\n  \"sesiones\": [\n    {\n      \"id\": \"ses-contrato-8163\",\n      \"nombre\": null,\n      \"visto\": \"<FECHA>\"\n    }\n  ],\n  \"batch\": \"A-una\",\n  \"batchSetAt\": \"<FECHA>\",\n  \"batchValid\": false,\n  \"batchInvalidReason\": \"la parte A-una no declara files: y ningún archivo atado a la tanda A-una\"\n}\n"
+      }
+    },
+    "set-check-sin-manual": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js set-check 'build': RECHAZADO — requiere --manual explícito.\n  Para checks mecánicos (no falseables) usá: marker.js run-check build -- <comando> [args...]\n  (run-check ejecuta el comando y captura el exit code REAL — no se puede colar un green).\n  Override manual real (ej: no hay build definido): agregá --manual (queda en gates.log).\n",
+      "archivos": {}
+    },
+    "set-check-manual": {
+      "status": 0,
+      "signal": null,
+      "stdout": "check build: green (manual)\n",
+      "stderr": "",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/gates.log": "{\"ts\":\"<FECHA>\",\"sessionId\":\"ses-contrato-8163\",\"repoPath\":\"<RAIZ>/repo\",\"storyPath\":\"<RAIZ>/repo/specs/story-9.1-juguete.md\",\"check\":\"build\",\"status\":\"green\",\"provenance\":\"manual\",\"storyId\":\"9.1\"}\n",
+        "HOME/.claude/.tycon-pipeline/active/ses-contrato-8163.json": "{\n  \"storyId\": \"9.1\",\n  \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"repoPath\": \"<RAIZ>/repo\",\n  \"evidenceDir\": null,\n  \"baseSha\": null,\n  \"runDir\": null,\n  \"sprint\": null,\n  \"sessionId\": \"ses-contrato-8163\",\n  \"startedAt\": \"<FECHA>\",\n  \"lastTouch\": \"<FECHA>\",\n  \"stepsCompleted\": [],\n  \"stepsPending\": [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9\n  ],\n  \"filesTouched\": [],\n  \"filesTouchedAt\": {},\n  \"iterations\": {},\n  \"fileEvents\": [],\n  \"stepTimings\": {\n    \"0\": {\n      \"startedAt\": \"<FECHA>\"\n    }\n  },\n  \"sesiones\": [\n    {\n      \"id\": \"ses-contrato-8163\",\n      \"nombre\": null,\n      \"visto\": \"<FECHA>\"\n    }\n  ],\n  \"checks\": {\n    \"build\": \"green\"\n  },\n  \"checksProvenance\": {\n    \"build\": \"manual\"\n  },\n  \"checksAt\": {\n    \"build\": \"<FECHA>\"\n  }\n}\n"
+      }
+    },
+    "run-check-ok": {
+      "status": 0,
+      "signal": null,
+      "stdout": "check build: green (run-check, <N> ms)\n",
+      "stderr": "",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/gates.log": "{\"ts\":\"<FECHA>\",\"sessionId\":\"ses-contrato-8163\",\"repoPath\":\"<RAIZ>/repo\",\"storyPath\":\"<RAIZ>/repo/specs/story-9.1-juguete.md\",\"check\":\"build\",\"status\":\"green\",\"provenance\":\"run-check\",\"cmd\":\"node -e process.exit(0)\",\"exit\":0,\"durationMs\":<N>,\"storyId\":\"9.1\"}\n",
+        "HOME/.claude/.tycon-pipeline/active/ses-contrato-8163.json": "{\n  \"storyId\": \"9.1\",\n  \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"repoPath\": \"<RAIZ>/repo\",\n  \"evidenceDir\": null,\n  \"baseSha\": null,\n  \"runDir\": null,\n  \"sprint\": null,\n  \"sessionId\": \"ses-contrato-8163\",\n  \"startedAt\": \"<FECHA>\",\n  \"lastTouch\": \"<FECHA>\",\n  \"stepsCompleted\": [],\n  \"stepsPending\": [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9\n  ],\n  \"filesTouched\": [],\n  \"filesTouchedAt\": {},\n  \"iterations\": {},\n  \"fileEvents\": [],\n  \"stepTimings\": {\n    \"0\": {\n      \"startedAt\": \"<FECHA>\"\n    }\n  },\n  \"sesiones\": [\n    {\n      \"id\": \"ses-contrato-8163\",\n      \"nombre\": null,\n      \"visto\": \"<FECHA>\"\n    }\n  ],\n  \"checks\": {\n    \"build\": \"green\"\n  },\n  \"checksProvenance\": {\n    \"build\": \"run-check\"\n  },\n  \"checksAt\": {\n    \"build\": \"<FECHA>\"\n  }\n}\n"
+      }
+    },
+    "run-check-rojo": {
+      "status": 3,
+      "signal": null,
+      "stdout": "check build: red:exit=3 (run-check, <N> ms)\n",
+      "stderr": "",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/gates.log": "{\"ts\":\"<FECHA>\",\"sessionId\":\"ses-contrato-8163\",\"repoPath\":\"<RAIZ>/repo\",\"storyPath\":\"<RAIZ>/repo/specs/story-9.1-juguete.md\",\"check\":\"build\",\"status\":\"red:exit=3\",\"provenance\":\"run-check\",\"cmd\":\"node -e process.exit(3)\",\"exit\":3,\"durationMs\":<N>,\"storyId\":\"9.1\",\"cola_motivo\":\"⚠️ tycon: no encuentro el arnés — busqué TYCON_GUIDES_DIR: sin definir · el enlace <RAIZ>/home/.claude/tycon-harness: falta. Corré scripts/install-tycon-hooks.sh del arnés (crea el lugar ~/.claude/tycon-harness) o definí TYCON_GUIDES_DIR=<ruta del clon>. — la salida no se guardó sin sanear\"}\n",
+        "HOME/.claude/.tycon-pipeline/active/ses-contrato-8163.json": "{\n  \"storyId\": \"9.1\",\n  \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"repoPath\": \"<RAIZ>/repo\",\n  \"evidenceDir\": null,\n  \"baseSha\": null,\n  \"runDir\": null,\n  \"sprint\": null,\n  \"sessionId\": \"ses-contrato-8163\",\n  \"startedAt\": \"<FECHA>\",\n  \"lastTouch\": \"<FECHA>\",\n  \"stepsCompleted\": [],\n  \"stepsPending\": [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9\n  ],\n  \"filesTouched\": [],\n  \"filesTouchedAt\": {},\n  \"iterations\": {},\n  \"fileEvents\": [],\n  \"stepTimings\": {\n    \"0\": {\n      \"startedAt\": \"<FECHA>\"\n    }\n  },\n  \"sesiones\": [\n    {\n      \"id\": \"ses-contrato-8163\",\n      \"nombre\": null,\n      \"visto\": \"<FECHA>\"\n    }\n  ],\n  \"checks\": {\n    \"build\": \"red:exit=3\"\n  },\n  \"checksProvenance\": {\n    \"build\": \"run-check\"\n  },\n  \"checksAt\": {\n    \"build\": \"<FECHA>\"\n  }\n}\n"
+      }
+    },
+    "mark-tests-not-scoped": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js mark-tests-not-scoped: sólo lo usa test-gate.sh (TYCON_TEST_GATE=1)\n",
+      "archivos": {}
+    },
+    "tests-failed-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js tests-failed: uso — tests-failed record --summary <f> --repo <r> [--full-ts <ts>] | clear --path <ruta> --repo <r> [--summary <f> --tree <árbol> [--coverage-file <f>]] [--result <f> [--story-id <id>] [--sealed <f>] [--inherited] [--full-suite-by <quién>]] | pending --suites <json> --gate <test-gate.sh> --repo <r> [--story <s>] | save-red|save-green --summary <f> --measured <f> [--coverage-file <f>] [--base <sha>] [--trim <t>] [--story-id <id>] [--after-inherited <f>] [--origin-at <ts>] --repo <r> | red-full|green-full --repo <r> | drop-red|drop-green --repo <r> | run-end --repo <r> --mode <m> --reason <t> --exit <n> --saved verde|rojo|no [--saved-reason <t>] [--origin-at <ts>] [--suites <n>] [--duration-ms <n>]\n",
+      "archivos": {}
+    },
+    "mark-tests-not-measured": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js mark-tests-not-measured: sólo lo usa test-gate.sh (TYCON_TEST_GATE=1)\n",
+      "archivos": {}
+    },
+    "set-flag-sin-motivo": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js set-flag: el escape de las pruebas primero pide el motivo — uso: set-flag atddBypass true --reason \"<por qué>\"\n",
+      "archivos": {}
+    },
+    "set-flag-con-motivo": {
+      "status": 0,
+      "signal": null,
+      "stdout": "atddBypass: true\n",
+      "stderr": "",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/active/ses-contrato-8163.json": "{\n  \"storyId\": \"9.1\",\n  \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"repoPath\": \"<RAIZ>/repo\",\n  \"evidenceDir\": null,\n  \"baseSha\": null,\n  \"runDir\": null,\n  \"sprint\": null,\n  \"sessionId\": \"ses-contrato-8163\",\n  \"startedAt\": \"<FECHA>\",\n  \"lastTouch\": \"<FECHA>\",\n  \"stepsCompleted\": [],\n  \"stepsPending\": [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9\n  ],\n  \"filesTouched\": [],\n  \"filesTouchedAt\": {},\n  \"iterations\": {},\n  \"fileEvents\": [],\n  \"stepTimings\": {\n    \"0\": {\n      \"startedAt\": \"<FECHA>\"\n    }\n  },\n  \"sesiones\": [\n    {\n      \"id\": \"ses-contrato-8163\",\n      \"nombre\": null,\n      \"visto\": \"<FECHA>\"\n    }\n  ],\n  \"atddBypass\": true,\n  \"atddBypassReason\": \"refactor sobre la red de siempre\"\n}\n"
+      }
+    },
+    "start-warning": {
+      "status": 0,
+      "signal": null,
+      "stdout": "Arranque: hecho, con aviso: no se pudo abrir el registro de horas\n",
+      "stderr": "",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/gates.log": "{\"ts\":\"<FECHA>\",\"sessionId\":\"ses-contrato-8163\",\"repoPath\":\"<RAIZ>/repo\",\"storyPath\":\"<RAIZ>/repo/specs/story-9.1-juguete.md\",\"name\":\"start-warning\",\"part\":\"time-tracking\",\"motivo\":\"sin persona\",\"at\":\"<FECHA>\",\"story\":\"9.1\"}\n",
+        "HOME/.claude/.tycon-pipeline/active/ses-contrato-8163.json": "{\n  \"storyId\": \"9.1\",\n  \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"repoPath\": \"<RAIZ>/repo\",\n  \"evidenceDir\": null,\n  \"baseSha\": null,\n  \"runDir\": null,\n  \"sprint\": null,\n  \"sessionId\": \"ses-contrato-8163\",\n  \"startedAt\": \"<FECHA>\",\n  \"lastTouch\": \"<FECHA>\",\n  \"stepsCompleted\": [],\n  \"stepsPending\": [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9\n  ],\n  \"filesTouched\": [],\n  \"filesTouchedAt\": {},\n  \"iterations\": {},\n  \"fileEvents\": [],\n  \"stepTimings\": {\n    \"0\": {\n      \"startedAt\": \"<FECHA>\"\n    }\n  },\n  \"sesiones\": [\n    {\n      \"id\": \"ses-contrato-8163\",\n      \"nombre\": null,\n      \"visto\": \"<FECHA>\"\n    }\n  ],\n  \"startWarnings\": [\n    {\n      \"part\": \"time-tracking\",\n      \"message\": \"sin persona\"\n    }\n  ]\n}\n"
+      }
+    },
+    "close-as-debt-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js close-as-debt: uso: close-as-debt --reason \"<qué quedó pendiente y por qué>\" --debt <DEF-id>\n",
+      "archivos": {}
+    },
+    "lift-debt-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js lift-debt: uso: lift-debt --debt <DEF-id>   (el id de la deuda del cierre, ya pagada)\n",
+      "archivos": {}
+    },
+    "expect-red-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js expect-red: uso: expect-red <control> --tests <T2,T5>   (las pruebas que quedan en rojo a propósito)\n",
+      "archivos": {}
+    },
+    "note-red-test-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js note-red-test: uso: note-red-test --test <ruta de la prueba> --reason \"<por qué la prueba está mal>\"\n",
+      "archivos": {}
+    },
+    "set-size": {
+      "status": 0,
+      "signal": null,
+      "stdout": "size: completa (superficie compartida)\n",
+      "stderr": "",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/active/ses-contrato-8163.json": "{\n  \"storyId\": \"9.1\",\n  \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"repoPath\": \"<RAIZ>/repo\",\n  \"evidenceDir\": null,\n  \"baseSha\": null,\n  \"runDir\": null,\n  \"sprint\": null,\n  \"sessionId\": \"ses-contrato-8163\",\n  \"startedAt\": \"<FECHA>\",\n  \"lastTouch\": \"<FECHA>\",\n  \"stepsCompleted\": [],\n  \"stepsPending\": [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9\n  ],\n  \"filesTouched\": [],\n  \"filesTouchedAt\": {},\n  \"iterations\": {},\n  \"fileEvents\": [],\n  \"stepTimings\": {\n    \"0\": {\n      \"startedAt\": \"<FECHA>\"\n    }\n  },\n  \"sesiones\": [\n    {\n      \"id\": \"ses-contrato-8163\",\n      \"nombre\": null,\n      \"visto\": \"<FECHA>\"\n    }\n  ],\n  \"size\": \"completa\",\n  \"size_reason\": \"forzado a mano: superficie compartida\",\n  \"sizeForced\": {\n    \"by\": \"acme\",\n    \"reason\": \"superficie compartida\",\n    \"at\": \"<FECHA>\",\n    \"from\": null\n  }\n}\n"
+      }
+    },
+    "set-models-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "uso: marker.js set-models <trabajo>=<nivel> … | --clear   (trabajos: reviewers, reviewers_reloop, adversarial, helpers o un revisor; niveles: economy, balanced, strong, max; también haiku, sonnet, opus, fable)\n",
+      "archivos": {}
+    },
+    "mark-models-warned": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "uso: marker.js mark-models-warned <clave> …\n",
+      "archivos": {}
+    },
+    "snapshot-iter-sin-n": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js snapshot-iter: N debe ser entero >= 1\n",
+      "archivos": {}
+    },
+    "snapshot-iter": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\n  \"iter\": 1,\n  \"foto\": \"tomada\",\n  \"verificada\": false,\n  \"motivo\": \"no hay registro de revisores en esta sesión (advisor-runs/<sid>.jsonl vacío o ausente)\",\n  \"snapshot_size\": 0,\n  \"ts\": \"<FECHA>\"\n}\n",
+      "stderr": "⚠ foto iter 1 sin verificar: no hay registro de revisores en esta sesión (advisor-runs/<sid>.jsonl vacío o ausente)\n   (¿retomaste la corrida en otra sesión sin copiar advisor-runs/<sid>.jsonl? La guarda no puede medir.)\n",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/gates.log": "{\"ts\":\"<FECHA>\",\"sessionId\":\"ses-contrato-8163\",\"repoPath\":\"<RAIZ>/repo\",\"storyPath\":\"<RAIZ>/repo/specs/story-9.1-juguete.md\",\"name\":\"advisors-iter\",\"storyId\":\"9.1\",\"iter\":1,\"snapshot_size\":0,\"foto\":\"tomada\",\"verificada\":false,\"motivo\":\"no hay registro de revisores en esta sesión (advisor-runs/<sid>.jsonl vacío o ausente)\"}\n",
+        "HOME/.claude/.tycon-pipeline/active/ses-contrato-8163.json": "{\n  \"storyId\": \"9.1\",\n  \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"repoPath\": \"<RAIZ>/repo\",\n  \"evidenceDir\": null,\n  \"baseSha\": null,\n  \"runDir\": null,\n  \"sprint\": null,\n  \"sessionId\": \"ses-contrato-8163\",\n  \"startedAt\": \"<FECHA>\",\n  \"lastTouch\": \"<FECHA>\",\n  \"stepsCompleted\": [],\n  \"stepsPending\": [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9\n  ],\n  \"filesTouched\": [],\n  \"filesTouchedAt\": {},\n  \"iterations\": {\n    \"1\": {\n      \"ts\": \"<FECHA>\",\n      \"filesSnapshot\": []\n    }\n  },\n  \"fileEvents\": [],\n  \"stepTimings\": {\n    \"0\": {\n      \"startedAt\": \"<FECHA>\"\n    }\n  },\n  \"sesiones\": [\n    {\n      \"id\": \"ses-contrato-8163\",\n      \"nombre\": null,\n      \"visto\": \"<FECHA>\"\n    }\n  ]\n}\n"
+      }
+    },
+    "runtime-waiver-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "🚫 marker.js runtime-waiver RECHAZADO — hay criterios SIN CORRER que no se pueden eximir: AC #1. Los corre el agente.\n",
+      "archivos": {}
+    },
+    "runtime-waiver-sin-terminal": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "🚫 marker.js runtime-waiver RECHAZADO — hay criterios SIN CORRER que no se pueden eximir: AC #1. Los corre el agente.\n",
+      "archivos": {}
+    },
+    "waive-critical-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js waive-critical: faltan --rule <regla> y --reason \"<por qué>\" (y --file <archivo> si el hallazgo lo nombra).\n",
+      "archivos": {}
+    },
+    "waive-critical-sin-terminal": {
+      "status": 1,
+      "signal": null,
+      "stdout": "",
+      "stderr": "ℹ️  el marcador de la historia 9.1 no tiene carpeta de corrida y no uso su apertura: la sesión no tiene una apertura en gates.log. Abro una carpeta de corrida nueva (9.1-<SELLO>).\n🔒 marker.js: esta firma no pasó por la ventana: el guion no lo lanzó la consola de la herramienta. Pedila de nuevo: el comando solo, en su forma exacta; en una pestaña sin permisos se aprueba con un click en el cuadro de opciones o con un «aprobado» escrito. O en tu terminal: marker.js waive-critical --terminal\n",
+      "archivos": {}
+    },
+    "compare-waiver-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js compare-waiver: faltan --command <candidato> y --reason \"<por qué>\" (y --story <historia>).\n",
+      "archivos": {}
+    },
+    "sign-adversarial-skip-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "🔒 marker.js sign-adversarial-skip: no se firmó el salteo — faltan --story <S> y --reason \"<motivo>\"\n",
+      "archivos": {}
+    },
+    "approve-pending-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "uso: marker.js approve-pending --id <código del pendiente> [--repo <carpeta>] [--terminal]\n",
+      "archivos": {}
+    },
+    "approve-save-sin-args": {
+      "status": 1,
+      "signal": null,
+      "stdout": "",
+      "stderr": "ℹ️  approve-save: la vuelta no tiene sello: no se pudo comparar lo que se guarda con lo revisado (no medido, no «igual»).\n🔒 marker.js: esta firma no pasó por la ventana: el guion no lo lanzó la consola de la herramienta. Pedila de nuevo: el comando solo, en su forma exacta; en una pestaña sin permisos se aprueba con un click en el cuadro de opciones o con un «aprobado» escrito. O en tu terminal: marker.js approve-save --terminal --for-session <D>\n",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/gates.log": "{\"ts\":\"<FECHA>\",\"sessionId\":\"ses-contrato-8163\",\"repoPath\":\"<RAIZ>/repo\",\"storyPath\":\"<RAIZ>/repo/specs/story-9.1-juguete.md\",\"name\":\"reviewed-tree\",\"status\":\"no-medido\",\"story\":\"9.1\",\"quien\":\"approve-save\",\"motivo\":\"la vuelta no tiene sello\"}\n"
+      }
+    },
+    "plan-review-sin-plan": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "🔒 marker.js plan-review: el plan de la sesión ses-contrato-8163 no está cerrado: se lanza la revisión después de cerrar «Armar el plan» (complete-step plan). No se escribió nada.\n",
+      "archivos": {}
+    },
+    "review-ask-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "🔒 marker.js review-ask: --kind es plan o code. No se escribió nada.\n",
+      "archivos": {}
+    },
+    "review-answer-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "🔒 marker.js review-answer: --kind es plan o code. No se escribió nada.\n",
+      "archivos": {}
+    },
+    "owner-away-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "uso: marker.js owner-away set --phrase \"<lo que dijo la persona>\" | clear [--reason \"<por qué>\"] | get\n",
+      "archivos": {}
+    },
+    "save-check-sin-args": {
+      "status": 1,
+      "signal": null,
+      "stdout": "",
+      "stderr": "🔒 save-check: la corrida no tiene un ok de guardar (saveOk): hay que pedirlo\n",
+      "archivos": {}
+    },
+    "designate-relay-frase-sin-rol": {
+      "status": 1,
+      "signal": null,
+      "stdout": "",
+      "stderr": "🚫 marker.js designate-relay: no se designó nada — la frase no nombra el rol «coordinadora».\n   Con una frase que nombra el rol (por ejemplo «Esta sesión es la coordinadora», con o sin tildes): node <GUIONES>/marker.js designate-relay --approved-by '<el dev>' --quote '<la frase>'\n",
+      "archivos": {}
+    },
+    "withdraw-relay": {
+      "status": 1,
+      "signal": null,
+      "stdout": "",
+      "stderr": "🚫 marker.js withdraw-relay: no se retiró a la coordinadora — no hay coordinadora en esta máquina.\n",
+      "archivos": {}
+    },
+    "mark-tested-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js mark-tested: falta --acs <números de criterio, separados por coma> (la persona lo aprueba en la ventana de permiso, con un click o un «aprobado», o con --terminal).\n",
+      "archivos": {}
+    },
+    "mark-adversarial-launched": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\n  \"launchedAtStep\": 4,\n  \"runId\": \"run-juguete\",\n  \"sessionId\": \"ses-contrato-8163\",\n  \"launchedAt\": \"<FECHA>\",\n  \"sellos\": {\n    \"<RAIZ>/repo\": \"<HEX>\"\n  },\n  \"copias\": {\n    \"<RAIZ>/repo\": \"<RAIZ>/home/.claude/.tycon-pipeline/frozen/ses-contrato-8163/pase-run-juguete/repo-<SELLO>\"\n  }\n}\n",
+      "stderr": "",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/frozen/ses-contrato-8163/vueltas.jsonl": "{\"ts\":\"<FECHA>\",\"tipo\":\"pase\",\"etiqueta\":\"pase-run-juguete\",\"story\":\"9.1\",\"repos\":[{\"repo\":\"<RAIZ>/repo\",\"tree\":\"<HEX>\",\"copy\":\"<RAIZ>/home/.claude/.tycon-pipeline/frozen/ses-contrato-8163/pase-run-juguete/repo-<SELLO>\",\"mainBase\":\"<HEX>\"}]}\n",
+        "HOME/.claude/.tycon-pipeline/frozen/ses-contrato-8163/pase-run-juguete/repo-<SELLO>/src/a.js": "module.exports = 1;\n",
+        "HOME/.claude/.tycon-pipeline/frozen/ses-contrato-8163/pase-run-juguete/repo-<SELLO>/specs/story-9.1-juguete.md": "---\nepic: 9\nstory: \"9.1\"\ntitle: \"Historia de juguete del contrato\"\nstatus: in-progress\npipelines:\n  - name: A-una\n    title: \"una\"\n    status: in-progress\n    acs_pending: [1]\n    tasks_pending: [1]\n    tests_pending: [T1]\n---\n\n# Story 9.1: Historia de juguete del contrato\n\nStatus: in-progress\n\n## Acceptance Criteria\n\n1. **Given** algo **When** pasa **Then** se ve.\n\n### Tests (1 verificación)\n\n| # | Test | AC | Nivel | Escenario | Resultado esperado |\n|---|------|----|-------|-----------|--------------------|\n| T1 | `Algo_Pasa_SeVe` | 1 | unit | algo | se ve |\n\n## Tasks / Subtasks\n\n- [ ] Task 1: algo (AC: 1)\n",
+        "HOME/.claude/.tycon-pipeline/active/ses-contrato-8163.json": "{\n  \"storyId\": \"9.1\",\n  \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"repoPath\": \"<RAIZ>/repo\",\n  \"evidenceDir\": null,\n  \"baseSha\": null,\n  \"runDir\": null,\n  \"sprint\": null,\n  \"sessionId\": \"ses-contrato-8163\",\n  \"startedAt\": \"<FECHA>\",\n  \"lastTouch\": \"<FECHA>\",\n  \"stepsCompleted\": [],\n  \"stepsPending\": [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9\n  ],\n  \"filesTouched\": [],\n  \"filesTouchedAt\": {},\n  \"iterations\": {},\n  \"fileEvents\": [],\n  \"stepTimings\": {\n    \"0\": {\n      \"startedAt\": \"<FECHA>\"\n    }\n  },\n  \"sesiones\": [\n    {\n      \"id\": \"ses-contrato-8163\",\n      \"nombre\": null,\n      \"visto\": \"<FECHA>\"\n    }\n  ],\n  \"adversarial\": {\n    \"launchedAtStep\": 4,\n    \"runId\": \"run-juguete\",\n    \"sessionId\": \"ses-contrato-8163\",\n    \"launchedAt\": \"<FECHA>\",\n    \"sellos\": {\n      \"<RAIZ>/repo\": \"<HEX>\"\n    },\n    \"copias\": {\n      \"<RAIZ>/repo\": \"<RAIZ>/home/.claude/.tycon-pipeline/frozen/ses-contrato-8163/pase-run-juguete/repo-<SELLO>\"\n    }\n  }\n}\n"
+      }
+    },
+    "freeze-adversarial": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\n  \"sellos\": {\n    \"<RAIZ>/repo\": \"<HEX>\"\n  },\n  \"copias\": {\n    \"<RAIZ>/repo\": \"<RAIZ>/home/.claude/.tycon-pipeline/frozen/ses-contrato-8163/pase-<MS>/repo-<SELLO>\"\n  }\n}\n",
+      "stderr": "",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/frozen/ses-contrato-8163/vueltas.jsonl": "{\"ts\":\"<FECHA>\",\"tipo\":\"pase\",\"etiqueta\":\"pase-<MS>\",\"story\":\"9.1\",\"repos\":[{\"repo\":\"<RAIZ>/repo\",\"tree\":\"<HEX>\",\"copy\":\"<RAIZ>/home/.claude/.tycon-pipeline/frozen/ses-contrato-8163/pase-<MS>/repo-<SELLO>\",\"mainBase\":\"<HEX>\"}]}\n",
+        "HOME/.claude/.tycon-pipeline/frozen/ses-contrato-8163/pase-<MS>/repo-<SELLO>/src/a.js": "module.exports = 1;\n",
+        "HOME/.claude/.tycon-pipeline/frozen/ses-contrato-8163/pase-<MS>/repo-<SELLO>/specs/story-9.1-juguete.md": "---\nepic: 9\nstory: \"9.1\"\ntitle: \"Historia de juguete del contrato\"\nstatus: in-progress\npipelines:\n  - name: A-una\n    title: \"una\"\n    status: in-progress\n    acs_pending: [1]\n    tasks_pending: [1]\n    tests_pending: [T1]\n---\n\n# Story 9.1: Historia de juguete del contrato\n\nStatus: in-progress\n\n## Acceptance Criteria\n\n1. **Given** algo **When** pasa **Then** se ve.\n\n### Tests (1 verificación)\n\n| # | Test | AC | Nivel | Escenario | Resultado esperado |\n|---|------|----|-------|-----------|--------------------|\n| T1 | `Algo_Pasa_SeVe` | 1 | unit | algo | se ve |\n\n## Tasks / Subtasks\n\n- [ ] Task 1: algo (AC: 1)\n",
+        "HOME/.claude/.tycon-pipeline/active/ses-contrato-8163.json": "{\n  \"storyId\": \"9.1\",\n  \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"repoPath\": \"<RAIZ>/repo\",\n  \"evidenceDir\": null,\n  \"baseSha\": null,\n  \"runDir\": null,\n  \"sprint\": null,\n  \"sessionId\": \"ses-contrato-8163\",\n  \"startedAt\": \"<FECHA>\",\n  \"lastTouch\": \"<FECHA>\",\n  \"stepsCompleted\": [],\n  \"stepsPending\": [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9\n  ],\n  \"filesTouched\": [],\n  \"filesTouchedAt\": {},\n  \"iterations\": {},\n  \"fileEvents\": [],\n  \"stepTimings\": {\n    \"0\": {\n      \"startedAt\": \"<FECHA>\"\n    }\n  },\n  \"sesiones\": [\n    {\n      \"id\": \"ses-contrato-8163\",\n      \"nombre\": null,\n      \"visto\": \"<FECHA>\"\n    }\n  ],\n  \"adversarialFrozen\": {\n    \"sellos\": {\n      \"<RAIZ>/repo\": \"<HEX>\"\n    },\n    \"copias\": {\n      \"<RAIZ>/repo\": \"<RAIZ>/home/.claude/.tycon-pipeline/frozen/ses-contrato-8163/pase-<MS>/repo-<SELLO>\"\n    },\n    \"at\": \"<FECHA>\"\n  }\n}\n"
+      }
+    },
+    "mark-adversarial-result-sin-json": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js mark-adversarial-result: <confirmados> tiene que ser un entero ≥ 0 (los hallazgos que el pase confirmó)\n",
+      "archivos": {}
+    },
+    "mark-adversarial-skipped-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js mark-adversarial-skipped: el portón dice que el pase CORRE — risk-class NORMAL (sin-pipelines-multi-tanda) → grande (el riesgo lo marca por otro criterio que el tamaño): corre (deep_review.large_routine: run)\n  No se saltea: se lanza (guía del pase adversarial §Lanzamiento temprano o §Acción) y se registra con\n    marker.js mark-adversarial-launched <runId> 4\n  No se anotó el salteo (el veredicto del portón sí queda en la corrida: `next` pide el lanzamiento).\n",
+      "archivos": {}
+    },
+    "mark-adversarial-gate-sin-json": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js mark-adversarial-gate: hace falta un JSON con { run?, files?, early_env? }\n",
+      "archivos": {}
+    },
+    "promote-probe-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js promote-probe: uso: promote-probe <probe_dir> --file <nombre.txt> --a <ruta del test relativa al repo>\n",
+      "archivos": {}
+    },
+    "adhoc-get": {
+      "status": 1,
+      "signal": null,
+      "stdout": "null\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "adhoc-clear-sin-carril": {
+      "status": 0,
+      "signal": null,
+      "stdout": "adhoc: cleared\n",
+      "stderr": "",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/adhoc.log": "{\"ts\":\"<FECHA>\",\"sessionId\":\"ses-contrato-8163\",\"repoPath\":\"<RAIZ>/repo\",\"kind\":\"ADHOC_CLEAR\",\"reason\":null,\"files\":0}\n"
+      }
+    },
+    "adhoc-set-sin-terminal": {
+      "status": 1,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js adhoc set: la lista (1 archivos): src/a.js\n🔒 marker.js adhoc set: la persona no lo aprobó — esta firma no pasó por la ventana: el guion no lo lanzó la consola de la herramienta. Pedila de nuevo: el comando solo, en su forma exacta; en una pestaña sin permisos se aprueba con un click en el cuadro de opciones o con un «aprobado» escrito. O en tu terminal: marker.js adhoc set --reason \"<motivo>\" [--max-files N] --data sin-cambio --file <ruta> --terminal --for-session <id>\n   El arreglo rápido lo aprueba una persona, no el agente: en la ventana de permiso, corriendo este comando solo y en su forma\n   exacta (la ventana le muestra el motivo y el cupo), o en su terminal:\n     node \"<RAIZ>/home/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js\" adhoc set '{\"reason\":\"arreglo del texto del botón\",\"datos\":\"sin-cambio\",\"allowedFiles\":[\"src/a.js\"]}' --terminal --for-session ses-contrato-8163 --repo \"<RAIZ>/repo\"\n   Si la persona no lo pidió, preguntale en castellano llano si lo quiere como ajuste puntual o con story.\n",
+      "archivos": {}
+    },
+    "adhoc-desconocido": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js adhoc: uso — adhoc set '{\"reason\":\"…\",\"maxFiles\":N,\"mockup\":\"<ruta>\",\"mockupApproved\":\"<quién y por qué vía>\"}' [--for-session <id>] [--terminal] | adhoc capture <imagen> | adhoc allow-data-change --changed \"…\" --recommends pasar|historia|descartar --why \"…\" | adhoc allow-foreign-save | adhoc until HH:MM | adhoc get | adhoc clear | adhoc clear-orphan <sessionId>\n",
+      "archivos": {}
+    },
+    "doing": {
+      "status": 3,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js doing: no se anotó nada — esta sesión tiene abierta la historia 9.1, y su paso ya dice qué hace y a qué hora termina; si deja la historia por otro trabajo, eso es otra sesión (si espera un turno: marker.js doing --waiting-for \"<qué espera>\")\n",
+      "archivos": {}
+    },
+    "doing-esperando": {
+      "status": 0,
+      "signal": null,
+      "stdout": "doing: la historia 9.1 (espera la firma del plan)\n",
+      "stderr": "",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/doing.log": "{\"ts\":\"<FECHA>\",\"sessionId\":\"ses-contrato-8163\",\"repoPath\":\"<RAIZ>/repo\",\"storyPath\":\"<RAIZ>/repo/specs/story-9.1-juguete.md\",\"kind\":\"DOING_SET\",\"waitingFor\":\"la firma del plan\"}\n",
+        "HOME/.claude/.tycon-pipeline/doing/ses-contrato-8163.json": "{\"at\":\"<FECHA>\",\"waitingFor\":\"la firma del plan\",\"waitingSince\":\"<FECHA>\"}"
+      }
+    },
+    "story-skill-bypass": {
+      "status": 1,
+      "signal": null,
+      "stdout": "",
+      "stderr": "🚫 marker.js story-skill-bypass: no deja constancia — escribir la historia sin la skill lo decide la persona.\n   Usá la skill tycon-create-story. Si la persona la quiere sin la skill, la firma sobre el archivo:\n     · en la ventana de permiso (la corre el agente y vos decís que sí): node \"<RAIZ>/home/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js\" sign-file story-skill-bypass <archivo>\n     · o en tu terminal: node \"<RAIZ>/home/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js\" sign-file story-skill-bypass <archivo> --terminal --for-session ses-contrato-8163\n     · o desde la pestaña de la coordinadora, que la pide para esta sesión y vos la aprobás ahí (nunca por delegación): node \"<RAIZ>/home/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js\" sign-file story-skill-bypass <archivo> --for-session ses-contrato-8163\n",
+      "archivos": {}
+    },
+    "sign-file-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "uso: marker.js sign-file <firma> <archivo> [--terminal --for-session <id>]; las firmas: story-skill-bypass, red-control-test-edit, ALLOW_DOD_EVIDENCE_WRITE, dod_runtime_exempt, cambiar-el-estado\n",
+      "archivos": {}
+    },
+    "approve-mockup-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js approve-mockup: la maqueta se aprueba con el plan: complete-step 3 --approved \"<cita>\" --mockup-approved \"<cita>\"\n",
+      "archivos": {}
+    },
+    "rethink-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js rethink: la nota no se guardó.\n  - --iter tiene que ser el número de la vuelta, un entero de 1 en adelante (vino «»).\n  - falta --repeated (qué hallazgos volvieron en las vueltas anteriores).\n  - falta decidir: --change \"<qué cambia del enfoque>\" o --keep \"<por qué sigue igual>\".\n  Uso: marker.js rethink --iter N --repeated \"<qué se repitió>\" (--change \"<qué cambia del enfoque>\" | --keep \"<por qué sigue igual>\") [--story-change \"<qué cambia de la story>\"]\n",
+      "archivos": {}
+    },
+    "park-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js park: falta la historia — uso: marker.js park <historia> --queue | --until AAAA-MM-DD [--session <id>]\n",
+      "archivos": {}
+    },
+    "unpark-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js unpark: falta la historia — uso: marker.js unpark <historia>\n",
+      "archivos": {}
+    },
+    "get-para-otra-sesion": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "🔒 marker.js: --for-session ses-otra: «get --for-session» no es una firma que se pida para otra sesión. No se escribió nada.\n",
+      "archivos": {}
+    },
+    "set-check-para-otra-sesion": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "🔒 marker.js: --for-session ses-otra: «set-check build» no es una firma que se pida para otra sesión. No se escribió nada.\n",
+      "archivos": {}
+    },
+    "doing-terminal-sin-sesion": {
+      "status": 0,
+      "signal": null,
+      "stdout": "doing: la historia 9.1 (espera la firma)\n",
+      "stderr": "",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/doing.log": "{\"ts\":\"<FECHA>\",\"sessionId\":\"ses-contrato-8163\",\"repoPath\":\"<RAIZ>/repo\",\"storyPath\":\"<RAIZ>/repo/specs/story-9.1-juguete.md\",\"kind\":\"DOING_SET\",\"waitingFor\":\"la firma\"}\n",
+        "HOME/.claude/.tycon-pipeline/doing/ses-contrato-8163.json": "{\"at\":\"<FECHA>\",\"waitingFor\":\"la firma\",\"waitingSince\":\"<FECHA>\"}"
+      }
+    },
+    "get-terminal-sin-sesion": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\n  \"storyId\": \"9.1\",\n  \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"repoPath\": \"<RAIZ>/repo\",\n  \"evidenceDir\": null,\n  \"baseSha\": null,\n  \"runDir\": null,\n  \"sprint\": null,\n  \"sessionId\": \"ses-contrato-8163\",\n  \"startedAt\": \"<FECHA>\",\n  \"lastTouch\": \"<FECHA>\",\n  \"stepsCompleted\": [],\n  \"stepsPending\": [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9\n  ],\n  \"filesTouched\": [],\n  \"filesTouchedAt\": {},\n  \"iterations\": {},\n  \"fileEvents\": [],\n  \"stepTimings\": {\n    \"0\": {\n      \"startedAt\": \"<FECHA>\"\n    }\n  },\n  \"sesiones\": [\n    {\n      \"id\": \"ses-contrato-8163\",\n      \"nombre\": null,\n      \"visto\": \"<FECHA>\"\n    }\n  ]\n}",
+      "stderr": "",
+      "archivos": {}
+    },
+    "approve-pending-para-otra-sesion": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js approve-pending: no pude leer tasks/todo.md de <RAIZ>/repo (ENOENT).\n",
+      "archivos": {}
+    },
+    "waive-critical-para-otra-sesion": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "🔒 marker.js: --for-session ses-otra: la sesión ses-otra no tiene una ejecución abierta. No se escribió nada.\n",
+      "archivos": {}
+    },
+    "pr-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js pr: uso — pr <número del pedido> [--merged] [--story <id>] [--repo <carpeta>] [--story-path <ruta de la historia>]\n",
+      "archivos": {}
+    },
+    "resume-autonomy-sin-pausa": {
+      "status": 1,
+      "signal": null,
+      "stdout": "",
+      "stderr": "🔒 marker.js resume-autonomy: No hay una detención que retomar en esta sesión (ses-contrato-8163): el modo autónomo no está detenido esperando a una persona, o no hay marcador. No pido la firma.\n",
+      "archivos": {}
+    },
+    "declare-pending-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "uso: marker.js declare-pending --id <código del pendiente> [--repo <carpeta>]\n",
+      "archivos": {}
+    },
+    "waiting-on-main-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js waiting-on-main: uso — set --repo <repo> --tree <árbol medido> --summary <suites.json> [--run <id>] [--merge] | clear --repo <repo> --measured <resumen> | suites --repo <repo> [--list <suites.json>] | mark\n",
+      "archivos": {}
+    },
+    "waiting-on-main-mark-sin-porton": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js waiting-on-main mark: sólo lo usa test-gate.sh (TYCON_TEST_GATE=1)\n",
+      "archivos": {}
+    },
+    "desconocido": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js: comando desconocido 'cualquiera'\nUsage: marker.js <set|get|touch|complete-step|append-file|clear|pr|is-active|list-all|find-by-story|clear-session|park|unpark|adopt-session|update-story-status|mark-dod-runtime-checked|set-autonomous|set-check|run-check|set-flag|set-size|snapshot-iter|mark-adversarial-launched|mark-adversarial-result|mark-adversarial-skipped|mark-adversarial-gate|promote-probe|adhoc|story-skill-bypass|approve-mockup|rethink|lift-debt> [arg] [arg2]\n",
+      "archivos": {}
+    },
+    "sin-comando": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "marker.js: comando desconocido 'undefined'\nUsage: marker.js <set|get|touch|complete-step|append-file|clear|pr|is-active|list-all|find-by-story|clear-session|park|unpark|adopt-session|update-story-status|mark-dod-runtime-checked|set-autonomous|set-check|run-check|set-flag|set-size|snapshot-iter|mark-adversarial-launched|mark-adversarial-result|mark-adversarial-skipped|mark-adversarial-gate|promote-probe|adhoc|story-skill-bypass|approve-mockup|rethink|lift-debt> [arg] [arg2]\n",
+      "archivos": {}
+    }
+  },
+  "requires": [
+    "scripts/hooks/context-size-notice.js",
+    "scripts/lib/delegated-signing.js",
+    "scripts/lib/lab-home.js",
+    "scripts/lib/live-sessions.js",
+    "scripts/lib/machine-id.js",
+    "scripts/lib/notify.js",
+    "scripts/lib/office-event.js",
+    "scripts/lib/owner-away.js",
+    "scripts/lib/owner-window.js",
+    "scripts/lib/pending-approvals.js",
+    "scripts/lib/real-home.js",
+    "scripts/lib/session-state.js",
+    "scripts/lib/signature-log.js",
+    "scripts/lib/signature-sources.js",
+    "scripts/lib/signatures.js",
+    "scripts/metrics/tokens-digest.js",
+    "scripts/setup/harness/tycon-home.js",
+    "scripts/tools/work-in-progress.js",
+    "skills/tycon-pipeline/scripts/lib/adhoc-base.js",
+    "skills/tycon-pipeline/scripts/lib/adhoc-foreign-save.js",
+    "skills/tycon-pipeline/scripts/lib/adhoc-list.js",
+    "skills/tycon-pipeline/scripts/lib/adhoc-screen.js",
+    "skills/tycon-pipeline/scripts/lib/adversarial-skip.js",
+    "skills/tycon-pipeline/scripts/lib/adversarial-verdict.js",
+    "skills/tycon-pipeline/scripts/lib/advisor-ledger.js",
+    "skills/tycon-pipeline/scripts/lib/approvals.js",
+    "skills/tycon-pipeline/scripts/lib/atdd-order.js",
+    "skills/tycon-pipeline/scripts/lib/autonomy-decision.js",
+    "skills/tycon-pipeline/scripts/lib/batch-scope.js",
+    "skills/tycon-pipeline/scripts/lib/browser-test.js",
+    "skills/tycon-pipeline/scripts/lib/companion-repos.js",
+    "skills/tycon-pipeline/scripts/lib/compare-previous.js",
+    "skills/tycon-pipeline/scripts/lib/compare-waiver.js",
+    "skills/tycon-pipeline/scripts/lib/controls-off.js",
+    "skills/tycon-pipeline/scripts/lib/critical-waivers.js",
+    "skills/tycon-pipeline/scripts/lib/evidence-config.js",
+    "skills/tycon-pipeline/scripts/lib/evidence-key.js",
+    "skills/tycon-pipeline/scripts/lib/external-flags.js",
+    "skills/tycon-pipeline/scripts/lib/failed-first.js",
+    "skills/tycon-pipeline/scripts/lib/first-story.js",
+    "skills/tycon-pipeline/scripts/lib/frozen-tree.js",
+    "skills/tycon-pipeline/scripts/lib/harness-path.js",
+    "skills/tycon-pipeline/scripts/lib/home-command.js",
+    "skills/tycon-pipeline/scripts/lib/late-snapshot.js",
+    "skills/tycon-pipeline/scripts/lib/ledger-honesty.js",
+    "skills/tycon-pipeline/scripts/lib/legacy-names.js",
+    "skills/tycon-pipeline/scripts/lib/main-check.js",
+    "skills/tycon-pipeline/scripts/lib/manual-checks.js",
+    "skills/tycon-pipeline/scripts/lib/marker-command.js",
+    "skills/tycon-pipeline/scripts/lib/mockup-shots.js",
+    "skills/tycon-pipeline/scripts/lib/models.js",
+    "skills/tycon-pipeline/scripts/lib/mutation-gate.js",
+    "skills/tycon-pipeline/scripts/lib/node-floor.js",
+    "skills/tycon-pipeline/scripts/lib/open-runs.js",
+    "skills/tycon-pipeline/scripts/lib/path-forms.js",
+    "skills/tycon-pipeline/scripts/lib/person-ok.js",
+    "skills/tycon-pipeline/scripts/lib/plan-display.js",
+    "skills/tycon-pipeline/scripts/lib/plan-review.js",
+    "skills/tycon-pipeline/scripts/lib/portable-tools.js",
+    "skills/tycon-pipeline/scripts/lib/red-test-edit.js",
+    "skills/tycon-pipeline/scripts/lib/reloop-code.js",
+    "skills/tycon-pipeline/scripts/lib/repo-attrib.js",
+    "skills/tycon-pipeline/scripts/lib/repo-group.js",
+    "skills/tycon-pipeline/scripts/lib/reported-criticals.js",
+    "skills/tycon-pipeline/scripts/lib/restore-steps.js",
+    "skills/tycon-pipeline/scripts/lib/rethink.js",
+    "skills/tycon-pipeline/scripts/lib/review-roster.js",
+    "skills/tycon-pipeline/scripts/lib/review-rounds.js",
+    "skills/tycon-pipeline/scripts/lib/run-close.js",
+    "skills/tycon-pipeline/scripts/lib/run-dir.js",
+    "skills/tycon-pipeline/scripts/lib/run-lines.js",
+    "skills/tycon-pipeline/scripts/lib/run-size.js",
+    "skills/tycon-pipeline/scripts/lib/runtime-waiver.js",
+    "skills/tycon-pipeline/scripts/lib/save-ok.js",
+    "skills/tycon-pipeline/scripts/lib/session-id.js",
+    "skills/tycon-pipeline/scripts/lib/session-liveness.js",
+    "skills/tycon-pipeline/scripts/lib/source-signals.js",
+    "skills/tycon-pipeline/scripts/lib/stack-config.js",
+    "skills/tycon-pipeline/scripts/lib/steps.js",
+    "skills/tycon-pipeline/scripts/lib/story-checks.js",
+    "skills/tycon-pipeline/scripts/lib/story-gate-io.js",
+    "skills/tycon-pipeline/scripts/lib/story-gate.js",
+    "skills/tycon-pipeline/scripts/lib/story-requests.js",
+    "skills/tycon-pipeline/scripts/lib/story-review-record.js",
+    "skills/tycon-pipeline/scripts/lib/ui-signal.js",
+    "skills/tycon-pipeline/scripts/lib/undeclared-changes.js",
+    "skills/tycon-pipeline/scripts/lib/waiver-display.js",
+    "skills/tycon-pipeline/scripts/mockup.js",
+    "skills/tycon-pipeline/scripts/pipeline.js",
+    "skills/tycon-pipeline/scripts/runtime-matrix.js"
+  ],
+  "exports": {
+    "marker": [],
+    "pipeline": [
+      "BANDERAS_DETECCION",
+      "CORE_REVIEWERS",
+      "GITIGNORE_ADVISORS",
+      "MECH_DISCOUNTABLE",
+      "advisorAffectedByDelta",
+      "advisorsRunSinceStart",
+      "aplicarModelosDeRevisores",
+      "aplicarTamanoALosRevisores",
+      "aprobacionesEnElRepoDeLaStory",
+      "archivosFantasma",
+      "buildAdvisorContext",
+      "buildStoryDigest",
+      "cmpStoryId",
+      "codeReviewerNames",
+      "completedWorkHours",
+      "computeAdvisorSet",
+      "computeDeepReviewGate",
+      "computeDeferralsOpen",
+      "computeDelicate",
+      "computeDepGate",
+      "computeDodCheckerNeeded",
+      "computeFindingsStatus",
+      "computeFollowupsStatus",
+      "computeGitignoreNeeds",
+      "computeMechDiscount",
+      "computeMissingBeforeStart",
+      "computeModelHint",
+      "computeNextStory",
+      "computePreflightFrontmatter",
+      "computeRiskClass",
+      "computeRunSize",
+      "computeSmartReloop",
+      "computeSpecStaleness",
+      "computeToolingExpected",
+      "computeValidadores",
+      "coreReviewerNames",
+      "coreReviewersDrift",
+      "decidirValidadorEnReloop",
+      "deepReviewConfig",
+      "deepReviewGateDeLaCorrida",
+      "densidadDelDiff",
+      "deriveStoryId",
+      "detectStack",
+      "e2eConfig",
+      "findRepoRootsForStory",
+      "followupKey",
+      "frenosDelManifiesto",
+      "gitArchivosDelWorkingTree",
+      "gitIgnoraProbe",
+      "gitignoreAppendText",
+      "harnessTimeTool",
+      "matchGlob",
+      "normalizeFindingRecord",
+      "notaDelTamano",
+      "orgDeepReview",
+      "orgModels",
+      "paquetesActivos",
+      "paquetesInstalados",
+      "parseFollowupsSection",
+      "parseFrontmatterList",
+      "parseFrontmatterPipeline",
+      "projectRunToStoryRepo",
+      "readSessionMarker",
+      "readSessionMarkerStrict",
+      "reloopHintsFor",
+      "resolveRunDir",
+      "revisionDeLaOrganizacion",
+      "revisoresDelNucleo",
+      "revisoresPorConfirmar",
+      "runDirKey",
+      "selectE2eApps",
+      "storyRequiresRuntimeEvidenceCheck",
+      "superficieDe",
+      "thirdPartyManifestPath",
+      "tierDe",
+      "tocaSuperficieCompartida",
+      "validateFilesExist",
+      "writeFindings",
+      "writeFollowups"
+    ]
+  }
+}

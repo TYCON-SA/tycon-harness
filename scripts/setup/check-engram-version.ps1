@@ -53,6 +53,18 @@ if ($TyconPsMajor -lt 7) {
     exit 1
 }
 
+# Sin Claude Code (TYCON_HARNESS_CLAUDE=off) nada va a la carpeta de Claude Code: el sello va a la carpeta del estado, la
+# que da la regla (harness/tycon-home.js). Si no contesta, el temporal: nunca la de Claude Code.
+function Get-OffStateDir {
+    $lib = Join-Path (Join-Path $PSScriptRoot 'harness') 'tycon-home.js'
+    if (-not (Test-Path $lib)) { return $null }
+    try { $d = (& node -e 'process.stdout.write(require(process.argv[1]).stateDir())' $lib 2>$null | Out-String).Trim(); if ($LASTEXITCODE -eq 0 -and $d) { return $d } } catch { }
+    return $null
+}
+# los sellos: con Claude Code, donde siempre; sin él, en la carpeta del estado (sin ella, en el temporal)
+$StampDir = Join-Path $HOME '.claude'
+if ($env:TYCON_HARNESS_CLAUDE -eq 'off') { $StampDir = Get-OffStateDir; if (-not $StampDir) { $StampDir = Join-Path ([IO.Path]::GetTempPath()) 'tycon-sin-estado' } }
+
 function Get-Semver([string]$text) {
     if ($text -match '(\d+)\.(\d+)\.(\d+)') {
         return [version]("{0}.{1}.{2}" -f $Matches[1], $Matches[2], $Matches[3])
@@ -98,7 +110,7 @@ try {
 
     # --- A2 · ALINEACIÓN AUTOMÁTICA (sólo si estás ATRASADO; nunca downgrade) ---
     if ($needsUpgrade) {
-        $failedStamp = Join-Path $HOME '.claude\.tycon-engram-upgrade-failed'
+        $failedStamp = Join-Path $StampDir '.tycon-engram-upgrade-failed'
         $goBin = $null
         try { $goBin = (& go env GOPATH 2>$null | Out-String).Trim() } catch { }
         $engramPath = (Get-Command engram -ErrorAction SilentlyContinue).Source
@@ -153,7 +165,7 @@ try {
     $upstream = Get-Semver $Matches[1]
     if (-not $upstream -or $upstream -le $pin) { exit 0 }
 
-    $stamp = Join-Path $HOME '.claude\.tycon-engram-upstream-notice'
+    $stamp = Join-Path $StampDir '.tycon-engram-upstream-notice'
     if (-not $Check) {
         if (Test-Path $stamp) {
             $age = (Get-Date) - (Get-Item $stamp).LastWriteTime

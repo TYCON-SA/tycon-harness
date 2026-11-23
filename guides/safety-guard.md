@@ -105,6 +105,26 @@ Cada regla tiene un rule ID estable (citado en el mensaje de bloqueo).
 - `git push --force-with-lease` a branches que NO son `main`/`master`/`dev`/`release/*` — rebase de feature branch propia es válido.
 - Lectura de `.env` vía `grep`/`awk`/`sed` — el bloqueo es solo sobre `cat`/`less`/`more`/`head`/`tail` (modos típicos de "miremos qué hay acá"). Workflows automatizados que extraen una key específica con `grep` siguen funcionando.
 
+## Las reglas deny: lo que frena aunque los ganchos estén apagados
+
+Este freno es un gancho: si alguien apaga los ganchos, o el gancho no corre, no frena nada. Para lo catastrófico, el
+instalador suma además reglas `permissions.deny` a `~/.claude/settings.json`, que Claude Code aplica antes de lanzar
+cualquier gancho y que ningún gancho puede dejar pasar. La lista es `RULES` en `scripts/setup/harness/deny-permissions.js`:
+
+| Regla | Qué niega | Por qué nunca necesita emergencia |
+|---|---|---|
+| FS-C2 | `rm -rf /` y sus variantes de opciones | Ninguna tarea pide borrar el disco entero |
+| FS-C3 | `rm -rf ~`, `~/`, `$HOME`, `$HOME/` y sus variantes | Ninguna tarea pide borrar la carpeta personal entera; algo de adentro se nombra (`~/.cache/x`) y no lo frena |
+
+Una regla deny no tiene la salida de emergencia de abajo: frena siempre. Por eso quedan sólo en este freno, con su
+emergencia, `curl | bash` (Claude Code parte el comando en el `|`, y la regla tendría que frenar `bash` solo) y el
+borrado de una base entera (SQL-C1: se autoriza para recrear una base de desarrollo, y va adentro de un cliente de SQL
+sin forma fija). Este freno sigue frenando las dos de la tabla, con el mismo id: es la segunda red, y la única en Codex y
+Cursor, que no leen `permissions.deny`.
+
+El instalador las suma en el perfil completo, sin tocar las reglas que ya tenía cada persona; desinstalar saca sólo las
+suyas. `TYCON_NO_DENY_RULES=1` no las suma.
+
 ## Cuando un freno no alcanza a decidir
 
 La regla: un freno que no alcanzó a decidir no deja pasar. Hoy la cumplen dos de los once frenos de consola; los otros
@@ -126,11 +146,32 @@ comando no corre ([producción con permiso](produccion-con-permiso.md)).
 | `session-collision-guard.js` | No | Pasa a los 600 s |
 | `background-question-guard.js` | No | Pasa a los 600 s |
 
+Cada freno tiene una clase propuesta: **exigencia** (protege algo que no se deshace o que no es del agente: producción y
+datos, secretos, la rama compartida y lo público, las firmas del dueño, las historias y las constancias; no se apaga para
+ningún modelo) o **preferencia** (un trámite o un estilo que un modelo podría decidir bien solo). Es una propuesta
+hasta que la firma el dueño, control por control, y no cambia lo que el freno decide. Vive, con su motivo y su fecha de
+revisión, en `scripts/metrics/controls-classification.json`; cuánto frenó cada uno, por modelo, lo dice
+`scripts/metrics/controls-table.js`.
+
 Lo que el reloj no cubre: si a un freno lo matan desde afuera, o no arranca, el comando pasa. No se les pone
 `onFailure` a estos ganchos a propósito: viven en la carpeta del usuario, y una actualización a medias dejaría a todas
 las sesiones de la máquina sin consola. En `on-bash-write-gate.js`, en Windows o con un Node sin `process.execve`, un
 análisis trabado en una llamada del sistema tampoco se corta: pasa a los 600 s. Un programa que el análisis haya
 lanzado puede seguir corriendo después de que el freno frenó.
+
+**Cuando `safety-guard-pre.sh` corta por su reloj, se mide qué paso tardó.** Con `TYCON_SAFETY_TRACE=1` (en el `env` de
+`settings.json`, o en la terminal desde donde se abre la herramienta) el freno anota en `safety-guard-times.jsonl`, en
+la carpeta de los registros sueltos, un renglón por cada node que lanza (y lo que lanzan ellos): cuándo arrancó y cuánto
+tardó. También anota su propio total al salir. Un node que no llegó a terminar porque lo cortó el reloj deja sólo su
+arranque: ése se comió el tiempo. Anota el guion y su subcomando, nunca los valores del comando, y no cambia ninguna
+decisión. Con una ruta en vez de `1`, anota ahí.
+
+**El chequeo antes de la ventana usa sólo lo que le queda al freno.** Antes de abrir la ventana de permiso de una firma,
+el guion comprueba si la negaría: así el «Sí» no se pierde en un comando que iba a fallar. Ese chequeo espera hasta
+12 s, pero con la máquina cargada lo que corre antes ya gastó parte de los 20 s, y el reloj del freno cortaba el comando
+sin abrir la ventana. Ahora el freno le pasa a la ventana el segundo en que lo corta su reloj, y el chequeo termina 3 s
+antes. Si no queda ni un segundo, no se corre. En los dos casos la ventana se abre igual y la firma la sigue dando el
+dueño: el guion vuelve a comprobar todo al firmar, así que no se pierde nada.
 
 ## Saltear el freno: lo decide la persona
 
@@ -255,9 +296,10 @@ cuidan esa carpeta entera, con Edit, Write y por consola, igual que los registro
 solo: es el mismo límite que tienen esos registros. Cerrarlo pide un proceso aparte con otro dueño, que queda para más
 adelante.
 
-Pendiente: `escape:TYCON_SAFETY_OFF` y `escape:TYCON_PROD_LINT` siguen en el catálogo de firmas aunque ya nada las
-pide. Se retiran en una tanda aparte, porque un perfil del equipo que las nombra en `approvals.owner_only` se leería
-roto.
+`escape:TYCON_SAFETY_OFF` y `escape:TYCON_PROD_LINT` siguen en el catálogo de firmas, marcadas retiradas: ya no apagan
+nada, ya nada las pide, y su fila de [las firmas del dueño](firmas-del-arnes.md) da la emergencia como salida. Siguen
+ahí porque sin ellas un perfil del equipo que las nombra en `approvals.owner_only` se leería roto; sacarlas pide migrar
+ese perfil.
 
 ### El estado de la historia y el marcador
 
