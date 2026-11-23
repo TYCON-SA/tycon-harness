@@ -2401,7 +2401,37 @@ const idleReasonFile = (home) => path.join(coordinationDir(home), 'idle-reason.j
 // terminó, un recordatorio del sistema
 const MID_TURN_TEXT = /^(Stop hook feedback|<task-notification>|<system-reminder>)/;
 // los recordatorios que Claude Code pone adelante del mensaje de la persona: se sacan antes de mirar qué escribió
-const REMINDER_BLOCK = /<system-reminder>[\s\S]*?<\/system-reminder>/g;
+const REMINDER_OPEN = '<system-reminder>';
+const REMINDER_CLOSE = '</system-reminder>';
+/**
+ * El texto sin sus recordatorios, en una pasada: cuenta aperturas y cierres, así un recordatorio adentro de otro sale
+ * entero, y una apertura sin cierre se come el resto del texto. Cada búsqueda se guarda hasta que la pasada la deja
+ * atrás: miles de aperturas sin cierre no vuelven a buscar el cierre desde cada una.
+ */
+function withoutReminders(text) {
+  const s = String(text);
+  let nextOpen = s.indexOf(REMINDER_OPEN);
+  let nextClose = s.indexOf(REMINDER_CLOSE);
+  const openFrom = (j) => { if (nextOpen !== -1 && nextOpen < j) nextOpen = s.indexOf(REMINDER_OPEN, j); return nextOpen; };
+  const closeFrom = (j) => { if (nextClose !== -1 && nextClose < j) nextClose = s.indexOf(REMINDER_CLOSE, j); return nextClose; };
+  let out = '';
+  let i = 0;
+  while (i < s.length) {
+    const o = openFrom(i);
+    if (o === -1) { out += s.slice(i); break; }
+    out += s.slice(i, o);
+    let depth = 1;
+    let j = o + REMINDER_OPEN.length;
+    while (depth > 0) {
+      const c = closeFrom(j);
+      if (c === -1) { j = s.length; break; }
+      const p = openFrom(j);
+      if (p !== -1 && p < c) { depth += 1; j = p + REMINDER_OPEN.length; } else { depth -= 1; j = c + REMINDER_CLOSE.length; }
+    }
+    i = j;
+  }
+  return out;
+}
 
 /**
  * Los destinatarios de los mensajes que la coordinadora mandó en este turno (`SendMessage` después del último mensaje
@@ -2422,11 +2452,13 @@ function messagedThisTurn(transcriptPath) {
       // que el arnés suma a mitad del turno (el aviso de un freno del cierre, una tarea de fondo que terminó, un recordatorio)
       if (Array.isArray(c) && c.some((x) => x && x.type === 'tool_result')) continue;
       if (r.isMeta) continue;
-      // bloque por bloque y sin los recordatorios: lo empieza un texto que queda y no es de mitad de turno. Uno con sólo
-      // recordatorios o avisos no lo empieza; uno sin texto (una imagen sola) sí
+      // lo empieza un bloque que no es texto (una imagen, un documento) o, bloque por bloque y sin los recordatorios, un
+      // texto que queda y no es de mitad de turno. Uno con sólo recordatorios o avisos no lo empieza. Sin texto, o con el
+      // texto vacío o en blanco, lo empieza, como antes de mirar los recordatorios
+      if (Array.isArray(c) && c.some((x) => x && typeof x === 'object' && x.type !== 'text')) break;
       const textos = typeof c === 'string' ? [c] : Array.isArray(c) ? c.filter((x) => x && x.type === 'text').map((x) => String(x.text == null ? '' : x.text)) : [];
-      const reales = textos.map((t) => t.replace(REMINDER_BLOCK, '').trim()).filter((t) => t !== '');
-      if (textos.length && !reales.some((t) => !MID_TURN_TEXT.test(t))) continue;
+      if (!textos.join('').trim()) break;
+      if (!textos.some((t) => { const real = withoutReminders(t).trim(); return real !== '' && !MID_TURN_TEXT.test(real); })) continue;
       break;
     }
     if (r.type === 'assistant' && Array.isArray(c)) {

@@ -671,6 +671,58 @@ test('NadieQuieto_RecordatorioAdelante_EmpiezaTurno: un mensaje de la persona co
   assert.match(d.reason, /Uma \(quieta hace 20 min\)/);
 });
 
+// Los bordes del inicio de turno: una conversación [la persona, mensaje a A, resultado, `content`, mensaje a B]. Si
+// `content` empieza el turno, sólo cuenta B; si no, A y B.
+function destinosConMensaje(content) {
+  const C = require('../tools/coordination.js');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'turno-bordes-'));
+  const send = (to) => ({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: `t-${to}`, name: 'SendMessage', input: { to } }] } });
+  const user = (c) => ({ type: 'user', message: { role: 'user', content: c } });
+  const result = user([{ type: 'tool_result', tool_use_id: 'x', content: 'ok' }]);
+  const f = path.join(root, 't.jsonl');
+  fs.writeFileSync(f, [user('antes'), send('A'), result, user(content), send('B')].map((r) => JSON.stringify(r)).join('\n'));
+  const t0 = process.hrtime.bigint();
+  const to = [...C.messagedThisTurn(f).to].sort();
+  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+  fs.rmSync(root, { recursive: true, force: true });
+  return { to, ms };
+}
+const IMAGEN = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBORw0KGgo=' } };
+const REC = (t) => `<system-reminder>${t}</system-reminder>`;
+
+test('NadieQuieto_BloqueNoTexto_EmpiezaTurno: una imagen o un documento con recordatorios es de la persona; el texto vacío, como antes', () => {
+  // 🔴 mutación: mirar sólo los bloques de texto → una imagen con un recordatorio adelante no corta el turno y A sale avisada
+  assert.deepStrictEqual(destinosConMensaje([IMAGEN, { type: 'text', text: REC('x') }]).to, ['B'], 'imagen y recordatorio');
+  assert.deepStrictEqual(destinosConMensaje([{ type: 'text', text: REC('x') }, { type: 'document', source: { type: 'text', media_type: 'text/plain', data: 'hola' } }]).to, ['B'], 'recordatorio y documento');
+  assert.deepStrictEqual(destinosConMensaje([{ type: 'text', text: '' }, IMAGEN]).to, ['B'], 'texto vacío e imagen');
+  assert.deepStrictEqual(destinosConMensaje([IMAGEN]).to, ['B'], 'imagen sola');
+  // el texto vacío o en blanco empezaba el turno antes de mirar los recordatorios, y lo sigue empezando
+  assert.deepStrictEqual(destinosConMensaje('').to, ['B'], 'texto suelto vacío');
+  assert.deepStrictEqual(destinosConMensaje([{ type: 'text', text: '' }]).to, ['B'], 'bloque de texto vacío');
+  assert.deepStrictEqual(destinosConMensaje('  \n').to, ['B'], 'texto en blanco');
+  // sólo recordatorios, sin nada más: sigue hacia atrás
+  assert.deepStrictEqual(destinosConMensaje([{ type: 'text', text: REC('x') }]).to, ['A', 'B'], 'sólo un recordatorio');
+});
+
+test('NadieQuieto_RecordatoriosSinCierre_Lineal: 40000 aperturas sin cierre se leen rápido, y una apertura sin cierre se come el resto', () => {
+  // 🔴 mutación: sacar los recordatorios con una expresión que vuelve a buscar el cierre desde cada apertura → segundos
+  const r = destinosConMensaje('<system-reminder>'.repeat(40000));
+  assert.deepStrictEqual(r.to, ['A', 'B'], 'sólo aperturas: no hay texto de la persona');
+  assert.ok(r.ms < 500, `40000 aperturas sin cierre tardaron ${Math.round(r.ms)} ms (tope 500)`);
+  const r2 = destinosConMensaje(`seguí${'<system-reminder>'.repeat(40000)}`);
+  assert.deepStrictEqual(r2.to, ['B'], 'el texto antes de las aperturas es de la persona');
+  assert.ok(r2.ms < 500, `con texto adelante tardaron ${Math.round(r2.ms)} ms (tope 500)`);
+  assert.deepStrictEqual(destinosConMensaje('<system-reminder>ctx sin cerrar\nseguí').to, ['A', 'B'], 'la apertura sin cierre se come el resto del bloque');
+  assert.deepStrictEqual(destinosConMensaje([{ type: 'text', text: '<system-reminder>sin cerrar' }, { type: 'text', text: 'seguí' }]).to, ['B'], 'sólo el resto de su bloque');
+});
+
+test('NadieQuieto_RecordatorioAnidado_SeSacaEntero: un recordatorio adentro de otro no deja restos como texto', () => {
+  // 🔴 mutación: cortar en el primer cierre → «c</system-reminder>» queda como texto de la persona y empieza el turno
+  assert.deepStrictEqual(destinosConMensaje('<system-reminder>a<system-reminder>b</system-reminder>c</system-reminder>').to, ['A', 'B'], 'anidado solo');
+  assert.deepStrictEqual(destinosConMensaje('<system-reminder>a<system-reminder>b</system-reminder>c</system-reminder>\nseguí').to, ['B'], 'anidado y texto');
+  assert.deepStrictEqual(destinosConMensaje(`${REC('a')}${REC('b')}`).to, ['A', 'B'], 'dos seguidos');
+});
+
 test('NadieQuieto_EsperaConLaPalabra_NoLaRepite: una espera anotada «espera que entre…» sale una vez, no «espera espera»', () => {
   // 🔴 mutación: anteponer «espera» a lo anotado → «Wanda (espera espera que entre el pedido …)», la clase de la 8.294 AC 14
   const t = toy({ nowMs: Date.now() });
