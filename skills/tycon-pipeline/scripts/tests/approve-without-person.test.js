@@ -106,6 +106,13 @@ function maqueta(t, { sensible = false } = {}) {
     elements: [{ kind: 'heading', text: 'Facturas pendientes' }, { kind: 'button', text: 'Pagar seleccionadas' }] }] });
   const r = spawnSync(process.execPath, [MOCKUP, 'render', '--data', '-', '--story', story], { encoding: 'utf8', input: modelo, env: ambiente(home) });
   assert.strictEqual(r.status, 0, salida(r));
+  // su revisión con navegador, limpia (la de `mockup.js shots`; el navegador se prueba en mockup.test.js)
+  {
+    const out = JSON.parse(r.stdout).out;
+    const SH = require(path.join(COPIA, 'lib', 'mockup-shots.js'));
+    const { report, shots } = SH.shotsPaths(out);
+    SH.escribirInforme({ report, file: path.basename(out), sha256: require(MOCKUP).mockupHash(fs.readFileSync(out, 'utf8')), shots, findings: [] });
+  }
   const estado = estadoDe(home);
   fs.mkdirSync(path.join(estado, 'active'), { recursive: true });
   const marcador = { storyId: '9.91', sessionId: DEST, stepScheme: 2, startedAt: new Date(AHORA - 3600000).toISOString(), lastTouch: new Date(AHORA).toISOString(),
@@ -306,6 +313,38 @@ test('T12 ApprovePending_DelegatedDestinationRepo_Signs @story-8.255 @ac-11', (t
   for (const [via, registro] of [['ventana', { sesion: DEST, destino: DEST, comando: 'x' }], ['ventana', { via: 'click', sesion: DEST, destino: DEST, comando: 'x' }], ['terminal', null]]) {
     assert.strictEqual(DS.antesDelPendiente({ via, registro, propia: DEST, estado: P.estado, cwd: P.destino, repo: P.destino, designada: nadie }), null, `${via} ${JSON.stringify(registro)}`);
   }
+});
+
+// la firma de trámite de un pendiente: la línea que escribe approve-pending lleva la vía de su renglón firmado, y el
+// control del commit la da por buena
+test('T12b ApprovePending_FirmaDeTramite_ElCommitLaAcepta', (t) => {
+  const P = pendiente(t);
+  registrar(P.home, { firma: PA.FIRMA, cmd: P.cmd(P.destino, DEST), sesion: COORD, destino: DEST, via: 'automatica', extra: { maquina: 'm' } });
+  const linea = PA.lineaNueva({ id: 'DEF-x', maquina: 'm', ahora: AHORA });
+  const renglones = [];
+  const r = ow.exigir({ firma: PA.FIRMA, argv: P.argv(P.destino, DEST), pid: 301, arbol: arbolDelGuion(P.home, P.cmd(P.destino, DEST)), casa: P.home,
+    ahora: AHORA + 60000, propia: undefined, resumen: `huella ${linea.huella} · DEF-x · el arreglo`, anotar: (g) => renglones.push(g), notificar: () => {},
+    avisarSinAprobacion: () => {},
+    antes: (via, registro) => DS.antesDelPendiente({ via, registro, propia: COORD, pedida: DEST, estado: P.estado, cwd: P.coordinadora, repo: P.destino, designada: (s) => s === COORD }) });
+  assert.strictEqual(r.codigo, 0, r.motivo);
+  assert.strictEqual(r.automatica, true, JSON.stringify(r));
+  assert.strictEqual(renglones.length, 1);
+  assert.strictEqual(renglones[0].via, 'automatica');
+  const escrita = { ...linea, via: PA.viaDeLaFirma(r), quien: ow.quienFirmo(r, 'persona').quien };
+  assert.strictEqual(escrita.via, 'automatica');
+  const tramite = () => ({ ok: true });
+  assert.deepStrictEqual(PA.revisarNuevas({ antes: '', despues: `${JSON.stringify(escrita)}\n`, renglones, deTramite: tramite }), [], 'el commit acepta la firma de trámite');
+  // con la vía que devuelve `exigir` (la de la delegación), el commit la rechazaba
+  const comoAntes = { ...escrita, via: r.via };
+  assert.strictEqual(PA.revisarNuevas({ antes: '', despues: `${JSON.stringify(comoAntes)}\n`, renglones, deTramite: tramite }).length, 1);
+  // si el perfil ya no la tiene como trámite (la pasó a «sólo del dueño»), la línea pide la firma de una persona
+  const delDueno = PA.revisarNuevas({ antes: '', despues: `${JSON.stringify(escrita)}\n`, renglones, deTramite: () => ({ ok: false, motivo: '«pending-approval» es sólo del dueño (approvals.owner_only)' }) });
+  assert.strictEqual(delDueno.length, 1);
+  assert.match(delDueno[0].motivo, /ya no es de trámite .*sólo del dueño.*lo firma una persona/);
+  // y una línea de otra vía no pregunta por el trámite
+  const otra = { ...escrita, via: 'delegacion' };
+  const conDelegacion = [{ ...renglones[0], via: 'delegacion' }];
+  assert.deepStrictEqual(PA.revisarNuevas({ antes: '', despues: `${JSON.stringify(otra)}\n`, renglones: conDelegacion, deTramite: () => { throw new Error('no pregunta'); } }), []);
 });
 
 // ── las firmas de rutina que se delegan ──────────────────────────────────────────────────────────────────────────

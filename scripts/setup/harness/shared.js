@@ -45,6 +45,7 @@ const os = require('os');
 const path = require('path');
 const PD = require('./plugin-dirs.js');   // la carpeta de los mods del arnés en CLAUDE_CODE_PLUGIN_DIRS
 const RP = require('./read-permissions.js');   // las reglas de lectura de las carpetas del arnés
+const DP = require('./deny-permissions.js');   // las reglas deny: borrar la raíz o la carpeta personal entera
 
 /** La clase de estas piezas: el `when` de la lista declarada (scripts/tests/fixtures/harness-managed-pieces.json). */
 const ORIGIN = 'shared';
@@ -119,7 +120,7 @@ function writeAtomic(file, text, mode) {
 /**
  * Las dos claves de settings.json. Devuelve `{ ok, pieces, changed, notes, reason }`; con `ok: false` no escribió nada.
  */
-function applySettings(file, { withBackup, home = os.homedir(), platform = process.platform, mods = true, inherited = undefined, canon = true, reads = false, tree = null, previous = [] }) {
+function applySettings(file, { withBackup, home = os.homedir(), platform = process.platform, mods = true, inherited = undefined, canon = true, reads = false, denies = false, tree = null, previous = [] }) {
   const out = { ok: true, pieces: [], changed: [], notes: [], reason: null };
   const fail = (reason) => Object.assign(out, { ok: false, pieces: [], changed: [], reason });
   let raw = null;
@@ -158,7 +159,11 @@ function applySettings(file, { withBackup, home = os.homedir(), platform = proce
   const rp = reads ? RP.apply(s, rules, { previous }) : { ok: true, added: [], dropped: [], ours: [] };
   if (!rp.ok) out.notes.push(`${rp.reason} en ${file}: no lo toco, y el recorrido puede frenar con «Allow this read?» al leer el arnés`);
   out.notes.push(...RP.notes(rp, file));
-  const readsChanged = rp.added.length > 0 || rp.dropped.length > 0;
+  // las reglas deny del arnés (deny-permissions.js), en el perfil completo; una lista con otra forma no se toca y se dice
+  const dp = denies ? DP.apply(s, DP.ourRules(), { previous }) : { ok: true, added: [], dropped: [], ours: [] };
+  if (!dp.ok) out.notes.push(`${dp.reason} en ${file}: no lo toco, y las reglas que niegan borrar la raíz o la carpeta personal no se sumaron (sigue el freno de mano)`);
+  out.notes.push(...DP.notes(dp, file));
+  const readsChanged = rp.added.length > 0 || rp.dropped.length > 0 || dp.added.length > 0 || dp.dropped.length > 0;
   if (needTop.length || needEnv.length || dirs.changed || readsChanged) {
     // el orden de inserción del python del aplicador: `hooks` (su setdefault), las claves de raíz, `env`
     const canonChanged = needTop.length || needEnv.length || dirs.changed;
@@ -179,10 +184,11 @@ function applySettings(file, { withBackup, home = os.homedir(), platform = proce
       const kept = left.length ? `; no pude borrar ${left.join(' ni ')}: borralo a mano` : '';
       return fail(`no pude escribir ${file} (${(e && e.code) || e.message}): las claves del arnés no se agregaron${kept}`);
     }
-    out.changed.push(...needTop, ...needEnv.map((k) => `env.${k}`), ...(dirs.changed ? [PD.PLUGIN_DIRS_ID] : []), ...rp.added.map(RP.pieceId));
+    out.changed.push(...needTop, ...needEnv.map((k) => `env.${k}`), ...(dirs.changed ? [PD.PLUGIN_DIRS_ID] : []), ...rp.added.map(RP.pieceId), ...dp.added.map(DP.pieceId));
   }
   // las reglas que quedan y son del arnés: una pieza cada una (la que ya tenía el dev no: es suya)
   for (const r of rp.ours) out.pieces.push({ kind: 'setting', where: file, id: RP.pieceId(r), value: r });
+  for (const r of dp.ours) out.pieces.push({ kind: 'setting', where: file, id: DP.pieceId(r), value: r });
   if (!canon) return out;
   // del arnés sólo con SU valor (si el dev fijó otro, es suya y no se anota); el `value` va al registro para que doctor
   // vea si lo cambia después
@@ -261,7 +267,7 @@ function applyShared({ home = os.homedir(), env = process.env, tree = null, back
     const canon = settings !== false;
     // `reads: false` (harness.js antes del aplicador): las suma `applyReadRules` después, con los enlaces ya hechos
     const reads = withReads && env[RP.OFF_ENV] !== '1';
-    const s = !canon && !reads ? { ok: true, pieces: [], changed: [], notes: [], reason: null } : applySettings(settingsFile(home, env), { withBackup, home, platform, mods: env.TYCON_NO_MODS !== '1', inherited: env[PD.PLUGIN_DIRS_KEY], canon, reads, tree: where, previous });
+    const s = !canon && !reads ? { ok: true, pieces: [], changed: [], notes: [], reason: null } : applySettings(settingsFile(home, env), { withBackup, home, platform, mods: env.TYCON_NO_MODS !== '1', inherited: env[PD.PLUGIN_DIRS_KEY], canon, reads, denies: canon && env[DP.OFF_ENV] !== '1', tree: where, previous });
     out.notes.push(...s.notes);
     if (!s.ok && canon) {
       out.ok = false; out.reason = s.reason;
@@ -312,7 +318,7 @@ function isShared(piece) {
   if (!isObject(piece) || typeof piece.id !== 'string') return false;
   if (piece.kind === 'command') return true;
   if (piece.kind !== 'setting') return false;
-  if (piece.id === PD.PLUGIN_DIRS_ID || RP.isRuleId(piece.id)) return true;
+  if (piece.id === PD.PLUGIN_DIRS_ID || RP.isRuleId(piece.id) || DP.isRuleId(piece.id)) return true;
   return has(TOP_CANONICAL, piece.id) || (piece.id.startsWith('env.') && has(ENV_CANONICAL, piece.id.slice(4)));
 }
 

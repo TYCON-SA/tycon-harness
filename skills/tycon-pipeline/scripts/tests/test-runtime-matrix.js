@@ -521,7 +521,8 @@ withWaiverLog(() => {
   const texto = lineas.join('\n');
   check('T16 el bloqueo nombra el AC con firma descartada y el comando para volver a firmar',
     /#2/.test(texto) && /descart/i.test(texto) && /marker\.js runtime-waiver/.test(texto) && texto.includes(f.storyPath), texto);
-  const fuente = (n) => fs.readFileSync(path.join(__dirname, '..', n), 'utf8');
+  // marker.js con sus partes de lib/
+  const fuente = (n) => (n === 'marker.js' ? require('./lib/marker-source.js')(path.join(__dirname, '..')) : fs.readFileSync(path.join(__dirname, '..', n), 'utf8'));
   check('T16 marker.js y on-pre-commit.js imprimen ese mismo aviso',
     /avisoFirmasDescartadas\(/.test(fuente('marker.js')) && /avisoFirmasDescartadas\(/.test(fuente('on-pre-commit.js')));
 });
@@ -2418,6 +2419,60 @@ withWaiverLog(() => {
         && noResuelve.warnings.filter((w) => NO_PUDE.test(w)).length === 1
         && veredictos(rSin) === '1:RUNTIME 2:RUNTIME 3:RUNTIME' && !rSin.warnings.some((w) => /no pude leer lo que carga/.test(w)),
       JSON.stringify({ v: veredictos(r), avisos, w: r.warnings.slice(0, 4), sin: rSin.warnings.slice(0, 3) }));
+  }
+  {
+    // las otras formas de cargar: `import … from`, `import()`, `require.resolve` y un `.ts` sin extensión en la carga
+    const vence = (carga, cambiado) => {
+      const l = labCarga(carga);
+      const destino = cambiado ? path.join(l.f.repo, cambiado) : l.cargado;
+      if (cambiado) { fs.writeFileSync(destino, 'export const x = 1;\n'); }
+      l.ahora(destino, 'module.exports = 2;\n');
+      return l.calcular();
+    };
+    const desdeImport = vence("import x from '../lib/x.js'");
+    const dinamico = vence("await import('../lib/x.js')");
+    const resuelto = vence("require.resolve('../lib/x.js')");
+    const ts = vence("import { x } from '../lib/y'", 'lib/y.ts');
+    // un `//` dentro de un texto no esconde la carga que sigue en el renglón; un import() no literal también se dice
+    const conBarras = labCarga("const u = 'a//b'; require(u)").calcular();
+    const importVariable = labCarga("const m = '../lib/x.js'; await import(m)").calcular();
+    // una suma de textos no es un literal; una comilla en una expresión regular no abre un texto
+    const suma = labCarga("const n = 'x'; require('../lib/' + n + '.js')").calcular();
+    const conRegex = labCarga("'a'.replace(/\"/g, 'b'); const u = \"http://x\"; require(u)").calcular();
+    // un comentario adentro de la llamada no la esconde; una llave antes del import tampoco; una carga comentada no carga
+    const comentarioAdentro = vence("require(/* la ayuda */ '../lib/x.js')");
+    const trasLlave = vence("if (1) {} import x from '../lib/x.js'");
+    const comentada = labCarga("// require('../lib/x.js')");
+    comentada.ahora(comentada.cargado, 'module.exports = 2;\n');
+    const rComentada = comentada.calcular();
+    const avisa = (r) => r.warnings.filter((w) => NO_PUDE.test(w)).length === 1;
+    check('Matriz_CargasPorImportYResolve_Vencen_YLasNoLiteralesSeDicen',
+      [desdeImport, dinamico, resuelto, ts, comentarioAdentro, trasLlave].every((r) => veredictos(r) === '1:RUNTIME 2:NOT-RUN 3:RUNTIME')
+        && [conBarras, importVariable, suma, conRegex].every(avisa)
+        && veredictos(rComentada) === '1:RUNTIME 2:RUNTIME 3:RUNTIME',
+      JSON.stringify({ i: veredictos(desdeImport), d: veredictos(dinamico), r: veredictos(resuelto), ts: veredictos(ts),
+        ca: veredictos(comentarioAdentro), ll: veredictos(trasLlave), com: veredictos(rComentada),
+        barras: conBarras.warnings.slice(0, 3), iv: importVariable.warnings.slice(0, 3), suma: suma.warnings.slice(0, 3), rx: conRegex.warnings.slice(0, 3) }));
+  }
+  {
+    // una prueba con la marca de la historia y sin criterios: lo que carga, si cambia, vence la evidencia entera (con la
+    // marca de un criterio vencía sólo ése: Matriz_CodigoQueCargaLaPruebaCambio_Vence). Una prueba que no se puede leer
+    // se juzga por la lista y lo dice; sin permisos que la cierren (Windows, o quien corre es root) no se puede armar
+    const sinCriterios = labCarga("require('../lib/x.js')", '@story-9.9');
+    sinCriterios.ahora(sinCriterios.cargado, 'module.exports = 2;\n');
+    const r = sinCriterios.calcular();
+    const cerrable = process.platform !== 'win32' && !(process.getuid && process.getuid() === 0);
+    let ri = null;
+    if (cerrable) {
+      const ilegible = labCarga();
+      const prueba = path.join(ilegible.f.repo, 'tests', 'feature.test.js');
+      fs.chmodSync(prueba, 0o000);
+      try { ri = ilegible.calcular(); } finally { fs.chmodSync(prueba, 0o644); }
+    }
+    check('Matriz_PruebaSinCriterios_VenceTodo_YLaIlegibleSeDice @story-8.282 @ac-10 @ac-12',
+      veredictos(r) === '1:NOT-RUN 2:NOT-RUN 3:NOT-RUN' && r.warnings.some((w) => /lib\/x\.js/.test(w))
+        && (!cerrable || ri.warnings.filter((w) => NO_PUDE.test(w)).length === 1),
+      JSON.stringify({ v: veredictos(r), w: r.warnings.slice(0, 3), ilegible: ri ? ri.warnings.slice(0, 4) : 'sin armar: no hay permisos que cierren un archivo acá' }));
   }
 }
 

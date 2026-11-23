@@ -46,6 +46,7 @@ const STEPS = {
   'legacy-names': () => require('../lib/legacy-names.js').cli,
   'canonical-path': () => require('../lib/canonical-path.js').cli,
   'install-third-party': () => require('../publishing/install-third-party.js').cli,
+  'loose-logs': () => require('../lib/loose-logs.js').cli,
   'apply-hooks': () => {
     const applyHooks = require('./apply-hooks.js');
     return (argv) => applyHooks.cli(argv, { runConfig: configInProcess });

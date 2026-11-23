@@ -54,7 +54,7 @@ test('T14 RutasDeWindows_SinVerdeFalso @story-8.115 @ac-12 — el pipeline usa e
   assert.match(pipeline, /require\('\.\/lib\/path-forms\.js'\)/, 'pipeline.js carga path-forms');
   assert.match(pipeline, /isE2eSpecPath\(path\.join\(dir, e\.name\)\)/, 'hasPlaywrightSpecs decide con isE2eSpecPath');
   assert.ok((pipeline.match(/relativeInsideRepo\(/g) || []).length >= 3, 'selectE2eApps decide «dentro del repo» con relativeInsideRepo');
-  assert.match(leer('marker.js'), /dest: posixRelative\(repo, dest\)/, 'promote-probe anota dest con posixRelative');
+  assert.match(require('./lib/marker-source.js')(path.join(__dirname, '..')), /dest: posixRelative\(repo, dest\)/, 'promote-probe anota dest con posixRelative');
   const atdd = leer(path.join('lib', 'atdd-commit-gate.js'));
   assert.ok((atdd.match(/isInsideRepo\(e\.path, repoRoot\)/g) || []).length === 2, 'eventsForRepo y pruneFileEvents comparan con isInsideRepo');
 });

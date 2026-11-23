@@ -194,6 +194,7 @@ En [pieces/metrics.md](pieces/metrics.md):
 - [scripts/lib/merge-metrics.js](pieces/metrics.md#scriptslibmerge-metricsjs)
 - [scripts/lib/people.js](pieces/metrics.md#scriptslibpeoplejs)
 - [scripts/lib/guard-record.js](pieces/metrics.md#scriptslibguard-recordjs)
+- [scripts/metrics/controls-table.js](pieces/metrics.md#scriptsmetricscontrols-tablejs) _(scripts/metrics/controls-table.js + scripts/metrics/controls-classification.json + scripts/lib/session-model.js)_
 - [scripts/nightly/dashboard/reducer.js](pieces/metrics.md#scriptsnightlydashboardreducerjs)
 - [lib/installed-tree.js](pieces/metrics.md#libinstalled-treejs)
 - [test-gate.sh](pieces/metrics.md#test-gatesh) _(test-gate.sh (AgentSkills) + la ficha «evaluaron el umbral»)_

@@ -599,6 +599,25 @@ test('PalabrasRuteadas_ResuelveCadaRutaComoElGuion (T25) — @story-8.295 @ac-1'
   assert.strictEqual(R('adhoc-lane', [M, 'adhoc', 'open']), null);
 });
 
+// 🔴 Falla con: «cambiar el estado» (sign-file cambiar-el-estado) delegado en el perfil, pero fuera de la lista de
+// desvíos: el freno no la manda a la coordinadora y le llega igual al dueño.
+test('CambiarElEstado_DelegadaEnElPerfil_VaALaCoordinadora — sign-file cambiar-el-estado, con el archivo absoluto', (t) => {
+  const L = laboratorio(t);
+  const perfil = { ...PERFIL, delegated_signing: [...PERFIL.delegated_signing, 'escape:cambiar-el-estado'] };
+  const historia = path.join(L.ajeno, 'specs', 'story-9.99.md');
+  const palabras = [MARKER, 'sign-file', 'cambiar-el-estado', historia];
+  const d = DR.delegable({ firma: 'escape:cambiar-el-estado', destino: 'ses-a', casa: L.casa, palabras, cwd: L.ajeno, delegacion: delegacionReal({ perfil }), plataforma: 'darwin', ...L.lista });
+  assert.strictEqual(d.ok, true, d.motivo);
+  assert.strictEqual(d.coordinadora, 'ses-coord');
+  assert.deepStrictEqual(d.palabras, [MARKER, 'sign-file', 'cambiar-el-estado', historia, '--for-session', 'ses-a']);
+  // con el archivo relativo no se sabe contra qué carpeta lo resuelve la coordinadora: no se desvía
+  const rel = DR.palabrasRuteadas('escape:cambiar-el-estado', [MARKER, 'sign-file', 'cambiar-el-estado', 'specs/story-9.99.md'], 'ses-a', L.ajeno);
+  assert.strictEqual(rel, null, 'un archivo relativo no se desvía');
+  // sin delegarla en el perfil, sigue siendo del dueño (y no se dice)
+  const sin = DR.delegable({ firma: 'escape:cambiar-el-estado', destino: 'ses-a', casa: L.casa, palabras, cwd: L.ajeno, delegacion: delegacionReal(), plataforma: 'darwin', ...L.lista });
+  assert.strictEqual(sin.ok, false);
+});
+
 test('NoRegresion_ListaApagadaSinDesignarCodex_ComoHoy (T26) — @story-8.295 @ac-20', (t) => {
   // lista apagada y máquina sin coordinadora designada: ni renglón desviado ni motivo dicho, la ventana de siempre
   for (const L of [laboratorio(t, { lista: 'off' }), laboratorio(t, { designada: false })]) {

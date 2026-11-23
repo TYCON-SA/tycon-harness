@@ -365,6 +365,14 @@ function fotosCompletas({ ahora, hoy, ayer, archivos }) {
     tiempo_por_etapa: { 'in-progress': { n: 12, mean: 3.1, median: 2.5, min: 0.5, max: 9 }, review: { n: 11, mean: 1.6, median: 1.2, min: 0.2, max: 4 } },
     estados_por_canonico: { conteo: { done: 12, review: 1, 'in-progress': 3, 'ready-for-dev': 2, blocked: 1 }, sin_diccionario: { esperando: 1 }, sin_status: 0, total: 20, por_grupo: { cerrado: 12, en_curso: 4, backlog: 2, bloqueado: 1 } },
     rework_por_causa: { conteo: { 'defecto-propio': 1, 'cambio-de-requisito': 1, 'deuda-declarada': 0, descubrimiento: 0 }, sin_declarar: 1, fuera_de_vocabulario: {}, sin_declarar_por_type: { fix: 1 }, total: 3 },
+    // lo entregado y lo rehecho de los últimos siete meses, el último en curso; los meses se cuentan desde hoy
+    rework_por_mes: { meses: [6, 5, 4, 3, 2, 1, 0].map((atras, i) => {
+      const [a, m] = hoy.split('-').map(Number);
+      const k = a * 12 + (m - 1) - atras;
+      return { mes: `${Math.floor(k / 12)}-${String((k % 12) + 1).padStart(2, '0')}`, en_curso: atras === 0, entregadas: [3, 4, 2, 5, 4, 3, 1][i],
+        rehechas: { conteo: { 'defecto-propio': [1, 0, 1, 1, 0, 1, 0][i], 'cambio-de-requisito': [0, 1, 0, 0, 1, 1, 0][i], 'deuda-declarada': [0, 0, 1, 0, 0, 1, 0][i], descubrimiento: [1, 0, 0, 1, 0, 0, 1][i] },
+          sin_declarar: [0, 1, 0, 0, 0, 0, 0][i], fuera_de_vocabulario: {} } };
+    }), sin_fecha: 0, fuera_de_ventana: { entregadas: 2, rehechas: 1 }, causa_aparte: 'deuda-declarada', repos_medidos: 2, repos_total: 2 },
     sin_transiciones: 0, estados_desconocidos: {} },
   repos: [
     { repo: '/home/dev/acme/Producto-X/historias', stories_total: 12, done_total: 8, rework_ratio: { num: 1, den: 8 }, dod_evidence_ratio: { num: 7, den: 8 }, not_measured: [],
