@@ -51,7 +51,7 @@ function ramaDeOrigen({ number, cwd, org = null, platform = null, timeoutMs = TO
   // stable-data: el tope de la lectura cuenta desde ahora; no se compara con nada guardado
   const args = JSON.stringify({ number: n, deadlineMs: Date.now() + timeoutMs - 500 });
   const r = spawnSync(process.execPath, [PLATFORM, 'change-request.read', '--repo', JSON.stringify(repo), '--args', args],
-    { cwd: cwd || process.cwd(), env, encoding: 'utf8', timeout: timeoutMs, stdio: ['ignore', 'pipe', 'pipe'] });
+    { cwd: cwd || process.cwd(), env, encoding: 'utf8', timeout: timeoutMs, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
   if (r.error) return { rama: null, motivo: r.error.code === 'ETIMEDOUT' ? 'se acabó el tiempo' : r.error.message };
   let res = null;
   try { res = JSON.parse(String(r.stdout || '').trim().split('\n').pop()); } catch (_) { /* abajo */ }
