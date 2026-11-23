@@ -3590,19 +3590,26 @@ const FORMAS_DEL_REPO = '<organización/repo> (o <organización>/<proyecto>/<rep
 // el número de una historia: `8.326`, `2.3` o uno suelto (`25`)
 const HISTORIA = /^\d+(?:\.\d+)*$/;
 
+// las ramas de los bots de dependencias: sus títulos citan versiones («Bump foo from 2.3 to 2.4»), no historias
+const RAMA_DE_BOT = /^(dependabot|renovate)\//;
+
 /**
  * ¿El pedido abierto es de la historia? Por la rama (`story/<id>`, `story/<id>-…` o `story/<id>/…`) o, si el número
- * lleva punto, por el título que lo nombra entero (`8.32` no es `8.325`, `8.32.1` ni `v8.32`), salvo que el pedido salga
- * de la rama de otra historia. Un número suelto sólo por la rama: «25» en un título no dice de qué historia es.
+ * lleva punto, por el título con la forma de los títulos del arnés: el número al principio, con su tanda opcional, y
+ * después «:», « —» o « -» («8.207 B: …», «8.32: …»), o al principio de un paréntesis («(8.32 A)», «(8.32)»,
+ * «feat(8.256): …», «(8.294, AC 14)»). El número va entero: `8.3` no es `8.32`, `18.3` ni `8.3.1`. Un título que sólo
+ * lo cita («Node 8.32 support», «fix tras 8.2») no cuenta, ni el de la rama de otra historia o de un bot. Un número
+ * suelto sólo por la rama: «25» en un título no dice de qué historia es.
  */
 function esDeLaHistoria(pedido, historia) {
   const rama = String((pedido && pedido.sourceBranch) || '').replace(/^refs\/heads\//, '');
   if (rama === `story/${historia}` || rama.startsWith(`story/${historia}-`) || rama.startsWith(`story/${historia}/`)) return true;
   // un pedido de la rama de otra historia que la cita en el título («sigue a 8.32») no es de ésta
-  if (!historia.includes('.') || /^story\//.test(rama)) return false;
+  if (!historia.includes('.') || /^story\//.test(rama) || RAMA_DE_BOT.test(rama)) return false;
   const titulo = String((pedido && pedido.title) || '');
   const exacto = historia.replace(/\./g, '\\.');
-  return new RegExp(`(^|[^\\w.])${exacto}(?!\\d|\\.\\d)`).test(titulo);
+  const tanda = '(?:\\s+[A-Z]\\d*)?';
+  return new RegExp(`^${exacto}${tanda}(?::|\\s+[—-])`).test(titulo) || new RegExp(`\\(${exacto}${tanda}\\s*[),]`).test(titulo);
 }
 
 /**

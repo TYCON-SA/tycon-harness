@@ -2489,6 +2489,37 @@ test('PrWaitStory_EndsWhenTheStoryOpensItsPullRequest: termina con el número cu
   assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '25' }, { listar: async () => suelta[n++], sleep: async () => {} }), { code: 0, text: 'open 71' });
 });
 
+test('PrWaitStory_TitleOnlyInTheHarnessForms: por el título cuenta sólo la forma de los títulos del arnés, y nunca un bot', async () => {
+  // la primera lectura trae sólo el pedido a juzgar; la segunda, el de la rama de la historia (999): si la espera
+  // termina con 999, el pedido a juzgar no contó
+  const juzgar = async (story, pedido) => {
+    const lecturas = [{ ok: true, value: [pedido] }, { ok: true, value: [pedidoDe(999, `story/${story}`)] }];
+    let k = 0;
+    return (await C.prWait({ rest: [], repo: 'acme/portal', story }, { listar: async () => lecturas[k++], sleep: async () => {} })).text;
+  };
+  // (el pase) un título que sólo cita el número no es de la historia
+  assert.strictEqual(await juzgar('2.3', pedidoDe(7, 'dependabot/npm/x', 'Bump foo from 2.3 to 2.4')), 'open 999');
+  assert.strictEqual(await juzgar('8.32', pedidoDe(9, 'feature/x', 'Node 8.32 support')), 'open 999');
+  assert.strictEqual(await juzgar('8.2', pedidoDe(11, 'wt/Otra', 'fix tras 8.2 en el pedido')), 'open 999');
+  assert.strictEqual(await juzgar('8.32', pedidoDe(12, 'revert-1464-wt/x', 'Revert 8.32 change')), 'open 999');
+  // la forma del arnés: el número al principio, con su tanda, y «:», « —» o « -»; o al principio de un paréntesis
+  assert.strictEqual(await juzgar('8.207', pedidoDe(20, 'wt/8207-B', '8.207 B: sin perfil del equipo, el click nombra a la coordinadora')), 'open 20');
+  assert.strictEqual(await juzgar('8.32', pedidoDe(21, 'wt/x', '8.32: el tope')), 'open 21');
+  assert.strictEqual(await juzgar('8.45', pedidoDe(22, 'wt/x', '8.45 B2 — la guía con nombre en inglés')), 'open 22');
+  assert.strictEqual(await juzgar('8.32', pedidoDe(23, 'wt/x', '8.32 - el tope')), 'open 23');
+  assert.strictEqual(await juzgar('8.32', pedidoDe(24, 'wt/z', 'feat(freno): el tope (8.32 A)')), 'open 24');
+  assert.strictEqual(await juzgar('8.256', pedidoDe(25, 'wt/x', 'feat(8.256): tanda C — lo que contesta el dueño')), 'open 25');
+  assert.strictEqual(await juzgar('8.294', pedidoDe(26, 'wt/x', 'fix(oficina): «espera a main» (8.294, AC 14)')), 'open 26');
+  // la rama de un bot no cuenta aunque el título tenga la forma del arnés
+  assert.strictEqual(await juzgar('8.32', pedidoDe(30, 'dependabot/npm/x', '8.32: bump')), 'open 999');
+  assert.strictEqual(await juzgar('8.32', pedidoDe(31, 'renovate/foo', 'chore(deps): (8.32)')), 'open 999');
+  // el número con borde: 8.3 no es 8.32 ni 18.3
+  assert.strictEqual(await juzgar('8.3', pedidoDe(40, 'wt/x', '8.32: el tope')), 'open 999');
+  assert.strictEqual(await juzgar('8.3', pedidoDe(41, 'wt/x', '18.3: otra')), 'open 999');
+  assert.strictEqual(await juzgar('8.3', pedidoDe(42, 'wt/x', 'fix: algo (18.3 A)')), 'open 999');
+  assert.strictEqual(await juzgar('8.3', pedidoDe(43, 'wt/x', 'fix: algo (8.3.1)')), 'open 999');
+});
+
 test('PrWaitStory_FailuresAndShapes: tres lecturas fallidas seguidas cortan con el motivo; otra forma no lee nada', async () => {
   const falla = async () => ({ ok: false, reason: 'no_medido', detail: 'sin conexión con la plataforma' });
   const r = await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32', interval: '1' }, { listar: falla, sleep: async () => {} });
