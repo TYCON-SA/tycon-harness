@@ -1625,37 +1625,60 @@ function main() {
       && /^done$/i.test(String(stagedFm.status || '').trim());
     const statusTransition = critica || internaDone;
 
-    // Trigger 2: pipeline block transition — `status: done` indentado (pipelines.X.status)
-    // que aparece en el frontmatter staged y NO estaba en HEAD.
-    // Scopeado al BLOQUE FRONTMATTER (entre los dos `---`), igual que Capa 2
-    // (on-frontmatter-write). Un regex sobre el diff crudo `git diff --cached` tomaría un
-    // `+status: done` en prosa o en un code-block como transición: un falso positivo.
+    // Trigger 2: una tanda del bloque pipelines que pasa a done. Lo decide batchTransition (lib/story-checks.js), el
+    // mismo que usa on-frontmatter-write: ante la duda, se mide. Hay transición si una tanda está done y no lo estaba en
+    // HEAD (por nombre), si suben los renglones de estado done del frontmatter (con comillas y mayúsculas), o si la
+    // lectura del bloque es dudosa (nombres recortados o repetidos, un bloque que el lector no entiende, una tanda sin
+    // estado legible), el bloque cambió y dice done. Sólo el frontmatter: un `status: done` en la prosa o en un bloque de
+    // código no cuenta.
     // 🔴 Se calcula ACÁ, antes del advisors-gate y del «sólo aviso».
     // Si estuviera después de dos `continue`, el aviso de `review → done` se marcaría por
     // spec sin saber si en el mismo commit se cierra una tanda. Así, `review → done` +
     // `pipelines.X: in-progress → done` sin evidencia —la última tanda de una story entregada en
     // tandas— pasaría a AVISO, cuando la transición de pipelines bloquea sola.
     const fmBlock = (c) => { const m = c.match(/^---\r?\n([\s\S]*?)\r?\n---/); return m ? m[1] : ''; };
-    const headDone = (fmBlock(head).match(/^\s+status:\s*done\b/gm) || []).length;
-    const stagedDone = (fmBlock(staged).match(/^\s+status:\s*done\b/gm) || []).length;
-    const pipelineTransition = stagedDone > headDone;
+    let lectura = null;
+    let pipelineTransition;
+    try {
+      lectura = require('./lib/story-checks.js').batchTransition(head, staged);
+      pipelineTransition = lectura.transition;
+    } catch {
+      // sin el lector no se sabe qué tanda cambió: un frontmatter que cambia cuenta como transición, y abajo se miden todas
+      pipelineTransition = fmBlock(head) !== fmBlock(staged);
+    }
     // Un commit que cierra tandas sin pasar la historia a review/done mide las tandas que cierra: salen del diff de la
     // historia (pasan a done en lo que se commitea y no lo estaban en HEAD), nunca del marcador de la sesión. Con paso
     // de la historia, se miden todas.
     // Sólo cuenta una tanda que ya estaba en HEAD sin estar done: una que aparece ya hecha no se cerró, y sin HEAD
-    // legible no se sabe qué cambió. En los dos casos se miden todas, y se dice.
+    // legible no se sabe qué cambió. En los dos casos se miden todas, y se dice. Con la lectura dudosa, o con un done
+    // que no es de ninguna tanda que el lector vea, también se miden todas.
+    // La excepción es el estreno: HEAD tiene la historia con su frontmatter y sin la clave `pipelines`. Ahí una tanda
+    // hecha no tenía en qué commit cerrarse, así que se mide ella sola, con su evidencia; las bloqueadas, pendientes o
+    // en curso no se miden. Un bloque que está en HEAD y no se lee no es un estreno: se miden todas.
     if (pipelineTransition && !statusTransition) {
+      const todas = (motivo) => process.stderr.write(`[on-pre-commit] ${specRel}: ${motivo}: se miden todas las tandas.\n`);
       try {
-        const { parsePipelinesBlock } = require('./lib/story-checks.js');
-        const antes = head ? parsePipelinesBlock(head) : [];
-        if (!antes.length) {
-          process.stderr.write(`[on-pre-commit] ${specRel}: no pude leer las tandas de la historia en HEAD: se miden todas las tandas.\n`);
+        if (!lectura) {
+          todas('no pude cargar el lector de tandas (lib/story-checks.js)');
+        } else if (lectura.doubtsBefore.length) {
+          todas(`no pude leer las tandas de la historia en HEAD (${lectura.doubtsBefore.join('; ')})`);
+        } else if (lectura.doubtsAfter.length) {
+          todas(`no pude leer las tandas de lo que se commitea (${lectura.doubtsAfter.join('; ')})`);
+        } else if (!lectura.turned.length) {
+          todas('el commit suma un estado done que no es de ninguna tanda que el lector vea');
+        } else if (!lectura.before.present && fmBlock(head)) {
+          const estrenadas = lectura.turned;
+          tandasQueCierran.set(specRel, { nombres: estrenadas, antes: [] });
+          const cual = estrenadas.length > 1 ? 'se miden esas tandas' : 'se mide esa tanda';
+          process.stderr.write(`[on-pre-commit] ${specRel}: el commit estrena las tandas con ${estrenadas.join(', ')} ya done: ${cual} (pasar la historia a review las pide todas).\n`);
+        } else if (!lectura.before.batches.length) {
+          todas('no pude leer las tandas de la historia en HEAD');
         } else {
-          const enHead = new Map(antes.map((t) => [t.name, t]));
-          const ahora = parsePipelinesBlock(staged);
-          const nuevas = ahora.filter((t) => String(t.status || '').toLowerCase() === 'done' && !enHead.has(t.name)).map((t) => t.name);
-          const cierran = ahora.filter((t) => String(t.status || '').toLowerCase() === 'done' && enHead.has(t.name)
-            && String(enHead.get(t.name).status || '').toLowerCase() !== 'done').map((t) => t.name);
+          const { isDoneBatch } = require('./lib/story-checks.js');
+          const enHead = new Map(lectura.before.batches.map((t) => [t.name, t]));
+          const ahora = lectura.after.batches;
+          const nuevas = ahora.filter((t) => isDoneBatch(t) && !enHead.has(t.name)).map((t) => t.name);
+          const cierran = ahora.filter((t) => isDoneBatch(t) && enHead.has(t.name) && !isDoneBatch(enHead.get(t.name))).map((t) => t.name);
           if (nuevas.length) {
             process.stderr.write(`[on-pre-commit] ${specRel}: el commit agrega la tanda ${nuevas.join(', ')} ya done: no se cerró en este commit; se miden todas las tandas.\n`);
           } else if (cierran.length) {
@@ -1665,7 +1688,7 @@ function main() {
           }
         }
       } catch (e) {
-        process.stderr.write(`[on-pre-commit] ${specRel}: no pude leer las tandas que cierra el commit (${e.message}): se miden todas las tandas.\n`);
+        todas(`no pude leer las tandas que cierra el commit (${e.message})`);
       }
     }
 

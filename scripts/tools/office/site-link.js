@@ -246,6 +246,9 @@ function lockOwner(lock, waitMs) {
         try { ({ pid } = JSON.parse(body)); } catch { /* otra cosa: abajo */ }
         resolve(res.statusCode === 200 && pid === lock.pid ? 'office' : 'foreign');
       });
+      // una respuesta cortada a mitad del cuerpo no termina nunca, y el plazo ya no corre: cuenta como otra cosa
+      res.on('error', () => resolve('foreign'));
+      res.on('close', () => { if (!res.complete) resolve('foreign'); });
     });
     req.on('timeout', () => { req.destroy(); resolve('silent'); });
     req.on('error', () => resolve('foreign'));

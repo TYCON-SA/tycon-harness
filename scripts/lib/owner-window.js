@@ -1041,6 +1041,21 @@ function comandoDelDetalle(palabras, texto) {
 }
 
 /**
+ * ¿Hay algún click o «aprobado» anotado sin vencer en la sesión del pedido o en la coordinadora confirmada? Sólo dice si
+ * vale la pena armar el cuadro antes de la firma de trámite; la que decide es `aprobacionExplicita`. Con las aprobaciones
+ * inyectadas (las pruebas), o si no se puede leer, se mira igual.
+ */
+function hayAprobacionesAnotadas({ aprobaciones, casa, sesion, ahora = Date.now() }) {
+  if (aprobaciones) return true;
+  try {
+    const oa = require('./owner-approvals.js');
+    const vence = oa.VENCE_MIN * 60000;
+    const sesiones = [...new Set([sesion, oa.coordinadoraConfirmada(casa)].filter((s) => s && SESION.test(s)))];
+    return sesiones.some((s) => oa.leerSesion(casa, s).some((r) => { const e = ahora - Date.parse(r.ts); return e >= 0 && e <= vence; }));
+  } catch (_) { return true; }
+}
+
+/**
  * La aprobación explícita de la persona para la firma pedida (owner-approvals.js): `{ ok, aprobacion, via }` o
  * `{ ok: false, motivo }`. Una por firma: un comando que pide dos no la usa. Lo irreversible no la acepta.
  */
@@ -1592,6 +1607,15 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   // conoce recién acá. Pasa por lo mismo que lo que sale sin persona: el cupo del camino corto y el control previo del
   // guion; lo que eso niega va a una persona, con los controles del árbol de siempre
   if (!automatica.ok && firmaGuion === REFIRMA && !escapes.length) automatica = deTramite(pendientes);
+  // un click o un «aprobado» de la persona a ESTE pedido (el cuadro de este comando, con su sello) gana a la firma de
+  // trámite: si la persona aprobó, la firma es suya y queda con su vía. Acá sólo se mira; se gasta más abajo, donde se
+  // gastan todas. El cuadro se arma sólo si hay alguna aprobación anotada sin vencer: sin ella, el trámite sigue igual
+  let aprobadaAntes = null;
+  if (automatica.ok && guion && pendientes.length === 1 && hayAprobacionesAnotadas({ aprobaciones, casa, sesion, ahora })) {
+    const cuadro = cuadroPara({ firma: pendientes[0], comando, palabras: can && can.palabras, destino, cwd: evento.cwd, casa, sesion, memo: criterios });
+    const a = aprobacionExplicita({ pendientes, sesion, destino, casa, ahora, cwd: evento.cwd, aprobaciones, herramienta: { pid: tool.pid, inicio: tool.inicio }, cuadro: cuadro || {}, arbol });
+    if (a.ok) { aprobadaAntes = a; automatica = { ok: false, motivo: null }; }
+  }
   if (automatica.ok && guion && pendientes.length === 1) {
     const cupo = firmaGuion === 'adhoc-lane' ? rutinaSinPermisos({ guion: firmaGuion, pendientes, palabras: can && can.palabras, destino, casa, topes, cwd: evento.cwd || null, sesion }) : { ok: true };
     if (!cupo.ok) automatica = { ok: false, motivo: cupo.motivo };
@@ -1712,9 +1736,10 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
     try { permiso = require(path.join(LIB, 'autonomy-decision.js')).permisoVigente(stateDir(casa), destino); } catch (_) { permiso = null; }
     if (permiso) return { decision: 'none', firmas: [] };
   }
-  if (delegada || sinVentana || deFondo || enWindows || soloClick || clickDelDueno) {
+  if (aprobadaAntes || delegada || sinVentana || deFondo || enWindows || soloClick || clickDelDueno) {
     const cuadro = pendientes.length === 1 ? cuadroPara({ firma: pendientes[0], comando, palabras: can && can.palabras, destino, cwd: evento.cwd, casa, sesion, memo: criterios }) : null;
-    const a = aprobacionExplicita({ pendientes, sesion, destino, casa, ahora, cwd: evento.cwd, aprobaciones, herramienta: { pid: tool.pid, inicio: tool.inicio }, cuadro: cuadro || {}, arbol });
+    // la que ganó a la firma de trámite ya se buscó con este mismo cuadro
+    const a = aprobadaAntes || aprobacionExplicita({ pendientes, sesion, destino, casa, ahora, cwd: evento.cwd, aprobaciones, herramienta: { pid: tool.pid, inicio: tool.inicio }, cuadro: cuadro || {}, arbol });
     if (a.ok) { aprobada = a; delegada = null; }
     else if (delegada) sinAprobacion = a.motivo;
     else {

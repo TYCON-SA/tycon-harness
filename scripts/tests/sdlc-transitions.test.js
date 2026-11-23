@@ -1591,3 +1591,195 @@ test('Memoria_HistorialGrande_NoGuardaElTexto · un historial con muchas version
   assert.strictEqual(out.status, 0, `se quedó sin memoria o falló (salida ${out.status}): ${String(out.stderr).slice(-400)}`);
   assert.strictEqual(out.stdout, '4', 'cada versión cambia el estado: 4 transiciones');
 });
+
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+// Lo rehecho al lado de lo entregado, mes por mes — `rework_por_mes` por repo y global
+// La entrega se fecha con su entrada al estado cerrado; la rehecha, con su alta. El mes son los
+// primeros 7 caracteres de la fecha de git, con el offset de esa misma fecha.
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+
+const HOY_MES = '2026-11-21';
+const VENTANA = ['2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11'];
+const padreVuelto = (id, status) => `---\nstory: ${id}\nepic: 1\nstatus: ${status}\nfollowed_up_by:\n  - id: H-8\n---\n\n# Story ${id}\n`;
+const filaDe = (rpm, mes) => (rpm && Array.isArray(rpm.meses) ? rpm.meses.find((f) => f.mes === mes) : undefined);
+const rehechasDe = (f) => sumaCausas(f.rehechas.conteo) + f.rehechas.sin_declarar + sumaCausas(f.rehechas.fuera_de_vocabulario);
+
+/** Una cerrada en septiembre y retocada en noviembre, una cancelada, y ocho hijas con cada balde de causa. */
+function fixturePorMes(nombre) {
+  const { root, repo } = nuevoRepo(nombre);
+  escribir(repo, 'specs/p1.md', story('PM-1', 'in-progress'));
+  escribir(repo, 'specs/p2.md', story('PM-2', 'in-progress'));
+  commit(repo, 'nacen dos', '2026-07-05T10:00:00-03:00');
+  escribir(repo, 'specs/p1.md', story('PM-1', 'done'));
+  commit(repo, 'PM-1 se cierra', '2026-09-12T10:00:00-03:00');
+  escribir(repo, 'specs/p2.md', story('PM-2', 'cancelled'));
+  commit(repo, 'PM-2 se cancela', '2026-09-20T10:00:00-03:00');
+  escribir(repo, 'specs/h1.md', storyConSeguimiento('H-1', 'done', { reason: 'defecto-propio' }));
+  escribir(repo, 'specs/h2.md', storyConSeguimiento('H-2', 'in-progress', { reason: 'cambio-de-requisito' }));
+  escribir(repo, 'specs/h3.md', storyConSeguimiento('H-3', 'backlog', { reason: 'deuda-declarada' }));
+  escribir(repo, 'specs/h4.md', storyConSeguimiento('H-4', 'review', { reason: 'descubrimiento' }));
+  escribir(repo, 'specs/h5.md', storyConSeguimiento('H-5', 'backlog'));
+  escribir(repo, 'specs/h6.md', storyConSeguimiento('H-6', 'backlog', { reason: 'otra-cosa' }));
+  escribir(repo, 'specs/h7.md', storyConSeguimiento('H-7', 'backlog', { types: ['fix', 'extension'], reason: 'descubrimiento' }));
+  commit(repo, 'nacen siete hijas', '2026-10-03T10:00:00-03:00');
+  escribir(repo, 'specs/p1.md', padreVuelto('PM-1', 'done'));
+  escribir(repo, 'specs/h8.md', storyConSeguimiento('H-8', 'backlog', { reason: 'defecto-propio' }));
+  commit(repo, 'PM-1 se retoca y nace H-8', '2026-11-02T10:00:00-03:00');
+  return { root, repo };
+}
+
+test('T1 (8.327) · PorMes_SieteMeses_EnOrden', () => {
+  // 🔴 rojo: armar la ventana con seis meses, o sin el mes en curso → la lista no da los siete; marcar
+  //    `en_curso` en todos o en ninguno; escribir las causas a mano y saltear las que valen 0 → mayo sin las cuatro.
+  const { repo } = fixturePorMes('pormes-t1');
+  const m = M.measureRepo(repo, null, { hoy: HOY_MES });
+  assert.ok(m.reworkPorMes, `sale medido: ${JSON.stringify(m.notMeasured)}`);
+  assert.deepStrictEqual(m.reworkPorMes.meses.map((f) => f.mes), VENTANA, 'los seis meses cerrados y el mes en curso, en orden');
+  assert.deepStrictEqual(m.reworkPorMes.meses.map((f) => f.en_curso), [false, false, false, false, false, false, true]);
+  const mayo = filaDe(m.reworkPorMes, '2026-05');
+  assert.deepStrictEqual({ ...mayo.rehechas.conteo }, { 'defecto-propio': 0, 'cambio-de-requisito': 0, 'deuda-declarada': 0, descubrimiento: 0 },
+    'las cuatro causas del vocabulario aparecen aun en cero');
+  assert.strictEqual(mayo.entregadas, 0);
+});
+
+test('T2 (8.327) · PorMes_Entregadas_PorFechaDeCierre', () => {
+  // 🔴 rojo: fechar la entrega con el último commit del archivo → PM-1 cae en noviembre; contar el
+  //    grupo `sin_entrega` como entrega → la cancelada suma en septiembre.
+  const { repo } = fixturePorMes('pormes-t2');
+  const r = M.measureRepo(repo, null, { hoy: HOY_MES }).reworkPorMes;
+  assert.strictEqual(filaDe(r, '2026-09').entregadas, 1, 'PM-1 se entregó en septiembre');
+  assert.strictEqual(filaDe(r, '2026-11').entregadas, 0, 'retocarla en noviembre no la vuelve a entregar');
+  assert.strictEqual(filaDe(r, '2026-10').entregadas, 1, 'H-1 nació cerrada en octubre: su alta es su cierre');
+  assert.strictEqual(r.meses.reduce((a, f) => a + f.entregadas, 0), 2, 'la cancelada no suma en ningún mes');
+});
+
+test('T3 (8.327) · PorMes_Rehechas_PorAltaYCausa', () => {
+  // 🔴 rojo: contar la hija con dos padres una vez por padre → descubrimiento 3; mandar `otra-cosa` a
+  //    sin_declarar; fechar la hija por su cierre → H-1 no cambia, pero H-8 (sin cerrar) desaparece.
+  const { repo } = fixturePorMes('pormes-t3');
+  const r = M.measureRepo(repo, null, { hoy: HOY_MES }).reworkPorMes;
+  const oct = filaDe(r, '2026-10');
+  assert.deepStrictEqual({ ...oct.rehechas.conteo }, { 'defecto-propio': 1, 'cambio-de-requisito': 1, 'deuda-declarada': 1, descubrimiento: 2 },
+    `octubre: ${JSON.stringify(oct.rehechas)}`);
+  assert.strictEqual(oct.rehechas.sin_declarar, 1, 'la hija sin causa va a sin_declarar');
+  assert.deepStrictEqual({ ...oct.rehechas.fuera_de_vocabulario }, { 'otra-cosa': 1 }, 'el valor fuera del vocabulario, con su nombre');
+  const nov = filaDe(r, '2026-11');
+  assert.strictEqual(nov.rehechas.conteo['defecto-propio'], 1, 'H-8 en el mes de su alta, aunque no se cerró');
+  assert.strictEqual(rehechasDe(nov), 1);
+  assert.strictEqual(r.meses.reduce((a, f) => a + rehechasDe(f), 0), 8, 'ocho hijas, ocho rehechas: ninguna dos veces');
+});
+
+test('T4 (8.327) · PorMes_SinFecha_NoInventaMes', () => {
+  // 🔴 rojo: fechar con la primera versión aunque la historia tenga una ilegible, o atribuirle a un id
+  //    repetido el alta de su gemelo → las dos entran a octubre y sin_fecha da 0.
+  const { repo } = nuevoRepo('pormes-t4');
+  escribir(repo, 'specs/a.md', storyConSeguimiento('SF-1', 'in-progress', { reason: 'defecto-propio' }));
+  escribir(repo, 'specs/b.md', story('SF-1', 'in-progress'));
+  escribir(repo, 'specs/c.md', `---\nstory: SF-2\nepic: 1\nfollowup_of:\n  - id: "P-1"\n    type: "fix"\nfollowup_reason: defecto-propio\nstatus:\n---\n\n# x\n`);
+  escribir(repo, 'specs/d.md', storyConSeguimiento('SF-3', 'backlog', { reason: 'defecto-propio' }));
+  commit(repo, 'nacen', '2026-10-10T10:00:00-03:00');
+  escribir(repo, 'specs/c.md', storyConSeguimiento('SF-2', 'backlog', { reason: 'defecto-propio' }));
+  commit(repo, 'SF-2 recupera su estado', '2026-10-11T10:00:00-03:00');
+  const r = M.measureRepo(repo, null, { hoy: HOY_MES }).reworkPorMes;
+  assert.ok(r, 'el repo se mide');
+  assert.strictEqual(r.sin_fecha, 2, `el id repetido y la versión ilegible no se fechan: ${JSON.stringify(r)}`);
+  assert.strictEqual(filaDe(r, '2026-10').rehechas.conteo['defecto-propio'], 1, 'sólo SF-3, que sí se puede fechar');
+  assert.strictEqual(r.meses.reduce((a, f) => a + rehechasDe(f), 0), 1);
+});
+
+test('T5 (8.327) · PorMes_HistorialNoLeido_NullConMotivo', () => {
+  // 🔴 rojo: calcular la serie con el presupuesto agotado (las altas que alcanzó a leer) o con el
+  //    vocabulario roto (una lista vacía de causas) → siete meses con números, en verde.
+  const { repo } = fixturePorMes('pormes-t5');
+  const m = M.measureRepo(repo, null, { hoy: HOY_MES, budgetMs: 1 });
+  assert.strictEqual(m.reworkPorMes, null, 'presupuesto agotado → null, nunca meses en cero');
+  assert.ok(m.notMeasured.some((x) => /rehecho por mes/.test(x)), `con su motivo: ${JSON.stringify(m.notMeasured)}`);
+  const roto = path.join(path.dirname(repo), 'causas-rotas.json');
+  fs.writeFileSync(roto, '{ esto no es json');
+  const d = medirJson(repo, { TYCON_CAUSES_PATH: roto });
+  assert.strictEqual(d.repos[0].rework_por_mes, null, 'vocabulario ilegible → null');
+  assert.strictEqual(d.global.rework_por_mes, null);
+  assert.ok(d.repos[0].not_measured.some((x) => /rehecho por mes/.test(x)), JSON.stringify(d.repos[0].not_measured));
+});
+
+test('T6 (8.327) · PorMes_Global_SumaSoloLosMedidos', () => {
+  // 🔴 rojo: sumar el repo sin historial como ceros, o publicar el global sin decir de cuántos repos sale.
+  const ahora = new Date();
+  const mes = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}`;
+  const fecha = `${mes}-01T12:00:00+00:00`;
+  const a = nuevoRepo('pormes-t6a').repo;
+  escribir(a, 'specs/a.md', story('GA-1', 'done'));
+  escribir(a, 'specs/b.md', storyConSeguimiento('GA-2', 'backlog', { reason: 'defecto-propio' }));
+  commit(a, 'a', fecha);
+  const b = nuevoRepo('pormes-t6b').repo;
+  escribir(b, 'specs/a.md', story('GB-1', 'done'));
+  escribir(b, 'specs/b.md', storyConSeguimiento('GB-2', 'backlog', { reason: 'descubrimiento' }));
+  commit(b, 'b', fecha);
+  const c = nuevoRepo('pormes-t6c').repo;
+  escribir(c, 'specs/a.md', story('GC-1', 'done'));        // sin ningún commit: no hay historial
+  const d = medirJson([a, b, c]);
+  const g = d.global.rework_por_mes;
+  assert.ok(g, 'el global sale medido');
+  assert.strictEqual(g.repos_medidos, 2);
+  assert.strictEqual(g.repos_total, 3);
+  assert.strictEqual(d.repos[2].rework_por_mes, null, 'el repo sin historial publica null');
+  assert.ok(d.repos[0].rework_por_mes && d.repos[1].rework_por_mes, 'cada repo medido publica el suyo');
+  const ult = g.meses[g.meses.length - 1];
+  assert.strictEqual(g.meses.length, 7);
+  assert.strictEqual(ult.mes, mes);
+  assert.strictEqual(ult.en_curso, true);
+  assert.strictEqual(ult.entregadas, 2, 'las dos entregas, una por repo medido');
+  assert.strictEqual(ult.rehechas.conteo['defecto-propio'], 1);
+  assert.strictEqual(ult.rehechas.conteo.descubrimiento, 1);
+  assert.strictEqual(g.sin_fecha, 0);
+  assert.deepStrictEqual(g.fuera_de_ventana, { entregadas: 0, rehechas: 0 });
+});
+
+test('T7 (8.327) · PorMes_NoCambiaLoDeAntes', () => {
+  // 🔴 rojo: reusar para la cuenta por mes una lista filtrada de stories o de cerradas → cambian el
+  //    denominador de `rework` o las cuentas de `reworkPorCausa`.
+  const { repo } = fixturePorMes('pormes-t7');
+  const conHoy = M.measureRepo(repo, null, { hoy: HOY_MES });
+  const otroHoy = M.measureRepo(repo, null, { hoy: '2027-06-01' });
+  assert.ok(conHoy.reworkPorMes, 'mide el campo nuevo');
+  assert.deepStrictEqual(conHoy.rework, { num: 1, den: 2 }, 'PM-1 volvió; las cerradas son PM-1 y H-1');
+  assert.deepStrictEqual({ ...conHoy.reworkPorCausa.conteo }, { 'defecto-propio': 2, 'cambio-de-requisito': 1, 'deuda-declarada': 1, descubrimiento: 2 });
+  assert.strictEqual(conHoy.reworkPorCausa.total, 8);
+  for (const k of ['rework', 'reworkPorCausa', 'reworkPorCarril']) {
+    assert.deepStrictEqual(otroHoy[k], conHoy[k], `${k} no depende del mes de hoy`);
+  }
+});
+
+test('T14 (8.327) · PorMes_FueraDeVentana_NoSeCorre', () => {
+  // 🔴 rojo: correr lo de antes de la ventana al primer mes, o lo del futuro al mes en curso → mayo o
+  //    noviembre suman, y fuera_de_ventana queda en cero.
+  const { repo } = nuevoRepo('pormes-t14');
+  escribir(repo, 'specs/a.md', story('FV-1', 'done'));
+  commit(repo, 'FV-1 nace cerrada en marzo', '2026-03-10T10:00:00-03:00');
+  escribir(repo, 'specs/b.md', storyConSeguimiento('FV-2', 'backlog', { reason: 'defecto-propio' }));
+  commit(repo, 'FV-2 nace en abril', '2026-04-15T10:00:00-03:00');
+  escribir(repo, 'specs/c.md', storyConSeguimiento('FV-3', 'backlog', { reason: 'cambio-de-requisito' }));
+  commit(repo, 'FV-3 con fecha en el futuro', '2026-12-05T10:00:00-03:00');
+  const r = M.measureRepo(repo, null, { hoy: HOY_MES }).reworkPorMes;
+  assert.deepStrictEqual(r.fuera_de_ventana, { entregadas: 1, rehechas: 2 });
+  const mayo = filaDe(r, '2026-05');
+  assert.strictEqual(mayo.entregadas, 0, 'mayo, el primer mes, no las suma');
+  assert.strictEqual(rehechasDe(mayo), 0);
+  assert.strictEqual(r.meses.reduce((a, f) => a + f.entregadas + rehechasDe(f), 0), 0, 'ningún mes las suma');
+  assert.strictEqual(r.sin_fecha, 0, 'fuera de la ventana no es sin fecha');
+});
+
+test('T15 (8.327) · PorMes_BordeDeMes_OffsetDeLaFecha', () => {
+  // 🔴 rojo: cortar el mes en UTC (`new Date(f).toISOString().slice(0, 7)`) → la hija cae en noviembre y
+  //    la cerrada en octubre.
+  const { repo } = nuevoRepo('pormes-t15');
+  escribir(repo, 'specs/b.md', story('BM-2', 'done'));
+  commit(repo, 'BM-2 nace cerrada', '2026-11-01T01:00:00+02:00');
+  escribir(repo, 'specs/a.md', storyConSeguimiento('BM-1', 'backlog', { reason: 'defecto-propio' }));
+  commit(repo, 'BM-1 nace', '2026-10-31T23:30:00-03:00');
+  const r = M.measureRepo(repo, null, { hoy: HOY_MES }).reworkPorMes;
+  assert.strictEqual(filaDe(r, '2026-10').rehechas.conteo['defecto-propio'], 1, 'la hija es de octubre con su offset');
+  assert.strictEqual(filaDe(r, '2026-11').entregadas, 1, 'la cerrada es de noviembre con su offset');
+  assert.strictEqual(filaDe(r, '2026-10').entregadas, 0);
+  assert.strictEqual(rehechasDe(filaDe(r, '2026-11')), 0);
+});

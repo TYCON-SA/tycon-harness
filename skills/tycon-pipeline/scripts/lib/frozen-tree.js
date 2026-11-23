@@ -30,6 +30,8 @@ function git(args, env) {
 }
 const unaLinea = (t) => String(t || '').split('\n').map((x) => x.trim()).filter(Boolean)[0] || 'sin detalle';
 const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return path.resolve(p); } };
+// Hasta qué tamaño se lee qué cambió adentro de un archivo (lib/change-kind.js no tiene tope de tiempo)
+const TOPE_DEL_LECTOR = 256 * 1024;
 
 /** Un índice aparte, en la carpeta temporal; se borra al terminar. */
 function conIndiceAparte(fn) {
@@ -203,6 +205,175 @@ function reposDe(rutas) {
   return { repos };
 }
 
+/**
+ * ¿El bloque `evidence:` del repo dice a propósito que no hay hermanos? Sí con el bloque vacío o con sólo sus llaves
+ * vacías (`companion_repos: []`, o la llave sin valor). Cualquier otra cosa de la que el lector de la configuración
+ * (lib/evidence-config.js) no sacó ningún hermano es un bloque que no se pudo leer. Lee el mismo archivo que ese lector.
+ */
+function evidenciaSinHermanos(repo) {
+  let txt = null;
+  for (const nombre of ['advisors.yaml', 'advisors.yml']) {
+    try { txt = fs.readFileSync(path.join(repo, '.tycon', nombre), 'utf8'); break; } catch (_) { /* el siguiente */ }
+  }
+  if (txt === null) return false;
+  let adentro = false;
+  let sangria = 0;
+  for (const linea of txt.split(/\r?\n/)) {
+    if (/^\s*#/.test(linea) || linea.trim() === '') continue;
+    const s = linea.length - linea.trimStart().length;
+    if (!adentro) {
+      const m = linea.match(/^evidence\s*:(.*)$/);
+      if (!m) continue;
+      // `evidence: {…}` en el mismo renglón: el lector no lo entiende
+      if (m[1].replace(/\s+#.*$/, '').trim()) return false;
+      adentro = true;
+      sangria = s;
+      continue;
+    }
+    if (s <= sangria) break;
+    if (!/^\s*(?:companion_repos|fe_paths)\s*:\s*(?:\[\s*\])?\s*(?:#.*)?$/.test(linea)) return false;
+  }
+  return adentro;
+}
+
+/**
+ * Los repos del pase adversarial: los de la vuelta (la historia y el repo del código) más cada repo hermano declarado
+ * (`.tycon/advisors.yaml → evidence.companion_repos`, con la misma lista que usa el portón de pruebas). `{ repos, hermanos }`
+ * o `{ error }`: una configuración que no se deja leer no es «sin hermanos», y un hermano que no se puede sellar tampoco.
+ */
+function reposDelPase({ story, repo }) {
+  const base = reposDe([story, repo]);
+  if (base.error) return base;
+  let hermanos;
+  try {
+    // un hermano declarado que no está en disco, o un bloque `evidence:` del que no sale ninguno, no se puede sellar
+    const { parseEvidenceConfig } = require('./evidence-config.js');
+    for (const r of base.repos) {
+      const cfg = parseEvidenceConfig(r);
+      if (cfg.missing.length) return { error: `${r} declara repos hermanos que no están en disco: ${cfg.missing.join(', ')}` };
+      if (cfg.blockPresent && !cfg.roots.length && !cfg.fePaths.length && !evidenciaSinHermanos(r)) return { error: `${r} tiene el bloque evidence: y no pude leer de él ningún repo hermano` };
+    }
+    hermanos = require('./companion-repos.js').companionRoots(repo, story || null);
+  } catch (e) {
+    return { error: `no pude leer los repos hermanos de ${repo}: ${unaLinea(e.message)}` };
+  }
+  // un hermano que está en disco y no es un repo git no tiene árbol que sellar: su código quedaría sin mirar
+  const so = require('./save-ok.js');
+  for (const h of hermanos) {
+    let raiz;
+    try { raiz = so.raizDe(path.resolve(h)); } catch (e) { return { error: `no pude saber el repo del hermano ${h}: ${unaLinea(e.message)}` }; }
+    if (!raiz) return { error: `el repo hermano ${h} está en disco pero no es un repo git: su código no se puede sellar` };
+  }
+  const todos = reposDe([...base.repos, ...hermanos]);
+  if (todos.error) return todos;
+  return { repos: todos.repos, hermanos: todos.repos.filter((r) => !base.repos.includes(r)) };
+}
+
+/**
+ * La ruta canónica, como la compara `verificarPruebasPropias` (lib/marker-adversarial.js): la real del sistema
+ * (`.native` resuelve enlaces y, donde el disco no distingue mayúsculas, las del archivo en disco); si no existe, la real
+ * del ancestro que sí existe más el resto tal cual. Otro error que «no existe» deja la ruta como vino.
+ */
+function canonica(p) {
+  let actual = path.resolve(p);
+  const resto = [];
+  for (;;) {
+    try { return path.join(fs.realpathSync.native(actual), ...resto); } catch (e) {
+      if (!e || (e.code !== 'ENOENT' && e.code !== 'ENOTDIR')) return path.join(actual, ...resto);
+    }
+    const padre = path.dirname(actual);
+    if (padre === actual) return path.join(actual, ...resto);
+    resto.unshift(path.basename(actual));
+    actual = padre;
+  }
+}
+
+/** La ruta con su carpeta canónica y el último tramo tal cual: un enlace en ese tramo no se sigue. */
+const conCarpetaCanonica = (p) => { const abs = path.resolve(p); return path.join(canonica(path.dirname(abs)), path.basename(abs)); };
+
+/**
+ * ¿Dos rutas (ya con la carpeta canónica) son el mismo archivo? La misma ruta, o el mismo nombre con otras mayúsculas en la
+ * misma carpeta cuando el disco las toma por el mismo archivo (mismo dispositivo e inodo, sin seguir enlaces).
+ */
+function mismoArchivo(a, b) {
+  if (a === b) return true;
+  if (path.dirname(a) !== path.dirname(b) || path.basename(a).toLowerCase() !== path.basename(b).toLowerCase()) return false;
+  try {
+    const x = fs.lstatSync(a, { bigint: true });
+    const y = fs.lstatSync(b, { bigint: true });
+    return x.dev === y.dev && x.ino === y.ino;
+  } catch (_) { return false; }
+}
+
+/**
+ * Lo sin commitear adentro de los submódulos y repos anidados de un repo, que el sello no ve: `add -A` anota de cada uno
+ * sólo su commit, no sus archivos. `{ files }` con cada archivo que su `git status` marca (con la carpeta adelante; un
+ * submódulo de adentro con cambios sale por su carpeta), o `{ error }` si alguno no se pudo mirar. Un submódulo sin bajar
+ * (sin carpeta, o vacía) no tiene archivos que mirar. Lo usan el cierre del pase con los repos hermanos
+ * (`hermanosCambiados`) y la comparación de lo que se guarda con lo revisado (`comprobarLoRevisado`, lib/marker-shared.js).
+ */
+function anidadosConCambios(repo, tree) {
+  const ls = git(['-C', repo, 'ls-tree', '-r', '-z', tree]);
+  if (!ls.ok) return { error: `no pude listar los submódulos de ${repo}: ${unaLinea(ls.err)}` };
+  const files = [];
+  for (const e of ls.crudo.split('\0')) {
+    const tab = e.indexOf('\t');
+    if (tab < 0 || !e.startsWith('160000 ')) continue;
+    const rel = e.slice(tab + 1);
+    const dir = path.join(repo, rel);
+    let entradas = [];
+    try { entradas = fs.readdirSync(dir); } catch (_) { entradas = []; }
+    if (!entradas.length) continue;
+    const top = git(['-C', dir, 'rev-parse', '--show-toplevel']);
+    if (!top.ok || canonica(top.out) !== canonica(dir)) return { error: `${rel} es un submódulo con archivos que no es un repo de git: no pude ver si cambió` };
+    const st = git(['-C', dir, 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=none']);
+    if (!st.ok) return { error: `no pude ver el estado del submódulo ${rel}: ${unaLinea(st.err)}` };
+    const partes = st.crudo.split('\0');
+    for (let i = 0; i < partes.length; i++) {
+      if (partes[i].length < 4) continue;
+      files.push(path.posix.join(rel, partes[i].slice(3)));
+      // un renombre trae después el nombre de antes
+      if (partes[i][0] === 'R' || partes[i][0] === 'C') i++;
+    }
+  }
+  return { files };
+}
+
+/**
+ * ¿Cambió el código de algún hermano desde que se lanzó el pase? Se vuelve a sellar cada hermano de la carpeta viva y se
+ * compara con su sello del lanzamiento; lo sin commitear adentro de sus submódulos y repos anidados, que el sello no ve,
+ * cuenta como cambio. `permitidos`: las pruebas propias que el cierre declara (`--own --in`), escritas
+ * a propósito después del pase; no cuentan. Se comparan como `verificarPruebasPropias`: una prueba declarada con otras
+ * mayúsculas libera el mismo archivo donde el disco no las distingue. Una declarada que es un enlace no libera nada: un
+ * enlace de una prueba al código es justo lo que el cierre tiene que ver. Devuelve `[{ repo, files }]` o
+ * `[{ repo, error }]` por cada hermano que no se puede dar por igual; `[]` si todos siguen iguales.
+ */
+function hermanosCambiados({ sellos, hermanos, permitidos = [] }) {
+  const out = [];
+  for (const repo of hermanos || []) {
+    const tree = sellos && sellos[repo];
+    if (!tree) { out.push({ repo, error: `el lanzamiento no trae el sello de ${repo}` }); continue; }
+    const ahora = seal(repo);
+    if (ahora.error) { out.push({ repo, error: ahora.error }); continue; }
+    const anidados = anidadosConCambios(repo, ahora.tree);
+    if (anidados.error) { out.push({ repo, error: anidados.error }); continue; }
+    let cambiados = [];
+    if (ahora.tree !== tree) {
+      const c = changed(repo, tree, ahora.tree, {});
+      if (c.error) { out.push({ repo, error: c.error }); continue; }
+      cambiados = [...c.files, ...(c.papeleo || [])];
+    }
+    if (!cambiados.length && !anidados.files.length) continue;
+    const libres = permitidos.map((p) => path.resolve(repo, p))
+      .filter((p) => { try { return !fs.lstatSync(p).isSymbolicLink(); } catch (_) { return true; } })
+      .map(conCarpetaCanonica);
+    const files = [...new Set([...cambiados, ...anidados.files])]
+      .filter((f) => { const k = conCarpetaCanonica(path.join(repo, f)); return !libres.some((l) => mismoArchivo(l, k)); }).sort();
+    if (files.length) out.push({ repo, files });
+  }
+  return out;
+}
+
 // El registro de las vueltas congeladas de una sesión, junto a sus copias: se borra con ellas.
 const registroDeVueltas = (stateDir, sid) => path.join(raizDeCopias(stateDir), seguro(sid), 'vueltas.jsonl');
 
@@ -358,9 +529,10 @@ const sinRenglonDeLaHistoria = (txt, clave) => String(txt).split('\n')
  * Con `mainAntes` y `mainAhora` (el punto en común con main del sello y el de ahora), un archivo que en la foto revisada
  * es igual al de `mainAntes` y ahora es igual al de `mainAhora` va a `deMain`: lo cambió main y la corrida no lo tocó
  * (en el estado del sprint, sin el renglón de la historia). Un archivo que la corrida tocó cuenta aunque main también.
- * Con `comentarios` (historia 8.217), un archivo con el mismo modo en los dos árboles que sólo movió comentarios
- * (lib/comment-only.js) va a `comentarios` y no a `files`; cualquier error al mirarlo lo deja en `files`. Sin la opción,
- * la salida no trae ese campo.
+ * Con `comentarios` (historia 8.217), un archivo con el mismo modo en los dos árboles cuyo cambio no pide otra vuelta
+ * (sólo comentarios o espacios, lib/change-kind.js; también textos si el dueño eligió que no la pidan,
+ * lib/review-change-policy.js) va a `comentarios` y no a `files`; cualquier error al mirarlo lo deja en `files`. Sin la
+ * opción, la salida no trae ese campo.
  */
 function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = null, comentarios = false } = {}) {
   if (treeA === treeB) return { files: [], papeleo: [], deMain: [], ...(comentarios ? { comentarios: [] } : {}) };
@@ -378,7 +550,10 @@ function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = n
       const a = contenidoDelSello(repo, treeA, rel);
       const b = contenidoDelSello(repo, treeB, rel);
       if (a.error || b.error || a.modo !== b.modo) return false;
-      return require('./comment-only.js').soloSeMovieronComentarios(a.buf, b.buf, { archivo: rel }).ok === true;
+      // el lector no tiene tope de tiempo: un archivo grande cuenta como cambio, como en el gancho de cada edición
+      if (a.buf.length > TOPE_DEL_LECTOR || b.buf.length > TOPE_DEL_LECTOR) return false;
+      const t = require('./change-kind.js').queCambio(a.buf, b.buf, { archivo: rel });
+      return !require('./review-change-policy.js').pideVuelta(t.tipo);
     } catch (_) { return false; }
   };
   const leer = (t, rel) => { const r = git(['-C', repo, 'show', `${t}:${rel}`]); return r.ok ? r.crudo : null; };
@@ -461,20 +636,22 @@ function contenidoDelSello(repo, tree, rel, { timeout } = {}) {
 }
 
 /**
- * ¿El archivo del disco difiere de lo sellado sólo en el lugar de sus comentarios? Un archivo común (no un enlace), con
- * el mismo bit de ejecución que en el sello. Lo que no se puede leer da `false`: cuenta como cambio.
+ * Qué cambió adentro del archivo del disco respecto de lo sellado (lib/change-kind.js): `{ tipo, motivo, visibles? }`,
+ * o null si no se puede comparar (no es un archivo común, pasa de `topeBytes`, no está en el sello, cambió su bit de
+ * ejecución, no se leyó). null cuenta como código.
  */
-function difiereSoloEnComentarios(repo, tree, abs, { timeout } = {}) {
+function tipoContraElSello(repo, tree, abs, { timeout, topeBytes = TOPE_DEL_LECTOR } = {}) {
   try {
     const st = fs.lstatSync(abs);
-    if (!st.isFile()) return false;
+    // el lector no tiene tope de tiempo: corre en el gancho de cada edición, y un archivo grande cuenta como código
+    if (!st.isFile() || st.size > topeBytes) return null;
     const rel = path.relative(real(repo), real(abs));
-    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return false;
+    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return null;
     const sello = contenidoDelSello(repo, tree, rel.split(path.sep).join('/'), { timeout });
-    if (sello.error) return false;
-    if (process.platform !== 'win32' && ((st.mode & 0o111) !== 0) !== (sello.modo === '100755')) return false;
-    return require('./comment-only.js').soloSeMovieronComentarios(sello.buf, fs.readFileSync(abs), { archivo: abs }).ok === true;
-  } catch (_) { return false; }
+    if (sello.error) return null;
+    if (process.platform !== 'win32' && ((st.mode & 0o111) !== 0) !== (sello.modo === '100755')) return null;
+    return require('./change-kind.js').queCambio(sello.buf, fs.readFileSync(abs), { archivo: abs });
+  } catch (_) { return null; }
 }
 
 /**
@@ -492,19 +669,20 @@ function vueltaCerradaDeLosRevisores(marker, cierre, { stateDir } = {}) {
 }
 
 /**
- * Los archivos (rutas absolutas) editados después de la última vuelta de revisores que quedaron iguales a lo revisado,
- * salvo el lugar de sus comentarios: los que no piden otra vuelta. Con más de 20 archivos no mira ninguno, y cuando se
- * acaba el presupuesto deja de mirar: lo que falta cuenta. Cada error queda en hook-errors.log y ese archivo cuenta.
+ * Qué cambió adentro de cada archivo (rutas absolutas) editado después de la última vuelta de revisores cerrada de esta
+ * historia, contra su sello: Map ruta → `{ tipo, motivo, visibles? }` (lib/change-kind.js). Lo que no se pudo mirar no
+ * está en el mapa, y cuenta como código. Con más de 20 archivos no mira ninguno, y cuando se acaba el presupuesto deja
+ * de mirar. Cada error queda en hook-errors.log.
  */
-function comentariosMovidosDesdeLaVuelta({ marker, cierre, archivos, presupuestoMs = 500, stateDir } = {}) {
-  const fuera = new Set();
+function tiposDesdeLaVuelta({ marker, cierre, archivos, presupuestoMs = 500, stateDir } = {}) {
+  const tipos = new Map();
   const lista = Array.isArray(archivos) ? archivos : [];
-  if (!lista.length || lista.length > 20) return fuera;
+  if (!lista.length || lista.length > 20) return tipos;
   const inicio = Date.now();
   const dir = stateDir || require('./state-dir.js').stateDir(os.homedir());
   let v;
-  try { v = vueltaCerradaDeLosRevisores(marker, cierre, { stateDir: dir }); } catch (e) { anotarError(dir, e); return fuera; }
-  if (!v || !Array.isArray(v.repos)) return fuera;
+  try { v = vueltaCerradaDeLosRevisores(marker, cierre, { stateDir: dir }); } catch (e) { anotarError(dir, e); return tipos; }
+  if (!v || !Array.isArray(v.repos)) return tipos;
   const { raizDelRepo } = require('./reloop-code.js');
   for (const abs of lista) {
     const queda = presupuestoMs - (Date.now() - inicio);
@@ -512,16 +690,17 @@ function comentariosMovidosDesdeLaVuelta({ marker, cierre, archivos, presupuesto
     try {
       const raiz = raizDelRepo(abs);
       const r = raiz && v.repos.find((x) => x && x.repo && x.tree && real(x.repo) === real(raiz));
-      if (r && difiereSoloEnComentarios(r.repo, r.tree, abs, { timeout: queda })) fuera.add(abs);
+      const t = r ? tipoContraElSello(r.repo, r.tree, abs, { timeout: queda }) : null;
+      if (t) tipos.set(abs, t);
     } catch (e) { anotarError(dir, e); }
   }
-  return fuera;
+  return tipos;
 }
 
 function anotarError(dir, e) {
   try {
     fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(path.join(dir, 'hook-errors.log'), `[${new Date().toISOString()}] comentarios movidos: no pude mirar lo revisado (${unaLinea((e && e.message) || e)}) — el archivo cuenta como cambio\n`, 'utf8');
+    fs.appendFileSync(path.join(dir, 'hook-errors.log'), `[${new Date().toISOString()}] qué cambió desde la vuelta: no pude mirar lo revisado (${unaLinea((e && e.message) || e)}) — el archivo cuenta como código\n`, 'utf8');
   } catch (_) { /* ayuda, no evidencia */ }
 }
 
@@ -575,8 +754,8 @@ function procedencia(repo, { env = process.env, home = os.homedir(), proceso = '
 }
 
 module.exports = {
-  seal, puntoComunConMain, freeze, verify, changed, copyDir, remove, sweep, reposDe, sealAndFreeze, vueltas, ultimaVuelta, seccionDelContexto, sinPapeleoDeLaHistoria, procedencia,
-  contenidoDelSello, difiereSoloEnComentarios, vueltaCerradaDeLosRevisores, comentariosMovidosDesdeLaVuelta,
+  seal, puntoComunConMain, freeze, verify, changed, anidadosConCambios, copyDir, remove, sweep, reposDe, reposDelPase, hermanosCambiados, sealAndFreeze, vueltas, ultimaVuelta, seccionDelContexto, sinPapeleoDeLaHistoria, procedencia,
+  contenidoDelSello, tipoContraElSello, vueltaCerradaDeLosRevisores, tiposDesdeLaVuelta,
 };
 
 // `node frozen-tree.js procedencia <repo>`: la procedencia como fragmento JSON (`"run":…,"tree":…`), para sumar a un
