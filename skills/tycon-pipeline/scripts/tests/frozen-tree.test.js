@@ -422,6 +422,32 @@ test('T15c Cleanup_DotDotSession_StaysInside @story-8.161 @ac-14 — (pase de la
   assert.match(p.run_error, /sin sesión/);
 });
 
+test('T15d Provenance_MarkerStoryWithoutRunDir_SaysWhy — (diferido de la 8.243) un marcador con historia y sin carpeta: la calcula, o dice por qué no', () => {
+  const R = repoDeJuguete('procedencia', { 'a.js': '1\n' });
+  const home = tmp('ft-home-proc-');
+  const activos = path.join(require(path.join(SCRIPTS, 'lib', 'state-dir.js')).stateDir(home), 'active');
+  fs.mkdirSync(activos, { recursive: true });
+  fs.writeFileSync(path.join(activos, 's-proc.json'), JSON.stringify({ storyId: '9.8', repoPath: R.repo }));
+  const leer = () => ft().procedencia(R.repo, { env: { CLAUDE_CODE_SESSION_ID: 's-proc' }, home });
+  // sin carpeta de corrida todavía
+  let p = leer();
+  assert.strictEqual(p.run, null);
+  assert.strictEqual(p.run_error, 'la historia del marcador todavía no tiene carpeta de corrida');
+  // con su carpeta, la que calcula el pipeline para la historia
+  const carpeta = path.join(R.repo, '.advisors', 'pipeline-runs', '9.8-20260101000000');
+  fs.mkdirSync(carpeta, { recursive: true });
+  p = leer();
+  assert.strictEqual(p.run, carpeta);
+  assert.ok(!('run_error' in p));
+  // y si calcularla falla, lo dice con su motivo
+  const RD = require(path.join(SCRIPTS, 'lib', 'run-dir.js'));
+  const original = RD.resolveRunDir;
+  RD.resolveRunDir = () => { throw new Error('sin permiso\nsegunda línea'); };
+  try { p = leer(); } finally { RD.resolveRunDir = original; }
+  assert.strictEqual(p.run, null);
+  assert.strictEqual(p.run_error, 'no pude calcular la carpeta de la corrida (sin permiso)');
+});
+
 function repoConHistoria() {
   const home = tmp('ft-home-');
   const r = repoDeJuguete('producto', {
