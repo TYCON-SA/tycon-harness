@@ -159,11 +159,14 @@ const MEASURES = {
   'El cuadro de una pregunta lleva el contexto adentro': 'nadie',
   'La constancia de un cambio de control, al final': 'nadie',
   'Las historias se cierran en horas': 'nadie',
-  'Foco en el arnés': 'nadie',
-  'Primero lo que rompe o demora, y después el resto en el mismo pulso': 'nadie',
+  'Primero lo que traba a todos, después el plan del producto': 'nadie',
   'Cada pendiente con quién lo tiene y en qué pedido': 'nadie',
   'Un solo empuje por pedido': 'nadie',
   'Nunca cerrar un turno con «¿seguimos?»': 'nadie',
+  'Con el dueño ausente no se abre un cuadro': 'nadie',
+  'Preguntarle al dueño antes de correr la firma de otra sesión': 'nadie',
+  'La constancia, con la carpeta quieta': 'nadie',
+  'La constancia, con el guion de la copia instalada': 'nadie',
 };
 const COMMAND = path.join(ROOT, 'commands', 'coordinate.md');
 const headings = (file) => fs.readFileSync(file, 'utf8').split('\n').filter((l) => /^## /.test(l));

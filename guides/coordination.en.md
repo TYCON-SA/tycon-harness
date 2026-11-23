@@ -409,9 +409,9 @@ the coordinator:
   «delicate» is measured on the part, and the plan stays tied to its list: editing code outside it stops, and at the
   close the whole diff is measured; if it comes out delicate, the plan goes back to the owner. The adversarial pass
   still goes by the whole story.
-- **Gives the code pass its turn.** She launches nothing for the code: with the owner away, she answers the question on
-  the owner's behalf according to the cell (`review-answer --for-session`, with «owner away» as the reason), and the
-  session itself launches the pass with its turn, as always.
+- **Gives the code pass its turn.** She launches nothing for the code: with the owner away, she answers on the owner's
+  behalf the question whose cell says `review` (`review-answer --for-session`, with «owner away» as the reason), and the
+  session itself launches the pass with its turn, as always. Having `skip` and `wait` ask for the owner's click is row 113.
 - **Sets the away mark** when the owner says they are leaving («go on autonomously», «I'm off», «see you tomorrow» or
   similar): `marker.js owner-away set --phrase "<what they said>"`. She judges it, not a list of phrases. The mark clears
   itself when the owner comes back: a message of theirs, a verified office message, a signature of theirs, or after 24
@@ -1061,7 +1061,8 @@ They come from a whole day of coordinating several sessions. Each says what to d
 
 ## How the coordinator works with the owner
 
-They come from a whole day in which the coordinator worked with the owner away. Each one, with its why.
+They come from a whole day in which the coordinator worked with the owner away. They apply to any coordinator, also a
+product's. Each one, with its why.
 
 - **A question's box carries its context inside.** What happens today, what the problem is, what changes and what it
   implies. Why: the owner sees only the box, not the conversation that explains it.
@@ -1072,11 +1073,10 @@ They come from a whole day in which the coordinator worked with the owner away. 
   live goes by its waiver: the coordinator signs it with `marker.js runtime-waiver <story> --acs <n> --for-session <D>`
   if the team profile delegates it, and otherwise the owner does. Waiving the whole story is a signature only the owner
   gives. Why: a finished story that waits days for its closing takes up the queue without adding anything.
-- **Focus on the harness.** What touches a product is not measured or proposed without a request. Why: a product has
-  its own team and its own times, and a proposal nobody asked for lands on them.
-- **First what breaks or delays.** When nothing of that is left free, the rest is handed out in the same pulse
-  (minor items, maintenance, measurements, approved improvements), without waiting for the owner to ask. Why: a free
-  session is lost machine time, and the owner does not have to hand out what is already approved.
+- **First what blocks everyone.** A red CI or a brake that does not let anyone work. After that, the order of the
+  product's plan: the sprint's stories and what its owner decides. What is already approved is handed out in the same
+  pulse, without waiting for the owner to ask. Why: a free session is lost machine time, and the owner does not have to
+  hand out what is already approved.
 - **Each pending item has written down who has it and in which pull request, before it is assigned.** Why: without
   that note the same fix is done twice; in a single day there were four duplicates.
 - **One push per pull request, with everything together.** After that, only the fix of a red or of what a review asked
@@ -1085,6 +1085,17 @@ They come from a whole day in which the coordinator worked with the owner away. 
   is not a broken one.
 - **A turn is never closed with «shall we go on?».** A session that waits gets work. Why: with the owner away, nobody
   answers that question and the session stays stopped.
+- **With the owner away, no box is opened.** The owner is told through the team's notice channel, and the coordinator
+  waits for them to write. Why: a box opened in the middle of the night left the coordinator stopped for six hours, and
+  the sessions without work.
+- **Before running the signature command of another session that asked for the owner's yes, the owner is asked.**
+  Why: a signature the profile delegates to the coordinator goes through on its own when the command runs, without
+  the owner seeing it.
+- **The record is asked for with the folder still.** Before the command, the session confirms it touches nothing until
+  the owner signs. Why: if the folder changes during the box, the record no longer matches and the click is lost.
+- **The record is signed with the script from the installed copy of the harness** (`scripts/ci/run-base-controls.sh`),
+  not the one in the pull request's folder. Why: an old copy of the script does not write the fingerprint, and the owner
+  has to click twice.
 
 ## What measures each rule
 
@@ -1145,11 +1156,14 @@ They come from a whole day in which the coordinator worked with the owner away. 
 | A question's box carries its context inside | nadie | It is the shape of the message: no data on the machine sees it. |
 | The record of a control change, at the end | nadie | The session decides when to ask for it; an expired record is stopped by its control, not by when it was asked for. |
 | Stories are closed in hours | nadie | It is a judgment call: the session sees which smoke check has a script. |
-| Focus on the harness | nadie | It is the coordinator's judgment call. |
-| First what breaks or delays, then the rest in the same pulse | nadie | What breaks or delays is a judgment call; idle sessions are counted by the notice of each turn. |
+| First what blocks everyone, then the product's plan | nadie | What blocks everyone is judgment; the quiet sessions are counted by the notice of each turn. |
 | Each pending item with who has it and in which pull request | nadie | The note goes in the coordinator's list, which does not go through a control. |
 | One push per pull request | nadie | Nothing stops an extra push: the CI queue shows it. |
 | Never close a turn with «shall we go on?» | nadie | It is the shape of the message; the coordinator with room and ready work is already stopped by the end-of-turn hook. |
+| With the owner away, no box is opened | nadie | Whether the owner is away is the coordinator's judgment; nothing stops a box for that. |
+| Ask the owner before running another session's signature | nadie | No control tells a delegated signature the owner wanted to see from a routine one. |
+| The record, with the folder still | nadie | The session confirms it in a message; a record that no longer matches is stopped by its control. |
+| The record, with the script from the installed copy | nadie | Which copy of the script runs is chosen by whoever writes the command. |
 
 The "Measured by" column keeps the Spanish words the harness uses everywhere: **aviso** (a notice), **freno** (a brake)
 and **nadie** (nobody).
