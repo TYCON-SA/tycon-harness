@@ -141,6 +141,12 @@ El escape `TYCON_FULL_SUITE=1` vale cuando acompaña al comando de pruebas: como
   tranquila, y `runs` lista las ejecuciones. Antes de partir una suite o mandarla a la noche, conviene mirar dónde se va su
   tiempo: casi siempre es trabajo repetido de la propia prueba (un proceso por archivo para sacar una huella, la misma
   consulta a git por cada módulo que se importa), y bajarlo no cambia lo que prueba.
+- **Cuánto puede tardar cada una.** Cada suite tiene un tope: cinco veces lo más que tardó en esta máquina, según ese
+  registro, entre 10 y 60 minutos; sin medición, 60. La que lo pasa se corta con todos sus procesos y cuenta roja, con
+  el renglón «❌ cortada por tiempo: pasó su tope de N min (de dónde salió)». Un proceso que se fue de su grupo queda
+  vivo, pero la ejecución sigue. Su tiempo no se anota, así que una vez colgada no sube su próximo tope. El 23/11, una prueba de guard-record, que tarda menos de medio minuto, quedó colgada
+  horas en un árbol temporal, con la máquina sin procesos. `TYCON_SUITE_MAX_SECONDS` fija el tope para todas; con `0`
+  no hay tope.
 
 ## El fix técnico durable (por proyecto)
 

@@ -1003,6 +1003,9 @@ function main(argv, env = process.env) {
     });
   };
 
+  // el registro de tiempos de la máquina, una vez por corrida: de ahí sale el tope de cada suite (topeDeSuite)
+  const historial = historialDeTiempos(env);
+
   const runOne = (p) => new Promise((resolve) => {
     let home = null;
     if (p.portable) {
@@ -1022,19 +1025,43 @@ function main(argv, env = process.env) {
     };
     c.stdout.on('data', take);
     c.stderr.on('data', take);
+    // Pasado su tope, la suite se corta: SIGTERM a su grupo y, si no se cerró en TOPE_GRACIA_MS, SIGKILL. Si después de
+    // otra gracia la salida sigue abierta (un nieto que se fue del grupo la tiene), se suelta y la suite se da por
+    // terminada: el nieto queda, pero la corrida sigue.
+    const tope = topeDeSuite(p.entrada.ruta, historial, env);
+    let vencida = false;
+    let rematar = null;
+    let soltar = null;
+    const senal = (s) => { try { process.kill(-c.pid, s); } catch { try { c.kill(s); } catch { /* ya terminó */ } } };
+    const reloj = tope.ms == null ? null : setTimeout(() => {
+      // la que ya salió y espera que se cierre su salida no se corta
+      if (c.exitCode !== null || c.signalCode !== null) return;
+      vencida = true;
+      senal('SIGTERM');
+      rematar = setTimeout(() => {
+        senal('SIGKILL');
+        soltar = setTimeout(() => {
+          for (const s of [c.stdout, c.stderr]) { try { s.destroy(); } catch { /* ya cerrada */ } }
+          done(null, null);
+        }, TOPE_GRACIA_MS);
+      }, TOPE_GRACIA_MS);
+    }, tope.ms);
     let settled = false;
     const done = (status, spawnError) => {
       // 'error' y 'close' pueden llegar los dos (un binario que no arranca): se anota una sola vez.
       if (settled) return;
       settled = true;
+      for (const t of [reloj, rematar, soltar]) if (t) clearTimeout(t);
       live.delete(c);
       if (home) removeTree(home);   // lo que quede, lo vuelve a intentar removeHomes al final
       const ms = Date.now() - t0;
-      const exit = status === null ? 124 : status;   // null = murió por señal: se cuenta como rojo
-      const salida = spawnError ? `${spawnError.message}\n` : Buffer.concat(chunks).toString('utf8');
-      // la que termina por el corte no se midió: su tiempo no va al registro
-      results[p.idx] = { idx: p.idx, ruta: p.ruta, entrada: p.entrada, exit, ms, salida, ...(interrupted ? { cortada: true } : {}) };
-      console.log(exit === 0 ? `ok       ${p.name} (${ms} ms)` : `ROJO(${exit}) ${p.ruta}`);
+      // null = murió por señal: se cuenta como rojo; la que se cortó por su tope también, aunque saliera con otro código
+      const exit = vencida || status === null ? 124 : status;
+      let salida = spawnError ? `${spawnError.message}\n` : Buffer.concat(chunks).toString('utf8');
+      if (vencida) salida += `\n❌ cortada por tiempo: pasó su tope de ${duracion(tope.ms)} (${tope.por})\n`;
+      // la que termina por el corte, o por su tope, no se midió: su tiempo no va al registro
+      results[p.idx] = { idx: p.idx, ruta: p.ruta, entrada: p.entrada, exit, ms, salida, ...(interrupted || vencida ? { cortada: true } : {}) };
+      console.log(exit === 0 ? `ok       ${p.name} (${ms} ms)` : `ROJO(${exit}) ${p.ruta}${vencida ? ` — cortada por tiempo (tope ${duracion(tope.ms)})` : ''}`);
       resolve();
     };
     c.on('error', (e) => done(127, e));
@@ -1117,6 +1144,51 @@ function main(argv, env = process.env) {
   })();
 }
 
+// El tope de tiempo de una suite: TOPE_VECES lo más que tardó en esta máquina, entre el piso y el techo; sin medición,
+// el techo. Una suite que lo pasa se corta y cuenta roja, con el motivo: una prueba colgada (el 23/11, la de
+// guard-record quedó horas en un árbol temporal) no traba la corrida ni se queda con sus procesos.
+const TOPE_VECES = 5;
+const TOPE_PISO_MS = 10 * 60000;
+const TOPE_TECHO_MS = 60 * 60000;
+// Después del SIGTERM al grupo de la suite, el SIGKILL: lo que no se cerró solo en este plazo se mata.
+const TOPE_GRACIA_MS = 10000;
+const RELOJ_MAX_MS = 2 ** 31 - 1;
+
+/**
+ * Las corridas del registro de tiempos, del mismo archivo en el que anota el portón (TYCON_SUITE_TIMES, o el de la
+ * carpeta de estado). Sin registro, o ilegible, ninguna: cada suite queda con el techo.
+ */
+function historialDeTiempos(env = process.env) {
+  try {
+    const file = suiteTimes.target(env, { byDefault: true }).file || path.join(stateDir(), 'suite-times.jsonl');
+    return suiteTimes.filterRuns(suiteTimes.readSources([file]).runs);
+  } catch (_) { return []; }
+}
+
+/**
+ * El tope de la suite `ruta` (la de suites.json) con las corridas `runs` del registro: `{ ms, por }`, con `ms` null sin
+ * tope y `por` de dónde salió, para el motivo del corte. `TYCON_SUITE_MAX_SECONDS` lo fija para todas (0 = sin tope);
+ * un valor que no es un número entero de segundos no cuenta.
+ */
+function topeDeSuite(ruta, runs, env = process.env) {
+  const fijo = String(env.TYCON_SUITE_MAX_SECONDS ?? '').trim();
+  if (/^\d+$/.test(fijo)) {
+    // más de lo que acepta un reloj de Node (24,8 días) lo dispararía al instante: queda en ese máximo
+    return { ms: Number(fijo) === 0 ? null : Math.min(Number(fijo) * 1000, RELOJ_MAX_MS), por: 'fijado con TYCON_SUITE_MAX_SECONDS' };
+  }
+  let max = 0;
+  for (const r of runs || []) {
+    for (const s of (r && r.suites) || []) {
+      if (s && s.s === ruta && Number(s.ms) > max) max = Number(s.ms);
+    }
+  }
+  const rango = `entre ${TOPE_PISO_MS / 60000} y ${TOPE_TECHO_MS / 60000} min`;
+  if (!max) return { ms: TOPE_TECHO_MS, por: `sin medición en esta máquina: el techo (${rango})` };
+  return { ms: Math.min(TOPE_TECHO_MS, Math.max(TOPE_PISO_MS, max * TOPE_VECES)), por: `${TOPE_VECES} veces lo más que tardó en esta máquina (${Math.round(max / 1000)} s), ${rango}` };
+}
+
+const duracion = (ms) => (ms >= 60000 ? `${Math.round(ms / 60000)} min` : `${Math.round(ms / 1000)} s`);
+
 /**
  * Cuánto tarda correr `items` con `workers` a la vez: las medianas del registro de la máquina y, sin medición, el peso
  * por defecto de suites-weights.json. `{ est, eta }`, con `eta` la hora estimada de fin. Tira si no puede estimar.
@@ -1128,8 +1200,8 @@ function estimar({ repo, items, workers }) {
     const d = (w.pr && w.pr.default) || w.default;
     if (Number(d) > 0) defaultMs = Number(d) * 1000;
   } catch (_) { /* sin pesos, el valor de siempre */ }
-  let runs = [];
-  try { runs = suiteTimes.filterRuns(suiteTimes.readSources([path.join(stateDir(), 'suite-times.jsonl')]).runs); } catch (_) { /* sin registro, todo con el peso por defecto */ }
+  // sin registro, todo con el peso por defecto
+  const runs = historialDeTiempos();
   const est = suiteTimes.estimateMs({ rutas: items.map((p) => p.entrada.ruta), workers, runs, defaultMs });
   const fin = new Date(Date.now() + est.ms);
   return { est, eta: `${String(fin.getHours()).padStart(2, '0')}:${String(fin.getMinutes()).padStart(2, '0')}` };
@@ -1210,4 +1282,4 @@ if (require.main === module) {
     process.exit(3);
   });
 }
-module.exports = { main, resolveWorkers, launchGate, pool, failedCases, capOutput, saveFullOutput, FULL_OUTPUT_MAX, RUN_OUTPUT_MAX, resolveSkillsRoot };
+module.exports = { main, resolveWorkers, launchGate, pool, failedCases, capOutput, saveFullOutput, FULL_OUTPUT_MAX, RUN_OUTPUT_MAX, resolveSkillsRoot, topeDeSuite, historialDeTiempos, TOPE_PISO_MS, TOPE_TECHO_MS };
