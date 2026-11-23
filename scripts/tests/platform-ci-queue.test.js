@@ -163,6 +163,54 @@ test('Ci_Read_ReturnsStagesNotJustBuild @story-8.85 @ac-17', async () => {
   }
 });
 
+// 🔴 Falla con: leer la compilación de un pedido de Azure DevOps por su rama (la del pedido corre sobre su fusión de
+//    prueba, `refs/pull/<n>/merge`): la lectura daría `none` o la de otra corrida.
+test('ChangeRequestBuild_Ado_ByPullRequest (T5) @story-8.322 @ac-5', async () => {
+  const m = mundo();
+  const az = conAz(m);
+  const fusion = 'refs/pull/6910/merge';
+  az.poner('runs-Producto.json', [
+    corrida(70, { sourceBranch: 'refs/heads/story/2.4', result: 'succeeded' }),
+    corrida(71, { sourceBranch: fusion, result: 'failed' }),
+  ]);
+  az.poner('timeline-71.json', { records: [etapa('Build', 'succeeded'), etapa('Package', 'failed')] });
+  const r = await ci(m, { pullRequest: 6910, branch: 'story/2.4' }, AZ);
+  assert.deepStrictEqual(r, { ok: true, value: { state: 'failed', stages: [
+    { pipeline: 'Backend CI', name: 'Build', result: 'succeeded' },
+    { pipeline: 'Backend CI', name: 'Package', result: 'failed' },
+  ] } }, JSON.stringify(r));
+  assert.strictEqual(C().verdictOf(r), 'rojo');
+  // corriendo, y antes de que arranque
+  az.poner('runs-Producto.json', [corrida(72, { sourceBranch: fusion, status: 'inProgress', result: null })]);
+  az.poner('timeline-72.json', { records: [etapa('Build', null, 'inProgress')] });
+  assert.strictEqual(C().verdictOf(await ci(m, { pullRequest: 6910 }, AZ)), 'corriendo');
+  az.poner('runs-Producto.json', [corrida(73, { sourceBranch: 'refs/heads/story/2.4' })]);
+  assert.strictEqual(C().verdictOf(await ci(m, { pullRequest: 6910 }, AZ)), 'ninguna');
+  // con el commit del empuje: la compilación de un empuje anterior, en verde, no cuenta; sin ese dato tampoco
+  const nueva = 'beef000beef000beef000beef000beef000beef0';
+  az.poner('runs-Producto.json', [corrida(74, { sourceBranch: fusion, triggerInfo: { 'pr.sourceSha': 'dead000beef000dead000beef000dead000beef0' } }), corrida(75, { sourceBranch: fusion })]);
+  assert.strictEqual(C().verdictOf(await ci(m, { pullRequest: 6910, commit: nueva }, AZ)), 'ninguna', 'tomó la compilación de otro empuje');
+  az.poner('runs-Producto.json', [corrida(76, { sourceBranch: fusion, result: 'succeeded', triggerInfo: { 'pr.sourceSha': nueva } }), corrida(77, { sourceBranch: fusion, result: 'failed', triggerInfo: { 'pr.sourceSha': 'dead000beef000dead000beef000dead000beef0' } })]);
+  az.poner('timeline-76.json', { records: [etapa('Build', 'succeeded')] });
+  assert.strictEqual(C().verdictOf(await ci(m, { pullRequest: 6910, commit: nueva.slice(0, 7) }, AZ)), 'verde');
+  // un número que no es número no llega a az
+  for (const malo of [0, -1, 'x', 1.5]) {
+    const r2 = await ci(m, { pullRequest: malo }, AZ);
+    assert.deepStrictEqual([r2.ok, r2.reason], [false, 'rechazado'], JSON.stringify([malo, r2]));
+  }
+});
+
+// 🔴 Falla con: que GitHub tome el número del pedido por una punta: los controles de un pedido van en la punta de su rama.
+test('ChangeRequestBuild_GitHub_ByBranch (T6) @story-8.322 @ac-5', async () => {
+  const g = mundo();
+  conGh(g, { checks: { arreglo: [{ name: 'build', status: 'completed', conclusion: 'success' }, { name: 'manifest', status: 'completed', conclusion: 'failure' }] } });
+  const r = await ci(g, { pullRequest: 12, branch: 'arreglo' }, GH);
+  assert.strictEqual(C().verdictOf(r), 'rojo', JSON.stringify(r));
+  assert.deepStrictEqual(r.value.stages.find((s) => s.result === 'failure'), { pipeline: null, name: 'manifest', result: 'failure' });
+  conGh(g, { checks: { arreglo: [{ name: 'build', status: 'completed', conclusion: 'success' }] } });
+  assert.strictEqual(C().verdictOf(await ci(g, { pullRequest: 12, branch: 'arreglo' }, GH)), 'verde');
+});
+
 test('Ci_Read_ReadFailure_NoMedido @story-8.85 @ac-17', async () => {
   const m = mundo();
   conAz(m);

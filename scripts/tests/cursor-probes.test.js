@@ -630,3 +630,65 @@ test('CursorProbes_SeCuelga_TiempoMaximoYSigue', async (t) => {
     assert.strictEqual(out.probes.S2.items.find((i) => i.source === 'paquete').status, 'MEDIDO');
   });
 });
+
+// The recorder says when its chain of ancestors was cut, instead of passing a short chain as whole. A
+// fake `ps` first in the PATH answers for every process: an endless chain, a parent `ps` cannot give, or a chain that
+// reaches process 1 (the control: there the chain is whole and no cut is reported).
+test('CursorProbes_CadenaCortada_ElRegistradorLoDice', { skip: IS_WIN ? 'sin ps en Windows' : false }, async (t) => {
+  const recorderChain = (mode) => {
+    const root = tmpRoot();
+    const bin = path.join(root, 'ps-bin');
+    fs.mkdirSync(bin);
+    fs.writeFileSync(path.join(bin, 'ps'), [
+      '#!/bin/sh',
+      'field="$2"; pid="$4"',
+      'case "$field" in',
+      '  ppid=) case "$MODE" in sinpadre) exit 1 ;; tope) echo 1 ;; *) echo $((pid + 1)) ;; esac ;;',
+      '  ucomm=) echo falso ;;',
+      '  lstart=) echo "Sun Nov 22 00:00:00 2026" ;;',
+      '  args=) echo "falso $pid" ;;',
+      'esac',
+      '',
+    ].join('\n'), { mode: 0o755 });
+    const recorder = path.join(root, 'recorder.js');
+    fs.writeFileSync(recorder, probes.RECORDER);
+    const records = path.join(root, 'records.jsonl');
+    const r = spawnSync(process.execPath, [recorder, 'prueba', records, '0'], {
+      env: { PATH: [bin, ...SYSTEM_PATH].join(path.delimiter), HOME: path.join(root, 'home'), MODE: mode },
+      input: '{}', encoding: 'utf8', timeout: 30000,
+    });
+    assert.strictEqual(r.status, 0, r.stderr);
+    const lines = fs.readFileSync(records, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    return lines.find((l) => l.stage === 'cadena');
+  };
+  await t.test('la cadena que no termina se corta a las 25 vueltas, y lo dice', () => {
+    const c = recorderChain('sinfin');
+    assert.strictEqual(c.ancestors.length, 25, JSON.stringify(c));
+    assert.match(String(c.ancestorsError), /25 vueltas/, JSON.stringify(c));
+  });
+  await t.test('si ps no da el padre, la cadena se corta ahí, y lo dice', () => {
+    const c = recorderChain('sinpadre');
+    assert.strictEqual(c.ancestors.length, 1, JSON.stringify(c));
+    assert.match(String(c.ancestorsError), /padre/, JSON.stringify(c));
+  });
+  await t.test('control: la cadena que llega al proceso 1 no avisa nada', () => {
+    const c = recorderChain('tope');
+    assert.strictEqual(c.ancestors.length, 1, JSON.stringify(c));
+    assert.strictEqual(c.ancestorsError, null, JSON.stringify(c));
+  });
+});
+
+// A PARTIAL probe tells an ERROR apart from a NOT MEASURED in its reason, and a probe with nothing
+// measured that mixes the two is an ERROR, not the status of whichever question came first.
+test('CursorProbes_Parcial_SeparaErrorDeNoMedido', () => {
+  const it = (status, motivo) => ({ id: `${status}-${motivo}`, status, motivo });
+  const partial = probes.summarize([it('MEDIDO', null), it('ERROR', 'se cayó'), it('NO MEDIDO', 'pide modelo'), it('NO MEDIDO', 'pide modelo')]);
+  assert.strictEqual(partial.status, 'PARCIAL');
+  assert.strictEqual(partial.motivo, 'ERROR: se cayó · NO MEDIDO: pide modelo');
+  const none = probes.summarize([it('NO MEDIDO', 'pide modelo'), it('ERROR', 'se cayó')]);
+  assert.strictEqual(none.status, 'ERROR', JSON.stringify(none));
+  assert.strictEqual(none.motivo, 'NO MEDIDO: pide modelo · ERROR: se cayó');
+  // control: the same status in every question keeps the reason of the first one, as before
+  const same = probes.summarize([it('NO MEDIDO', 'no está en el PATH'), it('NO MEDIDO', 'pide modelo')]);
+  assert.deepStrictEqual([same.status, same.motivo], ['NO MEDIDO', 'no está en el PATH']);
+});

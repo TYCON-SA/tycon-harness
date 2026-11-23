@@ -402,7 +402,8 @@ function firmaOffice() {
     wip: wip([{ session: 'Pepa', sid: 's-pepa', status: 'idle', work: '9.3 · Tres', extra: { kind: 'pipeline', title: 'Tres', storyId: '9.3', current: 'approve-plan' } }],
       { halfwayItems: [{ kind: 'run', text: 'Cinco', cleanAfter: null, sid: 's-rosa', name: 'Rosa', storyId: '9.5', awaits: 'plan' }] }),
     signatures: [{ id: 'f1', title: 'la firma de otra', at: NOW, destino: 's-otra', nombre: 'Otra' }, { id: 'f2', title: 'la firma de la terminal', at: NOW }],
-    board: buildBoard({ pendientes: [{ titulo: 'Firma del tablero', estado: 'firma', quien: 'Rita' }] }),
+    // una firma del tablero para el dueño: la de una sesión que ya no está va a «Sin sesión» (T343 de office-board.test.js)
+    board: buildBoard({ pendientes: [{ titulo: 'Firma del tablero', estado: 'firma', quien: 'vos' }] }),
     nowMs: NOW,
   }).data;
 }

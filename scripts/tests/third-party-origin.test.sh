@@ -12,6 +12,9 @@
 # falló. Control negativo: una entrada con el árbol alterado a mano tiene que salir 1.
 # 🔴 Sin pipes sobre el comando medido: el exit code REAL es el veredicto.
 set -u
+# Sin las variables que git le pasa a un gancho: con el GIT_DIR de una copia enlazada, `git -C <temporal> init --bare`
+# reinicia ese repo y deja pelado al común (hook-env-bare-init.test.js). El guion de node de abajo las hereda limpias.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
 TCG="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MANIFEST="$TCG/scripts/publishing/third-party-skills.json"
 BASE="$(mktemp -d "${TMPDIR:-/tmp}/tycon-terceros-origen.XXXXXX")"

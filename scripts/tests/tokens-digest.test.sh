@@ -1328,6 +1328,35 @@ else
   bad "T45 · sanear al cuadrado o con otro resultado" "salió: $r45"
 fi
 
+# ──────────────────────────────────────────────────────────────────────────────────────────────
+# T46 Sanear_TiradaSinEspacios_Lineal — una tirada larga de letras sin espacios (un hash, un base64, un nombre armado):
+# la búsqueda de «nombre=valor» y la de correos probaban desde cada letra y releían la tirada entera, y el tiempo crecía
+# al cuadrado (9000 letras: 1 s). Lo usan el buzón, la oficina y la conversación al sitio. Se limpian 120 000
+# caracteres de cada forma con un tope de 3 s: lineal tarda milisegundos, y al cuadrado tardaría más de un minuto con
+# letras y unos diez segundos con la forma de un correo sin arroba. Y lo de siempre se sigue tapando igual.
+# 🔴 Falla con: una búsqueda que vuelve a probar desde cada letra de una tirada que ya falló.
+r46="$(node -e '
+const { sanear } = require(process.argv[1]);
+const n = 120000;
+const formas = { letras: "a", hex: "a1b2c3d4", rayas: "a_b9c", base64: "QWxhZGRpbjpvcGVu", correo: "a.b+c" };
+const lentas = Object.entries(formas).map(([forma, pieza]) => {
+  const a = process.hrtime.bigint();
+  sanear(pieza.repeat(Math.ceil(n / pieza.length)), "/Users/x");
+  return { forma, ms: Math.round(Number(process.hrtime.bigint() - a) / 1e6) };
+}).filter((x) => x.ms > 3000);
+const casos = [["PASSWORD=abc y sigue", "PASSWORD=<oculto> y sigue"], ["9api_key=abc", "9api_key=<oculto>"],
+  ["{\"access_token\": \"x1\"}", "{\"access_token\": \"<oculto>\"}"], ["PATH=/usr/bin", "PATH=/usr/bin"],
+  ["escribile a ana.p+x@mail.example.com", "escribile a <correo>"], ["a@example.com+d@example.org", "<correo><correo>"],
+  ["_token=abc123", "_token=<oculto>"], ["1Password: hunter2", "1Password: <oculto>"]];
+const distintos = casos.map(([t, esperado]) => ({ t, sale: sanear(t, "/Users/x"), esperado })).filter((x) => x.sale !== x.esperado);
+console.log(JSON.stringify({ lentas, distintos }));
+' "$DIGEST")"
+if [ "$r46" = '{"lentas":[],"distintos":[]}' ]; then
+  ok "T46 · sanear crece lineal con una tirada larga sin espacios, y tapa lo mismo que antes"
+else
+  bad "T46 · sanear al cuadrado con una tirada sin espacios, o con otro resultado" "salió: $r46"
+fi
+
 # ══════════════════════════════════════════════════════════════════════════════════════════════
 if [ "$fallos" -eq 0 ]; then echo "✅ tokens-digest: todo verde"; exit 0; fi
 echo "❌ tokens-digest: $fallos rojos"; exit 1

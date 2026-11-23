@@ -18,7 +18,8 @@
  * Correr: node --test skills/tycon-pipeline/scripts/tests/test-gate-green-saved.test.js < /dev/null
  */
 
-const test = require('node:test');
+// partida sin mover sus pruebas: cada parte es test-gate-green-saved.p<k>.test.js (cuáles, suite-parts.json de esta carpeta)
+const test = require('./lib/suite-parts.js').test;
 const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
@@ -776,4 +777,180 @@ test('T8 LastGreen_ReactivatedSaved_NextRunsThemAgain @story-8.299 @ac-6 — el 
   assert.equal(r.status, 0, r.out);
   assert.deepEqual(r.corridas, ['g'], r.out);
   assert.match(r.out, /^VUELVE\s+g\.test\.sh — lo cambiado toca G\/\*\*, que lee sin nombrar$/m, r.out);
+});
+
+// ── La frescura mide los dos repos ──────────────────────────────────────────────────────────────────────────────────
+// Dos repos de prueba: `Back` (la historia, que declara a `Front` como hermano) y `Front` (una suite `node --test` en
+// `app/`). El portón de verdad con una HOME vacía, y después `suite-freshness.js check` sobre la constancia de `Back`.
+
+const PKG_NODE_TEST = `${JSON.stringify({ name: 'p', version: '1.0.0', scripts: { test: 'node --test' } })}\n`;
+const PRUEBA = (verde) => `const {test}=require('node:test');const assert=require('node:assert');test('caso',()=>{assert.equal(1,${verde ? 1 : 2});});\n`;
+const HISTORIA_HERMANO = (modificar) => ['---', 'epic: 9', 'story: "9.279"', 'title: "laboratorio de dos repos"',
+  'status: in-progress', 'files_to_create: []', 'files_to_modify:', ...modificar.map((x) => `  - ${x}`), '---', '',
+  '# Story 9.279', '', '## Acceptance Criteria', '', '1. **Given** algo **When** pasa **Then** se ve', '', '### Tests', '',
+  '| # | Test | AC | Nivel | Escenario | Resultado esperado |', '|---|---|---|---|---|---|', '| T1 | `Prueba` | 1 | unit | x | y |', ''].join('\n');
+
+function repoDePrueba(dir, archivos) {
+  fs.mkdirSync(dir, { recursive: true });
+  for (const [rel, txt] of Object.entries(archivos)) {
+    fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+    fs.writeFileSync(path.join(dir, rel), txt);
+  }
+  git(dir, 'init', '-q', '-b', 'main'); git(dir, 'config', 'user.email', 'prueba@ejemplo.invalid'); git(dir, 'config', 'user.name', 'prueba');
+  git(dir, 'add', '-A'); git(dir, 'commit', '-q', '-m', 'base');
+  return dir;
+}
+
+/** `backSuite`: Back tiene su propia suite verde. `frontVerde`: la suite de Front. `sinHermano`: la historia sólo toca Back. */
+function labHermano({ backSuite = true, frontVerde = true, sinHermano = false } = {}) {
+  const raiz = tmp('gs-hermano-');
+  const modificar = sinHermano ? ['src/a.js'] : ['src/a.js', 'Front/app/src/x.js', 'Front/app/tests/x.test.js'];
+  const back = repoDePrueba(path.join(raiz, 'Back'), {
+    'src/a.js': 'module.exports = 1;\n', 'specs/s.md': HISTORIA_HERMANO(modificar), '.gitignore': '.advisors/\n',
+    '.tycon/advisors.yaml': 'evidence:\n  companion_repos:\n    - Front\n',
+    ...(backSuite ? { 'package.json': PKG_NODE_TEST, 'test/b.test.js': PRUEBA(true) } : {}),
+  });
+  const front = repoDePrueba(path.join(raiz, 'Front'), {
+    '.gitignore': '.advisors/\n', 'app/package.json': PKG_NODE_TEST, 'app/tests/x.test.js': PRUEBA(frontVerde),
+  });
+  // sin commitear, como lo deja una historia a medio camino
+  fs.mkdirSync(path.join(front, 'app', 'src'), { recursive: true });
+  fs.writeFileSync(path.join(front, 'app', 'src', 'x.js'), 'module.exports = 1;\n');
+  return { raiz, back, front, story: path.join(back, 'specs', 's.md'), home: tmp('gs-hermano-home-') };
+}
+function entornoHermano(h) {
+  const env = { ...process.env };
+  for (const k of DEL_ENTORNO) delete env[k];
+  return { ...env, HOME: h.home, USERPROFILE: h.home, CLAUDE_CODE_SESSION_ID: 'gs-hermano' };
+}
+const portonHermano = (h) => spawnSync('bash', [TEST_GATE, h.back, h.story], { cwd: h.back, encoding: 'utf8', timeout: 120000, env: entornoHermano(h) });
+function frescura(h) {
+  const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'suite-freshness.js'), 'check', h.back], { encoding: 'utf8', env: entornoHermano(h) });
+  return { status: r.status, out: `${r.stdout}${r.stderr}` };
+}
+const constanciaDe = (h) => path.join(h.back, '.advisors', 'tests-result.json');
+const leerConstancia = (h) => JSON.parse(fs.readFileSync(constanciaDe(h), 'utf8'));
+const escribirConstancia = (h, art) => fs.writeFileSync(constanciaDe(h), `${JSON.stringify(art, null, 2)}\n`);
+function conPortonVerde(opts) {
+  const h = labHermano(opts);
+  const r = portonHermano(h);
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  return h;
+}
+
+test('T25 Freshness_SiblingChanged_Stale @story-8.279 @ac-38 @ac-39 — la constancia guarda la huella del hermano, y un cambio en él vence el verde', () => {
+  // 🔴 mutación: sin `repos` en la constancia, o con el chequeo midiendo sólo el repo de la historia, el cambio en Front da 0
+  const h = conPortonVerde();
+  const art = leerConstancia(h);
+  assert.match(String(art.code_state && art.code_state.state_hash), /^[0-9a-f]{64}$/, 'los campos de hoy siguen siendo los del repo de la historia');
+  const repos = art.code_state.repos || [];
+  assert.equal(repos.length, 1, JSON.stringify(art.code_state));
+  assert.equal(repos[0].name, 'Front');
+  assert.equal(repos[0].root, h.front);
+  assert.equal(repos[0].git, true);
+  assert.match(String(repos[0].state_hash), /^[0-9a-f]{64}$/);
+  let f = frescura(h);
+  assert.equal(f.status, 0, f.out);
+
+  fs.appendFileSync(path.join(h.front, 'app', 'src', 'x.js'), 'module.exports.y = 2;\n');
+  f = frescura(h);
+  assert.equal(f.status, 5, f.out);
+  assert.match(f.out, /Front/);
+  assert.doesNotMatch(f.out, /Back/, 'el motivo nombra al hermano, no al repo de la historia');
+
+  fs.writeFileSync(path.join(h.front, 'app', 'src', 'x.js'), 'module.exports = 1;\n');
+  f = frescura(h);
+  assert.equal(f.status, 0, `deshecho, vuelve a fresco: ${f.out}`);
+  fs.appendFileSync(path.join(h.back, 'src', 'a.js'), 'module.exports.b = 2;\n');
+  f = frescura(h);
+  assert.equal(f.status, 5, f.out);
+  assert.doesNotMatch(f.out, /Front/, 'un cambio sólo en el repo de la historia no nombra al hermano');
+});
+
+test('T25 Freshness_SiblingOnly_StoryRepoWithoutSuite_Measured @story-8.279 @ac-38 @ac-40 — sin suite propia y con el hermano verde, la constancia guarda las dos huellas', () => {
+  // 🔴 mutación: la constancia que arma el bloque de hermanos sin `code_state` deja el chequeo en «sin datos»
+  const h = conPortonVerde({ backSuite: false });
+  const art = leerConstancia(h);
+  assert.equal(art.all_green, true);
+  assert.match(String(art.code_state && art.code_state.state_hash), /^[0-9a-f]{64}$/, JSON.stringify(art.code_state));
+  assert.equal((art.code_state.repos || []).length, 1);
+  let f = frescura(h);
+  assert.equal(f.status, 0, f.out);
+  fs.appendFileSync(path.join(h.front, 'app', 'src', 'x.js'), 'module.exports.y = 2;\n');
+  f = frescura(h);
+  assert.equal(f.status, 5, f.out);
+});
+
+test('T25 Freshness_CommitWithoutChange_StaysFresh @story-8.279 @ac-39 — commitear en el hermano lo que ya estaba no vence el verde', () => {
+  const h = conPortonVerde();
+  git(h.front, 'add', '-A'); git(h.front, 'commit', '-q', '-m', 'lo de la historia');
+  const f = frescura(h);
+  assert.equal(f.status, 0, f.out);
+});
+
+test('T26 Freshness_SiblingUnreadable_NoData @story-8.279 @ac-40 — lo que no se puede medir no es fresco', () => {
+  // 🔴 mutación: saltear la raíz que no se puede leer, o la que no tiene huella, da 0
+  let h = conPortonVerde();
+  fs.rmSync(h.front, { recursive: true, force: true });
+  let f = frescura(h);
+  assert.equal(f.status, 6, f.out);
+  assert.match(f.out, /Front/);
+
+  h = conPortonVerde();
+  const art = leerConstancia(h);
+  delete art.code_state.repos;
+  escribirConstancia(h, art);
+  f = frescura(h);
+  assert.equal(f.status, 6, f.out);
+  assert.match(f.out, /Front/);
+});
+
+test('T26 Freshness_ChangedAndUnreadable_StaleNamesBoth @story-8.279 @ac-40 — un hermano cambiado y otro ilegible: sale 5 y nombra los dos', () => {
+  const h = conPortonVerde();
+  const otro = repoDePrueba(path.join(h.raiz, 'Otro'), { 'lib/o.js': 'module.exports = 1;\n' });
+  const art = leerConstancia(h);
+  art.companions.push({ root: otro, scope: null, files: ['lib/o.js'], exit: 0, green: true, no_suite: false });
+  art.code_state.repos.push({ name: 'Otro', root: otro, ...require(path.join(SCRIPTS, 'lib', 'suite-freshness.js')).codeState(otro) });
+  escribirConstancia(h, art);
+  let f = frescura(h);
+  assert.equal(f.status, 0, `con las dos huellas guardadas, fresco: ${f.out}`);
+  fs.appendFileSync(path.join(h.front, 'app', 'src', 'x.js'), 'module.exports.y = 2;\n');
+  fs.rmSync(otro, { recursive: true, force: true });
+  f = frescura(h);
+  assert.equal(f.status, 5, f.out);
+  assert.match(f.out, /Front/);
+  assert.match(f.out, /Otro/);
+});
+
+test('T26 Freshness_SiblingRed_NotFresh @story-8.279 @ac-40 — un hermano rojo con el repo de la historia verde no es fresco', () => {
+  // 🔴 mutación: mirar sólo `suite_green` da 0
+  const h = labHermano({ frontVerde: false });
+  const r = portonHermano(h);
+  assert.notEqual(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  const art = leerConstancia(h);
+  assert.equal(art.suite_green, true);
+  assert.equal(art.all_green, false);
+  const f = frescura(h);
+  assert.equal(f.status, 6, f.out);
+  assert.match(f.out, /hermano/);
+});
+
+test('T26 Freshness_NoSibling_AsToday @story-8.279 @ac-41 — sin hermano y con una constancia vieja, todo como hoy', () => {
+  const h = conPortonVerde({ sinHermano: true });
+  const art = leerConstancia(h);
+  assert.equal('companions' in art, false);
+  assert.equal('repos' in (art.code_state || {}), false);
+  let f = frescura(h);
+  assert.equal(f.status, 0, f.out);
+  fs.appendFileSync(path.join(h.back, 'src', 'a.js'), 'module.exports.b = 2;\n');
+  f = frescura(h);
+  assert.equal(f.status, 5, f.out);
+  assert.match(f.out, /re-correr test-gate\.sh/);
+  // una constancia vieja: sólo los campos planos, sin companions
+  fs.writeFileSync(path.join(h.back, 'src', 'a.js'), 'module.exports = 1;\n');
+  const vieja = leerConstancia(h);
+  vieja.code_state = { git: vieja.code_state.git, state_hash: vieja.code_state.state_hash, code_files: vieja.code_state.code_files };
+  escribirConstancia(h, vieja);
+  f = frescura(h);
+  assert.equal(f.status, 0, f.out);
 });

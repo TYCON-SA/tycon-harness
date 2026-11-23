@@ -368,6 +368,234 @@ test('T13b Adversarial_FormsThatOnlyRead_Pass @story-8.308 @ac-13', () => {
   ]) pasa(c, cmd);
 });
 
+// T16 ShellConC_EscribeLaHistoria_Frena
+// `sh -c '…'` (y bash, zsh, dash, ksh con `-c`) corre su texto como un comando: lo que ese texto escribe sobre una
+// historia frena como si estuviera afuera. Borrar ya frenaba; agregar con `>>`, `tee` o `sed -i` adentro pasaba.
+// 🔴 Falla con: leer el cuerpo de `sh -c` sólo para lo que borra, o tomar por escritura un `sh -c` que sólo lee.
+test('T16 ShellConC_EscribeLaHistoria_Frena', () => {
+  const c = corral();
+  for (const shell of SHELLS) {
+    frena(c, `${shell} -c 'echo x >> ${H}'`);
+    frena(c, `${shell} -c "echo x > ${H}"`);
+  }
+  for (const cmd of [
+    `sh -c 'echo x | tee -a ${H}'`,
+    `bash -c 'sed -i s/a/b/ ${H}'`,
+    `bash -lc 'printf x >> ${H}'`,
+    `echo ${H} | xargs -I {} sh -c 'echo x >> {}'`,
+    `sh -c "sh -c 'echo x >> ${H}'"`,
+    // lo que encontró el pase: el `--` antes del cuerpo y la historia como argumento del cuerpo
+    `bash -c -- 'echo x >> ${H}'`,
+    `bash -c -- 'rm ${H}'`,
+    `sh -c 'echo x >> "$1"' _ ${H}`,
+    `bash -c 'echo x >> $0' ${H}`,
+    `echo ${H} | xargs sh -c 'echo x >> $0'`,
+    // de la segunda vuelta: comillas dobles escapadas en el cuerpo, una opción después de -c, $* y el formato de printf
+    `sh -c "echo x >> \\"${H}\\""`,
+    `bash -c "echo \\"a b\\" >> ${H}"`,
+    `bash -c -x 'echo x >> ${H}'`,
+    `sh -c 'echo x >> $*' _ ${H}`,
+    `printf '%s\\n' ${H} | xargs sh -c 'echo x >> $0'`,
+    // de la tercera vuelta: un sh -c con comillas simples adentro de $(…) o de comillas invertidas
+    `echo $(sh -c 'echo x >> ${H}')`,
+    `echo \`bash -c 'echo x >> ${H}'\``,
+  ]) frena(c, cmd);
+  for (const cmd of [
+    `sh -c 'cat ${H}'`,
+    `bash -c 'grep -c status ${H} > /tmp/cuenta.txt'`,
+    `sh -c 'echo x >> notes.txt'`,
+    // un `sh -c` citado como texto (un mensaje, un heredoc a un archivo) no corre
+    `git commit -m 'doc: sh -c "echo x >> ${H}"'`,
+    `echo "use: sh -c 'echo x >> ${H}'"`,
+    `cat <<EOF > /tmp/n.txt\nsh -c 'echo x >> ${H}'\nEOF`,
+    // un `$(` escapado es texto
+    `echo "\\$(rm ${H})"`,
+  ]) pasa(c, cmd);
+});
+
+// T17 TuberiaAUnShell_YCdDeAfuera_Frenan (filas 59 y 60 de la coordinadora, del pase de la fila 54)
+// 🔴 Falla con: un texto que llega por una tubería a un shell sin `-c` que escribe la historia y pasa, o un `cd` del shell
+//    de afuera que no se aplica al comando anidado.
+test('T17 TuberiaAUnShell_YCdDeAfuera_Frenan', () => {
+  const c = corral();
+  for (const cmd of [
+    `echo 'echo x >> ${H}' | sh`,
+    `printf 'echo x >> ${H}\\n' | bash`,
+    `echo "echo x >> ${H}" | bash -s`,
+    `printf '%s\\n' 'echo x >> ${H}' | sh`,
+    `echo -e 'true\\necho x >> ${H}' | sh`,
+    `bash -c "cd specs && sh -c 'echo x >> story-1.1.md'"`,
+    `sh -c 'cd specs; bash -c "echo x > story-1.1.md"'`,
+    // del pase: filtros en el medio, envolturas, printf con el destino en el formato, opciones del cd, las dos
+    // filas juntas, -o agrupado y barras de escape
+    `echo 'echo x >> ${H}' | cat | sh`,
+    `echo 'echo x >> ${H}' | tee /dev/null | sh`,
+    `{ echo 'echo x >> ${H}'; } | sh`,
+    `builtin echo 'echo x >> ${H}' | sh`,
+    `echo 'echo x >> ${H}' | ( sh )`,
+    `printf 'echo x >> %s\\n' ${H} | sh`,
+    `bash -c 'cd -P specs && sh -c "echo x >> story-1.1.md"'`,
+    `cd -- specs && sh -c 'echo x >> story-1.1.md'`,
+    `bash -c 'cd specs && echo "echo x >> story-1.1.md" | sh'`,
+    `echo 'echo x >> ${H}' | bash -euo pipefail`,
+    `echo echo x \\>\\> ${H} | sh`,
+    // de la segunda vuelta: el cd de un renglón anterior, la tubería partida en renglones, comillas de varios renglones,
+    // un comentario después del shell y busybox
+    `cd specs\necho 'echo x >> story-1.1.md' | sh`,
+    `echo 'echo x >> ${H}' |\nsh`,
+    `echo 'a\necho x >> ${H}' | sh`,
+    `echo 'echo x >> ${H}' | sh # corre`,
+    `echo 'echo x >> ${H}' | busybox sh`,
+  ]) frena(c, cmd);
+  for (const cmd of [
+    `echo 'cat ${H}' | sh`,
+    `echo 'echo x >> notes.txt' | bash`,
+    `echo 'echo x >> ${H}' | cat`,
+    `bash -c "cd /tmp && sh -c 'echo x >> story-1.1.md'"`,
+  ]) pasa(c, cmd);
+});
+
+// 🔴 Falla con: una sustitución precedida por una barra escapada (`\\$(…)`) leída como escapada: la barra doble es una
+// barra suelta y la sustitución corre. La escapada de verdad (`\$(…)`) sigue siendo texto.
+test('T18 SustitucionTrasBarraEscapada_Corre', () => {
+  const c = corral();
+  for (const cmd of [
+    `echo \\\\$(sh -c 'echo x > ${H}')`,
+    `echo \\\\\`sh -c 'echo x > ${H}'\``,
+    `echo "\\\\$(sh -c 'echo x > ${H}')"`,
+  ]) frena(c, cmd);
+  for (const cmd of [
+    `echo \\$(sh -c 'echo x > ${H}')`,
+    `echo "\\$(sh -c 'echo x > ${H}')"`,
+  ]) pasa(c, cmd);
+});
+
+// T19 a T23 · las cinco formas de escribir una historia dentro de un shell anidado que el freno no leía (fila 61, del
+// pase adversarial del #1491), y lo que sólo lee o escribe otra cosa por las mismas formas, que sigue pasando.
+test('T19 ShellAnidado_ComillasAnsiC_Frena', () => {
+  const c = corral();
+  frena(c, `bash -c $'echo x >> ${H}'`);
+  frena(c, `sh -c $'rm ${H}'`);
+  frena(c, `bash -c $'echo x \\x3e\\x3e ${H}'`);
+  pasa(c, `bash -c $'echo x >> README.md'`);
+  pasa(c, `bash -c $'cat ${H}'`);
+});
+
+test('T20 ShellAnidado_RutaEnVariableOEnPwd_Frena', () => {
+  const c = corral();
+  frena(c, `F=${H}; sh -c 'echo x >> "$F"'`);
+  frena(c, `export F=${H}; sh -c 'echo x >> $F'`);
+  frena(c, `F=${H} sh -c 'rm "$F"'`);
+  frena(c, `sh -c 'echo x >> $PWD/${H}'`);
+  frena(c, `sh -c 'echo x >> "\${PWD}/${H}"'`);
+  pasa(c, `F=README.md; sh -c 'echo x >> "$F"'`);
+  pasa(c, `F=${H}; sh -c 'cat "$F"'`);
+  pasa(c, `sh -c 'echo x >> $PWD/README.md'`);
+});
+
+test('T21 ShellAnidado_ComillaSimpleAnidada_Frena', () => {
+  const c = corral();
+  frena(c, `sh -c 'sh -c '"'"'rm ${H}'"'"''`);
+  frena(c, `bash -c 'bash -c '\\''echo x >> ${H}'\\'''`);
+  pasa(c, `sh -c 'sh -c '"'"'cat ${H}'"'"''`);
+});
+
+test('T22 ShellAnidado_XargsPorHereString_Frena', () => {
+  const c = corral();
+  frena(c, `xargs -I{} sh -c 'rm {}' <<< ${H}`);
+  frena(c, `xargs -I{} sh -c 'echo x >> {}' <<< "${H}"`);
+  frena(c, `xargs sh -c 'rm "$@"' sh <<< ${H}`);
+  pasa(c, `xargs -I{} sh -c 'cat {}' <<< ${H}`);
+  pasa(c, `xargs -I{} sh -c 'rm {}' <<< README.md`);
+});
+
+test('T23 ShellAnidado_Busybox_Frena', () => {
+  const c = corral();
+  frena(c, `busybox sh -c 'echo x >> ${H}'`);
+  frena(c, `busybox ash -c 'rm ${H}'`);
+  frena(c, `busybox rm ${H}`);
+  frena(c, `busybox sed -i s/a/b/ ${H}`);
+  pasa(c, `busybox sh -c 'cat ${H}'`);
+  pasa(c, `busybox cat ${H}`);
+});
+
+// T24 a T27 · lo que encontró el pase adversarial de la fila 61: las mismas formas con un envoltorio delante, con la
+// variable armada de otra forma y con la entrada del `xargs` escrita de otra forma.
+test('T24 ShellAnidado_BusyboxConEnvoltorioOVariable_Frena', () => {
+  const c = corral();
+  for (const cmd of [`sudo busybox rm ${H}`, `nohup busybox rm ${H}`, `timeout 5 busybox rm ${H}`, `command busybox rm ${H}`,
+    `nice busybox rm ${H}`, `F=${H}; busybox rm $F`]) frena(c, cmd);
+  pasa(c, `sudo busybox cat ${H}`);
+  pasa(c, 'echo busybox rm');
+});
+
+test('T25 ShellAnidado_VariableArmadaDeOtraForma_Frena', () => {
+  const c = corral();
+  const muchas = Array.from({ length: 12 }, (_, k) => `V=a${k}`).join('; ');
+  for (const cmd of [`D=specs; F=$D/story-1.1.md; sh -c 'rm $F'`, `F=$'sp\\x65cs/story-1.1.md'; sh -c 'rm $F'`,
+    `${muchas}; V=${H}; sh -c 'rm $V'`, `F=${H}; sh -c 'rm \${F:-x}'`, `F=${H}; sh -c 'rm "\${F}"'`]) frena(c, cmd);
+  pasa(c, `D=specs; F=$D/README.md; sh -c 'rm $F'`);
+});
+
+test('T26 ShellAnidado_EntradaDeXargsEscritaDeOtraForma_Frena', () => {
+  const c = corral();
+  for (const cmd of [`xargs rm <<< 'specs/story-1.'1.md`, 'xargs rm <<< specs/story-1."1".md',
+    `xargs rm <<< $'README.md\\n${H}'`, `xargs rm <<< $'${H}\\x20README.md'`, `xargs -0 rm <<< $'README.md\\0${H}'`,
+    `xargs -d, rm <<< 'README.md,${H}'`, `F=${H}; xargs rm <<< "$F"`]) frena(c, cmd);
+  pasa(c, `xargs -d, cat <<< 'README.md,${H}'`);
+  pasa(c, 'xargs rm <<< README.md');
+});
+
+test('T27 ShellAnidado_XargsUnaPorVez_Frena', () => {
+  const c = corral();
+  frena(c, `xargs -n1 sh -c 'rm "$1"' _ <<< "README.md ${H}"`);
+  frena(c, `echo README.md ${H} | xargs -n1 sh -c 'rm "$1"' _`);
+  pasa(c, `xargs -n1 sh -c 'cat "$1"' _ <<< "README.md ${H}"`);
+});
+
+// T28 a T30 · la fila 81 (pase del pedido único #1502), la parte de las historias: la carpeta de `env -C`, `pushd` y los
+// `cd` encadenados dentro de un cuerpo anidado, `sudo` con una opción con valor, y `printf` con `\n` hacia `xargs`.
+test('T28 ShellAnidado_CarpetaDeEnvCPushdYCdEncadenados_Frena', () => {
+  const c = corral();
+  fs.mkdirSync(path.join(c.dir, 'sub'), { recursive: true });
+  for (const cmd of [`env -C specs sh -c 'echo x >> story-1.1.md'`, `sh -c 'cd sub && cd ../specs && echo x >> story-1.1.md'`,
+    `sh -c 'cd specs && cd - && cd specs && rm story-1.1.md'`, 'pushd specs && rm story-1.1.md', 'pushd specs; sh -c \'rm story-1.1.md\'']) frena(c, cmd);
+  pasa(c, `env -C specs sh -c 'cat story-1.1.md'`);
+  pasa(c, 'pushd specs && echo x >> notas.txt');
+});
+
+test('T29 ShellAnidado_SudoConOpcionConValor_Frena', () => {
+  const c = corral();
+  for (const cmd of [`sudo -u root sh -c 'echo x >> ${H}'`, `sudo -u root -g wheel bash -c 'rm ${H}'`]) frena(c, cmd);
+  pasa(c, `sudo -u root sh -c 'cat ${H}'`);
+});
+
+test('T30 ShellAnidado_PrintfConSaltoHaciaXargs_Frena', () => {
+  const c = corral();
+  frena(c, `printf '${H}\\n' | xargs rm`);
+  frena(c, `printf 'README.md\\n${H}\\n' | xargs rm`);
+  pasa(c, `printf '${H}\\n' | xargs cat`);
+});
+
+// T31 · fila 118: comillas pegadas en medio de una palabra (vacías o con algo adentro) son la misma palabra para el shell,
+// afuera y adentro de un shell anidado. T32 · `$PWD` después de un `cd` en el cuerpo es la carpeta de ese `cd`.
+test('T31 ComillasPegadasEnLaPalabra_Frena', () => {
+  const c = corral();
+  for (const cmd of ['rm sp""ecs/story-1.1.md', "rm specs/story-1.''1.md", 'echo x >> specs/"story"-1.1.md',
+    'sed -i s/a/b/ sp""ecs/story-1.1.md', `sh -c 'rm sp""ecs/story-1.1.md'`]) frena(c, cmd);
+  pasa(c, 'rm REA""DME.md');
+  pasa(c, 'cat sp""ecs/story-1.1.md');
+  pasa(c, 'git commit -m "toca sp""ecs/story-1.1.md"');
+});
+
+test('T32 ShellAnidado_PwdDespuesDeUnCd_EsLaCarpetaDelCd', () => {
+  const c = corral();
+  const afuera = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'freno-afuera-')));
+  pasa(c, `sh -c 'cd ${afuera} && echo x >> $PWD/${H}'`);
+  frena(c, `sh -c 'cd specs && echo x >> $PWD/story-1.1.md'`);
+  frena(c, `sh -c 'echo x >> $PWD/${H}; cd ${afuera}'`);
+});
+
 // T15 Bench_FrenoComandosAnidados
 // 🔴 Falla con: un caso del banco que no corre o que da otra salida que la esperada.
 test('T15 Bench_FrenoComandosAnidados', () => {
