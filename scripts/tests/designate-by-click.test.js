@@ -51,6 +51,14 @@ require(process.env.TEST_WINDOW_LIB).exigir = (o) => {
   if (o.antes) { const n = o.antes('click', null); if (n && n.codigo) return { codigo: n.codigo, motivo: n.motivo }; }
   // lo que pasa en la máquina mientras la firma espera (otra sesión que queda nombrada)
   if (process.env.TEST_DURING_WAIT) fs.appendFileSync(process.env.TEST_GATES, process.env.TEST_DURING_WAIT);
+  // el freno de ESTE proceso: el click vale si es del cuadro que se arma ahora, con el perfil de ahora
+  if (process.env.TEST_CLICK_COMMAND) {
+    const ow = require(process.env.TEST_WINDOW_LIB);
+    const comando = process.env.TEST_CLICK_COMMAND;
+    const cuadro = ow.cuadroPara({ firma: o.firma, comando, palabras: ow.canonica(comando), destino: o.propia, sesion: o.propia, cwd: process.env.TEST_CWD, casa: process.env.HOME });
+    const b = require(process.env.TEST_APPROVALS_LIB).buscar({ casa: process.env.HOME, sesion: o.propia, destino: o.propia, cuadro, ahora: Number(process.env.TEST_NOW), validar: () => ({ ok: true }) });
+    if (!b.ok) return { codigo: 1, motivo: 'no hay un click en el cuadro de esta pestaña' };
+  }
   return JSON.parse(process.env.TEST_SIGNATURE);
 };
 `;
@@ -70,16 +78,23 @@ function laboratorio(t, { perfil = { approvals: { relay_session: 'coordinadora' 
   const arnes = path.join(base, 'arnes');
   fs.mkdirSync(arnes);
   let perfilRuta = null;
-  if (perfil) { perfilRuta = path.join(arnes, 'team-profile.json'); fs.writeFileSync(perfilRuta, JSON.stringify(perfil)); }
-  const rol = perfil && perfil.approvals ? perfil.approvals.relay_session || '' : '';
-  const lab = { base, casa, carpeta, estado, llamada };
-  lab.correr = (args, { firma = { codigo: 0, via: 'click' }, sesion = SES, durante = [], perfilDurante } = {}) => {
+  const lab = { base, casa, carpeta, estado, llamada, rol: '' };
+  // el perfil del árbol, para el guion y para el cuadro que arma esta prueba (`enLaMaquina`)
+  lab.conPerfil = (p) => {
+    perfilRuta = p ? path.join(arnes, 'team-profile.json') : null;
+    if (p) fs.writeFileSync(perfilRuta, JSON.stringify(p)); else fs.rmSync(path.join(arnes, 'team-profile.json'), { force: true });
+    lab.rol = p && p.approvals ? p.approvals.relay_session || '' : '';
+  };
+  lab.conPerfil(perfil);
+  // `porElCuadro`: el comando con que se mostró el cuadro; el click vale sólo si es del cuadro que el guion arma ahora
+  lab.correr = (args, { firma = { codigo: 0, via: 'click' }, sesion = SES, durante = [], perfilDurante, porElCuadro } = {}) => {
     try { fs.rmSync(llamada); } catch (_) { /* no había */ }
     const env = { PATH: process.env.PATH, HOME: casa, USERPROFILE: casa, TYCON_LANE_LLM: '0', TYCON_PROFILE: perfilRuta || '0',
       ...(perfilDurante !== undefined ? { TEST_PROFILE_DURING_WAIT: perfilDurante } : {}),
+      ...(porElCuadro ? { TEST_CLICK_COMMAND: porElCuadro, TEST_CWD: carpeta, TEST_NOW: String(AHORA), TEST_APPROVALS_LIB: path.join(LIB, 'owner-approvals.js') } : {}),
       ...(durante.length ? { TEST_DURING_WAIT: durante.map((l) => `${JSON.stringify(l)}\n`).join(''), TEST_GATES: path.join(estado, 'gates.log') } : {}),
       TEST_CALL_FILE: llamada, TEST_SIGNATURE: JSON.stringify(firma), TEST_WINDOW_LIB: path.join(LIB, 'owner-window.js'),
-      TEST_CW_LIB: path.join(PIPELINE_LIB, 'critical-waivers.js'), TEST_RELAY: rol, TEST_HARNESS: arnes, ...(sesion ? { CLAUDE_CODE_SESSION_ID: sesion } : {}) };
+      TEST_CW_LIB: path.join(PIPELINE_LIB, 'critical-waivers.js'), TEST_RELAY: lab.rol, TEST_HARNESS: arnes, ...(sesion ? { CLAUDE_CODE_SESSION_ID: sesion } : {}) };
     return spawnSync(process.execPath, ['-r', precarga, MARKER, ...args], { cwd: carpeta, env, encoding: 'utf8' });
   };
   lab.pidio = () => { try { return JSON.parse(fs.readFileSync(llamada, 'utf8')); } catch (_) { return null; } };
@@ -91,12 +106,19 @@ function laboratorio(t, { perfil = { approvals: { relay_session: 'coordinadora' 
 }
 const designaciones = (lab) => lab.gates().filter((g) => g.name === 'relay-designation' || g.name === 'relay-designation-confirmed');
 
+/** `fn` con el rol del perfil del laboratorio, como lo lee el cuadro en esta prueba (el árbol del arnés no lo da). */
+function enLaMaquina(lab, fn) {
+  const leer = cw.sesionQueReenvia;
+  cw.sesionQueReenvia = () => (lab.rol ? { valor: lab.rol } : { valor: null });
+  try { return fn(); } finally { cw.sesionQueReenvia = leer; }
+}
+
 /** El freno de verdad sobre un comando de esta sesión, con el árbol de procesos de la prueba. */
 function frenar(lab, comando, { sesion = SES } = {}) {
-  return ow.decidir({ evento: { session_id: sesion, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: comando }, cwd: lab.carpeta },
-    escapes: [], arbol: arbolDelFreno(), pid: 201, casa: lab.casa, ahora: AHORA, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), clasificar: () => null, comprobar: () => null });
+  return enLaMaquina(lab, () => ow.decidir({ evento: { session_id: sesion, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: comando }, cwd: lab.carpeta },
+    escapes: [], arbol: arbolDelFreno(), pid: 201, casa: lab.casa, ahora: AHORA, delegacion: () => ({ ok: false, motivo: 'sin delegación en la prueba' }), clasificar: () => null, comprobar: () => null }));
 }
-const cuadroDe = (lab, firma, comando, sesion = SES) => ow.cuadroPara({ firma, comando, palabras: ow.canonica(comando), destino: sesion, sesion, cwd: lab.carpeta, casa: lab.casa });
+const cuadroDe = (lab, firma, comando, sesion = SES) => enLaMaquina(lab, () => ow.cuadroPara({ firma, comando, palabras: ow.canonica(comando), destino: sesion, sesion, cwd: lab.carpeta, casa: lab.casa }));
 
 // 🔴 Falla con: un nombramiento sin frase que no pide el click, o un cuadro que no dice qué sesión es.
 test('DesignateRelay_NoQuote_NoClick_DeniesWithBoxNamingSession (T1)', (t) => {
@@ -380,6 +402,28 @@ test('DesignateRelay_NoProfile_DesignatesWithoutConfirmation (T27)', (t) => {
   assert.strictEqual(s.status, 1, `${s.stdout}${s.stderr}`);
   assert.match(s.stderr, /el perfil del equipo cambió mientras se esperaba la firma/);
   assert.deepStrictEqual(designaciones(sale), []);
+});
+
+// 🔴 Falla con: un click dado al cuadro de una máquina sin perfil que, si el perfil gana approvals.relay_session con el
+// mismo nombre antes de que el comando corra en otro proceso, anota la confirmación (la firma por delegación).
+test('DesignateRelay_ProfileGainsRoleAfterTheBox_NoConfirmation', (t) => {
+  const comando = `node ${MARKER} designate-relay`;
+  // el control: sin cambio de perfil, el click del cuadro que se mostró vale, con perfil y sin él
+  for (const [perfil, renglones] of [[undefined, ['relay-designation', 'relay-designation-confirmed']], [null, ['relay-designation']]]) {
+    const lab = laboratorio(t, perfil === undefined ? {} : { perfil });
+    click(lab, cuadroDe(lab, 'designation-set', comando));
+    const r = lab.correr(['designate-relay'], { porElCuadro: comando });
+    assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+    assert.deepStrictEqual(designaciones(lab).map((g) => g.name), renglones);
+  }
+  // el cuadro se arma y se clickea sin perfil; el perfil gana el rol «coordinadora»; el comando corre en otro proceso
+  const lab = laboratorio(t, { perfil: null });
+  click(lab, cuadroDe(lab, 'designation-set', comando));
+  lab.conPerfil({ approvals: { relay_session: 'coordinadora' } });
+  const r = lab.correr(['designate-relay'], { porElCuadro: comando });
+  assert.ok(!designaciones(lab).some((g) => g.name === 'relay-designation-confirmed'), `nunca la confirmación:\n${r.stderr}`);
+  assert.notStrictEqual(r.status, 0, r.stderr);
+  assert.deepStrictEqual(designaciones(lab), [], 'no anota nada');
 });
 
 // La retirada atada por la misma función que la confirmación (también en delegated-signing-confirm.test.js, T6 y T8).
