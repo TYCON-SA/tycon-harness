@@ -536,11 +536,24 @@ function stateFiles(home, problems) {
 // sesión, manda él: el permiso está abierto sólo si la da esperando. Una negación (Esc o «No») corta el turno sin Stop ni
 // PostToolUse y la deja quieta con `permission` todavía anotado: no está trabada. Sin estado de Claude, el archivo de estado.
 // `key` identifica la espera para no anunciarla dos veces: la hora del permiso anotado, o la de Claude sin él.
+// El permiso que pide un agente de la sesión no la pone esperando: Claude Code la sigue dando ocupada (espera a su
+// agente). Se anuncia si está ocupada desde antes del pedido y la sesión lleva QUIETA_MS sin moverse: el final de la
+// herramienta pedida borra el permiso, y el de otra lo anota en `movedAt` (hooks/session-state.js, una vez por minuto).
+// El plazo pasa el tope de un comando de consola en primer plano (10 minutos): uno aprobado que todavía corre no sale.
+const QUIETA_MS = 11 * 60 * 1000;
+function porUnAgente(s, p, now) {
+  if (!p || s.status !== 'busy') return false;
+  const pSince = Date.parse(p.since);
+  if (!Number.isFinite(pSince) || !Number.isFinite(s.statusAt) || s.statusAt > pSince) return false;
+  const movio = Date.parse(p.movedAt);
+  return now - (Number.isFinite(movio) && movio > pSince ? movio : pSince) >= QUIETA_MS;
+}
 function stalledOf(s, f, now) {
   const p = f && f.permission && typeof f.permission === 'object' ? f.permission : null;
   const waits = s.status === 'waiting';
   const known = typeof s.status === 'string' && s.status !== '';
-  if (!((waits && (/permission/i.test(String(s.waitingFor || '')) || p)) || (p && !known))) return null;
+  const agente = porUnAgente(s, p, now);
+  if (!((waits && (/permission/i.test(String(s.waitingFor || '')) || p)) || (p && !known) || agente)) return null;
   const pSince = p ? Date.parse(p.since) : NaN;
   const since = Number.isFinite(pSince) ? pSince : (Number.isFinite(s.statusAt) ? s.statusAt : now);
   // el gancho ya lo anota tapado; se tapa otra vez por los archivos escritos antes de que una forma existiera
@@ -558,7 +571,7 @@ function stalledOf(s, f, now) {
   // de un permiso que se resolvió por otro camino (lo cortó un freno, o se destrabó) y que queda hasta el cierre del
   // turno: el aviso no la da por abierta. Esperando sin decir qué, se toma por el permiso, como siempre
   const confirmed = waits && (!s.waitingFor || /permission/i.test(String(s.waitingFor)));
-  return { tool: p ? label(p.tool) : null, detail, since, key: Number.isFinite(pSince) ? `p:${pSince}` : 'claude', confirmed, ...(forma ? { forma } : {}) };
+  return { tool: p ? label(p.tool) : null, detail, since, key: Number.isFinite(pSince) ? `p:${pSince}` : 'claude', confirmed, ...(agente ? { agente: true } : {}), ...(forma ? { forma } : {}) };
 }
 
 // La espera que el archivo de estado anota cuando una sesión abre un cuadro o pide aprobar su plan (hooks/session-state.js).
@@ -617,14 +630,38 @@ function swapLine(s) {
   if (sw.pct == null) return sw.none ? null : `Memoria de intercambio: no medida (${oneLine(sw.why || 'sin motivo').slice(0, 120)})`;
   if (sw.pct >= SWAP_LOW_PCT) return null;
   const idle = [...(s.idle || [])].sort((a, b) => Number(Boolean(b.waitingFor)) - Number(Boolean(a.waitingFor)));
-  const names = idle.map((x) => (x.waitingFor ? `${x.session} (espera ${x.waitingFor})` : x.session));
+  const { waitPhrase } = require('../lib/owner-wait-card.js');
+  const names = idle.map((x) => (x.waitingFor ? `${x.session} (${waitPhrase(x.waitingFor)})` : x.session));
   return `Memoria de intercambio casi llena: ${sw.pct} % libre. Claude Code puede cerrar sesiones quietas${names.length ? `: ${names.join(' · ')}` : ' (no hay quietas)'}. Antes de lanzar algo pesado, cerrá las quietas que no esperan nada (guides/coordination.md, «La memoria de intercambio»).`;
+}
+
+// Los procesos del usuario cerca del tope (desde este porcentaje): con el tope no arranca ningún comando, ni los ganchos ni
+// los frenos. Pasó con varios pases adversariales a la vez y una prueba colgada.
+const PROCS_HIGH_PCT = 70;
+// Lo que lee de más el comando `status`: la memoria de intercambio y los procesos. El aviso de cada turno y el freno del
+// cierre no corren `sysctl` ni `ps`.
+const STATUS_READS = Object.freeze({ swap: true, procs: true });
+// La lectura de los procesos del usuario para `status`: `{ used, max, pct, why }`. Como la memoria de intercambio, sólo la
+// pide el comando `status` (`opts.procs`).
+function procsOf(opts) {
+  if (!opts.procs && !opts.readProcs) return null;
+  try { return (opts.readProcs || require('./heavy-turn.js').userProcs)() || { used: null, max: null, pct: null, why: 'sin respuesta' }; } catch (e) { return { used: null, max: null, pct: null, why: oneLine(e.message) }; }
+}
+// La línea de los procesos, o null: medidos y lejos del tope no dice nada.
+function procsLine(s) {
+  const p = s.procs;
+  if (!p) return null;
+  // `ps` no pudo arrancar por falta de procesos: ése es el tope, no una medición que falló
+  if (p.pct == null && /EAGAIN|temporarily unavailable/i.test(String(p.why))) return 'Procesos del usuario en el tope: no pude arrancar ni `ps` para contarlos (EAGAIN). Ningún comando arranca, ni los ganchos ni los frenos: pedí que frenen los pases y los guiones de fondo (guides/coordination.md, «Los procesos del usuario»).';
+  if (p.pct == null) return `Procesos del usuario: no medidos (${oneLine(p.why || 'sin motivo').slice(0, 120)})`;
+  if (p.pct < PROCS_HIGH_PCT) return null;
+  return `Procesos del usuario cerca del tope: ${p.used} de ${p.max} (${p.pct} %). Con el tope no arranca ningún comando, ni los ganchos ni los frenos. Antes de lanzar algo pesado (un pase, mutantes, una suite), pedí que frenen los pases y los guiones de fondo que no hacen falta (guides/coordination.md, «Los procesos del usuario»).`;
 }
 
 const permissionText = (x) => [x.tool || 'un permiso', x.detail].filter(Boolean).join(' ');
 const gateText = (g) => `el portón acotado de ${g.session || 'una sesión sin nombre'} (${g.what}, desde las ${hhmm(g.since)})`;
 // La línea de una sesión trabada para la coordinadora, y la de una que cerró Claude Code.
-const stalledLine = (x) => `${x.session} ${x.confirmed === false ? `tiene un permiso anotado desde las ${hhmm(x.since)}, sin confirmar que siga abierto` : `espera un permiso desde las ${hhmm(x.since)}`}: ${permissionText(x)}.${x.forma ? ` Lo pidió el chequeo de borrados de Claude Code: ${x.forma}.` : ''}${x.relay ? ` No te llegó como cuadro: ${x.relay}.` : ''} Para entrar: claude attach ${x.session}`;
+const stalledLine = (x) => `${x.session} ${x.agente ? `espera un permiso desde las ${hhmm(x.since)} que pidió un agente suyo (la sesión figura ocupada y no se movió desde entonces)` : x.confirmed === false ? `tiene un permiso anotado desde las ${hhmm(x.since)}, sin confirmar que siga abierto` : `espera un permiso desde las ${hhmm(x.since)}`}: ${permissionText(x)}.${x.forma ? ` Lo pidió el chequeo de borrados de Claude Code: ${x.forma}.` : ''}${x.relay ? ` No te llegó como cuadro: ${x.relay}.` : ''} Para entrar: claude attach ${x.session}`;
 
 // Por qué el permiso de la sesión no le llegó a la coordinadora como cuadro, o dejó de esperarlo: lo anota el gancho de
 // permisos (scripts/hooks/permission-relay.js) en `coordination/permission-relay/<sesión>.json`, con la hora en que llegó
@@ -816,7 +853,7 @@ function status(opts = {}) {
     now, working, waiting, quiet, agentSilent, busySilent, backgroundStalled, passWaiting, suiteWaiting, outsideWaiting, stopped, cap: r.max_working, storiesCap: r.max_stories_in_cycle, adversarial, stalled, asking,
     // lo que espera revisión, de la foto del arranque: para mostrar, nunca para decidir
     review: RL.leerFoto(stateDir(home), now), reviewCap: r.max_awaiting_review,
-    retired: gone.retired, retiredMeasured: gone.measured, retiredWhy: gone.why, idle, swap: swapOf(opts),
+    retired: gone.retired, retiredMeasured: gone.measured, retiredWhy: gone.why, idle, swap: swapOf(opts), procs: procsOf(opts),
     suite: suiteRow, suites: suiteRows, secondTurn, heavyTurn, gates,
     signatures, plansWaiting: planWaits, pendingDesignation,
     unnamed, problems,
@@ -843,6 +880,8 @@ function statusText(s) {
   else if (s.retired && s.retired.length) lines.push(`Cerradas por Claude Code: ${s.retired.map(retiredLine).join(' · ')}`);
   const swap = swapLine(s);
   if (swap) lines.push(swap);
+  const procs = procsLine(s);
+  if (procs) lines.push(procs);
   const passText = (a) => `pase adversarial de ${a.storyId ? `la ${a.storyId}` : 'una sesión sin story'} (${a.session}, desde las ${hhmm(a.since)})`;
   const h = s.heavyTurn;
   // con una ejecución grande, si entra la segunda; con dos, las dos
@@ -1199,10 +1238,30 @@ function ownerWaitTurn(opts, a, lines, { home, me, stalled, now }) {
   for (const [sid, prev] of Object.entries(o.esperas)) {
     if (ahora.has(sid)) continue;
     // la que pasó a la lista o a un permiso sigue esperando: tiene su aviso por otro lado
-    if (!fuera.has(sid)) lines.push(`${quoted(prev.quien, LABEL_MAX)} ya no espera a la persona`);
+    if (!fuera.has(sid)) {
+      // la oficina saca de «Tu firma» a la sesión ocupada (le llegó un mensaje, corre un comando) aunque su plan siga sin
+      // aprobar: esa espera se retira sólo con el plan aprobado o la corrida cerrada
+      if (prev.espera === PLAN_WAIT && planStillUnapproved(home, sid)) continue;
+      lines.push(`${quoted(prev.quien, LABEL_MAX)} ya no espera a la persona`);
+    }
     delete o.esperas[sid];
   }
   return true;
+}
+
+// lo que la oficina dice que espera una sesión en «Aprobar el plan» (work-in-progress.js realState)
+const PLAN_WAIT = 'que apruebes el plan';
+
+/**
+ * ¿El plan de la corrida de `sid` sigue sin aprobar? Sí con su marcador abierto sin «Aprobar el plan» hecho, y en duda
+ * (un marcador que no se lee); no sin marcador (la corrida se cerró) o con el plan aprobado.
+ */
+function planStillUnapproved(home, sid) {
+  if (!SAFE_SID.test(String(sid))) return true;
+  let m;
+  try { m = JSON.parse(fs.readFileSync(path.join(stateDir(home), 'active', `${sid}.json`), 'utf8')); } catch (e) { return !e || e.code !== 'ENOENT'; }
+  if (!m || typeof m !== 'object' || Array.isArray(m)) return true;
+  return !require(path.join(SKILL_LIB, 'steps.js')).isDone(m, 'approve-plan');
 }
 
 /**
@@ -1963,7 +2022,7 @@ function outsideWaitLines(opts, sid, s, working, cap, getBoard, problems) {
   if (b.problem) problems.push(b.problem);
   const light = b.light.slice(0, 3);
   const lines = waiting.map((w) => {
-    const head = `Coordinación: ${w.session} espera ${w.waitingFor}${w.since == null ? '' : ` desde las ${hhmm(w.since)}`}`;
+    const head = `Coordinación: ${w.session} ${require('../lib/owner-wait-card.js').waitPhrase(w.waitingFor)}${w.since == null ? '' : ` desde las ${hhmm(w.since)}`}`;
     if (b.problem) return `${head}.`;
     return light.length ? `${head}: dale algo liviano de la fila — ${light.map(rowText).join(', ')}.` : `${head}: la fila no tiene nada liviano: que siga vigilando su pedido.`;
   });
@@ -3583,8 +3642,7 @@ function main(argv) {
   try { f = flags(more); } catch (e) { process.stderr.write(`coordination.js: ${e.message}\n`); return 2; }
   const base = { env: process.env };
   if (cmd === 'status') {
-    // sólo acá se lee la memoria de intercambio: el aviso de cada turno y el freno del cierre no corren `sysctl`
-    const s = status({ ...base, swap: true });
+    const s = status({ ...base, ...STATUS_READS });
     process.stdout.write(f.json ? `${JSON.stringify(s, null, 2)}\n` : `${statusText(s)}\n`);
     return 0;
   }
@@ -3691,6 +3749,6 @@ if (require.main === module) {
   else process.exitCode = code;
 }
 
-module.exports = { LAUNCH_TIMEOUT_MS, relaunch, flags, plansWaiting, planWaitLines, ownerNextPlans, planAwayLines, reviewAskLines, questionRelays, questionRelay, questionRelayLines, questionRelaysFile, planRequestLines, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, launchedMatches, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, ownerWaitAlive, permissionTurn, relayNoteOf, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN, reviewVerdict, fullSessionName, ownerReplyLines,
+module.exports = { LAUNCH_TIMEOUT_MS, relaunch, STATUS_READS, flags, plansWaiting, planWaitLines, ownerNextPlans, planAwayLines, reviewAskLines, questionRelays, questionRelay, questionRelayLines, questionRelaysFile, planRequestLines, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, launchedMatches, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, ownerWaitAlive, permissionTurn, relayNoteOf, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN, reviewVerdict, fullSessionName, ownerReplyLines,
   // la oficina cuenta las historias en curso con las mismas ejecuciones y las mismas sesiones vivas que la coordinadora
   stoppedRuns, markersBySid, codexThreads, CODEX_IDLE_MS };

@@ -357,8 +357,10 @@ The harness controls this, not anyone's memory:
   (session, suites and time of each gate), and the line saying who holds the place. Beside a single gate of up to 40
   suites, with free memory, the pass launches. The pass of a closed session does not count.
 - **How each one frees up.** The large run releases its turn when it ends; the turn of a dead process, or one older than
-  three hours, frees itself. The pass has no turn file: it holds the machine from its launch until its session notes the
-  result (`marker.js mark-adversarial-result`, with any verdict, `no-medido` too) or the skip
+  three hours, frees itself. That is why `heavy-turn.js take` asks for `--process <pid>`, the process that runs the heavy
+  work (in a script, `$$`): without it, the turn would be tied to the command's shell, which ends right away, and it
+  would free itself with nobody noticing. `release` asks for the same one. The pass has no turn file: it holds the
+  machine from its launch until its session notes the result (`marker.js mark-adversarial-result`, with any verdict, `no-medido` too) or the skip
   (`marker.js mark-adversarial-skipped`). Relaunched, it holds it again. A session that closed frees it, and after an hour
   it no longer stops anything, because it may be finished or stuck, and that is said.
 - **A free turn is not taken on its own: the «arrancá».** With a coordinator designated and alive, a gate that got a
@@ -376,15 +378,17 @@ The harness controls this, not anyone's memory:
   name: a gate that asks for it gets the «wait» with the reservation's name. With a large run going it does not reserve
   (it exits 77 and says who holds it). `heavy-turn.js release --reserve` frees it; it expires after 90 minutes (a round of
   reviewers or a pass; the three hours are a suite's) and, if the coordinator's session closed, after 10. With
-  `--to <session>`, the reservation says which session launches what was reserved (its pass without the pipeline, the
-  next point). It is for the pass, not for its suites: that session's gate waits like anyone's until it is released.
+  `--to <session>`, the reservation belongs to that session: it launches what was reserved (its pass without the
+  pipeline, the next point) and its gate takes the turn with no separate «go», even if it was in the queue. It is for
+  one thing at a time: if its gate is already running, the pass hook warns; with the pass in flight nothing stops its
+  gate, so the session does not run it until the pass ends. Other sessions wait until it is released.
 - **The pass without the pipeline also asks for the turn.** A session without a pipeline run (one the coordinator
   opened for a fix, or a loose one) launches its pass with the Agent or Workflow tool, with no marker to count it. On
   23/11 at 05:45, with several of those at once, the machine ran out of processes. The `agile-pass-turn.js` hook looks
   at each launch: every Workflow (the fan-out of agents that fills the machine) and an Agent whose description or type
   says adversarial (small reviewers and searches do not count; the request text is not read). If the session has neither the «go» (`grant --to`) nor a
-  reservation for it (`reserve --for "<what>" --to <session>`), it warns the session and the person who holds the turn,
-  and logs it in `gates.log` (`agile-pass-turn`). Today it only warns: whether it blocks is the owner's call, with that
+  reservation for it (`reserve --for "<what>" --to <session>`), or if its gate already runs with that reservation, it
+  warns the session and the person who holds the turn, and logs it in `gates.log` (`agile-pass-turn`). Today it only warns: whether it blocks is the owner's call, with that
   measurement (`MODO` in the hook). It does not look without a coordinator, at the coordinator itself, or at a pipeline
   session. `TYCON_AGILE_PASS_TURN=0` turns it off.
 
@@ -405,6 +409,16 @@ that fails) it says «no medida» and assumes nothing. Only the `status` command
 closing brake do not measure it. A session Claude Code already closed shows in «Cerradas por Claude Code» with what it was
 waiting for (its `marker.js doing --waiting-for` note) and since when, above the others, with its `coordination.js relaunch --id`.
 
+### The user's processes
+
+Each user has a process cap (on macOS, `kern.maxprocperuid`; on the Mac mini, 2666). At the cap no command starts: not
+the hooks, not the brakes. It happened on 23/11 at 05:45, with several adversarial passes at
+once and a hung test, and the Telegram MCP went down. `coordination.js status` counts the user's processes (`ps -U`): from 70 % of the cap it says how
+many there are and what the cap is. What to do: before launching anything heavy (a pass, mutants, a suite), ask for the
+passes and background scripts that are not needed to stop. If they cannot be counted (another platform, a command that
+fails) it says «no medidos» and assumes nothing; if `ps` cannot start for lack of processes, it says it is at the
+cap. Like swap memory, only the `status` command counts them.
+
 ## The automatic reviews: what the coordinator does
 
 When each review runs is set by the organization's configuration (`guides/automatic-reviews.en.md`). In each one,
@@ -422,7 +436,9 @@ the coordinator:
   launches itself approves the routine plan without a click: it is enough in both cases. With `person`, a routine plan
   is always signed by a person. Rejected or without a verdict, the plan waits. A delicate plan, and its mockup, are signed
   only by the owner with a click or an «approved» (also in the coordinator's tab), even if the profile names
-  `plan-approval:delicada`. **The plan she approves is a part's plan**: if the run recorded its batch (`set-batch`) and the part is valid
+  `plan-approval:delicada`. From that tab the command carries the quote: `marker.js complete-step approve-plan
+  --approved '<the person's quote>' --for-session <session>`; without it nothing is signed and no box is shown.
+  **The plan she approves is a part's plan**: if the run recorded its batch (`set-batch`) and the part is valid
   (with its `files:` or, without `files:`, with the files the story ties to it plus those it ties to no batch),
   «delicate» is measured on the part, and the plan stays tied to its list: editing code outside it stops, and at the
   close the whole diff is measured; if it comes out delicate, the plan goes back to the owner. The adversarial pass
@@ -519,6 +535,10 @@ turned on in the profile, or on the machine to try it out.
 - **How they go through, with a coordinator.** If the coordinator is confirmed and alive, it passes them all. The background
   session does not show the box or send messages: the brake tells it to wait for the notice. When the person writes, the
   coordinator gets a notice: answer what the person wrote and run `coordination.js owner-next`.
+- **Without the list, with a coordinator.** The background session does not send the coordinator the question to copy:
+  copied by hand it does not stay the same, and the click does not count. The brake says why the request does not reach
+  her list (the list is off, or there is no confirmed, live coordinator) and gives the terminal command. The session tells
+  her what is being decided and that command, and does not repeat its command until she says the owner signed.
 - **How they go through, without a coordinator.** The target session gets the same notice, once per row, and runs `owner-next`.
   If the person already answered «aprobado» to that box, it does not ask again.
 - **What `owner-next` gives.** One row, the oldest: a box to show without changing a letter, with a label («Firma 2/5»), and the

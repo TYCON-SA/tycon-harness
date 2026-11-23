@@ -82,16 +82,20 @@ function page(lock, { token = lock.token, origin = `http://127.0.0.1:${lock.port
   const WebSocket = require(VENDOR_WS);
   const ws = new WebSocket(`ws://127.0.0.1:${lock.port}/live${token == null ? '' : `?t=${token}`}`, { origin: origin || undefined, headers: { host } });
   const fotos = [];
+  // la hora a la que llegó cada foto, en el mismo orden: una prueba de intervalos mide la llegada, no cuándo la miró
+  const llegadas = [];
   const waiters = [];
   ws.on('message', (raw) => {
     const msg = JSON.parse(String(raw));
     fotos.push(msg);
+    llegadas.push(Date.now());
     while (waiters.length) waiters.shift()(msg);
   });
   ws.closed = new Promise((resolve) => ws.on('close', (code) => resolve(code)));
   ws.rejected = new Promise((resolve) => ws.on('unexpected-response', (req, res) => resolve(res.statusCode)));
   ws.on('error', () => { /* lo dicen closed y rejected */ });
   ws.fotos = fotos;
+  ws.llegadas = llegadas;
   ws.next = (ms = 3000) => new Promise((resolve, reject) => {
     const t = setTimeout(() => reject(new Error(`no llegó una foto en ${ms} ms`)), ms);
     waiters.push((msg) => { clearTimeout(t); resolve(msg); });
@@ -255,30 +259,32 @@ test('T7c Server_MachineOnly_NeverCloserThanTheInterval @story-8.301 @ac-7: sin 
   const lock = readLock(m);
   const p = page(lock);
   await p.next();
-  const llegadas = [];
   const desde = p.fotos.length;
   const coordination = path.join(m.sdir, 'coordination');
   fs.mkdirSync(coordination, { recursive: true });
   const board = path.join(coordination, 'tablero.json');
   fs.writeFileSync(board, JSON.stringify({ pendientes: [] }));
   await p.next(PLAZO);
+  // las fotos de la carga, con la hora a la que llegó cada una (sin la de la novedad del tablero): medidas cuando
+  // llegan, no cuando la prueba las mira, porque en una máquina cargada una vuelta atrasada junta dos llegadas lejanas
+  const llegadasDeLaCarga = () => p.llegadas.slice(desde + 1);
   const mirar = async (ms, reescribir) => {
     const t0 = Date.now();
     while (Date.now() - t0 < ms) {
       if (reescribir) fs.writeFileSync(board, fs.readFileSync(board));
       await sleep(300);
-      while (llegadas.length < p.fotos.length - desde - 1) llegadas.push(Date.now());
     }
   };
   // relecturas sin novedad, más seguidas que el intervalo: ninguna puede mandar una foto antes de tiempo
   await mirar(5000, true);
+  const llegadas = llegadasDeLaCarga();
   for (let i = 1; i < llegadas.length; i += 1) assert.ok(llegadas[i] - llegadas[i - 1] >= 1500, `dos fotos de la carga a ${llegadas[i] - llegadas[i - 1]} ms`);
   assert.ok(llegadas.length <= 3, `a lo sumo una por intervalo: ${llegadas.length} en 5 s`);
   // sin ninguna novedad ni relectura de afuera: sólo el reloj de la carga la pone al día
   const antes = llegadas.length;
   await mirar(5500, false);
   p.close();
-  assert.ok(llegadas.length - antes >= 2, `la carga se pone al día sola: ${llegadas.length - antes} fotos en 5,5 s con el intervalo en 2 s`);
+  assert.ok(llegadasDeLaCarga().length - antes >= 2, `la carga se pone al día sola: ${llegadasDeLaCarga().length - antes} fotos en 5,5 s con el intervalo en 2 s`);
 });
 
 test('T7 Events_BurstOfChanges_OneSnapshot @story-8.301 @ac-7: cinco cambios juntos dan una foto; una igual, o que sólo cambia la carga antes de 30 s, no manda nada', async () => {

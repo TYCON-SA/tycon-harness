@@ -28,8 +28,9 @@
  * del pedido (`huellaDe`), no la del texto mostrado.
  *
  * Un pedido que no se puede mostrar entero (más de 1500 caracteres; un carácter que no se ve o se ve en blanco, salvo
- * el espacio común y el salto de línea; datos que el cuadro no sabe mostrar) no se lleva. Ni ése ni el vencido le hablan
- * a la persona: el motivo queda en `<estado>/coordination/permission-relay/<sesión>.json` y la coordinadora lo ve en
+ * el espacio común y el salto de línea; datos que el cuadro no sabe mostrar) no se lleva. Ni ése, ni el vencido, ni el de
+ * una sesión de fondo que se queda sin cuadro (otro modo, la lista apagada, sin coordinadora o sin su owner-wait) le
+ * hablan a la persona: el motivo queda en `<estado>/coordination/permission-relay/<sesión>.json` y la coordinadora lo ve en
  * «Trabadas». Lo que pasó con cada pedido queda en gates.log (`permission-relay`: el estado, el id, la huella del pedido
  * y cuántos segundos esperó; sin el texto del pedido).
  *
@@ -193,7 +194,9 @@ const dormirDeVerdad = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer
 
 /**
  * ¿Le toca a este gancho? `{ lleva: true, sesion, herramienta, s, coordinadora }` o `{ lleva: false, motivo }`. Lo que
- * no depende de la máquina se mira primero: sin el evento de Claude, fuera del matcher o en otro modo no se lee nada.
+ * no depende de la máquina se mira primero: sin el evento de Claude o fuera del matcher no se lee nada. Una sesión de
+ * fondo que se queda sin cuadro (otro modo, la lista apagada, sin coordinadora o sin su owner-wait) trae `anotar`: nadie
+ * la ve esperar, y el motivo tiene que quedar para «Trabadas» y en gates.log.
  */
 function alcance(e, { casa, env, plataforma, arnes, ownerWaitVivo }) {
   if (!e || typeof e !== 'object') return { lleva: false, motivo: 'sin evento' };
@@ -201,19 +204,20 @@ function alcance(e, { casa, env, plataforma, arnes, ownerWaitVivo }) {
   if (e.hook_event_name !== 'PermissionRequest') return { lleva: false, motivo: 'otro evento' };
   const herramienta = String(e.tool_name || '');
   if (!HERRAMIENTAS.has(herramienta)) return { lleva: false, motivo: `${herramienta || 'sin herramienta'} no se lleva` };
-  if (e.permission_mode !== 'default') return { lleva: false, motivo: `modo ${String(e.permission_mode || 'sin modo')}` };
-  if (plataforma === 'win32' && herramienta === 'PowerShell') return { lleva: false, motivo: 'en Windows, por PowerShell el click no se puede comprobar' };
   const sesion = String(e.session_id || '');
   if (!SESION.test(sesion)) return { lleva: false, motivo: 'sin sesión legible' };
   const L = sl();
-  if (!L.encendida({ casa, arnes, env })) return { lleva: false, motivo: 'la lista está apagada' };
   const s = L.sesiones(casa);
   const x = s.mapa.get(sesion);
   if (!x || !/^(bg|background)$/.test(String(x.kind || ''))) return { lleva: false, motivo: 'no es una sesión de fondo' };
+  const sinCuadro = (motivo) => ({ lleva: false, motivo, anotar: { sesion, herramienta } });
+  if (e.permission_mode !== 'default') return sinCuadro(`modo ${String(e.permission_mode || 'sin modo')}`);
+  if (plataforma === 'win32' && herramienta === 'PowerShell') return sinCuadro('en Windows, por PowerShell el click no se puede comprobar');
+  if (!L.encendida({ casa, arnes, env })) return sinCuadro('la lista está apagada');
   const coordinadora = L.coordinadoraViva(casa, s);
-  if (!coordinadora) return { lleva: false, motivo: 'sin coordinadora confirmada y viva' };
+  if (!coordinadora) return sinCuadro('sin coordinadora confirmada y viva');
   if (coordinadora === sesion) return { lleva: false, motivo: 'es la coordinadora' };
-  if (!ownerWaitVivo(casa)) return { lleva: false, motivo: 'la coordinadora no tiene owner-wait corriendo' };
+  if (!ownerWaitVivo(casa)) return sinCuadro('la coordinadora no tiene owner-wait corriendo');
   return { lleva: true, sesion, herramienta, coordinadora };
 }
 
@@ -233,7 +237,14 @@ function decidir(evento, opts = {}) {
   if (env.TYCON_PERMISSION_RELAY === '0') return { decision: null, motivo: 'apagado' };
   const inicio = ahora();
   const a = alcance(evento, { casa, env, plataforma, arnes: opts.arnes, ownerWaitVivo });
-  if (!a.lleva) return { decision: null, motivo: a.motivo };
+  if (!a.lleva) {
+    if (a.anotar) {
+      const { sesion, herramienta } = a.anotar;
+      anotarMotivo(casa, sesion, { herramienta, motivo: `no se lleva al cuadro: ${a.motivo}`, ahora: ahora(), desde: inicio });
+      anotarDecision(casa, { sesion, estado: 'no-se-lleva', herramienta, pedido: null, motivo: a.motivo });
+    }
+    return { decision: null, motivo: a.motivo };
+  }
   const { sesion, herramienta, coordinadora } = a;
   const p = pedidoDe(herramienta, evento.tool_input);
   const c = p.pedido ? carpetaDe(evento.cwd) : {};
@@ -295,8 +306,9 @@ if (require.main === module) {
   try {
     if (process.env.TYCON_PERMISSION_RELAY === '0') process.exit(0);
     const evento = JSON.parse(fs.readFileSync(0, 'utf8').replace(/^\uFEFF/, '') || '{}');
-    // lo que no es de este gancho sale antes de leer nada de la máquina
-    if (!evento || evento.hook_event_name !== 'PermissionRequest' || !HERRAMIENTAS.has(String(evento.tool_name || '')) || evento.permission_mode !== 'default') process.exit(0);
+    // lo que no es de este gancho sale antes de leer nada de la máquina; otro modo no, porque en una sesión de fondo deja
+    // su motivo
+    if (!evento || evento.hook_event_name !== 'PermissionRequest' || !HERRAMIENTAS.has(String(evento.tool_name || ''))) process.exit(0);
     // la casa donde anota el click el gancho del cuadro (owner-approval-record.js), que no mira HOME
     casa = require(path.join(ROOT, 'scripts', 'lib', 'real-home.js')).casaDeLaCuenta();
     const out = salida(decidir(evento, { casa }));
