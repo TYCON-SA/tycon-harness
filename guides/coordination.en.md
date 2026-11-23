@@ -392,9 +392,9 @@ the coordinator:
 - **Approves on the owner's behalf only with «approved»** on that same plan, with `plan_review.routine_approval` (O4)
   on `review` and `plan-approval` delegated. Without a coordinator, that same «approved» of the review the session
   launches itself approves the routine plan without a click: it is enough in both cases. With `person`, a routine plan
-  is always signed by a person. Rejected or without a verdict, the plan waits. A delicate plan is signed by the owner, unless
-  the profile delegates `plan-approval:delicada`: then the coordinator approves it with that same «approved» from the
-  review she launched. **The plan she approves is a part's plan**: if the run recorded its batch (`set-batch`) and the part is valid
+  is always signed by a person. Rejected or without a verdict, the plan waits. A delicate plan, and its mockup, are signed
+  only by the owner with a click or an «approved» (also in the coordinator's tab), even if the profile names
+  `plan-approval:delicada`. **The plan she approves is a part's plan**: if the run recorded its batch (`set-batch`) and the part is valid
   (with its `files:` or, without `files:`, with the files the story ties to it plus those it ties to no batch),
   «delicate» is measured on the part, and the plan stays tied to its list: editing code outside it stops, and at the
   close the whole diff is measured; if it comes out delicate, the plan goes back to the owner. The adversarial pass
@@ -817,7 +817,9 @@ says so once under «No se pudo leer». A badly written row is not saved: `board
 
 - `pendientes`: a list; each item has `id` (its number, `T-41`: the command sets it), `titulo`, `estado` (`hecho`, `curso`,
   `firma`, `riesgo`, `entrando`, `sin-empezar`, or `espera`, which goes to «Sin sesión»; `curso` and `riesgo` go to «En
-  curso» only if a live session is doing it, and otherwise also to «Sin sesión»), `grupo` (`Hoy`, `Esta semana`, `La semana
+  curso» only if a live session is doing it, and otherwise also to «Sin sesión»; a `firma` whose `quien` is a session name
+  (one word, like «Tero-2») that is no longer in the office goes to «Sin sesión», with «la sesión que la esperaba ya no está»: it does not wait for
+  the owner), `grupo` (`Hoy`, `Esta semana`, `La semana
   que viene` or `Más adelante`), `orden`, `quien`, `nota`, and its time: `pronosticoIso` (local time, `YYYY-MM-DDTHH:MM`),
   or `termina` with its own text. A done item carries `realIso`. `estimadaIso` is not allowed. `ultimoHecho` is written
   only by the board when it moves on its own.
