@@ -1644,11 +1644,21 @@ function main() {
     // de la historia, se miden todas.
     // Sólo cuenta una tanda que ya estaba en HEAD sin estar done: una que aparece ya hecha no se cerró, y sin HEAD
     // legible no se sabe qué cambió. En los dos casos se miden todas, y se dice.
+    // La excepción es el estreno: HEAD tiene la historia con su frontmatter y sin renglón `pipelines:`. Ahí una tanda
+    // hecha no tenía en qué commit cerrarse, así que se mide ella sola, con su evidencia; las bloqueadas, pendientes o
+    // en curso no se miden. Un bloque que está en HEAD y no se lee no es un estreno: se miden todas.
     if (pipelineTransition && !statusTransition) {
       try {
         const { parsePipelinesBlock } = require('./lib/story-checks.js');
         const antes = head ? parsePipelinesBlock(head) : [];
-        if (!antes.length) {
+        const fmHead = fmBlock(head);
+        const estrenadas = !antes.length && fmHead && !/^pipelines\s*:/m.test(fmHead)
+          ? parsePipelinesBlock(staged).filter((t) => String(t.status || '').toLowerCase() === 'done').map((t) => t.name) : [];
+        if (estrenadas.length) {
+          tandasQueCierran.set(specRel, { nombres: estrenadas, antes: [] });
+          const cual = estrenadas.length > 1 ? 'se miden esas tandas' : 'se mide esa tanda';
+          process.stderr.write(`[on-pre-commit] ${specRel}: el commit estrena las tandas con ${estrenadas.join(', ')} ya done: ${cual} (pasar la historia a review las pide todas).\n`);
+        } else if (!antes.length) {
           process.stderr.write(`[on-pre-commit] ${specRel}: no pude leer las tandas de la historia en HEAD: se miden todas las tandas.\n`);
         } else {
           const enHead = new Map(antes.map((t) => [t.name, t]));

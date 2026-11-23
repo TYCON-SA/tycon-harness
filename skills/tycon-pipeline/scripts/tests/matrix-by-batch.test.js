@@ -2,7 +2,8 @@
 'use strict';
 // matrix-by-batch.test.js — en una historia paraguas, la ejecución de una tanda anota su tanda (`marker.js set-batch`)
 // y «Preparar el commit» le pide la evidencia en vivo de esa tanda, no la de todas. El control del commit mide todas al
-// pasar la historia a review, y al cerrar una tanda mide la que se cierra (la matriz y la Capa 5).
+// pasar la historia a review, y al cerrar una tanda mide la que se cierra (la matriz y la Capa 5). El commit que estrena
+// el bloque de tandas con una ya hecha mide ésa sola, con su evidencia.
 //
 // Corre los comandos reales con un HOME temporal y el id de sesión fijado en el proceso hijo.
 //
@@ -87,12 +88,12 @@ function entorno() {
     assert.strictEqual(r.status, 0, r.stderr + r.stdout);
   };
   // la humo de los criterios pedidos, con su espejo en el gates.log de la HOME temporal
-  const humo = (acs) => {
+  const humo = (acs, extra = {}) => {
     const gatesLog = path.join(dir() || path.join(home, '.claude', '.tycon-pipeline'), 'gates.log');
     fs.mkdirSync(path.dirname(gatesLog), { recursive: true });
     const dodDir = path.join(repo, '.advisors', 'dod-runtime');
     fs.mkdirSync(dodDir, { recursive: true });
-    LEDGER.append({ dodDir, gatesLog, story: '9.9', acs });
+    LEDGER.append({ dodDir, gatesLog, story: '9.9', acs, ...extra });
   };
   return { home, repo, story, git, correr, leer, escribir, activo, arrancar, humo, dir };
 }
@@ -273,6 +274,79 @@ test('T12 PreCommit_BatchToDone_MeasuresThatBatch @story-8.239 @ac-9 — cerrar 
   r = commitear(E, historia({ estados: { [A]: 'done' } }), 's-t12h');
   assert.notStrictEqual(r.status, 0, salida(r));
   assert.match(salida(r), /no pude leer las tandas de la historia en HEAD/, salida(r));
+});
+
+// ── El commit que estrena el bloque de tandas ───────────────────────────────────────────────────────────────────
+
+// La misma historia sin el bloque pipelines: así está en HEAD una historia que todavía no se partió en tandas.
+const sinTandas = (texto) => texto.replace(/\npipelines:\n[\s\S]*?\n---\n# Story/, '\n---\n# Story');
+function sinTandasEnHead(E) {
+  fs.writeFileSync(E.story, sinTandas(historia({ status: 'draft' })));
+  E.git('commit', '-qam', 'la historia todavía sin tandas');
+}
+// el commit que estrena las tres tandas: la primera ya hecha, las otras dos bloqueadas a propósito, con sus criterios
+// en `acs_pending` como pide el formato de la historia
+const estreno = (o = {}) => historia({ status: 'draft', estados: { [A]: 'done', [B]: 'blocked', [C]: 'blocked' }, ...o })
+  .replace('    status: blocked\n    acs: [2]', '    status: blocked\n    acs_pending: [2]')
+  .replace('    status: blocked\n    acs: [3]', '    status: blocked\n    acs_pending: [3]');
+
+test('T20 PreCommit_DebutBatches_DoneOne_MeasuresOnlyIt — el commit que estrena las tandas con una hecha mide sólo ésa', () => {
+  const E = entorno();
+  sinTandasEnHead(E);
+  E.humo([1]);
+  const r = commitear(E, estreno(), 's-t20');
+  assert.doesNotMatch(salida(r), CAPA5, salida(r));
+  assert.doesNotMatch(salida(r), /DODRT-C6/, salida(r));
+  assert.strictEqual(r.status, 0, salida(r));
+  assert.match(salida(r), new RegExp(`estrena las tandas con ${A} ya done: se mide esa tanda`), salida(r));
+});
+
+test('T21 PreCommit_DebutBatches_Negatives — sin evidencia en verde frena; con tandas en HEAD o pasando la historia a done se miden todas', () => {
+  // la tanda que estrena hecha sin su evidencia (hay de otra tanda): frena por su criterio, y sólo por el suyo
+  let E = entorno();
+  sinTandasEnHead(E);
+  E.humo([3]);
+  let r = commitear(E, estreno(), 's-t21a');
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(faltan(r), /#1\b/, salida(r));
+  assert.doesNotMatch(faltan(r), /#2\b/, salida(r));
+  // con su humo en rojo, tampoco pasa
+  E = entorno();
+  sinTandasEnHead(E);
+  E.humo([1], { exit: 1 });
+  r = commitear(E, estreno(), 's-t21b');
+  assert.notStrictEqual(r.status, 0, salida(r));
+  // la historia ya tenía tandas en HEAD y el commit agrega una ya hecha: no se cerró en este commit, se miden todas
+  E = entorno();
+  fs.writeFileSync(E.story, historia({ status: 'draft' }).replace(`  - name: ${A}\n    status: pending\n    acs: [1]\n`, ''));
+  E.git('commit', '-qam', 'la historia con dos tandas');
+  E.humo([1]);
+  r = commitear(E, estreno(), 's-t21c');
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(salida(r), new RegExp(`agrega la tanda ${A} ya done`), salida(r));
+  assert.match(faltan(r), /#2\b/, salida(r));
+  // en HEAD el bloque está pero no se lee: no es un estreno, se miden todas
+  E = entorno();
+  fs.writeFileSync(E.story, sinTandas(historia({ status: 'draft' })).replace('\n---\n# Story', '\npipelines: []\n---\n# Story'));
+  E.git('commit', '-qam', 'la historia con un bloque de tandas que no se lee');
+  E.humo([1]);
+  r = commitear(E, estreno(), 's-t21d');
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(salida(r), /no pude leer las tandas de la historia en HEAD/, salida(r));
+  // la historia sin tandas pasa a done: se mide entera
+  E = entorno();
+  sinTandasEnHead(E);
+  E.humo([1]);
+  r = commitear(E, sinTandas(historia({ status: 'done' })), 's-t21e');
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(faltan(r), /#2\b/, salida(r));
+  // estrena las tandas con una hecha y pasa la historia a done en el mismo commit: manda done, se miden todas
+  E = entorno();
+  sinTandasEnHead(E);
+  E.humo([1]);
+  r = commitear(E, estreno({ status: 'done' }), 's-t21f');
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(faltan(r), /#2\b/, salida(r));
 });
 
 // ── 8.240: la tanda se ata a lo que la corrida toca ──────────────────────────────────────────────────────────────
