@@ -81,6 +81,9 @@ const BUDGET_MS = 20 * 1000;
 const MAX_BUDGET_MS = 600 * 1000;
 const DEFAULT_HOURS = 24;
 const LSOF_TIMEOUT_MS = 5 * 1000;
+// sin `-n` y `-P`, lsof traduce cada dirección y cada puerto de red a un nombre: en una máquina con muchas conexiones
+// tarda decenas de segundos (medido: 26 s contra medio segundo) y se pasa del tope, y entonces no se barre nada
+const LSOF_ARGS = ['-n', '-P', '-u', String(process.getuid ? process.getuid() : ''), '-Fn'];
 // el borrado de una entrada no se puede cortar: no se empieza si no queda varias veces lo que tardó en mirarse
 const REMOVE_COST = 4;
 const MAX_NAMES = 5;
@@ -178,7 +181,7 @@ function fromLsof() {
   // por su ruta del sistema: uno encontrado en el PATH podría ser otro programa
   const bin = ['/usr/sbin/lsof', '/usr/bin/lsof'].find((p) => fs.existsSync(p));
   if (!bin) return null;
-  const r = spawnSync(bin, ['-u', String(process.getuid()), '-Fn'], { windowsHide: true, encoding: 'utf8', timeout: LSOF_TIMEOUT_MS, maxBuffer: 256 * 1024 * 1024 });
+  const r = spawnSync(bin, LSOF_ARGS, { windowsHide: true, encoding: 'utf8', timeout: LSOF_TIMEOUT_MS, maxBuffer: 256 * 1024 * 1024 });
   // lsof sale 1 cuando no pudo leer algún proceso y la lista sirve igual; cortado por una señal, queda por la mitad
   if (r.error || r.signal || (r.status !== 0 && r.status !== 1) || !r.stdout) return null;
   const out = new Set();
@@ -436,4 +439,4 @@ if (require.main === module) {
   process.exit(0);
 }
 
-module.exports = { sweep, looksRandom, defaultRoots, allowedRoots, livePaths, trusted, inspect, remove, startupLine };
+module.exports = { LSOF_ARGS, sweep, looksRandom, defaultRoots, allowedRoots, livePaths, trusted, inspect, remove, startupLine };

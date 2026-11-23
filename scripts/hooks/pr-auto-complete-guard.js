@@ -61,10 +61,12 @@ if (require('../lib/legacy-names.js').readEnv('TYCON_PR_AUTO_COMPLETE_GUARD', { 
 
 let cmd = '';
 let carpeta = process.cwd();   // donde corre el comando: el repo cuya plataforma sabe la rama del pedido
+let sesion; // la del evento, para la constancia; guard-record.js descarta una de otra forma
 try {
   const evento = JSON.parse(payload || '{}');
   cmd = (evento.tool_input || {}).command || '';
   if (typeof evento.cwd === 'string' && evento.cwd) carpeta = evento.cwd;
+  sesion = evento.session_id;
 } catch {
   // No pudo leer: no frena —un freno que rompe la sesión por un bug propio se apaga— pero lo dice.
   console.error(`${TAG} no pude leer la entrada del hook: no freno, pero tampoco miré.`);
@@ -269,7 +271,7 @@ for (const seg of az.segmentos(cmd)) {
 if (huboJuicio || huboEscape) {
   constanciaFreno.anotar({
     freno: 'pr-sin-auto-complete', regla: 'sin-auto-complete',
-    veredicto: problemas.length || problemasGh.length ? 'bloqueo' : (huboEscape ? 'escape' : 'paso'), cmd,
+    veredicto: problemas.length || problemasGh.length ? 'bloqueo' : (huboEscape ? 'escape' : 'paso'), cmd, sesion,
   });
 }
 if (problemasGh.length) {

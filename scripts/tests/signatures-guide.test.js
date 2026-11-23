@@ -75,7 +75,11 @@ test('8.139 T1 SignaturesGuide_UnaFilaPorFirma', () => {
   assert.deepStrictEqual(filas.map((f) => f[0]), ids.map((id) => `\`${id}\``), 'una fila por firma, en el orden del catálogo');
   for (const [i, s] of cat.SIGNATURES.entries()) {
     const otra = cat.ONLY_IN_TERMINAL.includes(s.id) ? 'no, sólo en tu terminal' : OTRA_SESION[s.otherSession];
-    assert.deepStrictEqual(filas[i], [`\`${s.id}\``, s.approves, `\`${s.command}\``, otra, s.terminal === null ? '—' : `\`${s.terminal}\``], s.id);
+    // un escape retirado: ya nada lo pide, y en la terminal queda la emergencia
+    const esperada = s.retired
+      ? [`\`${s.id}\``, s.approves, 'retirada: ya no apaga nada; la salida es la emergencia', otra, `\`${s.retired}\``]
+      : [`\`${s.id}\``, s.approves, `\`${s.command}\``, otra, s.terminal === null ? '—' : `\`${s.terminal}\``];
+    assert.deepStrictEqual(filas[i], esperada, s.id);
   }
   const grupos = tabla(texto, '## Los grupos de la 8.116');
   assert.deepStrictEqual(grupos.map((f) => f[0]), Object.keys(cat.GROUPS).map((g) => `\`${g}\``));
@@ -396,4 +400,16 @@ test('T19 SignaturesGuide_NotifiedSection_NamesMockupAndPending @story-8.255 @ac
   const seccion = fin >= 0 ? resto.slice(0, fin) : resto;
   for (const comando of ['approve-mockup', 'approve-pending']) assert.ok(seccion.includes(comando), `la sección no nombra ${comando}`);
   assert.match(seccion, /control\s+previo/, 'la sección dice la regla');
+});
+
+// 🔴 Falla con: la guía sin decir que el cambio de un control se aprueba con un click, que la CI sigue pidiendo la
+// constancia, o qué muestra el agente antes del cuadro.
+test('8.176-Guia_ControlChange_ConUnClickYLaCi @story-8.176 @ac-8', () => {
+  const guia = fs.readFileSync(GUIA, 'utf8');
+  const i = guia.indexOf('**El cambio de controles se aprueba con un click**');
+  assert.ok(i >= 0, 'la guía tiene el párrafo del click para control-change');
+  const parrafo = guia.slice(i, guia.indexOf('\n\n', i) < 0 ? undefined : guia.indexOf('\n\n', i)).replace(/\s+/g, ' ');
+  for (const re of [/`control-change`/, /constancia/, /sale en rojo/, /run-base-controls\.sh pending/, /diff/, /cuántos archivos/, /terminal/]) {
+    assert.match(parrafo, re, `el párrafo dice ${re}`);
+  }
 });

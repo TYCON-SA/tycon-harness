@@ -47,7 +47,10 @@
 name: public-ci
 
 on:
+  # un pedido en borrador no corre los trabajos (ver la condición de cada job); sacarlo del borrador
+  # (`ready_for_review`) lanza la corrida entera
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
   merge_group:
@@ -66,7 +69,7 @@ permissions:
 jobs:
   checks:
     name: Node ${{ matrix.node }} · ${{ matrix.part }}
-    if: github.event_name != 'push' || github.actor != 'github-merge-queue[bot]'
+    if: github.event.pull_request.draft != true && (github.event_name != 'push' || github.actor != 'github-merge-queue[bot]')
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
@@ -134,7 +137,7 @@ jobs:
   # Obligatorio: el chequeo `public-ci` lo espera como a los demás.
   installer-floor:
     name: Node 22 · installer-floor
-    if: github.event_name != 'push' || github.actor != 'github-merge-queue[bot]'
+    if: github.event.pull_request.draft != true && (github.event_name != 'push' || github.actor != 'github-merge-queue[bot]')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -179,7 +182,7 @@ jobs:
   # Obligatorio: el chequeo `public-ci` lo espera como a los demás.
   windows:
     name: Windows · ${{ matrix.scenario }}
-    if: github.event_name != 'push' || github.actor != 'github-merge-queue[bot]'
+    if: github.event.pull_request.draft != true && (github.event_name != 'push' || github.actor != 'github-merge-queue[bot]')
     runs-on: windows-latest
     timeout-minutes: 150
     strategy:
@@ -212,6 +215,8 @@ jobs:
   # de un job con matriz es uno solo para todas sus combinaciones: `success` sólo si TODAS (cada Node, cada parte)
   # terminaron bien; una que falló, se canceló o no corrió lo deja en otra cosa, y acá eso es rojo. La única excepción es
   # el push a main que hace la cola al entrar un pedido: ahí se saltea con los demás (la cola ya probó ese commit).
+  # En un pedido en borrador los demás no corren y éste sale ROJO, nunca salteado: un chequeo salteado cuenta como
+  # aprobado. Sacar el pedido del borrador corre todo de nuevo.
   public-ci:
     if: always() && (github.event_name != 'push' || github.actor != 'github-merge-queue[bot]')
     needs: [checks, installer-floor, windows]
@@ -221,7 +226,9 @@ jobs:
       - name: Todos los jobs terminaron bien
         env:
           RESULTS: ${{ join(needs.*.result, ' ') }}
+          DRAFT: ${{ github.event.pull_request.draft == true }}
         run: |
+          if [ "${DRAFT}" = "true" ]; then echo "::error::pedido en borrador: la CI no corrió; corre entera al sacarlo del borrador"; exit 1; fi
           echo "resultados: ${RESULTS}"
           [ -n "${RESULTS}" ] || exit 1
           for r in ${RESULTS}; do

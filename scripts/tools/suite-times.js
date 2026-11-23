@@ -22,9 +22,10 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *        suites de la validación de Azure, que corre en bash). --carga es la medida al arrancar el trabajo (sin ella,
  *        la de ahora); con --suites, el nombre del archivo de cada suite se anota como su `ruta` de suites.json.
  *
- *   repeats [--log <gates.log>] [--since <fecha u hora>] [--until <fecha u hora>] [--json]
+ *   repeats [--log <gates.log>] [--since <fecha u hora>] [--until <fecha u hora>] [--by-story] [--story <id>] [--json]
  *        las corridas del portón por día, en hora local: cuántas y cuántas horas de primeras, repetidas enteras,
- *        acotadas y sin correr, y las enteras agrupadas por motivo. Lee los renglones `test-gate-run` de gates.log (sin
+ *        acotadas y sin correr, y las enteras agrupadas por motivo. Con --by-story, por historia (para la retro: cuántas
+ *        corridas y cuánto tiempo se llevó cada una); con --story, sólo las de esa historia. Lee los renglones `test-gate-run` de gates.log (sin
  *        --log, el de la carpeta de estado de esta máquina). Los días de antes de ese renglón se clasifican por el
  *        comando del check `tests` del portón: sin poder distinguir, cuenta como entera; nunca achica las repeticiones.
  *        Una fecha sola (AAAA-MM-DD) es el día entero; con hora (AAAA-MM-DDTHH:MM), ese momento.
@@ -41,7 +42,7 @@ const st = require(LIB);
 const USAGE = 'uso: suite-times.js slow [--top <n>] [--from <ruta>…] [--source <origen>] [--max-load <c>] [--json]\n'
   + '     suite-times.js runs [--last <n>] [--from <ruta>…] [--source <origen>] [--json]\n'
   + '     suite-times.js record --tsv <archivo> --source <origen> --out <archivo> [--workers <n>] [--wall-ms <n>] [--repo <nombre>] [--carga <c>] [--suites <suites.json>]\n'
-  + '     suite-times.js repeats [--log <gates.log>] [--since <fecha u hora>] [--until <fecha u hora>] [--json]\n';
+  + '     suite-times.js repeats [--log <gates.log>] [--since <fecha u hora>] [--until <fecha u hora>] [--by-story] [--story <id>] [--json]\n';
 
 function parse(argv) {
   const o = { cmd: argv[0], from: [], json: false };
@@ -49,6 +50,7 @@ function parse(argv) {
     const a = argv[i];
     const val = () => { const v = argv[++i]; if (v === undefined || v.startsWith('--')) throw new Error(`${a} pide un valor`); return v; };
     if (a === '--json') o.json = true;
+    else if (a === '--by-story') o.by_story = true;
     else if (a === '--from') o.from.push(val());
     else if (['--top', '--last', '--max-load', '--workers', '--wall-ms', '--carga'].includes(a)) {
       const n = Number(val());
@@ -56,9 +58,11 @@ function parse(argv) {
       // cero suites o cero corridas no es un pedido: `slice(-0)` las devolvería todas
       if ((a === '--top' || a === '--last') && (n < 1 || !Number.isInteger(n))) throw new Error(`${a} tiene que ser un entero mayor que 0`);
       o[a.slice(2).replace('-', '_')] = n;
-    } else if (['--source', '--tsv', '--out', '--repo', '--suites', '--log', '--since', '--until'].includes(a)) o[a.slice(2)] = val();
+    } else if (['--source', '--tsv', '--out', '--repo', '--suites', '--log', '--since', '--until', '--story'].includes(a)) o[a.slice(2)] = val();
     else throw new Error(`no conozco ${a}`);
   }
+  if (o.story !== undefined && !o.story.trim()) throw new Error('--story pide el id de una historia');
+  if ((o.by_story || o.story !== undefined) && o.cmd !== 'repeats') throw new Error('--by-story y --story son de repeats');
   return o;
 }
 
@@ -240,6 +244,8 @@ function repeatsCmd(o) {
   const aviso = descartados ? `${descartados} renglón(es) de ejecuciones que no pude leer: no cuentan` : null;
   const vistas = new Set();
   const dias = new Map();
+  // por día, o por historia con --by-story (para la retro: cuántas corridas y cuánto tiempo se llevó cada una)
+  const campo = o.by_story ? 'historia' : 'dia';
   for (const x of todas) {
     const clave = `${x.story || '?'}|${x.ses}`;
     let modo = x.modo;
@@ -247,12 +253,15 @@ function repeatsCmd(o) {
     if (!modo) { modo = vistas.has(clave) ? ENTERA : PRIMERA; if (modo === ENTERA) motivo = SIN_MOTIVO; }
     vistas.add(clave);
     if (x.t < desde || x.t > hasta) continue;
-    const dia = diaLocal(x.t);
-    if (!dias.has(dia)) dias.set(dia, { dia, primera: { n: 0, ms: 0 }, entera: { n: 0, ms: 0 }, acotada: { n: 0, ms: 0 }, sin_correr: { n: 0, ms: 0 }, motivos: new Map() });
+    if (o.story && String(x.story) !== String(o.story)) continue;
+    const dia = o.by_story ? (x.story ? String(x.story) : 'sin historia') : diaLocal(x.t);
+    if (!dias.has(dia)) dias.set(dia, { [campo]: dia, total: { n: 0, ms: 0 }, primera: { n: 0, ms: 0 }, entera: { n: 0, ms: 0 }, acotada: { n: 0, ms: 0 }, sin_correr: { n: 0, ms: 0 }, motivos: new Map() });
     const d = dias.get(dia);
     const k = claveDe(modo);
     d[k].n += 1;
     d[k].ms += x.ms;
+    d.total.n += 1;
+    d.total.ms += x.ms;
     if (modo === ENTERA) {
       const m = d.motivos.get(motivo || SIN_MOTIVO) || { motivo: motivo || SIN_MOTIVO, n: 0, ms: 0 };
       m.n += 1;
@@ -261,16 +270,20 @@ function repeatsCmd(o) {
     }
   }
   if (!dias.size) {
-    process.stdout.write(`suite-times: no hay ejecuciones que leer en ${file}${o.since || o.until ? ' en ese rango' : ''}${aviso ? ` (${aviso})` : ''}\n`);
+    const filtro = [o.since || o.until ? 'en ese rango' : '', o.story ? `de la historia ${o.story}` : ''].filter(Boolean).join(' ');
+    process.stdout.write(`suite-times: no hay ejecuciones que leer en ${file}${filtro ? ` ${filtro}` : ''}${aviso ? ` (${aviso})` : ''}\n`);
     return 3;
   }
-  const filas = [...dias.values()].sort((a, b) => a.dia.localeCompare(b.dia)).map(({ motivos, ...d }) => ({
+  const filas = [...dias.values()].sort((a, b) => a[campo].localeCompare(b[campo], undefined, { numeric: true })).map(({ motivos, ...d }) => ({
     ...d, enteras_por_motivo: [...motivos.values()].sort((a, b) => b.ms - a.ms || a.motivo.localeCompare(b.motivo)) }));
-  if (o.json) { process.stdout.write(`${JSON.stringify({ log: file, desde: o.since || null, hasta: o.until || null, descartados, dias: filas }, null, 2)}\n`); return 0; }
+  if (o.json) {
+    process.stdout.write(`${JSON.stringify({ log: file, desde: o.since || null, hasta: o.until || null, historia: o.story || null, descartados, [o.by_story ? 'historias' : 'dias']: filas }, null, 2)}\n`);
+    return 0;
+  }
   const horas = (ms) => `${(ms / 3600000).toFixed(1).replace('.', ',')} h`;
-  const out = [`ejecuciones del portón por día, de ${file}`];
+  const out = [`ejecuciones del portón por ${o.by_story ? 'historia' : 'día'}, de ${file}`];
   for (const d of filas) {
-    out.push(d.dia);
+    out.push(o.by_story ? `${d.historia}: ${d.total.n} ejecución(es), ${horas(d.total.ms)}` : d.dia);
     for (const modo of MODOS) {
       const v = d[claveDe(modo)];
       out.push(`  ${modo.padEnd(11)} ${String(v.n).padStart(3)} ejecución(es), ${horas(v.ms)}`);
