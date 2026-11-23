@@ -309,7 +309,8 @@ function mismoArchivo(a, b) {
  * Lo sin commitear adentro de los submódulos y repos anidados de un repo, que el sello no ve: `add -A` anota de cada uno
  * sólo su commit, no sus archivos. `{ files }` con cada archivo que su `git status` marca (con la carpeta adelante; un
  * submódulo de adentro con cambios sale por su carpeta), o `{ error }` si alguno no se pudo mirar. Un submódulo sin bajar
- * (sin carpeta, o vacía) no tiene archivos que mirar.
+ * (sin carpeta, o vacía) no tiene archivos que mirar. Lo usan el cierre del pase con los repos hermanos
+ * (`hermanosCambiados`) y la comparación de lo que se guarda con lo revisado (`comprobarLoRevisado`, lib/marker-shared.js).
  */
 function anidadosConCambios(repo, tree) {
   const ls = git(['-C', repo, 'ls-tree', '-r', '-z', tree]);
@@ -753,7 +754,7 @@ function procedencia(repo, { env = process.env, home = os.homedir(), proceso = '
 }
 
 module.exports = {
-  seal, puntoComunConMain, freeze, verify, changed, copyDir, remove, sweep, reposDe, reposDelPase, hermanosCambiados, sealAndFreeze, vueltas, ultimaVuelta, seccionDelContexto, sinPapeleoDeLaHistoria, procedencia,
+  seal, puntoComunConMain, freeze, verify, changed, anidadosConCambios, copyDir, remove, sweep, reposDe, reposDelPase, hermanosCambiados, sealAndFreeze, vueltas, ultimaVuelta, seccionDelContexto, sinPapeleoDeLaHistoria, procedencia,
   contenidoDelSello, tipoContraElSello, vueltaCerradaDeLosRevisores, tiposDesdeLaVuelta,
 };
 
