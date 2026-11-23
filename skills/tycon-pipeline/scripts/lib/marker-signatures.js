@@ -9,7 +9,7 @@
  */
 const {
   MARKER_JS, PEDIDA, PREVIO, PROPIA, SCRIPTS_DIR, STATE_DIR, anotarAprobacion,
-  anotarFirma, appendLog, at, carpetaDeLaCorrida, cmd, comprobarLoRevisado,
+  anotarFirma, appendLog, at, carpetaDeLaCorrida, comprobarLoRevisado,
   delegatedSigning, esFecha, estado, fechaLocal, firmaDelDueno, fs,
   hermanosDeLaCorrida, nn, nowIso, os, ownerWindow, path, porDe, readMarker,
   reposParaComparar, resolveStoryPath, trabajarSobreElDestino, writeMarker,

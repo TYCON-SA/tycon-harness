@@ -2199,7 +2199,7 @@ function capNotice(opts = {}) {
   try { lines.push(...planRequestLines(opts, sid, opts.now == null ? Date.now() : Number(opts.now))); } catch (e) { problems.push(`los planes que esperan tu revisión (${e.code || e.message})`); }
   // con la marca de ausente, los planes que esperan a la persona se juntan para su vuelta
   try {
-    const planes = ((s && s.plansWaiting) || []).filter((p) => p.sid !== sid);
+    const planes = (s.plansWaiting || []).filter((p) => p.sid !== sid);
     if (planes.length) {
       const g = require(path.join(__dirname, '..', 'lib', 'owner-away.js')).get({ estado: stateDir(opts.home || require('os').homedir()), ahora: opts.now == null ? Date.now() : Number(opts.now) });
       if (g.problem) problems.push(`la marca de ausente (${g.problem})`);
