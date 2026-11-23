@@ -1416,7 +1416,7 @@ test('T7 Stop_PorNombre_ParaConElId @story-8.284 @ac-14: para con el id que anot
   fs.writeFileSync(path.join(t.repo, 'suelto.txt'), 'z\n');
   const r = stopIt(t, 'parable');
   assert.strictEqual(r.ok, true, r.message);
-  assert.strictEqual(r.message, 'paré parable (job-parable); se retoma con claude respawn job-parable');
+  assert.strictEqual(r.message, 'paré parable (job-parable); se retoma con coordination.js relaunch --id job-parable');
   assert.deepStrictEqual(closed(t), ['stop job-parable'], 'una sola llamada, y nunca rm');
   // una muerta con el mismo nombre no la vuelve ambigua: la misma regla que close
   const u = closeLab();
@@ -3408,9 +3408,10 @@ test('Planes_EsperandoAprobacion_EnStatus: el plan que espera su aprobación sal
   assert.ok(!texto.split('\n').some((l) => /espera su aprobación/.test(l) && /Bea|Ceci/.test(l)), texto);
 });
 
-// Planes_Delegado_LaCoordinadoraLoAprueba
-// 🔴 Falla con: un plan delicado que el perfil delega y la revisión aprobó no dice que lo puede dar la coordinadora.
-test('Planes_Delegado_LaCoordinadoraLoAprueba: con plan-approval:delicada delegada y la revisión aprobada, lo dice', () => {
+// Planes_Delicado_LoApruebaLaPersona
+// 🔴 Falla con: owner-next le dice a la coordinadora que puede dar el plan de una historia delicada porque el perfil nombra
+// plan-approval:delicada (fila 127). El plan de una delicada lo aprueba una persona, diga lo que diga el perfil.
+test('Planes_Delicado_LoApruebaLaPersona: aunque el perfil nombre plan-approval:delicada y la revisión lo aprobó, lo aprueba la persona', () => {
   const t = toy();
   planEsperando(t, 's-ana', 'Ana');
   planEsperando(t, 's-bea', 'Bea', { story: '9.12', hace: 30 });
@@ -3419,16 +3420,10 @@ test('Planes_Delegado_LaCoordinadoraLoAprueba: con plan-approval:delicada delega
     delegada: () => true,
   };
   const rows = C.plansWaiting({ ...t.opts, planDeps: deps });
-  const ana = rows.find((p) => p.sid === 's-ana');
-  const bea = rows.find((p) => p.sid === 's-bea');
-  assert.strictEqual(ana.porCoordinadora, true);
-  assert.strictEqual(bea.porCoordinadora, false, 'con la revisión rechazada, no');
-  const lineas = C.planWaitLines(rows).join('\n');
-  assert.match(lineas, /Ana \(s-ana\).*revisión: aprobado.*lo puede dar la coordinadora con el sí de la persona: .*complete-step approve-plan --for-session s-ana/);
-  assert.match(lineas, /Bea \(s-bea\).*revisión: rechazado/);
-  assert.doesNotMatch(lineas.split('\n').find((l) => /Bea/.test(l)), /coordinadora/);
-  // sin delegación: no lo dice
-  assert.strictEqual(C.plansWaiting({ ...t.opts, planDeps: { ...deps, delegada: () => false } }).find((p) => p.sid === 's-ana').porCoordinadora, false);
+  assert.deepStrictEqual(rows.map((p) => [p.sid, p.review]), [['s-ana', 'aprobado'], ['s-bea', 'rechazado']]);
+  const lineas = C.planWaitLines(rows);
+  assert.match(lineas[0], /Ana \(s-ana\).*revisión: aprobado\) — lo aprueba la persona$/);
+  for (const l of lineas) assert.doesNotMatch(l, /coordinadora|delega|--for-session/, l);
 });
 
 // Planes_OwnerNext_LosNombra
@@ -3465,6 +3460,84 @@ test('Planes_DuenoAusente_SeJuntanParaLaVuelta: con la marca de ausente, el avis
   assert.doesNotMatch(aviso(), /para cuando vuelva la persona/);
   require(path.join(ROOT, 'scripts', 'lib', 'owner-away.js')).set({ estado: t.state, quien: 'coordinadora', frase: 'me voy', ahora: mins(100) });
   assert.match(aviso(), /Coordinación: para cuando vuelva la persona: 1 plan espera su aprobación: Ana \(9\.11, hace 180 min\)/);
+});
+
+// ── Fila 86: relanzar una sesión de fondo la deja como abierta por la coordinadora ──────────────────────────────────────
+
+// Un lanzador de juguete que, con `respawn <id>`, deja viva la sesión de fondo con ese id: su archivo de sesión, con el pid de
+// esta prueba (vivo) y la hora de ahora, como la levanta Claude Code. `slowMs`: tarda eso después de dejarla viva.
+function relauncher(t, { name = 'Relanzada', cwd = null, fail = null, appear = true, slowMs = 0 } = {}) {
+  const script = path.join(t.root, 'relauncher.js');
+  fs.writeFileSync(script, `
+const fs = require('fs');
+const [verb, id] = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(path.join(t.root, 'closed.log'))}, verb + ' ' + id + '\\n');
+if (${JSON.stringify(fail)}) { process.stderr.write(${JSON.stringify(String(fail))} + '\\n'); process.exit(1); }
+if (${JSON.stringify(appear)}) fs.writeFileSync(${JSON.stringify(path.join(t.home, '.claude', 'sessions', 'sid-relanzada.json'))}, JSON.stringify({ pid: ${process.pid}, sessionId: 'sid-relanzada', name: ${JSON.stringify(name)}, nameSource: 'user', kind: 'bg', jobId: id, status: 'idle', statusUpdatedAt: Date.now(), startedAt: Date.now(), cwd: ${JSON.stringify(cwd || t.root)} }));
+if (${slowMs}) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ${slowMs});
+`);
+  return { bin: process.execPath, prefix: [script] };
+}
+const ID = 'abcd1234';
+
+test('T86a Relaunch_QuedaComoAbiertaPorLaCoordinadora: la que relanza coordination.js relaunch cuenta como abierta por ella', () => {
+  // 🔴 mutación: relanzar sin anotarla (una sesión relanzada a mano no está en el registro: sus firmas de rutina van al dueño)
+  const t = closeLab();
+  const r = C.relaunch({ ...t.closeOpts, id: ID, launcher: relauncher(t, { cwd: t.repo }) });
+  assert.strictEqual(r.ok, true, r.message);
+  assert.match(r.message, /relancé «Relanzada» \(abcd1234\)/);
+  assert.deepStrictEqual(closed(t), [`respawn ${ID}`]);
+  assert.deepStrictEqual(C.launchedBy({ home: t.home, sid: 'sid-relanzada' }), { launched: true });
+  // la misma sesión relanzada a mano, sin pasar por coordination.js, no está en el registro
+  const t2 = closeLab();
+  spawnSync(process.execPath, [relauncher(t2).prefix[0], 'respawn', ID]);
+  assert.deepStrictEqual(C.launchedBy({ home: t2.home, sid: 'sid-relanzada' }), { launched: false });
+  // el lanzador tardó más que su tope pero la dejó viva: se anota igual
+  const t3 = closeLab();
+  const lenta = C.relaunch({ ...t3.closeOpts, id: ID, timeoutMs: 500, launcher: relauncher(t3, { slowMs: 3000 }) });
+  assert.strictEqual(lenta.ok, true, lenta.message);
+  assert.deepStrictEqual(C.launchedBy({ home: t3.home, sid: 'sid-relanzada' }), { launched: true });
+});
+
+test('T86b Relaunch_LoQueNoRelanza: otra sesión, un id incompleto, una viva, un archivo ilegible o un lanzador que falla no relanzan ni anotan', () => {
+  const t = closeLab();
+  const otra = C.relaunch({ ...t.opts, env: { CLAUDE_CODE_SESSION_ID: 'sid-otra' }, id: ID, launcher: relauncher(t) });
+  assert.match(otra.message, /la coordinadora designada o una persona en su terminal/);
+  // el id entero, de 8 caracteres: claude respawn toma el comienzo de un id y relanzaría una viva
+  for (const id of ['-rm', 'abcd', 'job-rel']) assert.match(C.relaunch({ ...t.closeOpts, id, launcher: relauncher(t) }).message, /relaunch va con --id <el id de fondo, de 8 caracteres>/, id);
+  bg(t, 'viva', t.repo, { jobId: 'beef0001' });
+  assert.match(C.relaunch({ ...t.closeOpts, id: 'beef0001', launcher: relauncher(t) }).message, /«viva» \(beef0001\) está viva: no relancé nada/);
+  const falla = C.relaunch({ ...t.closeOpts, id: ID, launcher: relauncher(t, { fail: 'no existe ese id' }) });
+  assert.strictEqual(falla.ok, false);
+  assert.match(falla.message, /no la pude relanzar \(no existe ese id\)/);
+  assert.deepStrictEqual(closed(t), [`respawn ${ID}`], 'sólo el que falló llegó al lanzador');
+  assert.deepStrictEqual(C.launchedBy({ home: t.home, sid: 'sid-relanzada' }), { launched: false });
+  // el lanzador volvió bien pero la sesión no apareció: lo dice y no anota nada
+  const t2 = closeLab();
+  const muda = C.relaunch({ ...t2.closeOpts, id: ID, waitMs: 300, launcher: relauncher(t2, { appear: false }) });
+  assert.strictEqual(muda.ok, true);
+  assert.match(muda.message, /no la vi viva/);
+  // con el lanzador vencido y sin verla, no dice que no pasó nada
+  const t3 = closeLab();
+  const vencido = C.relaunch({ ...t3.closeOpts, id: ID, timeoutMs: 300, waitMs: 300, launcher: relauncher(t3, { appear: false, slowMs: 3000 }) });
+  assert.match(vencido.message, /no sé si la relanzó/);
+  // un archivo de sesión que no se lee: puede ser la viva con ese id, y no se relanza
+  const t4 = closeLab();
+  fs.writeFileSync(path.join(t4.home, '.claude', 'sessions', 'sid-rota.json'), '{ roto');
+  assert.match(C.relaunch({ ...t4.closeOpts, id: ID, launcher: relauncher(t4) }).message, /No pude leer todas las sesiones/);
+  assert.deepStrictEqual(closed(t4), []);
+});
+
+test('T86c Relaunch_NombreDeOtraViva: si otra sesión viva ya usa su nombre, no la anota ni le borra el registro a la otra', () => {
+  const t = closeLab();
+  const at = Date.now();
+  session(t, 'sid-abierta', 'Relanzada', { cwd: t.repo, kind: 'bg', jobId: 'aaaa0001', startedAt: at });
+  fs.mkdirSync(path.join(t.state, 'coordination'), { recursive: true });
+  fs.writeFileSync(path.join(t.state, 'coordination', 'launched.json'), JSON.stringify([{ name: 'Relanzada', cwd: t.repo, at, por: COORD_SID }]));
+  assert.deepStrictEqual(C.launchedBy({ home: t.home, sid: 'sid-abierta' }), { launched: true });
+  const r = C.relaunch({ ...t.closeOpts, id: ID, launcher: relauncher(t, { cwd: t.repo }) });
+  assert.match(r.message, /otra sesión viva ya se llama «Relanzada»: no la anoté/);
+  assert.deepStrictEqual(C.launchedBy({ home: t.home, sid: 'sid-abierta' }), { launched: true }, 'la otra conserva su registro');
 });
 
 // ── Fila 98: la sesión que dice que trabaja, pero no escribe hace rato y no corre nada ──────────────────────────────────

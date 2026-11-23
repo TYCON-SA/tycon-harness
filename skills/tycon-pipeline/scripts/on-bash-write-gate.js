@@ -5651,20 +5651,95 @@ function constanciasSinHuella(event, opts = {}) {
   if (!cmd || !/\bgit\b/.test(cmd) || !/\b(?:commit|push)\b/.test(cmd)) return null;
   const huellas = require('./lib/control-change-prints.js');
   const stateDir = opts.stateDir || require('./lib/story-gate-io.js').DEFAULT_STATE_DIR;
-  const base = cwdDelComando(cmd, nativePath(event?.cwd || process.cwd()));
+  const sesion = nativePath(event?.cwd || process.cwd());
+  // las carpetas donde puede correr el `git` que termina en la posición `hasta` del texto sin cuerpos de heredoc (sin
+  // `hasta`, cualquiera): la del `cd` del principio, la de cada `cd` o `pushd` (con sus opciones; desde el anterior y desde
+  // la sesión; `cd -` vuelve al de antes, y vale adentro de un paréntesis o de llaves), la de un `env -C` y la de
+  // GIT_WORK_TREE o GIT_DIR asignadas. Sólo lo que está antes del `git` y a nivel del shell: un `cd` posterior, o adentro
+  // de un texto entre comillas (el mensaje de un commit), de un comentario o del cuerpo de un heredoc, no mueve al `git`.
+  // `sinResolver`: las que no se pueden saber (una variable o una sustitución); `demasiadas`: más carpetas que el tope,
+  // que no se terminan de leer
+  const absoluta = (raw) => resolveTarget(raw, sesion, process.platform, { homeVariable: true });
+  const carpetasDe = (texto, hasta = Infinity) => {
+    const leido = quitarCuerposDeHeredoc(String(texto));
+    const fuera = posicionesFueraDeComillas(leido);
+    // la posición de la palabra que sigue al separador con que empieza la coincidencia
+    const palabraEn = (m) => m.index + (/^[\s;&|({]/.test(m[0]) ? 1 : 0);
+    const out = [cwdDelComando(texto, sesion)];
+    const sinResolver = [];
+    const visitadas = [sesion];
+    // la carpeta del cd: entre comillas, o una palabra suelta que puede llevar `$(…)` o acentos invertidos
+    for (const m of leido.matchAll(/(?:^|[\s;&|({])(?:cd|pushd)(?:[ \t]+(?:-[LPe@]+|--))*[ \t]+(?:'([^']*)'|"([^"]*)"|((?:\$\([^()]*\)|`[^`]*`|[^\s;&|()<>'"`])+))/g)) {
+      if (palabraEn(m) >= hasta) break;
+      if (!fuera(palabraEn(m))) continue;
+      const tok = m[1] ?? m[2] ?? m[3];
+      if (tok === '-') { if (visitadas.length > 1) visitadas.pop(); out.push(visitadas[visitadas.length - 1]); continue; }
+      if (!tok) continue;
+      // un comodín sin comillas lo expande el shell: no se sabe a qué carpeta va
+      if (m[3] !== undefined && /[*?[]|\{[^}]*,/.test(tok)) { sinResolver.push(`cd ${tok}`); continue; }
+      const ex = expandirRuta(leido.slice(0, m.index + m[0].length), tok);
+      if (ex.sinResolver.length) { sinResolver.push(`cd ${tok}`); continue; }
+      const encadenada = resolveTarget(ex.valor, visitadas[visitadas.length - 1], process.platform, { homeVariable: true });
+      out.push(encadenada, absoluta(ex.valor));
+      visitadas.push(encadenada);
+      if (new Set(out).size > TOPE_DE_CARPETAS_DE_CD) return { carpetas: [...new Set(out)], sinResolver, demasiadas: true };
+    }
+    let cursor = 0;
+    for (const t of tramos(String(texto))) {
+      const p = leido.indexOf(t, cursor);
+      if (p < 0) continue;
+      if (p >= hasta) break;
+      cursor = p + t.length;
+      for (const d of pelarEnv(t).carpetas) out.push(absoluta(d));
+    }
+    for (const m of leido.matchAll(/(?:^|[\s;&|({])(?:(?:export|local|declare|readonly|typeset)\s+(?:-\w+\s+)*)?(GIT_WORK_TREE|GIT_DIR)=((?:'[^']*'|"(?:\\.|[^"\\])*"|\\.|[^\s'"\\;&|()])*)/g)) {
+      if (palabraEn(m) >= hasta) break;
+      if (!fuera(palabraEn(m))) continue;
+      const v = palabraDelShell(m[2]);
+      if (/[$`]/.test(v)) { sinResolver.push(`${m[1]}=${v}`); continue; }
+      const abs = absoluta(v);
+      out.push(m[1] === 'GIT_DIR' && path.basename(abs) === '.git' ? path.dirname(abs) : abs);
+    }
+    return { carpetas: [...new Set(out)], sinResolver, demasiadas: false };
+  };
+  // dos lecturas juntas: la del texto anidado y la del comando que lo lleva
+  const unir = (a, b) => (b ? { carpetas: [...new Set([...a.carpetas, ...b.carpetas])], sinResolver: [...a.sinResolver, ...b.sinResolver], demasiadas: a.demasiadas || b.demasiadas } : a);
   const via = `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}`;
   const frena = (texto) => {
     try { require('./lib/story-gate-io.js').appendLog(stateDir, 'gates.log', resolveSessionId(event?.session_id), { name: 'story-gate', status: 'blocked', kind: 'constancia-sin-huella', via, reason: texto.split('\n')[0] }); } catch { /* el registro no traba el freno */ }
     return { block: `${texto}\n` };
   };
   const vistos = new Set();
-  // también lo que corre adentro (`bash -c "git commit …"`, `$(…)`)
-  for (const texto of [String(cmd), ...comandosAnidados(String(cmd)).slice(1)]) {
+  // también lo que corre adentro (`bash -c "git commit …"`, `$(…)`), lo que corre otro programa (un heredoc a un shell)
+  // y el comando con los renglones partidos con `\` juntados
+  const plano = String(cmd).replace(/\\\r?\n/g, ' ');
+  const textos = [...new Set([String(cmd), plano, ...comandosAnidados(String(cmd)).slice(1), ...comandosPorOtroPrograma(String(cmd), sesion)])];
+  const sinMirar = (que, sub) => frena(`🔒 CONSTANCIA SIN MIRAR — no pude resolver la carpeta de \`${que}\` antes de \`git ${sub}\`: no sé qué repo commitea o empuja ni si lleva una constancia sin firmar. Escribí la ruta sin variables.`);
+  const externo = quitarCuerposDeHeredoc(String(cmd));
+  for (const texto of textos) {
+    // un texto anidado (`$(git push)`, `bash -c "…"`, un `-exec`) corre también en las carpetas del comando que lo lleva,
+    // hasta donde aparece
+    const anidado = texto !== String(cmd) && texto !== plano;
+    const dondeAparece = anidado ? externo.indexOf(String(texto)) : -1;
+    const leido = quitarCuerposDeHeredoc(String(texto));
+    let cursor = 0;
     for (const tramo of tramos(texto)) {
-      // sin las redirecciones: `2>&1` o `> salida.txt` no son parte de lo que se empuja
-      const w = palabras(sinPalabrasDelShell(String(tramo).replace(REDIRECCION, ' '))).filter((x) => x !== '');
+      const p = leido.indexOf(tramo, cursor);
+      const fin = p < 0 ? Infinity : p + tramo.length;
+      if (p >= 0) cursor = fin;
+      // sin el comentario del final (`git push # x` no empuja `x`), sin el `env` de delante (`env -C repo git push`), sin
+      // las redirecciones (`2>&1` o `> salida.txt` no son parte de lo que se empuja) y sin el `)` que cierra un grupo; la
+      // palabra vacía de `-C ""` queda (git la toma como «acá»)
+      const enTramo = posicionesFueraDeComillas(String(tramo));
+      let corte = String(tramo).length;
+      if (typeof enTramo.esComentario === 'function') for (let k = 0; k < corte; k++) if (enTramo.esComentario(k)) corte = k;
+      const w = palabras(sinPalabrasDelShell(pelarEnv(String(tramo).slice(0, corte)).resto.replace(REDIRECCION, ' '))).map(sinCierreDeGrupo).filter((x, k, a) => x !== '' || a[k - 1] === '-C');
       if (nombreDeComando(w[0]) !== 'git') continue;
-      let dir = base;
+      const lectura = unir(carpetasDe(texto, fin), anidado ? carpetasDe(String(cmd), dondeAparece < 0 ? Infinity : dondeAparece) : null);
+      const carpetas = lectura.carpetas;
+      let dirs = carpetas;
+      let fija = false;
+      const pendientes = [];
       let i = 1;
       while (i < w.length && /^-/.test(w[i])) {
         const pegada = /^-C(.+)$/.exec(w[i]);
@@ -5673,16 +5748,36 @@ function constanciasSinHuella(event, opts = {}) {
           const ruta = expandirRuta(texto, crudo);
           // una carpeta que no se resuelve no se puede mirar: frena
           if (ruta.sinResolver.length) return frena(`🔒 CONSTANCIA SIN MIRAR — no pude resolver la carpeta de \`git -C ${crudo}\`: no sé qué repo commitea o empuja ni si lleva una constancia sin firmar. Escribí la ruta sin variables.`);
-          dir = resolveTarget(ruta.valor, dir, process.platform, { homeVariable: true }); i += pegada ? 1 : 2; continue;
+          dirs = dirs.map((d) => resolveTarget(ruta.valor, d, process.platform, { homeVariable: true }));
+          fija = fija || path.isAbsolute(String(ruta.valor));
+          i += pegada ? 1 : 2; continue;
         }
-        // las opciones de git que llevan su valor en la palabra que sigue
-        if (/^(?:-c|--git-dir|--work-tree|--namespace|--super-prefix|--attr-source|--config-env|--exec-path)$/.test(w[i])) { i += 2; continue; }
-        const wt = /^--work-tree=(.+)$/.exec(w[i]);
-        if (wt) dir = resolveTarget(wt[1], dir, process.platform, { homeVariable: true });
+        // `--work-tree` y `--git-dir`, pegados o aparte, nombran un repo más para mirar (el del `.git` es la carpeta que lo
+        // tiene); la carpeta de trabajo sigue: `git --git-dir=<otro> add -A` toma los archivos de acá
+        // (`--git-dir="$X"` llega partido en `--git-dir=` y el valor: el `=` vacío toma la palabra que sigue)
+        const repoPor = /^--(work-tree|git-dir)(?:=(.*))?$/.exec(w[i]);
+        if (repoPor) {
+          const valor = repoPor[2] || w[i + 1];
+          if (valor !== undefined) pendientes.push([repoPor[1], valor]);
+          i += repoPor[2] ? 1 : 2;
+          continue;
+        }
+        // las opciones de git que llevan su valor en la palabra que sigue; `-c user.name="AB"` llega partido en
+        // `user.name=` y el valor, que también es de la opción
+        if (w[i] === '-c' && /=$/.test(w[i + 1] || '') && w[i + 2] !== undefined && w[i + 2] !== 'commit' && w[i + 2] !== 'push') { i += 3; continue; }
+        if (/^(?:-c|--namespace|--super-prefix|--attr-source|--config-env|--exec-path)$/.test(w[i])) { i += 2; continue; }
         i++;
       }
       const sub = w[i];
       if (sub !== 'commit' && sub !== 'push') continue;
+      for (const [cual, valor] of pendientes) {
+        const ruta = expandirRuta(texto, valor);
+        if (ruta.sinResolver.length) return sinMirar(`git --${cual} ${valor}`, sub);
+        const abs = resolveTarget(ruta.valor, carpetas[0], process.platform, { homeVariable: true });
+        dirs = [...dirs, cual === 'git-dir' && path.basename(abs) === '.git' ? path.dirname(abs) : abs];
+      }
+      if (!fija && lectura.demasiadas) return frena(`🔒 CONSTANCIA SIN MIRAR — el comando cambia de carpeta más de ${TOPE_DE_CARPETAS_DE_CD} veces antes de \`git ${sub}\`: no sé en qué repo corre ni si lleva una constancia sin firmar. Partilo en comandos más cortos.`);
+      if (!fija && lectura.sinResolver.length) return sinMirar(lectura.sinResolver[0], sub);
       // lo que se empuja: sin refspec, la rama de HEAD; con `--all`/`--mirror`/`--branches` (también abreviadas) o un
       // comodín, todas; si no, el origen de cada refspec. Borrar una rama remota no empuja nada
       let refs = ['HEAD'];
@@ -5704,7 +5799,9 @@ function constanciasSinHuella(event, opts = {}) {
         const lista = remotoPorOpcion ? posicionales : posicionales.slice(1);
         for (let k = 0; k < lista.length; k++) {
           if (lista[k] === 'tag' && lista[k + 1]) { especificaciones.push(`refs/tags/${lista[++k]}`); continue; }
-          const origen = lista[k].replace(/^\+/, '').split(':')[0];
+          // un destino con una variable vale lo asignado; uno que no se resuelve (`$(…)`) puede ser cualquier rama
+          const ex = expandirRuta(texto, lista[k]);
+          const origen = (ex.sinResolver.length ? '*' : String(ex.valor)).replace(/^\+/, '').split(':')[0];
           if (origen) especificaciones.push(/\*/.test(origen) ? '*' : origen);
         }
         if (todas || especificaciones.includes('*')) refs = ['*'];
@@ -5713,11 +5810,13 @@ function constanciasSinHuella(event, opts = {}) {
         else if (lista.length) refs = [];
         if (!refs.length) continue;
       }
-      const clave = `${dir}\0${sub}\0${refs.join(',')}`;
-      if (vistos.has(clave)) continue;
-      vistos.add(clave);
-      const cartel = huellas.frenoDe({ dir, cuando: sub, stateDir, refs });
-      if (cartel) return frena(cartel);
+      for (const dir of dirs) {
+        const clave = `${dir}\0${sub}\0${refs.join(',')}`;
+        if (vistos.has(clave)) continue;
+        vistos.add(clave);
+        const cartel = huellas.frenoDe({ dir, cuando: sub, stateDir, refs });
+        if (cartel) return frena(cartel);
+      }
     }
   }
   return null;
