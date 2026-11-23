@@ -1773,14 +1773,14 @@ function palabrasProfundas(cmd) {
   return out;
 }
 
-// `cd <carpeta> && ` al principio exacto del comando, con la carpeta escrita tal cual (sin comillas, sin opción y sin
-// nada que el shell expanda o que corte el comando), seguido de UN `sed` que nombra sus archivos: ni tubería,
+// `cd <carpeta> && ` al principio exacto del comando, con la carpeta hecha sólo de letras, cifras y `_ . / + , -` (puede
+// empezar con `~/`; nada que bash o zsh expandan, como `~+`, `~-` o `~usuario`), seguido de UN `sed` que nombra sus archivos: ni tubería,
 // ni `$(…)`, ni comillas invertidas, ni otro comando, ni redirección, ni salto de línea, ni llaves, `@` o `~` (nombres
 // que el shell expande, `{a,b}.md`, `~+/a.md`). Un `perl -e` es un programa entero, que puede armar y escribir sus
 // archivos desde adentro (`BEGIN{@ARGV=glob …}`): es esta forma sólo como `CD_PERL`. Cualquier otra forma no es ésta: un
 // editor que toma sus archivos de una tubería (`ls | xargs sed -i`) o de `$(ls)` escribe en la carpeta del `cd`, y esa
 // carpeta es lo único que la nombra.
-const CD_INICIAL = /^cd ([^\s'"`$*?[\]{}()<>;&|\\-][^\s'"`$*?[\]{}()<>;&|\\]*) && sed [^\n|;&<>`${}@~]*$/;
+const CD_INICIAL = /^cd ((?:~\/)?[\w./+,][\w./+,-]*) && sed [^\n|;&<>`${}@~]*$/;
 
 // La misma forma con UN `perl` en el lugar: opciones escritas tal cual, un solo programa entre comillas simples sin `$`,
 // `@`, llaves ni comillas invertidas, y la carpeta y los archivos hechos sólo de letras, cifras y `_ . / + , -` (la
@@ -1794,15 +1794,16 @@ const CD_PERL = /^cd ((?:~\/)?[\w./+,][\w./+,-]*) && perl((?: -[A-Za-z0-9.]+)*) 
  * que escribe (en la de sed, null: los dice `sedsLiterales`); o null si el comando no tiene ninguna de las dos. En la de
  * perl, las opciones tienen que editar en el lugar e imprimir (`-i`, sin sufijo o con uno que empieza con punto y no
  * termina en `md`; `-p`; `-0` y `-l` también; nada más: ni `-n`, `-M`, `-I`, `-x`, `-d`), y el programa tiene que ser sólo
- * sustituciones (`programaDePerlSoloSustituye`). Con `CDPATH` puesto, un `cd` relativo puede ir a otra carpeta: no es la
- * forma de perl.
+ * sustituciones (`programaDePerlSoloSustituye`). Con `CDPATH` puesto, un `cd` relativo puede ir a otra carpeta: no es
+ * ninguna de las dos formas.
  */
 function cdInicial(cmd) {
   const s = String(cmd || '');
+  const relativoConCdpath = (carpeta) => Boolean(process.env.CDPATH) && !/^(?:\/|~\/)/.test(carpeta);
   const sed = CD_INICIAL.exec(s);
-  if (sed) return { carpeta: sed[1], archivos: null };
+  if (sed) return relativoConCdpath(sed[1]) ? null : { carpeta: sed[1], archivos: null };
   const p = CD_PERL.exec(s);
-  if (!p || (process.env.CDPATH && !/^(?:\/|~\/)/.test(p[1]))) return null;
+  if (!p || relativoConCdpath(p[1])) return null;
   const opciones = [...p[2].split(' ').filter(Boolean), ...(p[3] ? [`-${p[3]}`] : [])];
   let enLugar = false;
   let imprime = false;
@@ -2440,6 +2441,7 @@ function editaEnSitio(cmd) {
         const c = path.basename(words[k]).toLowerCase().replace(/\.exe$/, '');
         const resto = words.slice(k + 1);
         if (['sed', 'gsed', 'perl', 'ruby'].includes(c) && resto.some(opcionI)) return true;
+        if (['sed', 'gsed'].includes(c) && sedConEfectos(resto)) return true;
         if (['awk', 'gawk'].includes(c) && resto.some((w, j) => w === '-iinplace' || (w === '-i' && resto[j + 1] === 'inplace'))) return true;
         if (k === 0 && (c === 'ed' || c === 'ex')) return true;
       }
@@ -2449,6 +2451,99 @@ function editaEnSitio(cmd) {
     return false;
   };
   return [String(cmd || ''), ...anidadosHasta(cmd).leidos].some((t) => ver(t, 0));
+}
+
+/**
+ * ¿Un `sed` sin `-i` escribe o corre algo con su guion? Las palabras que siguen a `sed`: un guion de `-e` o
+ * `--expression`, o el primer argumento si no hay ninguno, que no sea sólo cambiar el texto que lee
+ * (`guionDeSedSinEfectos`): `w`, `W`, `s///w` escriben el archivo que nombran y `e` corre un comando. Un guion de
+ * archivo (`-f`) no se ve: cuenta como que sí.
+ */
+function sedConEfectos(args) {
+  const guiones = [];
+  let posicional = null;
+  for (let j = 0; j < args.length; j++) {
+    const w = args[j];
+    if (w === '--') { if (posicional == null) posicional = args[j + 1] ?? null; break; }
+    if (w === '-e' || w === '--expression') { if (j + 1 < args.length) guiones.push(args[++j]); continue; }
+    // `--expression='w h.md'`: el valor citado puede llegar pegado o como la palabra que sigue
+    if (/^--expression=/.test(w)) { const v = sinComillasDeLosBordes(w.slice('--expression='.length)); guiones.push(v !== '' ? v : (args[++j] ?? '')); continue; }
+    if (/^-[A-Za-z]*f/.test(w) || /^--file\b/.test(w)) return true;
+    if (/^-[A-Za-z]*e./.test(w)) { guiones.push(w.replace(/^-[A-Za-z]*?e/, '')); continue; }
+    if (w.startsWith('-') && w !== '-') continue;
+    if (posicional == null) posicional = w;
+  }
+  if (!guiones.length && posicional != null) guiones.push(posicional);
+  return guiones.some((g) => !guionDeSedSinEfectos(g));
+}
+
+/** La palabra sin las comillas que la rodean, si las tiene (`'w h.md'` → `w h.md`). */
+function sinComillasDeLosBordes(w) {
+  const m = /^(['"])([\s\S]*)\1$/.exec(String(w));
+  return m ? m[2] : String(w);
+}
+
+// el archivo de un `w` o `W` de un guion de `sed`, también con una dirección delante (`1w`, `/a/w`) o como indicador de
+// una sustitución (`s/a/b/w`): hasta el fin del renglón en un guion, y hasta un espacio o una comilla en el texto de un
+// comando, donde el guion puede venir citado o escapado (`printf 'w h.md\n' > x.sed`, `printf 'w\th.md'`)
+const SED_W_EN_GUION = /(?:^|[;{}\s\d$/!])[wW][ \t]+([^\n]+)/g;
+const SED_W_EN_COMANDO = /(?:^|[;{}\s\d$/!'"]|\\[nt])[wW](?:[ \t]|\\t)+([^\s'"\\;&|<>`]+)/g;
+
+/**
+ * Lo que escriben los guiones de un `sed`: los de la línea (`-e`, `--expression`, `--expression=…` o el primer
+ * argumento) y los de archivo (`-f x.sed`, `--file=x.sed`), leídos desde cada carpeta donde puede correr el comando. Un
+ * guion de archivo que no se puede leer (llega por la entrada con `-f -` o `/dev/stdin`, o lo escribe el mismo comando)
+ * se busca en el texto del comando, donde va su heredoc o lo que lo escribe. Leer de más no frena nada: sólo cuenta lo
+ * que resulta ser una historia.
+ */
+function destinosDeGuionDeSed(cmd, bases) {
+  const out = [];
+  let buscarEnElComando = false;
+  for (const tramo of tramos(cmd)) {
+    const words = palabras(tramo.trim().replace(PREFIJO, '')).filter((w) => w !== '');
+    const k = words.findIndex((w) => ['sed', 'gsed'].includes(path.basename(w).toLowerCase()));
+    if (k < 0) continue;
+    const deArchivo = [];
+    const enLinea = [];
+    let posicional = null;
+    for (let j = k + 1; j < words.length; j++) {
+      const w = words[j];
+      if (w === '-f' || w === '--file') { if (words[j + 1] != null) deArchivo.push(words[++j]); continue; }
+      if (w === '-e' || w === '--expression') { if (words[j + 1] != null) enLinea.push(words[++j]); continue; }
+      // el valor citado de `--file=` y `--expression=` puede llegar pegado o como la palabra que sigue
+      const conValor = /^--(file|expression)=(.*)$/s.exec(w);
+      if (conValor) {
+        const v = sinComillasDeLosBordes(conValor[2]);
+        const valor = v !== '' ? v : words[++j];
+        if (valor != null) (conValor[1] === 'file' ? deArchivo : enLinea).push(valor);
+        continue;
+      }
+      const corta = /^-([A-Za-z]*?)([fe])(.*)$/s.exec(w);
+      if (corta && !w.startsWith('--')) {
+        const valor = corta[3] !== '' ? corta[3] : words[++j];
+        if (valor != null) (corta[2] === 'f' ? deArchivo : enLinea).push(valor);
+        continue;
+      }
+      if (w.startsWith('-') && w !== '-') continue;
+      if (posicional == null) posicional = w;
+    }
+    if (!deArchivo.length && !enLinea.length && posicional != null) enLinea.push(posicional);
+    for (const g of enLinea) for (const m of String(g).matchAll(SED_W_EN_GUION)) out.push(m[1].trim());
+    for (const g of deArchivo) {
+      let leido = false;
+      if (g !== '-' && !/^\/dev\/(?:stdin|fd\/0)$/.test(g)) {
+        for (const base of bases) {
+          let texto;
+          try { texto = fs.readFileSync(resolveTarget(g, base, process.platform, { homeVariable: true }), 'utf8'); } catch { continue; }
+          leido = true;
+          for (const m of texto.matchAll(SED_W_EN_GUION)) out.push(m[1].trim());
+        }
+      }
+      if (!leido) buscarEnElComando = true;
+    }
+  }
+  if (buscarEnElComando) for (const m of String(cmd).matchAll(SED_W_EN_COMANDO)) out.push(m[1]);
+  return out;
 }
 
 // Un programa de `node -e` que no puede correr otro proceso: cada `require` es de un módulo propio de node que no corre
@@ -4634,6 +4729,7 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
     ...movidosFueraDeMd(cmd),
     ...destinosDeCopia(cmd),
     ...textosDeGuion,
+    ...destinosDeGuionDeSed(cmd, bases),
     // con un `for`, cuentan todas las palabras salvo que lo de afuera del bucle sólo lea
     ...(enSitio ? nombradas : (FOR_IN.test(cmd) ? (palabrasDelBucleSiFueraSoloSeLee(cmd, [...new Set([cwd, sesion])], instalados) || nombradas) : [])),
   ];
