@@ -153,9 +153,10 @@ mode or if the coordinator is in plan mode (the new session would wait for someo
 from the coordinator's conversation, which records it with each of the person's messages. **Known limit:** if someone
 changes its mode with Shift+Tab and sends no message afterwards, `open` copies the previous mode. A session opened by
 hand, or before this change, that got stuck like that, the coordinator stops and relaunches:
-`claude --bg --resume <id> -n <name> --permission-mode <its mode> --remote-control <name> -- <task>`. To stop a
+`claude --bg --resume <id> -n <name> --permission-mode <its mode> --remote-control <name> -- <task>` (relaunched that
+way it is not recorded as opened by the coordinator). To stop a
 background session, use `coordination.js stop --name <name>`: it looks up the background id that the session recorded
-and runs `claude stop` with it. It removes nothing, and the session is resumed with `claude respawn <id>`. By hand,
+and runs `claude stop` with it. It removes nothing, and the session is resumed with `coordination.js relaunch --id <id>`. By hand,
 `claude stop <id>` and `claude rm <id>` need the id that `claude agents` shows: neither the name nor the ref that
 ListAgents shows (the six characters in brackets) works, and they answer that they cannot find it (measured on
 2026-11-01 and 2026-11-15).
@@ -194,7 +195,9 @@ with the session's id.
 **An interactive session is not closed.** It is checked all the same and it says so: a person closes that tab.
 
 **Stopping is not closing.** `coordination.js stop --name <name>` stops a background session without checking whether
-it is clean and without removing it; the same rule on who can. It is resumed with `claude respawn <id>`.
+it is clean and without removing it; the same rule on who can. It is resumed with `coordination.js relaunch --id <id>`: it
+runs `claude respawn`, waits to see it alive and records it as opened by the coordinator, like `open`. Relaunched by hand
+with `claude respawn <id>`, it is not recorded, and its routine signatures fall into the owner's list.
 
 **Limits.** It looks at the folder the session is in now: it does not see another worktree the session left behind, nor
 what was kept with `git stash`. A branch deleted without merging is no longer seen. A branch squashed into one commit
@@ -400,7 +403,7 @@ are not working, those waiting for something first, since those are the ones tha
 launching anything heavy, close the idle ones that wait for nothing. If it cannot be read (another platform, a command
 that fails) it says «no medida» and assumes nothing. Only the `status` command reads it: the per-turn notice and the
 closing brake do not measure it. A session Claude Code already closed shows in «Cerradas por Claude Code» with what it was
-waiting for (its `marker.js doing --waiting-for` note) and since when, above the others, with its `claude respawn`.
+waiting for (its `marker.js doing --waiting-for` note) and since when, above the others, with its `coordination.js relaunch --id`.
 
 ### The user's processes
 
@@ -715,7 +718,7 @@ is the only background console with which the owner can still sign with a click.
   permission, in the session's tab or with `claude attach`.
 - "<session> siguió: el permiso ya no está abierto" or "<session> se cerró con un permiso abierto": the owner is told if
   they had been asked.
-- "<session>: la cerró Claude Code a las HH:MM por falta de memoria, quieta N min. Para levantarla: claude respawn <id>":
+- "<session>: la cerró Claude Code a las HH:MM por falta de memoria, quieta N min. Para levantarla: coordination.js relaunch --id <id>":
   Claude Code closes quiet background sessions on its own when the machine runs out of memory, and the harness cannot
   prevent it. The coordinator decides whether to bring it back: that uses memory again and counts for the cap.
 
@@ -1065,7 +1068,7 @@ They come from a whole day of coordinating several sessions. Each says what to d
 - **With a long suite queue, no session is opened to program.** If more than two sessions are waiting for the suite or
   gate turn, a new session is opened only for work that does not need the suite: writing a story, reviewing or
   researching. Those that only wait for their turn can be closed and resumed with the same conversation when their turn
-  comes (`claude respawn <id>`), with the order written down. Why: the suite runs one at a time; one more session does not
+  comes (`coordination.js relaunch --id <id>`), with the order written down. Why: the suite runs one at a time; one more session does not
   speed anything up, it lengthens the queue and takes memory.
 - **A red is not left behind, even if it is not from your own change.** Report it and fix it before going on. Why: tolerated
   reds hide the new ones.

@@ -2027,7 +2027,7 @@ test('Retirada_ConEspera_DiceQueEsperabaPrimero (T14) @story-8.274 @ac-18', () =
   assert.deepStrictEqual(Object.keys(s.retired[1]).sort(), ['at', 'idleMin', 'reason', 'session', 'short', 'sid'], 'sin espera, la de siempre');
   assert.strictEqual(s.retired[0].waitingSince, mins(50), 'desde cuándo, de su nota');
   const text = C.statusText(s);
-  assert.match(text, /Cerradas por Claude Code: Con-espera: la cerró Claude Code a las \d\d:\d\d por falta de memoria, quieta 24 min, esperando la firma del dueño para el plan desde las \d\d:\d\d\. Para levantarla: claude respawn bbbb2222 · Sin-espera:/);
+  assert.match(text, /Cerradas por Claude Code: Con-espera: la cerró Claude Code a las \d\d:\d\d por falta de memoria, quieta 24 min, esperando la firma del dueño para el plan desde las \d\d:\d\d\. Para levantarla: coordination\.js relaunch --id bbbb2222 · Sin-espera:/);
 });
 
 // 🔴 mutación: comparar al revés el 15 %, nombrar las quietas sin poner primero la que espera, o callar cuando no se mide.
