@@ -497,6 +497,27 @@ test('OwnerWindow_RuntimeWaiver_OtroSinCorrer_NiegaAntesDelCuadro', (t) => {
   assert.match(r.texto, /AC 1: .*el criterio: Given un pedido/, r.texto);
 });
 
+// 🔴 Falla con: con --acs la ventana mide sólo esos criterios y no ve otro sin correr de la historia: el cuadro que no
+//    avisa, en la pregunta que ve el dueño, que en ese caso la firma se niega después del click.
+test('OwnerWindow_RuntimeWaiver_ConAcs_AvisaDeOtrosSinCorrer', (t) => {
+  const AVISO = 'Ojo: si la historia tiene otros criterios sin correr, la firma se niega después de este click.';
+  for (const sinCorrer of [true, false]) {
+    const { repo, story } = historiaConCriterio(t, { sinCorrer });
+    const cmd = `node ${MARKER} runtime-waiver ${story} --acs 1`;
+    const r = pedir(casaNueva(t), cmd);
+    assert.strictEqual(r.decision, 'ask', r.texto);
+    assert.ok(r.texto.includes(AVISO), r.texto);
+    const q = ow.cuadroPara({ firma: 'runtime-waiver', comando: cmd, palabras: ow.canonica(cmd), destino: 'ses-a', sesion: 'ses-a', casa: casaNueva(t), cwd: repo });
+    assert.ok(q.pregunta.includes(`${AVISO} `), q.pregunta);
+    assert.strictEqual(q.pasaElTope, false, `${q.largo} letras`);
+  }
+  // sin --acs la ventana mide la historia entera: no hace falta el aviso
+  const { story } = historiaConCriterio(t);
+  const r = pedir(casaNueva(t), `node ${MARKER} runtime-waiver ${story}`);
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  assert.ok(!r.texto.includes('Ojo:'), r.texto);
+});
+
 // 🔴 Falla con: la ventana que con --acs arma la matriz de toda la historia (con decenas de humos pasa el reloj de 20 s
 //    del freno y la firma no sale): con --acs mide sólo esos criterios, y sin --acs, la historia entera.
 test('OwnerWindow_RuntimeWaiver_ConAcs_MideSoloEsosCriterios', (t) => {

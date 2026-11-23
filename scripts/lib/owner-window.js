@@ -881,8 +881,12 @@ function criteriosSinMemo(palabras, cwd, { casa, destino, sesion }) {
   }
   if (faltan.length) return { error: `el AC ${faltan.join(', ')} no es un criterio pendiente de firma en ${path.basename(abs)}` };
   if (!c.lista.length) return { error: `${path.basename(abs)} no tiene criterios pendientes de firma${tanda ? ` en la tanda ${tanda}` : ''}` };
-  return { lista: c.lista, historia: abs, texto: textoDeLosCriterios(c.lista), ...(tanda ? { tanda: c.matrix.batch } : {}) };
+  // `parcial`: con --acs no se midieron los demás criterios, y el cuadro avisa que otro sin correr niega después del click
+  return { lista: c.lista, historia: abs, texto: textoDeLosCriterios(c.lista), ...(tanda ? { tanda: c.matrix.batch } : {}), ...(pedidos ? { parcial: true } : {}) };
 }
+
+// el aviso del cuadro de `runtime-waiver --acs`: la ventana midió sólo esos criterios, y el guion mide la historia entera
+const AVISO_OTROS_SIN_CORRER = 'Ojo: si la historia tiene otros criterios sin correr, la firma se niega después de este click';
 
 // lo medido y la cota de un criterio con cota (`medida`, de waiver-display.js); nada en uno sin marca
 const loMedido = (x) => (x && x.medida ? `; lo medido: ${una(x.medida, 120)}` : '');
@@ -1036,7 +1040,8 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
     // tanda, la fuente la suma: el click dado a una tanda no vale para otra
     partes = { criterios: c.lista.map((x) => x.ac), queHace: lineas, queHaceALaVista: c.lista.map(renglonALaVista), completo: c.historia,
       completoEnPalabras: m && m.storyId ? fuentes.laHistoria(m) : `la historia ${path.basename(c.historia)}`,
-      fuente: [...(c.tanda ? [`la tanda: ${c.tanda}`] : []), ...lineas].join('\n'), que: queDeLaExcepcion(c.lista, c.tanda) };
+      fuente: [...(c.tanda ? [`la tanda: ${c.tanda}`] : []), ...lineas].join('\n'), que: queDeLaExcepcion(c.lista, c.tanda),
+      ...(c.parcial ? { aviso: AVISO_OTROS_SIN_CORRER } : {}) };
   }
   let delComando = [];
   if (!partes) {
@@ -1048,7 +1053,7 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
   // ruta resuelta: una ruta relativa desde otra carpeta es otro archivo, y el click dado a uno no vale para el otro
   const real = archivoDelPedido(firma, sinDestino, cwd);
   const huella = sha256(`${delPedido}\0${partes.fuente || ''}${real ? `\0${real}` : ''}`).slice(0, 8);
-  const q = require('./owner-approvals.js').cuadroDe({ firma, destino, que: partes.que || s.approves, historia: fuentes.historiaDe(m), criterios: partes.criterios, queHace: partes.queHaceALaVista || partes.queHace, todoQueHace: !!partes.todoQueHace, nota: partes.nota, archivos: partes.archivos,
+  const q = require('./owner-approvals.js').cuadroDe({ firma, destino, que: partes.que || s.approves, historia: fuentes.historiaDe(m), criterios: partes.criterios, queHace: partes.queHaceALaVista || partes.queHace, todoQueHace: !!partes.todoQueHace, nota: partes.nota, aviso: partes.aviso, archivos: partes.archivos,
     completo: partes.completo, completoEnPalabras: partes.completoEnPalabras, revision: partes.revision, siSaleMal: partes.siSaleMal || s.ifWrong, cita: partes.cita, huella, soloClick: s.soloClick, clickDelDueno: s.clickDelDueno, descripciones: s.descripciones,
     // sólo la fuente que lee la explicación del cambio la trae (null si la leyó y no hay): las demás, el cuadro de siempre
     ...(partes.explica !== undefined ? { explica: partes.explica } : {}),
