@@ -521,7 +521,8 @@ withWaiverLog(() => {
   const texto = lineas.join('\n');
   check('T16 el bloqueo nombra el AC con firma descartada y el comando para volver a firmar',
     /#2/.test(texto) && /descart/i.test(texto) && /marker\.js runtime-waiver/.test(texto) && texto.includes(f.storyPath), texto);
-  const fuente = (n) => fs.readFileSync(path.join(__dirname, '..', n), 'utf8');
+  // marker.js con sus partes de lib/
+  const fuente = (n) => (n === 'marker.js' ? require('./lib/marker-source.js')(path.join(__dirname, '..')) : fs.readFileSync(path.join(__dirname, '..', n), 'utf8'));
   check('T16 marker.js y on-pre-commit.js imprimen ese mismo aviso',
     /avisoFirmasDescartadas\(/.test(fuente('marker.js')) && /avisoFirmasDescartadas\(/.test(fuente('on-pre-commit.js')));
 });
@@ -2209,6 +2210,24 @@ withWaiverLog(() => {
     check('T4 Matrix_Batch_SharedOrUnattributedFile_NoReturn @story-8.240 @ac-2',
       !compartido.structuralError && (compartido.returnedAcs || []).length === 0 && JSON.stringify(compartido.acs) === JSON.stringify(vacia.acs),
       JSON.stringify({ c: compartido.structuralError || compartido.returnedAcs, acs: compartido.acs, vacia: vacia.acs }));
+  }
+  {
+    // 🔴 Falla con: el archivo de pruebas de una pantalla trae la prueba de la tanda medida (T1, del AC 1) y las de otras
+    //    dos tandas, y sólo éstas la declaran en `tests:`. La corrida de la A suma su prueba ahí y la matriz pide como
+    //    bloqueantes los criterios de la B y la C (reportado por un producto; reproducido con esta
+    //    historia de juguete).
+    const TRES = ['  - name: A-la-primera', '    status: pending', '    acs: [1]', '  - name: B-la-segunda', '    status: pending', '    acs: [2]',
+      '    tests: [T6]', '  - name: C-la-tercera', '    status: pending', '    acs: [3]', '    tests_pending: [T7]'];
+    const FILAS = ['| T5 | `src/d.js::edita` | 1 | e2e | x | y |', '| T6 | `src/d.js::lista` | 2 | e2e | x | y |', '| T7 | `src/d.js::exporta` | 3 | e2e | x | y |'];
+    const f = atada(TRES, [], [], FILAS);
+    const r = correr(f, ['src/d.js']);
+    // sin la prueba de la tanda medida en el archivo, sigue siendo de las otras: vuelven
+    const ajeno = atada(TRES, [], [], FILAS.slice(1));
+    const r2 = correr(ajeno, ['src/d.js']);
+    check('Matrix_Batch_SharedTestFileWithMeasuredBatchTest_NoReturn',
+      !r.structuralError && (r.returnedAcs || []).length === 0 && !r.acs.includes(2) && !r.acs.includes(3)
+        && JSON.stringify(r.outOfBatchAcs) === '[2,3]' && !r2.structuralError && JSON.stringify(r2.returnedAcs) === '[2,3]',
+      JSON.stringify({ e: r.structuralError, acs: r.acs, ret: r.returnedAcs, out: r.outOfBatchAcs, ajeno: r2.structuralError || r2.returnedAcs }));
   }
   {
     const f = atada(LISTA, B_ARCH);

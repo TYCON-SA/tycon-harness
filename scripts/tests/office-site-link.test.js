@@ -313,6 +313,7 @@ function richFoto() {
   data.meta.sitio = 'https://acme.example';
   // la carga de la máquina que mide collect()
   data.meta.maquina = { memoria: 62, procesador: 35 };
+  data.meta.turnoPesado = [{ sesion: 'Sesión A', suites: 120 }];
   // lo que fitPhoto le agrega a una foto que achicó para el sitio
   data.meta.recorte = 'foto achicada para el sitio: no viajaron las notas de 3 tarjetas';
   // lo que collect() le agrega con la oficina viva, y lo que buildOffice arma con agentes corriendo o con un pedido
@@ -349,7 +350,7 @@ function LOOSE_TOKENS() {
 }
 
 test('T1 Foto_LaMismaQueLaOficinaLocal: viaja sólo lo que lee la página; la lista y la página se cruzan', () => {
-  const { pick, FIELDS } = fields();
+  const { pick, FIELDS, LOCAL_ONLY } = fields();
   const foto = richFoto();
   const src = fs.readFileSync(PAGE, 'utf8');
   const readBy = (vars, text = src) => (k) => new RegExp(`\\b(?:${vars})\\.${k}\\b`).test(text);
@@ -379,6 +380,8 @@ test('T1 Foto_LaMismaQueLaOficinaLocal: viaja sólo lo que lee la página; la li
     ['meta', foto.meta, FIELDS.meta.fields, (k) => k === 'sitio' || readBy('meta')(k) || readBy('m', fn('umbral') + src.split('\n').find((l) => l.startsWith('const puestos=')))(k)],
     // cada rack lee su número por su tipo: `m[r.tipo]`, con el tipo escrito al armar los racks
     ['maquina', foto.meta.maquina, FIELDS.meta.fields.maquina.fields, (k) => (src.split('\n').find((l) => l.startsWith('const racks=')) || '').includes(`"${k}"`)],
+    // el renglón del turno de tarea pesada en la etiqueta de los racks
+    ['turnoPesado', foto.meta.turnoPesado[0], FIELDS.meta.fields.turnoPesado.of.fields, readBy('x', fn('renglonTurno'))],
     ['rows', foto.rows[0], FIELDS.rows.of.fields, readBy('r')],
     ['tablero', foto.tablero, FIELDS.tablero.fields, readBy('t', fn('renderBoard'))],
   ];
@@ -386,7 +389,8 @@ test('T1 Foto_LaMismaQueLaOficinaLocal: viaja sólo lo que lee la página; la li
   for (const [name, record, listed, isRead] of sections) {
     for (const k of Object.keys(record)) {
       seen.push(k);
-      assert.strictEqual(k in listed, isRead(k), `${name}.${k}: la lista y lo que lee la página no coinciden`);
+      // lo que la página lee y es sólo de la oficina local (LOCAL_ONLY, con su motivo) no viaja
+      assert.strictEqual(k in listed, isRead(k) && !(`${name}.${k}` in LOCAL_ONLY), `${name}.${k}: la lista y lo que lee la página no coinciden`);
     }
     for (const k of Object.keys(listed)) {
       assert.ok(isRead(k), `${name}.${k} está en la lista y la página no lo lee`);
@@ -2485,4 +2489,33 @@ test('Candado_RespuestaCortada_NoQuedaColgada — el puerto del candado manda la
     assert.strictEqual(await conPlazo(lockOwner(lock, 1000)), 'foreign');
     assert.strictEqual(await conPlazo(answers(lock)), false);
   } finally { cortador.close(); }
+});
+
+test('T352 SiteLink_LoQueTeNecesita_NoViajaAlSitio @story-8.234 @ac-40: lo que te necesita no viaja al sitio, y en el sitio la página no tiene la sección', () => {
+  const { pick } = fields();
+  const foto = { agents: [], items: [], kanban: { columnas: [] }, rows: [], free: [], unreadable: [], meta: { actualizado: '10:00', teToca: [], teNecesita: [{ clase: 'espera', que: 'la decisión del dueño', quien: 'Enzo', donde: 'acá' }] } };
+  const sale = pick(foto, '/home/prueba');
+  assert.ok(!('teNecesita' in (sale.meta || {})), JSON.stringify(sale.meta));
+  assert.ok(!JSON.stringify(sale).includes('la decisión del dueño'));
+  // la página la saca en el sitio (y en la demostración): ni la sección ni su título
+  const code = fs.readFileSync(path.join(ROOT, 'scripts', 'tools', 'office', 'page.js'), 'utf8');
+  assert.match(code, /function pintarNecesita\(\)\{[^\n]*\n\s*if\(CON_OFICINAS\)\{sec\.remove\(\);return\}/);
+});
+
+test('T342 Foto_TurnoPesadoViajaAlSitio_Filtrado @story-8.234 @ac-19 — el turno de tarea pesada viaja con el nombre y las suites enteras, y el sitio lo vuelve a filtrar', () => {
+  const { pick, FIELDS } = fields();
+  const { limpiarFoto } = require(path.join(ROOT, 'scripts', 'site', 'live-hub.js'));
+  const sent = (turnoPesado) => pick({ meta: { quietMin: 30, turnoPesado } }, '/home/nadie').meta.turnoPesado;
+  assert.deepStrictEqual(Object.keys(FIELDS.meta.fields.turnoPesado.of.fields).sort(), ['sesion', 'suites'], 'en la lista, sólo el nombre y la cuenta');
+  assert.deepStrictEqual(sent([{ sesion: 'Sesión A', suites: 120 }, {}]), [{ sesion: 'Sesión A', suites: 120 }, {}]);
+  assert.deepStrictEqual(sent([{ sesion: 'Sesión A', suites: 0 }]), [{ sesion: 'Sesión A', suites: 0 }], 'cero vale');
+  // una cuenta que no es un entero de 0 o más no viaja; lo que no está en la lista tampoco (ni el proceso ni la sesión)
+  for (const bad of [-1, 2.5, '12', Infinity]) assert.deepStrictEqual(sent([{ sesion: 'Sesión A', suites: bad }]), [{ sesion: 'Sesión A' }], `cuenta ${JSON.stringify(bad)}`);
+  assert.deepStrictEqual(sent([{ sesion: 'Sesión A', suites: 3, pid: 4242, sid: 'abc', what: '3 suites de repo-de-prueba' }]), [{ sesion: 'Sesión A', suites: 3 }]);
+  // el sitio acepta la válida, y una forma mala la rechaza entera
+  const ok = limpiarFoto({ meta: { turnoPesado: [{ sesion: 'Sesión A', suites: 120 }, {}] } });
+  assert.strictEqual(ok.ok, true);
+  assert.deepStrictEqual(ok.foto.meta.turnoPesado, [{ sesion: 'Sesión A', suites: 120 }, {}]);
+  for (const bad of [-1, 2.5, '12']) assert.strictEqual(limpiarFoto({ meta: { turnoPesado: [{ suites: bad }] } }).ok, false, `el sitio rechaza ${JSON.stringify(bad)}`);
+  assert.strictEqual(limpiarFoto({ meta: { turnoPesado: [{ sesion: 7 }] } }).ok, false, 'un nombre que no es texto');
 });

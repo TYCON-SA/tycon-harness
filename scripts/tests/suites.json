@@ -656,6 +656,12 @@
       "requiere": []
     },
     {
+      "__nota": "el plan de una historia delicada lo aprueba una persona aunque el perfil liste plan-approval:delicada (delegada o de trámite), y el click o el «aprobado» del dueño a ESTE pedido gana a la firma de trámite; el de otro pedido no. El freno en proceso y los guiones de verdad en una casa de juguete, con el perfil del caso en la copia del arnés; unos quince segundos.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/delegated-approval-person.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la revisión del plan se lanza sobre el plan cerrado: con «Armar el plan» abierto o con una pregunta sin contestar a la persona no se prepara, y un plan o una historia que cambian mientras corre se relanzan una sola vez entre los dos.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/plan-review-closed.test.js",
@@ -1143,7 +1149,7 @@
       "requiere": []
     },
     {
-      "__nota": "marker.js partido por responsabilidad (8.163 B): lo nuevo que cargue el despachador es sensible y el recorrido de módulos del freno de guiones no corta callado (topes con nombre, lectura única y con tope de bytes). Repos de juguete en el temporal; sin red.",
+      "__nota": "marker.js partido por responsabilidad (8.163 B): cada subcomando contra la foto de antes de partir, el despachador bajo el tope y cada parte con su responsabilidad y su prueba, la parte que falta, las exportaciones, lo nuevo sensible, lo publicado y el recorrido del freno de guiones (que lee entero lo partido y no corta callado). Carpetas fijas en el temporal; sin red.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/split-contract.test.js",
       "requiere": []
@@ -1280,6 +1286,12 @@
       "__nota": "story 8.109: el estado de la historia y el marcador no se tocan a mano (consola, Edit, apply_patch).",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/status-by-hand.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "fila 110 (22/11): el control de la escritura de una historia lee la tanda que pasa a done por su nombre y, ante una lectura dudosa del bloque, mide. Gancho de verdad con HOME temporal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/frontmatter-batch-done.test.js",
       "requiere": []
     },
     {
@@ -2624,6 +2636,11 @@
     {
       "raiz": "arnes",
       "ruta": "tests/coordination-fill-gate.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/review-load.test.js",
       "requiere": []
     },
     {
@@ -4967,6 +4984,12 @@
       "__nota": "el reloj propio del freno de seguridad: con un jq que se queda esperando (y un nieto que deja la salida abierta), el freno frena a su tope en vez de dejar que venza el de la herramienta, que correría el comando sin mirar; un comando común no espera y un tope fuera de rango usa el de fábrica. Salteada en Windows: el jq de mentira no se lanza sin .exe.",
       "raiz": "arnes",
       "ruta": "tests/safety-guard-clock.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la medición por paso del freno de seguridad (TYCON_SAFETY_TRACE): anota el total del freno al salir, también cuando lo corta su reloj, y cada node que lanza (y lo que lanzan ellos) con su arranque y lo que tardó, sin los valores del comando; sin la variable no anota y con ella no cambia ninguna decisión. Salteada en Windows: el jq de mentira no se lanza sin .exe.",
+      "raiz": "arnes",
+      "ruta": "tests/safety-guard-trace.test.js",
       "requiere": []
     },
     {

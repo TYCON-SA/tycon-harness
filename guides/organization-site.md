@@ -513,7 +513,8 @@ conexión.
 encargo, lo que está haciendo y su última acción; el tablero, las tablas, los tokens, los mensajes entre sesiones (los
 avioncitos), la conversación de cada sesión, que se abre con «Ver conversación», como en la máquina, y los dos números
 de los racks: el porcentaje de memoria y el de procesador en uso, enteros de 0 a 100 (ni el nombre de la máquina, ni sus
-procesos, ni totales en bytes). Cada texto sale sin
+procesos, ni totales en bytes), y, si corre una ejecución grande de pruebas, el nombre de la sesión que tiene el turno de
+tarea pesada y cuántas suites corre (sin su proceso ni su carpeta). Cada texto sale sin
 la carpeta personal ni las claves que se reconocen. La conversación viaja aparte de la foto, sólo a un sitio que la
 entiende, y el sitio la guarda sólo en memoria: nada de la oficina queda en su disco. Así, quien mantiene ve en vivo qué
 hace cada dev; cada dev lo sabe por la línea de la huella.
@@ -808,8 +809,8 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   frase queda registrada; lo delegado no está protegido contra un agente: si la coordinadora decide aprobarlo por su
   cuenta, el arnés no lo distingue de un ok del dueño, así que se delega sólo lo de bajo riesgo. «Sólo del dueño»
   (`approvals.owner_only`) la traba: el sitio no ofrece delegarla, y lo que no se firma desde la pestaña de otra sesión
-  tampoco se ofrece. El aviso fijo lo dice: «Aflojar un control siempre lo firma una persona, en su terminal; esto no lo
-  cambia.» Sin sesión designada, lo delegado no sirve, y la sección lo avisa. Lo delegado vale sólo en las máquinas de
+  tampoco se ofrece. El aviso fijo lo dice: «Aflojar un control siempre lo aprueba una persona, con un click o en su
+  terminal, y la emergencia sólo en su terminal: no se delega.» Sin sesión designada, lo delegado no sirve, y la sección lo avisa. Lo delegado vale sólo en las máquinas de
   la lista de abajo (`approvals.delegated_machines`), nombradas por su huella: las que el buzón de ejecuciones vio se
   agregan con un botón, y otra escribiendo su huella. De fábrica, en ninguna. Todo vale sólo desde acá, nunca desde
   una máquina.

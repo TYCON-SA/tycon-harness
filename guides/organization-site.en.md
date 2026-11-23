@@ -514,7 +514,8 @@ itself. Disabling a machine cuts its connection.
 assignment, what it is doing and its last action; the board, the tables, the tokens, the messages between sessions (the
 paper planes), each session's conversation, which opens with «See conversation», as on the machine, and the two numbers
 of the racks: the percentage of memory and of processor in use, whole numbers from 0 to 100 (not the machine's name, nor
-its processes, nor totals in bytes). Each text leaves
+its processes, nor totals in bytes), and, while a large test run is going, the name of the session that holds the
+heavy-test turn and how many suites it runs (not its process nor its folder). Each text leaves
 without the home folder or the keys that are recognized. The conversation travels apart from the snapshot, only to a site
 that understands it, and the site keeps it only in memory: nothing from the office stays on its disk. So maintainers see
 live what each dev is doing; each dev knows it from the fingerprint line.
@@ -823,7 +824,8 @@ be, to copy it and open the request by hand.
   agent: if the coordinator decides to approve it on its own, the harness cannot tell it apart from the owner's ok, so
   delegate only low-risk things. "Owner only" (`approvals.owner_only`) locks it: the site does not offer to delegate it,
   and it does not offer it for what cannot be signed from another session's tab either. The fixed notice says so:
-  "Loosening a control is always signed by a person, at their terminal; this does not change that." Without a
+  "Loosening a control is always approved by a person, with a click or at their terminal, and the emergency only at
+  their terminal: it is not delegated." Without a
   designated session, delegation does nothing, and the section warns about it. Delegation applies only on the machines
   in the list below (`approvals.delegated_machines`), named by their fingerprint: the ones the runs mailbox saw are
   added with a button, and another one by typing its fingerprint. By default, on none. All of it counts only from
