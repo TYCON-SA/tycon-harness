@@ -381,7 +381,11 @@ una, la coordinadora:
 
 - **Pregunta o no.** Si la matriz dice preguntar, la pregunta al dueño la hace ella, con el cuadro de opciones, y la
   anota: la sesión corre `marker.js review-ask --kind plan|code` antes del cuadro, y ella anota la respuesta con
-  `marker.js review-answer --for-session <sesión> --kind plan|code --choice review|skip|wait`. En cada mensaje suyo, el
+  `marker.js review-answer --for-session <sesión> --kind plan|code --choice review|skip|wait`. «skip» y «wait» a la
+  pregunta del plan la cierran sin revisar, y los anota sólo el click del dueño: el comando le devuelve el cuadro de la firma
+  `plan-review-answer`, que ella le muestra tal cual (o el dueño lo corre en su terminal); «review» y la pregunta del
+  código se anotan sin firma. Con el dueño ausente y la celda en `skip` o `wait`, no anota nada y la pregunta queda a la
+  vista. En cada mensaje suyo, el
   arnés le muestra las preguntas sin respuesta, con los minutos que llevan y, pasados los de
   `plan_review.owner_away_minutes`, lo que dice la celda de «dueño ausente».
 - **Lanza la revisión del plan**: `marker.js plan-review --for-session <sesión>`, con el comando que devuelve (el

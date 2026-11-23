@@ -1393,8 +1393,11 @@ function reviewAskLines(opts, sid, now, problems = []) {
     if (!marca && lleva < minutos) return `${base} (el dueño cuenta como ausente a los ${minutos}).`;
     if (p.kind === 'plan') {
       const celda = cfg.plan_review.routine_owner_away;
-      const que = celda === 'review' ? `lanzá la revisión (marker.js plan-review --for-session ${p.sesion})` : celda === 'skip' ? 'sigue sin revisión' : 'sigue esperando al dueño';
-      return `${base}: dueño ausente, plan_review.routine_owner_away: ${celda} — ${que}, y anotalo con marker.js review-answer --for-session ${p.sesion} --kind plan --choice ${celda} --reason "dueño ausente".`;
+      if (celda === 'review') return `${base}: dueño ausente, plan_review.routine_owner_away: review — lanzá la revisión (marker.js plan-review --for-session ${p.sesion}), y anotalo con marker.js review-answer --for-session ${p.sesion} --kind plan --choice review --reason "dueño ausente".`;
+      // «skip» y «wait» a la pregunta del plan los anota sólo el click del dueño (la firma plan-review-answer): con él
+      // ausente no se anotan, y la pregunta sigue a la vista
+      const que = celda === 'skip' ? 'la sesión sigue sin revisión, por el perfil' : 'la sesión sigue esperando al dueño';
+      return `${base}: dueño ausente, plan_review.routine_owner_away: ${celda} — ${que}. No lo anotes: «${celda}» a la pregunta del plan lo anota sólo el click del dueño, y la pregunta queda a la vista hasta que la conteste.`;
     }
     const celda = cfg.deep_review.small_routine_owner_away;
     const choice = celda === 'run' ? 'review' : celda;

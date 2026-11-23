@@ -1377,9 +1377,13 @@ test('PlanReview_LaPreguntaYLaEleccionSeAnotanYSeRespetan (T54) @story-8.221 @ac
   r = lab.marker('ses-x', ['review-answer', '--kind', 'plan', '--choice', 'skip', '--for-session', DESTINO]);
   assert.strictEqual(r.status, 2, r.stderr);
   assert.strictEqual(renglonesDe(lab, 'review-answer').length, 0, 'nada escrito');
-  // la coordinadora anota «seguir sin revisión» para ses-a; la propia sesión, la del código
+  // «seguir sin revisión» al plan sin el click del dueño no se anota (plan-review-answer-owner.test.js); con su click, la
+  // coordinadora lo anota para ses-a. La propia sesión anota la del código
   r = lab.marker(COORD, ['review-answer', '--kind', 'plan', '--choice', 'skip', '--for-session', DESTINO]);
-  assert.strictEqual(r.status, 0, r.stderr);
+  assert.notStrictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(renglonesDe(lab, 'review-answer').length, 0, 'sin el dueño, nada escrito');
+  assert.strictEqual(PR().anotarRespuesta({ estado: lab.estado, sesion: DESTINO, kind: 'plan', choice: 'skip', quien: `coordinadora ${COORD}`,
+    huella: PR().huellaDe({ estado: lab.estado, sesion: DESTINO, kind: 'plan' }).huella, via: 'click' }).codigo, 0);
   r = lab.marker(DESTINO, ['review-answer', '--kind', 'code', '--choice', 'review']);
   assert.strictEqual(r.status, 0, r.stderr);
   const resp = renglonesDe(lab, 'review-answer');
@@ -1480,8 +1484,9 @@ test('Marker_ElCuadroDeLaFirmaDiceElResultadoDeLaRevision (T27) @story-8.221 @ac
   // el plan cambió después de la revisión
   plan(7);
   dice(/Revisión automática: la revisión es de otra versión del plan/);
-  // se eligió seguir sin revisión
-  assert.strictEqual(lab.marker(COORD, ['review-answer', '--kind', 'plan', '--choice', 'skip', '--for-session', DESTINO]).status, 0);
+  // se eligió seguir sin revisión, con el click del dueño
+  assert.strictEqual(PR().anotarRespuesta({ estado: lab.estado, sesion: DESTINO, kind: 'plan', choice: 'skip', quien: `coordinadora ${COORD}`,
+    huella: PR().huellaDe({ estado: lab.estado, sesion: DESTINO, kind: 'plan' }).huella, via: 'click' }).codigo, 0);
   dice(/Revisión automática: sin revisión \(se eligió seguir\)/);
 });
 
@@ -2044,7 +2049,7 @@ test('PlanReview_AdoptedRun_InheritsRejectionAndLatestAnswer', (t) => {
   assert.ok(enContra && enContra.codigo === 2, JSON.stringify(enContra));
   // «seguir sin revisión» de la sesión anterior y después «revisar» de la nueva: manda la última
   const huella = sha(fs.readFileSync(lab.planFile, 'utf8'));
-  PR().anotarRespuesta({ estado: lab.estado, sesion: DESTINO, kind: 'plan', choice: 'skip', huella, quien: 'la persona', ahora: Date.parse('2026-11-22T12:00:00Z') });
+  assert.strictEqual(PR().anotarRespuesta({ estado: lab.estado, sesion: DESTINO, kind: 'plan', choice: 'skip', huella, quien: 'la persona', via: 'click', ahora: Date.parse('2026-11-22T12:00:00Z') }).codigo, 0);
   PR().anotarRespuesta({ estado: lab.estado, sesion: NUEVA, kind: 'plan', choice: 'review', huella, quien: 'la persona', ahora: Date.parse('2026-11-22T13:00:00Z') });
   assert.doesNotMatch(PR().lineaDelCuadro({ estado: lab.estado, destino: NUEVA, marker: adoptado() }).linea, /se eligió seguir/);
 });

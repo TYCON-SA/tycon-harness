@@ -381,7 +381,11 @@ the coordinator:
 
 - **Asks or not.** If the matrix says to ask, she asks the owner, with the options box, and records it: the session
   runs `marker.js review-ask --kind plan|code` before the box, and she records the answer with
-  `marker.js review-answer --for-session <session> --kind plan|code --choice review|skip|wait`. On each of her messages,
+  `marker.js review-answer --for-session <session> --kind plan|code --choice review|skip|wait`. «skip» and «wait» to the
+  plan question close it without a review, and only the owner's click records them: the command gives her the box of the
+  `plan-review-answer` signature, which she shows as it is (or the owner runs it in a terminal); «review» and the code
+  question are recorded with no signature. With the owner away and the cell on `skip` or `wait`, she records nothing and
+  the question stays in view. On each of her messages,
   the harness shows her the questions without an answer, how many minutes they have been waiting and, past
   `plan_review.owner_away_minutes`, what the «owner away» cell says.
 - **Launches the plan review**: `marker.js plan-review --for-session <session>`, with the command it returns (the

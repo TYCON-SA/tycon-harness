@@ -518,6 +518,20 @@ function topesDelCaminoCorto(casa) {
   return t;
 }
 
+// la respuesta del dueño a la pregunta de revisar el plan cuando la cierra sin revisar (`skip` o `wait`)
+const RESPUESTA_DEL_PLAN = 'plan-review-answer';
+
+/**
+ * ¿El `review-answer` con estos argumentos (ya leídos) anota «seguir sin revisión» o «esperar» a la pregunta del plan?
+ * Cuenta cada valor de `--kind` y `--choice`, separado o con `=`. Una palabra que no se lee hasta correr (`opaca`) puede
+ * ser cualquiera de los dos: lo pide.
+ */
+function respuestaDelDueno(a, opaca) {
+  if (opaca) return true;
+  const valores = (b) => a.flatMap((w, k) => (w === b ? [a[k + 1]] : w.startsWith(`${b}=`) ? [w.slice(b.length + 1)] : []));
+  return valores('--kind').includes('plan') && valores('--choice').some((c) => c === 'skip' || c === 'wait');
+}
+
 /**
  * La firma que pide un llamado a un guion. `donde` (`{ cwd, casa, sesion }`, la carpeta y la sesión del evento): con él,
  * la lista de un `adhoc set` se clasifica contra la carpeta del pedido, donde `<Nombre>/<ruta>` nombra un repo hermano,
@@ -566,6 +580,8 @@ function firmaDeLlamado(guion, sub, args, llamada = null, topes = null, donde = 
     if (sub === 'adhoc' && a[0] === 'allow-foreign-save') return 'adhoc-lane:guardado-ajeno';
     // volver al modo autónomo una ejecución detenida: la decisión del dueño, con o sin --ask-again
     if (sub === 'resume-autonomy') return 'autonomy-resume';
+    // «seguir sin revisión» o «esperar» a la pregunta de revisar el plan: la cierran sin revisar, y lo decide el dueño
+    if (sub === 'review-answer') return respuestaDelDueno(a, opaca) ? RESPUESTA_DEL_PLAN : null;
     if (sub === 'adhoc' && /[$`]/.test(a[0] || '')) return SOBRE_CUPO;
     // cerrar la ejecución que la partición de su historia dejó sin objeto: la bandera elige la forma de rutina, y el
     // guion comprueba antes de la firma que la historia se partió después de la apertura

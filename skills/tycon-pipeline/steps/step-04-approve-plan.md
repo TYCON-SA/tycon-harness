@@ -39,7 +39,8 @@ aprobarlo solo sale 2 sin escribir nada. Lo aprueba:
 2. **Se pregunta o no.** En una delicada se revisa siempre (`plan_review.delicate: always`). En una de rutina, de
    fábrica se le pregunta al dueño: justo antes de mostrarle el cuadro, `marker.js review-ask --kind plan`; con la
    respuesta, `marker.js review-answer --kind plan --choice review|skip|wait` (la coordinadora, con `--for-session
-   <sesión>`). Con el dueño ausente (la marca de ausente, o la pregunta sin respuesta pasados los minutos de
+   <sesión>`). «skip» y «wait» cierran la pregunta sin revisar y los anota sólo el click del dueño: el comando devuelve el
+   cuadro de la firma `plan-review-answer` para mostrarle (o lo corre en su terminal); «review» se anota sin firma. Con el dueño ausente (la marca de ausente, o la pregunta sin respuesta pasados los minutos de
    `plan_review.owner_away_minutes`), según `plan_review.routine_owner_away`: revisar sin preguntar, esperar o seguir sin
    revisión. Con «seguir sin revisión», el plan lo firma el dueño.
 3. **Quién lanza la revisión.** Se lanza con «Armar el plan» cerrado y sin una pregunta abierta a la persona sobre esta

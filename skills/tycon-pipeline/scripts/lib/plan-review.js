@@ -20,7 +20,9 @@
  * una falsificación coordinada de los dos archivos (el límite de toda la delegación).
  *
  * La pregunta de si revisar y su respuesta quedan en gates.log (`review-ask`, `review-answer`): los minutos sin respuesta
- * se cuentan desde la pregunta, y «seguir sin revisión» sobre un plan hace que la delegación no lo firme.
+ * se cuentan desde la pregunta, y «seguir sin revisión» sobre un plan hace que la delegación no lo firme. «Seguir sin
+ * revisión» y «esperar» a la pregunta del plan la sacan de la vista sin revisar: las anota sólo el dueño, con su click en el
+ * cuadro de la firma `plan-review-answer` o su terminal, y una respuesta así sin esa vía no cuenta. «review» no la necesita.
  */
 const fs = require('fs');
 const path = require('path');
@@ -39,6 +41,15 @@ const CAMBIO_HISTORIA = 'la historia cambió mientras corría la revisión';
 const esCambio = (motivo) => motivo === CAMBIO || motivo === CAMBIO_HISTORIA;
 const KINDS = Object.freeze(['plan', 'code']);
 const CHOICES = Object.freeze(['review', 'skip', 'wait']);
+// las respuestas a la pregunta de revisar el plan que la cierran sin revisar, y las vías con que las da el dueño: su click
+// en el cuadro de la firma o su terminal. La delegación, la ventana y un «aprobado» escrito no las dan
+const RESPUESTA_DEL_DUENO = 'plan-review-answer';
+const SIN_REVISAR = Object.freeze(['skip', 'wait']);
+const VIAS_DEL_DUENO = Object.freeze(['click', 'terminal']);
+/** ¿Esta respuesta la anota sólo el dueño? `skip` y `wait` a la pregunta del plan. */
+const pideAlDueno = (kind, choice) => kind === 'plan' && SIN_REVISAR.includes(choice);
+/** ¿El renglón de una respuesta cuenta? El que pide al dueño, sólo con su vía; los demás, siempre. */
+const respuestaQueCuenta = (j) => !pideAlDueno(j.kind, j.choice) || VIAS_DEL_DUENO.includes(j.via);
 
 const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
 const SESION = /^[\w-]+$/;
@@ -789,41 +800,48 @@ function anotarPregunta({ estado, sesion, kind, huella, ahora = Date.now() }) {
   return { codigo: 0 };
 }
 
-/** Anota la respuesta: la elección (`review`, `skip`, `wait`) y quién contestó. */
-function anotarRespuesta({ estado, sesion, kind, choice, quien, huella, motivo = null, ahora = Date.now() }) {
+/**
+ * Anota la respuesta: la elección (`review`, `skip`, `wait`) y quién contestó. `skip` y `wait` a la pregunta del plan
+ * piden `via`: el click del dueño o su terminal (la firma `plan-review-answer`); sin ella no se anota nada.
+ */
+function anotarRespuesta({ estado, sesion, kind, choice, quien, huella, motivo = null, via = null, ahora = Date.now() }) {
   if (!KINDS.includes(kind)) return no(`--kind es ${KINDS.join(' o ')}`);
   if (!CHOICES.includes(choice)) return no(`--choice es ${CHOICES.join(', ')}`);
-  anotarRenglon(estado, { name: 'review-answer', status: 'ok', sesion, kind, choice, quien, huella: huella || null, motivo }, ahora);
+  if (pideAlDueno(kind, choice) && !VIAS_DEL_DUENO.includes(via)) {
+    return no(`«${choice}» a la pregunta de revisar el plan lo anota sólo el dueño, con su click en el cuadro de la firma ${RESPUESTA_DEL_DUENO} o en su terminal${via ? ` (llegó por ${via})` : ''}; «review» se anota sin firma`);
+  }
+  anotarRenglon(estado, { name: 'review-answer', status: 'ok', sesion, kind, choice, quien, huella: huella || null, motivo, ...(via ? { via } : {}) }, ahora);
   return { codigo: 0 };
 }
 
 /**
  * Las preguntas sin respuesta: `[{ sesion, kind, huella, ts }]`, la más vieja primero. `problemas` (opcional) recibe el
- * motivo si el registro no se puede leer; las consultas de abajo hacen lo mismo.
+ * motivo si el registro no se puede leer; las consultas de abajo hacen lo mismo. Una respuesta que no cuenta (un `skip`
+ * o un `wait` al plan sin la vía del dueño) no la cierra.
  */
 function preguntasAbiertas({ estado, problemas }) {
   const abiertas = new Map();
   for (const j of renglones(estado, problemas)) {
     const clave = `${j.sesion}|${j.kind}`;
     if (j.name === 'review-ask') abiertas.set(clave, { sesion: j.sesion, kind: j.kind, huella: j.huella, ts: j.ts });
-    else if (j.name === 'review-answer' && abiertas.has(clave)) abiertas.delete(clave);
+    else if (j.name === 'review-answer' && abiertas.has(clave) && respuestaQueCuenta(j)) abiertas.delete(clave);
   }
   return [...abiertas.values()].sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
 }
 
-/** La última respuesta (`review`, `skip` o `wait`) de la pregunta de una sesión sobre esa huella, o null. */
+/** La última respuesta que cuenta (`review`, `skip` o `wait`) de la pregunta de una sesión sobre esa huella, o null. */
 function respuestaDe({ estado, sesion, kind, huella, problemas }) {
-  const r = renglones(estado, problemas).filter((j) => j.name === 'review-answer' && j.kind === kind && j.sesion === sesion && j.huella === huella);
+  const r = renglones(estado, problemas).filter((j) => j.name === 'review-answer' && j.kind === kind && j.sesion === sesion && j.huella === huella && respuestaQueCuenta(j));
   return r.length ? r[r.length - 1].choice : null;
 }
 
 /**
- * ¿Para este plan (su huella) se eligió seguir sin revisión? La última respuesta sobre esa huella manda; `destino` puede
- * ser varias sesiones (las de una corrida adoptada), y entonces manda la última de todas.
+ * ¿Para este plan (su huella) se eligió seguir sin revisión? La última respuesta que cuenta sobre esa huella manda;
+ * `destino` puede ser varias sesiones (las de una corrida adoptada), y entonces manda la última de todas.
  */
 function eligioSeguir({ estado, destino, huellaPlan, problemas }) {
   const destinos = [].concat(destino);
-  const r = renglones(estado, problemas).filter((j) => j.name === 'review-answer' && j.kind === 'plan' && destinos.includes(j.sesion) && j.huella === huellaPlan);
+  const r = renglones(estado, problemas).filter((j) => j.name === 'review-answer' && j.kind === 'plan' && destinos.includes(j.sesion) && j.huella === huellaPlan && respuestaQueCuenta(j));
   return r.length ? r[r.length - 1].choice === 'skip' : false;
 }
 
@@ -1213,7 +1231,7 @@ function guardarUso(estado, lanza, destino) {
 }
 
 module.exports = {
-  rutaResultado, resultadosGuardados, guardarResultado, rutaUso, guardarUso, configUsada, CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
+  rutaResultado, resultadosGuardados, guardarResultado, rutaUso, guardarUso, configUsada, CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, RESPUESTA_DEL_DUENO, VIAS_DEL_DUENO, pideAlDueno, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
   ultimaDelDestino, antesDeAprobar, rutinaParaDelegar, antesDelPlan, planDe, rutaConstancia, anotarPregunta, anotarRespuesta, preguntasAbiertas,
   eligioSeguir, respuestaDe, rechazosSeguidos, hallazgosCorregidos, lineaDelCuadro, accionDelPlan, coordinadoraQueAtiende, anotarPedido, pedidosA, estadoDelPedido, PEDIDO, huellaDe, designadaDeVerdad, sha,
   tieneRenglon, parteDe, problemaDelAprobador, textoPropioPorLaRevision, textoDeLaAprobacion, revisionEnContra, esProblemaDelAprobador, revisionesViejas, textoDeConstruccion, huellaDeConstruccion, cuartaVuelta, VUELTAS_SIN_PREGUNTAR,

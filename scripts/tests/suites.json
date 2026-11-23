@@ -662,6 +662,12 @@
       "requiere": []
     },
     {
+      "__nota": "«seguir sin revisión» y «esperar» a la pregunta de revisar el plan los anota sólo el dueño (la firma plan-review-answer, su click o su terminal): sin él no se anotan ni cuentan, el freno da el cuadro, el click de otro pedido no sirve; «review» y la pregunta del código siguen sin firma.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/plan-review-answer-owner.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la revisión del plan se lanza sobre el plan cerrado: con «Armar el plan» abierto o con una pregunta sin contestar a la persona no se prepara, y un plan o una historia que cambian mientras corre se relanzan una sola vez entre los dos.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/plan-review-closed.test.js",

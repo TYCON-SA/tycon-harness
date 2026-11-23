@@ -598,6 +598,26 @@ function delGuardadoAjeno(estado, destino) {
 }
 
 /**
+ * La respuesta del dueño a la pregunta de revisar el plan (`review-answer --kind plan --choice skip|wait`): qué elige y
+ * cuántas vueltas van. La huella del plan va a la fuente: un click dado al cuadro de otra versión del plan no vale para
+ * ésta. Sin el plan de la sesión no hay qué contestar, y no hay cuadro.
+ */
+function deLaRespuestaDelPlan(palabras, marcador, estado, destino) {
+  if (!estado || !destino) return { error: 'no sé de qué sesión es la pregunta de revisar el plan' };
+  const PR = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'plan-review.js'));
+  const h = PR.huellaDe({ estado, sesion: destino, kind: 'plan' });
+  if (h.codigo) return { error: h.motivo };
+  const choice = valor(palabras, '--choice');
+  let vueltas = null;
+  try { vueltas = marcador ? PR.cuartaVuelta({ estado, destino, marker: marcador }).vueltas : null; } catch (_) { vueltas = null; }
+  const van = Number.isInteger(vueltas) && vueltas > 0 ? [`Van ${vueltas} ${vueltas === 1 ? 'vuelta' : 'vueltas'} de la revisión del plan de esta historia`] : [];
+  const queHace = choice === 'skip'
+    ? ['Tu respuesta a la pregunta de revisar el plan: seguir sin la revisión', ...van, 'El plan lo aprueba después una persona: la delegación no lo firma']
+    : ['Tu respuesta a la pregunta de revisar el plan: esperar', ...van, 'La pregunta se cierra, y la sesión la vuelve a hacer más tarde'];
+  return { que: choice === 'skip' ? 'seguir sin la revisión del plan' : 'cerrar la pregunta de revisar el plan y esperar', queHace, fuente: `${choice}\n${h.huella}` };
+}
+
+/**
  * Nombrar o retirar a la coordinadora: qué sesión, en qué carpeta. El id solo no le dice nada al dueño; la carpeta sí.
  * El rol es el que nombra el perfil del equipo (`approvals.relay_session`).
  */
@@ -783,6 +803,7 @@ function partesDe({ firma, palabras, comando, cwd, marcador, estado, destino, to
   if (firma === 'adhoc-lane:datos' && estado && destino) return delFrenoDeDatos(palabras, estado, destino);
   if (firma === 'adhoc-lane:guardado-ajeno') return estado && destino ? delGuardadoAjeno(estado, destino) : { error: 'no sé de qué sesión es el guardado ajeno' };
   if (firma === 'lost-run') return deLaSalidaPerdida(palabras, cwd, estado, destino);
+  if (firma === 'plan-review-answer') return deLaRespuestaDelPlan(palabras, marcador, estado, destino);
   return null;
 }
 
