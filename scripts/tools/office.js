@@ -940,9 +940,24 @@ function placeWaits({ agents, kanban, sidOf, waitOf, ownerCard }) {
 }
 
 // La opción que alguien anotó como recomendada en el texto de una espera, una firma o una línea del tablero: «recomiendo: A»,
-// hasta el fin del texto o de su paréntesis. Sin esa marca no hay recomendación: la página lo dice y no la inventa.
-const RECOMMENDS = /(?:^|[\s(—–-])recomiendo:?\s+([^)]+?)\s*(?:\)|$)/iu;
-const recommendedIn = (text) => { const m = RECOMMENDS.exec(String(text || '')); return m ? m[1].trim() : null; };
+// con los dos puntos y sin un «no» delante, hasta el fin del texto o, si la marca abre un paréntesis, hasta el que lo
+// cierra. Sin esa marca no hay recomendación: la página lo dice y no la inventa.
+function recommendedIn(text) {
+  const s = String(text || '');
+  const m = /(?<![\p{L}\p{N}])recomiendo:\s*/iu.exec(s);
+  if (!m) return null;
+  const before = s.slice(0, m.index);
+  if (/(?<![\p{L}\p{N}])no\s+(?:lo\s+|la\s+)?$/iu.test(before)) return null;
+  let rest = s.slice(m.index + m[0].length);
+  if (/\(\s*$/.test(before)) {
+    let depth = 1;
+    for (let j = 0; j < rest.length; j += 1) {
+      if (rest[j] === '(') depth += 1;
+      else if (rest[j] === ')' && --depth === 0) { rest = rest.slice(0, j); break; }
+    }
+  }
+  return rest.trim() || null;
+}
 
 /**
  * Lo que te necesita, para la página de la oficina local: `[{ clase, que, quien?, donde, porque?, recomendada? }]`, en
@@ -2315,6 +2330,9 @@ function markRecipients(data, env, states, sdir, { isAlive, startOf, cxNames = n
   env.recipients = new Map();
   // quien espera al dueño en texto: sólo a ésa le llega una respuesta de la página de lo que te necesita
   const waitsOwner = new Set((((data.meta || {}).teNecesita) || []).filter((i) => i.clase === 'espera').map((i) => i.quien));
+  // dos sesiones con el mismo nombre comparten la entrada: a ninguna le llega una respuesta de esa página
+  const names = (data.agents || []).map((a) => a && a.nombre).filter(Boolean);
+  const repeated = new Set(names.filter((n, i) => names.indexOf(n) !== i));
   for (const a of data.agents || []) {
     if (!a || !a.nombre) continue;
     const e = env.files.get(a.nombre);
@@ -2327,7 +2345,7 @@ function markRecipients(data, env, states, sdir, { isAlive, startOf, cxNames = n
       recibe = w.alive ? 'si' : (Number.isFinite(w.deliveredAt) ? 'espera-cierre' : 'sin-vigilante');
     }
     a.recibe = recibe;
-    env.recipients.set(a.nombre, { sid: e ? e.sid : null, recibe, estado: a.estado, ocupada: WORKING.includes(a.estado), cuadro: ASKS_OWNER.has(a.estado), esperaDueno: waitsOwner.has(a.nombre) });
+    env.recipients.set(a.nombre, { sid: e ? e.sid : null, recibe, estado: a.estado, ocupada: WORKING.includes(a.estado), cuadro: ASKS_OWNER.has(a.estado), esperaDueno: waitsOwner.has(a.nombre) && !repeated.has(a.nombre), ...(repeated.has(a.nombre) ? { repetido: true } : {}) });
   }
 }
 

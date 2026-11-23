@@ -70,22 +70,33 @@ function renderEsperan(esperan){const e=document.getElementById("esperan");e.rep
 // oficina; una firma, un cuadro o lo del tablero dicen dónde se contestan. En el sitio no está.
 const NECESITA_CLASE={firma:"Firma",cuadro:"Cuadro",espera:"Espera",tablero:"Del tablero"};
 const descartadas=new Set();
+// cada cosa conserva su renglón mientras siga en la foto: lo que estás escribiendo y en qué va lo mandado no se pierden
+// cuando llega otra foto
+const renglonesNecesita=new Map();
 const claveNecesita=i=>i.clase+"\u0000"+(i.quien||"")+"\u0000"+i.que;
+const huellaNecesita=i=>JSON.stringify([i.donde,i.porque||"",i.recomendada||"",Boolean(LIVE)]);
+function renglonNecesita(i){const li=el("li","necesita-item");li.dataset.clase=i.clase;li.dataset.huella=huellaNecesita(i);
+  li.append(el("p","necesita-que",(NECESITA_CLASE[i.clase]||"Pendiente")+(i.quien?" · "+i.quien:"")+": "+i.que),el("p","m","Dónde se contesta: "+i.donde));
+  if(i.porque)li.append(el("p","m","Por qué sólo vos: "+i.porque));
+  li.append(el("p","m",i.recomendada?"Recomendada: "+i.recomendada:"Sin una opción recomendada anotada."));
+  if(i.clase==="espera"&&LIVE){const a=(agents||[]).find(x=>x.nombre===i.quien)||{};
+    campoMandar(i.quien,{recibe:a.recibe,motivo:null,cuadro:false},n=>li.append(n),{responde:"espera"},()=>{descartadas.add(claveNecesita(i));pintarNecesita()})}
+  else if(i.clase==="espera")li.append(el("p","m","Para contestarla desde acá, abrí la oficina viva con /office."));
+  return li}
 function pintarNecesita(){const sec=document.getElementById("necesita");if(!sec)return;
   if(CON_OFICINAS){sec.remove();return}
-  const lista=document.getElementById("necesitaLista");lista.replaceChildren();sec.hidden=false;
+  const lista=document.getElementById("necesitaLista");sec.hidden=false;
   const todas=(meta&&meta.teNecesita)||[];
   const vivas=new Set(todas.map(claveNecesita));for(const k of [...descartadas])if(!vivas.has(k))descartadas.delete(k);
   const items=todas.filter(i=>!descartadas.has(claveNecesita(i)));
-  if(!items.length){lista.appendChild(el("li","nada","Nada te espera."));return}
-  for(const i of items){const li=el("li","necesita-item");li.dataset.clase=i.clase;
-    li.append(el("p","necesita-que",(NECESITA_CLASE[i.clase]||"Pendiente")+(i.quien?" · "+i.quien:"")+": "+i.que),el("p","m","Dónde se contesta: "+i.donde));
-    if(i.porque)li.append(el("p","m","Por qué sólo vos: "+i.porque));
-    li.append(el("p","m",i.recomendada?"Recomendada: "+i.recomendada:"Sin una opción recomendada anotada."));
-    if(i.clase==="espera"&&LIVE){const a=(agents||[]).find(x=>x.nombre===i.quien)||{};
-      campoMandar(i.quien,{recibe:a.recibe,motivo:null,cuadro:false},n=>li.append(n),{responde:"espera"},()=>{descartadas.add(claveNecesita(i));pintarNecesita()})}
-    else if(i.clase==="espera")li.append(el("p","m","Para contestarla desde acá, abrí la oficina viva con /office."));
-    lista.appendChild(li)}}
+  for(const k of [...renglonesNecesita.keys()])if(!items.some(i=>claveNecesita(i)===k))renglonesNecesita.delete(k);
+  if(!items.length){lista.replaceChildren(el("li","nada","Nada te espera."));return}
+  // un renglón que cambió se arma de nuevo, salvo que tenga algo escrito: eso no se pisa
+  const escrito=li=>[...li.querySelectorAll("textarea")].some(t=>t.value.trim());
+  const orden=items.map(i=>{const k=claveNecesita(i);let li=renglonesNecesita.get(k);
+    if(!li||(li.dataset.huella!==huellaNecesita(i)&&!escrito(li))){li=renglonNecesita(i);renglonesNecesita.set(k,li)}return li});
+  const antes=[...lista.children];
+  if(antes.length!==orden.length||antes.some((n,j)=>n!==orden[j]))lista.replaceChildren(...orden)}
 // cuántas líneas del tablero vencieron: va fuera de lo que se pliega, que sin nada pendiente no se puede abrir
 function pintarAvisoToca(aviso){const p=document.getElementById("tocaAviso");p.hidden=!aviso;p.textContent=aviso||""}
 function renderTop(){

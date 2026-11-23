@@ -45,6 +45,7 @@ const SAYS = {
   'no-se-contesta': 'Desde acá sólo se contesta una espera en texto: lo demás se contesta donde dice.',
   cerro: 'La sesión cerró: tu respuesta no se mandó a nadie.',
   'con-cuadro': 'Tiene un cuadro abierto: se contesta en su chat, con el click.',
+  repetido: 'Hay más de una sesión con ese nombre: contestale en su chat.',
   resuelto: 'Ya estaba resuelto: tu respuesta quedó en el registro y no se entregó.',
 };
 
@@ -164,6 +165,7 @@ function officeMessages({ sdir, envelopes, okOrigin, notify, clock = Date.now, l
       const answering = body.responde === 'espera';
       const r = recipient(name);
       if (answering && !r) { reject(res, 410, { cerrada: true, motivo: SAYS.cerro }, { name, text, why: 'respuesta a la espera de una sesión que ya no está' }); return; }
+      if (answering && r.repetido) { reject(res, 409, { motivo: SAYS.repetido }, { name, sid: r.sid, text, why: 'respuesta a una espera con el nombre de más de una sesión' }); return; }
       if (answering && r.cuadro) { reject(res, 409, { motivo: SAYS['con-cuadro'] }, { name, sid: r.sid, text, why: 'respuesta a una espera con un cuadro abierto' }); return; }
       if (answering && !r.esperaDueno) { reject(res, 409, { resuelto: true, motivo: SAYS.resuelto }, { name, sid: r.sid, text, why: 'la espera ya estaba resuelta: guardada sin entregar' }); return; }
       if (!r) { reject(res, 404, { motivo: 'Esa sesión no está en la oficina.' }, { name, text, why: 'sesión que no está en la oficina' }); return; }

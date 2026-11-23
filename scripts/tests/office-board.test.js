@@ -1407,3 +1407,69 @@ test('T351 Office_LoQueTeNecesita_ItemResueltoSale @story-8.234 @ac-36 @ac-38: c
   assert.deepStrictEqual(despues.data.meta.teNecesita, []);
   assert.strictEqual(despues.env.recipients.get('Enzo').esperaDueno, false);
 });
+
+test('T353 Office_LoQueTeNecesita_RecomendacionSoloConLaMarca @story-8.234 @ac-35: «recomiendo: …» con los dos puntos y sin un «no» delante; nada más es una recomendación', () => {
+  const lineas = [
+    'Decidir A o B — no recomiendo: la B',
+    'Decidir C o D — no recomiendo la D',
+    'Ver si recomiendo algo',
+    'Elegir (recomiendo: la A (la rápida) porque es reversible) hoy',
+    'Decidir el nombre del producto — recomiendo: Cobre',
+  ];
+  const { data } = buildOffice({ wip: wip([]), board: buildBoard({ pendientes: [], meta: { teToca: lineas } }), nowMs: NOW });
+  assert.deepStrictEqual(data.meta.teNecesita.map((i) => i.recomendada || null), [null, null, null, 'la A (la rápida) porque es reversible', 'Cobre']);
+});
+
+test('T354 Office_LoQueTeNecesita_NombreRepetido @story-8.234 @ac-36: con dos sesiones del mismo nombre, a ninguna le llega una respuesta de la página', () => {
+  const { data } = buildOffice({
+    wip: wip([
+      { session: 'Rev', sid: 's-b', status: 'busy', extra: { kind: 'pipeline', title: 'Una', storyId: '9.1', current: 'implement' } },
+      { session: 'Rev', sid: 's-z', extra: { kind: 'note', text: 'algo', waitingFor: 'la decisión del dueño', waitingSince: NOW - 60000 } },
+    ]),
+    nowMs: NOW,
+  });
+  const env = createEnvelopes();
+  env.files.set('Rev', { file: '/x', sid: 's-b' });
+  markRecipients(data, env, [], fs.mkdtempSync(path.join(os.tmpdir(), 'necesita-')));
+  assert.deepStrictEqual([env.recipients.get('Rev').esperaDueno, env.recipients.get('Rev').repetido], [false, true]);
+});
+
+test('T355 Office_LoQueTeNecesita_OtraFotoNoBorraLoEscrito @story-8.234 @ac-36: con otra foto, el renglón de una espera sigue siendo el mismo y conserva lo escrito', () => {
+  const src = PAGE_CODE();
+  const from = src.indexOf('const NECESITA_CLASE=');
+  const to = src.indexOf('// cuántas líneas del tablero vencieron', from);
+  assert.ok(from >= 0 && to > from, 'page.js trae la parte de lo que te necesita');
+  const nodo = (tag) => ({
+    tag, children: [], dataset: {}, hidden: true, value: '', textContent: '', parent: null,
+    append(...ns) { for (const n of ns) { if (n.parent) n.parent.children.splice(n.parent.children.indexOf(n), 1); n.parent = this; this.children.push(n); } },
+    appendChild(n) { this.append(n); return n; },
+    replaceChildren(...ns) { for (const c of this.children) c.parent = null; this.children = []; this.append(...ns); },
+    remove() { if (this.parent) { this.parent.children.splice(this.parent.children.indexOf(this), 1); this.parent = null; } },
+    querySelectorAll(sel) { const out = []; const walk = (n) => { for (const c of n.children) { if (c.tag === sel) out.push(c); walk(c); } }; walk(this); return out; },
+  });
+  const sec = nodo('section');
+  const lista = nodo('ul');
+  const document = { getElementById: (id) => (id === 'necesita' ? sec : id === 'necesitaLista' ? lista : null) };
+  const el = (tag, cls, text) => { const n = nodo(tag); n.className = cls; n.textContent = text || ''; return n; };
+  const campoMandar = (nombre, ofi, fin) => fin(nodo('textarea'));
+  let meta = null;
+  // eslint-disable-next-line no-new-func
+  const api = new Function('document', 'el', 'campoMandar', 'LIVE', 'CON_OFICINAS', 'agents', 'getMeta', `let meta;const pintar=()=>{meta=getMeta();pintarNecesita()};${src.slice(from, to)};return{pintar}`)(document, el, campoMandar, { token: 't' }, false, [{ nombre: 'Enzo', recibe: 'si' }], () => meta);
+  const espera = { clase: 'espera', que: 'la decisión del dueño', quien: 'Enzo', donde: 'acá' };
+  meta = { teNecesita: [espera] };
+  api.pintar();
+  const renglon = lista.children[0];
+  renglon.querySelectorAll('textarea')[0].value = 'Elegí la A, pero antes revisá que';
+  // llega otra foto: la misma espera y una firma nueva
+  meta = { teNecesita: [espera, { clase: 'firma', que: 'saltar el pase', donde: 'en el chat de Ana, con el click' }] };
+  api.pintar();
+  assert.strictEqual(lista.children[0], renglon, 'el mismo renglón');
+  assert.strictEqual(renglon.querySelectorAll('textarea')[0].value, 'Elegí la A, pero antes revisá que');
+  assert.strictEqual(lista.children.length, 2);
+  // la firma no tiene dónde escribir
+  assert.strictEqual(lista.children[1].querySelectorAll('textarea').length, 0);
+  // resuelta: sale, y sin nada queda «Nada te espera.»
+  meta = { teNecesita: [] };
+  api.pintar();
+  assert.deepStrictEqual(lista.children.map((n) => n.textContent), ['Nada te espera.']);
+});

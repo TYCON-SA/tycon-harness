@@ -1572,3 +1572,15 @@ test('T350 Office_LoQueTeNecesita_ResueltaOCerrada @story-8.234 @ac-38: si ya no
   // en la página, la de una sesión que cerró se puede descartar
   assert.match(fs.readFileSync(path.join(__dirname, '..', 'tools', 'office', 'page.js'), 'utf8'), /if\(j\.cerrada&&descartar\)\{[^\n]*"Descartar"/);
 });
+
+test('T356 Office_LoQueTeNecesita_NombreRepetidoNoRecibe @story-8.234 @ac-36: el proceso no le entrega una respuesta a un nombre de dos sesiones', async () => {
+  const m = toy();
+  watcherAlive(m, 's1');
+  const r = await mountedRoute(m, { Rev: { sid: 's1', recibe: 'si', esperaDueno: false, repetido: true } }, { TYCON_OFFICE_MESSAGE_DEADLINE_MS: '60000' });
+  try {
+    const x = await r.send({ s: 'Rev', texto: 'la A', responde: 'espera' });
+    assert.strictEqual(x.status, 409);
+    assert.strictEqual(x.json.motivo, 'Hay más de una sesión con ese nombre: contestale en su chat.');
+    assert.deepStrictEqual(inboxOf(m), []);
+  } finally { r.close(); }
+});
