@@ -1283,6 +1283,12 @@
       "requiere": []
     },
     {
+      "__nota": "fila 64 (22/11): una constancia de control nueva necesita la huella que deja approve antes del commit y del empuje.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/control-change-prints.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "fila 44 (21/11): pasar una historia a done fuera de una corrida mira la matriz de evidencia en vivo o la constancia de la corrida.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/story-done-needs-matrix.test.js",
@@ -2618,6 +2624,12 @@
     {
       "raiz": "arnes",
       "ruta": "tests/coordination-fill-gate.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el permiso de una sesión de fondo le llega a la persona como cuadro (scripts/hooks/permission-relay.js, story 8.180 tanda B): en proceso, con casa de juguete y reloj propio.",
+      "raiz": "arnes",
+      "ruta": "tests/permission-relay.test.js",
       "requiere": []
     },
     {

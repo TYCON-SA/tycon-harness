@@ -600,6 +600,13 @@ fi
   callado && ok "T20 mirar pedidos no anota nada" || bad "T20 lectura" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null)"
   pedir Bash 'git commit -m "después: gh pr create --base main --title t --body b"'
   callado && ok "T20 un pedido MENCIONADO en un texto no es un pedido" || bad "T20 mención" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null)"
+  # un push dentro de un `bash -c` corre: se anota; nombrado en un texto (también un «bash -c» citado), no
+  pedir Bash 'bash -c "git push origin dev && git push origin main"'
+  anotado main && ok "T20 el push a main dentro de un bash -c se anota" || bad "T20 bash -c" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null) · $(head -c 200 "${T20}/stderr")"
+  pedir Bash 'echo "bash -c git push origin main"'
+  callado && ok "T20 un bash -c con push nombrado en un texto no se anota" || bad "T20 bash -c citado" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null)"
+  pedir Bash 'git commit -m "probé con bash -c \"git push origin main\""'
+  callado && ok "T20 un bash -c dentro del mensaje de un commit no se anota" || bad "T20 bash -c en un mensaje" "rc=$(cat "${T20}/rc") · $(cat "${LED20}" 2>/dev/null)"
   # la rama por defecto del remoto no es la principal: sin --base el pedido va a ella, y eso no es una entrega
   G20 update-ref refs/remotes/origin/dev "${TIP20}"; G20 symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/dev
   pedir Bash 'gh pr create --title t --body b'
