@@ -5478,12 +5478,15 @@ function constanciasSinHuella(event, opts = {}) {
     const out = [cwdDelComando(texto, sesion)];
     const sinResolver = [];
     const visitadas = [sesion];
-    for (const m of leido.matchAll(/(?:^|[\s;&|({])(?:cd|pushd)(?:[ \t]+(?:-[LPe@]+|--))*[ \t]+(?:'([^']*)'|"([^"]*)"|([^\s;&|()<>'"`]+))/g)) {
+    // la carpeta del cd: entre comillas, o una palabra suelta que puede llevar `$(…)` o acentos invertidos
+    for (const m of leido.matchAll(/(?:^|[\s;&|({])(?:cd|pushd)(?:[ \t]+(?:-[LPe@]+|--))*[ \t]+(?:'([^']*)'|"([^"]*)"|((?:\$\([^()]*\)|`[^`]*`|[^\s;&|()<>'"`])+))/g)) {
       if (palabraEn(m) >= hasta) break;
       if (!fuera(palabraEn(m))) continue;
       const tok = m[1] ?? m[2] ?? m[3];
       if (tok === '-') { if (visitadas.length > 1) visitadas.pop(); out.push(visitadas[visitadas.length - 1]); continue; }
       if (!tok) continue;
+      // un comodín sin comillas lo expande el shell: no se sabe a qué carpeta va
+      if (m[3] !== undefined && /[*?[]|\{[^}]*,/.test(tok)) { sinResolver.push(`cd ${tok}`); continue; }
       const ex = expandirRuta(leido.slice(0, m.index + m[0].length), tok);
       if (ex.sinResolver.length) { sinResolver.push(`cd ${tok}`); continue; }
       const encadenada = resolveTarget(ex.valor, visitadas[visitadas.length - 1], process.platform, { homeVariable: true });
@@ -5534,9 +5537,13 @@ function constanciasSinHuella(event, opts = {}) {
       const p = leido.indexOf(tramo, cursor);
       const fin = p < 0 ? Infinity : p + tramo.length;
       if (p >= 0) cursor = fin;
-      // sin el `env` de delante (`env -C repo git push`), sin las redirecciones (`2>&1` o `> salida.txt` no son parte de lo
-      // que se empuja) y sin el `)` que cierra un grupo; la palabra vacía de `-C ""` queda (git la toma como «acá»)
-      const w = palabras(sinPalabrasDelShell(pelarEnv(String(tramo)).resto.replace(REDIRECCION, ' '))).map(sinCierreDeGrupo).filter((x, k, a) => x !== '' || a[k - 1] === '-C');
+      // sin el comentario del final (`git push # x` no empuja `x`), sin el `env` de delante (`env -C repo git push`), sin
+      // las redirecciones (`2>&1` o `> salida.txt` no son parte de lo que se empuja) y sin el `)` que cierra un grupo; la
+      // palabra vacía de `-C ""` queda (git la toma como «acá»)
+      const enTramo = posicionesFueraDeComillas(String(tramo));
+      let corte = String(tramo).length;
+      if (typeof enTramo.esComentario === 'function') for (let k = 0; k < corte; k++) if (enTramo.esComentario(k)) corte = k;
+      const w = palabras(sinPalabrasDelShell(pelarEnv(String(tramo).slice(0, corte)).resto.replace(REDIRECCION, ' '))).map(sinCierreDeGrupo).filter((x, k, a) => x !== '' || a[k - 1] === '-C');
       if (nombreDeComando(w[0]) !== 'git') continue;
       const lectura = unir(carpetasDe(texto, fin), anidado ? carpetasDe(String(cmd), dondeAparece < 0 ? Infinity : dondeAparece) : null);
       const carpetas = lectura.carpetas;

@@ -292,6 +292,23 @@ test('T25 CommitLimpio_ElMensajeNombraCdOGitDir_Pasa', () => {
   }
 });
 
+// T26 y T27 · lo que dejó la tercera vuelta (ya pasaba en main): un comentario al final del empuje se tomaba como el
+// remoto y su refspec; y un cd con una sustitución sin comillas o con un comodín no se leía como carpeta sin resolver.
+test('T26 Empuje_ConUnComentarioAlFinal_Frena', () => {
+  const c = conConstanciaCommiteada();
+  for (const cmd of ['cd repo && git push # x', 'git -C repo push # cd otra', 'cd repo && git push --dry-run # nota']) frenaDesdeArriba(c, cmd);
+});
+
+test('T27 Empuje_DespuesDeUnCdConSustitucionSinComillasOComodin_FrenaSinMirar', () => {
+  const c = conConstanciaCommiteada();
+  for (const cmd of ['cd $(echo repo) && git push', 'cd `echo repo` && git push', 'cd $(pwd)/repo && git push', 'cd rep* && git push',
+    'cd $(git rev-parse --show-toplevel) && git commit -m x']) {
+    const r = c.correr(cmd, c.raiz);
+    assert.ok(r && r.block, `frena: ${cmd}`);
+    assert.match(r.block, /CONSTANCIA SIN MIRAR/, cmd);
+  }
+});
+
 test('T7 SinConstanciasNuevas_OComandosQueNoSonCommitNiPush_ComoAntes', () => {
   const c = corral();
   assert.strictEqual(c.correr('git commit -m x'), null);
