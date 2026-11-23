@@ -173,6 +173,46 @@ frena "T6i · con redirección" "$PUERTA $PROD 'select 1' > /tmp/x"
 frena "T6j · sentencia por sustitución de comando" "$PUERTA $PROD \"\$(cat /tmp/x.sql)\""
 frena "T6k · ruta partida con comillas" "/opt/tycon/bin/tycon-prod-sq\"\"l $PROD 'select 1'"
 
+# T117 · un `for` que nombra la puerta entre sus palabras y sólo lee no la invoca: pasa si todo el comando, también lo de
+# adentro de cada $( … ), son lectores que no ejecutan lo que reciben. Si el cuerpo usa la variable donde se ejecuta, frena.
+NP="${PUERTA##*/}"
+pasa  "T117a For_QueNombraLaPuertaYSoloLee_Pasa (el de la noche)" "for f in prod-access-guard $NP node-shim; do printf '%-22s banco:%s\n' \"\$f\" \"\$(grep -rl \"\$f\" scripts/controls-bench 2>/dev/null | wc -l | tr -d ' ')\"; done"
+pasa  "T117b For_ConGrep_Pasa" "for f in a $NP b; do grep -rn \"\$f\" scripts; done"
+frena "T117c For_LaVariableComoPrograma_Frena" "for f in $PUERTA; do \"\$f\" $PROD 'select 1'; done"
+frena "T117d For_LaVariableAUnShell_Frena" "for f in $NP; do echo \"\$f $PROD 'select 1'\" | sh; done"
+frena "T117e For_LaVariableAXargs_Frena" "for f in $PUERTA; do echo \"\$f\" | xargs -I{} {} $PROD 'select 1'; done"
+frena "T117f For_UnaSustitucionQueLaCorre_Frena" "for f in $PUERTA; do printf '%s' \"\$( \"\$f\" $PROD 'select 1' )\"; done"
+frena "T117g For_ComillasInvertidas_Frena" "for f in $PUERTA; do printf '%s' \"\`\$f $PROD 'select 1'\`\"; done"
+frena "T117h For_BashC_Frena" "for f in $PUERTA; do bash -c \"\$f $PROD 'select 1'\"; done"
+frena "T117i For_FindExec_Frena" "for f in $NP; do find . -name \"\$f\" -exec {} $PROD 'select 1' \\;; done"
+frena "T117j For_YLaPuertaComoProgramaDespues_Frena" "for f in a; do echo \"\$f\"; done; $PUERTA $PROD 'select 1' | head"
+frena "T117k For_RgPre_Frena" "for f in $PUERTA; do rg --pre \"\$f\" x scripts; done"
+frena "T117l For_SortCompressProgram_Frena" "for f in $PUERTA; do sort --compress-program=\"\$f\" x; done"
+frena "T117m For_UnaRedireccionQueEscribeEnLaVariable_Frena" "for f in $PUERTA; do echo x > \"\$f\"; done"
+frena "T117n For_UnaAsignacionDelanteDelLector_Frena" "for f in $NP; do PATH=/opt/tycon/bin cat \"\$f\"; done"
+frena "T117o For_EnvDelante_Frena" "for f in $PUERTA; do env \"\$f\" $NP; done"
+pasa  "T117p For_RedireccionADevNull_Pasa" "for f in $NP b; do grep -c \"\$f\" scripts/x > /dev/null 2>&1; done"
+# zsh y bash corren código sin `$( … )`: con un calificador de glob, con banderas de expansión o con aritmética sobre
+# un valor que trae código escondido entre comillas simples en las palabras del for
+frena "T117q For_CalificadorDeZsh_Frena" "for f in a $NP; do echo *(e:\"\$f $PROD 'select 1'\":); done"
+frena "T117r For_BanderaEDeZshConCodigoEnElFor_Frena" "for f in a $NP '\$($NP $PROD x)'; do echo \${(e)f}; done"
+frena "T117s For_TildeDeZshConCalificadorEnElFor_Frena" "for f in a $NP '*(e:$NP x:)'; do echo \${~f}; done"
+frena "T117t For_TildeSuelta_Frena" "for f in a $NP; do echo \$~f; done"
+frena "T117u For_UniqPisaSuSegundoArgumento_Frena" "for f in a $PUERTA; do uniq /etc/hosts \"\$f\"; done"
+frena "T117v For_ExpansionDePromptDeBash_Frena" "for f in a $NP '\$($NP y)'; do echo \${f@P}; done"
+frena "T117w For_AritmeticaConCorchetes_Frena" "for f in a $NP 'x[\$($NP y)]'; do echo \$[f]; done"
+frena "T117x For_PrintfNumericoEnZsh_Frena" "for f in a $NP 'x[\$($NP y)]'; do printf %d \"\$f\"; done"
+frena "T117y For_ProgramaConRuta_Frena" "for f in a $NP; do ./cat \"\$f\"; done"
+frena "T117z For_PrintfV_Frena" "for f in a $NP; do printf -v x '%s' \"\$f\"; done"
+frena "T117aa For_UnaAsignacionSuelta_Frena" "x=1; for f in a $NP; do echo \"\$f\"; done"
+frena "T117ab For_ComillasAnsiC_Frena" "for f in a $NP; do echo \$'\\x28' \"\$f\"; done"
+# la variable del for y printf con opciones cambian qué programa corre (PATH, o `path` en zsh)
+frena "T117ac For_LaVariableEsPATH_Frena" "for PATH in a $NP /tmp/x; do cat y; done"
+frena "T117ad For_LaVariableEsPathDeZsh_Frena" "for path in a $NP /tmp/x; do cat y; done"
+frena "T117ae For_PrintfVPegado_Frena" "for f in a $NP; do printf -vPATH '%s' /tmp/x; cat y; done"
+frena "T117af For_PrintfXvPegado_Frena" "for f in a $NP; do printf -xvPATH '%s' /tmp/x; cat y; done"
+pasa  "T117ag For_UnaVariableDeCuatroLetras_Pasa" "for item in a $NP; do grep -c \"\$item\" scripts/x; done"
+
 # ── T16 · secuestro de la puerta ──────────────────────────────────────────────────────────────
 # Sin esto, no revisar el shell deja que una función `tycon-prod-sql` en el .zshrc se quede con la
 # sentencia; y marcar cualquier alias que CONTENGA la palabra → falso positivo que apaga el control.
