@@ -124,7 +124,8 @@ const LOCAL_ONLY = Object.freeze({
   'kanban.columnas.tarjetas.local': 'marca la tarjeta de una historia de los proyectos de esta máquina, que no viaja entera',
   'tablas.pendientes.pie': 'los avisos de la lectura de las historias de esta máquina: sus filas tampoco viajan',
   'tablas.pendientes.filas.local': 'marca la fila de un proyecto de esta máquina, que no viaja entera',
-  'tablas.pendientes.filas.seccion': 'el título «De tus proyectos» va sólo con las filas de proyecto, que no viajan',});
+  'tablas.pendientes.filas.seccion': 'el título «De tus proyectos» va sólo con las filas de proyecto, que no viajan',
+  'meta.teNecesita': 'la página de lo que te necesita es de la oficina local: desde ella se le contesta a una sesión de esta máquina',});
 
 // La conversación de una sesión: lo que devuelve la ruta local de la conversación (`readConversation`), con cada texto
 // hasta CHARLA_TEXT_MAX. `recortada`: no entraba en 64 KB y se sacaron los mensajes más viejos.

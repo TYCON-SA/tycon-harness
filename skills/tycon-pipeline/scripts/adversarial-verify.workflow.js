@@ -157,6 +157,11 @@ copia de trabajo del equipo):
    el click de una persona, aun sin permisos: nadie mira, y tu guion queda parado. Si necesitás una carpeta vacía,
    armá OTRA con \`mktemp -d /tmp/probe.XXXXXX\`; lo que dejás en /tmp no se limpia. Usá rutas absolutas en vez de
    \`cd <carpeta> && …\`.
+6. Corré cada guion CON UNA CASA DE PRUEBA, nunca con la de la persona: los ganchos y guiones del arnés escriben su
+   estado y su registro de fallas en la carpeta personal, y una sonda que los hace fallar a propósito con la casa real
+   ensucia el registro que mide los frenos. Armá la casa adentro del laboratorio y pasala en cada comando:
+   \`mkdir -p "$LAB/casa" && HOME="$LAB/casa" USERPROFILE="$LAB/casa" TYCON_HOME= node …\` (o exportalas al comienzo del
+   guion). Un guion que necesita algo de la casa real lo copia a la de prueba.
 
 HERRAMIENTAS DE CÓDIGO (usá la mejor disponible, en este orden): (1) si el harness expone tools
 mcp__codegraph*__* o mcp__codebase_memory__* (buscalas con ToolSearch), usalas para lookup de símbolos,

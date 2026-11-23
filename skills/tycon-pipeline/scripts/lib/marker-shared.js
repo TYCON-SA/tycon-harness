@@ -457,7 +457,9 @@ function vueltaCongeladaComprobada(tipo, quien) {
 /**
  * Lo que se guarda, ¿es lo revisado? (historia 8.161, decisión 3). Sella cada repo de la última vuelta de revisores
  * (nunca la del pase) y compara con su sello: los archivos distintos, sin el papeleo, frenan con el comando de la
- * vuelta (`reviewed-tree-mismatch`). Una vuelta sin sello (de antes) no se compara: se dice y queda en gates.log.
+ * vuelta (`reviewed-tree-mismatch`). Lo sin commitear adentro de un submódulo o de un repo anidado, que el sello no ve
+ * (anota de cada uno sólo su commit), también frena; uno que no se puede mirar, también. Una vuelta sin sello (de antes)
+ * no se compara: se dice y queda en gates.log.
  */
 function comprobarLoRevisado(marker, quien) {
   const ft = require('./frozen-tree.js');
@@ -471,6 +473,8 @@ function comprobarLoRevisado(marker, quien) {
   const storyAbs = resolveStoryPath(marker.storyPath, marker);
   const realDe = (p) => { try { return fs.realpathSync(p); } catch (_e) { return path.resolve(p); } };
   const distintos = [];
+  // lo de adentro de un submódulo o repo anidado: otra vuelta no lo arregla, hay que commitearlo en su repo o descartarlo
+  const adentro = [];
   const papeleo = [];
   const deMain = [];
   const sinSepararMain = [];
@@ -490,6 +494,9 @@ function comprobarLoRevisado(marker, quien) {
   for (const r of v.repos) {
     const ahora = ft.seal(r.repo);
     if (ahora.error) frenar(`no pude sellar lo que se guarda para compararlo con lo revisado (${ahora.error}).`);
+    const anidados = ft.anidadosConCambios(r.repo, ahora.tree);
+    if (anidados.error) frenar(`no pude comparar lo que se guarda con lo revisado en ${path.basename(r.repo)}: ${anidados.error}.`);
+    for (const f of anidados.files) { distintos.push({ repo: r.repo, f }); adentro.push(f); }
     const rel = storyAbs ? path.relative(realDe(r.repo), realDe(storyAbs)) : null;
     // lo que trajo main en archivos que la corrida no tocó no es «no revisado»: se separa con el punto en común con main
     // del sello y el de ahora, del mismo repo
@@ -517,6 +524,7 @@ function comprobarLoRevisado(marker, quien) {
     console.error(`marker.js ${quien} BLOQUEADO — lo que se guarda no es lo revisado: cambió después de la última vuelta de revisores (${v.etiqueta}):`);
     for (const d of distintos) console.error(`   · ${d.f} (${path.basename(d.repo)})`);
     for (const s of sinSepararMain) console.error(`  No pude separar lo que trajo main (${s}): cuenta como cambio.`);
+    if (adentro.length) console.error('  Lo de adentro de un submódulo o repo anidado no lo ve la vuelta: commitealo en su repo, o descartalo, y después corré otra vuelta.');
     console.error(`  Corré otra vuelta: pipeline.js smart-reloop --story ${marker.storyPath || '<historia>'} --repo ${marker.repoPath || '<repo>'} --iter ${iter} --files "<el diff completo, como hoy>".`);
     console.error('  La vuelta re-revisa lo que cambió desde su foto; con el sello nuevo, este paso sigue.');
     process.exit(2);
@@ -746,6 +754,83 @@ function trabajarSobreElDestino(ow, r) {
 
 // La sesión que pidió la firma para otra, para las constancias: `{ por }`, o nada si es la propia.
 const porDe = (firma) => (firma && firma.constancia && firma.constancia.por ? { por: firma.constancia.por } : {});
+
+// ¿La firma la contestó una persona? Su click en el cuadro, su «aprobado» escrito, su terminal, o su «sí» en la ventana
+// de permiso de la herramienta (owner-window.js: el freno pide la ventana sólo en una pestaña que pregunta, y su registro
+// queda atado a este comando). La ventana no nombra a quién (approvals.js `deLaPersona`: el quién sale de las opciones),
+// pero la contestó una persona; la delegación, la revisión, el trámite y «hecho y avisado», no.
+const conPersona = (via) => via === 'ventana' || require('./approvals.js').deLaPersona(via, 'persona') !== null;
+
+// El modo de una aprobación según la firma que la respaldó: `user` sólo si la contestó una persona, como el plan; si no,
+// la vía misma (`automatica` para la firma de trámite, que owner-window.js devuelve como delegación).
+function modoDeLaFirma(firma) {
+  const via = firma && (firma.via || (firma.constancia && firma.constancia.via));
+  if (!(firma && firma.automatica) && conPersona(via)) return 'user';
+  return firma && firma.automatica ? 'automatica' : String(via || 'sin-persona');
+}
+
+// La cita de una opción (`--approved`, `--mockup-approved`): la palabra que sigue, salvo que sea otra opción. Sin esto
+// `--mockup-approved --for-session <s>` dejaba «--for-session» como la cita de quien aprobó.
+const citaDe = (v) => (typeof v === 'string' && v.trim() && !v.startsWith('--') ? v : null);
+
+// Las vías con que una aprobación quedó sin persona: la delegación, la revisión automática, la firma de trámite y
+// «hecho y avisado». La maqueta aprobada con el plan no guardaba su vía: es la del plan del mismo comando (la misma hora).
+const SIN_PERSONA_EN_LA_CONSTANCIA = new Set(['delegacion', 'revision', 'automatica', 'avisado']);
+function hechaSinPersona(ap, plan) {
+  if (!ap) return false;
+  if (SIN_PERSONA_EN_LA_CONSTANCIA.has(ap.mode)) return true;
+  const via = ap.via || (plan && plan !== ap && plan.at && plan.at === ap.at ? plan.via : null);
+  return SIN_PERSONA_EN_LA_CONSTANCIA.has(via);
+}
+// Lo que se guarda de la aprobación que reemplaza `--replace-delegated`.
+const reemplazada = (ap) => ({ via: ap.via || null, mode: ap.mode || null, text: ap.text || null, at: ap.at || null, ...(ap.por ? { por: ap.por } : {}) });
+
+// El control previo de `--replace-delegated`: firma sólo la persona, a ESTE pedido. owner-window.js pasa `delegacion`
+// para todo lo que sale sin ella (la delegación, el trámite, «hecho y avisado»); su registro dice si fue el click o el
+// «aprobado» (el del cuadro de este comando, con su sello), o el «sí» en la ventana de este comando (sin vía).
+// En el chequeo previo del freno, sin registro y sin una vía sin persona, la persona todavía puede contestar: no se
+// niega, y el freno ofrece la ventana y el cuadro (como `antesDelPlan`). Al correr de verdad siempre hay registro, y
+// cuenta sólo su vía.
+function soloLaPersona(via, registro) {
+  if (!registro && via !== 'delegacion') return null;
+  const v = registro ? (registro.via || 'ventana') : via;
+  if (conPersona(v)) return null;
+  return { codigo: 2, motivo: 'reemplazar una firma hecha por delegación pide el click, el «aprobado» o el «sí» en la ventana de una persona a este pedido, o su terminal: por la delegación o como trámite no se reemplaza' };
+}
+
+// ¿La aprobación `ap` es de una persona y sigue valiendo para la huella de ahora (`shaAhora`)? `campo` es dónde guarda
+// la suya (`planSha` el plan, `sha256` la maqueta). Si las dos huellas están y difieren, lo aprobado cambió y la
+// aprobación vieja ya no vale; sin alguna de las dos no se sabe si cambió, y cuenta como vigente.
+function aprobadaPorPersona(ap, shaAhora, campo, plan) {
+  if (!ap || ap.mode !== 'user' || hechaSinPersona(ap, plan)) return false;
+  return !(ap[campo] && shaAhora && ap[campo] !== shaAhora);
+}
+
+// El control previo de una firma que reescribiría lo que ya aprobó una persona (`protegidos`: 'plan', 'maqueta'): sin
+// persona (la delegación, la revisión, la firma de trámite o «hecho y avisado», que owner-window.js pasa como
+// `delegacion`) no se escribe y sale 2; la persona sí puede volver a aprobar. `{ codigo, motivo }` o null.
+function noPisaLaPersona(protegidos, via) {
+  if (!protegidos.length || via !== 'delegacion') return null;
+  const que = protegidos.includes('plan')
+    ? `el plan${protegidos.includes('maqueta') ? ' (y su maqueta)' : ''} ya lo aprobó una persona; un trámite no lo pisa`
+    : 'la maqueta ya la aprobó una persona; un trámite no la pisa';
+  return { codigo: 2, motivo: `${que}. Para aprobarlo de nuevo, que lo apruebe la persona (su click o su «aprobado» a este pedido, o su terminal). No se escribió nada.` };
+}
+
+// Quién aprobó la maqueta, para approvals.jsonl (lo lee el portón de la CI): la persona con su click, su «aprobado» o su
+// terminal, a nombre del usuario de la máquina; sin persona (la firma de trámite, la delegación, la revisión, «hecho y
+// avisado»), quien firmó de verdad, como el plan. Un nombre escrito en el comando (--approved-by) cuenta sólo con la
+// ventana, como siempre: nunca vuelve manual una firma que no tuvo persona.
+function quienDeLaMaqueta(firma, optVal) {
+  const persona = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona';
+  const deLaPersona = require('./approvals.js').deLaPersona(firma && firma.via, persona);
+  if (deLaPersona) return deLaPersona;
+  if (firma && (firma.automatica || SIN_PERSONA_EN_LA_CONSTANCIA.has(firma.via))) {
+    const q = firma.via === 'revision' && !firma.sesion ? { quien: 'revisión automática de la propia sesión' } : ownerWindow().quienFirmo(firma, persona);
+    return { tipo: 'automatica', quien: q.quien, ...(q.delegacion ? { delegacion: q.delegacion } : {}) };
+  }
+  return quienDeLasOpciones(optVal);
+}
 
 // El renglón `<firma>-signed` en gates.log: estricto. Sin él, el ok de guardar por delegación no ve la exención firmada
 // y la historia saldría limpia; si no se puede escribir, el comando falla a la vista y la firma no cuenta.
@@ -1267,7 +1352,8 @@ module.exports = {
   perdidaSinFrenar, vueltaCongeladaComprobada, comprobarLoRevisado, sellosDe, veredictoPaseAdversarial, paseAtendido,
   mensajeDelPaseAdversarial, PLAN_FILE, planDeLaCorrida, huellaDelPlan, planEnLaConversacion, planParaLaPersona,
   planVisto, anotarAprobacion, quienDeLasOpciones, CONTROLES_DEL_PASO, ORDER_REQUIRES_OLD, firmaDelDueno,
-  antesDeLaRevision, trabajarSobreElDestino, porDe, anotarFirma, idsDeEspera, doingFileOf, anotarOtraVuelta,
+  antesDeLaRevision, trabajarSobreElDestino, porDe, conPersona, modoDeLaFirma, citaDe, hechaSinPersona, reemplazada,
+  soloLaPersona, aprobadaPorPersona, noPisaLaPersona, quienDeLaMaqueta, anotarFirma, idsDeEspera, doingFileOf, anotarOtraVuelta,
   PASO_ARRANCABLE, arrancable, anotarArranque, VALID_CHECKS, resolveStoryPath, markerStoryIsUi, markerScreenRule,
   screenRule, TANDAS_MEDIDAS, tandasMedidasDe, avisarBajaDePantalla, TESTS_FAILED_PENDING, testsNotMeasuredLine,
   COLA_BYTES_RETENIDOS, RUN_CHECK_BUSY, SENALES_RUN_CHECK, VALID_FLAGS, EXTERNAL_FLAGS, HARNESS_COMMAND, OLD_FLAGS,
