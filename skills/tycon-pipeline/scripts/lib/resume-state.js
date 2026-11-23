@@ -9,7 +9,7 @@
  * la historia en lugar de arrastrar su conversación a la siguiente.
  *
  *   faltantes({ marker, paso, lanzados, existe }) → [{ que, comando? }]: lo que falta en disco al llegar a ese paso.
- *   lanzadosDe({ lineas, marker })               → los revisores que esta ejecución lanzó, sin los agentes sueltos.
+ *   lanzadosDe({ lineas, marker })               → los revisores que esta ejecución lanzó en «Revisores».
  *   CIERRE_DE_SESION                             → la línea que imprime el cierre de la historia.
  */
 
@@ -24,19 +24,30 @@ const CARPETA_DE_INFORMES = 'step-05-advisor-reports';
 const CIERRE_DE_SESION = 'La historia terminó: cerrá esta sesión. La próxima historia va en una sesión nueva (o tras /clear): '
   + 'releer esta conversación en cada turno cuesta más que todo lo demás, y el estado vive en disco, no acá.';
 
-/** Los revisores que esta ejecución lanzó (renglones del registro de la sesión, de esta historia y desde su arranque), sin repetir. */
+/**
+ * Los revisores que esta ejecución lanzó en «Revisores» (renglones del registro de la sesión, de esta historia y desde su
+ * arranque), sin repetir. Cuenta sólo los que nombra el set esperado de alguna marca `step5-start` (la que anota
+ * `pipeline.js advisors`): el validador de la historia, la revisión previa y los demás agentes de otros pasos no dejan
+ * informe en la carpeta de los revisores. Sin ninguna marca, la ejecución todavía no lanzó revisores.
+ */
 function lanzadosDe({ lineas = [], marker = {} } = {}) {
   const desde = Date.parse(marker.startedAt || '');
+  const esperados = new Set();
   const vistos = new Set();
   for (const l of lineas) {
     let r;
     try { r = typeof l === 'string' ? JSON.parse(l) : l; } catch { continue; }
-    if (!r || typeof r.advisor !== 'string' || SUELTOS.has(r.advisor)) continue;
-    if (marker.storyId && r.story != null && String(r.story) !== String(marker.storyId)) continue;
+    if (!r || typeof r !== 'object') continue;
     if (Number.isFinite(desde) && Number.isFinite(Date.parse(r.ts || '')) && Date.parse(r.ts) < desde) continue;
+    if (r.event === 'step5-start') {
+      for (const a of Array.isArray(r.expected) ? r.expected : []) if (typeof a === 'string') esperados.add(a);
+      continue;
+    }
+    if (typeof r.advisor !== 'string' || SUELTOS.has(r.advisor)) continue;
+    if (marker.storyId && r.story != null && String(r.story) !== String(marker.storyId)) continue;
     vistos.add(r.advisor);
   }
-  return [...vistos];
+  return [...vistos].filter((a) => esperados.has(a));
 }
 
 /**

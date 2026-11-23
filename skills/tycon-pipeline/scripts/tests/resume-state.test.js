@@ -4,7 +4,8 @@
  * al terminar la historia: releer la conversación entera es lo más caro de una ejecución.
  *
  *   T1 · fuera de un punto de control no pide nada; en «Aprobar el plan», las condiciones del pedido.
- *   T2 · en «Hallazgos», el informe de cada revisor lanzado; los agentes sueltos y los de otra historia no cuentan.
+ *   T2 · en «Hallazgos», el informe de cada revisor lanzado; los agentes sueltos, los de otra historia y los de otros
+ *        pasos (fuera del set esperado de «Revisores») no cuentan.
  *   T3 · marker.js conditions las anota, y next lo dice al llegar al punto de control.
  *   T4 · marker.js clear, al cerrar una historia, pide cerrar la sesión.
  *
@@ -48,6 +49,9 @@ test('T1 FueraDePunto_NoPide_EnAprobarElPlan_LasCondiciones', () => {
 test('T2 Hallazgos_CadaRevisorConSuInforme', () => {
   const m = { storyId: '9.1', startedAt: '2026-11-21T10:00:00Z', runDir: '/r', requestConditions: { texto: 'ninguna' } };
   const lineas = [
+    // el validador de la historia corre antes de «Revisores»: no deja informe en su carpeta
+    JSON.stringify({ ts: '2026-11-21T10:30:00Z', advisor: 'tycon-story-validator', story: '9.1' }),
+    JSON.stringify({ ts: '2026-11-21T10:59:00Z', event: 'step5-start', expected: ['tycon-plugin-security-basics', 'tycon-plugin-tests-coverage', 'tycon-silent-failure-hunter', 'tycon-spec-first-checker'] }),
     JSON.stringify({ ts: '2026-11-21T11:00:00Z', advisor: 'tycon-plugin-security-basics', story: '9.1' }),
     JSON.stringify({ ts: '2026-11-21T11:01:00Z', advisor: 'tycon-plugin-security-basics', story: '9.1' }),
     JSON.stringify({ ts: '2026-11-21T11:02:00Z', advisor: 'general-purpose', story: '9.1' }),
@@ -58,6 +62,8 @@ test('T2 Hallazgos_CadaRevisorConSuInforme', () => {
   ];
   const lanzados = CD.lanzadosDe({ lineas, marker: m });
   assert.deepStrictEqual(lanzados, ['tycon-plugin-security-basics', 'tycon-plugin-tests-coverage']);
+  // sin la marca de «Revisores», ningún agente cuenta como revisor lanzado
+  assert.deepStrictEqual(CD.lanzadosDe({ lineas: lineas.filter((l) => !l.includes('step5-start')), marker: m }), []);
   const hay = new Set([path.join('/r', CD.CARPETA_DE_INFORMES, 'tycon-plugin-tests-coverage.md')]);
   const f = CD.faltantes({ marker: m, paso: 'findings', lanzados, existe: (p) => hay.has(p) });
   assert.deepStrictEqual(f.map((x) => x.que), [`el informe de tycon-plugin-security-basics (${path.join('/r', CD.CARPETA_DE_INFORMES, 'tycon-plugin-security-basics.md')})`]);
@@ -99,5 +105,15 @@ test('T4 Clear_PideCerrarLaSesion', (t) => {
     stepScheme: 2, stepsCompleted: [], stepsPending: ['start'], lastTouch: new Date().toISOString() }));
   const r = correr(c, 'marker.js', ['clear']);
   assert.strictEqual(r.status, 0, r.stderr);
-  assert.ok(r.stdout.includes(CD.CIERRE_DE_SESION), r.stdout);
+  assert.strictEqual(r.stdout.split(CD.CIERRE_DE_SESION).length - 1, 1, `el renglón sale una sola vez:\n${r.stdout}`);
+  // el respaldo: con la carpeta del volcado ilegible el archivo de la ejecución falla, y el renglón sale igual, una vez
+  const c2 = casa(t);
+  const dir2 = path.join(c2.home, '.claude', '.tycon-pipeline', 'active');
+  fs.mkdirSync(dir2, { recursive: true });
+  fs.writeFileSync(path.join(dir2, 'sess-cd-1.json'), JSON.stringify({ sessionId: 'sess-cd-1', storyId: '9.1', repoPath: c2.repo, startedAt: new Date().toISOString(),
+    stepScheme: 2, stepsCompleted: [], stepsPending: ['start'], lastTouch: new Date().toISOString() }));
+  fs.writeFileSync(path.join(c2.home, '.claude', '.tycon-pipeline', 'timing-history'), 'no es una carpeta');
+  const r2 = correr(c2, 'marker.js', ['clear']);
+  assert.strictEqual(r2.status, 0, r2.stderr);
+  assert.strictEqual(r2.stdout.split(CD.CIERRE_DE_SESION).length - 1, 1, `con el archivo fallado, una sola vez:\n${r2.stdout}`);
 });
