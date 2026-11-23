@@ -1516,3 +1516,71 @@ process.exit(${code});`);
   assert.ok(dicho().every((k) => k <= 1), 'una vez por foto, no una por control');
   q.close();
 });
+
+test('T348 Office_LoQueTeNecesita_RespuestaLlega @story-8.234 @ac-36: la respuesta a una espera llega como un mensaje de la oficina, y verify la da por buena', async () => {
+  const m = toy();
+  watcherAlive(m, 's1');
+  const r = await mountedRoute(m, { Enzo: { sid: 's1', recibe: 'si', esperaDueno: true } }, { TYCON_OFFICE_MESSAGE_DEADLINE_MS: '60000' });
+  try {
+    const sent = await r.send({ s: 'Enzo', texto: 'la A', responde: 'espera' });
+    assert.strictEqual(sent.status, 200, JSON.stringify(sent.json));
+    const got = om.take(m.sdir, 's1');
+    assert.match(got.envelope, new RegExp(`^\\[oficina ${sent.json.id}\\] .*Dice: la A$`));
+    assert.deepStrictEqual(om.verify(m.sdir, sent.json.id, 's1'), { code: 0, text: 'la A' });
+  } finally { r.close(); }
+});
+
+test('T349 Office_LoQueTeNecesita_FirmaNoSeContestaAhi @story-8.234 @ac-37: una firma, un cuadro o lo del tablero no se contestan desde la página', async () => {
+  const m = toy();
+  watcherAlive(m, 's1');
+  const r = await mountedRoute(m, { Firmante: { sid: 's1', recibe: 'si', cuadro: true, esperaDueno: false } }, { TYCON_OFFICE_MESSAGE_DEADLINE_MS: '60000' });
+  try {
+    for (const responde of ['firma', 'cuadro', 'tablero']) {
+      const x = await r.send({ s: 'Firmante', texto: 'sí, firmo', responde });
+      assert.strictEqual(x.status, 400, responde);
+      assert.strictEqual(x.json.motivo, 'Desde acá sólo se contesta una espera en texto: lo demás se contesta donde dice.');
+    }
+    const conCuadro = await r.send({ s: 'Firmante', texto: 'sí', responde: 'espera' });
+    assert.strictEqual(conCuadro.status, 409);
+    assert.strictEqual(conCuadro.json.motivo, 'Tiene un cuadro abierto: se contesta en su chat, con el click.');
+    assert.deepStrictEqual(inboxOf(m), [], 'nada llegó al buzón');
+  } finally { r.close(); }
+  // la página ofrece escribir sólo en una espera
+  const code = fs.readFileSync(path.join(__dirname, '..', 'tools', 'office', 'page.js'), 'utf8');
+  assert.match(code, /if\(i\.clase==="espera"&&LIVE\)\{[\s\S]{0,200}?campoMandar\(/);
+  assert.strictEqual((code.match(/campoMandar\(i\./g) || []).length, 1, 'un solo campo, el de la espera');
+});
+
+test('T350 Office_LoQueTeNecesita_ResueltaOCerrada @story-8.234 @ac-38: si ya no espera, queda en el registro sin entregarse; si la sesión cerró, no va a nadie', async () => {
+  const m = toy();
+  watcherAlive(m, 's1');
+  const r = await mountedRoute(m, { Enzo: { sid: 's1', recibe: 'si', esperaDueno: false } }, { TYCON_OFFICE_MESSAGE_DEADLINE_MS: '60000' });
+  try {
+    const tarde = await r.send({ s: 'Enzo', texto: 'la B', responde: 'espera' });
+    assert.strictEqual(tarde.status, 409);
+    assert.strictEqual(tarde.json.resuelto, true);
+    assert.strictEqual(tarde.json.motivo, 'Ya estaba resuelto: tu respuesta quedó en el registro y no se entregó.');
+    assert.deepStrictEqual(inboxOf(m), []);
+    assert.ok(logOf(m).some((x) => x.estado === 'rechazado' && x.texto === 'la B'), 'la respuesta queda guardada en el registro');
+    const cerrada = await r.send({ s: 'Ida', texto: 'la C', responde: 'espera' });
+    assert.strictEqual(cerrada.status, 410);
+    assert.strictEqual(cerrada.json.cerrada, true);
+    assert.strictEqual(cerrada.json.motivo, 'La sesión cerró: tu respuesta no se mandó a nadie.');
+    // un mensaje común a una sesión que no está sigue diciendo lo de siempre
+    assert.strictEqual((await r.send({ s: 'Ida', texto: 'hola' })).status, 404);
+  } finally { r.close(); }
+  // en la página, la de una sesión que cerró se puede descartar
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'tools', 'office', 'page.js'), 'utf8'), /if\(j\.cerrada&&descartar\)\{[^\n]*"Descartar"/);
+});
+
+test('T356 Office_LoQueTeNecesita_NombreRepetidoNoRecibe @story-8.234 @ac-36: el proceso no le entrega una respuesta a un nombre de dos sesiones', async () => {
+  const m = toy();
+  watcherAlive(m, 's1');
+  const r = await mountedRoute(m, { Rev: { sid: 's1', recibe: 'si', esperaDueno: false, repetido: true } }, { TYCON_OFFICE_MESSAGE_DEADLINE_MS: '60000' });
+  try {
+    const x = await r.send({ s: 'Rev', texto: 'la A', responde: 'espera' });
+    assert.strictEqual(x.status, 409);
+    assert.strictEqual(x.json.motivo, 'Hay más de una sesión con ese nombre: contestale en su chat.');
+    assert.deepStrictEqual(inboxOf(m), []);
+  } finally { r.close(); }
+});
