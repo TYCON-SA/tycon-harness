@@ -244,7 +244,18 @@ test('PerlEnLugar_ProgramaQuePuedeHacerOtraCosa_Frena — con la carpeta del cd 
     `cd ${c.lab} && path[1,0]=$PWD/bin; perl -pi -e 's/x/y/' medir.sh`,
     `cd ${c.lab} && perl -pi -e 's/x/y/' medir.sh; rm s9001.md`,
     `cd ${c.lab} && perl -pi -e 's/x/y/' *.sh`,
+    // lo que confirmó la vuelta completa: una barra con una cifra en el reemplazo (perl la lee como un grupo), una
+    // carpeta del cd que el shell expande y nombres que zsh lee como comodines
+    `cd ${c.lab} && perl -pi -e 's/x/\\1[unlink q(s9001.md)]/' medir.sh`,
+    `cd ~+ && perl -pi -e 's/ready-for-dev/done/' s9001.md`,
+    `cd ~- && perl -pi -e 's/ready-for-dev/done/' s9001.md`,
+    `cd ${c.lab} && perl -pi -e 's/ready-for-dev/done/' ^medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/ready-for-dev/done/' s9#001.md`,
   ]) assert.ok(frenaComoHistoria(juzgar(c, cmd)), `frena: ${cmd}`);
+  // con CDPATH, un cd relativo puede ir a una carpeta que no está debajo de la sesión
+  const cmd = `cd plantillas && perl -pi -e 's/ready-for-dev/done/' template.md`;
+  const r = conEnv({ ...ENV, CDPATH: c.lab }, () => bash.handle({ tool_name: 'Bash', session_id: SID, cwd: path.join(c.lab, 'scripts'), tool_input: { command: cmd } }, { stateDir: c.estado }));
+  assert.ok(frenaComoHistoria(r), `frena con CDPATH: ${cmd}`);
 });
 
 // PerlEnLugar_NombraHistoria_FrenaSinCorrerSuPrograma: un perl que nombra una historia no se ensaya, porque ensayarlo
