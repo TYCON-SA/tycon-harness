@@ -168,7 +168,7 @@ const MOTIVOS = {
     produccion: ['escritura-protegida', 'nombre-armado', 'servidor-no-literal', 'base-de-produccion', 'llavero'],
   },
   'session-cap-guard': {
-    tope: ['en-el-tope', 'no-pude-contar', 'no-pude-decidir'],
+    tope: ['en-el-tope', 'no-pude-contar', 'no-pude-decidir', 'revision-llena'],
   },
 };
 

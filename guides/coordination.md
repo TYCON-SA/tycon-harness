@@ -229,6 +229,19 @@ pestaña Configuración, «Las sesiones de cada máquina»), y cada máquina pue
 aguanta depende de ella. Sin valor en ningún lado, el tope es 3. `coordination.js status` muestra quién trabaja, quién
 espera y por qué, y el tope con su origen.
 
+**El segundo tope: lo que espera la revisión de la persona.** El primer tope mide lo que aguanta la máquina; éste, lo que
+una persona puede revisar. Cuenta cuatro cosas, sólo mirando: las firmas que esperan a la persona (las delegadas no), las
+ejecuciones y caminos cortos terminados sin cerrar, las carpetas con cambios sin commitear y sin sesión (salvo las copias
+de prueba de un trabajo de fondo, bajo `~/.claude/jobs/`) y los pedidos trabados hace una hora o más (un borrador no,
+salvo en choque). Una sesión viva que espera a la persona no suma aparte: ya está en una de esas. El tope es
+`coordination.max_awaiting_review`, de 1 a 50, con el mismo orden que los otros; sin valor en ningún lado, 8. Entra en
+**modo aviso**: con lo que espera revisión en el tope, `open` y el freno de sesiones de fondo abren igual, lo dicen y
+dejan un renglón `review-cap` en `gates.log` para decidir con números si se pasa a freno; pasar a freno es un commit que
+cambia una constante, ninguna variable lo cambia. Lo que no se pudo mirar (por el tope de tiempo de 4 s, o una fuente
+rota) no suma y no frena. El freno que no deja la máquina vacía no empuja a abrir con la revisión llena. La foto que deja
+el arranque de cada sesión la muestran `status`, `/wip` y el aviso de la coordinadora, con su edad; para decidir se
+cuenta de nuevo, nunca con la foto.
+
 ### Cuántas historias a la vez, quién lanza lo pesado y cuándo se le escribe al dueño
 
 Cuatro reglas de la coordinadora, para cualquier organización:
@@ -395,9 +408,9 @@ una, la coordinadora:
   `files:` o, sin `files:`, con los archivos que la historia le ata a la tanda más los que no ata a ninguna), la delicada
   se mide por la parte, y el plan queda atado a su lista: editar código fuera de ella frena, y al cerrar se mide el diff
   entero; si sale delicado, el plan vuelve al dueño. El pase adversarial sigue por la historia entera.
-- **Da el turno del pase del código.** Del código no lanza nada: con el dueño ausente, contesta la pregunta en su
-  nombre según la celda (`review-answer --for-session`, con «dueño ausente» como motivo), y el pase lo lanza la propia
-  sesión con su turno, como siempre.
+- **Da el turno del pase del código.** Del código no lanza nada: con el dueño ausente, contesta en su nombre la pregunta
+  cuya celda dice `review` (`review-answer --for-session`, con «dueño ausente» como motivo), y el pase lo lanza la
+  propia sesión con su turno, como siempre. Que `skip` y `wait` pidan el click del dueño es la fila 113.
 - **Pone la marca de ausente** cuando el dueño dice que se va («seguí en autónomo», «me voy», «hasta mañana» o algo
   parecido): `marker.js owner-away set --phrase "<lo que dijo>"`. Lo juzga ella, no una lista de frases. La marca se borra
   sola cuando el dueño vuelve: un mensaje suyo, un mensaje de la oficina verificado, una firma suya o a las 24 horas. La
@@ -1027,7 +1040,8 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
 
 ## Cómo trabaja la coordinadora con el dueño
 
-Salen de un día entero en que la coordinadora trabajó con el dueño ausente. Cada una, con su porqué.
+Salen de un día entero en que la coordinadora trabajó con el dueño ausente. Valen para cualquier coordinadora, también
+la de un producto. Cada una, con su porqué.
 
 - **El cuadro de una pregunta lleva el contexto adentro.** Qué pasa hoy, cuál es el problema, qué cambia y qué implica.
   Por qué: el dueño ve sólo el cuadro, no la conversación que lo explica.
@@ -1038,11 +1052,10 @@ Salen de un día entero en que la coordinadora trabajó con el dueño ausente. C
   en vivo va por su exención: la firma la coordinadora con `marker.js runtime-waiver <historia> --acs <n> --for-session
   <D>` si el perfil del equipo se la delega, y si no, el dueño. Eximir la historia entera es firma sólo del dueño. Por
   qué: una historia terminada que espera días su cierre ocupa la fila sin aportar nada.
-- **Foco en el arnés.** Lo que toca un producto no se mide ni se propone sin pedido. Por qué: un producto tiene su
-  propio equipo y sus tiempos, y una propuesta que nadie pidió le cae encima.
-- **Primero lo que rompe o demora.** Cuando no queda nada de eso libre, se reparte en el mismo pulso el resto
-  (menores, mantenimiento, mediciones, mejoras aprobadas), sin esperar a que el dueño lo pida. Por qué: una sesión
-  libre es tiempo de máquina perdido, y el dueño no tiene que repartir lo ya aprobado.
+- **Primero lo que traba a todos.** La CI en rojo o un freno que no deja trabajar. Después, el orden del plan del
+  producto: las historias del sprint y lo que decida su dueño. Lo ya aprobado se reparte en el mismo pulso, sin esperar
+  a que el dueño lo pida. Por qué: una sesión libre es tiempo de máquina perdido, y el dueño no tiene que repartir lo ya
+  aprobado.
 - **Cada pendiente lleva anotado quién lo tiene y en qué pedido, antes de asignarlo.** Por qué: sin esa anotación el
   mismo arreglo se hace dos veces; en un solo día hubo cuatro duplicados.
 - **Un solo empuje por pedido, con todo junto.** Después, sólo el arreglo de un rojo o de lo que pidió una revisión.
@@ -1051,6 +1064,16 @@ Salen de un día entero en que la coordinadora trabajó con el dueño ausente. C
   espera no es un pedido roto.
 - **Nunca se cierra un turno con «¿seguimos?».** Una sesión que espera recibe trabajo. Por qué: con el dueño ausente,
   esa pregunta no la contesta nadie y la sesión queda parada.
+- **Con el dueño ausente no se abre un cuadro.** Se le avisa por el canal de avisos del equipo y se espera a que
+  escriba. Por qué: un cuadro abierto de madrugada dejó a la coordinadora seis horas parada, y a las sesiones sin
+  trabajo.
+- **Antes de correr el comando de firma de otra sesión que pidió el sí del dueño, se le pregunta al dueño.** Por qué: una
+  firma que el perfil le delega a la coordinadora sale sola al correr el comando, sin que el dueño la vea.
+- **La constancia se pide con la carpeta quieta.** Antes del comando, la sesión confirma que no toca nada hasta que
+  el dueño firme. Por qué: si la carpeta cambia durante el cuadro, la constancia ya no corresponde y el click se pierde.
+- **La constancia se firma con el guion de la copia instalada del arnés** (`scripts/ci/run-base-controls.sh`), no con
+  el de la carpeta del pedido. Por qué: una copia vieja del guion no anota la huella, y el dueño tiene que clickear dos
+  veces.
 
 ## Qué mide cada regla
 
@@ -1061,6 +1084,7 @@ Salen de un día entero en que la coordinadora trabajó con el dueño ausente. C
 | La coordinadora cierra los detalles con la opción más segura | nadie | Es criterio, y queda anotado para que el dueño lo vea. |
 | Cada sesión con un nombre puesto por una persona | aviso | `/coordinate` lista las que tienen el nombre que armó la herramienta. |
 | No más sesiones trabajando que el tope | freno | `open` no abre en el tope. Una sesión que el dueño abre a mano no la frena nada; la cuenta `status` y, al llegar al tope o cambiar el conteo, el aviso de la coordinadora. |
+| No abrir más cuando lo que espera la revisión de la persona llega a su tope | aviso | `open` y el freno de sesiones de fondo abren igual, lo dicen y anotan el renglón `review-cap`; lo no medido no frena. Pasa a freno con un commit, cuando los renglones lo justifiquen. |
 | Con la fila de la suite larga no se abren sesiones para programar | nadie | Qué trabajo pide suite es criterio; `status` muestra quién espera turno. |
 | Una suite completa por vez | freno | El corredor de las suites y las portables enteras no arrancan con el turno de otro proceso vivo, y dicen quién lo tiene. Una suite que alguien corre por otro camino no la ve. |
 | Pases adversariales de a uno | freno | El portón del pase sale 3 y `next` pide esperar con otro en vuelo. Lanzar el pase sin consultar el portón no lo frena nada, y el de un arreglo rápido no queda anotado como en vuelo. Pasada una hora, sólo avisa. |
@@ -1110,8 +1134,11 @@ Salen de un día entero en que la coordinadora trabajó con el dueño ausente. C
 | El cuadro de una pregunta lleva el contexto adentro | nadie | Es la forma del mensaje: ningún dato de la máquina la ve. |
 | La constancia de un cambio de control, al final | nadie | Cuándo la pide lo decide la sesión; la constancia vencida la frena su control, no el momento en que se pidió. |
 | Las historias se cierran en horas | nadie | Es criterio: cuál humo tiene guion lo ve la sesión. |
-| Foco en el arnés | nadie | Es criterio de la coordinadora. |
-| Primero lo que rompe o demora, y después el resto en el mismo pulso | nadie | Qué rompe o demora es criterio; las sesiones quietas las cuenta el aviso de cada turno. |
+| Primero lo que traba a todos, después el plan del producto | nadie | Qué traba a todos es criterio; las sesiones quietas las cuenta el aviso de cada turno. |
 | Cada pendiente con quién lo tiene y en qué pedido | nadie | La anotación va en la lista de la coordinadora, que no pasa por un control. |
 | Un solo empuje por pedido | nadie | Un empuje de más no lo frena nada: lo ve la cola de la CI. |
 | Nunca cerrar un turno con «¿seguimos?» | nadie | Es la forma del mensaje; la coordinadora con lugar y trabajo listo ya la frena el gancho del cierre del turno. |
+| Con el dueño ausente no se abre un cuadro | nadie | Que el dueño está ausente lo juzga la coordinadora; nada frena un cuadro por eso. |
+| Preguntarle al dueño antes de correr la firma de otra sesión | nadie | Ningún control separa una firma delegada que el dueño quería ver de una de rutina. |
+| La constancia, con la carpeta quieta | nadie | Lo confirma la sesión en un mensaje; una constancia que ya no corresponde la frena su control. |
+| La constancia, con el guion de la copia instalada | nadie | Qué copia del guion corre lo elige quien escribe el comando. |
