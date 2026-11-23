@@ -674,7 +674,10 @@ frene. Por eso el freno arma cada nombre como lo va a armar el shell, y juzga el
   en la carpeta de la sesión; `git -C` y `make -C` la fijan para su comando. Con `cd -` o un destino
   que no se puede leer queda desconocida, y entonces el nombre pelado del catálogo cuenta como protegido.
 - **`xargs`**: si un comando anterior de la misma tubería nombra un archivo protegido o la carpeta
-  protegida, el programa que corre `xargs` cuenta como escritura sobre eso.
+  protegida, el programa que corre `xargs` cuenta como escritura sobre eso. Un lector (`cat`, `jq`) pasa. Un
+  intérprete (`python3`, `node`…) frena aunque su programa sólo lea, porque corre código que el freno no ve
+  (`python3 -c` carga un `json.py` de la carpeta antes que el de verdad); el motivo no dice que escribe: dice
+  que no puede asegurar que sólo lea, y sugiere `jq` o la herramienta de lectura.
 - **`find`** que borra (`-delete`) o corre un programa que escribe: como baja a las subcarpetas, se juzga
   cuando arranca en la carpeta protegida, en una que la contiene (`~`, `~/.claude`, un repo) o en una
   desconocida. Para saber si una carpeta contiene repos con catálogo mira hasta 5.000 subcarpetas; con más, o

@@ -2631,9 +2631,11 @@ function escrituraProtegida(cmd, payload) {
         if (v && typeof v !== 'string') return v;                                // indecidible en alcance
         if (v) {
           // a un intérprete, el freno no le lee el programa (uno «que sólo lee» corre lo que haya en un json.py de la
-          // carpeta): que el motivo diga cómo leer sin escribir
-          const leer = INTERPRETE_POR_XARGS.test(p) ? ' Para sólo leerlos, usá jq o la herramienta de lectura: un intérprete al que xargs le pasa esos nombres cuenta como escritura.' : '';
-          return { motivo: `ese comando ESCRIBE sobre ${v} (xargs arma los argumentos de «${p}» con lo que le llega de «${corto(c.raw)}»).${leer}` };
+          // carpeta): frena igual, pero el motivo no dice que escribe, sino que no puede asegurar que sólo lea, y cómo leer
+          if (INTERPRETE_POR_XARGS.test(p)) {
+            return { motivo: `no puedo asegurar que ese comando sólo lea ${v}: xargs le pasa ese nombre a «${p}» (lo que le llega de «${corto(c.raw)}»), y un intérprete corre código que el freno no ve («python3 -c», por ejemplo, carga un json.py de la carpeta actual antes que el de verdad). Para sólo leerlo, usá jq o la herramienta de lectura.` };
+          }
+          return { motivo: `ese comando ESCRIBE sobre ${v} (xargs arma los argumentos de «${p}» con lo que le llega de «${corto(c.raw)}»).` };
         }
       }
     }
