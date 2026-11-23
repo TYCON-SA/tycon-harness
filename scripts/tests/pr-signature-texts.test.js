@@ -117,11 +117,16 @@ const NOMBRE_VIEJO_PERMITIDO = Object.freeze({
 // 🔴 Falla con: un texto del árbol público que todavía llama al paso 11 «Preparar el commit»: la persona lee un nombre
 // que ya no es el del paso.
 test('8.242-Barrido_SinPrepararElCommit (T26) @story-8.242 @ac-18', () => {
+  // en el árbol armado de la validación (lo privado con el público encima) quedan afuera las carpetas del privado que no
+  // viajan: sus historias, tareas y registros nombran el paso viejo a propósito
+  const armado = fs.existsSync(path.join(RAIZ, '.tycon', 'internal-forms.json'));
+  const NO_VIAJA = /^(?:(?:specs|tasks|inbox|qa|_bmad|artifacts|new-product-templates|\.advisors|\.dashboard|\.engram)\/|onboarding\/[^/]+\/)/;
   const l = spawnSync('git', ['-C', RAIZ, 'ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   assert.strictEqual(l.status, 0, `no pude listar los archivos del árbol: ${l.stderr}`);
-  const archivos = l.stdout.split('\0').filter(Boolean);
+  const archivos = l.stdout.split('\0').filter((rel) => rel && !(armado && NO_VIAJA.test(rel)));
   assert.ok(archivos.length > 100, 'la lista del árbol vino corta');
-  const VIEJO = /preparar el commit|prepare the commit/i;
+  // el nombre del paso, con mayúscula: «preparar el commit local» habla del commit de git, no del paso
+  const VIEJO = /Preparar el commit|Prepare the commit/;
   const conNombreViejo = [];
   for (const rel of archivos) {
     let texto;
