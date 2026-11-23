@@ -161,6 +161,21 @@ caracteres entre corchetes) sirven, y contestan que no la encuentran (medido el 
 
 Con Codex, las sesiones las abre el dueño: Codex no tiene un lanzador de sesiones de fondo con nombre.
 
+### Lo que la coordinadora ve de Codex
+
+Medido con Codex 0.162.1. La coordinadora va en Claude Code; desde ahí:
+
+- **Ve las sesiones de Codex por su actividad**, de la base de Codex. No sabe si una espera un permiso: con el cuadro
+  de permiso abierto, Codex no lo anota en la base ni en el registro de la sesión. Por eso `status` dice «no sé si
+  espera un permiso» en cada sesión de Codex. `codex agents` es una pantalla para una persona: no se lee desde un comando.
+- **Les puede dejar un mensaje** con `codex queue --thread <id> --message <texto>`. Queda en la cola de Codex. Que una
+  sesión abierta lo lea no se midió. A una sesión terminada también le contesta «Queued», sin error.
+- **El permiso de una sesión de Codex no le llega**: se contesta en la pestaña de Codex. Lo que Codex trae para eso
+  (`exec_permission_approvals`, `request_permissions_tool`) está en desarrollo y apagado. Las firmas de Codex siguen
+  por terminal.
+- **La revisión automática de permisos** (`approvals_reviewer = "auto_review"`) no se pudo comparar con el modo
+  automático de Claude: en la prueba, Codex no pidió permiso y el aislamiento negó el comando.
+
 ### La opción `--slot`: los puestos fijos
 
 Una versión de Claude Code que pida aprobar cada copia, aunque la principal ya esté aprobada, deja a `open --repo` sin

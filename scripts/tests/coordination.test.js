@@ -589,6 +589,43 @@ test('T8h Status_CodexWithoutDate_Waits @story-8.122 @ac-8: un hilo de Codex sin
   assert.match(w.why, /sin fecha de actividad/);
 });
 
+test('8.180 T23 Status_Codex_NoSabeNoEsSinTrabajo @story-8.180 @ac-23: de una sesión de Codex no se sabe si espera un permiso, y el estado lo dice', () => {
+  // medido con Codex 0.162.1: con su cuadro de permiso abierto, ni la base ni el registro del hilo lo anotan
+  const t = toy();
+  codexBase(t, [['cdx-1', 'Activa', 2], ['cdx-2', 'Quieta', 10]]);
+  const { DatabaseSync } = require('node:sqlite');
+  const db = new DatabaseSync(path.join(t.home, '.codex', 'state_5.sqlite'));
+  db.prepare('INSERT INTO threads (id, title, name, cwd, updated_at_ms) VALUES (?, ?, ?, ?, NULL)').run('cdx-3', 'resumen', 'SinFecha', t.root);
+  db.close();
+  const s = C.status(t.opts);
+  const rows = [...s.working, ...s.waiting].filter((x) => /^cdx-/.test(x.sid));
+  assert.deepStrictEqual(rows.map((x) => x.session).sort(), ['Activa', 'Quieta', 'SinFecha']);
+  for (const x of rows) {
+    assert.match(x.why, /no sé si (terminó o )?espera un permiso/, x.session);
+    assert.doesNotMatch(x.why, /sin trabajo/, x.session);
+  }
+  const text = C.statusText(s);
+  assert.match(text, /Activa — Codex, activa en los últimos 5 min; no sé si espera un permiso/);
+  assert.match(text, /Quieta — Codex, quieta hace 5 min o más; no sé si terminó o espera un permiso/);
+  assert.match(text, /SinFecha — Codex, sin fecha de actividad; no sé si espera un permiso/);
+  assert.doesNotMatch(text, /(Activa|Quieta|SinFecha) — sin trabajo/);
+});
+
+test('8.180 T24 Coordinate_EnCodex_DiceQueTiene @story-8.180 @ac-24: en Codex dice qué tiene, qué no, y que sus firmas van por terminal', () => {
+  const t = toy({ profile: { approvals: { relay_session: 'coordinadora' } } });
+  const r = coordinate(t, { CODEX_SESSION_ID: 'cdx-1' });
+  assert.strictEqual(r.code, 1);
+  assert.match(r.text, /Codex no puede coordinar/);
+  assert.match(r.text, /La coordinadora va en Claude Code/);
+  // lo que tiene: la coordinadora de Claude ve sus sesiones por la actividad y les deja un mensaje con codex queue
+  assert.match(r.text, /ve tus sesiones de Codex por su actividad/);
+  assert.match(r.text, /codex queue/);
+  // lo que no: saber si una espera un permiso, y llevar ese permiso a la pestaña de la coordinadora
+  assert.match(r.text, /no sabe si una espera un permiso/);
+  assert.match(r.text, /no le llega a la coordinadora/);
+  assert.match(r.text, /firmas de Codex siguen por terminal/);
+});
+
 test('T25b Open_MissingFolder_SaysSo @story-8.122 @ac-25: una carpeta que no existe no se confunde con el lanzador ausente', () => {
   const t = toy();
   const r = C.open({ ...t.opts, ...caller(t), cwd: path.join(t.root, 'no-existe'), name: 'n1', task: 'algo', launcher: launcher(t) });

@@ -777,9 +777,10 @@ function status(opts = {}) {
     const ago = c.last ? now - c.last : null;
     // Codex no deja archivo de sesión: su marcador sigue vivo mientras el hilo tuvo actividad hace poco, como en heavyPassesInFlight
     if (c.last && now - c.last < CODEX_IDLE_MS) aliveSids.add(c.id);
-    if (ago != null && ago >= 0 && ago < CODEX_WINDOW_MS) working.push({ session, sid: c.id, why: 'Codex, con actividad en los últimos 5 minutos', since: c.last });
-    else if (ago != null && ago >= 0 && ago < CODEX_IDLE_MS) waiting.push({ session, sid: c.id, why: 'Codex, sin actividad en los últimos 5 minutos' });
-    else if (ago == null) waiting.push({ session, sid: c.id, why: 'Codex, sin fecha de actividad' });
+    // Codex no anota en ningún lado que espera un permiso (ni su base ni el registro del hilo): eso se dice, no se supone
+    if (ago != null && ago >= 0 && ago < CODEX_WINDOW_MS) working.push({ session, sid: c.id, why: 'Codex, activa en los últimos 5 min; no sé si espera un permiso', since: c.last });
+    else if (ago != null && ago >= 0 && ago < CODEX_IDLE_MS) waiting.push({ session, sid: c.id, why: 'Codex, quieta hace 5 min o más; no sé si terminó o espera un permiso' });
+    else if (ago == null) waiting.push({ session, sid: c.id, why: 'Codex, sin fecha de actividad; no sé si espera un permiso' });
   }
   for (const o of opened) {
     if (!alive.has(o.name)) working.push({ session: o.name, sid: null, why: 'recién abierta, todavía sin archivo de sesión', since: o.at });
@@ -882,7 +883,11 @@ const isCodex = (env) => Boolean(env.CODEX_SESSION_ID) && !env.CLAUDE_CODE_SESSI
 function coordinate(opts = {}) {
   const env = opts.env || process.env;
   const home = opts.home || require('os').homedir();
-  if (isCodex(env)) return { code: 1, text: 'Codex no puede coordinar: sus mensajes a otra sesión (codex queue) no pasan por una herramienta que el arnés pueda mirar. La coordinadora va en Claude Code.' };
+  if (isCodex(env)) {
+    return { code: 1, text: ['Codex no puede coordinar: sus mensajes a otra sesión (codex queue) no pasan por una herramienta que el arnés pueda mirar. La coordinadora va en Claude Code.',
+      'Lo que tenés con Codex: la coordinadora de Claude ve tus sesiones de Codex por su actividad y les puede dejar un mensaje con codex queue.',
+      'Lo que no: no sabe si una espera un permiso (Codex no lo anota), y ese permiso no le llega a la coordinadora: lo contestás en la pestaña de Codex. Las firmas de Codex siguen por terminal.'].join('\n') };
+  }
   const r = rolDeCoordinar({ env, home, arnes: opts.arnes });
   const rol = { valor: r.rol };
   const sid = env.CLAUDE_CODE_SESSION_ID || null;
