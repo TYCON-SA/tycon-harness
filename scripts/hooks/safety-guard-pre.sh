@@ -551,13 +551,15 @@ fi
 # una variable, una copia con otro nombre o un comodín; para eso `sign` mira además quién lo lanzó y no firma si viene
 # de la herramienta. Un comando que sólo lee la biblioteca (`grep`, `cat`, `git log`…) no la corre: eso lo decide el
 # lector de marker-command.js, y si no está, se cae o no contesta en 5 s, frena. La salida va a un archivo: un programa
-# colgado que dejó un hijo no la deja abierta.
+# colgado que dejó un hijo no la deja abierta. El archivo va en $TMPDIR con plantilla: en macOS, `mktemp` sin argumentos
+# usa la carpeta temporal del sistema aunque $TMPDIR diga otra, y en un encierro que sólo deja escribir en $TMPDIR (la
+# corrida aislada de los humos) no lo crearía, y el freno frenaría lo que sólo lee.
 _firma_solo_lee() {
   tool_is_ps && return 1
   local _lib _salida _pid _vigia _respuesta
   _lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/skills/tycon-pipeline/scripts/lib/marker-command.js" || return 1
   [[ -f "$_lib" ]] && command -v "$HNODE" >/dev/null 2>&1 || return 1
-  _salida="$(mktemp 2>/dev/null)" || return 1
+  _salida="$(mktemp "${TMPDIR:-/tmp}/safety-guard-firma.XXXXXX" 2>/dev/null)" || return 1
   printf '%s' "$CMD" | "$HNODE" "$_lib" --sign-gate >"$_salida" 2>/dev/null &
   _pid=$!
   ( sleep 5; kill -9 "$_pid" 2>/dev/null ) >/dev/null 2>&1 &
