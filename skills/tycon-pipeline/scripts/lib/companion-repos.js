@@ -34,14 +34,15 @@ const { parseEvidenceConfig, discoverRepoRoot } = require('./evidence-config.js'
 // El entorno de cada git que pregunta por un hermano: sin el GIT_DIR, el GIT_WORK_TREE y compañía que llegan adentro de
 // un gancho de git o de un guion de otro repo (con ellos, `git -C <hermano>` contesta por ese otro repo), y con el idioma
 // fijo, porque los errores se leen por su texto.
-// Con las skills instaladas aparte del arnés no está scripts/lib: se sacan igual las variables que apuntan a otro repo.
+// Con las skills instaladas aparte del arnés no está scripts/lib: se sacan igual las variables que apuntan a otro repo
+// (lo que se le pregunta a git acá, rutas y nombres de rama, no depende del idioma).
 const entornoDeGit = () => {
   let cge;
   try { cge = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')); } catch (_) { cge = null; }
   if (cge) return cge.idiomaFijo(cge.sinGitDelPadre());
-  const env = { ...process.env, LC_ALL: 'C', LANG: 'C' };
+  const env = { ...process.env };
   for (const k of ['GIT_DIR', 'GIT_INDEX_FILE', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_PREFIX', 'GIT_OBJECT_DIRECTORY',
-    'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'LANGUAGE', 'LC_MESSAGES']) delete env[k];
+    'GIT_ALTERNATE_OBJECT_DIRECTORIES']) delete env[k];
   return env;
 };
 
