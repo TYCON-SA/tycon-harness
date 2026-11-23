@@ -728,7 +728,13 @@
       "requiere": []
     },
     {
-      "__nota": "lo que se mide de los repos de una corrida antes de guardarla (las huellas, los controles del commit en sólo lectura, lo sensible, el aviso) y que la firma de guardar ya no está (8.283).",
+      "__nota": "en Codex, la pregunta de un gancho sale como negativa con la pregunta y cómo aprobarlo a mano (Codex no tiene ventana de permiso); en Claude Code, pregunta. Aparte de save-brake.test.js, que es de las suites bajadas.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/hook-ask-codex.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el ok de guardar una story es la firma «save»: las huellas de cada repo, si el ok sigue valiendo, la story limpia, lo sensible y el aviso al dueño antes de la constancia.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/save-ok.test.js",
       "requiere": []
@@ -1932,6 +1938,12 @@
       "__nota": "Lo que da por buena la evidencia sin verificarla pide la firma de nivel 2: la bandera --no-mutation con motivo y firma, el período de aviso hasta la fecha de corte de la lista única, y los textos que nombran la firma. Casa de juguete y copias temporales del árbol.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/evidence-escape.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Lo que contesta el dueño lo contesta el dueño: «skip» del código pide la firma review-skip, las otras respuestas no, y la coordinadora lo contesta por el perfil sólo con el dueño ausente y la celda en skip. Casa de juguete con git.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/owner-answers.test.js",
       "requiere": []
     },
     {
@@ -3725,6 +3737,12 @@
       "requiere": []
     },
     {
+      "__nota": "El freno de pedidos juzga --delete-source-branch de un az repos pr update con la rama del pedido, que le pregunta al conector de la plataforma del repo (con el az de mentira).",
+      "raiz": "arnes",
+      "ruta": "tests/pr-update-source-branch.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "Los pedidos de cambio por la capa de plataforma: abrir uno en Azure DevOps y en GitHub contra el az y el gh de mentira (reusar el abierto, releerlo por rama si la respuesta no trae el número, lo que no abre), listar los de GitHub, el freno de un pedido por repo y los nocturnos que leen las dos plataformas.",
       "raiz": "arnes",
       "ruta": "tests/platform-change-request.test.js",
@@ -3790,6 +3808,12 @@
       "__nota": "Los textos del núcleo hablan de la plataforma del equipo: lo de Azure DevOps vive en guides/integrations/, salvo los renglones declarados con su motivo, y la guía de conectores dice cada operación y cada motivo.",
       "raiz": "arnes",
       "ruta": "tests/platform-texts.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "El aviso de consultas fallidas es neutro: qué comando de una plataforma es una consulta, el aviso del proyecto que no existe y el refresco de su lista los trae el conector en scripts/query-notice.js. Sin red: una casa de juguete con la lista guardada.",
+      "raiz": "arnes",
+      "ruta": "tests/failed-query-connectors.test.js",
       "requiere": []
     },
     {

@@ -75,17 +75,43 @@ function runtimeWaiverConOk(storyPath, argv, m) {
     process.exit(2);
   }
   const wd = require('./waiver-display.js');
-  // sólo la historia de la corrida abierta: una copia en otra ruta mostraría a la persona otra cosa que la que se firma
-  if (!wd.esLaDelMarcador(storyPath, m)) {
-    console.error(`🚫 marker.js runtime-waiver: no se firmó — ${storyPath} no es la historia de la corrida abierta en ${estado.SID !== PROPIA ? `la sesión ${estado.SID}` : 'esta sesión'}${m && m.storyPath ? ` (${m.storyPath})` : ''}.`);
+  const tanda = val('--batch');
+  if (argv.includes('--batch') && (!tanda || String(tanda).startsWith('-'))) {
+    console.error('marker.js runtime-waiver: --batch sin el nombre de la tanda.');
     process.exit(2);
   }
-  // la matriz de «Preparar el commit»: con tanda anotada, los criterios sin correr de las otras tandas no niegan la firma
-  const matrix = wd.matrixForSignature(storyPath, m);
+  if (m) {
+    // con una corrida abierta, la tanda es la que anotó la corrida: otra pedida a mano mediría otra cosa
+    if (tanda) {
+      console.error(`🚫 marker.js runtime-waiver: no se firmó — hay una ejecución abierta en ${estado.SID !== PROPIA ? `la sesión ${estado.SID}` : 'esta sesión'}, y manda la tanda de la ejecución (${m.batch || 'sin tanda: todas'}): pedila sin --batch.`);
+      process.exit(2);
+    }
+    // sólo la historia de la corrida abierta: una copia en otra ruta mostraría a la persona otra cosa que la que se firma
+    if (!wd.esLaDelMarcador(storyPath, m)) {
+      console.error(`🚫 marker.js runtime-waiver: no se firmó — ${storyPath} no es la historia de la corrida abierta en ${estado.SID !== PROPIA ? `la sesión ${estado.SID}` : 'esta sesión'}${m.storyPath ? ` (${m.storyPath})` : ''}.`);
+      process.exit(2);
+    }
+  } else if (!require('../runtime-matrix.js').discoverRepoRoot(storyPath)) {
+    // sin corrida, la constancia queda en el repo de la historia (`.tycon/runtime-waivers.jsonl`), para commitearla: el
+    // mismo repo que la matriz toma como `repoRoot`. Fuera de git no hay dónde, y la firma va a la terminal
+    console.error(`🚫 marker.js runtime-waiver: no se firmó — ${storyPath} no está en un repo git: sin una corrida abierta, la firma desde la sesión deja su constancia en el repo de la historia, para commitearla.`);
+    console.error(`   La firma una persona en su terminal: node ${MARKER_JS} runtime-waiver ${storyPath} --terminal`);
+    process.exit(2);
+  }
+  // la matriz de «Preparar el commit»: con tanda anotada, los criterios sin correr de las otras tandas no niegan la firma.
+  // Sin corrida, la tanda pedida con --batch, medida igual (el cuadro calcula la misma: scripts/lib/owner-window.js)
+  const matrix = wd.matrixForSignature(storyPath, m, { batch: m ? null : tanda });
   if (matrix.structuralError) { console.error(`marker.js runtime-waiver: la matriz no computa (${matrix.structuralError}).`); process.exit(2); }
+  // una tanda pedida que la matriz no pudo medir sola (sin criterios, o sin la lista de cambios): firmar con ella
+  // dejaría pasar criterios de otras tandas
+  if (tanda && !matrix.batch) {
+    const porQue = (matrix.warnings || []).find((w) => /mido todas las tandas/.test(w));
+    console.error(`🚫 marker.js runtime-waiver: no se firmó — no pude medir sólo la tanda ${tanda}${porQue ? ` (${porQue})` : ''}.`);
+    process.exit(2);
+  }
   const deOtraTanda = matrix.batch ? pedidos.filter((n) => !matrix.acs.includes(n)) : [];
   if (deOtraTanda.length) {
-    console.error(`🚫 marker.js runtime-waiver: no se firmó — AC ${deOtraTanda.join(', ')} no es de la tanda medida (${matrix.batch}): se firma en la corrida de su tanda.`);
+    console.error(`🚫 marker.js runtime-waiver: no se firmó — AC ${deOtraTanda.join(', ')} no es de la tanda medida (${matrix.batch}): se firma ${m ? 'en la corrida de su tanda' : 'con --batch de su tanda'}.`);
     process.exit(2);
   }
   // los que cubre el rojo esperado vigente de la deuda ya tienen su salida: no frenan la exención de los imposibles
@@ -112,12 +138,15 @@ function runtimeWaiverConOk(storyPath, argv, m) {
   const declHashByAc = {};
   for (const n of pedidos) declHashByAc[n] = waiver.declHashFor(matrix.perAc[n].declReason, matrix.perAc[n].coveredBy);
   const repoRoot = matrix.repoRoot || null;
+  // la sesión que pidió la firma: va dentro del ok, que entra en la cadena (cambiarla a mano descarta la firma)
+  const sesion = PROPIA !== '_nosession' ? PROPIA : null;
   const entry = waiver.appendWaiver({
     story: matrix.key || matrix.sid, acs: pedidos, matrixHash: matrix.hash, approvedBy: e.quien, nowIso: nowIso(), declHashByAc,
     logPath: repoRoot ? waiver.repoWaiverLogPath(repoRoot) : undefined,
-    ok: { tipo: e.tipo, quien: e.quien, via: e.via },
+    ok: { tipo: e.tipo, quien: e.quien, via: e.via, ...(sesion ? { sesion } : {}) },
   });
-  appendLog('gates.log', { type: 'RUNTIME_WAIVER', story: matrix.sid, acs: pedidos, matrixHash: matrix.hash, approvedBy: e.quien, via: e.via });
+  appendLog('gates.log', { type: 'RUNTIME_WAIVER', story: matrix.sid, acs: pedidos, matrixHash: matrix.hash, approvedBy: e.quien, via: e.via,
+    ...(sesion ? { sesion } : {}), ...(matrix.batch ? { batch: matrix.batch } : {}) });
   const mk = { ...(m || {}), repoPath: repoRoot || (m && m.repoPath) || null, storyId: (m && m.storyId) || matrix.sid, storyPath };
   for (const n of pedidos) {
     anotarAprobacion(mk, { que: `AC ${n} imposible de verificar en vivo`, via: e.via, tipo: e.tipo, quien: e.quien, ...(e.delegacion ? { delegacion: e.delegacion } : {}) });
@@ -215,9 +244,12 @@ function cmdReviewAsk(argv) {
   process.exit(0);
 }
 
-// `review-answer --kind plan|code --choice review|skip|wait [--for-session <D>]`: anota la respuesta a la pregunta de
-// revisar. La corre quien la recibe: la propia sesión o, con `--for-session`, sólo la designada. No es una firma y no
-// escribe el marcador destino: sólo un renglón `review-answer` en gates.log.
+// `review-answer --kind plan|code --choice review|skip|wait [--for-session <D>] [--by-profile]`: anota la respuesta a la
+// pregunta de revisar. La corre quien la recibe: la propia sesión o, con `--for-session`, sólo la designada. No escribe el
+// marcador destino: sólo un renglón `review-answer` en gates.log. «skip» del código lo contesta el dueño: pide la firma
+// `review-skip` (su ventana, su click o su «aprobado», nunca la delegación), y su vía queda en el renglón. Con
+// `--by-profile` lo anota sin firma, con `por: 'perfil'`, sólo si el dueño cuenta como ausente y la celda de «dueño
+// ausente» dice `skip` para ese diff (plan-review.js skipPorElPerfil).
 function cmdReviewAnswer(argv) {
   const pr = require('./plan-review.js');
   const { val } = opcionesDe(argv);
@@ -236,7 +268,24 @@ function cmdReviewAnswer(argv) {
   const kind = val('--kind');
   const h = pr.huellaDe({ estado: STATE_DIR, sesion, kind });
   if (h.codigo) { console.error(`🔒 marker.js review-answer: ${h.motivo}. No se escribió nada.`); process.exit(h.codigo); }
-  const r = pr.anotarRespuesta({ estado: STATE_DIR, sesion, kind, choice: val('--choice'), quien: ajena ? `coordinadora ${PROPIA}` : `sesión ${PROPIA}`, huella: h.huella, motivo: val('--reason') || null });
+  const choice = val('--choice');
+  const porPerfil = argv.includes('--by-profile');
+  if (porPerfil && !(kind === 'code' && choice === 'skip')) {
+    console.error('🔒 marker.js review-answer: --by-profile vale sólo para --kind code --choice skip. No se escribió nada.');
+    process.exit(2);
+  }
+  let via = null;
+  if (kind === 'code' && choice === 'skip') {
+    if (porPerfil) {
+      const c = pr.skipPorElPerfil({ estado: STATE_DIR, sesion, huella: h.huella });
+      if (c.codigo) { console.error(`🔒 marker.js review-answer --by-profile: ${c.motivo}. No se escribió nada.`); process.exit(c.codigo); }
+    } else {
+      const f = firmaDelDueno('review-skip', `contestar «skip» a la pregunta del pase del código de la sesión ${sesion}`);
+      via = f.via || null;
+    }
+  }
+  const r = pr.anotarRespuesta({ estado: STATE_DIR, sesion, kind, choice, quien: ajena ? `coordinadora ${PROPIA}` : `sesión ${PROPIA}`, huella: h.huella, motivo: val('--reason') || null,
+    via, por: porPerfil ? 'perfil' : null });
   if (r.codigo) { console.error(`🔒 marker.js review-answer: ${r.motivo}. No se escribió nada.`); process.exit(r.codigo); }
   process.stdout.write(`respuesta anotada para la sesión ${sesion}: ${val('--choice')} (${kind}).\n`);
   process.exit(0);
@@ -249,7 +298,9 @@ function cmdOwnerAway(argv) {
   const { val } = opcionesDe(argv);
   const accion = argv[0];
   if (accion === 'set') {
-    const r = oa.set({ estado: STATE_DIR, quien: `sesión ${PROPIA}`, frase: val('--phrase') });
+    // la frase la tipeó la persona en esta sesión, en los últimos 30 minutos: el agente no se pone la marca solo
+    const ap = require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'owner-approvals.js'));
+    const r = oa.set({ estado: STATE_DIR, quien: `sesión ${PROPIA}`, frase: val('--phrase'), verificar: (frase) => ap.fraseTipeadaReciente({ sesion: PROPIA, frase }) });
     if (r.codigo) { console.error(`🔒 marker.js owner-away set: ${r.motivo}. No se escribió nada.`); process.exit(r.codigo); }
     process.stdout.write(`marca de ausente puesta (${r.mark.setAt}): las revisiones siguen la celda de «persona ausente» hasta que la persona vuelva o pasen 24 h.\n`);
     process.exit(0);

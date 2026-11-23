@@ -1507,7 +1507,9 @@ function reviewAskLines(opts, sid, now, problems = []) {
     }
     const celda = cfg.deep_review.small_routine_owner_away;
     const choice = celda === 'run' ? 'review' : celda;
-    return `${base}: dueño ausente, deep_review.small_routine_owner_away: ${celda} — contestala con marker.js review-answer --for-session ${p.sesion} --kind code --choice ${choice} --reason "dueño ausente"; el pase lo lanza la propia sesión, con tu turno.`;
+    // «skip» lo contesta el perfil con --by-profile, que el guion comprueba: sin la bandera pide la firma del dueño
+    const porPerfil = celda === 'skip' ? ' --by-profile' : '';
+    return `${base}: dueño ausente, deep_review.small_routine_owner_away: ${celda} — contestala con marker.js review-answer --for-session ${p.sesion} --kind code --choice ${choice}${porPerfil} --reason "dueño ausente"; el pase lo lanza la propia sesión, con tu turno.`;
   });
 }
 

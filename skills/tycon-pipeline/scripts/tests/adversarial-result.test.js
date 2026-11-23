@@ -28,6 +28,8 @@ const { spawnSync } = require('child_process');
 const SCRIPTS = path.join(__dirname, '..');
 const SKILL = path.join(SCRIPTS, '..');
 const MARKER = path.join(SCRIPTS, 'marker.js');
+// «skip» del código lo contesta la persona (firma review-skip): la prueba da su click
+const { conVentana } = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'tests', 'lib', 'window-passed.js'));
 const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
 const LANZADO = '2026-09-18T01:00:00.000Z';
 const DESPUES = '2026-09-18T02:00:00.000Z';
@@ -200,7 +202,7 @@ test('T4 Skipped_PortonLow_AnotaSalteoYCierra5b @story-1.8 @ac-4', () => {
   const home = casa(); const SID = 't4'; const repo = mkRepo();
   writeFakeMarker(home, SID, { repoPath: repo, storyPath: path.join(repo, 'specs', 'a.md') });
   // de fábrica, un cambio chico de día pregunta: el salteo vale recién con la respuesta «skip» para este diff
-  const ra = correr(home, SID, ['review-answer', '--kind', 'code', '--choice', 'skip', '--reason', 'el dueño eligió no revisarlo']);
+  const ra = correr(home, SID, ['review-answer', '--kind', 'code', '--choice', 'skip', '--reason', 'el dueño eligió no revisarlo'], { env: conVentana({}, { via: 'click' }) });
   assert.equal(ra.status, 0, ra.stderr);
   const r = correr(home, SID, ['mark-adversarial-skipped', '--files', 'scripts/x.js']);
   assert.equal(r.status, 0, r.stderr);
@@ -794,7 +796,7 @@ test('T52 Skipped_ArchivosCuentaComoElPorton @story-1.8 @ac-41', () => {
   for (const [args, n] of casos) {
     const home = casa(); const repo = mkRepo({ codigo: 2 });
     writeFakeMarker(home, 't52', { repoPath: repo, storyPath: path.join(repo, 'specs', 'a.md') });
-    const ra = correr(home, 't52', ['review-answer', '--kind', 'code', '--choice', 'skip', '--reason', 'el dueño eligió no revisarlo']);
+    const ra = correr(home, 't52', ['review-answer', '--kind', 'code', '--choice', 'skip', '--reason', 'el dueño eligió no revisarlo'], { env: conVentana({}, { via: 'click' }) });
     assert.equal(ra.status, 0, ra.stderr);
     const r = correr(home, 't52', ['mark-adversarial-skipped', ...args]);
     assert.equal(r.status, 0, r.stderr);
