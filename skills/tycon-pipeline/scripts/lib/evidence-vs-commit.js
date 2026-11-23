@@ -28,8 +28,9 @@
  *      `{ cuenta: false, regla: 6, criterios }`, y la evidencia de los otros criterios sigue contando: el arreglo de
  *      una prueba no dice nada de lo que esa prueba no mira. Sin marcas o ilegible, `criterios: null`: vence toda. De qué historia es un commit lo dice
  *      lib/commit-story.js, o, para un commit de la rama de la historia que todavía no está en origin/main, la rama; si no
- *      se sabe, vence toda. Si lo único que cambió en la prueba son marcas `@story-…` y `@ac-N`, no vence nada: la prueba
- *      hace lo mismo que cuando corrió la evidencia, y devuelve `{ cuenta: true, regla: 6, via: 'solo-marcas' }`.
+ *      se sabe, vence toda. Si lo único que cambió en la prueba son marcas `@story-…` y `@ac-N` en el nombre de una prueba
+ *      o en un comentario, no vence nada: la prueba hace lo mismo que cuando corrió la evidencia, y devuelve
+ *      `{ cuenta: true, regla: 6, via: 'solo-marcas' }`. Una marca en un dato de la prueba, o cualquier otro cambio, vence.
  *
  * La regla de la entrada no es una más de esta lista: `entrada` responde aparte, y la pide la matriz cuando una evidencia no
  * cuenta (runtime-matrix.js). Una historia queda probada si lo que entró a origin/main es, por contenido, lo que se probó;
@@ -63,21 +64,70 @@ const MAIN = 'origin/main';
 // Una marca de prueba suelta, con los espacios de antes: `@story-<historia>` o `@ac-N`, sin una letra pegada a ninguno
 // de los dos lados (`x@ac-4` es texto de la prueba).
 const MARCA_DE_PRUEBA = /[ \t]*(?<![\w@])@(?:story-[\w.-]*\w|ac-\d+)(?!\w)/g;
-// Lo que queda de un renglón que sólo tenía marcas: nada, o el comienzo de un comentario.
-const RENGLON_SIN_NADA = /^[ \t]*(?:\/\/+|#+|\*+|\/\*+[ \t]*\*+\/)?[ \t]*$/;
+// Un comentario que sin sus marcas quedó vacío.
+const COMENTARIO_VACIO = /^[ \t]*(?:\/\/+|#+|\/\*+[ \t*]*\*\/)?[ \t]*$/;
+// Las palabras que declaran una prueba: su primer argumento es su nombre, donde van las marcas.
+const DECLARA_PRUEBA = /^(?:test|it|describe|context|suite|specify)$/;
 
 /**
- * El texto de una prueba sin sus marcas: se sacan de cada renglón, el renglón que sólo tenía marcas se va, y en el que
- * tenía algo más se va también el comentario que quedó vacío al final. Los renglones sin marcas quedan como están, salvo
- * los espacios del final. Dos versiones de una prueba que dan lo mismo acá difieren sólo en marcas.
+ * ¿El texto en la posición `k` es el nombre de una prueba? `test('…'`, `it.only('…'`, `describe.skip('…'`. Uno de un
+ * método (`t.test('…'`, `re.test('…'`) no: puede ser un dato.
  */
-function sinMarcas(texto) {
-  return String(texto).split(/\r?\n/).flatMap((renglon) => {
-    const sin = renglon.replace(MARCA_DE_PRUEBA, '');
-    if (sin === renglon) return [renglon.replace(/[ \t]+$/, '')];
-    if (RENGLON_SIN_NADA.test(sin)) return [];
-    return [sin.replace(/[ \t]*\/\*+[ \t]*\*+\//g, '').replace(/[ \t]*(?:\/\/+|#+)[ \t]*$/, '').replace(/[ \t]+$/, '')];
-  }).join('\n');
+function esNombreDePrueba(tokens, k) {
+  if (!tokens[k - 1] || tokens[k - 1].v !== '(') return false;
+  let j = k - 2;
+  while (j >= 2 && tokens[j].tipo === 'palabra' && !DECLARA_PRUEBA.test(tokens[j].v) && tokens[j - 1].v === '.') j -= 2;
+  return Boolean(tokens[j]) && tokens[j].tipo === 'palabra' && DECLARA_PRUEBA.test(tokens[j].v) && !(tokens[j - 1] && tokens[j - 1].v === '.');
+}
+
+/**
+ * En un lenguaje que lee lib/change-kind.js (menos C#): ¿las dos versiones difieren sólo en marcas? El código y las
+ * separaciones, iguales; un texto que cambió, sólo si es el nombre de una prueba y sin sus marcas da lo mismo (otro texto
+ * puede ser un dato de la prueba); los comentarios, iguales sin sus marcas, y el que quedó vacío no cuenta. La separación
+ * de antes del primer token no cuenta: es la de un renglón de comentario agregado arriba.
+ */
+function soloMarcasEnElCodigo(antes, ahora, ext) {
+  const idioma = { jsx: !/^\.(?:ts|mts|cts)$/.test(ext) };
+  const a = changeKind.leer(antes, idioma);
+  const b = changeKind.leer(ahora, idioma);
+  if (a.duda || b.duda || a.tokens.length !== b.tokens.length) return false;
+  for (let k = 0; k < a.tokens.length; k++) {
+    const [x, y] = [a.tokens[k], b.tokens[k]];
+    if (x.tipo !== y.tipo || x.familia !== y.familia) return false;
+    if (x.v === y.v) continue;
+    if (x.tipo !== 'texto' || !esNombreDePrueba(a.tokens, k)) return false;
+    if (x.v.replace(MARCA_DE_PRUEBA, '') !== y.v.replace(MARCA_DE_PRUEBA, '')) return false;
+  }
+  if (a.separaciones.some((s, k) => k > 0 && s !== b.separaciones[k])) return false;
+  const comentarios = (r) => JSON.stringify(r.comentarios.map((c) => [String(c.texto).replace(MARCA_DE_PRUEBA, ''), c.ancla])
+    .filter(([t]) => !COMENTARIO_VACIO.test(t)));
+  return comentarios(a) === comentarios(b);
+}
+
+/**
+ * En cualquier otro lenguaje: ¿las dos versiones difieren sólo en marcas de renglones de comentario (`#` o `//`)? Esos
+ * renglones se comparan sin sus marcas, y el que quedó vacío se va; todos los demás, tal cual, byte a byte. Un renglón
+ * adentro de un heredoc o de un texto entre comillas triples es un dato, aunque empiece con `#`.
+ */
+function soloMarcasEnComentarios(antes, ahora) {
+  const sin = (texto) => {
+    const out = [];
+    let fin = null;
+    for (const r of String(texto).split('\n')) {
+      if (fin) { out.push(r); if (fin.test(r)) fin = null; continue; }
+      if (/^[ \t]*(?:#|\/\/)/.test(r)) {
+        const s = r.replace(MARCA_DE_PRUEBA, '');
+        if (!(s !== r && COMENTARIO_VACIO.test(s))) out.push(s);
+        continue;
+      }
+      out.push(r);
+      const h = /<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\1/.exec(r);
+      if (h) fin = new RegExp(`^[ \\t]*${h[2]}[ \\t]*$`);
+      else if ((r.match(/"""|'''/g) || []).length % 2 === 1) fin = /"""|'''/;
+    }
+    return out.join('\n');
+  };
+  return sin(antes) === sin(ahora);
 }
 
 /** `{ codigo, salida }`; `codigo: null` si git no pudo contestar (no está, no es un repo accesible, venció el tiempo). */
@@ -349,9 +399,9 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
     return criterios.size ? [...criterios].sort((a, b) => a - b) : null;
   }
 
-  // ¿Lo único que cambió en la prueba, de la versión que juzgó la evidencia (`desde`) a la del disco, son marcas? Sin las
-  // marcas, las dos tienen que dar el mismo texto; o, en un lenguaje que lee lib/change-kind.js, diferir sólo en espacios.
-  // Sin `desde`, sin el archivo en esa versión o con git sin contestar, no.
+  // ¿Lo único que cambió en la prueba, de la versión que juzgó la evidencia (`desde`) a la del disco, son marcas? En el
+  // nombre de una prueba o en un comentario, nunca en un dato (soloMarcasEnElCodigo, soloMarcasEnComentarios). Sin `desde`,
+  // sin el archivo en esa versión, igual a la de ahora o con git sin contestar, no.
   function soloMarcas(archivo, carpeta, nombre, desde) {
     if (!desde) return false;
     let ahora;
@@ -359,11 +409,9 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
     const rel = rutaEnElRepo(carpeta, nombre);
     if (!rel || preguntar(carpeta, ['cat-file', '-e', `${desde}:${rel}`]).codigo !== 0) return false;
     const antes = preguntar(carpeta, ['show', `${desde}:${rel}`]);
-    if (antes.codigo !== 0) return false;
-    const [a, b] = [sinMarcas(antes.salida), sinMarcas(ahora)];
-    if (a === b) return true;
-    if (!changeKind.EXTENSIONES.includes(path.extname(rel).toLowerCase())) return false;
-    return changeKind.queCambio(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8'), { archivo: rel }).tipo === 'igual';
+    if (antes.codigo !== 0 || antes.salida === ahora) return false;
+    const ext = path.extname(rel).toLowerCase();
+    return changeKind.EXTENSIONES.includes(ext) && ext !== '.cs' ? soloMarcasEnElCodigo(antes.salida, ahora, ext) : soloMarcasEnComentarios(antes.salida, ahora);
   }
 
   // La regla 6 por criterio: la prueba que la propia historia cambió vence sólo la evidencia de los criterios que nombra,

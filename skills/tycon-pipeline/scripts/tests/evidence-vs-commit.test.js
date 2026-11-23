@@ -674,12 +674,29 @@ test('EvidenceVsCommit_SameStoryTagsAndCode_VoidsItsCriteria — marcas y algo m
   assert.equal(r.cuenta, false, JSON.stringify(r));
 });
 
+test('EvidenceVsCommit_TagsInDataOrWhitespace_Voids — una marca en un dato de la prueba, o un cambio de espacios en un texto, vencen', () => {
+  const base = 'test(\'caso a @story-9.9 @ac-2\', () => { assert.equal(f(), \'ok @ac-1\'); const t = `a \nb`; const r = /x @ac-1/; });\n';
+  for (const [caso, ahora] of [
+    ['la marca de un dato', base.replace('\'ok @ac-1\'', '\'ok\'')],
+    ['la marca de una expresión', base.replace('/x @ac-1/', '/x/')],
+    ['los espacios de una plantilla', base.replace('`a \nb`', '`a\nb`')],
+    ['un salto de Windows en una plantilla', base.replace('`a \nb`', '`a \r\nb`')],
+    ['una marca de un método que no declara una prueba', base.replace('assert.equal(f(), \'ok @ac-1\')', 'assert.equal(re.test(\'ok @ac-2\'), true)')],
+  ]) {
+    const l = labDeLaHistoria(base);
+    escribir(l.repo, PRUEBA_9_9, ahora);
+    commit(l.repo, 'cambia la prueba', 1700000200);
+    const r = l.juzgar(l.prueba);
+    assert.equal(r.cuenta, false, `${caso}: ${JSON.stringify(r)}`);
+  }
+});
+
 test('EvidenceVsCommit_SameStoryShellTestOnlyTags_StillCounts — en una suite de bash, sumar un renglón de marcas no vence; cambiar un comando sí', () => {
   const nombre = 'tests/feature.test.sh';
-  const lab = () => {
+  const lab = (inicial = '# @story-9.9 @ac-2\nok "caso a" "$(echo a)"\n') => {
     const repo = repoNuevo(carpeta());
     escribir(repo, 'src/feature.js', '// v1\n');
-    const abs = escribir(repo, nombre, '# @story-9.9 @ac-2\nok "caso a" "$(echo a)"\n');
+    const abs = escribir(repo, nombre, inicial);
     commit(repo, 'base', 1700000000);
     git(repo, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
     git(repo, ['switch', '-q', '-c', 'feature/9-9-lab']);
@@ -698,6 +715,22 @@ test('EvidenceVsCommit_SameStoryShellTestOnlyTags_StillCounts — en una suite d
   commit(l.repo, 'marca y cambia', 1700000200);
   r = l.juzgar();
   assert.deepStrictEqual([r.cuenta, r.regla], [false, 6], JSON.stringify(r));
+  // fuera de un comentario, una marca es parte del comando; y un renglón sin marcas se compara tal cual
+  for (const ahora of ['# @story-9.9 @ac-2\nok "caso a @ac-3" "$(echo a)"\n', '# @story-9.9 @ac-2 @ac-3\nok "caso a" "$(echo a)" \n',
+    '# @story-9.9 @ac-2 @ac-3\r\nok "caso a" "$(echo a)"\r\n']) {
+    l = lab();
+    escribir(l.repo, nombre, ahora);
+    commit(l.repo, 'marca y algo más', 1700000200);
+    r = l.juzgar();
+    assert.equal(r.cuenta, false, `${JSON.stringify(ahora)}: ${JSON.stringify(r)}`);
+  }
+  // un renglón con `#` adentro de un heredoc es un dato del archivo que escribe: una marca ahí cambia la prueba
+  const conHeredoc = 'ok "caso a" "$(echo a)"\ncat > x.txt <<EOF\n# x\nEOF\n';
+  l = lab(conHeredoc);
+  escribir(l.repo, nombre, conHeredoc.replace('# x', '# x @ac-5'));
+  commit(l.repo, 'marca adentro del heredoc', 1700000200);
+  r = l.juzgar();
+  assert.equal(r.cuenta, false, JSON.stringify(r));
 });
 
 test('T18 EvidenceVsCommit_SameStoryTestWithoutTags_VoidsAll @story-8.263 @ac-15 @ac-16 @ac-17 — sin marcas, ilegible, de código o de autoría desconocida vence todo; la de otra historia cuenta', () => {
