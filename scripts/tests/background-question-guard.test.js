@@ -680,11 +680,12 @@ test('T31 FirmaEnLanzada_NoRepetirAntesDelAviso @fila-149', () => {
 //    máquina, o prendida sin una coordinadora confirmada y viva).
 test('T32 PorQueSinLista_ApagadaOSinCoordinadora @fila-149', (t) => {
   const toy = maquina(t);
-  assert.match(ow.porQueSinLista({ casa: toy.casa, arnes: toy.arnes }), /apagada.*approvals\.signature_list/);
+  // el ambiente vacío: el de quien corre la prueba (TYCON_PROFILE=0 en las portables) taparía el perfil de juguete
+  assert.match(ow.porQueSinLista({ casa: toy.casa, arnes: toy.arnes, env: {} }), /apagada.*approvals\.signature_list/);
   fs.writeFileSync(path.join(toy.arnes, 'team-profile.json'), JSON.stringify({ approvals: { ...PERFIL.approvals, signature_list: 'on' } }));
   // un pedido que sí se anotaría: lo que falta es la coordinadora para la lista
   const cuadro = oa.cuadroDe({ firma: 'plan-approval', destino: 's', que: 'aprobar el plan', siSaleMal: 'se rehace', huella: 'abcd1234' });
-  const prendida = ow.porQueSinLista({ casa: toy.casa, arnes: toy.arnes, sesion: 's', destino: 's', pendientes: ['plan-approval'], cuadro });
+  const prendida = ow.porQueSinLista({ casa: toy.casa, arnes: toy.arnes, env: {}, sesion: 's', destino: 's', pendientes: ['plan-approval'], cuadro });
   assert.match(prendida, /coordinadora/);
   assert.doesNotMatch(prendida, /apagada/);
 });
@@ -695,7 +696,7 @@ test('T33 PorQueSinLista_ListaPrendida_DiceLoDelPedido @fila-149', (t) => {
   const toy = maquina(t);
   fs.writeFileSync(path.join(toy.arnes, 'team-profile.json'), JSON.stringify({ approvals: { ...PERFIL.approvals, signature_list: 'on' } }));
   const cuadro = oa.cuadroDe({ firma: 'plan-approval', destino: 's', que: 'aprobar el plan', siSaleMal: 'se rehace', huella: 'abcd1234' });
-  const por = (o) => ow.porQueSinLista({ casa: toy.casa, arnes: toy.arnes, sesion: 's', destino: 's', pendientes: ['plan-approval'], cuadro, ...o });
+  const por = (o) => ow.porQueSinLista({ casa: toy.casa, arnes: toy.arnes, env: {}, sesion: 's', destino: 's', pendientes: ['plan-approval'], cuadro, ...o });
   assert.match(por({ pendientes: ['plan-approval', 'save'] }), /varias firmas/);
   assert.match(por({ destino: 'ses-otra' }), /otra sesión/);
   assert.match(por({ cuadro: { error: 'no se pudo' } }), /no se pudo armar/);
