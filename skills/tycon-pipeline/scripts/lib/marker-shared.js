@@ -63,7 +63,9 @@ const PARA_OTRA_SESION = {
   // el plan con su nombre o con el número del marcador viejo, con la firma: la persona, o la coordinadora por delegación
   // con la revisión automática (sin firma no se escribe en la ejecución de otra sesión)
   'complete-step': { firma: 'plan-approval', marcador: true,
-    si: (a) => (a[3] === 'approve-plan' || a[3] === '3') && ['--approved', '--mockup-approved', '--terminal'].some((f) => a.includes(f)) },
+    si: (a) => (a[3] === 'approve-plan' || a[3] === '3') && ['--approved', '--mockup-approved', '--terminal'].some((f) => a.includes(f)),
+    // el paso del plan sin ninguna de esas: la firma es ésa, sólo le falta la cita (lo dice paraOtraSesion)
+    sinCita: (a) => a[3] === 'approve-plan' || a[3] === '3' },
   'approve-mockup': { firma: 'plan-approval', marcador: true },
   'waive-critical': { firma: 'critical-waiver', marcador: true },
   // eximir un comando de la comparación con main (historia 8.167): sobre la corrida abierta del destino
@@ -144,6 +146,11 @@ function paraOtraSesion(argv) {
   if (argv[2] === 'clear') no(`clear cierra la ejecución de la propia sesión; la de otra sesión se cierra con marker.js clear-session ${PEDIDA} (y si quedó perdida, clear-session ${PEDIDA} --lost --for-session ${PEDIDA})`);
   const t = reglaParaOtra(argv);
   const s = t && require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'signatures.js')).SIGNATURES.find((x) => x.id === t.firma);
+  // el plan sin --approved ni --terminal es la firma de otra sesión sin su cita: se dice qué falta y el comando, sin firmar
+  if (t && t.si && !t.si(argv) && t.sinCita && t.sinCita(argv) && s && s.otherSession === 'yes') {
+    const paso = `${argv[2]} ${argv[3]}`;
+    no(`«${paso}» firma el plan de otra sesión y le falta la cita de la persona que lo aprobó. Con la cita, el freno arma el cuadro: node ${MARKER_JS} ${paso} --approved '<la cita de la persona>' --for-session ${PEDIDA}; o en la terminal de la persona: node ${MARKER_JS} ${paso} --terminal --for-session ${PEDIDA}`);
+  }
   if (!t || (t.si && !t.si(argv)) || !s || s.otherSession !== 'yes') no(`«${argv.slice(2, 4).join(' ')}» no es una firma que se pida para otra sesión`);
   if (t.nombra && String(argv[t.nombra] || '').replace(/[/\\]/g, '_') !== PEDIDA) no(`el comando nombra la sesión ${argv[t.nombra]}, y la firma es para ${PEDIDA}`);
   estado.SID = PEDIDA;

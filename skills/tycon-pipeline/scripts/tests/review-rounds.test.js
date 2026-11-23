@@ -223,6 +223,45 @@ test('Cap_Default_Three @story-7.37 @ac-3 @story-8.221 @ac-46', () => {
   assert.match(v.stderr, /tope de 3 vueltas/);
 });
 
+// 🔴 Falla con: al tope, con los hallazgos leídos y nada abierto, el aviso frenaba (sale 3) sin nada que decidir: 77 de
+// 177 avisos de la medición de la 8.325.
+test('Cap_NadaAbierto_NoFrena: al tope sin nada abierto, sale 0 sin set y dice que siga', () => {
+  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('SEC-C1', 'CRITICAL', 'fixed'), hallazgo('TEST-W2', 'WARNING', 'fixed')] });
+  const r = lab.reloop(3);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /no quedó nada abierto/i);
+  assert.match(r.stderr, /Probar en vivo/);
+  const out = JSON.parse(r.stdout);
+  assert.deepEqual(out.rerun, [], 'no devuelve revisores');
+  assert.doesNotMatch(r.stderr, /🛑/);
+  const log = fs.readFileSync(path.join(lab.state, 'gates.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const aviso = log.filter((g) => g.name === 'review-cap-shown');
+  assert.equal(aviso.length, 1);
+  assert.equal(aviso[0].status, 'ok', 'se anota como ok, no como freno');
+  // 🔴 el aviso sin nada abierto no cuenta como aviso para una vuelta extra: si después aparece un crítico, se avisa antes
+  fs.writeFileSync(path.join(lab.run, 'findings.json'), JSON.stringify([hallazgo('SEC-C1', 'CRITICAL', 'open')]));
+  const extra = lab.reloop(3, ['--extra-round']);
+  assert.equal(extra.status, 3, extra.stderr);
+  assert.match(extra.stderr, /todavía no se avisó el tope/);
+  // 🔴 un crítico arreglado que su revisor todavía no confirmó necesita una vuelta más: sigue frenando y lo dice
+  const porConfirmar = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('SEC-C1', 'CRITICAL', 'fixed')] });
+  const registro = path.join(porConfirmar.state, 'reported-criticals', `${SID}.jsonl`);
+  fs.mkdirSync(path.dirname(registro), { recursive: true });
+  fs.writeFileSync(registro, [
+    { ts: T(1), kind: 'launched', advisor: 'tycon-plugin-security-basics', iter: 2, story: '9.8', run: RUN },
+    { ts: T(2), kind: 'report', advisor: 'tycon-plugin-security-basics', iter: 2, story: '9.8', run: RUN, readable: true, criticals: [{ rule: 'SEC-C1', count: 1 }] },
+  ].map((x) => JSON.stringify(x)).join('\n') + '\n');
+  const pc = porConfirmar.reloop(3);
+  assert.equal(pc.status, 3, pc.stderr);
+  assert.match(pc.stderr, /espera que su revisor lo confirme/);
+  // sin poder leer los hallazgos no es «nada abierto»: sigue frenando
+  const sinArchivo = laboratorio({ fotos: [1, 2], servidas: [1, 2] });
+  assert.equal(sinArchivo.reloop(3).status, 3);
+  // con algo abierto, como siempre
+  const conDeuda = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('TEST-W2', 'WARNING', 'open')] });
+  assert.equal(conDeuda.reloop(3).status, 3);
+});
+
 test('Cap_OrgAndRepo_RepoWins_BadValueSaid @story-7.37 @ac-4', () => {
   const rr = (lab) => JSON.parse(lab.cmd(PIPELINE, ['review-rounds', '--story', lab.story, '--repo', lab.repo, '--json']).stdout);
   const org = laboratorio({ org: { max_rounds: 3 }, advisorsYaml: null });
