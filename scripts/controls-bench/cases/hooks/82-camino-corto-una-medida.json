@@ -9,6 +9,8 @@
       "cases": [
         {
           "id": "camino-corto-empuje-con-cat-no-cuenta-lo-sin-seguir",
+          "tools": ["claude"],
+          "asymmetry": "En Codex la pregunta de un gancho sale como negativa con la pregunta y cómo aprobarlo a mano (medición 562: Codex no soporta «ask» y corre el comando). La dirección codex la cubre freno-de-guardar-pedido-preparado-en-codex-niega.",
           "type": "must-not-block",
           "_por_que": "nueve archivos sin seguir de otra sesión, cupo 8: el comando sólo empuja (con `| cat` detrás), así que lo sin seguir no suma y no frena. Pregunta porque el empuje no dice adónde va ni hay rama de empuje configurada: se trata como un empuje a una rama compartida.",
           "setup": [

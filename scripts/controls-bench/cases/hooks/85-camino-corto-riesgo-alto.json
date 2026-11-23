@@ -41,6 +41,8 @@
         },
         {
           "id": "camino-corto-riesgo-alto-con-constancias-pregunta",
+          "tools": ["claude"],
+          "asymmetry": "En Codex la pregunta de un gancho sale como negativa con la pregunta y cómo aprobarlo a mano (medición 562: Codex no soporta «ask» y corre el comando). La dirección codex la cubre freno-de-guardar-pedido-preparado-en-codex-niega.",
           "type": "must-emit",
           "_por_que": "el mismo carril con las dos constancias sobre lo que se guarda: el pull request pregunta como todo pull request del carril, sin pedir revisores (el commit pasa sin pregunta).",
           "setup": [
