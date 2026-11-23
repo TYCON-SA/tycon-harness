@@ -244,7 +244,9 @@ test('PlanReview_CorridaAdoptada_MandaLaUltimaRespuestaDeLasDosSesiones', (t) =>
   const lab = laboratorio(t);
   sesionDeLaCoordinadora(lab, { viva: true });
   const huella = lab.accion(AHORA).huellaPlan;
-  PR().anotarRespuesta({ estado: lab.estado, sesion: DESTINO, kind: 'plan', choice: 'skip', quien: 'la persona', huella, ahora: AHORA + MIN });
+  // «skip» lo anota sólo el click del dueño (la firma plan-review-answer): la prueba lo anota como lo deja ese click
+  const skip = PR().anotarRespuesta({ estado: lab.estado, sesion: DESTINO, kind: 'plan', choice: 'skip', quien: 'la persona', huella, via: 'click', ahora: AHORA + MIN });
+  assert.strictEqual(skip.codigo, 0, skip.motivo);
   const adoptado = lab.adoptar(NUEVA);
   const accion = (ahora) => PR().accionDelPlan({ estado: lab.estado, sesion: NUEVA, marker: adoptado, config: RUN(), home: lab.home, ahora });
   assert.strictEqual(accion(AHORA + 2 * MIN).decision, 'skip', 'el «seguir» de la anterior se hereda');
