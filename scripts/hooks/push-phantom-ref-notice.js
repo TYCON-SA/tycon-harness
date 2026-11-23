@@ -156,7 +156,7 @@ try {
   // algún día tiene que pasar a frenar: «avisó N veces y nadie hizo nada».
   constancia.anotar({
     freno: 'push-referencia-fantasma', regla: 'referencia-fantasma',
-    veredicto: malos.length ? 'aviso' : 'paso', cmd,
+    veredicto: malos.length ? 'aviso' : 'paso', cmd, sesion: ev.session_id,
   });
   if (malos.length) {
     console.log('⚠️  Lo que estás por pushear NOMBRA archivos que no existen en este repo:');

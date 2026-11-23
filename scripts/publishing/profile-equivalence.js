@@ -399,6 +399,8 @@ function isStartupLine(cmd) { return /\bgit\s+(?:-C\s+\S+\s+)?pull\b|\.tycon-pip
  * depende del orden) o `hooks/<archivo>` para los del arnés.
  */
 function scriptName(command) {
+  // con el lanzador del freno de publicación delante, el nombre es el del guion que lanza
+  command = String(command).replace(/^\s*bash\s+"[^"]*node-missing-launcher\.sh"\s+/, '');
   const s = /agent-skills\/skills\/([\w./-]+\.(?:js|sh|ps1|py|command))\b/.exec(command);
   if (s) return s[1];
   const i = /\/integrations\/([\w./-]+\.(?:js|sh|ps1|py|command))\b/.exec(command);

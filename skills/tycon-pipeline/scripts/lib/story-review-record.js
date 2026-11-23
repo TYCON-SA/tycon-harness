@@ -13,7 +13,9 @@ const crypto = require('crypto');
 const { stateDir } = require('./state-dir.js');
 
 const RECORD_DIR = 'story-reviews';
-const RESULTS = ['limpio', 'corregido', 'preguntado', 'saltado', 'pendiente', 'no-medido'];
+// `revalidada`: la vuelta del plan que siguió a un plan rechazado aprobó la historia con su cambio técnico a la vista
+// (story-revalidation.js); la escribe la revisión del plan, no se pide a mano
+const RESULTS = ['limpio', 'corregido', 'preguntado', 'saltado', 'pendiente', 'no-medido', 'revalidada'];
 const MOTIVOS = ['riesgo-bajo', 'apagado'];
 const DESTINOS = ['corregido', 'preguntado', 'descartado'];
 // las secciones que cambian con el avance del trabajo, a cualquier nivel de título
@@ -45,6 +47,14 @@ function recordFileViejo(home, storyPath) {
  * un bloque de código nada es título ni estado: un ejemplo cuenta como texto.
  */
 function huella(texto) {
+  return crypto.createHash('sha256').update(textoDeHuella(texto)).digest('hex');
+}
+
+/**
+ * El texto que mide la huella. Cada constancia lo guarda: con él, story-revalidation.js ve qué cambió de la historia
+ * después de validarla.
+ */
+function textoDeHuella(texto) {
   const lineas = String(texto).replace(/\r\n/g, '\n').split('\n');
   const fuera = [];
   let enFrontmatter = lineas[0] === '---';
@@ -72,7 +82,7 @@ function huella(texto) {
     if (salto) return;
     fuera.push(cerca === null ? l.replace(/^(\s*[-*]\s+)\[[xX ]\]/, '$1[ ]') : l);
   });
-  return crypto.createHash('sha256').update(fuera.join('\n').trim()).digest('hex');
+  return fuera.join('\n').trim();
 }
 
 /** Los problemas de una constancia por escribir; [] si está bien. */
@@ -106,10 +116,12 @@ function writeRecord(home, storyPath, datos) {
     modelo: datos.modelo || null,
     model_reason: datos.model_reason || null,
     huella: huella(texto),
+    texto: textoDeHuella(texto),
     hora: new Date().toISOString(),
     duracion_ms: datos.duracion_ms == null ? null : datos.duracion_ms,
     tokens: datos.tokens == null ? null : datos.tokens,
     riesgo: datos.riesgo || null,
+    ...(datos.origen ? { origen: datos.origen } : {}),
   };
   // lo que no se midió es null y se dice: un cero se leería como «no gastó nada»
   rec.medido = rec.tokens !== null && rec.duracion_ms !== null;
@@ -154,4 +166,4 @@ function resumenVolcado(home, storyPath) {
   };
 }
 
-module.exports = { RECORD_DIR, RESULTS, MOTIVOS, DESTINOS, huella, recordFile, recordFileViejo, problemas, writeRecord, readRecord, resumenVolcado };
+module.exports = { RECORD_DIR, RESULTS, MOTIVOS, DESTINOS, huella, textoDeHuella, recordFile, recordFileViejo, problemas, writeRecord, readRecord, resumenVolcado };

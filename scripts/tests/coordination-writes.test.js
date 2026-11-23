@@ -382,3 +382,59 @@ test('T12c Designacion_SinCarpetaDeCoordinacion_GuardaLaMemoria @story-8.212 @ac
   assert.strictEqual(lecturas.enteras, 1, 'la segunda llamada no lee el registro');
   assert.doesNotMatch(erroresDeGanchos(toy), /coordination-write/, 'y no se anota ningún error');
 });
+
+// 🔴 Falla con: `git worktree remove --force` de la coordinadora sobre una copia con cambios, que pasaba.
+test('T13 Coordinadora_WorktreeRemoveForzado_SeNiega @story-8.212 @ac-3', (t) => {
+  const toy = casaNueva(t);
+  designar(toy);
+  for (const cmd of ['git -C acme worktree remove --force ../acme--slot-2', `git worktree remove -f ${toy.puesto}`, 'git -C acme worktree remove ../acme--slot-2 --force',
+    'git -C acme worktree remove --fo ../acme--slot-2', 'git -C acme worktree remove --forc ../acme--slot-2']) {
+    assert.ok(negada(consola(toy, cmd)), cmd);
+  }
+  // sin --force, git no borra una copia con cambios: pasa, como a toda sesión
+  assert.ok(!negada(consola(toy, 'git -C acme worktree remove ../acme--slot-2')), 'sin --force pasa');
+  assert.ok(!negada(consola(toy, 'git -C acme worktree list')), 'mirar pasa');
+  assert.ok(!negada(consola(toy, 'git -C acme worktree remove --force ../acme--slot-2', OTRA)), 'otra sesión no nota nada');
+});
+
+// 🔴 Falla con: un comando que cambia un repo, aprobado por el dueño con un click en el cuadro, que se frena igual; o que
+//    pasa sin el click, por un mensaje, o dos veces con un mismo click.
+test('T14 Coordinadora_ClickDelDueno_PasaUnaVez @story-8.212 @ac-3', (t) => {
+  const toy = casaNueva(t);
+  designar(toy);
+  const cmd = 'git -C acme switch main';
+  const vistos = [];
+  let respuesta = { ok: false, motivo: 'no hay un click en el cuadro de esta pestaña de los últimos 30 minutos sin usar' };
+  const buscar = (q) => { vistos.push(q); return respuesta; };
+  const HERRAMIENTA = { pid: 4242, inicio: 'jue 21 nov 10:00' };
+  const con = (c, cwd = toy.raiz) => conEnv(SOLO_ESTE, () => BASH.handle({ hook_event_name: 'PreToolUse', session_id: COORD, tool_name: 'Bash', tool_input: { command: c }, cwd },
+    { ...opts(toy), casa: toy.casa, buscarAprobacion: buscar, herramienta: HERRAMIENTA }));
+  // sin el click: se niega y dice el cuadro que tiene que contestar el dueño, con el comando entero y la carpeta
+  const r = con(cmd);
+  assert.ok(negada(r), 'sin el click, se niega');
+  const cuadro = CW.cuadroDelComando(cmd, COORD, toy.raiz);
+  assert.ok(cuadro.pregunta.includes(cmd) && cuadro.pregunta.includes(toy.raiz), 'la pregunta lleva el comando entero y la carpeta');
+  assert.ok(r.block.includes(`Pregunta: ${cuadro.pregunta}`), r.block);
+  assert.match(r.block, /sólo su click/);
+  assert.strictEqual(vistos[0].sesion, COORD);
+  assert.deepStrictEqual(vistos[0].herramienta, HERRAMIENTA, 'el click lo anotó el proceso de la herramienta que corre el freno');
+  assert.strictEqual(vistos[0].cuadro.soloClick, true, 'sólo un click: ni un mensaje ni la delegación');
+  assert.strictEqual(vistos[0].cuadro.sello, cuadro.sello);
+  assert.notStrictEqual(CW.cuadroDelComando('git -C acme switch dev', COORD, toy.raiz).sello, cuadro.sello, 'otro comando, otro sello');
+  assert.notStrictEqual(CW.cuadroDelComando(cmd, COORD, toy.notas).sello, cuadro.sello, 'el mismo comando en otra carpeta, otro sello');
+  // un comando que no entra entero en la pregunta no tiene cuadro: el dueño no aprueba lo que no ve
+  const largo = `git -C acme switch main && echo ${'x'.repeat(600)} > acme/a.md`;
+  const sinCuadro = con(largo);
+  assert.ok(negada(sinCuadro) && !sinCuadro.block.includes('Pregunta:'), sinCuadro && sinCuadro.block);
+  assert.match(sinCuadro.block, /no entra entero en el cuadro/);
+  // con el click: pasa, lo anota, y el mismo click no sirve dos veces
+  respuesta = { ok: true, aprobacion: { id: 'click-1' }, via: 'click' };
+  assert.strictEqual(con(cmd), null, 'con el click del dueño, pasa');
+  assert.match(fs.readFileSync(registro(toy), 'utf8'), /"name":"coordinator-repo-write","status":"ok","sesion":"ses-coord"/);
+  assert.ok(fs.existsSync(path.join(toy.estado, 'owner-approvals', 'usadas', 'click-1')), 'el click quedó usado');
+  const otra = con(cmd);
+  assert.ok(negada(otra), 'el mismo click, otra vez: se niega');
+  assert.match(otra.block, /esa aprobación ya la usó otra firma/);
+  // Edit y Write no tienen este camino: lo que cambian lo hace una sesión
+  assert.ok(negada(editar(toy, path.join(toy.repo, 'guias', 'x.md'))));
+});

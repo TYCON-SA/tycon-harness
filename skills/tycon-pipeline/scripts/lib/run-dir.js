@@ -62,6 +62,14 @@ const esCarpetaDeCorrida = (p) => {
  *   - `storyPath`: una relativa, contra el repo.
  * Lo que no se puede ubicar queda como vino y `motivo` dice por qué (null si se ubicó todo). Devuelve una copia; nunca tira.
  */
+/** La carpeta con `.git` que contiene `dir` (subiendo), o null. */
+function raizDeGitDe(dir) {
+  for (let d = dir; ; d = path.dirname(d)) {
+    try { if (require('fs').existsSync(path.join(d, '.git'))) return d; } catch (_) { return null; }
+    if (path.dirname(d) === d) return null;
+  }
+}
+
 function rutasDeLaCorrida(m) {
   if (!m || typeof m !== 'object') return m;
   const out = { ...m };
@@ -69,6 +77,8 @@ function rutasDeLaCorrida(m) {
   const absoluta = (p) => typeof p === 'string' && p !== '' && path.isAbsolute(p);
   let repo = absoluta(m.repoPath) ? path.normalize(m.repoPath) : null;
   if (!repo && absoluta(m.runDir) && esCarpetaDeCorrida(m.runDir)) repo = path.dirname(path.dirname(path.dirname(path.normalize(m.runDir))));
+  // un marcador viejo sin repo: el de su historia absoluta (la raíz de git que la contiene)
+  if (!repo && !m.repoPath && absoluta(m.storyPath)) repo = raizDeGitDe(path.dirname(path.normalize(m.storyPath)));
   if (repo) out.repoPath = repo;
   else if (m.repoPath) motivos.push(`el repo de la corrida (${m.repoPath}) es relativo y su carpeta no dice cuál es`);
   if (typeof m.runDir === 'string' && m.runDir && !path.isAbsolute(m.runDir)) {

@@ -102,7 +102,8 @@ test('T8 ReadRules_DespuesDelAplicador @story-8.66 @ac-1 @ac-3 — el pase propi
   const m = maquina();
   try {
     // antes del aplicador (reads: false) no se suma ninguna, aunque el perfil sea el completo
-    const antes = SH.applyShared({ home: m.home, env: m.env, tree: m.tree, backup: false, settings: true, reads: false });
+    // (las reglas deny del perfil completo, de deny-permissions.test.js, se apagan: este caso mira sólo las de lectura)
+    const antes = SH.applyShared({ home: m.home, env: { ...m.env, TYCON_NO_DENY_RULES: '1' }, tree: m.tree, backup: false, settings: true, reads: false });
     assert.ok(antes.ok);
     assert.ok(!leer(m.settings).permissions, 'sin reglas antes del aplicador');
     // después: todas, con su pieza

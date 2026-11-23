@@ -35,6 +35,8 @@
  *     "siblings"?: [ { "path", "name" } ],   ← los plugins hermanos del corral del banco
  *     "shortPathSignals"?: [ { "id", "strength", "pattern", "files"?, "exclude"?, "says" } ] }   ← lo que el freno del camino
  *   corto busca en las líneas del cambio (lib/source-signals.js); una señal rota es un aviso, no un paquete roto
+ *   "ciLocalChecks"?: [ { "name", "run", "whenFile"?, "timeoutSeconds"? } ]   ← los controles de la CI que corren en
+ *   local antes de la foto del pull request (lib/ci-local-checks.js); uno mal escrito frena el cierre con «no medido»
  *   `skills` y `agents`: carpetas DEL PAQUETE (rutas relativas a su carpeta, sin salir de ella) con sus skills
  *   y sus agentes. Un revisor se busca primero en `agents` del paquete y después en la carpeta de agentes de la raíz; el
  *   mismo nombre en los dos lugares es un paquete roto (no se sabe cuál corre).
@@ -64,7 +66,7 @@ const path = require('path');
 const RAIZ_AGENT_SKILLS = path.resolve(__dirname, '..', '..', '..', '..');
 
 const VOCABULARIO = Object.freeze({
-  manifiesto: Object.freeze(['name', 'description', 'guides', 'skills', 'agents', 'reviewers', 'siblings', 'shortPathSignals']),
+  manifiesto: Object.freeze(['name', 'description', 'guides', 'skills', 'agents', 'reviewers', 'siblings', 'shortPathSignals', 'ciLocalChecks']),
   hermano: Object.freeze(['path', 'name']),
   revisor: Object.freeze(['agent', 'group', 'when', 'surface', 'depth', 'prefixes', 'needsStory', 'prompt', 'model', 'note']),
   condicion: Object.freeze(['all', 'any', 'no', 'detection', 'files', 'added']),
@@ -380,6 +382,8 @@ function cargarPaquetes({ packsDir, agentsDir, nucleo = [], banderas = [] } = {}
       hermanos: (json.siblings || []).map((h) => ({ ruta: h.path, nombre: h.name })),
       // las señales del camino corto: las valida source-signals.js, y una rota es un aviso, no un paquete roto
       senales: json.shortPathSignals == null ? [] : json.shortPathSignals,
+      // los controles de la CI que corren en local: los valida ci-local-checks.js, y uno mal escrito frena el cierre
+      controlesDeCi: json.ciLocalChecks == null ? [] : json.ciLocalChecks,
     });
   }
   if (errores.length) throw new PackError(errores);

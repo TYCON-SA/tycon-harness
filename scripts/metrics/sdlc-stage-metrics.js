@@ -510,6 +510,83 @@ function contarCausas(stories, vocab) {
     sin_declarar_por_type: porType, total };
 }
 
+// ── Lo rehecho al lado de lo entregado, mes por mes ───────────────────────────────────────────
+
+/** Cuántos meses mira la serie: los seis cerrados anteriores y el mes en curso. */
+const MESES_REPROCESO = 7;
+/**
+ * La causa que se muestra aparte y no suma a «rehechas sin deuda»: volver sobre una deuda declarada es el plan
+ * funcionando, y sumarla castigaría la conducta que el arnés pide. Se publica en el snapshot (`causa_aparte`) para que
+ * el tablero no tenga que nombrarla; si el vocabulario ya no la trae, se publica `null` y no hay columna aparte.
+ */
+const CAUSA_APARTE = 'deuda-declarada';
+
+/** `AAAA-MM-DD` de hoy: el de `hoy` si tiene esa forma, si no la fecha local de la máquina. */
+function hoyDe(hoy) {
+  if (typeof hoy === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(hoy)) return hoy;
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Los meses de la ventana (`AAAA-MM`), del más viejo al mes en curso. */
+function ventanaDeMeses(hoy) {
+  const [a, m] = hoyDe(hoy).split('-').map(Number);
+  const out = [];
+  for (let i = MESES_REPROCESO - 1; i >= 0; i--) {
+    const k = a * 12 + (m - 1) - i;
+    out.push(`${Math.floor(k / 12)}-${String((k % 12) + 1).padStart(2, '0')}`);
+  }
+  return out;
+}
+
+/**
+ * El mes de una fecha ISO de git: sus primeros 7 caracteres, con el offset de esa misma fecha
+ * (`2026-10-31T23:30:00-03:00` es octubre aunque en UTC ya sea noviembre). La misma regla que `closedMonth`.
+ */
+const mesDeFecha = (f) => (typeof f === 'string' && /^\d{4}-\d{2}/.test(f) ? f.slice(0, 7) : null);
+
+/**
+ * Lo entregado y lo rehecho de cada mes de la ventana, sin porcentaje: lo rehecho en un mes rehace entregas de otros.
+ *
+ *   · Una entrega es una story cerrada, en el mes de su entrada al estado cerrado (`cierreDe`).
+ *   · Una rehecha es una story con `followup_of:`, en el mes de su alta (`altaDe`), por causa, igual que `contarCausas`:
+ *     una vez aunque tenga varios padres, a `sin_declarar` sin causa, a `fuera_de_vocabulario` con su valor crudo.
+ *
+ * Una story sin fecha (los mapas traen `null`) no entra a ningún mes y suma a `sin_fecha`, una vez por archivo. Una
+ * fechada antes del primer mes o después del mes en curso suma a `fuera_de_ventana`; nunca se la corre al mes más cercano.
+ */
+function reworkPorMes(stories, done, cierreDe, altaDe, vocab, hoy) {
+  const meses = ventanaDeMeses(hoy);
+  const pos = new Map(meses.map((mes, i) => [mes, i]));
+  const filas = meses.map((mes, i) => {
+    const conteo = Object.create(null);
+    for (const c of vocab.causas) conteo[c] = 0;
+    return { mes, en_curso: i === meses.length - 1, entregadas: 0,
+      rehechas: { conteo, sin_declarar: 0, fuera_de_vocabulario: Object.create(null) } };
+  });
+  const sinFecha = new Set();
+  const fuera = { entregadas: 0, rehechas: 0 };
+  for (const s of done) {
+    const mes = mesDeFecha(cierreDe.get(s));
+    if (!mes) { sinFecha.add(s); continue; }
+    if (!pos.has(mes)) { fuera.entregadas += 1; continue; }
+    filas[pos.get(mes)].entregadas += 1;
+  }
+  for (const s of stories) {
+    if (!s.followupOf) continue;
+    const mes = mesDeFecha(altaDe.get(s));
+    if (!mes) { sinFecha.add(s); continue; }
+    if (!pos.has(mes)) { fuera.rehechas += 1; continue; }
+    const r = filas[pos.get(mes)].rehechas;
+    const raw = s.followupReason == null ? '' : String(s.followupReason).trim();
+    if (!raw) r.sin_declarar += 1;
+    else if (Object.prototype.hasOwnProperty.call(r.conteo, raw)) r.conteo[raw] += 1;
+    else r.fuera_de_vocabulario[raw] = (r.fuera_de_vocabulario[raw] || 0) + 1;
+  }
+  return { meses: filas, sin_fecha: sinFecha.size, fuera_de_ventana: fuera,
+    causa_aparte: vocab.causas.includes(CAUSA_APARTE) ? CAUSA_APARTE : null };
+}
+
 const BUDGET_TRANSICIONES_MS = 60000;   // configurable con --transitions-budget-ms
 const LOTE_BLOBS = 500;                 // el tamaño medido: 1430 OIDs → 3 viajes
 
@@ -1011,6 +1088,7 @@ function measureRepo(repo, since, opts = {}) {
       doneTotal: null,
       estadosPorCanonico: null,
       reworkPorCausa,
+      reworkPorMes: null,
       leads: null,
       rework: null,
       dod: null,
@@ -1118,8 +1196,12 @@ function measureRepo(repo, since, opts = {}) {
   //      la fecha de cierre de una story es la de su entrada al estado cerrado, no la de su último
   //      commit (una story vieja retocada después entraría a la ventana — medido en real).
   let reworkPorCarrilRepo = null;
+  // 3c · lo rehecho por mes: la entrega con la misma fecha de cierre que el carril, la rehecha con su alta. Sin el
+  //      historial, o sin el vocabulario de causas, es `null` con motivo: nunca siete meses en cero.
+  let reworkPorMesRepo = null;
   if (noMedido) {
     notMeasured.push('rework por carril: no se pudo leer el historial de estados, y sin él no hay fecha de cierre confiable — no se separa por carril');
+    notMeasured.push('rehecho por mes: no se pudo leer el historial de estados, y sin él no hay fecha de cierre ni de alta — no se separa por mes');
   } else {
     const faltan = new Set([...(tr.storiesFaltantes || []), ...(tr.conIlegibles || [])]);
     const cierreDe = new Map();
@@ -1133,6 +1215,19 @@ function measureRepo(repo, since, opts = {}) {
     const rpc = reworkPorCarril(repo, done, cierreDe, (s) => (claves && claves.get(path.resolve(s.file))) || s.id);
     if (rpc.motivo) notMeasured.push(rpc.motivo);
     reworkPorCarrilRepo = rpc.valor;
+    if (vocabCausas.motivo) {
+      notMeasured.push(`rehecho por mes: ${vocabCausas.motivo} (${vocabCausas.ruta}) — sin el vocabulario no se publican meses en cero`);
+    } else {
+      // El alta de cada hija, con las mismas exclusiones que el cierre: un id repetido o una historia con alguna versión
+      // faltante o ilegible no se fecha.
+      const dup = new Set(tr.idsDuplicados || []);
+      const altaDe = new Map();
+      for (const s of stories) {
+        if (!s.followupOf) continue;
+        altaDe.set(s, faltan.has(s.id) || dup.has(s.id) ? null : ((tr.altas || {})[s.id] || null));
+      }
+      reworkPorMesRepo = reworkPorMes(stories, done, cierreDe, altaDe, vocabCausas, opts.hoy);
+    }
   }
 
   return {
@@ -1151,6 +1246,7 @@ function measureRepo(repo, since, opts = {}) {
     // vocabulario no se pudo leer (motivo en `notMeasured`) o cuando el repo entero no se midió.
     reworkPorCausa,
     reworkPorCarril: reworkPorCarrilRepo,
+    reworkPorMes: reworkPorMesRepo,
     leads,
     rework,
     dod,
@@ -1357,6 +1453,38 @@ function main() {
     rpcGlobal.total += x.total;
   }
 
+  // Lo rehecho por mes, sumado mes a mes. Mismo trato que la causa: sólo los repos que lo midieron, y `null` si ninguno.
+  // Se dice de cuántos repos sale, porque un repo sin historial no aporta ni sus entregas.
+  const rpmRepos = repos.filter((r) => r.reworkPorMes);
+  let rpmGlobal = null;
+  if (rpmRepos.length) {
+    const porMes = new Map();
+    const fuera = { entregadas: 0, rehechas: 0 };
+    let sinFecha = 0;
+    for (const r of rpmRepos) {
+      for (const f of r.reworkPorMes.meses) {
+        if (!porMes.has(f.mes)) {
+          const conteo = Object.create(null);
+          for (const c of causasReproceso().causas) conteo[c] = 0;
+          porMes.set(f.mes, { mes: f.mes, en_curso: false, entregadas: 0,
+            rehechas: { conteo, sin_declarar: 0, fuera_de_vocabulario: Object.create(null) } });
+        }
+        const g = porMes.get(f.mes);
+        g.en_curso = g.en_curso || f.en_curso;
+        g.entregadas += f.entregadas;
+        for (const [k, n] of Object.entries(f.rehechas.conteo)) g.rehechas.conteo[k] = (g.rehechas.conteo[k] || 0) + n;
+        for (const [k, n] of Object.entries(f.rehechas.fuera_de_vocabulario)) g.rehechas.fuera_de_vocabulario[k] = (g.rehechas.fuera_de_vocabulario[k] || 0) + n;
+        g.rehechas.sin_declarar += f.rehechas.sin_declarar;
+      }
+      sinFecha += r.reworkPorMes.sin_fecha;
+      fuera.entregadas += r.reworkPorMes.fuera_de_ventana.entregadas;
+      fuera.rehechas += r.reworkPorMes.fuera_de_ventana.rehechas;
+    }
+    rpmGlobal = { meses: [...porMes.values()].sort((x, y) => x.mes.localeCompare(y.mes)), sin_fecha: sinFecha,
+      fuera_de_ventana: fuera, causa_aparte: rpmRepos[0].reworkPorMes.causa_aparte,
+      repos_medidos: rpmRepos.length, repos_total: repos.length };
+  }
+
   const global = {
     lead_time_days: stats(allLeads.map((l) => l.days)),
     lead_time_monthly: monthly,
@@ -1390,6 +1518,8 @@ function main() {
     // La causa del reproceso. Es la OTRA punta de `rework_ratio`: aquél cuenta las
     // padres que volvieron (165 de 496), éste las hijas que hicieron el seguimiento y por qué.
     rework_por_causa: rpcMedible ? rpcGlobal : null,
+    // Lo entregado y lo rehecho de cada mes, lado a lado: dos conteos, no un porcentaje.
+    rework_por_mes: rpmGlobal,
     // Mismo rastro que `diccionario`: qué vocabulario se usó de verdad, para que
     // `TYCON_CAUSES_PATH` no sea un interruptor invisible.
     causas_reproceso: { ruta: causasReproceso().ruta, hash: causasReproceso().hash },
@@ -1441,6 +1571,8 @@ function main() {
         // no se pudo medir o el vocabulario no vale. Un repo SIN seguimientos sale con `total: 0`
         // y las cuatro causas en cero — eso sí es «miré y no hay».
         rework_por_causa: r.reworkPorCausa || null,
+        // Lo rehecho por mes: `null` con motivo en `not_measured` cuando el historial o el vocabulario no se pudieron leer.
+        rework_por_mes: r.reworkPorMes || null,
         not_measured: r.notMeasured,
       })),
   });
@@ -1530,5 +1662,5 @@ if (require.main === module) {
 module.exports = {
   readFrontmatter, parseFrontmatter, fmKeyRe, measureRepo, firstPassFromDashboard,
   stats, discoverRepos, derivarTransiciones, tiempoPorEtapa, canonEstado, esClonParcial, reworkPorCarril,
-  diccionario, validarDiccionario, contarEstados, ESTADOS_PATH, dirsDeEvidencia, tieneHuellaDelArnes,
+  diccionario, validarDiccionario, contarEstados, ESTADOS_PATH, dirsDeEvidencia, tieneHuellaDelArnes, reworkPorMes,
 };

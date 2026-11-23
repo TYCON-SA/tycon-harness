@@ -262,11 +262,12 @@ quien usa los modelos de OpenAI; con él, el despliegue saca la línea `model =`
 
 - **Un modelo puede intentar escribir el escape de un freno.** En el laboratorio, `gpt-oss` escribió
   `TYCON_SAFETY_OFF=1` delante de un commit con `--no-verify`, aunque la orden decía que no buscara otra salida. Eso ya
-  no alcanza: el escape del freno de seguridad, y los de la revisión de producción (`TYCON_PROD_LINT`) y de nombres
-  (`TYCON_NEW_NAMES`), valen sólo si la persona los firma en la ventana de permiso o en su terminal
-  ([guía del freno](../safety-guard.md)). El freno de pruebas sigue con su escape liviano: `beam` lo usó por su cuenta,
-  y sólo cuida la carga de la máquina. Codex no tiene ventana de permiso: ahí el escape por comando se firma en la
-  terminal.
+  no alcanza: `TYCON_SAFETY_OFF` y `TYCON_PROD_LINT` ya no apagan nada, aunque se firmen. La salida del freno de
+  seguridad es la emergencia, que la persona firma en su terminal para un comando; la de la revisión del catálogo de
+  producción, la emergencia con `--commit` ([guía del freno](../safety-guard.md)). El escape de nombres
+  (`TYCON_NEW_NAMES`) sigue: vale sólo si la persona lo firma en la ventana de permiso o en su terminal. El freno de
+  pruebas sigue con su escape liviano: `beam` lo usó por su cuenta, y sólo cuida la carga de la máquina. Codex no tiene
+  ventana de permiso: ahí el escape de nombres se firma en la terminal.
 - **Un modelo puede saltearse los pasos de la skill de historias.** En el laboratorio, `gemma4` llamó a
   `tycon-create-story` sin seguir sus pasos, se autorizó solo el bypass del freno de historia a mano y escribió la
   historia igual. Ya no alcanza: escribir una historia sin la skill vale sólo si la persona lo firma con

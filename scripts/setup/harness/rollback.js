@@ -285,6 +285,24 @@ function planTrees(state, copy, env, home) {
  * Nunca tira por un paso que falla: lo dice en `lines` y `ok: false`.
  * @returns {{ ok, lines, report, version, moved: [{name, from, to}], undone: {<fuente>: <HEAD de antes>}, restored, warned, removed, kept, review }}
  */
+/** Saca el lanzador del freno de publicación de cada línea de ~/.claude/settings.json que lo nombra y ya no está. */
+function dropMissingLauncher(home, say) {
+  const file = path.join(home, '.claude', 'settings.json');
+  let s;
+  try { s = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '')); } catch (_) { return; }
+  let n = 0;
+  for (const bucket of Object.values((s && s.hooks) || {})) {
+    for (const entry of Array.isArray(bucket) ? bucket : []) {
+      for (const hk of (entry && Array.isArray(entry.hooks)) ? entry.hooks : []) {
+        const m = hk && typeof hk.command === 'string' && /^\s*bash\s+"([^"]*node-missing-launcher\.sh)"\s+/.exec(hk.command);
+        if (m && !fs.existsSync(m[1])) { hk.command = hk.command.slice(m[0].length); n += 1; }
+      }
+    }
+  }
+  if (!n) return;
+  try { writeBytesAtomic(file, Buffer.from(`${JSON.stringify(s, null, 2)}\n`)); say(`saqué el lanzador del freno de publicación de ${n} línea(s): esta versión no lo trae`); } catch (e) { say(`no pude sacar el lanzador del freno de publicación (${e.message}): reinstalá el arnés`); }
+}
+
 function restore(ctx, state, copy, { why = 'rollback', runApplier = null, log = null, filesOnly = false, snapshotDir = null, isOwnPiece = null, beforeTrees = null, afterTrees = null } = {}) {
   const home = (ctx && ctx.home) || os.homedir();
   const env = (ctx && ctx.env) || process.env;
@@ -363,6 +381,10 @@ function restore(ctx, state, copy, { why = 'rollback', runApplier = null, log = 
       } catch (e) { result.ok = false; say(`la capa no se pudo re-apilar: ${e.message}`); }
     }
   }
+
+  // el lanzador del freno de publicación: una versión de antes no lo trae, y su aplicador no reescribe una línea que lo
+  // nombra (la toma por el mismo gancho). Sin el archivo, bash sale 127 y el freno no corre: se saca de la línea
+  dropMissingLauncher(home, say);
 
   // (3) el aplicador de ese árbol, con el reporte de lo que dejó
   if (typeof runApplier !== 'function') { result.ok = false; say('sin aplicador para correr: no quito piezas ni toco el registro'); return result; }
@@ -488,4 +510,4 @@ function dropUnreported(state, applied, { home = os.homedir(), env = process.env
   return result;
 }
 
-module.exports = { pickTarget, restore, dropUnreported, newestFirst, defaultIsOwnPiece };
+module.exports = { dropMissingLauncher, pickTarget, restore, dropUnreported, newestFirst, defaultIsOwnPiece };

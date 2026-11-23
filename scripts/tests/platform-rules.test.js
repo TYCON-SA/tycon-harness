@@ -192,6 +192,22 @@ test('Rules_OnDemand_FirstCliUse_OncePerSession @story-8.85 @ac-35', () => {
   assert.ok(!/integración github/.test(gancho(om, bash('ses-m2', 'gh pr view 3')).ctx));
 });
 
+test('Rules_TimeoutConOpciones_YSubagenteAparte', () => {
+  const N = require(path.join(ROOT, 'scripts', 'lib', 'extension-notices.js'));
+  // `-k 5` y `-s KILL` llevan su valor aparte: la duración es la palabra que sigue
+  assert.ok(N.matchesCommand('timeout -k 5 10 az pipelines runs list', 'az pipelines'));
+  assert.ok(N.matchesCommand('timeout -s KILL 10 gh pr checks 7', 'gh pr'));
+  assert.ok(N.matchesCommand('timeout --kill-after=5 --foreground 10 gh pr checks 7', 'gh pr'));
+  assert.ok(!N.matchesCommand('timeout -k 5 10 gh repo view pr', 'gh pr'));
+  // un subagente comparte la sesión con su madre: lo que se le dijo a él, a ella se le dice igual
+  const o = org({ platform: { default: 'azure-devops' } });
+  const hijo = gancho(o, bash('ses-s', 'az pipelines runs list', { agent_id: 'agente-1' }));
+  sinDecision(hijo);
+  assert.ok(dijoAdo(hijo), hijo.raw);
+  assert.ok(!dijoAdo(gancho(o, bash('ses-s', 'az pipelines runs list', { agent_id: 'agente-1' }))), 'al mismo subagente, una vez');
+  assert.ok(dijoAdo(gancho(o, bash('ses-s', 'az pipelines runs list'))), 'a la madre, aunque ya se lo dijo a su subagente');
+});
+
 test('Rules_OtherPlatformNeverShown @story-8.85 @ac-35', () => {
   const chosen = (o) => {
     const r = spawnSync(process.execPath, [PLATFORM, 'chosen'], { env: o.env, encoding: 'utf8' });
@@ -239,4 +255,70 @@ test('Rules_OtherPlatformNeverShown @story-8.85 @ac-35', () => {
   const codex = JSON.parse(read(path.join(ROOT, 'adapters', 'codex', 'hooks.json')));
   const post = (codex.hooks || codex).PostToolUse || [];
   assert.ok(post.some((e) => e.matcher === 'Bash' && e.hooks.some((h) => /scripts\/hooks\/extension-notices\.js/.test(h.command))), 'Codex: después de Bash');
+});
+
+// ── el aviso «después del comando»: envoltorios, PowerShell, avisos rotos de lo que no aplica y git que no contesta ──
+
+test('Rules_Reconocimiento_EnvoltoriosYPowerShell @story-8.85', () => {
+  const N = require(path.join(ROOT, 'scripts', 'lib', 'extension-notices.js'));
+  // un grupo de la terminal, sudo y xargs no esconden el CLI; sus opciones con valor tampoco
+  assert.ok(N.matchesCommand('{ gh pr checks 7; }', 'gh pr'));
+  assert.ok(N.matchesCommand('sudo gh pr list', 'gh pr'));
+  assert.ok(N.matchesCommand('sudo -E -u bot gh pr list', 'gh pr'));
+  assert.ok(!N.matchesCommand('sudo -u gh ls pr', 'gh pr'), 'el valor de -u no es el CLI');
+  assert.ok(N.matchesCommand('xargs gh pr view', 'gh pr'));
+  assert.ok(N.matchesCommand('echo 7 | xargs -n 1 gh pr view', 'gh pr'));
+  assert.ok(N.matchesCommand('cat ids | xargs -I {} gh pr view {}', 'gh pr'));
+  assert.ok(!N.matchesCommand('xargs echo gh pr view', 'gh pr'), 'xargs echo no corre gh');
+  // las formas de PowerShell: la asignación delante, con o sin espacios y con paréntesis, y el operador de llamada
+  for (const c of ['$x = az repos pr list', '$x=az repos pr list', '$prs = (az repos pr list)', '& az repos pr list']) {
+    assert.ok(N.matchesCommand(c, 'az repos', { powershell: true }), c);
+  }
+  assert.ok(!N.matchesCommand('$x = "az repos pr list"', 'az repos', { powershell: true }), 'entre comillas es texto');
+});
+
+test('Rules_AvisoRotoDeLoQueNoAplica_NoSeDice @story-8.85', () => {
+  // el notices.json roto de un conector que nadie eligió, o de un paquete apagado en el repo, no se dice en cada comando
+  const o = org({ platform: { default: 'github' } });
+  fs.writeFileSync(path.join(o.ints, 'azure-devops', 'notices.json'), '{ roto');
+  const packs = tmp('paquetes-');
+  fs.mkdirSync(path.join(packs, 'apagado'));
+  fs.writeFileSync(path.join(packs, 'apagado', 'pack.json'), JSON.stringify({ name: 'apagado', description: 'de prueba' }));
+  fs.writeFileSync(path.join(packs, 'apagado', 'notices.json'), '{ roto');
+  fs.mkdirSync(path.join(o.repo, '.tycon'));
+  fs.writeFileSync(path.join(o.repo, '.tycon', 'advisors.yaml'), 'packs: []\n');
+  o.env.TYCON_PACKS_DIR = packs;
+  o.env.TYCON_PACKS_DEFAULT = 'all';
+  const g = gancho(o, bash('ses-r', 'gh pr view 3'));
+  sinDecision(g);
+  assert.ok(dijoGh(g), g.raw);
+  assert.doesNotMatch(g.ctx, /azure-devops|apagado/, 'ni el conector no elegido ni el paquete apagado');
+  assert.strictEqual(gancho(o, bash('ses-r', 'ls -la')).raw, '', 'un comando cualquiera: nada');
+  // en un repo donde el paquete sí está activo, su notices.json roto se dice
+  const activo = tmp('repo-');
+  execFileSync('git', ['init', '-q', activo]);
+  const a = gancho({ ...o, repo: activo }, bash('ses-r2', 'ls -la'));
+  assert.match(a.ctx, /paquete apagado: notices\.json no es JSON válido/, a.raw);
+  assert.doesNotMatch(a.ctx, /azure-devops/);
+});
+
+test('Rules_GitNoAbreLaCarpeta_LasDePlataformaSalen @story-8.85', () => {
+  // sin saber si la carpeta es un repo no se sabe qué paquetes están activos, pero las reglas de una plataforma no
+  // dependen del repo: salen igual
+  const o = org({ platform: { default: 'azure-devops' } });
+  const packs = tmp('paquetes-');
+  fs.mkdirSync(path.join(packs, 'producto', 'notices'), { recursive: true });
+  fs.writeFileSync(path.join(packs, 'producto', 'pack.json'), JSON.stringify({ name: 'producto', description: 'de prueba' }));
+  fs.writeFileSync(path.join(packs, 'producto', 'notices', 'p.md'), 'REGLA-DEL-PAQUETE\n');
+  fs.writeFileSync(path.join(packs, 'producto', 'notices.json'), JSON.stringify({ notices: [{ id: 'p', text: 'notices/p.md', when: 'after-command', commands: ['az pipelines'] }] }));
+  o.env.TYCON_PACKS_DIR = packs;
+  o.env.TYCON_PACKS_DEFAULT = 'all';
+  // un worktree cuyo .git apunta a una carpeta que ya no está: git no lo abre
+  const roto = tmp('worktree-roto-');
+  fs.writeFileSync(path.join(roto, '.git'), `gitdir: ${path.join(roto, 'no-esta', '.git', 'worktrees', 'x')}\n`);
+  const r = gancho({ ...o, repo: roto }, bash('ses-g', 'az pipelines runs list'));
+  sinDecision(r);
+  assert.ok(dijoAdo(r), `las de la plataforma salen: ${r.raw}`);
+  assert.ok(!r.ctx.includes('REGLA-DEL-PAQUETE'), 'la del paquete no: no se sabe si está activo');
+  assert.match(r.ctx, /no se pudo saber si .* es un repo/);
 });
