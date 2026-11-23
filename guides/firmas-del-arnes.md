@@ -479,7 +479,7 @@ vuelve a pedir la firma del dueño.
 | `escape:TYCON_NEW_NAMES` | apagar el control de nombres nuevos en lo que se publica | `TYCON_NEW_NAMES=0 <comando>` | no, en la pestaña de esa sesión | `TYCON_NEW_NAMES=0 <comando>` |
 | `escape:TYCON_TEST_GATE` | saltear el portón de pruebas del commit | `TYCON_TEST_GATE=1 <comando>` | no, en la pestaña de esa sesión | `TYCON_TEST_GATE=1 <comando>` |
 | `escape:DOD_BYPASS` | saltear los controles del commit (queda anotado) | `DOD_BYPASS=1 <comando>` | no, en la pestaña de esa sesión | `DOD_BYPASS=1 <comando>` |
-| `escape:TYCON_NO_DEEP_REVIEW` | pedir que se saltee el pase adversarial: lo saltea sólo la firma adversarial-skip | `TYCON_NO_DEEP_REVIEW=1 <comando>` | no, en la pestaña de esa sesión | `TYCON_NO_DEEP_REVIEW=1 <comando>` |
+| `escape:TYCON_NO_DEEP_REVIEW` | pedir que se saltee el pase adversarial (esta firma no lo saltea: eso lo firma adversarial-skip) | `TYCON_NO_DEEP_REVIEW=1 <comando>` | no, en la pestaña de esa sesión | `TYCON_NO_DEEP_REVIEW=1 <comando>` |
 | `escape:TYCON_STATUS_GATE` | cambiar a mano el estado de una story | `TYCON_STATUS_GATE=off <comando>` | no, en la pestaña de esa sesión | `TYCON_STATUS_GATE=off <comando>` |
 | `escape:TYCON_MUTATION_CHECK` | saltear el chequeo de mutantes de las pruebas | `TYCON_MUTATION_CHECK=off <comando>` | no, en la pestaña de esa sesión | `TYCON_MUTATION_CHECK=off <comando>` |
 | `escape:TYCON_STORY_REVIEW` | saltear la revisión de la historia antes del plan | `TYCON_STORY_REVIEW=0 <comando>` | no, en la pestaña de esa sesión | `TYCON_STORY_REVIEW=0 <comando>` |
