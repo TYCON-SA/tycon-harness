@@ -209,6 +209,11 @@ frena "T117ab For_ComillasAnsiC_Frena" "for f in a $NP; do echo \$'\\x28' \"\$f\
 # la variable del for y printf con opciones cambian qué programa corre (PATH, o `path` en zsh)
 frena "T117ac For_LaVariableEsPATH_Frena" "for PATH in a $NP /tmp/x; do cat y; done"
 frena "T117ad For_LaVariableEsPathDeZsh_Frena" "for path in a $NP /tmp/x; do cat y; done"
+# una tubería que le pasa la puerta a un programa que corre lo que recibe se mira también cuando el comando termina en
+# `|` y la última tubería queda abierta
+frena "T118a TuberiaAbiertaAlFinal_XargsLaCorre_Frena" "echo $PUERTA | xargs -I{} {} --version |"
+frena "T118b TuberiaAbiertaAlFinal_NodeLaRecibe_Frena" "echo $NP | node -e 'x' |"
+frena "T118c TuberiaAbiertaAlFinal_ConBarraYAmpersand_Frena" "printf '%s\\n' $NP |& xargs -n1 command -v |&"
 frena "T117ae For_PrintfVPegado_Frena" "for f in a $NP; do printf -vPATH '%s' /tmp/x; cat y; done"
 frena "T117af For_PrintfXvPegado_Frena" "for f in a $NP; do printf -xvPATH '%s' /tmp/x; cat y; done"
 pasa  "T117ag For_UnaVariableDeCuatroLetras_Pasa" "for item in a $NP; do grep -c \"\$item\" scripts/x; done"

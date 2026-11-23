@@ -1326,12 +1326,18 @@ test('SignatureQuestion_SameSealBeforeAndAfter (T12) @story-8.275 @ac-14 @story-
   const ANTES = { 'adhoc-lane': '26eeb534', 'lost-run': 'e089182e', 'designation-set': '03b92ba0' };
   const c = corrida(t, { titulo: 'x', extraHistoria: ['runtime_not_verifiable:', '  - ac: 1', '    reason: "el servicio externo no tiene ambiente de prueba"', '    covered_by: T1'] });
   const de = (firma, cmd, cwd = c.repo) => ow.cuadroPara({ firma, comando: cmd, palabras: ow.canonica(cmd), destino: 'ses-a', sesion: 'ses-a', cwd, casa: c.casa });
+  // el cuadro de nombrar depende del rol del perfil (sin él dice que la sesión sólo ordena): el fijo es el del perfil con
+  // el rol, y el de sin perfil tiene otro sello
+  const cw = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'critical-waivers.js'));
+  const leerRol = cw.sesionQueReenvia;
+  const nombrar = (valor) => { cw.sesionQueReenvia = () => ({ valor }); try { return de('designation-set', `node ${MARKER} designate-relay`, '/r/repo'); } finally { cw.sesionQueReenvia = leerRol; } };
   const ahora = {
     'adhoc-lane': de('adhoc-lane', `node ${MARKER} adhoc set '{"reason":"arreglar el aviso","maxFiles":3}'`),
     'lost-run': de('lost-run', `node ${MARKER} clear-session ses-b --lost`),
     'runtime-waiver': de('runtime-waiver', `node ${MARKER} runtime-waiver specs/story-9.99-prueba.md --acs 1`),
-    'designation-set': de('designation-set', `node ${MARKER} designate-relay`, '/r/repo'),
+    'designation-set': nombrar('coordinadora'),
   };
+  assert.notStrictEqual(nombrar(null).sello, ahora['designation-set'].sello, 'sin el rol en el perfil, otro cuadro');
   const distintos = Object.entries(ahora).filter(([firma]) => ANTES[firma])
     .filter(([firma, q]) => q.sello !== `firma ${firma} · sesión ses-a · código ${ANTES[firma]}`)
     .map(([firma, q]) => `${firma}: ${q.error || q.sello}`);

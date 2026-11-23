@@ -3563,7 +3563,7 @@
       "requiere": []
     },
     {
-      "__nota": "nombrar y retirar a la coordinadora con un click del dueño (marker.js designate-relay sin frase y withdraw-relay): el guion de verdad con la firma reemplazada y el freno en proceso; sin click no se anota nada, un click vencido, usado o de otra pregunta no vale, nadie la nombra por otra sesión, y sin click comprobable dice por qué y los respaldos. Sin red, segundos.",
+      "__nota": "nombrar y retirar a la coordinadora con un click del dueño (marker.js designate-relay sin frase y withdraw-relay): el guion de verdad con la firma reemplazada y el freno en proceso; sin click no se anota nada, un click vencido, usado o de otra pregunta no vale, nadie la nombra por otra sesión, sin perfil del equipo la nombra para ordenar sin anotar la confirmación, y sin click comprobable dice por qué y los respaldos. Sin red, segundos.",
       "raiz": "arnes",
       "ruta": "tests/designate-by-click.test.js",
       "requiere": []
