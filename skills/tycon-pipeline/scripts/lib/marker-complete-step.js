@@ -910,7 +910,7 @@ function cmdCompleteStep(nRaw, flags) {
           console.error(`   En una corrida vieja (${viejas.join(', ')}), \`approve-plan\` no sirve: anota en la abierta. Si su plan se`);
           console.error('   aprobó, se trae su línea desde la carpeta del mismo nombre del repo del código.');
         }
-        console.error('   Si la story se cerró sin pipeline, lo declara con `advisors_exempt: true` y su razón.');
+        console.error('   Si la story se cerró sin pipeline, la exención de los revisores (`advisors_exempt`) la decide la persona, con su firma sobre la historia.');
       } else {
         appendLog('gates.log', { name: 'approvals-story-repo', status: 'ok', story: marker.storyId || null, step: 8, proyecciones: r.proyecciones.length });
       }

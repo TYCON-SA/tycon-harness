@@ -133,8 +133,8 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   enumerados; la evidencia sale del repo de la story (+ `evidence.companion_repos` declarados en
   `.tycon/advisors.yaml`), nunca de hermanos por vecindad.
 - **F.iv — ADVISORS-GATE**: a `done` no se llega sin constancia de advisors en este repo (run dir con
-  reportes de «Revisores» o `check=advisors green` con el `repoPath`). Escapes del dev:
-  `advisors_exempt: true` + `advisors_exempt_reason:`, o `TYCON_ADVISORS_GATE=off`.
+  reportes de «Revisores» o `check=advisors green` con el `repoPath`). Escapes: la exención `advisors_exempt` con
+  su razón, que decide la persona con su firma sobre la historia, o `TYCON_ADVISORS_GATE=off` (sólo el freno local).
 - **G.i**: un plan de rutina se aprueba con el aprobado de su revisión, con o sin
   coordinadora; uno delicado, siempre el dev (risk-class); con `plan_review.routine_approval: person`, una persona.
   Push, scope: human-gate.

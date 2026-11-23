@@ -192,6 +192,52 @@ test('T10 FrontmatterWrite_ExencionQueYaEstaba_Pasa @story-8.96 — la que ya es
   assert.strictEqual(correr(ENCABEZADO, home, { tool_name: 'Write', tool_input: { file_path: borrador, content: juntas } }).status, 2);
 });
 
+// ── La exención de los revisores ──────────────────────────────────────────────────────────────────────────────────────
+
+// FrontmatterWrite_ExencionDeRevisores_PideLaFirma: `advisors_exempt` saltea los revisores al cerrar la historia, como
+// `dod_runtime_exempt` saltea la prueba en vivo. Agregarla, también al crearla, la decide el dueño con su firma sobre esa
+// historia; la que ya estaba y una guía que la nombra pasan
+test('T90 FrontmatterWrite_ExencionDeRevisores_PideLaFirma: agregar advisors_exempt pide la firma del dueño sobre la historia', () => {
+  const home = nuevaHome([deLaPersona('seguí')], 'Edit');
+  const agregar = (f, linea = 'advisors_exempt: true') => ({ tool_name: 'Edit',
+    tool_input: { file_path: f, old_string: 'qa_guide: off\n', new_string: `${linea}\nadvisors_exempt_reason: "modo ágil"\nqa_guide: off\n` } });
+  for (const st of ['draft', 'in-progress', 'review']) {
+    const r = correr(ENCABEZADO, home, agregar(historia(home, st)));
+    assert.strictEqual(r.status, 2, `${st}: ${r.stderr}`);
+    assert.match(r.stderr, /la exime de los revisores/);
+    assert.match(r.stderr, /marker\.js"? sign-file advisors_exempt /);
+  }
+  for (const forma of ['advisors_exempt: "true"', '  advisors_exempt: true', 'advisors_exempt: true # ágil']) {
+    assert.strictEqual(correr(ENCABEZADO, home, agregar(historia(home, 'in-progress'), forma)).status, 2, forma);
+  }
+  // al crearla
+  const nueva = path.join(home, 'repo', 'specs', 'story-9.11-nueva.md');
+  const crear = correr(ENCABEZADO, home, { tool_name: 'Write', tool_input: { file_path: nueva, content: '---\nepic: 9\nstory: "9.11"\ntitle: "Nueva"\nstatus: done\nadvisors_exempt: true\n---\n\n# Story 9.11\n' } });
+  assert.strictEqual(crear.status, 2, crear.stderr);
+  // con la frase de la persona no pasa
+  const conFrase = nuevaHome([deLaPersona('Autorizo advisors_exempt')], 'Edit');
+  assert.strictEqual(correr(ENCABEZADO, conFrase, agregar(historia(conFrase, 'in-progress'))).status, 2);
+  // la que ya estaba pasa; una guía que la nombra, también
+  const ya = historia(home, 'in-progress', 'advisors_exempt: true\n');
+  assert.strictEqual(correr(ENCABEZADO, home, { tool_name: 'Edit', tool_input: { file_path: ya, old_string: 'Texto.', new_string: 'Texto nuevo.' } }).status, 0);
+  const guia = path.join(home, 'repo', 'guia.md');
+  assert.strictEqual(correr(ENCABEZADO, home, { tool_name: 'Write', tool_input: { file_path: guia, content: '# Guía\n\nadvisors_exempt: true\n' } }).status, 0);
+  // la exención de la prueba en vivo sigue pidiendo la suya
+  assert.match(correr(ENCABEZADO, home, agregarExencion(historia(home, 'in-progress'))).stderr, /sign-file dod_runtime_exempt /);
+});
+
+// Firmas_ExencionDeRevisores_SoloDelDueno: la firma está en el catálogo, sobre un archivo, y no se delega aunque el perfil
+// la liste: saltear los revisores es una excepción, y las excepciones pasan por el click del dueño
+test('T91 Firmas_ExencionDeRevisores_SoloDelDueno: escape:advisors_exempt en el catálogo, sobre un archivo y nunca delegada', () => {
+  const sig = require(path.join(RAIZ, 'scripts', 'lib', 'signatures.js'));
+  const e = sig.SIGNATURES.find((x) => x.id === 'escape:advisors_exempt');
+  assert.ok(e, 'está en el catálogo');
+  assert.match(e.command, /marker\.js sign-file advisors_exempt <archivo>/);
+  const del = require(path.join(RAIZ, 'scripts', 'lib', 'delegated-signing.js'));
+  assert.ok(del.NUNCA_DELEGABLES.has('escape:advisors_exempt'), 'nunca delegable');
+  assert.match(del.NUNCA_DELEGABLES.get('escape:advisors_exempt'), /sólo del dueño/);
+});
+
 // ── Los avisos no recetan los escapes ─────────────────────────────────────────────────────────────────────────────────
 
 // Lo que le da al agente el escape como salida: el comando o el renglón que lo activa.
@@ -201,6 +247,7 @@ const RECETAS = [
   /DOD_BYPASS=1/,
   /touch\b[^\n]*ALLOW_DOD_EVIDENCE_WRITE/,
   /dod_runtime_exempt: true/,
+  /advisors_exempt: true/,
 ];
 // Un renglón que nombra el escape y dice que lo decide la persona, con su frase, no es una receta.
 const DE_LA_PERSONA = /autorizo|la persona|lo decide (?:el dev|la persona)/i;

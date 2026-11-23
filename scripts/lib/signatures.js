@@ -88,6 +88,7 @@ const LEVELS_EN = Object.freeze({
   'escape:TYCON_MUTATION_CHECK': 'skip the mutation check of the tests',
   'escape:TYCON_STORY_REVIEW': "skip the story's review before planning",
   'escape:story-skill-bypass': 'write a story without the story skill',
+  'escape:advisors_exempt': 'exempt a story from the reviewers',
   'escape:red-control-test-edit': "edit a control's old test that was failing",
   'escape:set-autonomous': 'change the autonomous mode of a run',
   'designation-confirm': 'confirm which session is the coordinator of this machine',
@@ -132,6 +133,7 @@ const LEVELS = Object.freeze([
   ['escape:TYCON_MUTATION_CHECK', 2, AMBOS, 'saltear el chequeo de mutantes de las pruebas'],
   ['escape:TYCON_STORY_REVIEW', 2, AMBOS, 'saltear la revisión de la historia antes del plan'],
   ['escape:story-skill-bypass', 2, AMBOS, 'escribir una historia sin la skill de historias'],
+  ['escape:advisors_exempt', 2, AMBOS, 'eximir una historia de los revisores'],
   ['escape:red-control-test-edit', 2, AMBOS, 'editar una prueba vieja de un control que estaba en rojo'],
   ['escape:set-autonomous', 2, AMBOS, 'cambiar el modo autónomo de una ejecución'],
   ['designation-confirm', 2, AMBOS, 'confirmar qué sesión es la coordinadora de esta máquina'],
@@ -173,7 +175,7 @@ const DELEGABLE_EXCEPTIONS = Object.freeze(['runtime-waiver', 'manual-test', 'es
 // las firmas sólo del dueño que la coordinadora pide para otra sesión sin delegarlas: le llegan al dueño en la pestaña de
 // ella (la ventana o el cuadro), así no tiene que entrar a la sesión que espera. Siguen siendo sólo suyas: el freno no
 // las pasa por la delegación (owner-window.js)
-const PARA_OTRA_SESION_SIN_DELEGAR = Object.freeze(['escape:dod_runtime_exempt', 'escape:story-skill-bypass', 'autonomy-resume', 'adhoc-lane:datos']);
+const PARA_OTRA_SESION_SIN_DELEGAR = Object.freeze(['escape:dod_runtime_exempt', 'escape:advisors_exempt', 'escape:story-skill-bypass', 'autonomy-resume', 'adhoc-lane:datos']);
 const otraSinDelegar = (id) => (PARA_OTRA_SESION_SIN_DELEGAR.includes(id) ? 'yes' : 'no');
 // las dos formas de nivel 2 de una firma de rutina, que el perfil nombra con su propio nombre (no son firmas de
 // SIGNATURES: se piden con la firma de la derecha, y su guion mira si el perfil nombra la forma): el guardado que toca
@@ -219,6 +221,7 @@ const CON_NOMBRE = [
   ['no-mutation', 'cerrar «Correr las pruebas» sin el chequeo de mutantes, con motivo', 'marker.js complete-step run-tests --no-mutation --reason <motivo>'],
   ['ALLOW_DOD_EVIDENCE_WRITE', 'escribir a mano la evidencia de la prueba en vivo', 'file'],
   ['dod_runtime_exempt', 'eximir una story de la prueba en vivo', 'file'],
+  ['advisors_exempt', 'eximir una story de los revisores', 'file'],
   ['no-deep-review', 'saltear el pase adversarial de una ejecución', 'pipeline.js start --no-deep-review'],
   ['cambiar-el-estado', 'cambiar a mano el estado de una story', 'file'],
   ['merge-bypass', 'mergear salteando la cola y la CI de main, o aflojar las políticas de la rama', 'gh pr merge <n> --admin (o un merge, una regla o una política por la API)'],
@@ -250,6 +253,7 @@ const SI_SALE_MAL = Object.freeze({
   'escape:trust-ran': 'los revisores cuentan como corridos sin constancia, y uno que no corrió pasa por corrido',
   'escape:ALLOW_DOD_EVIDENCE_WRITE': 'la evidencia de la prueba en vivo queda escrita a mano, y puede decir algo que no pasó',
   'escape:dod_runtime_exempt': 'la historia entera queda sin prueba en vivo, y un error puede llegar a producción',
+  'escape:advisors_exempt': 'la historia se cierra sin que ningún revisor la mire, y un error puede pasar sin que nadie lo vea',
   'escape:merge-bypass': 'el cambio entra a main sin la cola ni la CI, o una política de la rama queda floja, y lo que la CI frenaba llega a main',
   'escape:external-pr': 'el código de alguien de afuera entra a main, y lo que hace corre en cada máquina que se actualiza',
   'plan-approval': 'se implementa un plan que no querías; se frena la ejecución y se rehace, y nada entra a main sin revisión',
@@ -320,6 +324,7 @@ const APPROVES_EN = {
   'escape:trust-ran': 'count the reviewers without the record that they ran',
   'escape:ALLOW_DOD_EVIDENCE_WRITE': 'write the live test evidence by hand',
   'escape:dod_runtime_exempt': 'exempt a story from the live test',
+  'escape:advisors_exempt': 'exempt a story from the reviewers',
   'escape:no-deep-review': "skip a run's adversarial pass",
   'escape:cambiar-el-estado': "change a story's status by hand",
   'escape:merge-bypass': "merge skipping main's queue and CI, or loosen the branch policies",

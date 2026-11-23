@@ -93,6 +93,14 @@ function storyIsExempt(content) {
 // runtime-matrix, pipeline.js): en cualquier renglón del archivo, con sangría, con o sin comillas y con lo que siga
 // (un comentario). Si este control mirara menos que ellos, una forma que no ve pasaría sin la frase y valdría igual.
 const EXENTA = /^\s*dod_runtime_exempt:\s*["']?true\b/m;
+// Las exenciones que se agregan con la firma del dueño sobre la historia: la de la prueba en vivo y la de los revisores.
+// Cada una con el renglón como lo reconoce el más ancho de sus lectores, qué saltea y cuál es el camino normal.
+const EXENCIONES = [
+  { campo: 'dod_runtime_exempt', re: EXENTA, saltea: 'la exime de la prueba en vivo',
+    camino: ['El camino normal es correr la prueba en vivo; si la historia no se puede terminar, dejarla como deuda', '(marker.js close-as-debt).'] },
+  { campo: 'advisors_exempt', re: /^\s*advisors_exempt:\s*["']?true\b/m, saltea: 'la exime de los revisores',
+    camino: ['El camino normal es correr los revisores de la historia en su ejecución del pipeline.'] },
+];
 // la regla del cambio de estado a mano es la misma para la herramienta de edición y para la consola
 const { transicionAMano, isCriticalStatus, EN_IMPLEMENTACION } = require('./lib/story-transition.js');
 // El estado del encabezado, con fines de renglón de Windows y comillas simples o dobles.
@@ -127,27 +135,37 @@ function comoSeFirmaAca(firma, filePath, sesion) {
 }
 
 /**
- * La exención de la prueba en vivo que se agrega a una historia (pasa de ausente o `false` a `true`, también al crearla)
- * la decide la persona, en cualquier estado: sin su firma en la ventana sobre esta historia, `{ block }` que nombra el
- * comando; con ella, pasa (null) y queda la constancia con la sesión. El agente que escribe la historia no se exime solo.
+ * Una exención que se agrega a una historia (pasa de ausente o `false` a `true`, también al crearla) la decide la
+ * persona, en cualquier estado: sin su firma en la ventana sobre esta historia, `{ block }` que nombra el comando; con
+ * ella, pasa (null) y queda la constancia con la sesión. El agente que escribe la historia no se exime solo. Con dos
+ * nuevas en la misma escritura, cada una pide la suya.
  */
 function exencionNueva(event, oldContent, newContent, casa) {
-  if (!EXENTA.test(newContent) || (oldContent && EXENTA.test(oldContent)) || !esHistoria(newContent)) return null;
+  if (!esHistoria(newContent)) return null;
+  for (const ex of EXENCIONES) {
+    if (!ex.re.test(newContent) || (oldContent && ex.re.test(oldContent))) continue;
+    const r = exencionNuevaDe(ex, event, oldContent, newContent, casa);
+    if (r) return r;
+  }
+  return null;
+}
+
+function exencionNuevaDe(ex, event, oldContent, newContent, casa) {
   // el estado de antes o el de después, para el mensaje; la historia nueva no tiene estado de antes
   const antes = estadoDe(oldContent || '');
   const estado = EN_IMPLEMENTACION.has(antes) ? antes : (estadoDe(newContent) || antes || 'sin estado');
   const sid = event.session_id;
-  const r = firmaDeLaVentana('dod_runtime_exempt', event, event.tool_input.file_path, casa);
+  const r = firmaDeLaVentana(ex.campo, event, event.tool_input.file_path, casa);
   const ok = r.ok === true;
   const storyId = parseFrontmatter(newContent).story || '';
   try {
     const { rutaDeLaLib } = require('./lib/closing-record.js');
     // el camino es el de la firma: la ventana, la delegación o la terminal
     require(rutaDeLaLib()).anotar({ freno: 'on-frontmatter-write', regla: 'exencion-nueva', veredicto: ok ? 'escape' : 'bloqueo',
-      cmd: `${storyId}\0${estado}`, ...(ok ? { via: r.constancia.via, sesion: sid, escape: 'dod_runtime_exempt' } : {}) });
+      cmd: `${storyId}\0${estado}`, ...(ok ? { via: r.constancia.via, sesion: sid, escape: ex.campo } : {}) });
   } catch { /* ayuda, no evidencia */ }
   if (ok) return null;
-  const titulo = `🚨 BLOQUEADO — agregar la exención dod_runtime_exempt a la story ${storyId} (estado ${estado}) la exime de la prueba en vivo.`;
+  const titulo = `🚨 BLOQUEADO — agregar la exención ${ex.campo} a la story ${storyId} (estado ${estado}) ${ex.saltea}.`;
   return {
     block: [
       titulo,
@@ -155,8 +173,7 @@ function exencionNueva(event, oldContent, newContent, casa) {
       'Eximir una historia lo decide la persona, no el agente, también mientras se escribe. Si la persona quiere,',
       'la firma, y con su «Sí» se repite esta escritura:',
       ...r.renglones.map((l) => `  · ${l}`),
-      'El camino normal es correr la prueba en vivo; si la historia no se puede terminar, dejarla como deuda',
-      '(marker.js close-as-debt).',
+      ...ex.camino,
       `(No hay firma: ${r.motivo}.)`,
     ].join('\n') + '\n',
   };

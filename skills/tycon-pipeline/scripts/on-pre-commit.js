@@ -1981,7 +1981,7 @@ function main() {
       lines.push('     Salidas:');
       lines.push('       (a) Correr el pipeline sobre la story (con sus revisores):');
       lines.push(`           ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js')} start --story <spec> --repo <repo>`);
-      lines.push('       (b) Story SIN nada que auditar (docs/config puros) — lo decide el DEV, en el frontmatter:');
+      lines.push('       (b) Story SIN nada que auditar (docs/config puros) — lo decide la persona, con su firma sobre la historia:');
       lines.push('           advisors_exempt: true');
       lines.push('           advisors_exempt_reason: "<razón concreta>"');
       lines.push('       (c) Kill-switch del dev: TYCON_ADVISORS_GATE=off.');

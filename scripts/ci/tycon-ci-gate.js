@@ -574,7 +574,7 @@ function revisarAutoria(repo, storyId, storyPath) {
     if (ilegible) {
       // Presente y roto: frena siempre, haya corte o no.
       hallazgos.push({ regla: 'registro-de-autoria-invalido',
-        mensaje: `\`${nombre}/review-roster.json\` no se puede leer (${ilegible}). Un registro ilegible no es un registro: regeneralo corriendo los revisores, o declará \`advisors_exempt: true\` con su razón.` });
+        mensaje: `\`${nombre}/review-roster.json\` no se puede leer (${ilegible}). Un registro ilegible no es un registro: regeneralo corriendo los revisores; la exención de los revisores (\`advisors_exempt: true\` con su razón) la decide la persona, con su firma sobre la historia.` });
       continue;
     }
     if (!roster) continue;
@@ -592,7 +592,7 @@ function revisarAutoria(repo, storyId, storyPath) {
   }
   if (!algunoPostCutoff) return hallazgos; // run viejo: la ausencia no se le puede reclamar
   hallazgos.push({ regla: 'sin-registro-de-autoria',
-    mensaje: `pasa a \`done\` y ningún \`.advisors/pipeline-runs/${prefijoDeEvidencia(storyId, storyPath)}*/\` trae \`review-roster.json\` (quién implementó y quiénes revisaron). Lo escribe solo el hook al cerrar la ronda de revisores; si esta story se cerró sin pipeline, declaralo con \`advisors_exempt: true\` + su razón.` });
+    mensaje: `pasa a \`done\` y ningún \`.advisors/pipeline-runs/${prefijoDeEvidencia(storyId, storyPath)}*/\` trae \`review-roster.json\` (quién implementó y quiénes revisaron). Lo escribe solo el hook al cerrar la ronda de revisores; si esta story se cerró sin pipeline, la exención (\`advisors_exempt: true\` + su razón) la decide la persona, con su firma sobre la historia.` });
   return hallazgos;
 }
 
@@ -642,7 +642,7 @@ function revisarAprobaciones(repo, storyId, storyPath, ref = 'origin/main') {
     if (!reg.existe) {
       if (hay('sin-registro-de-aprobaciones')) {
         hallazgos.push({ regla: 'sin-registro-de-aprobaciones',
-          mensaje: `\`${nombre}/\` llegó a los revisores y no trae \`${approvalsLib.FILE}\` (qué se aprobó, cuándo y si fue una persona o un agente). Lo escribe marker.js al aprobar el plan. Si está en disco y no en el commit, el \`.gitignore\` lo traga: falta \`!**/.advisors/pipeline-runs/*/approvals.jsonl\` (el arranque del pipeline la agrega). Si la story se cerró sin pipeline, declaralo con \`advisors_exempt: true\` + su razón.` });
+          mensaje: `\`${nombre}/\` llegó a los revisores y no trae \`${approvalsLib.FILE}\` (qué se aprobó, cuándo y si fue una persona o un agente). Lo escribe marker.js al aprobar el plan. Si está en disco y no en el commit, el \`.gitignore\` lo traga: falta \`!**/.advisors/pipeline-runs/*/approvals.jsonl\` (el arranque del pipeline la agrega). Si la story se cerró sin pipeline, la exención (\`advisors_exempt: true\` + su razón) la decide la persona, con su firma sobre la historia.` });
       } else if (llegoARevisores) {
         avisos.push({ regla: 'sin-registro-de-aprobaciones',
           mensaje: `\`${nombre}/\` no trae \`${approvalsLib.FILE}\`, y la ejecución no tenía por qué dejarlo acá: su registro de revisores no declara que anote aprobaciones (un arnés anterior al registro de aprobaciones), o arrancó antes de que el registro llegara al repo de la story: no se sabe quién aprobó el plan. Avisa y no frena.` });
@@ -1062,7 +1062,7 @@ function revisar({ repo, base, staged, hoy = hoyUtc() }) {
       destino.push({ archivo: rel, story: idBruto, regla: 'sin-constancia-de-revisores',
         mensaje: !pref
           ? `pasa a \`done\` y no pude calcular la clave de la story ${idBruto} (${rel}) para buscar su carpeta de revisores: sin clave no se da constancia por buena (el motivo está en el aviso del portón). No es «no hay constancia»: es «no la pude buscar».`
-          : `pasa a \`done\` y no hay \`.advisors/pipeline-runs/${pref}*/\` en el repo${pref !== `${idBruto}-` ? ` (el número ${idBruto} se repite en el repo: la carpeta lleva la clave de esta story; las \`${idBruto}-*\` viejas no dicen de cuál son y no cuentan)` : ''}. Escape del dev: \`advisors_exempt: true\` + su razón.` });
+          : `pasa a \`done\` y no hay \`.advisors/pipeline-runs/${pref}*/\` en el repo${pref !== `${idBruto}-` ? ` (el número ${idBruto} se repite en el repo: la carpeta lleva la clave de esta story; las \`${idBruto}-*\` viejas no dicen de cuál son y no cuentan)` : ''}. La exención (\`advisors_exempt: true\` + su razón) la decide la persona, con su firma sobre la historia.` });
     }
 
     // (4) el que escribió el código no puede ser el que lo revisó — y tiene que estar ESCRITO

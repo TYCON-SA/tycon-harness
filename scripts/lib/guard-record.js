@@ -226,7 +226,7 @@ const RELEVO = /^[\p{L}\p{N}][\p{L}\p{N} _-]{0,39}$/u;
 // Qué escape con nombre se usó y en qué sesión: `marker.js clear` busca acá quién autorizó cerrar una ejecución abierta,
 // y `close-as-debt` quién autorizó la deuda. Lista cerrada; un valor fuera de la lista no se anota y queda el aviso.
 const ESCAPES_CON_NOMBRE = ['TYCON_SAFETY_OFF', 'TYCON_PROD_LINT', 'TYCON_NEW_NAMES', 'set-autonomous', 'cerrar-la-ejecucion', 'story-skill-bypass', 'cerrar-como-deuda',
-  'TYCON_TEST_GATE', 'DOD_BYPASS', 'force-manual', 'trust-ran', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt',
+  'TYCON_TEST_GATE', 'DOD_BYPASS', 'force-manual', 'trust-ran', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt', 'advisors_exempt',
   'TYCON_NO_DEEP_REVIEW', 'no-deep-review', 'TYCON_STATUS_GATE', 'cambiar-el-estado', 'merge-bypass', 'external-pr', 'red-control-test-edit',
   'rojo-esperado-de-la-matriz', 'TYCON_MUTATION_CHECK', 'TYCON_STORY_REVIEW', 'no-mutation'];
 const SESION = /^[\w-]{1,80}$/;
