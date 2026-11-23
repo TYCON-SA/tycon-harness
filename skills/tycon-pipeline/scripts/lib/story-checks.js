@@ -463,6 +463,7 @@ function parseTestsTable(specContent) {
     name: header.findIndex((h) => /test|nombre|descrip/.test(h)),
     ac: header.findIndex((h) => /^acs?$/.test(h)),
     nivel: header.findIndex((h) => /nivel|level|tipo/.test(h)),
+    archivos: header.findIndex((h) => /^(archivos|files)$/.test(h)),
   };
   if (idx.tid === -1) idx.tid = 0;
   if (idx.name === -1) idx.name = Math.min(1, header.length - 1);
@@ -489,7 +490,11 @@ function parseTestsTable(specContent) {
     }
     if (tid || name) {
       // `acCell`: la celda AC tal cual, para quien necesita leer también los rangos («1-3»); null sin columna AC
-      rows.push({ tid, name, acRefs: [...acRefs], acCell: idx.ac !== -1 ? (cells[idx.ac] || '') : null, nivel: idx.nivel !== -1 ? (cells[idx.nivel] || '') : null, raw: line.trim() });
+      // `archivos`: los archivos declarados que ejercita la prueba (columna `Archivos`, separados por comas), o null sin
+      // la columna o con la celda vacía: entonces no se sabe qué ejercita, y la matriz vence como siempre
+      const celdaArchivos = idx.archivos !== -1 ? (cells[idx.archivos] || '') : '';
+      const archivos = celdaArchivos.split(',').map((a) => a.replace(/`/g, '').trim()).filter((a) => a && !/^[-—–]+$/.test(a));
+      rows.push({ tid, name, acRefs: [...acRefs], acCell: idx.ac !== -1 ? (cells[idx.ac] || '') : null, nivel: idx.nivel !== -1 ? (cells[idx.nivel] || '') : null, archivos: archivos.length ? archivos : null, raw: line.trim() });
     }
   }
   if (!rows.length) {
@@ -766,6 +771,26 @@ function runStoryChecks({ repo, storyPath, files = [] }) {
   }
   const contentsCache = new Map();
   for (const f of testFiles) contentsCache.set(f, readText(f));
+
+  // ── VAL-W20: la columna Archivos nombra sólo código que la historia declara ──
+  // La matriz vence por esos nombres, contra el código declarado (sin las pruebas): uno mal escrito, o que no es código,
+  // deja su criterio venciendo como siempre (el arreglo se pierde) y se ve recién al cerrar. Se dice antes de programar.
+  const declaradosDeLaTabla = new Set(require('./test-scope.js').parseDeclaredFiles(story, { allForms: true }).map((d) => String(d).replace(/^\.\//, '')));
+  const nombrados = [...new Set(table.rows.flatMap((r) => (r.archivos || []).map((a) => a.replace(/^\.\//, ''))))];
+  // el código de la matriz: el de code-files.js con lo que sume la organización, más `.sql`
+  const esCodigoDeLaMatriz = (a) => codeFiles.isCode(a, { extra: require('./stack-config.js').orgExtra() }) || codeFiles.extOf(a) === '.sql';
+  const archivosMalos = nombrados.filter((a) => !declaradosDeLaTabla.has(a) || !esCodigoDeLaMatriz(a));
+  const archivosPrueba = nombrados.filter((a) => !archivosMalos.includes(a) && TEST_FILE_RE.test(a));
+  if (archivosMalos.length || archivosPrueba.length) {
+    findings.push({
+      rule: 'VAL-W20', severity: 'MEDIUM', status: 'fail',
+      detail: [
+        archivosMalos.length ? `La columna Archivos de la tabla ### Tests nombra lo que no es código declarado en files_to_modify / files_to_create: ${archivosMalos.join(', ')}. Escribilos igual que en la lista declarada.` : null,
+        archivosPrueba.length ? `Nombra pruebas, que no son lo que la prueba ejercita: ${archivosPrueba.join(', ')}.` : null,
+        'Si no, su criterio vence con cualquier cambio (story-format §6).',
+      ].filter(Boolean).join(' '),
+    });
+  }
 
   // ── ACCOV-C5: cada AC con ≥1 test asignado en la tabla ──
   if (acs.length && table.found) {
