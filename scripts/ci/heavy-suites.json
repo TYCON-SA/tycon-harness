@@ -173,10 +173,19 @@
         "scripts/tests/harness-profile.test.sh"
       ]
     },
-    "harness-uninstall.test.sh": {
-      "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado; decisión del dueño, 2026-10-08, story 8.22 tramo G). Sus patrones son los del grupo más su propio archivo. Hasta ese día corría también por `shared` y por lo que usa su código.",
+    "harness-uninstall.p1.test.sh": {
+      "why": "Una de las dos partes de harness-uninstall.test.sh (partida el 2026-11-22); el criterio es el de la suite entera. Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado; decisión del dueño, 2026-10-08, story 8.22 tramo G). Sus patrones son los del grupo más su propio archivo. Hasta ese día corría también por `shared` y por lo que usa su código.",
       "group": "installer",
       "patterns": [
+        "scripts/tests/harness-uninstall.p1.test.sh",
+        "scripts/tests/harness-uninstall.test.sh"
+      ]
+    },
+    "harness-uninstall.p2.test.sh": {
+      "why": "Una de las dos partes de harness-uninstall.test.sh (partida el 2026-11-22); el criterio es el de la suite entera. Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado; decisión del dueño, 2026-10-08, story 8.22 tramo G). Sus patrones son los del grupo más su propio archivo. Hasta ese día corría también por `shared` y por lo que usa su código.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/harness-uninstall.p2.test.sh",
         "scripts/tests/harness-uninstall.test.sh"
       ]
     },
@@ -277,10 +286,19 @@
         "scripts/setup/npm/**"
       ]
     },
-    "harness-move-home.test.sh": {
-      "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado y la decisión del dueño para la clase entera, 2026-10-08). Entró a main ese día con la story 8.23 (la mudanza de una máquina a ~/.tycon) sin peso medido: la frenó la guardia de T32 al traer main. Hasta entonces se elegía por su `gate_only_when_touching` de suites.json, que incluía scripts/lib/**; ése sigue siendo el del portón de cada story.",
+    "harness-move-home.p1.test.sh": {
+      "why": "Una de las dos partes de harness-move-home.test.sh (partida el 2026-11-22); el criterio es el de la suite entera. Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado y la decisión del dueño para la clase entera, 2026-10-08). Entró a main ese día con la story 8.23 (la mudanza de una máquina a ~/.tycon) sin peso medido: la frenó la guardia de T32 al traer main. Hasta entonces se elegía por su `gate_only_when_touching` de suites.json, que incluía scripts/lib/**; ése sigue siendo el del portón de cada story.",
       "group": "installer",
       "patterns": [
+        "scripts/tests/harness-move-home.p1.test.sh",
+        "scripts/tests/harness-move-home.test.sh"
+      ]
+    },
+    "harness-move-home.p2.test.sh": {
+      "why": "Una de las dos partes de harness-move-home.test.sh (partida el 2026-11-22); el criterio es el de la suite entera. Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado y la decisión del dueño para la clase entera, 2026-10-08). Entró a main ese día con la story 8.23 (la mudanza de una máquina a ~/.tycon) sin peso medido: la frenó la guardia de T32 al traer main. Hasta entonces se elegía por su `gate_only_when_touching` de suites.json, que incluía scripts/lib/**; ése sigue siendo el del portón de cada story.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/harness-move-home.p2.test.sh",
         "scripts/tests/harness-move-home.test.sh"
       ]
     },

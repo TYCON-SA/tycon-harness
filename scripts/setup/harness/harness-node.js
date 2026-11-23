@@ -461,8 +461,10 @@ function countHooks(settingsFile, interp, listed = null) {
         if (/bootstrap\.js$/.test(script) || /codegraph/i.test(script)) continue;
         if (listed ? !listed.some((rel) => script.endsWith(`/${rel}`)) : !/\/scripts\/hooks\/|\/skills\//.test(script)) continue;
         out.total += 1;
-        if (cmd.startsWith('node "')) out.path_node += 1;
-        else if (interp && interp.own && cmd.startsWith(`${interp.prefix} "`)) out.own += 1;
+        // con el lanzador del freno de publicación delante, el intérprete es lo que sigue
+        const run = cmd.replace(/^bash\s+"[^"]*\/node-missing-launcher\.sh"\s+/, '');
+        if (run.startsWith('node "')) out.path_node += 1;
+        else if (interp && interp.own && run.startsWith(`${interp.prefix} "`)) out.own += 1;
         else out.other += 1;
       }
     }

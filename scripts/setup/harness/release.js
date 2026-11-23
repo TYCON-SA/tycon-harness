@@ -608,6 +608,25 @@ function treeNumberOk(json, version) {
 }
 
 /**
+ * Estampa en el `version.json` de una versión bajada el número de su etiqueta, si el de git es el piso (`numbering:
+ * merge-tag`) y dice otro: `version` pasa a ser la etiqueta y `floor` guarda el piso. Actualiza el `blob` de esa entrada
+ * del manifiesto. Un version.json sin la marca, ilegible o que ya dice el número queda como vino.
+ */
+function stampVersion(dir, files, version) {
+  const file = path.join(dir, 'version.json');
+  let json;
+  try { json = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, '')); } catch (_) { return false; }
+  if (!VO.numberedByTag(json) || json.version === version) return false;
+  const stamped = Object.assign({ version, floor: json.version }, json, { version, floor: json.version,
+    installed: `el número de esta copia es el de su etiqueta (${VO.tagName(version)}); en git, «version» es el piso` });
+  const text = `${JSON.stringify(stamped, null, 2)}\n`;
+  fs.writeFileSync(file, text);
+  const entry = files.find((f) => f.path === 'version.json');
+  if (entry) entry.blob = lib('git-tree-hash.js').blobSha(Buffer.from(text));
+  return true;
+}
+
+/**
  * Baja el comprimido DEL COMMIT, lo recorre con el lector propio, verifica el árbol y deja la versión armada en
  * `incoming/<versión>/` con su manifiesto. `{ ok, dir, manifest }` o `{ ok: false, status, reason }` sin dejar nada.
  */
@@ -651,6 +670,10 @@ function download(ctx, c, repoName, { commit, version, ref, tagged = false, log 
         : `el número publicado (${version}) no coincide con el del árbol verificado de ${sha7(commit)} (${inTree || 'sin version.json'}) — no instalo nada` };
     }
   }
+  // con el número de una etiqueta, el version.json de git dice el piso: la copia instalada lleva el de su etiqueta, para
+  // que quien lo lea a mano sepa qué versión tiene. El manifiesto anota el contenido estampado (`doctor` no lo ve editado)
+  // y el árbol sigue siendo el del commit, ya verificado
+  if (version) stampVersion(dir, x.manifest, version);
   const manifest = { schema: 1, repo: repoName, ref, commit, tree: expectedTree, version, downloaded_at: nowIso(), files: x.manifest };
   fs.writeFileSync(path.join(dir, MANIFEST_NAME), `${JSON.stringify(manifest, null, 1)}\n`);
   if (log) log(`release: ${version || sha7(commit)} bajada y verificada en ${dir} (${x.manifest.length} archivos, árbol ${sha7(expectedTree)})`);
@@ -2601,7 +2624,7 @@ module.exports = {
   startup, cmdUpdate, cmdTeamRefresh, doctorItems, markHealth, healthDueAtStartup, startupHealth, versionLine, versionJson, FETCH_WINDOW_MS,
   MANIFEST_NAME, MAIN_REF, SYNC_REF, API_DEFAULT,
   githubRepoOf, repoOf, apiBase, client, explainFailure, tokenExpired, EXPIRED_TOKEN_TEXT, refCommit, versionAt, resolveChannel, check, locateVersion,
-  resolvePublic, numberAt, tagNumberOf, tagsByApi, tagsFor, tagCommit, pendingTag, PENDING_TAG_SAY_MS, trustedCache, fromCache, adoptTag, treeNumberOk,
+  resolvePublic, numberAt, tagNumberOf, tagsByApi, tagsFor, tagCommit, pendingTag, PENDING_TAG_SAY_MS, trustedCache, fromCache, adoptTag, treeNumberOk, stampVersion,
   download, readManifest, restoreThirdParty, swap, swapBack, repair, cleanupDeferred, isNamed, makeSource, shortPlanOf,
   convertLayout, swapLinks, swapBackLinks, repairLinks,
   cmdInstall, update, rollback, auditTree, refreshTeam, refreshTeamWithNewCode,

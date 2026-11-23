@@ -360,6 +360,7 @@ their tabs as before.
 - **Closed stories that left proof it works at runtime** (`dod`). Of the closed stories, how many left evidence that they were tested live.
 - **What comes back: stories with a later follow-up** (`rework`). How much of what was delivered had to be touched again.
 - **Why it came back: our defect vs. a requirement change** (`rework_por_causa`). Separates what came back because of our mistake from what came back because what was asked changed.
+- **Reworked next to delivered, month by month** (`rework_por_mes`). Shows, for each of the last months, how many stories were delivered and how many were reworked for each cause, to see whether rework grows or shrinks.
 - **Does what went through the pipeline come back less?** (`rework_por_carril`). Compares, per repo, rework with a pipeline record against rework without one.
 - **Mutation score: share of mutants the tests kill** (`mutacion`). Whether the tests break when the code is broken on purpose.
 - **Test runs that evaluated the 75% threshold on the changed lines** (`cobertura_tocada_evaluo`). How many times the coverage of what was touched was actually measured.
@@ -513,7 +514,8 @@ itself. Disabling a machine cuts its connection.
 assignment, what it is doing and its last action; the board, the tables, the tokens, the messages between sessions (the
 paper planes), each session's conversation, which opens with «See conversation», as on the machine, and the two numbers
 of the racks: the percentage of memory and of processor in use, whole numbers from 0 to 100 (not the machine's name, nor
-its processes, nor totals in bytes). Each text leaves
+its processes, nor totals in bytes), and, while a large test run is going, the name of the session that holds the
+heavy-test turn and how many suites it runs (not its process nor its folder). Each text leaves
 without the home folder or the keys that are recognized. The conversation travels apart from the snapshot, only to a site
 that understands it, and the site keeps it only in memory: nothing from the office stays on its disk. So maintainers see
 live what each dev is doing; each dev knows it from the fingerprint line.

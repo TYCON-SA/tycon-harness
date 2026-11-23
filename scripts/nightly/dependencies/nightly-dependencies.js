@@ -119,6 +119,7 @@ function parseArgs(argv) {
     else if (v === '--reason') a.motivo = argv[++i];
     else if (v === '--pr-closed') a.prCerrado = argv[++i];
     else if (v === '--clear-rejection') a.quitarRechazo = true;
+    else if (v === '--with-platform') a.conPlataforma = true;
     else if (v === '--decision-failed') a.decisionFallida = argv[++i];
     else if (v === '--json') a.json = true;
     else if (v === '--dry-run') a.dryRun = true;
@@ -512,6 +513,9 @@ function auditarArbol(base, entrada, guion, hoy) {
     graves: graves.map((h) => ({ paquete: h.paquete, severidad: h.severidad, advisories: h.advisories, declarada: h.declarada,
       ...(h.gravedad_sin_dato ? { gravedad_sin_dato: true } : {}) })),
     no_declaradas: inf.no_declaradas || [],
+    // las librerías copiadas que midió (`ws@8.22.0`), y las que no se auditan con su motivo: la noche dice qué miró
+    ...(Array.isArray(inf.copias) ? { copias: inf.copias } : {}),
+    ...(Array.isArray(inf.copias_sin_auditar) ? { copias_sin_auditar: inf.copias_sin_auditar } : {}),
   };
 }
 
@@ -1952,8 +1956,10 @@ function clones(a) {
     // el aviso nombra la entrada por su número: el texto de una entrada rara no se repite en el registro
     if (!formaDeClon(r)) { console.error(`⚠️ repos[${i}]: \`ruta\` o \`ado\` fuera de forma, no se clona`); continue; }
     vistas.add(r.ruta);
-    // Una entrada de GitHub da `<dueño>/<repo>`. Dos columnas siempre: el modelo de Azure lee dos.
-    console.log(`${r.ruta}\t${r.ado || r.github || ''}`);
+    // Una entrada de GitHub da `<dueño>/<repo>`, igual que una de Azure. Dos columnas, como las lee el clonador de GitHub;
+    // con --with-platform, una tercera (`ado` o `github`): el pipeline de Azure clona de GitHub lo que es de GitHub
+    const plataforma = a.conPlataforma ? `\t${r.ado ? 'ado' : r.github ? 'github' : ''}` : '';
+    console.log(`${r.ruta}\t${r.ado || r.github || ''}${plataforma}`);
   }
   return 0;
 }
@@ -2046,7 +2052,8 @@ const AYUDA = `nightly-dependencies.js — la revisión nocturna de dependencias
                                    arma título y cuerpo del pull request (por defecto el de Azure)
   note      --card <archivo>       escribe en la ficha lo que decidió una persona sobre su PR
   report    ¿sirve esta pieza? — desglosado, con criterio de retiro
-  clone-list lista "ruta<TAB>ado" de lo que el pipeline tiene que clonar (cada ruta una vez)
+  clone-list lista "ruta<TAB>ado" de lo que el pipeline tiene que clonar (cada ruta una vez); con
+            --with-platform suma una tercera columna, ado o github, de dónde se clona
 
 Una entrada de repos.json puede llevar "subruta" (2026-09-05): "ruta" sigue siendo la raíz del repo
 —de ahí se prepara el árbol de origin/main— y se audita la subcarpeta adentro de ese árbol, con su

@@ -44,7 +44,10 @@ function nuevo(viejo, forma) {
  * (y `signatureCommand`, con la carpeta); en `.sh` y `.json`, sin los escapes de sus comillas y de `$`.
  */
 function leido(archivo) {
-  const t = fs.readFileSync(path.join(ROOT, archivo), 'utf8');
+  // marker.js está partido: su texto es el del despachador más sus partes
+  const t = archivo === 'skills/tycon-pipeline/scripts/marker.js'
+    ? require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'tests', 'lib', 'marker-source.js'))(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts'))
+    : fs.readFileSync(path.join(ROOT, archivo), 'utf8');
   if (archivo.endsWith('.sh')) return t.replace(/\\(["$])/g, '$1');
   if (archivo.endsWith('.json')) return t.replace(/\\"/g, '"');
   return t

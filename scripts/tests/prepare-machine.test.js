@@ -252,6 +252,30 @@ test('8.187 T15b Preparar_LoQueNoPudoMirar_NoEsLoQueFalta @story-8.187 @ac-13: u
   assert.match(text(c), /no pude leer/);
 });
 
+test('Preparar_PerfilIlegible_LoDice — un perfil del equipo que no se lee se dice; no se toma callado como «con la contraseña»', () => {
+  const t = toy({ prod: { viejo: true } });
+  fs.writeFileSync(path.join(t.arnes, 'perfil-equipo.json'), '{ esto no es json');
+  const r = text(PM.check({ ...t.opts, repos: [] }));
+  assert.match(r, /no pude leer el perfil del equipo/, r);
+  assert.match(r, /contraseña/, 'sigue dando el comando con la contraseña');
+  // pase adversarial: un TYCON_PROFILE roto no cambia guard.update (sale del perfil del árbol): no se dice como ilegible
+  const t2 = toy({ profile: { guard: { update: 'password' } }, prod: { viejo: true } });
+  const otro = path.join(t2.home, 'otro-perfil.json');
+  fs.writeFileSync(otro, '{ roto');
+  const r2 = text(PM.check({ ...t2.opts, env: { ...(t2.opts.env || process.env), TYCON_PROFILE: otro }, repos: [] }));
+  assert.doesNotMatch(r2, /no pude leer el perfil del equipo/, r2);
+});
+
+test('Preparar_ImportSinPermiso_NoEsQueNoExista — un import cuya carpeta no se deja mirar es «no pude», no «no existe»', { skip: process.platform === 'win32' ? 'permisos POSIX' : false }, (tt) => {
+  const t = toy();
+  const fuera = fs.mkdtempSync(path.join(os.tmpdir(), 'prepare-machine-cerrada-'));
+  fs.writeFileSync(path.join(fuera, 'reglas.md'), '# reglas\n');
+  const r = repo(t, 'con-import', { claudeMd: `@${path.join(fuera, 'reglas.md')}\n` });
+  fs.chmodSync(fuera, 0o000);
+  tt.after(() => { fs.chmodSync(fuera, 0o700); fs.rmSync(fuera, { recursive: true, force: true }); });
+  assert.strictEqual(PM.hasExternalImports(r, t.home), null);
+});
+
 test('8.187 T15c Preparar_UnaParteQueSeCae_NoTiraAbajoLoDemas @story-8.187 @ac-13: si mirar el freno o la coordinadora lanza, lo dice como «no pude mirar» y sigue', () => {
   const t = toy();
   const r = PM.check({ ...t.opts, judgeGuard: () => { throw new Error('sin lector'); }, repos: [] });

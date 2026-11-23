@@ -637,7 +637,11 @@ const colorRack=p=>p>=85?"#ff4d4d":p>=60?"#ffb02e":"#3dff7a";
 function pintarRack(r,p){const ok=Number.isInteger(p)&&p>=0&&p<=100,n=ok?Math.round(p*RACK_FILAS/100):0;r.pct=ok?p:null;
   r.leds.forEach(m=>{m.userData.on=m.userData.fila<n;m.material.color.set(m.userData.on?colorRack(p):ok?LED_APAGADO:LED_SIN_MEDIDA)})}
 function pintarRacks(maq){const m=maq&&typeof maq==="object"?maq:{};racks.forEach(r=>pintarRack(r,m[r.tipo]));if(rackVisto)rackTag.textContent=textoRack(rackVisto)}
-function textoRack(r){return r.tipo==="memoria"?(r.pct==null?"Memoria: no medida":"Memoria en uso: "+r.pct+" %"):(r.pct==null?"Procesador: no medido":"Procesador: "+r.pct+" %")}
+function textoRack(r){const m=r.tipo==="memoria"?(r.pct==null?"Memoria: no medida":"Memoria en uso: "+r.pct+" %"):(r.pct==null?"Procesador: no medido":"Procesador: "+r.pct+" %");return [m,...turnosRack.map(renglonTurno)].join("\n")}
+// quién corre una ejecución grande y cuántas suites: un renglón por cada una, debajo de la medida; lo que no vino no se inventa
+let turnosRack=[];
+function pintarTurno(t){turnosRack=Array.isArray(t)?t.filter(x=>x&&typeof x==="object"):[];if(rackVisto)rackTag.textContent=textoRack(rackVisto)}
+function renglonTurno(x){return "Turno de tarea pesada: "+(typeof x.sesion==="string"&&x.sesion?x.sesion:"una sesión sin nombre")+", "+(Number.isInteger(x.suites)?x.suites+(x.suites===1?" suite":" suites"):"suites sin contar")}
 // un led apagado no titila, y con el movimiento reducido el encendido queda fijo
 function ledVisto(m,i,t){return m.userData.on&&ledRate&&!reduce?Math.sin(t*ledRate*(1+i%5*.3)+i*1.7)>-.5:true}
 // la etiqueta de un rack se ve mientras el mouse lo apunta, o desde que el dedo lo toca hasta que toca otra cosa
@@ -650,7 +654,7 @@ const leds=[];function rack(x,z,tipo,rot=0){const g=new THREE.Group();g.position
 const racks=[rack(.38,.95,"memoria",Math.PI/2),rack(.38,1.75,"procesador",Math.PI/2)];plant(scene,9.45,0,2.35,1.1);
 const rackDe=h=>(h&&racks.find(r=>r.hit===h.object))||null;
 // la etiqueta tiene el aspecto de las de las personas, pero no es una: no entra en su reparto ni recibe el mouse
-const rackTag=document.createElement("div");rackTag.className="rackTag";rackTag.style.cssText="position:absolute;display:none;transform:translate(-50%,-100%);pointer-events:none;z-index:2;background:rgba(24,20,34,.93);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:6px 11px;box-shadow:0 6px 18px rgba(0,0,0,.45);white-space:nowrap;color:#f4eefc;font:600 12.5px/1.2 var(--display)";labelsEl.appendChild(rackTag);
+const rackTag=document.createElement("div");rackTag.className="rackTag";rackTag.style.cssText="position:absolute;display:none;transform:translate(-50%,-100%);pointer-events:none;z-index:2;background:rgba(24,20,34,.93);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:6px 11px;box-shadow:0 6px 18px rgba(0,0,0,.45);white-space:pre;color:#f4eefc;font:600 12.5px/1.2 var(--display)";labelsEl.appendChild(rackTag);
 
 // ---------- centro: alfombra, mesita, sofá ----------
 const rug=add(new THREE.PlaneGeometry(4.0,3.6),M("#fff",{r:.95,x:{map:texRug}}),5.6,.012,5.4,scene,false);rug.rotation.x=-Math.PI/2;
@@ -929,7 +933,7 @@ function poblar(){const ps=puestos(),ags=T.agents().slice(0,ps.length);
 function alDia(){const ags=desks.map(d=>d.agent);
   ledRate=ags.filter(a=>a.estado==="trabajando"||a.estado==="prueba").length*1.6;
   drawPanel();
-  const meta=T.meta(),extra=meta&&meta.extra;pintarRacks(meta&&meta.maquina);
+  const meta=T.meta(),extra=meta&&meta.extra;pintarRacks(meta&&meta.maquina);pintarTurno(meta&&meta.turnoPesado);
   aviso(!ags.length?"No hay sesiones abiertas en esta máquina.":extra?"Y "+extra+" sesión(es) más: están en las tarjetas de abajo.":"")}
 T.refresh=()=>{const ps=puestos(),ags=T.agents().slice(0,ps.length);
   if(ags.map(a=>a.nombre).join("\n")!==quienes)poblar();else{desks.forEach((d,i)=>{d.agent=ags[i];pintarTag(d)});lastScr=-1}

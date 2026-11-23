@@ -105,14 +105,18 @@ fan-out no ocurrió (partes del Arranque salteadas, orden secuencial), lanzar lo
      validadores que ya corrieron salen de `validadores` y de `lanzamientos`, y `omitidos` los nombra. No se lanzan:
      anotar en el log del paso la `linea` y decirla en el anuncio. Si `validadores` queda vacío, el paso no espera
      ningún reporte y sigue a «Armar el plan». Con la historia cambiada (`stale`), en rojo o sin constancia
-     (`none`), se valida como siempre.
+     (`none`), se valida como siempre. La excepción es `por-revalidar`: la historia cambió sólo en lo técnico (las
+     pruebas, las tareas, las notas de desarrollo o la lista de archivos del encabezado) después de una revisión del
+     plan rechazada. Ahí no se vuelve a validar: la revalida la vuelta siguiente de la revisión del plan, que ve el
+     cambio (`lib/story-revalidation.js`).
 
    - **La revisión adversarial previa** (el revisor de historias): la decide
      `pipeline.js story-review-gate --story {story_path}`, y `validators` ya la suma como un lanzamiento más cuando el
      portón dice que corre (riesgo NORMAL y sin constancia vigente: la historia se escribió sin `tycon-create-story`,
      cambió después de la revisión, o la constancia es `no-medido`). Sale en el mismo mensaje paralelo que el
      validador, con el `modelo` que trae. Con constancia vigente no se lanza nada: anotar en el log del paso la `linea`
-     del portón («revisión previa vigente: <resultado>, <N> hallazgos, <modelo>»). Con riesgo bajo, registrar el
+     del portón («revisión previa vigente: <resultado>, <N> hallazgos, <modelo>»). Lo mismo con `por-revalidar` («revisión
+     previa a revalidar por la vuelta del plan»): no se lanza. Con riesgo bajo, registrar el
      salteo con su motivo (`story-review-record --result saltado --reason …`). Apagada (`TYCON_STORY_REVIEW=0`, que pide
      la firma `escape:TYCON_STORY_REVIEW` de la persona), el salteo lo anota su lector: no se registra a mano.
 

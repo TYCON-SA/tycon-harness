@@ -86,6 +86,9 @@ const VISUAL_E2E_FILE_RE = /\.(png|jpe?g|webp|gif|webm)$/i;
 const VISUAL_SMOKE_FILE_RE = /\.(png|webm)$/i;
 
 const RUNTIME_NIVEL_RE = /e2e|smoke|runtime|playwright/i;
+// Una prueba con Nivel `staging` se comprueba en staging, después del merge: su criterio no frena antes, y en done pide
+// un humo corrido con `--environment staging`
+const STAGING_NIVEL_RE = /^\s*staging\b/i;
 // El código es el de lib/code-files.js (con lo que sume la organización); la matriz suma `.sql` (migraciones).
 const codeFilesLib = require('./lib/code-files.js');
 function isCodeFile(f, { extra } = {}) {
@@ -345,12 +348,56 @@ function isDir(d) { try { return fs.statSync(d).isDirectory(); } catch { return 
 function isFile(f) { try { return fs.statSync(f).isFile(); } catch { return false; } }
 function mtimeMs(f) { try { return fs.statSync(f).mtimeMs; } catch { return 0; } }
 
+// lo que se prueba al resolver una carga relativa sin extensión: el archivo con cada una, o su index
+const EXTENSIONES_DE_CARGA = ['.js', '.json', '.ts', '.tsx', '.mjs', '.cjs', '.jsx'];
+
+/**
+ * El texto sin sus comentarios. Los textos entre comillas y las expresiones regulares quedan enteros: un `//` o una
+ * comilla adentro de uno (una dirección, una ruta, `/"/g`) no es un comentario ni abre un texto.
+ */
+function sinComentariosDe(texto) {
+  let out = '';
+  let i = 0;
+  // una `/` abre una expresión regular donde no puede ir una división: al principio o después de un operador
+  const abreRegex = () => { const previo = out.trimEnd(); return !previo || /[(,=:[!&|?{};+\-*%<>~^]$|\b(?:return|typeof|case|in|of)$/.test(previo); };
+  while (i < texto.length) {
+    const c = texto[i];
+    const d = texto[i + 1];
+    if (c === '/' && d === '/') { while (i < texto.length && texto[i] !== '\n') i += 1; continue; }
+    if (c === '/' && d === '*') { const fin = texto.indexOf('*/', i + 2); i = fin < 0 ? texto.length : fin + 2; continue; }
+    if (c === '/' && abreRegex()) {
+      let j = i + 1;
+      let clase = false;
+      while (j < texto.length && texto[j] !== '\n' && (clase || texto[j] !== '/')) {
+        if (texto[j] === '\\') j += 1;
+        else if (texto[j] === '[') clase = true;
+        else if (texto[j] === ']') clase = false;
+        j += 1;
+      }
+      out += texto.slice(i, j + 1);
+      i = j + 1;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`') {
+      let j = i + 1;
+      while (j < texto.length && texto[j] !== c && !(c !== '`' && texto[j] === '\n')) j += texto[j] === '\\' ? 2 : 1;
+      out += texto.slice(i, j + 1);
+      i = j + 1;
+      continue;
+    }
+    out += c;
+    i += 1;
+  }
+  return out;
+}
+
 /**
  * El código que cargan las pruebas de la historia, un nivel: por cada prueba de `codeFiles` que nombra
- * `@story-<sid>`, los `require('./…')` y `require('../…')` literales que caen en un archivo que no está en la lista, con
- * los criterios que esa prueba nombra (`@ac-N`; sin ninguno, null: vence la evidencia entera). Los de paquetes no se
- * miran. Una prueba ilegible, un `require` que no es un texto literal o uno relativo que no resuelve a un archivo dejan
- * esa prueba juzgada sólo por la lista, y se dice una vez por prueba en `warnings`.
+ * `@story-<sid>`, las cargas relativas literales (`require`, `require.resolve`, `import … from`, `import '…'`,
+ * `export … from` e `import()`) que caen en un archivo que no está en la lista, con los criterios que esa prueba nombra
+ * (`@ac-N`; sin ninguno, null: vence la evidencia entera). Los de paquetes no se miran. Una prueba ilegible, una carga
+ * que no es un texto literal o una relativa que no resuelve a un archivo dejan esa prueba juzgada sólo por la lista, y
+ * se dice una vez por prueba en `warnings`.
  */
 function codigoQueCarganLasPruebas(codeFiles, sid, warnings) {
   const { isTestPath } = require('./lib/atdd-order.js');
@@ -367,14 +414,23 @@ function codigoQueCarganLasPruebas(codeFiles, sid, warnings) {
     const criterios = [...new Set([...texto.matchAll(/@ac-(\d+)\b/g)].map((m) => Number(m[1])))].sort((a, b) => a - b);
     // la raíz desde la que se nombra la prueba: la ruta del aviso del archivo cargado se cuenta desde la misma
     const raiz = f.abs.endsWith(f.rel) ? f.abs.slice(0, -f.rel.length) : path.dirname(f.abs);
-    // un `require(` en un comentario no es una carga: se leen los literales del texto entero, y lo no literal sin comentarios
-    const sinComentarios = texto.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1');
-    let dudosa = /\brequire\s*\(\s*[^'"\s)]/.test(sinComentarios);
-    for (const m of texto.matchAll(/\brequire\s*\(\s*(['"])([^'"\n]*)\1\s*\)/g)) {
-      // relativo: `./…`, `../…`, y también `.` y `..` solos (cargan su index.js)
-      if (!/^\.\.?(\/|$)/.test(m[2])) continue;
-      const base = path.resolve(path.dirname(f.abs), m[2]);
-      const destino = [base, `${base}.js`, `${base}.json`, path.join(base, 'index.js')].find(esArchivo);
+    // una carga en un comentario no es una carga, y un comentario adentro de la llamada no la esconde: todo se lee sin
+    // comentarios. Una llamada cuyo primer argumento no es un texto entero (una variable, una plantilla, una suma de
+    // textos) es una carga que no se puede seguir
+    const sinComentarios = sinComentariosDe(texto);
+    let dudosa = false;
+    const literales = [];
+    for (const m of sinComentarios.matchAll(/\b(?:require(?:\.resolve)?|import)\s*\(/g)) {
+      const literal = /^\s*(['"])([^'"\n]*)\1\s*[,)]/.exec(sinComentarios.slice(m.index + m[0].length));
+      if (literal) literales.push(literal[2]);
+      else dudosa = true;
+    }
+    for (const m of sinComentarios.matchAll(/(?:^|[;\n{}])\s*(?:import|export)\s+(?:[^'";]*?\s+from\s+)?(['"])([^'"\n]*)\1/g)) literales.push(m[2]);
+    for (const carga of new Set(literales)) {
+      // relativo: `./…`, `../…`, y también `.` y `..` solos (cargan su index)
+      if (!/^\.\.?(\/|$)/.test(carga)) continue;
+      const base = path.resolve(path.dirname(f.abs), carga);
+      const destino = [base, ...EXTENSIONES_DE_CARGA.map((x) => `${base}${x}`), ...EXTENSIONES_DE_CARGA.map((x) => path.join(base, `index${x}`))].find(esArchivo);
       if (!destino) { dudosa = true; continue; }
       if (enLaLista.has(destino)) continue;
       out.push({ abs: destino, rel: path.relative(raiz, destino), mt: mtimeMs(destino), prueba: f.rel, criterios: criterios.length ? criterios : null });
@@ -928,6 +984,9 @@ function readSmokeLedger(evidenceDirs, sid, gatesLogPath) {
       // confirmada del espejo trae el flag. Es la vía de mutación para productos sin superficie
       // HTTP ni navegador.
       const mutatesOk = e.mutates === true && confirmadas.some((l) => l.includes('"mutates":true'));
+      // `--environment` (contra qué entorno corrió: `staging`): cuenta sólo si una línea confirmada del espejo trae el mismo
+      const entorno = typeof e.environment === 'string' && confirmadas.some((l) => l.includes(`"environment":${JSON.stringify(e.environment)}`))
+        ? e.environment : null;
       // Lo que midió el humo (`duration_ms`, `measures`) decide el veredicto de un criterio con cota: se confirma contra
       // el espejo leyendo cada renglón, por igualdad exacta y `measures` entero. Nunca por «el texto contiene»:
       // `"duration_ms":100` está contenido en `"duration_ms":1005`.
@@ -945,7 +1004,7 @@ function readSmokeLedger(evidenceDirs, sid, gatesLogPath) {
       // La imagen que el humo guardó con `--capture`, verificada contra el espejo como la salida.
       const imagen = mirrored ? imagenDelHumo(e, dir, confirmadas) : { ruta: null, problema: null };
       // `linea`: la línea entera, para encontrar en git el commit de ESTA corrida; un checkout puede dejarle el `\r`.
-      entries.push({ ...e, path: f, linea: line.replace(/\r$/, ''), tsMs: Date.parse(e.ts), mirrored, ancla, sello, mutatesOk, medidaConfirmada, evidenceKind: classifyCmd(e.cmd),
+      entries.push({ ...e, path: f, linea: line.replace(/\r$/, ''), tsMs: Date.parse(e.ts), mirrored, ancla, sello, mutatesOk, entorno, medidaConfirmada, evidenceKind: classifyCmd(e.cmd),
         v2, salidaProblema, visual: imagen.ruta, visualProblema: imagen.problema });
     }
   }
@@ -1628,6 +1687,15 @@ function compute(opts) {
       continue;
     }
     for (const { abs, lugar, sinCopia: declarado } of copias.values()) {
+      // Una copia que se juzga en el hermano tal como está declarado y que su main ya cambió después es vieja: su verde
+      // no dice nada del código de hoy. Sin poder preguntarle a git, tampoco se sabe: las dos no se pueden mirar.
+      if (declarado) {
+        const despues = companionLib.mainCambioDespues(abs);
+        if (despues.error || despues.commit) {
+          noLeidos.push({ rel, lugares, atrasado: { hermano: declarado, ...despues } });
+          continue;
+        }
+      }
       const mt = mtimeMs(abs);
       // Con más de una copia, el aviso dice de qué lugar es la que no cuenta.
       codeFiles.push({ rel: copias.size > 1 ? `${rel} (en ${path.basename(lugar)})` : rel, declarado: rel, abs, mt, sinCopia: declarado });
@@ -1646,7 +1714,15 @@ function compute(opts) {
       'No anulan la evidencia de esta tanda; cuentan cuando se mida la suya o la historia entera.');
   }
   const historiaEnDone = /^status:\s*["']?done\b/m.test(String(content).split(/^---\s*$/m)[1] || '');
-  for (const { rel, lugares: donde } of noLeidos) {
+  for (const { rel, lugares: donde, atrasado } of noLeidos) {
+    if (atrasado) {
+      const hermano = companionLib.label(atrasado.hermano);
+      warnings.push(atrasado.error
+        ? `No pude saber si ${rel} en ${hermano} es la versión de main (git: ${atrasado.error}) → ninguna evidencia cuenta. Revisá ese repo y volvé a correr la matriz.`
+        : `${rel} en ${hermano} es una copia vieja: ${hermano} está atrás de su origin/main, que lo cambió después (${atrasado.commit}) → ninguna evidencia cuenta. ` +
+          `Traé ${hermano} al día (o poné el código de la historia en su rama) y volvé a correr la evidencia.`);
+      continue;
+    }
     warnings.push(`No pude leer ${rel}: es código declarado y no está en ${donde.join(', ')} → ninguna evidencia cuenta. ` +
       (historiaEnDone
         ? 'La historia está en done: traé el hermano al día o volvé a correr la evidencia; no edites la lista para ponerla en verde.'
@@ -2069,6 +2145,14 @@ function compute(opts) {
   // Lo que se probó con el servidor simulado, por AC: { ac, archivo, linea, via, fuente }. No entra al `hash`.
   const simulados = [];
   const exenciones = [];   // usos de @runtime-exempt(DODRT-C8) — se cuentan y se muestran
+  // los criterios que una prueba con Nivel `staging` nombra, y el humo de staging que vale para cada uno
+  // (la celda puede venir con formato, `staging` o **staging**; y la de los criterios, con rangos o «todos»)
+  const stagingAcs = new Set(table.rows.filter((r) => STAGING_NIVEL_RE.test(String(r.nivel || '').replace(/[`*_]/g, '')))
+    .flatMap((r) => {
+      const c = r.acCell == null ? { acs: r.acRefs, todos: false } : acsDeLaCelda(r.acCell);
+      return c.todos ? acs : [...new Set([...c.acs, ...r.acRefs])];
+    }));
+  const humoDeStaging = new Map();
   for (const n of acs) {
     const runtime = [];
     const code = [];
@@ -2084,6 +2168,8 @@ function compute(opts) {
       return false;
     });
     const gatesDelAc = freshPassGates.filter((g) => valePara(g, n));
+    const deStaging = humosDelAc.find((e) => e.entorno === 'staging' && (e.evidenceKind === 'app-run' || LEGACY_SMOKE_KINDS));
+    if (deStaging) humoDeStaging.set(n, deStaging.ts);
     const usadas = [];
     const historiaVieja = nacioAntesDelAcExacto(storyPath);
     // Las pruebas en vivo que la tabla declara para el criterio y que no dieron evidencia: con el criterio en vivo por
@@ -2322,6 +2408,26 @@ function compute(opts) {
     }
   }
 
+  // Un criterio que se comprueba en staging: staging existe recién después del merge. Antes de done, si no corrió, queda
+  // EN-STAGING y no frena; para done (`paraDone`, lo pide el freno de done) hace falta su humo de staging, aunque haya
+  // corrido en otro lado: es lo que la prueba de la tabla pide.
+  const enStaging = [];
+  const stagingFalta = [];
+  const comoStaging = (n) => `bash ${path.join(__dirname, 'smoke-run.sh')} ${evidenceDirs[0] || '<carpeta de evidencia>'} ${storyPath} --acs ${n} ` +
+    '--environment staging -- <el comando contra staging, ej. curl -fsS https://<staging>/…>';
+  for (const n of acs) {
+    if (!stagingAcs.has(n) || humoDeStaging.has(n)) continue;
+    if (opts.paraDone) {
+      perAc[n].verdict = 'STAGING-FALTA';
+      stagingFalta.push(n);
+      warnings.push(`AC#${n} se comprueba en staging y no tiene un humo corrido contra staging → no pasa a done. Desplegá a staging y corré: ${comoStaging(n)}`);
+    } else if (perAc[n].verdict === 'NOT-RUN') {
+      perAc[n].verdict = 'EN-STAGING';
+      enStaging.push(n);
+      warnings.push(`AC#${n} se comprueba en staging, después del merge: no frena ahora. Para pasar la historia a done hace falta su humo contra staging: ${comoStaging(n)}`);
+    }
+  }
+
   // El waiver SÓLO promueve NOT-VERIFIABLE → WAIVED-USER. Un NOT-RUN waiveado se ignora
   // (el usuario no puede saltear algo que el agente simplemente no corrió).
   for (const n of acs) {
@@ -2379,7 +2485,7 @@ function compute(opts) {
   // corrieron y su medida no cumple la cota del criterio, o no está: bloquean, y no van en `notRun` («sin correr»)
   const fueraDeCota = acs.filter((n) => perAc[n].verdict === 'FUERA-DE-COTA');
   const sinMedicion = acs.filter((n) => perAc[n].verdict === 'SIN-MEDICION');
-  const pendientes = [...notRun, ...accionNoEjercida, ...notVerifiablePend, ...fueraDeCota, ...sinMedicion].sort((a, b) => a - b);
+  const pendientes = [...notRun, ...accionNoEjercida, ...notVerifiablePend, ...fueraDeCota, ...sinMedicion, ...stagingFalta].sort((a, b) => a - b);
 
   // Firmas descartadas que se nombran: sólo de un AC que de verdad espera firma (NOT-VERIFIABLE). Uno declarado
   // sin test que lo cubra (NOT-RUN) no se puede perdonar, y uno que ya corrió no la necesita.
@@ -2399,6 +2505,8 @@ function compute(opts) {
   return {
     sid, key: evKey, keyInfo: { topic: keyInfo.topic, repeated: keyInfo.repeated, siblings: keyInfo.siblings }, orphans,
     exempt: false, acs, perAc, pendientes, notRun, accionNoEjercida, notVerifiable: notVerifiablePend, fueraDeCota, sinMedicion,
+    // los criterios que se comprueban en staging: sin correr todavía (no frenan) y, para done, sin su humo de staging
+    enStaging, stagingFalta,
     exencionesC8: exenciones, sinImagen, avisos, simulados, aceptadoSinCobertura,
     hash, warnings, green, evidenceDirs, wsRoot, waivedAcs: [...waived], chainOk: chain.ok, waiverDiscarded,
     repoRoot,
@@ -2427,6 +2535,8 @@ function compute(opts) {
       exentosC8: exenciones.filter((e) => e.valida).length,
       fueraDeCota: fueraDeCota.length,
       sinMedicion: sinMedicion.length,
+      enStaging: enStaging.length,
+      stagingFalta: stagingFalta.length,
     },
   };
 }
@@ -2448,7 +2558,9 @@ function renderMd(r) {
   // los veredictos de la cota se nombran sólo si hay alguno: sin marcas, la línea es la de siempre
   const cotaTxt = (r.fueraDeCota || []).length || (r.sinMedicion || []).length
     ? ` · ${(r.fueraDeCota || []).length} fuera de la cota · ${(r.sinMedicion || []).length} sin medición (bloquean)` : '';
-  L.push(`**Cobertura**: ${r.stats.runtime}/${r.stats.total} ACs corridos en runtime · ${sinCorrer.length} sin correr (bloquean)${sinImagenTxt}${parcialTxt}${cotaTxt} · ${r.stats.notVerifiable} imposibles-declarados (esperan waiver)${waivedTxt}${exentoTxt}`);
+  const stagingTxt = (r.enStaging || []).length || (r.stagingFalta || []).length
+    ? ` · ${(r.enStaging || []).length} se comprueban en staging después del merge${(r.stagingFalta || []).length ? ` · ${r.stagingFalta.length} sin su humo de staging (bloquean done)` : ''}` : '';
+  L.push(`**Cobertura**: ${r.stats.runtime}/${r.stats.total} ACs corridos en runtime · ${sinCorrer.length} sin correr (bloquean)${sinImagenTxt}${parcialTxt}${cotaTxt}${stagingTxt} · ${r.stats.notVerifiable} imposibles-declarados (esperan waiver)${waivedTxt}${exentoTxt}`);
   if (r.batch) {
     L.push(`**Tanda medida**: ${r.batch}${(r.fueraDeTanda || []).length ? ` · fuera de esta tanda: ${r.fueraDeTanda.join(' · ')}` : ''} (pasar la historia a review las pide todas)`);
     if ((r.returnedBy || []).length) L.push(`**Vuelven a la matriz**: ${r.returnedBy.join(' · ')}`);
@@ -2459,7 +2571,7 @@ function renderMd(r) {
   for (const n of r.acs) {
     const a = r.perAc[n];
     const icon = a.verdict === 'RUNTIME' ? '🟢' : a.verdict === 'WAIVED-USER' ? '🟦' :
-      a.verdict === 'NOT-VERIFIABLE' ? '🟪' : a.verdict === 'RUNTIME-PARCIAL' ? '🟠' : '🔴'; // NOT-RUN = 🔴
+      a.verdict === 'NOT-VERIFIABLE' ? '🟪' : a.verdict === 'RUNTIME-PARCIAL' ? '🟠' : a.verdict === 'EN-STAGING' ? '🕓' : '🔴'; // NOT-RUN = 🔴
     // La columna de evidencia dice CÓMO se ejerció la acción cuando el AC es de acción — así el
     // lector distingue "la corrida observó" de "la corrida ejecutó" sin abrir el artefacto.
     // Junto a la evidencia, qué esperaba el humo y dónde está lo que salió. El texto viene del registro

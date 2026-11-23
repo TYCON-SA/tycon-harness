@@ -786,29 +786,18 @@ test('Coordinadora_ConstanciaQueNoCorresponde_NoFirma (T10) @story-1.29 @ac-8', 
 test('Delicado_ConRevisionAprobada_EsperaAlDev (T11) @story-1.29 @ac-9', (t) => {
   const lab = laboratorio(t, { sensible: 'seguridad' });
   lab.revisar(APROBADO);
-  const noTramite = () => false;
-  const a = PR().antesDeAprobar({ estado: lab.estado, firmante: COORD, destino: DESTINO, marker: JSON.parse(lab.leer(DESTINO)), deTramite: noTramite });
+  const a = PR().antesDeAprobar({ estado: lab.estado, firmante: COORD, destino: DESTINO, marker: JSON.parse(lab.leer(DESTINO)) });
   assert.strictEqual(a.codigo, 2);
   assert.match(a.motivo, /plan delicado \(nivel 2\): lo aprueba el dev/);
   // por el guion de verdad, tampoco
   const r = aprobarPorDelegacion(lab);
   assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /plan delicado \(nivel 2\): lo aprueba el dev/);
-  // con `plan-approval:delicada` delegada en el perfil, lo aprueba la coordinadora con su revisión aprobada; sin esa
-  // revisión no, y la propia sesión nunca. (Va en este caso: la lista de casos de esta suite está fija.)
-  const delegaDelicada = () => true;
+  // la propia sesión tampoco. Que el perfil liste `plan-approval:delicada` (delegada o de trámite) no lo cambia: lo
+  // mide delegated-approval-person.test.js con ese perfil. (Va en este caso: la lista de casos de esta suite está fija.)
   const m = JSON.parse(lab.leer(DESTINO));
-  const conLaForma = PR().antesDeAprobar({ estado: lab.estado, firmante: COORD, destino: DESTINO, marker: m, delegaDelicada });
-  assert.strictEqual(conLaForma.codigo, 0, JSON.stringify(conLaForma));
-  assert.strictEqual(conLaForma.constancia.delicate.value, true);
-  const propia = PR().antesDeAprobar({ estado: lab.estado, firmante: DESTINO, destino: DESTINO, marker: m, delegaDelicada, deTramite: noTramite });
+  const propia = PR().antesDeAprobar({ estado: lab.estado, firmante: DESTINO, destino: DESTINO, marker: m });
   assert.match(propia.motivo, /plan delicado \(nivel 2\): lo aprueba el dev/);
-  // con `plan-approval:delicada` de trámite (automatic-signing.js), el plan delicado sale con su revisión aprobada sin
-  // coordinadora delegada; sigue pidiendo la revisión de quien firma, aprobada, sobre este plan
-  const deTramite = PR().antesDeAprobar({ estado: lab.estado, firmante: COORD, destino: DESTINO, marker: m, delegaDelicada: () => false, deTramite: () => true });
-  assert.strictEqual(deTramite.codigo, 0, JSON.stringify(deTramite));
-  const deTramiteAjena = PR().antesDeAprobar({ estado: lab.estado, firmante: DESTINO, destino: DESTINO, marker: m, delegaDelicada: () => false, deTramite: () => true });
-  assert.strictEqual(deTramiteAjena.codigo, 2, 'la revisión la lanzó otra sesión: no firma la propia');
   // un plan delicado con la revisión de este plan en rechazo no se aprueba, tampoco con el «aprobado» de la persona
   const enContra = laboratorio(t, { sensible: 'seguridad' });
   enContra.revisar(RECHAZADO);
@@ -852,9 +841,9 @@ test('Delicado_ConRevisionAprobada_EsperaAlDev (T11) @story-1.29 @ac-9', (t) => 
   }
   assert.ok(!JSON.parse(enContra.leer(DESTINO)).planApproval, 'el plan delicado en rechazo no quedó aprobado');
   const sinRevision = laboratorio(t, { sensible: 'seguridad' });
-  const s2 = PR().antesDeAprobar({ estado: sinRevision.estado, firmante: COORD, destino: DESTINO, marker: JSON.parse(sinRevision.leer(DESTINO)), delegaDelicada });
+  const s2 = PR().antesDeAprobar({ estado: sinRevision.estado, firmante: COORD, destino: DESTINO, marker: JSON.parse(sinRevision.leer(DESTINO)) });
   assert.strictEqual(s2.codigo, 2);
-  assert.match(s2.motivo, /no hay una revisión automática/);
+  assert.match(s2.motivo, /plan delicado \(nivel 2\)/);
 });
 
 // ── el «aprobado» del dueño en la pestaña de la coordinadora: la firma es suya, y lo delicado pasa ────────────────────
@@ -2021,4 +2010,41 @@ test('PlanReview_RegistroIlegible_LlegaAlDuenoSinRelanzar (T12) @story-8.281 @ac
   }
   volver();
   assert.strictEqual(SGIO.listaDelPlanDelegado(lab.estado, DESTINO, marker), null, 'legible y sin parte: como hoy');
+});
+
+// ── una sesión que adopta la corrida de otra (adopt-session) ve la revisión del plan que se hizo para la anterior ──────
+test('PlanReview_AdoptedRun_InheritsReviewOfPreviousSession', (t) => {
+  const lab = laboratorio(t);
+  lab.revisar(APROBADO);
+  const NUEVA = 'ses-nueva';
+  // el marcador como lo deja adopt-session: el mismo, con la sesión nueva y de cuál viene
+  const adoptado = { ...JSON.parse(lab.leer(DESTINO)), sessionId: NUEVA, adoptedFrom: DESTINO, adoptedAt: '2026-11-22T12:00:00.000Z' };
+  const linea = PR().lineaDelCuadro({ estado: lab.estado, destino: NUEVA, marker: adoptado });
+  assert.match(linea.linea, /^revisado/, JSON.stringify(linea));
+  const a = PR().antesDeAprobar({ estado: lab.estado, firmante: COORD, destino: NUEVA, marker: adoptado });
+  assert.strictEqual(a.codigo, 0, JSON.stringify(a));
+  // sin «adoptedFrom» la sesión nueva no hereda nada: la revisión es de otra
+  const ajeno = { ...adoptado, adoptedFrom: undefined };
+  assert.match(PR().lineaDelCuadro({ estado: lab.estado, destino: NUEVA, marker: ajeno }).linea, /^sin revisión \(todavía no corrió/);
+  assert.strictEqual(PR().antesDeAprobar({ estado: lab.estado, firmante: COORD, destino: NUEVA, marker: ajeno }).codigo, 2);
+  // heredada, sigue atada al plan: si cambia después de la revisión, no aprueba
+  fs.appendFileSync(lab.planFile, '\n4. Un paso que se sumó después.\n');
+  const cambiado = PR().antesDeAprobar({ estado: lab.estado, firmante: COORD, destino: NUEVA, marker: adoptado });
+  assert.strictEqual(cambiado.codigo, 2, JSON.stringify(cambiado));
+  assert.match(cambiado.motivo, /el plan cambió después de la revisión/);
+});
+
+test('PlanReview_AdoptedRun_InheritsRejectionAndLatestAnswer', (t) => {
+  const lab = laboratorio(t, { sensible: 'seguridad' });
+  const NUEVA = 'ses-nueva';
+  const adoptado = () => ({ ...JSON.parse(lab.leer(DESTINO)), sessionId: NUEVA, adoptedFrom: DESTINO, adoptedAt: '2026-11-22T12:00:00.000Z' });
+  // la sesión anterior rechazó el plan delicado: el rechazo se hereda como la aprobación
+  lab.revisar(RECHAZADO);
+  const enContra = PR().revisionEnContra({ estado: lab.estado, destino: NUEVA, marker: adoptado() });
+  assert.ok(enContra && enContra.codigo === 2, JSON.stringify(enContra));
+  // «seguir sin revisión» de la sesión anterior y después «revisar» de la nueva: manda la última
+  const huella = sha(fs.readFileSync(lab.planFile, 'utf8'));
+  PR().anotarRespuesta({ estado: lab.estado, sesion: DESTINO, kind: 'plan', choice: 'skip', huella, quien: 'la persona', ahora: Date.parse('2026-11-22T12:00:00Z') });
+  PR().anotarRespuesta({ estado: lab.estado, sesion: NUEVA, kind: 'plan', choice: 'review', huella, quien: 'la persona', ahora: Date.parse('2026-11-22T13:00:00Z') });
+  assert.doesNotMatch(PR().lineaDelCuadro({ estado: lab.estado, destino: NUEVA, marker: adoptado() }).linea, /se eligió seguir/);
 });

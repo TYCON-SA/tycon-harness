@@ -19,7 +19,7 @@
 // destino: la lista no trae `mergeable`. Sin él, las llamadas de siempre.
 // Con `queue: true` (y sin rama), una sola consulta GraphQL por cada 100: si choca, si está en la cola (`inQueue`), si
 // GitHub todavía no calculó el choque (`mergeStateComputing`) y la última caída de la cola (`lastQueueDrop`: `{ cause:
-// ci | conflict | other, reason, at }`, o null), sin leer los controles de cada uno (`ciRunning: null`).
+// ci | conflict | timeout | other, reason, at, commit? }`, o null), sin leer los controles de cada uno (`ciRunning: null`).
 
 const fs = require('fs');
 const os = require('os');
@@ -214,22 +214,43 @@ function enCola(ctx, prs) {
   return out;
 }
 
-// Los abiertos con su lugar en la cola y su última caída, de a 100 por consulta. La caída es el último evento que lo
-// sacó de la cola o le apagó el auto-merge.
-const CONSULTA_ABIERTOS = 'query($owner:String!,$name:String!,$after:String){repository(owner:$owner,name:$name){'
-  + 'pullRequests(states:OPEN,first:100,after:$after){pageInfo{hasNextPage endCursor} nodes{number isDraft mergeable '
+// Los abiertos con su lugar en la cola y su última caída, de a POR_PAGINA por consulta. La caída es el último evento que
+// lo sacó de la cola o le apagó el auto-merge. Cada pedido trae sus reglas y sus controles, y GitHub corta una consulta
+// que pasa los 10 s con un 502 o un 504: con unos 110 pedidos abiertos, de a 100 corta siempre, de a 50 a veces y de a 25
+// una página ya tarda 7 s. Por eso de a 20, y una página que corta se pide otra vez con la mitad, hasta MIN_POR_PAGINA.
+const POR_PAGINA = 20;
+const MIN_POR_PAGINA = 5;
+// las consultas de una lectura, contando los reintentos: con páginas de 20 alcanza para más de mil pedidos
+const MAX_CONSULTAS = 60;
+const CONSULTA_ABIERTOS = 'query($owner:String!,$name:String!,$after:String,$first:Int!){repository(owner:$owner,name:$name){'
+  + 'pullRequests(states:OPEN,first:$first,after:$after){pageInfo{hasNextPage endCursor} nodes{number isDraft mergeable '
   + 'id reviewDecision baseRefName baseRef{branchProtectionRule{requiredStatusCheckContexts} rules(first:100){totalCount nodes{type parameters{__typename ... on RequiredStatusChecksParameters{requiredStatusChecks{context}}}}}} commits(last:1){nodes{commit{committedDate statusCheckRollup{state contexts(first:100){totalCount '
   + 'nodes{__typename ... on CheckRun{name status conclusion checkSuite{app{slug}}}}}}}}} '
   + 'mergeStateStatus headRefName headRefOid createdAt title author{login} autoMergeRequest{enabledAt} mergeQueueEntry{state} '
   + 'timelineItems(last:1,itemTypes:[REMOVED_FROM_MERGE_QUEUE_EVENT,AUTO_MERGE_DISABLED_EVENT]){nodes{__typename '
-  + '... on RemovedFromMergeQueueEvent{reason createdAt beforeCommit{oid}} ... on AutoMergeDisabledEvent{reason reasonCode createdAt}}} '
+  + '... on RemovedFromMergeQueueEvent{reason createdAt beforeCommit{oid parents(first:3){nodes{oid}}}} ... on AutoMergeDisabledEvent{reason reasonCode createdAt}}} '
   + 'empujes:timelineItems(last:1,itemTypes:[HEAD_REF_FORCE_PUSHED_EVENT]){nodes{... on HeadRefForcePushedEvent{createdAt}}}}}}}';
 
-/** La causa de una caída: `ci` (controles en rojo), `conflict` (choca con su destino) u `other`. */
+/**
+ * La causa de una caída: `ci` (controles en rojo), `conflict` (choca con su destino), `timeout` (la cola venció esperando
+ * sus controles) u `other`. GitHub dice `failed_checks`, `merge_conflict`, `checks_timed_out`, `manual`,
+ * `invalid_merge_commit`; un auto-merge apagado, su `reasonCode`.
+ */
 function causaDeCaida(motivo) {
   if (/conflict/i.test(motivo)) return 'conflict';
+  if (/timed?_?out/i.test(motivo)) return 'timeout';
   if (/check|fail/i.test(motivo)) return 'ci';
   return 'other';
+}
+
+/**
+ * La punta del pedido cuando la cola lo sacó, o null. `beforeCommit` NO es esa punta: es el merge que armó la cola (la
+ * destino con el pedido), y la punta es su segundo padre. Sin un merge de exactamente dos padres (un choque o una salida a
+ * mano no lo traen, y una cola que aplasta los commits arma uno de un padre) no se sabe.
+ */
+function puntaAlCaer(ev) {
+  const padres = ev && ev.beforeCommit && ev.beforeCommit.parents && Array.isArray(ev.beforeCommit.parents.nodes) ? ev.beforeCommit.parents.nodes : [];
+  return padres.length === 2 && padres[1] && padres[1].oid ? String(padres[1].oid) : null;
 }
 
 function deGraphql(p) {
@@ -251,9 +272,9 @@ function deGraphql(p) {
     title: String(p.title || ''),
     author: p.author && p.author.login ? String(p.author.login).toLowerCase() : null,
     ciRunning: null,
-    // `commit`: la punta que tenía cuando la cola lo sacó (sólo la caída de la cola lo trae)
+    // `commit`: la punta que tenía cuando la cola lo sacó, sólo cuando se sabe (`puntaAlCaer`)
     lastQueueDrop: ev ? { cause: causaDeCaida(motivo), reason: motivo, at: String(ev.createdAt || ''),
-      ...(ev.beforeCommit && ev.beforeCommit.oid ? { commit: String(ev.beforeCommit.oid) } : {}) } : null,
+      ...(puntaAlCaer(ev) ? { commit: puntaAlCaer(ev) } : {}) } : null,
     // para re-encolar el que quedó afuera después de un empuje: su identificador, la aprobación, el estado tal cual
     // (`unstable` ya cuenta como limpio arriba), las comprobaciones de la punta, cuándo se hizo la punta y desde cuándo
     // tiene el auto-merge
@@ -369,8 +390,15 @@ function listaConCola(ctx, repo, deadlineMs) {
   const [owner, name] = repo.split('/');
   const value = [];
   let after = null;
-  for (let page = 1; page <= MAX_PAGINAS; page++) {
-    const g = gh(ctx, 'POST', 'graphql', { query: CONSULTA_ABIERTOS, variables: { owner, name, after } });
+  let first = POR_PAGINA;
+  for (let consulta = 1; consulta <= MAX_CONSULTAS; consulta++) {
+    const g = gh(ctx, 'POST', 'graphql', { query: CONSULTA_ABIERTOS, variables: { owner, name, after, first } });
+    // GitHub cortó por tiempo: la misma página con la mitad; ni de a MIN_POR_PAGINA, no se pudo leer
+    if (cortoPorTiempo(g)) {
+      if (first <= MIN_POR_PAGINA) return no('no_medido', `GitHub cortó por tiempo la lista de pedidos abiertos aun de a ${first}: ${detalleDe(g)}`);
+      first = Math.max(MIN_POR_PAGINA, Math.floor(first / 2));
+      continue;
+    }
     if (g.problem) return g.problem;
     const prs = g.value && g.value.data && g.value.data.repository && g.value.data.repository.pullRequests;
     if (!prs || !Array.isArray(prs.nodes)) return no('no_medido', 'GitHub contestó los pedidos abiertos sin forma');
@@ -378,8 +406,17 @@ function listaConCola(ctx, repo, deadlineMs) {
     if (!prs.pageInfo || !prs.pageInfo.hasNextPage) return { ok: true, value: conAnalisis(ctx, repo, value, gh, { hasta: Number(deadlineMs) > 0 ? desde + Number(deadlineMs) * 0.8 : Infinity }) };
     after = prs.pageInfo.endCursor;
   }
-  return no('no_medido', `tope de ${MAX_PAGINAS} páginas: la lista no se leyó entera`);
+  return no('no_medido', `tope de ${MAX_CONSULTAS} consultas: la lista no se leyó entera`);
 }
+
+// El corte por tiempo de GitHub: un 502, 503 o 504 de la puerta de entrada, o la respuesta de GraphQL que dice que la
+// consulta se pasó de tiempo (llega con 200 y sin datos)
+function cortoPorTiempo(g) {
+  if (g.problem) return /HTTP 50[234]\b/.test(String(g.problem.detail || ''));
+  const errores = g.value && Array.isArray(g.value.errors) ? g.value.errors : [];
+  return !(g.value && g.value.data && g.value.data.repository) && errores.some((e) => /timeout|timed out/i.test(String(e && e.message)));
+}
+const detalleDe = (g) => String(g.problem ? g.problem.detail : JSON.stringify(g.value && g.value.errors)).slice(0, 200);
 
 /**
  * Un pedido por su número, abierto o cerrado: `{ number, state: open|merged|closed, draft, autoComplete, inQueue, mergedAt,

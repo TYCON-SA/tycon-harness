@@ -65,7 +65,7 @@ function compacto(ms) {
  * El repo de historias (con su evidencia) y, si se pide, el hermano `Back`. Las horas, una hora antes de ahora: la fecha
  * de los archivos en disco es la de ahora, así que el juez siempre le pregunta a git.
  */
-function lab({ declarados, hermanos = ['../Back'], fePaths = [], estado = 'in-progress', propios = {}, delHermano = { 'src/Feature.cs': '// v1\n' } } = {}) {
+function lab({ declarados, hermanos = ['../Back'], fePaths = [], estado = 'in-progress', propios = {}, delHermano = { 'src/Feature.cs': '// v1\n' }, historia = { id: '5.28', archivo: '5-28-carga' } } = {}) {
   const ws = carpeta();
   const esp = repoNuevo(ws, 'Historias');
   const ahora = Math.floor(Date.now() / 1000) - 3600;
@@ -80,16 +80,16 @@ function lab({ declarados, hermanos = ['../Back'], fePaths = [], estado = 'in-pr
   if (fePaths.length) yaml.push('  fe_paths:', ...fePaths.map((p) => `    - ${p}`));
   if (yaml.length > 1) escribir(esp, '.tycon/advisors.yaml', yaml.join('\n') + '\n');
   for (const [rel, texto] of Object.entries(propios)) escribir(esp, rel, texto);
-  const cuerpo = ['---', 'story: 5.28', `status: ${estado}`, 'files_to_modify:', ...declarados.map((d) => `  - ${d}`), '---', '',
+  const cuerpo = ['---', `story: ${historia.id}`, `status: ${estado}`, 'files_to_modify:', ...declarados.map((d) => `  - ${d}`), '---', '',
     '## Acceptance Criteria', '', '1. **Given** algo, **When** pasa, **Then** resultado.', '', '### Tests', '',
     '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|', '| E1 | `curl la pantalla` | 1 | e2e | x | y |', ''].join('\n');
-  const storyPath = escribir(esp, 'specs/stories/5-28-carga.md', cuerpo);
+  const storyPath = escribir(esp, `specs/stories/${historia.archivo}.md`, cuerpo);
   commit(esp, 'historias', ahora - 900);
   const dod = path.join(esp, '.advisors', 'dod-runtime');
   fs.mkdirSync(dod, { recursive: true });
   const gatesLog = path.join(ws, 'gates.log');
   const humo = (ts = ahora - 50) => {
-    ledgerLine.append({ dodDir: dod, gatesLog, story: '5.28', acs: [1], ts: new Date(ts * 1000).toISOString().replace(/\.\d+Z$/, 'Z'), cmd: 'curl -s http://localhost:5000/pantalla', mirror: true });
+    ledgerLine.append({ dodDir: dod, gatesLog, story: historia.id, acs: [1], ts: new Date(ts * 1000).toISOString().replace(/\.\d+Z$/, 'Z'), cmd: 'curl -s http://localhost:5000/pantalla', mirror: true });
     commit(esp, 'evidencia', ts + 5);
   };
   const gate = (ts = ahora - 40) => {
@@ -343,8 +343,8 @@ test('T14 TandaQueDejaDeEstarBloqueada_SuArchivoVuelveAContar', () => {
 // ---------------------------------------------------------------- la copia de la historia y el clon compartido
 
 /** El laboratorio con el hermano y su copia en la rama de la historia; el repo de historias, en esa rama o suelto. */
-function labConCopia({ declarados = ['src/Feature.cs'], suelto = false, copia = true } = {}) {
-  const f = lab({ declarados });
+function labConCopia({ declarados = ['src/Feature.cs'], suelto = false, copia = true, historia } = {}) {
+  const f = lab({ declarados, ...(historia ? { historia } : {}) });
   git(f.esp, ['checkout', '-q', '-b', RAMA]);
   if (suelto) git(f.esp, ['checkout', '-q', '--detach']);
   const wt = path.join(f.ws, 'Back-wt');
@@ -402,6 +402,16 @@ test('T17 HermanoSinCopiaDeLaHistoria_SeJuzgaYLoDice @story-8.235 @ac-17', () =>
   assert.match(avisos(rd), /comparada contra Back tal como está declarado: no tomé ninguna copia suya en la rama feature\/5-28-carga ni con el número 5\.28/);
 });
 
+test('T17c HermanoSinCopia_HistoriaSinRamaNiNumero_DiceQueNoLaBusco @story-8.235 @ac-17', () => {
+  // la cabeza suelta y una historia sin número: no hay con qué buscar la copia, y el aviso lo dice así
+  const f = labConCopia({ copia: false, suelto: true, historia: { id: 'carga', archivo: 'carga' } });
+  avanzaElClon(f);
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'NOT-RUN', avisos(r));
+  assert.match(avisos(r), /comparada contra Back tal como está declarado: no busqué su copia, la historia no tiene rama ni número/);
+  assert.doesNotMatch(avisos(r), /no tomé ninguna copia/);
+});
+
 test('T17b HermanoEnLaRamaDeLaHistoria_SinAvisoDeCopia @story-8.235 @ac-17', () => {
   // el declarado está él mismo en la rama de la historia: es su copia, y el aviso no dice que falta
   const f = lab({ declarados: ['src/Feature.cs'] });
@@ -436,4 +446,83 @@ test('T15b CopiaDeLaHistoria_RutaConOtraMayusculaOSoloEnLaCopia @story-8.235 @ac
     commit(m.wt, 'cambio en la rama', m.ahora + 100);
     assert.equal(m.calcular().perAc[1].verdict, 'NOT-RUN', 'la copia cambió: no cuenta');
   }
+});
+
+test('T17d HermanoEnMain_SoloAlDiaConSuOrigenEsSuCopia', () => {
+  // la historia y el hermano en `main`: `main` no nombra a ninguna historia, así que el hermano es su copia sólo al día
+  // con su origin/main y limpio. Sin origen (o al día), lo que cambió en él cuenta; adelantado, se juzga en el declarado
+  const alDia = lab({ declarados: ['src/Feature.cs'] });
+  alDia.humo();
+  avanzaElClon(alDia);
+  const r = alDia.calcular();
+  assert.doesNotMatch(avisos(r), /tal como está declarado/, avisos(r));
+  const adelantado = lab({ declarados: ['src/Feature.cs'] });
+  const origen = path.join(adelantado.ws, 'Back-origen.git');
+  execFileSync('git', ['init', '-q', '--bare', '-b', 'main', origen]);
+  git(adelantado.back, ['remote', 'add', 'origin', origen]);
+  git(adelantado.back, ['push', '-q', 'origin', 'main']);
+  git(adelantado.back, ['fetch', '-q', 'origin']);
+  adelantado.humo();
+  avanzaElClon(adelantado);
+  const s = adelantado.calcular();
+  assert.equal(s.perAc[1].verdict, 'NOT-RUN', avisos(s));
+  assert.match(avisos(s), /comparada contra Back tal como está declarado/);
+  // al día con su origen pero con cambios sin commitear: tampoco es su copia
+  git(adelantado.back, ['push', '-q', 'origin', 'main']);
+  git(adelantado.back, ['fetch', '-q', 'origin']);
+  const alDiaYa = adelantado.calcular();
+  assert.doesNotMatch(avisos(alDiaYa), /tal como está declarado/, 'al día y limpio: es su copia');
+  escribir(adelantado.back, 'src/otro.cs', '// sin commitear\n');
+  const sucio = adelantado.calcular();
+  assert.match(avisos(sucio), /comparada contra Back tal como está declarado/, avisos(sucio));
+});
+
+// ---------------------------------------------------------------- el hermano atrasado que sí tiene el archivo
+
+/** El hermano sin copia de la historia queda atrás de su origin/main local, y main ya cambió `rel` después de él. */
+function atrasarElHermano(f, rel = 'src/Feature.cs') {
+  escribir(f.back, rel, '// otra versión que ya entró a main\n');
+  commit(f.back, 'main avanza en el origen', f.ahora + 100);
+  git(f.back, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+  git(f.back, ['reset', '-q', '--hard', 'HEAD~1']);
+}
+
+test('T18 HermanoAtrasado_ConElArchivo_RojoYDiceQueEsUnaCopiaVieja', () => {
+  // el clon compartido quedó atrás de main y main cambió el archivo: la copia que se mira es vieja, y su verde no vale
+  const f = labConCopia({ copia: false });
+  atrasarElHermano(f);
+  const r = f.calcular();
+  assert.equal(r.green, false, avisos(r));
+  assert.deepEqual(r.noLeidos.map((n) => n.rel), ['src/Feature.cs'], avisos(r));
+  assert.match(avisos(r), /src\/Feature\.cs.*atrás de su origin\/main/, avisos(r));
+  assert.match(avisos(r), /Traé Back al día/, avisos(r));
+});
+
+test('T18b HermanoAtrasado_MainNoTocoElArchivo_SigueVerde', () => {
+  // atrás de main, pero main no cambió el archivo declarado: la copia es la misma que en main
+  const f = labConCopia({ copia: false });
+  atrasarElHermano(f, 'src/Otro.cs');
+  const r = f.calcular();
+  assert.deepEqual(r.noLeidos, [], avisos(r));
+  assert.equal(r.green, true, avisos(r));
+});
+
+test('T18d HermanoAtrasado_NombreConCorchetes_NoEsUnComodin', () => {
+  // `[id].cs` es ese archivo: que main cambie `i.cs` no lo vuelve una copia vieja
+  const f = lab({ declarados: ['src/[id].cs'], delHermano: { 'src/[id].cs': '// v1\n', 'src/i.cs': '// v1\n' } });
+  git(f.esp, ['checkout', '-q', '-b', RAMA]);
+  f.humo();
+  atrasarElHermano(f, 'src/i.cs');
+  const r = f.calcular();
+  assert.deepEqual(r.noLeidos, [], avisos(r));
+  assert.equal(r.green, true, avisos(r));
+});
+
+test('T18c HermanoConCopiaDeLaHistoria_ClonAtrasado_NoImporta', () => {
+  // con copia en la rama de la historia, el clon compartido no se mira: atrasado o no, no cambia nada
+  const f = labConCopia();
+  atrasarElHermano(f);
+  const r = f.calcular();
+  assert.deepEqual(r.noLeidos, [], avisos(r));
+  assert.equal(r.green, true, avisos(r));
 });
