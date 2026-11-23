@@ -825,7 +825,7 @@ function skipPorElPerfil({ estado, sesion, huella, ahora = Date.now() }) {
   const pregunta = preguntasAbiertas({ estado, problemas }).find((p) => p.sesion === sesion && p.kind === 'code' && p.huella === huella);
   if (problemas.length) return no(`no pude leer las preguntas de revisar (${problemas[0]})`);
   const aus = require('./review-policy.js').ownerAway({ mark: g.mark, askedAt: pregunta ? Date.parse(pregunta.ts) : null, now: ahora, minutes: cfg.plan_review.owner_away_minutes });
-  if (!aus.away) return no(`el dueño no cuenta como ausente (${aus.reason}): «skip» lo contesta él, con su firma`);
+  if (!aus.away) return no(`la persona no cuenta como ausente (${aus.reason}): «skip» lo contesta ella, con su firma`);
   // los archivos del cambio entero, como los ve el portón con --files: lo commiteado desde la base de la ejecución, lo
   // que falta commitear y los archivos nuevos sin seguir. Uno que falta achicaría el diff y daría «chica» a una grande
   const repo = marker.repoPath || process.cwd();
@@ -840,8 +840,8 @@ function skipPorElPerfil({ estado, sesion, huella, ahora = Date.now() }) {
   let r;
   try {
     r = pipeline().computeDeepReviewGate({ story: storyDe(marker), repo, files: [...archivos], reviewConfig: cfg, ownerAway: true, codeAnswer: null });
-  } catch (e) { return no(`no pude calcular la celda de «dueño ausente» (${(e && e.message) || e})`); }
-  if (!r || r.decision !== 'skip') return no(`la celda de «dueño ausente» para este diff dice ${(r && r.decision) || 'otra cosa'} (${(r && r.reason) || 'sin motivo'}): no contesta «skip»`);
+  } catch (e) { return no(`no pude calcular la celda de ausencia (${(e && e.message) || e})`); }
+  if (!r || r.decision !== 'skip') return no(`la celda de ausencia para este diff dice ${(r && r.decision) || 'otra cosa'} (${(r && r.reason) || 'sin motivo'}): no contesta «skip»`);
   return { codigo: 0, motivo: `${aus.reason}; ${r.reason}` };
 }
 
