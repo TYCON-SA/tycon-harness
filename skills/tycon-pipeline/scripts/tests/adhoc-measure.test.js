@@ -149,7 +149,9 @@ test('T1 Medida_UnaSola_LasDosViejasNoExisten @story-8.190 @ac-1', () => {
   assert.strictEqual(typeof m.medirLoPropio, 'function');
   assert.strictEqual(m.archivosDelCarril, undefined);
   assert.strictEqual(m.propiosDelCarril, undefined);
-  for (const rel of ['lib/adhoc-base.js', 'lib/save-brake.js', 'lib/adhoc-screen.js', 'lib/source-signals.js', 'pipeline.js', 'marker.js']) {
+  // marker.js con sus partes de lib/
+  const partes = fs.readdirSync(path.join(SCRIPTS, 'lib')).filter((f) => /^marker-.+\.js$/.test(f)).map((f) => `lib/${f}`);
+  for (const rel of ['lib/adhoc-base.js', 'lib/save-brake.js', 'lib/adhoc-screen.js', 'lib/source-signals.js', 'pipeline.js', 'marker.js', ...partes]) {
     const txt = fs.readFileSync(path.join(SCRIPTS, rel), 'utf8');
     assert.doesNotMatch(txt, /archivosDelCarril|propiosDelCarril/, rel);
   }
@@ -956,4 +958,22 @@ test('CuentaDelCarril_LaboratorioEnTemporal_NoSuma', (t) => {
   assert.deepStrictEqual(cuenta([]), ['sonda.js'], 'fuera de los temporales: es un repo del carril y suma');
   assert.deepStrictEqual(cuenta([fs.realpathSync(lab)]), [],
     'en un temporal, sin origin, con el carril fuera: no suma');
+});
+
+// La carpeta personal como repo (dotfiles) no se cuenta en el arreglo, y se dice; la misma pregunta a git sobre una ruta
+// no se repite en el proceso
+test('T80 Medida_CarpetaPersonal_LoDice_YConoceNoRepite', (t) => {
+  const d = repoConOrigin(t, 'casa');
+  const casaAntes = process.env.HOME;
+  process.env.HOME = d;
+  t.after(() => { process.env.HOME = casaAntes; });
+  const m = base().medirLoPropio({ bases: {} }, { repos: [fs.realpathSync(d)] });
+  assert.ok(m.avisos.some((a) => /es tu carpeta personal: no se cuenta en el arreglo/.test(a)), JSON.stringify(m.avisos));
+  assert.deepStrictEqual(m.fallas, []);
+  // la segunda pregunta por la misma ruta no llega a git: con el repo borrado, contesta lo mismo
+  const otro = repoConOrigin(t, 'conoce');
+  commitDe(otro, 'conocido.js', 'x\n');
+  assert.strictEqual(base().repoConoce(otro, 'conocido.js'), true);
+  fs.rmSync(path.join(otro, '.git'), { recursive: true, force: true });
+  assert.strictEqual(base().repoConoce(otro, 'conocido.js'), true, 'la respuesta se recuerda');
 });

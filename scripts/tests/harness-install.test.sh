@@ -344,8 +344,9 @@ if corre T36; then
   APPLIER_LOG() { printf '%s' "$LAB_HOME/.claude/.tycon-pipeline/lab-applier.log"; }
   last_run() { tail -1 "$(APPLIER_LOG)" 2>/dev/null; }
   # las piezas compartidas del registro, ordenadas, con repetidos si los hubiera
-  # (sin las reglas de lectura de las carpetas del arnés: dependen del laboratorio y las prueba read-permissions.test.js)
-  shared_managed() { estado "sorted([p['kind'], p['id']] for p in d.get('managed') or [] if p['kind'] in ('setting', 'command') and not p['id'].startswith('permissions.allow:'))"; }
+  # (sin las reglas de lectura de las carpetas del arnés, que dependen del laboratorio y las prueba read-permissions.test.js,
+  # ni las reglas deny, que prueba deny-permissions.test.js)
+  shared_managed() { estado "sorted([p['kind'], p['id']] for p in d.get('managed') or [] if p['kind'] in ('setting', 'command') and not p['id'].startswith(('permissions.allow:', 'permissions.deny:')))"; }
   SHARED_WANT="[['command', 'lab-command.md'], ['setting', 'cleanupPeriodDays'], ['setting', 'env.$VAR_ENV']]"
   no_repeats() { estado "len(d['managed']) == len({(p['kind'], p['where'], p['id']) for p in d['managed']})"; }
   in_machine() { [ "$(settings "d.get('cleanupPeriodDays')")" = 365 ] && [ "$(settings "d.get('env', {}).get('$VAR_ENV')")" = 1 ] && cmp -s "$LAB_TREE/commands/lab-command.md" "$LAB_HOME/.claude/commands/lab-command.md"; }

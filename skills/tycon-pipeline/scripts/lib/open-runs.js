@@ -437,6 +437,30 @@ function hayAbiertas({ home } = {}) {
   return { ok: true, n: [...ultimo.values()].filter((e) => e.name === 'run-open').length };
 }
 
+/**
+ * La marca de una corrida dejada a propósito: `<estado>/parked/<sesión>.json` con `{story, kind, until, at, by}`, de su
+ * historia y puesta después de que la corrida arrancó (una corrida nueva no la hereda), o la fecha de `paused_until:` de
+ * su historia. Devuelve la marca, `{ kind: 'historia', until }`, `{ kind: 'ilegible' }` (está y no se lee) o null. Es la
+ * lectura de `marcaDe` de marker.js; quien la usa decide qué hace con una ilegible.
+ */
+function marcaDeEstacionada(sid, m, { home, avisar = (t) => process.stderr.write(t) } = {}) {
+  const archivo = path.join(stateDir(home || os.homedir()), 'parked', `${String(sid).replace(/[/\\]/g, '_')}.json`);
+  let mark = null;
+  try { mark = JSON.parse(fs.readFileSync(archivo, 'utf8')); } catch (e) {
+    if (e.code !== 'ENOENT' && e.code !== 'ENOTDIR') {
+      avisar(`[open-runs] no pude leer la marca de la sesión ${sid} (${e.code || e.message}).\n`);
+      return { kind: 'ilegible' };
+    }
+  }
+  if (mark && String(mark.story) === String(m && m.storyId) && !(Date.parse(mark.at) < Date.parse(m && m.startedAt))) return mark;
+  let until = null;
+  try { until = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'live-sessions.js')).storyPausedUntil(m && m.storyPath); } catch (e) {
+    // sin ese lector, sólo cuenta la marca: se dice
+    avisar(`[open-runs] no pude ver si la historia ${m && m.storyId} está en pausa (${e.message}).\n`);
+  }
+  return until ? { kind: 'historia', until } : null;
+}
+
 /** ¿`hijo` es `padre` o está adentro? Como el sistema: en Windows sin distinguir barras ni mayúsculas; con los enlaces resueltos. */
 function dentroDe(hijo, padre, platform = process.platform) {
   // con los enlaces resueltos aunque la ruta ya no exista (una carpeta podada): se resuelve la carpeta de arriba que
@@ -466,4 +490,4 @@ function dentroDe(hijo, padre, platform = process.platform) {
   return false;
 }
 
-module.exports = { CAMPOS_DE_CIERRE, markerRel, markerEstable, mismaRuta, leerEventos, vigente, abrir, cerrar, raizDeGit, copiasDe, perdida, aperturaParaSalida, cartel, formaDeMarker, formasDeSalida, abiertasDentro, hayAbiertas, dentroDe, casaConComodin, gatesPath, markerPath };
+module.exports = { CAMPOS_DE_CIERRE, markerRel, markerEstable, mismaRuta, leerEventos, vigente, abrir, cerrar, raizDeGit, copiasDe, perdida, aperturaParaSalida, cartel, formaDeMarker, formasDeSalida, abiertasDentro, hayAbiertas, dentroDe, casaConComodin, gatesPath, markerPath, marcaDeEstacionada };

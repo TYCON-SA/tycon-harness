@@ -298,15 +298,24 @@ function recordLaunch(o) {
   // Un revisor del set de la ronda abierta deja su renglón `launched`: sin él, el cierre no sabría que de este revisor
   // falta el reporte (lib/reported-criticals.js). `reviewers-run` anota el suyo al lanzar el proceso, y no pasa por acá.
   // El set sale de la marca `step5-start` de la ronda (sólo su posición y su `expected`, no su `iter`).
+  // Un revisor de código lanzado fuera del set con la ronda abierta (el que se lanza a mano para confirmar un arreglo)
+  // también: con la marca `outside_set`, su reporte se anota y lo que cierra cuenta. Sin él, su «cerrado» no contaba y
+  // el cierre pedía una exención del dueño por un revisor que sí corrió. Un agente que no revisa código no está en la lista.
   if (!o.extra || o.extra.launcher !== 'pipeline') {
     try {
       const parsed = fs.readFileSync(logPath, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } });
       const idx = require('./lib/advisor-round.js').inicioDeLaRonda(parsed);
       const expected = idx >= 0 && Array.isArray(parsed[idx].expected) ? parsed[idx].expected : [];
-      if (expected.includes(advisor)) {
+      // los chequeadores de la historia (el validador, el de cobertura de criterios…) no cuentan fuera del set: se lanzan
+      // también para otra historia en medio de la vuelta, y su reporte no es de ésta. La exploración tampoco. Se descartan
+      // antes de cargar los paquetes
+      const ronda = require('./lib/advisor-round.js');
+      const fueraDelSet = idx >= 0 && !expected.includes(advisor) && !ronda.ADHOC.has(advisor) && !ronda.NO_REVISORES.has(advisor)
+        && require('./pipeline.js').codeReviewerNames(repo || process.cwd()).includes(advisor);
+      if (expected.includes(advisor) || fueraDelSet) {
         require('./lib/reported-criticals.js').recordLaunched({
           stateDir: stateDirOf(os.homedir()), sessionKey: sessionId, advisor, story, run, launcher: o.launcher || 'claude',
-          toolUseId: o.toolUseId || null,
+          toolUseId: o.toolUseId || null, outsideSet: fueraDelSet,
         });
       }
     } catch (e) {

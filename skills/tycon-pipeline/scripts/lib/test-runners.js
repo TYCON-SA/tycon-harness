@@ -563,7 +563,7 @@ function clasesMalas(files) {
 
 module.exports = {
   FACTORY, GATE_FACTORY, RESULT_FORMATS, COVERAGE_FORMATS, NAME_RE, validateRunners, resolve, inspect, detectorFiles, factoryTable,
-  scopedRecipe,
+  scopedRecipe, repoDe,
 };
 
 // CLI para test-gate.sh: `node test-runners.js resolve <carpeta> [--results <carpeta>]` → JSON `{ runner, problems }`,

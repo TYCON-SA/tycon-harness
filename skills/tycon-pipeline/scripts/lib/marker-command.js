@@ -236,10 +236,14 @@ function esElPipelineInstalado(ruta) {
   } catch { return false; }
 }
 
+// `sed -n '<desde>,<hasta>p'`: muestra renglones. Cualquier otro guion de sed puede escribir (`w`) o correr (`e`)
+const SED_QUE_MUESTRA = /^\d+(,\d+)?p$/;
+
 function tramoQueLeeLaFirma(w) {
   if (!w.length) return false;
   if (w.some((p) => p.startsWith('-') && (p.includes(BIBLIOTECA_DE_FIRMA) || p === '--output' || p.startsWith('--output=')))) return false;
   if (LEEN_LO_QUE_NOMBRAN.has(w[0])) return true;
+  if (w[0] === 'sed') return w[1] === '-n' && SED_QUE_MUESTRA.test(w[2] || '') && w.slice(3).every((p) => !p.startsWith('-'));
   if (w[0] === 'git') return GIT_QUE_SOLO_LEE.has(w[1]);
   if (w[0] !== 'node' || !w[1] || !PIPELINE_LISTA.has(w[2]) || !esElPipelineInstalado(w[1])) return false;
   return w.every((p, k) => !p.includes(BIBLIOTECA_DE_FIRMA) || w[k - 1] === '--files');
@@ -248,6 +252,8 @@ function tramoQueLeeLaFirma(w) {
 /**
  * Qué hace con la biblioteca de firma un comando que la nombra: `'lee'`, `'corre'` (cualquier forma que no sea leer) o
  * `'ilegible'`. Va carácter por carácter y sin expresiones: lo que no está en la lista de lo que sólo lee no se analiza.
+ * Cada tramo, separado por `|`, `;` o `&&`, tiene que leer; un `2>/dev/null` suelto no cuenta (tira los errores, no
+ * escribe ni corre nada). Un `&` solo (mandar al fondo) o cualquier otra redirección sigue fuera de la forma.
  */
 function leerFirma(cmd) {
   const lista = [[]];
@@ -255,7 +261,9 @@ function leerFirma(cmd) {
   let comilla = null;
   let fueraDeLaForma = false;
   const cerrar = () => { if (palabra !== null) lista[lista.length - 1].push(palabra); palabra = null; };
-  for (const c of String(cmd)) {
+  const texto = String(cmd).replace(/(^|\s)2>\/dev\/null(?=$|[\s|;&])/g, '$1');
+  for (let i = 0; i < texto.length; i++) {
+    const c = texto[i];
     if (c === '\r') return 'ilegible';
     const permitido = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || '_./:,@%+-'.includes(c);
     if (comilla) {
@@ -265,8 +273,9 @@ function leerFirma(cmd) {
     } else if (c === "'" || c === '"') {
       comilla = c;
       if (palabra === null) palabra = '';
-    } else if (c === ' ') cerrar();
-    else if (c === '|') { cerrar(); lista.push([]); }
+    } else if (c === ' ' || c === '\t') cerrar();
+    else if (c === '|' || c === ';') { cerrar(); lista.push([]); }
+    else if (c === '&' && texto[i + 1] === '&') { cerrar(); lista.push([]); i++; }
     else if (permitido) palabra = (palabra || '') + c;
     else fueraDeLaForma = true;
   }

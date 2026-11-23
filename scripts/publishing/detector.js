@@ -54,19 +54,22 @@ const PATRONES_GENERICOS = [
   // La misma clave ENTRE COMILLAS (`Password="…"`, `bizuit:emailPassword="…"`): la regla de arriba corta en la comilla
   // y no vería esta forma. Los marcadores de plantilla no son una clave:
   // `$VAR`, `{0}`, `%X%`, `***` y `<clave>` no disparan, ni un booleano (`requirePassword="true"`).
-  { nombre: 'clave-entre-comillas', categoria: 'secreto', regex: /\b[A-Za-z0-9_.:-]*?(?:password|pwd)\s*=\s*(["'])(?![$%{<]|\*+\1|(?:true|false)\1)[^"'\s]{4,}\1/gi },
+  { nombre: 'clave-entre-comillas', categoria: 'secreto', regex: /\b[A-Za-z0-9_.:-]*?(?:password|pwd)\s*=\s*(["'])(?![$%{<]|\*+\1|(?:true|false)\1)[^"'\s]{4,}\1/gi, tirada: /[A-Za-z0-9_.:-]/, pista: /password|pwd/i },
   // Un proceso exportado con la organización como sufijo del nombre: `<algo>__<org>.bpmn` o `.vdw`.
   // Es un patrón de forma: la organización no tiene que estar en ninguna lista.
   // Sobre la lista de rutas de una copia, cubre también el nombre del archivo. La extensión, sin
   // caja: un `.BPMN` es el mismo archivo.
   { nombre: 'nombre-con-sufijo-de-organizacion', categoria: 'cliente', regex: /[A-Za-z0-9]__[A-Za-z0-9][A-Za-z0-9-]*\.(?:bpmn|vdw)\b/gi },
   { nombre: 'ruta-de-maquina', categoria: 'ruta-de-maquina', regex: /\/(?:Users|home)\/[a-z][a-z0-9._-]*\/|\b[A-Z]:\\Users\\[A-Za-z][^\\\s]*\\/g },
-  { nombre: 'email', categoria: 'email', regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b/g },
+  { nombre: 'email', categoria: 'email', regex: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b/g, tirada: /[A-Za-z0-9._%+-]/, pista: /@/ },
   // Una licencia ajena que no se puede redistribuir: el aviso de copyright CON la reserva de todos los
   // derechos en la misma línea, o el frontmatter de una skill propietaria. La frase suelta en prosa no alcanza. Escrito
   // con escapes para que este archivo, que sale en la copia, no se dispare a sí mismo.
   { nombre: 'foreign-license', categoria: 'foreign-license', regex: /^(?=.*(?:©|\bCopyright\b))(?=.*\bAll\s+rights\s+reserved\b).*$|^license:\s*Proprietary\b.*$/gi },
 ];
+// `tirada` y `pista`: las dos reglas que arrancan con una tirada de caracteres repetibles (`\b[…]+…`). Sobre una línea
+// como `a-a-a-…` el regex vuelve a recorrer la tirada desde cada borde de palabra y tarda al cuadrado; el detector las
+// recorre con apariciones() saltando la tirada entera cuando el intento falla, y sin la pista no hay nada que buscar.
 const CATEGORIAS_ENMASCARADAS = new Set(['secreto']);
 // Lo que el patrón de email agarra y no es una persona: dominios de ejemplo (RFC 2606), usuarios
 // de servicio de git y el firmante automático de los commits, y nombres de imagen `icono@2x.png`.
@@ -636,7 +639,7 @@ const CORTE_DE_RENGLON = 200;
 function apariciones(r, texto) {
   const out = [];
   const vistas = new Set();
-  for (const v of [{ re: r.regex, nombre: '', vale: () => true }, ...(r.variantes || [])]) {
+  for (const v of [{ re: r.regex, tirada: r.tirada, pista: r.pista, nombre: '', vale: () => true }, ...(r.variantes || [])]) {
     if (v.prefijo) {
       const m = v.re.exec(texto);
       if (m && v.vale(m[2]) && !vistas.has(m[1].length)) {
@@ -647,7 +650,8 @@ function apariciones(r, texto) {
     }
     v.re.lastIndex = 0;
     let m;
-    while ((m = v.re.exec(texto)) !== null) {
+    const siguiente = v.tirada ? saltandoTiradas(v, texto) : () => v.re.exec(texto);
+    while ((m = siguiente()) !== null) {
       if (m[0].length === 0) { v.re.lastIndex++; continue; }
       if (!v.vale(m[0], texto, m.index) || vistas.has(m.index)) continue;
       vistas.add(m.index);
@@ -655,6 +659,32 @@ function apariciones(r, texto) {
     }
   }
   return out;
+}
+
+const ES_PALABRA = /[A-Za-z0-9_]/;
+const PEGAJOSOS = new WeakMap();
+
+/** Las coincidencias de una regla que arranca con una tirada (`\b[clase]+…` o `\b[clase]*?…`), las mismas y en el mismo
+ *  orden que `re.exec` en un bucle, sin el costo al cuadrado. Si el intento en un borde de palabra que abre una tirada
+ *  falla, falla también desde cada posición siguiente de esa tirada: llegan al mismo final (el `@` del correo) o ven un
+ *  subconjunto de los mismos candidatos (la `password` de la clave), y lo que sigue no depende de dónde se arrancó. Se
+ *  salta la tirada entera. Sin `pista` en el texto, la regla no puede coincidir. Devuelve la función `siguiente()`. */
+function saltandoTiradas(v, texto) {
+  if (!v.pista.test(texto)) return () => null;
+  let y = PEGAJOSOS.get(v.re);
+  if (!y) { y = new RegExp(v.re.source, `${v.re.flags.replace('g', '')}y`); PEGAJOSOS.set(v.re, y); }
+  let p = 0;
+  return () => {
+    while (p <= texto.length) {
+      y.lastIndex = p;
+      const m = y.exec(texto);
+      if (m) { p = m.index + Math.max(m[0].length, 1); return m; }
+      const borde = ES_PALABRA.test(texto[p - 1] || '') !== ES_PALABRA.test(texto[p] || '');
+      if (borde && p < texto.length && v.tirada.test(texto[p])) while (p < texto.length && v.tirada.test(texto[p])) p++;
+      else p++;
+    }
+    return null;
+  };
 }
 
 function detectar({ config, rutas, lista, base }) {

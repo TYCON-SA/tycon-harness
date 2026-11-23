@@ -36,7 +36,7 @@
  * no da la gravedad y cada vulnerabilidad cuenta como alta (ver `auditarPip`).
  * npm y nuget: una gravedad vacía o desconocida también cuenta como alta, con la misma marca (ver `gravedad`).
  *
- *   node audit-dependencies.js --repo <dir> --type npm|nuget|pip [--project <rel>]
+ *   node audit-dependencies.js --repo <dir> --type npm|nuget|pip|vendored [--project <rel>]
  *                                [--declared <rel>] [--json] [--block]
  *   node audit-dependencies.js --help
  *
@@ -64,7 +64,7 @@ const { aliasLegacyOptions, LegacyOptionsError } = (() => {
 
 const WHERE = 'scripts/ci/audit-dependencies.js';
 const SEVERIDADES_GRAVES = ['high', 'critical'];
-const GESTOR = { npm: 'npm', nuget: 'nuget', pip: 'pip-audit' };
+const GESTOR = { npm: 'npm', nuget: 'nuget', pip: 'pip-audit', vendored: 'npm' };
 const SEVERIDADES_CONOCIDAS = ['critical', 'high', 'moderate', 'low', 'info'];
 
 /**
@@ -106,7 +106,9 @@ function parseArgs(argv0) {
 const AYUDA = `audit-dependencies.js — el criterio del análisis de dependencias, en un solo lugar.
 
   --repo <dir>          raíz del repo a analizar (obligatorio)
-  --type npm|nuget|pip  qué gestor de paquetes (obligatorio)
+  --type npm|nuget|pip|vendored
+                        qué gestor de paquetes (obligatorio); vendored: las librerías copiadas en
+                        el repo (vendor/<nombre>/VERSION.json), auditadas por su versión exacta
   --project <rel>       nuget: el .sln/.csproj a analizar (por defecto, el .sln de la raíz);
                         pip: el archivo de requisitos fijado (por defecto, requirements.txt)
   --declared <rel>      archivo de deuda declarada (por defecto pending-vulnerabilities.json)
@@ -455,13 +457,90 @@ function auditarPip(repo, archivoRel) {
   return { medido: true, hallazgos, resumen: { critical: 0, high: hallazgos.length, moderate: 0, low: 0 }, proyecto: archivo };
 }
 
+// Las copias de librerías que un repo trae adentro (el arnés copia `ws` en scripts/tools/office/vendor/): cada una con
+// su `VERSION.json` (nombre y versión exacta). No tienen package-lock: se arma uno en una carpeta temporal con esas
+// versiones exactas y se le corre el mismo `npm audit` de siempre. Sin copias, o sin poder resolverlas en el registro,
+// no se midió: nunca «limpio».
+// Cada carpeta de una carpeta `vendor/` es una copia: `archivos`, sus VERSION.json; `sinVersion`, las que no lo traen
+// (una copia sin nombre ni versión no se puede auditar, y no se saltea callada); `enlaces`, una copia o una carpeta
+// `vendor/` que es un enlace (no se sigue: puede apuntar fuera del repo, y tampoco se saltea callada).
+function copiasDe(repo) {
+  const archivos = [];
+  const sinVersion = [];
+  const enlaces = [];
+  const recorrer = (dir) => {
+    let entradas;
+    try { entradas = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return; }
+    for (const e of entradas) {
+      // las copias de juguete de las pruebas no viajan como código del repo
+      if (e.name === '.git' || e.name === 'node_modules' || e.name === 'fixtures') continue;
+      const p = path.join(dir, e.name);
+      if (e.name === 'vendor' && e.isSymbolicLink()) { enlaces.push(path.relative(repo, p)); continue; }
+      if (!e.isDirectory()) continue;
+      if (e.name !== 'vendor') { recorrer(p); continue; }
+      for (const c of fs.readdirSync(p, { withFileTypes: true })) {
+        if (c.isSymbolicLink()) { enlaces.push(path.relative(repo, path.join(p, c.name))); continue; }
+        if (!c.isDirectory()) continue;
+        const v = path.join(p, c.name, 'VERSION.json');
+        if (fs.existsSync(v)) archivos.push(v); else sinVersion.push(path.relative(repo, path.join(p, c.name)));
+      }
+    }
+  };
+  recorrer(repo);
+  return { archivos: archivos.sort(), sinVersion: sinVersion.sort(), enlaces: enlaces.sort() };
+}
+
+// una versión exacta, como la publica npm: sin rangos, sin espacios ni otra cosa después
+const VERSION_EXACTA = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+
+function auditarCopias(repo) {
+  const { archivos, sinVersion, enlaces } = copiasDe(repo);
+  if (enlaces.length) return { medido: false, motivo: `copias que son un enlace, no se siguen: ${enlaces.join(', ')}` };
+  if (sinVersion.length) return { medido: false, motivo: `copias sin VERSION.json (nombre y versión exacta): ${sinVersion.join(', ')}` };
+  if (!archivos.length) return { medido: false, motivo: 'no hay copias de librerías (vendor/<nombre>/VERSION.json) en el repo' };
+  // sin prototipo: un nombre como `constructor` no choca con lo que trae un objeto
+  const versiones = Object.create(null);
+  const noAplica = [];
+  for (const a of archivos) {
+    const rel = path.relative(repo, a);
+    let v;
+    try { v = JSON.parse(fs.readFileSync(a, 'utf8')); } catch (e) { return { medido: false, motivo: `${rel} no se lee (${e.message})` }; }
+    // una copia que no es código de npm (un esquema, un dato) lo declara con su motivo: se nombra, no se audita
+    if (v && v.audit && v.audit.applies === false) {
+      if (typeof v.audit.reason !== 'string' || !v.audit.reason.trim()) return { medido: false, motivo: `${rel} dice que la auditoría no aplica sin decir por qué` };
+      noAplica.push(`${v.name || rel}: ${v.audit.reason}`);
+      continue;
+    }
+    if (!v || typeof v.name !== 'string' || !v.name || typeof v.version !== 'string' || !VERSION_EXACTA.test(v.version)) {
+      return { medido: false, motivo: `${rel} no trae nombre y versión exacta` };
+    }
+    if (versiones[v.name] && versiones[v.name] !== v.version) return { medido: false, motivo: `dos copias de ${v.name} con versiones distintas (${versiones[v.name]} y ${v.version})` };
+    versiones[v.name] = v.version;
+  }
+  if (!Object.keys(versiones).length) return { medido: false, motivo: `ninguna copia es de npm: ${noAplica.join(' · ')}` };
+  const dir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'copias-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name: 'copias', private: true, dependencies: versiones }, null, 2));
+    const r = correr('npm', ['install', '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund'], dir, Number(process.env.TYCON_DEP_TIMEOUT_MS || 30000));
+    if (!r.ok) return { medido: false, motivo: `no pude resolver las copias en el registro de npm: ${r.motivo}` };
+    if (r.code !== 0 || !fs.existsSync(path.join(dir, 'package-lock.json'))) {
+      return { medido: false, motivo: `no pude resolver las copias en el registro de npm (npm install salió ${r.code}): ${String(r.salida || '').trim().split('\n').pop()}` };
+    }
+    const bruto = auditarNpm(dir);
+    if (!bruto.medido) return bruto;
+    return { ...bruto, copias: Object.entries(versiones).map(([nombre, version]) => `${nombre}@${version}`), ...(noAplica.length ? { copias_sin_auditar: noAplica } : {}) };
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 // ── El informe ─────────────────────────────────────────────────────────────────────────────────
 
 function auditar({ repo, tipo, proyecto, declaradas, hoy }) {
   const base = { repo, tipo, medido: false, motivo_no_medido: null, hallazgos: [], no_declaradas: [], resumen: { critical: 0, high: 0, moderate: 0, low: 0 } };
   if (!fs.existsSync(repo)) return { ...base, motivo_no_medido: `no existe el repo ${repo}` };
 
-  const bruto = tipo === 'npm' ? auditarNpm(repo) : tipo === 'pip' ? auditarPip(repo, proyecto) : auditarNuget(repo, proyecto);
+  const bruto = tipo === 'npm' ? auditarNpm(repo) : tipo === 'vendored' ? auditarCopias(repo) : tipo === 'pip' ? auditarPip(repo, proyecto) : auditarNuget(repo, proyecto);
   if (!bruto.medido) return { ...base, motivo_no_medido: bruto.motivo };
 
   const decl = leerDeclaracion(repo, declaradas, hoy);
@@ -516,6 +595,8 @@ function auditar({ repo, tipo, proyecto, declaradas, hoy }) {
     ...base,
     medido: true,
     proyecto: bruto.proyecto || null,
+    ...(bruto.copias ? { copias: bruto.copias } : {}),
+    ...(bruto.copias_sin_auditar ? { copias_sin_auditar: bruto.copias_sin_auditar } : {}),
     hallazgos,
     resumen: bruto.resumen,
     no_declaradas,
@@ -533,6 +614,8 @@ function imprimirHumano(inf) {
   }
   const r = inf.resumen;
   console.log(`${inf.repo} (${inf.tipo}) — crít ${r.critical} · alta ${r.high} · mod ${r.moderate} · baja ${r.low}`);
+  if (inf.copias) console.log(`   copias auditadas: ${inf.copias.join(', ')}`);
+  for (const c of inf.copias_sin_auditar || []) console.log(`   sin auditar, a propósito: ${c}`);
   if (inf.declaracion.ilegible) console.log(`   ⚠️ ${inf.declaracion.archivo} está presente pero ILEGIBLE: no ampara a nadie.`);
   else if (inf.declaracion.existe && inf.declaracion.vencida) console.log(`   ⚠️ la deuda declarada venció el ${inf.declaracion.vence || '<sin fecha>'}: todo vuelve a contar como nuevo.`);
   else if (inf.declaracion.existe) console.log(`   ${inf.declaracion.paquetes} declarada(s) como deuda hasta el ${inf.declaracion.vence}.`);
@@ -547,7 +630,7 @@ function main() {
   if (a.help) { console.log(AYUDA); return 0; }
   if (a.error) { console.error(`error: ${a.error}\n\n${AYUDA}`); return 2; }
   if (!a.repo || !a.tipo) { console.error(`error: faltan --repo y/o --type\n\n${AYUDA}`); return 2; }
-  if (!['npm', 'nuget', 'pip'].includes(a.tipo)) { console.error(`error: --type tiene que ser npm, nuget o pip\n\n${AYUDA}`); return 2; }
+  if (!['npm', 'nuget', 'pip', 'vendored'].includes(a.tipo)) { console.error(`error: --type tiene que ser npm, nuget, pip o vendored\n\n${AYUDA}`); return 2; }
 
   const hoy = readEnv('TYCON_DEP_TODAY', { where: WHERE }) || new Date().toISOString().slice(0, 10);
   const inf = auditar({ repo: path.resolve(a.repo), tipo: a.tipo, proyecto: a.proyecto, declaradas: a.declaradas, hoy });
