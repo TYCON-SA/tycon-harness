@@ -2651,6 +2651,11 @@
       "requiere": []
     },
     {
+      "raiz": "arnes",
+      "ruta": "tests/review-load.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el permiso de una sesión de fondo le llega a la persona como cuadro (scripts/hooks/permission-relay.js, story 8.180 tanda B): en proceso, con casa de juguete y reloj propio.",
       "raiz": "arnes",
       "ruta": "tests/permission-relay.test.js",
