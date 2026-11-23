@@ -238,6 +238,22 @@ test('Cap_NadaAbierto_NoFrena: al tope sin nada abierto, sale 0 sin set y dice q
   const aviso = log.filter((g) => g.name === 'review-cap-shown');
   assert.equal(aviso.length, 1);
   assert.equal(aviso[0].status, 'ok', 'se anota como ok, no como freno');
+  // 🔴 el aviso sin nada abierto no cuenta como aviso para una vuelta extra: si después aparece un crítico, se avisa antes
+  fs.writeFileSync(path.join(lab.run, 'findings.json'), JSON.stringify([hallazgo('SEC-C1', 'CRITICAL', 'open')]));
+  const extra = lab.reloop(3, ['--extra-round']);
+  assert.equal(extra.status, 3, extra.stderr);
+  assert.match(extra.stderr, /todavía no se avisó el tope/);
+  // 🔴 un crítico arreglado que su revisor todavía no confirmó necesita una vuelta más: sigue frenando y lo dice
+  const porConfirmar = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('SEC-C1', 'CRITICAL', 'fixed')] });
+  const registro = path.join(porConfirmar.state, 'reported-criticals', `${SID}.jsonl`);
+  fs.mkdirSync(path.dirname(registro), { recursive: true });
+  fs.writeFileSync(registro, [
+    { ts: T(1), kind: 'launched', advisor: 'tycon-plugin-security-basics', iter: 2, story: '9.8', run: RUN },
+    { ts: T(2), kind: 'report', advisor: 'tycon-plugin-security-basics', iter: 2, story: '9.8', run: RUN, readable: true, criticals: [{ rule: 'SEC-C1', count: 1 }] },
+  ].map((x) => JSON.stringify(x)).join('\n') + '\n');
+  const pc = porConfirmar.reloop(3);
+  assert.equal(pc.status, 3, pc.stderr);
+  assert.match(pc.stderr, /espera que su revisor lo confirme/);
   // sin poder leer los hallazgos no es «nada abierto»: sigue frenando
   const sinArchivo = laboratorio({ fotos: [1, 2], servidas: [1, 2] });
   assert.equal(sinArchivo.reloop(3).status, 3);

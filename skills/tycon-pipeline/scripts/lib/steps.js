@@ -44,7 +44,7 @@ const OLD_IDS = ['0', '0b', '0c', '1', '2', '3', '4', '5', '5b', '6', '7', '7b',
 const OLD_FLAG = { '0b': ['workSignalStarted', 'clockiStarted'], '0c': ['adoMarkedActive'], '5b': ['deepReviewDone'], '7c': ['dodRuntimeChecked'] };
 // El comando que deja la bandera, con su constancia: el freno de complete-step lo nombra (su paso dice el detalle).
 const CLOSE_COMMAND = {
-  deepReviewDone: 'marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> (step-08-adversarial-pass.md)',
+  deepReviewDone: 'marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> --tests <k promovidas> [--own <p> --in "<rutas de prueba>"] [--deferred <d> --reason "<por qué>"] (con 0 confirmados, sin --tests; step-08-adversarial-pass.md)',
   dodRuntimeChecked: 'marker.js mark-dod-runtime-checked \'{"evidencePath": "<ruta absoluta de la evidencia>", "verdict": "PASS"}\' (step-10-live-check.md)',
 };
 const mensajeBandera = (nombre, flag) => `«${nombre}» no se cierra con complete-step: lo da por hecho su bandera (${flag}), que dejan sus propios comandos.${

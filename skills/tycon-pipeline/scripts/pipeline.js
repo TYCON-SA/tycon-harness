@@ -6622,8 +6622,11 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
     return null;
   }
   // al tope sin nada abierto no hay nada que decidir: no frena, no devuelve revisores y dice que siga. Sin poder leer los
-  // hallazgos no es «nada abierto»: eso frena como siempre
-  if (!paraOtra && !noMirado && h.existe && !ab.length) {
+  // hallazgos no es «nada abierto», y un crítico arreglado que su revisor todavía no confirmó necesita una vuelta más:
+  // los dos frenan como siempre
+  const porConfirmar = !ab.length ? revisoresPorConfirmar({ ...args, iter }) : null;
+  const nadaPorConfirmar = !!porConfirmar && !porConfirmar.error && !porConfirmar.agregar.length && !porConfirmar.fuera.length;
+  if (!paraOtra && !noMirado && h.existe && !ab.length && nadaPorConfirmar) {
     if (args.extraRound) return `🛑 La vuelta ${iter} no necesita la vuelta extra ni la firma: no quedó nada abierto. Pedí el set sin --extra-round.\n`;
     anotar({ name: 'review-cap-shown', status: 'ok', tope: tope.value, abiertos: [] });
     return { sinAbiertos: `ℹ️  Llegaste al tope de ${tope.value} vueltas de revisores (${de}) y no quedó nada abierto: no hace falta otra vuelta. Seguí con «Probar en vivo» y «Preparar el pull request».\n` };
@@ -6664,7 +6667,13 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
   }
   const renglones = [`🛑 Llegaste al tope de ${tope.value} vueltas de revisores (${de}): no devuelvo el set de la vuelta ${iter}.`, ...avisos];
   if (noMirado) renglones.push(`   No pude mirar lo abierto (${noMirado}): escribí los hallazgos con pipeline.js write-findings y volvé a pedirlo.`);
-  else if (!ab.length) renglones.push('   No quedó nada abierto: seguí con «Probar en vivo» y «Preparar el commit».');
+  else if (porConfirmar && porConfirmar.error) renglones.push(`   No quedó nada abierto en findings.json, pero no pude mirar lo que queda por confirmar (${porConfirmar.error}).`);
+  else if (porConfirmar && (porConfirmar.agregar.length || porConfirmar.fuera.length)) {
+    renglones.push('   No quedó nada abierto en findings.json, pero un crítico arreglado espera que su revisor lo confirme:');
+    for (const r of porConfirmar.agregar) renglones.push(`     · ${r.name}: ${r.reason}`);
+    for (const l of porConfirmar.fuera) renglones.push(`     · ${l}`);
+    renglones.push('   Una vuelta más con --extra-round lo confirma; si no, el cierre pide eximirlo.');
+  } else if (!ab.length) renglones.push('   No quedó nada abierto: seguí con «Probar en vivo» y «Preparar el commit».');
   if (bloquean.length) {
     renglones.push(`   Quedó abierto algo de seguridad o de datos (${bloquean.length}): lo decide una persona. Mostrale esto y preguntale qué hace:`);
     for (const l of rr.resumen(bloquean)) renglones.push(`     · ${l}`);

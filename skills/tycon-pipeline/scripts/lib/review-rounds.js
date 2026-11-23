@@ -193,7 +193,10 @@ function extras({ stateDir, story }) {
   return out;
 }
 
-/** El último aviso del tope que el arnés le mostró para esa vuelta de esa historia (`review-cap-shown`), o null. */
+/**
+ * El último aviso del tope que el arnés le mostró para esa vuelta de esa historia (`review-cap-shown`), o null. El tope
+ * sin nada abierto (status `ok`) no mostró nada que decidir: no cuenta como aviso para una vuelta extra.
+ */
 function avisoDelTope({ stateDir, story, iter }) {
   let txt = '';
   try { txt = fs.readFileSync(path.join(stateDir, 'gates.log'), 'utf8'); } catch (_) { return null; }
@@ -201,7 +204,7 @@ function avisoDelTope({ stateDir, story, iter }) {
   for (const l of txt.split('\n')) {
     if (!l.trim()) continue;
     let g; try { g = JSON.parse(l); } catch (_) { continue; }
-    if (g && g.name === 'review-cap-shown' && String(g.story) === String(story) && g.iter === iter) ultimo = g;
+    if (g && g.name === 'review-cap-shown' && g.status !== 'ok' && String(g.story) === String(story) && g.iter === iter) ultimo = g;
   }
   return ultimo;
 }
