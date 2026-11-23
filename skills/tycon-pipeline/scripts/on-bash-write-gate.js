@@ -174,11 +174,20 @@ try { ({ nativePath } = require('./lib/path-shape.js')); } catch (e) { logHookEr
 const Q = `(?:'([^']*)'|"([^"]*)"|([^\\s'"|;&<>]+))`; // token: 'x' | "x" | bare
 function tok(m, i) { return m[i] ?? m[i + 1] ?? m[i + 2] ?? null; }
 
+const SEPARADOR_DE_SEGMENTOS = /&&|\|\||\|&|;|\||\n|(?<![<>&|\\])&(?![&>])/;
 function splitSegments(cmd) {
   // Separadores de comandos (no dentro de comillas — aproximación: split simple alcanza para lo
   // que buscamos; las comillas raras caen del lado conservador = no se extrae nada).
   // también un `&` solo (segundo plano): `echo hi & cp a b` corre el cp. No `&&`, ni los de una redirección (`2>&1`, `&>`)
-  return String(cmd).split(/\s*(?:&&|\|\||\|&|;|\||\n|(?<![<>&|\\])&(?![&>]))\s*/).filter(Boolean);
+  // Los blancos de al lado de cada separador se sacan después, a mano, y no con `\s*` en la expresión, que con una
+  // tirada larga de espacios la hace cuadrática.
+  const partes = String(cmd).split(SEPARADOR_DE_SEGMENTOS);
+  return partes.map((p, i) => {
+    let s = p;
+    if (i > 0) s = s.trimStart();
+    if (i < partes.length - 1) s = s.trimEnd();
+    return s;
+  }).filter(Boolean);
 }
 
 /**
@@ -1570,6 +1579,22 @@ const PREFIJO = new RegExp(String.raw`^(?:\(\s*|[A-Za-z_]\w*=${VALOR_DE_ASIGNACI
 // los parámetros de Remove-Item que llevan un valor que no es la ruta
 const PS_CON_VALOR = /^-(?:filter|include|exclude|erroraction|ea|credential|stream|warningaction|wa|informationaction|ia)$/i;
 
+// Cada redirección del tramo (`> x`, `2>> "y"`, `&>|z`), con los espacios y tabs que la preceden, cambiada por un
+// blanco. Esos blancos se sacan a mano y no con un `[ \t]*` al principio de la expresión, que con una tirada larga de
+// espacios la hace cuadrática.
+const REDIRECCION_DE_SALIDA = /(?:&|\d)?>{1,2}(?:\||&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g;
+function blancoPorRedireccion(t) {
+  let out = '';
+  let desde = 0;
+  for (const m of t.matchAll(REDIRECCION_DE_SALIDA)) {
+    let hasta = m.index;
+    while (hasta > desde && (t[hasta - 1] === ' ' || t[hasta - 1] === '\t')) hasta--;
+    out += `${t.slice(desde, hasta)} `;
+    desde = m.index + m[0].length;
+  }
+  return out + t.slice(desde);
+}
+
 /**
  * Lo que el comando borra (`rm`, `del`, `Remove-Item` y sus alias, `git rm`) o deshace (`git checkout [<ref>] [--]
  * <ruta>`, `git restore <ruta>`): `[{ raw, kind: 'delete'|'restore', base?, quizas?, git? }]`. `base` es la carpeta de un
@@ -1581,7 +1606,7 @@ const PS_CON_VALOR = /^-(?:filter|include|exclude|erroraction|ea|credential|stre
 function destinosBorrados(cmd) {
   const out = [];
   for (const tramo of [String(cmd || ''), ...anidadosHasta(cmd).leidos].flatMap((t) => tramos(t))) {
-    const sinComentario = tramo.replace(/(^|\s)#.*$/, '').replace(/[ \t]*(?:&|\d)?>{1,2}(?:\||&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ');
+    const sinComentario = blancoPorRedireccion(tramo.replace(/(^|\s)#.*$/, ''));
     const words = palabras(sinPalabrasDelShell(sinComentario)).filter((w) => w !== '').map((w) => w.replace(/\)+$/, '')).filter(Boolean);
     if (!words.length) continue;
     const c = path.basename(words[0].replace(/^\\/, '')).toLowerCase().replace(/\.exe$/, '');
@@ -1640,7 +1665,9 @@ const LECTORES_DE_FIND = String.raw`(?:wc|cat|head|tail|grep|egrep|fgrep|rg|ls|s
 const BORRA_O_MUEVE = new RegExp([
   // el comando con su ruta (`/bin/rm`) o con la barra que saltea un alias (`\rm`) es el mismo comando
   String.raw`(?:^|[\s;&|(` + '`' + String.raw`'"])(?:[^\s;&|()'"` + '`' + String.raw`]*[\\/])?\\?(?:rm|rmdir|unlink|mv|move|remove-item|move-item|rename-item|rni|shred|trash|truncate)(?:\.exe)?(?=[\s;&|)` + '`' + String.raw`'"]|$)`,
-  String.raw`(?:^|[;&|(` + '`' + String.raw`'"\n]|\bcmd(?:\.exe)?\s+/[ck])\s*(?:[^\s;&|()'"` + '`' + String.raw`]*[\\/])?\\?(?:del|erase|rd|ren|mi|ri)(?:\.exe)?(?=[\s;&|)` + '`' + String.raw`'"]|$)`,
+  // los blancos después del separador no cruzan un salto de línea, que ya es otro separador: un `\s*` ahí hace cuadrática
+  // la expresión con una tirada larga de renglones vacíos (sólo se pregunta si hay una coincidencia: es la misma)
+  String.raw`(?:^|[;&|(` + '`' + String.raw`'"\n]|\bcmd(?:\.exe)?\s+/[ck])[^\S\n]*(?:[^\s;&|()'"` + '`' + String.raw`]*[\\/])?\\?(?:del|erase|rd|ren|mi|ri)(?:\.exe)?(?=[\s;&|)` + '`' + String.raw`'"]|$)`,
   String.raw`(?:^|\s)--?delete\b`,
   String.raw`(?:^|\s)-exec(?:dir)?\s+(?!` + LECTORES_DE_FIND + ')',
   // `git worktree move` ya casa por `move` suelto, en la primera forma (@story-8.318)
@@ -2005,6 +2032,11 @@ function carpetasDeLosCd(cmd, nivel = 0) {
   return out;
 }
 
+// Un shell con `-c` y su guion entre comillas (sólo importa dónde termina cada coincidencia). La carpeta de delante del
+// shell no cruza un separador: un `\S*` ahí hace cuadrática la expresión con una tirada larga de `;`, y donde termina
+// cada coincidencia es el mismo.
+const SHELL_CON_C = /(?:^|[\s;&|(`])(?:[^\s;&|(`]*\/)?(?:ba|z|k|da|fi|c|tc)?sh\b(?:\s+(?:--?[A-Za-z][\w-]*|[+-][oO]\s+(?:[^\s+-]|\+(?![oO](?:\s|$))|-(?![-A-Za-z])|--(?![A-Za-z]))\S*|\+[oO](?=\s)))*?\s+-[A-Za-z]*c\s+(?=['"])/g;
+
 /**
  * Lo que corre adentro de un comando, un nivel: el cuerpo de cada `$(…)` (con sus paréntesis balanceados) y de cada
  * par de comillas invertidas, fuera de las comillas simples; el guion de un shell con `-c` (con cualquier opción
@@ -2033,8 +2065,7 @@ function guionesInternos(cmd) {
       i = fin < 0 ? s.length : fin;
     }
   }
-  const conC = /(?:^|[\s;&|(`])(?:\S*\/)?(?:ba|z|k|da|fi|c|tc)?sh\b(?:\s+(?:--?[A-Za-z][\w-]*|[+-][oO]\s+(?:[^\s+-]|\+(?![oO](?:\s|$))|-(?![-A-Za-z])|--(?![A-Za-z]))\S*|\+[oO](?=\s)))*?\s+-[A-Za-z]*c\s+(?=['"])/g;
-  for (const m of s.matchAll(conC)) {
+  for (const m of s.matchAll(SHELL_CON_C)) {
     const i = m.index + m[0].length;
     const fin = s[i] === '"' ? cierreDoble(s, i) : s.indexOf("'", i + 1);
     const cuerpo = s.slice(i + 1, fin < 0 ? s.length : fin);
@@ -4319,6 +4350,25 @@ function entradaPorCadena(cadena, crudas, asignados) {
   return [...new Set([...(sep ? palabra.split(sep) : []), ...palabra.split(/\s+/)].map((x) => x.trim()).filter(Boolean))];
 }
 
+// El tramo sin su comentario del final (desde los blancos antes del primer `#` que va después de la última comilla) y sin
+// su cierre (`; )`, ` }`). Lo mismo que `/\s+#[^'"]*$/` y `/\s*;?\s*[)}]\s*$/` sobre el texto recortado, pero a mano:
+// con esas expresiones una tirada larga de espacios hace al freno cuadrático y cúbico, y pasa de su tope de tiempo.
+function sinComentarioAlFinal(t) {
+  const ultimaComilla = Math.max(t.lastIndexOf("'"), t.lastIndexOf('"'));
+  for (let q = t.indexOf('#', ultimaComilla + 1); q !== -1; q = t.indexOf('#', q + 1)) {
+    if (q === 0 || !/\s/.test(t[q - 1])) continue;
+    let p = q - 1;
+    while (p > 0 && /\s/.test(t[p - 1])) p--;
+    return t.slice(0, p);
+  }
+  return t;
+}
+function sinCierre(t) {
+  if (!/[)}]$/.test(t)) return t;
+  const s = t.slice(0, -1).trimEnd();
+  return s.endsWith(';') ? s.slice(0, -1).trimEnd() : s;
+}
+
 /**
  * Lo que corre otro programa, como texto de un comando: la orden de un `find -exec`, la de un `xargs` y lo que un heredoc o
  * un `<<<` le da a un shell. El cuerpo de un heredoc que va a otro programa no se lee como comando.
@@ -4370,7 +4420,7 @@ function comandosPorOtroPrograma(cmd, cwd) {
     // lo que un `echo`/`printf` escribe por una tubería a un shell que lee sus órdenes de la entrada (`| sh`, `| bash -s`)
     // corre como un comando
     // (con filtros en el medio, `| cat | sh`; con llaves o un subshell alrededor; y con los `cd` de antes en el renglón)
-    const sinEnvoltura = (t) => String(t).replace(/\s+#[^'"]*$/, '').trim().replace(/^[({]\s*/, '').replace(/\s*;?\s*[)}]\s*$/, '').replace(/^(?:builtin|busybox)\s+/, '');
+    const sinEnvoltura = (t) => sinCierre(sinComentarioAlFinal(String(t)).trim().replace(/^[({]\s*/, '')).replace(/^(?:builtin|busybox)\s+/, '');
     const escritoPor = (tramo) => {
       const w = palabras(sinPalabrasDelShell(sinEnvoltura(tramo))).filter((x) => x !== '');
       const escritor = nombreDeComando(w[0]) || '';
@@ -6332,7 +6382,7 @@ function handleCarrilEHistoria(event, opts = {}) {
   return null;
 }
 
-module.exports = { handle, guionesEnArchivo, carpetasQueBorraOMueve, borraEjecucionAbierta, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA, frenaLaRed, quitarCuerposDeHeredoc, vaAUnShell };
+module.exports = { handle, sinComentarioAlFinal, sinCierre, blancoPorRedireccion, splitSegments, SHELL_CON_C, BORRA_O_MUEVE, guionesEnArchivo, carpetasQueBorraOMueve, borraEjecucionAbierta, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA, frenaLaRed, quitarCuerposDeHeredoc, vaAUnShell };
 
 if (require.main === module) {
   const cruda = leerEntrada();
