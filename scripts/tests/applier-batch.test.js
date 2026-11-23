@@ -37,6 +37,8 @@ const SCRIPTS = {
   // los enlaces y el paso de terceros
   'canonical-path': path.join(ROOT, 'scripts', 'lib', 'canonical-path.js'),
   'install-third-party': path.join(ROOT, 'scripts', 'publishing', 'install-third-party.js'),
+  // la mudanza del historial viejo de los hooks
+  'loose-logs': path.join(ROOT, 'scripts', 'lib', 'loose-logs.js'),
 };
 
 const labs = [];
@@ -151,6 +153,8 @@ test('T1 Batch_SameAsSeparateCall — cada paso de la lista, en cada estado, igu
     ['apply-hooks, perfil minimal', (h) => { emptySettings(h); minimalProfile(h); }, applyStep],
     ['apply-hooks, settings.json roto', brokenSettings, applyStep],
     ['apply-hooks, -Check', emptySettings, { script: 'apply-hooks', args: [...applyStep.args, '--check'] }],
+    ['loose-logs --move-old, casa propia con historial viejo', (h) => { fs.mkdirSync(path.join(h, '.tycon', 'state'), { recursive: true }); fs.writeFileSync(path.join(h, '.claude', 'safety-guard.log'), 'una línea\n'); }, { script: 'loose-logs', args: ['--move-old'] }],
+    ['loose-logs --move-old, máquina de siempre (no hace nada)', sane, { script: 'loose-logs', args: ['--move-old'] }],
   ];
   for (const [label, setup, step] of cases) {
     const [a, b] = twoHomes('t1', setup);

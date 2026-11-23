@@ -20,7 +20,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync, spawnSync } = require('child_process');
+const { execFileSync, spawn } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 const DIR = path.join(ROOT, 'scripts', 'tests', 'fixtures', 'platform-golden');
@@ -117,24 +117,44 @@ function normalizar(linea) {
   return linea.replace(TMP, '<tmp>').replace(/\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?/g, '<fecha>');
 }
 
-/** Las llamadas de una suite, normalizadas, sin repetir y en orden; null si la suite no corrió bien. */
+/** Las llamadas de una suite, normalizadas, sin repetir y en orden; o el motivo si la suite no corrió bien. */
 function llamadasDe(suite) {
   const foto = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'foto-az-')), 'calls');
   fs.writeFileSync(foto, '');
   const file = path.join(ROOT, 'scripts', 'tests', suite);
   const cmd = suite.endsWith('.sh') ? ['bash', [file]] : [process.execPath, ['--test', file]];
-  const r = spawnSync(cmd[0], cmd[1], { cwd: ROOT, env: { ...process.env, TYCON_AZ_SNAPSHOT: foto }, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-  if (r.status !== 0) return { error: `la suite ${suite} salió ${r.status}: la foto de una suite roja no sirve de vara` };
-  const lineas = [...new Set(fs.readFileSync(foto, 'utf8').split('\n').filter(Boolean).map(normalizar))].sort();
-  // una suite que no llamó a az no saca foto: el az de mentira no se usó, o la variable no le llegó
-  if (!lineas.length) return { error: `la suite ${suite} no hizo ninguna llamada a az: la foto vacía no sirve de vara` };
-  return { lineas };
+  return new Promise((resolve) => {
+    const hijo = spawn(cmd[0], cmd[1], { cwd: ROOT, env: { ...process.env, TYCON_AZ_SNAPSHOT: foto }, stdio: 'ignore' });
+    hijo.on('error', (e) => resolve({ error: `la suite ${suite} no arrancó (${e.message})` }));
+    hijo.on('close', (status) => {
+      if (status !== 0) return resolve({ error: `la suite ${suite} salió ${status}: la foto de una suite roja no sirve de vara` });
+      const lineas = [...new Set(fs.readFileSync(foto, 'utf8').split('\n').filter(Boolean).map(normalizar))].sort();
+      // una suite que no llamó a az no saca foto: el az de mentira no se usó, o la variable no le llegó
+      if (!lineas.length) return resolve({ error: `la suite ${suite} no hizo ninguna llamada a az: la foto vacía no sirve de vara` });
+      return resolve({ lineas });
+    });
+  });
+}
+
+// Las seis suites corren de a tres: una detrás de otra sumaban unos 160 s (la de pedidos sola, 80) y la suite que compara
+// la foto pasaba su tope cuando corría acompañada. Cada una escribe su foto en su propio archivo.
+const A_LA_VEZ = Math.max(1, Math.min(3, os.cpus().length - 2));
+async function llamadasDeTodas(suites) {
+  const out = new Map();
+  const cola = [...suites];
+  await Promise.all(Array.from({ length: Math.min(A_LA_VEZ, cola.length) }, async () => {
+    while (cola.length) {
+      const suite = cola.shift();
+      out.set(suite, await llamadasDe(suite));
+    }
+  }));
+  return out;
 }
 
 function leerJson(f) { return JSON.parse(fs.readFileSync(path.join(DIR, f), 'utf8')); }
 function escribir(f, contenido) { fs.writeFileSync(path.join(DIR, f), contenido); }
 
-function main(argv) {
+async function main(argv) {
   const [modo, ...resto] = argv;
   const sinSuites = resto.includes('--without-suites');
   if (!['record', 'compare'].includes(modo)) { process.stderr.write('uso: record-platform-golden.js record|compare [--without-suites]\n'); return 2; }
@@ -152,8 +172,9 @@ function main(argv) {
     problemas.push(...compararComandos(leerJson('az-commands.json'), l));
   }
   if (!sinSuites) {
+    const fotos = await llamadasDeTodas(SUITES);
     for (const suite of SUITES) {
-      const r = llamadasDe(suite);
+      const r = fotos.get(suite);
       if (r.error) { problemas.push(r.error); continue; }
       const f = `${suite.replace(/\.test\.(js|sh)$/, '')}.calls`;
       if (modo === 'record') escribir(f, `${r.lineas.join('\n')}\n`);
@@ -171,5 +192,5 @@ function main(argv) {
   return problemas.length ? 1 : 0;
 }
 
-if (require.main === module) process.exitCode = main(process.argv.slice(2));
+if (require.main === module) main(process.argv.slice(2)).then((codigo) => { process.exitCode = codigo; });
 module.exports = { senales, literales, nucleo, deIntegraciones, grabadosQueViajan, compararComandos, normalizar, DURA, AFUERA, SUITES };

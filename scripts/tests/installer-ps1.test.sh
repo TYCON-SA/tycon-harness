@@ -99,7 +99,7 @@ NODE_CALLS="$T/node-calls.log"; : > "$NODE_CALLS"
 cat > "$T/bin/node" <<EOF
 #!/bin/sh
 printf "%s\\n" "\$*" >> "$NODE_CALLS"
-case "\$1 \$2" in *applier-batch.js\ --plan) env -u NODE_OPTIONS "$REAL_NODE" -e 'const at = { "skills-dir": "lib", "tycon-config": "lib", "legacy-names": "lib", "canonical-path": "lib", "apply-hooks": "setup", "install-third-party": "publishing" }; for (const s of JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).steps) console.log("(tanda) scripts/" + at[s.script] + "/" + s.script + ".js " + s.args.join(" "))' "\$3" >> "$NODE_CALLS" 2>/dev/null ;; esac
+case "\$1 \$2" in *applier-batch.js\ --plan) env -u NODE_OPTIONS "$REAL_NODE" -e 'const at = { "skills-dir": "lib", "tycon-config": "lib", "legacy-names": "lib", "canonical-path": "lib", "apply-hooks": "setup", "install-third-party": "publishing", "loose-logs": "lib" }; for (const s of JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).steps) console.log("(tanda) scripts/" + at[s.script] + "/" + s.script + ".js " + s.args.join(" "))' "\$3" >> "$NODE_CALLS" 2>/dev/null ;; esac
 exec "$REAL_NODE" "\$@"
 EOF
 chmod +x "$T/bin/node"

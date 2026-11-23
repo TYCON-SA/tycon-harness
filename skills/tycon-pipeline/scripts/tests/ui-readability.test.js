@@ -385,9 +385,9 @@ const SMOKE_RUN = path.join(SK, 'smoke-run.sh');
 const CAPA_EDITAR = { name: 'Editar plantilla', elements: [{ kind: 'heading', text: 'Editar plantilla' }, { kind: 'button', text: 'Probar' }, { kind: 'button', text: 'Guardar' }] };
 const CAPA_PROBAR = { name: 'Probar', presentation: 'layer', over: 'Editar plantilla', trigger: 'Probar', elements: [{ kind: 'heading', text: 'Probar la plantilla' }, { kind: 'button', text: 'Generar' }] };
 const PANTALLA_CAPA = 'export const P = () => <div><h1>Editar plantilla</h1><button>Probar</button><button>Guardar</button><h2>Probar la plantilla</h2><button>Generar</button></div>;\n';
-function mundoConCapa(screens = [CAPA_EDITAR, CAPA_PROBAR]) {
+function mundoConCapa(screens = [CAPA_EDITAR, CAPA_PROBAR], pantalla = PANTALLA_CAPA) {
   const repo = mundo();
-  escribir(path.join(repo, PANTALLA_730), PANTALLA_CAPA);
+  escribir(path.join(repo, PANTALLA_730), pantalla);
   const s = story(repo, [PANTALLA_730]);
   const qa = guiaLista(repo);
   const model = JSON.stringify({ title: 'Plantillas', screens });
@@ -839,4 +839,106 @@ test('QaGuide_RepoDeLaStorySinGit_LoDice @story-7.34 @ac-6 — si git no identif
   delete env.NODE_TEST_CONTEXT;
   const r = spawnSync('node', [QA, '--story', s, '--ui-texts'], { encoding: 'utf8', input: '', env });
   assert.match(`${r.stdout}\n${r.stderr}`, /no pude identificar el repo git de la story/, `${r.stdout}\n${r.stderr}`);
+});
+
+// ── los otros casos de una capa salen de a uno: cada uno se acepta en su propia prueba ──────────────────────────────
+const CAPA_PROBAR_CON_CASOS = { ...CAPA_PROBAR, variants: [
+  { when: 'falta el nombre', elements: [{ kind: 'message', text: 'Falta el nombre' }] },
+  { when: 'el nombre ya existe', elements: [{ kind: 'message', text: 'Ese nombre ya existe' }] },
+] };
+const PANTALLA_CON_CASOS = 'export const P = () => <div><h1>Editar plantilla</h1><button>Probar</button><button>Guardar</button><h2>Probar la plantilla</h2><button>Generar</button><p>Falta el nombre</p><p>Ese nombre ya existe</p></div>;\n';
+
+test('Capa_CadaCasoEnSuPropiaPrueba_Pasa @capa-de-la-maqueta', () => {
+  const m = mundoConCapa([CAPA_EDITAR, CAPA_PROBAR_CON_CASOS], PANTALLA_CON_CASOS);
+  humoDeCapa(m, { screen: 'Probar', trigger: 'Probar', dialog: true, texts: ['Probar la plantilla', 'Generar', 'Falta el nombre'] });
+  humoDeCapa(m, { screen: 'Probar', trigger: 'Probar', dialog: true, texts: ['Probar la plantilla', 'Generar', 'Ese nombre ya existe'] });
+  const r = checkCon(m.s);
+  assert.strictEqual(r.rc, 0, r.out);
+});
+
+test('Capa_UnCasoQueNingunaPruebaMuestra_Frena @capa-de-la-maqueta', () => {
+  const m = mundoConCapa([CAPA_EDITAR, CAPA_PROBAR_CON_CASOS], PANTALLA_CON_CASOS);
+  humoDeCapa(m, { screen: 'Probar', trigger: 'Probar', dialog: true, texts: ['Probar la plantilla', 'Generar', 'Falta el nombre', 'Otro texto del caso uno'] });
+  const r = checkCon(m.s);
+  assert.strictEqual(r.rc, 2, r.out);
+  assert.match(r.out, /\(12\) la capa «Probar» se abrió encima, pero ninguna prueba muestra adentro el caso «el nombre ya existe» \(«Ese nombre ya existe»\)/);
+  assert.match(r.out, /cada caso puede ir en su propia prueba/);
+  assert.doesNotMatch(r.out, /sin «Falta el nombre»/);
+});
+
+test('Capa_LosTextosDeLaVentanaSiguenJuntos @capa-de-la-maqueta', () => {
+  const m = mundoConCapa([CAPA_EDITAR, CAPA_PROBAR_CON_CASOS], PANTALLA_CON_CASOS);
+  // lo de siempre de la ventana va en una misma lectura; partirlo entre dos no alcanza
+  humoDeCapa(m, { screen: 'Probar', trigger: 'Probar', dialog: true, texts: ['Probar la plantilla', 'Falta el nombre'] });
+  humoDeCapa(m, { screen: 'Probar', trigger: 'Probar', dialog: true, texts: ['Generar', 'Ese nombre ya existe'] });
+  const r = checkCon(m.s);
+  assert.strictEqual(r.rc, 2, r.out);
+  assert.match(r.out, /\(12\) la capa «Probar» se abrió encima, pero sin «(Generar|Probar la plantilla)» adentro/);
+});
+
+test('LayerProbe_MenuListaYPopover_CuentanComoCapa @capa-de-la-maqueta', () => {
+  const lp = require(LAYER_PROBE);
+  const el = (attrs, text) => ({ getAttribute: (k) => attrs[k] ?? null, textContent: text, hidden: false });
+  for (const role of ['menu', 'listbox']) {
+    const r = lp.probeDocument({ querySelectorAll: (sel) => (sel.includes(`role="${role}"`) ? [el({ role }, 'Editar Borrar')] : []) }, { screen: 'Acciones', trigger: 'Más', texts: ['Editar', 'Borrar'], antes: lp.antesDe({ querySelectorAll: () => [] }) });
+    assert.deepStrictEqual([r.dialog, r.texts], [true, ['Editar', 'Borrar']], role);
+  }
+  // un popover abierto cuenta; un documento que no sabe de popovers no rompe la prueba
+  const pop = { querySelectorAll: (sel) => { if (sel.includes(':popover-open')) { if (sel.includes('role=')) throw new SyntaxError('unknown pseudo-class'); return [el({ popover: 'auto' }, 'Copiar enlace')]; } return []; } };
+  let r = lp.probeDocument(pop, { screen: 'Compartir', trigger: 'Compartir', texts: ['Copiar enlace'] });
+  assert.deepStrictEqual([r.dialog, r.texts], [true, ['Copiar enlace']]);
+  const sinPopover = { querySelectorAll: (sel) => { if (sel.includes(':popover-open')) throw new SyntaxError('unknown pseudo-class'); return sel.includes('role="dialog"') ? [el({ role: 'dialog' }, 'Generar')] : []; } };
+  r = lp.probeDocument(sinPopover, { screen: 'Probar', trigger: 'Probar', texts: ['Generar'] });
+  assert.deepStrictEqual([r.dialog, r.texts], [true, ['Generar']]);
+  assert.match(lp.SELECTOR, /role="menu"/);
+  assert.match(lp.SELECTOR, /role="listbox"/);
+  assert.match(lp.SELECTOR, /popover-open/);
+});
+
+test('Capa_ConstruidaEnLaPagina_NombraMenuYLista @capa-de-la-maqueta', () => {
+  const m = mundoConCapa();
+  humoDeCapa(m, { screen: 'Probar', trigger: 'Probar', dialog: false, texts: ['nombra-menu'] });
+  const r = checkCon(m.s);
+  assert.strictEqual(r.rc, 2, r.out);
+  assert.match(r.out, /un menú, una lista desplegable o un popover/);
+});
+
+test('LayerProbe_MenuQueYaEstaba_NoCuentaComoAbierto @capa-de-la-maqueta', () => {
+  const lp = require(LAYER_PROBE);
+  const el = (attrs, text, padre = null) => ({ getAttribute: (k) => attrs[k] ?? null, textContent: text, hidden: false, parentElement: padre });
+  const menu = el({ role: 'menu' }, 'Inicio Facturas Editar Borrar');
+  const doc = (els) => ({ querySelectorAll: (sel) => (sel.includes('role="menu"') ? els : []) });
+  // el menú de la barra ya estaba antes del click: no es lo que se abrió
+  const antes = lp.antesDe(doc([menu]));
+  let r = lp.probeDocument(doc([menu]), { screen: 'Acciones', trigger: 'Más', texts: ['Editar', 'Borrar'], antes });
+  assert.deepStrictEqual([r.dialog, r.texts], [false, []]);
+  // sin la foto de antes, un menú no se puede dar por abierto
+  r = lp.probeDocument(doc([menu]), { screen: 'Acciones', trigger: 'Más', texts: ['Editar', 'Borrar'] });
+  assert.strictEqual(r.dialog, false);
+  // un menú nuevo, sí; uno dentro de un contenedor escondido, no
+  const nuevo = el({ role: 'menu' }, 'Editar Borrar');
+  r = lp.probeDocument(doc([menu, nuevo]), { screen: 'Acciones', trigger: 'Más', texts: ['Editar', 'Borrar'], antes });
+  assert.deepStrictEqual([r.dialog, r.texts], [true, ['Editar', 'Borrar']]);
+  const escondido = el({ role: 'menu' }, 'Editar Borrar', el({ 'aria-hidden': 'true' }, ''));
+  r = lp.probeDocument(doc([escondido]), { screen: 'Acciones', trigger: 'Más', texts: ['Editar', 'Borrar'], antes: lp.antesDe(doc([])) });
+  assert.strictEqual(r.dialog, false);
+});
+
+test('Capa_PantallaRepetida_EsOtroCasoDeLaCapa @capa-de-la-maqueta', () => {
+  // un modelo que trae el caso de error como la pantalla entera repetida: es otro caso de la misma capa
+  const conError = { ...CAPA_PROBAR, state: 'con error', elements: [{ kind: 'heading', text: 'Probar la plantilla' }, { kind: 'message', text: 'La plantilla tiene un error' }] };
+  const m = mundoConCapa([CAPA_EDITAR, CAPA_PROBAR, conError], PANTALLA_CAPA.replace('</div>;', '<p>La plantilla tiene un error</p></div>;'));
+  humoDeCapa(m, { screen: 'Probar', trigger: 'Probar', dialog: true, texts: ['Probar la plantilla', 'Generar', 'Repetida sola'] });
+  const r = checkCon(m.s);
+  assert.strictEqual(r.rc, 2, r.out);
+  assert.match(r.out, /ninguna prueba muestra adentro el caso «con error» \(«(Probar la plantilla», «)?La plantilla tiene un error»\)/);
+});
+
+test('Capa_MotivoDeUnaCasilla_NoSeExigeAdentro @capa-de-la-maqueta', () => {
+  // el motivo de una casilla deshabilitada va como atributo title: la prueba en vivo lee el texto, no los atributos
+  const conCasilla = { ...CAPA_PROBAR, elements: [...CAPA_PROBAR.elements, { kind: 'checkbox', label: 'Publicar', disabled: true, title: 'Requiere permiso de publicación' }] };
+  const m = mundoConCapa([CAPA_EDITAR, conCasilla], PANTALLA_CAPA.replace('</div>;', '<input type="checkbox" disabled title="Requiere permiso de publicación" />Publicar</div>;'));
+  humoDeCapa(m, { screen: 'Probar', trigger: 'Probar', dialog: true, texts: ['Probar la plantilla', 'Generar', 'Publicar'] });
+  const r = checkCon(m.s);
+  assert.doesNotMatch(r.out, /\(12\)[^\n]*Requiere permiso de publicación/, r.out);
 });

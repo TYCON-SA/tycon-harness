@@ -396,7 +396,7 @@ test('Guion_ForSession_DestinoSinMarcador_Sale2 (T6) @story-8.142 @ac-2', (t) =>
   const gatesAntes = lab.gates().length;
   r = lab.correr(['complete-step', 'approve-plan', '--auto-approved', 'riesgo bajo', '--for-session', DESTINO]);
   assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
-  assert.match(r.stderr, /no es una firma que se pida/);
+  assert.match(r.stderr, /falta la cita de la persona/);
   assert.strictEqual(lab.aprobaciones(DESTINO).length, aprobacionesAntes, 'ninguna aprobación en la corrida de ses-a');
   assert.strictEqual(lab.gates().length, gatesAntes, 'ningún renglón en gates.log');
   assert.deepStrictEqual({ [DESTINO]: lab.leer(DESTINO), [COORD]: lab.leer(COORD) }, antes, 'nada escrito');
@@ -406,6 +406,29 @@ test('Guion_ForSession_DestinoSinMarcador_Sale2 (T6) @story-8.142 @ac-2', (t) =>
   assert.deepStrictEqual(ow.firmasDelComando(lab.comando(viejo)), ['plan-approval']);
   r = lab.correr(viejo);
   assert.doesNotMatch(r.stderr, /no es una firma que se pida/);
+});
+
+test('Guion_ForSession_PlanSinCita_DiceQueFaltaYElComando: el plan de otra sesión sin --approved dice qué falta, no que no es una firma', (t) => {
+  const lab = laboratorioOtraSesion(t);
+  const antes = { [DESTINO]: lab.leer(DESTINO), [COORD]: lab.leer(COORD) };
+  const gatesAntes = lab.gates().length;
+  // el plan con su nombre y con el número viejo: es la firma que se pide para otra sesión, sólo le falta la cita
+  for (const paso of ['approve-plan', '3']) {
+    const r = lab.correr(['complete-step', paso, '--for-session', DESTINO]);
+    assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
+    assert.doesNotMatch(r.stderr, /no es una firma que se pida/);
+    assert.match(r.stderr, /falta la cita de la persona/);
+    // el comando exacto: con la cita para que el freno arme el cuadro, o con --terminal en la terminal de la persona
+    assert.ok(r.stderr.includes(`node ${MARKER} complete-step ${paso} --approved '<la cita de la persona>' --for-session ${DESTINO}`), r.stderr);
+    assert.ok(r.stderr.includes(`node ${MARKER} complete-step ${paso} --terminal --for-session ${DESTINO}`), r.stderr);
+    assert.match(r.stderr, /No se escribió nada\./);
+  }
+  // sin la cita sigue sin firmarse: nada escrito en ninguna de las dos corridas, ni en gates.log, ni un pedido de ventana
+  assert.deepStrictEqual({ [DESTINO]: lab.leer(DESTINO), [COORD]: lab.leer(COORD) }, antes, 'nada escrito');
+  assert.strictEqual(lab.gates().length, gatesAntes, 'ningún renglón en gates.log');
+  assert.strictEqual(lab.vigentes().length, 0, 'ningún pedido de ventana');
+  // el freno tampoco lo toma por firma: no arma un cuadro sin la cita
+  assert.deepStrictEqual(ow.firmasDelComando(lab.comando(['complete-step', 'approve-plan', '--for-session', DESTINO])), []);
 });
 
 test('Guion_ForSession_EjecucionPerdida_DiceQuienPidio (T5) @story-8.142 @ac-3', (t) => {

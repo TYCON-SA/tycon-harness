@@ -65,10 +65,17 @@ const SENTENCES = /(?<!\b(?:Sr|Sra|Dr|Dra|Ing|Lic|Prof|Av|Art|art|núm|pág)\.)(
 // Lo que no dice qué hace una sesión: una pregunta, un consejo, un pedido a quien lee o un «listo» suelto.
 const NOT_WHAT_IT_DOES = /\?\s*$|^¿|^(?:listo|ok|dale|bien|bueno|perfecto|hecho|entendido|sí)[.!]?$|^(?:te\s+)?(?:conviene|recomiendo|sugiero|propongo)\b|^(?:querés|decime|avisame|confirmame|habría que|deberías|podés)\b/iu;
 
+// La cita con que una sesión abre su respuesta a un mensaje de la oficina: lo que sigue es lo que escribió la persona.
+const OFFICE_QUOTE = /Me escribiste desde la oficina/iu;
+
 // La primera oración de un texto que diga qué hace, en llano y recortada: sin el formato del chat. null si ninguna lo dice.
 function firstSentence(text) {
+  // desde la cita de la oficina, nada cuenta: no se sabe dónde termina (párrafos, «>», bloques de código), y lo que la
+  // sesión hace viaja al sitio. Cuenta lo que escribió antes
+  const at = String(text).search(OFFICE_QUOTE);
+  const own = at < 0 ? String(text) : String(text).slice(0, at);
   // sin los bloques de código ni las filas de una tabla: no son una frase
-  const prose = String(text).replace(/^\s*```[\s\S]*?(?:^\s*```.*$|(?![\s\S]))/gm, '').split('\n').filter((l) => !/^\s*\|/.test(l));
+  const prose = own.replace(/^\s*```[\s\S]*?(?:^\s*```.*$|(?![\s\S]))/gm, '').split('\n').filter((l) => !/^\s*\|/.test(l));
   const lines = prose.map((l) => l.replace(/^[\s>#*`-]+|[*`]+\s*$/g, '').trim()).filter(Boolean);
   if (!lines.length) return null;
   for (const line of lines) {
@@ -159,6 +166,11 @@ function launchedId(r) {
 }
 /** Cuántas tareas de fondo lanzadas en estos renglones no avisaron que terminaron. */
 function backgroundPending(lines) {
+  return backgroundPendingIds(lines).size;
+}
+
+/** Los ids de las tareas de fondo (agentes o comandos) lanzadas en estos renglones que no avisaron que terminaron. */
+function backgroundPendingIds(lines) {
   const running = new Set();
   const textOf = (v) => JSON.stringify(v || '').replace(/\\n/g, '\n');
   for (const line of lines) {
@@ -178,7 +190,7 @@ function backgroundPending(lines) {
     else if (d.type === 'attachment' && d.attachment && d.attachment.type === 'queued_command') notices = textOf(d.attachment);
     if (notices) for (const m of notices.matchAll(NOTICE)) running.delete(m[1]);
   }
-  return running.size;
+  return running;
 }
 
 /**
@@ -574,4 +586,4 @@ function readConversation(file, { coordinator, isCoordinator = false, background
   return out;
 }
 
-module.exports = { officeOf, peerOf, readTranscript, codexTranscript, peerMessagesSince, readConversation, coverSecrets, readSessionTokens, dayTokens, contextLimit, encargoOf, HEAD_BYTES, TAIL_BYTES, ENCARGO_MAX, FRASE_MAX };
+module.exports = { officeOf, peerOf, readTranscript, backgroundPendingIds, wholeLines, codexTranscript, peerMessagesSince, readConversation, coverSecrets, readSessionTokens, dayTokens, contextLimit, encargoOf, HEAD_BYTES, TAIL_BYTES, ENCARGO_MAX, FRASE_MAX };

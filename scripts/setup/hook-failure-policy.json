@@ -1,0 +1,26 @@
+{
+  "$comentario": "Qué hace cada freno cuando falla (no puede leer su entrada, le falta una pieza o se queda sin tiempo). Un renglón por registro de scripts/setup/hooks-list.json con effect: blocks. Clase: critico (frena en su terreno), calidad (deja pasar, avisa y anota) o cierre (deja cerrar y anota). fail_closed_today: los caminos que hoy, a propósito, frenan al fallar; una prueba los protege (hook-failure-matrix.test.js). Por ahora trae sólo el freno de publicación; los demás se suman con su clase.",
+  "frenos": [
+    {
+      "guion": "public-push-guard.js",
+      "evento": "PreToolUse",
+      "clase": "critico",
+      "terreno": "el texto crudo trae un `gh` que publica (pr, issue, release, api, gist, repo, label) o un `push`",
+      "fail_closed_today": [
+        { "camino": "entrada-sin-comando-con-gh", "dispara": "la entrada no trae un comando legible y su texto crudo trae un `gh` que publica" },
+        { "camino": "error-propio-con-gh-o-push", "dispara": "la revisión del comando falla por dentro y el comando trae un `gh` que publica o un `push`" },
+        { "camino": "error-en-la-salida-principal", "dispara": "un error que se escapa hasta la salida principal del modo freno: frena siempre" }
+      ],
+      "fail_closed_new": [
+        { "camino": "sin-node-en-su-terreno", "dispara": "no hay Node: el lanzador mira el texto crudo con el terreno" },
+        { "camino": "reloj-vencido-en-su-terreno", "dispara": "la revisión no contesta en su reloj propio" }
+      ],
+      "salidas_1_a_proposito": [],
+      "reloj_propio_ms": 60000,
+      "timeout_del_instalador": null,
+      "lanzador": "node-missing-launcher.sh",
+      "plataformas": { "mac": true, "linux": true, "windows": true },
+      "limites": ["en Windows no lleva el lanzador: sin Node el freno no arranca y la herramienta deja pasar", "en Codex no lleva el lanzador: sin Node el freno no arranca, como antes"]
+    }
+  ]
+}
