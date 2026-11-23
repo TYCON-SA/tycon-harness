@@ -364,6 +364,49 @@ test('T15 Fondo_SinArchivoDeSesion_LaVariableDeClaude — CLAUDE_JOB_DIR', (t) =
   assert.ok(r && r.decision === 'deny', JSON.stringify(r));
 });
 
+/** Una configuración administrada de juguete: su archivo y los de `managed-settings.d/`, con estas reglas «ask». */
+function administrada(toy, { ask = [], enCarpeta = [], copia = [] } = {}) {
+  const dir = path.join(toy.raiz, 'administrada');
+  fs.mkdirSync(path.join(dir, 'managed-settings.d'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'managed-settings.json'), JSON.stringify({ permissions: { ask } }));
+  fs.writeFileSync(path.join(dir, 'managed-settings.d', 'tycon-production.json'), JSON.stringify({ permissions: { ask: enCarpeta } }));
+  fs.writeFileSync(path.join(dir, 'managed-settings.d', 'tycon-production.json.bak-1'), JSON.stringify({ permissions: { ask: copia } }));
+  return dir;
+}
+const REGLAS_DEL_FRENO = ['Bash(az sql server firewall-rule *)', 'Edit(//**/.tycon/production.json)', 'Write(//**/.tycon/state/production-firewall.json)'];
+
+test('T28 Fondo_EdicionQuePidePermiso_SeNiegaConMotivo — fila 91', (t) => {
+  const toy = maquina(t);
+  const dir = administrada(toy, { enCarpeta: REGLAS_DEL_FRENO });
+  const catalogo = path.join(toy.raiz, 'probe', 'repos', 'b', '.tycon', 'production.json');
+  for (const [tool, tool_input] of [['Write', { file_path: catalogo, content: '{}' }], ['Edit', { file_path: catalogo, old_string: 'a', new_string: 'b' }],
+    ['MultiEdit', { file_path: catalogo, edits: [] }], ['NotebookEdit', { notebook_path: path.join(toy.casa, '.tycon', 'state', 'production-firewall.json') }]]) {
+    const r = G.decidir(evento(LANZADA, tool, tool_input), { home: toy.casa, env: {}, arnes: toy.arnes, administrada: dir });
+    assert.ok(r && r.decision === 'deny', `${tool}: ${JSON.stringify(r)}`);
+    assert.match(r.reason, /pide permiso/, tool);
+    assert.match(r.reason, /corre de fondo/, tool);
+    assert.match(r.reason, /coordinadora/, tool);
+  }
+  // en una sesión que no es de fondo, la regla pregunta como siempre
+  assert.strictEqual(G.decidir(evento(COORD, 'Write', { file_path: catalogo, content: '{}' }), { home: toy.casa, env: {}, arnes: toy.arnes, administrada: dir }), null);
+});
+
+test('T29 Fondo_EdicionSinReglaQuePregunte_Pasa — fila 91', (t) => {
+  const toy = maquina(t);
+  const catalogo = path.join(toy.raiz, 'probe', 'repos', 'b', '.tycon', 'production.json');
+  const otro = path.join(toy.raiz, 'probe', 'notas.md');
+  const conReglas = administrada(toy, { ask: ['Edit(//**/.tycon/production.json)'], copia: ['Edit(//**/notas.md)'] });
+  const d = (ruta, dir) => G.decidir(evento(LANZADA, 'Write', { file_path: ruta, content: 'x' }), { home: toy.casa, env: {}, arnes: toy.arnes, administrada: dir });
+  // la regla del archivo de la configuración administrada también cuenta
+  assert.ok(d(catalogo, conReglas), 'la regla de managed-settings.json');
+  // una ruta que ninguna regla nombra; una copia con otro final no se carga, como en Claude Code
+  assert.strictEqual(d(otro, conReglas), null);
+  // sin configuración administrada no hay nada que pregunte
+  assert.strictEqual(d(catalogo, path.join(toy.raiz, 'no-existe')), null);
+  // el interruptor
+  assert.strictEqual(G.decidir(evento(LANZADA, 'Write', { file_path: catalogo, content: 'x' }), { home: toy.casa, env: { TYCON_BG_QUESTION_GUARD: '0' }, arnes: toy.arnes, administrada: conReglas }), null);
+});
+
 test('T16 Formas_LoQueEncontroElPase — sin comillas, guiones literales, heredocs y textos largos', (t) => {
   const tmpdir = TMP;
   for (const c of ['rm -rf $(pwd)/x', 'rm -rf $(mktemp -d)', 'rm -rf `pwd`/x', 'rm -rf $(git rev-parse --show-toplevel)/dist', '\\rm -rf "$(pwd)"', 'nice rm -rf $(pwd)/x']) {

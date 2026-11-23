@@ -1125,6 +1125,30 @@ function elegir(declarado, rama, numero) {
 }
 const NO_LO_ELIJO = /no está al día con origin\/main o tiene cambios: no lo elijo por el nombre de la rama/;
 
+// Adentro de un gancho de git, o de un guion que corre otro repo, llegan GIT_DIR y GIT_WORK_TREE de ese repo: con ellos
+// `git -C <hermano>` preguntaba por el otro, y la búsqueda caía en el checkout compartido, que puede estar viejo.
+test('CompanionRepos_ConElGitDeOtroRepo_EncuentraElWorktree', () => {
+  const l = laboratorioMain();
+  const otro = repoGit(path.join(path.dirname(l.pub), 'otro'), { 'b.js': '1\n' });
+  git(otro, 'branch', 'story/9.1-x');
+  const r = spawnSync(process.execPath, ['-e', `process.stdout.write(JSON.stringify(require(${JSON.stringify(COMPANION_LIB)}).enLaMismaRama(...JSON.parse(process.argv[1]))))`,
+    JSON.stringify([l.pub, 'story/9.1-x', '9.1'])], { encoding: 'utf8', cwd: otro, env: { ...process.env, GIT_DIR: path.join(otro, '.git'), GIT_WORK_TREE: otro } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout), l.wt, r.stderr);
+  assert.doesNotMatch(r.stderr, /no pude leer la raíz git|no pude listar/);
+});
+
+// Lo que se pregunta después sobre el hermano encontrado (su nombre, su HEAD, lo que tiene sin commitear) también va sin
+// el GIT_DIR del otro repo: si no, se describe al hermano con los datos del repo de afuera.
+test('CompanionRepos_ConElGitDeOtroRepo_NombraAlHermano', () => {
+  const l = laboratorioMain();
+  const otro = repoGit(path.join(path.dirname(l.pub), 'otro'), { 'b.js': '1\n' });
+  const r = spawnSync(process.execPath, ['-e', `process.stdout.write(JSON.stringify(require(${JSON.stringify(COMPANION_LIB)}).nombreDelRepo(process.argv[1])))`,
+    l.pub], { encoding: 'utf8', cwd: otro, env: { ...process.env, GIT_DIR: path.join(otro, '.git'), GIT_WORK_TREE: otro } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout), path.basename(l.pub), r.stderr);
+});
+
 test('CompanionRepos_RamaMain_NoTomaElCompartidoSinMirar @story-8.282 @ac-18', () => {
   const casos = {
     atras: (l) => {

@@ -65,6 +65,38 @@ function renderHalfway(){const sec=document.getElementById("halfway"),k=DATA.kan
 // las esperas en sus tres grupos: van fuera de lo que se pliega, que sin nada en «Te toca» no se puede abrir
 const GRUPOS_ESPERA=[["dueno","Esperan al dueño"],["main","Esperan a main"],["sesion","Esperan a otra sesión"]];
 function renderEsperan(esperan){const e=document.getElementById("esperan");e.replaceChildren();GRUPOS_ESPERA.forEach(([k,t])=>{const l=(esperan&&esperan[k])||[];if(!l.length)return;e.appendChild(el("h3",null,t));const u=el("ul");l.forEach(x=>u.appendChild(el("li",null,x)));e.appendChild(u)});e.hidden=!e.children.length}
+// ── Lo que te necesita, sólo en la oficina local: cada cosa con qué hace falta, dónde se contesta, por qué sólo vos (su ficha,
+// si la tiene) y la opción recomendada, si alguien la anotó. Sólo una espera en texto se contesta acá, con un mensaje de la
+// oficina; una firma, un cuadro o lo del tablero dicen dónde se contestan. En el sitio no está.
+const NECESITA_CLASE={firma:"Firma",cuadro:"Cuadro",espera:"Espera",tablero:"Del tablero"};
+const descartadas=new Set();
+// cada cosa conserva su renglón mientras siga en la foto: lo que estás escribiendo y en qué va lo mandado no se pierden
+// cuando llega otra foto
+const renglonesNecesita=new Map();
+const claveNecesita=i=>i.clase+"\u0000"+(i.quien||"")+"\u0000"+i.que;
+const huellaNecesita=i=>JSON.stringify([i.donde,i.porque||"",i.recomendada||"",Boolean(LIVE)]);
+function renglonNecesita(i){const li=el("li","necesita-item");li.dataset.clase=i.clase;li.dataset.huella=huellaNecesita(i);
+  li.append(el("p","necesita-que",(NECESITA_CLASE[i.clase]||"Pendiente")+(i.quien?" · "+i.quien:"")+": "+i.que),el("p","m","Dónde se contesta: "+i.donde));
+  if(i.porque)li.append(el("p","m","Por qué sólo vos: "+i.porque));
+  li.append(el("p","m",i.recomendada?"Recomendada: "+i.recomendada:"Sin una opción recomendada anotada."));
+  if(i.clase==="espera"&&LIVE){const a=(agents||[]).find(x=>x.nombre===i.quien)||{};
+    campoMandar(i.quien,{recibe:a.recibe,motivo:null,cuadro:false},n=>li.append(n),{responde:"espera"},()=>{descartadas.add(claveNecesita(i));pintarNecesita()})}
+  else if(i.clase==="espera")li.append(el("p","m","Para contestarla desde acá, abrí la oficina viva con /office."));
+  return li}
+function pintarNecesita(){const sec=document.getElementById("necesita");if(!sec)return;
+  if(CON_OFICINAS){sec.remove();return}
+  const lista=document.getElementById("necesitaLista");sec.hidden=false;
+  const todas=(meta&&meta.teNecesita)||[];
+  const vivas=new Set(todas.map(claveNecesita));for(const k of [...descartadas])if(!vivas.has(k))descartadas.delete(k);
+  const items=todas.filter(i=>!descartadas.has(claveNecesita(i)));
+  for(const k of [...renglonesNecesita.keys()])if(!items.some(i=>claveNecesita(i)===k))renglonesNecesita.delete(k);
+  if(!items.length){lista.replaceChildren(el("li","nada","Nada te espera."));return}
+  // un renglón que cambió se arma de nuevo, salvo que tenga algo escrito: eso no se pisa
+  const escrito=li=>[...li.querySelectorAll("textarea")].some(t=>t.value.trim());
+  const orden=items.map(i=>{const k=claveNecesita(i);let li=renglonesNecesita.get(k);
+    if(!li||(li.dataset.huella!==huellaNecesita(i)&&!escrito(li))){li=renglonNecesita(i);renglonesNecesita.set(k,li)}return li});
+  const antes=[...lista.children];
+  if(antes.length!==orden.length||antes.some((n,j)=>n!==orden[j]))lista.replaceChildren(...orden)}
 // cuántas líneas del tablero vencieron: va fuera de lo que se pliega, que sin nada pendiente no se puede abrir
 function pintarAvisoToca(aviso){const p=document.getElementById("tocaAviso");p.hidden=!aviso;p.textContent=aviso||""}
 function renderTop(){
@@ -73,6 +105,7 @@ function renderTop(){
   const you=(meta&&meta.teToca)||[],ul=document.getElementById("youList");ul.replaceChildren();you.forEach(t=>ul.appendChild(el("li",null,t)));if(!you.length)ul.appendChild(el("li","nada","Nada por ahora: no hay firmas pendientes ni pedidos en el tablero."));
   renderEsperan(meta&&meta.esperan);
   pintarAvisoToca(meta&&meta.tocaAviso);
+  pintarNecesita();
   const aus=document.getElementById("ausente"),au=meta&&meta.ausente;aus.hidden=!au;aus.textContent=au?au.linea:"";
   const tr=document.getElementById("trabado"),stuck=(meta&&meta.trabado)||[];tr.hidden=!stuck.length;tr.replaceChildren();if(stuck.length){tr.appendChild(el("h2",null,"Trabado"));stuck.forEach(g=>{tr.appendChild(el("h3",null,g.titulo));const u=el("ul");(g.filas||[]).forEach(f=>u.appendChild(el("li",null,f)));tr.appendChild(u)})}
   pintarResumen(you.length,stuck.reduce((n,g)=>n+(g.filas||[]).length,0));
@@ -314,7 +347,7 @@ const ESTADO_TXT={mandado:"Mandado.",recibido:"Lo recibió."};
 const TOPE_MENSAJE=4000;
 // los mensajes de esta página que todavía no terminaron: id → { nombre, texto, campo, estado }
 const enCurso=new Map();
-function campoMandar(nombre,ofi,fin){const sec=el("div","mandar");sec.setAttribute("role","group");sec.setAttribute("aria-label","Escribirle a "+nombre);
+function campoMandar(nombre,ofi,fin,extra,descartar){const sec=el("div","mandar");sec.setAttribute("role","group");sec.setAttribute("aria-label","Escribirle a "+nombre);
   if(ofi.recibe!=="si"&&ofi.recibe!=="espera-cierre"){sec.append(el("p","m noRecibe",ofi.motivo||"Esta sesión no puede recibir mensajes de la oficina."));fin(sec);return}
   const campo=document.createElement("textarea"),boton=el("button","verCharla","Mandar"),estado=el("p","m estadoMensaje");
   campo.rows=3;campo.setAttribute("aria-label","Mensaje para "+nombre);boton.type="button";estado.setAttribute("role","status");
@@ -323,12 +356,13 @@ function campoMandar(nombre,ofi,fin){const sec=el("div","mandar");sec.setAttribu
     if(!texto.trim()){estado.textContent="El mensaje está vacío.";return}
     if(Array.from(texto).length>TOPE_MENSAJE){estado.textContent="El mensaje pasa de "+TOPE_MENSAJE+" caracteres.";return}
     boton.disabled=true;
-    fetch("mensaje?t="+encodeURIComponent(LIVE.token),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({s:nombre,texto,igual:Boolean(igual)})})
+    fetch("mensaje?t="+encodeURIComponent(LIVE.token),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({s:nombre,texto,igual:Boolean(igual),...(extra||{})})})
       .then(r=>r.json().catch(()=>({})).then(j=>({ok:r.ok,j})))
       .then(({ok,j})=>{boton.disabled=false;
         if(ok&&j.id){campo.value="";enCurso.set(j.id,{nombre,texto,campo,estado});estado.textContent=j.motivo||(j.cuadro?CUADRO_TXT:ESTADO_TXT.mandado);if(window.tablero.avion)window.tablero.avion(nombre);
           const antes=tempranos.get(j.id);if(antes){tempranos.delete(j.id);alMensaje(antes)}return}
         if(j.parece==="aprobacion"){const igualB=el("button","mas","Mandar igual");igualB.type="button";igualB.onclick=()=>mandar(true);estado.replaceChildren(document.createTextNode(j.motivo+" "),igualB);return}
+        if(j.cerrada&&descartar){const b=el("button","mas","Descartar");b.type="button";b.onclick=descartar;estado.replaceChildren(document.createTextNode(j.motivo+" "),b);return}
         estado.textContent=j.motivo||"No se pudo mandar."})
       .catch(()=>{boton.disabled=false;estado.textContent="No se pudo mandar."})};
   boton.onclick=()=>mandar(false);

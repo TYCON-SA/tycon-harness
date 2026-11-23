@@ -4001,12 +4001,12 @@ test('8.88 T51 · Site_Approvals_DelegatedSigningSelector_DefaultOff @story-8.88
   assert.ok(sel, 'hay un selector de firma delegada');
   assert.deepStrictEqual(p.todo(sel).filter((n) => n.tag === 'option').map((n) => n.attrs.value), ['', 'delegada', 'dueno']);
   assert.strictEqual(sel.attrs.value || '', '', 'de fábrica, apagada');
-  assert.match(p.textoDe('aprobaciones'), /Aflojar un control siempre lo firma una persona, en su terminal; esto no lo cambia\./);
+  assert.match(p.textoDe('aprobaciones'), /Aflojar un control siempre lo aprueba una persona, con un click o en su terminal, y la emergencia sólo en su terminal: no se delega\./);
   const rev = ORG.revisar({ seccion: 'aprobaciones', texto: ORG.formatJson(PERFIL_TYCON), borrador: { approvals: { relay_session: 'coordinadora', delegated_signing: 'refresh-after-main' } }, lectores: { 'harness-config': TC } });
   assert.strictEqual(rev.ok, true, JSON.stringify(rev.problems));
   const prendida = await pantallaFalsa([seccionPerfil('aprobaciones', { approvals: { relay_session: 'coordinadora', delegated_signing: 'refresh-after-main' } })]);
   assert.match(prendida.textoDe('aprobaciones'), /vuelve a firmar en nombre del dueño un pull request que él ya firmó, cuando lo único nuevo es que se trajo main/);
-  assert.match(prendida.textoDe('aprobaciones'), /Aflojar un control siempre lo firma una persona/);
+  assert.match(prendida.textoDe('aprobaciones'), /Aflojar un control siempre lo aprueba una persona/);
 });
 
 test('8.88 T52 · Site_Approvals_WarnsWhenNoRelaySession @story-8.88 @ac-29', async () => {
@@ -4251,14 +4251,14 @@ test('8.88 T53 · Site_Texts_EsAndEn @story-8.88 @ac-30', () => {
     assert.ok(es && en && es !== k && en !== k, `${k} existe en las dos lenguas`);
     assert.notStrictEqual(es, en, `${k} está traducida`);
   }
-  assert.match(textos.t('en', 'pantalla.firmaDelegadaAviso'), /signed by a person, at their terminal/);
+  assert.match(textos.t('en', 'pantalla.firmaDelegadaAviso'), /approved by a person, with a click or at their terminal/);
 });
 
 test('8.88 T54 · Guide_OrganizationSite_DescribesBothOptions @story-8.88 @ac-30', () => {
   const es = fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.md'), 'utf8');
   const en = fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.en.md'), 'utf8');
-  for (const [guia, frases] of [[es, ['Cómo se actualiza el freno de producción', 'guard.update', 'approvals.delegated_signing', 'Aflojar un control siempre lo firma una persona', 'de fábrica']],
-    [en, ['How the production guard updates', 'guard.update', 'approvals.delegated_signing', 'Loosening a control is always signed by a person', 'default']]]) {
+  for (const [guia, frases] of [[es, ['Cómo se actualiza el freno de producción', 'guard.update', 'approvals.delegated_signing', 'Aflojar un control siempre lo aprueba una persona', 'de fábrica']],
+    [en, ['How the production guard updates', 'guard.update', 'approvals.delegated_signing', 'Loosening a control is always approved by a person', 'default']]]) {
     for (const f of frases) assert.ok(guia.includes(f), `la guía dice «${f}»`);
   }
   assert.match(es, /un freno publicado más flojo llega/);
@@ -7157,4 +7157,26 @@ test('T24 SiteAccess_NoAdministrador_SinBotones @story-8.234 @ac-24 — una pers
     const w = await escribir('/api/config/revisar', dev, tok, { seccion: 'personas', borrador: { accion: 'not_team', maquina: 'maq-x', people: {} } });
     assert.strictEqual(w.status, 403);
   });
+});
+
+// 🔴 Falla con: el sitio o su guía mandando a la terminal el cambio de un control, que ya se aprueba con un click; o
+// prometiendo el click para la emergencia, que sigue sólo en la terminal; o sin decir que no se delega.
+test('8.176-Textos_ConUnClickOEnSuTerminal @story-8.176 @ac-7', () => {
+  const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const guias = { es: fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.md'), 'utf8'),
+    en: fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.en.md'), 'utf8') };
+  const espera = {
+    es: { click: /con un click o en su terminal/, sola: /emergencia[^.]*sólo en su terminal/, noDelega: /no se delega/ },
+    en: { click: /with a click or at their terminal/, sola: /emergency[^.]*only at their terminal/, noDelega: /not delegated/ },
+  };
+  for (const lengua of ['es', 'en']) {
+    for (const clave of ['pantalla.firmaDelegadaAviso', 'pantalla.firmasNivel3Frase']) {
+      const t = textos.t(lengua, clave);
+      for (const [que, re] of Object.entries(espera[lengua])) assert.match(t, re, `${clave} (${lengua}): ${que}`);
+    }
+    const aviso = textos.t(lengua, 'pantalla.firmaDelegadaAviso');
+    assert.ok(guias[lengua].replace(/\s+/g, ' ').includes(aviso), `la guía (${lengua}) copia el aviso tal cual: ${aviso}`);
+  }
+  assert.ok(!/en su terminal; esto no lo cambia/.test(guias.es + textos.t('es', 'pantalla.firmaDelegadaAviso')), 'el aviso viejo ya no está');
+  assert.ok(!/at their terminal; this does not change that/.test(guias.en + textos.t('en', 'pantalla.firmaDelegadaAviso')), 'ni en inglés');
 });

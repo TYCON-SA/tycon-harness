@@ -350,7 +350,7 @@ function LOOSE_TOKENS() {
 }
 
 test('T1 Foto_LaMismaQueLaOficinaLocal: viaja sólo lo que lee la página; la lista y la página se cruzan', () => {
-  const { pick, FIELDS } = fields();
+  const { pick, FIELDS, LOCAL_ONLY } = fields();
   const foto = richFoto();
   const src = fs.readFileSync(PAGE, 'utf8');
   const readBy = (vars, text = src) => (k) => new RegExp(`\\b(?:${vars})\\.${k}\\b`).test(text);
@@ -389,7 +389,8 @@ test('T1 Foto_LaMismaQueLaOficinaLocal: viaja sólo lo que lee la página; la li
   for (const [name, record, listed, isRead] of sections) {
     for (const k of Object.keys(record)) {
       seen.push(k);
-      assert.strictEqual(k in listed, isRead(k), `${name}.${k}: la lista y lo que lee la página no coinciden`);
+      // lo que la página lee y es sólo de la oficina local (LOCAL_ONLY, con su motivo) no viaja
+      assert.strictEqual(k in listed, isRead(k) && !(`${name}.${k}` in LOCAL_ONLY), `${name}.${k}: la lista y lo que lee la página no coinciden`);
     }
     for (const k of Object.keys(listed)) {
       assert.ok(isRead(k), `${name}.${k} está en la lista y la página no lo lee`);
@@ -2488,6 +2489,17 @@ test('Candado_RespuestaCortada_NoQuedaColgada — el puerto del candado manda la
     assert.strictEqual(await conPlazo(lockOwner(lock, 1000)), 'foreign');
     assert.strictEqual(await conPlazo(answers(lock)), false);
   } finally { cortador.close(); }
+});
+
+test('T352 SiteLink_LoQueTeNecesita_NoViajaAlSitio @story-8.234 @ac-40: lo que te necesita no viaja al sitio, y en el sitio la página no tiene la sección', () => {
+  const { pick } = fields();
+  const foto = { agents: [], items: [], kanban: { columnas: [] }, rows: [], free: [], unreadable: [], meta: { actualizado: '10:00', teToca: [], teNecesita: [{ clase: 'espera', que: 'la decisión del dueño', quien: 'Enzo', donde: 'acá' }] } };
+  const sale = pick(foto, '/home/prueba');
+  assert.ok(!('teNecesita' in (sale.meta || {})), JSON.stringify(sale.meta));
+  assert.ok(!JSON.stringify(sale).includes('la decisión del dueño'));
+  // la página la saca en el sitio (y en la demostración): ni la sección ni su título
+  const code = fs.readFileSync(path.join(ROOT, 'scripts', 'tools', 'office', 'page.js'), 'utf8');
+  assert.match(code, /function pintarNecesita\(\)\{[^\n]*\n\s*if\(CON_OFICINAS\)\{sec\.remove\(\);return\}/);
 });
 
 test('T342 Foto_TurnoPesadoViajaAlSitio_Filtrado @story-8.234 @ac-19 — el turno de tarea pesada viaja con el nombre y las suites enteras, y el sitio lo vuelve a filtrar', () => {
