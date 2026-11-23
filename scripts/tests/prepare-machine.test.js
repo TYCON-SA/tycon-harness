@@ -234,6 +234,29 @@ test('8.187 T9c Preparar_ImportsRechazados_NoLosPidePorSiempre @story-8.187 @ac-
   assert.match(text(r), /rechazaste/);
 });
 
+test('F159 T1 Preparar_PrincipalAprobada_NoPrometeLasCopias: con la principal aprobada dice «lista», pero no da por aprobadas sus copias ni sus puestos: avisa que no lo sabe y cómo aprobarlos', () => {
+  // fila 159: con Claude Code 2.1.330 cada copia o puesto se aprueba aparte, aunque la principal lo esté
+  const t = toy();
+  const a = repo(t, 'a');
+  fs.writeFileSync(path.join(t.home, '.claude.json'), JSON.stringify(trusted(a)));
+  const r = PM.check({ ...t.opts, repos: [a] });
+  assert.strictEqual(r.code, 0, text(r));
+  const out = text(r);
+  assert.match(out, /\blista\b/);
+  const nota = r.items.find((i) => i.ok === 'nota');
+  assert.ok(nota, out);
+  assert.match(nota.text, /copias/);
+  assert.match(nota.text, /puestos/);
+  assert.match(nota.text, /no sé/);
+  assert.match(nota.text, /claude/);
+  assert.doesNotMatch(out, /arrancan sin pedir|todos aprobados/);
+  // con la principal sin aprobar, lo que falta es la principal: la nota de las copias no hace falta
+  const t2 = toy();
+  const b = repo(t2, 'b');
+  const r2 = PM.check({ ...t2.opts, repos: [b] });
+  assert.strictEqual(r2.items.filter((i) => i.ok === 'nota').length, 0, text(r2));
+});
+
 test('8.187 T15b Preparar_LoQueNoPudoMirar_NoEsLoQueFalta @story-8.187 @ac-13: un aviso del freno de «no pude» y un CLAUDE.md ilegible salen como «no pude mirar» (2); los renglones de continuación van con su aviso', { skip: process.platform === 'win32' ? 'permisos POSIX' : false }, () => {
   const t = toy({ prod: { viejo: false, avisos: ['🔴 el FRENO de producción no está instalado', '   Instalalo (pide tu contraseña del Mac, una vez): open x'] } });
   const r = PM.check({ ...t.opts, repos: [] });
