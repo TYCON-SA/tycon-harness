@@ -338,6 +338,23 @@ test('T47 FilesToModify_SoloEnElRemoto_NoFrena: un clon atrasado no hace inventa
   assert.match(r.out, /al día/);
 });
 
+// 🔴 Falla con: la consulta a la rama principal del remoto con la ruta tal como la escribe la historia, con el nombre
+// del repo adelante («Backend/src/…»): dentro del repo hermano esa ruta no existe, y un clon atrasado frena el commit de
+// una historia cuyo archivo ya está en su rama principal.
+test('T50 FilesToModify_ConElRepoAdelante_SoloEnElRemoto_NoFrena: la ruta con el nombre del repo se busca dentro de ese repo', () => {
+  const { prod, proj } = productoConCodigo();
+  hermanoConArchivoSoloEnElRemoto(prod);
+  const f = story(proj, 'specs/story-6.5-cbu-del-gestor.md', HISTORIA_65(['Backend/src/AcmeBackend/Features/Nuevo/NuevoService.cs']));
+  const r = run([f], proj);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /al día/);
+  // la misma ruta con el nombre del repo, sin el archivo en ningún lado: sigue siendo inventada
+  const g = story(proj, 'specs/story-6.6-otra.md', HISTORIA_65(['Backend/src/AcmeBackend/Features/Nuevo/Inventado.cs']).map((l) => l.replace('"6.5"', '"6.6"')));
+  const s = run([g], proj);
+  assert.notStrictEqual(s.code, 0, s.out);
+  assert.match(s.out, /Inventado\.cs/);
+});
+
 // 🔴 Falla con: la consulta a un repo hermano hereda el GIT_DIR que git le pone al gancho de un commit. Esa variable le
 // gana a `-C`: se le pregunta al repo del commit, y un archivo que está en la rama principal del hermano se da por
 // inventado; o al revés, el repo del commit contesta por un hermano que no tiene el archivo.
@@ -702,4 +719,39 @@ test('AjustesDespuesDeLaFirma_SinPasar_FrenanElDone', (t) => {
     con(estado, '- [ ] todavía no\n');
     assert.notStrictEqual(lint().code, 0, `status: ${estado}`);
   }
+});
+
+// 🔴 Falla con: el nombre del repo comparado distinguiendo mayúsculas. «backend/src/…» con el repo «Backend» y el archivo
+// sólo en su rama principal frenaba el commit en macOS (pase adversarial del #1425).
+test('T51 FilesToModify_RepoEnMinusculas_SoloEnElRemoto_NoFrena: el nombre del repo sin distinguir mayúsculas', { skip: process.platform === 'linux' && 'en Linux la carpeta en minúsculas no existe: sólo avisa' }, () => {
+  const { prod, proj } = productoConCodigo();
+  hermanoConArchivoSoloEnElRemoto(prod);
+  const f = story(proj, 'specs/story-6.5-cbu-del-gestor.md', HISTORIA_65(['backend/src/AcmeBackend/Features/Nuevo/NuevoService.cs']));
+  const r = run([f], proj);
+  assert.strictEqual(r.code, 0, r.out);
+});
+
+// 🔴 Falla con: la consulta a la rama principal del remoto sin tope total. Cada llamada a git tenía 5 s, y una historia
+// con varias rutas inventadas, con git colgado, hacía esperar el commit minutos.
+test('T52 FilesToModify_GitColgado_ElRespaldoTieneTopeTotal: con git colgado, el lint termina y no da nada por inventado', () => {
+  const { prod, proj } = productoConCodigo();
+  hermanoConArchivoSoloEnElRemoto(prod);
+  // un git que contesta todo salvo la consulta a la rama principal, que se cuelga
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'lint-git-colgado-'));
+  const real = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+  fs.writeFileSync(path.join(bin, 'git'), `#!/bin/sh\ncase "$*" in *ls-tree*) exec sleep 60 ;; esac\nexec ${real} "$@"\n`);
+  fs.chmodSync(path.join(bin, 'git'), 0o755);
+  const inventadas = ['A', 'B', 'C', 'D', 'E', 'F'].map((n) => `Backend/src/AcmeBackend/Features/Nuevo/${n}.cs`);
+  const f = story(proj, 'specs/story-6.5-cbu-del-gestor.md', HISTORIA_65(inventadas));
+  // stable-data: mide cuánto tarda el lint, no es una fecha que la prueba compare
+  const desde = Date.now();
+  let r;
+  try {
+    r = { code: 0, out: execFileSync('node', [LINT, f], { cwd: proj, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 40000, env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } }) };
+  } catch (e) { r = { code: e.status ?? 1, out: `${e.stdout || ''}${e.stderr || ''}`, signal: e.signal }; }
+  const tardo = Date.now() - desde;
+  assert.ok(!r.signal, `el lint no terminó en 40 s con git colgado (${tardo} ms)`);
+  assert.ok(tardo < 20000, `el respaldo no tiene tope total: tardó ${tardo} ms`);
+  // lo que no se pudo mirar no se da por inventado
+  assert.strictEqual(r.code, 0, r.out);
 });

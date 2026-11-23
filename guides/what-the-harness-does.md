@@ -422,7 +422,7 @@ Cada edición de archivo pasa por una cadena de seis frenos, en este orden:
 
 | El freno | Qué impide | (script) |
 |---|---|---|
-| **el portón de carril** | tocar código sin una historia ni un carril de camino rápido | `on-story-gate` |
+| **el portón de carril** | tocar código sin una historia ni un carril de camino rápido; con una historia abierta, se edita el repo de la historia, el de su archivo y sus hermanos de `repo_group`, y nada más (por ahora el resto pasa y queda anotado) | `on-story-gate` |
 | **el que no te deja fabricar la evidencia** | inventar la prueba que después desbloquea el cierre de la story | `on-dod-evidence-guard` |
 | **el que custodia el "listo"** | marcar una story como terminada sin cumplir el listado de cierre | `on-frontmatter-write` |
 | **el que exige el test primero** | escribir el primer archivo de código antes que su test | `on-atdd-preedit` |

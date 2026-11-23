@@ -95,10 +95,11 @@ function patronesDeCarpeta() {
   carpetasDeTrabajo = [
     /--wt-/i,
     new RegExp(`${INICIO_DE_SEGMENTO}${deClaude}[\\\\/]worktrees[\\\\/]`, 'i'),
-    new RegExp(`${INICIO_DE_SEGMENTO}${deClaude}[\\\\/]jobs[\\\\/]`, 'i'),
+    new RegExp(`${INICIO_DE_SEGMENTO}${deClaude}[\\\\/](?:jobs(?:[\\\\/]|$)|jo?b?$)`, 'i'),
     /\$\{?CLAUDE_JOB_DIR\b/,
     new RegExp(`${INICIO_DE_PALABRA}(?:(?:/private)?/tmp(?:/|[\\s"'\\x60;|)>]|$)|(?:/private)?/var/folders/|\\$\\{?TMPDIR\\b)`, 'i'),
     new RegExp(`${INICIO_DE_SEGMENTO}AppData[\\\\/]Local[\\\\/]Temp(?:[\\\\/\\s]|$)`, 'i'),
+    /\$\{?env:(?:TEMP|TMP)\b|%(?:TEMP|TMP)%|\$\{?env:LOCALAPPDATA\}?[\\/]Temp(?:[\\/\s"']|$)/i,
     new RegExp(`${INICIO_DE_SEGMENTO}\\.tycon[\\\\/]state[\\\\/]`, 'i'),
     new RegExp(`${INICIO_DE_SEGMENTO}\\.advisors[\\\\/]`, 'i'),
   ];
@@ -128,7 +129,7 @@ function motivoDeRuido({ repo, summary }) {
   const resumen = String(summary || '').slice(0, 60).trim();
   if (!resumen) return 'conteo_sin_leccion';
   if (patronesDeCarpeta().some((re) => re.test(String(repo || '')) || re.test(resumen))) return 'carpeta_de_trabajo';
-  return RUTA_DE_UNA_MAQUINA.test(resumen) ? 'ruta_de_una_maquina' : null;
+  return RUTA_DE_UNA_MAQUINA.test(String(repo || '')) || RUTA_DE_UNA_MAQUINA.test(resumen) ? 'ruta_de_una_maquina' : null;
 }
 
 /** El repo se guarda como ruta relativa: un proyecto se reconoce por su último segmento, sin el sufijo de una copia de trabajo. */
@@ -231,7 +232,9 @@ async function recomendarPendientes({ pendientes, anteriores, proyectos, noche, 
   if (listo) cola.slice(TOPE_RECOMENDAR).forEach((x) => sin(x, 'tope'));
   for (let i = 0; i < entran.length; i += TANDA) {
     const tanda = entran.slice(i, i + TANDA);
-    const r = await llamar({ prompt: promptDeRecomendacion(tanda.map((x) => x.p)), nightly: noche, env });
+    // las propuestas guardadas se escribieron con el saneado de su noche: se vuelven a sanear antes de ir al modelo
+    const limpia = (p) => ({ ...p, patron: limpio(p.patron), repo: limpio(p.repo), redaccion: Object.fromEntries(Object.entries(p.redaccion || {}).map(([k, v]) => [k, typeof v === 'string' ? limpio(v) : v])) });
+    const r = await llamar({ prompt: promptDeRecomendacion(tanda.map((x) => limpia(x.p))), nightly: noche, env });
     // con el modelo caído no se le sigue pidiendo esa noche
     if (!r || !r.ok) { fallo((r && r.fallo) || 'red'); entran.slice(i).forEach((x) => sin(x, 'fallo')); break; }
     sumar(r.tokens);
@@ -325,7 +328,9 @@ function leerEspejo(espejo, hoy) {
         try { l = JSON.parse(cruda); } catch (_) { r.ilegibles++; continue; }
         if (!l || typeof l !== 'object') { r.ilegibles++; continue; }
         if (!l.repo || typeof l.repo !== 'string') { r.sin_repo++; continue; }
-        r.lineas.push({ maquina: m, dia, repo: l.repo, tool: String(l.tool || ''), summary: l.summary == null ? '' : String(l.summary), ts: l.ts, status: l.status });
+        // el resumen pasa por el saneado antes de todo: la clave del grupo, el patrón y lo que va al modelo salen de él
+        // cortado y en minúscula, y un día subido antes de un arreglo del saneado puede traer un secreto
+        r.lineas.push({ maquina: m, dia, repo: l.repo, tool: String(l.tool || ''), summary: l.summary == null ? '' : sanitize(String(l.summary), null), ts: l.ts, status: l.status });
       }
     }
   }
@@ -357,7 +362,8 @@ function respuestaVacia(texto) {
 }
 
 /** El candidato en la forma que leen `buildPrompt` y la revisión del observador. */
-const paraElModelo = (c) => ({ key: c.clave, count: c.veces, items: c.items.map((l) => ({ ts: l.ts, status: l.status, summary: l.summary })) });
+// la clave y los resúmenes vienen de líneas ya saneadas al leerlas; se vuelven a pasar por si alguien llama con otras
+const paraElModelo = (c, limpio) => ({ key: limpio(c.clave), count: c.veces, items: c.items.map((l) => ({ ts: l.ts, status: l.status, summary: limpio(l.summary) })) });
 
 function escribirJson(archivo, datos) {
   fs.mkdirSync(path.dirname(archivo), { recursive: true });
@@ -506,7 +512,7 @@ async function correrNoche(opts) {
   const fallo = (codigo) => { fallos[codigo] = (fallos[codigo] || 0) + 1; };
   for (let i = 0; i < aRedactar.length; i += TANDA) {
     const tanda = aRedactar.slice(i, i + TANDA);
-    const r = await llamar({ prompt: O.buildPrompt(tanda.map(paraElModelo), espejo.lineas.length, { proyectosConReglas: proyectos.nombres || undefined }), nightly: noche, env });
+    const r = await llamar({ prompt: O.buildPrompt(tanda.map((c) => paraElModelo(c, limpio)), espejo.lineas.length, { proyectosConReglas: proyectos.nombres || undefined }), nightly: noche, env });
     if (!r || !r.ok) { fallo((r && r.fallo) || 'red'); for (const c of tanda) resultado.set(c.huella, { tipo: 'sin', causa: 'fallo' }); continue; }
     sumar(r.tokens);
     const texto = String(r.texto || '');
@@ -538,7 +544,7 @@ async function correrNoche(opts) {
   // una sola revisión contra lo ya decidido y el catálogo del arnés; si falla o no se entiende, lo propuesto sigue
   if (aceptadas.length) {
     const insts = aceptadas.map((a, k) => ({ ...a.inst, candidate_index: k + 1 }));
-    const rev = O.promptDeRevision(insts, aceptadas.map((a) => paraElModelo(a.c)), noche.provider, { lugares, propuestas: dirPropuestas });
+    const rev = O.promptDeRevision(insts, aceptadas.map((a) => paraElModelo(a.c, limpio)), noche.provider, { lugares, propuestas: dirPropuestas });
     informe.revision = rev.prompt ? 'fallo' : 'sin_revision';
     if (rev.prompt) {
       const r = await llamar({ prompt: rev.prompt, nightly: noche, env });

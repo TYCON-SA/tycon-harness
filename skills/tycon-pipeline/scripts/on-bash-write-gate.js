@@ -484,7 +484,8 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
     // Anclados al INICIO del segmento: `grep -i "sed" src/a.ts` no es un sed -i.
     const head = seg.trim().replace(/^(?:\w+=\S+\s+)*(?:sudo\s+)?/, '');
     const isSedI = /^sed\b/.test(head) && /(^|\s)(-i\b|-[a-zA-Z]*i[a-zA-Z]*\b(?=\s)|--in-place)/.test(head);
-    const isPerlI = /^perl\b/.test(head) && /(^|\s)-[a-zA-Z]*i\S*(\s|$)/.test(head);
+    // (con el separador de registro en el mismo grupo: `-0pi`, `-0777pi`)
+    const isPerlI = /^perl\b/.test(head) && /(^|\s)-[a-zA-Z0-9]*i\S*(\s|$)/.test(head);
     if (isSedI || isPerlI) {
       const words = seg.match(new RegExp(Q, 'g')) || [];
       // el nombre del comando y, si no hay -e / -f, la expresión (el primer argumento) no son archivos: `keep` no los mira
@@ -617,6 +618,13 @@ const CORRE_ARCHIVO = /^(?:node|nodejs|python[0-9.]*|perl|ruby|bun|deno|tsx|ts-n
 // lo que el guion escribe se lee entero hasta este tamaño; más grande, cuenta si nombra una historia o una constancia
 const GUION_TOPE = 256 * 1024;
 const GUION_TOPE_DURO = 64 * 1024 * 1024;
+// el recorrido de los módulos locales: lo medido sobre los despachadores sin partir (marker.js, 127 módulos en 14
+// niveles) por dos. Lo que queda más allá no se corta callado: se juzga como un guion que no se lee entero
+const RECORRIDO_NIVELES = 28;
+const RECORRIDO_ARCHIVOS = 254;
+// lo que un comando puede hacerle leer al freno entre todos sus guiones y módulos (lo medido en los despachadores son
+// unos 3 MB): el freno corre antes de cada comando, y un guion armado a propósito no le agota la memoria
+const RECORRIDO_BYTES = 2 * GUION_TOPE_DURO;
 const ESCANEO_REINTENTO_MS = 3000;
 const CORCHETE_TOPE = 64;
 const CLASES_POSIX = {
@@ -823,12 +831,21 @@ function sinContinuaciones(cmd) {
  * módulos locales que importa. Un guion de la instalación del arnés no cuenta, por la ruta real ya resuelta: el
  * orquestador escribe historias. Un guion que un tramo sólo nombra tampoco (`tramoQueSoloNombra`).
  */
+// el comienzo de un archivo, sin leerlo entero: un ejecutable puede ser enorme y su línea `#!` no pide más
+function comienzoDe(real, bytes) {
+  const fd = fs.openSync(real, 'r');
+  try {
+    const buf = Buffer.alloc(bytes);
+    return buf.toString('utf8', 0, fs.readSync(fd, buf, 0, bytes, 0));
+  } finally { fs.closeSync(fd); }
+}
+
 function rutaRealDelGuion(valor, base) {
   const crudo = valor.startsWith('~/') ? os.homedir() + valor.slice(1) : path.isAbsolute(valor) ? valor : `${base}${path.sep}${valor}`;
   try { return fs.realpathSync.native(crudo); } catch { return null; }
 }
 
-function guionesEnArchivo(cmd, bases, instalados = []) {
+function guionesEnArchivo(cmd, bases, instalados = [], topeDeLectura = RECORRIDO_BYTES) {
   const out = [];
   const vistos = new Set();
   const escritos = heredocs(cmd).filter((h) => h.target);
@@ -844,30 +861,67 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
   // lo que git contestó, por esta llamada: un módulo que importan varios se pregunta una vez
   const memo = { porRuta: new Map() };
   const instalado = (real) => instalados.some((r) => isInsideReal(r, real)) || versionadoEnElArbolPropio(real, memo);
-  const leer = (real) => {
+  // cada archivo se lee una vez, y entre todos no pasan del tope: el que lo pasaría no se lee, y desde ahí no se lee
+  // más. Lo que falta cuenta como un guion que no se pudo leer
+  const lecturas = new Map();
+  let gastado = 0;
+  let agotado = false;
+  const sinLugar = (real) => {
+    if (!agotado) out.push({ interprete: '', archivo: real, texto: '', argv: [], grande: true });
+    agotado = true;
+    return { texto: '', grande: true };
+  };
+  const leerDelDisco = (real) => {
     try {
       const st = fs.statSync(real);
       if (!st.isFile()) return null;
       if (st.size > GUION_TOPE_DURO) return { texto: '', grande: true };
+      const costo = Math.max(st.size, 4096);
+      if (agotado || gastado + costo > topeDeLectura) return sinLugar(real);
+      gastado += costo;
       const texto = fs.readFileSync(real, 'utf8').replace(/\u0000/g, ' ');
       return { texto, grande: st.size > GUION_TOPE };
     } catch { return null; }
   };
-  // el guion y los módulos locales que importa, hasta dos niveles y veinte archivos; uno del arnés no se revisa, pero
-  // lo que importa pasa la misma prueba. El tope es de los módulos, y los del arnés llevan la cuenta aparte: no le comen
-  // el lugar a lo que corre después. Un guion nombrado en el comando se mira siempre
+  const leer = (real) => {
+    if (!lecturas.has(real)) lecturas.set(real, leerDelDisco(real));
+    return lecturas.get(real);
+  };
+  // el guion y los módulos locales que importa, hasta RECORRIDO_NIVELES niveles y RECORRIDO_ARCHIVOS archivos; uno del
+  // arnés no se revisa, pero lo que importa pasa la misma prueba. El tope es de los módulos, y los del arnés llevan la
+  // cuenta aparte: no le comen el lugar a lo que corre después. Un guion nombrado en el comando se mira siempre. Lo que
+  // el tope deja afuera cuenta como grande: frena si no se pudo leer, o si escribe y nombra una historia o una constancia.
+  // Lo que carga un módulo de afuera también queda afuera, hasta agotarlo (`vistos` termina el recorrido): cortar ahí
+  // dejaría pasar al que escribe un nivel más abajo
   const modulos = { exentos: 0, revisados: 0 };
+  const afuera = (interprete, real, leido, argv) => {
+    const pendientes = [];
+    const anotar = (archivo, l) => {
+      vistos.add(archivo);
+      if (!instalado(archivo)) out.push({ interprete, archivo, texto: l ? l.texto : '', argv, grande: true });
+      if (l) pendientes.push([archivo, l]);
+    };
+    if (!vistos.has(real)) anotar(real, leido);
+    while (pendientes.length) {
+      const [archivo, l] = pendientes.pop();
+      for (const m of importsLocales(familiaDe(interprete), l.texto, path.dirname(archivo))) {
+        const r = rutaReal(m, path.dirname(archivo));
+        if (r && !vistos.has(r)) anotar(r, leer(r));
+      }
+    }
+  };
   const agregar = (interprete, real, leido, argv, hondo = 0, exento = false) => {
     if (vistos.has(real)) return;
     const cuenta = exento ? 'exentos' : 'revisados';
-    if (hondo > 0 && modulos[cuenta]++ >= 20) return;
+    if (hondo > 0 && modulos[cuenta]++ >= RECORRIDO_ARCHIVOS) { afuera(interprete, real, leido, argv); return; }
     vistos.add(real);
     if (!exento) out.push({ interprete, archivo: real, texto: leido.texto, argv, grande: leido.grande });
-    if (hondo >= 2 || (leido.grande && !exento)) return;
+    if (leido.grande && !exento) return;
     for (const m of importsLocales(familiaDe(interprete), leido.texto, path.dirname(real))) {
       const r = rutaReal(m, path.dirname(real));
       if (!r) continue;
       const l = leer(r);
+      if (hondo >= RECORRIDO_NIVELES) { afuera(interprete, r, l, argv); continue; }
       if (l) agregar(interprete, r, l, argv, hondo + 1, instalado(r));
     }
   };
@@ -911,7 +965,7 @@ function guionesEnArchivo(cmd, bases, instalados = []) {
         try {
           const st = fs.statSync(real);
           if (!st.isFile() || !(st.mode & 0o111)) break;
-          const linea = fs.readFileSync(real, 'utf8').slice(0, 200).split('\n')[0];
+          const linea = comienzoDe(real, 200).split('\n')[0];
           // `#!/usr/bin/python3` · `#!/usr/bin/env -S python3 -u`: con `env`, el intérprete es su primera palabra
           const partes = linea.startsWith('#!') ? linea.slice(2).trim().split(/\s+/) : [];
           const interprete = nombreDeComando(partes[0]) === 'env'
@@ -979,7 +1033,7 @@ function importsLocales(familia, texto, dir) {
       out.push(m[2], ...['.js', '.cjs', '.mjs', '.ts', '/index.js'].map((e) => m[2] + e));
     }
   }
-  return out.filter((r) => { try { return fs.statSync(path.join(dir, r)).isFile(); } catch { return false; } });
+  return [...new Set(out)].filter((r) => { try { return fs.statSync(path.join(dir, r)).isFile(); } catch { return false; } });
 }
 
 /**
@@ -2131,7 +2185,11 @@ function zonaTocada(cmd, cwd, stateDir, { carpeta, nombres, pieza, enTexto = nul
     return false;
   };
   const out = [];
+  // una palabra repetida contesta lo mismo: se mira una vez, y una tira de `!|` no resuelve la misma ruta miles de veces
+  const vistas = new Set();
   for (const w of palabrasProfundas(cmd)) {
+    if (vistas.has(w)) continue;
+    vistas.add(w);
     // `enTexto`: la zona dice cómo se la nombra; el nombre suelto de la carpeta del estado no habla de ella
     if (porTexto && (enTexto ? enTexto(w) : nombraPorTexto(w))) { out.push(w); continue; }
     if (/\s/.test(w)) continue;
@@ -2360,7 +2418,7 @@ function movidosFueraDeMd(cmd) {
  * cuentan: lo que no se ve no pasa. Las escrituras comunes (`>`, `tee`, `node -e`) las ve `extractWriteTargets`.
  * Casos: scripts/controls-bench/cases/hooks/01-frenos-duros.json
  */
-function constanciasTocadas(cmd, cwd, stateDir = null) {
+function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
   // las constancias firmadas: las de cambio de control, la del salteo del pase adversarial y el registro del arnés
   // (`gates.log`), que lleva el renglón de la firma del salteo
   const { signedRecordKind } = require('./lib/story-gate.js');
@@ -2378,8 +2436,14 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
     return reales.some((r) => registros.some((g) => r === path.dirname(g)) || path.basename(path.dirname(r)) === 'pipeline-runs');
   };
   let base = cwd;
-  const abs = (raw) => resolveTarget(expandirRuta(cmd, raw).valor, base, process.platform, { homeVariable: true });
-  const es = (raw) => isControlApproval(String(raw)) || isControlApproval(abs(raw));
+  // con un `cd` que no se puede resolver (`cd "$X"`), una ruta relativa que nombra la carpeta o el archivo de las
+  // constancias puede caer en ellas: cuenta como una
+  let cdSinResolver = false;
+  // `$PWD`, `${PWD}` y `$(pwd)` son la carpeta que se está mirando (la de un `cd`, no la de partida)
+  const conPwd = (raw) => String(raw).replace(/\$\{PWD\}|\$PWD(?!\w)|\$\(pwd\)|`pwd`/g, () => base);
+  const abs = (raw) => resolveTarget(expandirRuta(cmd, conPwd(raw)).valor, base, process.platform, { homeVariable: true });
+  const es = (raw) => isControlApproval(String(raw)) || isControlApproval(abs(raw))
+    || (cdSinResolver && !path.isAbsolute(String(raw)) && /control-changes/i.test(String(raw)));
   const esRuta = (p) => isControlApproval(p) || isControlApproval(`${p}/`);
   const out = [];
   // se lee también con la continuación de renglón juntada: `cat <<'EOF' \` y abajo `> constancia` es una redirección del
@@ -2395,10 +2459,16 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
   // entra a un shell por tubería, por `<<<`, por un guion escrito antes o leído con `read`)
   const ejecuta = ejecutaTexto(cmd);
   if (ejecuta) todos.push(...citados(cmd).flatMap((c) => comandosAnidados(c)).flatMap((sub) => tramos(sub)).flatMap((t) => t.split(/(?<![&>|])&(?![&>])/)));
-  for (const tramo of todos) {
-    base = cwd;
-    // sin las redirecciones de lectura con su archivo (`< lista`): no son argumentos de la copia
-    const limpio = sinPalabrasDelShell(tramo);
+  const bases = carpetasDeLosCdDeConstancias(todos, cmd, [cwd, sesion]);
+  cdSinResolver = bases.sinResolver;
+  for (const tramo of todos) for (const raiz of bases.carpetas) {
+    base = raiz;
+    // sin las redirecciones de lectura con su archivo (`< lista`): no son argumentos de la copia. La carpeta de `env -C`
+    // ya está entre las bases: se saca para que lo que corre `env` quede como el comando
+    const resto = pelarEnv(tramo).resto;
+    const limpio = sinPalabrasDelShell(resto);
+    // `sinPalabrasDelShell` se come un `xargs` del principio con sus opciones: se anota antes
+    let porXargs = nombreDeComando(palabrasEnteras(resto.trim().replace(PREFIJO, ''))[0]) === 'xargs';
     // las redirecciones y el tee a una constancia, también adentro de `bash -c` (los tramos anidados están en `todos`);
     // `<>` abre el archivo para leer y escribir
     // el destino es la palabra entera del shell, con sus comillas resueltas (`.tycon/'control-changes.jsonl'`); uno armado
@@ -2408,10 +2478,12 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
     const fuera = ejecuta ? () => true : posicionesFueraDeComillas(limpio);
     for (const m of limpio.matchAll(/(?<![<\d&])(?:\d?>>?|&>>?|\d?<>)\|?\s*((?:\$\([^()]*\)|'[^']*'|"(?:\\.|[^"\\])*"|\\.|[^\s<>;&|'"\\])+)/g)) {
       if (!fuera(m.index)) continue;
-      const destino = palabraDelShell(m[1]);
+      const destino = sinCierreDeGrupo(palabraDelShell(m[1]));
       if (es(destino) || (/\$\(|`/.test(destino) && /control-changes|gates\.log/i.test(destino))) out.push(destino);
     }
-    const words = palabras(sinRedireccionesDeSalida(limpio).replace(/(?<![<\d])<(?!<)\s*[^\s<>;&|]+/g, ' ').trim().replace(PREFIJO, '')).filter((w) => w !== '' && w !== '\\');
+    // cada argumento es la palabra entera del shell, con sus comillas resueltas (`cp x .tycon/'control-changes.jsonl'`),
+    // y sin el `)` que cierra un paréntesis (`(cd d && touch f)`)
+    const words = palabrasEnteras(sinRedireccionesDeSalida(limpio).replace(/(?<![<\d])<(?!<)\s*[^\s<>;&|]+/g, ' ').trim().replace(PREFIJO, '')).filter((w) => w !== '' && w !== '\\');
     let c = nombreDeComando(words[0]);
     let args = words.slice(1);
     if (c === 'xargs') {
@@ -2420,7 +2492,11 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
       while (i < args.length && args[i].startsWith('-')) i += /^-(?:[IinLPdEsa]|-(?:replace|max-args|max-lines|max-procs|delimiter|eof|max-chars|arg-file))$/.test(args[i]) ? 2 : 1;
       c = nombreDeComando(args[i]);
       args = args.slice(i + 1);
+      porXargs = true;
     }
+    // lo que corre un `xargs` recibe archivos de la entrada, que no se ven: en la carpeta de las constancias, lo que no sea
+    // un lector conocido no pasa
+    if (porXargs && esRuta(path.join(base, 'x')) && !LECTORES_DE_XARGS.has(c)) { out.push(`${tramo.trim()} (en la carpeta de las constancias, con archivos que no se ven)`); continue; }
     const lleva = (opciones) => {
       // las cortas, también juntas (`-qO <ruta>`) o con el valor pegado (`-O<ruta>`); leer de más no frena nada:
       // sólo cuenta lo que nombra un archivo de la firma
@@ -2441,6 +2517,30 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
     // crea vacía. El valor de una opción que sólo se lee (`touch -r`, `vim -u`, `uniq -f`) no es lo que se escribe
     if (['sort', 'gsort', 'shuf'].includes(c)) { out.push(...lleva(['-o', '--output']).filter(es)); continue; }
     if (c === 'uniq') { const s = posicionales(args, /^-[fsw]$|^--(?:skip-fields|skip-chars|check-chars)$/); if (s[1] && es(s[1])) out.push(s[1]); continue; }
+    // los que escriben archivos con el nombre que les dan: `split` y `csplit` (el prefijo, con lo que le agregan),
+    // `script` (el registro: su primer argumento, o el de `-O`/`--log-out` y los demás registros), `diff`/`sdiff -o`
+    if (c === 'split' || c === 'gsplit') {
+      const prefijo = posicionales(args, /^-[abClnpt]$|^--(?:suffix-length|bytes|line-bytes|lines|number|separator|additional-suffix|filter)$/)[1] || 'x';
+      if (es(prefijo) || es(`${prefijo}aa`)) out.push(prefijo);
+      continue;
+    }
+    if (c === 'csplit' || c === 'gcsplit') {
+      const prefijo = lleva(['-f', '--prefix'])[0] || 'xx';
+      if (es(prefijo) || es(`${prefijo}00`)) out.push(prefijo);
+      continue;
+    }
+    if (c === 'script') {
+      // `-t` lleva valor en macOS y no en Linux: el registro se busca con las dos lecturas
+      const registros = [
+        // las cortas, también juntas con la que lleva valor al final (`-qc ls`)
+        posicionales(args, /^-[A-Za-z]*[cEIOBTmot]$|^--(?:command|echo|log-in|log-out|log-io|log-timing|timing|logging-format|output-limit)$/)[0],
+        posicionales(args, /^-[A-Za-z]*[cEIOBTmo]$|^--(?:command|echo|log-in|log-out|log-io|log-timing|timing|logging-format|output-limit)$/)[0],
+        ...lleva(['-O', '-I', '-B', '-T', '--log-out', '--log-in', '--log-io', '--log-timing', '--timing']),
+      ].map((r) => r || 'typescript');
+      out.push(...registros.filter(es));
+      continue;
+    }
+    if (c === 'diff' || c === 'gdiff' || c === 'sdiff') { out.push(...lleva(['-o', '--output']).filter(es)); continue; }
     if (c === 'awk' || c === 'gawk') {
       const incluye = lleva(['-i', '--include']).concat(args.filter((w) => /^-i./.test(w)).map((w) => w.slice(2)));
       if (incluye.some((v) => /(?:^|[\\/])inplace(?:\.awk)?$/.test(v))) out.push(...posicionales(args, /^-[ifvE]$|^--(?:include|file|assign|exec)$/).slice(1).filter(es));
@@ -2448,10 +2548,25 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
     }
     if (c === 'ruby' && args.some((w) => /^-[A-Za-z]*i/.test(w))) { out.push(...posicionales(args, /^-[eIrC]$/).filter(es)); continue; }
     if (['ex', 'vi', 'vim', 'nvim', 'gvim', 'rvim', 'view', 'vimdiff', 'nano', 'pico', 'emacs', 'micro', 'ed', 'touch'].includes(c)) {
-      const conValor = c === 'touch' ? /^-[rdt]$|^--(?:reference|date)$/ : /^-[uUiTcSsWwq]$|^--cmd$/;
-      out.push(...posicionales(args, conValor).filter((w) => !w.startsWith('+')).filter(es));
+      // `-s` lleva valor en vim (el guion de teclas) y no en `ex`, `vim -e` ni `ed` (callado): los archivos se buscan con
+      // las dos lecturas. Leer de más no frena nada: sólo cuenta lo que nombra una constancia
+      const lecturas = c === 'touch' ? [/^-[rdt]$|^--(?:reference|date)$/]
+        : c === 'ed' ? [/^-p$/] : [/^-[uUiTcSsWwq]$|^--cmd$/, /^-[uUiTcSWwq]$|^--cmd$/];
+      // la familia de vi con `-R` o `-M` sólo mira el archivo si nada le puede dar una orden de escribir: ni órdenes ni
+      // guiones (`-c`, `+`, `-s`, `-S`, `-w`), ni el modo ex (`ex`, `-e`, `-E`), ni la entrada (`-`, una tubería o una
+      // redirección de entrada en el comando, un heredoc). Con cualquiera de ellos, un `:w!` la escribe igual
+      // Sólo valen las banderas que no escriben ni leen órdenes (`-R`, `-M`, `-n`, `-b`…): cualquier otra opción (`-i`,
+      // `-V9<archivo>`, `-c:w`) la saca de sólo lectura
+      const soloMira = ['vi', 'vim', 'nvim', 'gvim', 'rvim', 'view', 'vimdiff'].includes(c)
+        && args.some((w) => /^-[A-Za-z]*[RM][A-Za-z]*$/.test(w) && !w.startsWith('--'))
+        && args.every((w) => !w.startsWith('-') && !w.startsWith('+') ? true : /^-[RMnNbylZXg]+$/.test(w))
+        && !/[|<]/.test(String(cmd));
+      if (!soloMira) out.push(...lecturas.flatMap((conValor) => posicionales(args, conValor)).filter((w) => !w.startsWith('+')).filter(es));
       if (c !== 'touch') {
         // `+'w x'` llega como dos palabras: el `+` solo y la orden
+        // `-w`/`-W` escriben las teclas en el archivo que nombran, `-i` el viminfo y `-V<n><archivo>` un registro
+        out.push(...lleva(['-w', '-W', '-i']).filter(es));
+        out.push(...args.map((w) => /^-V\d*(.+)$/.exec(w)).filter(Boolean).map((m) => m[1]).filter(es));
         const ordenes = [...lleva(['-c', '--cmd']), ...args.filter((w) => w.startsWith('+')).map((w) => w.slice(1)), ...args.filter((w, k) => args[k - 1] === '+')];
         out.push(...ordenes.flatMap((o) => [...o.matchAll(/(?:^|[|\s])(?:w(?:rite)?|sav(?:eas)?|x(?:it)?|wq)!?\s+(\S+)/g)].map((x) => x[1])).filter(es));
       }
@@ -2461,6 +2576,23 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
       // `w <archivo>` (o el modificador `w` de `s///w <archivo>`) escribe hasta el final del renglón del guion
       const guiones = [...lleva(['-e', '--expression']), ...(args.some((w) => /^-[A-Za-z]*[ef]$|^--(?:expression|file)/.test(w)) ? [] : posicionales(args, /^-[lf]$/).slice(0, 1))];
       out.push(...guiones.flatMap((g) => [...g.matchAll(/(?:^|[;\n}\s]|\/[gpIi0-9]*)w\s+([^\n;]+)/g)].map((x) => x[1].trim())).filter(es));
+    }
+    // los que cambian el archivo que nombran: `sed -i` y `perl -i` (sus archivos, sin el guion), el `of=` de `dd` y
+    // `truncate`. Se miran acá también, además de en `extractWriteTargets`, para resolverlos desde cada carpeta de un `cd`
+    if ((c === 'sed' || c === 'gsed') && args.some((w) => /^-[A-Za-z]*i|^--in-place/.test(w))) {
+      const conGuionAparte = args.some((w) => /^-[A-Za-z]*[ef]$|^--(?:expression|file)/.test(w));
+      out.push(...posicionales(args, /^-[A-Za-z]*[ef]$|^--(?:expression|file)$|^-l$/).slice(conGuionAparte ? 0 : 1).filter(es));
+      continue;
+    }
+    // el grupo de banderas puede llevar el separador de registro con dígitos antes de `-i` (`-0pi`, `-0777pi`)
+    if (c === 'perl' && args.some((w) => /^-[A-Za-z0-9]*i/.test(w))) { out.push(...posicionales(args, /^-[A-Za-z0-9]*[eEIMm]$/).filter(es)); continue; }
+    if (c === 'dd' || c === 'gdd') { out.push(...args.filter((w) => w.startsWith('of=')).map((w) => w.slice(3)).filter(es)); continue; }
+    if (c === 'truncate' || c === 'gtruncate') { out.push(...posicionales(args, /^-[sr]$|^--(?:size|reference)$/).filter(es)); continue; }
+    // lo que sale de una sustitución de proceso corre en el shell (`source <(echo …)`, `bash <(…)`): no se puede ver
+    // antes; si el comando nombra una constancia, no pasa
+    if (['source', '.', ...SHELLS_QUE_LEEN_COMANDOS].includes(c) && /<\(/.test(tramo) && /control-changes|gates\.log/i.test(String(cmd))) {
+      out.push(`${tramo.trim()} (corre en el shell lo que sale de una sustitución de proceso)`);
+      continue;
     }
     if (c === 'curl' || c === 'wget') { out.push(...lleva(['-o', '--output', '-O', '--output-document']).filter(es)); continue; }
     if (c === 'tar' || c === 'bsdtar' || c === 'unzip' || c === 'cpio') {
@@ -2472,7 +2604,7 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
           : args.some((w, k) => /^-[A-Za-z]*x/.test(w) || (k === 0 && /^[A-Za-z]*x[A-Za-z]*$/.test(w)) || w === '--extract' || w === '--get');
       if (!extrae) continue;
       const dirs = lleva(c === 'unzip' ? ['-d'] : c === 'cpio' ? ['-D', '--directory'] : ['-C', '--directory']);
-      const destinos = dirs.length ? dirs.map((d) => abs(d)) : [cwd];
+      const destinos = dirs.length ? dirs.map((d) => abs(d)) : [raiz];
       const enFirma = destinos.find(carpetaDeFirma);
       if (enFirma) { out.push(`${enFirma} (no se puede ver qué trae lo que se descomprime)`); continue; }
       // con los nombres cambiados al extraer (`tar -s`, `--transform`, `--strip-components`), lo que se lista no es lo
@@ -2490,7 +2622,7 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
     }
     // otros que extraen y que el freno no sabe listar: `pax -r`, `ditto -x`, `python3 -m zipfile|tarfile -e`. A la
     // carpeta de una constancia o dentro de un repo, no pasan
-    const extractor = (c === 'pax' && args.some((w) => /^-[A-Za-z]*r/.test(w))) ? cwd
+    const extractor = (c === 'pax' && args.some((w) => /^-[A-Za-z]*r/.test(w))) ? raiz
       : (c === 'ditto' && args.some((w) => /^-[A-Za-z]*x/.test(w))) ? abs(args.filter((w) => !w.startsWith('-')).pop() || '.')
         : (/^python[\d.]*$/.test(c) && args[0] === '-m' && /^(?:zipfile|tarfile)$/.test(args[1] || '') && args.some((w) => w === '-e' || w === '--extract'))
           ? abs(args[args.length - 1] && !args[args.length - 1].startsWith('-') && args.length > 4 ? args[args.length - 1] : '.') : null;
@@ -2612,8 +2744,112 @@ function constanciasTocadas(cmd, cwd, stateDir = null) {
   return [...new Set(out)];
 }
 
+// los comandos que un `xargs` puede correr en la carpeta de las constancias sin escribir nada
+const LECTORES_DE_XARGS = new Set(['cat', 'grep', 'egrep', 'fgrep', 'rg', 'head', 'tail', 'wc', 'ls', 'stat', 'file', 'jq',
+  'sha1sum', 'sha256sum', 'shasum', 'md5', 'md5sum', 'echo', 'printf']);
+// lo que puede ir delante de un `env` sin cambiar qué corre: un paréntesis, `sudo` y sus opciones, una variable, …
+const ANTES_DEL_ENV = /^(?:\(*|\{|nohup|command|exec|time|builtin|[A-Za-z_]\w*=.*)$/;
+// los envoltorios con opciones que llevan valor: cuál lleva valor en la palabra siguiente
+const ENVOLTORIOS_CON_VALOR = {
+  sudo: /^-[ugCDhprtU]$|^--(?:user|group|close-from|chdir|host|prompt|role|type|other-user)$/,
+  nice: /^-n$|^--adjustment$/,
+  timeout: /^-[sk]$|^--(?:signal|kill-after)$/,
+  stdbuf: /^-[ioe]$|^--(?:input|output|error)$/,
+  nohup: /^$/,
+};
+
 /**
- * El destino y los orígenes de una copia: el de `-t`/`--target-directory` (siempre una carpeta, en los comandos donde
+ * El tramo sin su `env` (también por su ruta, `/usr/bin/env`) y sin sus opciones, sus variables y su carpeta:
+ * `{ carpetas, resto }`, con `resto` desde el comando que corre y `carpetas` las de `-C`/`--chdir`, con sus comillas
+ * resueltas. `-u`/`--unset` llevan valor. Con `-S` (el comando en un texto) o sin `env`, el tramo queda como está.
+ */
+function pelarEnv(tramo) {
+  const t = String(tramo);
+  const piezas = [...t.matchAll(/(?:'[^']*'|"(?:\\.|[^"\\])*"|\\.|[^\s'"\\])+/g)];
+  const palabra = (k) => palabraDelShell(piezas[k][0]);
+  let k = 0;
+  while (k < piezas.length && path.basename(palabra(k).replace(/^\(+/, '')) !== 'env') {
+    const w = path.basename(palabra(k).replace(/^\(+/, ''));
+    const valor = ENVOLTORIOS_CON_VALOR[w];
+    if (!valor) { if (!ANTES_DEL_ENV.test(palabra(k))) break; k++; continue; }
+    // un envoltorio y sus opciones; las que llevan valor, con él; `timeout` lleva además la duración
+    k++;
+    while (k < piezas.length && palabra(k).startsWith('-')) k += valor.test(palabra(k)) ? 2 : 1;
+    if (w === 'timeout') k++;
+  }
+  if (k >= piezas.length || path.basename(palabra(k).replace(/^\(+/, '')) !== 'env') return { carpetas: [], resto: t };
+  const carpetas = [];
+  let j = k + 1;
+  while (j < piezas.length) {
+    const w = palabra(j);
+    let m;
+    if (/^[A-Za-z_]\w*=/.test(w)) { j++; continue; }
+    if (w === '--') { j++; break; }
+    if (/^-[iv0]*S|^--split-string/.test(w)) return { carpetas, resto: t };
+    if (/^-[iv0]*C$|^--chdir$/.test(w)) { if (j + 1 < piezas.length) carpetas.push(palabra(j + 1)); j += 2; continue; }
+    if ((m = /^-[iv0]*C(.+)$|^--chdir=(.*)$/.exec(w))) { carpetas.push(m[1] ?? m[2]); j++; continue; }
+    if (/^-[iv0]*[uPa]$|^--(?:unset|argv0)$/.test(w)) { j += 2; continue; }
+    if (w.startsWith('-')) { j++; continue; }
+    break;
+  }
+  return { carpetas, resto: j < piezas.length ? t.slice(piezas[j].index) : '' };
+}
+
+// el tope de carpetas contra las que se miran las rutas relativas de un comando con muchos `cd`
+const TOPE_DE_CARPETAS_DE_CD = 24;
+
+/**
+ * Las carpetas donde puede caer una ruta relativa del comando, para las constancias: las de partida y la de cada `cd` o
+ * `pushd` de cualquier tramo, también adentro de un paréntesis o de `bash -c`, resuelto desde cada carpeta ya juntada
+ * (`cd a && cd b` da `a/b`). No se decide cuál vale: se miran todas, y basta una que caiga en una constancia para frenar.
+ * Así un `cd` adentro de un paréntesis no cambia dónde se resuelve lo de afuera, que se sigue mirando desde la de partida.
+ * `sinResolver`: hubo un `cd` con una variable o una sustitución que no se puede saber adónde va.
+ */
+function carpetasDeLosCdDeConstancias(tramosDelComando, cmd, partida) {
+  const carpetas = [...new Set(partida.filter(Boolean))];
+  let sinResolver = false;
+  for (const tramo of tramosDelComando) {
+    // `env -C <carpeta> …` corre lo que sigue en esa carpeta
+    const { carpetas: conEnv } = pelarEnv(tramo);
+    const words = conEnv.length ? ['cd', ...conEnv] : palabrasEnteras(sinPalabrasDelShell(tramo)).filter((w) => w !== '');
+    if (words[0] === 'builtin') words.shift();
+    const programa = nombreDeComando(words[0]);
+    if (programa !== 'cd' && programa !== 'pushd' && programa !== 'chdir') continue;
+    // el primer argumento que no es una opción (`cd -P d`); `cd -` y `pushd +N` vuelven a una carpeta ya juntada
+    const destino = words.slice(1).find((w) => w === '-' || !/^[-+]/.test(w));
+    if (destino === '-') continue;
+    if (destino === undefined) {
+      if (!words.slice(1).some((w) => /^\+\d+$|^-\d+$/.test(w))) carpetas.push(os.homedir());
+      continue;
+    }
+    const ex = expandirRuta(cmd, destino);
+    if (ex.sinResolver.length || /\$|`/.test(String(ex.valor))) { sinResolver = true; continue; }
+    for (const desde of [...carpetas]) {
+      if (carpetas.length >= TOPE_DE_CARPETAS_DE_CD) break;
+      const dir = resolveTarget(ex.valor, desde, process.platform, { homeVariable: true });
+      if (!carpetas.includes(dir)) carpetas.push(dir);
+    }
+    // con demasiados `cd`, lo que quede afuera del tope no se sabe dónde cae
+    if (carpetas.length >= TOPE_DE_CARPETAS_DE_CD) sinResolver = true;
+  }
+  return { carpetas, sinResolver };
+}
+
+// una palabra del shell entera: comillas pegadas a texto, escapes y texto suelto, hasta un blanco o un operador
+const PALABRA_ENTERA = /(?:'[^']*'|"(?:\\.|[^"\\])*"|\\.|[^\s'"|;&<>\\])+/g;
+
+/** Las palabras del tramo, cada una entera y con sus comillas resueltas (`.tycon/'control-changes.jsonl'` es una). */
+function palabrasEnteras(tramo) {
+  return (String(tramo).match(PALABRA_ENTERA) || []).map((w) => sinCierreDeGrupo(palabraDelShell(w)));
+}
+
+/** La palabra sin los `)` que cierran un paréntesis abierto antes (`(cd d && touch f)` toca `f`), si ella no abre uno. */
+function sinCierreDeGrupo(w) {
+  return String(w).includes('(') ? String(w) : String(w).replace(/\)+$/, '');
+}
+
+/**
+ * El destino y los orígenes de una copia:el de `-t`/`--target-directory` (siempre una carpeta, en los comandos donde
  * `-t` es eso: en `rsync` es otra cosa), o el último argumento.
  */
 function destinoDeLaCopia(args, conT) {
@@ -3119,22 +3355,77 @@ function comandosAnidados(comando, hondo = 0, valores = null) {
   const sumarUno = (t) => { if (t && String(t).trim()) out.push(...comandosAnidados(String(t), hondo + 1, asignados)); };
   const sumarValores = (c) => { for (const t of valoresEn(c)) sumarUno(t); };
   const sumar = (c) => { sumarUno(c); sumarValores(c); };
-  // lo de adentro de una sustitución corre; una variable que ahí sólo se NOMBRA como argumento, no (la mira su programa)
-  for (const m of String(cmd).matchAll(/\$\(((?:[^()]|\([^()]*\))*)\)/g)) sumarUno(m[1]);
-  for (const m of String(cmd).matchAll(/`([^`]*)`/g)) sumarUno(m[1]);
+  // entre comillas simples (fuera de las dobles) `$(…)` y las comillas invertidas son texto: no corren
+  let sinSimples = '';
+  let q = null;
+  for (let i = 0, s = String(cmd); i < s.length; i++) {
+    const ch = s[i];
+    if (q === "'") { sinSimples += ch === "'" ? (q = null, ch) : ' '; continue; }
+    // la barra se come el carácter que sigue: un `$` o una comilla invertida escapados quedan como espacio (no abren una
+    // sustitución), y una barra escapada (`\\`) no escapa lo que viene después
+    if (ch === '\\' && q !== "'") { const sig = s[i + 1] || ''; sinSimples += ch + (sig === '$' || sig === '`' ? ' ' : sig); i++; continue; }
+    if (ch === '"') q = q === '"' ? null : '"';
+    else if (ch === "'" && q !== '"') q = "'";
+    sinSimples += ch;
+  }
+  // una comilla simple que no cierra no deja leer el comando: no se sabe qué es texto, y se mira todo
+  if (q === "'") sinSimples = String(cmd);
+  // un `\$(` o una comilla invertida escapada también son texto
+  // se busca sobre el texto sin lo de comillas simples (mismo largo) y se toma del original: un `sh -c '…'` adentro de
+  // un `$(…)` conserva su cuerpo. Lo de adentro de una sustitución corre; una variable que ahí sólo se NOMBRA como
+  // argumento, no (la mira su programa)
+  const original = String(cmd);
+  for (const m of sinSimples.matchAll(/\$\(((?:[^()]|\([^()]*\))*)\)/g)) sumarUno(original.slice(m.index + 2, m.index + m[0].length - 1));
+  for (const m of sinSimples.matchAll(/`([^`]*)`/g)) sumarUno(original.slice(m.index + 1, m.index + m[0].length - 1));
+  // los `cd` de antes en el mismo comando también valen para lo que corre adentro (`bash -c "cd specs && sh -c '…'"`): el
+  // cuerpo anidado se mira con ellos delante
+  const cds = [];
+  const sumarConCd = (b) => sumar(cds.length && b ? `${cds.join(' && ')} && ${b}` : b);
   for (const tramo of tramos(cmd)) {
-    const w = palabras(sinPalabrasDelShell(tramo)).filter((x) => x !== '');
+    // sin el `env` de delante (`env -C d sh -c '…'`): lo que corre `env` es el comando
+    const w = palabras(sinPalabrasDelShell(pelarEnv(tramo).resto)).filter((x) => x !== '');
     // las asignaciones de delante (`A=1 B=2 programa`) no son el programa, ni `builtin`/`command` (`builtin eval "$c"`)
     let k0 = w.findIndex((x) => !/^[A-Za-z_]\w*=/.test(x));
     while (k0 >= 0 && k0 < w.length - 1 && ['builtin', 'command'].includes(w[k0])) k0++;
     const c = nombreDeComando(w[k0]);
     // una variable como programa (`$c`, `"$c" arg`): se corre su valor
     if (k0 >= 0 && /^\$\{?[A-Za-z_]\w*\}?$/.test(w[k0])) sumarValores(w[k0]);
-    if (['bash', 'sh', 'zsh', 'dash'].includes(c)) {
-      const i = w.findIndex((x, k) => k > k0 && /^-[A-Za-z]*c[A-Za-z]*$/.test(x));
-      if (i > 0) sumar(w[i + 1]);
+    if (c === 'cd' || c === 'pushd') moverCds(cds, w.slice(k0));
+    // `script -c <comando>` (también `-qc` o `--command[=]`) corre el comando en un shell
+    if (c === 'script') {
+      // con las palabras enteras: `--command='touch x'` es una sola
+      const we = palabrasEnteras(sinPalabrasDelShell(pelarEnv(tramo).resto)).filter((x) => x !== '');
+      let ke = we.findIndex((x) => !/^[A-Za-z_]\w*=/.test(x));
+      while (ke >= 0 && ke < we.length - 1 && ['builtin', 'command'].includes(we[ke])) ke++;
+      we.forEach((x, k) => {
+        if (k <= ke) return;
+        if (/^-[A-Za-z]*c$|^--command$/.test(x)) sumarConCd(we[k + 1]);
+        else if (x.startsWith('--command=')) sumarConCd(x.slice('--command='.length));
+      });
+      // macOS: `script [opciones] <registro> <comando…>`; con las dos lecturas de `-t` (con valor en macOS, sin él en Linux)
+      for (const conValor of [/^-[A-Za-z]*[cEIOBTmot]$|^--[\w-]+$/, /^-[A-Za-z]*[cEIOBTmo]$|^--[\w-]+$/]) {
+        const sueltos = posicionales(we.slice(ke + 1), conValor);
+        if (sueltos.length > 1) sumarConCd(sueltos.slice(1).map(citarParaElShell).join(' '));
+      }
     }
-    if (c === 'eval') sumar(w.slice(k0 + 1).join(' '));
+    if (['bash', 'sh', 'zsh', 'dash', 'ksh', 'mksh', 'pdksh', 'ash', 'fish'].includes(c)) {
+      const i = w.findIndex((x, k) => k > k0 && /^-[A-Za-z]*c[A-Za-z]*$/.test(x));
+      // las opciones después de `-c` (`bash -c -x '…'`) y el `--` que las corta no son el cuerpo: es lo primero que sigue
+      let j = i + 1;
+      while (i > 0 && j < w.length && /^-[A-Za-z-]*$/.test(w[j]) && w[j] !== '-') { if (w[j++] === '--') break; }
+      // con comillas dobles escapadas adentro (`sh -c "echo x >> \"h.md\""`) las palabras cortan el cuerpo en la comilla:
+      // el cuerpo lo saca el lector de los guiones internos, que lee las comillas dobles enteras
+      if (i > 0 && /\\"/.test(tramo)) for (const g of guionesInternos(tramo)) sumarConCd(g);
+      else if (i > 0 && w[j] !== undefined) {
+        // lo que sigue al cuerpo son sus argumentos: `$0`, `$1`… (y `$@`, `$*`) valen eso adentro (`sh -c 'echo x >> "$1"' _ h.md`)
+        const resto = w.slice(j + 1);
+        // entre comillas dobles, `\"` y `\\` llegan escapados: adentro valen la comilla y la barra
+        const cuerpo = String(w[j]).replace(/\\(["\\$`])/g, '$1');
+        sumarConCd(cuerpo.replace(/\$\{?([0-9])\}?/g, (m, d) => (resto[Number(d)] !== undefined ? resto[Number(d)] : m))
+          .replace(/"?\$\{?[@*]\}?"?/g, () => resto.slice(1).join(' ')));
+      }
+    }
+    if (c === 'eval') sumarConCd(w.slice(k0 + 1).join(' '));
     if (c === 'find') {
       const i = w.findIndex((x) => x === '-exec' || x === '-execdir' || x === '-ok');
       if (i >= 0) {
@@ -3440,22 +3731,80 @@ const REDIRECCION = /(?<![^\s;&|(])\d*(?:<<<|<<-?|&>>?|[<>]{1,2}&?)[ \t]*(?:'[^'
 function guionDelShell(words) {
   for (let i = 1; i < words.length; i++) {
     if (words[i] === '--') return words[i + 1] || null;
-    if (/^[+-][oO]$/.test(words[i]) || /^--(?:rcfile|init-file)$/.test(words[i])) { i++; continue; }
+    // `-o` toma la palabra que sigue, también agrupado (`-euo pipefail`)
+    if (/^[+-][A-Za-z]*[oO]$/.test(words[i]) || /^--(?:rcfile|init-file)$/.test(words[i])) { i++; continue; }
     if (/^[+-]/.test(words[i])) continue;
     return words[i];
   }
   return null;
 }
 
-/** ¿El tramo es un shell que lee sus comandos de la entrada? Sí sin guion o con `-s`; no con `-c` ni con un guion. */
+/**
+ * Suma a `cds` el `cd` de las palabras `w` (`cd`/`pushd` y su carpeta, sin las opciones `-P`/`-L`/`-e`/`-@` ni el `--`).
+ * `cd -` vuelve a la carpeta de antes: saca el último.
+ */
+function moverCds(cds, w) {
+  const i = w.findIndex((x, k) => k > 0 && !/^-[LPe@]+$/.test(x) && x !== '--');
+  if (i < 0) return;
+  if (w[i] === '-') { cds.pop(); return; }
+  cds.push(`cd ${/\s/.test(w[i]) ? `"${w[i]}"` : w[i]}`);
+}
+
+/** Lo que escribe un `printf` con estos argumentos: el formato con cada `%s` (o `%b`, `%d`) cambiado por el que sigue. */
+function formatoDePrintf(args) {
+  const [formato = '', ...resto] = args;
+  if (!/%/.test(formato)) return [formato, ...resto].join(' ');
+  if (!resto.length) return formato.replace(/%[-0-9.]*[sbdq]/g, '');
+  let salida = '';
+  // como printf, el formato se repite hasta usar todos los argumentos
+  for (let k = 0; k < resto.length;) {
+    const antes = k;
+    salida += formato.replace(/%[-0-9.]*[sbdq]/g, () => (k < resto.length ? resto[k++] : ''));
+    if (k === antes) break;
+  }
+  return salida;
+}
+
+// los nombres de la entrada estándar como archivo: un guion con ese nombre es lo que llega por la entrada
+const LA_ENTRADA_COMO_ARCHIVO = /^(?:\/dev\/stdin|\/dev\/fd\/0|\/proc\/self\/fd\/0)$/;
+
+/**
+ * ¿El tramo es un shell que lee sus comandos de la entrada? Sí sin guion, con `-s` o con la entrada como guion
+ * (`bash /dev/stdin`); no con `-c` ni con otro guion. `source` y `.` con la entrada como archivo también la corren en el
+ * shell de ahora (`source /dev/stdin <<EOF`).
+ */
 function shellLeeEntrada(tramo) {
   const words = palabras(sinPalabrasDelShell(String(tramo).replace(REDIRECCION, ' '))).filter((w) => w !== '');
-  if (!SHELLS_QUE_LEEN_COMANDOS.has(nombreDeComando(words[0]))) return false;
+  const programa = nombreDeComando(words[0]);
+  if (programa === 'source' || programa === '.') return LA_ENTRADA_COMO_ARCHIVO.test(words.slice(1).find((w) => w !== '--') || '');
+  if (!SHELLS_QUE_LEEN_COMANDOS.has(programa)) return false;
   for (let i = 1; i < words.length; i++) {
     if (/^-[A-Za-z]*c/.test(words[i])) return false;
     if (/^-[A-Za-z]*s/.test(words[i])) return true;
   }
-  return guionDelShell(words) === null;
+  const guion = guionDelShell(words);
+  return guion === null || LA_ENTRADA_COMO_ARCHIVO.test(guion);
+}
+
+/**
+ * Los renglones de un comando como los lee el shell: un salto adentro de comillas, o después de un `|`, `&&` o `||` que
+ * espera lo que sigue, no corta.
+ */
+function renglonesDelShell(texto) {
+  const out = [];
+  let actual = '';
+  let q = null;
+  const s = String(texto);
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (q) { actual += c; if (c === '\\' && q === '"') actual += s[++i] || ''; else if (c === q) q = null; continue; }
+    if (c === "'" || c === '"') { q = c; actual += c; continue; }
+    if (c === '\\') { actual += c + (s[i + 1] || ''); i++; continue; }
+    if (c === '\n' && !/(?:\||&&)\s*$/.test(actual)) { out.push(actual); actual = ''; continue; }
+    actual += c === '\n' ? ' ' : c;
+  }
+  out.push(actual);
+  return out;
 }
 
 /** Las tuberías de un renglón y los tramos de cada una, sin cortar adentro de las comillas. */
@@ -3569,7 +3918,7 @@ function ordenesDeXargs(words, previas) {
  */
 function comandosPorOtroPrograma(cmd, cwd) {
   const s = String(cmd || '');
-  if (!/\bfind\b|\bxargs\b|<</.test(s)) return [];
+  if (!/\bfind\b|\bxargs\b|<<|\|/.test(s)) return [];
   const resolver = (raw, base) => resolveTarget(expandirRuta(cmd, raw).valor, base, process.platform, { homeVariable: true });
   const bases = [cwd];
   for (const m of s.matchAll(/(?:^|[\s;&|(])cd\s+(['"]?)([^\s'";&|)]+)\1/g)) bases.push(resolver(m[2], cwd));
@@ -3587,11 +3936,17 @@ function comandosPorOtroPrograma(cmd, cwd) {
     }
     lista.forEach((tramo, k) => {
       // sinPalabrasDelShell se come el `xargs` con sus opciones: acá sólo se sacan los prefijos y las palabras del shell
-      let antes = tramo.trim();
+      let antes = pelarEnv(tramo).resto.trim();
       for (let previo = null; previo !== antes;) { previo = antes; antes = antes.replace(PREFIJO, '').replace(PALABRA_ANTES_DE_XARGS, '').trim(); }
       const crudas = palabras(antes).filter((w) => w !== '');
       if (nombreDeComando(crudas[0]) === 'xargs') {
-        out.push(...ordenesDeXargs(crudas, k ? palabras(lista[k - 1]).filter((w) => w !== '') : []));
+        // lo que llega por la entrada: las palabras del tramo de antes, sin el `echo`/`printf` que las escribe (con él,
+        // `$0` del cuerpo de un `xargs sh -c` sería `echo`)
+        const previas = k ? palabras(lista[k - 1]).filter((w) => w !== '') : [];
+        // (de `printf`, también el formato: `printf '%s\n' h.md` escribe sólo `h.md`)
+        const escritor = nombreDeComando(previas[0]) || '';
+        const entrada = /^(?:echo|printf|print)$/.test(escritor) ? previas.slice(1).filter((w) => !/^-[a-zA-Z]+$/.test(w)) : previas;
+        out.push(...ordenesDeXargs(crudas, escritor === 'printf' && /%/.test(entrada[0] || '') ? entrada.slice(1) : entrada));
         return;
       }
       const words = palabras(sinPalabrasDelShell(tramo)).filter((w) => w !== '');
@@ -3602,6 +3957,47 @@ function comandosPorOtroPrograma(cmd, cwd) {
       if (entrada) out.push(entrada[1] ?? entrada[2] ?? entrada[3]);
     });
     const lineas = texto.split('\n');
+    // lo que un `echo`/`printf` escribe por una tubería a un shell que lee sus órdenes de la entrada (`| sh`, `| bash -s`)
+    // corre como un comando
+    // (con filtros en el medio, `| cat | sh`; con llaves o un subshell alrededor; y con los `cd` de antes en el renglón)
+    const sinEnvoltura = (t) => String(t).replace(/\s+#[^'"]*$/, '').trim().replace(/^[({]\s*/, '').replace(/\s*;?\s*[)}]\s*$/, '').replace(/^(?:builtin|busybox)\s+/, '');
+    const escritoPor = (tramo) => {
+      const w = palabras(sinPalabrasDelShell(sinEnvoltura(tramo))).filter((x) => x !== '');
+      const escritor = nombreDeComando(w[0]) || '';
+      if (!/^(?:echo|printf|print)$/.test(escritor)) return null;
+      if (escritor === 'printf') return formatoDePrintf(w.slice(1)).replace(/\\(.)/g, (m, c) => (c === 'n' ? '\n' : c));
+      // el de `echo` sale del tramo crudo, sin comillas ni escapes como lo deja el shell: las palabras sacan un `\>` suelto
+      const crudo = sinEnvoltura(tramo).replace(/^\s*(?:builtin\s+)?\S*?(?:echo|print)\s*/, '').replace(/^(?:-[neE]+\s+)+/, '');
+      let texto = '';
+      for (let i = 0, q = null; i < crudo.length; i++) {
+        const ch = crudo[i];
+        if (q === "'") { if (ch === "'") q = null; else texto += ch; continue; }
+        if (ch === '\\') { const sig = crudo[++i] || ''; texto += sig === 'n' ? '\n' : sig; continue; }
+        if (ch === '"') { q = q === '"' ? null : '"'; continue; }
+        if (ch === "'" && !q) { q = "'"; continue; }
+        texto += ch;
+      }
+      return texto.replace(/\\n/g, '\n').trim();
+    };
+    // los `cd` valen para los renglones que siguen; un renglón del shell no se corta adentro de comillas ni después de un `|`
+    const cdsDelRenglon = [];
+    for (const linea of renglonesDelShell(texto)) {
+      // lo que escribió la tubería de antes: un grupo (`{ echo …; } | sh`) se corta en el `;`, y lo que sigue empieza en `}`
+      let escritoAntes = null;
+      for (const tuberia of tuberiasDelRenglon(linea)) {
+        const primera = palabras(sinPalabrasDelShell(sinEnvoltura(tuberia[0] || ''))).filter((x) => x !== '');
+        if (nombreDeComando(primera[0]) === 'cd' || nombreDeComando(primera[0]) === 'pushd') moverCds(cdsDelRenglon, primera);
+        const cierraGrupo = /^\s*[})]/.test(tuberia[0] || '');
+        for (let k = 1; k < tuberia.length; k++) {
+          if (!shellLeeEntrada(sinEnvoltura(tuberia[k]))) continue;
+          let texto = null;
+          for (let j = k - 1; j >= 0 && texto === null; j--) texto = escritoPor(tuberia[j]);
+          if (texto === null && cierraGrupo) texto = escritoAntes;
+          if (texto !== null) out.push(cdsDelRenglon.length ? `${cdsDelRenglon.join(' && ')} && ${texto}` : texto);
+        }
+        escritoAntes = escritoPor(tuberia[tuberia.length - 1] || '');
+      }
+    }
     for (const { abre, desde, cierre, indice } of heredocsCerrados(lineas)) {
       if (heredocVaAUnShell(lineas[abre], indice)) out.push(lineas.slice(desde, cierre).join('\n'));
     }
@@ -3694,14 +4090,20 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
   // más allá del tope no se sabe qué corre: si nombra la ruta de una historia y escribe o borra, frena por el texto
   const sinLeer = anidadosHasta(cmd).hondos.some((h) => NOMBRA_RUTA_DE_HISTORIA.test(h) && (ESCRIBE.test(h) || BORRA_O_MUEVE.test(h)));
   // un guion de shell que escribe un heredoc del mismo comando corre lo que dice, y lo mismo lo que llega por otro
-  // programa: se mira como otro comando, un nivel
+  // programa: se mira como otro comando, un nivel. Lo que corre adentro (`sh -c '…'`, `$(…)`, comillas invertidas,
+  // también dentro de la orden de un `xargs`) se mira igual: su redirección a una historia escribe aunque vaya entre
+  // comillas para el comando de afuera
+  // lo que pasa el tope se dice primero: la lectura de abajo vería sólo los niveles que alcanza
+  if (sinLeer) return [`(un comando anidado a más de ${TOPE_ANIDADOS} niveles nombra una historia y escribe o borra: no se lee qué corre)`];
   if (hondo === 0) {
-    for (const texto of [...guionesDeShellEscritos(cmd, [...new Set([cwd, sesion])]), ...comandosPorOtroPrograma(cmd, cwd)]) {
+    const porOtro = [...guionesDeShellEscritos(cmd, [...new Set([cwd, sesion])]), ...comandosPorOtroPrograma(cmd, cwd)];
+    // sólo lo que de verdad corre (en posición de comando): un `sh -c "…"` citado en un mensaje o en un texto no
+    const adentro = [cmd, ...porOtro].flatMap((t) => comandosAnidados(sinCuerposDeTexto(t)).slice(1));
+    for (const texto of [...new Set([...porOtro, ...adentro])]) {
       const h = historiasPorConsola(texto, cwd, extractWriteTargets(texto, { keep: () => true }), sesion, [], hondo + 1, instalados);
       if (h.length) return h;
     }
   }
-  if (sinLeer) return [`(un comando anidado a más de ${TOPE_ANIDADOS} niveles nombra una historia y escribe o borra: no se lee qué corre)`];
   if (!enSitio && !destinosB.length && !ESCRIBE.test(String(cmd || ''))) return [];
   // con todos los editores en el lugar escritos como `sed` que nombra sus archivos, lo que escriben es lo que nombran:
   // la carpeta de un `cd` es desde dónde se leen, y una historia que tocan se ensaya para ver si le cambia el estado
@@ -4807,6 +5209,89 @@ function coordinadoraPorConsola(event, opts = {}) {
   });
 }
 
+/**
+ * Antes de un `git commit` o un `git push` (también con `-C <carpeta>`), cada constancia de control nueva del repo tiene que
+ * tener la huella que deja `approve` en esta máquina (lib/control-change-prints.js): mira lo escrito en la carpeta de
+ * constancias, no el comando que lo escribió. Sin huella, frena y dice cómo seguir.
+ */
+function constanciasSinHuella(event, opts = {}) {
+  if (event?.tool_name && event.tool_name !== 'Bash' && event.tool_name !== 'PowerShell') return null;
+  const cmd = event?.tool_input?.command;
+  if (!cmd || !/\bgit\b/.test(cmd) || !/\b(?:commit|push)\b/.test(cmd)) return null;
+  const huellas = require('./lib/control-change-prints.js');
+  const stateDir = opts.stateDir || require('./lib/story-gate-io.js').DEFAULT_STATE_DIR;
+  const base = cwdDelComando(cmd, nativePath(event?.cwd || process.cwd()));
+  const via = `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}`;
+  const frena = (texto) => {
+    try { require('./lib/story-gate-io.js').appendLog(stateDir, 'gates.log', resolveSessionId(event?.session_id), { name: 'story-gate', status: 'blocked', kind: 'constancia-sin-huella', via, reason: texto.split('\n')[0] }); } catch { /* el registro no traba el freno */ }
+    return { block: `${texto}\n` };
+  };
+  const vistos = new Set();
+  // también lo que corre adentro (`bash -c "git commit …"`, `$(…)`)
+  for (const texto of [String(cmd), ...comandosAnidados(String(cmd)).slice(1)]) {
+    for (const tramo of tramos(texto)) {
+      // sin las redirecciones: `2>&1` o `> salida.txt` no son parte de lo que se empuja
+      const w = palabras(sinPalabrasDelShell(String(tramo).replace(REDIRECCION, ' '))).filter((x) => x !== '');
+      if (nombreDeComando(w[0]) !== 'git') continue;
+      let dir = base;
+      let i = 1;
+      while (i < w.length && /^-/.test(w[i])) {
+        const pegada = /^-C(.+)$/.exec(w[i]);
+        if ((w[i] === '-C' && w[i + 1] !== undefined) || pegada) {
+          const crudo = pegada ? pegada[1] : w[i + 1];
+          const ruta = expandirRuta(texto, crudo);
+          // una carpeta que no se resuelve no se puede mirar: frena
+          if (ruta.sinResolver.length) return frena(`🔒 CONSTANCIA SIN MIRAR — no pude resolver la carpeta de \`git -C ${crudo}\`: no sé qué repo commitea o empuja ni si lleva una constancia sin firmar. Escribí la ruta sin variables.`);
+          dir = resolveTarget(ruta.valor, dir, process.platform, { homeVariable: true }); i += pegada ? 1 : 2; continue;
+        }
+        // las opciones de git que llevan su valor en la palabra que sigue
+        if (/^(?:-c|--git-dir|--work-tree|--namespace|--super-prefix|--attr-source|--config-env|--exec-path)$/.test(w[i])) { i += 2; continue; }
+        const wt = /^--work-tree=(.+)$/.exec(w[i]);
+        if (wt) dir = resolveTarget(wt[1], dir, process.platform, { homeVariable: true });
+        i++;
+      }
+      const sub = w[i];
+      if (sub !== 'commit' && sub !== 'push') continue;
+      // lo que se empuja: sin refspec, la rama de HEAD; con `--all`/`--mirror`/`--branches` (también abreviadas) o un
+      // comodín, todas; si no, el origen de cada refspec. Borrar una rama remota no empuja nada
+      let refs = ['HEAD'];
+      if (sub === 'push') {
+        const resto = w.slice(i + 1);
+        const posicionales = [];
+        let remotoPorOpcion = false;
+        let borra = false;
+        for (let k = 0; k < resto.length; k++) {
+          const x = resto[k];
+          if (/^(?:-o|--push-option|--repo|--receive-pack|--exec)$/.test(x)) { if (x === '--repo') remotoPorOpcion = true; k++; continue; }
+          if (/^--repo=/.test(x)) { remotoPorOpcion = true; continue; }
+          if (x === '-d' || /^--del(?:e(?:t(?:e)?)?)?$/.test(x)) { borra = true; continue; }
+          if (x.startsWith('-')) continue;
+          posicionales.push(x);
+        }
+        const todas = resto.some((x) => /^--(?:al|all|mir|mirr|mirro|mirror|br|bra|bran|branc|branch|branche|branches)$/.test(x));
+        const especificaciones = [];
+        const lista = remotoPorOpcion ? posicionales : posicionales.slice(1);
+        for (let k = 0; k < lista.length; k++) {
+          if (lista[k] === 'tag' && lista[k + 1]) { especificaciones.push(`refs/tags/${lista[++k]}`); continue; }
+          const origen = lista[k].replace(/^\+/, '').split(':')[0];
+          if (origen) especificaciones.push(/\*/.test(origen) ? '*' : origen);
+        }
+        if (todas || especificaciones.includes('*')) refs = ['*'];
+        else if (borra) refs = [];
+        else if (especificaciones.length) refs = especificaciones;
+        else if (lista.length) refs = [];
+        if (!refs.length) continue;
+      }
+      const clave = `${dir}\0${sub}\0${refs.join(',')}`;
+      if (vistos.has(clave)) continue;
+      vistos.add(clave);
+      const cartel = huellas.frenoDe({ dir, cuando: sub, stateDir, refs });
+      if (cartel) return frena(cartel);
+    }
+  }
+  return null;
+}
+
 function handle(event, opts = {}) {
   {
     let perdida = null;
@@ -4817,6 +5302,11 @@ function handle(event, opts = {}) {
     let abierta = null;
     try { abierta = borraEjecucionAbierta(event); } catch (e) { logHookError(e); abierta = { block: `🔒 CERRÁ LA EJECUCIÓN ANTES — no pude revisar si el comando borra la carpeta de una ejecución abierta (${e.message}): frena hasta poder mirarlo.\n` }; }
     if (abierta) return abierta;
+  }
+  {
+    let huella = null;
+    try { huella = constanciasSinHuella(event, opts); } catch (e) { logHookError(e); huella = { block: `🔒 CONSTANCIA SIN MIRAR — no pude revisar las constancias antes del commit o del empuje (${e.message}): frena hasta poder mirarlas.\n` }; }
+    if (huella) return huella;
   }
   {
     let coordinadora = null;
@@ -4905,7 +5395,7 @@ function handleCarrilEHistoria(event, opts = {}) {
     return /\.md$/i.test(t) || /\.md$/i.test(String(valor)) || protegido(resolveTarget(valor, cwd, process.platform, { homeVariable: true }));
   };
   // las constancias de cambio de control, sin interruptor: como el freno de Edit y Write
-  const constancias = constanciasTocadas(cmd, cwd, stateDir);
+  const constancias = constanciasTocadas(cmd, cwd, stateDir, baseCwd);
   // el registro de las aprobaciones de la persona, también al borrarlo o moverlo
   const aprobaciones = constancias.length ? [] : aprobacionesTocadas(cmd, cwd, stateDir);
   if (aprobaciones.length) {
@@ -5313,7 +5803,7 @@ function handleCarrilEHistoria(event, opts = {}) {
   return null;
 }
 
-module.exports = { handle, carpetasQueBorraOMueve, borraEjecucionAbierta, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA, frenaLaRed, quitarCuerposDeHeredoc, vaAUnShell };
+module.exports = { handle, guionesEnArchivo, carpetasQueBorraOMueve, borraEjecucionAbierta, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA, frenaLaRed, quitarCuerposDeHeredoc, vaAUnShell };
 
 if (require.main === module) {
   const cruda = leerEntrada();

@@ -39,6 +39,7 @@ const DEFINICIONES = [
   { id: 'dod', pregunta: 2, pestana: 'arnes', de: ['mejora', 'dod'], formato: 'pct', clave: 'dod' },
   { id: 'rework', pregunta: 2, pestana: 'arnes', de: ['mejora', 'rework'], formato: 'pct', clave: 'rework' },
   { id: 'rework_por_causa', pregunta: 2, pestana: 'arnes', de: ['extra', 'rework_por_causa'], formato: 'entero', clave: '' },
+  { id: 'rework_por_mes', pregunta: 2, pestana: 'arnes', de: ['extra', 'rework_por_mes'], formato: 'entero', clave: '' },
   { id: 'rework_por_carril', pregunta: 2, pestana: 'arnes', de: ['extra', 'rework_por_carril'], formato: 'entero', clave: '' },
   { id: 'mutacion', pregunta: 3, pestana: 'arnes', de: ['local', 'mutacion'], formato: 'pct', clave: 'mutacion' },
   { id: 'cobertura_tocada_evaluo', pregunta: 3, pestana: 'arnes', de: ['local', 'cobertura_tocada'], formato: 'pct', clave: 'cobertura_tocada_evaluo' },
@@ -131,7 +132,25 @@ function proyectar(def, m, cfg) {
         // las que el tablero cuenta aparte, fuera del vocabulario: una sola cuenta, sin sus claves
         .concat(fueraDelVocabulario(m.fuera_de_vocabulario)) }
       : {}),
+    // lo entregado y lo rehecho de cada mes de «lo rehecho al lado de lo entregado»: el mes con su forma, sólo números y
+    // las claves con la forma de las de «por qué volvió»; lo que no cumple, no viaja
+    ...(def.id === 'rework_por_mes' && Array.isArray(m.filas) ? { meses: mesesDelSitio(m.filas) } : {}),
   };
+}
+
+/** Las filas de «lo rehecho al lado de lo entregado» por lista blanca: a lo sumo siete meses bien formados. */
+function mesesDelSitio(filas) {
+  return filas
+    .filter((f) => f && typeof f.mes === 'string' && /^\d{4}-\d{2}$/.test(f.mes) && num(f.entregadas) !== null && num(f.sin_declarar) !== null)
+    .slice(0, 7)
+    .map((f) => ({
+      mes: f.mes, en_curso: f.en_curso === true, entregadas: num(f.entregadas),
+      causas: (Array.isArray(f.causas) ? f.causas : []).filter((c) => c && typeof c.clave === 'string' && /^[a-z][a-z-]{0,39}$/.test(c.clave) && num(c.n) !== null)
+        .slice(0, 12).map((c) => ({ clave: c.clave, n: num(c.n) }))
+        // las de una causa fuera del vocabulario (un número en el tablero) van como una causa más, como en rework_por_causa
+        .concat(num(f.fuera_de_vocabulario) > 0 ? [{ clave: 'fuera-del-vocabulario', n: num(f.fuera_de_vocabulario) }] : []),
+      sin_declarar: num(f.sin_declarar),
+    }));
 }
 
 /** La suma de las causas fuera del vocabulario (`[[clave, n], …]` del tablero) como una causa más, o ninguna. */
@@ -244,7 +263,13 @@ function tile(f, idioma = 'es') {
   const valor = formatear(f, idioma);
   const unidad = f.unidadDelValor ? ` ${T(`fichas.unidad.${f.unidadDelValor}${valor === '1' ? '1' : ''}`)}` : '';
   const extra = (Number.isFinite(f.umbralDias) ? `<div class="t-den">${esc(T(f.umbralDias === 1 ? 'fichas.masDeUnDia' : 'fichas.masDeDias', { d: f.umbralDias }))}</div>` : '')
-    + (Array.isArray(f.causas) && f.causas.length ? `<div class="t-den">${esc(f.causas.map((c) => `${T(CAUSAS.includes(c.clave) ? `fichas.causa.${c.clave}` : 'fichas.causa.otra')} ${c.n}`).join(' · '))}</div>` : '');
+    + (Array.isArray(f.causas) && f.causas.length ? `<div class="t-den">${esc(f.causas.map((c) => `${T(CAUSAS.includes(c.clave) ? `fichas.causa.${c.clave}` : 'fichas.causa.otra')} ${c.n}`).join(' · '))}</div>` : '')
+    // una línea por mes: las entregadas y cada causa de lo rehecho, con su nombre en el idioma de la página
+    + (Array.isArray(f.meses) ? f.meses.map((x) => `<div class="t-den">${esc(T(x.en_curso ? 'fichas.mes.filaEnCurso' : 'fichas.mes.fila', {
+      mes: x.mes, entregadas: x.entregadas,
+      rehechas: x.causas.map((c) => `${T(CAUSAS.includes(c.clave) ? `fichas.causa.${c.clave}` : 'fichas.causa.otra')} ${c.n}`)
+        .concat(`${T('fichas.causa.sin-declarar')} ${x.sin_declarar}`).join(' · '),
+    }))}</div>`).join('') : '');
   return `<div class="tile ${est}" data-ficha="${esc(f.id)}">${chip(est, T(f.estado === 'declarado' ? 'fichas.declarado' : `fichas.${PALABRA[f.nivel] || 'medido'}`))}<div class="t-label">${esc(titulo)}</div><div class="t-val">${esc(valor + unidad)}</div><div class="t-den">${den}</div>${extra}${f.fecha ? `<div class="t-den">${esc(T('fichas.fuenteDel', { fecha: f.fecha }))}</div>` : ''}</div>`;
 }
 

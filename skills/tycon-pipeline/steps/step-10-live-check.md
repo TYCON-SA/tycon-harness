@@ -1002,10 +1002,13 @@ si falla, sin bypass por env var — igual que la matriz):
    hasta `mockup-compare: no — <motivo>` (se imprime siempre).
 12. **Cada capa de la maqueta se abre encima**: por cada pantalla con `presentation: "layer"` en la maqueta aprobada,
    un humo de `smoke-run.sh` tiene que escribir en su salida la línea `layer-check` de `scripts/lib/layer-probe.js`.
-   La línea dice que tocar su botón abrió una ventana con `role="dialog"` o `aria-modal="true"`, con los textos de la
-   capa adentro. Con navegador, `probeLayer(page, { screen, trigger, texts })` toca el botón. Sin navegador (un proyecto
+   La línea dice que tocar su botón abrió algo encima, con los textos de la capa adentro: una ventana con
+   `role="dialog"` o `aria-modal="true"`, un menú (`role="menu"`), una lista desplegable (`role="listbox"`) o un
+   popover abierto. Los textos de la ventana van en una misma lectura. Cada otro caso de la capa (una variante de la
+   maqueta: un error, un vacío) sale de a uno, y puede ir en su propia prueba, que lo provoque. Con navegador, `probeLayer(page, { screen, trigger, texts })` toca el botón. Sin navegador (un proyecto
    sin Playwright, o un humo que no puede tocar el botón), la prueba de componente con jsdom o testing-library toca el
-   botón y escribe la misma línea con `probeDocument(document, …)`. Cuenta como la evidencia de la matriz: con su
+   botón y escribe la misma línea con `probeDocument(document, …)`; para un menú o una lista desplegable, con
+   `antes: antesDe(document)` tomado antes del click (uno que ya estaba en la página no cuenta). Cuenta como la evidencia de la matriz: con su
    espejo, la salida sin cambiar y exit 0. Construida en la página, sin evidencia, o con un texto afuera, frena y dice
    qué hacer. Lo arregla el asistente; no es una pregunta para el dev.
 

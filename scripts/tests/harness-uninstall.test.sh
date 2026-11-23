@@ -916,8 +916,11 @@ want += [("command", n) for n in names]
 # las reglas de lectura de las carpetas del arnés, una pieza por regla; la del árbol y la del enlace del arnés
 # tienen que estar (las de las skills dependen del árbol de laboratorio)
 rules = [i for (k, i) in keys if i.startswith("permissions.allow:Read(")]
-keys = [(k, i) for (k, i) in keys if not i.startswith("permissions.allow:")]
+# las reglas deny del perfil completo, una pieza por regla (su lista entera la prueba deny-permissions.test.js)
+denies = [i for (k, i) in keys if i.startswith("permissions.deny:")]
+keys = [(k, i) for (k, i) in keys if not i.startswith("permissions.allow:") and not i.startswith("permissions.deny:")]
 bad = []
+if "permissions.deny:Bash(rm -rf /)" not in denies: bad.append("falta la regla deny de borrar la raíz: %r" % denies)
 if "permissions.allow:Read(~/.claude/tycon-harness/**)" not in rules: bad.append("falta la regla de lectura del enlace del arnés: %r" % rules)
 if not any(r.endswith("/**)") and "/.claude/" not in r for r in rules): bad.append("falta la regla de lectura del árbol: %r" % rules)
 if not names: bad.append("el árbol de laboratorio no trae comandos: no se mide la copia")

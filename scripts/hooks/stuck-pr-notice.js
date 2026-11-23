@@ -487,6 +487,27 @@ function caidasDeLaCola(repos, leidas, ahora) {
   return lineas;
 }
 
+/** El motivo de una lectura fallida, en una línea: lo que contestó la plataforma sin su HTML. */
+function motivoBreve(x) {
+  const crudo = x ? String(x.detail || x.reason || '') : '';
+  return limpio(crudo.replace(/<[^>]*>/g, ' '), 120) || 'sin motivo';
+}
+
+/**
+ * El aviso de los repos que la última lectura no pudo leer: el motivo de cada uno, cuándo se vuelve a leer y la orden
+ * para leerlo ahora. La misma falla sale una vez por hora, no en cada turno (`unread-prs-notice.json` guarda cuál salió y
+ * cuándo); una falla distinta, o la misma después de una hora, sale de nuevo. null mientras no le toca.
+ */
+function avisoSinLeer(dir, sinLeer, tree, now) {
+  const archivo = path.join(dir, 'unread-prs-notice.json');
+  const firma = sinLeer.join(' · ');
+  const previo = leerJson(archivo);
+  if (previo && previo.firma === firma && now - Number(previo.at) < HORA_MS) return null;
+  try { escribirJson(archivo, { firma, at: now }); } catch { /* sin poder guardarlo, sale en cada turno: mejor que callar */ }
+  return `los pedidos listos sin encolar: la última lectura no pudo leer ${firma}. Se vuelve a leer sola cada `
+    + `${Math.round(FOTO_MS / 60000)} min; para leer ahora: node "${__filename}" --refresh "${tree}" (no se repite hasta dentro de una hora si sigue igual)`;
+}
+
 /**
  * Para el aviso de cada turno de la coordinadora (scripts/tools/coordination.js): los verdes sin entrar, de la foto que
  * dejó la última lectura. No sale a la red: con la foto vencida o sin foto, lanza la lectura de fondo y usa la que hay
@@ -510,13 +531,14 @@ function coordinatorLines({ home = os.homedir(), tree = path.resolve(process.env
   // lo mismo con un repo que la última lectura no pudo leer
   // (una plataforma sin la operación no es una lectura fallida: se calla, como en el arranque)
   const leida = (r) => { const x = foto.lecturas[claveDe(r)]; return Boolean(x && (x.ok || x.reason === 'no_soportado')); };
-  const sinLeer = declarados.repos.filter((r) => (r.platform === 'github' || r.platform === 'azure') && !leida(r)).map((r) => limpio(r.repo, 60));
+  const sinLeer = declarados.repos.filter((r) => (r.platform === 'github' || r.platform === 'azure') && !leida(r))
+    .map((r) => `${limpio(r.repo, 60)} (${motivoBreve(foto.lecturas[claveDe(r)])})`);
   const relojArchivo = path.join(dir, 'green-prs.json');
   const previo = leerJson(relojArchivo) || {};
   // con la foto de más de FOTO_MS, ninguno se da por fuera de la cola (la lectura nueva ya se lanzó)
   const lecturaDeHace = edad >= FOTO_MS ? Object.fromEntries(declarados.repos.map((r) => [claveDe(r), edad])) : {};
   const { trabados, estado } = verdesSinEntrar(declarados.repos, foto.lecturas, previo, now, verdeMin(), { lecturaDeHace });
-  let problem = sinLeer.length ? `los pedidos listos sin encolar: la última lectura no pudo leer ${sinLeer.join(', ')}` : null;
+  let problem = sinLeer.length ? avisoSinLeer(dir, sinLeer, tree, now) : null;
   try { escribirJson(relojArchivo, estado); } catch (e) { problem = `no pude guardar desde cuándo está verde cada pedido (${e.code || e.message})`; }
   trabados.sort((a, b) => b.ms - a.ms || a.creado - b.creado || a.number - b.number);
   // las caídas de la cola y lo que pasó con los que quedaron afuera después de un empuje, también en cada turno
