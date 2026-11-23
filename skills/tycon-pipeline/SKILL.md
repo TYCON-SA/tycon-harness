@@ -249,7 +249,7 @@ PAUSA sin mutar ante conflicto cross-sesión, rama protegida o pipeline abandona
 3 Armar el plan (`plan`) · 4 Aprobar el plan (`approve-plan`) · 5 Implementar (`implement`: pruebas primero,
 build-gate) · 6 Correr las pruebas (`run-tests`: `test-gate.sh <repo> <story_path>` —con la RUTA— suite completa una
 vez: 0 verde · ≠0 rojo · 3 sin medir · 4 FRENO sin deducir el proyecto: `test-gate.sh <repo> <story> <subdir>` · 5 falta el
-corredor · 6 salió 0 sin correr pruebas; después `pipeline.js dep-gate`) · 7 Revisores (`reviewers`; vuelta N si hubo
+corredor · 6 salió 0 sin correr pruebas · 8 entorno sin preparar; después `pipeline.js dep-gate`) · 7 Revisores (`reviewers`; vuelta N si hubo
 arreglos) · 8 Pase adversarial (`adversarial-pass`, join) · 9 Hallazgos (`findings`: `write-findings` + `write-followups`;
 frena con CRITICAL) · 10 Probar en vivo (`live-check`) · 11 Preparar el pull request (`prepare-commit`) ·
 post-merge: `close-work-item`.

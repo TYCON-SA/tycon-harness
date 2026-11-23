@@ -289,6 +289,10 @@ El mismo aviso trae dos cosas más:
   y cuyo archivo (`<conversación>/subagents/agent-<id>.jsonl`) no cambió en 20 minutos, sale como «X espera a su agente Y,
   que no escribe hace N min (su último paso: …)». `owner-wait` lo dice una vez por agente. Por qué: un comando del agente
   que nunca vuelve, o un permiso que no le sale a nadie, deja a la sesión esperando para siempre.
+- **La sesión que dice que trabaja y no escribe.** Una sesión «trabajando» que no dio un paso suyo en una hora (un mensaje que le
+  llega no cuenta), que no tiene un comando de fondo corriendo y que no corre ningún agente (ninguno escribió en 20 minutos) sale como «X dice que trabaja, pero no escribe hace N min y no corre
+  nada (su último paso: …): ¿trabada?». `owner-wait` lo dice una vez por sesión. Por qué: un comando no pasa de 10 minutos,
+  así que una hora callada sin agentes es una sesión trabada, y en la oficina se veía igual que una que trabaja.
 - **Los pedidos listos que nadie encoló, en GitHub.** Un pedido abierto y limpio (sin choque ni controles obligatorios
   pendientes), sin auto-merge y fuera de la cola, igual por más de 10 minutos, sale con el comando para encolarlo. Por qué:
   nadie lo va a mergear, y todos creen que ya entró. Sale de la última lectura guardada, de menos de una hora: el aviso no
@@ -368,7 +372,18 @@ examen son llamadas al modelo y no piden turno. Lo controla el arnés, no la mem
   que tome el turno. Antes de lanzarlos, `heavy-turn.js reserve --for "<qué>"` toma el turno a nombre de eso: un portón
   que lo pide recibe el «esperá» con el nombre de la reserva. Con una ejecución grande corriendo no reserva (sale 77 y dice
   quién la tiene). Se suelta con `heavy-turn.js release --reserve`, vence a los 90 minutos (una tanda de revisores o un
-  pase; las tres horas son las de una suite) y, si la sesión de la coordinadora se cerró, a los 10.
+  pase; las tres horas son las de una suite) y, si la sesión de la coordinadora se cerró, a los 10. Con
+  `--to <sesión>`, la reserva dice qué sesión lanza lo reservado (su pase sin el pipeline, el punto que sigue). Es
+  para el pase, no para sus suites: el portón de esa sesión espera como el de cualquiera hasta que se suelte.
+- **El pase sin el pipeline también pide turno.** Una sesión sin una ejecución del pipeline (la que abrió la coordinadora para
+  un arreglo, o una suelta) lanza su pase con la herramienta Agent o Workflow, sin marcador que lo cuente. El 23/11 a las
+  05:45, con varios de esos a la vez, la máquina se quedó sin procesos. El gancho `agile-pass-turn.js` mira cada
+  lanzamiento: todo Workflow (el abanico de agentes que llena la máquina) y un Agent cuya descripción o tipo dice
+  adversarial (los revisores chicos y las búsquedas no; el pedido no se mira). Si la sesión no tiene el «arrancá» (`grant --to`) ni una reserva para ella
+  (`reserve --for "<qué>" --to <sesión>`), avisa a la sesión y a la persona con quién tiene el turno, y lo anota en
+  `gates.log` (`agile-pass-turn`). Hoy sólo avisa: si pasa a frenar lo decide el dueño con esa medición (`MODO` en el
+  gancho). No mira sin coordinadora, en la coordinadora misma ni en una sesión del pipeline. `TYCON_AGILE_PASS_TURN=0` lo
+  apaga.
 
 `coordination.js status` muestra un solo renglón, «Turno de tarea pesada», con quién lo tiene y qué es; con una ejecución
 grande, si el segundo turno está libre o cerrado, con la memoria y el piso; con dos, las dos. `heavy-turn.js holders` las

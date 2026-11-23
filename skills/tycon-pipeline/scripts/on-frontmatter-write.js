@@ -506,6 +506,24 @@ function anotarDecision(regla, veredicto, storyId, estado) {
 
 const fmBlock = (c) => { const m = c.match(/^---\r?\n([\s\S]*?)\r?\n---/); return m ? m[1] : ''; };
 
+// ¿Una tanda del bloque pipelines pasa a done? Lo decide batchTransition (lib/story-checks.js), el mismo que usa
+// on-pre-commit: ante la duda, se mide (por nombre, por los renglones done con comillas y mayúsculas, o porque la
+// lectura del bloque es dudosa). Sólo el frontmatter: un `status: done` en la prosa o en un bloque de código no cuenta.
+// Sin el lector no se sabe qué tanda cambió: un frontmatter que cambia cuenta como transición. `detalle` es lo que dice
+// el cartel del freno.
+function tandaPasaADone(oldContent, newContent) {
+  try {
+    const t = require('./lib/story-checks.js').batchTransition(oldContent, newContent);
+    const partes = [];
+    if (t.turned.length) partes.push(`pasa a done ${t.turned.join(', ')}`);
+    if (t.doubtful) partes.push(`la lectura de las tandas es dudosa: ${[...t.doubtsBefore, ...t.doubtsAfter].join('; ')}`);
+    if (!partes.length && t.countUp) partes.push('suben los renglones de estado done');
+    return { transition: t.transition, detalle: partes.join(' · ') };
+  } catch (e) {
+    return { transition: fmBlock(oldContent) !== fmBlock(newContent), detalle: `no pude cargar el lector de tandas (${e.message})` };
+  }
+}
+
 /**
  * ¿El Edit/Write transiciona una STORY a review/done? Pura y sin salida: la usa la constancia de la
  * rama de exención, que corta ANTES de que el flujo principal lea la config del repo (y sus avisos).
@@ -523,8 +541,7 @@ function transicionDeStory(filePath, oldContent, newContent) {
     const oldS = (oldFm.status || '').toLowerCase();
     const newS = (newFm.status || '').toLowerCase();
     const statusTransition = isCriticalStatus(newS) && newS !== oldS;
-    const pipelineTransition = (fmBlock(newContent).match(/^\s+status:\s*done\b/gm) || []).length
-      > (fmBlock(oldContent).match(/^\s+status:\s*done\b/gm) || []).length;
+    const pipelineTransition = tandaPasaADone(oldContent, newContent).transition;
     return statusTransition || pipelineTransition ? { storyId: String(declaredId), estado: newS } : null;
   } catch {
     return null; // la constancia nunca decide nada: ante la duda, no anota
@@ -624,15 +641,9 @@ function handle(event, { casa } = {}) {
   const statusTransition =
     isCriticalStatus(newS) && newS !== oldS;
 
-  // Trigger 2: pipeline.X.status: done en el new state que NO estaba antes.
-  // Heurística: contamos ocurrencias de `status: done` indentado (block pipelines).
-  // Contar SOLO dentro del bloque frontmatter (entre los dos `---`),
-  // no en todo el contenido — un spec que documente el pipeline con un `status: done`
-  // indentado en prosa/code-block NO debe disparar el gate (falso positivo que bloquearía
-  // edits no relacionados).
-  const oldDoneCount = (fmBlock(oldContent).match(/^\s+status:\s*done\b/gm) || []).length;
-  const newDoneCount = (fmBlock(newContent).match(/^\s+status:\s*done\b/gm) || []).length;
-  const pipelineTransition = newDoneCount > oldDoneCount;
+  // Trigger 2: una tanda del bloque pipelines que pasa a done (tandaPasaADone).
+  const tandas = tandaPasaADone(oldContent, newContent);
+  const pipelineTransition = tandas.transition;
 
   if (!statusTransition && !pipelineTransition) return null;
 
@@ -710,7 +721,7 @@ function handle(event, { casa } = {}) {
   lines.push(`  File: ${filePath}`);
   lines.push(`  Story: ${storyId}`);
   lines.push(`  ${statusTransition ? '→ status: ' + (oldFm.status || '?') + ' → ' + (newFm.status || '?') : ''}`);
-  lines.push(`  ${pipelineTransition ? `→ pipelines.*.status: done added (${oldDoneCount} → ${newDoneCount})` : ''}`);
+  lines.push(`  ${pipelineTransition ? `→ pipelines: ${tandas.detalle}` : ''}`);
   lines.push('');
   lines.push('La story declara tests runtime-dependent (Playwright/E2E/smoke) pero no');
   lines.push(`existe archivo de evidencia .advisors/dod-runtime/${prefijoDe(storyId, filePath) || '(sin clave: no se pudo calcular, ver el aviso de arriba) '}*.md en:`);

@@ -294,6 +294,10 @@ Lo que tiene que cumplir esa aprobación:
   al **detalle**, que owner-next imprime debajo de la pregunta y nunca va dentro del cuadro: mostralo si lo pedís. Un
   cuadro que igual no entra (el guardado ajeno, que se muestra entero) llega con el aviso «Este cuadro pasa el tope del
   teléfono»: leelo en la máquina.
+- **El cambio de controles se aprueba con un click**, como las demás firmas de la máquina, o en tu terminal. La CI sigue
+  siendo la segunda llave: un pedido que cambia un control pide la constancia de `control-change`, y sin ella sale en
+  rojo. Antes del cuadro, la sesión te muestra la salida de `run-base-controls.sh pending` y el diff de esas rutas; nada
+  lo frena, es lo que se espera de ella. El cuadro dice cuántos archivos y en qué zonas, y el por qué sale de los commits.
 - **El cambio de controles se explica primero.** El cuadro de `control-change` dice, después de lo que se aprueba, qué
   cambia en el comportamiento del control (qué deja de frenar, qué empieza a frenar), por qué y el riesgo concreto de ese
   cambio. Lo escribe la sesión que hizo el cambio, en sus commits, con tres renglones: `Cambia-control: …`,

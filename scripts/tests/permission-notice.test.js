@@ -202,6 +202,21 @@ test('T9 OwnerWait_SesionFrenada_TerminaConLaLinea @story-8.202 @ac-6', () => {
   assert.match(r.lines[0], /^hora-mensajes espera un permiso desde las \d\d:\d\d: Write \/r\/specs\/x\.md\. Para entrar: claude attach hora-mensajes$/);
 });
 
+// 🔴 Falla con: el aviso que dice «espera un permiso» de una marca que Claude Code no confirma (la sesión sin estado, o
+// esperando otra cosa): un permiso que se resolvió por otro camino se anunciaba como abierto mientras la sesión seguía.
+test('T9b OwnerWait_PermisoSinConfirmar_DiceQueNoEstaConfirmado', () => {
+  // sin estado de Claude Code (el campo no está), y esperando otra cosa que un permiso
+  for (const estado of [{ status: undefined, statusUpdatedAt: undefined }, { status: 'waiting', waitingFor: 'input' }]) {
+    const t = toy();
+    claudeFile(t, OTRA, 'hora-mensajes', estado);
+    frenada(t, OTRA, 'Write', '/r/specs/x.md', 0);
+    const r = vuelta(t);
+    assert.strictEqual(r.lines.length, 1, JSON.stringify(r));
+    assert.match(r.lines[0], /^hora-mensajes tiene un permiso anotado desde las \d\d:\d\d, sin confirmar que siga abierto: Write \/r\/specs\/x\.md\. Para entrar: claude attach hora-mensajes$/, JSON.stringify(estado));
+    assert.doesNotMatch(r.lines[0], /espera un permiso/);
+  }
+});
+
 test('T10 OwnerWait_YaAnunciada_NoTerminaDeNuevo @story-8.202 @ac-6', () => {
   const t = toy();
   claudeFile(t, OTRA, 'hora-mensajes', { status: 'waiting' });
