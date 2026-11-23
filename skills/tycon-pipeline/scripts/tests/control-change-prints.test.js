@@ -217,6 +217,49 @@ test('T17 Empuje_WorkTreeAparteHeredocYRenglonPartido_Frena', () => {
     `bash <<'EOF'\ncd repo && git push\nEOF`, 'cd repo && git \\\n  push']) frenaDesdeArriba(c, cmd);
 });
 
+// T18 a T21 · lo que encontró el pase de la fila 81: cd con opciones, env -C con la carpeta aparte, las variables de git,
+// --git-dir sin --work-tree (que sigue mirando la carpeta de trabajo), carpetas sin resolver y el tope de carpetas.
+test('T18 Empuje_CdConOpcionesEnvCYVariablesDeGit_Frena', () => {
+  const c = conConstanciaCommiteada();
+  for (const cmd of ['cd -P repo && git commit -m x && git push', 'cd -- repo && git push', 'cd -L repo; git push',
+    'env -C repo git push', 'GIT_DIR=repo/.git GIT_WORK_TREE=repo git push', 'export GIT_DIR=repo/.git; git push']) frenaDesdeArriba(c, cmd);
+});
+
+test('T19 Commit_GitDirSinWorkTree_MiraTambienLaCarpetaDeTrabajo', () => {
+  // desde el repo con la constancia sin huella, el `.git` de otro: `git add` toma los archivos de acá
+  const c = corral();
+  c.constancia('aca');
+  const otro = path.join(c.raiz, 'otro');
+  fs.mkdirSync(otro);
+  git(otro, 'init', '-q', '-b', 'main');
+  const r = c.correr(`git --git-dir=${otro}/.git add -A && git --git-dir=${otro}/.git commit -m x`);
+  assert.ok(r && r.block, 'frena');
+  assert.match(r.block, /aca\.json/);
+});
+
+test('T20 Empuje_CarpetaSinResolver_FrenaComoGitC', () => {
+  const c = conConstanciaCommiteada();
+  for (const cmd of ['cd "$(echo repo)" && git push', 'for d in repo; do cd $d; git push; done', 'git --git-dir="$X/.git" push',
+    'git --work-tree $Y push']) {
+    const r = c.correr(cmd, c.raiz);
+    assert.ok(r && r.block, `frena: ${cmd}`);
+    assert.match(r.block, /CONSTANCIA SIN MIRAR|escondida\.json/, cmd);
+  }
+  // sin commit ni empuje, un cd sin resolver no importa
+  assert.strictEqual(c.correr('cd "$(echo repo)" && git status', c.raiz), null);
+});
+
+test('T21 Empuje_MuchosCd_FrenaSinTardar', () => {
+  const c = conConstanciaCommiteada();
+  const cds = Array.from({ length: 200 }, (_, k) => `cd /tmp/no-existe-${k}`).join(' && ');
+  // stable-data: el reloj mide cuánto tarda el freno, no da una fecha que se compare
+  const desde = Date.now();
+  const r = c.correr(`${cds} && git push`, c.raiz);
+  assert.ok(Date.now() - desde < 4000, `tardó ${Date.now() - desde} ms`);
+  assert.ok(r && r.block, 'con más carpetas que el tope no se sabe dónde corre: frena');
+  assert.match(r.block, /CONSTANCIA SIN MIRAR/);
+});
+
 test('T7 SinConstanciasNuevas_OComandosQueNoSonCommitNiPush_ComoAntes', () => {
   const c = corral();
   assert.strictEqual(c.correr('git commit -m x'), null);

@@ -5221,23 +5221,36 @@ function constanciasSinHuella(event, opts = {}) {
   const huellas = require('./lib/control-change-prints.js');
   const stateDir = opts.stateDir || require('./lib/story-gate-io.js').DEFAULT_STATE_DIR;
   const sesion = nativePath(event?.cwd || process.cwd());
-  // las carpetas donde puede correr un `git` del texto: la del `cd` del principio, la de cada `cd` o `pushd` (desde el
-  // anterior y desde la sesión; `cd -` vuelve al de antes, y vale adentro de un paréntesis o de llaves) y la de un `env -C`
+  // las carpetas donde puede correr un `git` del texto: la del `cd` del principio, la de cada `cd` o `pushd` (con sus
+  // opciones; desde el anterior y desde la sesión; `cd -` vuelve al de antes, y vale adentro de un paréntesis o de llaves),
+  // la de un `env -C` y la de GIT_WORK_TREE o GIT_DIR. `sinResolver`: las que no se pueden saber (una variable o una
+  // sustitución); `demasiadas`: más carpetas que el tope, que no se terminan de leer
+  const absoluta = (raw) => resolveTarget(raw, sesion, process.platform, { homeVariable: true });
   const carpetasDe = (texto) => {
     const out = [cwdDelComando(texto, sesion)];
+    const sinResolver = [];
     const visitadas = [sesion];
-    for (const m of String(texto).matchAll(/(?:^|[\s;&|({])(?:cd|pushd)[ \t]+(?:'([^']*)'|"([^"]*)"|([^\s;&|()<>'"`]+))/g)) {
+    for (const m of String(texto).matchAll(/(?:^|[\s;&|({])(?:cd|pushd)(?:[ \t]+(?:-[LPe@]+|--))*[ \t]+(?:'([^']*)'|"([^"]*)"|([^\s;&|()<>'"`]+))/g)) {
       const tok = m[1] ?? m[2] ?? m[3];
       if (tok === '-') { if (visitadas.length > 1) visitadas.pop(); out.push(visitadas[visitadas.length - 1]); continue; }
-      if (!tok || tok.startsWith('-')) continue;
+      if (!tok) continue;
       const ex = expandirRuta(String(texto).slice(0, m.index + m[0].length), tok);
-      if (ex.sinResolver.length) continue;
+      if (ex.sinResolver.length) { sinResolver.push(`cd ${tok}`); continue; }
       const encadenada = resolveTarget(ex.valor, visitadas[visitadas.length - 1], process.platform, { homeVariable: true });
-      out.push(encadenada, resolveTarget(ex.valor, sesion, process.platform, { homeVariable: true }));
+      out.push(encadenada, absoluta(ex.valor));
       visitadas.push(encadenada);
+      if (new Set(out).size > TOPE_DE_CARPETAS_DE_CD) return { carpetas: [...new Set(out)], sinResolver, demasiadas: true };
     }
-    for (const t of tramos(String(texto))) for (const d of pelarEnv(t).carpetas) out.push(resolveTarget(d, sesion, process.platform, { homeVariable: true }));
-    return [...new Set(out)];
+    for (const t of tramos(String(texto))) for (const d of pelarEnv(t).carpetas) out.push(absoluta(d));
+    const asignadas = asignacionesDe(String(texto));
+    for (const [nombre, deGit] of [['GIT_WORK_TREE', false], ['GIT_DIR', true]]) {
+      for (const v of asignadas.get(nombre) || []) {
+        if (/[$`]/.test(v)) { sinResolver.push(`${nombre}=${v}`); continue; }
+        const abs = absoluta(v);
+        out.push(deGit && path.basename(abs) === '.git' ? path.dirname(abs) : abs);
+      }
+    }
+    return { carpetas: [...new Set(out)], sinResolver, demasiadas: false };
   };
   const via = `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}`;
   const frena = (texto) => {
@@ -5249,13 +5262,18 @@ function constanciasSinHuella(event, opts = {}) {
   // y el comando con los renglones partidos con `\` juntados
   const plano = String(cmd).replace(/\\\r?\n/g, ' ');
   const textos = [...new Set([String(cmd), plano, ...comandosAnidados(String(cmd)).slice(1), ...comandosPorOtroPrograma(String(cmd), sesion)])];
+  const sinMirar = (que, sub) => frena(`🔒 CONSTANCIA SIN MIRAR — no pude resolver la carpeta de \`${que}\` antes de \`git ${sub}\`: no sé qué repo commitea o empuja ni si lleva una constancia sin firmar. Escribí la ruta sin variables.`);
   for (const texto of textos) {
-    const carpetas = carpetasDe(texto);
+    const lectura = carpetasDe(texto);
+    const carpetas = lectura.carpetas;
     for (const tramo of tramos(texto)) {
-      // sin las redirecciones: `2>&1` o `> salida.txt` no son parte de lo que se empuja; ni el `)` que cierra un grupo
-      const w = palabras(sinPalabrasDelShell(String(tramo).replace(REDIRECCION, ' '))).map(sinCierreDeGrupo).filter((x) => x !== '');
+      // sin el `env` de delante (`env -C repo git push`), sin las redirecciones (`2>&1` o `> salida.txt` no son parte de lo
+      // que se empuja) y sin el `)` que cierra un grupo
+      const w = palabras(sinPalabrasDelShell(pelarEnv(String(tramo)).resto.replace(REDIRECCION, ' '))).map(sinCierreDeGrupo).filter((x) => x !== '');
       if (nombreDeComando(w[0]) !== 'git') continue;
       let dirs = carpetas;
+      let fija = false;
+      const pendientes = [];
       let i = 1;
       while (i < w.length && /^-/.test(w[i])) {
         const pegada = /^-C(.+)$/.exec(w[i]);
@@ -5264,17 +5282,18 @@ function constanciasSinHuella(event, opts = {}) {
           const ruta = expandirRuta(texto, crudo);
           // una carpeta que no se resuelve no se puede mirar: frena
           if (ruta.sinResolver.length) return frena(`🔒 CONSTANCIA SIN MIRAR — no pude resolver la carpeta de \`git -C ${crudo}\`: no sé qué repo commitea o empuja ni si lleva una constancia sin firmar. Escribí la ruta sin variables.`);
-          dirs = dirs.map((d) => resolveTarget(ruta.valor, d, process.platform, { homeVariable: true })); i += pegada ? 1 : 2; continue;
+          dirs = dirs.map((d) => resolveTarget(ruta.valor, d, process.platform, { homeVariable: true }));
+          fija = fija || path.isAbsolute(String(ruta.valor));
+          i += pegada ? 1 : 2; continue;
         }
-        // `--work-tree` y `--git-dir`, pegados o aparte, dicen el repo: el del `.git` es la carpeta que lo tiene
-        const repoPor = /^--(work-tree|git-dir)(?:=(.+))?$/.exec(w[i]);
+        // `--work-tree` y `--git-dir`, pegados o aparte, nombran un repo más para mirar (el del `.git` es la carpeta que lo
+        // tiene); la carpeta de trabajo sigue: `git --git-dir=<otro> add -A` toma los archivos de acá
+        // (`--git-dir="$X"` llega partido en `--git-dir=` y el valor: el `=` vacío toma la palabra que sigue)
+        const repoPor = /^--(work-tree|git-dir)(?:=(.*))?$/.exec(w[i]);
         if (repoPor) {
-          const valor = repoPor[2] ?? w[i + 1];
-          if (valor !== undefined) {
-            const abs = resolveTarget(expandirRuta(texto, valor).valor, carpetas[0], process.platform, { homeVariable: true });
-            dirs = [repoPor[1] === 'git-dir' && path.basename(abs) === '.git' ? path.dirname(abs) : abs];
-          }
-          i += repoPor[2] !== undefined ? 1 : 2;
+          const valor = repoPor[2] || w[i + 1];
+          if (valor !== undefined) pendientes.push([repoPor[1], valor]);
+          i += repoPor[2] ? 1 : 2;
           continue;
         }
         // las opciones de git que llevan su valor en la palabra que sigue
@@ -5283,6 +5302,14 @@ function constanciasSinHuella(event, opts = {}) {
       }
       const sub = w[i];
       if (sub !== 'commit' && sub !== 'push') continue;
+      for (const [cual, valor] of pendientes) {
+        const ruta = expandirRuta(texto, valor);
+        if (ruta.sinResolver.length) return sinMirar(`git --${cual} ${valor}`, sub);
+        const abs = resolveTarget(ruta.valor, carpetas[0], process.platform, { homeVariable: true });
+        dirs = [...dirs, cual === 'git-dir' && path.basename(abs) === '.git' ? path.dirname(abs) : abs];
+      }
+      if (!fija && lectura.demasiadas) return frena(`🔒 CONSTANCIA SIN MIRAR — el comando cambia de carpeta más de ${TOPE_DE_CARPETAS_DE_CD} veces antes de \`git ${sub}\`: no sé en qué repo corre ni si lleva una constancia sin firmar. Partilo en comandos más cortos.`);
+      if (!fija && lectura.sinResolver.length) return sinMirar(lectura.sinResolver[0], sub);
       // lo que se empuja: sin refspec, la rama de HEAD; con `--all`/`--mirror`/`--branches` (también abreviadas) o un
       // comodín, todas; si no, el origen de cada refspec. Borrar una rama remota no empuja nada
       let refs = ['HEAD'];
