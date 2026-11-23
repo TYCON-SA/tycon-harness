@@ -814,7 +814,9 @@ says so once under «No se pudo leer». A badly written row is not saved: `board
 
 - `pendientes`: a list; each item has `id` (its number, `T-41`: the command sets it), `titulo`, `estado` (`hecho`, `curso`,
   `firma`, `riesgo`, `entrando`, `sin-empezar`, or `espera`, which goes to «Sin sesión»; `curso` and `riesgo` go to «En
-  curso» only if a live session is doing it, and otherwise also to «Sin sesión»), `grupo` (`Hoy`, `Esta semana`, `La semana
+  curso» only if a live session is doing it, and otherwise also to «Sin sesión»; a `firma` whose `quien` is a session name
+  (one word, like «Tero-2») that is no longer in the office goes to «Sin sesión», with «la sesión que la esperaba ya no está»: it does not wait for
+  the owner), `grupo` (`Hoy`, `Esta semana`, `La semana
   que viene` or `Más adelante`), `orden`, `quien`, `nota`, and its time: `pronosticoIso` (local time, `YYYY-MM-DDTHH:MM`),
   or `termina` with its own text. A done item carries `realIso`. `estimadaIso` is not allowed. `ultimoHecho` is written
   only by the board when it moves on its own.

@@ -804,7 +804,8 @@ aparte para `save --from` va fuera de la carpeta de estado. Si algo lo cambió s
 
 - `pendientes`: una lista; cada uno con `id` (su número, `T-41`: lo pone el comando), `titulo`, `estado` (`hecho`, `curso`,
   `firma`, `riesgo`, `entrando`, `sin-empezar` o `espera`, que va a «Sin sesión»; «curso» y «riesgo» van a «En curso» sólo
-  si una sesión viva lo hace, y si no, también a «Sin sesión»), `grupo` (`Hoy`, `Esta semana`, `La semana que viene` o
+  si una sesión viva lo hace, y si no, también a «Sin sesión»; una «firma» cuyo `quien` es el nombre de una sesión (una palabra,
+  como «Tero-2») que ya no está en la oficina va a «Sin sesión», con «la sesión que la esperaba ya no está»: no espera al dueño), `grupo` (`Hoy`, `Esta semana`, `La semana que viene` o
   `Más adelante`), `orden`, `quien`, `nota`, y su hora: `pronosticoIso` (hora local, `AAAA-MM-DDTHH:MM`), o `termina` con
   un texto propio. Un hecho lleva `realIso`. `estimadaIso` no va. `ultimoHecho` lo escribe sólo el tablero al moverse solo.
 - `historia` (por ejemplo `"2.81"`) y `pedido` (`{ "repo": "tycon-harness", "numero": 885 }`), opcionales. Con `historia` y
