@@ -205,7 +205,8 @@ Antes de cada commit, **compila sin ejecutar** cada migración SQL nueva o modif
 ninguna: el control de los niveles
 compara el perfil con el catálogo de la misma versión, y lo que decide es el freno de cada máquina. Lo mismo la huella
 de una constancia (`control-change-prints.js`) y lo que decide si hay una terminal de verdad (`runtime-waiver.js`,
-`home-command.js`). Por qué: un pedido que dejaba de pedir una firma (la variable del pase adversarial)
+`home-command.js`), y tres frenos: el de producción (`prod-access-guard.js`), el de mano (`safety-guard-pre.sh`) y el de
+las escrituras por consola (`on-bash-write-gate.js`): un cambio a un freno pasa por el dueño. Por qué: un pedido que dejaba de pedir una firma (la variable del pase adversarial)
 salió «entra sin constancia», con las dos pasadas en verde. Por eso llevan `sign_on_change`, como el juez y las
 bibliotecas de la firma. También lo llevan las piezas del freno de producción que se instalan o en las que confía y que
 ningún banco prueba: el instalador y la puesta al día que corren como root, su regla de sudo, el lanzador y la
