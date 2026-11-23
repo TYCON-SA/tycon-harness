@@ -346,3 +346,27 @@ test('RefreshAfterMain_ConstanciaGrande_LeeCadaCommitUnaVez (fila 164)', () => {
   // 21 commits del pedido más la punta: cada uno se lee una vez, con todas las rutas juntas
   assert.ok(lecturas <= 25, `leyó el árbol ${lecturas} veces (una por commit alcanza)`);
 });
+
+// 🔴 Falla con: leer juntas una ruta y la carpeta que la contiene cambia el motivo (git muestra lo de adentro y no la
+// carpeta), o muchas rutas largas pasan el largo de la línea de comandos y el clasificador dice que no pudo leer.
+test('RefreshAfterMain_CarpetaDeOtraYMuchasRutas_MismoMotivo (fila 164)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'refresh-after-main-'));
+  LABS.push(dir);
+  const largas = Array.from({ length: 120 }, (_, i) => `scripts/hooks/${'x'.repeat(90)}-${i}.sh`);
+  git(dir, 'init', '-q', '-b', 'main');
+  escribir(dir, 'a/b/c.sh', texto({}));
+  for (const p of largas) escribir(dir, p, texto({}));
+  commit(dir, 'base');
+  git(dir, 'checkout', '-q', '-b', 'pedido');
+  escribir(dir, 'a/b/c.sh', texto({ 1: 'cambio' }));
+  for (const p of largas) escribir(dir, p, texto({ 1: 'cambio' }));
+  const c = commit(dir, 'el cambio propio');
+  const vieja = constancia([{ path: 'a/b', blob: 'f'.repeat(40) }, { path: 'a/b/c.sh', blob: blob(dir, c, 'a/b/c.sh') }]);
+  const r = clasificar(dir, { entries: [{ path: 'a/b', blob: 'e'.repeat(40) }, { path: 'a/b/c.sh', blob: blob(dir, c, 'a/b/c.sh') }], approvals: [vieja] });
+  assert.deepStrictEqual(r, { clase: 'control-change', motivo: 'a/b no es un archivo común en la punta' });
+  // 120 rutas de casi cien letras: van en tandas y todas se leen (todas tal cual: ya firmado, no es refirma)
+  const entradas = largas.map((p) => ({ path: p, blob: blob(dir, c, p) }));
+  const r2 = clasificar(dir, { entries: entradas, approvals: [constancia(entradas)] });
+  assert.strictEqual(r2.clase, 'control-change');
+  assert.match(r2.motivo, /ya está firmado tal cual$/);
+});
