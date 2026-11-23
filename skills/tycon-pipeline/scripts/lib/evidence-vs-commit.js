@@ -105,65 +105,12 @@ function soloMarcasEnElCodigo(antes, ahora, ext) {
 }
 
 // Lo que hace de un comentario una directiva de alguna herramienta: ahí una marca nueva puede cambiar su efecto.
-const DIRECTIVA = /eslint|prettier|istanbul|\bc8\b|jshint|tslint|@ts-|biome-|deno-|noqa|pylint|shellcheck|nolint|noinspection|ignore|skip|suppress|disable|webpack|sourceMapping|@jsx|^\s*(?:\/\/|#)\s*!|\b(?:global|exported)\s/i;
+const DIRECTIVA = /eslint|prettier|istanbul|\bc8\b|jshint|tslint|@ts-|biome-|deno-|noqa|pylint|shellcheck|nolint|noinspection|ignore|skip|suppress|disable|webpack|sourceMapping|@jsx|environment|^\s*(?:\/\/|#)\s*!|\b(?:global|exported)\s/i;
 
 /** El texto de un comentario sin sus marcas; el de una directiva queda entero, para que una marca ahí cuente como cambio. */
 function sinMarcasDelComentario(texto) {
   const sin = String(texto).replace(MARCA_DE_PRUEBA, '');
   return sin !== String(texto) && DIRECTIVA.test(sin) ? String(texto) : sin;
-}
-
-/**
- * Los renglones de un guion de shell que son comentarios: los que empiezan con `#` fuera de comillas y de un heredoc. Lee
- * comillas simples, dobles e invertidas, `$'…'`, escapes, un `#` al final de un renglón y los heredocs (`<<`, `<<-`, con
- * la marca citada, escapada o con guiones). Con unas comillas o un heredoc sin cerrar, null.
- */
-function comentariosDelShell(texto) {
-  const renglones = String(texto).split('\n');
-  const comentario = renglones.map(() => false);
-  let q = null;
-  const pendientes = [];
-  let heredoc = null;
-  for (let n = 0; n < renglones.length; n++) {
-    const r = renglones[n];
-    if (heredoc) {
-      if ((heredoc.tabs ? r.replace(/^\t+/, '') : r) === heredoc.marca) heredoc = pendientes.shift() || null;
-      continue;
-    }
-    if (!q && /^[ \t]*#/.test(r)) { comentario[n] = true; continue; }
-    for (let i = 0; i < r.length; i++) {
-      const c = r[i];
-      if (q === "'") { if (c === "'") q = null; continue; }
-      if (q === "$'") { if (c === '\\') i++; else if (c === "'") q = null; continue; }
-      if (q) { if (c === '\\') i++; else if (c === q) q = null; continue; }
-      if (c === '\\') { i++; continue; }
-      if (c === '#' && (i === 0 || /[\s;&|(]/.test(r[i - 1]))) break;
-      if (c === '$' && r[i + 1] === "'") { q = "$'"; i++; continue; }
-      if (c === "'" || c === '"' || c === '`') { q = c; continue; }
-      const h = c === '<' ? /^<<(-?)[ \t]*(?:'([^']*)'|"([^"]*)"|\\?([^\s;&|<>()'"]+))/.exec(r.slice(i)) : null;
-      if (h && r[i + 2] !== '<') { pendientes.push({ marca: h[2] ?? h[3] ?? h[4], tabs: h[1] === '-' }); i += h[0].length - 1; }
-    }
-    if (!q && pendientes.length) heredoc = pendientes.shift();
-  }
-  return q || heredoc ? null : comentario;
-}
-
-/**
- * En un guion de shell: ¿las dos versiones difieren sólo en marcas de sus renglones de comentario? Esos renglones se
- * comparan sin sus marcas (el de una directiva, entero) y el que quedó vacío se va; todos los demás, byte a byte.
- */
-function soloMarcasEnElShell(antes, ahora) {
-  const sin = (texto) => {
-    const comentario = comentariosDelShell(texto);
-    if (!comentario) return null;
-    return String(texto).split('\n').flatMap((r, n) => {
-      if (!comentario[n]) return [r];
-      const s = sinMarcasDelComentario(r);
-      return s !== r && COMENTARIO_VACIO.test(s) ? [] : [s];
-    }).join('\n');
-  };
-  const [a, b] = [sin(antes), sin(ahora)];
-  return a !== null && a === b;
 }
 
 /** `{ codigo, salida }`; `codigo: null` si git no pudo contestar (no está, no es un repo accesible, venció el tiempo). */
@@ -436,8 +383,8 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
   }
 
   // ¿Lo único que cambió en la prueba, de la versión que juzgó la evidencia (`desde`) a la del disco, son marcas? En el
-  // nombre de una prueba o en un comentario, nunca en un dato: en JS y TS (soloMarcasEnElCodigo) y en un guion de shell
-  // (soloMarcasEnElShell), que se saben leer; en otro lenguaje no se sabe qué renglón es un comentario, y vence como
+  // nombre de una prueba o en un comentario, nunca en un dato ni en una directiva. Sólo en JS y TS (soloMarcasEnElCodigo),
+  // que el lector sabe leer; en otro lenguaje, también shell, no se sabe qué renglón es un comentario, y vence como
   // siempre. Sin `desde`, sin el archivo en esa versión, igual a la de ahora o con git sin contestar, no.
   function soloMarcas(archivo, carpeta, nombre, desde) {
     if (!desde) return false;
@@ -448,8 +395,7 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
     const antes = preguntar(carpeta, ['show', `${desde}:${rel}`]);
     if (antes.codigo !== 0 || antes.salida === ahora) return false;
     const ext = path.extname(rel).toLowerCase();
-    if (changeKind.EXTENSIONES.includes(ext) && ext !== '.cs') return soloMarcasEnElCodigo(antes.salida, ahora, ext);
-    return ext === '.sh' ? soloMarcasEnElShell(antes.salida, ahora) : false;
+    return changeKind.EXTENSIONES.includes(ext) && ext !== '.cs' ? soloMarcasEnElCodigo(antes.salida, ahora, ext) : false;
   }
 
   // La regla 6 por criterio: la prueba que la propia historia cambió vence sólo la evidencia de los criterios que nombra,

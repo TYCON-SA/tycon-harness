@@ -675,73 +675,30 @@ test('EvidenceVsCommit_SameStoryTagsAndCode_VoidsItsCriteria — marcas y algo m
 });
 
 test('EvidenceVsCommit_TagsInDataOrWhitespace_Voids — una marca en un dato de la prueba, o un cambio de espacios en un texto, vencen', () => {
-  const base = 'test(\'caso a @story-9.9 @ac-2\', () => { assert.equal(f(), \'ok @ac-1\'); const t = `a \nb`; const r = /x @ac-1/; });\n';
+  // la prueba empieza con un pragma de entorno y una directiva: una marca en cualquiera de los dos cambia su efecto
+  const base = '/** @jest-environment node */\n// eslint-disable-next-line\ntest(\'caso a @story-9.9 @ac-2\', () => { assert.equal(f(), \'ok @ac-1\'); const t = `a \nb`; const r = /x @ac-1/; });\n';
   for (const [caso, ahora] of [
     ['la marca de un dato', base.replace('\'ok @ac-1\'', '\'ok\'')],
     ['la marca de una expresión', base.replace('/x @ac-1/', '/x/')],
     ['los espacios de una plantilla', base.replace('`a \nb`', '`a\nb`')],
     ['un salto de Windows en una plantilla', base.replace('`a \nb`', '`a \r\nb`')],
     ['una marca de un método que no declara una prueba', base.replace('assert.equal(f(), \'ok @ac-1\')', 'assert.equal(re.test(\'ok @ac-2\'), true)')],
-    ['una marca en una directiva', base.replace('test(', '// eslint-disable-next-line @ac-4\ntest(')],
+    ['una marca en una directiva', base.replace('next-line\n', 'next-line @ac-4\n')],
+    ['una marca en un pragma de entorno', base.replace('node */', 'node @ac-4 */')],
   ]) {
-    const l = labDeLaHistoria(base.replace('test(', '// eslint-disable-next-line\ntest('));
+    const l = labDeLaHistoria(base);
     // el salto de Windows tiene que llegar al commit tal cual, con cualquier configuración de la máquina
     git(l.repo, ['config', 'core.autocrlf', 'false']);
-    escribir(l.repo, PRUEBA_9_9, caso === 'una marca en una directiva' ? ahora.replace('// eslint-disable-next-line\n', '') : ahora.replace('test(', '// eslint-disable-next-line\ntest('));
+    escribir(l.repo, PRUEBA_9_9, ahora);
     commit(l.repo, 'cambia la prueba', 1700000200);
     const r = l.juzgar(l.prueba);
     assert.equal(r.cuenta, false, `${caso}: ${JSON.stringify(r)}`);
   }
 });
 
-test('EvidenceVsCommit_SameStoryShellTestOnlyTags_StillCounts — en una suite de bash, sumar un renglón de marcas no vence; cambiar un comando sí', () => {
-  const nombre = 'tests/feature.test.sh';
-  const lab = (inicial = '# @story-9.9 @ac-2\nok "caso a" "$(echo a)"\n') => {
-    const repo = repoNuevo(carpeta());
-    git(repo, ['config', 'core.autocrlf', 'false']);
-    escribir(repo, 'src/feature.js', '// v1\n');
-    const abs = escribir(repo, nombre, inicial);
-    commit(repo, 'base', 1700000000);
-    git(repo, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
-    git(repo, ['switch', '-q', '-c', 'feature/9-9-lab']);
-    const ev = escribir(repo, '.advisors/dod-runtime/9.9-e2e-gate-20270101T000000Z.md', 'verdict=PASS\n');
-    commit(repo, 'evidencia', 1700000100);
-    const juzgar = () => evidencia().crearJuez({ historia: HISTORIA_9_9 }).vigencia({ archivo: abs, mtimeMs: Date.now(), evidencia: { ruta: ev, tsMs: 1700000100 * 1000 } });
-    return { repo, juzgar };
-  };
-  let l = lab();
-  escribir(l.repo, nombre, '# @story-9.9 @ac-2 @ac-3\n# @story-9.9 @ac-4\nok "caso a" "$(echo a)"\n');
-  commit(l.repo, 'marca', 1700000200);
-  let r = l.juzgar();
-  assert.deepStrictEqual([r.cuenta, r.regla, r.via], [true, 6, 'solo-marcas'], JSON.stringify(r));
-  l = lab();
-  escribir(l.repo, nombre, '# @story-9.9 @ac-2 @ac-3\nok "caso a" "$(echo b)"\n');
-  commit(l.repo, 'marca y cambia', 1700000200);
-  r = l.juzgar();
-  assert.deepStrictEqual([r.cuenta, r.regla], [false, 6], JSON.stringify(r));
-  // fuera de un comentario, una marca es parte del comando; y un renglón sin marcas se compara tal cual
-  for (const ahora of ['# @story-9.9 @ac-2\nok "caso a @ac-3" "$(echo a)"\n', '# @story-9.9 @ac-2 @ac-3\nok "caso a" "$(echo a)" \n',
-    '# @story-9.9 @ac-2 @ac-3\r\nok "caso a" "$(echo a)"\r\n']) {
-    l = lab();
-    escribir(l.repo, nombre, ahora);
-    commit(l.repo, 'marca y algo más', 1700000200);
-    r = l.juzgar();
-    assert.equal(r.cuenta, false, `${JSON.stringify(ahora)}: ${JSON.stringify(r)}`);
-  }
-  // un renglón con `#` adentro de un heredoc o de unas comillas de varios renglones es un dato: una marca ahí cambia la
-  // prueba; también en una directiva
-  for (const inicial of ['ok "caso a" "$(echo a)"\ncat > x.txt <<EOF\n# x\nEOF\n', "cat > x.txt <<\\EOF\n# x\nEOF\n",
-    "cat > x.txt <<'END-X'\n# x\nEND-X\n", "echo 'a\n# x\nb'\n", 'node -e "\n// x\n"\n', '# shellcheck disable=SC2086 # x\nok a\n']) {
-    l = lab(inicial);
-    escribir(l.repo, nombre, inicial.replace('# x', '# x @ac-5').replace('// x', '// x @ac-5'));
-    commit(l.repo, 'marca en un dato', 1700000200);
-    r = l.juzgar();
-    assert.equal(r.cuenta, false, `${JSON.stringify(inicial)}: ${JSON.stringify(r)}`);
-  }
-});
-
-test('EvidenceVsCommit_OtherLanguageOnlyTags_VoidsAsBefore — en un lenguaje que no se sabe leer, sumar marcas vence como en main', () => {
-  for (const [nombre, inicial] of [['tests/test_feature.py', '# x\ndef test_a():\n    pass\n'], ['tests/FeatureTests.cs', '// x\nclass T {}\n']]) {
+test('EvidenceVsCommit_OtherLanguageOnlyTags_VoidsAsBefore — en un lenguaje que no se sabe leer (también shell), sumar marcas vence como en main', () => {
+  for (const [nombre, inicial] of [['tests/test_feature.py', '# x\ndef test_a():\n    pass\n'], ['tests/FeatureTests.cs', '// x\nclass T {}\n'],
+    ['tests/feature.test.sh', '# x\nok "caso a" "$(echo a)"\n']]) {
     const repo = repoNuevo(carpeta());
     escribir(repo, 'src/feature.js', '// v1\n');
     const abs = escribir(repo, nombre, inicial);
