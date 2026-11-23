@@ -1376,8 +1376,15 @@ function lineaAprendizajes(archivo, hoy, { url, sitioPaso }) {
   const cuantas = (k) => (n(sin[k]) || 0) + (k === 'tope' ? 0 : n(espera[k]) || 0);
   const causas = APR_CAUSAS.filter(([k]) => cuantas(k)).map(([, t]) => t);
   const sinRedactar = APR_CAUSAS.reduce((s, [k]) => s + cuantas(k), 0);
-  const s = nuevas === 1 ? '' : 's';
-  const cabeza = `${nuevas ? `${nuevas} propuesta${s} nueva${s}` : 'sin propuestas nuevas'}${sinRedactar ? ` (${sinRedactar} sin redactar: ${causas.join(', ')})` : ''}`;
+  // las que la noche descartó al proponerlas también son nuevas, pero nadie las decide: no cuentan como propuestas
+  const descartadas = Math.min(n(r.descartadas) || 0, nuevas);
+  const paraDecidir = nuevas - descartadas;
+  const s = paraDecidir === 1 ? '' : 's';
+  const aclaraciones = [
+    ...(descartadas ? [`${descartadas} descartada${descartadas === 1 ? '' : 's'} por la noche`] : []),
+    ...(sinRedactar ? [`${sinRedactar} sin redactar: ${causas.join(', ')}`] : []),
+  ];
+  const cabeza = `${paraDecidir ? `${paraDecidir} propuesta${s} nueva${s}` : 'sin propuestas nuevas'}${aclaraciones.length ? ` (${aclaraciones.join('; ')})` : ''}`;
   const partes = [`aprendizajes: ${cabeza}, ${esperando} esperando decisión`];
   if (r.parcial === true) partes.push('lectura parcial del buzón');
   const calladas = n(r.maquinas_sin_reportar);
