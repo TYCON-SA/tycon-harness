@@ -516,7 +516,8 @@ turned on in the profile, or on the machine to try it out.
   notice and the session repeats the same command within 30 minutes. With an unused click, `owner-next` skips that row and says
   the repetition is missing.
 - **On a «No»:** `coordination.js owner-reject <id>` removes the row and names the session to tell. A box that closes or
-  resolves by itself leaves the row, and the pass stops there.
+  resolves by itself leaves the row, and the pass stops there. A background session's permission is different: on «Sí»
+  nothing is run, and on «No» its hook denies it by itself ("A background session's permission, as a box", below).
 - **What the coordinator signs by delegation.** Since the harness gives the routine signatures, only what is delegable
   and not routine reaches the coordinator. A delegable signature that the working session asked for itself does not
   reach the person: the gate routes it to the coordinator (`guides/firmas-del-arnes.md`, «Aprobar en nombre del dueño»).
@@ -693,9 +694,45 @@ is the only background console with which the owner can still sign with a click.
   Claude Code closes quiet background sessions on its own when the machine runs out of memory, and the harness cannot
   prevent it. The coordinator decides whether to bring it back: that uses memory again and counts for the cap.
 
+- "un permiso para la persona: «<session>» pide «<tool>» en «<folder>» (<row>). Te da el cuadro owner-next…": a
+  background session's permission arrived as a box (the next section). Each row is announced once.
+
 There is one per machine, and without a confirmed coordinator it exits at once. If it is not running, the notice of each
 turn says so with the command. `coordination.js status` shows the stuck sessions ("Trabadas") and the ones Claude Code
 closed ("Cerradas por Claude Code").
+
+### A background session's permission, as a box
+
+With the list on, a confirmed and alive coordinator and her `owner-wait` running, **the permission a background session
+in normal mode asks for reaches the person as a box, in the coordinator's tab** (`scripts/hooks/permission-relay.js`).
+The hook writes the whole request in the list and waits; `owner-wait` announces it and `owner-next` gives the box, which
+goes first: "¿Aprobás este pedido de <tool>? (permiso <id> · sesión <id> · código <fingerprint>) Carpeta: <folder>.
+Pedido:" and the whole request, with its line breaks. In Edit, Write, NotebookEdit and WebFetch each line of free text
+carries the mark "│ ", so nothing written inside is taken for a label, and the code is the fingerprint of the request's
+fields: two different requests never look the same nor share a click. The coordinator shows it without changing a
+letter, with «Sí, aprobar» and «No».
+
+- **On «Sí, aprobar», nothing is run.** The hook sees the person's click, spends it and lets that request run once,
+  with no permanent rule. The same request later carries another id and asks for another click.
+- **On «No»:** `coordination.js owner-reject <id>`. The hook denies it and the session is told the person said no.
+  Rejecting only denies: it never approves.
+- **Only the person approves it, with a click in the coordinator's tab.** Never the coordinator: not by delegation
+  (`approvals.delegated_signing` does not cover it), not with a typed «aprobado», not by touching the list.
+- **With no answer within `coordination.permission_wait_minutes`** (10 with no value, from 1 to 30), the hook leaves
+  without deciding: the usual window comes back in that session, which stays among the stuck ones ("Trabadas") with the
+  reason, and a late click approves nothing. The same if the coordinator dies or stops being the designated one while it
+  waits.
+- **Not carried, and the usual window comes at once:** an open tab, another mode (auto, no permissions, accept edits,
+  plan), no confirmed and alive coordinator, no `owner-wait`, the list off, the coordinator herself, Codex, and on
+  Windows a PowerShell command. Neither is a request that cannot be shown whole (over 1500 characters, characters that
+  are not seen or look blank, a line break in a path or an address, data the box does not show): the session stays
+  stuck with that reason. The tools it carries are Bash,
+  PowerShell, Edit, Write, NotebookEdit and WebFetch; the question box and the plan, never.
+- **If the person answers in the session's window** or the session closes, the hook dies and its row closes by itself:
+  a click is never asked for a request that no longer waits.
+
+What happened with each request stays in `gates.log` (`permission-relay`), without the request's text. It is turned off
+with `TYCON_PERMISSION_RELAY=0`.
 
 **What happens in other tabs reaches the coordinator on her turn**, and the working session sees nothing:
 

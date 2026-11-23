@@ -509,7 +509,9 @@ probarla.
   y la sesión repite el mismo comando dentro de los 30 minutos. Con un click sin usar, `owner-next` saltea ese renglón y dice
   que falta repetir.
 - **Con un «No»:** `coordination.js owner-reject <id>` saca el renglón y nombra la sesión a la que hay que avisarle. Un cuadro
-  cerrado o resuelto solo deja el renglón, y la pasada se corta.
+  cerrado o resuelto solo deja el renglón, y la pasada se corta. El permiso de una sesión de fondo es distinto: con el
+  «Sí» no se corre nada, y con el «No» su gancho lo niega solo («El permiso de una sesión de fondo, como cuadro», más
+  abajo).
 - **Lo que firma la coordinadora por delegación.** Con las firmas de trámite que da el arnés, a la coordinadora le llega
   sólo lo delegable que no es de trámite. Una firma delegable que la sesión que trabaja pidió para sí no llega a
   la persona: el freno la desvía a la coordinadora (`guides/firmas-del-arnes.md`, «Aprobar en nombre del dueño»). El
@@ -684,8 +686,44 @@ click. Mira cada 2 segundos y termina con una línea por novedad, y terminar la 
   Claude Code cierra solo las sesiones de fondo quietas cuando la máquina se queda sin memoria, y no se puede evitar
   desde el arnés. La coordinadora decide si la levanta: levantarla vuelve a ocupar memoria y cuenta para el tope.
 
+- «un permiso para la persona: «<sesión>» pide «<herramienta>» en «<carpeta>» (<renglón>). Te da el cuadro owner-next…»:
+  el permiso de una sesión de fondo llegó como cuadro (la sección que sigue). Cada renglón se anuncia una vez.
+
 Hay uno por máquina, y sin coordinadora confirmada sale enseguida. Si no está corriendo, el aviso de cada turno lo dice
 con el comando. `coordination.js status` muestra las «Trabadas» y las «Cerradas por Claude Code».
+
+### El permiso de una sesión de fondo, como cuadro
+
+Con la lista encendida, una coordinadora confirmada y viva y su `owner-wait` corriendo, **el permiso que pide una sesión de
+fondo en modo normal le llega a la persona como cuadro, en la pestaña de la coordinadora**
+(`scripts/hooks/permission-relay.js`). El gancho anota el pedido entero en la lista y espera; `owner-wait` lo anuncia y
+`owner-next` da el cuadro, que va primero: «¿Aprobás este pedido de <herramienta>? (permiso <id> · sesión <id> · código
+<huella>) Carpeta: <carpeta>. Pedido:» y el pedido entero, con sus saltos de línea. En Edit, Write, NotebookEdit y
+WebFetch cada renglón del texto libre va con la marca «│ », así nada escrito adentro se confunde con un rótulo, y el
+código es la huella de los campos del pedido: dos pedidos distintos nunca se ven igual ni comparten click. La
+coordinadora lo muestra sin cambiarle una letra, con «Sí, aprobar» y «No».
+
+- **Con «Sí, aprobar», no corre nada.** El gancho ve el click de la persona, lo gasta y deja correr ese pedido una sola
+  vez, sin reglas permanentes. Un pedido igual después lleva otro id y pide otro click.
+- **Con «No»:** `coordination.js owner-reject <id>`. El gancho lo niega y la sesión recibe que la persona dijo que no.
+  Rechazar sólo niega: nunca aprueba.
+- **Lo aprueba sólo la persona, con su click en la pestaña de la coordinadora.** La coordinadora nunca, ni por
+  delegación (`approvals.delegated_signing` no lo cubre), ni con un «aprobado» escrito, ni tocando la lista.
+- **Sin respuesta en `coordination.permission_wait_minutes`** (10 sin valor, de 1 a 30), el gancho sale sin decidir: vuelve la
+  ventana de siempre en esa sesión, que queda en las «Trabadas» con el motivo, y un click tardío no aprueba nada. Lo
+  mismo si la coordinadora muere o deja de ser la designada mientras espera.
+- **No se lleva, y sale la ventana de siempre sin demora:** una pestaña abierta, otro modo (automático, sin permisos,
+  aceptar ediciones, plan), sin coordinadora confirmada y viva, sin `owner-wait`, la lista apagada, la propia
+  coordinadora, Codex, y en Windows un comando por PowerShell. Tampoco un pedido que no se puede mostrar entero (más de
+  1500 caracteres, caracteres que no se ven o se ven en blanco, un salto de línea en una ruta o una dirección, datos que
+  el cuadro no muestra): la sesión queda trabada con ese motivo.
+  Las herramientas que lleva son Bash, PowerShell, Edit, Write, NotebookEdit y WebFetch; el cuadro de preguntas y el
+  plan, nunca.
+- **Si la persona contesta en la ventana de la sesión** o la sesión se cierra, el gancho muere y su renglón se cierra
+  solo: nunca se pide un click por un pedido que ya no espera.
+
+Lo que pasó con cada pedido queda en `gates.log` (`permission-relay`), sin el texto del pedido. Se apaga con
+`TYCON_PERMISSION_RELAY=0`.
 
 **Lo que pasa en otras pestañas le llega a la coordinadora en su turno**, sin que la sesión de trabajo vea nada:
 

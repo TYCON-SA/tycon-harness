@@ -2626,6 +2626,12 @@
       "requiere": []
     },
     {
+      "__nota": "el permiso de una sesión de fondo le llega a la persona como cuadro (scripts/hooks/permission-relay.js, story 8.180 tanda B): en proceso, con casa de juguete y reloj propio.",
+      "raiz": "arnes",
+      "ruta": "tests/permission-relay.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "sin perfil del equipo la coordinadora ordena y no firma. También la corre el ensayo de firmas de Windows (scripts/tests/windows/waiver-probe.js).",
       "raiz": "arnes",
       "ruta": "tests/coordination-without-profile.test.js",
@@ -3999,6 +4005,12 @@
       "requiere": []
     },
     {
+      "__nota": "fila 87: una prueba que arma un repo pelado de juguete no deja pelado al repo de verdad aunque corra dentro de un gancho de una copia enlazada (con su GIT_DIR) — team-config y third-party-origin dejan el repo de juguete con su árbol, y toda prueba con un init --bare sin carpeta saca GIT_DIR antes",
+      "raiz": "arnes",
+      "ruta": "tests/hook-env-bare-init.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.29: la pestaña Configuración del sitio de la organización, sólo para los que mantienen — un dev recibe 403 en cada ruta y sin sesión contesta como la 2.23; cada escritura exige el Origin del sitio (o Sec-Fetch-Site), el X-Site-Token de la sesión, JSON y un cuerpo de hasta 256 KB, y ninguna falta crea nada; las ocho secciones editables más Productos y Versiones de sólo lectura; «Revisar» valida con el parse del mismo lector del arnés y conserva byte por byte lo que no se editó; la propuesta de stages sólo lee; Personas guarda la huella del correo, nunca el correo; Umbrales edita sólo claves conocidas y queda en sólo lectura sin la marca del nocturno; la paridad por producto con renovar y cerrar; sin identidad de escritura, sólo lectura y descarga; el código no nombra la configuración de ninguna máquina ni un valor de una organización. Levanta el servidor del sitio con una sesión inyectada, repos git locales por HTTP y una API falsa de Azure DevOps y de GitHub en el proceso; sin red.",
       "raiz": "arnes",
       "ruta": "tests/site-config.test.js",
@@ -4077,7 +4089,7 @@
       "requiere": []
     },
     {
-      "__nota": "las fichas del tablero nocturno en el sitio: la lista de las 25 igual a la del tablero, una sola cuenta con colectar() sobre la misma foto, lista blanca de campos, «no medido» sin foto o con una vieja, las ocultas por site.hidden_cards no se arman ni llegan a la página, Arnés sólo para quien mantiene. Levanta el servidor del sitio con sesiones inyectadas y fotos sintéticas; sin red.",
+      "__nota": "las fichas del tablero nocturno en el sitio: la lista de las 28 igual a la del tablero, una sola cuenta con colectar() sobre la misma foto, lista blanca de campos, «no medido» sin foto o con una vieja, las ocultas por site.hidden_cards no se arman ni llegan a la página, Arnés sólo para quien mantiene. Levanta el servidor del sitio con sesiones inyectadas y fotos sintéticas; sin red.",
       "raiz": "arnes",
       "ruta": "tests/site-cards.test.js",
       "requiere": []

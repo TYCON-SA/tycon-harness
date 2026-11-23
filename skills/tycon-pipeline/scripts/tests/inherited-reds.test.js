@@ -21,7 +21,9 @@ const LIB = path.resolve(__dirname, '..', 'lib', 'inherited-reds.js');
 const CI = path.resolve(__dirname, '..', '..', '..', '..', 'scripts', 'ci');
 const tmp = (p) => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), p)));
 
-const git = (d, ...a) => spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', d, ...a], { encoding: 'utf8' });
+// sin las variables de un gancho: con su GIT_DIR, `-C` no decide el repo y un `init --bare` deja pelado al de verdad
+const ENV_GIT = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).sinGitDelPadre();
+const git = (d, ...a) => spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', d, ...a], { encoding: 'utf8', env: ENV_GIT });
 const FOTO = path.join('scripts', 'controls-bench', 'ultimo-suites.json');
 const HORA = 3600 * 1000;
 

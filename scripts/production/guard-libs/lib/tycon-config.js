@@ -221,7 +221,7 @@ const VOCABULARIO = Object.freeze({
   models: Object.freeze({ provider: 'aceptada' }),
   // la receta de la coordinadora (el tope de sesiones, la carpeta de firmas y el piso del segundo turno de ejecución
   // grande): el freno no las usa, pero las acepta
-  coordination: Object.freeze({ max_working: 'aceptada', owner_folder: 'aceptada', session_names: 'aceptada', second_heavy_min_free_pct: 'aceptada', max_stories_in_cycle: 'aceptada', max_awaiting_review: 'aceptada' }),
+  coordination: Object.freeze({ max_working: 'aceptada', owner_folder: 'aceptada', session_names: 'aceptada', second_heavy_min_free_pct: 'aceptada', max_stories_in_cycle: 'aceptada', permission_wait_minutes: 'aceptada', max_awaiting_review: 'aceptada' }),
   // la dirección del sitio de la organización (la abre el comando de barra org-site): el freno no la usa, pero la acepta
   site: Object.freeze({ url: 'aceptada' }),
   // el umbral de la sesión callada de la oficina de /office: el freno no lo usa, pero lo acepta
