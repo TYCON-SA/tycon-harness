@@ -639,6 +639,38 @@ test('NadieQuieto_NuncaTraba: tres bloqueos seguidos y al cuarto deja cerrar; si
   assert.match(r.stderr, /nadie quieto: no freno \(conversacion-ilegible\)/);
 });
 
+test('NadieQuieto_RecordatorioAdelante_EmpiezaTurno: un mensaje de la persona con recordatorios adelante empieza el turno; uno con sólo recordatorios, no', () => {
+  // 🔴 mutación: mirar el texto entero, recordatorios incluidos → el «seguí» con un <system-reminder> adelante no corta el
+  //    turno y los mensajes de turnos anteriores cuentan como de éste: la sesión que nadie avisó sale avisada y no frena
+  const C = require('../tools/coordination.js');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'turno-rec-'));
+  const send = (to) => ({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: `t-${to}`, name: 'SendMessage', input: { to } }] } });
+  const result = { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'x', content: 'ok' }] } };
+  const user = (content) => ({ type: 'user', message: { role: 'user', content } });
+  const write = (rows) => { const f = path.join(root, `${Math.random()}.jsonl`); fs.writeFileSync(f, rows.map((r) => JSON.stringify(r)).join('\n')); return f; };
+  const prompt = user('antes');
+  const dest = (rows) => [...C.messagedThisTurn(write(rows)).to].sort();
+  // el caso del pase: el recordatorio en un bloque y el texto de la persona en otro
+  assert.deepStrictEqual(dest([send('vieja'), user([{ type: 'text', text: '<system-reminder>ctx</system-reminder>' }, { type: 'text', text: 'seguí' }]), send('nueva')]), ['nueva'], 'bloques separados');
+  // el recordatorio y el texto en un mismo bloque
+  assert.deepStrictEqual(dest([send('vieja'), user([{ type: 'text', text: '<system-reminder>ctx\nmás</system-reminder>\nseguí' }]), send('nueva')]), ['nueva'], 'un solo bloque');
+  assert.deepStrictEqual(dest([send('vieja'), user('<system-reminder>ctx</system-reminder>\nseguí'), send('nueva')]), ['nueva'], 'texto suelto');
+  // sólo recordatorios (o un recordatorio y el aviso de una tarea de fondo): mitad de turno, sigue hacia atrás
+  assert.deepStrictEqual(dest([prompt, send('vieja'), result, user([{ type: 'text', text: '<system-reminder>a</system-reminder>' }, { type: 'text', text: '<system-reminder>b</system-reminder>' }]), send('nueva')]), ['nueva', 'vieja'], 'sólo recordatorios');
+  assert.deepStrictEqual(dest([prompt, send('vieja'), result, user([{ type: 'text', text: '<system-reminder>a</system-reminder>' }, { type: 'text', text: '<task-notification>x</task-notification>' }]), send('nueva')]), ['nueva', 'vieja'], 'recordatorio y tarea de fondo');
+  fs.rmSync(root, { recursive: true, force: true });
+  // de punta a punta: Uma recibió un mensaje en el turno anterior, la persona escribió «seguí» con un recordatorio
+  // adelante y en este turno nadie le escribió: frena por ella
+  const t = toy({ nowMs: Date.now() });
+  session(t, 's-u', 'Uma');
+  const tr = path.join(t.root, 'coord-rec.jsonl');
+  fs.writeFileSync(tr, [prompt, send('Uma'), result, user([{ type: 'text', text: '<system-reminder>ctx</system-reminder>' }, { type: 'text', text: 'seguí' }])].map((r) => JSON.stringify(r)).join('\n') + '\n');
+  const r = idleRun(t, { transcript: tr });
+  const d = r.stdout ? JSON.parse(r.stdout) : null;
+  assert.strictEqual(d && d.decision, 'block', r.stderr);
+  assert.match(d.reason, /Uma \(quieta hace 20 min\)/);
+});
+
 test('NadieQuieto_EsperaConLaPalabra_NoLaRepite: una espera anotada «espera que entre…» sale una vez, no «espera espera»', () => {
   // 🔴 mutación: anteponer «espera» a lo anotado → «Wanda (espera espera que entre el pedido …)», la clase de la 8.294 AC 14
   const t = toy({ nowMs: Date.now() });

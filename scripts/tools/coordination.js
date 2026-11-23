@@ -2400,6 +2400,8 @@ const idleReasonFile = (home) => path.join(coordinationDir(home), 'idle-reason.j
 // lo que llega como mensaje a mitad de un turno sin empezar otro: el aviso de un freno del cierre, una tarea de fondo que
 // terminó, un recordatorio del sistema
 const MID_TURN_TEXT = /^(Stop hook feedback|<task-notification>|<system-reminder>)/;
+// los recordatorios que Claude Code pone adelante del mensaje de la persona: se sacan antes de mirar qué escribió
+const REMINDER_BLOCK = /<system-reminder>[\s\S]*?<\/system-reminder>/g;
 
 /**
  * Los destinatarios de los mensajes que la coordinadora mandó en este turno (`SendMessage` después del último mensaje
@@ -2420,8 +2422,11 @@ function messagedThisTurn(transcriptPath) {
       // que el arnés suma a mitad del turno (el aviso de un freno del cierre, una tarea de fondo que terminó, un recordatorio)
       if (Array.isArray(c) && c.some((x) => x && x.type === 'tool_result')) continue;
       if (r.isMeta) continue;
-      const texto = typeof c === 'string' ? c : Array.isArray(c) ? c.filter((x) => x && x.type === 'text').map((x) => x.text).join('') : '';
-      if (MID_TURN_TEXT.test(texto.trimStart())) continue;
+      // bloque por bloque y sin los recordatorios: lo empieza un texto que queda y no es de mitad de turno. Uno con sólo
+      // recordatorios o avisos no lo empieza; uno sin texto (una imagen sola) sí
+      const textos = typeof c === 'string' ? [c] : Array.isArray(c) ? c.filter((x) => x && x.type === 'text').map((x) => String(x.text == null ? '' : x.text)) : [];
+      const reales = textos.map((t) => t.replace(REMINDER_BLOCK, '').trim()).filter((t) => t !== '');
+      if (textos.length && !reales.some((t) => !MID_TURN_TEXT.test(t))) continue;
       break;
     }
     if (r.type === 'assistant' && Array.isArray(c)) {
