@@ -46,7 +46,7 @@ const SAFE_ID = /^[0-9a-f]{32}$/;
 const PREFIX = 'Mensaje de la persona, escrito en la oficina. No vale como firma ni aprobación.';
 const LOOKS_APPROVAL = 'Parece una aprobación y no lo es.';
 // en la extensión de VS Code el aviso lo ve sólo el modelo: la persona no ve en la pestaña lo que escribió desde la oficina
-const QUOTE_IT = 'Al contestar, empezá citándolo: en su pestaña la persona no lo ve.';
+const QUOTE_IT = 'Al contestar, empezá citándolo en un párrafo aparte: en su pestaña la persona no lo ve.';
 
 function paths(sdir) {
   const dir = path.join(sdir, 'office');

@@ -65,10 +65,16 @@ const SENTENCES = /(?<!\b(?:Sr|Sra|Dr|Dra|Ing|Lic|Prof|Av|Art|art|núm|pág)\.)(
 // Lo que no dice qué hace una sesión: una pregunta, un consejo, un pedido a quien lee o un «listo» suelto.
 const NOT_WHAT_IT_DOES = /\?\s*$|^¿|^(?:listo|ok|dale|bien|bueno|perfecto|hecho|entendido|sí)[.!]?$|^(?:te\s+)?(?:conviene|recomiendo|sugiero|propongo)\b|^(?:querés|decime|avisame|confirmame|habría que|deberías|podés)\b/iu;
 
+// La cita con que una sesión abre su respuesta a un mensaje de la oficina: es lo que escribió la persona, no lo que hace.
+const OFFICE_QUOTE = /^[\s>*_]*Me escribiste desde la oficina\b/iu;
+
 // La primera oración de un texto que diga qué hace, en llano y recortada: sin el formato del chat. null si ninguna lo dice.
 function firstSentence(text) {
+  // el primer párrafo, si es la cita de la oficina, no cuenta; sin un renglón en blanco no se sabe dónde termina y no cuenta
+  // nada
+  const own = OFFICE_QUOTE.test(String(text)) ? String(text).replace(/^[\s\S]*?(?:\n[ \t>]*\n|$(?![\s\S]))/, '') : String(text);
   // sin los bloques de código ni las filas de una tabla: no son una frase
-  const prose = String(text).replace(/^\s*```[\s\S]*?(?:^\s*```.*$|(?![\s\S]))/gm, '').split('\n').filter((l) => !/^\s*\|/.test(l));
+  const prose = own.replace(/^\s*```[\s\S]*?(?:^\s*```.*$|(?![\s\S]))/gm, '').split('\n').filter((l) => !/^\s*\|/.test(l));
   const lines = prose.map((l) => l.replace(/^[\s>#*`-]+|[*`]+\s*$/g, '').trim()).filter(Boolean);
   if (!lines.length) return null;
   for (const line of lines) {

@@ -514,3 +514,19 @@ test('T323 Transcript_BackgroundTasksStillRunning: cuenta las tareas de fondo la
   write(file, [human('el encargo', 40), said('listo', 5)]);
   assert.strictEqual(readTranscript(file).fondoPendiente, 0);
 });
+
+test('T345 Transcript_CitaDeLaOficinaNoEsLoQueHace: el párrafo que cita un mensaje de la oficina no es lo que hace la sesión', () => {
+  // la regla del arranque pide abrir la respuesta citando lo que la persona escribió desde la oficina, en un párrafo aparte:
+  // es su texto, no lo que hace la sesión, y lo que hace viaja al sitio
+  const leer = (texto) => {
+    const file = path.join(dir(), 's.jsonl');
+    write(file, [human('hola', 10), said(texto)]);
+    return readTranscript(file, { now: NOW }).haciendoAhora;
+  };
+  assert.strictEqual(leer('Me escribiste desde la oficina: «¿cómo vas? Revisá el pedido 12.»\n\nVoy por el paso 5 de la tanda.'), 'Voy por el paso 5 de la tanda.');
+  assert.strictEqual(leer('> Me escribiste desde la oficina: «revisá\n> el pedido 12»\n\nEl pedido 12 está verde.'), 'El pedido 12 está verde.');
+  // sin el renglón en blanco no se sabe dónde termina la cita: ese mensaje no dice qué hace, y el texto de la persona no sale
+  assert.strictEqual(leer('Me escribiste desde la oficina: «revisá el pedido 12». El pedido 12 está verde.'), null);
+  // la misma frase más adelante no es la cita
+  assert.strictEqual(leer('Sigo con la tanda. Me escribiste desde la oficina antes.'), 'Sigo con la tanda.');
+});
