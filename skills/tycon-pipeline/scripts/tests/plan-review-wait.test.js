@@ -9,6 +9,11 @@
  *     cuenta como tomada, aunque la haya preparado antes del pedido
  *   PlanReview_PedidoResueltoPorUnaRevisionTerminada_UnRelanzamientoTieneSuPropioPlazo
  *   PlanReview_SinSaberSiVive_LaEsperaHastaElTope — la sesión no se declara sola: la espera los minutos del tope
+ *   PlanReview_CorridaAdoptada_VeLaRevisionYLosRechazosDeLaAnterior — la sesión que adopta la corrida no pide otra
+ *     revisión ni le anota un pedido a la coordinadora por un plan que ya revisó, cuenta sus rechazos, y la lista de
+ *     planes que esperan a la persona muestra esa revisión
+ *   Coordinacion_PlanYaAprobado_ElAvisoDelPedidoNoSigue — con el plan aprobado (por la sesión o por la que adoptó la
+ *     corrida) o la corrida cerrada, la coordinadora no sigue leyendo que el plan espera su revisión
  *
  * Una casa y un repo de juguete por prueba, con los guiones de verdad; la coordinadora designada y confirmada en el
  * registro. 0 deps (node:test).
@@ -36,6 +41,9 @@ const PERFIL = { relay_session: 'coordinadora', delegated_signing: ['plan-approv
 const delegacion = (o) => DS.delegaSinVentana({ ...o, perfil: () => PERFIL, huella: () => ({ huella: HUELLA }) });
 const PLAN = '# Plan\n\n## Qué hace\n\nCambia el título del README.\n\n## Archivos\n\n- README.md\n\n## Pasos\n\n1. Tocar el README.md.\n';
 const SIN_MEDIR = { modo: 'plan', medido: false, confirmed: [], hallazgos_sin_veredicto: 0, a_verificar_aparte: 0, lentes_sin_medir: ['ac-sin-cubrir'] };
+const APROBADO = { modo: 'plan', medido: true, confirmed: [], hallazgos_sin_veredicto: 0, a_verificar_aparte: 0, lentes_sin_medir: [] };
+const HALLAZGO = { lens: 'ac-sin-cubrir', severity: 'bug', file: 'plan', summary: 'el AC 3 no tiene ningún paso en el plan', repro: 'el plan no nombra el AC 3', confidence: 'high' };
+const RECHAZADO = { ...APROBADO, confirmed: [HALLAZGO] };
 const cfgCon = (raw = {}) => POL().normalize(raw).values;
 const RUN = () => cfgCon({ plan_review: { routine: 'always' } });
 // stable-data: la hora de las pruebas es fija
@@ -84,6 +92,24 @@ function laboratorio(t) {
     return PR().anotar({ lanza: COORD, destino: DESTINO, estado, resultado: { pedido: p.args.pedido, ...resultado }, modelo: 'opus', proveedor: 'anthropic' });
   };
   lab.accion = (ahora, config = RUN()) => PR().accionDelPlan({ estado, sesion: DESTINO, marker: lab.leer(DESTINO), config, home, ahora });
+  lab.planFile = path.join(require(PIPELINE).resolveRunDir(repo, '9.91', true, stories[DESTINO]), 'step-02-bmad-plan.md');
+  /** Lo que deja `marker.js adopt-session`: el mismo marcador con la sesión nueva y de cuál viene; el de la anterior se borra. */
+  lab.adoptar = (nueva) => {
+    const adoptado = { ...lab.leer(DESTINO), sessionId: nueva, adoptedFrom: DESTINO, adoptedAt: new Date(AHORA).toISOString() };
+    fs.writeFileSync(path.join(estado, 'active', `${nueva}.json`), JSON.stringify(adoptado));
+    fs.unlinkSync(path.join(estado, 'active', `${DESTINO}.json`));
+    return adoptado;
+  };
+  /** «Aprobar el plan» hecho en el marcador de `sid`, como lo deja `complete-step approve-plan` (el 3 del esquema viejo). */
+  lab.aprobarPlan = (sid) => {
+    const f = path.join(estado, 'active', `${sid}.json`);
+    const m = JSON.parse(fs.readFileSync(f, 'utf8'));
+    const paso = m.stepScheme === 2 ? 'approve-plan' : 3;
+    m.stepsCompleted = [...(m.stepsCompleted || []), paso];
+    m.stepsPending = (m.stepsPending || []).filter((x) => String(x) !== String(paso));
+    m.planApproval = { mode: 'user', text: 'firmado en la terminal', at: new Date(AHORA).toISOString() };
+    fs.writeFileSync(f, JSON.stringify(m));
+  };
   return lab;
 }
 
@@ -175,4 +201,70 @@ test('PlanReview_SinSaberSiVive_LaEsperaHastaElTope', (t) => {
   assert.strictEqual(a.lanza, 'coordinator', JSON.stringify(a));
   assert.match(a.reason, /no pude saber si la coordinadora/);
   assert.strictEqual(lab.accion(AHORA + 11 * MIN).lanza, 'session');
+});
+
+// 🔴 Falla con: la sesión que adoptó la corrida le pide a la coordinadora otra revisión de un plan que ya revisó (le anota
+//    un pedido que nadie resuelve: el aviso «espera que lances su revisión» con el plan ya aprobado) y no ve sus rechazos.
+test('PlanReview_CorridaAdoptada_VeLaRevisionYLosRechazosDeLaAnterior', (t) => {
+  const NUEVA = 'ses-nueva';
+  const lab = laboratorio(t);
+  sesionDeLaCoordinadora(lab, { viva: true });
+  lab.revisar(APROBADO);
+  const adoptado = lab.adoptar(NUEVA);
+  const a = PR().accionDelPlan({ estado: lab.estado, sesion: NUEVA, marker: adoptado, config: RUN(), home: lab.home, ahora: AHORA });
+  assert.strictEqual(a.revisado, 'aprobado', JSON.stringify(a));
+  assert.strictEqual(a.comando, undefined, 'no pide otra revisión del mismo plan');
+  assert.deepStrictEqual(PR().pedidosA({ estado: lab.estado, a: COORD }), [], 'ni le anota un pedido a la coordinadora');
+  // sin «adoptedFrom» la revisión es de otra sesión: no se hereda
+  const ajeno = { ...adoptado, adoptedFrom: undefined };
+  assert.strictEqual(PR().accionDelPlan({ estado: lab.estado, sesion: NUEVA, marker: ajeno, config: RUN(), home: lab.home, ahora: AHORA }).revisado, undefined);
+  // la lista de los planes que esperan a la persona (owner-next) tampoco dice «sin revisión todavía»
+  const f = path.join(lab.estado, 'active', `${NUEVA}.json`);
+  fs.writeFileSync(f, JSON.stringify({ ...adoptado, stepScheme: 2, stepsCompleted: ['start', 'validate-story', 'plan'], stepsPending: ['approve-plan', 'implement'], lastTouch: new Date().toISOString() }));
+  const fila = C().plansWaiting({ home: lab.home, now: Date.now() }).find((p) => p.sid === NUEVA);
+  assert.ok(fila, 'el plan de la sesión que adoptó espera su aprobación');
+  assert.strictEqual(fila.review, 'aprobado', JSON.stringify(fila));
+  // las vueltas rechazadas de la anterior cuentan para el tope de la que adoptó
+  const rech = laboratorio(t);
+  sesionDeLaCoordinadora(rech, { viva: true });
+  rech.revisar(RECHAZADO);
+  fs.appendFileSync(rech.planFile, '2. Un paso que corrige el hallazgo.\n');
+  rech.revisar(RECHAZADO);
+  const b = PR().accionDelPlan({ estado: rech.estado, sesion: NUEVA, marker: rech.adoptar(NUEVA), config: RUN(), home: rech.home, ahora: AHORA });
+  assert.strictEqual(b.revisado, 'rechazado', JSON.stringify(b));
+  assert.strictEqual(b.rechazos, 2, JSON.stringify(b));
+});
+
+// 🔴 Falla con: la coordinadora lee «cerró su plan y espera que lances su revisión… en N min la lanza ella sola» (y después
+//    «esperó N min…») durante más de una hora, con el plan ya aprobado (reportado por un producto, en una historia
+//    partida en tandas).
+test('Coordinacion_PlanYaAprobado_ElAvisoDelPedidoNoSigue', (t) => {
+  const lab = laboratorio(t);
+  sesionDeLaCoordinadora(lab, { viva: true });
+  assert.strictEqual(lab.accion(AHORA).lanza, 'coordinator');
+  assert.strictEqual(C().planRequestLines({ home: lab.home }, COORD, AHORA + 3 * MIN).length, 1, 'sin aprobar, el aviso sale');
+  lab.aprobarPlan(DESTINO);
+  assert.deepStrictEqual(C().planRequestLines({ home: lab.home }, COORD, AHORA + 3 * MIN), [], 'aprobado: ya no espera su revisión');
+  assert.deepStrictEqual(C().planRequestLines({ home: lab.home }, COORD, AHORA + 20 * MIN), [], 'ni sale el de «esperó N min»');
+  // la corrida la adoptó otra sesión y ésa aprobó el plan: tampoco
+  const adop = laboratorio(t);
+  sesionDeLaCoordinadora(adop, { viva: true });
+  adop.accion(AHORA);
+  adop.adoptar('ses-nueva');
+  assert.strictEqual(C().planRequestLines({ home: adop.home }, COORD, AHORA + 3 * MIN).length, 1, 'adoptada sin aprobar, el aviso sigue');
+  adop.aprobarPlan('ses-nueva');
+  assert.deepStrictEqual(C().planRequestLines({ home: adop.home }, COORD, AHORA + 3 * MIN), []);
+  // la corrida se cerró (sin marcador en ninguna sesión): no hay plan que revisar
+  const cerrada = laboratorio(t);
+  sesionDeLaCoordinadora(cerrada, { viva: true });
+  cerrada.accion(AHORA);
+  fs.unlinkSync(path.join(cerrada.estado, 'active', `${DESTINO}.json`));
+  assert.deepStrictEqual(C().planRequestLines({ home: cerrada.home }, COORD, AHORA + 3 * MIN), []);
+  // la misma sesión con otra corrida (otra hora de arranque): el pedido es de la anterior, no avisa
+  const otra = laboratorio(t);
+  sesionDeLaCoordinadora(otra, { viva: true });
+  otra.accion(AHORA);
+  const f = path.join(otra.estado, 'active', `${DESTINO}.json`);
+  fs.writeFileSync(f, JSON.stringify({ ...otra.leer(DESTINO), startedAt: '2026-11-21T00:00:00.000Z' }));
+  assert.deepStrictEqual(C().planRequestLines({ home: otra.home }, COORD, AHORA + 3 * MIN), []);
 });

@@ -167,7 +167,7 @@ function tandasNoMedidasDe(content, rel, pedidas) {
 }
 
 // La regla de atar un archivo a una tanda vive en lib/batch-scope.js: la parte que se programa y la matriz la usan igual
-const { sinPunto, renglonesDeLista, esRegistroDeCorrida, tandasQueNombran } = require(path.join(__dirname, 'lib', 'batch-scope.js'));
+const { sinPunto, renglonesDeLista, esRegistroDeCorrida, tandasQueNombran, filasQueNombran } = require(path.join(__dirname, 'lib', 'batch-scope.js'));
 
 /**
  * Las tandas a las que la historia ata un archivo que cambió la corrida. `c` es la ruta que da git, relativa a
@@ -176,17 +176,25 @@ const { sinPunto, renglonesDeLista, esRegistroDeCorrida, tandasQueNombran } = re
  * `nombra` de siempre, con la ruta de git y con la del renglón que le corresponde. Un cambio en `.advisors/` es el
  * registro de la ejecución: no se ata, aunque un renglón lo nombre de otra forma.
  */
-function tandasDelCambio(content, c, { codeRepo, lugares, real }) {
+function tandasDelCambio(content, c, o) {
   if (esRegistroDeCorrida(c)) return [];
+  const nombres = new Set();
+  for (const r of rutasDelCambio(content, c, o)) for (const t of tandasQueNombran(content, r)) nombres.add(t.name);
+  return [...nombres];
+}
+
+/**
+ * Las rutas con que la historia puede nombrar un archivo que cambió la corrida: la de git y la de cada renglón de la
+ * lista que es ese archivo.
+ */
+function rutasDelCambio(content, c, { codeRepo, lugares, real }) {
   const fm = (String(content).match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || '';
   const abs = real(path.resolve(codeRepo, c));
   const rutas = new Set([sinPunto(String(c))]);
   for (const it of renglonesDeLista(fm)) {
     if (lugares.some((l) => real(path.resolve(l, it.ruta)) === abs)) rutas.add(it.ruta);
   }
-  const nombres = new Set();
-  for (const r of rutas) for (const t of tandasQueNombran(content, r)) nombres.add(t.name);
-  return [...nombres];
+  return [...rutas];
 }
 
 // ---------------------------------------------------------------- parsing helpers
@@ -1439,11 +1447,14 @@ function compute(opts) {
   const testsByAc = {};
   const testIds = [];
   const unreadableTests = [];
+  // los criterios de cada prueba con id: dicen si un archivo de pruebas compartido trae una prueba de la tanda medida
+  const acsDeLaPrueba = new Map();
   for (const r of table.rows) {
     const id = r.tid || `(sin id: ${r.name})`;
     if (r.tid) testIds.push(r.tid);
     const c = r.acCell == null ? { acs: r.acRefs, legible: true, todos: false } : acsDeLaCelda(r.acCell);
     if (!c.legible) unreadableTests.push(id);
+    if (r.tid) acsDeLaPrueba.set(r.tid, c.todos ? [...acSet] : c.acs);
     for (const n of (c.todos ? [...acSet] : c.acs)) (testsByAc[n] = testsByAc[n] || []).push(id);
   }
 
@@ -1516,8 +1527,13 @@ function compute(opts) {
     const lugares = [...new Set([repoRoot, wsRoot, ...evCfg.roots, ...enRama, codeRepo].filter(Boolean))];
     const bloqueadas = new Set(tandas.filter((t) => String(t.status || '').toLowerCase() === 'blocked').map((t) => t.name));
     for (const c of opts.changed) {
-      const atadas = tandasDelCambio(content, String(c), { codeRepo: codeRepo || '.', lugares, real: companionLib.real });
+      const donde = { codeRepo: codeRepo || '.', lugares, real: companionLib.real };
+      const atadas = tandasDelCambio(content, String(c), donde);
       if (!atadas.length || atadas.some((n) => pedidas.includes(n))) continue;
+      // una fila de la tabla de pruebas que nombra el archivo y prueba un criterio de la tanda medida lo hace también
+      // suyo: el archivo de pruebas de una pantalla, con la prueba de la tanda medida y las de otras, es compartido
+      const deLaMedida = (id) => (acsDeLaPrueba.get(id) || []).some((a) => propios.has(a));
+      if (rutasDelCambio(content, String(c), donde).some((r) => filasQueNombran(content, r).some(deLaMedida))) continue;
       const activas = atadas.filter((n) => !bloqueadas.has(n));
       for (const n of activas.length ? activas : atadas) vuelven.set(n, [...new Set([...(vuelven.get(n) || []), String(c)])]);
     }
