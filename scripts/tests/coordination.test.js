@@ -2426,8 +2426,12 @@ test('F159 T5 Open_CarpetaSinAprobar_TraeLoQueDijoClaudeCode: con --cwd, el mens
 });
 
 // What the shell reads from a pasted command: each word on its own line, with nothing run.
+// The pasted text goes in a file that sh reads, as a pasted line would: the sh command itself is not built from paths.
+let shellWordsCount = 0;
 function shellWords(t, args) {
-  const r = spawnSync('sh', ['-c', `printf '%s\\n' ${args}`], { cwd: t.root, encoding: 'utf8' });
+  const pasted = path.join(t.root, `pasted-${++shellWordsCount}.sh`);
+  fs.writeFileSync(pasted, `printf '%s\\n' ${args}\n`);
+  const r = spawnSync('sh', [pasted], { cwd: t.root, encoding: 'utf8' });
   assert.strictEqual(r.status, 0, r.stderr);
   return r.stdout.replace(/\n$/, '').split('\n');
 }
