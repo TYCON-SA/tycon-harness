@@ -564,7 +564,11 @@ function stalledOf(s, f, now) {
       forma = f ? f.que : null;
     } catch (_) { forma = null; }
   }
-  return { tool: p ? label(p.tool) : null, detail, since, key: Number.isFinite(pSince) ? `p:${pSince}` : 'claude', ...(forma ? { forma } : {}) };
+  // sin confirmar: Claude Code no da estado, o dice que la sesión espera otra cosa que un permiso. Ahí la marca puede ser
+  // de un permiso que se resolvió por otro camino (lo cortó un freno, o se destrabó) y que queda hasta el cierre del
+  // turno: el aviso no la da por abierta. Esperando sin decir qué, se toma por el permiso, como siempre
+  const confirmed = waits && (!s.waitingFor || /permission/i.test(String(s.waitingFor)));
+  return { tool: p ? label(p.tool) : null, detail, since, key: Number.isFinite(pSince) ? `p:${pSince}` : 'claude', confirmed, ...(forma ? { forma } : {}) };
 }
 
 // La espera que el archivo de estado anota cuando una sesión abre un cuadro o pide aprobar su plan (hooks/session-state.js).
@@ -630,7 +634,7 @@ function swapLine(s) {
 const permissionText = (x) => [x.tool || 'un permiso', x.detail].filter(Boolean).join(' ');
 const gateText = (g) => `el portón acotado de ${g.session || 'una sesión sin nombre'} (${g.what}, desde las ${hhmm(g.since)})`;
 // La línea de una sesión trabada para la coordinadora, y la de una que cerró Claude Code.
-const stalledLine = (x) => `${x.session} espera un permiso desde las ${hhmm(x.since)}: ${permissionText(x)}.${x.forma ? ` Lo pidió el chequeo de borrados de Claude Code: ${x.forma}.` : ''}${x.relay ? ` No te llegó como cuadro: ${x.relay}.` : ''} Para entrar: claude attach ${x.session}`;
+const stalledLine = (x) => `${x.session} ${x.confirmed === false ? `tiene un permiso anotado desde las ${hhmm(x.since)}, sin confirmar que siga abierto` : `espera un permiso desde las ${hhmm(x.since)}`}: ${permissionText(x)}.${x.forma ? ` Lo pidió el chequeo de borrados de Claude Code: ${x.forma}.` : ''}${x.relay ? ` No te llegó como cuadro: ${x.relay}.` : ''} Para entrar: claude attach ${x.session}`;
 
 // Por qué el permiso de la sesión no le llegó a la coordinadora como cuadro, o dejó de esperarlo: lo anota el gancho de
 // permisos (scripts/hooks/permission-relay.js) en `coordination/permission-relay/<sesión>.json`, con la hora en que llegó
@@ -711,10 +715,10 @@ function status(opts = {}) {
     } catch (e) { problems.push(`la nota de ${nameOf(sid)} (${e.message})`); }
     const st = stalledOf(s, files.get(String(sid)), now);
     if (st) {
-      const { key, ...rest } = st;
-      // la clave de la espera no sale en --json: es sólo para owner-wait; tampoco el motivo del gancho de permisos, que
-      // sale en la línea
-      const row = Object.defineProperty({ session: nameOf(sid), sid, ...rest }, 'key', { value: key });
+      const { key, confirmed, ...rest } = st;
+      // la clave de la espera y si Claude Code la confirma no salen en --json: son sólo para owner-wait y el aviso;
+      // tampoco el motivo del gancho de permisos, que sale en la línea
+      const row = Object.defineProperties({ session: nameOf(sid), sid, ...rest }, { key: { value: key }, confirmed: { value: confirmed } });
       let relay = null;
       try { relay = relayNoteOf(home, sid, st.since); } catch { relay = null; }
       if (relay) Object.defineProperty(row, 'relay', { value: relay });
