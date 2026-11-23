@@ -302,7 +302,7 @@ se consulta producción desde Codex». Caso del banco: `codex-frena-tambien-la-p
 
 **Un freno que falla, en Codex, deja pasar.** Codex llama al freno directo (`node …/prod-access-guard.js`), sin el
 lanzador ni su reloj de 7 s, y no tiene `onFailure`. Si el freno se cae o se cuelga, el comando corre; en Claude Code el
-mismo fallo frena. Dicho en `guides/produccion-con-permiso.md`, «Los límites, dichos antes».
+mismo fallo frena. Dicho en `guides/production-with-permission.md`, «Los límites, dichos antes».
 
 **El firewall de la puerta** (`--open-firewall` / `--close-firewall`): en Codex tampoco se abre una regla.
 Además del cuadro, le falta un evento de fin de sesión (sus hooks son PreToolUse, PostToolUse,

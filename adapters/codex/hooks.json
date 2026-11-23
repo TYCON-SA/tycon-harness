@@ -417,7 +417,7 @@
     },
     {
       "log": "PreToolUse · Bash|Monitor|PowerShell (claude) ↔ Bash (codex)",
-      "verdict": "ASIMETRÍA DECLARADA (2026-09-15, story 6.1): `Monitor` y `PowerShell` son herramientas de Claude Code; Codex no las emite, así que del lado Codex el freno se registra con matcher `Bash`. Y lo que Codex NO puede cubrir se dice, no se promete: no lee la configuración administrada de Claude Code ni sus reglas `ask`, así que ahí no hay cuadro de aprobación — el hook frena TAMBIÉN la forma canónica de la puerta y el mensaje manda pasarle la sentencia al dev (caso `codex-frena-tambien-la-puerta` del banco). Tampoco tiene el lanzador ni `onFailure`: Codex llama al freno directo, sin el reloj de 7 s del lanzador, y si el freno se cae o se cuelga el comando corre (en Claude Code frena). Declarado en guides/produccion-con-permiso.md, «Los límites, dichos antes».",
+      "verdict": "ASIMETRÍA DECLARADA (2026-09-15, story 6.1): `Monitor` y `PowerShell` son herramientas de Claude Code; Codex no las emite, así que del lado Codex el freno se registra con matcher `Bash`. Y lo que Codex NO puede cubrir se dice, no se promete: no lee la configuración administrada de Claude Code ni sus reglas `ask`, así que ahí no hay cuadro de aprobación — el hook frena TAMBIÉN la forma canónica de la puerta y el mensaje manda pasarle la sentencia al dev (caso `codex-frena-tambien-la-puerta` del banco). Tampoco tiene el lanzador ni `onFailure`: Codex llama al freno directo, sin el reloj de 7 s del lanzador, y si el freno se cae o se cuelga el comando corre (en Claude Code frena). Declarado en guides/production-with-permission.md, «Los límites, dichos antes».",
       "scripts": [
         "prod-access-guard.js"
       ]

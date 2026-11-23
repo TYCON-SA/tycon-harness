@@ -258,7 +258,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 ## scripts/hooks/prod-access-guard.js
 
-_(scripts/hooks/prod-access-guard.js + scripts/production/ + guides/produccion-con-permiso.md)_
+_(scripts/hooks/prod-access-guard.js + scripts/production/ + guides/production-with-permission.md)_
 
 **Qué es:** Exige que una persona apruebe, de a una, cada consulta a una base de producción, y mantiene la contraseña del Llavero fuera de la conversación.
 

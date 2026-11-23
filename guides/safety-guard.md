@@ -130,7 +130,7 @@ suyas. `TYCON_NO_DENY_RULES=1` no las suma.
 La regla: un freno que no alcanzó a decidir no deja pasar. Hoy la cumplen dos de los once frenos de consola; los otros
 nueve no tienen reloj propio y, si se cuelgan, Claude Code los corta al vencer el tope de la herramienta y el comando
 corre. El freno de producción va aparte, en la configuración administrada: tiene su reloj, y si su gancho falla el
-comando no corre ([producción con permiso](produccion-con-permiso.md)).
+comando no corre ([producción con permiso](production-with-permission.md)).
 
 | Freno | Reloj propio | Si se traba |
 |---|---|---|
