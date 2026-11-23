@@ -116,7 +116,7 @@ test('Tooling_FindsToolsOnEveryPlatform_RunCheckUsesGitBash', async (t) => {
     const none = portable.runCheckLaunch(['bash', 'x.sh'], { platform: 'win32', env: winEnv, home, ownClone: home, exists: (p) => p === want });
     assert.strictEqual(none.file, null);
     assert.match(none.error, /no encuentro el arnés/, 'sin clon propio con la búsqueda, el motivo es el de siempre');
-    const marker = fs.readFileSync(path.join(SCRIPTS, 'marker.js'), 'utf8');
+    const marker = require(path.join(SCRIPTS, 'tests', 'lib', 'marker-source.js'))(SCRIPTS);
     assert.match(marker, /runCheckLaunch\(/, 'marker.js run-check lanza por runCheckLaunch()');
   });
 

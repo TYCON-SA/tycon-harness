@@ -1473,3 +1473,47 @@ test('T355 Office_LoQueTeNecesita_OtraFotoNoBorraLoEscrito @story-8.234 @ac-36: 
   api.pintar();
   assert.deepStrictEqual(lista.children.map((n) => n.textContent), ['Nada te espera.']);
 });
+
+test('T343 Kanban_FirmaDeSesionQueNoEsta_SinSesion: una firma del tablero para una sesión que ya no está no espera al dueño', () => {
+  const { data } = buildOffice({
+    wip: wip([{ session: 'Ana', status: 'busy', work: '9.1 · Una', extra: { kind: 'pipeline', title: 'Una', storyId: '9.1', current: 'implement' } }]),
+    board: buildBoard({ pendientes: [
+      { titulo: 'La de una sesión cerrada', estado: 'firma', quien: 'Muerta-6' },
+      { titulo: 'La de Ana', estado: 'firma', quien: 'Ana (la tanda B)' },
+      { titulo: 'La tuya', estado: 'firma', quien: 'vos' },
+      { titulo: 'Sin nombre', estado: 'firma' },
+    ] }),
+    nowMs: NOW,
+  });
+  assert.deepStrictEqual(titles(data, 'firma').sort(), ['La de Ana', 'La tuya', 'Sin nombre'].sort(), 'la de una sesión viva, la del dueño y la que no nombra a nadie siguen en «Tu firma»');
+  const sin = col(data, 'sinEmpezar').tarjetas.find((t) => t.titulo === 'La de una sesión cerrada');
+  assert.ok(sin, 'la de la sesión que ya no está va a «Sin sesión»');
+  assert.strictEqual(sin.motivo, 'la sesión que la esperaba ya no está');
+  assert.ok(!JSON.stringify((data.meta.esperan || {}).dueno || []).includes('Muerta-6'), '«Esperan al dueño» no la nombra');
+  // el nombre entero: una sesión viva «Tero» no retiene la firma de «Tero-2», que ya no está. Lo que no es un nombre de
+  // sesión (el dueño dicho de otra forma, un texto) se queda; la hora de la que se mueve es la de «Sin sesión»
+  const otra = buildOffice({
+    wip: wip([{ session: 'Tero', status: 'busy', work: '9.1 · Una', extra: { kind: 'pipeline', title: 'Una', storyId: '9.1', current: 'implement' } }]),
+    board: buildBoard({ pendientes: [
+      { titulo: 'De Tero-2', estado: 'firma', quien: 'Tero-2' },
+      { titulo: 'De Tero', estado: 'firma', quien: 'tero' },
+      { titulo: 'Vos decidís', estado: 'firma', quien: 'Vos decidís' },
+      { titulo: 'La dueña', estado: 'firma', quien: 'la dueña' },
+      { titulo: 'Con hora', estado: 'firma', quien: 'Pinola-6', pronosticoIso: '2026-10-18T08:00' },
+    ] }),
+    nowMs: NOW,
+  }).data;
+  assert.deepStrictEqual(titles(otra, 'firma').sort(), ['De Tero', 'La dueña', 'Vos decidís'].sort());
+  // un nombre de más de 40 letras: la lista de sesiones lo muestra cortado con «…», y la firma escrita con el nombre
+  // entero sigue siendo de esa sesión viva
+  const largo = 'fila-de-prueba-con-un-nombre-que-pasa-de-los-cuarenta';
+  const conLargo = buildOffice({
+    wip: wip([{ session: largo.slice(0, 39) + '…', status: 'busy', work: '9.2 · Otra', extra: { kind: 'pipeline', title: 'Otra', storyId: '9.2', current: 'implement' } }]),
+    board: buildBoard({ pendientes: [{ titulo: 'De la larga', estado: 'firma', quien: largo }] }),
+    nowMs: NOW,
+  }).data;
+  assert.deepStrictEqual(titles(conLargo, 'firma'), ['De la larga'], 'la sesión de nombre largo está viva: su firma se queda');
+  const hora = col(otra, 'sinEmpezar').tarjetas.find((t) => t.titulo === 'Con hora');
+  assert.ok(col(otra, 'sinEmpezar').tarjetas.some((t) => t.titulo === 'De Tero-2'), 'la de Tero-2 va a «Sin sesión»');
+  assert.ok(hora && /^estaba para /.test(hora.hora) && !hora.cls, `sin sesión no hay nadie atrasado: ${JSON.stringify(hora)}`);
+});

@@ -107,7 +107,8 @@ Los dos racks del fondo muestran la carga de la máquina: el más cercano al pan
 los turnos pesados); el otro, el procesador. Cada uno enciende, de abajo para arriba, las filas de su porcentaje: verde
 por debajo de 60 %, ámbar hasta 84 % y rojo desde 85 %. Las encendidas titilan más rápido cuantas más sesiones trabajan.
 Con el mouse encima, o al tocarlo, un rack dice su número («Memoria en uso: 62 %»). Un rack todo en gris claro es una
-medida que no se pudo leer: no se inventa ni se muestra la anterior.
+medida que no se pudo leer: no se inventa ni se muestra la anterior. Si corre una ejecución grande de pruebas, la etiqueta
+suma un renglón por cada una: «Turno de tarea pesada: <sesión>, 120 suites».
 
 ## Escribirle a una sesión
 
