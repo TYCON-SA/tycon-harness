@@ -534,10 +534,33 @@ function archivosQueSuman(files, adhoc = null, { temporales = null } = {}) {
 /**
  * La lista de la parte con la que la coordinadora aprobó el plan: `{ parte, lista, repoRoot }`, `{ problema }` o null.
  * Sale de la constancia de la revisión del plan, verificada contra su renglón de gates.log y contra la aprobación del
- * marcador; nunca del marcador ni de la historia de ahora. Sin plan delegado, o con una parte que la constancia anota
- * como inválida, null. Con una parte anotada y la constancia que no se puede leer, o que no la trae, `problema`: en duda,
- * la implementación no sigue.
+ * marcador; nunca del marcador ni de la historia de ahora. Si la revisión fue sin parte y la parte se anotó después con
+ * el plan igual, la lista es la que la historia le declaraba al anotarla: la del renglón `plan-kept` de esa aprobación
+ * (`set-batch`). Sin plan delegado, o con una parte que la constancia anota como inválida, null. Con una parte anotada y
+ * la constancia que no se puede leer, o que no la trae ni hay ese renglón, `problema`: en duda, la implementación no
+ * sigue.
  */
+/**
+ * La lista que `set-batch` anotó en gates.log al conservar la aprobación de la revisión (el renglón `plan-kept` de esta
+ * sesión, esta historia, esta parte y esta aprobación, con su huella), o null. El último renglón que coincide manda.
+ */
+function listaAlAnotarLaParte(stateDir, sessionId, marker) {
+  let texto;
+  try { texto = fs.readFileSync(path.join(stateDir, 'gates.log'), 'utf8'); } catch (_) { return null; }
+  const huella = require('./batch-scope.js').huellaDeLaLista;
+  let lista = null;
+  for (const l of texto.split('\n')) {
+    if (!l.includes('"plan-kept"')) continue;
+    let j;
+    try { j = JSON.parse(l); } catch (_) { continue; }
+    if (j.name !== 'plan-kept' || j.status !== 'ok' || j.sessionId !== sessionId || String(j.story) !== String(marker.storyId)) continue;
+    if (j.batch !== marker.batch || !j.aprobacion || j.aprobacion !== (marker.planApproval && marker.planApproval.at)) continue;
+    if (!Array.isArray(j.files) || !j.files.length || j.huella !== huella(j.files)) continue;
+    lista = j.files.map(String);
+  }
+  return lista;
+}
+
 function listaDelPlanDelegado(stateDir, sessionId, marker) {
   const ap = marker && marker.storyId && marker.planApproval;
   if (!ap || ap.mode !== 'revision') return null;
@@ -560,8 +583,13 @@ function listaDelPlanDelegado(stateDir, sessionId, marker) {
   // no ata ninguna lista. Sin la parte en la constancia, o una válida sin su lista, con una parte anotada en la corrida,
   // es un problema que se dice
   if (c.parte && c.parte.valida === false) return null;
-  if (!c.parte || !c.parte.valida || !Array.isArray(c.parte.files)) return conParte('la constancia no trae la parte con su lista');
   const raiz = marker.repoPath || null;
+  // la revisión fue sin parte: la lista que quedó al anotar la parte con el plan igual, la de esta aprobación
+  if (!c.parte && marker.batch) {
+    const k = listaAlAnotarLaParte(stateDir, sessionId, marker);
+    if (k) return { parte: String(marker.batch), lista: k.map((f) => path.resolve(raiz || process.cwd(), f)), repoRoot: raiz };
+  }
+  if (!c.parte || !c.parte.valida || !Array.isArray(c.parte.files)) return conParte('la constancia no trae la parte con su lista');
   return { parte: c.parte.nombre, lista: c.parte.files.map((f) => path.resolve(raiz || process.cwd(), f)), repoRoot: raiz };
 }
 

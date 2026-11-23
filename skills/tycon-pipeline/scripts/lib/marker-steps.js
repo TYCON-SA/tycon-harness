@@ -196,22 +196,29 @@ function cmdSnapshotIter(nRaw, flags) {
 }
 
 /**
- * Con el plan ya aprobado, ¿anotar la parte lo deja aprobado? Sólo si lo aprobó una persona (su aprobación no congela
- * una lista para la parte, la de la revisión sí) y ni el plan ni la maqueta aprobada cambiaron: `{ mantener, caso }`.
+ * Con el plan ya aprobado, ¿anotar la parte lo deja aprobado? `{ mantener, caso, lista? }`. Lo deja si ni el plan ni la
+ * maqueta aprobada cambiaron, y la aprobación fue de una persona o de la revisión automática. La de la revisión ata el
+ * portón de la parte a una lista: sin parte al aprobar, vale la que la historia declara para la parte (`files:` de
+ * `parte`, lo que devolvió validarParte), que va en `lista`; sin esa lista declarada, la aprobación se da de nuevo.
  */
-function planSigueAprobado(marker) {
+function planSigueAprobado(marker, parte = null) {
   const ap = marker.planApproval || {};
-  if (ap.mode !== 'user') return { mantener: false, caso: 'la aprobación fue de la revisión automática: con la parte la da de nuevo quien la dio' };
+  const deLaRevision = ap.mode === 'revision';
+  const quien = deLaRevision ? 'la revisión automática' : 'una persona';
+  if (!deLaRevision && ap.mode !== 'user') return { mantener: false, caso: `la aprobación fue por ${ap.mode || 'una vía que no se lee'}: con la parte la da de nuevo quien la dio` };
+  const declarada = parte && parte.valid && !parte.derivada && Array.isArray(parte.files) && parte.files.length ? parte.files : null;
+  if (deLaRevision && !declarada) return { mantener: false, caso: 'la aprobación fue de la revisión automática y la parte no declara una lista de archivos (files:) que valga: con la parte la da de nuevo quien la dio' };
   if (!ap.planSha) return { mantener: false, caso: 'la aprobación es de antes de guardar la huella del plan' };
   const ahora = huellaDelPlan(marker);
   if (!ahora.sha) return { mantener: false, caso: `no pude leer el plan de ahora (${ahora.motivo})` };
-  if (ahora.sha !== ap.planSha) return { mantener: false, caso: 'el plan cambió desde que lo aprobó una persona' };
+  if (ahora.sha !== ap.planSha) return { mantener: false, caso: `el plan cambió desde que lo aprobó ${quien}` };
   const maqueta = marker.mockupApproval;
   if (maqueta) {
     let sha = null;
     try { sha = require('../mockup.js').mockupHash(fs.readFileSync(maqueta.file, 'utf8')); } catch (_) { sha = null; }
     if (!sha || sha !== maqueta.sha256) return { mantener: false, caso: 'la maqueta aprobada cambió o no se puede leer' };
   }
+  if (deLaRevision) return { mantener: true, caso: 'el plan no cambió desde que lo aprobó la revisión automática: el portón de la parte usa la lista de archivos que la historia le declara', lista: declarada };
   return { mantener: true, caso: 'el plan no cambió desde que lo aprobó una persona' };
 }
 
@@ -290,12 +297,14 @@ function cmdSetBatch(nombre) {
   // delicada y el tamaño del plan se miden por la historia entera
   const scope = require('./batch-scope.js');
   const valida = scope.validarParte(texto, nombre);
-  // con el plan ya aprobado sin parte, anotarla lo deja pendiente otra vez (la aprobación era de otra cosa), salvo que lo
-  // haya aprobado una persona y no haya cambiado
+  // con el plan ya aprobado sin parte, anotarla lo deja pendiente otra vez (la aprobación era de otra cosa), salvo que no
+  // haya cambiado y lo haya aprobado una persona, o la revisión automática con una lista declarada para la parte
   const conPlan = require('./steps.js').isDone(marker, 'approve-plan');
-  const decision = conPlan ? planSigueAprobado(marker) : null;
+  const decision = conPlan ? planSigueAprobado(marker, valida) : null;
   if (decision && decision.mantener) {
-    appendLog('gates.log', { name: 'plan-kept', status: 'ok', story: marker.storyId || null, batch: nombre, motivo: decision.caso });
+    // la lista con que queda el portón de la parte, atada a esta aprobación: el registro, no la historia de después
+    appendLog('gates.log', { name: 'plan-kept', status: 'ok', story: marker.storyId || null, batch: nombre, motivo: decision.caso,
+      ...(decision.lista ? { files: decision.lista, huella: scope.huellaDeLaLista(decision.lista), aprobacion: marker.planApproval.at || null } : {}) });
   } else if (decision) {
     scope.volverAlPlan(marker);
     appendLog('gates.log', { name: 'plan-reopened', status: 'ok', story: marker.storyId || null, batch: nombre, motivo: `se anotó la parte con el plan ya aprobado sin parte: ${decision.caso}` });

@@ -476,7 +476,7 @@ test('T1 SetBatch_PlanIgualDeUnaPersona_NoReabre — @story-8.284 @ac-1 @ac-2 @a
 });
 
 // 🔴 Falla con: conservar una aprobación con el plan o la maqueta cambiados, sin huella, sin plan legible, o de la
-// revisión automática (la 8.168 la congela con la parte).
+// revisión automática con una parte que no declara su lista (files:): sin esa lista no hay con qué atar el portón.
 test('T2 SetBatch_PlanCambiadoSinHuellaODeRevision_Reabre — @story-8.284 @ac-3 @ac-4 @ac-18', () => {
   const casos = [
     ['el plan cambió', (L) => { L.conPlan({ mode: 'user', text: 'dale', planSha: sha256(PLAN) }); fs.writeFileSync(L.planFile, `${PLAN}\nOtro paso.\n`); },
@@ -484,7 +484,10 @@ test('T2 SetBatch_PlanCambiadoSinHuellaODeRevision_Reabre — @story-8.284 @ac-3
     ['sin huella', (L) => L.conPlan({ mode: 'user', text: 'dale' }), /la aprobación es de antes de guardar la huella del plan/],
     ['plan borrado', (L) => { L.conPlan({ mode: 'user', text: 'dale', planSha: sha256(PLAN) }); fs.rmSync(L.planFile); },
       /no pude leer el plan de ahora/],
-    ['de la revisión', (L) => L.conPlan({ mode: 'revision', text: 'revisión', planSha: sha256(PLAN), revision: { id: 'x', lanzo: 'coord' } }),
+    ['de la revisión, la parte sin files:', (L) => {
+      fs.writeFileSync(L.story, sinFilesEnA(historia()));
+      L.conPlan({ mode: 'revision', text: 'revisión', planSha: sha256(PLAN), revision: { id: 'x', lanzo: 'coord' } });
+    },
       /la aprobación fue de la revisión automática/],
     ['la maqueta cambió', (L) => {
       const maqueta = path.join(L.repo, 'maqueta.html');
@@ -508,4 +511,79 @@ test('T2 SetBatch_PlanCambiadoSinHuellaODeRevision_Reabre — @story-8.284 @ac-3
     assert.match(reabierto[0].motivo, linea, nombre);
     assert.ok(!L.gates().some((g) => g.name === 'plan-kept'), nombre);
   }
+});
+
+// ── anotar la parte con el plan igual de la revisión automática: vale la lista que declara la historia ──────────────
+
+// la historia sin el `files:` de la parte A
+const sinFilesEnA = (texto) => texto.replace(/(  - name: A-el-combo\n    status: pending\n    acs: \[1\]\n)    files:\n(?:      - .*\n)+/, '$1');
+
+/** El laboratorio de set-batch con el plan aprobado por la revisión automática que lanzó la coordinadora, sin parte. */
+function aprobadoPorLaRevision() {
+  const L = laboratorio();
+  L.conPlan({ mode: 'revision', text: 'revisión automática', planSha: sha256(PLAN) });
+  const p = pr.preparar({ lanza: 'coord', destino: 'sp', estado: L.estado, designada: () => 'coord' });
+  assert.strictEqual(p.codigo, 0, p.motivo);
+  const pedido = JSON.parse(fs.readFileSync(p.pedido, 'utf8'));
+  const c = pr.anotar({ lanza: 'coord', destino: 'sp', estado: L.estado, resultado: { medido: true, modo: 'plan', confirmed: [], pedido: pedido.numero } });
+  assert.ok(!c.parte, 'la revisión fue sin parte');
+  const m = L.leer();
+  m.planApproval.revision = { id: c.id, veredicto: c.veredicto, modelo: c.modelo, lanzo: 'coord' };
+  fs.writeFileSync(L.markerPath, JSON.stringify(m));
+  L.ev = (rel) => io.evaluate({ filePath: path.join(L.repo, rel), sessionId: 'sp', cwd: L.repo, via: 'Edit', stateDir: L.estado, installedRoots: [] });
+  return L;
+}
+
+// 🔴 Falla con: anotar la parte después de que la revisión automática aprobó el plan sin parte lo reabre (y la sesión
+// queda esperando otra aprobación del mismo plan), o el portón de la parte frena todo porque esa revisión no trae lista.
+test('T3 SetBatch_PlanIgualDeLaRevision_NoReabre_YElPortonUsaLaListaDeLaHistoria — @story-8.284', () => {
+  const L = aprobadoPorLaRevision();
+  const aprobado = L.leer();
+  // sin parte, el portón no ata ninguna lista
+  assert.notStrictEqual(tipo(L.ev('src/grilla.js')), 'batch-out-of-list');
+  const r = L.correr(['set-batch', A]);
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stdout, /el plan no cambió desde que lo aprobó la revisión automática/);
+  assert.match(r.stdout, /«Aprobar el plan» sigue hecho/);
+  const m = L.leer();
+  assert.strictEqual(m.batch, A);
+  assert.ok(require(path.join(SCRIPTS, 'lib', 'steps.js')).isDone(m, 'approve-plan'), JSON.stringify(m));
+  assert.deepStrictEqual(m.planApproval, aprobado.planApproval, 'la aprobación queda tal cual');
+  assert.ok(!L.gates().some((g) => g.name === 'plan-reopened'));
+  // la lista que declara la historia para la parte queda anotada con la aprobación que conserva
+  const kept = L.gates().filter((g) => g.name === 'plan-kept');
+  assert.strictEqual(kept.length, 1);
+  assert.deepStrictEqual([kept[0].batch, kept[0].files, kept[0].aprobacion], [A, ['src/combo.js', 'docs/combo.md'], aprobado.planApproval.at]);
+  // el portón de la parte usa esa lista: lo de la parte pasa, lo de otra frena
+  assert.notStrictEqual(tipo(L.ev('src/combo.js')), 'batch-out-of-list');
+  assert.strictEqual(tipo(L.ev('src/grilla.js')), 'batch-out-of-list');
+  // la historia suma el archivo a la parte después: no amplía nada (la lista quedó al anotar la parte)
+  fs.writeFileSync(L.story, historia({ filesA: ['src/combo.js', 'docs/combo.md', 'src/grilla.js'] }));
+  assert.strictEqual(tipo(L.ev('src/grilla.js')), 'batch-out-of-list');
+  // un renglón de la lista para otra aprobación no cuenta: sin el de esta, el portón no adivina y frena
+  const otro = aprobadoPorLaRevision();
+  fs.appendFileSync(path.join(otro.estado, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), sessionId: 'sp', name: 'plan-kept', status: 'ok', story: '9.7', batch: A, files: ['src/grilla.js'], aprobacion: 'otra' })}\n`);
+  const mm = otro.leer();
+  fs.writeFileSync(otro.markerPath, JSON.stringify({ ...mm, batch: A, batchValid: true }));
+  const v = otro.ev('src/combo.js');
+  assert.strictEqual(tipo(v), 'batch-out-of-list', JSON.stringify(v));
+  assert.match(v.verdict.reason, /no pude leer la lista de la parte/);
+});
+
+// 🔴 Falla con: conservar la aprobación de la revisión con el plan cambiado, o sin la lista declarada de la parte.
+test('T4 SetBatch_DeLaRevision_PlanCambiadoOParteSinFiles_Reabre — @story-8.284', () => {
+  const L = aprobadoPorLaRevision();
+  fs.writeFileSync(L.planFile, `${PLAN}\nOtro paso.\n`);
+  const r = L.correr(['set-batch', A]);
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stdout, /el plan cambió desde que lo aprobó la revisión automática/);
+  assert.match(r.stdout, /«Aprobar el plan» queda pendiente otra vez/);
+  assert.strictEqual(L.leer().planApproval, undefined);
+  const S = aprobadoPorLaRevision();
+  fs.writeFileSync(S.story, sinFilesEnA(historia()));
+  const s2 = S.correr(['set-batch', A]);
+  assert.strictEqual(s2.status, 0, s2.stderr);
+  assert.match(s2.stdout, /la parte no declara una lista de archivos \(files:\) que valga/);
+  assert.strictEqual(S.leer().planApproval, undefined);
+  assert.ok(!S.gates().some((g) => g.name === 'plan-kept'));
 });
