@@ -2212,6 +2212,24 @@ withWaiverLog(() => {
       JSON.stringify({ c: compartido.structuralError || compartido.returnedAcs, acs: compartido.acs, vacia: vacia.acs }));
   }
   {
+    // 🔴 Falla con: el archivo de pruebas de una pantalla trae la prueba de la tanda medida (T1, del AC 1) y las de otras
+    //    dos tandas, y sólo éstas la declaran en `tests:`. La corrida de la A suma su prueba ahí y la matriz pide como
+    //    bloqueantes los criterios de la B y la C (reportado por un producto; reproducido con esta
+    //    historia de juguete).
+    const TRES = ['  - name: A-la-primera', '    status: pending', '    acs: [1]', '  - name: B-la-segunda', '    status: pending', '    acs: [2]',
+      '    tests: [T6]', '  - name: C-la-tercera', '    status: pending', '    acs: [3]', '    tests_pending: [T7]'];
+    const FILAS = ['| T5 | `src/d.js::edita` | 1 | e2e | x | y |', '| T6 | `src/d.js::lista` | 2 | e2e | x | y |', '| T7 | `src/d.js::exporta` | 3 | e2e | x | y |'];
+    const f = atada(TRES, [], [], FILAS);
+    const r = correr(f, ['src/d.js']);
+    // sin la prueba de la tanda medida en el archivo, sigue siendo de las otras: vuelven
+    const ajeno = atada(TRES, [], [], FILAS.slice(1));
+    const r2 = correr(ajeno, ['src/d.js']);
+    check('Matrix_Batch_SharedTestFileWithMeasuredBatchTest_NoReturn',
+      !r.structuralError && (r.returnedAcs || []).length === 0 && !r.acs.includes(2) && !r.acs.includes(3)
+        && JSON.stringify(r.outOfBatchAcs) === '[2,3]' && !r2.structuralError && JSON.stringify(r2.returnedAcs) === '[2,3]',
+      JSON.stringify({ e: r.structuralError, acs: r.acs, ret: r.returnedAcs, out: r.outOfBatchAcs, ajeno: r2.structuralError || r2.returnedAcs }));
+  }
+  {
     const f = atada(LISTA, B_ARCH);
     const sin = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, batch: 'A-la-primera' });
     const nula = correr(f, null);

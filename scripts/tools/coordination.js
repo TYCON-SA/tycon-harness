@@ -192,12 +192,16 @@ function codexThreads(codexHome, problems) {
 // Un marcador sin tocar hace más de un día es una ejecución abandonada, no un plan que espera.
 const PLAN_WAIT_MAX_MS = 24 * 3600000;
 
-/** Las dependencias reales de `plansWaiting`: la última revisión del plan y si el perfil delega el plan delicado. */
+/**
+ * Las dependencias reales de `plansWaiting`: la última revisión del plan (de esta corrida, también la que se hizo para la
+ * sesión que fue adoptada; si no hay, la última de la sesión) y si el perfil delega el plan delicado.
+ */
 function planDepsDefault(home) {
   const PR = require(path.join(SKILL_LIB, 'plan-review.js'));
   const estado = stateDir(home);
   return {
-    revision: (sid) => PR.ultimaDelDestino({ estado, destino: sid }),
+    revision: (sid, m) => (m && m.storyId ? PR.ultimaDeLaCorrida({ estado, destinos: PR.sesionesDeLaCorrida(sid, m), corrida: PR.corridaDe(m) }) : null)
+      || PR.ultimaDelDestino({ estado, destino: sid }),
     delegada: (sid) => {
       const coord = PR.designadaDeVerdad(estado);
       if (!coord || coord === sid) return false;
@@ -227,7 +231,7 @@ function plansWaiting(opts = {}, problems = []) {
     if (Number.isFinite(tocado) && now - tocado > PLAN_WAIT_MAX_MS) continue;
     const desde = Date.parse((((m.stepTimings || {}).plan) || {}).completedAt || '');
     let rev = null;
-    try { rev = deps.revision(sid); } catch (e) { problems.push(`la revisión del plan de ${sid} (${e.code || e.message})`); }
+    try { rev = deps.revision(sid, m); } catch (e) { problems.push(`la revisión del plan de ${sid} (${e.code || e.message})`); }
     // una constancia ilegible de otra revisión no se anuncia acá: la dicen la revisión del plan y su cuadro; acá sólo se
     // usa la que se leyó, para decir quién puede aprobar
     const review = rev && rev.veredicto ? String(rev.veredicto) : null;
@@ -2720,6 +2724,19 @@ function questionRelayLines(opts, sid, now = Date.now()) {
 }
 
 /**
+ * ¿El plan del pedido `p` sigue esperando su revisión? No si su corrida (en la sesión que lo cerró o en la que la adoptó
+ * con `adopt-session`) ya tiene «Aprobar el plan» hecho, o si ya no está abierta en ninguna sesión: el aviso diría que
+ * espera un plan que ya no espera. Con algún marcador que no se lee (`leidos`), en duda, sigue esperando.
+ */
+function planEsperaRevision(p, marcadores, leidos, PR) {
+  const STEPS = require(path.join(SKILL_LIB, 'steps.js'));
+  const deLaCorrida = [...marcadores.entries()].filter(([s, m]) => m && (s === p.destino || m.adoptedFrom === p.destino)
+    && PR.mismaCorrida(p.corrida, PR.corridaDe(m)));
+  if (deLaCorrida.some(([, m]) => STEPS.isDone(m, 'approve-plan'))) return false;
+  return deLaCorrida.length > 0 || leidos.length > 0;
+}
+
+/**
  * Las líneas del aviso de la coordinadora `sid` sobre los planes que le pidió el arnés: los que esperan que lance su
  * revisión, con los minutos que le quedan, y los que siguieron sin ella porque no la tomó a tiempo (durante una hora).
  */
@@ -2731,7 +2748,10 @@ function planRequestLines(opts, sid, now = Date.now()) {
   const nombres = signatureList.sesiones(home).mapa;
   const quienEs = (s) => (nombres.get(s) && nombres.get(s).name ? `${nombres.get(s).name} (${s})` : s);
   const out = [];
+  const leidos = [];
+  const marcadores = markersBySid(home, leidos);
   for (const p of PR.pedidosA({ estado, a: sid })) {
+    if (!planEsperaRevision(p, marcadores, leidos, PR)) continue;
     const e = PR.estadoDelPedido({ estado, pedido: p, minutos, ahora: now });
     if (e.estado === 'esperando') out.push(`Coordinación: ${quienEs(p.destino)} cerró su plan a las ${hhmm(p.ts)} y espera que lances su revisión: marker.js plan-review --for-session ${p.destino}. Si no, en ${e.quedan} min la lanza ella sola.`);
     else if (e.estado === 'vencido' && now - e.vencio < RELAY_SEEN_MS) out.push(`Coordinación: ${quienEs(p.destino)} esperó ${minutos} min que lanzaras la revisión de su plan y desde las ${hhmm(e.vencio)} la lanza ella sola: un plan de rutina lo aprueba su propia revisión, uno delicado la persona. Si tenías algo que decir de ese plan, decíselo ahora.`);
