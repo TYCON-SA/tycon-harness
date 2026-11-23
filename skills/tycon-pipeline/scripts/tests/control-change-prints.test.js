@@ -180,6 +180,43 @@ test('T13 Empuje_RedireccionesOpcionesYBorrados_NoFrenanDeMas', () => {
   }
 });
 
+// T14 a T17 · fila 81 (pase del pedido único #1502), la parte de las constancias: el empuje desde otra carpeta escrito de
+// formas que no se leían. Desde la carpeta de arriba del repo, con una constancia sin huella ya commiteada en la rama.
+function conConstanciaCommiteada() {
+  const c = corral();
+  c.constancia('escondida');
+  git(c.repo, 'add', '-A'); git(c.repo, 'commit', '-q', '-m', 'escondida');
+  return c;
+}
+const frenaDesdeArriba = (c, cmd) => {
+  const r = c.correr(cmd, c.raiz);
+  assert.ok(r && r.block, `frena: ${cmd}`);
+  assert.match(r.block, /escondida\.json/, cmd);
+};
+
+test('T14 Empuje_AdentroDeUnParentesisODeUnGrupo_Frena', () => {
+  const c = conConstanciaCommiteada();
+  for (const cmd of ['(cd repo && git push)', '{ cd repo && git push; }', '( cd repo; git push )']) frenaDesdeArriba(c, cmd);
+});
+
+test('T15 Empuje_ConDosCdEnCadena_Frena', () => {
+  const c = conConstanciaCommiteada();
+  fs.mkdirSync(path.join(c.raiz, 'otra'), { recursive: true });
+  for (const cmd of ['cd otra && cd ../repo && git push', 'cd repo && cd . && git push', 'cd otra; cd ../repo; git commit -m x; git push']) frenaDesdeArriba(c, cmd);
+});
+
+test('T16 Empuje_DestinoConVariableOSustitucion_Frena', () => {
+  const c = conConstanciaCommiteada();
+  for (const cmd of ['B=trabajo; cd repo && git push origin "$B"', 'cd repo && git push origin "$(git branch --show-current)"',
+    'cd repo && git push origin $B']) frenaDesdeArriba(c, cmd);
+});
+
+test('T17 Empuje_WorkTreeAparteHeredocYRenglonPartido_Frena', () => {
+  const c = conConstanciaCommiteada();
+  for (const cmd of [`git --work-tree ${c.repo} --git-dir ${c.repo}/.git push`, `git --git-dir=${c.repo}/.git push`,
+    `bash <<'EOF'\ncd repo && git push\nEOF`, 'cd repo && git \\\n  push']) frenaDesdeArriba(c, cmd);
+});
+
 test('T7 SinConstanciasNuevas_OComandosQueNoSonCommitNiPush_ComoAntes', () => {
   const c = corral();
   assert.strictEqual(c.correr('git commit -m x'), null);

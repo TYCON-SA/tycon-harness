@@ -5220,20 +5220,42 @@ function constanciasSinHuella(event, opts = {}) {
   if (!cmd || !/\bgit\b/.test(cmd) || !/\b(?:commit|push)\b/.test(cmd)) return null;
   const huellas = require('./lib/control-change-prints.js');
   const stateDir = opts.stateDir || require('./lib/story-gate-io.js').DEFAULT_STATE_DIR;
-  const base = cwdDelComando(cmd, nativePath(event?.cwd || process.cwd()));
+  const sesion = nativePath(event?.cwd || process.cwd());
+  // las carpetas donde puede correr un `git` del texto: la del `cd` del principio, la de cada `cd` o `pushd` (desde el
+  // anterior y desde la sesión; `cd -` vuelve al de antes, y vale adentro de un paréntesis o de llaves) y la de un `env -C`
+  const carpetasDe = (texto) => {
+    const out = [cwdDelComando(texto, sesion)];
+    const visitadas = [sesion];
+    for (const m of String(texto).matchAll(/(?:^|[\s;&|({])(?:cd|pushd)[ \t]+(?:'([^']*)'|"([^"]*)"|([^\s;&|()<>'"`]+))/g)) {
+      const tok = m[1] ?? m[2] ?? m[3];
+      if (tok === '-') { if (visitadas.length > 1) visitadas.pop(); out.push(visitadas[visitadas.length - 1]); continue; }
+      if (!tok || tok.startsWith('-')) continue;
+      const ex = expandirRuta(String(texto).slice(0, m.index + m[0].length), tok);
+      if (ex.sinResolver.length) continue;
+      const encadenada = resolveTarget(ex.valor, visitadas[visitadas.length - 1], process.platform, { homeVariable: true });
+      out.push(encadenada, resolveTarget(ex.valor, sesion, process.platform, { homeVariable: true }));
+      visitadas.push(encadenada);
+    }
+    for (const t of tramos(String(texto))) for (const d of pelarEnv(t).carpetas) out.push(resolveTarget(d, sesion, process.platform, { homeVariable: true }));
+    return [...new Set(out)];
+  };
   const via = `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}`;
   const frena = (texto) => {
     try { require('./lib/story-gate-io.js').appendLog(stateDir, 'gates.log', resolveSessionId(event?.session_id), { name: 'story-gate', status: 'blocked', kind: 'constancia-sin-huella', via, reason: texto.split('\n')[0] }); } catch { /* el registro no traba el freno */ }
     return { block: `${texto}\n` };
   };
   const vistos = new Set();
-  // también lo que corre adentro (`bash -c "git commit …"`, `$(…)`)
-  for (const texto of [String(cmd), ...comandosAnidados(String(cmd)).slice(1)]) {
+  // también lo que corre adentro (`bash -c "git commit …"`, `$(…)`), lo que corre otro programa (un heredoc a un shell)
+  // y el comando con los renglones partidos con `\` juntados
+  const plano = String(cmd).replace(/\\\r?\n/g, ' ');
+  const textos = [...new Set([String(cmd), plano, ...comandosAnidados(String(cmd)).slice(1), ...comandosPorOtroPrograma(String(cmd), sesion)])];
+  for (const texto of textos) {
+    const carpetas = carpetasDe(texto);
     for (const tramo of tramos(texto)) {
-      // sin las redirecciones: `2>&1` o `> salida.txt` no son parte de lo que se empuja
-      const w = palabras(sinPalabrasDelShell(String(tramo).replace(REDIRECCION, ' '))).filter((x) => x !== '');
+      // sin las redirecciones: `2>&1` o `> salida.txt` no son parte de lo que se empuja; ni el `)` que cierra un grupo
+      const w = palabras(sinPalabrasDelShell(String(tramo).replace(REDIRECCION, ' '))).map(sinCierreDeGrupo).filter((x) => x !== '');
       if (nombreDeComando(w[0]) !== 'git') continue;
-      let dir = base;
+      let dirs = carpetas;
       let i = 1;
       while (i < w.length && /^-/.test(w[i])) {
         const pegada = /^-C(.+)$/.exec(w[i]);
@@ -5242,12 +5264,21 @@ function constanciasSinHuella(event, opts = {}) {
           const ruta = expandirRuta(texto, crudo);
           // una carpeta que no se resuelve no se puede mirar: frena
           if (ruta.sinResolver.length) return frena(`🔒 CONSTANCIA SIN MIRAR — no pude resolver la carpeta de \`git -C ${crudo}\`: no sé qué repo commitea o empuja ni si lleva una constancia sin firmar. Escribí la ruta sin variables.`);
-          dir = resolveTarget(ruta.valor, dir, process.platform, { homeVariable: true }); i += pegada ? 1 : 2; continue;
+          dirs = dirs.map((d) => resolveTarget(ruta.valor, d, process.platform, { homeVariable: true })); i += pegada ? 1 : 2; continue;
+        }
+        // `--work-tree` y `--git-dir`, pegados o aparte, dicen el repo: el del `.git` es la carpeta que lo tiene
+        const repoPor = /^--(work-tree|git-dir)(?:=(.+))?$/.exec(w[i]);
+        if (repoPor) {
+          const valor = repoPor[2] ?? w[i + 1];
+          if (valor !== undefined) {
+            const abs = resolveTarget(expandirRuta(texto, valor).valor, carpetas[0], process.platform, { homeVariable: true });
+            dirs = [repoPor[1] === 'git-dir' && path.basename(abs) === '.git' ? path.dirname(abs) : abs];
+          }
+          i += repoPor[2] !== undefined ? 1 : 2;
+          continue;
         }
         // las opciones de git que llevan su valor en la palabra que sigue
-        if (/^(?:-c|--git-dir|--work-tree|--namespace|--super-prefix|--attr-source|--config-env|--exec-path)$/.test(w[i])) { i += 2; continue; }
-        const wt = /^--work-tree=(.+)$/.exec(w[i]);
-        if (wt) dir = resolveTarget(wt[1], dir, process.platform, { homeVariable: true });
+        if (/^(?:-c|--namespace|--super-prefix|--attr-source|--config-env|--exec-path)$/.test(w[i])) { i += 2; continue; }
         i++;
       }
       const sub = w[i];
@@ -5273,7 +5304,9 @@ function constanciasSinHuella(event, opts = {}) {
         const lista = remotoPorOpcion ? posicionales : posicionales.slice(1);
         for (let k = 0; k < lista.length; k++) {
           if (lista[k] === 'tag' && lista[k + 1]) { especificaciones.push(`refs/tags/${lista[++k]}`); continue; }
-          const origen = lista[k].replace(/^\+/, '').split(':')[0];
+          // un destino con una variable vale lo asignado; uno que no se resuelve (`$(…)`) puede ser cualquier rama
+          const ex = expandirRuta(texto, lista[k]);
+          const origen = (ex.sinResolver.length ? '*' : String(ex.valor)).replace(/^\+/, '').split(':')[0];
           if (origen) especificaciones.push(/\*/.test(origen) ? '*' : origen);
         }
         if (todas || especificaciones.includes('*')) refs = ['*'];
@@ -5282,11 +5315,13 @@ function constanciasSinHuella(event, opts = {}) {
         else if (lista.length) refs = [];
         if (!refs.length) continue;
       }
-      const clave = `${dir}\0${sub}\0${refs.join(',')}`;
-      if (vistos.has(clave)) continue;
-      vistos.add(clave);
-      const cartel = huellas.frenoDe({ dir, cuando: sub, stateDir, refs });
-      if (cartel) return frena(cartel);
+      for (const dir of dirs) {
+        const clave = `${dir}\0${sub}\0${refs.join(',')}`;
+        if (vistos.has(clave)) continue;
+        vistos.add(clave);
+        const cartel = huellas.frenoDe({ dir, cuando: sub, stateDir, refs });
+        if (cartel) return frena(cartel);
+      }
     }
   }
   return null;
