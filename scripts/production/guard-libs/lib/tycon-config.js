@@ -226,6 +226,9 @@ const VOCABULARIO = Object.freeze({
   site: Object.freeze({ url: 'aceptada' }),
   // el umbral de la sesión callada de la oficina de /office: el freno no lo usa, pero lo acepta
   office: Object.freeze({ quiet_minutes: 'aceptada' }),
+  // lo que la máquina limpia sola (las horas de una carpeta de trabajo, los días de un temporal, el aviso de disco): el
+  // freno no lo usa, pero lo acepta
+  maintenance: Object.freeze({ worktree_idle_hours: 'aceptada', temp_days: 'aceptada', disk_warn_percent: 'aceptada' }),
   // los topes de archivos del camino corto (sólo del perfil del equipo): el freno no los usa, pero los acepta
   short_path: Object.freeze({ coordinator_max_files: 'aceptada', max_files: 'aceptada' }),
   // los interruptores que la organización enciende desde el sitio: el freno no los usa, pero los acepta

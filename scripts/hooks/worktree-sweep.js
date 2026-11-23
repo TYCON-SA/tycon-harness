@@ -11,17 +11,30 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *
  * ── QUÉ HACE ─────────────────────────────────────────────────────────────────────────────────────────────────────
  * Dos caminos, el mismo criterio:
- *   · Al arrancar sesión (SessionStart), como mucho una vez por día: recorre los repos conocidos —los de la raíz de
- *     repos de la máquina (`scripts/lib/repos-root.js`) hasta dos niveles, y el del cwd— y en cada uno sus carpetas de
- *     trabajo. Borra (`git worktree remove` + `git branch -d`) las que están LIMPIAS y con su HEAD ya en origin/main.
- *     Las que tienen cambios o commits sin mergear sólo las nombra, en una línea. Silencio si no hay nada.
+ *   · Al arrancar sesión (SessionStart), en cada arranque: dice en una línea lo que dejó la pasada anterior y lanza la
+ *     suya de fondo, sin esperarla (`--pass`, desprendida). La pasada recorre los repos conocidos —los de la raíz de
+ *     repos de la máquina (`scripts/lib/repos-root.js`) hasta dos niveles, y el del cwd— y sus carpetas de trabajo, de
+ *     a `MAX_PER_PASS`, siguiendo desde el cursor de la anterior (`worktree-sweep-cursor`). Borra (`git worktree
+ *     remove` + `git branch -d`) las que están LIMPIAS y con su HEAD ya en origin/main. Las que tienen cambios o commits
+ *     sin mergear sólo las nombra, una vez por día (`worktree-sweep-notice-last`). Hay una sola pasada viva por máquina
+ *     (`worktree-sweep.lock`, con el pid; el de un proceso muerto se pisa). Una vez por semana (`branch-count-last`),
+ *     la pasada trae las ramas del servidor (`git fetch --prune`) y cuenta las remotas ya entradas a main; el arranque
+ *     siguiente dice cuántas y el comando para borrarlas.
  *   · Al cerrar una story (`/tycon-pipeline close`, «Cerrar la historia»): `--story <N.M>` limita a las carpetas cuya rama nombra
  *     la story, trae origin primero (`git fetch`) y dice qué hizo con cada una.
  *
+ * El marcador de una ejecución adentro de la carpeta (`<estado>/active/`): si hay uno solo, de una ejecución terminada
+ * (sin pasos ni controles abiertos ni sin medir, con el pase cerrado, el ok de guardar vigente y sin una firma
+ * pendiente en `<estado>/coordination/signatures.json`), lo cierra con `marker.js clear-session` y después borra. Con
+ * una ejecución sin terminar, estacionada (`<estado>/parked/`), con más de un marcador, o con un marcador que no se
+ * puede leer, no borra y la nombra con sus sesiones.
+ *
  * ── LO QUE NUNCA TOCA ────────────────────────────────────────────────────────────────────────────────────────────
  *   · el checkout principal de un repo (el primero de `git worktree list`);
- *   · una carpeta con cambios: archivos modificados, en el índice o sin seguimiento (`git status --porcelain`). Además
- *     el borrado va sin `--force`: si git ve algo, se niega él también;
+ *   · una carpeta con cambios: archivos modificados, en el índice o sin seguimiento (`git status --porcelain`), o con
+ *     evidencia que git ignora en `.advisors/` (salvo la copia de la apertura de una ejecución, que es de open-runs.js).
+ *     Además el borrado va sin `--force`: si git ve algo, se niega él también;
+ *   · una carpeta que es, o contiene, el cwd de una sesión viva (`<claude>/sessions/`), aunque esté quieta;
  *   · una carpeta con commits que no están en origin/main (o en la rama por defecto de origin);
  *   · una carpeta bloqueada (`git worktree lock`), una que ya no existe en disco, o la que contiene el cwd de esta sesión;
  *   · una carpeta con una ejecución abierta adentro (su apertura vigente en gates.log, lib/open-runs.js): borrarla deja
@@ -33,28 +46,42 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  * Mac, Linux y Windows: sólo Node y git, sin shell.
  *
  * Apagar: TYCON_WORKTREE_SWEEP=0 (los dos caminos). Horas de uso que protegen una carpeta al arrancar:
- * TYCON_WORKTREE_SWEEP_IDLE_HOURS (4). Forzar la pasada de hoy: --force. Probar sin borrar: --dry-run.
+ * `maintenance.worktree_idle_hours` (scripts/lib/tycon-config.js, 4 de fábrica), que TYCON_WORKTREE_SWEEP_IDLE_HOURS pisa
+ * en la máquina. La pasada de todas las carpetas, ahora y diciendo qué hizo: --force. Probar sin borrar: --dry-run.
  * Fail-open: un hook de arranque nunca frena ni tira.
  *
  * Uso:
- *   node scripts/hooks/worktree-sweep.js                         ← el hook de arranque
+ *   node scripts/hooks/worktree-sweep.js [--max <n>]             ← el hook de arranque (lanza --pass de fondo)
+ *   node scripts/hooks/worktree-sweep.js --pass [--max <n>]      ← una pasada de fondo, desde el cursor
  *   node scripts/hooks/worktree-sweep.js --story <N.M> [--dry-run] [--json]
- *   node scripts/hooks/worktree-sweep.js --force [--dry-run]     ← la pasada de arranque, ahora
+ *   node scripts/hooks/worktree-sweep.js --force [--dry-run]     ← la pasada de todas, ahora
  */
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 // La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
 // archivo viaja suelto (al banco, a laboratorios de pruebas); ahí vale la ruta de siempre, que es la misma.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 
 const STAMP_NAME = 'worktree-sweep-last-run';
-const EVERY_MS = 24 * 60 * 60 * 1000;
+const LOCK_NAME = 'worktree-sweep.lock';
+const CURSOR_NAME = 'worktree-sweep-cursor';
+const RESULT_NAME = 'worktree-sweep-result.json';
+const NOTICE_DAY_NAME = 'worktree-sweep-notice-last';
+const BRANCH_STAMP_NAME = 'branch-count-last';
+const BRANCH_EVERY_MS = 7 * 24 * 60 * 60 * 1000;
+// una pasada larga sigue siendo de este proceso: el candado sólo se pisa si su proceso murió o pasó media hora
+const LOCK_STALE_MS = 30 * 60 * 1000;
+// cuántas carpetas mira una pasada de fondo; la siguiente sigue desde el cursor
+const MAX_PER_PASS = 20;
 const GIT_TIMEOUT_MS = 15000;
-const MAX_NAMES = 5;
+const FETCH_TIMEOUT_MS = 60000;
+const MAX_NAMES = 10;
 const WIN = process.platform === 'win32';
+// la copia de la apertura de una ejecución (lib/open-runs.js) no es evidencia: la juzga el chequeo de ejecuciones abiertas
+const RUN_OPEN_COPY = /^\.advisors\/pipeline-runs\/[^/]+\/run-open\.json$/;
 
 function git(cwd, args, timeout = GIT_TIMEOUT_MS) {
   const r = spawnSync('git', args, { cwd, encoding: 'utf8', timeout, windowsHide: true, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } });
@@ -137,11 +164,13 @@ function branchNamesStory(branch, story) {
 }
 
 /**
- * Evalúa (y, si no es `dryRun`, borra) las carpetas de trabajo de los repos dados.
- * Devuelve { removed: [...], kept: [{ name, why }], branchKept: [...], checked, unreadable: [...] }.
+ * Evalúa (y, si no es `dryRun`, borra) las carpetas de trabajo de los repos dados. Con `max`, mira como mucho esa
+ * cantidad, empezando por la que sigue a `cursor` (las carpetas de todos los repos, por ruta), y devuelve en `cursor`
+ * dónde quedó: vacío si llegó al final.
+ * Devuelve { removed: [...], kept: [{ name, why }], branchKept: [...], checked, unreadable: [...], cursor }.
  */
-function sweep({ repos, cwd, story = null, idleMs = 0, now = Date.now(), dryRun = false, fetch = false, home = os.homedir() }) {
-  const res = { removed: [], kept: [], branchKept: [], checked: 0, unreadable: [] };
+function sweep({ repos, cwd, story = null, idleMs = 0, now = Date.now(), dryRun = false, fetch = false, home = os.homedir(), max = 0, cursor = '' }) {
+  const res = { removed: [], kept: [], branchKept: [], checked: 0, unreadable: [], cursor: '' };
   // las ejecuciones abiertas (gates.log), leídas una vez y sólo si alguna carpeta llega a borrarse (@story-8.318)
   let abiertas;
   const abiertaEn = (wt) => {
@@ -150,44 +179,207 @@ function sweep({ repos, cwd, story = null, idleMs = 0, now = Date.now(), dryRun 
     const a = abiertas.lib.abiertasDentro(wt, { eventos: abiertas.eventos }).abiertas[0];
     return a ? { why: `tiene una ejecución abierta (story ${a.story || '?'}, sesión ${a.sesion})` } : null;
   };
+  // los marcadores, las firmas pendientes y las sesiones vivas: también una vez, y sólo si alguna llega a borrarse
+  let ctx;
+  const contexto = () => { if (ctx === undefined) ctx = leerContexto(home); return ctx; };
+  const todas = [];
   for (const repo of repos) {
     const list = listWorktrees(repo);
     if (!list) { res.unreadable.push(path.basename(repo)); continue; }
     let linked = list.slice(1).filter((w) => !w.prunable && fs.existsSync(w.path));
     if (story) linked = linked.filter((w) => branchNamesStory(w.branch, story));
     if (!linked.length) continue;
-    if (fetch) git(repo, ['fetch', '--quiet', 'origin'], 60000);
+    if (fetch) git(repo, ['fetch', '--quiet', 'origin'], FETCH_TIMEOUT_MS);
     const target = targetRef(repo);
     if (!target) { res.unreadable.push(`${path.basename(repo)} (sin origin/main)`); continue; }
-    for (const w of linked) {
-      res.checked++;
-      const name = path.basename(w.path);
-      if (cwd && inside(cwd, w.path)) { res.kept.push({ name, why: 'es la carpeta de esta sesión' }); continue; }
-      if (w.locked) { if (story) res.kept.push({ name, why: 'está bloqueada (git worktree lock)' }); continue; }
-      // al arrancar, una carpeta en uso o recién creada se deja en silencio: puede ser de otra sesión viva
-      if (!story && idleMs > 0 && now - lastUsedMs(w.path) < idleMs) continue;
-      const st = git(w.path, ['status', '--porcelain']);
-      if (!st.ok) { res.kept.push({ name, why: 'no pude leer su estado' }); continue; }
-      if (st.out) { res.kept.push({ name, why: 'tiene cambios' }); continue; }
-      const head = git(w.path, ['rev-parse', 'HEAD']).out;
-      if (!head) { res.kept.push({ name, why: 'no pude leer su HEAD' }); continue; }
-      const merged = git(repo, ['merge-base', '--is-ancestor', head, target.sha]).ok;
-      if (!merged) { res.kept.push({ name, why: `commits sin mergear a ${target.name}` }); continue; }
-      if (!story && head === target.sha) continue;
-      // con la carpeta de una ejecución abierta adentro, borrarla deja la ejecución perdida: se cierra antes
-      const abierta = abiertaEn(w.path);
-      if (abierta) { res.kept.push({ name, why: abierta.why }); continue; }
-      if (dryRun) { res.removed.push(name); continue; }
-      const rm = git(repo, ['worktree', 'remove', w.path]);
-      if (!rm.ok) { res.kept.push({ name, why: `git no la quiso borrar (${rm.err.split('\n')[0] || 'sin motivo'})` }); continue; }
-      res.removed.push(name);
-      if (w.branch) {
-        const b = git(repo, ['branch', '-d', w.branch]);
-        if (!b.ok) res.branchKept.push(w.branch);
-      }
+    for (const w of linked) todas.push({ repo, target, w });
+  }
+  let turno = todas;
+  if (max > 0) {
+    todas.sort((a, b) => (norm(a.w.path) < norm(b.w.path) ? -1 : norm(a.w.path) > norm(b.w.path) ? 1 : 0));
+    const desde = cursor ? todas.findIndex((x) => norm(x.w.path) > cursor) : 0;
+    turno = (desde < 0 ? [] : todas.slice(desde)).slice(0, max);
+    res.cursor = turno.length === max && desde + max < todas.length ? norm(turno[turno.length - 1].w.path) : '';
+  }
+  for (const { repo, target, w } of turno) {
+    res.checked++;
+    const name = path.basename(w.path);
+    if (cwd && inside(cwd, w.path)) { res.kept.push({ name, why: 'es la carpeta de esta sesión' }); continue; }
+    if (w.locked) { if (story) res.kept.push({ name, why: 'está bloqueada (git worktree lock)' }); continue; }
+    // al arrancar, una carpeta en uso o recién creada se deja en silencio: puede ser de otra sesión viva
+    if (!story && idleMs > 0 && now - lastUsedMs(w.path) < idleMs) continue;
+    const st = git(w.path, ['status', '--porcelain']);
+    if (!st.ok) { res.kept.push({ name, why: 'no pude leer su estado' }); continue; }
+    if (st.out) { res.kept.push({ name, why: `tiene ${st.out.split('\n').length} archivo(s) con cambios`, cambios: true }); continue; }
+    const ev = evidenciaIgnorada(w.path);
+    if (ev === null) { res.kept.push({ name, why: 'no pude ver si tiene evidencia ignorada en .advisors' }); continue; }
+    if (ev) { res.kept.push({ name, why: `tiene ${ev} archivo(s) de evidencia sin guardar en .advisors`, cambios: true }); continue; }
+    const head = git(w.path, ['rev-parse', 'HEAD']).out;
+    if (!head) { res.kept.push({ name, why: 'no pude leer su HEAD' }); continue; }
+    const merged = git(repo, ['merge-base', '--is-ancestor', head, target.sha]).ok;
+    if (!merged) { res.kept.push({ name, why: `commits sin mergear a ${target.name}` }); continue; }
+    if (!story && head === target.sha) continue;
+    // la carpeta de una sesión viva no se toca, aunque esté quieta
+    const viva = sesionVivaEn(contexto(), w.path);
+    if (viva) { res.kept.push({ name, why: viva }); continue; }
+    // el marcador de una ejecución terminada se cierra antes de borrar; con cualquier otro, la carpeta queda
+    const marca = juzgarMarcadores(contexto(), w.path, { home, dryRun });
+    if (marca) { res.kept.push({ name, why: marca }); continue; }
+    // con la carpeta de una ejecución abierta adentro, borrarla deja la ejecución perdida: se cierra antes
+    const abierta = abiertaEn(w.path);
+    if (abierta) { res.kept.push({ name, why: abierta.why }); continue; }
+    if (dryRun) { res.removed.push(name); continue; }
+    const rm = git(repo, ['worktree', 'remove', w.path]);
+    if (!rm.ok) {
+      // otra pasada pudo borrarla en el medio: lo que ya no está no es un error
+      if (!fs.existsSync(w.path)) continue;
+      res.kept.push({ name, why: `git no la quiso borrar (${rm.err.split('\n')[0] || 'sin motivo'})` });
+      continue;
+    }
+    res.removed.push(name);
+    if (w.branch) {
+      const b = git(repo, ['branch', '-d', w.branch]);
+      if (!b.ok) res.branchKept.push(w.branch);
     }
   }
   return res;
+}
+
+/** Cuántos archivos que git ignora hay en `.advisors/` (sin la copia de la apertura); null si no se pudo mirar. */
+function evidenciaIgnorada(wt) {
+  // `traditional` con `--untracked-files=all` nombra cada archivo de una carpeta ignorada; `matching` la nombraría una vez
+  const r = git(wt, ['status', '--porcelain', '--ignored=traditional', '--untracked-files=all', '--', '.advisors']);
+  if (!r.ok) return null;
+  return r.out.split('\n').filter((l) => l.startsWith('!! ') && !RUN_OPEN_COPY.test(l.slice(3).replace(/^"|"$/g, ''))).length;
+}
+
+/**
+ * Lo que hace falta para juzgar una ejecución adentro de una carpeta: los marcadores activos, los estacionados, las
+ * firmas pendientes y las sesiones vivas. Lo que no se pudo leer queda con su motivo, y esa parte no deja borrar.
+ */
+function leerContexto(home) {
+  const estado = stateDirOf(home);
+  const ctx = { home, marcadores: [], ilegibles: [], firmas: null, firmasError: null, vivas: null, vivasError: null };
+  const activos = path.join(estado, 'active');
+  let archivos = [];
+  try { archivos = fs.readdirSync(activos).filter((f) => f.endsWith('.json')); } catch (e) {
+    if (!e || e.code !== 'ENOENT') ctx.ilegibles.push(`la carpeta de marcadores (${(e && e.code) || 'error'})`);
+  }
+  for (const f of archivos) {
+    const sid = f.slice(0, -5);
+    try {
+      const m = JSON.parse(fs.readFileSync(path.join(activos, f), 'utf8'));
+      if (!m || typeof m !== 'object') throw new Error('no es un objeto');
+      ctx.marcadores.push({ sid, m });
+    } catch (e) {
+      // borrado por otra pasada en el medio: no es un marcador ilegible
+      if (e && e.code === 'ENOENT') continue;
+      ctx.ilegibles.push(`el marcador ${sid}`);
+    }
+  }
+  try {
+    const lista = JSON.parse(fs.readFileSync(path.join(estado, 'coordination', 'signatures.json'), 'utf8'));
+    ctx.firmas = Array.isArray(lista) ? lista : null;
+    if (!ctx.firmas) ctx.firmasError = 'no es una lista';
+  } catch (e) {
+    if (e && e.code === 'ENOENT') ctx.firmas = [];
+    else ctx.firmasError = (e && (e.code || e.message)) || 'error';
+  }
+  const sesiones = path.join(claudeDirOf(home), 'sessions');
+  try {
+    ctx.vivas = [];
+    for (const f of fs.readdirSync(sesiones).filter((x) => x.endsWith('.json'))) {
+      let s;
+      try { s = JSON.parse(fs.readFileSync(path.join(sesiones, f), 'utf8')); } catch (e) {
+        if (e && e.code === 'ENOENT') continue;
+        throw new Error(`${f} no se puede leer`);
+      }
+      const pid = Number(s && s.pid);
+      if (!Number.isInteger(pid) || pid <= 0 || typeof s.cwd !== 'string') continue;
+      if (!pidAlive(pid)) continue;
+      ctx.vivas.push({ sid: String(s.sessionId || f.slice(0, -5)), name: typeof s.name === 'string' && s.name.trim() ? s.name.trim() : null, cwd: s.cwd });
+    }
+  } catch (e) {
+    if (e && e.code === 'ENOENT') ctx.vivas = [];
+    else { ctx.vivas = null; ctx.vivasError = (e && (e.code || e.message)) || 'error'; }
+  }
+  return ctx;
+}
+
+function claudeDirOf(home) {
+  const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
+  try { if (fs.existsSync(lib)) return require(lib).claudeDir(home); } catch (_) { /* la de siempre */ }
+  return path.join(home || os.homedir(), '.claude');
+}
+
+function pidAlive(pid) {
+  try { process.kill(pid, 0); return true; } catch (e) { return Boolean(e && e.code === 'EPERM'); }
+}
+
+/** El motivo para no tocar la carpeta de una sesión viva, o null. Sin poder ver las sesiones, tampoco se toca. */
+function sesionVivaEn(ctx, wt) {
+  if (!ctx.vivas) return `no pude ver las sesiones vivas (${ctx.vivasError})`;
+  const v = ctx.vivas.find((s) => inside(s.cwd, wt));
+  return v ? `es la carpeta de una sesión viva: ${v.name ? `${v.name} (${v.sid})` : v.sid}` : null;
+}
+
+/**
+ * Los marcadores de la carpeta: ninguno → null (se puede borrar); uno solo, de una ejecución terminada y sin firma
+ * pendiente → lo cierra con `marker.js clear-session` y devuelve null; cualquier otro caso → el motivo, con las sesiones.
+ */
+function juzgarMarcadores(ctx, wt, { home, dryRun }) {
+  if (ctx.ilegibles.length) return `no pude leer ${ctx.ilegibles.join(', ')}: no sé de qué carpeta es`;
+  const deAca = ctx.marcadores.filter(({ m }) => (m.repoPath && inside(m.repoPath, wt)) || (m.storyPath && path.isAbsolute(m.storyPath) && inside(path.dirname(m.storyPath), wt)));
+  if (!deAca.length) return null;
+  if (deAca.length > 1) return `tiene ${deAca.length} ejecuciones (sesiones ${deAca.map((x) => x.sid).sort().join(', ')})`;
+  const { sid, m } = deAca[0];
+  const estacionada = estacionadaDe(sid, m, home);
+  if (estacionada) return `su ejecución está estacionada (sesión ${sid}${estacionada === true ? '' : `: ${estacionada}`})`;
+  const fin = terminada(m);
+  if (!fin.ok) return `su ejecución no terminó (sesión ${sid}: ${fin.motivo})`;
+  if (ctx.firmasError) return `no pude leer las firmas pendientes (${ctx.firmasError}) de su ejecución (sesión ${sid})`;
+  const firma = ctx.firmas.find((f) => f && ([f.cwd, f.carpeta].some((c) => typeof c === 'string' && c && inside(c, wt))
+    || f.destino === sid || f.sesion === sid || (typeof f.key === 'string' && f.key.includes(wt))));
+  if (firma) return `su ejecución tiene una firma pendiente (sesión ${sid})`;
+  if (dryRun) return null;
+  const markerJs = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+  if (!fs.existsSync(markerJs)) return `no pude cerrar su marcador: este arnés no trae marker.js (sesión ${sid})`;
+  const r = spawnSync(process.execPath, [markerJs, 'clear-session', sid], { cwd: wt, encoding: 'utf8', timeout: GIT_TIMEOUT_MS, windowsHide: true, env: { ...process.env, HOME: home, USERPROFILE: home } });
+  // otra pasada pudo cerrarlo en el medio: «no había marcador» no es un error
+  if (r.status === 0 || /no había marcador de esa sesión/.test(r.stderr || '')) return null;
+  return `no pude cerrar su marcador (sesión ${sid}: ${String(r.stderr || r.error || '').split('\n')[0] || `salió ${r.status}`})`;
+}
+
+/** true, el motivo de una estacionada, o null. Lo lee open-runs.js si viene con el arnés; si no, por su archivo. */
+function estacionadaDe(sid, m, home) {
+  try {
+    const lib = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'open-runs.js');
+    if (fs.existsSync(lib)) {
+      const marca = require(lib).marcaDeEstacionada(sid, m, { home, avisar: () => {} });
+      if (!marca) return null;
+      return marca.kind === 'ilegible' ? 'su marca no se puede leer' : true;
+    }
+  } catch (e) { return `no pude ver si está estacionada (${e.message})`; }
+  return fs.existsSync(path.join(stateDirOf(home), 'parked', `${String(sid).replace(/[/\\]/g, '_')}.json`)) || null;
+}
+
+/**
+ * ¿La ejecución terminó? El estado de cierre de lib/run-close.js (sin pasos sin correr, sin controles en rojo ni sin
+ * medir, con el pase cerrado y sin esperar a una persona) y el ok de guardar vigente (lib/save-ok.js).
+ */
+function terminada(m) {
+  const lib = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib');
+  let rc, so;
+  try { rc = require(path.join(lib, 'run-close.js')); so = require(path.join(lib, 'save-ok.js')); } catch (e) {
+    return { ok: false, motivo: `no pude ver su estado (${(e && (e.code || e.message)) || 'error'})` };
+  }
+  try {
+    const e = rc.estado(m);
+    if (rc.abierta(e) || e.sinMedir.length || e.detenida) return { ok: false, motivo: rc.motivoDe(e) || 'abierta' };
+    const v = so.vigente({ saveOk: m.saveOk });
+    if (!v.ok) return { ok: false, motivo: `sin el ok de guardar vigente: ${v.motivo}` };
+    return { ok: true };
+  } catch (e) { return { ok: false, motivo: `no pude ver su estado (${e.message})` }; }
 }
 
 /**
@@ -241,14 +433,146 @@ function names(list) {
   return list.length > MAX_NAMES ? `${shown} y ${list.length - MAX_NAMES} más` : shown;
 }
 
-/** La línea del arranque; null si no hay nada que decir. */
-function startupLine(res, dryRun) {
+/** La línea del arranque; null si no hay nada que decir. Con `sinNombrar`, sin las que quedaron ni las sin revisar. */
+function startupLine(res, dryRun, { sinNombrar = false } = {}) {
   const parts = [];
   if (res.removed.length) parts.push(`${dryRun ? 'borraría' : 'borré'} ${res.removed.length} ya mergeada(s) (${names(res.removed)})`);
-  if (res.kept.length) parts.push(`no toqué ${res.kept.length} con trabajo: ${names(res.kept.map((k) => `${k.name} (${k.why})`))}`);
+  if (!sinNombrar && res.kept.length) parts.push(`no toqué ${res.kept.length} con trabajo: ${names(res.kept.map((k) => `${k.name} (${k.why})`))}`);
   if (res.branchKept.length) parts.push(`la rama quedó en ${names(res.branchKept)} (git branch -d no la soltó)`);
-  if (res.unreadable.length) parts.push(`sin revisar: ${names(res.unreadable)}`);
+  if (!sinNombrar && res.unreadable.length) parts.push(`sin revisar: ${names(res.unreadable)}`);
   return parts.length ? `carpetas de trabajo: ${parts.join(' · ')}. Apagar: TYCON_WORKTREE_SWEEP=0` : null;
+}
+
+/** La línea de las ramas remotas ya entradas, o null. */
+function branchesLine(b) {
+  if (!b || !b.total) return null;
+  const cuenta = b.repos.filter((r) => r.n).map((r) => `${path.basename(r.repo)}: ${r.n}`).join(', ');
+  const comandos = b.repos.filter((r) => r.n).map((r) => `git -C "${r.repo}" for-each-ref --merged ${r.target} --format='%(refname:lstrip=3)' refs/remotes/origin | grep -v -x -e HEAD -e ${r.target.replace(/^origin\//, '')} | xargs -n 50 git -C "${r.repo}" push origin --delete`);
+  return `ramas: ${b.total} rama(s) remota(s) ya entrada(s) a main que el servidor no borró (${cuenta}). Para borrarlas: ${comandos.join(' ; ')}`;
+}
+
+/**
+ * Una vez por semana: trae las ramas del servidor (`fetch --prune`, sin pedir clave) y cuenta las remotas ya entradas.
+ * Un repo que no se pudo traer no se cuenta esa vez. `null` si no tocaba o si no pudo contar ninguno.
+ */
+function countBranches(repos, home, now = Date.now()) {
+  const sello = path.join(stateDirOf(home), BRANCH_STAMP_NAME);
+  try { if (now - fs.statSync(sello).mtimeMs < BRANCH_EVERY_MS) return null; } catch (_) { /* sin sello: toca */ }
+  const out = { total: 0, repos: [], skipped: [] };
+  for (const repo of repos) {
+    const f = git(repo, ['fetch', '--quiet', '--prune', 'origin'], FETCH_TIMEOUT_MS);
+    if (!f.ok) { out.skipped.push(path.basename(repo)); continue; }
+    const target = targetRef(repo);
+    if (!target) { out.skipped.push(path.basename(repo)); continue; }
+    const r = git(repo, ['for-each-ref', '--merged', target.sha, '--format=%(refname)', 'refs/remotes/origin']);
+    if (!r.ok) { out.skipped.push(path.basename(repo)); continue; }
+    const propia = `refs/remotes/${target.name}`;
+    const n = r.out.split('\n').filter((x) => x && x !== propia && x !== 'refs/remotes/origin/HEAD').length;
+    out.repos.push({ repo, target: target.name, n });
+    out.total += n;
+  }
+  if (!out.repos.length) return null;
+  try { fs.mkdirSync(path.dirname(sello), { recursive: true }); fs.writeFileSync(sello, new Date(now).toISOString() + '\n'); } catch (_) { /* sin sello: se cuenta de nuevo */ }
+  return out;
+}
+
+/** Las horas de quietud: `maintenance.worktree_idle_hours` (o su variable); si el lector no está o falla, la variable o 4. */
+function idleHours(env = process.env) {
+  const lib = path.join(__dirname, '..', 'lib', 'tycon-config.js');
+  try {
+    if (fs.existsSync(lib)) {
+      const tc = require(lib);
+      const r = tc.leerParaHook({});
+      if (r.ok) return tc.mantenimiento(r.config).worktree_idle_hours.value;
+    }
+  } catch (_) { /* fail-open: la variable o el de fábrica */ }
+  const hours = Number(env.TYCON_WORKTREE_SWEEP_IDLE_HOURS);
+  return env.TYCON_WORKTREE_SWEEP_IDLE_HOURS !== undefined && env.TYCON_WORKTREE_SWEEP_IDLE_HOURS !== '' && Number.isFinite(hours) && hours >= 0 ? hours : 4;
+}
+
+/** El candado de la pasada: `'taken'`, `'busy'` (otra viva) o `'error'`. El de un proceso muerto, viejo o ilegible se pisa. */
+function takeLock(file) {
+  try { fs.mkdirSync(path.dirname(file), { recursive: true }); } catch (_) { return 'error'; }
+  for (let i = 0; i < 2; i++) {
+    try {
+      const fd = fs.openSync(file, 'wx');
+      fs.writeSync(fd, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
+      fs.closeSync(fd);
+      return 'taken';
+    } catch (e) {
+      if (!e || e.code !== 'EEXIST') return 'error';
+      let held = null;
+      try { held = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) { held = null; }
+      const age = held && typeof held.at === 'string' ? Date.now() - Date.parse(held.at) : Infinity;
+      if (held && Number.isInteger(held.pid) && pidAlive(held.pid) && age < LOCK_STALE_MS) return 'busy';
+      try { fs.rmSync(file, { force: true }); } catch (_) { return 'error'; }
+    }
+  }
+  return 'busy';
+}
+function releaseLock(file) {
+  try { const held = JSON.parse(fs.readFileSync(file, 'utf8')); if (held && held.pid === process.pid) fs.rmSync(file, { force: true }); } catch (_) { /* nada */ }
+}
+
+function readJson(file) { try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) { return null; } }
+function writeAtomic(file, data) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(data) + '\n');
+  fs.renameSync(tmp, file);
+}
+const today = (now = new Date()) => `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+/**
+ * Lo que dice el arranque de la pasada anterior, una vez: lo borrado siempre; lo que quedó y lo sin revisar, una vez
+ * por día; las ramas, cuando se contaron. Marca el resultado como mostrado.
+ */
+function takeNotice(home) {
+  const estado = stateDirOf(home);
+  const file = path.join(estado, RESULT_NAME);
+  const res = readJson(file);
+  if (!res || res.shown === true) return [];
+  const diaFile = path.join(estado, NOTICE_DAY_NAME);
+  let dia = null;
+  try { dia = fs.readFileSync(diaFile, 'utf8').trim(); } catch (_) { dia = null; }
+  const hayNombres = Boolean(res.kept.length || res.unreadable.length);
+  const nombrar = hayNombres && dia !== today();
+  const lines = [startupLine(res, false, { sinNombrar: !nombrar }), branchesLine(res.branches)].filter(Boolean);
+  // una pasada de fondo pudo escribir otro resultado en el medio: se marca sólo si sigue siendo el mismo
+  const again = readJson(file);
+  if (!again || again.at !== res.at) return lines;
+  try { writeAtomic(file, { ...again, shown: true }); } catch (_) { return []; }   // sin poder marcarlo, mejor callar que repetir
+  if (nombrar) { try { fs.writeFileSync(diaFile, today() + '\n'); } catch (_) { /* mañana se repite: no es grave */ } }
+  return lines;
+}
+
+/** Lanza la pasada desprendida y vuelve. Nunca tira. */
+function launch(max) {
+  try {
+    const child = spawn(process.execPath, [__filename, '--pass', ...(max ? ['--max', String(max)] : [])], { detached: true, stdio: 'ignore', windowsHide: true, env: process.env });
+    child.on('error', () => { /* fail-open: la próxima sesión lo intenta de nuevo */ });
+    child.unref();
+  } catch (_) { /* fail-open */ }
+}
+
+/** Una pasada de fondo: con el candado, desde el cursor, y el conteo semanal de ramas. Deja el resultado escrito. */
+function pass({ home, cwd, max }) {
+  const estado = stateDirOf(home);
+  const lock = path.join(estado, LOCK_NAME);
+  if (takeLock(lock) !== 'taken') return null;
+  try {
+    let cursor = '';
+    try { cursor = fs.readFileSync(path.join(estado, CURSOR_NAME), 'utf8').trim(); } catch (_) { cursor = ''; }
+    const repos = knownRepos(cwd);
+    const res = sweep({ repos, cwd, idleMs: idleHours() * 60 * 60 * 1000, home, max: max || MAX_PER_PASS, cursor });
+    try { fs.writeFileSync(path.join(estado, CURSOR_NAME), res.cursor + '\n'); } catch (_) { /* sin cursor: empieza de nuevo */ }
+    const branches = countBranches(repos, home);
+    const { cursor: _c, ...guardar } = res;
+    const kept = guardar.kept.map(({ name, why }) => ({ name, why }));
+    writeAtomic(path.join(estado, RESULT_NAME), { at: new Date().toISOString(), ...guardar, kept, branches, shown: false });
+    try { fs.writeFileSync(path.join(estado, STAMP_NAME), new Date().toISOString() + '\n'); } catch (_) { /* nada */ }
+    return res;
+  } finally { releaseLock(lock); }
 }
 
 function storyLines(res, story, dryRun) {
@@ -275,20 +599,27 @@ function main() {
     else process.stdout.write(storyLines(res, story, dryRun).join('\n') + '\n');
     return 0;
   }
-  // el hook: una vez por día, salvo --force
-  const stamp = path.join(stateDirOf(os.homedir()), STAMP_NAME);
-  if (!process.argv.includes('--force')) {
-    try { if (Date.now() - fs.statSync(stamp).mtimeMs < EVERY_MS) return 0; } catch (_) { /* sin sello: toca hoy */ }
+  const home = os.homedir();
+  const maxArg = Number(arg('--max'));
+  const max = Number.isInteger(maxArg) && maxArg > 0 ? maxArg : 0;
+  // la pasada de fondo que lanza el arranque
+  if (process.argv.includes('--pass')) { pass({ home, cwd, max }); return 0; }
+  // la pasada de todas, ahora, diciendo qué hizo (y la prueba sin borrar)
+  if (process.argv.includes('--force') || dryRun) {
+    const lock = path.join(stateDirOf(home), LOCK_NAME);
+    const got = dryRun ? 'taken' : takeLock(lock);
+    if (got === 'busy') { process.stdout.write('carpetas de trabajo: otra pasada está corriendo en esta máquina; probá de nuevo cuando termine\n'); return 0; }
+    try {
+      const res = sweep({ repos: knownRepos(cwd), cwd, idleMs: idleHours() * 60 * 60 * 1000, dryRun, home });
+      const line = startupLine(res, dryRun);
+      if (json) process.stdout.write(JSON.stringify({ dryRun, ...res }, null, 2) + '\n');
+      else if (line) process.stdout.write(line + '\n');
+    } finally { if (!dryRun) releaseLock(lock); }
+    return 0;
   }
-  const hours = Number(process.env.TYCON_WORKTREE_SWEEP_IDLE_HOURS);
-  const idleMs = (Number.isFinite(hours) && hours >= 0 ? hours : 4) * 60 * 60 * 1000;
-  const res = sweep({ repos: knownRepos(cwd), cwd, idleMs, dryRun });
-  if (!dryRun) {
-    try { fs.mkdirSync(path.dirname(stamp), { recursive: true }); fs.writeFileSync(stamp, new Date().toISOString() + '\n'); } catch (_) { /* sin sello: mañana se repite, no es grave */ }
-  }
-  const line = startupLine(res, dryRun);
-  if (json) process.stdout.write(JSON.stringify({ dryRun, ...res }, null, 2) + '\n');
-  else if (line) process.stdout.write(line + '\n');
+  // el hook: lo que dejó la pasada anterior, y la de esta sesión de fondo, sin esperarla
+  for (const line of takeNotice(home)) process.stdout.write(line + '\n');
+  launch(max);
   return 0;
 }
 

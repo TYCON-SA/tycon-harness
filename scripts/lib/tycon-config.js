@@ -279,6 +279,12 @@ const VOCABULARIO = Object.freeze({
   // La oficina de /office. `quiet_minutes`: cuántos minutos sin novedades tiene que pasar una sesión que trabaja para que
   // la página diga «sin novedades desde las HH:MM». Sin valor, 15.
   office: Object.freeze({ quiet_minutes: 'entero:1-1440' }),
+  // Lo que la máquina limpia sola. `worktree_idle_hours`: cuántas horas sin uso tiene que pasar una carpeta de trabajo
+  // para que el barrido de cada arranque la borre (scripts/hooks/worktree-sweep.js); sin valor, 4. `temp_days`: cuántos
+  // días sin uso tiene que pasar una carpeta temporal para barrerla; sin valor, 2. `disk_warn_percent`: con cuánto disco
+  // libre, en porcentaje, avisa el arranque; sin valor, 15. Con el orden de siempre (variable › máquina › perfil),
+  // porque cuánto aguanta depende de la máquina.
+  maintenance: Object.freeze({ worktree_idle_hours: 'entero:0-720', temp_days: 'entero:1-365', disk_warn_percent: 'entero:1-99' }),
   // Los topes de archivos del camino corto (el arreglo rápido sin historia). `coordinator_max_files`: lo que se abre sin
   // una persona (la coordinadora por delegación, o una pestaña sin permisos); `max_files`: hasta dónde alcanza la firma
   // común, y más es la firma de sobre cupo. Sin valor, 5 y 8. Los rangos salen de SHORT_PATH_MAX. Valen SÓLO desde el
@@ -581,6 +587,7 @@ const VARIABLES = Object.freeze({
   'coordination.max_stories_in_cycle': ['TYCON_COORDINATION_MAX_STORIES_IN_CYCLE'],
   'coordination.permission_wait_minutes': ['TYCON_COORDINATION_PERMISSION_WAIT_MINUTES'],
   'coordination.max_awaiting_review': ['TYCON_COORDINATION_MAX_AWAITING_REVIEW'],
+  'maintenance.worktree_idle_hours': ['TYCON_WORKTREE_SWEEP_IDLE_HOURS'],
 });
 
 // Los interruptores por hook que ya existían siguen valiendo POR ENCIMA de la llave de su
@@ -1518,6 +1525,18 @@ function coordinacion(config) {
     max_awaiting_review: con('max_awaiting_review', 8) };
 }
 /**
+ * Lo que la máquina limpia sola, según una configuración YA cargada: `{ worktree_idle_hours, temp_days,
+ * disk_warn_percent }`, cada uno `{ value, origin }`. Sin valor, 4, 2 y 15 con origen `sin-valor`.
+ */
+function mantenimiento(config) {
+  const v = (config && config.valores && config.valores.maintenance) || {};
+  const o = (config && config.origenes) || {};
+  const con = (clave, defecto) => (Number.isInteger(v[clave])
+    ? { value: v[clave], origin: o[`maintenance.${clave}`] }
+    : { value: defecto, origin: 'sin-valor' });
+  return { worktree_idle_hours: con('worktree_idle_hours', 4), temp_days: con('temp_days', 2), disk_warn_percent: con('disk_warn_percent', 15) };
+}
+/**
  * Los topes del camino corto, según una configuración YA cargada: `{ coordinator_max_files: { value, origin }, max_files:
  * { value, origin }, delegado }`. Sin valor (o con un valor que el lector rechazó), 5 y 8 con origen `sin-valor`.
  * `delegado` es el cupo que rige para lo que se abre sin una persona: el menor de los dos, porque un carril delegado no
@@ -1974,7 +1993,7 @@ const KEYS = Object.freeze(Object.keys(VOCABULARIO).map((s) => enArchivo(s)));
 
 module.exports = {
   parse, KEYS, motivoPaquetes, paquetesDeTexto, CANALES_DE_AVISO,
-  VOCABULARIO, DEFAULTS, PROFILE_WINS, PROFILE_ONLY, SHORT_PATH_MAX, SHORT_PATH_FACTORY, caminoCorto, INTEGRACIONES, LAS_OCHO, TOOLS, toolKeys, coordinacion, temasDeSesion, sessionNames, COMO_SE_PRENDE, VARIABLES, INTERRUPTORES_POR_HOOK, RAIZ_ARNES, NOMBRE_PERFIL, NOMBRE_PERFIL_VIEJO, perfilDelArbol, avisoNombrePerfil, NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, DONDE_CLAVES, ConfigError,
+  VOCABULARIO, DEFAULTS, PROFILE_WINS, PROFILE_ONLY, SHORT_PATH_MAX, SHORT_PATH_FACTORY, caminoCorto, mantenimiento, INTEGRACIONES, LAS_OCHO, TOOLS, toolKeys, coordinacion, temasDeSesion, sessionNames, COMO_SE_PRENDE, VARIABLES, INTERRUPTORES_POR_HOOK, RAIZ_ARNES, NOMBRE_PERFIL, NOMBRE_PERFIL_VIEJO, perfilDelArbol, avisoNombrePerfil, NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, DONDE_CLAVES, ConfigError,
   rutaMaquina, nombreArchivoMaquina, comoSePrende, rutaPerfil, leerPerfil, rutaLlaveBuzon, cargar, leer, leerParaHook, avisoParaHook, valor, explicar, estadoEnlace, formaPersonal,
   normalizarOrg, nombreDeOrganizacion, resolverRutaDeArchivo, personalEnComentario,
   esIntegracion, estadoIntegracion, integraciones, timeTracking, plataforma, validarTipo, delegaFirma, AREAS_PLATAFORMA, respuesta, modelProvider, TOPE_POR_ESTILO, integracionParaComando, integracionParaHook, sinAnotar, setKey, guardKnows, guardAccepts, cli,
