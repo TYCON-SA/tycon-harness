@@ -349,6 +349,48 @@ test('T21 PreCommit_DebutBatches_Negatives — sin evidencia en verde frena; con
   assert.match(faltan(r), /#2\b/, salida(r));
 });
 
+test('T22 PreCommit_BatchToDone_ReadByName — la tanda que pasa a done se lee por su nombre: comillas, mayúsculas, otro done que se va o un intercambio', () => {
+  const bloqueadas = { [B]: 'blocked', [C]: 'blocked' };
+  // el estreno con `status: "done"` y su evidencia: se mide ésa sola, igual que sin comillas
+  let E = entorno();
+  sinTandasEnHead(E);
+  E.humo([1]);
+  let r = commitear(E, estreno({ estados: { [A]: '"done"', ...bloqueadas } }), 's-t22a');
+  assert.strictEqual(r.status, 0, salida(r));
+  assert.match(salida(r), new RegExp(`estrena las tandas con ${A} ya done`), salida(r));
+  // el estreno con `status: "done"` sin su evidencia: frena por su criterio
+  E = entorno();
+  sinTandasEnHead(E);
+  E.humo([3]);
+  r = commitear(E, estreno({ estados: { [A]: '"done"', ...bloqueadas } }), 's-t22b');
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(faltan(r), /#1\b/, salida(r));
+  // un cierre común con `status: "done"` o `status: Done` sin su evidencia: frena por su criterio
+  for (const [estado, sid] of [['"done"', 's-t22c'], ['Done', 's-t22d']]) {
+    E = entorno();
+    E.humo([3]);
+    r = commitear(E, historia({ estados: { [A]: estado } }), sid);
+    assert.notStrictEqual(r.status, 0, `${estado}: ${salida(r)}`);
+    assert.match(faltan(r), /#1\b/, `${estado}: ${salida(r)}`);
+  }
+  // el commit que estrena la tanda hecha y quita otro `status: done` del frontmatter: la cuenta no sube, pero se mide
+  E = entorno();
+  fs.writeFileSync(E.story, sinTandas(historia({ status: 'draft' })).replace('\n---\n# Story', '\nreview:\n  status: done\n---\n# Story'));
+  E.git('commit', '-qam', 'la historia sin tandas y con otro done');
+  E.humo([3]);
+  r = commitear(E, estreno(), 's-t22e');
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(faltan(r), /#1\b/, salida(r));
+  // el done pasa de una tanda a otra: la que queda hecha no lo estaba en HEAD, se mide
+  E = entorno();
+  fs.writeFileSync(E.story, historia({ estados: { [A]: 'done' } }));
+  E.git('commit', '-qam', 'la primera tanda hecha');
+  E.humo([1]);
+  r = commitear(E, historia({ estados: { [B]: 'done' } }), 's-t22f');
+  assert.notStrictEqual(r.status, 0, salida(r));
+  assert.match(faltan(r), /#2\b/, salida(r));
+});
+
 // ── 8.240: la tanda se ata a lo que la corrida toca ──────────────────────────────────────────────────────────────
 
 const B_ARCH = ['  - src/b.js  # tanda B'];

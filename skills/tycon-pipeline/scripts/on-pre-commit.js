@@ -1625,20 +1625,27 @@ function main() {
       && /^done$/i.test(String(stagedFm.status || '').trim());
     const statusTransition = critica || internaDone;
 
-    // Trigger 2: pipeline block transition — `status: done` indentado (pipelines.X.status)
-    // que aparece en el frontmatter staged y NO estaba en HEAD.
-    // Scopeado al BLOQUE FRONTMATTER (entre los dos `---`), igual que Capa 2
-    // (on-frontmatter-write). Un regex sobre el diff crudo `git diff --cached` tomaría un
-    // `+status: done` en prosa o en un code-block como transición: un falso positivo.
+    // Trigger 2: una tanda del bloque pipelines que pasa a done. Sale de las tandas que lee parsePipelinesBlock (sólo
+    // el frontmatter, no la prosa ni un bloque de código) en HEAD y en lo que se commitea, comparadas por nombre: cuenta
+    // cada tanda done ahora que no lo estaba en HEAD o no existía. Contar renglones `status: done` no ve `"done"` ni
+    // `Done`, que el lector toma por done, ni un done que pasa de una tanda a otra o que se va de otro lugar del
+    // frontmatter en el mismo commit: la cuenta no sube y la tanda se cerraba sin medir.
     // 🔴 Se calcula ACÁ, antes del advisors-gate y del «sólo aviso».
     // Si estuviera después de dos `continue`, el aviso de `review → done` se marcaría por
     // spec sin saber si en el mismo commit se cierra una tanda. Así, `review → done` +
     // `pipelines.X: in-progress → done` sin evidencia —la última tanda de una story entregada en
     // tandas— pasaría a AVISO, cuando la transición de pipelines bloquea sola.
     const fmBlock = (c) => { const m = c.match(/^---\r?\n([\s\S]*?)\r?\n---/); return m ? m[1] : ''; };
-    const headDone = (fmBlock(head).match(/^\s+status:\s*done\b/gm) || []).length;
-    const stagedDone = (fmBlock(staged).match(/^\s+status:\s*done\b/gm) || []).length;
-    const pipelineTransition = stagedDone > headDone;
+    const tandaHecha = (t) => String(t.status || '').toLowerCase() === 'done';
+    let pipelineTransition;
+    try {
+      const { parsePipelinesBlock } = require('./lib/story-checks.js');
+      const hechasEnHead = new Set((head ? parsePipelinesBlock(head) : []).filter(tandaHecha).map((t) => t.name));
+      pipelineTransition = parsePipelinesBlock(staged).some((t) => tandaHecha(t) && !hechasEnHead.has(t.name));
+    } catch {
+      // sin el lector no se sabe qué tanda cambió: un frontmatter que cambia cuenta como transición, y abajo se miden todas
+      pipelineTransition = fmBlock(head) !== fmBlock(staged);
+    }
     // Un commit que cierra tandas sin pasar la historia a review/done mide las tandas que cierra: salen del diff de la
     // historia (pasan a done en lo que se commitea y no lo estaban en HEAD), nunca del marcador de la sesión. Con paso
     // de la historia, se miden todas.
@@ -1653,7 +1660,7 @@ function main() {
         const antes = head ? parsePipelinesBlock(head) : [];
         const fmHead = fmBlock(head);
         const estrenadas = !antes.length && fmHead && !/^pipelines\s*:/m.test(fmHead)
-          ? parsePipelinesBlock(staged).filter((t) => String(t.status || '').toLowerCase() === 'done').map((t) => t.name) : [];
+          ? parsePipelinesBlock(staged).filter(tandaHecha).map((t) => t.name) : [];
         if (estrenadas.length) {
           tandasQueCierran.set(specRel, { nombres: estrenadas, antes: [] });
           const cual = estrenadas.length > 1 ? 'se miden esas tandas' : 'se mide esa tanda';
@@ -1663,9 +1670,8 @@ function main() {
         } else {
           const enHead = new Map(antes.map((t) => [t.name, t]));
           const ahora = parsePipelinesBlock(staged);
-          const nuevas = ahora.filter((t) => String(t.status || '').toLowerCase() === 'done' && !enHead.has(t.name)).map((t) => t.name);
-          const cierran = ahora.filter((t) => String(t.status || '').toLowerCase() === 'done' && enHead.has(t.name)
-            && String(enHead.get(t.name).status || '').toLowerCase() !== 'done').map((t) => t.name);
+          const nuevas = ahora.filter((t) => tandaHecha(t) && !enHead.has(t.name)).map((t) => t.name);
+          const cierran = ahora.filter((t) => tandaHecha(t) && enHead.has(t.name) && !tandaHecha(enHead.get(t.name))).map((t) => t.name);
           if (nuevas.length) {
             process.stderr.write(`[on-pre-commit] ${specRel}: el commit agrega la tanda ${nuevas.join(', ')} ya done: no se cerró en este commit; se miden todas las tandas.\n`);
           } else if (cierran.length) {
