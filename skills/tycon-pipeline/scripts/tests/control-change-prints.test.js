@@ -260,6 +260,38 @@ test('T21 Empuje_MuchosCd_FrenaSinTardar', () => {
   assert.match(r.block, /CONSTANCIA SIN MIRAR/);
 });
 
+// T22 a T25 · lo que encontró la vuelta de regresiones: el empuje adentro de una sustitución después de un cd, el `-c`
+// con comillas pegadas y el `-C ""`; y lo que frenaba de más: un cd después del git o en un comentario, y el texto de un
+// mensaje de commit que nombra cd o GIT_DIR.
+test('T22 Empuje_AdentroDeUnaSustitucionDespuesDeUnCd_Frena', () => {
+  const c = conConstanciaCommiteada();
+  for (const cmd of ['cd repo && echo $(git push)', 'cd repo && echo `git push`', 'cd repo; x=$(git push)',
+    'cd repo && find . -maxdepth 0 -exec git push \\;']) frenaDesdeArriba(c, cmd);
+});
+
+test('T23 Empuje_ConUnaOpcionConComillasPegadasOConCVacio_Frena', () => {
+  const c = conConstanciaCommiteada();
+  for (const cmd of ['cd repo && git -c user.name="AB" push', "cd repo && git -c user.name='AB' -c user.email=\"a@b.c\" push",
+    'cd repo && git -C "" push']) frenaDesdeArriba(c, cmd);
+});
+
+test('T24 CommitLimpio_CdConVariableDespuesOEnUnComentario_Pasa', () => {
+  const c = corral();
+  for (const cmd of ['git commit --allow-empty -m a; cd $X', 'git push\ncd $X', '# cd $X\ngit push', 'git push && cd "$(pwd)"']) {
+    assert.strictEqual(c.correr(cmd), null, cmd);
+  }
+  // antes del empuje sigue frenando: no se sabe dónde corre
+  assert.match(c.correr('cd $X && git push').block, /CONSTANCIA SIN MIRAR/);
+});
+
+test('T25 CommitLimpio_ElMensajeNombraCdOGitDir_Pasa', () => {
+  const c = corral();
+  for (const cmd of ["git commit --allow-empty -m 'cd $X and GIT_DIR=$Y'", "git commit --allow-empty -m \"$(cat <<'EOF'\nfix: cd $X\nGIT_DIR=$Y\nEOF\n)\"",
+    'git commit --allow-empty -F - <<EOF\ncd $X\nexport GIT_DIR=$Y\nEOF']) {
+    assert.strictEqual(c.correr(cmd), null, cmd);
+  }
+});
+
 test('T7 SinConstanciasNuevas_OComandosQueNoSonCommitNiPush_ComoAntes', () => {
   const c = corral();
   assert.strictEqual(c.correr('git commit -m x'), null);
