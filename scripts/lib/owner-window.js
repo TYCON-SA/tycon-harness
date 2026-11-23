@@ -549,6 +549,13 @@ function firmaDeLlamado(guion, sub, args, llamada = null, topes = null, donde = 
     if (sub === 'runtime-waiver') return 'runtime-waiver';
     if (sub === 'compare-waiver') return 'compare-waiver';
     if (sub === 'sign-adversarial-skip') return 'adversarial-skip';
+    // contestar «skip» a la pregunta del pase del código lo contesta la persona; la coordinadora, con el dueño ausente y
+    // la celda en skip, lo anota con --by-profile, que el guion comprueba. Una palabra opaca cuenta como el pedido
+    if (sub === 'review-answer') {
+      if (opaca) return 'review-skip';
+      const valor = (b) => { const i = a.indexOf(b); if (i >= 0) return a[i + 1]; const w = a.find((x) => x.startsWith(`${b}=`)); return w ? w.slice(b.length + 1) : undefined; };
+      return valor('--kind') === 'code' && valor('--choice') === 'skip' && !pide('--by-profile') ? 'review-skip' : null;
+    }
     if (sub === 'approve-pending') return 'pending-approval';
     if (sub === 'approve-save') return 'save';
     // nombrar a la coordinadora: sin frase, con el click del dueño; con `--quote` (aun vacío), la frase de respaldo, que
@@ -1281,7 +1288,7 @@ const PRECHEQUEO_VIA = 'TYCON_SIGN_PRECHECK_VIA';
 // las firmas de guion con requisitos propios; el carril y las firmas sobre un archivo no comprueban nada antes de firmar
 // (`adhoc-lane`: el largo del motivo y un tope menor que lo ya tocado se niegan antes de la ventana)
 const CON_PRECHEQUEO = new Set(['extra-round', 'save', 'plan-approval', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver', 'adhoc-lane', SOBRE_CUPO,
-  'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran',
+  'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'review-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran',
   // saltear los mutantes sin motivo, o en un paso que no corre las pruebas
   'escape:no-mutation',
   // nombrar sin id de sesión, o retirar desde una sesión que no es la coordinadora, se niega sin gastar el click

@@ -571,6 +571,37 @@ function mensajeEnLaTranscripcion(ruta, a, { sello, destino, pregunta } = {}) {
   return { ok: true };
 }
 
+// lo que dice la marca de ausente cuando no hay mensajes de la persona que leer (Codex, `claude -p`, una transcripción
+// rota): se pierde el atajo de la marca, no la autonomía
+const SIN_MENSAJES_DE_LA_PERSONA = 'no pude leer los mensajes de la persona: el dueño cuenta como ausente por los minutos sin respuesta';
+const FRASE_RECIENTE_MS = 30 * 60 * 1000;
+
+/**
+ * ¿`frase` está en un mensaje tipeado por la persona en la transcripción de `sesion`, en los últimos 30 minutos antes de
+ * `ahora`? El mismo criterio que el «aprobado» escrito: origen humano y tipeado (`TIPEADO`), nunca un mensaje envuelto
+ * (otra sesión, un canal, un aviso) ni uno de un programa. La frase se busca dentro del mensaje, sin distinguir
+ * mayúsculas ni espacios. `{ ok }`, o `{ ok: false, motivo, sinTranscripcion? }`.
+ */
+function fraseTipeadaReciente({ casa = os.homedir(), sesion, frase, ahora = Date.now() } = {}) {
+  const ruta = transcripcionDe(casa, sesion);
+  if (!ruta) return { ok: false, motivo: SIN_MENSAJES_DE_LA_PERSONA, sinTranscripcion: true };
+  let rs;
+  try { rs = renglones(ruta, { tope: true }); } catch (_) { return { ok: false, motivo: SIN_MENSAJES_DE_LA_PERSONA, sinTranscripcion: true }; }
+  const normal = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const buscada = normal(frase);
+  if (!buscada) return { ok: false, motivo: 'falta la frase del dueño' };
+  const tipeada = rs.some((r) => {
+    if (!r || r.type !== 'user' || r.isMeta === true || !r.origin || r.origin.kind !== 'human') return false;
+    if (!(TIPEADO[r.entrypoint] || []).includes(r.promptSource)) return false;
+    const texto = textoDe(r);
+    if (texto === null || ENVUELTO.test(texto)) return false;
+    const t = Date.parse(r.timestamp);
+    return Number.isFinite(t) && t <= ahora + MARGEN_MS && ahora - t <= FRASE_RECIENTE_MS && normal(texto).includes(buscada);
+  });
+  return tipeada ? { ok: true }
+    : { ok: false, motivo: `«${String(frase).slice(0, 80)}» no está en un mensaje tipeado por la persona en esta sesión en los últimos 30 minutos (un mensaje de otra sesión, de un canal o de un programa no cuenta)` };
+}
+
 function pistaDeVersion(renglon) {
   // el click ya se negó: esto sólo agrega qué actualizar, y si no se puede cargar la negativa queda igual
   try { return require('./claude-versions.js').clickHint(renglon); } catch (_) { return ''; }
@@ -1119,5 +1150,5 @@ function validarEnClaude(a, { casa = os.homedir(), cwd, cuadro, destino, linea, 
 }
 
 module.exports = { VENCE_MIN, ENVUELTO, PERMITIDOS, TIPEADO, APRUEBA, NIEGA, PREGUNTA_CAMBIADA, LARGO_EN_TELEFONO, DETALLE_TITULO, carpeta, esAprobacion, mensajeDeLaPersona, respuestaDelCuadro, aprobadasDelCuadro, cuadroDe, recortar, sinRutas, renglonDelTope, notasDelCuadro, traeElSello, lanzadoPorLaHerramienta,
-  anotar, leerSesion, consumir, devolver, transcripcionDe, controlRemotoDelProceso, mensajeEnLaTranscripcion, clickEnLaTranscripcion, capas, hooksDePlugins, ganchosDelEncabezado, banderasDe, alcanzaAlCuadro, esPermitido,
+  anotar, leerSesion, consumir, devolver, transcripcionDe, fraseTipeadaReciente, SIN_MENSAJES_DE_LA_PERSONA, controlRemotoDelProceso, mensajeEnLaTranscripcion, clickEnLaTranscripcion, capas, hooksDePlugins, ganchosDelEncabezado, banderasDe, alcanzaAlCuadro, esPermitido,
   escuchasDelCuadro, procesoQueLaAnoto, coordinadoraConfirmada, buscar, buscarPermiso, validarEnClaude, plataformaDe, constanciaDeLaTerminal };

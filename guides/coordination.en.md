@@ -429,9 +429,15 @@ the coordinator:
   still goes by the whole story.
 - **Gives the code pass its turn.** She launches nothing for the code: with the owner away, she answers on the owner's
   behalf the question whose cell says `review` (`review-answer --for-session`, with «owner away» as the reason), and the
-  session itself launches the pass with its turn, as always. Having `skip` and `wait` ask for the owner's click is row 113.
+  session itself launches the pass with its turn, as always. If the cell says `skip`, she records it with `--by-profile`:
+  the script checks that the owner counts as away and that the cell says so, and records `por: perfil`. Outside that
+  case, a code «skip» is the owner's answer: it asks for the `review-skip` signature, their click or their «approved» in
+  your tab, never the delegation.
 - **Sets the away mark** when the owner says they are leaving («go on autonomously», «I'm off», «see you tomorrow» or
-  similar): `marker.js owner-away set --phrase "<what they said>"`. She judges it, not a list of phrases. The mark clears
+  similar): `marker.js owner-away set --phrase "<what they said>"`. She judges it, not a list of phrases, but the phrase
+  must be in a message the owner typed in her tab in the last 30 minutes: one from another session, a channel or a program
+  does not count, and if their messages cannot be read it exits 2. Without the mark, the owner still counts as away after
+  the minutes without an answer. The mark clears
   itself when the owner comes back: a message of theirs, a verified office message, a signature of theirs, or after 24
   hours. The office shows it while it is set.
 

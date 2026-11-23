@@ -215,9 +215,12 @@ function cmdReviewAsk(argv) {
   process.exit(0);
 }
 
-// `review-answer --kind plan|code --choice review|skip|wait [--for-session <D>]`: anota la respuesta a la pregunta de
-// revisar. La corre quien la recibe: la propia sesión o, con `--for-session`, sólo la designada. No es una firma y no
-// escribe el marcador destino: sólo un renglón `review-answer` en gates.log.
+// `review-answer --kind plan|code --choice review|skip|wait [--for-session <D>] [--by-profile]`: anota la respuesta a la
+// pregunta de revisar. La corre quien la recibe: la propia sesión o, con `--for-session`, sólo la designada. No escribe el
+// marcador destino: sólo un renglón `review-answer` en gates.log. «skip» del código lo contesta el dueño: pide la firma
+// `review-skip` (su ventana, su click o su «aprobado», nunca la delegación), y su vía queda en el renglón. Con
+// `--by-profile` lo anota sin firma, con `por: 'perfil'`, sólo si el dueño cuenta como ausente y la celda de «dueño
+// ausente» dice `skip` para ese diff (plan-review.js skipPorElPerfil).
 function cmdReviewAnswer(argv) {
   const pr = require('./plan-review.js');
   const { val } = opcionesDe(argv);
@@ -236,7 +239,24 @@ function cmdReviewAnswer(argv) {
   const kind = val('--kind');
   const h = pr.huellaDe({ estado: STATE_DIR, sesion, kind });
   if (h.codigo) { console.error(`🔒 marker.js review-answer: ${h.motivo}. No se escribió nada.`); process.exit(h.codigo); }
-  const r = pr.anotarRespuesta({ estado: STATE_DIR, sesion, kind, choice: val('--choice'), quien: ajena ? `coordinadora ${PROPIA}` : `sesión ${PROPIA}`, huella: h.huella, motivo: val('--reason') || null });
+  const choice = val('--choice');
+  const porPerfil = argv.includes('--by-profile');
+  if (porPerfil && !(kind === 'code' && choice === 'skip')) {
+    console.error('🔒 marker.js review-answer: --by-profile vale sólo para --kind code --choice skip. No se escribió nada.');
+    process.exit(2);
+  }
+  let via = null;
+  if (kind === 'code' && choice === 'skip') {
+    if (porPerfil) {
+      const c = pr.skipPorElPerfil({ estado: STATE_DIR, sesion, huella: h.huella });
+      if (c.codigo) { console.error(`🔒 marker.js review-answer --by-profile: ${c.motivo}. No se escribió nada.`); process.exit(c.codigo); }
+    } else {
+      const f = firmaDelDueno('review-skip', `contestar «skip» a la pregunta del pase del código de la sesión ${sesion}`);
+      via = f.via || null;
+    }
+  }
+  const r = pr.anotarRespuesta({ estado: STATE_DIR, sesion, kind, choice, quien: ajena ? `coordinadora ${PROPIA}` : `sesión ${PROPIA}`, huella: h.huella, motivo: val('--reason') || null,
+    via, por: porPerfil ? 'perfil' : null });
   if (r.codigo) { console.error(`🔒 marker.js review-answer: ${r.motivo}. No se escribió nada.`); process.exit(r.codigo); }
   process.stdout.write(`respuesta anotada para la sesión ${sesion}: ${val('--choice')} (${kind}).\n`);
   process.exit(0);
@@ -249,7 +269,9 @@ function cmdOwnerAway(argv) {
   const { val } = opcionesDe(argv);
   const accion = argv[0];
   if (accion === 'set') {
-    const r = oa.set({ estado: STATE_DIR, quien: `sesión ${PROPIA}`, frase: val('--phrase') });
+    // la frase la tipeó la persona en esta sesión, en los últimos 30 minutos: el agente no se pone la marca solo
+    const ap = require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'owner-approvals.js'));
+    const r = oa.set({ estado: STATE_DIR, quien: `sesión ${PROPIA}`, frase: val('--phrase'), verificar: (frase) => ap.fraseTipeadaReciente({ sesion: PROPIA, frase }) });
     if (r.codigo) { console.error(`🔒 marker.js owner-away set: ${r.motivo}. No se escribió nada.`); process.exit(r.codigo); }
     process.stdout.write(`marca de ausente puesta (${r.mark.setAt}): las revisiones siguen la celda de «persona ausente» hasta que la persona vuelva o pasen 24 h.\n`);
     process.exit(0);
