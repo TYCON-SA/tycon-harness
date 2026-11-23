@@ -240,6 +240,14 @@ test('T23 OwnerAway_PhraseMustBeTyped @story-8.256 @ac-22 — la marca se pone s
     assert.match(r.motivo, /tipeado por la persona/, frase);
     assert.ok(!OA.get({ estado: L.estado, ahora: T0 }).mark, `${frase}: sin marca`);
   }
+  // 🔴 una letra, una palabra suelta o un pedazo de palabra del mensaje no alcanzan: son dos palabras enteras seguidas
+  for (const frase of ['e', 'voy', 'e voy', 'voy, seg']) {
+    const r = OA.set({ estado: L.estado, quien: 'coordinadora', frase, ahora: T0, verificar });
+    assert.strictEqual(r.codigo, 2, frase);
+    assert.ok(!OA.get({ estado: L.estado, ahora: T0 }).mark, `${frase}: sin marca`);
+  }
+  // la misma frase con las tildes en otra forma (NFD) y en mayúsculas sí
+  assert.strictEqual(OA.set({ estado: L.estado, quien: 'coordinadora', frase: 'SEGUÍ EN AUTÓNOMO'.normalize('NFD'), ahora: T0, verificar }).codigo, 0);
 });
 
 test('T24 OwnerAway_NoTranscript_Exit2 @story-8.256 @ac-23 — sin transcripción legible no se pone la marca, con el motivo fijo', (t) => {

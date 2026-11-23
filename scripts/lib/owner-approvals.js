@@ -579,24 +579,31 @@ const FRASE_RECIENTE_MS = 30 * 60 * 1000;
 /**
  * ¿`frase` está en un mensaje tipeado por la persona en la transcripción de `sesion`, en los últimos 30 minutos antes de
  * `ahora`? El mismo criterio que el «aprobado» escrito: origen humano y tipeado (`TIPEADO`), nunca un mensaje envuelto
- * (otra sesión, un canal, un aviso) ni uno de un programa. La frase se busca dentro del mensaje, sin distinguir
- * mayúsculas ni espacios. `{ ok }`, o `{ ok: false, motivo, sinTranscripcion? }`.
+ * (otra sesión, un canal, un aviso) ni uno de un programa. La frase son al menos dos palabras seguidas del mensaje,
+ * enteras, sin distinguir mayúsculas, espacios ni la forma de las tildes: una letra o una palabra suelta de cualquier
+ * mensaje no pone la marca. `{ ok }`, o `{ ok: false, motivo, sinTranscripcion? }`.
  */
 function fraseTipeadaReciente({ casa = os.homedir(), sesion, frase, ahora = Date.now() } = {}) {
+  const palabras = (s) => String(s || '').normalize('NFC').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  const buscada = palabras(frase);
+  if (buscada.length < 2) return { ok: false, motivo: `la frase tiene que citar al menos dos palabras seguidas del mensaje del dueño (vino «${String(frase || '').slice(0, 80)}»)` };
   const ruta = transcripcionDe(casa, sesion);
   if (!ruta) return { ok: false, motivo: SIN_MENSAJES_DE_LA_PERSONA, sinTranscripcion: true };
   let rs;
   try { rs = renglones(ruta, { tope: true }); } catch (_) { return { ok: false, motivo: SIN_MENSAJES_DE_LA_PERSONA, sinTranscripcion: true }; }
-  const normal = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
-  const buscada = normal(frase);
-  if (!buscada) return { ok: false, motivo: 'falta la frase del dueño' };
+  // la frase, palabra por palabra, dentro de las palabras del mensaje: «me voy» está en «me voy, seguí», «e» no
+  const contiene = (texto) => {
+    const p = palabras(texto);
+    for (let i = 0; i + buscada.length <= p.length; i++) if (buscada.every((w, k) => p[i + k] === w)) return true;
+    return false;
+  };
   const tipeada = rs.some((r) => {
     if (!r || r.type !== 'user' || r.isMeta === true || !r.origin || r.origin.kind !== 'human') return false;
     if (!(TIPEADO[r.entrypoint] || []).includes(r.promptSource)) return false;
     const texto = textoDe(r);
     if (texto === null || ENVUELTO.test(texto)) return false;
     const t = Date.parse(r.timestamp);
-    return Number.isFinite(t) && t <= ahora + MARGEN_MS && ahora - t <= FRASE_RECIENTE_MS && normal(texto).includes(buscada);
+    return Number.isFinite(t) && t <= ahora + MARGEN_MS && ahora - t <= FRASE_RECIENTE_MS && contiene(texto);
   });
   return tipeada ? { ok: true }
     : { ok: false, motivo: `«${String(frase).slice(0, 80)}» no está en un mensaje tipeado por la persona en esta sesión en los últimos 30 minutos (un mensaje de otra sesión, de un canal o de un programa no cuenta)` };

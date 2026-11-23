@@ -826,14 +826,20 @@ function skipPorElPerfil({ estado, sesion, huella, ahora = Date.now() }) {
   if (problemas.length) return no(`no pude leer las preguntas de revisar (${problemas[0]})`);
   const aus = require('./review-policy.js').ownerAway({ mark: g.mark, askedAt: pregunta ? Date.parse(pregunta.ts) : null, now: ahora, minutes: cfg.plan_review.owner_away_minutes });
   if (!aus.away) return no(`el dueño no cuenta como ausente (${aus.reason}): «skip» lo contesta él, con su firma`);
-  // los archivos del mismo diff de la huella (`git diff HEAD`), como los mira el portón con --files
+  // los archivos del cambio entero, como los ve el portón con --files: lo commiteado desde la base de la ejecución, lo
+  // que falta commitear y los archivos nuevos sin seguir. Uno que falta achicaría el diff y daría «chica» a una grande
   const repo = marker.repoPath || process.cwd();
   const env = require(path.join(RAIZ, 'scripts', 'lib', 'clean-git-env.js')).idiomaFijo();
-  const d = require('child_process').spawnSync('git', ['-C', repo, 'diff', '--name-only', 'HEAD'], { windowsHide: true, encoding: 'utf8', env });
-  if (d.status !== 0) return no(`no pude leer los archivos del diff (${(d.stderr || '').trim().split('\n')[0] || d.status})`);
+  const git = (args) => require('child_process').spawnSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8', env });
+  const archivos = new Set();
+  for (const args of [['diff', '--name-only', marker.baseSha || 'HEAD'], ['ls-files', '--others', '--exclude-standard']]) {
+    const d = git(args);
+    if (d.status !== 0) return no(`no pude leer los archivos del cambio (${(d.stderr || '').trim().split('\n')[0] || d.status})`);
+    for (const f of d.stdout.split('\n')) if (f) archivos.add(f);
+  }
   let r;
   try {
-    r = pipeline().computeDeepReviewGate({ story: storyDe(marker), repo, files: d.stdout.split('\n').filter(Boolean), reviewConfig: cfg, ownerAway: true, codeAnswer: null });
+    r = pipeline().computeDeepReviewGate({ story: storyDe(marker), repo, files: [...archivos], reviewConfig: cfg, ownerAway: true, codeAnswer: null });
   } catch (e) { return no(`no pude calcular la celda de «dueño ausente» (${(e && e.message) || e})`); }
   if (!r || r.decision !== 'skip') return no(`la celda de «dueño ausente» para este diff dice ${(r && r.decision) || 'otra cosa'} (${(r && r.reason) || 'sin motivo'}): no contesta «skip»`);
   return { codigo: 0, motivo: `${aus.reason}; ${r.reason}` };
