@@ -232,3 +232,25 @@ test('ReviewPolicy_DelicadaSinCodigo_NoCorre @story-8.282 @ac-13 @ac-14 @ac-28 �
   const conCodigo = P.codeReview({ ...base, codeFiles: 3, config: cfg() });
   assert.strictEqual(conCodigo.decision, 'run');
 });
+
+test('ReviewPolicy_DelicadaSoloDocumentacion_ElPortonLaSaltea @story-8.282 @ac-13 — el portón entero, no sólo codeReview: una delicada que toca sólo documentación no corre el pase', () => {
+  const pipeline = require('../pipeline.js');
+  // la corrida liviana la saltea antes; forzada a completa a mano, la saltea la matriz por «sin código»
+  for (const [archivos, runSize, motivo] of [
+    [['guides/x.md'], undefined, /corrida liviana \(sólo documentación/],
+    [['guides/x.md', 'docs/y.md'], { size: 'completa', reason: 'a mano' }, /sin código/],
+  ]) {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'rp-solo-docs-'));
+    try {
+      spawnSync('git', ['-C', repo, 'init', '-q', '-b', 'feature/9-9-x']);
+      fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
+      const story = path.join(repo, 'specs', 'story-9.9-x.md');
+      fs.writeFileSync(story, ['---', 'story: 9.9', 'status: in-progress', 'files_to_modify:', ...archivos.map((a) => `  - ${a}`), '---', '',
+        '## Acceptance Criteria', '', '1. **Given** a **When** b **Then** c.', ''].join('\n'));
+      for (const a of archivos) { fs.mkdirSync(path.dirname(path.join(repo, a)), { recursive: true }); fs.writeFileSync(path.join(repo, a), '# x\n'); }
+      const r = pipeline.computeDeepReviewGate({ story, repo, files: archivos, filesDeclarado: true, runSize, delicate: { value: true, rule: 'prueba', reason: 'delicada' } });
+      assert.strictEqual(r.run, false, `${archivos}: ${JSON.stringify(r)}`);
+      assert.match(String(r.reason), motivo, archivos.join(' '));
+    } finally { fs.rmSync(repo, { recursive: true, force: true }); }
+  }
+});

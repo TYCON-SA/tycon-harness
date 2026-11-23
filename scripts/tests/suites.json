@@ -1283,6 +1283,12 @@
       "requiere": []
     },
     {
+      "__nota": "fila 64 (22/11): una constancia de control nueva necesita la huella que deja approve antes del commit y del empuje.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/control-change-prints.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "fila 44 (21/11): pasar una historia a done fuera de una corrida mira la matriz de evidencia en vivo o la constancia de la corrida.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/story-done-needs-matrix.test.js",
@@ -2618,6 +2624,12 @@
     {
       "raiz": "arnes",
       "ruta": "tests/coordination-fill-gate.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el permiso de una sesión de fondo le llega a la persona como cuadro (scripts/hooks/permission-relay.js, story 8.180 tanda B): en proceso, con casa de juguete y reloj propio.",
+      "raiz": "arnes",
+      "ruta": "tests/permission-relay.test.js",
       "requiere": []
     },
     {
@@ -3991,6 +4003,12 @@
       "__nota": "la página local de la configuración de la organización (`harness.js team-config`), de sólo lectura: sólo contesta con su llave y por su propia dirección (otro Host, otro Origin, sin llave, no JSON o un cuerpo de más: rechazados); nada se carga de afuera; muestra las secciones del núcleo común con los problemas de los lectores del árbol; la carpeta de cada clon la valida y la guarda quien la lanzó; las cinco rutas que antes guardaban o proponían contestan 410 sin escribir archivo, rama ni pedido, y el aviso dice el sitio o el repo de operaciones; cómo se abre el navegador en Mac, Windows y Linux.",
       "raiz": "arnes",
       "ruta": "tests/team-config.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "fila 87: una prueba que arma un repo pelado de juguete no deja pelado al repo de verdad aunque corra dentro de un gancho de una copia enlazada (con su GIT_DIR) — team-config y third-party-origin dejan el repo de juguete con su árbol, y toda prueba con un init --bare sin carpeta saca GIT_DIR antes",
+      "raiz": "arnes",
+      "ruta": "tests/hook-env-bare-init.test.js",
       "requiere": []
     },
     {

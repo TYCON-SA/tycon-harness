@@ -2453,6 +2453,26 @@ withWaiverLog(() => {
         ca: veredictos(comentarioAdentro), ll: veredictos(trasLlave), com: veredictos(rComentada),
         barras: conBarras.warnings.slice(0, 3), iv: importVariable.warnings.slice(0, 3), suma: suma.warnings.slice(0, 3), rx: conRegex.warnings.slice(0, 3) }));
   }
+  {
+    // una prueba con la marca de la historia y sin criterios: lo que carga, si cambia, vence la evidencia entera (con la
+    // marca de un criterio vencía sólo ése: Matriz_CodigoQueCargaLaPruebaCambio_Vence). Una prueba que no se puede leer
+    // se juzga por la lista y lo dice; sin permisos que la cierren (Windows, o quien corre es root) no se puede armar
+    const sinCriterios = labCarga("require('../lib/x.js')", '@story-9.9');
+    sinCriterios.ahora(sinCriterios.cargado, 'module.exports = 2;\n');
+    const r = sinCriterios.calcular();
+    const cerrable = process.platform !== 'win32' && !(process.getuid && process.getuid() === 0);
+    let ri = null;
+    if (cerrable) {
+      const ilegible = labCarga();
+      const prueba = path.join(ilegible.f.repo, 'tests', 'feature.test.js');
+      fs.chmodSync(prueba, 0o000);
+      try { ri = ilegible.calcular(); } finally { fs.chmodSync(prueba, 0o644); }
+    }
+    check('Matriz_PruebaSinCriterios_VenceTodo_YLaIlegibleSeDice @story-8.282 @ac-10 @ac-12',
+      veredictos(r) === '1:NOT-RUN 2:NOT-RUN 3:NOT-RUN' && r.warnings.some((w) => /lib\/x\.js/.test(w))
+        && (!cerrable || ri.warnings.filter((w) => NO_PUDE.test(w)).length === 1),
+      JSON.stringify({ v: veredictos(r), w: r.warnings.slice(0, 3), ilegible: ri ? ri.warnings.slice(0, 4) : 'sin armar: no hay permisos que cierren un archivo acá' }));
+  }
 }
 
 // La captura de un portón E2E vencido para un criterio no cuenta para ese criterio: la captura es evidencia del mismo
