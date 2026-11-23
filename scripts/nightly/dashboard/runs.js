@@ -610,8 +610,9 @@ function cierreDeCorrida(d) {
   return { estado: d.archivedAt && pendientes.length ? 'incompleta' : 'completa', inferido: true };
 }
 
-// Los resultados de la revisión previa que cuentan como «la historia se revisó antes de programar».
-const REVISION_HECHA = new Set(['limpio', 'corregido', 'preguntado']);
+// Los resultados de la revisión previa que cuentan como «la historia se revisó antes de programar». `revalidada`: la
+// revisó otra vez la vuelta del plan que aprobó un cambio técnico (skills/tycon-pipeline/scripts/lib/story-revalidation.js)
+const REVISION_HECHA = new Set(['limpio', 'corregido', 'preguntado', 'revalidada']);
 const NOTA_SIN_REVISION = 'sin revisión previa';
 
 /**

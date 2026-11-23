@@ -299,10 +299,12 @@ function nombresDeArchivos(absolutos, marker) {
  * `aunConHallazgos`: decide también con Hallazgos abierto. Lo usa el freno de «Preparar el commit»: un arreglo hecho
  * después de los revisores pide la vuelta aunque Hallazgos no se haya cerrado; `next` espera a que cierre.
  *
- * Un archivo que quedó igual a lo revisado, salvo el lugar de sus comentarios, no cuenta (historia 8.217): lo decide
- * lib/frozen-tree.js contra el sello de la última vuelta cerrada. Si eso falla, no se saca ninguno.
+ * Lo que cambió adentro de cada archivo lo decide lib/frozen-tree.js contra el sello de la última vuelta cerrada, con la
+ * regla de lib/review-change-policy.js: un archivo que sólo cambió comentarios o espacios no cuenta, y si todo lo que
+ * pide la vuelta son textos, la vuelta es chica (`chica: true`). `textosConVueltaChica` cambia la decisión del dueño para
+ * una prueba. Si eso falla, todo cuenta como código.
  */
-function reviewersRound(marker, { aunConHallazgos = false } = {}) {
+function reviewersRound(marker, { aunConHallazgos = false, textosConVueltaChica } = {}) {
   if (!marker || schemeOf(marker) !== 2) return null;
   if (!aunConHallazgos && !isDone(marker, 'findings')) return null;
   if (aunConHallazgos && !isDone(marker, 'reviewers')) return null;
@@ -326,16 +328,22 @@ function reviewersRound(marker, { aunConHallazgos = false } = {}) {
     if (!absolutos.includes(abs)) absolutos.push(abs);
     if (!primero.has(abs) || ts < primero.get(abs)) primero.set(abs, ts);
   }
-  let movidos = new Set();
+  // qué cambió adentro de cada uno, contra el sello de la vuelta (lib/review-change-policy.js): sólo comentarios no
+  // cuenta; sólo textos pide la vuelta chica; lo que no se pudo mirar cuenta como código
+  let tipos = new Map();
   if (absolutos.length) {
-    try { movidos = require('./frozen-tree.js').comentariosMovidosDesdeLaVuelta({ marker, cierre, archivos: absolutos }); } catch (e) { anotarFalla(e); }
+    try { tipos = require('./frozen-tree.js').tiposDesdeLaVuelta({ marker, cierre, archivos: absolutos }); } catch (e) { anotarFalla(e); }
   }
-  const cuentan = absolutos.filter((abs) => !movidos.has(abs));
+  const politica = require('./review-change-policy.js');
+  const tipoDe = (abs) => (tipos.get(abs) || {}).tipo || 'codigo';
+  const cuentan = absolutos.filter((abs) => politica.pideVuelta(tipoDe(abs), textosConVueltaChica === undefined ? {} : { textosConVueltaChica }));
   for (const abs of cuentan) if (desde === null || primero.get(abs) < desde) desde = primero.get(abs);
   const archivos = previo && Array.isArray(previo.archivos) ? previo.archivos.filter((a) => typeof a === 'string') : [];
+  // la vuelta es chica si todo lo que la pide son textos, también lo que ya estaba pedido
+  const chica = cuentan.every((abs) => tipoDe(abs) === 'textos') && (!archivos.length || previo.chica === true);
   for (const nombre of nombresDeArchivos(cuentan, marker)) if (!archivos.includes(nombre)) archivos.push(nombre);
   if (!archivos.length) return null;
-  return { round: (Number(t.rounds) || 1) + 1, archivos, desde: new Date(desde).toISOString() };
+  return { round: (Number(t.rounds) || 1) + 1, archivos, desde: new Date(desde).toISOString(), ...(chica ? { chica: true } : {}) };
 }
 
 /** Una falla al mirar lo revisado: queda en hook-errors.log y la decisión sigue como si no se hubiera mirado. */
@@ -344,7 +352,7 @@ function anotarFalla(e) {
     const fs = require('fs');
     const dir = require('./state-dir.js').stateDir(require('os').homedir());
     fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(path.join(dir, 'hook-errors.log'), `[${new Date().toISOString()}] reviewersRound: no pude ver si sólo se movieron comentarios (${String((e && e.message) || e).split('\n')[0]}) — cuentan todos\n`, 'utf8');
+    fs.appendFileSync(path.join(dir, 'hook-errors.log'), `[${new Date().toISOString()}] reviewersRound: no pude ver qué cambió adentro de los archivos (${String((e && e.message) || e).split('\n')[0]}) — cuentan todos como código\n`, 'utf8');
   } catch (_) { /* ayuda, no evidencia */ }
 }
 

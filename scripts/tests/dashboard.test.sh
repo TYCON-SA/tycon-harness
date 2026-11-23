@@ -2121,6 +2121,116 @@ assert c['valor'] == 3, c   # mediana de 2 h (la copia nueva) y 4 h; con la viej
 PY
 rm -rf "$T"
 
+# ═══════════════════════════════════════════════════════════════════════════════════════════
+# Lo rehecho al lado de lo entregado, mes por mes — la ficha que sigue a «Por qué volvió»
+# ═══════════════════════════════════════════════════════════════════════════════════════════
+
+# Agrega `rework_por_mes` al global del snapshot SDLC ya montado. $2: «null» lo publica en null; un número de 0 a 6
+# marca ese mes como el único en curso (por defecto, el último). Los meses son fijos: el tablero no usa su reloj.
+con_por_mes() {
+  python3 - "$1" "${2:-6}" <<'PY2'
+import glob, json, sys
+f = glob.glob(sys.argv[1] + '/sdlc-stage-*.json')[0]
+d = json.load(open(f))
+if sys.argv[2] == 'null':
+    d['global']['rework_por_mes'] = None
+else:
+    curso = int(sys.argv[2])
+    meses = []
+    for i, mes in enumerate(['2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11']):
+        meses.append({'mes': mes, 'en_curso': i == curso, 'entregadas': 10 + i,
+                      'rehechas': {'conteo': {'defecto-propio': i, 'cambio-de-requisito': 1, 'deuda-declarada': 2, 'descubrimiento': 0},
+                                   'sin_declarar': 1, 'fuera_de_vocabulario': {}}})
+    d['global']['rework_por_mes'] = {'meses': meses, 'sin_fecha': 2, 'fuera_de_ventana': {'entregadas': 1, 'rehechas': 3},
+                                     'causa_aparte': 'deuda-declarada', 'repos_medidos': 1, 'repos_total': 1}
+json.dump(d, open(f, 'w'))
+PY2
+}
+TITULO_MES='Lo rehecho al lado de lo entregado, mes por mes'
+# Las filas de la tabla de la ficha: «<mes>|<texto de la fila sin etiquetas>» por línea.
+filas_mes() {
+  python3 -c "
+import re,sys
+h=sys.stdin.read()
+for m in re.finditer(r'<tr class=\"mes-fila\" data-mes=\"([0-9-]+)\">(.*?)</tr>', h, re.S):
+    print(m.group(1) + '|' + re.sub(r'<[^>]+>', ' ', m.group(2)))
+"
+}
+
+# ── C-8.327a la ficha mes por mes: filas, causas, deuda aparte y «en curso» ──
+# 🔴 rojo previo: la ficha no existe; sumar la deuda a «rehechas sin deuda» → la fila de octubre da 9 y 9; ponerla antes
+#    de «Por qué volvió» o lejos de ella; el pie sin decir cuántas quedaron sin fecha o fuera de la ventana.
+T=$(mktemp -d); montar_sano "$T"; con_causas "$T"; con_por_mes "$T"
+node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
+EST=$(ficha_estado "$T/o.html" "$TITULO_MES")
+[ "$EST" != "blind" ] && [ "$EST" != "AUSENTE" ] && ok "C-8.327a la ficha está y está medida («${EST}»)" || mal "C-8.327a la ficha falta o sale con trama: «${EST}»"
+python3 - "$T/o.html" "$TITULO_MES" <<'PY2' && ok "C-8.327a va justo después de «Por qué volvió»" || mal "C-8.327a no está justo después de «Por qué volvió»"
+import sys
+h = open(sys.argv[1], encoding='utf8').read()
+t = [f[:1200] for f in h.split('<div class="tile ')[1:]]
+i = next((n for n, x in enumerate(t) if 'Por qué volvió' in x), -1)
+sys.exit(0 if i >= 0 and i + 1 < len(t) and sys.argv[2] in t[i + 1] else 1)
+PY2
+FIC=$(tile_completo "$T/o.html" "$TITULO_MES")
+N=$(echo "$FIC" | filas_mes | wc -l | tr -d ' ')
+[ "$N" -eq 7 ] && ok "C-8.327a siete filas, una por mes" || mal "C-8.327a esperaba 7 filas y hay $N"
+echo "$FIC" | grep 'rehechas sin deuda' >/dev/null && echo "$FIC" | grep 'rehechas con deuda' >/dev/null && ok "C-8.327a las dos columnas de rehechas, rotuladas" || mal "C-8.327a faltan los rótulos «rehechas sin deuda» / «rehechas con deuda»"
+echo "$FIC" | grep 'Deuda declarada' >/dev/null && ok "C-8.327a la deuda declarada en su propia columna" || mal "C-8.327a falta la columna de la deuda declarada"
+OCT=$(echo "$FIC" | filas_mes | grep '^2026-10|')
+echo "$OCT" | python3 -c "
+import re,sys
+p=sys.stdin.read().split('|',1)
+n=p[1].split() if len(p)==2 else []
+sys.exit(0 if n[:1]==['2026-10'] and n[1:]==['15','5','1','0','1','7','2','9'] else 1)" && ok "C-8.327a octubre: 15 entregadas, causas, 7 sin deuda, 2 de deuda, 9 con deuda" || mal "C-8.327a la fila de octubre no cuadra: ${OCT}"
+echo "$FIC" | grep -E '<div class="t-val">35<' >/dev/null && ok "C-8.327a el número de la ficha es la suma de rehechas sin deuda (35)" || mal "C-8.327a el número no es 35"
+echo "$FIC" | grep 'en curso' >/dev/null && ok "C-8.327a el mes en curso lleva la palabra" || mal "C-8.327a falta «en curso»"
+echo "$FIC" | grep 'no es un porcentaje' >/dev/null && ok "C-8.327a el pie dice que no es un porcentaje" || mal "C-8.327a el pie no dice «no es un porcentaje»"
+echo "$FIC" | grep 'cambio-de-requisito subiendo mientras defecto-propio baja' >/dev/null && ok "C-8.327a el pie repite la señal" || mal "C-8.327a el pie no repite la señal"
+echo "$FIC" | grep '2 sin fecha' >/dev/null && ok "C-8.327a el pie dice las 2 sin fecha" || mal "C-8.327a el pie no dice «2 sin fecha»"
+echo "$FIC" | grep '4 fuera de la ventana' >/dev/null && ok "C-8.327a el pie dice las 4 fuera de la ventana" || mal "C-8.327a el pie no dice «4 fuera de la ventana»"
+echo "$FIC" | grep '1 de 1 repos' >/dev/null && ok "C-8.327a el denominador dice de cuántos repos sale" || mal "C-8.327a el denominador no dice los repos"
+rm -rf "$T"
+
+# ── C-8.327b sin el campo: la ficha sale no medida, nunca 0 ──
+# 🔴 rojo previo: un default de lista vacía o de ceros → la ficha medida con un 0, que se lee «no se rehizo nada».
+for CASO in sin null; do
+  T=$(mktemp -d); montar_sano "$T"
+  [ "$CASO" = null ] && con_por_mes "$T" null
+  node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
+  EST=$(ficha_estado "$T/o.html" "$TITULO_MES")
+  [ "$EST" = "blind" ] && ok "C-8.327b (${CASO}) la ficha va con trama" || mal "C-8.327b (${CASO}) esperaba trama y fue «${EST}»"
+  FIC=$(tile_completo "$T/o.html" "$TITULO_MES")
+  echo "$FIC" | grep '>0<' >/dev/null && mal "C-8.327b (${CASO}) dibujó un 0" || ok "C-8.327b (${CASO}) no dibuja ningún 0"
+  echo "$FIC" | grep 'mes-fila' >/dev/null && mal "C-8.327b (${CASO}) dibujó filas sin dato" || ok "C-8.327b (${CASO}) no dibuja filas"
+  echo "$FIC" | grep 'snapshot no trae' >/dev/null && ok "C-8.327b (${CASO}) dice por qué" || mal "C-8.327b (${CASO}) sin motivo"
+  rm -rf "$T"
+done
+
+# ── C-8.327c las fichas vecinas no cambian ──
+# 🔴 rojo previo: reusar en la ficha nueva el armado de «Por qué volvió» o del gráfico mensual y tocarlos al pasar.
+T=$(mktemp -d); montar_sano "$T"; con_causas "$T"
+node "$TABLERO" --dir "$T" --output "$T/a.html" >/dev/null 2>&1
+con_por_mes "$T"
+node "$TABLERO" --dir "$T" --output "$T/b.html" >/dev/null 2>&1
+hash_de() { python3 -c "import hashlib,sys;print(hashlib.sha256(sys.stdin.read().encode()).hexdigest()[:16])"; }
+[ -n "$(svg_grafico "$T/a.html")" ] && [ "$(svg_grafico "$T/a.html")" = "$(svg_grafico "$T/b.html")" ] && ok "C-8.327c el gráfico mensual es el mismo" || mal "C-8.327c el gráfico mensual cambió"
+for PAT in 'Lo que vuelve' 'Por qué volvió'; do
+  HA=$(tile_completo "$T/a.html" "$PAT" | hash_de); HB=$(tile_completo "$T/b.html" "$PAT" | hash_de)
+  [ "$HA" = "$HB" ] && ok "C-8.327c «${PAT}» es la misma" || mal "C-8.327c «${PAT}» cambió con el campo nuevo"
+done
+rm -rf "$T"
+
+# ── C-8.327d el mes en curso no se llama cerrado ──
+# 🔴 rojo previo: calcular el mes en curso con el reloj del tablero → con el archivo que marca octubre, «en curso» sale
+#    en noviembre (o en el mes de hoy), no en la fila que lo trae.
+for CURSO in 6:2026-11 5:2026-10; do
+  T=$(mktemp -d); montar_sano "$T"; con_por_mes "$T" "${CURSO%%:*}"
+  node "$TABLERO" --dir "$T" --output "$T/o.html" >/dev/null 2>&1
+  CON=$(tile_completo "$T/o.html" "$TITULO_MES" | filas_mes | grep 'en curso' | cut -d'|' -f1 | tr '\n' ' ')
+  [ "$CON" = "${CURSO#*:} " ] && ok "C-8.327d «en curso» sólo en ${CURSO#*:}, la fila que lo trae" || mal "C-8.327d «en curso» salió en «${CON}», esperaba ${CURSO#*:}"
+  rm -rf "$T"
+done
+
 echo
 if [ "$FALLOS" -gt 0 ]; then echo "FALLARON $FALLOS chequeo(s)"; exit 1; fi
 echo "todo verde"
