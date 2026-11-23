@@ -332,7 +332,75 @@ function registrar(ctx, extra) {
 // si fuera una invocación no canónica, y le pasa igual con `show`, `diff`, `blame` y `add`. Un freno que
 // muerde en comandos de todos los días se apaga en una semana. Ninguno de estos programas EJECUTA lo
 // que recibe como ruta, a diferencia de `bash -c`, `eval` o `xargs`, que siguen frenados.
-const LECTORES_DE_TEXTO = new Set(['which', 'type', 'whence', 'man', 'echo', 'printf', 'cat', 'bat', 'less', 'more', 'head', 'tail', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'wc', 'stat', 'ls', 'file', 'diff', 'shasum', 'md5', 'open', 'code', 'git', 'cp', 'mv', 'chmod', 'chown', 'sed', 'awk', 'basename', 'dirname', 'realpath', 'readlink', 'find', 'sort', 'uniq']);
+// Fuera de la lista, porque corren un programa: `awk` (`system()`), `sed` (el comando `e`) y `open`. Los de la lista
+// que lo corren con una opción la tienen en `OPCIONES_QUE_EJECUTAN`, y `git` en `gitQueLee`.
+const LECTORES_DE_TEXTO = new Set(['which', 'type', 'whence', 'man', 'echo', 'printf', 'cat', 'bat', 'less', 'more', 'head', 'tail', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'wc', 'stat', 'ls', 'file', 'diff', 'shasum', 'md5', 'code', 'git', 'cp', 'mv', 'chmod', 'chown', 'basename', 'dirname', 'realpath', 'readlink', 'find', 'sort', 'uniq']);
+// Las opciones con que un lector corre otro programa. Las largas de `sort` y `ag` se aceptan abreviadas (`--comp`,
+// `--pag`), así que se compara el principio.
+const OPCIONES_QUE_EJECUTAN = {
+  find: /^-(exec|execdir|ok|okdir)$/,
+  rg: /^--(pre|hostname-bin)(=|$)/,
+  ag: /^--pag/,
+  sort: /^--co/,
+  man: /^-[A-Za-z]*[PH]|^--(pag|htm)/,
+  bat: /^--pager(=|$)/,
+  less: /^\+|^-k|^--les/,
+  more: /^\+|^-k|^--les/,
+  // code: cualquier opción salvo las de abrir un archivo (Electron y la línea de órdenes de VS Code tienen varias que
+  // corren un programa o instalan algo)
+  code: /^-(?!(r|g|n|w|d|a)$|-(reuse-window|new-window|wait|goto|diff|add)$)/,
+};
+// Los subcomandos de git que leen o registran: el resto (`difftool`, `bisect`, `rebase`, `submodule`, un alias…) puede
+// correr un programa.
+const GIT_QUE_LEE = new Set(['log', 'show', 'diff', 'blame', 'annotate', 'status', 'add', 'rm', 'mv', 'restore', 'ls-files',
+  'ls-tree', 'grep', 'cat-file', 'rev-parse', 'rev-list', 'shortlog', 'whatchanged', 'diff-tree', 'diff-index', 'commit',
+  'checkout', 'switch', 'stash', 'branch', 'cherry-pick', 'reset', 'tag', 'describe', 'reflog', 'merge-base', 'show-branch',
+  'push', 'fetch', 'pull', 'merge', 'worktree', 'clean', 'remote', 'config']);
+// Las claves de `git -c` que no corren nada: colores y formato de la salida
+const GIT_C_QUE_LEE = /^(color\.[\w.-]+|core\.quotepath|diff\.renames|log\.date|log\.decorate|grep\.linenumber)=/i;
+// Las variables que pueden ir delante de un lector: idioma, zona, terminal y colores, y un pager que es `cat`, `less`
+// o `more` sin nada más. Cualquier otra (`GIT_PAGER=<programa>`, `LESSOPEN=…`, `PATH=…`) puede cambiar lo que corre.
+const VARIABLE_QUE_LEE = /^(TZ|LANG|LANGUAGE|LC_\w+|TERM|COLUMNS|LINES|NO_COLOR|CLICOLOR|CLICOLOR_FORCE|FORCE_COLOR)=|^(PAGER|GIT_PAGER|MANPAGER|BAT_PAGER)=["']?(cat|less|more)["']?$/;
+
+/** `git …` lee sin correr otro programa: `-c` sólo de formato, ni `--config-env` ni `--exec-path`, un subcomando que lee, y `grep` sin `-O`. */
+function gitQueLee(t) {
+  for (let i = 1; i < t.length; i++) {
+    const a = desescapar(t[i]);
+    if (a === '-c') { if (!GIT_C_QUE_LEE.test(desescapar(t[i + 1] || ''))) return false; i++; continue; }
+    if (/^(-c|--config-env|--exec-path|--upload-pack|--receive-pack)/.test(a)) return false;
+    if (['-C', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--attr-source'].includes(a)) { i++; continue; }
+    if (a.startsWith('-')) continue;
+    if (!GIT_QUE_LEE.has(a)) return false;
+    const resto = t.slice(i + 1).map(desescapar);
+    // `--open-files-in-pager` se acepta abreviado (`--open`, `--op`); `--o` solo es ambiguo con `--or`
+    if (a === 'grep') return !resto.some((x) => /^-[A-Za-z]*O|^--op/.test(x));
+    // el programa del otro lado (`--upload-pack`, `--receive-pack`, `--exec`), también abreviado
+    if (['push', 'fetch', 'pull'].includes(a)) return !resto.some((x) => /^--(upl|rec|e)/.test(x));
+    // un remoto `ext::<programa>` corre ese programa
+    if (a === 'remote') return !resto.some((x) => x.includes('::'));
+    // `git config` sólo para leer: escribir un alias `!…` deja algo que corre después
+    if (a === 'config') return resto.some((x) => /^(--get|--get-all|--get-regexp|--list|-l)$/.test(x));
+    return true;
+  }
+  return true;
+}
+
+/**
+ * ¿El programa de `t` es un lector, y así como está escrito no corre otro programa? `prefijo` es lo que va delante del
+ * programa (variables, `sudo`, `env`…): una variable ahí que no sea de `VARIABLE_QUE_LEE` cambia lo que corre.
+ */
+function lectorQueNoEjecuta(t, prefijo) {
+  const prog = basename(t[0]);
+  if (!LECTORES_DE_TEXTO.has(prog)) return false;
+  const variables = prefijo.match(/(?:^|\s)[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|\S*)/g) || [];
+  if (variables.some((v) => !VARIABLE_QUE_LEE.test(v.trim()))) return false;
+  if (prog === 'git') return gitQueLee(t);
+  const op = OPCIONES_QUE_EJECUTAN[prog];
+  return !op || !t.slice(1).some((x) => op.test(desescapar(x)));
+}
+// Lo que puede recibir por un tubo lo que escribe otro sin correrlo: los lectores (con sus opciones) y unos pocos que
+// sólo cortan o dan formato. Cualquier otro (un shell, un intérprete, `xargs`, `awk`, `sed`, `env sh`…) puede correrlo.
+const RECIBEN_SIN_CORRER = new Set(['cut', 'tr', 'column', 'nl', 'fold', 'paste', 'jq', 'pbcopy', 'tee']);
 const PUERTA = '/opt/tycon/bin/tycon-prod-sql';
 const NOMBRE_PUERTA = 'tycon-prod-sql';
 // Lista BLANCA: ruta absoluta, nada antes ni después, la sentencia en UN argumento entre comillas
@@ -642,14 +710,48 @@ function decidir(entrada) {
   // —la propia suite de la puerta— contiene el nombre adentro, y correrla se frenaba como «invocación no
   // canónica» (2026-09-15, en vivo, el tercer falso positivo de esta familia en un día).
   const NOMBRA_PUERTA = new RegExp(`(?<![\\w-])${NOMBRE_PUERTA}(?![\\w.-])`);
-  const invocaLaPuerta = partes.some(({ texto }) => {
-    if (!NOMBRA_PUERTA.test(texto) && !NOMBRA_PUERTA.test(sinComillas(texto))) return false;
+  // Un lector que corre otro programa por una opción (`find -exec`, `rg --pre`, `git -c core.pager=…`) o con una variable
+  // delante (`GIT_PAGER=… git log`) no es un lector: ver `lectorQueNoEjecuta`. Además:
+  // - lo de adentro de cada `$( … )` corre, así que se juzga como un comando: `echo "$(<puerta> …)"` la invoca;
+  // - un tramo de tubería que nombra la puerta (también en un heredoc) y termina en algo que no es un lector (`| sh`,
+  //   `| env -i sh`, `| xargs sh -c`, `| awk …`) le puede dar a correr lo que escribe;
+  // - un comando que nombra la puerta y tiene un `<( … )` o `>( … )` (`| tee >(sh)`, `sh < <(echo …)`) corre lo de
+  //   adentro: `segmentos` los parte en el paréntesis, así que se mira el comando entero.
+  const nombra = (x, todo) => NOMBRA_PUERTA.test(x) || NOMBRA_PUERTA.test(sinComillas(x)) || (x.includes('__HEREDOC__') && nombra(todo, ''));
+  const recibeSinCorrer = (texto) => {
     const t = tokensDeSegmento(texto, tokens, PREFIJOS);
+    const prefijo = (texto.trimStart().match(PREFIJOS) || [''])[0];
+    if (!t.length) return false;
+    if (LECTORES_DE_TEXTO.has(basename(t[0]))) return lectorQueNoEjecuta(t, prefijo);
+    return RECIBEN_SIN_CORRER.has(basename(t[0])) && !/[A-Za-z_]\w*=/.test(prefijo);
+  };
+  const segmentoInvoca = (texto, todo, prof) => {
+    if (!nombra(texto, todo)) return false;
+    if (prof < 4 && substitutions(texto).some((s) => comandoInvoca(s, prof + 1))) return true;
+    // `command -v <puerta>` sólo pregunta si existe
+    if (/^\s*command\s+-[vV]+(\s|$)/.test(texto)) return false;
+    const crudos = tokens(texto.replace(PREFIJOS, ''));
+    const t = tokensDeSegmento(texto, tokens, PREFIJOS);
+    // la puerta quedó como valor de una opción de adelante: `time -p <puerta>`, `command -p <puerta>`, `env -S '<puerta> …'`
+    if (crudos.slice(0, crudos.length - t.length).some((x) => nombra(x, ''))) return true;
     if (!t.length) return false;
     const prog = basename(t[0]);
     if (prog === NOMBRE_PUERTA || t[0] === PUERTA) return true;
-    return !LECTORES_DE_TEXTO.has(prog);
-  });
+    return !lectorQueNoEjecuta(t, (texto.trimStart().match(PREFIJOS) || [''])[0]);
+  };
+  const comandoInvoca = (todo, prof = 0) => {
+    if (/[<>]\(/.test(todo) && nombra(todo, '')) return true;
+    const ps = segmentos(todo);
+    let tramo = [];
+    for (let i = 0; i <= ps.length; i++) {
+      if (ps[i]) tramo.push(ps[i]);
+      if (ps[i] && /^\|&?$/.test(ps[i].sep || '')) continue;
+      if (tramo.length > 1 && tramo.slice(1).some((x) => !recibeSinCorrer(x.texto)) && tramo.some((x) => nombra(x.texto, todo))) return true;
+      tramo = [];
+    }
+    return ps.some(({ texto }) => segmentoInvoca(texto, todo, prof));
+  };
+  const invocaLaPuerta = comandoInvoca(cmd);
   if (invocaLaPuerta) {
     // 🔴 Un subagente no usa la puerta, con ninguna forma: la persona que contesta el cuadro mira la sesión principal, y
     // un subagente de fondo puede lanzar decenas de consultas en segundos y apilarle cuadros de algo que no sigue.
