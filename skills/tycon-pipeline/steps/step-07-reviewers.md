@@ -35,7 +35,7 @@ El script además:
   `~/.claude/.tycon-pipeline/advisor-context/<sid>-iter<N>.md`. Es el **INPUT PRIMARIO**
   de cada advisor — pasalo en el prompt en vez de hacer que cada subagente re-lea todo.
 - **`frozen`**: lo que se revisa, congelado (historia 8.161). Al lanzar la vuelta, `advisors` y `smart-reloop` sellan el
-  repo de la historia y el del código y arman una copia de sólo lectura de cada uno en la carpeta de estado del
+  repo de la historia, el del código y cada repo hermano declarado, y arman una copia de sólo lectura de cada uno en la carpeta de estado del
   pipeline: `[{ repo, tree, copy }]`. El `context_file` nombra cada copia y su sello: **los revisores leen la copia, no
   la carpeta viva**. Si no se puede sellar o copiar, la vuelta no se lanza (sale 2 con el motivo). La foto de la vuelta
   (`snapshot-iter`) guarda ese sello, y «Preparar el commit» compara lo que se guarda contra él.

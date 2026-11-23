@@ -3621,21 +3621,32 @@ function computeSpecStaleness(fm, hoyMs) {
 }
 
 /**
- * Congela la vuelta de revisores (historia 8.161): sella el repo de la historia y el del código y arma la copia de sólo
- * lectura de cada uno en la carpeta de estado (lib/frozen-tree.js). `{ repos }` o `{ error }`: sin sello o sin copia la
- * vuelta no se lanza, nunca se revisa la carpeta viva en silencio. Una ruta fuera de todo repo de git no tiene árbol
- * que sellar: no suma copia.
+ * Congela la vuelta de revisores (historia 8.161): sella el repo de la historia, el del código y cada repo hermano
+ * declarado, y arma la copia de sólo lectura de cada uno en la carpeta de estado (lib/frozen-tree.js). Los hermanos
+ * entran como en el pase: así «Preparar» compara también su código con lo revisado, y el arreglo de un hallazgo del
+ * pase en un hermano lo cubre la vuelta siguiente. `{ repos, aviso? }` o `{ error }`: sin sello o sin copia de la
+ * historia o del código la vuelta no se lanza, nunca se revisa la carpeta viva en silencio. Un hermano que no se deja
+ * sellar no frena la vuelta: se lee vivo, como antes, y `aviso` lo dice; entonces el arreglo de un hallazgo del pase
+ * en ese hermano sigue frenando el cierre del pase. Una ruta fuera de todo repo de git no tiene árbol que sellar: no
+ * suma copia.
  */
 function congelarVuelta({ story, repo, iter }) {
   const ft = require('./lib/frozen-tree.js');
-  const { repos, error } = ft.reposDe([story, repo]);
-  if (error) return { error };
-  if (!repos.length) return { repos: [] };
+  const base = ft.reposDe([story, repo]);
+  if (base.error) return { error: base.error };
+  if (!base.repos.length) return { repos: [] };
   let storyId = null;
   try { storyId = story ? parseFrontmatterPipeline(readText(story)).story || null : null; } catch { storyId = null; }
-  return ft.sealAndFreeze({
+  const congelar = (repos) => ft.sealAndFreeze({
     stateDir: stateDirOf(os.homedir()), sid: sessionIdFileKey(), etiqueta: `rev-iter${iter || 1}`, repos, tipo: 'revisores', story: storyId,
   });
+  const pase = ft.reposDelPase({ story, repo });
+  const conHermanos = !pase.error && pase.repos.length > base.repos.length ? congelar(pase.repos) : null;
+  if (conHermanos && !conHermanos.error) return conHermanos;
+  const sinHermanos = congelar(base.repos);
+  const motivo = pase.error || (conHermanos && conHermanos.error);
+  if (!motivo || sinHermanos.error) return sinHermanos;
+  return { ...sinHermanos, aviso: `los repos hermanos no se sellaron (${motivo}): los revisores los leen vivos, y un arreglo del pase en ellos frena su cierre` };
 }
 
 /** Suma al contexto de los revisores (el compartido y los recortados) la copia y el sello de cada repo. */
@@ -7766,6 +7777,7 @@ function main() {
       process.exitCode = 2;
       return;
     }
+    if (congelada.aviso) process.stderr.write(`⚠️  pipeline.js advisors: ${congelada.aviso}.\n`);
     set.frozen = congelada.repos;
     const ctx = buildAdvisorContext({ repo: args.repo, story: args.story, files: args.files, iter: args.iter });
     contextoConLaCopia(ctx, congelada.repos);
@@ -7926,6 +7938,7 @@ function main() {
       process.exitCode = 2;
       return;
     }
+    if (congelada.aviso) process.stderr.write(`⚠️  pipeline.js smart-reloop: ${congelada.aviso}.\n`);
     result.frozen = congelada.repos;
     const ctx = buildAdvisorContext({ repo: args.repo, story: args.story, files: args.files, iter: args.iter });
     contextoConLaCopia(ctx, congelada.repos);
