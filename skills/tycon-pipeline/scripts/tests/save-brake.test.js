@@ -358,6 +358,37 @@ test('Freno_RepoAjeno_Pasa_PedidoPregunta (T5) @story-8.151 @ac-5', (t) => {
   assert.match(r.stdout, VENTANA, 'el pedido pregunta: se juzga contra toda la corrida');
 });
 
+// Freno_CorridaEstacionada_PedidoDeRepoAjeno_Pasa (fila 100)
+// Una corrida estacionada (la marca de su historia en parked/, puesta después de que arrancó, o `paused_until:` en la
+// historia) no ata a su sesión: un pedido desde un repo que no es de la corrida no se juzga contra ella. Desde un repo de
+// la corrida, sin marca, con la marca de una corrida anterior o con una marca ilegible, frena como siempre.
+// 🔴 Falla con: el pedido del repo ajeno sumado a lo que sale hacia el equipo aunque la corrida esté estacionada.
+test('Freno_CorridaEstacionada_PedidoDeRepoAjeno_Pasa (fila 100)', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  const ajeno = repoConOrigin(t, 'ajeno');
+  abrir(h, corrida(a));
+  const marca = path.join(estado(h), 'parked', `${SID}.json`);
+  fs.mkdirSync(path.dirname(marca), { recursive: true });
+  const marcar = (at, story = '9.99') => fs.writeFileSync(marca, JSON.stringify({ story, kind: 'queue', at, by: 'prueba' }));
+  const pedido = (cwd) => brake().decidir({ command: 'gh pr create --fill', cwd, sid: SID, home: h });
+  marcar(new Date().toISOString());
+  assert.strictEqual(pedido(ajeno), null, 'estacionada: el pedido de otro repo pasa');
+  assert.ok(pedido(a) && pedido(a).texto, 'estacionada: el pedido de un repo de la corrida sigue frenando');
+  marcar('2020-01-01T00:00:00Z');
+  assert.ok(pedido(ajeno) && pedido(ajeno).texto, 'la marca de una corrida anterior no la estaciona');
+  marcar(new Date().toISOString(), '9.98');
+  assert.ok(pedido(ajeno) && pedido(ajeno).texto, 'la marca de otra historia no la estaciona');
+  fs.writeFileSync(marca, '{ no es json');
+  assert.ok(pedido(ajeno) && pedido(ajeno).texto, 'una marca ilegible no afloja el freno');
+  fs.rmSync(marca);
+  assert.ok(pedido(ajeno) && pedido(ajeno).texto, 'sin la marca frena como siempre');
+  // la pausa escrita en la historia también la estaciona
+  escribir(a, 'specs/story-9.99.md', '---\nstory_id: "9.99"\nstatus: in-progress\npaused_until: 2099-01-01\n---\n');
+  assert.strictEqual(pedido(ajeno), null, 'con paused_until en la historia, el pedido de otro repo pasa');
+  assert.ok(pedido(a) && pedido(a).texto, 'con paused_until, el de un repo de la corrida sigue frenando');
+});
+
 // T6 Freno_SinCorrida_O_Adhoc_IgualQueHoy
 // El adhoc de esta prueba no trae su firma: no es un carril abierto. El carril firmado pregunta (T15).
 // 🔴 Falla con: el freno cambiando lo que pasa fuera de una corrida (un aviso, una salida distinta o una pregunta nueva
@@ -559,8 +590,19 @@ test('Freno_PedidosDeLosConectores (T13)', (t) => {
 test('CambioAUnControl_SiguePidiendoLaFirmaDeControl (T14)', (t) => {
   const RAIZ = path.resolve(SCRIPTS, '..', '..', '..');
   const copia = path.join(tmp(t, 'freno-control-'), 'arnes');
-  const clon = spawnSync('git', ['clone', '-q', '--depth', '1', `file://${RAIZ}`, copia], { encoding: 'utf8' });
-  assert.strictEqual(clon.status, 0, clon.stderr);
+  // la copia sale de un clon; si el arnés corre desde una carpeta sin git (un laboratorio armado con git archive), de
+  // sus archivos en un repo nuevo
+  const tope = spawnSync('git', ['-C', RAIZ, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
+  const esRepo = tope.status === 0 && fs.realpathSync(tope.stdout.trim()) === fs.realpathSync(RAIZ);
+  if (esRepo) {
+    const clon = spawnSync('git', ['clone', '-q', '--depth', '1', `file://${RAIZ}`, copia], { encoding: 'utf8' });
+    assert.strictEqual(clon.status, 0, clon.stderr);
+  } else {
+    fs.cpSync(RAIZ, copia, { recursive: true, filter: (f) => !['.git', 'node_modules'].includes(path.basename(f)) });
+    sh(copia, 'init', '-q');
+    sh(copia, 'add', '-A');
+    sh(copia, 'commit', '-q', '-m', 'el arnés');
+  }
   sh(copia, 'branch', 'base');
   sh(copia, 'checkout', '-q', '-b', 'pedido');
   const freno = 'skills/tycon-pipeline/scripts/lib/save-brake.js';
@@ -1155,7 +1197,7 @@ test('T42 SaveBrake_TextoQueFalta_DiceComoSeCompleta @story-8.181 @ac-16', (t) =
   assert.ok(r && r.texto, JSON.stringify(r));
   assert.match(r.texto, /le faltan? \d+ texto/);
   assert.match(r.texto, /Corregí la pantalla/);
-  assert.match(r.texto, /Volvé a aprobar la maqueta/);
+  assert.match(r.texto, /Si lo que cambió es la maqueta: mostrásela a la persona/);
   assert.match(r.texto, /maqueta-diferencias\.md/);
   assert.match(r.texto, /differs:/);
 });
@@ -1540,6 +1582,112 @@ test('8.242-FrenoQueNoCarga_EnCorridaFrena (T20) @story-8.242 @ac-11', (t) => {
   const r = gancho(h, 'gh pr create --fill', { cwd: a, preload: frenoRoto(t) });
   assert.strictEqual(r.status, 2, r.stderr);
   assert.match(r.stderr, /el freno de guardar no pudo correr/);
+});
+
+// ── El commit por la coordinadora, si el perfil lo pide (approvals.local_commit) ─────────────────────────────────────
+// El perfil del equipo de un árbol de prueba: una carpeta con `team-profile.json` (texto tal cual, o un objeto), o sin él.
+function arbolCon(t, perfil) {
+  const d = tmp(t, 'freno-arbol-');
+  if (perfil !== undefined) fs.writeFileSync(path.join(d, 'team-profile.json'), typeof perfil === 'string' ? perfil : JSON.stringify(perfil));
+  return d;
+}
+const decideCon = (h, command, cwd, arnes) => brake().decidir({ command, cwd, sid: SID, home: h, arnes });
+const POR_LA_COORDINADORA = /tu organización pide que la coordinadora firme cada commit: `marker\.js approve-save`/;
+
+// 🔴 Falla con: un perfil sin la clave, o con `agent`, que vuelve a pedir algo antes del commit.
+test('8.242-Perfil_CommitLocal_PorDefectoElAgente (T21) @story-8.242 @ac-14', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  for (const perfil of [undefined, { approvals: { relay_session: 'coordinadora' } }, { approvals: { local_commit: 'agent' } }]) {
+    const arnes = arbolCon(t, perfil);
+    for (const m of [corrida(a), preparada(a)]) {
+      abrir(h, m);
+      assert.strictEqual(decideCon(h, 'git commit -m x', a, arnes), null, `${JSON.stringify(perfil)}: el commit pasa`);
+    }
+  }
+  assert.ok(gatesDe(h).filter((x) => x.name === 'save-brake').every((x) => /commit local, sin pregunta/.test(x.reason)));
+});
+
+// 🔴 Falla con: `coordinator` que deja commitear sin el ok, con un ok de otra corrida o con el código cambiado desde el
+// ok; o un pull request en el mismo comando que tapa el commit sin el ok.
+test('8.242-Perfil_Coordinadora_PideElOk (T22) @story-8.242 @ac-15', (t) => {
+  const so = require(SO_LIB);
+  const h = home(t);
+  const a = repoConOrigin(t);
+  const arnes = arbolCon(t, { approvals: { relay_session: 'coordinadora', local_commit: 'coordinator' } });
+  abrir(h, corrida(a));
+  let d = decideCon(h, 'git commit -m x', a, arnes);
+  assert.ok(d && d.texto, JSON.stringify(d));
+  assert.match(d.texto, POR_LA_COORDINADORA);
+  assert.match(d.texto, /no tiene un ok de guardar/);
+  // con el pull request en el mismo comando, frena por el commit: la ventana del pull request no lo cubre
+  d = decideCon(h, 'git commit -m x && gh pr create --fill', a, arnes);
+  assert.match((d || {}).texto || '', POR_LA_COORDINADORA, JSON.stringify(d));
+  // con el ok vigente, pasa y queda en el registro
+  abrir(h, corrida(a, { saveOk: { storyId: '9.99', startedAt: ANTES, huellas: so.huellas([a]) } }));
+  assert.strictEqual(decideCon(h, 'git commit -m x', a, arnes), null);
+  assert.ok(gatesDe(h).some((x) => x.name === 'save-brake' && /con el ok de guardar de la coordinadora/.test(x.reason)));
+  // un ok de otra corrida no vale
+  abrir(h, corrida(a, { saveOk: { storyId: '9.99', startedAt: '2026-10-28T10:00:00.000Z', huellas: so.huellas([a]) } }));
+  assert.match((decideCon(h, 'git commit -m x', a, arnes) || {}).texto || '', /otra corrida/);
+  // con el árbol cambiado desde el ok, frena con el mismo texto
+  abrir(h, corrida(a, { saveOk: { storyId: '9.99', startedAt: ANTES, huellas: so.huellas([a]) } }));
+  escribir(a, 'src/nuevo.js', 'module.exports = 2;\n');
+  d = decideCon(h, 'git commit -m x', a, arnes);
+  assert.match((d || {}).texto || '', POR_LA_COORDINADORA, JSON.stringify(d));
+  assert.match(d.texto, /cambió después del ok/);
+  // el ok se mide con el árbol de antes del comando: lo que el mismo comando escribe antes de commitear no lo cubre
+  const b = repoConOrigin(t, 'escribe');
+  escribir(b, 'a.js', 'module.exports = 1;\n');
+  sh(b, 'add', '-A');
+  sh(b, 'commit', '-q', '-m', 'a');
+  abrir(h, corrida(b, { saveOk: { storyId: '9.99', startedAt: ANTES, huellas: so.huellas([b]) } }));
+  assert.strictEqual(decideCon(h, 'git commit -am x', b, arnes), null, 'sin escribir nada, el ok lo cubre');
+  for (const cmd of ['echo 2 > a.js && git commit -am x', "sed -i '' s/1/2/ a.js && git commit -am x", 'echo x > src.js && git add -A && git commit -m y']) {
+    d = decideCon(h, cmd, b, arnes);
+    assert.match((d || {}).texto || '', POR_LA_COORDINADORA, `«${cmd}»: ${JSON.stringify(d)}`);
+    assert.match(d.texto, /cambia el código antes de commitearlo/);
+  }
+  // lo que se escribe fuera de todo repo (el mensaje del commit, un registro) no es código, y el papeleo tampoco lo es
+  // cuando la carpeta llega por un enlace
+  const fuera = tmp(t, 'freno-fuera-');
+  for (const cmd of [`printf msg > ${fuera}/msg.txt && git commit -F ${fuera}/msg.txt`, `npm run build > ${fuera}/b.log; git commit -am x`]) {
+    assert.strictEqual(decideCon(h, cmd, b, arnes), null, `«${cmd}»`);
+  }
+  const enlace = path.join(tmp(t, 'freno-enlace-'), 'repo');
+  fs.symlinkSync(b, enlace);
+  assert.strictEqual(decideCon(h, 'echo y > specs/story-9.99.md && git commit -am x', enlace, arnes), null, 'el papeleo, por el enlace');
+  // el marcador que no se lee: el ok vive ahí, así que el commit no guarda
+  fs.writeFileSync(marcadorPath(h), '{ esto no es json');
+  assert.match((decideCon(h, 'git commit -m x', a, arnes) || {}).texto || '', POR_LA_COORDINADORA);
+});
+
+// 🔴 Falla con: un valor que el lector no entiende, o un perfil que no se lee, leído como «el agente solo» (pasa
+// callado) o como «la coordinadora» (frena sin que nadie lo haya pedido).
+test('8.242-Perfil_ValorQueNoSeEntiende_Pregunta (T23) @story-8.242 @ac-16', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  abrir(h, corrida(a));
+  const casos = [
+    [{ approvals: { local_commit: 'si' } }, /approvals\.local_commit del perfil del equipo no se entiende/],
+    [{ approvals: 'x' }, /approvals del perfil del equipo no se entiende/],
+    ['{ "approvals": ', /el perfil del equipo no se puede leer/],
+  ];
+  for (const [perfil, motivo] of casos) {
+    const d = decideCon(h, 'git commit -m x', a, arbolCon(t, perfil));
+    assert.ok(d && d.pregunta && !d.texto, `${JSON.stringify(perfil)}: ${JSON.stringify(d)}`);
+    // la forma del comando, sin sus argumentos: la ventana no muestra lo que pueda traer una credencial
+    assert.match(d.pregunta, /^¿GUARDO\? «git commit», de la corrida de 9\.99: /);
+    assert.match(d.pregunta, motivo);
+    assert.match(d.pregunta, /no sé si tu organización pide que la coordinadora firme cada commit/);
+  }
+  // con el marcador que tampoco se lee, pregunta igual: no pasa con el aviso de siempre
+  fs.writeFileSync(marcadorPath(h), '{ esto no es json');
+  for (const [perfil, motivo] of casos) {
+    const d = decideCon(h, 'git commit -m x', a, arbolCon(t, perfil));
+    assert.ok(d && d.pregunta && !d.texto && !d.aviso, `${JSON.stringify(perfil)}: ${JSON.stringify(d)}`);
+    assert.match(d.pregunta, motivo);
+  }
 });
 
 // 🔴 Falla con: lo que se trajo de `main` después de preparar que sale en el pedido sin pasar por «Preparar el pull request».

@@ -29,7 +29,10 @@ function toy({ cap = 5, busy = 0 } = {}) {
   fs.mkdirSync(path.join(stateDir(home), 'active'), { recursive: true });
   const profile = path.join(root, 'perfil-equipo.json');
   fs.writeFileSync(profile, JSON.stringify(cap == null ? {} : { coordination: { max_working: cap } }));
-  const env = { TYCON_PROFILE: profile };
+  // an empty repos root: without it the review count (scripts/lib/review-load.js) walks the real repos next to the harness clone
+  const repos = path.join(root, 'repos');
+  fs.mkdirSync(repos);
+  const env = { TYCON_PROFILE: profile, TYCON_REPOS_ROOT: repos };
   const t = { root, home, profile, env };
   for (let i = 1; i <= busy; i += 1) session(t, `busy-${i}`, `S${i}`, { status: 'busy' });
   return t;
@@ -131,7 +134,7 @@ const STATES = [
 ];
 function stateToy(s) {
   const t = toy({ cap: s.cap, busy: s.busy });
-  if (s.cap == null) t.env = { TYCON_PROFILE: '0' };
+  if (s.cap == null) t.env = { ...t.env, TYCON_PROFILE: '0' };
   if (s.openedAgo) {
     fs.mkdirSync(C.coordinationDir(t.home), { recursive: true });
     fs.writeFileSync(openedFile(t), JSON.stringify([{ name: 'recien', cwd: t.root, at: NOW - s.openedAgo * 60000 }]));
@@ -362,4 +365,30 @@ test('T17 ComandoDeOpen_RutaConCaracteresRaros @story-8.178 @ac-1: la carpeta de
     const r = spawnSync('sh', ['-c', `printf %s ${quoted[1]}`], { encoding: 'utf8' });
     assert.strictEqual(r.stdout, cwd);
   }
+});
+
+// 🔴 Falla con: con la revisión llena, en freno, el agente abre una sesión de fondo por otro camino que `open`.
+test('T9 CapGuard_RevisionLlena_MismoVeredicto @story-8.326 @ac-6', () => {
+  const RLIB = require(path.join(ROOT, 'scripts', 'lib', 'review-load.js'));
+  const t = toy();
+  const llena = () => ({ total: 8, partes: { firmas: 2, terminados: 2, carpetas: 2, pedidos: 2 }, noMedido: { terminados: 0, carpetas: 0 }, tope: { value: 8, origin: 'sin-valor' }, problems: [] });
+  const ev = { hook_event_name: 'PreToolUse', tool_name: 'Bash', cwd: t.root, tool_input: { command: 'claude --bg -n nueva -- hola' } };
+  const antes = RLIB.MODO_TOPE_DE_REVISION;
+  RLIB.MODO_TOPE_DE_REVISION = 'block';
+  try {
+    const d = G.decidir(ev, { home: t.home, env: t.env, now: NOW, reviewLoad: llena });
+    assert.strictEqual(d.deny, true, JSON.stringify(d));
+    assert.strictEqual(d.motivo, 'revision-llena');
+    assert.match(d.message, /8 cosas esperan revisión de la persona/);
+    assert.deepStrictEqual(opened(t), [], 'negada, no se anota como abierta');
+  } finally { RLIB.MODO_TOPE_DE_REVISION = antes; }
+  // en aviso pasa, y deja el renglón para medir
+  const a = G.decidir(ev, { home: t.home, env: t.env, now: NOW, reviewLoad: llena });
+  assert.strictEqual(a.deny, false);
+  const gl = fs.readFileSync(path.join(stateDir(t.home), 'gates.log'), 'utf8');
+  assert.match(gl, /"name":"review-cap","status":"warn"/);
+  assert.match(gl, /"donde":"session-cap-guard"/);
+  // la negativa queda en frenos.jsonl con su motivo (no se descarta por estar fuera de la lista)
+  require(path.join(ROOT, 'scripts', 'lib', 'guard-record.js')).anotar({ freno: 'session-cap-guard', regla: 'tope', veredicto: 'bloqueo', motivo: 'revision-llena', cmd: 'claude --bg', home: t.home });
+  assert.ok(frenos(t).some((f) => f.motivo === 'revision-llena'), JSON.stringify(frenos(t)));
 });

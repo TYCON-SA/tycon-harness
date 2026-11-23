@@ -148,20 +148,20 @@ pasa(){
 }
 
 # ── T-puerta-6 · guiones guardados que leen la clave, por bash y por ruta ──────────────────────
-frena "T-puerta-6 Freno_GuionGuardado_BashYRuta · bash scripts/leer.sh" "bash scripts/leer.sh" "scripts/leer.sh"
-frena "T-puerta-6 Freno_GuionGuardado_BashYRuta · ./scripts/leer.sh" "./scripts/leer.sh" "scripts/leer.sh"
-frena "T-puerta-6 Freno_GuionGuardado_BashYRuta · el motivo nombra el llavero" "bash scripts/leer.sh" "$LLAVERO"
-frena "T-puerta-6 Freno_GuionGuardado_BashYRuta · scripts/leer.sh corrido como programa (sin ./)" "scripts/leer.sh" "scripts/leer.sh"
-frena "T-puerta-6 Freno_GuionGuardado_BashYRuta · ../juguete/scripts/leer.sh" "../juguete/scripts/leer.sh" "scripts/leer.sh"
-frena "T-puerta-6 Freno_GuionGuardado_BashYRuta · cd scripts && bash leer.sh (sigue el cd)" "cd scripts && bash leer.sh" "scripts/leer.sh"
-frena "T-puerta-6 Freno_GuionGuardado_BashYRuta · desde otra carpeta, con la ruta absoluta" "cd / && bash $JUG/scripts/leer.sh" "scripts/leer.sh"
+frena "T-puerta-6 Freno_GuionGuardado_BashYRuta @story-8.254 @ac-5 · bash scripts/leer.sh" "bash scripts/leer.sh" "scripts/leer.sh"
+frena "T-puerta-6 Freno_GuionGuardado_BashYRuta @story-8.254 @ac-5 · ./scripts/leer.sh" "./scripts/leer.sh" "scripts/leer.sh"
+frena "T-puerta-6 Freno_GuionGuardado_BashYRuta @story-8.254 @ac-5 · el motivo nombra el llavero" "bash scripts/leer.sh" "$LLAVERO"
+frena "T-puerta-6 Freno_GuionGuardado_BashYRuta @story-8.254 @ac-5 · scripts/leer.sh corrido como programa (sin ./)" "scripts/leer.sh" "scripts/leer.sh"
+frena "T-puerta-6 Freno_GuionGuardado_BashYRuta @story-8.254 @ac-5 · ../juguete/scripts/leer.sh" "../juguete/scripts/leer.sh" "scripts/leer.sh"
+frena "T-puerta-6 Freno_GuionGuardado_BashYRuta @story-8.254 @ac-5 · cd scripts && bash leer.sh (sigue el cd)" "cd scripts && bash leer.sh" "scripts/leer.sh"
+frena "T-puerta-6 Freno_GuionGuardado_BashYRuta @story-8.254 @ac-5 · desde otra carpeta, con la ruta absoluta" "cd / && bash $JUG/scripts/leer.sh" "scripts/leer.sh"
 
 # ── T-puerta-7 · node y python ──────────────────────────────────────────────────────────────────
-frena "T-puerta-7 Freno_GuionGuardado_NodeYPython · node scripts/leer.js" "node scripts/leer.js" "scripts/leer.js"
-frena "T-puerta-7 Freno_GuionGuardado_NodeYPython · python3 scripts/leer.py" "python3 scripts/leer.py" "scripts/leer.py"
+frena "T-puerta-7 Freno_GuionGuardado_NodeYPython @story-8.254 @ac-5 · node scripts/leer.js" "node scripts/leer.js" "scripts/leer.js"
+frena "T-puerta-7 Freno_GuionGuardado_NodeYPython @story-8.254 @ac-5 · python3 scripts/leer.py" "python3 scripts/leer.py" "scripts/leer.py"
 
 # ── T-puerta-4 · un guion que llama a la puerta (sonda p10) ─────────────────────────────────────
-frena "T-puerta-4 Sonda_p10_GuionLlamaALaPuerta_PideCuadro · el freno lo frena" "bash scripts/consulta.sh" "llama a la puerta"
+frena "T-puerta-4 Sonda_p10_GuionLlamaALaPuerta_PideCuadro @story-8.254 @ac-4 @ac-5 · el freno lo frena" "bash scripts/consulta.sh" "llama a la puerta"
 # corrido SIN el freno (como lo haría otro asistente o un hook propio): la puerta pide el cuadro, y sin respuesta no
 # lee la clave ni llama al cliente
 RAIZ="$TMP/sys"; mkdir -p "$RAIZ/usr/bin" "$RAIZ/bin" "$RAIZ/opt/tycon/bin"
@@ -174,47 +174,47 @@ sed "s|$PUERTA|bash $PUERTA_REPO|" "$JUG/scripts/consulta.sh" > "$TMP/consulta-r
 ( cd "$JUG" && env -i HOME="$CASA" PATH=/usr/bin:/bin TYCON_PROD_TEST_PATH="$(dirname "$(command -v node)")" TYCON_PROD_ROOT="$RAIZ" TYCON_REPOS_ROOT="$REPOS" bash "$TMP/consulta-repo.sh" ) >"$TMP/out4" 2>&1
 rc=$?
 if [ "$rc" = 2 ] && [ "$(head -1 "$TMP/orden.log" 2>/dev/null)" = cuadro ] && ! grep -q '^security\|^sqlcmd' "$TMP/orden.log"; then
-  ok "T-puerta-4 Sonda_p10_GuionLlamaALaPuerta_PideCuadro · sin el freno, la puerta pide el cuadro y sin respuesta no consulta"
-else no "T-puerta-4 Sonda_p10_GuionLlamaALaPuerta_PideCuadro · rc=$rc · orden: $(tr '\n' ' ' < "$TMP/orden.log" 2>/dev/null) · $(head -c 200 "$TMP/out4")"; fi
+  ok "T-puerta-4 Sonda_p10_GuionLlamaALaPuerta_PideCuadro @story-8.254 @ac-4 @ac-5 · sin el freno, la puerta pide el cuadro y sin respuesta no consulta"
+else no "T-puerta-4 Sonda_p10_GuionLlamaALaPuerta_PideCuadro @story-8.254 @ac-4 @ac-5 · rc=$rc · orden: $(tr '\n' ' ' < "$TMP/orden.log" 2>/dev/null) · $(head -c 200 "$TMP/out4")"; fi
 
 # ── T-puerta-8 · npm, yarn y pnpm (sonda p05) ───────────────────────────────────────────────────
 for g in npm yarn pnpm; do
-  frena "T-puerta-8 Freno_NpmYarnPnpmRun · $g run leer" "$g run leer" "package.json (script «leer»)"
+  frena "T-puerta-8 Freno_NpmYarnPnpmRun @story-8.254 @ac-6 · $g run leer" "$g run leer" "package.json (script «leer»)"
 done
-frena "T-puerta-8 Freno_NpmYarnPnpmRun · npm --prefix con la carpeta" "npm --prefix $JUG run leer" "package.json (script «leer»)"
-frena "T-puerta-8 Freno_NpmYarnPnpmRun · npm run leer desde una subcarpeta del paquete" "cd sub/dir && npm run leer" "package.json (script «leer»)"
-pasa "T-puerta-8 Freno_NpmYarnPnpmRun · npm run build (no nombra nada) pasa" "npm run build"
+frena "T-puerta-8 Freno_NpmYarnPnpmRun @story-8.254 @ac-6 · npm --prefix con la carpeta" "npm --prefix $JUG run leer" "package.json (script «leer»)"
+frena "T-puerta-8 Freno_NpmYarnPnpmRun @story-8.254 @ac-6 · npm run leer desde una subcarpeta del paquete" "cd sub/dir && npm run leer" "package.json (script «leer»)"
+pasa "T-puerta-8 Freno_NpmYarnPnpmRun @story-8.254 @ac-6 · npm run build (no nombra nada) pasa" "npm run build"
 
 # ── T-puerta-9 · make (sonda p06) ───────────────────────────────────────────────────────────────
-frena "T-puerta-9 Freno_Make · make leer" "make leer" "Makefile (objetivo «leer»)"
-frena "T-puerta-9 Freno_Make · make sin objetivo corre el primero" "make" "Makefile (objetivo «leer»)"
-frena "T-puerta-9 Freno_Make · make delega: el prerrequisito nombra el llavero" "make delega" "Makefile (objetivo «ayuda»)"
-pasa "T-puerta-9 Freno_Make · make compilar (no nombra nada) pasa" "make compilar"
+frena "T-puerta-9 Freno_Make @story-8.254 @ac-6 · make leer" "make leer" "Makefile (objetivo «leer»)"
+frena "T-puerta-9 Freno_Make @story-8.254 @ac-6 · make sin objetivo corre el primero" "make" "Makefile (objetivo «leer»)"
+frena "T-puerta-9 Freno_Make @story-8.254 @ac-6 · make delega: el prerrequisito nombra el llavero" "make delega" "Makefile (objetivo «ayuda»)"
+pasa "T-puerta-9 Freno_Make @story-8.254 @ac-6 · make compilar (no nombra nada) pasa" "make compilar"
 
 # ── T-puerta-10 · un nivel más, y no dos ────────────────────────────────────────────────────────
-frena "T-puerta-10 Freno_NpmRunQueCorreUnArchivo_MiraUnNivel · npm run x → node scripts/leer.js" "npm run x" "scripts/leer.js"
-pasa "T-puerta-10 Freno_NpmRunQueCorreUnArchivo_MiraUnNivel · el segundo nivel no se mira" "npm run x2"
+frena "T-puerta-10 Freno_NpmRunQueCorreUnArchivo_MiraUnNivel @story-8.254 @ac-6 · npm run x → node scripts/leer.js" "npm run x" "scripts/leer.js"
+pasa "T-puerta-10 Freno_NpmRunQueCorreUnArchivo_MiraUnNivel @story-8.254 @ac-6 · el segundo nivel no se mira" "npm run x2"
 
 # ── T-puerta-11 · automatizar la pantalla ───────────────────────────────────────────────────────
 SE="System ""Events"
-frena "T-puerta-11 Freno_AutomatizarLaPantalla · click" "osascript -e 'tell application \"$SE\" to click button \"Aprobar\" of window 1 of process \"osascript\"'" "pantalla"
-frena "T-puerta-11 Freno_AutomatizarLaPantalla · keystroke" "osascript -e 'tell application \"$SE\" to keystroke return'" "pantalla"
-frena "T-puerta-11 Freno_AutomatizarLaPantalla · key code" "osascript -e 'tell application \"$SE\" to key code 36'" "pantalla"
-frena "T-puerta-11 Freno_AutomatizarLaPantalla · cliclick" "cliclick c:500,400" "pantalla"
-pasa "T-puerta-11 Freno_AutomatizarLaPantalla · display notification pasa" "osascript -e 'display notification \"listo\"'"
+frena "T-puerta-11 Freno_AutomatizarLaPantalla @story-8.254 @ac-7 · click" "osascript -e 'tell application \"$SE\" to click button \"Aprobar\" of window 1 of process \"osascript\"'" "pantalla"
+frena "T-puerta-11 Freno_AutomatizarLaPantalla @story-8.254 @ac-7 · keystroke" "osascript -e 'tell application \"$SE\" to keystroke return'" "pantalla"
+frena "T-puerta-11 Freno_AutomatizarLaPantalla @story-8.254 @ac-7 · key code" "osascript -e 'tell application \"$SE\" to key code 36'" "pantalla"
+frena "T-puerta-11 Freno_AutomatizarLaPantalla @story-8.254 @ac-7 · cliclick" "cliclick c:500,400" "pantalla"
+pasa "T-puerta-11 Freno_AutomatizarLaPantalla @story-8.254 @ac-7 · display notification pasa" "osascript -e 'display notification \"listo\"'"
 
 # ── T-puerta-26 · lo que no se puede mirar pasa y queda anotado ─────────────────────────────────
 : > "$REGISTRO"
-pasa "T-puerta-26 Freno_GuionIlegibleOGrande_NoSeMiraYSeAnota · guion de más de 64 KB" "bash scripts/grande.sh"
-pasa "T-puerta-26 Freno_GuionIlegibleOGrande_NoSeMiraYSeAnota · guion sin permiso de lectura" "bash scripts/cerrado.sh"
-pasa "T-puerta-26 Freno_GuionIlegibleOGrande_NoSeMiraYSeAnota · npm run sin ese script" "npm run no-existe"
+pasa "T-puerta-26 Freno_GuionIlegibleOGrande_NoSeMiraYSeAnota @story-8.254 @ac-21 · guion de más de 64 KB" "bash scripts/grande.sh"
+pasa "T-puerta-26 Freno_GuionIlegibleOGrande_NoSeMiraYSeAnota @story-8.254 @ac-21 · guion sin permiso de lectura" "bash scripts/cerrado.sh"
+pasa "T-puerta-26 Freno_GuionIlegibleOGrande_NoSeMiraYSeAnota @story-8.254 @ac-21 · npm run sin ese script" "npm run no-existe"
 # una opción larga de make que el freno no sabe leer puede cambiar qué archivo corre: se dice que no se miró
 OPCION_RARA="--make""file=otro.mk"
-pasa "T-puerta-26 Freno_GuionIlegibleOGrande_NoSeMiraYSeAnota · make con una opción que no sabe leer" "make $OPCION_RARA compilar"
+pasa "T-puerta-26 Freno_GuionIlegibleOGrande_NoSeMiraYSeAnota @story-8.254 @ac-21 · make con una opción que no sabe leer" "make $OPCION_RARA compilar"
 n="$(grep -c '"tipo":"no-mirado"' "$REGISTRO" 2>/dev/null)"
 if [ "${n:-0}" = 4 ] && grep -q 'grande.sh' "$REGISTRO" && grep -q 'cerrado.sh' "$REGISTRO" && grep -q 'no-existe' "$REGISTRO" && grep -q 'opción que no sé leer' "$REGISTRO" && ! grep -q '"bloqueo"' "$REGISTRO"; then
-  ok "T-puerta-26 Freno_GuionIlegibleOGrande_NoSeMiraYSeAnota · los cuatro quedan como «no-mirado», ninguno como bloqueo"
-else no "T-puerta-26 Freno_GuionIlegibleOGrande_NoSeMiraYSeAnota · el registro: $(tr '\n' ' ' < "$REGISTRO" | head -c 400)"; fi
+  ok "T-puerta-26 Freno_GuionIlegibleOGrande_NoSeMiraYSeAnota @story-8.254 @ac-21 · los cuatro quedan como «no-mirado», ninguno como bloqueo"
+else no "T-puerta-26 Freno_GuionIlegibleOGrande_NoSeMiraYSeAnota @story-8.254 @ac-21 · el registro: $(tr '\n' ' ' < "$REGISTRO" | head -c 400)"; fi
 
 # ── T-puerta-35 · el guion se encuentra aunque llegue por otro camino ───────────────────────────
 Q=scripts/leer
@@ -227,70 +227,70 @@ for c in "bash -c 'bash $Q.sh'" "sh -c \"node $Q.js\"" "eval 'bash $Q.sh'" "eval
          "npm run xruta" "npm run xarriba" "npm run xcd" "npm run xcds" "npm run xsolo" "npm run xenv" \
          "bash scripts/nul.sh" "bash scripts/pegado.sh" "bash scripts/host.sh" \
          "bash \"\$PWD/$Q.sh\"" "bash \"\$(pwd)/$Q.sh\"" "bun $Q.js" "eval ./$Q.sh" "bash --rcfile ./lib/index.js $Q.sh" "cd scripts; cd -; bash $Q.sh"; do
-  frena "T-puerta-35 Freno_GuionPorOtroCamino · $c" "$c" "y este comando lo corre"
+  frena "T-puerta-35 Freno_GuionPorOtroCamino @story-8.254 @ac-31 · $c" "$c" "y este comando lo corre"
 done
-frena "T-puerta-35 Freno_GuionPorOtroCamino · heredoc que alimenta un shell" "bash <<'FIN'
+frena "T-puerta-35 Freno_GuionPorOtroCamino @story-8.254 @ac-31 · heredoc que alimenta un shell" "bash <<'FIN'
 bash $Q.sh
 FIN" "scripts/leer.sh"
 printf "#!/usr/bin/env bash\nbash <<'FIN'\n%s %s q\nFIN\n" "$PUERTA" "$PROD" > "$JUG/scripts/p-heredoc.sh"
 printf "#!/usr/bin/env bash\ncat <<'FIN'\n%s <host> q\nFIN\n" "$PUERTA" > "$JUG/scripts/p-texto.sh"
-pasa "T-puerta-38 Freno_NombrarNoEsCorrer · un heredoc que sólo se imprime" "bash scripts/p-texto.sh"
-for g in p-sub p-eval p-env p-heredoc; do frena "T-puerta-35 Freno_GuionPorOtroCamino · la puerta en $g" "bash scripts/$g.sh" "llama a la puerta"; done
+pasa "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · un heredoc que sólo se imprime" "bash scripts/p-texto.sh"
+for g in p-sub p-eval p-env p-heredoc; do frena "T-puerta-35 Freno_GuionPorOtroCamino @story-8.254 @ac-31 · la puerta en $g" "bash scripts/$g.sh" "llama a la puerta"; done
 
 # ── T-puerta-36 · make: lo que corre aunque no esté escrito en la receta ────────────────────────
 for c in "make -C mk/cond cond" "make -C mk/defecto" "make -C mk/define leer" "make -C mk/vars var" "make -C mk/vars varp" "make -C mk/shell" "make -C mk/sub" "make -C mk/prereq" \
          "make -j 4" "make -j4" "make --jobs 4" "make -l 2" "make -f mk/b.mk -f mk/a.mk leer" "make -C mk/comenta leer"; do
-  frena "T-puerta-36 Freno_MakeComoLoLeeMake · $c" "$c" "y este comando lo corre"
+  frena "T-puerta-36 Freno_MakeComoLoLeeMake @story-8.254 @ac-32 · $c" "$c" "y este comando lo corre"
 done
 : > "$REGISTRO"
-pasa "T-puerta-38 Freno_NombrarNoEsCorrer · una función de nombre calculado que no se resuelve pasa" "make -C mk/sh-opaco nada"
-if grep -q 'nombre calculado' "$REGISTRO"; then ok "T-puerta-38 Freno_NombrarNoEsCorrer · y queda como «no-mirado»"
-else no "T-puerta-38 Freno_NombrarNoEsCorrer · nombre calculado sin anotar: $(head -c 200 "$REGISTRO")"; fi
+pasa "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · una función de nombre calculado que no se resuelve pasa" "make -C mk/sh-opaco nada"
+if grep -q 'nombre calculado' "$REGISTRO"; then ok "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · y queda como «no-mirado»"
+else no "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · nombre calculado sin anotar: $(head -c 200 "$REGISTRO")"; fi
 for d in sh-cond sh-dep sh-inc sh-igual sh-llave sh-define sh-suelto sh-calculado sh-incluido sh-rehace sh-call sh-call-llave; do
-  frena "T-puerta-36 Freno_MakeComoLoLeeMake · lo que corre al leerlo: $d" "make -C mk/$d nada" "y este comando lo corre"
+  frena "T-puerta-36 Freno_MakeComoLoLeeMake @story-8.254 @ac-32 · lo que corre al leerlo: $d" "make -C mk/$d nada" "y este comando lo corre"
 done
-frena "T-puerta-36 Freno_MakeComoLoLeeMake · make -n igual lee el archivo" "make -n -C mk/sh-cond nada" "y este comando lo corre"
-pasa "T-puerta-36 Freno_MakeComoLoLeeMake · make -n no corre la receta" "make -n leer"
-pasa "T-puerta-36 Freno_MakeComoLoLeeMake · un comentario después de los «:» no es un prerrequisito" "make -C mk/comenta a"
+frena "T-puerta-36 Freno_MakeComoLoLeeMake @story-8.254 @ac-32 · make -n igual lee el archivo" "make -n -C mk/sh-cond nada" "y este comando lo corre"
+pasa "T-puerta-36 Freno_MakeComoLoLeeMake @story-8.254 @ac-32 · make -n no corre la receta" "make -n leer"
+pasa "T-puerta-36 Freno_MakeComoLoLeeMake @story-8.254 @ac-32 · un comentario después de los «:» no es un prerrequisito" "make -C mk/comenta a"
 
 # ── T-puerta-37 · npm, yarn, pnpm y bun: las opciones y lo que corre al instalar ────────────────
 for c in "npm --registry local run leer" "npm --registry=local run leer" "npm run --silent leer" "npm run -- leer" "npm -- run leer" "npm -w otro run leer" "pnpm -F otro leer" "pnpm --filter otro run leer" "yarn workspace otro leer" "bun run leer" \
          "npm --prefix inst install" "cd inst && npm i" "cd inst && npm ci" "cd inst && yarn" "cd inst && pnpm install"; do
-  frena "T-puerta-37 Freno_GestoresConOpciones · $c" "$c" "y este comando lo corre"
+  frena "T-puerta-37 Freno_GestoresConOpciones @story-8.254 @ac-32 · $c" "$c" "y este comando lo corre"
 done
-pasa "T-puerta-37 Freno_GestoresConOpciones · npm view no corre scripts" "npm view leer"
+pasa "T-puerta-37 Freno_GestoresConOpciones @story-8.254 @ac-32 · npm view no corre scripts" "npm view leer"
 
 # ── T-puerta-38 · nombrar la puerta sin correrla no frena; lo que no se puede leer queda anotado ──
-for g in asigna caso arreglo; do pasa "T-puerta-38 Freno_NombrarNoEsCorrer · $g" "bash scripts/$g.sh"; done
-pasa "T-puerta-38 Freno_NombrarNoEsCorrer · un programa de node corrido por su ruta" "./scripts/doc.js"
+for g in asigna caso arreglo; do pasa "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · $g" "bash scripts/$g.sh"; done
+pasa "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · un programa de node corrido por su ruta" "./scripts/doc.js"
 : > "$REGISTRO"
-pasa "T-puerta-38 Freno_NombrarNoEsCorrer · una ruta con variable pasa" 'bash "$DIR/leer.sh"'
-pasa "T-puerta-38 Freno_NombrarNoEsCorrer · tras un cd que no se lee, lo que no se encuentra pasa" 'cd "$DIR" && bash nada.sh'
+pasa "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · una ruta con variable pasa" 'bash "$DIR/leer.sh"'
+pasa "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · tras un cd que no se lee, lo que no se encuentra pasa" 'cd "$DIR" && bash nada.sh'
 n="$(grep -c '"tipo":"no-mirado"' "$REGISTRO" 2>/dev/null)"
-if [ "${n:-0}" = 2 ]; then ok "T-puerta-38 Freno_NombrarNoEsCorrer · las dos quedan como «no-mirado»"
-else no "T-puerta-38 Freno_NombrarNoEsCorrer · el registro: $(tr '\n' ' ' < "$REGISTRO" | head -c 300)"; fi
+if [ "${n:-0}" = 2 ]; then ok "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · las dos quedan como «no-mirado»"
+else no "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · el registro: $(tr '\n' ' ' < "$REGISTRO" | head -c 300)"; fi
 : > "$REGISTRO"
 cp "$JUG/scripts/leer.sh" "$TMP/cerrado-temporal.sh"; chmod 000 "$TMP/cerrado-temporal.sh"
-pasa "T-puerta-38 Freno_NombrarNoEsCorrer · un guion temporal sin permiso de lectura pasa" "bash $TMP/cerrado-temporal.sh"
-if grep -q 'cerrado-temporal' "$REGISTRO" && grep -q 'sin permiso de lectura' "$REGISTRO"; then ok "T-puerta-38 Freno_NombrarNoEsCorrer · y queda como «no-mirado»"
-else no "T-puerta-38 Freno_NombrarNoEsCorrer · sin anotar: $(head -c 200 "$REGISTRO")"; fi
+pasa "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · un guion temporal sin permiso de lectura pasa" "bash $TMP/cerrado-temporal.sh"
+if grep -q 'cerrado-temporal' "$REGISTRO" && grep -q 'sin permiso de lectura' "$REGISTRO"; then ok "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · y queda como «no-mirado»"
+else no "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · sin anotar: $(head -c 200 "$REGISTRO")"; fi
 : > "$REGISTRO"
 muchos=""; for i in $(seq 1 40); do cp "$JUG/scripts/no-declarado.sh" "$JUG/scripts/m$i.sh"; muchos="$muchos bash scripts/m$i.sh;"; done
-pasa "T-puerta-38 Freno_NombrarNoEsCorrer · un comando con más guiones de los que se leen pasa" "$muchos"
-if grep -q 'alcanzo a leer' "$REGISTRO"; then ok "T-puerta-38 Freno_NombrarNoEsCorrer · y dice que no los leyó todos"
-else no "T-puerta-38 Freno_NombrarNoEsCorrer · sin anotar: $(head -c 200 "$REGISTRO")"; fi
+pasa "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · un comando con más guiones de los que se leen pasa" "$muchos"
+if grep -q 'alcanzo a leer' "$REGISTRO"; then ok "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · y dice que no los leyó todos"
+else no "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · sin anotar: $(head -c 200 "$REGISTRO")"; fi
 : > "$REGISTRO"
-pasa "T-puerta-38 Freno_NombrarNoEsCorrer · un Makefile con más objetivos de los que se siguen pasa" "make -f mk/muchos.mk todo"
-if grep -q 'alcanzo a seguir' "$REGISTRO"; then ok "T-puerta-38 Freno_NombrarNoEsCorrer · y dice que no los siguió todos"
-else no "T-puerta-38 Freno_NombrarNoEsCorrer · sin anotar: $(head -c 200 "$REGISTRO")"; fi
+pasa "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · un Makefile con más objetivos de los que se siguen pasa" "make -f mk/muchos.mk todo"
+if grep -q 'alcanzo a seguir' "$REGISTRO"; then ok "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · y dice que no los siguió todos"
+else no "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · sin anotar: $(head -c 200 "$REGISTRO")"; fi
 # con un catálogo ilegible no se sabe qué está declarado: pasa, y queda dicho que no se miró
 CASA_BIEN="$CASA"; REPOS_BIEN="$REPOS"; REGISTRO_BIEN="$REGISTRO"
 CASA="$TMP/casa-rota"; REPOS="$TMP/repos-rotos"; REGISTRO="$CASA/.claude/.tycon-pipeline/production.log"
 mkdir -p "$CASA/.claude/.tycon-pipeline" "$REPOS/backend-acme/.tycon"; ( cd "$REPOS/backend-acme" && git init -q . ) >/dev/null 2>&1
 printf '{ roto' > "$REPOS/backend-acme/.tycon/production.json"
-pasa "T-puerta-38 Freno_NombrarNoEsCorrer · con el catálogo ilegible pasa" "bash scripts/leer.sh"
-if grep -q 'no se pudieron leer' "$REGISTRO"; then ok "T-puerta-38 Freno_NombrarNoEsCorrer · y dice que no miró lo declarado"
-else no "T-puerta-38 Freno_NombrarNoEsCorrer · sin anotar: $(head -c 200 "$REGISTRO" 2>/dev/null)"; fi
+pasa "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · con el catálogo ilegible pasa" "bash scripts/leer.sh"
+if grep -q 'no se pudieron leer' "$REGISTRO"; then ok "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · y dice que no miró lo declarado"
+else no "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · sin anotar: $(head -c 200 "$REGISTRO" 2>/dev/null)"; fi
 CASA="$CASA_BIEN"; REPOS="$REPOS_BIEN"; REGISTRO="$REGISTRO_BIEN"
 # lo que podría colgar al freno: una variable de Makefile referida miles de veces, y un FIFO donde iría un package.json
 { printf 'V := %s\n' "$(head -c 2000 /dev/zero | tr '\0' 'x')"; printf 'bomba:\n\t@echo'; for i in $(seq 1 6000); do printf ' $(V)'; done; printf '\n'; } > "$JUG/mk/bomba.mk"
@@ -299,42 +299,48 @@ head -c 60000 /dev/zero | tr '\0' '#' > "$JUG/mk/relleno.mk"
 { for i in $(seq 1 2500); do printf 'include mk/relleno.mk\n'; done; printf 'nada:\n\t@true\n'; } > "$JUG/mk/incluye.mk"
 for c in "make -f mk/bomba.mk bomba" "make -f mk/incluye.mk nada" "node fifo"; do
   t0="$(node -e 'console.log(Date.now())')"; rc="$(corre "$c")"; ms=$(( $(node -e 'console.log(Date.now())') - t0 ))
-  if [ "$rc" = 0 ] && [ "$ms" -lt 5000 ]; then ok "T-puerta-38 Freno_NombrarNoEsCorrer · «${c}» no cuelga al freno"
-  else no "T-puerta-38 Freno_NombrarNoEsCorrer · «${c}»: rc=$rc en $ms ms"; fi
+  if [ "$rc" = 0 ] && [ "$ms" -lt 5000 ]; then ok "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · «${c}» no cuelga al freno"
+  else no "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · «${c}»: rc=$rc en $ms ms"; fi
 done
-# el mismo archivo incluido miles de veces se lee una sola: no llega al tope de lo que se lee
-if ! grep -q 'incluye más' "$REGISTRO"; then ok "T-puerta-38 Freno_NombrarNoEsCorrer · un include repetido se lee una vez"
-else no "T-puerta-38 Freno_NombrarNoEsCorrer · include repetido: $(grep 'incluye más' "$REGISTRO" | head -c 200)"; fi
+# el mismo archivo incluido miles de veces se lee una sola: no llega al tope de lo que se lee. La marca es positiva: el
+# archivo incluido trae la receta que lee la clave, así que el freno frena sólo si lo leyó; y el registro se vacía antes,
+# para que no pase con el registro vacío
+head -c 60000 /dev/zero | tr '\0' '#' > "$JUG/mk/relleno-lee.mk"; printf '\nnada:\n\t%s\n' "$LEE_CLAVE" >> "$JUG/mk/relleno-lee.mk"
+for i in $(seq 1 2500); do printf 'include mk/relleno-lee.mk\n'; done > "$JUG/mk/incluye-lee.mk"
+: > "$REGISTRO"
+frena "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · un include repetido se lee: ve la receta que trae" "make -f mk/incluye-lee.mk nada" "y este comando lo corre"
+if [ -s "$REGISTRO" ] && ! grep -q 'incluye más' "$REGISTRO"; then ok "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · un include repetido se lee una vez"
+else no "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · include repetido: $(head -c 200 "$REGISTRO")"; fi
 # un include dentro de otro se sigue; lo que pasa de los topes queda dicho
 printf 'include mk/in2.mk\n' > "$JUG/mk/in1.mk"; printf 'leer:\n\t%s\n' "$LEE_CLAVE" > "$JUG/mk/in2.mk"; printf 'include mk/in1.mk\n' > "$JUG/mk/anidado.mk"
-frena "T-puerta-36 Freno_MakeComoLoLeeMake · un include dentro de otro" "make -f mk/anidado.mk leer" "y este comando lo corre"
+frena "T-puerta-36 Freno_MakeComoLoLeeMake @story-8.254 @ac-32 · un include dentro de otro" "make -f mk/anidado.mk leer" "y este comando lo corre"
 { for i in $(seq 1 9); do printf 'nada%s:\n\t@true\n' "$i" > "$JUG/mk/n$i.mk"; printf 'include mk/n%s.mk\n' "$i"; done; printf 'nada:\n\t@true\n'; } > "$JUG/mk/nueve.mk"
 { for i in $(seq 1 300); do printf 'include mk/falta%s.mk\n' "$i"; done; printf 'nada:\n\t@true\n'; } > "$JUG/mk/trescientos.mk"
 { for i in $(seq 1 20); do printf 'X%s := $(shell true)\n' "$i"; done; printf 'nada:\n\t@true\n'; } > "$JUG/mk/veinte.mk"
 for caso in "nueve:incluye más archivos" "trescientos:incluye más archivos" "veinte:alcanzo a mirar"; do
-  : > "$REGISTRO"; pasa "T-puerta-38 Freno_NombrarNoEsCorrer · ${caso%%:*} pasa" "make -f mk/${caso%%:*}.mk nada"
-  if grep -q "${caso#*:}" "$REGISTRO"; then ok "T-puerta-38 Freno_NombrarNoEsCorrer · ${caso%%:*} queda como «no-mirado»"
-  else no "T-puerta-38 Freno_NombrarNoEsCorrer · ${caso%%:*}: sin anotar: $(head -c 200 "$REGISTRO")"; fi
+  : > "$REGISTRO"; pasa "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · ${caso%%:*} pasa" "make -f mk/${caso%%:*}.mk nada"
+  if grep -q "${caso#*:}" "$REGISTRO"; then ok "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · ${caso%%:*} queda como «no-mirado»"
+  else no "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · ${caso%%:*}: sin anotar: $(head -c 200 "$REGISTRO")"; fi
 done
 : > "$REGISTRO"
 { printf 'R := %s\nC := %s\nleer:\n\t@echo $(R) $(R) $(C)\n' "$(head -c 32740 /dev/zero | tr '\0' 'x')" "$LEE_CLAVE"; } > "$JUG/mk/esconde.mk"
-pasa "T-puerta-38 Freno_NombrarNoEsCorrer · una variable que no entra en el tope pasa" "make -f mk/esconde.mk leer"
-if grep -q 'alcanzo a expandir' "$REGISTRO"; then ok "T-puerta-38 Freno_NombrarNoEsCorrer · y dice que no la expandió"
-else no "T-puerta-38 Freno_NombrarNoEsCorrer · sin anotar: $(head -c 200 "$REGISTRO")"; fi
+pasa "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · una variable que no entra en el tope pasa" "make -f mk/esconde.mk leer"
+if grep -q 'alcanzo a expandir' "$REGISTRO"; then ok "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · y dice que no la expandió"
+else no "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · sin anotar: $(head -c 200 "$REGISTRO")"; fi
 repetido=""; for i in $(seq 1 400); do repetido="$repetido bash scripts/grande.sh;"; done
 t0="$(node -e 'console.log(Date.now())')"; rc="$(corre "$repetido")"; ms=$(( $(node -e 'console.log(Date.now())') - t0 ))
-if [ "$rc" = 0 ] && [ "$ms" -lt 5000 ]; then ok "T-puerta-38 Freno_NombrarNoEsCorrer · repetir un guion no gasta el reloj"
-else no "T-puerta-38 Freno_NombrarNoEsCorrer · rc=$rc en $ms ms"; fi
+if [ "$rc" = 0 ] && [ "$ms" -lt 5000 ]; then ok "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · repetir un guion no gasta el reloj"
+else no "T-puerta-38 Freno_NombrarNoEsCorrer @story-8.254 @ac-21 @ac-33 · rc=$rc en $ms ms"; fi
 
 # ── T-puerta-39 · apretar la pantalla, y leerla sin apretar nada ─────────────────────────────────
 for accion in 'perform action "AXPress" of button 1 of window 1 of process "osascript"' 'key down return'; do
-  frena "T-puerta-39 Freno_PantallaSinPalabrasExactas · $accion" "osascript -e 'tell application \"$SE\" to $accion'" "pantalla"
+  frena "T-puerta-39 Freno_PantallaSinPalabrasExactas @story-8.254 @ac-33 · $accion" "osascript -e 'tell application \"$SE\" to $accion'" "pantalla"
 done
-frena "T-puerta-39 Freno_PantallaSinPalabrasExactas · por su identificador" "osascript -e 'tell application id \"com.apple.systemevents\" to keystroke return'" "pantalla"
-frena "T-puerta-39 Freno_PantallaSinPalabrasExactas · en dos -e" "osascript -e 'tell application \"$SE\"' -e 'keystroke return' -e 'end tell'" "pantalla"
-frena "T-puerta-39 Freno_PantallaSinPalabrasExactas · un archivo por tubería" "cat scripts/p.applescript | osascript" "pantalla"
-frena "T-puerta-39 Freno_PantallaSinPalabrasExactas · un archivo como argumento" "osascript scripts/p.applescript" "pantalla"
-pasa "T-puerta-39 Freno_PantallaSinPalabrasExactas · leer procesos y filtrar por «click» no aprieta nada" "osascript -e 'tell application \"$SE\" to get name of every process' | grep -i click"
+frena "T-puerta-39 Freno_PantallaSinPalabrasExactas @story-8.254 @ac-33 · por su identificador" "osascript -e 'tell application id \"com.apple.systemevents\" to keystroke return'" "pantalla"
+frena "T-puerta-39 Freno_PantallaSinPalabrasExactas @story-8.254 @ac-33 · en dos -e" "osascript -e 'tell application \"$SE\"' -e 'keystroke return' -e 'end tell'" "pantalla"
+frena "T-puerta-39 Freno_PantallaSinPalabrasExactas @story-8.254 @ac-33 · un archivo por tubería" "cat scripts/p.applescript | osascript" "pantalla"
+frena "T-puerta-39 Freno_PantallaSinPalabrasExactas @story-8.254 @ac-33 · un archivo como argumento" "osascript scripts/p.applescript" "pantalla"
+pasa "T-puerta-39 Freno_PantallaSinPalabrasExactas @story-8.254 @ac-33 · leer procesos y filtrar por «click» no aprieta nada" "osascript -e 'tell application \"$SE\" to get name of every process' | grep -i click"
 
 # ── T-puerta-33 · un renglón hecho para trabar la lectura no cuelga al freno ─────────────────────
 { head -1 "$JUG/scripts/consulta.sh"; node -e 'process.stdout.write("!|".repeat(2000) + "\n")'; tail -n +2 "$JUG/scripts/consulta.sh"; } > "$JUG/scripts/hostil.sh"
@@ -366,23 +372,42 @@ renglon(){ C="$1" D="$2" node -e 'console.log(JSON.stringify({type:"assistant",c
 medir(){ ( cd "$JUG" && env HOME="$CASA" node "$AQUI/scripts/production/measure-guard.js" 100 "$REPOS" ) > "$TMP/medida" 2>"$TMP/medida.err"; echo $?; }
 { renglon "echo uno" /no/existe; renglon "echo dos" /no/existe; } > "$TRANS/t.jsonl"
 rc="$(medir)"
-if [ "$rc" = 1 ] && grep -q '"medidos": 0' "$TMP/medida"; then ok "T-puerta-40 MedirFreno_SinMedirNoDaVerde · ningún comando medido: sale 1"
-else no "T-puerta-40 MedirFreno_SinMedirNoDaVerde · rc=$rc · $(head -c 200 "$TMP/medida" | tr '\n' ' ') · $(head -c 160 "$TMP/medida.err")"; fi
+if [ "$rc" = 1 ] && grep -q '"medidos": 0' "$TMP/medida"; then ok "T-puerta-40 MedirFreno_SinMedirNoDaVerde @story-8.254 @ac-34 · ningún comando medido: sale 1"
+else no "T-puerta-40 MedirFreno_SinMedirNoDaVerde @story-8.254 @ac-34 · rc=$rc · $(head -c 200 "$TMP/medida" | tr '\n' ' ') · $(head -c 160 "$TMP/medida.err")"; fi
 { renglon "echo uno" "$JUG"; renglon "echo dos" /no/existe; renglon "osascript -e 'tell application \"$SE\" to keystroke return'" "$JUG"; } > "$TRANS/t.jsonl"
 rc="$(medir)"
 if [ "$rc" = 0 ] && grep -q '"frenados_por_apretar_la_pantalla": 1' "$TMP/medida" && grep -q '"frenados_que_no_nombran_bases": 0' "$TMP/medida" && grep -q '"sin_carpeta": 1' "$TMP/medida"; then
-  ok "T-puerta-40 MedirFreno_SinMedirNoDaVerde · apretar la pantalla no cuenta como falso positivo, y lo no medido se muestra"
-else no "T-puerta-40 MedirFreno_SinMedirNoDaVerde · rc=$rc · $(tr -d '\n ' < "$TMP/medida" | head -c 300) · $(head -c 160 "$TMP/medida.err")"; fi
+  ok "T-puerta-40 MedirFreno_SinMedirNoDaVerde @story-8.254 @ac-34 · apretar la pantalla no cuenta como falso positivo, y lo no medido se muestra"
+else no "T-puerta-40 MedirFreno_SinMedirNoDaVerde @story-8.254 @ac-34 · rc=$rc · $(tr -d '\n ' < "$TMP/medida" | head -c 300) · $(head -c 160 "$TMP/medida.err")"; fi
 mkdir -p "$CASA/guiones"; cp "$JUG/scripts/leer.sh" "$CASA/guiones/leer.sh"
 renglon "bash ~/guiones/leer.sh" "$JUG" > "$TRANS/t.jsonl"
 rc="$(medir)"
-if grep -q '"frenados": 1' "$TMP/medida"; then ok "T-puerta-40 MedirFreno_SinMedirNoDaVerde · un guion en ~/ se busca en la carpeta real"
-else no "T-puerta-40 MedirFreno_SinMedirNoDaVerde · ~/: rc=$rc · $(tr -d '\n ' < "$TMP/medida" | head -c 300)"; fi
+if grep -q '"frenados": 1' "$TMP/medida"; then ok "T-puerta-40 MedirFreno_SinMedirNoDaVerde @story-8.254 @ac-34 · un guion en ~/ se busca en la carpeta real"
+else no "T-puerta-40 MedirFreno_SinMedirNoDaVerde @story-8.254 @ac-34 · ~/: rc=$rc · $(tr -d '\n ' < "$TMP/medida" | head -c 300)"; fi
 
 # ── T-puerta-30 · lo no declarado y las piezas del freno pasan ──────────────────────────────────
-pasa "T-puerta-30 Freno_NombresNoDeclaradosYPiezasDelFreno_Pasan · un llavero no declarado" "bash scripts/no-declarado.sh"
-pasa "T-puerta-30 Freno_NombresNoDeclaradosYPiezasDelFreno_Pasan · node scripts/hooks/prod-access-guard.js" "node $HOOK"
-pasa "T-puerta-30 Freno_NombresNoDeclaradosYPiezasDelFreno_Pasan · un programa compilado por ruta no es un guion" "/bin/ls -la"
+pasa "T-puerta-30 Freno_NombresNoDeclaradosYPiezasDelFreno_Pasan @story-8.254 @ac-26 · un llavero no declarado" "bash scripts/no-declarado.sh"
+pasa "T-puerta-30 Freno_NombresNoDeclaradosYPiezasDelFreno_Pasan @story-8.254 @ac-26 · node scripts/hooks/prod-access-guard.js" "node $HOOK"
+pasa "T-puerta-30 Freno_NombresNoDeclaradosYPiezasDelFreno_Pasan @story-8.254 @ac-26 · un programa compilado por ruta no es un guion" "/bin/ls -la"
+
+# ── T-puerta-indice · un guion que nombra sólo un host de producción, sin cliente de base ni otra señal, depende del
+#    índice guardado para ser candidato: con el índice ilegible se mira igual (todo guion es candidato), y sin índice
+#    pasa y queda anotado como «no-mirado», nunca en silencio ──
+printf '#!/usr/bin/env bash\ncurl -s https://%s/estado\n' "$OTRO_PROD" > "$JUG/scripts/solo-host.sh"
+corre "bash scripts/leer.sh" >/dev/null   # deja el índice armado
+INDICE="$(find "$CASA" -name production-index.json -print -quit)"
+if [ -z "$INDICE" ]; then no "T-puerta-indice no encontré el índice de servidores en la casa de prueba"
+else
+  frena "T-puerta-indice Freno_SoloHost_IndiceLegible · con el índice legible frena" "bash scripts/solo-host.sh" "$OTRO_PROD"
+  printf '{ esto no es json' > "$INDICE"
+  # al rearmarlo, la memoria de producción ya no cierra con su huella: frena por eso, y nunca deja pasar
+  frena "T-puerta-indice Freno_SoloHost_IndiceIlegible · con el índice ilegible se mira igual y frena" "bash scripts/solo-host.sh" "FRENO DE PRODUCCIÓN"
+  rm -f "$INDICE"; : > "$REGISTRO"
+  rc="$(corre "bash scripts/solo-host.sh")"
+  if grep -q '"tipo":"no-mirado"' "$REGISTRO" && grep -q 'índice' "$REGISTRO"; then
+    ok "T-puerta-indice Freno_SoloHost_SinIndice · sin índice queda anotado como «no-mirado» (rc=$rc)"
+  else no "T-puerta-indice Freno_SoloHost_SinIndice · sin índice no se anotó nada (rc=$rc): $(tr '\n' ' ' < "$REGISTRO" | head -c 300)"; fi
+fi
 
 echo "— prod-saved: $pasaron ok, $fallos fallos —"
 [ "$fallos" -eq 0 ]

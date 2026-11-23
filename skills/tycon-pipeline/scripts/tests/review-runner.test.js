@@ -90,7 +90,7 @@ test('T1 ReviewRunner_ElNucleoNoNombraCorredores @story-8.221 @ac-1 — ni el c�
     assert.deepStrictEqual(malas, [], `${path.basename(f)} nombra un corredor`);
   }
   // los manejadores nuevos de marker.js
-  const marker = fs.readFileSync(path.join(SCRIPTS, 'marker.js'), 'utf8');
+  const marker = require(path.join(SCRIPTS, 'tests', 'lib', 'marker-source.js'))(SCRIPTS);
   for (const fn of ['cmdPlanReview', 'cmdReviewAsk', 'cmdReviewAnswer', 'cmdOwnerAway']) {
     const i = marker.indexOf(`function ${fn}(`);
     assert.ok(i >= 0, `marker.js no tiene ${fn}`);
@@ -246,6 +246,40 @@ test('WorkflowLite_ElCorredorDePruebaNuncaApruebaNiMide — con TYCON_WFLITE_AGE
   const m = require('../lib/adversarial-verdict.js').medicionDelResultado(res);
   assert.strictEqual(m.medido, false);
   assert.match(m.motivo, /corredor de prueba/);
+});
+
+// Defecto 9 (20/11): la revisión automática del plan dejaba sólo el total de tokens, y no se podía saber cuánto costó.
+// Cada agente deja su consumo por tipo (entrada, salida, creación y lectura de caché), y el corredor lo suma por agente.
+test('T1 ReviewRunner_UsageByType_PerAgent — cada agente deja su consumo por tipo; dos intentos se suman', () => {
+  const integ = RR.loadIntegration({ env: {} });
+  const ok = RR.readAnswer(integ.runners.claude, { stdout: fs.readFileSync(path.join(FIX, 'claude-ok.json'), 'utf8'), stderr: '', code: 0 });
+  assert.deepStrictEqual(ok.usage, { input_tokens: 2, cache_creation_input_tokens: 31155, cache_read_input_tokens: 0, output_tokens: 74 });
+  assert.strictEqual(RR.readAnswer(integ.runners.codex, { stdout: '', stderr: '', code: 0, fileText: '{"eco":"x"}' }).usage, null, 'sin consumo medible, null');
+  const { anotarUso } = require('../workflow-lite.js');
+  const corredor = {};
+  anotarUso(corredor, { clave: 'plan-hunt:ac', fase: 'Hunt', nombre: 'claude', modelo: 'opus', usage: ok.usage });
+  anotarUso(corredor, { clave: 'plan-hunt:ac', fase: 'Hunt', nombre: 'claude', modelo: 'opus', usage: { input_tokens: 1, output_tokens: 6 } });
+  anotarUso(corredor, { clave: 'plan-verify:ac', fase: 'Verify', nombre: 'claude', modelo: 'opus', usage: null });
+  assert.deepStrictEqual(corredor.usoPorAgente, {
+    'plan-hunt:ac': { fase: 'Hunt', corredor: 'claude', modelo: 'opus', intentos: 2, input_tokens: 3, cache_creation_input_tokens: 31155, cache_read_input_tokens: 0, output_tokens: 80 },
+  });
+});
+
+// Pedido del 20/11: una revisión que se corta (la mataron, se colgó, se cayó la máquina) no dejaba su consumo, porque el
+// corredor lo escribía sólo al terminar. Con `usoFile`, cada intento lo deja escrito al momento, marcado sin terminar.
+test('T2 ReviewRunner_UsageWrittenAsItGoes_SurvivesACut — el consumo queda escrito después de cada intento, sin terminar', (t) => {
+  const { anotarUso, escribirUso } = require('../workflow-lite.js');
+  const dir = carpeta(t, 'wflite-uso-');
+  const usoFile = path.join(dir, 'ses-a.resultado.uso.json');
+  const corredor = { usoFile, pedido: 'pedido-1', tokensPorFase: {} };
+  anotarUso(corredor, { clave: 'plan-hunt:ac', fase: 'Hunt', nombre: 'claude', modelo: 'opus', usage: { input_tokens: 5, cache_read_input_tokens: 7, output_tokens: 3 } });
+  const j = JSON.parse(fs.readFileSync(usoFile, 'utf8'));
+  assert.strictEqual(j.pedido, 'pedido-1');
+  assert.strictEqual(j.completo, false, 'sin terminar: si se corta acá, el consumo de lo que ya corrió queda');
+  assert.deepStrictEqual(j.tokens.por_agente['plan-hunt:ac'], { fase: 'Hunt', corredor: 'claude', modelo: 'opus', intentos: 1, input_tokens: 5, cache_read_input_tokens: 7, output_tokens: 3 });
+  assert.strictEqual(j.tokens.total, 15);
+  escribirUso(corredor, true);
+  assert.strictEqual(JSON.parse(fs.readFileSync(usoFile, 'utf8')).completo, true);
 });
 
 test('T60 ReviewRunner_LeeLaRespuestaYElTopeDeCadaCorredor @story-8.221 @ac-2 @ac-4 @ac-5 — salidas reales: respuesta, tokens, error y tope; sin confinamiento no corre en el modo código', () => {

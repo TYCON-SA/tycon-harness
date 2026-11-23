@@ -25,9 +25,10 @@ const os = require('os');
 const path = require('path');
 const PD = require('./plugin-dirs.js');
 const RP = require('./read-permissions.js');
+const DP = require('./deny-permissions.js');
 
 const KINDS = ['hook', 'setting', 'block', 'import', 'startup-line', 'link', 'command', 'git-hook', 'launch-agent', 'codex', 'third-party', 'file'];
-const EVENTS = ['PreToolUse', 'PostToolUseFailure', 'PostToolUse', 'SessionStart', 'SessionEnd', 'Stop', 'SubagentStop', 'UserPromptSubmit', 'Notification', 'PreCompact', 'PermissionRequest'];
+const EVENTS = ['PreToolUse', 'PostToolUseFailure', 'PostToolUse', 'SessionStart', 'SessionEnd', 'Stop', 'StopFailure', 'SubagentStop', 'UserPromptSubmit', 'Notification', 'PreCompact', 'PermissionRequest'];
 const BLOCK_RE = /<!--\s*TYCON_BLOCK:([^\s>]+)\s+START/g;
 
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
@@ -197,6 +198,8 @@ function present(piece, { home = os.homedir(), env = process.env, isStartupLine 
       const s = json(piece.where);
       // una regla de lectura del arnés es un elemento de permissions.allow, que también tiene las del dev
       if (RP.isRuleId(piece.id)) return Boolean(s) && RP.hasRule(s, RP.ruleOf(piece.id));
+      // una regla deny del arnés, lo mismo en permissions.deny
+      if (DP.isRuleId(piece.id)) return Boolean(s) && DP.hasRule(s, DP.ruleOf(piece.id));
       const v = s ? getPath(s, piece.id) : undefined;
       if (v === undefined) return false;
       // la carpeta de los mods es un elemento de una lista que también tiene las carpetas del dev

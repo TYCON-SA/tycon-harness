@@ -507,6 +507,14 @@ de la corrida, no que el número sea una medición honesta. `duration_ms` sí lo
   `snake_case` (ej: `test_post_pedidos_sin_clave_da_401`)
 - **Columna `AC` (OBLIGATORIA)**: lista de números de AC que cubre el test (ej: `1` o `1,3`). Todo AC debe aparecer en al menos una fila (regla GOLD #2, verificada mecánicamente por ACCOV-C5)
 - **Columna `Nivel` (OBLIGATORIA)**: `unit` | `integration` | `e2e`
+- **Columna `Archivos` (OPCIONAL)**: los archivos declarados (`files_to_modify` / `files_to_create`, escritos igual) que
+  ejercita la prueba, separados por comas. Sirve para que un cambio chico no obligue a repetir todos los humos: cuando
+  cambia un archivo de código, la matriz vence sólo la evidencia de los criterios cuyas pruebas lo ejercitan, y la de
+  los demás sigue contando (lo dice como aviso). Por qué la escribe la historia y no quien corre el humo: queda fija
+  antes de programar, la mira el validador, y no la elige el mismo agente que se ahorra repetir la prueba. Un criterio
+  con alguna prueba sin esta celda, o sin ninguna prueba, vence como siempre (todo cambio lo vence). Un nombre que la
+  historia no declara se avisa y su criterio vence como siempre: un error de tipeo no deja una evidencia sin vencer.
+  Ejemplo: `| E3 | \`MapaMuestraLosPuntos\` | 2 | e2e | … | … | \`web/MapaDelEditor.tsx\`, \`web/puntos.ts\` |`
 - El escenario describe las condiciones de entrada
 - El resultado esperado es concreto (codigo HTTP, evento emitido, estado final)
 - Cubren: happy path, errores, edge cases, idempotencia, no-regresion
