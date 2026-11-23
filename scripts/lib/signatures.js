@@ -31,6 +31,9 @@
  *                 u otro si es un escape que hace lo mismo que otra firma.
  *   level         el mayor nivel de lo que cubre.
  *   profiles      a quién se le pide: 'dev' (el dev de producto) y 'mant' (quien mantiene el arnés).
+ *   retired       sólo en un escape que ya no apaga nada (RETIRADAS): el comando de la salida que queda en su lugar, la
+ *                 emergencia. Sigue en el catálogo con su id y su comando para que un perfil que lo nombra se lea
+ *                 igual; la guía lo muestra como retirado.
  *
  * LEVELS es la tabla de niveles del esquema de firmas, un nivel por id: 1 rutina, 2 excepción (da por bueno
  * algo sin verificarlo y deja deuda), 3 irreversible o afloja un freno. La coordinadora firma por delegación la rutina
@@ -57,7 +60,7 @@ const LOST_RUN_PARTICION = 'lost-run:particion';
 
 // qué aprueba cada id de la tabla, en inglés: la pantalla del sitio lo muestra en ese idioma
 const LEVELS_EN = Object.freeze({
-  'plan-approval': 'approve the plan (level 2 if the story is sensitive: risk-class works it out, and the coordinator approves it only if the profile delegates plan-approval:delicada and her automatic review came back approved; level 1 is also approved by the approved verdict of the automatic review, with or without a coordinator, unless plan_review.routine_approval is person)',
+  'plan-approval': 'approve the plan (level 2 if the story is sensitive: risk-class works it out, and then the plan and its mockup are approved only by the owner, with a click or an «approved», even if the profile names plan-approval:delicada; level 1 is also approved by the approved verdict of the automatic review, with or without a coordinator, unless plan_review.routine_approval is person)',
   'extra-round': 'one more round of reviewers',
   'pending-approval': 'open a new item in the pending list',
   'save': 'save: commit, push and pull requests, if no commit touches anything sensitive',
@@ -91,8 +94,8 @@ const LEVELS_EN = Object.freeze({
   'designation-set': "name a session as this machine's coordinator, with a click in its tab",
   'designation-withdraw': "withdraw this machine's coordinator, with a click in its tab",
   'control-change': 'any change to a control',
-  'escape:TYCON_SAFETY_OFF': 'turn off the safety guard for one command',
-  'escape:TYCON_PROD_LINT': 'turn off the production query control',
+  'escape:TYCON_SAFETY_OFF': 'turn off the safety guard for one command (retired: it no longer turns anything off)',
+  'escape:TYCON_PROD_LINT': 'turn off the production query control (retired: it no longer turns anything off)',
   'escape:TYCON_NEW_NAMES': 'turn off the names check on what is published',
   emergency: 'the emergency exit: let one command that a brake stops go through, with a reason and for that command only',
   'escape:merge-bypass': "merge skipping main's queue and CI, or loosen the branch policies: one command, never delegated",
@@ -101,7 +104,7 @@ const LEVELS_EN = Object.freeze({
 
 // id, nivel, perfiles, qué aprueba
 const LEVELS = Object.freeze([
-  ['plan-approval', 1, AMBOS, 'aprobar el plan (nivel 2 si la historia es delicada: lo calcula risk-class, y la coordinadora lo aprueba sólo si el perfil delega plan-approval:delicada y su revisión automática dio aprobado; el nivel 1 lo aprueba también el veredicto aprobado de la revisión automática, con o sin coordinadora, salvo con plan_review.routine_approval: person)'],
+  ['plan-approval', 1, AMBOS, 'aprobar el plan (nivel 2 si la historia es delicada: lo calcula risk-class, y entonces el plan y su maqueta los aprueba sólo el dueño, con su click o su «aprobado», aunque el perfil nombre plan-approval:delicada; el nivel 1 lo aprueba también el veredicto aprobado de la revisión automática, con o sin coordinadora, salvo con plan_review.routine_approval: person)'],
   ['extra-round', 1, AMBOS, 'una vuelta más de revisores'],
   ['pending-approval', 1, AMBOS, 'abrir un pendiente nuevo en la lista'],
   ['save', 1, AMBOS, 'guardar: commit, push y pull requests, si ningún commit toca algo de lo sensible'],
@@ -135,8 +138,8 @@ const LEVELS = Object.freeze([
   ['designation-set', 2, AMBOS, 'nombrar a una sesión coordinadora de esta máquina, con un click en su pestaña'],
   ['designation-withdraw', 2, AMBOS, 'retirar a la coordinadora de esta máquina, con un click en su pestaña'],
   ['control-change', 3, MANT, 'cualquier cambio de control'],
-  ['escape:TYCON_SAFETY_OFF', 3, AMBOS, 'apagar el freno de seguridad para un comando'],
-  ['escape:TYCON_PROD_LINT', 3, AMBOS, 'apagar el control de consultas a producción'],
+  ['escape:TYCON_SAFETY_OFF', 3, AMBOS, 'apagar el freno de seguridad para un comando (retirada: ya no apaga nada)'],
+  ['escape:TYCON_PROD_LINT', 3, AMBOS, 'apagar el control de consultas a producción (retirada: ya no apaga nada)'],
   ['escape:TYCON_NEW_NAMES', 3, MANT, 'apagar el control de nombres en lo que se publica'],
   ['emergency', 3, AMBOS, 'la salida de emergencia: dejar pasar un comando que un freno para, con motivo y para ese comando solo'],
   ['escape:merge-bypass', 3, AMBOS, 'mergear salteando la cola y la CI de main, o aflojar las políticas de la rama: un comando, nunca por delegación'],
@@ -167,9 +170,16 @@ const DELEGABLE_EXCEPTIONS = Object.freeze(['runtime-waiver', 'manual-test', 'es
   'lost-run', 'escape:cerrar-la-ejecucion', 'escape:cerrar-como-deuda', 'escape:rojo-esperado-de-la-matriz',
   'escape:TYCON_STATUS_GATE', 'escape:cambiar-el-estado', 'escape:set-autonomous',
   'adhoc-lane:guardado-ajeno', 'critical-waiver', 'escape:force-manual', 'escape:red-control-test-edit']);
-// las dos formas de nivel 2 de una firma de rutina, que el perfil delega con su propio nombre (no son firmas de
-// SIGNATURES: se piden con la firma de la derecha, y su guion mira si el perfil nombra la forma): el plan de una historia
-// delicada, sólo con el «aprobado» de la revisión automática que lanzó la coordinadora, y el guardado que toca algo sensible
+// las firmas sólo del dueño que la coordinadora pide para otra sesión sin delegarlas: le llegan al dueño en la pestaña de
+// ella (la ventana o el cuadro), así no tiene que entrar a la sesión que espera. Siguen siendo sólo suyas: el freno no
+// las pasa por la delegación (owner-window.js)
+const PARA_OTRA_SESION_SIN_DELEGAR = Object.freeze(['escape:dod_runtime_exempt', 'escape:story-skill-bypass', 'autonomy-resume', 'adhoc-lane:datos']);
+const otraSinDelegar = (id) => (PARA_OTRA_SESION_SIN_DELEGAR.includes(id) ? 'yes' : 'no');
+// las dos formas de nivel 2 de una firma de rutina, que el perfil nombra con su propio nombre (no son firmas de
+// SIGNATURES: se piden con la firma de la derecha, y su guion mira si el perfil nombra la forma): el guardado que toca
+// algo sensible, que la coordinadora firma si el perfil lo delega, y el plan de una historia delicada, que el perfil
+// puede nombrar sin que eso delegue nada: ese plan y su maqueta los aprueba sólo el dueño, con su click o su «aprobado»
+// (lib/plan-review.js antesDeAprobar). La forma sigue en la lista para que un perfil que la nombra siga siendo válido
 const PLAN_DELICADO = 'plan-approval:delicada';
 const SAVE_SENSIBLE = 'save:sensible';
 const DELEGABLE_FORMS = Object.freeze({ [PLAN_DELICADO]: 'plan-approval', [SAVE_SENSIBLE]: 'save' });
@@ -177,9 +187,17 @@ const DELEGABLE_FORMS = Object.freeze({ [PLAN_DELICADO]: 'plan-approval', [SAVE_
 const levelOf = (id) => LEVELS.find((l) => l.id === id);
 const coversOf = (id) => COVERS[id] || [id];
 
+// los escapes que ya no apagan nada: el freno anota la variable y la deja sin efecto. Siguen en el catálogo, con su id y
+// su comando, para que un perfil del equipo que los nombra en `approvals.owner_only` se siga leyendo entero; cada uno
+// dice la salida que queda en su lugar, la emergencia que la persona firma en su terminal
+const RETIRADAS = Object.freeze({
+  'escape:TYCON_SAFETY_OFF': 'harness.js sign emergency --reason "<por qué>" --request <número>',
+  'escape:TYCON_PROD_LINT': 'harness.js sign emergency --reason "<por qué>" --commit',
+});
+
 const POR_VARIABLE = [
-  ['TYCON_SAFETY_OFF', '1', 'apagar el freno de seguridad para un comando'],
-  ['TYCON_PROD_LINT', '0', 'apagar el control de consultas a producción para un comando'],
+  ['TYCON_SAFETY_OFF', '1', 'apagar el freno de seguridad para un comando (retirada: ya no apaga nada)'],
+  ['TYCON_PROD_LINT', '0', 'apagar el control de consultas a producción para un comando (retirada: ya no apaga nada)'],
   ['TYCON_NEW_NAMES', '0', 'apagar el control de nombres nuevos en lo que se publica'],
   ['TYCON_TEST_GATE', '1', 'saltear el portón de pruebas del commit'],
   ['DOD_BYPASS', '1', 'saltear los controles del commit (queda anotado)'],
@@ -210,8 +228,8 @@ const CON_NOMBRE = [
 // qué pasa si sale mal: lo dice el cuadro de opciones que arma el guion de la firma (owner-window.js `cuadroPara`). Cada
 // firma trae el suyo, escapes incluidos: un mismo texto para todas no le dice a la persona qué arriesga con ésta
 const SI_SALE_MAL = Object.freeze({
-  'escape:TYCON_SAFETY_OFF': 'un comando que el freno de seguridad para, como un borrado grande o un push forzado, corre sin freno',
-  'escape:TYCON_PROD_LINT': 'una consulta a producción corre sin que nadie mire si escribe o borra datos',
+  'escape:TYCON_SAFETY_OFF': 'nada: está retirada y ya no apaga el freno de seguridad; la salida es la emergencia, que la persona firma en su terminal',
+  'escape:TYCON_PROD_LINT': 'nada: está retirada y ya no apaga la revisión de producción; la salida es la emergencia del commit, que la persona firma en su terminal',
   'escape:TYCON_NEW_NAMES': 'un nombre viejo o interno sale en lo que se publica',
   'escape:TYCON_TEST_GATE': 'el commit entra sin correr las pruebas, y una prueba rota llega al pedido',
   'escape:DOD_BYPASS': 'el commit entra sin ningún control de cierre, y un criterio sin probar puede llegar a main; queda anotado',
@@ -282,8 +300,8 @@ const APPROVES_EN = {
   'adhoc-lane:guardado-ajeno': 'let a save that is not part of a quick fix waiting for its reviewers go through once, with what it saves in view',
   'autonomy-resume': 'put a run the closing control stopped back into autonomous mode, with the rounds reset',
   save: 'save the story: commit, push and the pull requests',
-  'escape:TYCON_SAFETY_OFF': 'turn off the safety guard for one command',
-  'escape:TYCON_PROD_LINT': 'turn off the production query control for one command',
+  'escape:TYCON_SAFETY_OFF': 'turn off the safety guard for one command (retired: it no longer turns anything off)',
+  'escape:TYCON_PROD_LINT': 'turn off the production query control for one command (retired: it no longer turns anything off)',
   'escape:TYCON_NEW_NAMES': 'turn off the new names control on what is published',
   'escape:TYCON_TEST_GATE': "skip the commit's test gate",
   'escape:DOD_BYPASS': "skip the commit's controls (it is logged)",
@@ -340,9 +358,9 @@ const SIGNATURES = Object.freeze([
     // como el freno de los datos: sólo el click del dueño, en la pestaña que trabaja o en la de la coordinadora vigente, o su
     // terminal; nunca la delegación, un «aprobado» escrito ni la ventana de permiso
     clickDelDueno: true, descripciones: Object.freeze(['La sesión sigue con el arreglo. Pasa el tope de archivos del camino corto: lo elegís vos, en lugar de una historia.', 'No se abre el arreglo, y el trabajo va por una historia.']) },
-  // dejar pasar el freno de los datos: sólo el click del dueño, en la pestaña que trabaja o en la de la coordinadora vigente;
-  // nunca un «aprobado» escrito, la delegación ni la ventana de permiso
-  { id: 'adhoc-lane:datos', approves: 'dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia', command: 'marker.js adhoc allow-data-change --changed <qué cambió> --recommends pasar --why <por qué>', otherSession: 'no',
+  // dejar pasar el freno de los datos: sólo el click del dueño, en la pestaña que trabaja o en la de la coordinadora vigente
+  // (que lo pide para esa sesión con --for-session); nunca un «aprobado» escrito, la delegación ni la ventana de permiso
+  { id: 'adhoc-lane:datos', approves: 'dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia', command: 'marker.js adhoc allow-data-change --changed <qué cambió> --recommends pasar --why <por qué>', otherSession: otraSinDelegar('adhoc-lane:datos'),
     terminal: 'marker.js adhoc allow-data-change --changed <qué cambió> --recommends pasar --why <por qué> --terminal --for-session <id>',
     clickDelDueno: true, descripciones: Object.freeze(['Dejar pasar: sigue por camino corto, con este cambio de datos o de permisos.', 'No pasa: la sesión escribe la historia; o descarta lo del carril, si lo decís por la coordinadora.']) },
   // dejar pasar una vez un guardado ajeno al carril que espera sus revisores: el click de una persona, en la pestaña que
@@ -352,9 +370,9 @@ const SIGNATURES = Object.freeze([
     terminal: 'marker.js adhoc allow-foreign-save --terminal --for-session <id>',
     clickDelDueno: true, descripciones: Object.freeze(['Pasa una vez: este comando, tal como se ve, sin esperar los revisores del carril.', 'No pasa: la sesión espera los revisores y el pase del carril.']) },
   // volver al modo autónomo una ejecución que el control de cierre detuvo: sólo el click del dueño, en la pestaña que
-  // trabaja o en la de la coordinadora, o su terminal (que deja un permiso que la sesión detenida consume); nunca la
-  // delegación, «hecho y avisado» ni un «aprobado» escrito. La decisión la toma siempre la sesión detenida
-  { id: 'autonomy-resume', approves: 'volver al modo autónomo una ejecución que el control de cierre detuvo, con las vueltas en cero', command: 'marker.js resume-autonomy', otherSession: 'no',
+  // trabaja o en la de la coordinadora (que la pide para esa sesión con --for-session), o su terminal (que deja un permiso
+  // que la sesión detenida consume); nunca la delegación, «hecho y avisado» ni un «aprobado» escrito
+  { id: 'autonomy-resume', approves: 'volver al modo autónomo una ejecución que el control de cierre detuvo, con las vueltas en cero', command: 'marker.js resume-autonomy', otherSession: otraSinDelegar('autonomy-resume'),
     terminal: 'marker.js resume-autonomy --terminal --for-session <id>',
     clickDelDueno: true, descripciones: Object.freeze(['La sesión vuelve a correr los controles y sigue arreglando sola, con vueltas nuevas', 'La sesión queda detenida hasta que entres a ella']) },
   { id: 'save', approves: 'guardar la story: commit, push y los pull requests', command: 'marker.js approve-save [--for-session <D>]', otherSession: 'yes', terminal: 'marker.js approve-save --terminal --for-session <D>' },
@@ -370,7 +388,7 @@ const SIGNATURES = Object.freeze([
   ...CON_NOMBRE.map(([nombre, approves, command]) => {
     // la terminal de la persona no tiene la sesión en el ambiente: sin --for-session la constancia no la usaría nadie
     // la coordinadora la pide para otra sesión sólo si es de las que el perfil puede delegar
-    if (command === 'file') return { id: `escape:${nombre}`, approves, command: sobreArchivo(nombre), otherSession: DELEGABLE_EXCEPTIONS.includes(`escape:${nombre}`) ? 'yes' : 'no', terminal: `${sobreArchivo(nombre)} --terminal --for-session <sesión del agente>` };
+    if (command === 'file') return { id: `escape:${nombre}`, approves, command: sobreArchivo(nombre), otherSession: DELEGABLE_EXCEPTIONS.includes(`escape:${nombre}`) ? 'yes' : otraSinDelegar(`escape:${nombre}`), terminal: `${sobreArchivo(nombre)} --terminal --for-session <sesión del agente>` };
     if (POR_GUION.includes(nombre)) return { id: `escape:${nombre}`, approves, command, otherSession: 'yes', terminal: `${command.replace(' [--for-session <D>]', '')} --terminal` };
     if (POR_SU_PASO.includes(nombre)) return { id: `escape:${nombre}`, approves, command, otherSession: 'no', terminal: `${command} --terminal --for-session <sesión>` };
     return { id: `escape:${nombre}`, approves, command, otherSession: 'no', terminal: 'el mismo comando' };
@@ -379,6 +397,7 @@ const SIGNATURES = Object.freeze([
   const covers = coversOf(s.id).map(levelOf);
   return Object.freeze({
     ...s, approvesEn: APPROVES_EN[s.id] || null, kind: kindDe(s.id), ifWrong: SI_SALE_MAL[s.id],
+    ...(RETIRADAS[s.id] ? { retired: RETIRADAS[s.id] } : {}),
     covers: Object.freeze(covers.map((l) => l.id)),
     level: Math.max(...covers.map((l) => l.level)),
     profiles: Object.freeze(AMBOS.filter((p) => covers.some((l) => l.profiles.includes(p)))),
@@ -414,6 +433,9 @@ const SENSITIVE = Object.freeze([
   'skills/tycon-pipeline/scripts/lib/story-gate.js', 'skills/tycon-pipeline/scripts/lib/story-gate-io.js',
   // lo que decide si la story está limpia: el pase, los hallazgos, las exenciones y el portón de pruebas
   'skills/tycon-pipeline/scripts/marker.js', 'skills/tycon-pipeline/scripts/pipeline.js',
+  // lo que sale de esos dos y del freno de guiones al partirlos sigue siendo sensible: lo que carga un sensible, lo es
+  'skills/tycon-pipeline/scripts/lib/marker-*.js', 'skills/tycon-pipeline/scripts/lib/pipeline-*.js',
+  'skills/tycon-pipeline/scripts/lib/bash-gate-*.js',
   'skills/tycon-pipeline/scripts/lib/adversarial-verdict.js', 'skills/tycon-pipeline/scripts/lib/critical-waivers.js',
   'skills/tycon-pipeline/scripts/lib/runtime-waiver.js', 'skills/tycon-pipeline/scripts/test-gate.sh',
   'skills/tycon-pipeline/scripts/lib/test-gate-*.js', 'skills/tycon-pipeline/scripts/lib/test-scope.js',
@@ -533,4 +555,4 @@ function delegable(id, raised) {
 // Lo que no tiene vuelta atrás: sólo se firma en la terminal de la persona, nunca con un click ni con un «aprobado»
 const ONLY_IN_TERMINAL = Object.freeze(['escape:TYCON_SAFETY_OFF', 'escape:TYCON_PROD_LINT', 'emergency']);
 
-module.exports = { TOPE, SOBRE_CUPO, LOST_RUN_PARTICION, firmaDelPedidoAdhoc, SIGNATURES, LEVELS, GROUPS, FIRMAS_DE_ARCHIVO, SENSITIVE, REQUIERE_SENSIBLE, NOT_DELEGATED, DELEGABLE_EXCEPTIONS, DELEGABLE_FORMS, PLAN_DELICADO, SAVE_SENSIBLE, ONLY_IN_TERMINAL, ids, groupNames, formNames, isId, isForm, expand, effectiveLevel, delegatedLevel, delegable };
+module.exports = { TOPE, SOBRE_CUPO, LOST_RUN_PARTICION, firmaDelPedidoAdhoc, SIGNATURES, LEVELS, GROUPS, FIRMAS_DE_ARCHIVO, SENSITIVE, REQUIERE_SENSIBLE, NOT_DELEGATED, DELEGABLE_EXCEPTIONS, PARA_OTRA_SESION_SIN_DELEGAR, DELEGABLE_FORMS, PLAN_DELICADO, SAVE_SENSIBLE, ONLY_IN_TERMINAL, ids, groupNames, formNames, isId, isForm, expand, effectiveLevel, delegatedLevel, delegable };

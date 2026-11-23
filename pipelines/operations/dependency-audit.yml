@@ -177,11 +177,21 @@ jobs:
           ORG="$(System.CollectionUri)"
           FALLIDOS=""
           # Las rutas y los repos salen de repos.json: agregar un repo es una entrada en ese archivo, no una línea acá.
-          while IFS=$'\t' read -r RUTA ADO; do
+          # La tercera columna dice de dónde se clona: un repo de GitHub (el arnés, con su librería copiada) se clona
+          # de GitHub, público y sin credenciales; el token de esta corrida es de Azure y no viaja a otro servidor.
+          while IFS=$'\t' read -r RUTA ADO PLATAFORMA; do
             [ -z "$RUTA" ] && continue
-            PROJ="${ADO%%/*}"; RNAME="${ADO##*/}"
             DEST="$CLONES/$RUTA"
             mkdir -p "$(dirname "$DEST")"
+            if [ "$PLATAFORMA" = "github" ]; then
+              if ! ERR=$(GIT_TERMINAL_PROMPT=0 git -c credential.helper= clone --quiet --depth=1 --branch main \
+                   "https://github.com/${ADO}.git" "$DEST" 2>&1); then
+                echo "##vso[task.logissue type=warning]No se pudo clonar $ADO de GitHub: $ERR"
+                FALLIDOS="$FALLIDOS $ADO"
+              fi
+              continue
+            fi
+            PROJ="${ADO%%/*}"; RNAME="${ADO##*/}"
             if ! ERR=$(git -c http.extraheader="AUTHORIZATION: bearer $SYSTEM_ACCESSTOKEN" \
                  clone --quiet --depth=1 --branch "$(RAMA_ANALIZADA)" \
                  "${ORG}${PROJ}/_git/${RNAME}" "$DEST" 2>&1); then
@@ -189,7 +199,7 @@ jobs:
               echo "##vso[task.logissue type=warning]No se pudo clonar $PROJ/$RNAME: $ERR"
               FALLIDOS="$FALLIDOS $ADO"
             fi
-          done < <(node scripts/nightly/dependencies/nightly-dependencies.js clone-list)
+          done < <(node scripts/nightly/dependencies/nightly-dependencies.js clone-list --with-platform)
           echo "clonados: $(cd "$CLONES" && find . -maxdepth 3 -name .git | wc -l)"
           [ -z "$FALLIDOS" ] || echo "##vso[task.logissue type=warning]Repos NO clonados:$FALLIDOS — van a figurar como NO MEDIDO, que no es lo mismo que limpio"
         displayName: 'Clonar los repos declarados'

@@ -21,7 +21,9 @@ const LIB = path.resolve(__dirname, '..', 'lib', 'inherited-reds.js');
 const CI = path.resolve(__dirname, '..', '..', '..', '..', 'scripts', 'ci');
 const tmp = (p) => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), p)));
 
-const git = (d, ...a) => spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', d, ...a], { encoding: 'utf8' });
+// sin las variables de un gancho: con su GIT_DIR, `-C` no decide el repo y un `init --bare` deja pelado al de verdad
+const ENV_GIT = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).sinGitDelPadre();
+const git = (d, ...a) => spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', d, ...a], { encoding: 'utf8', env: ENV_GIT });
 const FOTO = path.join('scripts', 'controls-bench', 'ultimo-suites.json');
 const HORA = 3600 * 1000;
 
@@ -280,7 +282,8 @@ test('Heredado_MedidoEnMainEnElMomento @story-8.230 @ac-14 — la base que no se
   const f = resumen(raiz, ['tests/a.test.sh']);
   const r = enLaBase(raiz, f);
   assert.equal(r.status, 1, r.stderr);
-  assert.match(veredicto(leer(f), 'tests/a.test.sh').motivo, /no se pudo armar la base/);
+  // 🔴 mutación: el motivo sin la línea de git (`r && (r.stderr || r.stdout)` sin el stderr) → «()» vacío
+  assert.match(veredicto(leer(f), 'tests/a.test.sh').motivo, /no se pudo armar la base \(\S[^)]*\)/);
   // la lista de suites de la base rota: no es «la suite no está en la base»
   const remoto = tmp('herencia-remoto-');
   git(remoto, 'init', '-q', '--bare', '-b', 'main');
@@ -328,6 +331,38 @@ test('Heredado_MedidoEnMainEnElMomento @story-8.230 @ac-14 — un tope que no es
   const r = enLaBase(raiz, f, { TYCON_INHERITED_BASE_MAX: 'off' });
   assert.match(r.stderr, /TYCON_INHERITED_BASE_MAX=off no es un entero ≥ 0: uso 3/);
   assert.equal(veredicto(leer(f), 'tests/a.test.sh').verdict, 'heredada', 'con el de por defecto sí mide');
+});
+
+test('Heredado_MedidoEnMainEnElMomento @story-8.230 @ac-14 — un tope negativo tampoco es un entero ≥ 0: usa el de por defecto y lo dice', () => {
+  // 🔴 mutación: aceptar cualquier entero (`n >= 0` → `true`) → con -1 no mide nada y no lo dice.
+  const raiz = conBase();
+  const f = resumen(raiz, ['tests/a.test.sh']);
+  const r = enLaBase(raiz, f, { TYCON_INHERITED_BASE_MAX: '-1' });
+  assert.match(r.stderr, /TYCON_INHERITED_BASE_MAX=-1 no es un entero ≥ 0: uso 3/);
+  assert.equal(veredicto(leer(f), 'tests/a.test.sh').verdict, 'heredada', 'con el de por defecto sí mide');
+});
+
+test('Heredado_MedidoEnMainEnElMomento @story-8.230 @ac-14 — una falla vacía o sin su entrada queda «no medido», sin romper la medición', () => {
+  // 🔴 mutación: leer la entrada sin mirar si la falla existe (`f && f.entrada` → `f.entrada`) → se cae con una nula.
+  const raiz = conBase();
+  const f = resumen(raiz, ['tests/a.test.sh']);
+  const j = leer(f);
+  j.fallas.push(null, { ruta: path.join(raiz, 'scripts', 'tests', 'x.test.sh'), exit: 1 }, { ruta: path.join(raiz, 'scripts', 'tests', 'y.test.sh'), exit: 1, entrada: null });
+  fs.writeFileSync(f, JSON.stringify(j));
+  const r = enLaBase(raiz, f);
+  assert.doesNotMatch(r.stderr, /TypeError/, r.stderr);
+  const k = leer(f);
+  assert.equal(veredicto(k, 'tests/a.test.sh').verdict, 'heredada', r.stderr);
+  for (const ruta of ['null', path.join(raiz, 'scripts', 'tests', 'x.test.sh'), path.join(raiz, 'scripts', 'tests', 'y.test.sh')]) {
+    assert.deepEqual([veredicto(k, ruta).verdict, veredicto(k, ruta).motivo], ['no-medido', 'no medido: la falla no trae su entrada de suites.json'], ruta);
+  }
+  // sin base que medir, todas «no medido» con su ruta, también la nula
+  const suelta = tmp('herencia-suelta-');
+  const g = resumen(suelta, []);
+  fs.writeFileSync(g, JSON.stringify({ ...leer(g), fallas: [null, { ruta: 'z.test.sh', exit: 1 }] }));
+  const s = enLaBase(suelta, g);
+  assert.doesNotMatch(s.stderr, /TypeError/, s.stderr);
+  assert.deepEqual(leer(g).base_check.suites.map((x) => [x.ruta, x.raiz, x.verdict]), [['null', null, 'no-medido'], ['z.test.sh', null, 'no-medido']]);
 });
 
 test('Heredado_MedidoEnMainEnElMomento @story-8.230 @ac-14 — apagado con TYCON_INHERITED_BASE_MAX=0: el resumen queda como hoy', () => {

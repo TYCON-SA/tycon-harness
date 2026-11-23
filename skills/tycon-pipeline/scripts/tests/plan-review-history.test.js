@@ -62,3 +62,54 @@ test('T2 PlanReview_EachReviewKept_WithUsageByAgent — dos revisiones dejan dos
   assert.strictEqual(PR.guardarResultado(dir, LANZA, DESTINO), c2.resultado_guardado);
   assert.strictEqual(PR.resultadosGuardados(dir, LANZA, DESTINO).length, 2);
 });
+
+// Pedido del 20/11: una revisión cortada no dejaba lo que gastó. El corredor deja su consumo al momento (`rutaUso`), y la
+// constancia lo toma de ahí cuando el resultado no lo trae, marcado como cortada; el de otra revisión no se toma.
+function revisionCortada(dir, numero, pedidoDelUso) {
+  const carpeta = path.join(dir, PR.CARPETA, LANZA);
+  fs.mkdirSync(carpeta, { recursive: true });
+  const planFile = path.join(dir, 'plan.md');
+  fs.writeFileSync(planFile, PLAN);
+  fs.writeFileSync(path.join(carpeta, `${DESTINO}.pending.json`), JSON.stringify({ numero, lanzo: LANZA, destino: DESTINO, informativa: false,
+    corte: 'all', corrida: { storyId: '9.91' }, storyId: '9.91', planFile, storyFile: null, huellas: { plan: PR.sha(PLAN) }, delicate: { value: false } }));
+  const tokens = { total: 40, por_fase: { Hunt: 40 }, por_agente: { 'plan-hunt:ac': { fase: 'Hunt', corredor: 'claude', modelo: 'opus', intentos: 1, input_tokens: 30, output_tokens: 10 } } };
+  fs.writeFileSync(PR.rutaUso(dir, LANZA, DESTINO), JSON.stringify({ pedido: pedidoDelUso, completo: false, tokens }));
+  return tokens;
+}
+
+test('T3 PlanReview_CutReview_KeepsItsUsage — sin resultado, la constancia guarda lo gastado hasta el corte', (t) => {
+  const dir = estado(t);
+  const tokens = revisionCortada(dir, 'pedido-1', 'pedido-1');
+  const c = PR.anotar({ lanza: LANZA, destino: DESTINO, estado: dir, resultado: null, sinHerramienta: 'se cortó', modelo: 'opus' });
+  assert.strictEqual(c.veredicto, 'sin-veredicto');
+  assert.deepStrictEqual(c.uso, { ...tokens, cortada: true });
+  assert.ok(c.uso_guardado && fs.existsSync(c.uso_guardado), 'el consumo queda guardado con fecha');
+});
+
+// Pase adversarial (21/11): la ruta fija conserva el resultado de la revisión anterior, y `--result <ruta fija>` se lo pasa
+// a anotar. Su consumo no es el de ésta: vale el de la cortada.
+test('T6 PlanReview_CutAfterAnotherReview_TakesItsOwnUsage — con el resultado viejo en la ruta fija, vale el consumo de la cortada', (t) => {
+  const dir = estado(t);
+  const viejo = { pedido: 'pedido-1', confirmed: [], medido: true, corredor: { nombre: 'workflow-lite', tokens: { total: 999, por_fase: { Hunt: 999 }, por_agente: {} } } };
+  const tokens = revisionCortada(dir, 'pedido-2', 'pedido-2');
+  const c = PR.anotar({ lanza: LANZA, destino: DESTINO, estado: dir, resultado: viejo, modelo: 'opus' });
+  assert.strictEqual(c.veredicto, 'sin-veredicto');
+  assert.deepStrictEqual(c.uso, { ...tokens, cortada: true });
+});
+
+test('T4 PlanReview_UsageOfAnotherReview_NotTaken — el consumo de otra revisión no se le cuenta a ésta', (t) => {
+  const dir = estado(t);
+  revisionCortada(dir, 'pedido-2', 'pedido-1');
+  const c = PR.anotar({ lanza: LANZA, destino: DESTINO, estado: dir, resultado: null, sinHerramienta: 'se cortó', modelo: 'opus' });
+  assert.strictEqual(c.uso, null);
+});
+
+test('T5 PlanReview_CutUsage_KeptWithDate — el consumo se guarda con fecha, una vez, y no cuenta como resultado', (t) => {
+  const dir = estado(t);
+  revisionCortada(dir, 'pedido-1', 'pedido-1');
+  const g = PR.guardarUso(dir, LANZA, DESTINO);
+  assert.ok(g && /\.uso\.json$/.test(g) && /\d{4}-\d\d-\d\dT/.test(path.basename(g)), String(g));
+  assert.strictEqual(PR.guardarUso(dir, LANZA, DESTINO), g, 'guardar dos veces el mismo no lo duplica');
+  assert.strictEqual(JSON.parse(fs.readFileSync(g, 'utf8')).pedido, 'pedido-1');
+  assert.strictEqual(PR.resultadosGuardados(dir, LANZA, DESTINO).length, 0, 'no se cuenta como un resultado');
+});

@@ -75,7 +75,11 @@ test('8.139 T1 SignaturesGuide_UnaFilaPorFirma', () => {
   assert.deepStrictEqual(filas.map((f) => f[0]), ids.map((id) => `\`${id}\``), 'una fila por firma, en el orden del catálogo');
   for (const [i, s] of cat.SIGNATURES.entries()) {
     const otra = cat.ONLY_IN_TERMINAL.includes(s.id) ? 'no, sólo en tu terminal' : OTRA_SESION[s.otherSession];
-    assert.deepStrictEqual(filas[i], [`\`${s.id}\``, s.approves, `\`${s.command}\``, otra, s.terminal === null ? '—' : `\`${s.terminal}\``], s.id);
+    // un escape retirado: ya nada lo pide, y en la terminal queda la emergencia
+    const esperada = s.retired
+      ? [`\`${s.id}\``, s.approves, 'retirada: ya no apaga nada; la salida es la emergencia', otra, `\`${s.retired}\``]
+      : [`\`${s.id}\``, s.approves, `\`${s.command}\``, otra, s.terminal === null ? '—' : `\`${s.terminal}\``];
+    assert.deepStrictEqual(filas[i], esperada, s.id);
   }
   const grupos = tabla(texto, '## Los grupos de la 8.116');
   assert.deepStrictEqual(grupos.map((f) => f[0]), Object.keys(cat.GROUPS).map((g) => `\`${g}\``));

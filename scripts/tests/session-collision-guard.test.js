@@ -237,3 +237,24 @@ test('SG-A4 SessionStart_Unreadable_SaysSo @story-8.292 @ac-11', { skip: process
     assert.match(r.stdout, /no pude ver si hay otra sesión en este checkout/);
   } finally { fs.chmodSync(projects, 0o755); fs.chmodSync(active, 0o755); }
 });
+
+test('Choque_TextoDeUnHeredoc_NoEsUnComando: un heredoc que CITA un `git merge` no frena; uno que va a un shell, sí', () => {
+  // 🔴 rojo: el cuerpo de `cat >> nota.md <<'EOF'` que menciona `git merge` frenaba como si se hiciera un merge
+  const t = toy();
+  const checkout = repo(t, 'harness-maintainers');
+  transcript(t, checkout, 'cccc3333-misma', checkout);
+  const con = (command) => run(t, 'PreToolUse', checkout, { tool_input: { command } });
+  const texto = con("cat >> nota.md <<'EOF'\nHay OTRA sesión viva: antes del `git merge origin/main` hay que avisarle.\nEOF");
+  assert.strictEqual(texto.status, 0, texto.stderr);
+  // lo que corre se sigue mirando: el heredoc a un shell, y el `$(…)` de un cuerpo sin comillas
+  // (y las formas de darle un heredoc a un shell que no se enumeran: ante la duda el cuerpo cuenta, del pase adversarial)
+  for (const corre of ["bash <<'EOF'\ngit merge origin/main\nEOF", "cat <<'EOF' | sh\ngit merge origin/main\nEOF", 'cat > nota.md <<EOF\nhola $(git merge origin/main)\nEOF',
+    "bash -l --noprofile <<'EOF'\ngit merge origin/main\nEOF", "cat <<'EOF' | sudo -u yo bash\ngit merge origin/main\nEOF",
+    "cat <<'EOF' | env X=1 sh\ngit merge origin/main\nEOF", "cat <<'EOF' | xargs -I{} sh -c '{}'\ngit merge origin/main\nEOF",
+    "eval \"$(cat <<'EOF'\ngit merge origin/main\nEOF\n)\"", "source /dev/stdin <<'EOF'\ngit merge origin/main\nEOF",
+    ". /dev/stdin <<'EOF'\ngit merge origin/main\nEOF", "cat > s.sh <<'EOF'\ngit merge origin/main\nEOF\n./s.sh",
+    "{ cat <<'EOF'\ngit merge origin/main\nEOF\n} | bash"]) {
+    const r = con(corre);
+    assert.strictEqual(r.status, 2, `no frenó: ${corre}\n${r.stderr}`);
+  }
+});
