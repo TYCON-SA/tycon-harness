@@ -9,7 +9,7 @@
  */
 const {
   MARKER_JS, PEDIDA, PREVIO, PROPIA, SCRIPTS_DIR, STATE_DIR, anotarAprobacion,
-  anotarFirma, appendLog, at, carpetaDeLaCorrida, cmd, comprobarLoRevisado,
+  anotarFirma, appendLog, at, carpetaDeLaCorrida, comprobarLoRevisado,
   delegatedSigning, esFecha, estado, fechaLocal, firmaDelDueno, fs,
   hermanosDeLaCorrida, nn, nowIso, os, ownerWindow, path, porDe, readMarker,
   reposParaComparar, resolveStoryPath, trabajarSobreElDestino, writeMarker,
@@ -715,7 +715,8 @@ function firmaDeLaDesignacion(firma, resumen, antes, alNegar) {
 
 // `designate-relay` designa ESTA sesión, en esta máquina, como la coordinadora: la que ordena las sesiones. Sin frase,
 // con el click del dueño en el cuadro que dice qué sesión es y en qué carpeta (firma `designation-set`): el arnés no lee
-// ninguna frase, y anota la designación y su confirmación en un paso. Con `--approved-by "<el dev>" --quote "<su frase>"`,
+// ninguna frase; con el rol del perfil anota la designación y su confirmación en un paso, y sin él sólo la designación
+// (la sesión ordena y no firma por nadie). Con `--approved-by "<el dev>" --quote "<su frase>"`,
 // el respaldo: la frase nombra el rol (el de `approvals.relay_session` o, sin perfil, «coordinadora») y, con el rol del
 // perfil, la sesión firma en nombre del dueño cuando él la confirma (scripts/lib/delegated-signing.js
 // `confirm-designation`); sin él, las firmas siguen yendo a la ventana del dueño. Una designación nueva reemplaza a la
@@ -732,11 +733,10 @@ function cmdDesignateRelay(argv) {
     process.exit(1);
   }
   const e = r.entrada;
-  // sin el rol en el perfil la frase no se puede confirmar: con otra confirmada en pie, la línea quedaría pendiente para siempre
-  // el rol se mira como lo mira el click (sesionQueReenvia): es lo que pide confirm-designation para confirmar
-  const confirmada = cw.designacionConfirmada();
-  if (confirmada && !confirmada.error && confirmada.sesion !== e.sesion && !cw.sesionQueReenvia().valor) {
-    console.error(`🚫 marker.js designate-relay: no se designó nada — la sesión ${confirmada.sesion} es la coordinadora confirmada, y sin approvals.relay_session en el perfil esta designación no se puede confirmar. Primero hay que retirarla: desde su pestaña, node ${MARKER_JS} withdraw-relay; si ya no vive, desde ésta, node ${MARKER_JS} withdraw-relay --session ${confirmada.sesion}.`);
+  // el rol se mira con sesionQueReenvia: es lo que pide confirm-designation para confirmar
+  const tapa = confirmadaEnPie(cw, e.sesion, () => Boolean(cw.sesionQueReenvia().valor));
+  if (tapa) {
+    console.error(`🚫 marker.js designate-relay: no se designó nada — ${tapa}.`);
     process.exit(1);
   }
   appendLog('gates.log', { name: cw.DESIGNACION, status: 'ok', ts: nowIso(), sesion: e.sesion, rol: e.rol, quien: e.quien, cita: e.cita, cita_cuando: e.cita_cuando });
@@ -752,10 +752,21 @@ function cmdDesignateRelay(argv) {
     process.exit(0);
   }
   if (r.firma) console.error(`✅ Esta sesión (${e.sesion}) es la «${e.rol}» de esta máquina, designada por ${e.quien}. Vale cuando una persona la confirma: corré node scripts/lib/delegated-signing.js confirm-designation en esta pestaña y aprobala con un click, o confirmala en su terminal`);
-  else console.error(`✅ Esta sesión (${e.sesion}) es la «${e.rol}» de esta máquina, designada por ${e.quien}: ordena esta máquina, y las firmas siguen yendo a la ventana de la persona${r.aviso ? ` (${r.aviso.replace(/: nadie reenvía$/, '')})` : ' (el perfil del equipo no tiene approvals.relay_session)'}.`);
+  else console.error(`✅ Esta sesión (${e.sesion}) es la «${e.rol}» de esta máquina, designada por ${e.quien}: ordena esta máquina, y las firmas siguen yendo a la ventana de la persona (${porQueNoFirma(r.aviso)}).`);
   console.error(`   Antes de seguir, leé tus reglas completas: ${path.join(SCRIPTS_DIR, '..', '..', '..', 'guides', 'coordination.md')}`);
   process.exit(0);
 }
+
+// Sin el rol en el perfil una designación nueva no se puede confirmar: con otra confirmada en pie, quedaría pendiente
+// para siempre. El motivo para no designar, o null. `firma()` dice si el perfil nombra el rol; se mira sólo si hace falta.
+function confirmadaEnPie(cw, sesion, firma) {
+  const confirmada = cw.designacionConfirmada();
+  if (!confirmada || confirmada.error || confirmada.sesion === sesion || firma()) return null;
+  return `la sesión ${confirmada.sesion} es la coordinadora confirmada, y sin approvals.relay_session en el perfil esta designación no se puede confirmar. Primero hay que retirarla: desde su pestaña, node ${MARKER_JS} withdraw-relay; si ya no vive, desde ésta, node ${MARKER_JS} withdraw-relay --session ${confirmada.sesion}`;
+}
+
+// Por qué la sesión ordena y no firma: lo que no se pudo leer del perfil, o que el perfil no tiene la clave.
+const porQueNoFirma = (aviso) => (aviso ? aviso.replace(/: nadie reenvía$/, '') : 'el perfil del equipo no tiene approvals.relay_session');
 
 // Una prueba (`TYCON_TEST_RUN=1`, la marca que pone smoke-run.sh) no escribe la designación del estado real de la
 // máquina (historia 8.314): sale 2 sin escribir. Si no se puede saber, también.
@@ -772,26 +783,37 @@ function designarPorClick(cw) {
     console.error(`🚫 marker.js designate-relay: no se nombró a la coordinadora — no pude comprobar el click: ${motivo}.`);
     for (const l of respaldosDeDesignar(sesion)) console.error(l);
   };
+  // el rol de ordenar: el del perfil, que firma por la persona, o sin perfil el de fábrica, que sólo ordena
+  const coord = cw.rolDeCoordinar();
+  // se lee de nuevo en cada llamada: lo que se anota es lo que el cuadro mostró, y sin el rol nunca se confirma
   const antes = () => {
     if (!/^[\w-]+$/.test(String(sesion || '')) || sesion === '_nosession') return { codigo: 1, motivo: 'la sesión no dice su identificador' };
-    const declarada = cw.sesionQueReenvia();
-    if (!declarada.valor) return { codigo: 1, motivo: `la organización no usa una sesión que reenvía el ok de un dev (approvals.relay_session del perfil del equipo)${declarada.aviso ? `: ${declarada.aviso}` : ''}` };
-    return null;
+    const ahora = cw.rolDeCoordinar();
+    if (ahora.rol !== coord.rol || ahora.firma !== coord.firma) return { codigo: 1, motivo: 'el perfil del equipo cambió mientras se esperaba la firma: corré el comando de nuevo' };
+    const tapa = confirmadaEnPie(cw, sesion, () => coord.firma);
+    return tapa ? { codigo: 1, motivo: tapa, enPie: true } : null;
   };
-  // antes de pedir la firma: sin id de sesión o sin rol en el perfil, el click no tendría qué nombrar
+  // antes de pedir la firma: sin id de sesión el click no tendría qué nombrar, y con otra confirmada en pie que esta
+  // designación no puede reemplazar, el click se gastaría; los respaldos no sirven para eso: hay que retirarla
   const previo = antes();
+  if (previo && previo.enPie) { console.error(`🚫 marker.js designate-relay: no se nombró a la coordinadora — ${previo.motivo}.`); process.exit(previo.codigo); }
   if (previo) { noSeNombro(previo.motivo); process.exit(previo.codigo); }
-  const rol = cw.sesionQueReenvia().valor;
-  const r = firmaDeLaDesignacion('designation-set', `la sesión ${sesion} pasa a ser la «${rol}» de esta máquina`, antes, noSeNombro);
-  appendLog('gates.log', { name: cw.DESIGNACION, status: 'ok', ts: nowIso(), sesion, rol, quien: 'la persona', via: r.via });
+  const r = firmaDeLaDesignacion('designation-set', `la sesión ${sesion} pasa a ser la «${coord.rol}» de esta máquina`, antes, noSeNombro);
+  appendLog('gates.log', { name: cw.DESIGNACION, status: 'ok', ts: nowIso(), sesion, rol: coord.rol, quien: 'la persona', via: r.via });
   const quedo = cw.ultimaDesignacion();
   if (!quedo || quedo.error || quedo.sesion !== sesion) {
     console.error(`🚫 marker.js designate-relay: no pude dejar la designación en el registro del arnés${quedo && quedo.error ? ` (${quedo.error})` : ''}.`);
     process.exit(2);
   }
-  // el mismo click la confirma: el renglón se ata a esta designación por su hora, sin frase
-  appendLog('gates.log', delegatedSigning().confirmationRecord(quedo, nowIso(), { via: r.via }));
-  console.error(`✅ Esta sesión (${sesion}) es la «${rol}» de esta máquina, nombrada por la persona con ${r.via === 'click' ? 'su click' : 'su terminal'}.`);
+  const con = r.via === 'click' ? 'su click' : 'su terminal';
+  if (coord.firma) {
+    // el mismo click la confirma: el renglón se ata a esta designación por su hora, sin frase
+    appendLog('gates.log', delegatedSigning().confirmationRecord(quedo, nowIso(), { via: r.via }));
+    console.error(`✅ Esta sesión (${sesion}) es la «${coord.rol}» de esta máquina, nombrada por la persona con ${con}.`);
+  } else {
+    // sin el rol en el perfil no hay confirmación: la sesión no firma por nadie
+    console.error(`✅ Esta sesión (${sesion}) es la «${coord.rol}» de esta máquina, nombrada por la persona con ${con}: ordena esta máquina, y las firmas siguen yendo a la ventana de la persona (${porQueNoFirma(coord.aviso)}).`);
+  }
   console.error(`   Antes de seguir, leé tus reglas completas: ${path.join(SCRIPTS_DIR, '..', '..', '..', 'guides', 'coordination.md')}`);
   process.exit(0);
 }
