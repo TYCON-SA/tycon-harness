@@ -89,24 +89,42 @@ function storyIsExempt(content) {
   return /^dod_runtime_exempt:\s*true\b/m.test(content);
 }
 
-// La exención como la reconoce el más ancho de los lectores que la conceden (este hook, on-pre-commit, el portón de CI,
-// runtime-matrix, pipeline.js): en cualquier renglón del archivo, con sangría, con o sin comillas y con lo que siga
-// (un comentario). Si este control mirara menos que ellos, una forma que no ve pasaría sin la frase y valdría igual.
-const EXENTA = /^\s*dod_runtime_exempt:\s*["']?true\b/m;
-// Las exenciones que se agregan con la firma del dueño sobre la historia: la de la prueba en vivo y la de los revisores.
-// Cada una con el renglón como lo reconoce el más ancho de sus lectores, qué saltea y cuál es el camino normal.
+// Las exenciones que se agregan con la firma del dueño sobre la historia: la de la prueba en vivo y la de los revisores,
+// cada una con qué saltea y cuál es el camino normal.
 const EXENCIONES = [
-  { campo: 'dod_runtime_exempt', re: EXENTA, saltea: 'la exime de la prueba en vivo',
+  { campo: 'dod_runtime_exempt', saltea: 'la exime de la prueba en vivo',
     camino: ['El camino normal es correr la prueba en vivo; si la historia no se puede terminar, dejarla como deuda', '(marker.js close-as-debt).'] },
-  { campo: 'advisors_exempt', re: /^\s*advisors_exempt:\s*["']?true\b/m, saltea: 'la exime de los revisores',
+  { campo: 'advisors_exempt', saltea: 'la exime de los revisores',
     camino: ['El camino normal es correr los revisores de la historia en su ejecución del pipeline.'] },
 ];
+// El encabezado como lo lee el portón de CI, sin la marca de orden de bytes: desde las rayas del comienzo, con lo que
+// tengan después en su renglón, hasta el primer renglón que empieza con rayas. null si no hay.
+function encabezadoAncho(c) {
+  const t = String(c || '').replace(/^\uFEFF/, '');
+  if (!t.startsWith('---')) return null;
+  const fin = t.indexOf('\n---', 3);
+  return fin === -1 ? null : t.slice(3, fin);
+}
+const esHistoriaAncha = (c) => { const fm = encabezadoAncho(c); return fm !== null && /^\s*(?:story|status)\s*:/m.test(fm); };
+// Los lectores que conceden una exención: el más ancho (en cualquier renglón, con sangría o comillas), el del freno del
+// commit (en cualquier renglón, sin sangría ni comillas) y los del portón de CI y pipeline.js (en el encabezado). Sólo en
+// una historia: un archivo que no lo es no concede nada.
+function lectoresDe(campo) {
+  const ancho = new RegExp(`^\\s*${campo}:\\s*["']?true\\b`, 'm');
+  const estrecho = new RegExp(`^${campo}:\\s*true\\b`, 'm');
+  return [(c) => ancho.test(c), (c) => estrecho.test(c), (c) => ancho.test(encabezadoAncho(c) || '')];
+}
+// Nueva: algún lector la ve en lo que queda escrito y no la veía antes. «Ya estaba» cuenta sólo si ese mismo lector la
+// concedía en una historia
+function esExencionNueva(campo, oldContent, newContent) {
+  if (!esHistoriaAncha(newContent)) return false;
+  const antesEraHistoria = !!oldContent && esHistoriaAncha(oldContent);
+  return lectoresDe(campo).some((ve) => ve(newContent) && !(antesEraHistoria && ve(oldContent)));
+}
 // la regla del cambio de estado a mano es la misma para la herramienta de edición y para la consola
 const { transicionAMano, isCriticalStatus, EN_IMPLEMENTACION } = require('./lib/story-transition.js');
 // El estado del encabezado, con fines de renglón de Windows y comillas simples o dobles.
 const estadoDe = (c) => { const m = /^status:\s*["']?([\w-]+)/m.exec(fmBlock(c)); return m ? m[1].toLowerCase() : ''; };
-// Una historia: un encabezado con `story:` o `status:`. Una guía que nombra la exención no lo tiene.
-const esHistoria = (c) => /^(?:story|status):/m.test(fmBlock(c));
 
 /**
  * La firma de la ventana sobre este archivo (`marker.js sign-file <firma> <archivo>`, scripts/lib/owner-window.js):
@@ -135,36 +153,33 @@ function comoSeFirmaAca(firma, filePath, sesion) {
 }
 
 /**
- * Una exención que se agrega a una historia (pasa de ausente o `false` a `true`, también al crearla) la decide la
- * persona, en cualquier estado: sin su firma en la ventana sobre esta historia, `{ block }` que nombra el comando; con
- * ella, pasa (null) y queda la constancia con la sesión. El agente que escribe la historia no se exime solo. Con dos
- * nuevas en la misma escritura, cada una pide la suya.
+ * Una exención que se agrega a una historia (ver `esExencionNueva`, también al crearla) la decide la persona, en
+ * cualquier estado: sin su firma en la ventana sobre esta historia, `{ block }` que nombra el comando; con ella, pasa
+ * (null) y queda la constancia con la sesión. El agente que escribe la historia no se exime solo. Con dos nuevas en la
+ * misma escritura, cada una pide la suya, y el escape se anota sólo si pasan todas: si una frena, la escritura no ocurre.
  */
 function exencionNueva(event, oldContent, newContent, casa) {
-  if (!esHistoria(newContent)) return null;
-  for (const ex of EXENCIONES) {
-    if (!ex.re.test(newContent) || (oldContent && ex.re.test(oldContent))) continue;
-    const r = exencionNuevaDe(ex, event, oldContent, newContent, casa);
-    if (r) return r;
-  }
-  return null;
-}
-
-function exencionNuevaDe(ex, event, oldContent, newContent, casa) {
+  const nuevas = EXENCIONES.filter((ex) => esExencionNueva(ex.campo, oldContent, newContent));
+  if (!nuevas.length) return null;
   // el estado de antes o el de después, para el mensaje; la historia nueva no tiene estado de antes
   const antes = estadoDe(oldContent || '');
   const estado = EN_IMPLEMENTACION.has(antes) ? antes : (estadoDe(newContent) || antes || 'sin estado');
-  const sid = event.session_id;
-  const r = firmaDeLaVentana(ex.campo, event, event.tool_input.file_path, casa);
-  const ok = r.ok === true;
   const storyId = parseFrontmatter(newContent).story || '';
-  try {
-    const { rutaDeLaLib } = require('./lib/closing-record.js');
-    // el camino es el de la firma: la ventana, la delegación o la terminal
-    require(rutaDeLaLib()).anotar({ freno: 'on-frontmatter-write', regla: 'exencion-nueva', veredicto: ok ? 'escape' : 'bloqueo',
-      cmd: `${storyId}\0${estado}`, ...(ok ? { via: r.constancia.via, sesion: sid, escape: ex.campo } : {}) });
-  } catch { /* ayuda, no evidencia */ }
-  if (ok) return null;
+  const firmas = nuevas.map((ex) => ({ ex, r: firmaDeLaVentana(ex.campo, event, event.tool_input.file_path, casa) }));
+  const frenada = firmas.find(({ r }) => r.ok !== true);
+  const anotar = (linea) => {
+    try {
+      const { rutaDeLaLib } = require('./lib/closing-record.js');
+      require(rutaDeLaLib()).anotar({ freno: 'on-frontmatter-write', regla: 'exencion-nueva', cmd: `${storyId}\0${estado}`, ...linea });
+    } catch { /* ayuda, no evidencia */ }
+  };
+  // el camino es el de la firma: la ventana, la delegación o la terminal
+  if (!frenada) {
+    for (const { ex, r } of firmas) anotar({ veredicto: 'escape', via: r.constancia.via, sesion: event.session_id, escape: ex.campo });
+    return null;
+  }
+  anotar({ veredicto: 'bloqueo' });
+  const { ex, r } = frenada;
   const titulo = `🚨 BLOQUEADO — agregar la exención ${ex.campo} a la story ${storyId} (estado ${estado}) ${ex.saltea}.`;
   return {
     block: [
@@ -407,14 +422,18 @@ function contenidoPorParche(event, filePath, oldContent) {
     desde = i + despues.length;
   }
   if (aplicado) return texto;
+  // una exención que el parche agrega se suma al final del encabezado: Codex la escribe aunque el tramo no calce
+  // exacto, y quien la juzga tiene que verla (del lado que frena)
+  const exenciones = bloque.split('\n').filter((r) => r.startsWith('+') && EXENCIONES.some((ex) => new RegExp(`^\\s*${ex.campo}\\s*:`).test(r.slice(1)))).map((r) => r.slice(1));
   const agregados = bloque.split('\n').filter((r) => /^\+\s*status:/.test(r)).map((r) => r.slice(1));
-  if (!agregados.length) return oldContent;
+  if (!agregados.length && !exenciones.length) return oldContent;
+  if (!agregados.length) return oldContent.replace(/\n---/, () => `\n${exenciones.join('\n')}\n---`);
   // el estado nuevo reemplaza al del encabezado; uno con sangría es del bloque pipelines: se suma al final del encabezado
   let fm = oldContent;
   for (const r of agregados) {
     fm = /^\s/.test(r) ? fm.replace(/\n---/, () => `\n${r}\n---`) : fm.replace(/^status:.*$/m, () => r);
   }
-  return fm;
+  return exenciones.length ? fm.replace(/\n---/, () => `\n${exenciones.join('\n')}\n---`) : fm;
 }
 
 /**
@@ -543,8 +562,13 @@ function handle(event, { casa } = {}) {
     newContent = contenidoPorParche(event, filePath, oldContent);
   } else {
     // Edit — aplicar mentalmente el reemplazo.
-    const oldStr = event.tool_input.old_string || '';
-    const newStr = event.tool_input.new_string || '';
+    let oldStr = event.tool_input.old_string || '';
+    let newStr = event.tool_input.new_string || '';
+    // en un archivo con renglones de Windows la herramienta aplica el reemplazo aunque old_string venga con \n
+    if (!oldContent.includes(oldStr) && oldContent.includes('\r\n') && /(^|[^\r])\n/.test(oldStr)) {
+      const aCrlf = (t) => t.replace(/\r?\n/g, '\r\n');
+      if (oldContent.includes(aCrlf(oldStr))) { oldStr = aCrlf(oldStr); newStr = aCrlf(newStr); }
+    }
     if (!oldContent.includes(oldStr)) {
       // El Edit va a fallar de todas formas (old_string no matchea). Dejá pasar
       // — Claude Code va a reportar el error real.

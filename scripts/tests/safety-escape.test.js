@@ -952,6 +952,28 @@ test('T10 EscC5_ExencionPorLaTerminal_Frena @story-8.96 — agregar la exención
   }
 });
 
+// EscC5_ExencionDeRevisoresPorLaTerminal_Frena (pase adversarial): la exención de los revisores, igual que la de la prueba
+// en vivo, no se escribe por la consola; leerla, buscarla o sacarla no frena
+test('T10b EscC5_ExencionDeRevisoresPorLaTerminal_Frena — agregar advisors_exempt con sed, perl, una redirección o un heredoc', () => {
+  for (const c of [
+    `sed -i '' 's/^qa_guide: off/qa_guide: off\\nadvisors_exempt: true/' specs/story-9.9.md`,
+    `perl -pi -e 's/^status:/advisors_exempt: true\\nstatus:/' specs/story-9.9.md`,
+    `printf 'advisors_exempt: "true"\\n' >> specs/story-9.9.md`,
+    `echo "advisors_exempt: true" | tee -a specs/story-9.9.md`,
+    "cat > specs/story-9.20-nueva.md <<'EOF'\n---\nstory: \"9.20\"\nstatus: done\nadvisors_exempt: true\n---\nEOF",
+  ]) {
+    const r = freno(c, { conversacion: [deLaPersona('seguí')] });
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, /ESC-C5/, c);
+    assert.match(r.stderr, /la exime de los revisores/, c);
+    assert.match(r.stderr, /marker\.js"? sign-file advisors_exempt <archivo>/, c);
+  }
+  for (const c of ['grep -n advisors_exempt specs/*.md', `grep -c 'advisors_exempt: true' specs/story-9.9.md > /tmp/n.txt`,
+    `sed -i '' '/^advisors_exempt: true/d' specs/story-9.9.md`]) {
+    assert.strictEqual(freno(c).status, 0, c);
+  }
+});
+
 // ESC-C6: la cita de la aprobación del plan está en lo que dijo la persona
 const RESPUESTA_PREGUNTA = 'Apruebo el plan (Recomendado)';
 const pregunta = (min = 3) => ({ type: 'assistant', timestamp: hace(min), message: { role: 'assistant',
@@ -1836,7 +1858,7 @@ test('T28 FrenoDeSeguridad_RenglonForjado_NoApruebaNada @story-8.139 @ac-28 — 
     // nombrar y retirar a la coordinadora con un click
     ['designation-set', ['node', M, 'designate-relay']],
     ['designation-withdraw', ['node', M, 'withdraw-relay']],
-    ...['story-skill-bypass', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt', 'cambiar-el-estado', 'red-control-test-edit']
+    ...['story-skill-bypass', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt', 'advisors_exempt', 'cambiar-el-estado', 'red-control-test-edit']
       .map((n) => [`escape:${n}`, ['node', M, 'sign-file', n, '/r/specs/story-9.99.md']]),
   ];
   // todas las del catálogo que ya tienen comando están en la lista

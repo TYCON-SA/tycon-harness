@@ -238,6 +238,51 @@ test('T91 Firmas_ExencionDeRevisores_SoloDelDueno: escape:advisors_exempt en el 
   assert.match(del.NUNCA_DELEGABLES.get('escape:advisors_exempt'), /sólo del dueño/);
 });
 
+// FrontmatterWrite_ExencionNueva_LoQueLosLectoresVen (pase adversarial): la exención es nueva si algún lector que la
+// concede pasa de no verla a verla. «Ya estaba» no cuenta en un archivo que no era historia, ni en un renglón que ningún
+// lector concede (sangrado en el cuerpo, entre comillas). El encabezado se lee como el portón de CI (con un espacio
+// después de las rayas o la marca de orden de bytes), un Edit con renglones de Windows se aplica como lo aplica la
+// herramienta, y un parche de Codex que no se puede reconstruir igual cuenta la exención que agrega
+test('T92 FrontmatterWrite_ExencionNueva_LoQueLosLectoresVen: dos pasos, cuerpo, comillas, encabezado ancho, Windows y Codex', () => {
+  for (const campo of ['advisors_exempt', 'dod_runtime_exempt']) {
+    const home = nuevaHome([deLaPersona('seguí')], 'Edit');
+    const dir = path.join(home, 'repo', 'specs');
+    const frena = (evento, que) => { const r = correr(ENCABEZADO, home, evento); assert.strictEqual(r.status, 2, `${campo}, ${que}: ${r.stderr}`); };
+    const pasa = (evento, que) => { const r = correr(ENCABEZADO, home, evento); assert.strictEqual(r.status, 0, `${campo}, ${que}: ${r.stderr}`); };
+    const editar = (file, de, a2) => ({ tool_name: 'Edit', tool_input: { file_path: file, old_string: de, new_string: a2 } });
+    // en dos pasos: primero sin story ni status (no es historia), después se le agregan
+    const dos = path.join(dir, 'story-9.50-dos.md');
+    fs.mkdirSync(dir, { recursive: true });
+    const sinHistoria = `---\nepic: 9\ntitle: "Dos"\n${campo}: true\n---\n\n# Dos\n`;
+    pasa({ tool_name: 'Write', tool_input: { file_path: dos, content: sinHistoria } }, 'un archivo que no es historia');
+    fs.writeFileSync(dos, sinHistoria);
+    frena(editar(dos, 'title: "Dos"\n', 'story: "9.50"\nstatus: in-progress\ntitle: "Dos"\n'), 'en dos pasos');
+    // un ejemplo sangrado en el cuerpo no es la exención: agregarla al encabezado la pide; editar otra parte, no
+    const conEjemplo = historia(home, 'in-progress');
+    fs.writeFileSync(conEjemplo, fs.readFileSync(conEjemplo, 'utf8').replace('Texto.\n', `Texto.\n\n    ${campo}: true\n`));
+    frena(editar(conEjemplo, 'qa_guide: off\n', `${campo}: true\nqa_guide: off\n`), 'con un ejemplo en el cuerpo');
+    pasa(editar(conEjemplo, '## Story', '## La historia'), 'editar otra parte de una historia con el ejemplo');
+    // de entre comillas a sin comillas
+    const comillas = historia(home, 'in-progress', `${campo}: "true"\n`);
+    frena(editar(comillas, `${campo}: "true"`, `${campo}: true`), 'de entre comillas a sin comillas');
+    // el encabezado con un espacio después de las rayas, o con la marca de orden de bytes
+    for (const [que, cambiar] of [['rayas con espacio', (t) => t.replace(/^---\n/, '--- \n')], ['marca de orden de bytes', (t) => '\uFEFF' + t]]) {
+      const h = historia(home, 'in-progress');
+      fs.writeFileSync(h, cambiar(fs.readFileSync(h, 'utf8')));
+      frena(editar(h, 'qa_guide: off\n', `${campo}: true\nqa_guide: off\n`), que);
+    }
+    // una historia con renglones de Windows y un Edit de varios renglones con \n
+    const crlf = historia(home, 'in-progress');
+    fs.writeFileSync(crlf, fs.readFileSync(crlf, 'utf8').replace(/\n/g, '\r\n'));
+    frena(editar(crlf, 'status: in-progress\nqa_guide: off\n', `status: in-progress\n${campo}: true\nqa_guide: off\n`), 'renglones de Windows');
+    // parches de Codex que no se reconstruyen igual: un tramo sólo con lo agregado, y el primero sin @@
+    for (const [que, cuerpo] of [['sólo agregado', `@@\n+${campo}: true`], ['sin @@', ` status: in-progress\n+${campo}: true\n qa_guide: off`]]) {
+      const h = historia(home, 'in-progress');
+      frena({ tool_name: 'Edit', tool_name_raw: 'apply_patch', tool_input: { file_path: h, command: `*** Begin Patch\n*** Update File: ${h}\n${cuerpo}\n*** End Patch\n` } }, `Codex, ${que}`);
+    }
+  }
+});
+
 // ── Los avisos no recetan los escapes ─────────────────────────────────────────────────────────────────────────────────
 
 // Lo que le da al agente el escape como salida: el comando o el renglón que lo activa.
@@ -253,7 +298,7 @@ const RECETAS = [
 const DE_LA_PERSONA = /autorizo|la persona|lo decide (?:el dev|la persona)/i;
 // En el código, sólo cuentan los textos que se le muestran al agente; en las instrucciones, todo renglón.
 // (cualquier `.push(` de renglones de un aviso, no sólo `lines`: el validador encontró uno en `pl.push`)
-const EMISOR = /console\.(?:error|log|warn)\(|\.push\(|stderr\.write\(|mensaje:|^\s*(?:[:?+]\s*)?['"`]/;
+const EMISOR = /console\.(?:error|log|warn)\(|\.push\(|stderr\.write\(|estricto\(|mensaje:|^\s*(?:[:?+]\s*)?['"`]/;
 const AVISOS = [
   'skills/tycon-pipeline/scripts/marker.js',
   'skills/tycon-pipeline/scripts/pipeline.js',
