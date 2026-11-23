@@ -702,6 +702,10 @@ click. Mira cada 2 segundos y termina con una línea por novedad, y terminar la 
 - «<sesión> espera un permiso desde las HH:MM: <herramienta> <qué pide>. Para entrar: claude attach <sesión>»: se lo
   pasa al dueño con la sesión, qué pide y su recomendación. El permiso lo contesta una persona, en la pestaña de la
   sesión o con `claude attach`.
+- «… que pidió un agente suyo (la sesión figura ocupada y no se movió desde entonces)»: el permiso lo pidió un agente
+  de la sesión. Claude Code la sigue dando ocupada, porque espera a su agente; sale si está ocupada desde antes del
+  pedido y lleva 11 minutos sin moverse (más que lo que puede correr un comando aprobado). Se trata igual que el de
+  arriba.
 - «<sesión> siguió: el permiso ya no está abierto» o «<sesión> se cerró con un permiso abierto»: se le avisa al dueño si
   se lo había pedido.
 - «<sesión>: la cerró Claude Code a las HH:MM por falta de memoria, quieta N min. Para levantarla: coordination.js relaunch --id <id>»:
@@ -736,7 +740,8 @@ coordinadora lo muestra sin cambiarle una letra, con «Sí, aprobar» y «No».
   mismo si la coordinadora muere o deja de ser la designada mientras espera.
 - **No se lleva, y sale la ventana de siempre sin demora:** una pestaña abierta, otro modo (automático, sin permisos,
   aceptar ediciones, plan), sin coordinadora confirmada y viva, sin `owner-wait`, la lista apagada, la propia
-  coordinadora, Codex, y en Windows un comando por PowerShell. Tampoco un pedido que no se puede mostrar entero (más de
+  coordinadora, Codex, y en Windows un comando por PowerShell. En una sesión de fondo, el motivo queda en «Trabadas» y
+  en `gates.log`, así una espera de toda la noche no pasa sin rastro. Tampoco un pedido que no se puede mostrar entero (más de
   1500 caracteres, caracteres que no se ven o se ven en blanco, un salto de línea en una ruta o una dirección, datos que
   el cuadro no muestra): la sesión queda trabada con ese motivo.
   Las herramientas que lleva son Bash, PowerShell, Edit, Write, NotebookEdit y WebFetch; el cuadro de preguntas y el
