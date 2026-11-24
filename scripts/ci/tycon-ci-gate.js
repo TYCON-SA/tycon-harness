@@ -948,7 +948,7 @@ function evidenciasParaJuzgar({ repo, dodEnGit, punta, correr }) {
     if (txt === null || txt.includes('\u0000')) continue;
     if (!ES_EVIDENCIA_ADEMAS.some((re) => re.test(nombre))) {
       if (evidenciaDeclaraFail(txt)) continue;
-      const u = correr(repo, ['log', '-1', '--format=%H %ct', punta, '--', rel]);
+      const u = correr(repo, ['--literal-pathspecs', 'log', '-1', '--format=%H %ct', punta, '--', rel]);
       const [commit, hora] = u.codigo === 0 ? u.salida.trim().split(' ') : [];
       out.push({ rel, ruta, md: true, commit: commit || null, tsMs: Number(hora) * 1000 });
       continue;
@@ -965,14 +965,15 @@ function evidenciasParaJuzgar({ repo, dodEnGit, punta, correr }) {
 
 /**
  * Un `.md` por su última versión: vale para `rel` si el archivo es igual en el commit que la escribió y en la punta del
- * pedido (la regla 4 del juez, que lo juzgaría por su primera versión). Devuelve lo mismo que `vigencia`.
+ * pedido (la regla 4 del juez, que lo juzgaría por su primera versión). La ruta va literal: con corchetes no es un patrón.
+ * Devuelve lo mismo que `vigencia`.
  */
 function vigenciaDelMd({ correr, repo, punta, ev, rel }) {
   if (!ev.commit) return { cuenta: false, motivo: 'sin-respuesta' };
-  const d = correr(repo, ['diff-tree', '--quiet', '-r', ev.commit, punta, '--', rel]);
+  const d = correr(repo, ['--literal-pathspecs', 'diff-tree', '--quiet', '-r', ev.commit, punta, '--', rel]);
   if (d.codigo === 0) return { cuenta: true };
   if (d.codigo !== 1) return { cuenta: false, motivo: 'sin-respuesta' };
-  const u = correr(repo, ['log', '-1', '--format=%h', punta, '--', rel]);
+  const u = correr(repo, ['--literal-pathspecs', 'log', '-1', '--format=%h', punta, '--', rel]);
   return { cuenta: false, motivo: 'cambio-posterior', commit: u.codigo === 0 ? u.salida.trim() || null : null };
 }
 

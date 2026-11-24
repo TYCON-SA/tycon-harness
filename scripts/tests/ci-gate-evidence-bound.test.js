@@ -145,6 +145,26 @@ test('T20 NewSmokeAfterCode_Passes — una evidencia commiteada después del có
   const fusion = gate.revisar({ repo: f.dir, base: destino, staged: false, hoy: DESDE });
   assert.deepStrictEqual(de(fusion.hallazgos, 'evidencia-vieja'), [], JSON.stringify(fusion.hallazgos));
   assert.deepStrictEqual(chequeo(fusion, 'evidencia-atada').map((v) => v.nivel), ['verificado-por-el-servidor'], JSON.stringify(fusion.verificacion));
+  // lo mismo con una línea del registro de humos, que juzga la regla del freno local preguntando por la punta del pedido
+  g('switch', '-q', 'pedido');
+  fs.rmSync(path.join(f.dir, '.advisors/dod-runtime/1.1-20261112.md'));
+  f.escribir('.advisors/dod-runtime/1.1-smoke-ledger.jsonl', `${JSON.stringify({ ts: '2026-11-12T10:00:00Z', exit: 0, acs: [1] })}\n`);
+  f.commit('2026-11-12');
+  g('switch', '-q', '--detach', destino);
+  g('merge', '-q', '--no-ff', '-m', 'Merge del pedido', 'pedido');
+  const conHumo2 = gate.revisar({ repo: f.dir, base: destino, staged: false, hoy: DESDE });
+  assert.deepStrictEqual(de(conHumo2.hallazgos, 'evidencia-vieja'), [], `la línea del registro sobre la fusión: ${JSON.stringify(conHumo2.hallazgos)}`);
+
+  // una ruta con corchetes es una ruta, no un patrón: lo que cambia en una carpeta hermana de una letra no la vence
+  const c = repoDeJuguete(t, { declarados: ['src/app/[id]/page.js'], extra: { 'src/app/[id]/page.js': 'v1\n', 'src/app/i/page.js': 'v1\n' } });
+  c.escribir('src/app/[id]/page.js', 'v2\n');
+  c.story('review');
+  c.commit('2026-11-11');
+  c.escribir('.advisors/dod-runtime/1.1-20261112.md', 'verdict=PASS\n');
+  c.commit('2026-11-12');
+  c.escribir('src/app/i/page.js', 'v2\n');
+  c.commit('2026-11-13');
+  assert.deepStrictEqual(de(revisar(c, DESDE).hallazgos, 'evidencia-vieja'), [], 'los corchetes no son un comodín');
 });
 
 test('T21 CodeInOtherRepo_OnlyNotice — el código declarado no está en este repo: sólo avisa que no es verificable desde acá @story-8.259 @ac-13', (t) => {

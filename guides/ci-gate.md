@@ -407,6 +407,9 @@ pedido, y lo que la rama destino cambió en esos archivos no vence su evidencia.
 **Lo que no mira.** Sólo el código que cambia este pedido. Si el código cambió en un pedido anterior y la historia se
 cierra en otro, ese otro no lo ve.
 
+**Lo que vence igual que el freno local.** Si la rama del pedido trae la rama destino después de su evidencia, y la rama
+destino cambió un archivo declarado, la evidencia vence, como en la matriz del freno local: hay que volver a correrla.
+
 El registro de humos se mira además por sus huellas. Cada línea `v:2` anota el sha256 de su salida (`output_sha`) y de su
 captura (`capture_sha`). El portón lo recalcula sobre lo que guarda git: si es distinto, o el archivo no está, sale
 `registro-de-humo-inconsistente`. Las líneas sin `v:2` se saltean, y la salida dice cuántas.
