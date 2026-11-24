@@ -376,7 +376,7 @@ For each candidate that suggests a non-trivial rule (NOT obvious things like "us
 Rules:
 - ONLY output YAML, no prose explanation outside the YAML.
 - If a candidate is too trivial or noisy, SKIP it (don't force an instinct).
-- Confidence < 0.7 → skip entirely.
+- Confidence < ${MIN_CONFIDENCE} → skip entirely.
 - Be specific. "Run tests after editing" is bad. "After editing a .cs file in NimboBackend, run dotnet test on the matching Tests project" is good.
 - tycon_artifact_suggestion: only if the pattern is strong enough to justify a new automation. Most patterns are just instincts (artifact_suggestion=null).
 - candidate_index is REQUIRED and must be the number of the Candidate block this instinct came from.
@@ -1207,7 +1207,7 @@ function main() {
 module.exports = {
   buildPrompt, catalogoDetallado, instintosYaDecididos, topeDecididos, promptDeRevision, leerRevision,
   citaVerificada, decidirDescarte, contextoOllama, migrarDescartadosViejos, maybeNotify,
-  extractYamlArray, instinctHash, existingHashes, loadObservations,
+  extractYamlArray, instinctHash, existingHashes, loadObservations, MIN_CONFIDENCE,
 };
 
 if (require.main === module) main();

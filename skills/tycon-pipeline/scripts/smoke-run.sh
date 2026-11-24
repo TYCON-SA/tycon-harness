@@ -178,7 +178,7 @@ if [ -n "$ACS" ] && [ "$PASA_SI_SET" != 1 ]; then
   exit 2
 fi
 
-# ── La corrida aislada (historia 8.314) ──
+# ── La ejecución aislada (historia 8.314) ──
 # Un humo comparado, y uno cuyo programa es un guion de laboratorio (en .advisors/dod-runtime/, o suelto en una carpeta
 # temporal), corren con una casa aparte y sin poder escribir en la de la cuenta (lib/isolated-run.js). Se decide antes de
 # escribir nada: lo que se niega no deja renglón. Un humo común no pasa por ahí y sigue como siempre, también sin
@@ -206,14 +206,14 @@ case "$DECIDE_RC" in
   2) exit 2 ;;
   *)
     if [ "$COMPARE" = 1 ]; then
-      echo "smoke-run.sh: no pude armar la corrida aislada ($ISOLATED_JS no está o no contestó): un humo comparado no corre con la casa real — no se corre." >&2
+      echo "smoke-run.sh: no pude armar la ejecución aislada ($ISOLATED_JS no está o no contestó): un humo comparado no corre con la casa real — no se corre." >&2
       exit 2
     fi
     LAB_NOMBRADO=0
     case " $* " in *.advisors/dod-runtime/*|*" /tmp/"*|*" /private/tmp/"*|*/var/folders/*) LAB_NOMBRADO=1 ;; esac
     if [ -n "${TMPDIR:-}" ]; then case " $* " in *"${TMPDIR%/}"*) LAB_NOMBRADO=1 ;; esac; fi
     if [ "$LAB_NOMBRADO" = 1 ]; then
-      echo "smoke-run.sh: no pude armar la corrida aislada ($ISOLATED_JS no está o no contestó) y el comando nombra una carpeta de laboratorio: no corre con la casa real — no se corre." >&2
+      echo "smoke-run.sh: no pude armar la ejecución aislada ($ISOLATED_JS no está o no contestó) y el comando nombra una carpeta de laboratorio: no corre con la casa real — no se corre." >&2
       exit 2
     fi
     echo "[smoke-run] ⚠️ no pude decidir si el humo es de laboratorio ($ISOLATED_JS no está o no contestó): corre con la casa de siempre." >&2 ;;
@@ -477,7 +477,7 @@ echo "[smoke-run] story=$STORY_ID acs=$ACS exit=$EXIT mutates=$MUTATES → ledge
 
 # ── El humo comparado (historia 8.167) ──
 # Después del humo de siempre, que es la evidencia: el comando con main y con el cambio, aislados. Su resultado no cambia
-# la salida de este humo; lo juzga «Preparar el commit».
+# la salida de este humo; lo juzga «Preparar el pull request».
 if [ "$COMPARE" = 1 ]; then
   CON_ENTRADA=()
   [ -n "$ENTRADA_TMP" ] && CON_ENTRADA=(--stdin-file "$ENTRADA_TMP")

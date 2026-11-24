@@ -31,7 +31,7 @@ const {
  *     "gatesRun": ["DODRT-C1", "DODRT-C2", ...]
  *   }
  *
- * Solo PASS desbloquea «Preparar el commit». PARTIAL requiere waiver explícito del user
+ * Solo PASS desbloquea «Preparar el pull request». PARTIAL requiere waiver explícito del user
  * (manejado en el step file).
  */
 function cmdMarkDodRuntimeChecked(payloadJson) {

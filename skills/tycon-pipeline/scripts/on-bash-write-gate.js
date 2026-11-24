@@ -2887,7 +2887,23 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
   if (ejecuta) todos.push(...citados(cmd).flatMap((c) => comandosAnidados(c)).flatMap((sub) => tramos(sub)).flatMap((t) => t.split(/(?<![&>|])&(?![&>])/)));
   const bases = carpetasDeLosCdDeConstancias(todos, cmd, [cwd, sesion]);
   cdSinResolver = bases.sinResolver;
-  for (const tramo of todos) for (const raiz of bases.carpetas) {
+  // `cd /otro && git merge <sha>` con todo encadenado detrás: ese git corre en la carpeta del cd, y en la de partida no se
+  // mira (un commit que sólo existe en la otra carpeta no se puede ver desde la de partida, y frenaba un merge que no corre
+  // ahí). Vale sólo para un `git <subcomando>` escrito tal cual en el primer nivel: sin opciones antes del subcomando
+  // (`-c core.worktree=…`), sin un programa delante que lo corra en otra carpeta (`sudo -D`) y sin que corra también
+  // anidado en otro programa o en un texto. Tampoco si una variable de git apunta a otro repo (`GIT_DIR=…`). Todo lo
+  // demás se sigue mirando en todas las carpetas
+  const partir = (t) => tramos(t).flatMap((x) => x.split(/(?<![&>|])&(?![&>])/)).map((x) => x.trim());
+  const soloEnElCd = bases.unico && !/\bGIT_[A-Z_]+\b/.test(String(cmd)) && todoCorreDespuesDelCd(cmd);
+  const deArriba = soloEnElCd ? new Set(lecturas.flatMap(partir)) : new Set();
+  const deAdentro = soloEnElCd ? new Set([...lecturas.flatMap((t) => [...comandosAnidados(t).slice(1), ...comandosPorOtroPrograma(t, cwd)]),
+    ...(ejecuta ? citados(cmd).flatMap((c) => comandosAnidados(c)) : [])].flatMap(partir)) : new Set();
+  const delCd = bases.carpetas.filter((d) => d === bases.unico || ![cwd, sesion].includes(d));
+  const carpetasDe = (tramo) => {
+    const t = String(tramo).trim();
+    return soloEnElCd && deArriba.has(t) && !deAdentro.has(t) && /^git\s+[a-z]/.test(t) ? delCd : bases.carpetas;
+  };
+  for (const tramo of todos) for (const raiz of carpetasDe(tramo)) {
     base = raiz;
     // sin las redirecciones de lectura con su archivo (`< lista`): no son argumentos de la copia. La carpeta de `env -C`
     // ya está entre las bases: se saca para que lo que corre `env` quede como el comando
@@ -3230,26 +3246,37 @@ const TOPE_DE_CARPETAS_DE_CD = 24;
  * (`cd a && cd b` da `a/b`). No se decide cuál vale: se miran todas, y basta una que caiga en una constancia para frenar.
  * Así un `cd` adentro de un paréntesis no cambia dónde se resuelve lo de afuera, que se sigue mirando desde la de partida.
  * `sinResolver`: hubo un `cd` con una variable o una sustitución que no se puede saber adónde va.
+ * `unico`: la carpeta, si todos los `cd` del comando van a la misma ruta absoluta; si alguno vuelve (`cd -`, `popd`,
+ * `pushd +N`), va a otra, a una relativa (que `CDPATH` puede llevar a otro lado) o no se resuelve, es null.
  */
 function carpetasDeLosCdDeConstancias(tramosDelComando, cmd, partida) {
   const carpetas = [...new Set(partida.filter(Boolean))];
   let sinResolver = false;
+  const absolutos = new Set();
+  let otroCd = false;
   for (const tramo of tramosDelComando) {
     // `env -C <carpeta> …` corre lo que sigue en esa carpeta
     const { carpetas: conEnv } = pelarEnv(tramo);
     const words = conEnv.length ? ['cd', ...conEnv] : palabrasEnteras(sinPalabrasDelShell(tramo)).filter((w) => w !== '');
     if (words[0] === 'builtin') words.shift();
     const programa = nombreDeComando(words[0]);
+    // lo que cambia la carpeta del shell sin que se vea adónde: volver (`popd`), un guion o un texto que corre en el mismo
+    // shell (`source`, `.`, `eval`), un alias, o una variable como programa (`$C /otra`, que puede ser un `cd`). Un
+    // programa aparte (`bash f.sh`, `git`) no cambia la carpeta del shell que lo lanza
+    if (['popd', 'source', '.', 'eval', 'alias'].includes(programa) || /[$`]/.test(String(words[0] || ''))) otroCd = true;
     if (programa !== 'cd' && programa !== 'pushd' && programa !== 'chdir') continue;
     // el primer argumento que no es una opción (`cd -P d`); `cd -` y `pushd +N` vuelven a una carpeta ya juntada
     const destino = words.slice(1).find((w) => w === '-' || !/^[-+]/.test(w));
-    if (destino === '-') continue;
+    if (destino === '-') { otroCd = true; continue; }
     if (destino === undefined) {
+      otroCd = true;
       if (!words.slice(1).some((w) => /^\+\d+$|^-\d+$/.test(w))) carpetas.push(os.homedir());
       continue;
     }
     const ex = expandirRuta(cmd, destino);
     if (ex.sinResolver.length || /\$|`/.test(String(ex.valor))) { sinResolver = true; continue; }
+    if (path.isAbsolute(String(ex.valor))) absolutos.add(resolveTarget(ex.valor, '/', process.platform, { homeVariable: true }));
+    else otroCd = true;
     for (const desde of [...carpetas]) {
       if (carpetas.length >= TOPE_DE_CARPETAS_DE_CD) break;
       const dir = resolveTarget(ex.valor, desde, process.platform, { homeVariable: true });
@@ -3258,7 +3285,35 @@ function carpetasDeLosCdDeConstancias(tramosDelComando, cmd, partida) {
     // con demasiados `cd`, lo que quede afuera del tope no se sabe dónde cae
     if (carpetas.length >= TOPE_DE_CARPETAS_DE_CD) sinResolver = true;
   }
-  return { carpetas, sinResolver };
+  const unico = !sinResolver && !otroCd && absolutos.size === 1 ? [...absolutos][0] : null;
+  return { carpetas, sinResolver, unico };
+}
+
+/**
+ * Si el comando empieza con un `cd` (o `pushd`, `chdir`) y todo lo demás va encadenado con `&&` o `|`: así nada corre en
+ * la carpeta de partida, porque si el `cd` falla el `&&` corta. Un `;`, un salto de línea, `||`, un `&` suelto, un
+ * paréntesis, llaves o una comilla invertida fuera de comillas pueden correr algo en la carpeta de partida (o no se sabe):
+ * entonces no.
+ */
+function todoCorreDespuesDelCd(cmd) {
+  const s = quitarCuerposDeHeredoc(String(cmd));
+  if (!/^\s*(?:builtin\s+)?(?:cd|pushd|chdir)\s/.test(s)) return false;
+  let q = null;
+  let encadenado = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '\\' && q !== "'") { i++; continue; }
+    if (q) { if (c === q) q = null; continue; }
+    if (c === "'" || c === '"') { q = c; continue; }
+    if (c === '&' && s[i + 1] === '&') { encadenado = true; i++; continue; }
+    if (c === '|' && s[i + 1] === '|') return false;
+    // el primer separador es el `&&` del cd: `cd d | x` corre el cd en otro proceso
+    if (c === '|') { if (!encadenado) return false; continue; }
+    if (c === ';' || c === '\n' || c === '\r' || c === '(' || c === ')' || c === '{' || c === '}' || c === '`') return false;
+    // `2>&1`, `>&2`, `&>archivo` y `|&` son redirecciones, no un `&` que manda al fondo
+    if (c === '&' && !/[>&|]/.test(s[i - 1] || '') && s[i + 1] !== '>') return false;
+  }
+  return encadenado;
 }
 
 // una palabra del shell entera: comillas pegadas a texto, escapes y texto suelto, hasta un blanco o un operador

@@ -1,7 +1,7 @@
 {
   "agent": "tycon-ac-coverage-checker",
   "file": "agents/tycon-ac-coverage-checker.md",
-  "hash": "07f41bfa819391ff961ebfcff84ea1518514060c",
+  "hash": "5bbf4a3deb022e1d3fd7499e5a5566406f6cf60c",
   "passed": 6,
   "total": 6,
   "score": 1,

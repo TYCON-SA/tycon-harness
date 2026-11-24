@@ -22,6 +22,10 @@ const { spawnSync } = require('child_process');
 const SO = require('../lib/save-ok.js');
 
 const GIT_ENV = { GIT_AUTHOR_NAME: 'p', GIT_AUTHOR_EMAIL: 'p@p', GIT_COMMITTER_NAME: 'p', GIT_COMMITTER_EMAIL: 'p@p' };
+// Ningún paquete activo: estas pruebas miden el pre-commit del repo antes de la foto, no los controles de CI de los
+// paquetes. Con paquetes en el árbol (el de la noche trae los del equipo), sin esto los controles de CI en local buscan
+// el arnés instalado para saber cuáles activar, y la HOME de la prueba no lo trae.
+process.env.TYCON_PACKS_DEFAULT = 'none';
 function sh(dir, ...args) {
   const r = spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', env: { ...process.env, ...GIT_ENV } });
   if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`);

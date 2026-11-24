@@ -5,7 +5,7 @@
  * autonomous-close.test.js — el cierre del turno de una corrida autónoma con la matriz roja sólo por criterios que esperan
  * la exención de la persona (on-stop-dod-gate.js). La pista le dice al agente que pida la exención corriendo él
  * `marker.js runtime-waiver`, que deja el renglón en la lista del dueño con su cuadro (owner-window.js); y salir del modo
- * autónomo, o esperar a la persona, deja cerrar el turno pero no saltea la matriz en «Preparar el commit».
+ * autónomo, o esperar a la persona, deja cerrar el turno pero no saltea la matriz en «Preparar el pull request».
  */
 const { test } = require('node:test');
 const assert = require('node:assert');

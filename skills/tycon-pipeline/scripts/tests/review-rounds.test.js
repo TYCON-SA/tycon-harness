@@ -302,12 +302,19 @@ test('Cap_SecurityCritical_AsksThePerson @story-7.37 @ac-5', () => {
 
 // 🔴 Falla con: --delegated que todavía sirve la vuelta extra por la frase del dueño, o un aviso del tope que lo ofrece.
 test('Cap_ExtraRoundDelegated_YaNoAutoriza', () => {
+  // Sin el perfil del equipo, la vuelta extra la aprueba una persona. El perfil se lee del árbol del arnés que corre, y
+  // el árbol de la noche trae el del equipo, que la puede listar como trámite (eso lo mide T80a): esta prueba corre una
+  // copia propia del arnés, sin el perfil.
+  const copia = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'tests', 'lib', 'harness-copy.js')).harnessCopy();
+  fs.rmSync(path.join(copia, 'team-profile.json'), { force: true });
+  const tope = (lab, extra = []) => spawnSync(process.execPath, [path.join(copia, 'skills', 'tycon-pipeline', 'scripts', 'pipeline.js'),
+    'smart-reloop', '--iter', '3', '--repo', lab.repo, '--story', lab.story, '--files', 'src/a.js', ...extra], { encoding: 'utf8', env: lab.env });
   const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('SEC-C1', 'CRITICAL', 'open')] });
-  const aviso = lab.reloop(3);
+  const aviso = tope(lab);
   assert.doesNotMatch(aviso.stderr, /--delegated/);
   assert.match(aviso.stderr, /--for-session/);
   lab.conversar([delDev('aprobá una vuelta más')]);
-  const sin = lab.reloop(3, ['--extra-round', '--delegated']);
+  const sin = tope(lab, ['--extra-round', '--delegated']);
   assert.equal(sin.status, 3);
   assert.match(sin.stderr, /--delegated ya no la autoriza/);
   assert.ok(!gates(lab).some((g) => g.name === 'extra-round'), 'no se anota una vuelta que no se sirvió');
