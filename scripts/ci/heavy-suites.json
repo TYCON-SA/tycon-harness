@@ -261,10 +261,21 @@
         "scripts/tests/release-api-count.p2.test.sh"
       ]
     },
-    "harness-tools.test.sh": {
-      "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado; decisión del dueño, 2026-10-08, story 8.22 tramo G). Entró a main ese mismo día con la story 8.23 y no tenía peso medido: la encontró el pase adversarial del tramo. Prueba los enchufes de cada herramienta (Claude Code y Codex), así que suma a los patrones del grupo lo propio de su tema: el adaptador de Codex (adapters/codex/**) y lo que lo arma (build/**). Hasta ese día se elegía por su `gate_only_when_touching` de suites.json, que incluía scripts/lib/** y scripts/hooks/**; ése sigue siendo el del portón de cada story.",
+    "harness-tools.p1.test.sh": {
+      "why": "Una de las dos partes de harness-tools.test.sh (partida el 2026-11-24); el criterio es el de la suite entera. Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado; decisión del dueño, 2026-10-08, story 8.22 tramo G). Entró a main ese mismo día con la story 8.23 y no tenía peso medido: la encontró el pase adversarial del tramo. Prueba los enchufes de cada herramienta (Claude Code y Codex), así que suma a los patrones del grupo lo propio de su tema: el adaptador de Codex (adapters/codex/**) y lo que lo arma (build/**). Hasta ese día se elegía por su `gate_only_when_touching` de suites.json, que incluía scripts/lib/** y scripts/hooks/**; ése sigue siendo el del portón de cada story.",
       "group": "installer",
       "patterns": [
+        "scripts/tests/harness-tools.p1.test.sh",
+        "scripts/tests/harness-tools.test.sh",
+        "adapters/codex/**",
+        "build/**"
+      ]
+    },
+    "harness-tools.p2.test.sh": {
+      "why": "Una de las dos partes de harness-tools.test.sh (partida el 2026-11-24); el criterio es el de la suite entera. Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado; decisión del dueño, 2026-10-08, story 8.22 tramo G). Entró a main ese mismo día con la story 8.23 y no tenía peso medido: la encontró el pase adversarial del tramo. Prueba los enchufes de cada herramienta (Claude Code y Codex), así que suma a los patrones del grupo lo propio de su tema: el adaptador de Codex (adapters/codex/**) y lo que lo arma (build/**). Hasta ese día se elegía por su `gate_only_when_touching` de suites.json, que incluía scripts/lib/** y scripts/hooks/**; ése sigue siendo el del portón de cada story.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/harness-tools.p2.test.sh",
         "scripts/tests/harness-tools.test.sh",
         "adapters/codex/**",
         "build/**"
