@@ -25,7 +25,8 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *   open --name <n> --repo <repo> [--branch <rama>] [--slot] [--reuse] -- <encargo>
  *                            lo mismo, en una copia hermana nueva del repo (`<principal>--wt-<nombre>`, desde
  *                            origin/main), en la rama del trabajo (wt/<nombre> sin rama); con --slot, en un puesto fijo
- *                            libre (scripts/tools/work-slots.js). Si Claude Code no la abre, borra lo que creó, salvo
+ *                            libre (scripts/tools/work-slots.js). Sin --slot, un puesto libre donde Claude Code ya abrió
+ *                            una sesión va antes que la copia nueva. Si Claude Code no la abre, borra lo que creó, salvo
  *                            si contesta que la carpeta no está aprobada: la deja, con su rama, para que una persona la
  *                            apruebe, y con --reuse la reintenta en esa misma carpeta (la copia de ese nombre, o el
  *                            puesto que está en esa rama)
@@ -3286,9 +3287,11 @@ function openNow(opts) {
   if (pm.problem) return no(`No pude saber en qué modo de permisos estás (${pm.problem}): no la abrí.`);
   // Con el repo, la sesión va a una copia hermana nueva (`<principal>--wt-<nombre>`); con `--slot`, a un puesto fijo
   // (scripts/tools/work-slots.js). Con 2.1.312 una copia de un repo con la principal aprobada no pedía aprobación; con
-  // 2.1.330 la sesión de fondo la pide para cada copia y cada puesto: la carpeta queda y `--reuse` la reintenta ahí.
+  // 2.1.330 la sesión de fondo la pide para cada copia y cada puesto: la carpeta queda y `--reuse` la reintenta ahí. Por
+  // eso, sin `--slot`, un puesto libre que Claude Code ya aceptó va antes que una copia nueva.
   let slot = null;
   let copy = null;
+  let preferred = false;
   if (opts.repo) {
     if (!path.isAbsolute(opts.repo)) return no('El repo va con su ruta absoluta: no la abrí.');
     const branch = opts.branch || `wt/${name}`;
@@ -3301,9 +3304,20 @@ function openNow(opts) {
       if (!tk.ok) return no(`${tk.message.replace(/\.$/, '')}; no la abrí.`);
       slot = tk;
     } else {
-      const c = siblingCopy({ repo: opts.repo, name, branch });
-      if (!c.ok) return no(c.message);
-      copy = c;
+      // sólo un puesto que ya está, que Claude Code ya aceptó y sin una sesión viva adentro (la que lo usó pudo quedar
+      // abierta); si no hay o no se pudo tomar, la copia de siempre
+      const tc = workSlots.trustCheck({ home, env });
+      const ocupadas = new Set(live.filter((x) => x.cwd).map((x) => realDir(x.cwd)));
+      const trusted = tc.trusted ? (p) => tc.trusted(p) && !ocupadas.has(realDir(p)) : null;
+      const tk = trusted ? workSlots.take({ home, env, arnes: opts.arnes, repo: opts.repo, branch, trusted }) : null;
+      if (tk && tk.ok) {
+        slot = tk;
+        preferred = true;
+      } else {
+        const c = siblingCopy({ repo: opts.repo, name, branch });
+        if (!c.ok) return no(c.message);
+        copy = c;
+      }
     }
   }
   const where = slot ? slot.path : copy ? copy.path : cwd;
@@ -3350,6 +3364,8 @@ function openNow(opts) {
     const out = `${r.stderr || ''}\n${r.stdout || ''}`;
     const first = out.split('\n').map((l) => l.trim()).find(Boolean);
     if (/not trusted/i.test(out)) {
+      // ese puesto ya no cuenta como aceptado
+      if (slot) { try { workSlots.noteAccepted({ home, folder: slot.path, accepted: false }); } catch { /* el registro sólo ordena la preferencia */ } }
       const line = untrustedSaid(out);
       const said = line ? ` Claude Code dijo: «${line}».` : '';
       if (!slot && !copy) return fail(`La carpeta ${where} todavía no está aprobada para Claude Code: la abre el dueño una vez. Mientras tanto, la sesión la abre el dueño y yo le doy el encargo.${said}`);
@@ -3357,7 +3373,10 @@ function openNow(opts) {
     }
     return fail(`El lanzador falló: ${first || (r.signal ? `lo cortó la señal ${r.signal}` : `salió con código ${r.status}`)}. No reintenté.`);
   }
-  const opened = `Abrí «${name}» en ${where}. Para entrar: claude attach ${name}, o desde claude.ai/code (control remoto «${name}»)`;
+  // abrió: Claude Code aceptó el puesto, y la próxima apertura sin --slot lo puede preferir
+  if (slot) { try { workSlots.noteAccepted({ home, folder: slot.path }); } catch { /* el registro sólo ordena la preferencia */ } }
+  const enPuesto = preferred ? ` (el puesto ${slot.n}, que Claude Code ya aceptó, en vez de una copia nueva)` : '';
+  const opened = `Abrí «${name}» en ${where}${enPuesto}. Para entrar: claude attach ${name}, o desde claude.ai/code (control remoto «${name}»)`;
   let unlaunched = '';
   try { noteLaunched({ home, now, name, cwd: where, por: sessionOf({ ...opts, env }) }); } catch (e) {
     unlaunched = ` No la pude anotar entre las que abrió la coordinadora (${e.code || e.message}): puede preguntarle a la persona.`;
