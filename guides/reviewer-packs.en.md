@@ -156,6 +156,7 @@ Nor is `packs.default` set in the machine configuration (`~/.claude/tycon.json`)
    words and without the IDs, what each rule looks at, which ones stop the story and which only warn, and how many exam
    cases passed.
 8. **The backup, once.** A local profile lives only on that machine: `doctor` shows it as a warning. Offer once to push it
-   to GitHub or Azure DevOps: an empty private repo, and from the profile folder `git remote add origin <address>` and
+   to GitHub or Azure DevOps (the profile cannot go on GitLab yet): an empty private repo, and from the profile folder
+   `git remote add origin <address>` and
    `git push -u origin main`; then `harness.js install --team <address>`, so the harness reads it from there. If the
    person says no, do not offer it again: the `doctor` warning stays, and it blocks nothing.
