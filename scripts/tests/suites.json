@@ -943,6 +943,18 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/subtraction-test.test.js",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/tools/**",
+        "scripts/controls-bench/**",
+        "scripts/setup/**",
+        "scripts/lib/**",
+        "scripts/metrics/**"
+      ]
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/guide-runner.test.js",
       "requiere": [],
       "gate_only_when_touching": [
