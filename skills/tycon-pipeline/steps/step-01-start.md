@@ -80,7 +80,7 @@ dice en `actions_done`; si esa rama ya existe, pausa nombrándola. La marca sola
 
 ### PIPE-C5 — la story ya está `in-progress` sin marcador activo (CRITICAL, bloquea)
 
-Es un pipeline abandonado (sesión cerrada sin «Preparar el commit»). Mostrar la fecha del último cambio del
+Es un pipeline abandonado (sesión cerrada sin «Preparar el pull request»). Mostrar la fecha del último cambio del
 frontmatter (`git log`) y ofrecer: **retomar** (resumen de engram, `git status`, seguir donde quedó), **reiniciar**
 (`marker.js update-story-status "<STORY_PATH>" "ready-for-dev"` y volver a arrancar; lo no commiteado se pierde con un
 `git checkout`) o **cancelar**.
@@ -205,7 +205,7 @@ sobre la misma historia sólo choca si entrega la misma tanda, o si no anotó ni
 vez: con la misma tanda no cambia nada, con otra pausa, y sin tanda anotada la anota. Si la tanda no se pudo anotar,
 `start` sale 1 con el comando a mano; hasta anotarla, la matriz mide todas las tandas.
 
-Desde ahí «Preparar el commit» le pide la evidencia en vivo de esa tanda, no la de todas. Una ejecución que arrancó sin
+Desde ahí «Preparar el pull request» le pide la evidencia en vivo de esa tanda, no la de todas. Una ejecución que arrancó sin
 `--batch` la anota a mano, una vez:
 
 ```bash

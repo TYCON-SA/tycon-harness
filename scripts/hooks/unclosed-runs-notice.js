@@ -11,7 +11,7 @@
  *
  * Además vive acá `debtNotice`, el aviso de la deuda de evidencia en vivo vencida, con su propio sello por día local
  * (`evidence-debt-notice.json`): una corrida que llegó al commit con criterios sin evidencia en vivo (el renglón
- * `acmatrix-debt` de `gates.log`, que anota `marker.js` al preparar el commit) y cuya fecha pasó. Mira sólo esos
+ * `acmatrix-debt` de `gates.log`, que anota `marker.js` al preparar el pull request) y cuya fecha pasó. Mira sólo esos
  * criterios en la matriz de la historia: si alguno sigue sin evidencia, una línea; si la historia no está o la matriz no
  * se calcula, lo dice («no pude mirar»). La deuda pagada se cierra con `acmatrix-debt-paid`. No corre desde este gancho,
  * que se instala sólo con el buzón: lo llama `finished-open-notice.js`, que se instala siempre.

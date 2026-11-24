@@ -3293,12 +3293,12 @@ function notaCierre3(marker) {
 const NOTA_CIERRE_5B = 'si el pase corrió, marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> '
   + '--tests <k> [--own <p> --in "<rutas>"] [--deferred <d> --reason "…"]; si no corre, marker.js mark-adversarial-skipped '
   + '--files <archivos de código del diff> (lo decide el portón). Los dos cierran el pase adversarial (la bandera ya no se escribe a mano)';
-// La prueba en vivo tampoco se cierra con `complete-step`, ni se saltea en silencio. El cierre de «Preparar el commit» exige
+// La prueba en vivo tampoco se cierra con `complete-step`, ni se saltea en silencio. El cierre de «Preparar el pull request» exige
 // `dodRuntimeChecked` SIEMPRE —la story exenta la deja con «exenta: …»—, así que `next` no puede dar la prueba en vivo por
 // salteado y mandar al 8: chocaría contra ese freno después de obedecer a `next`. El motivo mecánico del salteo sigue a la vista en `skip_mechanical`.
 const NOTA_CIERRE_7C = 'marker.js mark-dod-runtime-checked \'{"verdict":"PASS","evidencePath":"<ruta de la evidencia>"}\'';
 const NOTA_7C_EXENTA = 'La story está exenta de la verificación en vivo (dod_runtime_exempt: true): no hay nada que correr, pero el cierre '
-  + 'de «Preparar el commit» pide su constancia. Dejala con: marker.js mark-dod-runtime-checked \'{"verdict":"PASS","evidencePath":"exenta: <la razón del frontmatter>"}\'.';
+  + 'de «Preparar el pull request» pide su constancia. Dejala con: marker.js mark-dod-runtime-checked \'{"verdict":"PASS","evidencePath":"exenta: <la razón del frontmatter>"}\'.';
 
 /**
  * Qué le falta al pase adversarial, para `next`. Sólo con «Correr las pruebas» cerrado.
@@ -3308,7 +3308,7 @@ const NOTA_7C_EXENTA = 'La story está exenta de la verificación en vivo (dod_r
  * veredicto que el portón dejó anotado (`adversarialGate`): no lo recalcula, porque no tiene los archivos del cambio.
  * Sin veredicto, lo que pide es consultar el portón —la falta de veredicto no es «no corre»—.
  *
- * Nunca pide relanzar un pase atendido (relanzar uno cerrado bloquea «Preparar el commit»), y ante un lanzamiento de otra sesión
+ * Nunca pide relanzar un pase atendido (relanzar uno cerrado bloquea «Preparar el pull request»), y ante un lanzamiento de otra sesión
  * sin resultado aplica la regla de `lib/adversarial-verdict.js` sin preguntarle a nadie.
  * → `{ pending_action?: { kind, message, command?, rule?, why? }, adversarial_note?: string }`
  */
@@ -3410,7 +3410,7 @@ function accionDelPase(marker, story, { sidNow, nextStep } = {}) {
 
 /**
  * Lo que cambia en el paso por el tamaño de la corrida, o null. «Correr las pruebas» de una liviana: las tandas van
- * juntas. «Preparar el commit» de una liviana: no se pide la validación pesada del repo, salvo que el dev la haya nombrado
+ * juntas. «Preparar el pull request» de una liviana: no se pide la validación pesada del repo, salvo que el dev la haya nombrado
  * (`marker.js set-flag heavyValidationRequested true`).
  */
 function notaDelTamano(marker, nextStep) {
@@ -3448,7 +3448,7 @@ function computeNext() {
   const warnings = STEPS_TABLE.startWarningLines(marker);
 
   // Un arreglo después de Hallazgos (una edición de código posterior al último cierre de los revisores) pide otra vuelta.
-  // Si los revisores cerraron después de «Preparar el commit», lo preparado ya no es lo revisado: se prepara de nuevo.
+  // Si los revisores cerraron después de «Preparar el pull request», lo preparado ya no es lo revisado: se prepara de nuevo.
   const reloop = STEPS_TABLE.reviewersRound(marker);
   const ultimoViejo = STEPS_TABLE.prepareCommitStale(marker);
 
@@ -3460,7 +3460,7 @@ function computeNext() {
     if (s.id === 'reviewers' && reloop) done = false;
     if (s.id === 'prepare-commit' && ultimoViejo) done = false;
     if (s.id === 'live-check' && !done && story) {
-      // el único salteo que deja constancia: sin ella «Preparar el commit» no cierra (ver NOTA_CIERRE_7C)
+      // el único salteo que deja constancia: sin ella «Preparar el pull request» no cierra (ver NOTA_CIERRE_7C)
       if (storyIsExemptCheck(story)) skip = 'dod_runtime_exempt: true en frontmatter';
       else if (!storyRequiresRuntimeEvidenceCheck(story)) skip = 'story NO declara runtime tests (sin tests_done_*, sin E2E, sin tests/e2e/)';
     }
@@ -4170,7 +4170,7 @@ function computeStart(args) {
       // del roster resolvería un path inexistente y callaría con "mismo repo". Todo lector acepta absolutos.
       storyId, storyPath: path.resolve(storyPath), repoPath: repo, runDir, sprint: fm.sprint ? parseInt(fm.sprint, 10) || null : null,
       // Dónde nace la evidencia de cierre: el repo de la story, aunque el código
-      // esté en otro. Lo leen los pasos «Probar en vivo» y «Preparar el commit» para no tener que adivinarlo.
+      // esté en otro. Lo leen los pasos «Probar en vivo» y «Preparar el pull request» para no tener que adivinarlo.
       evidenceDir: evid.dir || null,
       // Commit de partida: la base de las «líneas tocadas» que mide test-gate.sh.
       // Sin git queda null y test-gate cae a HEAD diciéndolo.
@@ -5257,6 +5257,7 @@ function equivalenciasDeModelos() {
 //      diff toca una de esas rutas, corre AUNQUE el risk-class dé LOW. Está en el 4to
 //      lugar a propósito: no puede pisar el kill-switch ni el `off` del dueño del repo, pero sí
 //      gana sobre el criterio por tamaño de diff, que puede dejar pasar un defecto en superficie compartida.
+//   4d) el código va a un repo hermano con su corrida a la vista (lib/delegated-pass.js): esa corrida decide el pase.
 //   5) default → risk-class (NORMAL run / LOW skip). Si el repo NO declaró superficie compartida,
 //      el skip por LOW se decide a ciegas y el veredicto lo dice (`shared_surface_declared:false`).
 // Corre UNA vez por corrida (default: se lanza al cierre de «Correr las pruebas» y el paso del pase adversarial es el join; TYCON_5B_EARLY=0 → se lanza en su paso), NUNCA por re-loop D.i
@@ -5455,7 +5456,17 @@ function deepReviewGateDeLaCorrida({ args, corrida, casa, userInfo, mostrar = fa
   const ej = ejecucionDeLaCorrida(args, corrida);
   const constancia = ej ? sk.vigente({ ...ej, casa, userInfo })
     : { ok: false, motivo: 'no hay una ejecución abierta de esta story', ninguna: true };
-  const result = computeDeepReviewGate({ ...args, adversarialSkipRecord: constancia, marcador: corrida || null });
+  // el pase que le toca a la corrida del repo hermano: sólo con una corrida de esta story y sin la constancia, que ya saltea.
+  // Lo que no se pudo mirar no deja el pase: el portón sigue como siempre y lo dice
+  let paseDelegado = null;
+  if (ej && !constancia.ok) {
+    try {
+      paseDelegado = require('./lib/delegated-pass.js').paseDelegado({ repo: args.repo, story: args.story, files: args.files, filesDeclarado: args.filesDeclarado, marcador: corrida });
+    } catch (e) {
+      paseDelegado = { ok: false, motivo: `no pude mirar si el pase le toca al repo hermano (${e && e.message})` };
+    }
+  }
+  const result = computeDeepReviewGate({ ...args, adversarialSkipRecord: constancia, marcador: corrida || null, paseDelegado });
   let texto = '';
   // Sin corrida no hay ejecución que firmar: la constancia nombra carpeta y comienzo, y no se ofrecen comandos.
   if (result.skip_request && mostrar && !ej) {
@@ -5547,6 +5558,21 @@ function criterioDelPase(args) {
   if (runSize.size === 'liviana') {
     return { run: false, risk: 'liviana', model: null, run_size: 'liviana', reason: `corrida liviana (${runSize.reason}) → sin pase adversarial; override: --deep-review o marker.js set-size completa --reason "<por qué>"` };
   }
+  // 4d) El código va a un repo hermano y su corrida se ve: esa corrida, con su portón, decide el pase sobre ese código.
+  //     Lo mira `deepReviewGateDeLaCorrida` (lib/delegated-pass.js); sin la mirada, o con algo que falte, se sigue
+  //     como siempre y el veredicto dice por qué (`delegation`).
+  const pd = args.paseDelegado || null;
+  if (pd && pd.ok) {
+    return { run: false, risk: 'delegated', model: null, decision: 'delegate', delegated_to: pd.hermanos,
+      reason: `${pd.motivo}: esta corrida no corre el pase ni pregunta (${pd.hermanos.map((h) => `la ejecución de ${h.nombre}, sesión ${h.sesion || '?'}`).join('; ')})` };
+  }
+  const delegacion = pd ? { delegation: { ok: false, motivo: pd.motivo } } : {};
+  const veredicto = criterioDeLaMatriz(args, { model, extras });
+  return veredicto && typeof veredicto === 'object' ? { ...veredicto, ...delegacion } : veredicto;
+}
+
+// La matriz de la organización (lib/review-policy.js `codeReview`): delicada o no, chica o grande, con la densidad.
+function criterioDeLaMatriz(args, { model, extras }) {
   // 5) La matriz de la organización (lib/review-policy.js `codeReview`): delicada o no, chica o grande.
   const rc = computeRiskClass(args);
   // `computeRiskClass` devuelve `{risk:'NORMAL', error, ...}` SIN `criteria` cuando --story es
@@ -6475,7 +6501,7 @@ function writeFollowups(args) {
 // determinista sin LLM). Como WRITE MANUAL del orquestador en el paso de hallazgos se olvidaría y rompería el conteo.
 // `write-findings` lo
 // vuelve una llamada de script validada + ubicada sola; `findings-status` lo enforcea como
-// pre-condición mecánica de «Preparar el commit» (exit 3 si falta → el orquestador lo escribe antes del commit).
+// pre-condición mecánica de «Preparar el pull request» (exit 3 si falta → el orquestador lo escribe antes del commit).
 const VALID_SEVERITY = new Set(['CRITICAL', 'WARNING']);
 // 'refuted': hallazgo reportado,
 // investigado y RETIRADO por falso (típicamente por el propio advisor). No es 'fixed' (no hubo
@@ -6684,7 +6710,7 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
     for (const r of porConfirmar.agregar) renglones.push(`     · ${r.name}: ${r.reason}`);
     for (const l of porConfirmar.fuera) renglones.push(`     · ${l}`);
     renglones.push('   Una vuelta más con --extra-round lo confirma; si no, el cierre pide eximirlo.');
-  } else if (!ab.length) renglones.push('   No quedó nada abierto: seguí con «Probar en vivo» y «Preparar el commit».');
+  } else if (!ab.length) renglones.push('   No quedó nada abierto: seguí con «Probar en vivo» y «Preparar el pull request».');
   if (bloquean.length) {
     renglones.push(`   Quedó abierto algo de seguridad o de datos (${bloquean.length}): lo decide una persona. Mostrale esto y preguntale qué hace:`);
     for (const l of rr.resumen(bloquean)) renglones.push(`     · ${l}`);
@@ -7076,7 +7102,7 @@ function projectRunToStoryRepo(runDir, storyPath) {
 }
 
 // ── El cierre mira las aprobaciones donde las mira el portón ────────────────
-// Antes de «Preparar el commit»: proyecta la corrida abierta y revisa, en el repo de la STORY, cada carpeta de corrida
+// Antes de «Preparar el pull request»: proyecta la corrida abierta y revisa, en el repo de la STORY, cada carpeta de corrida
 // de la story con la regla del portón (lib/approvals.js → problemasDelRegistro, su primer problema, y la exención de
 // `advisors_exempt`). Una carpeta a la que le falta algo y tiene su par con el mismo nombre en el repo del código se
 // vuelve a proyectar y se vuelve a mirar: así se ponen al día las corridas que anotaron sólo en el repo del código. Con
@@ -7457,7 +7483,7 @@ function recordRefutation(args) {
       : "El verificador reprodujo el hallazgo: queda 'fixed' (con su prueba) u 'open'; 'refuted' y 'waived' se rechazan." };
 }
 
-// findings-status: pre-condición mecánica de «Preparar el commit». ¿El run tiene findings.json válido?
+// findings-status: pre-condición mecánica de «Preparar el pull request». ¿El run tiene findings.json válido?
 function computeFindingsStatus(args) {
   const storyId = deriveStoryId(args.story);
   if (!storyId) return { error: `--story inválido o sin frontmatter: ${args.story}` };
@@ -8923,7 +8949,7 @@ function main() {
   }
   // ── findings.json del paso de hallazgos ─────────────────────────────────
   // write-findings: escribe el artefacto machine-parseable (paso de hallazgos). findings-status:
-  // pre-condición de «Preparar el commit» — exit 3 si falta (para que el orquestador lo escriba).
+  // pre-condición de «Preparar el pull request» — exit 3 si falta (para que el orquestador lo escriba).
   if (cmd === 'write-findings') {
     const result = writeFindings(args);
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
@@ -9089,7 +9115,7 @@ function main() {
     '       (valida lo que devolvió el verificador {refuted, command, output} y guarda <corrida>/refutations/<id>.json:\n' +
     '       sin esa constancia write-findings no deja un hallazgo como refuted.)\n' +
     '  node pipeline.js findings-status   --story <spec.md> --repo <dir>\n' +
-    '       (pre-condición de «Preparar el commit» — exit 3 si falta el findings.json del run. El orquestador lo\n' +
+    '       (pre-condición de «Preparar el pull request» — exit 3 si falta el findings.json del run. El orquestador lo\n' +
     '       corre antes del commit-prep y, si falta, lo escribe con write-findings.)\n' +
     '  node pipeline.js write-followups   --story <spec.md> --findings <findings.json>\n' +
     '       (adopción BMAD — persiste findings advisor no resueltos como sección checkbox EN la\n' +
