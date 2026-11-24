@@ -161,7 +161,14 @@ function problemsOf(m, folder) {
     else for (const o of m.operations) if (!contrato.operations.includes(o)) out.push(`operación desconocida: ${o} (las del contrato: ${contrato.operations.join(', ')})`);
     if (m.capabilities !== undefined && !isObject(m.capabilities)) out.push('«capabilities» es un objeto');
     if (m.rawCommands !== undefined && !(Array.isArray(m.rawCommands) && m.rawCommands.every((c) => typeof c === 'string' && c.trim()))) out.push('«rawCommands» es una lista de textos');
-  }
+    // los comandos crudos que crean o juntan un pedido: los mira el freno de guardar, que los pasa por la ventana de la
+    // persona. Cada uno es uno de `rawCommands`: una sola lista de los comandos de la plataforma
+    if (m.changeRequestCommands !== undefined) {
+      const crudos = Array.isArray(m.rawCommands) ? m.rawCommands.map((c) => String(c).trim()) : [];
+      if (!(Array.isArray(m.changeRequestCommands) && m.changeRequestCommands.every((c) => typeof c === 'string' && c.trim()))) out.push('«changeRequestCommands» es una lista de textos');
+      else for (const c of m.changeRequestCommands) if (!crudos.includes(c.trim())) out.push(`«changeRequestCommands»: «${c}» no está en «rawCommands»`);
+    }
+  } else if (m.changeRequestCommands !== undefined) out.push('«changeRequestCommands» es sólo de un conector de plataforma (kind platform)');
   // `hardSignals`: los patrones de un comando o una dirección de su plataforma que el núcleo no puede sumar (los cuenta el
   // candado, scripts/ci/check-core-neutrality.js): así el núcleo no escribe ninguno
   if (m.hardSignals !== undefined) {
@@ -242,7 +249,7 @@ function listManifests({ env = process.env, dir = integrationsDir(env) } = {}) {
       hooks: Array.isArray(m.hooks) ? m.hooks : [], dispatch: Array.isArray(m.dispatch) ? m.dispatch : [],
       skills: Array.isArray(m.skills) ? m.skills : [], settings: Array.isArray(m.settings) ? m.settings : [],
       mcp: m.mcp ? { server: m.mcp.server, machine: m.mcp.machine === true } : null,
-      ...(m.kind === 'platform' ? { connector: m.connector, operations: m.operations, capabilities: isObject(m.capabilities) ? m.capabilities : {}, rawCommands: Array.isArray(m.rawCommands) ? m.rawCommands : [], hardSignals: Array.isArray(m.hardSignals) ? m.hardSignals : [] } : {}),
+      ...(m.kind === 'platform' ? { connector: m.connector, operations: m.operations, capabilities: isObject(m.capabilities) ? m.capabilities : {}, rawCommands: Array.isArray(m.rawCommands) ? m.rawCommands : [], changeRequestCommands: Array.isArray(m.changeRequestCommands) ? m.changeRequestCommands : [], hardSignals: Array.isArray(m.hardSignals) ? m.hardSignals : [] } : {}),
       offer: m.offer ? { does: m.offer.does, needs: m.offer.needs } : null,
     });
   }

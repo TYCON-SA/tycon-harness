@@ -54,7 +54,7 @@ const leerLineas = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8').split('
 
 // ── DEF-8.195: el marcador no acepta pasos hechos por set, ni pierde ediciones sin rastro ────────────────────────────
 
-test('T1 MarkerSet_SameStoryNewDoneSteps_Discarded @def-8.195 — «Preparar el commit» no se marca hecho con set', () => {
+test('T1 MarkerSet_SameStoryNewDoneSteps_Discarded @def-8.195 — «Preparar el pull request» no se marca hecho con set', () => {
   const l = lab();
   const historia = escribir(l.repo, 'story.md', '---\nstory: "9.5"\n---\n');
   const base = { storyId: '9.5', storyPath: historia, repoPath: l.repo, stepScheme: 2, stepsCompleted: ['start'], stepsPending: ['plan', 'prepare-commit'] };

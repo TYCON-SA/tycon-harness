@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-dod-runtime-checker.md
-# source_sha256: 4b601f6553200a0ca527dcdc37ed8a9bb9ff17e37c9c2725dca27afe2571d3f8
+# source_sha256: c6e8e7dc48c1d0041b2f5d8bf656922d69abfc3c7e13503f45018776ec084f88
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-dod-runtime-checker.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-dod-runtime-checker").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
@@ -425,7 +425,7 @@ block-transition-to-done | proceed-to-done
 ## Cuándo invocar
 
 - **Antes de transicionar `status: review → done`** en el frontmatter (typically post-push, post-CI-run).
-- **Antes de «Preparar el commit» de una ejecución que cablea UI nueva** — aunque la story quede `in-progress` y los E2E estén diferidos (DODRT-C5).
+- **Antes de «Preparar el pull request» de una ejecución que cablea UI nueva** — aunque la story quede `in-progress` y los E2E estén diferidos (DODRT-C5).
 - Cuando el user pide explícito *\"validá DoD\"* / *\"está realmente done?\"* / *\"podemos marcar done?\"* / *\"lo probaste?\"*.
 
 ## Cuándo NO invocar

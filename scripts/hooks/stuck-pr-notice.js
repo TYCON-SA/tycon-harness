@@ -25,7 +25,8 @@
 // nunca calla como si no hubiera nada.
 //
 // LA COLA: un pedido que la plataforma sacó de la cola (sin auto-completar y fuera de ella) sale enseguida y sin reloj,
-// con la causa: la CI combinada en rojo, el choque con main, o lo que la plataforma diga. Uno con auto-completar que no
+// con la causa: la CI combinada en rojo (con lo que falló, cuando la lectura de fondo lo encontró en el registro de la
+// corrida de la cola: la constancia que falta o las suites en rojo), el choque con main, o lo que la plataforma diga. Uno con auto-completar que no
 // tiene lugar en la cola lo dice. «Todavía no calculado» no es un estado: conserva el anterior y su reloj.
 //
 // Muestra 5 pedidos como máximo, los más viejos primero, y el resto como «(+N más)». El texto que viene de la plataforma
@@ -125,15 +126,50 @@ const fotoDe = (dir) => path.join(dir, 'stuck-prs-photo.json');
 const candadoDe = (dir) => path.join(dir, 'stuck-prs-refresh.lock');
 const refrescoMs = () => { const v = Number(readVar('TYCON_STUCK_PR_REFRESH_MS')); return Number.isFinite(v) && v > 0 ? v : 90000; };
 
-/** Lee los repos con un tope (sin los controles de cada pedido, y con la cola donde la plataforma la tiene). */
-async function leer(repos, tree, tope) {
+/**
+ * Lee los repos con un tope (sin los controles de cada pedido, y con la cola donde la plataforma la tiene). `extra(repo)`
+ * suma argumentos a la lectura de cada repo.
+ */
+async function leer(repos, tree, tope, extra = () => ({})) {
   const platform = require(path.join(ROOT, 'scripts', 'lib', 'platform', 'platform.js'));
   const deadlineMs = Date.now() + tope;
   const leidas = {};
   for (const repo of repos) {
-    leidas[claveDe(repo)] = await platform.run('change-request.list', { deadlineMs, checks: false, queue: true }, { env: process.env, repo, tree });
+    leidas[claveDe(repo)] = await platform.run('change-request.list', { deadlineMs, checks: false, queue: true, ...extra(repo) }, { env: process.env, repo, tree });
   }
   return leidas;
+}
+
+// POR QUÉ LA CI COMBINADA SALIÓ EN ROJO: lo lee la lectura de fondo, nunca el arranque. La plataforma lo busca en el
+// registro de la corrida de la cola (`queueDropDetail`), y queda guardado por caída (`<repo>#<número>@<fecha>`) para no
+// volver a leerlo; una caída de más de 14 días se olvida, salvo que la lectura la siga trayendo (si no, se leería una vez
+// sí y otra no).
+const motivosDe = (dir) => path.join(dir, 'queue-drop-reasons.json');
+const MOTIVO_DIAS = 14;
+function leerMotivos(dir) {
+  const m = leerJson(motivosDe(dir));
+  return m && typeof m === 'object' && !Array.isArray(m) ? m : {};
+}
+/** Guarda el motivo de cada caída que trajo la lectura y olvida los viejos que la lectura ya no trae. */
+function guardarMotivos(dir, repos, leidas, motivos, ahora) {
+  const nuevos = {};
+  const siguen = new Set();
+  for (const repo of repos) {
+    const r = leidas[claveDe(repo)];
+    if (!r || !r.ok || !Array.isArray(r.value)) continue;
+    for (const p of r.value) {
+      const d = p.lastQueueDrop;
+      if (!d) continue;
+      const clave = `${claveDe(repo)}#${p.number}@${d.at}`;
+      siguen.add(clave);
+      if (d.detail && typeof d.detail.text === 'string') nuevos[clave] = { kind: d.detail.kind, text: d.detail.text };
+    }
+  }
+  for (const [k, v] of Object.entries(motivos)) {
+    const at = Date.parse(String(k).split('@').pop());
+    if (!(k in nuevos) && (siguen.has(k) || (Number.isFinite(at) && ahora - at < MOTIVO_DIAS * 24 * HORA_MS))) nuevos[k] = v;
+  }
+  escribirJson(motivosDe(dir), nuevos);
 }
 
 /**
@@ -254,8 +290,14 @@ async function refrescar(tree) {
     const declarados = reposDelArnes(tree);
     if (declarados.problema || !declarados.repos.length) return;
     const ahora = Date.now();
-    const leidas = await leer(declarados.repos, tree, refrescoMs());
+    const motivos = leerMotivos(dir);
+    const conocidos = (repo) => {
+      const pre = `${claveDe(repo)}#`;
+      return { queueDropDetail: { known: Object.keys(motivos).filter((k) => k.startsWith(pre)).map((k) => k.slice(pre.length)) } };
+    };
+    const leidas = await leer(declarados.repos, tree, refrescoMs(), conocidos);
     escribirJson(fotoDe(dir), { at: new Date(ahora).toISOString(), repos: declarados.repos.map(claveDe), lecturas: leidas });
+    try { guardarMotivos(dir, declarados.repos, leidas, motivos, ahora); } catch { /* sin guardar, la próxima lectura los busca otra vez */ }
     escribirJson(propiosDe(dir), leerPropios({ repos: declarados.repos, ahora }));
     if (declarados.publico) escribirJson(afueraDe(dir), leerAfuera(declarados.publico, tree, ahora));
     reencolarLosListos(dir, declarados.repos, leidas, ahora);
@@ -423,12 +465,16 @@ const comoQuedoAfuera = (p, ahora) => {
   return Number.isFinite(t) && Number.isFinite(ahora) ? `después del empuje de hace ${haceDe(Math.max(0, ahora - t))}` : 'después del empuje';
 };
 
-/** La línea de una caída de la cola que no vuelve sola: cuándo, por qué cayó y por qué no se re-encola. */
-function lineaDeCaida(repo, p, ahora) {
+/**
+ * La línea de una caída de la cola que no vuelve sola: cuándo, por qué cayó (con lo que falló, si la lectura de fondo lo
+ * encontró: `motivos`) y por qué no se re-encola.
+ */
+function lineaDeCaida(repo, p, ahora, motivos = {}) {
   const d = p.lastQueueDrop;
   const at = Date.parse(d.at);
   const ms = Number.isFinite(at) ? ahora - at : 0;
-  const por = CAUSAS[d.cause] || `la plataforma dice «${limpio(d.reason, 40)}»`;
+  const detalle = (d.detail && d.detail.text) || (motivos[`${claveDe(repo)}#${p.number}@${d.at}`] || {}).text;
+  const por = `${CAUSAS[d.cause] || `la plataforma dice «${limpio(d.reason, 40)}»`}${detalle ? ` (${limpio(detalle, 220)})` : ''}`;
   const caida = decisionDeCaida(p);
   const porQueNo = caida && !caida.vuelve && repo.platform === 'github'
     ? `. No lo re-encolo: ${caida.porQueNo}${caida.aMano ? ` con ${comandoParaEncolar(repo, p.number, p.nodeId)}` : ''}` : '';
@@ -550,13 +596,13 @@ function lineasDeReencolado(repos, leidas, intentos, ahora) {
 }
 
 /** Los que se cayeron de la cola y no tienen una punta nueva después, con su causa: `[linea]`. */
-function caidasDeLaCola(repos, leidas, ahora) {
+function caidasDeLaCola(repos, leidas, ahora, motivos = {}) {
   const lineas = [];
   for (const repo of repos) {
     const r = leidas[claveDe(repo)];
     if (!r || !r.ok || !Array.isArray(r.value)) continue;
     for (const p of porNumero(r.value).filter((x) => x.lastQueueDrop && !x.draft && !x.autoComplete && x.inQueue !== true && !pidioEntrarAntes(x))) {
-      lineas.push(lineaDeCaida(repo, p, ahora).linea);
+      lineas.push(lineaDeCaida(repo, p, ahora, motivos).linea);
     }
   }
   return lineas;
@@ -620,7 +666,7 @@ function coordinatorLines({ home = os.homedir(), tree = path.resolve(process.env
   const { intentos, problema: sinIntentos } = leerIntentos(dir);
   if (sinIntentos) problem = problem ? `${problem} · ${sinIntentos}` : sinIntentos;
   const todas = [...reglaSinAnalisis(declarados.repos, foto.lecturas),
-    ...caidasDeLaCola(declarados.repos, foto.lecturas, now),
+    ...caidasDeLaCola(declarados.repos, foto.lecturas, now, leerMotivos(dir)),
     ...lineasDeReencolado(declarados.repos, foto.lecturas, intentos, now),
     ...paraReencolar(declarados.repos, foto.lecturas, intentos, now).esperan.map((e) => e.linea),
     ...trabados.map((t) => t.linea)];
@@ -642,6 +688,7 @@ async function main() {
 
   const ahora = Date.now();
   const dir = stateDirOf(os.homedir());
+  const motivos = leerMotivos(dir);
   const { leidas, incompleta, anterior } = await lecturas(declarados.repos, tree, dir, ahora);
   // lo que no llegó a leerse sigue de fondo; mientras tanto vale la foto anterior, con su edad, si tiene esa lectura
   const deFondo = incompleta && lanzarRefresco(tree, dir);
@@ -679,7 +726,7 @@ async function main() {
     for (const k of Object.keys(estado)) if (k.startsWith(`${base}#`)) delete estado[k];
     // se cayó de la cola: un hecho, sale enseguida y sin reloj. Ni borrador, ni de vuelta con auto-completar o en la cola
     for (const p of r.value.filter((x) => x.lastQueueDrop && !x.draft && !x.autoComplete && x.inQueue !== true && !pidioEntrarAntes(x))) {
-      const { ms, linea } = lineaDeCaida(repo, p, ahora);
+      const { ms, linea } = lineaDeCaida(repo, p, ahora, motivos);
       trabados.push({ ms, creado: Infinity, number: p.number, linea });
     }
     for (const p of r.value.filter((x) => x.autoComplete)) {

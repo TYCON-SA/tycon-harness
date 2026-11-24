@@ -45,7 +45,30 @@ function preCommitHook(kind, repoRoot) {
   return path.join(dir, 'pre-commit');
 }
 
-module.exports = { preCommitHook, SPLIT_NAMES, CHECKS_NAME };
+/**
+ * El archivo de los controles del pre-commit del arnés PÚBLICO, para las suites que miran su texto o corren uno de sus
+ * tramos. En el árbol armado (el privado con el público encima) `.githooks/pre-commit-checks` es la copia propia del
+ * privado, declarada en `.tycon/internal-forms.json` (`own`), que le pide al gancho público los controles que no nombra:
+ * ahí el público llega por TYCON_CHECKS_PUBLIC_HOOK, la misma variable que usa el pipeline de pedidos del privado. Sin
+ * ella, o con la lista ilegible, tira: no poder mirar el gancho público no es verde. Fuera del árbol armado, el del repo.
+ * @param {string} repoRoot la raíz del árbol que corre las suites
+ * @param {object} [env]    de dónde sale TYCON_CHECKS_PUBLIC_HOOK (por defecto, el ambiente)
+ * @returns {string} la ruta del gancho público
+ */
+function publicHarnessHook(repoRoot, env = process.env) {
+  const forms = path.join(repoRoot, '.tycon', 'internal-forms.json');
+  if (!fs.existsSync(forms)) return preCommitHook('harness', repoRoot);
+  let own;
+  try { own = JSON.parse(fs.readFileSync(forms, 'utf8')).own || {}; } catch (e) {
+    throw new Error(`pre-commit-hook: no pude leer ${forms} (${e.message}): no sé si .githooks/${CHECKS_NAME} es el gancho público`);
+  }
+  if (!Object.prototype.hasOwnProperty.call(own, `.githooks/${CHECKS_NAME}`)) return preCommitHook('harness', repoRoot);
+  const pub = env.TYCON_CHECKS_PUBLIC_HOOK;
+  if (pub && fs.existsSync(pub)) return pub;
+  throw new Error(`pre-commit-hook: en este árbol armado .githooks/${CHECKS_NAME} es la copia propia del privado y el gancho público no vino${pub ? ` (TYCON_CHECKS_PUBLIC_HOOK=${pub} no existe)` : ''}: pasalo con TYCON_CHECKS_PUBLIC_HOOK=<clon del arnés>/.githooks/${CHECKS_NAME}`);
+}
+
+module.exports = { preCommitHook, publicHarnessHook, SPLIT_NAMES, CHECKS_NAME };
 
 if (require.main === module) {
   const [kind, repoRoot] = process.argv.slice(2);
