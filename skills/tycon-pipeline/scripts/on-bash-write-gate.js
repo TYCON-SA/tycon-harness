@@ -2512,34 +2512,72 @@ function salidaAjenaALaRevision(cmd, cwd, stateDir, installedRoots) {
   // esto cierra el camino fácil, no una falsificación armada a propósito
   const nombraLaRevision = /(^|[^\w-])plan-review|\}-review|tycon[\\/]state|\.tycon-pipeline/i.test(String(cmd || ''));
   const cambiaDeCarpeta = /(^|[;&|(\s])(?:cd|pushd)(\s|$)/.test(String(cmd));
-  // los corredores del pase: sólo la lista de la organización, como la escribe el arnés; revisores propios, nunca
-  const opcionesDelArnes = (w) => {
-    if (w.some((x) => x === '--agents-dir' || x.startsWith('--agents-dir='))) return false;
-    const ri = w.findIndex((x) => x === '--runners' || x.startsWith('--runners='));
-    if (ri < 0) return true;
-    const lista = w[ri].startsWith('--runners=') ? w[ri].slice('--runners='.length) : w[ri + 1];
-    return !!lista && lista === corredoresDeLaOrganizacion().lista;
-  };
-  // el pedido que preparó el arnés, una sola vez y de una sola forma: `--args-file '<carpeta de la revisión>/<destino>.args.json'`
-  // (la que imprime marker.js plan-review), o la de antes, `--args "$(cat '<…>.args.json')"`, que sigue en las corridas
-  // que ya la tenían impresa
-  const pedidoDelArnes = (tramo, w) => {
-    const delPedido = (ruta) => {
-      const archivo = resolveTarget(ruta, cwd, process.platform, { homeVariable: true });
-      return /\.args\.json$/.test(archivo) && enLaRevision(archivo);
-    };
-    const todos = String(tramo).match(/(?:^|\s)--args(?:=|\s)/g) || [];
-    const conArchivo = w.filter((x) => x === '--args-file' || x.startsWith('--args-file='));
-    if (conArchivo.length) {
-      if (conArchivo.length !== 1 || todos.length) return false;
-      const i = w.indexOf(conArchivo[0]);
-      const ruta = conArchivo[0].startsWith('--args-file=') ? conArchivo[0].slice('--args-file='.length) : w[i + 1];
-      // una ruta que no se lee hasta correr (una variable, una sustitución) no es la que preparó el arnés
-      return !!ruta && !/[$`]/.test(ruta) && delPedido(ruta);
+  // las palabras del comando como las lee el shell, sólo en la forma que imprime el arnés: un solo comando, con caracteres
+  // simples sin comillas y tramos entre comillas simples, pegados o no, y un comentario al final. Otra cosa (una barra
+  // invertida, comillas dobles, `$`, `~`, comodines, un `#` pegado, otro renglón con algo, también después del
+  // comentario, que el shell termina en el salto de renglón) no es esa forma, y el freno no la lee distinto que el shell: null
+  const palabrasDelCorredor = (comando) => {
+    const t = String(comando);
+    const w = [];
+    let actual = null;
+    // lo que queda desde `i` es un salto de renglón (o nada) y después sólo los blancos del shell: un `\r`, un espacio
+    // duro, `\f` o `\v` el shell los toma como parte de una palabra o como otro comando
+    const terminaAca = (i) => !/[^ \t\n]/.test(t.slice(i));
+    for (let i = 0; i < t.length;) {
+      const c = t[i];
+      if (c === '\n') { if (!terminaAca(i)) return null; break; }
+      if (c === ' ' || c === '\t') { if (actual !== null) { w.push(actual); actual = null; } i++; continue; }
+      if (c === '#' && actual === null) {
+        const fin = t.indexOf('\n', i);
+        if (fin >= 0 && !terminaAca(fin)) return null;
+        break;
+      }
+      if (c === "'") {
+        const j = t.indexOf("'", i + 1);
+        if (j < 0) return null;
+        actual = (actual || '') + t.slice(i + 1, j);
+        i = j + 1;
+        continue;
+      }
+      if (!/[A-Za-z0-9_./,=:+@%-]/.test(c)) return null;
+      actual = (actual || '') + c;
+      i++;
     }
-    const m = String(tramo).match(/(?:^|\s)--args\s+"\$\(cat\s+(?:'([^']+)'|([^\s'"()$`]+))\)"(?=\s|$)/);
-    if (todos.length !== 1 || !m) return false;
-    return delPedido(m[1] || m[2]);
+    if (actual !== null) w.push(actual);
+    return w;
+  };
+  // una ruta absoluta, sin `.` ni `..`: la misma para el freno y para el shell, en cualquier carpeta
+  const exacta = (p) => path.isAbsolute(p) && path.normalize(p) === p && !p.endsWith(path.sep);
+  // el corredor del pase como lo imprime marker.js plan-review (lib/plan-review.js, comandoLite), solo y como el comando
+  // entero: `node` (el del PATH: una ruta, `./node` o `nodejs` puede ser un programa de la sesión), los dos guiones del
+  // arnés, el pedido y el --out una vez cada uno y, si va, la lista de corredores de la organización; revisores propios o
+  // `--args`, nunca. El pedido es la pareja exacta del --out que se mira, `<carpeta de la revisión de este estado>/<sesión>/
+  // <destino>.args.json` y `<…>/<destino>.resultado.json`: por la carpeta real, no por su nombre, y un archivo común, no un
+  // enlace (si todavía no existe, el corredor no lo lee y no escribe nada)
+  const esElCorredor = (comando, abs) => {
+    const w = palabrasDelCorredor(comando);
+    if (!w || w.length < 3 || w[0] !== 'node') return false;
+    if (!exacta(w[1]) || !exacta(w[2]) || !delArnes(w[1], 'workflow-lite.js') || !delArnes(w[2], 'adversarial-verify.workflow.js')) return false;
+    const op = {};
+    for (let i = 3; i < w.length; i++) {
+      const m = /^--(args-file|out|runners)(?:=(.*))?$/.exec(w[i]);
+      if (!m || op[m[1]] !== undefined) return false;
+      const v = m[2] !== undefined ? m[2] : w[++i];
+      if (!v) return false;
+      op[m[1]] = v;
+    }
+    const pedido = op['args-file'];
+    if (!pedido || !op.out || !exacta(pedido) || !exacta(op.out)) return false;
+    if (op.runners !== undefined && op.runners !== corredoresDeLaOrganizacion().lista) return false;
+    const destino = /^(.+)\.resultado\.json$/.exec(path.basename(op.out));
+    if (!destino || pedido !== path.join(path.dirname(op.out), `${destino[1]}.args.json`)) return false;
+    const carpeta = installedTree.realPath(path.dirname(op.out));
+    if (!carpeta || !carpetas.some((c) => installedTree.realPath(c) === path.dirname(carpeta))) return false;
+    // el --out que se mira es éste
+    if (!abs || installedTree.realPath(path.dirname(abs)) !== carpeta || path.basename(abs) !== path.basename(op.out)) return false;
+    let st = null;
+    try { st = fs.lstatSync(pedido); } catch (e) { if (!e || e.code !== 'ENOENT') return false; }
+    return (!st || st.isFile()) && installedTree.realPath(pedido) === path.join(carpeta, path.basename(pedido));
   };
   for (const tramo of tramos(cmd)) {
     const w = palabras(tramo);
@@ -2553,10 +2591,7 @@ function salidaAjenaALaRevision(cmd, cwd, stateDir, installedRoots) {
       const opaco = /[$`]/.test(destino) || (cambiaDeCarpeta && !path.isAbsolute(destino) && !/^~/.test(destino));
       const abs = opaco ? null : resolveTarget(destino, cwd, process.platform, { homeVariable: true });
       if (opaco ? !nombraLaRevision : !enLaRevision(abs)) continue;
-      const corredor = !opaco && destinos.length === 1 && /^(?:.*[\\/])?node(?:js)?(?:\.exe)?$/i.test(w[0] || '') && w[1] && w[2]
-        && delArnes(w[1], 'workflow-lite.js') && delArnes(w[2], 'adversarial-verify.workflow.js') && pedidoDelArnes(tramo, w)
-        && opcionesDelArnes(w);
-      if (!corredor) return abs || destino;
+      if (opaco || destinos.length !== 1 || !esElCorredor(cmd, abs)) return abs || destino;
     }
   }
   return null;
