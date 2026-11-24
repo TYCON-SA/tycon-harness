@@ -2578,6 +2578,13 @@ test('F159 T10 Open_PrefiereUnPuestoYaAceptado: sin --slot, con un puesto libre 
   assert.strictEqual(r2.ok, true, r2.message);
   assert.strictEqual(fs.realpathSync(launched(t).cwd), copyOf(repo, 'n2'));
   assert.strictEqual(branchIn(slotOf(repo, 1)), '', 'el puesto sin aceptar sigue libre');
+  // el puesto aceptado, suelto pero con la sesión que lo usó todavía viva adentro: no se prefiere
+  assert.strictEqual(WS.release({ ...t.opts, slot: slotOf(repo, 2) }).ok, true);
+  session(t, 'quedo-abierta', 'quedó', { cwd: slotOf(repo, 2) });
+  const r3 = C.open({ ...t.opts, ...caller(t), now: NOW + 2000, repo, name: 'n3', task: 'algo', launcher: launcher(t) });
+  assert.strictEqual(r3.ok, true, r3.message);
+  assert.strictEqual(fs.realpathSync(launched(t).cwd), copyOf(repo, 'n3'), 'dos sesiones en la misma carpeta no');
+  assert.strictEqual(branchIn(slotOf(repo, 2)), '', 'el puesto con la sesión viva sigue libre');
 });
 
 test('F159 T11 Open_AnotaElPuestoQueAbrió: una apertura buena en un puesto lo anota como aceptado y un «not trusted» ahí lo saca; una copia no se anota, y sin --slot no se crean puestos', () => {

@@ -228,7 +228,8 @@ function repoItems({ repos, home, env, platform }) {
       items.push({ ok: false, text: `${m.main}: sin aprobar en Claude Code. Abrila una vez y aceptá la carpeta (y los imports del CLAUDE.md, si pregunta):`, command: openIn(m.main, platform) });
       continue;
     }
-    approvedMains.push(m.main);
+    // dos --repo del mismo repo (la principal y un puesto suyo) son una sola carpeta principal
+    if (!approvedMains.includes(m.main)) approvedMains.push(m.main);
     if (p.hasClaudeMdExternalIncludesApproved) continue;
     const ext = hasExternalImports(m.main, home);
     if (ext === null) {

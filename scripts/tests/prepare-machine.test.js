@@ -274,6 +274,9 @@ test('F159 T12 Preparar_ListaLosPuestosDeUnaVez: con la principal aprobada, una 
   assert.ok(notas[0].text.includes(`cd '${slotN(2)}' && claude`), notas[0].text);
   assert.ok(!notas[0].text.includes(`'${slotN(1)}'`) && !notas[0].text.includes(`'${slotN(3)}'`), notas[0].text);
   assert.match(text(r), /\blista\b/);
+  // la principal y un puesto suyo como dos --repo: cada puesto se nombra una sola vez
+  const doble = PM.check({ ...t.opts, repos: [a, slotN(1)] }).items.find((i) => i.ok === 'nota' && /puesto/.test(i.text));
+  assert.strictEqual(doble.text.split(`cd '${slotN(2)}'`).length, 2, doble.text);
   // todos aprobados o aceptados: ninguna nota de puestos
   WS.noteAccepted({ home: t.home, folder: slotN(2) });
   assert.strictEqual(PM.check({ ...t.opts, repos: [a] }).items.filter((i) => i.ok === 'nota' && /puesto/.test(i.text)).length, 0);

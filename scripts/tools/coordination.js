@@ -3315,9 +3315,12 @@ function openNow(opts) {
       if (!tk.ok) return no(`${tk.message.replace(/\.$/, '')}; no la abrí.`);
       slot = tk;
     } else {
-      // sólo un puesto que ya está y que Claude Code ya aceptó; si no hay o no se pudo tomar, la copia de siempre
+      // sólo un puesto que ya está, que Claude Code ya aceptó y sin una sesión viva adentro (la que lo usó pudo quedar
+      // abierta); si no hay o no se pudo tomar, la copia de siempre
       const tc = workSlots.trustCheck({ home, env });
-      const tk = tc.trusted ? workSlots.take({ home, env, arnes: opts.arnes, repo: opts.repo, branch, trusted: tc.trusted }) : null;
+      const ocupadas = new Set(live.filter((x) => x.cwd).map((x) => realDir(x.cwd)));
+      const trusted = tc.trusted ? (p) => tc.trusted(p) && !ocupadas.has(realDir(p)) : null;
+      const tk = trusted ? workSlots.take({ home, env, arnes: opts.arnes, repo: opts.repo, branch, trusted }) : null;
       if (tk && tk.ok) {
         slot = tk;
         preferred = true;
