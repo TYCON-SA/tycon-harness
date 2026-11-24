@@ -32,7 +32,7 @@ const ENUMS = Object.freeze({
 });
 
 const RANGES = Object.freeze({
-  plan_review: { owner_away_minutes: [5, 240] },
+  plan_review: { owner_away_minutes: [5, 240], coordinator_wait_minutes: [1, 120] },
   deep_review: { small_max_files: [1, 50] },
   review: { max_rounds: [1, 6] },
 });
@@ -44,7 +44,7 @@ const BOOLEANS = Object.freeze({
 const DEFAULTS = Object.freeze({
   plan_review: Object.freeze({
     delicate: 'always', routine: 'ask', routine_owner_away: 'review', routine_approval: 'review', coordinator_approves: true,
-    rejected_reaches_owner: false, owner_away_minutes: 20, lenses: Object.freeze(['suposicion-falsa']),
+    rejected_reaches_owner: false, owner_away_minutes: 20, coordinator_wait_minutes: 10, lenses: Object.freeze(['suposicion-falsa']),
   }),
   deep_review: Object.freeze({
     delicate: 'always', small_max_files: 6, small_routine_day: 'ask', small_routine_owner_away: 'run', large_routine: 'run',

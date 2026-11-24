@@ -204,19 +204,26 @@ const relDe = (repo, abs) => {
  * una variable sin expandir (`$L/p.js`) no traen a su repo; una pantalla borrada y commiteada, sí. Si se agota el tiempo,
  * cuenta como conocida (del lado seguro) y lo dice en `avisos`.
  */
+// lo que ya se le preguntó a git en este proceso: la misma ruta del mismo repo no se vuelve a preguntar
+const CONOCE = new Map();
 function repoConoce(repo, rel, avisos = []) {
+  const clave = `${repo}\0${rel}`;
+  if (CONOCE.has(clave)) return CONOCE.get(clave);
   const tope = topeDeConoce();
+  // a destiempo no se recuerda: la próxima vez se pregunta de nuevo
   const agotado = () => { avisos.push(`camino corto: no pude saber a tiempo si ${repo} conoce ${rel}: cuenta como suya`); return true; };
   if (tope <= 0) return agotado();
+  let conoce;
   try {
-    if (git(repo, ['--literal-pathspecs', 'ls-files', '--', rel], tope)) return true;
-    return !!git(repo, ['--literal-pathspecs', 'log', '-1', '--format=%H', '--branches', '--', rel], tope);
+    conoce = Boolean(git(repo, ['--literal-pathspecs', 'ls-files', '--', rel], tope))
+      || !!git(repo, ['--literal-pathspecs', 'log', '-1', '--format=%H', '--branches', '--', rel], tope);
   } catch (e) {
     if (e && (e.code === 'ETIMEDOUT' || e.signal === 'SIGTERM')) return agotado();
     // sin commits, `log` no tiene qué recorrer: no la conoce. Otro error: ante la duda, se mide
-    if (/does not have any commits|bad default revision/i.test(String(e.stderr || e.message))) return false;
-    return true;
+    conoce = !/does not have any commits|bad default revision/i.test(String(e.stderr || e.message));
   }
+  CONOCE.set(clave, conoce);
+  return conoce;
 }
 
 /**
@@ -470,9 +477,34 @@ function fotosDe(dir, repo, rama, desde) {
 }
 
 /**
+ * Los sellos que revisó la última vuelta CERRADA de revisores de cada corrida abierta, en el repo `real`: un arreglo rápido
+ * sobre la rama de una historia todavía abierta mide desde ahí, no desde main. Una vuelta sin cerrar no cuenta
+ * (frozen-tree.js `vueltaCerradaDeLosRevisores`). `{ arboles, aviso? }`.
+ */
+function arbolesRevisados(dir, real) {
+  let nombres;
+  try { nombres = fs.readdirSync(path.join(dir, 'active')).filter((n) => n.endsWith('.json')); } catch (e) {
+    if (e.code === 'ENOENT') return { arboles: [] };
+    return { arboles: [], aviso: noPudeLeer('active', e) };
+  }
+  const ft = require('./frozen-tree.js');
+  const { reviewersClose } = require('./steps.js');
+  const arboles = [];
+  let rotos = 0;
+  for (const n of nombres) {
+    let m;
+    try { m = JSON.parse(fs.readFileSync(path.join(dir, 'active', n), 'utf8')); } catch (_) { rotos += 1; continue; }
+    const v = ft.vueltaCerradaDeLosRevisores(m, reviewersClose(m), { stateDir: dir });
+    for (const r of (v && v.repos) || []) if (r && ES_SHA.test(String(r.tree)) && rutaReal(String(r.repo)) === real) arboles.push(r.tree);
+  }
+  return { arboles, ...(rotos ? { aviso: noPudeLeer('active', { code: `${rotos} marcador(es) que no se leen` }) } : {}) };
+}
+
+/**
  * La punta con constancia de la rama: el commit P más nuevo entre M (el punto en común con la rama de integración, sin
- * incluirlo) y HEAD que desciende de M y tiene su constancia —el árbol de la foto de una corrida cerrada completa, o el
- * guardado de OTRO carril: cada archivo con el contenido anotado y todo lo cambiado desde su base dentro de la lista, con la
+ * incluirlo) y HEAD que desciende de M y tiene su constancia —el árbol que vio la última vuelta cerrada de revisores de
+ * una corrida abierta (igual salvo el papeleo), el árbol de la foto de una corrida cerrada completa, o el guardado de
+ * OTRO carril: cada archivo con el contenido anotado y todo lo cambiado desde su base dentro de la lista, con la
  * base en M u otra punta válida—. Un merge de `main` después de P lo deja fuera: P ya no desciende del M de hoy. `adhoc`:
  * el carril que mide, cuyos guardados no cuentan. `{ sha }` (null: no hay) y `aviso` si una constancia no se pudo leer.
  */
@@ -487,9 +519,19 @@ function puntaConConstancia(repo, M, { adhoc = null, dir = estadoDelArnes() } = 
     const g = guardadosDe(dir, real, rama);
     const guardados = g.lista.filter((x) => !propio || x.carril !== propio);
     const f = fotosDe(dir, real, rama, Number(git(repo, ['log', '-1', '--format=%ct', M])) || 0);
-    const aviso = g.aviso || f.aviso;
-    if (!guardados.length && !f.fotos.length) return { sha: null, ...(aviso ? { aviso } : {}) };
+    const rv = arbolesRevisados(dir, real);
+    const aviso = g.aviso || f.aviso || rv.aviso;
+    if (!guardados.length && !f.fotos.length && !rv.arboles.length) return { sha: null, ...(aviso ? { aviso } : {}) };
     const enLaRama = new Set(commits);
+    // lo que revisó la vuelta: un commit de la rama igual a ese sello, sin contar el papeleo (la historia, la evidencia)
+    const deLaVuelta = new Set();
+    if (rv.arboles.length) {
+      const ft = require('./frozen-tree.js');
+      for (const sha of commits) {
+        const arbol = git(repo, ['rev-parse', `${sha}^{tree}`]);
+        if (rv.arboles.some((t) => { const c = ft.changed(repo, t, arbol); return !c.error && c.files.length === 0; })) { deLaVuelta.add(sha); break; }
+      }
+    }
     // la foto se toma antes del commit: su punta es su cabeza o uno de los commits que le siguen, no cualquiera de la rama
     const deLaFoto = new Set();
     for (const foto of f.fotos) {
@@ -513,7 +555,7 @@ function puntaConConstancia(repo, M, { adhoc = null, dir = estadoDelArnes() } = 
     };
     const validas = new Map();
     const valida = (sha, vuelta) => {
-      if (deLaFoto.has(sha)) return true;
+      if (deLaFoto.has(sha) || deLaVuelta.has(sha)) return true;
       if (validas.has(sha)) return validas.get(sha);
       const ok = guardados.some((x) => {
         // lo barato primero: una base que no es M ni de la rama no puede encadenar
@@ -589,8 +631,8 @@ function medirCadaRepo(adhoc, { repos: extra = [] } = {}) {
   for (const repo of [...new Set([...repos, ...extra.filter(Boolean)])]) {
     try {
       if (!sigueElRepo(repo)) { avisos.push(`camino corto: ${repo} ya no es un repo: no hay nada que medir ahí`); continue; }
-      // la carpeta de la persona como repo de dotfiles no es del arreglo: el portón de edición tampoco la cuenta
-      if (repo === casa) continue;
+      // la carpeta de la persona como repo de dotfiles no es del arreglo: el portón de edición tampoco la cuenta, y se dice
+      if (repo === casa) { avisos.push(`camino corto: ${repo} es tu carpeta personal: no se cuenta en el arreglo`); continue; }
       let nacido = true;
       try { git(repo, ['rev-parse', '--verify', '-q', 'HEAD']); } catch (e) { if (e.status === 1) nacido = false; else throw e; }
       const base = laBase(repo, adhoc, nacido);
@@ -747,7 +789,41 @@ function marcaSinSustento(marca, medida, alDia, bases, adhoc, avisar = () => {})
  * de otro repo del carril lo muestra en los dos, y Mac guarda un nombre con acento en una forma de Unicode y git lo lista en otra.
  * `repos`: los del guardado, además de los del carril; `medida`: la de esta vuelta (sin ella, mide).
  */
-function cuentaDelCarril(adhoc, { repos = [], sinSeguir = false, medida } = {}) {
+// Las carpetas temporales del sistema, por su ruta real (en macOS /tmp es /private/tmp, y la de cada usuario vive en
+// /private/var/folders). Ahí corren los laboratorios y las pruebas.
+function temporalesDelSistema() {
+  const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return null; } };
+  return [...new Set([real(require('os').tmpdir()), real('/tmp'), real('/private/tmp'), real('/private/var/folders')].filter(Boolean))];
+}
+const dentroDe = (dir, p) => p === dir || p.startsWith(dir.endsWith(path.sep) ? dir : dir + path.sep);
+
+/**
+ * El juez de los laboratorios del camino corto: `(raiz) → bool`, si un repo es un laboratorio que no suma al tope. Lo es
+ * un `git init` de prueba en una carpeta temporal del sistema: sin ningún remoto y con su propia carpeta `.git` (un clon,
+ * con el remoto que sea, y un worktree, que tiene un archivo `.git`, suman), cuando la carpeta del camino corto (`cwd`)
+ * vive fuera de los temporales. Los repos anotados del carril no cuentan para decidirlo: el freno de edición anota ahí el
+ * repo de cada archivo tocado, laboratorios incluidos. Si el camino corto vive en un temporal, o no se sabe dónde vive,
+ * nada es laboratorio. Un git que no contesta: suma. `temporales`: otra lista, para las pruebas.
+ */
+function juezDeLaboratorios(adhoc, { temporales = null } = {}) {
+  const tmps = temporales || temporalesDelSistema();
+  const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return null; } };
+  const carril = adhoc && adhoc.cwd ? real(adhoc.cwd) : null;
+  if (!carril || tmps.some((t) => dentroDe(t, carril))) return () => false;
+  const juzgados = new Map();
+  return (raiz) => {
+    const r = real(raiz);
+    if (!r || r === carril || !tmps.some((t) => dentroDe(t, r))) return false;
+    if (!juzgados.has(r)) {
+      let lab = false;
+      try { lab = fs.statSync(path.join(r, '.git')).isDirectory() && git(r, ['remote']).trim() === ''; } catch (_) { lab = false; }
+      juzgados.set(r, lab);
+    }
+    return juzgados.get(r);
+  };
+}
+
+function cuentaDelCarril(adhoc, { repos = [], sinSeguir = false, medida, temporales = null } = {}) {
   const { isImplPath } = require('./atdd-order.js');
   const { isCodeFile } = require('./story-gate.js');
   const m = medida || module.exports.medirLoPropio(adhoc, { repos });
@@ -755,7 +831,9 @@ function cuentaDelCarril(adhoc, { repos = [], sinSeguir = false, medida } = {}) 
   const porRepo = rutasDe(m, adhoc, { como: 'propio', repos: leer, sinSeguir, suma: sumaAlTope });
   const anotadas = new Set([adhoc && adhoc.mockup, adhoc && adhoc.capture].filter((x) => x && typeof x.file === 'string').map((x) => rutaReal(x.file)));
   const archivos = new Map();
+  const esLaboratorio = juezDeLaboratorios(adhoc, { temporales });
   for (const repo of Object.keys(porRepo)) {
+    if (esLaboratorio(repo)) continue;
     for (const rel of porRepo[repo]) {
       const abs = path.join(repo, rel);
       if (isImplPath(rel) && isCodeFile(rel) && !anotadas.has(rutaReal(abs))) {
@@ -804,4 +882,4 @@ function mismoRepo(a, b) {
 const huellaCompleta = (h) => typeof h === 'string' && !h.startsWith('incompleta:');
 
 module.exports = { traerBase, conBase, conBasesAlDia, mismoOrigen, formaDeLaRemota, repoConoce, medirLoPropio, rutasDe, reposQueSeMiden, marcaSinSustento,
-  anotarGuardadoDelCarril, puntaConConstancia, reposDelCarril, cuentaDelCarril, sigueElRepo, huellaDelCarril, huellaCompleta, mismoRepo, raizDe, ubicar, sumaAlTope, RAMA };
+  anotarGuardadoDelCarril, puntaConConstancia, reposDelCarril, cuentaDelCarril, juezDeLaboratorios, sigueElRepo, huellaDelCarril, huellaCompleta, mismoRepo, raizDe, ubicar, sumaAlTope, RAMA };

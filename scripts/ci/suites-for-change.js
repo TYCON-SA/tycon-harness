@@ -150,16 +150,59 @@ const runsAllDirect = (f) => DIRECT_RUNS_ALL.test(f) && !DIRECT_PIPELINE_OWN_SUI
 const WALKS_PIPELINES = /(^|[^A-Za-z0-9_-])pipelines(\/|['"`])/;
 
 /**
- * ¿El código de la suite (`text`) nombra el archivo `f`? Su ruta, su nombre con extensión, o su nombre sin extensión si
- * tiene 4 letras o más (`w` suelta no nombra `w.js`); cada uno como palabra entera, no pegado a una letra, un dígito, `_`
- * ni `-`: `DATABASE` no nombra un archivo `BASE`, ni `estate.js` a `state.js`. El nombre sin extensión seguido de un
- * punto sí cuenta (`state.json` nombra a `state.js` por `state`): ante la duda, corre.
+ * ¿El código de la suite (`text`, en `rel`) nombra el archivo `f`? Su ruta, su nombre con extensión, o su nombre sin
+ * extensión si tiene 4 letras o más (`w` suelta no nombra `w.js`); cada uno como palabra entera, no pegado a una letra, un
+ * dígito, `_` ni `-`: `DATABASE` no nombra un archivo `BASE`, ni `estate.js` a `state.js`.
+ * El nombre sin extensión cuenta sólo escrito como el de un archivo: después de una barra o una comilla, y antes de una
+ * comilla, un punto o una barra (`require('../lib/state')`, `'state.json'` nombran a `state.js`). Suelto es una palabra
+ * más: `repos` aparece en cientos de suites que no leen `repos.json`, y las hacía correr a todas.
+ * Si en el repo hay otro archivo con el mismo nombre (`ambiguous`), el nombre solo no alcanza: tiene que venir con su
+ * carpeta (`dependencies/repos.json`), o la carpeta nombrada como palabra en la suite (lo que arma `path.join`), o la
+ * suite en la misma carpeta que el archivo. La ruta entera nombra siempre.
  */
-function names(text, f) {
+function names(text, f, { rel = null, ambiguous = null } = {}) {
+  if (nombraEntero(text, f)) return true;
   const base = path.posix.basename(f);
-  if (nombraEntero(text, f) || nombraEntero(text, base)) return true;
   const stem = base.replace(/\.[^.]+$/, '');
-  return stem.length >= 4 && nombraEntero(text, stem);
+  const hit = nombraEntero(text, base) || (stem !== base && stem.length >= 4 && nombraComoArchivo(text, stem));
+  if (!hit) return false;
+  if (!ambiguous || !ambiguous.has(base)) return true;
+  const dir = path.posix.dirname(f);
+  if (dir === '.') return true;
+  const parent = path.posix.basename(dir);
+  if (nombraEntero(text, `${parent}/${base}`) || nombraEntero(text, parent)) return true;
+  if (rel === null) return false;
+  if (path.posix.dirname(rel) === dir) return true;
+  return relativeRefs(text).some((r) => path.posix.join(path.posix.dirname(rel), r) === f || path.posix.join(path.posix.dirname(rel), `${r}.js`) === f);
+}
+
+// las rutas relativas entre comillas (`'../state.js'`, `"./lib/x"`): resueltas desde la suite, dicen qué archivo es
+function relativeRefs(text) {
+  return [...text.matchAll(/['"`](\.\.?\/[^'"`\s]+)['"`]/g)].map((m) => m[1]);
+}
+
+// el nombre sin extensión escrito como el de un archivo: `/state'`, `'state.`, `"state/`
+function nombraComoArchivo(text, stem) {
+  if (!text.includes(stem)) return false;
+  const esc = stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`[/'"\`]${esc}['"\`./]`).test(text);
+}
+
+/**
+ * Los nombres de archivo que se repiten en el repo (`git ls-files`): ahí el nombre solo no dice cuál es. Sin git, ninguno
+ * (null): el nombre solo sigue alcanzando, como antes, y corre de más.
+ */
+function repeatedNames(repoRoot) {
+  const r = require('child_process').spawnSync('git', ['-C', repoRoot, '-c', 'core.quotePath=false', 'ls-files'], { encoding: 'utf8', maxBuffer: 1 << 28, windowsHide: true });
+  if (r.status !== 0 || typeof r.stdout !== 'string') return null;
+  const seen = new Set();
+  const twice = new Set();
+  for (const f of r.stdout.split('\n')) {
+    if (!f) continue;
+    const b = path.posix.basename(f);
+    if (seen.has(b)) twice.add(b); else seen.add(b);
+  }
+  return twice;
 }
 
 function nombraEntero(text, s) {
@@ -295,6 +338,9 @@ function readHeavy(file) {
 }
 
 // Lo que, si el cambio lo toca, hace correr todo: cómo se eligen las suites.
+// Lo que define el criterio de un grupo: tocarlo corre las suites del grupo aunque el cambio no toque sus patrones.
+const GROUP_CRITERION = ['scripts/ci/suites-for-change.js', 'scripts/ci/heavy-suites.json'];
+
 const SELECTION_ITSELF = ['scripts/ci/suites-for-change.js', 'scripts/ci/suite-deps.js', 'scripts/ci/heavy-suites.json',
   'scripts/ci/suites-over-limit.json', 'pipelines/azure-pipelines-maintainers-pr.yml', 'pipelines/templates/run-suites.yml'];
 
@@ -579,11 +625,16 @@ function main(argv) {
   const itself = listed.known ? listed.files.map((f) => f.replace(/\\/g, '/')).filter((f) => SELECTION_ITSELF.includes(f)) : [];
   // --groups-alone: las suites de un grupo se eligen por los patrones del grupo y los suyos aunque no haya --deps
   // utilizable, porque ése es todo su criterio. Es para la CI de GitHub, que no tiene foto nocturna; la red es el banco
-  // nocturno, que las corre siempre. Si el cambio toca cómo se elige, corren.
-  const groupsAlone = argv.includes('--groups-alone') && !itself.length;
-  if (argv.includes('--groups-alone') && itself.length) process.stderr.write(`ℹ️  el cambio toca cómo se eligen las suites (${itself.join(', ')}): las de los grupos corren\n`);
-  let depsSel = null;
+  // nocturno, que las corre siempre. Con --direct pasa lo mismo: cuando el cambio toca el pipeline o cómo corren las
+  // pruebas, corre todo menos el grupo, que corre sólo si el cambio toca sus patrones (las del laboratorio del
+  // instalador eran ~115 de los 325 minutos de ese «corre todo»). Si el cambio toca el criterio del grupo
+  // (`GROUP_CRITERION`), o no se sabe qué cambió, corren.
   const direct = argv.includes('--direct');
+  const criterion = listed.known ? listed.files.map((f) => f.replace(/\\/g, '/')).filter((f) => GROUP_CRITERION.includes(f)) : [];
+  const wantsGroups = argv.includes('--groups-alone') || direct;
+  const groupsAlone = wantsGroups && listed.known && !criterion.length;
+  if (wantsGroups && criterion.length) process.stderr.write(`ℹ️  el cambio toca cómo se eligen las suites de los grupos (${criterion.join(', ')}): las de los grupos corren\n`);
+  let depsSel = null;
   if (direct && listed.known && changed.known) {
     const files = listed.files.map((f) => f.replace(/\\/g, '/'));
     const all = [...new Set([...itself, ...files.filter(runsAllDirect)])];
@@ -591,12 +642,15 @@ function main(argv) {
     if (all.length) process.stderr.write(`ℹ️  el cambio toca cómo se eligen o corren las pruebas (${all.join(', ')}): corre todo\n`);
     else if (net.problem) process.stderr.write(`ℹ️  --direct no saltea nada: no hay red para lo salteado (${net.problem})\n`);
     else {
-      // Un archivo nuevo o borrado cambia lo que ve una suite que recorre el repo (un censo, un barrido de comentarios)
-      // aunque no lo nombre. Si el cambio agrega o borra algo —o no se sabe—, ésas corren.
-      const ar = readChanged(arg(argv, '--added-removed'));
-      const structural = !ar.known || ar.files.length > 0;
-      if (structural) process.stderr.write(`ℹ️  ${ar.known ? 'el cambio agrega o borra archivos' : 'no sé si el cambio agrega o borra archivos'}: corren las suites que recorren el repo\n`);
-      depsSel = { direct: true, files, measured: net.measured, texts: new Map(), structural, D: require('./suite-deps.js'), cache: new Map() };
+      // Una suite que recorre el repo (un censo, un barrido de comentarios, el que busca direcciones públicas) mira el
+      // contenido de cada archivo sin nombrarlo: un archivo cambiado, nuevo o borrado cambia lo que ve. Corren siempre;
+      // con sólo las altas y bajas (`--added-removed`, que se sigue aceptando), un archivo modificado que rompe el
+      // barrido pasaría sin la suite que lo frena.
+      const structural = true;
+      process.stderr.write('ℹ️  corren las suites que recorren el repo: miran el contenido de cada archivo\n');
+      const ambiguous = repeatedNames(repoRoot);
+      if (!ambiguous) process.stderr.write('ℹ️  no pude listar el repo con git: un nombre de archivo repetido cuenta igual que uno único\n');
+      depsSel = { direct: true, files, measured: net.measured, texts: new Map(), structural, D: require('./suite-deps.js'), cache: new Map(), ambiguous };
     }
   } else if (argv.includes('--deps') && listed.known && changed.known) {
     const files = listed.files.map((f) => f.replace(/\\/g, '/'));
@@ -667,7 +721,7 @@ function main(argv) {
         depsSel.texts.set(rel, t);
       }
       const t = depsSel.texts.get(rel);
-      if (t === null || files.some((f) => names(t, f))) return false;
+      if (t === null || files.some((f) => names(t, f, { rel, ambiguous: depsSel.ambiguous }))) return false;
       // un YAML de la lista de los que siguen la regla común: corre también la suite que recorre la carpeta `pipelines`
       // sin nombrar cada archivo (la que arma los nombres por partes o lee la carpeta entera, como la que fija que
       // ningún pipeline sube a main desde otra rama)

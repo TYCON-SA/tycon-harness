@@ -236,10 +236,14 @@ function esElPipelineInstalado(ruta) {
   } catch { return false; }
 }
 
+// `sed -n '<desde>,<hasta>p'`: muestra renglones. Cualquier otro guion de sed puede escribir (`w`) o correr (`e`)
+const SED_QUE_MUESTRA = /^\d+(,\d+)?p$/;
+
 function tramoQueLeeLaFirma(w) {
   if (!w.length) return false;
   if (w.some((p) => p.startsWith('-') && (p.includes(BIBLIOTECA_DE_FIRMA) || p === '--output' || p.startsWith('--output=')))) return false;
   if (LEEN_LO_QUE_NOMBRAN.has(w[0])) return true;
+  if (w[0] === 'sed') return w[1] === '-n' && SED_QUE_MUESTRA.test(w[2] || '') && w.slice(3).every((p) => !p.startsWith('-'));
   if (w[0] === 'git') return GIT_QUE_SOLO_LEE.has(w[1]);
   if (w[0] !== 'node' || !w[1] || !PIPELINE_LISTA.has(w[2]) || !esElPipelineInstalado(w[1])) return false;
   return w.every((p, k) => !p.includes(BIBLIOTECA_DE_FIRMA) || w[k - 1] === '--files');
@@ -248,6 +252,8 @@ function tramoQueLeeLaFirma(w) {
 /**
  * Qué hace con la biblioteca de firma un comando que la nombra: `'lee'`, `'corre'` (cualquier forma que no sea leer) o
  * `'ilegible'`. Va carácter por carácter y sin expresiones: lo que no está en la lista de lo que sólo lee no se analiza.
+ * Cada tramo, separado por `|`, `;` o `&&`, tiene que leer; un `2>/dev/null` suelto no cuenta (tira los errores, no
+ * escribe ni corre nada). Un `&` solo (mandar al fondo) o cualquier otra redirección sigue fuera de la forma.
  */
 function leerFirma(cmd) {
   const lista = [[]];
@@ -255,7 +261,9 @@ function leerFirma(cmd) {
   let comilla = null;
   let fueraDeLaForma = false;
   const cerrar = () => { if (palabra !== null) lista[lista.length - 1].push(palabra); palabra = null; };
-  for (const c of String(cmd)) {
+  const texto = String(cmd).replace(/(^|\s)2>\/dev\/null(?=$|[\s|;&])/g, '$1');
+  for (let i = 0; i < texto.length; i++) {
+    const c = texto[i];
     if (c === '\r') return 'ilegible';
     const permitido = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || '_./:,@%+-'.includes(c);
     if (comilla) {
@@ -265,8 +273,9 @@ function leerFirma(cmd) {
     } else if (c === "'" || c === '"') {
       comilla = c;
       if (palabra === null) palabra = '';
-    } else if (c === ' ') cerrar();
-    else if (c === '|') { cerrar(); lista.push([]); }
+    } else if (c === ' ' || c === '\t') cerrar();
+    else if (c === '|' || c === ';') { cerrar(); lista.push([]); }
+    else if (c === '&' && texto[i + 1] === '&') { cerrar(); lista.push([]); i++; }
     else if (permitido) palabra = (palabra || '') + c;
     else fueraDeLaForma = true;
   }
@@ -431,7 +440,7 @@ function llamadas(cmd, { shell = 'bash' } = {}, hondo = 0) {
 
 /**
  * Lo que la llamada pide decidir a la persona: 'set-autonomous', 'cerrar la ejecución', 'force-manual', 'trust-ran',
- * 'no-deep-review', la variable que un `--env-file` puede traer ('TYCON_MUTATION_CHECK', 'TYCON_STORY_REVIEW') o null. `sid` es la sesión del pedido (para `clear-session` de otra sesión, que no cierra esta ejecución).
+ * 'no-deep-review' (un `--env-file` delante de los guiones del pase; la bandera sola es un pedido), la variable que un `--env-file` puede traer ('TYCON_MUTATION_CHECK', 'TYCON_STORY_REVIEW') o null. `sid` es la sesión del pedido (para `clear-session` de otra sesión, que no cierra esta ejecución).
  */
 // Las opciones que llevan valor, por guion: lo que va después de una de ellas es su valor (`--repo $PWD`). Las de
 // `pipeline.js` se leen de su propio lector de opciones (las que consumen `argv[++i]`), así una opción nueva no queda
@@ -448,7 +457,11 @@ function opcionesConValor(guion) {
   if (conValorCache.pipeline) return conValorCache.pipeline;
   const set = new Set();
   try {
-    const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'pipeline.js'), 'utf8');
+    // pipeline.js está partido en lib/pipeline-*.js: el lector de argumentos vive en una de sus partes
+    const fs = require('fs');
+    const path = require('path');
+    const partes = fs.readdirSync(__dirname).filter((f) => /^pipeline-.+\.js$/.test(f)).sort().map((f) => path.join(__dirname, f));
+    const src = [path.join(__dirname, '..', 'pipeline.js'), ...partes].map((f) => fs.readFileSync(f, 'utf8')).join('\n');
     const i = src.indexOf('function parseArgs');
     const cuerpo = i >= 0 ? src.slice(i, src.indexOf('\n}\n', i)) : '';
     for (const linea of cuerpo.split('\n')) {
@@ -549,13 +562,14 @@ function escapeDe(llamada, sid, comando = null) {
   if (llamada.guion === 'pipeline') {
     // `check-count --trust-ran`: la lista de revisores la da el agente y el arnés no la vio correr
     if (sub === 'check-count') return pide('--trust-ran') && !porSuGuion('trust-ran') ? 'trust-ran' : null;
-    // apagar el pase adversarial al arrancar la historia o al consultar el portón; un `--env-file` delante del guion
-    // puede traer `TYCON_NO_DEEP_REVIEW` sin que el comando la muestre
-    if (sub === 'start' || sub === 'deep-review-gate') return pide('--no-deep-review') || llamada.envFile ? 'no-deep-review' : null;
+    // `--no-deep-review` es un pedido: el pase se saltea sólo con la firma `adversarial-skip`, y la bandera no pide otra.
+    // Un `--env-file` delante del guion al arrancar la historia o al consultar el portón sí: puede traer una variable que
+    // cambia la decisión del pase (el umbral de densidad) sin que el comando la muestre
+    if (sub === 'start' || sub === 'deep-review-gate') return llamada.envFile ? 'no-deep-review' : null;
     // la revisión de la historia (`validators`, su nombre viejo y su portón): el archivo puede traer TYCON_STORY_REVIEW
     if (llamada.envFile && ['validators', 'validadores', 'story-review-gate', null].includes(sub)) return 'TYCON_STORY_REVIEW';
-    // sin subcomando a la vista: puede ser cualquiera de los dos
-    if (sub === null && llamada.dudosa) return pide('--trust-ran') ? 'trust-ran' : pide('--no-deep-review') ? 'no-deep-review' : null;
+    // sin subcomando a la vista: puede ser `check-count`, o el portón del pase con un `--env-file`
+    if (sub === null && llamada.dudosa) return pide('--trust-ran') ? 'trust-ran' : llamada.envFile ? 'no-deep-review' : null;
     return null;
   }
   // cerrar las pruebas (por su nombre, el del marcador viejo o en una variable): el archivo puede traer TYCON_MUTATION_CHECK.
@@ -563,11 +577,12 @@ function escapeDe(llamada, sid, comando = null) {
   if (sub === 'complete-step' && llamada.envFile && (!args[0] || !lit(args[0]) || ['run-tests', 'implement', '4'].includes(args[0].texto.trim()))) return 'TYCON_MUTATION_CHECK';
   // `set-check <nombre> <estado> --force-manual`: un control declarado a mano, en cualquier estado
   if (sub === 'set-check') return pide('--force-manual') && !porSuGuion('force-manual') ? 'force-manual' : null;
-  // `mark-adversarial-skipped --no-deep-review`: abandonar el pase aunque el portón diga que corre
-  if (sub === 'mark-adversarial-skipped') return pide('--no-deep-review') || llamada.envFile ? 'no-deep-review' : null;
-  // sin subcomando a la vista (por `xargs`, en una variable, tras una comilla sin cerrar): puede ser `clear`
-  // con la bandera del pase a la vista: apagarlo frena siempre, también con la ejecución en verde o sin ejecución
-  if (sub === null) return !llamada.dudosa ? null : pide('--no-deep-review') || llamada.envFile ? 'no-deep-review' : 'cerrar la ejecución';
+  // `mark-adversarial-skipped`: el salteo lo decide el portón que llama, con la firma `adversarial-skip`; un `--env-file`
+  // delante puede traerle una variable que cambia esa decisión
+  if (sub === 'mark-adversarial-skipped') return llamada.envFile ? 'no-deep-review' : null;
+  // sin subcomando a la vista (por `xargs`, en una variable, tras una comilla sin cerrar): puede ser `clear`, o el
+  // salteo con un `--env-file`, que frena siempre, también con la ejecución en verde o sin ejecución
+  if (sub === null) return !llamada.dudosa ? null : llamada.envFile ? 'no-deep-review' : 'cerrar la ejecución';
   if (sub === 'set-autonomous') {
     const v = args[0];
     return lit(v) && ['true', '1', 'on'].includes(v.texto) ? null : 'set-autonomous';

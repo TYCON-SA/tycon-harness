@@ -163,10 +163,12 @@ function assertBlocked(fx, r, { category, place, secret = TERM } = {}) {
   }
   assert.ok(!/--no-verify/.test(r.all), 'el mensaje del freno nunca sugiere --no-verify');
 }
-function assertPassed(r) {
-  assert.strictEqual(r.status, 0, `tenía que pasar, salió ${r.status}\n${r.all}`);
-  assert.strictEqual(r.json && r.json.verdict, 'pass', r.all);
-  assert.deepStrictEqual(r.json.findings, []);
+/** El empuje pasó; `etiqueta` dice cuál caso, en el mensaje de la falla. */
+function assertPassed(r, etiqueta = '') {
+  const de = etiqueta ? `${etiqueta}: ` : '';
+  assert.strictEqual(r.status, 0, `${de}tenía que pasar, salió ${r.status}\n${r.all}`);
+  assert.strictEqual(r.json && r.json.verdict, 'pass', `${de}${r.all}`);
+  assert.deepStrictEqual(r.json.findings, [], etiqueta);
 }
 
 // ── qué se mira en cada commit nuevo ─────────────────────────────────────────────────────────────────────
@@ -2232,4 +2234,186 @@ test('T12 EmpujeAOtraRamaOMarca_Pasa @story-8.241 @ac-7', (t) => {
   const r = guard(fx, line('refs/heads/feat/x', sha, ZERO, 'refs/heads/main'), { remote: ado, url: ado });
   assert.strictEqual(r.status, 0, r.all);
   assert.strictEqual(r.json && r.json.remote, 'private', r.all);
+});
+
+// ── el perfil de OTRA organización: la lista privada es del equipo que mantiene el arnés ────────────────────────────
+// Un colaborador de afuera tiene instalado el perfil de SU organización (otra-org) y empuja a su copia del arnés. La lista
+// privada nunca se le da: exigírsela lo deja sin poder empujar nunca. Al equipo dueño lo reconoce el `team-repos.json` del
+// perfil INSTALADO (al lado de team-profile.json, en el arnés que corre el freno) cuando declara `maintainers`: el repo de
+// mantenimiento, donde vive la lista. Nunca el del árbol que se empuja. Ante la duda —sin ese archivo, ilegible, de forma
+// desconocida, o el arnés instalado dentro de lo que se empuja— es el equipo dueño: la lista sigue siendo obligatoria.
+const orgRepo = (org, repo) => ({ platform: 'github', org, repo });
+const OTHER_ORG_REPOS = { version: 1, public: orgRepo('otra-org', 'arnes'), profile: orgRepo('otra-org', 'perfil'), operations: orgRepo('otra-org', 'operaciones') };
+const OWNER_REPOS = { ...OTHER_ORG_REPOS, public: orgRepo('equipo-dueno', 'arnes'), profile: orgRepo('equipo-dueno', 'perfil'), operations: orgRepo('equipo-dueno', 'operaciones'), maintainers: orgRepo('equipo-dueno', 'mantenimiento') };
+const json = (o) => `${JSON.stringify(o, null, 2)}\n`;
+/** Un laboratorio cuya máquina tiene instalado el perfil de una organización: `repos` es su team-repos.json (o su texto). */
+function orgLab(t, repos) {
+  const fx = lab(t, { team: false });
+  fs.writeFileSync(path.join(fx.harness, 'team-profile.json'), '{}\n');
+  if (repos !== undefined) fs.writeFileSync(path.join(fx.harness, 'team-repos.json'), typeof repos === 'string' ? repos : json(repos));
+  return fx;
+}
+
+test('T80 PerfilDeOtraOrg_SinLista_EmpujaConLosControlesGenerales_YLoDice', (t) => {
+  const fx = orgLab(t, OTHER_ORG_REPOS);
+  commitOn(fx, 'limpia', { 'guides/a.md': `acá ${TERM} no es de ninguna lista\n` });
+  const clean = guard(fx, branchLine(fx, 'limpia'), { list: null });
+  assertPassed(clean);
+  assert.strictEqual(clean.json.generic_only, true);
+  assert.match(guard(fx, branchLine(fx, 'limpia'), { list: null, args: [] }).stderr, /otra organización/);
+  // lo que no necesita lista se sigue mirando entero: un token, una ruta vedada (el correo de quien firma es de esa
+  // persona y lo decide ella: con el perfil de otra organización no se exige el noreply — T89)
+  commitOn(fx, 'token', { 'scripts/x.js': `const t = '${TOKEN}';\n` });
+  assertBlocked(fx, guard(fx, branchLine(fx, 'token'), { list: null }), { category: 'secreto', secret: [TOKEN] });
+  commitOn(fx, 'vedada', { 'specs/x.md': 'limpio\n' });
+  assert.strictEqual(guard(fx, branchLine(fx, 'vedada'), { list: null }).status, 1);
+  // y con su propia lista declarada, la usa como siempre
+  assertBlocked(fx, guard(fx, branchLine(fx, 'limpia')), { category: 'cliente' });
+});
+
+test('T81 PerfilDelEquipoDueno_SinLista_SigueFrenando', (t) => {
+  const fx = orgLab(t, OWNER_REPOS);
+  commitOn(fx, 'limpia', { 'guides/a.md': 'limpio\n' });
+  const r = guard(fx, branchLine(fx, 'limpia'), { list: null });
+  assert.strictEqual(r.status, 2, `el equipo dueño sin lista: «no pude mirar»\n${r.all}`);
+  assert.strictEqual(r.json.verdict, 'blind');
+  // `maintainers` declarado, con el valor que sea: es el equipo dueño
+  const odd = orgLab(t, { ...OTHER_ORG_REPOS, maintainers: null });
+  commitOn(odd, 'limpia', { 'guides/a.md': 'limpio\n' });
+  assert.strictEqual(guard(odd, branchLine(odd, 'limpia'), { list: null }).status, 2);
+});
+
+test('T82 PerfilQueNoSeDejaLeer_EsElEquipoDueno', (t) => {
+  // sin team-repos.json (un perfil local, o una instalación a medias), roto, vacío, de otra versión o sin `profile`
+  for (const repos of [undefined, '{ roto', '{}\n', '[]\n', json({ ...OTHER_ORG_REPOS, version: 2 }), json({ ...OTHER_ORG_REPOS, profile: 'perfil' })]) {
+    const fx = orgLab(t, repos);
+    commitOn(fx, 'limpia', { 'guides/a.md': 'limpio\n' });
+    const r = guard(fx, branchLine(fx, 'limpia'), { list: null });
+    assert.strictEqual(r.status, 2, `team-repos.json ${repos === undefined ? 'ausente' : repos.trim()}: ante la duda, lista obligatoria\n${r.all}`);
+  }
+});
+
+test('T83 ElArbolEmpujado_NoDiceDeQueOrganizacionEsLaMaquina', (t) => {
+  // un árbol con el perfil (falso) del equipo dueño, en la máquina de otra-org: el veredicto es el mismo que sin él
+  const other = orgLab(t, OTHER_ORG_REPOS);
+  commitOn(other, 'trae-perfil', { 'guides/a.md': 'limpio\n', 'team-profile.json': '{}\n', 'team-repos.json': json(OWNER_REPOS) });
+  const r = guard(other, branchLine(other, 'trae-perfil'), { list: null });
+  assertPassed(r);
+  assert.strictEqual(r.json.generic_only, true);
+  // un árbol con el perfil de otra-org, en la máquina del equipo dueño: no lo vuelve «otra organización»
+  const owner = orgLab(t, OWNER_REPOS);
+  commitOn(owner, 'trae-perfil', { 'guides/a.md': 'limpio\n', 'team-profile.json': '{}\n', 'team-repos.json': json(OTHER_ORG_REPOS) });
+  assert.strictEqual(guard(owner, branchLine(owner, 'trae-perfil'), { list: null }).status, 2);
+  // el freno corriendo DESDE el árbol que se empuja (un clon usado como arnés): su team-repos.json lo eligió la rama
+  const inTree = lab(t, { team: false });
+  for (const p of [...PIECES, HISTORY]) write(inTree.work, p, fs.readFileSync(path.join(REPO, p)));
+  commitOn(inTree, 'propia', { 'guides/a.md': 'limpio\n', 'team-profile.json': '{}\n', 'team-repos.json': json(OTHER_ORG_REPOS) });
+  const own = guard({ ...inTree, harness: inTree.work }, branchLine(inTree, 'propia'), { list: null });
+  assert.strictEqual(own.status, 2, `el perfil del propio árbol no decide la organización\n${own.all}`);
+});
+
+test('T84 Status_DiceDeQueOrganizacionEsElPerfil', (t) => {
+  const other = orgLab(t, OTHER_ORG_REPOS);
+  const env = { ...cleanEnv(), HOME: other.home, TYCON_HOME: path.join(other.home, '.tycon'), GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: os.devNull };
+  const run = (fx) => spawnSync(process.execPath, [path.join(fx.harness, 'scripts/hooks/public-push-guard.js'), 'status'], { cwd: fx.root, encoding: 'utf8', env: { ...env, HOME: fx.home, TYCON_HOME: path.join(fx.home, '.tycon') } });
+  assert.match(run(other).stdout, /otra organización/);
+  assert.match(run(orgLab(t, OWNER_REPOS)).stdout, /máquina del equipo: sí/);
+});
+
+// ── el perfil local de otra organización (harness.js team-init --local): sin team-repos.json ───────────────────────────
+// Un colaborador de afuera arma su perfil con `team-init --local`, que no trae team-repos.json, y lo instala. Sin otra
+// señal, «sin team-repos.json» es el equipo dueño (T82) y le exigía la lista privada. La señal positiva es el sello de la
+// capa instalada (.tycon-team.json, lo escribe el instalador): el perfil se bajó de una carpeta de esta máquina. Un
+// perfil del equipo dueño se baja de su repo, nunca de una carpeta. Ante cualquier otra cosa, como hoy: lista obligatoria.
+const stamp = (host, extra = {}) => json({ schema: 1, repo: host === 'local' ? '/tmp/perfil-de-acme' : 'https://github.com/equipo-dueno/perfil', host, ref: 'main', name: 'acme', files: [{ path: 'team-profile.json' }], ...extra });
+function layerLab(t, { repos, seal } = {}) {
+  const fx = orgLab(t, repos);
+  if (seal !== undefined) fs.writeFileSync(path.join(fx.harness, '.tycon-team.json'), seal);
+  commitOn(fx, 'limpia', { 'guides/a.md': 'limpio\n' });
+  return fx;
+}
+
+test('T85 PerfilLocalDeOtraOrg_SinTeamRepos_EmpujaConLosControlesGenerales', (t) => {
+  const fx = layerLab(t, { seal: stamp('local') });
+  const r = guard(fx, branchLine(fx, 'limpia'), { list: null });
+  assertPassed(r);
+  assert.strictEqual(r.json.generic_only, true);
+  // lo que no necesita lista se sigue mirando
+  commitOn(fx, 'token', { 'scripts/x.js': `const t = '${TOKEN}';\n` });
+  assertBlocked(fx, guard(fx, branchLine(fx, 'token'), { list: null }), { category: 'secreto', secret: [TOKEN] });
+});
+
+test('T86 SinTeamRepos_ConUnSelloQueNoEsLocal_SigueFrenando', (t) => {
+  // el perfil bajado de un repo, un sello roto, de otra forma o sin sello: ante la duda, el equipo dueño
+  for (const seal of [stamp('github'), stamp('azure'), '{ roto', '[]\n', json({ schema: 1 }), stamp('LOCAL'), stamp('local', { schema: 2 }), undefined]) {
+    const fx = layerLab(t, { seal });
+    const r = guard(fx, branchLine(fx, 'limpia'), { list: null });
+    assert.strictEqual(r.status, 2, `sello ${seal === undefined ? 'ausente' : seal.trim().slice(0, 60)}: lista obligatoria\n${r.all}`);
+  }
+});
+
+test('T87 ElSelloLocal_NoTapaUnTeamReposQueDiceOtraCosa', (t) => {
+  // con team-repos.json, manda él: con `maintainers` o ilegible, el sello local no lo vuelve otra organización
+  for (const repos of [OWNER_REPOS, '{ roto', '{}\n']) {
+    const fx = layerLab(t, { repos, seal: stamp('local') });
+    assert.strictEqual(guard(fx, branchLine(fx, 'limpia'), { list: null }).status, 2, `team-repos.json ${typeof repos === 'string' ? repos.trim() : 'del equipo dueño'}`);
+  }
+});
+
+test('T88 ElSelloDelArbolEmpujado_NoDecideLaOrganizacion', (t) => {
+  // el freno corriendo desde el árbol que se empuja: un sello local que trae la rama no cuenta
+  const inTree = lab(t, { team: false });
+  for (const p of [...PIECES, HISTORY]) write(inTree.work, p, fs.readFileSync(path.join(REPO, p)));
+  commitOn(inTree, 'propia', { 'guides/a.md': 'limpio\n', 'team-profile.json': '{}\n', '.tycon-team.json': stamp('local') });
+  const own = guard({ ...inTree, harness: inTree.work }, branchLine(inTree, 'propia'), { list: null });
+  assert.strictEqual(own.status, 2, `el sello del propio árbol no decide la organización\n${own.all}`);
+});
+
+// ── el correo de quien firma: `noreply` sólo en una máquina del equipo dueño ─────────────────────────────────────────
+// La regla protege los correos del equipo que mantiene el arnés. Un colaborador de otra organización (o sin perfil) que
+// firma con el correo de su empresa publica SU correo, y eso lo decide él: frenarlo lo deja sin poder empujar.
+// un dominio común inventado (uno reservado para ejemplos tiene su propia excepción en el detector, y no probaría lo que
+// vive un colaborador); armado acá para que el archivo no lo traiga escrito entero
+const REAL_DOMAIN = ['empresa-inventada', 'com', 'ar'].join('.');
+const REAL = { name: 'Colaborador Externo', email: ['colaborador-externo', REAL_DOMAIN].join('@') };
+function signedLab(fx) {
+  commitOn(fx, 'autor', { 'guides/a.md': 'limpio\n' }, 'docs: a', { who: REAL, committer: GOOD });
+  commitOn(fx, 'committer', { 'guides/b.md': 'limpio\n' }, 'docs: b', { who: GOOD, committer: REAL });
+  return fx;
+}
+
+test('T89 CorreoReal_OtraOrgOSinPerfil_Pasa', (t) => {
+  for (const [label, fx] of [['perfil de otra organización', orgLab(t, OTHER_ORG_REPOS)], ['perfil local de otra organización', layerLab(t, { seal: stamp('local') })], ['sin perfil', lab(t, { team: false })]]) {
+    signedLab(fx);
+    for (const branch of ['autor', 'committer']) assertPassed(guard(fx, branchLine(fx, branch), { list: null }), `${label}, ${branch}`);
+    // una marca anotada firmada con su correo, también
+    const clean = git(fx.work, ['rev-parse', 'autor']);
+    git(fx.work, ['tag', '-a', 'v9', '-m', 'una versión limpia', clean], { committer: REAL });
+    assertPassed(guard(fx, line('refs/tags/v9', git(fx.work, ['rev-parse', 'refs/tags/v9'])), { list: null }), `${label}, marca`);
+  }
+});
+
+test('T89b CorreoReal_SeMiraContraLaListaDeLaMaquina', (t) => {
+  // el correo real que se deja pasar se publica entero: con una lista propia en la máquina, un término suyo adentro frena
+  const fx = orgLab(t, OTHER_ORG_REPOS);
+  commitOn(fx, 'termino', { 'guides/a.md': 'limpio\n' }, 'docs: a', { who: { name: 'Colaborador Externo', email: [TERM.toLowerCase(), REAL_DOMAIN].join('@') }, committer: GOOD });
+  assertBlocked(fx, guard(fx, branchLine(fx, 'termino')), { category: 'cliente', place: /el autor del commit/ });
+  // y uno limpio, con la misma lista, pasa
+  signedLab(fx);
+  assertPassed(guard(fx, branchLine(fx, 'autor')));
+});
+
+test('T90 CorreoReal_EquipoDueno_SigueFrenando', (t) => {
+  // el perfil del equipo dueño, y ante la duda (perfil sin team-repos.json): el correo tiene que ser noreply
+  for (const fx of [orgLab(t, OWNER_REPOS), lab(t)]) {
+    signedLab(fx);
+    const r = guard(fx, branchLine(fx, 'autor'));
+    assert.strictEqual(r.status, 1, r.all);
+    assert.ok(r.json.findings.some((f) => f.category === 'identidad'), r.all);
+  }
+  // la validación de un pedido (el modo de rango) lo exige siempre, aunque la máquina no tenga perfil
+  const sinPerfil = signedLab(lab(t, { team: false }));
+  const r = rangeGuard(sinPerfil, { branch: 'autor', head: git(sinPerfil.work, ['rev-parse', 'autor']) });
+  assert.strictEqual(r.status, 1, r.all);
+  assert.ok(r.json.findings.some((f) => f.category === 'identidad'), r.all);
 });

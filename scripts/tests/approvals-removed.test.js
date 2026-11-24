@@ -208,6 +208,56 @@ test('Nightly_FirstMeasurementFailed_NextOneStartsWhereItStarted @story-8.248 @a
   assert.deepStrictEqual(r.foto.sin_firma.map((x) => x.path), [ruta(B)], r.out);
 });
 
+// Un borrado sin firma se sigue diciendo una semana desde la noche en que se vio: la medición siguiente no lo borra de
+// la foto aunque no entre nada nuevo, ni aunque esa noche no mida.
+test('Nightly_UnsignedRemoval_SaidForAWeek @DEF-8.248-avisos', (t) => {
+  const dir = lab(t);
+  const repo = repoConDosConstancias(dir);
+  fs.rmSync(path.join(repo, ruta(B)));
+  git(dir, repo, ['add', '-A']); git(dir, repo, ['commit', '-qm', 'borra B'], AHORA - HOUR);
+  const primera = contar(dir, repo);
+  assert.deepStrictEqual(primera.foto.sin_firma.map((x) => x.path), [ruta(B)], primera.out);
+  // la noche siguiente no entró nada nuevo: B se sigue diciendo
+  const otra = contar(dir, repo, ['--now', new Date(AHORA + 24 * HOUR).toISOString()]);
+  assert.strictEqual(otra.status, 0, otra.out);
+  assert.deepStrictEqual(otra.foto.sin_firma.map((x) => x.path), [ruta(B)], `la segunda noche lo olvidó: ${otra.out}`);
+  assert.strictEqual(otra.foto.sin_firma[0].avisada_desde, new Date(AHORA).toISOString(), 'dice desde qué noche se avisa');
+  assert.match(otra.out, /1 sin firma/);
+  // un borrado nuevo se suma al arrastrado, sin repetirlo
+  fs.rmSync(path.join(repo, ruta(A)));
+  git(dir, repo, ['add', '-A']); git(dir, repo, ['commit', '-qm', 'borra A'], AHORA + 30 * HOUR);
+  const tercera = contar(dir, repo, ['--now', new Date(AHORA + 48 * HOUR).toISOString()]);
+  assert.deepStrictEqual(tercera.foto.sin_firma.map((x) => x.path).sort(), [ruta(A), ruta(B)].sort(), tercera.out);
+  // una noche que no midió no lo pierde: la siguiente que mide lo sigue diciendo
+  const out = path.join(dir, 'ultimo-constancias.json');
+  const medida = JSON.parse(fs.readFileSync(out, 'utf8'));
+  fs.writeFileSync(out, JSON.stringify({ ...medida, medido: false, motivo: 'falló', con_firma: [] }));
+  const trasFalla = contar(dir, repo, ['--now', new Date(AHORA + 72 * HOUR).toISOString()]);
+  assert.deepStrictEqual(trasFalla.foto.sin_firma.map((x) => x.path).sort(), [ruta(A), ruta(B)].sort(), trasFalla.out);
+  // pasada la semana desde la noche en que se vio, B deja de decirse; A todavía no
+  const semana = contar(dir, repo, ['--now', new Date(AHORA + 8 * 24 * HOUR).toISOString()]);
+  assert.deepStrictEqual(semana.foto.sin_firma.map((x) => x.path), [ruta(A)], semana.out);
+});
+
+// Una foto anterior que existe y no se lee no es «no hay foto»: la medición dice «no medido» y la deja como está, en
+// lugar de mirar sólo el último día y pisarla. `--fresh` empieza de nuevo a conciencia.
+test('Nightly_UnreadablePreviousPhoto_NotMeasuredAndKept @DEF-8.248-avisos', (t) => {
+  const dir = lab(t);
+  const repo = repoConDosConstancias(dir);
+  const out = path.join(dir, 'ultimo-constancias.json');
+  for (const rota of ['{ "kind": "constancias-borradas", ', '[1, 2]']) {
+    fs.writeFileSync(out, rota);
+    const r = contar(dir, repo);
+    assert.strictEqual(r.status, 3, r.out);
+    assert.match(r.out, /no medido/);
+    assert.match(r.out, /foto anterior/);
+    assert.strictEqual(fs.readFileSync(out, 'utf8'), rota, 'la foto rota queda como estaba');
+  }
+  const fresca = contar(dir, repo, ['--fresh']);
+  assert.strictEqual(fresca.status, 0, fresca.out);
+  assert.strictEqual(fresca.foto.medido, true);
+});
+
 test('Nightly_UnreadableHistory_NotMeasured @story-8.248 @ac-9', (t) => {
   const dir = lab(t);
   const noRepo = path.join(dir, 'no-es-un-repo');
@@ -231,4 +281,21 @@ test('LocalBrake_WriteApprovalByHand_Unchanged @story-8.248 @ac-12', (t) => {
   assert.strictEqual(r.status, 2, `el freno no frenó: ${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /constancia de cambio de control no se escribe a mano/);
   assert.match(r.stderr, /run-base-controls\.sh approve/);
+});
+
+// 🔴 Falla con: el mensaje que ofrecía como vía válida «la sesión designada con la frase de la persona (`--relayed-by`)»,
+// que el guion y el freno de mano niegan: el agente lo intentaba y chocaba (revisión de precisión de los frenos).
+test('LocalBrake_WriteApprovalByHand_NoOfreceLaViaQueSeNiega', (t) => {
+  const dir = lab(t);
+  const repo = path.join(dir, 'repo');
+  fs.mkdirSync(repo);
+  git(dir, repo, ['init', '-q', '.']);
+  const evento = { session_id: 'prueba-constancia', tool_name: 'Write', tool_input: { file_path: path.join(repo, CARPETA, 'abc.json'), content: '{}' } };
+  const r = spawnSync(process.execPath, [HOOK], { encoding: 'utf8', input: JSON.stringify(evento), cwd: repo, env: gitEnv(dir) });
+  assert.strictEqual(r.status, 2, `el freno no frenó: ${r.stdout}${r.stderr}`);
+  assert.doesNotMatch(r.stderr, /sesión designada/);
+  assert.match(r.stderr, /Un reenvío \(`--relayed-by`\) no la da/);
+  assert.match(r.stderr, /ella lo aprueba en la ventana o en el cuadro/);
+  // el mensaje sale también en un repo de producto: no nombra las piezas de la capa de mantenimiento
+  assert.doesNotMatch(r.stderr, /dueño|coordinadora|delegación/);
 });

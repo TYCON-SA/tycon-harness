@@ -240,6 +240,11 @@ const VOCABULARIO = Object.freeze({
     // (delegation-routing.js): pasado el plazo, el renglón vuelve al dueño. Sin valor, 10. Sólo del perfil: si la máquina
     // pudiera decirlo, el agente se estiraría el plazo.
     delegation_wait_minutes: 'entero:1-60',
+    // Quién firma el commit local de una corrida: `agent` (o sin valor), el agente commitea solo y la persona aprueba el
+    // pull request; `coordinator`, la coordinadora lo firma antes con `marker.js approve-save` (la firma `save`), y sin
+    // ese ok vigente el freno de guardar no deja commitear. Sólo del perfil: si la máquina pudiera decirlo, el agente se
+    // sacaría la firma.
+    local_commit: 'opcion:agent|coordinator',
   }),
   // Cómo se pone al día el freno de producción de cada máquina: `password` (o sin valor), con la contraseña
   // de su persona cada vez; `auto`, solo, con la versión publicada, en las máquinas que instalaron el permiso. Sólo del
@@ -265,8 +270,15 @@ const VOCABULARIO = Object.freeze({
   // siempre, porque cuánto aguanta depende de la máquina. Sin valor, 50; con 100, la máquina queda con un turno.
   // `max_stories_in_cycle`: cuántas historias puede tener la coordinadora en el ciclo completo a la vez (de arrancadas a
   // entradas a main); con el tope lleno no arranca ni retoma otra hasta que una entre, y las demás quedan en fila. Con el
-  // orden de siempre. Sin valor, 4.
-  coordination: Object.freeze({ max_working: 'entero:1-20', owner_folder: 'ruta', session_names: 'nombres-de-sesion', second_heavy_min_free_pct: 'entero:1-100', max_stories_in_cycle: 'entero:1-20' }),
+  // orden de siempre. Sin valor, 4. `permission_wait_minutes`: cuántos minutos espera el permiso de una sesión de fondo
+  // que le llegó a la coordinadora como cuadro (scripts/hooks/permission-relay.js); pasado el plazo vuelve la ventana
+  // normal y un click tardío no aprueba nada. No afloja nada: el permiso lo aprueba igual un click de la persona. Con el
+  // orden de siempre. Sin valor, 10; el gancho tiene un plazo de 31 minutos, por eso el tope es 30.
+  // `max_awaiting_review`: cuántas cosas pueden esperar la revisión de la persona (firmas, terminados sin cerrar, carpetas sin guardar, pedidos trabados) antes de que la coordinadora deje de abrir sesiones (scripts/lib/review-load.js). Con el orden de siempre. Sin valor, 8.
+  // `light_list`: un archivo markdown con trabajo liviano para las sesiones que quedan quietas o esperan algo de afuera
+  // (la lista de la coordinadora): sus renglones abiertos se suman a la fila liviana del tablero. Con el orden de
+  // siempre. Sin valor, sólo el tablero.
+  coordination: Object.freeze({ max_working: 'entero:1-20', owner_folder: 'ruta', session_names: 'nombres-de-sesion', second_heavy_min_free_pct: 'entero:1-100', max_stories_in_cycle: 'entero:1-20', permission_wait_minutes: 'entero:1-30', max_awaiting_review: 'entero:1-50', light_list: 'ruta' }),
   // La oficina de /office. `quiet_minutes`: cuántos minutos sin novedades tiene que pasar una sesión que trabaja para que
   // la página diga «sin novedades desde las HH:MM». Sin valor, 15.
   office: Object.freeze({ quiet_minutes: 'entero:1-1440' }),
@@ -279,6 +291,11 @@ const VOCABULARIO = Object.freeze({
   // equipo (PROFILE_ONLY): es una para toda la organización, y si la máquina pudiera decirla, el agente podría mandar a
   // la persona a otra página. Sin valor, el comando dice cómo cargarla (desde el sitio o con un pedido al perfil).
   site: Object.freeze({ url: 'url' }),
+  // `pull_requests.team_authors`: las cuentas de GitHub del equipo. Un pedido de otra cuenta (o de un bot que no está en
+  // la lista) no se encola ni se mergea sin la firma del dueño (external-pr.js, regla GIT-C7). Sin valor, es del equipo
+  // sólo la cuenta con la que el CLI de GitHub está autenticado en la máquina. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY): si la máquina pudiera
+  // decirlo, el agente se sumaría a cualquiera a la lista.
+  pull_requests: Object.freeze({ team_authors: 'cuentas' }),
   // Los interruptores de la organización (la sección «Frenos y medidores» del sitio). Hoy cada uno se cambia también por
   // máquina con su variable (SWITCHES dice cuál), y la variable puesta sigue ganando. Los frenos (`freno`) sólo se
   // ENCIENDEN desde acá: «on» (en cualquier mayúscula) o `true`; un valor que dice apagado se ignora y se nombra
@@ -337,7 +354,7 @@ const RETIRADAS = Object.freeze({
 // perfil es versionado y se cambia con un pedido; la variable y el archivo de la máquina los puede escribir el agente que
 // implementa, y esta clave abre la puerta a eximir un crítico: si las leyera, el agente se la abriría solo. Lo que el
 // archivo de la máquina tenga escrito queda en `shadowed` con `by: 'solo-perfil'` y `explain` lo dice; `set` no la escribe.
-const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files', 'approvals.delegation_wait_minutes']);
+const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files', 'approvals.delegation_wait_minutes', 'pull_requests.team_authors', 'approvals.local_commit']);
 // Hasta dónde puede subir cada tope del camino corto. El delegado, hasta 6: sube lo
 // mínimo, porque con riesgo normal ese carril no lleva revisores ni pase adversarial, y una historia de 6 archivos ya deja
 // de saltearse el pase. El de la firma común, hasta 12: evita el click aparte en un arreglo de 9 archivos y lo mantiene en
@@ -565,6 +582,9 @@ const VARIABLES = Object.freeze({
   'coordination.session_names': ['TYCON_COORDINATION_SESSION_NAMES'],
   'coordination.second_heavy_min_free_pct': ['TYCON_COORDINATION_SECOND_HEAVY_MIN_FREE_PCT'],
   'coordination.max_stories_in_cycle': ['TYCON_COORDINATION_MAX_STORIES_IN_CYCLE'],
+  'coordination.permission_wait_minutes': ['TYCON_COORDINATION_PERMISSION_WAIT_MINUTES'],
+  'coordination.max_awaiting_review': ['TYCON_COORDINATION_MAX_AWAITING_REVIEW'],
+  'coordination.light_list': ['TYCON_COORDINATION_LIGHT_LIST'],
 });
 
 // Los interruptores por hook que ya existían siguen valiendo POR ENCIMA de la llave de su
@@ -640,6 +660,7 @@ function normalizarValor(tipo, valor, home, clave) {
   if (tipo === 'llave-o-detectar' && esDetect(valor)) return DETECT;   // el valor viejo se lee como el nuevo
   if (tipo === 'paquetes' && typeof valor === 'string') return valor.trim();
   if (tipo === 'plataforma') return Object.fromEntries(Object.keys(valor).filter((k) => !esComentario(k)).map((k) => [k, String(valor[k]).trim().toLowerCase()]));
+  if (tipo === 'cuentas') return valor.map((v) => v.trim());
   if (tipo === 'maquinas') return valor.map((m) => ({ id: m.id.trim(), label: m.label.trim() }));
   if (tipo === 'niveles') return { ...valor };
   if (tipo === 'nombres-de-sesion') return Array.isArray(valor) ? valor.map((v) => String(v).trim()) : String(valor).trim().toLowerCase();
@@ -1093,6 +1114,12 @@ function validarTipo(tipo, valor) {
     }
     case 'puerto':
       return (Number.isInteger(valor) && valor >= 1 && valor <= 65535) ? null : `tiene que ser un puerto (un entero de 1 a 65535), no ${JSON.stringify(valor)}`;
+    case 'cuentas': {
+      // las cuentas de GitHub: una lista no vacía de nombres de cuenta (los bots, con su sufijo, como `app/<nombre>`)
+      if (!Array.isArray(valor) || !valor.length) return `tiene que ser una lista no vacía de cuentas de GitHub, no ${JSON.stringify(valor)}`;
+      const mala = valor.find((v) => typeof v !== 'string' || !/^(app\/)?[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(\[bot\])?$/.test(v.trim()));
+      return mala === undefined ? null : `${JSON.stringify(mala)} no es una cuenta de GitHub`;
+    }
     case 'maquinas': {
       // las máquinas donde vale la firma por delegación: la huella de machine-id.js y un nombre para la persona
       const forma = 'una lista no vacía de {"id": "<16 hex de machine-id.js>", "label": "<nombre>"}';
@@ -1481,8 +1508,9 @@ function modelProvider(opts = {}) {
 /**
  * La receta de la coordinadora, según una configuración YA cargada: `{ max_working: { value, origin }, owner_folder:
  * { value, origin }, session_names: { value, origin }, second_heavy_min_free_pct: { value, origin },
- * max_stories_in_cycle: { value, origin } }`. Sin valor, el tope es 3, la carpeta null, los nombres null, el piso del
- * segundo turno 50 y el tope de historias en el ciclo 4, todos con origen `sin-valor`.
+ * max_stories_in_cycle: { value, origin }, permission_wait_minutes: { value, origin } }`. Sin valor, el tope es 3, la
+ * carpeta null, los nombres null, el piso del segundo turno 50, el tope de historias en el ciclo 4 y la espera de un
+ * permiso 10 minutos, todos con origen `sin-valor`.
  */
 function coordinacion(config) {
   const v = (config.valores && config.valores.coordination) || {};
@@ -1490,7 +1518,8 @@ function coordinacion(config) {
   const con = (clave, defecto) => (v[clave] === null || v[clave] === undefined
     ? { value: defecto, origin: 'sin-valor' }
     : { value: v[clave], origin: o[`coordination.${clave}`] });
-  return { max_working: con('max_working', 3), owner_folder: con('owner_folder', null), session_names: con('session_names', null), second_heavy_min_free_pct: con('second_heavy_min_free_pct', 50), max_stories_in_cycle: con('max_stories_in_cycle', 4) };
+  return { max_working: con('max_working', 3), owner_folder: con('owner_folder', null), session_names: con('session_names', null), second_heavy_min_free_pct: con('second_heavy_min_free_pct', 50), max_stories_in_cycle: con('max_stories_in_cycle', 4), permission_wait_minutes: con('permission_wait_minutes', 10),
+    max_awaiting_review: con('max_awaiting_review', 8), light_list: con('light_list', null) };
 }
 /**
  * Los topes del camino corto, según una configuración YA cargada: `{ coordinator_max_files: { value, origin }, max_files:

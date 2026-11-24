@@ -550,7 +550,8 @@ if corre T18; then
   # estado release de esta máquina
   out="$(bash -c 'SCRIPT_DIR="$1"; HOME="$2"; _tcg_root="$(cd "$SCRIPT_DIR/.." && pwd)"; _state_file="$(node -e "process.stdout.write(require(process.argv[1]).stateDir())" "$SCRIPT_DIR/setup/harness/tycon-home.js" 2>/dev/null)/harness-state.json"; if grep -q "\"kind\":[[:space:]]*\"release\"" "$_state_file" 2>/dev/null; then echo "     node $_tcg_root/scripts/setup/harness.js update"; else echo "     git -C x pull --ff-only && git -C $_tcg_root pull --ff-only"; fi' _ "$T/harness/scripts" "$LAB_HOME")"
   case "$out" in *"harness.js update"*) ok "el consejo del instalador en release dice harness.js update" ;; *) mal "el consejo del instalador sigue diciendo git pull: $out" ;; esac
-  grep -q 'harness.js update; en un clon, git pull' "$RAIZ/skills/tycon-pipeline/scripts/pipeline.js" && ok "el consejo de pipeline.js nombra harness.js update antes que git pull" || mal "pipeline.js sigue aconsejando sólo git pull"
+  # pipeline.js está partido en lib/pipeline-*.js: el consejo puede vivir en una de sus partes
+  grep -q 'harness.js update; en un clon, git pull' "$RAIZ/skills/tycon-pipeline/scripts/pipeline.js" "$RAIZ"/skills/tycon-pipeline/scripts/lib/pipeline-*.js && ok "el consejo de pipeline.js nombra harness.js update antes que git pull" || mal "pipeline.js sigue aconsejando sólo git pull"
   grep -q '"kind":\[\[:space:\]\]\*"release"' "$RAIZ/scripts/install-tycon-hooks.sh" && ok "el instalador decide el consejo por la forma de la instalación" || mal "el instalador no mira la forma de la instalación"
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi

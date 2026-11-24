@@ -29,7 +29,7 @@ function github(rutas) {
   return { llamar, llamadas };
 }
 const CONFIGURADO = [/code-scanning\/default-setup$/, { value: { state: 'configured' } }];
-const SIN_ALERTAS = [/code-scanning\/alerts\?ref=refs%2Fpull%2F\d+%2Fmerge&state=open/, { value: [] }];
+const SIN_ALERTAS = [/code-scanning\/alerts\?ref=refs%2Fpull%2F\d+%2F(merge|head)&state=open/, { value: [] }];
 
 function leer(nodos, rutas) {
   const g = github(rutas);
@@ -60,7 +60,7 @@ test('T3 CodeScanning_EnRojoOCorriendo_NoEsVerde — failure, neutral o sin term
 });
 
 test('T4 CodeScanning_ConAlertasAbiertas_EsRojo — el control en success pero el pedido con una alerta abierta', () => {
-  const { pedidos } = leer([nodo(4, [corrida()])], [CONFIGURADO, [/code-scanning\/alerts\?ref=refs%2Fpull%2F4%2Fmerge/, { value: [{ number: 9 }] }]]);
+  const { pedidos } = leer([nodo(4, [corrida()])], [CONFIGURADO, [/code-scanning\/alerts\?ref=refs%2Fpull%2F4%2Fmerge/, { value: [{ number: 9 }] }], SIN_ALERTAS]);
   assert.strictEqual(pedidos[0].codeScanning.estado, 'rojo');
   assert.match(pedidos[0].codeScanning.motivo, /1 alerta/);
 });
@@ -133,4 +133,17 @@ test('T11 CodeScanning_ExigidoComoControlRequerido_CuentaComoExigido — por una
   assert.strictEqual(r(conCheck('CodeQL')), true);
   assert.strictEqual(r(conCheck('public-ci')), false);
   assert.strictEqual(r({ ...NO_EXIGE, branchProtectionRule: { requiredStatusCheckContexts: ['public-ci', 'CodeQL'] } }), true);
+});
+
+test('T12 CodeScanning_AlertaSoloEnLaPunta_EsRojo — una alerta anotada en refs/pull/N/head (no en /merge) también cuenta', () => {
+  // así entró a main la alerta 171 del público: el análisis la anotó en la punta del pedido, y el control sólo leía /merge
+  const { pedidos, llamadas } = leer([nodo(12, [corrida()])], [CONFIGURADO,
+    [/code-scanning\/alerts\?ref=refs%2Fpull%2F12%2Fmerge/, { value: [] }],
+    [/code-scanning\/alerts\?ref=refs%2Fpull%2F12%2Fhead/, { value: [{ number: 171 }] }]]);
+  assert.strictEqual(pedidos[0].codeScanning.estado, 'rojo', JSON.stringify(pedidos[0].codeScanning));
+  assert.match(pedidos[0].codeScanning.motivo, /1 alerta/);
+  assert.ok(llamadas.some((r) => /refs%2Fpull%2F12%2Fhead/.test(r)), 'lee la punta');
+  // la misma alerta en las dos: se cuenta una vez
+  const dos = leer([nodo(12, [corrida()])], [CONFIGURADO, [/code-scanning\/alerts\?ref=refs%2Fpull%2F12%2F(merge|head)/, { value: [{ number: 171 }] }]]).pedidos[0];
+  assert.match(dos.codeScanning.motivo, /^1 alerta/);
 });

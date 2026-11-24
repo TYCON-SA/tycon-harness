@@ -9,6 +9,8 @@
  *
  * stable-data: las horas son las de AHORA, fija; ninguna se compara con el reloj.
  */
+// sin el perfil del equipo: la prueba fija su ambiente (lib/without-team-profile.js)
+require('./lib/without-team-profile.js');
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
@@ -161,7 +163,7 @@ test('T17 Verificar_UnknownVia_Denied @story-8.255 @ac-16', (t) => {
 
 // ── la prueba de cruce ───────────────────────────────────────────────────────────────────────────────────────────
 
-const RUTINA = ['pending-approval', 'save', 'plan-approval', 'adhoc-lane'];
+const RUTINA = ['pending-approval', 'plan-approval', 'adhoc-lane'];
 const NIVEL = new Map(SIG.LEVELS.map((l) => [l.id, l.level]));
 const cubre = (firma) => { const s = SIG.SIGNATURES.find((x) => x.id === firma); return s ? [...s.covers] : [firma]; };
 const pideAntes = (firma) => RUTINA.includes(firma) || cubre(firma).some((id) => NIVEL.get(id) === 1);
@@ -171,14 +173,16 @@ const pideAntes = (firma) => RUTINA.includes(firma) || cubre(firma).some((id) =>
  * encierra. `delega`: la definición de `firmaDelDueno`, cuyo `antes` lo trae cada llamada literal.
  */
 const CALCULADAS = {
-  'skills/tycon-pipeline/scripts/marker.js::firmaDelDueno': { delega: true },
-  'skills/tycon-pipeline/scripts/marker.js::firmaDeLaDesignacion': { firmas: ['designation-set', 'designation-withdraw'] },
-  'skills/tycon-pipeline/scripts/marker.js::cmdAdhoc': { firmas: ['adhoc-lane', 'adhoc-lane:sobre-cupo'] },
-  'skills/tycon-pipeline/scripts/marker.js::cmdSignFile': { firmas: SIG.FIRMAS_DE_ARCHIVO.map((f) => `escape:${f}`) },
-  'skills/tycon-pipeline/scripts/marker.js::cmdApprovePending': { firmas: ['pending-approval'] },
-  'skills/tycon-pipeline/scripts/marker.js::cmdSalidaPerdida': { firmas: ['lost-run', 'lost-run:particion'] },
-  'skills/tycon-pipeline/scripts/marker.js::cmdSignAdversarialSkip': { firmas: ['adversarial-skip'] },
+  'skills/tycon-pipeline/scripts/lib/marker-shared.js::firmaDelDueno': { delega: true },
+  'skills/tycon-pipeline/scripts/lib/marker-signatures.js::firmaDeLaDesignacion': { firmas: ['designation-set', 'designation-withdraw'] },
+  'skills/tycon-pipeline/scripts/lib/marker-adhoc.js::cmdAdhoc': { firmas: ['adhoc-lane', 'adhoc-lane:sobre-cupo'] },
+  'skills/tycon-pipeline/scripts/lib/marker-signatures.js::cmdSignFile': { firmas: SIG.FIRMAS_DE_ARCHIVO.map((f) => `escape:${f}`) },
+  'skills/tycon-pipeline/scripts/lib/marker-signatures.js::cmdApprovePending': { firmas: ['pending-approval'] },
+  'skills/tycon-pipeline/scripts/lib/marker-sessions.js::cmdSalidaPerdida': { firmas: ['lost-run', 'lost-run:particion'] },
+  'skills/tycon-pipeline/scripts/lib/marker-signatures.js::cmdSignAdversarialSkip': { firmas: ['adversarial-skip'] },
   'skills/tycon-pipeline/scripts/lib/adversarial-skip.js::firmarSalteo': { firmas: ['adversarial-skip'] },
+  'skills/tycon-pipeline/scripts/lib/marker-signatures.js::cmdSignAtddSkip': { firmas: ['atdd-skip'] },
+  'skills/tycon-pipeline/scripts/lib/atdd-skip.js::firmar': { firmas: ['atdd-skip'] },
   'scripts/ci/run-base-controls.sh::approveByWindow': { firmas: ['refresh-after-main', 'control-change'] },
 };
 // las que no viven dentro de una función: se reconocen por su argumento. El `verify` de la consola, que ningún guion del
@@ -271,8 +275,10 @@ test('T15 CrossCheck_EveryNoPersonSignatureHasBefore @story-8.255 @ac-13', (t) =
   const archivos = archivosDelArbol(RAIZ);
   assert.ok(archivos.includes('skills/tycon-pipeline/scripts/marker.js') && archivos.includes('scripts/lib/owner-window.js'), 'recorre el árbol del arnés');
   // las llamadas de siempre se encuentran, con su firma
-  const delMarker = llamadasDe(RAIZ, 'skills/tycon-pipeline/scripts/marker.js');
-  for (const f of ['plan-approval', 'compare-waiver', 'save']) assert.ok(delMarker.some((c) => c.firma === f), `encuentra la llamada de ${f}`);
+  // marker.js con sus partes de lib/
+  const partes = fs.readdirSync(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib')).filter((f) => /^marker-.+\.js$/.test(f)).map((f) => `skills/tycon-pipeline/scripts/lib/${f}`);
+  const delMarker = ['skills/tycon-pipeline/scripts/marker.js', ...partes].flatMap((f) => llamadasDe(RAIZ, f));
+  for (const f of ['plan-approval', 'compare-waiver']) assert.ok(delMarker.some((c) => c.firma === f), `encuentra la llamada de ${f}`);
   assert.ok(!delMarker.some((c) => c.funcion === null), 'cada llamada sabe en qué función está');
   assert.deepStrictEqual(problemasDelCruce(RAIZ, archivos), [], 'toda firma que sale sin persona pasa su antes');
   // el verify de la consola no tiene llamadores
@@ -284,7 +290,7 @@ test('T15 CrossCheck_EveryNoPersonSignatureHasBefore @story-8.255 @ac-13', (t) =
   t.after(() => fs.rmSync(juguete, { recursive: true, force: true }));
   fs.mkdirSync(path.join(juguete, 'scripts'), { recursive: true });
   fs.writeFileSync(path.join(juguete, 'scripts', 'nuevo.js'), [
-    '// firmaDelDueno(\'save\', x) en un comentario no cuenta',
+    '// firmaDelDueno(\'pending-approval\', x) en un comentario no cuenta',
     'function hacer() {',
     '  const f = firmaDelDueno(\'compare-waiver\', \'eximir\');',
     '  const g = ow.exigir({ firma: elegida, argv });',

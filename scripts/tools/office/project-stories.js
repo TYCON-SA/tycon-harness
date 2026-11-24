@@ -6,7 +6,12 @@ if (require.main === module) { try { require('../../lib/node-floor.js').guard();
  * project-stories.js — los pendientes de cada proyecto donde trabajaste esta semana, para la oficina.
  * Casos: scripts/tests/office-project-stories.test.js y scripts/tests/office-project-stories-live.smoke.js
  *
- *   node project-stories.js --refresh     lee y deja <estado>/office/project-stories.json (con candado)
+ *   node project-stories.js --refresh             lee y deja <estado>/office/project-stories.json (con candado)
+ *   node project-stories.js --refresh-if-moved    relee sólo si la rama principal de algún proyecto se movió
+ *
+ * Cada proyecto trae también `abiertas` (las historias de los grupos «backlog», «en curso» y «bloqueado», con su archivo y
+ * su estado, de donde la oficina saca el número de abiertas), `remoto`, `lugar` y `commit` (el commit leído de la rama
+ * principal, null si se leyó de la copia).
  *
  * Qué proyectos: un repo donde abriste una sesión de Claude o de Codex, o donde hiciste un commit propio, en los
  * últimos 7 días (WORK_DAYS). Tener el clon no cuenta, ni una ejecución automática.
@@ -50,6 +55,8 @@ const AUTOMATIC = new Set(['sdk-cli', 'codex_exec']);
 // lo que entra: el grupo «en curso» del vocabulario y las listas para programar (la única constante)
 const READY = 'ready-for-dev';
 const ENTER = new Set([...STATES.groups.en_curso, READY]);
+// lo que cuenta como abierta: los grupos «backlog», «en curso» y «bloqueado» del vocabulario (borradores incluidos)
+const OPEN = new Set([...STATES.groups.backlog, ...STATES.groups.en_curso, ...STATES.groups.bloqueado]);
 // Una dependencia está resuelta con su historia cerrada o en revisión (en `main`: varias quedan en revisión por el papeleo
 // de cierre). La revisión se nombra por su alias del vocabulario: el canónico escrito a mano lo frena la prueba de la oficina.
 const RESOLVED = new Set([...STATES.groups.cerrado, STATES.alias['ready-for-review']].filter(Boolean));
@@ -261,9 +268,10 @@ function pausedDate(fm) {
 }
 
 /**
- * Lo que dice una historia: `{ story, dependsOn }` si entra, `{ out: true, id, estado }` si no entra (su número y su estado
- * resuelven las dependencias de las que sí entran), `{ unread: true }` si dice ser historia y no se puede leer, o null si
- * no es una historia (un .md sin `story:` en el encabezado).
+ * Lo que dice una historia: `{ story, dependsOn, abierta }` si entra como tarjeta, `{ out: true, id, estado }` si no entra
+ * (su número y su estado resuelven las dependencias de las que sí entran; si está abierta, trae además `abierta` y
+ * `dependsOn`), `{ unread: true }` si dice ser historia y no se puede leer, o null si no es una historia (un .md sin
+ * `story:` en el encabezado). `abierta` es lo que cuenta el número de abiertas: `{ id, archivo, estado, pausa? }`.
  */
 function parseStory(text, archivo) {
   // un archivo guardado con BOM sigue siendo una historia
@@ -277,16 +285,21 @@ function parseStory(text, archivo) {
   const estado = canonical(scalar(fm, 'status'));
   if (!estado) return { unread: true };
   const numero = id.replace(/\s+#.*$/, '');
-  if (!ENTER.has(estado)) return { out: true, id: numero, estado };
-  const story = { id: numero, archivo, titulo: scalar(fm, 'title'), estado, prioridad: scalar(fm, 'priority'), trabajo: scalar(fm, 'work_item') };
+  if (!OPEN.has(estado)) return { out: true, id: numero, estado };
   const pausa = pausedDate(fm);
+  const abierta = { id: numero, archivo, estado, ...(pausa ? { pausa } : {}) };
+  if (!ENTER.has(estado)) return { out: true, id: numero, estado, abierta, dependsOn: dependsList(fm) };
+  const story = { id: numero, archivo, titulo: scalar(fm, 'title'), estado, prioridad: scalar(fm, 'priority'), trabajo: scalar(fm, 'work_item') };
   if (pausa) story.pausa = pausa;
-  return { story, dependsOn: dependsList(fm) };
+  return { story, dependsOn: dependsList(fm), abierta };
 }
 
-/** La rama principal traída: la primera que existe de origin/HEAD, origin/main y origin/master; null si ninguna. */
+/** La rama principal traída y su commit: la primera que existe de origin/HEAD, origin/main y origin/master; null si ninguna. */
 function mainRef(repo, run) {
-  for (const b of BRANCHES) if (run(repo, ['rev-parse', '--verify', '--quiet', `${b}^{commit}`]).ok) return b;
+  for (const b of BRANCHES) {
+    const r = run(repo, ['rev-parse', '--verify', '--quiet', `${b}^{commit}`]);
+    if (r.ok) return { ref: b, commit: r.out.trim() };
+  }
   return null;
 }
 
@@ -312,12 +325,16 @@ function workingMarkdown(dir, depth = 0, out = []) {
   return out;
 }
 
-/** Las historias de un lugar: `{ historias, sinLeer, traidoAt, deTuCopia, problem }`, sin tocar la copia. */
+/**
+ * Las historias de un lugar: `{ historias, abiertas, sinLeer, traidoAt, deTuCopia, commit, ref, problem }`, sin tocar la
+ * copia. `commit` y `ref` son los de la rama principal leída; leído de la copia, los dos son null.
+ */
 function readPlace(place, run) {
   const r = repoOfFolder(place.repo, run);
   if (!r) return { problem: 'no es un repo de git' };
   const rel = path.relative(place.repo, place.dir).split(path.sep).join('/');
   const historias = [];
+  const abiertas = [];
   // las dependencias declaradas y el estado de TODAS las historias leídas: resuelven `pendientes` y no se guardan
   const declared = [];
   const estados = new Map();
@@ -326,12 +343,18 @@ function readPlace(place, run) {
     const s = parseStory(text, archivo);
     if (!s) return;
     if (s.unread) { sinLeer += 1; return; }
+    const deps = Array.isArray(s.dependsOn) && s.dependsOn.length ? s.dependsOn : null;
+    if (s.abierta) {
+      abiertas.push(s.abierta);
+      if (deps) declared.push([s.abierta, deps]);
+    }
     if (s.out) { estados.set(String(s.id), s.estado); return; }
     estados.set(String(s.story.id), s.story.estado);
     historias.push(s.story);
-    if (Array.isArray(s.dependsOn) && s.dependsOn.length) declared.push([s.story, s.dependsOn]);
+    if (deps) declared.push([s.story, deps]);
   };
-  const ref = mainRef(place.repo, run);
+  const main = mainRef(place.repo, run);
+  const ref = main ? main.ref : null;
   if (ref) {
     // con -z git no pone comillas ni escapes a los nombres con tildes o ñ; la raíz del repo se pide como «.»
     const ls = run(place.repo, ['ls-tree', '-r', '-z', ref, '--', rel ? `${rel}/` : '.']);
@@ -358,7 +381,7 @@ function readPlace(place, run) {
     const pendientes = ref ? deps.filter((d) => !RESOLVED.has(estados.get(String(d)))) : deps.slice();
     if (pendientes.length) story.pendientes = pendientes;
   }
-  return { historias, sinLeer, traidoAt: fetchedAt(r.common), deTuCopia: !ref, problem: null, common: r.common, root: r.root };
+  return { historias, abiertas, sinLeer, traidoAt: fetchedAt(r.common), deTuCopia: !ref, commit: main ? main.commit : null, ref, problem: null, common: r.common, root: r.root };
 }
 
 /** La lista de productos de la organización (la que elige configPorDefecto), plana: `[{ producto, ado?, github? }]`. */
@@ -404,7 +427,7 @@ function collect({ home = os.homedir(), now = Date.now(), env = process.env, ema
       any = true;
       const rel = path.relative(place.repo, place.dir).split(path.sep).join('/');
       const key = `${remoteKey(place.repo) || read.common}|${rel}`;
-      const row = rows.get(key) || { key, remote: remoteKey(place.repo), repoName: path.basename(read.root), worked: new Set(), read };
+      const row = rows.get(key) || { key, remote: remoteKey(place.repo), repoName: path.basename(read.root), worked: new Set(), read, place };
       row.worked.add(remoteKey(repo.root));
       rows.set(key, row);
     }
@@ -413,14 +436,22 @@ function collect({ home = os.homedir(), now = Date.now(), env = process.env, ema
   const named = [...rows.values()].map((r) => ({ ...r, producto: productOf(r.remote, products) || [...r.worked].map((k) => productOf(k, products)).find(Boolean) || null }));
   const perProduct = new Map();
   for (const r of named) if (r.producto) perProduct.set(r.producto, (perProduct.get(r.producto) || 0) + 1);
-  const proyectos = named.filter((r) => r.read.historias.length).map((r) => ({
+  // todo proyecto leído entra, aunque no tenga nada abierto: su número de abiertas es 0, no «no lo leí». La tabla y el
+  // kanban saltean los que no tienen tarjetas ni historias sin leer (`view`)
+  const proyectos = named.map((r) => ({
     nombre: r.producto ? (perProduct.get(r.producto) > 1 ? `${r.producto} · ${r.repoName}` : r.producto) : r.repoName,
     traidoAt: r.read.traidoAt,
     deTuCopia: r.read.deTuCopia,
     sinLeer: r.read.sinLeer,
     // el remoto del lugar y los de los repos trabajados que leen de ahí: así el freno sabe de qué proyecto es cada historia
     repos: [...new Set([r.remote, ...r.worked].filter(Boolean))],
+    // el remoto del lugar, para elegir el proyecto de la coordinadora; el lugar y el commit leído, para saber si main se
+    // movió (el lugar es de esta máquina: la foto no lo copia)
+    remoto: r.remote,
+    lugar: { repo: r.place.repo, ref: r.read.ref, common: r.read.common },
+    commit: r.read.commit,
     historias: r.read.historias,
+    abiertas: r.read.abiertas,
   }));
   return { at: new Date(now).toISOString(), proyectos, sinHistorias: [...new Set(sinHistorias)], commitsPropios: p.ownCommits };
 }
@@ -451,16 +482,38 @@ function refresh({ stateDir, now = Date.now(), read }) {
 }
 
 /**
- * Las ejecuciones de esta máquina: los marcadores de active/ y los cierres de timing-history/ de las últimas 24 h. Lo que
- * no se pudo leer (una carpeta sin permiso, un archivo roto) va a `problems` si quien llama lo pasa: el freno del cierre
- * del turno no cuenta ninguna historia con una corrida en duda.
+ * ¿Se movió la rama principal de algún proyecto desde la lectura guardada? Si sí (o no hay lectura), relee con `refresh`:
+ * `{ ran, moved, why? }`. Un proyecto sin el campo `commit` o sin `lugar` (una lectura de antes del número de abiertas)
+ * cuenta como movido; uno leído de la copia (`lugar.ref` null) no tiene con qué comparar y no cuenta; un repo que no
+ * contesta tampoco, y los demás se comparan igual. Si la lectura nueva se cae, el error sube y queda el archivo anterior.
+ */
+function refreshIfMoved({ stateDir, read, git, now = Date.now() }) {
+  const run = git || gitRunner();
+  let snap = null;
+  try { snap = JSON.parse(fs.readFileSync(path.join(stateDir, 'office', 'project-stories.json'), 'utf8')); } catch { /* sin lectura: se lee */ }
+  const movedOne = (p) => {
+    if (!p || !p.lugar || !('commit' in p)) return true;
+    if (!p.lugar.ref) return false;
+    const r = run(p.lugar.repo, ['rev-parse', '--verify', '--quiet', `${p.lugar.ref}^{commit}`]);
+    return r.ok && r.out.trim() !== p.commit;
+  };
+  // se comparan todos, aunque uno ya se haya movido: así un repo que no contesta nunca frena a los demás
+  const moved = !snap || !Array.isArray(snap.proyectos) || snap.proyectos.map(movedOne).some(Boolean);
+  if (!moved) return { ran: false, moved: false, why: 'ninguna rama principal se movió' };
+  return { ...refresh({ stateDir, now, read }), moved: true };
+}
+
+/**
+ * Las ejecuciones de esta máquina: los marcadores de active/ (`activo: true`, con el `repoPath` de su ejecución) y los
+ * cierres de timing-history/ de las últimas 24 h. Lo que no se pudo leer (una carpeta sin permiso, un archivo roto) va a
+ * `problems` si quien llama lo pasa: el freno del cierre del turno no cuenta ninguna historia con una corrida en duda.
  */
 function runsOfThisMachine({ stateDir, now = Date.now(), problems = null }) {
   const out = [];
   const doubt = (what) => { if (problems) problems.push(what); };
-  const take = (m) => { if (m && m.storyPath) out.push({ archivo: path.basename(String(m.storyPath)), sessionId: m.sessionId || null }); };
+  const take = (m, activo = false) => { if (m && m.storyPath) out.push({ archivo: path.basename(String(m.storyPath)), sessionId: m.sessionId || null, ...(activo ? { activo: true, repoPath: m.repoPath ? String(m.repoPath) : null } : {}) }); };
   const read = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch (e) { doubt(`la ejecución ${path.basename(f)} (${e.code || 'rota'})`); return null; } };
-  try { for (const f of fs.readdirSync(path.join(stateDir, 'active'))) if (f.endsWith('.json')) take(read(path.join(stateDir, 'active', f))); } catch (e) { if (e.code !== 'ENOENT') doubt(`las ejecuciones de active/ (${e.code || e.message})`); }
+  try { for (const f of fs.readdirSync(path.join(stateDir, 'active'))) if (f.endsWith('.json')) take(read(path.join(stateDir, 'active', f)), true); } catch (e) { if (e.code !== 'ENOENT') doubt(`las ejecuciones de active/ (${e.code || e.message})`); }
   const hist = path.join(stateDir, 'timing-history');
   let names = [];
   try { names = fs.readdirSync(hist); } catch (e) { if (e.code !== 'ENOENT') doubt(`los cierres de timing-history/ (${e.code || e.message})`); }
@@ -549,8 +602,9 @@ function view({ snap, nota = null, runs = [], filas = [], nameOf = () => null, w
 }
 
 if (require.main === module) {
-  if (!process.argv.includes('--refresh')) {
-    process.stderr.write('uso: project-stories.js --refresh\n');
+  const ifMoved = process.argv.includes('--refresh-if-moved');
+  if (!ifMoved && !process.argv.includes('--refresh')) {
+    process.stderr.write('uso: project-stories.js --refresh | --refresh-if-moved\n');
     process.exit(2);
   }
   const { stateDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
@@ -561,11 +615,18 @@ if (require.main === module) {
       roots = r.roots || (r.root ? [r.root] : null);
       if (!roots) rootsProblem = r.motivo || 'sin raíz de repos';
     } catch (e) { rootsProblem = `la raíz de repos no se pudo leer (${e.message})`; }
+    // el correo de la persona sale de su configuración de git (una lectura, no del clon): sólo se pide al releer
     const email = gitRunner()(os.homedir(), ['config', '--global', 'user.email']).out.trim() || null;
     return collect({ email, roots, rootsProblem, products: loadProducts() });
   };
-  const r = refresh({ stateDir: stateDir(os.homedir()), read });
-  process.stdout.write(`${JSON.stringify(r)}\n`);
+  try {
+    const r = ifMoved ? refreshIfMoved({ stateDir: stateDir(os.homedir()), read }) : refresh({ stateDir: stateDir(os.homedir()), read });
+    process.stdout.write(`${JSON.stringify(r)}\n`);
+  } catch (e) {
+    // la lectura nueva se cayó: queda la anterior, y la oficina lo dice por el código de salida
+    process.stderr.write(`project-stories.js: la lectura no se pudo hacer (${e.message})\n`);
+    process.exit(1);
+  }
 }
 
-module.exports = { WORK_DAYS, READY, gitRunner, sessionFolders, projectsOf, placesFor, remoteKey, parseStory, readPlace, collect, refresh, runsOfThisMachine, runOf, whoOf, loadProducts, readSnapshot, inOrder, view };
+module.exports = { WORK_DAYS, READY, OPEN, gitRunner, sessionFolders, projectsOf, placesFor, remoteKey, parseStory, readPlace, collect, refresh, refreshIfMoved, runsOfThisMachine, runOf, whoOf, loadProducts, readSnapshot, inOrder, view, fetchedAt, ago };

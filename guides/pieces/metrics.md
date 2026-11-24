@@ -42,6 +42,30 @@ _(scripts/nightly/watcher/vigilante.js + inbox/watcher/)_
 
 **Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscipush-nightly-datajs)
 
+## scripts/lib/result-travel.js
+
+**Qué es:** Cómo viajan los resultados de la noche que produce una máquina (el examen de revisores, los casos de guía y la revisión semanal): cada uno va como una entrada nueva a la rama `night-results`.
+
+**Por qué existe:** La máquina no puede empujar a `main` del repo de mantenimiento. Publica sin tocar el clon, guarda el resultado primero en la carpeta de estado y anota si viajó o no, para que un empuje fallido se vea al arrancar.
+
+**Quién la usa:** `periodic-exam.js`, `guide-runner`, la revisión semanal y el aviso `bench-notice.js`.
+
+**Dónde se prueba:** `scripts/tests/result-travel.test.js`
+
+**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptslibresult-traveljs)
+
+## scripts/ci/carry-night-results.js
+
+**Qué es:** El guion que lleva a un checkout de `main` las entradas de `night-results` que todavía no llevó, de la más vieja a la más nueva.
+
+**Por qué existe:** Es el otro extremo de `result-travel.js`. Escribe en `main` y cualquiera puede empujar a la rama, así que aplica sólo lo que tiene forma de resultado. Un archivo viejo no pisa uno nuevo, y lo llevado se anota en `carried.json`.
+
+**Quién la usa:** Un nocturno del repo de mantenimiento, entre `push-nightly-data.js sync` y `save`.
+
+**Dónde se prueba:** `scripts/tests/carry-night-results.test.js`
+
+**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscicarry-night-resultsjs)
+
 ## pipelines/azure-pipelines-banco.yml
 
 **Qué es:** El pipeline `pipelines/azure-pipelines-banco.yml` que corre de noche el banco de controles y las suites de prueba del arnés.
@@ -289,6 +313,16 @@ _(scripts/metrics/upload-runs.js + scripts/metrics/download-runs.js)_
 **Dónde se prueba:** `scripts/tests/guard-record.test.sh`
 
 **Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptslibguard-recordjs)
+
+## scripts/metrics/controls-table.js
+
+**Qué es:** La tabla de los controles de esta máquina, por freno y por modelo: cuánto frenó, avisó, pasó con firma y dejó pasar, los controles del pipeline que frenaron, las fallas de cada freno y si es exigencia o preferencia.
+
+**Por qué existe:** Para decidir qué freno se relaja y para qué modelo hace falta saber cuánto frena y cuánto se firma igual. Sólo lee.
+
+**Quién la usa:** Quien mantiene el arnés, a mano. La clasificación vive en `controls-classification.json`.
+
+**Dónde se prueba:** `scripts/tests/controls-table.test.js`
 
 ## scripts/nightly/dashboard/reducer.js
 

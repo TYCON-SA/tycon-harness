@@ -227,6 +227,11 @@ function isOfficeMailboxRecord(p) { return OFFICE_MAILBOX.test(norm(String(p || 
 // estado de la cuenta, en una de sus dos carpetas (la carpeta misma también)
 const REPORTED_CRITICALS_DIR = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/reported-criticals(\/|$)/i;
 function isReportedCriticalsRecord(p) { return REPORTED_CRITICALS_DIR.test(norm(String(p || ''))); }
+// El registro de corridas de los revisores (lib/advisor-ledger.js): lo escriben sólo el gancho del lanzamiento de cada
+// revisor (on-advisor-run.js) y el de Codex. El cierre lo usa para ver salidas de revisores que no quedaron en el registro
+// de críticos: borrarlo apaga ese control y deja saltear revisores. Sólo en el estado de la cuenta (la carpeta también)
+const ADVISOR_RUNS_DIR = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/advisor-runs(\/|$)/i;
+function isAdvisorRunsRecord(p) { return ADVISOR_RUNS_DIR.test(norm(String(p || ''))); }
 // La revisión automática del plan (lib/plan-review.js): el pedido, sus args, el resultado del corredor y la constancia
 // con el veredicto. Lo escriben sólo `marker.js plan-review` y el corredor del pase (`workflow-lite.js` con el guion del
 // pase del arnés). Escribir el resultado o la constancia es darse un «aprobado». Sólo en el estado de la cuenta
@@ -247,13 +252,19 @@ function signedRecordKind(p) {
   if (isLaunchedSessionsRecord(p)) return 'launched-sessions';
   if (isOfficeMailboxRecord(p)) return 'office-mailbox';
   if (isReportedCriticalsRecord(p)) return 'reported-criticals';
+  if (isAdvisorRunsRecord(p)) return 'advisor-runs';
   return isAdversarialSkipRecord(p) ? 'adversarial-skip-record' : null;
 }
+
+// Con una historia abierta, el código de un repo fuera de su grupo: 'aviso' (pasa y queda anotado) o 'freno'. Pasar a
+// freno es un commit que cambia este valor; ninguna variable, opción ni archivo lo cambia
+const MODO_FUERA_DEL_GRUPO = 'aviso';
+const modoFueraDelGrupo = () => (module.exports.MODO_FUERA_DEL_GRUPO === 'freno' ? 'freno' : 'aviso');
 
 function computeStoryGate({
   filePath, stateDir, homeDir, repoRoot, repoHasTycon, repoHasStories, gateEnabled = true, marker, adhoc,
   isHarness, realFilePath = null, installedRoots = [], realStateDir = null, sensitiveCheck = null,
-  adhocRepoRoot = null, riesgoAlto = null, listGateEnabled = true, batchList = null,
+  adhocRepoRoot = null, riesgoAlto = null, listGateEnabled = true, batchList = null, grupo = null,
 }) {
   if (!filePath) return { action: 'pass', reason: 'sin file_path' };
   // la ruta real (por los enlaces) la resuelve el borde; sin ella, la escrita
@@ -296,6 +307,9 @@ function computeStoryGate({
   }
   if (isReportedCriticalsRecord(filePath) || isReportedCriticalsRecord(real)) {
     return { action: 'block', kind: 'reported-criticals', reason: 'escritura a mano del registro de críticos reportados' };
+  }
+  if (isAdvisorRunsRecord(filePath) || isAdvisorRunsRecord(real)) {
+    return { action: 'block', kind: 'advisor-runs', reason: 'escritura a mano del registro de corridas de los revisores' };
   }
   if (isPlanReviewRecord(filePath) || isPlanReviewRecord(real)) {
     return { action: 'block', kind: 'plan-review', reason: 'escritura a mano de la constancia de la revisión del plan' };
@@ -396,9 +410,19 @@ function computeStoryGate({
     // ningún esquema no dice si el plan está aprobado: se trata como pendiente (frena, no abre)
     const S = require('./steps.js');
     const planPending = S.schemeOf(marker) === null || S.isPending(marker, 'approve-plan');
-    // El sub-portón de plan aplica al repo de la story (si lo conocemos) — editar otra cosa
-    // mid-pipeline no es "implementar antes del plan".
-    const inStoryRepo = !marker.repoPath || isInside(marker.repoPath, filePath);
+    // Un repo fuera del grupo de la historia (ni el de la corrida, ni el de su historia, ni un hermano declarado), o uno
+    // del que no se pudo saber: en freno, frena por esta regla aunque el plan esté pendiente; en aviso, pasa y el borde
+    // lo anota. El modo se lee de los exports en cada decisión: lo cambia un commit, nunca el ambiente
+    if (grupo && (grupo.estado === 'fuera' || grupo.estado === 'no-pude-saber')) {
+      const datos = { kind: 'story-out-of-group', estado: grupo.estado, repoDelArchivo: grupo.repoDelArchivo || null, motivo: grupo.motivo || null };
+      if (modoFueraDelGrupo() === 'freno') {
+        return { action: 'block', ...datos, reason: `el archivo es de un repo fuera del grupo de la historia ${marker.storyId}${grupo.motivo ? `: ${grupo.motivo}` : ''}` };
+      }
+      return { action: 'pass', reason: 'pipeline activo (marker) — carril story, fuera del grupo (aviso)', aviso: { ...datos, modo: 'aviso' } };
+    }
+    // El sub-portón de plan aplica al repo de la story y a lo de adentro de su grupo (los hermanos y el repo de su
+    // historia) — editar otra cosa mid-pipeline no es "implementar antes del plan".
+    const inStoryRepo = !marker.repoPath || isInside(marker.repoPath, filePath) || (grupo && grupo.estado === 'adentro');
     if (planPending && inStoryRepo) {
       return {
         action: 'block',
@@ -487,7 +511,8 @@ function textoDelTope({ harness = true, tocados, cupo, archivos = [], ibaA = nul
     ...(harness ? [
       '  Si el dev elige seguir sin historia, es su click aparte, en esta pestaña; la coordinadora no lo da:',
     ] : [
-      '  Si preferís seguir sin historia, lo elegís vos con un click aparte, en esta pestaña:',
+      '  Si el dev prefiere seguir sin historia, lo elige él con un click aparte, en esta pestaña. Preguntale; con su sí,',
+      '  corré este comando solo:',
     ]),
     `   ${pedido}`,
     '  Ese comando trae el cuadro. Cuentan sólo los archivos de implementación, sin pruebas ni guías.',
@@ -514,7 +539,8 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '⛔ camino rápido — RUTA DE RIESGO ALTO',
       viaLine.replace(/\n$/, ''),
       `  ${f} es de riesgo alto (regla: ${regla}).`,
-      '  Este cambio lo aprobás vos: abrí el camino rápido con tu sí en la ventana de permiso. Antes de guardar corren',
+      '  Este cambio lo aprueba el dev con su sí en la ventana de permiso (o en el cuadro). Preguntale si lo quiere por',
+      '  camino rápido; si dice que sí, corré `marker.js adhoc set` solo y en su forma exacta. Antes de guardar corren',
       '  los revisores y el pase adversarial sobre su diff.',
     ]).filter((l) => l !== '').join('\n');
   }
@@ -565,7 +591,7 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       ...(r.vecino ? [`  Ese archivo es de ${r.vecino}: ampliar la lista no alcanza.`] : []),
       harness
         ? '  Para tocarlo, ampliá la lista: es otra autorización del mismo tipo que abrir, que da una persona (por delegación, la lista nueva contiene entera la firmada):'
-        : '  Para tocarlo, ampliá la lista: lo aprobás vos con tu sí, como al abrir:',
+        : '  Para tocarlo hay que ampliar la lista, y eso lo aprueba el dev, como al abrir. Preguntale; con su sí, corré este comando solo (la ventana o el cuadro le piden el sí):',
       `   ${pedido}`,
       '  Si el arreglo creció, la salida es una historia: `Skill(skill="tycon-create-story", …)`.',
     ].filter((l) => l !== '').join('\n');
@@ -610,8 +636,12 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '⛔ una constancia de cambio de control no se escribe a mano',
       viaLine.replace(/\n$/, ''),
       `  ${f}`,
-      '  La escribe `bash scripts/ci/run-base-controls.sh approve`: una persona en su terminal, o la sesión designada con',
-      '  la frase de la persona (`--relayed-by`). `pending` da los dos comandos.',
+      '  La escribe `bash scripts/ci/run-base-controls.sh approve`, con la firma de una persona: corré el comando que da',
+      '  `pending`, solo y en su forma exacta, y ella lo aprueba en la ventana o en el cuadro; o lo corre en su terminal',
+      '  con `--terminal`. Un reenvío (`--relayed-by`) no la da.',
+      '  Si sólo la NOMBRA un texto entre comillas (la descripción de un pedido, un mensaje): en un comando con un',
+      '  programa que puede correr un texto (gh, az, git, un shell…) ese texto cuenta como comando. Escribilo antes a',
+      '  un archivo (`cat > /tmp/cuerpo.md <<\'EOF\'`) y pasalo con `--body-file` (o `--description @/tmp/cuerpo.md`).',
     ].filter((l) => l !== '').join('\n');
   }
   if (r.kind === 'adversarial-skip-record') {
@@ -661,6 +691,15 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '  escribe desde la oficina o en su pestaña.',
     ].filter((l) => l !== '').join('\n');
   }
+  if (r.kind === 'advisor-runs') {
+    return [
+      '⛔ el registro de corridas de los revisores no se toca a mano',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  Lo escribe sólo el arnés al lanzar cada revisor. El cierre lo lee para ver lo que dijo un revisor que no quedó en el',
+      '  registro de críticos: borrarlo o escribirlo es saltear esa revisión. Si un revisor falló, se vuelve a correr.',
+    ].filter((l) => l !== '').join('\n');
+  }
   if (r.kind === 'reported-criticals') {
     return [
       '⛔ el registro de críticos reportados no se toca a mano',
@@ -690,6 +729,23 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '  `marker.js approve-pending --id <CÓDIGO> --repo <carpeta absoluta> --for-session <sesión que lo abrió>` (o la persona',
       '  en la ventana de permiso, o en su terminal con `--terminal`). Esa firma escribe la línea.',
     ].filter((l) => l !== '').join('\n');
+  }
+  if (r.kind === 'story-out-of-group') {
+    const repoDeLaHistoria = marker && marker.repoPath ? norm(marker.repoPath) : '(el repo de la historia)';
+    const repoDelArchivo = r.repoDelArchivo ? norm(r.repoDelArchivo) : '(no se pudo leer)';
+    return [
+      `⛔ tycon-pipeline — CÓDIGO FUERA DEL GRUPO DE LA HISTORIA (story ${marker?.storyId || '?'})`,
+      viaLine + '',
+      `  Ibas a editar ${f}, del repo ${repoDelArchivo}.`,
+      `  La historia abierta es del repo ${repoDeLaHistoria}, y con ella se edita sólo ese repo, el de su historia y sus`,
+      '  hermanos declarados.',
+      `  Motivo: ${r.motivo || (r.estado === 'no-pude-saber' ? 'no pude saber si es un hermano' : 'no está en el grupo')}.`,
+      '',
+      '  Salidas:',
+      '   1. Si el repo es un hermano: declararlo en `repo_group` de `.tycon/advisors.yaml` en los DOS repos, commiteado y',
+      '      subido a su rama principal (el grupo se lee de la rama principal del remoto).',
+      '   2. Si no lo es: trabajar ese cambio con su propio carril en ese repo (una historia o un camino corto allá).',
+    ].join('\n');
   }
   if (r.kind === 'plan') {
     return [
@@ -840,8 +896,9 @@ function storyByConsoleMessage(rutas, via) {
 }
 
 module.exports = {
+  MODO_FUERA_DEL_GRUPO,
   markerDeleteMessage, storyByConsoleMessage,
-  computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, isTerminalAcknowledgmentsRecord, isLaunchedSessionsRecord, isOfficeMailboxRecord, isReportedCriticalsRecord, isPlanReviewRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
+  computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, isTerminalAcknowledgmentsRecord, isLaunchedSessionsRecord, isOfficeMailboxRecord, isReportedCriticalsRecord, isAdvisorRunsRecord, isPlanReviewRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
   STORY_INTENT_PATTERNS,
   DEFAULT_ADHOC_MAX_FILES, DELEGATED_ADHOC_MAX_FILES, cupoDelegado, cupoAlDeclarar, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS, MARKER_REL,
 };

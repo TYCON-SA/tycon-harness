@@ -102,21 +102,43 @@ function mensajeDeLaPersona(prompt) {
 }
 
 /**
- * La respuesta del cuadro, tal como la devolvió la herramienta (`tool_response`, nunca `tool_input`): `{ ok, pregunta,
- * respuesta }` si la persona eligió una opción que aprueba, o `{ ok: false, motivo }`. Una sola pregunta; sin
- * resolución por ausencia (`afkTimeoutMs`) ni preguntas sin contestar (`annotations.*.unanswered`).
+ * Las respuestas del cuadro, tal como las devolvió la herramienta (`tool_response`, nunca `tool_input`): `{ ok,
+ * respuestas: [[pregunta, respuesta]…] }` o `{ ok: false, motivo }`. Lo que vale para el cuadro entero se mira acá: sin
+ * resolución por ausencia (`afkTimeoutMs`) ni preguntas sin contestar (`annotations.*.unanswered`), ninguna cuenta.
  */
-function respuestaDelCuadro(salida) {
+function respuestasDelCuadro(salida) {
   const r = salida && typeof salida === 'object' ? salida : null;
   if (!r) return { ok: false, motivo: 'la herramienta no devolvió respuesta' };
   if (r.afkTimeoutMs !== undefined && r.afkTimeoutMs !== null) return { ok: false, motivo: 'el cuadro se resolvió solo, por ausencia' };
   const notas = r.annotations && typeof r.annotations === 'object' ? Object.values(r.annotations) : [];
   if (notas.some((n) => n && typeof n === 'object' && n.unanswered)) return { ok: false, motivo: 'una pregunta quedó sin contestar' };
   const respuestas = r.answers && typeof r.answers === 'object' ? Object.entries(r.answers) : [];
-  if (respuestas.length !== 1) return { ok: false, motivo: respuestas.length ? 'el cuadro tenía más de una pregunta' : 'nadie contestó el cuadro' };
-  const [pregunta, respuesta] = respuestas[0];
+  return respuestas.length ? { ok: true, respuestas } : { ok: false, motivo: 'nadie contestó el cuadro' };
+}
+
+/** `{ ok, pregunta, respuesta }` si la respuesta a esa pregunta aprueba, o `{ ok: false, motivo }`. */
+function unaRespuesta([pregunta, respuesta]) {
   if (typeof respuesta !== 'string' || !esAprobacion(respuesta)) return { ok: false, motivo: 'la opción elegida no aprueba' };
   return { ok: true, pregunta: String(pregunta), respuesta };
+}
+
+/**
+ * La respuesta del cuadro a una pregunta: `{ ok, pregunta, respuesta }` si la persona eligió una opción que aprueba, o
+ * `{ ok: false, motivo }`. Sin `pregunta`, el cuadro tiene que traer una sola. Con `pregunta`, se mira sólo la respuesta
+ * a ésa, como si fuera un cuadro de una sola pregunta: en un cuadro con varias firmas, cada una tiene la suya.
+ */
+function respuestaDelCuadro(salida, { pregunta } = {}) {
+  const todas = respuestasDelCuadro(salida);
+  if (!todas.ok) return todas;
+  if (pregunta === undefined) return todas.respuestas.length === 1 ? unaRespuesta(todas.respuestas[0]) : { ok: false, motivo: 'el cuadro tenía más de una pregunta' };
+  const esa = todas.respuestas.find(([p]) => p === pregunta);
+  return esa ? unaRespuesta(esa) : { ok: false, motivo: 'el cuadro no trae esa pregunta' };
+}
+
+/** Las preguntas del cuadro cuya respuesta aprueba, cada una como `{ pregunta, respuesta }`; ninguna si el cuadro no vale entero. */
+function aprobadasDelCuadro(salida) {
+  const todas = respuestasDelCuadro(salida);
+  return todas.ok ? todas.respuestas.map(unaRespuesta).filter((r) => r.ok).map(({ pregunta, respuesta }) => ({ pregunta, respuesta })) : [];
 }
 
 // lo que puede seguir a «sesión» en una frase sin nombrar ninguna; cualquier otra palabra cuenta como un id, y ante la duda
@@ -549,6 +571,44 @@ function mensajeEnLaTranscripcion(ruta, a, { sello, destino, pregunta } = {}) {
   return { ok: true };
 }
 
+// lo que dice la marca de ausente cuando no hay mensajes de la persona que leer (Codex, `claude -p`, una transcripción
+// rota): se pierde el atajo de la marca, no la autonomía
+const SIN_MENSAJES_DE_LA_PERSONA = 'no pude leer los mensajes de la persona: el dueño cuenta como ausente por los minutos sin respuesta';
+const FRASE_RECIENTE_MS = 30 * 60 * 1000;
+
+/**
+ * ¿`frase` está en un mensaje tipeado por la persona en la transcripción de `sesion`, en los últimos 30 minutos antes de
+ * `ahora`? El mismo criterio que el «aprobado» escrito: origen humano y tipeado (`TIPEADO`), nunca un mensaje envuelto
+ * (otra sesión, un canal, un aviso) ni uno de un programa. La frase son al menos dos palabras seguidas del mensaje,
+ * enteras, sin distinguir mayúsculas, espacios ni la forma de las tildes: una letra o una palabra suelta de cualquier
+ * mensaje no pone la marca. `{ ok }`, o `{ ok: false, motivo, sinTranscripcion? }`.
+ */
+function fraseTipeadaReciente({ casa = os.homedir(), sesion, frase, ahora = Date.now() } = {}) {
+  const palabras = (s) => String(s || '').normalize('NFC').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  const buscada = palabras(frase);
+  if (buscada.length < 2) return { ok: false, motivo: `la frase tiene que citar al menos dos palabras seguidas del mensaje del dueño (vino «${String(frase || '').slice(0, 80)}»)` };
+  const ruta = transcripcionDe(casa, sesion);
+  if (!ruta) return { ok: false, motivo: SIN_MENSAJES_DE_LA_PERSONA, sinTranscripcion: true };
+  let rs;
+  try { rs = renglones(ruta, { tope: true }); } catch (_) { return { ok: false, motivo: SIN_MENSAJES_DE_LA_PERSONA, sinTranscripcion: true }; }
+  // la frase, palabra por palabra, dentro de las palabras del mensaje: «me voy» está en «me voy, seguí», «e» no
+  const contiene = (texto) => {
+    const p = palabras(texto);
+    for (let i = 0; i + buscada.length <= p.length; i++) if (buscada.every((w, k) => p[i + k] === w)) return true;
+    return false;
+  };
+  const tipeada = rs.some((r) => {
+    if (!r || r.type !== 'user' || r.isMeta === true || !r.origin || r.origin.kind !== 'human') return false;
+    if (!(TIPEADO[r.entrypoint] || []).includes(r.promptSource)) return false;
+    const texto = textoDe(r);
+    if (texto === null || ENVUELTO.test(texto)) return false;
+    const t = Date.parse(r.timestamp);
+    return Number.isFinite(t) && t <= ahora + MARGEN_MS && ahora - t <= FRASE_RECIENTE_MS && contiene(texto);
+  });
+  return tipeada ? { ok: true }
+    : { ok: false, motivo: `«${String(frase).slice(0, 80)}» no está en un mensaje tipeado por la persona en esta sesión en los últimos 30 minutos (un mensaje de otra sesión, de un canal o de un programa no cuenta)` };
+}
+
 function pistaDeVersion(renglon) {
   // el click ya se negó: esto sólo agrega qué actualizar, y si no se puede cargar la negativa queda igual
   try { return require('./claude-versions.js').clickHint(renglon); } catch (_) { return ''; }
@@ -573,6 +633,23 @@ function anotarPreguntaDistinta({ casa, sello, sesion, esperada, recibida }) {
 }
 
 /**
+ * ¿El sello propio de la pregunta clickeada es de la firma y la sesión de `sello` (con cualquier código)? El propio es el
+ * último que trae: otro cuadro puede citar este sello en el medio (la cita de un criterio, un pedido) y termina con el
+ * suyo. Un pedido de permiso lleva su sello antes del pedido: ése nunca es de esta firma. Se compara sin tildes, sin
+ * mayúsculas y con los espacios juntados: un cuadro de esta firma retocado a mano (un punto al final, comillas, «Sesion»,
+ * un salto de renglón) la sigue nombrando. Sin sello, no.
+ */
+function nombraLaMismaFirmaYSesion(pregunta, sello) {
+  const plano = (s) => String(s || '').normalize('NFKD').replace(/[\p{M}\p{Cf}]/gu, '').replace(/\s+/g, ' ').toLowerCase();
+  const SELLOS = /\b(firma|permiso) ([\w:.-]+) · sesion ([\w-]+) · codigo /g;
+  const suyos = [...plano(pregunta).matchAll(SELLOS)];
+  const esta = [...plano(sello).matchAll(SELLOS)][0];
+  if (!esta || !suyos.length || suyos.some((m) => m[1] === 'permiso')) return false;
+  const propio = suyos[suyos.length - 1];
+  return propio[1] === esta[1] && propio[2] === esta[2] && propio[3] === esta[3];
+}
+
+/**
  * El cuadro en la transcripción: la pregunta es la que armó el guion, la respuesta es la del registro, a esa hora, y no la
  * dio un gancho. `{ ok }` o `{ ok: false, motivo }`.
  */
@@ -591,14 +668,17 @@ function clickEnLaTranscripcion(ruta, a, { pregunta, opciones, descripciones, se
   if (!d) return { ok: false, motivo: `la transcripción no dice quién contestó el cuadro${pistaDeVersion(r)}` };
   if (d.source === 'hook' || d.reasonType === 'hook') return { ok: false, motivo: 'el cuadro lo contestó un gancho, no la persona' };
   if (d.decision && d.decision !== 'accept') return { ok: false, motivo: 'el cuadro no se aceptó' };
-  const dijo = respuestaDelCuadro(r.toolUseResult);
+  // sólo la respuesta a la pregunta del registro: en un cuadro con varias firmas, las otras son de otras firmas
+  const dijo = respuestaDelCuadro(r.toolUseResult, { pregunta: a.pregunta });
   if (!dijo.ok) return { ok: false, motivo: `en la transcripción, ${dijo.motivo}` };
   if (dijo.pregunta !== a.pregunta || dijo.respuesta !== a.respuesta) return { ok: false, motivo: 'la respuesta del cuadro en la transcripción no es la del registro' };
   if (!pregunta || dijo.pregunta !== pregunta) {
-    anotarPreguntaDistinta({ casa, sello, sesion: a.sesion, esperada: pregunta, recibida: dijo.pregunta });
+    // el renglón, sólo para un click a esta misma firma y sesión: cada firma que se chequea mira todos los clicks recientes
+    // de la pestaña, y uno a otra firma, o sin sello, no dice nada de ésta
+    if (nombraLaMismaFirmaYSesion(dijo.pregunta, sello)) anotarPreguntaDistinta({ casa, sello, sesion: a.sesion, esperada: pregunta, recibida: dijo.pregunta });
     // con el mismo sello, la firma y lo que se firma son los mismos: lo que cambió es el texto
     const mismoSello = !!pregunta && !!selloAlFinal(pregunta) && selloAlFinal(dijo.pregunta) === selloAlFinal(pregunta);
-    return { ok: false, motivo: mismoSello ? PREGUNTA_CAMBIADA : 'la pregunta del cuadro no es la que armó el guion para esta firma: mostrala tal cual' };
+    return { ok: false, motivo: mismoSello ? PREGUNTA_CAMBIADA : 'la pregunta del cuadro no es la que armó el guion para esta firma: el click fue a otra pregunta' };
   }
   // con dos opciones que aprueban, la persona no tendría cómo decir que no
   const mostrada = ((r.toolUseResult && r.toolUseResult.questions) || []).find((q) => q && q.question === pregunta);
@@ -1040,6 +1120,44 @@ function buscar({ casa, sesion, destino = sesion, cuadro, coordinadora = null, a
 }
 
 /**
+ * El click de la persona para el renglón `permiso` cuyo cuadro es `cuadro` (signature-list.js `cuadroDePermiso`): sólo un
+ * click (nunca un «aprobado» escrito ni una delegación), anotado por la herramienta en la pestaña de la coordinadora
+ * confirmada `coordinadora`, con su proceso vivo, sin usar, después de `desde` (la hora del renglón) y de los últimos 30
+ * minutos, contestando esa pregunta entera con «Sí, aprobar». Se confirma como cualquier click (`validarEnClaude`: la
+ * transcripción y los ganchos que escuchan el cuadro), en la carpeta de la pestaña donde se contestó (sin ella, `carpeta`,
+ * la del pedido). `{ ok, aprobacion }`
+ * o `{ ok: false, motivo }`, con `noLeida` si una lectura falló. `validar` y `arbol`, para las pruebas. No la gasta: eso
+ * lo hace quien decide (`consumir`), una sola vez.
+ */
+function buscarPermiso({ casa, cuadro, coordinadora, carpeta = null, desde = 0, ahora = Date.now(), arbol, validar } = {}) {
+  if (!SESION.test(String(coordinadora || ''))) return { ok: false, motivo: 'no hay coordinadora confirmada' };
+  if (!cuadro || !cuadro.pregunta || !cuadro.sello) return { ok: false, motivo: 'no pude armar el cuadro de este permiso' };
+  let candidatas;
+  try { candidatas = leerSesion(casa, coordinadora); } catch (e) { return { ok: false, motivo: e.message, noLeida: true }; }
+  candidatas = candidatas.filter((r) => {
+    const t = Date.parse(r.ts);
+    return r.sesion === coordinadora && plataformaDe(r) === 'claude' && r.tipo === 'click' && r.respuesta === APRUEBA && r.pregunta === cuadro.pregunta
+      && t >= desde && ahora - t >= 0 && ahora - t <= VENCE_MIN * 60000 && !usada(casa, r.id);
+  }).sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts));
+  if (!candidatas.length) return { ok: false, motivo: 'no hay un click de la persona en el cuadro de este permiso' };
+  const check = validar || ((a, ctx) => validarEnClaude(a, ctx));
+  const leido = arbol === undefined ? ow().arbolDeLaPlataforma() : arbol;
+  let motivo = null;
+  let noLeida = false;
+  for (const a of candidatas) {
+    const p = procesoQueLaAnoto({ a, arbol: leido, casa });
+    if (!p.ok) { motivo = motivo || p.motivo; noLeida = noLeida || Boolean(p.noLeida); continue; }
+    // sin la carpeta de la pestaña, la del pedido: siempre se miran los ganchos de alguna carpeta, nunca ninguna
+    const donde = p.cwd || carpeta || casa;
+    const v = check(a, { casa, cwd: donde, cuadro: { ...cuadro, clickDelDueno: true }, destino: coordinadora, linea: p.linea, cwdAprobacion: donde });
+    if (v && v.ok) return { ok: true, aprobacion: a };
+    motivo = motivo || (v && v.motivo) || 'no se pudo confirmar';
+    noLeida = noLeida || Boolean(v && v.noLeida);
+  }
+  return { ok: false, motivo: `el click no vale: ${motivo}`, ...(noLeida ? { noLeida: true } : {}) };
+}
+
+/**
  * La confirmación con lo que deja Claude Code: la transcripción de la sesión donde se aprobó y, para el click, los
  * ganchos que escuchan el cuadro, en la carpeta de la firma y en la de la pestaña donde se contestó (`cwdAprobacion`).
  * `linea`: la del proceso de la herramienta que lo mostró. El «aprobado» sólo tiene que traer el sello: el texto lo
@@ -1057,6 +1175,6 @@ function validarEnClaude(a, { casa = os.homedir(), cwd, cuadro, destino, linea, 
   return clickEnLaTranscripcion(ruta, a, { pregunta: cuadro.pregunta, opciones: cuadro.opciones, descripciones: cuadro.descripciones, sello: cuadro.sello, casa });
 }
 
-module.exports = { VENCE_MIN, ENVUELTO, PERMITIDOS, TIPEADO, APRUEBA, NIEGA, PREGUNTA_CAMBIADA, LARGO_EN_TELEFONO, DETALLE_TITULO, carpeta, esAprobacion, mensajeDeLaPersona, respuestaDelCuadro, cuadroDe, recortar, sinRutas, renglonDelTope, notasDelCuadro, traeElSello, lanzadoPorLaHerramienta,
-  anotar, leerSesion, consumir, devolver, transcripcionDe, controlRemotoDelProceso, mensajeEnLaTranscripcion, clickEnLaTranscripcion, capas, hooksDePlugins, ganchosDelEncabezado, banderasDe, alcanzaAlCuadro, esPermitido,
-  escuchasDelCuadro, procesoQueLaAnoto, coordinadoraConfirmada, buscar, validarEnClaude, plataformaDe, constanciaDeLaTerminal };
+module.exports = { VENCE_MIN, ENVUELTO, PERMITIDOS, TIPEADO, APRUEBA, NIEGA, PREGUNTA_CAMBIADA, LARGO_EN_TELEFONO, DETALLE_TITULO, carpeta, esAprobacion, mensajeDeLaPersona, respuestaDelCuadro, aprobadasDelCuadro, cuadroDe, recortar, sinRutas, renglonDelTope, notasDelCuadro, traeElSello, lanzadoPorLaHerramienta,
+  anotar, leerSesion, consumir, devolver, transcripcionDe, fraseTipeadaReciente, SIN_MENSAJES_DE_LA_PERSONA, controlRemotoDelProceso, mensajeEnLaTranscripcion, clickEnLaTranscripcion, capas, hooksDePlugins, ganchosDelEncabezado, banderasDe, alcanzaAlCuadro, esPermitido,
+  escuchasDelCuadro, procesoQueLaAnoto, coordinadoraConfirmada, buscar, buscarPermiso, validarEnClaude, plataformaDe, constanciaDeLaTerminal };

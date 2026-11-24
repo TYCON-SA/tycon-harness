@@ -24,9 +24,11 @@
  * del merge; con `true` desde `dev`, la plataforma la borraría; la lista es la de §9b.4 del paso de merge). Cierra
  * además las otras dos puertas al mismo resultado: un `az repos pr update` que APAGUE el auto-complete o PRENDA el
  * squash, y el que PUBLIQUE un borrador (`--draft false`) sin llevar las tres banderas. El `update` no dice la rama de
- * origen: con `--delete-source-branch true` frena siempre, y para publicar va `false`. Un `update` común sin la
- * bandera no se juzga por ella: az conserva la que el pedido ya tenía. Lo que no puede leer (un valor que arma la
- * terminal, un comodín, un `@archivo`) es una falta. Mira sólo el texto del comando —nada de red— con el lector de
+ * origen: cuando trae `--delete-source-branch`, el freno se la pregunta a la plataforma del repo
+ * (scripts/lib/pr-source-branch.js, con tope de tiempo) y juzga como al crear: `true` desde una rama efímera, `false`
+ * desde una de larga vida. Si no la pudo leer, `true` frena y `false` pasa. Un `update` común sin la bandera no se
+ * juzga por ella: az conserva la que el pedido ya tenía. Lo que no puede leer (un valor que arma la terminal, un
+ * comodín, un `@archivo`) es una falta. Fuera de esa pregunta mira sólo el texto del comando, con el lector de
  * scripts/lib/az-pr.js (`faltasDe`).
  *
  * QUÉ NO HACE. Un borrador recién creado no se toca (no se completa solo por definición) y lo dice.
@@ -58,9 +60,13 @@ try { payload = fs.readFileSync(0, 'utf8'); } catch { process.exit(0); }
 if (require('../lib/legacy-names.js').readEnv('TYCON_PR_AUTO_COMPLETE_GUARD', { where: 'scripts/hooks/pr-auto-complete-guard.js' }) === '0') process.exit(0);
 
 let cmd = '';
+let carpeta = process.cwd();   // donde corre el comando: el repo cuya plataforma sabe la rama del pedido
+let sesion; // la del evento, para la constancia; guard-record.js descarta una de otra forma
 try {
   const evento = JSON.parse(payload || '{}');
   cmd = (evento.tool_input || {}).command || '';
+  if (typeof evento.cwd === 'string' && evento.cwd) carpeta = evento.cwd;
+  sesion = evento.session_id;
 } catch {
   // No pudo leer: no frena —un freno que rompe la sesión por un bug propio se apaga— pero lo dice.
   console.error(`${TAG} no pude leer la entrada del hook: no freno, pero tampoco miré.`);
@@ -154,6 +160,31 @@ function constancia(tipo, texto, comando) {
   } catch { /* la constancia en stderr ya salió */ }
 }
 
+// El número de un pedido vale en una organización: la rama se pregunta en la del repo de la carpeta, y sólo sirve si az va
+// a esa misma. Se pregunta sólo en el caso simple: el comando entero es un único `az …` que empieza por `az` (sin cambiar
+// de carpeta, sin variables delante, sin otra línea ni agrupación), con a lo sumo una organización escrita y la detección
+// prendida. Cualquier otra forma puede llevar az a otro repo u otra organización: no se pregunta. Una organización
+// escrita se compara después con la del remoto (`orgDelComando`).
+function fueraDelRepo(seg) {
+  if (az.segmentos(cmd).length !== 1 || /[\n{}()`]|\$\(/.test(cmd) || !/^\s*az\s/.test(cmd)) {
+    return 'el comando no es un único az: puede correr en otra carpeta o con otra organización';
+  }
+  const detect = az.valorDe(seg, 'detect');
+  if (detect && (!detect.literal || !az.esCierto(detect.texto))) return 'con --detect apagado az toma la organización por defecto, que puede ser otra';
+  const org = az.valorDe(seg, 'org');
+  const organization = az.valorDe(seg, 'organization');
+  // `--org` es una abreviatura de `--organization`: cada lectura da la última de las dos, como az. Si difieren, el comando
+  // nombra dos y no se sabe cuál toma
+  if (org && organization && org.texto !== organization.texto) return 'el comando nombra dos organizaciones';
+  if ((org || organization) && !(org || organization).literal) return 'la organización del comando no se puede leer';
+  return null;
+}
+/** La organización que nombra el comando (`--org`/`--organization` escrita), o null si no nombra ninguna. */
+function orgDelComando(seg) {
+  const org = az.valorDe(seg, 'org') || az.valorDe(seg, 'organization');
+  return org && org.literal ? org.texto : null;
+}
+
 let huboEscape = false;   // ¿ya se anotó el escape de este comando?
 // ¿este freno llegó a JUZGAR algún segmento? Un `--help`, un pull request que va a `dev` o un
 // borrador son cosas que él mismo declara fuera de su alcance: anotarles un `paso` mete en su
@@ -193,7 +224,21 @@ for (const seg of az.segmentos(cmd)) {
   // La regla vive en `faltasDe` (scripts/lib/az-pr.js): la misma que lee la revisión nocturna de las ejecuciones.
   // Se juzga ANTES de mirar el prefijo: un prefijo puesto sobre un tramo que pasaría igual no es un salteo, y anotarlo
   // llenaba el registro de salteos que no eran.
-  const { juzgado, borrador, faltas } = az.faltasDe(seg);
+  // La rama del pedido, sólo si el `update` trae `--delete-source-branch` escrito: es lo único que la necesita.
+  let ramaDeOrigen = null;
+  if (verbo === 'update') {
+    const borrar = az.valorDe(seg, 'delete-source-branch');
+    const id = az.valorDe(seg, 'id');
+    if (borrar && borrar.literal && id && id.literal && /^\d+$/.test(id.texto)) {
+      const fuera = fueraDelRepo(seg);
+      const leida = fuera ? { rama: null, motivo: fuera }
+        : require(path.join(__dirname, '..', 'lib', 'pr-source-branch.js')).ramaDeOrigen({ number: id.texto, cwd: carpeta, org: orgDelComando(seg), platform: 'azure' });
+      ramaDeOrigen = leida.rama;
+      // sin la rama, `false` pasa igual que antes: el aviso sólo cuando la falta es por no poder leerla
+      if (!leida.rama && az.esCierto(borrar.texto)) console.error(`${TAG} no pude leer la rama del pedido ${id.texto} (${leida.motivo}): juzgo --delete-source-branch sin ella.`);
+    }
+  }
+  const { juzgado, borrador, faltas } = az.faltasDe(seg, { ramaDeOrigen });
   let sobra = false;
   if (az.tieneEscape(seg)) {
     if (faltas.length) {
@@ -226,7 +271,7 @@ for (const seg of az.segmentos(cmd)) {
 if (huboJuicio || huboEscape) {
   constanciaFreno.anotar({
     freno: 'pr-sin-auto-complete', regla: 'sin-auto-complete',
-    veredicto: problemas.length || problemasGh.length ? 'bloqueo' : (huboEscape ? 'escape' : 'paso'), cmd,
+    veredicto: problemas.length || problemasGh.length ? 'bloqueo' : (huboEscape ? 'escape' : 'paso'), cmd, sesion,
   });
 }
 if (problemasGh.length) {
@@ -252,12 +297,25 @@ const detalle = problemas.map((p) => {
 }).join('\n');
 
 const soloUpdates = problemas.every((p) => p.verbo === 'update');
+// Lo que va a mano: al crear, las tres banderas; al actualizar, sin `--source-branch` (az no lo acepta ahí) y con la
+// regla de la rama que el freno leyó del pedido.
+const AYUDA_CREATE = `Si de verdad tiene que ir a mano, el comando lleva las tres banderas, explícitas:
+
+  az repos pr create ... --source-branch <rama> --auto-complete true --squash false --delete-source-branch true
+
+(\`--delete-source-branch false\` sólo desde dev, develop, main o master: las demás ramas se borran al entrar.)`;
+const AYUDA_UPDATE = `Si de verdad tiene que ir a mano, el mismo update lleva:
+
+  --auto-complete true --squash false --delete-source-branch <true|false>
+
+(El freno lee la rama del pedido: \`true\` desde una rama efímera, \`false\` desde dev, develop, main o master. Si no la
+puede leer, va \`false\`.)`;
 // Las dos formas legítimas que el freno veía frenadas una y otra vez: el pedido que espera una aprobación (se crea en
 // borrador) y el que se retiene apagando la entrada automática (el prefijo es su salida).
 const esperaAprobacion = problemas.some((p) => p.verbo === 'create' && !az.esCierto(az.flagDe(p.seg, 'auto-complete')));
 const retiene = problemas.some((p) => p.verbo === 'update' && az.esFalso(az.flagDe(p.seg, 'auto-complete')));
 const formas = [
-  esperaAprobacion ? 'Si el pedido espera una aprobación, crealo en borrador (`--draft true`) y, cuando se apruebe, publicalo con `--draft false --auto-complete true --squash false --delete-source-branch false` (el `update` no dice la rama, así que con `true` frena; la rama se borra a mano o con el skill de merge).' : null,
+  esperaAprobacion ? 'Si el pedido espera una aprobación, crealo en borrador (`--draft true`) y, cuando se apruebe, publicalo con `--draft false --auto-complete true --squash false --delete-source-branch <true|false>` (el freno lee la rama del pedido: `true` desde una rama efímera, `false` desde dev, develop, main o master).' : null,
   retiene ? 'Para retener una entrega ya encolada (apagar la entrada automática), el prefijo es la salida: `TYCON_PR_BY_HAND=1` pegado a ese mismo `update`.' : null,
 ].filter(Boolean);
 console.error(`🔴 Este pull request se está armando A MANO y no va a quedar bien${soloUpdates ? '' : ' (va a main)'}:
@@ -268,11 +326,7 @@ el gate de build y tests y arma el mensaje que queda como descripción:
 
   Skill(skill="tycon-merge-to-main", args="source=${rama} target=main")
 
-Si de verdad tiene que ir a mano, el comando lleva las tres banderas, explícitas:
-
-  az repos pr create ... --source-branch <rama> --auto-complete true --squash false --delete-source-branch true
-
-(\`--delete-source-branch false\` sólo desde dev, develop, main o master: las demás ramas se borran al entrar.)
+${soloUpdates ? AYUDA_UPDATE : AYUDA_CREATE}
 ${formas.length ? `\n${formas.join('\n')}\n` : ''}
 Un borrador recién creado no se toca (sí al publicarlo). Para saltear este freno una sola vez, a
 propósito —por ejemplo para retener una entrega apagando el auto-complete—, el prefijo va PEGADO al

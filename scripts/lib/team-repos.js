@@ -146,7 +146,9 @@ const REVIEW_PREFIX_RE = /^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*$/;
 // skills/tycon-pipeline/scripts/lib/test-runners.js (test-runners.test.js compara los dos).
 // `rules` = las reglas que otro equipo tiene distintas: cómo se nombran las pruebas, qué cuenta como pantalla para la
 // prueba E2E obligatoria, y en qué idioma está la app. Una regla sin declarar vale lo de fábrica (stack-config.js).
-const STACK_KEYS = ['code_extensions', 'test_runners', 'rules'];
+// `test_environments` = cómo se prepara y se desarma el entorno de pruebas de unos repos (una base local, un servidor
+// levantado, variables): el portón lo prepara antes de la suite (skills/tycon-pipeline/scripts/lib/test-environment.js).
+const STACK_KEYS = ['code_extensions', 'test_runners', 'rules', 'test_environments'];
 const STACK_EXT_RE = /^\.[a-z0-9]+(?:\.[a-z0-9]+)?$/;
 const RULE_VALUES = { test_names: ['any', 'pascal', 'snake'], screen_test: ['ui', 'react', 'off'] };
 const UI_LANGUAGE_RE = /^[a-z]{2}(?:-[A-Z]{2})?$/;
@@ -155,6 +157,56 @@ const RUNNER_DETECT_DEPTH_MAX = 3;
 const RUNNER_ARGS_FORBIDDEN = /["'$`\\\r\n]/;
 const RUNNER_COVERAGE_FORMATS = ['cobertura', 'lcov', 'istanbul-json', 'jacoco', 'go-cover'];
 const RUNNER_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+const ENV_KEYS = ['name', 'label', 'repos', 'prepare', 'teardown', 'requires', 'timeout_s'];
+const ENV_VAR_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const ENV_TIMEOUT_MAX = 3600;
+
+/**
+ * Los problemas de cada entorno de `stack.test_environments`, con la ruta `stack.test_environments.<i>.<campo>`. Un
+ * entorno: `name`, `repos` (los repos a los que se aplica, con la forma `<repo>` de este archivo), `prepare` (el comando
+ * que lo deja listo), y opcionales `label`, `teardown` (el que lo desarma), `requires` (las variables que tiene que dejar
+ * puestas) y `timeout_s` (de 1 a 3600). Un repo va en un solo entorno.
+ */
+function environmentsProblems(value) {
+  if (!Array.isArray(value)) return [{ path: 'stack.test_environments', message: 'tiene que ser una lista de entornos de prueba' }];
+  const out = []; const nombres = new Set(); const repos = new Map();
+  value.forEach((e, i) => {
+    const p = `stack.test_environments.${i}`;
+    if (!isObject(e)) { out.push({ path: p, message: 'tiene que ser un objeto' }); return; }
+    for (const k of Object.keys(e)) if (!ENV_KEYS.includes(k) && !fieldComment(k, e[k])) out.push({ path: `${p}.${k}`, message: 'clave desconocida' });
+    if (typeof e.name !== 'string' || !RUNNER_NAME.test(e.name)) out.push({ path: `${p}.name`, message: `minúsculas, números y guiones (es ${JSON.stringify(e.name)})` });
+    else if (nombres.has(e.name)) out.push({ path: `${p}.name`, message: `${e.name} está repetido` });
+    if (typeof e.name === 'string') nombres.add(e.name);
+    if (e.label !== undefined && (typeof e.label !== 'string' || !e.label.trim() || e.label.length > 80)) {
+      out.push({ path: `${p}.label`, message: 'el nombre para personas: texto de 1 a 80 caracteres' });
+    }
+    if (typeof e.prepare !== 'string' || !e.prepare.trim()) out.push({ path: `${p}.prepare`, message: 'falta el comando que prepara el entorno' });
+    if (e.teardown !== undefined && (typeof e.teardown !== 'string' || !e.teardown.trim())) out.push({ path: `${p}.teardown`, message: 'el comando que desarma el entorno: texto, o sin la clave' });
+    if (e.requires !== undefined && (!Array.isArray(e.requires) || e.requires.some((v) => typeof v !== 'string' || !ENV_VAR_NAME.test(v)))) {
+      out.push({ path: `${p}.requires`, message: 'una lista de nombres de variables, por ejemplo ["ACME_TEST_SQL"]' });
+    }
+    if (e.timeout_s !== undefined && (!Number.isInteger(e.timeout_s) || e.timeout_s < 1 || e.timeout_s > ENV_TIMEOUT_MAX)) {
+      out.push({ path: `${p}.timeout_s`, message: `los segundos que puede tardar cada comando: un entero de 1 a ${ENV_TIMEOUT_MAX} (es ${JSON.stringify(e.timeout_s)})` });
+    }
+    if (!Array.isArray(e.repos) || !e.repos.length) { out.push({ path: `${p}.repos`, message: 'la lista de repos a los que se aplica, con la forma de los repos de este archivo' }); return; }
+    const antes = out.length;
+    const claves = [];
+    e.repos.forEach((r, j) => {
+      const at = `${p}.repos.${j}`;
+      const malos = repoProblems(r, at);
+      if (malos.length) out.push(...malos);
+      else claves.push([at, identityKey(r)]);
+    });
+    // un entorno que no se usa (tiene otro problema) no le quita sus repos a uno bien escrito
+    const sano = out.length === antes && !out.some((x) => x.path.startsWith(`${p}.`));
+    for (const [at, clave] of claves) {
+      if (repos.has(clave)) out.push({ path: at, message: `este repo ya está en el entorno ${repos.get(clave)}: un repo va en un solo entorno` });
+      else if (sano) repos.set(clave, e.name);
+    }
+  });
+  return out;
+}
 
 /** Los problemas de cada herramienta de `stack.test_runners`, con la ruta `stack.test_runners.<i>.<campo>`. */
 function runnersProblems(value) {
@@ -801,6 +853,7 @@ function stackProblems(value) {
   }
   if (value.test_runners !== undefined) out.push(...runnersProblems(value.test_runners));
   if (value.rules !== undefined) out.push(...rulesProblems(value.rules));
+  if (value.test_environments !== undefined) out.push(...environmentsProblems(value.test_environments));
   return out;
 }
 
@@ -831,6 +884,10 @@ function stackSinProblemas(value, problemas) {
     if (!STACK_KEYS.includes(k)) continue;
     if (k === 'test_runners' && Array.isArray(v)) {
       const indices = new Set(problemas.map((p) => p.path.match(/^stack\.test_runners\.(\d+)/)).filter(Boolean).map((m) => Number(m[1])));
+      out[k] = v.filter((_, i) => !indices.has(i));
+    } else if (k === 'test_environments' && Array.isArray(v)) {
+      // un entorno mal escrito no se usa; los demás siguen
+      const indices = new Set(problemas.map((p) => p.path.match(/^stack\.test_environments\.(\d+)/)).filter(Boolean).map((m) => Number(m[1])));
       out[k] = v.filter((_, i) => !indices.has(i));
     } else if (k === 'rules' && isObject(v)) {
       // una regla mal escrita sale sola: vale lo de fábrica, y las demás siguen
@@ -979,7 +1036,7 @@ function privateRepoRef(data) {
   return `${m.project}/_git/${m.repo}`;
 }
 
-module.exports = { VERSION, PLATFORMS, HARNESS_PLATFORMS, CONNECTORS, connectorOf, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, PROVIDERS, NIGHTLY_PROVIDERS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, STORY_INDEX_MODES, storyIndexProblems, storyIndexFor, modelsProblems, reviewProblems, contextNoticeProblems, deepReviewProblems, DEEP_REVIEW_VALUES, modelsAboveCeiling, modelsOutsideAllowed, nightlyLevel, suitesWithoutPipeline, suitesWithRule, stackProblems, weeklyReviewProblems, estimatesProblems, ESTIMATES_UNITS, ESTIMATES_HOURS_PER_DAY, WAIT_NOTICE_PEER_MAX, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
+module.exports = { VERSION, PLATFORMS, HARNESS_PLATFORMS, CONNECTORS, connectorOf, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, PROVIDERS, NIGHTLY_PROVIDERS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, STORY_INDEX_MODES, storyIndexProblems, storyIndexFor, modelsProblems, reviewProblems, contextNoticeProblems, deepReviewProblems, DEEP_REVIEW_VALUES, modelsAboveCeiling, modelsOutsideAllowed, nightlyLevel, suitesWithoutPipeline, suitesWithRule, stackProblems, environmentsProblems, weeklyReviewProblems, estimatesProblems, ESTIMATES_UNITS, ESTIMATES_HOURS_PER_DAY, WAIT_NOTICE_PEER_MAX, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

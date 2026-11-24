@@ -53,9 +53,21 @@ function leer(ruta) {
 }
 const porQueNo = (ruta) => (ruta && sinLeer.has(ruta) ? ` (no pude leerlo: ${sinLeer.get(ruta)})` : '');
 
+/**
+ * El repo de la corrida: el del marcador o, en un marcador viejo sin él, la raíz de git de su historia absoluta. Nunca la
+ * carpeta desde donde corre el proceso: la pregunta de firma no puede cambiar según dónde se lanzó. Sin ninguno, null.
+ */
+function repoDelMarcador(m) {
+  if (!m) return null;
+  const r = require(path.join(PIPELINE, '..', 'lib', 'run-dir.js')).rutasDeLaCorrida(m);
+  return r && typeof r.repoPath === 'string' && path.isAbsolute(r.repoPath) ? r.repoPath : null;
+}
+
 function rutaDeLaHistoria(m) {
   if (!m || !m.storyPath) return null;
-  return path.isAbsolute(m.storyPath) ? m.storyPath : path.join(m.repoPath || process.cwd(), m.storyPath);
+  if (path.isAbsolute(m.storyPath)) return m.storyPath;
+  const repo = repoDelMarcador(m);
+  return repo ? path.join(repo, m.storyPath) : null;
 }
 
 /** La historia de la corrida con su título (`title:` del frontmatter), o null sin corrida. */
@@ -71,7 +83,12 @@ function historiaDe(m) {
 /** La carpeta de la corrida de la sesión del marcador, sin crearla; null sin corrida o sin clave. */
 function carpetaDeLaCorrida(m) {
   if (!m || !m.storyId) return null;
-  try { return require(PIPELINE).resolveRunDir(m.repoPath || process.cwd(), String(m.storyId), false, rutaDeLaHistoria(m) || undefined, { marker: m }); } catch (e) {
+  const repo = repoDelMarcador(m);
+  if (!repo) {
+    process.stderr.write(`⚠️  el marcador de la historia ${m.storyId} no dice su repo ni trae su historia con ruta absoluta: sus firmas no entran en la lista.\n`);
+    return null;
+  }
+  try { return require(PIPELINE).resolveRunDir(repo, String(m.storyId), false, rutaDeLaHistoria(m) || undefined, { marker: m }); } catch (e) {
     // sin carpeta, las firmas de esa corrida no se listan: se dice, para que la lista corta no parezca completa
     process.stderr.write(`⚠️  no pude calcular la carpeta de la ejecución de la historia ${m.storyId} (${e.message}): sus firmas no entran en la lista.\n`);
     return null;
@@ -141,6 +158,55 @@ function delPlan(palabras, m, { estado, destino } = {}) {
     : [`el plan: ${s.errores.map(corto).join(' y ')}: corregilo antes de pedir la firma`];
   if (s.error) return { queHace: s.errores, ...(aLaVista ? { queHaceALaVista: aLaVista } : {}), completo: ruta, completoEnPalabras: EL_PLAN, fuente, cita, revision };
   return { queHace: s.queHace, archivos: s.archivos, completo: ruta, completoEnPalabras: EL_PLAN, fuente, cita, revision };
+}
+
+// volver a aprobar la maqueta (`approve-mockup`): firma como el plan, pero el cuadro es de la maqueta. Nombra la huella
+// aprobada y la de ahora, y si cambian los textos que se comparan con la pantalla. La versión aprobada se lee del último
+// commit, y sólo si su huella es la aprobada: sin ella, el cuadro dice que no sabe.
+const LA_MAQUETA = 'la maqueta, en la carpeta de la guía del tester';
+const SI_SALE_MAL_MAQUETA = 'se construye contra una maqueta que no querías, y la pantalla se compara con esos textos; se vuelve a aprobar la maqueta y se corrige la pantalla';
+function deLaMaqueta(palabras, m) {
+  const que = 'volver a aprobar la maqueta de una story';
+  const cita = valor(palabras, '--approved');
+  const mk = require(path.join(PIPELINE, '..', 'mockup.js'));
+  const historia = rutaDeLaHistoria(m);
+  let p = null;
+  try { p = historia ? mk.mockupPaths(historia) : null; } catch (_) { p = null; }
+  const html = p ? leer(p.mockup) : null;
+  if (html == null) {
+    const linea = p ? `no encuentro la maqueta en ${p.mockup}${porQueNo(p.mockup)}` : 'no sé dónde está la maqueta: la sesión no tiene una historia que la ubique';
+    return { que, queHace: [linea], fuente: linea, cita, siSaleMal: SI_SALE_MAL_MAQUETA };
+  }
+  const nueva = mk.mockupHash(html);
+  // la aprobada es la que anotó la ejecución (como la mira approve-mockup); el archivo de aprobación del repo no la prueba
+  const vieja = m && m.mockupApproval && m.mockupApproval.sha256 ? String(m.mockupApproval.sha256) : null;
+  const corta = (h) => h.slice(0, 12);
+  const lineas = [];
+  let textos = 'sin comparar';
+  if (!vieja) lineas.push(`Primera aprobación de la maqueta en esta ejecución: huella ${corta(nueva)}`);
+  else if (vieja === nueva) lineas.push(`La maqueta no cambió desde su aprobación: huella ${corta(nueva)}`);
+  else {
+    lineas.push(`Huella: ${corta(vieja)} → ${corta(nueva)}`);
+    const r = git(path.dirname(p.mockup), ['show', `HEAD:./${path.basename(p.mockup)}`]);
+    const antes = r.status === 0 && mk.mockupHash(r.stdout) === vieja ? mk.mockupTexts(r.stdout) : null;
+    const ahora = mk.mockupTexts(html);
+    if (!antes || !ahora) {
+      textos = 'no sé';
+      lineas.push('No sé si los textos que se comparan con la pantalla son los mismos: la versión aprobada no está en el último commit');
+    } else {
+      // como los compara la capa 10: por su texto, en cualquier pantalla; el motivo de una casilla es otra cosa
+      const de = (ts) => [...new Set(ts.map((x) => `${x.kind === 'title' ? 'title' : ''}\u0000${String(x.text).replace(/\s+/g, ' ').trim()}`))];
+      const a = de(antes); const b = de(ahora);
+      const sale = a.filter((x) => !b.includes(x)); const entra = b.filter((x) => !a.includes(x));
+      const nombres = (xs) => xs.slice(0, 3).map((x) => `«${x.split('\u0000')[1]}»`).join(', ') + (xs.length > 3 ? ` y ${xs.length - 3} más` : '');
+      if (!sale.length && !entra.length) { textos = 'iguales'; lineas.push('Los textos que se comparan con la pantalla son los mismos: cambió el dibujo'); }
+      else {
+        textos = 'distintos';
+        lineas.push(`Cambian los textos que se comparan con la pantalla: ${[sale.length ? `sale ${nombres(sale)}` : '', entra.length ? `entra ${nombres(entra)}` : ''].filter(Boolean).join('; ')}`);
+      }
+    }
+  }
+  return { que, queHace: lineas, completo: p.mockup, completoEnPalabras: LA_MAQUETA, fuente: [vieja || '', nueva, textos, ...lineas].join('\n'), cita, siSaleMal: SI_SALE_MAL_MAQUETA };
 }
 
 // sin programas externos: el cuadro se arma antes de la firma, y el repo lo nombra el comando. Las rutas van literales: un
@@ -553,10 +619,13 @@ function deLaDesignacion(firma, destino, cwd, palabras) {
     return { queHace: lineas, queHaceALaVista: aLaVista, fuente: lineas.join('\n'), que: RETIRAR_OTRA };
   }
   const verbo = firma === 'designation-set' ? 'pasa a ser' : 'deja de ser';
+  // sin el rol en el perfil, nombrarla sólo la deja ordenar, y el cuadro lo dice: así no es el mismo cuadro que con el
+  // rol (que la deja firmar), y un click dado sin perfil no vale si el perfil gana el rol antes de que corra el comando
+  const modo = firma === 'designation-set' && !rol ? ': ordena, y las firmas siguen yendo a la persona' : '';
   // dos líneas: una carpeta larga no corta la que dice qué pasa
-  const lineas = [`La sesión ${destino} ${verbo} la «${rol || 'coordinadora'}» de esta máquina`, `Su carpeta: ${cwd || process.cwd()}`];
-  // la fuente queda como estaba (la huella no cambia); lo que se ve dice la sesión por sus 8 letras y la carpeta por su nombre
-  const aLaVista = [`La sesión ${String(destino).slice(0, 8)} ${verbo} la «${rol || 'coordinadora'}» de esta máquina`, `Su carpeta: ${path.basename(cwd || process.cwd())}`];
+  const lineas = [`La sesión ${destino} ${verbo} la «${rol || 'coordinadora'}» de esta máquina${modo}`, `Su carpeta: ${cwd || process.cwd()}`];
+  // con el rol, la fuente queda como estaba (la huella no cambia); lo que se ve dice la sesión por sus 8 letras y la carpeta por su nombre
+  const aLaVista = [`La sesión ${String(destino).slice(0, 8)} ${verbo} la «${rol || 'coordinadora'}» de esta máquina${modo}`, `Su carpeta: ${path.basename(cwd || process.cwd())}`];
   return { queHace: lineas, queHaceALaVista: aLaVista, fuente: lineas.join('\n') };
 }
 
@@ -613,11 +682,102 @@ function deLaSalidaPerdida(palabras, cwd, estado, destino) {
   return { queHace: [linea], fuente: linea };
 }
 
-function partesDe({ firma, palabras, cwd, marcador, estado, destino, topes, casa } = {}) {
+/**
+ * El pedido de alguien de afuera: el autor, el número, el título y cuántos archivos toca, preguntados a GitHub
+ * (external-pr.js). Lo que se preguntó entra en la fuente: un click dado a otro pedido, u otro título, no se toma.
+ */
+function delPedidoDeAfuera(palabras, cwd, casa) {
+  if (!palabras) return { error: 'el pedido de afuera no se lee entero: no hay cuadro' };
+  const E = require('./external-pr.js');
+  // las palabras vuelven a un comando con comillas simples donde hacen falta (una consulta de GraphQL lleva espacios)
+  const comando = palabras.map((w) => (/^[\w@%+=:,./-]+$/.test(String(w)) ? String(w) : `'${String(w).replace(/'/g, "'\\''")}'`)).join(' ');
+  const r = E.decidir(comando, { cwd, home: casa });
+  if (!r || !r.firmas) return { error: (r && r.frena) || 'el comando no encola ni mergea un pedido de afuera' };
+  return { que: 'encolar o mergear un pedido de alguien de afuera del equipo', queHace: r.firmas, fuente: r.firmas.join('\n') };
+}
+
+// lo que pasa si sale mal al cambiar o borrar un conjunto de reglas: no es que algo entre a main sin la CI, es que una
+// regla que estaba deja de aplicarse
+const SI_REEMPLAZA = 'el conjunto de reglas queda como lo escribe el comando; si le falta una regla que estaba (la revisión, la CI exigida, la cola), deja de aplicarse';
+const SI_BORRA = 'lo que exigía el conjunto de reglas (la revisión, la CI exigida, la cola) deja de aplicarse';
+// el archivo de `--input` que se lee para el cuadro: uno de verdad tiene unos pocos kilobytes
+const TOPE_DEL_CUERPO = 256 * 1024;
+const NOMBRE_DE_CLAVE = /^[\w.-]{1,60}(\[[\w.-]{1,60}\])?$/;
+const CLAVES_A_LA_VISTA = 12;
+
+/** Las claves de primer nivel del cuerpo JSON de `--input` (de una regla, su tipo), o `{ error }` si no se lee. */
+function clavesDelCuerpo(archivo, cwd) {
+  try {
+    // la terminal expande la tilde antes de correr el comando: el cuadro lee el mismo archivo
+    const tilde = /^~(?=[\\/]|$)/.test(archivo) ? require('os').homedir() + archivo.slice(1) : archivo;
+    const ruta = path.resolve(cwd || process.cwd(), tilde);
+    const st = fs.statSync(ruta);
+    // un dispositivo o una tubería dice tamaño 0 y su lectura no termina: el cuadro no espera
+    if (!st.isFile()) return { error: 'no es un archivo común' };
+    if (st.size > TOPE_DEL_CUERPO) return { error: 'es demasiado grande para leerlo' };
+    const cuerpo = JSON.parse(fs.readFileSync(ruta, 'utf8'));
+    if (!cuerpo || typeof cuerpo !== 'object' || Array.isArray(cuerpo)) return { error: 'no es un objeto JSON' };
+    const claves = [];
+    for (const k of Object.keys(cuerpo)) {
+      const tipos = k === 'rules' && Array.isArray(cuerpo.rules) ? cuerpo.rules.map((r) => r && typeof r.type === 'string' && `rules[${r.type}]`).filter(Boolean) : [];
+      claves.push(...(tipos.length ? tipos : [k]));
+    }
+    return { claves };
+  } catch (e) { return { error: e && e.code === 'ENOENT' ? 'no está' : 'no se puede leer' }; }
+}
+
+/** Lo que manda un comando que reemplaza un conjunto de reglas, en palabras: sus claves, o que no se ve. */
+function loQueManda(manda, cwd) {
+  const claves = [...(manda.campos || [])];
+  let porQue = '';
+  if (manda.archivo) {
+    const c = clavesDelCuerpo(manda.archivo, cwd);
+    if (c.error) porQue = ` (${path.basename(manda.archivo)} ${c.error})`;
+    else claves.push(...c.claves);
+  }
+  // una clave con caracteres raros no se muestra tal cual: el cuadro no repite lo que el agente quiera escribir
+  const todas = [...new Set(claves)];
+  const vistas = todas.filter((k) => NOMBRE_DE_CLAVE.test(k));
+  if (!vistas.length) return `no se ve qué manda${porQue}`;
+  const mas = vistas.length > CLAVES_A_LA_VISTA || vistas.length < todas.length ? ' y otras' : '';
+  return `${vistas.slice(0, CLAVES_A_LA_VISTA).join(', ')}${mas}${porQue}`;
+}
+
+/**
+ * Saltear la cola o aflojar las reglas: lo que el lector (ci-bypass.js) dice de cada forma del comando. Sólo con un
+ * conjunto de reglas de GitHub tiene texto propio (qué le hace y lo que manda); lo demás, el cuadro de siempre.
+ */
+function deSaltearLaCola(comando, cwd) {
+  if (comando == null) return null;
+  let hs;
+  try { hs = require('./ci-bypass.js').leer(String(comando)); } catch (_) { return null; }
+  // una parte que el lector no lee entera puede ser un merge: el cuadro de siempre, con la alarma
+  if (hs.some((h) => !h.legible)) return null;
+  const conjuntos = hs.filter((h) => h.conjunto);
+  if (!conjuntos.length) return null;
+  const queHace = [];
+  for (const h of hs) if (!queHace.includes(h.motivo)) queHace.push(h.motivo);
+  const corto = require('./owner-approvals.js').sinRutas(String(comando).replace(/\s+/g, ' ').trim());
+  // lo que manda cada conjunto que se reemplaza, con su número cuando son varios
+  const reemplazos = conjuntos.filter((h) => h.accion === 'replace');
+  const reemplaza = reemplazos.length > 0;
+  const mandas = reemplazos.map((h) => `${reemplazos.length > 1 ? `al ${h.conjunto}: ` : ''}${loQueManda(h.manda, cwd)}`);
+  queHace.push(`${reemplaza ? `lo que manda: ${mandas.join('; ')}; ` : ''}el comando: ${corto}`);
+  // con otra forma en el mismo comando (un merge con --admin), su consecuencia de siempre también vale: no se reemplaza
+  const soloReglas = conjuntos.length === hs.length;
+  return { ...(soloReglas ? { que: 'cambiar o borrar un conjunto de reglas de la rama', siSaleMal: reemplaza ? SI_REEMPLAZA : SI_BORRA } : {}),
+    queHace, fuente: queHace.join('\n') };
+}
+
+function partesDe({ firma, palabras, comando, cwd, marcador, estado, destino, topes, casa } = {}) {
+  if (firma === 'escape:merge-bypass') return deSaltearLaCola(comando, cwd);
   if (firma === 'designation-set' || firma === 'designation-withdraw') return deLaDesignacion(firma, destino, cwd, palabras);
   if (firma === 'escape:rojo-esperado-de-la-matriz') return delRojoEsperado(palabras, marcador);
+  // volver al modo autónomo: el cuadro sale de la detención que el control de cierre anotó en el marcador de la sesión
+  if (firma === 'autonomy-resume') return require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'autonomy-decision.js')).partes(marcador, { casa, sesion: destino });
+  if (firma === 'escape:external-pr') return delPedidoDeAfuera(palabras, cwd, casa);
   if (!palabras) return null;
-  if (firma === 'plan-approval') return delPlan(palabras, marcador, { estado, destino });
+  if (firma === 'plan-approval') return palabras[1] === 'approve-mockup' ? deLaMaqueta(palabras, marcador) : delPlan(palabras, marcador, { estado, destino });
   if (firma === 'control-change' || firma === 'refresh-after-main') return deControles(palabras, cwd, estado);
   if (firma === 'manual-test') return deLaPruebaAMano(palabras, marcador);
   if (firma === 'critical-waiver') return delCritico(palabras, marcador);

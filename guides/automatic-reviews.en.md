@@ -17,8 +17,12 @@ installer, production, a migration, or declares `sensible:`. In doubt, delicate.
 
 - **The away mark** is set. Whoever gets the owner's message saying they are leaving («go on autonomously», «I'm off»,
   «see you tomorrow» or similar) sets it: the coordinator, or the session itself if there is no coordinator, with
-  `marker.js owner-away set --phrase "<what they said>"`. It clears itself when the owner comes back: a message typed
-  by them, a verified office message, a signature of theirs, or after 24 hours. The office shows it while it is set.
+  `marker.js owner-away set --phrase "<what they said>"`. The phrase must be in a message the owner typed in that tab in
+  the last 30 minutes; otherwise it exits 2 and does not set the mark. It clears itself when the owner comes back: a
+  message typed by them, a verified office message, a signature of theirs, or after 24 hours. The office shows it while
+  it is set.
+  With the mark set, `owner-next` does not build a signature's question box: it says to tell the owner through the
+  notification channels and to wait until they write, and the signature stays on the list unchanged.
 - Or a review's question has been waiting `plan_review.owner_away_minutes` minutes without an answer (built-in 20). The
   minutes count from when the question was recorded (`marker.js review-ask`).
 
@@ -26,21 +30,23 @@ installer, production, a migration, or declares `sensible:`. In doubt, delicate.
 
 | Delicate? | Does it run? (built-in) | Who approves on «approved» |
 |---|---|---|
-| Yes | Always, without asking (`plan_review.delicate: always`) | The owner, with the result in the box. If the profile delegates `plan-approval:delicada`, the coordinator, only with the «approved» of the review she launched |
+| Yes | Always, without asking (`plan_review.delicate: always`) | The owner, with a click or an «approved» and the result in the box; the mockup too. Never the coordinator or the harness on their own, even if the profile names `plan-approval:delicada` |
 | No | The owner is asked (`plan_review.routine: ask`). Owner away: it reviews (`plan_review.routine_owner_away: review`) | The review, with or without a coordinator (`plan_review.routine_approval: review`): with a coordinator, she signs on the owner's behalf; without one, it is approved without a click. With `person`, the owner |
 
 It is launched with «Armar el plan» closed and no open question to the person about this review (unless they count
-as away): before that, `plan-review` refuses without launching anything and says why. The coordinator launches it (`marker.js plan-review --for-session <session>`); without a coordinator, the session
+as away): before that, `plan-review` refuses without launching anything and says why. The fourth round on the same
+story, for any reason, is decided by a person: their «review» to the question, or the signed extra round; being away is
+not enough. The coordinator launches it (`marker.js plan-review --for-session <session>`); without a coordinator, the session
 itself (`marker.js plan-review`). The session's own review approves a routine plan just like the coordinator's; it only
 informs on a delicate story or with `plan_review.routine_approval: person`. Built-in, it runs one lens,
 «suposicion-falsa»: what the plan believes about the code and is not true. The results:
 
 | Result | What happens |
 |---|---|
-| «approved» | Routine: it is approved, with or without a coordinator (with one, she signs; without one, `complete-step approve-plan` closes without a click). Delicate, or with `plan_review.routine_approval: person`: it reaches the owner with «reviewed, no findings» (a delicate one is approved by the harness on its own if the profile lists `plan-approval:delicada` as routine, with the session's own review) |
+| «approved» | Routine: it is approved, with or without a coordinator (with one, she signs; without one, `complete-step approve-plan` closes without a click). Delicate, or with `plan_review.routine_approval: person`: it reaches the owner with «reviewed, no findings» (a delicate one is approved only by the owner, even if the profile names `plan-approval:delicada`) |
 | «approved with notes» | Confirmed findings below the severity cut: it counts as approved, the session fixes them while coding and the box shows them |
 | «rejected» | Only for a confirmed finding at the cut (built-in, a bug). The session fixes the plan and the review runs again. It reaches the owner at the cap of rejections in a row (`review.max_rounds`, built-in 3), or right away with `plan_review.rejected_reaches_owner: true` |
-| «no verdict» | It reaches the owner with «could not review: <reason>». If the plan or the story changed while it ran, it is retried only once, with all the changes together |
+| «no verdict» | It reaches the owner with «could not review: <reason>». If the plan or the story changed while it ran, it is retried only once, with all the changes together. From the story, what defines the build counts: its later record, «Ajustes después de la firma» and the `status` do not change it; when in doubt, the whole story counts |
 | Chose not to review | The owner approves, and the box says «no review» |
 
 ### What the review the session launches itself guarantees
@@ -161,3 +167,18 @@ refuted with the verifier's record, deferred, or waived by the owner.
 | O16 | How many verifiers | `review_runner.verifiers` | `per_lens` · `per_finding` | `per_lens` | `per_finding` to measure one per finding |
 | O17 | From what severity a confirmed finding blocks | `review.blocking_severity` | `bug` · `robustness` · `all` | `bug` | `robustness` or `all` to also block on the rest |
 | O18 | Which lenses the plan review runs | `plan_review.lenses` | list of `suposicion-falsa` · `ac-sin-cubrir` · `prueba-que-falta` · `riesgo-sin-defensa` | `["suposicion-falsa"]` | add lenses for a wider review, at the cost of more agents |
+
+## If the coordinator does not attend
+
+A session does not sit still waiting for a coordinator that does not attend. The harness decides, never the session:
+
+- **The plan review.** If the designated coordinator is not alive (Claude Code deleted its session file, or its process
+  is gone), the session launches the review itself. If it is alive, the harness records the request when the plan
+  closes; if the coordinator does not launch the review within `plan_review.coordinator_wait_minutes` minutes (built-in
+  10, from 1 to 120), the session launches it. Without knowing whether it is alive, the session waits those minutes.
+- **The question to the person.** The question-box guard sends the question to the coordinator and records it. If the
+  coordinator does not answer within those same minutes, the session asks again and the question reaches the person.
+- **The coordinator finds out on its own:** its every-turn notice names each plan waiting for its review and each
+  question the guard sent it, with the minutes it has left.
+
+This key is not on the site screen yet: it is changed with a pull request to the team profile.

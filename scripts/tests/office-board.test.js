@@ -15,7 +15,7 @@ const {
   IDS, runMarkerFile, BEFORE_PLAN, CLOSED, sessionWith, atIso, KANBAN_BOARD, collectAt, localIsoAt, mixedOffice,
   WALL_ORDER, toyKanban, firmaCard, firmaData, wip, toyHome, toyMachine, storyFile, collectWith, drawKanban, toyRepo,
   parkMachine, openWallPanel, wallTexts, firmaOffice, filesOf, buildOffice, page, collect, buildBoard,
-  createEnvelopes, ownerWaitsOf, tinyDom
+  createEnvelopes, ownerWaitsOf, tinyDom, markRecipients
 } = require('./lib/office-fixtures.js');
 
 test('T6 PanelYTeToca: el panel cuenta el trabajo, las firmas y lo que quedó a medio camino; «te toca» sólo pide firmar', () => {
@@ -462,6 +462,28 @@ test('T229 OpenPrs_FromThePhoto: «Esperan entrar» cuenta los pedidos reales, d
   assert.match(col(await read(), 'entrando').nota, /no se midieron/, 'sin foto, tampoco');
 });
 
+// La tarjeta va en una línea con puntos al final: lo que va al final de un título largo no se ve. Cuántas firmas esperan
+// va al principio, donde se ve siempre; el renglón de la pared, que no se corta, sigue diciendo «y N más».
+test('Office_FirmasDeUnaSesion_CuantasVaDelante @DEF-8.248-tarjeta-y-mas', () => {
+  const largo = 'marcar como probado a mano el criterio de la pantalla de la estación con su detalle completo';
+  const fila = (title, extra = {}) => ({ tipo: 'firma', id: `f-${title}`, firma: 'manual-test', destino: 'b', title, at: NOW - 60000, ...extra });
+  let { data } = buildOffice({ wip: wip([{ session: 'Bruno', sid: 'b', status: 'busy', extra: { kind: 'pipeline', current: 'implement', title: 'Lo de Bruno' } }]),
+    signatures: [fila(largo), fila('otro criterio', { at: NOW }), fila('un tercero', { at: NOW })], nowMs: NOW });
+  assert.deepStrictEqual(titles(data, 'firma'), [`Firmas (3): ${largo}`], 'cuántas esperan, antes del título');
+  assert.match(data.meta.teToca[0], / y 2 más \(Bruno\)$/, 'la pared sigue diciendo cuántas más');
+  // una sola: como siempre
+  ({ data } = buildOffice({ wip: wip([{ session: 'Bruno', sid: 'b', status: 'busy', extra: { kind: 'pipeline', current: 'implement', title: 'Lo de Bruno' } }]),
+    signatures: [fila(largo)], nowMs: NOW }));
+  assert.deepStrictEqual(titles(data, 'firma'), [`Firma: ${largo}`]);
+  // varios permisos de una sesión: el número delante, sin «Firma»
+  ({ data } = buildOffice({ wip: wip([]), signatures: [{ tipo: 'permiso', id: 'p1', destino: 'c', nombre: 'Ciro', title: 'Permiso: Bash', at: NOW }, { tipo: 'permiso', id: 'p2', destino: 'c', nombre: 'Ciro', title: 'Permiso: Edit', at: NOW }], nowMs: NOW }));
+  assert.deepStrictEqual(titles(data, 'firma'), ['(2) Permiso: Bash']);
+  // las aprobadas que esperan que la sesión las repita, igual
+  ({ data } = buildOffice({ wip: wip([{ session: 'Bruno', sid: 'b', status: 'busy', extra: { kind: 'pipeline', current: 'implement', title: 'Lo de Bruno' } }]),
+    signatures: [fila(largo, { aprobada: true }), fila('otro criterio', { aprobada: true, at: NOW })], nowMs: NOW }));
+  assert.deepStrictEqual(col(data, 'curso').tarjetas.filter((c) => /^Firmas? /.test(c.titulo)).map((c) => c.titulo), [`Firmas (2): ${largo}`]);
+});
+
 test('Office_UnaTarjetaPorSesion (T8) — @story-8.153 @ac-8: un renglón de la lista de firmas no duplica la tarjeta de su sesión', () => {
   const fila = (destino, title, extra = {}) => ({ tipo: 'firma', id: `f-${destino}-${title}`, destino, title, at: NOW - 60000, ...extra });
   // la sesión ya esperando la firma: una sola tarjeta, la suya
@@ -477,7 +499,7 @@ test('Office_UnaTarjetaPorSesion (T8) — @story-8.153 @ac-8: un renglón de la 
   ({ data } = buildOffice({ wip: wip([{ session: 'Bruno', sid: 'b', status: 'busy', extra: { kind: 'pipeline', current: 'implement', title: 'Lo de Bruno' } }]),
     signatures: [fila('b', 'marcar un criterio'), fila('b', 'otro criterio')], nowMs: NOW }));
   assert.deepStrictEqual(titles(data, 'curso'), ['Lo de Bruno']);
-  assert.deepStrictEqual(titles(data, 'firma'), ['Firma: marcar un criterio y 1 más'], 'una por sesión');
+  assert.deepStrictEqual(titles(data, 'firma'), ['Firmas (2): marcar un criterio'], 'una por sesión, con cuántas esperan delante');
   assert.strictEqual(col(data, 'firma').tarjetas[0].quien, 'Bruno');
   assert.strictEqual(data.meta.teToca.length, col(data, 'firma').tarjetas.length, 'coincide con la columna');
 
@@ -871,7 +893,7 @@ test('T14 Office_FirmaAprobadaSinRepetir_EsperaALaSesion @story-8.234 @ac-14: la
   // dos aprobadas de la misma sesión: una tarjeta, con la más vieja y cuántas más
   ({ data } = buildOffice({ wip: wip([{ session: 'Bruno', sid: 'b', status: 'busy', extra: { kind: 'pipeline', current: 'implement', title: 'Lo de Bruno' } }]),
     signatures: [firmaDe('b', 'marcar un criterio', { aprobada: true }), firmaDe('b', 'otro criterio', { aprobada: true, at: NOW })], nowMs: NOW }));
-  assert.deepStrictEqual(col(data, 'curso').tarjetas.filter((c) => /^Firma: /.test(c.titulo)).map((c) => c.titulo), ['Firma: marcar un criterio y 1 más']);
+  assert.deepStrictEqual(col(data, 'curso').tarjetas.filter((c) => /^Firmas? /.test(c.titulo)).map((c) => c.titulo), ['Firmas (2): marcar un criterio']);
 
   // caso 5b: el guardado aprobado (firma `save`) deja de pedir el ok de guardar, igual que el plan
   ({ data } = buildOffice({ wip: wip([{ session: 'Eva', sid: 'e', status: 'idle', extra: { kind: 'finished', title: 'Lo de Eva' } }]),
@@ -1050,4 +1072,448 @@ test('T13 Regresion_FirmasYPreguntasViejas_NoVencen — @story-8.306 @ac-13', ()
   const before = { text: fs.readFileSync(file, 'utf8'), at: fs.statSync(file).mtimeMs };
   assert.strictEqual(boardTool.sync(sdir, [], { now: NOW, live: [] }).written, false);
   assert.deepStrictEqual({ text: fs.readFileSync(file, 'utf8'), at: fs.statSync(file).mtimeMs }, before);
+});
+
+// ---------- 8.313: las historias abiertas en main, por grupo, el proyecto principal y la hora del dato ----------
+
+const OFFICE_8313 = require(OFFICE);
+const { buildTables } = OFFICE_8313;
+const { execFileSync } = require('child_process');
+const PS_8313 = require(path.join(path.dirname(OFFICE), 'office', 'project-stories.js'));
+const SD_8313 = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
+const HOUR_8313 = 3600e3;
+const ymd8313 = (ms) => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const ab8313 = (id, estado = 'ready-for-dev', extra = {}) => ({ id, archivo: `story-${id}.md`, estado, ...extra });
+const key8313 = (nombre) => `github/acme/${nombre}`;
+/** Un proyecto de la lectura de fondo, con sus abiertas; su lugar es una carpeta de mentira. */
+const proy8313 = (nombre, abiertas, extra = {}) => ({ nombre, traidoAt: atIso(NOW - 5 * HOUR_8313), deTuCopia: false, sinLeer: 0, repos: [key8313(nombre)], remoto: key8313(nombre), commit: 'c'.repeat(40), lugar: { repo: `/r/${nombre}`, ref: 'origin/main', common: `/r/${nombre}/.git` }, historias: [], abiertas, ...extra });
+const snap8313 = (proyectos, at = NOW - 10 * 60e3) => ({ at: atIso(at), proyectos, sinHistorias: [], commitsPropios: { medido: true } });
+// la carpeta de cada repo de mentira es de su proyecto: /r/<nombre> → github/acme/<nombre>
+const remoteOf8313 = (dir) => { const m = /^\/r\/([^/]+)/.exec(String(dir || '')); return m ? key8313(m[1]) : null; };
+const coord8313 = (nombre) => ({ sid: 'coord', cwd: `/r/${nombre}`, remote: key8313(nombre) });
+/** Lo que la foto le pasa a la cuenta: la lectura, las ejecuciones y quién coordina. */
+const open8313 = (snap, more = {}) => OFFICE_8313.openStories({ snap, runs: [], alive: new Set(), stopped: [], sessionStories: [], coordinator: coord8313('acme'), remoteOf: remoteOf8313, fetchedOf: () => null, nowMs: NOW, ...more });
+const nums8313 = (p) => p && { total: p.total, enCurso: p.enCurso, enEspera: p.enEspera, sinComenzar: p.sinComenzar, conParte: p.conParte };
+/** La foto de la oficina con la lectura de fondo y dos filas del tablero sin sesión. */
+const office8313 = (projectStories, filas = []) => buildOffice({
+  wip: wip([]), nowMs: NOW,
+  board: OFFICE_8313.buildBoard({ pendientes: filas }),
+  projectStories: { runs: [], alive: new Set(), stopped: [], coordinator: coord8313('acme'), remoteOf: remoteOf8313, fetchedOf: () => null, ...projectStories },
+}).data;
+const FILAS_8313 = [{ id: 'T-1', titulo: 'Fila uno', estado: 'espera', grupo: 'Hoy', orden: 1 }, { id: 'T-2', titulo: 'Fila dos', estado: 'espera', grupo: 'Hoy', orden: 2 }];
+
+test('T3 Grupos_CadaHistoriaEnUnoYSumanElTotal @story-8.313 @ac-2 @ac-3 — cada camino en su grupo, la suma da el total y conParte cuenta la in-progress sola', () => {
+  const hoy = ymd8313(NOW);
+  const ayer = ymd8313(NOW - 24 * HOUR_8313);
+  const acme = proy8313('acme', [
+    ab8313('3.1', 'in-progress'), ab8313('3.2', 'in-progress'), ab8313('3.3', 'ready-for-dev'),
+    ab8313('3.4', 'review'), ab8313('3.5', 'blocked'), ab8313('3.6', 'ready-for-dev', { pendientes: ['9.9'] }),
+    ab8313('3.7', 'ready-for-dev', { pausa: hoy }), ab8313('3.8', 'ready-for-dev', { pausa: ayer }),
+    ab8313('3.9', 'ready-for-dev'), ab8313('3.10', 'in-progress'),
+  ]);
+  const a = open8313(snap8313([acme]), {
+    runs: [{ archivo: 'story-3.1.md', sessionId: 'viva', activo: true, repoPath: '/r/acme/wt' }],
+    alive: new Set(['viva']),
+    stopped: [{ storyId: '3.2', archivo: 'story-3.2.md', repoPath: '/r/acme' }],
+    sessionStories: [{ id: '3.3', remote: key8313('acme') }],
+  });
+  assert.ok(a.principal, JSON.stringify(a));
+  assert.deepStrictEqual(nums8313(a.principal), { total: 10, enCurso: 3, enEspera: 4, sinComenzar: 3, conParte: 1 });
+  assert.strictEqual(a.principal.enCurso + a.principal.enEspera + a.principal.sinComenzar, a.principal.total);
+  assert.strictEqual(a.principal.total, acme.abiertas.length, 'el total es la cantidad de abiertas');
+  assert.strictEqual(a.principal.nombre, 'acme');
+  assert.strictEqual(a.principal.leidoAt, atIso(NOW - 10 * 60e3));
+  assert.strictEqual(a.principal.commit, 'c'.repeat(40));
+  assert.strictEqual(a.linea, 'Abiertas: 10 · 3 en curso · 4 en espera · 3 sin comenzar');
+  assert.strictEqual(a.principal.detalle, 'Abiertas: 10 · 3 en curso · 4 en espera · 3 sin comenzar (1 con una parte hecha)');
+});
+
+test('T4 Grupos_MarcadorDeSesionMuerta_NoEsEnCurso @story-8.313 @ac-3 — sesión muerta, cierre reciente, la coordinadora y lo de otro repo con el mismo archivo no son «en curso»', () => {
+  const acme = proy8313('acme', [ab8313('4.1'), ab8313('4.2'), ab8313('4.3'), ab8313('4.4'), ab8313('4.5')]);
+  const a = open8313(snap8313([acme]), {
+    runs: [
+      { archivo: 'story-4.1.md', sessionId: 'muerta', activo: true, repoPath: '/r/acme' },
+      { archivo: 'story-4.2.md', sessionId: 'cerro', activo: false, repoPath: '/r/acme' },
+      { archivo: 'story-4.3.md', sessionId: 'coord', activo: true, repoPath: '/r/acme' },
+      { archivo: 'story-4.4.md', sessionId: 'viva', activo: true, repoPath: '/r/otro' },
+    ],
+    alive: new Set(['cerro', 'coord', 'viva']),
+    stopped: [{ storyId: '4.5', archivo: 'story-4.5.md', repoPath: '/r/otro' }],
+  });
+  assert.deepStrictEqual(nums8313(a.principal), { total: 5, enCurso: 0, enEspera: 0, sinComenzar: 5, conParte: 0 });
+  // en la foto, la sesión coordinadora con tarjeta que nombra una historia tampoco cuenta
+  const data = buildOffice({
+    wip: wip([{ session: 'Coordinadora', sid: 'coord', work: 'Story 4.3', extra: { kind: 'pipeline', storyId: '4.3', current: 'implement', steps: STEPS } }]),
+    nowMs: NOW, coordinatorSid: 'coord', coordinatorName: 'Coordinadora',
+    projectStories: { snap: snap8313([acme]), runs: [], alive: new Set(['coord']), stopped: [], coordinator: coord8313('acme'), remoteOf: remoteOf8313, fetchedOf: () => null },
+  }).data;
+  assert.strictEqual(data.kanban.abiertas.principal.enCurso, 0, JSON.stringify(data.kanban.abiertas));
+});
+
+test('T5 Principal_EsElProyectoDeLaCoordinadora @story-8.313 @ac-2 @ac-5 — dos proyectos, la coordinadora en una copia del segundo: office.js --json trae sus números', () => {
+  const { home } = toyHome();
+  const sdir = SD_8313.stateDir(home);
+  // la carpeta de la coordinadora: una copia de trabajo del segundo proyecto, con su remoto (sin red)
+  const copia = fs.mkdtempSync(path.join(os.tmpdir(), 'office-8313-copia-'));
+  const g = (...args) => execFileSync('git', ['-c', 'init.defaultBranch=main', ...args], { cwd: copia, stdio: 'pipe' });
+  g('init', '-q');
+  g('remote', 'add', 'origin', 'https://github.com/acme/dos.git');
+  const key = PS_8313.remoteKey(copia);
+  assert.ok(key, 'el remoto de la copia se reconoce');
+  const now = Date.now();
+  const uno = { ...proy8313('uno', [ab8313('1.1'), ab8313('1.2')]), traidoAt: null };
+  const dos = { ...proy8313('dos', [ab8313('2.1', 'review'), ab8313('2.2'), ab8313('2.3', 'in-progress')]), remoto: key, repos: [key], traidoAt: null };
+  fs.mkdirSync(path.join(sdir, 'office'), { recursive: true });
+  fs.writeFileSync(path.join(sdir, 'office', 'project-stories.json'), JSON.stringify(snap8313([uno, dos], now - 60e3)));
+  fs.writeFileSync(path.join(sdir, 'gates.log'), `${JSON.stringify({ name: 'relay-designation', status: 'ok', sesion: 'coord', via: 'click', ts: atIso(now - HOUR_8313) })}\n`);
+  fs.writeFileSync(path.join(home, '.claude', 'sessions', 'coord.json'), JSON.stringify({ pid: process.pid, sessionId: 'coord', name: 'Coordinadora', status: 'idle', statusUpdatedAt: now, cwd: copia }));
+  const data = JSON.parse(run(home, ['--json', '--now', new Date(now).toISOString()]));
+  const a = data.kanban.abiertas;
+  assert.ok(a && a.principal, JSON.stringify(a));
+  assert.strictEqual(a.principal.nombre, 'dos');
+  assert.deepStrictEqual(nums8313(a.principal), { total: 3, enCurso: 0, enEspera: 1, sinComenzar: 2, conParte: 1 });
+  assert.deepStrictEqual(a.otros.map((p) => [p.nombre, p.total]), [['uno', 2]]);
+  assert.strictEqual(a.linea, 'Abiertas: 3 · 0 en curso · 1 en espera · 2 sin comenzar');
+  assert.ok(!JSON.stringify(a).includes('/r/'), 'ni la ruta de un repo');
+});
+
+test('T6 Otros_VanAparteYNoSeSuman @story-8.313 @ac-6 — el principal cuenta lo suyo; el otro va aparte con sus grupos y su renglón', () => {
+  const a = open8313(snap8313([proy8313('acme', [ab8313('6.1'), ab8313('6.2', 'review'), ab8313('6.3')]), proy8313('beta', [ab8313('7.1', 'blocked'), ab8313('7.2')])]));
+  assert.strictEqual(a.principal.total, 3);
+  assert.strictEqual(a.otros.length, 1);
+  assert.deepStrictEqual(nums8313(a.otros[0]), { total: 2, enCurso: 0, enEspera: 1, sinComenzar: 1, conParte: 0 });
+  assert.strictEqual(a.otros[0].renglon, 'beta: 2 abiertas · 0 en curso · 1 en espera · 1 sin comenzar');
+});
+
+test('T7 SinPrincipal_DiceElMotivo @story-8.313 @ac-13 — sin coordinadora, sin carpeta, repo ajeno y empate: sin principal, todos en otros y la nota', () => {
+  const ps = [proy8313('acme', [ab8313('7.1')]), proy8313('beta', [ab8313('7.2')])];
+  const empate = [proy8313('acme', [ab8313('7.1')]), proy8313('beta', [ab8313('7.2')], { remoto: key8313('acme') })];
+  const casos = [
+    ['sin coordinadora', { coordinator: null }, ps, /no hay coordinadora designada/],
+    ['sin carpeta', { coordinator: { sid: 'coord', cwd: null, remote: null } }, ps, /no sé en qué carpeta trabaja la coordinadora/],
+    ['repo ajeno', { coordinator: coord8313('gamma') }, ps, /no es de ningún proyecto leído/],
+    ['empate', {}, empate, /más de un proyecto/],
+  ];
+  for (const [nombre, more, proyectos, motivo] of casos) {
+    const a = open8313(snap8313(proyectos), more);
+    assert.strictEqual(a.principal, undefined, nombre);
+    assert.strictEqual(a.otros.length, 2, `${nombre}: todos en otros`);
+    assert.match(a.nota, /^Sin proyecto principal: /, nombre);
+    assert.match(a.nota, motivo, nombre);
+    assert.strictEqual(a.linea, a.nota, `${nombre}: la pantalla muestra la nota en lugar del número`);
+  }
+});
+
+test('T8 Abiertas_SinLecturaOVieja_NoDaNumero @story-8.313 @ac-12 — sin archivo, roto, de 61 minutos o de antes del cambio: sin números, con nota', () => {
+  const dir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'office-8313-lectura-'));
+  const sinArchivo = dir();
+  const roto = dir();
+  fs.mkdirSync(path.join(roto, 'office'));
+  fs.writeFileSync(path.join(roto, 'office', 'project-stories.json'), '{ roto');
+  const vieja = dir();
+  fs.mkdirSync(path.join(vieja, 'office'));
+  fs.writeFileSync(path.join(vieja, 'office', 'project-stories.json'), JSON.stringify(snap8313([proy8313('acme', [ab8313('8.1')])], NOW - 61 * 60e3)));
+  for (const [nombre, sd] of [['sin archivo', sinArchivo], ['rota', roto], ['de 61 minutos', vieja]]) {
+    const r = PS_8313.readSnapshot(sd, NOW);
+    const a = open8313(r.snap, { nota: r.nota });
+    assert.strictEqual(a.principal, undefined, nombre);
+    assert.ok(!('total' in a) && !(a.otros || []).length, `${nombre}: sin números`);
+    assert.strictEqual(a.linea, 'Abiertas: sin dato', nombre);
+    assert.strictEqual(a.nota, r.nota, `${nombre}: con el motivo de readSnapshot`);
+  }
+  const antes = snap8313([{ ...proy8313('acme', [ab8313('8.1')]), abiertas: undefined }]);
+  const a = open8313(antes);
+  assert.strictEqual(a.linea, 'Abiertas: sin dato');
+  assert.match(a.nota, /antes del número de abiertas: se relee en el próximo control/);
+  // en pantalla
+  const data = office8313({ snap: null, nota: 'No pude leer los pendientes de tus proyectos' });
+  assert.ok(wallTexts(data).includes('Abiertas: sin dato'), 'la pared lo dice');
+  assert.ok(!wallTexts(data).some((t) => /^Abiertas: \d/.test(t)), 'nunca un número');
+});
+
+test('T11 Pantalla_MuestraElNumeroYSuHora @story-8.313 @ac-4 @ac-11 — pared, detalle y kanban dicen el número y de cuándo es', () => {
+  const snap = snap8313([proy8313('acme', [ab8313('11.1'), ab8313('11.2', 'review')])]);
+  const leido = `Leído a las ${hm(NOW - 10 * 60e3)}`;
+  const con = (fetchedOf, more = {}) => office8313({ snap, fetchedOf, ...more });
+  const linea = 'Abiertas: 2 · 0 en curso · 1 en espera · 1 sin comenzar';
+  const enLasTres = (data, hora) => {
+    const pared = wallTexts(data);
+    assert.ok(pared.includes(linea), `la pared: ${pared.join(' | ')}`);
+    assert.ok(pared.includes(hora), `la pared, la hora: ${pared.join(' | ')}`);
+    const detalle = textOf(openWallPanel(data));
+    assert.ok(detalle.includes(linea) && detalle.includes(hora) && detalle.includes('acme'), `el detalle: ${detalle}`);
+    const kanban = textOf(drawKanban(data).body);
+    assert.ok(kanban.includes(linea) && kanban.includes(hora) && kanban.includes('acme'), `el kanban: ${kanban}`);
+  };
+  enLasTres(con(() => atIso(NOW - 3 * 60e3)), `${leido} · main traído hace 3 min`);
+  enLasTres(con(() => atIso(NOW - 3 * HOUR_8313)), `${leido} · main traído hace 3 h`);
+  // un fetch más nuevo sin releer: se ve en la foto siguiente
+  enLasTres(con(() => atIso(NOW - 60e3)), `${leido} · main traído hace 1 min`);
+  // sin poder leer el FETCH_HEAD, vale el guardado (hace 5 h)
+  enLasTres(con(() => null), `${leido} · main traído hace 5 h`);
+  // sin ninguna de las dos
+  const sinHora = snap8313([proy8313('acme', [ab8313('11.1'), ab8313('11.2', 'review')], { traidoAt: null })]);
+  enLasTres(office8313({ snap: sinHora, fetchedOf: () => null }), `${leido} · no sé cuándo se trajo main`);
+  // leída de la copia
+  const copia = snap8313([proy8313('acme', [ab8313('11.1'), ab8313('11.2', 'review')], { deTuCopia: true, commit: null })]);
+  enLasTres(office8313({ snap: copia, fetchedOf: () => null }), `${leido} · de tu copia`);
+});
+
+test('T12 Detalle_ListaLosOtrosProyectos @story-8.313 @ac-4 @ac-6 @ac-14 — los otros con sus avisos en el detalle; el principal con su parte hecha; la pared no los nombra', () => {
+  const snap = snap8313([
+    proy8313('acme', [ab8313('12.1', 'in-progress'), ab8313('12.2')]),
+    proy8313('beta', [ab8313('13.1')], { sinLeer: 1 }),
+    proy8313('gamma', [ab8313('14.1'), ab8313('14.2')], { deTuCopia: true, commit: null }),
+  ]);
+  const data = office8313({ snap });
+  const detalle = textOf(openWallPanel(data));
+  assert.ok(detalle.includes('(1 con una parte hecha)'), detalle);
+  assert.ok(detalle.includes('Otros proyectos'), detalle);
+  assert.ok(detalle.includes('beta: 1 abiertas · 0 en curso · 0 en espera · 1 sin comenzar · 1 no se pudo leer'), detalle);
+  assert.ok(detalle.includes('gamma: 2 abiertas · 0 en curso · 0 en espera · 2 sin comenzar · de tu copia'), detalle);
+  const pared = wallTexts(data).join(' | ');
+  assert.ok(!/beta|gamma/.test(pared), `la pared no los muestra: ${pared}`);
+  assert.strictEqual(data.kanban.abiertas.principal.total, 2, 'no se suman al principal');
+});
+
+test('T13 SinSesion_NoCuentaLasPlegadas @story-8.313 @ac-7 — 2 filas y 3 historias plegadas: la columna dice 2 en todos lados y la línea plegada 3', () => {
+  const hist = (id) => ({ id, archivo: `story-${id}.md`, titulo: `La historia ${id}`, estado: 'ready-for-dev', prioridad: null, trabajo: null });
+  const acme = proy8313('acme', [ab8313('5.1'), ab8313('5.2'), ab8313('5.3')], { historias: [hist('5.1'), hist('5.2'), hist('5.3')] });
+  const data = office8313({ snap: snap8313([acme]) }, FILAS_8313);
+  const { body } = drawKanban(data);
+  const nodos = all(body, () => true);
+  assert.ok(nodos.some((n) => n.tag === 'h3' && n.textContent === 'Sin sesión · 2'), 'el encabezado');
+  assert.ok(nodos.some((n) => n.tag === 'button' && n.textContent === 'Historias de tus proyectos · 3'), 'la línea plegada');
+  const pared = wallTexts(data);
+  const i = pared.indexOf('Sin sesión');
+  assert.strictEqual(pared[i - 1], '2', `la pared: ${pared.join(' | ')}`);
+  const detalle = all(openWallPanel(data), (n) => n.className === 'cnt').map(textOf);
+  assert.ok(detalle.includes('2Sin sesión'), `el detalle: ${detalle.join(' | ')}`);
+  const t = buildTables({ kanban: data.kanban, nowMs: NOW, sinModelo: true });
+  assert.match(t.pendientes.cruce, /\b2 sin sesión\b/);
+});
+
+test('Regresion_ParedSinPrincipal_ElMotivoEntero @story-8.313 @ac-13 — en la pared, el motivo largo de «Sin proyecto principal» entra en el ancho del panel, sin cortarse', () => {
+  const data = office8313({ snap: snap8313([proy8313('beta', [ab8313('1.1')])]), coordinator: coord8313('gamma') });
+  const motivo = data.kanban.abiertas.linea;
+  assert.match(motivo, /^Sin proyecto principal: el repo de la coordinadora no es de ningún proyecto leído$/);
+  // la pared, con un lienzo que mide: cada letra ocupa lo que dice su tamaño de letra
+  const html = page(data);
+  const fn = (html.match(/function drawPanel\(\)\{[\s\S]*?texPanel\.needsUpdate=true;\}/) || [])[0];
+  const order = (html.match(/function paredEnOrden\(K\)\{.*\}\n/) || [])[0];
+  assert.ok(fn && order, 'la página trae el dibujo de la pared');
+  const lines = [];
+  const state = { font: '26px x' };
+  const px = () => Number((/(\d+)px/.exec(state.font) || [0, 26])[1]);
+  const g = new Proxy({}, {
+    get: (_, k) => (k === 'fillText' ? (t, x) => lines.push({ t: String(t), x, w: String(t).length * px() * 0.55 })
+      : k === 'measureText' ? (t) => ({ width: String(t).length * px() * 0.55 }) : k === 'font' ? state.font : () => {}),
+    set: (_, k, v) => { if (k === 'font') state.font = v; return true; },
+  });
+  new Function('texPanel', 'T', 'KCOL', 'HALF', 'FONT', 'stampOf', `${order}${fn};drawPanel();`)({ userData: { g } }, { kanban: () => data.kanban, meta: () => data.meta }, {}, '#f00', 'x', () => 'sello');
+  const parts = lines.filter((l) => motivo.includes(l.t.trim()) && l.t.trim().length > 3);
+  assert.ok(parts.length, `la pared dice el motivo: ${lines.map((l) => l.t).join(' | ')}`);
+  assert.strictEqual(parts.map((l) => l.t.trim()).join(' '), motivo, 'el motivo entero, aunque vaya en dos renglones');
+  for (const l of parts) assert.ok(l.x + l.w <= 768 - 36, `«${l.t}» entra en el panel (termina en ${Math.round(l.x + l.w)})`);
+});
+
+test('Regresion_PrincipalConNoLeidas_LoDice @story-8.313 @ac-14 — si el proyecto principal tiene historias sin leer, la pared, el detalle y el kanban lo dicen junto al número', () => {
+  const data = office8313({ snap: snap8313([proy8313('acme', [ab8313('9.1'), ab8313('9.2', 'review')], { sinLeer: 2 })]) });
+  assert.strictEqual(data.kanban.abiertas.principal.total, 2, 'las no leídas no entran en el total');
+  const aviso = '2 no se pudieron leer';
+  assert.ok(wallTexts(data).some((t) => t.includes(aviso)), `la pared: ${wallTexts(data).join(' | ')}`);
+  assert.ok(textOf(openWallPanel(data)).includes(aviso), 'el detalle');
+  assert.ok(textOf(drawKanban(data).body).includes(aviso), 'el kanban');
+});
+
+test('T20 Regresion_TarjetasYColumnasIguales @story-8.313 @ac-20 — la misma foto con y sin abiertas: tarjetas, filas «De tus proyectos» y columnas iguales', () => {
+  const hist = (id) => ({ id, archivo: `story-${id}.md`, titulo: `La historia ${id}`, estado: 'ready-for-dev', prioridad: null, trabajo: null });
+  const con = proy8313('acme', [ab8313('20.1'), ab8313('20.2', 'draft')], { historias: [hist('20.1')] });
+  const sin = { ...con };
+  delete sin.abiertas;
+  const a = office8313({ snap: snap8313([con]) }, FILAS_8313);
+  const b = office8313({ snap: snap8313([sin]) }, FILAS_8313);
+  assert.ok(a.kanban.abiertas.principal && !b.kanban.abiertas.principal, 'una trae el número y la otra no');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(a.kanban.columnas)), JSON.parse(JSON.stringify(b.kanban.columnas)));
+  const ta = buildTables({ kanban: a.kanban, nowMs: NOW, sinModelo: true });
+  const tb = buildTables({ kanban: b.kanban, nowMs: NOW, sinModelo: true });
+  assert.deepStrictEqual(ta.pendientes.filas, tb.pendientes.filas);
+  assert.strictEqual(ta.pendientes.cruce, tb.pendientes.cruce);
+});
+
+test('T346 Office_LoQueTeNecesita_CadaItemCompleto @story-8.234 @ac-35: las cuatro clases, cada una con qué, dónde, por qué y la recomendación anotada', () => {
+  const note = (waitingFor) => ({ kind: 'note', text: 'algo', waitingFor, waitingSince: NOW - 60000 });
+  const { data } = buildOffice({
+    wip: wip([
+      { session: 'Firmante', sid: 's-f', status: 'waiting_for_permission', extra: { kind: 'pipeline', title: 'Una', storyId: '9.1', current: 'implement' } },
+      { session: 'Preg', sid: 's-preg', status: 'busy', extra: { kind: 'pipeline', title: 'Dos', storyId: '9.2', current: 'implement' } },
+      { session: 'Enzo', extra: note('que el dueño elija la A o la B (recomiendo: la A)') },
+      { session: 'Sin', extra: note('la prueba del dueño') },
+      { session: 'Casco', extra: note('que Enzo termine') },
+    ]),
+    sessionFiles: [sessionFile('s-preg', { name: 'Preg', waitingForOwner: true, waitingFor: 'una respuesta' })],
+    signatures: [{ id: 'f1', title: 'saltar el pase de 5.2', at: NOW }],
+    board: buildBoard({ pendientes: [], meta: { teToca: ['Decidir el nombre del producto — recomiendo: Cobre'] } }),
+    // la ficha de lo que espera al dueño: su riesgo es el porqué
+    ownerCard: ({ row }) => ({ riesgo: `delicado (${row.origen})`, accion: 'x', linea: 'x' }),
+    nowMs: NOW,
+  });
+  const n = data.meta.teNecesita;
+  const de = (clase) => n.filter((i) => i.clase === clase);
+  assert.deepStrictEqual(n.map((i) => i.clase).sort(), ['cuadro', 'espera', 'espera', 'firma', 'firma', 'tablero'].sort(), JSON.stringify(n, null, 1));
+  // la firma de una sesión se contesta en su chat; la de la lista, con la coordinadora
+  assert.deepStrictEqual(de('firma').map((i) => [i.quien || null, i.donde]).sort(), [
+    ['Firmante', 'en el chat de Firmante, con el click'],
+    [null, 'en el chat de la coordinadora, que te trae el cuadro'],
+  ].sort());
+  assert.deepStrictEqual(de('cuadro').map((i) => [i.quien, i.donde]), [['Preg', 'en el chat de Preg, con el click']]);
+  // por qué sólo vos: el riesgo de su ficha, si la tiene
+  assert.ok([...de('firma'), ...de('cuadro')].every((i) => /^delicado \(/.test(i.porque)), JSON.stringify(n));
+  assert.ok(de('tablero').every((i) => !('porque' in i)));
+  // la espera al dueño, con lo que espera y su recomendación; la que espera a otra sesión no es del dueño
+  assert.deepStrictEqual(de('espera').map((i) => [i.quien, i.que, i.recomendada || null]).sort(), [
+    ['Enzo', 'que el dueño elija la A o la B (recomiendo: la A)', 'la A'],
+    ['Sin', 'la prueba del dueño', null],
+  ].sort());
+  assert.ok(de('espera').every((i) => /^acá: /.test(i.donde)));
+  assert.deepStrictEqual(de('tablero').map((i) => [i.que, i.donde, i.recomendada]), [['Decidir el nombre del producto — recomiendo: Cobre', 'con la coordinadora', 'Cobre']]);
+  // cada cosa dice qué hace falta y dónde se contesta; sin recomendación anotada no se inventa una
+  assert.ok(n.every((i) => i.que && i.donde));
+  assert.ok(n.filter((i) => i.clase !== 'tablero' && i.quien !== 'Enzo').every((i) => !('recomendada' in i)));
+});
+
+test('T347 Office_LoQueTeNecesita_Vacio @story-8.234 @ac-39: sin nada que espere al dueño, la lista viene vacía y la página dice «Nada te espera»', () => {
+  const { data } = buildOffice({ wip: wip([{ session: 'Uno', status: 'busy', extra: { kind: 'pipeline', current: 'implement' } }]), nowMs: NOW });
+  assert.deepStrictEqual(data.meta.teNecesita, []);
+  const html = page(data);
+  assert.match(html, /id="necesita"/);
+  assert.match(PAGE_CODE(), /"Nada te espera\."/);
+});
+
+test('T351 Office_LoQueTeNecesita_ItemResueltoSale @story-8.234 @ac-36 @ac-38: cuando la sesión deja de esperar, su ítem sale de la lista y el proceso ya no le entrega una respuesta', () => {
+  const sdir = fs.mkdtempSync(path.join(os.tmpdir(), 'necesita-'));
+  const foto = (extra) => {
+    const { data } = buildOffice({ wip: wip([{ session: 'Enzo', sid: 's-enzo', extra }]), nowMs: NOW });
+    const env = createEnvelopes();
+    env.files.set('Enzo', { file: '/x', sid: 's-enzo' });
+    markRecipients(data, env, [], sdir);
+    return { data, env };
+  };
+  const antes = foto({ kind: 'note', text: 'algo', waitingFor: 'la decisión del dueño', waitingSince: NOW - 60000 });
+  assert.deepStrictEqual(antes.data.meta.teNecesita.map((i) => [i.clase, i.quien]), [['espera', 'Enzo']]);
+  assert.strictEqual(antes.env.recipients.get('Enzo').esperaDueno, true);
+  // resuelta por otro camino: al recargar ya no está, y una respuesta tardía se guarda sin entregarse (T350)
+  const despues = foto({ kind: 'note', text: 'sigue con lo suyo' });
+  assert.deepStrictEqual(despues.data.meta.teNecesita, []);
+  assert.strictEqual(despues.env.recipients.get('Enzo').esperaDueno, false);
+});
+
+test('T353 Office_LoQueTeNecesita_RecomendacionSoloConLaMarca @story-8.234 @ac-35: «recomiendo: …» con los dos puntos y sin un «no» delante; nada más es una recomendación', () => {
+  const lineas = [
+    'Decidir A o B — no recomiendo: la B',
+    'Decidir C o D — no recomiendo la D',
+    'Ver si recomiendo algo',
+    'Elegir (recomiendo: la A (la rápida) porque es reversible) hoy',
+    'Decidir el nombre del producto — recomiendo: Cobre',
+  ];
+  const { data } = buildOffice({ wip: wip([]), board: buildBoard({ pendientes: [], meta: { teToca: lineas } }), nowMs: NOW });
+  assert.deepStrictEqual(data.meta.teNecesita.map((i) => i.recomendada || null), [null, null, null, 'la A (la rápida) porque es reversible', 'Cobre']);
+});
+
+test('T354 Office_LoQueTeNecesita_NombreRepetido @story-8.234 @ac-36: con dos sesiones del mismo nombre, a ninguna le llega una respuesta de la página', () => {
+  const { data } = buildOffice({
+    wip: wip([
+      { session: 'Rev', sid: 's-b', status: 'busy', extra: { kind: 'pipeline', title: 'Una', storyId: '9.1', current: 'implement' } },
+      { session: 'Rev', sid: 's-z', extra: { kind: 'note', text: 'algo', waitingFor: 'la decisión del dueño', waitingSince: NOW - 60000 } },
+    ]),
+    nowMs: NOW,
+  });
+  const env = createEnvelopes();
+  env.files.set('Rev', { file: '/x', sid: 's-b' });
+  markRecipients(data, env, [], fs.mkdtempSync(path.join(os.tmpdir(), 'necesita-')));
+  assert.deepStrictEqual([env.recipients.get('Rev').esperaDueno, env.recipients.get('Rev').repetido], [false, true]);
+});
+
+test('T355 Office_LoQueTeNecesita_OtraFotoNoBorraLoEscrito @story-8.234 @ac-36: con otra foto, el renglón de una espera sigue siendo el mismo y conserva lo escrito', () => {
+  const src = PAGE_CODE();
+  const from = src.indexOf('const NECESITA_CLASE=');
+  const to = src.indexOf('// cuántas líneas del tablero vencieron', from);
+  assert.ok(from >= 0 && to > from, 'page.js trae la parte de lo que te necesita');
+  const nodo = (tag) => ({
+    tag, children: [], dataset: {}, hidden: true, value: '', textContent: '', parent: null,
+    append(...ns) { for (const n of ns) { if (n.parent) n.parent.children.splice(n.parent.children.indexOf(n), 1); n.parent = this; this.children.push(n); } },
+    appendChild(n) { this.append(n); return n; },
+    replaceChildren(...ns) { for (const c of this.children) c.parent = null; this.children = []; this.append(...ns); },
+    remove() { if (this.parent) { this.parent.children.splice(this.parent.children.indexOf(this), 1); this.parent = null; } },
+    querySelectorAll(sel) { const out = []; const walk = (n) => { for (const c of n.children) { if (c.tag === sel) out.push(c); walk(c); } }; walk(this); return out; },
+  });
+  const sec = nodo('section');
+  const lista = nodo('ul');
+  const document = { getElementById: (id) => (id === 'necesita' ? sec : id === 'necesitaLista' ? lista : null) };
+  const el = (tag, cls, text) => { const n = nodo(tag); n.className = cls; n.textContent = text || ''; return n; };
+  const campoMandar = (nombre, ofi, fin) => fin(nodo('textarea'));
+  let meta = null;
+  // eslint-disable-next-line no-new-func
+  const api = new Function('document', 'el', 'campoMandar', 'LIVE', 'CON_OFICINAS', 'agents', 'getMeta', `let meta;const pintar=()=>{meta=getMeta();pintarNecesita()};${src.slice(from, to)};return{pintar}`)(document, el, campoMandar, { token: 't' }, false, [{ nombre: 'Enzo', recibe: 'si' }], () => meta);
+  const espera = { clase: 'espera', que: 'la decisión del dueño', quien: 'Enzo', donde: 'acá' };
+  meta = { teNecesita: [espera] };
+  api.pintar();
+  const renglon = lista.children[0];
+  renglon.querySelectorAll('textarea')[0].value = 'Elegí la A, pero antes revisá que';
+  // llega otra foto: la misma espera y una firma nueva
+  meta = { teNecesita: [espera, { clase: 'firma', que: 'saltar el pase', donde: 'en el chat de Ana, con el click' }] };
+  api.pintar();
+  assert.strictEqual(lista.children[0], renglon, 'el mismo renglón');
+  assert.strictEqual(renglon.querySelectorAll('textarea')[0].value, 'Elegí la A, pero antes revisá que');
+  assert.strictEqual(lista.children.length, 2);
+  // la firma no tiene dónde escribir
+  assert.strictEqual(lista.children[1].querySelectorAll('textarea').length, 0);
+  // resuelta: sale, y sin nada queda «Nada te espera.»
+  meta = { teNecesita: [] };
+  api.pintar();
+  assert.deepStrictEqual(lista.children.map((n) => n.textContent), ['Nada te espera.']);
+});
+
+test('T343 Kanban_FirmaDeSesionQueNoEsta_SinSesion: una firma del tablero para una sesión que ya no está no espera al dueño', () => {
+  const { data } = buildOffice({
+    wip: wip([{ session: 'Ana', status: 'busy', work: '9.1 · Una', extra: { kind: 'pipeline', title: 'Una', storyId: '9.1', current: 'implement' } }]),
+    board: buildBoard({ pendientes: [
+      { titulo: 'La de una sesión cerrada', estado: 'firma', quien: 'Muerta-6' },
+      { titulo: 'La de Ana', estado: 'firma', quien: 'Ana (la tanda B)' },
+      { titulo: 'La tuya', estado: 'firma', quien: 'vos' },
+      { titulo: 'Sin nombre', estado: 'firma' },
+    ] }),
+    nowMs: NOW,
+  });
+  assert.deepStrictEqual(titles(data, 'firma').sort(), ['La de Ana', 'La tuya', 'Sin nombre'].sort(), 'la de una sesión viva, la del dueño y la que no nombra a nadie siguen en «Tu firma»');
+  const sin = col(data, 'sinEmpezar').tarjetas.find((t) => t.titulo === 'La de una sesión cerrada');
+  assert.ok(sin, 'la de la sesión que ya no está va a «Sin sesión»');
+  assert.strictEqual(sin.motivo, 'la sesión que la esperaba ya no está');
+  assert.ok(!JSON.stringify((data.meta.esperan || {}).dueno || []).includes('Muerta-6'), '«Esperan al dueño» no la nombra');
+  // el nombre entero: una sesión viva «Tero» no retiene la firma de «Tero-2», que ya no está. Lo que no es un nombre de
+  // sesión (el dueño dicho de otra forma, un texto) se queda; la hora de la que se mueve es la de «Sin sesión»
+  const otra = buildOffice({
+    wip: wip([{ session: 'Tero', status: 'busy', work: '9.1 · Una', extra: { kind: 'pipeline', title: 'Una', storyId: '9.1', current: 'implement' } }]),
+    board: buildBoard({ pendientes: [
+      { titulo: 'De Tero-2', estado: 'firma', quien: 'Tero-2' },
+      { titulo: 'De Tero', estado: 'firma', quien: 'tero' },
+      { titulo: 'Vos decidís', estado: 'firma', quien: 'Vos decidís' },
+      { titulo: 'La dueña', estado: 'firma', quien: 'la dueña' },
+      { titulo: 'Con hora', estado: 'firma', quien: 'Pinola-6', pronosticoIso: '2026-10-18T08:00' },
+    ] }),
+    nowMs: NOW,
+  }).data;
+  assert.deepStrictEqual(titles(otra, 'firma').sort(), ['De Tero', 'La dueña', 'Vos decidís'].sort());
+  // un nombre de más de 40 letras: la lista de sesiones lo muestra cortado con «…», y la firma escrita con el nombre
+  // entero sigue siendo de esa sesión viva
+  const largo = 'fila-de-prueba-con-un-nombre-que-pasa-de-los-cuarenta';
+  const conLargo = buildOffice({
+    wip: wip([{ session: largo.slice(0, 39) + '…', status: 'busy', work: '9.2 · Otra', extra: { kind: 'pipeline', title: 'Otra', storyId: '9.2', current: 'implement' } }]),
+    board: buildBoard({ pendientes: [{ titulo: 'De la larga', estado: 'firma', quien: largo }] }),
+    nowMs: NOW,
+  }).data;
+  assert.deepStrictEqual(titles(conLargo, 'firma'), ['De la larga'], 'la sesión de nombre largo está viva: su firma se queda');
+  const hora = col(otra, 'sinEmpezar').tarjetas.find((t) => t.titulo === 'Con hora');
+  assert.ok(col(otra, 'sinEmpezar').tarjetas.some((t) => t.titulo === 'De Tero-2'), 'la de Tero-2 va a «Sin sesión»');
+  assert.ok(hora && /^estaba para /.test(hora.hora) && !hora.cls, `sin sesión no hay nadie atrasado: ${JSON.stringify(hora)}`);
 });

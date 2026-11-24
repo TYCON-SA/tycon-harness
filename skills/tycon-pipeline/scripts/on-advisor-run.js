@@ -298,15 +298,24 @@ function recordLaunch(o) {
   // Un revisor del set de la ronda abierta deja su renglón `launched`: sin él, el cierre no sabría que de este revisor
   // falta el reporte (lib/reported-criticals.js). `reviewers-run` anota el suyo al lanzar el proceso, y no pasa por acá.
   // El set sale de la marca `step5-start` de la ronda (sólo su posición y su `expected`, no su `iter`).
+  // Un revisor de código lanzado fuera del set con la ronda abierta (el que se lanza a mano para confirmar un arreglo)
+  // también: con la marca `outside_set`, su reporte se anota y lo que cierra cuenta. Sin él, su «cerrado» no contaba y
+  // el cierre pedía una exención del dueño por un revisor que sí corrió. Un agente que no revisa código no está en la lista.
   if (!o.extra || o.extra.launcher !== 'pipeline') {
     try {
       const parsed = fs.readFileSync(logPath, 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } });
       const idx = require('./lib/advisor-round.js').inicioDeLaRonda(parsed);
       const expected = idx >= 0 && Array.isArray(parsed[idx].expected) ? parsed[idx].expected : [];
-      if (expected.includes(advisor)) {
+      // los chequeadores de la historia (el validador, el de cobertura de criterios…) no cuentan fuera del set: se lanzan
+      // también para otra historia en medio de la vuelta, y su reporte no es de ésta. La exploración tampoco. Se descartan
+      // antes de cargar los paquetes
+      const ronda = require('./lib/advisor-round.js');
+      const fueraDelSet = idx >= 0 && !expected.includes(advisor) && !ronda.ADHOC.has(advisor) && !ronda.NO_REVISORES.has(advisor)
+        && require('./pipeline.js').codeReviewerNames(repo || process.cwd()).includes(advisor);
+      if (expected.includes(advisor) || fueraDelSet) {
         require('./lib/reported-criticals.js').recordLaunched({
           stateDir: stateDirOf(os.homedir()), sessionKey: sessionId, advisor, story, run, launcher: o.launcher || 'claude',
-          toolUseId: o.toolUseId || null,
+          toolUseId: o.toolUseId || null, outsideSet: fueraDelSet,
         });
       }
     } catch (e) {
@@ -427,27 +436,6 @@ function recordLaunch(o) {
   return { sessionId, cwd, logPath, repo, story, ok: !lineError, ...(lineError ? { error: lineError } : {}) };
 }
 
-/**
- * ¿El freno de lanzamiento de revisores está registrado en la configuración de Claude Code? Mira las cuatro: la de la
- * casa y la del repo, con sus `.local`. Un archivo que no se lee no lo registra.
- */
-function reviewerGateRegistered(cwd) {
-  const bases = [os.homedir(), ...(cwd ? [cwd] : [])];
-  for (const b of bases) {
-    for (const archivo of [path.join(b, '.claude', 'settings.json'), path.join(b, '.claude', 'settings.local.json')]) {
-      let conf;
-      try { conf = JSON.parse(fs.readFileSync(archivo, 'utf8')); } catch { continue; }
-      const grupos = conf && conf.hooks && Array.isArray(conf.hooks.PreToolUse) ? conf.hooks.PreToolUse : [];
-      for (const g of grupos) {
-        for (const h of (g && Array.isArray(g.hooks) ? g.hooks : [])) {
-          if (h && /reviewer-launch-gate\.js/.test(String(h.command || ''))) return true;
-        }
-      }
-    }
-  }
-  return false;
-}
-
 function main() {
   let event;
   try {
@@ -497,32 +485,6 @@ function main() {
     return;
   }
 
-  // ── El lanzamiento que niega el freno de revisores no se anota ────────────
-  // El freno (`reviewer-launch-gate.js`) y este registro corren en el mismo PreToolUse, en cualquier orden: deciden con
-  // la misma función sobre el mismo marcador. Un lanzamiento negado no corrió, y anotarlo lo haría contar en
-  // `check-count`, en el registro de autoría y en la foto de la vuelta. Se descuenta sólo con el freno registrado en la
-  // configuración: con los guiones nuevos y la configuración vieja nadie lo frena, y entonces se anota y se avisa.
-  // Codex no pasa por el freno; su lanzador llama a `recordLaunch` directo.
-  let notaFreno = null;
-  if (event.tool_name !== 'collaborationspawn_agent') {
-    try {
-      const d = require('./reviewer-launch-gate.js').decide(event);
-      if (d.deny) {
-        if (reviewerGateRegistered(event.cwd)) return;
-        notaFreno = 'el freno de lanzamiento de revisores (reviewer-launch-gate.js) no está registrado en la configuración de Claude Code: '
-          + `este revisor salió sin el pase adversarial en vuelo (${d.kind}). El perfil minimal no lo trae; en full, lo instala install-tycon-hooks.`;
-      }
-    } catch (err) {
-      // la consulta rota no cambia nada: se anota como siempre, y queda dicho que no se pudo consultar
-      try {
-        fs.appendFileSync(path.join(stateDirOf(os.homedir()), 'gates.log'), `${JSON.stringify({
-          ts: new Date().toISOString(), sessionId: event.session_id || null, name: 'reviewer-launch-gate-unreadable',
-          motivo: 'error', via: 'on-advisor-run', detail: String((err && err.message) || err).split('\n')[0].slice(0, 200),
-        })}\n`, 'utf8');
-      } catch { /* sin registro, se anota igual */ }
-    }
-  }
-
   // el registro de antes de este lanzamiento: dice si el pedido trae su lectura curada (y entonces no explora)
   const fileKey = sessionIdFileKey(event.session_id);
   let prevLines = [];
@@ -537,12 +499,7 @@ function main() {
   const { cwd, logPath } = recordLaunch({ sessionId: event.session_id, cwd: event.cwd, advisor, model, transcriptPath: event.transcript_path, prompt: ti.prompt, extra,
     toolUseId: typeof event.tool_use_id === 'string' ? event.tool_use_id : null,
     launcher: event.tool_name === 'collaborationspawn_agent' ? 'codex-agent' : 'claude' });
-  if (process.env.TYCON_SPAWN_GOVERNANCE === '0') {
-    if (notaFreno) {
-      try { process.stdout.write(JSON.stringify({ systemMessage: `[tycon-pipeline] lanzamiento \`${advisor}\`: ${notaFreno}` })); } catch { /* nunca romper el spawn */ }
-    }
-    return;
-  }
+  if (process.env.TYCON_SPAWN_GOVERNANCE === '0') return;
 
   // ── El techo de la organización ───────────────────────────────────────────
   // En Claude el techo lo cumple el modelo que da el pipeline; si un lanzamiento lo pasa (con `model:` o, sin él, el
@@ -567,9 +524,8 @@ function main() {
   }
 
   if (!ADHOC.has(advisor) || curated) {
-    const notas = [notaFreno, notaTecho].filter(Boolean);
-    if (notas.length) {
-      try { process.stdout.write(JSON.stringify({ systemMessage: `[tycon-pipeline] lanzamiento \`${advisor}\`: ${notas.join(' · ')}` })); } catch { /* nunca romper el spawn */ }
+    if (notaTecho) {
+      try { process.stdout.write(JSON.stringify({ systemMessage: `[tycon-pipeline] lanzamiento \`${advisor}\`: ${notaTecho}` })); } catch { /* nunca romper el spawn */ }
     }
     return;
   }

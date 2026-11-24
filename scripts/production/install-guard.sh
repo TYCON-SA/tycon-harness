@@ -168,7 +168,9 @@ try:
         for l in open(reg, encoding="utf-8", errors="replace"):
             try: r = json.loads(l)
             except Exception: continue
-            if isinstance(r, dict) and r.get("status") == "failed" and r.get("attempted_version") == version and r.get("reason") == motivo: sys.exit(0)
+            # sin versión no se repite: una bajada nueva que falla igual y temprano tiene que dejar su renglón, o el
+            # gancho de arranque la relanza en cada sesión (sólo la frena una falla posterior a la bajada)
+            if version and isinstance(r, dict) and r.get("status") == "failed" and r.get("attempted_version") == version and r.get("reason") == motivo: sys.exit(0)
     r = {"status": "failed", "attempted_version": version, "reason": motivo, "at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
     with open(reg, "a", encoding="utf-8") as f: f.write(json.dumps(r, ensure_ascii=False) + "\n")
 except OSError as e:

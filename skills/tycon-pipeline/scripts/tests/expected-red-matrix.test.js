@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 // expected-red-matrix.test.js — una ejecución que la persona cerró en deuda por criterios sin evidencia en vivo llega al
-// commit sólo por esos criterios: el control de la matriz al preparar el commit (DODRT-C6) acepta el rojo esperado de
+// commit sólo por esos criterios: el control de la matriz al preparar el pull request (DODRT-C6) acepta el rojo esperado de
 // `acmatrix` cuando cada criterio sin correr está cubierto por la lista de pruebas del rojo esperado, con una fecha de
 // vencimiento de hasta 14 días desde el cierre en deuda. `expect-red acmatrix` pide su propia firma, atada a la lista y la
 // fecha que mostró la ventana. Vencida, el aviso de arranque lo dice.
@@ -121,7 +121,7 @@ function entorno(opciones = {}) {
   return { home, repo, story, git, correr, leer, escribir, activo, arrancar, humo, dir, gates, firmar };
 }
 
-// Lleva la ejecución hasta «Preparar el commit», con «Probar en vivo» hecho: el freno que queda es el de la matriz.
+// Lleva la ejecución hasta «Preparar el pull request», con «Probar en vivo» hecho: el freno que queda es el de la matriz.
 const HECHOS = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'findings', 'live-check'];
 function hastaPrepararElCommit(E, sid, extra = {}) {
   const m = E.leer(sid);
@@ -219,6 +219,34 @@ test('T3 PrepareCommit_UnsignedNotVerifiable_Blocks @story-8.252 @ac-3 — un cr
   assert.match(salida(r), /imposibles-declarados[^\n]*#4/, salida(r));
   assert.match(salida(r), /la deuda no exime[^\n]*#4/, salida(r));
   assert.doesNotMatch(salida(r), /Sin evidencia en vivo:/);
+});
+
+// 🔴 Falla con: la exención de humo rechazada porque quedan criterios «sin correr» que el rojo esperado vigente de la deuda
+// ya cubre: la deuda pide la exención firmada y la exención pide que no quede nada sin correr, y se frenan entre sí.
+test('RuntimeWaiver_EnDeuda_LoQueCubreElRojoEsperadoNoCuentaComoSinCorrer — sólo los fuera de la deuda la rechazan', () => {
+  const E = entorno({ archivos: ['runtime_not_verifiable:', '  - ac: 4', '    reason: "el equipo de pruebas no existe"', '    covered_by: "T4"'] });
+  E.arrancar('s-rw');
+  hastaPrepararElCommit(E, 's-rw');
+  E.humo([4], { cmd: 'node --test tests/a.test.js' });
+  const waiver = () => E.correr('marker.js', ['runtime-waiver', E.story, '--acs', '4'], 's-rw');
+  // la deuda cubre los AC 1 a 3: la exención del 4 no se rechaza por ellos
+  enDeuda(E, 's-rw');
+  let r = waiver();
+  assert.doesNotMatch(salida(r), /SIN CORRER/, salida(r));
+  // la lista del rojo esperado deja afuera el AC 3: ése sí la rechaza, y sólo ése
+  enDeuda(E, 's-rw', { pruebas: ['T1', 'T2'] });
+  r = waiver();
+  assert.match(salida(r), /SIN CORRER[^\n]*: AC #3\. /, salida(r));
+  // vencida, no cubre nada
+  enDeuda(E, 's-rw', { hasta: fecha(-1) });
+  r = waiver();
+  assert.match(salida(r), /SIN CORRER[^\n]*: AC #1, #2, #3\. /, salida(r));
+  // sin deuda, igual que hoy
+  const m = E.leer('s-rw');
+  delete m.cierre; delete m.expectedRed;
+  E.escribir('s-rw', m);
+  r = waiver();
+  assert.match(salida(r), /SIN CORRER[^\n]*: AC #1, #2, #3\. /, salida(r));
 });
 
 test('T4 PrepareCommit_NoDebt_SameAsToday @story-8.252 @ac-4 — sin deuda, o en deuda sin rojo esperado de la matriz, frena con los mensajes de hoy', () => {
@@ -492,6 +520,23 @@ test('T12 ExpectRed_Acmatrix_Renew @story-8.252 @ac-7 — renovar dentro del top
   // en verde, el control queda verde
   E.correr('marker.js', ['run-check', 'acmatrix', '--', process.execPath, '-e', 'process.exit(0)'], 's-t12');
   assert.match(E.leer('s-t12').checks.acmatrix, /^green/);
+});
+
+test('ExpectRed_Acmatrix_RenewLogUnwritable_KeepsOldDate — si la renovación no se puede anotar, la fecha nueva no se guarda', () => {
+  const E = paraElRojoEsperado('s-t12b');
+  const T = ['T1', 'T2', 'T3'];
+  E.firmar('s-t12b', { pruebas: T, hasta: fecha(3) });
+  let r = expectRed(E, 's-t12b', T, fecha(3));
+  assert.strictEqual(r.status, 0, r.stderr);
+  // el gates.log no se deja escribir: es una carpeta
+  const gatesLog = path.join(E.dir(), 'gates.log');
+  fs.rmSync(gatesLog);
+  fs.mkdirSync(gatesLog);
+  E.firmar('s-t12b', { pruebas: T, hasta: fecha(10) });
+  r = expectRed(E, 's-t12b', T, fecha(10));
+  assert.notStrictEqual(r.status, 0, 'sin el renglón de la renovación, la renovación no se acepta');
+  assert.match(r.stderr, /gates\.log/);
+  assert.strictEqual(E.leer('s-t12b').expectedRed.acmatrix.until, fecha(3), 'el marcador sigue con la fecha de antes');
 });
 
 test('T8 Notice_ExpiredEvidenceDebt @story-8.252 @ac-8 — la deuda vencida con sus criterios sin correr se avisa al arrancar, con su sello propio', () => {

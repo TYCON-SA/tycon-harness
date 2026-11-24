@@ -1,4 +1,6 @@
 'use strict';
+// sin el perfil del equipo: la prueba fija su ambiente (lib/without-team-profile.js)
+require('./lib/without-team-profile.js');
 // office-site-link.test.js — what each machine sends to the organization site: its key, its enrollment request and the
 // same snapshot its local office shows. The toy site is a real server inside the test, with the copied WebSocket library;
 // every test runs with a toy HOME and kills the processes it starts.
@@ -311,6 +313,7 @@ function richFoto() {
   data.meta.sitio = 'https://acme.example';
   // la carga de la máquina que mide collect()
   data.meta.maquina = { memoria: 62, procesador: 35 };
+  data.meta.turnoPesado = [{ sesion: 'Sesión A', suites: 120 }];
   // lo que fitPhoto le agrega a una foto que achicó para el sitio
   data.meta.recorte = 'foto achicada para el sitio: no viajaron las notas de 3 tarjetas';
   // lo que collect() le agrega con la oficina viva, y lo que buildOffice arma con agentes corriendo o con un pedido
@@ -347,7 +350,7 @@ function LOOSE_TOKENS() {
 }
 
 test('T1 Foto_LaMismaQueLaOficinaLocal: viaja sólo lo que lee la página; la lista y la página se cruzan', () => {
-  const { pick, FIELDS } = fields();
+  const { pick, FIELDS, LOCAL_ONLY } = fields();
   const foto = richFoto();
   const src = fs.readFileSync(PAGE, 'utf8');
   const readBy = (vars, text = src) => (k) => new RegExp(`\\b(?:${vars})\\.${k}\\b`).test(text);
@@ -377,6 +380,8 @@ test('T1 Foto_LaMismaQueLaOficinaLocal: viaja sólo lo que lee la página; la li
     ['meta', foto.meta, FIELDS.meta.fields, (k) => k === 'sitio' || readBy('meta')(k) || readBy('m', fn('umbral') + src.split('\n').find((l) => l.startsWith('const puestos=')))(k)],
     // cada rack lee su número por su tipo: `m[r.tipo]`, con el tipo escrito al armar los racks
     ['maquina', foto.meta.maquina, FIELDS.meta.fields.maquina.fields, (k) => (src.split('\n').find((l) => l.startsWith('const racks=')) || '').includes(`"${k}"`)],
+    // el renglón del turno de tarea pesada en la etiqueta de los racks
+    ['turnoPesado', foto.meta.turnoPesado[0], FIELDS.meta.fields.turnoPesado.of.fields, readBy('x', fn('renglonTurno'))],
     ['rows', foto.rows[0], FIELDS.rows.of.fields, readBy('r')],
     ['tablero', foto.tablero, FIELDS.tablero.fields, readBy('t', fn('renderBoard'))],
   ];
@@ -384,7 +389,8 @@ test('T1 Foto_LaMismaQueLaOficinaLocal: viaja sólo lo que lee la página; la li
   for (const [name, record, listed, isRead] of sections) {
     for (const k of Object.keys(record)) {
       seen.push(k);
-      assert.strictEqual(k in listed, isRead(k), `${name}.${k}: la lista y lo que lee la página no coinciden`);
+      // lo que la página lee y es sólo de la oficina local (LOCAL_ONLY, con su motivo) no viaja
+      assert.strictEqual(k in listed, isRead(k) && !(`${name}.${k}` in LOCAL_ONLY), `${name}.${k}: la lista y lo que lee la página no coinciden`);
     }
     for (const k of Object.keys(listed)) {
       assert.ok(isRead(k), `${name}.${k} está en la lista y la página no lo lee`);
@@ -1216,8 +1222,10 @@ test('T40 Eventos_LlegaEnDosSegundos_SinProcesoNoFrena: el aviso llega; sin proc
     return { r, ms: Date.now() - t0 };
   };
   const sameAsWithProcess = ({ r }) => { assert.strictEqual(r.decision, asked.decision, JSON.stringify(r)); assert.deepStrictEqual(Object.keys(r).sort(), Object.keys(asked).sort()); };
-  const withoutProcess = ask('toolu_02');
-  sameAsWithProcess(withoutProcess);
+  // tres pedidos de cada lado y se comparan las medianas, como con el marcador: una sola muestra de cada lado da un
+  // rojo cuando la máquina está cargada justo en una de las dos
+  const windowTimes = (prefix) => [0, 1, 2].map((i) => { const x = ask(`${prefix}${i}`); sameAsWithProcess(x); return x.ms; });
+  const withoutWindow = windowTimes('toolu_02_');
   // un candado de un proceso que ya no está: el aviso se pierde en silencio
   fs.writeFileSync(lockOf(m), JSON.stringify({ pid: 999999, port: await freePort(), token: 'viejo', startedAt: '2026-06-01T12:00:00.000Z' }));
   const stale = [];
@@ -1226,9 +1234,8 @@ test('T40 Eventos_LlegaEnDosSegundos_SinProcesoNoFrena: el aviso llega; sin proc
   assert.ok(median(stale) - median(without) < 200, `sin proceso: ${without} ms, con candado viejo: ${stale} ms`);
   assert.strictEqual(lastStale.stderr, '', 'y se calla');
   assert.strictEqual(lastStale.stdout, lastWithout.stdout, 'el comando dice lo mismo');
-  const staleWindow = ask('toolu_03');
-  sameAsWithProcess(staleWindow);
-  assert.ok(staleWindow.ms - withoutProcess.ms < 200, `ventana sin proceso: ${withoutProcess.ms} ms, con candado viejo: ${staleWindow.ms} ms`);
+  const staleWindow = windowTimes('toolu_03_');
+  assert.ok(median(staleWindow) - median(withoutWindow) < 200, `ventana sin proceso: ${withoutWindow} ms, con candado viejo: ${staleWindow} ms`);
   const q2 = Date.now();
   assert.doesNotThrow(() => event.notify('s1', { home: m.home }));
   assert.ok(Date.now() - q2 < 200, 'con candado viejo, tampoco espera');
@@ -2430,4 +2437,99 @@ test('T14 Foto_NoLlevaLasFechas — @story-8.306 @ac-13', () => {
   assert.ok(!JSON.stringify(data).includes('teTocaDesde'), 'la foto no lo trae');
   data.meta.teTocaDesde = { Algo: '2026-06-01T08:00' };
   assert.ok(!JSON.stringify(pick(data, '/home/nadie')).includes('teTocaDesde'), 'al sitio tampoco');
+});
+
+test('T22 Sitio_NoRecibeLasAbiertas @story-8.313 @ac-19: kanban.abiertas no viaja, está en LOCAL_ONLY, y la foto no lleva la ruta de un repo', () => {
+  const { buildOffice } = office();
+  const { pick, LOCAL_ONLY } = fields();
+  const nowMs = Date.parse('2026-06-01T12:00:00Z');
+  const repo = `${USERS_HOME}/SourceCode/acme-historias`;
+  const proyecto = { nombre: 'acme', traidoAt: null, deTuCopia: false, sinLeer: 0, repos: ['github/acme/historias'], remoto: 'github/acme/historias', commit: 'c'.repeat(40), lugar: { repo, ref: 'origin/main', common: `${repo}/.git` }, historias: [], abiertas: [{ id: '1.1', archivo: 'story-1.1.md', estado: 'review' }] };
+  const projectStories = { snap: { at: new Date(nowMs - 60e3).toISOString(), proyectos: [proyecto], sinHistorias: [] }, runs: [], alive: new Set(), stopped: [], coordinator: { sid: 'coord', cwd: repo, remote: 'github/acme/historias' }, remoteOf: () => null, fetchedOf: () => null };
+  const { data } = buildOffice({ wip: { rows: [], details: [], extra: [], free: [], halfway: [], unreadable: [] }, nowMs, projectStories });
+  assert.ok(data.kanban.abiertas && data.kanban.abiertas.principal, 'la foto local la trae');
+  assert.ok(!JSON.stringify(data).includes(repo), 'la foto no lleva la ruta del repo');
+  const sent = pick(data, '/home/nadie');
+  assert.ok(!('abiertas' in sent.kanban), 'no viaja');
+  assert.ok(typeof LOCAL_ONLY['kanban.abiertas'] === 'string' && LOCAL_ONLY['kanban.abiertas'].length > 20, 'dice por qué no viaja');
+});
+
+test('Candado_UnSoloDueno — office.js pregunta por el proceso del candado con lockOwner de site-link.js, sin copia propia', async () => {
+  // la consulta al proceso del candado vive en un solo lugar
+  const fuente = fs.readFileSync(OFFICE, 'utf8');
+  assert.doesNotMatch(fuente, /\/health\?t=/, 'office.js no arma su propia consulta al proceso del candado');
+  const { answers } = require(OFFICE);
+  assert.strictEqual(typeof answers, 'function');
+  // sin candado, o con un pid que ya no vive: no contesta
+  assert.strictEqual(await answers(null), false);
+  assert.strictEqual(await answers({ pid: 2147483646, port: 1, token: 'x' }), false);
+  // un proceso que contesta con el pid del candado, sí; con otro pid, no
+  const toy = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ pid: Number(new URL(req.url, 'http://x').searchParams.get('pid')) || process.pid })); });
+  await new Promise((r) => toy.listen(0, '127.0.0.1', r));
+  const { port } = toy.address();
+  try {
+    assert.strictEqual(await answers({ pid: process.pid, port, token: 'x' }), true);
+    const otro = http.createServer((req, res) => { res.writeHead(200); res.end(JSON.stringify({ pid: process.pid + 1 })); });
+    await new Promise((r) => otro.listen(0, '127.0.0.1', r));
+    try { assert.strictEqual(await answers({ pid: process.pid, port: otro.address().port, token: 'x' }), false); } finally { otro.close(); }
+  } finally { toy.close(); }
+});
+
+test('Candado_RespuestaCortada_NoQuedaColgada — el puerto del candado manda las cabeceras y corta a mitad del cuerpo: cuenta como otra cosa', async () => {
+  const net = require('net');
+  const { lockOwner } = require(path.join(ROOT, 'scripts', 'tools', 'office', 'site-link.js'));
+  const { answers } = require(OFFICE);
+  const cortador = net.createServer((s) => {
+    s.once('data', () => { s.write('HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n{"pid":'); setTimeout(() => s.destroy(), 30); });
+  });
+  await new Promise((r) => cortador.listen(0, '127.0.0.1', r));
+  const lock = { pid: process.pid, port: cortador.address().port, token: 'x' };
+  // un vigilante: sin el arreglo, la pregunta no termina nunca
+  const conPlazo = (p) => Promise.race([p, new Promise((r) => setTimeout(() => r('colgada'), 3000))]);
+  try {
+    assert.strictEqual(await conPlazo(lockOwner(lock, 1000)), 'foreign');
+    assert.strictEqual(await conPlazo(answers(lock)), false);
+  } finally { cortador.close(); }
+});
+
+test('T352 SiteLink_LoQueTeNecesita_NoViajaAlSitio @story-8.234 @ac-40: lo que te necesita no viaja al sitio, y en el sitio la página no tiene la sección', () => {
+  const { pick } = fields();
+  const foto = { agents: [], items: [], kanban: { columnas: [] }, rows: [], free: [], unreadable: [], meta: { actualizado: '10:00', teToca: [], teNecesita: [{ clase: 'espera', que: 'la decisión del dueño', quien: 'Enzo', donde: 'acá' }] } };
+  const sale = pick(foto, '/home/prueba');
+  assert.ok(!('teNecesita' in (sale.meta || {})), JSON.stringify(sale.meta));
+  assert.ok(!JSON.stringify(sale).includes('la decisión del dueño'));
+  // la página la saca en el sitio (y en la demostración): ni la sección ni su título
+  const code = fs.readFileSync(path.join(ROOT, 'scripts', 'tools', 'office', 'page.js'), 'utf8');
+  assert.match(code, /function pintarNecesita\(\)\{[^\n]*\n\s*if\(CON_OFICINAS\)\{sec\.remove\(\);return\}/);
+});
+
+// SiteLink_LoQueTeNecesita_ElSitioNoLaTrae: el sitio arma su página con siteParts y no corre la parte de arriba de la página
+// local, así que la sección tiene que salir de lo que sirve: ni la sección, ni su título, ni su lista
+test('T357 SiteLink_LoQueTeNecesita_ElSitioNoLaTrae @story-8.234 @ac-40: el HTML de la pestaña «Oficinas» no trae la sección', () => {
+  const PARTS = require(path.join(ROOT, 'scripts', 'tools', 'office', 'page-parts.js'));
+  for (const source of ['site', 'demo']) {
+    const { body } = PARTS.siteParts({ source, urlOf: (m) => `/offices/${m}`, script: '/offices/page.js' });
+    assert.ok(!/id="necesita"|necesitaLista|Lo que te necesita/.test(body), `${source}: la sección sigue en lo que sirve el sitio`);
+    assert.match(body, /id="office"/, `${source}: lo demás de la página sigue`);
+  }
+  // la página local la sigue trayendo
+  assert.match(PARTS.renderPage({ data: {} }), /id="necesita"/);
+});
+
+test('T342 Foto_TurnoPesadoViajaAlSitio_Filtrado @story-8.234 @ac-19 — el turno de tarea pesada viaja con el nombre y las suites enteras, y el sitio lo vuelve a filtrar', () => {
+  const { pick, FIELDS } = fields();
+  const { limpiarFoto } = require(path.join(ROOT, 'scripts', 'site', 'live-hub.js'));
+  const sent = (turnoPesado) => pick({ meta: { quietMin: 30, turnoPesado } }, '/home/nadie').meta.turnoPesado;
+  assert.deepStrictEqual(Object.keys(FIELDS.meta.fields.turnoPesado.of.fields).sort(), ['sesion', 'suites'], 'en la lista, sólo el nombre y la cuenta');
+  assert.deepStrictEqual(sent([{ sesion: 'Sesión A', suites: 120 }, {}]), [{ sesion: 'Sesión A', suites: 120 }, {}]);
+  assert.deepStrictEqual(sent([{ sesion: 'Sesión A', suites: 0 }]), [{ sesion: 'Sesión A', suites: 0 }], 'cero vale');
+  // una cuenta que no es un entero de 0 o más no viaja; lo que no está en la lista tampoco (ni el proceso ni la sesión)
+  for (const bad of [-1, 2.5, '12', Infinity]) assert.deepStrictEqual(sent([{ sesion: 'Sesión A', suites: bad }]), [{ sesion: 'Sesión A' }], `cuenta ${JSON.stringify(bad)}`);
+  assert.deepStrictEqual(sent([{ sesion: 'Sesión A', suites: 3, pid: 4242, sid: 'abc', what: '3 suites de repo-de-prueba' }]), [{ sesion: 'Sesión A', suites: 3 }]);
+  // el sitio acepta la válida, y una forma mala la rechaza entera
+  const ok = limpiarFoto({ meta: { turnoPesado: [{ sesion: 'Sesión A', suites: 120 }, {}] } });
+  assert.strictEqual(ok.ok, true);
+  assert.deepStrictEqual(ok.foto.meta.turnoPesado, [{ sesion: 'Sesión A', suites: 120 }, {}]);
+  for (const bad of [-1, 2.5, '12']) assert.strictEqual(limpiarFoto({ meta: { turnoPesado: [{ suites: bad }] } }).ok, false, `el sitio rechaza ${JSON.stringify(bad)}`);
+  assert.strictEqual(limpiarFoto({ meta: { turnoPesado: [{ sesion: 7 }] } }).ok, false, 'un nombre que no es texto');
 });

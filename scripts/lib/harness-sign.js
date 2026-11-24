@@ -17,8 +17,11 @@
  *     palabras al azar de la ventana nueva);
  *   · `--commit` es para el control de los servidores de producción, que corre adentro del commit: vale para el próximo
  *     commit en el repo de la carpeta donde se firma (`consumirCommit`).
- * El pedido y el permiso viven en `emergency/` dentro de la carpeta de estado de la casa de la cuenta. Los dos vencen a
- * los 30 minutos y se usan una sola vez: un número usado o vencido no sirve.
+ * El permiso vive en `emergency/` dentro de la carpeta de estado de la casa de la cuenta: es lo que autoriza, y `HOME` no
+ * lo mueve. El pedido no autoriza nada y vive en `emergency/pedidos/` de la casa de `HOME`, la de quien corre el freno: en
+ * el uso normal es la misma casa, y una prueba con su propia casa no escribe en la de la cuenta. Un pedido en otra casa
+ * no lo ve la terminal de la persona: el comando sigue frenado. Los dos vencen a los 30 minutos y se usan una sola vez:
+ * un número usado o vencido no sirve.
  *
  * `acknowledge` es la constancia de una persona pedida desde Codex (`harness.js sign acknowledge --session <sesión>
  * --seal <sello> --text <texto>`): la conversación de Codex no distingue lo que tipeó la persona de lo que mete un
@@ -63,7 +66,8 @@ const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return path
 const vigente = (ts, ahora) => { const edad = ahora - Date.parse(ts); return edad >= 0 && edad <= VENCE_MIN * 60000; };
 
 function carpeta(casa) { return path.join(stateDir(casa === undefined ? casaDeLaCuenta() : casa), 'emergency'); }
-const carpetaPedidos = (casa) => path.join(carpeta(casa), 'pedidos');
+// el pedido, en la casa de HOME (sin casa dada): no autoriza nada, y el permiso sigue en la de la cuenta
+const carpetaPedidos = (casa) => path.join(stateDir(casa === undefined ? os.homedir() : casa), 'emergency', 'pedidos');
 // las marcas de la constancia de Codex: las escribe sólo `acknowledge`, y los frenos de escritura las cuidan como al
 // registro de aprobaciones (story-gate.js, on-bash-write-gate.js)
 function carpetaConstancias(casa) { return path.join(stateDir(casa === undefined ? casaDeLaCuenta() : casa), 'terminal-acknowledgments'); }
@@ -201,9 +205,12 @@ function mover(archivo, como, ahora) {
   try { fs.renameSync(archivo, `${archivo}.${como}-${ahora}`); return true; } catch (_) { return false; }
 }
 
-/** Borra lo de más de un día en las tres carpetas: pedidos, permisos y marcas de constancias, ya vencidos. Nunca falla. */
-function barrer(casa, ahora) {
-  for (const dir of [carpeta(casa), carpetaPedidos(casa), carpetaConstancias(casa)]) {
+/**
+ * Borra lo de más de un día en las tres carpetas (pedidos, permisos y marcas de constancias, ya vencidos), o en las de
+ * `dirs`. Nunca falla.
+ */
+function barrer(casa, ahora, dirs = [carpeta(casa), carpetaPedidos(casa), carpetaConstancias(casa)]) {
+  for (const dir of dirs) {
     let archivos = [];
     try { archivos = fs.readdirSync(dir); } catch (_) { continue; }
     for (const f of archivos) {
@@ -220,8 +227,9 @@ function barrer(casa, ahora) {
 function pedir({ casa, comando, ahora = Date.now() } = {}) {
   try {
     if (comando == null || comando === '') return { ok: false, error: 'sin comando' };
-    barrer(casa, Date.now());
+    // sólo la carpeta de los pedidos: el freno no toca la de los permisos
     const dir = carpetaPedidos(casa);
+    barrer(casa, Date.now(), [dir]);
     const huella = sha256(comando);
     let archivos = [];
     try { archivos = fs.readdirSync(dir).filter((f) => NUMERO.test(f.replace(/\.json$/, '')) && f.endsWith('.json')); } catch (_) { archivos = []; }
@@ -258,8 +266,10 @@ function pedidoVigente({ casa, numero, ahora }) {
  * `via`: por dónde llega el pedido; en esta etapa, sólo `terminal` firma.
  * `argv`: el comando entero (el guion y sus argumentos), para correrlo otra vez en la ventana nueva de Windows.
  * `origen` (o `arbol`, el de los procesos): quién lanzó el comando; las pruebas lo pasan.
+ * `casaDelPedido`: dónde buscar el pedido, si no es `casa` (la prueba del freno real, que corre con su propia casa y deja
+ * el permiso en la de la cuenta).
  */
-function sign({ id, reason = '', request = null, commit = false, target = null, orderedBy = null, signer, via = 'terminal', tty, append, levels = {}, casa, cwd = process.cwd(), ahora = Date.now(), argv = process.argv.slice(1), origen, arbol } = {}) {
+function sign({ id, reason = '', request = null, commit = false, target = null, orderedBy = null, signer, via = 'terminal', tty, append, levels = {}, casa, casaDelPedido = casa, cwd = process.cwd(), ahora = Date.now(), argv = process.argv.slice(1), origen, arbol } = {}) {
   const no = (code, ...lines) => ({ code, lines });
   const e = entrada(id);
   if (!e) return no(2, `harness sign: «${id}» no es un id del catálogo de firmas (guides/firmas-del-arnes.md)`);
@@ -281,7 +291,7 @@ function sign({ id, reason = '', request = null, commit = false, target = null, 
         '   harness sign emergency --reason "<por qué>" --request <número>');
     }
     if (request) {
-      pedido = pedidoVigente({ casa, numero: request, ahora });
+      pedido = pedidoVigente({ casa: casaDelPedido, numero: request, ahora });
       if (!pedido.ok) return no(2, `harness sign: ${pedido.error}`);
       comando = pedido.pedido.comando;
     } else comando = COMMIT;
@@ -460,7 +470,7 @@ function permisos(casa) {
   try { return fs.readdirSync(carpeta(casa)).filter((f) => f.endsWith('.json')).map((f) => leer(path.join(carpeta(casa), f))).filter(Boolean); } catch (_) { return []; }
 }
 
-module.exports = { EMERGENCIA, VENCE_MIN, carpeta, entrada, nivelEfectivo, sign, pedir, consumir, consumirCommit, hayPermisoDeCommit, permisos, esCommit, origenDeVerdad, aLaVista,
+module.exports = { EMERGENCIA, VENCE_MIN, carpeta, carpetaPedidos, entrada, nivelEfectivo, sign, pedir, consumir, consumirCommit, hayPermisoDeCommit, permisos, esCommit, origenDeVerdad, aLaVista,
   acknowledge, carpetaConstancias, marcaDeConstancia, esCodex };
 
 if (require.main === module) {
@@ -468,6 +478,7 @@ if (require.main === module) {
   if (argv[0] === 'consume') {
     let comando = '';
     try { comando = fs.readFileSync(0, 'utf8'); } catch (_) { comando = ''; }
+    // el permiso, de la casa de la cuenta; el pedido, a la de HOME
     const r = consumir({ comando });
     if (r && r.ok) { process.stdout.write(`${r.permiso.motivo}\n`); process.exitCode = 0; } else {
       const p = pedir({ comando });

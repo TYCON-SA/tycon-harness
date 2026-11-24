@@ -60,10 +60,14 @@ const { stateDir, claudeDir } = require(path.join(ROOT, 'skills', 'tycon-pipelin
 const DEBOUNCE_MS = 250;
 const QUERY_TTL_MS = 60 * 1000;
 const PR_PHOTO_MS = 3 * 60 * 1000;
+// la carga de la máquina se pone al día sola en los racks: a lo sumo una foto cada medio minuto por ella
+const MACHINE_PHOTO_MS = 30 * 1000;
 const TOPICS_MS = 60 * 1000;
 const HALFWAY_MS = 15 * 60 * 1000;
 // las historias de los proyectos de la persona se leen de fondo, a lo sumo una vez cada media hora
 const PROJECTS_MS = 30 * 60 * 1000;
+// y cada minuto se mira si la rama principal de algún proyecto se movió: si sí, se relee sin esperar la media hora
+const PROJECTS_CHECK_MS = 60 * 1000;
 const HALFWAY_OPEN_FRESH_MS = 60 * 1000;
 const MAX_PAYLOAD = 1024;
 const MAX_EVENT_BYTES = 256;
@@ -115,38 +119,68 @@ function watchedDirs(home, sdir) {
 const BOARD_OWN = /^(tablero\.lock|tablero-(numeros|hechos|huella)\.json(\.bak)?)$|\.tmp$/;
 const ignoredChange = (name) => name != null && BOARD_OWN.test(String(name));
 
+// Lo que decide si una foto es nueva sin mirar la carga de la máquina (`meta.maquina`), que cambia en cada lectura.
+const photoKey = (d) => JSON.stringify(d && d.meta && d.meta.maquina ? { ...d, meta: { ...d.meta, maquina: undefined } } : d);
+const loadOf = (d) => JSON.stringify((d && d.meta && d.meta.maquina) || null);
+/**
+ * ¿Sale esta foto? Sale si cambió algo de la oficina. Si sólo cambió la carga de la máquina, sale cuando pasaron
+ * `everyMs` desde la última foto mandada: los racks se ponen al día solos sin mandar una foto por cada lectura. Una
+ * foto igual, carga incluida, no sale nunca. Las dos horas son las del comienzo de cada lectura, y hay un margen de un
+ * décimo del intervalo (un segundo como mucho): una lectura que tarda menos que la anterior no pierde su turno y deja
+ * los racks un intervalo más sin moverse.
+ */
+function photoDue({ json, lastJson, data, last, now, lastSentAt, everyMs }) {
+  if (json !== lastJson) return true;
+  return loadOf(data) !== loadOf(last) && now - lastSentAt >= everyMs - Math.min(1000, everyMs / 10);
+}
+
 /**
  * Vigila cada carpeta; la que todavía no existe se espera desde la de arriba, y la que no se puede vigilar se anota en
- * `notes`. Devuelve una función que deja de vigilar.
+ * `notes`. Una ruta que se borra o se reemplaza por renombre (la escritura atómica de `gates.log`) deja al vigilante
+ * sobre lo que ya no está, sin error: ante un `rename` que cambió lo que hay en la ruta, se la vuelve a vigilar, o se la
+ * espera desde la de arriba. Devuelve una función que deja de vigilar.
  */
 function watchAll(dirs, onChange, notes) {
-  const watchers = [];
+  const watchers = new Set();
+  let stopped = false;
   const failOn = process.env.TYCON_OFFICE_TEST === '1' ? process.env.TYCON_OFFICE_WATCH_FAIL : null;
   const note = (dir, e) => notes.push(`no se vigila ${dir}: ${e.message || e}; los cambios ahí llegan al reabrir`);
+  const inodeOf = (p) => { try { return fs.statSync(p).ino; } catch { return null; } };
+  const drop = (w) => { watchers.delete(w); try { w.close(); } catch { /* ya cerrado */ } };
   const watchDir = (dir) => {
     try {
       if (failOn && path.basename(dir) === failOn) throw new Error('falla de prueba');
-      const w = fs.watch(dir, (ev, name) => { if (!ignoredChange(name)) onChange(); });
-      w.on('error', (e) => { note(dir, e); try { w.close(); } catch { /* ya cerrado */ } onChange(); });
-      watchers.push(w);
+      const ino = inodeOf(dir);
+      const w = fs.watch(dir, (ev, name) => {
+        if (ev === 'rename' && inodeOf(dir) !== ino) {
+          drop(w);
+          if (!stopped) arm(dir);
+          onChange();
+          return;
+        }
+        if (!ignoredChange(name)) onChange();
+      });
+      w.on('error', (e) => { note(dir, e); drop(w); onChange(); });
+      watchers.add(w);
     } catch (e) { note(dir, e); }
   };
-  for (const dir of dirs) {
-    if (fs.existsSync(dir)) { watchDir(dir); continue; }
+  function arm(dir) {
+    if (fs.existsSync(dir)) { watchDir(dir); return; }
     const parent = path.dirname(dir);
     try {
       const w = fs.watch(parent, (ev, name) => {
         if (name && name !== path.basename(dir)) return;
         if (!fs.existsSync(dir)) return;
-        try { w.close(); } catch { /* ya cerrado */ }
+        drop(w);
         watchDir(dir);
         onChange();
       });
       w.on('error', (e) => { note(dir, e); onChange(); });
-      watchers.push(w);
+      watchers.add(w);
     } catch (e) { note(dir, e); }
   }
-  return () => { for (const w of watchers) { try { w.close(); } catch { /* ya cerrado */ } } };
+  for (const dir of dirs) arm(dir);
+  return () => { stopped = true; for (const w of watchers) { try { w.close(); } catch { /* ya cerrado */ } } watchers.clear(); };
 }
 
 const hhmm = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
@@ -297,6 +331,8 @@ async function serve() {
   let link = siteAddress ? createLink({ site: siteAddress, sdir, home, onCharlaReady: charlaReady }) : null;
   let limits = lifeLimits(Boolean(link));
   let rereadNext = false;
+  // cuántas veces cambió el enlace: una foto pedida antes de un cambio leyó la dirección vieja y no sale
+  let linkTurn = 0;
   let pendingCharlas = null;
   let charlaTimer = null;
   const deliverCharlas = () => {
@@ -344,25 +380,39 @@ async function serve() {
   let idle = null;
   let cap = null;
   let done = false;
-  const broadcast = () => {
-    const msg = JSON.stringify({ type: 'foto', data: last });
+  // cuándo empezó a leerse la última foto mandada (la primera también cuenta): la mide `photoDue`
+  let lastSentAt = 0;
+  const broadcast = (readAt = Date.now()) => {
+    // en las pruebas, la hora en que empezó a leerse: el intervalo de la carga se mide ahí, no a la llegada, que corre
+    // con lo que tardó cada lectura
+    const msg = JSON.stringify({ type: 'foto', data: last, ...(testing ? { leidaEn: readAt } : {}) });
     for (const c of clients) if (c.readyState === WebSocket.OPEN) c.send(msg);
     if (link) link.update(last);
     counters.sends += 1;
+    lastSentAt = readAt;
+  };
+  // en las pruebas, una carga que cambia en cada lectura: la de verdad, en números enteros, puede quedar igual
+  let testLoad = 0;
+  const withTestLoad = (d) => {
+    if (!testing || process.env.TYCON_OFFICE_TEST_LOAD !== 'changes' || !d || !d.meta) return d;
+    testLoad += 1;
+    return { ...d, meta: { ...d.meta, maquina: { memoria: testLoad % 100, procesador: 50 } } };
   };
   let pending = null;
   let running = false;
   let again = false;
-  // Lo que decide si una foto es nueva. La carga de la máquina (`meta.maquina`) no cuenta: cambia en cada lectura, y una
-  // foto que sólo cambia en ella no sale; los racks se ponen al día con la próxima novedad de la oficina.
-  const photoKey = (d) => JSON.stringify(d && d.meta && d.meta.maquina ? { ...d, meta: { ...d.meta, maquina: undefined } } : d);
+  const machineEveryMs = numEnv('TYCON_OFFICE_MACHINE_PHOTO_MS', MACHINE_PHOTO_MS);
   const recompute = async () => {
     if (running) { again = true; return; }
     running = true;
     try {
-      const data = await snapshot();
+      const turn = linkTurn;
+      const readAt = Date.now();
+      const data = withTestLoad(await snapshot());
+      // el enlace cambió mientras se armaba: esta foto nombra el sitio de antes; se arma otra con la dirección nueva
+      if (turn !== linkTurn) { pendingCharlas = null; again = true; return; }
       const json = photoKey(data);
-      if (json !== lastJson) { last = data; lastJson = json; broadcast(); }
+      if (photoDue({ json, lastJson, data, last, now: readAt, lastSentAt, everyMs: machineEveryMs })) { last = data; lastJson = json; broadcast(readAt); }
       deliverCharlas();
     } catch (e) {
       // la página se entera con la foto que tiene, más el aviso (uno solo); la próxima foto buena lo saca
@@ -399,6 +449,16 @@ async function serve() {
     child.on('exit', () => { prRunning = false; schedule(); });
     child.unref();
   };
+  // la carga de la máquina, al día aunque la oficina no tenga novedades: una foto nueva cada `machineEveryMs` mientras
+  // alguien mira (una página, o el sitio con sesiones vivas). Sale sólo si la carga cambió (photoDue)
+  let machineTimer = null;
+  const machineTick = () => {
+    if (done || !(clients.size || (link && liveSessions().length))) { machineTimer = null; return; }
+    schedule();
+    machineTimer = setTimeout(machineTick, machineEveryMs);
+    machineTimer.unref();
+  };
+  const startMachineTicks = () => { if (!machineTimer && !done) { machineTimer = setTimeout(machineTick, machineEveryMs); machineTimer.unref(); } };
   const prTick = () => {
     if (!clients.size) { prTimer = null; return; }
     const age = prPhotoAge();
@@ -414,11 +474,13 @@ async function serve() {
   let projectsTimer = null;
   let projectsRunning = false;
   const projectsAge = () => { try { return Date.now() - fs.statSync(path.join(sdir, 'office', 'project-stories.json')).mtimeMs; } catch { return Infinity; } };
-  const readProjects = () => {
+  // `mode`: la lectura entera de cada media hora (`--refresh`) o el control de cada minuto (`--refresh-if-moved`); las dos
+  // comparten `projectsRunning`, así que nunca corren a la vez, y el mismo aviso si se caen
+  const readProjects = (mode = '--refresh') => {
     if (projectsRunning || !projectsReader) return;
     projectsRunning = true;
     counters.projectReads += 1;
-    const child = spawn(process.execPath, [projectsReader, '--refresh'], { stdio: 'ignore', windowsHide: true, timeout: 5 * 60 * 1000 });
+    const child = spawn(process.execPath, [projectsReader, mode], { stdio: 'ignore', windowsHide: true, timeout: 5 * 60 * 1000 });
     child.on('error', (e) => { projectsRunning = false; noteOnce(`las historias de tus proyectos no se pudieron leer: ${e.message}`); });
     // un lector que se cae, o al que corta el tope, se dice: si no, la oficina mostraría la lectura vieja sin motivo
     child.on('exit', (code, signal) => {
@@ -434,6 +496,15 @@ async function serve() {
     if (age >= projectsEveryMs) readProjects();
     projectsTimer = setTimeout(projectsTick, age >= projectsEveryMs ? projectsEveryMs : projectsEveryMs - age);
     projectsTimer.unref();
+  };
+  // el control de cada minuto: sólo con alguien mirando, y sin lanzar otro si hay una lectura en curso
+  const projectsCheckMs = numEnv('TYCON_OFFICE_PROJECTS_CHECK_MS', PROJECTS_CHECK_MS);
+  let projectsCheckTimer = null;
+  const projectsCheckTick = () => {
+    if (!clients.size) { projectsCheckTimer = null; return; }
+    readProjects('--refresh-if-moved');
+    projectsCheckTimer = setTimeout(projectsCheckTick, projectsCheckMs);
+    projectsCheckTimer.unref();
   };
 
   // el tema de los trabajos nuevos, de fondo y a lo sumo una vez por minuto: armar la foto no espera al modelo. Sólo con una
@@ -614,7 +685,10 @@ async function serve() {
       clients.add(ws);
       reviewLife();
       if (!prTimer) prTick();
+      startMachineTicks();
       if (!projectsTimer) projectsTick();
+      // el primer control, a su intervalo: al abrir ya corre la lectura de cada media hora si hace falta
+      if (!projectsCheckTimer) { projectsCheckTimer = setTimeout(projectsCheckTick, projectsCheckMs); projectsCheckTimer.unref(); }
       if (!topicsTimer) topicsTick();
       halfwayOnOpen();
       // el canal de vuelta está cerrado: un mensaje cierra la conexión sin leerse
@@ -622,7 +696,7 @@ async function serve() {
       // un mensaje de más de 1 KB lo corta la librería sola, con 1009, antes de leerlo
       // sólo el corte por tamaño es un mensaje de la página; un corte de red no lo es (lo dice el `close`)
       ws.on('error', (e) => { if (e && e.code === 'WS_ERR_UNSUPPORTED_MESSAGE_LENGTH') noteOnce(BACK_CHANNEL); });
-      ws.on('close', () => { clients.delete(ws); reviewLife(); if (!clients.size) { clearTimeout(prTimer); prTimer = null; clearTimeout(projectsTimer); projectsTimer = null; clearTimeout(topicsTimer); topicsTimer = null; clearTimeout(halfwayTimer); halfwayTimer = null; } });
+      ws.on('close', () => { clients.delete(ws); reviewLife(); if (!clients.size) { clearTimeout(prTimer); prTimer = null; clearTimeout(projectsTimer); projectsTimer = null; clearTimeout(projectsCheckTimer); projectsCheckTimer = null; clearTimeout(topicsTimer); topicsTimer = null; clearTimeout(halfwayTimer); halfwayTimer = null; } });
       ready.then(() => { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'foto', data: last })); })
         .catch((e) => { noteOnce(`una página no recibió la foto: ${e.message}`); try { ws.close(1011, 'sin foto'); } catch { /* ya cerrada */ } });
     });
@@ -653,7 +727,7 @@ async function serve() {
   function shutdown() {
     if (done) return;
     done = true;
-    clearTimeout(idle); clearTimeout(cap); clearTimeout(pending); clearTimeout(settle); clearTimeout(prTimer); clearTimeout(topicsTimer); clearTimeout(halfwayTimer); clearInterval(sessionCheck);
+    clearTimeout(idle); clearTimeout(cap); clearTimeout(pending); clearTimeout(settle); clearTimeout(prTimer); clearTimeout(machineTimer); clearTimeout(topicsTimer); clearTimeout(halfwayTimer); clearInterval(sessionCheck);
     unwatch();
     messages.stop();
     if (link) link.stop();
@@ -691,6 +765,8 @@ async function serve() {
       const now = liveSessions().join('\n');
       if (now !== seen) { seen = now; schedule(); }
       reviewLife();
+      // el reloj de la carga se paró si se fueron todas las sesiones: vuelve con la primera que aparece
+      if (now) startMachineTicks();
     }, numEnv('TYCON_OFFICE_SESSION_CHECK_MS', SESSION_CHECK_MS));
   }
   // el tope cuenta desde que arrancó el proceso, con los límites del enlace de ahora
@@ -721,8 +797,9 @@ async function serve() {
     // la foto que sigue relee la dirección (`meta.sitio`) y sale entera, aunque lo demás no haya cambiado: el sitio nuevo
     // no recibe la vieja, que nombra al otro. Antes de la primera foto, el enlace lo arranca el arranque
     rereadNext = true;
+    linkTurn += 1;
     lastJson = null;
-    if (link && last) link.start();
+    if (link && last) { link.start(); startMachineTicks(); }
   }
   reviewLife();
   armCap();
@@ -732,7 +809,8 @@ async function serve() {
   // mientras se arma la primera foto, un cambio deja pedida otra (`again`): se calcula apenas termina
   running = true;
   try {
-    last = await snapshot();
+    lastSentAt = Date.now();
+    last = withTestLoad(await snapshot());
     lastJson = photoKey(last);
   } catch (e) {
     unwatch();
@@ -744,7 +822,7 @@ async function serve() {
   }
   markReady();
   if (lockLost()) { shutdown(); return; }
-  if (link) { link.update(last); link.start(); }
+  if (link) { link.update(last); link.start(); startMachineTicks(); }
   if (again) { again = false; schedule(); }
 }
 
@@ -763,4 +841,4 @@ else if (require.main === module) {
   });
 }
 
-module.exports = { ignoredChange, cachedQuery, watchedDirs, watchAll, lockPathOf, officeDirOf, lifeLimits, forSite, changedTalks };
+module.exports = { photoDue, MACHINE_PHOTO_MS, ignoredChange, cachedQuery, watchedDirs, watchAll, lockPathOf, officeDirOf, lifeLimits, forSite, changedTalks };

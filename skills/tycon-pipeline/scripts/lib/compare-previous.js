@@ -2,7 +2,7 @@
 /**
  * El humo comparado (historia 8.167): un comando que el cambio toca se corre con `main` y con el cambio, aislados, y se
  * comparan su código de salida y su salida normalizada. Deja el resultado en `compare-previous.json` de la carpeta de la
- * corrida; «Preparar el commit» frena por una diferencia que la historia no declara.
+ * corrida; «Preparar el pull request» frena por una diferencia que la historia no declara.
  *
  * Cómo se aísla cada corrida:
  *   - Dos clones locales del repo del comando, sin remoto (no un worktree: compartiría el `.git` del repo real). El de
@@ -149,11 +149,19 @@ function encierro(env = process.env) {
   return { nombre: 'ninguno', corta: 'nada: corren con las otras capas' };
 }
 const sbplString = (s) => `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+const subpaths = (rutas) => [...new Set(rutas.flatMap((p) => [p, real(p)]))].map((p) => `(subpath ${sbplString(p)})`).join(' ');
 // `red`: deja la red abierta (la corrida aislada de un humo, historia 8.314: sus guiones hablan con localhost); la
-// comparación la corta
-function perfilSandbox(escribibles, { red = false } = {}) {
-  const permitidas = [...new Set(escribibles.flatMap((p) => [p, real(p)]))].map((p) => `(subpath ${sbplString(p)})`).join(' ');
-  return `(version 1)(allow default)${red ? '' : '(deny network*)'}(deny file-write* (require-not (require-any ${permitidas} (subpath "/dev"))))`;
+// comparación la corta.
+// `fatales` y `mensaje`: una escritura negada adentro de esas carpetas mata al proceso, y el sistema la anota en su
+// registro con `mensaje`. Una negación común sólo queda anotada para los programas del sistema (bash, touch), nunca para
+// node; la que mata, para todos
+function perfilSandbox(escribibles, { red = false, fatales = [], mensaje = null } = {}) {
+  const permitidas = subpaths(escribibles);
+  const base = `(version 1)(allow default)${red ? '' : '(deny network*)'}(deny file-write* (require-not (require-any ${permitidas} (subpath "/dev"))))`;
+  if (!fatales.length) return base;
+  // la regla que mata va última: entre las que coinciden manda la última
+  return `${base}(deny file-write* (require-all (require-any ${subpaths(fatales)}) (require-not (require-any ${permitidas} (subpath "/dev"))))`
+    + ` (with send-signal SIGKILL)${mensaje ? ` (with message ${sbplString(mensaje)})` : ''})`;
 }
 
 /** El git de verdad, para los reemplazos: el primero del PATH que no es el de compare-shims. */
@@ -250,7 +258,7 @@ function clones({ repo, stateDir, sid, mainHead }) {
  * el orden en que el programa las escribe. Con dos tubos el orden dependería de cuál lee primero el padre, y el mismo
  * código daría «distinto» de una corrida a otra.
  */
-function correr({ argv, cwd, env, enc, perfil, tiempoMs, salidaF }) {
+function correr({ argv, cwd, env, enc, perfil, tiempoMs, salidaF, entradaF }) {
   return new Promise((resolve) => {
     const [cmd, ...args] = argv;
     const t0 = Date.now();
@@ -260,11 +268,15 @@ function correr({ argv, cwd, env, enc, perfil, tiempoMs, salidaF }) {
     let tope = false;
     let hijo;
     let fd;
+    let fdEntrada;
     try {
       fd = fs.openSync(salidaF, 'w');
-      hijo = spawn(lanzar[0], lanzar[1], { windowsHide: true, cwd, env, detached: true, stdio: ['ignore', fd, fd] });
+      // la misma entrada que recibió el humo de siempre (un gancho lee su evento por ahí), abierta de nuevo para cada lado
+      if (entradaF) fdEntrada = fs.openSync(entradaF, 'r');
+      hijo = spawn(lanzar[0], lanzar[1], { windowsHide: true, cwd, env, detached: true, stdio: [fdEntrada === undefined ? 'ignore' : fdEntrada, fd, fd] });
     } catch (e) {
       if (fd !== undefined) try { fs.closeSync(fd); } catch (_) { /* ya cerrado */ }
+      if (fdEntrada !== undefined) try { fs.closeSync(fdEntrada); } catch (_) { /* ya cerrado */ }
       resolve({ exit: 127, salida: `no se pudo correr: ${e.message}`, ms: Date.now() - t0, tope: false });
       return;
     }
@@ -276,6 +288,7 @@ function correr({ argv, cwd, env, enc, perfil, tiempoMs, salidaF }) {
       clearTimeout(blando);
       if (duro) clearTimeout(duro);
       try { fs.closeSync(fd); } catch (_) { /* ya cerrado */ }
+      if (fdEntrada !== undefined) try { fs.closeSync(fdEntrada); } catch (_) { /* ya cerrado */ }
       let salida = '';
       let cortada = false;
       try {
@@ -444,7 +457,8 @@ function humosQueCuentan(previas, tope = Infinity) {
  * registro), `cwd` la carpeta desde donde corre el humo. Anota la entrada en el informe de `runDir` y la devuelve:
  * `{ resultado: 'igual' | 'distinto' | 'nuevo' | 'no-comparado', motivo?, main?, cambio?, diff?, encierro, ... }`.
  */
-async function compararHumo({ argv, cmd, cwd = process.cwd(), runDir, sid, stateDir, covers = [], env = process.env }) {
+// `entradaF`: el archivo con la entrada que recibió el humo de siempre; cada lado la lee desde el principio
+async function compararHumo({ argv, cmd, cwd = process.cwd(), runDir, sid, stateDir, covers = [], env = process.env, entradaF }) {
   const t0 = Date.now();
   const tp = topes(env);
   const enc = encierro(env);
@@ -504,7 +518,7 @@ async function compararHumo({ argv, cmd, cwd = process.cwd(), runDir, sid, state
       argv: argv.map((a) => String(a).split('{raiz}').join(raizClon)),
       cwd: fs.existsSync(dirTrabajo) ? dirTrabajo : raizClon,
       env: { ...entornoDeCorrida({ casa, marcas, gitReal }), TMPDIR: temporal, TMP: temporal, TEMP: temporal },
-      enc, perfil, tiempoMs: Math.min(tp.corridaMs, restante), salidaF: path.join(casa, 'salida.txt'),
+      enc, perfil, tiempoMs: Math.min(tp.corridaMs, restante), salidaF: path.join(casa, 'salida.txt'), entradaF,
     });
     let marcasTxt = '';
     try { marcasTxt = fs.readFileSync(marcas, 'utf8').trim(); } catch (_) { marcasTxt = ''; }
@@ -566,22 +580,73 @@ function rutasAModificar(storyText) {
   }).filter((r) => r && !r.endsWith('/')))];
 }
 
+// El sufijo de una copia aparte (`<Repo>--wt-<nombre>`, la que arma scripts/tools/tycon-worktree.sh), o null.
+const SUFIJO_DE_COPIA = /--wt-([A-Za-z0-9._-]+)$/;
+const sufijoDe = (raiz) => { const m = raiz ? SUFIJO_DE_COPIA.exec(path.basename(raiz)) : null; return m ? m[1] : null; };
+// La carpeta `.git` común de un repo (la misma para el repo y todas sus copias), o null.
+function gitComun(dir) {
+  const r = git(['-C', dir, 'rev-parse', '--git-common-dir']);
+  return r.ok && r.out ? real(path.resolve(dir, r.out)) : null;
+}
+
+/**
+ * Los repos de la corrida que son el hermano `nombre`: el que se llama así y, si la historia trabaja en una copia
+ * `--wt-<s>`, la copia `<nombre>--wt-<s>` que es de verdad una copia del repo `<nombre>` de al lado (el mismo `.git`). Una
+ * carpeta con el sufijo que es otro repo, o la copia del hermano con otro sufijo, no es el hermano: lo que la historia
+ * cambió no está ahí, y contarla podría dejar sin comparar un comando que sí cambió.
+ */
+function hermanoDeLaCorrida(nombre, raices, raizHistoria) {
+  if (!nombre || nombre === '.' || nombre === '..') return [];
+  const out = raices.filter((r) => path.basename(r) === nombre);
+  const s = sufijoDe(raizHistoria);
+  if (!s) return out;
+  for (const r of raices) {
+    if (path.basename(r) !== `${nombre}--wt-${s}` || out.includes(r)) continue;
+    // las dos, raíces de repo: dos carpetas sueltas dentro de un mismo repo comparten su `.git` sin ser copias
+    const comun = raizDe(r) === real(r) ? gitComun(r) : null;
+    const base = path.join(path.dirname(r), nombre);
+    if (comun && fs.existsSync(base) && raizDe(base) === real(base) && gitComun(base) === comun) out.push(r);
+  }
+  return out;
+}
+
 /**
  * Dónde cae una ruta declarada entre los repos de la corrida: `[{ repo, rel }]`. Una relativa se prueba en cada repo; una
  * absoluta, una con `~/` o una que sube (`../`, desde la raíz del repo de la historia) cae en el repo que la contiene.
+ * Una escrita desde la carpeta de los repos (`<Hermano>/archivo`, o `../<Hermano>/archivo`) cae también en el hermano
+ * de la corrida con ese nombre, o en su copia con el sufijo de la copia de la historia (`hermanoDeLaCorrida`).
  */
 function ubicar(ruta, raices, raizHistoria) {
+  const out = [];
+  const sumar = (repo, rel) => { if (rel && !out.some((x) => x.repo === repo && x.rel === rel)) out.push({ repo, rel }); };
+  // la ruta normalizada (`H//x`, `H/a/../x` → `H/x`): con la cruda, el archivo existe en el disco pero no en `main`
+  // con ese nombre, y un comando que cambió no sería candidato ni quedaría «sin repo»
+  const delHermano = (ruta) => {
+    const partes = path.posix.normalize(ruta).split('/');
+    if (partes.length < 2) return;
+    const rel = partes.slice(1).join('/');
+    for (const repo of hermanoDeLaCorrida(partes[0], raices, raizHistoria)) {
+      if (dentroDe(repo, path.join(repo, rel))) sumar(repo, rel);
+    }
+  };
   let abs = null;
   if (ruta.startsWith('~/')) abs = path.join(os.homedir(), ruta.slice(2));
   else if (path.isAbsolute(ruta)) abs = ruta;
   else if (ruta.startsWith('../')) abs = raizHistoria ? path.resolve(raizHistoria, ruta) : null;
-  else return raices.filter((repo) => dentroDe(repo, path.join(repo, ruta))).map((repo) => ({ repo, rel: ruta }));
+  else {
+    for (const repo of raices) if (dentroDe(repo, path.join(repo, ruta))) sumar(repo, ruta);
+    delHermano(ruta);
+    return out;
+  }
   if (!abs) return [];
-  const out = [];
   for (const repo of raices) {
     const dentro = [abs, real(abs)].find((x) => dentroDe(repo, x));
-    if (dentro) out.push({ repo, rel: path.relative(repo, dentro).split(path.sep).join('/') });
+    if (dentro) sumar(repo, path.relative(repo, dentro).split(path.sep).join('/'));
   }
+  // una que cae en la carpeta de los repos: el primer tramo es el hermano
+  const padre = raizHistoria ? path.dirname(raizHistoria) : null;
+  const enPadre = padre && [abs, real(abs)].find((x) => dentroDe(padre, x));
+  if (enPadre) delHermano(path.relative(padre, enPadre).split(path.sep).join('/'));
   return out;
 }
 
@@ -829,9 +894,9 @@ function rutaMudada(ruta, renombres) {
 function archivosDeLaTanda(marker, storyPath) {
   const tanda = marker && marker.batch ? String(marker.batch) : null;
   if (!tanda) return { files: null, tanda: null, motivo: 'la corrida no tiene tanda' };
-  const suya = marker.storyPath
-    ? (path.isAbsolute(marker.storyPath) ? marker.storyPath : path.resolve(marker.repoPath || process.cwd(), marker.storyPath))
-    : null;
+  // las rutas del marcador, absolutas contra su repo (lib/run-dir.js); nunca contra la carpeta del proceso
+  const r = marker.storyPath ? require('./run-dir.js').rutasDeLaCorrida(marker) : null;
+  const suya = r && typeof r.storyPath === 'string' && path.isAbsolute(r.storyPath) ? r.storyPath : null;
   if (!suya || !storyPath || real(suya) !== real(storyPath)) return { files: null, tanda, motivo: `el marcador es de otra historia (${marker.storyPath || 'sin historia'})` };
   let texto;
   try { texto = fs.readFileSync(storyPath, 'utf8'); } catch (e) { return { files: null, tanda, motivo: `no pude leer la historia (${e.code || e.message})` }; }
@@ -948,7 +1013,7 @@ function ultimas(entradas) {
 }
 
 /**
- * Lo que decide «Preparar el commit». `entradas`: las del informe verificadas y del código de ahora; `exenciones`: Map
+ * Lo que decide «Preparar el pull request». `entradas`: las del informe verificadas y del código de ahora; `exenciones`: Map
  * archivo → constancia vigente. `{ faltan: [{ archivo, repo?, subcomandos, motivo }], noDeclaradas: [entrada],
  * cubiertos: [{ archivo, por, como, covers? }], avisos: [texto], notas: [texto] }`.
  */
@@ -1052,7 +1117,7 @@ function delCodigoDeAhora(entradas, storyPath) {
 }
 
 /**
- * El freno de «Preparar el commit» (AC 11-14, 20-22): calcula los candidatos y juzga el informe y las exenciones.
+ * El freno de «Preparar el pull request» (AC 11-14, 20-22): calcula los candidatos y juzga el informe y las exenciones.
  * `{ medido, candidatos, bloquea, lineas, avisos, juicio }`. Sin candidatos no hace nada (`candidatos: []`). Escribe los
  * avisos en `compare-avisos.md` de la corrida, para el texto del pedido.
  */
@@ -1110,7 +1175,7 @@ function freno({ storyPath, repos, runDir, stateDir, story, marker = null }) {
   } else if (runDir) {
     try { fs.rmSync(path.join(runDir, AVISOS), { force: true }); } catch (_) { /* no estaba */ }
   }
-  return { medido: true, candidatos: c.candidatos, sinRepo: c.sinRepo, bloquea: !!(j.faltan.length || j.noDeclaradas.length), lineas, avisos, juicio: j };
+  return { medido: true, candidatos: c.candidatos, sinRepo: c.sinRepo, noMedidos: c.noMedidos || [], bloquea: !!(j.faltan.length || j.noDeclaradas.length), lineas, avisos, juicio: j };
 }
 
 module.exports = { compararHumo, normalizar, comparar, tocaLoReal, encierro, perfilSandbox, barrer, limpiar, leerInforme, anotarEntrada, informeVerificado, raizDelHumo, reposDeLaSesion, archivoQueCorre, topes,
@@ -1135,22 +1200,24 @@ if (require.main === module) {
     let cmd = val('--cmd-json');
     try { cmd = cmd ? JSON.parse(cmd) : undefined; } catch (_) { /* el texto tal cual */ }
     // la carpeta de la corrida: la que se pasa, o la de la historia del marcador de la sesión (la misma que calcula el
-    // freno de «Preparar el commit»); sin marcador, la de sus clones
+    // freno de «Preparar el pull request»); sin marcador, la de sus clones
     let runDir = val('--run-dir');
     if (!runDir) {
       try {
         const m = JSON.parse(fs.readFileSync(path.join(stateDir, 'active', `${seguro(sid)}.json`), 'utf8'));
-        const repo = m.repoPath || process.cwd();
-        const story = m.storyPath ? (path.isAbsolute(m.storyPath) ? m.storyPath : path.resolve(repo, m.storyPath)) : undefined;
-        runDir = m.runDir || (m.storyId ? require('../pipeline.js').resolveRunDir(repo, String(m.storyId), true, story, { marker: m }) : null);
+        // las rutas del marcador, absolutas contra su repo (lib/run-dir.js); nunca contra la carpeta del proceso
+        const r = require('./run-dir.js').rutasDeLaCorrida(m);
+        const abs = (p) => (typeof p === 'string' && path.isAbsolute(p) ? p : null);
+        const repo = abs(r.repoPath);
+        runDir = abs(r.runDir) || (m.storyId && repo ? require('../pipeline.js').resolveRunDir(repo, String(m.storyId), true, abs(r.storyPath) || undefined, { marker: m }) : null);
       } catch (_) { runDir = null; }
     }
     if (!runDir) {
       runDir = carpetaDeLaSesion(stateDir, sid);
-      // el freno de «Preparar el commit» busca el informe en la carpeta de la corrida: acá no lo va a encontrar
+      // el freno de «Preparar el pull request» busca el informe en la carpeta de la corrida: acá no lo va a encontrar
       process.stderr.write(`[compare] ⚠️ no encontré la carpeta de la corrida de la sesión ${sid}: el informe queda en ${runDir} y el freno no lo va a ver. Pasá --run-dir.\n`);
     }
-    compararHumo({ argv: comando, cmd, cwd: process.cwd(), runDir, sid, stateDir, covers })
+    compararHumo({ argv: comando, cmd, cwd: process.cwd(), runDir, sid, stateDir, covers, entradaF: val('--stdin-file') || undefined })
       .then((e) => {
         process.stderr.write(`[compare] ${e.resultado}${e.motivo ? ` — ${e.motivo}` : ''}${e.main && e.cambio ? ` (main ${e.main.exit}, cambio ${e.cambio.exit})` : ''} · encierro: ${e.encierro.nombre}\n`);
       })

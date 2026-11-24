@@ -1,4 +1,6 @@
 'use strict';
+// sin el perfil del equipo: la prueba fija su ambiente (scripts/tests/lib/without-team-profile.js)
+require('../../../../scripts/tests/lib/without-team-profile.js');
 // Los escapes del pipeline que fabrican evidencia o una exención los autoriza una persona, con la firma de la ventana
 // sobre ese archivo (`marker.js sign-file`). Sin ella, el guardián de la evidencia no consume el permiso y el hook del
 // encabezado frena la exención de la prueba en vivo; la frase en la conversación ya no firma. Los avisos e
@@ -207,7 +209,8 @@ const DE_LA_PERSONA = /autorizo|la persona|lo decide (?:el dev|la persona)/i;
 const EMISOR = /console\.(?:error|log|warn)\(|\.push\(|stderr\.write\(|mensaje:|^\s*(?:[:?+]\s*)?['"`]/;
 const AVISOS = [
   'skills/tycon-pipeline/scripts/marker.js',
-  'skills/tycon-pipeline/scripts/pipeline.js',
+  // pipeline.js con sus partes de lib/
+  ...require(path.join(__dirname, 'lib', 'pipeline-source.js')).files().map((f) => path.relative(RAIZ, f)),
   'skills/tycon-pipeline/scripts/on-frontmatter-write.js',
   'skills/tycon-pipeline/scripts/on-pre-commit.js',
   'skills/tycon-pipeline/scripts/on-dod-evidence-guard.js',
@@ -394,7 +397,7 @@ test('Guion_ForSession_DestinoSinMarcador_Sale2 (T6) @story-8.142 @ac-2', (t) =>
   const gatesAntes = lab.gates().length;
   r = lab.correr(['complete-step', 'approve-plan', '--auto-approved', 'riesgo bajo', '--for-session', DESTINO]);
   assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
-  assert.match(r.stderr, /no es una firma que se pida/);
+  assert.match(r.stderr, /falta la cita de la persona/);
   assert.strictEqual(lab.aprobaciones(DESTINO).length, aprobacionesAntes, 'ninguna aprobación en la corrida de ses-a');
   assert.strictEqual(lab.gates().length, gatesAntes, 'ningún renglón en gates.log');
   assert.deepStrictEqual({ [DESTINO]: lab.leer(DESTINO), [COORD]: lab.leer(COORD) }, antes, 'nada escrito');
@@ -404,6 +407,29 @@ test('Guion_ForSession_DestinoSinMarcador_Sale2 (T6) @story-8.142 @ac-2', (t) =>
   assert.deepStrictEqual(ow.firmasDelComando(lab.comando(viejo)), ['plan-approval']);
   r = lab.correr(viejo);
   assert.doesNotMatch(r.stderr, /no es una firma que se pida/);
+});
+
+test('Guion_ForSession_PlanSinCita_DiceQueFaltaYElComando: el plan de otra sesión sin --approved dice qué falta, no que no es una firma', (t) => {
+  const lab = laboratorioOtraSesion(t);
+  const antes = { [DESTINO]: lab.leer(DESTINO), [COORD]: lab.leer(COORD) };
+  const gatesAntes = lab.gates().length;
+  // el plan con su nombre y con el número viejo: es la firma que se pide para otra sesión, sólo le falta la cita
+  for (const paso of ['approve-plan', '3']) {
+    const r = lab.correr(['complete-step', paso, '--for-session', DESTINO]);
+    assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
+    assert.doesNotMatch(r.stderr, /no es una firma que se pida/);
+    assert.match(r.stderr, /falta la cita de la persona/);
+    // el comando exacto: con la cita para que el freno arme el cuadro, o con --terminal en la terminal de la persona
+    assert.ok(r.stderr.includes(`node ${MARKER} complete-step ${paso} --approved '<la cita de la persona>' --for-session ${DESTINO}`), r.stderr);
+    assert.ok(r.stderr.includes(`node ${MARKER} complete-step ${paso} --terminal --for-session ${DESTINO}`), r.stderr);
+    assert.match(r.stderr, /No se escribió nada\./);
+  }
+  // sin la cita sigue sin firmarse: nada escrito en ninguna de las dos corridas, ni en gates.log, ni un pedido de ventana
+  assert.deepStrictEqual({ [DESTINO]: lab.leer(DESTINO), [COORD]: lab.leer(COORD) }, antes, 'nada escrito');
+  assert.strictEqual(lab.gates().length, gatesAntes, 'ningún renglón en gates.log');
+  assert.strictEqual(lab.vigentes().length, 0, 'ningún pedido de ventana');
+  // el freno tampoco lo toma por firma: no arma un cuadro sin la cita
+  assert.deepStrictEqual(ow.firmasDelComando(lab.comando(['complete-step', 'approve-plan', '--for-session', DESTINO])), []);
 });
 
 test('Guion_ForSession_EjecucionPerdida_DiceQuienPidio (T5) @story-8.142 @ac-3', (t) => {
@@ -520,11 +546,13 @@ test('Guion_ForSession_Delegada_SeisLlaves (T7) @story-8.142 @ac-4', (t) => {
   const delegacion = ({ perfil = PERFIL, huella = HUELLA } = {}) => (o) => DS.delegaSinVentana({ ...o, perfil: () => perfil, huella: () => ({ huella }) });
   // con las seis llaves el freno no pide ventana; el plan, además, sólo con el «aprobado» de la revisión automática que
   // lanzó la coordinadora: sin ella sale 2 y el pedido no se gasta
+  // por la revisión, --approved sólo dice «revisión»: el texto de la aprobación lo arma el arnés
+  const APROBAR_POR_REVISION = ['complete-step', 'approve-plan', '--for-session', DESTINO, '--approved', 'revisión'];
   let lab = laboratorioOtraSesion(t);
   designar(lab);
-  const p = lab.pedir(lab.comando(APROBAR), { delegacion: delegacion() });
+  const p = lab.pedir(lab.comando(APROBAR_POR_REVISION), { delegacion: delegacion() });
   assert.strictEqual(p.decision, 'allow', p.texto);
-  let r = lab.correr(APROBAR);
+  let r = lab.correr(APROBAR_POR_REVISION);
   assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /revisión automática/);
   assert.strictEqual(lab.vigentes().length, 1, 'el pedido sigue sin gastar');
@@ -534,7 +562,7 @@ test('Guion_ForSession_Delegada_SeisLlaves (T7) @story-8.142 @ac-4', (t) => {
   const preparado = PR.preparar({ lanza: COORD, destino: DESTINO, estado: lab.estadoDir, home: lab.home, delegacion: delegacion() });
   assert.strictEqual(preparado.codigo, 0);
   PR.anotar({ lanza: COORD, destino: DESTINO, estado: lab.estadoDir, resultado: { pedido: preparado.args.pedido, modo: 'plan', medido: true, confirmed: [], hallazgos_sin_veredicto: 0, a_verificar_aparte: 0, lentes_sin_medir: [] } });
-  r = lab.correr(APROBAR);
+  r = lab.correr(APROBAR_POR_REVISION);
   assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
   const destino = JSON.parse(lab.leer(DESTINO));
   assert.strictEqual(destino.planApproval.via, 'revision');

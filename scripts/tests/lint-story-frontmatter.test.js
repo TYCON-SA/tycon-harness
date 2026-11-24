@@ -338,6 +338,23 @@ test('T47 FilesToModify_SoloEnElRemoto_NoFrena: un clon atrasado no hace inventa
   assert.match(r.out, /al día/);
 });
 
+// 🔴 Falla con: la consulta a la rama principal del remoto con la ruta tal como la escribe la historia, con el nombre
+// del repo adelante («Backend/src/…»): dentro del repo hermano esa ruta no existe, y un clon atrasado frena el commit de
+// una historia cuyo archivo ya está en su rama principal.
+test('T50 FilesToModify_ConElRepoAdelante_SoloEnElRemoto_NoFrena: la ruta con el nombre del repo se busca dentro de ese repo', () => {
+  const { prod, proj } = productoConCodigo();
+  hermanoConArchivoSoloEnElRemoto(prod);
+  const f = story(proj, 'specs/story-6.5-cbu-del-gestor.md', HISTORIA_65(['Backend/src/AcmeBackend/Features/Nuevo/NuevoService.cs']));
+  const r = run([f], proj);
+  assert.strictEqual(r.code, 0, r.out);
+  assert.match(r.out, /al día/);
+  // la misma ruta con el nombre del repo, sin el archivo en ningún lado: sigue siendo inventada
+  const g = story(proj, 'specs/story-6.6-otra.md', HISTORIA_65(['Backend/src/AcmeBackend/Features/Nuevo/Inventado.cs']).map((l) => l.replace('"6.5"', '"6.6"')));
+  const s = run([g], proj);
+  assert.notStrictEqual(s.code, 0, s.out);
+  assert.match(s.out, /Inventado\.cs/);
+});
+
 // 🔴 Falla con: la consulta a un repo hermano hereda el GIT_DIR que git le pone al gancho de un commit. Esa variable le
 // gana a `-C`: se le pregunta al repo del commit, y un archivo que está en la rama principal del hermano se da por
 // inventado; o al revés, el repo del commit contesta por un hermano que no tiene el archivo.
@@ -534,6 +551,40 @@ test('NaceAhora_UnreadableMergeHead_CountsAsExisting @story-8.269 @ac-9 @ac-10',
   fs.rmSync(mergeHead, { recursive: true, force: true });
 });
 
+/**
+ * `naceAhora` en un proceso aparte con un `git` que falla a propósito: `grep2` hace que `git grep` salga 2 (un error, no
+ * «no encontré»), y `log` hace fallar el `git log --follow`. Lo demás va al git de verdad.
+ */
+function naceAhoraConGitRoto(abs, storyId, falla) {
+  const programa = `
+    const cp = require('child_process');
+    const original = cp.execFileSync;
+    cp.execFileSync = (cmd, args, opts) => {
+      if (cmd === 'git' && ${JSON.stringify(falla)} === 'grep2' && args[0] === 'grep') {
+        const e = new Error('git grep salió 2'); e.status = 2; throw e;
+      }
+      if (cmd === 'git' && ${JSON.stringify(falla)} === 'log' && args[0] === 'log') {
+        const e = new Error('git log falló'); e.status = 128; throw e;
+      }
+      return original(cmd, args, opts);
+    };
+    const { naceAhora } = require(${JSON.stringify(FOLLOWUP_OF)});
+    process.stdout.write(JSON.stringify({ nace: naceAhora(${JSON.stringify(abs)}, ${JSON.stringify(storyId)}) }));`;
+  return JSON.parse(execFileSync(process.execPath, ['-e', programa], { encoding: 'utf8' })).nace;
+}
+
+// 🔴 Falla con: tomar cualquier salida de `git grep` que no sea 0 como «no la encontré» (la 1 lo es; la 2 es un error), o
+// seguir de largo cuando `git log` falla: la historia nueva saldría «nace ahora» sin que nadie lo pudiera saber, y el lint
+// frenaría. Un git que no contesta es «no sé»: existente (avisa, no frena).
+test('NaceAhora_GitThatFails_CountsAsExisting @story-8.269 — git grep que sale 2 y git log que falla', () => {
+  const { proj } = ramaAtrasada();
+  const nueva = story(proj, 'specs/story-9.6-nueva.md', ['story: "9.6"', 'epic: 9', 'status: ready-for-dev']);
+  // con el git de verdad, la historia nueva nace: así la prueba mira el error y no otra cosa
+  assert.strictEqual(naceAhoraConGitRoto(nueva, '9.6', 'ninguna'), true, 'sin fallas, nace');
+  assert.strictEqual(naceAhoraConGitRoto(nueva, '9.6', 'grep2'), false, 'git grep que sale 2: no se sabe, existente');
+  assert.strictEqual(naceAhoraConGitRoto(nueva, '9.6', 'log'), false, 'git log que falla: no se sabe, existente');
+});
+
 // 🔴 Falla con: la búsqueda por `story:` sin comillas como texto fijo — `story: 9.2` aparece dentro de `story: 9.26`, y
 // una historia nueva cuyo número es el comienzo de otro que ya existe se da por existente (el lint no la frena).
 test('NaceAhora_StoryIdPrefixOfAnother_StillBorn @story-8.269 @ac-7', () => {
@@ -626,4 +677,81 @@ test('T37 LintFrontmatter_IntentReaderMissing_LoudWarning @story-8.258 @ac-29', 
   assert.strictEqual(roto.code, 1, `con un intent.js que no carga, frena\n${roto.out}`);
   assert.match(roto.out, /roto al cargar/);
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+// 🔴 Falla con: una historia en `done` con un ajuste de «Ajustes después de la firma» sin pasar al cuerpo que se
+//    commitea igual, o una con todos pasados (`- [x]`) que se frena.
+test('AjustesDespuesDeLaFirma_SinPasar_FrenanElDone', (t) => {
+  const root = mkRepo('lint-ajustes-');
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const fm = (estado) => `---\nstory: "1.1"\nepic: 1\nstatus: ${estado}\n---\n\n# Story 1.1\n\n## Acceptance Criteria\n\nAC 1. x\n\n`;
+  const con = (estado, ajustes) => write(root, 'specs/story-1.1-juguete.md', `${fm(estado)}## Ajustes después de la firma\n\n${ajustes}\n## Dev Agent Record\n\n- nota\n`);
+  const lint = () => run(['specs/story-1.1-juguete.md'], root);
+  con('done', '- [ ] cambiar el ejemplo del AC 1\n');
+  let r = lint();
+  assert.notStrictEqual(r.code, 0, r.out);
+  assert.match(r.out, /1 ajuste\(s\) de «Ajustes después de la firma» sin pasar al cuerpo/);
+  // un renglón suelto, sin casilla, también es un ajuste sin pasar; y un título dentro de un bloque no cierra la sección
+  con('done', '- [x] pasado\n  con su continuación\n\notra cosa suelta\n');
+  assert.notStrictEqual(lint().code, 0, 'un renglón suelto');
+  con('done', '- [x] pasado\n```\n## Dev Agent Record\n```\n- [ ] escondido\n');
+  r = lint();
+  assert.notStrictEqual(r.code, 0, 'un título dentro de un bloque de código');
+  // todos pasados, o una historia que todavía no está en done: no frena
+  con('done', '- [x] pasado al cuerpo\n  con su continuación\n* [X] otro\n');
+  r = lint();
+  assert.strictEqual(r.code, 0, r.out);
+  con('in-progress', '- [ ] todavía no\n');
+  r = lint();
+  assert.strictEqual(r.code, 0, r.out);
+  const { ajustesSinPasar } = require(LINT);
+  assert.deepStrictEqual(ajustesSinPasar('# S\n\n### Ajustes después de la firma\n\n- [ ] a\n\n## Otra\n\n- [ ] b\n'), ['- [ ] a'], 'termina en el título de su nivel o mayor');
+  // lo que el pase encontró: un ajuste sin pasar debajo de uno pasado, después de un renglón vacío o como subtítulo
+  const S = '## Ajustes después de la firma\n\n';
+  assert.deepStrictEqual(ajustesSinPasar(`${S}- [x] a\n  - [ ] sub\n`), ['- [ ] sub'], 'anidado');
+  assert.deepStrictEqual(ajustesSinPasar(`${S}- [x] a\n\n    cambiar el AC 2\n`), ['cambiar el AC 2'], 'después de un renglón vacío');
+  assert.deepStrictEqual(ajustesSinPasar(`${S}- [x] a\n### AC 9. nuevo\n`), ['### AC 9. nuevo'], 'un subtítulo');
+  assert.deepStrictEqual(ajustesSinPasar(`${S}- [x] a\n  sigue\n  - [x] sub pasado\n* [X] b\n`), [], 'todo pasado, también anidado');
+  // el título como ejemplo en un bloque de código del cuerpo no abre la sección
+  assert.deepStrictEqual(ajustesSinPasar('## Notas\n\n```md\n## Ajustes después de la firma\n```\n\nTexto.\n\n## Dev Agent Record\n'), [], 'un ejemplo en un bloque');
+  // el estado como lo leen los guiones: con comillas simples o con un comentario, también es done
+  for (const estado of ["'done'", 'done # cerrada', '"Done"']) {
+    con(estado, '- [ ] todavía no\n');
+    assert.notStrictEqual(lint().code, 0, `status: ${estado}`);
+  }
+});
+
+// 🔴 Falla con: el nombre del repo comparado distinguiendo mayúsculas. «backend/src/…» con el repo «Backend» y el archivo
+// sólo en su rama principal frenaba el commit en macOS (pase adversarial del #1425).
+test('T51 FilesToModify_RepoEnMinusculas_SoloEnElRemoto_NoFrena: el nombre del repo sin distinguir mayúsculas', { skip: process.platform === 'linux' && 'en Linux la carpeta en minúsculas no existe: sólo avisa' }, () => {
+  const { prod, proj } = productoConCodigo();
+  hermanoConArchivoSoloEnElRemoto(prod);
+  const f = story(proj, 'specs/story-6.5-cbu-del-gestor.md', HISTORIA_65(['backend/src/AcmeBackend/Features/Nuevo/NuevoService.cs']));
+  const r = run([f], proj);
+  assert.strictEqual(r.code, 0, r.out);
+});
+
+// 🔴 Falla con: la consulta a la rama principal del remoto sin tope total. Cada llamada a git tenía 5 s, y una historia
+// con varias rutas inventadas, con git colgado, hacía esperar el commit minutos.
+test('T52 FilesToModify_GitColgado_ElRespaldoTieneTopeTotal: con git colgado, el lint termina y no da nada por inventado', () => {
+  const { prod, proj } = productoConCodigo();
+  hermanoConArchivoSoloEnElRemoto(prod);
+  // un git que contesta todo salvo la consulta a la rama principal, que se cuelga
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'lint-git-colgado-'));
+  const real = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+  fs.writeFileSync(path.join(bin, 'git'), `#!/bin/sh\ncase "$*" in *ls-tree*) exec sleep 60 ;; esac\nexec ${real} "$@"\n`);
+  fs.chmodSync(path.join(bin, 'git'), 0o755);
+  const inventadas = ['A', 'B', 'C', 'D', 'E', 'F'].map((n) => `Backend/src/AcmeBackend/Features/Nuevo/${n}.cs`);
+  const f = story(proj, 'specs/story-6.5-cbu-del-gestor.md', HISTORIA_65(inventadas));
+  // stable-data: mide cuánto tarda el lint, no es una fecha que la prueba compare
+  const desde = Date.now();
+  let r;
+  try {
+    r = { code: 0, out: execFileSync('node', [LINT, f], { cwd: proj, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 40000, env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } }) };
+  } catch (e) { r = { code: e.status ?? 1, out: `${e.stdout || ''}${e.stderr || ''}`, signal: e.signal }; }
+  const tardo = Date.now() - desde;
+  assert.ok(!r.signal, `el lint no terminó en 40 s con git colgado (${tardo} ms)`);
+  assert.ok(tardo < 20000, `el respaldo no tiene tope total: tardó ${tardo} ms`);
+  // lo que no se pudo mirar no se da por inventado
+  assert.strictEqual(r.code, 0, r.out);
 });

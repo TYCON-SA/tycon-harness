@@ -29,7 +29,6 @@ const UPLOAD = path.join(ROOT, 'scripts', 'metrics', 'upload-runs.js');
 const { stateDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
 
 const TZ = 'America/Argentina/Buenos_Aires';
-const MIN = 60000;
 const DAY = 86400000;
 const at = (local) => Date.parse(`${local.replace(' ', 'T')}:00-03:00`);
 const iso = (local) => new Date(at(local)).toISOString();

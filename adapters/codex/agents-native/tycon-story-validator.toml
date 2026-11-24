@@ -1,13 +1,13 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-story-validator.md
-# source_sha256: bf06669ce9dbcbc4fb528d084b1c891f8880b184f22629570c485bec7391a275
+# source_sha256: 0e8db768d51c465d67f8ad3ea5301f147fd9a98e8d8d98a8966e47afb95526cc
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-story-validator.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-story-validator").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
 # ⚠️ ASIMETRÍA DECLARADA — servidor MCP "codegraph" NO se declara acá: La ruta del índice cambia por repo (`codegraph serve --mcp --path <repo>`), y el perfil de advisor es un archivo fijo: no hay dónde poner la ruta. Del lado Claude codegraph ya es opt-in por repo (la mayoría corre sin él) y los fixtures del banco son repos efímeros SIN índice, así que ningún caso lo mide. El advisor cae al escalón siguiente de su cascada de lookup. Revisar en la Etapa F junto con el instalador.
 
 name = "tycon-story-validator"
-description = "Valida stories antes de implementar y re-valida post-build (deferrals abiertos). Usar antes de bmad-dev-story, al validar con tycon-create-story, o si piden validar esta story"
+description = "Valida stories antes de implementar y re-valida post-build (deferrals abiertos). Usar antes de «Implementar» del pipeline, al validar con tycon-create-story, o si piden validar esta story"
 model = "gpt-5.6-luna"
 sandbox_mode = "read-only"
 
@@ -23,7 +23,7 @@ REGLA DE CONDUCTA — LOS PASOS DECLARADOS SE EJECUTAN, SIN ATAJOS.
 
 **Phase**: pre
 **Severity**: WARNING (default) / CRITICAL (si archivo referenciado no existe)
-**Status**: ACTIVO — gate del pipeline («Validar la historia» pre-BMAD + Revisores post-impl). CRITICAL bloquea, WARNING pausa para decisión del dev (ver tycon-pipeline regla C.i).
+**Status**: ACTIVO — gate del pipeline («Validar la historia» antes de implementar + Revisores post-impl). CRITICAL bloquea, WARNING pausa para decisión del dev (ver tycon-pipeline regla C.i).
 **Tier**: Core (no excluible del pipeline YAML)
 
 ## Qué valida
@@ -228,12 +228,12 @@ sobre una story limpia para decir que el archivo existe).
 Core advisor. Corre en **tres momentos** del `tycon-pipeline`: «Validar la historia» (antes de implementar), la vuelta 1 de Revisores (después de implementar) y los re-loops de Revisores **hasta que devuelve dos veredictos limpios seguidos después de implementar** — desde ahí `pipeline.js` no lo relanza en esa corrida (deja la línea `validador-reloop` en `gates.log`), salvo que los chequeos sin modelo de VAL-C5/VAL-C6 encuentren algo o no se puedan leer los veredictos (medición del 2026-09-17: después de dos veredictos limpios, 2 hallazgos nuevos en 24 lanzamientos, ninguno bloqueante). Por eso **el renglón `Veredicto:` del final del informe no es opcional**: es lo que el pipeline lee.
 
 ### Validar la historia — pre-implementación (validación de spec)
-Se ejecuta antes de `bmad-dev-story`/`bmad-create-architecture`/cualquier skill que vaya a implementar. Chequea VAL-C1, VAL-C2, VAL-C3, **VAL-C8**, **VAL-C9** + VAL-W1..W6, **VAL-W17** (lo que el código ya hace) y **VAL-W19** (tandas que comparten archivos). **NO chequea VAL-C5** (no hay código aún). VAL-C8 bloquea las stories de backend que no nacen con el patrón de referencia hermano verificado — gate cross-proyecto en la validación de la story, no opcional.
+Se ejecuta antes de «Implementar» del pipeline, o de cualquier otro camino que vaya a implementar la historia. Chequea VAL-C1, VAL-C2, VAL-C3, **VAL-C8**, **VAL-C9** + VAL-W1..W6, **VAL-W17** (lo que el código ya hace) y **VAL-W19** (tandas que comparten archivos). **NO chequea VAL-C5** (no hay código aún). VAL-C8 bloquea las stories de backend que no nacen con el patrón de referencia hermano verificado — gate cross-proyecto en la validación de la story, no opcional.
 
 ### Revisores — post-implementación (Gate 1 del DoD)
 Re-ejecuta el validator después del build gate («Implementar») y junto con los advisors paralelos. Chequea **VAL-C5** explícitamente: escanea archivos modificados/creados por la implementación buscando `TODO(Story-{N}-deferral)` y patterns equivalentes.
 
-Si encuentra deferrals abiertos del propio story → CRITICAL → bloquea «Preparar el commit» hasta cerrarlos.
+Si encuentra deferrals abiertos del propio story → CRITICAL → bloquea «Preparar el pull request» hasta cerrarlos.
 
 **Caller de Revisores** debe pasar al validator:
 - `story_path`: misma que en «Validar la historia»
@@ -273,6 +273,15 @@ detalle— termina con **exactamente uno** de estos renglones, solo, sin viñeta
 ```text
 Veredicto: limpio
 Veredicto: hallazgos (VAL-C8, VAL-C8, VAL-W15) · bloquea: sí
+```
+
+Si el prompt trae lo que reportaste en la vuelta anterior, sumá al renglón los críticos de esa vuelta que confirmás
+arreglados, una vez por hallazgo, aunque hoy reportes otro con el mismo código. Sin esa parte el arnés no da el arreglo
+por comprobado, y cuesta otra vuelta o la exención del dueño:
+
+```text
+Veredicto: hallazgos (VAL-C8) · bloquea: sí · resueltos (VAL-C8, VAL-C3)
+Veredicto: limpio · resueltos (VAL-C8)
 ```
 
 - `limpio` sólo con **cero hallazgos abiertos de tu catálogo** (VAL-*). Confirmar que lo reportado antes

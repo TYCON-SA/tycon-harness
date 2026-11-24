@@ -41,8 +41,8 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
 //     directorio (tampoco `popd`).
 //   · `cd $HOME/X && …` — `HOME` se trata como una variable que el comando no define (`~` sí se
 //     expande), así que sale "no pude resolver": no anota nada y lo dice. Ruidoso, no falso.
-// Y lo que NO se ve: un push dentro de un `sh -c "…"` o de un heredoc que no alimenta a un shell (`python3 - <<EOF` que
-// lanza el push por dentro). Ese cuerpo se quita ANTES de analizar —es texto, no comandos: un `node - <<EOF` con un
+// Y lo que NO se ve: un push dentro de un heredoc que no alimenta a un shell (`python3 - <<EOF` que lanza el push por
+// dentro). Un `bash -c "…"` (o `sh`, `zsh`) sí se lee: lo citado ahí es un comando. Ese cuerpo se quita ANTES de analizar —es texto, no comandos: un `node - <<EOF` con un
 // string con forma de push dispararía el aviso de "no pude resolver" sin que hubiera ningún push—; el
 // de un `bash <<EOF` se conserva y su push se anota. Lo demás lo cubre retro-staleness-notice.js, por días.
 // "Cubierto" es MECÁNICO: el capturer escribe en ~/.claude/tycon-harness/.dashboard/metrics-*.json
@@ -356,9 +356,13 @@ function entradasCorregidas() {
 // origen atrasada: el pedido anotó un commit viejo, que ninguna retrospectiva de este merge va a cubrir. Sólo se avisa;
 // lo corrige una persona. Sólo para pedidos (un push a main anota lo que acaba de subir) y sólo si se puede leer en git.
 const RE_PEDIDO = /\bpr\s+(create|new)\b|change-request/;
+// ¿La entrada es de un pedido? Lo dice `entrega`, que se decide al anotar con el comando entero: `cmd` va cortado, y un
+// comando largo (`cat <archivo>;` y después el que abre el pedido) pierde el pedido en el corte. Las entradas anotadas antes de
+// `entrega` se juzgan por su `cmd`. (No es `tipo`: ése distingue los renglones que no son entradas.)
+const esPedido = (e) => e.entrega === 'pedido' || RE_PEDIDO.test(String(e.cmd || ''));
 function yaEstabaEnMain(e) {
   // una entrada que entró reclama el commit que el pedido dejó en main: estar en main es lo esperado
-  if (e.corregida || e.estado === 'entro' || !RE_PEDIDO.test(String(e.cmd || ''))) return false;
+  if (e.corregida || e.estado === 'entro' || !esPedido(e)) return false;
   const t = Date.parse(e.ts);
   if (!t) return false;
   const dir = carpetaVigente(e);
@@ -373,6 +377,18 @@ function comandoDeCorregir(e) {
   return `node "${__filename}" --correct --repo "${carpetaVigente(e)}" --sha ${e.pedidoDe || e.sha} --real <commit del pedido> --reason "<por qué>"`;
 }
 const avisoYaEnMain = (e) => (yaEstabaEnMain(e) ? `\n      ⚠ ese commit ya estaba en ${ramaCorta(e.branch) || 'main'} antes del pedido: la entrada puede haber anotado una rama de origen vieja. Si es así, la corrige una persona con el commit real: ${comandoDeCorregir(e)}` : '');
+
+/**
+ * ¿La sesión es la coordinadora designada de esta máquina? Es para decir quién corrigió, no para dejarla hacer algo: no
+ * pide la confirmación de la firma delegada. Sin poder leerlo, no.
+ */
+function esLaCoordinadora(sesion) {
+  if (!sesion || sesion === '_nosession') return false;
+  try {
+    const d = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'critical-waivers.js')).designacionVigente({ dir: STATE_DIR });
+    return Boolean(d && !d.error && d.sesion === sesion);
+  } catch { return false; }
+}
 
 /**
  * `--correct --sha <anotado> --real <commit> --reason "<texto>" [--repo <carpeta>]`: agrega la corrección de UNA
@@ -415,8 +431,12 @@ function corregir(argv) {
   // el commit real viene después del anotado (el pedido mergeó una punta que ya lo traía): sin eso, una corrección podría
   // saldar la entrada con cualquier commit que ya tenga su retrospectiva
   if (gitOrNull(dir, ['merge-base', '--is-ancestor', e.sha, completo]) === null) return salir(`el commit ${realArg} no trae al anotado (${e.sha}): la corrección apunta al commit que el pedido mergeó, que lo contiene`);
-  const quien = git(dir, ['config', '--get', 'user.name']) || (() => { try { return os.userInfo().username; } catch { return null; } })() || 'sin nombre';
-  const c = { ts: new Date().toISOString(), tipo: 'correccion', entrada: { repo: e.repoPath, sha: e.sha, ts: e.ts }, real: completo.slice(0, 12), motivo, quien, carpeta: dir, sesion: sessionIdOf({}) };
+  const usuario = git(dir, ['config', '--get', 'user.name']) || (() => { try { return os.userInfo().username; } catch { return null; } })() || 'sin nombre';
+  const sesion = sessionIdOf({});
+  // la coordinadora corre con el usuario de git de la máquina: la corrección dice que fue ella, no la persona
+  const coordinadora = esLaCoordinadora(sesion);
+  const quien = coordinadora ? `la coordinadora (sesión ${sesion}, con el usuario de git ${usuario})` : usuario;
+  const c = { ts: new Date().toISOString(), tipo: 'correccion', entrada: { repo: e.repoPath, sha: e.sha, ts: e.ts }, real: completo.slice(0, 12), motivo, quien, ...(coordinadora ? { por: 'coordinadora' } : {}), carpeta: dir, sesion };
   const renglones = copias.map((x) => JSON.stringify({ ...c, entrada: { repo: x.repoPath, sha: x.sha, ts: x.ts } }) + '\n').join('');
   // el catch de `main` se traga todo (un gancho no rompe nada): una corrección que no se pudo escribir se dice acá
   try {
@@ -470,7 +490,11 @@ function numerosDeAz(salida) {
     if (ids.length) return ids;
   }
   const renglones = texto.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  return renglones.length && renglones.every((l) => /^\d+$/.test(l)) ? renglones.map(Number) : [];
+  // `--query pullRequestId -o tsv` contesta el número solo; un `git rev-parse` antes en el mismo comando deja su commit
+  // en otro renglón (letras de la a a la f): ése no es otro texto, y el número sigue siendo el del pedido
+  const esCommit = (l) => /^[0-9a-f]{7,40}$/.test(l) && /[a-f]/.test(l);
+  const numeros = renglones.filter((l) => /^\d+$/.test(l));
+  return numeros.length && renglones.every((l) => /^\d+$/.test(l) || esCommit(l)) ? numeros.map(Number) : [];
 }
 
 /** El número de cada pedido de la salida de la herramienta: `pullRequestId` de az, la dirección `…/pull/N` de gh. */
@@ -595,7 +619,7 @@ function repoComun(dir) {
     if (!m) return real(dir);
     const propia = path.resolve(dir, m[1]);
     // un submódulo no tiene `commondir`: su carpeta de git es la común
-    let comun = propia;
+    let comun;
     try { comun = path.resolve(propia, fs.readFileSync(path.join(propia, 'commondir'), 'utf8').trim()); } catch { comun = propia; }
     return real(comun);
   } catch { return real(dir); }
@@ -695,8 +719,8 @@ function estadoDelRegistro() {
       // Un pedido creado no es un merge. Sin su número no se le puede preguntar a la plataforma si entró ni con qué
       // commit: la entrada quedó por la punta de la rama, que no es la fusión aunque ya esté en la línea de main. No
       // frena (se ve en el aviso de arranque, con su `--correct`), ni cuando no se puede leer la línea de main.
-      if (!e.pr && e.estado !== 'entro' && RE_PEDIDO.test(String(e.cmd || ''))) { out.fueraDeMain.push({ ...e, sinNumero: true }); continue; }
-      if ((e.pr || e.estado === 'entro' || RE_PEDIDO.test(String(e.cmd || ''))) && enLineaDeMain(e) === false) { out.fueraDeMain.push(e); continue; }
+      if (!e.pr && e.estado !== 'entro' && esPedido(e)) { out.fueraDeMain.push({ ...e, sinNumero: true }); continue; }
+      if ((e.pr || e.estado === 'entro' || esPedido(e)) && enLineaDeMain(e) === false) { out.fueraDeMain.push(e); continue; }
     }
     out.pendientes.push(e);
   }
@@ -849,9 +873,8 @@ function record(event) {
   // texto, no un push. Sin esto, cualquier `grep -rn "git push origin main" …` o `node -e` con
   // strings caería en el aviso de "no pude resolver" + exit 2, y un control ruidoso termina en
   // TYCON_RETRO_PENDING=0.
-  // El precio declarado: un `sh -c "git push origin main"` queda del lado de "mencionado" y no se
-  // ve. Es el mismo precio que se paga por los heredocs, y va al lado barato: ningún push del ledger
-  // real tiene esa forma.
+  // La excepción es una consola que corre lo citado (`bash -c "git push origin main"`): ahí el push es de verdad, y
+  // git-target.js lee cada uno con su carpeta.
   // `cmdShell`: el comando sin los cuerpos de heredoc que son texto (ver el require de sinHeredocs).
   // Sólo el camino del push lo usa; el del PR ya corta sus segmentos sin heredocs (az-pr.js).
   const cmdShell = sinHeredocs(cmd, { salvoShell: true });
@@ -859,7 +882,9 @@ function record(event) {
   // Los pedidos de GitHub (`gh pr create` hacia la rama principal) y los que abre la capa de plataforma: la entrega de
   // un repo que vive ahí.
   const pedidosGh = [...pedidosDeGh(cmd, cwd, /powershell|pwsh/i.test(String(event.tool_name || ''))), ...pedidosDeCapa(cmd, cwd)];
-  const hayPush = /\bgit\b[^|;&\n]*\bpush\b/.test(sinLoCitado(cmdShell));
+  // un `bash -c '…git push…'` corre lo que está entre comillas: ahí lo citado es un comando, y git-target.js lo lee
+  const consolaC = /(^|[\s;&|(])(?:bash|sh|zsh)\s+-[a-z]*c\b/.test(sinLoCitado(cmdShell)) && /\bgit\b[^|;&\n]*\bpush\b/.test(cmdShell);
+  const hayPush = consolaC || /\bgit\b[^|;&\n]*\bpush\b/.test(sinLoCitado(cmdShell));
   if (!isPrCreate && !hayPush && !pedidosGh.length) return;
 
   // ¿Dónde corre cada entrega de este comando? Con el `cd`/`-C` seguidos, no con el cwd de la
@@ -957,7 +982,7 @@ function record(event) {
   }
   // un pedido sin número queda por la punta de su rama, que no está en main: su latido no se puede escribir (sale 2), y la
   // entrada no frena el cierre y sale en el aviso de arranque con su `--correct`. No se pide el latido.
-  const sinNumero = reclamadas.filter((x) => x.estado !== 'esperando' && RE_PEDIDO.test(String(x.cmd || '')));
+  const sinNumero = reclamadas.filter((x) => x.estado !== 'esperando' && esPedido(x));
   if (sinNumero.length) lineas.push(`retro-pending: no pude leer el número del pedido en la salida de la herramienta (${sinNumero.map(fmt).join(', ')}): la entrada queda por la punta de la rama y no frena. Cuando el pedido entre, corregila con el commit que dejó en main: ${sinNumero.map(comandoDeCorregir).join(' · ')}`);
   const aLatir = reclamadas.filter((x) => x.estado !== 'esperando' && !sinNumero.includes(x));
   if (aLatir.length) lineas.push(`retro-pending: push a ${aLatir[0].branch} registrado (${aLatir.map(fmt).join(', ')}). Antes de cerrar el turno, corré el latido por ese merge (regla 10b — el Stop-gate exige el archivo): ${aLatir.map(launchHint).join(' · ')}`);
@@ -1040,6 +1065,43 @@ function repoPorNombre(dir, nombre) {
     if (id.estado === 'error') errores.push(`no pude leer el origin de ${root}`);
   }
   return { root: null, errores };
+}
+/**
+ * Con la sesión en la carpeta que agrupa los repos de un producto (no es un repo): el repo de una subcarpeta DIRECTA
+ * cuyo `origin` es `ruta` (la de `identidadRemoto`). Sólo si hay exactamente uno; ninguno o dos es null («sin ubicar»).
+ * El nombre de la carpeta nunca cuenta: dos copias del mismo repo son dos candidatos, no una elección.
+ */
+function hijoConOrigen(dir, ruta) {
+  if (!ruta || !fs.existsSync(dir)) return null;
+  const hallados = [];
+  for (const c of subcarpetas(dir, [])) {
+    const root = raizGit(c);
+    if (!root || real(root) !== real(c)) continue;
+    const origen = identidadRemoto(git(root, ['remote', 'get-url', 'origin']));
+    if (origen && origen.ruta === ruta) hallados.push(root);
+  }
+  return hallados.length === 1 ? hallados[0] : null;
+}
+/**
+ * La copia de trabajo del repo `ruta` (`dueño/repo`) que tiene la rama `rama`, buscada desde la carpeta `desde`: el clon
+ * que se llama como el repo, al lado de `desde` o adentro, con ese `origin`, y entre sus copias (`git worktree list`) la
+ * única con esa rama. Sin rama, sin clon o con más de una copia, null: no se adivina.
+ */
+function copiaConLaRama(desde, ruta, rama) {
+  if (!rama || !ruta) return null;
+  const nombre = ruta.split('/').pop();
+  for (const base of [path.dirname(desde), desde]) {
+    const cand = path.join(base, nombre);
+    const r = raizGit(cand);
+    if (!r || real(r) !== real(cand)) continue;
+    const origen = identidadRemoto(git(r, ['remote', 'get-url', 'origin']));
+    if (!origen || origen.ruta !== ruta) continue;
+    const copias = String(git(r, ['worktree', 'list', '--porcelain']) || '').split(/\n\s*\n/)
+      .map((b) => ({ dir: (/^worktree (.+)$/m.exec(b) || [])[1], rama: (/^branch refs\/heads\/(.+)$/m.exec(b) || [])[1] }))
+      .filter((x) => x.dir && x.rama === rama);
+    return copias.length === 1 ? copias[0].dir : null;
+  }
+  return null;
 }
 function pedidosDeAz(cmd, base) {
   const out = [];
@@ -1170,16 +1232,19 @@ function pedidosDeGh(cmd, cwd, powershell) {
     if (c.cwdDesconocido || c.cdIncierto || c.repoDesconocido) { out.push({ resuelto: false }); continue; }
     // los `cd` literales de la línea, en orden; `~` es la carpeta de la persona (la terminal la expande, `path` no)
     const dir = (c.cds || []).reduce((d, paso) => path.resolve(d, String(paso).replace(/^~(?=$|[\\/])/, os.homedir())), cwd);
-    const root = git(dir, ['rev-parse', '--show-toplevel']);
-    if (!root) { out.push({ resuelto: false }); continue; }
+    // desde la carpeta que agrupa los repos, `--repo` elige al hijo cuyo origin es ese repo
+    let root = git(dir, ['rev-parse', '--show-toplevel']) || (c.repo ? hijoConOrigen(dir, c.repo) : null);
+    const propia = c.head && !c.head.includes(':') ? c.head : null;
     if (c.repo) {
-      // `--repo`/`GH_REPO` nombran un repo: si no es el `origin` de esta carpeta, el pedido es de OTRO repo
-      const origen = identidadRemoto(git(root, ['remote', 'get-url', 'origin']));
-      if (!origen || origen.ruta !== c.repo) { out.push({ resuelto: false }); continue; }
+      // `--repo`/`GH_REPO` nombran un repo: si no es el `origin` de esta carpeta, el pedido es de OTRO repo. Se busca su
+      // copia por la rama de `--head` (el clon de ese repo al lado de esta carpeta, y la copia de trabajo con esa rama);
+      // sin una sola que la tenga, no se sabe dónde corre
+      const origen = root ? identidadRemoto(git(root, ['remote', 'get-url', 'origin'])) : null;
+      if (!origen || origen.ruta !== c.repo) root = copiaConLaRama(root || dir, c.repo, propia);
     }
+    if (!root) { out.push({ resuelto: false }); continue; }
     // la punta: la de la rama de `--head` o, sin `--head`, la de la rama en la que está la carpeta; con `dueño:rama` es
     // la de otro repo, y si no está en ningún lado, la de HEAD
-    const propia = c.head && !c.head.includes(':') ? c.head : null;
     const puntaPropia = propia && puntaDeLaRama(root, propia);
     const rama = puntaPropia ? ramaCorta(propia) : git(root, ['rev-parse', '--abbrev-ref', 'HEAD']);
     let target = c.base;
@@ -1198,8 +1263,8 @@ function pedidosDeGh(cmd, cwd, powershell) {
 
 /**
  * Los pedidos que abre la capa de plataforma (`platform.js change-request open`) hacia la rama principal, con la misma
- * forma que `pedidosDeGh`. El repo de `--repo` tiene que ser el `origin` de la carpeta: si no, o si un `cd` lo arma la
- * terminal, el pedido queda «sin ubicar».
+ * forma que `pedidosDeGh`. El repo de `--repo` tiene que ser el `origin` de la carpeta o, si la carpeta no es un repo,
+ * el de exactamente una de sus subcarpetas directas: si no, o si un `cd` lo arma la terminal, el pedido queda «sin ubicar».
  */
 function pedidosDeCapa(cmd, cwd) {
   if (!/platform\.js/.test(cmd)) return [];
@@ -1221,12 +1286,14 @@ function pedidosDeCapa(cmd, cwd) {
     try { args = a ? JSON.parse(a.startsWith('@') ? fs.readFileSync(path.resolve(dir, a.slice(1)), 'utf8') : a) : null; } catch { args = null; }
     if (!args || typeof args.targetBranch !== 'string') { out.push({ resuelto: false }); continue; }
     if (!esPrincipal(args.targetBranch)) continue;
-    const root = !dirIncierto && git(dir, ['rev-parse', '--show-toplevel']);
-    if (!root) { out.push({ resuelto: false }); continue; }
+    if (dirIncierto) { out.push({ resuelto: false }); continue; }
     let repo = null;
     const crudo = valor('--repo');
     try { repo = crudo && crudo.trim().startsWith('{') ? JSON.parse(crudo) : null; } catch { repo = null; }
     const quiere = (repo ? [repo.org, repo.project, repo.repo].filter(Boolean).join('/') : String(crudo || '')).toLowerCase();
+    // desde la carpeta que agrupa los repos, `--repo` elige al hijo cuyo origin es ese repo
+    const root = git(dir, ['rev-parse', '--show-toplevel']) || hijoConOrigen(dir, quiere);
+    if (!root) { out.push({ resuelto: false }); continue; }
     const origen = identidadRemoto(git(root, ['remote', 'get-url', 'origin']));
     if (!quiere || !origen || origen.ruta !== quiere) { out.push({ resuelto: false }); continue; }
     const rama = typeof args.sourceBranch === 'string' ? ramaCorta(args.sourceBranch) : null;
@@ -1360,7 +1427,7 @@ function anotar(event, cmd, punto, ctx) {
   // un pedido con su número queda esperando que entre («LOS PEDIDOS ABIERTOS»)
   const pedido = ctx.isPrCreate && Number.isInteger(ctx.pr) ? { pr: ctx.pr, plataforma: ctx.plataforma || 'azure', estado: 'esperando' } : {};
   const entry = { ts: new Date().toISOString(), sessionId: sessionIdOf(event), repoPath: root, sha: sha.slice(0, 12), branch: target,
-    ...(origen && origen !== 'HEAD' ? { origen } : {}), ...pedido, cmd: cmd.slice(0, 120) };
+    ...(origen && origen !== 'HEAD' ? { origen } : {}), ...pedido, ...(ctx.isPrCreate ? { entrega: 'pedido' } : {}), cmd: cmd.slice(0, 120) };
   if (juicio && juicio.exento) Object.assign(entry, { exento: juicio.exento, motivo: juicio.motivo, commits: juicio.commits, archivos: juicio.archivos.slice(0, 40) });
   if (ctx.isPrCreate && !ctx.sha && ctx.punta) entry.punta = ctx.punta;   // la punta cayó a HEAD, dicho
   const principal = carpetaPrincipal(root);

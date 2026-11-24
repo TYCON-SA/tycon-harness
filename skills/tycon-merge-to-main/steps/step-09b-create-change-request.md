@@ -8,7 +8,7 @@ El pedido lo abre la capa de plataforma del arnés, igual en Azure DevOps, en Gi
 organización declara en `team-repos.json` y atiende su conector (`host: platform` en el plan):
 
 ```
-node "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/lib/platform/platform.js" change-request open --repo '<repo>' --auto-complete --args '@<argsFile>'
+cd '<carpeta del repo>' && node "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/lib/platform/platform.js" change-request open --repo '<repo>' --auto-complete --args '@<argsFile>'
 ```
 
 La capa elige el conector por la plataforma del repo y devuelve un JSON: `{ ok: true, value }` o
@@ -153,8 +153,11 @@ El repo va en una línea, literal, con lo que dio el plan:
   otro servidor.
 
 ```bash
-node "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/lib/platform/platform.js" change-request open --repo '<repo en JSON>' --auto-complete --args '@<argsFile>'
+cd '<carpeta del repo>' && node "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/lib/platform/platform.js" change-request open --repo '<repo en JSON>' --auto-complete --args '@<argsFile>'
 ```
+
+El `cd` va siempre, aunque la sesión ya esté en el repo: la retrospectiva anota el pedido contra la carpeta donde
+corre, y desde una carpeta que agrupa varios repos sólo lo ubica si un único hijo tiene ese `origin`.
 
 🔴 **Solo en su llamada y en segundo plano**, con el mecanismo de la herramienta (regla anti-espera del 7b): en GitHub
 sin auto-merge el conector espera el control, y una validación tarda decenas de minutos. Avisá que el pedido queda

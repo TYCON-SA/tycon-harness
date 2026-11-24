@@ -47,7 +47,8 @@ const autor = ['-c', 'user.email=prueba@ejemplo.invalid', '-c', 'user.name=prueb
 function git(d, ...a) {
   const fecha = '2026-01-01T00:00:00Z';
   return spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-c', 'core.hooksPath=/dev/null', ...autor, '-C', d, ...a], {
-    encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_DATE: fecha, GIT_COMMITTER_DATE: fecha },
+    // sin las variables de un gancho: con su GIT_DIR, `-C` no decide el repo y un `init --bare` deja pelado al de verdad
+    encoding: 'utf8', env: require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).sinGitDelPadre({ GIT_AUTHOR_DATE: fecha, GIT_COMMITTER_DATE: fecha }),
   });
 }
 const sha = (d, ref = 'HEAD') => git(d, 'rev-parse', ref).stdout.trim();
@@ -534,7 +535,6 @@ test('MB1 Broken_OneRecord_JoinsAndExtends @story-8.294 @ac-9 — tres corridas,
 
 // ── T12-T15: el tablero, la espera de fondo, el arreglo y el aviso ───────────────────────────────────────────────────
 
-const BOARD = path.resolve(SCRIPTS, '..', '..', '..', 'scripts', 'tools', 'office', 'board.js');
 const NOTICE = path.resolve(SCRIPTS, '..', '..', '..', 'scripts', 'hooks', 'bench-notice.js');
 const filas = (l) => {
   const f = path.join(l.home, '.claude', '.tycon-pipeline', 'coordination', 'tablero.json');

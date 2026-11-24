@@ -18,6 +18,8 @@
  * que cambia un criterio o dejar la fila de A con otra clave en la lista (T22), inventar una forma canónica donde no la
  * hay (T23), migrar el click de antes (T24).
  */
+// sin el perfil del equipo: la prueba fija su ambiente (lib/without-team-profile.js)
+require('./lib/without-team-profile.js');
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');

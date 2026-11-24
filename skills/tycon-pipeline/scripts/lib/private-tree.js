@@ -151,6 +151,11 @@ function cloneWithDisk(src, dest, { at = null } = {}) {
   const head = at || git(src, ['rev-parse', 'HEAD']).trim();
   git(path.dirname(dest), ['clone', '-q', '--shared', '--no-checkout', src, dest]);
   git(dest, ['checkout', '-q', '--detach', head]);
+  // El clon queda en un commit suelto: sin `at` es el código de la corrida, y lleva su rama anotada para que
+  // lib/companion-repos.js elija los hermanos por ella. Uno en una versión fija (la del servidor, main) no la lleva.
+  const { ramaDe, RAMA_DE_LA_CORRIDA } = require('./companion-repos.js');
+  const rama = at ? null : ramaDe(src);
+  if (rama) git(dest, ['config', '--local', RAMA_DE_LA_CORRIDA, rama]);
   // El origin/main del clon sería la rama main local del repo de origen, que puede estar atrás del servidor: las suites
   // que cortan «lo propio de la rama» en `merge-base origin/main HEAD` verían como propio lo que ya entró a main. Con
   // --prune salen antes las ramas locales copiadas: una `story` local chocaría con una `story/x` del servidor.
@@ -259,13 +264,8 @@ function machineConfigFile(env) {
   return path.join(h, 'config.json');
 }
 
-function build(repo, story, dir) {
-  const t0 = Date.now();
-  const pub = findPublic(repo, story);
-  const arbol = path.join(dir, 'arbol');
-  const publico = path.join(dir, 'publico');
-  const priv = cloneWithDisk(repo, arbol);
-  const pubFoto = cloneWithDisk(pub.root, publico, { at: pub.source === 'server' ? pub.commit : null });
+/** Pone el público clonado en `publico` debajo del privado clonado en `arbol`, con el guion de superposición del privado. */
+function superponer(arbol, publico, dir, pubRoot) {
   const layer = teamLayer();
   const team = layer.dir || '';
   const report = path.join(dir, 'superpuesto.json');
@@ -275,8 +275,41 @@ function build(repo, story, dir) {
     maxBuffer: 64 * 1024 * 1024 });
   if (r.error || r.status !== 0) {
     const motivo = r.error ? r.error.message : `${(r.stderr || r.stdout || '').trim().split('\n').pop() || `salió ${r.status}`}`;
-    throw new Error(`no pude poner el público (${pub.root}) debajo del privado: ${motivo}`);
+    throw new Error(`no pude poner el público (${pubRoot}) debajo del privado: ${motivo}`);
   }
+  return { layer, team, overlay: (r.stdout || '').trim().split('\n').pop() || '' };
+}
+
+/**
+ * El árbol armado de los dos `origin/main`, sin el disco de ninguno: la base contra la que el juez de heredados mide un
+ * caso que la foto nocturna no conoce. Cada repo se clona en el commit de su `origin/main` (resuelto en el repo de
+ * origen: pasado como texto, el clon todavía no tiene esos refs y caería en otro commit). Sin `origin/main` en alguno,
+ * tira con su nombre. → `{ tree, skills, private: { root, commit }, public: { root, commit } }`.
+ */
+function buildAtMain(repo, pubRoot, dir) {
+  const punta = (r, cual) => {
+    try { return git(r, ['rev-parse', '-q', '--verify', 'refs/remotes/origin/main^{commit}']).trim(); } catch (_e) {
+      throw new Error(`el ${cual} (${r}) no tiene origin/main`);
+    }
+  };
+  const privMain = punta(repo, 'privado');
+  const pubMain = punta(pubRoot, 'público');
+  const arbol = path.join(dir, 'arbol');
+  const publico = path.join(dir, 'publico');
+  cloneWithDisk(repo, arbol, { at: privMain });
+  cloneWithDisk(pubRoot, publico, { at: pubMain });
+  superponer(arbol, publico, dir, pubRoot);
+  return { tree: arbol, skills: path.join(arbol, 'skills'), private: { root: repo, commit: privMain }, public: { root: pubRoot, commit: pubMain } };
+}
+
+function build(repo, story, dir) {
+  const t0 = Date.now();
+  const pub = findPublic(repo, story);
+  const arbol = path.join(dir, 'arbol');
+  const publico = path.join(dir, 'publico');
+  const priv = cloneWithDisk(repo, arbol);
+  const pubFoto = cloneWithDisk(pub.root, publico, { at: pub.source === 'server' ? pub.commit : null });
+  const { layer, team, overlay } = superponer(arbol, publico, dir, pub.root);
   return {
     tree: arbol, skills: path.join(arbol, 'skills'),
     base: { ...pub, uncommitted: pubFoto.uncommitted },
@@ -284,7 +317,7 @@ function build(repo, story, dir) {
     // la huella de lo que se clonó de cada repo, antes de superponer: lo que este árbol mide de verdad (lib/after-main.js)
     measured: { private: require('./after-main.js').sinLaConstancia(arbol, priv.tree), public: require('./after-main.js').sinLaConstancia(publico, pubFoto.tree) },
     team: team || null, teamSource: layer.source, teamProblem: layer.problem, seconds: Math.round((Date.now() - t0) / 100) / 10,
-    overlay: (r.stdout || '').trim().split('\n').pop() || '',
+    overlay,
   };
 }
 
@@ -320,7 +353,7 @@ function touchedBoth(repo, pub, story) {
     bases: [a.base, b.base].filter(Boolean), reason, ...(a.must_measure || b.must_measure ? { must_measure: true } : {}) };
 }
 
-module.exports = { isThinPrivate, detectThin, findPublic, cloneWithDisk, teamLayer, build, touchedBoth, NoPublic };
+module.exports = { isThinPrivate, detectThin, findPublic, cloneWithDisk, teamLayer, build, buildAtMain, touchedBoth, NoPublic };
 
 if (require.main === module) {
   const [cmd, ...rest] = process.argv.slice(2);

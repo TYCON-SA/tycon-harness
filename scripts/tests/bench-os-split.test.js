@@ -244,13 +244,14 @@ test('T12 PipelineMergeStep_DoesNotHideTheError @story-8.300 @ac-6 @ac-7', { ski
   let ini = fin;
   while (!/- (?:script|bash): \|/.test(lineas[ini])) ini--;
   const sangria = lineas[ini + 1].match(/^ */)[0].length;
-  const paso = (raiz) => lineas.slice(ini + 1, fin).map((l) => l.slice(sangria)).join('\n').replace(/\$\(Pipeline\.Workspace\)/g, `${raiz}/w`).replace(/\$\(Build\.SourcesDirectory\)/g, ROOT).replace(/\$\(Build\.BuildId\)/g, '1');
+  // las rutas van por el entorno, no dentro del texto del comando: el guion de bash queda fijo
+  const paso = lineas.slice(ini + 1, fin).map((l) => l.slice(sangria)).join('\n').replace(/\$\(Pipeline\.Workspace\)/g, '${BENCH_WORKSPACE}').replace(/\$\(Build\.SourcesDirectory\)/g, '${BENCH_SOURCES}').replace(/\$\(Build\.BuildId\)/g, '1');
   const correr = (dejar) => {
     const raiz = temporal(t);
     fs.mkdirSync(path.join(raiz, 'w'));
     for (const [so, rep] of Object.entries(dejar)) { fs.mkdirSync(path.join(raiz, 'w', `banco-${so}`)); fs.writeFileSync(path.join(raiz, 'w', `banco-${so}`, `banco-${so}.json`), JSON.stringify(rep)); }
     const out = path.join(raiz, 'junto.json');
-    const r = spawnSync('bash', ['-c', paso(raiz)], { cwd: raiz, encoding: 'utf8', env: { ...process.env, BENCH_MERGED: out, BENCH_HISTORY: path.join(raiz, 'hist') } });
+    const r = spawnSync('bash', ['-c', paso], { cwd: raiz, encoding: 'utf8', env: { ...process.env, BENCH_WORKSPACE: path.join(raiz, 'w'), BENCH_SOURCES: ROOT, BENCH_MERGED: out, BENCH_HISTORY: path.join(raiz, 'hist') } });
     return { ...r, out };
   };
   const sinMac = correr({ linux: conMac() });

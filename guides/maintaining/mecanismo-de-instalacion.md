@@ -609,7 +609,10 @@ instalarlo.
 - **Una máquina sin Claude Code vive entera en `~/.tycon`**: su estado es `~/.tycon/state`, las copias de seguridad
   `~/.tycon/backups` y su configuración `~/.tycon/config.json` (la misma del permiso de GitHub, que `tycon-config.js`
   conoce y nunca muestra). La regla es una sola y la lee el disco (`tycon-home.js`): **si existe `~/.tycon/state`, todo
-  es de ahí; si no, lo de siempre**. Ahí no corre el aplicador ni se crea nada en `~/.claude`; `uninstall` quita esa
+  es de ahí; si no, lo de siempre**. Ahí el aplicador corre sólo en su modo sin Claude Code, en Mac y en Windows: los
+  hooks globales de git, el buzón, los chequeos de engram y de sqlite3, el `AGENTS.md` puntero y el refresco de la lista
+  de proyectos de Azure (en Mac, además, las pruebas rápidas de las skills), y nada en `~/.claude`. Las skills, también
+  las de terceros, vienen en la versión bajada y harness.js las enlaza en `~/.codex/skills`. `uninstall` quita esa
   carpeta y la máquina queda libre. Es la regla con que la mudanza pasa a las demás.
 - **El MCP de Codex**: qué servidores espera sale de las integraciones prendidas y de `build/equivalences.json`;
   `~/.claude.json` sólo aporta la definición de los que son de cada máquina, si existe. Un servidor esperado que no se
@@ -620,12 +623,12 @@ instalarlo.
   por un `CLAUDE.md`, un `~/.claude.json` o una llave en el rc que no tiene.
 
 Lo que espera a la mudanza: los registros que los hooks en shell escriben al usarse siguen cayendo donde
-siempre; a una máquina nacida sin Claude Code no se le suma Claude Code (`install --tool claude` sale 2 y lo dice); en
-una instalación desde un clon Claude Code no se saca; y una máquina sólo con Codex no tiene el hook global de git ni las
-tareas diarias de fondo, que hoy pone el aplicador.
+siempre; a una máquina nacida sin Claude Code no se le suma Claude Code (`install --tool claude` sale 2 y lo dice); y en
+una instalación desde un clon Claude Code no se saca.
 
-Pruebas: `scripts/tests/harness-tools.test.sh` (T21, T22, T23, T26), `agents-md-blocks.test.js`, `tycon-config.test.js`
-(T24), `harness-parity.test.sh` (T25); en Windows, el escenario `codex-only` del pipeline 182.
+Pruebas: `scripts/tests/harness-tools.test.sh` (T21, T22, T23, T26, T54, T55), `installer-ps1-codex-only.test.sh` (el
+aplicador de Windows sin Claude Code, con `pwsh`), `agents-md-blocks.test.js`, `tycon-config.test.js` (T24),
+`harness-parity.test.sh` (T25); en Windows, el escenario `codex-only` del pipeline 182.
 
 ## La capa del equipo sobre la versión bajada
 

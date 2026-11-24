@@ -521,18 +521,70 @@ function rootsOf(storyFile) {
  * sin poder listarla (un error, el tiempo agotado), 'unknown': no se da por inventada. Dentro de un commit git deja
  * `GIT_DIR` y compañía en el entorno, y le ganan a `-C`: sin sacarlas, contestaría el repo del commit.
  */
+// El tiempo de git para preguntarle a la rama principal del remoto: cada llamada, y todas juntas en una corrida del lint.
+// Con git colgado, una historia con varias rutas hacía esperar el commit minutos; pasado el total, lo que falta no se
+// mira y no se da por inventado.
+const GIT_POR_LLAMADA_MS = 5000;
+const GIT_EN_TOTAL_MS = 10000;
+let gitGastadoMs = 0;
+// la rama principal de cada repo, preguntada una vez por corrida
+const ramaDe = new Map();
+
+/** Corre git con lo que queda del tope total; sin tiempo, `{ sinTiempo: true }` sin correrlo. */
+function gitConTope(args, opts) {
+  const queda = GIT_EN_TOTAL_MS - gitGastadoMs;
+  if (queda <= 0) return { sinTiempo: true };
+  const desde = Date.now();
+  try {
+    return { out: execFileSync('git', args, { windowsHide: true, ...opts, timeout: Math.min(GIT_POR_LLAMADA_MS, queda) }) };
+  } catch (e) { return { error: e }; } finally { gitGastadoMs += Date.now() - desde; }
+}
+
 function inRemoteMain(root, p) {
   if (!fs.existsSync(path.join(root, '.git'))) return 'no';
   const env = sinGitDelPadre();
-  let ref = null;
-  for (const r of ['origin/HEAD', 'origin/main']) {
-    try { execFileSync('git', ['-C', root, 'rev-parse', '--verify', '-q', `${r}^{commit}`], { windowsHide: true, stdio: 'ignore', timeout: 5000, env }); ref = r; break; } catch { /* la siguiente */ }
+  if (!ramaDe.has(root)) {
+    let ref = null;
+    for (const r of ['origin/HEAD', 'origin/main']) {
+      const g = gitConTope(['-C', root, 'rev-parse', '--verify', '-q', `${r}^{commit}`], { stdio: 'ignore', env });
+      if (g.sinTiempo) return 'unknown';
+      if (!g.error) { ref = r; break; }
+      // se cortó por tiempo: no se sabe si tiene la rama
+      if (g.error.signal) return 'unknown';
+    }
+    ramaDe.set(root, ref);
   }
+  const ref = ramaDe.get(root);
   if (!ref) return 'no';
-  try {
-    const out = execFileSync('git', ['-C', root, 'ls-tree', '--name-only', ref, '--', p], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, env });
-    return out.trim() ? 'yes' : 'no';
-  } catch { return 'unknown'; }
+  const g = gitConTope(['-C', root, 'ls-tree', '--name-only', ref, '--', p], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env });
+  if (g.sinTiempo || g.error) return 'unknown';
+  return g.out.trim() ? 'yes' : 'no';
+}
+
+/**
+ * Dónde preguntarle a git por una ruta de la historia: cada raíz con la ruta tal cual y, si la ruta empieza con el
+ * nombre de un repo («Backend/src/…»), ese repo con el resto. Dentro del repo hermano la ruta con su nombre adelante no
+ * existe: sin quitárselo, un clon atrasado da por inventado un archivo que ya está en su rama principal.
+ */
+function lugaresEnElRemoto(roots, p) {
+  const [top, ...resto] = p.split('/');
+  const lugares = roots.map((r) => [r, p]);
+  if (resto.length) {
+    const rest = resto.join('/');
+    for (const r of roots) {
+      // el nombre del repo sin distinguir mayúsculas: en macOS y Windows «backend/» es la carpeta «Backend»
+      if (path.basename(r).toLowerCase() === top.toLowerCase()) lugares.push([r, rest]);
+      else if (fs.existsSync(path.join(r, top, '.git'))) lugares.push([path.join(r, top), rest]);
+    }
+  }
+  // el mismo repo llega como hermano y como carpeta del padre: se le pregunta una vez
+  const vistos = new Set();
+  return lugares.filter(([r, q]) => {
+    const k = `${path.resolve(r)}\0${q}`;
+    if (vistos.has(k)) return false;
+    vistos.add(k);
+    return true;
+  });
 }
 
 /**
@@ -564,6 +616,61 @@ function filesDeParteMalos(fm) {
 }
 
 /** `{ missing, unsure }` de una story: las rutas que no existen y las que no se pueden juzgar. */
+/**
+ * Los renglones de «Ajustes después de la firma» que no están marcados como pasados al cuerpo. Un ajuste pasado es un
+ * renglón `- [x] …` (o `* [x]`, con o sin sangría), con los renglones de texto que le siguen sin cortar y con sangría;
+ * cualquier otro renglón con texto cuenta como pendiente: una casilla sin marcar (también anidada), un renglón suelto,
+ * un subtítulo o lo que hay en un bloque de código. La sección, de nivel 2 o 3 y fuera de un bloque de código, termina en
+ * el próximo título de su nivel o uno mayor.
+ */
+function ajustesSinPasar(content) {
+  const lineas = String(content).replace(/^﻿/, '').replace(/\r\n?/g, '\n').split('\n');
+  const pendientes = [];
+  let nivel = 0;
+  let enPasado = false;
+  let cerco = null;
+  for (const l of lineas) {
+    if (cerco) {
+      const cierre = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(l);
+      if (cierre && cierre[1][0] === cerco[0] && cierre[1].length >= cerco.length) cerco = null;
+      if (nivel && l.trim()) pendientes.push(l.trim());
+      continue;
+    }
+    const apertura = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(l);
+    if (apertura && !(apertura[1][0] === '`' && apertura[2].includes('`'))) {
+      cerco = apertura[1];
+      enPasado = false;
+      if (nivel) pendientes.push(l.trim());
+      continue;
+    }
+    const t = /^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$/.exec(l);
+    if (t) {
+      const nombre = t[2].replace(/[*_`]/g, '').trim().toLowerCase();
+      enPasado = false;
+      if (nivel && t[1].length <= nivel) nivel = 0;
+      if (!nivel && nombre === 'ajustes después de la firma') { nivel = t[1].length; continue; }
+      // un subtítulo dentro de la sección también es texto sin pasar
+      if (nivel) pendientes.push(l.trim());
+      continue;
+    }
+    if (!nivel) continue;
+    // un renglón vacío corta la continuación de un ajuste pasado
+    if (!l.trim()) { enPasado = false; continue; }
+    if (/^\s*[-*+]\s+\[[xX]\]\s/.test(l)) { enPasado = true; continue; }
+    const item = /^\s*([-*+]|\d+[.)])\s/.test(l);
+    if (enPasado && !item && /^\s{2,}\S/.test(l)) continue;
+    enPasado = false;
+    pendientes.push(l.trim());
+  }
+  return pendientes;
+}
+
+/** El estado de una historia como lo leen los guiones del arnés: sin comillas, sin comentario y en minúsculas. */
+function estadoDe(fm) {
+  const m = /^status\s*:\s*(.*)$/m.exec(fm);
+  return m ? m[1].replace(/\s+#.*$/, '').trim().replace(/^(["'])(.*)\1$/, '$2').trim().toLowerCase() : '';
+}
+
 function checkStory(storyFile, content) {
   const text = (content === undefined ? fs.readFileSync(storyFile, 'utf8') : content).replace(/^﻿/, '');
   if (!text.startsWith('---')) return { missing: [], unsure: [] };
@@ -585,7 +692,7 @@ function checkStory(storyFile, content) {
     const top = p.split('/')[0];
     if (!(p.includes('/') && roots.some((r) => probe(path.join(r, top)) === 'yes'))) { unsure.push(p); continue; }
     // antes de darla por inventada: un clon atrasado no tiene un archivo que ya está en la rama principal de su remoto
-    (roots.some((r) => inRemoteMain(r, p) !== 'no') ? unsure : missing).push(p);
+    (lugaresEnElRemoto(roots, p).some(([r, q]) => inRemoteMain(r, q) !== 'no') ? unsure : missing).push(p);
   }
   return { missing, unsure };
 }
@@ -720,6 +827,21 @@ function main() {
       }
     } else if (/^riesgo_alto_por\s*:/m.test(parsed.fm)) {
       console.error(`⚠️  ${rel}: no encontré la regla de riesgo (lib/risk-paths.js del skill tycon-pipeline): \`riesgo_alto_por:\` no se revisó.`);
+    }
+
+    // 10. Una historia terminada no guarda ajustes sin pasar al cuerpo: «Ajustes después de la firma» es el lugar de los
+    //     ajustes de redacción mientras se revisa el plan (la revisión no se ata a esa sección), y se vacía antes de `done`
+    if (estadoDe(parsed.fm) === 'done') {
+      const pendientes = ajustesSinPasar(content);
+      if (pendientes.length) {
+        errors.push({
+          rel,
+          problema: `está en \`done\` con ${pendientes.length} ajuste(s) de «Ajustes después de la firma» sin pasar al cuerpo: ${pendientes.slice(0, 3).map((l) => `«${l.slice(0, 60)}»`).join(', ')}`,
+          efecto: 'lo que se construyó no es lo que dice la historia: el ajuste quedó fuera del cuerpo que leen los demás',
+          arreglo: 'pasar cada ajuste al cuerpo de la historia y marcarlo `- [x]` en esa sección',
+        });
+        continue;
+      }
     }
 
     // 8. `files:` y `sensible:` de una parte (story-format.md §1.1): `files:` es una lista de rutas. Uno que no se puede
@@ -865,7 +987,7 @@ function main() {
 // Exportado para que OTROS controles usen EL MISMO criterio de "esto es una story" en vez de
 // escribir el suyo (dos detectores del mismo concepto terminan divergiendo: uno aparte podría tomar por story rota
 // un reporte de medición que declara `story:` en el cuerpo, sin frontmatter).
-module.exports = { frontmatterZone, looksLikeStory, DECLARES_STORY, NOT_A_STORY_NAME, STORY_SHAPED, errorRiesgoAltoPor, mensajeRiesgoAltoPor, filesDeParteMalos };
+module.exports = { frontmatterZone, looksLikeStory, DECLARES_STORY, NOT_A_STORY_NAME, STORY_SHAPED, errorRiesgoAltoPor, mensajeRiesgoAltoPor, filesDeParteMalos, ajustesSinPasar };
 
 // 🔴 `process.exitCode`, NO `process.exit()`: en Node las escrituras a una tubería son
 // ASINCRÓNICAS y `process.exit()` mata el proceso con parte de lo escrito en el aire. Medido con

@@ -11,8 +11,8 @@ it is not a promise that everything works the same with your repos.
 - **The checks and the skills work as they are**, with nothing installed for Cursor.
 - **The global rules and the reviewers as separate agents are missing.** A story in progress adds them.
 - **The free plan runs out fast** with a story's pipeline.
-- **The «Auto» model got around a brake** by writing on its own the variable that turns it off. Read
-  [the warnings](#warnings).
+- **The «Auto» model got around a brake** by writing on its own the variable that turned it off back then. That
+  variable no longer turns anything off: read [the warnings](#warnings).
 
 ## What works as it is
 
@@ -40,10 +40,12 @@ an id of its own per session.
 
 ## Warnings
 
-- **The brake that gets bypassed.** With the «Auto» model, the agent hit the safety brake and got around it by writing
-  the variable that turns it off, claiming a permission nobody had given. It also happened with open models in other
-  tools. While that escape is a variable the agent can write, the brake only stops a model that obeys. Another story
-  in progress closes it by asking a person for permission.
+- **The brake that got bypassed.** With the «Auto» model, the agent hit the safety brake and got around it by writing
+  the variable that turned it off back then, claiming a permission nobody had given. It also happened with open models
+  in other tools. That variable no longer turns anything off: the brake's only way out is the emergency, which the
+  person signs in their own terminal for one command ([guard guide](../safety-guard.md)). One limit remains, declared
+  by that guide: the emergency's permit is a file in the state folder, and an agent that managed to write it without
+  going through the guards would give itself the permit.
 - **The free plan runs out fast.** A single pipeline run up to the code used about 40,000 input tokens and 350,000
   cache tokens, and a few more prompts used up the quota. Once it runs out, every prompt returns the same limit notice.
 - **No tokens or cost in the record.** Cursor does not keep its usage on the machine: its local databases have no

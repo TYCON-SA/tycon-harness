@@ -225,7 +225,7 @@ como la historia entera, como antes.
 - Dos tandas sin terminar que nombran el mismo archivo tienen que decir, cada una, qué entrega sola (`delivers`); si ninguna sirve sola, se juntan en una → **VAL-W19 WARNING** si alguna no lo dice.
 
 **La tanda de la ejecución.** La ejecución que entrega una tanda arranca con `pipeline.js start --batch <name>`, o la
-anota con `marker.js set-batch <name>` (una vez, y la tanda no puede estar `done`). Desde ahí, «Preparar el commit» le
+anota con `marker.js set-batch <name>` (una vez, y la tanda no puede estar `done`). Desde ahí, «Preparar el pull request» le
 pide la evidencia en vivo de los criterios de esa tanda (`acs` ∪ `acs_pending`) más los de ninguna tanda, no la de
 todas. Cerrar una tanda (`status: done`) pide la evidencia de la que se cierra. Pasar la historia a `review` o `done`
 pide la de todas.
@@ -507,6 +507,14 @@ de la corrida, no que el número sea una medición honesta. `duration_ms` sí lo
   `snake_case` (ej: `test_post_pedidos_sin_clave_da_401`)
 - **Columna `AC` (OBLIGATORIA)**: lista de números de AC que cubre el test (ej: `1` o `1,3`). Todo AC debe aparecer en al menos una fila (regla GOLD #2, verificada mecánicamente por ACCOV-C5)
 - **Columna `Nivel` (OBLIGATORIA)**: `unit` | `integration` | `e2e`
+- **Columna `Archivos` (OPCIONAL)**: los archivos declarados (`files_to_modify` / `files_to_create`, escritos igual) que
+  ejercita la prueba, separados por comas. Sirve para que un cambio chico no obligue a repetir todos los humos: cuando
+  cambia un archivo de código, la matriz vence sólo la evidencia de los criterios cuyas pruebas lo ejercitan, y la de
+  los demás sigue contando (lo dice como aviso). Por qué la escribe la historia y no quien corre el humo: queda fija
+  antes de programar, la mira el validador, y no la elige el mismo agente que se ahorra repetir la prueba. Un criterio
+  con alguna prueba sin esta celda, o sin ninguna prueba, vence como siempre (todo cambio lo vence). Un nombre que la
+  historia no declara se avisa y su criterio vence como siempre: un error de tipeo no deja una evidencia sin vencer.
+  Ejemplo: `| E3 | \`MapaMuestraLosPuntos\` | 2 | e2e | … | … | \`web/MapaDelEditor.tsx\`, \`web/puntos.ts\` |`
 - El escenario describe las condiciones de entrada
 - El resultado esperado es concreto (codigo HTTP, evento emitido, estado final)
 - Cubren: happy path, errores, edge cases, idempotencia, no-regresion
@@ -821,6 +829,21 @@ Ejemplo:
 4. **File List exhaustiva**: si olvidás un archivo, el reviewer no puede verificar que la implementacion esta completa
 5. **Completion Notes accionables**: no "se implemento la story" sino QUE se implemento y COMO
 
+### 10b. Ajustes después de la firma (opcional)
+
+Los ajustes de redacción que aparecen mientras se revisa el plan (un ejemplo, una palabra, los hallazgos de la vuelta
+anterior) no se escriben en el cuerpo hasta firmar el plan: la revisión del plan se ata a lo que define la construcción,
+y esta sección no cuenta. Cada ajuste, un renglón; se marca `- [x]` cuando ya está en el cuerpo. Los revisores del
+código y el pase adversarial la leen como parte de lo pedido, y una historia en `done` con un ajuste sin marcar no se
+commitea.
+
+```markdown
+## Ajustes después de la firma
+
+- [ ] AC 2: el ejemplo dice «tres días», va «cinco días hábiles».
+- [x] Dev Notes: «borrar» por «archivar» (ya en el cuerpo).
+```
+
 ### 11. Follow-ups y cambios post-firma (opcional, derivado de `followed_up_by:`)
 
 Para stories `done` o `review` que tuvieron follow-ups posteriores (recalibraciones, fixes, scope changes — declarados en `followed_up_by:` del frontmatter), agregar al final del cuerpo un bloque humano-amigable que resuma qué entrega *hoy* la story respecto a lo originalmente firmado.
@@ -849,7 +872,7 @@ node ~/.claude/tycon-harness/scripts/tools/tycon-backfill-followups.js \
 
 Si la historia modifica un comando que existe en `main`, «Probar en vivo» lo corre con la versión de `main` y con el
 cambio, y compara las dos salidas (`smoke-run.sh --compare`, ver `steps/step-10-live-check.md`). Una diferencia que la
-historia no declara frena «Preparar el commit». Se declara en esta sección, un renglón por comando:
+historia no declara frena «Preparar el pull request». Se declara en esta sección, un renglón por comando:
 
 ```markdown
 ## Cambios de comportamiento

@@ -111,8 +111,13 @@ function platformPiece(file) {
 }
 const oneLineError = (e) => String((e && e.message) || e).split('\n')[0].slice(0, 200);
 function repoDeclaresWorkItems(filePath) {
-  const files = platformPiece('work-items-config.js')?.FILES;
-  if (!Array.isArray(files)) return false;
+  const pieza = platformPiece('work-items-config.js');
+  const files = pieza?.FILES;
+  if (!Array.isArray(files)) {
+    // la pieza carga pero no trae la lista de archivos: el aviso no sale por eso, y se dice, como cuando no carga
+    if (pieza) process.stderr.write('despachador: el aviso del pedido de trabajo no mira work-items-config.js: no exporta FILES (la lista de archivos que declaran los pedidos de trabajo)\n');
+    return false;
+  }
   let dir = path.dirname(path.resolve(String(filePath || '.')));
   for (;;) {
     if (files.some((f) => fs.existsSync(path.join(dir, '.tycon', f)))) return true;
@@ -220,7 +225,9 @@ const CHAINS = {
     // la nota (`marker.js note-red-test`) o, si es la prueba de un control, la firma del dueño. Ver lib/red-test-edit.js.
     { name: 'on-red-test-edit', path: path.join(PIPELINE_SCRIPTS, 'on-red-test-edit.js'), steps: ['all'], effect: 'blocks', failMode: 'closed' },
     { name: 'on-write-collision', path: path.join(PIPELINE_SCRIPTS, 'on-write-collision.js'), steps: ['implement'], effect: 'warns', failMode: 'open' },
-    { name: 'on-planning-artifact', path: path.join(PIPELINE_SCRIPTS, 'on-planning-artifact.js'), steps: ['plan'], effect: 'warns', failMode: 'open' },
+    // Los documentos de planificación: frena un PRD aprobado sin la validación de otro agente y avisa lo demás
+    // (reglas 12.1 y 12.4 de workflow-orchestration.md). Abierto: un error del control no frena un documento.
+    { name: 'on-planning-artifact', path: path.join(PIPELINE_SCRIPTS, 'on-planning-artifact.js'), steps: ['all'], effect: 'blocks', failMode: 'open' },
     // Código deprecado del repo (lib/deprecated.js): con `deprecated.edit: block`, editarlo sin una historia que lo pida
     // frena acá; con `warn`, el aviso sale después de editar (en post-edit), que es el que le llega al modelo.
     { name: 'on-deprecated-edit', path: path.join(PIPELINE_SCRIPTS, 'on-deprecated-edit.js'), steps: ['all'], effect: 'blocks', failMode: 'open' },
@@ -506,7 +513,7 @@ function dispatch(mode, { hoy = new Date().toISOString().slice(0, 10) } = {}) {
   process.exit(0);
 }
 
-module.exports = { dispatch, prepareEvents, CHAINS, integrationEntries, abrirConsumos, cerrarConsumos, logDispatchFailure, FAIL_CLOSED_ON_THROW_FROM };
+module.exports = { dispatch, prepareEvents, CHAINS, integrationEntries, abrirConsumos, cerrarConsumos, logDispatchFailure, FAIL_CLOSED_ON_THROW_FROM, repoDeclaresWorkItems };
 
 // CLI: `node dispatch.js pre-edit|post-edit` (los entry-scripts hook-*.js lo llaman).
 if (require.main === module) {

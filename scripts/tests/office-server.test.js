@@ -233,7 +233,73 @@ test('T96 Live_StatusChange_PushesPhoto @story-2.81 @ac-51: una sesión que se p
   p.close();
 });
 
-test('T7 Events_BurstOfChanges_OneSnapshot: cinco cambios juntos dan una foto; uno igual no manda nada', async () => {
+// 🔴 mutación: mandar la foto que sólo cambia la carga en cada lectura, o no mandarla nunca.
+test('T7b PhotoDue_MachineOnly_AtMostEvery30s @story-8.301 @ac-7: lo de la oficina sale ya; la carga sola, cada 30 s', () => {
+  const { photoDue, MACHINE_PHOTO_MS } = require(path.join(ROOT, 'scripts', 'tools', 'office', 'server.js'));
+  assert.strictEqual(MACHINE_PHOTO_MS, 30000);
+  const foto = (memoria) => ({ meta: { maquina: { memoria, procesador: 10 } }, agentes: [] });
+  const base = { json: 'a', lastJson: 'a', last: foto(40), everyMs: MACHINE_PHOTO_MS, lastSentAt: 1000 };
+  assert.strictEqual(photoDue({ ...base, json: 'b', data: foto(40), now: 1001 }), true, 'una novedad de la oficina sale enseguida');
+  // el margen es de un segundo: una lectura que tarda menos que la anterior no pierde su turno
+  assert.strictEqual(photoDue({ ...base, data: foto(41), now: 1000 + 28999 }), false, 'la carga sola, antes de 29 s, no');
+  assert.strictEqual(photoDue({ ...base, data: foto(41), now: 1000 + 29000 }), true, 'la carga sola, a los 29 s, sí');
+  assert.strictEqual(photoDue({ ...base, data: foto(40), now: 1000 + 600000 }), false, 'una foto igual, carga incluida, nunca');
+});
+
+// 🔴 mutación: sin el reloj, o decidiendo la foto como antes, la carga no se pone al día sin novedades; sin anotar la
+// hora del último envío, cada relectura sin novedad manda una foto.
+test('T7c Server_MachineOnly_NeverCloserThanTheInterval @story-8.301 @ac-7: sin novedades, la carga sale sola y nunca más seguido que el intervalo', async () => {
+  const m = toy();
+  // la carga de prueba cambia en cada lectura: cada relectura es una foto que sólo cambia la carga
+  openSync(m, { TYCON_OFFICE_MACHINE_PHOTO_MS: '2000', TYCON_OFFICE_TEST_LOAD: 'changes' });
+  const lock = readLock(m);
+  const p = page(lock);
+  await p.next();
+  const desde = p.fotos.length;
+  const coordination = path.join(m.sdir, 'coordination');
+  fs.mkdirSync(coordination, { recursive: true });
+  const board = path.join(coordination, 'tablero.json');
+  fs.writeFileSync(board, JSON.stringify({ pendientes: [] }));
+  await p.next(PLAZO);
+  // una foto de la carga es la que, respecto de la anterior, sólo cambia la carga; una novedad (otra cosa cambió: el
+  // minuto, un tablero) sale enseguida y no cuenta. El intervalo se mide como lo mide el servidor (`photoDue`): desde
+  // que empezó a leerse la foto anterior hasta que empezó a leerse esta. La llegada no sirve: una lectura lenta seguida
+  // de una rápida manda dos fotos más juntas que sus lecturas, y eso depende de la carga del runner
+  const sinCarga = (f) => JSON.stringify({ ...f.data, meta: { ...f.data.meta, maquina: null } });
+  const fotosDeLaCarga = () => {
+    const vistas = p.fotos.slice(desde);
+    return vistas.slice(1).map((f, i) => ({ f, previa: vistas[i] })).filter(({ f, previa }) => sinCarga(f) === sinCarga(previa));
+  };
+  // la relectura escribe el tablero entero de una vez (archivo aparte y renombre): a medio escribir, el servidor lo vería
+  // vacío o roto y eso sería una novedad, no una relectura
+  const reescribir = () => { fs.writeFileSync(`${board}.tmp`, fs.readFileSync(board)); fs.renameSync(`${board}.tmp`, board); };
+  const mirar = async (ms, conRelecturas) => {
+    const t0 = Date.now();
+    while (Date.now() - t0 < ms) {
+      if (conRelecturas) reescribir();
+      await sleep(300);
+    }
+  };
+  // relecturas sin novedad, más seguidas que el intervalo: ninguna puede leer una foto de la carga antes de tiempo. Con
+  // el intervalo en 2 s el margen es de 200 ms: entre su lectura y la de la foto anterior, al menos 1800 ms
+  await mirar(5000, true);
+  const carga = fotosDeLaCarga();
+  assert.ok(carga.every(({ f, previa }) => Number.isFinite(f.leidaEn) && Number.isFinite(previa.leidaEn)), 'el servidor de prueba dice cuándo leyó cada foto');
+  for (const { f, previa } of carga) assert.ok(f.leidaEn - previa.leidaEn >= 1800, `una foto de la carga leída a ${f.leidaEn - previa.leidaEn} ms de la anterior`);
+  assert.ok(carga.length <= 3, `a lo sumo una por intervalo: ${carga.length} en 5 s`);
+  // sin ninguna novedad ni relectura de afuera: sólo el reloj de la carga la pone al día, y lo vuelve a hacer. Se esperan
+  // dos fotos más de la carga con un plazo holgado y no se cuentan en una ventana fija: en un runner lento cada lectura
+  // tarda más y un tic puede perder su turno por unos milisegundos, y entonces sale en el siguiente
+  const antes = carga.length;
+  const hasta = Date.now() + 2 * PLAZO;
+  while (fotosDeLaCarga().length - antes < 2 && Date.now() < hasta) await sleep(100);
+  p.close();
+  const todas = fotosDeLaCarga();
+  assert.ok(todas.length - antes >= 2, `la carga se pone al día sola: ${todas.length - antes} fotos en ${2 * PLAZO} ms con el intervalo en 2 s`);
+  for (const { f, previa } of todas.slice(antes)) assert.ok(f.leidaEn - previa.leidaEn >= 1800, `una foto del reloj leída a ${f.leidaEn - previa.leidaEn} ms de la anterior`);
+});
+
+test('T7 Events_BurstOfChanges_OneSnapshot @story-8.301 @ac-7: cinco cambios juntos dan una foto; una igual, o que sólo cambia la carga antes de 30 s, no manda nada', async () => {
   // la foto lleva la hora en minutos: si el minuto cambia en medio, la foto nueva es legítima.
   // La prueba arranca lejos del cambio de minuto (dura unos 4 s, aun con la máquina cargada).
   const enElMinuto = Date.now() % 60000;
@@ -256,6 +322,7 @@ test('T7 Events_BurstOfChanges_OneSnapshot: cinco cambios juntos dan una foto; u
   p.close();
 });
 
+// el reloj de la carga de la máquina relee cada 30 s (T7c): la prueba dura menos, y mide que nada más lea
 test('T8 Server_Idle_ReadsNothing: sin cambios no se lee nada ni se corre nada', async () => {
   const m = toy();
   openSync(m);
@@ -633,6 +700,58 @@ test('T14 Watch_MissingFolder_AndWatchError: una carpeta que aparece después se
   assert.ok(foto.data.agents.some((a) => /arreglo de la oficina/.test(a.titulo || '')), JSON.stringify(foto.data.agents));
   assert.strictEqual((await counters(lock)).intervals, 0, 'sin consultas periódicas');
   p.close();
+});
+
+// Un archivo vigilado que se reemplaza por renombre (la escritura atómica de gates.log) deja al vigilante sobre el archivo
+// viejo, sin error: la oficina lo vuelve a vigilar, y los cambios siguientes llegan.
+test('Watch_ReplacedByRename_KeepsWatching @DEF-2.81-B-vigilancia-muda', async () => {
+  const { watchAll } = require(SERVER);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'office-rewatch-'));
+  const file = path.join(dir, 'gates.log');
+  const sub = path.join(dir, 'doing');
+  fs.writeFileSync(file, 'a\n');
+  fs.mkdirSync(sub);
+  let n = 0;
+  const notes = [];
+  const stop = watchAll([file, sub], () => { n += 1; }, notes);
+  const llega = async () => { for (let i = 0; i < 40 && n === 0; i += 1) await sleep(50); return n; };
+  try {
+    await sleep(150);
+    fs.writeFileSync(`${file}.tmp`, 'b\n');
+    fs.renameSync(`${file}.tmp`, file);
+    assert.ok(await llega() > 0, 'el reemplazo mismo se ve');
+    await sleep(300);
+    n = 0;
+    fs.appendFileSync(file, 'c\n');
+    assert.ok(await llega() > 0, 'un cambio después del reemplazo sigue llegando');
+    // la carpeta borrada y vuelta a crear: lo de adentro sigue llegando
+    fs.rmSync(sub, { recursive: true });
+    await sleep(300);
+    fs.mkdirSync(sub);
+    await sleep(300);
+    n = 0;
+    fs.writeFileSync(path.join(sub, 's1.json'), '{}');
+    assert.ok(await llega() > 0, 'la carpeta vuelta a crear se vigila');
+    assert.deepStrictEqual(notes, []);
+  } finally {
+    stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// server.log junta los arranques: si el proceso nuevo muere sin escribir, la apertura cita su código de salida, no la
+// última línea de un arranque anterior.
+test('Open_DiesWithoutWriting_DoesNotCiteAnOldStart @DEF-2.81-B-vigilancia-muda', { skip: WIN }, () => {
+  const m = toy();
+  const dir = path.join(m.sdir, 'office');
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(path.join(dir, 'server.log'), 'no arrancó: el motivo de un arranque anterior\n');
+  const muere = path.join(m.home, 'muere.js');
+  fs.writeFileSync(muere, "if (/server\\.js$/.test(process.argv[1] || '')) process.exit(7);\n");
+  const r = openSync(m, { NODE_OPTIONS: `--require ${muere}` });
+  assert.strictEqual(r.status, 1, r.stderr);
+  assert.doesNotMatch(r.stderr, /arranque anterior/, 'no cita una línea vieja');
+  assert.match(r.stderr, /código 7/, r.stderr);
 });
 
 test('T15 Open_PortOrLockFails_Exits1: sin poder escribir el candado sale 1 y no deja proceso', { skip: WIN || process.getuid() === 0 }, () => {
@@ -1205,7 +1324,7 @@ test('T27 Mensaje_NoEscribeEnAprobaciones @story-8.183 @ac-14 @ac-15: «aprobado
     const anyway = await r.send({ s: 'Alfa', texto: 'aprobado', igual: true });
     assert.strictEqual(anyway.status, 200);
     const got = om.take(m.sdir, 's1');
-    assert.match(got.envelope, /Parece una aprobación y no lo es\. Dice: aprobado$/);
+    assert.match(got.envelope, /Parece una aprobación y no lo es\. Al contestar, empezá citándolo en un párrafo aparte: en su pestaña la persona no lo ve\. Dice: aprobado$/);
     assert.deepStrictEqual(fs.readdirSync(approvals).sort(), before);
   } finally { r.close(); }
 });
@@ -1419,4 +1538,116 @@ test('T47 Office_LaMarcaDeAusenteSeVe @story-8.221 @ac-36: con la marca puesta, 
   assert.strictEqual(foto().meta.ausente, null, 'borrada, no la trae');
   const html = fs.readFileSync(path.join(ROOT, 'scripts', 'tools', 'office', 'page.html'), 'utf8');
   assert.match(html, /id="ausente"/, 'la página tiene dónde mostrarla');
+});
+
+test('T16 Servidor_ControlaCadaMinutoSoloConAlguienMirando @story-8.313 @ac-8 @ac-10 @ac-15: el control lanza --refresh-if-moved sólo con una página, sin superponerse, y una caída se dice una vez', async () => {
+  // un lector de juguete que tarda: anota cuándo empieza y cuándo termina cada corrida
+  const slowReader = (m, { code = 0 } = {}) => {
+    const script = path.join(m.home, 'control-lento.js');
+    fs.writeFileSync(script, `const fs = require('fs');
+const log = ${JSON.stringify(`${script}.log`)};
+fs.appendFileSync(log, 'inicio ' + process.argv[2] + '\\n');
+Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 700);
+fs.appendFileSync(log, 'fin\\n');
+process.exit(${code});`);
+    return { script, lines: () => { try { return fs.readFileSync(`${script}.log`, 'utf8').trim().split('\n').filter(Boolean); } catch { return []; } } };
+  };
+  const fresh = (m) => {
+    // una lectura recién hecha: la de cada media hora no corre, sólo el control
+    fs.mkdirSync(path.join(m.sdir, 'office'), { recursive: true });
+    fs.writeFileSync(path.join(m.sdir, 'office', 'project-stories.json'), JSON.stringify({ at: new Date().toISOString(), proyectos: [], sinHistorias: [] }));
+  };
+  const m = toy();
+  fresh(m);
+  const f = slowReader(m);
+  openSync(m, { TYCON_OFFICE_PROJECTS_READ: f.script, TYCON_OFFICE_PROJECTS_MS: '3600000', TYCON_OFFICE_PROJECTS_CHECK_MS: '200' });
+  await sleep(800);
+  assert.deepStrictEqual(f.lines(), [], 'sin páginas no controla');
+  const p = page(readLock(m));
+  await p.next();
+  assert.ok(await until(() => f.lines().filter((l) => l === 'fin').length >= 2, PLAZO), `con una página controla (${f.lines().join(' | ')})`);
+  p.close();
+  const lines = f.lines();
+  assert.ok(lines.filter((l) => l.startsWith('inicio')).every((l) => l === 'inicio --refresh-if-moved'), 'lanza el control, no la lectura entera');
+  // nunca dos a la vez: cada inicio va seguido de su fin
+  for (let i = 0; i < lines.length; i += 1) if (lines[i].startsWith('inicio') && i + 1 < lines.length) assert.strictEqual(lines[i + 1], 'fin', `sin superponerse: ${lines.join(' | ')}`);
+  // un control que se cae: la oficina lo dice una vez
+  const n = toy();
+  fresh(n);
+  const g = slowReader(n, { code: 3 });
+  openSync(n, { TYCON_OFFICE_PROJECTS_READ: g.script, TYCON_OFFICE_PROJECTS_MS: '3600000', TYCON_OFFICE_PROJECTS_CHECK_MS: '200' });
+  const q = page(readLock(n));
+  await q.next();
+  const dicho = () => q.fotos.filter((x) => x.data).map((x) => (x.data.unreadable || []).filter((u) => /las historias de tus proyectos no se pudieron leer: .*3/.test(u)).length);
+  assert.ok(await until(() => dicho().some((k) => k > 0), PLAZO), 'llega el aviso');
+  assert.ok(dicho().every((k) => k <= 1), 'una vez por foto, no una por control');
+  q.close();
+});
+
+test('T348 Office_LoQueTeNecesita_RespuestaLlega @story-8.234 @ac-36: la respuesta a una espera llega como un mensaje de la oficina, y verify la da por buena', async () => {
+  const m = toy();
+  watcherAlive(m, 's1');
+  const r = await mountedRoute(m, { Enzo: { sid: 's1', recibe: 'si', esperaDueno: true } }, { TYCON_OFFICE_MESSAGE_DEADLINE_MS: '60000' });
+  try {
+    const sent = await r.send({ s: 'Enzo', texto: 'la A', responde: 'espera' });
+    assert.strictEqual(sent.status, 200, JSON.stringify(sent.json));
+    const got = om.take(m.sdir, 's1');
+    assert.match(got.envelope, new RegExp(`^\\[oficina ${sent.json.id}\\] .*Dice: la A$`));
+    assert.deepStrictEqual(om.verify(m.sdir, sent.json.id, 's1'), { code: 0, text: 'la A' });
+  } finally { r.close(); }
+});
+
+test('T349 Office_LoQueTeNecesita_FirmaNoSeContestaAhi @story-8.234 @ac-37: una firma, un cuadro o lo del tablero no se contestan desde la página', async () => {
+  const m = toy();
+  watcherAlive(m, 's1');
+  const r = await mountedRoute(m, { Firmante: { sid: 's1', recibe: 'si', cuadro: true, esperaDueno: false } }, { TYCON_OFFICE_MESSAGE_DEADLINE_MS: '60000' });
+  try {
+    for (const responde of ['firma', 'cuadro', 'tablero']) {
+      const x = await r.send({ s: 'Firmante', texto: 'sí, firmo', responde });
+      assert.strictEqual(x.status, 400, responde);
+      assert.strictEqual(x.json.motivo, 'Desde acá sólo se contesta una espera en texto: lo demás se contesta donde dice.');
+    }
+    const conCuadro = await r.send({ s: 'Firmante', texto: 'sí', responde: 'espera' });
+    assert.strictEqual(conCuadro.status, 409);
+    assert.strictEqual(conCuadro.json.motivo, 'Tiene un cuadro abierto: se contesta en su chat, con el click.');
+    assert.deepStrictEqual(inboxOf(m), [], 'nada llegó al buzón');
+  } finally { r.close(); }
+  // la página ofrece escribir sólo en una espera
+  const code = fs.readFileSync(path.join(__dirname, '..', 'tools', 'office', 'page.js'), 'utf8');
+  assert.match(code, /if\(i\.clase==="espera"&&LIVE\)\{[\s\S]{0,200}?campoMandar\(/);
+  assert.strictEqual((code.match(/campoMandar\(i\./g) || []).length, 1, 'un solo campo, el de la espera');
+});
+
+test('T350 Office_LoQueTeNecesita_ResueltaOCerrada @story-8.234 @ac-38: si ya no espera, queda en el registro sin entregarse; si la sesión cerró, no va a nadie', async () => {
+  const m = toy();
+  watcherAlive(m, 's1');
+  const r = await mountedRoute(m, { Enzo: { sid: 's1', recibe: 'si', esperaDueno: false } }, { TYCON_OFFICE_MESSAGE_DEADLINE_MS: '60000' });
+  try {
+    const tarde = await r.send({ s: 'Enzo', texto: 'la B', responde: 'espera' });
+    assert.strictEqual(tarde.status, 409);
+    assert.strictEqual(tarde.json.resuelto, true);
+    assert.strictEqual(tarde.json.motivo, 'Ya estaba resuelto: tu respuesta quedó en el registro y no se entregó.');
+    assert.deepStrictEqual(inboxOf(m), []);
+    assert.ok(logOf(m).some((x) => x.estado === 'rechazado' && x.texto === 'la B'), 'la respuesta queda guardada en el registro');
+    const cerrada = await r.send({ s: 'Ida', texto: 'la C', responde: 'espera' });
+    assert.strictEqual(cerrada.status, 410);
+    assert.strictEqual(cerrada.json.cerrada, true);
+    assert.strictEqual(cerrada.json.motivo, 'La sesión cerró: tu respuesta no se mandó a nadie.');
+    // un mensaje común a una sesión que no está sigue diciendo lo de siempre
+    assert.strictEqual((await r.send({ s: 'Ida', texto: 'hola' })).status, 404);
+  } finally { r.close(); }
+  // en la página, la de una sesión que cerró se puede descartar
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'tools', 'office', 'page.js'), 'utf8'), /if\(j\.cerrada&&descartar\)\{[^\n]*"Descartar"/);
+});
+
+test('T356 Office_LoQueTeNecesita_NombreRepetidoNoRecibe @story-8.234 @ac-36: el proceso no le entrega una respuesta a un nombre de dos sesiones', async () => {
+  const m = toy();
+  watcherAlive(m, 's1');
+  const r = await mountedRoute(m, { Rev: { sid: 's1', recibe: 'si', esperaDueno: false, repetido: true } }, { TYCON_OFFICE_MESSAGE_DEADLINE_MS: '60000' });
+  try {
+    const x = await r.send({ s: 'Rev', texto: 'la A', responde: 'espera' });
+    assert.strictEqual(x.status, 409);
+    assert.strictEqual(x.json.motivo, 'Hay más de una sesión con ese nombre: contestale en su chat.');
+    assert.deepStrictEqual(inboxOf(m), []);
+  } finally { r.close(); }
 });

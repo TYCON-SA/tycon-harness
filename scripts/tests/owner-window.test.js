@@ -11,6 +11,8 @@
  * stable-data: los «git commit» de abajo son textos que se le pasan al freno, no commits; la única hora real es la de la
  * corrida de pruebas en verde que la matriz pide reciente, y no se compara con ninguna fecha fija.
  */
+// sin el perfil del equipo: la prueba fija su ambiente (lib/without-team-profile.js)
+require('./lib/without-team-profile.js');
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
@@ -125,9 +127,11 @@ test('OwnerWindow_FirmaReconocida_PideVentanaYAnota (T7)', (t) => {
     assert.strictEqual(r.decision, 'ask', `${cmd}: ${r.texto}`);
     assert.deepStrictEqual(r.firmas, [firma], cmd);
     const s = require('../lib/signatures.js').SIGNATURES.find((x) => x.id === firma);
-    // el de la excepción en vivo dice la razón declarada, no el texto del catálogo
+    // el de la excepción en vivo dice la razón declarada, no el texto del catálogo; volver a aprobar la maqueta firma como
+    // el plan, pero su cuadro dice que es la maqueta
     const que = firma === 'runtime-waiver' ? 'Aceptar sin prueba en vivo el AC 1, porque «el servicio externo no tiene ambiente de prueba»'
-      : `${s.approves.charAt(0).toUpperCase()}${s.approves.slice(1)}`;
+      : / approve-mockup /.test(cmd) ? 'Volver a aprobar la maqueta de una story'
+        : `${s.approves.charAt(0).toUpperCase()}${s.approves.slice(1)}`;
     assert.ok(r.texto.includes(`¿${que}?`), `${cmd}: el texto dice qué aprueba`);
     assert.match(r.texto, /9\.99/, `${cmd}: el texto dice la story`);
     assert.match(r.texto, /ses-a/, `${cmd}: el texto dice la sesión destino`);
@@ -168,6 +172,44 @@ test('OwnerWindow_GuionAprobado_FirmaConVentana (T8)', (t) => {
     assert.strictEqual(g[0].sesion, 'ses-a');
     assert.strictEqual(g[0].destino, 'ses-a');
   }
+});
+
+// «Avisar si cambia la consola»: cuando la herramienta cambia la forma con que corre sus comandos, `desenvolver` no la
+// reconoce y daba null callado: el click del dueño se gastaba sin decir por qué y el freno dejaba de ver las consolas de
+// fondo sin que nadie lo supiera. Ahora el guion lo dice, y las dos cosas quedan en hook-errors.log, que el aviso de
+// arranque cuenta (hook-failures-notice.js), sin la línea de comando.
+test('OwnerWindow_ConsolaConOtraForma_LoDiceYQuedaAnotado @aviso-consola', (t) => {
+  const [firma, cmd, argv] = GUIONES[0];
+  const casa = casaNueva(t);
+  pedir(casa, cmd);
+  const nueva = (c, o) => envolver(casa, c, o).replace(" && { \\builtin unalias", " && \\builtin typeset -g CLAUDE_NUEVO=1 2>/dev/null || true && { \\builtin unalias");
+  assert.notStrictEqual(nueva(cmd), envolver(casa, cmd), 'la prueba arma otra forma');
+  assert.strictEqual(ow.desenvolver(nueva(cmd), casa), null, 'la forma nueva no se reconoce');
+  const log = path.join(require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js')).stateDir(casa), 'hook-errors.log');
+  const leer = () => { try { return fs.readFileSync(log, 'utf8'); } catch (_) { return ''; } };
+  const CAMBIO = /cambió la forma de su consola/;
+  // un padre que no es una consola de la herramienta: el motivo de siempre, sin anotar nada
+  let v = ow.verificar({ firma, argv, pid: 301, arbol: arbolDelGuion(casa, cmd, { consola: 'bash /tmp/mio.sh' }), casa, ahora: AHORA });
+  assert.strictEqual(v.ok, false);
+  assert.doesNotMatch(v.motivo, CAMBIO);
+  assert.doesNotMatch(leer(), CAMBIO);
+  // la consola de la herramienta con otra forma: el click no vale, se dice por qué y queda anotado sin la línea de comando
+  v = ow.verificar({ firma, argv, pid: 301, arbol: arbolDelGuion(casa, cmd, { consola: nueva(cmd) }), casa, ahora: AHORA });
+  assert.strictEqual(v.ok, false);
+  assert.match(v.motivo, /la herramienta cambió la forma de su consola/);
+  assert.match(v.motivo, /--terminal/, 'dice la salida por la terminal');
+  assert.match(leer(), /\] owner-window FAILED CLOSED: la herramienta cambió la forma de su consola/);
+  assert.doesNotMatch(leer(), /approve-plan|CLAUDE_NUEVO|dale, seguí/, 'sin la línea de comando');
+  assert.strictEqual(vigentes(casa).length, 1, 'nada lo consumió');
+  // del lado del freno: una consola de fondo con la forma nueva no se ve; queda anotado que el freno no la ve
+  fs.rmSync(log, { force: true });
+  pedir(casa, cmd, { arbol: arbolDelFreno({ extra: [{ pid: 400, ppid: 100, inicio: INICIO, comando: nueva('sleep 99', { deFondo: true }) }] }) });
+  assert.match(leer(), /\] owner-window FAILED OPEN: la herramienta cambió la forma de su consola/);
+  assert.doesNotMatch(leer(), /sleep 99|CLAUDE_NUEVO/, 'sin la línea de comando');
+  // con la forma de siempre no se anota nada
+  fs.rmSync(log, { force: true });
+  pedir(casa, cmd, { arbol: arbolDelFreno({ extra: [{ pid: 400, ppid: 100, inicio: INICIO, comando: envolver(casa, 'sleep 99', { deFondo: true }) }] }) });
+  assert.doesNotMatch(leer(), CAMBIO);
 });
 
 test('OwnerWindow_FirmaEscondida_NoFirma (T9)', (t) => {
@@ -2541,15 +2583,16 @@ test('Precheck_AprobarElPlan_FueraDeOrdenNiegaYEnOrdenNoEscribe', (t) => {
 
 // Las otras firmas de guion con requisitos propios pasan por el mismo chequeo. Quedan sin chequeo el carril, que no
 // tiene requisitos antes de la firma, y las cuatro firmas sobre un archivo.
-const CON_REQUISITOS = ['plan-approval', 'extra-round', 'save', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver',
-  'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran', 'adhoc-lane', 'adhoc-lane:sobre-cupo',
-  'designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno', 'lost-run:particion', 'escape:no-mutation'];
+const CON_REQUISITOS = ['plan-approval', 'extra-round', 'save', 'atdd-skip', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver',
+  'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'review-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran', 'adhoc-lane', 'adhoc-lane:sobre-cupo',
+  'designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno', 'autonomy-resume', 'lost-run:particion', 'escape:no-mutation'];
 
 // 🔴 Falla con: una firma de guion con requisitos que abre la ventana sin preguntarle antes al guion.
 test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => {
   assert.deepStrictEqual([...ow.CON_PRECHEQUEO].sort(), [...CON_REQUISITOS].sort());
   const otras = [
     ['adversarial-skip', `node ${MARKER} sign-adversarial-skip --story /r/specs/story-9.99.md --reason "sin código"`],
+    ['atdd-skip', `node ${MARKER} sign-atdd-skip --story /r/specs/story-9.99.md --reason "sólo guías"`],
     ['pending-approval', `node ${MARKER} approve-pending --id DEF-nuevo --repo /r`],
     ['escape:force-manual', `node ${MARKER} set-check dod green --force-manual`],
     ['escape:trust-ran', `node ${PIPELINE} check-count --repo /r --story /r/specs/story-9.99.md --trust-ran --ran a`],
@@ -2565,6 +2608,10 @@ test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => 
     ['lost-run:particion', `node ${MARKER} clear-session ses-a --lost --partition`],
     // cerrar las pruebas sin los mutantes: sin motivo o en un paso que no las corre, el guion se niega antes de la firma
     ['escape:no-mutation', `node ${MARKER} complete-step run-tests --no-mutation --reason "refactor sin código nuevo"`],
+    // volver al modo autónomo: sin detención, con el botón de pánico o con el «No» del dueño se niega antes del cuadro
+    ['autonomy-resume', `node ${MARKER} resume-autonomy`],
+    // contestar «skip» a la pregunta del pase del código: sin pregunta o sin diff legible, el guion se niega antes del cuadro
+    ['review-skip', `node ${MARKER} review-answer --kind code --choice skip`],
   ];
   const vistas = new Set();
   for (const [firma, cmd] of [...GUIONES, ...otras]) {
@@ -2782,6 +2829,22 @@ test('Adhoc_ClickConElCuadroDelFreno_DejaElCupoPedido', (t) => {
   assert.deepStrictEqual([r.decision, r.via], ['allow', 'click'], r.texto);
 });
 
+// La exención de comparación con main en una sesión de fondo de una historia delicada (Producto A, 20/11): el perfil la
+// delega, pero el guion niega la delegación en una historia delicada y pide el click del dueño. Con el click anotado, el
+// freno lo toma antes que la delegación, desde su sesión o con la sesión de fondo pidiéndola para sí.
+const EXIMIR = `node ${MARKER} compare-waiver --story /r/stories/story-9.99.md --command ProdForms/build-form.js --reason "usa la red"`;
+
+test('T1 CompareWaiver_ClickDelDuenoEnSesionDeFondo_GanaALaDelegacion — el click se toma; sin click, delegación', (t) => {
+  const casa = casaNueva(t);
+  const deFondo = { session_id: 'ses-a', permission_mode: 'bypassPermissions' };
+  const sin = pedirConDelegacion(casa, EXIMIR, { evento: deFondo });
+  assert.deepStrictEqual([sin.decision, sin.via], ['allow', 'delegacion'], sin.texto);
+  const conClick = casaNueva(t);
+  anotarAprobacion(conClick, 'ses-a', { tipo: 'click', tool_use_id: 'toolu_1' });
+  const r = pedirConDelegacion(conClick, EXIMIR, { evento: deFondo });
+  assert.deepStrictEqual([r.decision, r.via], ['allow', 'click'], r.texto);
+});
+
 test('Adhoc_PestanaSinPermisos_PideMasQueElCupo_NoSeHaceAvisado', (t) => {
   const casa = casaNueva(t);
   const r = pedirSinVentana(casa, `node ${MARKER} adhoc set '{"reason":"arreglo del sp","allowedFiles":["src/sp.js"],"maxFiles":7}'`, { evento: { session_id: 'ses-a' } });
@@ -2955,11 +3018,12 @@ test('ExcepcionesDeTramite_ParaOtraSesion_FirmanPorDelegacion', (t) => {
     const reg = JSON.parse(fs.readFileSync(path.join(ow.carpeta(casa), vigentes(casa)[0]), 'utf8'));
     assert.deepStrictEqual([reg.firma, reg.via, reg.destino], [firma, 'delegacion', 'ses-b'], cmd);
   }
-  // las firmas sobre un archivo que no son de trámite siguen sin correrse desde otra pestaña
+  // las firmas sobre un archivo que no son de trámite se piden desde otra pestaña, pero nunca por delegación: van a la
+  // ventana de quien las pide (Exencion_*)
   for (const nombre of ['story-skill-bypass', 'dod_runtime_exempt']) {
     const r = pedir(casaNueva(t), `node ${MARKER} sign-file ${nombre} /r/x.md --for-session ses-b`, { delegacion });
-    assert.strictEqual(r.decision, 'deny', nombre);
-    assert.match(r.texto, /no se corre desde la pestaña de otra sesión/, nombre);
+    assert.strictEqual(r.decision, 'ask', `${nombre}: ${r.texto}`);
+    assert.notStrictEqual(r.via, 'delegacion', nombre);
   }
 });
 
@@ -2969,10 +3033,9 @@ test('AdhocSet_SobreCupo_ParaOtraSesion_ElGuionTambienLoNiega @story-8.181 @ac-3
   const r = ow.exigir({ firma: SOBRE_CUPO, argv: [MARKER, 'adhoc', 'set', '{"reason":"arreglo del sp","allowedFiles":["src/sp.js"],"maxFiles":9}', '--for-session', 'ses-b'], propia: 'ses-a' });
   assert.notStrictEqual(r.codigo, 0, JSON.stringify(r));
   assert.match(r.motivo, /no pasó por la ventana/);
-  // la que no es de trámite sigue sin correrse desde otra pestaña
+  // la del freno de los datos se pide desde otra pestaña, pero sin el click del dueño el guion tampoco la firma
   const datos = ow.exigir({ firma: 'adhoc-lane:datos', argv: [MARKER, 'adhoc', 'allow-data-change', '--changed', 'x', '--recommends', 'pasar', '--why', 'y', '--for-session', 'ses-b'], propia: 'ses-a' });
-  assert.strictEqual(datos.codigo, 1, JSON.stringify(datos));
-  assert.match(datos.motivo, /se corre desde la sesión destino/);
+  assert.notStrictEqual(datos.codigo, 0, JSON.stringify(datos));
 });
 
 // 🔴 Falla con: la lista cruda, con pruebas y sondas, que niega un cupo que alcanza y empuja a la firma de sobre cupo.
@@ -3962,6 +4025,31 @@ test('OwnerNext_DaElCuadro_LaSesionRepite (T11) — @story-8.153 @ac-11', (t) =>
   assert.strictEqual(propia.destino, 'ses-a');
 });
 
+test('OwnerNext_OtraSesionNo_SinCuadroSalvoDelegada (T20) — @story-8.319 @ac-4 @ac-15', (t) => {
+  // una firma que no se corre desde la pestaña de otra sesión: a la coordinadora no le da cuadro, le da la pestaña
+  // destino y la forma de la terminal. La que el perfil le delega sigue con su cuadro, como antes
+  const pasadaCon = (casa, delegacion) => sl.siguiente({ casa, ...SIN_PERFIL(casa), sesion: 'ses-coord', ahora: AHORA, arbol: CON_COORD, validar: VALIDA(casa), delegacion });
+  const anotar = (casa, firma, cmd, titulo) => sl.anotarFirma({ casa, firma, titulo, sesion: 'ses-a', destino: 'ses-a', comando: cmd, palabras: ow.canonica(cmd), cwd: '/r', ahora: AHORA - 600000 });
+
+  let casa = casaDeLista(t);
+  anotar(casa, 'adversarial-skip', SKIP_T, 'saltear el pase adversarial con constancia');
+  const sinDelegar = pasadaCon(casa, SIN_DELEGACION);
+  assert.strictEqual(sinDelegar.tipo, 'via', JSON.stringify(sinDelegar));
+  assert.strictEqual(sinDelegar.pregunta, undefined, 'sin cuadro');
+  assert.strictEqual(sinDelegar.delegada, false);
+  assert.match(sinDelegar.texto, /pestaña de ses-a/);
+  assert.ok(sinDelegar.texto.includes('sign-adversarial-skip --story s --reason porque --terminal --for-session ses-a'), sinDelegar.texto);
+
+  // la delegación es la que se le pasa: con una que dice que el perfil se la delega, el mismo renglón lleva su cuadro
+  casa = casaDeLista(t);
+  anotar(casa, 'adversarial-skip', SKIP_T, 'saltear el pase adversarial con constancia');
+  const delegada = pasadaCon(casa, () => ({ ok: true }));
+  assert.strictEqual(delegada.tipo, 'firma', JSON.stringify(delegada));
+  assert.ok(delegada.pregunta, 'el cuadro de siempre');
+  // sin delegar, la misma firma pierde el cuadro
+  assert.strictEqual(pasadaCon(casa, SIN_DELEGACION).tipo, 'via');
+});
+
 test('Aviso_SinCoordinadora_AprobadoAlCuadroYaMostrado (T10) — @story-8.153 @ac-10', (t) => {
   const casa = casaDeLista(t, { coord: null });
   const neg = pedirConLista(casa, MANUAL_T);
@@ -4252,12 +4340,50 @@ test('OwnerWindow_WatcherOtherShapes_StillBlocks @story-8.270 @ac-14 @ac-15 @ac-
   assert.strictEqual(pedir(casa, GUIONES[0][1], { arbol: conVigilante(casa, `node "${COORD_PROPIO}" owner-wait`) }).decision, 'ask');
 });
 
+// pr-wait --story: la espera de que una historia abra su pedido también es de sólo lectura
+test('OwnerWindow_ReadOnlyWatcherStory_DelegatedSignAllowed: con pr-wait --story de fondo, la coordinadora firma por delegación; otra forma niega', (t) => {
+  for (const linea of [`node "${COORD_PROPIO}" pr-wait --repo acme/arnes --story 8.326`, `node ${COORD_PROPIO} pr-wait --repo acme/arnes --story 25 --interval 60`]) {
+    const casa = casaNueva(t);
+    const r = pedirConDelegacion(casa, ADHOC_EN_CUPO, { arbol: conVigilante(casa, linea) });
+    assert.deepStrictEqual([r.decision, r.via], ['allow', 'delegacion'], `${linea}: ${r.texto}`);
+  }
+  for (const linea of [
+    `node "${COORD_PROPIO}" pr-wait --repo acme/arnes --story $S`, // armada
+    `node "${COORD_PROPIO}" pr-wait --repo acme/arnes --story 8.326 --number 7`, // las dos
+    `node "${COORD_PROPIO}" pr-wait --repo acme/arnes --story x8`, // no es una historia
+    `node "${COORD_PROPIO}" pr-wait --repo acme/arnes --story 8.`,
+    `node "${COORD_PROPIO}" pr-wait --repo acme/arnes --story 8.326 | tee PALABRA-CONOCIDA`,
+    `node "${COORD_PROPIO}" pr-wait --story 8.326 --repo acme/arnes`, // otro orden
+  ]) {
+    const casa = casaNueva(t);
+    const r = pedirConDelegacion(casa, ADHOC_EN_CUPO, { arbol: conVigilante(casa, linea) });
+    assert.strictEqual(r.decision, 'deny', linea);
+    assert.doesNotMatch(r.texto, /PALABRA-CONOCIDA|tee /, linea);
+  }
+});
+
+// pr-wait con el repo de Azure DevOps escrito entero (<org>/<proyecto>/<repo>) también es de sólo lectura
+test('OwnerWindow_ReadOnlyWatcherOrgProjectRepo_DelegatedSignAllowed: con --repo <org>/<proyecto>/<repo> de fondo, la coordinadora firma por delegación', (t) => {
+  for (const linea of [`node "${COORD_PROPIO}" pr-wait --repo acme/Seguimiento/seguimiento-backend --number 7`,
+    `node "${COORD_PROPIO}" pr-wait --repo "acme/Acme Formularios Propios/formularios-app" --story 2.1 --interval 60`]) {
+    const casa = casaNueva(t);
+    const r = pedirConDelegacion(casa, ADHOC_EN_CUPO, { arbol: conVigilante(casa, linea) });
+    assert.deepStrictEqual([r.decision, r.via], ['allow', 'delegacion'], `${linea}: ${r.texto}`);
+  }
+  for (const linea of [`node "${COORD_PROPIO}" pr-wait --repo a/b/c/d --number 7`, `node "${COORD_PROPIO}" pr-wait --repo a//c --number 7`,
+    `node "${COORD_PROPIO}" pr-wait --repo "a/b;c/d" --number 7`]) {
+    const casa = casaNueva(t);
+    assert.strictEqual(pedirConDelegacion(casa, ADHOC_EN_CUPO, { arbol: conVigilante(casa, linea) }).decision, 'deny', linea);
+  }
+});
+
 test('Guide_DelegatedSign_NamesReadOnlyWatchers @story-8.270 @ac-17 — la guía de las firmas nombra el vigilante y por qué lo demás frena', () => {
   const guia = fs.readFileSync(path.join(RAIZ, 'guides', 'firmas-del-arnes.md'), 'utf8');
   const inicio = guia.indexOf('## Aprobar en nombre del dueño');
   assert.ok(inicio >= 0, 'falta la sección de la firma por delegación');
   const seccion = guia.slice(inicio, guia.indexOf('\n## ', inicio + 5));
   assert.ok(seccion.includes('pr-wait --repo <organización/repo> --number <número>'));
+  assert.ok(seccion.includes('pr-wait --repo <organización/repo> --story <historia>'), 'la guía no nombra la espera de una historia');
   assert.doesNotMatch(seccion, /gh pr checks|gh run watch/);
   assert.match(seccion, /sólo lectura/);
   assert.match(seccion, /Cualquier otra consola de fondo sigue frenando/);
@@ -4356,8 +4482,9 @@ test('T6 SoloTerminal_ClickConControlRemoto_NoFirma @story-8.304 @ac-9', (t) => 
 
 test('T14 FirmasDelFreno_ClickConControlRemoto_AvisanSinRenglon @story-8.304 @ac-13', (t) => {
   const { SIGNATURES, ONLY_IN_TERMINAL } = require('../lib/signatures.js');
-  // `escape:rojo-esperado-de-la-matriz` pide además la historia de una corrida para armar su cuadro; pasa por la misma rama
-  const afuera = new Set(['escape:merge-bypass', 'escape:rojo-esperado-de-la-matriz', ...ONLY_IN_TERMINAL]);
+  // `escape:rojo-esperado-de-la-matriz` pide además la historia de una corrida para armar su cuadro; pasa por la misma rama.
+  // `escape:external-pr` pide un pedido de verdad para su cuadro: lo prueba external-pr.test.js
+  const afuera = new Set(['escape:merge-bypass', 'escape:external-pr', 'escape:rojo-esperado-de-la-matriz', ...ONLY_IN_TERMINAL]);
   const firmas = SIGNATURES.filter((s) => s.kind === 'freno' && !afuera.has(s.id)).map((s) => s.id);
   assert.ok(firmas.includes('escape:DOD_BYPASS') && firmas.includes('escape:TYCON_NEW_NAMES'), firmas.join(' '));
   // cada una con su forma a la vista: la variable delante del comando, o el guion que la pide
@@ -4535,4 +4662,119 @@ test('T11 Firmar_RemoteControlSegunLaVia @story-8.304 @ac-7 @ac-8', (t) => {
   ow.firmar({ firma: 'plan-approval', via: 'ventana', sesion: 'ses-p', destino: 'ses-a', herramienta, ahora: AHORA, persona: 'acme', notificar: callado,
     casaDeCuenta: () => casa, anotar: () => {}, appendSignature: (o) => { anotados.push(o.remoteControl); return { ok: true }; } });
   assert.deepStrictEqual(anotados, [true]);
+});
+
+// ── La exención de la prueba en vivo, desde el cuadro de la coordinadora (renglón 34 de la fila) ─────────────────────
+// Eximir una historia de la prueba en vivo es firma sólo del dueño. Hasta ahora se firmaba sólo en la pestaña de la
+// sesión que escribe la historia: el dueño tenía que entrar a esa sesión. Ahora la coordinadora la pide para esa sesión
+// y le llega al dueño en su pestaña (la ventana o el cuadro); nunca por delegación.
+const EXENCION = `node ${MARKER} sign-file dod_runtime_exempt /r/specs/story-9.99.md --for-session ses-a`;
+
+// 🔴 Falla con: la exención negada desde la pestaña de la coordinadora («no se corre desde la pestaña de otra sesión»).
+test('Exencion_DesdeLaCoordinadora_VaASuVentanaOSuCuadro', (t) => {
+  // con permisos: la ventana en la pestaña de la coordinadora, para la sesión que escribe
+  const ventana = pedir(casaConDesignada(t), EXENCION, { evento: DE_LA_COORD });
+  assert.strictEqual(ventana.decision, 'ask', ventana.texto);
+  assert.match(ventana.texto, /ses-a/);
+  // sin permisos y sin la aprobación del dueño: no se firma sola
+  const casa = casaConDesignada(t);
+  const sola = pedirSinVentana(casa, EXENCION);
+  assert.strictEqual(sola.decision, 'deny', sola.texto);
+  assert.strictEqual(registros(casa).length, 0);
+  // con el click del dueño en el cuadro: firmada para la sesión que escribe la historia
+  const casa2 = casaConDesignada(t);
+  const click = pedirSinVentana(casa2, EXENCION, { aprobaciones: conClick() });
+  assert.deepStrictEqual([click.decision, click.via], ['allow', 'click'], click.texto);
+  const reg = registroVigente(casa2);
+  assert.deepStrictEqual([reg.firma, reg.destino], ['escape:dod_runtime_exempt', 'ses-a']);
+});
+
+// 🔴 Falla con: la exención firmada por delegación, con el perfil que delega el grupo de los escapes o la nombra.
+test('Exencion_NuncaPorDelegacion', (t) => {
+  const delega = delegacionReal({ perfil: { ...PERFIL, delegated_signing: [...PERFIL.delegated_signing, 'escape-phrases', 'escape:dod_runtime_exempt'] } });
+  // la coordinadora, sin permisos y sin la aprobación del dueño
+  const casa = casaConDesignada(t);
+  const r = pedirSinVentana(casa, EXENCION, { delegacion: delega });
+  assert.notStrictEqual(r.via, 'delegacion', r.texto);
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.strictEqual(registros(casa).length, 0);
+  // la sesión que escribe la historia, en su pestaña: la ventana, no la delegación
+  const propia = pedir(casaConDesignada(t), `node ${MARKER} sign-file dod_runtime_exempt /r/specs/story-9.99.md`, { evento: { session_id: 'ses-a' }, delegacion: delega });
+  assert.notStrictEqual(propia.via, 'delegacion', propia.texto);
+  assert.notStrictEqual(propia.decision, 'allow', propia.texto);
+  // la delegación del perfil la rechaza por su nombre
+  const d = DS.delegaSinVentana({ firma: 'escape:dod_runtime_exempt', sesion: 'ses-coord', destino: 'ses-a', home: casaConDesignada(t), perfil: () => PERFIL, huella: () => ({ huella: HUELLA }) });
+  assert.strictEqual(d.ok, false);
+  assert.match(d.motivo, /sólo del dueño/);
+});
+
+// 🔴 Falla con: el cartel de la sesión que escribe la historia no dice cómo pedírsela a la coordinadora.
+test('Exencion_ElCartelDiceComoPedirlaALaCoordinadora', () => {
+  const f = ow.formasDeFirmar('dod_runtime_exempt', '/r/specs/story-9.99.md', 'ses-a');
+  assert.strictEqual(f.desdeLaCoordinadora, `${ow.comoSeFirma('dod_runtime_exempt', '/r/specs/story-9.99.md')} --for-session ses-a`);
+  assert.strictEqual(f.renglones.length, 3);
+  assert.match(f.renglones[2], /pestaña de la coordinadora.*nunca por delegación/);
+  // la otra sólo del dueño sobre un archivo, también; una de trámite (la pide la coordinadora por delegación), o sin
+  // sesión, no lo dice
+  assert.strictEqual(ow.formasDeFirmar('story-skill-bypass', '/r/x.md', 'ses-a').renglones.length, 3);
+  assert.strictEqual(ow.formasDeFirmar('cambiar-el-estado', '/r/x.md', 'ses-a').renglones.length, 2);
+  assert.strictEqual(ow.formasDeFirmar('dod_runtime_exempt', '/r/x.md', null).desdeLaCoordinadora, null);
+});
+
+// 🔴 Falla con: el mismo sello para una ruta relativa desde dos carpetas: el click dado viendo un archivo vale para otro
+// si la sesión cambia de carpeta antes de repetir el comando (pase adversarial).
+test('Exencion_RutaRelativa_ElSelloAtaElArchivoResuelto', (t) => {
+  const casa = casaNueva(t);
+  const palabras = (ruta) => [MARKER, 'sign-file', 'dod_runtime_exempt', ruta, '--for-session', 'ses-a'];
+  const cuadro = (ruta, cwd) => ow.cuadroPara({ firma: 'escape:dod_runtime_exempt', palabras: palabras(ruta), destino: 'ses-a', cwd, casa, sesion: 'ses-coord' });
+  const x = cuadro('specs/story-1.md', '/repoX');
+  const y = cuadro('specs/story-1.md', '/repoY');
+  assert.ok(x.sello && y.sello, JSON.stringify(x));
+  assert.notStrictEqual(x.sello, y.sello, 'otra carpeta, otro archivo: otro sello');
+  // la misma ruta absoluta desde cualquier carpeta es el mismo archivo y el mismo sello
+  assert.strictEqual(cuadro('/repoX/specs/story-1.md', '/repoX').sello, cuadro('/repoX/specs/story-1.md', '/repoY').sello);
+  // la relativa y la absoluta del mismo archivo son dos textos de comando: el click dado a uno no vale para el otro
+  assert.notStrictEqual(x.sello, cuadro('/repoX/specs/story-1.md', '/otra').sello);
+});
+
+// 🔴 Falla con: una firma sólo del dueño que la coordinadora pide para otra sesión firmada por delegación, con una
+// delegación que diga que sí a todo (el freno no la consulta), o negada por ser de otra pestaña.
+test('SoloDelDueno_ParaOtraSesion_NuncaPorDelegacion', (t) => {
+  const casos = [
+    `node ${MARKER} sign-file dod_runtime_exempt /r/specs/story-9.99.md --for-session ses-a`,
+    `node ${MARKER} sign-file story-skill-bypass /r/specs/story-9.99.md --for-session ses-a`,
+    `node ${MARKER} resume-autonomy --for-session ses-a`,
+    `node ${MARKER} adhoc allow-data-change --changed "la fuente" --recommends pasar --why "es la misma tabla" --for-session ses-a`,
+  ];
+  let consultas = 0;
+  const siATodo = () => { consultas++; return { ok: true, maquina: 'm' }; };
+  for (const cmd of casos) {
+    const casa = casaConDesignada(t);
+    const r = pedirSinVentana(casa, cmd, { delegacion: siATodo });
+    assert.notStrictEqual(r.via, 'delegacion', `${cmd}: ${r.texto}`);
+    assert.strictEqual(r.decision, 'deny', `${cmd}: ${r.texto}`);
+    assert.doesNotMatch(r.texto, /no se corre desde la pestaña de otra sesión/, cmd);
+    assert.strictEqual(registros(casa).length, 0, cmd);
+  }
+  assert.strictEqual(consultas, 0, 'la delegación no se consulta para ninguna');
+  // las cuatro dicen «sí» en el catálogo, y ninguna es delegable
+  const cat = require('../lib/signatures.js');
+  for (const id of cat.PARA_OTRA_SESION_SIN_DELEGAR) {
+    assert.strictEqual(cat.SIGNATURES.find((s) => s.id === id).otherSession, 'yes', id);
+    assert.strictEqual(DS.delegaSinVentana({ firma: id, sesion: 'ses-coord', destino: 'ses-a', home: casaConDesignada(t), perfil: () => ({ ...PERFIL, delegated_signing: [id, 'escape-phrases'] }), huella: () => ({ huella: HUELLA }) }).ok, false, id);
+  }
+});
+
+// 🔴 Falla con: sin la carpeta del pedido, el sello de una ruta relativa sale de la carpeta del proceso que dibuja el
+// cuadro (la coordinadora, la oficina): el mismo renglón da otro código en cada uno (pase adversarial).
+test('Exencion_RutaRelativaSinCarpeta_ElSelloNoDependeDeQuienLoDibuja', (t) => {
+  const casa = casaNueva(t);
+  const palabras = [MARKER, 'sign-file', 'dod_runtime_exempt', 'notas.md', '--for-session', 'ses-a'];
+  const cuadro = () => ow.cuadroPara({ firma: 'escape:dod_runtime_exempt', palabras, destino: 'ses-a', cwd: null, casa, sesion: 'ses-coord' }).sello;
+  const antes = process.cwd();
+  let enTmp; let enRaiz;
+  try { process.chdir(os.tmpdir()); enTmp = cuadro(); process.chdir(path.parse(antes).root); enRaiz = cuadro(); } finally { process.chdir(antes); }
+  assert.strictEqual(enTmp, enRaiz);
+  // y no es el sello del mismo pedido con carpeta
+  assert.notStrictEqual(enTmp, ow.cuadroPara({ firma: 'escape:dod_runtime_exempt', palabras, destino: 'ses-a', cwd: os.tmpdir(), casa, sesion: 'ses-coord' }).sello);
 });

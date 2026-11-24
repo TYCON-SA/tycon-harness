@@ -18,8 +18,8 @@ const { registroDe, conElProceso } = require('../hooks/owner-approval-record.js'
 const AHORA = Date.parse('2026-11-01T23:30:00Z');
 const hace = (min) => new Date(AHORA - min * 60000).toISOString();
 const SIEMPRE = () => ({ ok: true });
-const FIRMA = 'save';
-const armar = (firma = FIRMA, destino = 'ses-a', huella = 'ab12cd34') => oa.cuadroDe({ firma, destino, que: 'guardar los cambios', queHace: ['el comando: marker.js approve-save'], siSaleMal: 'se revierte el commit', huella });
+const FIRMA = 'pending-approval';
+const armar = (firma = FIRMA, destino = 'ses-a', huella = 'ab12cd34') => oa.cuadroDe({ firma, destino, que: 'abrir el pendiente DEF-nuevo', queHace: ['el comando: marker.js approve-pending --id DEF-nuevo'], siSaleMal: 'se revierte el commit', huella });
 const CUADRO = armar();
 const PIDE = CUADRO.pregunta;
 const CTX = (casa, o = {}) => ({ casa, cuadro: CUADRO, destino: 'ses-a', ...o });
@@ -103,8 +103,8 @@ test('TraeElSello_EnteroYSinNombrarOtraSesion', () => {
   const o = { sello: CUADRO.sello, destino: 'ses-a' };
   assert.ok(oa.traeElSello(`Te pido esto: ${CUADRO.sello}. ¿Lo aprobás?`, o));
   assert.ok(!oa.traeElSello('¿Apruebo el formato del resumen?', o));
-  assert.ok(!oa.traeElSello('firma save, sesión ses-a', o), 'sin el código del comando no es el sello');
-  assert.ok(!oa.traeElSello(armar('save', 'ses-a', 'distinto1').sello, o), 'el sello de otro comando no aprueba éste');
+  assert.ok(!oa.traeElSello('firma pending-approval, sesión ses-a', o), 'sin el código del comando no es el sello');
+  assert.ok(!oa.traeElSello(armar(FIRMA, 'ses-a', 'distinto1').sello, o), 'el sello de otro comando no aprueba éste');
   assert.ok(!oa.traeElSello(`${CUADRO.sello} y también sesión ses-b`, o), 'un texto que enumera sesiones no vale');
   assert.ok(!oa.traeElSello(`${CUADRO.sello}, el arreglo de la sesión Sivori`, o), 'un nombre después de «sesión» cuenta como otra');
   assert.ok(oa.traeElSello(`${CUADRO.sello}, como en la sesión anterior`, o), '«sesión anterior» no nombra ninguna');
@@ -114,7 +114,7 @@ test('TraeElSello_EnteroYSinNombrarOtraSesion', () => {
 
 test('Transcripcion_AprobadoParaOtraSesionEnLaMismaPestana_NoFirmaLaPropia', (t) => {
   const casa = casaNueva(t);
-  const otra = armar('save', 'ses-b').pregunta;
+  const otra = armar(FIRMA, 'ses-b').pregunta;
   transcripcion(casa, 'ses-a', [agente(otra), tipeado('Aprobado')]);
   assert.match(oa.validarEnClaude(mensaje(), CTX(casa)).motivo, /no trae/);
   transcripcion(casa, 'ses-a', [cuadro('toolu_1', otra), respuesta('toolu_1', { pregunta: otra })]);
@@ -124,16 +124,16 @@ test('Transcripcion_AprobadoParaOtraSesionEnLaMismaPestana_NoFirmaLaPropia', (t)
 test('Transcripcion_DosAprobadoSeguidos_CadaUnoConSuPregunta', (t) => {
   const casa = casaNueva(t);
   const critica = armar('critical-waiver', 'ses-b');
-  const guardar = armar('save', 'ses-b');
+  const pendiente = armar(FIRMA, 'ses-b');
   // la sesión ses-a es la coordinadora: dos «aprobado» a un minuto, para dos firmas
-  transcripcion(casa, 'ses-a', [agente(critica.pregunta, hace(3)), tipeado('Aprobado', hace(2)), agente(guardar.pregunta, hace(1.5)), tipeado('Aprobado', hace(1))]);
+  transcripcion(casa, 'ses-a', [agente(critica.pregunta, hace(3)), tipeado('Aprobado', hace(2)), agente(pendiente.pregunta, hace(1.5)), tipeado('Aprobado', hace(1))]);
   const primero = mensaje('Aprobado', hace(2));
   const segundo = mensaje('Aprobado', hace(1));
   const con = (c) => ({ casa, cuadro: c, destino: 'ses-b' });
   assert.ok(oa.validarEnClaude(primero, con(critica)).ok);
-  assert.ok(oa.validarEnClaude(segundo, con(guardar)).ok);
+  assert.ok(oa.validarEnClaude(segundo, con(pendiente)).ok);
   assert.ok(!oa.validarEnClaude(segundo, con(critica)).ok, 'el segundo no exime el crítico');
-  assert.ok(!oa.validarEnClaude(primero, con(guardar)).ok, 'el primero no guarda');
+  assert.ok(!oa.validarEnClaude(primero, con(pendiente)).ok, 'el primero no abre el pendiente');
 });
 
 test('Transcripcion_AprobadoConSoloElSello_DiceQueFaltaLaPregunta', (t) => {
@@ -407,6 +407,28 @@ test('Click_OpcionesQueNoSonLasDelGuion_NoVale', (t) => {
   assert.deepStrictEqual(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), click(), { pregunta: PIDE, opciones: CUADRO.opciones }), { ok: true });
 });
 
+// La exención de comparación con main (Producto A, 20/11): la sesión mostró el cuadro con la pregunta y las etiquetas del
+// guion, pero con descripciones propias en cada opción. Sólo un cuadro de sólo click fija sus descripciones; éste no.
+test('T2 CompareWaiver_OwnDescriptions_ClickStillCounts — ni las descripciones propias ni dos preguntas en un cuadro invalidan el click', (t) => {
+  const casa = casaNueva(t);
+  const c = require('../lib/owner-window.js').cuadroPara({ firma: 'compare-waiver', palabras: ['marker.js', 'compare-waiver', '--story', '/r/stories/story-9.99.md',
+    '--command', 'ProdForms/build-form.js', '--reason', 'usa la red'], destino: 'ses-a', casa, sesion: 'ses-a' });
+  assert.ok(!c.error, c.error);
+  assert.strictEqual(c.descripciones, undefined, 'la exención no es de sólo click: no fija descripciones');
+  const conDescripciones = (preguntas) => ({ ...respuesta('toolu_1', { pregunta: c.pregunta, opciones: c.opciones }),
+    toolUseResult: { questions: preguntas, answers: { [c.pregunta]: 'Sí, aprobar' } } });
+  const mostrada = { question: c.pregunta, options: [{ label: c.opciones[0], description: 'Exime build-form.js de la comparación con main.' },
+    { label: c.opciones[1], description: 'No se exime; el commit queda frenado.' }] };
+  const unClick = { ...click(), pregunta: c.pregunta };
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1', c.pregunta), conDescripciones([mostrada])]);
+  const ctx = { pregunta: c.pregunta, opciones: c.opciones, descripciones: c.descripciones, sello: c.sello, casa };
+  assert.deepStrictEqual(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), unClick, ctx), { ok: true });
+  // las dos exenciones en un mismo cuadro: la respuesta va atada a su pregunta, así que el «Sí» a ésta cuenta
+  const otra = { ...mostrada, question: c.pregunta.replace('build-form.js', 'jest.config.cjs') };
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1', c.pregunta), conDescripciones([mostrada, otra])]);
+  assert.deepStrictEqual(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), unClick, ctx), { ok: true });
+});
+
 // La negativa por pregunta distinta deja dónde difería: sin eso, el click se pierde y nadie sabe por qué
 const OTRA_EN_57 = (p) => `${p.slice(0, 57)}${p[57] === 'X' ? 'Y' : 'X'}${p.slice(58)}`;
 const registroDeErrores = (casa) => path.join(require('../../skills/tycon-pipeline/scripts/lib/state-dir.js').stateDir(casa), 'hook-errors.log');
@@ -441,6 +463,40 @@ test('T7 OwnerApprovals_QuestionMismatch_LogUnwritable_SameDenial @story-8.276 @
   // sin casa tampoco escribe, y niega igual
   const sin = oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), click(), { pregunta: OTRA_EN_57(PIDE), opciones: CUADRO.opciones });
   assert.strictEqual(sin.motivo, r.motivo);
+});
+
+// Una firma que se chequea mira todos los clicks recientes de la pestaña. El renglón se escribía por cada uno que no
+// coincidía, también por los de otra firma o sin sello, y la pista llevaba al click equivocado
+test('T8 OwnerApprovals_QuestionMismatch_LogsOnlyForThisSignatureAndSession', (t) => {
+  const casa = casaNueva(t);
+  const probar = (pregunta, id) => {
+    transcripcion(casa, 'ses-a', [cuadro(id, pregunta), respuesta(id, { pregunta })]);
+    return oa.validarEnClaude({ ...click(id), pregunta }, CTX(casa));
+  };
+  const deOtraFirma = armar('control-change').pregunta;
+  const deOtraSesion = armar(FIRMA, 'ses-b').pregunta;
+  const sinSello = '¿Abrir el arreglo rápido de la sesión?';
+  for (const [pregunta, id] of [[deOtraFirma, 'toolu_2'], [deOtraSesion, 'toolu_3'], [sinSello, 'toolu_4']]) {
+    assert.strictEqual(probar(pregunta, id).ok, false, 'un click a otra pregunta no vale');
+  }
+  assert.ok(!fs.existsSync(registroDeErrores(casa)), 'ni otra firma, ni otra sesión, ni un click sin sello dejan el renglón');
+  // la misma firma y sesión con otro código sí lo deja: es el click a esta firma con otra fuente
+  assert.strictEqual(probar(armar(FIRMA, 'ses-a', 'ffff0000').pregunta, 'toolu_5').ok, false);
+  const renglones = () => fs.readFileSync(registroDeErrores(casa), 'utf8').trim().split('\n').filter((l) => l.includes('owner-approvals: la pregunta del cuadro'));
+  const log = renglones();
+  assert.strictEqual(log.length, 1, 'un renglón, el del click a esta firma');
+  assert.ok(log[0].includes(CUADRO.sello), 'con el sello de esta firma');
+  // el cuadro de esta firma retocado a mano la sigue nombrando: un punto al final, comillas, el sello sin tildes
+  const retocados = [`${PIDE}.`, `«${PIDE}»`, PIDE.replace('sesión', 'sesion').replace('código', 'codigo'),
+    PIDE.replace('(firma', '(Firma').replace('sesión', 'Sesión'), PIDE.replace(' · sesión', ' · sesión'), PIDE.replace(' · código', '\n· código')];
+  retocados.forEach((pregunta, n) => assert.strictEqual(probar(pregunta, `toolu_${6 + n}`).ok, false));
+  assert.strictEqual(renglones().length, 1 + retocados.length, 'cada click retocado de esta firma deja su renglón');
+  // otro cuadro que cita este sello en el medio termina con el suyo: no culpa a esta firma. Tampoco un pedido de permiso
+  // cuyo pedido nombra este sello
+  const queCita = armar('control-change', 'ses-a', 'cc00cc00').pregunta.replace('¿', `¿(cita: «${CUADRO.sello}») `);
+  const permiso = `¿Aprobás este pedido de Bash? (permiso permiso-1a2b3c4d · sesión ses-a · código 6c60386e) Carpeta: /r. Pedido:\necho "(${CUADRO.sello})"`;
+  [queCita, permiso].forEach((pregunta, n) => assert.strictEqual(probar(pregunta, `toolu_${20 + n}`).ok, false));
+  assert.strictEqual(renglones().length, 1 + retocados.length, 'un cuadro que sólo cita este sello no deja renglón');
 });
 
 const SOBRE_CUPO = 'adhoc-lane:sobre-cupo';
@@ -1061,9 +1117,9 @@ test('T5 OwnerApprovals_ManyClicks_ReasonOfThisSignature @story-8.287 @ac-8 @ac-
   assert.strictEqual(oa.buscar({ casa: casa2, sesion: 'ses-a', cuadro: CUADRO, ahora: AHORA, plataformas: ['claude', 'codex'] }).motivo,
     'la aprobación no vale: no hay un click para esta firma: los 2 clicks recientes son de otras firmas');
   // un click a esta firma, con su sello, cuya pregunta difiere sólo en «Qué hace»: niega por la pregunta y lo anota
-  const conRuta = (queHace, huella = 'ab12cd34') => oa.cuadroDe({ firma: FIRMA, destino: 'ses-a', que: 'guardar los cambios', queHace: [queHace], siSaleMal: 'se revierte el commit', huella });
-  const delGuion = conRuta('el comando: marker.js approve-save');
-  const delCuadro = conRuta('el comando: marker.js approve-save --all');
+  const conRuta = (queHace, huella = 'ab12cd34') => oa.cuadroDe({ firma: FIRMA, destino: 'ses-a', que: 'abrir el pendiente DEF-nuevo', queHace: [queHace], siSaleMal: 'se revierte el commit', huella });
+  const delGuion = conRuta('el comando: marker.js approve-pending');
+  const delCuadro = conRuta('el comando: marker.js approve-pending --all');
   assert.strictEqual(delGuion.sello, delCuadro.sello, 'el mismo código de la firma');
   const casa3 = casaNueva(t);
   transcripcion(casa3, 'ses-a', [cuadro('toolu_4', delCuadro.pregunta), respuesta('toolu_4', { pregunta: delCuadro.pregunta })]);
@@ -1072,11 +1128,11 @@ test('T5 OwnerApprovals_ManyClicks_ReasonOfThisSignature @story-8.287 @ac-8 @ac-
     `la aprobación no vale: ${oa.PREGUNTA_CAMBIADA}`);
   const log = fs.readFileSync(registroDeErrores(casa3), 'utf8').trim().split('\n');
   assert.strictEqual(log.length, 1);
-  const enCompleto = delGuion.pregunta.indexOf('approve-save.') + 'approve-save'.length;
+  const enCompleto = delGuion.pregunta.indexOf('approve-pending.') + 'approve-pending'.length;
   assert.match(log[0], new RegExp(`primer carácter distinto: ${enCompleto} `), 'difiere en «Qué hace»');
   assert.ok(log[0].includes(delGuion.sello));
   // con un click aprobado más viejo a esta misma firma con otro código: el motivo sigue siendo el de la pregunta
-  const viejo = conRuta('el comando: marker.js approve-save', 'ee11ee11');
+  const viejo = conRuta('el comando: marker.js approve-pending', 'ee11ee11');
   assert.notStrictEqual(viejo.sello, delGuion.sello);
   const casa4 = casaNueva(t);
   transcripcion(casa4, 'ses-a', [cuadro('toolu_5', viejo.pregunta, hace(5)), respuesta('toolu_5', { pregunta: viejo.pregunta, ts: hace(4) }),
@@ -1219,7 +1275,7 @@ test('T47 OwnerApprovals_ReadFailure_IsNoLeida @story-8.234 @ac-15: una lectura 
 //    consume sin firmar (el dueño tendría que volver a pedir todo), o un motivo que no dice que cambió el texto.
 test('T13 OwnerApprovals_OldFormatClick_NotSigned_RowStays @story-8.275 @ac-16 @ac-17', (t) => {
   // la pregunta vieja: otro texto, con el mismo sello al final (el sello no depende del formato)
-  const VIEJA = `¿Guardar los cambios? Sesión ses-a. Qué hace: el comando: marker.js approve-save. Archivos: a.js, b.js. Si sale mal: se revierte el commit. (${CUADRO.sello})`;
+  const VIEJA = `¿Abrir el pendiente? Sesión ses-a. Qué hace: el comando: marker.js approve-pending. Archivos: a.js, b.js. Si sale mal: se revierte el commit. (${CUADRO.sello})`;
   const ALTERADA = `${PIDE.slice(0, 20)}X${PIDE.slice(21)}`;
   for (const [nombre, vista] of [['formato viejo', VIEJA], ['texto alterado', ALTERADA]]) {
     const casa = casaNueva(t);
@@ -1313,4 +1369,72 @@ test('T13 GanchoDeAprobacion_AnotaElControlRemotoAlContestar @story-8.304 @ac-8'
   registroDeSesion(casa, {});
   assert.strictEqual(oa.leerSesion(casa, 'ses-r')[0].control_remoto, true);
   assert.strictEqual(conElProceso({ tipo: 'mensaje', sesion: 'ses-r', ts: DIEZ }, { pid: 100, inicio: 'x' }, casa).control_remoto, false);
+});
+
+// Un solo cuadro con varias firmas, una pregunta por firma con su texto y su código: cada respuesta vale para su firma, y
+// sólo para la suya. Cada pregunta se mira como si fuera un cuadro de una sola firma.
+test('CuadroConVariasFirmas_CadaRespuestaValeSoloParaLaSuya', (t) => {
+  const { registrosDe } = require('../hooks/owner-approval-record.js');
+  const A = CUADRO;
+  // cada firma con su texto: con el mismo, la pregunta de A con el código de B sería la de B
+  const conTexto = (firma, que, huella) => oa.cuadroDe({ firma, destino: 'ses-a', que, queHace: [`el comando: marker.js ${firma}`], siSaleMal: 'se revierte el commit', huella });
+  const B = conTexto('control-change', 'cambiar un control', 'ff00ff00');
+  const C = conTexto('extra-round', 'pedir otra vuelta de revisión', '0f0f0f0f');
+  const SI = 'Sí, aprobar';
+  const opcionesDe = (c) => c.opciones.map((label) => ({ label }));
+  // la salida real del cuadro: todas las preguntas, con sus opciones, y la respuesta de cada una
+  const salida = (pares, extra = {}) => ({ questions: pares.map(([c]) => ({ question: c.pregunta, options: opcionesDe(c) })),
+    answers: Object.fromEntries(pares.map(([c, op]) => [c.pregunta, op])), ...extra });
+  const multi = (id, s, { decision = { decision: 'accept', source: 'user_temporary' }, ts = hace(1) } = {}) => ({
+    type: 'user', timestamp: ts, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }] }, toolUseResult: s, permissionDecision: decision });
+  const evento = (s) => ({ hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', session_id: 'ses-a', tool_use_id: 'toolu_9', tool_response: s });
+  // la casa con la transcripción y lo que anotó el gancho; por firma, si buscar la da por aprobada
+  const pasar = (s, { respuestaDe = multi } = {}) => {
+    const casa = casaNueva(t);
+    transcripcion(casa, 'ses-a', [cuadro('toolu_9', A.pregunta, hace(2)), respuestaDe('toolu_9', s)]);
+    for (const r of registrosDe(evento(s), { ahora: AHORA - 60000 })) oa.anotar(casa, r);
+    return [A, B, C].map((c) => {
+      const r = oa.buscar({ casa, sesion: 'ses-a', cuadro: c, ahora: AHORA });
+      if (r.ok) assert.ok(oa.consumir(casa, r.aprobacion, { ahora: AHORA, firma: c.sello, sesion: 'ses-a' }).ok, 'cada aprobación se usa una vez');
+      return r.ok;
+    });
+  };
+
+  // las tres aprobadas en un cuadro: las tres cuentan, cada una con su propio renglón
+  const todas = salida([[A, SI], [B, SI], [C, SI]]);
+  assert.strictEqual(registrosDe(evento(todas), { ahora: AHORA }).length, 3, 'un renglón por pregunta aprobada');
+  assert.deepStrictEqual(pasar(todas), [true, true, true]);
+
+  // una aprueba y otra rechaza: sólo cuenta la aprobada
+  assert.deepStrictEqual(pasar(salida([[A, SI], [B, 'No'], [C, SI]])), [true, false, true]);
+
+  // el código de B puesto en la pregunta de A (el texto de una firma con el código de otra): no es la de ninguna
+  const cruzada = A.pregunta.replace(A.sello, B.sello);
+  const alReves = B.pregunta.replace(B.sello, A.sello);
+  assert.ok(![A.pregunta, B.pregunta].includes(cruzada) && ![A.pregunta, B.pregunta].includes(alReves));
+  const conCruce = { questions: [{ question: cruzada, options: opcionesDe(A) }, { question: alReves, options: opcionesDe(B) }, { question: C.pregunta, options: opcionesDe(C) }],
+    answers: { [cruzada]: SI, [alReves]: SI, [C.pregunta]: SI } };
+  assert.deepStrictEqual(pasar(conCruce), [false, false, true]);
+
+  // una respuesta «Other» con texto libre que no aprueba: no cuenta
+  assert.deepStrictEqual(pasar(salida([[A, 'Sí, pero cambiá el título'], [B, SI]])), [false, true, false]);
+
+  // lo que se exige a un cuadro de una firma se exige igual: contestado por un gancho, de otra hora, resuelto por ausencia
+  // o con una pregunta sin contestar, no cuenta ninguna
+  const GANCHO = { decision: 'accept', source: 'hook', reasonType: 'hook' };
+  assert.deepStrictEqual(pasar(todas, { respuestaDe: (id, s) => multi(id, s, { decision: GANCHO }) }), [false, false, false]);
+  assert.deepStrictEqual(pasar(todas, { respuestaDe: (id, s) => multi(id, s, { ts: hace(60) }) }), [false, false, false]);
+  assert.deepStrictEqual(pasar(salida([[A, SI], [B, SI]], { afkTimeoutMs: 60000 })), [false, false, false]);
+  assert.deepStrictEqual(pasar(salida([[A, SI], [B, SI]], { annotations: { [B.pregunta]: { unanswered: 'dismissed' } } })), [false, false, false]);
+
+  // el renglón anotado para A no sirve para B aunque se lo adultere: la transcripción dice qué contestó cada pregunta
+  const casa = casaNueva(t);
+  const s = salida([[A, SI], [B, 'No']]);
+  transcripcion(casa, 'ses-a', [cuadro('toolu_9', A.pregunta, hace(2)), multi('toolu_9', s)]);
+  const [deA] = registrosDe(evento(s), { ahora: AHORA - 60000 });
+  oa.anotar(casa, { ...deA, pregunta: B.pregunta });
+  assert.ok(!oa.buscar({ casa, sesion: 'ses-a', cuadro: B, ahora: AHORA }).ok, 'el «No» de B no se vuelve un «Sí»');
+
+  // una sola pregunta sigue como hoy
+  assert.deepStrictEqual(oa.respuestaDelCuadro({ answers: { [A.pregunta]: SI } }), { ok: true, pregunta: A.pregunta, respuesta: SI });
 });

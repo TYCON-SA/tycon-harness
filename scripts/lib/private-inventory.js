@@ -110,7 +110,8 @@ function comparar({ repo, privado = null, ref = DEFAULT_REF, env = process.env }
   try {
     if (git(c.path, ['rev-parse', '--verify', '-q', `${ref}^{commit}`], { ajeno: true }).status !== 0) return { ...base, estado: 'no-pude', motivo: `${ref} no está en el clon privado ${c.path}` };
     fecha = gitOk(c.path, ['log', '-1', '--format=%cs', ref], { ajeno: true });
-    commit = arbolArmado(repo, c.path, ref, propias(c.path, ref));
+    // con su declaración: la copia propia del pre-commit que delega en el gancho público vale sólo si está declarada
+    commit = arbolArmado(repo, c.path, ref, [...propias(c.path, ref), FORMS]);
   } catch (e) { return { ...base, estado: 'no-pude', motivo: e.message }; }
   const r = spawnSync('bash', [guion, 'check-inventory', '--root', repo, '--ref', commit], { encoding: 'utf8', env: sinRepo(), windowsHide: true });
   const salida = `${r.stdout || ''}${r.stderr || ''}`.trim();

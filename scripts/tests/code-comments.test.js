@@ -27,7 +27,8 @@ const { spawnSync } = require('child_process');
 
 const RAIZ = path.resolve(__dirname, '..', '..');
 const GUARD = path.join(RAIZ, 'scripts', 'publishing', 'internal-history.js');
-const HOOK = path.join(RAIZ, '.githooks', 'pre-commit-checks');
+// el gancho del arnés público, también en el árbol armado (ver publicHarnessHook)
+const HOOK = () => require('./lib/pre-commit-hook.js').publicHarnessHook(RAIZ);
 const PUBLIC_CI = path.join(RAIZ, 'scripts', 'ci', 'public-ci.sh');
 const ALLOWED = 'scripts/tests/fixtures/internal-history-allowed.json';
 const ih = require(GUARD);
@@ -498,7 +499,7 @@ test('T20 CommentGuard_PrRange_LikeRepoLint — el pedido armado como la revisi�
   const ci = fs.readFileSync(PUBLIC_CI, 'utf8');
   assert.match(ci, /reset --quiet --soft "\$\{mb\}"/, 'repo-lint pone HEAD en la base del pedido');
   assert.match(ci, /bash \.githooks\/pre-commit-checks/, 'y corre el control del commit');
-  const hook = fs.readFileSync(HOOK, 'utf8');
+  const hook = fs.readFileSync(HOOK(), 'utf8');
   assert.match(hook, /node "\$INTERNAL_HISTORY" --repo "\$REPO_ROOT" --zone comment/, 'que llama a la zona de comentarios');
 
   const l = publicLab();
@@ -513,7 +514,7 @@ test('T20 CommentGuard_PrRange_LikeRepoLint — el pedido armado como la revisi�
 
 /** El tramo de la zona de comentarios del control del commit, cortado hasta su `fi` de primer nivel. */
 function hookBlock() {
-  const hook = fs.readFileSync(HOOK, 'utf8');
+  const hook = fs.readFileSync(HOOK(), 'utf8');
   const from = hook.indexOf('# ── La historia interna en los comentarios');
   assert.ok(from > 0, 'el control del commit tiene el tramo');
   return hook.slice(from, hook.indexOf('\nfi\n', from) + 4);
@@ -608,7 +609,7 @@ test('T21 CommentGuard_OnlyPublishedTree — en el repo del equipo no aplica; en
   }
 
   // el tramo del control del commit: sólo llama al freno si el repo trae su guion
-  assert.match(hookBlock(), /INTERNAL_HISTORY="\$REPO_ROOT\/scripts\/publishing\/internal-history\.js"/);
+  assert.match(hookBlock(), /INTERNAL_HISTORY="\$\{TCG:-\$REPO_ROOT\}\/scripts\/publishing\/internal-history\.js"/);
   const p = publicLab();
   stage(p.repo, { 'src/app.js': `// ${RED.date}\n` });
   const run = runHookBlock(p, { withGuard: false });

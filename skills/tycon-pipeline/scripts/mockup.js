@@ -16,6 +16,8 @@
  *   status --story <spec> [--json]                                     ¿tiene pantalla? dónde va su maqueta, aprobada o no
  *   schema                                                             la forma del modelo
  *   demo [--out <ruta>]                                                la maqueta del modelo de ejemplo
+ *   shots <html>                                                       la mira con un navegador a 1440 y 390 px: capturas
+ *                                                                      e informe (0 = se lee bien · 1 = hallazgos · 2 = no pude)
  *
  * Es estática a propósito: sin <script>, sin imágenes, sin enlaces que naveguen, con una política de seguridad del
  * contenido que niega todo salvo estilos en línea. Sin código ni direcciones no hay forma de cargar red, y la
@@ -38,6 +40,8 @@ const TONES = ['info', 'ok', 'warn', 'error'];
 const CHAT_FROM = ['us', 'them'];
 const CHAT_NOTE = 'Mensajes de ejemplo, para ilustrar: no son los de la pantalla real';
 const TEXT_KINDS = ['heading', 'text', 'button', 'link', 'message', 'box'];
+// los que pueden ser un dato de ejemplo entero (`example: true`): su único texto comparado es el dato
+const EXAMPLE_KINDS = ['text', 'message'];
 // cómo se presenta una pantalla: en la página, o como una capa encima de otra (una ventana, un diálogo, un panel)
 const PRESENTATIONS = ['page', 'layer'];
 // dónde va un elemento, a grandes rasgos: la maqueta lo dibuja en una grilla aproximada (sin zona, va al centro)
@@ -75,8 +79,10 @@ const isChecked = (c) => (typeof c.checked === 'boolean' ? c.checked : c.value =
 
 // Los textos que se comparan con la pantalla, de un elemento del modelo. El rótulo de un `box` describe una imagen o un
 // gráfico para quien aprueba y no está en la pantalla: se compara sólo con `compare: true`. `value`, `rows`, `notes`,
-// `checked` y `disabled` son datos de ejemplo y no se comparan.
+// `checked` y `disabled` son datos de ejemplo y no se comparan. Un elemento marcado `example: true` es todo dato de ejemplo
+// (una versión, una fecha, un usuario de prueba): la pantalla dice lo mismo con datos de verdad, y no se compara.
 function comparedOf(el) {
+  if (el.example === true) return [];
   if (['heading', 'text', 'button', 'link', 'message'].includes(el.kind)) return [el.text];
   if (el.kind === 'box') return el.compare === true ? [el.text] : [];
   if (el.kind === 'checkbox') return [el.label, ...(isStr(el.title) ? [el.title] : [])];
@@ -135,6 +141,9 @@ function elementProblems(el, e) {
   if (el.kind === 'message' && el.tone !== undefined && !TONES.includes(el.tone)) out.push(`${k}: \`tone\` «${el.tone}» no está en la lista (${TONES.join(' | ')})`);
   if (el.zone !== undefined && !ZONES.includes(el.zone)) out.push(`${k}: \`zone\` «${el.zone}» no está en la lista (${ZONES.join(' | ')})`);
   if (el.existing !== undefined && typeof el.existing !== 'boolean') out.push(`${k}: \`existing\` tiene que ser true o false`);
+  if (el.example !== undefined && typeof el.example !== 'boolean') out.push(`${k}: \`example\` tiene que ser true o false`);
+  // en los otros tipos el dato de ejemplo (filas, valor, marca) ya no se compara: la marca sacaría rótulos y columnas reales
+  else if (el.example === true && !EXAMPLE_KINDS.includes(el.kind)) out.push(`${k}: \`example\` va sólo en un text o un message: en un ${el.kind} sacaría de la comparación textos reales de la pantalla`);
   if (el.kind === 'checkbox') out.push(...checkboxProblems(el, k));
   if (el.kind === 'chat') {
     if (!Array.isArray(el.messages) || !el.messages.length) out.push(`${k}: falta \`messages\` (una lista de mensajes de ejemplo, no vacía)`);
@@ -209,6 +218,7 @@ function validateModel(model) {
     }
     if (!Array.isArray(sc.elements) || !sc.elements.length) { out.push(`${p}: falta \`elements\` (lo que muestra la pantalla)`); return; }
     sc.elements.forEach((el, j) => out.push(...elementProblems(el, `${p}, elemento ${j + 1}`)));
+    if (sc.elements.every((el) => el && el.example === true)) out.push(`${p}: todos sus elementos son datos de ejemplo y la pantalla no se compararía con nada: dejá sin \`example\` los textos reales`);
   });
   if (out.length) return out;
   model.screens.forEach((sc, i) => allElements(sc).forEach((el, j) => {
@@ -260,14 +270,13 @@ const STYLE = `
   fieldset.group legend { font-size: 13px; font-weight: 600; padding: 0 4px; }
   .group-row { display: flex; flex-direction: row; flex-wrap: wrap; gap: 16px; }
   .existing { filter: saturate(0.35); opacity: 0.78; }
-  .new { position: relative; outline: 2px solid #6d28d9; outline-offset: 5px; border-radius: 6px; }
-  .new-tag { position: absolute; top: -22px; left: 4px; z-index: 1; font-size: 12px; font-weight: 700; line-height: 1; color: #fff; background: #6d28d9; border-radius: 4px; padding: 3px 7px; }
+  .new { background: #f3eefe; border: 2px solid #6d28d9; border-radius: 8px; padding: 6px 8px; max-width: 100%; box-sizing: border-box; }
   .opens { position: relative; display: inline-block; }
   .open-tag { position: absolute; bottom: -26px; right: 0; z-index: 1; white-space: nowrap; font-size: 12px; font-weight: 700; line-height: 1; color: #1d2433; background: #ffe7a3; border: 1px solid #e0a100; border-radius: 4px; padding: 2px 6px; }
   .trigger { outline: 3px solid #e0a100; outline-offset: 3px; }
   .new .trigger { outline: 0; }
   .ph-bar { display: block; width: 180px; max-width: 40vw; height: 12px; border-radius: 6px; background: #e3e6eb; }
-  table.table { border-collapse: collapse; min-width: 420px; }
+  table.table { border-collapse: collapse; max-width: 100%; }
   table.table th, table.table td { border-bottom: 1px solid #e3e6eb; padding: 8px 12px; text-align: left; font-size: 14px; }
   table.table th { color: #5a6475; font-weight: 600; }
   ul.list { margin: 0; padding-left: 20px; }
@@ -292,13 +301,13 @@ const STYLE = `
   .screen-body.zoned { align-items: stretch; padding: 0; gap: 0; }
   .zone-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; padding: 16px 24px; }
   .zone-head { border-bottom: 1px solid #eef0f3; }
-  .zone-row:has(.new), .screen-body:not(.zoned):has(> .new:first-child) { padding-top: 32px; }
   .zone-foot { border-top: 1px solid #eef0f3; }
-  .zone-middle { display: flex; flex-wrap: nowrap; gap: 0; align-items: stretch; flex: 1; padding: 0; }
-  .zone { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; min-width: 0; overflow-wrap: anywhere; }
+  .zone-middle { display: flex; flex-wrap: wrap; gap: 0; align-items: stretch; flex: 1; padding: 0; }
+  .zone { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; overflow-wrap: break-word; box-sizing: border-box; }
   .zone-middle .zone { padding: 20px 24px; }
-  .zone-left { flex: 0 0 34%; min-width: 200px; box-sizing: border-box; border-right: 1px solid #e3e6eb; background: #fbfbfc; padding: 0 !important; }
-  .zone-center, .zone-right { flex: 1; min-width: 0; }
+  .zone-left { flex: 0 1 34%; min-width: 200px; border-right: 1px solid #e3e6eb; background: #fbfbfc; padding: 0 !important; }
+  .zone-center { flex: 3 1 360px; }
+  .zone-right { flex: 1 1 240px; }
   .zone-middle .zone:has(> .chat), .zone-middle .zone:has(> div > .chat) { padding: 0; }
   .zone-middle .zone > .chat, .zone-middle .zone > div > .chat { border-radius: 0; flex: 1; }
   .zone-middle .zone:has(> div > .chat) > div:has(> .chat) { flex: 1; display: flex; flex-direction: column; }
@@ -306,7 +315,7 @@ const STYLE = `
   .variants { margin-top: 18px; }
   .variants-title { margin: 0 0 10px; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #5a6475; }
   .variant-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; align-items: stretch; }
-  .variant { max-width: 560px; background: #fff; border: 1px solid #cfd4dc; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; min-width: 0; overflow-wrap: anywhere; }
+  .variant { max-width: 560px; background: #fff; border: 1px solid #cfd4dc; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; min-width: 0; overflow-wrap: break-word; }
   .variant-when { margin: 0; font-size: 14px; font-weight: 600; }
   .variant-zone { display: block; font-weight: 400; font-size: 12px; color: #5a6475; }
   .variant-note { margin: 0; font-size: 14px; color: #3b4456; }
@@ -318,7 +327,12 @@ const STYLE = `
   .dev-notes { font-size: 12px; color: #6b7485; margin-top: 12px; border-top: 1px solid #d5d9e0; padding-top: 10px; }
   .dev-notes p { margin: 0; }
   .dev-notes ul { margin: 4px 0 0; padding-left: 20px; }
-  @media (max-width: 600px) { body { padding: 20px 12px 32px; } .zone-middle { flex-direction: column; } .zone-left { flex: none; border-right: 0; border-bottom: 1px solid #e3e6eb; } .bubble { max-width: 88%; } }
+  @media (max-width: 600px) { body { padding: 20px 12px 32px; } .zone-middle { flex-direction: column; } .zone-left { flex: none; border-right: 0; border-bottom: 1px solid #e3e6eb; } .zone-center, .zone-right { flex: none; } .zone-middle .zone, .zone-row { padding-left: 12px; padding-right: 12px; } .new { padding: 4px 6px; } table.table th, table.table td { padding: 6px 4px; font-size: 12px; } .bubble { max-width: 88%; } }
+`;
+// Sólo va cuando la maqueta tiene un dato de ejemplo: sin ninguno sale igual que siempre, y su huella no cambia.
+const EXAMPLE_STYLE = `
+  .example { outline: 1px dashed #b08a2e; outline-offset: 3px; border-radius: 4px; }
+  .example-note { display: inline-block; margin-left: 6px; font-size: 11px; color: #8a6d1f; }
 `;
 // Sólo va cuando la maqueta tiene una capa: una maqueta sin capas sale sin esa parte.
 const LAYER_STYLE = `
@@ -387,9 +401,12 @@ function renderMockup(model) {
   // lo de hoy atenuado; lo nuevo en violeta, sólo cuando la pantalla mezcla las dos cosas (si es toda nueva, la marca va
   // una vez, en su cabecera)
   const el = (x, i, ctx) => {
-    if (ctx.marcas && x.existing === true) return `<div class="existing">${dibujo(x, i, ctx)}</div>`;
-    if (ctx.marcas && ctx.mezcla) return `<div class="new"><span class="new-tag">Nuevo</span>${dibujo(x, i, ctx)}</div>`;
-    return dibujo(x, i, ctx);
+    // un dato de ejemplo va marcado y sin la marca que lo compara con la pantalla; adentro de la marca de lo de hoy o de lo nuevo
+    const cuerpo = x.example === true ? `<div class="example">${dibujo(x, i, { ...ctx, T: plano })}<span class="example-note">dato de ejemplo</span></div>` : dibujo(x, i, ctx);
+    if (ctx.marcas && x.existing === true) return `<div class="existing">${cuerpo}</div>`;
+    // lo nuevo va con fondo y borde de zona, explicado en la leyenda: una etiqueta encima tapaba el contenido
+    if (ctx.marcas && ctx.mezcla) return `<div class="new">${cuerpo}</div>`;
+    return cuerpo;
   };
   // sin zonas, la columna de siempre; con zonas, una grilla aproximada: arriba, al medio (izquierda, centro,
   // derecha) y abajo
@@ -413,7 +430,7 @@ function renderMockup(model) {
     const cards = sc.variants.map((v) => {
       const zona = ZONES.includes(v.zone) ? v.zone : '';
       const donde = zona ? ` <span class="variant-zone">· cambia sólo la parte ${ZONE_NAMES[zona]}</span>` : '';
-      let els = Array.isArray(v.elements) ? v.elements.map((x) => dibujo(x, i, { T: marcado })).join('') : '';
+      let els = Array.isArray(v.elements) ? v.elements.map((x) => el(x, i, { T: marcado })).join('') : '';
       if (zona && els) {
         const conChat = sc.elements.some((x) => (x.zone || 'center') === zona && x.kind === 'chat');
         els = `<div class="variant-zone-preview preview-${zona}${conChat ? ' preview-chat' : ''}">${els}</div>`;
@@ -462,6 +479,7 @@ function renderMockup(model) {
     return [`<section class="screen" ${attrs}>`, caption, marco(cuerpo(sc.elements, i, ctx)), variantes(sc, i), '</section>'].filter(Boolean).join('\n');
   }).join('\n');
   const conCapas = model.screens.some((sc) => sc.presentation === 'layer');
+  const conEjemplos = model.screens.some((sc) => allElements(sc).some((x) => x && x.example === true));
   const leyenda = conExistentes || conCapas ? `<div class="legend">${conExistentes ? '<span><i class="sw sw-new"></i>Lo nuevo, que agrega la story</span><span><i class="sw sw-old"></i>Lo que la pantalla ya tiene (sin marca, apenas atenuado)</span>' : ''}${conCapas ? '<span><i class="sw sw-open"></i>Lo que abre una ventana</span>' : ''}</div>` : '';
   const archivos = model.screens.map((sc, i) => (isStr(sc.file) ? `<li>${E(nombreDe(sc, i))}: ${E(sc.file)}</li>` : '')).filter(Boolean);
   const sub = `Maqueta de la pantalla${isStr(model.storyId) ? ` — story ${E(model.storyId)}` : ''}. Se aprueba junto con el plan, y la pantalla construida tiene que decir estos mismos textos.`;
@@ -473,7 +491,7 @@ function renderMockup(model) {
     `<meta name="generator" content="${GENERATOR}">`,
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<title>Maqueta — ${E(model.title)}</title>`,
-    `<style>${STYLE}${conCapas ? LAYER_STYLE : ''}</style>`,
+    `<style>${STYLE}${conCapas ? LAYER_STYLE : ''}${conEjemplos ? EXAMPLE_STYLE : ''}</style>`,
     '</head><body>',
     `<header><h1>${E(model.title)}</h1>${isStr(model.summary) ? `<p class="summary">${E(model.summary)}</p>` : ''}<p class="schema-note">${SCHEMA_NOTE}</p>${leyenda}</header>`,
     screens,
@@ -525,8 +543,11 @@ function mockupTexts(html) {
 }
 
 /**
- * Las capas de una maqueta armada por este guion: `[{ screen, name, trigger, over, texts }]`, o null si el archivo no es
- * de mockup.js. `texts` son los de la ventana; los de la pantalla de abajo, dibujada detrás, no cuentan.
+ * Las capas de una maqueta armada por este guion: `[{ screen, name, trigger, over, texts, variants }]`, o null si el
+ * archivo no es de mockup.js. `texts` son los de la ventana; los de la pantalla de abajo, dibujada detrás, no cuentan.
+ * `variants` son los otros casos de la ventana (`[{ when, texts }]`): salen de a uno, cada uno con sus textos. Una pantalla
+ * repetida con el nombre de la capa (`Otro caso de «…»`) es otro caso, con su estado como `when`. El motivo de una
+ * casilla deshabilitada no cuenta: va como atributo, y la prueba en vivo lee el texto.
  */
 function mockupLayers(html) {
   const s = String(html);
@@ -535,7 +556,25 @@ function mockupLayers(html) {
   const out = [];
   for (const m of s.matchAll(/<section class="screen layer" data-screen-index="(\d+)" data-screen-name="([^"]*)" data-presentation="layer">[\s\S]*?<p class="layer-how">Se abre al tocar «([^»]*)» en «([^»]*)»\.<\/p>/g)) {
     const screen = Number(m[1]);
-    out.push({ screen, name: decode(m[2]), trigger: decode(m[3]), over: decode(m[4]), texts: textos.filter((t) => t.screen === screen).map((t) => t.text) });
+    // los otros casos van al final de la sección, en sus tarjetas: lo de antes es la ventana
+    const fin = s.indexOf('</section>', m.index);
+    const seccion = s.slice(m.index, fin === -1 ? undefined : fin);
+    const textosDe = (t, n = screen) => [...t.matchAll(/data-mockup-text="([^"]*)" data-kind="([^"]*)" data-screen="(\d+)"/g)].filter((x) => Number(x[3]) === n && x[2] !== 'title').map((x) => decode(x[1]));
+    const corte = seccion.indexOf('<div class="variants">');
+    const variants = corte === -1 ? [] : seccion.slice(corte).split('<div class="variant">').slice(1)
+      .map((tarjeta) => ({ when: decode(((/<p class="variant-when">([^<]*)/.exec(tarjeta) || [])[1] || '').trim()), texts: textosDe(tarjeta) }))
+      .filter((v) => v.texts.length);
+    const name = decode(m[2]);
+    for (const r of s.matchAll(/<section class="screen repeat" data-screen-index="(\d+)" data-screen-name="([^"]*)" data-presentation="layer">/g)) {
+      if (decode(r[2]) !== name) continue;
+      const n = Number(r[1]);
+      const finR = s.indexOf('</section>', r.index);
+      const otra = s.slice(r.index, finR === -1 ? undefined : finR);
+      const estado = (/<span class="screen-state">([^<]*)<\/span>/.exec(otra) || [])[1];
+      const texts = textosDe(otra, n);
+      if (texts.length) variants.push({ when: estado ? decode(estado) : `otro caso de «${name}»`, texts });
+    }
+    out.push({ screen, name, trigger: decode(m[3]), over: decode(m[4]), texts: textosDe(corte === -1 ? seccion : seccion.slice(0, corte)), variants });
   }
   return out;
 }
@@ -666,14 +705,14 @@ function compareWithScreens({ texts, screens, md }) {
   return { missing, extras, declared, unreadable, warnings };
 }
 
-/** Los argumentos de `qa-guide.js --check` en «Preparar el commit»: con la maqueta aprobada en el marcador, su huella. */
+/** Los argumentos de `qa-guide.js --check` en «Preparar el pull request»: con la maqueta aprobada en el marcador, su huella. */
 function qaGuideCheckArgs(storyPath, marker) {
   const sha = marker && marker.mockupApproval && marker.mockupApproval.sha256;
   return [path.join(__dirname, 'qa-guide.js'), '--check', '--story', storyPath, ...(sha ? ['--mockup-sha', sha] : [])];
 }
 
 /**
- * Qué hace «Preparar el commit» con la maqueta. `{ block, skip, compare, screenNow }`:
+ * Qué hace «Preparar el pull request» con la maqueta. `{ block, skip, compare, screenNow }`:
  *   block   — la story ganó una pantalla después de aprobar el plan sin maqueta (el paso «Aprobar el plan» anotó `screen: false`).
  *   skip    — tenía maqueta aprobada y no se detecta pantalla: no se compara, se dice y se anota.
  *   compare — hay maqueta aprobada y la story sigue con pantalla (o no se pudo leer: «no pude mirar» no saltea).
@@ -756,8 +795,12 @@ ${JSON.stringify(DEMO, null, 2)}
 - "summary" (opcional): una frase en castellano llano que dice qué cambia en la pantalla. Va arriba de todo: es lo
   primero que lee quien aprueba, que no programa.
 - "existing": true, en cualquier elemento, lo dibuja atenuado: la pantalla ya lo tiene y la story no lo agrega. Se sigue
-  comparando. Con algún "existing" en la maqueta, lo demás sale en violeta con la marca "Nuevo" (una pantalla toda nueva
-  lleva la marca una sola vez). Sin ninguno no se marca nada: marcá lo que ya existe.
+  comparando. Con algún "existing" en la maqueta, lo demás sale con fondo violeta claro y borde, explicado en la
+  leyenda de arriba; nada se dibuja encima del contenido (una pantalla toda nueva lleva la marca "Todo nuevo" una sola
+  vez, en su título). Sin ninguno no se marca nada: marcá lo que ya existe.
+- "example": true, en un text o un message, lo marca como dato de ejemplo (una versión, una fecha, un usuario de
+  prueba) y no lo compara: la pantalla dice lo mismo con datos de verdad. En los otros tipos el dato de ejemplo (las
+  filas, el valor, la marca) ya no se compara. Una pantalla no puede ser toda de ejemplo.
 - "zone" (opcional), en cualquier elemento: dónde va, a grandes rasgos: ${ZONES.join(' | ')}. Se dibuja en una grilla
   aproximada (arriba, al medio izquierda-centro-derecha, abajo); sin zona va al centro.
 - "variants" (opcional), en una pantalla: los otros casos (cargando, vacío, error, sin permiso). Cada una lleva "when"
@@ -885,12 +928,28 @@ function main() {
     return;
   }
 
-  fail('comandos: render | check | texts | status | schema | demo');
+  if (cmd === 'shots') {
+    const f = argv[1];
+    if (!f) fail('uso: mockup.js shots <maqueta.html>');
+    require(path.join(__dirname, 'lib', 'mockup-shots.js')).revisar({ mockupPath: f }).then((r) => {
+      if (r.error) { console.error(`mockup.js shots: no la pude mirar: ${r.error}`); process.exit(2); }
+      console.log(JSON.stringify({ ok: r.ok, report: r.report, shots: r.shots, findings: r.findings }, null, 2));
+      console.error(`capturas: ${Object.values(r.shots).join(' · ')} — mandáselas a quien aprueba, no sólo la ruta`);
+      if (!r.ok) {
+        console.error(`🔴 la maqueta no se lee bien (${r.findings.length} hallazgo(s)):`);
+        for (const x of r.findings) console.error(`  - a ${x.width} px, ${x.kind}: ${x.what}`);
+        process.exit(1);
+      }
+    }, (e) => { console.error(`mockup.js shots: ${e.message}`); process.exit(2); });
+    return;
+  }
+
+  fail('comandos: render | check | texts | status | schema | demo | shots');
 }
 
 module.exports = {
   renderMockup, mockupEsc, validateMockupHtml, mockupTexts, mockupLayers, mockupHash, mockupPaths, screenStory, readApproval,
-  writeApproval, compareWithScreens, qaGuideCheckArgs, mockupStep8, validateModel, modelWarnings, declaredDiffs, GENERATOR, CSP,
+  writeApproval, compareWithScreens, qaGuideCheckArgs, mockupStep8, validateModel, modelWarnings, declaredDiffs, GENERATOR, CSP, DEMO,
 };
 
 if (require.main === module) main();

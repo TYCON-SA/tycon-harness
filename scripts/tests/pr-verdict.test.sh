@@ -17,6 +17,11 @@ SCRIPT="$AQUI/scripts/ci/pr-verdict.js"
 YAML="$AQUI/pipelines/azure-pipelines-maintainers-pr.yml"
 # Los pasos que corren las suites viven en una plantilla que usan el trabajo de suites y el del banco.
 SUITES_TEMPLATE="$AQUI/pipelines/templates/run-suites.yml"
+# Los pasos del veredicto viven en otra plantilla: los corre el último trabajo que publica.
+VERDICT_TEMPLATE="$AQUI/pipelines/templates/verdict.yml"
+# El pipeline de PR con su plantilla del veredicto, si está: lo que se busca puede estar en cualquiera de los dos.
+PR_FILES=("$YAML")
+[ -f "$VERDICT_TEMPLATE" ] && PR_FILES+=("$VERDICT_TEMPLATE")
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 fallos=0; pasaron=0
 ok(){ echo "✅ veredicto-pr: $1"; pasaron=$((pasaron+1)); }
@@ -176,10 +181,10 @@ if [ ! -f "$YAML" ]; then
   # el pipeline es del privado: la copia pública no lo trae, y ahí no hay qué medir
   echo "⏭ veredicto-pr: V11 NO MEDIDO — no está pipelines/azure-pipelines-maintainers-pr.yml (la copia pública no trae los pipelines del equipo). No es un verde."
 else
-  { grep -q 'pr-verdict.js' "$YAML" && grep -q -- '--ado' "$YAML"; } \
+  grep -hE '^[^#]*pr-verdict\.js.* --ado' "${PR_FILES[@]}" > /dev/null \
     && ok "V11a: el pipeline de PR da el veredicto con este guion, en modo Azure" || no "V11a: el pipeline no llama a pr-verdict.js --ado"
   # Nunca escribe: ni commit, ni push, ni add. (El nocturno sí; éste no.)
-  if grep -nE '^[^#]*git (commit|push|add)\b' "$YAML" > "$TMP/escribe.txt"; then
+  if grep -nE '^[^#]*git (commit|push|add)\b' "${PR_FILES[@]}" > "$TMP/escribe.txt"; then
     no "V11b: 🔴 el pipeline de PR escribe en el repo: $(cat "$TMP/escribe.txt")"
   else
     ok "V11b: el pipeline de PR nunca commitea ni pushea (eso sigue siendo del nocturno)"
@@ -330,8 +335,8 @@ rc=$(corre --suites-actual "$TMP/ahora-s.json" --suites-snapshot "$TMP/foto-s.js
 if [ -f "$YAML" ]; then
   # El modo aviso no está fijo en el YAML; lo decide el interruptor de la definición
   # (scripts/ci/suites-block.js). Lo que hace cada valor lo corre pr-suites-shards.test.js con el paso real.
-  { grep -q -- '--retries' "$YAML" && grep -q 'suites-block.js' "$YAML" && grep -q 'suites-block.js' "$SUITES_TEMPLATE" \
-    && ! grep -qE '^[^#]*pr-verdict\.js.* --suites-warn' "$YAML" && grep -q '2ª pasada' "$SUITES_TEMPLATE"; } \
+  { grep -qh -- '--retries' "${PR_FILES[@]}" && grep -qh 'suites-block.js' "${PR_FILES[@]}" && grep -q 'suites-block.js' "$SUITES_TEMPLATE" \
+    && ! grep -qhE '^[^#]*pr-verdict\.js.* --suites-warn' "${PR_FILES[@]}" && grep -q '2ª pasada' "$SUITES_TEMPLATE"; } \
     && ok "V14b: el pipeline reintenta la suite roja y el modo aviso lo decide el interruptor, no el YAML" \
     || no "V14b: el pipeline no reintenta, o el modo aviso sigue fijo en el YAML"
   # El banco NO se reintenta: su rojo frena. (Su paso no puede nombrar el reintento.)
@@ -578,7 +583,8 @@ if [ -f "$YAML" ]; then
   # Saca un paso del yml por su displayName y le sustituye las macros de Azure. Lo que no es de la máquina de prueba sale
   # del entorno: `${{ parameters.runAll }}` → $RUN_ALL_TEST (False si no está) y `$(todoElRepo)` → $TODO_TEST.
   # Para el trabajo de suites: `$(SUITES_SHARD)`/`$(SUITES_OF)` → $SUITES_SHARD_TEST/$SUITES_OF_TEST (1 si no están) y
-  # `$(Pipeline.Workspace)` → <carpeta temporal>/workspace. `$(Build.SourcesDirectory)` es este checkout, o el de $3.
+  # `$(Pipeline.Workspace)` → <carpeta temporal>/workspace. `$(banco)` (si el banco corre en el pedido) → $BANCO_TEST
+  # (si, si no está). `$(Build.SourcesDirectory)` es este checkout, o el de $3.
   # El paso se busca en el pipeline y en la plantilla de las suites: en los dos archivos, uno tras otro.
   step_of_yaml() { # $1=displayName $2=carpeta temporal [$3=raíz de las fuentes]
     node -e '
@@ -595,7 +601,7 @@ if [ -f "$YAML" ]; then
     const subs = [["$(Agent.TempDirectory)", tmp], ["$(Build.SourceBranch)", "refs/heads/pr"], ["${{ parameters.runAll }}", "${RUN_ALL_TEST:-False}"],
       ["$(todoElRepo)", "${TODO_TEST}"], ["$(Build.SourcesDirectory)", sources], ["$(Build.ArtifactStagingDirectory)", tmp + "/staging"],
       ["${{ parameters.suiteShards }}", "2"], ["$(SUITES_SHARD)", "${SUITES_SHARD_TEST:-1}"], ["$(SUITES_OF)", "${SUITES_OF_TEST:-1}"],
-      ["$(Pipeline.Workspace)", tmp + "/workspace"]];
+      ["$(Pipeline.Workspace)", tmp + "/workspace"], ["$(banco)", "${BANCO_TEST:-si}"]];
     let text = body.map((l) => l.slice(indent)).join("\n");
     for (const [from, to] of subs) text = text.split(from).join(to);
     // una macro dentro de un comentario del paso no corre (el paso explica ahí por qué NO usa `$(System.PullRequest…)`)

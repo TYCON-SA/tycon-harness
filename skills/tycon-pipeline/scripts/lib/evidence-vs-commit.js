@@ -28,7 +28,9 @@
  *      `{ cuenta: false, regla: 6, criterios }`, y la evidencia de los otros criterios sigue contando: el arreglo de
  *      una prueba no dice nada de lo que esa prueba no mira. Sin marcas o ilegible, `criterios: null`: vence toda. De qué historia es un commit lo dice
  *      lib/commit-story.js, o, para un commit de la rama de la historia que todavía no está en origin/main, la rama; si no
- *      se sabe, vence toda.
+ *      se sabe, vence toda. Si lo único que cambió en la prueba son marcas `@story-…` y `@ac-N` en el nombre de una prueba
+ *      o en un comentario, no vence nada: la prueba hace lo mismo que cuando corrió la evidencia, y devuelve
+ *      `{ cuenta: true, regla: 6, via: 'solo-marcas' }`. Una marca en un dato de la prueba, o cualquier otro cambio, vence.
  *
  * La regla de la entrada no es una más de esta lista: `entrada` responde aparte, y la pide la matriz cuando una evidencia no
  * cuenta (runtime-matrix.js). Una historia queda probada si lo que entró a origin/main es, por contenido, lo que se probó;
@@ -50,6 +52,7 @@ const { execFileSync } = require('child_process');
 const path = require('path');
 const { isTestPath } = require('./atdd-order.js');
 const { ramaDelAsunto, historiaDeLaRama, historiaDeLaFusion, nombraLaHistoria } = require('./commit-story.js');
+const changeKind = require('./change-kind.js');
 
 const TIEMPO_MAX_MS = 10000;
 // La historia entera de un registro de humos con sus cambios cabe holgada; si no cabe, git no contesta y la evidencia no cuenta.
@@ -58,6 +61,60 @@ const FORMATO_DE_COMMIT = '%H %ct %h';
 // Abre cada commit en la historia de un registro: un byte que no aparece en un renglón de texto.
 const MARCA_DE_COMMIT = '\x01';
 const MAIN = 'origin/main';
+// Una marca de prueba suelta, con los espacios de antes: `@story-<historia>` o `@ac-N`, sin una letra pegada a ninguno
+// de los dos lados (`x@ac-4` es texto de la prueba).
+const MARCA_DE_PRUEBA = /[ \t]*(?<![\w@])@(?:story-[\w.-]*\w|ac-\d+)(?!\w)/g;
+// Un comentario que sin sus marcas quedó vacío.
+const COMENTARIO_VACIO = /^[ \t]*(?:\/\/+|#+|\/\*+[ \t*]*\*\/)?[ \t]*$/;
+// Las palabras que declaran una prueba: su primer argumento es su nombre, donde van las marcas.
+const DECLARA_PRUEBA = /^(?:test|it|describe|context|suite|specify)$/;
+// Lo que se encadena a una de ésas y sigue declarando una prueba (`test.only`, `describe.skip`, `test.describe.serial`,
+// `test.step`). Otro método (`context.setItem`, `test.expect`) es una llamada cualquiera: su texto es un dato.
+const MODIFICA_PRUEBA = /^(?:only|skip|todo|step|concurrent|serial|parallel|sequential|fixme|fail|failing)$/;
+
+/**
+ * ¿El texto en la posición `k` es el nombre de una prueba? `test('…'`, `it.only('…'`, `describe.skip('…'`. Uno de un
+ * método (`t.test('…'`, `re.test('…'`) no: puede ser un dato.
+ */
+function esNombreDePrueba(tokens, k) {
+  if (!tokens[k - 1] || tokens[k - 1].v !== '(') return false;
+  let j = k - 2;
+  while (j >= 2 && tokens[j].tipo === 'palabra' && tokens[j - 1].v === '.' && (MODIFICA_PRUEBA.test(tokens[j].v) || DECLARA_PRUEBA.test(tokens[j].v))) j -= 2;
+  return Boolean(tokens[j]) && tokens[j].tipo === 'palabra' && DECLARA_PRUEBA.test(tokens[j].v) && !(tokens[j - 1] && tokens[j - 1].v === '.');
+}
+
+/**
+ * En un lenguaje que lee lib/change-kind.js (menos C#): ¿las dos versiones difieren sólo en marcas? El código y las
+ * separaciones, iguales; un texto que cambió, sólo si es el nombre de una prueba y sin sus marcas da lo mismo (otro texto
+ * puede ser un dato de la prueba); los comentarios, iguales sin sus marcas, y el que quedó vacío no cuenta. La separación
+ * de antes del primer token no cuenta: es la de un renglón de comentario agregado arriba.
+ */
+function soloMarcasEnElCodigo(antes, ahora, ext) {
+  const idioma = { jsx: !/^\.(?:ts|mts|cts)$/.test(ext) };
+  const a = changeKind.leer(antes, idioma);
+  const b = changeKind.leer(ahora, idioma);
+  if (a.duda || b.duda || a.tokens.length !== b.tokens.length) return false;
+  for (let k = 0; k < a.tokens.length; k++) {
+    const [x, y] = [a.tokens[k], b.tokens[k]];
+    if (x.tipo !== y.tipo || x.familia !== y.familia) return false;
+    if (x.v === y.v) continue;
+    if (x.tipo !== 'texto' || !esNombreDePrueba(a.tokens, k)) return false;
+    if (x.v.replace(MARCA_DE_PRUEBA, '') !== y.v.replace(MARCA_DE_PRUEBA, '')) return false;
+  }
+  if (a.separaciones.some((s, k) => k > 0 && s !== b.separaciones[k])) return false;
+  const comentarios = (r) => JSON.stringify(r.comentarios.map((c) => [sinMarcasDelComentario(c.texto), c.ancla])
+    .filter(([t]) => !COMENTARIO_VACIO.test(t)));
+  return comentarios(a) === comentarios(b);
+}
+
+// Lo que hace de un comentario una directiva de alguna herramienta: ahí una marca nueva puede cambiar su efecto.
+const DIRECTIVA = /eslint|prettier|istanbul|\bc8\b|jshint|tslint|@ts-|biome-|deno-|noqa|pylint|shellcheck|nolint|noinspection|ignore|skip|suppress|disable|webpack|sourceMapping|@jsx|environment|<reference|<amd-|^\s*(?:\/\/|#)\s*!|\b(?:global|exported)\s/i;
+
+/** El texto de un comentario sin sus marcas; el de una directiva queda entero, para que una marca ahí cuente como cambio. */
+function sinMarcasDelComentario(texto) {
+  const sin = String(texto).replace(MARCA_DE_PRUEBA, '');
+  return sin !== String(texto) && DIRECTIVA.test(sin) ? String(texto) : sin;
+}
 
 /** `{ codigo, salida }`; `codigo: null` si git no pudo contestar (no está, no es un repo accesible, venció el tiempo). */
 function correrGitDeVerdad(carpeta, args, env) {
@@ -108,9 +165,19 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
   function preguntar(carpeta, pedido, env = base) {
     // con `log.showSignature` prendido, git escribe la firma de cada commit antes del formato pedido y se leería como un commit
     const args = pedido[0] === 'log' ? ['log', '--no-show-signature', ...pedido.slice(1)] : pedido;
-    const clave = `${env === base ? '' : 'indice\0'}${carpeta}\0${args.join('\0')}`;
-    if (!respuestas.has(clave)) respuestas.set(clave, correrGit(carpeta, args, env));
+    // lo que contesta lo mismo desde cualquier carpeta del repo se pregunta una vez, desde su raíz
+    const donde = delRepo(pedido) ? raizDe(carpeta) || carpeta : carpeta;
+    const clave = `${env === base ? '' : 'indice\0'}${donde}\0${args.join('\0')}`;
+    if (!respuestas.has(clave)) respuestas.set(clave, correrGit(donde, args, env));
     return respuestas.get(clave);
+  }
+
+  // Una pregunta sobre commits y referencias, sin ninguna ruta (ni `--` ni «revisión:archivo»): su respuesta es la del repo.
+  // `rev-parse` sólo con lo que no depende de la carpeta: `--git-common-dir` y `--show-toplevel` contestan según dónde corre.
+  function delRepo(pedido) {
+    if (pedido.includes('--') || pedido.some((a) => a.includes(':'))) return false;
+    if (pedido[0] === 'rev-parse') return pedido.includes('--verify') || pedido.includes('--is-shallow-repository');
+    return ['log', 'rev-list', 'merge-base', 'cat-file'].includes(pedido[0]);
   }
 
   function raizDe(carpeta) {
@@ -303,7 +370,11 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
   function criteriosDeLaPrueba(archivo, carpeta, nombre, desde) {
     let disco;
     try { disco = require('fs').readFileSync(archivo, 'utf8'); } catch (_) { return null; }
-    const rel = rutaEnElRepo(carpeta, nombre);
+    // un git que no contesta la ruta no es «el archivo no está en git»: sin las versiones de HEAD y de la evidencia, los
+    // criterios del disco solos vencerían de menos, y con null vence toda (el lado seguro). Sin rastrear, sólo el disco
+    const enGit = preguntar(carpeta, ['ls-files', '-z', '--full-name', '--', nombre]);
+    if (enGit.codigo !== 0) return null;
+    const rel = enGit.salida.split('\0')[0] || null;
     const textos = [disco];
     for (const rev of ['HEAD', ...(desde ? [desde] : [])]) {
       if (!rel) break;
@@ -324,11 +395,28 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
     return criterios.size ? [...criterios].sort((a, b) => a - b) : null;
   }
 
+  // ¿Lo único que cambió en la prueba, de la versión que juzgó la evidencia (`desde`) a la del disco, son marcas? En el
+  // nombre de una prueba o en un comentario, nunca en un dato ni en una directiva. Sólo en JS y TS (soloMarcasEnElCodigo),
+  // que el lector sabe leer; en otro lenguaje, también shell, no se sabe qué renglón es un comentario, y vence como
+  // siempre. Sin `desde`, sin el archivo en esa versión, igual a la de ahora o con git sin contestar, no.
+  function soloMarcas(archivo, carpeta, nombre, desde) {
+    if (!desde) return false;
+    let ahora;
+    try { ahora = require('fs').readFileSync(archivo, 'utf8'); } catch (_) { return false; }
+    const rel = rutaEnElRepo(carpeta, nombre);
+    if (!rel || preguntar(carpeta, ['cat-file', '-e', `${desde}:${rel}`]).codigo !== 0) return false;
+    const antes = preguntar(carpeta, ['show', `${desde}:${rel}`]);
+    if (antes.codigo !== 0 || antes.salida === ahora) return false;
+    const ext = path.extname(rel).toLowerCase();
+    return changeKind.EXTENSIONES.includes(ext) && ext !== '.cs' ? soloMarcasEnElCodigo(antes.salida, ahora, ext) : false;
+  }
+
   // La regla 6 por criterio: la prueba que la propia historia cambió vence sólo la evidencia de los criterios que nombra,
   // porque pudo dar verde por estar mal sólo en lo que mira. `criterios: null` vence toda la evidencia. `desde` es la
-  // versión que juzgó la evidencia.
-  const porCriterio = (archivo, carpeta, nombre, motivo, regla, desde, extra = {}) =>
-    NO_CUENTA(motivo, 6, { ...extra, reglaDeOrigen: regla, criterios: criteriosDeLaPrueba(archivo, carpeta, nombre, desde) });
+  // versión que juzgó la evidencia. Si sólo le cambió marcas, no vence nada.
+  const porCriterio = (archivo, carpeta, nombre, motivo, regla, desde, extra = {}) => (soloMarcas(archivo, carpeta, nombre, desde)
+    ? { cuenta: true, regla: 6, via: 'solo-marcas', reglaDeOrigen: regla }
+    : NO_CUENTA(motivo, 6, { ...extra, reglaDeOrigen: regla, criterios: criteriosDeLaPrueba(archivo, carpeta, nombre, desde) }));
 
   // Con la prueba sin commitear al correr, el commit que guardó justo lo probado no es un cambio posterior: se cuenta desde
   // el primero que dejó el archivo igual a su huella. Si ninguno lo hizo, desde el ancla.
@@ -624,7 +712,15 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
     return criteriosDeLaPrueba(archivo, path.dirname(archivo), path.basename(archivo), desde);
   }
 
-  return { vigencia, commitDeLaEvidencia, entrada, criteriosDe };
+  // El nombre del repo de un archivo (el de su checkout principal, como el ancla), o null si git no contesta.
+  const repos = new Map();
+  function repoDe(archivo) {
+    const carpeta = path.dirname(archivo);
+    if (!repos.has(carpeta)) repos.set(carpeta, nombreDelRepo(carpeta));
+    return repos.get(carpeta);
+  }
+
+  return { vigencia, commitDeLaEvidencia, entrada, criteriosDe, repoDe };
 }
 
 /** Por qué no cuenta, en una frase para el aviso de la matriz. Sin rutas ni texto de git: la matriz viaja por git. */

@@ -223,6 +223,26 @@ test('gh: con --head en una variable no toma la punta de la rama actual', () => 
   assert.notStrictEqual(e.sha, remota.slice(0, 12));
 });
 
+// Un pedido abierto con un comando largo (fila 95): el registro guarda el comando cortado, y que es un pedido se decide
+// con el comando entero. Con el corte, la entrada parecía un empuje a main y el cierre pedía el latido de un merge que no
+// existe, con la punta de la rama.
+test('un pedido con un comando largo sigue siendo un pedido aunque el registro corte el comando', () => {
+  const { dir, local } = repoConDev({ soloLocal: true });
+  git(dir, ['checkout', '--quiet', 'main']);
+  const lab = laboratorio();
+  const largo = `cat ${path.join(dir, 'una', 'carpeta', 'con', 'un', 'nombre', 'largo', 'para', 'que', 'el', 'registro', 'corte', 'cuerpo.md')}; ${GH}`;
+  assert.ok(largo.indexOf('gh pr create') > 120, `el pedido queda después del corte: ${largo.indexOf('gh pr create')}`);
+  lab.pedido(largo, dir);
+  const [e] = lab.entradas();
+  assert.ok(e, 'el pedido deja su entrada');
+  assert.strictEqual(e.sha, local.slice(0, 12));
+  assert.doesNotMatch(e.cmd, /pr create/, 'el registro guarda el comando cortado');
+  assert.strictEqual(e.entrega, 'pedido', 'que es un pedido queda anotado aparte');
+  assert.strictEqual(e.tipo, undefined, '`tipo` es de los renglones que no son entradas');
+  const salida = lab.cierre(dir).stdout;
+  assert.strictEqual(salida ? JSON.parse(salida).decision : undefined, undefined, `el cierre no pide el latido de un pedido: ${salida}`);
+});
+
 // El comando de la skill que saca la sha del registro: desde la carpeta principal paga sólo lo que se paga desde ahí.
 function shaDelRegistro(lab, repo) {
   const skill = fs.readFileSync(path.join(ROOT, 'skills', 'tycon-merge-to-main', 'SKILL.md'), 'utf8');
@@ -294,6 +314,50 @@ test('el archivo de otro repo no salda la entrada', () => {
   assert.strictEqual(JSON.parse(lab.cierre(tmp()).stdout).decision, 'block');
 });
 
+// Caso: el latido corrido desde una copia del repo (`<repo>--wt-X`) deja su archivo con la ruta de la copia. El aviso no lo
+// reconocía para el merge anotado desde la carpeta principal: lo seguía pidiendo y mandaba el latido a la principal, que
+// no tenía el commit y pedía un git fetch.
+test('el archivo del latido corrido desde una copia borrada <repo>--wt-X salda la entrada de la carpeta principal', () => {
+  const base = tmp();
+  const principal = path.join(base, 'producto');
+  fs.mkdirSync(principal);
+  git(principal, ['init', '--quiet', '-b', 'main']);
+  git(principal, ['commit', '--quiet', '--allow-empty', '-m', 'base']);
+  const lab = laboratorio();
+  lab.sembrar({ repoPath: principal });
+  fs.writeFileSync(path.join(lab.dashboard, 'metrics-x.json'), JSON.stringify({ repo: path.join(base, 'producto--wt-X'), merge_commit: SHA_ENTERO, project: 'x' }));
+  assert.strictEqual(lab.cierre(tmp()).stdout, '');
+});
+
+test('el archivo del latido corrido desde una copia viva <repo>--wt-X salda la entrada de la carpeta principal', () => {
+  const base = tmp();
+  const principal = path.join(base, 'producto');
+  fs.mkdirSync(principal);
+  git(principal, ['init', '--quiet', '-b', 'main']);
+  git(principal, ['commit', '--quiet', '--allow-empty', '-m', 'base']);
+  const copia = path.join(base, 'producto--wt-X');
+  git(principal, ['worktree', 'add', '--quiet', '-b', 'tarea', copia, 'main']);
+  const lab = laboratorio();
+  lab.sembrar({ repoPath: principal });
+  fs.writeFileSync(path.join(lab.dashboard, 'metrics-x.json'), JSON.stringify({ repo: copia, merge_commit: SHA_ENTERO, project: 'x' }));
+  assert.strictEqual(lab.cierre(tmp()).stdout, '');
+});
+
+test('un repo aparte que se llama <repo>--wt-X no salda la entrada de <repo>', () => {
+  const base = tmp();
+  const principal = path.join(base, 'producto');
+  const otro = path.join(base, 'producto--wt-X');
+  for (const d of [principal, otro]) {
+    fs.mkdirSync(d);
+    git(d, ['init', '--quiet', '-b', 'main']);
+    git(d, ['commit', '--quiet', '--allow-empty', '-m', 'base']);
+  }
+  const lab = laboratorio();
+  lab.sembrar({ repoPath: principal });
+  fs.writeFileSync(path.join(lab.dashboard, 'metrics-x.json'), JSON.stringify({ repo: otro, merge_commit: SHA_ENTERO, project: 'x' }));
+  assert.strictEqual(JSON.parse(lab.cierre(tmp()).stdout).decision, 'block');
+});
+
 // Una entrada sin copia y sin carpeta principal no la paga ningún latido (pide el repo y el commit): no corta el turno,
 // se avisa una vez con el comando de corregir. Cortar por ella era pedir algo que nadie puede hacer.
 test('sin copia y sin carpeta principal, el cierre avisa sin cortar', () => {
@@ -334,4 +398,81 @@ test('el merge de otra sesión en otro repo cercano avisa sin cortar, con su com
   assert.strictEqual(salida.decision, undefined, salida.systemMessage);
   assert.ok(salida.systemMessage.includes(`--repo "${repo}" --merge ${SHA}`), salida.systemMessage);
   assert.match(salida.systemMessage, /de la sesión otra/);
+});
+
+// ── la sesión en la carpeta que agrupa los repos de un producto (no es un repo) ──
+/** Una carpeta que no es un repo, con un repo hijo bajo el arnés por cada `[nombre, origin]`. */
+function carpetaPadre(hijos) {
+  const padre = path.join(tmp(), 'producto-a');
+  fs.mkdirSync(padre);
+  for (const [nombre, origen] of hijos) {
+    const dir = path.join(padre, nombre);
+    fs.mkdirSync(dir);
+    git(dir, ['init', '--quiet', '-b', 'main']);
+    fs.mkdirSync(path.join(dir, '.tycon'));
+    fs.writeFileSync(path.join(dir, '.tycon', 'advisors.yaml'), '');
+    commit(dir, 'base.txt');
+    git(dir, ['remote', 'add', 'origin', origen]);
+    git(dir, ['checkout', '--quiet', '-b', 'dev']);
+    commit(dir, 'dev.txt');
+    git(dir, ['checkout', '--quiet', 'main']);
+  }
+  return padre;
+}
+const AZ_BACKEND = 'https://dev.azure.com/acme/producto-a/_git/backend';
+const AZ_FRONTEND = 'https://dev.azure.com/acme/producto-a/_git/frontend';
+const CAPA_BACKEND = `node scripts/lib/platform/platform.js change-request open --repo '{"platform":"azure","org":"acme","project":"producto-a","repo":"backend"}' --auto-complete --args '{"targetBranch":"main","sourceBranch":"dev"}'`;
+
+test('la capa desde la carpeta padre anota el repo hijo cuyo origin es el --repo', () => {
+  const padre = carpetaPadre([['backend', AZ_BACKEND], ['frontend', AZ_FRONTEND]]);
+  const lab = laboratorio();
+  lab.pedido(CAPA_BACKEND, padre);
+  const [e, otra] = lab.entradas();
+  assert.ok(e, 'el pedido deja su entrada');
+  assert.strictEqual(otra, undefined);
+  assert.strictEqual(e.repoPath, path.join(padre, 'backend'));
+});
+
+test('la capa desde la carpeta padre sin ningún hijo con ese origin queda sin ubicar', () => {
+  const padre = carpetaPadre([['backend', 'https://dev.azure.com/acme/producto-a/_git/otro'], ['frontend', AZ_FRONTEND]]);
+  const lab = laboratorio();
+  const r = lab.pedido(CAPA_BACKEND, padre);
+  assert.deepStrictEqual(lab.entradas(), []);
+  assert.strictEqual(r.status, 2);
+  assert.match(r.stderr, /no pude resolver a qué repo fue/);
+});
+
+test('la capa desde la carpeta padre con dos hijos con ese origin queda sin ubicar', () => {
+  const padre = carpetaPadre([['backend', AZ_BACKEND], ['backend-copia', AZ_BACKEND], ['frontend', AZ_FRONTEND]]);
+  const lab = laboratorio();
+  const r = lab.pedido(CAPA_BACKEND, padre);
+  assert.deepStrictEqual(lab.entradas(), []);
+  assert.strictEqual(r.status, 2);
+  assert.match(r.stderr, /no pude resolver a qué repo fue/);
+});
+
+test('la capa con cd al repo hijo sigue anotando ese repo', () => {
+  const padre = carpetaPadre([['backend', AZ_BACKEND], ['frontend', AZ_FRONTEND]]);
+  const lab = laboratorio();
+  lab.pedido(`cd '${path.join(padre, 'backend')}' && ${CAPA_BACKEND}`, padre);
+  const [e] = lab.entradas();
+  assert.ok(e, 'el pedido deja su entrada');
+  assert.strictEqual(e.repoPath, path.join(padre, 'backend'));
+});
+
+test('gh con --repo desde la carpeta padre anota el repo hijo cuyo origin es el --repo', () => {
+  const padre = carpetaPadre([['backend', 'https://github.com/acme/backend.git'], ['frontend', 'https://github.com/acme/frontend.git']]);
+  const lab = laboratorio();
+  lab.pedido('gh pr create --repo acme/backend --base main --head dev --title t --body-file cuerpo.md', padre);
+  const [e] = lab.entradas();
+  assert.ok(e, 'el pedido deja su entrada');
+  assert.strictEqual(e.repoPath, path.join(padre, 'backend'));
+});
+
+test('gh sin --repo desde la carpeta padre queda sin ubicar', () => {
+  const padre = carpetaPadre([['backend', 'https://github.com/acme/backend.git']]);
+  const lab = laboratorio();
+  const r = lab.pedido('gh pr create --base main --head dev --title t --body-file cuerpo.md', padre);
+  assert.deepStrictEqual(lab.entradas(), []);
+  assert.strictEqual(r.status, 2);
 });

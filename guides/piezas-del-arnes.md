@@ -119,6 +119,7 @@ En [pieces/ci.md](pieces/ci.md):
 - [scripts/ci/check-product-parity.js](pieces/ci.md#scriptscicheck-product-parityjs)
 - [scripts/ci/check-trigger-without-docs.js](pieces/ci.md#scriptscicheck-trigger-without-docsjs)
 - [scripts/ci/check-tests-without-ci.js](pieces/ci.md#scriptscicheck-tests-without-cijs)
+- [scripts/tests/hidden-window.test.js](pieces/ci.md#scriptstestshidden-windowtestjs)
 
 ## Las bibliotecas del pipeline
 
@@ -172,6 +173,8 @@ En [pieces/metrics.md](pieces/metrics.md):
 - [scripts/nightly/watcher/vigilante.js](pieces/metrics.md#scriptsnightlywatchervigilantejs) _(scripts/nightly/watcher/vigilante.js + inbox/watcher/)_
 - [scripts/controls-bench/periodic-exam.js](pieces/metrics.md#scriptscontrols-benchperiodic-examjs)
 - [scripts/ci/push-nightly-data.js](pieces/metrics.md#scriptscipush-nightly-datajs)
+- [scripts/lib/result-travel.js](pieces/metrics.md#scriptslibresult-traveljs)
+- [scripts/ci/carry-night-results.js](pieces/metrics.md#scriptscicarry-night-resultsjs)
 - [pipelines/azure-pipelines-banco.yml](pieces/metrics.md#pipelinesazure-pipelines-bancoyml)
 - [scripts/ci/suites-shard.js](pieces/metrics.md#scriptscisuites-shardjs) _(scripts/ci/suites-shard.js + scripts/ci/suites-weights.json)_
 - [scripts/ci/suites-over-limit.json](pieces/metrics.md#scriptscisuites-over-limitjson) _(scripts/ci/suites-over-limit.json + scripts/tests/lib/suite-parts.js + scripts/tests/lib/suite-parts.sh)_
@@ -191,6 +194,7 @@ En [pieces/metrics.md](pieces/metrics.md):
 - [scripts/lib/merge-metrics.js](pieces/metrics.md#scriptslibmerge-metricsjs)
 - [scripts/lib/people.js](pieces/metrics.md#scriptslibpeoplejs)
 - [scripts/lib/guard-record.js](pieces/metrics.md#scriptslibguard-recordjs)
+- [scripts/metrics/controls-table.js](pieces/metrics.md#scriptsmetricscontrols-tablejs) _(scripts/metrics/controls-table.js + scripts/metrics/controls-classification.json + scripts/lib/session-model.js)_
 - [scripts/nightly/dashboard/reducer.js](pieces/metrics.md#scriptsnightlydashboardreducerjs)
 - [lib/installed-tree.js](pieces/metrics.md#libinstalled-treejs)
 - [test-gate.sh](pieces/metrics.md#test-gatesh) _(test-gate.sh (AgentSkills) + la ficha «evaluaron el umbral»)_
@@ -213,6 +217,7 @@ En [pieces/machine.md](pieces/machine.md):
 - [scripts/hooks/worktree-sweep.js](pieces/machine.md#scriptshooksworktree-sweepjs)
 - [scripts/hooks/dev-behind-main-notice.js](pieces/machine.md#scriptshooksdev-behind-main-noticejs)
 - [scripts/hooks/stuck-pr-notice.js](pieces/machine.md#scriptshooksstuck-pr-noticejs)
+- [scripts/lib/outside-contributions.js](pieces/machine.md#scriptsliboutside-contributionsjs)
 - [scripts/hooks/extension-notices.js](pieces/machine.md#scriptshooksextension-noticesjs)
 - [scripts/hooks/missing-path-notice.js](pieces/machine.md#scriptshooksmissing-path-noticejs)
 - [scripts/hooks/deprecated-session-notice.js](pieces/machine.md#scriptshooksdeprecated-session-noticejs)
@@ -223,7 +228,7 @@ En [pieces/machine.md](pieces/machine.md):
 - [scripts/hooks/failed-query-notice.js](pieces/machine.md#scriptshooksfailed-query-noticejs)
 - [scripts/hooks/context-size-notice.js](pieces/machine.md#scriptshookscontext-size-noticejs)
 - [scripts/hooks/wait-notice.js](pieces/machine.md#scriptshookswait-noticejs)
-- [scripts/hooks/prod-access-guard.js](pieces/machine.md#scriptshooksprod-access-guardjs) _(scripts/hooks/prod-access-guard.js + scripts/production/ + guides/produccion-con-permiso.md)_
+- [scripts/hooks/prod-access-guard.js](pieces/machine.md#scriptshooksprod-access-guardjs) _(scripts/hooks/prod-access-guard.js + scripts/production/ + guides/production-with-permission.md)_
 - [claude-md-blocks/budget.json](pieces/machine.md#claude-md-blocksbudgetjson) _(claude-md-blocks/budget.json + scripts/ci/check-claude-md-blocks.js)_
 - [scripts/hooks/harness-bootstrap-heal.sh](pieces/machine.md#scriptshooksharness-bootstrap-healsh)
 - [tycon-pipeline/scripts/lib/guides-heal.js](pieces/machine.md#tycon-pipelinescriptslibguides-healjs) _(tycon-pipeline/scripts/lib/guides-heal.js (en agent-skills) + scripts/hooks/branch-guard-notice.js)_

@@ -6,6 +6,8 @@
  *
  * Corre pipeline.js y marker.js de verdad sobre una corrida de juguete, con HOME temporal. 0 deps (node:test).
  */
+// sin el perfil del equipo: la prueba fija su ambiente (scripts/tests/lib/without-team-profile.js)
+require('../../../../scripts/tests/lib/without-team-profile.js');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
@@ -221,6 +223,45 @@ test('Cap_Default_Three @story-7.37 @ac-3 @story-8.221 @ac-46', () => {
   assert.match(v.stderr, /tope de 3 vueltas/);
 });
 
+// 🔴 Falla con: al tope, con los hallazgos leídos y nada abierto, el aviso frenaba (sale 3) sin nada que decidir: 77 de
+// 177 avisos de la medición de la 8.325.
+test('Cap_NadaAbierto_NoFrena: al tope sin nada abierto, sale 0 sin set y dice que siga', () => {
+  const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('SEC-C1', 'CRITICAL', 'fixed'), hallazgo('TEST-W2', 'WARNING', 'fixed')] });
+  const r = lab.reloop(3);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /no quedó nada abierto/i);
+  assert.match(r.stderr, /Probar en vivo/);
+  const out = JSON.parse(r.stdout);
+  assert.deepEqual(out.rerun, [], 'no devuelve revisores');
+  assert.doesNotMatch(r.stderr, /🛑/);
+  const log = fs.readFileSync(path.join(lab.state, 'gates.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const aviso = log.filter((g) => g.name === 'review-cap-shown');
+  assert.equal(aviso.length, 1);
+  assert.equal(aviso[0].status, 'ok', 'se anota como ok, no como freno');
+  // 🔴 el aviso sin nada abierto no cuenta como aviso para una vuelta extra: si después aparece un crítico, se avisa antes
+  fs.writeFileSync(path.join(lab.run, 'findings.json'), JSON.stringify([hallazgo('SEC-C1', 'CRITICAL', 'open')]));
+  const extra = lab.reloop(3, ['--extra-round']);
+  assert.equal(extra.status, 3, extra.stderr);
+  assert.match(extra.stderr, /todavía no se avisó el tope/);
+  // 🔴 un crítico arreglado que su revisor todavía no confirmó necesita una vuelta más: sigue frenando y lo dice
+  const porConfirmar = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('SEC-C1', 'CRITICAL', 'fixed')] });
+  const registro = path.join(porConfirmar.state, 'reported-criticals', `${SID}.jsonl`);
+  fs.mkdirSync(path.dirname(registro), { recursive: true });
+  fs.writeFileSync(registro, [
+    { ts: T(1), kind: 'launched', advisor: 'tycon-plugin-security-basics', iter: 2, story: '9.8', run: RUN },
+    { ts: T(2), kind: 'report', advisor: 'tycon-plugin-security-basics', iter: 2, story: '9.8', run: RUN, readable: true, criticals: [{ rule: 'SEC-C1', count: 1 }] },
+  ].map((x) => JSON.stringify(x)).join('\n') + '\n');
+  const pc = porConfirmar.reloop(3);
+  assert.equal(pc.status, 3, pc.stderr);
+  assert.match(pc.stderr, /espera que su revisor lo confirme/);
+  // sin poder leer los hallazgos no es «nada abierto»: sigue frenando
+  const sinArchivo = laboratorio({ fotos: [1, 2], servidas: [1, 2] });
+  assert.equal(sinArchivo.reloop(3).status, 3);
+  // con algo abierto, como siempre
+  const conDeuda = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('TEST-W2', 'WARNING', 'open')] });
+  assert.equal(conDeuda.reloop(3).status, 3);
+});
+
 test('Cap_OrgAndRepo_RepoWins_BadValueSaid @story-7.37 @ac-4', () => {
   const rr = (lab) => JSON.parse(lab.cmd(PIPELINE, ['review-rounds', '--story', lab.story, '--repo', lab.repo, '--json']).stdout);
   const org = laboratorio({ org: { max_rounds: 3 }, advisorsYaml: null });
@@ -261,15 +302,51 @@ test('Cap_SecurityCritical_AsksThePerson @story-7.37 @ac-5', () => {
 
 // 🔴 Falla con: --delegated que todavía sirve la vuelta extra por la frase del dueño, o un aviso del tope que lo ofrece.
 test('Cap_ExtraRoundDelegated_YaNoAutoriza', () => {
+  // Sin el perfil del equipo, la vuelta extra la aprueba una persona. El perfil se lee del árbol del arnés que corre, y
+  // el árbol de la noche trae el del equipo, que la puede listar como trámite (eso lo mide T80a): esta prueba corre una
+  // copia propia del arnés, sin el perfil.
+  const copia = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'tests', 'lib', 'harness-copy.js')).harnessCopy();
+  fs.rmSync(path.join(copia, 'team-profile.json'), { force: true });
+  const tope = (lab, extra = []) => spawnSync(process.execPath, [path.join(copia, 'skills', 'tycon-pipeline', 'scripts', 'pipeline.js'),
+    'smart-reloop', '--iter', '3', '--repo', lab.repo, '--story', lab.story, '--files', 'src/a.js', ...extra], { encoding: 'utf8', env: lab.env });
   const lab = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings: [hallazgo('SEC-C1', 'CRITICAL', 'open')] });
-  const aviso = lab.reloop(3);
+  const aviso = tope(lab);
   assert.doesNotMatch(aviso.stderr, /--delegated/);
   assert.match(aviso.stderr, /--for-session/);
   lab.conversar([delDev('aprobá una vuelta más')]);
-  const sin = lab.reloop(3, ['--extra-round', '--delegated']);
+  const sin = tope(lab, ['--extra-round', '--delegated']);
   assert.equal(sin.status, 3);
   assert.match(sin.stderr, /--delegated ya no la autoriza/);
   assert.ok(!gates(lab).some((g) => g.name === 'extra-round'), 'no se anota una vuelta que no se sirvió');
+});
+
+// 🔴 Falla con: el cartel del tope que dice que la vuelta extra la aprueba una persona cuando el perfil del equipo la
+// lista como firma de trámite (la da el arnés solo), o que dice «trámite» sin el perfil.
+test('T80a Cap_VueltaExtraDeTramite_ElCartelLoDice: el cartel dice quién da la vuelta extra, según el perfil del equipo', () => {
+  // el perfil del equipo se lee del árbol del arnés que corre: una copia propia, con el perfil y sin él
+  const copia = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'tests', 'lib', 'harness-copy.js')).harnessCopy();
+  const perfil = path.join(copia, 'team-profile.json');
+  const tope = (lab, extra = []) => spawnSync(process.execPath, [path.join(copia, 'skills', 'tycon-pipeline', 'scripts', 'pipeline.js'),
+    'smart-reloop', '--iter', '3', '--repo', lab.repo, '--story', lab.story, '--files', 'src/a.js', ...extra], { encoding: 'utf8', env: lab.env });
+  const findings = [hallazgo('SEC-C1', 'CRITICAL', 'open')];
+  fs.rmSync(perfil, { force: true });
+  const a = tope(laboratorio({ fotos: [1, 2], servidas: [1, 2], findings }));
+  assert.equal(a.status, 3, a.stderr);
+  assert.match(a.stderr, /la persona lo aprueba en la ventana de permiso/);
+  assert.doesNotMatch(a.stderr, /trámite/);
+  fs.writeFileSync(perfil, JSON.stringify({ approvals: { delegated_signing: ['extra-round'] } }));
+  try {
+    const con = laboratorio({ fotos: [1, 2], servidas: [1, 2], findings });
+    const b = tope(con);
+    assert.equal(b.status, 3, b.stderr);
+    assert.match(b.stderr, /firma de trámite del perfil del equipo/);
+    assert.match(b.stderr, /no la firma una persona/);
+    // eximir el crítico sigue siendo de una persona (critical-waiver nunca es trámite): lo que cambia es la vuelta extra
+    assert.doesNotMatch(b.stderr, /--extra-round, y la persona lo aprueba/);
+    assert.match(b.stderr, /waive-critical[^\n]*la persona lo aprueba/);
+    assert.match(tope(con, ['--extra-round', '--quote', 'dale, una vuelta más']).stderr, /la cita ya no la autoriza\. Es una firma de trámite/);
+    assert.match(tope(con, ['--extra-round', '--delegated']).stderr, /Va el mismo comando sin --delegated: es una firma de trámite/);
+  } finally { fs.rmSync(perfil, { force: true }); }
 });
 
 test('Cap_OtherOpen_BecomesDebt @story-7.37 @ac-6', () => {
@@ -297,6 +374,35 @@ test('Close_BlockingCriticalOpen_Blocks @story-7.37 @ac-7', () => {
     assert.notEqual(r.status, 0, f.rule_id);
     assert.match(r.stderr, new RegExp(`${f.rule_id}.*seguridad o (de )?datos|seguridad o (de )?datos.*${f.rule_id}`, 's'), r.stderr);
   }
+});
+
+// 🔴 Falla con: el cartel del cierre que dice que la vuelta extra «le pide el permiso en la ventana de permiso» cuando el
+// perfil del equipo la lista como firma de trámite (fila 80: la sesión y dos coordinadoras la tomaron por la firma del
+// dueño), o que dice «trámite» sin el perfil, o que deja de decir que eximir el crítico es de una persona.
+test('T80b Close_VueltaExtraDeTramite_ElCartelDelCierreLoDice: el freno del cierre dice quién da la vuelta extra, según el perfil', () => {
+  const copia = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'tests', 'lib', 'harness-copy.js')).harnessCopy();
+  const perfil = path.join(copia, 'team-profile.json');
+  const cierre = (lab) => spawnSync(process.execPath, [path.join(copia, 'skills', 'tycon-pipeline', 'scripts', 'marker.js'), 'complete-step', '8'],
+    { encoding: 'utf8', cwd: lab.repo, env: lab.env });
+  const findings = [hallazgo('SEC-C1', 'CRITICAL', 'open')];
+  fs.rmSync(perfil, { force: true });
+  const a = cierre(laboratorio({ fotos: [1, 2], findings }));
+  assert.notEqual(a.status, 0, a.stderr);
+  assert.match(a.stderr, /SEC-C1/);
+  assert.match(a.stderr, /Lo decide una persona: arreglarlo/);
+  assert.match(a.stderr, /que le pide el permiso en la ventana de permiso/);
+  assert.doesNotMatch(a.stderr, /trámite/);
+  fs.writeFileSync(perfil, JSON.stringify({ approvals: { delegated_signing: ['extra-round'] } }));
+  try {
+    const b = cierre(laboratorio({ fotos: [1, 2], findings }));
+    assert.notEqual(b.status, 0, b.stderr);
+    assert.match(b.stderr, /SEC-C1/);
+    assert.match(b.stderr, /Es una firma de\s+trámite del perfil del equipo/);
+    assert.match(b.stderr, /no la\s+firma una persona/);
+    assert.doesNotMatch(b.stderr, /ventana de permiso/);
+    // eximir el crítico sigue siendo de una persona (critical-waiver nunca es trámite)
+    assert.match(b.stderr, /eximirlo: eso lo decide una persona \(marker\.js waive-critical/);
+  } finally { fs.rmSync(perfil, { force: true }); }
 });
 
 test('Close_UnreadableFindings_NeverNothingOpen @story-7.37 @ac-7 @ac-8', () => {

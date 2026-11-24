@@ -6,13 +6,35 @@
  *
  *   Claude: PreToolUse de AskUserQuestion y del dictado (mcp__spokenly__ask_user_dictation). Niega si la sesión es de
  *           fondo, la abrió `coordination.js open` (su renglón en `<estado>/coordination/launched.json`) y hay una
- *           coordinadora confirmada por el dueño y viva que no es ella. El texto dice qué mandarle y a quién.
+ *           coordinadora confirmada por el dueño y viva que no es ella. El texto dice qué mandarle y a quién. La pregunta
+ *           queda anotada (coordination.js questionRelay) y sale en el aviso de cada turno de la coordinadora; si la sesión
+ *           repite la misma pregunta pasado `plan_review.coordinator_wait_minutes`, le llega a la persona.
  *
  * Claude: PreToolUse de Bash. En una sesión de fondo (su archivo de Claude Code dice `kind: bg`), niega el comando que
  *           haría que Claude Code le pida permiso a una persona aun sin permisos (lib/bg-permission-shapes.js: un `rm`
  *           cuyo destino no puede revisar) y dice cómo reescribirlo. Nadie contesta ese pedido de fondo, y mientras
  *           espera la sesión no lee mensajes: la negación llega como respuesta y la sesión reintenta sola. Lo que hoy
  *           pasa sin pedir, pasa; en una sesión que no es de fondo, nada cambia.
+ *
+ * Claude: PreToolUse de Edit, Write, MultiEdit y NotebookEdit. En una sesión de fondo, niega la edición que una regla
+ *           «ask» de la configuración administrada haría pedirle a una persona (la del freno de producción cubre el
+ *           catálogo y sus estados, también en una carpeta temporal) y dice cómo seguir. Las reglas se leen de esa
+ *           configuración, así que vale también para las que sume la organización. En una sesión que no es de fondo, la
+ *           regla pregunta como siempre.
+ *
+ * Claude: PreToolUse de SendMessage: a una sesión de fondo que abrió `open` sólo le escribe la coordinadora. Un
+ *           mensaje de otra sesión le llega retenido (otro modo de permisos) y la deja esperando un click en una pestaña
+ *           que nadie mira; se niega y se manda a la coordinadora, que se lo pasa. Acá se mira el DESTINO (`tool_input.to`), no la
+ *           sesión que llama, con las formas que Claude Code entrega: el nombre entero de los archivos de sesión (el
+ *           recorte de la oficina confunde nombres largos) comparado como lo compara Claude Code, el id de la sesión, la
+ *           dirección `uds:` o la ruta del socket, `bridge:`, y `*`, que es toda sesión viva. Con la coordinadora viva,
+ *           una falla niega. A una sesión con persona delante se le escribe como siempre. Corre en la máquina de quien
+ *           manda: un mensaje desde otra máquina no lo ve.
+ *
+ * Claude: PreToolUse de AskUserQuestion, en cualquier sesión: niega el cuadro con la opción «Sí, aprobar» (la de los
+ *           cuadros de firma) cuya pregunta no trae el código que imprimió el guion. Ese click no aprueba nada
+ *           (owner-approvals.js lo compara con la pregunta del guion) y la persona lo pierde; el texto dice que la muestre
+ *           tal cual, o que use otra etiqueta. Otras etiquetas, aunque aprueben («Aprobado», «Sí, que entre»), pasan.
  *
  * Toda pregunta, no sólo la de firma: una pregunta libre de la sesión también le llegaba a la persona por una pestaña que
  * no mira. ExitPlanMode no: es la salida del modo plan, y negarla dejaría a la sesión encerrada ahí.
@@ -27,7 +49,13 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..', '..');
 const QUESTION_TOOLS = new Set(['AskUserQuestion', 'mcp__spokenly__ask_user_dictation']);
-const SELLO = /\bfirma ([\w:.-]+) · sesi[oó]n [\w-]+ · c[oó]digo [\w-]+/;
+const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+const MESSAGE_TOOL = 'SendMessage';
+// un destino que no es otra sesión: la conversación principal o un ayudante de la propia sesión (su id)
+const NOT_A_SESSION = /^(main|a[0-9a-f]{16})$/;
+const SELLO = /\bfirma ([\w:.-]+) · sesi[oó]n ([\w-]+) · c[oó]digo [\w-]+/;
+// el código de un cuadro que aprueba: el de una firma o el de un pedido de permiso (signature-list.js cuadroDePermiso)
+const CODIGO_DEL_GUION = /\b(?:firma|permiso) [\w:.-]+ · sesi[oó]n [\w-]+ · c[oó]digo [\w-]+/;
 const NOMBRE = 'background-question-guard';
 
 const stateDirOf = (home) => require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js')).stateDir(home);
@@ -41,6 +69,37 @@ function textoDe(input) {
   const i = input && typeof input === 'object' ? input : {};
   if (Array.isArray(i.questions)) return i.questions.map((q) => (q && q.question) || '').join(' ');
   return String(i.question || i.prompt || i.message || i.text || '');
+}
+
+// lo que se le dice a la sesión que arma un cuadro de aprobación sin el código del guion. No trae un sello ni nombra una
+// firma: el aviso no tiene que parecerse al cuadro que pide
+const SIN_CODIGO = 'Este cuadro trae la opción «Sí, aprobar», pero su pregunta no trae el código que imprimió el comando del arnés '
+  + '(«… · código …»). Un click ahí no aprueba nada y la persona lo pierde. Mostrá la pregunta exactamente como la imprimió el '
+  + 'comando, sin cambiarle una letra; si no es una aprobación del arnés, usá otra etiqueta para esa opción.';
+
+/**
+ * Un cuadro con la opción de aprobar del arnés («Sí, aprobar», la que ponen sus cuadros de firma) y una pregunta sin el
+ * código del guion: `{ decision: 'deny', reason }` o null. Ese click no aprueba nada, porque owner-approvals.js lo compara
+ * con la pregunta del guion, código incluido, y la persona lo pierde: se avisa antes de mostrarlo. Es esa etiqueta y no
+ * cualquiera que apruebe: una pregunta de decisión («Sí, que entre», «Aprobado») sigue pasando. El código es el de una
+ * firma o el de un pedido de permiso, y puede ir en el medio (el de permiso va antes del pedido). Sin poder leer la
+ * etiqueta, pasa.
+ */
+function decidirAprobacionSinCodigo(input, home) {
+  const qs = input && typeof input === 'object' && Array.isArray(input.questions) ? input.questions : [];
+  let aprueba;
+  try { aprueba = require('../lib/owner-approvals.js').APRUEBA; } catch (e) {
+    logError(home, `no pude leer la opción de aprobar (${(e && e.message) || e}): el cuadro pasó sin mirar si trae el código`);
+    return null;
+  }
+  // una etiqueta que se ve igual también cuenta: espacio duro, coma ancha, un relleno en blanco o un carácter invisible no
+  // la hacen otra. Las letras de otro alfabeto que se parecen no se persiguen: lo que se ataja es el cuadro escrito a mano
+  const visible = (s) => String(s).normalize('NFKD').replace(/[\p{M}\p{Cf}]/gu, '')
+    .replace(/[ᅟᅠ⠀ㅤﾠ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const igual = (label) => typeof label === 'string' && visible(label) === visible(aprueba);
+  const sinCodigo = qs.some((q) => q && Array.isArray(q.options) && q.options.some((o) => o && igual(o.label))
+    && !CODIGO_DEL_GUION.test(String(q.question || '')));
+  return sinCodigo ? { decision: 'deny', reason: SIN_CODIGO } : null;
 }
 
 /** ¿La firma sólo la aprueba un click en la pestaña que trabaja? Sin la lista de firmas, no, y queda anotado. */
@@ -62,7 +121,7 @@ function textoDeLaNegativa({ nombre, sid, firma = null, soloClick = false, duda 
       : `Esta sesión la abrió la coordinadora: no le preguntes a la persona. Mandale a «${nombre}» (${sid}) por SendMessage la pregunta tal cual,`,
     'lo que se decide en tres renglones (el plan, si es un plan) y la ruta del archivo. Esperá su aviso.',
   ];
-  if (firma && soloClick) partes.push('Es una firma que sólo aprueba un click en la pestaña que trabaja: no se aprueba desde la pestaña de la coordinadora. Queda la terminal del dueño, y eso es lo que le pasás.');
+  if (firma && soloClick) partes.push('Es una firma que sólo aprueba un click en la pestaña que trabaja, y su sello nombra otra sesión: se muestra en la pestaña de esa sesión, o queda la terminal del dueño.');
   else if (firma) partes.push('Es una pregunta de firma: va tal cual, sin cambiarle una letra; la coordinadora la muestra en su pestaña, y con el click repetís el comando acá.');
   return partes.join(' ');
 }
@@ -90,6 +149,132 @@ function coordinadoraDeLaLanzada({ home = os.homedir(), sid, env, arnes }) {
     return { name: (c && c.name) || 'la coordinadora', sid: coord, duda: !!lanzada.problem };
   } catch (e) {
     logError(home, `${(e && e.message) || e}: dejé preguntar a ${sid}`);
+    return null;
+  }
+}
+
+/** La negativa de un mensaje: a quién mandárselo. `duda`: no se pudo leer el registro de las lanzadas. */
+function textoDeLaNegativaDelMensaje({ nombre, sid, duda = false }) {
+  return [
+    duda ? 'No pude leer qué sesiones abrió la coordinadora, y el destino es de fondo: ante la duda, no le escribas directo.' : null,
+    'Esa sesión trabaja de fondo: mandáselo a la coordinadora, que se lo pasa.',
+    `Mandale a «${nombre}» (${sid}) por SendMessage a quién va y lo que querés que le diga.`,
+  ].filter(Boolean).join(' ');
+}
+
+/** Un texto ajeno en un renglón del registro: sin saltos ni caracteres de control, y corto. */
+const unRenglon = (x) => String(x).replace(/[\p{Cc}\p{Cf}]+/gu, ' ').slice(0, 200);
+
+/** El nombre como lo compara Claude Code al entregar un mensaje: NFKC, sin control, sin espacios al borde, en minúsculas y con `-` por espacio. */
+const nombreNormal = (x) => String(x).normalize('NFKC').replace(/[\p{Cc}\p{Cf}]/gu, '').trim().toLowerCase().replace(/\s+/g, '-');
+
+/** Una dirección de Claude Code (`uds:`, `bridge:`) viene codificada; si no se puede decodificar, se compara tal cual. */
+function decodificada(x) {
+  try { return decodeURIComponent(x); } catch { return x; }
+}
+
+/** Las sesiones de la máquina como las escribe Claude Code: `{ sid, name, socket, bridge, kind }` de las vivas, con el nombre entero. */
+function sesionesVivas(home, problemas) {
+  const dir = path.join(require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js')).claudeDir(home), 'sessions');
+  let archivos;
+  try { archivos = fs.readdirSync(dir).filter((n) => n.endsWith('.json')); } catch (e) {
+    if (e.code !== 'ENOENT') problemas.push(`${dir}: ${e.message}`);
+    return [];
+  }
+  const out = [];
+  for (const n of archivos) {
+    let s;
+    try { s = JSON.parse(fs.readFileSync(path.join(dir, n), 'utf8')); } catch (e) { problemas.push(`${n}: ${e.message}`); continue; }
+    if (!s || typeof s !== 'object' || typeof s.sessionId !== 'string') continue;
+    const pid = Number(s.pid);
+    let viva = false;
+    try { process.kill(pid, 0); viva = true; } catch (e) { viva = e.code === 'EPERM'; }
+    if (!Number.isInteger(pid) || pid <= 0 || !viva) continue;
+    const texto = (v) => (typeof v === 'string' ? v : null);
+    out.push({ sid: s.sessionId, name: typeof s.name === 'string' ? s.name.trim() : '', socket: texto(s.messagingSocketPath), bridge: texto(s.bridgeSessionId), kind: String(s.kind || '') });
+  }
+  return out;
+}
+
+/**
+ * Las sesiones a las que va un mensaje, con las formas que Claude Code entrega: `*` es toda viva; `uds:<ruta>` (o la ruta
+ * del socket suelta) la de ese socket; `bridge:<id>` la de ese puente; el id de la sesión, ésa; si no, el nombre sin su
+ * ` [ref]`, comparado como lo compara Claude Code (mayúsculas, espacios y el espacio antes de la referencia no cuentan).
+ */
+function destinosDe(to, vivas) {
+  if (to === '*') return vivas.map((s) => s.sid);
+  const uds = /^uds:(.+)$/i.exec(to);
+  if (uds || to.startsWith('/') || to.startsWith('\\\\.\\pipe\\')) {
+    const ruta = uds ? decodificada(uds[1]) : to;
+    return vivas.filter((s) => s.socket && (s.socket === ruta || s.socket === to)).map((s) => s.sid);
+  }
+  const puente = /^bridge:(.+)$/i.exec(to);
+  if (puente) return vivas.filter((s) => s.bridge && s.bridge === decodificada(puente[1])).map((s) => s.sid);
+  const porId = vivas.filter((s) => s.sid === to);
+  if (porId.length) return porId.map((s) => s.sid);
+  const ref = /^(.*\S)\s*\[([0-9a-f]{6,12})\]$/i.exec(to.trim());
+  const nombre = nombreNormal(ref ? ref[1] : to);
+  return nombre ? vivas.filter((s) => nombreNormal(s.name) === nombre).map((s) => s.sid) : [];
+}
+
+/**
+ * Un mensaje de `sid` a `to`: niega si algún destino es una sesión de fondo que abrió `open`, con una coordinadora
+ * confirmada y viva que no es quien manda. Un destino que no es ninguna sesión pasa y queda anotado. Una falla con la
+ * coordinadora ya confirmada niega (ante la duda): un freno que deja pasar al fallar es un agujero. Una falla sobre un
+ * destino que no es de fondo deja pasar ese destino, y queda anotada.
+ */
+function decidirMensaje({ home, sid, to, env, arnes }) {
+  let coord = null;
+  let nombreCoord = 'la coordinadora';
+  const negar = (duda) => ({ decision: 'deny', reason: textoDeLaNegativaDelMensaje({ nombre: nombreCoord, sid: coord, duda }) });
+  try {
+    const sl = require('../lib/signature-list.js');
+    const s = sl.sesiones(home);
+    const confirmada = require('../lib/owner-approvals.js').coordinadoraConfirmada(home, { env, arnes });
+    coord = confirmada && sl.vive(s, confirmada) === true ? confirmada : null;
+    if (!coord || coord === sid) return null;
+    const c = s.mapa.get(coord);
+    if (c && c.name) nombreCoord = c.name;
+    const problemas = [];
+    const vivas = sesionesVivas(home, problemas);
+    // el nombre entero de la coordinadora, del archivo de su sesión: el de la lista de sesiones viene recortado
+    const deCoord = vivas.find((v) => v.sid === coord);
+    if (deCoord && deCoord.name) nombreCoord = deCoord.name;
+    const todos = destinosDe(to, vivas);
+    if (!todos.length) {
+      if (NOT_A_SESSION.test(to) || to === '*') return null;
+      // con un archivo de sesión ilegible, el destino que no resuelve puede ser justo esa sesión: ante la duda, niega
+      if (problemas.length) {
+        logError(home, `el mensaje de ${sid} a «${unRenglon(to)}» no va a ninguna sesión que pude leer (${unRenglon(problemas[0])}): lo frené ante la duda`);
+        return negar(true);
+      }
+      logError(home, `el mensaje de ${sid} a «${unRenglon(to)}» no va a ninguna sesión viva: lo dejé pasar`);
+      return null;
+    }
+    if (problemas.length) logError(home, `no pude leer archivos de sesión al mirar el mensaje de ${sid} (${unRenglon(problemas.join('; '))})`);
+    let duda = false;
+    let frena = false;
+    // ni la coordinadora ni quien manda (una lanzada que difunde) son el destino que se frena
+    for (const destino of todos.filter((d) => d !== coord && d !== sid)) {
+      let lanzada;
+      try { lanzada = require('../tools/coordination.js').launchedBy({ home, sid: destino }); } catch (e) {
+        const deFondo = /^(bg|background)$/.test((vivas.find((v) => v.sid === destino) || {}).kind || '');
+        logError(home, `no pude saber si ${destino} la abrió la coordinadora (${unRenglon((e && e.message) || e)}): ${deFondo ? 'es de fondo, frené el mensaje' : 'dejé pasar el mensaje'}`);
+        if (deFondo) { frena = true; duda = true; }
+        continue;
+      }
+      if (lanzada.problem) {
+        logError(home, `no pude saber si ${destino} la abrió la coordinadora (${unRenglon(lanzada.problem)}): ${lanzada.background ? 'es de fondo, frené el mensaje' : 'dejé pasar el mensaje'}`);
+        if (lanzada.background) { frena = true; duda = true; }
+      } else if (lanzada.launched) frena = true;
+    }
+    return frena ? negar(duda) : null;
+  } catch (e) {
+    if (coord && coord !== sid) {
+      logError(home, `${unRenglon((e && e.message) || e)}: con la coordinadora viva, frené el mensaje de ${sid} ante la duda`);
+      return negar(true);
+    }
+    logError(home, `${unRenglon((e && e.message) || e)}: dejé pasar el mensaje de ${sid}`);
     return null;
   }
 }
@@ -126,25 +311,122 @@ function decidirBash(d, { home, env }) {
   return { decision: 'deny', forma: forma.forma, reason: require('../lib/bg-permission-shapes.js').textoDeLaNegativa(forma) };
 }
 
+/** La carpeta de la configuración administrada de Claude Code (la misma que usa owner-approvals.js). */
+function carpetaAdministrada(plataforma = process.platform) {
+  if (plataforma === 'darwin') return '/Library/Application Support/ClaudeCode';
+  return plataforma === 'win32' ? 'C:\\Program Files\\ClaudeCode' : '/etc/claude-code';
+}
+
 /**
- * Lo que decide el freno: null (pasa) o `{ decision: 'deny', reason }`. `home`, `env` y `arnes` (el árbol con el perfil del equipo) se pasan en las pruebas.
+ * Los patrones de las reglas «ask» de edición (`Edit(…)`, `Write(…)`) de la configuración administrada: su archivo y los
+ * `.json` de su carpeta `managed-settings.d/` (las copias con otro final no se cargan). Un archivo que no se lee no suma.
  */
-function decidir(evento, { home = os.homedir(), env = process.env, arnes } = {}) {
+function reglasQuePreguntan(administrada) {
+  const d = path.join(administrada, 'managed-settings.d');
+  const archivos = [path.join(administrada, 'managed-settings.json')];
+  try { archivos.push(...fs.readdirSync(d).filter((f) => f.endsWith('.json')).sort().map((f) => path.join(d, f))); } catch (_) { /* sin carpeta */ }
+  const out = [];
+  for (const a of archivos) {
+    let j = null;
+    try { j = JSON.parse(fs.readFileSync(a, 'utf8')); } catch (_) { continue; }
+    const ask = j && j.permissions && Array.isArray(j.permissions.ask) ? j.permissions.ask : [];
+    for (const r of ask) { const m = /^(?:Edit|Write)\((.+)\)$/.exec(String(r)); if (m) out.push(m[1]); }
+  }
+  return out;
+}
+
+/**
+ * ¿La ruta absoluta `abs` cae en el patrón de la regla? Sólo los patrones absolutos (`//ruta`) y los de la casa (`~/ruta`),
+ * con `**` (cualquier tramo) y `*`; uno relativo al proyecto o a la configuración no se juzga acá.
+ */
+function caeEnLaRegla(abs, patron, home) {
+  let p;
+  if (patron.startsWith('//')) p = patron.slice(1);
+  else if (patron.startsWith('~/')) p = `${home.replace(/\\/g, '/').replace(/\/$/, '')}/${patron.slice(2)}`;
+  else return false;
+  let re = '';
+  for (let i = 0; i < p.length; i++) {
+    if (p.startsWith('**/', i)) { re += '(?:.*/)?'; i += 2; continue; }
+    if (p.startsWith('**', i)) { re += '.*'; i += 1; continue; }
+    if (p[i] === '*') { re += '[^/]*'; continue; }
+    re += p[i].replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+  }
+  return new RegExp(`^${re}$`).test(abs);
+}
+
+/**
+ * Una edición de fondo que pediría permiso por una regla «ask» de la configuración administrada (la del freno de
+ * producción cubre el catálogo y sus estados): `{ decision: 'deny', reason }` o null. Nadie contesta ese cuadro de fondo,
+ * y la sesión quedaba trabada sin leer mensajes; se niega con el motivo y cómo seguir.
+ */
+function decidirEdicion(d, { home, env, administrada }) {
+  const ti = d.tool_input || {};
+  const ruta = typeof ti.file_path === 'string' ? ti.file_path : (typeof ti.notebook_path === 'string' ? ti.notebook_path : '');
+  if (!ruta) return null;
+  const abs = path.resolve(typeof d.cwd === 'string' ? d.cwd : process.cwd(), ruta).replace(/\\/g, '/');
+  const regla = reglasQuePreguntan(administrada).find((p) => caeEnLaRegla(abs, p, home));
+  if (!regla) return null;
+  const sid = d.session_id;
+  if (!sid || !/^[\w-]+$/.test(String(sid)) || !esDeFondo({ home, sid, env })) return null;
+  return {
+    decision: 'deny',
+    reason: `Esa escritura pide permiso a una persona: la configuración administrada de la máquina tiene una regla «preguntar» para ${abs} (${regla}). `
+      + 'Esta sesión corre de fondo: nadie contesta ese cuadro, y la sesión quedaría trabada sin leer mensajes. '
+      + 'Si es un laboratorio del freno de producción, no hace falta escribir ese archivo: el freno juzga los nombres y no lee el catálogo. Correlo con HOME y TYCON_REPOS_ROOT temporales. '
+      + 'Si de verdad hay que cambiarlo, es de una persona: dejalo escrito para la coordinadora.',
+  };
+}
+
+/**
+ * Lo que decide el freno: null (pasa) o `{ decision: 'deny', reason }`. `home`, `env`, `arnes` (el árbol con el perfil del
+ * equipo) y `administrada` (la carpeta de la configuración administrada) se pasan en las pruebas.
+ */
+function decidir(evento, { home = os.homedir(), env = process.env, arnes, ahora = Date.now(), administrada = carpetaAdministrada() } = {}) {
   const d = evento && typeof evento === 'object' ? evento : {};
   if (env.TYCON_BG_QUESTION_GUARD === '0') return null;
   if (d.hook_event_name && d.hook_event_name !== 'PreToolUse') return null;
   if (d.tool_name === 'Bash') return decidirBash(d, { home, env });
+  if (EDIT_TOOLS.has(d.tool_name)) return decidirEdicion(d, { home, env, administrada });
+  if (d.tool_name === MESSAGE_TOOL) {
+    const sid = d.session_id;
+    const to = String((d.tool_input && d.tool_input.to) || '').trim();
+    if (!sid || !/^[\w-]+$/.test(String(sid)) || !to) return null;
+    return decidirMensaje({ home, sid, to, env, arnes });
+  }
   if (!QUESTION_TOOLS.has(d.tool_name)) return null;
+  // en cualquier sesión: un cuadro de aprobación sin el código del guion no aprueba nada
+  if (d.tool_name === 'AskUserQuestion') {
+    const sinCodigo = decidirAprobacionSinCodigo(d.tool_input, home);
+    if (sinCodigo) return sinCodigo;
+  }
   const sid = d.session_id;
   if (!sid || !/^[\w-]+$/.test(String(sid))) return null;
   const c = coordinadoraDeLaLanzada({ home, sid, env, arnes });
   if (!c) return null;
   const m = SELLO.exec(textoDe(d.tool_input));
   const firma = m ? m[1] : null;
-  return { decision: 'deny', reason: textoDeLaNegativa({ nombre: c.name, sid: c.sid, firma, soloClick: firma ? esSoloClick(home, firma) : false, duda: c.duda }) };
+  const soloClick = firma ? esSoloClick(home, firma) : false;
+  // la firma de sólo click de esta misma sesión (nombrar o retirar la coordinadora) vale sólo en esta pestaña: el cuadro
+  // se muestra acá, y el dueño lo contesta en ella o por control remoto; mandarlo a la coordinadora dejaba sólo la terminal.
+  // Sólo con una pregunta y un sello: otra pregunta en el mismo cuadro seguiría yendo a la coordinadora. Va antes del
+  // registro de preguntas: ese cuadro no es una pregunta para la coordinadora
+  const preguntas = d.tool_input && Array.isArray(d.tool_input.questions) ? d.tool_input.questions.length : 1;
+  const sellos = textoDe(d.tool_input).match(new RegExp(SELLO.source, 'g')) || [];
+  if (soloClick && m[2] === String(sid) && preguntas === 1 && sellos.length === 1) return null;
+  // la coordinadora tiene sus minutos para contestar; si no, la pregunta le llega a la persona y la sesión no queda quieta.
+  // El registro lo lleva este freno: sin poder leerlo o escribirlo, se niega como siempre, y queda anotado
+  let espera = null;
+  try {
+    const r = require('../tools/coordination.js').questionRelay({ home, sesion: sid, a: c.sid, pregunta: textoDe(d.tool_input), ahora });
+    if (r.pasa) return null;
+    espera = r.quedan;
+  } catch (e) { logError(home, `no pude llevar el registro de las preguntas a la coordinadora (${(e && e.message) || e}): negué sin plazo`); }
+  const base = textoDeLaNegativa({ nombre: c.name, sid: c.sid, firma, soloClick, duda: c.duda });
+  const plazo = espera ? ` La coordinadora lo ve en su aviso de cada turno. Si en ${espera} min no te la resuelve, volvé a hacer la misma pregunta con el cuadro: le llega a la persona.` : '';
+  return { decision: 'deny', reason: `${base}${plazo}` };
 }
 
-module.exports = { QUESTION_TOOLS, decidir, textoDeLaNegativa, coordinadoraDeLaLanzada, esDeFondo };
+module.exports = { QUESTION_TOOLS, MESSAGE_TOOL, decidir, textoDeLaNegativa, textoDeLaNegativaDelMensaje, coordinadoraDeLaLanzada, esDeFondo };
 
 if (require.main === module) {
   if (process.env.TYCON_BG_QUESTION_GUARD === '0') process.exit(0);

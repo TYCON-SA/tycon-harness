@@ -168,6 +168,11 @@
       "requiere": []
     },
     {
+      "raiz": "arnes",
+      "ruta": "tests/bench-usage.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 7.53: sondas de comportamiento — el agente de verdad (claude -p) en un laboratorio con HOME vacío y sólo el gancho medido, para ver si sigue cumpliendo una regla que dejó de estar siempre a la vista. Sin claude o sin sesión: NO MEDIDO.",
       "raiz": "arnes",
       "ruta": "tests/behavior-probes.test.sh",
@@ -492,6 +497,11 @@
       "requiere": []
     },
     {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/planning-controls.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.48: la lista única de lo que es código, de lo que es prueba y de las marcas de prueba salteada.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/code-files.test.js",
@@ -552,9 +562,21 @@
       "requiere": []
     },
     {
+      "__nota": "el entorno de pruebas que declara la organización (stack.test_environments): se valida, el portón lo prepara antes de la suite y lo desarma al terminar, y si no queda listo sale 8, «entorno sin preparar», sin correr la suite (herramienta falsa en el PATH).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-environment.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la puerta de pruebas con el back en pytest en una subcarpeta y el front con Playwright (herramientas falsas en el PATH); lo que no sabe correr deja constancia y el check queda «sin medir» (story 7.45).",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/test-gate-project-folder.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el portón por parte: una parte que no cambió desde su verde en esta story y rama lo conserva; lo que cambia la huella (la parte, lo común, lo ignorado, el entorno, el portón) la vuelve a correr (fila 79, punto 5).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-part-keep.test.js",
       "requiere": []
     },
     {
@@ -639,12 +661,6 @@
       "requiere": []
     },
     {
-      "__nota": "el freno de lanzamiento de revisores: niega con el criterio de next, deja pasar con su motivo, y on-advisor-run.js no anota el negado salvo sin el freno registrado. Todo en un HOME temporal.",
-      "raiz": "agent-skills",
-      "ruta": "tycon-pipeline/scripts/tests/reviewer-launch-gate.test.js",
-      "requiere": []
-    },
-    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/approvals.test.js",
       "requiere": []
@@ -662,9 +678,33 @@
       "requiere": []
     },
     {
+      "__nota": "el plan de una historia delicada lo aprueba una persona aunque el perfil liste plan-approval:delicada (delegada o de trámite), y el click o el «aprobado» del dueño a ESTE pedido gana a la firma de trámite; el de otro pedido no. El freno en proceso y los guiones de verdad en una casa de juguete, con el perfil del caso en la copia del arnés; unos quince segundos.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/delegated-approval-person.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la maqueta queda con mode user sólo con la vía de una persona y su cita no es la opción que sigue; --replace-delegated (approve-plan y approve-mockup) vuelve a firmar lo aprobado sin persona sólo con el click o el «aprobado» del dueño a ese pedido: sin él, o con el de otro pedido, no escribe nada. Los guiones de verdad en una casa de juguete; unos veinte segundos.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/mockup-approval-person.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la revisión del plan se lanza sobre el plan cerrado: con «Armar el plan» abierto o con una pregunta sin contestar a la persona no se prepara, y un plan o una historia que cambian mientras corre se relanzan una sola vez entre los dos.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/plan-review-closed.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "cada revisión automática del plan deja su resultado con fecha, sin pisar la anterior, y su constancia guarda el consumo por agente y por tipo de token.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/plan-review-history.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "una sesión no queda quieta esperando a una coordinadora que no atiende: si la designada no vive, la revisión del plan la lanza la sesión; si vive y no toma el pedido que le anota el arnés en plan_review.coordinator_wait_minutes, también, y la coordinadora lo ve en su aviso. Una revisión suya en curso cuenta como tomada y cada relanzamiento tiene su propio plazo.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/plan-review-wait.test.js",
       "requiere": []
     },
     {
@@ -698,15 +738,33 @@
       "requiere": []
     },
     {
+      "__nota": "en Codex, la pregunta de un gancho sale como negativa con la pregunta y cómo aprobarlo a mano (Codex no tiene ventana de permiso); en Claude Code, pregunta. Aparte de save-brake.test.js, que es de las suites bajadas.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/hook-ask-codex.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el ok de guardar una story es la firma «save»: las huellas de cada repo, si el ok sigue valiendo, la story limpia, lo sensible y el aviso al dueño antes de la constancia.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/save-ok.test.js",
       "requiere": []
     },
     {
+      "__nota": "saltear pruebas primero pide la firma del dueño por ejecución (atdd-skip): sin ella no saltea, con la de otra ejecución tampoco, y se firma desde una terminal sin sesión (8.283).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/atdd-skip.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el freno del ok de guardar: el gancho del comando frena el commit, el push y los pedidos de una corrida sin la constancia vigente, y los de una corrida que cerró sin ella; clear sin el ok sale 2.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/save-brake.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el pedido sin preparar que no es de la historia dice la salida (la coordinadora cierra la ejecución con el comando exacto); aparte de save-brake.test.js, que es de las suites bajadas.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/save-brake-way-out.test.js",
       "requiere": []
     },
     {
@@ -748,6 +806,12 @@
       "__nota": "story 8.84: la revisión adversarial de la historia antes de programar — el portón, la constancia y su huella, validators y el volcado.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/story-review.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "fila 72 (DemoTracking #44): un cambio técnico de la historia después de un plan rechazado lo revalida la vuelta siguiente de la revisión del plan — el portón de la adversarial y validators no relanzan, lo que sigue venciendo, y la vuelta que escribe las constancias sólo al aprobar.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/story-revalidation.test.js",
       "requiere": []
     },
     {
@@ -827,6 +891,16 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/production-notice-cases.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/pre-commit-hook.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/readme-index.test.js",
       "requiere": []
     },
@@ -891,6 +965,18 @@
       "gate_only_when_touching": [
         "scripts/controls-bench/**",
         "scripts/lib/**"
+      ]
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/subtraction-test.test.js",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/tools/**",
+        "scripts/controls-bench/**",
+        "scripts/setup/**",
+        "scripts/lib/**",
+        "scripts/metrics/**"
       ]
     },
     {
@@ -1043,6 +1129,18 @@
       "requiere": []
     },
     {
+      "__nota": "una tirada larga de espacios no vuelve lento al freno de consola (on-bash-write-gate.js y shell-parse.js): el cierre, el comentario y el recorte de las líneas a mano, iguales a las expresiones de antes; el gancho entero con 40 KB de espacios, con casa de juguete.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-long-blanks.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la puerta de la consola no deja sacar un worktree (ni borrar la carpeta) con una constancia de control sin commitear: la firma del dueño se perdería.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-unsaved-approval.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "Con un camino corto con lista, el freno de la consola juzga la ruta real de una variable del comando (también con bucles) y, si no la puede resolver o la carpeta cambió con un cd que no sigue, frena diciendo que no pudo; ve cp, mv y sed -i dentro de bloques.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/bash-write-unresolved-path.test.js",
@@ -1058,6 +1156,12 @@
       "__nota": "Un guion en archivo demasiado grande para leerlo entero frena si escribe y nombra una historia (la palabra entera) o una constancia; en un repo sin historias, sólo por una constancia o la ruta de una historia.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/bash-write-big-script.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "La segunda capa del freno de escrituras por consola: lo protegido que un comando cambió vuelve a lo que tenía la foto de antes, comparado por contenido, salvo lo que escribe marker.js solo.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-after.test.js",
       "requiere": []
     },
     {
@@ -1091,6 +1195,12 @@
       "requiere": []
     },
     {
+      "__nota": "fila 106: un `node -e` con «sed -i» en un texto y un `sed -i ''` con la comilla simple metida no son historias escritas por consola; lo que escribe una historia sigue frenando.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-write-false-story.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.278: el lector de comandos. marker.js y pipeline.js cuentan sólo donde se corren, no donde otro programa los nombra.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/marker-command.test.js",
@@ -1110,6 +1220,12 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/bash-gate-clock.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "marker.js partido por responsabilidad (8.163 B): cada subcomando contra la foto de antes de partir, el despachador bajo el tope y cada parte con su responsabilidad y su prueba, la parte que falta, las exportaciones, lo nuevo sensible, lo publicado y el recorrido del freno de guiones (que lee entero lo partido y no corta callado). Carpetas fijas en el temporal; sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/split-contract.test.js",
       "requiere": []
     },
     {
@@ -1139,6 +1255,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.274: el cierre de una corrida autónoma con la matriz roja pide la exención por el cuadro de la lista del dueño, y salir del modo autónomo no saltea la matriz en «Preparar».",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/autonomous-close.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "cada proceso le pregunta a git una sola vez lo mismo (la huella de la carpeta, leída del disco); el gancho, la configuración, los hermanos y los controles de la base.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/git-memo.test.js",
@@ -1161,18 +1283,61 @@
       "requiere": []
     },
     {
+      "__nota": "Parte 1 de 3 de tycon-pipeline/scripts/tests/test-gate-failed-first.test.js (2026-11-22, fila 48: entera salía roja por tiempo en la validación del privado; el archivo entero no se registra, lib/suite-parts.js y suite-parts.json de su carpeta).",
       "raiz": "agent-skills",
-      "ruta": "tycon-pipeline/scripts/tests/test-gate-failed-first.test.js",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-failed-first.p1.test.js",
       "requiere": []
     },
     {
+      "__nota": "Parte 2 de 3 de tycon-pipeline/scripts/tests/test-gate-failed-first.test.js (2026-11-22, fila 48: entera salía roja por tiempo en la validación del privado; el archivo entero no se registra, lib/suite-parts.js y suite-parts.json de su carpeta).",
       "raiz": "agent-skills",
-      "ruta": "tycon-pipeline/scripts/tests/test-gate-green-saved.test.js",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-failed-first.p2.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 3 de 3 de tycon-pipeline/scripts/tests/test-gate-failed-first.test.js (2026-11-22, fila 48: entera salía roja por tiempo en la validación del privado; el archivo entero no se registra, lib/suite-parts.js y suite-parts.json de su carpeta).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-failed-first.p3.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 1 de 5 de tycon-pipeline/scripts/tests/test-gate-green-saved.test.js (2026-11-22, fila 48: entera salía roja por tiempo en la validación del privado; el archivo entero no se registra, lib/suite-parts.js y suite-parts.json de su carpeta).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-green-saved.p1.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 2 de 5 de tycon-pipeline/scripts/tests/test-gate-green-saved.test.js (2026-11-22, fila 48: entera salía roja por tiempo en la validación del privado; el archivo entero no se registra, lib/suite-parts.js y suite-parts.json de su carpeta).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-green-saved.p2.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 3 de 5 de tycon-pipeline/scripts/tests/test-gate-green-saved.test.js (2026-11-22, fila 48: entera salía roja por tiempo en la validación del privado; el archivo entero no se registra, lib/suite-parts.js y suite-parts.json de su carpeta).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-green-saved.p3.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 4 de 5 de tycon-pipeline/scripts/tests/test-gate-green-saved.test.js (2026-11-22, fila 48: entera salía roja por tiempo en la validación del privado; el archivo entero no se registra, lib/suite-parts.js y suite-parts.json de su carpeta).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-green-saved.p4.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 5 de 5 de tycon-pipeline/scripts/tests/test-gate-green-saved.test.js (2026-11-22, fila 48: entera salía roja por tiempo en la validación del privado; el archivo entero no se registra, lib/suite-parts.js y suite-parts.json de su carpeta).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-green-saved.p5.test.js",
       "requiere": []
     },
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/inherited-reds.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/ci-red-close.test.js",
       "requiere": []
     },
     {
@@ -1195,6 +1360,30 @@
       "__nota": "story 8.109: el estado de la historia y el marcador no se tocan a mano (consola, Edit, apply_patch).",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/status-by-hand.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "fila 110 (22/11): el control de la escritura de una historia lee la tanda que pasa a done por su nombre y, ante una lectura dudosa del bloque, mide. Gancho de verdad con HOME temporal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/frontmatter-batch-done.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "fila 64 (22/11): una constancia de control nueva necesita la huella que deja approve antes del commit y del empuje.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/control-change-prints.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "fila 44 (21/11): pasar una historia a done fuera de una corrida mira la matriz de evidencia en vivo o la constancia de la corrida.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/story-done-needs-matrix.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "fila 45 (21/11): un criterio con prueba de Nivel staging no frena antes del merge y pide su humo de staging para done.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/staging-criteria.test.js",
       "requiere": []
     },
     {
@@ -1272,13 +1461,13 @@
       "requiere": []
     },
     {
-      "__nota": "un criterio con cota fuera de la cota o sin medición: la matriz, «Preparar el commit» y el control del commit lo nombran con lo medido y la cota; la deuda no lo exime; la pregunta de la firma por terminal muestra lo medido. Comandos reales con HOME temporal",
+      "__nota": "un criterio con cota fuera de la cota o sin medición: la matriz, «Preparar el pull request» y el control del commit lo nombran con lo medido y la cota; la deuda no lo exime; la pregunta de la firma por terminal muestra lo medido. Comandos reales con HOME temporal",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/matrix-out-of-bound-message.test.js",
       "requiere": []
     },
     {
-      "__nota": "en una historia paraguas la tanda se anota una vez (set-batch), «Preparar el commit» mide sólo esa tanda, y el control del commit mide todas al pasar a review y la que se cierra al cerrar una tanda. Comandos reales con HOME temporal (8.239)",
+      "__nota": "en una historia paraguas la tanda se anota una vez (set-batch), «Preparar el pull request» mide sólo esa tanda, y el control del commit mide todas al pasar a review y la que se cierra al cerrar una tanda. Comandos reales con HOME temporal (8.239)",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/matrix-by-batch.test.js",
       "requiere": []
@@ -1540,7 +1729,17 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/suggestion-choices.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/runs-review.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/adversarial-skip-one-signature.test.js",
       "requiere": []
     },
     {
@@ -1587,6 +1786,11 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/adversarial-skip-signed.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/delegated-pass.test.js",
       "requiere": []
     },
     {
@@ -1662,6 +1866,12 @@
       "__nota": "las guías del pipeline dicen lo que el código hace: las recetas y la fecha del chequeo de mutantes, y la plantilla de historia que nace en borrador.",
       "raiz": "arnes",
       "ruta": "tests/pipeline-docs-match-code.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "ninguna guía ofrece un escape que ya no apaga nada: la lista sale de los retirados del catálogo de firmas, y cada párrafo que nombra uno dice que está retirado o figura en las excepciones con su motivo.",
+      "raiz": "arnes",
+      "ruta": "tests/retired-escape-docs.test.js",
       "requiere": []
     },
     {
@@ -1778,8 +1988,20 @@
       "requiere": []
     },
     {
+      "__nota": "Lo que contesta el dueño lo contesta el dueño: «skip» del código pide la firma review-skip, las otras respuestas no, y la coordinadora lo contesta por el perfil sólo con el dueño ausente y la celda en skip. Casa de juguete con git.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/owner-answers.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/undeclared-changes.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "8.267 tanda B: cuando main avanza durante una corrida, el sello de lo revisado y «cambios sin declarar» no se contradicen (rama al día, sin traer main, y main que vuelve a avanzar después de traerlo).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/main-advances-during-run.test.js",
       "requiere": []
     },
     {
@@ -1804,6 +2026,12 @@
       "requiere": []
     },
     {
+      "__nota": "los errores del arranque de una corrida y sus carpetas que se tragaban sin decir nada: cada uno avisa o queda no medido.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/start-silences.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.161: la copia congelada de lo que revisa cada vuelta (sello, copia de sólo lectura, comparación con lo que se guarda) y la procedencia de cada prueba. Repos de juguete en una carpeta temporal, sin red.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/frozen-tree.test.js",
@@ -1813,6 +2041,12 @@
       "__nota": "story 8.217: un .js que sólo movió comentarios no pide otra vuelta de revisores; el lector de tokens ante la duda no decide. Textos de juguete y los .js de lib/ leídos, sin red.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/comment-only.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "2026-11-22, filas 79 y 80: qué cambió adentro de un archivo de código (espacios, comentarios, textos o código) en .js, .ts, .tsx y .cs; ante la duda, código. Textos de juguete y los .js de lib/ leídos, sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/change-kind.test.js",
       "requiere": []
     },
     {
@@ -1828,15 +2062,27 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.167 (T12-T16, T24-T28, T31, T34): los candidatos, el freno de «Preparar el commit», la exención firmada y la cobertura por declaración. Repos de juguete, la firma por la ventana de prueba, sin red.",
+      "__nota": "story 8.167 (T12-T16, T24-T28, T31, T34): los candidatos, el freno de «Preparar el pull request», la exención firmada y la cobertura por declaración. Repos de juguete, la firma por la ventana de prueba, sin red.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/compare-previous-gate.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la comparación con main y la matriz del commit ubican los archivos de repos hermanos escritos como Repo/archivo, también en copias --wt: la copia ajena, el sufijo falseado y la carpeta suelta no cuentan. Repos de juguete, sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/sibling-copies.test.js",
       "requiere": []
     },
     {
       "__nota": "lectores que leían mal o callaban: el grupo de rutas «(app)/» no es el prefijo del repo, el normalizador del despachador que no carga deja su línea, owner-away get muestra la marca sin confirmar. HOME de laboratorio, sin red.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/quiet-readers.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "errores que se tragaban en silencio: pasos hechos por set, ediciones y firmas que no se anotan, lo preparado ilegible, marcadores ajenos ilegibles, listas sin cerrar y lanzamientos de revisores ilegibles. HOME de laboratorio, sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/swallowed-errors.test.js",
       "requiere": []
     },
     {
@@ -1847,6 +2093,12 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/story-discovery.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el despachador dice por qué no mira si el repo declara pedidos de trabajo cuando work-items-config.js carga sin su lista FILES; sin la pieza, calla.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/dispatch-work-items-list.test.js",
       "requiere": []
     },
     {
@@ -1947,6 +2199,12 @@
       "__nota": "Parte 4 de 4 de tycon-pipeline/scripts/tests/adhoc-foreign-save.test.js (ninguna suite pasa de 45 s; el archivo entero no se registra; el reparto, en suite-parts.json de esa carpeta). story 8.236: un guardado ajeno a un camino corto que espera sus revisores pide el click de una persona, con lo que guarda a la vista; vale una vez y para eso; lo que no se puede ver entero frena como siempre; el chequeo en seco no trae la base.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/adhoc-foreign-save.p4.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.298: la detención del modo autónomo le llega al dueño como un pendiente (firma autonomy-resume); la contesta con su click o su terminal y sólo la toma la sesión detenida con marker.js resume-autonomy; el «No» queda anotado; set-autonomous true, set con otra historia, clear sin firma y clear-session de otra sesión no son salidas. La firma por la terminal se mide con un pty de Python y se dice NO MEDIDA si no hay.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/autonomy-resume.test.js",
       "requiere": []
     },
     {
@@ -2082,6 +2340,12 @@
     {
       "raiz": "arnes",
       "ruta": "tests/update-guard.test.sh",
+      "requiere": []
+    },
+    {
+      "__nota": "el candado del instalador no vence por edad mientras su dueño vive; con el dueño vivo, a la hora. Evalúa sólo _lock_stale, sin correr el instalador.",
+      "raiz": "arnes",
+      "ruta": "tests/install-lock-owner.test.sh",
       "requiere": []
     },
     {
@@ -2328,6 +2592,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/office-page-english.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/office-conversation.test.js",
       "requiere": []
     },
@@ -2343,7 +2612,18 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/office-board-forecast.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/test-run-isolation.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.321: un guion de laboratorio que limpia las TYCON_* y arma su casa corre igual dentro de la ejecución aislada de smoke-run.sh que suelto, y la casa de la cuenta sigue protegida. Repos y casas de juguete, sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/lab-inside-isolation.test.js",
       "requiere": []
     },
     {
@@ -2354,6 +2634,11 @@
     {
       "raiz": "arnes",
       "ruta": "tests/office-inbox-watch.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/provider-retry.test.js",
       "requiere": []
     },
     {
@@ -2389,6 +2674,11 @@
     {
       "raiz": "arnes",
       "ruta": "tests/session-state.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/run-overrun.test.js",
       "requiere": []
     },
     {
@@ -2457,6 +2747,23 @@
     {
       "raiz": "arnes",
       "ruta": "tests/coordination-fill-gate.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/review-load.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el permiso de una sesión de fondo le llega a la persona como cuadro (scripts/hooks/permission-relay.js, story 8.180 tanda B): en proceso, con casa de juguete y reloj propio.",
+      "raiz": "arnes",
+      "ruta": "tests/permission-relay.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "un pase lanzado sin el pipeline pasa por el turno de tarea pesada (scripts/hooks/agile-pass-turn.js, fila 126 a): qué cuenta como pase, el aviso con quién tiene el turno, el «arrancá» y la reserva para la sesión; el gancho entero con casa de juguete.",
+      "raiz": "arnes",
+      "ruta": "tests/agile-pass-turn.test.js",
       "requiere": []
     },
     {
@@ -2673,6 +2980,12 @@
       "__nota": "Parte 2 de 2 de tests/installer-ps1.test.sh (2026-10-14: entera tardaba ~440 s en el agente de GitHub y en uno lento pasó el tope de 900 s de public-ci; el archivo entero no se registra, scripts/tests/lib/suite-parts.sh). story 8.7 (tanda C, pase adversarial): el gemelo de Windows del instalador y del sync de bloques, corrido con pwsh — -Check sobre una HOME vacía (salía 1 con un error de PowerShell), el settings.json que deja una instalación limpia, uno vacío, el marcador requires-integration mal escrito comparado byte a byte con el .sh. Sin pwsh en la máquina: NO MEDIDO, exit 0. ~12 s.",
       "raiz": "arnes",
       "ruta": "tests/installer-ps1.p2.test.sh",
+      "requiere": []
+    },
+    {
+      "__nota": "Tanda 11 de las menores: el instalador de Windows en una máquina sólo con Codex (TYCON_HARNESS_CLAUDE=off), corrido con pwsh. Corre la lista cerrada (engram, el AGENTS.md puntero, el refresco de Azure, la subida al buzón, los hooks globales de git), no busca agent-skills y no escribe nada en la carpeta de Claude Code; los sellos de engram y de sqlite3 de Windows van a la carpeta del estado; harness.js lo lanza en Windows. Sin pwsh o sin node: NO MEDIDO, exit 0. ~10 s.",
+      "raiz": "arnes",
+      "ruta": "tests/installer-ps1-codex-only.test.sh",
       "requiere": []
     },
     {
@@ -2924,6 +3237,12 @@
       "__nota": "story 7.54: el aviso de contexto. Avisa al cruzar el umbral de tokens y cada 100 mil más; /clear y compactar lo vuelven a cero; máquina sobre organización sobre fábrica; lo que no puede medir lo dice. Nunca frena.",
       "raiz": "arnes",
       "ruta": "tests/context-size-notice.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el aviso de contexto al cerrar un paso pesado del pipeline: sobre el umbral recomienda /compact o sesión nueva; debajo, en un paso liviano, tras compactar o apagado, nada. Nunca frena.",
+      "raiz": "arnes",
+      "ruta": "tests/context-at-step-close.test.js",
       "requiere": []
     },
     {
@@ -3211,6 +3530,12 @@
       "requiere": []
     },
     {
+      "__nota": "la copia propia del pre-commit del privado le pide al gancho público los controles que no nombra: el gancho corre sólo esos (y como gancho propio no filtra), `unnamed` los lista y frena si falta uno, y el control de la base acepta la delegación sólo de la copia declarada.",
+      "raiz": "arnes",
+      "ruta": "tests/hook-delegation.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "las firmas del dueño se dan en la ventana de permiso: el freno pide la ventana y deja el registro del pedido, y el guion de la firma comprueba en el árbol de procesos que lo lanzó la herramienta con ese comando (árbol, casa y hora inyectados).",
       "raiz": "arnes",
       "ruta": "tests/owner-window.test.js",
@@ -3265,6 +3590,18 @@
       "requiere": []
     },
     {
+      "__nota": "encolar o mergear un pedido de alguien de afuera del equipo lo aprueba el dueño (regla GIT-C7): el lector (scripts/lib/external-pr.js), el freno de la sesión de verdad con una casa de juguete y el cuadro de la firma. GitHub es un gh falso en el PATH. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/external-pr.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "los pedidos y los issues de gente de afuera del equipo en el repo público (scripts/lib/outside-contributions.js, con la regla del freno de pedidos de afuera): el renglón del resumen diario (open-prs.js --outside-from, y su forma en daily-summary.js) y el del arranque (stuck-pr-notice.js). GitHub es un gh de juguete por TYCON_GH_CMD; casas temporales. No medido no es cero. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/outside-contributions.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "las entradas a la rama principal sin su CI (scripts/nightly/main-entries/main-entries.js): GitHub es un servidor local que contesta como su API y Azure un az de mentira. No medido no es cero. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/main-entries.test.js",
@@ -3307,7 +3644,7 @@
       "requiere": []
     },
     {
-      "__nota": "nombrar y retirar a la coordinadora con un click del dueño (marker.js designate-relay sin frase y withdraw-relay): el guion de verdad con la firma reemplazada y el freno en proceso; sin click no se anota nada, un click vencido, usado o de otra pregunta no vale, nadie la nombra por otra sesión, y sin click comprobable dice por qué y los respaldos. Sin red, segundos.",
+      "__nota": "nombrar y retirar a la coordinadora con un click del dueño (marker.js designate-relay sin frase y withdraw-relay): el guion de verdad con la firma reemplazada y el freno en proceso; sin click no se anota nada, un click vencido, usado o de otra pregunta no vale, nadie la nombra por otra sesión, sin perfil del equipo la nombra para ordenar sin anotar la confirmación, y sin click comprobable dice por qué y los respaldos. Sin red, segundos.",
       "raiz": "arnes",
       "ruta": "tests/designate-by-click.test.js",
       "requiere": []
@@ -3328,6 +3665,18 @@
       "__nota": "la tabla de controles de la máquina (scripts/metrics/controls-table.js): cuenta por freno y regla y las firmas por vía con los registros de una casa de prueba; un registro que no está sale «no medido», los renglones sin fecha se cuentan aparte y el guion no escribe en la carpeta de estado. Segundos.",
       "raiz": "arnes",
       "ruta": "tests/controls-table.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la clasificación de cada control (scripts/metrics/controls-classification.json): cada freno de guard-record.js y cada gancho que frena tiene su entrada con exigencia o preferencia, motivo y fecha de revisión; una exigencia dice qué protege. Segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/controls-classification.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el modelo de una sesión (scripts/lib/session-model.js): el primer modelo real de su conversación, leído por tramos; sin conversación, ilegible o sin modelo, «no medido» con el motivo. Segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/session-model.test.js",
       "requiere": []
     },
     {
@@ -3463,6 +3812,12 @@
       "requiere": []
     },
     {
+      "__nota": "El freno de pedidos juzga --delete-source-branch de un az repos pr update con la rama del pedido, que le pregunta al conector de la plataforma del repo (con el az de mentira).",
+      "raiz": "arnes",
+      "ruta": "tests/pr-update-source-branch.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "Los pedidos de cambio por la capa de plataforma: abrir uno en Azure DevOps y en GitHub contra el az y el gh de mentira (reusar el abierto, releerlo por rama si la respuesta no trae el número, lo que no abre), listar los de GitHub, el freno de un pedido por repo y los nocturnos que leen las dos plataformas.",
       "raiz": "arnes",
       "ruta": "tests/platform-change-request.test.js",
@@ -3531,6 +3886,12 @@
       "requiere": []
     },
     {
+      "__nota": "El aviso de consultas fallidas es neutro: qué comando de una plataforma es una consulta, el aviso del proyecto que no existe y el refresco de su lista los trae el conector en scripts/query-notice.js. Sin red: una casa de juguete con la lista guardada.",
+      "raiz": "arnes",
+      "ruta": "tests/failed-query-connectors.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "El pedido de trabajo de la historia por la capa de plataforma: crear, activar y cerrar con Azure DevOps (las mismas llamadas a az de los pasos) y con GitHub (issue, etiquetas, horas en un comentario), el campo work_item con su alias, la configuración con su nombre viejo y lo que GitHub no tiene. Sin red: el az y el gh de mentira.",
       "raiz": "arnes",
       "ruta": "tests/platform-work-item.test.js",
@@ -3552,6 +3913,12 @@
       "__nota": "story 8.150: la carpeta del estado y la de los registros sueltos dichas por el ayudante de shell (scripts/lib/state-dir.sh) son las mismas que dice tycon-home.js, en nueve casos (casa propia o no, TYCON_HOME absoluta, relativa, con espacios, vacía). Sin red: HOME de juguete en procesos hijos.",
       "raiz": "arnes",
       "ruta": "tests/state-dir-parity.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "un marcador viejo, sin la ruta del repo o con rutas relativas: la pregunta de firma y los lectores directos (la tanda, la procedencia) no dependen de la carpeta del proceso.",
+      "raiz": "arnes",
+      "ruta": "tests/old-marker-paths.test.js",
       "requiere": []
     },
     {
@@ -3755,9 +4122,21 @@
       ]
     },
     {
-      "__nota": "story 8.23 (tanda D, T27, T28, T29 y T32): la mudanza de una máquina del clon a ~/.tycon (harness.js migrate --to-home): las precondiciones sin escribir y el plan (--dry-run); la mudanza entera con diario (la versión en ~/.tycon/harness, el estado, la configuración fundida y el .dashboard en ~/.tycon, los hooks al árbol nuevo con la misma cuenta, los enlaces viejos) y sus cortes en cuatro puntos (el arranque completa o deshace); el clon de la persona intacto y declarable (paths.maintained); la llave install.home del perfil (una vez, la precondición reintenta, el fallo durante queda failed). Sobre la máquina de juguete instalada desde un clon y el servidor de versiones de juguete; sin red real.",
+      "__nota": "Parte 1 de 2 de tests/harness-move-home.test.sh (2026-11-22, fila 48: entera era de las que salían rojas por tiempo en la validación del privado; parte 1: T27, T28 y T28x; parte 2: T28y, T28r, T29, T32, T13 y T14. El archivo entero no se registra, scripts/tests/lib/suite-parts.sh). story 8.23 (tanda D, T27, T28, T29 y T32): la mudanza de una máquina del clon a ~/.tycon (harness.js migrate --to-home): las precondiciones sin escribir y el plan (--dry-run); la mudanza entera con diario (la versión en ~/.tycon/harness, el estado, la configuración fundida y el .dashboard en ~/.tycon, los hooks al árbol nuevo con la misma cuenta, los enlaces viejos) y sus cortes en cuatro puntos (el arranque completa o deshace); el clon de la persona intacto y declarable (paths.maintained); la llave install.home del perfil (una vez, la precondición reintenta, el fallo durante queda failed). Sobre la máquina de juguete instalada desde un clon y el servidor de versiones de juguete; sin red real.",
       "raiz": "arnes",
-      "ruta": "tests/harness-move-home.test.sh",
+      "ruta": "tests/harness-move-home.p1.test.sh",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/setup/**",
+        "scripts/lib/**",
+        "scripts/tests/lib/**",
+        "scripts/tests/fixtures/**"
+      ]
+    },
+    {
+      "__nota": "Parte 2 de 2 de tests/harness-move-home.test.sh (2026-11-22, fila 48: entera era de las que salían rojas por tiempo en la validación del privado; parte 1: T27, T28 y T28x; parte 2: T28y, T28r, T29, T32, T13 y T14. El archivo entero no se registra, scripts/tests/lib/suite-parts.sh). story 8.23 (tanda D, T27, T28, T29 y T32): la mudanza de una máquina del clon a ~/.tycon (harness.js migrate --to-home): las precondiciones sin escribir y el plan (--dry-run); la mudanza entera con diario (la versión en ~/.tycon/harness, el estado, la configuración fundida y el .dashboard en ~/.tycon, los hooks al árbol nuevo con la misma cuenta, los enlaces viejos) y sus cortes en cuatro puntos (el arranque completa o deshace); el clon de la persona intacto y declarable (paths.maintained); la llave install.home del perfil (una vez, la precondición reintenta, el fallo durante queda failed). Sobre la máquina de juguete instalada desde un clon y el servidor de versiones de juguete; sin red real.",
+      "raiz": "arnes",
+      "ruta": "tests/harness-move-home.p2.test.sh",
       "requiere": [],
       "gate_only_when_touching": [
         "scripts/setup/**",
@@ -3788,6 +4167,12 @@
       "__nota": "la página local de la configuración de la organización (`harness.js team-config`), de sólo lectura: sólo contesta con su llave y por su propia dirección (otro Host, otro Origin, sin llave, no JSON o un cuerpo de más: rechazados); nada se carga de afuera; muestra las secciones del núcleo común con los problemas de los lectores del árbol; la carpeta de cada clon la valida y la guarda quien la lanzó; las cinco rutas que antes guardaban o proponían contestan 410 sin escribir archivo, rama ni pedido, y el aviso dice el sitio o el repo de operaciones; cómo se abre el navegador en Mac, Windows y Linux.",
       "raiz": "arnes",
       "ruta": "tests/team-config.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "fila 87: una prueba que arma un repo pelado de juguete no deja pelado al repo de verdad aunque corra dentro de un gancho de una copia enlazada (con su GIT_DIR) — team-config y third-party-origin dejan el repo de juguete con su árbol, y toda prueba con un init --bare sin carpeta saca GIT_DIR antes",
+      "raiz": "arnes",
+      "ruta": "tests/hook-env-bare-init.test.js",
       "requiere": []
     },
     {
@@ -3869,7 +4254,7 @@
       "requiere": []
     },
     {
-      "__nota": "las fichas del tablero nocturno en el sitio: la lista de las 25 igual a la del tablero, una sola cuenta con colectar() sobre la misma foto, lista blanca de campos, «no medido» sin foto o con una vieja, las ocultas por site.hidden_cards no se arman ni llegan a la página, Arnés sólo para quien mantiene. Levanta el servidor del sitio con sesiones inyectadas y fotos sintéticas; sin red.",
+      "__nota": "las fichas del tablero nocturno en el sitio: la lista de las 28 igual a la del tablero, una sola cuenta con colectar() sobre la misma foto, lista blanca de campos, «no medido» sin foto o con una vieja, las ocultas por site.hidden_cards no se arman ni llegan a la página, Arnés sólo para quien mantiene. Levanta el servidor del sitio con sesiones inyectadas y fotos sintéticas; sin red.",
       "raiz": "arnes",
       "ruta": "tests/site-cards.test.js",
       "requiere": []
@@ -4029,9 +4414,24 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.23 (tanda C, T21, T22, T23 y T26): cada herramienta, sus enchufes — install detecta Claude Code y Codex (el ejecutable o su configuración propia), las nombra en el plan y --tool las fija; una máquina SÓLO con Codex instala, se actualiza por su hook de arranque y se desinstala sin nada nuevo en ~/.claude (el estado nace en ~/.tycon/state), con AGENTS.md desde los bloques entre marcas; el MCP de Codex sin ~/.claude.json, el servidor que falta dicho y writable_roots; sumar una herramienta después (install --tool) y sacar una sola (uninstall --tool). Sobre la máquina de juguete y el servidor de versiones de juguete, con `claude` y `codex` de mentira (harness_lab_tools).",
+      "__nota": "Parte 1 de 2 de tests/harness-tools.test.sh (2026-11-24, fila 48: entera tardaba 138 a 143 s sola en una Mac, más del doble de su peso, y salía roja por tiempo en la validación del privado; parte 1: T40, T41, T42, T43, T50, T44, T45, T47, T48, T54, T55, T49, T53, T51, T52 y T13; parte 2: T21, T22, T23, T26 y T26b. El archivo entero no se registra, scripts/tests/lib/suite-parts.sh).",
       "raiz": "arnes",
-      "ruta": "tests/harness-tools.test.sh",
+      "ruta": "tests/harness-tools.p1.test.sh",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/setup/**",
+        "scripts/lib/**",
+        "scripts/hooks/**",
+        "build/**",
+        "adapters/codex/**",
+        "scripts/tests/lib/**",
+        "scripts/tests/fixtures/**"
+      ]
+    },
+    {
+      "__nota": "Parte 2 de 2 de tests/harness-tools.test.sh (2026-11-24, fila 48: entera tardaba 138 a 143 s sola en una Mac, más del doble de su peso, y salía roja por tiempo en la validación del privado; parte 1: T40, T41, T42, T43, T50, T44, T45, T47, T48, T54, T55, T49, T53, T51, T52 y T13; parte 2: T21, T22, T23, T26 y T26b. El archivo entero no se registra, scripts/tests/lib/suite-parts.sh).",
+      "raiz": "arnes",
+      "ruta": "tests/harness-tools.p2.test.sh",
       "requiere": [],
       "gate_only_when_touching": [
         "scripts/setup/**",
@@ -4184,8 +4584,15 @@
       "requiere": []
     },
     {
+      "__nota": "Parte 1 de 2 de tests/harness-uninstall.test.sh (2026-11-22, fila 48: entera era de las que salían rojas por tiempo en la validación del privado; parte 1: T18, T26 y T27; parte 2: T21, K3, REG, T38, S16 y T29. El archivo entero no se registra, scripts/tests/lib/suite-parts.sh).",
       "raiz": "arnes",
-      "ruta": "tests/harness-uninstall.test.sh",
+      "ruta": "tests/harness-uninstall.p1.test.sh",
+      "requiere": []
+    },
+    {
+      "__nota": "Parte 2 de 2 de tests/harness-uninstall.test.sh (2026-11-22, fila 48: entera era de las que salían rojas por tiempo en la validación del privado; parte 1: T18, T26 y T27; parte 2: T21, K3, REG, T38, S16 y T29. El archivo entero no se registra, scripts/tests/lib/suite-parts.sh).",
+      "raiz": "arnes",
+      "ruta": "tests/harness-uninstall.p2.test.sh",
       "requiere": []
     },
     {
@@ -4646,6 +5053,12 @@
       "requiere": []
     },
     {
+      "__nota": "el comando con que harness.js team-init suma el perfil a esta máquina: con la versión bajada, install --version; instalada desde un clon (como trabaja quien contribuye), migrate --to-home --team, porque install --version ahí sale 2 sin escribir. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/team-init-add-profile.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "gitleaks no toma por claves las huellas de la evidencia del arnés (scripts/ci/secret-scan/evidence-hashes.toml): una huella con ruta que dice api bajo .advisors/ pasa; la misma fuera de .advisors/, una clave real y un 40 hex con clave que no es un archivo frenan; las plantillas del portón de historias llevan la excepción tal cual. Ejercita la regla con la expresión de generic-api-key de gitleaks v8.30.1, sin red ni docker.",
       "raiz": "arnes",
       "ruta": "tests/secret-scan-evidence-hashes.test.js",
@@ -4730,6 +5143,18 @@
       "requiere": []
     },
     {
+      "__nota": "la medición por paso del freno de seguridad (TYCON_SAFETY_TRACE): anota el total del freno al salir, también cuando lo corta su reloj, y cada node que lanza (y lo que lanzan ellos) con su arranque y lo que tardó, sin los valores del comando; sin la variable no anota y con ella no cambia ninguna decisión. Salteada en Windows: el jq de mentira no se lanza sin .exe.",
+      "raiz": "arnes",
+      "ruta": "tests/safety-guard-trace.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el chequeo del guion antes de la ventana usa sólo lo que le queda al freno de seguridad (TYCON_SAFETY_DEADLINE_S, menos un margen): un chequeo trabado se corta antes que el reloj del freno, sin tiempo no se corre y la ventana se abre como siempre; el freno le pasa a la ventana el segundo en que lo corta su reloj, descontado lo que ya gastó. Salteadas en Windows las que lanzan el freno o un guion trabado.",
+      "raiz": "arnes",
+      "ruta": "tests/precheck-guard-deadline.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la trampa de errores del freno de comandos deja su línea en hook-errors.log (renglón y texto del guion, con sello y renglón en blanco; nunca el comando) cuando lo hace dejar pasar; la salida normal no escribe. Corre una copia del freno con un renglón que falla.",
       "raiz": "arnes",
       "ruta": "tests/safety-guard-err-trap.test.js",
@@ -4762,6 +5187,12 @@
       "requiere": []
     },
     {
+      "__nota": "fila 74 (22/11): las expresiones del freno de producción que crecían con el cuadrado del largo dicen lo mismo que antes y no se cuelgan.",
+      "raiz": "arnes",
+      "ruta": "tests/guard-regex-speed.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.115 (T7): ningún salteo de Windows sin su motivo escrito en las siete suites que corre el ensayo de Windows (apply-hooks, safety-escape, story-gate, ledger-visible, run-close, pipeline-unit; harness-node mide su propia lista fija). Sólo lee archivos.",
       "raiz": "arnes",
       "ruta": "tests/windows-skips.test.js",
@@ -4771,6 +5202,11 @@
       "__nota": "story 8.66: las reglas de lectura de las carpetas del arnés en permissions.allow de ~/.claude/settings.json — cuáles (el árbol, sus dos enlaces y cada skill enlazada), su forma, sumar sin pisar al dev, sin repetir, después del aplicador, sacar al actualizar lo que ya no es del arnés (leyendo el registro de disco) y desinstalar sólo lo anotado. Con HOME y settings.json de prueba.",
       "raiz": "arnes",
       "ruta": "tests/read-permissions.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/deny-permissions.test.js",
       "requiere": []
     },
     {
@@ -4831,6 +5267,16 @@
       "__nota": "story 8.26, tanda F1 (T22, T56): el freno antes de publicar, en un empuje (scripts/hooks/public-push-guard.js). El freno corre COPIADO a un arnés de laboratorio —así la prueba decide si esa «máquina» tiene el perfil del equipo y dónde está la lista— contra repos de juguete con git; un repo desnudo local hace de público. Cada rojo (un término en el contenido, la ruta, el mensaje, la rama o una marca; un token; un correo que no es noreply; una ruta vedada; un objeto ilegible; el tope de tiempo) tiene su verde. La lista es inventada.",
       "raiz": "arnes",
       "ruta": "tests/public-push-guard.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/hook-failure-critical.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/hook-failure-matrix.test.js",
       "requiere": []
     },
     {
@@ -4908,6 +5354,18 @@
       "__nota": "story 2.78: el cierre (marker.js clear) pone las firmas de la ejecución en su volcado y no falla por ellas (sin hora de arranque: «no medido»). HOME de prueba por caso; el registro de la cuenta no cambia. Sin red.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/marker-archive-signatures.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.83: los cinco comandos del marcador (set, complete-step, adopt-session, restore, clear) anotan la sesión que los corre, con su nombre, en marker.sesiones (una por sesión, hasta 10) y el volcado del cierre la lleva; no poder leer el nombre nunca frena. HOME de prueba por caso, con sesiones inventadas; sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/marker-session-names.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.83: el nombre de una sesión por su id con los lectores de /wip (archivo de sesión de Claude, el último /rename, Codex); un nombre armado de la carpeta es sin nombre; nunca tira. Casas temporales; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/session-name.test.js",
       "requiere": []
     },
     {
@@ -4995,6 +5453,12 @@
       "requiere": []
     },
     {
+      "__nota": "los git dentro de un `bash -c '…'` se ven todos, cada uno con su carpeta (scripts/lib/git-target.js: lo usan el reclamo de la retrospectiva, el freno de sesiones y el de producción).",
+      "raiz": "arnes",
+      "ruta": "tests/git-target-shell-c.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "un latido de retrospectiva es sólo de un commit que entró a main, y uno falso se anula sin borrarlo: el pedido abierto que espera, entra o se abandona (scripts/hooks/retro-pending.js), la línea de main y --annul (scripts/metrics/retro-heartbeat.js) y lo que no cuenta (retro-coverage.js, weekly-review.js, dashboard-metrics.js, sdlc-stage-metrics.js). Repos de juguete con git de verdad, az y gh de mentira en el PATH y un buzón de mentira en el mismo proceso. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/retro-heartbeat-main.test.js",
@@ -5025,7 +5489,7 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.31 (T9 a T14): los avisos de dependencias como issues de GitHub (scripts/nightly/dependencies/github-issues.js) con un gh de mentira (tests/lib/fake-gh.js) — crear con etiquetas, marca y asignado verificado; no repetir; tope y reintentos; cerrar sólo lo suyo y reabrir lo que cerró; borrado, movido y 401; el volcado con la clave <repo>#<n>; la elección de plataforma de work-items.js por team-repos.json; y el cruce del nocturno con números de issue repetidos entre repos. Sin red.",
+      "__nota": "story 8.31 (T9 a T14): los avisos de dependencias como issues de GitHub (integrations/github/scripts/dependency-notices.js) con un gh de mentira (tests/lib/fake-gh.js) — crear con etiquetas, marca y asignado verificado; no repetir; tope y reintentos; cerrar sólo lo suyo y reabrir lo que cerró; borrado, movido y 401; el volcado con la clave <repo>#<n>; la elección de plataforma de work-items.js por team-repos.json; y el cruce del nocturno con números de issue repetidos entre repos. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/github-issues.test.js",
       "requiere": [],

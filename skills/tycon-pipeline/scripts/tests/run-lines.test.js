@@ -152,7 +152,7 @@ test('RL4 Final_NotEntered_And_NotMeasured @story-8.293 @ac-3', () => {
   assert.strictEqual(b, 'pedido: no medido — trabajo no medido, espera no medida, 2 vueltas, firmas de una persona no medidas');
   // (c) pedido sin merge
   const c = RL.final({ dump: volcado(j, { pr: { number: 7 } }), runDir: j.runDir, stateDir: j.stateDir, gatesLog: [] });
-  assert.match(c, /^pedido #7 abierto, espera la cola — 52 min de trabajo, 14 min de espera, 2 vueltas, firmas de una persona no medidas$/);
+  assert.match(c, /^pedido #7 abierto, compilación sin ver: no está listo todavía — 52 min de trabajo, 14 min de espera, 2 vueltas, firmas de una persona no medidas$/);
 });
 
 test('RL5 SameText_SessionWipNotice @story-8.293 @ac-4', () => {
@@ -286,7 +286,7 @@ test('MK2 Clear_PrintsLinesAndFinal @story-8.293 @ac-3 @ac-6', () => {
   const c = E.correr(['clear'], sid);
   assert.strictEqual(c.status, 0, c.stderr);
   const err = c.stderr.split('\n');
-  const iFinal = err.findIndex((l) => l.startsWith('[corrida] pedido #12 abierto, espera la cola — '));
+  const iFinal = err.findIndex((l) => l.startsWith('[corrida] pedido #12 abierto, compilación sin ver: no está listo todavía — '));
   assert.ok(iFinal >= 0, c.stderr);
   assert.ok(err.findIndex((l) => l.startsWith('[corrida] ✓ Arranque')) < iFinal, 'los renglones van antes del renglón final');
   assert.ok(err.findIndex((l) => l.startsWith('[marker] timing dump archivado')) < iFinal);
@@ -345,7 +345,6 @@ test('MK3 Clear_Notice_OncePerRun_NoChannelNoFail @story-8.293 @ac-8', async (t)
 
 const aislado = (j) => ({ home: j.base, env: {} });
 const hasta = (id) => TODOS.slice(0, TODOS.indexOf(id) + 1);
-const motivoDe = (l) => l.text.split(' — ').slice(1).join(' — ');
 const escribirGates = (j, filas) => fs.writeFileSync(path.join(j.stateDir, 'gates.log'), filas.map((g) => `${typeof g === 'string' ? g : JSON.stringify(g)}\n`).join(''));
 
 test('RG1 AdversarialSkip_RealMarker_SaysSkipped @story-8.293 @ac-1', () => {
@@ -382,6 +381,27 @@ test('RG3 Reviewers_OtherRoundPending_IsTheCurrentStep @story-8.293 @ac-1 @ac-7'
   const o = { marker: m, runDir: j.runDir, stateDir: j.stateDir, gatesLog: [], ...aislado(j) };
   assert.strictEqual(deUnPaso(RL.lines(o), 'reviewers').text, '● Revisores — falta la vuelta 2: 1 archivo cambió después de los revisores');
   assert.strictEqual(RL.stateLine(o), '● Revisores — falta la vuelta 2: 1 archivo cambió después de los revisores');
+});
+
+// Renglón 555 de la lista semanal: si no se pudo saber si falta otra vuelta, /wip mostraba «Revisores» como paso actual.
+// «No medido» no es «falta otra vuelta»: el paso es el real, y el renglón de los revisores dice que no se midió.
+test('RG3b Reviewers_RoundNotMeasured_StepIsTheRealOne', () => {
+  const j = juguete();
+  const m = marcador(j, {
+    stepsCompleted: hasta('findings'), stepsPending: ['prepare-commit'], iterations: { 1: {} },
+    stepTimings: { ...TIEMPOS, findings: { startedAt: at(66), completedAt: at(70) }, 'prepare-commit': { startedAt: at(72) } },
+  });
+  const STEPS_LIB = require(path.join(SCRIPTS, 'lib', 'steps.js'));
+  const original = STEPS_LIB.reviewersRound;
+  STEPS_LIB.reviewersRound = () => { throw new Error('git no contestó'); };
+  try {
+    const o = { marker: m, runDir: j.runDir, stateDir: j.stateDir, gatesLog: [], ...aislado(j) };
+    // el primer paso sin hacer de esta corrida es el pase adversarial
+    const estado = String(RL.stateLine(o));
+    assert.doesNotMatch(estado, /Revisores/, 'no «Revisores»');
+    assert.match(estado, /Pase adversarial/, 'el paso real');
+    assert.match(deUnPaso(RL.lines(o), 'reviewers').text, /no medido/);
+  } finally { STEPS_LIB.reviewersRound = original; }
 });
 
 test('RG4 PrepareBrake_OnlyItsOwnAndCurrent @story-8.293 @ac-2', () => {
@@ -715,7 +735,8 @@ test('T17 MarkerPr_ConCorrida_EscribeRenglonSinRepetir @story-8.310 @ac-17', () 
   assert.strictEqual(E.correr(['pr', '15', '--repo', path.join(E.base, 'no-existe')], sid).status, 2);
 });
 
-test('T17b MarkerClear_RepoConCommitsNoAnotado_Avisa @story-8.310 @ac-17', () => {
+// 8.322: con «Preparar el pull request» cerrado ya no avisa: frena (T7 de la 8.322), y con todos anotados lanza la espera
+test('T17b MarkerClear_RepoConCommitsNoAnotado_Frena (T7, T8) @story-8.310 @ac-17 @story-8.322 @ac-6 @ac-7', async () => {
   const E = entorno();
   fs.mkdirSync(path.dirname(REGISTRO(E)), { recursive: true });
   const conRenglon = conCommitPropio(repoAparte(E, 'con-renglon'));
@@ -729,13 +750,27 @@ test('T17b MarkerClear_RepoConCommitsNoAnotado_Avisa @story-8.310 @ac-17', () =>
   assert.strictEqual(E.correr(['pr', '20', '--repo', conRenglon], sid).status, 0);
   assert.strictEqual(E.correr(['pr', '21', '--repo', E.repo], sid).status, 0);
   const c = E.correr(['clear'], sid);
-  assert.strictEqual(c.status, 0, c.stderr);
-  const avisos = c.stderr.split('\n').filter((l) => /sin pedido anotado/.test(l));
-  assert.strictEqual(avisos.length, 1, c.stderr);
-  assert.match(avisos[0], /sin-nada/);
+  assert.strictEqual(c.status, 2, c.stderr);
+  assert.match(c.stderr, /marker\.js clear: sin-nada tiene commits de la corrida y sin pedido anotado\. Sin el pedido de cada repo no se espera su compilación/);
+  assert.doesNotMatch(c.stderr, /con-renglon/);
+  assert.ok(fs.existsSync(E.activo(sid)), 'el cierre frenado borró la corrida');
+  // con el pedido anotado, cierra y lanza la espera: el renglón no dice «listo», y la espera termina en «no medido»
+  // (el remoto de prueba no es de ninguna plataforma)
+  assert.strictEqual(E.correr(['pr', '22', '--repo', sinNada], sid).status, 0);
+  const d = E.correr(['clear'], sid);
+  assert.strictEqual(d.status, 0, d.stderr);
+  // los tres pedidos, también el de la historia aunque se anotó otro después
+  assert.match(d.stderr, /\[corrida\] pedidos abiertos, compilación corriendo: no están listos todavía \(#21 de repo, #20 de con-renglon, #22 de sin-nada\)\. El aviso de «listos para aprobar» llega cuando todas den verde/);
+  assert.match(d.stderr, /pedido #22 abierto, compilación sin ver: no está listo todavía/);
+  assert.doesNotMatch(d.stderr, /espera la cola|listos para aprobar\./);
+  const resultado = path.join(E.stateDir, 'pr-build-wait', `${sid}-resultado.json`);
+  for (let i = 0; i < 100 && !fs.existsSync(resultado); i++) await new Promise((ok) => setTimeout(ok, 100));
+  const r = JSON.parse(fs.readFileSync(resultado, 'utf8'));
+  assert.strictEqual(r.estado, 'no-medido', JSON.stringify(r));
+  assert.match(r.texto, /^Historia 9\.9: no pude ver la compilación de todos los pedidos\. No están listos hasta verla en verde\./);
 });
 
-test('MarkerClear_RenglonDeUnPedidoViejo_AvisaIgual @story-8.310 @ac-17', () => {
+test('MarkerClear_RenglonDeUnPedidoViejo_FrenaIgual @story-8.310 @ac-17 @story-8.322 @ac-6', () => {
   const E = entorno();
   fs.mkdirSync(path.dirname(REGISTRO(E)), { recursive: true });
   const viejo = conCommitPropio(repoAparte(E, 'viejo'));
@@ -743,9 +778,33 @@ test('MarkerClear_RenglonDeUnPedidoViejo_AvisaIgual @story-8.310 @ac-17', () => 
   fs.writeFileSync(REGISTRO(E), `${JSON.stringify({ historia: '9.9', clave: '9.9', repo: 'viejo', pedido: 3, ts: new Date(T0 - 86400000).toISOString() })}\n`);
   const sid = 'clear-viejo';
   E.escribir(sid, E.base9(sid, { stepsCompleted: [...TODOS], stepsPending: [], deepReviewDone: true, dodRuntimeChecked: true, fileEvents: [{ path: path.join(viejo, 'a.js'), ts: at(1) }] }));
+  // un commit de antes de la corrida (la historia escrita antes, `dev` en un hermano) no pide pedido
+  const antiguo = repoAparte(E, 'antiguo');
+  fs.writeFileSync(path.join(antiguo.r, 'a.js'), '2\n');
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-C', antiguo.r, 'commit', '-qam', 'de antes'], { stdio: 'ignore',
+    env: { ...process.env, GIT_AUTHOR_DATE: new Date(T0 - 86400000).toISOString(), GIT_COMMITTER_DATE: new Date(T0 - 86400000).toISOString() } });
   const c = E.correr(['clear'], sid);
-  assert.strictEqual(c.status, 0, c.stderr);
-  assert.match(c.stderr, /viejo: tiene commits de la corrida y sin pedido anotado/);
+  assert.strictEqual(c.status, 2, c.stderr);
+  assert.match(c.stderr, /marker\.js clear: viejo tiene commits de la corrida y sin pedido anotado/);
+  // el repo que a propósito no lleva pedido: con su motivo, cierra y queda anotado
+  const sinMotivo = E.correr(['clear', '--no-pr', 'viejo'], sid);
+  assert.strictEqual(sinMotivo.status, 2, 'sin motivo cerró');
+  assert.match(sinMotivo.stderr, /marker\.js clear --no-pr: va con --reason "<por qué ese repo no lleva pedido>"/);
+  const sinPedido = E.correr(['clear', '--no-pr', 'viejo', '--reason', 'la corrida se descartó'], sid);
+  assert.strictEqual(sinPedido.status, 0, sinPedido.stderr);
+  assert.match(sinPedido.stderr, /sin pedido a propósito: viejo \(«la corrida se descartó»\)/);
+  const gates = fs.readFileSync(path.join(E.stateDir, 'gates.log'), 'utf8').split('\n').filter(Boolean).map(JSON.parse);
+  assert.ok(gates.some((g) => g.name === 'clear-no-pr' && g.repos[0] === 'viejo' && g.motivo === 'la corrida se descartó'), 'no quedó en gates.log');
+  E.escribir(sid, E.base9(sid, { stepsCompleted: [...TODOS], stepsPending: [], deepReviewDone: true, dodRuntimeChecked: true,
+    fileEvents: [{ path: path.join(antiguo.r, 'a.js'), ts: at(1) }] }));
+  const soloAntiguo = E.correr(['clear'], sid);
+  assert.strictEqual(soloAntiguo.status, 0, soloAntiguo.stderr);
+  // antes de «Preparar el pull request», como siempre: avisa y cierra
+  const antes = 'clear-viejo-antes';
+  E.escribir(antes, E.base9(antes, { stepsCompleted: TODOS.filter((s) => s !== 'prepare-commit'), stepsPending: ['prepare-commit'], fileEvents: [{ path: path.join(viejo, 'a.js'), ts: at(1) }] }));
+  const d = E.correr(['clear'], antes);
+  assert.strictEqual(d.status, 0, d.stderr);
+  assert.match(d.stderr, /viejo: tiene commits de la corrida y sin pedido anotado/);
 });
 
 test('MarkerPr_SinRepo_ConCorridaEnOtroRepo_SoloMarcador @story-8.310 @ac-17', () => {

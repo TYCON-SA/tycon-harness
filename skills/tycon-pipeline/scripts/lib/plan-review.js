@@ -42,7 +42,97 @@ const CHOICES = Object.freeze(['review', 'skip', 'wait']);
 
 const sha = (t) => crypto.createHash('sha256').update(t).digest('hex');
 const SESION = /^[\w-]+$/;
+
+// lo que de la historia no define lo que se construye: el registro de después (story-format.md, «Dev Agent Record» y
+// sus partes, el «Change Log» y los «Follow-ups»), y del frontmatter el estado y los enlaces a las que la siguen
+// «Ajustes después de la firma» guarda los ajustes de redacción que se pasan al cuerpo después de firmar el plan: los
+// revisores y el cierre la leen, y el control del encabezado frena el `done` con uno sin pasar (lint-story-frontmatter.js)
+const SECCIONES_DE_REGISTRO = new Set(['dev agent record', 'change log', 'follow-ups y cambios post-firma', 'agent model used',
+  'debug log references', 'completion notes list', 'file list', 'ajustes después de la firma']);
+const CLAVES_DE_REGISTRO = new Set(['status', 'followed_up_by']);
+
+/**
+ * La historia como la ata la revisión del plan: todo lo que define lo que se construye, sin el registro de después
+ * (`SECCIONES_DE_REGISTRO`, de nivel 2 o 3, y `CLAVES_DE_REGISTRO` del frontmatter). Ante la duda, cuenta: con una forma
+ * que el corte no lee con certeza (un título con sangría o subrayado, un comentario HTML, un bloque de código sin cerrar,
+ * una sección de registro de nivel 1) se usa la historia entera. Sólo se igualan el BOM y los fines de renglón.
+ */
+function textoDeConstruccion(texto) {
+  const entero = String(texto).replace(/^﻿/, '').replace(/\r\n?/g, '\n');
+  const lineas = entero.split('\n');
+  const salida = [];
+  let i = 0;
+  if (lineas[0] === '---') {
+    const fin = lineas.indexOf('---', 1);
+    if (fin > 0) {
+      salida.push('---');
+      for (let k = 1; k < fin; k++) {
+        const clave = /^([\w-]+)\s*:/.exec(lineas[k]);
+        if (clave && CLAVES_DE_REGISTRO.has(clave[1].toLowerCase())) {
+          // el valor de la clave, también el que sigue en renglones con sangría o como lista
+          while (k + 1 < fin && /^(\s|-\s)/.test(lineas[k + 1])) k++;
+          continue;
+        }
+        salida.push(lineas[k]);
+      }
+      salida.push('---');
+      i = fin + 1;
+    }
+  }
+  // un bloque de código abre con 3 o más ` o ~ (hasta 3 espacios de sangría) y cierra con el mismo signo, al menos igual de
+  // largo y sin nada después; el de ` no lleva ` en su etiqueta
+  let cerco = null;
+  let salteando = 0;
+  let anterior = '';
+  for (; i < lineas.length; i++) {
+    const l = lineas[i];
+    if (cerco) {
+      const cierre = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(l);
+      if (cierre && cierre[1][0] === cerco[0] && cierre[1].length >= cerco.length) cerco = null;
+      if (!salteando) salida.push(l);
+      anterior = l;
+      continue;
+    }
+    const apertura = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(l);
+    if (apertura && !(apertura[1][0] === '`' && apertura[2].includes('`'))) {
+      cerco = apertura[1];
+      if (!salteando) salida.push(l);
+      anterior = l;
+      continue;
+    }
+    // lo que el corte no lee con certeza: la historia entera
+    if (/^ {1,3}#{1,6}(\s|$)/.test(l) || /<!--/.test(l) || (/^ {0,3}(=+|-+)\s*$/.test(l) && anterior.trim() !== '')) return entero;
+    const titulo = /^(#{1,6})(?:\s+(.*?))?\s*#*\s*$/.exec(l);
+    if (titulo) {
+      const nivel = titulo[1].length;
+      const nombre = (titulo[2] || '').replace(/[*_`]/g, '').trim().toLowerCase();
+      if (salteando && nivel <= salteando) salteando = 0;
+      if (SECCIONES_DE_REGISTRO.has(nombre)) {
+        if (nivel === 1) return entero;
+        if (!salteando) salteando = nivel;
+      }
+    }
+    if (!salteando) salida.push(l);
+    anterior = l;
+  }
+  if (cerco) return entero;
+  return salida.join('\n');
+}
+
+const huellaDeConstruccion = (texto) => sha(textoDeConstruccion(texto));
+
+/**
+ * ¿La historia de ahora es la que se revisó? Con la huella de construcción, lo que define la construcción; una
+ * revisión anotada sin ella (de antes) se compara con el archivo entero. Sin texto, no.
+ */
+function mismaHistoria(texto, huellas) {
+  if (texto === null || texto === undefined || !huellas) return false;
+  if (huellas.construccion) return huellaDeConstruccion(texto) === huellas.construccion;
+  return sha(texto) === huellas.story;
+}
 const no = (motivo) => ({ codigo: 2, motivo });
+// el resultado es el de esta revisión: trae el número del pedido
+const esDeLaRevision = (resultado, pedido) => !!(resultado && pedido && pedido.numero && resultado.pedido === pedido.numero);
 const pipeline = () => require('../pipeline.js');
 const policy = () => require('./review-policy.js');
 const RAIZ = path.join(__dirname, '..', '..', '..', '..');
@@ -229,6 +319,82 @@ function designadaDeVerdad(estado) {
   return d ? d.sesion : null;
 }
 
+// El pedido a la coordinadora de revisar un plan: lo anota el arnés la primera vez que le toca a ella, y desde ahí se
+// cuentan los minutos que tiene para tomarlo (lanzar la revisión).
+const PEDIDO = 'plan-review-request';
+
+/** El id de la última revisión terminada que lanzó `a` sobre `destino` en esta corrida, o null. */
+function ultimaTerminada({ estado, a, destino, corrida }) {
+  const r = leerConstancia({ estado, lanza: a, destino });
+  return r.ok && mismaCorrida(r.constancia.corrida, corrida) ? r.constancia.id : null;
+}
+
+/** ¿`a` tiene preparada, y todavía sin resultado, una revisión de ESTE plan de `destino` en esta corrida? */
+function revisionEnCurso({ estado, a, destino, huellaPlan, corrida }) {
+  let p = null;
+  try { p = JSON.parse(fs.readFileSync(rutaPedido(estado, a, destino), 'utf8')); } catch (_) { return false; }
+  return !!p && !!p.huellas && p.huellas.plan === huellaPlan && mismaCorrida(p.corrida, corrida);
+}
+
+/** Los pedidos de revisión que el arnés le anotó a la coordinadora `a`: el último por destino. */
+function pedidosA({ estado, a }) {
+  const ultimos = new Map();
+  for (const j of renglones(estado)) if (j.name === PEDIDO && j.a === a) ultimos.set(j.destino, j);
+  return [...ultimos.values()];
+}
+
+/**
+ * En qué está un pedido a la coordinadora: `{ estado: 'tomado' }` (tiene la revisión de este plan en curso), `'resuelto'`
+ * (terminó una revisión suya después del pedido: lo que sigue lo dice la constancia), `'esperando'` (con `quedan`
+ * minutos) o `'vencido'` (con `vencio`, la hora en que se cumplió el plazo).
+ */
+function estadoDelPedido({ estado, pedido, minutos, ahora = Date.now() }) {
+  const base = { estado, a: pedido.a, destino: pedido.destino, huellaPlan: pedido.huellaPlan, corrida: pedido.corrida };
+  if (revisionEnCurso(base)) return { estado: 'tomado' };
+  if (ultimaTerminada(base) !== (pedido.tras || null)) return { estado: 'resuelto' };
+  const desde = Date.parse(pedido.ts);
+  if (!Number.isFinite(desde)) return { estado: 'esperando', quedan: minutos };
+  if (ahora - desde < minutos * 60000) return { estado: 'esperando', quedan: Math.max(1, Math.ceil(minutos - (ahora - desde) / 60000)) };
+  return { estado: 'vencido', vencio: desde + minutos * 60000 };
+}
+
+/**
+ * La coordinadora que atiende la revisión del plan de `sesion`: `{ coordinadora, motivo, pedido, tras }`, con
+ * `coordinadora` null si la sesión sigue sola. Lo decide el arnés, nunca la sesión:
+ *   · sin designada, o la designada es la propia sesión → sola;
+ *   · la designada no vive (Claude Code borra su archivo de sesión al cerrarla, o su proceso ya no está) → sola;
+ *   · no se sabe si vive (la carpeta de sesiones no se lee) → la espera, y la rescata el tope de minutos;
+ *   · tiene en curso la revisión de este plan → la espera, aunque la haya lanzado antes del pedido;
+ *   · el pedido de este plan (después de su última revisión terminada) lleva `minutos` sin que ella lo tome → sola.
+ * `pedido`: si ya está anotado; `tras`: la última revisión terminada de ella, a la que se ata un pedido nuevo (así un
+ * relanzamiento del mismo plan tiene su propio plazo). Lo anota `anotarPedido` cuando a ella le toca lanzar, no antes.
+ */
+function coordinadoraQueAtiende({ estado, home, sesion, huellaPlan, corrida, minutos, ahora = Date.now(), avisos = [] }) {
+  let d = null;
+  try { d = designadaDeVerdad(estado); } catch (e) { avisos.push(`no pude leer la designación de la coordinadora (${e.message}): cuenta como que no hay`); }
+  if (!d || d === sesion) return { coordinadora: null, motivo: null };
+  let vive = null;
+  try {
+    const sl = require(path.join(RAIZ, 'scripts', 'lib', 'signature-list.js'));
+    vive = sl.vive(sl.sesiones(home), d);
+  } catch (e) { vive = null; }
+  if (vive === false) return { coordinadora: null, motivo: `la coordinadora designada (${d}) no está viva: la revisión la lanza esta sesión` };
+  if (vive === null) avisos.push(`no pude saber si la coordinadora (${d}) está viva: la espera, hasta ${minutos} min (plan_review.coordinator_wait_minutes)`);
+  const base = { estado, a: d, destino: sesion, huellaPlan, corrida };
+  if (revisionEnCurso(base)) return { coordinadora: d, motivo: null, pedido: true };
+  const tras = ultimaTerminada(base);
+  const pedido = renglones(estado).filter((j) => j.name === PEDIDO && j.destino === sesion && j.a === d && j.huellaPlan === huellaPlan
+    && mismaCorrida(j.corrida, corrida) && (j.tras || null) === tras).pop();
+  if (!pedido) return { coordinadora: d, motivo: null, pedido: false, tras };
+  const e = estadoDelPedido({ estado, pedido, minutos, ahora });
+  if (e.estado !== 'vencido') return { coordinadora: d, motivo: null, pedido: true, tras };
+  return { coordinadora: null, motivo: `la coordinadora (${d}) no tomó el pedido en ${minutos} min (plan_review.coordinator_wait_minutes): la revisión la lanza esta sesión`, pedido: true, tras };
+}
+/** Anota el pedido a la coordinadora `a` de revisar el plan de `destino`: desde acá corren sus minutos. */
+function anotarPedido({ estado, a, destino, huellaPlan, corrida, tras = null, ahora = Date.now() }) {
+  anotarRenglon(estado, { name: PEDIDO, status: 'ok', a, destino, huellaPlan, corrida, tras }, ahora);
+}
+
 /**
  * Los renglones de gates.log, ya leídos (los renglones rotos no cuentan). Sin el archivo, ninguno. Si existe y no se
  * puede leer, también ninguno, y el motivo va a `problemas` cuando quien llama lo pide: un registro ilegible no es uno
@@ -256,7 +422,7 @@ const anotarRenglon = (estado, r, ahora = Date.now()) => {
  * plan: informativa sólo si no puede firmar (una story delicada, o `routine_approval: person`). Para otra sesión, sólo la
  * designada. Lanzar no pide la delegación: se mira al firmar. `designada()` y `config` se inyectan en las pruebas.
  */
-function preparar({ lanza, destino, estado, designada, config } = {}) {
+function preparar({ lanza, destino, estado, designada, config, home = require('os').homedir() } = {}) {
   if (!lanza || !SESION.test(lanza)) return no('falta la sesión que lanza la revisión');
   // de la propia sesión: decide el destino y que no se pide ser la designada; si es informativa se decide después
   const propia = !destino || destino === lanza;
@@ -285,6 +451,12 @@ function preparar({ lanza, destino, estado, designada, config } = {}) {
       if (!away.away) return no(`hay una pregunta abierta a la persona sobre la revisión de este plan (desde ${pregunta.ts}): se lanza con su respuesta (review-answer) o cuando cuente como ausente`);
     }
   }
+  // la cuarta vuelta de la misma historia no se lanza sola: la decide una persona, aunque esté ausente
+  {
+    const v = cuartaVuelta({ estado, destino: dest, marker });
+    if (v.falta) return no(v.vueltas === null ? `no pude leer el registro de vueltas (${v.motivo}): sin saber cuántas van no se lanza`
+      : `ya van ${v.vueltas} vueltas de la revisión del plan de esta historia: la próxima la decide una persona. La sesión ${dest} le pregunta (marker.js review-ask --kind plan, antes del cuadro), se anota su respuesta (marker.js review-answer --kind plan --choice review${dest === lanza ? '' : ` --for-session ${dest}`}) y recién ahí se lanza`);
+  }
   let plan;
   try { plan = planDe(marker); } catch (e) { return no(`no pude encontrar el plan de la corrida (${e.message})`); }
   if (plan.error) return no(`no pude leer el plan de la corrida (${plan.file}: ${plan.error})`);
@@ -296,21 +468,45 @@ function preparar({ lanza, destino, estado, designada, config } = {}) {
   const parte = parteDe(marker, storyTexto);
   const delicate = pipeline().computeDelicate({ story: storyFile, repo: marker.repoPath, planText: plan.texto, batch: batchDe(parte) });
   const cfg = configUsada(config);
-  // la revisión de la propia sesión firma una rutina con `review`, y un plan delicado si el perfil lo lista como trámite
-  // (automatic-signing.js); si no puede firmar, informa
-  const informativa = propia && ((delicate.value && !delicadaDeTramite()) || cfg.plan_review.routine_approval !== 'review');
+  // la revisión de la propia sesión firma una rutina con `review`; un plan delicado nunca (lo aprueba una persona): ahí
+  // informa
+  const informativa = propia && (delicate.value || cfg.plan_review.routine_approval !== 'review');
   // el número al azar que ata el resultado del pase a esta revisión: un resultado sin él, o con el de otra, no se anota
   const numero = crypto.randomBytes(16).toString('hex');
   const corte = cfg.review.blocking_severity;
+  // la historia cambiada sólo en lo técnico después de un plan rechazado: esta vuelta la revalida con el cambio a la vista,
+  // y si aprueba escribe las constancias nuevas (story-revalidation.js). Si no se puede saber, la vuelta es la de siempre
+  let revalida = null;
+  try {
+    const pr = require('./story-revalidation.js').porRevalidar({ home, storyPath: storyFile, estado });
+    if (pr.aplica) revalida = pr;
+  } catch (_) { revalida = null; }
   const args = { modo: 'plan', repo: marker.repoPath || path.dirname(storyFile), storyTexto, planTexto: plan.texto, model: MODELO, runDir: plan.runDir, pedido: numero,
+    // el cambio de la historia va aparte: lo juzga su propia lente (`cambio-de-historia`), no se lee como parte de la historia
+    ...(revalida ? { cambioDeHistoria: require('./story-revalidation.js').textoDelCambio(revalida.cambios) } : {}),
     lenses: cfg.plan_review.lenses.slice(), verifiers: cfg.review_runner.verifiers, blocking_severity: corte, ...(parte ? { parte } : {}) };
   const pedido = {
     numero, lanzo: lanza, destino: dest, informativa, corte, corrida: corridaDe(marker), storyId: String(marker.storyId), planFile: plan.file, storyFile,
-    huellas: { plan: sha(plan.texto), story: sha(storyTexto) }, delicate, hora: new Date().toISOString(), ...(parte ? { parte } : {}),
+    huellas: { plan: sha(plan.texto), story: sha(storyTexto), construccion: huellaDeConstruccion(storyTexto) }, delicate, hora: new Date().toISOString(), ...(parte ? { parte } : {}),
+    ...(revalida ? { revalidacion: {
+      // las constancias que esta vuelta revalida: la de validación sólo si era verde (si no, el validador vuelve a correr)
+      kinds: [...(revalida.validacion.estado === 'por-revalidar' && revalida.validacion.record.resultado === 'verde' ? ['validacion'] : []),
+        ...(revalida.revision.estado === 'por-revalidar' ? ['revision'] : [])],
+      validadores: revalida.validacion.record ? revalida.validacion.record.validadores : null,
+      riesgo: revalida.revision.record ? revalida.revision.record.riesgo : null,
+      huella: require('./story-review-record.js').huella(storyTexto),
+      partes: revalida.cambios.map((c) => c.parte),
+      // las constancias que vio esta vuelta: si otra se escribe mientras corre el pase, no se pisa
+      horas: { validacion: revalida.validacion.record ? revalida.validacion.record.hora : null, revision: revalida.revision.record ? revalida.revision.record.hora : null },
+    } } : {}),
   };
   escribirDeUnaVez(rutaPedido(estado, lanza, dest), `${JSON.stringify(pedido, null, 2)}\n`);
+  anotarRenglon(estado, { name: LANZADA, status: 'ok', sesion: lanza, destino: dest, story: String(marker.storyId), historia: historiaDe(marker), corrida: pedido.corrida, pedido: numero });
   const argsFile = path.join(carpetaDe(estado, lanza), `${dest}.args.json`);
   escribirDeUnaVez(argsFile, `${JSON.stringify(args, null, 2)}\n`);
+  // el resultado de la revisión anterior, antes de que el corredor lo pise: si no se puede guardar, se dice y se sigue
+  try { guardarResultado(estado, lanza, dest); } catch (e) { process.stderr.write(`⚠️  no pude guardar con fecha el resultado de la revisión anterior (${e.code || e.message}): el corredor lo va a pisar\n`); }
+  try { guardarUso(estado, lanza, dest); } catch (e) { process.stderr.write(`⚠️  no pude guardar con fecha el consumo de la revisión anterior (${e.code || e.message}): el corredor lo va a pisar\n`); }
   return { codigo: 0, args, argsFile, pedido: rutaPedido(estado, lanza, dest), delicate, informativa, destino: dest };
 }
 
@@ -336,16 +532,67 @@ function comandoLite(argsFile, out, { order, integration } = {}) {
     (nombres ? ` --runners ${nombres.join(',')}  # revisor: ${labels.join(', luego ')}` : '');
 }
 
-/** Los renglones `plan-review` de un destino y una corrida, en orden. */
+/** Los renglones `plan-review` de un destino (o de varios: las sesiones de una corrida adoptada) y una corrida, en orden. */
 function revisionesDe(estado, destino, corrida, problemas) {
-  return renglones(estado, problemas).filter((j) => j.name === 'plan-review' && j.destino === destino && mismaCorrida(j.corrida, corrida));
+  const destinos = [].concat(destino);
+  return renglones(estado, problemas).filter((j) => j.name === 'plan-review' && destinos.includes(j.destino) && mismaCorrida(j.corrida, corrida));
 }
+
+/**
+ * Las sesiones de la corrida de `marker`: la de ahora y, si adoptó la corrida de otra (`adopt-session`), la anterior.
+ * La revisión que se hizo para la anterior es de esta misma corrida: se hereda, y sigue atada a la huella del plan.
+ * Un solo salto: el marcador guarda sólo la última adopción, así que después de A→B→C lo hecho para A no se ve y se
+ * pide de nuevo (falla cerrado).
+ */
+function sesionesDeLaCorrida(destino, marker) {
+  const previa = marker && typeof marker.adoptedFrom === 'string' && marker.adoptedFrom && marker.adoptedFrom !== destino ? marker.adoptedFrom : null;
+  return previa ? [destino, previa] : [destino];
+}
+
+/** La constancia más nueva de esta corrida sobre alguna de `destinos` (las sesiones de la corrida), o null. */
+function ultimaDeLaCorrida({ estado, destinos, corrida }) {
+  return destinos.map((d) => ultimaDelDestino({ estado, destino: d })).filter((c) => c && c.corrida && mismaCorrida(c.corrida, corrida))
+    .sort((a, b) => Date.parse(b.hora) - Date.parse(a.hora))[0] || null;
+}
+
+// las vueltas de la revisión del plan de una historia que se lanzan sin preguntar: la siguiente la decide una persona
+const VUELTAS_SIN_PREGUNTAR = 3;
+const LANZADA = 'plan-review-launch';
+
+/**
+ * ¿La próxima vuelta de la revisión del plan de la historia de `marker` necesita la respuesta de una persona? `{ vueltas,
+ * falta }`: las vueltas lanzadas de esa historia (por cualquier motivo y desde cualquier sesión, también las cortadas o
+ * rechazadas), y `falta` si ya van `VUELTAS_SIN_PREGUNTAR` y, después de la última en el registro, no hay un «review» de
+ * la persona para `destino` ni una vuelta extra de esa historia firmada por una persona. Sin el registro legible, falta.
+ */
+function cuartaVuelta({ estado, destino, marker }) {
+  const problemas = [];
+  const todos = renglones(estado, problemas);
+  if (problemas.length) return { vueltas: null, falta: true, motivo: problemas[0] };
+  const storyId = String(marker.storyId);
+  const historia = historiaDe(marker);
+  const deEsta = (j) => j.name === LANZADA && j.story === storyId && (j.historia || null) === historia;
+  let ultima = -1;
+  let vueltas = 0;
+  todos.forEach((j, k) => { if (deEsta(j)) { vueltas++; ultima = k; } });
+  if (vueltas < VUELTAS_SIN_PREGUNTAR) return { vueltas, falta: false };
+  // después de la última vuelta en el orden del registro, no por la hora
+  const respondio = todos.slice(ultima + 1).some((j) => (j.name === 'review-answer' && j.kind === 'plan' && j.sesion === destino && j.choice === 'review')
+    || (j.name === 'extra-round-signed' && j.status === 'ok' && String(j.story) === storyId && VIAS_DE_PERSONA.includes(j.via)));
+  return { vueltas, falta: !respondio };
+}
+
+// las vías de una firma que dio una persona: la delegación, el aviso y la de trámite no son su respuesta
+const VIAS_DE_PERSONA = ['ventana', 'terminal', 'click', 'mensaje'];
+
+/** El archivo de la historia de la corrida, sin su carpeta: la misma historia en otra copia es la misma. */
+const historiaDe = (marker) => { try { return path.basename(storyDe(marker)); } catch (_) { return null; } };
 
 /**
  * Anota el resultado de la revisión preparada: devuelve la constancia escrita, o `{ codigo: 2, motivo }` si no hay pedido.
  * `resultado`: lo que devolvió el pase en modo plan. `sinHerramienta`: el motivo de no poder correrlo (sin veredicto).
  */
-function anotar({ lanza, destino, estado, resultado, sinHerramienta, noVale = null, modelo = MODELO, proveedor = 'anthropic', ahora = Date.now() } = {}) {
+function anotar({ lanza, destino, estado, resultado, sinHerramienta, noVale = null, modelo = MODELO, proveedor = 'anthropic', ahora = Date.now(), home = require('os').homedir() } = {}) {
   const dest = destino || lanza;
   const fp = rutaPedido(estado, lanza, dest);
   let pedido;
@@ -365,7 +612,7 @@ function anotar({ lanza, destino, estado, resultado, sinHerramienta, noVale = nu
   let ahoraHistoria = null;
   try { ahoraHistoria = pedido.storyFile ? fs.readFileSync(pedido.storyFile, 'utf8') : null; } catch (_) { ahoraHistoria = null; }
   const cambioElPlan = ahoraPlan === null || sha(ahoraPlan) !== pedido.huellas.plan;
-  const cambioLaHistoria = !!(pedido.huellas && pedido.huellas.story) && (ahoraHistoria === null || sha(ahoraHistoria) !== pedido.huellas.story);
+  const cambioLaHistoria = !!(pedido.huellas && pedido.huellas.story) && !mismaHistoria(ahoraHistoria, pedido.huellas);
   if (cambioElPlan || cambioLaHistoria) {
     veredicto = 'sin-veredicto';
     motivo = cambioElPlan ? CAMBIO : CAMBIO_HISTORIA;
@@ -378,15 +625,50 @@ function anotar({ lanza, destino, estado, resultado, sinHerramienta, noVale = nu
   const confirmados = (!sinHerramienta && !noVale && resultado && Array.isArray(resultado.confirmed)) ? resultado.confirmed : [];
   const { blocks } = policy();
   const aHallazgo = (h) => ({ lente: h.lens || null, severidad: h.adjusted_severity || h.severity || null, archivo: h.file || null, linea: h.line ?? null, resumen: h.summary || '' });
+  // el resultado de esta revisión, con fecha y sin pisar el de la anterior; y cuánto costó, por agente y por tipo
+  let guardado = null;
+  try { guardado = guardarResultado(estado, lanza, dest); } catch (e) { process.stderr.write(`⚠️  no pude guardar con fecha el resultado de la revisión (${e.code || e.message})\n`); }
+  // el consumo del resultado vale sólo si el resultado es de esta revisión: la ruta fija puede tener todavía el de la anterior
+  const esDeEsta = !!(resultado && !noVale && pedido.numero && resultado.pedido === pedido.numero);
+  let uso = esDeEsta && resultado.corredor && resultado.corredor.tokens && typeof resultado.corredor.tokens === 'object' ? resultado.corredor.tokens : null;
+  // una revisión cortada no deja resultado, pero el corredor dejó su consumo al momento: vale sólo el de esta revisión
+  let usoGuardado = null;
+  if (!uso) {
+    const parcial = usoDe(estado, lanza, dest);
+    if (parcial && pedido.numero && parcial.pedido === pedido.numero && parcial.tokens && typeof parcial.tokens === 'object') {
+      uso = { ...parcial.tokens, cortada: !parcial.completo };
+      try { usoGuardado = guardarUso(estado, lanza, dest); } catch (e) { process.stderr.write(`⚠️  no pude guardar con fecha el consumo de la revisión (${e.code || e.message})\n`); }
+    }
+  }
+  const id = sha(`${lanza}|${dest}|${ahora}`).slice(0, 12);
+  // la vuelta que revalidaba la historia (story-revalidation.js): aprobada, con la lente del cambio medida y con la historia
+  // tal como la vio, escribe las constancias nuevas. Rechazada, sin veredicto, sin esa lente o con la historia cambiada
+  // otra vez, no escribe nada y siguen a revalidar
+  let revalidacion = null;
+  const rv = pedido.revalidacion;
+  // la lente medida y SIN ningún hallazgo propio, antes de verificar: su verificador no ve el cambio, y un hallazgo que
+  // refuta o al que le baja la gravedad no puede volver revalidada a la historia
+  const lenteDelCambio = !!(esDeLaRevision(resultado, pedido) && Array.isArray(resultado.lentes)
+    && resultado.lentes.some((l) => l && l.lens === 'cambio-de-historia' && l.estado === 'medida' && l.count === 0));
+  if (rv && Array.isArray(rv.kinds) && rv.kinds.length && APROBADOS.includes(veredicto) && lenteDelCambio && ahoraHistoria !== null
+    && require('./story-review-record.js').huella(ahoraHistoria) === rv.huella) {
+    try {
+      const escritas = require('./story-revalidation.js').revalidar({ home, storyPath: pedido.storyFile,
+        kinds: rv.kinds, validadores: rv.validadores, riesgo: rv.riesgo, revisionDelPlan: id, horas: rv.horas || {} });
+      revalidacion = { kinds: rv.kinds, partes: rv.partes, escritas };
+    } catch (e) { revalidacion = { kinds: rv.kinds, partes: rv.partes, error: e.message }; }
+  }
   const constancia = {
-    id: sha(`${lanza}|${dest}|${ahora}`).slice(0, 12),
+    id,
     veredicto, motivo, informativa: !!pedido.informativa,
     hallazgos: confirmados.filter((h) => blocks(h.adjusted_severity || h.severity, corte)).map(aHallazgo),
     notas: confirmados.filter((h) => !blocks(h.adjusted_severity || h.severity, corte)).map(aHallazgo),
     corte, modelo, proveedor, hora: new Date(ahora).toISOString(), lanzo: lanza, destino: dest,
-    corrida: pedido.corrida, storyId: pedido.storyId, huellas: pedido.huellas, delicate: pedido.delicate,
+    corrida: pedido.corrida, storyId: pedido.storyId, huellas: pedido.huellas, delicate: pedido.delicate, uso, resultado_guardado: guardado,
+    ...(usoGuardado ? { uso_guardado: usoGuardado } : {}),
     // la parte y su lista, congeladas: el portón lee de acá la lista que vale con el plan aprobado por delegación
     ...(pedido.parte ? { parte: pedido.parte } : {}),
+    ...(revalidacion ? { revalidacion } : {}),
   };
   const texto = `${JSON.stringify(constancia, null, 2)}\n`;
   escribirDeUnaVez(rutaConstancia(estado, lanza, dest), texto);
@@ -515,12 +797,52 @@ function anotarPregunta({ estado, sesion, kind, huella, ahora = Date.now() }) {
   return { codigo: 0 };
 }
 
-/** Anota la respuesta: la elección (`review`, `skip`, `wait`) y quién contestó. */
-function anotarRespuesta({ estado, sesion, kind, choice, quien, huella, motivo = null, ahora = Date.now() }) {
+/**
+ * Anota la respuesta: la elección (`review`, `skip`, `wait`) y quién contestó. `via`: la vía de la firma del dueño que
+ * la dio (`skip` del código); `por: 'perfil'`: la contestó la coordinadora por la celda de «dueño ausente».
+ */
+function anotarRespuesta({ estado, sesion, kind, choice, quien, huella, motivo = null, via = null, por = null, ahora = Date.now() }) {
   if (!KINDS.includes(kind)) return no(`--kind es ${KINDS.join(' o ')}`);
   if (!CHOICES.includes(choice)) return no(`--choice es ${CHOICES.join(', ')}`);
-  anotarRenglon(estado, { name: 'review-answer', status: 'ok', sesion, kind, choice, quien, huella: huella || null, motivo }, ahora);
+  anotarRenglon(estado, { name: 'review-answer', status: 'ok', sesion, kind, choice, quien, huella: huella || null, motivo, ...(via ? { via } : {}), ...(por ? { por } : {}) }, ahora);
   return { codigo: 0 };
+}
+
+/**
+ * ¿La celda de «dueño ausente» contesta «skip» por el dueño a la pregunta del código de `sesion` sobre `huella`? El dueño
+ * tiene que contar como ausente (la marca, o la pregunta de ese diff con `plan_review.owner_away_minutes` minutos sin
+ * respuesta) y la matriz del portón del pase (pipeline.js), con el dueño ausente, tiene que decir `skip` para ese diff.
+ * `{ codigo: 0, motivo }` o `{ codigo: 2, motivo }`: lo que no se puede leer no contesta por el dueño.
+ */
+function skipPorElPerfil({ estado, sesion, huella, ahora = Date.now() }) {
+  let marker;
+  try { marker = marcadorDe(estado, sesion); } catch (e) { return no(e.message); }
+  if (!marker) return no(`la sesión ${sesion} no tiene una ejecución abierta`);
+  const cfg = configDeLaOrganizacion().values;
+  const g = require(path.join(RAIZ, 'scripts', 'lib', 'owner-away.js')).get({ estado, ahora });
+  if (g.problem) return no(`no pude leer la marca de ausente (${g.problem})`);
+  const problemas = [];
+  const pregunta = preguntasAbiertas({ estado, problemas }).find((p) => p.sesion === sesion && p.kind === 'code' && p.huella === huella);
+  if (problemas.length) return no(`no pude leer las preguntas de revisar (${problemas[0]})`);
+  const aus = require('./review-policy.js').ownerAway({ mark: g.mark, askedAt: pregunta ? Date.parse(pregunta.ts) : null, now: ahora, minutes: cfg.plan_review.owner_away_minutes });
+  if (!aus.away) return no(`la persona no cuenta como ausente (${aus.reason}): «skip» lo contesta ella, con su firma`);
+  // los archivos del cambio entero, como los ve el portón con --files: lo commiteado desde la base de la ejecución, lo
+  // que falta commitear y los archivos nuevos sin seguir. Uno que falta achicaría el diff y daría «chica» a una grande
+  const repo = marker.repoPath || process.cwd();
+  const env = require(path.join(RAIZ, 'scripts', 'lib', 'clean-git-env.js')).idiomaFijo();
+  const git = (args) => require('child_process').spawnSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8', env });
+  const archivos = new Set();
+  for (const args of [['diff', '--name-only', marker.baseSha || 'HEAD'], ['ls-files', '--others', '--exclude-standard']]) {
+    const d = git(args);
+    if (d.status !== 0) return no(`no pude leer los archivos del cambio (${(d.stderr || '').trim().split('\n')[0] || d.status})`);
+    for (const f of d.stdout.split('\n')) if (f) archivos.add(f);
+  }
+  let r;
+  try {
+    r = pipeline().computeDeepReviewGate({ story: storyDe(marker), repo, files: [...archivos], reviewConfig: cfg, ownerAway: true, codeAnswer: null });
+  } catch (e) { return no(`no pude calcular la celda de ausencia (${(e && e.message) || e})`); }
+  if (!r || r.decision !== 'skip') return no(`la celda de ausencia para este diff dice ${(r && r.decision) || 'otra cosa'} (${(r && r.reason) || 'sin motivo'}): no contesta «skip»`);
+  return { codigo: 0, motivo: `${aus.reason}; ${r.reason}` };
 }
 
 /**
@@ -543,9 +865,13 @@ function respuestaDe({ estado, sesion, kind, huella, problemas }) {
   return r.length ? r[r.length - 1].choice : null;
 }
 
-/** ¿Para este plan (su huella) se eligió seguir sin revisión? La última respuesta sobre esa huella manda. */
+/**
+ * ¿Para este plan (su huella) se eligió seguir sin revisión? La última respuesta sobre esa huella manda; `destino` puede
+ * ser varias sesiones (las de una corrida adoptada), y entonces manda la última de todas.
+ */
 function eligioSeguir({ estado, destino, huellaPlan, problemas }) {
-  const r = renglones(estado, problemas).filter((j) => j.name === 'review-answer' && j.kind === 'plan' && j.sesion === destino && j.huella === huellaPlan);
+  const destinos = [].concat(destino);
+  const r = renglones(estado, problemas).filter((j) => j.name === 'review-answer' && j.kind === 'plan' && destinos.includes(j.sesion) && j.huella === huellaPlan);
   return r.length ? r[r.length - 1].choice === 'skip' : false;
 }
 
@@ -574,7 +900,11 @@ function topeDeRechazos(cfg, repo) {
       const v = RR.delYaml(require('./config-source.js').leerCommiteado(repo));
       const n = Number(v);
       if (v !== undefined && Number.isInteger(n) && n >= RR.MINIMO && n <= RR.MAXIMO) return n;
-    } catch (_) { /* sin el ajuste del repo vale el de la organización, el mismo que usan las vueltas del código */ }
+    } catch (e) {
+      // sin el ajuste del repo vale el de la organización, el mismo que usan las vueltas del código; se dice, porque el
+      // número del repo puede ser otro
+      process.stderr.write(`⚠️  no pude leer review.max_rounds de ${repo} (${String((e && e.message) || e).split('\n')[0]}): vale el de la organización (${cfg.review.max_rounds}).\n`);
+    }
   }
   return cfg.review.max_rounds;
 }
@@ -588,7 +918,23 @@ function hallazgosCorregidos({ estado, destino, corrida, problemas }) {
  * La línea del cuadro de la firma con el resultado de la revisión de este plan, y las notas o hallazgos que la siguen.
  * `{ linea, detalle: [] }`.
  */
-function lineaDelCuadro({ estado, destino, marker, config }) {
+function lineaDelCuadro(o) {
+  const r = lineaDelCuadroSola(o);
+  // la historia cambió después de validarla y ninguna vuelta del plan la revalidó: quien firma lo ve, con el cambio
+  try {
+    const sr = require('./story-revalidation.js');
+    const pr = sr.porRevalidar({ home: o.home || require('os').homedir(), storyPath: storyDe(o.marker), estado: o.estado });
+    if (pr.aplica) {
+      // en palabras, no con «-» y «+»: el cuadro le saca el guion a cada renglón y uno que se va se leería como afirmado
+      const detalle = pr.cambios.flatMap((c) => [`cambió ${c.parte}:`, ...c.quitadas.map((l) => `se va: ${l}`), ...c.sumadas.map((l) => `llega: ${l}`)]);
+      return { linea: `${r.linea}; la historia cambió después de validarla y ninguna vuelta del plan la revalidó (${pr.cambios.map((c) => c.parte).join('; ')})`,
+        detalle: [...r.detalle, ...detalle] };
+    }
+  } catch (_) { /* sin poder saberlo, el cuadro dice lo de siempre */ }
+  return r;
+}
+
+function lineaDelCuadroSola({ estado, destino, marker, config }) {
   const cfg = configUsada(config);
   const plan = planDe(marker);
   const huellaPlan = plan.texto ? sha(plan.texto) : null;
@@ -597,9 +943,10 @@ function lineaDelCuadro({ estado, destino, marker, config }) {
   const sinRegistro = [];
   renglones(estado, sinRegistro);
   if (sinRegistro.length) return { linea: `${sinRegistro[0]}: no sé cómo quedó la revisión`, detalle: [] };
-  if (huellaPlan && eligioSeguir({ estado, destino, huellaPlan })) return { linea: 'sin revisión (se eligió seguir)', detalle: [] };
-  const c = ultimaDelDestino({ estado, destino });
-  const deEsta = c && c.veredicto && mismaCorrida(c.corrida, corrida) ? c : null;
+  const destinos = sesionesDeLaCorrida(destino, marker);
+  if (huellaPlan && eligioSeguir({ estado, destino: destinos, huellaPlan })) return { linea: 'sin revisión (se eligió seguir)', detalle: [] };
+  const deEsta = destinos.map((d) => ultimaDelDestino({ estado, destino: d })).filter((c) => c && c.veredicto && mismaCorrida(c.corrida, corrida))
+    .sort((a, b) => Date.parse(b.hora) - Date.parse(a.hora))[0] || null;
   if (!deEsta) {
     const delicate = pipeline().computeDelicate({ story: storyDe(marker), repo: marker.repoPath, planText: plan.texto || '' });
     if (!delicate.value && cfg.plan_review.routine === 'never') return { linea: 'sin revisión (el perfil no revisa)', detalle: [] };
@@ -609,10 +956,10 @@ function lineaDelCuadro({ estado, destino, marker, config }) {
   const lista = (hs) => (hs || []).map((h) => `- [${h.lente || '?'}] ${h.resumen}`);
   if (deEsta.veredicto === 'sin-veredicto') return { linea: `no se pudo revisar: ${deEsta.motivo || 'el pase no midió todo'}`, detalle: [] };
   if (deEsta.veredicto === 'rechazado') {
-    const n = rechazosSeguidos({ estado, destino, corrida });
+    const n = rechazosSeguidos({ estado, destino: destinos, corrida });
     return { linea: `revisado, rechazado ${n} ${n === 1 ? 'vez' : 'veces seguidas'}`, detalle: lista(deEsta.hallazgos) };
   }
-  const corregidos = hallazgosCorregidos({ estado, destino, corrida });
+  const corregidos = hallazgosCorregidos({ estado, destino: destinos, corrida });
   const base = corregidos ? `revisado, ${corregidos} hallazgos corregidos` : 'revisado, sin hallazgos';
   if (deEsta.veredicto === 'aprobado-con-notas') {
     const k = (deEsta.notas || []).length;
@@ -622,23 +969,54 @@ function lineaDelCuadro({ estado, destino, marker, config }) {
 }
 
 /**
- * Las condiciones de la aprobación del plan por delegación: `{ codigo: 2, motivo }` para no firmar (el pedido no se
- * gasta), o `{ codigo: 0, via: 'revision', constancia }`. Primero si la story es delicada y si el perfil deja que la
- * coordinadora apruebe; después la constancia. Todo se vuelve a calcular ahora: el plan, la story y si es delicada.
- * `delegacion(o)` (opcional) mira la delegación del perfil; sin ella, la miró antes el freno de la firma.
+ * Lo que la aprobación del plan de una corrida mide ahora: su plan, su historia, su parte y si es delicada (risk-class,
+ * `computeDelicate`). Con la historia ilegible, delicada. Lo usan `antesDeAprobar` y `planParaDelegar`: el desvío a la
+ * coordinadora y owner-next miden igual que la firma.
  */
-function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion, home, delegaDelicada = delicadaDelegada, deTramite = delicadaDeTramite }) {
+function medirElPlan(marker) {
   const plan = planDe(marker);
   const storyFile = storyDe(marker);
   let storyTexto = null;
   try { storyTexto = fs.readFileSync(storyFile, 'utf8'); } catch (_) { storyTexto = null; }
   const parte = parteDe(marker, storyTexto);
   const delicate = pipeline().computeDelicate({ story: storyFile, repo: marker.repoPath, planText: plan.texto || '', batch: batchDe(parte) });
-  // un plan delicado: sólo la coordinadora para otra sesión, con `plan-approval:delicada` delegada en el perfil; la
-  // revisión que lanzó la propia sesión no lo aprueba nunca. Lo demás (su revisión, aprobada, sobre este plan) sigue igual
-  // un plan delicado: con la revisión aprobada, lo firma el arnés si el perfil lo lista como trámite; si no, sólo la
-  // coordinadora para otra sesión, con `plan-approval:delicada` delegada
-  if (delicate.value && !deTramite({ home }) && (firmante === destino || !delegaDelicada({ sesion: firmante, destino, estado, home }))) return no(`plan delicado (nivel 2): lo aprueba el dev, no la revisión (${delicate.reason})`);
+  return { plan, storyFile, storyTexto, parte, delicate };
+}
+
+const PLAN_DE_UNA_PERSONA = 'el plan de una historia delicada lo aprueba una persona';
+
+/**
+ * ¿El plan de la sesión `destino` (o su maqueta, que se firma como el plan) puede ir a la coordinadora por delegación?
+ * null si su historia es de rutina; `{ codigo: 2, motivo }` si es delicada o si no se puede saber (sin marcador, con el
+ * marcador o el plan ilegibles, con la historia ilegible): entonces lo aprueba una persona, como en `antesDeAprobar`.
+ * Lo preguntan el desvío y owner-next antes de ofrecerle la firma (scripts/lib/delegation-routing.js `deUnaPersona`).
+ */
+function planParaDelegar({ estado, destino } = {}) {
+  const sinSaber = (por) => no(`${PLAN_DE_UNA_PERSONA}, y no sé si ésta lo es: ${por}`);
+  if (!estado || !SESION.test(String(destino || ''))) return sinSaber('no sé de qué sesión es el plan');
+  let marker;
+  try { marker = marcadorDe(estado, String(destino)); } catch (e) { return sinSaber(e.message); }
+  if (!marker || marker.storyId == null) return sinSaber(`la sesión ${destino} no tiene una ejecución abierta`);
+  let m;
+  try { m = medirElPlan(marker); } catch (e) { return sinSaber(`no pude medir su historia (${e.message})`); }
+  if (m.plan.error) return sinSaber(`no pude leer su plan (${m.plan.error})`);
+  return m.delicate.value ? no(`${PLAN_DE_UNA_PERSONA} (${m.delicate.reason})`) : null;
+}
+
+/**
+ * Las condiciones de la aprobación del plan sin persona (la delegación, la firma de trámite, «hecho y avisado», la
+ * revisión de la propia sesión): `{ codigo: 2, motivo }` para no firmar (el pedido no se gasta), o
+ * `{ codigo: 0, via: 'revision', constancia }`. Primero si la story es delicada: entonces no, nunca, diga lo que diga el
+ * perfil; después si el perfil deja que la coordinadora apruebe, y la constancia. Todo se vuelve a calcular ahora: el
+ * plan, la story y si es delicada. `delegacion(o)` (opcional) mira la delegación del perfil; sin ella, la miró antes el
+ * freno de la firma.
+ */
+function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion, home }) {
+  const { plan, storyTexto, parte, delicate } = medirElPlan(marker);
+  // un plan delicado lo aprueba una persona, con su click o su «aprobado» (o en su terminal): ni la revisión de la propia
+  // sesión, ni la coordinadora por delegación, ni el arnés como trámite. El perfil no lo cambia: `plan-approval:delicada`
+  // en approvals.delegated_signing no lo vuelve trámite ni lo delega
+  if (delicate.value) return no(`plan delicado (nivel 2): lo aprueba el dev con su click o su «aprobado», no la revisión ni la delegación (${delicate.reason})`);
   const cfg = configUsada(config);
   if (cfg.plan_review.routine_approval !== 'review') return no(`${PIDE_EL_CLICK(cfg)}: ${ESPERA}`);
   const malEscrita = problemaDelAprobador(config);
@@ -648,42 +1026,79 @@ function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion,
     try { d = delegacion({ firma: 'plan-approval', sesion: firmante, destino, home, estado }); } catch (e) { d = { ok: false, motivo: e.message }; }
     if (!d || !d.ok) return no(`el perfil no delega la aprobación del plan (${(d && d.motivo) || 'sin respuesta'}): ${ESPERA}`);
   }
-  const r = leerConstancia({ estado, lanza: firmante, destino });
+  // la constancia de esta corrida: la de la sesión de ahora o, en una corrida adoptada, la de la anterior. Si ninguna es
+  // de esta corrida, la primera que se lee dice por qué no
+  const destinos = sesionesDeLaCorrida(destino, marker);
+  const hoyCorrida = corridaDe(marker);
+  const leidas = destinos.map((d) => ({ d, r: leerConstancia({ estado, lanza: firmante, destino: d }) }));
+  const deEsta = leidas.find((x) => x.r.ok && x.r.constancia.corrida && mismaCorrida(x.r.constancia.corrida, hoyCorrida));
+  const elegida = deEsta || leidas.find((x) => x.r.ok || !x.r.ausente) || leidas[0];
+  const r = elegida.r;
+  const deQuien = elegida.d;
   if (!r.ok && r.ausente) return no(`no hay una revisión automática de este plan lanzada por esta sesión (marker.js plan-review${firmante === destino ? '' : ` --for-session ${destino}`}): ${ESPERA}`);
   if (!r.ok) return no(`la constancia de la revisión no se puede leer (${r.motivo}): ${ESPERA}`);
   const c = r.constancia;
   if (c.informativa === true) return no(`la revisión es informativa (la lanzó la propia sesión cuando no podía firmar): sólo informa: ${ESPERA}`);
-  if (c.lanzo !== firmante || c.destino !== destino) return no(`la revisión la lanzó otra sesión (${c.lanzo}), no la que firma: ${ESPERA}`);
+  if (c.lanzo !== firmante || c.destino !== deQuien) return no(`la revisión la lanzó otra sesión (${c.lanzo}), no la que firma: ${ESPERA}`);
   const sinRegistro = [];
-  if (!tieneRenglon(estado, firmante, destino, r.texto, sinRegistro)) return no(`${sinRegistro[0] || 'la constancia de la revisión no tiene su renglón en gates.log'}: ${ESPERA}`);
+  if (!tieneRenglon(estado, firmante, deQuien, r.texto, sinRegistro)) return no(`${sinRegistro[0] || 'la constancia de la revisión no tiene su renglón en gates.log'}: ${ESPERA}`);
   const hoy = corridaDe(marker);
   if (c.storyId !== hoy.storyId || c.corrida.storyId !== hoy.storyId || c.corrida.startedAt !== hoy.startedAt) return no(`la revisión es de otra corrida (${c.corrida.storyId}, ${c.corrida.startedAt}): ${ESPERA}`);
   if (!plan.texto || sha(plan.texto) !== c.huellas.plan) return no(`el plan cambió después de la revisión: ${ESPERA}`);
-  if (storyTexto === null || sha(storyTexto) !== c.huellas.story) return no(`la story cambió después de la revisión: ${ESPERA}`);
+  if (!mismaHistoria(storyTexto, c.huellas)) return no(`la story cambió después de la revisión en lo que define la construcción: ${ESPERA}`);
   if (c.delicate.value !== delicate.value) return no(`la story era delicada cuando se revisó y ya no lo es: ${ESPERA}`);
   // la coordinadora aprueba lo que se revisó: la misma parte, igual de válida y con la misma lista
   if (!mismaParte(c.parte, parte)) return no(`la parte o su lista cambiaron desde la revisión (${c.parte ? c.parte.nombre : 'sin parte'} → ${parte ? parte.nombre : 'sin parte'}): ${ESPERA}`);
-  if (eligioSeguir({ estado, destino, huellaPlan: c.huellas.plan })) return no(`para este plan se eligió seguir sin revisión: lo firma una persona`);
+  if (eligioSeguir({ estado, destino: destinos, huellaPlan: c.huellas.plan })) return no(`para este plan se eligió seguir sin revisión: lo firma una persona`);
   if (!APROBADOS.includes(c.veredicto)) return no(`${ESPERA} (la revisión dijo ${c.veredicto})`);
   return { codigo: 0, via: 'revision', constancia: c };
 }
 
-/** ¿El perfil lista el plan de una historia delicada como trámite, que firma el arnés solo? (automatic-signing.js) */
-function delicadaDeTramite({ home } = {}) {
-  try {
-    const raiz = path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib');
-    const forma = require(path.join(raiz, 'signatures.js')).PLAN_DELICADO;
-    return !!require(path.join(raiz, 'automatic-signing.js')).esDeTramite({ firma: forma, ...(home ? { home } : {}) }).ok;
-  } catch (_) { return false; }
+// En la aprobación por la revisión (la delegación, la firma de trámite), `--approved` sólo dice que es la revisión: el
+// texto de la aprobación lo arma el arnés con quién lanzó la revisión y su veredicto. Un texto propio podría atribuir
+// una firma que nadie dio («firma del dueño con el cuadro»), y la constancia lo guardaría como cierto.
+const PALABRA_DE_LA_REVISION = /^(?:la\s+)?revisi[oó]n$/i;
+
+/** null si el `--approved` de una aprobación por la revisión es la palabra «revisión» (o falta); si no, el motivo. */
+function textoPropioPorLaRevision(dado) {
+  if (dado == null || PALABRA_DE_LA_REVISION.test(String(dado).trim())) return null;
+  return 'en la aprobación por la revisión el texto lo arma el arnés (quién lanzó la revisión y su veredicto): '
+    + `cerrá con --approved revisión, sin «${String(dado).replace(/\s+/g, ' ').slice(0, 80)}»`;
 }
 
-/** ¿El perfil le delega a la coordinadora `sesion` el plan de una historia delicada de `destino`? Con todas las llaves. */
-function delicadaDelegada({ sesion, destino, estado, home }) {
+/** El texto de una aprobación por la revisión, armado por el arnés con su constancia. */
+function textoDeLaAprobacion(c) {
+  return `revisión ${c.id} ${c.veredicto} (${c.modelo}), lanzada por la sesión ${c.lanzo}`;
+}
+
+/**
+ * ¿La última revisión CON VEREDICTO de esta corrida, de cualquier sesión, está en rechazo, y la historia es delicada?
+ * `{ codigo: 2, motivo }` para no aprobar, por ninguna vía: un plan delicado no se aprueba con su revisión en contra.
+ * null si no. Se lee de gates.log, que no se pisa: ni cambiar el plan después del rechazo ni anotar encima una revisión
+ * sin veredicto lo destapan; lo destapa una revisión aprobada posterior.
+ */
+function revisionEnContra({ estado, destino, marker }) {
+  const plan = planDe(marker);
+  const problemas = [];
+  // en una corrida adoptada, el rechazo de la sesión anterior cuenta como su aprobación
+  const conVeredicto = revisionesDe(estado, sesionesDeLaCorrida(destino, marker), corridaDe(marker), problemas)
+    .filter((j) => j.veredicto === 'rechazado' || APROBADOS.includes(j.veredicto));
+  const u = conVeredicto[conVeredicto.length - 1];
+  // con el registro ilegible no se sabe si hay una revisión en contra: cuenta como si la hubiera
+  if (!problemas.length && (!u || u.veredicto !== 'rechazado')) return null;
+  const storyFile = storyDe(marker);
+  let storyTexto = null;
+  try { storyTexto = fs.readFileSync(storyFile, 'utf8'); } catch (_) { storyTexto = null; }
+  // sin poder saber si es delicada, cuenta como delicada
+  let delicada;
   try {
-    const raiz = path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib');
-    const forma = require(path.join(raiz, 'signatures.js')).PLAN_DELICADO;
-    return !!require(path.join(raiz, 'delegated-signing.js')).delegaSinVentana({ firma: forma, sesion, destino, estado, ...(home ? { home } : {}) }).ok;
-  } catch (_) { return false; }
+    delicada = pipeline().computeDelicate({ story: storyFile, repo: marker.repoPath, planText: plan.texto || '', batch: batchDe(parteDe(marker, storyTexto)) }).value !== false;
+  } catch (_) { delicada = true; }
+  if (!delicada) return null;
+  if (problemas.length) return no(`plan delicado y no pude leer sus revisiones (${problemas[0]}): no sé si alguna está en contra`);
+  return { ...no(`plan delicado con su última revisión (${u.ts || 'sin fecha'}) en rechazo: un plan delicado no se aprueba con la revisión en contra. `
+    + 'Corregí el plan con lo que encontró la revisión y lanzala de nuevo: la aprueba una revisión aprobada posterior'),
+  revision: { ts: u.ts || null, veredicto: u.veredicto, sesion: u.sesion || null } };
 }
 
 /**
@@ -739,9 +1154,9 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
   const delicate = pipeline().computeDelicate({ story: storyDe(marker), repo: marker.repoPath, planText: plan.texto, batch: batchDe(parteDe(marker, storyTexto)) });
   // lo que no se pudo leer se decide del lado conservador (sin coordinadora, dueño presente) y se dice en el motivo
   const avisos = [];
-  let coordinadora = null;
-  try { coordinadora = designadaDeVerdad(estado); } catch (e) { avisos.push(`no pude leer la designación de la coordinadora (${e.message}): cuenta como que no hay`); }
-  const hayCoordinadora = !!coordinadora && coordinadora !== sesion;
+  // la coordinadora cuenta sólo si atiende: viva y tomando el pedido a tiempo (si no, la sesión no queda esperándola)
+  const atiende = coordinadoraQueAtiende({ estado, home, sesion, huellaPlan, corrida: corridaDe(marker), minutos: cfg.plan_review.coordinator_wait_minutes, ahora, avisos });
+  const hayCoordinadora = !!atiende.coordinadora;
   let marca = null;
   try {
     const leida = require(path.join(RAIZ, 'scripts', 'lib', 'owner-away.js')).get({ estado, home, ahora });
@@ -753,13 +1168,17 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
   const away = P.ownerAway({ mark: marca, askedAt: pregunta ? Date.parse(pregunta.ts) : null, now: ahora, minutes: cfg.plan_review.owner_away_minutes });
   const r = P.planReview({ delicate: delicate.value, coordinator: hayCoordinadora, ownerAway: away.away, config: cfg });
   const out = { ...r, delicate: delicate.value, ownerAway: away, huellaPlan };
+  if (atiende.motivo) { out.reason = `${out.reason}; ${atiende.motivo}`; out.sinCoordinadora = atiende.motivo; }
   if (sinRegistro.length) avisos.push(sinRegistro[0]);
   if (avisos.length) { out.reason = `${out.reason} (${avisos.join('; ')})`; out.problems = avisos; }
   // sin el registro no se sabe si se eligió seguir ni se cuentan los rechazos o los cambios del plan, que son los topes
   // que llevan el caso al dueño: llega al dueño ahora, sin relanzar
   if (sinRegistro.length) return { ...out, alDueno: { llega: true, motivo: `${sinRegistro[0]}: lo decide una persona` } };
-  if (eligioSeguir({ estado, destino: sesion, huellaPlan })) return { ...out, decision: 'skip', reason: 'se eligió seguir sin revisión para este plan' };
-  const c = ultimaDelDestino({ estado, destino: sesion });
+  // en una corrida adoptada cuentan también la revisión, los rechazos y la elección de seguir de la sesión anterior
+  const destinos = sesionesDeLaCorrida(sesion, marker);
+  // las dos sesiones juntas: manda la última respuesta, no cualquier «seguir» de una de ellas
+  if (eligioSeguir({ estado, destino: destinos, huellaPlan })) return { ...out, decision: 'skip', reason: 'se eligió seguir sin revisión para este plan' };
+  const c = ultimaDeLaCorrida({ estado, destinos, corrida: corridaDe(marker) }) || ultimaDelDestino({ estado, destino: sesion });
   // con coordinadora, una informativa no tapa la revisión que ella tiene que lanzar; la de la propia sesión que puede
   // firmar (rutina con `review`) sí cuenta: aprueba en los dos casos
   const informativa = !!c && c.informativa === true;
@@ -767,7 +1186,7 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
     && !(hayCoordinadora && informativa && r.approves === 'coordinator');
   if (revisado && c.veredicto === 'rechazado') {
     // rechazado: la sesión corrige y vuelve a cerrar el plan; llega al dueño con O5 en sí o al tope de rechazos seguidos
-    const n = rechazosSeguidos({ estado, destino: sesion, corrida: corridaDe(marker) });
+    const n = rechazosSeguidos({ estado, destino: destinos, corrida: corridaDe(marker) });
     // el mismo tope que las vueltas de revisores del código: el repo manda sobre la organización
     const tope = topeDeRechazos(cfg, marker.repoPath);
     const llega = cfg.plan_review.rejected_reaches_owner || n >= tope;
@@ -785,12 +1204,24 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
   const deOtraVersion = !!(c && c.huellas && c.huellas.plan !== huellaPlan && mismaCorrida(c.corrida, corridaDe(marker)) && c.veredicto);
   if (r.decision === 'run' || ((deOtraVersion || deUnCambio) && r.decision === 'ask')) {
     // el plan cambió mientras corría: se reintenta una sola vez sobre el plan cerrado; la segunda llega al dueño
-    const deCambio = revisionesDe(estado, sesion, corridaDe(marker)).filter((j) => esCambio(j.motivo));
+    const deCambio = revisionesDe(estado, destinos, corridaDe(marker)).filter((j) => esCambio(j.motivo));
     const cambios = deCambio.length;
     if (cambios >= 2) return { ...out, alDueno: { llega: true, motivo: `no se pudo revisar: ${deCambio[deCambio.length - 1].motivo}, dos veces` } };
     out.comando = hayCoordinadora ? `marker.js plan-review --for-session ${sesion}` : 'marker.js plan-review';
     out.lanza = hayCoordinadora ? 'coordinator' : 'session';
+    // le toca lanzar a la coordinadora: desde ahora corren sus minutos para tomarlo
+    if (hayCoordinadora && !atiende.pedido) {
+      try { anotarPedido({ estado, a: atiende.coordinadora, destino: sesion, huellaPlan, corrida: corridaDe(marker), tras: atiende.tras || null, ahora }); } catch (e) {
+        out.problems = [...(out.problems || []), `no pude anotar el pedido a la coordinadora (${e.code || e.message}): si no lo toma, la sesión sigue esperándola`];
+      }
+    }
     if (cambios === 1) out.reintento = true;
+    const v = cuartaVuelta({ estado, destino: sesion, marker });
+    if (v.falta) {
+      out.cuartaVuelta = { vueltas: v.vueltas };
+      out.comando = 'marker.js review-ask --kind plan';
+      out.alDueno = { llega: true, motivo: v.vueltas === null ? `no pude leer el registro de vueltas (${v.motivo}): lo decide una persona` : `ya van ${v.vueltas} vueltas de la revisión del plan de esta historia: la próxima la decide una persona` };
+    }
   } else if (r.decision === 'ask' && !pregunta) {
     out.comando = 'marker.js review-ask --kind plan';
   }
@@ -800,9 +1231,74 @@ function accionDelPlan({ estado, sesion, marker, config, home, ahora = Date.now(
 /** La ruta donde el corredor deja el resultado de la revisión que preparó `lanza` sobre `destino` (el `--out` del comando). */
 const rutaResultado = (estado, lanza, destino) => path.join(carpetaDe(estado, lanza), `${destino}.resultado.json`);
 
+// Cada revisión deja su resultado con fecha, en `resultados/`: el corredor escribe siempre en la ruta fija, y la siguiente
+// revisión de la misma sesión lo pisaba. La fecha es la del archivo y la huella de su texto evita guardar dos veces el mismo.
+const carpetaResultados = (estado, lanza) => path.join(carpetaDe(estado, lanza), 'resultados');
+
+/** Los resultados guardados de las revisiones de `lanza` sobre `destino`, del más viejo al más nuevo. */
+function resultadosGuardados(estado, lanza, destino) {
+  let archivos;
+  try { archivos = fs.readdirSync(carpetaResultados(estado, lanza)); } catch (_) { return []; }
+  return archivos.filter((f) => f.startsWith(`${destino}.`) && f.endsWith('.resultado.json')).sort().map((f) => path.join(carpetaResultados(estado, lanza), f));
+}
+
+/**
+ * Guarda con fecha el resultado de la ruta fija, si hay uno y no está guardado; devuelve su ruta guardada o null. Lo
+ * llaman la preparación (antes de que el corredor lo pise) y la anotación.
+ */
+function guardarResultado(estado, lanza, destino) {
+  const fijo = rutaResultado(estado, lanza, destino);
+  let texto;
+  let cuando;
+  try { texto = fs.readFileSync(fijo, 'utf8'); cuando = fs.statSync(fijo).mtime; } catch (_) { return null; }
+  const huella = sha(texto).slice(0, 8);
+  const ya = resultadosGuardados(estado, lanza, destino).find((f) => f.endsWith(`.${huella}.resultado.json`));
+  if (ya) return ya;
+  const fecha = cuando.toISOString().replace(/:/g, '-').replace(/\.\d+Z$/, 'Z');
+  const destinoArchivo = path.join(carpetaResultados(estado, lanza), `${destino}.${fecha}.${huella}.resultado.json`);
+  fs.mkdirSync(carpetaResultados(estado, lanza), { recursive: true });
+  escribirDeUnaVez(destinoArchivo, texto);
+  return destinoArchivo;
+}
+
+/**
+ * La ruta donde el corredor deja, al momento, lo que lleva gastado la revisión de `lanza` sobre `destino`: queda aunque la
+ * revisión se corte (workflow-lite.js, `usoDe`).
+ */
+const rutaUso = (estado, lanza, destino) => path.join(carpetaDe(estado, lanza), `${destino}.resultado.uso.json`);
+
+/** El consumo al momento de la última revisión, o null si no hay uno legible. */
+function usoDe(estado, lanza, destino) {
+  try { return JSON.parse(fs.readFileSync(rutaUso(estado, lanza, destino), 'utf8')); } catch (_) { return null; }
+}
+
+/**
+ * Guarda con fecha el consumo al momento, si hay uno y no está guardado; devuelve su ruta guardada o null. Va junto a los
+ * resultados, terminado en `.uso.json`: la revisión siguiente lo pisa, y una cortada no tiene otro lugar donde quede.
+ */
+function guardarUso(estado, lanza, destino) {
+  const fijo = rutaUso(estado, lanza, destino);
+  let texto;
+  let cuando;
+  try { texto = fs.readFileSync(fijo, 'utf8'); cuando = fs.statSync(fijo).mtime; } catch (_) { return null; }
+  const huella = sha(texto).slice(0, 8);
+  let archivos = [];
+  try { archivos = fs.readdirSync(carpetaResultados(estado, lanza)); } catch (_) { archivos = []; }
+  const ya = archivos.find((f) => f.startsWith(`${destino}.`) && f.endsWith(`.${huella}.uso.json`));
+  if (ya) return path.join(carpetaResultados(estado, lanza), ya);
+  const fecha = cuando.toISOString().replace(/:/g, '-').replace(/\.\d+Z$/, 'Z');
+  const destinoArchivo = path.join(carpetaResultados(estado, lanza), `${destino}.${fecha}.${huella}.uso.json`);
+  fs.mkdirSync(carpetaResultados(estado, lanza), { recursive: true });
+  escribirDeUnaVez(destinoArchivo, texto);
+  return destinoArchivo;
+}
+
 module.exports = {
-  rutaResultado, configUsada, CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
-  ultimaDelDestino, antesDeAprobar, rutinaParaDelegar, antesDelPlan, planDe, rutaConstancia, anotarPregunta, anotarRespuesta, preguntasAbiertas,
-  eligioSeguir, respuestaDe, rechazosSeguidos, hallazgosCorregidos, lineaDelCuadro, accionDelPlan, huellaDe, designadaDeVerdad, sha,
-  tieneRenglon, parteDe, problemaDelAprobador, esProblemaDelAprobador, revisionesViejas,
+  rutaResultado, resultadosGuardados, guardarResultado, rutaUso, guardarUso, configUsada, CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
+  ultimaDelDestino, antesDeAprobar, planParaDelegar, rutinaParaDelegar, antesDelPlan, planDe, rutaConstancia, anotarPregunta, anotarRespuesta, skipPorElPerfil, preguntasAbiertas,
+  eligioSeguir, respuestaDe, rechazosSeguidos, hallazgosCorregidos, lineaDelCuadro, accionDelPlan, coordinadoraQueAtiende, anotarPedido, pedidosA, estadoDelPedido, PEDIDO, huellaDe, designadaDeVerdad, sha,
+  tieneRenglon, sesionesDeLaCorrida, ultimaDeLaCorrida, mismaCorrida, corridaDe, parteDe, problemaDelAprobador, textoPropioPorLaRevision, textoDeLaAprobacion, revisionEnContra, esProblemaDelAprobador, revisionesViejas, textoDeConstruccion, huellaDeConstruccion, cuartaVuelta, VUELTAS_SIN_PREGUNTAR,
 };
+
+// el tope de rechazos, para sus pruebas (start-silences.test.js)
+module.exports.topeDeRechazos = topeDeRechazos;

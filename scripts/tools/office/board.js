@@ -33,6 +33,7 @@
  *   board.js set <T-n> campo=valor…                cambia una fila
  *   board.js close <T-n> [--real AAAA-MM-DDTHH:MM] la cierra: hecho, con la hora de ahora o la dada
  *   board.js check                                 valida sin escribir
+ *   board.js photo                                 anota la foto del día de cuántas quedan (también la anota cada guardado)
  *   board.js sync --facts <archivo> [--complete]   aplica hechos (lo llama la oficina)
  *   board.js due                                   lista las líneas de «Te toca», con su edad y su estado
  *   board.js due confirm <id>                      la línea vuelve a contar desde ahora
@@ -40,7 +41,12 @@
  *   [--state-dir <carpeta>]                      otra carpeta de estado (pruebas)
  * Sale 0 si escribió (o si `check` no encontró nada), 2 si no escribió por una regla, un candado o un cambio.
  *
- * Casos: scripts/tests/office-task-numbers.test.js
+ * Para pronosticar cuánto queda, cada fila lleva su fecha de alta (`alta`, AAAA-MM-DD): la pone `add` y `sync`, y una
+ * fila vieja sin ella toma la primera fecha `dd/mm` de su nota. Una tarjeta agrupada cuenta un pendiente por renglón de
+ * su nota (`taskCount`). Cada guardado, y la oficina en cada lectura (`photo`), anotan la foto del día con cuántas filas y
+ * cuántos pendientes quedan (`tablero-fotos.json`).
+ *
+ * Casos: scripts/tests/office-task-numbers.test.js, scripts/tests/office-board-forecast.test.js
  */
 const crypto = require('crypto');
 const fs = require('fs');
@@ -69,7 +75,13 @@ const TOCA_EXPIRES_MS = 24 * 3600 * 1000;
 const TOCA_KEEP_MS = 30 * 24 * 3600 * 1000;
 const TOCA_USAGE = 'uso: board.js due [confirm <id> | drop <id>]';
 // los campos que `set` y `add` aceptan; `ultimoHecho` lo escribe sólo `sync`
-const FIELDS = ['titulo', 'estado', 'grupo', 'orden', 'quien', 'nota', 'pronosticoIso', 'termina', 'realIso', 'historia', 'tema', 'pedido'];
+const FIELDS = ['titulo', 'estado', 'grupo', 'orden', 'quien', 'nota', 'pronosticoIso', 'termina', 'realIso', 'historia', 'tema', 'pedido', 'alta'];
+// la fecha de alta de una fila (`alta`): un día que exista
+const DAY_FORM = /^\d{4}-\d\d-\d\d$/;
+// al mediodía: con el cambio de hora a medianoche, ese día no tiene 00:00 y sigue siendo un día
+const validDay = (s) => DAY_FORM.test(s) && validLocalHour(`${s}T12:00`);
+// las fotos diarias de cuántas quedan: las de los últimos dos años
+const PHOTOS_KEPT = 730;
 
 const pad = (n) => String(n).padStart(2, '0');
 const localIso = (ms) => { const d = new Date(ms); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
@@ -80,7 +92,78 @@ const numOf = (id) => { const m = ID.exec(String(id || '')); return m ? Number(m
 
 function paths(sdir) {
   const dir = path.join(sdir, 'coordination');
-  return { dir, board: path.join(dir, 'tablero.json'), numbers: path.join(dir, 'tablero-numeros.json'), print: path.join(dir, 'tablero-huella.json'), facts: path.join(dir, 'tablero-hechos.json'), lock: path.join(dir, 'tablero.lock') };
+  return { dir, board: path.join(dir, 'tablero.json'), numbers: path.join(dir, 'tablero-numeros.json'), print: path.join(dir, 'tablero-huella.json'), facts: path.join(dir, 'tablero-hechos.json'), lock: path.join(dir, 'tablero.lock'), photos: path.join(dir, 'tablero-fotos.json') };
+}
+
+const localDay = (ms) => localIso(ms).slice(0, 10);
+
+/**
+ * La fecha de alta de una fila vieja, de la primera fecha de su nota que exista y ya haya llegado: `dd/mm/aaaa` o
+ * `dd/mm/aa` con su año; `dd/mm`, del año de `now` o del anterior si todavía no llegó. Lo que no es un día (`50/50`,
+ * `31/11`) se saltea. Sin ninguna, null: no se inventa.
+ */
+function altaFromNote(nota, now) {
+  const today = localDay(now);
+  const year = new Date(now).getFullYear();
+  for (const m of str(nota).matchAll(/(?:^|[^\d/])(\d{1,2})\/(\d{1,2})(?:\/(\d{4}|\d{2}))?(?![\d/])/g)) {
+    const years = m[3] ? [m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3])] : [year, year - 1];
+    for (const y of years) {
+      const day = `${y}-${pad(Number(m[2]))}-${pad(Number(m[1]))}`;
+      if (validDay(day) && day <= today) return day;
+    }
+  }
+  return null;
+}
+
+/** Cuántos pendientes cuenta una fila: una hecha, ninguno; una tarjeta agrupada, uno por renglón de su nota; si no, uno. */
+function taskCount(r) {
+  if (!r || r.estado === 'hecho') return 0;
+  return Math.max(1, str(r.nota).split('\n').filter((l) => l.trim()).length);
+}
+
+/** La cuenta de lo que queda en estas filas: `{ filas, tareas }`. */
+function leftOf(rows) {
+  const open = rows.filter((r) => r && typeof r === 'object' && r.estado !== 'hecho');
+  return { filas: open.length, tareas: open.reduce((n, r) => n + taskCount(r), 0) };
+}
+
+/**
+ * Anota la foto del día con lo que queda en `rows` (`tablero-fotos.json`, `{ "AAAA-MM-DD": { filas, tareas, hora } }`).
+ * La del día queda con la última cuenta; la misma cuenta no se reescribe. Devuelve si escribió.
+ */
+function keepPhoto(sdir, rows, now) {
+  const p = paths(sdir);
+  const { value } = readJson(p.photos, {});
+  const photos = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const day = localDay(now);
+  const left = leftOf(rows);
+  const prev = photos[day];
+  if (prev && prev.filas === left.filas && prev.tareas === left.tareas) return false;
+  photos[day] = { ...left, hora: localIso(now) };
+  const kept = Object.keys(photos).filter((d) => DAY_FORM.test(d)).sort().slice(-PHOTOS_KEPT);
+  writeAtomic(p.photos, `${JSON.stringify(Object.fromEntries(kept.map((d) => [d, photos[d]])), null, 2)}\n`);
+  return true;
+}
+
+/**
+ * La foto del día aunque el tablero no cambie: la pide la oficina en cada lectura, así un día sin guardados también
+ * queda. Con el tablero ilegible no anota nada (una foto en cero sería falsa) y dice por qué.
+ */
+function photo(sdir, { now = Date.now() } = {}) {
+  const prueba = require(path.join(__dirname, '..', '..', 'lib', 'lab-home.js')).pruebaSobreLoReal(sdir);
+  if (prueba) return { written: false, aviso: `${prueba}: no anoté la foto del tablero` };
+  // con el candado del tablero: un guardado entre la lectura y la foto no queda pisado por una cuenta vieja
+  let res;
+  try {
+    res = withLock(sdir, () => {
+      let current;
+      try { current = readBoardRaw(sdir); } catch (e) { return { written: false, aviso: `no anoté la foto del tablero: ${e.message}` }; }
+      if (current.text == null) return { written: false };
+      return { written: keepPhoto(sdir, current.raw.pendientes, now) };
+    });
+  } catch (e) { return { written: false, aviso: `no anoté la foto del tablero (${e.message})` }; }
+  if (res.code === 2) return { written: false, aviso: `no anoté la foto del tablero: ${res.lines.join(' ').replace(/^⛔\s*/, '')}` };
+  return res;
 }
 
 /** Normaliza lo que se escribe para nombrar una fila: `41`, `T-41` o `t-41` es `T-41`; otra cosa, null. */
@@ -166,6 +249,7 @@ function rowProblems(rows, { ultimo }) {
     if (!ESTADOS.includes(r.estado)) out.push({ fila, regla: `el estado «${r.estado == null ? '' : r.estado}» no es uno de ${ESTADOS.join(', ')}` });
     if (r.estado === 'hecho' && !validLocalHour(str(r.realIso))) out.push({ fila, regla: 'una fila hecha lleva realIso (AAAA-MM-DDTHH:MM, una hora que exista)' });
     if (r.estimadaIso != null) out.push({ fila, regla: 'estimadaIso no va: la hora es pronosticoIso o termina' });
+    if (r.alta != null && !validDay(str(r.alta))) out.push({ fila, regla: 'la fecha de alta va como AAAA-MM-DD, un día que exista' });
   }
   for (const [id, filas] of seen) if (filas.length > 1) out.push({ fila: filas.join(' y '), regla: `el número ${id} está repetido` });
   return out;
@@ -333,6 +417,12 @@ function write(sdir, change, { now = Date.now(), live = null, home = os.homedir(
     if (res.code != null) return res;
     const raw = res.raw;
     const rows = raw.pendientes;
+    // una fila vieja sin fecha de alta toma la de su nota, si la tiene
+    for (const r of rows) {
+      if (!r || typeof r !== 'object' || Array.isArray(r) || r.alta != null) continue;
+      const alta = altaFromNote(r.nota, now);
+      if (alta) r.alta = alta;
+    }
     if (tope && !allowShrink && antes >= SHRINK_MIN_ROWS && rows.length * 2 < antes) {
       return { code: 2, lines: [`⛔ no escribí nada: el tablero tiene ${antes} filas y el nuevo ${rows.length}, menos de la mitad. Si es a propósito, volvé a correrlo con --allow-shrink`] };
     }
@@ -365,6 +455,8 @@ function write(sdir, change, { now = Date.now(), live = null, home = os.homedir(
     const lines = [...(res.lines || [])];
     if (copia) lines.push(`copié el tablero anterior: ${copia} (board.js restore ${copia} lo vuelve)`);
     if (afterRename) lines.push(...afterRename(rows));
+    // la foto del día con lo que queda; si no se puede anotar, el tablero ya quedó guardado
+    try { keepPhoto(sdir, rows, now); } catch (e) { lines.push(`⚠️ no anoté la foto del día (${e.message})`); }
     if (n.numeradas.length) lines.push(`numeré ${n.numeradas.length}: ${n.numeradas.join(', ')}`);
     if (n.recuperadas.length) lines.push(`recuperé por su título: ${n.recuperadas.join(', ')}`);
     lines.push(...quienWarnings(rows, live || liveSessions(home, sdir)));
@@ -433,6 +525,7 @@ function add(sdir, pairs, opts = {}) {
     const bad = applyFields(r, pairs);
     if (bad) return { code: 2, lines: [`⛔ ${bad}`] };
     if (!str(r.titulo)) return { code: 2, lines: ['⛔ una fila nueva lleva titulo=…'] };
+    if (r.alta == null) r.alta = localDay(opts.now || Date.now());
     // una sola fila abierta por historia: si ya hay, se cambia esa
     const same = r.historia ? raw.pendientes.find((x) => x && x.historia === r.historia && x.estado !== 'hecho') : null;
     if (same) return { code: 2, lines: [`⛔ ya hay una fila abierta de la historia ${r.historia}: ${nameOf(same)}. Cambiala con set ${same.id || ''}`.trim()] };
@@ -463,6 +556,35 @@ function close(sdir, id, { real = null, ...opts } = {}) {
     r.realIso = real || localIso(opts.now || Date.now());
     return { raw };
   }, opts);
+}
+
+/**
+ * Saca una fila sin darla por terminada: no pasa por «hecho», así que no aparece en «Terminados hoy» ni en «Hechos». Sirve
+ * para una fila que no debía estar (la escribió una prueba, por ejemplo); quien la saca da el motivo, que queda en el
+ * registro de hechos. Una fila con `historia` no se saca así: `sync` la volvería a crear mientras su sesión trabaje, y se
+ * cierra con `close`. El contador de números no se toca: el mismo título recupera su número, como cualquier fila sin `id`.
+ */
+function drop(sdir, id, motivo, opts = {}) {
+  const why = str(motivo);
+  if (!why) return { code: 2, lines: ['⛔ drop va con --reason "<por qué sale>": no escribí nada'] };
+  let gone = null;
+  let logAviso = null;
+  const now = opts.now || Date.now();
+  const res = write(sdir, (raw) => {
+    const r = findRow(raw, id);
+    if (!r) return { code: 2, lines: [`⛔ no hay una fila ${taskId(id) || id} en el tablero`] };
+    if (r.historia) return { code: 2, lines: [`⛔ ${r.id} es de la historia ${r.historia}: se cierra con close. Sacada con drop, sync la volvería a crear mientras su sesión siga trabajando`] };
+    gone = r;
+    return { raw: { ...raw, pendientes: raw.pendientes.filter((x) => x !== r) }, lines: [`saqué ${nameOf(r)} sin darla por terminada: sacala también de tu archivo aparte, o el próximo save --from la devuelve`] };
+  }, {
+    ...opts,
+    afterRename: () => {
+      const a = appendFacts(sdir, [{ id: gone.id, tipo: 'descartada', clave: `descartada:${gone.id}`, titulo: str(gone.titulo), motivo: why, hora: localIso(now), anotado: new Date(now).toISOString() }]);
+      logAviso = a.aviso;
+      return a.lines;
+    },
+  });
+  return logAviso ? { ...res, lines: [...res.lines, `⚠️ ${logAviso}`] } : res;
 }
 
 /** Valida el tablero que hay, sin escribir. */
@@ -626,7 +748,7 @@ function sync(sdir, facts, { complete = false, now = Date.now(), ...opts } = {})
     }
     for (const [target, f] of best) {
       if (typeof target === 'string') {
-        const r = { titulo: str(f.titulo) || `Historia ${f.historia}`, historia: f.historia, estado: 'curso', grupo: 'Hoy', ...(f.quien ? { quien: f.quien } : {}), ultimoHecho: { clave: f.clave, at: localIso(f.at) } };
+        const r = { titulo: str(f.titulo) || `Historia ${f.historia}`, historia: f.historia, estado: 'curso', grupo: 'Hoy', alta: localDay(now), ...(f.quien ? { quien: f.quien } : {}), ultimoHecho: { clave: f.clave, at: localIso(f.at) } };
         rows.push(r);
         applied.push({ r, f });
         continue;
@@ -688,6 +810,7 @@ function main(argv, { home = os.homedir(), out = (t) => process.stdout.write(`${
   const sdir = take('--state-dir') || stateDir(home);
   const from = take('--from');
   const real = take('--real');
+  const reason = take('--reason');
   const factsFile = take('--facts');
   const complete = take('--complete', false) === true;
   const allowShrink = take('--allow-shrink', false) === true;
@@ -705,7 +828,9 @@ function main(argv, { home = os.homedir(), out = (t) => process.stdout.write(`${
   else if (cmd === 'add') res = add(sdir, rest, { home });
   else if (cmd === 'set') res = rest.length < 2 ? { code: 2, lines: ['⛔ uso: set <T-n> campo=valor…'] } : set(sdir, rest[0], rest.slice(1), { home });
   else if (cmd === 'close') res = rest.length !== 1 ? { code: 2, lines: ['⛔ uso: close <T-n> [--real AAAA-MM-DDTHH:MM]'] } : close(sdir, rest[0], { real, home });
+  else if (cmd === 'drop') res = rest.length !== 1 ? { code: 2, lines: ['⛔ uso: drop <T-n> --reason "<por qué sale>"'] } : drop(sdir, rest[0], reason, { home });
   else if (cmd === 'check') res = check(sdir);
+  else if (cmd === 'photo') { const p = photo(sdir); res = p.aviso ? { code: 2, lines: [`⛔ ${p.aviso}`] } : { code: 0, lines: [p.written ? 'anoté la foto del día' : 'la foto del día ya estaba'] }; }
   else if (cmd === 'sync') {
     let facts = [];
     try { facts = factsFile ? JSON.parse(fs.readFileSync(factsFile, 'utf8')) : []; } catch (e) { res = { code: 2, lines: [`⛔ ${factsFile} no se pudo leer (${e.message})`] }; }
@@ -715,11 +840,11 @@ function main(argv, { home = os.homedir(), out = (t) => process.stdout.write(`${
     if (problem) res = { code: 2, lines: [`⛔ ${problem}`, TOCA_USAGE] };
     else if (!rest.length) res = toca(sdir);
     else res = (rest[0] === 'confirm' ? tocaConfirm : tocaDrop)(sdir, rest[1], { home });
-  } else res = { code: 2, lines: ['uso: board.js save --from <archivo> [--allow-shrink] | backups | restore <copia> | add titulo=… [campo=valor…] | set <T-n> campo=valor… | close <T-n> [--real AAAA-MM-DDTHH:MM] | check | sync --facts <archivo> [--complete] | due [confirm <id> | drop <id>]'] };
+  } else res = { code: 2, lines: ['uso: board.js save --from <archivo> [--allow-shrink] | backups | restore <copia> | add titulo=… [campo=valor…] | set <T-n> campo=valor… | close <T-n> [--real AAAA-MM-DDTHH:MM] | drop <T-n> --reason "<por qué sale>" | check | photo | sync --facts <archivo> [--complete] | due [confirm <id> | drop <id>]'] };
   for (const l of res.lines) (res.code === 0 ? out : err)(l);
   return res.code;
 }
 
-module.exports = { paths, taskId, orderRows, readNumbers, readBoardRaw, rowProblems, numberRows, quienWarnings, save, backups, restore, add, set, close, check, sync, tocaState, toca, tocaConfirm, tocaDrop, mergeFacts, readFacts, lastFactLine, printCheck, ESTADOS, ID, main };
+module.exports = { paths, taskId, taskCount, leftOf, photo, orderRows, readNumbers, readBoardRaw, rowProblems, numberRows, quienWarnings, save, backups, restore, add, set, close, drop, check, sync, tocaState, toca, tocaConfirm, tocaDrop, mergeFacts, readFacts, lastFactLine, printCheck, ESTADOS, ID, main };
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));

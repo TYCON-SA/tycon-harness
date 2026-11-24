@@ -65,10 +65,17 @@ const SENTENCES = /(?<!\b(?:Sr|Sra|Dr|Dra|Ing|Lic|Prof|Av|Art|art|núm|pág)\.)(
 // Lo que no dice qué hace una sesión: una pregunta, un consejo, un pedido a quien lee o un «listo» suelto.
 const NOT_WHAT_IT_DOES = /\?\s*$|^¿|^(?:listo|ok|dale|bien|bueno|perfecto|hecho|entendido|sí)[.!]?$|^(?:te\s+)?(?:conviene|recomiendo|sugiero|propongo)\b|^(?:querés|decime|avisame|confirmame|habría que|deberías|podés)\b/iu;
 
+// La cita con que una sesión abre su respuesta a un mensaje de la oficina: lo que sigue es lo que escribió la persona.
+const OFFICE_QUOTE = /Me escribiste desde la oficina/iu;
+
 // La primera oración de un texto que diga qué hace, en llano y recortada: sin el formato del chat. null si ninguna lo dice.
 function firstSentence(text) {
+  // desde la cita de la oficina, nada cuenta: no se sabe dónde termina (párrafos, «>», bloques de código), y lo que la
+  // sesión hace viaja al sitio. Cuenta lo que escribió antes
+  const at = String(text).search(OFFICE_QUOTE);
+  const own = at < 0 ? String(text) : String(text).slice(0, at);
   // sin los bloques de código ni las filas de una tabla: no son una frase
-  const prose = String(text).replace(/^\s*```[\s\S]*?(?:^\s*```.*$|(?![\s\S]))/gm, '').split('\n').filter((l) => !/^\s*\|/.test(l));
+  const prose = own.replace(/^\s*```[\s\S]*?(?:^\s*```.*$|(?![\s\S]))/gm, '').split('\n').filter((l) => !/^\s*\|/.test(l));
   const lines = prose.map((l) => l.replace(/^[\s>#*`-]+|[*`]+\s*$/g, '').trim()).filter(Boolean);
   if (!lines.length) return null;
   for (const line of lines) {
@@ -144,13 +151,56 @@ function wholeLines(text, cutStart, cutEnd) {
   return lines;
 }
 
+// Las tareas de fondo de Claude Code. El lanzamiento se lee de los datos del resultado de la herramienta, no de su texto
+// (un `grep` o un `Read` que cita «running in background with ID» no lanza nada): `backgroundTaskId` (una orden de consola
+// de fondo o pasada al fondo) o `status: 'async_launched'` con su `taskId` (un flujo) o su `agentId` (un agente de fondo).
+// El fin llega como un aviso (`<task-notification>` con `<task-id>` y `<status>`): como mensaje, o mientras la sesión
+// trabaja, encolado (`queue-operation`, o un `attachment` de tipo `queued_command`); o como el resultado de detenerla.
+const NOTICE = /<task-id>([A-Za-z0-9_-]+)<\/task-id>[\s\S]*?<status>(completed|failed|killed|stopped|cancelled)<\/status>/g;
+const STOPPED = /Successfully stopped task: ([A-Za-z0-9_-]+)/g;
+function launchedId(r) {
+  if (!r || typeof r !== 'object') return null;
+  if (typeof r.backgroundTaskId === 'string' && r.backgroundTaskId) return r.backgroundTaskId;
+  if (r.status === 'async_launched') return r.taskId || r.agentId || null;
+  return null;
+}
+/** Cuántas tareas de fondo lanzadas en estos renglones no avisaron que terminaron. */
+function backgroundPending(lines) {
+  return backgroundPendingIds(lines).size;
+}
+
+/** Los ids de las tareas de fondo (agentes o comandos) lanzadas en estos renglones que no avisaron que terminaron. */
+function backgroundPendingIds(lines) {
+  const running = new Set();
+  const textOf = (v) => JSON.stringify(v || '').replace(/\\n/g, '\n');
+  for (const line of lines) {
+    let d;
+    try { d = JSON.parse(line); } catch { continue; }
+    if (!d || d.isSidechain) continue;
+    let notices = null;
+    if (d.type === 'user' && d.message) {
+      if (d.toolUseResult) {
+        const id = launchedId(d.toolUseResult);
+        if (id) running.add(id);
+        for (const m of textOf(d.message.content).matchAll(STOPPED)) running.delete(m[1]);
+        continue;
+      }
+      notices = textOf(d.message.content);
+    } else if (d.type === 'queue-operation') notices = textOf(d.content);
+    else if (d.type === 'attachment' && d.attachment && d.attachment.type === 'queued_command') notices = textOf(d.attachment);
+    if (notices) for (const m of notices.matchAll(NOTICE)) running.delete(m[1]);
+  }
+  return running;
+}
+
 /**
- * Lee una conversación: `{ encargo, haciendoAhora, ultimaAccion, lastWriteMs, problem }`. Sin el archivo, vacía o con un
+ * Lee una conversación: `{ encargo, haciendoAhora, ultimaAccion, lastWriteMs, fondoPendiente, problem }`. `fondoPendiente`:
+ * las tareas de fondo lanzadas en el tramo final que no avisaron que terminaron. Sin el archivo, vacía o con un
  * formato desconocido, los tres datos en null; si no se puede leer, además `problem` con su motivo y nunca su texto.
  * `opts`: `io` (`{ readSync }`, para contar lo que se lee).
  */
 function readTranscript(file, { io = fs } = {}) {
-  const out = { encargo: null, haciendoAhora: null, ultimaAccion: null, lastWriteMs: null, problem: null };
+  const out = { encargo: null, haciendoAhora: null, ultimaAccion: null, lastWriteMs: null, fondoPendiente: 0, problem: null };
   let fd;
   try { fd = fs.openSync(file, 'r'); } catch (e) {
     if (e.code !== 'ENOENT' && e.code !== 'ENOTDIR') out.problem = `no se pudo leer (${e.code || 'error'})`;
@@ -180,6 +230,7 @@ function readTranscript(file, { io = fs } = {}) {
         if (said) { out.encargo = cut(said, ENCARGO_MAX); break; }
       }
     }
+    out.fondoPendiente = backgroundPending(tailLines);
     // sólo su último mensaje: uno anterior ya no dice qué hace ahora
     let lastMessageSeen = false;
     for (let i = tailLines.length - 1; i >= 0 && !(lastMessageSeen && out.ultimaAccion); i -= 1) {
@@ -303,7 +354,8 @@ function eachLineBackward(file, { maxBytes, step = 1024 * 1024 }, visit) {
 const SESSION_CONVERSATION_BYTES = 16 * 1024 * 1024;
 const COORDINATOR_CONVERSATION_BYTES = 64 * 1024 * 1024;
 const WITH_COORDINATOR = 10;
-const FROM_PERSON = 20;
+// los turnos de «Con vos», de la persona y de los que no arrancó ella: alto, para que el tope real sean los bytes leídos
+const TURNS_MAX = 500;
 const WITH_SESSIONS = 10;
 // El destinatario que es un subagente de la propia sesión, no otra sesión: `a` y su identificador
 const SUBAGENT_ID = /^a[0-9a-f]{12,}$/;
@@ -337,6 +389,15 @@ const sentOf = (d) => {
   if (d.type !== 'assistant' || !d.message || !Array.isArray(d.message.content)) return [];
   return d.message.content.filter((c) => c && c.type === 'tool_use' && c.name === 'SendMessage' && c.input && typeof c.input.message === 'string' && c.input.message)
     .map((c) => ({ a: bareName(c.input.to), texto: shownText(c.input.message), at: atOf(d) }));
+};
+// un turno que no arrancó la persona: un mensaje de otra sesión o el aviso de una tarea de fondo que terminó (no el de
+// la oficina, que es de la persona). `{ origen, at }`, o null
+const otherStartOf = (d) => {
+  if (d.isSidechain) return null;
+  const o = originOf(d);
+  if (o && o.kind === 'peer' && o.name) return { origen: `a un mensaje de ${String(o.name)}`, at: atOf(d) };
+  if (o && o.kind === 'task-notification' && !officeOf(d)) return { origen: 'al terminar una tarea de fondo', at: atOf(d) };
+  return null;
 };
 const personOf = (d) => {
   if (d.type !== 'user' || d.isMeta || d.toolUseResult || !d.origin || d.origin.kind !== 'human' || !d.message) return null;
@@ -466,8 +527,9 @@ function readSessionTokens(file, counts, { modelSettings } = {}) {
 
 /**
  * Los últimos mensajes de una sesión, a pedido. En toda sesión, `conVos`: lo que la persona le escribió (tipeado en su
- * pestaña, o desde la oficina con `oficina: true` e id) y la respuesta de cada turno: `[{ quien: 'vos' | 'sesion', texto, at }]`,
- * los últimos 20 de la persona. En una sesión que no es la coordinadora, además `conCoordinadora: [{ de, texto, at, propio }]`
+ * pestaña, o desde la oficina con `oficina: true` e id) y la respuesta de cada turno: `[{ quien: 'vos' | 'sesion', texto, at }]`.
+ * También los turnos que no arrancó la persona (un mensaje de otra sesión, una tarea de fondo que terminó): su respuesta,
+ * con `sinPersona: true` y `origen`. Todos los turnos que entran en los bytes leídos, hasta TURNS_MAX. En una sesión que no es la coordinadora, además `conCoordinadora: [{ de, texto, at, propio }]`
  * (los últimos 10) y, si es de fondo, el mensaje con que arrancó (`arranque`), que no se cuenta como de la persona. En la
  * coordinadora, `conSesiones: [{ sesion, at, mensajes: [{ de, texto, at }] }]`, con la sesión que habló último primero y a lo
  * sumo los últimos 10 mensajes de cada una; sus respuestas van con `quien: 'coordinadora'`. Se agrupa por el nombre: es lo
@@ -487,8 +549,8 @@ function readConversation(file, { coordinator, isCoordinator = false, background
     if (row.mensajes.length < WITH_SESSIONS) row.mensajes.push(m);
   };
   let answer = null;
-  let persons = 0;
-  const enough = () => persons >= FROM_PERSON && (!coordinator || conCoordinadora.length >= WITH_COORDINATOR);
+  let turns = 0;
+  const enough = () => turns >= TURNS_MAX && (!coordinator || conCoordinadora.length >= WITH_COORDINATOR);
   eachLineBackward(file, { maxBytes: maxBytes || (coord ? COORDINATOR_CONVERSATION_BYTES : SESSION_CONVERSATION_BYTES) }, (line) => {
     if (line.includes('"stop_hook_summary"')) {
       // un turno que terminó: lo que se vea de acá para atrás ya es de otro
@@ -500,7 +562,8 @@ function readConversation(file, { coordinator, isCoordinator = false, background
     const isSend = line.includes('"SendMessage"');
     const isOffice = line.includes('[oficina ');
     const isText = line.includes('"type":"assistant"') && line.includes('"type":"text"');
-    if (!isPeer && !isSend && (persons >= FROM_PERSON || (!isPerson && !isText && !isOffice))) return false;
+    const isTask = line.includes('"kind":"task-notification"');
+    if (!isPeer && !isSend && (turns >= TURNS_MAX || (!isPerson && !isText && !isOffice && !isTask))) return false;
     const d = parsed(line);
     if (!d) return false;
     const got = peerOf(d);
@@ -511,7 +574,7 @@ function readConversation(file, { coordinator, isCoordinator = false, background
       if (got && got.de === coordinator) conCoordinadora.push({ de: got.de, texto: got.texto, at: got.at, propio: false });
       for (const s of sentOf(d).reverse()) if (s.a === coordinator) conCoordinadora.push({ de: null, texto: s.texto, at: s.at, propio: true });
     }
-    if (persons >= FROM_PERSON) return coord ? false : enough();
+    if (turns >= TURNS_MAX) return coord ? false : enough();
     if (d.type === 'assistant' && answer === null && d.message) {
       const t = [...textsOf(d.message.content)].reverse().find((x) => x.trim());
       if (t) answer = { quien: coord ? 'coordinadora' : 'sesion', texto: shownText(t), at: atOf(d) };
@@ -523,7 +586,13 @@ function readConversation(file, { coordinator, isCoordinator = false, background
       if (answer) conVos.push(answer);
       conVos.push(office ? { quien: 'vos', texto: office.texto, at: office.at, oficina: true, id: office.id } : { quien: 'vos', texto: person.texto, at: person.at });
       answer = null;
-      persons += 1;
+      turns += 1;
+    } else {
+      const otro = otherStartOf(d);
+      if (otro) {
+        if (answer) { conVos.push({ ...answer, sinPersona: true, origen: otro.origen }); turns += 1; }
+        answer = null;
+      }
     }
     return coord ? false : enough();
   });
@@ -535,4 +604,4 @@ function readConversation(file, { coordinator, isCoordinator = false, background
   return out;
 }
 
-module.exports = { officeOf, peerOf, readTranscript, codexTranscript, peerMessagesSince, readConversation, coverSecrets, readSessionTokens, dayTokens, contextLimit, encargoOf, HEAD_BYTES, TAIL_BYTES, ENCARGO_MAX, FRASE_MAX };
+module.exports = { officeOf, peerOf, readTranscript, backgroundPendingIds, wholeLines, codexTranscript, peerMessagesSince, readConversation, coverSecrets, readSessionTokens, dayTokens, contextLimit, encargoOf, HEAD_BYTES, TAIL_BYTES, ENCARGO_MAX, FRASE_MAX };

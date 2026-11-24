@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-plugin-tests-coverage.md
-# source_sha256: 182b3278e0d4dd9e4a1de7128e8e2c8eae3f24c53a41e0dbdd3f5cb81d009b17
+# source_sha256: 94910ba697ceb1b4cd551d9f66d6dc735237a7f26c2a4eae97cecb6ee6eb9331
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-plugin-tests-coverage.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-plugin-tests-coverage").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
@@ -131,7 +131,7 @@ REGLA DE CONDUCTA — LOS PASOS DECLARADOS SE EJECUTAN, SIN ATAJOS.
 - NO ejecuta tests ni coverage (Bash removido del frontmatter 2026-06-09) — LEE el artefacto de test-gate.sh. Correr la suite acá duplicaba la corrida de «Correr las pruebas» dentro del fan-out paralelo.
 - NO promueve a CRITICAL aunque coverage sea 0% en **archivo existente** (solo cuando es método nuevo sin cobertura — TEST-C2 es específico).
 - NO reescribe tests faltantes.
-- NO sugiere qué test escribir — eso es trabajo del `bmad-dev-story`.
+- NO sugiere qué test escribir — eso es trabajo de «Implementar», en el pipeline.
 - NO corre tests de performance.
 - NO emite findings sin rule ID.
 
@@ -195,6 +195,13 @@ Tu reporte final se estructura SIEMPRE así:
    ```text
    Veredicto: limpio
    Veredicto: hallazgos (SEC-C1, SEC-C1, SEC-W2) · bloquea: sí
+   ```
+   Si el prompt trae lo que reportaste en la vuelta anterior, sumá al renglón los críticos de esa vuelta que confirmás
+   arreglados, una vez por hallazgo, aunque hoy reportes otro con el mismo código. Sin esa parte el arnés no da el arreglo
+   por comprobado, y cuesta otra vuelta o la exención del dueño:
+   ```text
+   Veredicto: hallazgos (SEC-C1) · bloquea: sí · resueltos (SEC-C1, SEC-C3)
+   Veredicto: limpio · resueltos (SEC-C1)
    ```
 
 **Tope duro: 1000 caracteres de prosa** (600 si el prompt no pide lo contrario). Sin hallazgos:

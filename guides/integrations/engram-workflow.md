@@ -279,12 +279,24 @@ gana la última escritura. Un chunk sin fecha va al final y se avisa; uno ilegib
 node <arnés>/scripts/lib/manifest-engram.js rebuild --repo <repo>      # 0 sano · 1 algo quedó afuera · 3 no aplica
 ```
 
-**Cómo se pasa un repo.** Dos líneas en el mismo commit, sin borrar el archivo local:
+**Cómo se pasa un repo.** Un comando, en una rama nueva desde `main`. Agrega la línea al `.gitignore`, saca el índice
+de git sin borrar el archivo local y lo deja declarando todos los chunks. Deja los dos cambios preparados; el commit y
+el pedido son tuyos:
 
 ```bash
-printf '.engram/manifest.json\n' >> .gitignore
-git rm --cached .engram/manifest.json
+node <arnés>/scripts/lib/manifest-engram.js adopt --repo <repo>           # en seco: dice qué haría (sale 1)
+node <arnés>/scripts/lib/manifest-engram.js adopt --repo <repo> --apply   # 0 hecho o ya estaba · 3 no pudo, y dice por qué
+git commit -m "chore(engram): el índice de memoria no viaja por git"
 ```
+
+Es el cambio de dos líneas (`.engram/manifest.json` al `.gitignore` y `git rm --cached .engram/manifest.json`), con
+dos cuidados: no repite la regla si ya estaba, y no saca el índice de git si otra regla lo sigue incluyendo. Fuera de
+git y sin ignorar, el próximo `git add -A` lo devolvería.
+
+**Por qué ésta y no otra salida.** Unir el JSON al mergear no sirve en un pedido: `merge=union` junta líneas y puede
+dejar el JSON inválido, y Azure DevOps y GitHub no corren controladores de merge propios del lado del servidor. Con el
+índice en git, todo pedido que suma memoria choca con el que entró antes que él. Resolverlo obliga a empujar de nuevo,
+y eso borra la aprobación.
 
 Un repo está en índice local cuando `git check-ignore -q .engram/manifest.json` sale 0 y el índice no está en
 `git ls-files`. El chequeo previo al commit, el portón de CI y la auditoría lo detectan solos: no cruzan entradas

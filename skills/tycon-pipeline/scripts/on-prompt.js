@@ -78,8 +78,13 @@ function listAllMarkers(currentSessionId) {
         // Auto-cleanup: skip nuestra propia sesión (safety) y borrar el resto.
         if (currentSessionId && m.sessionId === currentSessionId) continue;
         // una ejecución perdida no se poda: sale sólo por la salida del dueño (no poder preguntar tampoco la poda)
+        // las rutas del marcador, absolutas contra su repo (lib/run-dir.js): sin repo no se puede mirar su copia en el repo,
+        // y ante la duda no se poda (nunca la carpeta de esta sesión, que es de otro repo)
+        const rutas = require('./lib/run-dir.js').rutasDeLaCorrida(m);
+        const repoM = typeof rutas.repoPath === 'string' && path.isAbsolute(rutas.repoPath) ? rutas.repoPath : null;
+        const runDirM = typeof rutas.runDir === 'string' && path.isAbsolute(rutas.runDir) ? rutas.runDir : null;
         let perdida = true;
-        try { perdida = !!require('./lib/open-runs.js').perdida({ sid: m.sessionId || f.replace(/\.json$/, ''), cwd: m.repoPath || process.cwd() }); } catch { /* queda perdida */ }
+        try { perdida = !repoM || !!require('./lib/open-runs.js').perdida({ sid: m.sessionId || f.replace(/\.json$/, ''), cwd: repoM }); } catch { /* queda perdida */ }
         // no se poda, y sigue a la vista en la lista (las demás sesiones la ven como ocupada)
         if (perdida) { markers.push(m); continue; }
         // una que espera su turno con la espera anotada no está abandonada: sigue, y cuenta como ocupada
@@ -95,8 +100,8 @@ function listAllMarkers(currentSessionId) {
         try { fs.unlinkSync(full); } catch { /* best-effort */ }
         // el cierre de la sesión podada: sin él, su apertura sin marcador frenaría como perdida (lib/open-runs.js)
         try {
-          require('./lib/open-runs.js').cerrar({ sid: currentSessionId, sesion: m.sessionId || f.replace(/\.json$/, ''), runDir: m.runDir || null,
-            story: String(m.storyId), estado: 'abandonada', motivo: `podada: más de ${STALE_HOURS} h sin tocarse`, extra: { repoPath: m.repoPath || null }, soloAbierta: true });
+          require('./lib/open-runs.js').cerrar({ sid: currentSessionId, sesion: m.sessionId || f.replace(/\.json$/, ''), runDir: runDirM,
+            story: String(m.storyId), estado: 'abandonada', motivo: `podada: más de ${STALE_HOURS} h sin tocarse`, extra: { repoPath: repoM }, soloAbierta: true });
         } catch { /* best-effort: la pregunta lo verá */ }
         continue;
       }
@@ -243,6 +248,28 @@ function matches(prompt, patterns) {
 const NON_HUMAN_RE = /<task-notification>|<local-command-stdout>|<command-name>|SYSTEM NOTIFICATION - NOT USER INPUT|<system-reminder>/;
 const { prompt, sessionId, transcriptPath } = readEvent();
 if (!prompt) process.exit(0);
+
+// Una ejecución detenida por el control de cierre (`needs_human`) que despierta con un mensaje que no tipeó la persona:
+// el recordatorio de que la decisión es del dueño (lib/autonomy-decision.js). Va antes del corte de abajo porque un aviso
+// de tarea también la despierta. Fail-open: un error acá no frena el gancho.
+try {
+  // el marcador tal como está: una detención puede ser de un marcador sin historia, que readMarker no devuelve
+  const own = markerFilePath(sessionId);
+  const detenido = fs.existsSync(own) ? JSON.parse(fs.readFileSync(own, 'utf8')) : null;
+  if (detenido && detenido.needs_human === true) {
+    const sl = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signature-list.js'));
+    // sin archivo de sesión (Codex no lo escribe) se toma como interactiva: lo envuelto sigue sin ser de la persona, y
+    // la conversación todavía puede decir que el mensaje lo puso un programa
+    const s = sl.sesiones(os.homedir()).mapa.get(sessionId);
+    if (!sl.esDeLaPersona({ prompt, kind: s ? s.kind || 'interactive' : 'interactive', transcript: transcriptPath })) {
+      emit(require('./lib/autonomy-decision.js').recordatorio({ casa: os.homedir(), sesion: sessionId, marker: detenido }));
+    }
+  }
+} catch (e) {
+  // fail-open: no frena el gancho, pero queda anotado (no es «no había detención»)
+  try { require('./lib/story-gate-io.js').appendLog(require('./lib/state-dir.js').stateDir(os.homedir()), 'gates.log', sessionId, { repoPath: null, name: 'autonomy-reminder', status: 'unknown', kind: 'unknown-error', reason: String(e && e.message) }); } catch { /* el registro tampoco frena */ }
+}
+
 if (NON_HUMAN_RE.test(prompt)) process.exit(0);
 
 // El self-upgrade del SessionStart hook no vive acá: reescribiría
