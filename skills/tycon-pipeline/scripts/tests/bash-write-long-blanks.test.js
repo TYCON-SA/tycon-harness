@@ -14,6 +14,7 @@
  *   BLANKS3  el gancho entero decide en menos de 3 s con 40 KB en cinco formas (espacios en un heredoc, `;` en un
  *            heredoc, espacios en `bash -c`, espacios por un tubo a `sh`, renglones vacíos en un heredoc)
  *   BLANKS4  los segmentos, las redirecciones, el `sh -c` y la de borrados dan lo mismo que las expresiones de antes
+ *   BLANKS5  los destinos se leen en menos de 1,5 s con 150 KB de `$(` o `${` sin cerrar detrás de `>` o `<`
  * 🔴 Nada toca el HOME real: el gancho corre en un proceso hijo con una casa de juguete.
  */
 const { test } = require('node:test');
@@ -123,5 +124,20 @@ test('BLANKS3 TiradaLarga_EnCadaForma_DecideEnSegundos', () => {
     const r = correrElGancho(comando);
     assert.doesNotMatch(r.stderr, /no alcanzó a decidir/, forma);
     assert.ok(r.ms < 3000, `${forma}: tardó ${r.ms} ms`);
+  }
+});
+
+// 🔴 mutación: que la palabra de una redirección exija el cierre de `$(` o `${`: cada una sin cerrar recorre el resto del
+// comando, y con 150 KB tarda segundos.
+test('BLANKS5 SustitucionSinCerrar_TrasRedireccion_LeeEnUnaPasada', () => {
+  const n = 150 * 1024;
+  for (const abre of ['>${', '>$(', '<$(', '<${', '> $( ']) {
+    const comando = `cp a /tmp/destino ${abre.repeat(Math.ceil(n / abre.length))}`;
+    // stable-data: el reloj mide cuánto tarda la lectura, que es lo que se prueba
+    const desde = Date.now();
+    const destinos = bash.extractWriteTargets(comando);
+    const ms = Date.now() - desde;
+    assert.ok(destinos.includes('/tmp/destino'), `${abre}: ${JSON.stringify(destinos.slice(0, 4))}`);
+    assert.ok(ms < 1500, `${abre}: tardó ${ms} ms`);
   }
 });

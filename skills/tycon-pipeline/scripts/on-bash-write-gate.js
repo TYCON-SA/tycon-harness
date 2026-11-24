@@ -226,8 +226,9 @@ function sinPalabrasDeBloque(seg) {
  * barra suelta del final (`cp a b \` sin renglón siguiente), que tampoco es el último argumento.
  */
 // La palabra de una redirección, como la lee el shell: con lo citado, `$'…'`, `$(…)`, `${…}` y lo escapado pegado
-// (`<<<x"y"`, `<'a b'c`, `<<<$(echo x y)`, `<<<a\ b`). Cada pieza empieza distinto: no hay dos formas de leer lo mismo
-const PALABRA_DE_REDIRECCION = String.raw`(?:\$'(?:\\.|[^'\\])*'|\$"(?:\\.|[^"\\])*"|'[^']*'|"(?:\\.|[^"\\])*"|\$\([^)]*\)|\$\{[^}]*\}|\\.|[^\s'"\\|;&<>$]|\$(?![('{"]))+`;
+// (`<<<x"y"`, `<'a b'c`, `<<<$(echo x y)`, `<<<a\ b`). Cada pieza empieza distinto: no hay dos formas de leer lo mismo.
+// Un `$(` o `${` sin cerrar se lleva el resto del tramo: exigir el cierre recorre el resto una vez por cada uno
+const PALABRA_DE_REDIRECCION = String.raw`(?:\$'(?:\\.|[^'\\])*'|\$"(?:\\.|[^"\\])*"|'[^']*'|"(?:\\.|[^"\\])*"|\$\([^)]*\)?|\$\{[^}]*\}?|\\.|[^\s'"\\|;&<>$]|\$(?![('{"]))+`;
 // el descriptor de una redirección: una o más cifras, o un nombre (`{fd}`), al principio de una palabra
 const DESCRIPTOR = String.raw`(?:\d+|\{[A-Za-z_]\w*\})`;
 // (la palabra va en su propio grupo opcional: un `?` pegado al `+` de la palabra la volvería perezosa, de una letra)
