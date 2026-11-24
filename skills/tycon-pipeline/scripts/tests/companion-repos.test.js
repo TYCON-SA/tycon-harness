@@ -429,6 +429,25 @@ test('companionRoots y la consulta de hermanos: una story ilegible falla y un he
   assert.match(r2.stderr, /Fantasma/, 'el hermano declarado que no está en disco se avisa con su nombre');
 });
 
+// 🔴 Falla con: con un solo proyecto con pruebas no había alcance que deducir, y el portón del hermano corría en su raíz,
+// donde no hay solución: frenaba con 4 («el alcance no es un proyecto») y no había dónde declararle la carpeta
+test('F209 companionTargets_SolucionEnUnaSubcarpeta_ElAlcanceEsEsaCarpeta: el único proyecto del hermano un nivel abajo', () => {
+  const { companionTargets } = require(COMPANION_LIB);
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-sln-')));
+  const sln = (rel) => `Microsoft Visual Studio Solution File, Format Version 12.00\nProject("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "App", "${rel}", "{11111111-1111-1111-1111-111111111111}"\nEndProject\n`;
+  const csproj = '<Project Sdk="Microsoft.NET.Sdk"></Project>\n';
+  repoGit(path.join(raiz, 'Api'), { 'Web/App.sln': sln('App\\App.csproj'), 'Web/App/App.csproj': csproj, 'Web/App/X.cs': 'class X {}\n', 'README.md': 'api\n' });
+  repoGit(path.join(raiz, 'Raiz'), { 'App.sln': sln('App\\App.csproj'), 'App/App.csproj': csproj, 'App/Y.cs': 'class Y {}\n' });
+  const back = repoGit(path.join(raiz, 'Back'), {
+    'specs/s.md': STORY({ modificar: ['Web/App/X.cs', 'App/Y.cs'] }),
+    '.tycon/advisors.yaml': 'evidence:\n  companion_repos:\n    - Api\n    - Raiz\n',
+  });
+  const porNombre = Object.fromEntries(companionTargets(back, path.join(back, 'specs', 's.md')).map((t) => [path.basename(t.root), t]));
+  assert.equal(porNombre.Api.scope, 'Web', 'la solución está en Web/: la corrida del hermano va ahí');
+  // con la solución en la raíz, sin alcance: lo decide su propio portón, como siempre
+  assert.equal(porNombre.Raiz.scope, '');
+});
+
 test('test-gate: si no se pudo averiguar qué hermanos toca la story, no sale verde', (t) => {
   if (process.getuid && process.getuid() === 0) { t.skip('como root la story sin permiso igual se lee'); return; }
   const lab = laboratorioDePruebas({ backConSuite: true });

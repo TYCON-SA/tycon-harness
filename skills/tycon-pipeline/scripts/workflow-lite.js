@@ -355,6 +355,7 @@ function makeAgent(opts, corredor) {
         process.stderr.write(`wflite ▸ ${label} con ${runner.label} (intento ${attempt})\n`);
         let res;
         let leido;
+        let donde = null;
         try { fs.rmSync(outFile, { force: true }); } catch (_) {}
         if (stub) {
           res = await spawnAgent(stub.split(' '), prompt, opts.cwd, opts.timeoutMs);
@@ -362,8 +363,8 @@ function makeAgent(opts, corredor) {
           if (leido.failed) leido.limit = esTope(res);
         } else {
           const c = RR.commandFor(name, runner, { model: modelo, schema: strict, schemaFile, outFile, cwd: opts.cwd, customCommand: lista.customCommand, prompt });
-          res = await spawnAgent([c.bin, ...c.args], prompt, opts.cwd, opts.timeoutMs, { stdin: c.input === 'stdin', env: c.env });
-          let fileText = null;
+          donde = RR.resolveBin(runner, c.bin);
+          res = await spawnAgent([donde.bin || c.bin, ...c.args], prompt, opts.cwd, opts.timeoutMs, { stdin: c.input === 'stdin', env: c.env });          let fileText = null;
           if (c.answer === 'file' || c.answer === 'file-env') { try { fileText = fs.readFileSync(outFile, 'utf8'); } catch (_) { fileText = null; } }
           leido = RR.readAnswer(runner, { stdout: res.out, stderr: res.err, code: res.code, fileText });
           if (leido.failed && !leido.limit) leido.limit = esTope(res);
@@ -385,7 +386,11 @@ function makeAgent(opts, corredor) {
           corredor.fallosSeguidos[name] = (corredor.fallosSeguidos[name] || 0) + 1;
           const noLanzo = res.code === -1;
           if (noLanzo || corredor.fallosSeguidos[name] >= FALLOS_PARA_CAIDO) {
-            const por = noLanzo ? `no se pudo lanzar (${causa})` : `falló ${corredor.fallosSeguidos[name]} veces seguidas (${causa})`;
+            // sin el programa: dónde se buscó y la salida aprobada, que no lanza nada desde acá
+            const dondeBusco = noLanzo && donde && donde.bin === null
+              ? `: no está en ${donde.buscado.join(' ni en ')}; la salida aprobada es --agents-dir <carpeta> (los agentes los lanza la sesión)`
+              : '';
+            const por = noLanzo ? `no se pudo lanzar (${causa})${dondeBusco}` : `falló ${corredor.fallosSeguidos[name]} veces seguidas (${causa})`;
             corredor.caidos[name] = { causa: por, hora: horaCorta(), label };
             process.stderr.write(`wflite ✖ ${label}: ${runner.label} ${por} — no lo vuelvo a probar en esta corrida\n`);
           }
