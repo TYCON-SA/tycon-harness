@@ -119,9 +119,9 @@ function traducirNodo(n){
 }
 if(LANG==="en"){
   const raiz=document.querySelector(".contenido-oficina")||document.body;
-  if(!CON_OFICINAS){RAIZ.lang="en";document.title=traducir(document.title)}
+  if(!CON_OFICINAS){RAIZ.lang="en";document.title=traducir(document.title);}
   traducirNodo(raiz);
-  new MutationObserver(cambios=>{for(const c of cambios){if(c.type==="characterData"||c.type==="attributes")traducirNodo(c.target);else c.addedNodes.forEach(traducirNodo)}})
+  new MutationObserver(cambios=>{for(const c of cambios){if(c.type==="characterData"||c.type==="attributes")traducirNodo(c.target);else c.addedNodes.forEach(traducirNodo);}})
     .observe(raiz,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:["aria-label","placeholder","title"]});
   const pintar=CanvasRenderingContext2D.prototype.fillText;
   CanvasRenderingContext2D.prototype.fillText=function(t,...r){return pintar.call(this,typeof t==="string"?traducir(t):t,...r)};

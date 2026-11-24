@@ -3698,6 +3698,12 @@
       "requiere": []
     },
     {
+      "__nota": "el perfil por modelo (scripts/lib/control-profile.js): una preferencia firmada y relajada para un perfil deja de frenar sólo para sus modelos; exigencia, sin modelo, sin firmar o vencida, todo prendido. Con el freno de un pedido por repo y un az de mentira. Segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/control-profile.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el registro común de las firmas (scripts/lib/signature-log.js): cada firma de guion deja un renglón con quién firmó, la vía, si fue delegada, quién la pidió, su id y su nivel del catálogo, la máquina, la hora y el motivo; si no se puede escribir, la firma sigue y avisa.",
       "raiz": "arnes",
       "ruta": "tests/signature-log.test.js",
@@ -5318,6 +5324,12 @@
       "__nota": "el número de versión lo pone el merge: la etiqueta v<número> sobre cada merge a main (scripts/ci/version-tag.js y .github/workflows/version-tag.yml). Dos merges no toman el mismo número y el número no baja; las máquinas con y sin clon leen la etiqueta, una punta sin etiqueta espera en silencio (y lo dice pasadas unas horas) y no queda recordada con el piso; el paso version de la CI pública; y los únicos dos workflows del repo público, con su forma exacta. Repos de juguete con git de verdad y clientes de mentira: sin red, unos segundos.",
       "raiz": "arnes",
       "ruta": "tests/version-by-merge.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "una máquina con una actualización que falló no está «al día»: la mirada dice la versión que falló, el motivo y la hora, y no borra el aviso de la falla.",
+      "raiz": "arnes",
+      "ruta": "tests/release-check-failed.test.js",
       "requiere": []
     },
     {

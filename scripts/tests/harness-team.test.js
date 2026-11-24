@@ -1649,6 +1649,55 @@ test('T33 Team_RenamesMapThirdExactPath_ShapeValidated_OldVariableOptionAndState
   assert.equal(TEAM.checkAgainstVersion(l2.dir, [{ path: 'perfil-equipo.json' }, { path: 'scripts/metrics/corridas-buzon.json' }], bare, { env: {} }).ok, true, 'la capa de la A1 sigue pasando');
 });
 
+// ── T33c: un guion partido en lib/<nombre>-*.js ───────────────────────────────────────────────────────────────
+// Un guion grande se parte en un despachador y sus partes de lib/ (marker.js, pipeline.js): el nombre de una opción
+// puede quedar sólo en una parte. Si el validador lo busca sólo en el despachador, un mapa sano rechaza la capa y la
+// actualización se cae en cada máquina.
+// 🔴 Falla con: un validador que mira sólo el archivo `where` (rechaza el mapa sano), o que mira cualquier archivo de
+//    lib/ (deja pasar un nombre que sólo tiene la parte de otro guion).
+test('T33c Team_RenamesMap_SplitScript_NameInItsPartsCounts', () => {
+  const lab = casa('t33c');
+  const v = mapVersion(lab);
+  const relmFile = path.join(v, '.tycon-release.json');
+  const relm = JSON.parse(fs.readFileSync(relmFile, 'utf8'));
+  const put = (p, text) => { const f = path.join(v, ...p.split('/')); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, text); relm.files.push({ path: p, blob: TEAM.blobOf(Buffer.from(text)) }); };
+  // el despachador carga una parte con el nombre armado: su texto no la nombra entera
+  put('scripts/ci/split.js', "'use strict';\n// el despachador: carga sus partes\nrequire('./lib/split-args.js');\nconst kind = 'extra';\nrequire(`./lib/split-${kind}-built.js`);\n");
+  put('scripts/ci/lib/split-args.js', "'use strict';\n// las opciones del guion partido\nconst OPTIONS = ['marks'];\nmodule.exports = OPTIONS;\n");
+  put('scripts/ci/lib/other-args.js', "'use strict';\nconst OPTIONS = ['elsewhere'];\nmodule.exports = OPTIONS;\n");
+  // un guion hermano cuyo nombre empieza igual (split-extra.js): una parte lib/split-extra-*.js puede ser de los dos
+  put('scripts/ci/split-extra.js', "'use strict';\nrequire('./lib/split-extra-args.js');\n");
+  put('scripts/ci/lib/split-extra-args.js', "'use strict';\nconst OPTIONS = ['sibling-only'];\nmodule.exports = OPTIONS;\n");
+  put('scripts/ci/lib/split-extra-built.js', "'use strict';\nconst OPTIONS = ['built-name'];\nmodule.exports = OPTIONS;\n");
+  // una ruta con barras invertidas en la lista de la versión: en Windows apunta a otro archivo, no es una parte
+  put('scripts/ci/lib/split-x\\..\\..\\b.js', "'use strict';\nconst OPTIONS = ['backslashed'];\nmodule.exports = OPTIONS;\n");
+  fs.writeFileSync(relmFile, JSON.stringify(relm));
+  const judge = (extra) => {
+    fs.rmSync(path.join(lab, 'layer'), { recursive: true, force: true });
+    const m = saneMap(); m.entries.push(extra);
+    const l = mapLayer(lab, m);
+    return TEAM.checkAgainstVersion(l.dir, l.files, v, { env: {} });
+  };
+  // el nombre sólo en una parte del guion: está
+  const ok = judge({ kind: 'option', old: 'marcas', new: 'marks', where: 'scripts/ci/split.js', batch: 'X' });
+  assert.equal(ok.ok, true, JSON.stringify(ok.problems));
+  // el nombre sólo en la parte de OTRO guion: no está
+  const ajeno = judge({ kind: 'option', old: 'otro', new: 'elsewhere', where: 'scripts/ci/split.js', batch: 'X' });
+  assert.ok(ajeno.problems.some((x) => /entries\[8\].*elsewhere.*scripts\/ci\/split\.js/.test(x.reason)), JSON.stringify(ajeno.problems));
+  // en ningún lado: no está
+  const nada = judge({ kind: 'option', old: 'nunca', new: 'never-there', where: 'scripts/ci/split.js', batch: 'X' });
+  assert.ok(nada.problems.some((x) => /entries\[8\].*never-there/.test(x.reason)), JSON.stringify(nada.problems));
+  // una parte que por su nombre puede ser de dos guiones cuenta para los dos, la cargue quien la cargue y como sea: un
+  // falso «está» sólo deja pasar un mapa; un falso «no está» tira la actualización de todo el equipo
+  for (const [name, where] of [['built-name', 'scripts/ci/split.js'], ['sibling-only', 'scripts/ci/split.js'], ['sibling-only', 'scripts/ci/split-extra.js']]) {
+    const r = judge({ kind: 'option', old: 'dudosa', new: name, where, batch: 'X' });
+    assert.equal(r.ok, true, `${name} en ${where}: ${JSON.stringify(r.problems)}`);
+  }
+  // sólo en una ruta con barras invertidas: no cuenta como parte
+  const barras = judge({ kind: 'option', old: 'barras', new: 'backslashed', where: 'scripts/ci/split.js', batch: 'X' });
+  assert.ok(barras.problems.some((x) => /entries\[8\].*backslashed/.test(x.reason)), JSON.stringify(barras.problems));
+});
+
 // el árbol real: sólo en el clon del equipo (el reparto no viaja en la copia)
 const IN_REPO_33 = fs.existsSync(path.join(ROOT, 'scripts', 'publishing', 'replacements.json')) && fs.existsSync(path.join(ROOT, MAP_PATH));
 test('T33 Team_RenamesMapThirdExactPath_ShapeValidated_OldVariableOptionAndStateFileResolvedOnLayerMachine_UnderSizeCap · el mapa real contra lo que publica HEAD', { skip: !IN_REPO_33 && 'el mapa y el reparto no viajan en la copia' }, () => {
