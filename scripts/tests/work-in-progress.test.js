@@ -420,7 +420,7 @@ const GH = 'https://github.com/acme/x.git';
 const at = (user, rest) => `${user}${'@'}${rest}`;
 const AZ = `https://${at('acme', 'dev.azure.com')}/acme/Proyecto%20Uno/_git/y`;
 
-test('T20b Entrando_EsquemaNuevo @story-7.23 @ac-13: con los pasos por nombre, «Preparar el commit» cerrado también entra a los repos', () => {
+test('T20b Entrando_EsquemaNuevo @story-7.23 @ac-13: con los pasos por nombre, «Preparar el pull request» cerrado también entra a los repos', () => {
   const m = toyMachine();
   const repo = gitRepo(m.root, 'x', 'story/x', GH);
   entering(m, 'ent00000-2', { repoPath: repo, stepScheme: 2,
@@ -1660,7 +1660,7 @@ test('wip · CerradoHaceMasDe24h_NoEscondeLaSesion: un cierre viejo no la escond
   assert.deepStrictEqual(runP(m).free, []);
 });
 
-test('wip · PasoConBandera_EsElQueSigue: con «Probar en vivo» sin hacer, el estado es ése y no «Preparar el commit»', () => {
+test('wip · PasoConBandera_EsElQueSigue: con «Probar en vivo» sin hacer, el estado es ése y no «Preparar el pull request»', () => {
   const m = toyMachine();
   const base = { storyId: '9.3', storyPath: story(m.root, '9.3', 't'), stepScheme: 2, deepReviewDone: true, lastTouch: NOW,
     stepsCompleted: ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'findings'], stepsPending: ['prepare-commit'] };

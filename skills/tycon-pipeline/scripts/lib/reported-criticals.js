@@ -23,7 +23,7 @@
  * [SEC-C3]» también cuenta (el agente lo anota con su motivo). Un reporte sin el renglón de veredicto no se lee; un
  * veredicto con otra forma («**Veredicto**: GREEN», «## Veredicto») tampoco.
  *
- * `cross` es el cruce que corren `write-findings` y los cierres de «Hallazgos» y «Preparar el commit». Una corrida sin
+ * `cross` es el cruce que corren `write-findings` y los cierres de «Hallazgos» y «Preparar el pull request». Una corrida sin
  * ningún renglón (empezó antes de que existiera el registro) lo dice y sigue como antes.
  */
 

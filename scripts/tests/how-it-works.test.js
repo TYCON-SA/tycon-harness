@@ -1603,7 +1603,7 @@ test('HowItWorks_CloseChecks_ShownAsBlocks @story-8.127 @ac-9 — cada paso mues
   assert.match(TX().t('es', pase.textKey), /preparar el pull request/);
   assert.match(TX().t('es', pase.textKey), /resultado/);
   // el del pase dice en qué paso se revisa
-  assert.ok(itemDe(seccionDe(html, 'adversarial-pass'), TX().t('es', pase.textKey)).includes(TX().t('es', 'paso.prepare-commit')), 'dice que frena al preparar el commit');
+  assert.ok(itemDe(seccionDe(html, 'adversarial-pass'), TX().t('es', pase.textKey)).includes(TX().t('es', 'paso.prepare-commit')), 'dice que frena al preparar el pull request');
   for (const idioma of ['es', 'en']) for (const r of S.STEP_CLOSE_CHECKS) assert.ok(TX().t(idioma, r.textKey), `${r.textKey} en ${idioma}`);
 });
 

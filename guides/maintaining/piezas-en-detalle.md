@@ -108,7 +108,7 @@ Catálogo maestro de reglas de advisors con IDs estables (`SEC-C1`, `DOTNET-W3`,
 
 ## guides/accov-governance-protocol.md
 
-Protocolo de CIERRE de story (ACCOV-C7..C10: self-audit, meta-audit, convergencia, checklist-manual prohibido). Extraído del advisor ac-coverage; lo lee el orquestador (los pasos «Probar en vivo» y «Preparar el commit») on-demand al transicionar a `review`/`done`
+Protocolo de CIERRE de story (ACCOV-C7..C10: self-audit, meta-audit, convergencia, checklist-manual prohibido). Extraído del advisor ac-coverage; lo lee el orquestador (los pasos «Probar en vivo» y «Preparar el pull request») on-demand al transicionar a `review`/`done`
 
 ## guides/guide-update-proposals.md
 
