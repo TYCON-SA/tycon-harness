@@ -13,12 +13,18 @@
 const fs = require('fs');
 const path = require('path');
 
-function pipelineSource(scriptsDir = path.resolve(__dirname, '..', '..')) {
+/** Las rutas absolutas de pipeline.js y de sus partes, en el orden del texto: para las pruebas que dicen archivo y línea. */
+function pipelineFiles(scriptsDir = path.resolve(__dirname, '..', '..')) {
   const lib = path.join(scriptsDir, 'lib');
   const partes = fs.readdirSync(lib).filter((f) => /^pipeline-.+\.js$/.test(f)).sort();
-  return [path.join(scriptsDir, 'pipeline.js'), ...partes.map((m) => path.join(lib, m))]
+  return [path.join(scriptsDir, 'pipeline.js'), ...partes.map((m) => path.join(lib, m))];
+}
+
+function pipelineSource(scriptsDir = path.resolve(__dirname, '..', '..')) {
+  return pipelineFiles(scriptsDir)
     .map((f) => `// ── ${path.relative(scriptsDir, f)}\n${fs.readFileSync(f, 'utf8')}`)
     .join('\n');
 }
 
 module.exports = pipelineSource;
+module.exports.files = pipelineFiles;

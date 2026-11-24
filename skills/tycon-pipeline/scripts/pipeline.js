@@ -47,6 +47,8 @@ const CARGAS = {
 };
 function cargar(modulo) {
   try { return CARGAS[modulo](); } catch (e) {
+    // importado por otro guion (un gancho, marker.js): el error sube y lo decide quien llama, que puede seguir sin él
+    if (require.main !== module) throw e;
     console.error(`pipeline.js: falta el módulo lib/${modulo} o no carga (${String((e && e.message) || e).split('\n')[0]})`);
     process.exit(2);
   }
