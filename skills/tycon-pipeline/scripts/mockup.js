@@ -595,9 +595,15 @@ function screenStory(storyPath) {
   return { screen: screen === true, signal: detail.signal, detail, repoRoot, story: abs };
 }
 
-/** Dónde van la maqueta y su aprobación: la carpeta y la clave de la guía del tester (`qa-guide.js#qaPlace`). */
-function mockupPaths(storyPath) {
-  const { qaDir, qk } = require(path.join(__dirname, 'qa-guide.js')).qaPlace(storyPath);
+/**
+ * Dónde van la maqueta y su aprobación: la carpeta y la clave de la guía del tester. De fábrica calcula también la matriz
+ * de la story (`qa-guide.js#qaLocation`) y tira si no computa: los pasos que aprueban la maqueta frenan ahí. Con
+ * `checkMatrix: false` da sólo el lugar (`qa-guide.js#qaPlace`), el mismo, sin la matriz, que tarda: lo usan la consulta
+ * `status` y el armado de la maqueta, que no aprueban nada.
+ */
+function mockupPaths(storyPath, { checkMatrix = true } = {}) {
+  const qa = require(path.join(__dirname, 'qa-guide.js'));
+  const { qaDir, qk } = checkMatrix ? qa.qaLocation(storyPath) : qa.qaPlace(storyPath);
   return { qaDir, key: qk, mockup: path.join(qaDir, `${qk}-mockup.html`), approval: path.join(qaDir, `${qk}-mockup-approval.json`) };
 }
 
@@ -859,7 +865,7 @@ function main() {
       let sc;
       try { sc = screenStory(story); } catch (e) { fail(`no pude leer la story (${e.code || e.message}): no sé si tiene pantalla`); }
       if (!sc.screen) fail('la story no tiene pantalla: no hay maqueta que armar');
-      try { out = mockupPaths(story).mockup; } catch (e) { fail(`no pude calcular dónde va la maqueta: ${e.message}`); }
+      try { out = mockupPaths(story, { checkMatrix: false }).mockup; } catch (e) { fail(`no pude calcular dónde va la maqueta: ${e.message}`); }
     }
     const html = renderMockup(model);
     fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
@@ -906,7 +912,7 @@ function main() {
     let res = { screen: false, signal: sc.signal, key: null, path: null, exists: false, approval: null, changed: null };
     if (sc.screen) {
       let p;
-      try { p = mockupPaths(story); } catch (e) { fail(`no pude calcular la clave de la story: ${e.message}`); }
+      try { p = mockupPaths(story, { checkMatrix: false }); } catch (e) { fail(`no pude calcular la clave de la story: ${e.message}`); }
       const ap = readApproval(p.approval);
       const exists = fs.existsSync(p.mockup);
       let changed = null;

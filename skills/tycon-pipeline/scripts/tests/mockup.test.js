@@ -31,6 +31,7 @@
  *           desborda o parte una palabra, sin navegador no dice «limpio», y el freno de la aprobación
  *   T62 status ubica la maqueta sin calcular la matriz de la story
  *   T63 el lugar sin la matriz es el mismo que el de la guía del tester: número repetido, exenta, id con letras
+ *   T64 con la matriz que no computa, el lugar que usan los pasos que aprueban la maqueta sigue frenando; status no
  *
  * El ejemplo es inventado a propósito (facturas): lo que se publica no lleva el rubro de un cliente.
  * Correr: node --test skills/tycon-pipeline/scripts/tests/mockup.test.js < /dev/null
@@ -1226,4 +1227,19 @@ test('T63 Mockup_LugarSinMatriz_IgualQueLaGuia: la carpeta y la clave sin la mat
   assert.strictEqual(qaPlace(exenta).qk, '1.1');
   // una story que no existe no tiene lugar
   assert.throws(() => qaPlace(path.join(repoEx, 'specs', 'stories', 'no-existe.md')));
+});
+
+// 🔴 Falla con: al sacar la matriz del lugar de la maqueta, los pasos que la aprueban dejaban de frenar una story cuya
+// matriz no computa (sin criterios legibles): ese freno vivía en el cálculo del lugar
+test('T64 Mockup_MatrizQueNoComputa_LaAprobacionFrena: el lugar de los pasos que aprueban frena; el de status no', () => {
+  const { mockupPaths } = require(MOCKUP);
+  const repo = mundo();
+  const s = path.join(repo, 'specs', 'stories', 'story-1.1-x.md');
+  escribir(s, ['---', 'epic: 1', 'story: "1.1"', 'title: "La lista de facturas"', 'status: in-progress', 'files_to_modify:',
+    '  - src/components/Facturas.tsx', '---', '', '# Story 1.1', '', 'Sin criterios todavía.', ''].join('\n'));
+  assert.throws(() => mockupPaths(s), /la matriz no computa/);
+  assert.strictEqual(mockupPaths(s, { checkMatrix: false }).mockup, path.join(repo, 'specs', 'qa', '1.1-mockup.html'));
+  const r = run(['status', '--story', s, '--json']);
+  assert.strictEqual(r.rc, 0, r.all);
+  assert.strictEqual(JSON.parse(r.out).path, path.join(repo, 'specs', 'qa', '1.1-mockup.html'));
 });
