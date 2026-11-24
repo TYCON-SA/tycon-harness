@@ -20,6 +20,9 @@ Es una página web para toda la organización. Cada persona entra con la cuenta 
 tareas, sus pedidos de cambio, sus ejecuciones. Quienes mantienen el arnés ven todo, y además tienen la pestaña
 **Configuración**, donde se personaliza la organización (quién es responsable de qué, el canal del aviso, los umbrales).
 
+El sitio lee y configura repos de GitHub o de Azure DevOps. Los de GitLab todavía no los usa: una organización que
+trabaja en GitLab tiene el arnés en cada máquina, pero el sitio no muestra esos repos.
+
 **Las palabras que usa el sitio**, para quien no programa:
 
 - **El arnés:** el conjunto de reglas, controles y ayudantes con que el equipo programa con Claude. Este sitio muestra
@@ -1954,7 +1957,7 @@ un dato). Es la configuración de la organización, no la de ninguna máquina.
   leer».
 - **Se guarda con una rama y un pedido, nunca en la rama principal** (`scripts/lib/repo-proposal.js`): desde el clon
   temporal que el sitio ya tiene, sin tocar su árbol ni su índice. El pedido se abre por la API REST de Azure DevOps o
-  de GitHub, donde viven los repos que configura el sitio (en GitLab todavía no van), y dice quién lo pidió. Un pedido por archivo. Si el archivo cambió desde que se abrió la sección, o ya hay un
+  de GitHub y dice quién lo pidió. Un pedido por archivo. Si el archivo cambió desde que se abrió la sección, o ya hay un
   pedido abierto sobre él, no se crea nada.
 - **Sin una política que pida revisión en `main`, «Proponer» queda apagado.** En Azure DevOps vale una política
   «Minimum number of reviewers» sobre toda la rama, o una «Required reviewers» con filtro de ruta, y con el filtro

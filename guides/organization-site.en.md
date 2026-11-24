@@ -22,6 +22,9 @@ things: their tasks, their change requests, their runs. Whoever maintains the ha
 the **Configuration** tab, where the organization is customized (who is responsible for what, the
 notice channel, the thresholds).
 
+The site reads and configures GitHub or Azure DevOps repos. It does not use GitLab repos yet: an organization that
+works on GitLab has the harness on each machine, but the site does not show those repos.
+
 **The words the site uses**, for whoever does not program:
 
 - **The harness:** the set of rules, controls and helpers the team uses to program with Claude. This site shows what the
@@ -1993,8 +1996,7 @@ data). It is the configuration of the organization, not that of any machine.
   can read it. A section whose reader cannot read its key yet says so.
 - **It saves with a branch and a pull request, never on the main branch** (`scripts/lib/repo-proposal.js`): from the
   temporary clone the site already has, without touching its working tree or its index. The request is opened through
-  the REST API of Azure DevOps or GitHub, where the repos the site configures live (not on GitLab yet), and says who
-  asked for it. One request per file. If the file changed since the
+  the REST API of Azure DevOps or GitHub and says who asked for it. One request per file. If the file changed since the
   section was opened, or there is already an open request on it, nothing is created.
 - **Without a policy that requires review on `main`, "Proponer" stays off.** On Azure DevOps a "Minimum number of
   reviewers" policy on the whole branch counts, or a "Required reviewers" one with a path filter; with the filter,
