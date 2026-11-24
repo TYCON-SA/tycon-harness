@@ -334,8 +334,8 @@ test('T15 Workflows_OnlyCiAndTagger_TaggerHasItsExactShape', () => {
   const dir = path.join(ROOT, '.github', 'workflows');
   if (!fs.existsSync(dir)) return;   // el repo del equipo no lleva la carpeta: la mira la copia pública
   // la lista cerrada: la CI, el que etiqueta, el que publica el instalador de npm y el de la imagen del sitio
-  assert.deepStrictEqual([...WF.WORKFLOWS].sort(), ['ci.yml', 'npm-publish.yml', 'site-image.yml', 'version-tag.yml']);
-  assert.deepStrictEqual(WF.strayWorkflows(fs.readdirSync(dir)), [], 'en .github/workflows/ sólo la CI, el que etiqueta y el que publica en npm');
+  assert.deepStrictEqual([...WF.WORKFLOWS].sort(), ['ci.yml', 'code-scanning.yml', 'npm-publish.yml', 'site-image.yml', 'version-tag.yml']);
+  assert.deepStrictEqual(WF.strayWorkflows(fs.readdirSync(dir)), [], 'en .github/workflows/ sólo la CI, el que etiqueta, el que publica en npm, el de la imagen del sitio y el análisis de CodeQL');
   assert.deepStrictEqual(WF.strayWorkflows(['ci.yml', 'version-tag.yml', 'npm-publish.yml', 'otro.yml']), ['otro.yml']);
   assert.deepStrictEqual(WF.check(fs.readFileSync(path.join(dir, 'npm-publish.yml'), 'utf8'), { publisher: true }), [], 'el que publica cumple su forma');
   const text = fs.readFileSync(path.join(dir, 'version-tag.yml'), 'utf8');
