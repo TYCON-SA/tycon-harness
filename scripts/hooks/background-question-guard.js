@@ -31,9 +31,10 @@
  *           una falla niega. A una sesión con persona delante se le escribe como siempre. Corre en la máquina de quien
  *           manda: un mensaje desde otra máquina no lo ve.
  *
- * Claude: PreToolUse de AskUserQuestion, en cualquier sesión: niega el cuadro con una opción que aprueba («Sí, aprobar»)
- *           cuya pregunta no trae el código que imprimió el guion. Ese click no aprueba nada (owner-approvals.js lo compara
- *           con la pregunta del guion) y la persona lo pierde; el texto dice que la muestre tal cual, o que use otra etiqueta.
+ * Claude: PreToolUse de AskUserQuestion, en cualquier sesión: niega el cuadro con la opción «Sí, aprobar» (la de los
+ *           cuadros de firma) cuya pregunta no trae el código que imprimió el guion. Ese click no aprueba nada
+ *           (owner-approvals.js lo compara con la pregunta del guion) y la persona lo pierde; el texto dice que la muestre
+ *           tal cual, o que use otra etiqueta. Otras etiquetas, aunque aprueben («Aprobado», «Sí, que entre»), pasan.
  *
  * Toda pregunta, no sólo la de firma: una pregunta libre de la sesión también le llegaba a la persona por una pestaña que
  * no mira. ExitPlanMode no: es la salida del modo plan, y negarla dejaría a la sesión encerrada ahí.
@@ -75,19 +76,21 @@ const SIN_CODIGO = 'Este cuadro trae la opción «Sí, aprobar», pero su pregun
   + 'comando, sin cambiarle una letra; si no es una aprobación del arnés, usá otra etiqueta para esa opción.';
 
 /**
- * Un cuadro con una opción que aprueba (la que el registro de clicks anota como aprobación) y una pregunta sin el código
- * del guion: `{ decision: 'deny', reason }` o null. Ese click no aprueba nada, porque owner-approvals.js lo compara con la
- * pregunta del guion, código incluido, y la persona lo pierde: se avisa antes de mostrarlo. El código puede ir en el medio
- * (el pedido de permiso de signature-list.js lo lleva antes del pedido). Sin poder leer qué opción aprueba, pasa.
+ * Un cuadro con la opción de aprobar del arnés («Sí, aprobar», la que ponen sus cuadros de firma) y una pregunta sin el
+ * código del guion: `{ decision: 'deny', reason }` o null. Ese click no aprueba nada, porque owner-approvals.js lo compara
+ * con la pregunta del guion, código incluido, y la persona lo pierde: se avisa antes de mostrarlo. Es esa etiqueta y no
+ * cualquiera que apruebe: una pregunta de decisión («Sí, que entre», «Aprobado») sigue pasando. El código puede ir en el
+ * medio (el pedido de permiso de signature-list.js lo lleva antes del pedido). Sin poder leer la etiqueta, pasa.
  */
 function decidirAprobacionSinCodigo(input, home) {
   const qs = input && typeof input === 'object' && Array.isArray(input.questions) ? input.questions : [];
   let aprueba;
-  try { aprueba = require('../lib/owner-approvals.js').esAprobacion; } catch (e) {
-    logError(home, `no pude leer qué opción aprueba (${(e && e.message) || e}): el cuadro pasó sin mirar si trae el código`);
+  try { aprueba = require('../lib/owner-approvals.js').APRUEBA; } catch (e) {
+    logError(home, `no pude leer la opción de aprobar (${(e && e.message) || e}): el cuadro pasó sin mirar si trae el código`);
     return null;
   }
-  const sinCodigo = qs.some((q) => q && Array.isArray(q.options) && q.options.some((o) => o && typeof o.label === 'string' && aprueba(o.label))
+  const igual = (label) => typeof label === 'string' && label.normalize('NFC').trim() === String(aprueba).normalize('NFC');
+  const sinCodigo = qs.some((q) => q && Array.isArray(q.options) && q.options.some((o) => o && igual(o.label))
     && !SELLO.test(String(q.question || '')));
   return sinCodigo ? { decision: 'deny', reason: SIN_CODIGO } : null;
 }

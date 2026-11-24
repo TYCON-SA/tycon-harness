@@ -732,6 +732,13 @@ test('T-fila149 CuadroDeAprobacionSinCodigo_SeNiegaAntesDelClick', (t) => {
   assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', conOpciones(permiso))), null);
   // sin la opción de aprobar, es una pregunta como cualquier otra
   assert.strictEqual(decidir(toy, evento(sid)), null);
+  // las preguntas de decisión de la coordinadora siguen pasando, aunque su etiqueta apruebe: sólo cuenta la de los cuadros
+  // de firma
+  for (const etiqueta of ['Sí, que entre', 'Sí, a done', 'Aprobado', 'Apruebo', 'Sí, aprobar el plan', 'Sí, aprobar (Recomendado)']) {
+    assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', conOpciones('¿Entra la 8.163 C?', [etiqueta, 'No']))), null, etiqueta);
+  }
+  // la etiqueta con espacios de más sigue siendo la de los cuadros de firma
+  assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', conOpciones('¿Abro el arreglo?', [' Sí, aprobar ', 'No']))).decision, 'deny');
   // dos preguntas en un cuadro: alcanza con que una de aprobación venga sin código
   const dos = { questions: [...conOpciones(delGuion.pregunta, delGuion.opciones).questions, ...conOpciones('¿Y también el plan?').questions] };
   assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', dos)).decision, 'deny');
