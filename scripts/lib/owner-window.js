@@ -871,7 +871,7 @@ function criteriosSinMemo(palabras, cwd, { casa, destino, sesion }) {
   // el motivo de cada uno, el mismo que da el guion de la firma: uno sin correr no se exime, lo corre el agente
   const porQueNo = (n) => {
     const a = c.matrix.perAc && c.matrix.perAc[n];
-    if ((c.matrix.notRun || []).includes(n)) return `el AC ${n} está SIN CORRER: no se puede eximir, lo corre el agente`;
+    if ((c.matrix.notRun || []).includes(n)) return `el AC ${n} está SIN CORRER: un criterio sin correr no se exime, lo corre el agente`;
     if (!a) return `el AC ${n} no es un criterio de la historia`;
     if (a.verdict === 'RUNTIME') return `el AC ${n} ya corrió en vivo: no hace falta eximirlo`;
     if (a.verdict === 'WAIVED-USER') return `el AC ${n} ya está eximido`;

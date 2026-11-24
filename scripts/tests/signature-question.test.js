@@ -954,7 +954,7 @@ test('8.176-SinCuadro_VariasFirmasConUnaDeControl_NoMandaAPending (T10b) @story-
   assert.strictEqual(r.decision, 'deny', r.texto);
   assert.deepStrictEqual(r.firmas, ['runtime-waiver']);
   // fila 42: el motivo es el real, el mismo que da el guion de la firma: el criterio no corrió, no «no está pendiente»
-  assert.match(r.texto, /el AC 1 está SIN CORRER: no se puede eximir, lo corre el agente/, r.texto);
+  assert.match(r.texto, /el AC 1 está SIN CORRER: un criterio sin correr no se exime, lo corre el agente/, r.texto);
   assert.doesNotMatch(r.texto, /no es un criterio pendiente de firma/, r.texto);
   assert.doesNotMatch(r.texto, /run-base-controls\.sh pending/, r.texto);
   // con dos firmas, la ventana dice las dos: no la pregunta de la primera
