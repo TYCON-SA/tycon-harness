@@ -8,7 +8,9 @@
 #
 # - Azure: entra con una credencial federada propia (`azure/login` con OIDC, `id-token: write`), sin ningún secreto
 #   guardado. Su aplicación de Entra tiene un rol propio sobre LA APLICACIÓN del sitio y nada más; no es la de la copia.
-# - Render: el hook de redespliegue es el único secreto (SITE_RENDER_DEPLOY_HOOK); nunca sale en el registro.
+# - Render: el hook de redespliegue es el secreto obligatorio (SITE_RENDER_DEPLOY_HOOK); el optativo SITE_RENDER_API_KEY,
+#   con la variable SITE_RENDER_SERVICE_ID, deja preguntar a Render qué imagen corre. Sin cargar llegan vacíos y todo
+#   sigue igual. Ninguno sale en el registro.
 #
 # Variables del repo (no son secretos): SITE_PLATFORM (azure o render), SITE_IMAGE_NAME, SITE_RESOURCE_GROUP, SITE_APP,
 # SITE_URL, y para Azure SITE_UPDATE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID.
@@ -100,6 +102,8 @@ jobs:
           SITE_APP: ${{ vars.SITE_APP }}
           SITE_URL: ${{ vars.SITE_URL }}
           SITE_RENDER_DEPLOY_HOOK: ${{ secrets.SITE_RENDER_DEPLOY_HOOK }}
+          SITE_RENDER_API_KEY: ${{ secrets.SITE_RENDER_API_KEY }}
+          SITE_RENDER_SERVICE_ID: ${{ vars.SITE_RENDER_SERVICE_ID }}
         run: |
           set -uo pipefail
           node scripts/site/deploy/update-site.js --platform "$SITE_PLATFORM" --image "$SITE_IMAGE_NAME" \

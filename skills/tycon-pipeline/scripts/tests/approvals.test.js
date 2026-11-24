@@ -538,7 +538,7 @@ test('Aprobar_ProyeccionFalla_AvisaYSigue @story-8.133 @ac-7', () => {
   assert.equal(l.status, 'failed');
 });
 
-// El cierre: un marcador en «Preparar el commit» con la corrida abierta en el repo del código. Los demás frenos del
+// El cierre: un marcador en «Preparar el pull request» con la corrida abierta en el repo del código. Los demás frenos del
 // cierre pueden frenar también; cada prueba mira la línea y el mensaje de éste.
 const CORRIDA = '9.95-20991231120000';
 const CORRIDA_RE = CORRIDA.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

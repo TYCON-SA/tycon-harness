@@ -63,7 +63,9 @@ const PARA_OTRA_SESION = {
   // el plan con su nombre o con el número del marcador viejo, con la firma: la persona, o la coordinadora por delegación
   // con la revisión automática (sin firma no se escribe en la ejecución de otra sesión)
   'complete-step': { firma: 'plan-approval', marcador: true,
-    si: (a) => (a[3] === 'approve-plan' || a[3] === '3') && ['--approved', '--mockup-approved', '--terminal'].some((f) => a.includes(f)) },
+    si: (a) => (a[3] === 'approve-plan' || a[3] === '3') && ['--approved', '--mockup-approved', '--terminal'].some((f) => a.includes(f)),
+    // el paso del plan sin ninguna de esas: la firma es ésa, sólo le falta la cita (lo dice paraOtraSesion)
+    sinCita: (a) => a[3] === 'approve-plan' || a[3] === '3' },
   'approve-mockup': { firma: 'plan-approval', marcador: true },
   'waive-critical': { firma: 'critical-waiver', marcador: true },
   // eximir un comando de la comparación con main (historia 8.167): sobre la corrida abierta del destino
@@ -144,6 +146,11 @@ function paraOtraSesion(argv) {
   if (argv[2] === 'clear') no(`clear cierra la ejecución de la propia sesión; la de otra sesión se cierra con marker.js clear-session ${PEDIDA} (y si quedó perdida, clear-session ${PEDIDA} --lost --for-session ${PEDIDA})`);
   const t = reglaParaOtra(argv);
   const s = t && require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'signatures.js')).SIGNATURES.find((x) => x.id === t.firma);
+  // el plan sin --approved ni --terminal es la firma de otra sesión sin su cita: se dice qué falta y el comando, sin firmar
+  if (t && t.si && !t.si(argv) && t.sinCita && t.sinCita(argv) && s && s.otherSession === 'yes') {
+    const paso = `${argv[2]} ${argv[3]}`;
+    no(`«${paso}» firma el plan de otra sesión y le falta la cita de la persona que lo aprobó. Con la cita, el freno arma el cuadro: node ${MARKER_JS} ${paso} --approved '<la cita de la persona>' --for-session ${PEDIDA}; o en la terminal de la persona: node ${MARKER_JS} ${paso} --terminal --for-session ${PEDIDA}`);
+  }
   if (!t || (t.si && !t.si(argv)) || !s || s.otherSession !== 'yes') no(`«${argv.slice(2, 4).join(' ')}» no es una firma que se pida para otra sesión`);
   if (t.nombra && String(argv[t.nombra] || '').replace(/[/\\]/g, '_') !== PEDIDA) no(`el comando nombra la sesión ${argv[t.nombra]}, y la firma es para ${PEDIDA}`);
   estado.SID = PEDIDA;
@@ -340,8 +347,36 @@ function avisarOficina(sesion = estado.SID) {
   try { require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'office-event.js')).notify(sesion); } catch (_e) { /* la vigilancia de la oficina lo ve después */ }
 }
 
+// Las sesiones que pasaron por la corrida, con su nombre (`marker.sesiones`, scripts/lib/session-name.js): la entrada de
+// la sesión que corre el comando se pone al día en los cinco comandos que marcan el arranque, cada paso, cada pase de
+// sesión y el cierre. El nombre se lee una vez por comando. Leerlo nunca frena ni cambia la salida: si no se puede, la
+// entrada queda sin nombre (o, sin la librería, la lista queda como estaba) y sale una línea con el código.
+const COMANDOS_CON_NOMBRE = new Set(['set', 'complete-step', 'adopt-session', 'restore', 'clear']);
+let nombreDelComando;
+function conSesionNombrada(marker) {
+  if (PREVIO || estado.SOLO_LECTURA || estado.SID !== PROPIA || estado.SID === '_nosession' || !COMANDOS_CON_NOMBRE.has(process.argv[2])) return marker;
+  if (!marker || typeof marker !== 'object' || !marker.storyId) return marker;
+  if (nombreDelComando === undefined) {
+    try {
+      const lib = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'session-name.js'));
+      nombreDelComando = { lib, leido: lib.nombreDeSesion({ sid: estado.SID, home: os.homedir() }), visto: nowIso() };
+      if (nombreDelComando.leido.problema) process.stderr.write(`[marker] no pude leer el nombre de la sesión (${nombreDelComando.leido.problema})\n`);
+    } catch (_e) {
+      nombreDelComando = null;
+      process.stderr.write('[marker] no pude leer el nombre de la sesión (sin-libreria)\n');
+    }
+  }
+  if (!nombreDelComando) return marker;
+  try {
+    const { lib, leido, visto } = nombreDelComando;
+    marker.sesiones = lib.conSesion(marker.sesiones, { id: estado.SID, nombre: leido.nombre, cortado: leido.cortado, visto });
+  } catch (_e) { /* la lista queda como estaba: el marcador se escribe igual */ }
+  return marker;
+}
+
 function writeMarker(marker) {
   sinFirmaNoSeEscribe();
+  conSesionNombrada(marker);
   ensureActiveDir();
   pruneStale();
   const p = markerFilePath(estado.SID);
@@ -951,7 +986,7 @@ function screenRule() {
   try { return require(path.join(__dirname, '..', 'lib', 'stack-config.js')).orgRules().rules.screen_test.value; } catch (_e) { return 'ui'; }
 }
 
-// Las tandas que mide la corrida (la anotada más las que volvieron), con la matriz de «Preparar el commit»; null sin
+// Las tandas que mide la corrida (la anotada más las que volvieron), con la matriz de «Preparar el pull request»; null sin
 // tanda, sin lista o con el marcador de otra historia. Se calcula una vez por comando: la pantalla la pregunta varias.
 const TANDAS_MEDIDAS = new Map();
 function tandasMedidasDe(marker) {
@@ -1026,10 +1061,10 @@ const TESTS_FAILED_PENDING = 76;
 /**
  * `mark-tests-not-measured`: la salida 3 de test-gate.sh es «sin medir» (no reconoce ninguna herramienta de pruebas en el
  * repo y no corrió nada). Pone `sin-medir` sobre cualquier estado anterior: un verde de otra corrida no puede quedar en
- * pie. No es verde ni un rojo para arreglar: complete-step run-tests y «Preparar el commit» lo anuncian (nunca un verde callado). Sólo lo
+ * pie. No es verde ni un rojo para arreglar: complete-step run-tests y «Preparar el pull request» lo anuncian (nunca un verde callado). Sólo lo
  * llama test-gate.sh.
  */
-/** La línea que dicen «Correr las pruebas» y «Preparar el commit» cuando el check `tests` quedó «sin medir». */
+/** La línea que dicen «Correr las pruebas» y «Preparar el pull request» cuando el check `tests` quedó «sin medir». */
 function testsNotMeasuredLine(marker) {
   const r = String((marker && marker.testsNotMeasuredReason) || '');
   // el portón sabe correrlas, pero la herramienta no arrancó: el motivo es ése
@@ -1050,7 +1085,8 @@ const SENALES_RUN_CHECK = { SIGHUP: 1, SIGINT: 2, SIGTERM: 15 };
 // `pipeline.js next` los leen para no re-ejecutar (evita doble timer / doble
 // transición de WI al retomar cross-session).
 // `atddBypass`: escape consciente del portón pre-edit de ATDD (on-atdd-preedit.js) —
-// para el refactor legítimo sobre red preexistente. El uso queda en bypass.log, no es silencioso.
+// para el refactor legítimo sobre red preexistente. Pide la firma del dueño para la ejecución (lib/atdd-skip.js); el
+// uso queda en bypass.log, no es silencioso.
 // `waitingForHuman` — EL TERCER ESTADO del portón de autonomía.
 // El Stop-hook distingue dos cosas: "podés cerrar" (todo verde) y "no cierres, arreglá" (algo en
 // rojo). Este flag cubre la tercera, que es la más común: "le pregunté al dev y estoy esperando". Y como
@@ -1063,7 +1099,7 @@ const SENALES_RUN_CHECK = { SIGHUP: 1, SIGINT: 2, SIGTERM: 15 };
 // `autonomous`, y se apaga solo. Mismo patrón que `ALLOW_DOD_EVIDENCE_WRITE`.
 //
 // 🔴 `deepReviewDone` NO se escribe a mano. Es la bandera que cierra el pase adversarial, y cualquiera que la escriba
-// la cierra sin anotar qué encontró el pase, y «Preparar el commit» la da por buena. La escriben sólo los dos
+// la cierra sin anotar qué encontró el pase, y «Preparar el pull request» la da por buena. La escriben sólo los dos
 // comandos que cierran el pase con constancia: `mark-adversarial-result` (el pase corrió y se anota su
 // resultado) y `mark-adversarial-skipped` (el portón decidió que no corre).
 // Las banderas, en dos listas (lib/external-flags.js): las de hechos externos las pone sólo el arnés cuando hizo el
@@ -1348,7 +1384,7 @@ module.exports = {
   signatureCommand, STEPS_LIB, posixRelative, STATE_DIR, ACTIVE_DIR, LEGACY_MARKER_PATH, STALE_HOURS, PROPIA, PEDIDA,
   PREVIO, LOGS_DEL_CHEQUEO, PARA_OTRA_SESION, PARTICION, reglaParaOtra, ownerWindow, paraOtraSesion, ensureActiveDir,
   nowIso, markerFilePath, firmadaDespuesDe, pruneStale, appendLog, conRutas, readOwnMarkerRaw, readMarker,
-  sinFirmaNoSeEscribe, avisarOficina, writeMarker, syncSessionState, cerrarEjecucion, frenarSiIlegible, frenarSiPerdida,
+  sinFirmaNoSeEscribe, avisarOficina, conSesionNombrada, writeMarker, syncSessionState, cerrarEjecucion, frenarSiIlegible, frenarSiPerdida,
   perdidaSinFrenar, vueltaCongeladaComprobada, comprobarLoRevisado, sellosDe, veredictoPaseAdversarial, paseAtendido,
   mensajeDelPaseAdversarial, PLAN_FILE, planDeLaCorrida, huellaDelPlan, planEnLaConversacion, planParaLaPersona,
   planVisto, anotarAprobacion, quienDeLasOpciones, CONTROLES_DEL_PASO, ORDER_REQUIRES_OLD, firmaDelDueno,

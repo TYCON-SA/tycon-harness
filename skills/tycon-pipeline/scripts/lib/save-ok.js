@@ -601,7 +601,7 @@ function limpia({ marker, repos, ahora: hs, findings = [], firmasDeLaCorrida = [
   if (medida) return falta(`${medida.repo}: no pude medirlo (${medida.error})`);
   const prev = new Map(marker.prepareCommitHuellas.map((h) => [h.repo, h]));
   const otra = hs.find((h) => { const p = prev.get(h.repo); return !p || p.rama !== h.rama || p.arbol !== h.arbol; });
-  if (otra || prev.size !== hs.length) return falta(`${otra ? otra.repo : 'la corrida'}: cambió después de preparar el commit`);
+  if (otra || prev.size !== hs.length) return falta(`${otra ? otra.repo : 'la corrida'}: cambió después de preparar el pull request`);
   const ultimo = ultimoCambio(marker, repos);
   const checks = marker.checks || {};
   const prov = (marker.checksProvenance || {}).tests;

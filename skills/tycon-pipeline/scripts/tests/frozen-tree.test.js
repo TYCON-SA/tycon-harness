@@ -239,7 +239,7 @@ test('T4 Adversarial_ResultCarriesLaunchedTree @story-8.161 @ac-3 — el resulta
   assert.ok((C.marcador().adversarialPasses || []).length === 1, 'lo guarda');
 });
 
-// «Preparar el commit» hasta el freno de lo revisado: los pasos de antes, por fuera del orden
+// «Preparar el pull request» hasta el freno de lo revisado: los pasos de antes, por fuera del orden
 const prepararCommit = (C) => C.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order']);
 const MISMATCH = /lo que se guarda no es lo revisado/;
 
@@ -1043,7 +1043,7 @@ test('T2 ReviewersRound_BloqueSubidoSobreComentario_NoPideVuelta @story-8.217 @a
   try { assert.strictEqual(require(path.join(SCRIPTS, 'lib', 'steps.js')).otraVueltaDe(C.marcador()), null); } finally { process.env.HOME = antes; }
 });
 
-test('T3 ReviewedTree_ComentarioMovido_NoFrenaYLoDice @story-8.217 @ac-2 — «Preparar el commit» sigue y lo anota', () => {
+test('T3 ReviewedTree_ComentarioMovido_NoFrenaYLoDice @story-8.217 @ac-2 — «Preparar el pull request» sigue y lo anota', () => {
   const C = corridaRevisada('s-ft-8217-t3');
   C.editar('src/a.js', A_MOVIDO);
   const r = prepararCommit(C);
@@ -1232,7 +1232,7 @@ test('T80h Rethink_VueltaChica_SinNota: la tercera vuelta, si es chica, no pide 
   assert.match(salida(v2.r), /repens|nota/i);
 });
 
-test('T80e ReviewedTree_ComentarioCambiado_NoFrena_TextoSi: «Preparar el commit» perdona un comentario cambiado y frena un texto', () => {
+test('T80e ReviewedTree_ComentarioCambiado_NoFrena_TextoSi: «Preparar el pull request» perdona un comentario cambiado y frena un texto', () => {
   const C = corridaRevisada('s-ft-80e');
   C.editar('src/a.js', A_REVISADO.replace('la suma de los dos', 'la suma de a y b'), { evento: false });
   const r = prepararCommit(C);
@@ -1464,6 +1464,64 @@ test('Pase_PropiaDelHermanoConRepo_NoFrenaElCierre — la prueba propia declarad
   assert.strictEqual(codigo.status, 2, salida(codigo));
   assert.match(salida(codigo), HERMANO);
   assert.match(salida(codigo), /Front: src\/x\.js$/m);
+});
+
+// Arreglar los hallazgos del pase en un repo hermano obligaba a relanzar el pase entero: el cierre frenaba cualquier
+// cambio del hermano, y la vuelta de revisores, que cubre los arreglos del repo principal, no sellaba los hermanos.
+function corridaConHermano(sid) {
+  const front = repoDeJuguete('Front', { 'src/x.js': 'module.exports = 1;\n', 'tests/x.test.js': '// prueba\n' });
+  const C = corrida(sid, { antesDeArrancar: (codigo) => {
+    fs.mkdirSync(path.join(codigo.repo, '.tycon'), { recursive: true });
+    fs.writeFileSync(path.join(codigo.repo, '.tycon', 'advisors.yaml'), `evidence:\n  companion_repos:\n    - ${path.relative(codigo.repo, front.repo)}\n`);
+    codigo.git('add', '.');
+    codigo.git('commit', '-qm', 'declara el hermano');
+  } });
+  const cerrarPase = (confirmados) => {
+    const f = path.join(tmp('ft-res-'), 'step-05b-adversarial.json');
+    fs.writeFileSync(f, JSON.stringify({ confirmed: Array.from({ length: confirmados }, (_, i) => ({ lens: 'x', summary: `y${i}` })), sellos: C.marcador().adversarial.sellos }));
+    const destino = confirmados ? ['--tests', '0', '--deferred', String(confirmados), '--reason', 'caso de prueba'] : [];
+    return C.correr('marker.js', ['mark-adversarial-result', String(confirmados), '--type', '5b', '--result', f, '--run', 'r1', ...destino]);
+  };
+  return { ...C, front, cerrarPase };
+}
+const HERMANO_CAMBIADO = /el código de un repo hermano cambió/;
+
+test('Revisores_LaVueltaSellaLosHermanos — la vuelta de revisores congela cada repo hermano, y guardar un hermano distinto de lo revisado frena', () => {
+  // 🔴 rojo si: la vuelta sella sólo la historia y el código → el arreglo del hermano no tiene contra qué compararse al guardar.
+  const C = corridaConHermano('s-ft-hermano-vuelta');
+  const { r } = C.vuelta();
+  assert.strictEqual(r.status, 0, salida(r));
+  const v = ft().ultimaVuelta(C.estado(), C.sid, 'revisores');
+  assert.ok(v && (v.repos || []).some((x) => x.repo === C.front.repo), `la vuelta sella el hermano: ${JSON.stringify(v)}`);
+  fs.writeFileSync(path.join(C.front.repo, 'src', 'x.js'), 'module.exports = 2;\n');
+  const p = prepararCommit(C);
+  assert.strictEqual(p.status, 2, salida(p));
+  assert.match(salida(p), MISMATCH);
+  assert.match(salida(p), /src\/x\.js/);
+});
+
+test('Pase_ArregloDelHermanoConHallazgos_QuedaParaLaVuelta — con hallazgos, el arreglo del hermano no frena el cierre y queda anotado; sin hallazgos frena como antes', () => {
+  // 🔴 rojo si: el cierre frena cualquier cambio del hermano → arreglar los hallazgos obliga a relanzar el pase entero.
+  const C = corridaConHermano('s-ft-hermano-arreglo');
+  assert.strictEqual(C.vuelta().r.status, 0);
+  const l = C.correr('marker.js', ['mark-adversarial-launched', 'r1', '4']);
+  assert.strictEqual(l.status, 0, salida(l));
+  fs.writeFileSync(path.join(C.front.repo, 'src', 'x.js'), 'module.exports = 2;\n');
+  const con = C.cerrarPase(1);
+  assert.strictEqual(con.status, 0, salida(con));
+  assert.doesNotMatch(salida(con), HERMANO_CAMBIADO, salida(con));
+  assert.match(salida(con), /lo revisa la próxima vuelta de revisores/);
+  const anotado = gatesDe(C).filter((g) => g.name === 'frozen-sibling');
+  assert.deepStrictEqual(anotado.map((g) => g.status), ['al-re-loop']);
+  assert.deepStrictEqual(anotado[0].repos, [{ repo: C.front.repo, files: ['src/x.js'] }]);
+  // sin hallazgos no hay nada que arreglar: un cambio del hermano es código que nadie miró
+  const S = corridaConHermano('s-ft-hermano-sin');
+  assert.strictEqual(S.vuelta().r.status, 0);
+  assert.strictEqual(S.correr('marker.js', ['mark-adversarial-launched', 'r1', '4']).status, 0);
+  fs.writeFileSync(path.join(S.front.repo, 'src', 'x.js'), 'module.exports = 2;\n');
+  const sin = S.cerrarPase(0);
+  assert.strictEqual(sin.status, 2, salida(sin));
+  assert.match(salida(sin), HERMANO_CAMBIADO);
 });
 
 // ¿El disco de las pruebas distingue mayúsculas? APFS y NTFS no; ext4 sí.

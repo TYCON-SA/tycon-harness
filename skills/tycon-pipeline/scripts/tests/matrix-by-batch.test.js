@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 // matrix-by-batch.test.js — en una historia paraguas, la ejecución de una tanda anota su tanda (`marker.js set-batch`)
-// y «Preparar el commit» le pide la evidencia en vivo de esa tanda, no la de todas. El control del commit mide todas al
+// y «Preparar el pull request» le pide la evidencia en vivo de esa tanda, no la de todas. El control del commit mide todas al
 // pasar la historia a review, y al cerrar una tanda mide la que se cierra (la matriz y la Capa 5). El commit que estrena
 // el bloque de tandas con una ya hecha mide ésa sola, con su evidencia.
 //
@@ -98,7 +98,7 @@ function entorno() {
   return { home, repo, story, git, correr, leer, escribir, activo, arrancar, humo, dir };
 }
 
-// Lleva la ejecución hasta «Preparar el commit», con «Probar en vivo» hecho: el freno que queda es el de la matriz.
+// Lleva la ejecución hasta «Preparar el pull request», con «Probar en vivo» hecho: el freno que queda es el de la matriz.
 const HECHOS = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'findings', 'live-check'];
 function hastaPrepararElCommit(E, sid) {
   const m = E.leer(sid);
@@ -612,7 +612,7 @@ test('T8 Matrix_Batch_CrossRepoPaths_Match @story-8.240 @ac-5 — historia en un
     const r = rm.compute({ storyPath: E.story, batch: A, changed: ['src/b.js'], codeRepo: C });
     assert.deepStrictEqual(r.returnedAcs, [2], `${renglon}: ${JSON.stringify(r.structuralError || r.warnings)}`);
   }
-  // un marcador cuyo repo del código es C: «Preparar el commit» toma la lista de C
+  // un marcador cuyo repo del código es C: «Preparar el pull request» toma la lista de C
   fs.writeFileSync(E.story, historia({ archivos: ['  - src/b.js  # tanda B'] }));
   E.git('commit', '-qam', 'la historia con el archivo de C');
   E.arrancar('s-a8');
@@ -842,7 +842,7 @@ test('T19 RuntimeWaiver_Terminal_ForSession_ReadsBatch @story-8.240 @ac-12 — l
   }
   // el rechazo por las otras tandas nombra --for-session con la sesión de la corrida
   assert.match(String(wd.pistaDeSesion({ stateDir: E.dir(), storyPath: E.story })), /--for-session s-a19/);
-  // «Preparar el commit» con la matriz roja por el criterio de la tanda: el comando de la firma lleva la sesión
+  // «Preparar el pull request» con la matriz roja por el criterio de la tanda: el comando de la firma lleva la sesión
   hastaPrepararElCommit(E, 's-a19');
   const r = E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], 's-a19');
   assert.match(salida(r), MATRIZ_ROJA, salida(r));
@@ -978,4 +978,186 @@ test('T7 MatrizPorTanda_ArchivoDeAdvisors_NoSeAta @story-8.283 @ac-12 @ac-13 @ac
   // el archivo de código sí, como hoy; y con los registros al lado, lo mismo que sin ellos
   assert.deepStrictEqual(deB(['src/c.js']).returnedAcs, [1]);
   assert.deepStrictEqual(deB([...registros, 'src/c.js']).returnedAcs, deB(['src/c.js']).returnedAcs);
+});
+
+// ── fila 154: la firma de un criterio que no se prueba en vivo, desde una sesión sin corrida abierta ───────────────────
+
+// En modo ágil la sesión no tiene corrida: la firma desde la sesión (el cuadro o la ventana de permiso) se acepta si la
+// historia está en un repo git, donde queda su constancia para commitear. Con corrida abierta, como siempre: sólo la
+// historia de la corrida y con la tanda de la corrida. `--batch <tanda>` sin corrida mide sólo esa tanda.
+const historiaConDosFirmas = (o = {}) => historia(o).replace('pipelines:', ['runtime_not_verifiable:',
+  '  - ac: 1', '    reason: "el servicio externo no tiene ambiente de prueba"', '    covered_by: T1',
+  '  - ac: 2', '    reason: "el banco no tiene ambiente de prueba"', '    covered_by: T2', 'pipelines:'].join('\n'));
+function sinCorrida(E, texto = historiaConFirma()) {
+  fs.writeFileSync(E.story, texto);
+  E.git('commit', '-qam', 'los criterios que no se prueban en vivo');
+  fs.mkdirSync(path.join(E.repo, '.advisors'), { recursive: true });
+  fs.writeFileSync(path.join(E.repo, '.advisors', 'tests-result.json'), JSON.stringify({ ts: new Date().toISOString(), story_id: '9.9', suite_green: true }));
+}
+const firmas = (E) => { try { return fs.readFileSync(path.join(E.repo, '.tycon', 'runtime-waivers.jsonl'), 'utf8').split('\n').filter(Boolean).map(JSON.parse); } catch (_) { return []; } };
+const renglonesDeGates = (E) => [path.join(E.home, '.tycon', 'state'), path.join(E.home, '.claude', '.tycon-pipeline')].flatMap((d) => {
+  try { return fs.readFileSync(path.join(d, 'gates.log'), 'utf8').split('\n').filter(Boolean).map((l) => { try { return JSON.parse(l); } catch (_) { return {}; } }); } catch (_) { return []; }
+});
+const firmar = (E, args, sid, via = 'click') => E.correr('marker.js', ['runtime-waiver', E.story, ...args], sid, conVentana({}, { via }));
+const owLib = () => require(path.join(RAIZ, 'scripts', 'lib', 'owner-window.js'));
+const cuadro = (E, args, sid) => {
+  const cmd = `node ${path.join(SCRIPTS, 'marker.js')} runtime-waiver ${E.story}${args.length ? ` ${args.join(' ')}` : ''}`;
+  return owLib().cuadroPara({ firma: 'runtime-waiver', comando: cmd, palabras: owLib().canonica(cmd), destino: sid, sesion: sid, cwd: E.repo, casa: E.home });
+};
+
+test('F154-1 RuntimeWaiver_SinCorrida_FirmaYAnotaLaSesion — sin corrida, la firma por el cuadro sale y su renglón dice la sesión', () => {
+  const E = entorno();
+  sinCorrida(E);
+  E.humo([2, 3]);
+  const r = firmar(E, ['--acs', '1', '--approved-by', 'Dev de Prueba'], 's-f1');
+  assert.strictEqual(r.status, 0, salida(r));
+  const [f] = firmas(E);
+  assert.ok(f, 'la constancia queda en el repo, para commitearla');
+  assert.deepStrictEqual(f.acs, [1]);
+  assert.strictEqual(f.ok.sesion, 's-f1', JSON.stringify(f));
+  // la sesión entra en la cadena: la firma vale para la matriz, y cambiarla a mano la descarta
+  const rm = require(path.join(SCRIPTS, 'runtime-matrix.js'));
+  assert.strictEqual(rm.compute({ storyPath: E.story }).perAc[1].verdict, 'WAIVED-USER');
+  const waiver = require(path.join(SCRIPTS, 'lib', 'runtime-waiver.js'));
+  const log = path.join(E.repo, '.tycon', 'runtime-waivers.jsonl');
+  assert.strictEqual(waiver.verifyChain(log).discarded.length, 0);
+  fs.writeFileSync(log, `${JSON.stringify({ ...f, ok: { ...f.ok, sesion: 's-otra' } })}\n`);
+  assert.strictEqual(waiver.verifyChain(log).discarded.length, 1, 'otra sesión a mano no vale');
+  const g = renglonesDeGates(E).find((x) => x.type === 'RUNTIME_WAIVER');
+  assert.ok(g, 'el renglón de gates.log');
+  assert.strictEqual(g.sesion, 's-f1', JSON.stringify(g));
+});
+
+test('F154-2 RuntimeWaiver_SinCorrida_FueraDeGit_Niega — sin corrida y sin repo git, no hay dónde dejar la constancia: la terminal', () => {
+  const E = entorno();
+  sinCorrida(E);
+  E.humo([2, 3]);
+  const fuera = fs.mkdtempSync(path.join(os.tmpdir(), 'matrix-by-batch-sin-git-'));
+  const suelta = path.join(fuera, 'story-9.9-paraguas.md');
+  fs.copyFileSync(E.story, suelta);
+  const r = E.correr('marker.js', ['runtime-waiver', suelta, '--acs', '1', '--approved-by', 'Dev de Prueba'], 's-f2', conVentana({}, { via: 'click' }));
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /no está en un repo git/, salida(r));
+  assert.match(salida(r), /--terminal/, salida(r));
+  assert.ok(!fs.existsSync(path.join(fuera, '.tycon')), 'no firmó nada');
+  fs.rmSync(fuera, { recursive: true, force: true });
+});
+
+test('F154-3 RuntimeWaiver_CorridaDeOtraHistoria_SigueNegada — con corrida abierta, sólo la historia de la corrida', () => {
+  const E = entorno();
+  sinCorrida(E);
+  E.humo([2, 3]);
+  const otra = path.join(E.repo, 'specs', 'story-9.7-otra.md');
+  fs.writeFileSync(otra, historiaConFirma().replace('story: "9.9"', 'story: "9.7"').replace('# Story 9.9', '# Story 9.7'));
+  E.git('add', '.');
+  E.git('commit', '-qm', 'otra historia');
+  E.arrancar('s-f3');
+  const r = E.correr('marker.js', ['runtime-waiver', otra, '--acs', '1', '--approved-by', 'Dev de Prueba'], 's-f3', conVentana({}, { via: 'click' }));
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /no es la historia de la corrida abierta/, salida(r));
+  assert.deepStrictEqual(firmas(E), []);
+});
+
+test('F154-4 RuntimeWaiver_SinCorrida_QuoteYRelayed_SiguenNegados — sin corrida tampoco firma la cita ni el ok reenviado', () => {
+  const E = entorno();
+  sinCorrida(E);
+  E.humo([2, 3]);
+  let r = firmar(E, ['--acs', '1', '--quote', 'dale'], 's-f4');
+  assert.strictEqual(r.status, 1, salida(r));
+  assert.match(salida(r), /la cita ya no firma/, salida(r));
+  r = firmar(E, ['--acs', '1', '--relayed-by', 's-coord'], 's-f4');
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /no se acepta reenviado/, salida(r));
+  assert.deepStrictEqual(firmas(E), []);
+});
+
+test('F154-5 RuntimeWaiver_SinCorrida_Batch_OtraTanda_Niega — con --batch mide esa tanda: firma la suya y niega la de otra', () => {
+  const E = entorno();
+  sinCorrida(E, historiaConDosFirmas());
+  // sin --batch, los criterios sin correr de la tercera tanda frenan
+  let r = firmar(E, ['--acs', '1'], 's-f5');
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /SIN CORRER/, salida(r));
+  // el criterio de la segunda tanda, pedido con la primera: se niega, en el guion y en el cuadro
+  r = firmar(E, ['--batch', A, '--acs', '2'], 's-f5');
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), new RegExp(`AC 2 no es de la tanda medida \\(${A}\\)`), salida(r));
+  const q = cuadro(E, ['--batch', A, '--acs', '2'], 's-f5');
+  assert.match(String(q.error), new RegExp(`AC 2 no es de la tanda ${A}`), JSON.stringify(q));
+  assert.deepStrictEqual(firmas(E), []);
+  // el de la tanda: firma, aunque las otras tandas no tengan evidencia
+  r = firmar(E, ['--batch', A, '--acs', '1'], 's-f5');
+  assert.strictEqual(r.status, 0, salida(r));
+  assert.deepStrictEqual(firmas(E).map((f) => f.acs), [[1]]);
+});
+
+test('F154-6 RuntimeWaiver_SinCorrida_TandaInexistente_Niega — una tanda que no está en la historia no se mide', () => {
+  const E = entorno();
+  sinCorrida(E, historiaConDosFirmas());
+  const r = firmar(E, ['--batch', 'Z-no-existe', '--acs', '1'], 's-f6');
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /la tanda «Z-no-existe» no está en el bloque pipelines/, salida(r));
+  const q = cuadro(E, ['--batch', 'Z-no-existe', '--acs', '1'], 's-f6');
+  assert.match(String(q.error), /Z-no-existe/, JSON.stringify(q));
+  assert.deepStrictEqual(firmas(E), []);
+});
+
+test('F154-7 RuntimeWaiver_ConCorrida_Batch_Niega — con corrida abierta manda la tanda de la corrida: --batch se niega', () => {
+  const E = entorno();
+  sinCorrida(E, historiaConDosFirmas());
+  E.arrancar('s-f7');
+  const r = firmar(E, ['--batch', A, '--acs', '1'], 's-f7');
+  assert.strictEqual(r.status, 2, salida(r));
+  assert.match(salida(r), /manda la tanda de la ejecución/, salida(r));
+  const q = cuadro(E, ['--batch', A, '--acs', '1'], 's-f7');
+  assert.match(String(q.error), /manda la tanda de la ejecución/, JSON.stringify(q));
+  assert.deepStrictEqual(firmas(E), []);
+});
+
+test('F154-8 Cuadro_SinCorrida_Batch_MismosCriteriosQueElGuion — el cuadro nombra la tanda y muestra lo que el guion firma', () => {
+  const E = entorno();
+  sinCorrida(E, historiaConDosFirmas());
+  // sin --acs: los pendientes de la tanda, sólo el AC 1 (el AC 2 es de la segunda)
+  const q = cuadro(E, ['--batch', A], 's-f8');
+  assert.ok(!q.error, q.error);
+  assert.match(q.pregunta, new RegExp(`tanda ${A}`), q.pregunta);
+  assert.match(q.pregunta, /AC 1: /, q.pregunta);
+  assert.doesNotMatch(q.pregunta, /AC 2/, q.pregunta);
+  // sin --batch, el cuadro muestra los dos: la tanda cambia lo que se firma, y la huella
+  const todas = cuadro(E, [], 's-f8');
+  assert.match(todas.pregunta, /AC 2/, todas.pregunta);
+  assert.doesNotMatch(todas.pregunta, /tanda/, todas.pregunta);
+  assert.notStrictEqual(todas.sello, q.sello);
+  const r = firmar(E, ['--batch', A], 's-f8');
+  assert.strictEqual(r.status, 0, salida(r));
+  assert.deepStrictEqual(firmas(E).map((f) => f.acs), [[1]]);
+});
+
+test('F154-9 Cuadro_SinCorrida_BatchYAcs_MismaHuellaQueElGuion — con --batch y --acs, la tanda y sólo esos criterios: el criterio sale igual', () => {
+  const E = entorno();
+  sinCorrida(E, historiaConDosFirmas());
+  const wd = require(path.join(SCRIPTS, 'lib', 'waiver-display.js'));
+  // las dos opciones valen juntas: la tanda decide qué criterios entran y `acs` qué humos se miden
+  const parcial = wd.matrixForSignature(E.story, null, { batch: A, acs: [1] });
+  assert.ok(!parcial.structuralError, parcial.structuralError);
+  assert.strictEqual(parcial.batch, A);
+  assert.deepStrictEqual(parcial.parcial, [1]);
+  assert.strictEqual(parcial.hash, null);
+  // lo que mide el guion: la matriz entera de la tanda; el criterio pedido sale con la misma huella
+  const entera = wd.matrixForSignature(E.story, null, { batch: A });
+  assert.strictEqual(entera.batch, A);
+  assert.ok(entera.hash, 'la matriz que firma tiene huella');
+  const enCuadro = wd.criteriosDe(E.story, [1], parcial).lista;
+  const enGuion = wd.criteriosDe(E.story, [1], entera).lista;
+  assert.strictEqual(enCuadro.length, 1);
+  assert.deepStrictEqual(enCuadro, enGuion);
+  // el cuadro con las dos muestra lo que firma el guion, y un criterio de otra tanda se niega igual
+  const q = cuadro(E, ['--batch', A, '--acs', '1'], 's-f9');
+  assert.ok(!q.error, q.error);
+  assert.match(q.pregunta, new RegExp(`tanda ${A}`), q.pregunta);
+  const otra = cuadro(E, ['--batch', A, '--acs', '2'], 's-f9');
+  assert.match(String(otra.error), /no es de la tanda/, String(otra.error));
+  const r = firmar(E, ['--batch', A, '--acs', '1'], 's-f9');
+  assert.strictEqual(r.status, 0, salida(r));
+  assert.deepStrictEqual(firmas(E).map((f) => f.acs), [[1]]);
 });

@@ -190,6 +190,33 @@ test('Permiso_NoEntraEntero_VentanaNormal (T11) @story-8.180 @ac-11', (t) => {
   assert.strictEqual(fila.pedido, 'echo uno\n\necho dos');
 });
 
+// 🔴 Falla con: el permiso de una sesión de fondo que el gancho no lleva por el modo, la coordinadora o su owner-wait
+// salía en silencio, sin renglón ni motivo: una noche trabada que después no se pudo reconstruir (fila 70, 22/11).
+test('Permiso_DeFondoQueNoSeLleva_DejaRenglonYMotivo (fila 70)', (t) => {
+  const casos = [
+    ['en otro modo', { ev: { permission_mode: 'acceptEdits' } }, /modo acceptEdits/],
+    ['sin coordinadora', { lab: { designada: false } }, /sin coordinadora confirmada y viva/],
+    ['sin owner-wait', { correr: { ownerWaitVivo: () => false } }, /no tiene owner-wait corriendo/],
+  ];
+  for (const [que, o, motivo] of casos) {
+    const L = lab(t, o.lab || {});
+    const { r } = correr(L, evento(o.ev || {}), o.correr || {});
+    assert.strictEqual(r.decision, null, que);
+    assert.match(r.motivo, motivo, que);
+    const g = gates(L);
+    assert.strictEqual(g.length, 1, `${que}: un renglón en gates.log`);
+    assert.strictEqual(g[0].status, 'no-se-lleva', que);
+    assert.match(String(g[0].motivo), motivo, que);
+    assert.ok(!JSON.stringify(g[0]).includes('touch v1-si'), `${que}: sin el texto del pedido`);
+    const nota = JSON.parse(fs.readFileSync(path.join(estado(L.casa), 'coordination', 'permission-relay', `${BG}.json`), 'utf8'));
+    assert.match(nota.motivo, motivo, `${que}: el motivo para «Trabadas»`);
+  }
+  // una sesión que no es de fondo no deja nada: el gancho no es para ella
+  const L = lab(t);
+  correr(L, evento({ session_id: COORD }));
+  assert.deepStrictEqual(gates(L), [], 'sin renglón para una sesión con persona delante');
+});
+
 // ── AC 10 y 12: dos pedidos distintos nunca se ven igual ni comparten código ──────────────────────────────────────
 
 test('Permiso_PedidoAmbiguo_NoSeConfunde (T10b) @story-8.180 @ac-10 @ac-12', (t) => {
@@ -514,6 +541,76 @@ test('Permiso_PlanYPreguntas_NoSeLlevan (T18) @story-8.180 @ac-18', (t) => {
   const suyo = lista.filter((h) => h.spec === '@tcg:permission-relay.js');
   assert.deepStrictEqual(suyo.map((h) => [h.event, h.matcher]), [['PermissionRequest', 'Bash|PowerShell|Edit|Write|NotebookEdit|WebFetch']]);
   assert.ok(suyo[0].timeout > 30 * 60, 'su plazo pasa la espera más larga que acepta la configuración');
+});
+
+// ── fila 91: una sesión de fondo nunca queda esperando un permiso ──────────────────────────────────────────────────
+// Lo que el reenvío no decide en una sesión de fondo (no se lleva al cuadro, venció la espera, se fue la coordinadora)
+// sale negado con su motivo y una salida: nadie contesta esa ventana, y mientras espera la sesión no lee mensajes.
+
+/** Lo que el gancho le escribe a Claude Code, con el mismo reloj y la misma casa de juguete que `correr`. */
+function paraClaude(L, ev, o = {}) {
+  const { pasos = [], plataforma = 'darwin', env = L.env } = o;
+  const ownerWaitVivo = 'ownerWaitVivo' in o ? o.ownerWaitVivo : () => true;
+  let reloj = AHORA;
+  const dormir = (ms) => { reloj += ms; const paso = pasos.shift(); if (paso) paso({ reloj, fila: delGancho(L)[0] }); };
+  const out = PR.paraClaude(ev, { casa: L.casa, arnes: L.arnes, env, plataforma, ahora: () => reloj, dormir, pollMs: 2000, ownerWaitVivo, arbol: ARBOL, validar: SIEMPRE });
+  return out ? JSON.parse(out).hookSpecificOutput : null;
+}
+
+test('Fondo_PermisoQueNadieContesta_SeNiegaConMotivo (fila 91)', (t) => {
+  const casos = [
+    ['en otro modo', () => lab(t), { ev: { permission_mode: 'acceptEdits' } }, /modo acceptEdits/],
+    ['sin permisos', () => lab(t), { ev: { permission_mode: 'bypassPermissions' } }, /modo bypassPermissions/],
+    ['sin coordinadora', () => lab(t, { designada: false }), {}, /sin coordinadora/],
+    ['sin owner-wait', () => lab(t), { ownerWaitVivo: () => false }, /owner-wait/],
+    ['la lista apagada', () => lab(t, { llave: 'off' }), {}, /la lista está apagada/],
+    ['Windows, por PowerShell', () => lab(t), { ev: { tool_name: 'PowerShell', tool_input: { command: 'New-Item x' } }, plataforma: 'win32' }, /PowerShell/],
+    ['un pedido que no entra entero', () => lab(t), { ev: { tool_input: { command: 'x'.repeat(PR.PEDIDO_MAX + 1) } } }, /caracteres/],
+    ['nadie contesta el cuadro', () => lab(t), {}, /nadie contestó el cuadro/],
+  ];
+  for (const [que, armar, o, motivo] of casos) {
+    const L = armar();
+    const h = paraClaude(L, evento(o.ev || {}), o);
+    assert.ok(h, `${que}: decide, no deja la ventana abierta`);
+    assert.strictEqual(h.hookEventName, 'PermissionRequest', que);
+    assert.strictEqual(h.decision.behavior, 'deny', que);
+    assert.match(h.decision.message, motivo, `${que}: dice por qué`);
+    assert.match(h.decision.message, /de fondo/, `${que}: dice que es por ser de fondo`);
+    assert.match(h.decision.message, /coordinadora/, `${que}: y la salida`);
+    assert.ok(!('updatedPermissions' in h.decision), `${que}: sin reglas`);
+    assert.ok(gates(L).some((g) => g.status === 'negado-de-fondo' && motivo.test(String(g.motivo))), `${que}: queda en gates.log`);
+    assert.deepStrictEqual(delGancho(L), [], `${que}: sin renglón`);
+  }
+  // la coordinadora se va mientras espera: también se niega
+  const L = lab(t);
+  const h = paraClaude(L, evento(), { pasos: [() => sesion(L.casa, COORD, { archivo: String(process.pid), pid: MUERTO, kind: 'interactive' })] });
+  assert.strictEqual(h.decision.behavior, 'deny');
+  assert.match(h.decision.message, /la coordinadora ya no está/);
+  // un motivo largo o con saltos de línea llega en un solo renglón y con tope
+  const largo = JSON.parse(PR.salida(PR.negarSiNadieContesta({ decision: null, deFondo: true, motivo: `a\nb ${'x'.repeat(500)}` }, lab(t).casa, evento()))).hookSpecificOutput.decision.message;
+  assert.ok(!largo.includes('\n'), 'sin saltos de línea');
+  assert.ok(largo.length < 500, 'con tope');
+  assert.match(largo, /\(a b x+\)/);
+});
+
+test('Fondo_LoQueNoEsDeFondoOLaPersonaDecide_NoCambia (fila 91)', (t) => {
+  // con persona delante, Codex, la propia coordinadora o el gancho apagado: sin decidir, la ventana de siempre
+  const casos = [
+    ['una pestaña abierta', () => lab(t, { bg: { kind: 'interactive' } }), {}],
+    ['Codex', () => lab(t), { ev: { turn_id: 't-1' } }],
+    ['la misma coordinadora', () => { const L = lab(t); sesion(L.casa, COORD, { archivo: String(process.pid), kind: 'bg' }); return L; }, { ev: { session_id: COORD } }],
+    ['apagado con TYCON_PERMISSION_RELAY=0', () => lab(t), { env: { TYCON_PERMISSION_RELAY: '0' } }],
+    ['una herramienta fuera del matcher', () => lab(t), { ev: { tool_name: 'Read', tool_input: { file_path: '/r/x' } } }],
+  ];
+  for (const [que, armar, o] of casos) assert.strictEqual(paraClaude(armar(), evento(o.ev || {}), o), null, que);
+  // el click de la persona decide como siempre: «Sí» aprueba esa vez, «No» niega con su texto
+  const si = lab(t);
+  const aprobado = paraClaude(si, evento(), { pasos: [({ reloj, fila }) => click(si, { pregunta: pregunta(fila), ts: reloj })] });
+  assert.deepStrictEqual(aprobado.decision, { behavior: 'allow' });
+  const no = lab(t);
+  const negado = paraClaude(no, evento(), { pasos: [({ fila }) => sl.rechazar({ casa: no.casa, id: fila.id, sesion: COORD })] });
+  assert.strictEqual(negado.decision.behavior, 'deny');
+  assert.match(negado.decision.message, /La persona dijo que no/);
 });
 
 test('Permiso_OtrosModos_NoDisparan, en proceso (T25, la parte sin vivo) @story-8.180 @ac-25', (t) => {

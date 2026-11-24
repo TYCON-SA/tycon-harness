@@ -1044,6 +1044,13 @@ function cmdPending() {
   let deMain = null;
   try { deMain = refreshedFrom(a, work, deDueno.map(({ x }) => x), baseApprovalHashes(a.root, a.base)); } finally { fs.rmSync(work, { recursive: true, force: true }); }
   if (deMain) { console.log(`base-controls: no hace falta firmar: es lo que el dueño firmó (${deMain.slice(0, 12)}) más lo que trajo main, con fusión limpia`); return; }
+  // si la revisión la va a exigir: siempre que cambie un archivo que firma siempre; si no, sólo cuando los controles de
+  // la base dan rojo con el pedido, y eso lo mide `run`, que corre las dos pasadas. Sin esto, el hash de arriba se lee
+  // como «hay que firmar» aunque el pedido entre sin constancia
+  const siempre = a.changed.filter((p) => a.signOnChange.has(p));
+  console.log(siempre.length
+    ? `base-controls: la revisión va a exigir la constancia: cambia ${siempre.join(', ')}, que firma siempre`
+    : 'base-controls: la revisión exige la constancia sólo si los controles de la base dan rojo con el pedido (lo mide `run`); con las dos pasadas en verde no la pide, salvo otro rojo (el inventario, una delegación sin probar)');
   const firma = signCommand(a.root, a.entries, a.approvalsOut, a.baseArg, { guion: selfPath() });
   console.log(`la firma, desde la sesión (el dueño la aprueba en la ventana de permiso, o, donde la ventana no llega, con su click en el cuadro de opciones o su «aprobado»): ${firma}`);
   console.log(`o, si prefiere, en su terminal: ${firma} --terminal`);

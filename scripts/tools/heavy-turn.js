@@ -21,8 +21,8 @@
  * (es un extra), y una que ya corre no se corta si la memoria baja después. Con dos corriendo, la tercera espera. Lo que
  * decide es cuántas corren, no qué archivo queda libre, y quien pierde la publicación de un lugar vuelve a contar.
  *
- *   take --what <qué corre> [--process <pid>]   0 = turno tomado (o no hay coordinadora) · 77 = no hay lugar, y dice por qué
- *   release [--process <pid>]                   suelta el lugar de ese proceso; el de otro no lo toca
+ *   take --what <qué corre> --process <pid>     0 = turno tomado (o no hay coordinadora) · 77 = no hay lugar, y dice por qué
+ *   release --process <pid>                     suelta el lugar de ese proceso; el de otro no lo toca
  *   release --reserve                           suelta la reserva (la coordinadora, o la sesión que la puso)
  *   grant --to <sesión>                         el «arrancá» de la coordinadora para una sesión de la fila (2 = no se puede)
  *   reserve --for "<qué>" [--to <sesión>]       la coordinadora reserva el turno para revisores o un pase, de una sesión (77 = ya corre una)
@@ -265,7 +265,9 @@ function take({ home = require('os').homedir(), env = process.env, arnes, pid = 
       message: `Hay un pase adversarial en vuelo en esta máquina: pase adversarial de la ${oneLine(pass.storyId) || 'sin story'} (${oneLine(pass.session)}, desde las ${hhmmIso(pass.since)}). Va una tarea pesada por vez (guides/coordination.md, «Lo pesado, con turno»): esperá que su sesión anote el resultado, o pedile turno a la ${role}.` });
   }
   const reserved = reserveInForce({ home, now });
-  if (reserved && reserved.sid !== sid) {
+  // la reserva con `--to` es de esa sesión: la toma ella como la toma la coordinadora, sin «arrancá» aparte
+  const mineReserve = Boolean(reserved && sid && reserved.to === sid);
+  if (reserved && reserved.sid !== sid && !mineReserve) {
     return refuse({ ok: false, taken: false, note, holder: { kind: 'reserve', ...reserved },
       message: `El turno de tarea pesada está reservado por la ${role} para «${oneLine(reserved.what)}» (${oneLine(reserved.session) || 'su sesión'}, desde las ${hhmm(reserved.at)}): esperá que lo suelte, o pedile turno a la ${role} (guides/coordination.md, «Lo pesado, con turno»).` });
   }
@@ -273,9 +275,9 @@ function take({ home = require('os').homedir(), env = process.env, arnes, pid = 
   const grant = grantInForce({ home, now });
   const mineGrant = Boolean(grant && sid && grant.to === sid);
   const waited = lined ? readWait(home, sid, now) : null;
-  const notYours = waited && !mineGrant
+  const notYours = waited && !mineGrant && !mineReserve
     ? `Esperá el «arrancá» de la ${role}: anotaste que esperabas turno a las ${hhmm(waited.at)}, y con coordinadora el turno libre no se toma solo. Avisale que estás lista; ella lo da con heavy-turn.js grant --to ${sid}.`
-    : !waited && grant && !mineGrant
+    : !waited && grant && !mineGrant && !mineReserve
       ? `La ${role} le dio el «arrancá» a ${sessionName(home, grant.to)} a las ${hhmm(grant.at)}: el turno es suyo hasta que lo tome o venza (${GRANT_MS / 60000} min). Esperá, o pedile turno a la ${role}.`
       : null;
   const files = slotFiles(home);
@@ -607,6 +609,25 @@ function swapFree({ platform = process.platform, run } = {}) {
 }
 
 /**
+ * Los procesos del usuario contra su tope: `{ used, max, pct, why }`. Con el tope no arranca ningún comando, ni los
+ * ganchos ni los frenos. En macOS, `sysctl -n kern.maxprocperuid` y `ps -U <uid>`; `run(cmd, args)` reemplaza la consola
+ * en las pruebas. En otro sistema no se mide: `pct` null con el motivo.
+ */
+function userProcs({ platform = process.platform, run, uid = typeof process.getuid === 'function' ? process.getuid() : null } = {}) {
+  const none = (why) => ({ used: null, max: null, pct: null, why });
+  if (platform !== 'darwin') return none(`no sé medirlos en ${platform}`);
+  try {
+    const exec = run || ((cmd, args) => require('child_process').execFileSync(cmd, args, { encoding: 'utf8', timeout: 5000, windowsHide: true }));
+    const max = Number(String(exec('sysctl', ['-n', 'kern.maxprocperuid'])).trim());
+    if (!Number.isInteger(max) || max <= 0) return none('sysctl kern.maxprocperuid no dio un número');
+    const used = String(exec('ps', ['-U', String(uid), '-o', 'pid='])).split('\n').filter((l) => /^\s*\d+\s*$/.test(l)).length;
+    if (!used) return none('ps no listó ningún proceso del usuario');
+    // hacia abajo: un 69,9 % no es el 70 %
+    return { used, max, pct: Math.floor((used / max) * 100), why: null };
+  } catch (e) { return none(oneLine(e.message)); }
+}
+
+/**
  * Si un portón acotado de `suites` suites puede correr ahora: `{ ok, message, pass, note }`. Sin coordinadora, o sin un
  * pase en vuelo, sí, y la memoria no se mira. Con un pase en vuelo, sólo si son `BESIDE_PASS_MAX_SUITES` o menos, no
  * hay otro portón al lado y la memoria libre llega al piso. `pass` es el pase al lado, para la relectura.
@@ -663,6 +684,16 @@ function release({ home = require('os').homedir(), pid = process.pid } = {}) {
 function main(argv) {
   const [cmd, ...rest] = argv;
   const val = (k) => { const i = rest.indexOf(k); return i >= 0 ? rest[i + 1] : undefined; };
+  // `take` y `release` piden el proceso que corre lo pesado: sin él, el lugar quedaría atado a la consola de este comando,
+  // que termina enseguida, y el turno se soltaría solo sin que nadie se entere (o `release` no soltaría nada)
+  if (cmd === 'take' && val('--process') === undefined) {
+    process.stderr.write('heavy-turn.js take: falta --process <pid>, el proceso que corre lo pesado (en un guion, --process $$). Sin él, el turno quedaría atado a la consola de este comando, que termina enseguida, y se soltaría solo.\n');
+    return 2;
+  }
+  if (cmd === 'release' && !rest.includes('--reserve') && val('--process') === undefined) {
+    process.stderr.write('heavy-turn.js release: falta --process <pid>, el proceso que tomó el turno (el mismo de su take). Sin él no se suelta nada.\n');
+    return 2;
+  }
   const pid = val('--process') !== undefined ? Number(val('--process')) : process.ppid;
   if ((cmd === 'take' || cmd === 'release') && !(Number.isInteger(pid) && pid > 0)) { process.stderr.write('heavy-turn.js: --process va con un número de proceso\n'); return 2; }
   if (cmd === 'take') {
@@ -693,10 +724,10 @@ function main(argv) {
     process.stdout.write(rest.includes('--json') ? `${JSON.stringify(all)}\n` : `${all.length ? all.map(describe).join('\n') : 'nadie'}\n`);
     return 0;
   }
-  process.stderr.write('uso: heavy-turn.js take --what <qué> [--process <pid>] | release [--process <pid>] | release --reserve | grant --to <sesión> | reserve --for "<qué>" | holder [--json] | holders [--json]\n');
+  process.stderr.write('uso: heavy-turn.js take --what <qué> --process <pid> | release --process <pid> | release --reserve | grant --to <sesión> | reserve --for "<qué>" | holder [--json] | holders [--json]\n');
   return 2;
 }
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { take, release, holder, holders, coordinator, secondTurnFloor, grant, reserve, releaseReserve, grantInForce, lastGrant, reserveInForce, readWait, swapFree, GRANT_MS, RESERVE_MS, describe, turnFile, slotFiles, SECOND_HEAVY_MIN_FREE_PCT, clearWait, gateStarted, gateEnded, gatesRunning, runningSids, isTurnWait, besidePass, besideRecheck, freeMemory, suitesOf, describeGate, BUSY_EXIT, BESIDE_PASS_MAX_SUITES, BESIDE_PASS_MIN_FREE_PCT };
+module.exports = { take, release, holder, holders, coordinator, secondTurnFloor, grant, reserve, releaseReserve, grantInForce, lastGrant, reserveInForce, readWait, swapFree, userProcs, GRANT_MS, RESERVE_MS, describe, turnFile, slotFiles, SECOND_HEAVY_MIN_FREE_PCT, clearWait, gateStarted, gateEnded, gatesRunning, runningSids, isTurnWait, besidePass, besideRecheck, freeMemory, suitesOf, describeGate, BUSY_EXIT, BESIDE_PASS_MAX_SUITES, BESIDE_PASS_MIN_FREE_PCT };

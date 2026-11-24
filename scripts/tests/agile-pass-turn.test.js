@@ -9,6 +9,7 @@
  *   APT5  el gancho entero: sin coordinadora calla y no anota; apagado, también; lo que no es pase, también.
  *   APT6  el evento: apagado calla aun con coordinadora; el aviso viaja como contexto, nunca como freno; un error queda
  *         como no medido.
+ *   APT7  con la reserva para la sesión, si su portón ya corre con ella, avisa: es para una cosa por vez.
  * 🔴 Nada toca el HOME real: el gancho corre en un proceso hijo con su HOME de juguete.
  */
 const test = require('node:test');
@@ -29,6 +30,8 @@ const maquina = (cambios = {}) => ({
   arranca: () => null,
   reserva: () => null,
   corriendo: () => [],
+  propias: () => [],
+  propios: () => [],
   pases: () => [],
   ...cambios,
 });
@@ -75,6 +78,48 @@ test('APT3 NoMira_SinCoordinadora_LaCoordinadora_NiConCorrida', () => {
   assert.strictEqual(G.decidir(pase, maquina({ tieneCorrida: (s) => s === 'ses-a' })).status, 'fuera');
   assert.strictEqual(G.decidir({ ...pase, sid: null }, maquina()).status, 'fuera');
   assert.strictEqual(G.decidir({ ...pase, toolInput: { description: 'buscar' } }, maquina()).status, 'fuera', 'lo que no es pase no se mira');
+});
+
+// 🔴 mutación: dar turno con la reserva aunque el portón de la sesión ya corra con ella (pase y suites a la vez), o
+// mirar las ejecuciones de otras sesiones (esas no usan la reserva de ésta).
+test('APT7 ConReserva_SiSuPortonYaCorre_Avisa (fila 130)', () => {
+  const reserva = () => ({ sid: 'coord-1', what: 'su pase', to: 'ses-a' });
+  const ocupada = G.decidir(pase, maquina({ reserva, propias: (s) => (s === 'ses-a' ? ['Uma (40 suites, desde las 10:05)'] : []) }));
+  assert.strictEqual(ocupada.status, 'aviso');
+  assert.match(ocupada.message, /con la reserva de la coordinadora, pero con esa reserva ya corre Uma \(40 suites, desde las 10:05\), de esta sesión: es para una cosa por vez\. Lanzalo cuando termine\. Hoy sólo se avisa\./);
+  assert.strictEqual(G.decidir({ ...pase, modo: 'block' }, maquina({ reserva, propias: () => ['x'] })).status, 'freno');
+  // lo de otra sesión no cuenta
+  assert.strictEqual(G.decidir(pase, maquina({ reserva, corriendo: () => ['Bea (120 suites)'], propias: (s) => (s === 'ses-b' ? ['Bea'] : []) })).status, 'con-turno');
+  // el lector de la máquina: de los dos lugares del turno, sólo el de esa sesión
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'apt7-casa-'));
+  try {
+    const coord = path.join(require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js')).stateDir(home), 'coordination');
+    fs.mkdirSync(coord, { recursive: true });
+    // stable-data: un lugar del turno vence por edad contra la hora de ahora; la prueba sólo mira de qué sesión es
+    const ahora = Date.now();
+    fs.writeFileSync(path.join(coord, 'suite-turn.json'), JSON.stringify({ pid: process.pid, sid: 'ses-b', session: 'Bea', what: '120 suites', at: ahora - 1000 }));
+    fs.writeFileSync(path.join(coord, 'suite-turn-2.json'), JSON.stringify({ pid: process.pid, sid: 'ses-a', session: 'Uma', what: '40 suites', at: ahora }));
+    const L = G.lectores(home, ahora);
+    assert.strictEqual(L.corriendo().length, 2);
+    const propias = L.propias('ses-a');
+    assert.strictEqual(propias.length, 1);
+    assert.match(propias[0], /Uma/);
+    assert.doesNotMatch(propias[0], /Bea/);
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+// 🔴 Falla con (fila 138): la sesión que tomó el turno para su pase lo lanza y el aviso le dice «sin el turno… lo tiene»
+// ella misma; o el turno que la sesión tomó para otra cosa (su portón) deja lanzar el pase encima, o lo dice confuso.
+test('APT8 TurnoPropio_ParaSuPase_ConTurno_ParaOtraCosa_Avisa (fila 138)', () => {
+  const paraElPase = maquina({ propios: (s) => (s === 'ses-a' ? [{ texto: 'Uma (pase adversarial fila 9, desde las 10:05)', what: 'pase adversarial fila 9' }] : []) });
+  assert.deepStrictEqual(G.decidir(pase, paraElPase), { status: 'con-turno', message: null });
+  assert.strictEqual(G.decidir({ toolName: 'Workflow', toolInput: {}, sid: 'ses-a' }, maquina({ propios: () => [{ texto: 'Uma (workflow de revisores)', what: 'workflow de revisores' }] })).status, 'con-turno');
+  const paraOtra = G.decidir(pase, maquina({ propios: (s) => (s === 'ses-a' ? [{ texto: 'Uma (40 suites, desde las 10:05)', what: '40 suites' }] : []) }));
+  assert.strictEqual(paraOtra.status, 'aviso');
+  assert.match(paraOtra.message, /el turno de esta sesión es para Uma \(40 suites, desde las 10:05\): es para una cosa por vez\. Lanzalo cuando termine\. Hoy sólo se avisa\./);
+  assert.doesNotMatch(paraOtra.message, /sin el turno/);
+  // el turno de otra sesión sigue avisando como antes
+  assert.match(G.decidir(pase, maquina({ corriendo: () => ['Bea (pase de la 9.9)'], propios: (s) => (s === 'ses-b' ? [{ texto: 'Bea', what: 'pase de la 9.9' }] : []) })).message, /sin el turno de tarea pesada de esta máquina\. Lo tiene: Bea/);
 });
 
 // 🔴 mutación: en modo freno, dejar pasar o frenar con otro motivo.

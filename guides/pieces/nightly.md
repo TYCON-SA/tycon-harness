@@ -74,9 +74,11 @@ _(work-items.js state + el cruce de scripts/nightly/dependencies/nightly-depende
 
 **Por qué existe:** Un pull request con auto-completar y el build roto queda esperando un verde imposible y nadie se entera. Avisa por antigüedad, sólo al dev. Si Azure no contesta, lo dice: no medido no es cero.
 
+Con `--outside-from` deja además el renglón «De afuera: …» (`scripts/lib/outside-contributions.js`).
+
 **Quién la usa:** El pipeline del vigilante y `daily-summary.js deliver --extra`; con `--json` lo lee el sitio.
 
-**Dónde se prueba:** `scripts/tests/open-prs.test.sh`, `scripts/tests/daily-summary.test.sh`
+**Dónde se prueba:** `scripts/tests/open-prs.test.sh`, `scripts/tests/daily-summary.test.sh`, `scripts/tests/outside-contributions.test.js`
 
 **Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptsnightlyopen-prsopen-prsjs)
 

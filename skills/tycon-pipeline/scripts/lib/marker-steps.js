@@ -10,10 +10,10 @@
 const {
   MARKER_JS, PASO_ARRANCABLE, PREVIO, PROPIA, SCRIPTS_DIR, STATE_DIR, STEPS_LIB,
   VALID_PIPELINE_STATUSES, VALID_STATUSES, anotarAprobacion, anotarArranque,
-  anotarSalteoEnElRegistro, antesDeLaRevision, appendLog, at,
+  anotarSalteoEnElRegistro, antesDeLaRevision, appendLog,
   carpetaDeLaCorrida, conHoraDelPaso, dondeViveLaHistoria, estado,
   firmaDelDueno, formasDeFirmarArchivo, fs, huellaDelPlan, nn, nowIso, os,
-  ownerWindow, path, porDe, quienDeLasOpciones, quitarSalteoDelRegistro,
+  ownerWindow, path, porDe, quitarSalteoDelRegistro,
   readMarker, readOwnMarkerRaw, resolveStoryPath, sellosDe, syncSessionState,
   trabajarSobreElDestino, vueltaCongeladaComprobada, writeMarker,
   citaDe, conPersona, hechaSinPersona, modoDeLaFirma, quienDeLaMaqueta, reemplazada, soloLaPersona, aprobadaPorPersona, noPisaLaPersona,
@@ -247,7 +247,7 @@ function cmdStartStep(nRaw) {
 }
 
 /**
- * `set-batch <tanda>`: anota la tanda de la ejecución en una historia paraguas. «Preparar el commit» le pasa esa tanda
+ * `set-batch <tanda>`: anota la tanda de la ejecución en una historia paraguas. «Preparar el pull request» le pasa esa tanda
  * a la matriz, que mide sólo sus criterios. Se anota una vez: el mismo nombre otra vez no cambia nada; otro, o
  * `--clear`, se niega (para otra tanda, otra ejecución). La tanda tiene que estar en el bloque `pipelines` de la
  * historia del marcador y no estar `done`. Es la única forma de escribirla: `set` no la acepta.

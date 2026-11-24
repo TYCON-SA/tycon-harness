@@ -1776,3 +1776,62 @@ test('T92 Sitio_PedidoAprobado_NoVuelveATeTocaDecidir — lo aprobado espera la 
     assert.deepStrictEqual((await lista()).json.toca.map((x) => x.id), ['vig-dos', 'dep-uno'], 'cerrado sin aprobar: vuelve a decidirse');
   });
 });
+
+// ── las sesiones de cada caso en «Qué pasó» ─────────────────────────────────────────────────────
+
+const conSes = (n, dia, story, sesiones) => ({ ...caso(n, dia, 'mac-a-0123abcd', story), ...(sesiones === undefined ? {} : { sesiones }) });
+const EJ_SES = conCasos('RR-HOOK:Stop/sesiones', 'aviso con sesiones', [
+  conSes(11, '2026-10-21', '4.1', 'Carrizo-4'), conSes(12, '2026-10-22', '4.2', 'Carrizo-4+Ponzio-5'), conSes(13, '2026-10-22', '4.3', 'Ponzio-5'),
+]);
+const EJ_OCHO = conCasos('RR-HOOK:Stop/ocho', 'aviso con ocho sesiones', [
+  conSes(14, '2026-10-22', '4.4', ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8'].join('+')),
+]);
+const EJ_MANO = conCasos('RR-HOOK:Stop/mano', 'aviso editado a mano', [conSes(15, '2026-10-22', '4.5', null)]);
+const EJ_ETIQUETA = conCasos('RR-HOOK:Stop/etiqueta', 'aviso con etiqueta', [
+  conSes(16, '2026-10-22', '4.6', null), conSes(17, '2026-10-22', '4.7', null), conSes(18, '2026-10-22', '4.8', null),
+]);
+const EJ_ROTA = conCasos('RR-HOOK:Stop/rota', 'aviso con etiqueta html', [conSes(24, '2026-10-22', '5.5', null)]);
+// editadas a mano: la ficha se escribe con forma y después se le cambia en el archivo `sesiones` de cada caso por lo que
+// la noche nunca escribiría. Un valor sin forma de clave (espacios, `<`) deja la ficha entera ilegible (`parsear`); uno
+// con forma de clave pero no de nombre de sesión (`.`, `/`, `@`, `:`) llega al sitio, que lo descarta.
+const aMano = (f, valores) => {
+  let i = 0;
+  return { [`inbox/runs-review/pending/${f.id}.yaml`]: CYCLE.serializar(f).replace(/"sesiones":null/g, () => `"sesiones":${JSON.stringify(valores[i++])}`) };
+};
+const EJ_MIXTA = conCasos('RR-HOOK:Stop/mixta', 'aviso mixto', [
+  conSes(19, '2026-10-21', '4.9', 'Carrizo-4'), conSes(20, '2026-10-22', '5.1', null), conSes(21, '2026-10-22', '5.2'),
+]);
+const EJ_SIN = conCasos('RR-HOOK:Stop/sin', 'aviso sin nombres', [conSes(22, '2026-10-22', '5.3', null), conSes(23, '2026-10-22', '5.4')]);
+
+// 2.83-QuePaso_NombraLasSesiones
+// 🔴 Falla con: los nombres en otro orden que el más nuevo primero, repetidos, sin el tope de 6, un nombre sin forma a la
+//    vista (o sin escapar), o la línea sin traducir.
+test('T10 2.83-QuePaso_NombraLasSesiones @story-2.83 @ac-13 @ac-15 — la tarjeta dice las sesiones de cada caso', { timeout: 60000 }, async () => {
+  await conSitio({ extra: { ...extraDe(EJ_SES, EJ_OCHO), ...aMano(EJ_MANO, ['a.b+Carrizo-4']), ...aMano(EJ_ETIQUETA, ['Ponzio-5', 'x/y@z', 'a:b']), ...aMano(EJ_ROTA, ['<b>x</b>']) } }, async ({ h, lead, lista, fila }) => {
+    const j = (await lista()).json;
+    assert.match(fila(j, 'ejecuciones', EJ_SES.id).que_paso, / Máquinas: mac-a\. Sesiones: Ponzio-5, Carrizo-4\.$/);
+    assert.match(fila(j, 'ejecuciones', EJ_OCHO.id).que_paso, / Sesiones: S8, S7, S6, S5, S4, S3 y 2 más\.$/);
+    assert.match(fila(j, 'ejecuciones', EJ_MANO.id).que_paso, / Sesiones: Carrizo-4\.$/, 'el nombre sin forma no sale y la ejecución cuenta como nombrada');
+    assert.match(fila(j, 'ejecuciones', EJ_ETIQUETA.id).que_paso, / Sesiones: Ponzio-5 \(2 ejecuciones sin nombre\)\.$/);
+    const p = await h.pedir('/mantenimiento', { cookie: lead });
+    const carta = cartaDe(p.texto, `ejecuciones/${EJ_ETIQUETA.id}`);
+    assert.match(carta, /Sesiones: Ponzio-5 \(2 ejecuciones sin nombre\)\./);
+    assert.doesNotMatch(carta, /x\/y@z|a:b/, 'un nombre sin forma no sale');
+    assert.strictEqual(fila(j, 'ejecuciones', EJ_ROTA.id), undefined, 'una ficha con html en sesiones no se lee');
+    assert.doesNotMatch(p.texto, /<b>x<\/b>|&lt;b&gt;x/, 'el html de una ficha editada no sale, ni escapado');
+    const en = (await lista(`${lead}; sitio-idioma=en`)).json;
+    assert.match(fila(en, 'ejecuciones', EJ_SES.id).que_paso, / Machines: mac-a\. Sessions: Ponzio-5, Carrizo-4\.$/);
+  });
+});
+
+// 2.83-QuePaso_SinNombreLoCuenta
+// 🔴 Falla con: no contar las ejecuciones sin nombre (null o sin la clave), o una línea de sesiones sin ningún nombre.
+test('T11 2.83-QuePaso_SinNombreLoCuenta @story-2.83 @ac-14 — las ejecuciones sin nombre se cuentan, y sin ninguno no hay línea', { timeout: 60000 }, async () => {
+  await conSitio({ extra: extraDe(EJ_MIXTA, EJ_SIN) }, async ({ lead, lista, fila }) => {
+    const j = (await lista()).json;
+    assert.match(fila(j, 'ejecuciones', EJ_MIXTA.id).que_paso, / Sesiones: Carrizo-4 \(2 ejecuciones sin nombre\)\.$/);
+    assert.doesNotMatch(fila(j, 'ejecuciones', EJ_SIN.id).que_paso, /Sesiones/);
+    const en = (await lista(`${lead}; sitio-idioma=en`)).json;
+    assert.match(fila(en, 'ejecuciones', EJ_MIXTA.id).que_paso, / Sessions: Carrizo-4 \(2 runs without a name\)\.$/);
+  });
+});

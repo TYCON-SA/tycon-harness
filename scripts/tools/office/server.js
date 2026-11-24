@@ -331,6 +331,8 @@ async function serve() {
   let link = siteAddress ? createLink({ site: siteAddress, sdir, home, onCharlaReady: charlaReady }) : null;
   let limits = lifeLimits(Boolean(link));
   let rereadNext = false;
+  // cuántas veces cambió el enlace: una foto pedida antes de un cambio leyó la dirección vieja y no sale
+  let linkTurn = 0;
   let pendingCharlas = null;
   let charlaTimer = null;
   const deliverCharlas = () => {
@@ -381,7 +383,9 @@ async function serve() {
   // cuándo empezó a leerse la última foto mandada (la primera también cuenta): la mide `photoDue`
   let lastSentAt = 0;
   const broadcast = (readAt = Date.now()) => {
-    const msg = JSON.stringify({ type: 'foto', data: last });
+    // en las pruebas, la hora en que empezó a leerse: el intervalo de la carga se mide ahí, no a la llegada, que corre
+    // con lo que tardó cada lectura
+    const msg = JSON.stringify({ type: 'foto', data: last, ...(testing ? { leidaEn: readAt } : {}) });
     for (const c of clients) if (c.readyState === WebSocket.OPEN) c.send(msg);
     if (link) link.update(last);
     counters.sends += 1;
@@ -402,8 +406,11 @@ async function serve() {
     if (running) { again = true; return; }
     running = true;
     try {
+      const turn = linkTurn;
       const readAt = Date.now();
       const data = withTestLoad(await snapshot());
+      // el enlace cambió mientras se armaba: esta foto nombra el sitio de antes; se arma otra con la dirección nueva
+      if (turn !== linkTurn) { pendingCharlas = null; again = true; return; }
       const json = photoKey(data);
       if (photoDue({ json, lastJson, data, last, now: readAt, lastSentAt, everyMs: machineEveryMs })) { last = data; lastJson = json; broadcast(readAt); }
       deliverCharlas();
@@ -790,6 +797,7 @@ async function serve() {
     // la foto que sigue relee la dirección (`meta.sitio`) y sale entera, aunque lo demás no haya cambiado: el sitio nuevo
     // no recibe la vieja, que nombra al otro. Antes de la primera foto, el enlace lo arranca el arranque
     rereadNext = true;
+    linkTurn += 1;
     lastJson = null;
     if (link && last) { link.start(); startMachineTicks(); }
   }

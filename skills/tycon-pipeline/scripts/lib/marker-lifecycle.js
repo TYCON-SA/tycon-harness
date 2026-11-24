@@ -10,9 +10,9 @@
 const {
   HARNESS_INVALID_ARGS, HARNESS_OLD_OPTION, LEGACY_MARKER_PATH, OLD_FLAGS,
   SCRIPTS_DIR, STATE_DIR, STEPS_LIB, anotarArranque, anotarOtraVuelta,
-  appendLog, at, avisarOficina, cerrarEjecucion, doingFileOf, estado,
+  appendLog, at, avisarOficina, cerrarEjecucion, conSesionNombrada, doingFileOf, estado,
   frenarSiIlegible, frenarSiPerdida, fs, idsDeEspera, markerFilePath, nn,
-  nowIso, opcion, os, path, readMarker, readOwnMarkerRaw, reposParaComparar,
+  nowIso, os, path, readMarker, readOwnMarkerRaw, reposParaComparar,
   resolveStoryPath, sinFirmaNoSeEscribe, syncSessionState, writeMarker,
 } = require('./marker-shared.js');
 
@@ -102,7 +102,7 @@ function cmdSet(payloadJson) {
       appendLog('bypass.log', { kind: 'MARKER_SET_EXTERNAL_FLAG_DISCARDED', flag: k, storyId: payload.storyId });
     }
   }
-  // La tanda de la ejecución achica la matriz de «Preparar el commit»: la escribe sólo `set-batch`, que la valida
+  // La tanda de la ejecución achica la matriz de «Preparar el pull request»: la escribe sólo `set-batch`, que la valida
   // contra la historia y no la cambia. Un `get | … | set` que la trae como estaba pasa.
   for (const k of ['batch', 'batchSetAt']) {
     if (!Object.prototype.hasOwnProperty.call(payload, k)) continue;
@@ -113,7 +113,7 @@ function cmdSet(payloadJson) {
   }
   // 🔴 Anti-leak cross-story: el spread de abajo preserva
   // campos ante un `set` de la MISMA story — pero si esta sesión arranca una story NUEVA sobre un
-  // marker viejo sin clear (pipeline cancelado, crash, "listo" antes de «Preparar el commit»), la story B
+  // marker viejo sin clear (pipeline cancelado, crash, "listo" antes de «Preparar el pull request»), la story B
   // heredaría el ciclo de vida de la A: `deepReviewDone=true` heredado → computeNext saltea el pase adversarial
   // de B EN SILENCIO; `checks.build=green` y `dodRuntimeChecked` heredados → gates mintiendo.
   // Por eso, al cambiar de storyId, los campos de CICLO DE VIDA DE
@@ -173,14 +173,14 @@ function cmdSet(payloadJson) {
       // nueva arranques de la vieja, y `anotarArranque` se niega a pisar uno existente.
       stepTimings,
       // Lo del pase adversarial es de la corrida. Heredado, B contaría como suyas las pruebas
-      // promovidas de A en `--tests`, y con el freno de «Preparar el commit» heredaría el salteo de A y cerraría ese
+      // promovidas de A en `--tests`, y con el freno de «Preparar el pull request» heredaría el salteo de A y cerraría ese
       // paso sin su propio pase adversarial.
       adversarialPasses, adversarialRegressions, adversarialSkip,
       // El veredicto del portón (y el temprano apagado) son de la corrida: heredado, `next` le pediría a
       // la story nueva lanzar el pase con los archivos de la vieja, o le dejaría apagado el temprano.
       adversarialGate,
       // La maqueta aprobada y la decisión de «Aprobar el plan» son de la story. Heredadas, la story B usaría la
-      // maqueta de A (o su «sin pantalla») en «Preparar el commit».
+      // maqueta de A (o su «sin pantalla») en «Preparar el pull request».
       mockupApproval, mockupDecision,
       // el tamaño de la corrida (y su forzado a mano) es de la story.
       size, size_reason, estimate_min, estimate_source, sizeForced,
@@ -197,6 +197,8 @@ function cmdSet(payloadJson) {
       batch, batchSetAt,
       // el pedido es de la corrida: heredado, el cierre de la nueva anunciaría un pedido que no es suyo
       pr,
+      // las sesiones que pasaron son de la corrida: heredadas, la ficha de la nueva nombraría sesiones de la anterior
+      sesiones,
       ...carryOver
     } = existing;
     console.error(
@@ -216,7 +218,7 @@ function cmdSet(payloadJson) {
     for (const p of existing.stepsPending || []) if (!nuevos.has(String(p))) payload.stepsPending.push(p);
   }
   // Ni marcar hechos los que no lo estaban: un paso se cierra con `complete-step`, que corre sus frenos. Un `set` de la
-  // misma historia con «Preparar el commit» en `stepsCompleted` se saltearía el de código sin revisar.
+  // misma historia con «Preparar el pull request» en `stepsCompleted` se saltearía el de código sin revisar.
   // Listas sin esquema legible (números y nombres mezclados) no se tocan: las rechaza entera la validación de más abajo.
   const esquemaDelPedido = () => STEPS_LIB.schemeOf({ stepScheme: payload.stepScheme !== undefined ? payload.stepScheme : existing.stepScheme,
     stepsCompleted: payload.stepsCompleted, stepsPending: Array.isArray(payload.stepsPending) ? payload.stepsPending : (existing.stepsPending || []) });
@@ -1138,6 +1140,8 @@ function cmdClear(rest = []) {
   try {
     const marker = readMarker();
     if (marker && marker.storyId) {
+      // la sesión que cierra entra a la lista antes de armar el volcado: viaja en `marker.sesiones`
+      conSesionNombrada(marker);
       let gates = [];
       try {
         const raw = fs.readFileSync(path.join(STATE_DIR, 'gates.log'), 'utf8');

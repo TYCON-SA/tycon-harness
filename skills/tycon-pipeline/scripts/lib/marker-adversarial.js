@@ -8,7 +8,7 @@
  * locales van relativos a esta carpeta.
  */
 const {
-  SCRIPTS_DIR, STATE_DIR, anotarSalteoEnElRegistro, appendLog, at,
+  SCRIPTS_DIR, STATE_DIR, anotarSalteoEnElRegistro, appendLog,
   carpetaDeLaCorrida, estado, fs, nn, nowIso, paseAtendido, path, posixRelative,
   quitarSalteoDelRegistro, readMarker, resolveStoryPath, sellosDe,
   veredictoPaseAdversarial, writeMarker,
@@ -247,7 +247,7 @@ function cmdMarkAdversarialSkipped(argsGate) {
 // variable): `next` no tiene los archivos del cambio y no recalcula el portón, lee esto.
 //
 // 🔴 Va en un campo PROPIO, `adversarialGate`, nunca dentro de `marker.adversarial`: para el salteo, el freno del
-// «Preparar el commit», `next` y el paso de revisores, `adversarial` significa «lanzado» (con él, `mark-adversarial-skipped` se niega).
+// «Preparar el pull request», `next` y el paso de revisores, `adversarial` significa «lanzado» (con él, `mark-adversarial-skipped` se niega).
 //
 // El temprano apagado (`TYCON_5B_EARLY=0`) se lee del entorno de UN comando, y en una sesión de agente el entorno no
 // pasa de un comando al siguiente (un `next` suelto no lleva la variable que tuvo el comando anterior).
@@ -367,6 +367,8 @@ function cmdMarkAdversarialResult(countRaw) {
   // línea queda `no-medido`, que NO cierra el pase. Una revisión a mano (`--type revision`) no lo exige.
   const resultadoRuta = flag('--result');
   let medicion = null;
+  // los hermanos que cambiaron después del lanzamiento y quedan para la próxima vuelta de revisores
+  let alReloop = null;
   if (tipo === '5b' || resultadoRuta !== undefined) {
     const { medicionDelResultado, SALIDA_APROBADA } = require('./adversarial-verdict.js');
     if (!resultadoRuta) {
@@ -411,13 +413,21 @@ function cmdMarkAdversarialResult(countRaw) {
       }
       // El código de los repos hermanos (los sellados que no son la historia ni el repo de la corrida) no puede haber
       // cambiado desde el lanzamiento: el pase daría por bueno algo que no miró. Las pruebas propias que este cierre
-      // declara (`--in`) se escriben a propósito después del pase y no cuentan.
+      // declara (`--in`) se escriben a propósito después del pase y no cuentan. Con hallazgos, el cambio es el arreglo:
+      // como en el repo principal, lo cubre la vuelta de revisores que sigue, si la última sella ese hermano (así
+      // «Preparar» frena si lo guardado no es lo que revisó). Un hermano que no se pudo comparar frena siempre.
       const principales = ft.reposDe([resolveStoryPath(corrida.storyPath, corrida) || corrida.storyPath, corrida.repoPath]);
       const hermanos = principales.error ? Object.keys(lanzado.sellos) : Object.keys(lanzado.sellos).filter((r) => !principales.repos.includes(r));
       const iIn = argv.indexOf('--in');
       const permitidos = rutasDeLasPropias(iIn >= 0 ? String(nn(argv[iIn + 1], '')).split(',').map((s) => s.trim()).filter(Boolean) : [], corrida);
       const cambiados = ft.hermanosCambiados({ sellos: lanzado.sellos, hermanos, permitidos });
-      if (cambiados.length) {
+      const vuelta = cambiados.length && confirmados > 0 ? ft.ultimaVuelta(STATE_DIR, estado.SID, 'revisores') : null;
+      const sellaLaVuelta = (r) => Boolean(vuelta && (vuelta.repos || []).some((x) => x.repo === r && x.tree));
+      if (vuelta && cambiados.every((x) => !x.error && sellaLaVuelta(x.repo))) {
+        alReloop = cambiados;
+        console.error(`ℹ️  marker.js mark-adversarial-result: un repo hermano tiene cambios desde el lanzamiento del pase; con ${confirmados} hallazgo(s) es el arreglo, y lo revisa la próxima vuelta de revisores: «Preparar» frena si lo guardado no es lo revisado.`);
+        for (const x of cambiados) console.error(`   · ${path.basename(x.repo)}: ${x.files.join(', ')}`);
+      } else if (cambiados.length) {
         appendLog('gates.log', { name: 'frozen-sibling', status: 'blocked', quien: 'mark-adversarial-result', repos: cambiados.map((x) => x.repo) });
         console.error('marker.js mark-adversarial-result BLOQUEADO — el código de un repo hermano cambió después de lanzar el pase: el pase no miró esto.');
         for (const x of cambiados) console.error(`   · ${path.basename(x.repo)}: ${x.error || x.files.join(', ')}`);
@@ -573,7 +583,9 @@ function cmdMarkAdversarialResult(countRaw) {
     runId: flag('--run') || null,
     modelo: flag('--model') || null,
     head,
+    ...(alReloop ? { hermanos_al_reloop: alReloop.map((x) => ({ repo: x.repo, files: x.files })) } : {}),
   };
+  if (alReloop) appendLog('gates.log', { name: 'frozen-sibling', status: 'al-re-loop', quien: 'mark-adversarial-result', storyId, repos: pase.hermanos_al_reloop });
   appendLog('gates.log', { name: 'adversarial-pass', storyId, ...pase });
   if (corrida) {
     corrida.adversarialPasses = [...(corrida.adversarialPasses || []), { ts: nowIso(), ...pase }];

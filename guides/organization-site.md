@@ -246,7 +246,11 @@ la fila vuelve a «Te toca decidir» con el porqué. El tipo del pedido de traba
 
 Cada tarjeta dice **qué pasó** en llano, con los datos de la ficha. En una de ejecuciones, por ejemplo: «Entre el 21/10 y
 el 24/10, 4 ejecuciones terminaron sin el pase adversarial, la revisión que intenta romper lo que ya se aprobó.
-Historias: 4.1, 4.3. Máquinas: mac-a, mac-b.» Si hay análisis, dice **por qué** pasa, qué **recomienda** y qué
+Historias: 4.1, 4.3. Máquinas: mac-a, mac-b. Sesiones: Ponzio-5, Carrizo-4.» El nombre de cada sesión es el nombre que
+tenía la sesión en su máquina durante la ejecución, y entra sólo si tiene forma de nombre de sesión (letras sin acento,
+números, guion o guion bajo, sin espacios, hasta 40 caracteres); las ejecuciones con un nombre sin esa forma, o sin
+nombre, se cuentan aparte («2 ejecuciones sin nombre»). Una ejecución cerrada antes de que el arnés anotara los nombres no
+lo trae. Si hay análisis, dice **por qué** pasa, qué **recomienda** y qué
 se haría si se arregla, y aclara si lo escribió el modelo de la noche o una persona. Sin análisis, dice por qué no lo
 tiene. Si la noche dejó una propuesta, dice que la escribió el modelo de IA que revisa cada noche, y su botón queda
 resaltado. Los botones para decidir están siempre a la vista, bajo el título **Decidir**.
@@ -801,6 +805,11 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   (sin click, la frase de antes queda de respaldo). Se retira con `marker.js withdraw-relay`. Se la reconoce por su conversación, no por
   su nombre: sigue valiendo si la sesión se reinicia, y hay que volver a designarla si se abre un chat nuevo o se hace
   `/clear`. Una sesión que se llama igual no puede reenviar.
+  Después viene **quién firma cada commit de una ejecución** (`approvals.local_commit`). «Nadie: el agente commitea solo»
+  es lo de fábrica: la persona aprueba el pull request, y el commit, que es local y se deshace, no pide nada. «La
+  coordinadora, antes de cada commit» suma una segunda mirada: el agente no commitea sin su ok de guardar (`marker.js
+  approve-save`), y un cambio después del ok pide otro. Si el perfil no le delega la firma `save`, la da la persona en la
+  ventana. El sitio no la propone a una capa que pide una versión del arnés que todavía no la lee.
   Debajo está **quién firma cada cosa**: una fila por cada firma del catálogo (`guides/firmas-del-arnes.md`), con tres
   opciones. «A la ventana del dueño» es lo de fábrica: el dueño contesta en la ventana de permiso; donde la ventana no
   llega, aprueba con un click en el cuadro de opciones o un «aprobado» escrito; o firma en su terminal.
@@ -1817,6 +1826,15 @@ huella de la versión que instalás.
 huella de `stable` (`imgURL=<imagen>@sha256:…`). El hook es un secreto (`SITE_RENDER_DEPLOY_HOOK`): nunca sale en el
 registro. Render lo hace de fondo; la prueba sin sesión de la noche siguiente lo confirma. Si Render rechaza la imagen (un
 404), tiene que ser del mismo registro y nombre que la del servicio.
+
+**Si quedó instalado por etiqueta** (optativo): con la llave de la API de Render (`SITE_RENDER_API_KEY`, secreta) y el id
+del servicio (`SITE_RENDER_SERVICE_ID`, el `srv-…` de su URL), el nocturno le pregunta a Render qué imagen corre el
+servicio antes de pedir el redespliegue. Si está fijada por etiqueta (`:stable`, `:latest`), el resultado sale `no_pudo`
+con el motivo «instalado por etiqueta» y la banda del sitio aparece igual que en Azure. Si Render no contesta, sale
+`no_pudo` con su código, nunca «al día». Sin las dos variables, todo sigue como antes. En Azure Pipelines se cargan en
+«Variables» del pipeline (la llave, como secreta); en GitHub, la llave como secreto y el id como variable del repo.
+Render no tiene llaves de sólo lectura: una llave abre todos los espacios de trabajo de su usuario. Creala desde un
+usuario que sólo esté en el espacio del sitio, y revocala desde «Account Settings → API Keys» si se filtra.
 
 ### Una máquina propia
 

@@ -113,7 +113,7 @@
             "git init -q .",
             "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/active",
             "cp _marker.json ${SANDBOX_HOME}/.claude/.tycon-pipeline/active/adv-b3.json",
-            "node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js review-answer --kind code --choice skip --reason 'la persona eligió no revisarlo' > ra.out 2> ra.err",
+            "node -e \"const L=process.argv[1]+'/skills/tycon-pipeline/scripts/lib/';const pr=require(L+'plan-review.js');const e=require(L+'state-dir.js').stateDir(require('os').homedir());const s=process.env.CLAUDE_CODE_SESSION_ID;const h=pr.huellaDe({estado:e,sesion:s,kind:'code'});if(!h.huella){console.error(h.motivo);process.exit(2)}process.exit(pr.anotarRespuesta({estado:e,sesion:s,kind:'code',choice:'skip',quien:'sesión '+s,huella:h.huella,motivo:'la persona eligió no revisarlo',via:'click'}).codigo)\" \"${SKILLS}\" > ra.out 2> ra.err",
             "node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js mark-adversarial-skipped --files scripts/x.js > sk.out 2> sk.err; echo \"rc=$?\" > rc.txt"
           ],
           "stdin": {

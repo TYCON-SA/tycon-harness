@@ -115,7 +115,15 @@
       "cambio": "la rama de un repo hermano y la configuración del repo, una vez por proceso: las preguntas a git bajaron de 1 729 a 1 691. Los casos no cambiaron.",
       "rompi": "parseAcsFromSpec de on-pre-commit.js devuelve una lista vacía",
       "caso_rojo": "parseAcsFromSpec extrae ACs canónicos",
-      "excepcion": "aceptada por el dueño (17/11 16:3x, «si», por Coordinadora-2): no llega a la meta; se vuelve a medir en el seguimiento con la máquina vacía"
+      "excepcion": "aceptada por el dueño (17/11 16:3x, «si», por Coordinadora-2): no llega a la meta; se vuelve a medir en el seguimiento con la máquina vacía",
+      "casos_renombrados": [
+        {
+          "antes": "marker complete-step 4: el flag atddBypass satisface el gate (F3 — un solo escape, no dos)",
+          "ahora": "marker complete-step 4: el flag atddBypass sin firma no satisface el gate",
+          "historia": "8.283",
+          "motivo": "saltear pruebas primero pide la firma del dueño: el flag solo ya no satisface el gate; con la firma lo prueba atdd-skip.test.js (T4)"
+        }
+      ]
     }
   ],
   "github": [
