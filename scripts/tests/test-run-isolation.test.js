@@ -243,6 +243,10 @@ test('F174 T2 Aislada_HijoSinLasVariablesDeLaRed_EscribeEnSuLaboratorio: un hijo
   });
   const s = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.33', ['--', process.execPath, '.advisors/dod-runtime/g.js', destinoReal], { cwd: r, env: ambiente(c) });
   assert.match(salida(s), /LAB ok/, salida(s));
+  // la casa de la cuenta de esta prueba es una carpeta temporal que llega por HOME. Sin el encierro del sistema (Linux,
+  // Windows), el hijo sin sus variables protege la casa de la cuenta del sistema (os.userInfo), que acá es otra: sólo
+  // con el encierro se puede ver que la de la prueba sigue frenada, sin escribir en la de verdad
+  if (process.platform !== 'darwin' || /sin el encierro del sistema/.test(salida(s))) return;
   assert.doesNotMatch(salida(s), /REAL escribió/, salida(s));
   assert.ok(!fs.existsSync(destinoReal), 'la casa de la cuenta sigue frenada');
 });
