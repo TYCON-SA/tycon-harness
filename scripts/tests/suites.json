@@ -627,6 +627,12 @@
       "requiere": []
     },
     {
+      "__nota": "los args del pase llegan en un archivo (--args-file): en Windows la línea de comando no aguanta los de la revisión del plan.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/workflow-lite-args-file.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el permiso de escribir evidencia a mano y la exención de la prueba en vivo los autoriza la persona; los avisos no le dan al agente la receta de los escapes (story 8.96).",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/pipeline-escape.test.js",
