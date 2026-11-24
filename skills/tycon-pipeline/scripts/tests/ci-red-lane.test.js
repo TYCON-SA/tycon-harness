@@ -61,7 +61,7 @@ function mundo(t, { estado = 'rojo', veredicto = 'rojo', numero = 6910 } = {}) {
     pedidos: [{ repo, nombre: 'backend', numero, rama: 'story/2.4', commit, veredicto, etapa: 'Backend CI · Package' }] }));
   return { repo, home, state, commit };
 }
-const abrir = (m, o = {}) => lane.validarApertura({ stateDir: m.state, sesion: 's1', pedido: 6910, control: 'Manifest check', allowedFiles: [path.join(m.repo, 'plugin.json')], codigo: 0, tope: firmas.TOPE_CI_ROJO, ...o });
+const abrir = (m, o = {}) => lane.validarApertura({ stateDir: m.state, sesion: 's1', pedido: 6910, control: 'Manifest check', allowedFiles: [path.join(m.repo, 'plugin.json')], tope: firmas.TOPE_CI_ROJO, ...o });
 
 // 🔴 Falla con: abrir sin anotar la punta del pedido (el carril mediría desde main y contaría la historia entera).
 test('CiRedLane_Opens_OnRedPr (T13) @story-8.322 @ac-11', (t) => {
@@ -82,7 +82,8 @@ test('CiRedLane_Opens_OnRedPr (T13) @story-8.322 @ac-11', (t) => {
 test('CiRedLane_Signature_OwnerOrDelegated (T14) @story-8.322 @ac-12', () => {
   const pedido = (...extra) => ['--ci-red', '6910', '--check', 'Manifest check', '--reason', 'saca la clave', '--data', 'sin-cambio', ...extra];
   assert.strictEqual(firmas.firmaDelPedidoAdhoc(pedido('--file', 'plugin.json', '--file', 'src/a.js')), firmas.CI_ROJO);
-  assert.strictEqual(firmas.firmaDelPedidoAdhoc(pedido('--file', 'src/a.js', '--file', 'src/b.js', '--file', 'src/c.js', '--file', 'src/a.test.js')), firmas.CI_ROJO, 'una prueba no cuenta');
+  assert.strictEqual(firmas.firmaDelPedidoAdhoc(pedido('--file', 'src/a.js', '--file', 'src/b.js', '--file', 'src/c.js', '--file', 'src/a.test.js')), firmas.SOBRE_CUPO, 'una prueba cuenta');
+  assert.strictEqual(firmas.firmaDelPedidoAdhoc(pedido('--file', 'src/a.js', '--file', 'src/a.test.js', '--file', 'README.md')), firmas.CI_ROJO);
   assert.strictEqual(firmas.firmaDelPedidoAdhoc(pedido('--file', 'src/a.js', '--file', 'src/b.js', '--file', 'src/c.js', '--file', 'src/d.js')), firmas.SOBRE_CUPO);
   assert.strictEqual(firmas.firmaDelPedidoAdhoc(pedido('--max-files', '2', '--file', 'src/a.js')), firmas.SOBRE_CUPO);
   const s = firmas.SIGNATURES.find((x) => x.id === firmas.CI_ROJO);
@@ -116,7 +117,14 @@ test('CiRedLane_Box_ShowsPrCheckFiles (T15) @story-8.322 @ac-12', (t) => {
 // 🔴 Falla con: un tope que no es el del arreglo, o un archivo fuera de la lista que guarda.
 test('CiRedLane_OutsideListOrOverCap_Blocks (T16) @story-8.322 @ac-13', (t) => {
   const m = mundo(t);
-  assert.match(abrir(m, { allowedFiles: ['a', 'b', 'c', 'd'].map((n) => path.join(m.repo, 'src', `${n}.js`)), codigo: 4 }).problema, /nombra 4 archivos de implementación y el arreglo de un rojo de CI llega hasta 3/);
+  assert.match(abrir(m, { allowedFiles: ['a', 'b', 'c', 'd'].map((n) => path.join(m.repo, 'src', `${n}.js`)) }).problema, /nombra 4 archivos y el arreglo de un rojo de CI llega hasta 3, pruebas incluidas/);
+  // el tope cuenta todo: con las pruebas afuera, un archivo de código y diez de prueba pasaban sin revisores
+  assert.match(abrir(m, { allowedFiles: ['a.js', 'a.test.js', 'b.test.js', 'c.test.js'].map((n) => path.join(m.repo, 'src', n)) }).problema, /nombra 4 archivos/);
+  // la compilación y los controles del repo no se tocan por acá: el arreglo los apagaría en vez de arreglar el rojo
+  for (const rel of ['.github/workflows/ci.yml', 'azure-pipelines.yml', 'build/azure-pipelines-pr.yaml', 'pipelines/build.yml', '.gitlab-ci.yml', '.tycon/ci-local-checks.json', '.tycon/advisors.yaml']) {
+    escribir(m.repo, rel);
+    assert.match(abrir(m, { allowedFiles: [path.join(m.repo, rel)] }).problema || '', /la lista toca la compilación o los controles del repo/, rel);
+  }
   const otro = tmp(t, 'otro-repo-');
   assert.match(abrir(m, { allowedFiles: [path.join(otro, 'x.js')] }).problema, /no son del repo del pedido \(backend\)/);
   // abierto con su lista, guardar un archivo que la lista no nombra frena (el freno de la lista de siempre)
@@ -134,15 +142,17 @@ test('CiRedLane_OutsideListOrOverCap_Blocks (T16) @story-8.322 @ac-13', (t) => {
   assert.match(d.texto, /src\/a\.js|lista/, d.texto);
 });
 
-// 🔴 Falla con: guardar el arreglo sin correr el control que falló, o con el control todavía en rojo.
+// 🔴 Falla con: guardar el arreglo sin correr los controles de CI en local, o corriendo sólo el que nombró la sesión.
 test('CiRedLane_Save_RunsFailedCheck (T17) @story-8.322 @ac-14', () => {
   const carril = { ciRojo: { pedido: 6910, control: 'Manifest check', repo: '/r/backend', nombre: 'backend' } };
-  const declarado = { controles: [{ nombre: 'Manifest check' }], errores: [] };
-  const rojo = lane.frenoAlGuardar(carril, { controlesDe: () => declarado, correr: (repo, o) => ({ codigo: 2, motivo: `${o.soloNombre} sale 1 en local` }) });
-  assert.strictEqual(rojo.texto, '🔒 GUARDAR: el arreglo del rojo de CI del pedido #6910 todavía no pasa el control que falló: Manifest check sale 1 en local');
+  const declarado = { controles: [{ nombre: 'Manifest check' }, { nombre: 'Lint' }], errores: [] };
+  // el rojo de otro control declarado también frena: con `--check` elegido por la sesión, el que falló quedaba sin correr
+  const rojo = lane.frenoAlGuardar(carril, { controlesDe: () => declarado, correr: (repo, o) => (o.soloNombre ? { codigo: 0 } : { codigo: 2, motivo: 'Lint sale 1 en local' }) });
+  assert.ok(rojo, 'guardó con un control declarado en rojo');
+  assert.strictEqual(rojo.texto, '🔒 GUARDAR: el arreglo del rojo de CI del pedido #6910 todavía no pasa los controles de CI que corren en local: Lint sale 1 en local');
   let corrido = null;
-  assert.strictEqual(lane.frenoAlGuardar(carril, { controlesDe: () => declarado, correr: (repo, o) => { corrido = [repo, o.soloNombre]; return { codigo: 0 }; } }), null);
-  assert.deepStrictEqual(corrido, ['/r/backend', 'Manifest check'], 'corrió otro control, o en otro repo');
+  assert.strictEqual(lane.frenoAlGuardar(carril, { controlesDe: () => declarado, correr: (repo, o) => { corrido = [repo, Boolean(o && o.soloNombre)]; return { codigo: 0 }; } }), null);
+  assert.deepStrictEqual(corrido, ['/r/backend', false], 'corrió uno solo, o en otro repo');
   // el control que dejó de estar declarado: sin él nada frena el arreglo, y no guarda
   assert.match(lane.frenoAlGuardar(carril, { controlesDe: () => ({ controles: [], errores: [] }), correr: () => assert.fail('corrió un control que no está declarado') }).texto,
     /el control «Manifest check» ya no está declarado para correr en local en backend: sin él no se guarda/);
@@ -162,7 +172,7 @@ test('CiRedLane_NoPlanNoReviewers_HighRisk (T18) @story-8.322 @ac-15', () => {
 test('CiRedLane_Sensitive_KeepsControlSignature (T19) @story-8.322 @ac-15', (t) => {
   const m = mundo(t);
   escribir(m.repo, 'scripts/lib/signatures.js', '// x\n');
-  const r = abrir(m, { allowedFiles: [path.join(m.repo, 'scripts', 'lib', 'signatures.js')], codigo: 1 });
+  const r = abrir(m, { allowedFiles: [path.join(m.repo, 'scripts', 'lib', 'signatures.js')] });
   assert.match(r.problema, /la lista toca lo sensible \(scripts\/lib\/signatures\.js\): eso va con su firma de control/);
 });
 
@@ -189,6 +199,15 @@ test('CiRedLane_Refuses_GreenOtherOrClosed (T20) @story-8.322 @ac-16', (t) => {
     { cwd: c.repo, encoding: 'utf8', env: { ...process.env, HOME: c.home, USERPROFILE: c.home, CLAUDE_CODE_SESSION_ID: 's1' } });
   assert.strictEqual(comun.status, 2, comun.stderr);
   assert.match(comun.stderr, /tiene abierto el arreglo del rojo de CI del pedido #6910, sin revisores; un arreglo común no se le suma/);
+  // ni al revés: el arreglo de un rojo no se abre sobre un arreglo común abierto, que tiene su propio tope
+  const d = mundo(t);
+  fs.mkdirSync(path.join(d.state, 'adhoc'), { recursive: true });
+  fs.writeFileSync(path.join(d.state, 'adhoc', 's1.json'), JSON.stringify({ reason: 'un arreglo común con su lista', maxFiles: 8, files: [], allowedFiles: ['a', 'b', 'c', 'd'].map((n) => path.join(d.repo, 'src', `${n}.js`)),
+    declaredAt: ahora, lastTouch: ahora, firmadaEn: ahora, via: 'ventana', datos: 'sin-cambio' }));
+  const encima = spawnSync(process.execPath, [MARKER, 'adhoc', 'set', '--ci-red', '6910', '--check', 'Manifest check', '--reason', 'saca defaultSettings del manifiesto', '--data', 'sin-cambio', '--file', 'plugin.json'],
+    { cwd: d.repo, encoding: 'utf8', env: { ...process.env, HOME: d.home, USERPROFILE: d.home, CLAUDE_CODE_SESSION_ID: 's1' } });
+  assert.strictEqual(encima.status, 2, encima.stderr);
+  assert.match(encima.stderr, /esta sesión tiene abierto un arreglo rápido común; el arreglo de un rojo de CI no se abre encima/);
   // por la consola: lo rechaza antes de pedir la firma
   const n = mundo(t, { estado: 'listos', veredicto: 'verde' });
   const r = spawnSync(process.execPath, [MARKER, 'adhoc', 'set', '--ci-red', '6910', '--check', 'Manifest check', '--reason', 'saca defaultSettings del manifiesto', '--data', 'sin-cambio', '--file', 'plugin.json'],

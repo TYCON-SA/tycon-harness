@@ -4,7 +4,7 @@
  * pedido) se cierra como `reemplazada`, sin pase, pasos ni firma: `marker.js clear --replaced-by <commit>`.
  *
  * No se le cree a nadie: el arnés comprueba que el commit está en `main` del servidor de un repo de la ejecución, que es
- * posterior a su arranque y que toca alguno de los archivos que la ejecución editó. Una ejecución detenida, que espera la
+ * posterior a su arranque y que toca todos los archivos que la ejecución editó en ese repo. Una ejecución detenida, que espera la
  * decisión del dueño, no se cierra así. Si no lo puede comprobar, queda la salida de siempre (la firma de cerrar
  * la ejecución). La comprobación la hace igual el freno de la consola, antes, sin traer `main` (`fetch: false`), y el
  * guion, después de traerlo.
@@ -84,6 +84,12 @@ function comprobar({ marker, sha, fetch = false } = {}) {
     }
     const toca = d.stdout.split('\n').map((x) => x.trim()).filter((x) => x && archivos.has(x));
     if (!toca.length) { vistos.push(`${path.basename(repo)}: el commit no toca ninguno de los archivos que editó la ejecución`); continue; }
+    // todos, no alguno: un archivo en común con otra historia (una lista de suites) no dice que el arreglo entró
+    const sinTocar = [...archivos].filter((x) => !toca.includes(x));
+    if (sinTocar.length) {
+      vistos.push(`${path.basename(repo)}: el commit deja sin tocar ${sinTocar.length} de los archivos que editó la ejecución (${sinTocar.slice(0, 5).join(', ')}${sinTocar.length > 5 ? ', …' : ''})`);
+      continue;
+    }
     return { ok: true, repo, archivos: toca };
   }
   return { ok: false, motivo: vistos.length ? vistos.join('; ') : `el commit ${String(sha).slice(0, 12)} no está en ningún repo de la ejecución` };

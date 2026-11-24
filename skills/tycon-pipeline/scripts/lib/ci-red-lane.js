@@ -3,15 +3,17 @@
  * ci-red-lane.js — el arreglo de un rojo de CI de un pedido abierto y ya revisado (la firma `adhoc-lane:ci-rojo`).
  *
  * Un rojo chico de la compilación de un pedido (una clave mal puesta en un manifiesto) no paga una corrida entera: se
- * abre un camino corto atado al pedido y al control que falló, sin plan ni revisores, con un tope de 3 archivos de
- * implementación. Lo que lo protege es su alcance y el control que falló corrido otra vez antes de guardar.
+ * abre un camino corto atado al pedido y al control que falló, sin plan ni revisores, con un tope de 3 archivos, pruebas
+ * incluidas. Lo que lo protege es su alcance y los controles de CI corridos otra vez en local antes de guardar.
  *
  *   · `validarApertura(...)`  `{ ciRojo }` o `{ problema }`. Abre sólo sobre un pedido que la espera de la compilación
  *                             de ESTA sesión vio en rojo (`pr-build-wait/<sesión>-resultado.json`), con la lista dentro del
- *                             repo de ese pedido, sin archivos sensibles (van con su firma de control), con el control
- *                             declarado para correr en local y con la punta del repo en el commit que dio rojo. Anota la punta: el carril mide desde ahí, no desde `main`.
- *   · `frenoAlGuardar(carril)` `{ texto }` o null. Corre el control que falló, que el repo tiene que declarar para correr
- *                             en local (lib/ci-local-checks.js): sin él no abre, y si deja de estar, no guarda.
+ *                             repo de ese pedido, sin archivos sensibles (van con su firma de control), sin la compilación
+ *                             ni la configuración del arnés del repo, con el control declarado para correr en local y con
+ *                             la punta del repo en el commit que dio rojo. Anota la punta: el carril mide desde ahí, no desde `main`.
+ *   · `frenoAlGuardar(carril)` `{ texto }` o null. Corre todos los controles de CI que el repo declara para correr en local
+ *                             (lib/ci-local-checks.js), no sólo el que nombró la sesión: el nombre no se puede cotejar con
+ *                             la etapa que falló en la compilación. Sin el control nombrado no abre, y si deja de estar, no guarda.
  *   · `esperaTrasEmpujar(...)` la lista para relanzar la espera de la compilación del pedido con la punta nueva; con
  *                             verde, la espera cierra el carril.
  */
@@ -21,6 +23,10 @@ const { spawnSync } = require('child_process');
 
 const git = (repo, args) => spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', windowsHide: true });
 const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return path.resolve(p); } };
+
+// la compilación del repo y la configuración del arnés (donde se declaran los controles locales y sus paquetes): tocarlas
+// apagaría el control en rojo en vez de arreglarlo
+const DE_LA_COMPILACION = [/^\.tycon\//i, /^\.github\/(?:workflows|actions)\//i, /(?:^|\/)azure-pipelines[^/]*\.ya?ml$/i, /^pipelines\/.*\.ya?ml$/i, /(?:^|\/)\.gitlab-ci\.ya?ml$/i];
 
 /** El resultado de la espera de la compilación de la sesión, o `{ problema }`. */
 function resultadoDeLaSesion(stateDir, sesion) {
@@ -32,9 +38,9 @@ function resultadoDeLaSesion(stateDir, sesion) {
 
 /**
  * ¿Se puede abrir el arreglo? `pedido` (número), `control` (el nombre del control que falló), `allowedFiles` (absolutas),
- * `codigo` (cuántos son de implementación), `tope`.
+ * `tope` (de archivos, pruebas incluidas).
  */
-function validarApertura({ stateDir, sesion, pedido, control, allowedFiles = [], codigo, tope, controlesDe = (repo) => require('./ci-local-checks.js').controlesDe(repo) }) {
+function validarApertura({ stateDir, sesion, pedido, control, allowedFiles = [], tope, controlesDe = (repo) => require('./ci-local-checks.js').controlesDe(repo) }) {
   const r = resultadoDeLaSesion(stateDir, sesion);
   if (r.problema) return { problema: r.problema };
   const p = (r.pedidos || []).find((x) => Number(x.numero) === Number(pedido));
@@ -42,13 +48,16 @@ function validarApertura({ stateDir, sesion, pedido, control, allowedFiles = [],
   if (r.estado !== 'rojo' || p.veredicto !== 'rojo') return { problema: `la compilación del pedido #${pedido} no está en rojo (la espera dijo: ${p.veredicto}): no hay rojo que arreglar por esta vía` };
   if (!String(control || '').trim()) return { problema: '--check "<control que falló>" va con el nombre del control' };
   if (!allowedFiles.length) return { problema: 'la lista de archivos va con --file <ruta>, al menos uno' };
-  if (codigo > tope) return { problema: `la lista nombra ${codigo} archivos de implementación y el arreglo de un rojo de CI llega hasta ${tope}: esto va por el camino corto de siempre o por una historia` };
+  if (allowedFiles.length > tope) return { problema: `la lista nombra ${allowedFiles.length} archivos y el arreglo de un rojo de CI llega hasta ${tope}, pruebas incluidas: esto va por el camino corto de siempre o por una historia` };
   const repo = real(p.repo);
   const fuera = allowedFiles.filter((f) => { const rel = path.relative(repo, real(path.dirname(f))); return rel.startsWith('..') || path.isAbsolute(rel); });
   if (fuera.length) return { problema: `${fuera.length} archivo(s) de la lista no son del repo del pedido (${p.nombre}): ${fuera.slice(0, 3).join(', ')}` };
   const so = require('./save-ok.js');
-  const sensibles = allowedFiles.map((f) => path.relative(repo, f).split(path.sep).join('/')).filter((rel) => so.esSensible(rel));
+  const rels = allowedFiles.map((f) => path.relative(repo, path.join(real(path.dirname(f)), path.basename(f))).split(path.sep).join('/'));
+  const sensibles = rels.filter((rel) => so.esSensible(rel));
   if (sensibles.length) return { problema: `la lista toca lo sensible (${sensibles.join(', ')}): eso va con su firma de control, no por el arreglo de un rojo de CI` };
+  const deLaCompilacion = rels.filter((rel) => DE_LA_COMPILACION.some((re) => re.test(rel)));
+  if (deLaCompilacion.length) return { problema: `la lista toca la compilación o los controles del repo (${deLaCompilacion.join(', ')}): cambiarlos no arregla el rojo, lo apaga; va por el camino corto de siempre, con revisores` };
   // el control que falló tiene que poder correr en local: es lo único que frena el arreglo antes de empujar
   const { controles, errores } = controlesDe(repo);
   if (errores.length) return { problema: `no pude leer los controles de CI que corren en local en ${p.nombre}: ${errores.join('; ')}` };
@@ -63,7 +72,7 @@ function validarApertura({ stateDir, sesion, pedido, control, allowedFiles = [],
   return { ciRojo: { pedido: Number(pedido), control: String(control).trim(), repo, nombre: p.nombre, rama: p.rama || null, etapa: p.etapa || null, puntas: { [repo]: sha }, storyId: r.storyId || null } };
 }
 
-/** El freno de guardar del arreglo: el control que falló, otra vez, en local. `{ texto }` o null. */
+/** El freno de guardar del arreglo: los controles de CI del repo, otra vez, en local. `{ texto }` o null. */
 function frenoAlGuardar(carril, { correr = (repo, o) => require('./ci-local-checks.js').correr(repo, o), controlesDe = (repo) => require('./ci-local-checks.js').controlesDe(repo) } = {}) {
   const c = carril && carril.ciRojo;
   if (!c) return null;
@@ -72,8 +81,8 @@ function frenoAlGuardar(carril, { correr = (repo, o) => require('./ci-local-chec
   const declarado = controles.find((x) => x.nombre === c.control);
   // al abrir estaba declarado: si el repo dejó de declararlo, no hay con qué frenar el arreglo
   if (!declarado) return { texto: `🔒 GUARDAR: el control «${c.control}» ya no está declarado para correr en local en ${c.nombre}: sin él no se guarda el arreglo del rojo de CI del pedido #${c.pedido}` };
-  const r = correr(c.repo, { soloNombre: c.control });
-  if (r.codigo !== 0) return { texto: `🔒 GUARDAR: el arreglo del rojo de CI del pedido #${c.pedido} todavía no pasa el control que falló: ${r.motivo}` };
+  const r = correr(c.repo, {});
+  if (r.codigo !== 0) return { texto: `🔒 GUARDAR: el arreglo del rojo de CI del pedido #${c.pedido} todavía no pasa los controles de CI que corren en local: ${r.motivo}` };
   return null;
 }
 

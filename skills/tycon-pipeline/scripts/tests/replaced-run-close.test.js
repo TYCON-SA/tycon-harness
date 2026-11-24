@@ -155,6 +155,15 @@ test('ReplacedBy_OtherFiles_Refuses (T25) @story-8.322 @ac-23', (t) => {
   const r = cerrar(c, '--replaced-by', c.otro);
   assert.strictEqual(r.status, 1);
   assert.match(r.stderr, /no toca ninguno de los archivos que editó la ejecución/);
+  // un commit que toca uno de los archivos que editó la ejecución y deja otro sin tocar: su arreglo no está en main
+  const dos = marcador(c);
+  fs.writeFileSync(path.join(c.estado, 'active', `${SID}.json`), JSON.stringify({ ...dos, fileEvents: [...dos.fileEvents, { path: path.join(c.repo, 'src', 'otro.js'), ts: hace(20), code: true }] }));
+  assert.deepStrictEqual(frena(c, `node ${MARKER} clear --replaced-by ${c.enMain}`), ['cerrar la ejecución'], 'el freno usa la misma comprobación');
+  const parcial = cerrar(c, '--replaced-by', c.enMain);
+  assert.strictEqual(parcial.status, 1, parcial.stderr);
+  assert.match(parcial.stderr, /deja sin tocar .*src\/otro\.js/);
+  assert.ok(marcador(c).storyId, 'borró la ejecución');
+  fs.writeFileSync(path.join(c.estado, 'active', `${SID}.json`), JSON.stringify(dos));
   // sin archivos anotados no hay con qué comparar
   const m = marcador(c);
   fs.writeFileSync(path.join(c.estado, 'active', `${SID}.json`), JSON.stringify({ ...m, fileEvents: [] }));

@@ -662,11 +662,16 @@ function cmdAdhoc(sub, payloadJson) {
     const firmaDelPedido = firmas.firmaDelPedidoAdhoc(process.argv.slice(4), topes.maximo, { cwd: carpetaDeLaLista });
     // el arreglo de un rojo de CI: sólo sobre el pedido en rojo de esta sesión, dentro de su repo y su tope, sin lo sensible
     if (payload.ciRojo !== undefined) {
-      if (firmaDelPedido !== firmas.CI_ROJO) {
-        console.error(`marker.js adhoc set: la lista nombra más de ${firmas.TOPE_CI_ROJO} archivos de implementación: el arreglo de un rojo de CI llega hasta ahí; lo demás va por el camino corto de siempre o por una historia.`);
+      // sobre un arreglo común abierto heredaría su lista y su tope: se cierra uno y se abre el otro
+      if (actual && !actual.ciRojo) {
+        console.error('marker.js adhoc set: esta sesión tiene abierto un arreglo rápido común; el arreglo de un rojo de CI no se abre encima. Cerralo (marker.js adhoc clear) y pedí el del rojo.');
         process.exit(2);
       }
-      const v = require('./ci-red-lane.js').validarApertura({ stateDir: STATE_DIR, sesion: destino, pedido: payload.ciRojo, control: payload.control, allowedFiles, codigo: deCodigo, tope: firmas.TOPE_CI_ROJO });
+      if (firmaDelPedido !== firmas.CI_ROJO) {
+        console.error(`marker.js adhoc set: la lista nombra más de ${firmas.TOPE_CI_ROJO} archivos, pruebas incluidas: el arreglo de un rojo de CI llega hasta ahí; lo demás va por el camino corto de siempre o por una historia.`);
+        process.exit(2);
+      }
+      const v = require('./ci-red-lane.js').validarApertura({ stateDir: STATE_DIR, sesion: destino, pedido: payload.ciRojo, control: payload.control, allowedFiles, tope: firmas.TOPE_CI_ROJO });
       if (v.problema) { console.error(`marker.js adhoc set: ${v.problema}.`); process.exit(2); }
       ciRojo = v.ciRojo;
     } else if (actual && actual.ciRojo) {
@@ -676,7 +681,7 @@ function cmdAdhoc(sub, payloadJson) {
     }
     const enLaLista = `${allowedFiles.length} archivo${allowedFiles.length === 1 ? '' : 's'} (${relLista.slice(0, 2).join(', ')}${relLista.length > 2 ? ', …' : ''})`;
     const delRojo = ciRojo ? `arreglo del rojo de CI del pedido #${ciRojo.pedido} (${ciRojo.nombre}${ciRojo.etapa ? `, falló «${ciRojo.etapa}»` : ''}), control «${ciRojo.control}», sin plan ni revisores, de la sesión ${destino}` : null;
-    const r = ow.exigir({ firma: firmaDelPedido, argv: process.argv.slice(1), resumen: enUnRenglon(delRojo ? `${conRiesgo}${delRojo}: «${reason}» · ${enLaLista} · hasta ${firmas.TOPE_CI_ROJO} archivos de implementación`
+    const r = ow.exigir({ firma: firmaDelPedido, argv: process.argv.slice(1), resumen: enUnRenglon(delRojo ? `${conRiesgo}${delRojo}: «${reason}» · ${enLaLista} · hasta ${firmas.TOPE_CI_ROJO} archivos, pruebas incluidas`
       : `${conRiesgo}arreglo rápido de la sesión ${destino}${enRepos}${conMaqueta}: «${reason}» · ${enLaLista} · ${cupoPedido}`),
       propia: PROPIA, anotar: anotarFirma, antes });
     if (r.codigo !== 0) {

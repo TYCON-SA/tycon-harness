@@ -117,7 +117,7 @@ const LEVELS = Object.freeze([
   ['save', 1, AMBOS, 'guardar: commit, push y pull requests, si ningún commit toca algo de lo sensible'],
   ['browser-test:prepare', 1, AMBOS, 'preparar la prueba con navegador'],
   ['adhoc-lane', 1, AMBOS, 'abrir un arreglo rápido sin historia, dentro del cupo'],
-  ['adhoc-lane:ci-rojo', 1, AMBOS, 'abrir el arreglo de un rojo de CI de un pull request abierto, sin plan ni revisores (hasta 3 archivos de implementación; antes de guardar corren el control que falló y las pruebas tocadas)'],
+  ['adhoc-lane:ci-rojo', 1, AMBOS, 'abrir el arreglo de un rojo de CI de un pull request abierto, sin plan ni revisores (hasta 3 archivos, pruebas incluidas; antes de guardar corren los controles de CI en local y las pruebas tocadas)'],
   ['compare-waiver', 1, AMBOS, 'eximir de la comparación con main a un comando que la historia modifica (delegable sólo si el perfil la suma a approvals.delegated_signing)'],
   ['refresh-after-main', 1, MANT, 'refirmar los controles tras traer main, sin cambio propio'],
   ['lost-run:particion', 1, AMBOS, 'cerrar una ejecución perdida que la partición de su historia en tandas dejó sin objeto (delegable sólo si el perfil la suma a approvals.delegated_signing)'],
@@ -516,11 +516,12 @@ function firmaDelPedidoAdhoc(args = [], tope = TOPE, { cwd = null } = {}) {
   };
   if (String(a[0] || '').startsWith('--')) {
     if (a.some((w) => w.startsWith('--max-files=') || w.startsWith('--file='))) return SOBRE_CUPO;
-    // el arreglo de un rojo de CI: su propia firma, con su tope; un cupo pedido o más código que el tope no es esta vía
+    // el arreglo de un rojo de CI: su propia firma, con su tope; un cupo pedido o más archivos que el tope, pruebas
+    // incluidas, no es esta vía
     if (a.includes('--ci-red') || a.some((w) => w.startsWith('--ci-red='))) {
       if (a.includes('--max-files') || a.some((w) => w.startsWith('--ci-red='))) return SOBRE_CUPO;
       const deLaLista = a.flatMap((w, i) => (w === '--file' ? [a[i + 1]] : []));
-      return codigoDe(deLaLista) <= TOPE_CI_ROJO ? CI_ROJO : SOBRE_CUPO;
+      return deLaLista.length <= TOPE_CI_ROJO ? CI_ROJO : SOBRE_CUPO;
     }
     const lista = a.flatMap((w, i) => (w === '--file' ? [a[i + 1]] : []));
     if (lista.length && !dentro(codigoDe(lista))) return SOBRE_CUPO;
