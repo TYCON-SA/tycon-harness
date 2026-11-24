@@ -1259,6 +1259,16 @@ test('CopiaPorOtroProgramaOEnvoltorio_AlEstado_Frena (fila 223, el freno)', () =
     for (const pegado of ['cp>log', 'cp>>log', 'cp>|log', 'cp<<<x', 'cp$x', 'cp${x}', 'cp$()', 'cp``', "cp$''", 'mv$x', 'rsync$x -a', 'install$x', 'env cp$x']) {
       frena(`${pegado} ${S} '${res}'`);
     }
+    // de la tercera vuelta: una redirección pegada con una barra en su palabra (`cp>/dev/null`) no cambia el programa; y
+    // miles de `-S` encadenados se leen sin agotar la memoria: el `cp` de al lado se sigue viendo
+    for (const pegado of ['cp>/dev/null', 'cp>/tmp/log', 'cp>>/tmp/log', 'cp</dev/null', 'cp<<<a/b', 'mv>/dev/null']) frena(`${pegado} ${S} '${res}'`);
+    frena(`truncate>/dev/null -s0 '${res}'`);
+    frena(`sed>/dev/null -i.bak s/a/b/ '${res}'`);
+    frena(`env ${'-S'.repeat(50000)}x; cp ${S} '${res}'`);
+    // stable-data: el reloj mide cuánto tarda la lectura, que es lo que se prueba (un valor de `-S` con miles de palabras)
+    const desde = Date.now();
+    bash.extractWriteTargets(`env -S'${'-S '.repeat(20000)}cp' ${S} '${res}'`);
+    assert.ok(Date.now() - desde < 1500, `env -S con miles de palabras: ${Date.now() - desde} ms`);
     // lo de siempre sigue pasando
     pasa(`install -m 644 ${S} '${repo}/copia.json'`);
     pasa(`rsync -a ${S} '${repo}/copia.json'`);
@@ -1304,6 +1314,16 @@ test('CpAlEstado_ConRedireccionRara_Frena (fila 224, el freno)', () => {
     for (const op of ['>!', '>>!', '&>!', '2>!', 'X=1 >!', 'env >!', 'nohup >!']) frena(`${op} cp ${S} '${res}'`);
     frena(`>! sed -i.bak s/a/b/ '${res}'`);
     for (const entrada of ['<<<$(true; true)', '<<<$(true|true)', '<<<${x:-a; b}']) frena(`cp ${S} ${entrada} '${res}'`);
+    // de la tercera vuelta: con una sustitución sin cerrar detrás, el destino de antes sigue siendo un destino; y en zsh
+    // `>! x` delante de los argumentos de un guion es una redirección
+    // (el destino, sin la ejecución abierta: con ella frena también otra capa)
+    const destinoVisto = (cmd) => assert.ok(bash.extractWriteTargets(cmd).includes(res), JSON.stringify(cmd));
+    for (const entrada of ['<<<$(true; true)', '<<<$(a|b)', '<<<${x:-a; b}', '2>$(true; echo /tmp/z)']) {
+      destinoVisto(`cp ${S} '${res}' ${entrada}`);
+      destinoVisto(`mv ${S} '${res}' ${entrada}`);
+    }
+    destinoVisto(`truncate -s0 '${res}' <<<$(true; true)`);
+    frena(`node -e "require('fs').writeFileSync(process.argv[1],'x')" >! /tmp/x '${res}'`);
     // lo de siempre sigue pasando
     pasa(`cp ${S} '${repo}/copia.json' <<<x"y"`);
     pasa(`HOLA=1 >/dev/null cp ${S} '${repo}/copia.json'`);

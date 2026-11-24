@@ -247,9 +247,11 @@ function sinCerrar(redireccion) {
 function palabrasDelComando(seg) {
   // un comentario al final no es parte del comando
   const sinComentario = String(seg).replace(/(^|\s)#.*$/, '');
-  // una sustitución sin cerrar deja en su lugar una palabra que no se resuelve: lo que quede como último argumento no es
-  // el destino de verdad, y el tramo no se sabe leer
-  const blanco = (r) => (sinCerrar(r) ? ' $( ' : ' ');
+  // con una sustitución sin cerrar no se sabe dónde termina el comando: `words.sinCerrar` lo dice, y quien busca el
+  // último argumento toma todos. En su lugar queda una palabra que no se resuelve: el destino puede haber quedado en el
+  // tramo siguiente
+  let abierta = false;
+  const blanco = (r) => { if (!sinCerrar(r)) return ' '; abierta = true; return ' $( '; };
   const sinRedir = sinComentario
     .replace(REDIRECCION_DE_SALIDA_CON_PALABRA, blanco)
     .replace(REDIRECCION_DE_ENTRADA_CON_PALABRA, blanco);
@@ -258,7 +260,14 @@ function palabrasDelComando(seg) {
     return mm ? tok(mm, 1) : null;
   }).filter(Boolean);
   if (words[words.length - 1] === '\\') words.pop();
+  words.sinCerrar = abierta;
   return words;
+}
+
+/** El último argumento que no es una opción; con el tramo sin cerrar (`palabrasDelComando`), todos. */
+function ultimosArgumentos(words) {
+  const sueltos = words.slice(1).filter((w) => !w.startsWith('-'));
+  return words.sinCerrar ? sueltos : sueltos.slice(-1);
 }
 
 // Una redirección delante del comando (`> f cp a b`, `10>f cp a b`, `{fd}>f cp a b`, `<<<x cp a b`): el comando es lo
@@ -290,6 +299,18 @@ const CON_PALABRA_PROPIA = new Set(['timeout', 'chrt', 'taskset']);
 // el principio de una palabra que es una redirección (`>f`, `2>`, `{fd}<x`, `&>f`, `>|f`)
 const EMPIEZA_REDIRECCION = new RegExp(String.raw`^(?:&|${DESCRIPTOR})?(?:>{1,2}(?:\||!|&[|!]?)?|<(?:<<|<-?|&|>)?)`);
 
+/** Dónde termina la palabra antes de un `<` o `>` sin comillas ni barra (el largo de la palabra si no hay). */
+function antesDeUnaRedireccion(crudo) {
+  for (let i = 0; i < crudo.length; i++) {
+    const c = crudo[i];
+    if (c === '\\') { i++; continue; }
+    if (c === "'") { const j = crudo.indexOf("'", i + 1); if (j < 0) return crudo.length; i = j; continue; }
+    if (c === '"') { let j = i + 1; while (j < crudo.length && crudo[j] !== '"') j += crudo[j] === '\\' ? 2 : 1; i = j; continue; }
+    if (c === '<' || c === '>') return i;
+  }
+  return crudo.length;
+}
+
 /**
  * El tramo desde el programa que corre, con el programa por su nombre (`/bin/cp` y `\cp` son `cp`): sin las variables de
  * delante, las redirecciones (`HOLA=1 >f cp`) ni los envoltorios que corren otro comando (`env -i X=1`, `command`,
@@ -299,15 +320,17 @@ function desdeElPrograma(seg) {
   const t = String(seg).trim();
   const PIEZA = /(?:'[^']*'|"(?:\\.|[^"\\])*"|\\.|[^\s'"\\])+/g;
   const pieza = new RegExp(PIEZA.source, 'g');
-  // las palabras del valor de un `env -S` que faltan leer, antes de seguir con las del tramo: cada una con lo que le
-  // sigue (el resto del valor y después el resto del tramo), que se arma sólo si esa palabra resulta el programa
+  // las palabras del valor de un `env -S` que faltan leer, antes de seguir con las del tramo, en una pila (la próxima
+  // arriba): cada una con lo que le sigue (el resto del valor y después el resto del tramo), que se arma sólo si esa
+  // palabra resulta el programa. Un valor de una sola palabra es esa palabra, con lo que seguía al `-S`: no abre otro nivel
   const pendientes = [];
   const ponerValor = (valor, despues) => {
-    const nuevas = [...valor.matchAll(new RegExp(PIEZA.source, 'g'))].map((v) => {
-      const fin = v.index + v[0].length;
-      return { crudo: v[0], despues: () => `${valor.slice(fin)} ${despues()}` };
-    });
-    pendientes.unshift(...nuevas);
+    if (!/\s/.test(valor)) { if (valor) pendientes.push({ crudo: valor, despues }); return; }
+    const nuevas = [...valor.matchAll(new RegExp(PIEZA.source, 'g'))];
+    for (let k = nuevas.length - 1; k >= 0; k--) {
+      const fin = nuevas[k].index + nuevas[k][0].length;
+      pendientes.push({ crudo: nuevas[k][0], despues: () => `${valor.slice(fin)} ${despues()}` });
+    }
   };
   // las opciones del envoltorio que se está leyendo (null fuera de uno), las palabras que siguen y no son el programa (el
   // valor de una opción), si al terminar sus opciones le sigue una palabra suya, y si la que sigue es el valor de un `-S`
@@ -319,7 +342,7 @@ function desdeElPrograma(seg) {
   for (;;) {
     let crudo;
     let despues;
-    if (pendientes.length) ({ crudo, despues } = pendientes.shift());
+    if (pendientes.length) ({ crudo, despues } = pendientes.pop());
     else {
       const m = pieza.exec(t);
       if (!m) break;
@@ -331,13 +354,16 @@ function desdeElPrograma(seg) {
     // una redirección no es el programa; si su palabra va aparte (`> f`), tampoco la que sigue
     const redireccion = EMPIEZA_REDIRECCION.exec(crudo);
     if (redireccion) { if (redireccion[0].length === crudo.length) saltar = 1; continue; }
+    // una redirección pegada detrás (`cp>/dev/null`, `X=1>f`) termina la palabra: cuenta lo de antes
+    crudo = crudo.slice(0, antesDeUnaRedireccion(crudo));
     const w = palabraDelShell(crudo);
     // `env -S` parte su valor en palabras y las lee como las suyas (variables, opciones, el programa): pegado (`-Scp`,
     // `-S'cp a b'`, `--split-string=…`) o en la palabra siguiente. Sólo detrás de opciones sin valor (`-iS`): en
     // `-uSSH_AUTH_SOCK` la `S` es del nombre de la variable
     if (valorDeS) { valorDeS = false; ponerValor(w, despues); continue; }
     if (envoltorio === 'env' && opciones !== null) {
-      const corto = /^-[0iv]*S/.exec(w);
+      // (varios pegados, `-S-S-Scp`, de una vez: cada uno corre el valor del siguiente)
+      const corto = /^(?:-[0iv]*S)+/.exec(w);
       const largo = /^--(s[a-z-]*)(?==|$)/.exec(w);
       if (corto || (largo && 'split-string'.startsWith(largo[1]))) {
         const valor = corto ? w.slice(corto[0].length) : w.slice(largo[0].length + 1);
@@ -379,7 +405,7 @@ function cpMvDest(seg) {
     } else if (pegado) { dir = pegado[1]; fuera.add(i); }
   }
   // sin -t: el último argumento que no es una opción (`cp a b -f`, `Copy-Item a b -Force`, `cp a b --`)
-  if (dir === null) { const t = words.slice(1).filter((w) => !w.startsWith('-')).pop(); return t ? [t] : []; }
+  if (dir === null) return ultimosArgumentos(words);
   const fuentes = words.filter((w, i) => !fuera.has(i) && !w.startsWith('-'));
   return [dir, ...fuentes.map((f) => `${dir.replace(/[\\/]+$/, '')}/${f.split(/[\\/]/).pop()}`)];
 }
@@ -741,8 +767,11 @@ function destinosDeEscritura(raw, s, keep, out) {
   for (const seg of splitSegments(s)) {
     const programa = desdeElPrograma(sinRedireccionesDelante(seg));
     if (/^truncate\b/.test(programa)) {
-      const t = palabrasDelComando(programa).pop();
-      if (t && !t.startsWith('-')) out.add(t);
+      const words = palabrasDelComando(programa);
+      // el último, si no es una opción; con el tramo sin cerrar, todos los que no lo son
+      const t = words[words.length - 1];
+      if (words.sinCerrar) for (const w of ultimosArgumentos(words)) out.add(w);
+      else if (t && !t.startsWith('-')) out.add(t);
     }
   }
 
@@ -796,11 +825,20 @@ function palabras(tramo) {
   }).filter((w) => w != null);
 }
 
-/** Los argumentos que siguen a un script, sin redirecciones; el `--` de node no cuenta (node lo saca de `process.argv`). */
+/**
+ * Las listas de argumentos que siguen a un script, sin redirecciones; el `--` de node no cuenta (node lo saca de
+ * `process.argv`). Una sola, salvo con un `>!` (`>>!`, `&>!`, `N>!`): en bash el archivo es `!` y lo que sigue es un
+ * argumento; en zsh lo que sigue es el archivo. Entonces van las dos.
+ */
 function argumentosDe(resto) {
-  const sinRedir = String(resto || '').replace(/[ \t]*(?:&|\d)?>{1,2}(?:\||&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ');
-  const w = palabras(sinRedir).filter((x) => x !== '');
-  return w[0] === '--' ? w.slice(1) : w;
+  const lista = (operador) => {
+    const sinRedir = String(resto || '').replace(new RegExp(String.raw`[ \t]*(?:&|\d)?>{1,2}${operador}[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?`, 'g'), ' ');
+    const w = palabras(sinRedir).filter((x) => x !== '');
+    return w[0] === '--' ? w.slice(1) : w;
+  };
+  const deBash = lista(String.raw`(?:\||&)?`);
+  if (!/>!/.test(String(resto || ''))) return [deBash];
+  return [deBash, lista(String.raw`(?:\||!|&[|!]?)?`)];
 }
 
 /**
@@ -817,7 +855,7 @@ function scriptsInline(cmd) {
   const conFlag = new RegExp(`${inicio}((?:\\s+-{1,2}[A-Za-z][\\w-]*(?:=[^\\s'"]+)?)*?)\\s+(?:-[a-zA-Z]*[epc]|--eval|--print|-Command)\\s+(['"])((?:\\\\[\\s\\S]|(?!\\2)[^\\\\])*)\\2([^\\n;&|]*)`, 'gi');
   // sin los cuerpos de los heredocs: un `node -e` adentro de un `.md` que se escribe es texto, no un comando
   const sinCuerpos = raw.replace(/((?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)(?:[\s\S]*?\n)??[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
-  for (const m of sinCuerpos.matchAll(conFlag)) out.push({ script: m[3], argv: argumentosDe(m[4]) });
+  for (const m of sinCuerpos.matchAll(conFlag)) for (const argv of argumentosDe(m[4])) out.push({ script: m[3], argv });
   // por la entrada: el heredoc o el here-string que llega a un intérprete como su programa, detrás de un envoltorio,
   // en otra etapa de la tubería o con `/dev/stdin`
   for (const p of programasPorEntrada(raw)) {
