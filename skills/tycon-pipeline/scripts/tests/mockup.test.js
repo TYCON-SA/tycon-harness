@@ -1193,12 +1193,15 @@ test('T62 Mockup_Status_SinCalcularLaMatriz: status ubica la maqueta sin calcula
   const s = story(repo, ['src/components/Facturas.tsx']);
   const marca = path.join(TMP, 't62', 'llamadas.txt');
   const gancho = path.join(TMP, 't62', 'gancho.js');
+  // el gancho es un texto fijo: las rutas le llegan por el ambiente, no se escriben dentro del código
   escribir(gancho, [
-    `const m = require(${JSON.stringify(path.join(SK, 'runtime-matrix.js'))});`,
+    'const m = require(process.env.T62_MATRIX_MODULE);',
     'const original = m.compute;',
-    `m.compute = function (...a) { require('fs').appendFileSync(${JSON.stringify(marca)}, 'compute\\n'); return original.apply(this, a); };`,
+    "m.compute = function (...a) { require('fs').appendFileSync(process.env.T62_CALLS_FILE, 'compute\\n'); return original.apply(this, a); };",
   ].join('\n'));
-  const r = run(['status', '--story', s, '--json'], { env: { NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --require "${gancho}"`.trim() } });
+  const r = run(['status', '--story', s, '--json'], { env: {
+    NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --require "${gancho}"`.trim(), T62_MATRIX_MODULE: path.join(SK, 'runtime-matrix.js'), T62_CALLS_FILE: marca,
+  } });
   assert.strictEqual(r.rc, 0, r.all);
   const st = JSON.parse(r.out);
   assert.strictEqual(st.screen, true);
