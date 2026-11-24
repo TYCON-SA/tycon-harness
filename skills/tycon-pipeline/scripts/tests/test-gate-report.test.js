@@ -1023,9 +1023,9 @@ test('T80 TestGate_FailedTestNames_FromTrxAndJestJson — el informe dice el nom
   let { rc, stderr, got } = correrInforme(caso, [process.execPath, REPORT], { TYCON_GUIDES_DIR: tmpReal('tgr-sin-org-') });
   assert.strictEqual(rc, 0, stderr);
   assert.deepStrictEqual(got.tests_result.failed_tests, [
-    { name: 'Acme.Orders.Tests.ImporterTests.Importa_Pedido' },
-    { name: 'Acme.Orders.Tests.PriceTests.Suma(a: 1, b: "x")' },
-    { name: 'Acme.Orders.Tests.PriceTests.SeCorta' },
+    { name: 'Acme.Orders.Tests.ImporterTests.Importa_Pedido', outcome: 'Failed' },
+    { name: 'Acme.Orders.Tests.PriceTests.Suma(a: 1, b: "x")', outcome: 'Failed' },
+    { name: 'Acme.Orders.Tests.PriceTests.SeCorta', outcome: 'Timeout' },
   ]);
   // jest: el nombre completo, o los títulos de arriba con el de la prueba; el archivo relativo al proyecto; un archivo
   // que no llegó a correr se nombra igual
@@ -1063,4 +1063,26 @@ test('T80 …con muchas fallas, la lista se corta y dice cuántas más', () => {
   const r = nombresDeFallas({ runner: 'jest', jestJson: { testResults: [{ name: '/r/a.test.js', status: 'failed', assertionResults: muchas }] }, repoRun: '/r' });
   assert.strictEqual(r.failed_tests.length, 100);
   assert.strictEqual(r.failed_tests_more, 30);
+});
+
+test('T80 …la carpeta por un enlace, una entrada vacía y un archivo que falló con sus pruebas en verde', () => {
+  // 🔴 rojo si: jest escribe la ruta real y la carpeta llega por un enlace → el archivo sale «../../…» y no calza
+  const { nombresDeFallas } = require(REPORT);
+  const real = tmpReal('tgr-real-');
+  fs.mkdirSync(path.join(real, 'src'));
+  fs.writeFileSync(path.join(real, 'src', 'a.test.js'), '');
+  fs.writeFileSync(path.join(real, 'src', 'b.test.js'), '');
+  const enlace = path.join(tmpReal('tgr-enlace-'), 'repo');
+  fs.symlinkSync(real, enlace, 'dir');
+  const r = nombresDeFallas({ repoRun: enlace, jestJson: { testResults: [
+    null,
+    { name: path.join(real, 'src', 'a.test.js'), status: 'failed', assertionResults: [{ title: 'x', status: 'failed' }] },
+    { name: path.join(real, 'src', 'b.test.js'), status: 'failed', assertionResults: [{ title: 'y', status: 'passed' }] },
+    { name: '/otro/repo/c.test.js', status: 'failed', assertionResults: [] },
+  ] } });
+  assert.deepStrictEqual(r.failed_tests, [
+    { file: 'src/a.test.js', name: 'x' },
+    { file: 'src/b.test.js', name: null, file_failed: true },
+    { file: '/otro/repo/c.test.js', name: null, did_not_run: true },
+  ]);
 });

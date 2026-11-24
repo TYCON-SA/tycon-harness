@@ -146,8 +146,10 @@ por qué. Queda escrito en `base_check`. Topes: `TYCON_INHERITED_BASE_MAX` suite
 `TYCON_INHERITED_BASE_TIMEOUT_S` segundos por suite (600).
 
 Con .NET (y con otra herramienta que deja un trx) y con jest o vitest, `tests-result.json` dice además cuáles
-pruebas fallaron: `failed_tests`, con el nombre de cada una (y el archivo, en jest y vitest). Va hasta 100, y
-`failed_tests_more` dice cuántas más hubo. Un archivo de jest que no llegó a correr va con `did_not_run: true`. Sirve
+pruebas fallaron: `failed_tests`, con el nombre de cada una. En jest y vitest va también el archivo; en el trx, el
+resultado (`outcome`), porque la lista suma las que dieron error o se cortaron y el total del trx no. Va hasta 100, y
+`failed_tests_more` dice cuántas más hubo. Un archivo de jest que falló sin ninguna prueba fallida va igual: con
+`did_not_run: true` si no corrió ninguna, y con `file_failed: true` si corrieron todas y pasaron. Sirve
 para comparar con las que ya fallaban antes del cambio. Hoy no perdona nada: en estos repos, una falla de antes
 todavía frena.
 

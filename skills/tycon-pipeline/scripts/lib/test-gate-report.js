@@ -320,10 +320,13 @@ function clasificarSalteadas(salteadas) {
 const FALLO_TRX = new Set(['Failed', 'Error', 'Timeout', 'Aborted']);
 const TOPE_NOMBRES = 100;
 /**
- * El nombre de cada prueba que falló: `{ failed_tests: [{ file?, name, did_not_run? }], failed_tests_more }`. Del trx,
- * los resultados de primer nivel (como `contarTrx`) con su `testName`; del json de jest o vitest, el nombre completo de
- * cada aserción fallida (o sus títulos de arriba con el suyo) y el archivo relativo a la carpeta que se prueba. Un
- * archivo de jest que falló sin ninguna aserción fallida no llegó a correr: se nombra igual. Hasta `TOPE_NOMBRES`.
+ * El nombre de cada prueba que falló: `{ failed_tests: [{ file?, name, outcome?, did_not_run?, file_failed? }],
+ * failed_tests_more }`. Del trx, los resultados de primer nivel (como `contarTrx`) con su `testName` y su `outcome`: el
+ * total de fallas del trx (`Counters.failed`) no suma las que dieron error o se cortaron, y la lista sí. Del json de jest
+ * o vitest, el nombre completo de cada aserción fallida (o sus títulos de arriba con el suyo) y el archivo relativo a la
+ * carpeta que se prueba, las dos por su ruta real (jest escribe la real; la carpeta puede venir por un enlace). Un archivo
+ * que falló sin ninguna aserción fallida se nombra igual: `did_not_run` si no trae ninguna (no llegó a correr),
+ * `file_failed` si las trae y pasaron (falló algo del archivo, como un `afterAll`). Hasta `TOPE_NOMBRES`.
  */
 function nombresDeFallas({ trxFiles = [], jestJson = null, repoRun = '' }) {
   const out = [];
@@ -332,20 +335,27 @@ function nombresDeFallas({ trxFiles = [], jestJson = null, repoRun = '' }) {
     const ns = t.tag.split('}')[0].replace(/^\{+|\{+$/g, '');
     const enResults = descendientes(t, `{${ns}}Results`).find((e) => e !== t);
     for (const r of enResults ? enResults.children.filter((e) => e.tag === `{${ns}}UnitTestResult`) : []) {
-      if (FALLO_TRX.has(String(atributo(r, 'outcome', '')))) out.push({ name: String(atributo(r, 'testName', '') || '?') });
+      const outcome = String(atributo(r, 'outcome', ''));
+      if (FALLO_TRX.has(outcome)) out.push({ name: String(atributo(r, 'testName', '') || '?'), outcome });
     }
   }
+  const raiz = repoRun ? rutaReal(repoRun) : '';
   const archivoDe = (n) => {
-    const rel = repoRun && path.isAbsolute(String(n || '')) ? path.relative(repoRun, n) : String(n || '?');
-    return rel.split(path.sep).join('/');
+    const s = String(n || '?');
+    if (!raiz || !path.isAbsolute(s)) return s.split(path.sep).join('/');
+    const rel = path.relative(raiz, rutaReal(s));
+    // fuera de la carpeta que se prueba (otra unidad, otro repo): la ruta tal como vino
+    return (rel.startsWith('..') || path.isAbsolute(rel) ? s : rel).split(path.sep).join('/');
   };
   for (const f of (jestJson && Array.isArray(jestJson.testResults) ? jestJson.testResults : [])) {
-    const falladas = (Array.isArray(f.assertionResults) ? f.assertionResults : []).filter((a) => a && a.status === 'failed');
+    if (!f || typeof f !== 'object') continue;
+    const todas = Array.isArray(f.assertionResults) ? f.assertionResults : [];
+    const falladas = todas.filter((a) => a && a.status === 'failed');
     for (const a of falladas) {
       const nombre = a.fullName || [...(Array.isArray(a.ancestorTitles) ? a.ancestorTitles : []), a.title].filter(Boolean).join(' ');
       out.push({ file: archivoDe(f.name), name: nombre || '?' });
     }
-    if (!falladas.length && f.status === 'failed') out.push({ file: archivoDe(f.name), name: null, did_not_run: true });
+    if (!falladas.length && f.status === 'failed') out.push({ file: archivoDe(f.name), name: null, ...(todas.length ? { file_failed: true } : { did_not_run: true }) });
   }
   return { failed_tests: out.slice(0, TOPE_NOMBRES), failed_tests_more: Math.max(0, out.length - TOPE_NOMBRES) };
 }
