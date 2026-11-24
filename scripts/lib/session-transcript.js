@@ -354,7 +354,8 @@ function eachLineBackward(file, { maxBytes, step = 1024 * 1024 }, visit) {
 const SESSION_CONVERSATION_BYTES = 16 * 1024 * 1024;
 const COORDINATOR_CONVERSATION_BYTES = 64 * 1024 * 1024;
 const WITH_COORDINATOR = 10;
-const FROM_PERSON = 20;
+// los turnos de «Con vos», de la persona y de los que no arrancó ella: alto, para que el tope real sean los bytes leídos
+const TURNS_MAX = 500;
 const WITH_SESSIONS = 10;
 // El destinatario que es un subagente de la propia sesión, no otra sesión: `a` y su identificador
 const SUBAGENT_ID = /^a[0-9a-f]{12,}$/;
@@ -388,6 +389,15 @@ const sentOf = (d) => {
   if (d.type !== 'assistant' || !d.message || !Array.isArray(d.message.content)) return [];
   return d.message.content.filter((c) => c && c.type === 'tool_use' && c.name === 'SendMessage' && c.input && typeof c.input.message === 'string' && c.input.message)
     .map((c) => ({ a: bareName(c.input.to), texto: shownText(c.input.message), at: atOf(d) }));
+};
+// un turno que no arrancó la persona: un mensaje de otra sesión o el aviso de una tarea de fondo que terminó (no el de
+// la oficina, que es de la persona). `{ origen, at }`, o null
+const otherStartOf = (d) => {
+  if (d.isSidechain) return null;
+  const o = originOf(d);
+  if (o && o.kind === 'peer' && o.name) return { origen: `a un mensaje de ${String(o.name)}`, at: atOf(d) };
+  if (o && o.kind === 'task-notification' && !officeOf(d)) return { origen: 'al terminar una tarea de fondo', at: atOf(d) };
+  return null;
 };
 const personOf = (d) => {
   if (d.type !== 'user' || d.isMeta || d.toolUseResult || !d.origin || d.origin.kind !== 'human' || !d.message) return null;
@@ -517,8 +527,9 @@ function readSessionTokens(file, counts, { modelSettings } = {}) {
 
 /**
  * Los últimos mensajes de una sesión, a pedido. En toda sesión, `conVos`: lo que la persona le escribió (tipeado en su
- * pestaña, o desde la oficina con `oficina: true` e id) y la respuesta de cada turno: `[{ quien: 'vos' | 'sesion', texto, at }]`,
- * los últimos 20 de la persona. En una sesión que no es la coordinadora, además `conCoordinadora: [{ de, texto, at, propio }]`
+ * pestaña, o desde la oficina con `oficina: true` e id) y la respuesta de cada turno: `[{ quien: 'vos' | 'sesion', texto, at }]`.
+ * También los turnos que no arrancó la persona (un mensaje de otra sesión, una tarea de fondo que terminó): su respuesta,
+ * con `sinPersona: true` y `origen`. Todos los turnos que entran en los bytes leídos, hasta TURNS_MAX. En una sesión que no es la coordinadora, además `conCoordinadora: [{ de, texto, at, propio }]`
  * (los últimos 10) y, si es de fondo, el mensaje con que arrancó (`arranque`), que no se cuenta como de la persona. En la
  * coordinadora, `conSesiones: [{ sesion, at, mensajes: [{ de, texto, at }] }]`, con la sesión que habló último primero y a lo
  * sumo los últimos 10 mensajes de cada una; sus respuestas van con `quien: 'coordinadora'`. Se agrupa por el nombre: es lo
@@ -538,8 +549,8 @@ function readConversation(file, { coordinator, isCoordinator = false, background
     if (row.mensajes.length < WITH_SESSIONS) row.mensajes.push(m);
   };
   let answer = null;
-  let persons = 0;
-  const enough = () => persons >= FROM_PERSON && (!coordinator || conCoordinadora.length >= WITH_COORDINATOR);
+  let turns = 0;
+  const enough = () => turns >= TURNS_MAX && (!coordinator || conCoordinadora.length >= WITH_COORDINATOR);
   eachLineBackward(file, { maxBytes: maxBytes || (coord ? COORDINATOR_CONVERSATION_BYTES : SESSION_CONVERSATION_BYTES) }, (line) => {
     if (line.includes('"stop_hook_summary"')) {
       // un turno que terminó: lo que se vea de acá para atrás ya es de otro
@@ -551,7 +562,8 @@ function readConversation(file, { coordinator, isCoordinator = false, background
     const isSend = line.includes('"SendMessage"');
     const isOffice = line.includes('[oficina ');
     const isText = line.includes('"type":"assistant"') && line.includes('"type":"text"');
-    if (!isPeer && !isSend && (persons >= FROM_PERSON || (!isPerson && !isText && !isOffice))) return false;
+    const isTask = line.includes('"kind":"task-notification"');
+    if (!isPeer && !isSend && (turns >= TURNS_MAX || (!isPerson && !isText && !isOffice && !isTask))) return false;
     const d = parsed(line);
     if (!d) return false;
     const got = peerOf(d);
@@ -562,7 +574,7 @@ function readConversation(file, { coordinator, isCoordinator = false, background
       if (got && got.de === coordinator) conCoordinadora.push({ de: got.de, texto: got.texto, at: got.at, propio: false });
       for (const s of sentOf(d).reverse()) if (s.a === coordinator) conCoordinadora.push({ de: null, texto: s.texto, at: s.at, propio: true });
     }
-    if (persons >= FROM_PERSON) return coord ? false : enough();
+    if (turns >= TURNS_MAX) return coord ? false : enough();
     if (d.type === 'assistant' && answer === null && d.message) {
       const t = [...textsOf(d.message.content)].reverse().find((x) => x.trim());
       if (t) answer = { quien: coord ? 'coordinadora' : 'sesion', texto: shownText(t), at: atOf(d) };
@@ -574,7 +586,13 @@ function readConversation(file, { coordinator, isCoordinator = false, background
       if (answer) conVos.push(answer);
       conVos.push(office ? { quien: 'vos', texto: office.texto, at: office.at, oficina: true, id: office.id } : { quien: 'vos', texto: person.texto, at: person.at });
       answer = null;
-      persons += 1;
+      turns += 1;
+    } else {
+      const otro = otherStartOf(d);
+      if (otro) {
+        if (answer) { conVos.push({ ...answer, sinPersona: true, origen: otro.origen }); turns += 1; }
+        answer = null;
+      }
     }
     return coord ? false : enough();
   });

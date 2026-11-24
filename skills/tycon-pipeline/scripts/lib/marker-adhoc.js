@@ -9,7 +9,7 @@
  */
 const {
   ADHOC_CUPO_MAX, ADHOC_MOTIVO_MAX, DATOS_TEXTO, DATOS_VALORES, MARKER_JS,
-  PROPIA, SCRIPTS_DIR, STALE_HOURS, STATE_DIR, anotarFirma, appendLog, at,
+  PROPIA, SCRIPTS_DIR, STALE_HOURS, STATE_DIR, anotarFirma, appendLog,
   avisarOficina, citar, cupoAlDeclarar, estado, fs, nowIso, os, path,
   sessionLiveness, syncSessionState, untilIso, warnPastUntil,
 } = require('./marker-shared.js');

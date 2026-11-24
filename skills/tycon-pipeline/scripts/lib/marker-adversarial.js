@@ -8,7 +8,7 @@
  * locales van relativos a esta carpeta.
  */
 const {
-  SCRIPTS_DIR, STATE_DIR, anotarSalteoEnElRegistro, appendLog, at,
+  SCRIPTS_DIR, STATE_DIR, anotarSalteoEnElRegistro, appendLog,
   carpetaDeLaCorrida, estado, fs, nn, nowIso, paseAtendido, path, posixRelative,
   quitarSalteoDelRegistro, readMarker, resolveStoryPath, sellosDe,
   veredictoPaseAdversarial, writeMarker,
