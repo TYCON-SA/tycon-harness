@@ -694,7 +694,7 @@ desde la rama de integración más cercana: una ruta de riesgo alto que trajo `d
 propio pedido y no pide revisores; lo de riesgo alto que la rama cambió, sí.
 
 **El rojo de CI de un pedido ya revisado tiene su propio camino corto.** Cuando la espera de la compilación (la lanza
-`marker.js clear`) avisa «en rojo», el arreglo no abre otra corrida: la sesión del pedido corre `marker.js adhoc set
+`marker.js clear`) avisa «en rojo», el arreglo no abre otra ejecución: la sesión del pedido corre `marker.js adhoc set
 --ci-red <pedido> --check "<el control que falló>" --reason "<qué se arregla>" --data sin-cambio --file <ruta>`, con la
 firma `adhoc-lane:ci-rojo`. La aprueba el dueño, o vos si el perfil la tiene en `delegated_signing`; por delegación le
 llega al dueño una línea con el pedido, el control y los archivos. Abre sólo sobre el pedido en rojo de esa sesión, con
