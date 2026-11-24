@@ -409,8 +409,10 @@ function nombraLaHistoria(t, clave) {
   const partes = [];
   for (const p of String(clave).split('-')) { if (!/^\d+$/.test(p)) break; partes.push(p); }
   if (partes.length < 2) return false;
-  const id = partes.join('.').replace(/\./g, '\\.');
-  return new RegExp(`^${id}(?![\\d.])`).test(String(t));
+  // se compara como texto, sin armar una expresión regular con lo que trae el renglón
+  const id = partes.join('.');
+  const s = String(t);
+  return s.startsWith(id) && !/[\d.]/.test(s.charAt(id.length));
 }
 
 /**

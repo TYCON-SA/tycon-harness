@@ -746,6 +746,12 @@ test('Migrate_BlockThatNamesTheFirstStoryOfItsEpic_GoesToThatStory (T28) @story-
   const intro = leer(dir, 'specs/epics-intro.md');
   assert.match(intro, /Prosa de la épica, escrita después de su renglón\./, 'lo de antes sigue siendo de la épica');
   assert.doesNotMatch(intro, /ESTACIONADA|Lo que falta/, 'y la nota de la historia no queda en la épica');
+  // una barra invertida en la nota no cambia a quién va ni se pierde
+  const barra = jugueteAMano('t28d', { sprint: ['development_status:', '  epic-1: in-progress', '  # Prosa de la épica.',
+    '  # 1.2 la ruta C:\\dir\\a.md quedó así.', '  1-2-alfa: backlog', ''] });
+  assert.strictEqual(correr(['--repo', barra, '--migrate', '--report', path.join(barra, 'specs', 'qa', 'm.md')]).code, 0);
+  assert.ok(leer(barra, 'specs/story-1.2-alfa.md').includes('1.2 la ruta C:\\dir\\a.md quedó así.'), 'la nota con la barra va entera a la historia');
+  assert.ok(!leer(barra, 'specs/epics-intro.md').includes('C:\\dir'), 'y no queda en la épica');
   // un número que sigue con otro dígito es otra historia: el número tiene que terminar ahí
   const otra = jugueteAMano('t28b', { sprint: ['development_status:', '  epic-1: in-progress', '  # 1.20 es otra historia.', '  1-2-alfa: backlog', ''] });
   assert.strictEqual(correr(['--repo', otra, '--migrate', '--report', path.join(otra, 'specs', 'qa', 'm.md')]).code, 0);
