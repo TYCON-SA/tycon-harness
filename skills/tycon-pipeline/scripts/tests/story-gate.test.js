@@ -1212,9 +1212,15 @@ test('Comentario_ConUnaComilla_NoEscondeElRenglonSiguiente (fila 217, el freno)'
     for (const pegado of ['cat <(echo a)#b', 'echo @(a)#b', 'a=(x)#b']) frena(`${pegado}; cp /tmp/falso.json '${res}'`);
     frena(`[[ x =~ ((a) #b) ]]; cp /tmp/falso.json '${res}'`);
     frena(`[[ x == (#b) ]]; cp /tmp/falso.json '${res}'`);
-    // después de cerrar un subshell, con un blanco o sin él, el comentario sigue siendo comentario
+    // después de cerrar un subshell, con un blanco, el comentario sigue siendo comentario
     frena(`( : ) # '\ncp /tmp/falso.json '${res}'`);
-    frena(`( : )# '\ncp /tmp/falso.json '${res}'`);
+    // de la vuelta final: una comilla doble adentro de `$(…)`, `${…}` o comillas invertidas que están entre comillas
+    // dobles abre otro texto, no cierra el de afuera; y en zsh, `(a|b)#x` es un patrón (el `#` sigue el cierre)
+    frena(`echo "$(echo "a #b")"; cp /tmp/falso.json '${res}'`);
+    frena(`echo "\${HOLA:-"a #b"}"; cp /tmp/falso.json '${res}'`);
+    frena(`echo "\`echo "a #b"\`"; cp /tmp/falso.json '${res}'`);
+    frena(`[[ a == (a|b)#x ]]; cp /tmp/falso.json '${res}'`);
+    frena(`case x in (a)#x) :;; esac; cp /tmp/falso.json '${res}'`);
     // un comentario con una comilla y nada escondido, o un `#` que no empieza una palabra, sigue pasando
     pasa("echo hola # it's fine\nls -la");
     pasa("echo 'a # b' && echo \"c # d\"");
