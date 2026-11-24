@@ -10,6 +10,122 @@ let DATA=(()=>{const b=document.getElementById("officeData");return b?JSON.parse
 // con el proceso local, las fotos llegan por el WebSocket; la página nunca le manda nada
 const LIVE=SOURCE==="local"?{token:RAIZ.dataset.token}:null;
 const el=(t,c,txt)=>{const e=document.createElement(t);if(c)e.className=c;if(txt!=null)e.textContent=txt;return e};
+// idioma: desde
+// El idioma de la página: en el sitio, el de quien mira (el `lang` que puso el sitio); en la oficina local y en la foto
+// fija, el del navegador. Los textos fijos de la página salen en ese idioma: se traducen al aparecer, por su texto entero
+// (EN) o por una frase con datos (PATRONES_EN). Lo que arma la foto (estados, notas, temas) llega como vino.
+const LANG=CON_OFICINAS?(RAIZ.lang==="en"?"en":"es"):(/^en\b/i.test((navigator&&navigator.language)||"")?"en":"es");
+const EN={
+  "Oficina del arnés":"Harness office","Abrir el sitio":"Open the site","Oficinas":"Offices",
+  "Una oficina por máquina: cada persona es una sesión de agente; abajo, cada sesión con el avance de su trabajo. Tocá una oficina para agrandarla y, adentro, una persona para ver qué hace.":"One office per machine: each person is an agent session; below, each session with the progress of its work. Tap an office to enlarge it and, inside, a person to see what they are doing.",
+  "← Volver a todas":"← Back to all","Te toca a vos":"Your turn","Etiquetas":"Labels","Siempre":"Always","Al pasar el mouse":"On mouse over",
+  "Arrastrá para girar · ⌘ o Ctrl más rueda, o pellizco, para acercar · tocá a alguien o el panel de la pared para ver el detalle":"Drag to turn · ⌘ or Ctrl plus wheel, or pinch, to zoom · tap someone or the wall panel to see the detail",
+  "Las sesiones":"The sessions",
+  "Lo que te necesita":"What needs you",
+  "Las firmas y los cuadros se contestan donde dice cada uno. Desde acá sólo se contesta una espera en texto, y nada de lo que escribas acá firma, aprueba ni contesta un cuadro.":"Signatures and dialogs are answered where each one says. From here you can only answer a text wait, and nothing you write here signs, approves or answers a dialog.",
+  "«Prometido» es la hora que dio la ejecución al arrancar; «Termina» es la de ahora, que se recalcula al entrar a cada paso y queda fija hasta el próximo. La diferencia sale en rojo si va más de 15 minutos tarde y en verde si va más de 15 minutos antes.":"«Promised» is the time the run gave when it started; «Ends» is the current one, recalculated when each step starts and fixed until the next. The difference shows in red if it is more than 15 minutes late and in green if it is more than 15 minutes early.",
+  "El trabajo":"The work","Tablas":"Tables","Kanban":"Kanban","Buscar":"Search","Ir":"Go","Ver como tabla":"See as a table","Trabajo":"Work","Estado":"State",
+  "Fin estimado":"Estimated end","Sesión":"Session","Carpeta":"Folder","Las sesiones trabajando en la oficina":"The sessions working in the office","Acercar":"Zoom in","Alejar":"Zoom out","Conversación":"Conversation",
+  "Trabajando":"Working","Corriendo pruebas":"Running tests","Parada":"Stopped","Esperando entrar":"Waiting to merge","Esperando":"Waiting","Tu firma":"Your signature","Te pregunta":"Asks you",
+  "Libre":"Free","Coordinando":"Coordinating","Inactiva":"Inactive","Terminado, falta cerrar":"Done, still to close","Pasada de la hora":"Past its time","En hora":"On time",
+  "Agentes de IA":"AI agents","Pendientes":"Pending","tocá para ver el detalle":"tap to see the detail","TU FIRMA":"SIGN","PARADA":"STOPPED",
+  "A medio camino":"Halfway","Camino corto":"Short path","Cargando las oficinas…":"Loading the offices…","Con la coordinadora":"With the coordinator","Con las sesiones":"With the sessions",
+  "Con quién":"With whom","Con qué sesión":"With which session","Con vos":"With you","De la historia":"From the story","Detalle de la sesión":"Session detail","Detalle de la tarjeta":"Card detail",
+  "El mensaje está vacío.":"The message is empty.","En pausa":"Paused","Espera a la Coordinadora":"Waits for the coordinator","Espera tu firma":"Waits for your signature","Esperan a main":"Waiting for main",
+  "Esperan a otra sesión":"Waiting for another session","Esperan al dueño":"Waiting for the owner","Esta sesión está cerrada: no recibe mensajes.":"This session is closed: it does not receive messages.",
+  "Esta sesión no puede recibir mensajes de la oficina.":"This session cannot receive messages from the office.","Esta sesión ya no está en la oficina.":"This session is no longer in the office.",
+  "Esto le llega como un mensaje tuyo. No firma ni aprueba nada.":"It reaches the session as a message from you. It does not sign or approve anything.",
+  "Está esperando que contestes su cuadro: lo va a leer cuando lo hagas.":"It is waiting for you to answer its question box: it will read this when you do.",
+  "Hace más de un minuto que no llega nada del sitio: lo que ves puede estar atrasado. Vuelvo a conectar.":"Nothing has arrived from the site for over a minute: what you see may be behind. Reconnecting.",
+  "Haciendo ahora":"Doing now","Incluye su agente":"Includes its agent","La conversación de esta sesión no se lee desde la oficina.":"This session's conversation is not read from the office.",
+  "La conversación de esta sesión todavía no llegó al sitio.":"This session's conversation has not reached the site yet.","La oficina se cerró. Corré /office otra vez para verla al día.":"The office closed. Run /office again to see it up to date.",
+  "Llegan de la máquina al sitio, que los guarda sólo en su memoria.":"They go from the machine to the site, which keeps them only in memory.","Lo recibió.":"It received it.",
+  "Lo va a recibir cuando termine lo que está haciendo.":"It will receive it when it finishes what it is doing.","Mandar igual":"Send anyway","Mano levantada":"Hand raised","Memoria: no medida":"Memory: not measured",
+  "Mensaje de arranque":"Starting message","Mientras tanto":"Meanwhile","Nada por ahora":"Nothing for now","Nada por ahora: no hay firmas pendientes ni pedidos en el tablero.":"Nothing for now: no pending signatures or requests on the board.",
+  "Nadie trabaja en esta máquina.":"Nobody is working on this machine.","No hay mensajes con la coordinadora en lo último de su conversación.":"No messages with the coordinator in the latest part of its conversation.",
+  "No hay mensajes con las sesiones en lo último de su conversación.":"No messages with the sessions in the latest part of its conversation.","No hay mensajes con vos en lo último de su conversación.":"No messages with you in the latest part of its conversation.",
+  "No hay nada pendiente en esta máquina.":"Nothing is pending on this machine.","No hay sesiones abiertas en esta máquina.":"There are no open sessions on this machine.","No le llegó.":"It did not get it.",
+  "No pude traer las oficinas de ejemplo.":"I could not bring the sample offices.","No se guardan en el disco. Si esta máquina está aprobada en el sitio de la organización, se ven también ahí.":"They are not saved to disk. If this machine is approved on the organization's site, they show there too.",
+  "No se pudo leer la conversación de esta sesión.":"This session's conversation could not be read.","No se pudo mandar.":"It could not be sent.","Oficinas del equipo":"Team offices","Otros proyectos":"Other projects",
+  "Pasos de la ejecución":"Steps of the run","Por qué":"Why","Procesador: no medido":"Processor: not measured","Sin título":"Untitled","Te toca":"Your turn","Tocala para ver su sala.":"Tap it to see its room.",
+  "Tenés demasiadas ventanas abiertas en las oficinas: cerrá otra pestaña y recargá esta.":"You have too many office windows open: close another tab and reload this one.",
+  "Todavía no contestó: mirá su conversación más tarde.":"No answer yet: check its conversation later.","Todavía no hay oficinas para mostrarte: aparecen cuando una máquina confirmada a tu nombre se conecta.":"There are no offices to show you yet: they appear when a machine confirmed in your name connects.",
+  "Tokens consumidos":"Tokens used","Tu sesión venció o tu cuenta ya no está en la lista: volvé a entrar al sitio.":"Your session expired or your account is no longer on the list: sign in to the site again.",
+  "Ver conversación":"See conversation","Vos · desde la oficina":"You · from the office","Vos":"You","cerrada, sin hora":"closed, no time","esperan o libres":"waiting or free","esperan tu firma":"waiting for your signature",
+  "la oficina no contestó":"the office did not answer","más nueva que el sitio":"newer than the site","no medido":"not measured","posible clave copiada":"possible copied key","reconectando: el sitio se reinició":"reconnecting: the site restarted",
+  "sin dato":"no data","sin hora":"no time","una conversación sin su forma":"a conversation without its shape","Última acción":"Last action","Escribí un número, como T-41 o 41.":"Type a number, such as T-41 or 41.",
+  "Esta máquina no tiene coordinadora designada: no hay con quién cruzar los mensajes.":"This machine has no designated coordinator: there is no one to cross the messages with.",
+  "No pude dibujar la última novedad; muestro la anterior.":"I could not draw the latest update; showing the previous one.",
+  "Avance":"Progress","Cerradas":"Closed","Cerrar":"Close","Contexto":"Context","Cuándo":"When","Encargo":"Assignment","Espera":"Waits","Grupo":"Group","Haciendo":"Doing","Historia":"Story","Mandar":"Send",
+  "Marca":"Mark","Modelo":"Model","Motivo":"Reason","Nada":"Nothing","Nota":"Note","Novedades":"News","Pedido":"Request","Prometido":"Promised","Propuesta":"Proposal","Quitada":"Removed","Quitar":"Remove",
+  "Quién":"Who","Riesgo":"Risk","Termina":"Ends","Trabado":"Stuck"
+  ,"Espera main.":"Waits for main.","Leyendo…":"Reading…","Mandado.":"Sent.","No se guardan en el disco.":"They are not saved to disk.","Si esta máquina está aprobada en el sitio de la organización, se ven también ahí.":"If this machine is approved on the organization's site, they show there too.","sesión":"session","sesiones":"sessions","trabajando":"working","y algo más":"and something else",
+  "Las contraseñas y las claves se tapan.":"Passwords and keys are hidden.","No pude dibujar la última novedad; la oficina muestra la anterior.":"I could not draw the latest update; the office shows the previous one.",
+  "Corré /office otra vez si sigue así.":"Run /office again if it keeps happening.","Lo que ves es lo último que llegó; vuelvo a intentar en":"What you see is the last that arrived; trying again in",
+  "Se cortó la conexión con el sitio.":"The connection with the site was cut.",
+  "Este navegador no pudo cargar la oficina en 3D; las tarjetas y la tabla tienen lo mismo.":"This browser could not load the office in 3D; the cards and the table have the same.",
+  "Este navegador no puede mostrar la oficina en 3D; las tarjetas y la tabla tienen lo mismo.":"This browser cannot show the office in 3D; the cards and the table have the same.",
+  "Tus últimos 20 mensajes con sus respuestas, y los últimos 10 con la coordinadora.":"Your last 20 messages with their answers, and the last 10 with the coordinator.",
+  "Tus últimos 20 mensajes con sus respuestas, y los últimos 10 con cada sesión, en orden; primero la que habló último.":"Your last 20 messages with their answers, and the last 10 with each session, in order; the one that spoke last first."
+};
+// las frases con un dato adentro: el texto entero, con el dato en su lugar. Una función recibe lo encontrado y traduce lo
+// que hace falta de adentro
+const PATRONES_EN=[
+  [/^Agrandar la oficina de (.+)$/,"Enlarge the office of $1"],[/^sin novedades desde las (.+)$/,"no news since $1"],[/^sin conexión desde (.+)$/,"no connection since $1"],
+  [/^Te toca: (.+)$/,"Your turn: $1"],[/^Trabado: (.+)$/,"Stuck: $1"],[/^Conversación de (.+)$/,"Conversation with $1"],[/^Escribirle a (.+)$/,"Write to $1"],[/^Mensaje para (.+)$/,"Message for $1"],
+  [/^La oficina de (.+)$/,"The office of $1"],[/^Las sesiones de (.+)$/,"The sessions of $1"],[/^Al día a las (.+)$/,"Up to date at $1"],[/^pedidos leídos a las (.+)$/,"requests read at $1"],
+  [/^(.+): no llegan fotos nuevas$/,(m,x)=>traducir(x)+": no new photos arrive"],[/^foto de las (.+)$/,"photo at $1"],
+  [/^Libres: (.+)$/,"Free: $1"],[/^Inactiva: (.+)$/,"Inactive: $1"],[/^Memoria en uso: (.+)$/,"Memory in use: $1"],[/^Procesador: (.+)$/,"Processor: $1"],[/^No se pudo leer: (.+)$/,"Could not read: $1"],
+  [/^No se pudo quitar: (.+)$/,"Could not remove: $1"],[/^última actividad (.+)$/,"last activity $1"],[/^última novedad (.+)$/,"last news $1"],
+  [/^Vos → (.+)$/,"You → $1"],[/^respondió (.+)$/,"answered $1"],[/^Ver los (\d+)$/,"See all $1"],[/^Las otras (\d+)$/,"The other $1"],[/^Incluye sus (\d+) agentes$/,"Includes its $1 agents"],
+  [/^El mensaje pasa de (\d+) caracteres\.$/,"The message is over $1 characters."],[/^y (\d+) mensajes? más$/,"and $1 more message(s)"],[/^Historias de tus proyectos$/,"Stories of your projects"],
+  [/^La (T-\d+|\d+) no está en el tablero\.$/,"$1 is not on the board."],[/^(⌘|Ctrl) \+ rueda para acercar$/,"$1 + wheel to zoom"],
+  [/^Y (\d+) sesión\(es\) más: están en las tarjetas de abajo\.$/,"And $1 more session(s): they are in the cards below."],[/^(\d+) s\.$/,"$1 s."],
+  [/^(dom|lun|mar|mié|jue|vie|sáb)( \d\d:\d\d)$/,(m,d,h)=>({dom:"Sun",lun:"Mon",mar:"Tue","mié":"Wed",jue:"Thu",vie:"Fri","sáb":"Sat"})[d]+h]
+];
+// Un texto entero; si no, una frase con datos; si no, por partes: sin el símbolo de adelante, cada parte entre « · », y
+// cada oración. Una parte que no se conoce queda como vino.
+function traducir(s){
+  if(LANG!=="en"||typeof s!=="string")return s;
+  const m=/^(\s*)([\s\S]*?)(\s*)$/.exec(s),t=m[2];
+  if(!t)return s;
+  return m[1]+traducirTexto(t)+m[3];
+}
+function traducirTexto(t){
+  if(Object.prototype.hasOwnProperty.call(EN,t))return EN[t];
+  const partes=t.split(" · ");
+  if(partes.length>1)return partes.map(traducirTexto).join(" · ");
+  // lo capturado también se traduce, si es un texto que la página conoce
+  for(const [re,en] of PATRONES_EN)if(re.test(t))return t.replace(re,typeof en==="function"?en:(...g)=>en.replace(/\$(\d)/g,(x,k)=>traducirTexto(g[+k])));
+  const sim=/^([^\p{L}\p{N}«/]+)(\p{L}[\s\S]*)$/u.exec(t);
+  if(sim)return sim[1]+traducirTexto(sim[2]);
+  const oraciones=t.split(/(?<=[.;?!])\s+(?=[\p{Lu}¿«])/u);
+  if(oraciones.length>1)return oraciones.map(traducirTexto).join(" ");
+  const fin=/^(.*\S) (\d+ s\.)$/.exec(t);
+  if(fin&&Object.prototype.hasOwnProperty.call(EN,fin[1]))return EN[fin[1]]+" "+fin[2];
+  return t;
+}
+// idioma: hasta
+// En inglés, cada texto de la oficina se traduce al aparecer: los nodos de texto, las etiquetas que se leen y lo que se
+// dibuja en las paredes de la sala. La lógica de la página no cambia: los textos siguen siendo los mismos adentro.
+// Lo que escribieron las personas y las sesiones (conversaciones, títulos) va marcado translate="no" y queda como vino.
+const sinTraducir=n=>{const e=n.nodeType===1?n:n.parentElement;return !!(e&&e.closest&&e.closest('[translate="no"]'))};
+function traducirNodo(n){
+  if(sinTraducir(n))return;
+  if(n.nodeType===3){const t=traducir(n.data);if(t!==n.data)n.data=t;return}
+  if(n.nodeType!==1)return;
+  for(const a of ["aria-label","placeholder","title"])if(n.hasAttribute(a)){const v=n.getAttribute(a),t=traducir(v);if(t!==v)n.setAttribute(a,t)}
+  for(const c of n.childNodes)traducirNodo(c);
+}
+if(LANG==="en"){
+  const raiz=document.querySelector(".contenido-oficina")||document.body;
+  if(!CON_OFICINAS){RAIZ.lang="en";document.title=traducir(document.title)}
+  traducirNodo(raiz);
+  new MutationObserver(cambios=>{for(const c of cambios){if(c.type==="characterData"||c.type==="attributes")traducirNodo(c.target);else c.addedNodes.forEach(traducirNodo)}})
+    .observe(raiz,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:["aria-label","placeholder","title"]});
+  const pintar=CanvasRenderingContext2D.prototype.fillText;
+  CanvasRenderingContext2D.prototype.fillText=function(t,...r){return pintar.call(this,typeof t==="string"?traducir(t):t,...r)};
+}
 const DAYS=["dom","lun","mar","mié","jue","vie","sáb"];
 const parse=s=>{const m=/^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)$/.exec(s||"");return m?new Date(+m[1],m[2]-1,+m[3],+m[4],+m[5]):null};
 const fmt=s=>{const d=parse(s);return d?DAYS[d.getDay()]+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"):"—"};
@@ -42,7 +158,7 @@ function renderBoard(){const body=document.getElementById("boardBody"),k=DATA.ka
     if(!list.length)col.appendChild(el("p","none","Nada"));
     // en «Sin sesión», las tarjetas de historia de tus proyectos van juntas en una línea que se abre, después de las demás
     const plegadas=c.id==="sinEmpezar"?list.filter(i=>i.local===true):[];
-    const tarjeta=(i,dest)=>{const card=el("div","item abre"),tit=el("b","una-linea",i.titulo||"");tit.title=i.titulo||"";if(typeof i.numero==="string"){card.setAttribute("data-numero",i.numero);card.appendChild(el("span","num",i.numero));if(typeof numeroMarcado==="string"&&i.numero===numeroMarcado)card.classList.add("marcada")}card.tabIndex=0;card.setAttribute("role","button");card.onclick=()=>{if(!String(window.getSelection?getSelection():""))abrirTarjeta(i,card);};card.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();abrirTarjeta(i,card);}};card.appendChild(tit);const line=[i.quien,i.hora,i.grupo].filter(Boolean).join(" · "),quienEs=(DATA.agents||[]).find(a=>a.nombre===String(i.quien||"").split(" · ")[0]),mod=quienEs&&(quienEs.modelo||quienEs.esfuerzo)?(quienEs.modelo||"sin dato")+" · "+(quienEs.esfuerzo||"sin dato"):"";if(mod)card.appendChild(el("span","m mod",mod));if(line)card.appendChild(el("span","m",line));const eh=c.id==="curso"&&estadoDeHora(i);if(eh){card.style.setProperty("--k",eh[1]);card.appendChild(el("span","estado-hora",eh[0]))}
+    const tarjeta=(i,dest)=>{const card=el("div","item abre"),tit=el("b","una-linea",i.titulo||"");tit.setAttribute("translate","no");tit.title=i.titulo||"";if(typeof i.numero==="string"){card.setAttribute("data-numero",i.numero);card.appendChild(el("span","num",i.numero));if(typeof numeroMarcado==="string"&&i.numero===numeroMarcado)card.classList.add("marcada")}card.tabIndex=0;card.setAttribute("role","button");card.onclick=()=>{if(!String(window.getSelection?getSelection():""))abrirTarjeta(i,card);};card.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();abrirTarjeta(i,card);}};card.appendChild(tit);const line=[i.quien,i.hora,i.grupo].filter(Boolean).join(" · "),quienEs=(DATA.agents||[]).find(a=>a.nombre===String(i.quien||"").split(" · ")[0]),mod=quienEs&&(quienEs.modelo||quienEs.esfuerzo)?(quienEs.modelo||"sin dato")+" · "+(quienEs.esfuerzo||"sin dato"):"";if(mod)card.appendChild(el("span","m mod",mod));if(line)card.appendChild(el("span","m",line));const eh=c.id==="curso"&&estadoDeHora(i);if(eh){card.style.setProperty("--k",eh[1]);card.appendChild(el("span","estado-hora",eh[0]))}
       [i.espera?"Espera "+i.espera+".":"",i.marca,i.motivo,i.nota,i.ficha&&i.ficha.linea].forEach(v=>{if(v)card.appendChild(el("span","n",v))});if(i.mano)card.appendChild(el("span","mano "+i.mano,"✋ "+(i.mano==="coordinadora"?"Espera a la Coordinadora":"Espera tu firma")));dest.appendChild(card)};
     list.filter(i=>!plegadas.includes(i)).forEach(i=>tarjeta(i,col));
     if(plegadas.length){const linea=el("button","plegadas","Historias de tus proyectos · "+plegadas.length),caja=el("div","plegadas-lista");linea.type="button";plegadas.forEach(i=>tarjeta(i,caja));
@@ -60,7 +176,7 @@ function renderBoard(){const body=document.getElementById("boardBody"),k=DATA.ka
 function renderHalfway(){const sec=document.getElementById("halfway"),k=DATA.kanban||{},half=k.medioCamino||[];sec.replaceChildren();sec.hidden=!half.length&&!k.medioCaminoNoSe;if(sec.hidden)return;
   sec.appendChild(el("h2",null,"A medio camino"));
   if(k.medioCaminoLeido)sec.appendChild(el("p","none",k.medioCaminoLeido));
-  half.forEach(i=>{const card=el("div","item");card.appendChild(el("b",null,i.titulo));card.appendChild(el("span","n",i.accion));sec.appendChild(card)});
+  half.forEach(i=>{const card=el("div","item");card.appendChild(Object.assign(el("b",null,i.titulo),{translate:false}));card.appendChild(el("span","n",i.accion));sec.appendChild(card)});
   if(k.medioCaminoNoSe)sec.appendChild(el("p","none",k.medioCaminoNoSe))}
 // las esperas en sus tres grupos: van fuera de lo que se pliega, que sin nada en «Te toca» no se puede abrir
 const GRUPOS_ESPERA=[["dueno","Esperan al dueño"],["main","Esperan a main"],["sesion","Esperan a otra sesión"]];
@@ -167,7 +283,7 @@ function renderTablas(){const sec=document.getElementById("tablas"),ts=DATA.tabl
       if(!(r.trabajos||[]).length){[r.grupo,r.que,r.col].forEach(v=>tr.appendChild(el("td",null,v||"")));bd.appendChild(tr);return;}
       const id=k+"|"+seccion+"|"+r.grupo,b=el("button","temaBoton",r.grupo),primera=el("td"),det=el("tr","temaTrabajos"),dd=el("td"),ul=el("ul");
       b.type="button";b.dataset.tema=id;primera.appendChild(b);tr.className="temaFila";tr.appendChild(primera);[r.que,r.col].forEach(v=>tr.appendChild(el("td",null,v||"")));
-      r.trabajos.forEach(w=>{const li=el("li");if(typeof w.numero==="string")li.appendChild(el("span","num",w.numero));li.appendChild(el("b",null,w.titulo));li.appendChild(el("span",null,[w.quien,w.como].filter(Boolean).join(" · ")));ul.appendChild(li)});
+      r.trabajos.forEach(w=>{const li=el("li");if(typeof w.numero==="string")li.appendChild(el("span","num",w.numero));li.appendChild(Object.assign(el("b",null,w.titulo),{translate:false}));li.appendChild(el("span",null,[w.quien,w.como].filter(Boolean).join(" · ")));ul.appendChild(li)});
       dd.colSpan=3;dd.appendChild(ul);det.appendChild(dd);
       const pintar=()=>{const abierta=temasAbiertos.has(id);det.hidden=!abierta;b.setAttribute("aria-expanded",String(abierta))};
       tr.addEventListener("click",()=>{if(temasAbiertos.has(id))temasAbiertos.delete(id);else temasAbiertos.add(id);pintar()});pintar();
@@ -257,7 +373,7 @@ function botonCerrar(alCerrar){const b=el("button","close","×");b.type="button"
 function sesionDeTarjeta(i){const q=String(i.quien||"").trim(),primera=q.split(/[\s,]+/)[0];return agents.find(a=>a.nombre===q)||agents.find(a=>a.nombre===primera)||null;}
 // El detalle de una tarjeta del kanban, en la misma ventana que la conversación: su título entero, lo que sabe la tarjeta y, si la hace una sesión, su ficha.
 function abrirTarjeta(i,card){const v=ventana(),box=v.firstElementChild,a=sesionDeTarjeta(i),nro=numeroDe(i);charlaDe=null;ultimoPedido+=1;charlaVuelve=card;v.hidden=false;box.classList.add("detalle");box.setAttribute("aria-label","Detalle de la tarjeta");document.documentElement.classList.add("con-ventana");
-  const cerrar=botonCerrar(cerrarCharla);box.replaceChildren(...(nro?[el("p","num",nro)]:[]),el("h3",null,i.titulo||"Sin título"));
+  const cerrar=botonCerrar(cerrarCharla);box.replaceChildren(...(nro?[el("p","num",nro)]:[]),Object.assign(el("h3",null,i.titulo||"Sin título"),{translate:!i.titulo}));
   const dl=el("dl"),fila=(k,x)=>{if(x==null||x==="")return;const dd=el("dd");dd.append(x);dl.append(el("dt",null,k),dd);};
   fila("Quién",i.quien);if(!a||String(i.hora||"")!==String((finTxt(a)||{}).hora||""))fila("Cuándo",i.hora);if(!a||i.espera!==a.espera)fila("Espera",i.espera);fila("Marca",i.marca);fila("Motivo",i.motivo);fila("Nota",i.nota);fila("Grupo",i.grupo);
   // el enlace sólo lleva a estos dos sitios: de los datos sale la ruta, nunca la dirección entera
@@ -309,7 +425,7 @@ function formatear(texto){const out=[];let lista=null,codigo=null,tabla=null;
     lista=null;const limpia=linea.replace(/^\s*#{1,6}\s+/,"");if(!limpia.trim())continue;
     const p=document.createElement("p");if(limpia!==linea){const f=document.createElement("strong");f.textContent=limpia.replace(/\*\*/g,"");p.append(f)}else enLinea(p,linea);out.push(p)}
   return out}
-function msg(quien,cuando,texto,mio){const box=document.createElement("div");box.className="msg"+(mio?" mio":"");const b=document.createElement("b"),t=Number(cuando),hh=Number.isFinite(t)&&t>0?new Date(t):null;b.textContent=quien+(hh?" · "+String(hh.getHours()).padStart(2,"0")+":"+String(hh.getMinutes()).padStart(2,"0"):"");box.append(b,...formatear(texto));return box}
+function msg(quien,cuando,texto,mio){const box=document.createElement("div");box.className="msg"+(mio?" mio":"");const b=document.createElement("b"),t=Number(cuando),hh=Number.isFinite(t)&&t>0?new Date(t):null;b.textContent=quien+(hh?" · "+String(hh.getHours()).padStart(2,"0")+":"+String(hh.getMinutes()).padStart(2,"0"):"");const cuerpo=formatear(texto);cuerpo.forEach(n=>n.setAttribute&&n.setAttribute("translate","no"));box.append(b,...cuerpo);return box}
 // Abre como un chat: cada conversación en lo último, dentro de su caja.
 function listaCharla(filas,vacio){if(!filas.length)return el("p","m",vacio);const ch=el("div","chat");filas.forEach(f=>ch.append(f));return ch}
 // Las dos conversaciones de la coordinadora, de a una y con todo el alto: abre en la primera. La otra arranca en lo último al mostrarse.
@@ -427,7 +543,7 @@ if(!CON_OFICINAS){relojTick(agents,Date.now(),meta);renderTop();renderCrew();
 const CERRADA="La oficina se cerró. Corré /office otra vez para verla al día.";
 function cerrada(){const o=document.getElementById("ovl");o.textContent=CERRADA;o.hidden=false;const fl=document.getElementById("freeLine");fl.textContent=CERRADA;fl.hidden=false}
 if(LIVE){const ws=new WebSocket("ws://"+location.host+"/live?t="+encodeURIComponent(LIVE.token));
-  ws.onmessage=ev=>{const o=document.getElementById("ovl"),FALLA="No pude dibujar la última novedad; la oficina muestra la anterior. Corré /office otra vez si sigue así.";try{const m=JSON.parse(ev.data);if(m&&m.type==="mensaje"){alMensaje(m);return}if(!m||m.type!=="foto")return;setData(m.data);relojTick(agents,Date.now(),meta);renderTop();renderCrew();if(o.textContent===FALLA){o.textContent="";o.hidden=true}if(window.tablero.refresh)window.tablero.refresh()}catch(e){console.error(e);o.textContent=FALLA;o.hidden=false}};
+  ws.onmessage=ev=>{const o=document.getElementById("ovl"),FALLA="No pude dibujar la última novedad; la oficina muestra la anterior. Corré /office otra vez si sigue así.";try{const m=JSON.parse(ev.data);if(m&&m.type==="mensaje"){alMensaje(m);return}if(!m||m.type!=="foto")return;setData(m.data);relojTick(agents,Date.now(),meta);renderTop();renderCrew();if(traducir(o.textContent)===traducir(FALLA)){o.textContent="";o.hidden=true}if(window.tablero.refresh)window.tablero.refresh()}catch(e){console.error(e);o.textContent=FALLA;o.hidden=false}};
   ws.onclose=cerrada;}
 if(!CON_OFICINAS)setTimeout(()=>{if(!window.tablero.started)sinTresD("Este navegador no pudo cargar la oficina en 3D; las tarjetas y la tabla tienen lo mismo.")},8000);
 // sólo cierra un toque que empieza y termina afuera: seleccionar texto adentro y soltar afuera no la cierra
@@ -812,7 +928,7 @@ function abrirTablero(){sel=null;desks.forEach(pintarTag);const K=T.kanban()||{}
   const toca=(meta&&meta.teToca)||[];if(toca.length){panel.append(mk("h4","toca","Te toca"));const ul=mk("ul","toca");toca.forEach(t=>ul.append(mk("li",null,t)));panel.append(ul);}
   // lo que no se está trabajando no estira el detalle: con muchas, se abre a pedido, y sigue abierto cuando llega otra foto
   orden.forEach(c=>{const rows=c.tarjetas;if(!rows.length)return;const h=mk("h4",null,c.nombre+" · "+rows.length);h.style.color=c.color;panel.append(h);
-    const lista=()=>{const ul=mk("ul","list");rows.forEach(r=>{const li=mk("li");li.append(mk("b",null,r.titulo||""));if(c.id==="medio")li.append(mk("span","m",r.accion||""));else{li.append(mk("span","m",[r.quien,r.hora,r.espera?"espera "+r.espera:"",r.marca,r.motivo].filter(Boolean).join(" · ")));if(r.nota)li.append(mk("span","m",r.nota));}ul.append(li);});return ul;};
+    const lista=()=>{const ul=mk("ul","list");rows.forEach(r=>{const li=mk("li");li.append(Object.assign(mk("b",null,r.titulo||""),{translate:false}));if(c.id==="medio")li.append(mk("span","m",r.accion||""));else{li.append(mk("span","m",[r.quien,r.hora,r.espera?"espera "+r.espera:"",r.marca,r.motivo].filter(Boolean).join(" · ")));if(r.nota)li.append(mk("span","m",r.nota));}ul.append(li);});return ul;};
     if((c.id==="sinEmpezar"||c.id==="hechos")&&rows.length>5&&!panel.abiertos.has(c.id)){const b=mk("button","verTodos","Ver los "+rows.length);b.type="button";b.onclick=()=>{panel.abiertos.add(c.id);b.replaceWith(lista());};panel.append(b);}
     else panel.append(lista());});
   if(K.medioCaminoLeido)panel.append(mk("p","m",K.medioCaminoLeido));
@@ -937,7 +1053,7 @@ function arrancarOficinas(){
   let oficinas=new Map(),elegida=oficinaDelHash(location.hash),pedida=elegida,llego=false,cortada=false;const fichas=new Map();
   // lo de una sola oficina queda debajo de la elegida; la sala y las tarjetas de la página local no se usan
   sec.hidden=false;$("office").hidden=true;$("crew").closest("section").hidden=true;detalle.append($("resumen"),$("trabajo"),$("noRead"));sec.append($("foot"));wrap.before(document.querySelector(".interruptor"));
-  document.querySelector("header h1").textContent="Oficinas del equipo";document.title="Oficinas del equipo";
+  document.querySelector("header h1").textContent=traducir("Oficinas del equipo");document.title=traducir("Oficinas del equipo");
   const decir=t=>{avisoEl.textContent=t||"";avisoEl.hidden=!t};
   // lo que repinta desde afuera de la conexión: si falla, se dice en la página, no sólo en la consola
   const seguro=f=>{try{f()}catch(e){console.error(e);decir("No pude dibujar la última novedad; muestro la anterior.")}};
@@ -1017,7 +1133,7 @@ function arrancarOficinas(){
   setInterval(()=>{if(!viva||!conexionMuerta(ultimo,Date.now()))return;const muerta=viva;viva=null;muerta.onmessage=muerta.onclose=null;try{muerta.close()}catch(e){}decir(AVISO_SIN_NOVEDAD);conectar()},REVISAR_CONEXION_MS);
   function conectar(){const ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/live/offices");viva=ws;ultimo=Date.now();
     ws.onmessage=ev=>{ultimo=Date.now();let m;try{m=JSON.parse(ev.data)}catch(e){console.error(e);decir("No pude dibujar la última novedad; muestro la anterior.");return}
-      if(m&&m.type==="latido"){if(avisoEl.textContent===AVISO_SIN_NOVEDAD)decir("");return}
+      if(m&&m.type==="latido"){if(traducir(avisoEl.textContent)===traducir(AVISO_SIN_NOVEDAD))decir("");return}
       intento=0;decir("");try{recibir(m)}catch(e){console.error(e);decir("No pude dibujar la última novedad; muestro la anterior.")}};
     ws.onclose=ev=>{if(viva===ws)viva=null;const r=alCerrarLaConexion(ev.code,intento);decir(r.texto);if(!r.reintenta){cortada=true;pintarVacio();return}intento+=1;setTimeout(conectar,r.esperaMs)}}
   conectar();}

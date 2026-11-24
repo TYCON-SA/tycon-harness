@@ -31,7 +31,7 @@ const {
  *     "gatesRun": ["DODRT-C1", "DODRT-C2", ...]
  *   }
  *
- * Solo PASS desbloquea «Preparar el commit». PARTIAL requiere waiver explícito del user
+ * Solo PASS desbloquea «Preparar el pull request». PARTIAL requiere waiver explícito del user
  * (manejado en el step file).
  */
 function cmdMarkDodRuntimeChecked(payloadJson) {
@@ -800,6 +800,15 @@ function cmdSetFlag(flag, valRaw, extra = []) {
   if (!marker) {
     console.error('marker.js set-flag: no hay marker activo para esta sesión');
     process.exit(1);
+  }
+  // prender el escape es un pedido: sin la firma del dueño para esta ejecución no se escribe, y el pedido queda anotado
+  // para que la pueda dar (lib/atdd-skip.js)
+  if (flag === 'atddBypass' && valor) {
+    const d = require('./atdd-skip.js').decidir({ marker, pide: true, camino: 'set-flag atddBypass' });
+    if (!d.saltea) {
+      console.error(d.texto);
+      process.exit(2);
+    }
   }
   marker[flag] = valor;
   if (flag === 'atddBypass') {

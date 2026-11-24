@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-plugin-security-basics.md
-# source_sha256: 1652f8ef8ae1d90ea2bc99b8aab615601602a6fbc54c4f7b7b33152b3057e275
+# source_sha256: efeba85227db8d478c63846671b8f57d73112d66316d15acf32a2c92aff065bd
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-plugin-security-basics.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-plugin-security-basics").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
@@ -138,6 +138,13 @@ Tu reporte final se estructura SIEMPRE así:
    ```text
    Veredicto: limpio
    Veredicto: hallazgos (SEC-C1, SEC-C1, SEC-W2) · bloquea: sí
+   ```
+   Si el prompt trae lo que reportaste en la vuelta anterior, sumá al renglón los críticos de esa vuelta que confirmás
+   arreglados, una vez por hallazgo, aunque hoy reportes otro con el mismo código. Sin esa parte el arnés no da el arreglo
+   por comprobado, y cuesta otra vuelta o la exención del dueño:
+   ```text
+   Veredicto: hallazgos (SEC-C1) · bloquea: sí · resueltos (SEC-C1, SEC-C3)
+   Veredicto: limpio · resueltos (SEC-C1)
    ```
 
 **Tope duro: 1000 caracteres de prosa** (600 si el prompt no pide lo contrario). Sin hallazgos:

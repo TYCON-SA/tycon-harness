@@ -383,6 +383,54 @@ test('T12c Designacion_SinCarpetaDeCoordinacion_GuardaLaMemoria @story-8.212 @ac
   assert.doesNotMatch(erroresDeGanchos(toy), /coordination-write/, 'y no se anota ningún error');
 });
 
+test('T1 CoordinadoraEscribe_Chmod_Frena @story-8.283 @ac-1 @ac-2 @ac-31', (t) => {
+  const toy = casaNueva(t);
+  designar(toy);
+  for (const f of ['a.md', 'b.md']) fs.writeFileSync(path.join(toy.repo, f), 'a\n');
+  // el modo simbólico que empieza con guion es el modo, no una opción: el archivo que sigue es la ruta
+  for (const cmd of ['chmod -x acme/a.md', 'chmod -w acme/a.md', 'chmod -rwx acme/a.md', 'chmod u-x acme/a.md',
+    'chmod +x acme/a.md', 'chmod 644 acme/a.md', 'chmod -R 644 acme/a.md', 'chmod -R -x acme/a.md', 'chown -h acme acme/a.md',
+    // varias acciones en una cláusula, la copia de los permisos de otro y cláusulas con quién
+    'chmod -x+w acme/a.md', 'chmod -wx=r acme/a.md', 'chmod -wx-r acme/a.md', 'chmod -g acme/a.md', 'chmod -u acme/a.md',
+    'chmod -o acme/a.md', 'chmod -xX,g=u acme/a.md', 'chmod -x= acme/a.md', 'chmod -R -x+w acme/a.md']) {
+    assert.ok(negada(consola(toy, cmd)), cmd);
+  }
+  // con varios archivos mira todos: el cuidado puede ser el segundo, después de uno de afuera
+  fs.writeFileSync(path.join(toy.notas, 'o.txt'), 'o\n');
+  for (const cmd of ['chmod +x notas/o.txt acme/b.md', 'chmod -x notas/o.txt acme/b.md', 'chmod -R -x notas/o.txt acme/b.md', 'chmod -v -R 755 notas/o.txt acme/b.md',
+    'chmod -g notas/o.txt acme/b.md']) {
+    assert.ok(negada(consola(toy, cmd)), cmd);
+  }
+  // lo de afuera sigue pasando, y otra sesión no nota nada
+  assert.ok(!negada(consola(toy, 'chmod -x notas/o.txt')), 'fuera de los repos pasa');
+  assert.ok(!negada(consola(toy, 'chmod -x acme/a.md', OTRA)), 'otra sesión pasa');
+});
+
+test('T2 CoordinadoraEscribe_AvisoUnaVezPorSesion_YSinMarcaAvisa @story-8.283 @ac-3 @ac-4', (t) => {
+  const toy = casaNueva(t);
+  designar(toy);
+  // la carpeta de la memoria de quién coordina es un archivo: guardar la memoria falla siempre, también como root
+  const coord = path.join(toy.estado, 'coordination');
+  fs.rmSync(coord, { recursive: true, force: true });
+  fs.writeFileSync(coord, 'no es una carpeta\n');
+  const avisos = () => (erroresDeGanchos(toy).match(/no pude guardar la memoria de quién coordina/g) || []).length;
+  const juzgar = (sid) => CW.judge({ sessionId: sid, files: [path.join(toy.notas, 'x')], stateDir: toy.estado });
+  for (let i = 0; i < 3; i++) juzgar(COORD);
+  assert.strictEqual(avisos(), 1, 'la misma sesión avisa una vez');
+  juzgar(OTRA);
+  juzgar(OTRA);
+  assert.strictEqual(avisos(), 2, 'otra sesión avisa la suya, una vez');
+  // la marca no se puede escribir (una carpeta en su lugar): avisa en cada llamada, nunca calla
+  const tercera = 'ses-tercera';
+  fs.mkdirSync(path.join(toy.estado, `coordination-memo-aviso-${tercera}`));
+  for (let i = 0; i < 3; i++) juzgar(tercera);
+  assert.strictEqual(avisos(), 5, 'sin marca posible, un aviso por llamada');
+  // sin sesión (un llamador que no la pasa): avisa cada vez, como antes
+  CW.currentCoordinator({ stateDir: toy.estado });
+  CW.currentCoordinator({ stateDir: toy.estado });
+  assert.strictEqual(avisos(), 7, 'sin sesión, un aviso por llamada');
+});
+
 // 🔴 Falla con: `git worktree remove --force` de la coordinadora sobre una copia con cambios, que pasaba.
 test('T13 Coordinadora_WorktreeRemoveForzado_SeNiega @story-8.212 @ac-3', (t) => {
   const toy = casaNueva(t);

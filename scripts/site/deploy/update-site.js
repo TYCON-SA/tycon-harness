@@ -31,7 +31,8 @@
  *   node update-site.js --platform azure --resource-group <g> --app <a> --site-url <https://…> --image <registro/repo>
  *                       --operations-json <operations.json> --state-dir <carpeta> [--subscription <s>] [--demo] [--dry-run]
  *   node update-site.js --platform render --image <registro/repo> --operations-json <…> --state-dir <…>  (el hook, en
- *                       la variable SITE_RENDER_DEPLOY_HOOK)
+ *                       la variable SITE_RENDER_DEPLOY_HOOK; con SITE_RENDER_API_KEY y SITE_RENDER_SERVICE_ID, pregunta
+ *                       a la API de Render qué imagen corre el servicio)
  *   node update-site.js --platform local --compose <compose.yaml> --site-url http://127.0.0.1:8080 --image <…> --mode auto
  *   SALIDA: 0 al_dia, aviso, actualizado o pedido · 1 no_pudo o vuelto_atras · 2 uso. `TYCON_AZ_CMD` y `TYCON_DOCKER_CMD`
  *   cambian los ejecutables (las pruebas usan dobles).
@@ -196,6 +197,27 @@ async function pedirRender(hook, ref, f = globalThis.fetch) {
   }
 }
 
+/**
+ * Lo que corre un servicio de Render, por su API: `{ huella }`, `{ porEtiqueta: true }` o `{ error }`. Lee `imagePath`
+ * de `GET /v1/services/<id>` (con `Authorization: Bearer <llave>`). La llave y la dirección no se escriben en ningún lado;
+ * la dirección va por https, salvo un servidor local de las pruebas.
+ */
+async function imagenEnRender(api, f = globalThis.fetch) {
+  let u;
+  try { u = new URL(`${String(api.base || 'https://api.render.com/v1').replace(/\/+$/, '')}/services/${encodeURIComponent(api.servicio)}`); } catch { return { error: 'no se pudo leer la imagen que corre (la dirección de la API de Render no sirve)' }; }
+  if (u.protocol !== 'https:' && !(u.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(u.hostname))) return { error: 'no se pudo leer la imagen que corre (la API de Render va por https)' };
+  let r;
+  try { r = await f(u.toString(), { headers: { authorization: `Bearer ${api.clave}`, accept: 'application/json' } }); } catch (e) { return { error: `no se pudo leer la imagen que corre (${(e.cause && e.cause.code) || 'sin red'})` }; }
+  if (!r.ok) return { error: `no se pudo leer la imagen que corre (Render contestó ${r.status})` };
+  let d;
+  try { d = await r.json(); } catch { return { error: 'no se pudo leer la imagen que corre (la respuesta de Render no es JSON)' }; }
+  const ref = d && typeof d.imagePath === 'string' ? d.imagePath.trim() : '';
+  if (!ref) return { error: 'no se pudo leer la imagen que corre (Render no dijo la imagen del servicio)' };
+  const h = huellaDe(ref);
+  if (h) return { huella: h };
+  return CON_ETIQUETA.test(ref) ? { porEtiqueta: true } : { error: 'no se pudo leer la imagen que corre (no está fijada por huella)' };
+}
+
 /** Decide y aplica. Devuelve el resultado (y lo escribe en `estadoDir`). Nunca rechaza. */
 async function actualizar(o) {
   const { plataforma, imagen, estadoDir, ahora = Date.now, log = () => {}, urlRegistro = null, fetch: f } = o;
@@ -218,8 +240,15 @@ async function actualizar(o) {
   const nombre = LR.nombreSinEtiqueta(imagen);
   const ref = `${nombre}@${st.huella}`;
 
-  // Render: no se puede preguntar qué corre sin una credencial de su API; vale lo último que se le pidió
+  // Render: sin una credencial de su API no se puede preguntar qué corre, y vale lo último que se le pidió. Con la
+  // credencial (llave y servicio), se pregunta: uno instalado por etiqueta lo dice, y «no pude preguntar» nunca es «al día»
   if (plataforma === 'render') {
+    const api = o.render && o.render.api;
+    if (api && api.clave && api.servicio) {
+      const corre = await imagenEnRender(api, f);
+      if (corre.error) return fin('no_pudo', null, st.version, corre.error);
+      if (corre.porEtiqueta) return fin('no_pudo', null, st.version, POR_ETIQUETA);
+    }
     const prev = estado.aplicada;
     if (prev && prev.huella === st.huella) {
       // lo pedido la noche anterior se prueba ahora (Render redespliega de fondo): «al día» sólo si el sitio contesta sano
@@ -361,6 +390,12 @@ function modoDe(ruta) {
   return v === 'auto' || v === 'notice' ? v : null;
 }
 
+// Azure Pipelines deja `$(NOMBRE)` tal cual cuando la variable no está cargada: eso cuenta como vacía.
+function variableCargada(nombre) {
+  const v = process.env[nombre] || '';
+  return /^\$\([A-Za-z0-9_.]+\)$/.test(v) ? '' : v;
+}
+
 async function main(argv) {
   const op = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
   if (argv.includes('--test-site')) {
@@ -377,13 +412,13 @@ async function main(argv) {
     plataforma, modo, imagen: op('--image'), estadoDir: op('--state-dir'), dryRun: argv.includes('--dry-run'), demo: argv.includes('--demo'),
     log: (l) => process.stdout.write(`[sitio] ${l}\n`),
     azure: { grupo: op('--resource-group'), app: op('--app'), suscripcion: op('--subscription'), url: op('--site-url') },
-    render: { hook: process.env.SITE_RENDER_DEPLOY_HOOK || null, url: op('--site-url') },
+    render: { hook: process.env.SITE_RENDER_DEPLOY_HOOK || null, url: op('--site-url'), api: { clave: variableCargada('SITE_RENDER_API_KEY'), servicio: variableCargada('SITE_RENDER_SERVICE_ID') } },
     local: { compose: op('--compose'), url: op('--site-url') },
   });
   return ['no_pudo', 'vuelto_atras'].includes(r.resultado) ? 1 : 0;
 }
 
-module.exports = { actualizar, modoDe, sitioDePrueba, probarDemo, RESULTADOS, MOTIVOS };
+module.exports = { actualizar, modoDe, sitioDePrueba, probarDemo, variableCargada, RESULTADOS, MOTIVOS };
 
 if (require.main === module) {
   main(process.argv.slice(2)).then((c) => process.exit(c), (e) => { process.stderr.write(`update-site: falló: ${e && e.stack ? e.stack : e}\n`); process.exit(1); });

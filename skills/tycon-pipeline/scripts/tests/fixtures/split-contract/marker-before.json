@@ -264,13 +264,11 @@
       "archivos": {}
     },
     "set-flag-con-motivo": {
-      "status": 0,
+      "status": 2,
       "signal": null,
-      "stdout": "atddBypass: true\n",
-      "stderr": "",
-      "archivos": {
-        "HOME/.claude/.tycon-pipeline/active/ses-contrato-8163.json": "{\n  \"storyId\": \"9.1\",\n  \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"repoPath\": \"<RAIZ>/repo\",\n  \"evidenceDir\": null,\n  \"baseSha\": null,\n  \"runDir\": null,\n  \"sprint\": null,\n  \"sessionId\": \"ses-contrato-8163\",\n  \"startedAt\": \"<FECHA>\",\n  \"lastTouch\": \"<FECHA>\",\n  \"stepsCompleted\": [],\n  \"stepsPending\": [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9\n  ],\n  \"filesTouched\": [],\n  \"filesTouchedAt\": {},\n  \"iterations\": {},\n  \"fileEvents\": [],\n  \"stepTimings\": {\n    \"0\": {\n      \"startedAt\": \"<FECHA>\"\n    }\n  },\n  \"sesiones\": [\n    {\n      \"id\": \"ses-contrato-8163\",\n      \"nombre\": null,\n      \"visto\": \"<FECHA>\"\n    }\n  ],\n  \"atddBypass\": true,\n  \"atddBypassReason\": \"refactor sobre la red de siempre\"\n}\n"
-      }
+      "stdout": "",
+      "stderr": "🔒 set-flag atddBypass es un pedido de saltear «pruebas primero», no un salteo: sin la firma de una persona el freno sigue.\n   Muestra <SELLO> · historia 9.1 · ejecución <FECHA> · null\n   No pude anotar la muestra (la ejecución no tiene carpeta o no dice cuándo arrancó): sin ella no hay firma posible.\n   Con la muestra anotada, una persona firma con: node <GUIONES>/marker.js sign-atdd-skip --story 9.1 --reason \"<motivo>\"  (o en su terminal: node <GUIONES>/marker.js sign-atdd-skip --story 9.1 --reason \"<motivo>\" --terminal)\n\n",
+      "archivos": {}
     },
     "start-warning": {
       "status": 0,
@@ -397,6 +395,13 @@
       "signal": null,
       "stdout": "",
       "stderr": "uso: marker.js approve-pending --id <código del pendiente> [--repo <carpeta>] [--terminal]\n",
+      "archivos": {}
+    },
+    "sign-atdd-skip-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "🔒 marker.js sign-atdd-skip: no se firmó el salteo — faltan --story <S> y --reason \"<motivo>\"\n",
       "archivos": {}
     },
     "approve-save-sin-args": {

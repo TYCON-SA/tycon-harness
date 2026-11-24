@@ -170,7 +170,7 @@ export function readRun(text, now) {
     }
   }
   const round = reloop ? reloop.round : null;
-  // «Preparar el commit» otra vez: los revisores cerraron después de su cierre. Es la copia de `prepareCommitStale` de
+  // «Preparar el pull request» otra vez: los revisores cerraron después de su cierre. Es la copia de `prepareCommitStale` de
   // lib/steps.js (el cartel corre sin el arnés); la prueba de igualdad de harness-mods.test.js frena si se separan
   const prepEnd = endOf('prepare-commit');
   const revisorTs = typeof m.ultimoRevisorTs === 'string' ? ms(m.ultimoRevisorTs) : null;
@@ -238,7 +238,7 @@ export function readRun(text, now) {
     current: current ? { id: current.id, name: nameOf(current), number: current.number } : null,
     done: STEPS.filter((s) => finished(s.id)).length,
     total: TOTAL,
-    // con otra vuelta, desde el primer cambio sin revisar; con «Preparar el commit» pedido otra vez, desde el último
+    // con otra vuelta, desde el primer cambio sin revisar; con «Preparar el pull request» pedido otra vez, desde el último
     // cierre de los revisores: el arranque de los dos pasos puede ser de ayer
     minutesStep: current
       ? minutes(reloop && current.id === 'reviewers' && reloop.since !== null ? reloop.since
