@@ -10,9 +10,9 @@
 const {
   HARNESS_INVALID_ARGS, HARNESS_OLD_OPTION, LEGACY_MARKER_PATH, OLD_FLAGS,
   SCRIPTS_DIR, STATE_DIR, STEPS_LIB, anotarArranque, anotarOtraVuelta,
-  appendLog, at, avisarOficina, cerrarEjecucion, doingFileOf, estado,
+  appendLog, at, avisarOficina, cerrarEjecucion, conSesionNombrada, doingFileOf, estado,
   frenarSiIlegible, frenarSiPerdida, fs, idsDeEspera, markerFilePath, nn,
-  nowIso, opcion, os, path, readMarker, readOwnMarkerRaw, reposParaComparar,
+  nowIso, os, path, readMarker, readOwnMarkerRaw, reposParaComparar,
   resolveStoryPath, sinFirmaNoSeEscribe, syncSessionState, writeMarker,
 } = require('./marker-shared.js');
 
@@ -197,6 +197,8 @@ function cmdSet(payloadJson) {
       batch, batchSetAt,
       // el pedido es de la corrida: heredado, el cierre de la nueva anunciaría un pedido que no es suyo
       pr,
+      // las sesiones que pasaron son de la corrida: heredadas, la ficha de la nueva nombraría sesiones de la anterior
+      sesiones,
       ...carryOver
     } = existing;
     console.error(
@@ -1138,6 +1140,8 @@ function cmdClear(rest = []) {
   try {
     const marker = readMarker();
     if (marker && marker.storyId) {
+      // la sesión que cierra entra a la lista antes de armar el volcado: viaja en `marker.sesiones`
+      conSesionNombrada(marker);
       let gates = [];
       try {
         const raw = fs.readFileSync(path.join(STATE_DIR, 'gates.log'), 'utf8');

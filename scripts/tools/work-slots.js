@@ -21,13 +21,16 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *                                               origin/main si no existe); imprime su cd
  *   release [<puesto>]                          lo deja sobre main sin rama y libre; la rama queda. Con cambios sin
  *                                               commitear no lo suelta
- *   pending-trust [--repo <r>]                  los puestos que Claude Code todavía no tiene aprobados, cada uno con
- *                                               el cd para aprobarlo; sin repo, los de todos los repos con puestos
+ *   pending-trust [--repo <r>]                  los puestos sin su propia aprobación anotada en Claude Code (los que
+ *                                               pueden faltar), cada uno con el cd para aprobarlo; sin repo, los de
+ *                                               todos los repos con puestos
  *
  * El repo por defecto es el de la carpeta actual. Los repos con puestos quedan anotados en
  * `<estado>/coordination/slots.json`, para que `pending-trust` los encuentre. La aprobación se mira en la
  * configuración de Claude Code (`~/.claude.json`, o la de `CLAUDE_CONFIG_DIR`), por la ruta exacta del puesto; de ese
- * archivo no se imprime nada más que rutas.
+ * archivo no se imprime nada más que rutas. Un puesto cuenta como aprobado sólo con su propia entrada: la de su carpeta
+ * principal no alcanza (con Claude Code 2.1.330 la sesión de fondo pide aprobar cada puesto aparte, y esa aprobación no
+ * queda anotada en ese archivo), así que sin entrada propia no se sabe y el puesto sale en la lista.
  */
 const fs = require('fs');
 const os = require('os');
@@ -227,7 +230,10 @@ function release(opts = {}) {
 
 const claudeConfigFile = (home, env) => (env && env.CLAUDE_CONFIG_DIR ? path.join(env.CLAUDE_CONFIG_DIR, '.claude.json') : path.join(home, '.claude.json'));
 
-/** Los puestos que Claude Code todavía no tiene aprobados. `{ ok, pending: [rutas] }` o `{ ok: false, message }`. */
+/**
+ * Los puestos sin su propia aprobación anotada: los que pueden faltar. Nunca dice que están aprobados sin la entrada de
+ * cada uno. `{ ok, pending: [rutas], message }` o `{ ok: false, message }`.
+ */
 function pendingTrust(opts = {}) {
   const home = opts.home || os.homedir();
   const repos = opts.repo ? [opts.repo] : readRegistry(home);
@@ -238,18 +244,24 @@ function pendingTrust(opts = {}) {
   } catch (e) {
     if (e.code !== 'ENOENT') return no(`No pude leer ${file} (${e.code || 'no es JSON'}): no sé qué puestos están aprobados.`);
   }
-  const trusted = (p) => Boolean(projects[p] && projects[p].hasTrustDialogAccepted);
+  const trusted = (p) => Boolean(projects[p] && projects[p].hasTrustDialogAccepted === true);
   const pending = [];
+  let total = 0;
   for (const repo of repos) {
     const l = list({ ...opts, repo });
     if (!l.ok) return no(l.message);
-    // una copia de un repo cuya carpeta principal está aprobada no pregunta (medido con Claude Code 2.1.312): un puesto
-    // queda pendiente sólo si no están aprobados ni él ni su carpeta principal
-    for (const s of l.slots) if (!trusted(s.path) && !trusted(l.main)) pending.push(s.path);
+    total += l.slots.length;
+    // sólo la entrada del puesto prueba algo: la de su carpeta principal valía con 2.1.312 y con 2.1.330 ya no
+    for (const s of l.slots) if (!trusted(s.path)) pending.push(s.path);
   }
-  const message = pending.length
-    ? `${pending.length} puesto(s) sin aprobar en Claude Code. Para cada uno, abrí Claude ahí una vez y aceptá:`
-    : (repos.length ? 'Los puestos están todos aprobados en Claude Code.' : 'Todavía no hay puestos en ningún repo.');
+  let message;
+  if (pending.length) {
+    message = `${pending.length} puesto(s) sin su propia aprobación anotada: no sé si Claude Code los tiene aprobados (Claude Code 2.1.330 los aprueba aparte y no lo anota). Si al abrir una sesión ahí dice que la carpeta no está aprobada, abrí claude una vez en esa carpeta (aceptá si pregunta y salí):`;
+  } else if (total) {
+    message = `Los ${total} puesto(s) están aprobados en Claude Code: cada uno tiene su propia aprobación anotada.`;
+  } else {
+    message = repos.length ? 'Los repos anotados no tienen puestos todavía.' : 'Todavía no hay puestos en ningún repo.';
+  }
   return { ok: true, pending, message };
 }
 

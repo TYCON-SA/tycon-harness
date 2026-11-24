@@ -399,7 +399,7 @@
         },
         {
           "id": "bloquea-el-update-que-borra-la-rama",
-          "_por_que": "8.164: el update no dice la rama de origen; con --delete-source-branch true el freno no puede ver si borraría dev (consultar a Azure es la 8.225).",
+          "_por_que": "8.164: el update no dice la rama de origen. El freno se la pregunta a la plataforma del repo; acá no hay repo de una plataforma, así que no la puede leer, y con --delete-source-branch true no puede ver si borraría dev: frena (con la rama, la regla de crear: pr-update-source-branch.test.js).",
           "type": "must-block",
           "stdin": {
             "tool_name": "Bash",
@@ -409,7 +409,7 @@
           },
           "expect": {
             "exit": 2,
-            "stderr_re": ["el `update` no dice la rama de origen"]
+            "stderr_re": ["no pude leer la rama del pedido"]
           }
         },
         {
