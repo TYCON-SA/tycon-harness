@@ -854,7 +854,7 @@ test('T19 RuntimeWaiver_Terminal_ForSession_ReadsBatch @story-8.240 @ac-12 — l
 // Renglón 7 de la fila del 21/11 (casos del 11 y el 12/11): midiendo la primera tanda, un archivo de la segunda, todavía
 // pendiente y sin crear, contaba como «código declarado que no pude leer» y anulaba los humos de la medida. Un archivo
 // atado sólo a tandas que no se miden no se lee como del cambio: se dice aparte y no anula nada.
-test('T1 TandaFutura_ArchivoSinCrear_NoAnulaLosHumos — midiendo A, un archivo sin crear de B pendiente no descarta la evidencia', () => {
+test('T1 TandaFutura_ArchivoSinCrear_NoAnulaLosHumos @story-8.267 @ac-8 @ac-9 — midiendo A, un archivo sin crear de B pendiente no descarta la evidencia', () => {
   const E = entorno();
   fs.writeFileSync(E.story, historia({ archivos: ['  - src/futuro.js  # tanda B'] }));
   E.git('add', '.');
