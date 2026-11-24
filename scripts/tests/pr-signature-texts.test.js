@@ -97,19 +97,6 @@ test('8.242-Guias_DicenElPedido (T17) @story-8.242 @ac-12', () => {
 
 // Los archivos que todavía pueden nombrar el paso 11 como antes, cada uno con su motivo.
 const NOMBRE_VIEJO_PERMITIDO = Object.freeze({
-  // los revisores: cambiar su texto pide el examen de cada uno, que va en la lista semanal
-  'agents/tycon-ac-coverage-checker.md': 'revisor: el cambio pide su examen (lista semanal)',
-  'agents/tycon-deferral-tracker.md': 'revisor: el cambio pide su examen (lista semanal)',
-  'agents/tycon-dod-runtime-checker.md': 'revisor: el cambio pide su examen (lista semanal)',
-  'agents/tycon-story-validator.md': 'revisor: el cambio pide su examen (lista semanal)',
-  'adapters/codex/agents/tycon-ac-coverage-checker.toml': 'copia de Codex del revisor: sale de agents/ (build/generate.js)',
-  'adapters/codex/agents/tycon-deferral-tracker.toml': 'copia de Codex del revisor: sale de agents/ (build/generate.js)',
-  'adapters/codex/agents/tycon-dod-runtime-checker.toml': 'copia de Codex del revisor: sale de agents/ (build/generate.js)',
-  'adapters/codex/agents/tycon-story-validator.toml': 'copia de Codex del revisor: sale de agents/ (build/generate.js)',
-  'adapters/codex/agents-native/tycon-ac-coverage-checker.toml': 'copia de Codex del revisor: sale de agents/ (build/generate.js)',
-  'adapters/codex/agents-native/tycon-deferral-tracker.toml': 'copia de Codex del revisor: sale de agents/ (build/generate.js)',
-  'adapters/codex/agents-native/tycon-dod-runtime-checker.toml': 'copia de Codex del revisor: sale de agents/ (build/generate.js)',
-  'adapters/codex/agents-native/tycon-story-validator.toml': 'copia de Codex del revisor: sale de agents/ (build/generate.js)',
   // esta prueba busca las dos formas viejas: las nombra
   'scripts/tests/pr-signature-texts.test.js': 'la prueba que busca el nombre viejo',
 });
