@@ -636,6 +636,23 @@ function anotarPreguntaDistinta({ casa, sello, sesion, esperada, recibida }) {
 }
 
 /**
+ * ¿El sello propio de la pregunta clickeada es de la firma y la sesión de `sello` (con cualquier código)? El propio es el
+ * último que trae: otro cuadro puede citar este sello en el medio (la cita de un criterio, un pedido) y termina con el
+ * suyo. Un pedido de permiso lleva su sello antes del pedido: ése nunca es de esta firma. Se compara sin tildes, sin
+ * mayúsculas y con los espacios juntados: un cuadro de esta firma retocado a mano (un punto al final, comillas, «Sesion»,
+ * un salto de renglón) la sigue nombrando. Sin sello, no.
+ */
+function nombraLaMismaFirmaYSesion(pregunta, sello) {
+  const plano = (s) => String(s || '').normalize('NFKD').replace(/[\p{M}\p{Cf}]/gu, '').replace(/\s+/g, ' ').toLowerCase();
+  const SELLOS = /\b(firma|permiso) ([\w:.-]+) · sesion ([\w-]+) · codigo /g;
+  const suyos = [...plano(pregunta).matchAll(SELLOS)];
+  const esta = [...plano(sello).matchAll(SELLOS)][0];
+  if (!esta || !suyos.length || suyos.some((m) => m[1] === 'permiso')) return false;
+  const propio = suyos[suyos.length - 1];
+  return propio[1] === esta[1] && propio[2] === esta[2] && propio[3] === esta[3];
+}
+
+/**
  * El cuadro en la transcripción: la pregunta es la que armó el guion, la respuesta es la del registro, a esa hora, y no la
  * dio un gancho. `{ ok }` o `{ ok: false, motivo }`.
  */
@@ -659,7 +676,9 @@ function clickEnLaTranscripcion(ruta, a, { pregunta, opciones, descripciones, se
   if (!dijo.ok) return { ok: false, motivo: `en la transcripción, ${dijo.motivo}` };
   if (dijo.pregunta !== a.pregunta || dijo.respuesta !== a.respuesta) return { ok: false, motivo: 'la respuesta del cuadro en la transcripción no es la del registro' };
   if (!pregunta || dijo.pregunta !== pregunta) {
-    anotarPreguntaDistinta({ casa, sello, sesion: a.sesion, esperada: pregunta, recibida: dijo.pregunta });
+    // el renglón, sólo para un click a esta misma firma y sesión: cada firma que se chequea mira todos los clicks recientes
+    // de la pestaña, y uno a otra firma, o sin sello, no dice nada de ésta
+    if (nombraLaMismaFirmaYSesion(dijo.pregunta, sello)) anotarPreguntaDistinta({ casa, sello, sesion: a.sesion, esperada: pregunta, recibida: dijo.pregunta });
     // con el mismo sello, la firma y lo que se firma son los mismos: lo que cambió es el texto
     const mismoSello = !!pregunta && !!selloAlFinal(pregunta) && selloAlFinal(dijo.pregunta) === selloAlFinal(pregunta);
     return { ok: false, motivo: mismoSello ? PREGUNTA_CAMBIADA : 'la pregunta del cuadro no es la que armó el guion para esta firma: el click fue a otra pregunta' };
