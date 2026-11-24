@@ -34,7 +34,8 @@
     { "name": "core-neutrality", "script": "scripts/ci/check-core-neutrality.js", "rules": [
       "scripts/ci/neutrality-allowlist.json",
       "integrations/azure-devops/integration.json",
-      "integrations/github/integration.json"
+      "integrations/github/integration.json",
+      "integrations/gitlab/integration.json"
     ] },
     { "name": "vocabulary", "script": "scripts/ci/vocabulary.js", "rules": [
       "scripts/ci/vocabulary.json"
