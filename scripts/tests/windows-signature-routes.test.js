@@ -352,8 +352,8 @@ test('T16b Guias_ElEscapeQueComprobaSuGuion_ConElClickEnSuFormaExacta', () => {
   assert.match(paso6, /click o el «aprobado»/);
   assert.match(paso6, /también en Windows/);
   assert.match(paso6, /solo y en su forma exacta/);
-  // el SKILL no tiene lugar para la regla entera: dice quién la firma y manda al paso 6
-  assert.match(skill, /`--force-manual` lo firma la persona \(paso 6\)/);
+  // el SKILL no tiene lugar para la regla entera (está en el paso de las pruebas): dice quién la firma
+  assert.match(skill, /`--force-manual` lo firma la persona\./);
   for (const g of ['firmas-del-arnes.md', 'safety-guard.md']) {
     const t = leer('guides', g);
     assert.doesNotMatch(t, /En Windows, además, un escape se firma siempre ahí/, g);
