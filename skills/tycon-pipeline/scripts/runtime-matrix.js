@@ -1703,11 +1703,20 @@ function compute(opts) {
   const deTandaBloqueada = [];
   // midiendo una tanda, lo que todavía no existe y la historia ata sólo a otras tandas sin hacer no es código de lo medido
   const deTandaNoMedida = [];
+  // `<hermano>/ruta`, con el nombre del hermano adelante, es esa ruta adentro del hermano, esté donde esté: desde la
+  // carpeta de arriba sólo se encuentra si el hermano vive ahí. Con su copia en la rama, va a la copia (más abajo)
+  const porNombre = evCfg.roots.map((r) => ({ nombre: companionLib.label(r).toLowerCase(), raiz: companionLib.real(r) }));
   for (const rel of declared) {
     const copias = new Map();
-    for (const desde of lugares) {
+    const intentos = lugares.map((desde) => ({ desde, relEn: rel }));
+    for (const h of porNombre) {
+      if (rel.toLowerCase().startsWith(`${h.nombre}/`)) intentos.push({ desde: h.raiz, relEn: rel.slice(h.nombre.length + 1) });
+    }
+    // dónde se buscó, para el aviso: los lugares y la ruta adentro de cada hermano que la nombra
+    const buscada = [...lugares, ...intentos.slice(lugares.length).map((i) => path.join(copiaDe.get(i.desde) || i.desde, i.relEn))];
+    for (const { desde, relEn } of intentos) {
       let lugar = desde;
-      let abs = path.resolve(lugar, rel);
+      let abs = path.resolve(lugar, relEn);
       // la ruta real con la forma del disco (mayúsculas incluidas, y también la de un archivo que no existe), la misma que
       // usan las llaves de las copias: con otra, una ruta escrita con otra mayúscula no se reconocería como del hermano
       let real = companionLib.real(abs);
@@ -1729,7 +1738,7 @@ function compute(opts) {
       const deOtra = !tandas && midiendoTanda ? tandasNoMedidasDe(content, rel, [...pedidas, ...vuelven.keys()]) : null;
       if (tandas) deTandaBloqueada.push({ rel, tandas });
       else if (deOtra) deTandaNoMedida.push({ rel, tandas: deOtra });
-      else noLeidos.push({ rel, lugares });
+      else noLeidos.push({ rel, lugares: buscada });
       continue;
     }
     for (const { abs, lugar, sinCopia: declarado } of copias.values()) {

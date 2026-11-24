@@ -355,7 +355,15 @@ function enLaMismaRama(declarado, rama, numero) {
     mismoNombre = null;
   }
   if (mismoNombre) return rama === 'main' ? elegir(mismoNombre.ruta) : alDiaOVieja(mismoNombre, worktrees, nombre, elegir, null);
-  const candidatos = worktrees.filter((w) => ramaNombraLaStory(w.rama, numero));
+  // un número con el prefijo de su producto (`BCRA-1.1`) cuya rama nombra sólo el número (`feature/1-1-…`): si ninguna lo
+  // nombra entero, se busca sin el prefijo, con la misma regla de un único candidato
+  let candidatos = worktrees.filter((w) => ramaNombraLaStory(w.rama, numero));
+  const prefijo = !candidatos.length && /^([a-z]+)[._-](?=\d)/i.exec(String(numero || ''));
+  if (prefijo) {
+    const sinPrefijo = String(numero).slice(prefijo[0].length);
+    candidatos = worktrees.filter((w) => ramaNombraLaStory(w.rama, sinPrefijo));
+    if (candidatos.length) numero = `${sinPrefijo} (sin el prefijo ${prefijo[1]})`;
+  }
   if (!rama) {
     if (candidatos.length) avisar(`${nombre}: la story ${numero} corre en un commit suelto, sin la rama de la corrida: no elijo por su número (${candidatos.map((w) => `${real(w.ruta)} en ${w.rama}`).join(' · ')}), uso el declarado ${declarado}`);
     return declarado;
