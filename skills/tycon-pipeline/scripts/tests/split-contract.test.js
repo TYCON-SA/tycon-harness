@@ -21,8 +21,11 @@ const { spawnSync } = require('child_process');
 
 const SCRIPTS = path.resolve(__dirname, '..');
 const FOTO = path.join(__dirname, 'fixtures', 'split-contract', 'marker-before.json');
+// la de pipeline.js se graba aparte (`SPLIT_CONTRACT_RECORD=pipeline`), sobre el pipeline.js sin partir
+const FOTO_PIPELINE = path.join(__dirname, 'fixtures', 'split-contract', 'pipeline-before.json');
 const SID = 'ses-contrato-8163';
 const GRABAR = process.env.SPLIT_CONTRACT_RECORD === '1';
+const GRABAR_PIPELINE = process.env.SPLIT_CONTRACT_RECORD === 'pipeline';
 
 const FUERA_DEL_ENTORNO = ['TYCON_GUIDES_DIR', 'TCG', 'NODE_TEST_CONTEXT', 'TYCON_SKILLS_DIR', 'TYCON_HOME', 'TYCON_STATE_DIR',
   'TYCON_AUTO_SNAPSHOT', 'TYCON_SNAPSHOT_GUARD', 'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'TYCON_SESSION_ID',
@@ -180,7 +183,73 @@ const CASOS = [
   { id: 'sin-comando', argv: [] },
 ];
 
-const reemplazar = (s, m) => String(s).replace(/\{REPO\}/g, m.repo).replace(/\{STORY\}/g, m.story).replace(/\{HOME\}/g, m.home);
+/**
+ * Los casos de pipeline.js: al menos uno por subcomando, más el carril rápido, el pedido para otra sesión, el subcomando
+ * desconocido y sin comando. Los que leen la corrida arrancan con el marcador de la historia de juguete.
+ */
+const CASOS_PIPELINE = [
+  { id: 'review-rounds-sin-marcador', argv: ['review-rounds'] },
+  { id: 'review-rounds', marcador: true, argv: ['review-rounds'] },
+  { id: 'advisors-sin-args', argv: ['advisors'] },
+  { id: 'advisors', marcador: true, argv: ['advisors', '--repo', '{REPO}', '--story', '{STORY}', '--files', 'src/a.js'] },
+  { id: 'advisors-archivo-fantasma', marcador: true, argv: ['advisors', '--repo', '{REPO}', '--story', '{STORY}', '--files', 'src/no-existe.js'] },
+  { id: 'advisors-carril-sin-carril', argv: ['advisors', '--adhoc'] },
+  { id: 'check-count-carril-sin-carril', argv: ['check-count', '--adhoc'] },
+  { id: 'deep-review-gate-carril-sin-carril', argv: ['deep-review-gate', '--adhoc'] },
+  { id: 'siblings', argv: ['siblings', '--repo', '{REPO}'] },
+  { id: 'validators', argv: ['validators', '--story', '{STORY}', '--repo', '{REPO}'] },
+  { id: 'smart-reloop-sin-args', argv: ['smart-reloop'] },
+  { id: 'smart-reloop-sin-foto', marcador: true, argv: ['smart-reloop', '--iter', '2', '--repo', '{REPO}', '--story', '{STORY}', '--files', 'src/a.js'] },
+  { id: 'preflight-frontmatter', argv: ['preflight-frontmatter', '--story-path', '{STORY}', '--target-status', 'review'] },
+  { id: 'reviewers-run-sin-args', argv: ['reviewers-run'] },
+  { id: 'check-count-sin-marcador', argv: ['check-count', '--ran', 'a,b'] },
+  { id: 'check-count', marcador: true, argv: ['check-count', '--ran', 'a,b'] },
+  { id: 'lint-config', argv: ['lint-config', '--repo', '{REPO}'] },
+  { id: 'advisor-runs', marcador: true, argv: ['advisor-runs'] },
+  { id: 'next-sin-marcador', argv: ['next'] },
+  { id: 'next', marcador: true, argv: ['next'] },
+  { id: 'next-para-otra-sesion', marcador: true, argv: ['next', '--for-session', 'ses-otra'] },
+  { id: 'work-signal', marcador: true, argv: ['work-signal'] },
+  { id: 'work-signal-start', marcador: true, argv: ['work-signal', 'start'] },
+  { id: 'ado-mark-active-sin-pedido', marcador: true, argv: ['ado-mark-active'] },
+  { id: 'estimate-real', marcador: true, argv: ['estimate-real'] },
+  { id: 'start-sin-args', argv: ['start'] },
+  { id: 'start', argv: ['start', '--story', '{STORY}', '--repo', '{REPO}', '--brief'] },
+  { id: 'risk-class', argv: ['risk-class', '--story', '{STORY}', '--files', 'src/a.js', '--repo', '{REPO}'] },
+  { id: 'story-review-gate', argv: ['story-review-gate', '--story', '{STORY}', '--repo', '{REPO}'] },
+  { id: 'story-review-record-sin-args', argv: ['story-review-record'] },
+  { id: 'validation-record-sin-args', argv: ['validation-record'] },
+  { id: 'tooling-expected', argv: ['tooling-expected', '--repo', '{REPO}'] },
+  { id: 'model-hint', argv: ['model-hint', '--story', '{STORY}', '--files', 'src/a.js'] },
+  { id: 'deep-review-gate', argv: ['deep-review-gate', '--repo', '{REPO}', '--story', '{STORY}', '--files', 'src/a.js'] },
+  { id: 'timing-report', marcador: true, argv: ['timing-report'] },
+  { id: 'cost-report', marcador: true, argv: ['cost-report'] },
+  { id: 'org-rules', argv: ['org-rules', '--repo', '{REPO}'] },
+  { id: 'readability-brief-sin-args', argv: ['readability-brief'] },
+  { id: 'evidence-key', argv: ['evidence-key', '--story', '{STORY}'] },
+  { id: 'compare-candidates-sin-args', argv: ['compare-candidates'] },
+  { id: 'compare-candidates', argv: ['compare-candidates', '--story', '{STORY}', '--repo', '{REPO}'] },
+  { id: 'run-dir', marcador: true, argv: ['run-dir', '--story', '{STORY}', '--repo', '{REPO}'] },
+  { id: 'evidence-dir', argv: ['evidence-dir', '--story', '{STORY}'] },
+  { id: 'e2e-config', argv: ['e2e-config', '--repo', '{REPO}'] },
+  { id: 'dep-gate', argv: ['dep-gate', '--repo', '{REPO}', '--story', '{STORY}'] },
+  { id: 'next-story', argv: ['next-story', '--repo', '{REPO}'] },
+  { id: 'write-followups-sin-args', argv: ['write-followups'] },
+  { id: 'write-findings-sin-hallazgos', marcador: true, argv: ['write-findings', '--story', '{STORY}', '--repo', '{REPO}', '--findings', '{REPO}/no-hay.json'] },
+  { id: 'verify-finding-sin-args', argv: ['verify-finding'] },
+  { id: 'record-refutation-sin-args', argv: ['record-refutation'] },
+  { id: 'findings-status', marcador: true, argv: ['findings-status', '--story', '{STORY}', '--repo', '{REPO}'] },
+  { id: 'dod-checker-needed', argv: ['dod-checker-needed', '--story', '{STORY}'] },
+  { id: 'deferrals-open', argv: ['deferrals-open', '--story', '{STORY}'] },
+  { id: 'qa-readability', argv: ['qa-readability', '--story', '{STORY}'] },
+  { id: 'qa-readability-con-marcas', marcador: true, argv: ['qa-readability', '--story', '{STORY}', '--marks', '0'] },
+  { id: 'followups-status', argv: ['followups-status', '--story', '{STORY}'] },
+  { id: 'mech-check', argv: ['mech-check', '--repo', '{REPO}', '--story', '{STORY}', '--files', 'src/a.js'] },
+  { id: 'desconocido', argv: ['cualquiera'] },
+  { id: 'sin-comando', argv: [] },
+].map((c) => ({ ...c, id: `pipeline-${c.id}`, guion: 'pipeline.js' }));
+
+const reemplazar =(s, m) => String(s).replace(/\{REPO\}/g, m.repo).replace(/\{STORY\}/g, m.story).replace(/\{HOME\}/g, m.home);
 
 function git(dir, env, ...a) {
   return spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', dir, ...a], { encoding: 'utf8', env });
@@ -258,10 +327,14 @@ function normalizar(texto, m) {
     .replace(/"(pid|ppid|durationMs|duration_ms|ms)":\s?\d+/g, '"$1":<N>');
 }
 
-/** Corre un caso contra `scripts` (la carpeta con marker.js): `{ status, stdout, stderr, archivos }`, normalizado. */
+/**
+ * Corre un caso contra `scripts` (la carpeta con marker.js y pipeline.js): `{ status, stdout, stderr, archivos }`,
+ * normalizado. El guion del caso es `caso.guion` (de fábrica, marker.js); el marcador lo arma siempre marker.js.
+ */
 function correr(caso, scripts = SCRIPTS) {
   const m = armar(caso);
   const marker = path.join(scripts, 'marker.js');
+  const guion = path.join(scripts, caso.guion || 'marker.js');
   if (caso.marcador) {
     const r = spawnSync(process.execPath, [marker, 'set', JSON.stringify({ storyId: '9.1', storyPath: m.story, repoPath: m.repo })],
       { cwd: m.repo, env: m.env, encoding: 'utf8', timeout: 30000 });
@@ -270,7 +343,13 @@ function correr(caso, scripts = SCRIPTS) {
   const antes = archivos(m);
   const env = { ...m.env };
   if (caso.sinSesion) { delete env.CLAUDE_CODE_SESSION_ID; delete env.TYCON_SESSION_ID; }
-  const r = spawnSync(process.execPath, [marker, ...caso.argv.map((a) => reemplazar(a, m))],
+  // pipeline.js mira las herramientas de la máquina (engram en el PATH) y la raíz de los repos: la foto no puede depender
+  // de la máquina que la graba ni de la que la corre
+  if (caso.guion === 'pipeline.js') {
+    if (process.platform !== 'win32') env.PATH = [path.dirname(process.execPath), '/usr/bin', '/bin'].join(path.delimiter);
+    env.TYCON_REPOS_ROOT = m.raiz;
+  }
+  const r = spawnSync(process.execPath, [guion, ...caso.argv.map((a) => reemplazar(a, m))],
     { cwd: m.repo, env, encoding: 'utf8', timeout: 30000, input: '' });
   const despues = archivos(m);
   const cambiados = {};
@@ -377,9 +456,57 @@ function grabar() {
   return foto;
 }
 
+/** La foto de pipeline.js: sus casos (dos veces, como la de marker.js), sus `require` y sus exportaciones. */
+function grabarPipeline() {
+  const foto = { nota: 'salida de cada caso con el pipeline.js sin partir; grabada con SPLIT_CONTRACT_RECORD=pipeline', casos: {} };
+  const inestables = [];
+  for (const caso of CASOS_PIPELINE) {
+    const a = correr(caso);
+    const b = correr(caso);
+    const d = diferencia(a, b);
+    if (d) inestables.push(`${caso.id}: ${d}`);
+    foto.casos[caso.id] = a;
+  }
+  if (inestables.length) throw new Error(`casos inestables entre dos corridas (arreglá la normalización antes de grabar):\n${inestables.join('\n')}`);
+  foto.requires = requiresLocales(path.join(SCRIPTS, 'pipeline.js'));
+  foto.exports = clavesDePipeline();
+  fs.mkdirSync(path.dirname(FOTO_PIPELINE), { recursive: true });
+  fs.writeFileSync(FOTO_PIPELINE, JSON.stringify(foto, null, 2) + '\n');
+  return foto;
+}
+
+/** Los subcomandos del despacho de pipeline.js, leídos de sus `if (cmd === '…')`. */
+const subcomandosDePipeline = (scriptsDir = SCRIPTS) => [...new Set([...fs.readFileSync(path.join(scriptsDir, 'pipeline.js'), 'utf8')
+  .matchAll(/\bcmd === '([\w-]+)'/g)].map((x) => x[1]))];
+
+if (GRABAR_PIPELINE) {
+  test('grabar la foto de pipeline.js', () => { grabarPipeline(); });
+} else if (!GRABAR) {
+  test('T6 Pipeline_SameOutputsBeforeAndAfter @story-8.163 @ac-6', () => {
+    assert.ok(fs.existsSync(FOTO_PIPELINE), `falta la foto de antes: ${FOTO_PIPELINE}`);
+    const foto = JSON.parse(fs.readFileSync(FOTO_PIPELINE, 'utf8'));
+    const faltan = CASOS_PIPELINE.filter((c) => !foto.casos[c.id]).map((c) => c.id);
+    assert.deepStrictEqual(faltan, [], `casos sin foto de antes: ${faltan.join(', ')}`);
+    const distintos = [];
+    for (const caso of CASOS_PIPELINE) {
+      const d = diferencia(foto.casos[caso.id], correr(caso));
+      if (d) distintos.push(`${caso.argv[0] || '(sin comando)'} · caso ${caso.id} · ${d}`);
+    }
+    assert.deepStrictEqual(distintos, [], `salidas que cambiaron al partir:\n${distintos.join('\n')}`);
+  });
+
+  test('T6b cada subcomando de pipeline.js tiene al menos un caso @story-8.163 @ac-6', () => {
+    const subcomandos = subcomandosDePipeline();
+    assert.ok(subcomandos.length >= 43, `esperaba los 43 subcomandos del despacho, encontré ${subcomandos.length}`);
+    const conCaso = new Set(CASOS_PIPELINE.map((c) => c.argv[0]));
+    const sin = subcomandos.filter((s) => !conCaso.has(s));
+    assert.deepStrictEqual(sin, [], `subcomandos sin caso: ${sin.join(', ')}`);
+  });
+}
+
 if (GRABAR) {
   test('grabar la foto de antes', () => { grabar(); });
-} else {
+} else if (!GRABAR_PIPELINE) {
   test('T3 Marker_SameOutputsBeforeAndAfter @story-8.163 @ac-3', () => {
     assert.ok(fs.existsSync(FOTO), `falta la foto de antes: ${FOTO}`);
     const foto = JSON.parse(fs.readFileSync(FOTO, 'utf8'));

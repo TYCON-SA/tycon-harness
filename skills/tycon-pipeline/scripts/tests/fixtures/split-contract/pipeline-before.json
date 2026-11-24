@@ -1,0 +1,605 @@
+{
+  "nota": "salida de cada caso con el pipeline.js sin partir; grabada con SPLIT_CONTRACT_RECORD=pipeline",
+  "casos": {
+    "pipeline-review-rounds-sin-marcador": {
+      "status": 0,
+      "signal": null,
+      "stdout": "0 vueltas de revisores (tope 3); lo abierto no lo pude mirar: no encontré la carpeta de la corrida.\n",
+      "stderr": "⚠️  no encontré la carpeta de la corrida\n",
+      "archivos": {}
+    },
+    "pipeline-review-rounds": {
+      "status": 0,
+      "signal": null,
+      "stdout": "0 vueltas de revisores (tope 3); lo abierto no lo pude mirar: no encontré la carpeta de la corrida.\n",
+      "stderr": "⚠️  no encontré la carpeta de la corrida\n",
+      "archivos": {}
+    },
+    "pipeline-advisors-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "🛑 --files llegó VACÍO (0 paths).\nCausa típica: variable de shell vacía/unset (`--files $VAR`). Pasá los archivos del diff explícitos —\nun set computado sin files degrada a onlyDocs (~3 advisors) y PERSISTE un expected[] corrupto (caso 9.4).\nSi la iteración legítimamente no tiene archivos (¿seguro?) → --allow-missing-files.\n",
+      "archivos": {}
+    },
+    "pipeline-advisors": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\n  \"base\": [\n    \"tycon-plugin-tests-coverage\",\n    \"tycon-plugin-security-basics\"\n  ],\n  \"completitud\": [\n    \"tycon-story-validator\",\n    \"tycon-spec-first-checker\",\n    \"tycon-ac-coverage-checker\",\n    \"tycon-deferral-tracker\"\n  ],\n  \"conditional\": [],\n  \"all\": [\n    \"tycon-plugin-tests-coverage\",\n    \"tycon-plugin-security-basics\",\n    \"tycon-story-validator\",\n    \"tycon-spec-first-checker\",\n    \"tycon-ac-coverage-checker\",\n    \"tycon-deferral-tracker\"\n  ],\n  \"required_count\": 6,\n  \"detection\": {\n    \"hasNext\": false,\n    \"hasReact\": false,\n    \"csModified\": false,\n    \"tsxModified\": true,\n    \"shModified\": false,\n    \"pyModified\": false,\n    \"svelteModified\": false,\n    \"vueModified\": false,\n    \"sourceModified\": true,\n    \"codeModified\": true,\n    \"pluginCfgModified\": false,\n    \"secretCfgModified\": false,\n    \"depChanged\": false,\n    \"onlyDocs\": false,\n    \"warning\": \"sin package.json encontrado (ni en raíz, ni ancestros de los files, ni subdirs) — detección React/Next ciega; verificá --repo\"\n  },\n  \"completitud_motivos\": [],\n  \"stack_problems\": [],\n  \"packs\": [],\n  \"packs_dir\": \"<ARNES>/packs\",\n  \"packs_declarados\": null,\n  \"packs_nota\": \"ningún paquete instalado en <ARNES>/packs\",\n  \"story_path_para\": [\n    \"tycon-spec-first-checker\"\n  ],\n  \"mech_findings\": [\n    {\n      \"rule\": \"ACCOV-C1\",\n      \"severity\": \"CRITICAL\",\n      \"status\": \"fail\",\n      \"detail\": \"Tests de la tabla SIN implementación encontrada (grep por Trait/tag, T-ID y nombre sobre 0 test files): T1\"\n    },\n    {\n      \"rule\": \"DEFTR-C1\",\n      \"severity\": \"CRITICAL\",\n      \"status\": \"fail\",\n      \"detail\": \"pipelines pending (A-una) sin trazabilidad: no hay TODO(Story-9.1-deferral) en código ni mención de la story en tasks/todo.md (del repo). Deuda fantasma.\"\n    }\n  ],\n  \"mech_note\": \"⚠️ 2 finding(s) mecánicos CONFIRMADOS (mech-check) — van DIRECTO al reporte consolidado.\",\n  \"frozen\": [\n    {\n      \"repo\": \"<RAIZ>/repo\",\n      \"tree\": \"<HEX>\",\n      \"copy\": \"<RAIZ>/home/.claude/.tycon-pipeline/frozen/ses-contrato-8163/rev-iter1/repo-<SELLO>\",\n      \"mainBase\": \"<HEX>\"\n    }\n  ],\n  \"reglas_revisores\": {\n    \"estado\": \"sin_claude_md\"\n  },\n  \"context_file\": \"<RAIZ>/home/.claude/.tycon-pipeline/advisor-context/ses-contrato-8163-iter1.md\",\n  \"context_file_overrides\": {\n    \"tycon-story-validator\": \"<RAIZ>/home/.claude/.tycon-pipeline/advisor-context/ses-contrato-8163-iter1-tycon-story-validator.md\"\n  },\n  \"batch_rule\": \"Ventana deslizante: MÁXIMO 4 subagentes VIVOS a la vez (máquina 8c/16GB). Al llegar la notificación de que uno terminó, lanzar el siguiente del set en ese turno — no esperar a que termine el grupo entero. NUNCA lanzar el set completo en un solo mensaje paralelo si supera 4. ⚠️ Si el pase adversarial fue lanzado al cerrar «Correr las pruebas» y sigue en vuelo, el cap baja a 2 — este string no conoce ese estado: manda la guía del paso de revisores §Cap reducido. Avisos al dev agrupados por hito (mitad del set y set completo), no por advisor.\",\n  \"run_size\": \"completa\"\n}\n",
+      "stderr": "ℹ️  el marcador de la historia 9.1 no tiene carpeta de corrida y no uso su apertura: la sesión no tiene una apertura en gates.log. Abro una carpeta de corrida nueva (9.1-<SELLO>).\n",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/frozen/ses-contrato-8163/vueltas.jsonl": "{\"ts\":\"<FECHA>\",\"tipo\":\"revisores\",\"etiqueta\":\"rev-iter1\",\"story\":\"9.1\",\"repos\":[{\"repo\":\"<RAIZ>/repo\",\"tree\":\"<HEX>\",\"copy\":\"<RAIZ>/home/.claude/.tycon-pipeline/frozen/ses-contrato-8163/rev-iter1/repo-<SELLO>\",\"mainBase\":\"<HEX>\"}]}\n",
+        "HOME/.claude/.tycon-pipeline/frozen/ses-contrato-8163/rev-iter1/repo-<SELLO>/src/a.js": "module.exports = 1;\n",
+        "HOME/.claude/.tycon-pipeline/frozen/ses-contrato-8163/rev-iter1/repo-<SELLO>/specs/story-9.1-juguete.md": "---\nepic: 9\nstory: \"9.1\"\ntitle: \"Historia de juguete del contrato\"\nstatus: in-progress\npipelines:\n  - name: A-una\n    title: \"una\"\n    status: in-progress\n    acs_pending: [1]\n    tasks_pending: [1]\n    tests_pending: [T1]\n---\n\n# Story 9.1: Historia de juguete del contrato\n\nStatus: in-progress\n\n## Acceptance Criteria\n\n1. **Given** algo **When** pasa **Then** se ve.\n\n### Tests (1 verificación)\n\n| # | Test | AC | Nivel | Escenario | Resultado esperado |\n|---|------|----|-------|-----------|--------------------|\n| T1 | `Algo_Pasa_SeVe` | 1 | unit | algo | se ve |\n\n## Tasks / Subtasks\n\n- [ ] Task 1: algo (AC: 1)\n",
+        "HOME/.claude/.tycon-pipeline/frozen/ses-contrato-8163/rev-iter1/repo-<SELLO>/.advisors/pipeline-runs/9.1-<SELLO>/rethink/served.json": "{\n  \"served\": [\n    1\n  ]\n}\n",
+        "HOME/.claude/.tycon-pipeline/advisor-runs/ses-contrato-8163.jsonl": "{\"ts\":\"<FECHA>\",\"event\":\"step5-start\",\"expected\":[\"tycon-plugin-tests-coverage\",\"tycon-plugin-security-basics\",\"tycon-story-validator\",\"tycon-spec-first-checker\",\"tycon-ac-coverage-checker\",\"tycon-deferral-tracker\"],\"mode\":\"advisors\",\"iter\":1,\"context_file\":\"<RAIZ>/home/.claude/.tycon-pipeline/advisor-context/ses-contrato-8163-iter1.md\",\"context_file_overrides\":{\"tycon-story-validator\":\"<RAIZ>/home/.claude/.tycon-pipeline/advisor-context/ses-contrato-8163-iter1-tycon-story-validator.md\"}}\n",
+        "HOME/.claude/.tycon-pipeline/advisor-context/ses-contrato-8163-iter1-tycon-story-validator.md": "# Advisor context — iter 1 · recortado para `tycon-story-validator`\n\n> Tu superficie es la STORY, no el diff. Acá está el digest completo de la story, la\n> lista COMPLETA de archivos del diff, y —para VAL-C5— **sólo los hunks cuyas líneas\n> agregadas contienen marcas de deuda diferida**. Los demás hunks NO están pegados\n> a propósito: si una regla tuya depende de uno, abrilo con Read en vez de darla por\n> evaluada. NO asumas \"sin deuda\" por ausencia de hunks: los que traen marcas están\n> todos acá; los otros fueron descartados por un filtro de contenido, no por muestreo.\n\n## Archivos del diff (1)\n\n- src/a.js\n\n## Story digest (frontmatter + ACs + Tests + Tasks + verificación)\n\n---\nepic: 9\nstory: \"9.1\"\ntitle: \"Historia de juguete del contrato\"\nstatus: in-progress\npipelines:\n  - name: A-una\n    title: \"una\"\n    status: in-progress\n    acs_pending: [1]\n    tasks_pending: [1]\n    tests_pending: [T1]\n---\n## Tasks / Subtasks\n\n- [ ] Task 1: algo (AC: 1)\n\n\n## Acceptance Criteria\n\n1. **Given** algo **When** pasa **Then** se ve.\n\n\n### Tests (1 verificación)\n\n| # | Test | AC | Nivel | Escenario | Resultado esperado |\n|---|------|----|-------|-----------|--------------------|\n| T1 | `Algo_Pasa_SeVe` | 1 | unit | algo | se ve |\n\n\n## Hunks con marcas de deuda diferida (VAL-C5) — 0 de 0 archivos\n\n```diff\n(ningún archivo del diff agrega marcas de deuda)\n```\n\n## Archivos del diff sin marcas de deuda (0) — no pegados, abrilos con Read si los necesitás\n\n\n## Lo que se revisa: la versión congelada\n\nLeé la copia de cada repo, no la carpeta viva: la carpeta viva puede cambiar mientras revisás, y lo que se guarda\nse compara con este sello. Las rutas del diff son relativas a la raíz de cada copia.\n\n- <RAIZ>/repo → copia: <RAIZ>/home/.claude/.tycon-pipeline/frozen/ses-contrato-8163/rev-iter1/repo-<SELLO> (sello <HEX>)\n",
+        "HOME/.claude/.tycon-pipeline/advisor-context/ses-contrato-8163-iter1.md": "# Advisor context — iter 1\n\n> Artefacto generado por pipeline.js (1 vez por iteración). Es tu input primario:\n> contiene el digest de la story (secciones operativas), la lista de archivos del\n> diff y los hunks. Leé archivos completos SOLO si necesitás contexto adicional.\n> Lo que quedó recortado está LISTADO — si una regla tuya depende de algo que no\n> está pegado acá, abrí ese archivo en vez de darla por evaluada.\n\n## Archivos del diff (1)\n\n- src/a.js\n\n\n\n## Story digest (frontmatter + ACs + Tests + Tasks + verificación)\n\n---\nepic: 9\nstory: \"9.1\"\ntitle: \"Historia de juguete del contrato\"\nstatus: in-progress\npipelines:\n  - name: A-una\n    title: \"una\"\n    status: in-progress\n    acs_pending: [1]\n    tasks_pending: [1]\n    tests_pending: [T1]\n---\n## Tasks / Subtasks\n\n- [ ] Task 1: algo (AC: 1)\n\n\n## Acceptance Criteria\n\n1. **Given** algo **When** pasa **Then** se ve.\n\n\n### Tests (1 verificación)\n\n| # | Test | AC | Nivel | Escenario | Resultado esperado |\n|---|------|----|-------|-----------|--------------------|\n| T1 | `Algo_Pasa_SeVe` | 1 | unit | algo | se ve |\n\n\n## Diff unificado (git diff contra la bifurcación con main)\n\n```diff\n(git diff vacío — sin cambios trackeados en estos archivos; los nuevos sin seguimiento van más abajo)\n```\n\n## Lo que se revisa: la versión congelada\n\nLeé la copia de cada repo, no la carpeta viva: la carpeta viva puede cambiar mientras revisás, y lo que se guarda\nse compara con este sello. Las rutas del diff son relativas a la raíz de cada copia.\n\n- <RAIZ>/repo → copia: <RAIZ>/home/.claude/.tycon-pipeline/frozen/ses-contrato-8163/rev-iter1/repo-<SELLO> (sello <HEX>)\n",
+        "REPO/.advisors/pipeline-runs/9.1-<SELLO>/rethink/served.json": "{\n  \"served\": [\n    1\n  ]\n}\n"
+      }
+    },
+    "pipeline-advisors-archivo-fantasma": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "🛑 1/1 de los --files NO existen en disco:\n  - src/no-existe.js\n\nCausa típica: expansión de shell rota (zsh NO word-splitea $VAR sin comillas — usá ${=VAR} o pasá los paths explícitos).\nUn set computado sobre files fantasma degrada a onlyDocs y PERSISTE un expected[] corrupto (caso 9.4 <DIA>).\nSi el diff incluye archivos BORRADOS legítimos → re-corré con --allow-missing-files.\n",
+      "archivos": {}
+    },
+    "pipeline-advisors-carril-sin-carril": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "🛑 advisors --adhoc: esta sesión no tiene un camino rápido abierto con su firma (marker.js adhoc set).\n",
+      "archivos": {}
+    },
+    "pipeline-check-count-carril-sin-carril": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "🛑 check-count --adhoc: esta sesión no tiene un camino rápido abierto con su firma (marker.js adhoc set).\n",
+      "archivos": {}
+    },
+    "pipeline-deep-review-gate-carril-sin-carril": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "🛑 deep-review-gate --adhoc: esta sesión no tiene un camino rápido abierto con su firma (marker.js adhoc set).\n",
+      "archivos": {}
+    },
+    "pipeline-siblings": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\n  \"repo\": \"<RAIZ>/repo\",\n  \"raiz\": \"<RAIZ>\",\n  \"hermanos\": [],\n  \"texto\": \"(no hay hermanos declarados: no se buscan)\"\n}\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-validators": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\n  \"story\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"repo\": \"<RAIZ>/repo\",\n  \"validadores\": [\n    \"tycon-story-validator\",\n    \"tycon-story-adversarial-reviewer\"\n  ],\n  \"lanzamientos\": [\n    {\n      \"agente\": \"tycon-story-adversarial-reviewer\",\n      \"paquete\": null,\n      \"modelo\": \"sonnet\",\n      \"prompt\": \"Revisá la historia <RAIZ>/repo/specs/story-9.1-juguete.md contra el repo <RAIZ>/repo, antes de programarla. Una sola pasada, de sólo lectura. Corrés en paralelo con el validador de stories: no repitas lo que es de su catálogo (VAL-*). Cada hallazgo con su regla SADV, el criterio o la sección, y su evidencia; sin evidencia no es hallazgo. Cerrá con el renglón «Veredicto:».\",\n      \"nota\": \"la revisión previa no tiene constancia vigente (none): corre una vez, en el mismo mensaje que el validador; modelo: sonnet (valor de hoy). Al terminar, story-review-record con --tokens y --duration-ms del resultado del lanzamiento.\"\n    }\n  ],\n  \"validacion_previa\": {\n    \"estado\": \"none\",\n    \"omitidos\": [],\n    \"linea\": null\n  },\n  \"packs\": [],\n  \"packs_dir\": \"<ARNES>/packs\",\n  \"packs_nota\": \"ningún paquete instalado en <ARNES>/packs\",\n  \"contexto\": {\n    \"files\": [],\n    \"detection\": {\n      \"hasNext\": false,\n      \"hasReact\": false,\n      \"csModified\": false,\n      \"tsxModified\": false,\n      \"shModified\": false,\n      \"pyModified\": false,\n      \"svelteModified\": false,\n      \"vueModified\": false,\n      \"sourceModified\": false,\n      \"codeModified\": false,\n      \"pluginCfgModified\": false,\n      \"secretCfgModified\": false,\n      \"depChanged\": false,\n      \"onlyDocs\": true\n    }\n  },\n  \"dependencias_de_pruebas\": [],\n  \"archivos_deprecados\": []\n}\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-smart-reloop-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "🛑 --files llegó VACÍO (0 paths).\nCausa típica: variable de shell vacía/unset (`--files $VAR`). Pasá los archivos del diff explícitos —\nun set computado sin files degrada a onlyDocs (~3 advisors) y PERSISTE un expected[] corrupto (caso 9.4).\nSi la iteración legítimamente no tiene archivos (¿seguro?) → --allow-missing-files.\n",
+      "archivos": {}
+    },
+    "pipeline-smart-reloop-sin-foto": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\n  \"base\": [\n    \"tycon-plugin-tests-coverage\",\n    \"tycon-plugin-security-basics\"\n  ],\n  \"completitud\": [\n    \"tycon-story-validator\",\n    \"tycon-spec-first-checker\",\n    \"tycon-ac-coverage-checker\",\n    \"tycon-deferral-tracker\"\n  ],\n  \"conditional\": [],\n  \"all\": [\n    \"tycon-plugin-tests-coverage\",\n    \"tycon-plugin-security-basics\",\n    \"tycon-story-validator\",\n    \"tycon-spec-first-checker\",\n    \"tycon-ac-coverage-checker\",\n    \"tycon-deferral-tracker\"\n  ],\n  \"required_count\": 6,\n  \"detection\": {\n    \"hasNext\": false,\n    \"hasReact\": false,\n    \"csModified\": false,\n    \"tsxModified\": true,\n    \"shModified\": false,\n    \"pyModified\": false,\n    \"svelteModified\": false,\n    \"vueModified\": false,\n    \"sourceModified\": true,\n    \"codeModified\": true,\n    \"pluginCfgModified\": false,\n    \"secretCfgModified\": false,\n    \"depChanged\": false,\n    \"onlyDocs\": false,\n    \"warning\": \"sin package.json encontrado (ni en raíz, ni ancestros de los files, ni subdirs) — detección React/Next ciega; verificá --repo\"\n  },\n  \"completitud_motivos\": [],\n  \"stack_problems\": [],\n  \"packs\": [],\n  \"packs_dir\": \"<ARNES>/packs\",\n  \"packs_declarados\": null,\n  \"packs_nota\": \"ningún paquete instalado en <ARNES>/packs\",\n  \"story_path_para\": [\n    \"tycon-spec-first-checker\"\n  ],\n  \"iter\": 2,\n  \"mode\": \"no-prev-snapshot-fallback\",\n  \"warning\": \"no hay marker.iterations[1].filesSnapshot — fallback a set completo. Llamá 'marker.js snapshot-iter 1' después de invocar advisors de esa iter.\",\n  \"rerun\": [\n    \"tycon-plugin-tests-coverage\",\n    \"tycon-plugin-security-basics\",\n    \"tycon-story-validator\",\n    \"tycon-spec-first-checker\"\n  ],\n  \"skipped\": [],\n  \"delta_files\": [],\n  \"reloop_model_hints\": {\n    \"tycon-spec-first-checker\": \"sonnet\"\n  },\n  \"reloop_model_hints_note\": \"tier deep (Opus) → sonnet en re-loop: el juicio de scope grande ya corrió en iter 1; ignorá el hint SOLO si el delta toca specs.\",\n  \"rerun_count\": 4,\n  \"mech_discounted\": [\n    {\n      \"name\": \"tycon-deferral-tracker\",\n      \"reason\": \"mech-check sin ambiguos DEFTR-* → delta cubierto mecánicamente (0 tokens) [descuento solo iter≥2: el pase LLM profundo corrió en iter 1]\"\n    },\n    {\n      \"name\": \"tycon-ac-coverage-checker\",\n      \"reason\": \"mech-check sin ambiguos ACCOV-* → delta cubierto mecánicamente (0 tokens) [descuento solo iter≥2: el pase LLM profundo corrió en iter 1]\"\n    }\n  ],\n  \"mech_findings\": [\n    {\n      \"rule\": \"ACCOV-C1\",\n      \"severity\": \"CRITICAL\",\n      \"status\": \"fail\",\n      \"detail\": \"Tests de la tabla SIN implementación encontrada (grep por Trait/tag, T-ID y nombre sobre 0 test files): T1\"\n    },\n    {\n      \"rule\": \"DEFTR-C1\",\n      \"severity\": \"CRITICAL\",\n      \"status\": \"fail\",\n      \"detail\": \"pipelines pending (A-una) sin trazabilidad: no hay TODO(Story-9.1-deferral) en código ni mención de la story en tasks/todo.md (del repo). Deuda fantasma.\"\n    }\n  ],\n  \"mech_note\": \"mech-check descontó 2 advisor(s) del rerun/expected. ⚠️ 2 finding(s) mecánicos CONFIRMADOS — al reporte del paso de hallazgos. El descuento nunca saca a un revisor con críticos abiertos por confirmar: ése vuelve (confirm_reviewers).\",\n  \"frozen\": [\n    {\n      \"repo\": \"<RAIZ>/repo\",\n      \"tree\": \"<HEX>\",\n      \"copy\": \"<RAIZ>/home/.claude/.tycon-pipeline/frozen/ses-contrato-8163/rev-iter2/repo-<SELLO>\",\n      \"mainBase\": \"<HEX>\"\n    }\n  ],\n  \"reglas_revisores\": {\n    \"estado\": \"sin_claude_md\"\n  },\n  \"context_file\": \"<RAIZ>/home/.claude/.tycon-pipeline/advisor-context/ses-contrato-8163-iter2.md\",\n  \"context_file_overrides\": {\n    \"tycon-story-validator\": \"<RAIZ>/home/.claude/.tycon-pipeline/advisor-context/ses-contrato-8163-iter2-tycon-story-validator.md\"\n  },\n  \"batch_rule\": \"Ventana deslizante: MÁXIMO 4 subagentes VIVOS a la vez (máquina 8c/16GB); reponer el slot al llegar cada notificación de término. ⚠️ Cap 2 si el pase adversarial sigue en vuelo (manda la guía del paso de revisores §Cap reducido).\",\n  \"validador_reloop\": {\n    \"invoca\": true,\n    \"limpias_seguidas\": null,\n    \"motivo\": \"no sé cuándo arrancó el paso de revisores (el marcador no lo anotó): se invoca\"\n  }\n}\n",
+      "stderr": "ℹ️  el marcador de la historia 9.1 no tiene carpeta de corrida y no uso su apertura: la sesión no tiene una apertura en gates.log. Abro una carpeta de corrida nueva (9.1-<SELLO>).\nℹ️  el marcador de la historia 9.1 no tiene carpeta de corrida y no uso su apertura: la sesión no tiene una apertura en gates.log. Uso la regla sin marcador.\n",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/gates.log": "{\"ts\":\"<FECHA>\",\"sessionId\":\"ses-contrato-8163\",\"name\":\"validador-reloop\",\"repoPath\":\"<RAIZ>/repo\",\"storyId\":\"9.1\",\"iter\":2,\"invoca\":true,\"limpias_seguidas\":null,\"motivo\":\"no sé cuándo arrancó el paso de revisores (el marcador no lo anotó): se invoca\"}\n",
+        "HOME/.claude/.tycon-pipeline/frozen/ses-contrato-8163/vueltas.jsonl": "{\"ts\":\"<FECHA>\",\"tipo\":\"revisores\",\"etiqueta\":\"rev-iter2\",\"story\":\"9.1\",\"repos\":[{\"repo\":\"<RAIZ>/repo\",\"tree\":\"<HEX>\",\"copy\":\"<RAIZ>/home/.claude/.tycon-pipeline/frozen/ses-contrato-8163/rev-iter2/repo-<SELLO>\",\"mainBase\":\"<HEX>\"}]}\n",
+        "HOME/.claude/.tycon-pipeline/frozen/ses-contrato-8163/rev-iter2/repo-<SELLO>/src/a.js": "module.exports = 1;\n",
+        "HOME/.claude/.tycon-pipeline/frozen/ses-contrato-8163/rev-iter2/repo-<SELLO>/specs/story-9.1-juguete.md": "---\nepic: 9\nstory: \"9.1\"\ntitle: \"Historia de juguete del contrato\"\nstatus: in-progress\npipelines:\n  - name: A-una\n    title: \"una\"\n    status: in-progress\n    acs_pending: [1]\n    tasks_pending: [1]\n    tests_pending: [T1]\n---\n\n# Story 9.1: Historia de juguete del contrato\n\nStatus: in-progress\n\n## Acceptance Criteria\n\n1. **Given** algo **When** pasa **Then** se ve.\n\n### Tests (1 verificación)\n\n| # | Test | AC | Nivel | Escenario | Resultado esperado |\n|---|------|----|-------|-----------|--------------------|\n| T1 | `Algo_Pasa_SeVe` | 1 | unit | algo | se ve |\n\n## Tasks / Subtasks\n\n- [ ] Task 1: algo (AC: 1)\n",
+        "HOME/.claude/.tycon-pipeline/frozen/ses-contrato-8163/rev-iter2/repo-<SELLO>/.advisors/pipeline-runs/9.1-<SELLO>/rethink/served.json": "{\n  \"served\": [\n    2\n  ]\n}\n",
+        "HOME/.claude/.tycon-pipeline/advisor-runs/ses-contrato-8163.jsonl": "{\"ts\":\"<FECHA>\",\"event\":\"step5-start\",\"expected\":[\"tycon-plugin-tests-coverage\",\"tycon-plugin-security-basics\",\"tycon-story-validator\",\"tycon-spec-first-checker\"],\"mode\":\"no-prev-snapshot-fallback\",\"iter\":2,\"context_file\":\"<RAIZ>/home/.claude/.tycon-pipeline/advisor-context/ses-contrato-8163-iter2.md\",\"context_file_overrides\":{\"tycon-story-validator\":\"<RAIZ>/home/.claude/.tycon-pipeline/advisor-context/ses-contrato-8163-iter2-tycon-story-validator.md\"}}\n",
+        "HOME/.claude/.tycon-pipeline/advisor-context/ses-contrato-8163-iter2-tycon-story-validator.md": "# Advisor context — iter 2 · recortado para `tycon-story-validator`\n\n> Tu superficie es la STORY, no el diff. Acá está el digest completo de la story, la\n> lista COMPLETA de archivos del diff, y —para VAL-C5— **sólo los hunks cuyas líneas\n> agregadas contienen marcas de deuda diferida**. Los demás hunks NO están pegados\n> a propósito: si una regla tuya depende de uno, abrilo con Read en vez de darla por\n> evaluada. NO asumas \"sin deuda\" por ausencia de hunks: los que traen marcas están\n> todos acá; los otros fueron descartados por un filtro de contenido, no por muestreo.\n\n## Archivos del diff (1)\n\n- src/a.js\n\n## Story digest (frontmatter + ACs + Tests + Tasks + verificación)\n\n---\nepic: 9\nstory: \"9.1\"\ntitle: \"Historia de juguete del contrato\"\nstatus: in-progress\npipelines:\n  - name: A-una\n    title: \"una\"\n    status: in-progress\n    acs_pending: [1]\n    tasks_pending: [1]\n    tests_pending: [T1]\n---\n## Tasks / Subtasks\n\n- [ ] Task 1: algo (AC: 1)\n\n\n## Acceptance Criteria\n\n1. **Given** algo **When** pasa **Then** se ve.\n\n\n### Tests (1 verificación)\n\n| # | Test | AC | Nivel | Escenario | Resultado esperado |\n|---|------|----|-------|-----------|--------------------|\n| T1 | `Algo_Pasa_SeVe` | 1 | unit | algo | se ve |\n\n\n## Hunks con marcas de deuda diferida (VAL-C5) — 0 de 0 archivos\n\n```diff\n(ningún archivo del diff agrega marcas de deuda)\n```\n\n## Archivos del diff sin marcas de deuda (0) — no pegados, abrilos con Read si los necesitás\n\n\n## Lo que se revisa: la versión congelada\n\nLeé la copia de cada repo, no la carpeta viva: la carpeta viva puede cambiar mientras revisás, y lo que se guarda\nse compara con este sello. Las rutas del diff son relativas a la raíz de cada copia.\n\n- <RAIZ>/repo → copia: <RAIZ>/home/.claude/.tycon-pipeline/frozen/ses-contrato-8163/rev-iter2/repo-<SELLO> (sello <HEX>)\n",
+        "HOME/.claude/.tycon-pipeline/advisor-context/ses-contrato-8163-iter2.md": "# Advisor context — iter 2\n\n> Artefacto generado por pipeline.js (1 vez por iteración). Es tu input primario:\n> contiene el digest de la story (secciones operativas), la lista de archivos del\n> diff y los hunks. Leé archivos completos SOLO si necesitás contexto adicional.\n> Lo que quedó recortado está LISTADO — si una regla tuya depende de algo que no\n> está pegado acá, abrí ese archivo en vez de darla por evaluada.\n\n## Archivos del diff (1)\n\n- src/a.js\n\n\n\n## Story digest (frontmatter + ACs + Tests + Tasks + verificación)\n\n---\nepic: 9\nstory: \"9.1\"\ntitle: \"Historia de juguete del contrato\"\nstatus: in-progress\npipelines:\n  - name: A-una\n    title: \"una\"\n    status: in-progress\n    acs_pending: [1]\n    tasks_pending: [1]\n    tests_pending: [T1]\n---\n## Tasks / Subtasks\n\n- [ ] Task 1: algo (AC: 1)\n\n\n## Acceptance Criteria\n\n1. **Given** algo **When** pasa **Then** se ve.\n\n\n### Tests (1 verificación)\n\n| # | Test | AC | Nivel | Escenario | Resultado esperado |\n|---|------|----|-------|-----------|--------------------|\n| T1 | `Algo_Pasa_SeVe` | 1 | unit | algo | se ve |\n\n\n## Diff unificado (git diff contra la bifurcación con main)\n\n```diff\n(git diff vacío — sin cambios trackeados en estos archivos; los nuevos sin seguimiento van más abajo)\n```\n\n## Lo que se revisa: la versión congelada\n\nLeé la copia de cada repo, no la carpeta viva: la carpeta viva puede cambiar mientras revisás, y lo que se guarda\nse compara con este sello. Las rutas del diff son relativas a la raíz de cada copia.\n\n- <RAIZ>/repo → copia: <RAIZ>/home/.claude/.tycon-pipeline/frozen/ses-contrato-8163/rev-iter2/repo-<SELLO> (sello <HEX>)\n",
+        "REPO/.advisors/pipeline-runs/9.1-<SELLO>/rethink/served.json": "{\n  \"served\": [\n    2\n  ]\n}\n"
+      }
+    },
+    "pipeline-preflight-frontmatter": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\n  \"story_id\": \"9.1\",\n  \"story_path\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"target_state\": {\n    \"status\": \"review\",\n    \"pipeline_done\": null\n  },\n  \"ready_to_edit\": true,\n  \"preconditions\": [],\n  \"reason\": \"Story NO declara runtime tests (sin tests_done_*, sin E2E, sin tests/e2e/). Gate no aplica.\"\n}\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-reviewers-run-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "{\n  \"launched\": [],\n  \"skipped\": [],\n  \"results\": [],\n  \"reports_dir\": null,\n  \"error\": \"no hay set de esta vuelta: corré primero `pipeline.js advisors` (o `smart-reloop`) y después reviewers-run.\"\n}\n",
+      "stderr": "reviewers-run: no hay set de esta vuelta: corré primero `pipeline.js advisors` (o `smart-reloop`) y después reviewers-run.\n",
+      "archivos": {}
+    },
+    "pipeline-check-count-sin-marcador": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "🛑 check-count FALLÓ CERRADO — no hay step5-start en el registro: `pipeline.js advisors` no corrió en esta corrida.\nSin ese registro no hay set esperado ni spawns contra qué contar, y un OK sería un verde sobre nada.\nCorré `pipeline.js advisors --repo <r> --story <s> --files <…>`, lanzá los revisores y volvé a contar.\nConfiar en una lista de revisores dada por vos lo decide la persona, no el agente: si quiere, lo firma en la ventana de permiso o en su terminal.\n",
+      "archivos": {}
+    },
+    "pipeline-check-count": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "🛑 check-count FALLÓ CERRADO — no hay step5-start en el registro: `pipeline.js advisors` no corrió en esta corrida.\nSin ese registro no hay set esperado ni spawns contra qué contar, y un OK sería un verde sobre nada.\nCorré `pipeline.js advisors --repo <r> --story <s> --files <…>`, lanzá los revisores y volvé a contar.\nConfiar en una lista de revisores dada por vos lo decide la persona, no el agente: si quiere, lo firma en la ventana de permiso o en su terminal.\n",
+      "archivos": {}
+    },
+    "pipeline-lint-config": {
+      "status": 0,
+      "signal": null,
+      "stdout": "lint-config: <RAIZ>/repo no tiene .tycon/advisors.yaml — nada que revisar.\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-advisor-runs": {
+      "status": 0,
+      "signal": null,
+      "stdout": "❓ Sin corridas de revisores registradas para: todo el registro\n\n   🔴 \"Sin registro\" NO prueba que no corrieron: prueba que no quedó constancia.\n   El detalle por spawn se guarda 7 días; después queda sólo el resumen durable\n   (<RAIZ>/home/.claude/.tycon-pipeline/advisor-runs-summary.jsonl), que agrupa por sesión y no baja al spawn individual.\n   Una corrida anterior a que esto existiera (<DIA>) tampoco tiene repo ni story.\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-next-sin-marcador": {
+      "status": 1,
+      "signal": null,
+      "stdout": "{\n  \"error\": \"sin marker activo en esta sesión — arrancá con `pipeline.js start --story <spec> --repo <dir>` (o marker.js set en el «Arranque»)\"\n}\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-next": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\n  \"story_id\": \"9.1\",\n  \"story_path\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"autonomous\": false,\n  \"checks\": {},\n  \"checks_provenance\": {},\n  \"adversarial\": null,\n  \"adversarial_is_ours\": null,\n  \"next_step\": \"start\",\n  \"step_number\": 1,\n  \"step_total\": 11,\n  \"step_name\": \"Arranque\",\n  \"next_step_file\": \"<RAIZ>/home/.claude/agent-skills/skills/tycon-pipeline/steps/step-01-start.md\",\n  \"step_scheme\": 1,\n  \"preconditions\": [],\n  \"steps\": [\n    {\n      \"step\": \"start\",\n      \"number\": 1,\n      \"name\": \"Arranque\",\n      \"file\": \"<RAIZ>/home/.claude/agent-skills/skills/tycon-pipeline/steps/step-01-start.md\",\n      \"done\": false\n    },\n    {\n      \"step\": \"validate-story\",\n      \"number\": 2,\n      \"name\": \"Validar la historia\",\n      \"file\": \"<RAIZ>/home/.claude/agent-skills/skills/tycon-pipeline/steps/step-02-validate-story.md\",\n      \"done\": false\n    },\n    {\n      \"step\": \"plan\",\n      \"number\": 3,\n      \"name\": \"Armar el plan\",\n      \"file\": \"<RAIZ>/home/.claude/agent-skills/skills/tycon-pipeline/steps/step-03-plan.md\",\n      \"done\": false\n    },\n    {\n      \"step\": \"approve-plan\",\n      \"number\": 4,\n      \"name\": \"Aprobar el plan\",\n      \"file\": \"<RAIZ>/home/.claude/agent-skills/skills/tycon-pipeline/steps/step-04-approve-plan.md\",\n      \"done\": false\n    },\n    {\n      \"step\": \"implement\",\n      \"number\": 5,\n      \"name\": \"Implementar\",\n      \"file\": \"<RAIZ>/home/.claude/agent-skills/skills/tycon-pipeline/steps/step-05-implement.md\",\n      \"done\": false\n    },\n    {\n      \"step\": \"run-tests\",\n      \"number\": 6,\n      \"name\": \"Correr las pruebas\",\n      \"file\": \"<RAIZ>/home/.claude/agent-skills/skills/tycon-pipeline/steps/step-06-run-tests.md\",\n      \"done\": false\n    },\n    {\n      \"step\": \"reviewers\",\n      \"number\": 7,\n      \"name\": \"Revisores\",\n      \"file\": \"<RAIZ>/home/.claude/agent-skills/skills/tycon-pipeline/steps/step-07-reviewers.md\",\n      \"done\": false\n    },\n    {\n      \"step\": \"adversarial-pass\",\n      \"number\": 8,\n      \"name\": \"Pase adversarial\",\n      \"file\": \"<RAIZ>/home/.claude/agent-skills/skills/tycon-pipeline/steps/step-08-adversarial-pass.md\",\n      \"done\": false\n    },\n    {\n      \"step\": \"findings\",\n      \"number\": 9,\n      \"name\": \"Hallazgos\",\n      \"file\": \"<RAIZ>/home/.claude/agent-skills/skills/tycon-pipeline/steps/step-09-findings.md\",\n      \"done\": false\n    },\n    {\n      \"step\": \"live-check\",\n      \"number\": 10,\n      \"name\": \"Probar en vivo\",\n      \"file\": \"<RAIZ>/home/.claude/agent-skills/skills/tycon-pipeline/steps/step-10-live-check.md\",\n      \"done\": false,\n      \"skip_mechanical\": \"story NO declara runtime tests (sin tests_done_*, sin E2E, sin tests/e2e/)\"\n    },\n    {\n      \"step\": \"prepare-commit\",\n      \"number\": 11,\n      \"name\": \"Preparar el pull request\",\n      \"file\": \"<RAIZ>/home/.claude/agent-skills/skills/tycon-pipeline/steps/step-11-prepare-commit.md\",\n      \"done\": false\n    }\n  ],\n  \"start_parts\": [\n    {\n      \"part\": \"time-tracking\",\n      \"name\": \"el aviso de trabajo\"\n    }\n  ],\n  \"note\": \"ANTES, lo que falta del Arranque: el aviso de trabajo (step-01-start.md); si una parte falla, marker.js start-warning <time-tracking|ado> \\\"<motivo>\\\" y seguí. Sigue «Arranque» (paso 1 de 11). Leé SOLO step-01-start.md y ejecutalo. Los skips listados son mecánicos (verificables) — no infieras otros (regla E.i). Al completar: marker.js complete-step start.\"\n}\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-next-para-otra-sesion": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "🛑 --for-session con otra sesión vale acá sólo para la vuelta extra de revisores (smart-reloop --extra-round) y para check-count --trust-ran: next se corre desde la sesión destino. No escribí nada.\n",
+      "archivos": {}
+    },
+    "pipeline-work-signal": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "uso: pipeline.js work-signal <start|stop> [--story <spec> --repo <dir>]   (Arranque: start · «Cerrar la historia»: stop)\n",
+      "archivos": {}
+    },
+    "pipeline-work-signal-start": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\"ran\":false,\"warnings\":[\"aviso de trabajo: el arnés de esta máquina no trae el evento de trabajo (scripts/lib/work-signal.js); sigo sin registrar\"]}\n",
+      "stderr": "aviso de trabajo: el arnés de esta máquina no trae el evento de trabajo (scripts/lib/work-signal.js); sigo sin registrar\n",
+      "archivos": {}
+    },
+    "pipeline-ado-mark-active-sin-pedido": {
+      "status": 1,
+      "signal": null,
+      "stdout": "",
+      "stderr": "ado-mark-active: la historia no tiene pedido de trabajo (work_item:); si no se puede, marker.js start-warning ado \"<motivo>\"\n",
+      "archivos": {}
+    },
+    "pipeline-estimate-real": {
+      "status": 2,
+      "signal": null,
+      "stdout": "{\"ok\":false,\"reason\":\"falta --story <spec>\"}\n",
+      "stderr": "estimate-real: falta --story <spec>\n",
+      "archivos": {}
+    },
+    "pipeline-start-sin-args": {
+      "status": 1,
+      "signal": null,
+      "stdout": "{\n  \"ready\": false,\n  \"error\": \"--story inválido o no existe: null\",\n  \"models_provider\": {\n    \"provider\": \"anthropic\",\n    \"origin\": \"derivado\"\n  },\n  \"models_warnings\": [\n    \"el proveedor de modelos de la máquina no se pudo leer (no encontré el lector de la configuración de la máquina (sin arnés)): sigo como Anthropic\"\n  ]\n}\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-start": {
+      "status": 1,
+      "signal": null,
+      "stdout": "{\n  \"ready\": false,\n  \"story_id\": \"9.1\",\n  \"branch\": \"main\",\n  \"pauses\": [\n    {\n      \"id\": \"PIPE-C1-branch-guard\",\n      \"detail\": \"Estás en rama protegida 'main' — NO implementar acá. Creá/checkout una rama de trabajo primero.\"\n    },\n    {\n      \"id\": \"PIPE-C5-abandoned\",\n      \"detail\": \"La story ya está status: in-progress sin pipeline activo en otra sesión — probable pipeline abandonado (sesión que murió sin cerrar).\"\n    }\n  ],\n  \"models_warnings\": [\n    \"el proveedor de modelos de la máquina no se pudo leer (no encontré el lector de la configuración de la máquina (sin arnés)): sigo como Anthropic\"\n  ],\n  \"models_provider\": {\n    \"provider\": \"anthropic\",\n    \"origin\": \"derivado\"\n  },\n  \"acciones\": [\n    \"PIPE-C2: agregado a .gitignore: **/.advisors/*, !**/.advisors/dod-runtime/, !**/.advisors/pipeline-runs/, **/.advisors/pipeline-runs/*, !**/.advisors/pipeline-runs/*/, **/.advisors/pipeline-runs/*/*, !**/.advisors/pipeline-runs/*/review-roster.json, !**/.advisors/pipeline-runs/*/findings.json, !**/.advisors/pipeline-runs/*/approvals.jsonl, .dashboard/\",\n    \"Falta antes de arrancar: no pude mirar el servidor MCP de la herramienta de horas (no encontré el evento de trabajo del arnés); no es «está todo»\"\n  ],\n  \"next\": \"NADA mutado (salvo .gitignore idempotente). Resolvé las pausas y re-corré start.\",\n  \"completo\": \"<RAIZ>/home/.claude/.tycon-pipeline/salidas/start-9.1-<FECHA>.json\"\n}\n",
+      "stderr": "",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/salidas/start-9.1-<FECHA>.json": "{\n  \"ready\": false,\n  \"story_id\": \"9.1\",\n  \"branch\": \"main\",\n  \"pauses\": [\n    {\n      \"id\": \"PIPE-C1-branch-guard\",\n      \"detail\": \"Estás en rama protegida 'main' — NO implementar acá. Creá/checkout una rama de trabajo primero.\"\n    },\n    {\n      \"id\": \"PIPE-C5-abandoned\",\n      \"detail\": \"La story ya está status: in-progress sin pipeline activo en otra sesión — probable pipeline abandonado (sesión que murió sin cerrar).\",\n      \"options\": \"retomar desde el último step (pipeline.js next tras adopt/re-set del marker) / resetear status y arrancar fresh\"\n    }\n  ],\n  \"actions_done\": [\n    \"PIPE-C2: agregado a .gitignore: **/.advisors/*, !**/.advisors/dod-runtime/, !**/.advisors/pipeline-runs/, **/.advisors/pipeline-runs/*, !**/.advisors/pipeline-runs/*/, **/.advisors/pipeline-runs/*/*, !**/.advisors/pipeline-runs/*/review-roster.json, !**/.advisors/pipeline-runs/*/findings.json, !**/.advisors/pipeline-runs/*/approvals.jsonl, .dashboard/\",\n    \"Falta antes de arrancar: no pude mirar el servidor MCP de la herramienta de horas (no encontré el evento de trabajo del arnés); no es «está todo»\"\n  ],\n  \"note\": \"NADA mutado (salvo .gitignore idempotente). Resolvé las pausas y re-corré start.\",\n  \"models_provider\": {\n    \"provider\": \"anthropic\",\n    \"origin\": \"derivado\"\n  },\n  \"models_warnings\": [\n    \"el proveedor de modelos de la máquina no se pudo leer (no encontré el lector de la configuración de la máquina (sin arnés)): sigo como Anthropic\"\n  ]\n}\n",
+        "REPO/.gitignore": "# TYCON — los artefactos efimeros de advisors NO viajan, pero la evidencia de cierre SI:\n# es auditable y el medidor SDLC la lee desde el servidor (si no viaja, mide 0% y miente).\n# Patron `dir/*` (no `dir/`) para que la negacion pueda re-incluir el subdirectorio.\n**/.advisors/*\n!**/.advisors/dod-runtime/\n# ...y de cada corrida del pipeline viajan SOLO el registro de revisores y sus hallazgos:\n# es lo que el porton de CI exige para pasar una story a `done` (<DIA>).\n!**/.advisors/pipeline-runs/\n**/.advisors/pipeline-runs/*\n!**/.advisors/pipeline-runs/*/\n**/.advisors/pipeline-runs/*/*\n!**/.advisors/pipeline-runs/*/review-roster.json\n!**/.advisors/pipeline-runs/*/findings.json\n!**/.advisors/pipeline-runs/*/approvals.jsonl\n.dashboard/\n"
+      }
+    },
+    "pipeline-risk-class": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\n  \"risk\": \"NORMAL\",\n  \"run_size\": \"completa\",\n  \"criteria\": [\n    {\n      \"name\": \"sin-migraciones-sql\",\n      \"pass\": true,\n      \"detail\": \"migraciones de schema cambian datos — siempre plan HITL\"\n    },\n    {\n      \"name\": \"sin-scope-firmado\",\n      \"pass\": true,\n      \"detail\": \"signed_for_sprint=(ausente) signed_ac_ref=(ausente) — stories firmadas con cliente siempre plan HITL\"\n    },\n    {\n      \"name\": \"superficie-chica\",\n      \"pass\": true,\n      \"detail\": \"1 archivos en scope (límite 6; 0 archivos = scope no declarado → NORMAL)\"\n    },\n    {\n      \"name\": \"sin-paths-sensibles\",\n      \"pass\": true,\n      \"detail\": \"archivos de auth/seguridad/pagos siempre plan HITL\"\n    },\n    {\n      \"name\": \"sin-pipelines-multi-tanda\",\n      \"pass\": false,\n      \"detail\": \"stories con entregas en tandas tienen interdependencias — plan HITL\"\n    }\n  ],\n  \"delicate\": {\n    \"value\": false,\n    \"rule\": null,\n    \"reason\": \"ninguna\"\n  },\n  \"note\": \"NORMAL: «Aprobar el plan» con la persona, o la coordinadora con la revisión automática si la story no es delicada.\"\n}\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-story-review-gate": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\n  \"run\": true,\n  \"record\": \"none\",\n  \"riesgo\": \"NORMAL\",\n  \"model\": \"sonnet\",\n  \"model_origin\": \"default\",\n  \"model_reason\": \"sonnet (valor de hoy)\"\n}\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-story-review-record-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "story-review-record: --story inválido: null\n",
+      "archivos": {}
+    },
+    "pipeline-validation-record-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "validation-record: --story inválido: null\n",
+      "archivos": {}
+    },
+    "pipeline-tooling-expected": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\n  \"expected\": [\n    {\n      \"name\": \"engram\",\n      \"mcp_prefix\": \"mcp__plugin_engram_engram__\",\n      \"why\": \"protocolo de memoria persistente SIEMPRE activo (guides/integrations/engram-workflow.md) — el paso «Armar el plan» inyecta gotchas previos del repo y el cierre guarda session_summary\",\n      \"binary_found\": null,\n      \"cli_fallback\": \"engram search --project <name> \\\"<query>\\\" | engram sync --project <name> — vía Bash, mismo store\",\n      \"fallback\": \"run sin memoria persistente (el paso «Armar el plan» pierde las lecciones previas; el cierre no guarda summary)\",\n      \"raise_it\": \"NO se puede levantar acá — el binario NO está en esta máquina: AVISAR al user con la acción concreta de instalación (codegraph: guides/integrations/codegraph-mcp.md; codebase_memory: conseguir el binario e instalar con `codebase-memory-mcp install`). Mientras tanto, fallback.\",\n      \"if_unavailable\": \"AVISAR al user en 1 línea ANTES de seguir: \\\"engram MCP no disponible → este run pierde memoria persistente\\\". Después seguir `raise_it` (el CLI engram cubre search/sync para este run).\"\n    },\n    {\n      \"name\": \"workflow-tool\",\n      \"mcp_prefix\": \"Workflow\",\n      \"why\": \"el paso «Pase adversarial» (adversarial deep-verify) corre vía la tool Workflow — sin ella el pase adversarial NO corre y se pierde la capa que cazó los bugs de E1\",\n      \"binary_found\": null,\n      \"cli_fallback\": null,\n      \"fallback\": \"saltear el pase adversarial (cobertura reducida: solo los advisors single-pass)\",\n      \"raise_it\": \"sin CLI alternativo (es una tool del harness) — si no está, PREGUNTAR al user si sigue sin el pase adversarial.\",\n      \"if_unavailable\": \"AVISAR al user — esto NO es un skip silencioso legítimo: \\\"la tool Workflow no está disponible → el pase adversarial no puede correr; la ejecución queda solo con los advisors single-pass. ¿Sigo igual?\\\" El user decide.\"\n    },\n    {\n      \"mcp_prefix\": null,\n      \"binary_found\": null,\n      \"cli_fallback\": null,\n      \"fallback\": \"el paso del pipeline que la invoca no puede cargarla: se frena ahí o se sigue sin ella, con el dev avisado\",\n      \"name\": \"third-party-manifest\",\n      \"kind\": \"manifest\",\n      \"present\": false,\n      \"why\": \"manifiesto de skills de terceros ilegible: no encontré el arnés (TYCON_GUIDES_DIR o el enlace ~/.claude/tycon-harness) — no puedo decir si están las skills que invoca el pipeline\",\n      \"action\": \"actualizá el arnés (harness.js update; en un clon, git pull) y corré su instalador\",\n      \"raise_it\": \"AVISAR al user en 1 línea: sin manifiesto no se sabe si faltan skills de terceros; seguir.\",\n      \"if_unavailable\": \"AVISAR al user en 1 línea y seguir: es una advertencia, no un freno.\"\n    }\n  ],\n  \"note\": \"El script detecta la EXPECTATIVA + si el BINARIO está (mecánico). La disponibilidad del MCP en el harness la verificás VOS (orquestador): tool esperada no disponible o que FALLA mid-run → avisar al user (1 línea) y seguir `raise_it` — CLI vía Bash si el binario está, aviso de instalación si no. Degradar en silencio = bug (PIPE-C9 / TOOL.i).\"\n}\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-model-hint": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\n  \"recommended_session_model\": \"opus\",\n  \"also_ok\": [],\n  \"risk\": \"NORMAL\",\n  \"heavy\": false,\n  \"heavy_signal_count\": 1,\n  \"signals\": [\n    {\n      \"name\": \"superficie-grande\",\n      \"hit\": false,\n      \"detail\": \"1 archivos en scope (umbral >12)\"\n    },\n    {\n      \"name\": \"muchos-acs\",\n      \"hit\": false,\n      \"detail\": \"1 ACs (umbral ≥10)\"\n    },\n    {\n      \"name\": \"codigo-nuevo-amplio\",\n      \"hit\": false,\n      \"detail\": \"approach=(ausente) + 0 files_to_create (umbral: CREATE y ≥5)\"\n    },\n    {\n      \"name\": \"multi-tanda\",\n      \"hit\": true,\n      \"detail\": \"bloque pipelines: — entregas en tandas con interdependencias\"\n    },\n    {\n      \"name\": \"migraciones-mas-codigo\",\n      \"hit\": false,\n      \"detail\": \"migración SQL + código en el mismo scope\"\n    },\n    {\n      \"name\": \"scope-firmado\",\n      \"hit\": false,\n      \"detail\": \"scope firmado con cliente — costo de error alto\"\n    }\n  ],\n  \"reason\": \"NORMAL común → opus (sonnet se queda corto en el plan)\",\n  \"note\": \"ADVISORY para el MODELO DE SESIÓN (armar el plan, aprobarlo e implementar corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea.\"\n}\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-deep-review-gate": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\n  \"run\": true,\n  \"risk\": \"NORMAL\",\n  \"model\": \"sonnet\",\n  \"model_reason\": \"default (recorta $ ~5x vs Opus)\",\n  \"early_launch\": true,\n  \"size\": \"large\",\n  \"decision\": \"run\",\n  \"delicate\": {\n    \"value\": false,\n    \"reason\": \"ninguna\"\n  },\n  \"verifiers\": \"per_lens\",\n  \"blocking_severity\": \"bug\",\n  \"reason\": \"risk-class NORMAL (sin-pipelines-multi-tanda) → grande (el riesgo lo marca por otro criterio que el tamaño): corre (deep_review.large_routine: run)\"\n}\n",
+      "stderr": "deep-review-gate: team-repos.json: no pude leer la configuración de la organización (⚠️ tycon: no encuentro el arnés — busqué TYCON_GUIDES_DIR: sin definir · el enlace <RAIZ>/home/.claude/tycon-harness: falta. Corré scripts/install-tycon-hooks.sh del arnés (crea el lugar ~/.claude/tycon-harness) o definí TYCON_GUIDES_DIR=<ruta del clon>.): uso la de fábrica\n",
+      "archivos": {}
+    },
+    "pipeline-timing-report": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\n  \"story_id\": \"9.1\",\n  \"total_min_so_far\": 0,\n  \"timeline\": [\n    {\n      \"label\": \"pipeline-start\",\n      \"ts\": \"<FECHA>\",\n      \"delta_min\": 0\n    },\n    {\n      \"label\": \"step-0-start\",\n      \"ts\": \"<FECHA>\",\n      \"delta_min\": 0\n    }\n  ],\n  \"gates\": [],\n  \"note\": \"delta_min = minutos desde el evento anterior. Steps sin complete-step no aparecen (corré marker.js complete-step N al cerrar cada step).\"\n}\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-cost-report": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\n  \"sessions\": [],\n  \"totals\": {\n    \"runs\": 0,\n    \"spawns\": 0,\n    \"adhoc\": 0,\n    \"adhoc_pre_step5\": 0,\n    \"sin_model\": 0\n  },\n  \"resumen\": \"sin spawns registrados\"\n}\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-org-rules": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\n  \"rules\": {\n    \"test_names\": {\n      \"value\": \"any\",\n      \"source\": \"por_defecto\"\n    },\n    \"screen_test\": {\n      \"value\": \"ui\",\n      \"source\": \"por_defecto\"\n    },\n    \"ui_language\": {\n      \"value\": null,\n      \"source\": \"por_defecto\"\n    }\n  },\n  \"problems\": [\n    \"⚠️ tycon: no encuentro el arnés — busqué TYCON_GUIDES_DIR: sin definir · el enlace <RAIZ>/home/.claude/tycon-harness: falta. Corré scripts/install-tycon-hooks.sh del arnés (crea el lugar ~/.claude/tycon-harness) o definí TYCON_GUIDES_DIR=<ruta del clon>.\"\n  ],\n  \"story_format\": null,\n  \"screen\": null\n}\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-readability-brief-sin-args": {
+      "status": 0,
+      "signal": null,
+      "stdout": "Sos un tester no técnico: trabajás en QA de laboratorio y no sabés programar.\nLeé cada paso de la guía de QA. Marcá lo que te dejaría preguntándole a un dev: jerga, ambigüedad («buscá una orden» sin decir cómo), conocimiento que el paso da por sabido.\nLa organización no declaró el idioma de la app: no juzgues el idioma del texto.\nCada marca, en su línea: «<texto citado>» — qué confunde.\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-evidence-key": {
+      "status": 0,
+      "signal": null,
+      "stdout": "9.1\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-compare-candidates-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "uso: pipeline.js compare-candidates --story <spec.md> [--repo <repo>[,<repo>]] [--json]\n",
+      "archivos": {}
+    },
+    "pipeline-compare-candidates": {
+      "status": 0,
+      "signal": null,
+      "stdout": "sin candidatos: la historia no modifica comandos que existen en main. No hay nada que comparar.\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-run-dir": {
+      "status": 3,
+      "signal": null,
+      "stdout": "",
+      "stderr": "run-dir: todavía no hay carpeta de corrida para 9.1 (pasá --create para crearla)\n",
+      "archivos": {}
+    },
+    "pipeline-evidence-dir": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\n  \"evidence_dir\": \"<RAIZ>/repo/.advisors/dod-runtime\",\n  \"story_repo\": \"<RAIZ>/repo\",\n  \"repo\": \"<RAIZ>/repo\",\n  \"cross_repo\": false,\n  \"source\": \"story-repo\"\n}\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-e2e-config": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{}\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-dep-gate": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\n  \"gate\": \"pass\",\n  \"new_deps\": [],\n  \"declared\": [],\n  \"undeclared\": [],\n  \"repos\": [\n    \"<RAIZ>/repo\"\n  ],\n  \"note\": \"Sin dependencias nuevas en el diff.\"\n}\n",
+      "stderr": "",
+      "archivos": {
+        "REPO/.advisors/pipeline-runs/9.1-<SELLO>/dep-gate.json": "{\n  \"gate\": \"pass\",\n  \"new_deps\": [],\n  \"declared\": [],\n  \"undeclared\": [],\n  \"repos\": [\n    \"<RAIZ>/repo\"\n  ],\n  \"note\": \"Sin dependencias nuevas en el diff.\"\n}\n"
+      }
+    },
+    "pipeline-next-story": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\n  \"next_story\": null,\n  \"in_progress\": [\n    {\n      \"story_id\": \"9.1\",\n      \"story_path\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n      \"sprint\": null,\n      \"title\": \"Historia de juguete del contrato\"\n    }\n  ],\n  \"review\": [],\n  \"scanned\": {\n    \"root\": \"<RAIZ>/repo\",\n    \"stories_found\": 1,\n    \"excluded\": 0,\n    \"partial\": false,\n    \"id_criterion\": \"default (id jerárquico numérico)\"\n  },\n  \"warnings\": [],\n  \"note\": \"No hay stories ready-for-dev — menú de recuperación (mirror bmad-dev-story Step 1).\",\n  \"options\": [\n    \"retomar una in-progress: 9.1\",\n    \"crear la próxima story (tycon-create-story) desde los epics\",\n    \"validar/mejorar una story existente (tycon-story-validator) para pasarla a ready-for-dev\",\n    \"pasar un path de story explícito a `pipeline.js start --story <spec>`\"\n  ]\n}\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-write-followups-sin-args": {
+      "status": 1,
+      "signal": null,
+      "stdout": "{\n  \"error\": \"--story inválido o no existe: null\"\n}\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-write-findings-sin-hallazgos": {
+      "status": 1,
+      "signal": null,
+      "stdout": "{\n  \"error\": \"--findings no es JSON válido: Unexpected end of JSON input\"\n}\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-verify-finding-sin-args": {
+      "status": 1,
+      "signal": null,
+      "stdout": "{\n  \"error\": \"falta --finding <archivo.json>\"\n}\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-record-refutation-sin-args": {
+      "status": 1,
+      "signal": null,
+      "stdout": "{\n  \"error\": \"falta --finding <archivo.json>\"\n}\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-findings-status": {
+      "status": 3,
+      "signal": null,
+      "stdout": "{\n  \"exists\": false,\n  \"valid\": false,\n  \"story_id\": \"9.1\",\n  \"run_dir\": null,\n  \"note\": \"⚠️ No hay run dir bajo .advisors/pipeline-runs/ para 9.1. Escribí el findings.json del paso de hallazgos: pipeline.js write-findings --story <RAIZ>/repo/specs/story-9.1-juguete.md --findings <array.json|->.\"\n}\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-dod-checker-needed": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\n  \"invoca\": true,\n  \"motivos\": [\n    \"hay tandas en vuelo (A-una: in-progress): multi-pipeline lo mira sólo el checker\",\n    \"no pude mirar el diff de la corrida (sin base: sin --base ni marcador de la corrida en este repo): se invoca\"\n  ],\n  \"preguntas\": {\n    \"transaccion\": {\n      \"respuesta\": false,\n      \"detalle\": \"ningún AC declara TransactionScope ni transacción con rollback/compensación\"\n    },\n    \"tandas\": {\n      \"respuesta\": true,\n      \"detalle\": \"A-una: in-progress\"\n    },\n    \"worker\": {\n      \"respuesta\": null,\n      \"detalle\": \"sin base de la corrida\"\n    }\n  },\n  \"story_id\": \"9.1\",\n  \"base\": {\n    \"ref\": \"<HEX>\",\n    \"source\": \"bifurcacion\"\n  }\n}\n",
+      "stderr": "",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/gates.log": "{\"ts\":\"<FECHA>\",\"sessionId\":\"ses-contrato-8163\",\"name\":\"dod-checker-decision\",\"repoPath\":\"<RAIZ>/repo\",\"storyId\":\"9.1\",\"invoca\":true,\"motivos\":[\"hay tandas en vuelo (A-una: in-progress): multi-pipeline lo mira sólo el checker\",\"no pude mirar el diff de la corrida (sin base: sin --base ni marcador de la corrida en este repo): se invoca\"]}\n"
+      }
+    },
+    "pipeline-deferrals-open": {
+      "status": 3,
+      "signal": null,
+      "stdout": "{\n  \"story_id\": \"9.1\",\n  \"open\": true,\n  \"tags\": [],\n  \"tandas\": [\n    {\n      \"name\": \"A-una\",\n      \"status\": \"in-progress\"\n    }\n  ],\n  \"todo\": null\n}\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-qa-readability": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "--marks tiene que ser un entero ≥ 0 (vino «undefined»): no se anota nada\n",
+      "archivos": {}
+    },
+    "pipeline-qa-readability-con-marcas": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\"anotado\":true,\"storyId\":\"9.1\",\"marcas\":0}\n",
+      "stderr": "",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/gates.log": "{\"ts\":\"<FECHA>\",\"sessionId\":\"ses-contrato-8163\",\"name\":\"qa-legibilidad\",\"repoPath\":\"<RAIZ>/repo\",\"storyId\":\"9.1\",\"marcas\":0}\n"
+      }
+    },
+    "pipeline-followups-status": {
+      "status": 0,
+      "signal": null,
+      "stdout": "{\n  \"has_section\": false,\n  \"total\": 0,\n  \"open\": 0,\n  \"resolved\": 0,\n  \"items\": []\n}\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-mech-check": {
+      "status": 2,
+      "signal": null,
+      "stdout": "{\n  \"findings\": [\n    {\n      \"rule\": \"ACCOV-C1\",\n      \"severity\": \"CRITICAL\",\n      \"status\": \"fail\",\n      \"detail\": \"Tests de la tabla SIN implementación encontrada (grep por Trait/tag, T-ID y nombre sobre 0 test files): T1\"\n    },\n    {\n      \"rule\": \"DEFTR-C1\",\n      \"severity\": \"CRITICAL\",\n      \"status\": \"fail\",\n      \"detail\": \"pipelines pending (A-una) sin trazabilidad: no hay TODO(Story-9.1-deferral) en código ni mención de la story en tasks/todo.md (del repo). Deuda fantasma.\"\n    }\n  ],\n  \"ambiguous\": [],\n  \"ok\": [\n    {\n      \"rule\": \"ACCOV-C5\",\n      \"detail\": \"1 ACs, todos con ≥1 test asignado en la tabla.\"\n    }\n  ],\n  \"stats\": {\n    \"acs\": 1,\n    \"table_rows\": 1,\n    \"table_has_ac_column\": true,\n    \"test_files_scanned\": 0,\n    \"companion_roots\": [],\n    \"story_id\": \"9.1\"\n  },\n  \"llm_escalation\": [],\n  \"note\": \"2 finding(s) CONFIRMADOS mecánicamente — van directo al reporte (no necesitan advisor LLM). Sin ambiguos → en re-loops (iter≥2) ac-coverage y deferral-tracker quedan descontados del set (MECH-2); en iter 1 SÍ corren (juicio LLM completo). El revisor de cableado, si su paquete está activo, se invoca siempre (mech solo cubre WIRING-C1). El descuento nunca saca a un revisor con críticos abiertos por confirmar: ése vuelve (confirm_reviewers).\"\n}\n",
+      "stderr": "",
+      "archivos": {}
+    },
+    "pipeline-desconocido": {
+      "status": 1,
+      "signal": null,
+      "stdout": "",
+      "stderr": "pipeline.js (H17 §4 + §5 incremental) — uso:\n  node pipeline.js start          --story <spec.md> --repo <dir> [--autonomous] [--brief]\n       (preflight mecánico en 1 comando: cross-session + branch guard + gitignore +\n       marker + status in-progress. Pausa sin mutar ante conflicto/rama protegida.\n       --brief: devuelve sólo lo que el orquestador consume y la RUTA del JSON entero\n       (~4 KB → ~600 B; el detalle queda en ~/.claude/.tycon-pipeline/salidas/). Sin el\n       flag, salida idéntica a siempre. Story 7.10.)\n  node pipeline.js next\n       (próximo step + step_file + skips MECÁNICOS evaluados + checks del marker.\n       El LLM sigue siendo el loop (H17): lee SOLO el step file que esto indica.)\n  node pipeline.js risk-class     --story <spec.md> [--files ...] [--repo <dir>]\n       (LOW o NORMAL, y `delicate`: el plan de una story delicada lo aprueba siempre el dev.\n       Uno de rutina lo aprueba el «aprobado» de su revisión. Push/scope firmado SIEMPRE human-gate.)\n  node pipeline.js tooling-expected --repo <dir>\n       (PIPE-C9: qué tooling ESPERA el pipeline acá — codegraph si hay .codegraph/, engram,\n       tool Workflow p/ el pase adversarial. El orquestador cruza contra su harness y AVISA al user si algo\n       esperado no está disponible ANTES de degradar al fallback. `start` ya lo incluye.)\n  node pipeline.js model-hint     --story <spec.md> [--files ...]\n       (sugerencia de modelo de SESIÓN por complejidad: LOW→sonnet · NORMAL→opus ·\n       NORMAL+≥2 señales pesadas→opus. Advisory: el orquestador compara con su modelo\n       real y sugiere /model al user en el Arranque. NUNCA bloquea. `start` ya lo incluye.)\n  node pipeline.js deep-review-gate --repo <dir> --story <spec.md> [--files ...]\n                                  [--deep-review|--no-deep-review|--ultracode|--deep-review-opus|--deep-review-fable]\n       (Pase adversarial: ¿corre el pase adversarial reproduce-or-refute? Gate = risk-class NORMAL.\n       {run, model, model_reason, reason}. Modelo: sonnet default; story pesada → opus\n       automático. Fable no se ofrece nunca: sólo corre con --deep-review-fable.\n       Kill-switch: TYCON_NO_DEEP_REVIEW=1. Repo: .tycon/advisors.yaml deep_review:)\n  node pipeline.js advisors       --repo <dir> --story <spec.md> --files a.cs b.tsx ...\n                                  [--iter N] [--cost-tier lean|standard|deep] [--allow-missing-files]\n       (valida que los --files existan — abort exit 2 ante paths fantasma/vacíos; corre\n       mech-check inline y DESCUENTA advisors cubiertos (MECH-2) del set/expected;\n       el descuento nunca saca a un revisor con críticos abiertos por confirmar;\n       --iter N>1 emite reloop_model_hints (deep→sonnet). Genera context_file compartido\n       + persiste expected[] en el log para check-count. Triggers sobre líneas AGREGADAS.)\n  node pipeline.js check-count    [--ran a,b,c]\n       (valida contra el expected persistido del último step5-start; FALLA CERRADO\n       si hay step5-start sin spawns registrados — confiar en la lista lo decide la persona, en la ventana de permiso o en su terminal)\n  node pipeline.js smart-reloop   --iter N --repo <r> --story <s> --files ... [--force-full-reloop]\n                                  [--allow-missing-files]\n       (SPEED-1 — delta = unión(nombres nuevos ∪ fileEvents ∪ mtime post-snapshot);\n       requiere marker.js snapshot-iter (N-1) previo. Valida --files. Emite\n       reloop_model_hints en TODOS los modos iter>1 y aplica descuento MECH-2.)\n  node pipeline.js mech-check     --repo <dir> --story <spec.md> [--files ...]\n       (checks deterministas ACCOV-C1/C5, DEFTR-C1/C2, WIRING-C1 — 0 tokens; findings\n       confirmados van directo al reporte; ambiguos escalan al advisor LLM.)\n  node pipeline.js preflight-frontmatter --story-path <spec.md> --target-status review|done\n                                          --target-pipeline-done <pipeline-name>\n       (SPEED-2 — pre-condiciones de los hooks ANTES del Edit del frontmatter.)\n  node pipeline.js timing-report\n       (Fase 0 — desglose de wall-clock por step/iter/gate de la corrida en curso.)\n  node pipeline.js dep-gate       --repo <dir> --story <spec.md>\n       (adopción BMAD — «Correr las pruebas»: dependencias NUEVAS (package.json/*.csproj) no declaradas\n       en la story → exit 2 PAUSA HITL. Match conservador por nombre en el texto de la story.)\n  node pipeline.js next-story     [--specs-dir <dir>] [--repo <dir>]\n       (adopción BMAD — próxima story ready-for-dev en specs/stories/ (orden numérico) +\n       menú de recuperación si no hay. NO arranca el pipeline: devuelve el path para `start`.)\n  node pipeline.js write-findings    --story <spec.md> --repo <dir> --findings <array.json|->\n       (paso de hallazgos — escribe el findings.json machine-parseable en el run dir (auto-resuelto):\n       array de {rule_id,severity,advisor,file,disposition,reason}. Valida schema. Es el\n       insumo del retrospective-capturer — reemplaza el WRITE MANUAL olvidable (BUG-PIPELINE-006).)\n  node pipeline.js verify-finding    --finding <hallazgo.json> [--repo <dir>] [--model sonnet]\n       (un hallazgo que el autor propone descartar como falso: imprime el lanzamiento — prompt y modelo — de UN\n       verificador independiente que corre el código. {reviewer, rule, file, line, summary, author_reason}.)\n  node pipeline.js record-refutation --finding <hallazgo.json> --result <resultado.json> --verifier <agente@ts>\n                                     --verifier-model <modelo> --run-dir <corrida>\n       (valida lo que devolvió el verificador {refuted, command, output} y guarda <corrida>/refutations/<id>.json:\n       sin esa constancia write-findings no deja un hallazgo como refuted.)\n  node pipeline.js findings-status   --story <spec.md> --repo <dir>\n       (pre-condición de «Preparar el commit» — exit 3 si falta el findings.json del run. El orquestador lo\n       corre antes del commit-prep y, si falta, lo escribe con write-findings.)\n  node pipeline.js write-followups   --story <spec.md> --findings <findings.json>\n       (adopción BMAD — persiste findings advisor no resueltos como sección checkbox EN la\n       story (idempotente por fkey ruleId|file, preserva [x] previos). Solo toca el body.)\n  node pipeline.js followups-status  --story <spec.md>\n       (adopción BMAD — Arranque y «Validar la historia»: cuenta review follow-ups abiertos/resueltos. exit 3 si\n       hay abiertos (priorizarlos sobre tasks nuevas), 0 si limpio.)\n  node pipeline.js validators        --story <spec.md> --repo <dir>\n       (story 8.2 — «Validar la historia»: el validador de stories + los revisores del grupo `validacion`\n       de los paquetes activos (packs/), con su prompt rendido y su modelo. Un paquete roto\n       o uno que el repo nombra y no está instalado → exit 2 con archivo, revisor y motivo.)\n",
+      "archivos": {}
+    },
+    "pipeline-sin-comando": {
+      "status": 0,
+      "signal": null,
+      "stdout": "",
+      "stderr": "pipeline.js (H17 §4 + §5 incremental) — uso:\n  node pipeline.js start          --story <spec.md> --repo <dir> [--autonomous] [--brief]\n       (preflight mecánico en 1 comando: cross-session + branch guard + gitignore +\n       marker + status in-progress. Pausa sin mutar ante conflicto/rama protegida.\n       --brief: devuelve sólo lo que el orquestador consume y la RUTA del JSON entero\n       (~4 KB → ~600 B; el detalle queda en ~/.claude/.tycon-pipeline/salidas/). Sin el\n       flag, salida idéntica a siempre. Story 7.10.)\n  node pipeline.js next\n       (próximo step + step_file + skips MECÁNICOS evaluados + checks del marker.\n       El LLM sigue siendo el loop (H17): lee SOLO el step file que esto indica.)\n  node pipeline.js risk-class     --story <spec.md> [--files ...] [--repo <dir>]\n       (LOW o NORMAL, y `delicate`: el plan de una story delicada lo aprueba siempre el dev.\n       Uno de rutina lo aprueba el «aprobado» de su revisión. Push/scope firmado SIEMPRE human-gate.)\n  node pipeline.js tooling-expected --repo <dir>\n       (PIPE-C9: qué tooling ESPERA el pipeline acá — codegraph si hay .codegraph/, engram,\n       tool Workflow p/ el pase adversarial. El orquestador cruza contra su harness y AVISA al user si algo\n       esperado no está disponible ANTES de degradar al fallback. `start` ya lo incluye.)\n  node pipeline.js model-hint     --story <spec.md> [--files ...]\n       (sugerencia de modelo de SESIÓN por complejidad: LOW→sonnet · NORMAL→opus ·\n       NORMAL+≥2 señales pesadas→opus. Advisory: el orquestador compara con su modelo\n       real y sugiere /model al user en el Arranque. NUNCA bloquea. `start` ya lo incluye.)\n  node pipeline.js deep-review-gate --repo <dir> --story <spec.md> [--files ...]\n                                  [--deep-review|--no-deep-review|--ultracode|--deep-review-opus|--deep-review-fable]\n       (Pase adversarial: ¿corre el pase adversarial reproduce-or-refute? Gate = risk-class NORMAL.\n       {run, model, model_reason, reason}. Modelo: sonnet default; story pesada → opus\n       automático. Fable no se ofrece nunca: sólo corre con --deep-review-fable.\n       Kill-switch: TYCON_NO_DEEP_REVIEW=1. Repo: .tycon/advisors.yaml deep_review:)\n  node pipeline.js advisors       --repo <dir> --story <spec.md> --files a.cs b.tsx ...\n                                  [--iter N] [--cost-tier lean|standard|deep] [--allow-missing-files]\n       (valida que los --files existan — abort exit 2 ante paths fantasma/vacíos; corre\n       mech-check inline y DESCUENTA advisors cubiertos (MECH-2) del set/expected;\n       el descuento nunca saca a un revisor con críticos abiertos por confirmar;\n       --iter N>1 emite reloop_model_hints (deep→sonnet). Genera context_file compartido\n       + persiste expected[] en el log para check-count. Triggers sobre líneas AGREGADAS.)\n  node pipeline.js check-count    [--ran a,b,c]\n       (valida contra el expected persistido del último step5-start; FALLA CERRADO\n       si hay step5-start sin spawns registrados — confiar en la lista lo decide la persona, en la ventana de permiso o en su terminal)\n  node pipeline.js smart-reloop   --iter N --repo <r> --story <s> --files ... [--force-full-reloop]\n                                  [--allow-missing-files]\n       (SPEED-1 — delta = unión(nombres nuevos ∪ fileEvents ∪ mtime post-snapshot);\n       requiere marker.js snapshot-iter (N-1) previo. Valida --files. Emite\n       reloop_model_hints en TODOS los modos iter>1 y aplica descuento MECH-2.)\n  node pipeline.js mech-check     --repo <dir> --story <spec.md> [--files ...]\n       (checks deterministas ACCOV-C1/C5, DEFTR-C1/C2, WIRING-C1 — 0 tokens; findings\n       confirmados van directo al reporte; ambiguos escalan al advisor LLM.)\n  node pipeline.js preflight-frontmatter --story-path <spec.md> --target-status review|done\n                                          --target-pipeline-done <pipeline-name>\n       (SPEED-2 — pre-condiciones de los hooks ANTES del Edit del frontmatter.)\n  node pipeline.js timing-report\n       (Fase 0 — desglose de wall-clock por step/iter/gate de la corrida en curso.)\n  node pipeline.js dep-gate       --repo <dir> --story <spec.md>\n       (adopción BMAD — «Correr las pruebas»: dependencias NUEVAS (package.json/*.csproj) no declaradas\n       en la story → exit 2 PAUSA HITL. Match conservador por nombre en el texto de la story.)\n  node pipeline.js next-story     [--specs-dir <dir>] [--repo <dir>]\n       (adopción BMAD — próxima story ready-for-dev en specs/stories/ (orden numérico) +\n       menú de recuperación si no hay. NO arranca el pipeline: devuelve el path para `start`.)\n  node pipeline.js write-findings    --story <spec.md> --repo <dir> --findings <array.json|->\n       (paso de hallazgos — escribe el findings.json machine-parseable en el run dir (auto-resuelto):\n       array de {rule_id,severity,advisor,file,disposition,reason}. Valida schema. Es el\n       insumo del retrospective-capturer — reemplaza el WRITE MANUAL olvidable (BUG-PIPELINE-006).)\n  node pipeline.js verify-finding    --finding <hallazgo.json> [--repo <dir>] [--model sonnet]\n       (un hallazgo que el autor propone descartar como falso: imprime el lanzamiento — prompt y modelo — de UN\n       verificador independiente que corre el código. {reviewer, rule, file, line, summary, author_reason}.)\n  node pipeline.js record-refutation --finding <hallazgo.json> --result <resultado.json> --verifier <agente@ts>\n                                     --verifier-model <modelo> --run-dir <corrida>\n       (valida lo que devolvió el verificador {refuted, command, output} y guarda <corrida>/refutations/<id>.json:\n       sin esa constancia write-findings no deja un hallazgo como refuted.)\n  node pipeline.js findings-status   --story <spec.md> --repo <dir>\n       (pre-condición de «Preparar el commit» — exit 3 si falta el findings.json del run. El orquestador lo\n       corre antes del commit-prep y, si falta, lo escribe con write-findings.)\n  node pipeline.js write-followups   --story <spec.md> --findings <findings.json>\n       (adopción BMAD — persiste findings advisor no resueltos como sección checkbox EN la\n       story (idempotente por fkey ruleId|file, preserva [x] previos). Solo toca el body.)\n  node pipeline.js followups-status  --story <spec.md>\n       (adopción BMAD — Arranque y «Validar la historia»: cuenta review follow-ups abiertos/resueltos. exit 3 si\n       hay abiertos (priorizarlos sobre tasks nuevas), 0 si limpio.)\n  node pipeline.js validators        --story <spec.md> --repo <dir>\n       (story 8.2 — «Validar la historia»: el validador de stories + los revisores del grupo `validacion`\n       de los paquetes activos (packs/), con su prompt rendido y su modelo. Un paquete roto\n       o uno que el repo nombra y no está instalado → exit 2 con archivo, revisor y motivo.)\n",
+      "archivos": {}
+    }
+  },
+  "requires": [
+    "scripts/lib/owner-away.js",
+    "scripts/lib/owner-window.js",
+    "scripts/lib/sibling-copy.js",
+    "scripts/lib/signature-sources.js",
+    "scripts/tools/coordination.js",
+    "skills/tycon-pipeline/scripts/lib/adhoc-base.js",
+    "skills/tycon-pipeline/scripts/lib/adversarial-skip.js",
+    "skills/tycon-pipeline/scripts/lib/adversarial-verdict.js",
+    "skills/tycon-pipeline/scripts/lib/advisor-ledger.js",
+    "skills/tycon-pipeline/scripts/lib/advisor-round.js",
+    "skills/tycon-pipeline/scripts/lib/approvals.js",
+    "skills/tycon-pipeline/scripts/lib/batch-scope.js",
+    "skills/tycon-pipeline/scripts/lib/browser-test.js",
+    "skills/tycon-pipeline/scripts/lib/code-files.js",
+    "skills/tycon-pipeline/scripts/lib/codex-reviewers.js",
+    "skills/tycon-pipeline/scripts/lib/companion-repos.js",
+    "skills/tycon-pipeline/scripts/lib/compare-previous.js",
+    "skills/tycon-pipeline/scripts/lib/config-lint.js",
+    "skills/tycon-pipeline/scripts/lib/config-source.js",
+    "skills/tycon-pipeline/scripts/lib/controls-off.js",
+    "skills/tycon-pipeline/scripts/lib/coverage-base.js",
+    "skills/tycon-pipeline/scripts/lib/critical-waivers.js",
+    "skills/tycon-pipeline/scripts/lib/deprecated.js",
+    "skills/tycon-pipeline/scripts/lib/evidence-config.js",
+    "skills/tycon-pipeline/scripts/lib/evidence-key.js",
+    "skills/tycon-pipeline/scripts/lib/external-flags.js",
+    "skills/tycon-pipeline/scripts/lib/first-time-record.js",
+    "skills/tycon-pipeline/scripts/lib/frozen-tree.js",
+    "skills/tycon-pipeline/scripts/lib/harness-freshness.js",
+    "skills/tycon-pipeline/scripts/lib/harness-path.js",
+    "skills/tycon-pipeline/scripts/lib/home-command.js",
+    "skills/tycon-pipeline/scripts/lib/late-snapshot.js",
+    "skills/tycon-pipeline/scripts/lib/ledger-honesty.js",
+    "skills/tycon-pipeline/scripts/lib/legacy-names.js",
+    "skills/tycon-pipeline/scripts/lib/live-sessions.js",
+    "skills/tycon-pipeline/scripts/lib/match-glob.js",
+    "skills/tycon-pipeline/scripts/lib/models.js",
+    "skills/tycon-pipeline/scripts/lib/node-floor.js",
+    "skills/tycon-pipeline/scripts/lib/open-runs.js",
+    "skills/tycon-pipeline/scripts/lib/packs.js",
+    "skills/tycon-pipeline/scripts/lib/path-forms.js",
+    "skills/tycon-pipeline/scripts/lib/plan-review.js",
+    "skills/tycon-pipeline/scripts/lib/portable-tools.js",
+    "skills/tycon-pipeline/scripts/lib/real-hours.js",
+    "skills/tycon-pipeline/scripts/lib/red-test-edit.js",
+    "skills/tycon-pipeline/scripts/lib/refutation.js",
+    "skills/tycon-pipeline/scripts/lib/reloop-code.js",
+    "skills/tycon-pipeline/scripts/lib/reported-criticals.js",
+    "skills/tycon-pipeline/scripts/lib/rethink.js",
+    "skills/tycon-pipeline/scripts/lib/review-change-policy.js",
+    "skills/tycon-pipeline/scripts/lib/review-policy.js",
+    "skills/tycon-pipeline/scripts/lib/review-roster.js",
+    "skills/tycon-pipeline/scripts/lib/review-rounds.js",
+    "skills/tycon-pipeline/scripts/lib/reviewer-rules.js",
+    "skills/tycon-pipeline/scripts/lib/risk-paths.js",
+    "skills/tycon-pipeline/scripts/lib/run-dir.js",
+    "skills/tycon-pipeline/scripts/lib/run-size.js",
+    "skills/tycon-pipeline/scripts/lib/save-ok.js",
+    "skills/tycon-pipeline/scripts/lib/session-id.js",
+    "skills/tycon-pipeline/scripts/lib/sibling-copy.js",
+    "skills/tycon-pipeline/scripts/lib/stack-config.js",
+    "skills/tycon-pipeline/scripts/lib/state-dir.js",
+    "skills/tycon-pipeline/scripts/lib/steps.js",
+    "skills/tycon-pipeline/scripts/lib/story-checks.js",
+    "skills/tycon-pipeline/scripts/lib/story-discovery.js",
+    "skills/tycon-pipeline/scripts/lib/story-gate-io.js",
+    "skills/tycon-pipeline/scripts/lib/story-revalidation.js",
+    "skills/tycon-pipeline/scripts/lib/story-review-record.js",
+    "skills/tycon-pipeline/scripts/lib/story-skill-gate.js",
+    "skills/tycon-pipeline/scripts/lib/test-deps.js",
+    "skills/tycon-pipeline/scripts/lib/test-scope.js",
+    "skills/tycon-pipeline/scripts/lib/ui-signal.js",
+    "skills/tycon-pipeline/scripts/lib/validation-record.js",
+    "skills/tycon-pipeline/scripts/lib/waiver-display.js",
+    "skills/tycon-pipeline/scripts/mockup.js",
+    "skills/tycon-pipeline/scripts/tools/coordination.js"
+  ],
+  "exports": [
+    "BANDERAS_DETECCION",
+    "CORE_REVIEWERS",
+    "GITIGNORE_ADVISORS",
+    "MECH_DISCOUNTABLE",
+    "advisorAffectedByDelta",
+    "advisorsRunSinceStart",
+    "aplicarModelosDeRevisores",
+    "aplicarTamanoALosRevisores",
+    "aprobacionesEnElRepoDeLaStory",
+    "archivosFantasma",
+    "buildAdvisorContext",
+    "buildStoryDigest",
+    "cmpStoryId",
+    "codeReviewerNames",
+    "completedWorkHours",
+    "computeAdvisorSet",
+    "computeDeepReviewGate",
+    "computeDeferralsOpen",
+    "computeDelicate",
+    "computeDepGate",
+    "computeDodCheckerNeeded",
+    "computeFindingsStatus",
+    "computeFollowupsStatus",
+    "computeGitignoreNeeds",
+    "computeMechDiscount",
+    "computeMissingBeforeStart",
+    "computeModelHint",
+    "computeNextStory",
+    "computePreflightFrontmatter",
+    "computeRiskClass",
+    "computeRunSize",
+    "computeSmartReloop",
+    "computeSpecStaleness",
+    "computeToolingExpected",
+    "computeValidadores",
+    "coreReviewerNames",
+    "coreReviewersDrift",
+    "decidirValidadorEnReloop",
+    "deepReviewConfig",
+    "deepReviewGateDeLaCorrida",
+    "densidadDelDiff",
+    "deriveStoryId",
+    "detectStack",
+    "e2eConfig",
+    "findRepoRootsForStory",
+    "followupKey",
+    "frenosDelManifiesto",
+    "gitArchivosDelWorkingTree",
+    "gitIgnoraProbe",
+    "gitignoreAppendText",
+    "harnessTimeTool",
+    "matchGlob",
+    "normalizeFindingRecord",
+    "notaDelTamano",
+    "orgDeepReview",
+    "orgModels",
+    "paquetesActivos",
+    "paquetesInstalados",
+    "parseFollowupsSection",
+    "parseFrontmatterList",
+    "parseFrontmatterPipeline",
+    "projectRunToStoryRepo",
+    "readSessionMarker",
+    "readSessionMarkerStrict",
+    "reloopHintsFor",
+    "resolveRunDir",
+    "revisionDeLaOrganizacion",
+    "revisoresDelNucleo",
+    "revisoresPorConfirmar",
+    "runDirKey",
+    "selectE2eApps",
+    "storyRequiresRuntimeEvidenceCheck",
+    "superficieDe",
+    "thirdPartyManifestPath",
+    "tierDe",
+    "tocaSuperficieCompartida",
+    "validateFilesExist",
+    "writeFindings",
+    "writeFollowups"
+  ]
+}
