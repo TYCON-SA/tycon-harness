@@ -73,7 +73,7 @@ test('T5 Translate_InSpanish_LeavesEverythingAsIs — en castellano no cambia na
 // La página compara el texto de un aviso con el suyo para saber si lo borra: traducido, la comparación tiene que seguir
 // dando igual. Un texto que la página compara así y que tiene traducción se compara traducido de los dos lados.
 test('T7 ComparedNotices_StillMatchInEnglish — un aviso que la página compara con su texto se compara traducido', () => {
-  const { EN } = block();
+  block();
   assert.deepStrictEqual([...CODE.matchAll(/[\w.]+\.textContent===[A-Z_]+/g)].map((m) => m[0]), [], 'una comparación de un texto pintado va traducida de los dos lados');
   assert.match(CODE, /traducir\(avisoEl\.textContent\)===traducir\(AVISO_SIN_NOVEDAD\)/);
   assert.match(CODE, /traducir\(o\.textContent\)===traducir\(FALLA\)/);
