@@ -86,12 +86,14 @@ function relajacionesDe(control, tree) {
 
 /** Avisa una sola vez por día y por control que el perfil nombra una exigencia. */
 function avisoDiario(control, home, now) {
+  const texto = `el perfil del equipo relaja ${control}, que es una exigencia: no se relaja para ningún modelo, sigue frenando`;
   let dir;
-  try { dir = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js')).stateDir(home); } catch (_) { dir = path.join(home, '.claude', '.tycon-pipeline'); }
+  // la carpeta del estado la sabe tycon-home.js; sin él no hay dónde anotar el día, y se avisa en cada consulta
+  try { dir = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js')).stateDir(home); } catch (_) { return texto; }
   const marca = path.join(dir, `control-profile-exigencia-${hoyDe(now)}-${String(control).replace(/[^\w.-]/g, '_')}`);
   if (fs.existsSync(marca)) return null;
   try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(marca, ''); } catch (_) { /* sin marca, se vuelve a avisar */ }
-  return `el perfil del equipo relaja ${control}, que es una exigencia: no se relaja para ningún modelo, sigue frenando`;
+  return texto;
 }
 
 function decide({ control, sessionId, tree = null, home = os.homedir(), now = Date.now(), modelOf = null } = {}) {
