@@ -727,9 +727,15 @@ test('T-fila149 CuadroDeAprobacionSinCodigo_SeNiegaAntesDelClick', (t) => {
   // con el código del guion al final, pasa
   const delGuion = oa.cuadroDe({ firma: 'save', destino: sid, que: 'guardar los cambios', queHace: ['el comando: marker.js approve-save'], siSaleMal: 'se revierte el commit', huella: 'ab12cd34' });
   assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', conOpciones(delGuion.pregunta, delGuion.opciones))), null);
-  // con el código en el medio (el pedido de permiso lo lleva antes del pedido), pasa
-  const permiso = '¿Aprobás este pedido de Bash? (firma permiso · sesión ses-x · código ab12cd34) Carpeta: /r. Pedido:\nls';
-  assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', conOpciones(permiso))), null);
+  // el pedido de permiso, tal cual lo arma signature-list.js: su código empieza con «permiso» y va antes del pedido; pasa
+  const permiso = require('../lib/signature-list.js').cuadroDePermiso({ id: 'permiso-1a2b3c4d', destino: 'ses-x', huella: '6c60386e1234',
+    herramienta: 'Bash', carpeta: '/r', pedido: 'git push origin wt/x' });
+  assert.match(permiso.pregunta, /\(permiso permiso-1a2b3c4d · sesión ses-x · código 6c60386e\)/);
+  assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', conOpciones(permiso.pregunta, permiso.opciones))), null);
+  // una etiqueta que se ve igual sigue siendo la de aprobar: espacio duro, carácter invisible, coma ancha
+  for (const etiqueta of ['Sí, aprobar', 'Sí, aprobar​', 'Sí， aprobar']) {
+    assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', conOpciones('¿Abro el arreglo?', [etiqueta, 'No']))).decision, 'deny', JSON.stringify(etiqueta));
+  }
   // sin la opción de aprobar, es una pregunta como cualquier otra
   assert.strictEqual(decidir(toy, evento(sid)), null);
   // las preguntas de decisión de la coordinadora siguen pasando, aunque su etiqueta apruebe: sólo cuenta la de los cuadros

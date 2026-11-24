@@ -482,9 +482,14 @@ test('T8 OwnerApprovals_QuestionMismatch_LogsOnlyForThisSignatureAndSession', (t
   assert.ok(!fs.existsSync(registroDeErrores(casa)), 'ni otra firma, ni otra sesión, ni un click sin sello dejan el renglón');
   // la misma firma y sesión con otro código sí lo deja: es el click a esta firma con otra fuente
   assert.strictEqual(probar(armar(FIRMA, 'ses-a', 'ffff0000').pregunta, 'toolu_5').ok, false);
-  const log = fs.readFileSync(registroDeErrores(casa), 'utf8').trim().split('\n');
+  const renglones = () => fs.readFileSync(registroDeErrores(casa), 'utf8').trim().split('\n').filter((l) => l.includes('owner-approvals: la pregunta del cuadro'));
+  const log = renglones();
   assert.strictEqual(log.length, 1, 'un renglón, el del click a esta firma');
   assert.ok(log[0].includes(CUADRO.sello), 'con el sello de esta firma');
+  // el cuadro de esta firma retocado a mano la sigue nombrando: un punto al final, comillas, el sello sin tildes
+  const retocados = [`${PIDE}.`, `«${PIDE}»`, PIDE.replace('sesión', 'sesion').replace('código', 'codigo')];
+  retocados.forEach((pregunta, n) => assert.strictEqual(probar(pregunta, `toolu_${6 + n}`).ok, false));
+  assert.strictEqual(renglones().length, 1 + retocados.length, 'cada click retocado de esta firma deja su renglón');
 });
 
 const SOBRE_CUPO = 'adhoc-lane:sobre-cupo';

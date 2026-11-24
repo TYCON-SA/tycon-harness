@@ -54,6 +54,8 @@ const MESSAGE_TOOL = 'SendMessage';
 // un destino que no es otra sesión: la conversación principal o un ayudante de la propia sesión (su id)
 const NOT_A_SESSION = /^(main|a[0-9a-f]{16})$/;
 const SELLO = /\bfirma ([\w:.-]+) · sesi[oó]n ([\w-]+) · c[oó]digo [\w-]+/;
+// el código de un cuadro que aprueba: el de una firma o el de un pedido de permiso (signature-list.js cuadroDePermiso)
+const CODIGO_DEL_GUION = /\b(?:firma|permiso) [\w:.-]+ · sesi[oó]n [\w-]+ · c[oó]digo [\w-]+/;
 const NOMBRE = 'background-question-guard';
 
 const stateDirOf = (home) => require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js')).stateDir(home);
@@ -79,8 +81,9 @@ const SIN_CODIGO = 'Este cuadro trae la opción «Sí, aprobar», pero su pregun
  * Un cuadro con la opción de aprobar del arnés («Sí, aprobar», la que ponen sus cuadros de firma) y una pregunta sin el
  * código del guion: `{ decision: 'deny', reason }` o null. Ese click no aprueba nada, porque owner-approvals.js lo compara
  * con la pregunta del guion, código incluido, y la persona lo pierde: se avisa antes de mostrarlo. Es esa etiqueta y no
- * cualquiera que apruebe: una pregunta de decisión («Sí, que entre», «Aprobado») sigue pasando. El código puede ir en el
- * medio (el pedido de permiso de signature-list.js lo lleva antes del pedido). Sin poder leer la etiqueta, pasa.
+ * cualquiera que apruebe: una pregunta de decisión («Sí, que entre», «Aprobado») sigue pasando. El código es el de una
+ * firma o el de un pedido de permiso, y puede ir en el medio (el de permiso va antes del pedido). Sin poder leer la
+ * etiqueta, pasa.
  */
 function decidirAprobacionSinCodigo(input, home) {
   const qs = input && typeof input === 'object' && Array.isArray(input.questions) ? input.questions : [];
@@ -89,9 +92,11 @@ function decidirAprobacionSinCodigo(input, home) {
     logError(home, `no pude leer la opción de aprobar (${(e && e.message) || e}): el cuadro pasó sin mirar si trae el código`);
     return null;
   }
-  const igual = (label) => typeof label === 'string' && label.normalize('NFC').trim() === String(aprueba).normalize('NFC');
+  // una etiqueta que se ve igual también cuenta: espacio duro, coma ancha o un carácter invisible no la hacen otra
+  const visible = (s) => String(s).normalize('NFKC').replace(/\p{Cf}/gu, '').replace(/\s+/g, ' ').trim();
+  const igual = (label) => typeof label === 'string' && visible(label) === visible(aprueba);
   const sinCodigo = qs.some((q) => q && Array.isArray(q.options) && q.options.some((o) => o && igual(o.label))
-    && !SELLO.test(String(q.question || '')));
+    && !CODIGO_DEL_GUION.test(String(q.question || '')));
   return sinCodigo ? { decision: 'deny', reason: SIN_CODIGO } : null;
 }
 
