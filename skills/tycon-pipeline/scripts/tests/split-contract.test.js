@@ -702,10 +702,9 @@ test('T5 BashGate_ReadsMarkerWhole @story-8.163 @ac-5', () => {
   const nombrado = bloque.startsWith(FRENO_ENTERO) ? bloque.split('\n')[2].trim() : null;
   assert.notStrictEqual(nombrado, path.join(copia, 'marker.js'), 'marker.js se lee entero');
   assert.ok(!nombrado || !/[\\/]lib[\\/]marker-[^\\/]+\.js$/.test(nombrado), `un módulo de la partición se lee entero (${nombrado})`);
-  // lo que marker.js ya cargaba y pasa el tope sigue sin leerse entero hasta que se partan pipeline.js y el freno: se
-  // nombra, no se esconde
-  assert.ok([path.join(copia, 'pipeline.js'), path.join(copia, 'on-bash-write-gate.js')].includes(nombrado),
-    `lo que falta hasta partir pipeline.js y el freno: uno de los dos (${nombrado})`);
+  // lo que marker.js ya cargaba y pasa el tope sigue sin leerse entero hasta que se parta el freno: se nombra, no se
+  // esconde (pipeline.js ya está partido)
+  assert.strictEqual(nombrado, path.join(copia, 'on-bash-write-gate.js'), `lo que falta hasta partir el freno (${nombrado})`);
 });
 
 /** Una cadena de módulos de juguete: `principal.js` → m1 → … → m<largo>; el último hace `ultimo`. */
@@ -841,6 +840,10 @@ test('T13 Install_CopiesNewModules @story-8.163 @ac-13', () => {
   assert.strictEqual(ls.status, 0, `no pude listar lo versionado: ${ls.stderr}`);
   const versionados = ls.stdout.split('\0').filter(Boolean);
   for (const m of Object.keys(MODULOS)) assert.ok(versionados.includes(`skills/tycon-pipeline/scripts/lib/${m}`), `lo publicado lleva lib/${m}`);
+  // y las partes de pipeline.js
+  const partes = fs.readdirSync(LIB).filter((f) => /^pipeline-.+\.js$/.test(f));
+  assert.ok(partes.length > 0, 'hay partes de pipeline.js');
+  for (const m of partes) assert.ok(versionados.includes(`skills/tycon-pipeline/scripts/lib/${m}`), `lo publicado lleva lib/${m}`);
   const instalado = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'split-instalado-')));
   for (const f of versionados) {
     const desde = path.join(RAIZ_ARNES, f);
@@ -868,3 +871,133 @@ test('T13 Install_CopiesNewModules @story-8.163 @ac-13', () => {
 });
 
 module.exports = { CASOS, correr, diferencia, normalizar, armar, entorno, requiresLocales, SID };
+// ── la partición de pipeline.js ──────────────────────────────────────────────────────────────────────────────────────
+
+/** Las partes de pipeline.js que hay hoy: `lib/pipeline-*.js`. */
+const partesDePipeline = (lib = LIB) => {
+  try { return fs.readdirSync(lib).filter((f) => /^pipeline-.+\.js$/.test(f)).sort(); } catch { return []; }
+};
+/**
+ * Las partes del plan, con un caso de la foto que las corre (las bibliotecas, por el subcomando que las usa; el
+ * compartido no tiene).
+ */
+const PARTES_PIPELINE = {
+  'pipeline-shared.js': null,
+  'pipeline-reviewers.js': 'pipeline-validators',
+  'pipeline-rounds.js': 'pipeline-smart-reloop-sin-foto',
+  'pipeline-deep-review.js': 'pipeline-deep-review-gate',
+  'pipeline-lane.js': 'pipeline-advisors-carril-sin-carril',
+  'pipeline-start.js': 'pipeline-tooling-expected',
+  'pipeline-next.js': 'pipeline-next',
+  'pipeline-preflight.js': 'pipeline-preflight-frontmatter',
+  'pipeline-findings.js': 'pipeline-followups-status',
+  'pipeline-reports.js': 'pipeline-evidence-dir',
+  'pipeline-advisor-set.js': 'pipeline-advisors',
+  'pipeline-advisor-context.js': 'pipeline-advisors',
+  'pipeline-risk.js': 'pipeline-risk-class',
+  'pipeline-models.js': 'pipeline-model-hint',
+};
+
+test('T7 Pipeline_UnderLimit_OneJobPerModule @story-8.163 @ac-7', () => {
+  const despachador = path.join(SCRIPTS, 'pipeline.js');
+  assert.ok(letras(despachador) < TOPE_LETRAS, `pipeline.js tiene ${letras(despachador)} letras: el tope es ${TOPE_LETRAS}`);
+  assert.deepStrictEqual(partesDePipeline(), Object.keys(PARTES_PIPELINE).sort(), 'las partes de pipeline.js son las del plan');
+  const freno = fs.readFileSync(path.join(SCRIPTS, 'on-bash-write-gate.js'), 'utf8');
+  const tope = Number((/const GUION_TOPE = (\d+) \* 1024;/.exec(freno) || [])[1]) * 1024;
+  assert.ok(tope > 0, 'el tope por archivo del freno se lee de su texto');
+  assert.ok(fs.statSync(despachador).size < tope, `pipeline.js pesa ${fs.statSync(despachador).size} bytes y el freno lee enteros hasta ${tope}`);
+  for (const m of Object.keys(PARTES_PIPELINE)) {
+    const archivo = path.join(LIB, m);
+    const texto = fs.readFileSync(archivo, 'utf8');
+    assert.ok([...texto].length < TOPE_LETRAS, `${m} tiene ${[...texto].length} letras: el tope es ${TOPE_LETRAS}`);
+    assert.ok(fs.statSync(archivo).size < tope, `${m} pesa ${fs.statSync(archivo).size} bytes y el freno lee enteros hasta ${tope}`);
+    assert.match(texto.split('\n').slice(0, 30).join('\n'), /Responsabilidad: \S/, `${m}: su cabecera dice su responsabilidad`);
+    const sinComentarios = texto.split('\n').filter((l) => !/^\s*(\/\/|\*)/.test(l)).join('\n');
+    if (m !== 'pipeline-shared.js') assert.doesNotMatch(sinComentarios, /\b__filename\b|\b__dirname\b/, `${m}: usa PIPELINE_JS y SCRIPTS_DIR, no su propia ubicación`);
+    // lo que cambia mientras corre se lee del objeto compartido, nunca de una copia
+    const copia = sinComentarios.split('\n').find((l) => /\b(?:let|const|var)\s+(?:avisosDelPorton|paraOtra)\b/.test(l)
+      || /\b(?:let|const|var)\s*\{[^}\n]*(?<![.\w])(?:avisosDelPorton|paraOtra)\b[^}\n]*\}\s*=/.test(l));
+    assert.strictEqual(copia, undefined, `${m}: no copia avisosDelPorton ni paraOtra (${copia})`);
+    // lo que la partición suma tiene que existir; lo que ya estaba en la foto queda como estaba (una `SCRIPTS_DIR`
+    // local que apunta a scripts/ del arnés se lee acá como la carpeta de los guiones, antes y después)
+    const antes = new Set(JSON.parse(fs.readFileSync(FOTO_PIPELINE, 'utf8')).requires);
+    for (const r of requiresLocales(archivo)) if (!antes.has(r)) assert.ok(fs.existsSync(path.join(RAIZ_ARNES, r)), `${m}: carga ${r}, que no existe`);
+  }
+});
+
+for (const [parte, caso] of Object.entries(PARTES_PIPELINE)) {
+  test(`T7 Parte_${parte.replace(/\.js$/, '')}_CargaYCorre @story-8.163 @ac-7`, () => {
+    const archivo = path.join(LIB, parte);
+    assert.ok(fs.existsSync(archivo), `falta ${parte}`);
+    const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'split-parte-')));
+    if (caso === null) {
+      // el compartido: lo que cambia mientras corre, con su valor de arranque, y las dos rutas que fija el despachador
+      const r = spawnSync(process.execPath, ['-e', `const s = require(${JSON.stringify(archivo)}); process.stdout.write(JSON.stringify({ avisos: s.estadoPipeline.avisosDelPorton, otra: s.estadoPipeline.paraOtra, scripts: s.estadoPipeline.SCRIPTS_DIR, pipeline: s.estadoPipeline.PIPELINE_JS }))`],
+        { encoding: 'utf8', env: entorno(home), timeout: 30000 });
+      assert.strictEqual(r.status, 0, r.stderr);
+      assert.deepStrictEqual(JSON.parse(r.stdout), { avisos: [], otra: null, scripts: SCRIPTS, pipeline: path.join(SCRIPTS, 'pipeline.js') });
+      return;
+    }
+    const carga = spawnSync(process.execPath, ['-e', `require(${JSON.stringify(archivo)})`], { encoding: 'utf8', env: entorno(home), timeout: 30000 });
+    assert.strictEqual(carga.status, 0, `${parte} no carga: ${carga.stderr}`);
+    const foto = JSON.parse(fs.readFileSync(FOTO_PIPELINE, 'utf8'));
+    const c = CASOS_PIPELINE.find((x) => x.id === caso);
+    assert.strictEqual(diferencia(foto.casos[caso], correr(c)), null, `${parte}: su subcomando (${c.argv.join(' ')}) cambió`);
+  });
+}
+
+test('T10 Pipeline_MissingModule_FailsLoud @story-8.163 @ac-10', () => {
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'split-falta-p-')));
+  const copia = path.join(raiz, 'scripts');
+  fs.cpSync(SCRIPTS, copia, { recursive: true, filter: (s) => !/[\\/]tests([\\/]|$)/.test(s.slice(SCRIPTS.length)) });
+  const falta = path.join(copia, 'lib', 'pipeline-reports.js');
+  assert.ok(fs.existsSync(falta), 'la copia tiene la parte de los informes');
+  fs.rmSync(falta);
+  const home = path.join(raiz, 'home');
+  fs.mkdirSync(home);
+  const r = spawnSync(process.execPath, [path.join(copia, 'pipeline.js'), 'evidence-key', '--story', path.join(raiz, 'x.md')], { encoding: 'utf8', env: entorno(home), timeout: 30000 });
+  assert.notStrictEqual(r.status, 0, 'sin su parte, el subcomando no sigue como si nada');
+  const lineas = r.stderr.split('\n').filter((l) => l.trim());
+  assert.strictEqual(lineas.length, 1, `una sola línea con el motivo:\n${r.stderr}`);
+  assert.match(lineas[0], /lib\/pipeline-reports\.js/, 'nombra la parte que falta');
+  const otro = spawnSync(process.execPath, [path.join(copia, 'pipeline.js'), 'lint-config', '--repo', raiz], { encoding: 'utf8', env: entorno(home), timeout: 30000 });
+  assert.strictEqual(otro.status, 0, `un subcomando de otra parte sigue andando: ${otro.stderr}`);
+  // el compartido lo carga el despachador al arrancar: sin él tampoco sale el error largo de Node
+  fs.rmSync(path.join(copia, 'lib', 'pipeline-shared.js'));
+  const sinCompartido = spawnSync(process.execPath, [path.join(copia, 'pipeline.js'), 'lint-config', '--repo', raiz], { encoding: 'utf8', env: entorno(home), timeout: 30000 });
+  assert.strictEqual(sinCompartido.status, 2, `sin el compartido sale 2:\n${sinCompartido.stderr}`);
+  const renglones = sinCompartido.stderr.split('\n').filter((l) => l.trim());
+  assert.strictEqual(renglones.length, 1, `una sola línea con el motivo:\n${sinCompartido.stderr}`);
+  assert.match(renglones[0], /lib\/pipeline-shared\.js/, 'nombra el compartido');
+});
+
+test('T15 Pipeline_SameExportsAsThePhoto @story-8.163 @ac-15', () => {
+  const foto = JSON.parse(fs.readFileSync(FOTO_PIPELINE, 'utf8'));
+  assert.ok(Array.isArray(foto.exports) && foto.exports.length > 70, 'la foto de pipeline.js trae sus exportaciones');
+  assert.deepStrictEqual(clavesDePipeline(), foto.exports, 'pipeline.js exporta las mismas claves');
+  // cada clave trae lo mismo que traía: una función sigue siendo función y un valor sigue siendo del mismo tipo
+  const r = spawnSync(process.execPath, ['-e', `const p = require(${JSON.stringify(path.join(SCRIPTS, 'pipeline.js'))}); process.stdout.write(JSON.stringify(Object.keys(p).filter((k) => p[k] === undefined)))`],
+    { encoding: 'utf8', env: entorno(fs.mkdtempSync(path.join(os.tmpdir(), 'split-claves-'))), timeout: 30000 });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.deepStrictEqual(JSON.parse(r.stdout), [], 'ninguna exportación quedó vacía');
+});
+
+test('T16 Pipeline_ModulesAreSensitive @story-8.163 @ac-16', () => {
+  const { esSensible } = require(path.join(LIB, 'save-ok.js'));
+  const foto = JSON.parse(fs.readFileSync(FOTO_PIPELINE, 'utf8'));
+  assert.ok(Array.isArray(foto.requires) && foto.requires.length > 40, 'la foto de pipeline.js trae sus require');
+  const archivos = [path.join(SCRIPTS, 'pipeline.js'), ...partesDePipeline().map((m) => path.join(LIB, m))];
+  assert.deepStrictEqual(nuevosNoSensibles(foto.requires, archivos), [], 'todo lo nuevo que cargan pipeline.js y sus partes es sensible');
+  assert.ok(partesDePipeline().length > 0, 'hay partes de pipeline.js');
+  for (const m of partesDePipeline()) assert.ok(esSensible(`skills/tycon-pipeline/scripts/lib/${m}`), `${m} es sensible`);
+});
+
+test('T7 BashGate_ReadsPipelineWhole @story-8.163 @ac-7', () => {
+  const r = repoDelFreno();
+  const copia = path.join(r.raiz, 'scripts');
+  fs.cpSync(SCRIPTS, copia, { recursive: true, filter: (s) => !/[\\/]tests([\\/]|$)/.test(s.slice(SCRIPTS.length)) });
+  const bloque = frenar(r, `node ${path.join(copia, 'pipeline.js')} next`);
+  const nombrado = bloque.startsWith(FRENO_ENTERO) ? bloque.split('\n')[2].trim() : null;
+  assert.notStrictEqual(nombrado, path.join(copia, 'pipeline.js'), 'pipeline.js se lee entero');
+  assert.ok(!nombrado || !/[\\/]lib[\\/]pipeline-[^\\/]+\.js$/.test(nombrado), `una parte de pipeline.js se lee entera (${nombrado})`);
+});
