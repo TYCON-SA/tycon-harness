@@ -1206,6 +1206,15 @@ test('Comentario_ConUnaComilla_NoEscondeElRenglonSiguiente (fila 217, el freno)'
     frena(`echo $'\\'' # '\ncp /tmp/falso.json '${res}'`);
     // un `#` pegado a un carácter escapado o al cierre de `$(…)` es parte de la palabra, no un comentario
     for (const pegado of ['a\\ #b', 'a\\;#b', 'a\\&#b', 'a\\(#b', '$(date)#b', '$((1+1))#b']) frena(`echo ${pegado} > '${res}'`);
+    // del tercer agente: un blanco que el shell no toma como blanco (`\r`, `\v`, `\f`, un espacio duro o uno de Unicode),
+    // un `#` pegado al cierre de `<(…)`, `@(…)` o `a=(…)`, y uno adentro de los paréntesis de `[[ … ]]`
+    for (const b of ['\r', '\v', '\f', ' ', ' ']) frena(`echo a${b}#b; cp /tmp/falso.json '${res}'`);
+    for (const pegado of ['cat <(echo a)#b', 'echo @(a)#b', 'a=(x)#b']) frena(`${pegado}; cp /tmp/falso.json '${res}'`);
+    frena(`[[ x =~ ((a) #b) ]]; cp /tmp/falso.json '${res}'`);
+    frena(`[[ x == (#b) ]]; cp /tmp/falso.json '${res}'`);
+    // después de cerrar un subshell, con un blanco o sin él, el comentario sigue siendo comentario
+    frena(`( : ) # '\ncp /tmp/falso.json '${res}'`);
+    frena(`( : )# '\ncp /tmp/falso.json '${res}'`);
     // un comentario con una comilla y nada escondido, o un `#` que no empieza una palabra, sigue pasando
     pasa("echo hola # it's fine\nls -la");
     pasa("echo 'a # b' && echo \"c # d\"");

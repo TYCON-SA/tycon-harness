@@ -1586,10 +1586,15 @@ function quitarCuerposDeHeredoc(cmd) {
  * El comando sin sus comentarios: lo que sigue a un `#` que empieza una palabra, fuera de comillas, hasta el salto de
  * renglón, que queda. Una comilla adentro de un comentario no abre nada y el renglón siguiente corre, como en el shell:
  * sin esto, esa comilla juntaba lo de abajo con el comentario y nadie lo miraba. Se usa sobre el comando ya sin los cuerpos
- * de sus heredocs (lo de adentro de un cuerpo no es del shell). Saca sólo lo que es comentario seguro: adentro de comillas
- * invertidas, de `$(…)` o de `${…}` no saca nada (ahí el `#` puede ser texto, y el shell corta esas partes antes); una
- * continuación de renglón (`\` y salto) no empieza una palabra, porque el shell junta los renglones; y `$'…'` deja escapar
- * su comilla (`\'`), como en el shell.
+ * de sus heredocs (lo de adentro de un cuerpo no es del shell). Saca sólo lo que es comentario seguro:
+ *  - una palabra empieza sólo después de un blanco del shell (espacio, tab, salto de renglón) o de `;`, `&` o `|`: un `\r`,
+ *    un espacio duro o uno de Unicode son parte de la palabra;
+ *  - adentro de comillas invertidas o de cualquier paréntesis o llave (`$(…)`, `<(…)`, `${…}`, `a=(…)`, un subshell, un
+ *    patrón de `[[ … ]]`) no saca nada: ahí el `#` puede ser texto;
+ *  - el cierre de un paréntesis o una llave sigue la palabra (`$(date)#b`, `<(echo a)#b`), salvo el de un subshell que
+ *    abrió donde empezaba una palabra (`( : )#x`);
+ *  - lo escapado sigue la palabra, y una continuación de renglón (`\` y salto) no la corta, porque el shell junta los
+ *    renglones; `$'…'` deja escapar su comilla (`\'`), como en el shell.
  */
 function sinComentarios(cmd) {
   const s = String(cmd || '');
@@ -1598,7 +1603,9 @@ function sinComentarios(cmd) {
   let q = null;
   // el último carácter que cuenta para saber si un `#` empieza una palabra: una continuación de renglón no cuenta
   let anterior = '';
-  let anidado = 0;
+  const empiezaPalabra = () => anterior === '' || anterior === ' ' || anterior === '\t' || anterior === '\n' || anterior === ';' || anterior === '&' || anterior === '|';
+  // cada paréntesis o llave abierta: si abrió donde empezaba una palabra (un subshell), su cierre también la empieza
+  const abiertos = [];
   let invertidas = false;
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
@@ -1615,7 +1622,7 @@ function sinComentarios(cmd) {
       if (s[i] !== '\n') anterior = 'x';
       continue;
     }
-    if (c === '#' && !anidado && !invertidas && (anterior === '' || /[\s;&|()]/.test(anterior))) {
+    if (c === '#' && !abiertos.length && !invertidas && empiezaPalabra()) {
       const fin = s.indexOf('\n', i);
       if (fin < 0) break;
       i = fin - 1;
@@ -1623,15 +1630,13 @@ function sinComentarios(cmd) {
     }
     if (c === '$' && s[i + 1] === '$') { out += '$$'; i++; anterior = '$'; continue; }
     if (c === '$' && s[i + 1] === "'") { q = "$'"; out += "$'"; i++; anterior = "'"; continue; }
-    if (c === '$' && (s[i + 1] === '(' || s[i + 1] === '{')) { anidado++; out += c + s[i + 1]; i++; anterior = s[i]; continue; }
     if (c === "'" || c === '"') q = c;
     else if (c === '`') invertidas = !invertidas;
-    else if (anidado && (c === '(' || c === '{')) anidado++;
-    else if (anidado && (c === ')' || c === '}')) {
-      // el cierre de `$(…)` o `${…}` sigue la palabra (`$(date)#b` es una sola)
-      anidado--;
+    else if (c === '(' || c === '{') abiertos.push(c === '(' && empiezaPalabra());
+    else if (c === ')' || c === '}') {
+      const subshell = abiertos.length ? abiertos.pop() : false;
       out += c;
-      anterior = 'x';
+      anterior = subshell && !abiertos.length ? ';' : 'x';
       continue;
     }
     out += c;
