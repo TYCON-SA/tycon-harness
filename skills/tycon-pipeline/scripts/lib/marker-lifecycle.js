@@ -1109,6 +1109,24 @@ function lanzarEsperaDeCompilacion(marker) {
   }
 }
 
+/**
+ * `clear --replaced-by <commit>`: `{ ok, commit, repo, archivos }` si el commit está en origin/main (después de traerlo)
+ * y toca archivos que editó la ejecución (lib/replaced-run.js); sin la bandera, null. Si no se comprueba, sale 1 y no
+ * borra nada.
+ */
+function reemplazoPedido(marker, rest) {
+  const i = rest.indexOf('--replaced-by');
+  if (i < 0) return null;
+  const sha = String(rest[i + 1] || '').trim();
+  const r = require('./replaced-run.js').comprobar({ marker, sha, fetch: true });
+  if (!r.ok) {
+    console.error(`marker.js clear --replaced-by: no lo pude comprobar (${r.motivo}). No se borró nada. Si el arreglo no está en main, la ejecución se cierra como siempre: marker.js clear (pide la firma de cerrarla).`);
+    process.exit(1);
+  }
+  appendLog('gates.log', { name: 'clear-replaced-by', story: marker && marker.storyId, commit: sha, repo: r.repo, archivos: r.archivos });
+  return { ...r, commit: sha };
+}
+
 function cmdClear(rest = []) {
   // Timing dump automático: el cierre del
   // pipeline archiva el marker completo + los gates de la sesión ANTES de borrar —
@@ -1121,8 +1139,11 @@ function cmdClear(rest = []) {
   frenarSiIlegible(markerFilePath(estado.SID), estado.SID, 'clear');
   try { marcadorAntes = readMarker(); } catch (_e) { marcadorAntes = null; }
   frenarSiPerdida(estado.SID, 'clear', marcadorAntes && marcadorAntes.repoPath);
+  // `--replaced-by <commit>`: el arreglo de la ejecución ya entró a main por otro lado. Se comprueba con main traído; sin
+  // poder comprobarlo no cierra así, y queda la salida de siempre (la firma de cerrar la ejecución)
+  const reemplazo = reemplazoPedido(marcadorAntes, rest);
   marcadorAntes = reposSinPr(marcadorAntes, rest);
-  frenarSiFaltanPedidos(marcadorAntes);
+  if (!reemplazo) frenarSiFaltanPedidos(marcadorAntes);
   // una ejecución detenida la cierra el dueño: el perfil puede delegar «cerrar la ejecución», pero esa firma por
   // delegación (o la automática) no alcanza para salir de una detención que espera su decisión
   let crudo = null;
@@ -1203,7 +1224,7 @@ function cmdClear(rest = []) {
       // Cómo terminó la ejecución (lib/run-close.js): completa, o abortada con su motivo y quién autorizó cerrar. Un
       // cierre ya escrito (la deuda de close-as-debt) no se pisa. Que falle no frena el archivo: queda dicho.
       try {
-        marker.cierre = require('./run-close.js').cierreDe(marker, { sid: estado.SID });
+        marker.cierre = require('./run-close.js').cierreDe(marker, { sid: estado.SID, reemplazo });
         const c = marker.cierre;
         cerradaEnClear = cerrarEjecucion(estado.SID, marker, { registrar: false, estado: c.estado, motivo: c.motivo || null, via: c.via || null, ...(c.deuda ? { extra: { deuda: c.deuda } } : {}) });
       } catch (e) {

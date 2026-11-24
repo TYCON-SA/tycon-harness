@@ -119,14 +119,15 @@ const loQueDijo = (r) => {
 
 /**
  * Corre los controles del repo. `{ codigo: 0, corridos: [nombres], avisos }` o `{ codigo: 2, motivo }`. `limite`: la hora
- * en ms después de la cual no se lanza ninguno más (el plazo de todos los controles del cierre).
+ * en ms después de la cual no se lanza ninguno más (el plazo de todos los controles del cierre). `soloNombre`: sólo ése.
  */
-function correr(repo, { limite = Infinity, leerPaquetes } = {}) {
+function correr(repo, { limite = Infinity, leerPaquetes, soloNombre = null } = {}) {
   const nombre = path.basename(repo);
   const { controles, avisos, errores } = controlesDe(repo, { leerPaquetes });
   if (errores.length) return { codigo: 2, motivo: `${nombre}: no medido, los controles de CI en local: ${errores.join('; ')}` };
   const corridos = [];
-  for (const c of controles) {
+  // `soloNombre`: uno solo, el que falló en la compilación (el arreglo de un rojo de CI, lib/ci-red-lane.js)
+  for (const c of controles.filter((x) => soloNombre === null || x.nombre === soloNombre)) {
     if (c.whenFile) {
       const tiene = tieneArchivo(repo, c.whenFile);
       if (tiene === null) return { codigo: 2, motivo: `${nombre}: no medido «${c.nombre}»: git no dijo si el repo tiene ${c.whenFile}` };

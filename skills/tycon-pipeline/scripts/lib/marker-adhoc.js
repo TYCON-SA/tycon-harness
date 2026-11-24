@@ -370,6 +370,22 @@ function cmdAdhoc(sub, payloadJson) {
     process.stdout.write(`adhoc: captura anotada ${file}\n`);
     process.exit(0);
   }
+  // `adhoc ci-wait`: después de empujar el arreglo de un rojo de CI, la espera de la compilación del pedido con la punta
+  // nueva; con verde, la espera cierra el arreglo (lib/pr-build-wait.js `--close-adhoc`). No pide firma
+  if (sub === 'ci-wait') {
+    const a = io.readAdhoc(STATE_DIR, estado.SID);
+    if (!a || !a.ciRojo) { console.error('marker.js adhoc ci-wait: esta sesión no tiene abierto el arreglo de un rojo de CI.'); process.exit(2); }
+    const pedidos = require('./ci-red-lane.js').esperaTrasEmpujar(a);
+    if (!pedidos) { console.error(`marker.js adhoc ci-wait: no pude leer la punta de ${a.ciRojo.nombre}.`); process.exit(1); }
+    const dir = path.join(STATE_DIR, 'pr-build-wait');
+    fs.mkdirSync(dir, { recursive: true });
+    const archivo = path.join(dir, `${estado.SID}-${Date.now()}.json`);
+    fs.writeFileSync(archivo, JSON.stringify({ session: estado.SID, storyId: a.ciRojo.storyId || `pedido #${a.ciRojo.pedido}`, pedidos, closeAdhoc: true }), 'utf8');
+    require('child_process').spawn(process.execPath, [path.join(SCRIPTS_DIR, 'lib', 'pr-build-wait.js'), '--file', archivo], { detached: true, stdio: 'ignore', windowsHide: true, env: process.env }).unref();
+    appendLog('gates.log', { name: 'ci-red-lane', status: 'wait', pedido: a.ciRojo.pedido, commit: pedidos[0].commit });
+    console.error(`marker.js adhoc ci-wait: espero la compilación del pedido #${a.ciRojo.pedido} con ${pedidos[0].commit.slice(0, 12)}; con verde cierro el arreglo y aviso. El pedido no está listo hasta ese aviso.`);
+    process.exit(0);
+  }
   if (sub === 'allow-data-change') return cmdAdhocAllowDataChange(io);
   if (sub === 'allow-foreign-save') return cmdAdhocAllowForeignSave(io);
   if (sub === 'clear') {
@@ -594,6 +610,8 @@ function cmdAdhoc(sub, payloadJson) {
     console.error(`marker.js adhoc set: la lista (${allowedFiles.length} archivos): ${relLista.map(renglon).join(', ')}`);
     // en la terminal el dueño ve este resumen: el motivo y el cupo, como en la ventana
     const cupoPedido = payload.maxFiles !== undefined ? `hasta ${payload.maxFiles} archivos de implementación, sin pruebas ni guías` : `el cupo de la organización (${topes.maximo} archivos de implementación, o el que ya tenía)`;
+    // el arreglo de un rojo de CI (lib/ci-red-lane.js): se valida más abajo, con la firma que pide el comando
+    let ciRojo = null;
     // por delegación, el dueño se entera antes de la constancia, por los canales del perfil: sin entrega, no hay arreglo
     const antes = (viaPedida, registro) => {
       // «hecho y avisado» (pestaña sin permisos) cuenta como delegado: tampoco lo leyó una persona
@@ -627,7 +645,8 @@ function cmdAdhoc(sub, payloadJson) {
       const cupo = cupoAlDeclarar({ pedido: payload.maxFiles, existing: actual, via: viaPedida, topes, sobreCupo: firmas.firmaDelPedidoAdhoc(process.argv.slice(4), topes.maximo, { cwd: carpetaDeLaLista }) === firmas.SOBRE_CUPO && viaPedida === 'delegacion' });
       // el de una pestaña sin permisos lo abrió la propia sesión, sin firma: «hecho y avisado»
       const quien = registro && registro.via === 'avisado' ? `la sesión ${registro.sesion} abrió sin firma (pestaña sin permisos)` : 'la coordinadora abrió';
-      const a = so.avisar({ texto: `Arreglo rápido: ${quien} el de la sesión ${destino}: «${reason}» · hasta ${cupo} archivos, sin tocar lo sensible.`,
+      const delRojo = ciRojo ? ` Es el arreglo del rojo de CI del pedido #${ciRojo.pedido} (${ciRojo.nombre}), control «${ciRojo.control}», sin plan ni revisores: ${relLista.join(', ')}.` : '';
+      const a = so.avisar({ texto: `Arreglo rápido: ${quien} el de la sesión ${destino}: «${reason}» · hasta ${ciRojo ? firmas.TOPE_CI_ROJO : cupo} archivos, sin tocar lo sensible.${delRojo}`,
         canales: () => notify.canalesDeLaSesion(), mandar: (o) => notify.avisar(o) });
       return a.ok ? null : { codigo: 1, motivo: `sin aviso a la persona, la coordinadora no abre el arreglo rápido (${a.motivo})` };
     };
@@ -641,8 +660,24 @@ function cmdAdhoc(sub, payloadJson) {
     const firmas = require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'signatures.js'));
     // la misma regla que mira el freno: pasar el tope es otra firma
     const firmaDelPedido = firmas.firmaDelPedidoAdhoc(process.argv.slice(4), topes.maximo, { cwd: carpetaDeLaLista });
+    // el arreglo de un rojo de CI: sólo sobre el pedido en rojo de esta sesión, dentro de su repo y su tope, sin lo sensible
+    if (payload.ciRojo !== undefined) {
+      if (firmaDelPedido !== firmas.CI_ROJO) {
+        console.error(`marker.js adhoc set: la lista nombra más de ${firmas.TOPE_CI_ROJO} archivos de implementación: el arreglo de un rojo de CI llega hasta ahí; lo demás va por el camino corto de siempre o por una historia.`);
+        process.exit(2);
+      }
+      const v = require('./ci-red-lane.js').validarApertura({ stateDir: STATE_DIR, sesion: destino, pedido: payload.ciRojo, control: payload.control, allowedFiles, codigo: deCodigo, tope: firmas.TOPE_CI_ROJO });
+      if (v.problema) { console.error(`marker.js adhoc set: ${v.problema}.`); process.exit(2); }
+      ciRojo = v.ciRojo;
+    } else if (actual && actual.ciRojo) {
+      // agrandar el arreglo de un rojo con un pedido común le sacaría los revisores con otra firma: no se mezcla
+      console.error(`marker.js adhoc set: esta sesión tiene abierto el arreglo del rojo de CI del pedido #${actual.ciRojo.pedido}, sin revisores; un arreglo común no se le suma. Cerralo (marker.js adhoc clear) y abrí el que necesites.`);
+      process.exit(2);
+    }
     const enLaLista = `${allowedFiles.length} archivo${allowedFiles.length === 1 ? '' : 's'} (${relLista.slice(0, 2).join(', ')}${relLista.length > 2 ? ', …' : ''})`;
-    const r = ow.exigir({ firma: firmaDelPedido, argv: process.argv.slice(1), resumen: enUnRenglon(`${conRiesgo}arreglo rápido de la sesión ${destino}${enRepos}${conMaqueta}: «${reason}» · ${enLaLista} · ${cupoPedido}`),
+    const delRojo = ciRojo ? `arreglo del rojo de CI del pedido #${ciRojo.pedido} (${ciRojo.nombre}${ciRojo.etapa ? `, falló «${ciRojo.etapa}»` : ''}), control «${ciRojo.control}», sin plan ni revisores, de la sesión ${destino}` : null;
+    const r = ow.exigir({ firma: firmaDelPedido, argv: process.argv.slice(1), resumen: enUnRenglon(delRojo ? `${conRiesgo}${delRojo}: «${reason}» · ${enLaLista} · hasta ${firmas.TOPE_CI_ROJO} archivos de implementación`
+      : `${conRiesgo}arreglo rápido de la sesión ${destino}${enRepos}${conMaqueta}: «${reason}» · ${enLaLista} · ${cupoPedido}`),
       propia: PROPIA, anotar: anotarFirma, antes });
     if (r.codigo !== 0) {
       // la forma con JSON sólo si hace falta: la maqueta no entra en la otra, y hay motivos que no se pueden citar en ella
@@ -650,7 +685,9 @@ function cmdAdhoc(sub, payloadJson) {
       const sinJson = screen.motivoSeCita(reason) && (porBanderas || (!maqueta && require('./runtime-waiver.js').esWindows()));
       const pedidoEnJson = porBanderas ? JSON.stringify(payload) : String(payloadJson);
       const conLista = relLista.map((f) => ` --file ${/^[\w./-]+$/.test(f) ? f : `"${f}"`}`).join('');
-      const pedidoEnTerminal = sinJson ? `--reason "${reason}"${payload.maxFiles !== undefined ? ` --max-files ${payload.maxFiles}` : ''}${payload.datos ? ` --data ${payload.datos}` : ''}${conLista}` : `'${pedidoEnJson.replace(/'/g, "'\\''")}'`;
+      // el arreglo de un rojo de CI va sólo con banderas: su pedido y su control, siempre
+      const delRojoEnTerminal = ciRojo ? `--ci-red ${ciRojo.pedido} --check "${ciRojo.control.replace(/"/g, '')}" ` : '';
+      const pedidoEnTerminal = sinJson || ciRojo ? `${delRojoEnTerminal}--reason "${reason}"${payload.maxFiles !== undefined ? ` --max-files ${payload.maxFiles}` : ''}${payload.datos ? ` --data ${payload.datos}` : ''}${conLista}` : `'${pedidoEnJson.replace(/'/g, "'\\''")}'`;
       console.error(`🔒 marker.js adhoc set: la persona no lo aprobó — ${r.motivo}`);
       console.error('   El arreglo rápido lo aprueba una persona, no el agente: en la ventana de permiso, corriendo este comando solo y en su forma');
       console.error('   exacta (la ventana le muestra el motivo y el cupo), o en su terminal:');
@@ -675,7 +712,7 @@ function cmdAdhoc(sub, payloadJson) {
     const by = r.sesion || estado.SID;
     const existing = io.readAdhoc(STATE_DIR, destino);
     const pedido = payload.maxFiles !== undefined ? payload.maxFiles : (existing ? existing.maxFiles : topes.maximo);
-    const maxFiles = cupoAlDeclarar({ pedido: payload.maxFiles, existing, via, topes, sobreCupo: firmaDelPedido === firmas.SOBRE_CUPO });
+    const maxFiles = ciRojo ? firmas.TOPE_CI_ROJO : cupoAlDeclarar({ pedido: payload.maxFiles, existing, via, topes, sobreCupo: firmaDelPedido === firmas.SOBRE_CUPO });
     // la marca del sobre cupo: la pone la firma nueva y se conserva mientras el cupo siga por encima del tope. Un carril
     // anterior con más que el tope no la tiene: termina con su número, sin pedirla
     const sobreCupo = firmaDelPedido === firmas.SOBRE_CUPO ? { sobreCupo: true, cupoPedido: maxFiles, eligio: via === 'delegacion' ? 'coordinadora' : 'persona' }
@@ -704,6 +741,8 @@ function cmdAdhoc(sub, payloadJson) {
       ...(existing && existing.frenoDatos ? { frenoDatos: existing.frenoDatos } : {}),
       ...(existing && existing.datosPermitido ? { datosPermitido: existing.datosPermitido } : {}),
       ...(existing && existing.untilAt ? { untilAt: existing.untilAt } : {}),
+      // el arreglo de un rojo de CI: el pedido, el control que falló y la punta desde la que se mide
+      ...(ciRojo ? { ciRojo } : {}),
       // las rutas anotadas, la marca de riesgo y las constancias, con el motivo que sea: valen por su huella, y declarar
       // el carril de nuevo no las vence
       ...(existing ? Object.fromEntries(['rutas', 'riesgoAlto', 'revisoresEsperados', 'revisores', 'pase', 'pruebas', 'pruebasPorRepo']
@@ -728,7 +767,10 @@ function cmdAdhoc(sub, payloadJson) {
     const maquina = r.registro && r.registro.maquina ? r.registro.maquina : null;
     appendLog('adhoc.log', { kind: existing ? 'ADHOC_UPDATE' : 'ADHOC_SET', reason, maxFiles, prevMaxFiles: existing ? existing.maxFiles : null,
       files: obj.files.length, cwd: process.cwd(), via, by, destino, ...sobreCupo, ...(maquina ? { maquina } : {}), ...(gateOn ? {} : { gate: 'off' }),
-      ...(maqueta ? { mockup: maqueta.file, mockupApproved: maqueta.approval } : {}), ...(obj.datos ? { datos: obj.datos } : {}), allowedFiles });
+      ...(maqueta ? { mockup: maqueta.file, mockupApproved: maqueta.approval } : {}), ...(obj.datos ? { datos: obj.datos } : {}), allowedFiles,
+      ...(ciRojo ? { ciRojo: { pedido: ciRojo.pedido, control: ciRojo.control, repo: ciRojo.nombre } } : {}) });
+    // el arreglo de un rojo de CI queda también entre las firmas, con su pedido, su control y sus archivos
+    if (ciRojo) appendLog('gates.log', { name: 'ci-red-lane', status: 'open', pedido: ciRojo.pedido, control: ciRojo.control, repo: ciRojo.nombre, via, files: relLista });
     if (!gateOn) appendLog('bypass.log', { kind: 'STORY_GATE_OFF_ADHOC', reason, cwd: process.cwd() });
     if (maxFiles < pedido) {
       const antes = Number(payload.maxFiles) > 0 ? `pediste ${pedido}` : `tenía ${pedido}`;
@@ -737,6 +779,7 @@ function cmdAdhoc(sub, payloadJson) {
     process.stdout.write(JSON.stringify(obj, null, 2) + '\n');
     // el aviso de las pruebas, al abrir y no recién al guardar; por la salida de errores: el JSON queda igual (@story-8.319)
     console.error(`Si este camino corto cambia código, guardar pide una corrida en verde: ${require('./open-runs.js').markerEstable(os.homedir())} adhoc test -- <el comando de las pruebas>. Si cambiás código después, se vence.`);
+    if (ciRojo) console.error(`Arreglo del rojo de CI del pedido #${ciRojo.pedido}: sin plan ni revisores. Antes de guardar corre el control «${ciRojo.control}»; después de empujar, ${require('./open-runs.js').markerEstable(os.homedir())} adhoc ci-wait espera la compilación y cierra el arreglo con el verde.`);
     process.exit(0);
   }
   console.error('marker.js adhoc: uso — adhoc set \'{"reason":"…","maxFiles":N,"mockup":"<ruta>","mockupApproved":"<quién y por qué vía>"}\' [--for-session <id>] [--terminal] | adhoc capture <imagen> | adhoc allow-data-change --changed "…" --recommends pasar|historia|descartar --why "…" | adhoc allow-foreign-save | adhoc until HH:MM | adhoc get | adhoc clear | adhoc clear-orphan <sessionId>');
