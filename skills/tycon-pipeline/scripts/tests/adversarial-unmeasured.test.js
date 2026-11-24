@@ -98,11 +98,15 @@ if (esVerif) {
 if (r === 'tope') tope();
 if (r === 'dead' || r === undefined) muerto();
 if (esVerif) { console.log(JSON.stringify(Object.assign({ reasoning: 'corrí la prueba', adjusted_severity: 'bug', probe_dir: '', todos_el_mismo_defecto: true }, r))); process.exit(0); }
-const o = Array.isArray(r) ? { findings: r } : r;
+const o1 = Array.isArray(r) ? { findings: r } : r;
+// la segunda vez que se lanza un cazador (el pedido dice SEGUNDA VEZ), contesta lo de \`otraVez\` si lo hay
+const o2 = o1 && o1.otraVez !== undefined && p.includes('SEGUNDA VEZ:') ? o1.otraVez : o1;
+const o = Array.isArray(o2) ? { findings: o2 } : o2;
 const findings = o.findings || [];
 const resp = { lens: lente.key, base: o.base === undefined ? cfg.base : o.base, findings };
 if (resp.base === null) delete resp.base;
 if (o.base_existe !== undefined) resp.base_existe = o.base_existe;
+if (o.git_rechazado !== undefined) resp.git_rechazado = o.git_rechazado;
 const suya = path.join(cfg.runDir, 'step-05b-probes', 'caza-' + lente.key);
 if (o.probe === 'vacia') resp.probe_dir = '';
 else if (o.probe === 'ajena') resp.probe_dir = path.join(cfg.runDir, 'step-05b-probes', 'caza-otra');
@@ -192,6 +196,106 @@ test('BaseInexistente_NoEsLimpio: con la base que no existe en el repo, ninguna 
   const dir2 = tmp('adv-base-ok-');
   const d2 = doble(dir2, { hunt: { default: { findings: [], base_existe: true } } });
   assert.equal(correrPase(dir2, d2.env).result.medido, true);
+});
+
+// 🔴 Falla con: tomar la palabra de un cazador sobre la base. Uno que corrió git en su propia carpeta (otro repo) dijo
+// «la base no existe», la lente quedó sin medir y hubo que repetir el pase entero (fila 137). Ahora ese cazador se
+// relanza una vez, solo, y el pedido le dice que la base salió de ese repo y que corra git con -C.
+test('BaseQueElCazadorNoVe_SeRelanzaSolo: el que dice que la base no existe se relanza una vez; si la encuentra, la lente cuenta', () => {
+  const dir = tmp('adv-otra-vez-');
+  const [l0, l1] = LENTES;
+  const { env, log, prompts } = doble(dir, { hunt: { default: [], [l0.key]: { findings: [], base_existe: false, otraVez: { findings: [], base_existe: true } } } });
+  const r = correrPase(dir, env);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.result.medido, true, JSON.stringify(r.result.lentes));
+  const lanzados = fs.readFileSync(log, 'utf8').trim().split('\n');
+  assert.equal(lanzados.filter((x) => x === `hunt:${l0.key}`).length, 2, 'el que no vio la base, dos veces');
+  assert.equal(lanzados.filter((x) => x === `hunt:${l1.key}`).length, 1, 'los demás, una');
+  assert.equal(lanzados.filter((x) => x.startsWith('hunt:')).length, LENTES.length + 1, 'no se repite el pase entero');
+  assert.equal(r.result.lentes.find((l) => l.lens === l0.key).otra_vez, true);
+  const pedido = fs.readFileSync(path.join(prompts, `hunt-${l0.key}.txt`), 'utf8');
+  assert.ok(pedido.includes('SEGUNDA VEZ:') && pedido.includes(`git -C ${dir} cat-file -e ${BASE}^{commit}`), pedido.slice(-600));
+  // el que lo repite la segunda vez queda sin medir, dice que lo dijo dos veces y deja el repo y la base para comprobarla
+  const dir2 = tmp('adv-otra-vez-no-');
+  const d2 = doble(dir2, { hunt: { default: [], [l0.key]: { findings: [], base_existe: false } } });
+  const r2 = correrPase(dir2, d2.env);
+  assert.equal(r2.status, 3, r2.stderr);
+  const sin = r2.result.lentes.find((l) => l.lens === l0.key);
+  assert.equal(sin.estado, 'sin-medir');
+  assert.match(sin.motivo, /dijo dos veces que la base/);
+  assert.deepEqual(sin.sin_base, { repo: dir2, base: BASE });
+  // un rechazo de git no se relanza: la sesión lo va a volver a rechazar
+  const dir3 = tmp('adv-otra-vez-rechazo-');
+  const d3 = doble(dir3, { hunt: { default: [], [l0.key]: { findings: [], base_existe: false, git_rechazado: 'This session is isolated' } } });
+  correrPase(dir3, d3.env);
+  assert.equal(fs.readFileSync(d3.log, 'utf8').trim().split('\n').filter((x) => x === `hunt:${l0.key}`).length, 1);
+});
+
+// 🔴 Falla con: anotar «la base no existe» porque lo dijo el cazador. Quien anota el resultado la busca con git en el
+// repo del pase: si está, el cazador miró en otra carpeta; si no, la base del pase está mal. Cada caso dice cómo seguir.
+test('BaseSinMedir_LaCompruebaGit: al anotar, git en el repo del pase dice si la base que el cazador no vio está o no', () => {
+  const { medicionDelResultado } = require(VERDICT_LIB);
+  const repo = tmp('adv-git-base-');
+  const git = (...a) => spawnSync('git', ['-C', repo, ...a], { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 'lab', GIT_AUTHOR_EMAIL: 'lab@example.invalid', GIT_COMMITTER_NAME: 'lab', GIT_COMMITTER_EMAIL: 'lab@example.invalid' } });
+  git('init', '-q');
+  fs.writeFileSync(path.join(repo, 'a.txt'), 'a\n');
+  git('add', 'a.txt');
+  git('commit', '-q', '-m', 'base');
+  const esta = git('rev-parse', 'HEAD').stdout.trim();
+  const lente = (base) => ({ lens: 'x', estado: 'sin-medir', count: 0, motivo: `su cazador dijo dos veces que la base ${base} no existe en el repo`, sin_base: { repo, base } });
+  const conEsta = medicionDelResultado({ confirmed: [], lentes: [lente(esta)] });
+  assert.equal(conEsta.medido, false, 'sigue sin medir: el cazador no revisó nada');
+  assert.match(conEsta.motivo, /git sí la encuentra en .*: el cazador miró en otra carpeta; relanzá el pase/);
+  const conOtra = medicionDelResultado({ confirmed: [], lentes: [lente(BASE)] });
+  assert.match(conOtra.motivo, /git tampoco la encuentra en .*: relanzá con la base de git merge-base/);
+  // sin el repo y la base, o con una base que no es un hash, el motivo queda como vino y no se corre git
+  const sinDatos = medicionDelResultado({ confirmed: [], lentes: [{ ...lente(esta), sin_base: { repo, base: '--version' } }] });
+  assert.doesNotMatch(sinDatos.motivo, /git (sí|tampoco)/);
+  // la base del pase entero: si git no la encuentra en el repo, ninguna lente cuenta, aunque todas digan que midieron
+  // (un cazador al que se le insistió puede darla por buena sin verla)
+  const medidas = { confirmed: [], lentes: [{ lens: 'x', estado: 'medida', count: 1 }], detalle: [{ lens: 'x' }] };
+  assert.equal(medicionDelResultado({ ...medidas, base_del_pase: { repo, base: esta } }).medido, true, 'con la base en el repo, cuenta');
+  const sinLaBase = medicionDelResultado({ ...medidas, base_del_pase: { repo, base: BASE } });
+  assert.equal(sinLaBase.medido, false);
+  assert.deepEqual(sinLaBase.lentes_sin_medir, ['x']);
+  assert.match(sinLaBase.motivo, /no está en .* \(lo dice git\): ninguna lente pudo comparar/);
+  // en una carpeta que no es un repo de git no se puede saber: no se juzga por eso
+  const sinGit = tmp('adv-sin-git-');
+  assert.equal(medicionDelResultado({ ...medidas, base_del_pase: { repo: sinGit, base: BASE } }).medido, true);
+  // …salvo la lente relanzada: cuenta sólo si git confirma la base (la segunda vuelta no vuelve verde una base que falta)
+  const relanzada = { confirmed: [], lentes: [{ lens: 'x', estado: 'medida', count: 1, otra_vez: true }], detalle: [{ lens: 'x' }] };
+  assert.equal(medicionDelResultado({ ...relanzada, base_del_pase: { repo, base: esta } }).medido, true, 'con git que la confirma, cuenta');
+  for (const [caso, obj] of [['carpeta sin git', { ...relanzada, base_del_pase: { repo: sinGit, base: BASE } }], ['sin la base del pase', relanzada]]) {
+    const m = medicionDelResultado(obj);
+    assert.equal(m.medido, false, caso);
+    assert.match(m.motivo, /dijo primero que la base no estaba y git no pudo confirmar/, caso);
+  }
+  // un repo relativo (el guion usa «.» sin repo) se resuelve contra el del registro
+  const relativo = medicionDelResultado({ ...medidas, base_del_pase: { repo: '.', base: BASE } }, { repo });
+  assert.equal(relativo.medido, false);
+  assert.match(relativo.motivo, /\(lo dice git\)/);
+  // GIT_DIR en el entorno no lleva la comprobación a otro repo
+  const antes = process.env.GIT_DIR;
+  process.env.GIT_DIR = path.join(sinGit, 'otro.git');
+  try {
+    assert.equal(medicionDelResultado({ ...relanzada, base_del_pase: { repo, base: esta } }).medido, true, 'con GIT_DIR ajeno');
+  } finally { if (antes === undefined) delete process.env.GIT_DIR; else process.env.GIT_DIR = antes; }
+});
+
+// 🔴 Falla con: el cazador de una sesión aislada en otra carpeta corría `git … ; echo rc=$?`, la herramienta lo
+// rechazaba sin correrlo, y el cazador devolvía base_existe = false: la lente salía «la base no existe» y el pase entero
+// se repetía buscando un commit que sí estaba (fila 137).
+test('GitRechazado_SinMedirConSuMotivo: si la sesión no deja correr git, la lente sale sin medir con ese motivo; el pedido pide comandos simples', () => {
+  const dir = tmp('adv-rechazo-');
+  const { env, prompts } = doble(dir, { hunt: { default: { findings: [], base_existe: false, git_rechazado: 'This session is isolated in the worktree /x, but this command names git in a form too complex to verify' } } });
+  const r = correrPase(dir, env);
+  assert.equal(r.status, 3, `sale 3 con un pase no medido\n${r.stderr}`);
+  assert.equal(r.result.medido, false);
+  assert.ok(r.result.lentes.every((l) => l.estado === 'sin-medir' && /git no pudo correr en esta sesión/.test(l.motivo) && /isolated in the worktree/.test(l.motivo) && !/no existe/.test(l.motivo)),
+    JSON.stringify(r.result.lentes));
+  const pedido = fs.readFileSync(path.join(prompts, `hunt-${LENTES[0].key}.txt`), 'utf8');
+  assert.match(pedido, /de a uno, en su forma simple/, 'pide git sin ; && ni tubos');
+  assert.match(pedido, /git_rechazado/, 'dice cómo informar un rechazo');
 });
 
 test('T4 8.56-VerificadorMuerto_SinVeredicto @story-8.56 @ac-3 @ac-4', () => {

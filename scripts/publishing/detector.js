@@ -675,15 +675,19 @@ function saltandoTiradas(v, texto) {
   if (!y) { y = new RegExp(v.re.source, `${v.re.flags.replace('g', '')}y`); PEGAJOSOS.set(v.re, y); }
   let p = 0;
   return () => {
-    while (p <= texto.length) {
+    while (p < texto.length) {
       y.lastIndex = p;
       const m = y.exec(texto);
       if (m) { p = m.index + Math.max(m[0].length, 1); return m; }
-      const borde = ES_PALABRA.test(texto[p - 1] || '') !== ES_PALABRA.test(texto[p] || '');
-      if (borde && p < texto.length && v.tirada.test(texto[p])) while (p < texto.length && v.tirada.test(texto[p])) p++;
+      const borde = ES_PALABRA.test(texto[p - 1] || '') !== ES_PALABRA.test(texto[p]);
+      if (borde && v.tirada.test(texto[p])) while (p < texto.length && v.tirada.test(texto[p])) p++;
       else p++;
     }
-    return null;
+    // el final del texto se prueba una vez, como en el bucle de `re.exec`: la regla todavía puede coincidir vacía ahí
+    if (p !== texto.length) return null;
+    p++;
+    y.lastIndex = texto.length;
+    return y.exec(texto);
   };
 }
 
@@ -784,5 +788,5 @@ if (require.main === module) {
 module.exports = {
   detectar, cargarConfig, globARegex, esBinario, ErrorDeConfig, PATRONES_GENERICOS,
   regexOtraCaja, regexMayusculas, regexPartes, partesDe, conSeparador,
-  reviewText,
+  reviewText, saltandoTiradas,
 };

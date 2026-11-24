@@ -413,15 +413,22 @@ function faltaDeBorrarRama(borrar, origen) {
 }
 
 /**
- * Lo mismo para un `update`, que no dice la rama de origen (az no acepta `--source-branch` ahí): con `true` el freno no
- * puede ver si borraría `dev`, así que frena. Ver la rama pidiéndosela a Azure es la historia 8.225.
+ * Lo mismo para un `update`, que no dice la rama de origen (az no acepta `--source-branch` ahí). Con la rama que dio la
+ * plataforma (`origen`, lib/pr-source-branch.js) vale la regla de crear: `true` desde una rama efímera, `false` desde una
+ * de larga vida. Sin ella, `true` no se puede juzgar (podría borrar `dev`) y frena, y `false` pasa.
  */
-function faltaDeBorrarRamaUpdate(borrar, publica) {
-  const regla = 'va `--delete-source-branch false`: el `update` no dice la rama de origen, así que `true` no lo puedo juzgar. Si no, el skill de merge, o el escape';
+function faltaDeBorrarRamaUpdate(borrar, publica, origen = null) {
+  const regla = origen
+    ? (esDeLargaVida(origen) ? `el pedido sale de \`${origen}\`, una rama de larga vida: va \`--delete-source-branch false\`` : `el pedido sale de \`${origen}\`: va \`--delete-source-branch true\` (la rama se borra al entrar)`)
+    : 'va `--delete-source-branch false`: no pude leer la rama del pedido, así que `true` no lo puedo juzgar. Si no, el skill de merge, o el escape';
   if (borrar === null) return publica ? `publica un borrador sin \`--delete-source-branch\` explícito: ${regla}` : null;
   if (!borrar.literal) return ilegible('--delete-source-branch', borrar);
-  if (esCierto(borrar.texto)) return `con \`--delete-source-branch true\`: ${regla}`;
-  if (!esFalso(borrar.texto)) return `con \`--delete-source-branch ${borrar.texto}\`: no es un valor que entienda; ${regla}`;
+  if (!esCierto(borrar.texto) && !esFalso(borrar.texto)) return `con \`--delete-source-branch ${borrar.texto}\`: no es un valor que entienda; ${regla}`;
+  const cierto = esCierto(borrar.texto);
+  if (!origen) return cierto ? `con \`--delete-source-branch true\`: ${regla}` : null;
+  const larga = esDeLargaVida(origen);
+  if (cierto && larga) return `con \`--delete-source-branch true\`: la plataforma borraría \`${origen}\` al completar, sin vuelta atrás; ${regla}`;
+  if (!cierto && !larga) return `con \`--delete-source-branch false\`: la rama queda viva después del merge; ${regla}`;
   return null;
 }
 
@@ -469,7 +476,7 @@ function fantasmas(seg) {
  * el pedido de ayuda y el código pasado a un intérprete) y la revisión nocturna de las ejecuciones, que con ella sabe
  * si un pedido armado con el escape lo necesitaba.
  */
-function faltasDe(seg) {
+function faltasDe(seg, { ramaDeOrigen = null } = {}) {
   const verbo = verboDePr(seg);
   const res = { verbo, juzgado: false, borrador: false, faltas: [] };
   if (verbo !== 'create' && verbo !== 'update') return res;
@@ -515,10 +522,10 @@ function faltasDe(seg) {
     if (!esCierto(autoComplete)) res.faltas.push('publica un borrador (`--draft false`) sin `--auto-complete true`: queda un PR normal que nadie completa');
     if (squash === null || !esFalso(squash)) res.faltas.push('publica un borrador sin `--squash false` explícito: la estrategia la decide la política de la rama');
   }
-  // El borrador se creó sin que el freno lo juzgara, y el `update` no dice la rama: publicar pide la bandera, y `true`
-  // frena siempre. Un `update` común sin la bandera no se mira: az conserva la opción que el pedido ya tenía
-  // (`update_pull_request` parte de `existing_pr.completion_options`).
-  const falta = faltaDeBorrarRamaUpdate(v.borrar, publica && esCierto(autoComplete));
+  // El borrador se creó sin que el freno lo juzgara: publicar pide la bandera, juzgada con la rama del pedido si quien
+  // llama la leyó (`ramaDeOrigen`). Un `update` común sin la bandera no se mira: az conserva la opción que el pedido ya
+  // tenía (`update_pull_request` parte de `existing_pr.completion_options`).
+  const falta = faltaDeBorrarRamaUpdate(v.borrar, publica && esCierto(autoComplete), ramaDeOrigen);
   if (falta) res.faltas.push(falta);
   return res;
 }

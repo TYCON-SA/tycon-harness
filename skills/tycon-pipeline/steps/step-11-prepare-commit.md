@@ -30,7 +30,9 @@ El comando frena en código lo siguiente (no hace falta repetir la verificación
   esa vuelta. Cualquier archivo distinto frena, también una prueba o un texto, salvo el papeleo: el que no cuenta para
   el ok de guardar, `tasks/todo.md`, y de la historia de la corrida su estado, sus tildes, su Change Log, su Dev Agent
   Record y sus «Cambios de comportamiento». Sale 2, nombra cada archivo y el `smart-reloop` de la vuelta siguiente (con `--files` del diff completo, como
-  siempre). Igual sin cambios: «lo que se guarda es lo revisado (<sellos>)». Antes comprueba que la copia de la vuelta
+  siempre). Lo sin commitear adentro de un submódulo o de un repo anidado, que el sello no ve (anota de cada uno sólo su
+  commit), también frena, con su carpeta adelante: otra vuelta no lo arregla, se commitea en su repo o se descarta. Uno
+  que no se puede mirar frena igual. Igual sin cambios: «lo que se guarda es lo revisado (<sellos>)». Antes comprueba que la copia de la vuelta
   siga siendo la de su sello. Una vuelta sin sello (de una corrida anterior) no se compara: lo dice y queda en
   `gates.log` como no medido. El ok de guardar hace la misma comparación antes de la firma.
 - **Cambios sin declarar** (`undeclared-changes`, va primero y no se abre con `DOD_BYPASS`): lo que cambió en el repo
@@ -310,7 +312,7 @@ adicional (smoke check DoD Gate 2, debugging, ajustes a la spec, integration tes
 fix-up). Si el registro ya se cerró, ese trabajo no se trackea y el dev pierde horas
 facturables.
 
-**Patrón observado (2026-05-12):** tras preparar el commit, el agente cerró el registro
+**Patrón observado (2026-05-12):** tras preparar el pull request, el agente cerró el registro
 "por prolijidad". Después el usuario pidió 27min adicionales de DoD smoke + commits +
 integration tests, todos sin tracking. Tuvo que recuperarse manualmente con un entry
 retroactivo. **No vuelva a pasar.**

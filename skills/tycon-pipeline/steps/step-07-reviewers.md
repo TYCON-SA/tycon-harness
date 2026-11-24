@@ -35,10 +35,10 @@ El script además:
   `~/.claude/.tycon-pipeline/advisor-context/<sid>-iter<N>.md`. Es el **INPUT PRIMARIO**
   de cada advisor — pasalo en el prompt en vez de hacer que cada subagente re-lea todo.
 - **`frozen`**: lo que se revisa, congelado (historia 8.161). Al lanzar la vuelta, `advisors` y `smart-reloop` sellan el
-  repo de la historia y el del código y arman una copia de sólo lectura de cada uno en la carpeta de estado del
+  repo de la historia, el del código y cada repo hermano declarado, y arman una copia de sólo lectura de cada uno en la carpeta de estado del
   pipeline: `[{ repo, tree, copy }]`. El `context_file` nombra cada copia y su sello: **los revisores leen la copia, no
   la carpeta viva**. Si no se puede sellar o copiar, la vuelta no se lanza (sale 2 con el motivo). La foto de la vuelta
-  (`snapshot-iter`) guarda ese sello, y «Preparar el commit» compara lo que se guarda contra él.
+  (`snapshot-iter`) guarda ese sello, y «Preparar el pull request» compara lo que se guarda contra él.
   Los que necesitan la story completa (`story_path_para` de la salida: el spec-first del núcleo
   y los revisores de paquetes con `needsStory`) reciben **además** `story_path`.
 - **`context_file_overrides`** (2026-07-28): mapa `{advisor: path}`. **Si un advisor figura
@@ -566,7 +566,7 @@ La decisión queda escrita en el marcador (`otraVuelta`: la vuelta, los archivos
 
 **Objetivo**: cerrar el loop posterior a «Hallazgos» — si la decisión del usuario (o el auto-flow)
 resultó en **fixes de código aplicados**, el diff que los advisors auditaron ya no es el
-diff actual. NO se avanza a «Probar en vivo» / «Preparar el commit» con auditoría vieja.
+diff actual. NO se avanza a «Probar en vivo» / «Preparar el pull request» con auditoría vieja.
 
 ### Decisión (automática, sin preguntar)
 
@@ -600,10 +600,13 @@ tope, `smart-reloop` no devuelve el set y dice qué quedó abierto:
   preguntale: una vuelta más (`smart-reloop … --extra-round --approved-by "<la persona>"`, que la persona aprueba en
   la ventana de permiso, o con `--terminal`; la cita ya no la autoriza), o eximirlo (`marker.js waive-critical`). Si
   el perfil del equipo lista la vuelta extra como trámite (`approvals.delegated_signing`), la da el arnés solo, sin
-  ventana, y el aviso del tope lo dice: no la firma una persona. Eximir el crítico sigue siendo de una persona.
+  ventana, y el aviso del tope lo dice: no la firma una persona ni hace falta el dueño; la corre la propia sesión. El
+  cierre de «Hallazgos» lo dice igual. Eximir el crítico sigue siendo de una persona.
   Sin eso, `complete-step prepare-commit` no cierra.
 - **lo demás** queda como deuda visible y el recorrido sigue sin otra vuelta: en `findings.json` con
   `"disposition": "deferred"` y `"deuda": "tope"` (`write-findings`), después `write-followups`.
+- **nada**: con `findings.json` leído y nada abierto, no frena. Sale 0, sin revisores (`"mode": "cap-nothing-open"`),
+  y dice que sigas con «Probar en vivo». Sin `findings.json`, o sin poder leerlo, no es «nada»: frena como antes.
 
 **El validador de stories en el re-loop**: `smart-reloop` lo saca
 del set cuando ya devolvió **dos veredictos limpios seguidos** después de implementar; lo dice en
@@ -679,9 +682,9 @@ hazard en varios sitios), aplicá TODOS los fixes de la clase en ESTA iteración
 fixees el primer sitio y re-loopees, porque el advisor re-descubre el próximo sitio en la iteración
 siguiente (whack-a-mole). Ver SKILL.md §D.i.2.
 
-### Relación con la pre-condición de «Preparar el commit» (regla D.i)
+### Relación con la pre-condición de «Preparar el pull request» (regla D.i)
 
 La misma lógica GOTO vive como **pre-condición de último recurso en `step-11-prepare-commit.md`**
 (`diff_at_last_step_06 != diff_now` → STOP + volver a Revisores con iteration N+1). Esta sección es la
-referencia del flujo; la pre-condición de «Preparar el commit» atrapa el caso en que esta vuelta se haya
-salteado por inferencia: sin ella, «Preparar el commit» arranca sin re-auditar los fixes hechos después de los revisores.
+referencia del flujo; la pre-condición de «Preparar el pull request» atrapa el caso en que esta vuelta se haya
+salteado por inferencia: sin ella, «Preparar el pull request» arranca sin re-auditar los fixes hechos después de los revisores.

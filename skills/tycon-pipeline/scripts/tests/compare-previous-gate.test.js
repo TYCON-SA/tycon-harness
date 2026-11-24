@@ -3,7 +3,7 @@
 // compare-previous-gate.test.js — cuándo se compara y qué pasa con la diferencia.
 //
 //   T12      los candidatos: sólo los comandos modificados que existen en main, sin las pruebas, cada uno de su repo
-//   T13-T16  el freno de «Preparar el commit»: sin humo ni exención, diferencia sin declarar, declarada, sin candidatos
+//   T13-T16  el freno de «Preparar el pull request»: sin humo ni exención, diferencia sin declarar, declarada, sin candidatos
 //   T24-T27  la exención con firma, la del frontmatter no cuenta, «no comparado» no cumple, el aviso de cada exención
 //   T28, T34 qué humo cubre qué candidato: por subcomando, por palabra completa, y por declaración con `--covers`
 //   T31      la firma en el catálogo y en la ventana; sin el perfil, la coordinadora no la firma
@@ -110,7 +110,7 @@ function historia(repo, { modificar = [], cuerpo = [], frontmatter = [] } = {}) 
   return storyPath;
 }
 
-// El laboratorio de un repo: la historia y el comando viven en el mismo repo; el marcador está en «Preparar el commit».
+// El laboratorio de un repo: la historia y el comando viven en el mismo repo; el marcador está en «Preparar el pull request».
 function laboratorio({ archivos = { 'cli.js': CLI }, cambios = { 'cli.js': enGet }, modificar = ['cli.js'], cuerpo = [], frontmatter = [], sid = 's-gate', batch = null } = {}) {
   const base = tmp('cpg-');
   const home = path.join(base, 'home');
@@ -262,6 +262,19 @@ test('T24 CompareWaiver_SinFirmaNoEscribe @story-8.167 @ac-20 — sin firma no h
   fs.mkdirSync(L2.runDir(), { recursive: true });
   fs.writeFileSync(path.join(L2.runDir(), require(CW).FILE), `${JSON.stringify({ ts: new Date().toISOString(), story: '9.9', command: 'cli.js', reason: 'x', tipo: 'manual', quien: 'el dev', via: 'compare-waiver (ventana)' })}\n`);
   assert.match(L2.cerrar().stderr, FRENO);
+});
+
+// 🔴 Falla con: la exención que el arnés firma como trámite (el perfil lista `compare-waiver` en
+//    approvals.delegated_signing) sale con la vía «firma de trámite · arnés», que la constancia no reconoce: marker.js
+//    compare-waiver gasta la firma y después dice que la constancia no vale.
+test('CompareWaiver_DeTramite_LaConstanciaVale — la exención firmada como trámite se anota y vale', () => {
+  const ow = require(path.join(RAIZ, 'scripts', 'lib', 'owner-window.js'));
+  // como la arma compare-waiver con lo que devuelve la firma de trámite (owner-window.js exigir: `automatica: true`)
+  const q = ow.quienFirmo({ via: 'delegacion', automatica: true, sesion: 's-gate' }, 'persona');
+  const linea = { ts: new Date().toISOString(), story: '9.9', command: 'cli.js', reason: 'usa la red', ...q, via: `compare-waiver (${q.via})` };
+  assert.strictEqual(require(CW).constanciaInvalida(linea), null, JSON.stringify(linea));
+  // una vía que no dice cómo se firmó sigue sin valer
+  assert.match(require(CW).constanciaInvalida({ ...linea, via: 'compare-waiver (a mano)' }), /vía/);
 });
 
 // Dos comandos de main cambiados por la rama, cada uno de una tanda: `otro.js` es de la A (ya en main, done) y `cli.js`

@@ -569,11 +569,15 @@ function listaDelPlanDelegado(stateDir, sessionId, marker) {
   if (!lanzo) return conParte('la aprobación no dice qué sesión lanzó la revisión');
   let pr;
   try { pr = require('./plan-review.js'); } catch (e) { return conParte(e.message); }
-  const r = pr.leerConstancia({ estado: stateDir, lanza: lanzo, destino: sessionId });
+  // la constancia de la aprobación: la de la sesión de ahora o, en una corrida adoptada (`adopt-session`), la de la
+  // sesión anterior, para la que se lanzó la revisión
+  const leidas = pr.sesionesDeLaCorrida(sessionId, marker).map((d) => ({ d, r: pr.leerConstancia({ estado: stateDir, lanza: lanzo, destino: d }) }));
+  const elegida = leidas.find((x) => x.r.ok && (!ap.revision.id || x.r.constancia.id === ap.revision.id)) || leidas.find((x) => x.r.ok || !x.r.ausente) || leidas[0];
+  const { d: deQuien, r } = elegida;
   if (!r.ok) return conParte(r.ausente ? 'no está la constancia de la revisión' : r.motivo);
   // un registro ilegible frena también sin parte: no se puede confirmar la revisión con que se aprobó el plan
   const sinRegistro = [];
-  if (!pr.tieneRenglon(stateDir, lanzo, sessionId, r.texto, sinRegistro)) {
+  if (!pr.tieneRenglon(stateDir, lanzo, deQuien, r.texto, sinRegistro)) {
     if (sinRegistro.length) return { problema: `no pude confirmar la revisión con que se aprobó el plan (${sinRegistro[0]})` };
     return conParte('la constancia no tiene su renglón en gates.log');
   }

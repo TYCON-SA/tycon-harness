@@ -240,6 +240,11 @@ const VOCABULARIO = Object.freeze({
     // (delegation-routing.js): pasado el plazo, el renglón vuelve al dueño. Sin valor, 10. Sólo del perfil: si la máquina
     // pudiera decirlo, el agente se estiraría el plazo.
     delegation_wait_minutes: 'entero:1-60',
+    // Quién firma el commit local de una corrida: `agent` (o sin valor), el agente commitea solo y la persona aprueba el
+    // pull request; `coordinator`, la coordinadora lo firma antes con `marker.js approve-save` (la firma `save`), y sin
+    // ese ok vigente el freno de guardar no deja commitear. Sólo del perfil: si la máquina pudiera decirlo, el agente se
+    // sacaría la firma.
+    local_commit: 'opcion:agent|coordinator',
   }),
   // Cómo se pone al día el freno de producción de cada máquina: `password` (o sin valor), con la contraseña
   // de su persona cada vez; `auto`, solo, con la versión publicada, en las máquinas que instalaron el permiso. Sólo del
@@ -270,7 +275,10 @@ const VOCABULARIO = Object.freeze({
   // normal y un click tardío no aprueba nada. No afloja nada: el permiso lo aprueba igual un click de la persona. Con el
   // orden de siempre. Sin valor, 10; el gancho tiene un plazo de 31 minutos, por eso el tope es 30.
   // `max_awaiting_review`: cuántas cosas pueden esperar la revisión de la persona (firmas, terminados sin cerrar, carpetas sin guardar, pedidos trabados) antes de que la coordinadora deje de abrir sesiones (scripts/lib/review-load.js). Con el orden de siempre. Sin valor, 8.
-  coordination: Object.freeze({ max_working: 'entero:1-20', owner_folder: 'ruta', session_names: 'nombres-de-sesion', second_heavy_min_free_pct: 'entero:1-100', max_stories_in_cycle: 'entero:1-20', permission_wait_minutes: 'entero:1-30', max_awaiting_review: 'entero:1-50' }),
+  // `light_list`: un archivo markdown con trabajo liviano para las sesiones que quedan quietas o esperan algo de afuera
+  // (la lista de la coordinadora): sus renglones abiertos se suman a la fila liviana del tablero. Con el orden de
+  // siempre. Sin valor, sólo el tablero.
+  coordination: Object.freeze({ max_working: 'entero:1-20', owner_folder: 'ruta', session_names: 'nombres-de-sesion', second_heavy_min_free_pct: 'entero:1-100', max_stories_in_cycle: 'entero:1-20', permission_wait_minutes: 'entero:1-30', max_awaiting_review: 'entero:1-50', light_list: 'ruta' }),
   // La oficina de /office. `quiet_minutes`: cuántos minutos sin novedades tiene que pasar una sesión que trabaja para que
   // la página diga «sin novedades desde las HH:MM». Sin valor, 15.
   office: Object.freeze({ quiet_minutes: 'entero:1-1440' }),
@@ -346,7 +354,7 @@ const RETIRADAS = Object.freeze({
 // perfil es versionado y se cambia con un pedido; la variable y el archivo de la máquina los puede escribir el agente que
 // implementa, y esta clave abre la puerta a eximir un crítico: si las leyera, el agente se la abriría solo. Lo que el
 // archivo de la máquina tenga escrito queda en `shadowed` con `by: 'solo-perfil'` y `explain` lo dice; `set` no la escribe.
-const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files', 'approvals.delegation_wait_minutes', 'pull_requests.team_authors']);
+const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files', 'approvals.delegation_wait_minutes', 'pull_requests.team_authors', 'approvals.local_commit']);
 // Hasta dónde puede subir cada tope del camino corto. El delegado, hasta 6: sube lo
 // mínimo, porque con riesgo normal ese carril no lleva revisores ni pase adversarial, y una historia de 6 archivos ya deja
 // de saltearse el pase. El de la firma común, hasta 12: evita el click aparte en un arreglo de 9 archivos y lo mantiene en
@@ -576,6 +584,7 @@ const VARIABLES = Object.freeze({
   'coordination.max_stories_in_cycle': ['TYCON_COORDINATION_MAX_STORIES_IN_CYCLE'],
   'coordination.permission_wait_minutes': ['TYCON_COORDINATION_PERMISSION_WAIT_MINUTES'],
   'coordination.max_awaiting_review': ['TYCON_COORDINATION_MAX_AWAITING_REVIEW'],
+  'coordination.light_list': ['TYCON_COORDINATION_LIGHT_LIST'],
 });
 
 // Los interruptores por hook que ya existían siguen valiendo POR ENCIMA de la llave de su
@@ -1510,7 +1519,7 @@ function coordinacion(config) {
     ? { value: defecto, origin: 'sin-valor' }
     : { value: v[clave], origin: o[`coordination.${clave}`] });
   return { max_working: con('max_working', 3), owner_folder: con('owner_folder', null), session_names: con('session_names', null), second_heavy_min_free_pct: con('second_heavy_min_free_pct', 50), max_stories_in_cycle: con('max_stories_in_cycle', 4), permission_wait_minutes: con('permission_wait_minutes', 10),
-    max_awaiting_review: con('max_awaiting_review', 8) };
+    max_awaiting_review: con('max_awaiting_review', 8), light_list: con('light_list', null) };
 }
 /**
  * Los topes del camino corto, según una configuración YA cargada: `{ coordinator_max_files: { value, origin }, max_files:

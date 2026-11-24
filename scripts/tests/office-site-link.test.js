@@ -350,7 +350,7 @@ function LOOSE_TOKENS() {
 }
 
 test('T1 Foto_LaMismaQueLaOficinaLocal: viaja sólo lo que lee la página; la lista y la página se cruzan', () => {
-  const { pick, FIELDS } = fields();
+  const { pick, FIELDS, LOCAL_ONLY } = fields();
   const foto = richFoto();
   const src = fs.readFileSync(PAGE, 'utf8');
   const readBy = (vars, text = src) => (k) => new RegExp(`\\b(?:${vars})\\.${k}\\b`).test(text);
@@ -389,7 +389,8 @@ test('T1 Foto_LaMismaQueLaOficinaLocal: viaja sólo lo que lee la página; la li
   for (const [name, record, listed, isRead] of sections) {
     for (const k of Object.keys(record)) {
       seen.push(k);
-      assert.strictEqual(k in listed, isRead(k), `${name}.${k}: la lista y lo que lee la página no coinciden`);
+      // lo que la página lee y es sólo de la oficina local (LOCAL_ONLY, con su motivo) no viaja
+      assert.strictEqual(k in listed, isRead(k) && !(`${name}.${k}` in LOCAL_ONLY), `${name}.${k}: la lista y lo que lee la página no coinciden`);
     }
     for (const k of Object.keys(listed)) {
       assert.ok(isRead(k), `${name}.${k} está en la lista y la página no lo lee`);
@@ -1221,8 +1222,10 @@ test('T40 Eventos_LlegaEnDosSegundos_SinProcesoNoFrena: el aviso llega; sin proc
     return { r, ms: Date.now() - t0 };
   };
   const sameAsWithProcess = ({ r }) => { assert.strictEqual(r.decision, asked.decision, JSON.stringify(r)); assert.deepStrictEqual(Object.keys(r).sort(), Object.keys(asked).sort()); };
-  const withoutProcess = ask('toolu_02');
-  sameAsWithProcess(withoutProcess);
+  // tres pedidos de cada lado y se comparan las medianas, como con el marcador: una sola muestra de cada lado da un
+  // rojo cuando la máquina está cargada justo en una de las dos
+  const windowTimes = (prefix) => [0, 1, 2].map((i) => { const x = ask(`${prefix}${i}`); sameAsWithProcess(x); return x.ms; });
+  const withoutWindow = windowTimes('toolu_02_');
   // un candado de un proceso que ya no está: el aviso se pierde en silencio
   fs.writeFileSync(lockOf(m), JSON.stringify({ pid: 999999, port: await freePort(), token: 'viejo', startedAt: '2026-06-01T12:00:00.000Z' }));
   const stale = [];
@@ -1231,9 +1234,8 @@ test('T40 Eventos_LlegaEnDosSegundos_SinProcesoNoFrena: el aviso llega; sin proc
   assert.ok(median(stale) - median(without) < 200, `sin proceso: ${without} ms, con candado viejo: ${stale} ms`);
   assert.strictEqual(lastStale.stderr, '', 'y se calla');
   assert.strictEqual(lastStale.stdout, lastWithout.stdout, 'el comando dice lo mismo');
-  const staleWindow = ask('toolu_03');
-  sameAsWithProcess(staleWindow);
-  assert.ok(staleWindow.ms - withoutProcess.ms < 200, `ventana sin proceso: ${withoutProcess.ms} ms, con candado viejo: ${staleWindow.ms} ms`);
+  const staleWindow = windowTimes('toolu_03_');
+  assert.ok(median(staleWindow) - median(withoutWindow) < 200, `ventana sin proceso: ${withoutWindow} ms, con candado viejo: ${staleWindow} ms`);
   const q2 = Date.now();
   assert.doesNotThrow(() => event.notify('s1', { home: m.home }));
   assert.ok(Date.now() - q2 < 200, 'con candado viejo, tampoco espera');
@@ -2488,6 +2490,30 @@ test('Candado_RespuestaCortada_NoQuedaColgada — el puerto del candado manda la
     assert.strictEqual(await conPlazo(lockOwner(lock, 1000)), 'foreign');
     assert.strictEqual(await conPlazo(answers(lock)), false);
   } finally { cortador.close(); }
+});
+
+test('T352 SiteLink_LoQueTeNecesita_NoViajaAlSitio @story-8.234 @ac-40: lo que te necesita no viaja al sitio, y en el sitio la página no tiene la sección', () => {
+  const { pick } = fields();
+  const foto = { agents: [], items: [], kanban: { columnas: [] }, rows: [], free: [], unreadable: [], meta: { actualizado: '10:00', teToca: [], teNecesita: [{ clase: 'espera', que: 'la decisión del dueño', quien: 'Enzo', donde: 'acá' }] } };
+  const sale = pick(foto, '/home/prueba');
+  assert.ok(!('teNecesita' in (sale.meta || {})), JSON.stringify(sale.meta));
+  assert.ok(!JSON.stringify(sale).includes('la decisión del dueño'));
+  // la página la saca en el sitio (y en la demostración): ni la sección ni su título
+  const code = fs.readFileSync(path.join(ROOT, 'scripts', 'tools', 'office', 'page.js'), 'utf8');
+  assert.match(code, /function pintarNecesita\(\)\{[^\n]*\n\s*if\(CON_OFICINAS\)\{sec\.remove\(\);return\}/);
+});
+
+// SiteLink_LoQueTeNecesita_ElSitioNoLaTrae: el sitio arma su página con siteParts y no corre la parte de arriba de la página
+// local, así que la sección tiene que salir de lo que sirve: ni la sección, ni su título, ni su lista
+test('T357 SiteLink_LoQueTeNecesita_ElSitioNoLaTrae @story-8.234 @ac-40: el HTML de la pestaña «Oficinas» no trae la sección', () => {
+  const PARTS = require(path.join(ROOT, 'scripts', 'tools', 'office', 'page-parts.js'));
+  for (const source of ['site', 'demo']) {
+    const { body } = PARTS.siteParts({ source, urlOf: (m) => `/offices/${m}`, script: '/offices/page.js' });
+    assert.ok(!/id="necesita"|necesitaLista|Lo que te necesita/.test(body), `${source}: la sección sigue en lo que sirve el sitio`);
+    assert.match(body, /id="office"/, `${source}: lo demás de la página sigue`);
+  }
+  // la página local la sigue trayendo
+  assert.match(PARTS.renderPage({ data: {} }), /id="necesita"/);
 });
 
 test('T342 Foto_TurnoPesadoViajaAlSitio_Filtrado @story-8.234 @ac-19 — el turno de tarea pesada viaja con el nombre y las suites enteras, y el sitio lo vuelve a filtrar', () => {

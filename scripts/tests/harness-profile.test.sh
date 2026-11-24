@@ -458,12 +458,15 @@ PY
     #   scripts/hooks/office-link-start.js — el proceso que le manda la oficina de la máquina al sitio de la organización
     #     (al arrancar la sesión y al escribir un pedido: dos veces)
     #   scripts/hooks/cover-secrets.js — tapa los secretos de la máquina en lo que devuelven los comandos y las lecturas
-    #   scripts/hooks/background-question-guard.js — la pregunta de una sesión que abrió la coordinadora va a la coordinadora
+    #   scripts/hooks/background-question-guard.js — la pregunta de una sesión que abrió la coordinadora va a la coordinadora;
+    #     de fondo, niega el borrado y la edición que pedirían permiso
     #   scripts/hooks/finished-open-notice.js — lo terminado sin cerrar de la máquina, dicho al arrancar
     #   scripts/hooks/hook-failures-notice.js — las fallas de los controles de las últimas 24 horas, dichas al arrancar
     #   scripts/hooks/guard-auto-update.js — la actualización del freno de producción sin contraseña, al arrancar
     #   tycon-pipeline/scripts/on-advisor-done.js — anota los críticos de un revisor apenas termina
     #   scripts/hooks/session-collision-guard.js — el aviso de llegada de otra sesión viva, que ahora va siempre
+    #   scripts/hooks/agile-pass-turn.js — un pase lanzado sin el pipeline avisa si no tiene el turno de tarea pesada
+    #   scripts/hooks/provider-retry.js — la sesión se reanuda sola cuando el proveedor corta el turno
     # «ruta=N»: registrado N veces (un hook en varios eventos); sin «=N», una.
     T40_ADDED=(scripts/hooks/public-push-guard.js scripts/hooks/owner-email-notice.js scripts/hooks/wait-notice.js=6
       scripts/hooks/session-collision-guard.js
@@ -474,9 +477,9 @@ PY
       scripts/hooks/context-size-notice.js=2 scripts/hooks/session-cap-guard.js scripts/hooks/coordination-fill-gate.js scripts/hooks/permission-relay.js scripts/hooks/office-link-start.js=2
       scripts/hooks/cover-secrets.js
       scripts/hooks/office-message-rule.js scripts/hooks/office-inbox-watch.js=2
-      scripts/hooks/background-question-guard.js=2 scripts/hooks/finished-open-notice.js scripts/hooks/guard-auto-update.js
+      scripts/hooks/background-question-guard.js=3 scripts/hooks/finished-open-notice.js scripts/hooks/guard-auto-update.js
       scripts/hooks/hook-failures-notice.js tycon-pipeline/scripts/on-advisor-done.js
-      scripts/hooks/temp-sweep.js)
+      scripts/hooks/temp-sweep.js scripts/hooks/agile-pass-turn.js scripts/hooks/provider-retry.js)
     t40_apart() { # t40_apart <settings> <salida> → aparta los declarados del settings (lo reescribe); en <salida>, los que no están UNA vez
       rm -f "$2"
       python3 - "$1" "$2" "${T40_ADDED[@]}" <<'PY'
@@ -503,7 +506,9 @@ PY
     }
     # El piso en cada hook `.js` del arnés, y `--gate` exactamente en los frenos: `PreToolUse` con `effect: blocks` en
     # la lista de hooks del árbol (la regla de apply-hooks.js `isGate`). Sale 0 si está bien, 1 con lo que falla, y 3
-    # si ningún hook lleva el piso (una máquina con el Node propio del arnés: el aplicador no lo usa).
+    # si ningún hook lleva el piso (una máquina con el Node propio del arnés: el aplicador no lo usa). Un freno con
+    # `launcher` en la lista (el de publicación) va con el lanzador delante, `bash "<…>/node-missing-launcher.sh" `, y
+    # el piso después.
     t40_floor_check() { # t40_floor_check <settings>
       python3 - "$1" "$TREE/scripts/setup/hooks-list.json" <<'PY'
 import json, re, sys
@@ -513,7 +518,7 @@ specs = specs.get("hooks", specs) if isinstance(specs, dict) else specs
 gates = [s["spec"] for s in specs if s.get("event") == "PreToolUse" and s.get("effect") == "blocks"]
 def suffix(spec):
     return "/scripts/hooks/" + spec[len("@tcg:"):] if spec.startswith("@tcg:") else "/skills/" + spec
-floor = re.compile(r'^node "[^"]*/scripts/lib/node-floor\.js"( --gate)? "([^"]+\.js)"')
+floor = re.compile(r'^(?:bash "[^"]*/scripts/hooks/node-missing-launcher\.sh" )?node "[^"]*/scripts/lib/node-floor\.js"( --gate)? "([^"]+\.js)"')
 bad, floored = [], 0
 for event, groups in (data.get("hooks") or {}).items():
     for group in groups:

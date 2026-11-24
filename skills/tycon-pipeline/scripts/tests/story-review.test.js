@@ -253,8 +253,8 @@ test('StoryReviewRecord_AgenteNoLaEscribeAMano @story-8.84 @ac-11 — la constan
   const v = computeStoryGate({ filePath: f, stateDir: sd, homeDir: l.home, repoRoot: null, repoHasTycon: false, repoHasStories: false, marker: null, adhoc: null });
   assert.equal(v.action, 'block');
   assert.equal(v.kind, 'state-dir');
-  // y el único que la escribe es el comando: el texto del guion la nombra sólo por writeRecord
-  const src = fs.readFileSync(PIPELINE, 'utf8');
+  // y el único que la escribe es el comando: el texto del guion (con sus partes de lib/) la nombra sólo por writeRecord
+  const src = require('./lib/pipeline-source.js')(SCRIPTS);
   assert.match(src, /story-review-record/);
   assert.ok((src.match(/writeRecord\(/g) || []).length >= 1);
 });

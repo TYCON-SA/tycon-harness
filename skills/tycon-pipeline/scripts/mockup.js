@@ -40,6 +40,8 @@ const TONES = ['info', 'ok', 'warn', 'error'];
 const CHAT_FROM = ['us', 'them'];
 const CHAT_NOTE = 'Mensajes de ejemplo, para ilustrar: no son los de la pantalla real';
 const TEXT_KINDS = ['heading', 'text', 'button', 'link', 'message', 'box'];
+// los que pueden ser un dato de ejemplo entero (`example: true`): su único texto comparado es el dato
+const EXAMPLE_KINDS = ['text', 'message'];
 // cómo se presenta una pantalla: en la página, o como una capa encima de otra (una ventana, un diálogo, un panel)
 const PRESENTATIONS = ['page', 'layer'];
 // dónde va un elemento, a grandes rasgos: la maqueta lo dibuja en una grilla aproximada (sin zona, va al centro)
@@ -77,8 +79,10 @@ const isChecked = (c) => (typeof c.checked === 'boolean' ? c.checked : c.value =
 
 // Los textos que se comparan con la pantalla, de un elemento del modelo. El rótulo de un `box` describe una imagen o un
 // gráfico para quien aprueba y no está en la pantalla: se compara sólo con `compare: true`. `value`, `rows`, `notes`,
-// `checked` y `disabled` son datos de ejemplo y no se comparan.
+// `checked` y `disabled` son datos de ejemplo y no se comparan. Un elemento marcado `example: true` es todo dato de ejemplo
+// (una versión, una fecha, un usuario de prueba): la pantalla dice lo mismo con datos de verdad, y no se compara.
 function comparedOf(el) {
+  if (el.example === true) return [];
   if (['heading', 'text', 'button', 'link', 'message'].includes(el.kind)) return [el.text];
   if (el.kind === 'box') return el.compare === true ? [el.text] : [];
   if (el.kind === 'checkbox') return [el.label, ...(isStr(el.title) ? [el.title] : [])];
@@ -137,6 +141,9 @@ function elementProblems(el, e) {
   if (el.kind === 'message' && el.tone !== undefined && !TONES.includes(el.tone)) out.push(`${k}: \`tone\` «${el.tone}» no está en la lista (${TONES.join(' | ')})`);
   if (el.zone !== undefined && !ZONES.includes(el.zone)) out.push(`${k}: \`zone\` «${el.zone}» no está en la lista (${ZONES.join(' | ')})`);
   if (el.existing !== undefined && typeof el.existing !== 'boolean') out.push(`${k}: \`existing\` tiene que ser true o false`);
+  if (el.example !== undefined && typeof el.example !== 'boolean') out.push(`${k}: \`example\` tiene que ser true o false`);
+  // en los otros tipos el dato de ejemplo (filas, valor, marca) ya no se compara: la marca sacaría rótulos y columnas reales
+  else if (el.example === true && !EXAMPLE_KINDS.includes(el.kind)) out.push(`${k}: \`example\` va sólo en un text o un message: en un ${el.kind} sacaría de la comparación textos reales de la pantalla`);
   if (el.kind === 'checkbox') out.push(...checkboxProblems(el, k));
   if (el.kind === 'chat') {
     if (!Array.isArray(el.messages) || !el.messages.length) out.push(`${k}: falta \`messages\` (una lista de mensajes de ejemplo, no vacía)`);
@@ -211,6 +218,7 @@ function validateModel(model) {
     }
     if (!Array.isArray(sc.elements) || !sc.elements.length) { out.push(`${p}: falta \`elements\` (lo que muestra la pantalla)`); return; }
     sc.elements.forEach((el, j) => out.push(...elementProblems(el, `${p}, elemento ${j + 1}`)));
+    if (sc.elements.every((el) => el && el.example === true)) out.push(`${p}: todos sus elementos son datos de ejemplo y la pantalla no se compararía con nada: dejá sin \`example\` los textos reales`);
   });
   if (out.length) return out;
   model.screens.forEach((sc, i) => allElements(sc).forEach((el, j) => {
@@ -321,6 +329,11 @@ const STYLE = `
   .dev-notes ul { margin: 4px 0 0; padding-left: 20px; }
   @media (max-width: 600px) { body { padding: 20px 12px 32px; } .zone-middle { flex-direction: column; } .zone-left { flex: none; border-right: 0; border-bottom: 1px solid #e3e6eb; } .zone-center, .zone-right { flex: none; } .zone-middle .zone, .zone-row { padding-left: 12px; padding-right: 12px; } .new { padding: 4px 6px; } table.table th, table.table td { padding: 6px 4px; font-size: 12px; } .bubble { max-width: 88%; } }
 `;
+// Sólo va cuando la maqueta tiene un dato de ejemplo: sin ninguno sale igual que siempre, y su huella no cambia.
+const EXAMPLE_STYLE = `
+  .example { outline: 1px dashed #b08a2e; outline-offset: 3px; border-radius: 4px; }
+  .example-note { display: inline-block; margin-left: 6px; font-size: 11px; color: #8a6d1f; }
+`;
 // Sólo va cuando la maqueta tiene una capa: una maqueta sin capas sale sin esa parte.
 const LAYER_STYLE = `
   .layer-how { margin: 0 0 10px; font-size: 14px; color: #3b4456; }
@@ -388,10 +401,12 @@ function renderMockup(model) {
   // lo de hoy atenuado; lo nuevo en violeta, sólo cuando la pantalla mezcla las dos cosas (si es toda nueva, la marca va
   // una vez, en su cabecera)
   const el = (x, i, ctx) => {
-    if (ctx.marcas && x.existing === true) return `<div class="existing">${dibujo(x, i, ctx)}</div>`;
+    // un dato de ejemplo va marcado y sin la marca que lo compara con la pantalla; adentro de la marca de lo de hoy o de lo nuevo
+    const cuerpo = x.example === true ? `<div class="example">${dibujo(x, i, { ...ctx, T: plano })}<span class="example-note">dato de ejemplo</span></div>` : dibujo(x, i, ctx);
+    if (ctx.marcas && x.existing === true) return `<div class="existing">${cuerpo}</div>`;
     // lo nuevo va con fondo y borde de zona, explicado en la leyenda: una etiqueta encima tapaba el contenido
-    if (ctx.marcas && ctx.mezcla) return `<div class="new">${dibujo(x, i, ctx)}</div>`;
-    return dibujo(x, i, ctx);
+    if (ctx.marcas && ctx.mezcla) return `<div class="new">${cuerpo}</div>`;
+    return cuerpo;
   };
   // sin zonas, la columna de siempre; con zonas, una grilla aproximada: arriba, al medio (izquierda, centro,
   // derecha) y abajo
@@ -415,7 +430,7 @@ function renderMockup(model) {
     const cards = sc.variants.map((v) => {
       const zona = ZONES.includes(v.zone) ? v.zone : '';
       const donde = zona ? ` <span class="variant-zone">· cambia sólo la parte ${ZONE_NAMES[zona]}</span>` : '';
-      let els = Array.isArray(v.elements) ? v.elements.map((x) => dibujo(x, i, { T: marcado })).join('') : '';
+      let els = Array.isArray(v.elements) ? v.elements.map((x) => el(x, i, { T: marcado })).join('') : '';
       if (zona && els) {
         const conChat = sc.elements.some((x) => (x.zone || 'center') === zona && x.kind === 'chat');
         els = `<div class="variant-zone-preview preview-${zona}${conChat ? ' preview-chat' : ''}">${els}</div>`;
@@ -464,6 +479,7 @@ function renderMockup(model) {
     return [`<section class="screen" ${attrs}>`, caption, marco(cuerpo(sc.elements, i, ctx)), variantes(sc, i), '</section>'].filter(Boolean).join('\n');
   }).join('\n');
   const conCapas = model.screens.some((sc) => sc.presentation === 'layer');
+  const conEjemplos = model.screens.some((sc) => allElements(sc).some((x) => x && x.example === true));
   const leyenda = conExistentes || conCapas ? `<div class="legend">${conExistentes ? '<span><i class="sw sw-new"></i>Lo nuevo, que agrega la story</span><span><i class="sw sw-old"></i>Lo que la pantalla ya tiene (sin marca, apenas atenuado)</span>' : ''}${conCapas ? '<span><i class="sw sw-open"></i>Lo que abre una ventana</span>' : ''}</div>` : '';
   const archivos = model.screens.map((sc, i) => (isStr(sc.file) ? `<li>${E(nombreDe(sc, i))}: ${E(sc.file)}</li>` : '')).filter(Boolean);
   const sub = `Maqueta de la pantalla${isStr(model.storyId) ? ` — story ${E(model.storyId)}` : ''}. Se aprueba junto con el plan, y la pantalla construida tiene que decir estos mismos textos.`;
@@ -475,7 +491,7 @@ function renderMockup(model) {
     `<meta name="generator" content="${GENERATOR}">`,
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<title>Maqueta — ${E(model.title)}</title>`,
-    `<style>${STYLE}${conCapas ? LAYER_STYLE : ''}</style>`,
+    `<style>${STYLE}${conCapas ? LAYER_STYLE : ''}${conEjemplos ? EXAMPLE_STYLE : ''}</style>`,
     '</head><body>',
     `<header><h1>${E(model.title)}</h1>${isStr(model.summary) ? `<p class="summary">${E(model.summary)}</p>` : ''}<p class="schema-note">${SCHEMA_NOTE}</p>${leyenda}</header>`,
     screens,
@@ -689,14 +705,14 @@ function compareWithScreens({ texts, screens, md }) {
   return { missing, extras, declared, unreadable, warnings };
 }
 
-/** Los argumentos de `qa-guide.js --check` en «Preparar el commit»: con la maqueta aprobada en el marcador, su huella. */
+/** Los argumentos de `qa-guide.js --check` en «Preparar el pull request»: con la maqueta aprobada en el marcador, su huella. */
 function qaGuideCheckArgs(storyPath, marker) {
   const sha = marker && marker.mockupApproval && marker.mockupApproval.sha256;
   return [path.join(__dirname, 'qa-guide.js'), '--check', '--story', storyPath, ...(sha ? ['--mockup-sha', sha] : [])];
 }
 
 /**
- * Qué hace «Preparar el commit» con la maqueta. `{ block, skip, compare, screenNow }`:
+ * Qué hace «Preparar el pull request» con la maqueta. `{ block, skip, compare, screenNow }`:
  *   block   — la story ganó una pantalla después de aprobar el plan sin maqueta (el paso «Aprobar el plan» anotó `screen: false`).
  *   skip    — tenía maqueta aprobada y no se detecta pantalla: no se compara, se dice y se anota.
  *   compare — hay maqueta aprobada y la story sigue con pantalla (o no se pudo leer: «no pude mirar» no saltea).
@@ -782,6 +798,9 @@ ${JSON.stringify(DEMO, null, 2)}
   comparando. Con algún "existing" en la maqueta, lo demás sale con fondo violeta claro y borde, explicado en la
   leyenda de arriba; nada se dibuja encima del contenido (una pantalla toda nueva lleva la marca "Todo nuevo" una sola
   vez, en su título). Sin ninguno no se marca nada: marcá lo que ya existe.
+- "example": true, en un text o un message, lo marca como dato de ejemplo (una versión, una fecha, un usuario de
+  prueba) y no lo compara: la pantalla dice lo mismo con datos de verdad. En los otros tipos el dato de ejemplo (las
+  filas, el valor, la marca) ya no se compara. Una pantalla no puede ser toda de ejemplo.
 - "zone" (opcional), en cualquier elemento: dónde va, a grandes rasgos: ${ZONES.join(' | ')}. Se dibuja en una grilla
   aproximada (arriba, al medio izquierda-centro-derecha, abajo); sin zona va al centro.
 - "variants" (opcional), en una pantalla: los otros casos (cargando, vacío, error, sin permiso). Cada una lleva "when"

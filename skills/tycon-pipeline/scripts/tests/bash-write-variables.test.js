@@ -461,6 +461,81 @@ test('T34 GuionPorEntradaQueEscribeSusArgumentos_Frena', () => {
   });
 });
 
+// T34b OpenSinModoDeEscritura_NoEsEscritura
+// Un `python3 -c` que sólo lee con `open(<variable>)` —el nombre sale de un `for` del shell o de un `glob`— no escribe:
+// el `for` y el comodín no lo vuelven una escritura. El modo lo dice el segundo argumento o `mode=`, en cualquier lugar.
+// 🔴 Falla con: contar cualquier `open(` como escritura (frena la lectura), o mirar sólo el segundo argumento literal (deja
+//    pasar `open(p, encoding='utf-8', mode='w')` y `open(p, m)` con el modo en una variable).
+test('T34b OpenSinModoDeEscritura_NoEsEscritura', () => {
+  const { estado, repo } = corralConHistorias();
+  conEnv(ENV, () => {
+    const freno = (c) => tituloDe(bash.handle(ev(c, repo), { stateDir: estado, installedRoots: [] }));
+    const porArchivo = (py) => `for f in specs/*.md; do python3 -c "import sys; ${py}" "$f"; done`;
+    for (const c of [
+      porArchivo("print(open(sys.argv[1]).read()[:80])"),
+      porArchivo("print(open(sys.argv[1], 'rb').read()[:80])"),
+      porArchivo("print(open(sys.argv[1], encoding='ascii').read())"),
+      porArchivo("print(open(sys.argv[1], mode='r', encoding='utf-8').read())"),
+      `python3 -c "import glob; [print(open(p).read()[:50]) for p in glob.glob('specs/*.md')]"`,
+      `python3 -c "import glob; [print(open(p, encoding='latin-1').read()[:50]) for p in glob.glob('specs/*.md')]"`,
+    ]) assert.equal(freno(c), '', c);
+    for (const c of [
+      porArchivo("open(sys.argv[1], 'w').write('x')"),
+      porArchivo("open(sys.argv[1], 'r+').write('x')"),
+      porArchivo("open(sys.argv[1], encoding='utf-8', mode='w').write('x')"),
+      porArchivo("m='a'; open(sys.argv[1], m).write('x')"),
+      porArchivo("open(sys.argv[1], **{'mode': 'w'}).write('x')"),
+      porArchivo("import io; io.open(sys.argv[1], 'w').write('x')"),
+      porArchivo("import os; os.close(os.open(sys.argv[1], os.O_WRONLY))"),
+      porArchivo("from pathlib import Path; Path(sys.argv[1]).open('w').write('x')"),
+      `F=specs/story-x.md; python3 -c "open('$F', encoding='utf-8', mode='w').write('x')"`,
+      `F=specs/story-x.md; python3 -c "m='w'; open('$F', m).write('x')"`,
+      // el método con un blanco antes de `open`, los modos por palabra clave de os.open y el `::Open(` de .NET
+      porArchivo("from pathlib import Path; Path(sys.argv[1]). open('w').write('x')"),
+      porArchivo("import os; os.open(path=sys.argv[1], flags=os.O_WRONLY)"),
+      `for f in specs/*.md; do python3 -c "import os; os.open('specs/story-x.md', flags=os.O_WRONLY)" "$f"; done`,
+      `for f in specs/*.md; do pwsh -c "[IO.File]::Open(\\"$f\\", [IO.FileMode]::Create)"; done`,
+      // las comillas escapadas del shell, sobre una historia y sobre una constancia; los modos que no son `w` ni `a`
+      `python3 -c "open(\\"specs/story-x.md\\", \\"w\\").write('x')"`,
+      `python3 -c "open(\\".github/control-changes/n.md\\", \\"w\\").write('x')"`,
+      `python3 -c "open('.github/control-changes/n.md', 'r+').write('x')"`,
+      `python3 -c "open('.github/control-changes/n.md', encoding='utf-8', mode='x').write('x')"`,
+      // la ruta de una constancia con nombre, con prefijo de texto o en Path(…).open(modo)
+      `python3 -c "open(mode='w', file='.github/control-changes/n.md')"`,
+      `python3 -c "open(r'.github/control-changes/n.md', 'w')"`,
+      `python3 -c "from pathlib import Path; Path('.github/control-changes/n.md').open('a').write('x')"`,
+      `python3 -c "import io; io.open(file='.github/control-changes/n.md', mode='w')"`,
+      // perl con el manejador primero, en sus dos formas; ruby con codificación y os.open que no sólo lee
+      `perl -e 'open(FH, ">specs/story-x.md")'`,
+      `perl -e 'open(my $fh, ">", ".github/control-changes/n.md")'`,
+      `ruby -e "File.open('specs/story-x.md', 'r+:utf-8').write('x')"`,
+      `python3 -c "import os; os.open('specs/story-x.md', os.O_RDONLY|os.O_TRUNC)"`,
+    ]) assert.notEqual(freno(c), '', c);
+    // leer una constancia, o un archivo con su modo de lectura entre comillas escapadas, no es escribirlo
+    for (const c of [
+      `python3 -c "print(open('.github/control-changes/n.md').read())"`,
+      `python3 -c "print(open('.github/control-changes/n.md', mode=\\"r\\").read())"`,
+      `python3 -c "from pathlib import Path; print(Path('.github/control-changes/n.md').open().read())"`,
+      `ruby -e "File.open('specs/story-x.md', 'r:utf-8').read"`,
+      `python3 -c "import os; os.open('specs/story-x.md', os.O_RDONLY)"`,
+      `python3 -c "import sys; print(open(sys.argv[1], \\"r\\").read())" specs/story-x.md`,
+      porArchivo("print(open(file=sys.argv[1], errors='replace').read())"),
+      `F=specs/story-x.md; python3 -c "print(open(\\"$F\\").read())"`,
+    ]) assert.equal(freno(c), '', c);
+    // la ruta como argumento con nombre (`file=`, `path=`, en cualquier lugar) y una variable entre comillas escapadas del
+    // shell: los frena el freno de historias, no otro que justo aplica. Sin la corrida abierta, que con un destino que no
+    // resuelve frena antes como edición invisible
+    fs.rmSync(path.join(estado, 'active', `${SID}.json`));
+    for (const c of [
+      `python3 -c "import sys; open(file=sys.argv[1], mode='w')" specs/story-x.md`,
+      `python3 -c "import sys; open(mode='w', file=sys.argv[1])" specs/story-x.md`,
+      `python3 -c "import sys; open(path=sys.argv[1], mode='a')" specs/story-x.md`,
+      `F=specs/story-x.md; python3 -c "open(\\"$F\\", \\"w\\")"`,
+      `F=specs/story-x.md; python3 -c "open(\\"$F\\", 'w').write('x')"`,
+    ]) assert.equal(freno(c), HISTORIA, c);
+  });
+});
+
 // T35 GuionEnArchivoQueEscribeUnaHistoriaOUnaConstancia_Frena
 // `python3 p.py`, `node p.js <historia>`: el programa no está en el comando, está en un archivo. El freno lo lee y mira
 // lo que escribe, como si llegara por la entrada. `ruby -e` es un guion en línea más.
@@ -825,4 +900,35 @@ test('el mensaje del freno dice de quién es el escape y nombra la receta', () =
   const m = lv.mensaje(['/repo/src/Foo.cs'], '9.9');
   assert.match(m, /replace-section\.js/, 'la receta para un reemplazo grande');
   assert.match(m, /ambiente de la sesión/, 'el escape no se pone desde el comando');
+});
+
+// 🔴 Falla con: no contar como escritura el `--output` de git. `git log --output=specs/h.md` (también `diff` y `show`,
+// con la ruta aparte, abreviada como `--out=` o entre comillas) escribe el archivo que nombra, y el freno no lo veía, ni
+// para una historia ni para una constancia.
+test('GitConOutput_EscribeLoQueNombra: git log, diff o show con --output frenan como una escritura', () => {
+  const { estado, repo } = corralConHistorias();
+  conEnv(ENV, () => {
+    const freno = (c) => tituloDe(bash.handle(ev(c, repo), { stateDir: estado, installedRoots: [] }));
+    for (const c of [
+      'git log --output=specs/story-x.md',
+      'git diff --output specs/story-x.md',
+      'git show --out=specs/story-x.md HEAD',
+      'git log --ou=specs/story-x.md',
+      "git log --output='specs/story-x.md'",
+      'git -C specs log --output=story-x.md',
+      'env GIT_PAGER=cat git log --output=specs/story-x.md',
+      // detrás de otro comando que lo lanza, y en un alias de `-c`
+      'echo HEAD | xargs git diff --output=specs/story-x.md',
+      'find . -name x -exec git log --output=specs/story-x.md \\;',
+      "git -c 'alias.d=diff --output=specs/story-x.md' d",
+    ]) assert.equal(freno(c), HISTORIA, c);
+    assert.match(freno('git log --output=.github/control-changes/abc.json'), /constancia de cambio de control/);
+    for (const c of [
+      'git log --oneline -3 specs/story-x.md',
+      'git log --output-indicator-new=x specs/story-x.md',
+      'git diff --output=/tmp/x.diff',
+      "git -c 'alias.l=log --oneline' l",
+      'echo HEAD | xargs git log --oneline',
+    ]) assert.equal(freno(c), '', c);
+  });
 });

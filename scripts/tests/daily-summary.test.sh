@@ -1575,6 +1575,16 @@ aprendizajes "$D/inf.json" '{"nuevas":0,'"$SIN_NADA"',"en_espera_por":{"tope":40
 reset_srv ok:1; entregar "$D" dependencias "$HOY" --instincts "$D/inf.json" >/dev/null
 [ "$(linea_apr)" = "aprendizajes: sin propuestas nuevas, 9 esperando decisión · en la pestaña Aprendizajes del sitio" ] \
   && ok "4.14-T10 lo que espera por el tope no se avisa" || no "4.14-T10 tope: «$(linea_apr)»"
+# Fila 155: las que nacen descartadas no son propuestas para decidir
+# 🔴 Falla con: «20 propuestas nuevas» cuando las 20 nacieron descartadas, y quien lo lee cree que tiene 20 para decidir.
+aprendizajes "$D/inf.json" '{"nuevas":20,"descartadas":20,'"$SIN_NADA"'}'
+reset_srv ok:1; entregar "$D" dependencias "$HOY" --instincts "$D/inf.json" >/dev/null
+[ "$(linea_apr)" = "aprendizajes: sin propuestas nuevas (20 descartadas por la noche), 9 esperando decisión · en la pestaña Aprendizajes del sitio" ] \
+  && ok "Fila155 las que nacen descartadas no cuentan como nuevas" || no "Fila155 todas descartadas: «$(linea_apr)»"
+aprendizajes "$D/inf.json" '{"nuevas":5,"descartadas":1}'
+reset_srv ok:1; entregar "$D" dependencias "$HOY" --instincts "$D/inf.json" >/dev/null
+[ "$(linea_apr)" = "aprendizajes: 4 propuestas nuevas (1 descartada por la noche; 2 sin redactar: por el tope), 9 esperando decisión · en la pestaña Aprendizajes del sitio" ] \
+  && ok "Fila155 nuevas para decidir, descartadas y sin redactar juntas" || no "Fila155 mezcla: «$(linea_apr)»"
 aprendizajes "$D/inf.json" '{"estado":"no_medido","motivo":"sin_az","nuevas":null,"pendientes_total":null}'
 reset_srv ok:1; entregar "$D" dependencias "$HOY" --instincts "$D/inf.json" >/dev/null
 [ "$(linea_apr)" = "aprendizajes: ? (la noche no pudo leer el buzón)" ] && ok "4.7-T30 no_medido es «?», nunca 0" || no "4.7-T30 no_medido: «$(linea_apr)»"

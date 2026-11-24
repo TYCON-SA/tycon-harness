@@ -169,7 +169,7 @@ test('NarratedStep_WithoutRecord_IsNotDone @story-8.97 @ac-7', () => {
   }
   assert.ok(!r2.out || !/Preparar el pull request/.test(r2.out.systemMessage || ''), 'la línea salió en una pausa sin afirmación de cierre');
 
-  // el freno real: «Preparar el commit» se niega con un paso anterior abierto
+  // el freno real: «Preparar el pull request» se niega con un paso anterior abierto
   const e3 = mkEnv();
   const env = { ...e3.env, CLAUDE_CODE_SESSION_ID: SID };
   const pc = spawnSync(process.execPath, [MARKER, 'complete-step', 'prepare-commit'], { cwd: e3.repo, env, encoding: 'utf8', timeout: 30000 });

@@ -9,6 +9,7 @@
  *   T19 con el plan aprobado por una persona, no frena
  *   T31 la lista que vale es la congelada al aprobar: sumar el archivo a `files:` en la historia, o una lista escrita en
  *       el marcador, no lo deja pasar
+ *   Adopcion1 en una corrida adoptada, la lista sale de la constancia de la revisión hecha para la sesión anterior
  *
  * stable-data: arma la corrida, la revisión del plan y su constancia en carpetas temporales; nunca toca el repo real.
  * Correr: node --test skills/tycon-pipeline/scripts/tests/batch-plan-gate.test.js
@@ -119,6 +120,25 @@ test('T32 ParteQueDejaDeValer_NoAmplia — @story-8.168 @ac-11', () => {
   // y el portón sigue con la lista congelada al aprobar
   assert.strictEqual(tipo(C.ev('src/grilla.js')), 'batch-out-of-list');
   assert.notStrictEqual(tipo(C.ev('src/combo.js')), 'batch-out-of-list');
+});
+
+// 🔴 Falla con: en una corrida adoptada (`adopt-session`) con el plan aprobado por la revisión de la sesión anterior, el
+//    portón busca la constancia con la sesión nueva, no la encuentra y frena todo el código de la parte.
+test('Adopcion1 Edit_CorridaAdoptada_LaListaSaleDeLaConstanciaDeLaAnterior', () => {
+  const C = corrida();
+  const nueva = 'nueva';
+  // lo que deja adopt-session: el mismo marcador con la sesión nueva y de cuál viene; el de la anterior se borra
+  fs.writeFileSync(path.join(C.estado, 'active', `${nueva}.json`), JSON.stringify({ ...C.marker, sessionId: nueva, adoptedFrom: C.sid }));
+  fs.unlinkSync(path.join(C.estado, 'active', `${C.sid}.json`));
+  const ev = (rel) => io.evaluate({ filePath: path.join(C.repo, rel), sessionId: nueva, cwd: C.repo, via: 'Edit', stateDir: C.estado, installedRoots: [] });
+  const dentro = ev('src/combo.js');
+  assert.notStrictEqual(tipo(dentro), 'batch-out-of-list', JSON.stringify(dentro && dentro.verdict));
+  const fuera = ev('src/grilla.js');
+  assert.strictEqual(tipo(fuera), 'batch-out-of-list');
+  assert.match(fuera.verdict.reason, /no está en la lista de la parte A-el-combo/, 'frena por la lista heredada, no por no encontrarla');
+  // sin «adoptedFrom», la constancia es de otra sesión: no se hereda y, con una parte, frena en duda
+  fs.writeFileSync(path.join(C.estado, 'active', `${nueva}.json`), JSON.stringify({ ...C.marker, sessionId: nueva }));
+  assert.match(io.listaDelPlanDelegado(C.estado, nueva, { ...C.marker, sessionId: nueva }).problema, /no está la constancia de la revisión/);
 });
 
 // ── la parte no cambia con el plan aprobado ───────────────────────────────────────────────────────

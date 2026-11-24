@@ -435,7 +435,7 @@ function enteringEnd(marker, entry, nowMs, info = {}) {
   }
   const t8 = (marker.stepTimings || {})['prepare-commit'] || (marker.stepTimings || {})['8'];
   const done = Date.parse(t8 && t8.completedAt);
-  if (!Number.isFinite(done)) return 'sin estimación (espera la CI o la cola; sin la hora de cierre de «Preparar el commit»)';
+  if (!Number.isFinite(done)) return 'sin estimación (espera la CI o la cola; sin la hora de cierre de «Preparar el pull request»)';
   const fixed = done + entry.ms;
   info.at = fixed;
   info.late = nowMs > fixed;
@@ -1864,4 +1864,4 @@ if (require.main === module) {
 // el nombre de una sesión como lo deja `sessionsBySid`: quien lo compara con uno guardado lo recorta igual
 const listedName = (s) => cut(s, NAME_MAX);
 
-module.exports = { touchedField, SAVE_WAIT, SAVE_ASK, SAVE_WAITS, SAVE_OK, listedName, buildWip, wipNow, renderRetired, retiredNow, renderFreeSlots, freeSlotsNow, createMemory, reviseHalfway, git, stepMedians, enteredMain, OVERDUE_HOUR, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, readPrs, parseRemote, offQueueOf, identityOf, remoteOfFolder, endOf, hourForStep, hourVerdict, realState, replacedByNewer, storyPausedUntil, unsavedChanges, codexNames, PER_QUERY_MS, ALL_QUERIES_MS, SAFE_SID, LOOSE_STALE_MS };
+module.exports = { touchedField, SAVE_WAIT, SAVE_ASK, SAVE_WAITS, SAVE_OK, listedName, buildWip, wipNow, renderRetired, retiredNow, renderFreeSlots, freeSlotsNow, createMemory, reviseHalfway, git, stepMedians, enteredMain, OVERDUE_HOUR, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, readPrs, parseRemote, offQueueOf, identityOf, remoteOfFolder, endOf, hourForStep, hourVerdict, realState, replacedByNewer, storyPausedUntil, unsavedChanges, codexNames, sessionTitle, NAME_MAX, PER_QUERY_MS, ALL_QUERIES_MS, SAFE_SID, LOOSE_STALE_MS };

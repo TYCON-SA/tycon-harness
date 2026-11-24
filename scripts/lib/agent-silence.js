@@ -80,4 +80,79 @@ function silentAgents({ projectsDir, cwd, sid, now = Date.now(), calladoMs }) {
   return { pendientes, callados };
 }
 
-module.exports = { silentAgents, projectDirOf };
+/** Si algún archivo de agente de `root` (o de un lote de flujo, en `root/workflows/<lote>`) cambió en los últimos `ms`. */
+function agentWroteSince(root, now, ms) {
+  const fresh = (dir) => {
+    let names;
+    try { names = fs.readdirSync(dir); } catch { return false; }
+    return names.some((n) => /^agent-.*\.jsonl$/.test(n) && (() => { try { return now - fs.statSync(path.join(dir, n)).mtimeMs < ms; } catch { return false; } })());
+  };
+  if (fresh(root)) return true;
+  let lotes;
+  try { lotes = fs.readdirSync(path.join(root, 'workflows')); } catch { return false; }
+  return lotes.some((l) => fresh(path.join(root, 'workflows', l)));
+}
+
+// Claude Code corta el nombre de la carpeta de un cwd largo a 200 caracteres y le suma una marca al final: la conversación
+// se busca por ese principio. null si no está
+const DIR_NAME_MAX = 200;
+function conversationFile(projectsDir, cwd, sid) {
+  const name = String(cwd).replace(/[^A-Za-z0-9-]/g, '-');
+  const direct = path.join(projectsDir, name, `${sid}.jsonl`);
+  if (fs.existsSync(direct)) return direct;
+  if (name.length <= DIR_NAME_MAX) return null;
+  let dirs;
+  try { dirs = fs.readdirSync(projectsDir); } catch { return null; }
+  const prefix = name.slice(0, DIR_NAME_MAX);
+  for (const d of dirs) {
+    const file = path.join(projectsDir, d, `${sid}.jsonl`);
+    if (d.startsWith(prefix) && fs.existsSync(file)) return file;
+  }
+  return null;
+}
+
+// por conversación: la marca (fecha y tamaño) con que se leyó y la hora de su último paso propio
+const OWN_LEIDOS = new Map();
+// La hora del último paso de la sesión: un mensaje suyo o el resultado de una herramienta suya. Lo que Claude Code agrega
+// solo (un mensaje que le llega, el aviso de una tarea de fondo) también toca el archivo y no es la sesión trabajando.
+// null si no hay ninguno en el final o no se pudo leer
+function lastOwnAt(file, st) {
+  const mark = `${st.mtimeMs}:${st.size}`;
+  const prev = OWN_LEIDOS.get(file);
+  if (prev && prev.mark === mark) return prev.at;
+  let at = null;
+  let lines;
+  try { lines = tailLines(file); } catch { return null; }
+  for (let i = lines.length - 1; i >= 0 && at == null; i -= 1) {
+    let d;
+    try { d = JSON.parse(lines[i]); } catch { continue; }
+    if (!d || d.isSidechain) continue;
+    const content = d.message && Array.isArray(d.message.content) ? d.message.content : [];
+    const own = d.type === 'assistant' || (d.type === 'user' && (d.toolUseResult !== undefined || content.some((c) => c && c.type === 'tool_result')));
+    const t = own ? Date.parse(d.timestamp) : NaN;
+    if (Number.isFinite(t)) at = t;
+  }
+  OWN_LEIDOS.set(file, { mark, at });
+  return at;
+}
+
+/**
+ * La sesión que dice que trabaja pero no da un paso suyo hace `silentMs` y no corre nada: ningún archivo de agente suyo
+ * cambió en `agentMs` (un comando no pasa de su tope de 10 min, así que una hora callada sin agentes no es un comando
+ * largo). `{ minutos, herramienta }` con su último paso; null si trabaja, si corre un agente, si no tiene conversación o si
+ * no se pudo leer: no saber no es un problema que frene los avisos de las demás. Con `readSteps: false` no abre la
+ * conversación y cuenta la hora del archivo, que también cambia con un mensaje que le llega.
+ */
+function busySilence({ projectsDir, cwd, sid, now = Date.now(), silentMs, agentMs, readSteps = true }) {
+  if (!projectsDir || typeof cwd !== 'string' || !cwd || !SAFE.test(String(sid))) return null;
+  const conversacion = conversationFile(projectsDir, cwd, sid);
+  if (!conversacion) return null;
+  let st;
+  try { st = fs.statSync(conversacion); } catch { return null; }
+  const last = readSteps ? lastOwnAt(conversacion, st) : st.mtimeMs;
+  if (last == null || now - last < silentMs) return null;
+  if (agentWroteSince(path.join(path.dirname(conversacion), String(sid), 'subagents'), now, agentMs)) return null;
+  return { minutos: Math.floor((now - last) / 60000), herramienta: lastToolOf(conversacion) };
+}
+
+module.exports = { silentAgents, busySilence, projectDirOf };

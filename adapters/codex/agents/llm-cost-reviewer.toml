@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/llm-cost-reviewer.md
-# source_sha256: 3b4eeb862b50faab303ef294fb0501319c5d2cd09f3dc738e35b2bc91261f5ef
+# source_sha256: 382edb50e24ff65b75500e0555c781283856461942d696fe9341a40785a4693c
 # Se despliega como $CODEX_HOME/llm-cost-reviewer.config.toml y se invoca: codex exec -p llm-cost-reviewer
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 
@@ -93,6 +93,15 @@ cada hallazgo una vez por hallazgo (dos del mismo tipo, dos veces); también sin
 ```text
 Veredicto: limpio
 Veredicto: hallazgos (LLMCOST-C1, LLMCOST-C1, LLMCOST-W2) · bloquea: sí
+```
+
+Si el prompt trae lo que reportaste en la vuelta anterior, sumá al renglón los críticos de esa vuelta que confirmás
+arreglados, una vez por hallazgo, aunque hoy reportes otro con el mismo código. Sin esa parte el arnés no da el arreglo
+por comprobado, y cuesta otra vuelta o la exención del dueño:
+
+```text
+Veredicto: hallazgos (LLMCOST-C1) · bloquea: sí · resueltos (LLMCOST-C1, LLMCOST-C2)
+Veredicto: limpio · resueltos (LLMCOST-C1)
 ```
 
 Lo lee el arnés: anota cada regla crítica con cuántas veces la reportaste, y no deja cerrar la historia si los hallazgos
