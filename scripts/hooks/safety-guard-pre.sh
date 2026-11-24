@@ -319,7 +319,8 @@ ow_gate() {
     out="$(printf '%s' "$INPUT" | TYCON_SAFETY_DEADLINE_S="$tope" "$HNODE" "$lib" gate ${args[@]+"${args[@]}"} 2>/dev/null)" || out=""
     # Lo que contestan los lectores se lee con `< <(printf …)`, nunca con un here-string: el bash 3.2 de macOS escribe el
     # temporal de un here-string en /var/tmp, /tmp o la carpeta actual, y dentro de un encierro que no lo deja (la corrida
-    # aislada de los humos, con el freno corrido desde otro repo) no lee nada y niega todo
+    # aislada de los humos, con el freno corrido desde otro repo) no lee lo que le contestan: según el lugar, niega o deja
+    # pasar
     while IFS= read -r k; do
       case "$k" in
         decision=*) OW_DECISION="${k#decision=}" ;;
@@ -1013,8 +1014,9 @@ ow_negar() { # la ventana negó: frena con el motivo de la firma
   alt="$OW_OFRECE"
   regla="$(ow_regla "$OW_FIRMA")" || regla="ESC-C3"
   if [[ "$regla" == "ESC-C1" ]]; then esc_c1_negar "${OW_FIRMA#escape:}"; fi
-  for f in ${_c3_negables[@]+"${_c3_negables[@]}"}; do
-    IFS=$'\t' read -r clave esc sub a1 < <(printf '%s\n' "$f") || true
+  # todos por un solo descriptor (el 9, para que lo que corre adentro no lea los renglones): en una función, el bash 3.2
+  # no cierra el de cada `< <(…)` hasta que vuelve, y con uno por vuelta dejaba de leer pasados los 253
+  while IFS=$'\t' read -r -u 9 clave esc sub a1; do
     [[ "escape:$clave" == "$OW_FIRMA" ]] || continue
     ESC_CARTEL="$OW_TEXTO${alt:+
 $alt}
@@ -1042,7 +1044,7 @@ Primero lo que no necesita a la persona: lo de «Alternativa». Si no se puede, 
           "Cerrar la ejecución ahora (marker.js ${sub}) la archiva como si hubiera terminado, y no terminó: ${_c3_motivo:-tiene algo pendiente}." \
           "Terminá lo pendiente. Si no se puede, decíselo a la persona." ;;
     esac
-  done
+  done 9< <(printf '%s\n' ${_c3_negables[@]+"${_c3_negables[@]}"})
   ESC_CARTEL="$OW_TEXTO"
   case "$OW_FIRMA" in
     plan-approval) block "ESC-C6" \

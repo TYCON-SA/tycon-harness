@@ -234,7 +234,9 @@ const GUARD_PRE = path.join(RAIZ, 'scripts', 'hooks', 'safety-guard-pre.sh');
 test('F214 Freno_SinHereStrings: el freno de la consola no usa here-strings ni here documents', () => {
   const malos = fs.readFileSync(GUARD_PRE, 'utf8').split('\n')
     .map((l, i) => ({ l, i: i + 1 }))
-    .filter(({ l }) => !/^\s*#/.test(l) && (/<<<\s*"?\$/.test(l) || /<<-?\s*['"]?[A-Za-z_]+['"]?\s*$/.test(l)))
+    // un `<<<` o un `<<PALABRA` (con comillas, barra o guion) fuera de una cadena: lo que el freno sólo analiza como texto
+    // va entre comillas
+    .filter(({ l }) => !/^\s*#/.test(l) && /(^|[^<'"])<<(<(?!"\s*$)|-?\s*(\\|['"])?[A-Za-z_][A-Za-z0-9_]*)/.test(l))
     .map(({ l, i }) => `${i}: ${l.trim()}`);
   assert.deepStrictEqual(malos, []);
 });
@@ -249,12 +251,13 @@ test('F214 Aislada_ElFrenoDesdeOtraCarpeta_Decide: dentro del encierro, el freno
       // un comando que pasa por los lectores del freno: su respuesta se lee renglón por renglón
       "const ev = JSON.stringify({ tool_name: 'Bash', session_id: 's214', cwd: process.argv[2], tool_input: { command: 'gh pr merge 12 --merge' } });",
       "const h = spawnSync('/bin/bash', [process.argv[3]], { cwd: process.argv[2], input: ev, encoding: 'utf8' });",
-      "console.log('FRENO ' + h.status + ' ' + (h.stderr || '').split('\\n').filter((x) => /temp file|here document/.test(x)).join(' | '));",
+      "console.log('FRENO ' + h.status + ' ' + ((h.stderr || '').match(/GIT-C[0-9]+/) || ['sin-regla'])[0] + ' ' + (h.stderr || '').split('\\n').filter((x) => /temp file|here document/.test(x)).join(' | '));",
     ].join('\n'),
   });
   const g = path.join(r, '.advisors', 'dod-runtime', 'g.js');
   const s = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.33', ['--', process.execPath, g, afuera, GUARD_PRE], { cwd: r, env: ambiente(c) });
-  assert.match(salida(s), /FRENO \d+/, salida(s));
+  // sin leer a sus lectores, el freno dejaba pasar este merge (salía 0); leyéndolos, lo frena con su regla
+  assert.match(salida(s), /FRENO 2 GIT-C7/, salida(s));
   assert.doesNotMatch(salida(s), /cannot create temp file/, salida(s));
   assert.deepStrictEqual(fs.readdirSync(afuera).filter((f) => /^sh-thd-/i.test(f)), [], 'nada en la carpeta de afuera');
 });
