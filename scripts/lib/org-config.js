@@ -63,7 +63,7 @@ const SECCIONES = Object.freeze([
   // como estaba (Telegram, de cada máquina, no se edita desde la sección de integraciones).
   // si la organización usa una sesión que reenvía el ok de un dev (approvals.relay_session; vale sólo desde el perfil;
   // cuál sesión es, se designa en cada máquina)
-  Object.freeze({ id: 'aprobaciones', titulo: 'Quién reenvía el ok de un dev', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['approvals'], rutas: Object.freeze(['approvals.relay_session', 'approvals.delegated_signing', 'approvals.owner_only', 'approvals.delegated_machines', 'approvals.levels']), idCorto: 'profile', necesita: ['approvals'] }),
+  Object.freeze({ id: 'aprobaciones', titulo: 'Quién reenvía el ok de un dev', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['approvals'], rutas: Object.freeze(['approvals.relay_session', 'approvals.delegated_signing', 'approvals.owner_only', 'approvals.delegated_machines', 'approvals.levels', 'approvals.local_commit']), idCorto: 'profile', necesita: ['approvals'] }),
   // la dirección del sitio que abre el comando de barra org-site en cada máquina (site.url; vale sólo desde el perfil)
   Object.freeze({ id: 'direccionSitio', titulo: 'La dirección del sitio en cada máquina', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['site'], rutas: Object.freeze(['site.url']), idCorto: 'profile', necesita: ['site'] }),
   Object.freeze({ id: 'pruebaAMano', titulo: 'Prueba a mano de cada criterio', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['qa'], rutas: Object.freeze(['qa.manual_check']), idCorto: 'profile', necesita: ['qa'] }),
@@ -433,6 +433,13 @@ const PULL_REQUESTS_SINCE = '2026.11.20.99';
  */
 const SIGNATURE_LIST_SINCE = '2026.11.02.38';
 /**
+ * 🔴 La primera versión del arnés cuyo lector conoce `approvals.local_commit` (quién firma el commit de una corrida).
+ * Provisoria hasta la etiqueta del merge que la trae, como PULL_REQUESTS_SINCE: una versión que todavía no existe, para
+ * que el sitio frene de más. Un lector anterior la leería como una clave desconocida, y una clave rota de `approvals`
+ * deja sin ninguna firma delegada.
+ */
+const LOCAL_COMMIT_SINCE = '2026.11.22.99';
+/**
  * 🔴 La primera versión del arnés cuyo lector conoce `integrations.timeTracking` (la etiqueta del merge que trajo ese
  * lector). El selector de la herramienta de horas saca la llave vieja `integrations.clockify` del perfil: una máquina
  * anterior no entiende la clave nueva y se quedaría sin Clockify en silencio. Por eso el pedido que la cambia sube
@@ -533,6 +540,9 @@ function pedidasDelPerfil({ doc, actual }) {
   const lista = isObject(doc) && isObject(doc.approvals) ? doc.approvals.signature_list : undefined;
   const listaAntes = isObject(actual) && isObject(actual.approvals) ? actual.approvals.signature_list : undefined;
   if (lista !== undefined && (!isObject(actual) || canonico(lista) !== canonico(listaAntes))) pedidas.push(['approvals.signature_list', SIGNATURE_LIST_SINCE, 'org.capaSinListaDeEspera']);
+  const commitLocal = isObject(doc) && isObject(doc.approvals) ? doc.approvals.local_commit : undefined;
+  const commitLocalAntes = isObject(actual) && isObject(actual.approvals) ? actual.approvals.local_commit : undefined;
+  if (commitLocal !== undefined && (!isObject(actual) || canonico(commitLocal) !== canonico(commitLocalAntes))) pedidas.push(['approvals.local_commit', LOCAL_COMMIT_SINCE, 'org.capaSinCommitLocal']);
   const nombres = isObject(doc) && isObject(doc.coordination) ? doc.coordination.session_names : undefined;
   const nombresAntes = isObject(actual) && isObject(actual.coordination) ? actual.coordination.session_names : undefined;
   if (nombres !== undefined && (!isObject(actual) || canonico(nombres) !== canonico(nombresAntes))) pedidas.push(['coordination.session_names', SESSION_NAMES_SINCE, 'org.capaSinNombresDeSesion']);
@@ -2680,6 +2690,14 @@ ${trabajandoJs}
       ayuda.textContent = T('pantalla.quienReenviaElOkAyuda', { nombre: nombre });
     }, 'approvals.relay_session.nombre', pr, { placeholder: T('pantalla.quienReenviaElOkEjemplo') }));
     box.appendChild(ayuda);
+    // quién firma el commit de una corrida: el agente (sin valor, de fábrica) o la coordinadora, con su ok de guardar
+    var commitLocal = (d.approvals || {}).local_commit;
+    box.appendChild(selector(T('pantalla.commitLocal'), commitLocal === 'coordinator' ? 'coordinator' : 'agent', [['agent', T('pantalla.commitLocalAgente')], ['coordinator', T('pantalla.commitLocalCoordinadora')]], function (x) {
+      // el agente es lo de fábrica: elegirlo saca la clave, salvo que el perfil ya lo dijera escrito
+      hoja(d, 'approvals', 'local_commit', x === 'coordinator' ? 'coordinator' : (commitLocal === 'agent' ? 'agent' : ''));
+      render();
+    }, 'approvals.local_commit', pr));
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.commitLocalAyuda') }));
     // quién firma cada cosa (story 8.116): una fila por firma del catálogo, que va a la ventana del dueño (de fábrica),
     // se delega a la sesión que reenvía, o es sólo del dueño. Lo sólo del dueño no se ofrece para delegar (pasa primero
     // por la ventana), ni lo que no se firma desde la pestaña de otra sesión
@@ -4728,7 +4746,7 @@ ${trabajandoJs}
 
 module.exports = {
   extrasDeAprobaciones, nombreDeMaquina,
-  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, CONTEXT_NOTICE_SINCE, DEEP_REVIEW_SINCE, REVIEW_RUNNER_SINCE, PLAN_REVIEW_SINCE, DEEP_REVIEW_MATRIX_SINCE, REVIEW_SEVERITY_SINCE, WEEKLY_REVIEW_SINCE, STORY_INDEX_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, COORDINATION_SINCE, SWITCHES_SINCE, SITE_SINCE, SESSION_NAMES_SINCE, OFFICE_SINCE, SHORT_PATH_SINCE, SIGNATURE_LIST_SINCE, WAIT_NOTICE_ENABLED_SINCE, WAIT_NOTICE_OWNER_SINCE, WAIT_NOTICE_PEER_SINCE, DELEGATED_LIST_SINCE, OWNER_ONLY_SINCE, LEVELS_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, PACK_BLOCKS_SINCE, packBlocksLayer, capaQueSube, clavesQuePidenVersion, pedidasDelPerfil, direccionDelSitio, leerPerfil, estadoDelPerfil, origenDe, nombresDeLaLista, diferenciaDeJson, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, CONTEXT_NOTICE_SINCE, DEEP_REVIEW_SINCE, REVIEW_RUNNER_SINCE, PLAN_REVIEW_SINCE, DEEP_REVIEW_MATRIX_SINCE, REVIEW_SEVERITY_SINCE, WEEKLY_REVIEW_SINCE, STORY_INDEX_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, COORDINATION_SINCE, SWITCHES_SINCE, SITE_SINCE, SESSION_NAMES_SINCE, OFFICE_SINCE, SHORT_PATH_SINCE, SIGNATURE_LIST_SINCE, LOCAL_COMMIT_SINCE, WAIT_NOTICE_ENABLED_SINCE, WAIT_NOTICE_OWNER_SINCE, WAIT_NOTICE_PEER_SINCE, DELEGATED_LIST_SINCE, OWNER_ONLY_SINCE, LEVELS_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, PACK_BLOCKS_SINCE, packBlocksLayer, capaQueSube, clavesQuePidenVersion, pedidasDelPerfil, direccionDelSitio, leerPerfil, estadoDelPerfil, origenDe, nombresDeLaLista, diferenciaDeJson, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
   problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, estimacionesDeHoy, modelosEnNiveles, equivalenciasDe, proveedoresDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS, CLAVES_DEL_REPO, lectorDeClave, reemplazarBloque, revisarClaveDelRepo, idDeRepo, urlDeRepo,

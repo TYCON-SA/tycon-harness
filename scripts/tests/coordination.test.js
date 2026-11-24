@@ -589,6 +589,53 @@ test('T8h Status_CodexWithoutDate_Waits @story-8.122 @ac-8: un hilo de Codex sin
   assert.match(w.why, /sin fecha de actividad/);
 });
 
+test('8.180 T23 Status_Codex_NoSabeNoEsSinTrabajo @story-8.180 @ac-23: de una sesión de Codex no se sabe si espera un permiso, y el estado lo dice', () => {
+  // medido con Codex 0.162.1: con su cuadro de permiso abierto, ni la base ni el registro del hilo lo anotan
+  const t = toy();
+  codexBase(t, [['cdx-1', 'Activa', 2], ['cdx-2', 'Quieta', 10]]);
+  const { DatabaseSync } = require('node:sqlite');
+  const db = new DatabaseSync(path.join(t.home, '.codex', 'state_5.sqlite'));
+  db.prepare('INSERT INTO threads (id, title, name, cwd, updated_at_ms) VALUES (?, ?, ?, ?, NULL)').run('cdx-3', 'resumen', 'SinFecha', t.root);
+  db.close();
+  const s = C.status(t.opts);
+  const rows = [...s.working, ...s.waiting].filter((x) => /^cdx-/.test(x.sid));
+  assert.deepStrictEqual(rows.map((x) => x.session).sort(), ['Activa', 'Quieta', 'SinFecha']);
+  for (const x of rows) {
+    assert.match(x.why, /no sé si (terminó o )?espera un permiso/, x.session);
+    assert.doesNotMatch(x.why, /sin trabajo/, x.session);
+  }
+  const text = C.statusText(s);
+  assert.match(text, /Activa — Codex, activa en los últimos 5 min; no sé si espera un permiso/);
+  assert.match(text, /Quieta — Codex, quieta hace 5 min o más; no sé si terminó o espera un permiso/);
+  assert.match(text, /SinFecha — Codex, sin fecha de actividad; no sé si espera un permiso/);
+  assert.doesNotMatch(text, /(Activa|Quieta|SinFecha) — sin trabajo/);
+});
+
+test('8.180 T23b Status_Codex_FechaFutura_NoDesaparece @story-8.180 @ac-23: un hilo de Codex con la fecha en el futuro (otro reloj) sale con su «no sé»', () => {
+  const t = toy();
+  codexBase(t, [['cdx-f', 'Futura', -5]]);
+  const s = C.status(t.opts);
+  const w = s.waiting.find((x) => x.sid === 'cdx-f');
+  assert.ok(w, JSON.stringify(s));
+  assert.match(w.why, /fecha de actividad en el futuro; no sé si espera un permiso/);
+  assert.ok(!s.working.some((x) => x.sid === 'cdx-f'), 'una fecha futura no prueba que trabaje');
+});
+
+test('8.180 T24 Coordinate_EnCodex_DiceQueTiene @story-8.180 @ac-24: en Codex dice qué tiene, qué no, y que sus firmas van por terminal', () => {
+  const t = toy({ profile: { approvals: { relay_session: 'coordinadora' } } });
+  const r = coordinate(t, { CODEX_SESSION_ID: 'cdx-1' });
+  assert.strictEqual(r.code, 1);
+  assert.match(r.text, /Codex no puede coordinar/);
+  assert.match(r.text, /La coordinadora va en Claude Code/);
+  // lo que tiene: la coordinadora de Claude ve sus sesiones por la actividad y les deja un mensaje con codex queue
+  assert.match(r.text, /ve tus sesiones de Codex por su actividad/);
+  assert.match(r.text, /codex queue/);
+  // lo que no: saber si una espera un permiso, y llevar ese permiso a la pestaña de la coordinadora
+  assert.match(r.text, /no sabe si una espera un permiso/);
+  assert.match(r.text, /no le llega a la coordinadora/);
+  assert.match(r.text, /firmas de Codex siguen por terminal/);
+});
+
 test('T25b Open_MissingFolder_SaysSo @story-8.122 @ac-25: una carpeta que no existe no se confunde con el lanzador ausente', () => {
   const t = toy();
   const r = C.open({ ...t.opts, ...caller(t), cwd: path.join(t.root, 'no-existe'), name: 'n1', task: 'algo', launcher: launcher(t) });
@@ -1416,7 +1463,7 @@ test('T7 Stop_PorNombre_ParaConElId @story-8.284 @ac-14: para con el id que anot
   fs.writeFileSync(path.join(t.repo, 'suelto.txt'), 'z\n');
   const r = stopIt(t, 'parable');
   assert.strictEqual(r.ok, true, r.message);
-  assert.strictEqual(r.message, 'paré parable (job-parable); se retoma con claude respawn job-parable');
+  assert.strictEqual(r.message, 'paré parable (job-parable); se retoma con coordination.js relaunch --id job-parable');
   assert.deepStrictEqual(closed(t), ['stop job-parable'], 'una sola llamada, y nunca rm');
   // una muerta con el mismo nombre no la vuelve ambigua: la misma regla que close
   const u = closeLab();
@@ -1802,6 +1849,66 @@ test('T7 OwnerWait_UnaVezCadaDosMinutosYEntreProcesos @story-8.219 @ac-7: owner-
   }
 });
 
+test('OwnerWait_PlanSinFirmar_NoDiceYaNoEspera: una sesión ocupada con el plan sin aprobar sigue esperando a la persona, con la lista apagada y encendida', () => {
+  const OA = require(path.join(ROOT, 'scripts', 'lib', 'owner-approvals.js'));
+  const DS = require(path.join(ROOT, 'scripts', 'lib', 'delegated-signing.js'));
+  const { buildOffice, ownerWaitsOf } = require(path.join(ROOT, 'scripts', 'tools', 'office.js'));
+  const COORD_SID = 's-coord';
+  const DORA = 's-dora';
+  // lo que pone la oficina de verdad en «Tu firma» para Dora en el paso del plan: quieta, espera el plan; ocupada (le
+  // llegó un mensaje, corre un comando), sale de «Tu firma» aunque el plan siga sin aprobar
+  const oficina = (status) => {
+    const wip = { rows: [{ work: 'Historia 9.1', state: 'en curso', end: '15:00', session: 'Dora', folder: 'repo' }],
+      details: [{ sid: DORA, status, statusAt: NOW - 60000 }], extra: [{ kind: 'pipeline', current: 'approve-plan', storyId: '9.1', title: '9.1 Algo' }],
+      free: [], halfway: [], unreadable: [] };
+    return { esperas: ownerWaitsOf(buildOffice({ wip, nowMs: NOW }).data), problemas: [] };
+  };
+  assert.deepStrictEqual(oficina('idle').esperas.map((w) => [w.sid, w.espera]), [[DORA, PLAN]], 'quieta, espera el plan');
+  assert.deepStrictEqual(oficina('busy').esperas, [], 'ocupada, la oficina no la pone en «Tu firma»');
+  const confirmada = OA.coordinadoraConfirmada;
+  try {
+    for (const lista of ['off', 'on']) {
+      // la lista de firmas sale de la llave de la máquina: sin signatureDestinos inyectado, se lee el registro de verdad
+      const t = toy({ machine: { approvals: { signature_list: lista } } });
+      fs.writeFileSync(path.join(t.arnes, 'team-profile.json'), JSON.stringify({ approvals: { relay_session: 'coordinadora' } }));
+      const d = { name: 'relay-designation', status: 'ok', ts: new Date(NOW).toISOString(), sesion: COORD_SID, rol: 'coordinadora', quien: 'el dueño', cita: 'Esta sesión es la coordinadora' };
+      fs.writeFileSync(path.join(t.state, 'gates.log'), `${JSON.stringify(d)}\n${JSON.stringify(DS.confirmationRecord(d, new Date(NOW).toISOString()))}\n`);
+      session(t, COORD_SID, 'Coordinadora', { status: 'busy' });
+      session(t, DORA, 'Dora', { status: 'busy' });
+      OA.coordinadoraConfirmada = (casa, o = {}) => confirmada(casa, { arnes: t.arnes, ...o });
+      // la corrida de Dora, abierta por la coordinadora, en «Aprobar el plan» sin aprobar
+      const plan = { stepScheme: 2, stepsCompleted: ['start', 'validate-story', 'plan'], stepsPending: ['approve-plan', 'implement'] };
+      marker(t, DORA, plan);
+      let lectura = oficina('idle');
+      const vuelta = (seg) => C.ownerWaitOnce({ ...t.opts, sessionId: COORD_SID, now: NOW + seg * 1000, ownerWaits: () => lectura }).lines;
+      assert.deepStrictEqual(vuelta(0), ['«Dora» («9.1 Algo») espera de la persona: «que apruebes el plan»'], `lista ${lista}`);
+      lectura = oficina('busy');
+      assert.deepStrictEqual(vuelta(120), [], `lista ${lista}: ocupada con el plan sin aprobar, no «ya no espera»`);
+      assert.ok(C.readAnnounced(t.home).owner.esperas[DORA], `lista ${lista}: la espera sigue anunciada`);
+      // vuelve a quedar quieta: ya estaba anunciada, no se repite
+      lectura = oficina('idle');
+      assert.deepStrictEqual(vuelta(240), [], `lista ${lista}: la misma espera no se anuncia dos veces`);
+      // un marcador que no se lee: en duda, sigue esperando
+      lectura = oficina('busy');
+      fs.writeFileSync(path.join(t.state, 'active', `${DORA}.json`), '{ no es json');
+      assert.deepStrictEqual(vuelta(360), [], `lista ${lista}: con el marcador ilegible, sigue esperando`);
+      // el plan aprobado: ahora sí ya no espera
+      marker(t, DORA, { ...plan, stepsCompleted: [...plan.stepsCompleted, 'approve-plan'], stepsPending: ['implement'] });
+      assert.deepStrictEqual(vuelta(480), ['«Dora» ya no espera a la persona'], `lista ${lista}: con el plan aprobado, sí lo dice`);
+      // la espera cerrada de verdad: la corrida que se cierra sin aprobar el plan también lo dice
+      lectura = oficina('idle');
+      marker(t, DORA, plan);
+      assert.deepStrictEqual(vuelta(600), ['«Dora» («9.1 Algo») espera de la persona: «que apruebes el plan»'], `lista ${lista}`);
+      lectura = oficina('busy');
+      fs.rmSync(path.join(t.state, 'active', `${DORA}.json`));
+      assert.deepStrictEqual(vuelta(720), ['«Dora» ya no espera a la persona'], `lista ${lista}: sin la corrida, ya no espera`);
+      fs.rmSync(t.root, { recursive: true, force: true });
+    }
+  } finally {
+    OA.coordinadoraConfirmada = confirmada;
+  }
+});
+
 // ── One heavy-work turn per machine: the pass and the large test run share it ────────────────────────────────────
 
 // The turn file of a large test run held by this process, as heavy-turn.js publishes it.
@@ -2063,27 +2170,23 @@ test('8.187 T2 Open_ConSlot_TomaUnPuesto @story-8.187 @ac-2: con --slot toma un 
   assert.strictEqual(C.flags(['--repo', '/r', '--slot']).slot, true);
 });
 
-test('8.187 T3 Open_NotTrusted_BorraLoQueCreo @story-8.187 @ac-3: «not trusted» borra la copia y la rama nueva; una rama que ya existía queda', () => {
+test('8.187 T3 Open_FallaDelLanzador_BorraLoQueCreo @story-8.187 @ac-3: una falla del lanzador que no es «not trusted» borra la copia y la rama nueva; una rama que ya existía queda', () => {
+  // «not trusted» ya no borra: deja la carpeta para que una persona la apruebe (fila 159, F159 T1)
   const t = toy({ profile: { coordination: { max_working: 3 } } });
   const repo = toyRepo(t);
-  const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: launcher(t, 'untrusted') });
+  const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: launcher(t, 'error') });
   assert.strictEqual(r.ok, false);
   assert.strictEqual(launched(t).cwd, copyOf(repo, 'n1'), 'probó en la copia hermana');
   assert.ok(!fs.existsSync(copyOf(repo, 'n1')), 'la copia no queda');
   assert.strictEqual(branchExists(repo, 'wt/n1'), false, 'la rama nueva no queda');
   gitToy(repo, 'branch', 'feat/existe', 'origin/main');
-  const r2 = C.open({ ...t.opts, ...caller(t), now: NOW + 1000, repo, name: 'n2', branch: 'feat/existe', task: 'algo', launcher: launcher(t, 'untrusted') });
+  const r2 = C.open({ ...t.opts, ...caller(t), now: NOW + 1000, repo, name: 'n2', branch: 'feat/existe', task: 'algo', launcher: launcher(t, 'error') });
   assert.strictEqual(r2.ok, false);
   assert.ok(!fs.existsSync(copyOf(repo, 'n2')), 'la copia no queda');
   assert.strictEqual(branchExists(repo, 'feat/existe'), true, 'la rama que ya existía queda');
-  // otra falla del lanzador también limpia
-  const r3 = C.open({ ...t.opts, ...caller(t), now: NOW + 2000, repo, name: 'n3', task: 'algo', launcher: launcher(t, 'error') });
-  assert.strictEqual(r3.ok, false);
-  assert.ok(!fs.existsSync(copyOf(repo, 'n3')));
-  assert.strictEqual(branchExists(repo, 'wt/n3'), false);
 });
 
-test('8.187 T4 Open_NotTrusted_NombraPrincipalYSlot @story-8.187 @ac-4: una línea con la carpeta principal y --slot; una sola llamada; ~/.claude.json igual', () => {
+test('8.187 T4 Open_NotTrusted_NombraLaCopia @story-8.187 @ac-4: una línea que nombra la copia (no culpa a la principal) y cómo reintentar reusándola; una sola llamada; ~/.claude.json igual', () => {
   const t = toy({ profile: { coordination: { max_working: 3 } } });
   const repo = toyRepo(t);
   const cfg = path.join(t.home, '.claude.json');
@@ -2092,9 +2195,10 @@ test('8.187 T4 Open_NotTrusted_NombraPrincipalYSlot @story-8.187 @ac-4: una lín
   const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: countingLauncher(t, 'untrusted') });
   assert.strictEqual(r.ok, false);
   assert.strictEqual(r.message.trim().split('\n').length, 1, r.message);
-  assert.match(r.message, new RegExp(`${repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!-)`), `nombra la carpeta principal: ${r.message}`);
+  assert.ok(r.message.includes(`cd '${copyOf(repo, 'n1')}'`), `nombra la copia: ${r.message}`);
+  assert.doesNotMatch(r.message, /falta aprobar la carpeta principal/, r.message);
   assert.doesNotMatch(r.message, /--slot-\d/, 'no habla de un puesto');
-  assert.match(r.message, /--slot\b(?!-)/, 'ofrece la opción --slot');
+  assert.match(r.message, /--reuse\b/, 'dice cómo reintentar reusándola');
   assert.strictEqual(calls(t).length, 1, 'no reintenta');
   assert.strictEqual(calls(t)[0].cwd, copyOf(repo, 'n1'), 'lo intentó en la copia hermana');
   assert.deepStrictEqual(fs.readFileSync(cfg), antes, 'no toca ~/.claude.json');
@@ -2226,20 +2330,232 @@ test('8.187 T19 Guias_NoDescribenElCaminoViejo @story-8.187 @ac-18: pending-trus
   }
 });
 
-test('8.187 T3b Open_NotTrusted_SinPoderBorrar_LoDice @story-8.187 @ac-3: si la copia no se puede borrar, el mensaje no dice «borré»: dice que queda para el barrido', () => {
+test('8.187 T3b Open_FallaDelLanzador_SinPoderBorrar_LoDice @story-8.187 @ac-3: si la copia no se puede borrar, el mensaje no dice «borré»: dice que queda para el barrido', () => {
   const t = toy({ profile: { coordination: { max_working: 3 } } });
   const repo = toyRepo(t);
-  // el lanzador bloquea la copia antes de contestar «not trusted»: `worktree remove --force` no saca una bloqueada
+  // el lanzador bloquea la copia antes de fallar: `worktree remove --force` no saca una bloqueada
   const script = path.join(t.root, 'locking-launcher.js');
   fs.writeFileSync(script, `
 require('child_process').spawnSync('git', ['worktree', 'lock', process.cwd()], { cwd: process.cwd() });
-process.stderr.write('Error: Workspace not trusted.\\n'); process.exit(1);
+process.stderr.write('boom: algo salió mal\\n'); process.exit(4);
 `);
   const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: { bin: process.execPath, prefix: [script] } });
   assert.strictEqual(r.ok, false);
   assert.doesNotMatch(r.message, /Borré la copia/, r.message);
   assert.match(r.message, /No pude borrar la copia .*barrido/, r.message);
   spawnSync('git', ['-C', repo, 'worktree', 'unlock', copyOf(repo, 'n1')]);
+});
+
+// ── Fila 159: Claude Code 2.1.330 asks to approve each copy and slot, even with the main folder approved ─────────────
+
+const UNTRUSTED_LINE = 'Error: Workspace not trusted. Open it once to trust it.';
+
+test('F159 T1 Open_CopiaSinAprobar_LaDejaYDiceCómoAprobarla: «not trusted» deja la copia y su rama, nombra la copia (no la principal), dice cómo aprobarla y cómo reintentar, y trae lo que dijo Claude Code', () => {
+  const t = toy({ profile: { coordination: { max_working: 3 } } });
+  const repo = toyRepo(t);
+  const copy = copyOf(repo, 'n1');
+  const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: countingLauncher(t, 'untrusted') });
+  assert.strictEqual(r.ok, false);
+  assert.ok(fs.existsSync(copy), 'la copia queda para que la aprueben');
+  assert.strictEqual(branchIn(copy), 'wt/n1', 'con su rama');
+  assert.strictEqual(r.message.trim().split('\n').length, 1, r.message);
+  assert.ok(r.message.includes(`cd '${copy}'`), r.message);
+  assert.match(r.message, /no está aprobada en esta versión de Claude Code/);
+  assert.match(r.message, /una persona/);
+  assert.doesNotMatch(r.message, /falta aprobar la carpeta principal|Borré/, r.message);
+  assert.ok(r.message.includes(UNTRUSTED_LINE), `trae lo que dijo Claude Code: ${r.message}`);
+  // el comando para reintentar es uno que la línea de comandos entiende
+  const cmd = r.message.match(/open (--name .*?) -- /);
+  assert.ok(cmd, r.message);
+  const f = C.flags(cmd[1].match(/'[^']*'|\S+/g).map((x) => x.replace(/^'|'$/g, '')));
+  assert.strictEqual(f.name, 'n1');
+  assert.strictEqual(f.repo, repo);
+  assert.strictEqual(f.reuse, true);
+  assert.notStrictEqual(f.slot, true);
+  assert.match(r.message, new RegExp(`worktree remove '${escapar(copy)}'`), 'dice cómo sacarla si no se usa');
+  assert.strictEqual(calls(t).length, 1, 'no reintenta');
+});
+
+test('F159 T2 Open_PuestoSinAprobar_QuedaTomado: «not trusted» deja el puesto tomado y con su rama; el mensaje dice cómo aprobarlo, reintentar o soltarlo', () => {
+  const t = toy({ profile: { coordination: { max_working: 2 } } });
+  const repo = toyRepo(t);
+  const r = C.open({ ...t.opts, ...caller(t), repo, slot: true, name: 'n1', task: 'algo', launcher: launcher(t, 'untrusted') });
+  assert.strictEqual(r.ok, false);
+  const s1 = WS.list({ ...t.opts, repo }).slots[0];
+  assert.strictEqual(s1.free, false, 'el puesto sigue tomado');
+  assert.strictEqual(s1.branch, 'wt/n1', 'con su rama');
+  assert.strictEqual(branchExists(repo, 'wt/n1'), true);
+  assert.strictEqual(r.message.trim().split('\n').length, 1, r.message);
+  assert.ok(r.message.includes(`cd '${slotOf(repo, 1)}'`), r.message);
+  assert.match(r.message, /no está aprobada en esta versión de Claude Code/);
+  assert.match(r.message, /--slot --reuse/);
+  assert.ok(r.message.includes(`release '${slotOf(repo, 1)}'`), r.message);
+  assert.ok(r.message.includes(UNTRUSTED_LINE), r.message);
+  assert.doesNotMatch(r.message, /carpeta principal/);
+});
+
+test('F159 T3 Open_Reuse_AbreEnLaMismaCarpeta: después de aprobarla, --reuse abre en la misma copia o el mismo puesto, sin crear otra carpeta', () => {
+  const t = toy({ profile: { coordination: { max_working: 3 } } });
+  const repo = toyRepo(t);
+  const copy = copyOf(repo, 'n1');
+  assert.strictEqual(C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: launcher(t, 'untrusted') }).ok, false);
+  // lo que deja quien la aprueba (sin commitear) sigue ahí: es la misma carpeta, no una nueva con el mismo nombre
+  fs.writeFileSync(path.join(copy, 'de-la-aprobacion.txt'), 'x\n');
+  const r = C.open({ ...t.opts, ...caller(t), now: NOW + 1000, repo, name: 'n1', reuse: true, task: 'implementá la 9.9', launcher: launcher(t) });
+  assert.strictEqual(r.ok, true, r.message);
+  assert.strictEqual(fs.realpathSync(launched(t).cwd), copy);
+  assert.ok(fs.existsSync(path.join(copy, 'de-la-aprobacion.txt')), 'la misma copia');
+  const job = launched(t).argv[launched(t).argv.length - 1];
+  assert.ok(job.includes(copy) && job.includes('wt/n1'), job);
+  assert.match(job, /commiteado, empujado y con su pedido abierto/);
+  assert.deepStrictEqual(fs.readdirSync(path.dirname(repo)).filter((d) => d.includes('--wt-')), ['proyecto--wt-n1'], 'no crea otra copia');
+  // con un puesto: el mismo puesto, y el otro sigue libre
+  const t2 = toy({ profile: { coordination: { max_working: 2 } } });
+  const repo2 = toyRepo(t2);
+  assert.strictEqual(C.open({ ...t2.opts, ...caller(t2), repo: repo2, slot: true, name: 'n1', task: 'algo', launcher: launcher(t2, 'untrusted') }).ok, false);
+  assert.strictEqual(branchIn(slotOf(repo2, 1)), 'wt/n1', 'el puesto quedó tomado para reintentar');
+  const r2 = C.open({ ...t2.opts, ...caller(t2), now: NOW + 1000, repo: repo2, slot: true, reuse: true, name: 'n1', task: 'algo', launcher: launcher(t2) });
+  assert.strictEqual(r2.ok, true, r2.message);
+  assert.strictEqual(fs.realpathSync(launched(t2).cwd), slotOf(repo2, 1));
+  assert.match(launched(t2).argv[launched(t2).argv.length - 1], /release/);
+  assert.strictEqual(WS.list({ ...t2.opts, repo: repo2 }).slots[1].free, true, 'no toma otro puesto');
+});
+
+test('F159 T4 Open_Reuse_SeNiegaSinCarpetaOConOtraSesion: --reuse sin repo, sin nombre, sin carpeta que reusar, en otra rama o con una sesión viva ahí no abre; si el lanzador falla, no borra lo reusado', () => {
+  const t = toy({ profile: { coordination: { max_working: 3, session_names: ['Norte'] } } });
+  const repo = toyRepo(t);
+  const copy = copyOf(repo, 'n1');
+  const sinRepo = C.open({ ...t.opts, ...caller(t), cwd: t.root, reuse: true, name: 'n1', task: 'algo', launcher: countingLauncher(t) });
+  assert.match(sinRepo.message, /--reuse va con --repo/);
+  const sinNombre = C.open({ ...t.opts, ...caller(t), repo, reuse: true, task: 'algo', launcher: countingLauncher(t) });
+  assert.match(sinNombre.message, /--reuse va con --name/);
+  const nada = C.open({ ...t.opts, ...caller(t), repo, reuse: true, name: 'n1', task: 'algo', launcher: countingLauncher(t) });
+  assert.strictEqual(nada.ok, false);
+  assert.match(nada.message, /no hay qué reusar/);
+  const nadaSlot = C.open({ ...t.opts, ...caller(t), repo, slot: true, reuse: true, name: 'n1', task: 'algo', launcher: countingLauncher(t) });
+  assert.match(nadaSlot.message, /no hay qué reusar/);
+  assert.strictEqual(calls(t).length, 0);
+  // la copia en otra rama no es la de este trabajo
+  gitToy(repo, 'worktree', 'add', '-q', '-b', 'otra', copy, 'origin/main');
+  const otraRama = C.open({ ...t.opts, ...caller(t), repo, reuse: true, name: 'n1', task: 'algo', launcher: countingLauncher(t) });
+  assert.strictEqual(otraRama.ok, false);
+  assert.match(otraRama.message, /rama otra/);
+  gitToy(copy, 'switch', '-q', '-c', 'wt/n1');
+  // la persona la aprobó y dejó claude abierto ahí: dos sesiones en la misma carpeta no
+  session(t, 'aprobando', 'aprueba', { cwd: copy });
+  const viva = C.open({ ...t.opts, ...caller(t), repo, reuse: true, name: 'n1', task: 'algo', launcher: countingLauncher(t) });
+  assert.strictEqual(viva.ok, false);
+  assert.match(viva.message, /sesión viva/);
+  assert.strictEqual(calls(t).length, 0);
+  fs.rmSync(path.join(t.home, '.claude', 'sessions', 'aprobando.json'));
+  const falla = C.open({ ...t.opts, ...caller(t), repo, reuse: true, name: 'n1', task: 'algo', launcher: launcher(t, 'error') });
+  assert.strictEqual(falla.ok, false);
+  assert.ok(fs.existsSync(copy), 'no borra una copia que no creó');
+  assert.strictEqual(branchExists(repo, 'wt/n1'), true);
+  // la línea de comandos lee --reuse sin valor
+  const f = C.flags(['--name', 'n1', '--repo', '/r', '--reuse', '--', 'el encargo']);
+  assert.strictEqual(f.reuse, true);
+  assert.deepStrictEqual(f.rest, ['el encargo']);
+});
+
+test('F159 T5 Open_CarpetaSinAprobar_TraeLoQueDijoClaudeCode: con --cwd, el mensaje de siempre más la primera línea cruda de Claude Code, recortada', () => {
+  const t = toy();
+  const r = open(t, { name: 'n1', task: 'algo', launcher: launcher(t, 'untrusted') });
+  assert.strictEqual(r.ok, false);
+  assert.ok(r.message.includes(UNTRUSTED_LINE), r.message);
+  assert.strictEqual(r.message.trim().split('\n').length, 1);
+  const largo = path.join(t.root, 'largo.js');
+  fs.writeFileSync(largo, `process.stderr.write('\\n  Workspace not trusted: ' + 'x'.repeat(500) + '\\notra línea\\n'); process.exit(1);`);
+  const r2 = open(t, { name: 'n2', task: 'algo', launcher: { bin: process.execPath, prefix: [largo] } });
+  assert.ok(r2.message.includes('Workspace not trusted: xxx'), r2.message);
+  assert.doesNotMatch(r2.message, /x{300}/, 'recortada');
+  assert.doesNotMatch(r2.message, /otra línea/);
+});
+
+// What the shell reads from a pasted command: each word on its own line, with nothing run.
+// The pasted text goes in a file that sh reads, as a pasted line would: the sh command itself is not built from paths.
+let shellWordsCount = 0;
+function shellWords(t, args) {
+  const pasted = path.join(t.root, `pasted-${++shellWordsCount}.sh`);
+  fs.writeFileSync(pasted, `printf '%s\\n' ${args}\n`);
+  const r = spawnSync('sh', [pasted], { cwd: t.root, encoding: 'utf8' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  return r.stdout.replace(/\n$/, '').split('\n');
+}
+
+test('F159 T6 Open_CitaLaLineaQueDiceNotTrusted: la cita es la línea que dice «not trusted», no un aviso que salió antes', () => {
+  const t = toy({ profile: { coordination: { max_working: 3 } } });
+  const repo = toyRepo(t);
+  const script = path.join(t.root, 'aviso-antes.js');
+  fs.writeFileSync(script, `process.stderr.write('Update available\\n(node) DeprecationWarning: algo viejo\\nError: Workspace not trusted.\\n'); process.exit(1);`);
+  const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: { bin: process.execPath, prefix: [script] } });
+  assert.strictEqual(r.ok, false);
+  assert.ok(r.message.includes('Claude Code dijo: «Error: Workspace not trusted.»'), r.message);
+  assert.doesNotMatch(r.message, /Update available|DeprecationWarning/);
+  // con --cwd, lo mismo
+  const r2 = open(t, { name: 'n2', task: 'algo', launcher: { bin: process.execPath, prefix: [script] } });
+  assert.ok(r2.message.includes('Claude Code dijo: «Error: Workspace not trusted.»'), r2.message);
+});
+
+test('F159 T7 Open_CitaLimpia: la cita sale sin secuencias de terminal enteras ni caracteres de control, y el recorte no parte un carácter', () => {
+  const t = toy();
+  const color = path.join(t.root, 'color.js');
+  fs.writeFileSync(color, `process.stderr.write('\\x1b[31mError:\\x1b[0m Workspace \\x1b]0;titulo\\x07not trusted\\u202e\\x07 fin\\r\\n'); process.exit(1);`);
+  const r = open(t, { name: 'n1', task: 'algo', launcher: { bin: process.execPath, prefix: [color] } });
+  assert.ok(r.message.includes('«Error: Workspace not trusted fin»'), JSON.stringify(r.message));
+  assert.doesNotMatch(r.message, /\[31m|\[0m|titulo|[\u0000-\u001f\u007f-\u009f\u202e]/, JSON.stringify(r.message));
+  // 199 letras y un emoji: el recorte de 200 caracteres deja el emoji entero
+  const emoji = path.join(t.root, 'emoji.js');
+  fs.writeFileSync(emoji, `process.stderr.write('a'.repeat(199) + '\\u{1F600}' + 'resto Workspace not trusted\\n'); process.exit(1);`);
+  const r2 = open(t, { name: 'n2', task: 'algo', launcher: { bin: process.execPath, prefix: [emoji] } });
+  assert.ok(r2.message.includes(`${'a'.repeat(199)}\u{1F600}…`), r2.message);
+  assert.doesNotMatch(r2.message, /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/, 'medio emoji');
+});
+
+test('F159 T8 Open_ComandosCitadosParaElShell: el reintento, el cd y el soltar llevan cada valor entre comillas simples; pegados, no corren nada', { skip: process.platform === 'win32' ? 'sh' : false }, () => {
+  const t = toy({ profile: { coordination: { max_working: 3 } } });
+  const repo = toyRepo(t);
+  const branch = "a'b;touch${IFS}pwn";
+  const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', branch, task: 'algo', launcher: launcher(t, 'untrusted') });
+  assert.strictEqual(r.ok, false);
+  const retry = r.message.match(/ open (.*?) -- <el mismo encargo>/);
+  assert.ok(retry, r.message);
+  assert.deepStrictEqual(shellWords(t, retry[1]), ['--name', 'n1', '--repo', repo, '--branch', branch, '--reuse']);
+  const cd = r.message.match(/ cd ('(?:[^']|'\\'')*')/);
+  assert.ok(cd, r.message);
+  assert.deepStrictEqual(shellWords(t, cd[1]), [copyOf(repo, 'n1')]);
+  const remove = r.message.match(/git -C (.*?) worktree remove ('(?:[^']|'\\'')*')/);
+  assert.ok(remove, r.message);
+  assert.deepStrictEqual(shellWords(t, `${remove[1]} ${remove[2]}`), [repo, copyOf(repo, 'n1')]);
+  assert.ok(!fs.existsSync(path.join(t.root, 'pwn')), 'pegarlo no corrió nada');
+  // el puesto: soltarlo también va citado
+  const t2 = toy({ profile: { coordination: { max_working: 1 } } });
+  const repo2 = toyRepo(t2);
+  const r2 = C.open({ ...t2.opts, ...caller(t2), repo: repo2, slot: true, name: 'n1', task: 'algo', launcher: launcher(t2, 'untrusted') });
+  const rel = r2.message.match(/node ('(?:[^']|'\\'')*') release ('(?:[^']|'\\'')*')/);
+  assert.ok(rel, r2.message);
+  assert.deepStrictEqual(shellWords(t2, `${rel[1]} ${rel[2]}`), [path.join(ROOT, 'scripts', 'tools', 'work-slots.js'), slotOf(repo2, 1)]);
+});
+
+test('F159 T9 Open_SinRespuesta_DiceCómoSacarLoQueCreó: si el lanzador no vuelve, no borra nada y dice cómo sacar la copia o soltar el puesto si no abrió', () => {
+  const t = toy({ profile: { coordination: { max_working: 3 } } });
+  const repo = toyRepo(t);
+  const copy = copyOf(repo, 'n1');
+  const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: launcher(t, 'hang'), timeoutMs: 400 });
+  assert.strictEqual(r.ok, false);
+  assert.match(r.message, /no sé si abrió/);
+  assert.ok(fs.existsSync(copy), 'no borra: no se sabe si abrió');
+  assert.ok(r.message.includes(`worktree remove '${copy}'`), r.message);
+  assert.strictEqual(r.message.trim().split('\n').length, 1);
+  const t2 = toy({ profile: { coordination: { max_working: 1 } } });
+  const repo2 = toyRepo(t2);
+  const r2 = C.open({ ...t2.opts, ...caller(t2), repo: repo2, slot: true, name: 'n1', task: 'algo', launcher: launcher(t2, 'hang'), timeoutMs: 400 });
+  assert.strictEqual(r2.ok, false);
+  assert.strictEqual(WS.list({ ...t2.opts, repo: repo2 }).slots[0].free, false, 'el puesto sigue tomado');
+  assert.ok(r2.message.includes(`release '${slotOf(repo2, 1)}'`), r2.message);
+  // con --cwd no creó nada: el mensaje de siempre
+  const r3 = open(t, { name: 'n3', task: 'algo', launcher: launcher(t, 'hang'), timeoutMs: 400 });
+  assert.doesNotMatch(r3.message, /worktree remove|release/);
 });
 
 test('8.187 T5b Open_NombreAuto_SaltaLasCopiasQueQuedaron @story-8.187 @ac-5: sin --name no elige un nombre cuya copia todavía existe, aunque su rama sea otra', () => {
@@ -3408,9 +3724,10 @@ test('Planes_EsperandoAprobacion_EnStatus: el plan que espera su aprobación sal
   assert.ok(!texto.split('\n').some((l) => /espera su aprobación/.test(l) && /Bea|Ceci/.test(l)), texto);
 });
 
-// Planes_Delegado_LaCoordinadoraLoAprueba
-// 🔴 Falla con: un plan delicado que el perfil delega y la revisión aprobó no dice que lo puede dar la coordinadora.
-test('Planes_Delegado_LaCoordinadoraLoAprueba: con plan-approval:delicada delegada y la revisión aprobada, lo dice', () => {
+// Planes_Delicado_LoApruebaLaPersona
+// 🔴 Falla con: owner-next le dice a la coordinadora que puede dar el plan de una historia delicada porque el perfil nombra
+// plan-approval:delicada (fila 127). El plan de una delicada lo aprueba una persona, diga lo que diga el perfil.
+test('Planes_Delicado_LoApruebaLaPersona: aunque el perfil nombre plan-approval:delicada y la revisión lo aprobó, lo aprueba la persona', () => {
   const t = toy();
   planEsperando(t, 's-ana', 'Ana');
   planEsperando(t, 's-bea', 'Bea', { story: '9.12', hace: 30 });
@@ -3419,16 +3736,10 @@ test('Planes_Delegado_LaCoordinadoraLoAprueba: con plan-approval:delicada delega
     delegada: () => true,
   };
   const rows = C.plansWaiting({ ...t.opts, planDeps: deps });
-  const ana = rows.find((p) => p.sid === 's-ana');
-  const bea = rows.find((p) => p.sid === 's-bea');
-  assert.strictEqual(ana.porCoordinadora, true);
-  assert.strictEqual(bea.porCoordinadora, false, 'con la revisión rechazada, no');
-  const lineas = C.planWaitLines(rows).join('\n');
-  assert.match(lineas, /Ana \(s-ana\).*revisión: aprobado.*lo puede dar la coordinadora con el sí de la persona: .*complete-step approve-plan --for-session s-ana/);
-  assert.match(lineas, /Bea \(s-bea\).*revisión: rechazado/);
-  assert.doesNotMatch(lineas.split('\n').find((l) => /Bea/.test(l)), /coordinadora/);
-  // sin delegación: no lo dice
-  assert.strictEqual(C.plansWaiting({ ...t.opts, planDeps: { ...deps, delegada: () => false } }).find((p) => p.sid === 's-ana').porCoordinadora, false);
+  assert.deepStrictEqual(rows.map((p) => [p.sid, p.review]), [['s-ana', 'aprobado'], ['s-bea', 'rechazado']]);
+  const lineas = C.planWaitLines(rows);
+  assert.match(lineas[0], /Ana \(s-ana\).*revisión: aprobado\) — lo aprueba la persona$/);
+  for (const l of lineas) assert.doesNotMatch(l, /coordinadora|delega|--for-session/, l);
 });
 
 // Planes_OwnerNext_LosNombra
@@ -3465,6 +3776,84 @@ test('Planes_DuenoAusente_SeJuntanParaLaVuelta: con la marca de ausente, el avis
   assert.doesNotMatch(aviso(), /para cuando vuelva la persona/);
   require(path.join(ROOT, 'scripts', 'lib', 'owner-away.js')).set({ estado: t.state, quien: 'coordinadora', frase: 'me voy', ahora: mins(100) });
   assert.match(aviso(), /Coordinación: para cuando vuelva la persona: 1 plan espera su aprobación: Ana \(9\.11, hace 180 min\)/);
+});
+
+// ── Fila 86: relanzar una sesión de fondo la deja como abierta por la coordinadora ──────────────────────────────────────
+
+// Un lanzador de juguete que, con `respawn <id>`, deja viva la sesión de fondo con ese id: su archivo de sesión, con el pid de
+// esta prueba (vivo) y la hora de ahora, como la levanta Claude Code. `slowMs`: tarda eso después de dejarla viva.
+function relauncher(t, { name = 'Relanzada', cwd = null, fail = null, appear = true, slowMs = 0 } = {}) {
+  const script = path.join(t.root, 'relauncher.js');
+  fs.writeFileSync(script, `
+const fs = require('fs');
+const [verb, id] = process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(path.join(t.root, 'closed.log'))}, verb + ' ' + id + '\\n');
+if (${JSON.stringify(fail)}) { process.stderr.write(${JSON.stringify(String(fail))} + '\\n'); process.exit(1); }
+if (${JSON.stringify(appear)}) fs.writeFileSync(${JSON.stringify(path.join(t.home, '.claude', 'sessions', 'sid-relanzada.json'))}, JSON.stringify({ pid: ${process.pid}, sessionId: 'sid-relanzada', name: ${JSON.stringify(name)}, nameSource: 'user', kind: 'bg', jobId: id, status: 'idle', statusUpdatedAt: Date.now(), startedAt: Date.now(), cwd: ${JSON.stringify(cwd || t.root)} }));
+if (${slowMs}) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ${slowMs});
+`);
+  return { bin: process.execPath, prefix: [script] };
+}
+const ID = 'abcd1234';
+
+test('T86a Relaunch_QuedaComoAbiertaPorLaCoordinadora: la que relanza coordination.js relaunch cuenta como abierta por ella', () => {
+  // 🔴 mutación: relanzar sin anotarla (una sesión relanzada a mano no está en el registro: sus firmas de rutina van al dueño)
+  const t = closeLab();
+  const r = C.relaunch({ ...t.closeOpts, id: ID, launcher: relauncher(t, { cwd: t.repo }) });
+  assert.strictEqual(r.ok, true, r.message);
+  assert.match(r.message, /relancé «Relanzada» \(abcd1234\)/);
+  assert.deepStrictEqual(closed(t), [`respawn ${ID}`]);
+  assert.deepStrictEqual(C.launchedBy({ home: t.home, sid: 'sid-relanzada' }), { launched: true });
+  // la misma sesión relanzada a mano, sin pasar por coordination.js, no está en el registro
+  const t2 = closeLab();
+  spawnSync(process.execPath, [relauncher(t2).prefix[0], 'respawn', ID]);
+  assert.deepStrictEqual(C.launchedBy({ home: t2.home, sid: 'sid-relanzada' }), { launched: false });
+  // el lanzador tardó más que su tope pero la dejó viva: se anota igual
+  const t3 = closeLab();
+  const lenta = C.relaunch({ ...t3.closeOpts, id: ID, timeoutMs: 500, launcher: relauncher(t3, { slowMs: 3000 }) });
+  assert.strictEqual(lenta.ok, true, lenta.message);
+  assert.deepStrictEqual(C.launchedBy({ home: t3.home, sid: 'sid-relanzada' }), { launched: true });
+});
+
+test('T86b Relaunch_LoQueNoRelanza: otra sesión, un id incompleto, una viva, un archivo ilegible o un lanzador que falla no relanzan ni anotan', () => {
+  const t = closeLab();
+  const otra = C.relaunch({ ...t.opts, env: { CLAUDE_CODE_SESSION_ID: 'sid-otra' }, id: ID, launcher: relauncher(t) });
+  assert.match(otra.message, /la coordinadora designada o una persona en su terminal/);
+  // el id entero, de 8 caracteres: claude respawn toma el comienzo de un id y relanzaría una viva
+  for (const id of ['-rm', 'abcd', 'job-rel']) assert.match(C.relaunch({ ...t.closeOpts, id, launcher: relauncher(t) }).message, /relaunch va con --id <el id de fondo, de 8 caracteres>/, id);
+  bg(t, 'viva', t.repo, { jobId: 'beef0001' });
+  assert.match(C.relaunch({ ...t.closeOpts, id: 'beef0001', launcher: relauncher(t) }).message, /«viva» \(beef0001\) está viva: no relancé nada/);
+  const falla = C.relaunch({ ...t.closeOpts, id: ID, launcher: relauncher(t, { fail: 'no existe ese id' }) });
+  assert.strictEqual(falla.ok, false);
+  assert.match(falla.message, /no la pude relanzar \(no existe ese id\)/);
+  assert.deepStrictEqual(closed(t), [`respawn ${ID}`], 'sólo el que falló llegó al lanzador');
+  assert.deepStrictEqual(C.launchedBy({ home: t.home, sid: 'sid-relanzada' }), { launched: false });
+  // el lanzador volvió bien pero la sesión no apareció: lo dice y no anota nada
+  const t2 = closeLab();
+  const muda = C.relaunch({ ...t2.closeOpts, id: ID, waitMs: 300, launcher: relauncher(t2, { appear: false }) });
+  assert.strictEqual(muda.ok, true);
+  assert.match(muda.message, /no la vi viva/);
+  // con el lanzador vencido y sin verla, no dice que no pasó nada
+  const t3 = closeLab();
+  const vencido = C.relaunch({ ...t3.closeOpts, id: ID, timeoutMs: 300, waitMs: 300, launcher: relauncher(t3, { appear: false, slowMs: 3000 }) });
+  assert.match(vencido.message, /no sé si la relanzó/);
+  // un archivo de sesión que no se lee: puede ser la viva con ese id, y no se relanza
+  const t4 = closeLab();
+  fs.writeFileSync(path.join(t4.home, '.claude', 'sessions', 'sid-rota.json'), '{ roto');
+  assert.match(C.relaunch({ ...t4.closeOpts, id: ID, launcher: relauncher(t4) }).message, /No pude leer todas las sesiones/);
+  assert.deepStrictEqual(closed(t4), []);
+});
+
+test('T86c Relaunch_NombreDeOtraViva: si otra sesión viva ya usa su nombre, no la anota ni le borra el registro a la otra', () => {
+  const t = closeLab();
+  const at = Date.now();
+  session(t, 'sid-abierta', 'Relanzada', { cwd: t.repo, kind: 'bg', jobId: 'aaaa0001', startedAt: at });
+  fs.mkdirSync(path.join(t.state, 'coordination'), { recursive: true });
+  fs.writeFileSync(path.join(t.state, 'coordination', 'launched.json'), JSON.stringify([{ name: 'Relanzada', cwd: t.repo, at, por: COORD_SID }]));
+  assert.deepStrictEqual(C.launchedBy({ home: t.home, sid: 'sid-abierta' }), { launched: true });
+  const r = C.relaunch({ ...t.closeOpts, id: ID, launcher: relauncher(t, { cwd: t.repo }) });
+  assert.match(r.message, /otra sesión viva ya se llama «Relanzada»: no la anoté/);
+  assert.deepStrictEqual(C.launchedBy({ home: t.home, sid: 'sid-abierta' }), { launched: true }, 'la otra conserva su registro');
 });
 
 // ── Fila 98: la sesión que dice que trabaja, pero no escribe hace rato y no corre nada ──────────────────────────────────

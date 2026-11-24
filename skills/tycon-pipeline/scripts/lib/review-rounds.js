@@ -193,7 +193,10 @@ function extras({ stateDir, story }) {
   return out;
 }
 
-/** El último aviso del tope que el arnés le mostró para esa vuelta de esa historia (`review-cap-shown`), o null. */
+/**
+ * El último aviso del tope que el arnés le mostró para esa vuelta de esa historia (`review-cap-shown`), o null. El tope
+ * sin nada abierto (status `ok`) no mostró nada que decidir: no cuenta como aviso para una vuelta extra.
+ */
 function avisoDelTope({ stateDir, story, iter }) {
   let txt = '';
   try { txt = fs.readFileSync(path.join(stateDir, 'gates.log'), 'utf8'); } catch (_) { return null; }
@@ -201,7 +204,7 @@ function avisoDelTope({ stateDir, story, iter }) {
   for (const l of txt.split('\n')) {
     if (!l.trim()) continue;
     let g; try { g = JSON.parse(l); } catch (_) { continue; }
-    if (g && g.name === 'review-cap-shown' && String(g.story) === String(story) && g.iter === iter) ultimo = g;
+    if (g && g.name === 'review-cap-shown' && g.status !== 'ok' && String(g.story) === String(story) && g.iter === iter) ultimo = g;
   }
   return ultimo;
 }
@@ -228,6 +231,15 @@ function resumen(lista) {
   return lista.map((a) => `${a.regla}${a.file ? ` en ${a.file}` : ''}${a.resumen ? ` — ${a.resumen}` : ''}`);
 }
 
+// ¿La vuelta extra es una firma de trámite? Lo es si el perfil del equipo la lista en `approvals.delegated_signing`
+// (scripts/lib/automatic-signing.js): la da el arnés solo, sin ventana ni cuadro, y ningún cartel puede decir que la
+// aprueba una persona. Sin poder leer el perfil, no lo es.
+function vueltaExtraDeTramite() {
+  try {
+    return !!require(require('path').join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'automatic-signing.js')).esDeTramite({ firma: 'extra-round' }).ok;
+  } catch (_) { return false; }
+}
+
 /** La línea del cierre. Con `noMirado` (no se pudieron leer los hallazgos) no dice «nada»: dice que no se pudo mirar. */
 function linea({ n, max, abiertos: ab, noMirado }) {
   if (noMirado) return `${n} ${n === 1 ? 'vuelta' : 'vueltas'} de revisores (tope ${max}); lo abierto no lo pude mirar: ${noMirado}.`;
@@ -240,4 +252,4 @@ function linea({ n, max, abiertos: ab, noMirado }) {
   return `${n} ${n === 1 ? 'vuelta' : 'vueltas'} de revisores (tope ${max}); quedó abierto: ${partes.length ? partes.join('; ') : 'nada'}.`;
 }
 
-module.exports = { FABRICA, MINIMO, MAXIMO, PREFIJOS_FABRICA, delYaml, tope, topeSinMaquina, prefijos, clase, abiertos, hallazgosDe, vueltas, lanzada, extras, avisoDelTope, juezDeLaVuelta, resumen, linea };
+module.exports = { FABRICA, MINIMO, MAXIMO, PREFIJOS_FABRICA, delYaml, tope, topeSinMaquina, prefijos, clase, abiertos, hallazgosDe, vueltas, lanzada, extras, avisoDelTope, juezDeLaVuelta, resumen, vueltaExtraDeTramite, linea };
