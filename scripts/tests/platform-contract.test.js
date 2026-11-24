@@ -654,6 +654,8 @@ test('T122 PrRead_ContractAndConnectors @story-2.81 @ac-65', async () => {
     prAzure(24, { status: 'completed', closedDate: MERGED }),
     prAzure(25, { status: 'abandoned', closedDate: MERGED }),
     prAzure(26, { repository: { name: 'OtroRepo', project: { name: 'Producto' } } }),
+    // el mismo nombre de repo en otro proyecto de la organización: el número es de toda la organización
+    prAzure(27, { repository: { name: 'Backend', project: { name: 'OtroProyecto' } } }),
   ]));
   const az = (number) => P().run('change-request.read', { number }, { env: w.env, repo: AZ });
   r = await az(21);
@@ -667,10 +669,13 @@ test('T122 PrRead_ContractAndConnectors @story-2.81 @ac-65', async () => {
   assert.deepStrictEqual([r.value.state, r.value.mergedAt], ['merged', MERGED]);
   r = await az(25);
   assert.deepStrictEqual([r.value.state, r.value.mergedAt], ['closed', null]);
-  for (const n of [999, 26]) {
+  for (const n of [999, 26, 27]) {
     r = await az(n);
     assert.deepStrictEqual([r.ok, r.reason], [false, 'no_encontrado'], `${n}: ${JSON.stringify(r)}`);
   }
+  // el proyecto se compara sin mayúsculas, y un repo sin proyecto en su identidad no lo mira
+  r = await P().run('change-request.read', { number: 23 }, { env: w.env, repo: { ...AZ, project: 'producto' } });
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
 });
 
 test('T22 Conector_LeerPedido_DevuelveMergeCommit @story-8.205 @ac-3', async () => {

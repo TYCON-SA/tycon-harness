@@ -1724,6 +1724,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/adversarial-skip-one-signature.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/reviewers-cost.test.sh",
       "requiere": []
     },
@@ -1766,6 +1771,11 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/adversarial-skip-signed.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/delegated-pass.test.js",
       "requiere": []
     },
     {
@@ -2563,6 +2573,11 @@
     {
       "raiz": "arnes",
       "ruta": "tests/office-page.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/office-page-english.test.js",
       "requiere": []
     },
     {
@@ -5438,7 +5453,7 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.31 (T9 a T14): los avisos de dependencias como issues de GitHub (scripts/nightly/dependencies/github-issues.js) con un gh de mentira (tests/lib/fake-gh.js) — crear con etiquetas, marca y asignado verificado; no repetir; tope y reintentos; cerrar sólo lo suyo y reabrir lo que cerró; borrado, movido y 401; el volcado con la clave <repo>#<n>; la elección de plataforma de work-items.js por team-repos.json; y el cruce del nocturno con números de issue repetidos entre repos. Sin red.",
+      "__nota": "story 8.31 (T9 a T14): los avisos de dependencias como issues de GitHub (integrations/github/scripts/dependency-notices.js) con un gh de mentira (tests/lib/fake-gh.js) — crear con etiquetas, marca y asignado verificado; no repetir; tope y reintentos; cerrar sólo lo suyo y reabrir lo que cerró; borrado, movido y 401; el volcado con la clave <repo>#<n>; la elección de plataforma de work-items.js por team-repos.json; y el cruce del nocturno con números de issue repetidos entre repos. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/github-issues.test.js",
       "requiere": [],
