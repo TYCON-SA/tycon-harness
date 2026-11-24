@@ -394,6 +394,7 @@ function parseArgs(argv) {
     const t = argv[i];
     if (t === '--repo') a.repo = argv[++i];
     else if (t === '--story') a.story = argv[++i];
+    else if (t === '--to') a.to = argv[++i];                         // move-story: la ruta nueva de la historia
     else if (t === '--files') { a.filesDeclarado = true; while (argv[i + 1] && !argv[i + 1].startsWith('--')) a.files.push(argv[++i]); }
     else if (t === '--ran') a.ran = (argv[++i] || '').split(',').map((s) => s.trim()).filter(Boolean);
     else if (t === '--iter') a.iter = parseInt(argv[++i], 10) || 1;

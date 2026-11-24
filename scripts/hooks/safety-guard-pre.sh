@@ -119,8 +119,19 @@ sg_identity() {
   printf '%s' "$s"
 }
 _sg_id="$(sg_identity $$)"
+# Lo que el freno está haciendo, para que el corte lo diga: lo anotan sus partes lentas (la lista de procesos de Windows,
+# el chequeo de un guion, la conversación donde se confirma una aprobación) en este archivo. En Git Bash, node no
+# entiende las rutas /c/…: va con barras hacia adelante (cygpath -m)
+SG_ETAPA="${TMPDIR:-/tmp}/tycon-sg-etapa-$$"
+rm -f "$SG_ETAPA" 2>/dev/null || true
+TYCON_SAFETY_STAGE_FILE="$SG_ETAPA"
+if command -v cygpath >/dev/null 2>&1; then TYCON_SAFETY_STAGE_FILE="$(cygpath -m "$SG_ETAPA" 2>/dev/null || printf '%s' "$SG_ETAPA")"; fi
+export TYCON_SAFETY_STAGE_FILE
 sg_clock_fired() {
-  echo "⛔ TYCON safety-guard: el freno no terminó de mirar el comando en ${SG_CLOCK_S} s y lo frena: pasado el tope de la herramienta, el comando correría sin mirar. Si se repite, decíselo a la persona: algo deja esperando al freno." >&2
+  local etapa=""
+  [[ -s "$SG_ETAPA" ]] && etapa="$(head -c 200 "$SG_ETAPA" 2>/dev/null | tr -d '\n')"
+  rm -f "$SG_ETAPA" 2>/dev/null
+  echo "⛔ TYCON safety-guard: el freno no terminó de mirar el comando en ${SG_CLOCK_S} s y lo frena: pasado el tope de la herramienta, el comando correría sin mirar.${etapa:+ Estaba ${etapa}.} Para seguir: volvé a correr el comando; si se repite, subí TYCON_SAFETY_TIMEOUT_S (hasta 50) en el entorno de la herramienta, o abrí una sesión nueva (una conversación larga hace más lenta la confirmación de una firma). Si nada de eso alcanza, decíselo a la persona." >&2
   exit 2
 }
 trap 'sg_clock_fired' TERM
@@ -317,6 +328,8 @@ ow_gate() {
     tope="$(date +%s 2>/dev/null)" || tope=""
     if [[ "$tope" =~ ^[0-9]+$ ]]; then tope=$(( tope + SG_CLOCK_S - SECONDS - 1 )); else tope=""; fi
     out="$(printf '%s' "$INPUT" | TYCON_SAFETY_DEADLINE_S="$tope" "$HNODE" "$lib" gate ${args[@]+"${args[@]}"} 2>/dev/null)" || out=""
+    # la ventana ya contestó: lo que anotó no es lo que el freno hace después
+    rm -f "$SG_ETAPA" 2>/dev/null || true
     while IFS= read -r k; do
       case "$k" in
         decision=*) OW_DECISION="${k#decision=}" ;;
