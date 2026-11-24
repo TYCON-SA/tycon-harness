@@ -37,8 +37,9 @@ const PARTES = [
 const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 
 // La huella de la parte de instalación (desde «Qué hace falta antes» hasta el final). Si la instalación cambia a
-// propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma que SITE_TRUST_PROXY toma la lista de
-// direcciones del intermediario (y que con `1` el sitio avisa); antes dejó fuera del candado las rutas de la máquina, dice
+// propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma, en Render, la llave optativa de su API
+// para avisar si quedó instalado por etiqueta (SITE_RENDER_API_KEY y SITE_RENDER_SERVICE_ID, y el alcance de la llave);
+// antes sumó que SITE_TRUST_PROXY toma la lista de direcciones del intermediario (y que con `1` el sitio avisa); antes dejó fuera del candado las rutas de la máquina, dice
 // el paso de una vez para las oficinas y que el sitio tiene que ver la dirección de quien pide; antes dijo cuándo sale la invitación de Microsoft (en el
 // primer ciclo del sitio, o cuando alguien entra si está dormido), que Microsoft no reenvía el correo a una dirección
 // invitada hace poco y qué hacer entonces, y que el correo puede caer en spam, con su remitente;
@@ -61,8 +62,8 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // línea «cambio aplicado» del registro, que ya no lleva el correo de quien propone; y, en inglés, sin el nombre castellano
 // de los botones entre paréntesis.
 const HUELLA_INSTALACION = {
-  es: 'd7e47784e6016bb4da4f727f6b00df6a6377eb09031792cb17bf8b49845c517d',
-  en: '66a4ae50dc645b5ea9dfe8d165968c2e228b4c2670b8d87fd20466ec28e9661b',
+  es: 'd672e892954d1aa8616c277372f190801574f62d89cc51425e59ab96d9dc5c48',
+  en: '4df6677edb4dbe3bdf0b2d3717c4bd0befbafa2413a14345e08ba282f8f56cf7',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {
@@ -526,4 +527,15 @@ test('T20 4.14-Guide_LearningsSectionsUpdated @story-4.14 @ac-19 — las guías 
   const operaciones = leer(path.join(ROOT, 'pipelines', 'operations', 'README.md'));
   assert.ok(!operaciones.includes('sólo con los números'), 'la guía de los pipelines tampoco');
   assert.ok(require('./lib/pieces-guide.js').piecesText(ROOT).includes('recomendaciones.json'), 'la ficha nombra el archivo de la noche');
+});
+
+test('T12 2.83-Guia_SesionesEnLaFicha @story-2.83 @ac-16 — las dos guías traen las sesiones en la tarjeta de ejecuciones', () => {
+  const casos = [
+    [GUIA, ['Máquinas: mac-a, mac-b. Sesiones: Ponzio-5, Carrizo-4.', 'el nombre que tenía la sesión en su máquina', 'forma de nombre de sesión', 'antes de que el arnés anotara los nombres']],
+    [GUIA_EN, ['Machines: mac-a, mac-b. Sessions: Ponzio-5, Carrizo-4.', 'the name the session had on its machine', 'shape of a session name', 'before the harness recorded the names']],
+  ];
+  for (const [guia, frases] of casos) {
+    const t = leer(guia).replace(/\s+/g, ' ');
+    for (const f of frases) assert.ok(t.includes(f), `${path.basename(guia)}: dice «${f}»`);
+  }
 });

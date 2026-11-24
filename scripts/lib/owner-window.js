@@ -305,12 +305,17 @@ function esOwnerWait(comando) {
  * plataforma), con el mismo lector y las mismas reglas que `esOwnerWait` (un solo tramo, todas las palabras literales,
  * sin redirecciones ni nada armado):
  *   node <coordination.js de este arnés> pr-wait --repo <org/repo> --number <n> [--interval <s>]
- * `<n>` y `<s>` son enteros positivos escritos tal cual, y `<org/repo>` una palabra `organización/repo`. Un bucle de
+ *   node <coordination.js de este arnés> pr-wait --repo <org/repo> --story <historia> [--interval <s>]
+ * `<n>` y `<s>` son enteros positivos escritos tal cual, `<historia>` un número de historia (`8.326`, `25`) y
+ * `<org/repo>` una palabra `organización/repo` u `organización/proyecto/repo` (un repo de Azure DevOps escrito entero, el
+ * proyecto con espacios si los tiene). La segunda espera a que la historia abra su pedido: también sólo lee. Un bucle de
  * consola escrito a mano, o el vigilante propio de una plataforma, no es esta forma: desde su línea no se sabe si además
  * escribe.
  */
 const ENTERO = /^[1-9]\d*$/;
 const ORG_REPO = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
+const HISTORIA = /^\d+(?:\.\d+)*$/;
+const ORG_PROYECTO_REPO = /^[A-Za-z0-9._-]+\/(?:[A-Za-z0-9._-][A-Za-z0-9._ -]*[A-Za-z0-9._-]|[A-Za-z0-9._-])\/[A-Za-z0-9._-]+$/;
 function esVigilanteDeLectura(comando) {
   let t;
   try { t = markerCommand().tramos(String(comando), 'bash'); } catch (_) { return false; }
@@ -319,8 +324,9 @@ function esVigilanteDeLectura(comando) {
   if (p.some((x) => !x.literal || /^\d*[<>&|]/.test(x.texto) || /[\r\n]/.test(x.texto))) return false;
   const w = p.map((x) => x.texto);
   const intervalo = (resto) => resto.length === 0 || (resto.length === 2 && resto[0] === '--interval' && ENTERO.test(resto[1]));
-  if (NODES.has(base(w[0])) && path.isAbsolute(w[1] || '') && w[2] === 'pr-wait' && w[3] === '--repo' && ORG_REPO.test(w[4] || '')
-    && w[5] === '--number' && ENTERO.test(w[6] || '') && intervalo(w.slice(7))) {
+  const cual = (w[5] === '--number' && ENTERO.test(w[6] || '')) || (w[5] === '--story' && HISTORIA.test(w[6] || ''));
+  if (NODES.has(base(w[0])) && path.isAbsolute(w[1] || '') && w[2] === 'pr-wait' && w[3] === '--repo' && (ORG_REPO.test(w[4] || '') || ORG_PROYECTO_REPO.test(w[4] || ''))
+    && cual && intervalo(w.slice(7))) {
     const propio = real(COORDINACION);
     return propio !== null && real(w[1]) === propio;
   }
@@ -549,8 +555,16 @@ function firmaDeLlamado(guion, sub, args, llamada = null, topes = null, donde = 
     if (sub === 'runtime-waiver') return 'runtime-waiver';
     if (sub === 'compare-waiver') return 'compare-waiver';
     if (sub === 'sign-adversarial-skip') return 'adversarial-skip';
+    // contestar «skip» a la pregunta del pase del código lo contesta la persona; la coordinadora, con el dueño ausente y
+    // la celda en skip, lo anota con --by-profile, que el guion comprueba. Una palabra opaca cuenta como el pedido
+    if (sub === 'review-answer') {
+      if (opaca) return 'review-skip';
+      const valor = (b) => { const i = a.indexOf(b); if (i >= 0) return a[i + 1]; const w = a.find((x) => x.startsWith(`${b}=`)); return w ? w.slice(b.length + 1) : undefined; };
+      return valor('--kind') === 'code' && valor('--choice') === 'skip' && !pide('--by-profile') ? 'review-skip' : null;
+    }
     if (sub === 'approve-pending') return 'pending-approval';
     if (sub === 'approve-save') return 'save';
+    if (sub === 'sign-atdd-skip') return 'atdd-skip';
     // nombrar a la coordinadora: sin frase, con el click del dueño; con `--quote` (aun vacío), la frase de respaldo, que
     // confirma después confirm-designation
     if (sub === 'designate-relay') return pide('--quote') ? null : 'designation-set';
@@ -1357,8 +1371,8 @@ const PRECHEQUEO_OK = 'tycon-sign-precheck: ok';
 const PRECHEQUEO_VIA = 'TYCON_SIGN_PRECHECK_VIA';
 // las firmas de guion con requisitos propios; el carril y las firmas sobre un archivo no comprueban nada antes de firmar
 // (`adhoc-lane`: el largo del motivo y un tope menor que lo ya tocado se niegan antes de la ventana)
-const CON_PRECHEQUEO = new Set(['extra-round', 'save', 'plan-approval', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver', 'adhoc-lane', SOBRE_CUPO,
-  'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran',
+const CON_PRECHEQUEO = new Set(['extra-round', 'save', 'atdd-skip', 'plan-approval', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver', 'adhoc-lane', SOBRE_CUPO,
+  'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'review-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran',
   // saltear los mutantes sin motivo, o en un paso que no corre las pruebas
   'escape:no-mutation',
   // nombrar sin id de sesión, o retirar desde una sesión que no es la coordinadora, se niega sin gastar el click

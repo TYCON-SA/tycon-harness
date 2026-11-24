@@ -28,6 +28,8 @@ const { spawnSync } = require('child_process');
 const SCRIPTS = path.join(__dirname, '..');
 const SKILL = path.join(SCRIPTS, '..');
 const MARKER = path.join(SCRIPTS, 'marker.js');
+// «skip» del código lo contesta la persona (firma review-skip): la prueba da su click
+const { conVentana } = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'tests', 'lib', 'window-passed.js'));
 const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
 const LANZADO = '2026-09-18T01:00:00.000Z';
 const DESPUES = '2026-09-18T02:00:00.000Z';
@@ -167,13 +169,16 @@ test('T1 SetFlag_DeepReviewDone_SeNiega @story-1.8 @ac-1', () => {
 test('T2 SetFlag_OtrasBanderas_SiguenAndando @story-1.8 @ac-2', () => {
   const home = casa(); const SID = 't2';
   writeFakeMarker(home, SID);
-  for (const f of ['atddBypass', 'waitingForHuman']) {
-    // el escape del freno de pruebas primero pide su motivo
-    const r = correr(home, SID, ['set-flag', f, 'true', ...(f === 'atddBypass' ? ['--reason', 'refactor sobre red existente'] : [])]);
-    assert.equal(r.status, 0, `${f}: ${r.stderr}`);
-    assert.equal(r.stdout.trim(), `${f}: true`);
-    assert.equal(leerMarker(home, SID)[f], true);
-  }
+  const r = correr(home, SID, ['set-flag', 'waitingForHuman', 'true']);
+  assert.equal(r.status, 0, `waitingForHuman: ${r.stderr}`);
+  assert.equal(r.stdout.trim(), 'waitingForHuman: true');
+  assert.equal(leerMarker(home, SID).waitingForHuman, true);
+  // el escape del freno de pruebas primero pide además la firma del dueño: sin ella sale 2 y no escribe
+  // (con la firma, la T4 de 8.283 en unit.test.js)
+  const escape = correr(home, SID, ['set-flag', 'atddBypass', 'true', '--reason', 'refactor sobre red existente']);
+  assert.equal(escape.status, 2, escape.stderr);
+  assert.match(escape.stderr, /sign-atdd-skip/);
+  assert.equal(leerMarker(home, SID).atddBypass, undefined);
   // las de hechos externos las pone el arnés: set-flag sale 2 y no escribe (Casos: external-flags.test.js)
   for (const f of ['workSignalStarted', 'adoMarkedActive']) {
     const r = correr(home, SID, ['set-flag', f, 'true']);
@@ -197,7 +202,7 @@ test('T4 Skipped_PortonLow_AnotaSalteoYCierra5b @story-1.8 @ac-4', () => {
   const home = casa(); const SID = 't4'; const repo = mkRepo();
   writeFakeMarker(home, SID, { repoPath: repo, storyPath: path.join(repo, 'specs', 'a.md') });
   // de fábrica, un cambio chico de día pregunta: el salteo vale recién con la respuesta «skip» para este diff
-  const ra = correr(home, SID, ['review-answer', '--kind', 'code', '--choice', 'skip', '--reason', 'el dueño eligió no revisarlo']);
+  const ra = correr(home, SID, ['review-answer', '--kind', 'code', '--choice', 'skip', '--reason', 'el dueño eligió no revisarlo'], { env: conVentana({}, { via: 'click' }) });
   assert.equal(ra.status, 0, ra.stderr);
   const r = correr(home, SID, ['mark-adversarial-skipped', '--files', 'scripts/x.js']);
   assert.equal(r.status, 0, r.stderr);
@@ -791,7 +796,7 @@ test('T52 Skipped_ArchivosCuentaComoElPorton @story-1.8 @ac-41', () => {
   for (const [args, n] of casos) {
     const home = casa(); const repo = mkRepo({ codigo: 2 });
     writeFakeMarker(home, 't52', { repoPath: repo, storyPath: path.join(repo, 'specs', 'a.md') });
-    const ra = correr(home, 't52', ['review-answer', '--kind', 'code', '--choice', 'skip', '--reason', 'el dueño eligió no revisarlo']);
+    const ra = correr(home, 't52', ['review-answer', '--kind', 'code', '--choice', 'skip', '--reason', 'el dueño eligió no revisarlo'], { env: conVentana({}, { via: 'click' }) });
     assert.equal(ra.status, 0, ra.stderr);
     const r = correr(home, 't52', ['mark-adversarial-skipped', ...args]);
     assert.equal(r.status, 0, r.stderr);

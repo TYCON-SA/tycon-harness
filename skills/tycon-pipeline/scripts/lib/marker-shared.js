@@ -347,8 +347,36 @@ function avisarOficina(sesion = estado.SID) {
   try { require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'office-event.js')).notify(sesion); } catch (_e) { /* la vigilancia de la oficina lo ve después */ }
 }
 
+// Las sesiones que pasaron por la corrida, con su nombre (`marker.sesiones`, scripts/lib/session-name.js): la entrada de
+// la sesión que corre el comando se pone al día en los cinco comandos que marcan el arranque, cada paso, cada pase de
+// sesión y el cierre. El nombre se lee una vez por comando. Leerlo nunca frena ni cambia la salida: si no se puede, la
+// entrada queda sin nombre (o, sin la librería, la lista queda como estaba) y sale una línea con el código.
+const COMANDOS_CON_NOMBRE = new Set(['set', 'complete-step', 'adopt-session', 'restore', 'clear']);
+let nombreDelComando;
+function conSesionNombrada(marker) {
+  if (PREVIO || estado.SOLO_LECTURA || estado.SID !== PROPIA || estado.SID === '_nosession' || !COMANDOS_CON_NOMBRE.has(process.argv[2])) return marker;
+  if (!marker || typeof marker !== 'object' || !marker.storyId) return marker;
+  if (nombreDelComando === undefined) {
+    try {
+      const lib = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'session-name.js'));
+      nombreDelComando = { lib, leido: lib.nombreDeSesion({ sid: estado.SID, home: os.homedir() }), visto: nowIso() };
+      if (nombreDelComando.leido.problema) process.stderr.write(`[marker] no pude leer el nombre de la sesión (${nombreDelComando.leido.problema})\n`);
+    } catch (_e) {
+      nombreDelComando = null;
+      process.stderr.write('[marker] no pude leer el nombre de la sesión (sin-libreria)\n');
+    }
+  }
+  if (!nombreDelComando) return marker;
+  try {
+    const { lib, leido, visto } = nombreDelComando;
+    marker.sesiones = lib.conSesion(marker.sesiones, { id: estado.SID, nombre: leido.nombre, cortado: leido.cortado, visto });
+  } catch (_e) { /* la lista queda como estaba: el marcador se escribe igual */ }
+  return marker;
+}
+
 function writeMarker(marker) {
   sinFirmaNoSeEscribe();
+  conSesionNombrada(marker);
   ensureActiveDir();
   pruneStale();
   const p = markerFilePath(estado.SID);
@@ -958,7 +986,7 @@ function screenRule() {
   try { return require(path.join(__dirname, '..', 'lib', 'stack-config.js')).orgRules().rules.screen_test.value; } catch (_e) { return 'ui'; }
 }
 
-// Las tandas que mide la corrida (la anotada más las que volvieron), con la matriz de «Preparar el commit»; null sin
+// Las tandas que mide la corrida (la anotada más las que volvieron), con la matriz de «Preparar el pull request»; null sin
 // tanda, sin lista o con el marcador de otra historia. Se calcula una vez por comando: la pantalla la pregunta varias.
 const TANDAS_MEDIDAS = new Map();
 function tandasMedidasDe(marker) {
@@ -1033,10 +1061,10 @@ const TESTS_FAILED_PENDING = 76;
 /**
  * `mark-tests-not-measured`: la salida 3 de test-gate.sh es «sin medir» (no reconoce ninguna herramienta de pruebas en el
  * repo y no corrió nada). Pone `sin-medir` sobre cualquier estado anterior: un verde de otra corrida no puede quedar en
- * pie. No es verde ni un rojo para arreglar: complete-step run-tests y «Preparar el commit» lo anuncian (nunca un verde callado). Sólo lo
+ * pie. No es verde ni un rojo para arreglar: complete-step run-tests y «Preparar el pull request» lo anuncian (nunca un verde callado). Sólo lo
  * llama test-gate.sh.
  */
-/** La línea que dicen «Correr las pruebas» y «Preparar el commit» cuando el check `tests` quedó «sin medir». */
+/** La línea que dicen «Correr las pruebas» y «Preparar el pull request» cuando el check `tests` quedó «sin medir». */
 function testsNotMeasuredLine(marker) {
   const r = String((marker && marker.testsNotMeasuredReason) || '');
   // el portón sabe correrlas, pero la herramienta no arrancó: el motivo es ése
@@ -1057,7 +1085,8 @@ const SENALES_RUN_CHECK = { SIGHUP: 1, SIGINT: 2, SIGTERM: 15 };
 // `pipeline.js next` los leen para no re-ejecutar (evita doble timer / doble
 // transición de WI al retomar cross-session).
 // `atddBypass`: escape consciente del portón pre-edit de ATDD (on-atdd-preedit.js) —
-// para el refactor legítimo sobre red preexistente. El uso queda en bypass.log, no es silencioso.
+// para el refactor legítimo sobre red preexistente. Pide la firma del dueño para la ejecución (lib/atdd-skip.js); el
+// uso queda en bypass.log, no es silencioso.
 // `waitingForHuman` — EL TERCER ESTADO del portón de autonomía.
 // El Stop-hook distingue dos cosas: "podés cerrar" (todo verde) y "no cierres, arreglá" (algo en
 // rojo). Este flag cubre la tercera, que es la más común: "le pregunté al dev y estoy esperando". Y como
@@ -1070,7 +1099,7 @@ const SENALES_RUN_CHECK = { SIGHUP: 1, SIGINT: 2, SIGTERM: 15 };
 // `autonomous`, y se apaga solo. Mismo patrón que `ALLOW_DOD_EVIDENCE_WRITE`.
 //
 // 🔴 `deepReviewDone` NO se escribe a mano. Es la bandera que cierra el pase adversarial, y cualquiera que la escriba
-// la cierra sin anotar qué encontró el pase, y «Preparar el commit» la da por buena. La escriben sólo los dos
+// la cierra sin anotar qué encontró el pase, y «Preparar el pull request» la da por buena. La escriben sólo los dos
 // comandos que cierran el pase con constancia: `mark-adversarial-result` (el pase corrió y se anota su
 // resultado) y `mark-adversarial-skipped` (el portón decidió que no corre).
 // Las banderas, en dos listas (lib/external-flags.js): las de hechos externos las pone sólo el arnés cuando hizo el
@@ -1355,7 +1384,7 @@ module.exports = {
   signatureCommand, STEPS_LIB, posixRelative, STATE_DIR, ACTIVE_DIR, LEGACY_MARKER_PATH, STALE_HOURS, PROPIA, PEDIDA,
   PREVIO, LOGS_DEL_CHEQUEO, PARA_OTRA_SESION, PARTICION, reglaParaOtra, ownerWindow, paraOtraSesion, ensureActiveDir,
   nowIso, markerFilePath, firmadaDespuesDe, pruneStale, appendLog, conRutas, readOwnMarkerRaw, readMarker,
-  sinFirmaNoSeEscribe, avisarOficina, writeMarker, syncSessionState, cerrarEjecucion, frenarSiIlegible, frenarSiPerdida,
+  sinFirmaNoSeEscribe, avisarOficina, conSesionNombrada, writeMarker, syncSessionState, cerrarEjecucion, frenarSiIlegible, frenarSiPerdida,
   perdidaSinFrenar, vueltaCongeladaComprobada, comprobarLoRevisado, sellosDe, veredictoPaseAdversarial, paseAtendido,
   mensajeDelPaseAdversarial, PLAN_FILE, planDeLaCorrida, huellaDelPlan, planEnLaConversacion, planParaLaPersona,
   planVisto, anotarAprobacion, quienDeLasOpciones, CONTROLES_DEL_PASO, ORDER_REQUIRES_OLD, firmaDelDueno,

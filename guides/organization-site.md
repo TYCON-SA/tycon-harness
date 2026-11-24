@@ -246,7 +246,11 @@ la fila vuelve a «Te toca decidir» con el porqué. El tipo del pedido de traba
 
 Cada tarjeta dice **qué pasó** en llano, con los datos de la ficha. En una de ejecuciones, por ejemplo: «Entre el 21/10 y
 el 24/10, 4 ejecuciones terminaron sin el pase adversarial, la revisión que intenta romper lo que ya se aprobó.
-Historias: 4.1, 4.3. Máquinas: mac-a, mac-b.» Si hay análisis, dice **por qué** pasa, qué **recomienda** y qué
+Historias: 4.1, 4.3. Máquinas: mac-a, mac-b. Sesiones: Ponzio-5, Carrizo-4.» El nombre de cada sesión es el nombre que
+tenía la sesión en su máquina durante la ejecución, y entra sólo si tiene forma de nombre de sesión (letras sin acento,
+números, guion o guion bajo, sin espacios, hasta 40 caracteres); las ejecuciones con un nombre sin esa forma, o sin
+nombre, se cuentan aparte («2 ejecuciones sin nombre»). Una ejecución cerrada antes de que el arnés anotara los nombres no
+lo trae. Si hay análisis, dice **por qué** pasa, qué **recomienda** y qué
 se haría si se arregla, y aclara si lo escribió el modelo de la noche o una persona. Sin análisis, dice por qué no lo
 tiene. Si la noche dejó una propuesta, dice que la escribió el modelo de IA que revisa cada noche, y su botón queda
 resaltado. Los botones para decidir están siempre a la vista, bajo el título **Decidir**.
@@ -1822,6 +1826,15 @@ huella de la versión que instalás.
 huella de `stable` (`imgURL=<imagen>@sha256:…`). El hook es un secreto (`SITE_RENDER_DEPLOY_HOOK`): nunca sale en el
 registro. Render lo hace de fondo; la prueba sin sesión de la noche siguiente lo confirma. Si Render rechaza la imagen (un
 404), tiene que ser del mismo registro y nombre que la del servicio.
+
+**Si quedó instalado por etiqueta** (optativo): con la llave de la API de Render (`SITE_RENDER_API_KEY`, secreta) y el id
+del servicio (`SITE_RENDER_SERVICE_ID`, el `srv-…` de su URL), el nocturno le pregunta a Render qué imagen corre el
+servicio antes de pedir el redespliegue. Si está fijada por etiqueta (`:stable`, `:latest`), el resultado sale `no_pudo`
+con el motivo «instalado por etiqueta» y la banda del sitio aparece igual que en Azure. Si Render no contesta, sale
+`no_pudo` con su código, nunca «al día». Sin las dos variables, todo sigue como antes. En Azure Pipelines se cargan en
+«Variables» del pipeline (la llave, como secreta); en GitHub, la llave como secreto y el id como variable del repo.
+Render no tiene llaves de sólo lectura: una llave abre todos los espacios de trabajo de su usuario. Creala desde un
+usuario que sólo esté en el espacio del sitio, y revocala desde «Account Settings → API Keys» si se filtra.
 
 ### Una máquina propia
 

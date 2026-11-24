@@ -96,15 +96,16 @@ test('SignatureQuestion_EveryFirma_VerbOnce_NoAprobas (T32)', (t) => {
 
 // 🔴 Falla con: la historia nombrada sólo por su número, o una línea de historia sin corrida.
 test('SignatureQuestion_StoryWithTitle_NamesTitle (T33)', (t) => {
-  const save = conFirma('save');
+  const pendiente = conFirma('pending-approval');
+  const cmd = (c) => `node ${MARKER} approve-pending --id DEF-nuevo --repo ${c.repo}`;
   const con = corrida(t);
-  assert.match(save(con, `node ${MARKER} approve-save`).pregunta, new RegExp(`Historia 9\\.99, «${TITULO}», sesión ses-a\\.`));
+  assert.match(pendiente(con, cmd(con)).pregunta, new RegExp(`Historia 9\\.99, «${TITULO}», sesión ses-a\\.`));
   const sin = corrida(t, { titulo: null });
-  assert.match(save(sin, `node ${MARKER} approve-save`).pregunta, /Historia 9\.99 \(sin título en su archivo\), sesión ses-a\./);
+  assert.match(pendiente(sin, cmd(sin)).pregunta, /Historia 9\.99 \(sin título en su archivo\), sesión ses-a\./);
   // sin corrida no hay historia que nombrar, pero sí la sesión sobre la que se firma
   const ninguna = corrida(t);
   fs.rmSync(path.join(ninguna.estado, 'active', 'ses-a.json'));
-  const q = save(ninguna, `node ${MARKER} approve-save`).pregunta;
+  const q = pendiente(ninguna, cmd(ninguna)).pregunta;
   assert.doesNotMatch(q, /Historia/);
   assert.match(q, /\? Sesión ses-a\./);
 });
@@ -596,7 +597,7 @@ test('SignatureQuestion_SourceChangedAfterBox_ClickDoesNotCount (T43)', (t) => {
 test('SignatureQuestion_LongFields_CutWithMark (T44)', () => {
   const larga = 'x'.repeat(300);
   const archivos = Array.from({ length: 14 }, (_, i) => `a${i}.js`);
-  const q = oa.cuadroDe({ firma: 'save', destino: 'ses-a', que: 'guardar la story', queHace: [larga], archivos, siSaleMal: 'se revierte', huella: 'ab12cd34' }).pregunta;
+  const q = oa.cuadroDe({ firma: 'pending-approval', destino: 'ses-a', que: 'abrir un pendiente nuevo', queHace: [larga], archivos, siSaleMal: 'se revierte', huella: 'ab12cd34' }).pregunta;
   // 8.275: el corte dice «(sigue en el detalle)»; los archivos, en cantidad y zonas
   assert.match(q, /Qué hace: x+ \(sigue en el detalle\)\./);
   assert.ok(!q.includes('…'), q);
@@ -1322,7 +1323,7 @@ test('SignatureQuestion_SameSealBeforeAndAfter (T12) @story-8.275 @ac-14 @story-
   // calculados con estos mismos comandos y esta misma corrida
   // `runtime-waiver` no va fijo: su forma canónica lleva la ruta real de la historia, que acá es una carpeta temporal
   // distinta en cada corrida; abajo, el mismo código por ruta relativa y absoluta, y nunca el de antes de la 8.296
-  const ANTES = { 'adhoc-lane': '26eeb534', save: '0925a02b', 'lost-run': 'e089182e', 'designation-set': '03b92ba0' };
+  const ANTES = { 'adhoc-lane': '26eeb534', 'lost-run': 'e089182e', 'designation-set': '03b92ba0' };
   const c = corrida(t, { titulo: 'x', extraHistoria: ['runtime_not_verifiable:', '  - ac: 1', '    reason: "el servicio externo no tiene ambiente de prueba"', '    covered_by: T1'] });
   const de = (firma, cmd, cwd = c.repo) => ow.cuadroPara({ firma, comando: cmd, palabras: ow.canonica(cmd), destino: 'ses-a', sesion: 'ses-a', cwd, casa: c.casa });
   // el cuadro de nombrar depende del rol del perfil (sin él dice que la sesión sólo ordena): el fijo es el del perfil con
@@ -1332,7 +1333,6 @@ test('SignatureQuestion_SameSealBeforeAndAfter (T12) @story-8.275 @ac-14 @story-
   const nombrar = (valor) => { cw.sesionQueReenvia = () => ({ valor }); try { return de('designation-set', `node ${MARKER} designate-relay`, '/r/repo'); } finally { cw.sesionQueReenvia = leerRol; } };
   const ahora = {
     'adhoc-lane': de('adhoc-lane', `node ${MARKER} adhoc set '{"reason":"arreglar el aviso","maxFiles":3}'`),
-    save: de('save', `node ${MARKER} approve-save`),
     'lost-run': de('lost-run', `node ${MARKER} clear-session ses-b --lost`),
     'runtime-waiver': de('runtime-waiver', `node ${MARKER} runtime-waiver specs/story-9.99-prueba.md --acs 1`),
     'designation-set': nombrar('coordinadora'),

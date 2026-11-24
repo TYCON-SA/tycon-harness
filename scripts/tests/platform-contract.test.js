@@ -654,6 +654,8 @@ test('T122 PrRead_ContractAndConnectors @story-2.81 @ac-65', async () => {
     prAzure(24, { status: 'completed', closedDate: MERGED }),
     prAzure(25, { status: 'abandoned', closedDate: MERGED }),
     prAzure(26, { repository: { name: 'OtroRepo', project: { name: 'Producto' } } }),
+    // el mismo nombre de repo en otro proyecto de la organización: el número es de toda la organización
+    prAzure(27, { repository: { name: 'Backend', project: { name: 'OtroProyecto' } } }),
   ]));
   const az = (number) => P().run('change-request.read', { number }, { env: w.env, repo: AZ });
   r = await az(21);
@@ -667,10 +669,13 @@ test('T122 PrRead_ContractAndConnectors @story-2.81 @ac-65', async () => {
   assert.deepStrictEqual([r.value.state, r.value.mergedAt], ['merged', MERGED]);
   r = await az(25);
   assert.deepStrictEqual([r.value.state, r.value.mergedAt], ['closed', null]);
-  for (const n of [999, 26]) {
+  for (const n of [999, 26, 27]) {
     r = await az(n);
     assert.deepStrictEqual([r.ok, r.reason], [false, 'no_encontrado'], `${n}: ${JSON.stringify(r)}`);
   }
+  // el proyecto se compara sin mayúsculas, y un repo sin proyecto en su identidad no lo mira
+  r = await P().run('change-request.read', { number: 23 }, { env: w.env, repo: { ...AZ, project: 'producto' } });
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
 });
 
 test('T22 Conector_LeerPedido_DevuelveMergeCommit @story-8.205 @ac-3', async () => {
@@ -728,4 +733,23 @@ test('T30 Contrato_EstimateEnCreateYUpdate @story-2.75 @ac-27', async () => {
   // el núcleo no nombra campos de ninguna herramienta
   const texto = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'platform', 'contract.js'), 'utf8');
   assert.doesNotMatch(texto, /Microsoft\.VSTS|OriginalEstimate|StoryPoints|ProjectV2/);
+});
+
+// 🔴 Falla con: un conector que no devuelve la rama de origen del pedido (el freno de pedidos la necesita para juzgar
+// `--delete-source-branch` en un `update`).
+test('T123 PrRead_GivesTheSourceBranch — leer un pedido devuelve su rama de origen, en las dos plataformas', async () => {
+  const m = mundo({ platform: { default: 'github' } });
+  const env = { ...m.env, TYCON_GH_CMD: FAKE_GH, FAKE_GH_STATE: estadoGh({ pulls: { 'acme/portal': [
+    { number: 51, state: 'open', title: 'a', head: { ref: 'story/8.1-algo', sha: 'a1' }, base: { repo: { full_name: 'acme/portal' } }, user: { login: 'x', type: 'User' } },
+    { number: 52, state: 'open', title: 'b', head: { sha: 'b1' }, base: { repo: { full_name: 'acme/portal' } }, user: { login: 'x', type: 'User' } },
+  ] } }) };
+  const gh = async (number) => (await P().run('change-request.read', { number }, { env, repo: GH })).value.sourceBranch;
+  assert.strictEqual(await gh(51), 'story/8.1-algo');
+  assert.strictEqual(await gh(52), null, 'sin rama, null');
+  const w = mundoAzure([[]]);
+  fs.writeFileSync(path.join(w.fix, 'repos-pr.json'), JSON.stringify([prAzure(61), prAzure(62, { sourceRefName: 'refs/heads/dev' }), prAzure(63, { sourceRefName: 'refs/pull/63/merge' })]));
+  const az = async (number) => (await P().run('change-request.read', { number }, { env: w.env, repo: AZ })).value.sourceBranch;
+  assert.strictEqual(await az(61), 'story/61');
+  assert.strictEqual(await az(62), 'dev');
+  assert.strictEqual(await az(63), null, 'algo que no es una rama, null');
 });

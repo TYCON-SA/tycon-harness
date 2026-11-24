@@ -225,7 +225,7 @@ como la historia entera, como antes.
 - Dos tandas sin terminar que nombran el mismo archivo tienen que decir, cada una, qué entrega sola (`delivers`); si ninguna sirve sola, se juntan en una → **VAL-W19 WARNING** si alguna no lo dice.
 
 **La tanda de la ejecución.** La ejecución que entrega una tanda arranca con `pipeline.js start --batch <name>`, o la
-anota con `marker.js set-batch <name>` (una vez, y la tanda no puede estar `done`). Desde ahí, «Preparar el commit» le
+anota con `marker.js set-batch <name>` (una vez, y la tanda no puede estar `done`). Desde ahí, «Preparar el pull request» le
 pide la evidencia en vivo de los criterios de esa tanda (`acs` ∪ `acs_pending`) más los de ninguna tanda, no la de
 todas. Cerrar una tanda (`status: done`) pide la evidencia de la que se cierra. Pasar la historia a `review` o `done`
 pide la de todas.
@@ -872,7 +872,7 @@ node ~/.claude/tycon-harness/scripts/tools/tycon-backfill-followups.js \
 
 Si la historia modifica un comando que existe en `main`, «Probar en vivo» lo corre con la versión de `main` y con el
 cambio, y compara las dos salidas (`smoke-run.sh --compare`, ver `steps/step-10-live-check.md`). Una diferencia que la
-historia no declara frena «Preparar el commit». Se declara en esta sección, un renglón por comando:
+historia no declara frena «Preparar el pull request». Se declara en esta sección, un renglón por comando:
 
 ```markdown
 ## Cambios de comportamiento

@@ -578,6 +578,44 @@ function mensajeEnLaTranscripcion(ruta, a, { sello, destino, pregunta } = {}) {
   return { ok: true };
 }
 
+// lo que dice la marca de ausente cuando no hay mensajes de la persona que leer (Codex, `claude -p`, una transcripción
+// rota): se pierde el atajo de la marca, no la autonomía
+const SIN_MENSAJES_DE_LA_PERSONA = 'no pude leer los mensajes de la persona: el dueño cuenta como ausente por los minutos sin respuesta';
+const FRASE_RECIENTE_MS = 30 * 60 * 1000;
+
+/**
+ * ¿`frase` está en un mensaje tipeado por la persona en la transcripción de `sesion`, en los últimos 30 minutos antes de
+ * `ahora`? El mismo criterio que el «aprobado» escrito: origen humano y tipeado (`TIPEADO`), nunca un mensaje envuelto
+ * (otra sesión, un canal, un aviso) ni uno de un programa. La frase son al menos dos palabras seguidas del mensaje,
+ * enteras, sin distinguir mayúsculas, espacios ni la forma de las tildes: una letra o una palabra suelta de cualquier
+ * mensaje no pone la marca. `{ ok }`, o `{ ok: false, motivo, sinTranscripcion? }`.
+ */
+function fraseTipeadaReciente({ casa = os.homedir(), sesion, frase, ahora = Date.now() } = {}) {
+  const palabras = (s) => String(s || '').normalize('NFC').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  const buscada = palabras(frase);
+  if (buscada.length < 2) return { ok: false, motivo: `la frase tiene que citar al menos dos palabras seguidas del mensaje del dueño (vino «${String(frase || '').slice(0, 80)}»)` };
+  const ruta = transcripcionDe(casa, sesion);
+  if (!ruta) return { ok: false, motivo: SIN_MENSAJES_DE_LA_PERSONA, sinTranscripcion: true };
+  let rs;
+  try { rs = renglones(ruta, { tope: true }); } catch (_) { return { ok: false, motivo: SIN_MENSAJES_DE_LA_PERSONA, sinTranscripcion: true }; }
+  // la frase, palabra por palabra, dentro de las palabras del mensaje: «me voy» está en «me voy, seguí», «e» no
+  const contiene = (texto) => {
+    const p = palabras(texto);
+    for (let i = 0; i + buscada.length <= p.length; i++) if (buscada.every((w, k) => p[i + k] === w)) return true;
+    return false;
+  };
+  const tipeada = rs.some((r) => {
+    if (!r || r.type !== 'user' || r.isMeta === true || !r.origin || r.origin.kind !== 'human') return false;
+    if (!(TIPEADO[r.entrypoint] || []).includes(r.promptSource)) return false;
+    const texto = textoDe(r);
+    if (texto === null || ENVUELTO.test(texto)) return false;
+    const t = Date.parse(r.timestamp);
+    return Number.isFinite(t) && t <= ahora + MARGEN_MS && ahora - t <= FRASE_RECIENTE_MS && contiene(texto);
+  });
+  return tipeada ? { ok: true }
+    : { ok: false, motivo: `«${String(frase).slice(0, 80)}» no está en un mensaje tipeado por la persona en esta sesión en los últimos 30 minutos (un mensaje de otra sesión, de un canal o de un programa no cuenta)` };
+}
+
 function pistaDeVersion(renglon) {
   // el click ya se negó: esto sólo agrega qué actualizar, y si no se puede cargar la negativa queda igual
   try { return require('./claude-versions.js').clickHint(renglon); } catch (_) { return ''; }
@@ -599,6 +637,23 @@ function anotarPreguntaDistinta({ casa, sello, sesion, esperada, recibida }) {
     fs.mkdirSync(stateDir(casa), { recursive: true });
     fs.appendFileSync(path.join(stateDir(casa), 'hook-errors.log'), `[${new Date().toISOString()}] owner-approvals: la pregunta del cuadro no es la del guion · ${una(sello, 200)} · click de ${una(sesion, 80)} · huellas ${huella(e)}/${huella(r)} (guion/cuadro) · largos ${e.length}/${r.length} · primer carácter distinto: ${i} · guion ${JSON.stringify(e.slice(i, i + 40))} · cuadro ${JSON.stringify(r.slice(i, i + 40))}\n\n`);
   } catch (_) { /* sin registro: la negativa es la misma */ }
+}
+
+/**
+ * ¿El sello propio de la pregunta clickeada es de la firma y la sesión de `sello` (con cualquier código)? El propio es el
+ * último que trae: otro cuadro puede citar este sello en el medio (la cita de un criterio, un pedido) y termina con el
+ * suyo. Un pedido de permiso lleva su sello antes del pedido: ése nunca es de esta firma. Se compara sin tildes, sin
+ * mayúsculas y con los espacios juntados: un cuadro de esta firma retocado a mano (un punto al final, comillas, «Sesion»,
+ * un salto de renglón) la sigue nombrando. Sin sello, no.
+ */
+function nombraLaMismaFirmaYSesion(pregunta, sello) {
+  const plano = (s) => String(s || '').normalize('NFKD').replace(/[\p{M}\p{Cf}]/gu, '').replace(/\s+/g, ' ').toLowerCase();
+  const SELLOS = /\b(firma|permiso) ([\w:.-]+) · sesion ([\w-]+) · codigo /g;
+  const suyos = [...plano(pregunta).matchAll(SELLOS)];
+  const esta = [...plano(sello).matchAll(SELLOS)][0];
+  if (!esta || !suyos.length || suyos.some((m) => m[1] === 'permiso')) return false;
+  const propio = suyos[suyos.length - 1];
+  return propio[1] === esta[1] && propio[2] === esta[2] && propio[3] === esta[3];
 }
 
 /**
@@ -625,7 +680,9 @@ function clickEnLaTranscripcion(ruta, a, { pregunta, opciones, descripciones, se
   if (!dijo.ok) return { ok: false, motivo: `en la transcripción, ${dijo.motivo}` };
   if (dijo.pregunta !== a.pregunta || dijo.respuesta !== a.respuesta) return { ok: false, motivo: 'la respuesta del cuadro en la transcripción no es la del registro' };
   if (!pregunta || dijo.pregunta !== pregunta) {
-    anotarPreguntaDistinta({ casa, sello, sesion: a.sesion, esperada: pregunta, recibida: dijo.pregunta });
+    // el renglón, sólo para un click a esta misma firma y sesión: cada firma que se chequea mira todos los clicks recientes
+    // de la pestaña, y uno a otra firma, o sin sello, no dice nada de ésta
+    if (nombraLaMismaFirmaYSesion(dijo.pregunta, sello)) anotarPreguntaDistinta({ casa, sello, sesion: a.sesion, esperada: pregunta, recibida: dijo.pregunta });
     // con el mismo sello, la firma y lo que se firma son los mismos: lo que cambió es el texto
     const mismoSello = !!pregunta && !!selloAlFinal(pregunta) && selloAlFinal(dijo.pregunta) === selloAlFinal(pregunta);
     return { ok: false, motivo: mismoSello ? PREGUNTA_CAMBIADA : 'la pregunta del cuadro no es la que armó el guion para esta firma: el click fue a otra pregunta' };
@@ -1126,5 +1183,5 @@ function validarEnClaude(a, { casa = os.homedir(), cwd, cuadro, destino, linea, 
 }
 
 module.exports = { VENCE_MIN, ENVUELTO, PERMITIDOS, TIPEADO, APRUEBA, NIEGA, PREGUNTA_CAMBIADA, LARGO_EN_TELEFONO, DETALLE_TITULO, carpeta, esAprobacion, mensajeDeLaPersona, respuestaDelCuadro, aprobadasDelCuadro, cuadroDe, recortar, sinRutas, renglonDelTope, notasDelCuadro, traeElSello, lanzadoPorLaHerramienta,
-  anotar, leerSesion, consumir, devolver, transcripcionDe, controlRemotoDelProceso, mensajeEnLaTranscripcion, clickEnLaTranscripcion, capas, hooksDePlugins, ganchosDelEncabezado, banderasDe, alcanzaAlCuadro, esPermitido,
+  anotar, leerSesion, consumir, devolver, transcripcionDe, fraseTipeadaReciente, SIN_MENSAJES_DE_LA_PERSONA, controlRemotoDelProceso, mensajeEnLaTranscripcion, clickEnLaTranscripcion, capas, hooksDePlugins, ganchosDelEncabezado, banderasDe, alcanzaAlCuadro, esPermitido,
   escuchasDelCuadro, procesoQueLaAnoto, coordinadoraConfirmada, buscar, buscarPermiso, validarEnClaude, plataformaDe, constanciaDeLaTerminal };

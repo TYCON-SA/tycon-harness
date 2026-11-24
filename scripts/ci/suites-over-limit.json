@@ -150,13 +150,6 @@
         "why": "Suite del laboratorio del instalador. Por decisión del dueño corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado); con cualquier otro cambio la corre el nocturno. Cuando corre pasa de 45 s (132 s medidos en el agente): son decenas de casos que instalan, actualizan y revisan sobre el laboratorio, de 2 a 12 s cada uno. Armar el laboratorio no es lo caro (0,85 s por vez, medido el 2026-10-07): prepararlo una sola vez no la baja. Bajaría con menos procesos por comando del instalador, que es código del producto y otra story."
       }
     },
-    "harness-tools.test.sh": {
-      "exception": {
-        "signed_by": "el dueño del arnés",
-        "date": "2026-10-08",
-        "why": "Suite del laboratorio del instalador (los enchufes de cada herramienta). Por decisión del dueño corre en la validación de la rama sólo cuando el cambio toca el instalador (el grupo `installer` de scripts/ci/heavy-suites.json, con su costo aceptado) o el adaptador de Codex; con cualquier otro cambio la corre el nocturno. Cuando corre pasa de 45 s: 60 s medidos en la Mac, porque entró a main el mismo día sin peso medido en el agente (la medición final lo corrige). Son 140 verificaciones que instalan y revisan sobre el laboratorio; armar el laboratorio no es lo caro."
-      }
-    },
     "get-harness.test.sh": {
       "exception": {
         "signed_by": "el dueño del arnés",

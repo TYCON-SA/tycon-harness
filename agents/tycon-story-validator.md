@@ -220,7 +220,7 @@ Se ejecuta antes de «Implementar» del pipeline, o de cualquier otro camino que
 ### Revisores — post-implementación (Gate 1 del DoD)
 Re-ejecuta el validator después del build gate («Implementar») y junto con los advisors paralelos. Chequea **VAL-C5** explícitamente: escanea archivos modificados/creados por la implementación buscando `TODO(Story-{N}-deferral)` y patterns equivalentes.
 
-Si encuentra deferrals abiertos del propio story → CRITICAL → bloquea «Preparar el commit» hasta cerrarlos.
+Si encuentra deferrals abiertos del propio story → CRITICAL → bloquea «Preparar el pull request» hasta cerrarlos.
 
 **Caller de Revisores** debe pasar al validator:
 - `story_path`: misma que en «Validar la historia»
@@ -260,6 +260,15 @@ detalle— termina con **exactamente uno** de estos renglones, solo, sin viñeta
 ```text
 Veredicto: limpio
 Veredicto: hallazgos (VAL-C8, VAL-C8, VAL-W15) · bloquea: sí
+```
+
+Si el prompt trae lo que reportaste en la vuelta anterior, sumá al renglón los críticos de esa vuelta que confirmás
+arreglados, una vez por hallazgo, aunque hoy reportes otro con el mismo código. Sin esa parte el arnés no da el arreglo
+por comprobado, y cuesta otra vuelta o la exención del dueño:
+
+```text
+Veredicto: hallazgos (VAL-C8) · bloquea: sí · resueltos (VAL-C8, VAL-C3)
+Veredicto: limpio · resueltos (VAL-C8)
 ```
 
 - `limpio` sólo con **cero hallazgos abiertos de tu catálogo** (VAL-*). Confirmar que lo reportado antes

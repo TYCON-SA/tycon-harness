@@ -12,7 +12,7 @@
           "type": "must-block",
           "_por_que": "El caso del 2026-09-04: `az repos pr list --project Acme … | sed` — el proyecto se llama «Acme Logistica», az falló, el sed se comió el error, la salida vacía se leyó como «no hay PR abierto». Dos conclusiones falsas ese día.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -37,7 +37,7 @@
           "type": "must-stay-quiet",
           "_por_que": "Hubo respuesta: no hay nada que sospechar, aunque el error esté tapado.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -55,7 +55,7 @@
           "type": "must-stay-quiet",
           "_por_que": "🔴 El que sostiene el control: un listado vacío con el error a la vista es la respuesta correcta («no hay PR abiertos»). Avisar acá sería el ruido que apaga el control.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -73,7 +73,7 @@
           "type": "must-stay-quiet",
           "_por_que": "Con `set -o pipefail` el código de salida del az sobrevive al filtro: quien escribió eso ya se protegió.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -91,7 +91,7 @@
           "type": "must-stay-quiet",
           "_por_que": "Un ls vacío con 2>/dev/null lo mira missing-path-notice (el disco); éste sólo mira servicios.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -108,7 +108,7 @@
           "id": "otra-herramienta-no-avisa",
           "type": "must-stay-quiet",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Read",
@@ -125,7 +125,7 @@
           "type": "must-block",
           "_por_que": "La segunda mirada, sólo con lista cacheada: `--project Acme` no está en la organización (es «Acme Logistica»). Con ese nombre az falla siempre; se dice aunque haya salida y aunque el error no esté tapado.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/",
             "mkdir -p $HOME/.claude/.tycon-pipeline && printf '{\"org\":\"https://dev.azure.com/org-del-equipo\",\"proyectos\":[\"Acme Logistica\",\"Totora\",\"URUTAU\"]}' > $HOME/.claude/.tycon-pipeline/az-projects.json"
           ],
           "stdin": {
@@ -150,7 +150,7 @@
           "id": "proyecto-que-si-existe-no-avisa",
           "type": "must-stay-quiet",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/",
             "mkdir -p $HOME/.claude/.tycon-pipeline && printf '{\"org\":\"https://dev.azure.com/org-del-equipo\",\"proyectos\":[\"Acme Logistica\",\"Totora\"]}' > $HOME/.claude/.tycon-pipeline/az-projects.json"
           ],
           "stdin": {
@@ -169,7 +169,7 @@
           "type": "must-stay-quiet",
           "_por_que": "Sin la lista no hay contra qué comparar: callado, no adivina.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -186,7 +186,7 @@
           "id": "apagado-por-variable",
           "type": "must-stay-quiet",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "env": {
             "TYCON_FAILED_QUERY_NOTICE": "0"
@@ -207,7 +207,7 @@
           "type": "must-block",
           "_por_que": "🔴 El comando REAL del 2026-09-04, tal cual: un `echo` de cabecera que deja stdout NO vacío, `--project \"$proj\"` (una variable, que la segunda mirada no juzga), `2>/dev/null` y `| sed`. La primera versión del hook callaba acá —el caso 1 del banco era una versión saneada de una línea—; la salida se ATRIBUYE descontando lo que imprimió el echo.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -232,7 +232,7 @@
           "type": "must-block",
           "_por_que": "La consulta no arranca el comando: va en la segunda línea, dentro de un `for … do`. Fija la conducta (la segmentación por línea y por `do`); la primera versión también lo veía por su prefijo `do`, así que este caso no la distingue: lo que la distingue es el de la variable y el del echo de cabecera.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -256,7 +256,7 @@
           "type": "must-block",
           "_por_que": "`TOK=$(curl … 2>/dev/null)`: el código de salida se pierde en la asignación y lo que se ve es el echo de después. Forma real de las transcripciones.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -281,7 +281,7 @@
           "type": "must-block",
           "_por_que": "`|| true` es el silenciador más honesto: el fallo se convierte en éxito a propósito y la salida vacía se lee como «no hay».",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -306,7 +306,7 @@
           "type": "must-block",
           "_por_que": "`az … ; echo listo`: el código de salida que el modelo ve es el del ÚLTIMO comando. La consulta pudo fallar y el turno termina en 0.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -331,7 +331,7 @@
           "type": "must-block",
           "_por_que": "Codex entrega tool_response como STRING, no como objeto con stdout: la pata Codex del banco corría con un payload que Codex nunca manda. Fija la conducta (la primera versión también aceptaba el string); sin este caso, borrar esa rama deja los casos verdes y el hook mudo en Codex.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -352,7 +352,7 @@
           "type": "must-block",
           "_por_que": "Todo proyecto real de la organización tiene espacio en el nombre, así que el argumento viene entre comillas; el aviso sugiere el parecido y NO pega la lista entera (los nombres de clientes no van al contexto).",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/",
             "mkdir -p $HOME/.claude/.tycon-pipeline && printf '{\"org\":\"https://dev.azure.com/org-del-equipo\",\"fecha\":\"%s\",\"proyectos\":[\"Acme Logistica\",\"Totora\",\"URUTAU\"]}' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > $HOME/.claude/.tycon-pipeline/az-projects.json"
           ],
           "stdin": {
@@ -382,7 +382,7 @@
           "type": "must-stay-quiet",
           "_por_que": "🔴 Reemplaza al caso «2>/dev/null y vacío avisa» de la primera versión: `2>/dev/null` esconde el MENSAJE, no el fallo — si el comando falla, el harness devuelve «Error: Exit code N» y el modelo lo ve. Con exit 0 y salida vacía es un vacío legítimo, y avisar ahí era ruido (revisión adversarial 2026-09-06, #42).",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -403,7 +403,7 @@
           "type": "must-stay-quiet",
           "_por_que": "Cuando el comando falla, tool_response es el string «Error: Exit code N …»: el modelo está viendo el fallo, no hay nada que avisar.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/",
             "mkdir -p $HOME/.claude/.tycon-pipeline && printf '{\"org\":\"https://dev.azure.com/org-del-equipo\",\"fecha\":\"%s\",\"proyectos\":[\"Acme Logistica\",\"Totora\",\"URUTAU\"]}' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > $HOME/.claude/.tycon-pipeline/az-projects.json"
           ],
           "stdin": {
@@ -422,7 +422,7 @@
           "type": "must-stay-quiet",
           "_por_que": "🔴 `az login -u … -p CLAVE`: la primera versión leía ese `-p` como proyecto e imprimía la clave por stderr con la lista de proyectos al lado. El `-p` sólo se juzga en `az repos|pipelines|boards|artifacts|devops`.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/",
             "mkdir -p $HOME/.claude/.tycon-pipeline && printf '{\"org\":\"https://dev.azure.com/org-del-equipo\",\"fecha\":\"%s\",\"proyectos\":[\"Acme Logistica\",\"Totora\",\"URUTAU\"]}' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > $HOME/.claude/.tycon-pipeline/az-projects.json"
           ],
           "stdin": {
@@ -444,7 +444,7 @@
           "type": "must-stay-quiet",
           "_por_que": "Alcanzaba con que «az» apareciera en cualquier parte del texto para que el `-p` de mkdir se leyera como proyecto («--project /tmp/x no existe en la organización»).",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/",
             "mkdir -p $HOME/.claude/.tycon-pipeline && printf '{\"org\":\"https://dev.azure.com/org-del-equipo\",\"fecha\":\"%s\",\"proyectos\":[\"Acme Logistica\",\"Totora\",\"URUTAU\"]}' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > $HOME/.claude/.tycon-pipeline/az-projects.json"
           ],
           "stdin": {
@@ -466,7 +466,7 @@
           "type": "must-stay-quiet",
           "_por_que": "🔴 El hook real se disparó sobre el informe de su propia revisión: un heredoc con una tabla markdown que tenía «-p |» en una fila. Los cuerpos de heredoc no son comandos.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/",
             "mkdir -p $HOME/.claude/.tycon-pipeline && printf '{\"org\":\"https://dev.azure.com/org-del-equipo\",\"fecha\":\"%s\",\"proyectos\":[\"Acme Logistica\",\"Totora\",\"URUTAU\"]}' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > $HOME/.claude/.tycon-pipeline/az-projects.json"
           ],
           "stdin": {
@@ -488,7 +488,7 @@
           "type": "must-stay-quiet",
           "_por_que": "az acepta el ID del proyecto; el hook afirmaba «no existe en la organización» sobre un comando que acababa de funcionar.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/",
             "mkdir -p $HOME/.claude/.tycon-pipeline && printf '{\"org\":\"https://dev.azure.com/org-del-equipo\",\"fecha\":\"%s\",\"proyectos\":[\"Acme Logistica\",\"Totora\",\"URUTAU\"]}' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > $HOME/.claude/.tycon-pipeline/az-projects.json"
           ],
           "stdin": {
@@ -510,7 +510,7 @@
           "type": "must-stay-quiet",
           "_por_que": "Un Bash en segundo plano devuelve stdout vacío por diseño (el resultado llega después): 293 de los ~380 avisos que la primera versión habría dado eran esto. El CLAUDE.md MANDA segundo plano para todo paso largo.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -533,7 +533,7 @@
           "type": "must-stay-quiet",
           "_por_que": "`curl -o archivo`: la salida va al archivo, el vacío en pantalla es lo esperado. Ídem `> archivo`.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -554,7 +554,7 @@
           "type": "must-stay-quiet",
           "_por_que": "`az devops configure --defaults …` escribe configuración: no devuelve nada y no hay nada que leer. Estaba entre los 33 «avisos» del commit original.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/",
             "mkdir -p $HOME/.claude/.tycon-pipeline && printf '{\"org\":\"https://dev.azure.com/org-del-equipo\",\"fecha\":\"%s\",\"proyectos\":[\"Acme Logistica\",\"Totora\",\"URUTAU\"]}' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > $HOME/.claude/.tycon-pipeline/az-projects.json"
           ],
           "stdin": {
@@ -576,7 +576,7 @@
           "type": "must-stay-quiet",
           "_por_que": "Un POST/PUT/DELETE es una escritura; su respuesta vacía no se lee como «no hay».",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -597,7 +597,7 @@
           "type": "must-stay-quiet",
           "_por_que": "Una lista de proyectos de más de 30 días denunciaría con certeza un proyecto creado ayer. `fecha` se escribía y no se leía.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/",
             "mkdir -p $HOME/.claude/.tycon-pipeline && printf '{\"org\":\"x\",\"fecha\":\"2019-01-01T00:00:00Z\",\"proyectos\":[\"Acme Logistica\"]}' > $HOME/.claude/.tycon-pipeline/az-projects.json"
           ],
           "stdin": {
@@ -619,7 +619,7 @@
           "type": "must-stay-quiet",
           "_por_que": "`az … && echo ok`: si az falla, el && corta y el exit ≠ 0 se ve. Fija la conducta (espejo): sin él, «hay otro comando después» se apaga a la semana.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -640,7 +640,7 @@
           "type": "must-stay-quiet",
           "_por_que": "🔴 Espejo del caso del subshell (revisión con Fable, #14): `R=$(consulta); echo \"resultado: $R\"` con «resultado: succeeded» en pantalla. La primera reescritura reemplazaba la variable por `.*` y descontaba la línea entera como texto del echo → avisaba «devolvió VACÍO» con los datos a la vista. La variable que trajo texto ES la salida de la consulta.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -661,7 +661,7 @@
           "type": "must-block",
           "_por_que": "`--project ${PROJ}` sin comillas: las llaves de la expansión partían el segmento y la consulta dejaba de ser la que precede al filtro (revisión con Fable, #3).",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -685,7 +685,7 @@
           "type": "must-block",
           "_por_que": "🔴 Un `# don't forget` antes de la consulta: el apóstrofo abría una comilla que se tragaba el resto del comando y el hook callaba — silencio leído como «no hay», justo lo que existe para evitar (revisión con Fable, #57).",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -709,7 +709,7 @@
           "type": "must-stay-quiet",
           "_por_que": "bash acepta cualquier palabra como delimitador (`END-DOC`): con el regex de identificador, el cuerpo del documento —que tenía un `az … | head`— se leía como comandos (revisión con Fable, #58).",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/",
             "mkdir -p $HOME/.claude/.tycon-pipeline && printf '{\"org\":\"https://dev.azure.com/org-del-equipo\",\"fecha\":\"%s\",\"proyectos\":[\"Acme Logistica\",\"Totora\",\"URUTAU\"]}' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > $HOME/.claude/.tycon-pipeline/az-projects.json"
           ],
           "stdin": {
@@ -731,7 +731,7 @@
           "type": "must-stay-quiet",
           "_por_que": "`… | head -3 &`: segundo plano por el shell, no por run_in_background — su salida no está en este resultado (revisión con Fable, #58).",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -752,7 +752,7 @@
           "type": "must-block",
           "_por_que": "🔴 Regresión del arreglo del `&` de fondo (crítico del 1er pase, D1): `2>&1` se leía como «& de fondo» y partía el segmento, y la primera mirada callaba. El 45 % de las consultas reales (1.110 de 2.441) llevan `2>&1`.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -776,7 +776,7 @@
           "type": "must-block",
           "_por_que": "«etiqueta: $R» con R vacío imprime «etiqueta:» (sin el espacio): la atribución exigía el espacio y la línea no se descontaba → silencio (crítico del 1er pase, D2). 189 usos reales llevan el espacio.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -800,7 +800,7 @@
           "type": "must-stay-quiet",
           "_por_que": "Con `… &` la primera mirada callaba pero la segunda seguía hablando del `--project` (crítico del 1er pase, D2): el resultado de algo que se fue al fondo no está en esta respuesta, para ninguna de las dos.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/",
             "mkdir -p $HOME/.claude/.tycon-pipeline && printf '{\"org\":\"https://dev.azure.com/org-del-equipo\",\"fecha\":\"%s\",\"proyectos\":[\"Acme Logistica\",\"Totora\",\"URUTAU\"]}' \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > $HOME/.claude/.tycon-pipeline/az-projects.json"
           ],
           "stdin": {
@@ -822,7 +822,7 @@
           "type": "must-block",
           "_por_que": "🔴 La forma en que se escribe un barrido: `for id in …; do echo \"== $id ==\"; az … | head; done`. La variable del for llena la cabecera; con la regla «descontar sólo si la variable vino vacía» esas líneas quedaban como salida y el hook callaba (segundo pase con Fable, [9]). Sólo la variable que se llenó con una consulta cuenta como salida.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -846,7 +846,7 @@
           "type": "must-block",
           "_por_que": "🔴 Regresión del corte por `&` de fondo (2do pase con Fable, [0]/[8]/[14]/[16]): `2>&1` tiene un `&` seguido de dígito, así que la consulta quedaba partida y con separador `&` — el hook la leía como enviada al fondo y callaba. Es el idioma más común para «ver también el error», y justo ahí el vacío volvía a leerse como «no hay».",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -870,7 +870,7 @@
           "type": "must-block",
           "_por_que": "El mismo `2>&1` con `|| true`, la otra forma frecuente: el fallo se convierte en éxito y la salida vacía se lee como «no hay».",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -894,7 +894,7 @@
           "type": "must-block",
           "_por_que": "`|&` es un pipe que además lleva stderr (bash 4+): se leía como `|` seguido de un `&` de fondo y la consulta se descartaba.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "Bash",
@@ -931,7 +931,7 @@
           "type": "must-block",
           "_por_que": "El caso del 2026-09-04: `az repos pr list --project Acme … | sed` — el proyecto se llama «Acme Logistica», az falló, el sed se comió el error, la salida vacía se leyó como «no hay PR abierto». Dos conclusiones falsas ese día.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "PowerShell",
@@ -957,7 +957,7 @@
           "type": "must-block",
           "_por_que": "Deuda SALIDA-VACIA-DE-COMANDO-FALLADO pagada el 2026-10-16: en Windows la consulta y la forma de tapar el error son las de PowerShell. -ErrorAction SilentlyContinue saca el error de la vista: vacío no es «no hay».",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "PowerShell",
@@ -982,7 +982,7 @@
           "type": "must-block",
           "_por_que": "Deuda SALIDA-VACIA-DE-COMANDO-FALLADO pagada el 2026-10-16: en Windows la consulta y la forma de tapar el error son las de PowerShell. -EA 0 es la forma corta de lo mismo.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "PowerShell",
@@ -1007,7 +1007,7 @@
           "type": "must-block",
           "_por_que": "Deuda SALIDA-VACIA-DE-COMANDO-FALLADO pagada el 2026-10-16: en Windows la consulta y la forma de tapar el error son las de PowerShell. El catch vacío se come el error.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "PowerShell",
@@ -1032,7 +1032,7 @@
           "type": "must-block",
           "_por_que": "Deuda SALIDA-VACIA-DE-COMANDO-FALLADO pagada el 2026-10-16: en Windows la consulta y la forma de tapar el error son las de PowerShell. La tubería a un cmdlet: lo que se ve es lo del último.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "PowerShell",
@@ -1057,7 +1057,7 @@
           "type": "must-block",
           "_por_que": "Deuda SALIDA-VACIA-DE-COMANDO-FALLADO pagada el 2026-10-16: en Windows la consulta y la forma de tapar el error son las de PowerShell. En Windows llega az.cmd; findstr es el grep de cmd.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "PowerShell",
@@ -1082,7 +1082,7 @@
           "type": "must-block",
           "_por_que": "Deuda SALIDA-VACIA-DE-COMANDO-FALLADO pagada el 2026-10-16: en Windows la consulta y la forma de tapar el error son las de PowerShell. El encabezado de Write-Host no es salida de la consulta.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "PowerShell",
@@ -1107,7 +1107,7 @@
           "type": "must-stay-quiet",
           "_por_que": "Deuda SALIDA-VACIA-DE-COMANDO-FALLADO pagada el 2026-10-16: en Windows la consulta y la forma de tapar el error son las de PowerShell. Una escritura: el vacío es lo esperado.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "PowerShell",
@@ -1128,7 +1128,7 @@
           "type": "must-stay-quiet",
           "_por_que": "Deuda SALIDA-VACIA-DE-COMANDO-FALLADO pagada el 2026-10-16: en Windows la consulta y la forma de tapar el error son las de PowerShell. Descarga a archivo: no hay nada que ver en pantalla.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "PowerShell",
@@ -1149,7 +1149,7 @@
           "type": "must-stay-quiet",
           "_por_que": "Deuda SALIDA-VACIA-DE-COMANDO-FALLADO pagada el 2026-10-16: en Windows la consulta y la forma de tapar el error son las de PowerShell. Sin nada que tape el error, un fallo se ve: vacío es una respuesta.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "PowerShell",
@@ -1170,7 +1170,7 @@
           "type": "must-stay-quiet",
           "_por_que": "Deuda SALIDA-VACIA-DE-COMANDO-FALLADO pagada el 2026-10-16: en Windows la consulta y la forma de tapar el error son las de PowerShell. La salida se tira a propósito.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "PowerShell",
@@ -1191,7 +1191,7 @@
           "type": "must-stay-quiet",
           "_por_que": "Deuda SALIDA-VACIA-DE-COMANDO-FALLADO pagada el 2026-10-16: en Windows la consulta y la forma de tapar el error son las de PowerShell. Con algo en pantalla, la consulta contestó.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "PowerShell",
@@ -1212,7 +1212,7 @@
           "type": "must-stay-quiet",
           "_por_que": "Deuda SALIDA-VACIA-DE-COMANDO-FALLADO pagada el 2026-10-16: en Windows la consulta y la forma de tapar el error son las de PowerShell. Si el error igual salió por stderr, el modelo lo está viendo.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/hooks && cp $TCG/scripts/hooks/failed-query-notice.js tcg/scripts/hooks/ && mkdir -p tcg/scripts/lib && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/legacy-names.js tcg/scripts/lib/ && mkdir -p tcg/integrations/azure-devops/scripts tcg/integrations/github/scripts && cp $TCG/integrations/azure-devops/scripts/query-notice.js tcg/integrations/azure-devops/scripts/ && cp $TCG/integrations/github/scripts/query-notice.js tcg/integrations/github/scripts/"
           ],
           "stdin": {
             "tool_name": "PowerShell",

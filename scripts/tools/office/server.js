@@ -383,7 +383,9 @@ async function serve() {
   // cuándo empezó a leerse la última foto mandada (la primera también cuenta): la mide `photoDue`
   let lastSentAt = 0;
   const broadcast = (readAt = Date.now()) => {
-    const msg = JSON.stringify({ type: 'foto', data: last });
+    // en las pruebas, la hora en que empezó a leerse: el intervalo de la carga se mide ahí, no a la llegada, que corre
+    // con lo que tardó cada lectura
+    const msg = JSON.stringify({ type: 'foto', data: last, ...(testing ? { leidaEn: readAt } : {}) });
     for (const c of clients) if (c.readyState === WebSocket.OPEN) c.send(msg);
     if (link) link.update(last);
     counters.sends += 1;

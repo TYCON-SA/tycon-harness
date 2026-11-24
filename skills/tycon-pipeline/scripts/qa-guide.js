@@ -786,7 +786,7 @@ function uiReadabilityCheck({ content, fm, qaDir, qk, repoRoot, storyPath }) {
 // El dueño aprueba una maqueta con el plan (mockup.js) y queda su
 // huella; acá se exige que (9) la maqueta aprobada esté intacta, y (10) lo construido tenga sus textos. Sin aprobación
 // anotada (stories sin aprobación, o el chequeo corrido fuera del pipeline) no se compara y se dice; con
-// `--mockup-sha` (lo pasa «Preparar el commit» desde el marcador) borrar el archivo de aprobación no saltea la comparación.
+// `--mockup-sha` (lo pasa «Preparar el pull request» desde el marcador) borrar el archivo de aprobación no saltea la comparación.
 function mockupLayers({ qaDir, qk, mockupSha, screens }) {
   const mk = require(path.join(__dirname, 'mockup.js'));
   const problems = []; const notes = [];

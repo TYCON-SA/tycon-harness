@@ -98,7 +98,7 @@ function runtimeWaiverConOk(storyPath, argv, m) {
     console.error(`   La firma una persona en su terminal: node ${MARKER_JS} runtime-waiver ${storyPath} --terminal`);
     process.exit(2);
   }
-  // la matriz de «Preparar el commit»: con tanda anotada, los criterios sin correr de las otras tandas no niegan la firma.
+  // la matriz de «Preparar el pull request»: con tanda anotada, los criterios sin correr de las otras tandas no niegan la firma.
   // Sin corrida, la tanda pedida con --batch, medida igual (el cuadro calcula la misma: scripts/lib/owner-window.js)
   const matrix = wd.matrixForSignature(storyPath, m, { batch: m ? null : tanda });
   if (matrix.structuralError) { console.error(`marker.js runtime-waiver: la matriz no computa (${matrix.structuralError}).`); process.exit(2); }
@@ -160,7 +160,7 @@ function runtimeWaiverConOk(storyPath, argv, m) {
 // Un crítico lo decide una persona
 // ============================================================
 // `waive-critical --rule <id> --file <f> --reason "<r>"` deja la constancia de que una persona eximió ese CRITICAL, y
-// sólo así `write-findings` y los cierres de «Hallazgos» y «Preparar el commit» aceptan un CRITICAL `waived`. Dos caminos:
+// sólo así `write-findings` y los cierres de «Hallazgos» y «Preparar el pull request» aceptan un CRITICAL `waived`. Dos caminos:
 //   1. la ventana de permiso: el agente corre el comando (sin `--quote` ni `--relayed-by`) y el dev lo aprueba ahí; el
 //      guion comprueba en el árbol de procesos que lo lanzó la herramienta con ese comando (scripts/lib/owner-window.js).
 //   2. `--terminal`: lo corre el dev en su terminal (o la ventana nueva en Windows), como `runtime-waiver`.
@@ -244,9 +244,12 @@ function cmdReviewAsk(argv) {
   process.exit(0);
 }
 
-// `review-answer --kind plan|code --choice review|skip|wait [--for-session <D>]`: anota la respuesta a la pregunta de
-// revisar. La corre quien la recibe: la propia sesión o, con `--for-session`, sólo la designada. No es una firma y no
-// escribe el marcador destino: sólo un renglón `review-answer` en gates.log.
+// `review-answer --kind plan|code --choice review|skip|wait [--for-session <D>] [--by-profile]`: anota la respuesta a la
+// pregunta de revisar. La corre quien la recibe: la propia sesión o, con `--for-session`, sólo la designada. No escribe el
+// marcador destino: sólo un renglón `review-answer` en gates.log. «skip» del código lo contesta el dueño: pide la firma
+// `review-skip` (su ventana, su click o su «aprobado», nunca la delegación), y su vía queda en el renglón. Con
+// `--by-profile` lo anota sin firma, con `por: 'perfil'`, sólo si el dueño cuenta como ausente y la celda de «dueño
+// ausente» dice `skip` para ese diff (plan-review.js skipPorElPerfil).
 function cmdReviewAnswer(argv) {
   const pr = require('./plan-review.js');
   const { val } = opcionesDe(argv);
@@ -265,7 +268,24 @@ function cmdReviewAnswer(argv) {
   const kind = val('--kind');
   const h = pr.huellaDe({ estado: STATE_DIR, sesion, kind });
   if (h.codigo) { console.error(`🔒 marker.js review-answer: ${h.motivo}. No se escribió nada.`); process.exit(h.codigo); }
-  const r = pr.anotarRespuesta({ estado: STATE_DIR, sesion, kind, choice: val('--choice'), quien: ajena ? `coordinadora ${PROPIA}` : `sesión ${PROPIA}`, huella: h.huella, motivo: val('--reason') || null });
+  const choice = val('--choice');
+  const porPerfil = argv.includes('--by-profile');
+  if (porPerfil && !(kind === 'code' && choice === 'skip')) {
+    console.error('🔒 marker.js review-answer: --by-profile vale sólo para --kind code --choice skip. No se escribió nada.');
+    process.exit(2);
+  }
+  let via = null;
+  if (kind === 'code' && choice === 'skip') {
+    if (porPerfil) {
+      const c = pr.skipPorElPerfil({ estado: STATE_DIR, sesion, huella: h.huella });
+      if (c.codigo) { console.error(`🔒 marker.js review-answer --by-profile: ${c.motivo}. No se escribió nada.`); process.exit(c.codigo); }
+    } else {
+      const f = firmaDelDueno('review-skip', `contestar «skip» a la pregunta del pase del código de la sesión ${sesion}`);
+      via = f.via || null;
+    }
+  }
+  const r = pr.anotarRespuesta({ estado: STATE_DIR, sesion, kind, choice, quien: ajena ? `coordinadora ${PROPIA}` : `sesión ${PROPIA}`, huella: h.huella, motivo: val('--reason') || null,
+    via, por: porPerfil ? 'perfil' : null });
   if (r.codigo) { console.error(`🔒 marker.js review-answer: ${r.motivo}. No se escribió nada.`); process.exit(r.codigo); }
   process.stdout.write(`respuesta anotada para la sesión ${sesion}: ${val('--choice')} (${kind}).\n`);
   process.exit(0);
@@ -278,7 +298,9 @@ function cmdOwnerAway(argv) {
   const { val } = opcionesDe(argv);
   const accion = argv[0];
   if (accion === 'set') {
-    const r = oa.set({ estado: STATE_DIR, quien: `sesión ${PROPIA}`, frase: val('--phrase') });
+    // la frase la tipeó la persona en esta sesión, en los últimos 30 minutos: el agente no se pone la marca solo
+    const ap = require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'owner-approvals.js'));
+    const r = oa.set({ estado: STATE_DIR, quien: `sesión ${PROPIA}`, frase: val('--phrase'), verificar: (frase) => ap.fraseTipeadaReciente({ sesion: PROPIA, frase }) });
     if (r.codigo) { console.error(`🔒 marker.js owner-away set: ${r.motivo}. No se escribió nada.`); process.exit(r.codigo); }
     process.stdout.write(`marca de ausente puesta (${r.mark.setAt}): las revisiones siguen la celda de «persona ausente» hasta que la persona vuelva o pasen 24 h.\n`);
     process.exit(0);
@@ -493,7 +515,44 @@ function cmdCompareWaiver(argv) {
   cw.anotar(runDir, constancia);
   anotarAprobacion(m, { que: `exencion de la comparacion ${command}`, via: entrada.via, tipo: entrada.tipo, quien: entrada.quien, ...porDe(firmaDada),
     ...(entrada.delegacion ? { delegacion: entrada.delegacion } : {}) });
-  console.error(`✅ ${command} eximido de la comparación con main (${constancia.tipo === 'manual' ? 'manual' : 'por delegación'}, ${constancia.quien}). «Preparar el commit» lo avisa, y el texto del pedido también.`);
+  console.error(`✅ ${command} eximido de la comparación con main (${constancia.tipo === 'manual' ? 'manual' : 'por delegación'}, ${constancia.quien}). «Preparar el pull request» lo avisa, y el texto del pedido también.`);
+  process.exit(0);
+}
+
+// `sign-atdd-skip --story S --reason R [--terminal]`: la firma del dueño que saltea «pruebas primero» en la ejecución
+// de S (lib/atdd-skip.js). La ejecución sale de la última muestra de S que anotó el pedido (`--no-atdd`, `set-flag
+// atddBypass` o el portón previo), no del marcador: en la terminal del dueño no hay sesión. Sin muestra sale 1 sin
+// escribir nada; la cita, el reenvío y el --ok no firman.
+function cmdSignAtddSkip(argv) {
+  const sk = require('./atdd-skip.js');
+  const { val, tiene } = opcionesDe(argv);
+  if (tiene('--terminal')) {
+    const waiver = require('./runtime-waiver.js');
+    if (waiver.esWindows() && process.env[waiver.MARCA_VENTANA] !== '1') {
+      console.error('🪟 Abro una ventana nueva para la firma: seguí ahí.');
+      const v = waiver.abrirVentana({ script: MARKER_JS, args: ['sign-atdd-skip', ...argv] });
+      if (v.estado === 'vencida' || v.estado === 'no-abrio') { console.error(`🔒 marker.js sign-atdd-skip: ${v.estado === 'vencida' ? 'la ventana venció sin firmar' : `no pude abrir la ventana (${v.motivo})`} — no se firmó nada.`); process.exit(1); }
+      process.exit(v.codigo === 0 ? 0 : (v.codigo || 1));
+    }
+    if (waiver.esWindows()) waiver.dentroDeLaVentana();
+  }
+  const ow = require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+  const r = sk.firmar({
+    story: (val('--story') || '').trim(), motivo: (val('--reason') || '').trim(), argv: process.argv.slice(1), sesion: estado.SID || null,
+    exigir: (o) => ow.exigir(o),
+    aprobar: (linea, entrada) => {
+      const m = readMarker();
+      if (m && String(m.storyId) === String(linea.story)) anotarAprobacion(m, entrada);
+      else require('./approvals.js').anotar(linea.carpeta, entrada);
+    },
+  });
+  if (r.codigo !== 0) {
+    console.error(`🔒 marker.js sign-atdd-skip: no se firmó el salteo — ${r.motivo}`);
+    process.exit(r.codigo);
+  }
+  if (r.aviso) console.error(`⚠️  ${r.aviso}`);
+  appendLog('gates.log', { name: 'atdd-skip-recorded', status: 'ok', story: r.linea.story, camino: r.linea.camino, via: r.linea.via, huella: r.linea.huella });
+  console.error(`✅ salteo de «pruebas primero» firmado (historia ${r.linea.story}, vía ${r.linea.via}, huella ${r.linea.huella}). Vale para esa ejecución entera.`);
   process.exit(0);
 }
 
@@ -1066,7 +1125,7 @@ function cmdRuntimeWaiver(storyArg, argv = []) {
     process.exit(2);
   }
 
-  // con --for-session, el marcador de esa sesión: la matriz mide su tanda, como «Preparar el commit»
+  // con --for-session, el marcador de esa sesión: la matriz mide su tanda, como «Preparar el pull request»
   const matrix = require('./waiver-display.js').matrixForSignature(storyPath, m);
   if (matrix.structuralError) {
     console.error(`marker.js runtime-waiver: la matriz no computa (${matrix.structuralError}).`);
@@ -1222,7 +1281,7 @@ function cmdSignFile(firma, archivo) {
 module.exports = {
   carpetaParaLaFirma, quienFirmo, firmadoEnLaTerminal, sinCorrerFueraDeLaDeuda, runtimeWaiverConOk, opcionesDe,
   cmdPlanReview, cmdReviewAsk, cmdReviewAnswer, cmdOwnerAway, cmdWaiveCritical, cmdCompareWaiver,
-  cmdSignAdversarialSkip, cmdDeclarePending, cmdApprovePending, firmasDeLaCorrida, cmdApproveSave, cmdSaveCheck,
+  cmdSignAdversarialSkip, cmdSignAtddSkip, cmdDeclarePending, cmdApprovePending, firmasDeLaCorrida, cmdApproveSave, cmdSaveCheck,
   respaldosDeDesignar, firmaDeLaDesignacion, cmdDesignateRelay, negarSiEsPruebaSobreLoReal, designarPorClick,
   vidaDeLaSesion, cmdWithdrawRelay, cmdMarkTested, cmdRuntimeWaiver, cmdSignFile,
 };
