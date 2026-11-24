@@ -348,12 +348,12 @@ test('T16b Guias_ElEscapeQueComprobaSuGuion_ConElClickEnSuFormaExacta', () => {
   const leer = (...r) => fs.readFileSync(path.join(RAIZ, ...r), 'utf8').replace(/\s+/g, ' ');
   const paso6 = leer('skills', 'tycon-pipeline', 'steps', 'step-06-run-tests.md');
   const skill = leer('skills', 'tycon-pipeline', 'SKILL.md');
-  for (const [que, t] of [['paso 6', paso6], ['SKILL', skill]]) {
-    assert.match(t, /--force-manual/, que);
-    assert.match(t, /click o el «aprobado»/, que);
-    assert.match(t, /también en Windows/, que);
-    assert.match(t, /solo y en su forma exacta/, que);
-  }
+  assert.match(paso6, /--force-manual/);
+  assert.match(paso6, /click o el «aprobado»/);
+  assert.match(paso6, /también en Windows/);
+  assert.match(paso6, /solo y en su forma exacta/);
+  // el SKILL no tiene lugar para la regla entera: dice quién la firma y manda al paso 6
+  assert.match(skill, /`--force-manual` lo firma la persona \(paso 6\)/);
   for (const g of ['firmas-del-arnes.md', 'safety-guard.md']) {
     const t = leer('guides', g);
     assert.doesNotMatch(t, /En Windows, además, un escape se firma siempre ahí/, g);
