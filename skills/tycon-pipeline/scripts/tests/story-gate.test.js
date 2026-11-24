@@ -1208,6 +1208,49 @@ test('CpAlEstado_ConBarraAlFinalOEntradaRedirigida_Frena (fila 222, el freno)', 
   });
 });
 
+// 🔴 Fila 223. Mutación: reconocer una copia sólo si el tramo empieza con `cp`, `mv` o `ln` (o `sudo`). `install` y `rsync`
+// copian igual, y un envoltorio (`env`, `command`, `nohup`, `timeout 5`) o el programa por su ruta o escapado (`/bin/cp`,
+// `\cp`) corren el mismo `cp`: el resultado de la revisión se escribía sin que ningún control lo viera.
+test('CopiaPorOtroProgramaOEnvoltorio_AlEstado_Frena (fila 223, el freno)', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'plan-review', 's1'), { recursive: true });
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const res = path.join(E, 'plan-review', 's1', 's1.resultado.json');
+  const S = path.join(repo, 'falso.json');
+  fs.writeFileSync(S, '{}');
+  const arnes = path.join(SCRIPTS, '..', '..', '..');
+  conEnv(SIN_REGISTRO, () => {
+    const frena = (cmd) => { const r = bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }); assert.ok(r && r.block, JSON.stringify(cmd)); };
+    const pasa = (cmd) => assert.equal(bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }), null, JSON.stringify(cmd));
+    // otros programas que copian
+    frena(`install ${S} '${res}'`);
+    frena(`install -m 644 ${S} '${res}'`);
+    frena(`install -t '${E}/plan-review/s1' ${S}`);
+    frena(`rsync ${S} '${res}'`);
+    frena(`rsync -a ${S} '${res}'`);
+    // el mismo cp por su ruta, escapado o detrás de un envoltorio
+    frena(`/bin/cp ${S} '${res}'`);
+    frena(`\\cp ${S} '${res}'`);
+    frena(`command cp ${S} '${res}'`);
+    frena(`env cp ${S} '${res}'`);
+    frena(`env -i HOLA=1 cp ${S} '${res}'`);
+    frena(`env -u HOME cp ${S} '${res}'`);
+    frena(`nohup cp ${S} '${res}'`);
+    frena(`timeout -s KILL 5 cp ${S} '${res}'`);
+    frena(`nice -n 5 mv ${S} '${res}'`);
+    // lo mismo con los otros que escriben el archivo que nombran
+    frena(`env sed -i 's/a/b/' '${res}'`);
+    frena(`/usr/bin/sed -i 's/a/b/' '${res}'`);
+    frena(`command truncate -s 0 '${res}'`);
+    // lo de siempre sigue pasando
+    pasa(`install -m 644 ${S} '${repo}/copia.json'`);
+    pasa(`rsync -a ${S} '${repo}/copia.json'`);
+    pasa(`env HOLA=1 cp ${S} '${repo}/copia.json'`);
+    pasa('npm install left-pad');
+  });
+});
+
 // 🔴 Mutaciones: mirar sólo el primer `--out`, aceptar un destino que no se puede leer, o aceptar el corredor del arnés
 // con un `--args` que no es el pedido que preparó el arnés: con cualquiera, la sesión escribe un «aprobado» que no es el
 // de su plan (T28, las tres formas de falsificar el resultado).

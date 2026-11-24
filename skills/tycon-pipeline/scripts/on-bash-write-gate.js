@@ -247,6 +247,52 @@ function sinRedireccionesDelante(seg) {
   return t.slice(i);
 }
 
+// Las opciones de un envoltorio que llevan su valor en la palabra siguiente: las de `ENVOLTORIOS_CON_VALOR` (más abajo en
+// el archivo: se juntan la primera vez que se piden) y las de estos
+const MAS_OPCIONES_CON_VALOR = {
+  env: /^-[uCSPa]$|^--(?:unset|chdir|split-string|argv0)$/,
+  doas: /^-[uC]$/,
+  ionice: /^-[cnpPu]$|^--(?:class|classdata|pid|pgid|uid)$/,
+  exec: /^-a$/,
+  time: /^-[fo]$|^--(?:format|output)$/,
+};
+let opcionesConValor = null;
+const opcionesDelEnvoltorio = (n) => (opcionesConValor ||= { ...ENVOLTORIOS_CON_VALOR, ...MAS_OPCIONES_CON_VALOR })[n];
+// los envoltorios que, después de sus opciones, llevan una palabra suya antes del comando: la duración, la prioridad, la
+// máscara de procesadores
+const CON_PALABRA_PROPIA = new Set(['timeout', 'chrt', 'taskset']);
+
+/**
+ * El tramo desde el programa que corre, con el programa por su nombre (`/bin/cp` y `\cp` son `cp`): sin las variables de
+ * delante ni los envoltorios que corren otro comando (`env -i X=1`, `command`, `nohup`, `sudo -u x`, `timeout 5`,
+ * `busybox`), con sus opciones. '' si no queda programa.
+ */
+function desdeElPrograma(seg) {
+  const t = String(seg).trim();
+  const pieza = /(?:'[^']*'|"(?:\\.|[^"\\])*"|\\.|[^\s'"\\])+/g;
+  // las opciones del envoltorio que se está leyendo (null fuera de uno), las palabras que siguen y no son el programa (el
+  // valor de una opción), y si al terminar sus opciones le sigue una palabra suya
+  let opciones = null;
+  let saltar = 0;
+  let propia = false;
+  for (let m = pieza.exec(t); m; m = pieza.exec(t)) {
+    if (saltar) { saltar--; continue; }
+    const w = palabraDelShell(m[0]);
+    if (opciones !== null && w.startsWith('-')) { if (opciones && opciones.test(w)) saltar = 1; continue; }
+    if (opciones !== null && propia) { opciones = null; propia = false; continue; }
+    opciones = null;
+    if (/^[A-Za-z_]\w*=/.test(m[0])) continue;
+    const n = nombreDeComando(w);
+    if (n === 'busybox') continue;
+    if (ENVOLTORIOS.has(n)) { opciones = opcionesDelEnvoltorio(n) || false; propia = CON_PALABRA_PROPIA.has(n); continue; }
+    return n + t.slice(m.index + m[0].length);
+  }
+  return '';
+}
+
+// los programas que copian o mueven a un destino que es su último argumento (o la carpeta de `-t`)
+const COPIA = /^(?:g?(?:cp|mv|ln|install)|rsync)\b/;
+
 /**
  * Los destinos de un cp / mv: con `-t` / `--target-directory` (también `-rt`, `-t<carpeta>`), la carpeta y cada archivo
  * que llega a ella; si no, el último argumento (`palabrasDelComando`, sin redirecciones: `cp a b 2>&1`, `cp a b <<<x`).
@@ -521,12 +567,13 @@ function destinosDeEscritura(raw, s, keep, out) {
     // la palabra de un bloque o el paréntesis delante no es el comando: `do cp a b`, `then sed -i …`, `if cp a b`, `(cp a b)`
     const seg = sinPalabrasDeBloque(crudo);
     // Anclados al INICIO del segmento: `grep -i "sed" src/a.ts` no es un sed -i.
-    const head = seg.trim().replace(/^(?:\w+=\S+\s+)*(?:sudo\s+)?/, '');
+    // Sin variables ni envoltorios delante, y con el programa por su nombre: `env sed -i`, `/usr/bin/sed -i` son un sed -i
+    const head = desdeElPrograma(sinRedireccionesDelante(seg));
     const isSedI = /^sed\b/.test(head) && /(^|\s)(-i\b|-[a-zA-Z]*i[a-zA-Z]*\b(?=\s)|--in-place)/.test(head);
     // (con el separador de registro en el mismo grupo: `-0pi`, `-0777pi`)
     const isPerlI = /^perl\b/.test(head) && /(^|\s)-[a-zA-Z0-9]*i\S*(\s|$)/.test(head);
     if (isSedI || isPerlI) {
-      const words = seg.match(new RegExp(Q, 'g')) || [];
+      const words = head.match(new RegExp(Q, 'g')) || [];
       // el nombre del comando y, si no hay -e / -f, la expresión (el primer argumento) no son archivos: `keep` no los mira
       const conExpresionAparte = /(^|\s)(-[a-zA-Z]*[ef]|--expression|--file)/.test(head) || isPerlI;
       let args = 0;
@@ -551,12 +598,13 @@ function destinosDeEscritura(raw, s, keep, out) {
         if (isCodeFile(t) || isManifestFile(t) || (keep && !esExpresion && keep(t)) || (!esExpresion && rutaConVariable)) out.add(t);
       }
     }
-    // 4) cp / mv / ln → destino = último token del segmento (un enlace también deja un archivo en su destino). También
-    //    las formas de PowerShell de cp y mv (Copy-Item / Move-Item y sus alias copy / cpi / move / mi; no distingue
-    //    mayúsculas): por la herramienta PowerShell de Windows. Una redirección delante (`> f cp a b`) no es el comando.
-    const comando = sinRedireccionesDelante(seg);
-    if (/^(?:\w+=\S+\s+)*(?:sudo\s+)?(?:cp|mv|ln)\b/.test(comando) || /^(?:copy-item|move-item|copy|cpi|move|mi)\b/i.test(comando)) {
-      for (const t of cpMvDest(seg)) out.add(t);
+    // 4) cp / mv / ln / install / rsync → destino = último token del segmento (un enlace también deja un archivo en su
+    //    destino). También las formas de PowerShell de cp y mv (Copy-Item / Move-Item y sus alias copy / cpi / move / mi;
+    //    no distingue mayúsculas): por la herramienta PowerShell de Windows. Una redirección delante (`> f cp a b`) no es
+    //    el comando, ni un envoltorio (`env cp`, `nohup cp`); el programa también por su ruta o escapado (`/bin/cp`, `\cp`).
+    const programa = desdeElPrograma(sinRedireccionesDelante(seg));
+    if (COPIA.test(programa) || /^(?:copy-item|move-item|copy|cpi|move|mi)\b/i.test(programa)) {
+      for (const t of cpMvDest(programa)) out.add(t);
     }
   }
 
@@ -615,8 +663,9 @@ function destinosDeEscritura(raw, s, keep, out) {
   const reDd = /\bdd\b[^\n|;&]*?\bof=(['"]?)([^\s'"]+)\1/g;
   while ((m = reDd.exec(s))) out.add(m[2]);
   for (const seg of splitSegments(s)) {
-    if (/^(?:\w+=\S+\s+)*(?:sudo\s+)?truncate\b/.test(sinRedireccionesDelante(seg))) {
-      const t = palabrasDelComando(sinRedireccionesDelante(seg)).pop();
+    const programa = desdeElPrograma(sinRedireccionesDelante(seg));
+    if (/^truncate\b/.test(programa)) {
+      const t = palabrasDelComando(programa).pop();
       if (t && !t.startsWith('-')) out.add(t);
     }
   }
