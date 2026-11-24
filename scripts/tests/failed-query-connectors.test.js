@@ -121,3 +121,15 @@ test('FailedQuery_RedireccionNoEsPalabra: una redirección corta las palabras, c
     assert.match(r.stderr, /VACÍO/, command);
   }
 });
+
+// 🔴 Falla con: ya visto el verbo, una opción del conector se salteaba igual y la palabra suelta que venía después (una
+// variable, un número) pasaba a ser la última, que es la que mira el conector de Azure; una redirección antes del verbo
+// cortaba las palabras; y una escritura con `-p x show` detrás se leía como consulta (la vuelta corta del 24/11)
+test('FailedQuery_VerboYaVisto_LaOpcionCorta: la opción del conector se saltea sólo antes del verbo, y la redirección no corta', () => {
+  const H = require(HOOK);
+  const clase = (s) => H.clasificar(s).clase;
+  for (const c of ['az repos pr list --project p $X', 'az repos pr list --org u "$@"', 'az repos pr list -p p 5', 'az repos pr list --org=u ~/x',
+    'az repos pr 2>&1 list', 'az repos pr 2>/dev/null list', 'az 2>&1 repos pr list', 'az repos pr 2> err.txt list',
+    'az repos pr --org u list', 'gh pr -R o/r list']) assert.strictEqual(clase(c), 'consulta', c);
+  for (const c of ['az repos pr set-vote -p x show', 'az repos pr create --org u list', 'gh pr create -R o/r list']) assert.strictEqual(clase(c), 'otro', c);
+});

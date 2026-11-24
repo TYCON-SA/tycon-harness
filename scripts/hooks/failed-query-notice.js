@@ -76,10 +76,13 @@ const programaDe = (primero) => path.basename(String(primero).replace(/\\/g, '/'
  * Las palabras del comando que no son opciones, hasta la primera opción que viene DESPUÉS de ellas: el grupo y el verbo.
  * Las opciones globales que van antes del grupo (`gh -R o/r pr list`, `az --only-show-errors repos …`) se saltean, y con
  * ellas su valor si el conector dice que lleva uno (`conValor`) y no viene pegado con «=». Entre el grupo y el verbo
- * (`<programa> <grupo> --opción valor <verbo>`) se saltea sólo una opción de `conValor`, con su valor: cualquier otra
- * corta, para que el valor de una opción de texto (un título que dice «list») no se lea como verbo.
+ * (`<programa> <grupo> --opción valor <verbo>`) se saltea sólo una opción de `conValor`, con su valor, y sólo mientras no
+ * apareció una palabra que el conector reconoce como verbo (`esVerbo`): ya visto el verbo, la opción corta, para que una
+ * palabra suelta de después no pase por el verbo. Cualquier otra opción corta siempre, para que el valor de una opción
+ * de texto (un título que dice «list») no se lea como verbo. Una redirección (`2>&1`, `> out`, `2>/dev/null`, `<in`) no
+ * es el grupo ni el verbo: se saltea, y con ella su destino si va aparte.
  */
-function palabras(argv, conValor) {
+function palabras(argv, conValor, esVerbo) {
   let i = 1;
   while (i < argv.length && argv[i].startsWith('-')) {
     const o = argv[i++];
@@ -88,10 +91,9 @@ function palabras(argv, conValor) {
   const pos = [];
   while (i < argv.length) {
     const o = argv[i];
-    // una redirección (`2>&1`, `>`, `2>/dev/null`, `<in`) no es el grupo ni el verbo: corta, como una opción
-    if (/^[0-9&]*[<>]/.test(o)) break;
+    if (/^[0-9&]*[<>]/.test(o)) { i += /^[0-9&]*(?:>>?|>\||<{1,3})$/.test(o) ? 2 : 1; continue; }
     if (!o.startsWith('-')) { pos.push(o); i++; continue; }
-    if (!conValor || !conValor.has(o.split('=')[0])) break;
+    if (!conValor || !conValor.has(o.split('=')[0]) || (esVerbo && pos.some(esVerbo))) break;
     i += o.includes('=') ? 1 : 2;
   }
   return pos;
@@ -143,7 +145,7 @@ function clasificar(texto) {
   const conector = CONECTORES.find((c) => c.programas.includes(cmdL));
   // las opciones de antes del grupo se saltean sólo en un programa de un conector, que dice cuáles llevan valor; en los
   // demás, una opción que el gancho no conoce corta, y su valor no se toma por el verbo
-  const pos = conector ? palabras(argv, conector.conValor) : [];
+  const pos = conector ? palabras(argv, conector.conValor, conector.esVerbo) : [];
   if (!conector) for (let i = 1; i < argv.length && !argv[i].startsWith('-'); i++) pos.push(argv[i]);
   if (conector) return { clase: conector.clasificar({ pos, limpio }) === 'consulta' ? 'consulta' : 'otro', cmd, argv };
   if (cmd === 'curl') {
