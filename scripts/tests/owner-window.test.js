@@ -635,6 +635,9 @@ test('OwnerWindow_CasaFalsa_NoVale (T20)', (t) => {
 test('OwnerWindow_FirmaDelFreno_VentanaSinRegistro (T34)', (t) => {
   const forma = [
     ['escape:TYCON_TEST_GATE', 'TYCON_TEST_GATE=1 bash scripts/test-gate.sh /r /r/s.md'],
+    // cada comando de la consola corre en su propio shell: `export` como primer tramo es la misma asignación, a la vista
+    ['escape:TYCON_TEST_GATE', 'export TYCON_TEST_GATE=1; bash scripts/test-gate.sh /r /r/s.md'],
+    ['escape:TYCON_TEST_GATE', 'export TYCON_TEST_GATE=1 && bash scripts/test-gate.sh /r /r/s.md'],
     ['escape:TYCON_SAFETY_OFF', 'TYCON_SAFETY_OFF=1 git push --force origin x'],
     ['escape:TYCON_PROD_LINT', 'TYCON_PROD_LINT=0 git commit -m x'],
     ['escape:set-autonomous', `node ${MARKER} set-autonomous false`],
@@ -650,8 +653,10 @@ test('OwnerWindow_FirmaDelFreno_VentanaSinRegistro (T34)', (t) => {
     assert.strictEqual(registros(casa).length, 0, `${cmd}: sin registro`);
   }
   const escondida = [
-    ['escape:TYCON_TEST_GATE', 'export TYCON_TEST_GATE=1; bash scripts/test-gate.sh /r /r/s.md'],
     ['escape:TYCON_TEST_GATE', 'env TYCON_TEST_GATE=1 bash scripts/test-gate.sh /r /r/s.md'],
+    ['escape:TYCON_TEST_GATE', 'export TYCON_TEST_GATE=1 | bash scripts/test-gate.sh /r /r/s.md'],
+    ['escape:TYCON_TEST_GATE', 'export TYCON_TEST_GATE=1 TYCON_TEST_GATE=1; bash scripts/test-gate.sh'],
+    ['escape:TYCON_TEST_GATE', 'export TYCON_TEST_GATE=1'],
     ['escape:TYCON_TEST_GATE', 'V=TYCON_TEST_GATE; export $V=1; bash scripts/test-gate.sh'],
     ['escape:set-autonomous', `cd /r && node ${MARKER} set-autonomous false`],
     ['escape:set-autonomous', `S=set-autonomous; node ${MARKER} $S false`],
@@ -1805,11 +1810,13 @@ test('TresFirmas_OwnerOnly_NoSeDelegan (T12) @story-8.142 @ac-9', (t) => {
     const r = pedir(casa, cmd, { evento: DE_LA_COORD, delegacion });
     assert.strictEqual(r.decision, 'ask', `${firma}: ${r.texto}`);
     assert.notStrictEqual(registroVigente(casa).via, 'delegacion', firma);
-    // y con las mismas llaves sin el candado, la delegación la firma: la diferencia es owner_only
+    // y con las mismas llaves sin el candado, la delegación la firma: la diferencia es owner_only. Salvo runtime-waiver,
+    // que nunca se delega: aceptar un criterio imposible de probar en vivo espera al dueño aunque el perfil la liste
     const casa2 = casaConDesignada(t);
     const [, cmd2] = tresParaOtra(casa2).find(([f]) => f === firma);
     const libre = pedir(casa2, cmd2, { evento: DE_LA_COORD, delegacion: delegacionReal({ perfil: { ...PERFIL, delegated_signing: [firma], owner_only: [] } }) });
-    assert.strictEqual(libre.decision, 'allow', `${firma}: ${libre.texto}`);
+    assert.strictEqual(libre.decision, firma === 'runtime-waiver' ? 'ask' : 'allow', `${firma}: ${libre.texto}`);
+    if (firma === 'runtime-waiver') assert.notStrictEqual(registroVigente(casa2).via, 'delegacion', firma);
   }
 });
 
@@ -3236,13 +3243,13 @@ test('Aprobacion_RutinaSinAprobacion_SigueHechaYAvisada_ConAprobacionEsDeLaPerso
 });
 
 test('Aprobacion_GanaALaDelegacion_LaFirmaEsDeLaPersonaYSeUsaUnaVez', (t) => {
-  const delegaTodo = delegacionReal({ perfil: { ...PERFIL, delegated_signing: ['plan-approval', 'save', 'runtime-waiver'] } });
-  const RUNTIME = `node ${MARKER} runtime-waiver ${HISTORIA.story} --acs 1 --for-session ses-a`;
+  const delegaTodo = delegacionReal({ perfil: { ...PERFIL, delegated_signing: ['plan-approval', 'save', 'escape:force-manual'] } });
+  const FORZADO = `node ${MARKER} set-check dod green --force-manual --for-session ses-a`;
   const casos = [['plan-approval', PLAN, PLAN_ARGV], ['save', SAVE, SAVE_ARGV],
-    ['runtime-waiver', RUNTIME, [MARKER, 'runtime-waiver', HISTORIA.story, '--acs', '1', '--for-session', 'ses-a']]];
+    ['escape:force-manual', FORZADO, [MARKER, 'set-check', 'dod', 'green', '--force-manual', '--for-session', 'ses-a']]];
   for (const [firma, cmd, argv] of casos) {
     const casa = casaConDesignada(t);
-    if (firma === 'runtime-waiver') tresParaOtra(casa);
+    if (firma === 'escape:force-manual') tresParaOtra(casa);
     const pide = (modo) => pedir(casa, cmd, { evento: { ...DE_LA_COORD, ...(modo ? { permission_mode: modo } : {}) }, delegacion: delegaTodo, aprobaciones: aprobacionesDePrueba() });
     // sin aprobación, la delegación como siempre: el guion decide con sus controles
     assert.strictEqual(pide('bypassPermissions').via, 'delegacion', firma);

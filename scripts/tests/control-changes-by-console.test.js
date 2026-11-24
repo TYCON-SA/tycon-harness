@@ -658,3 +658,94 @@ test('Constancias_PrefijoConComillasRepetidas_TerminaRapido', () => {
     assert.ok(r && r.block, `pasó con el prefijo «${cab}» largo`);
   }
 });
+
+// Dos repos de verdad: el de partida de la sesión, y otro con un commit en main que el de partida no tiene, y una rama
+// que trae una constancia.
+function dosRepos() {
+  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'constancias-dos-'));
+  const env = sinGitDelPadre({ GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z' });
+  const repo = (nombre) => {
+    const r = path.join(casa, nombre);
+    fs.mkdirSync(r);
+    const git = (...a) => execFileSync('git', ['-c', 'maintenance.auto=false', ...a], { cwd: r, env, stdio: 'ignore' });
+    git('init', '-q', '-b', 'main');
+    git('config', 'user.email', 'prueba@ejemplo.test');
+    git('config', 'user.name', 'prueba');
+    git('commit', '-q', '--allow-empty', '-m', `inicio ${nombre}`);
+    return { r, git };
+  };
+  const partida = repo('partida');
+  const otro = repo('otro');
+  otro.git('checkout', '-q', '-b', 'trabajo');
+  otro.git('checkout', '-q', '-b', 'con-firma');
+  fs.mkdirSync(path.join(otro.r, '.tycon'));
+  fs.writeFileSync(path.join(otro.r, '.tycon', 'control-changes.jsonl'), '{}\n');
+  otro.git('add', '.');
+  otro.git('commit', '-q', '-m', 'trae una constancia');
+  otro.git('checkout', '-q', 'main');
+  fs.writeFileSync(path.join(otro.r, 'a.txt'), 'a');
+  otro.git('add', '.');
+  otro.git('commit', '-q', '-m', 'main avanza sin constancias');
+  const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: otro.r, env, encoding: 'utf8' }).trim();
+  otro.git('checkout', '-q', 'trabajo');
+  return { casa, partida: partida.r, otro: otro.r, sha };
+}
+
+// 🔴 Falla con: `cd <otro repo> && git merge <sha>` frenado con «no pude ver qué constancias trae <sha>» porque el freno
+// buscaba el commit también en la carpeta de partida de la sesión, donde no existe, aunque el merge no puede correr ahí
+// (si el `cd` falla, el `&&` corta). Lo que sí puede correr en la carpeta de partida se sigue mirando ahí.
+test('Constancias_CdAOtroRepo_NoMiraLaCarpetaDePartida', () => {
+  const { casa, partida, otro, sha } = dosRepos();
+  const gate = require(GATE);
+  const correr = (command) => gate.handle({ tool_name: 'Bash', tool_input: { command }, cwd: partida, session_id: 'prueba' }, { stateDir: path.join(casa, 'estado'), installedRoots: [] });
+  const fusionar = `git merge --no-edit`;
+  const pasan = [
+    `cd ${otro} && ${fusionar} ${sha}`,
+    `cd ${otro} && ${fusionar} ${sha} 2>&1 | grep -E "CONFLICT|Merge made" | head -3 | cut -c1-200`,
+    `cd ${otro} && git status --short && ${fusionar} ${sha}`,
+    `builtin cd -P ${otro} && ${fusionar} ${sha}`,
+  ];
+  for (const c of pasan) assert.ok(!(correr(c) || {}).block, `pasa: ${c}\n${(correr(c) || {}).block}`);
+  const frenan = [
+    // lo que trae la rama se sigue mirando en la carpeta del cd
+    `cd ${otro} && ${fusionar} con-firma`,
+    // si el cd falla, lo que sigue corre en la carpeta de partida
+    `cd ${otro}; ${fusionar} ${sha}`,
+    `cd ${otro} || true && ${fusionar} ${sha}`,
+    `cd ${otro}\n${fusionar} ${sha}`,
+    `cd ${otro} & ${fusionar} ${sha}`,
+    // el cd adentro de un paréntesis o de llaves no cambia dónde corre lo de afuera
+    `(cd ${otro} && true) && ${fusionar} ${sha}`,
+    `{ cd ${otro}; } && ${fusionar} ${sha}`,
+    // vuelve a la carpeta de partida, o va a otra
+    `cd ${otro} && cd - && ${fusionar} ${sha}`,
+    `cd ${otro} && popd && ${fusionar} ${sha}`,
+    `cd ${otro} && cd ${partida} && ${fusionar} ${sha}`,
+    `cd ${otro} && bash -c 'cd - && ${fusionar} ${sha}'`,
+    // una ruta relativa puede caer en otro lado (CDPATH): se mira como siempre
+    `cd ../otro && ${fusionar} ${sha}`,
+    // el cd no es lo primero
+    `true && cd ${otro} && ${fusionar} ${sha}`,
+    // git apunta al repo de partida por variable u opción
+    `cd ${otro} && GIT_DIR=${partida}/.git ${fusionar} ${sha}`,
+    `cd ${otro} && export GIT_DIR=${partida}/.git && ${fusionar} ${sha}`,
+    `cd ${otro} && git --git-dir=${partida}/.git merge --no-edit ${sha}`,
+    `cd ${otro} && git --work-tree=${partida} merge --no-edit ${sha}`,
+    `cd ${otro} && git -C ${partida} merge --no-edit ${sha}`,
+    `cd ${otro} && git -c core.worktree=${partida} merge --no-edit ${sha}`,
+    // un programa delante que corre git en la carpeta de partida (el pase del 24/11), también anidado
+    `cd ${otro} && sudo -D ${partida} ${fusionar} ${sha}`,
+    `cd ${otro} && sudo --chdir=${partida} bash -c '${fusionar} ${sha}'`,
+    // lo que corre en el mismo shell puede volver a la carpeta de partida sin que se vea
+    `cd ${otro} && source ./vuelve.sh && ${fusionar} ${sha}`,
+    `cd ${otro} && . ./vuelve.sh && ${fusionar} ${sha}`,
+    `cd ${otro} && eval "$(cat vuelve.txt)" && ${fusionar} ${sha}`,
+    `cd ${otro} && C=cd && $C ${partida} && ${fusionar} ${sha}`,
+    `cd ${otro} && command cd ${partida} && ${fusionar} ${sha}`,
+  ];
+  // un programa aparte no cambia la carpeta del shell: lo que sigue corre en la del cd
+  for (const c of [`cd ${otro} && bash ./otro.sh && ${fusionar} ${sha}`, `cd ${otro} && node -e 1 && ${fusionar} ${sha}`]) {
+    assert.ok(!(correr(c) || {}).block, `pasa: ${c}\n${(correr(c) || {}).block}`);
+  }
+  for (const c of frenan) assert.ok((correr(c) || {}).block, `frena: ${c}`);
+});

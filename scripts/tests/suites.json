@@ -3470,6 +3470,12 @@
       "requiere": []
     },
     {
+      "__nota": "fila 120: el control de la revisión que prueba que la máquina, una variable o un perfil que no es el del árbol no pisan las claves que vale sólo el perfil del equipo; sin el filtro, o con una clave afuera, frena; lo que no puede medir no es verde",
+      "raiz": "arnes",
+      "ruta": "tests/check-profile-only.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "los frenos y medidores que la organización cambia desde el sitio (switches del perfil, wait_notice.enabled): sin clave como hoy, la organización los enciende, un freno no se apaga desde el perfil, una clave ilegible no cambia nada.",
       "raiz": "arnes",
       "ruta": "tests/org-switches.test.js",
@@ -3629,6 +3635,12 @@
       "__nota": "lo que el portón de CI empieza a frenar (scripts/ci/tycon-ci-gate.js): la evidencia que declara FAIL o no se puede leer, la que está en el disco y no en git, y la carpeta de corrida que por la fecha en que entró en git pide registro de autoría; avisa hasta STRICT_EVIDENCE_FROM y frena desde ese día",
       "raiz": "arnes",
       "ruta": "tests/ci-gate-reads-verdict.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la evidencia atada al cambio en el portón de CI (scripts/ci/tycon-ci-gate.js): la evidencia de cierre anterior al código que cambia el pedido, las huellas del registro de humos y lo que no se pudo comparar, que avisan hasta su fecha y frenan desde ella.",
+      "raiz": "arnes",
+      "ruta": "tests/ci-gate-evidence-bound.test.js",
       "requiere": []
     },
     {
@@ -3809,6 +3821,12 @@
       "__nota": "La capa de plataforma (scripts/lib/platform/platform.js): las diez operaciones del contrato, quién elige la plataforma de cada una (el repo o el perfil, sin adivinar), los motivos cerrados, el conector de mentira y los dos de verdad contra el az y el gh de mentira, las credenciales que faltan sin imprimirlas, y la elección en el perfil y en el sitio.",
       "raiz": "arnes",
       "ruta": "tests/platform-contract.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "El conector de GitLab por la capa de plataforma, contra el glab de mentira: la identidad con namespace de grupos anidados y host en team-repos.json, el servidor de un repo sin declarar, el pedido de trabajo como issue, el merge request, la CI por estados de commit, lo asignado, las lecturas de varias páginas, sin glab y sin red, merge-pr.js y story-index.js con un remoto de GitLab, los pasos 0 y 9b del skill de merge y el freno de un pedido por repo.",
+      "raiz": "arnes",
+      "ruta": "tests/platform-gitlab.test.js",
       "requiere": []
     },
     {
