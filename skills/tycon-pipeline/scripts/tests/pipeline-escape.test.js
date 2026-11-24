@@ -294,10 +294,11 @@ function laboratorioOtraSesion(t) {
     assert.strictEqual(set.status, 0, set.stderr);
     for (const n of ['0', '1', '2']) lab.marker(sid, ['complete-step', n], {});
   }
-  /** El pedido de la ventana, como lo arma el freno ante el comando de ses-coord. */
-  lab.pedir = (cmd, { delegacion = () => ({ ok: false, motivo: 'sin delegación en la prueba' }) } = {}) => ow.decidir({
+  /** El pedido de la ventana, como lo arma el freno ante el comando de ses-coord; `tramite`: qué firmas da el arnés solo. */
+  lab.pedir = (cmd, { delegacion = () => ({ ok: false, motivo: 'sin delegación en la prueba' }), tramite = null } = {}) => ow.decidir({
     evento: { session_id: COORD, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: cmd } },
-    escapes: [], arbol: arbolDelFreno(), pid: 201, casa: home, ahora: AHORA, delegacion, clasificar: () => null });
+    escapes: [], arbol: arbolDelFreno(), pid: 201, casa: home, ahora: AHORA, delegacion, clasificar: () => null,
+    ...(tramite ? { tramite, huellaDeLaMaquina: () => ({ huella: HUELLA }) } : {}) });
   /** El guion que corre ses-coord con la ventana aprobada (el árbol del comando); `sesionEn`: su variable de sesión al salir. */
   lab.correr = (args) => {
     const cmd = `node ${MARKER} ${args.map(comillas).join(' ')}`;
@@ -579,6 +580,32 @@ test('TresFirmasDelFreno_ForSession_LaCoordinadoraLasFirmaPorDelegacion', (t) =>
     preparar(otro);
     assert.strictEqual(otro.pedir(otro.comando(args), { delegacion: delegacion(PERFIL) }).decision, 'ask', `${firma} sin delegar`);
   }
+});
+
+// 🔴 Falla con: el rojo esperado de un control bajo la firma de la matriz, que el perfil da por trámite: el arnés deja
+// solo las pruebas o la compilación en rojo hasta el commit; o una sesión cualquiera que, por trámite, le apaga el modo
+// autónomo a otra (hallazgos del pase adversarial de la 8.323).
+test('TresFirmasDelFreno_ConElTramiteDelPerfil_NiElRojoDeUnControlNiOtraSesion', (t) => {
+  // el perfil vivo: la firma de la matriz y la de apagar el lazo son de trámite; la de cerrar como deuda, no
+  const tramite = (ids) => (ids.every((id) => ['escape:rojo-esperado-de-la-matriz', 'escape:set-autonomous'].includes(id)) ? { ok: true } : { ok: false, motivo: 'no es de trámite' });
+  const cambiar = (lab, sid, f) => { const m = JSON.parse(lab.leer(sid)); f(m); fs.writeFileSync(lab.marcador(sid), JSON.stringify(m)); };
+  // el rojo esperado de un control, en la propia sesión y en deuda: pide la firma de cerrar como deuda, que no es de trámite
+  const lab = laboratorioOtraSesion(t);
+  cambiar(lab, COORD, (m) => { m.cierre = { estado: 'deuda', deuda: 'DEF-9.92-juguete', motivo: 'x', via: 'ventana', at: new Date().toISOString() }; m.checks = { tests: 'red:exit=1' }; });
+  const control = lab.pedir(lab.comando(['expect-red', 'tests', '--tests', 'T2']), { tramite });
+  assert.deepStrictEqual(control.firmas, ['escape:cerrar-como-deuda'], control.texto);
+  assert.notStrictEqual(control.via, 'automatica', `el rojo de un control no sale por trámite: ${control.texto}`);
+  assert.notStrictEqual(control.decision, 'allow', control.texto);
+  // apagar el modo autónomo de otra sesión, sin coordinadora designada: tampoco sale por trámite
+  const otra = laboratorioOtraSesion(t);
+  for (const sid of [COORD, DESTINO]) cambiar(otra, sid, (m) => { m.autonomous = true; });
+  const apagar = otra.pedir(otra.comando(['set-autonomous', 'false', '--for-session', DESTINO]), { tramite });
+  assert.deepStrictEqual(apagar.firmas, ['escape:set-autonomous'], apagar.texto);
+  assert.notStrictEqual(apagar.via, 'automatica', `apagarle el lazo a otra sesión no sale por trámite: ${apagar.texto}`);
+  assert.notStrictEqual(apagar.decision, 'allow', apagar.texto);
+  // la propia sesión sí: apagar su lazo sigue siendo de trámite si el perfil lo dice
+  const propia = otra.pedir(otra.comando(['set-autonomous', 'false']), { tramite });
+  assert.deepStrictEqual([propia.decision, propia.via], ['allow', 'automatica'], propia.texto);
 });
 
 test('Guion_ForSession_Delegada_SeisLlaves (T7) @story-8.142 @ac-4', (t) => {

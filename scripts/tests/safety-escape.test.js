@@ -789,11 +789,11 @@ test('T19 EscC4_CloseAsDebtYExpectRed_VanALaVentana @story-8.93 @ac-10 @ac-11 �
   // `close-as-debt` en su forma exacta la pide su guion en la ventana (8.323; en Codex, la terminal con esa forma); detrás
   // de un `cd`, o el rojo esperado de un control que no es la matriz, el cartel de siempre
   const DEUDA_ESCONDIDA = 'cd /tmp && node marker.js close-as-debt --reason "sin versión compatible" --debt DEF-9.9-angular';
-  // la escondida no se firma: la de la terminal es la forma exacta. El rojo esperado de un control lleva la firma del rojo
-  // esperado (8.323), con su forma exacta
+  // la escondida no se firma: la de la terminal es la forma exacta. El rojo esperado de un control lleva la firma de
+  // cerrar como deuda (8.323), que nombra las dos formas exactas
   const TERMINAL = {
     deuda: /Esta firma se da en tu terminal: marker\.js close-as-debt --reason "<texto>" --debt <DEF-id> --terminal/,
-    rojo: /Esta firma se da en tu terminal: marker\.js expect-red <acmatrix\|control> --tests <T1,T2> \[--until <AAAA-MM-DD>\] --terminal/,
+    rojo: /Esta firma se da en tu terminal: marker\.js close-as-debt --reason "<texto>" --debt <DEF-id> --terminal, o marker\.js expect-red <control> --tests <T1,T2> --terminal/,
   };
   for (const [c, terminal] of [[DEUDA.cerrar, TERMINAL.deuda], [DEUDA_ESCONDIDA, TERMINAL.deuda], [DEUDA.rojo, TERMINAL.rojo]]) {
     for (const marcador of [VERDE, ROJO]) {

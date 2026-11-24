@@ -559,6 +559,8 @@ function escapeDe(llamada, sid, comando = null) {
   const pide = lectorDeBanderas(llamada);
   // el comando entero en la forma canónica de la firma la pide su guion en la ventana: no es un escape del freno
   const porSuGuion = (esc) => comando != null && canonicaDe(comando) === `escape:${esc}`;
+  // el control de `expect-red` es la matriz o un control común: el mismo criterio que owner-window.js esRojoDeUnControl
+  const rojoDeUnControl = (texto) => { const c = String(texto == null ? '' : texto).trim(); return c !== '' && !c.startsWith('-') && c !== 'acmatrix'; };
   if (llamada.guion === 'pipeline') {
     // `check-count --trust-ran`: la lista de revisores la da el agente y el arnés no la vio correr
     if (sub === 'check-count') return pide('--trust-ran') && !porSuGuion('trust-ran') ? 'trust-ran' : null;
@@ -588,10 +590,15 @@ function escapeDe(llamada, sid, comando = null) {
     return (lit(v) && ['true', '1', 'on'].includes(v.texto)) || porSuGuion('set-autonomous') ? null : 'set-autonomous';
   }
   if (sub === 'clear') return 'cerrar la ejecución';
-  // cerrar la historia como deuda, o registrar un rojo como esperado (de la matriz o de un control, con una sola firma):
-  // siempre lo decide la persona. En su forma canónica las dos las pide su guion en la ventana
+  // cerrar la historia como deuda, o registrar un rojo como esperado: siempre lo decide la persona. El rojo de un control
+  // va con la firma de cerrar como deuda; el de la matriz tiene la suya, que muestra los criterios y la fecha, y un
+  // control que no se ve (`expect-red "$C"`) puede ser la matriz. En su forma canónica las pide su guion en la ventana
   if (sub === 'close-as-debt') return porSuGuion('cerrar-como-deuda') ? null : 'cerrar como deuda';
-  if (sub === 'expect-red') return porSuGuion('rojo-esperado-de-la-matriz') ? null : 'rojo esperado de la matriz';
+  if (sub === 'expect-red') {
+    const deUnControl = !!args[0] && lit(args[0]) && rojoDeUnControl(args[0].texto);
+    if (deUnControl) return porSuGuion('cerrar-como-deuda') ? null : 'cerrar como deuda';
+    return porSuGuion('rojo-esperado-de-la-matriz') ? null : 'rojo esperado de la matriz';
+  }
   if (sub === 'clear-session') {
     const v = args[0];
     if (!v || !lit(v)) return 'cerrar la ejecución';

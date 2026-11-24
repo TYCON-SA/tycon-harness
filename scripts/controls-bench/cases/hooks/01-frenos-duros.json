@@ -4759,7 +4759,7 @@
             "exit": 2,
             "stderr_re": [
               "ESC-C4",
-              "marker\\.js expect-red <acmatrix\\|control> --tests"
+              "marker\\.js expect-red acmatrix --tests <T1,T2> --until <AAAA-MM-DD> --terminal"
             ]
           }
         },

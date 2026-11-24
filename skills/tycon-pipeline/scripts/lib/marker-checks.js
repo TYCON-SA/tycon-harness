@@ -987,12 +987,14 @@ function cmdExpectRed(args) {
     console.error(`marker.js expect-red: el control ${check} no está en rojo (${actual || 'sin registrar'}): no hay rojo que esperar`);
     process.exit(2);
   }
-  // lo firma una persona, o la coordinadora por delegación, con la misma firma que el rojo esperado de la matriz; recién
-  // con la firma se escribe, sobre el marcador que quedó, y sólo si el control sigue en ese rojo
-  const firma = firmaDelDueno('escape:rojo-esperado-de-la-matriz', `dejar ${check} en rojo esperado (${tests.join(', ')}) en la deuda ${marker.cierre.deuda}`);
+  // lo firma una persona, o la coordinadora por delegación, con la firma de cerrar como deuda: es lo que falta de la
+  // deuda. El de la matriz tiene la suya. Recién con la firma se escribe, sobre el marcador que quedó, y sólo si sigue
+  // la misma deuda y el control sigue en ese rojo
+  const firma = firmaDelDueno('escape:cerrar-como-deuda', `dejar ${check} en rojo esperado (${tests.join(', ')}) en la deuda ${marker.cierre.deuda}`);
   const fresco = readMarker();
-  if (!fresco || !fresco.cierre || fresco.cierre.estado !== 'deuda' || String(nn(at(fresco.checks, check), '')) !== actual) {
-    console.error('🔒 marker.js expect-red: la ejecución cambió mientras se firmaba (se cerró, salió de la deuda o el control ya no es ese rojo). No se escribió nada.');
+  if (!fresco || !fresco.cierre || fresco.cierre.estado !== 'deuda' || fresco.cierre.deuda !== marker.cierre.deuda
+    || String(nn(at(fresco.checks, check), '')) !== actual) {
+    console.error('🔒 marker.js expect-red: la ejecución cambió mientras se firmaba (se cerró, cambió de deuda o el control ya no es ese rojo). No se escribió nada.');
     process.exit(2);
   }
   fresco.checks[check] = `rojo-esperado:exit=${m[1]}`;
@@ -1000,7 +1002,7 @@ function cmdExpectRed(args) {
   fresco.lastTouch = nowIso();
   writeMarker(fresco);
   appendLog('gates.log', { name: 'expect-red', story: nn(fresco.storyId, null), check, tests, deuda: fresco.cierre.deuda, via: firma.constancia.via, ...porDe(firma) });
-  process.stdout.write(`${check}: rojo-esperado:exit=${m[1]} (${tests.join(', ')}) — deuda ${marker.cierre.deuda}\n`);
+  process.stdout.write(`${check}: rojo-esperado:exit=${m[1]} (${tests.join(', ')}) — deuda ${fresco.cierre.deuda}\n`);
 }
 
 // El rojo esperado de la matriz: `expect-red acmatrix --tests <T1,T2> --until <AAAA-MM-DD>`. Lleva al commit los criterios
@@ -1055,8 +1057,9 @@ function rojoEsperadoDeLaMatriz(marker, tests, args, actual) {
   // lo firma una persona, o la coordinadora por delegación, sobre esta lista y esta fecha: la firma es de este comando
   const firma = firmaDelDueno('escape:rojo-esperado-de-la-matriz', `${marker.storyId || 'la ejecución'}: ${tests.join(', ')} sin evidencia en vivo hasta ${hasta} (deuda ${marker.cierre.deuda})`);
   const despues = readMarker();
-  if (!despues || !despues.cierre || despues.cierre.estado !== 'deuda' || String(nn(at(despues.checks, 'acmatrix'), '')) !== actual) {
-    console.error('🔒 marker.js expect-red: la ejecución cambió mientras se firmaba. No se escribió nada.');
+  if (!despues || !despues.cierre || despues.cierre.estado !== 'deuda' || despues.cierre.deuda !== marker.cierre.deuda
+    || String(nn(at(despues.checks, 'acmatrix'), '')) !== actual) {
+    console.error('🔒 marker.js expect-red: la ejecución cambió mientras se firmaba (se cerró, cambió de deuda o la matriz ya no es ese rojo). No se escribió nada.');
     process.exit(2);
   }
   marker = despues;
@@ -1067,8 +1070,9 @@ function rojoEsperadoDeLaMatriz(marker, tests, args, actual) {
   // el renglón va antes que el marcador y sin él no se guarda nada: es lo que hace hablar al aviso de la deuda vencida,
   // y un marcador con la fecha nueva sin su renglón dejaría el aviso con la vieja
   try {
-    if (renovada) appendLog('gates.log', { name: 'acmatrix-debt-renewed', story: nn(marker.storyId, null), storyPath: story, deuda: marker.cierre.deuda, tests, until: hasta, antes: previo.until || null }, { estricto: true });
-    else appendLog('gates.log', { name: 'expect-red', story: nn(marker.storyId, null), check: 'acmatrix', tests, deuda: marker.cierre.deuda, until: hasta }, { estricto: true });
+    const quien = { via: firma.constancia.via, ...porDe(firma) };
+    if (renovada) appendLog('gates.log', { name: 'acmatrix-debt-renewed', story: nn(marker.storyId, null), storyPath: story, deuda: marker.cierre.deuda, tests, until: hasta, antes: previo.until || null, ...quien }, { estricto: true });
+    else appendLog('gates.log', { name: 'expect-red', story: nn(marker.storyId, null), check: 'acmatrix', tests, deuda: marker.cierre.deuda, until: hasta, ...quien }, { estricto: true });
   } catch (e) {
     console.error(`marker.js expect-red: no pude anotar el rojo esperado de la matriz en gates.log (${e.code || e.message}): sin ese renglón nadie avisa cuando venza la deuda. No guardé nada; revisá la carpeta de estado y reintentá.`);
     process.exit(2);

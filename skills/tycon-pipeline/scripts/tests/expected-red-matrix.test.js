@@ -432,14 +432,17 @@ test('T9 Matrix_TestsCoverAcs @story-8.252 @ac-2 — qué pruebas nombran cada c
   assert.deepStrictEqual(c.uncovered, [1, 2, 3, 4, 5]);
 });
 
-// 🔴 Falla con: el rojo esperado de un control sin cuadro en la ventana: la fuente pedía la fecha y la matriz, así que la
-// firma de un control (8.323) no se podía dar nunca (hallazgo del pase adversarial).
+// 🔴 Falla con: el rojo esperado de un control sin cuadro en la ventana (la fuente pedía la fecha y la matriz), o con la
+// firma de la matriz, que el perfil puede dar por trámite: el rojo de un control va con la de cerrar como deuda, y
+// «acmatrix » con un espacio es la matriz, con sus criterios (hallazgos de los pases adversariales de la 8.323).
 test('8.323-ExpectRedDeUnControl_LaVentanaDaSuCuadro — el control, las pruebas y la deuda, sin fecha ni matriz', () => {
   const MARKER = 'node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js';
   const E = paraElRojoEsperado('s-er');
   const ow = require(path.join(RAIZ, 'scripts', 'lib', 'owner-window.js'));
   const comando = `${MARKER} expect-red tests --tests T2,T5`;
-  const cuadro = ow.cuadroPara({ firma: 'escape:rojo-esperado-de-la-matriz', comando, palabras: null, destino: 's-er', cwd: E.repo, casa: E.home, sesion: 's-er' });
+  assert.strictEqual(ow.canonicaDe(comando).id, 'escape:cerrar-como-deuda', 'el rojo de un control pide la firma de cerrar como deuda');
+  assert.strictEqual(ow.canonicaDe(`${MARKER} expect-red 'acmatrix ' --tests T1 --until 2026-12-01`).id, 'escape:rojo-esperado-de-la-matriz', 'con un espacio sigue siendo la matriz');
+  const cuadro = ow.cuadroPara({ firma: 'escape:cerrar-como-deuda', comando, palabras: null, destino: 's-er', cwd: E.repo, casa: E.home, sesion: 's-er' });
   assert.ok(!cuadro.error, cuadro.error);
   const todo = JSON.stringify(cuadro);
   assert.match(todo, /tests/);
@@ -447,8 +450,11 @@ test('8.323-ExpectRedDeUnControl_LaVentanaDaSuCuadro — el control, las pruebas
   assert.match(todo, new RegExp(DEUDA));
   assert.doesNotMatch(todo, /vence|AC \d/, 'sin fecha ni criterios de la matriz');
   // sin la lista de pruebas no hay cuadro
-  const sin = ow.cuadroPara({ firma: 'escape:rojo-esperado-de-la-matriz', comando: `${MARKER} expect-red tests`, palabras: null, destino: 's-er', cwd: E.repo, casa: E.home, sesion: 's-er' });
+  const sin = ow.cuadroPara({ firma: 'escape:cerrar-como-deuda', comando: `${MARKER} expect-red tests`, palabras: null, destino: 's-er', cwd: E.repo, casa: E.home, sesion: 's-er' });
   assert.ok(sin.error, JSON.stringify(sin));
+  // la firma de la matriz no da el cuadro de un control
+  const ajena = ow.cuadroPara({ firma: 'escape:rojo-esperado-de-la-matriz', comando, palabras: null, destino: 's-er', cwd: E.repo, casa: E.home, sesion: 's-er' });
+  assert.ok(ajena.error, JSON.stringify(ajena));
 });
 
 test('T10 ExpectRed_Acmatrix_AsksPermission @story-8.252 @ac-9 — la firma propia: la pide su guion (escondida, el freno), la ventana muestra criterios, pruebas y fecha, y vale una vez', () => {
@@ -475,12 +481,12 @@ test('T10 ExpectRed_Acmatrix_AsksPermission @story-8.252 @ac-9 — la firma prop
   assert.strictEqual(mc.detalleDelRojoEsperado('acmatrix', ['T3', 'T1', 'T2', 'T1'], hasta), mc.detalleDelRojoEsperado('acmatrix', ['T1', 'T2', 'T3'], hasta));
   assert.notStrictEqual(mc.detalleDelRojoEsperado('acmatrix', ['T1', 'T2'], hasta), mc.detalleDelRojoEsperado('acmatrix', ['T1', 'T2', 'T3'], hasta));
   assert.notStrictEqual(mc.detalleDelRojoEsperado('acmatrix', ['T1', 'T2', 'T3'], fecha(8)), mc.detalleDelRojoEsperado('acmatrix', ['T1', 'T2', 'T3'], hasta));
-  // otro control (8.323): la misma firma del rojo esperado; la forma exacta la pide su guion, la escondida la frena el
-  // freno, sin la huella de la matriz
+  // otro control (8.323): la firma de cerrar como deuda; la forma exacta la pide su guion, la escondida la frena el
+  // freno como cerrar como deuda, sin la huella de la matriz
   g = gate(`${MARKER} expect-red tests --tests T2`);
   assert.doesNotMatch(g.stdout, /^frena=/m, g.stdout);
   g = gate(`cd ${E.repo} && ${MARKER} expect-red tests --tests T2`);
-  assert.match(g.stdout, /^frena=rojo esperado de la matriz\texpect-red\ttests$/m, g.stdout);
+  assert.match(g.stdout, /^frena=cerrar como deuda\texpect-red\ttests$/m, g.stdout);
   assert.doesNotMatch(g.stdout, /^detalle=/m);
   // la ventana: lo que se aprueba trae los criterios con su texto, las pruebas y la fecha
   const ow = require(path.join(RAIZ, 'scripts', 'lib', 'owner-window.js'));

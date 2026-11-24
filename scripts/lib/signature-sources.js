@@ -633,13 +633,17 @@ function deLaDesignacion(firma, destino, cwd, palabras) {
  * El rojo esperado de la matriz (`marker.js expect-red acmatrix --tests … --until …`): los criterios que la lista deja
  * sin evidencia en vivo, con su texto, las pruebas y la fecha, de la matriz de la historia de la corrida. Sin el comando
  * a la vista, sin la historia o sin la matriz, `{ error }`: sin los criterios a la vista no se firma. El de un control
- * (`expect-red <control> --tests …`, la misma firma) no tiene fecha ni matriz: el control, las pruebas y la deuda.
+ * (`expect-red <control> --tests …`, con la firma de cerrar como deuda) no tiene fecha ni matriz: el control, las
+ * pruebas y la deuda. `de` (`control` o `matriz`): la firma que se pide, y el comando del otro rojo no se firma con ella.
  */
-function delRojoEsperado(palabras, m) {
+function delRojoEsperado(palabras, m, { de = null } = {}) {
   if (!palabras) return { error: 'el comando no está escrito tal cual (una envoltura, una variable): sin los criterios a la vista no se firma' };
   const pruebas = String(valor(palabras, '--tests') || '').split(',').map((t) => t.trim()).filter(Boolean);
-  const control = String(palabras[2] || '');
-  if (control && !control.startsWith('-') && control !== 'acmatrix') {
+  const control = String(palabras[2] || '').trim();
+  const deUnControl = require('./owner-window.js').esRojoDeUnControl(palabras[2]);
+  if (de === 'control' && !deUnControl) return { error: 'el rojo esperado de la matriz tiene su propia firma, con los criterios y la fecha' };
+  if (de === 'matriz' && deUnControl) return { error: `el rojo esperado del control ${control} va con la firma de cerrar como deuda` };
+  if (deUnControl) {
     if (!pruebas.length) return { error: 'el comando no dice las pruebas (--tests): sin ellas a la vista no se firma' };
     const deuda = m && m.cierre && m.cierre.estado === 'deuda' && m.cierre.deuda ? m.cierre.deuda : null;
     const linea = `Dejar el control ${control} en rojo esperado hasta el commit, con las pruebas ${pruebas.join(', ')}${deuda ? `, en la deuda ${deuda}` : ''}`;
@@ -780,7 +784,9 @@ function deSaltearLaCola(comando, cwd) {
 function partesDe({ firma, palabras, comando, cwd, marcador, estado, destino, topes, casa } = {}) {
   if (firma === 'escape:merge-bypass') return deSaltearLaCola(comando, cwd);
   if (firma === 'designation-set' || firma === 'designation-withdraw') return deLaDesignacion(firma, destino, cwd, palabras);
-  if (firma === 'escape:rojo-esperado-de-la-matriz') return delRojoEsperado(palabras, marcador);
+  if (firma === 'escape:rojo-esperado-de-la-matriz') return delRojoEsperado(palabras, marcador, { de: 'matriz' });
+  // el rojo esperado de un control va con la firma de cerrar como deuda: el cuadro dice el control, las pruebas y la deuda
+  if (firma === 'escape:cerrar-como-deuda' && palabras && palabras[1] === 'expect-red') return delRojoEsperado(palabras, marcador, { de: 'control' });
   // volver al modo autónomo: el cuadro sale de la detención que el control de cierre anotó en el marcador de la sesión
   if (firma === 'autonomy-resume') return require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'autonomy-decision.js')).partes(marcador, { casa, sesion: destino });
   if (firma === 'escape:external-pr') return delPedidoDeAfuera(palabras, cwd, casa);
