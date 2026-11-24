@@ -240,6 +240,11 @@ const VOCABULARIO = Object.freeze({
     // (delegation-routing.js): pasado el plazo, el renglón vuelve al dueño. Sin valor, 10. Sólo del perfil: si la máquina
     // pudiera decirlo, el agente se estiraría el plazo.
     delegation_wait_minutes: 'entero:1-60',
+    // Quién firma el commit local de una corrida: `agent` (o sin valor), el agente commitea solo y la persona aprueba el
+    // pull request; `coordinator`, la coordinadora lo firma antes con `marker.js approve-save` (la firma `save`), y sin
+    // ese ok vigente el freno de guardar no deja commitear. Sólo del perfil: si la máquina pudiera decirlo, el agente se
+    // sacaría la firma.
+    local_commit: 'opcion:agent|coordinator',
   }),
   // Cómo se pone al día el freno de producción de cada máquina: `password` (o sin valor), con la contraseña
   // de su persona cada vez; `auto`, solo, con la versión publicada, en las máquinas que instalaron el permiso. Sólo del
@@ -346,7 +351,7 @@ const RETIRADAS = Object.freeze({
 // perfil es versionado y se cambia con un pedido; la variable y el archivo de la máquina los puede escribir el agente que
 // implementa, y esta clave abre la puerta a eximir un crítico: si las leyera, el agente se la abriría solo. Lo que el
 // archivo de la máquina tenga escrito queda en `shadowed` con `by: 'solo-perfil'` y `explain` lo dice; `set` no la escribe.
-const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files', 'approvals.delegation_wait_minutes', 'pull_requests.team_authors']);
+const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files', 'approvals.delegation_wait_minutes', 'pull_requests.team_authors', 'approvals.local_commit']);
 // Hasta dónde puede subir cada tope del camino corto. El delegado, hasta 6: sube lo
 // mínimo, porque con riesgo normal ese carril no lleva revisores ni pase adversarial, y una historia de 6 archivos ya deja
 // de saltearse el pase. El de la firma común, hasta 12: evita el click aparte en un arreglo de 9 archivos y lo mantiene en

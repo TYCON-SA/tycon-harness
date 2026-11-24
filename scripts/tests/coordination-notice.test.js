@@ -2027,7 +2027,7 @@ test('Retirada_ConEspera_DiceQueEsperabaPrimero (T14) @story-8.274 @ac-18', () =
   assert.deepStrictEqual(Object.keys(s.retired[1]).sort(), ['at', 'idleMin', 'reason', 'session', 'short', 'sid'], 'sin espera, la de siempre');
   assert.strictEqual(s.retired[0].waitingSince, mins(50), 'desde cuándo, de su nota');
   const text = C.statusText(s);
-  assert.match(text, /Cerradas por Claude Code: Con-espera: la cerró Claude Code a las \d\d:\d\d por falta de memoria, quieta 24 min, esperando la firma del dueño para el plan desde las \d\d:\d\d\. Para levantarla: claude respawn bbbb2222 · Sin-espera:/);
+  assert.match(text, /Cerradas por Claude Code: Con-espera: la cerró Claude Code a las \d\d:\d\d por falta de memoria, quieta 24 min, esperando la firma del dueño para el plan desde las \d\d:\d\d\. Para levantarla: coordination\.js relaunch --id bbbb2222 · Sin-espera:/);
 });
 
 // 🔴 mutación: comparar al revés el 15 %, nombrar las quietas sin poner primero la que espera, o callar cuando no se mide.
@@ -2104,6 +2104,42 @@ test('Memoria_SwapBordeYComaDecimal_Avisa @story-8.274 @ac-19 @ac-20', () => {
   const t = toy();
   const text = C.statusText(C.status({ ...t.opts, noTranscripts: true, readSwap: () => mac('vm.swapusage: total = 1000.00M  used = 854.00M  free = 146.00M') }));
   assert.match(text, /Memoria de intercambio casi llena: 14 % libre/);
+});
+
+// 🔴 mutación: comparar al revés el 70 %, redondear para arriba (un 69,9 % avisaría), callar cuando no se mide, o leer
+// los procesos sin que `status` los pida.
+test('Procesos_CercaDelTope_Avisa (fila 126 b)', () => {
+  const t = toy();
+  const at = (r) => C.statusText(C.status({ ...t.opts, noTranscripts: true, readProcs: () => r }));
+  const high = at({ used: 1867, max: 2666, pct: 70, why: null });
+  assert.match(high, /Procesos del usuario cerca del tope: 1867 de 2666 \(70 %\)\. Con el tope no arranca ningún comando, ni los ganchos ni los frenos\./, high);
+  assert.match(high, /pedí que frenen los pases y los guiones de fondo que no hacen falta/);
+  assert.doesNotMatch(at({ used: 1866, max: 2666, pct: 69, why: null }), /Procesos del usuario/, 'debajo del 70 % no dice nada');
+  assert.match(at({ used: null, max: null, pct: null, why: 'no sé medirlos en linux' }), /Procesos del usuario: no medidos \(no sé medirlos en linux\)/);
+  // `ps` que no arranca por falta de procesos es el tope, no una medición que falló
+  const tope = at({ used: null, max: null, pct: null, why: 'spawnSync ps EAGAIN' });
+  assert.match(tope, /Procesos del usuario en el tope: no pude arrancar ni `ps` para contarlos \(EAGAIN\)/, tope);
+  assert.doesNotMatch(tope, /no medidos/);
+  // sin pedirlos, `status` no los lee (el aviso de cada turno y el freno del cierre): nada que decir; el comando `status`
+  // sí los pide
+  assert.strictEqual(C.status({ ...t.opts, noTranscripts: true }).procs, null);
+  assert.strictEqual(C.STATUS_READS.procs, true, 'el comando status pide los procesos');
+  assert.strictEqual(C.STATUS_READS.swap, true, 'el comando status pide la memoria de intercambio');
+  // el lector: el tope de sysctl y la cuenta de ps; lo ilegible y otra plataforma, null con el motivo
+  const HT = require(path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js'));
+  const pids = (n) => Array.from({ length: n }, (_, i) => `  ${100 + i}`).join('\n');
+  // el tope lo da la primera llamada (`-n kern.maxprocperuid`); la cuenta, la segunda (`-U <uid> -o pid=`)
+  const mac = (max, n) => HT.userProcs({ platform: 'darwin', uid: 501, run: (prog, args) => {
+    if (args[0] === '-n') { assert.deepStrictEqual([prog, ...args], ['sysctl', '-n', 'kern.maxprocperuid']); return `${max}\n`; }
+    assert.deepStrictEqual([prog, ...args], ['ps', '-U', '501', '-o', 'pid=']);
+    return `${pids(n)}\n`;
+  } });
+  assert.deepStrictEqual(mac(2666, 1867), { used: 1867, max: 2666, pct: 70, why: null });
+  assert.strictEqual(mac(2666, 1866).pct, 69, 'un 69,9 % no sube al 70');
+  assert.match(mac('nada', 10).why, /kern\.maxprocperuid no dio un número/);
+  assert.match(mac(2666, 0).why, /ps no listó/);
+  assert.match(HT.userProcs({ platform: 'darwin', run: () => { throw new Error('EAGAIN'); } }).why, /EAGAIN/);
+  assert.deepStrictEqual(HT.userProcs({ platform: 'linux' }), { used: null, max: null, pct: null, why: 'no sé medirlos en linux' });
 });
 
 // 🔴 mutación: pegar la hora de una nota vieja a una espera que vino de otro lado (la del pipeline): la espera parece

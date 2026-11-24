@@ -57,8 +57,9 @@ node scripts/tools/prepare-machine.js --repo <repo> [--repo <another repo>]
 It says one at a time what is missing, with the command for each: open each repo's main folder once (`cd '<repo>' &&
 claude` and accept), update the production guard if the machine has one, and confirm the coordinator if your
 organization uses her to sign. You do what is missing: the script only reads, approves nothing and does not ask for your
-password. When you run it again and nothing is missing, it says «lista» (ready). With the main folder approved, the
-sessions the coordinator opens in copies of the repo start without asking you anything.
+password. When you run it again and nothing is missing, it says «lista» (ready). Since Claude Code 2.1.330, each copy of
+the repo where the coordinator opens a session is approved separately, even with the main folder approved: if it is not,
+she tells you which folder to open once and opens the session there again.
 
 ## A working day
 

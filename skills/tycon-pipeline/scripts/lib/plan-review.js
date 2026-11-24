@@ -797,12 +797,52 @@ function anotarPregunta({ estado, sesion, kind, huella, ahora = Date.now() }) {
   return { codigo: 0 };
 }
 
-/** Anota la respuesta: la elección (`review`, `skip`, `wait`) y quién contestó. */
-function anotarRespuesta({ estado, sesion, kind, choice, quien, huella, motivo = null, ahora = Date.now() }) {
+/**
+ * Anota la respuesta: la elección (`review`, `skip`, `wait`) y quién contestó. `via`: la vía de la firma del dueño que
+ * la dio (`skip` del código); `por: 'perfil'`: la contestó la coordinadora por la celda de «dueño ausente».
+ */
+function anotarRespuesta({ estado, sesion, kind, choice, quien, huella, motivo = null, via = null, por = null, ahora = Date.now() }) {
   if (!KINDS.includes(kind)) return no(`--kind es ${KINDS.join(' o ')}`);
   if (!CHOICES.includes(choice)) return no(`--choice es ${CHOICES.join(', ')}`);
-  anotarRenglon(estado, { name: 'review-answer', status: 'ok', sesion, kind, choice, quien, huella: huella || null, motivo }, ahora);
+  anotarRenglon(estado, { name: 'review-answer', status: 'ok', sesion, kind, choice, quien, huella: huella || null, motivo, ...(via ? { via } : {}), ...(por ? { por } : {}) }, ahora);
   return { codigo: 0 };
+}
+
+/**
+ * ¿La celda de «dueño ausente» contesta «skip» por el dueño a la pregunta del código de `sesion` sobre `huella`? El dueño
+ * tiene que contar como ausente (la marca, o la pregunta de ese diff con `plan_review.owner_away_minutes` minutos sin
+ * respuesta) y la matriz del portón del pase (pipeline.js), con el dueño ausente, tiene que decir `skip` para ese diff.
+ * `{ codigo: 0, motivo }` o `{ codigo: 2, motivo }`: lo que no se puede leer no contesta por el dueño.
+ */
+function skipPorElPerfil({ estado, sesion, huella, ahora = Date.now() }) {
+  let marker;
+  try { marker = marcadorDe(estado, sesion); } catch (e) { return no(e.message); }
+  if (!marker) return no(`la sesión ${sesion} no tiene una ejecución abierta`);
+  const cfg = configDeLaOrganizacion().values;
+  const g = require(path.join(RAIZ, 'scripts', 'lib', 'owner-away.js')).get({ estado, ahora });
+  if (g.problem) return no(`no pude leer la marca de ausente (${g.problem})`);
+  const problemas = [];
+  const pregunta = preguntasAbiertas({ estado, problemas }).find((p) => p.sesion === sesion && p.kind === 'code' && p.huella === huella);
+  if (problemas.length) return no(`no pude leer las preguntas de revisar (${problemas[0]})`);
+  const aus = require('./review-policy.js').ownerAway({ mark: g.mark, askedAt: pregunta ? Date.parse(pregunta.ts) : null, now: ahora, minutes: cfg.plan_review.owner_away_minutes });
+  if (!aus.away) return no(`la persona no cuenta como ausente (${aus.reason}): «skip» lo contesta ella, con su firma`);
+  // los archivos del cambio entero, como los ve el portón con --files: lo commiteado desde la base de la ejecución, lo
+  // que falta commitear y los archivos nuevos sin seguir. Uno que falta achicaría el diff y daría «chica» a una grande
+  const repo = marker.repoPath || process.cwd();
+  const env = require(path.join(RAIZ, 'scripts', 'lib', 'clean-git-env.js')).idiomaFijo();
+  const git = (args) => require('child_process').spawnSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8', env });
+  const archivos = new Set();
+  for (const args of [['diff', '--name-only', marker.baseSha || 'HEAD'], ['ls-files', '--others', '--exclude-standard']]) {
+    const d = git(args);
+    if (d.status !== 0) return no(`no pude leer los archivos del cambio (${(d.stderr || '').trim().split('\n')[0] || d.status})`);
+    for (const f of d.stdout.split('\n')) if (f) archivos.add(f);
+  }
+  let r;
+  try {
+    r = pipeline().computeDeepReviewGate({ story: storyDe(marker), repo, files: [...archivos], reviewConfig: cfg, ownerAway: true, codeAnswer: null });
+  } catch (e) { return no(`no pude calcular la celda de ausencia (${(e && e.message) || e})`); }
+  if (!r || r.decision !== 'skip') return no(`la celda de ausencia para este diff dice ${(r && r.decision) || 'otra cosa'} (${(r && r.reason) || 'sin motivo'}): no contesta «skip»`);
+  return { codigo: 0, motivo: `${aus.reason}; ${r.reason}` };
 }
 
 /**
@@ -929,6 +969,41 @@ function lineaDelCuadroSola({ estado, destino, marker, config }) {
 }
 
 /**
+ * Lo que la aprobación del plan de una corrida mide ahora: su plan, su historia, su parte y si es delicada (risk-class,
+ * `computeDelicate`). Con la historia ilegible, delicada. Lo usan `antesDeAprobar` y `planParaDelegar`: el desvío a la
+ * coordinadora y owner-next miden igual que la firma.
+ */
+function medirElPlan(marker) {
+  const plan = planDe(marker);
+  const storyFile = storyDe(marker);
+  let storyTexto = null;
+  try { storyTexto = fs.readFileSync(storyFile, 'utf8'); } catch (_) { storyTexto = null; }
+  const parte = parteDe(marker, storyTexto);
+  const delicate = pipeline().computeDelicate({ story: storyFile, repo: marker.repoPath, planText: plan.texto || '', batch: batchDe(parte) });
+  return { plan, storyFile, storyTexto, parte, delicate };
+}
+
+const PLAN_DE_UNA_PERSONA = 'el plan de una historia delicada lo aprueba una persona';
+
+/**
+ * ¿El plan de la sesión `destino` (o su maqueta, que se firma como el plan) puede ir a la coordinadora por delegación?
+ * null si su historia es de rutina; `{ codigo: 2, motivo }` si es delicada o si no se puede saber (sin marcador, con el
+ * marcador o el plan ilegibles, con la historia ilegible): entonces lo aprueba una persona, como en `antesDeAprobar`.
+ * Lo preguntan el desvío y owner-next antes de ofrecerle la firma (scripts/lib/delegation-routing.js `deUnaPersona`).
+ */
+function planParaDelegar({ estado, destino } = {}) {
+  const sinSaber = (por) => no(`${PLAN_DE_UNA_PERSONA}, y no sé si ésta lo es: ${por}`);
+  if (!estado || !SESION.test(String(destino || ''))) return sinSaber('no sé de qué sesión es el plan');
+  let marker;
+  try { marker = marcadorDe(estado, String(destino)); } catch (e) { return sinSaber(e.message); }
+  if (!marker || marker.storyId == null) return sinSaber(`la sesión ${destino} no tiene una ejecución abierta`);
+  let m;
+  try { m = medirElPlan(marker); } catch (e) { return sinSaber(`no pude medir su historia (${e.message})`); }
+  if (m.plan.error) return sinSaber(`no pude leer su plan (${m.plan.error})`);
+  return m.delicate.value ? no(`${PLAN_DE_UNA_PERSONA} (${m.delicate.reason})`) : null;
+}
+
+/**
  * Las condiciones de la aprobación del plan sin persona (la delegación, la firma de trámite, «hecho y avisado», la
  * revisión de la propia sesión): `{ codigo: 2, motivo }` para no firmar (el pedido no se gasta), o
  * `{ codigo: 0, via: 'revision', constancia }`. Primero si la story es delicada: entonces no, nunca, diga lo que diga el
@@ -937,12 +1012,7 @@ function lineaDelCuadroSola({ estado, destino, marker, config }) {
  * freno de la firma.
  */
 function antesDeAprobar({ estado, firmante, destino, marker, config, delegacion, home }) {
-  const plan = planDe(marker);
-  const storyFile = storyDe(marker);
-  let storyTexto = null;
-  try { storyTexto = fs.readFileSync(storyFile, 'utf8'); } catch (_) { storyTexto = null; }
-  const parte = parteDe(marker, storyTexto);
-  const delicate = pipeline().computeDelicate({ story: storyFile, repo: marker.repoPath, planText: plan.texto || '', batch: batchDe(parte) });
+  const { plan, storyTexto, parte, delicate } = medirElPlan(marker);
   // un plan delicado lo aprueba una persona, con su click o su «aprobado» (o en su terminal): ni la revisión de la propia
   // sesión, ni la coordinadora por delegación, ni el arnés como trámite. El perfil no lo cambia: `plan-approval:delicada`
   // en approvals.delegated_signing no lo vuelve trámite ni lo delega
@@ -1225,7 +1295,7 @@ function guardarUso(estado, lanza, destino) {
 
 module.exports = {
   rutaResultado, resultadosGuardados, guardarResultado, rutaUso, guardarUso, configUsada, CARPETA, VEREDICTOS, APROBADOS, KINDS, CHOICES, configDeLaOrganizacion, veredictoDe, comandoLite, preparar, anotar, leerConstancia,
-  ultimaDelDestino, antesDeAprobar, rutinaParaDelegar, antesDelPlan, planDe, rutaConstancia, anotarPregunta, anotarRespuesta, preguntasAbiertas,
+  ultimaDelDestino, antesDeAprobar, planParaDelegar, rutinaParaDelegar, antesDelPlan, planDe, rutaConstancia, anotarPregunta, anotarRespuesta, skipPorElPerfil, preguntasAbiertas,
   eligioSeguir, respuestaDe, rechazosSeguidos, hallazgosCorregidos, lineaDelCuadro, accionDelPlan, coordinadoraQueAtiende, anotarPedido, pedidosA, estadoDelPedido, PEDIDO, huellaDe, designadaDeVerdad, sha,
   tieneRenglon, sesionesDeLaCorrida, ultimaDeLaCorrida, mismaCorrida, corridaDe, parteDe, problemaDelAprobador, textoPropioPorLaRevision, textoDeLaAprobacion, revisionEnContra, esProblemaDelAprobador, revisionesViejas, textoDeConstruccion, huellaDeConstruccion, cuartaVuelta, VUELTAS_SIN_PREGUNTAR,
 };

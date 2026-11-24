@@ -170,6 +170,26 @@ test('T7 SiguioOSeCerro_BorraElPermiso @story-8.202 @ac-4', () => {
   assert.strictEqual(s.waitingForOwner, true, 'ni baja la espera');
 });
 
+// 🔴 Falla con: con un permiso abierto, nada anotaba que la sesión siguió con otra herramienta (el pedido cierra el
+// tramo trabajado y `lastEventAt` queda vacío): un agente al que le negaron algo y siguió trabajando salía como trabado
+// hasta el final del turno (fila 70, pase adversarial).
+test('T7b PostToolUseDeOtraHerramienta_AnotaQueSeMovio_UnaVezPorMinuto', () => {
+  const t = toy();
+  const T0 = mins(30);
+  SS.handle(ev(OTRA, { tool_name: 'Bash', tool_input: { command: 'npm i' } }), {}, t.home, T0);
+  const otra = (ms) => SS.handle({ session_id: OTRA, hook_event_name: 'PostToolUse', tool_name: 'Read' }, {}, t.home, ms);
+  otra(T0 + 120000);
+  const a = readState(t, OTRA);
+  assert.strictEqual(a.permission.movedAt, new Date(T0 + 120000).toISOString());
+  assert.strictEqual(a.permission.tool, 'Bash', 'el permiso sigue anotado');
+  assert.strictEqual(a.waitingForOwner, true, 'y la espera también');
+  assert.ok(!a.workingSince, 'no reabre el tramo trabajado');
+  otra(T0 + 150000);
+  assert.strictEqual(readState(t, OTRA).permission.movedAt, new Date(T0 + 120000).toISOString(), 'a los 30 s no vuelve a escribir');
+  SS.handle({ session_id: OTRA, hook_event_name: 'PostToolUseFailure', tool_name: 'Grep' }, {}, t.home, T0 + 190000);
+  assert.strictEqual(readState(t, OTRA).permission.movedAt, new Date(T0 + 190000).toISOString(), 'pasado el minuto, sí; también una que falló');
+});
+
 test('T8 EscuchasDelCuadro_ConElGancho_NoEsAjeno @story-8.202 @ac-5', () => {
   const list = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'hooks-list.json'), 'utf8'));
   const hooks = (list.hooks || list).filter((h) => h.event === 'PermissionRequest' && /session-state\.js$/.test(h.spec));
@@ -215,6 +235,37 @@ test('T9b OwnerWait_PermisoSinConfirmar_DiceQueNoEstaConfirmado', () => {
     assert.match(r.lines[0], /^hora-mensajes tiene un permiso anotado desde las \d\d:\d\d, sin confirmar que siga abierto: Write \/r\/specs\/x\.md\. Para entrar: claude attach hora-mensajes$/, JSON.stringify(estado));
     assert.doesNotMatch(r.lines[0], /espera un permiso/);
   }
+});
+
+// 🔴 Falla con: el permiso que pide un agente de una sesión de fondo no se anuncia. La sesión principal sigue «ocupada»
+// (espera a su agente) y el aviso sólo miraba la que Claude Code da esperando: una noche entera trabada sin que nadie se
+// enterara (fila 70, DemoTracking, 22/11).
+test('T9c OwnerWait_PermisoDeUnAgente_LaSesionFiguraOcupada_LoAnuncia', () => {
+  const t = toy();
+  // ocupada desde antes del pedido, y nada pasó en la sesión desde entonces
+  claudeFile(t, OTRA, 'hora-mensajes', { status: 'busy', statusUpdatedAt: mins(30) });
+  frenada(t, OTRA, 'Bash', 'cd /tmp/capt34 && python3 -', 20);
+  const r = vuelta(t);
+  assert.strictEqual(r.lines.length, 1, JSON.stringify(r));
+  assert.match(r.lines[0], /^hora-mensajes espera un permiso desde las \d\d:\d\d que pidió un agente suyo \(la sesión figura ocupada y no se movió desde entonces\): Bash cd \/tmp\/capt34 && python3 -\. Para entrar: claude attach hora-mensajes$/);
+  // si la sesión se movió hace poco con el permiso abierto (un «No» y el agente siguió con otra herramienta), no está trabada
+  const t2 = toy();
+  claudeFile(t2, OTRA, 'hora-mensajes', { status: 'busy', statusUpdatedAt: mins(30) });
+  stateFile(t2, OTRA, { waitingForOwner: true, waitingFor: 'un permiso', permission: { tool: 'Bash', detail: 'npm i', since: new Date(mins(20)).toISOString(), via: 'request' } });
+  SS.handle({ session_id: OTRA, hook_event_name: 'PostToolUse', tool_name: 'Read' }, {}, t2.home, mins(5));
+  assert.deepStrictEqual(vuelta(t2).lines, [], 'se movió hace 5 minutos');
+  // y si después se quedó quieta del todo, sale
+  assert.strictEqual(vuelta(t2, { now: NOW + 7 * 60000 }).lines.length, 1, 'quieta 12 minutos desde que se movió por última vez');
+  // un permiso de hace menos que el tope de un comando en primer plano puede ser uno aprobado que todavía corre
+  const t4 = toy();
+  claudeFile(t4, OTRA, 'hora-mensajes', { status: 'busy', statusUpdatedAt: mins(30) });
+  frenada(t4, OTRA, 'Bash', 'npm test', 9);
+  assert.deepStrictEqual(vuelta(t4).lines, [], 'pedido hace 9 minutos: puede estar corriendo');
+  // ocupada desde después del pedido: la conversación principal lo resolvió y siguió
+  const t3 = toy();
+  claudeFile(t3, OTRA, 'hora-mensajes', { status: 'busy', statusUpdatedAt: mins(1) });
+  frenada(t3, OTRA, 'Bash', 'npm i', 20);
+  assert.deepStrictEqual(vuelta(t3).lines, [], 'ocupada desde después del pedido');
 });
 
 test('T10 OwnerWait_YaAnunciada_NoTerminaDeNuevo @story-8.202 @ac-6', () => {

@@ -121,7 +121,7 @@ test('T31 Retiradas_Status_LaLineaYJson @story-8.202 @ac-27', () => {
   const anon = s.retired.find((r) => r.short === 'ccccdddd');
   assert.strictEqual(anon.session, 'ccccdddd', 'sin su archivo, el id corto');
   const text = C.statusText(s);
-  assert.match(text, /Cerradas por Claude Code: .*trabajo-norte: la cerró Claude Code a las \d\d:\d\d por falta de memoria, quieta 27 min, sin anotar qué esperaba\. Para levantarla: claude respawn aaaabbbb/);
+  assert.match(text, /Cerradas por Claude Code: .*trabajo-norte: la cerró Claude Code a las \d\d:\d\d por falta de memoria, quieta 27 min, sin anotar qué esperaba\. Para levantarla: coordination\.js relaunch --id aaaabbbb/);
   assert.ok(!s.working.some((w) => w.sid === SID_NORTE), 'no cuenta para el tope');
 });
 
@@ -139,7 +139,7 @@ test('T33 OwnerWait_Retirada_TerminaUnaVez @story-8.202 @ac-29', () => {
   job(t, 'aaaabbbb', 'trabajo-norte', SID_NORTE);
   const r = C.ownerWaitOnce(t.opts);
   assert.deepStrictEqual(r.lines.length, 1);
-  assert.match(r.lines[0], /^trabajo-norte: la cerró Claude Code a las \d\d:\d\d por falta de memoria, quieta 27 min, sin anotar qué esperaba\. Para levantarla: claude respawn aaaabbbb$/);
+  assert.match(r.lines[0], /^trabajo-norte: la cerró Claude Code a las \d\d:\d\d por falta de memoria, quieta 27 min, sin anotar qué esperaba\. Para levantarla: coordination\.js relaunch --id aaaabbbb$/);
   assert.deepStrictEqual(C.ownerWaitOnce(t.opts).lines, [], 'la segunda vez no');
 });
 
@@ -232,7 +232,7 @@ test('T36 CapNotice_RetiradaSinAnunciar_LaLinea @story-8.202 @ac-29', () => {
   fs.writeFileSync(path.join(t.state, 'coordination', 'owner-wait.pid'), String(process.pid));
   daemon(t, [retire(mins(10), 'aaaabbbb', 27)]);
   job(t, 'aaaabbbb', 'trabajo-norte', SID_NORTE);
-  assert.match(C.capNotice(t.opts) || '', /trabajo-norte: la cerró Claude Code .* claude respawn aaaabbbb/);
+  assert.match(C.capNotice(t.opts) || '', /trabajo-norte: la cerró Claude Code .* coordination\.js relaunch --id aaaabbbb/);
   C.ownerWaitOnce(t.opts);
   assert.doesNotMatch(C.capNotice(t.opts) || '', /la cerró Claude Code/, 'ya anunciada');
 });
@@ -313,8 +313,8 @@ test('T38 Retiradas_DicenQueEsperaban', () => {
   assert.match(sur.waited, /la 9\.9, Aprobar el plan: ¿Apruebo el plan\?/);
   assert.strictEqual(anon.waited, undefined, 'sin nada anotado, sin el campo');
   const text = C.statusText(s);
-  assert.match(text, /trabajo-norte: la cerró Claude Code a las \d\d:\d\d por falta de memoria, quieta 27 min, esperando la firma de la coordinadora desde las \d\d:\d\d\. Para levantarla: claude respawn aaaabbbb/);
-  assert.match(text, /ccccdddd: la cerró Claude Code .*quieta 12 min, sin anotar qué esperaba\. Para levantarla: claude respawn ccccdddd/);
+  assert.match(text, /trabajo-norte: la cerró Claude Code a las \d\d:\d\d por falta de memoria, quieta 27 min, esperando la firma de la coordinadora desde las \d\d:\d\d\. Para levantarla: coordination\.js relaunch --id aaaabbbb/);
+  assert.match(text, /ccccdddd: la cerró Claude Code .*quieta 12 min, sin anotar qué esperaba\. Para levantarla: coordination\.js relaunch --id ccccdddd/);
   assert.match(W.renderRetired(s.retired), /trabajo-sur: la cerró Claude Code \(falta de memoria\), quieta 15 min, esperando la 9\.9, Aprobar el plan/);
   const oficina = JSON.stringify(O.buildOffice({ wip: { rows: [], details: [], extra: [], free: [], halfway: [], unreadable: [], retired: s.retired }, nowMs: NOW }).data);
   assert.match(oficina, /esperaba la firma de la coordinadora; para levantarla: claude respawn aaaabbbb/);
