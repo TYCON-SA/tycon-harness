@@ -234,6 +234,74 @@ test('MoveStory_NewKeyAlreadyHasSameContent_Moves', () => {
   assert.equal(VR.readRecord(l.home, l.a).estado, 'current', r.out);
 });
 
+const conHora = (f, hora) => { const r = JSON.parse(fs.readFileSync(f, 'utf8')); r.hora = hora; fs.writeFileSync(f, `${JSON.stringify(r, null, 2)}\n`); };
+
+// La clave nueva ya tiene la constancia del mismo contenido (otra copia lo validó): queda la más nueva de las dos, y el
+// comando dice cuál quedó.
+// 🔴 Falla con: un comando que se queda siempre con la de la otra copia (y la propia, más nueva, se pierde) o que dice
+//    «vigente» sin decir con qué resultado quedó.
+test('MoveStory_NewKeySameContent_NewerRecordWins_AndSaysWhich', () => {
+  const nuestra = lab('mas-nueva-nuestra');
+  fs.writeFileSync(nuestra.a, HISTORIA);
+  VR.writeRecord(nuestra.home, nuestra.a, { resultado: 'rojo', validadores: ['tycon-story-validator'] });
+  conHora(VR.recordFile(nuestra.home, nuestra.a), '2026-01-01T00:00:00.000Z');
+  fs.rmSync(nuestra.a);
+  validar(nuestra);
+  const r = mover(nuestra);
+  assert.equal(r.status, 0, r.out);
+  assert.equal(VR.readRecord(nuestra.home, nuestra.a).record.resultado, 'verde', 'la propia, más nueva, quedó');
+  assert.match(r.out, /verde/);
+
+  const suya = lab('mas-nueva-suya');
+  validar(suya);
+  conHora(VR.recordFile(suya.home, suya.de), '2026-01-01T00:00:00.000Z');
+  fs.writeFileSync(suya.a, HISTORIA);
+  VR.writeRecord(suya.home, suya.a, { resultado: 'rojo', validadores: ['tycon-story-validator'] });
+  fs.rmSync(suya.a);
+  const r2 = mover(suya);
+  assert.equal(r2.status, 0, r2.out);
+  assert.equal(VR.readRecord(suya.home, suya.a).record.resultado, 'rojo', 'la de la otra copia, más nueva, quedó');
+  assert.match(r2.out, /rojo/);
+});
+
+// Una ruta que una historia dejó al moverse se puede volver a usar: su constancia vieja queda marcada como movida.
+// 🔴 Falla con: un comando que toma la constancia que dejó una mudanza por la de otra historia y se niega para siempre.
+test('MoveStory_PathLeftByAMove_CanBeReused', () => {
+  const l = lab('reusar');
+  validar(l);
+  assert.equal(mover(l).status, 0);
+  // otra historia a la ruta que quedó libre
+  const c = path.join(l.repo, 'specs', 'a', 'story-9.3-otra.md');
+  fs.writeFileSync(c, HISTORIA.replace(/9\.1/g, '9.3'));
+  git(l.repo, 'add', '-A'); git(l.repo, 'commit', '-q', '-m', 'otra');
+  validar(l, c);
+  const r = mover(l, c, l.de);
+  assert.equal(r.status, 0, r.out);
+  assert.equal(VR.readRecord(l.home, l.de).estado, 'current', r.out);
+  // y la primera, de vuelta a su ruta de antes (ahora ocupada): se niega por el destino, no por la constancia
+  git(l.repo, 'commit', '-q', '-am', 'mudanzas');
+  const ida = lab('ida-y-vuelta');
+  validar(ida);
+  assert.equal(mover(ida).status, 0);
+  git(ida.repo, 'commit', '-q', '-m', 'ida');
+  const vuelta = mover(ida, ida.a, ida.de);
+  assert.equal(vuelta.status, 0, vuelta.out);
+  assert.equal(VR.readRecord(ida.home, ida.de).estado, 'current', vuelta.out);
+});
+
+// La constancia de primera vez es por ruta real: la de otra rama del mismo checkout en la ruta nueva no se pisa.
+// 🔴 Falla con: un comando que escribe la de primera vez sin mirar si la ruta nueva ya tiene la de otra historia.
+test('MoveStory_FirstTimeOfOtherStoryAtNewPath_NotOverwritten', () => {
+  const l = lab('primera-vez-otra');
+  FT.writeRecord(l.home, l.de, '9.1');
+  FT.writeRecordAt(l.home, path.join(fs.realpathSync(path.dirname(l.a)), path.basename(l.a)), '9.7');
+  const r = mover(l);
+  assert.equal(r.status, 0, r.out);
+  assert.match(r.out, /primera vez/);
+  assert.equal(FT.isRecorded(l.home, l.a, '9.7'), true, 'la de la otra historia sigue');
+  assert.equal(FT.isRecorded(l.home, l.a, '9.1'), false);
+});
+
 test('MoveStory_Usage_Exits2', () => {
   const l = lab('uso');
   const env = { ...process.env, HOME: l.home };

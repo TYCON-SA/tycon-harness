@@ -848,37 +848,58 @@ function moverHistoria({ home, de, a }) {
   if (abiertas.length) return no(`la corrida abierta de la sesión ${abiertas.join(', ')} usa esta historia: terminala o sacala antes de moverla`);
 
   const rel = (p) => path.relative(raiz || process.cwd(), p).split(path.sep).join('/');
-  // las constancias, leídas con la ruta de hoy. La clave es el repo más la ruta: la comparten las copias del mismo repo
-  // (worktrees, ramas), así que la de la ruta vieja no se borra (otra copia puede tener la historia ahí) y la de la ruta
-  // nueva no se pisa si es de otro contenido (otra copia puede tener otra historia ahí)
-  const constancias = [['la validación', validationRecord], ['la revisión previa', storyReviewRecord]].map(([nombre, R]) => {
-    const leida = R.readRecord(home, deReal);
-    const nuevo = R.recordFile(home, aReal);
-    let ya = null;
-    try { ya = JSON.parse(fs.readFileSync(nuevo, 'utf8')); } catch { ya = null; }
-    return { nombre, leida, nuevo, ya };
-  });
+  const leerJson = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
+  const hora = (r) => { const t = Date.parse(r && (r.hora || r.at)); return Number.isNaN(t) ? 0 : t; };
+  // Las constancias, leídas con la ruta de hoy. La clave es el repo más la ruta: la comparten las copias del mismo repo
+  // (worktrees, ramas). Por eso la de la ruta vieja no se borra: se marca `movida` (otra copia puede seguir teniendo la
+  // historia ahí, y la marca no cambia lo que lee el lector), y una marcada así se puede pisar después. La de la ruta
+  // nueva no se pisa si es de otro contenido y no está marcada (otra copia tiene otra historia ahí); si es del mismo
+  // contenido, queda la más nueva de las dos.
+  const constancias = [['la validación', validationRecord], ['la revisión previa', storyReviewRecord]].map(([nombre, R]) => ({
+    nombre,
+    leida: R.readRecord(home, deReal),
+    nuevo: R.recordFile(home, aReal),
+    ya: leerJson(R.recordFile(home, aReal)),
+    viejos: [...new Set([R.recordFile(home, deReal), R.recordFileViejo(home, deReal)])],
+  }));
+  const pasa = (c) => c.leida.estado !== 'none' && c.leida.estado !== 'stale';
   for (const c of constancias) {
-    if (c.leida.estado === 'stale' || c.leida.estado === 'none' || !c.ya) continue;
+    if (!pasa(c) || !c.ya || c.ya.movida) continue;
     if (c.ya.huella !== c.leida.record.huella) return no(`${c.nombre} de ${rel(aReal)} ya existe para otro contenido (otra copia del repo tiene otra historia en esa ruta): elegí otra ruta`);
   }
+  // la de primera vez es por ruta real: la de otra historia en la ruta nueva (otra rama de esta copia) no se pisa
   const primeraVez = FT.isRecorded(home, deReal, numero);
+  const ftYa = leerJson(FT.recordFile(home, aReal));
+  const ftPasa = primeraVez && (!ftYa || ftYa.movida || String(ftYa.story) === String(numero));
 
-  // primero las constancias de la ruta nueva y después el archivo: si algo falla, se deshace lo escrito y no se movió nada
-  const escritos = [];
-  const deshacer = () => { for (const f of escritos) { try { fs.unlinkSync(f); } catch { /* ya no estaba */ } } };
+  // primero las constancias y después el archivo: si algo falla, cada una vuelve a como estaba y no se mueve nada
+  const cambios = [];
+  const guardar = (f, escribir) => { cambios.push({ f, antes: fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : null }); escribir(); };
+  const escribirJson = (f, obj) => guardar(f, () => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, `${JSON.stringify(obj, null, 2)}\n`); });
+  const deshacer = () => {
+    for (const { f, antes } of cambios.reverse()) {
+      try { if (antes === null) fs.unlinkSync(f); else fs.writeFileSync(f, antes); } catch { /* lo que no se pudo volver atrás queda como está */ }
+    }
+  };
+  const marca = rel(aReal);
   try {
     for (const c of constancias) {
-      if (c.leida.estado === 'stale' || c.leida.estado === 'none' || c.ya) continue;
-      fs.mkdirSync(path.dirname(c.nuevo), { recursive: true });
-      fs.writeFileSync(c.nuevo, `${JSON.stringify({ ...c.leida.record, path: aReal }, null, 2)}\n`);
-      escritos.push(c.nuevo);
+      if (pasa(c)) {
+        const { movida, ...propia } = c.leida.record;
+        const otraMasNueva = c.ya && !c.ya.movida && c.ya.huella === propia.huella && hora(c.ya) >= hora(propia);
+        c.queda = otraMasNueva ? c.ya : propia;
+        if (!otraMasNueva) escribirJson(c.nuevo, { ...propia, path: aReal });
+      }
+      for (const f of c.viejos) {
+        const r = f !== c.nuevo && leerJson(f);
+        if (r) escribirJson(f, { ...r, movida: marca });
+      }
     }
+    if (ftPasa) guardar(FT.recordFile(home, aReal), () => FT.writeRecordAt(home, aReal, numero));
     if (primeraVez) {
-      // se deshace sólo si la escribió este comando
-      const existia = fs.existsSync(FT.recordFile(home, aReal));
-      const f = FT.writeRecordAt(home, aReal, numero);
-      if (!existia) escritos.push(f);
+      const f = FT.recordFile(home, deReal);
+      const r = f !== FT.recordFile(home, aReal) && leerJson(f);
+      if (r) escribirJson(f, { ...r, movida: marca });
     }
   } catch (e) {
     deshacer();
@@ -899,6 +920,7 @@ function moverHistoria({ home, de, a }) {
 
   const lineas = [`move-story: ${rel(deReal)} → ${rel(aReal)}, el mismo contenido${seguida ? ' (git mv)' : ''}`];
   let codigo = 0;
+  const resumen = (r) => `${r.resultado}, del ${r.hora}`;
   for (const c of constancias) {
     if (c.leida.estado === 'none') continue;
     if (c.leida.estado === 'stale') {
@@ -906,10 +928,15 @@ function moverHistoria({ home, de, a }) {
       lineas.push(`⚠️  ${c.nombre}: la validación quedó en la ruta vieja: el contenido cambió después de escribirla. La historia se movió sin ella: hay que volver a validarla.`);
       continue;
     }
-    lineas.push(`${c.nombre}: pasó a la ruta nueva${c.leida.estado === 'current' ? ', vigente' : ''}`);
+    lineas.push(c.queda === c.ya
+      ? `${c.nombre}: la ruta nueva ya tenía una más nueva de este mismo contenido (de otra copia del repo): queda esa (${resumen(c.queda)})`
+      : `${c.nombre}: pasó a la ruta nueva (${resumen(c.queda)})`);
   }
   if (constancias.every((c) => c.leida.estado === 'none')) lineas.push('no tenía validación: no había nada que pasar');
-  if (primeraVez) lineas.push('la constancia de primera vez: pasó a la ruta nueva');
+  if (primeraVez) {
+    lineas.push(ftPasa ? 'la constancia de primera vez: pasó a la ruta nueva'
+      : `la constancia de primera vez no se pasó: la ruta nueva ya tiene la de la historia ${ftYa.story} (otra rama de esta copia)`);
+  }
 
   // el estado del sprint que cuenta es el de la carpeta de la historia: un cambio de carpeta lo deja en la vieja
   const deDir = path.dirname(deReal);
