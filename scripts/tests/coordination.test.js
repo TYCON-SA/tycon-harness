@@ -2587,6 +2587,52 @@ test('F159 T9 Open_SinRespuesta_DiceCómoSacarLoQueCreó: si el lanzador no vuel
   assert.doesNotMatch(r3.message, /worktree remove|release/);
 });
 
+const acceptedFolders = (t) => { try { return JSON.parse(fs.readFileSync(WS.acceptedFile(t.home), 'utf8')).folders; } catch { return []; } };
+
+test('F159 T10 Open_PrefiereUnPuestoYaAceptado: sin --slot, con un puesto libre donde Claude Code ya abrió una sesión, abre ahí y no crea copia; sin ninguno libre así, crea la copia como siempre', () => {
+  const t = toy({ profile: { coordination: { max_working: 3 } } });
+  const repo = toyRepo(t);
+  WS.ensure({ ...t.opts, repo, count: 2 });
+  WS.noteAccepted({ home: t.home, folder: slotOf(repo, 2) });
+  const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: launcher(t) });
+  assert.strictEqual(r.ok, true, r.message);
+  assert.strictEqual(fs.realpathSync(launched(t).cwd), slotOf(repo, 2));
+  assert.strictEqual(branchIn(slotOf(repo, 2)), 'wt/n1');
+  assert.strictEqual(fs.existsSync(copyOf(repo, 'n1')), false, 'no crea copia');
+  assert.match(launched(t).argv[launched(t).argv.length - 1], /release/);
+  assert.match(r.message, /puesto 2/);
+  assert.strictEqual(branchIn(slotOf(repo, 1)), '', 'el puesto sin aceptar sigue libre');
+  // el único puesto aceptado está tomado: la siguiente va a una copia, y no toma el que no se sabe si está aprobado
+  const r2 = C.open({ ...t.opts, ...caller(t), now: NOW + 1000, repo, name: 'n2', task: 'algo', launcher: launcher(t) });
+  assert.strictEqual(r2.ok, true, r2.message);
+  assert.strictEqual(fs.realpathSync(launched(t).cwd), copyOf(repo, 'n2'));
+  assert.strictEqual(branchIn(slotOf(repo, 1)), '', 'el puesto sin aceptar sigue libre');
+  // el puesto aceptado, suelto pero con la sesión que lo usó todavía viva adentro: no se prefiere
+  assert.strictEqual(WS.release({ ...t.opts, slot: slotOf(repo, 2) }).ok, true);
+  session(t, 'quedo-abierta', 'quedó', { cwd: slotOf(repo, 2) });
+  const r3 = C.open({ ...t.opts, ...caller(t), now: NOW + 2000, repo, name: 'n3', task: 'algo', launcher: launcher(t) });
+  assert.strictEqual(r3.ok, true, r3.message);
+  assert.strictEqual(fs.realpathSync(launched(t).cwd), copyOf(repo, 'n3'), 'dos sesiones en la misma carpeta no');
+  assert.strictEqual(branchIn(slotOf(repo, 2)), '', 'el puesto con la sesión viva sigue libre');
+});
+
+test('F159 T11 Open_AnotaElPuestoQueAbrió: una apertura buena en un puesto lo anota como aceptado y un «not trusted» ahí lo saca; una copia no se anota, y sin --slot no se crean puestos', () => {
+  const t = toy({ profile: { coordination: { max_working: 3 } } });
+  const repo = toyRepo(t);
+  const r0 = C.open({ ...t.opts, ...caller(t), repo, name: 'n0', task: 'algo', launcher: launcher(t) });
+  assert.strictEqual(r0.ok, true, r0.message);
+  assert.strictEqual(fs.existsSync(slotOf(repo, 1)), false, 'sin --slot no crea puestos');
+  assert.deepStrictEqual(acceptedFolders(t), [], 'una copia no se anota');
+  const r1 = C.open({ ...t.opts, ...caller(t), now: NOW + 1000, repo, slot: true, name: 'n1', task: 'algo', launcher: launcher(t) });
+  assert.strictEqual(r1.ok, true, r1.message);
+  assert.deepStrictEqual(acceptedFolders(t), [slotOf(repo, 1)]);
+  assert.strictEqual(WS.release({ ...t.opts, slot: slotOf(repo, 1) }).ok, true);
+  // más tarde Claude Code dice que no está aprobada: deja de contar como aceptada
+  const r2 = C.open({ ...t.opts, ...caller(t), now: NOW + 2000, repo, slot: true, name: 'n2', task: 'algo', launcher: launcher(t, 'untrusted') });
+  assert.strictEqual(r2.ok, false);
+  assert.deepStrictEqual(acceptedFolders(t), []);
+});
+
 test('8.187 T5b Open_NombreAuto_SaltaLasCopiasQueQuedaron @story-8.187 @ac-5: sin --name no elige un nombre cuya copia todavía existe, aunque su rama sea otra', () => {
   const t = toy({ profile: { coordination: { max_working: 3, session_names: ['Norte', 'Sur'] } } });
   const repo = toyRepo(t);
@@ -2738,6 +2784,193 @@ test('PrWait_AdoRepoDeclared_ReadsWithItsProject @story-8.270 @ac-26 — a repo 
   assert.strictEqual(r4.code, 2);
   assert.match(r4.error, /falta el proyecto/);
   assert.match(r4.error, /team-repos\.json/, `el motivo no dice que la identidad no se resolvió: ${r4.error}`);
+});
+
+// ── pr-wait --story: esperar a que una historia abra su pedido ───────────────────────────────────────────────────
+// La coordinadora espera a que la sesión de una historia abra su pedido, de fondo y sin escribir nada: la lista de
+// abiertos por la capa de plataforma (`change-request.list`), hasta que aparezca uno de la rama `story/<id>` o con la
+// historia en el título.
+const pedidoDe = (number, sourceBranch, title = 'x') => ({ number, sourceBranch, title, draft: false, author: null, ciRunning: null });
+
+test('PrWaitStory_EndsWhenTheStoryOpensItsPullRequest: termina con el número cuando aparece el pedido de la historia', async () => {
+  const respuestas = [
+    { ok: true, value: [] },
+    { ok: true, value: [pedidoDe(40, 'story/8.3'), pedidoDe(41, 'wt/otra', 'arreglo de la 8.325'), pedidoDe(42, 'story/8.32x')] },
+    { ok: true, value: [pedidoDe(40, 'story/8.3'), pedidoDe(43, 'story/8.32-el-tope')] },
+  ];
+  const vistos = [];
+  const listar = async (args, repo) => { vistos.push([args, repo]); return respuestas[vistos.length - 1]; };
+  const r = await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32', interval: '1' }, { listar, sleep: async () => {} });
+  assert.deepStrictEqual(r, { code: 0, text: 'open 43\n  43 «x»' });
+  assert.strictEqual(vistos.length, 3);
+  assert.deepStrictEqual(vistos[0][0], { checks: false });
+  // el título que nombra la historia también cuenta, con el número entero (8.32 no es 8.325 ni 8.32.1)
+  const porTitulo = async () => ({ ok: true, value: [pedidoDe(50, 'wt/x', 'feat: algo (8.325)'), pedidoDe(51, 'wt/y', 'fix: 8.32.1'), pedidoDe(52, 'wt/z', 'feat(freno): el tope (8.32 A)')] });
+  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: porTitulo, sleep: async () => {} }), { code: 0, text: 'open 52\n  52 «feat(freno): el tope (8.32 A)»' });
+  // (el pase) el pedido de otra historia que cita ésta en el título, o el número pegado a una letra, no terminan la espera
+  const citas = [{ ok: true, value: [pedidoDe(80, 'story/8.33', 'feat 8.33 (sigue a 8.32)'), pedidoDe(81, 'wt/x', 'v8.32 algo')] }, { ok: true, value: [pedidoDe(82, 'wt/y', 'fix (8.32 B)')] }];
+  let k = 0;
+  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: async () => citas[k++], sleep: async () => {} }), { code: 0, text: 'open 82\n  82 «fix (8.32 B)»' });
+  // dos de la misma historia: los dos números
+  const dos = async () => ({ ok: true, value: [pedidoDe(60, 'story/8.32'), pedidoDe(61, 'story/8.32/b')] });
+  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: dos, sleep: async () => {} }), { code: 0, text: 'open 60 61\n  60 «x»\n  61 «x»' });
+  // una historia sin punto sólo se busca por la rama: «25» en un título no dice nada
+  const suelta = [{ ok: true, value: [pedidoDe(70, 'wt/x', 'arregla el #25')] }, { ok: true, value: [pedidoDe(71, 'story/25-demo')] }];
+  let n = 0;
+  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '25' }, { listar: async () => suelta[n++], sleep: async () => {} }), { code: 0, text: 'open 71\n  71 «x»' });
+});
+
+test('PrWaitStory_TitleOnlyInTheHarnessForms: por el título cuenta sólo la forma de los títulos del arnés, y nunca un bot', async () => {
+  // la primera lectura trae sólo el pedido a juzgar; la segunda, el de la rama de la historia (999): si la espera
+  // termina con 999, el pedido a juzgar no contó
+  const juzgar = async (story, pedido) => {
+    const lecturas = [{ ok: true, value: [pedido] }, { ok: true, value: [pedidoDe(999, `story/${story}`)] }];
+    let k = 0;
+    return (await C.prWait({ rest: [], repo: 'acme/portal', story }, { listar: async () => lecturas[k++], sleep: async () => {} })).text.split('\n')[0];
+  };
+  // (el pase) un título que sólo cita el número no es de la historia
+  assert.strictEqual(await juzgar('2.3', pedidoDe(7, 'dependabot/npm/x', 'Bump foo from 2.3 to 2.4')), 'open 999');
+  assert.strictEqual(await juzgar('8.32', pedidoDe(9, 'feature/x', 'Node 8.32 support')), 'open 999');
+  assert.strictEqual(await juzgar('8.2', pedidoDe(11, 'wt/Otra', 'fix tras 8.2 en el pedido')), 'open 999');
+  assert.strictEqual(await juzgar('8.32', pedidoDe(12, 'revert-1464-wt/x', 'Revert 8.32 change')), 'open 999');
+  // la forma del arnés: el número al principio, con su tanda, y «:», « —» o « -»; o al principio de un paréntesis
+  assert.strictEqual(await juzgar('8.207', pedidoDe(20, 'wt/8207-B', '8.207 B: sin perfil del equipo, el click nombra a la coordinadora')), 'open 20');
+  assert.strictEqual(await juzgar('8.32', pedidoDe(21, 'wt/x', '8.32: el tope')), 'open 21');
+  assert.strictEqual(await juzgar('8.45', pedidoDe(22, 'wt/x', '8.45 B2 — la guía con nombre en inglés')), 'open 22');
+  assert.strictEqual(await juzgar('8.32', pedidoDe(23, 'wt/x', '8.32 - el tope')), 'open 23');
+  assert.strictEqual(await juzgar('8.32', pedidoDe(24, 'wt/z', 'feat(freno): el tope (8.32 A)')), 'open 24');
+  assert.strictEqual(await juzgar('8.256', pedidoDe(25, 'wt/x', 'feat(8.256): tanda C — lo que contesta el dueño')), 'open 25');
+  assert.strictEqual(await juzgar('8.294', pedidoDe(26, 'wt/x', 'fix(oficina): «espera a main» (8.294, AC 14)')), 'open 26');
+  // la rama de un bot no cuenta aunque el título tenga la forma del arnés
+  assert.strictEqual(await juzgar('8.32', pedidoDe(30, 'dependabot/npm/x', '8.32: bump')), 'open 999');
+  assert.strictEqual(await juzgar('8.32', pedidoDe(31, 'renovate/foo', 'chore(deps): (8.32)')), 'open 999');
+  // el número con borde: 8.3 no es 8.32 ni 18.3
+  assert.strictEqual(await juzgar('8.3', pedidoDe(40, 'wt/x', '8.32: el tope')), 'open 999');
+  assert.strictEqual(await juzgar('8.3', pedidoDe(41, 'wt/x', '18.3: otra')), 'open 999');
+  assert.strictEqual(await juzgar('8.3', pedidoDe(42, 'wt/x', 'fix: algo (18.3 A)')), 'open 999');
+  assert.strictEqual(await juzgar('8.3', pedidoDe(43, 'wt/x', 'fix: algo (8.3.1)')), 'open 999');
+  // el paréntesis vale en cualquier lugar del título
+  assert.strictEqual(await juzgar('8.32', pedidoDe(44, 'wt/x', 'fix(foo): handle (8.32) edge')), 'open 44');
+});
+
+test('PrWaitStory_RevertsDoNotCount: un revert no es el pedido de la historia, aunque el título coincida', async () => {
+  const juzgar = async (story, pedido) => {
+    const lecturas = [{ ok: true, value: [pedido] }, { ok: true, value: [pedidoDe(999, `story/${story}`)] }];
+    let k = 0;
+    return (await C.prWait({ rest: [], repo: 'acme/portal', story }, { listar: async () => lecturas[k++], sleep: async () => {} })).text.split('\n')[0];
+  };
+  // por el título: empieza con «Revert», sin importar mayúsculas
+  assert.strictEqual(await juzgar('8.32', pedidoDe(1, 'wt/x', 'Revert (8.32)')), 'open 999');
+  assert.strictEqual(await juzgar('8.32', pedidoDe(2, 'wt/x', 'REVERT 8.32: el tope')), 'open 999');
+  assert.strictEqual(await juzgar('8.32', pedidoDe(3, 'wt/x', 'revert "feat(freno): el tope (8.32 A)"')), 'open 999');
+  // por la rama: `revert-…` o `revert/…`
+  assert.strictEqual(await juzgar('8.32', pedidoDe(4, 'revert-x', '8.32: el tope')), 'open 999');
+  assert.strictEqual(await juzgar('8.32', pedidoDe(5, 'revert/x', 'feat: (8.32 A)')), 'open 999');
+});
+
+test('PrWaitStory_SaysTheTitleOfWhatItFound: la salida trae el título de cada pedido encontrado, en un renglón y recortado', async () => {
+  // el primer renglón sigue siendo `open <número…>`; debajo, un renglón por pedido con su número y su título
+  const uno = async () => ({ ok: true, value: [pedidoDe(52, 'wt/z', 'feat(freno): el tope (8.32 A)')] });
+  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: uno, sleep: async () => {} }),
+    { code: 0, text: 'open 52\n  52 «feat(freno): el tope (8.32 A)»' });
+  // un título con saltos de renglón y caracteres de control sale en un renglón, sin ellos, y recortado a 80
+  const largo = `feat: algo\u001b[31m\nrojo\u0007 (8.32) ${'a'.repeat(200)}`;
+  const raro = async () => ({ ok: true, value: [pedidoDe(53, 'wt/x', largo)] });
+  const r = await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: raro, sleep: async () => {} });
+  const renglones = r.text.split('\n');
+  assert.strictEqual(renglones.length, 2, JSON.stringify(r.text));
+  assert.strictEqual(renglones[0], 'open 53');
+  assert.strictEqual(renglones[1], `  53 «${Array.from(`feat: algo[31m rojo (8.32) ${'a'.repeat(200)}`).slice(0, 80).join('')}»`);
+  assert.doesNotMatch(r.text, /[\u0000-\u0009\u000b-\u001f\u007f]/);
+  // un pedido sin título lo dice
+  const sin = async () => ({ ok: true, value: [{ number: 54, sourceBranch: 'story/8.32' }] });
+  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: sin, sleep: async () => {} }),
+    { code: 0, text: 'open 54\n  54 «sin título»' });
+});
+
+test('PrWaitStory_FailuresAndShapes: tres lecturas fallidas seguidas cortan con el motivo; otra forma no lee nada', async () => {
+  const falla = async () => ({ ok: false, reason: 'no_medido', detail: 'sin conexión con la plataforma' });
+  const r = await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32', interval: '1' }, { listar: falla, sleep: async () => {} });
+  assert.strictEqual(r.code, 2);
+  assert.match(r.error, /historia 8\.32/);
+  assert.match(r.error, /sin conexión con la plataforma/);
+  // una lista que no es una lista cuenta como falla
+  const rara = async () => ({ ok: true, value: { nada: 1 } });
+  assert.strictEqual((await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: rara, sleep: async () => {} })).code, 2);
+  // una falla entre lecturas buenas no suma
+  const mezcla = [falla, async () => ({ ok: true, value: [] }), falla, falla, async () => ({ ok: true, value: [pedidoDe(9, 'story/8.32')] })];
+  let i = 0;
+  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/portal', story: '8.32' }, { listar: (...a) => mezcla[i++](...a), sleep: async () => {} }), { code: 0, text: 'open 9\n  9 «x»' });
+  let leyo = false;
+  const nunca = async () => { leyo = true; return { ok: true, value: [] }; };
+  // (el pase) un intervalo de más de un día desborda el reloj de node y la espera leería sin pausa
+  for (const f of [{ story: '8.32', number: '7' }, { story: 'x8' }, { story: '8.' }, { story: '8..3' }, { story: '' }, { story: '8.32', interval: '0' },
+    { story: '8.32', interval: '86401' }, { story: '8.32', interval: '99999999999' }, { number: '7', interval: '99999999999' }]) {
+    const rr = await C.prWait({ rest: [], repo: 'acme/portal', ...f }, { listar: nunca, leer: nunca, sleep: async () => {} });
+    assert.strictEqual(rr.code, 2, JSON.stringify(f));
+  }
+  assert.strictEqual(leyo, false, 'leyó con una forma que no vale');
+});
+
+test('PrWaitStory_GoesThroughThePlatformLayer: por la consola, lee la lista de abiertos por la capa de plataforma y nada más', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'coord-prs-'));
+  const ints = path.join(root, 'integrations');
+  fs.cpSync(PLATFORM_FAKE, path.join(ints, 'fake-platform'), { recursive: true });
+  const log = path.join(root, 'calls.jsonl');
+  fs.writeFileSync(path.join(ints, 'fake-platform', 'scripts', 'connector.js'), `'use strict';
+const fs = require('fs');
+module.exports = { run: (operacion, args) => {
+  fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ operacion, args }) + '\\n');
+  const n = fs.readFileSync(${JSON.stringify(log)}, 'utf8').trim().split('\\n').length;
+  return { ok: true, value: n < 2 ? [] : [{ number: 88, sourceBranch: 'story/8.32', title: 'x' }] };
+} };
+`);
+  const tree = path.join(root, 'tree');
+  fs.mkdirSync(tree);
+  fs.writeFileSync(path.join(tree, 'team-profile.json'), JSON.stringify({ integrations: { platform: { default: 'fake-platform' } } }));
+  fs.writeFileSync(path.join(tree, 'team-repos.json'), JSON.stringify({ version: 1, public: { platform: 'github', org: 'acme', repo: 'arnes' },
+    profile: { platform: 'github', org: 'acme', repo: 'perfil' }, operations: { platform: 'github', org: 'acme', repo: 'operaciones' } }));
+  const home = path.join(root, 'home');
+  fs.mkdirSync(home);
+  const env = { ...process.env, HOME: home, USERPROFILE: home, TYCON_HOME: path.join(home, '.tycon'), TYCON_INTEGRATIONS_DIR: ints, TYCON_TREE: tree,
+    TYCON_FAKE_PLATFORM_TOKEN: ['tok', 'falso'].join('-') };
+  for (const k of Object.keys(env)) if (/^TYCON_(ADO_ORG|ADO_CMD|PLATFORM|PROFILE)$|^FAKE_PLATFORM_/.test(k)) delete env[k];
+  const r = spawnSync(process.execPath, [COORD, 'pr-wait', '--repo', 'acme/portal', '--story', '8.32', '--interval', '1'], { encoding: 'utf8', input: '', timeout: 60000, env });
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  assert.strictEqual(r.stdout.trim(), 'open 88\n  88 «x»');
+  const calls = fs.readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  assert.deepStrictEqual(calls.map((c) => c.operacion), ['change-request.list', 'change-request.list']);
+});
+
+test('PrWait_OrgProjectRepo_ReadsWithoutTheProfile: --repo <org>/<proyecto>/<repo> lee un repo de Azure DevOps que team-repos.json no declara', async () => {
+  const tree = fs.mkdtempSync(path.join(os.tmpdir(), 'coord-pr-proy-'));
+  fs.writeFileSync(path.join(tree, 'team-profile.json'), '{}');
+  fs.writeFileSync(path.join(tree, 'team-repos.json'), JSON.stringify({ version: 1, public: { platform: 'github', org: 'acme', repo: 'arnes' },
+    profile: { platform: 'github', org: 'acme', repo: 'perfil' }, operations: { platform: 'github', org: 'acme', repo: 'operaciones' } }));
+  const vistos = [];
+  const leer = async (number, repo) => { vistos.push(repo); return { ok: true, value: { number, state: 'merged' } }; };
+  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/Seguimiento/seguimiento-backend', number: '7' }, { leer, tree }), { code: 0, text: 'merged' });
+  assert.deepStrictEqual(vistos[0], { platform: 'azure', org: 'acme', project: 'Seguimiento', repo: 'seguimiento-backend' });
+  // un proyecto con espacios, como los de Azure DevOps
+  await C.prWait({ rest: [], repo: 'acme/Acme Formularios Propios/formularios-app', number: '7' }, { leer, tree });
+  assert.deepStrictEqual(vistos[1], { platform: 'azure', org: 'acme', project: 'Acme Formularios Propios', repo: 'formularios-app' });
+  // también con --story
+  const listados = [];
+  const listar = async (args, repo) => { listados.push(repo); return { ok: true, value: [{ number: 3, sourceBranch: 'story/2.1', title: 'x' }] }; };
+  assert.deepStrictEqual(await C.prWait({ rest: [], repo: 'acme/Seguimiento/seguimiento-backend', story: '2.1' }, { listar, tree, sleep: async () => {} }), { code: 0, text: 'open 3\n  3 «x»' });
+  assert.strictEqual(listados[0].project, 'Seguimiento');
+  // otra forma no lee, y el error dice las dos formas
+  for (const malo of ['a/b/c/d', 'a//c', '/b/c', 'a/b/']) {
+    const r = await C.prWait({ rest: [], repo: malo, number: '7' }, { leer, tree });
+    assert.strictEqual(r.code, 2, malo);
+    assert.match(r.error, /<organización>\/<proyecto>\/<repo>/, malo);
+  }
+  assert.strictEqual(vistos.length, 2, 'con otra forma no leyó');
+  // el repo sin identidad que falla dice la forma de Azure DevOps
+  const falla = async () => ({ ok: false, reason: 'rechazado', detail: 'falta el proyecto' });
+  const r = await C.prWait({ rest: [], repo: 'acme/seguimiento-backend', number: '7', interval: '1' }, { leer: falla, tree, sleep: async () => {} });
+  assert.strictEqual(r.code, 2);
+  assert.match(r.error, /<organización>\/<proyecto>\/<repo>/);
 });
 
 // ── El pase al lado de un portón acotado (8.286) ─────────────────────────────────────────────────────────────────
