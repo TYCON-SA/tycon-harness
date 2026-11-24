@@ -1186,6 +1186,35 @@ PY
   else no "T30k · el forjado pasó o frenó por otro motivo: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
   [ -d "$SYS30/opt/tycon" ] && no "T30k · …y dejó algo en /opt/tycon" || ok "T30l · …sin dejar nada en /opt"
   G30 checkout -q -- scripts/production/guard-libs/lib/skills-dir.js; rm -f "$SRC30/.git/forjado.idx"; cp "$AQUI/scripts/production/guard-libs/lib/skills-dir.js" "$ARNES30/scripts/production/guard-libs/lib/skills-dir.js"; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
+  # (e2) 🔴 la versión numerada por su etiqueta: al bajarla, el instalador reescribe version.json con el número de la
+  # etiqueta (release.js, stampVersion) y anota en el manifiesto el blob del texto nuevo, con el árbol del commit. El
+  # árbol se recalcula con el version.json de git de ese commit, y lo del disco tiene que ser el estampado de ése.
+  cp "$AQUI/version.json" "$SRC30/version.json"; G30 add -A >/dev/null; G30 commit -q -m "con version.json numerado por etiqueta" >/dev/null; G30 push -q "$BARE30" main >/dev/null 2>&1
+  cp "$AQUI/version.json" "$ARNES30/version.json"; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
+  estampa30(){ node -e '
+const fs = require("fs"), path = require("path");
+const [release, dir, version] = process.argv.slice(1);
+const p = path.join(dir, ".tycon-release.json"), m = JSON.parse(fs.readFileSync(p, "utf8"));
+if (!require(release).stampVersion(dir, m.files, version)) { console.error("no estampó version.json"); process.exit(1); }
+m.version = version; fs.writeFileSync(p, JSON.stringify(m, null, 1) + "\n");' "$AQUI/scripts/setup/harness/release.js" "$ARNES30" 2026.11.24.7; }
+  rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"
+  if estampa30 && instala30 && [ -f "$SYS30/opt/tycon/hooks/prod-access-guard.js" ]; then ok "T30v · la versión numerada por su etiqueta, con version.json estampado, se instala"
+  else no "T30v · con version.json estampado: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
+  # (e3) 🔴 un version.json que dice ser el estampado pero cambia otra cosa: el manifiesto anota su blob, así que el
+  # archivo «coincide»; no es el estampado del de git y no se instala
+  rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"
+  node -e '
+const fs = require("fs"), path = require("path"), crypto = require("crypto");
+const dir = process.argv[1], f = path.join(dir, "version.json"), p = path.join(dir, ".tycon-release.json");
+const j = JSON.parse(fs.readFileSync(f, "utf8")); j.note = "otra nota, escrita a mano"; const texto = JSON.stringify(j, null, 2) + "\n";
+fs.writeFileSync(f, texto);
+const m = JSON.parse(fs.readFileSync(p, "utf8")), b = Buffer.from(texto);
+m.files.find((x) => x.path === "version.json").blob = crypto.createHash("sha1").update(Buffer.concat([Buffer.from("blob " + b.length + "\0"), b])).digest("hex");
+fs.writeFileSync(p, JSON.stringify(m, null, 1) + "\n");' "$ARNES30"
+  if ! instala30 && grep -q 'version.json' "$TMP/inst-30" && ! grep -q 'recalculado desde el disco' "$TMP/inst-30"; then ok "T30w · un version.json que no es el estampado del de git frena y lo nombra"
+  else no "T30w · el version.json retocado pasó o frenó por otro motivo: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
+  [ -d "$SYS30/opt/tycon" ] && no "T30w · …y dejó algo en /opt/tycon" || ok "T30x · …sin dejar nada en /opt"
+  cp "$AQUI/version.json" "$ARNES30/version.json"; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
   # (f) la versión instalada ya no es la punta publicada (alguien publicó otra). Con más de 30
   # publicaciones por día, una cada ~10 min, exigir la punta exacta haría casi imposible instalar el freno. Vale un commit
   # PUBLICADO de main (GitHub: «behind» respecto de la punta) cuyo freno sea byte a byte el de la punta: instala y avisa.
