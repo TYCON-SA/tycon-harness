@@ -190,6 +190,33 @@ test('Permiso_NoEntraEntero_VentanaNormal (T11) @story-8.180 @ac-11', (t) => {
   assert.strictEqual(fila.pedido, 'echo uno\n\necho dos');
 });
 
+// 🔴 Falla con: el permiso de una sesión de fondo que el gancho no lleva por el modo, la coordinadora o su owner-wait
+// salía en silencio, sin renglón ni motivo: una noche trabada que después no se pudo reconstruir (fila 70, 22/11).
+test('Permiso_DeFondoQueNoSeLleva_DejaRenglonYMotivo (fila 70)', (t) => {
+  const casos = [
+    ['en otro modo', { ev: { permission_mode: 'acceptEdits' } }, /modo acceptEdits/],
+    ['sin coordinadora', { lab: { designada: false } }, /sin coordinadora confirmada y viva/],
+    ['sin owner-wait', { correr: { ownerWaitVivo: () => false } }, /no tiene owner-wait corriendo/],
+  ];
+  for (const [que, o, motivo] of casos) {
+    const L = lab(t, o.lab || {});
+    const { r } = correr(L, evento(o.ev || {}), o.correr || {});
+    assert.strictEqual(r.decision, null, que);
+    assert.match(r.motivo, motivo, que);
+    const g = gates(L);
+    assert.strictEqual(g.length, 1, `${que}: un renglón en gates.log`);
+    assert.strictEqual(g[0].status, 'no-se-lleva', que);
+    assert.match(String(g[0].motivo), motivo, que);
+    assert.ok(!JSON.stringify(g[0]).includes('touch v1-si'), `${que}: sin el texto del pedido`);
+    const nota = JSON.parse(fs.readFileSync(path.join(estado(L.casa), 'coordination', 'permission-relay', `${BG}.json`), 'utf8'));
+    assert.match(nota.motivo, motivo, `${que}: el motivo para «Trabadas»`);
+  }
+  // una sesión que no es de fondo no deja nada: el gancho no es para ella
+  const L = lab(t);
+  correr(L, evento({ session_id: COORD }));
+  assert.deepStrictEqual(gates(L), [], 'sin renglón para una sesión con persona delante');
+});
+
 // ── AC 10 y 12: dos pedidos distintos nunca se ven igual ni comparten código ──────────────────────────────────────
 
 test('Permiso_PedidoAmbiguo_NoSeConfunde (T10b) @story-8.180 @ac-10 @ac-12', (t) => {

@@ -58,6 +58,14 @@ Se agrava cuando, **al mismo tiempo**, el agente tiene **8–11 subagentes (advi
    para la CI del pedido. En el árbol armado del privado vale lo mismo, comparando cada repo: el privado y el público. Si
    además cambió el perfil del equipo, o el público salió de otro lado, corre lo de siempre.
 
+   *Una parte que no cambió conserva su verde*: una story que toca dos proyectos del mismo repo (el backend y el sitio)
+   corre cada uno por separado. Si una parte ya dio verde en esta story y rama, y no cambió nada de lo que la puede
+   afectar, no vuelve a correr. Lo que la puede afectar es la carpeta de la parte, lo común del repo, lo ignorado por git
+   (un `.env`, algo generado), el portón, las versiones de sus herramientas y las variables que cambian una prueba
+   (`lib/part-keep.js`). Nunca se conserva una parte de navegador, una que nombra una ruta de la otra parte o de fuera
+   del repo, ni un repo con workspaces. Para correrlas todas: `TYCON_TEST_GATE_ALL_PARTS=1`. El merge a main y la CI
+   corren todo.
+
    *La completa no corre en la máquina*: en un repo que acota el portón corren sólo las suites que leen lo tocado, y
    como mucho 60 (el tope de la máquina; el repo lo cambia con `test_gate.max_local_suites`). Si son más (se tocó un
    archivo de control o una pieza central que nombran cientos), corren las más cercanas al cambio: la suite tocada, la
@@ -141,6 +149,12 @@ El escape `TYCON_FULL_SUITE=1` vale cuando acompaña al comando de pruebas: como
   tranquila, y `runs` lista las ejecuciones. Antes de partir una suite o mandarla a la noche, conviene mirar dónde se va su
   tiempo: casi siempre es trabajo repetido de la propia prueba (un proceso por archivo para sacar una huella, la misma
   consulta a git por cada módulo que se importa), y bajarlo no cambia lo que prueba.
+- **Cuánto puede tardar cada una.** Cada suite tiene un tope: cinco veces lo más que tardó en esta máquina, según ese
+  registro, entre 10 y 60 minutos; sin medición, 60. La que lo pasa se corta con todos sus procesos y cuenta roja, con
+  el renglón «❌ cortada por tiempo: pasó su tope de N min (de dónde salió)». Un proceso que se fue de su grupo queda
+  vivo, pero la ejecución sigue. Su tiempo no se anota, así que una vez colgada no sube su próximo tope. El 23/11, una prueba de guard-record, que tarda menos de medio minuto, quedó colgada
+  horas en un árbol temporal, con la máquina sin procesos. `TYCON_SUITE_MAX_SECONDS` fija el tope para todas; con `0`
+  no hay tope.
 
 ## El fix técnico durable (por proyecto)
 

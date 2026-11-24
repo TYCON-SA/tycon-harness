@@ -240,6 +240,11 @@ const VOCABULARIO = Object.freeze({
     // (delegation-routing.js): pasado el plazo, el renglón vuelve al dueño. Sin valor, 10. Sólo del perfil: si la máquina
     // pudiera decirlo, el agente se estiraría el plazo.
     delegation_wait_minutes: 'entero:1-60',
+    // Quién firma el commit local de una corrida: `agent` (o sin valor), el agente commitea solo y la persona aprueba el
+    // pull request; `coordinator`, la coordinadora lo firma antes con `marker.js approve-save` (la firma `save`), y sin
+    // ese ok vigente el freno de guardar no deja commitear. Sólo del perfil: si la máquina pudiera decirlo, el agente se
+    // sacaría la firma.
+    local_commit: 'opcion:agent|coordinator',
   }),
   // Cómo se pone al día el freno de producción de cada máquina: `password` (o sin valor), con la contraseña
   // de su persona cada vez; `auto`, solo, con la versión publicada, en las máquinas que instalaron el permiso. Sólo del

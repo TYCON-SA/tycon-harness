@@ -446,6 +446,8 @@ function leerPedido(args, ctx) {
       // GitHub da `merge_commit_sha` también con el pedido abierto (el commit de prueba): sólo vale el de uno que entró
       mergeCommit: p.merged_at && /^[0-9a-f]{40}$/i.test(String(p.merge_commit_sha || '')) ? String(p.merge_commit_sha).toLowerCase() : null,
       title: String(p.title || ''),
+      // la rama de origen; null si GitHub no la dio
+      sourceBranch: p.head && typeof p.head.ref === 'string' && p.head.ref ? p.head.ref : null,
     },
   };
 }

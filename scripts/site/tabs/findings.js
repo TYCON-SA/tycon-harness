@@ -99,8 +99,12 @@ const COMO_TERMINO = {
   ATDD_BYPASS: 'sinPruebasPrimero', atddBypass: 'sinPruebasPrimero', ATDD_PREEDIT_BYPASS: 'sinPruebasPrimero',
   TYCON_SAFETY_OFF: 'sinFreno',
 };
-// Cuántas historias o máquinas se nombran antes de «y N más».
+// Cuántas historias, máquinas o sesiones se nombran antes de «y N más».
 const TOPE_LISTA = 6;
+// La forma de un nombre de sesión (la regla con que la coordinadora abre sesiones): el sitio la vuelve a mirar en cada
+// nombre de `sesiones` de un caso, por si la ficha se editó a mano.
+const { NAME_RE: FORMA_DE_NOMBRE, NAME_MAX: TOPE_NOMBRE } = require('../../lib/tycon-config.js').sessionNames;
+const nombresDeSesion = (v) => (typeof v === 'string' ? v.split('+').filter((n) => n.length <= TOPE_NOMBRE && FORMA_DE_NOMBRE.test(n)) : []);
 const PIPELINE_DE = { vigilante: 'production-watch.yml', ejecuciones: 'runs-review.yml', dependencias: 'dependency-audit.yml' };
 const CARPETAS_DE_PIPELINES = ['pipelines', '.github/workflows'];
 const RENGLON_CRON = /^\s*-?\s*cron\s*:/;
@@ -325,8 +329,12 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       const casos = Array.isArray(f.casos) ? f.casos : [];
       const unicos = (k) => [...new Set(casos.map((c) => c[k]).filter((x) => typeof x === 'string' && x).reverse())];
       const dias = casos.map((c) => c.dia).filter((x) => typeof x === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x)).sort();
+      // las sesiones: los nombres con forma de cada caso, el más nuevo primero; un caso sin ninguno cuenta como sin nombre
+      const porCaso = casos.map((c) => nombresDeSesion(c && c.sesiones));
+      const sesiones = [...new Set(porCaso.flat().reverse())];
       return { veces: f.casos_total || f.apariciones || null, maquinas: unicos('maquina').map((m) => m.replace(HUELLA_DE_MAQUINA, '')),
-        stories: unicos('story'), desde: dias[0] || null, hasta: dias[dias.length - 1] || null };
+        stories: unicos('story'), sesiones, sin_nombre: porCaso.filter((xs) => !xs.length).length,
+        desde: dias[0] || null, hasta: dias[dias.length - 1] || null };
     }
     if (fuente === 'dependencias') {
       const e = reg.formato.leerFicha(String(txt)).escalares;
@@ -603,6 +611,10 @@ function crearRutas({ cfg, fuentes, ahora = Date.now, fetch = globalThis.fetch, 
       const lista = (xs) => (xs.length > TOPE_LISTA ? `${xs.slice(0, TOPE_LISTA).join(', ')}${T(idioma, 'mant.paso.yMas', { n: xs.length - TOPE_LISTA })}` : xs.join(', '));
       if (c.stories && c.stories.length) partes.push(T(idioma, 'mant.paso.historias', { lista: lista(c.stories) }));
       if (c.maquinas && c.maquinas.length) partes.push(T(idioma, 'mant.paso.maquinas', { lista: lista(c.maquinas) }));
+      if (c.sesiones && c.sesiones.length) {
+        const sin = c.sin_nombre || 0;
+        partes.push(T(idioma, sin === 0 ? 'mant.paso.sesiones' : sin === 1 ? 'mant.paso.sesionesSinNombreUna' : 'mant.paso.sesionesSinNombre', { lista: lista(c.sesiones), k: sin }));
+      }
       return partes.join(' ');
     }
     const h = f.hechos || {};

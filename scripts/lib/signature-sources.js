@@ -619,10 +619,13 @@ function deLaDesignacion(firma, destino, cwd, palabras) {
     return { queHace: lineas, queHaceALaVista: aLaVista, fuente: lineas.join('\n'), que: RETIRAR_OTRA };
   }
   const verbo = firma === 'designation-set' ? 'pasa a ser' : 'deja de ser';
+  // sin el rol en el perfil, nombrarla sólo la deja ordenar, y el cuadro lo dice: así no es el mismo cuadro que con el
+  // rol (que la deja firmar), y un click dado sin perfil no vale si el perfil gana el rol antes de que corra el comando
+  const modo = firma === 'designation-set' && !rol ? ': ordena, y las firmas siguen yendo a la persona' : '';
   // dos líneas: una carpeta larga no corta la que dice qué pasa
-  const lineas = [`La sesión ${destino} ${verbo} la «${rol || 'coordinadora'}» de esta máquina`, `Su carpeta: ${cwd || process.cwd()}`];
-  // la fuente queda como estaba (la huella no cambia); lo que se ve dice la sesión por sus 8 letras y la carpeta por su nombre
-  const aLaVista = [`La sesión ${String(destino).slice(0, 8)} ${verbo} la «${rol || 'coordinadora'}» de esta máquina`, `Su carpeta: ${path.basename(cwd || process.cwd())}`];
+  const lineas = [`La sesión ${destino} ${verbo} la «${rol || 'coordinadora'}» de esta máquina${modo}`, `Su carpeta: ${cwd || process.cwd()}`];
+  // con el rol, la fuente queda como estaba (la huella no cambia); lo que se ve dice la sesión por sus 8 letras y la carpeta por su nombre
+  const aLaVista = [`La sesión ${String(destino).slice(0, 8)} ${verbo} la «${rol || 'coordinadora'}» de esta máquina${modo}`, `Su carpeta: ${path.basename(cwd || process.cwd())}`];
   return { queHace: lineas, queHaceALaVista: aLaVista, fuente: lineas.join('\n') };
 }
 

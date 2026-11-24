@@ -139,6 +139,65 @@ test('SedEnLugar_GuionOArchivoQueNoSeLee_Frena — con la carpeta del cd llena d
   ]) assert.ok(frenaComoHistoria(juzgar(c, cmd)), `frena: ${cmd}`);
 });
 
+// SedEnLugar_CarpetaQueElShellExpande_Frena: la carpeta del cd de la forma de sed tiene la misma regla que la de perl,
+// sólo letras, cifras y `_ . / + , -` (puede empezar con `~/`). Con `~+`, `~-` o `~usuario` el shell la cambia por otra
+// carpeta, y con `CDPATH` un cd relativo puede caer en otra: el freno buscaba los archivos del sed donde no estaban.
+test('SedEnLugar_CarpetaQueElShellExpande_Frena — ~+, ~-, ~usuario y CDPATH, como en perl', () => {
+  const c = carpeta();
+  const usuario = os.userInfo().username;
+  for (const cmd of [
+    `cd ~+ && sed ${EN_LUGAR} 's/ready-for-dev/done/' s9001.md`,
+    `cd ~- && sed ${EN_LUGAR} 's/ready-for-dev/done/' s9001.md`,
+    `cd ~${usuario}/../..${c.lab} && sed ${EN_LUGAR} 's/ready-for-dev/done/' s9001.md`,
+  ]) {
+    const r = conEnv({ ...ENV, OLDPWD: c.lab }, () => bash.handle({ tool_name: 'Bash', session_id: SID, cwd: c.lab, tool_input: { command: cmd } }, { stateDir: c.estado }));
+    assert.ok(frenaComoHistoria(r), `frena: ${cmd}`);
+  }
+  const cmd = `cd plantillas && sed ${EN_LUGAR} 's/ready-for-dev/done/' template.md`;
+  const r = conEnv({ ...ENV, CDPATH: c.lab }, () => bash.handle({ tool_name: 'Bash', session_id: SID, cwd: path.join(c.lab, 'scripts'), tool_input: { command: cmd } }, { stateDir: c.estado }));
+  assert.ok(frenaComoHistoria(r), `frena con CDPATH: ${cmd}`);
+  // la forma de siempre sigue pasando: una carpeta escrita tal cual y un sed sobre un .sh
+  assert.ok(!frenaComoHistoria(juzgar(c, `cd ${c.lab} && sed ${EN_LUGAR} 's/x/y/' medir.sh`)), 'la carpeta escrita tal cual pasa');
+});
+
+// SedSinEnLugar_EscribeConW_Frena: un sed sin `-i` también escribe archivos, con el comando `w`, el `W` de GNU o el
+// modificador `w` de una sustitución, y corre comandos con `e`. El archivo que nombran es un destino aunque el sed no
+// edite en el lugar, también desde un guion de archivo (`-f`).
+test('SedSinEnLugar_EscribeConW_Frena — w, W, s///w y e, con y sin cd, con -n, -e y -f', () => {
+  const c = carpeta();
+  fs.writeFileSync(path.join(c.lab, 'guion.sed'), 'p\n1w s9001.md\n');
+  for (const cmd of [
+    `cd ${c.lab} && sed -n 'w s9001.md' medir.sh`,
+    `sed -n 'w s9001.md' medir.sh`,
+    `sed 'w s9001.md' medir.sh`,
+    `sed -n 'W s9001.md' medir.sh`,
+    `sed -n 's/x/y/w s9001.md' medir.sh`,
+    `sed -n '1w s9001.md' medir.sh`,
+    `sed -n '/x/w s9001.md' medir.sh`,
+    `sed -n -e 'p' -e 'w s9001.md' medir.sh`,
+    `sed -n '1{w s9001.md\n}' medir.sh`,
+    `sed -n "w s9001.md" medir.sh`,
+    `sed -n 'w plantillas/template.md' medir.sh`,
+    // el guion leído de un archivo, y `e`, que corre un comando
+    `sed -n -f guion.sed medir.sh`,
+    `cd ${c.lab} && sed -n --file=guion.sed medir.sh`,
+    `sed -n '1e touch s9001.md' medir.sh`,
+    // lo que confirmó el pase: la expresión pegada a su opción, el guion por la entrada y el guion que escribe el
+    // mismo comando (el freno no lo encuentra en el disco)
+    `gsed -n --expression='w s9001.md' medir.sh`,
+    `sed -n --expression='1w s9001.md' medir.sh`,
+    `sed -n -f - medir.sh <<'EOF'\nw s9001.md\nEOF`,
+    `sed -n -f /dev/stdin medir.sh <<'EOF'\n1w s9001.md\nEOF`,
+    `printf 'w s9001.md\\n' > nuevo.sed && sed -n -f nuevo.sed medir.sh`,
+    `printf "w\\ts9001.md\\n" > nuevo.sed; sed -n -f nuevo.sed medir.sh`,
+    `printf 'p\\nw s9001.md\\n' > nuevo.sed; sed -n -f nuevo.sed medir.sh`,
+  ]) assert.ok(frenaComoHistoria(juzgar(c, cmd)), `frena: ${cmd}`);
+  // leer o imprimir no escribe: un sed sin -i y sin w sigue pasando, aunque lea una historia
+  for (const cmd of [`sed -n 'p' s9001.md`, `sed -n '1,5p' s9001.md medir.sh`, `sed 's/x/y/' medir.sh`]) {
+    assert.ok(!frenaComoHistoria(juzgar(c, cmd)), `no frena: ${cmd}`);
+  }
+});
+
 test('Programa_QuePuedeCorrerElTexto_Frena — el pase adversarial: otro intérprete, módulos armados, salida a un shell', () => {
   const c = carpeta();
   const sed = 'sed -i \\"\\" s/ready-for-dev/done/ s9001.md';
@@ -163,4 +222,113 @@ test('Programa_QuePuedeCorrerElTexto_Frena — el pase adversarial: otro intérp
     `cd ${c.lab} && node -e 'const t="${sed}"' -r ./pre.js`,
     `cd ${c.lab} && NODE_OPTIONS=--require=./pre.js node -e 'const t="${sed}"'`,
   ]) assert.ok(frenaComoHistoria(juzgar(c, cmd)), `el texto puede correr: frena: ${cmd}`);
+});
+
+// ── perl -pi con un programa que sólo sustituye ──────────────────────────────────────────────────────────────────────
+
+// PerlEnLugar_SoloSustituye_NoEsHistoria: `perl -pi -e` con un programa que es sólo sustituciones `s///` escribe sólo los
+// archivos que nombra, como un `sed -i`: la carpeta del `cd` no cuenta por las historias que tiene
+test('PerlEnLugar_SoloSustituye_NoEsHistoria — sobre un .sh, con la carpeta del cd llena de historias', () => {
+  const c = carpeta();
+  for (const cmd of [
+    `cd ${c.lab} && perl -pi -e 's/x/y/g' medir.sh`,
+    `cd ${c.lab} && perl -i -pe 's/PROG=x/PROG=y/' medir.sh`,
+    `cd ${c.lab} && perl -pi.bak -e 's#a#b#g; s/c/d/' scripts/tests/guard.test.sh`,
+    `cd ${c.lab} && perl -0777 -pi -e 's/\\n+/\\n/g' medir.sh`,
+    // las palabras del programa no son destinos: un espacio, un punto suelto, una historia nombrada en el texto
+    `cd ${c.lab} && perl -pi -e 's/^ *//' scripts/tests/guard.test.sh`,
+    `cd ${c.lab} && perl -pi -e 's/fin . x/fin. x/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/ver s9001.md antes/ver s9002.md antes/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/"plantillas"/"modelos"/' medir.sh`,
+  ]) {
+    const r = juzgar(c, cmd);
+    assert.ok(!frenaComoHistoria(r), `${cmd}: ${r && r.block}`);
+  }
+});
+
+test('PerlEnLugar_CambiaEstadoDeHistoria_Frena', () => {
+  const c = carpeta();
+  for (const cmd of [
+    `cd ${c.lab} && perl -pi -e 's/ready-for-dev/done/' s9001.md`,
+    `cd ${c.lab} && perl -pi -e 's/x/y/' medir.sh; perl -pi -e 's/ready-for-dev/done/' s9001.md`,
+  ]) assert.ok(frenaComoHistoria(juzgar(c, cmd)), `un perl que cambia el estado de una historia frena: ${cmd}`);
+});
+
+// PerlEnLugar_ProgramaQuePuedeHacerOtraCosa_Frena: lo que no es una sustitución cerrada se lee como siempre, y la carpeta
+// del cd cuenta por sus historias: código en BEGIN, la bandera e, código adentro del texto o de la expresión, otra orden,
+// una opción que carga código, la trampa de -pie (sufijo «e» y el programa leído de un archivo), una variable, $(…) o
+// comillas invertidas
+test('PerlEnLugar_ProgramaQuePuedeHacerOtraCosa_Frena — con la carpeta del cd llena de historias', () => {
+  const c = carpeta();
+  for (const cmd of [
+    `cd ${c.lab} && perl -pi -e 'BEGIN{@ARGV=glob "*.md"} s/a/b/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/a/b/e' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/a/@{[system "touch s9001.md"]}/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/(?{ system "x" })a/b/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 'open F,">","s9001.md"' medir.sh`,
+    `cd ${c.lab} && perl -pi -Mstrict -e 's/a/b/' medir.sh`,
+    `cd ${c.lab} && perl -pie 's/a/b/' medir.sh`,
+    `X=done; cd ${c.lab} && perl -pi -e "s/a/$X/" medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/a/b/' $(ls)`,
+    `cd ${c.lab} && perl -pi -e 's/a/\`touch s9001.md\`/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/a/$x[system "touch s9001.md"]/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/a/$1[unlink "s9001.md"]/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/a/$x->[0]/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/a/b/' -e 's/c/d/' medir.sh`,
+    `cd ${c.lab} && perl -ni -e 's/a/b/' medir.sh`,
+    `cd ${c.lab} && perl -pi -Ilib -e 's/a/b/' medir.sh`,
+    `cd ${c.lab} && perl -i.md -pe 's/a/b/' medir.sh`,
+    `cd ${c.lab} && PERL5OPT=-Mstrict perl -pi -e 's/a/b/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/a/b/'\nperl -pi -e 's/c/d/' medir.sh`,
+    // lo que confirmó el pase adversarial: variables especiales con un índice que perl calcula
+    `cd ${c.lab} && perl -pi -e 's/x/$)[system q(perl -pi -e s,ready-for-dev,done, s9001.md)]/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/x/$![unlink q(s9001.md)]/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/x/$,[unlink q(s9001.md)]/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's#x#$/[unlink q(s9001.md)]#' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/x/$::x[unlink q(s9001.md)]/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/x/$12[unlink q(s9001.md)]/' medir.sh`,
+    // el ambiente de perl, con el nombre armado al sacar las comillas, y otro programa que se llama perl
+    `export PERL5""OPT='-M5;unlink(q(s9001.md))'; cd ${c.lab} && perl -pi -e 's/x/y/' medir.sh`,
+    `export PERL5\\OPT='-M5;unlink(q(s9001.md))'; cd ${c.lab} && perl -pi -e 's/x/y/' medir.sh`,
+    `cd ${c.lab} && PATH=./bin:$PATH perl -pi -e 's/x/y/' medir.sh`,
+    `cd ${c.lab} && ./perl -pi -e 's/x/y/' medir.sh`,
+    `perl() { rm s9001.md; }; cd ${c.lab} && perl -pi -e 's/x/y/' medir.sh`,
+    // un archivo en una variable (puede valer \`-e\`) y una redirección que cambia lo que se lee del programa
+    `X=-e; cd ${c.lab} && perl -pi -e 's/a/b/' $X medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/a/b/>"@[system q(x)]"' medir.sh`,
+    // lo que confirmó la segunda vuelta: el ambiente cambiado con el comando escrito de otra forma, y en zsh
+    `\\export PERL5\\OPT='-M5;@ARGV=(q(s9001.md))'; cd ${c.lab} && perl -pi -e 's/ready-for-dev/done/' medir.sh`,
+    `cd ${c.lab} && echo \\'; export PERL5OPT=-M5\\;@ARGV=\\(q\\(s9001.md\\)\\); echo \\'; perl -pi -e 's/ready-for-dev/done/' medir.sh`,
+    `cd ${c.lab} && functions[perl]='rm s9001.md'; perl -pi -e 's/x/y/' medir.sh`,
+    `cd ${c.lab} && path[1,0]=$PWD/bin; perl -pi -e 's/x/y/' medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/x/y/' medir.sh; rm s9001.md`,
+    `cd ${c.lab} && perl -pi -e 's/x/y/' *.sh`,
+    // lo que confirmó la vuelta completa: una barra con una cifra en el reemplazo (perl la lee como un grupo), una
+    // carpeta del cd que el shell expande y nombres que zsh lee como comodines
+    `cd ${c.lab} && perl -pi -e 's/x/\\1[unlink q(s9001.md)]/' medir.sh`,
+    `cd ~+ && perl -pi -e 's/ready-for-dev/done/' s9001.md`,
+    `cd ~- && perl -pi -e 's/ready-for-dev/done/' s9001.md`,
+    `cd ${c.lab} && perl -pi -e 's/ready-for-dev/done/' ^medir.sh`,
+    `cd ${c.lab} && perl -pi -e 's/ready-for-dev/done/' s9#001.md`,
+  ]) assert.ok(frenaComoHistoria(juzgar(c, cmd)), `frena: ${cmd}`);
+  // con CDPATH, un cd relativo puede ir a una carpeta que no está debajo de la sesión
+  const cmd = `cd plantillas && perl -pi -e 's/ready-for-dev/done/' template.md`;
+  const r = conEnv({ ...ENV, CDPATH: c.lab }, () => bash.handle({ tool_name: 'Bash', session_id: SID, cwd: path.join(c.lab, 'scripts'), tool_input: { command: cmd } }, { stateDir: c.estado }));
+  assert.ok(frenaComoHistoria(r), `frena con CDPATH: ${cmd}`);
+});
+
+// PerlEnLugar_NombraHistoria_FrenaSinCorrerSuPrograma: un perl que nombra una historia no se ensaya, porque ensayarlo
+// sería correr su programa adentro del freno. La historia cuenta como escrita aunque el programa parezca no cambiarle el
+// estado (las variables especiales valen distinto leyendo la entrada que editando el archivo), y el programa no corre
+test('PerlEnLugar_NombraHistoria_FrenaSinCorrerSuPrograma', () => {
+  const c = carpeta();
+  const marca = path.join(c.lab, 'CORRIO');
+  for (const cmd of [
+    `cd ${c.lab} && perl -pi -e 's/Cuerpo/Texto/' s9001.md`,
+    `cd ${c.lab} && perl -pi -e 's/rea[^$~]y-for-dev/done/i' s9001.md`,
+    `cd ${c.lab} && perl -pi -e 's/ready-for-dev(?!$!)/done/' s9001.md`,
+    `cd ${c.lab} && perl -pi -e 's/zzz/zzz/' s9001.md; perl -pi -e 's/ready-for-dev/ready-for-dev!/' ./s9001.md; perl -pi -e 's/ready-for-dev!/done/' s9001.md`,
+    `cd ${c.lab} && perl -pi -e 's/Cuerpo/$)[system q(touch ${marca})]/' s9001.md`,
+  ]) assert.ok(frenaComoHistoria(juzgar(c, cmd)), `frena: ${cmd}`);
+  assert.ok(!fs.existsSync(marca), 'el freno corrió el programa de perl');
 });

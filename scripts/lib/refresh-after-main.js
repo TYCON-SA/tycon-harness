@@ -70,6 +70,50 @@ function entradaDe(root, rev, p) {
 }
 const comun = (e) => !!e && e.tipo === 'blob' && COMUNES.has(e.modo);
 
+// La entrada de una ruta en un commit, leída una sola vez por commit con todas las rutas que se firman juntas (una
+// constancia de 15 archivos sobre un pedido de 20 commits, con varias constancias anteriores, eran cientos de lecturas y
+// el freno de firmas no terminaba de mirar en su tope). Una ruta que no se firma, o que es la carpeta de otra que se
+// firma (`ls-tree` con las dos muestra lo de adentro y no la carpeta), se lee sola, como antes. Las rutas van en tandas,
+// para no pasar el largo de la línea de comandos.
+const TANDA_DE_RUTAS = 6000;
+function rutasJuntas(entries) {
+  const todas = [...new Set(entries.map((e) => e.path))];
+  return new Set(todas.filter((p) => !todas.some((q) => q.startsWith(`${p}/`))));
+}
+function entradaEn(ctx, rev, p) {
+  if (!ctx.paths.has(p)) return entradaDe(ctx.root, rev, p);
+  let delCommit = ctx.arboles.get(rev);
+  if (!delCommit) {
+    delCommit = new Map();
+    let tanda = [];
+    let largo = 0;
+    const leer = () => {
+      const r = git(ctx.root, ['ls-tree', '-z', rev, '--', ...tanda]);
+      if (r.status !== 0) throw new NoSe(`no pude leer ${tanda[0]} en ${rev.slice(0, 12)}`);
+      for (const rec of r.stdout.split('\0').filter(Boolean)) {
+        const tab = rec.indexOf('\t');
+        const [modo, tipo, blob] = rec.slice(0, tab).split(' ');
+        delCommit.set(rec.slice(tab + 1), { modo, tipo, blob });
+      }
+      tanda = [];
+      largo = 0;
+    };
+    for (const q of ctx.paths) {
+      if (tanda.length && largo + q.length > TANDA_DE_RUTAS) leer();
+      tanda.push(q);
+      largo += q.length + 1;
+    }
+    if (tanda.length) leer();
+    ctx.arboles.set(rev, delCommit);
+  }
+  return delCommit.get(p) || null;
+}
+function mergeBaseEn(ctx, a, b) {
+  const k = `${a} ${b}`;
+  if (!ctx.bases.has(k)) ctx.bases.set(k, mergeBase(ctx.root, a, b));
+  return ctx.bases.get(k);
+}
+
 /** Las constancias que pueden ser la anterior de una refirma: del dueño (sin `via`) y que no están en la base. */
 function anteriores(approvals, baseHashes) {
   const enBase = baseHashes instanceof Set ? baseHashes : new Set(baseHashes || []);
@@ -83,18 +127,18 @@ function porQueNo(ctx, anterior, e) {
   const no = (motivo) => ({ no: motivo });
   const regla = anterior.rules.find((r) => r && r.path === e.path);
   if (!regla || typeof regla.blob !== 'string') return no(`${e.path} no está en la constancia anterior`);
-  const punta = entradaDe(root, tipC, e.path);
+  const punta = entradaEn(ctx, tipC, e.path);
   if (!punta) return no(`${e.path} no está en la punta del pedido`);
   if (!comun(punta)) return no(`${e.path} no es un archivo común en la punta`);
   if (punta.blob !== e.blob) return no(`${e.path} en la punta no es el blob que se firma`);
   // el más viejo con ese blob: un cambio de modo posterior deja el mismo blob y no es lo que se firmó
-  const c = [...commits].reverse().find((h) => { const x = entradaDe(root, h, e.path); return x && x.blob === regla.blob; });
+  const c = [...commits].reverse().find((h) => { const x = entradaEn(ctx, h, e.path); return x && x.blob === regla.blob; });
   if (!c) return no(`ningún commit del pedido tiene ${e.path} como lo firmó el dueño`);
-  const enC = entradaDe(root, c, e.path);
+  const enC = entradaEn(ctx, c, e.path);
   if (!comun(enC) || enC.modo !== punta.modo) return no(`${e.path} cambió de modo o de tipo desde lo firmado`);
   if (regla.blob === e.blob) return { tal: true };
-  const o1 = entradaDe(root, mergeBase(root, c, baseC), e.path);
-  const o2 = entradaDe(root, mb, e.path);
+  const o1 = entradaEn(ctx, mergeBaseEn(ctx, c, baseC), e.path);
+  const o2 = entradaEn(ctx, mb, e.path);
   if (!comun(o1) || !comun(o2)) return no(`${e.path} no está como archivo común en main (nuevo, borrado o renombrado)`);
   if (o1.blob === o2.blob) return no(`main no cambió ${e.path}: no hay nada que traer`);
   const archivo = (nombre, blob) => {
@@ -138,10 +182,12 @@ function classify({ root, base, tip = 'HEAD', entries, approvals, baseHashes } =
     const lista = una(root, ['rev-list', `${mb}..${tipC}`]).split('\n').filter(Boolean);
     if (lista.length > MAX_COMMITS) return control(`el pedido tiene más de ${MAX_COMMITS} commits`);
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'refresh-after-main-'));
-    const ctx = { root, mb, baseC, tipC, commits: lista, tmp };
+    const ctx = { root, mb, baseC, tipC, commits: lista, tmp, paths: rutasJuntas(entries), arboles: new Map(), bases: new Map() };
     let motivo = null;
     for (const anterior of candidatas) {
-      const cada = entries.map((e) => porQueNo(ctx, anterior, e));
+      // la primera entrada que no es lo firmado descarta esta constancia: las demás no se miran
+      const cada = [];
+      for (const e of entries) { const x = porQueNo(ctx, anterior, e); cada.push(x); if (x.no) break; }
       const no = cada.find((x) => x.no);
       // todo tal cual no es traer main: esas entradas ya las firmó el dueño con ese mismo hash
       if (!no && cada.some((x) => !x.tal)) return { clase: REFIRMA, refirma_de: anterior.hash, motivo: 'es lo que da traer main sobre lo que el dueño firmó' };

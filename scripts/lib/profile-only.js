@@ -20,4 +20,5 @@ module.exports = Object.freeze([
   'short_path.max_files',
   'approvals.delegation_wait_minutes',
   'pull_requests.team_authors',
+  'approvals.local_commit',
 ]);

@@ -73,8 +73,10 @@ no() { suite_check; TOTAL=$((TOTAL+1)); FAILURES=$((FAILURES+1)); echo "❌ inst
 brief() { tail -2 "$1" 2>/dev/null | sed $'s/\x1b\\[[0-9;]*m//g' | tr '\n' ' ' | cut -c1-"${2:-300}"; }   # <archivo> [largo]: el final de una salida, en un renglón y sin colores
 
 # ── el clon de laboratorio: el repo único (scripts/ + skills/ y agents/ de juguete en la raíz) ─────────────────
+# De integrations/ sólo los query-notice.js de cada conector: sin ellos el refresco de la lista de proyectos no tiene
+# quién lo haga (AC 36). Los manifiestos no: con ellos el instalador sumaría los ganchos de cada integración.
 CLONE="$T/clone"; mkdir -p "$CLONE/agents" "$CLONE/skills/tycon-pipeline"
-( cd "$ROOT" && tar cf - --exclude=scripts/tests --exclude=node_modules --exclude=.bench scripts claude-md-blocks ) | ( cd "$CLONE" && tar xf - )
+( cd "$ROOT" && tar cf - --exclude=scripts/tests --exclude=node_modules --exclude=.bench scripts claude-md-blocks integrations/*/scripts/query-notice.js ) | ( cd "$CLONE" && tar xf - )
 [ -f "$CLONE/scripts/install-tycon-hooks.ps1" ] || { echo "❌ installer-ps1: no pude armar el clon de laboratorio"; exit 1; }
 printf '# skill de juguete\n' > "$CLONE/skills/tycon-pipeline/SKILL.md"
 printf '# revisor de juguete\n' > "$CLONE/agents/lab-reviewer.md"
@@ -1386,7 +1388,8 @@ if [ "$RC" -eq 0 ] && [ "$R" = ok ] && [ "$(hhash "$HI")" = "$V1" ]; then ok "(v
 else no "(v) T26 instalado (rc $RC): ${R} · $(brief "$T/v2.out" 200)"; fi
 # T69 · con una herramienta de horas elegida y sus filas en la tabla de nombres de tools, el plan predice el bloque igual
 # que lo escribe el sync: instalado, «keep» (no «update» por el lugar de las filas sin expandir)
-CINT="$T/clone-int"; mkdir -p "$CINT"; ( cd "$CLONE" && tar cf - . ) | ( cd "$CINT" && tar xf - ); cp -R "$ROOT/integrations" "$CINT/integrations"
+# el clon ya trae integrations/ (los query-notice.js): se copia su CONTENIDO, no la carpeta adentro de la que ya está
+CINT="$T/clone-int"; mkdir -p "$CINT/integrations"; ( cd "$CLONE" && tar cf - . ) | ( cd "$CINT" && tar xf - ); cp -R "$ROOT/integrations/." "$CINT/integrations/"
 TT_ONE="$(node -e 'const I=require(process.argv[1]);const ms=I.listManifests({dir:process.argv[2]}).manifests.filter((m)=>m.kind==="timeTracking"&&require("fs").existsSync(process.argv[2]+"/"+m.name+"/tool-names.md"));console.log(ms.length?ms[0].name:"")' "$ROOT/scripts/lib/integrations.js" "$ROOT/integrations")"
 HT="$(new_home plan-time)"
 LAB_INSTALLER="$CINT/scripts/install-tycon-hooks.ps1" installer "$HT" "${HELD[@]}" "${TEAM[@]}" TYCON_NO_CLAUDEMD_SYNC=0 "TYCON_TIME_TRACKING=$TT_ONE" > "$T/vt1.out" 2>&1
