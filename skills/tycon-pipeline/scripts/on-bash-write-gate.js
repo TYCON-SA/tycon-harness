@@ -176,8 +176,8 @@ try { ({ nativePath } = require('./lib/path-shape.js')); } catch (e) { logHookEr
 const Q = `(?:'([^']*)'|"([^"]*)"|([^\\s'"|;&<>]+))`; // token: 'x' | "x" | bare
 function tok(m, i) { return m[i] ?? m[i + 1] ?? m[i + 2] ?? null; }
 
-// (el `|` de `>|`, que pisa el archivo aunque el shell no deje pisar, no separa)
-const SEPARADOR_DE_SEGMENTOS = /&&|\|\||(?<!>)\|&|;|(?<!>)\||\n|(?<![<>&|\\])&(?![&>])/;
+// (el `|` de `>|`, que pisa el archivo aunque el shell no deje pisar, no separa; el de un `\>|` sí: ese `>` es una letra)
+const SEPARADOR_DE_SEGMENTOS = /&&|\|\||(?<!(?<!\\)>)\|&|;|(?<!(?<!\\)>)\||\n|(?<![<>&|\\])&(?![&>])/;
 function splitSegments(cmd) {
   // Separadores de comandos (no dentro de comillas — aproximación: split simple alcanza para lo
   // que buscamos; las comillas raras caen del lado conservador = no se extrae nada).
@@ -231,7 +231,7 @@ const PALABRA_DE_REDIRECCION = String.raw`(?:\$'(?:\\.|[^'\\])*'|\$"(?:\\.|[^"\\
 // el descriptor de una redirección: una o más cifras, o un nombre (`{fd}`), al principio de una palabra
 const DESCRIPTOR = String.raw`(?:\d+|\{[A-Za-z_]\w*\})`;
 // (la palabra va en su propio grupo opcional: un `?` pegado al `+` de la palabra la volvería perezosa, de una letra)
-const REDIRECCION_DE_SALIDA_CON_PALABRA = new RegExp(String.raw`[ \t]*(?:&|(?<!\S)${DESCRIPTOR})?>{1,2}(?:\||&)?[ \t]*(?:${PALABRA_DE_REDIRECCION})?`, 'g');
+const REDIRECCION_DE_SALIDA_CON_PALABRA = new RegExp(String.raw`[ \t]*(?:&|(?<!\S)${DESCRIPTOR})?>{1,2}(?:\||!|&)?[ \t]*(?:${PALABRA_DE_REDIRECCION})?`, 'g');
 const REDIRECCION_DE_ENTRADA_CON_PALABRA = new RegExp(String.raw`(?:(?<!\S)${DESCRIPTOR})?<(?:<<|<-?|&|>)?[ \t]*(?:${PALABRA_DE_REDIRECCION})?`, 'g');
 
 function palabrasDelComando(seg) {
@@ -250,7 +250,7 @@ function palabrasDelComando(seg) {
 
 // Una redirección delante del comando (`> f cp a b`, `10>f cp a b`, `{fd}>f cp a b`, `<<<x cp a b`): el comando es lo
 // que sigue
-const REDIRECCION_DELANTE = new RegExp(String.raw`(?:(?:&|${DESCRIPTOR})?>{1,2}(?:\||&)?|${DESCRIPTOR}?<(?:<<|<-?|&|>)?)[ \t]*${PALABRA_DE_REDIRECCION}[ \t]*`, 'y');
+const REDIRECCION_DELANTE = new RegExp(String.raw`(?:(?:&|${DESCRIPTOR})?>{1,2}(?:\||!|&)?|${DESCRIPTOR}?<(?:<<|<-?|&|>)?)[ \t]*${PALABRA_DE_REDIRECCION}[ \t]*`, 'y');
 function sinRedireccionesDelante(seg) {
   const t = String(seg).trim();
   let i = 0;
@@ -261,8 +261,9 @@ function sinRedireccionesDelante(seg) {
 
 // Las opciones de un envoltorio que llevan su valor en la palabra siguiente: las de `ENVOLTORIOS_CON_VALOR` (más abajo en
 // el archivo: se juntan la primera vez que se piden) y las de estos
+// (el `-S` de `env` no: su valor es el comando que corre, y se lee en `desdeElPrograma`)
 const MAS_OPCIONES_CON_VALOR = {
-  env: /^-[uCSPa]$|^--(?:unset|chdir|split-string|argv0)$/,
+  env: /^-[uCPa]$|^--(?:unset|chdir|argv0)$/,
   doas: /^-[uC]$/,
   ionice: /^-[cnpPu]$|^--(?:class|classdata|pid|pgid|uid)$/,
   exec: /^-a$/,
@@ -274,7 +275,7 @@ const opcionesDelEnvoltorio = (n) => (opcionesConValor ||= { ...ENVOLTORIOS_CON_
 // máscara de procesadores
 const CON_PALABRA_PROPIA = new Set(['timeout', 'chrt', 'taskset']);
 // el principio de una palabra que es una redirección (`>f`, `2>`, `{fd}<x`, `&>f`, `>|f`)
-const EMPIEZA_REDIRECCION = new RegExp(String.raw`^(?:&|${DESCRIPTOR})?(?:>{1,2}(?:\||&)?|<(?:<<|<-?|&|>)?)`);
+const EMPIEZA_REDIRECCION = new RegExp(String.raw`^(?:&|${DESCRIPTOR})?(?:>{1,2}(?:\||!|&)?|<(?:<<|<-?|&|>)?)`);
 
 /**
  * El tramo desde el programa que corre, con el programa por su nombre (`/bin/cp` y `\cp` son `cp`): sin las variables de
@@ -289,37 +290,47 @@ function desdeElPrograma(seg) {
   let opciones = null;
   let saltar = 0;
   let propia = false;
+  let envoltorio = null;
   for (let m = pieza.exec(t); m; m = pieza.exec(t)) {
     if (saltar) { saltar--; continue; }
     // una redirección no es el programa; si su palabra va aparte (`> f`), tampoco la que sigue
     const redireccion = EMPIEZA_REDIRECCION.exec(m[0]);
     if (redireccion) { if (redireccion[0].length === m[0].length) saltar = 1; continue; }
     const w = palabraDelShell(m[0]);
+    // `env -S` corre su valor como comando: pegado (`-Scp`, `--split-string=cp`), es el programa; si va aparte, la palabra
+    // que sigue lo es
+    const partido = envoltorio === 'env' && opciones !== null ? /^(?:-[a-zA-Z]*S|--split-string(?:=|$))(.*)$/.exec(w) : null;
+    if (partido) {
+      if (!partido[1]) { opciones = null; continue; }
+      return nombreDeComando(partido[1]) + t.slice(m.index + m[0].length);
+    }
     if (opciones !== null && w.startsWith('-')) { if (opciones && opciones.test(w)) saltar = 1; continue; }
     if (opciones !== null && propia) { opciones = null; propia = false; continue; }
     opciones = null;
     if (/^[A-Za-z_]\w*=/.test(m[0])) continue;
     const n = nombreDeComando(w);
     if (n === 'busybox') continue;
-    if (ENVOLTORIOS.has(n)) { opciones = opcionesDelEnvoltorio(n) || false; propia = CON_PALABRA_PROPIA.has(n); continue; }
+    if (ENVOLTORIOS.has(n)) { opciones = opcionesDelEnvoltorio(n) || false; propia = CON_PALABRA_PROPIA.has(n); envoltorio = n; continue; }
     return n + t.slice(m.index + m[0].length);
   }
   return '';
 }
 
-// los programas que copian o mueven a un destino que es su último argumento (o la carpeta de `-t`)
-const COPIA = /^(?:g?(?:cp|mv|ln|install)|rsync)\b/;
+// los programas que copian o mueven a un destino que es su último argumento (o la carpeta de `-t`); el nombre entero
+// (`install.sh` es un guion, no `install`)
+const COPIA = /^(?:g?(?:cp|mv|ln|install)|rsync)(?=\s|$)/;
 
 /**
  * Los destinos de un cp / mv: con `-t` / `--target-directory` (también `-rt`, `-t<carpeta>`), la carpeta y cada archivo
  * que llega a ella; si no, el último argumento (`palabrasDelComando`, sin redirecciones: `cp a b 2>&1`, `cp a b <<<x`).
+ * En rsync `-t` conserva las fechas: ahí no hay carpeta de destino aparte.
  */
 function cpMvDest(seg) {
   const words = palabrasDelComando(sinRedireccionesDelante(seg));
   // con varios -t vale el último, como en cp
   let dir = null;
   const fuera = new Set([0]);   // el nombre del comando, y lo que nombra la carpeta
-  for (let i = 0; i < words.length; i++) {
+  for (let i = 0; i < words.length && words[0] !== 'rsync'; i++) {
     const largo = /^--target-directory=(.+)$/.exec(words[i]);
     const pegado = /^-t(.+)$/.exec(words[i]);
     if (largo) { dir = largo[1]; fuera.add(i); } else if ((/^-[a-zA-Z]*t$/.test(words[i]) || words[i] === '--target-directory') && words[i + 1]) {
@@ -560,7 +571,7 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
 /** Agrega a `out` los destinos de escritura de `s` (el comando ya sin lo que no es comando); `raw`, el comando entero. */
 function destinosDeEscritura(raw, s, keep, out) {
   // 1) redirecciones: `> f`, `>> f`, `2> f`, `&> f`, `>| f`, `>& f` (no `>&2`, no `<`)
-  const reRedirect = new RegExp(`(?:^|[^<>&])(?:&|\\d)?>{1,2}(?:\\||&(?![\\d-]))?[ \\t]*${Q}`, 'g');
+  const reRedirect = new RegExp(`(?:^|[^<>&])(?:&|\\d)?>{1,2}(?:\\||!|&(?![\\d-]))?[ \\t]*${Q}`, 'g');
   let m;
   while ((m = reRedirect.exec(s))) {
     const t = tok(m, 1);
@@ -739,7 +750,7 @@ function palabras(tramo) {
 
 /** Los argumentos que siguen a un script, sin redirecciones; el `--` de node no cuenta (node lo saca de `process.argv`). */
 function argumentosDe(resto) {
-  const sinRedir = String(resto || '').replace(/[ \t]*(?:&|\d)?>{1,2}(?:\||&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ');
+  const sinRedir = String(resto || '').replace(/[ \t]*(?:&|\d)?>{1,2}(?:\||!|&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ');
   const w = palabras(sinRedir).filter((x) => x !== '');
   return w[0] === '--' ? w.slice(1) : w;
 }
@@ -1712,7 +1723,7 @@ const PS_CON_VALOR = /^-(?:filter|include|exclude|erroraction|ea|credential|stre
 // Cada redirección del tramo (`> x`, `2>> "y"`, `&>|z`), con los espacios y tabs que la preceden, cambiada por un
 // blanco. Esos blancos se sacan a mano y no con un `[ \t]*` al principio de la expresión, que con una tirada larga de
 // espacios la hace cuadrática.
-const REDIRECCION_DE_SALIDA = /(?:&|\d)?>{1,2}(?:\||&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g;
+const REDIRECCION_DE_SALIDA = /(?:&|\d)?>{1,2}(?:\||!|&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g;
 function blancoPorRedireccion(t) {
   let out = '';
   let desde = 0;
@@ -2829,7 +2840,7 @@ function sedsLiterales(cmd) {
     // el carril de código no la reconoce, así que no es la forma
     const sinComillas = tramo.replace(/'[^']*'|"(?:\\.|[^"\\])*"/g, '');
     if (/\$\(|`|[()]/.test(sinComillas)) { if (editaEnSitio(tramo)) return null; continue; }
-    const sinRedir = tramo.trim().replace(PREFIJO, '').replace(/[ \t]*(?:&|\d)?>{1,2}(?:\||&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ');
+    const sinRedir = tramo.trim().replace(PREFIJO, '').replace(/[ \t]*(?:&|\d)?>{1,2}(?:\||!|&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ');
     // `-i''` pegado se lee como `-i ''`, el sufijo vacío aparte (como lo lee `palabras` y lo juzga el resto del freno)
     const lectura = palabrasDelSed(sinRedir.replace(/(^|\s)(-[A-Za-z0-9]*i)(''|"")(?=\s|$)/g, '$1$2 $3'));
     if (!lectura) { if (editaEnSitio(tramo)) return null; continue; }
@@ -5870,7 +5881,7 @@ const FIND_QUE_ESCRIBE = new Set(['rm', 'mv', 'sed', 'perl', 'truncate', 'shred'
 function destinosDeLaCoordinadora(cmd) {
   const out = [];
   for (const tramo of tramos(cmd)) {
-    const limpio = tramo.replace(/(^|\s)#.*$/, '').replace(/[ \t]*(?:&|\d)?>{1,2}(?:\||&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ');
+    const limpio = tramo.replace(/(^|\s)#.*$/, '').replace(/[ \t]*(?:&|\d)?>{1,2}(?:\||!|&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ');
     const words = palabras(limpio.trim().replace(PREFIJO, '')).filter((w) => w !== '').map((w) => w.replace(/\)+$/, '')).filter(Boolean);
     if (!words.length) continue;
     const c = path.basename(words[0].replace(/^\\/, '')).toLowerCase().replace(/\.exe$/, '');

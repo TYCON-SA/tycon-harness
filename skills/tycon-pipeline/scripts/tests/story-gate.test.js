@@ -1243,6 +1243,13 @@ test('CopiaPorOtroProgramaOEnvoltorio_AlEstado_Frena (fila 223, el freno)', () =
     frena(`env sed -i 's/a/b/' '${res}'`);
     frena(`/usr/bin/sed -i 's/a/b/' '${res}'`);
     frena(`command truncate -s 0 '${res}'`);
+    // de la vuelta corta: en rsync `-t` conserva las fechas (no es la carpeta de destino), y `env -S` corre su valor
+    frena(`rsync -t ${S} '${res}'`);
+    frena(`rsync -rt ${S} '${res}'`);
+    frena(`rsync -at ${S} '${res}'`);
+    frena(`env -S cp ${S} '${res}'`);
+    frena(`env -iS cp ${S} '${res}'`);
+    frena(`env --split-string=cp ${S} '${res}'`);
     // lo de siempre sigue pasando
     pasa(`install -m 644 ${S} '${repo}/copia.json'`);
     pasa(`rsync -a ${S} '${repo}/copia.json'`);
@@ -1275,6 +1282,11 @@ test('CpAlEstado_ConRedireccionRara_Frena (fila 224, el freno)', () => {
     for (const entrada of ['10<x', '12<x', '{fd}<x', '{fd}<<<x']) frena(`cp ${S} '${res}' ${entrada}`);
     // una redirección delante del comando: descriptor largo, con nombre, `>|`, o detrás de una variable
     for (const delante of ['10>f', '{fd}>f', 'HOLA=1 >f', 'HOLA=1 > f', '>|f']) frena(`${delante} cp ${S} '${res}'`);
+    // de la vuelta corta: un `>` escapado antes de una tubería no es `>|`, y lo de después de la tubería corre
+    for (const antes of ['echo \\>', 'echo a\\>', 'true \\\\\\>']) frena(`${antes}|cp ${S} '${res}'`);
+    frena(`echo \\>|&cp ${S} '${res}'`);
+    // `>!` (zsh: pisa el archivo aunque el shell no deje pisar) escribe en lo que sigue, como `>|`
+    for (const op of ['>!', '>! ', '>>!', '&>!']) frena(`echo x ${op}'${res}'`);
     // lo de siempre sigue pasando
     pasa(`cp ${S} '${repo}/copia.json' <<<x"y"`);
     pasa(`HOLA=1 >/dev/null cp ${S} '${repo}/copia.json'`);
