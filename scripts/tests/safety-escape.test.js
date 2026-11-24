@@ -2094,6 +2094,30 @@ test('T11 EscC1_MutationCheckOff_AsksSignature @story-8.256 @ac-10 @ac-15 @ac-26
   assert.deepStrictEqual(renglonesDe(antes.home).filter((x) => x.kind === 'ESCAPE_NOTICE_PERIOD').map((x) => x.variable), ['TYCON_MUTATION_CHECK']);
 });
 
+// T11b EscC1_ExportSameAsInline @story-8.256 @ac-10 @ac-12
+// 🔴 Falla con: `export NOMBRE=valor && …` (o con `;`) que el guion de la ventana niega por «viene escondido» mientras la
+//    misma asignación delante del comando va a la ventana: cada comando de la consola corre en su propio shell, y el
+//    dueño ve el nombre y el valor igual.
+test('T11b EscC1_ExportSameAsInline @story-8.256 @ac-10 @ac-12', () => {
+  const pasada = arbolConCorte('2000-01-01');
+  const m = path.join(pasada.dir, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+  const p = path.join(pasada.dir, 'skills', 'tycon-pipeline', 'scripts', 'pipeline.js');
+  const casos = [
+    [`TYCON_MUTATION_CHECK=off node ${m} complete-step run-tests`, [`export TYCON_MUTATION_CHECK=off; node ${m} complete-step run-tests`, `export TYCON_MUTATION_CHECK=off && node ${m} complete-step run-tests`]],
+    [`TYCON_STORY_REVIEW=0 node ${p} validators --story s.md --repo .`, [`export TYCON_STORY_REVIEW=0 && node ${p} validators --story s.md --repo .`]],
+  ];
+  for (const [enLinea, conExport] of casos) {
+    for (const permisos of ['bypassPermissions', 'default']) {
+      const base = veredicto(freno(enLinea, { hook: pasada.hook, permisos }));
+      for (const cmd of conExport) {
+        const r = freno(cmd, { hook: pasada.hook, permisos });
+        assert.doesNotMatch(r.stderr, /viene escondido/, `${cmd} (${permisos})`);
+        assert.strictEqual(veredicto(r), base, `${cmd} (${permisos}): la misma decisión que con la variable delante (${base}); ${r.stderr}`);
+      }
+    }
+  }
+});
+
 // T13 EscC1_StoryReviewZero_AsksSignature @story-8.256 @ac-12
 // 🔴 Falla con: `TYCON_STORY_REVIEW=0` que pasa sin firma desde la fecha de corte, o un `--env-file` delante de
 //    `validators` (o de su nombre viejo, `validadores`) que pasa.

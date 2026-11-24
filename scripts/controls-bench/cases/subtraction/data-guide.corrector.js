@@ -1,6 +1,6 @@
 'use strict';
 // Corrector de la historia de juguete «guía de los datos» de la prueba de resta.
-const { juguete, cambiados } = require('./toy-commit.js');
+const { juguete } = require('./toy-commit.js');
 
 module.exports = juguete(Object.assign({"guion": "scripts/publishing/internal-history.js", "llave": "TYCON_INTERNAL_HISTORY"}, {
   verificar: (dir, base) => {

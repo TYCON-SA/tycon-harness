@@ -135,7 +135,10 @@ node "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/tools/merge-pr.js
 Sale 0 con un JSON (sale 2 sólo si no pudo leer el repo o su configuración del merge: mostrar el
 `reason` y parar). Guardar en el output del step, tal cual:
 
-- `mode` (`push`|`pr`) y `step` (`9`|`9b`|`9c`): no se recalculan después.
+- `mode` (`push`|`pr`) y `step` (`9`|`9b`|`9c`): no se recalculan después. `host` dice de qué plataforma es el
+  `origin`. Con `azure` o con `platform` el pedido sigue por el `9b`, y con `github` por el `9c`. `platform` es una
+  plataforma que la organización declara en `team-repos.json` y atiende su conector; la identidad del repo viene en el
+  campo `repo` del plan.
 - `suites` (`server`|`machine`) y `suitesReason` (una línea: qué regla aplicó y por qué). La regla
   sale de `team-repos.json → merge_suites` (la configuración de la organización) y, si la regla es
   `automatico`, de lo que contesta la plataforma sobre la rama destino.

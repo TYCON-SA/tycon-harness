@@ -1,0 +1,12 @@
+{
+  "__doc": "El conector de GitLab de la capa de plataforma (scripts/lib/platform/platform.js), para gitlab.com y para una instalación propia. Usa el glab de la máquina (TYCON_GLAB_CMD) con su sesión. Las operaciones que no declara contestan no_soportado. Guía: guides/integrations/gitlab-platform.md.",
+  "name": "gitlab",
+  "label": "GitLab",
+  "kind": "platform",
+  "connector": "scripts/connector.js",
+  "operations": ["work-item.create", "work-item.update", "work-item.close", "work-item.find", "work-item.read", "change-request.open", "change-request.vote", "change-request.list", "change-request.read", "assigned.list", "ci.read"],
+  "capabilities": { "completedHours": "field", "estimate": "field", "workItemType": "label", "autoComplete": "auto-or-wait" },
+  "rawCommands": ["glab mr create", "glab mr new", "glab mr merge", "glab mr accept", "glab issue create", "glab issue new", "glab issue update", "glab issue close"],
+  "changeRequestCommands": ["glab mr create", "glab mr new", "glab mr merge", "glab mr accept"],
+  "hardSignals": ["\\bglab\\s+(mr|issue|api)\\b", "/api/v4/", "https?://gitlab\\.com"]
+}

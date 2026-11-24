@@ -316,6 +316,50 @@ function clasificarSalteadas(salteadas) {
   return { noMedidas, aProposito };
 }
 
+// Lo que en un trx es una prueba que falló: la que falló, la que dio error, la que se cortó por tiempo o se abortó.
+const FALLO_TRX = new Set(['Failed', 'Error', 'Timeout', 'Aborted']);
+const TOPE_NOMBRES = 100;
+/**
+ * El nombre de cada prueba que falló: `{ failed_tests: [{ file?, name, outcome?, did_not_run?, file_failed? }],
+ * failed_tests_more }`. Del trx, los resultados de primer nivel (como `contarTrx`) con su `testName` y su `outcome`: el
+ * total de fallas del trx (`Counters.failed`) no suma las que dieron error o se cortaron, y la lista sí. Del json de jest
+ * o vitest, el nombre completo de cada aserción fallida (o sus títulos de arriba con el suyo) y el archivo relativo a la
+ * carpeta que se prueba, las dos por su ruta real (jest escribe la real; la carpeta puede venir por un enlace). Un archivo
+ * que falló sin ninguna aserción fallida se nombra igual: `did_not_run` si no trae ninguna (no llegó a correr),
+ * `file_failed` si las trae y pasaron (falló algo del archivo, como un `afterAll`). Hasta `TOPE_NOMBRES`.
+ */
+function nombresDeFallas({ trxFiles = [], jestJson = null, repoRun = '' }) {
+  const out = [];
+  for (const tf of trxFiles) {
+    const t = leerXml(fs.readFileSync(tf, 'utf8'));
+    const ns = t.tag.split('}')[0].replace(/^\{+|\{+$/g, '');
+    const enResults = descendientes(t, `{${ns}}Results`).find((e) => e !== t);
+    for (const r of enResults ? enResults.children.filter((e) => e.tag === `{${ns}}UnitTestResult`) : []) {
+      const outcome = String(atributo(r, 'outcome', ''));
+      if (FALLO_TRX.has(outcome)) out.push({ name: String(atributo(r, 'testName', '') || '?'), outcome });
+    }
+  }
+  const raiz = repoRun ? rutaReal(repoRun) : '';
+  const archivoDe = (n) => {
+    const s = String(n || '?');
+    if (!raiz || !path.isAbsolute(s)) return s.split(path.sep).join('/');
+    const rel = path.relative(raiz, rutaReal(s));
+    // fuera de la carpeta que se prueba (otra unidad, otro repo): la ruta tal como vino
+    return (rel.startsWith('..') || path.isAbsolute(rel) ? s : rel).split(path.sep).join('/');
+  };
+  for (const f of (jestJson && Array.isArray(jestJson.testResults) ? jestJson.testResults : [])) {
+    if (!f || typeof f !== 'object') continue;
+    const todas = Array.isArray(f.assertionResults) ? f.assertionResults : [];
+    const falladas = todas.filter((a) => a && a.status === 'failed');
+    for (const a of falladas) {
+      const nombre = a.fullName || [...(Array.isArray(a.ancestorTitles) ? a.ancestorTitles : []), a.title].filter(Boolean).join(' ');
+      out.push({ file: archivoDe(f.name), name: nombre || '?' });
+    }
+    if (!falladas.length && f.status === 'failed') out.push({ file: archivoDe(f.name), name: null, ...(todas.length ? { file_failed: true } : { did_not_run: true }) });
+  }
+  return { failed_tests: out.slice(0, TOPE_NOMBRES), failed_tests_more: Math.max(0, out.length - TOPE_NOMBRES) };
+}
+
 /** Un TRX con la forma del lector de JUnit (`readJunit`): `{ ok, total, passed, failed, skipped, files }` o `{ ok:false, reason }`. */
 function trxComoReporte(archivos) {
   if (!archivos.length) return { ok: false, reason: 'la herramienta no dejó ningún reporte TRX en esta corrida: sin él la puerta no puede contar las pruebas' };
@@ -792,6 +836,22 @@ function informe(argv) {
     }
   } catch (e) {
     result.totals_error = String(e && e.message !== undefined ? e.message : e);
+  }
+
+  // ── El nombre de cada prueba que falló ──
+  // Los totales dicen cuántas; esto dice cuáles, para poder compararlas con las que ya fallaban antes del cambio. Sólo
+  // cuando el reporte los trae (el trx de .NET o de otra herramienta, el json de jest o vitest): sin fallas, no hay campo.
+  try {
+    const trxDeLaCorrida = runner === 'dotnet' ? buscarArchivos(resultsDir, (nm) => nm.endsWith('.trx'))
+      : generico && generico.results && generico.results.format === 'trx' ? reportesDe(generico.results, { repoRun, resultsDir }) : [];
+    const vj = ['jest', 'vitest'].includes(runner) ? [path.join(resultsDir, 'vitest.json'), path.join(resultsDir, 'jest.json')].find(existe) : null;
+    const n = nombresDeFallas({ runner, trxFiles: trxDeLaCorrida, jestJson: vj ? leerJson(vj) : null, repoRun });
+    if (n.failed_tests.length) {
+      result.failed_tests = n.failed_tests;
+      if (n.failed_tests_more) result.failed_tests_more = n.failed_tests_more;
+    }
+  } catch (e) {
+    result.failed_tests_error = `no pude leer el nombre de las pruebas que fallaron (${e && e.message ? e.message : e})`;
   }
 
   // ── El mínimo de cobertura del propio repo (jest `coverageThreshold`, vitest `thresholds`) ──
@@ -1337,7 +1397,7 @@ function calzaPorTerminacion(a, b) {
   return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
 }
 
-module.exports = { informe, calzaPorTerminacion, leerXml, descendientes, redondear1, rutaReal, buscarArchivos, contarTrx, clasificarSalteadas, OBS_HASTA, isCodeFile, resolverUmbral };
+module.exports = { informe, calzaPorTerminacion, nombresDeFallas, leerXml, descendientes, redondear1, rutaReal, buscarArchivos, contarTrx, clasificarSalteadas, OBS_HASTA, isCodeFile, resolverUmbral };
 
 if (require.main === module) {
   try {

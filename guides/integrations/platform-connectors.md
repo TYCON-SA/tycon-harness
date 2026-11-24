@@ -1,13 +1,13 @@
 # Conectores de plataforma — cómo sumar una plataforma al arnés
 
-El núcleo del arnés no habla con Azure DevOps ni con GitHub: habla con **la plataforma del equipo**, por una capa
-(`scripts/lib/platform/platform.js`) que elige qué conector atiende cada operación y le pasa el pedido. Esta guía es
-para quien quiere sumar una tercera plataforma: qué tiene que atender el conector, qué tiene que contestar y cómo se
-prueba que cumple.
+El núcleo del arnés no habla con Azure DevOps, con GitHub ni con GitLab: habla con **la plataforma del equipo**, por una
+capa (`scripts/lib/platform/platform.js`) que elige qué conector atiende cada operación y le pasa el pedido. Esta guía es
+para quien quiere sumar otra plataforma: qué tiene que atender el conector, qué tiene que contestar y cómo se prueba que
+cumple.
 
-Los dos conectores que trae el arnés sirven de ejemplo vivo: `integrations/azure-devops/` y `integrations/github/`. El
-caso de cada uno, para quien lo usa, está en `guides/integrations/ado-projects.md` y en
-`guides/integrations/github-platform.md`.
+Los tres conectores que trae el arnés sirven de ejemplo vivo: `integrations/azure-devops/`, `integrations/github/` e
+`integrations/gitlab/`. El caso de cada uno, para quien lo usa, está en `guides/integrations/ado-projects.md`, en
+`guides/integrations/github-platform.md` y en `guides/integrations/gitlab-platform.md`.
 
 ---
 
@@ -48,6 +48,7 @@ operación sin pedirle nada: `node scripts/lib/platform/platform.js choose <oper
   "operations": ["work-item.create", "work-item.read", "change-request.open", "ci.read"],
   "capabilities": { "completedHours": "comment", "estimate": "comment", "workItemType": "label", "autoComplete": "auto-or-wait" },
   "rawCommands": ["forge pr create", "forge issue close"],
+  "changeRequestCommands": ["forge pr create"],
   "settings": [{ "key": "acme-forge.token", "type": "secreto", "env": "TYCON_ACME_FORGE_TOKEN" }]
 }
 ```
@@ -69,6 +70,9 @@ operación sin pedirle nada: `node scripts/lib/platform/platform.js choose <oper
 - `rawCommands` son los comandos crudos de la plataforma que no se corren a mano porque hay una operación que los
   reemplaza (crear un pedido, cerrar uno). Los frenos los leen de acá (`platform.js raw-command '<comando>'`): un
   conector nuevo no toca ningún freno, declara sus comandos.
+- `changeRequestCommands` son los de `rawCommands` que crean o juntan un pedido de cambio, con sus alias. El freno de
+  guardar los pasa por la ventana de la persona dentro de una ejecución, como un `git push` a una rama compartida. Cada
+  uno tiene que estar en `rawCommands`: si no, el lector frena el manifiesto.
 - `settings` declara sus claves de configuración; las de `type: "secreto"` no se escriben nunca en el perfil del equipo:
   cada persona las carga en su máquina.
 
@@ -92,12 +96,22 @@ module.exports = { run };
 |---|---|
 | `env` | las variables de entorno con que se llamó a la capa |
 | `root` | la raíz del arnés: para reusar sus lectores (no la carpeta del conector, que puede ser otra) |
-| `repo` | la identidad del repo (`{ org, repo, … }`) en las operaciones atadas a un repo |
+| `repo` | la identidad del repo (`{ org, repo, … }`, o `{ namespace, repo, host? }` donde el repo vive en grupos) en las operaciones atadas a un repo |
 | `label` | el nombre de la plataforma para los mensajes |
 | `secretState(clave)` | si un secreto está (`{ present, estado }`), nunca su valor |
 | `readSecret(clave)` | el valor, sólo cuando lo va a usar |
 | `configValue('sección.clave')` | un valor de la configuración de la máquina, o `undefined` |
 | `configProblem(sección)` | si la configuración de esa sección no se pudo leer: «no se pudo leer» no es «falta el dato» |
+
+### El remoto de un clon (opcional)
+
+Una plataforma con un servidor único no necesita nada más. Una que cada organización instala en su propio servidor
+exporta además `identityFromRemote(url, declarados)`: recibe la dirección del remoto `origin` de un clon y los repos de
+su plataforma que declara `team-repos.json`, y devuelve la identidad del repo tal como está declarada, o `null` si el
+servidor de esa dirección no es el de ninguno. La capa valida lo que devuelve como un repo del archivo. Con eso
+`scripts/tools/merge-pr.js` y `scripts/tools/story-index.js` reconocen el clon sin que el núcleo conozca el servidor; un
+remoto de un servidor que nadie declaró sigue siendo «de otro servidor». El ejemplo es
+`integrations/gitlab/scripts/remote.js`.
 
 ### Lo que contesta
 
@@ -199,8 +213,9 @@ respuesta correcta es `sin_credencial` con el comando para cargarlas, y eso tamb
 **El ejemplo es el conector de mentira de las pruebas**, `scripts/tests/lib/fake-platform/`: declara todas las
 operaciones menos votar, pide un token secreto (sin él contesta `sin_credencial`, como uno real) y contesta lo que le
 digan las pruebas. `scripts/tests/platform-contract.test.js` lo usa para probar la capa entera
-(`FakePlatform_PassesConformance`) y pasa la misma conformidad a los dos conectores reales
-(`Conformance_AzureAndGithub_DeclaredOps`). Para un conector nuevo:
+(`FakePlatform_PassesConformance`) y pasa la misma conformidad a los conectores de Azure DevOps y de GitHub
+(`Conformance_AzureAndGithub_DeclaredOps`); la del de GitLab está con sus casos, en
+`scripts/tests/platform-gitlab.test.js`. Para un conector nuevo:
 
 1. copiar `fake-platform/` a `integrations/<nombre>/` y cambiar el manifiesto;
 2. reemplazar cada respuesta de mentira por la llamada a la plataforma, operación por operación;

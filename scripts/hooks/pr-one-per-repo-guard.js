@@ -105,16 +105,20 @@ function pedidosDeGitHub(comando, cwd) {
       const i = t.findIndex((x) => /(^|[\\/])platform\.js$/.test(x));
       if (i < 0 || !(t[i + 1] === 'change-request.open' || (t[i + 1] === 'change-request' && t[i + 2] === 'open'))) continue;
       const valor = (n) => { const k = t.indexOf(n, i); return k >= 0 ? t[k + 1] : undefined; };
-      let repo = null;
+      // el repo se lee como lo lee la capa: `org/repo`, `grupo/sub/repo` (un repo en un namespace) o su identidad en JSON.
+      // Si la capa no carga, el pedido va sin repo: la revisión dice que no verificó, y sigue con los de Azure de la línea
+      let P = null;
+      try { P = require('../lib/platform/platform.js'); } catch { P = null; }
       const crudo = valor('--repo');
-      try { repo = crudo && crudo.trim().startsWith('{') ? JSON.parse(crudo) : (crudo ? { org: crudo.split('/')[0], repo: crudo.split('/')[1] } : null); } catch { repo = null; }
+      const leido = crudo && P ? P.repoOf(crudo) : null;
+      const repo = leido && typeof leido === 'object' && typeof leido.repo === 'string' && (typeof leido.org === 'string' || typeof leido.namespace === 'string') ? leido : null;
       let args = {};
       const a = valor('--args');
       try { args = a ? JSON.parse(a.startsWith('@') ? fs.readFileSync(require('path').resolve(cwd || process.cwd(), a.slice(1)), 'utf8') : a) : {}; } catch {
         // sin los argumentos no se sabe la rama propia: cualquier pedido abierto contaría como otro
         args = null;
       }
-      const donde = repo && repo.org && repo.repo ? `${repo.org}/${repo.repo}` : '(un repo que no pude leer)';
+      const donde = repo ? P.nameOf(repo) : '(un repo que no pude leer)';
       if (!args) out.push({ repo: null, rama: null, donde: `${donde}, cuyos argumentos (${String(a).slice(0, 80)}) no pude leer` });
       else out.push({ repo, rama: args.sourceBranch || null, donde });
     }
@@ -268,6 +272,17 @@ return enCurso;
 }
 
 function bloquear(bloqueos) {
+// El perfil por modelo (lib/control-profile.js): si el dueño relajó este control para el perfil del modelo de esta
+// sesión, no frena y lo anota como `paso-por-perfil`, para que la tabla de controles lo siga contando. Sin relajación,
+// sin modelo o con cualquier duda, frena como siempre.
+let perfil = { on: true };
+try { perfil = require(require('path').join(__dirname, '..', 'lib', 'control-profile.js')).decide({ control: 'pr-uno-por-repo', sessionId: sesion }); } catch { perfil = { on: true }; }
+if (perfil.aviso) console.error(`[pr-uno-por-repo] ${perfil.aviso}`);
+if (!perfil.on) {
+  console.error(`[pr-uno-por-repo] no freno: ${perfil.motivo}.`);
+  constancia.anotar({ freno: 'pr-uno-por-repo', regla: 'pr-duplicado', veredicto: 'paso-por-perfil', cmd, sesion });
+  process.exit(0);
+}
 const cabeceras = bloqueos.map(({ donde, enCurso }) => `🔴 ${donde} YA TIENE ${enCurso.length} pull request CONSTRUYENDO:\n\n` +
   enCurso.map((p) => `  · PR ${p.pullRequestId} — ${p.title} (rama ${String(p.sourceRefName || '').replace('refs/heads/', '')})`).join('\n')).join('\n\n');
 console.error(`${cabeceras}
