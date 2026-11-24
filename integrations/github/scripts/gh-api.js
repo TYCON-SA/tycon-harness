@@ -14,8 +14,11 @@ const no = (reason, detail) => ({ ok: false, reason, detail });
 // dos empieza con «-»; el nombre puede empezar con punto (`.github`) pero no ser «.» ni «..», que armarían otra ruta.
 const esRepoGithub = (id) => /^\w[\w-]*\/(?!\.\.?$)[\w.][\w.-]*$/.test(String(id));
 
-/** `{value}` con la respuesta en JSON, o `{problem}` con el «no» de la capa. */
-function gh(ctx, method, ruta, body) {
+/**
+ * `{value}` con la respuesta en JSON, o `{problem}` con el «no» de la capa. Con `{ texto: true }`, `value` es la respuesta
+ * tal cual: el registro de un trabajo de Actions llega en texto plano.
+ */
+function gh(ctx, method, ruta, body, { texto = false } = {}) {
   const cmd = ctx.env.TYCON_GH_CMD || 'gh';
   const [bin, pre] = /\.js$/.test(cmd) ? [process.execPath, [cmd]] : [cmd, []];
   const args = [...pre, 'api', '--method', method, '-H', 'Accept: application/vnd.github+json', ruta];
@@ -42,6 +45,7 @@ function gh(ctx, method, ruta, body) {
     if (/ENOTFOUND|ETIMEDOUT|ECONNREFUSED|ECONNRESET|getaddrinfo|could not resolve|error connecting to/i.test(t)) return { problem: no('red', t) };
     return { problem: no('rechazado', t || `gh salió ${r.status}`) };
   }
+  if (texto) return { value: String(r.stdout || '') };
   // una escritura que salió 0 se hizo aunque la respuesta no se entienda (tomarla por fallada invitaría a repetirla)
   try { return { value: JSON.parse(r.stdout) }; } catch (_) { return method === 'GET' ? { problem: no('no_medido', 'gh contestó algo que no es JSON') } : { value: null }; }
 }

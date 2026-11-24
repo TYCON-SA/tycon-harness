@@ -891,6 +891,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/production-notice-cases.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/pre-commit-hook.test.js",
       "requiere": []
     },
