@@ -307,8 +307,10 @@ function negarSiNadieContesta(r, casa, evento = {}) {
 /** Lo que el gancho escribe para Claude Code: nada sin decidir; si no, la decisión para esa sola vez, sin reglas. */
 function salida(r) {
   if (!r || (r.decision !== 'allow' && r.decision !== 'deny')) return '';
+  // el motivo puede nombrar campos del pedido o una ruta de error: va en un solo renglón y con tope
+  const motivo = String(r.motivo || 'sin motivo').replace(/\s+/g, ' ').trim().slice(0, 200);
   const message = r.nadieContesta
-    ? `Esta sesión es de fondo y nadie contesta su ventana de permiso (${r.motivo}): el pedido se niega para que la sesión no quede trabada. Hacelo de otra forma que no pida permiso, seguí sin él, o mandale a la coordinadora qué necesitás y por qué.`
+    ? `Esta sesión es de fondo y nadie contesta su ventana de permiso (${motivo}): el pedido se niega para que la sesión no quede trabada. Hacelo de otra forma que no pida permiso, seguí sin él, o mandale a la coordinadora qué necesitás y por qué.`
     : 'La persona dijo que no a este pedido, desde la pestaña de la coordinadora: no corre. Seguí sin él, o avisale a la coordinadora qué necesitás y por qué.';
   const decision = r.decision === 'allow' ? { behavior: 'allow' } : { behavior: 'deny', message };
   return JSON.stringify({ hookSpecificOutput: { hookEventName: 'PermissionRequest', decision } });

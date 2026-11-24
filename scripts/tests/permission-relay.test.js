@@ -586,6 +586,11 @@ test('Fondo_PermisoQueNadieContesta_SeNiegaConMotivo (fila 91)', (t) => {
   const h = paraClaude(L, evento(), { pasos: [() => sesion(L.casa, COORD, { archivo: String(process.pid), pid: MUERTO, kind: 'interactive' })] });
   assert.strictEqual(h.decision.behavior, 'deny');
   assert.match(h.decision.message, /la coordinadora ya no está/);
+  // un motivo largo o con saltos de línea llega en un solo renglón y con tope
+  const largo = JSON.parse(PR.salida(PR.negarSiNadieContesta({ decision: null, deFondo: true, motivo: `a\nb ${'x'.repeat(500)}` }, lab(t).casa, evento()))).hookSpecificOutput.decision.message;
+  assert.ok(!largo.includes('\n'), 'sin saltos de línea');
+  assert.ok(largo.length < 500, 'con tope');
+  assert.match(largo, /\(a b x+\)/);
 });
 
 test('Fondo_LoQueNoEsDeFondoOLaPersonaDecide_NoCambia (fila 91)', (t) => {
