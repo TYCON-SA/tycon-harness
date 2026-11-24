@@ -3708,7 +3708,8 @@ function esDeLaHistoria(pedido, historia) {
   if (!historia.includes('.') || /^story\//.test(rama) || RAMA_DE_BOT.test(rama) || RAMA_DE_REVERT.test(rama)) return false;
   const titulo = String((pedido && pedido.title) || '').trim();
   if (TITULO_DE_REVERT.test(titulo)) return false;
-  const exacto = historia.replace(/\./g, '\\.');
+  // escape completo aunque `historia` ya llegue como dígitos y puntos (HISTORIA): la expresión no depende de esa guarda
+  const exacto = historia.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const tanda = '(?:\\s+[A-Z]\\d*)?';
   return new RegExp(`^${exacto}${tanda}(?::|\\s+[—-])`).test(titulo) || new RegExp(`\\(${exacto}${tanda}\\s*[),]`).test(titulo);
 }
