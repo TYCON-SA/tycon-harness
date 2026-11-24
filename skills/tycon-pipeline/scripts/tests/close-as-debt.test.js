@@ -56,9 +56,9 @@ function entorno({ todo = null, enHistoria = false } = {}) {
   // las sesiones con la firma dada en la ventana, con su vía (`ventana`, `click` o `mensaje`)
   const firmadas = new Map();
   const { conVentana } = require(path.join(RAIZ, 'scripts', 'tests', 'lib', 'window-passed.js'));
-  // `preload`: otro módulo que se carga después de la ventana
-  const correr = (script, args, sid, { preload = null } = {}) => {
-    const e = firmadas.has(sid) ? conVentana(env(sid), firmadas.get(sid) === 'ventana' ? {} : { via: firmadas.get(sid) }) : env(sid);
+  // `preload`: otro módulo que se carga después de la ventana; `env`: variables de más para el guion
+  const correr = (script, args, sid, { preload = null, env: extra = {} } = {}) => {
+    const e = { ...(firmadas.has(sid) ? conVentana(env(sid), firmadas.get(sid) === 'ventana' ? {} : { via: firmadas.get(sid) }) : env(sid)), ...extra };
     if (preload) e.NODE_OPTIONS = `${e.NODE_OPTIONS || ''} --require ${preload}`.trim();
     return spawnSync(process.execPath, [path.join(SCRIPTS, script), ...args], { encoding: 'utf8', env: e, input: '', cwd: repo });
   };
@@ -182,14 +182,21 @@ test('8.323-ExpectRedDeUnControl_LoFirmaComoElRojoEsperado — sin la firma no s
   assert.ok(log.some((l) => l.name === 'expect-red' && l.check === 'tests' && l.via === 'click'), 'el registro anota la vía');
 });
 
-/** Un módulo que envuelve `exigir` de la ventana y corre `cuerpo` después de la firma (la ejecución cambia mientras se firma). */
-function trasLaFirma(cuerpo) {
+/**
+ * Un módulo que envuelve `exigir` de la ventana y, después de la firma, cambia la ejecución: con `AFTER_SIGN=borrar`
+ * borra el marcador de `AFTER_SIGN_MARKER`; con `verde`, pone su control `tests` en verde. El texto es fijo: lo que
+ * cambia viaja por el ambiente.
+ */
+function trasLaFirma() {
   const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'preload-')), 'tras-la-firma.js');
   fs.writeFileSync(f, [
     "const Module = require('module'); const fs = require('fs'); const orig = Module._load;",
+    'const cambiar = () => { const a = process.env.AFTER_SIGN_MARKER;',
+    "  if (process.env.AFTER_SIGN === 'borrar') fs.rmSync(a, { force: true });",
+    "  if (process.env.AFTER_SIGN === 'verde') { const m = JSON.parse(fs.readFileSync(a, 'utf8')); m.checks.tests = 'green'; fs.writeFileSync(a, JSON.stringify(m)); } };",
     'Module._load = function (req) { const m = orig.apply(this, arguments);',
     "  if (/owner-window\\.js$/.test(req) && !m.__envuelto) { const ex = m.exigir; m.__envuelto = true;",
-    `    m.exigir = (o) => { const r = ex(o); ${cuerpo} return r; };`,
+    '    m.exigir = (o) => { const r = ex(o); cambiar(); return r; };',
     '    m.exigir.porPasada = ex.porPasada; }',
     '  return m; };',
   ].join('\n'));
@@ -204,9 +211,8 @@ test('F219-T3 ExpectRedYCloseAsDebt_CambiaMientrasSeFirma_NoEscribe @fila-219', 
   const E = entorno({ todo: '- [ ] [DEF-9.9-angular] subir angular\n' });
   E.arrancar('s-f219');
   E.escribir('s-f219', { ...E.leer('s-f219'), cierre: deuda, checks: { tests: 'red:exit=1' }, checksProvenance: { tests: 'test-gate' } });
-  const marcador = JSON.stringify(E.activo('s-f219'));
-  const verde = trasLaFirma(`const m = JSON.parse(fs.readFileSync(${marcador}, 'utf8')); m.checks.tests = 'green'; fs.writeFileSync(${marcador}, JSON.stringify(m));`);
-  const r = E.correr('marker.js', ['expect-red', 'tests', '--tests', 'T2'], 's-f219', { preload: verde });
+  const r = E.correr('marker.js', ['expect-red', 'tests', '--tests', 'T2'], 's-f219',
+    { preload: trasLaFirma(), env: { AFTER_SIGN: 'verde', AFTER_SIGN_MARKER: E.activo('s-f219') } });
   assert.strictEqual(r.status, 2, r.stderr);
   assert.match(r.stderr, /la ejecución cambió mientras se firmaba/);
   const m = E.leer('s-f219');
@@ -215,8 +221,8 @@ test('F219-T3 ExpectRedYCloseAsDebt_CambiaMientrasSeFirma_NoEscribe @fila-219', 
   // cerrar como deuda una ejecución que se cierra mientras se firma
   const C = entorno({ todo: '- [ ] [DEF-9.9-angular] subir angular\n' });
   C.arrancar('s-f219b');
-  const borrar = trasLaFirma(`fs.rmSync(${JSON.stringify(C.activo('s-f219b'))}, { force: true });`);
-  const c = C.correr('marker.js', CERRAR, 's-f219b', { preload: borrar });
+  const c = C.correr('marker.js', CERRAR, 's-f219b',
+    { preload: trasLaFirma(), env: { AFTER_SIGN: 'borrar', AFTER_SIGN_MARKER: C.activo('s-f219b') } });
   assert.strictEqual(c.status, 2, c.stderr);
   assert.match(c.stderr, /No se escribió nada/);
   assert.ok(!fs.existsSync(C.activo('s-f219b')), 'no vuelve a escribir el marcador cerrado');
