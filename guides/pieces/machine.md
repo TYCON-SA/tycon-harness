@@ -130,13 +130,23 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 ## scripts/hooks/stuck-pr-notice.js
 
-**Qué es:** Avisa al abrir la sesión, una línea por pedido, qué pedidos con auto-completar llevan más de una hora en choque con su destino, o sin choque y sin entrar.
+**Qué es:** Avisa al abrir la sesión qué pedidos con auto-completar llevan más de una hora en choque, o limpios y sin entrar, y los pedidos e issues de gente de afuera en el repo público de GitHub (`scripts/lib/outside-contributions.js`).
 
-**Por qué existe:** Un pedido con auto-completar que choca, o que está limpio y no entra, no le avisa a nadie: se queda abierto días mientras todos creen que ya entró. Lee los repos del arnés que declara `team-repos.json` por la capa de plataforma, con tope de 5 s y una foto de 10 minutos; si no pudo leer dice «no medido», nunca calla como si no hubiera nada.
+**Por qué existe:** Un pedido con auto-completar que choca, o que no entra, no le avisa a nadie: queda abierto días mientras todos creen que entró. Si no pudo leer dice «no medido», nunca calla como si no hubiera nada.
 
 **Quién la usa:** El arranque de sesión, en los repos del arnés. Umbral: `TYCON_STUCK_PR_HOURS` (1). Se apaga con `TYCON_STUCK_PR_NOTICE=0`.
 
-**Dónde se prueba:** `scripts/tests/stuck-pr-notice.test.js`
+**Dónde se prueba:** `scripts/tests/stuck-pr-notice.test.js`, `scripts/tests/outside-contributions.test.js`
+
+## scripts/lib/outside-contributions.js
+
+**Qué es:** Mide los pedidos y los issues abiertos de gente de afuera del equipo en el repo público, y si la CI de un pedido espera aprobación.
+
+**Por qué existe:** Un pedido desde un fork no corre su CI hasta que alguien del equipo la aprueba, y un issue de afuera no le llega a nadie: sin aviso, el de afuera espera días. Quién es de afuera lo decide la regla del freno de pedidos de afuera (`scripts/lib/external-pr.js`). Sin red, o sin saber quién es del equipo, dice «no medido».
+
+**Quién la usa:** `scripts/hooks/stuck-pr-notice.js` al arrancar y `scripts/nightly/open-prs/open-prs.js --outside-from` en el resumen diario.
+
+**Dónde se prueba:** `scripts/tests/outside-contributions.test.js`
 
 ## scripts/hooks/extension-notices.js
 
@@ -258,7 +268,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 ## scripts/hooks/prod-access-guard.js
 
-_(scripts/hooks/prod-access-guard.js + scripts/production/ + guides/produccion-con-permiso.md)_
+_(scripts/hooks/prod-access-guard.js + scripts/production/ + guides/production-with-permission.md)_
 
 **Qué es:** Exige que una persona apruebe, de a una, cada consulta a una base de producción, y mantiene la contraseña del Llavero fuera de la conversación.
 

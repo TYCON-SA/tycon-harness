@@ -368,3 +368,12 @@ test('T14 Nightly_GithubEntries: clone-list, la identidad de la ficha y el cruce
   fcfg.github.issues_enabled = false;
   assert.deepStrictEqual(noc.archivarIgnorados(path.join(f, 'pend'), '2026-11-30', fcfg, null), ['zzz99999'], 'apagados: la regla de siempre');
 });
+
+// 🔴 Falla con: los avisos de dependencias como issues de GitHub viven en el núcleo (scripts/nightly/dependencies/), y
+// work-items.js los carga nombrando la plataforma; son del conector, y la entrada los busca por el conector
+test('DependencyNotices_LoDeGitHubViveEnSuConector: el archivo está en el conector y work-items.js no nombra su ruta', () => {
+  assert.ok(fs.existsSync(path.join(ROOT, 'integrations', 'github', 'scripts', 'dependency-notices.js')), 'está en integrations/github/scripts/');
+  assert.ok(!fs.existsSync(path.join(DEP, 'github-issues.js')), 'ya no está en el núcleo');
+  assert.doesNotMatch(fs.readFileSync(WI, 'utf8'), /github-issues\.js'\)|'integrations', 'github'/, 'work-items.js lo busca por el conector, no por su nombre');
+  assert.strictEqual(typeof require(path.join(ROOT, 'integrations', 'github', 'scripts', 'dependency-notices.js')).main, 'function');
+});

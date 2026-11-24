@@ -1085,7 +1085,8 @@ const SENALES_RUN_CHECK = { SIGHUP: 1, SIGINT: 2, SIGTERM: 15 };
 // `pipeline.js next` los leen para no re-ejecutar (evita doble timer / doble
 // transición de WI al retomar cross-session).
 // `atddBypass`: escape consciente del portón pre-edit de ATDD (on-atdd-preedit.js) —
-// para el refactor legítimo sobre red preexistente. El uso queda en bypass.log, no es silencioso.
+// para el refactor legítimo sobre red preexistente. Pide la firma del dueño para la ejecución (lib/atdd-skip.js); el
+// uso queda en bypass.log, no es silencioso.
 // `waitingForHuman` — EL TERCER ESTADO del portón de autonomía.
 // El Stop-hook distingue dos cosas: "podés cerrar" (todo verde) y "no cierres, arreglá" (algo en
 // rojo). Este flag cubre la tercera, que es la más común: "le pregunté al dev y estoy esperando". Y como
