@@ -60,7 +60,7 @@ const FRENOS = {
   // alguien agrega una regla al freno, y una lista que se desactualiza sola publica todo como `otra`.
   'safety-guard': { forma: /^[A-Z]{2,8}-[CW][0-9]{1,2}$/, veredictos: ['bloqueo', 'escape'] },
   'test-scope-guard': { reglas: ['suite-completa'], veredictos: ['bloqueo', 'paso', 'escape'] },
-  'pr-uno-por-repo': { reglas: ['pr-duplicado'], veredictos: ['bloqueo', 'paso', 'escape'] },
+  'pr-uno-por-repo': { reglas: ['pr-duplicado'], veredictos: ['bloqueo', 'paso', 'escape', 'paso-por-perfil'] },
   'pr-sin-auto-complete': { reglas: ['sin-auto-complete'], veredictos: ['bloqueo', 'paso', 'escape'] },
   // Encolar un pedido del arnés que toca el instalador sin las portables en verde (el mismo hook que el de arriba).
   'pr-sin-portables': { reglas: ['sin-portables'], veredictos: ['bloqueo', 'paso', 'escape'] },

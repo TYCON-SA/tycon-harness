@@ -26,6 +26,8 @@ Para un cambio chico, el proceso prevé un camino corto, con menos pasos. Para c
 
 Una vez terminado, el trabajo sigue por el pipeline de integración y despliegue continuo. El arnés trae pipelines listos para algunas plataformas; para las demás, se suma al que ya tiene la organización. Ahí se construye, se vuelven a correr las pruebas y se despliega en un entorno de prueba. En los pipelines que trae el arnés, a producción se pasa sólo con la aprobación de una persona.
 
+El arnés trabaja con GitHub, Azure DevOps y GitLab (el público o una instalación propia): el pedido de trabajo de cada historia, el pedido de cambio y su CI van por cualquiera de las tres. GitLab tiene límites: el arnés todavía no lee su cola de merge, sus despliegues ni la regla de aprobación de una rama; el repo del equipo va en GitHub o en Azure DevOps, y los procesos de la noche y el sitio todavía no usan repos de GitLab. El detalle, en [GitLab como plataforma del equipo](guides/integrations/gitlab-platform.md).
+
 Y nada de esto depende de que el modelo no se olvide o de que el desarrollador se lo recuerde: los controles viven afuera del modelo. Por ejemplo, si un agente intenta cerrar una historia sin la evidencia de sus pruebas, el arnés lo frena en la máquina. Antes de que el trabajo se sume al código, el pipeline de integración continua verifica que la historia traiga la evidencia de sus pruebas y la constancia de quién la revisó. Si hace falta saltear un control, queda registrado y el responsable lo ve. Aflojar un control lo aprueba siempre una persona. Y cada noche, los controles del arnés se ponen a prueba con ejemplos armados para eso: lo que cada uno tiene que frenar y lo que tiene que dejar pasar.
 
 Así, cada trabajo que pasa por el proceso queda con su historia, sus pruebas, qué revisores corrieron y quién aprobó lo delicado. Y lo que entra por el camino corto, o directamente por fuera del arnés, no se pierde: el sitio cuenta cuántos cambios entraron sin historia. Cuando un cliente pregunta cómo se trabaja con IA en su producto, todo queda registrado y se puede mostrar. Las historias, la evidencia de las pruebas y la constancia de los revisores quedan guardadas en los repositorios del propio proyecto.
@@ -317,7 +319,7 @@ Un ejemplo: en ACME, Pedro es el admin y Juan programa.
    necesita cada caso y dónde vive cada configuración, en [Con sitio o sin sitio](getting-started/reference.es.md#con-sitio-o-sin-sitio).
 3. Juan instala con npx y el repo del equipo: `npx @tyconsa/harness@latest --team acme/harness-team-profile` si está en
    GitHub, o `npx @tyconsa/harness@latest --team <la dirección del repo>` si está en Azure DevOps (la forma de la
-   dirección, en [Azure DevOps](guides/integrations/ado-projects.md#la-url-de-un-repo)). Como ese repo lo ve sólo el equipo, antes de bajar nada la línea mira si lo puede leer y, si
+   dirección, en [Azure DevOps](guides/integrations/ado-projects.md#la-url-de-un-repo)); en GitLab, el repo del equipo todavía no va. Como ese repo lo ve sólo el equipo, antes de bajar nada la línea mira si lo puede leer y, si
    no, le pide el permiso de lectura. Desde ahí, cada actualización le trae también lo del equipo.
 
 Cómo se extiende el arnés para tu organización, con un recorrido de ejemplo, en un

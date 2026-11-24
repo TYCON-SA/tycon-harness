@@ -30,7 +30,8 @@ const path = require('path');
 
 const stateDirOf = (home) => require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js')).stateDir(home);
 
-const VEREDICTOS = ['bloqueo', 'aviso', 'escape', 'paso'];
+// `paso-por-perfil`: no frenó porque el dueño relajó el control para el perfil del modelo (lib/control-profile.js)
+const VEREDICTOS = ['bloqueo', 'aviso', 'escape', 'paso', 'paso-por-perfil'];
 const NO_MEDIDO = 'no medido';
 const SIN_MODELO = 'sin modelo';
 // Cómo dice gates.log qué decidió un control: unos en `status`, otros en `action`. Lo que no es una de estas (no medido,
@@ -75,7 +76,7 @@ function contar({ frenos, firmas }) {
   const porControl = new Map();
   for (const f of frenos.filas) {
     const clave = `${f.freno || 'sin freno'}\u0000${f.regla || 'sin regla'}`;
-    if (!porControl.has(clave)) porControl.set(clave, { freno: f.freno || 'sin freno', regla: f.regla || 'sin regla', bloqueo: 0, aviso: 0, escape: 0, paso: 0, otro: 0 });
+    if (!porControl.has(clave)) porControl.set(clave, { freno: f.freno || 'sin freno', regla: f.regla || 'sin regla', bloqueo: 0, aviso: 0, escape: 0, paso: 0, 'paso-por-perfil': 0, otro: 0 });
     const c = porControl.get(clave);
     if (VEREDICTOS.includes(f.veredicto)) c[f.veredicto]++; else c.otro++;
   }
@@ -118,7 +119,7 @@ function modelosDe(sesiones, { home, modelOf } = {}) {
   return out;
 }
 
-const filaVacia = () => ({ decidio: 0, bloqueo: 0, aviso: 0, escape: 0, paso: 0, a: 0, b: 0, c: 0, sinHuella: 0, sinDecision: 0 });
+const filaVacia = () => ({ decidio: 0, bloqueo: 0, aviso: 0, escape: 0, paso: 0, 'paso-por-perfil': 0, a: 0, b: 0, c: 0, sinHuella: 0, sinDecision: 0 });
 
 /**
  * Por freno y por modelo: los veredictos y las marcas de cada bloqueo. Un bloqueo cuyo mismo comando (misma huella, mismo
@@ -232,12 +233,12 @@ function revision(entrada, hoy) {
 
 function tablaPorModelo(l, porNombre, clasif, hoy, marcas) {
   const resto = marcas ? ' | (a) pasó con firma después | (b) pasó sin firma después | (c) no se repitió | sin huella' : ' | Sin decisión (no medido, desconocido)';
-  l.push(`| Control | Clasificación | Revisar antes de | Modelo | Tuvo que decidir | Frenó | Avisó | Pasó con firma | Dejó pasar${resto} |`);
-  l.push(`|---|---|---|---|---:|---:|---:|---:|---:${marcas ? '|---:|---:|---:|---:' : '|---:'}|`);
+  l.push(`| Control | Clasificación | Revisar antes de | Modelo | Tuvo que decidir | Frenó | Avisó | Pasó con firma | Dejó pasar | Pasó por el perfil${resto} |`);
+  l.push(`|---|---|---|---|---:|---:|---:|---:|---:|---:${marcas ? '|---:|---:|---:|---:' : '|---:'}|`);
   for (const nombre of [...porNombre.keys()].sort()) {
     const r = revision(clasif.entradas[nombre], hoy);
     for (const [modelo, c] of [...porNombre.get(nombre).entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
-      l.push(`| ${nombre} | ${r.tipo} | ${r.fecha} | ${modelo} | ${c.decidio} | ${c.bloqueo} | ${c.aviso} | ${c.escape} | ${c.paso}${marcas ? ` | ${c.a} | ${c.b} | ${c.c} | ${c.sinHuella}` : ` | ${c.sinDecision}`} |`);
+      l.push(`| ${nombre} | ${r.tipo} | ${r.fecha} | ${modelo} | ${c.decidio} | ${c.bloqueo} | ${c.aviso} | ${c.escape} | ${c.paso} | ${c['paso-por-perfil'] || 0}${marcas ? ` | ${c.a} | ${c.b} | ${c.c} | ${c.sinHuella}` : ` | ${c.sinDecision}`} |`);
     }
   }
 }
@@ -249,8 +250,8 @@ function markdown({ frenos, firmas, conteo, desde, ahora, extra }) {
   if (frenos.estado !== 'ok') l.push(`${NO_MEDIDO}: ${estadoDe(frenos, 'frenos.jsonl')}.`);
   else if (!conteo.controles.length) l.push('Ningún freno anotó una decisión en el período.');
   else {
-    l.push('| Freno | Regla | Frenó | Avisó | Pasó con firma | Dejó pasar | Falsas alarmas conocidas |', '|---|---|---:|---:|---:|---:|---|');
-    for (const c of conteo.controles) l.push(`| ${c.freno} | ${c.regla} | ${c.bloqueo} | ${c.aviso} | ${c.escape} | ${c.paso} | ${NO_MEDIDO} |`);
+    l.push('| Freno | Regla | Frenó | Avisó | Pasó con firma | Dejó pasar | Pasó por el perfil | Falsas alarmas conocidas |', '|---|---|---:|---:|---:|---:|---:|---|');
+    for (const c of conteo.controles) l.push(`| ${c.freno} | ${c.regla} | ${c.bloqueo} | ${c.aviso} | ${c.escape} | ${c.paso} | ${c['paso-por-perfil']} | ${NO_MEDIDO} |`);
     const otros = conteo.controles.reduce((n, c) => n + c.otro, 0);
     if (otros) l.push('', `${otros} renglón(es) con un veredicto que no es ninguno de ${VEREDICTOS.join(', ')}.`);
   }
