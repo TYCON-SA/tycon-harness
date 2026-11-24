@@ -2214,6 +2214,8 @@ function codexAgentThreads(codexHome, problems) {
   try {
     const { DatabaseSync } = require('node:sqlite');
     db = new DatabaseSync(path.join(codexHome, newest), { readOnly: true });
+    // Codex toma su base unos instantes mientras escribe: se espera hasta un segundo antes de decir que no se pudo leer
+    db.exec('PRAGMA busy_timeout = 1000');
     const cols = new Set(db.prepare('PRAGMA table_info(threads)').all().map((c) => c.name));
     const where = [cols.has('source') ? "source = 'exec'" : null, cols.has('thread_source') ? "thread_source = 'subagent'" : null].filter(Boolean);
     if (!where.length) return unknown();
@@ -2887,4 +2889,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { answers, workedAfterWait, hiddenCardsLine, otherProjectsOf, readOpenPrs, ownerWaitsOf, closedByPid,removeClosed, markRecipients, markClosedSessions, closedSessionLastAt, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, boardLine, findTask, boardEditedNotice, syncBoardFromPhoto, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive, buildTables, rowPrsNow, applyRowPrs, settleRowPrs, workCards, readTranscripts, readLastWrites, machineLoad, memoryCommand, MODULES, openStories };
+module.exports = { answers, codexAgentThreads, workedAfterWait, hiddenCardsLine, otherProjectsOf, readOpenPrs, ownerWaitsOf, closedByPid,removeClosed, markRecipients, markClosedSessions, closedSessionLastAt, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, boardLine, findTask, boardEditedNotice, syncBoardFromPhoto, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive, buildTables, rowPrsNow, applyRowPrs, settleRowPrs, workCards, readTranscripts, readLastWrites, machineLoad, memoryCommand, MODULES, openStories };

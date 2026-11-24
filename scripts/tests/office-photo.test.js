@@ -1384,6 +1384,19 @@ test('T301 Agents_UnknownBase: si la base de Codex no se puede leer no se oculta
   assert.strictEqual(said.length, 1);
 });
 
+test('T301b Agents_BaseTakenAWhile_WaitsAndReadsIt @fila-83c: la base de Codex tomada por otro proceso unos instantes no es «no pude leer»', async () => {
+  const { holdCodexBase, exited } = require('./lib/codex-base-lock.js');
+  const { codexAgentThreads } = require(OFFICE);
+  const m = parkMachine();
+  const codexHome = toyCodexBase(m, [{ id: 'agente-1', source: 'exec' }]);
+  const child = await holdCodexBase(path.join(codexHome, 'state_5.sqlite'), 300);
+  const problems = [];
+  const agents = codexAgentThreads(codexHome, problems);
+  await exited(child);
+  assert.deepStrictEqual(problems, []);
+  assert.deepStrictEqual([...agents], ['agente-1']);
+});
+
 test('T302 Agents_CountedForTheirSession: la foto cuenta los agentes bajo el proceso de la sesión; sin procesos no dice cuántos', async () => {
   const m = parkMachine();
   const now = Date.now();
