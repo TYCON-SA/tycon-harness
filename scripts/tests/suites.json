@@ -5327,6 +5327,12 @@
       "requiere": []
     },
     {
+      "__nota": "una máquina con una actualización que falló no está «al día»: la mirada dice la versión que falló, el motivo y la hora, y no borra el aviso de la falla.",
+      "raiz": "arnes",
+      "ruta": "tests/release-check-failed.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.26, tanda F1 (T55): el freno antes de publicar disparado por un `git push` DE VERDAD, con la carpeta global de hooks puesta como git la pone (scripts/hooks/git-pre-push-global.sh). Mira el efecto: la ref remota no cambia. Desde un clon recién hecho; con un pre-push propio que acepta y que rechaza; un repo que no es del arnés (misma salida que sin hook); sin el guion y sin node; una rama que trae su propio freno saboteado. Unos 10 segundos.",
       "raiz": "arnes",
       "ruta": "tests/githook-pre-push.test.sh",
