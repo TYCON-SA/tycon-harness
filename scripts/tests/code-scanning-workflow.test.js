@@ -16,6 +16,8 @@
  *   · T5 — cada `uses:` va fijado por el sha completo, con el tag como comentario.
  *   · T6 — los mismos tres lenguajes que analizaba la configuración de fábrica, sin compilar, con su categoría.
  *   · T7 — los únicos workflows del repo público son cinco, y `.github/workflows/` no tiene otros.
+ *   · T8 — las formas de evasión que ve la forma exacta, y el checkout sin la credencial guardada.
+ *   · T9 — los workflows públicos que no son `ci.yml` piden la constancia del dueño al cambiar (el inventario de la base).
  *
  * Correr: node --test scripts/tests/code-scanning-workflow.test.js
  */
@@ -70,6 +72,8 @@ test('T4 CodeScanning_Permissions_Exact @story-8.331 @ac-3 @ac-6', () => {
   assert.ok(broken('  security-events: write\n', '  security-events: write\n  pull-requests: write\n').includes('scanning-permissions'), 'un permiso de más: rojo');
   assert.ok(broken('    runs-on: ubuntu-latest\n', '    runs-on: ubuntu-latest\n    permissions:\n      contents: write\n').includes('scanning-permissions'), 'permisos por job: rojo');
   assert.ok(broken('          build-mode: none\n', '          build-mode: none\n          token: ${{ secrets.GITHUB_TOKEN }}\n').includes('secrets'), 'un secreto: rojo');
+  // un comentario dentro del bloque no cambia los permisos: la regla no lo toma por un permiso
+  assert.ok(!broken('  security-events: write\n', '  security-events: write\n  # el de subir resultados\n').includes('scanning-permissions'), 'un comentario: falso rojo');
 });
 
 // 🔴 Falla con: una acción fijada por un tag que alguien puede mover.
@@ -86,6 +90,18 @@ test('T6 CodeScanning_Languages_ThreeNoBuild @story-8.331 @ac-1 @ac-6', () => {
   assert.ok(broken('[actions, javascript-typescript, python]', '[actions, javascript-typescript]').includes('scanning-languages'), 'un lenguaje menos: rojo');
   assert.ok(broken('          build-mode: none\n', '          build-mode: autobuild\n').includes('scanning-languages'), 'compilar: rojo');
   assert.ok(broken('          category: /language:${{ matrix.language }}\n', '          category: otra\n').includes('scanning-languages'), 'otra categoría: rojo (las alertas dejan de ser las mismas)');
+  // la palabra en un comentario no es compilar
+  assert.ok(!broken('name: code-scanning\n', 'name: code-scanning\n# sin build manual\n').includes('scanning-languages'), 'un comentario: falso rojo');
+});
+
+// 🔴 Falla con: un workflow público que un pedido (o un fork) puede cambiar sin la constancia del dueño.
+test('T9 Workflows_PublicOnesSignOnChange @story-8.331 @ac-11', () => {
+  const inv = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'ci', 'controls-from-base.json'), 'utf8'));
+  const forma = (inv.controls || []).find((c) => c.name === 'workflow-shape');
+  assert.ok(forma, 'el inventario de la base tiene el control workflow-shape');
+  const firmados = (forma.rules || []).filter((r) => r && r.sign_on_change).map((r) => r.path).sort();
+  const publicos = WF.WORKFLOWS.filter((w) => w !== 'ci.yml').map((w) => `.github/workflows/${w}`).sort();
+  assert.deepStrictEqual(firmados, publicos, 'cada workflow público que no es ci.yml pide la constancia al cambiar');
 });
 
 // 🔴 Falla con: una forma de evasión que la regla con nombre no ve y la forma exacta sí, o la credencial del checkout guardada.

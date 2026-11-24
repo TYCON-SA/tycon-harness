@@ -926,9 +926,11 @@ const SCANNING_RULES = [
   },
   {
     id: 'scanning-permissions',
-    check(lines, text) {
+    check(lines) {
       const all = lines.filter((l) => l.code && /^(?:-\s+)?["']?permissions["']?\s*:/.test(l.body));
-      if (all.length !== 1 || !/^permissions:\n {2}contents: read\n {2}actions: read\n {2}security-events: write\njobs:/m.test(text.replace(/\r\n/g, '\n'))) {
+      // sólo las líneas de código: un comentario dentro del bloque no cambia los permisos
+      const code = lines.filter((l) => l.code).map((l) => l.raw).join('\n');
+      if (all.length !== 1 || !/^permissions:\n {2}contents: read\n {2}actions: read\n {2}security-events: write\njobs:/m.test(code)) {
         return 'un solo bloque `permissions`, arriba de todo, con `contents: read`, `actions: read` y `security-events: write`, y nada más';
       }
       return null;
@@ -946,10 +948,11 @@ const SCANNING_RULES = [
   },
   {
     id: 'scanning-languages',
-    check(lines, text) {
+    check(lines) {
       const has = (raw) => lines.filter((l) => l.code && l.raw === raw).length === 1;
+      const code = lines.filter((l) => l.code).map((l) => l.raw).join('\n');
       if (!has('        language: [actions, javascript-typescript, python]')) return 'analiza los tres lenguajes de la configuración de fábrica: `actions`, `javascript-typescript` y `python`';
-      if (!has('          build-mode: none') || /\b(autobuild|manual)\b/.test(text)) return 'sin compilar (`build-mode: none`): compilar es correr código de afuera';
+      if (!has('          build-mode: none') || /\b(autobuild|manual)\b/.test(code)) return 'sin compilar (`build-mode: none`): compilar es correr código de afuera';
       if (!has('          category: /language:${{ matrix.language }}')) return 'la categoría de cada lenguaje es `/language:<lenguaje>`, la de la configuración de fábrica: con otra, las alertas dejan de ser las mismas';
       return null;
     },
