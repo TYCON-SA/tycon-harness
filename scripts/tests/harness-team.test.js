@@ -1661,14 +1661,14 @@ test('T33c Team_RenamesMap_SplitScript_NameInItsPartsCounts', () => {
   const relmFile = path.join(v, '.tycon-release.json');
   const relm = JSON.parse(fs.readFileSync(relmFile, 'utf8'));
   const put = (p, text) => { const f = path.join(v, ...p.split('/')); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, text); relm.files.push({ path: p, blob: TEAM.blobOf(Buffer.from(text)) }); };
-  put('scripts/ci/split.js', "'use strict';\n// el despachador: carga sus partes\nrequire('./lib/split-args.js');\nrequire('./lib/split-extra-named.js');\n");
-  // una parte que por su nombre podría ser del hermano (lib/split-extra-*.js), pero que el despachador nombra: es suya
-  put('scripts/ci/lib/split-extra-named.js', "'use strict';\nconst OPTIONS = ['named-by-dispatcher'];\nmodule.exports = OPTIONS;\n");
+  // el despachador carga una parte con el nombre armado: su texto no la nombra entera
+  put('scripts/ci/split.js', "'use strict';\n// el despachador: carga sus partes\nrequire('./lib/split-args.js');\nconst kind = 'extra';\nrequire(`./lib/split-${kind}-built.js`);\n");
   put('scripts/ci/lib/split-args.js', "'use strict';\n// las opciones del guion partido\nconst OPTIONS = ['marks'];\nmodule.exports = OPTIONS;\n");
   put('scripts/ci/lib/other-args.js', "'use strict';\nconst OPTIONS = ['elsewhere'];\nmodule.exports = OPTIONS;\n");
-  // un guion hermano cuyo nombre empieza igual (split-extra.js): sus partes (lib/split-extra-*.js) son suyas, no de split.js
+  // un guion hermano cuyo nombre empieza igual (split-extra.js): una parte lib/split-extra-*.js puede ser de los dos
   put('scripts/ci/split-extra.js', "'use strict';\nrequire('./lib/split-extra-args.js');\n");
   put('scripts/ci/lib/split-extra-args.js', "'use strict';\nconst OPTIONS = ['sibling-only'];\nmodule.exports = OPTIONS;\n");
+  put('scripts/ci/lib/split-extra-built.js', "'use strict';\nconst OPTIONS = ['built-name'];\nmodule.exports = OPTIONS;\n");
   // una ruta con barras invertidas en la lista de la versión: en Windows apunta a otro archivo, no es una parte
   put('scripts/ci/lib/split-x\\..\\..\\b.js', "'use strict';\nconst OPTIONS = ['backslashed'];\nmodule.exports = OPTIONS;\n");
   fs.writeFileSync(relmFile, JSON.stringify(relm));
@@ -1687,14 +1687,12 @@ test('T33c Team_RenamesMap_SplitScript_NameInItsPartsCounts', () => {
   // en ningún lado: no está
   const nada = judge({ kind: 'option', old: 'nunca', new: 'never-there', where: 'scripts/ci/split.js', batch: 'X' });
   assert.ok(nada.problems.some((x) => /entries\[8\].*never-there/.test(x.reason)), JSON.stringify(nada.problems));
-  // sólo en la parte de un guion hermano que empieza igual: no está en split.js, y sí en el hermano
-  const hermano = judge({ kind: 'option', old: 'hermano', new: 'sibling-only', where: 'scripts/ci/split.js', batch: 'X' });
-  assert.ok(hermano.problems.some((x) => /entries\[8\].*sibling-only.*scripts\/ci\/split\.js/.test(x.reason)), JSON.stringify(hermano.problems));
-  const delHermano = judge({ kind: 'option', old: 'hermano', new: 'sibling-only', where: 'scripts/ci/split-extra.js', batch: 'X' });
-  assert.equal(delHermano.ok, true, JSON.stringify(delHermano.problems));
-  // la parte dudosa que el despachador nombra cuenta para él: rechazarla tiraría la actualización de todo el equipo
-  const nombrada = judge({ kind: 'option', old: 'nombrada', new: 'named-by-dispatcher', where: 'scripts/ci/split.js', batch: 'X' });
-  assert.equal(nombrada.ok, true, JSON.stringify(nombrada.problems));
+  // una parte que por su nombre puede ser de dos guiones cuenta para los dos, la cargue quien la cargue y como sea: un
+  // falso «está» sólo deja pasar un mapa; un falso «no está» tira la actualización de todo el equipo
+  for (const [name, where] of [['built-name', 'scripts/ci/split.js'], ['sibling-only', 'scripts/ci/split.js'], ['sibling-only', 'scripts/ci/split-extra.js']]) {
+    const r = judge({ kind: 'option', old: 'dudosa', new: name, where, batch: 'X' });
+    assert.equal(r.ok, true, `${name} en ${where}: ${JSON.stringify(r.problems)}`);
+  }
   // sólo en una ruta con barras invertidas: no cuenta como parte
   const barras = judge({ kind: 'option', old: 'barras', new: 'backslashed', where: 'scripts/ci/split.js', batch: 'X' });
   assert.ok(barras.problems.some((x) => /entries\[8\].*backslashed/.test(x.reason)), JSON.stringify(barras.problems));

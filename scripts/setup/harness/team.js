@@ -724,19 +724,13 @@ function renamesProblems(layerDir, versionDir, idx) {
     return texts.get(p);
   };
   // las partes de un guion partido que trae la versión: `<carpeta>/lib/<nombre>-*.<ext>`, sin subcarpetas ni barras
-  // invertidas. Una que por su nombre también podría ser de un guion hermano que empieza igual (`<nombre>-<algo>.<ext>`
-  // en la misma carpeta) cuenta sólo si `text`, el texto del guion, la nombra: si no, es del hermano
-  const partsOf = (p, text) => {
+  // invertidas. Una que por su nombre también podría ser de un guion hermano que empieza igual (`<nombre>-<algo>.<ext>`)
+  // cuenta para los dos: un falso «está» sólo deja pasar un mapa, y un falso «no está» tira la actualización del equipo
+  const partsOf = (p) => {
     const m = /^(.*\/)?([^/]+)\.(js|mjs|cjs)$/.exec(p);
     if (!m) return [];
-    const dir = m[1] || '';
-    const ext = `.${m[3]}`;
-    const pre = `${dir}lib/${m[2]}-`;
-    const hermanos = idx.paths.filter((x) => x.startsWith(`${dir}${m[2]}-`) && x.endsWith(ext) && !x.slice(dir.length).includes('/'))
-      .map((x) => `${dir}lib/${x.slice(dir.length, -ext.length)}-`);
-    const nombrada = (x) => text.includes(x.slice(`${dir}lib/`.length, -ext.length));
-    return idx.paths.filter((x) => x.startsWith(pre) && x.endsWith(ext) && !x.slice(pre.length).includes('/') && !x.includes('\\')
-      && (!hermanos.some((h) => x.startsWith(h)) || nombrada(x)));
+    const pre = `${m[1] || ''}lib/${m[2]}-`;
+    return idx.paths.filter((x) => x.startsWith(pre) && x.endsWith(`.${m[3]}`) && !x.slice(pre.length).includes('/') && !x.includes('\\'));
   };
   // la regla de rutas del lector, envuelta: es código de la versión y esta función nunca tira
   const pathWhy = (p, kind) => { try { return LN.pathProblem(p, kind); } catch (err) { return `no se pudo juzgar con el lector de la versión (${(err && err.message) || err})`; } };
@@ -769,7 +763,7 @@ function renamesProblems(layerDir, versionDir, idx) {
       if (typeof t !== 'string') problems.push(at(`${who}: no pude leer ${e.where} de la versión (${t.error}) para buscar ${name}`));
       else if (!t.includes(name)) {
         // un guion partido: el nombre puede vivir en una de sus partes de lib/
-        const parts = partsOf(e.where, t);
+        const parts = partsOf(e.where);
         const inPart = parts.some((p) => { const tp = textOf(p); return typeof tp === 'string' && tp.includes(name); });
         if (!inPart) problems.push(at(`${who}: el nombre nuevo ${name} no está en ${e.where} de la versión${parts.length ? ' ni en sus partes de lib/' : ''}`));
       }
