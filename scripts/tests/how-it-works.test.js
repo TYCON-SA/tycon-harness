@@ -830,7 +830,7 @@ const VIEJOS = /Validar la story(?! en)|Cerrar en ADO/;
 test('T25 ComoTrabaja_NingunNombreViejoDePaso @story-2.61.3 @ac-1 — ningún «Validar la story» ni «Cerrar en ADO» como nombre de paso', () => {
   // «Validar la story en …» es el pedido al validador, no el nombre del paso
   const archivos = ['scripts/site/texts.js', 'skills/tycon-pipeline/scripts/on-prompt.js', 'skills/tycon-pipeline/scripts/lib/story-gate.js',
-    'skills/tycon-pipeline/scripts/pipeline.js', 'skills/tycon-pipeline/scripts/lib/steps.js', 'mods/harness-mods/hooks/steps.mjs',
+    ...require(path.join(path.join(SCRIPTS, 'tests'), 'lib', 'pipeline-source.js')).files().map((f) => path.relative(ROOT, f)), 'skills/tycon-pipeline/scripts/lib/steps.js', 'mods/harness-mods/hooks/steps.mjs',
     'skills/tycon-pipeline/SKILL.md', 'skills/tycon-pipeline/steps/step-01-start.md', 'skills/tycon-pipeline/steps/step-02-validate-story.md',
     'skills/tycon-pipeline/steps/close-work-item.md', 'guides/organization-site.md'];
   for (const a of archivos) {

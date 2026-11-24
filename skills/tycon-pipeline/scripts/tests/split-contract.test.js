@@ -21,8 +21,11 @@ const { spawnSync } = require('child_process');
 
 const SCRIPTS = path.resolve(__dirname, '..');
 const FOTO = path.join(__dirname, 'fixtures', 'split-contract', 'marker-before.json');
+// la de pipeline.js se graba aparte (`SPLIT_CONTRACT_RECORD=pipeline`), sobre el pipeline.js sin partir
+const FOTO_PIPELINE = path.join(__dirname, 'fixtures', 'split-contract', 'pipeline-before.json');
 const SID = 'ses-contrato-8163';
 const GRABAR = process.env.SPLIT_CONTRACT_RECORD === '1';
+const GRABAR_PIPELINE = process.env.SPLIT_CONTRACT_RECORD === 'pipeline';
 
 const FUERA_DEL_ENTORNO = ['TYCON_GUIDES_DIR', 'TCG', 'NODE_TEST_CONTEXT', 'TYCON_SKILLS_DIR', 'TYCON_HOME', 'TYCON_STATE_DIR',
   'TYCON_AUTO_SNAPSHOT', 'TYCON_SNAPSHOT_GUARD', 'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'TYCON_SESSION_ID',
@@ -182,7 +185,73 @@ const CASOS = [
   { id: 'sin-comando', argv: [] },
 ];
 
-const reemplazar = (s, m) => String(s).replace(/\{REPO\}/g, m.repo).replace(/\{STORY\}/g, m.story).replace(/\{HOME\}/g, m.home);
+/**
+ * Los casos de pipeline.js: al menos uno por subcomando, más el carril rápido, el pedido para otra sesión, el subcomando
+ * desconocido y sin comando. Los que leen la corrida arrancan con el marcador de la historia de juguete.
+ */
+const CASOS_PIPELINE = [
+  { id: 'review-rounds-sin-marcador', argv: ['review-rounds'] },
+  { id: 'review-rounds', marcador: true, argv: ['review-rounds'] },
+  { id: 'advisors-sin-args', argv: ['advisors'] },
+  { id: 'advisors', marcador: true, argv: ['advisors', '--repo', '{REPO}', '--story', '{STORY}', '--files', 'src/a.js'] },
+  { id: 'advisors-archivo-fantasma', marcador: true, argv: ['advisors', '--repo', '{REPO}', '--story', '{STORY}', '--files', 'src/no-existe.js'] },
+  { id: 'advisors-carril-sin-carril', argv: ['advisors', '--adhoc'] },
+  { id: 'check-count-carril-sin-carril', argv: ['check-count', '--adhoc'] },
+  { id: 'deep-review-gate-carril-sin-carril', argv: ['deep-review-gate', '--adhoc'] },
+  { id: 'siblings', argv: ['siblings', '--repo', '{REPO}'] },
+  { id: 'validators', argv: ['validators', '--story', '{STORY}', '--repo', '{REPO}'] },
+  { id: 'smart-reloop-sin-args', argv: ['smart-reloop'] },
+  { id: 'smart-reloop-sin-foto', marcador: true, argv: ['smart-reloop', '--iter', '2', '--repo', '{REPO}', '--story', '{STORY}', '--files', 'src/a.js'] },
+  { id: 'preflight-frontmatter', argv: ['preflight-frontmatter', '--story-path', '{STORY}', '--target-status', 'review'] },
+  { id: 'reviewers-run-sin-args', argv: ['reviewers-run'] },
+  { id: 'check-count-sin-marcador', argv: ['check-count', '--ran', 'a,b'] },
+  { id: 'check-count', marcador: true, argv: ['check-count', '--ran', 'a,b'] },
+  { id: 'lint-config', argv: ['lint-config', '--repo', '{REPO}'] },
+  { id: 'advisor-runs', marcador: true, argv: ['advisor-runs'] },
+  { id: 'next-sin-marcador', argv: ['next'] },
+  { id: 'next', marcador: true, argv: ['next'] },
+  { id: 'next-para-otra-sesion', marcador: true, argv: ['next', '--for-session', 'ses-otra'] },
+  { id: 'work-signal', marcador: true, argv: ['work-signal'] },
+  { id: 'work-signal-start', marcador: true, argv: ['work-signal', 'start'] },
+  { id: 'ado-mark-active-sin-pedido', marcador: true, argv: ['ado-mark-active'] },
+  { id: 'estimate-real', marcador: true, argv: ['estimate-real'] },
+  { id: 'start-sin-args', argv: ['start'] },
+  { id: 'start', argv: ['start', '--story', '{STORY}', '--repo', '{REPO}', '--brief'] },
+  { id: 'risk-class', argv: ['risk-class', '--story', '{STORY}', '--files', 'src/a.js', '--repo', '{REPO}'] },
+  { id: 'story-review-gate', argv: ['story-review-gate', '--story', '{STORY}', '--repo', '{REPO}'] },
+  { id: 'story-review-record-sin-args', argv: ['story-review-record'] },
+  { id: 'validation-record-sin-args', argv: ['validation-record'] },
+  { id: 'tooling-expected', argv: ['tooling-expected', '--repo', '{REPO}'] },
+  { id: 'model-hint', argv: ['model-hint', '--story', '{STORY}', '--files', 'src/a.js'] },
+  { id: 'deep-review-gate', argv: ['deep-review-gate', '--repo', '{REPO}', '--story', '{STORY}', '--files', 'src/a.js'] },
+  { id: 'timing-report', marcador: true, argv: ['timing-report'] },
+  { id: 'cost-report', marcador: true, argv: ['cost-report'] },
+  { id: 'org-rules', argv: ['org-rules', '--repo', '{REPO}'] },
+  { id: 'readability-brief-sin-args', argv: ['readability-brief'] },
+  { id: 'evidence-key', argv: ['evidence-key', '--story', '{STORY}'] },
+  { id: 'compare-candidates-sin-args', argv: ['compare-candidates'] },
+  { id: 'compare-candidates', argv: ['compare-candidates', '--story', '{STORY}', '--repo', '{REPO}'] },
+  { id: 'run-dir', marcador: true, argv: ['run-dir', '--story', '{STORY}', '--repo', '{REPO}'] },
+  { id: 'evidence-dir', argv: ['evidence-dir', '--story', '{STORY}'] },
+  { id: 'e2e-config', argv: ['e2e-config', '--repo', '{REPO}'] },
+  { id: 'dep-gate', argv: ['dep-gate', '--repo', '{REPO}', '--story', '{STORY}'] },
+  { id: 'next-story', argv: ['next-story', '--repo', '{REPO}'] },
+  { id: 'write-followups-sin-args', argv: ['write-followups'] },
+  { id: 'write-findings-sin-hallazgos', marcador: true, argv: ['write-findings', '--story', '{STORY}', '--repo', '{REPO}', '--findings', '{REPO}/no-hay.json'] },
+  { id: 'verify-finding-sin-args', argv: ['verify-finding'] },
+  { id: 'record-refutation-sin-args', argv: ['record-refutation'] },
+  { id: 'findings-status', marcador: true, argv: ['findings-status', '--story', '{STORY}', '--repo', '{REPO}'] },
+  { id: 'dod-checker-needed', argv: ['dod-checker-needed', '--story', '{STORY}'] },
+  { id: 'deferrals-open', argv: ['deferrals-open', '--story', '{STORY}'] },
+  { id: 'qa-readability', argv: ['qa-readability', '--story', '{STORY}'] },
+  { id: 'qa-readability-con-marcas', marcador: true, argv: ['qa-readability', '--story', '{STORY}', '--marks', '0'] },
+  { id: 'followups-status', argv: ['followups-status', '--story', '{STORY}'] },
+  { id: 'mech-check', argv: ['mech-check', '--repo', '{REPO}', '--story', '{STORY}', '--files', 'src/a.js'] },
+  { id: 'desconocido', argv: ['cualquiera'] },
+  { id: 'sin-comando', argv: [] },
+].map((c) => ({ ...c, id: `pipeline-${c.id}`, guion: 'pipeline.js' }));
+
+const reemplazar =(s, m) => String(s).replace(/\{REPO\}/g, m.repo).replace(/\{STORY\}/g, m.story).replace(/\{HOME\}/g, m.home);
 
 function git(dir, env, ...a) {
   return spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', '-C', dir, ...a], { encoding: 'utf8', env });
@@ -263,10 +332,14 @@ function normalizar(texto, m) {
     .replace(/"(pid|ppid|durationMs|duration_ms|ms)":\s?\d+/g, '"$1":<N>');
 }
 
-/** Corre un caso contra `scripts` (la carpeta con marker.js): `{ status, stdout, stderr, archivos }`, normalizado. */
+/**
+ * Corre un caso contra `scripts` (la carpeta con marker.js y pipeline.js): `{ status, stdout, stderr, archivos }`,
+ * normalizado. El guion del caso es `caso.guion` (de fábrica, marker.js); el marcador lo arma siempre marker.js.
+ */
 function correr(caso, scripts = SCRIPTS) {
   const m = armar(caso);
   const marker = path.join(scripts, 'marker.js');
+  const guion = path.join(scripts, caso.guion || 'marker.js');
   if (caso.marcador) {
     const r = spawnSync(process.execPath, [marker, 'set', JSON.stringify({ storyId: '9.1', storyPath: m.story, repoPath: m.repo })],
       { cwd: m.repo, env: m.env, encoding: 'utf8', timeout: 30000 });
@@ -275,7 +348,13 @@ function correr(caso, scripts = SCRIPTS) {
   const antes = archivos(m);
   const env = { ...m.env };
   if (caso.sinSesion) { delete env.CLAUDE_CODE_SESSION_ID; delete env.TYCON_SESSION_ID; }
-  const r = spawnSync(process.execPath, [marker, ...caso.argv.map((a) => reemplazar(a, m))],
+  // pipeline.js mira las herramientas de la máquina (engram en el PATH) y la raíz de los repos: la foto no puede depender
+  // de la máquina que la graba ni de la que la corre
+  if (caso.guion === 'pipeline.js') {
+    if (process.platform !== 'win32') env.PATH = [path.dirname(process.execPath), '/usr/bin', '/bin'].join(path.delimiter);
+    env.TYCON_REPOS_ROOT = m.raiz;
+  }
+  const r = spawnSync(process.execPath, [guion, ...caso.argv.map((a) => reemplazar(a, m))],
     { cwd: m.repo, env, encoding: 'utf8', timeout: 30000, input: '' });
   const despues = archivos(m);
   const cambiados = {};
@@ -382,9 +461,57 @@ function grabar() {
   return foto;
 }
 
+/** La foto de pipeline.js: sus casos (dos veces, como la de marker.js), sus `require` y sus exportaciones. */
+function grabarPipeline() {
+  const foto = { nota: 'salida de cada caso con el pipeline.js sin partir; grabada con SPLIT_CONTRACT_RECORD=pipeline', casos: {} };
+  const inestables = [];
+  for (const caso of CASOS_PIPELINE) {
+    const a = correr(caso);
+    const b = correr(caso);
+    const d = diferencia(a, b);
+    if (d) inestables.push(`${caso.id}: ${d}`);
+    foto.casos[caso.id] = a;
+  }
+  if (inestables.length) throw new Error(`casos inestables entre dos corridas (arreglá la normalización antes de grabar):\n${inestables.join('\n')}`);
+  foto.requires = requiresLocales(path.join(SCRIPTS, 'pipeline.js'));
+  foto.exports = clavesDePipeline();
+  fs.mkdirSync(path.dirname(FOTO_PIPELINE), { recursive: true });
+  fs.writeFileSync(FOTO_PIPELINE, JSON.stringify(foto, null, 2) + '\n');
+  return foto;
+}
+
+/** Los subcomandos del despacho de pipeline.js, leídos de sus `if (cmd === '…')`. */
+const subcomandosDePipeline = (scriptsDir = SCRIPTS) => [...new Set([...fs.readFileSync(path.join(scriptsDir, 'pipeline.js'), 'utf8')
+  .matchAll(/\bcmd === '([\w-]+)'/g)].map((x) => x[1]))];
+
+if (GRABAR_PIPELINE) {
+  test('grabar la foto de pipeline.js', () => { grabarPipeline(); });
+} else if (!GRABAR) {
+  test('T6 Pipeline_SameOutputsBeforeAndAfter @story-8.163 @ac-6', () => {
+    assert.ok(fs.existsSync(FOTO_PIPELINE), `falta la foto de antes: ${FOTO_PIPELINE}`);
+    const foto = JSON.parse(fs.readFileSync(FOTO_PIPELINE, 'utf8'));
+    const faltan = CASOS_PIPELINE.filter((c) => !foto.casos[c.id]).map((c) => c.id);
+    assert.deepStrictEqual(faltan, [], `casos sin foto de antes: ${faltan.join(', ')}`);
+    const distintos = [];
+    for (const caso of CASOS_PIPELINE) {
+      const d = diferencia(foto.casos[caso.id], correr(caso));
+      if (d) distintos.push(`${caso.argv[0] || '(sin comando)'} · caso ${caso.id} · ${d}`);
+    }
+    assert.deepStrictEqual(distintos, [], `salidas que cambiaron al partir:\n${distintos.join('\n')}`);
+  });
+
+  test('T6b cada subcomando de pipeline.js tiene al menos un caso @story-8.163 @ac-6', () => {
+    const subcomandos = subcomandosDePipeline();
+    assert.ok(subcomandos.length >= 43, `esperaba los 43 subcomandos del despacho, encontré ${subcomandos.length}`);
+    const conCaso = new Set(CASOS_PIPELINE.map((c) => c.argv[0]));
+    const sin = subcomandos.filter((s) => !conCaso.has(s));
+    assert.deepStrictEqual(sin, [], `subcomandos sin caso: ${sin.join(', ')}`);
+  });
+}
+
 if (GRABAR) {
   test('grabar la foto de antes', () => { grabar(); });
-} else {
+} else if (!GRABAR_PIPELINE) {
   test('T3 Marker_SameOutputsBeforeAndAfter @story-8.163 @ac-3', () => {
     assert.ok(fs.existsSync(FOTO), `falta la foto de antes: ${FOTO}`);
     const foto = JSON.parse(fs.readFileSync(FOTO, 'utf8'));
@@ -580,10 +707,9 @@ test('T5 BashGate_ReadsMarkerWhole @story-8.163 @ac-5', () => {
   const nombrado = bloque.startsWith(FRENO_ENTERO) ? bloque.split('\n')[2].trim() : null;
   assert.notStrictEqual(nombrado, path.join(copia, 'marker.js'), 'marker.js se lee entero');
   assert.ok(!nombrado || !/[\\/]lib[\\/]marker-[^\\/]+\.js$/.test(nombrado), `un módulo de la partición se lee entero (${nombrado})`);
-  // lo que marker.js ya cargaba y pasa el tope sigue sin leerse entero hasta que se partan pipeline.js y el freno: se
-  // nombra, no se esconde
-  assert.ok([path.join(copia, 'pipeline.js'), path.join(copia, 'on-bash-write-gate.js')].includes(nombrado),
-    `lo que falta hasta partir pipeline.js y el freno: uno de los dos (${nombrado})`);
+  // lo que marker.js ya cargaba y pasa el tope sigue sin leerse entero hasta que se parta el freno: se nombra, no se
+  // esconde (pipeline.js ya está partido)
+  assert.strictEqual(nombrado, path.join(copia, 'on-bash-write-gate.js'), `lo que falta hasta partir el freno (${nombrado})`);
 });
 
 /** Una cadena de módulos de juguete: `principal.js` → m1 → … → m<largo>; el último hace `ultimo`. */
@@ -719,6 +845,10 @@ test('T13 Install_CopiesNewModules @story-8.163 @ac-13', () => {
   assert.strictEqual(ls.status, 0, `no pude listar lo versionado: ${ls.stderr}`);
   const versionados = ls.stdout.split('\0').filter(Boolean);
   for (const m of Object.keys(MODULOS)) assert.ok(versionados.includes(`skills/tycon-pipeline/scripts/lib/${m}`), `lo publicado lleva lib/${m}`);
+  // y las partes de pipeline.js
+  const partes = fs.readdirSync(LIB).filter((f) => /^pipeline-.+\.js$/.test(f));
+  assert.ok(partes.length > 0, 'hay partes de pipeline.js');
+  for (const m of partes) assert.ok(versionados.includes(`skills/tycon-pipeline/scripts/lib/${m}`), `lo publicado lleva lib/${m}`);
   const instalado = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'split-instalado-')));
   for (const f of versionados) {
     const desde = path.join(RAIZ_ARNES, f);
@@ -746,3 +876,133 @@ test('T13 Install_CopiesNewModules @story-8.163 @ac-13', () => {
 });
 
 module.exports = { CASOS, correr, diferencia, normalizar, armar, entorno, requiresLocales, SID };
+// ── la partición de pipeline.js ──────────────────────────────────────────────────────────────────────────────────────
+
+/** Las partes de pipeline.js que hay hoy: `lib/pipeline-*.js`. */
+const partesDePipeline = (lib = LIB) => {
+  try { return fs.readdirSync(lib).filter((f) => /^pipeline-.+\.js$/.test(f)).sort(); } catch { return []; }
+};
+/**
+ * Las partes del plan, con un caso de la foto que las corre (las bibliotecas, por el subcomando que las usa; el
+ * compartido no tiene).
+ */
+const PARTES_PIPELINE = {
+  'pipeline-shared.js': null,
+  'pipeline-reviewers.js': 'pipeline-validators',
+  'pipeline-rounds.js': 'pipeline-smart-reloop-sin-foto',
+  'pipeline-deep-review.js': 'pipeline-deep-review-gate',
+  'pipeline-lane.js': 'pipeline-advisors-carril-sin-carril',
+  'pipeline-start.js': 'pipeline-tooling-expected',
+  'pipeline-next.js': 'pipeline-next',
+  'pipeline-preflight.js': 'pipeline-preflight-frontmatter',
+  'pipeline-findings.js': 'pipeline-followups-status',
+  'pipeline-reports.js': 'pipeline-evidence-dir',
+  'pipeline-advisor-set.js': 'pipeline-advisors',
+  'pipeline-advisor-context.js': 'pipeline-advisors',
+  'pipeline-risk.js': 'pipeline-risk-class',
+  'pipeline-models.js': 'pipeline-model-hint',
+};
+
+test('T7 Pipeline_UnderLimit_OneJobPerModule @story-8.163 @ac-7', () => {
+  const despachador = path.join(SCRIPTS, 'pipeline.js');
+  assert.ok(letras(despachador) < TOPE_LETRAS, `pipeline.js tiene ${letras(despachador)} letras: el tope es ${TOPE_LETRAS}`);
+  assert.deepStrictEqual(partesDePipeline(), Object.keys(PARTES_PIPELINE).sort(), 'las partes de pipeline.js son las del plan');
+  const freno = fs.readFileSync(path.join(SCRIPTS, 'on-bash-write-gate.js'), 'utf8');
+  const tope = Number((/const GUION_TOPE = (\d+) \* 1024;/.exec(freno) || [])[1]) * 1024;
+  assert.ok(tope > 0, 'el tope por archivo del freno se lee de su texto');
+  assert.ok(fs.statSync(despachador).size < tope, `pipeline.js pesa ${fs.statSync(despachador).size} bytes y el freno lee enteros hasta ${tope}`);
+  for (const m of Object.keys(PARTES_PIPELINE)) {
+    const archivo = path.join(LIB, m);
+    const texto = fs.readFileSync(archivo, 'utf8');
+    assert.ok([...texto].length < TOPE_LETRAS, `${m} tiene ${[...texto].length} letras: el tope es ${TOPE_LETRAS}`);
+    assert.ok(fs.statSync(archivo).size < tope, `${m} pesa ${fs.statSync(archivo).size} bytes y el freno lee enteros hasta ${tope}`);
+    assert.match(texto.split('\n').slice(0, 30).join('\n'), /Responsabilidad: \S/, `${m}: su cabecera dice su responsabilidad`);
+    const sinComentarios = texto.split('\n').filter((l) => !/^\s*(\/\/|\*)/.test(l)).join('\n');
+    if (m !== 'pipeline-shared.js') assert.doesNotMatch(sinComentarios, /\b__filename\b|\b__dirname\b/, `${m}: usa PIPELINE_JS y SCRIPTS_DIR, no su propia ubicación`);
+    // lo que cambia mientras corre se lee del objeto compartido, nunca de una copia
+    const copia = sinComentarios.split('\n').find((l) => /\b(?:let|const|var)\s+(?:avisosDelPorton|paraOtra)\b/.test(l)
+      || /\b(?:let|const|var)\s*\{[^}\n]*(?<![.\w])(?:avisosDelPorton|paraOtra)\b[^}\n]*\}\s*=/.test(l));
+    assert.strictEqual(copia, undefined, `${m}: no copia avisosDelPorton ni paraOtra (${copia})`);
+    // lo que la partición suma tiene que existir; lo que ya estaba en la foto queda como estaba (una `SCRIPTS_DIR`
+    // local que apunta a scripts/ del arnés se lee acá como la carpeta de los guiones, antes y después)
+    const antes = new Set(JSON.parse(fs.readFileSync(FOTO_PIPELINE, 'utf8')).requires);
+    for (const r of requiresLocales(archivo)) if (!antes.has(r)) assert.ok(fs.existsSync(path.join(RAIZ_ARNES, r)), `${m}: carga ${r}, que no existe`);
+  }
+});
+
+for (const [parte, caso] of Object.entries(PARTES_PIPELINE)) {
+  test(`T7 Parte_${parte.replace(/\.js$/, '')}_CargaYCorre @story-8.163 @ac-7`, () => {
+    const archivo = path.join(LIB, parte);
+    assert.ok(fs.existsSync(archivo), `falta ${parte}`);
+    const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'split-parte-')));
+    if (caso === null) {
+      // el compartido: lo que cambia mientras corre, con su valor de arranque, y las dos rutas que fija el despachador
+      const r = spawnSync(process.execPath, ['-e', `const s = require(${JSON.stringify(archivo)}); process.stdout.write(JSON.stringify({ avisos: s.estadoPipeline.avisosDelPorton, otra: s.estadoPipeline.paraOtra, scripts: s.estadoPipeline.SCRIPTS_DIR, pipeline: s.estadoPipeline.PIPELINE_JS }))`],
+        { encoding: 'utf8', env: entorno(home), timeout: 30000 });
+      assert.strictEqual(r.status, 0, r.stderr);
+      assert.deepStrictEqual(JSON.parse(r.stdout), { avisos: [], otra: null, scripts: SCRIPTS, pipeline: path.join(SCRIPTS, 'pipeline.js') });
+      return;
+    }
+    const carga = spawnSync(process.execPath, ['-e', `require(${JSON.stringify(archivo)})`], { encoding: 'utf8', env: entorno(home), timeout: 30000 });
+    assert.strictEqual(carga.status, 0, `${parte} no carga: ${carga.stderr}`);
+    const foto = JSON.parse(fs.readFileSync(FOTO_PIPELINE, 'utf8'));
+    const c = CASOS_PIPELINE.find((x) => x.id === caso);
+    assert.strictEqual(diferencia(foto.casos[caso], correr(c)), null, `${parte}: su subcomando (${c.argv.join(' ')}) cambió`);
+  });
+}
+
+test('T10 Pipeline_MissingModule_FailsLoud @story-8.163 @ac-10', () => {
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'split-falta-p-')));
+  const copia = path.join(raiz, 'scripts');
+  fs.cpSync(SCRIPTS, copia, { recursive: true, filter: (s) => !/[\\/]tests([\\/]|$)/.test(s.slice(SCRIPTS.length)) });
+  const falta = path.join(copia, 'lib', 'pipeline-reports.js');
+  assert.ok(fs.existsSync(falta), 'la copia tiene la parte de los informes');
+  fs.rmSync(falta);
+  const home = path.join(raiz, 'home');
+  fs.mkdirSync(home);
+  const r = spawnSync(process.execPath, [path.join(copia, 'pipeline.js'), 'evidence-key', '--story', path.join(raiz, 'x.md')], { encoding: 'utf8', env: entorno(home), timeout: 30000 });
+  assert.notStrictEqual(r.status, 0, 'sin su parte, el subcomando no sigue como si nada');
+  const lineas = r.stderr.split('\n').filter((l) => l.trim());
+  assert.strictEqual(lineas.length, 1, `una sola línea con el motivo:\n${r.stderr}`);
+  assert.match(lineas[0], /lib\/pipeline-reports\.js/, 'nombra la parte que falta');
+  const otro = spawnSync(process.execPath, [path.join(copia, 'pipeline.js'), 'lint-config', '--repo', raiz], { encoding: 'utf8', env: entorno(home), timeout: 30000 });
+  assert.strictEqual(otro.status, 0, `un subcomando de otra parte sigue andando: ${otro.stderr}`);
+  // el compartido lo carga el despachador al arrancar: sin él tampoco sale el error largo de Node
+  fs.rmSync(path.join(copia, 'lib', 'pipeline-shared.js'));
+  const sinCompartido = spawnSync(process.execPath, [path.join(copia, 'pipeline.js'), 'lint-config', '--repo', raiz], { encoding: 'utf8', env: entorno(home), timeout: 30000 });
+  assert.strictEqual(sinCompartido.status, 2, `sin el compartido sale 2:\n${sinCompartido.stderr}`);
+  const renglones = sinCompartido.stderr.split('\n').filter((l) => l.trim());
+  assert.strictEqual(renglones.length, 1, `una sola línea con el motivo:\n${sinCompartido.stderr}`);
+  assert.match(renglones[0], /lib\/pipeline-shared\.js/, 'nombra el compartido');
+});
+
+test('T15 Pipeline_SameExportsAsThePhoto @story-8.163 @ac-15', () => {
+  const foto = JSON.parse(fs.readFileSync(FOTO_PIPELINE, 'utf8'));
+  assert.ok(Array.isArray(foto.exports) && foto.exports.length > 70, 'la foto de pipeline.js trae sus exportaciones');
+  assert.deepStrictEqual(clavesDePipeline(), foto.exports, 'pipeline.js exporta las mismas claves');
+  // cada clave trae lo mismo que traía: una función sigue siendo función y un valor sigue siendo del mismo tipo
+  const r = spawnSync(process.execPath, ['-e', `const p = require(${JSON.stringify(path.join(SCRIPTS, 'pipeline.js'))}); process.stdout.write(JSON.stringify(Object.keys(p).filter((k) => p[k] === undefined)))`],
+    { encoding: 'utf8', env: entorno(fs.mkdtempSync(path.join(os.tmpdir(), 'split-claves-'))), timeout: 30000 });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.deepStrictEqual(JSON.parse(r.stdout), [], 'ninguna exportación quedó vacía');
+});
+
+test('T16 Pipeline_ModulesAreSensitive @story-8.163 @ac-16', () => {
+  const { esSensible } = require(path.join(LIB, 'save-ok.js'));
+  const foto = JSON.parse(fs.readFileSync(FOTO_PIPELINE, 'utf8'));
+  assert.ok(Array.isArray(foto.requires) && foto.requires.length > 40, 'la foto de pipeline.js trae sus require');
+  const archivos = [path.join(SCRIPTS, 'pipeline.js'), ...partesDePipeline().map((m) => path.join(LIB, m))];
+  assert.deepStrictEqual(nuevosNoSensibles(foto.requires, archivos), [], 'todo lo nuevo que cargan pipeline.js y sus partes es sensible');
+  assert.ok(partesDePipeline().length > 0, 'hay partes de pipeline.js');
+  for (const m of partesDePipeline()) assert.ok(esSensible(`skills/tycon-pipeline/scripts/lib/${m}`), `${m} es sensible`);
+});
+
+test('T7 BashGate_ReadsPipelineWhole @story-8.163 @ac-7', () => {
+  const r = repoDelFreno();
+  const copia = path.join(r.raiz, 'scripts');
+  fs.cpSync(SCRIPTS, copia, { recursive: true, filter: (s) => !/[\\/]tests([\\/]|$)/.test(s.slice(SCRIPTS.length)) });
+  const bloque = frenar(r, `node ${path.join(copia, 'pipeline.js')} next`);
+  const nombrado = bloque.startsWith(FRENO_ENTERO) ? bloque.split('\n')[2].trim() : null;
+  assert.notStrictEqual(nombrado, path.join(copia, 'pipeline.js'), 'pipeline.js se lee entero');
+  assert.ok(!nombrado || !/[\\/]lib[\\/]pipeline-[^\\/]+\.js$/.test(nombrado), `una parte de pipeline.js se lee entera (${nombrado})`);
+});
