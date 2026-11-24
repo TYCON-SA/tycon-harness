@@ -1130,6 +1130,19 @@ test('Resueltos_TerceraVuelta_LoQueElUltimoReporteVeNoFiguraArreglado @story-8.2
   assert.deepEqual(rc.cross({ lines: baja, findings: [...fixed(2), { rule_id: 'SPEC-C3', severity: 'CRITICAL', disposition: 'open', file: 'z.js' }] }).problemas, []);
 });
 
+// 🔴 Falla con: «resueltos (…)» partido en dos renglones no se lee, y lo que confirma resuelto cuenta como hallazgo
+//    (el mismo código, dos veces).
+test('Resueltos_RenglonPartido — la lista de resueltos sigue en el renglón de abajo hasta su paréntesis', () => {
+  const rc = rcLib();
+  assert.deepEqual(rc.extractResolved('Veredicto: limpio · resueltos (SEC-C1,\n  SEC-C3)'), [{ rule: 'SEC-C1', count: 1 }, { rule: 'SEC-C3', count: 1 }]);
+  assert.deepEqual(rc.extractCriticals('Veredicto: hallazgos (SEC-C1) · bloquea: sí · resueltos (SEC-C1,\n  SEC-C3)'), [{ rule: 'SEC-C1', count: 1 }], 'lo resuelto no cuenta doble');
+  // en más de dos renglones también, y con fines de línea de Windows
+  assert.deepEqual(rc.extractResolved('Veredicto: limpio · resueltos (SEC-C1,\r\n  SEC-C3,\r\n  TEST-C2)').map((r) => r.rule), ['SEC-C1', 'SEC-C3', 'TEST-C2']);
+  // sin cierre antes de un renglón vacío u otro veredicto, la lista no se traga lo que sigue
+  assert.deepEqual(rc.extractResolved('Veredicto: limpio · resueltos (SEC-C1,\n\nSEC-C3)'), []);
+  assert.deepEqual(rc.extractResolved('Veredicto: limpio · resueltos (SEC-C1,\nVeredicto: hallazgos (SEC-C3) · bloquea: sí'), []);
+});
+
 test('Resueltos_SoloElUltimoRenglon @story-8.296 — un veredicto citado de la vuelta anterior no confirma nada', () => {
   const rc = rcLib();
   const texto = 'Antes dije:\n```\nVeredicto: limpio · resueltos (SEC-C1, SEC-C1)\n```\nAhora:\nVeredicto: hallazgos (SEC-C1) · bloquea: sí';

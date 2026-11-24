@@ -50,6 +50,7 @@ const hashOf = (text) => crypto.createHash('sha256').update(String(text || '')).
 
 // la parte del renglón de veredicto con lo que el revisor confirma resuelto de su vuelta anterior: «· resueltos (SPEC-C3)»
 const RE_RESOLVED = /·\s*resueltos\s*\(([^)]*)\)/i;
+const RE_RESOLVED_OPEN = /·\s*resueltos\s*\(/i;
 
 /** Cada código de un texto con cuántas veces aparece. */
 function codesIn(text) {
@@ -70,6 +71,15 @@ function verdictLines(text) {
     const start = i;
     if (/hallazgos\s*\(/i.test(line) && !/\)/.test(line.slice(line.search(/hallazgos\s*\(/i)))) {
       while (i + 1 < lines.length && !/\)/.test(line.slice(line.search(/hallazgos\s*\(/i)))) line += ` ${lines[++i]}`;
+    }
+    // «resueltos (…)» partido sigue en los renglones de abajo hasta su paréntesis, sin cruzar un renglón vacío ni otro
+    // veredicto; sin cierre, el renglón queda solo: una lista sin cerrar no se traga lo que sigue
+    const resueltosAbierto = (l) => { const k = l.search(RE_RESOLVED_OPEN); return k >= 0 && !/\)/.test(l.slice(k)); };
+    if (resueltosAbierto(line)) {
+      let junto = line;
+      let k = i;
+      while (resueltosAbierto(junto) && k + 1 < lines.length && lines[k + 1].trim() && !RE_VERDICT_LINE.test(lines[k + 1])) junto += ` ${lines[++k]}`;
+      if (!resueltosAbierto(junto)) { line = junto; i = k; }
     }
     out.push({ i: start, j: i, line });
   }
