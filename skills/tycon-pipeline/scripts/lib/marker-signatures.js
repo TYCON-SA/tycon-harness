@@ -98,7 +98,7 @@ function runtimeWaiverConOk(storyPath, argv, m) {
     console.error(`   La firma una persona en su terminal: node ${MARKER_JS} runtime-waiver ${storyPath} --terminal`);
     process.exit(2);
   }
-  // la matriz de «Preparar el commit»: con tanda anotada, los criterios sin correr de las otras tandas no niegan la firma.
+  // la matriz de «Preparar el pull request»: con tanda anotada, los criterios sin correr de las otras tandas no niegan la firma.
   // Sin corrida, la tanda pedida con --batch, medida igual (el cuadro calcula la misma: scripts/lib/owner-window.js)
   const matrix = wd.matrixForSignature(storyPath, m, { batch: m ? null : tanda });
   if (matrix.structuralError) { console.error(`marker.js runtime-waiver: la matriz no computa (${matrix.structuralError}).`); process.exit(2); }
@@ -160,7 +160,7 @@ function runtimeWaiverConOk(storyPath, argv, m) {
 // Un crítico lo decide una persona
 // ============================================================
 // `waive-critical --rule <id> --file <f> --reason "<r>"` deja la constancia de que una persona eximió ese CRITICAL, y
-// sólo así `write-findings` y los cierres de «Hallazgos» y «Preparar el commit» aceptan un CRITICAL `waived`. Dos caminos:
+// sólo así `write-findings` y los cierres de «Hallazgos» y «Preparar el pull request» aceptan un CRITICAL `waived`. Dos caminos:
 //   1. la ventana de permiso: el agente corre el comando (sin `--quote` ni `--relayed-by`) y el dev lo aprueba ahí; el
 //      guion comprueba en el árbol de procesos que lo lanzó la herramienta con ese comando (scripts/lib/owner-window.js).
 //   2. `--terminal`: lo corre el dev en su terminal (o la ventana nueva en Windows), como `runtime-waiver`.
@@ -515,7 +515,7 @@ function cmdCompareWaiver(argv) {
   cw.anotar(runDir, constancia);
   anotarAprobacion(m, { que: `exencion de la comparacion ${command}`, via: entrada.via, tipo: entrada.tipo, quien: entrada.quien, ...porDe(firmaDada),
     ...(entrada.delegacion ? { delegacion: entrada.delegacion } : {}) });
-  console.error(`✅ ${command} eximido de la comparación con main (${constancia.tipo === 'manual' ? 'manual' : 'por delegación'}, ${constancia.quien}). «Preparar el commit» lo avisa, y el texto del pedido también.`);
+  console.error(`✅ ${command} eximido de la comparación con main (${constancia.tipo === 'manual' ? 'manual' : 'por delegación'}, ${constancia.quien}). «Preparar el pull request» lo avisa, y el texto del pedido también.`);
   process.exit(0);
 }
 
@@ -1125,7 +1125,7 @@ function cmdRuntimeWaiver(storyArg, argv = []) {
     process.exit(2);
   }
 
-  // con --for-session, el marcador de esa sesión: la matriz mide su tanda, como «Preparar el commit»
+  // con --for-session, el marcador de esa sesión: la matriz mide su tanda, como «Preparar el pull request»
   const matrix = require('./waiver-display.js').matrixForSignature(storyPath, m);
   if (matrix.structuralError) {
     console.error(`marker.js runtime-waiver: la matriz no computa (${matrix.structuralError}).`);

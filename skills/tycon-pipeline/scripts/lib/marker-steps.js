@@ -247,7 +247,7 @@ function cmdStartStep(nRaw) {
 }
 
 /**
- * `set-batch <tanda>`: anota la tanda de la ejecución en una historia paraguas. «Preparar el commit» le pasa esa tanda
+ * `set-batch <tanda>`: anota la tanda de la ejecución en una historia paraguas. «Preparar el pull request» le pasa esa tanda
  * a la matriz, que mide sólo sus criterios. Se anota una vez: el mismo nombre otra vez no cambia nada; otro, o
  * `--clear`, se niega (para otra tanda, otra ejecución). La tanda tiene que estar en el bloque `pipelines` de la
  * historia del marcador y no estar `done`. Es la única forma de escribirla: `set` no la acepta.

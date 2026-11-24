@@ -50,8 +50,9 @@ test('T14 RutasDeWindows_SinVerdeFalso @story-8.115 @ac-12 — la ruta relativa 
 test('T14 RutasDeWindows_SinVerdeFalso @story-8.115 @ac-12 — el pipeline usa estas decisiones, no una copia propia', () => {
   // las funciones se miden acá con rutas de Windows; si un guion dejara de llamarlas, esa medición no lo cubriría
   const leer = (rel) => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
-  const pipeline = leer('pipeline.js');
-  assert.match(pipeline, /require\('\.\/lib\/path-forms\.js'\)/, 'pipeline.js carga path-forms');
+  // pipeline.js con sus partes de lib/, que cargan path-forms desde su misma carpeta
+  const pipeline = require('./lib/pipeline-source.js')(path.join(__dirname, '..'));
+  assert.match(pipeline, /require\('\.\/(?:lib\/)?path-forms\.js'\)/, 'pipeline.js carga path-forms');
   assert.match(pipeline, /isE2eSpecPath\(path\.join\(dir, e\.name\)\)/, 'hasPlaywrightSpecs decide con isE2eSpecPath');
   assert.ok((pipeline.match(/relativeInsideRepo\(/g) || []).length >= 3, 'selectE2eApps decide «dentro del repo» con relativeInsideRepo');
   assert.match(require('./lib/marker-source.js')(path.join(__dirname, '..')), /dest: posixRelative\(repo, dest\)/, 'promote-probe anota dest con posixRelative');

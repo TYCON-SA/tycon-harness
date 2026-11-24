@@ -312,7 +312,7 @@ adicional (smoke check DoD Gate 2, debugging, ajustes a la spec, integration tes
 fix-up). Si el registro ya se cerró, ese trabajo no se trackea y el dev pierde horas
 facturables.
 
-**Patrón observado (2026-05-12):** tras preparar el commit, el agente cerró el registro
+**Patrón observado (2026-05-12):** tras preparar el pull request, el agente cerró el registro
 "por prolijidad". Después el usuario pidió 27min adicionales de DoD smoke + commits +
 integration tests, todos sin tracking. Tuvo que recuperarse manualmente con un entry
 retroactivo. **No vuelva a pasar.**

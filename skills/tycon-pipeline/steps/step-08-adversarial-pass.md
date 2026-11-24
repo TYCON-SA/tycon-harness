@@ -29,7 +29,7 @@ El workflow se lanza **al cierre de «Implementar»** (ver `step-06-run-tests.md
   lanzamiento tiene menos de 45 min y esa sesión sigue viva (su conversación cambió hace menos de 10
   min), **ESPERAR** su resultado (`esperar-pase-ajeno`: lo anota esa sesión; acá se cierra el turno
   como en el join pasivo); si no, **RELANZAR** (`relanzar-pase-ajeno`). Si ya tiene resultado, está
-  atendido y no se relanza (relanzar un pase cerrado bloquea «Preparar el commit»). Para relanzar, ANUNCIAR en 1
+  atendido y no se relanza (relanzar un pase cerrado bloquea «Preparar el pull request»). Para relanzar, ANUNCIAR en 1
   línea *"el pase adversarial de la sesión <id> quedó sin resultado — lo relanzo (~20-40 min): <why>"*
   y, como en un retome NO están en contexto ni el gate ni las decisiones: **(a)** re-evaluar el gate
   (§Cuándo corre) para obtener el `model` fresco, **(b)** recuperar `decisions` del
@@ -59,7 +59,7 @@ El workflow se lanza **al cierre de «Implementar»** (ver `step-06-run-tests.md
 La bandera que lee `pipeline.js next` no se escribe a mano, y `complete-step prepare-commit` **frena** si el pase
 se lanzó y su resultado no está (freno `adversarial-result-gate`; `DOD_BYPASS` no lo abre). Medido antes
 de cablearlo: 4 de 9 corridas que lanzaron el pase lo cerraron con la bandera y sin
-anotar qué encontró, y 3 de esas 4 pasaron «Preparar el commit» igual. Anotar el resultado sin haber procesado la
+anotar qué encontró, y 3 de esas 4 pasaron «Preparar el pull request» igual. Anotar el resultado sin haber procesado la
 notificación sigue siendo mentira: el número de confirmados es el real.
 
 > **Por qué existe**: un review adversarial multi-agente *después* del pipeline caza bugs reales que los

@@ -123,6 +123,15 @@ Veredicto: limpio
 Veredicto: hallazgos (I18N-C1, I18N-C1, I18N-W2) · bloquea: sí
 ```
 
+Si el prompt trae lo que reportaste en la vuelta anterior, sumá al renglón los críticos de esa vuelta que confirmás
+arreglados, una vez por hallazgo, aunque hoy reportes otro con el mismo código. Sin esa parte el arnés no da el arreglo
+por comprobado, y cuesta otra vuelta o la exención del dueño:
+
+```text
+Veredicto: hallazgos (I18N-C1) · bloquea: sí · resueltos (I18N-C1, I18N-C2)
+Veredicto: limpio · resueltos (I18N-C1)
+```
+
 Lo lee el arnés: anota cada regla crítica con cuántas veces la reportaste, y no deja cerrar la historia si los hallazgos
 anotados son menos. Sin el renglón, tu reporte queda como no leído y la historia no cierra. No lo escribas a un archivo:
 va en tu respuesta.

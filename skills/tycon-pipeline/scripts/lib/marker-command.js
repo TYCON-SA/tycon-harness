@@ -457,7 +457,11 @@ function opcionesConValor(guion) {
   if (conValorCache.pipeline) return conValorCache.pipeline;
   const set = new Set();
   try {
-    const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'pipeline.js'), 'utf8');
+    // pipeline.js está partido en lib/pipeline-*.js: el lector de argumentos vive en una de sus partes
+    const fs = require('fs');
+    const path = require('path');
+    const partes = fs.readdirSync(__dirname).filter((f) => /^pipeline-.+\.js$/.test(f)).sort().map((f) => path.join(__dirname, f));
+    const src = [path.join(__dirname, '..', 'pipeline.js'), ...partes].map((f) => fs.readFileSync(f, 'utf8')).join('\n');
     const i = src.indexOf('function parseArgs');
     const cuerpo = i >= 0 ? src.slice(i, src.indexOf('\n}\n', i)) : '';
     for (const linea of cuerpo.split('\n')) {
