@@ -595,9 +595,9 @@ function screenStory(storyPath) {
   return { screen: screen === true, signal: detail.signal, detail, repoRoot, story: abs };
 }
 
-/** Dónde van la maqueta y su aprobación: la carpeta y la clave de la guía del tester (`qa-guide.js#qaLocation`). */
+/** Dónde van la maqueta y su aprobación: la carpeta y la clave de la guía del tester (`qa-guide.js#qaPlace`). */
 function mockupPaths(storyPath) {
-  const { qaDir, qk } = require(path.join(__dirname, 'qa-guide.js')).qaLocation(storyPath);
+  const { qaDir, qk } = require(path.join(__dirname, 'qa-guide.js')).qaPlace(storyPath);
   return { qaDir, key: qk, mockup: path.join(qaDir, `${qk}-mockup.html`), approval: path.join(qaDir, `${qk}-mockup-approval.json`) };
 }
 
