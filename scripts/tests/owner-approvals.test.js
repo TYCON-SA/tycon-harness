@@ -487,9 +487,16 @@ test('T8 OwnerApprovals_QuestionMismatch_LogsOnlyForThisSignatureAndSession', (t
   assert.strictEqual(log.length, 1, 'un renglón, el del click a esta firma');
   assert.ok(log[0].includes(CUADRO.sello), 'con el sello de esta firma');
   // el cuadro de esta firma retocado a mano la sigue nombrando: un punto al final, comillas, el sello sin tildes
-  const retocados = [`${PIDE}.`, `«${PIDE}»`, PIDE.replace('sesión', 'sesion').replace('código', 'codigo')];
+  const retocados = [`${PIDE}.`, `«${PIDE}»`, PIDE.replace('sesión', 'sesion').replace('código', 'codigo'),
+    PIDE.replace('(firma', '(Firma').replace('sesión', 'Sesión'), PIDE.replace(' · sesión', ' · sesión'), PIDE.replace(' · código', '\n· código')];
   retocados.forEach((pregunta, n) => assert.strictEqual(probar(pregunta, `toolu_${6 + n}`).ok, false));
   assert.strictEqual(renglones().length, 1 + retocados.length, 'cada click retocado de esta firma deja su renglón');
+  // otro cuadro que cita este sello en el medio termina con el suyo: no culpa a esta firma. Tampoco un pedido de permiso
+  // cuyo pedido nombra este sello
+  const queCita = armar('control-change', 'ses-a', 'cc00cc00').pregunta.replace('¿', `¿(cita: «${CUADRO.sello}») `);
+  const permiso = `¿Aprobás este pedido de Bash? (permiso permiso-1a2b3c4d · sesión ses-a · código 6c60386e) Carpeta: /r. Pedido:\necho "(${CUADRO.sello})"`;
+  [queCita, permiso].forEach((pregunta, n) => assert.strictEqual(probar(pregunta, `toolu_${20 + n}`).ok, false));
+  assert.strictEqual(renglones().length, 1 + retocados.length, 'un cuadro que sólo cita este sello no deja renglón');
 });
 
 const SOBRE_CUPO = 'adhoc-lane:sobre-cupo';

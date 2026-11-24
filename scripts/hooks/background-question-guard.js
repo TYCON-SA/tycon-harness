@@ -92,8 +92,10 @@ function decidirAprobacionSinCodigo(input, home) {
     logError(home, `no pude leer la opción de aprobar (${(e && e.message) || e}): el cuadro pasó sin mirar si trae el código`);
     return null;
   }
-  // una etiqueta que se ve igual también cuenta: espacio duro, coma ancha o un carácter invisible no la hacen otra
-  const visible = (s) => String(s).normalize('NFKC').replace(/\p{Cf}/gu, '').replace(/\s+/g, ' ').trim();
+  // una etiqueta que se ve igual también cuenta: espacio duro, coma ancha, un relleno en blanco o un carácter invisible no
+  // la hacen otra. Las letras de otro alfabeto que se parecen no se persiguen: lo que se ataja es el cuadro escrito a mano
+  const visible = (s) => String(s).normalize('NFKD').replace(/[\p{M}\p{Cf}]/gu, '')
+    .replace(/[ᅟᅠ⠀ㅤﾠ]/g, ' ').replace(/\s+/g, ' ').trim();
   const igual = (label) => typeof label === 'string' && visible(label) === visible(aprueba);
   const sinCodigo = qs.some((q) => q && Array.isArray(q.options) && q.options.some((o) => o && igual(o.label))
     && !CODIGO_DEL_GUION.test(String(q.question || '')));

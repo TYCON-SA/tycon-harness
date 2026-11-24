@@ -633,13 +633,20 @@ function anotarPreguntaDistinta({ casa, sello, sesion, esperada, recibida }) {
 }
 
 /**
- * ¿La pregunta clickeada nombra la firma y la sesión de `sello` (con cualquier código), en cualquier lugar y con o sin
- * tildes? Un cuadro de esta firma retocado a mano (un punto al final, comillas, «sesion») la sigue nombrando. Sin sello, no.
+ * ¿El sello propio de la pregunta clickeada es de la firma y la sesión de `sello` (con cualquier código)? El propio es el
+ * último que trae: otro cuadro puede citar este sello en el medio (la cita de un criterio, un pedido) y termina con el
+ * suyo. Un pedido de permiso lleva su sello antes del pedido: ése nunca es de esta firma. Se compara sin tildes, sin
+ * mayúsculas y con los espacios juntados: un cuadro de esta firma retocado a mano (un punto al final, comillas, «Sesion»,
+ * un salto de renglón) la sigue nombrando. Sin sello, no.
  */
 function nombraLaMismaFirmaYSesion(pregunta, sello) {
-  const sinTildes = (s) => String(s || '').normalize('NFD').replace(/\p{M}/gu, '');
-  const i = String(sello || '').lastIndexOf('código ');
-  return i > 0 && sinTildes(pregunta).includes(sinTildes(String(sello).slice(0, i)));
+  const plano = (s) => String(s || '').normalize('NFKD').replace(/[\p{M}\p{Cf}]/gu, '').replace(/\s+/g, ' ').toLowerCase();
+  const SELLOS = /\b(firma|permiso) ([\w:.-]+) · sesion ([\w-]+) · codigo /g;
+  const suyos = [...plano(pregunta).matchAll(SELLOS)];
+  const esta = [...plano(sello).matchAll(SELLOS)][0];
+  if (!esta || !suyos.length || suyos.some((m) => m[1] === 'permiso')) return false;
+  const propio = suyos[suyos.length - 1];
+  return propio[1] === esta[1] && propio[2] === esta[2] && propio[3] === esta[3];
 }
 
 /**

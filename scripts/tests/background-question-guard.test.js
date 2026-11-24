@@ -733,7 +733,7 @@ test('T-fila149 CuadroDeAprobacionSinCodigo_SeNiegaAntesDelClick', (t) => {
   assert.match(permiso.pregunta, /\(permiso permiso-1a2b3c4d · sesión ses-x · código 6c60386e\)/);
   assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', conOpciones(permiso.pregunta, permiso.opciones))), null);
   // una etiqueta que se ve igual sigue siendo la de aprobar: espacio duro, carácter invisible, coma ancha
-  for (const etiqueta of ['Sí, aprobar', 'Sí, aprobar​', 'Sí， aprobar']) {
+  for (const etiqueta of ['Sí, aprobar', 'Sí, aprobar​', 'Sí， aprobar', 'Sí, aprobar️', 'Sí, apro͏bar', 'Sí,⠀aprobar', 'Sí,ㅤaprobar']) {
     assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', conOpciones('¿Abro el arreglo?', [etiqueta, 'No']))).decision, 'deny', JSON.stringify(etiqueta));
   }
   // sin la opción de aprobar, es una pregunta como cualquier otra
