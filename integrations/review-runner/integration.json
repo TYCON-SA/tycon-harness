@@ -11,8 +11,8 @@
       "label": "Claude",
       "bin": "claude",
       "bin_paths": {
-        "darwin": ["~/.vscode/extensions/anthropic.claude-code-*/resources/native-binary/claude", "~/.cursor/extensions/anthropic.claude-code-*/resources/native-binary/claude", "~/.local/bin/claude", "~/.claude/local/claude"],
-        "linux": ["~/.vscode/extensions/anthropic.claude-code-*/resources/native-binary/claude", "~/.cursor/extensions/anthropic.claude-code-*/resources/native-binary/claude", "~/.local/bin/claude", "~/.claude/local/claude"],
+        "darwin": ["~/.vscode/extensions/anthropic.claude-code-*/resources/native-binary/claude", "~/.cursor/extensions/anthropic.claude-code-*/resources/native-binary/claude", "~/.local/bin/claude"],
+        "linux": ["~/.vscode/extensions/anthropic.claude-code-*/resources/native-binary/claude", "~/.cursor/extensions/anthropic.claude-code-*/resources/native-binary/claude", "~/.local/bin/claude"],
         "win32": ["~/.vscode/extensions/anthropic.claude-code-*/resources/native-binary/claude.exe", "~/.cursor/extensions/anthropic.claude-code-*/resources/native-binary/claude.exe", "~/.local/bin/claude.exe"]
       },
       "args": ["-p", "--output-format", "json", "--no-session-persistence", "--strict-mcp-config"],
