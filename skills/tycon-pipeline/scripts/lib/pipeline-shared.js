@@ -235,6 +235,7 @@ function harnessWorkSignal(opts = {}) {
 //      diff toca una de esas rutas, corre AUNQUE el risk-class dé LOW. Está en el 4to
 //      lugar a propósito: no puede pisar el kill-switch ni el `off` del dueño del repo, pero sí
 //      gana sobre el criterio por tamaño de diff, que puede dejar pasar un defecto en superficie compartida.
+//   4d) el código va a un repo hermano con su corrida a la vista (lib/delegated-pass.js): esa corrida decide el pase.
 //   5) default → risk-class (NORMAL run / LOW skip). Si el repo NO declaró superficie compartida,
 //      el skip por LOW se decide a ciegas y el veredicto lo dice (`shared_surface_declared:false`).
 // Corre UNA vez por corrida (default: se lanza al cierre de «Correr las pruebas» y el paso del pase adversarial es el join; TYCON_5B_EARLY=0 → se lanza en su paso), NUNCA por re-loop D.i

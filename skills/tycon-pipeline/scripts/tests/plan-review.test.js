@@ -681,7 +681,7 @@ test('PlanReview_DestinoSinCorrida (T18) @story-1.29 @ac-18', (t) => {
 
 test('PlanReview_LanzarNoPideLaDelegacion (T52) @story-8.221 @ac-41', (t) => {
   const lab = laboratorio(t);
-  const sinPlan = { ...PERFIL, delegated_signing: ['save'] };
+  const sinPlan = { ...PERFIL, delegated_signing: ['pending-approval'] };
   // lanzar: la designada con --for-session y la propia sesión sin él, aunque el perfil no delegue el plan
   const p = PR().preparar({ lanza: COORD, destino: DESTINO, estado: lab.estado, home: lab.home });
   assert.strictEqual(p.codigo, 0, p.motivo);
@@ -944,7 +944,7 @@ test('Delicado_AprobadoQueNoNombraEstaFirmaOEstaSesion_NoPasa', (t) => {
     'Firma plan-approval: ¿lo aprobás?', // sin la sesión, un «aprobado» al plan de otra serviría para éste
     'Firma plan-approval, sesión ses-b: ¿lo aprobás?',
     'Firma plan-approval, sesión ses-a: ¿lo aprobás?', // ya no alcanza con nombrarla: la pregunta la arma el freno
-    'Firma save, sesión ses-a: ¿lo guardo?',
+    'Firma pending-approval, sesión ses-a: ¿lo apruebo?',
     '¿Te parece bien el formato?',
   ]) {
     const lab = laboratorio(t, { sensible: 'seguridad' });
@@ -1025,14 +1025,14 @@ test('NoRegresion_PersonaYOtrasFirmas (T19) @story-1.29 @ac-19 @ac-20', (t) => {
       assert.strictEqual(PR().antesDelPlan({ via, estado: l.estado, firmante: COORD, destino: DESTINO, marker: JSON.parse(l.leer(DESTINO)) }), null);
     }
   }
-  // otra firma delegada (el ok de guardar) firma sin pedir revisión: owner-window no la condiciona
+  // otra firma delegada (abrir un pendiente) firma sin pedir revisión: owner-window no la condiciona
   const casa = lab.home;
-  const cmd = `node ${MARKER} approve-save --for-session ${DESTINO}`;
+  const cmd = `node ${MARKER} approve-pending --id DEF-nuevo --repo /r --for-session ${DESTINO}`;
   const pedido = ow.decidir({ evento: { session_id: COORD, tool_use_id: 'toolu_02', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: cmd } },
     escapes: [], arbol: arbolDelFreno(), pid: 201, casa, ahora: AHORA, delegacion: () => ({ ok: true, maquina: HUELLA }), clasificar: () => null });
   assert.strictEqual(pedido.decision, 'allow');
-  // el guion de guardar pasa su control previo (los controles de la delegación); acá deja pasar
-  const e = ow.exigir({ firma: 'save', argv: [MARKER, 'approve-save', '--for-session', DESTINO], pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000, propia: COORD, antes: () => null });
+  // el guion del pendiente pasa su control previo (el repo de la sesión); acá deja pasar
+  const e = ow.exigir({ firma: 'pending-approval', argv: [MARKER, 'approve-pending', '--id', 'DEF-nuevo', '--repo', '/r', '--for-session', DESTINO], pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000, propia: COORD, antes: () => null });
   assert.deepStrictEqual([e.codigo, e.via], [0, 'delegacion']);
 });
 

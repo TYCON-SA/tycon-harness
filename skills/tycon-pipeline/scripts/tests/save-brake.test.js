@@ -529,7 +529,7 @@ test('Cierre_SinOk_Cierra (T9) @story-8.151 @ac-9', (t) => {
 });
 
 // T12 PrepareCommit_LaVentanaConOrden
-// 🔴 Falla con: el paso de preparar el commit que todavía pide approve-save o el ok dicho en el chat, o sin el orden
+// 🔴 Falla con: el paso de preparar el pull request que todavía pide approve-save o el ok dicho en el chat, o sin el orden
 // del cierre.
 test('PrepareCommit_LaVentanaConOrden (T12) @story-8.151 @ac-12', () => {
   const texto = fs.readFileSync(path.join(SCRIPTS, '..', 'steps', 'step-11-prepare-commit.md'), 'utf8');

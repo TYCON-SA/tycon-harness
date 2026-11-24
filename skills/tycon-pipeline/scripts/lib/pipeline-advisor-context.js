@@ -605,7 +605,7 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
     for (const r of porConfirmar.agregar) renglones.push(`     · ${r.name}: ${r.reason}`);
     for (const l of porConfirmar.fuera) renglones.push(`     · ${l}`);
     renglones.push('   Una vuelta más con --extra-round lo confirma; si no, el cierre pide eximirlo.');
-  } else if (!ab.length) renglones.push('   No quedó nada abierto: seguí con «Probar en vivo» y «Preparar el commit».');
+  } else if (!ab.length) renglones.push('   No quedó nada abierto: seguí con «Probar en vivo» y «Preparar el pull request».');
   if (bloquean.length) {
     renglones.push(`   Quedó abierto algo de seguridad o de datos (${bloquean.length}): lo decide una persona. Mostrale esto y preguntale qué hace:`);
     for (const l of rr.resumen(bloquean)) renglones.push(`     · ${l}`);

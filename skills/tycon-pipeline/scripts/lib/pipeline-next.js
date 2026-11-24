@@ -30,12 +30,12 @@ function notaCierre3(marker) {
 const NOTA_CIERRE_5B = 'si el pase corrió, marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> '
   + '--tests <k> [--own <p> --in "<rutas>"] [--deferred <d> --reason "…"]; si no corre, marker.js mark-adversarial-skipped '
   + '--files <archivos de código del diff> (lo decide el portón). Los dos cierran el pase adversarial (la bandera ya no se escribe a mano)';
-// La prueba en vivo tampoco se cierra con `complete-step`, ni se saltea en silencio. El cierre de «Preparar el commit» exige
+// La prueba en vivo tampoco se cierra con `complete-step`, ni se saltea en silencio. El cierre de «Preparar el pull request» exige
 // `dodRuntimeChecked` SIEMPRE —la story exenta la deja con «exenta: …»—, así que `next` no puede dar la prueba en vivo por
 // salteado y mandar al 8: chocaría contra ese freno después de obedecer a `next`. El motivo mecánico del salteo sigue a la vista en `skip_mechanical`.
 const NOTA_CIERRE_7C = 'marker.js mark-dod-runtime-checked \'{"verdict":"PASS","evidencePath":"<ruta de la evidencia>"}\'';
 const NOTA_7C_EXENTA = 'La story está exenta de la verificación en vivo (dod_runtime_exempt: true): no hay nada que correr, pero el cierre '
-  + 'de «Preparar el commit» pide su constancia. Dejala con: marker.js mark-dod-runtime-checked \'{"verdict":"PASS","evidencePath":"exenta: <la razón del frontmatter>"}\'.';
+  + 'de «Preparar el pull request» pide su constancia. Dejala con: marker.js mark-dod-runtime-checked \'{"verdict":"PASS","evidencePath":"exenta: <la razón del frontmatter>"}\'.';
 
 /**
  * Qué le falta al pase adversarial, para `next`. Sólo con «Correr las pruebas» cerrado.
@@ -45,7 +45,7 @@ const NOTA_7C_EXENTA = 'La story está exenta de la verificación en vivo (dod_r
  * veredicto que el portón dejó anotado (`adversarialGate`): no lo recalcula, porque no tiene los archivos del cambio.
  * Sin veredicto, lo que pide es consultar el portón —la falta de veredicto no es «no corre»—.
  *
- * Nunca pide relanzar un pase atendido (relanzar uno cerrado bloquea «Preparar el commit»), y ante un lanzamiento de otra sesión
+ * Nunca pide relanzar un pase atendido (relanzar uno cerrado bloquea «Preparar el pull request»), y ante un lanzamiento de otra sesión
  * sin resultado aplica la regla de `lib/adversarial-verdict.js` sin preguntarle a nadie.
  * → `{ pending_action?: { kind, message, command?, rule?, why? }, adversarial_note?: string }`
  */
@@ -147,7 +147,7 @@ function accionDelPase(marker, story, { sidNow, nextStep } = {}) {
 
 /**
  * Lo que cambia en el paso por el tamaño de la corrida, o null. «Correr las pruebas» de una liviana: las tandas van
- * juntas. «Preparar el commit» de una liviana: no se pide la validación pesada del repo, salvo que el dev la haya nombrado
+ * juntas. «Preparar el pull request» de una liviana: no se pide la validación pesada del repo, salvo que el dev la haya nombrado
  * (`marker.js set-flag heavyValidationRequested true`).
  */
 function notaDelTamano(marker, nextStep) {
@@ -185,7 +185,7 @@ function computeNext() {
   const warnings = STEPS_TABLE.startWarningLines(marker);
 
   // Un arreglo después de Hallazgos (una edición de código posterior al último cierre de los revisores) pide otra vuelta.
-  // Si los revisores cerraron después de «Preparar el commit», lo preparado ya no es lo revisado: se prepara de nuevo.
+  // Si los revisores cerraron después de «Preparar el pull request», lo preparado ya no es lo revisado: se prepara de nuevo.
   const reloop = STEPS_TABLE.reviewersRound(marker);
   const ultimoViejo = STEPS_TABLE.prepareCommitStale(marker);
 
@@ -197,7 +197,7 @@ function computeNext() {
     if (s.id === 'reviewers' && reloop) done = false;
     if (s.id === 'prepare-commit' && ultimoViejo) done = false;
     if (s.id === 'live-check' && !done && story) {
-      // el único salteo que deja constancia: sin ella «Preparar el commit» no cierra (ver NOTA_CIERRE_7C)
+      // el único salteo que deja constancia: sin ella «Preparar el pull request» no cierra (ver NOTA_CIERRE_7C)
       if (storyIsExemptCheck(story)) skip = 'dod_runtime_exempt: true en frontmatter';
       else if (!storyRequiresRuntimeEvidenceCheck(story)) skip = 'story NO declara runtime tests (sin tests_done_*, sin E2E, sin tests/e2e/)';
     }

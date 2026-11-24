@@ -84,7 +84,7 @@ function ghCon(pulls) {
 }
 const llamadas = (env) => (fs.existsSync(env.FAKE_GH_LOG) ? fs.readFileSync(env.FAKE_GH_LOG, 'utf8').trim().split('\n').filter(Boolean).length : 0);
 
-test('T16 Ejecucion_TerminadaSinCerrar_DiceDesdeCuandoYComoSeCierra @story-8.195 @ac-16 — la línea de la sesión propia cuenta desde el cierre de «Preparar el commit»', () => {
+test('T16 Ejecucion_TerminadaSinCerrar_DiceDesdeCuandoYComoSeCierra @story-8.195 @ac-16 — la línea de la sesión propia cuenta desde el cierre de «Preparar el pull request»', () => {
   const C = casa();
   C.marcador('s-16', terminada());
   const r = F.stopLines({ sid: 's-16', home: C.home, stateDir: C.sdir, now: AHORA });
@@ -104,7 +104,7 @@ test('T17 Ejecucion_ConOtraVuelta_DiceQueFaltaRevisar @story-8.195 @ac-17 — co
   assert.equal(r.length, 1);
   assert.match(r[0], /story 7\.7 tiene código cambiado después de los revisores \(src\/a\.js\): falta revisarlo; `pipeline\.js next` dice cómo/);
   assert.doesNotMatch(r[0], /marker\.js clear/);
-  // los revisores cerraron después del último paso: «Preparar el commit» se pide otra vez, también es revisar
+  // los revisores cerraron después del último paso: «Preparar el pull request» se pide otra vez, también es revisar
   C.marcador('s-17', terminada({ stepTimings: { reviewers: { completedAt: HACE(120), lastCompletedAt: HACE(30) }, findings: { completedAt: HACE(110) }, 'prepare-commit': { completedAt: HACE(90) } } }));
   assert.match(F.stopLines({ sid: 's-17', home: C.home, stateDir: C.sdir, now: AHORA })[0], /falta revisarlo/);
 });

@@ -69,8 +69,8 @@ function escribir(file, data) {
 }
 
 /**
- * La ejecución de un marcador, si terminó: null si le quedan pasos o no cerró «Preparar el commit». Si no, `{ storyId,
- * desde, revisar, archivos }`: `desde` es el cierre de «Preparar el commit» (sin él, la última vez que se tocó);
+ * La ejecución de un marcador, si terminó: null si le quedan pasos o no cerró «Preparar el pull request». Si no, `{ storyId,
+ * desde, revisar, archivos }`: `desde` es el cierre de «Preparar el pull request» (sin él, la última vez que se tocó);
  * `revisar`, si cambió código después de los revisores o los revisores cerraron después del último paso.
  */
 function runState(marker) {

@@ -135,13 +135,14 @@ const CASOS = [
   { id: 'waive-critical-sin-terminal', marcador: true, argv: ['waive-critical', '--rule', 'X-C1', '--file', 'src/a.js', '--reason', 'probado'] },
   { id: 'compare-waiver-sin-args', marcador: true, argv: ['compare-waiver'] },
   { id: 'sign-adversarial-skip-sin-args', marcador: true, argv: ['sign-adversarial-skip'] },
-  { id: 'approve-pending-sin-args', marcador: true, argv: ['approve-pending'] },
+  { id: 'sign-atdd-skip-sin-args', marcador: true, argv: ['sign-atdd-skip'] },
   { id: 'approve-save-sin-args', marcador: true, argv: ['approve-save'] },
+  { id: 'save-check-sin-args', marcador: true, argv: ['save-check'] },
+  { id: 'approve-pending-sin-args', marcador: true, argv: ['approve-pending'] },
   { id: 'plan-review-sin-plan', marcador: true, argv: ['plan-review'] },
   { id: 'review-ask-sin-args', marcador: true, argv: ['review-ask'] },
   { id: 'review-answer-sin-args', marcador: true, argv: ['review-answer'] },
   { id: 'owner-away-sin-args', argv: ['owner-away'] },
-  { id: 'save-check-sin-args', marcador: true, argv: ['save-check'] },
   // con una frase que no nombra el rol: sin frase, la respuesta depende de las firmas del perfil del equipo, que se leen
   // siempre del perfil del árbol (ninguna variable las cambia) y el árbol armado del portón lo trae
   { id: 'designate-relay-frase-sin-rol', argv: ['designate-relay', '--approved-by', 'acme', '--quote', 'hola'] },
@@ -322,6 +323,9 @@ function normalizar(texto, m) {
     .replace(/\b[0-9a-f]{12,}\b/g, '<HEX>')
     // el sello de la copia congelada de un repo depende del árbol, no de lo que hace el subcomando
     .replace(/\brepo-[0-9a-f]{8}\b/g, 'repo-<SELLO>')
+    // la huella de la muestra de un pedido de firma lleva la hora en que se anotó
+    .replace(/\bMuestra [0-9a-f]{8}\b/g, 'Muestra <SELLO>')
+    .replace(/"huella":"[0-9a-f]{8}"/g, '"huella":"<SELLO>"')
     .replace(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g, '<HORA>')
     .replace(/\b\d+(?:[.,]\d+)?\s?(ms|s|min)\b/g, '<N> $1')
     .replace(/"(pid|ppid|durationMs|duration_ms|ms)":\s?\d+/g, '"$1":<N>');
@@ -524,7 +528,7 @@ if (GRABAR) {
     const texto = fs.readFileSync(path.join(SCRIPTS, 'marker.js'), 'utf8');
     const despacho = texto.slice(texto.lastIndexOf('switch (cmd)'));
     const subcomandos = [...despacho.matchAll(/case '([\w-]+)':/g)].map((x) => x[1]);
-    assert.ok(subcomandos.length >= 65, `esperaba los 65 subcomandos del despacho, encontré ${subcomandos.length}`);
+    assert.ok(subcomandos.length >= 66, `esperaba los 66 subcomandos del despacho, encontré ${subcomandos.length}`);
     const conCaso = new Set(CASOS.map((c) => c.argv[0]));
     const sin = subcomandos.filter((s) => !conCaso.has(s));
     assert.deepStrictEqual(sin, [], `subcomandos sin caso: ${sin.join(', ')}`);

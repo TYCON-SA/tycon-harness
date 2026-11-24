@@ -6441,7 +6441,7 @@ function matrizDeLaGuia(idioma) {
 test('T76 2.79-Firmas_PorNivelConMatrizYSinIds @story-2.79 @ac-69 — por nivel, con la matriz de la guía arriba, sin ids y sin ofrecer delegar lo que no se delega', async () => {
   const SIG = SIGS_79();
   const nivelDe = new Map(SIG.LEVELS.map((l) => [l.id, l.level]));
-  // como el sitio: lo que nunca se delega (guardar algo sensible) no sube el nivel de su firma, que es rutina
+  // como el sitio: lo que nunca se delega no sube el nivel de su firma
   const nivelDeForma = (f) => Math.max(...f.covers.filter((c) => !SIG.NOT_DELEGATED.includes(c)).map((c) => nivelDe.get(c) || 3));
   const grupos = new Map();
   for (const f of SIG.SIGNATURES) { const k = f.covers.join(','); grupos.set(k, Math.max(grupos.get(k) || 0, nivelDeForma(f))); }
@@ -6469,7 +6469,7 @@ test('T76 2.79-Firmas_PorNivelConMatrizYSinIds @story-2.79 @ac-69 — por nivel,
     assert.deepStrictEqual(filas, matrizDeLaGuia(idioma), `${idioma}: la matriz del sitio es la de la guía`);
     // ningún nombre interno del catálogo a la vista
     const visible = nodos.map((n) => n.textContent || '').join(' \n ');
-    // los que tienen guion o dos puntos: «save» o «emergency» son también palabras del texto en inglés
+    // los que tienen guion o dos puntos: «emergency» es también una palabra del texto en inglés
     const ids = new Set([...SIG.SIGNATURES.map((f) => f.id), ...SIG.LEVELS.map((l) => l.id)].filter((id) => /[-:]/.test(id)));
     for (const id of ids) assert.ok(!visible.includes(id), `${idioma}: «${id}» no se ve`);
     // una firma de nivel 2 en «Sólo el dueño» no invita a delegarla
@@ -6516,7 +6516,7 @@ test('T76 2.79-Firmas_PorNivelConMatrizYSinIds @story-2.79 @ac-69 — en el nave
 
 // 2.79-Firmas_UnaSolaTablaConNivel
 // 🔴 Falla con: la tabla «El nivel de cada firma» todavía aparte, una cosa cubierta sin su selector de nivel o con dos
-//    (`save:sensible`, que nunca se delega, o `emergency`, que no tiene firma del catálogo), la misma firma con un nombre en
+//    (`browser-test:no`, que comparte la fila de su firma, o `emergency`, que no tiene firma del catálogo), la misma firma con un nombre en
 //    la fila y otro en su selector de nivel, o subir el nivel que deja «Delegada» en el selector de quién firma de la fila.
 test('T78 2.79-Firmas_UnaSolaTablaConNivel @story-2.79 @ac-71 — una tabla con firma, nivel y quién; un selector por cada nivel; subir a 2 saca «Delegada» en la fila', async () => {
   const SIG = SIGS_79();
@@ -6542,9 +6542,10 @@ test('T78 2.79-Firmas_UnaSolaTablaConNivel @story-2.79 @ac-71 — una tabla con 
       assert.ok(dentro.includes(sels[0]), `${idioma}: ${l.id}, en la tabla única`);
       assert.deepStrictEqual(valores(sels[0]), ['1', '2', '3'].slice(l.level - 1), `${idioma}: ${l.id}, sólo desde su nivel para arriba`);
     }
-    // lo que nunca se delega, en la fila de su firma; lo cubierto sin firma del catálogo, en su fila y sin grupo
+    // una de las dos cosas que cubre una firma, en la fila de su firma; lo cubierto sin firma del catálogo, en su fila y
+    // sin grupo
     const sel = (id) => nodos().find((n) => n.tag === 'select' && n.attrs['data-path'] === id);
-    assert.strictEqual(filaDe(sel('approvals.nivel.save:sensible')).attrs['data-firma-grupo'], 'save,save:sensible', `${idioma}: guardar algo sensible, en la fila de guardar`);
+    assert.strictEqual(filaDe(sel('approvals.nivel.browser-test:no')).attrs['data-firma-grupo'], 'browser-test:prepare,browser-test:no', `${idioma}: no hacer la prueba con navegador, en la fila de esa prueba`);
     const suelta = filaDe(sel('approvals.nivel.emergency'));
     assert.strictEqual(suelta.attrs['data-nivel-suelto'], 'emergency', `${idioma}: la emergencia, en su fila`);
     assert.strictEqual(suelta.attrs['data-firma-grupo'], undefined, `${idioma}: sin grupo de firma`);

@@ -205,7 +205,7 @@ function main() {
     '       (valida lo que devolvió el verificador {refuted, command, output} y guarda <corrida>/refutations/<id>.json:\n' +
     '       sin esa constancia write-findings no deja un hallazgo como refuted.)\n' +
     '  node pipeline.js findings-status   --story <spec.md> --repo <dir>\n' +
-    '       (pre-condición de «Preparar el commit» — exit 3 si falta el findings.json del run. El orquestador lo\n' +
+    '       (pre-condición de «Preparar el pull request» — exit 3 si falta el findings.json del run. El orquestador lo\n' +
     '       corre antes del commit-prep y, si falta, lo escribe con write-findings.)\n' +
     '  node pipeline.js write-followups   --story <spec.md> --findings <findings.json>\n' +
     '       (adopción BMAD — persiste findings advisor no resueltos como sección checkbox EN la\n' +

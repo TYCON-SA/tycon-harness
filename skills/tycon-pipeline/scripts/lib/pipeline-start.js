@@ -643,7 +643,7 @@ function computeStart(args) {
       // del roster resolvería un path inexistente y callaría con "mismo repo". Todo lector acepta absolutos.
       storyId, storyPath: path.resolve(storyPath), repoPath: repo, runDir, sprint: fm.sprint ? parseInt(fm.sprint, 10) || null : null,
       // Dónde nace la evidencia de cierre: el repo de la story, aunque el código
-      // esté en otro. Lo leen los pasos «Probar en vivo» y «Preparar el commit» para no tener que adivinarlo.
+      // esté en otro. Lo leen los pasos «Probar en vivo» y «Preparar el pull request» para no tener que adivinarlo.
       evidenceDir: evid.dir || null,
       // Commit de partida: la base de las «líneas tocadas» que mide test-gate.sh.
       // Sin git queda null y test-gate cae a HEAD diciéndolo.

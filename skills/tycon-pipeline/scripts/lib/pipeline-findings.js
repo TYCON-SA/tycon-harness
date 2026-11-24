@@ -310,7 +310,7 @@ function writeFollowups(args) {
 // determinista sin LLM). Como WRITE MANUAL del orquestador en el paso de hallazgos se olvidaría y rompería el conteo.
 // `write-findings` lo
 // vuelve una llamada de script validada + ubicada sola; `findings-status` lo enforcea como
-// pre-condición mecánica de «Preparar el commit» (exit 3 si falta → el orquestador lo escribe antes del commit).
+// pre-condición mecánica de «Preparar el pull request» (exit 3 si falta → el orquestador lo escribe antes del commit).
 const VALID_SEVERITY = new Set(['CRITICAL', 'WARNING']);
 // 'refuted': hallazgo reportado,
 // investigado y RETIRADO por falso (típicamente por el propio advisor). No es 'fixed' (no hubo
@@ -537,7 +537,7 @@ function projectRunToStoryRepo(runDir, storyPath) {
 }
 
 // ── El cierre mira las aprobaciones donde las mira el portón ────────────────
-// Antes de «Preparar el commit»: proyecta la corrida abierta y revisa, en el repo de la STORY, cada carpeta de corrida
+// Antes de «Preparar el pull request»: proyecta la corrida abierta y revisa, en el repo de la STORY, cada carpeta de corrida
 // de la story con la regla del portón (lib/approvals.js → problemasDelRegistro, su primer problema, y la exención de
 // `advisors_exempt`). Una carpeta a la que le falta algo y tiene su par con el mismo nombre en el repo del código se
 // vuelve a proyectar y se vuelve a mirar: así se ponen al día las corridas que anotaron sólo en el repo del código. Con
@@ -918,7 +918,7 @@ function recordRefutation(args) {
       : "El verificador reprodujo el hallazgo: queda 'fixed' (con su prueba) u 'open'; 'refuted' y 'waived' se rechazan." };
 }
 
-// findings-status: pre-condición mecánica de «Preparar el commit». ¿El run tiene findings.json válido?
+// findings-status: pre-condición mecánica de «Preparar el pull request». ¿El run tiene findings.json válido?
 function computeFindingsStatus(args) {
   const storyId = deriveStoryId(args.story);
   if (!storyId) return { error: `--story inválido o sin frontmatter: ${args.story}` };
@@ -999,7 +999,7 @@ function cmdWriteFollowups(cmd, args) {
 
 // ── findings.json del paso de hallazgos ─────────────────────────────────
 // write-findings: escribe el artefacto machine-parseable (paso de hallazgos). findings-status:
-// pre-condición de «Preparar el commit» — exit 3 si falta (para que el orquestador lo escriba).
+// pre-condición de «Preparar el pull request» — exit 3 si falta (para que el orquestador lo escriba).
 function cmdWriteFindings(cmd, args) {
   const result = writeFindings(args);
   process.stdout.write(JSON.stringify(result, null, 2) + '\n');
