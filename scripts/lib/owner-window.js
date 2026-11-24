@@ -698,19 +698,28 @@ function destinoDe(palabras, sesion, firma) {
   return i >= 0 ? palabras[i + 1] || '' : sesion;
 }
 
-/** ¿El escape por variable viene en su forma de siempre (la asignación literal al principio del comando, una vez)? */
+/**
+ * ¿El escape por variable viene a la vista, una vez? La asignación literal al principio del comando, o un primer tramo
+ * `export NOMBRE=valor` seguido de otro comando: cada comando de la consola corre en su propio shell, así que es la misma
+ * asignación, y el dueño ve el nombre y el valor en la ventana igual.
+ */
 function variableALaVista(nombre, valor, comando) {
   let t;
   try { t = markerCommand().tramos(String(comando), 'bash'); } catch (_) { return false; }
   if (!t.tramos.length) return false;
   const w = t.tramos[0].palabras;
-  let i = 0;
-  let esta = false;
-  for (; i < w.length && /^[A-Za-z_]\w*=/.test(w[i].texto); i++) {
-    if (!w[i].literal) return false;
-    if (w[i].texto === `${nombre}=${valor}`) esta = true;
+  const exportada = w.length === 2 && w[0].literal && w[0].texto === 'export' && t.tramos.length > 1 && t.tramos[1].tras !== '|';
+  if (exportada) {
+    if (!w[1].literal || w[1].texto !== `${nombre}=${valor}` || !t.tramos[1].palabras.length) return false;
+  } else {
+    let i = 0;
+    let esta = false;
+    for (; i < w.length && /^[A-Za-z_]\w*=/.test(w[i].texto); i++) {
+      if (!w[i].literal) return false;
+      if (w[i].texto === `${nombre}=${valor}`) esta = true;
+    }
+    if (!esta || i >= w.length) return false;
   }
-  if (!esta || i >= w.length) return false;
   const veces = String(comando).match(new RegExp(`(^|[^\\w])${escRe(nombre)}(?![\\w])`, 'g')) || [];
   return veces.length === 1;
 }
