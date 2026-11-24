@@ -142,27 +142,32 @@ async function leer(repos, tree, tope, extra = () => ({})) {
 
 // POR QUÉ LA CI COMBINADA SALIÓ EN ROJO: lo lee la lectura de fondo, nunca el arranque. La plataforma lo busca en el
 // registro de la corrida de la cola (`queueDropDetail`), y queda guardado por caída (`<repo>#<número>@<fecha>`) para no
-// volver a leerlo; una caída de más de 14 días se olvida.
+// volver a leerlo; una caída de más de 14 días se olvida, salvo que la lectura la siga trayendo (si no, se leería una vez
+// sí y otra no).
 const motivosDe = (dir) => path.join(dir, 'queue-drop-reasons.json');
 const MOTIVO_DIAS = 14;
 function leerMotivos(dir) {
   const m = leerJson(motivosDe(dir));
   return m && typeof m === 'object' && !Array.isArray(m) ? m : {};
 }
-/** Guarda el motivo de cada caída que trajo la lectura y olvida los viejos. */
+/** Guarda el motivo de cada caída que trajo la lectura y olvida los viejos que la lectura ya no trae. */
 function guardarMotivos(dir, repos, leidas, motivos, ahora) {
   const nuevos = {};
-  for (const [k, v] of Object.entries(motivos)) {
-    const at = Date.parse(String(k).split('@').pop());
-    if (Number.isFinite(at) && ahora - at < MOTIVO_DIAS * 24 * HORA_MS) nuevos[k] = v;
-  }
+  const siguen = new Set();
   for (const repo of repos) {
     const r = leidas[claveDe(repo)];
     if (!r || !r.ok || !Array.isArray(r.value)) continue;
     for (const p of r.value) {
       const d = p.lastQueueDrop;
-      if (d && d.detail && typeof d.detail.text === 'string') nuevos[`${claveDe(repo)}#${p.number}@${d.at}`] = { kind: d.detail.kind, text: d.detail.text };
+      if (!d) continue;
+      const clave = `${claveDe(repo)}#${p.number}@${d.at}`;
+      siguen.add(clave);
+      if (d.detail && typeof d.detail.text === 'string') nuevos[clave] = { kind: d.detail.kind, text: d.detail.text };
     }
+  }
+  for (const [k, v] of Object.entries(motivos)) {
+    const at = Date.parse(String(k).split('@').pop());
+    if (!(k in nuevos) && (siguen.has(k) || (Number.isFinite(at) && ahora - at < MOTIVO_DIAS * 24 * HORA_MS))) nuevos[k] = v;
   }
   escribirJson(motivosDe(dir), nuevos);
 }

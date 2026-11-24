@@ -391,7 +391,7 @@ function motivoDelRegistro(texto) {
   const lineas = String(texto).split(/\r?\n/).map((l) => l.replace(/\x1b\[[0-9;]*m/g, '').replace(/^\S*\d{4}-\d\d-\d\dT[\d:.]+Z\s/, ''));
   const base = lineas.map((l) => /❌ base-controls: rojo — (.+)$/.exec(l)).find(Boolean);
   if (base && /afloja un control sin la constancia/.test(base[1])) {
-    return { kind: 'constancia', text: 'falta la constancia: main cambió y la cola, que mide contra el de hoy, ya frena lo que el pedido afloja; traé main y pedila con `run-base-controls.sh pending --root . --base origin/main --range origin/main...HEAD`' };
+    return { kind: 'constancia', text: 'falta la constancia: la cola mide contra el main de hoy, que ya frena lo que el pedido afloja; traé main y corré `bash scripts/ci/run-base-controls.sh pending --root . --base origin/main --range origin/main...HEAD`' };
   }
   if (base) return { kind: 'controles', text: `base-controls: ${base[1].slice(0, 160)}` };
   const suites = [...new Set(lineas.map((l) => /^\s*·\s+(?:tests\/)?(\S+)\s+\(exit\b/.exec(l)).filter(Boolean).map((x) => x[1]))];
@@ -410,19 +410,21 @@ function motivoDeLaCola(ctx, repo, n, at) {
   if (r.problem || !r.value || !Array.isArray(r.value.workflow_runs)) return null;
   const deLaCola = new RegExp(`^gh-readonly-queue/[^/]+/pr-${Number(n)}-`);
   const hasta = Date.parse(at);
+  // lo cancelado es lo que la cola cortó al sacar el pedido, no lo que falló: va después, y no se nombra como el rojo
+  const cancelado = (x) => x.conclusion === 'cancelled';
   const corridas = r.value.workflow_runs
     .filter((x) => x && deLaCola.test(String(x.head_branch || '')) && MALOS.has(x.conclusion) && !(Date.parse(x.created_at) > hasta))
-    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+    .sort((a, b) => cancelado(a) - cancelado(b) || Date.parse(b.created_at) - Date.parse(a.created_at));
   if (!corridas.length) return null;
   const j = gh(ctx, 'GET', `repos/${repo}/actions/runs/${Number(corridas[0].id)}/jobs?filter=latest&per_page=100`);
   if (j.problem || !j.value || !Array.isArray(j.value.jobs)) return null;
-  const rojos = j.value.jobs.filter((x) => x && MALOS.has(x.conclusion)).sort((a, b) => (a.name === 'public-ci') - (b.name === 'public-ci'));
+  const rojos = j.value.jobs.filter((x) => x && MALOS.has(x.conclusion)).sort((a, b) => cancelado(a) - cancelado(b) || (a.name === 'public-ci') - (b.name === 'public-ci'));
   for (const job of rojos) {
     const l = gh(ctx, 'GET', `repos/${repo}/actions/jobs/${Number(job.id)}/logs`, null, { texto: true });
     const m = l.problem ? null : motivoDelRegistro(l.value);
     if (m) return m;
   }
-  const nombres = rojos.map((x) => String(x.name || '')).filter((x) => x && x !== 'public-ci');
+  const nombres = rojos.filter((x) => !cancelado(x)).map((x) => String(x.name || '')).filter((x) => x && x !== 'public-ci');
   return nombres.length ? { kind: 'trabajo', text: `en rojo: ${nombres.slice(0, 2).join(', ')}` } : null;
 }
 
@@ -436,10 +438,16 @@ function conMotivoDeCaida(ctx, repo, pedidos, conocidos, hasta) {
     const d = p.lastQueueDrop;
     if (!d || d.cause !== 'ci' || (d.commit && d.commit !== p.sourceCommit) || ya.has(`${p.number}@${d.at}`)) continue;
     if (Date.now() > hasta) break;
-    const m = motivoDeLaCola(ctx, repo, p.number, d.at);
-    if (m) d.detail = m;
+    // sin motivo también vuelve con detalle (vacío): así se guarda y no se busca otra vez en cada lectura
+    d.detail = motivoDeLaCola(ctx, repo, p.number, d.at) || { kind: 'ninguno', text: '' };
   }
   return pedidos;
+}
+
+/** El corte de la lectura: `deadlineMs` es la hora límite, como en los demás conectores, y el corte usa el 80 % de lo que falta. */
+function topeDe(desde, deadlineMs) {
+  const d = Number(deadlineMs);
+  return d > 0 ? desde + (d - desde) * 0.8 : Infinity;
 }
 
 function listaConCola(ctx, repo, deadlineMs, motivos = null) {
@@ -461,7 +469,7 @@ function listaConCola(ctx, repo, deadlineMs, motivos = null) {
     if (!prs || !Array.isArray(prs.nodes)) return no('no_medido', 'GitHub contestó los pedidos abiertos sin forma');
     for (const p of prs.nodes) if (p && Number.isInteger(p.number)) value.push(deGraphql(p));
     if (!prs.pageInfo || !prs.pageInfo.hasNextPage) {
-      const hasta = Number(deadlineMs) > 0 ? desde + Number(deadlineMs) * 0.8 : Infinity;
+      const hasta = topeDe(desde, deadlineMs);
       const leidos = conAnalisis(ctx, repo, value, gh, { hasta });
       return { ok: true, value: motivos ? conMotivoDeCaida(ctx, repo, leidos, motivos.known, hasta) : leidos };
     }
@@ -579,4 +587,4 @@ function asignados(args, ctx) {
 
 module.exports = { 'change-request.open': abrirPedido, 'change-request.list': listarPedidos, 'change-request.read': leerPedido, 'assigned.list': asignados };
 // los ayudantes que reusa la lectura de la CI y de la cola (y la limpieza, para las pruebas), fuera del mapa de operaciones
-for (const [k, v] of Object.entries({ todas, controles, repoDe, MALOS, sinSalteos, deGraphql, conAnalisis })) Object.defineProperty(module.exports, k, { value: v, enumerable: false });
+for (const [k, v] of Object.entries({ todas, controles, repoDe, MALOS, sinSalteos, deGraphql, conAnalisis, topeDe })) Object.defineProperty(module.exports, k, { value: v, enumerable: false });
