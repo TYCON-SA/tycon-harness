@@ -914,39 +914,74 @@ function archivosDelPedido(repo, base) {
   }
 }
 
-/** La hora del commit que agregó `rel` en HEAD, en milisegundos, o NaN. */
-function horaDeEntrada(repo, rel) {
+/**
+ * La punta del pedido, si HEAD es la fusión que arma el servidor (su primer padre es la rama destino, o un commit de ella)
+ * y el segundo no está en la rama destino: lo que la rama destino trae en esa fusión no es del pedido. Si no, null: el
+ * pedido es HEAD.
+ */
+function puntaDelPedido(repo, base) {
   try {
-    const horas = git(repo, ['--literal-pathspecs', 'log', '--topo-order', '--diff-filter=A', '--format=%ct', 'HEAD', '--', rel]).split('\n').filter(Boolean);
-    return horas.length ? Number(horas[horas.length - 1]) * 1000 : NaN;
-  } catch (_e) { return NaN; }
+    const padres = git(repo, ['rev-list', '--parents', '-n', '1', 'HEAD']).trim().split(' ').slice(1);
+    if (padres.length !== 2) return null;
+    const esDeLaBase = (c) => { try { git(repo, ['merge-base', '--is-ancestor', c, base]); return true; } catch (_e) { return false; } };
+    return esDeLaBase(padres[0]) && !esDeLaBase(padres[1]) ? padres[1] : null;
+  } catch (_e) { return null; }
 }
 
 /**
- * La evidencia de cierre en git como la juzga `evidence-vs-commit.js`: cada `.md` es una, con la hora en que entró; cada
- * línea del registro de humos con su `ts` es otra, con su texto, porque el juez busca el commit que la agregó.
+ * Un ejecutor de git que pregunta por `punta` donde el juez pregunta por HEAD: el juez compara siempre contra HEAD, y en
+ * la fusión del servidor HEAD trae también lo de la rama destino. `symbolic-ref` queda como está: pregunta por la rama.
  */
-function evidenciasParaJuzgar(repo, dodEnGit) {
+const aLaPunta = (correr, punta) => (carpeta, args, env) => correr(carpeta, args[0] === 'symbolic-ref' ? args
+  : args.map((a) => (a === 'HEAD' ? punta : a.replace(/^HEAD:/, `${punta}:`).replace(/\.\.HEAD$/, `..${punta}`))), env);
+
+/**
+ * La evidencia de cierre en git que puede atar el cambio: cada `.md` que no declara FAIL, por su última versión (se
+ * reescribe con el mismo nombre), y cada línea del registro de humos con `ts` y salida 0, con su texto, porque el juez
+ * busca el commit que la agregó. Una evidencia que falla no ata nada, aunque sea posterior al código.
+ */
+function evidenciasParaJuzgar({ repo, dodEnGit, punta, correr }) {
   const out = [];
   for (const { rel, nombre } of dodEnGit) {
     const ruta = path.join(repo, rel);
-    if (!ES_EVIDENCIA_ADEMAS.some((re) => re.test(nombre))) { out.push({ rel, ruta, tsMs: horaDeEntrada(repo, rel) }); continue; }
-    for (const crudo of String(contenidoEn(repo, 'HEAD', rel) || '').split('\n')) {
+    const txt = contenidoEn(repo, punta, rel);
+    if (txt === null || txt.includes('\u0000')) continue;
+    if (!ES_EVIDENCIA_ADEMAS.some((re) => re.test(nombre))) {
+      if (evidenciaDeclaraFail(txt)) continue;
+      const u = correr(repo, ['log', '-1', '--format=%H %ct', punta, '--', rel]);
+      const [commit, hora] = u.codigo === 0 ? u.salida.trim().split(' ') : [];
+      out.push({ rel, ruta, md: true, commit: commit || null, tsMs: Number(hora) * 1000 });
+      continue;
+    }
+    for (const crudo of txt.split('\n')) {
       const linea = crudo.replace(/\r$/, '');
       let j;
       try { j = JSON.parse(linea); } catch (_e) { continue; }
-      if (j && typeof j === 'object' && typeof j.ts === 'string') out.push({ rel, ruta, linea, tsMs: Date.parse(j.ts) });
+      if (j && typeof j === 'object' && typeof j.ts === 'string' && j.exit === 0) out.push({ rel, ruta, linea, tsMs: Date.parse(j.ts) });
     }
   }
   return out;
 }
 
 /**
+ * Un `.md` por su última versión: vale para `rel` si el archivo es igual en el commit que la escribió y en la punta del
+ * pedido (la regla 4 del juez, que lo juzgaría por su primera versión). Devuelve lo mismo que `vigencia`.
+ */
+function vigenciaDelMd({ correr, repo, punta, ev, rel }) {
+  if (!ev.commit) return { cuenta: false, motivo: 'sin-respuesta' };
+  const d = correr(repo, ['diff-tree', '--quiet', '-r', ev.commit, punta, '--', rel]);
+  if (d.codigo === 0) return { cuenta: true };
+  if (d.codigo !== 1) return { cuenta: false, motivo: 'sin-respuesta' };
+  const u = correr(repo, ['log', '-1', '--format=%h', punta, '--', rel]);
+  return { cuenta: false, motivo: 'cambio-posterior', commit: u.codigo === 0 ? u.salida.trim() || null : null };
+}
+
+/**
  * ¿Alguna evidencia vale para todo el código declarado que el pedido cambia? `{ vale }` con la que vale; `{ duda }` si
  * ninguna vale y alguna no se pudo comparar (git no contestó: no es «vieja»); si no, `{ vieja }` con los archivos de la
- * primera y por qué no vale. La fecha del disco no se mira (el checkout la pone): decide git.
+ * más nueva y por qué no vale. La fecha del disco no se mira (el checkout la pone): decide git.
  */
-function juzgarEvidencia({ juez, repo, tocados, evidencias, enPalabras }) {
+function juzgarEvidencia({ juez, correr, repo, punta, tocados, evidencias, enPalabras }) {
   let vieja = null;
   let duda = null;
   // la más nueva primero: es la que más probablemente vale, y si ninguna vale es la que nombra el aviso
@@ -954,7 +989,8 @@ function juzgarEvidencia({ juez, repo, tocados, evidencias, enPalabras }) {
     const contra = [];
     let sinRespuesta = false;
     for (const rel of tocados) {
-      const r = juez.vigencia({ archivo: path.join(repo, rel), mtimeMs: Infinity, evidencia: { ruta: ev.ruta, tsMs: ev.tsMs, ...(ev.linea ? { linea: ev.linea } : {}) } });
+      const r = ev.md ? vigenciaDelMd({ correr, repo, punta, ev, rel })
+        : juez.vigencia({ archivo: path.join(repo, rel), mtimeMs: Infinity, evidencia: { ruta: ev.ruta, tsMs: ev.tsMs, linea: ev.linea } });
       if (r.cuenta) continue;
       if (r.motivo === 'sin-respuesta' || r.motivo === 'sin-hora') { sinRespuesta = true; duda = duda || `${ev.rel}: ${enPalabras(r)}`; break; }
       contra.push(`\`${rel}\` (${enPalabras(r)})`);
@@ -963,6 +999,17 @@ function juzgarEvidencia({ juez, repo, tocados, evidencias, enPalabras }) {
     if (!sinRespuesta && !vieja) vieja = { ev, contra };
   }
   return duda ? { duda } : { vieja };
+}
+
+/**
+ * La ruta declarada como la guarda git en este repo, o null si no está: sin `./`, con barras normales y, si no está tal
+ * cual, con otra caja si hay una sola que coincide.
+ */
+function rutaEnEsteRepo(declarada, enGit, porCaja) {
+  const r = String(declarada).replace(/\\/g, '/').replace(/^(\.\/)+/, '').replace(/\/(\.\/)+/g, '/');
+  if (enGit.has(r)) return r;
+  const otras = porCaja.get(r.toLowerCase());
+  return otras && otras.length === 1 ? otras[0] : null;
 }
 
 /** El sha256 de lo que guarda git en `ref:rel`, o null. La salida se compara sin los `\r` de fin de línea, como la matriz. */
@@ -1137,8 +1184,10 @@ function revisar({ repo, base, staged, hoy = hoyUtc(), juezGit }) {
     // en git, el disco decide como siempre: si tampoco está ahí frena como hoy; si está, sale por la regla de fecha.
     const gitDod = !exentaDod && prefijoDeLaStory() ? listaDeGit() : null;
     const dodEnGit = gitDod && gitDod.lista ? evidenciaEnGit(gitDod.lista, prefijoDeLaStory()) : [];
+    let veredicto = null;
     if (dodEnGit.length) {
       const v = veredictoDeEvidencia(repo, refNuevo, dodEnGit);
+      veredicto = v.estado;
       if (v.estado === 'no-leido') nivel('veredicto-de-la-evidencia', NIVELES.NO_MEDIDO);
       else nivel('veredicto-de-la-evidencia', NIVELES.REGISTRO, v.estado === 'pasa' ? 'no declara FAIL' : 'declara FAIL');
       if (v.estado === 'falla') {
@@ -1181,7 +1230,7 @@ function revisar({ repo, base, staged, hoy = hoyUtc(), juezGit }) {
       // la evidencia contra el código declarado que el pedido cambia. Antes del commit no se mide: lo mide la matriz del
       // freno del commit, con el archivo sin commitear
       const libs = staged ? null : reglaCargada();
-      const declarados = libs && !libs.error ? libs.declarados.parseDeclaredFiles(nuevo, { allForms: true }).map((f) => f.replace(/^\.\//, '')) : [];
+      const declarados = libs && !libs.error ? libs.declarados.parseDeclaredFiles(nuevo, { allForms: true }) : [];
       const esCodigo = (f) => libs.codigo.isCode(f) || libs.codigo.extOf(f) === '.sql';
       if (staged) {
         nivel('evidencia-atada', NIVELES.NO_MEDIDO, 'antes del commit la mide la matriz del freno del commit; acá, en el pedido');
@@ -1194,7 +1243,10 @@ function revisar({ repo, base, staged, hoy = hoyUtc(), juezGit }) {
         const lista = listaDeGit();
         const enGitAhora = new Set(lista.lista || []);
         const codigo = declarados.filter(esCodigo);
-        const aca = codigo.filter((f) => enGitAhora.has(f));
+        const porCaja = new Map();
+        for (const g of enGitAhora) porCaja.set(g.toLowerCase(), [...(porCaja.get(g.toLowerCase()) || []), g]);
+        const aca = [...new Set(codigo.map((f) => rutaEnEsteRepo(f, enGitAhora, porCaja)).filter(Boolean))];
+        const afuera = codigo.length - codigo.filter((f) => rutaEnEsteRepo(f, enGitAhora, porCaja)).length;
         const cambios = cambiosDelPedido();
         if (lista.error || cambios.error) {
           nivel('evidencia-atada', NIVELES.NO_MEDIDO, 'git no contestó');
@@ -1205,7 +1257,8 @@ function revisar({ repo, base, staged, hoy = hoyUtc(), juezGit }) {
             mensaje: `declara ${codigo.length} archivo(s) de código que no están en este repo: la evidencia atada al cambio es no verificable desde este repo. Avisa y no frena.` });
         } else {
           const tocados = aca.filter((f) => cambios.has(f));
-          if (!tocados.length) nivel('evidencia-atada', NIVELES.SERVIDOR, 'el pedido no cambia el código declarado de este repo');
+          const deAfuera = afuera ? `; ${afuera} declarado(s) fuera de este repo, sin verificar` : '';
+          if (!tocados.length) nivel('evidencia-atada', NIVELES.SERVIDOR, `el pedido no cambia el código declarado de este repo${deAfuera}`);
           else if (!dodEnGit.length) nivel('evidencia-atada', NIVELES.NO_MEDIDO, 'sin evidencia de cierre en git');
           else {
             const historia = {
@@ -1217,11 +1270,16 @@ function revisar({ repo, base, staged, hoy = hoyUtc(), juezGit }) {
                 } catch (_e) { return null; }
               },
             };
-            const evidencias = evidenciasParaJuzgar(repo, dodEnGit);
+            // en la fusión del servidor se juzga la punta del pedido: lo que trae la rama destino no es del pedido
+            const correrBase = juezGit || libs.juez.correrGitDeVerdad;
+            const punta = puntaDelPedido(repo, base);
+            const correr = punta ? aLaPunta(correrBase, punta) : correrBase;
+            const evidencias = evidenciasParaJuzgar({ repo, dodEnGit, punta: punta || 'HEAD', correr });
             const j = evidencias.length
-              ? juzgarEvidencia({ juez: libs.juez.crearJuez({ correrGit: juezGit, historia }), repo, tocados, evidencias, enPalabras: libs.juez.motivoEnPalabras })
-              : { duda: 'ninguna evidencia de cierre trae una hora que la regla pueda usar' };
-            if (j.vale) nivel('evidencia-atada', NIVELES.SERVIDOR, `vale ${j.vale.rel}`);
+              ? juzgarEvidencia({ juez: libs.juez.crearJuez({ correrGit: correr, historia }), correr, repo, punta: punta || 'HEAD', tocados, evidencias, enPalabras: libs.juez.motivoEnPalabras })
+              : veredicto === 'pasa' ? { duda: 'ninguna evidencia de cierre trae una hora que la regla pueda usar' } : { sinEvidencia: true };
+            if (j.sinEvidencia) nivel('evidencia-atada', NIVELES.NO_MEDIDO, 'ninguna evidencia de cierre que no falle (lo dice el veredicto)');
+            else if (j.vale) nivel('evidencia-atada', NIVELES.SERVIDOR, `vale ${j.vale.rel}${deAfuera}`);
             else if (j.duda) {
               nivel('evidencia-atada', NIVELES.NO_MEDIDO, 'git no contestó');
               atada('evidencia-no-comparada', `pasa a \`${estadoNuevo}\` y no pude comparar su evidencia de cierre con el código que cambia el pedido: ${j.duda}. No es «está bien»: es «no lo pude comparar».`);

@@ -90,6 +90,15 @@ test('T19 OldEvidence_NoticeThenBlocks — la única evidencia es anterior al c�
   const desde = revisar(r, DESDE);
   assert.deepStrictEqual(reglas(desde.hallazgos), ['evidencia-vieja'], JSON.stringify(desde.hallazgos));
   assert.deepStrictEqual(chequeo(desde, 'evidencia-atada').map((v) => v.nivel), ['verificado-por-el-servidor']);
+
+  // una evidencia posterior al código que declara FAIL, o una línea del registro que no salió 0, no la ata: la vieja no
+  // pasa por eso
+  for (const [rel, txt] of [['.advisors/dod-runtime/1.1-20261112.md', 'verdict=FAIL\n'], ['.advisors/dod-runtime/1.1-smoke-ledger.jsonl', `${JSON.stringify({ ts: '2026-11-12T10:00:00Z', exit: 1, acs: [1] })}\n`]]) {
+    const f = conCodigoCambiado(t);
+    f.escribir(rel, txt);
+    f.commit('2026-11-12');
+    assert.deepStrictEqual(de(revisar(f, DESDE).hallazgos, 'evidencia-vieja').length, 1, `${rel}: una evidencia que falla no ata`);
+  }
 });
 
 test('T20 NewSmokeAfterCode_Passes — una evidencia commiteada después del código vale @story-8.259 @ac-13', (t) => {
@@ -106,6 +115,36 @@ test('T20 NewSmokeAfterCode_Passes — una evidencia commiteada después del có
   h.commit('2026-11-12');
   const conHumo = revisar(h, DESDE);
   assert.deepStrictEqual(de(conHumo.hallazgos, 'evidencia-vieja'), [], JSON.stringify(conHumo.hallazgos));
+
+  // la evidencia reescrita con el mismo nombre después del código: vale por su última versión, no por la primera
+  const re = conCodigoCambiado(t);
+  re.escribir('.advisors/dod-runtime/1.1-20261110.md', 'verdict=PASS\notra corrida\n');
+  re.commit('2026-11-12');
+  assert.deepStrictEqual(de(revisar(re, DESDE).hallazgos, 'evidencia-vieja'), [], 'la evidencia reescrita vale');
+
+  // en el servidor HEAD es la fusión del pedido con la rama destino: lo que la rama destino cambió en el archivo
+  // declarado no es del pedido y no vence su evidencia
+  const f = repoDeJuguete(t);
+  const g = (...a) => execFileSync('git', ['-C', f.dir, '-c', 'user.email=b@b', '-c', 'user.name=b', ...a], { stdio: 'pipe', encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_DATE: '2026-11-13T12:00:00Z', GIT_COMMITTER_DATE: '2026-11-13T12:00:00Z' } });
+  f.escribir('src/feature.js', 'module.exports = 1;\n\n\n\n\n\nmodule.exports.b = 1;\n');
+  f.commit('2026-11-10');
+  const base0 = g('rev-parse', 'HEAD').trim();
+  g('switch', '-q', '-c', 'pedido');
+  f.escribir('src/feature.js', 'module.exports = 2;\n\n\n\n\n\nmodule.exports.b = 1;\n');
+  f.commit('2026-11-11');
+  f.escribir('.advisors/dod-runtime/1.1-20261112.md', 'verdict=PASS\n');
+  f.story('review');
+  f.commit('2026-11-12');
+  g('switch', '-q', 'main');
+  f.escribir('src/feature.js', 'module.exports = 1;\n\n\n\n\n\nmodule.exports.b = 2;\n');
+  f.commit('2026-11-12');
+  const destino = g('rev-parse', 'HEAD').trim();
+  g('switch', '-q', '--detach', destino);
+  g('merge', '-q', '--no-ff', '-m', 'Merge del pedido', 'pedido');
+  assert.notStrictEqual(base0, destino);
+  const fusion = gate.revisar({ repo: f.dir, base: destino, staged: false, hoy: DESDE });
+  assert.deepStrictEqual(de(fusion.hallazgos, 'evidencia-vieja'), [], JSON.stringify(fusion.hallazgos));
+  assert.deepStrictEqual(chequeo(fusion, 'evidencia-atada').map((v) => v.nivel), ['verificado-por-el-servidor'], JSON.stringify(fusion.verificacion));
 });
 
 test('T21 CodeInOtherRepo_OnlyNotice — el código declarado no está en este repo: sólo avisa que no es verificable desde acá @story-8.259 @ac-13', (t) => {
@@ -119,6 +158,14 @@ test('T21 CodeInOtherRepo_OnlyNotice — el código declarado no está en este r
   assert.match(aviso[0].mensaje, /no verificable desde este repo/);
   assert.deepStrictEqual(de(res.avisos, 'evidencia-vieja'), []);
   assert.deepStrictEqual(chequeo(res, 'evidencia-atada').map((v) => v.nivel), ['no-medido']);
+
+  // una ruta de este repo escrita con `./`, con barra invertida o con otra caja es de este repo, no de otro
+  for (const ruta of ['./src/feature.js', 'src\\feature.js', 'SRC/Feature.js']) {
+    const e = conCodigoCambiado(t, { declarados: [ruta] });
+    const r2 = revisar(e, DESDE);
+    assert.deepStrictEqual(de(r2.avisos, 'evidencia-atada-otro-repo'), [], `${ruta}: ${JSON.stringify(r2.avisos)}`);
+    assert.deepStrictEqual(reglas(r2.hallazgos), ['evidencia-vieja'], `${ruta}: ${JSON.stringify(r2.hallazgos)}`);
+  }
 });
 
 test('T22 LedgerOutputEdited_NoticeThenBlocks — una salida editada después del humo y una captura borrada: avisa y desde la fecha frena @story-8.259 @ac-14 @ac-15', (t) => {
@@ -154,7 +201,7 @@ test('T23 LedgerIntact_Passes_V1Skipped — el registro sin tocar pasa; la líne
     declarados: [],
     extra: {
       '.advisors/dod-runtime/1.1-smoke-ledger.jsonl': `${JSON.stringify(linea)}\n${JSON.stringify(vieja)}\n`,
-      '.advisors/dod-runtime/1.1-smoke-outputs/a.txt': salida,
+      '.advisors/dod-runtime/1.1-smoke-outputs/a.txt': salida.replace(/\n/g, '\r\n'),
       '.advisors/dod-runtime/1.1-smoke-captures/c.png': imagen,
     },
   });

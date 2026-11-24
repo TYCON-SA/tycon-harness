@@ -399,7 +399,13 @@ En el pedido, el portón mira si la evidencia de cierre es de este código. Toma
 (`files_to_modify` y `files_to_create`) y que el pedido cambia. Alguna evidencia de cierre tiene que valer para todos
 esos archivos, con la regla del freno local (`evidence-vs-commit.js` del skill): el archivo tiene que ser igual en el
 commit que guardó la evidencia y en el pedido. Si ninguna vale, sale `evidencia-vieja`, y hace falta una ejecución
-commiteada después del cambio. Cada línea del registro de humos cuenta como una evidencia, con el commit que la agregó.
+commiteada después del cambio. Cada línea del registro de humos con salida 0 cuenta como una evidencia, con el commit que
+la agregó; un `.md` que no declara FAIL cuenta por su última versión, porque se reescribe con el mismo nombre. Una
+evidencia que falla no ata nada. En el servidor el pedido llega fusionado con la rama destino: se juzga la punta del
+pedido, y lo que la rama destino cambió en esos archivos no vence su evidencia.
+
+**Lo que no mira.** Sólo el código que cambia este pedido. Si el código cambió en un pedido anterior y la historia se
+cierra en otro, ese otro no lo ve.
 
 El registro de humos se mira además por sus huellas. Cada línea `v:2` anota el sha256 de su salida (`output_sha`) y de su
 captura (`capture_sha`). El portón lo recalcula sobre lo que guarda git: si es distinto, o el archivo no está, sale
