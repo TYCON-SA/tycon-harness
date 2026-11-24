@@ -633,6 +633,12 @@
       "requiere": []
     },
     {
+      "__nota": "pipeline.js move-story mueve una historia de carpeta igual byte a byte y pasa a la ruta nueva su validación vigente; la vencida queda en la vieja y sale con 3.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/story-move.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el permiso de escribir evidencia a mano y la exención de la prueba en vivo los autoriza la persona; los avisos no le dan al agente la receta de los escapes (story 8.96).",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/pipeline-escape.test.js",

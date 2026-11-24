@@ -470,8 +470,11 @@ function leerStory(storyPath) {
 
 /**
  * Los hermanos que la story toca, con los archivos que declara en cada uno y el alcance de pruebas deducido sobre esos
- * archivos (sólo si el hermano tiene más de un proyecto con pruebas y se puede deducir; si no, vacío y lo decide el
- * propio test-gate del hermano). `opts.onMissing` como en `companionRoots`; `opts.warn(texto)` para los avisos.
+ * archivos (si el hermano tiene más de un proyecto con pruebas y se puede deducir; si no, vacío y lo decide el propio
+ * test-gate del hermano). Con un solo proyecto .NET en una subcarpeta (la solución un nivel abajo), el alcance es esa
+ * carpeta: sin él, el test-gate del hermano corre `dotnet test` en la raíz, donde no hay solución, y frena con 4. Un
+ * proyecto de node en una subcarpeta no lo necesita: el test-gate encuentra su `package.json` solo.
+ * `opts.onMissing` como en `companionRoots`; `opts.warn(texto)` para los avisos.
  */
 function companionTargets(repo, storyPath, opts) {
   const ts = require('./test-scope.js');
@@ -489,8 +492,10 @@ function companionTargets(repo, storyPath, opts) {
   return [...porRaiz.entries()].map(([root, files]) => {
     let scope = '';
     try {
-      const d = ts.deduceScope({ files, candidates: ts.discoverCandidates(root) });
+      const candidatos = ts.discoverCandidates(root);
+      const d = ts.deduceScope({ files, candidates: candidatos });
       if (d.multi && !d.ambiguous && d.scope) scope = d.scope;
+      else if (candidatos.length === 1 && candidatos[0].dir !== '.' && candidatos[0].runner === 'dotnet') scope = candidatos[0].dir;
     } catch (e) {
       // Sin alcance deducido, el test-gate del hermano deduce el suyo (o frena con 4): se avisa, no se calla.
       warn(`no pude deducir el alcance de pruebas en ${label(root)} (${(e && e.message) || e}): lo decide su propio test-gate`);
