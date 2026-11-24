@@ -427,7 +427,7 @@ Cada edición de archivo pasa por una cadena de seis frenos, en este orden:
 | **el que custodia el "listo"** | marcar una story como terminada sin cumplir el listado de cierre | `on-frontmatter-write` |
 | **el que exige el test primero** | escribir el primer archivo de código antes que su test | `on-atdd-preedit` |
 | **el que evita el choque** | que dos sesiones en paralelo se pisen el mismo archivo | `on-write-collision` |
-| **el que cuida los planos** | crear un artefacto de planificación que ignora otro ya aprobado | `on-planning-artifact` |
+| **el que cuida los planos** | aprobar un PRD sin la validación de otro agente (frena); crear un artefacto de planificación que ignora otro ya aprobado, o sin su método y su proceso (avisa) | `on-planning-artifact` |
 
 **Y la segunda puerta, que es la que casi nadie ve**: un archivo también se escribe por consola
 (`cat >`, `sed -i`, `tee`, `cp`). Y no hace falta mala intención — **en "auto mode" el propio arnés
