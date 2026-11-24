@@ -89,38 +89,9 @@ function storyIsExempt(content) {
   return /^dod_runtime_exempt:\s*true\b/m.test(content);
 }
 
-// Las exenciones que se agregan con la firma del dueño sobre la historia: la de la prueba en vivo y la de los revisores,
-// cada una con qué saltea y cuál es el camino normal.
-const EXENCIONES = [
-  { campo: 'dod_runtime_exempt', saltea: 'la exime de la prueba en vivo',
-    camino: ['El camino normal es correr la prueba en vivo; si la historia no se puede terminar, dejarla como deuda', '(marker.js close-as-debt).'] },
-  { campo: 'advisors_exempt', saltea: 'la exime de los revisores',
-    camino: ['El camino normal es correr los revisores de la historia en su ejecución del pipeline.'] },
-];
-// El encabezado como lo lee el portón de CI, sin la marca de orden de bytes: desde las rayas del comienzo, con lo que
-// tengan después en su renglón, hasta el primer renglón que empieza con rayas. null si no hay.
-function encabezadoAncho(c) {
-  const t = String(c || '').replace(/^\uFEFF/, '');
-  if (!t.startsWith('---')) return null;
-  const fin = t.indexOf('\n---', 3);
-  return fin === -1 ? null : t.slice(3, fin);
-}
-const esHistoriaAncha = (c) => { const fm = encabezadoAncho(c); return fm !== null && /^\s*(?:story|status)\s*:/m.test(fm); };
-// Los lectores que conceden una exención: el más ancho (en cualquier renglón, con sangría o comillas), el del freno del
-// commit (en cualquier renglón, sin sangría ni comillas) y los del portón de CI y pipeline.js (en el encabezado). Sólo en
-// una historia: un archivo que no lo es no concede nada.
-function lectoresDe(campo) {
-  const ancho = new RegExp(`^\\s*${campo}:\\s*["']?true\\b`, 'm');
-  const estrecho = new RegExp(`^${campo}:\\s*true\\b`, 'm');
-  return [(c) => ancho.test(c), (c) => estrecho.test(c), (c) => ancho.test(encabezadoAncho(c) || '')];
-}
-// Nueva: algún lector la ve en lo que queda escrito y no la veía antes. «Ya estaba» cuenta sólo si ese mismo lector la
-// concedía en una historia
-function esExencionNueva(campo, oldContent, newContent) {
-  if (!esHistoriaAncha(newContent)) return false;
-  const antesEraHistoria = !!oldContent && esHistoriaAncha(oldContent);
-  return lectoresDe(campo).some((ve) => ve(newContent) && !(antesEraHistoria && ve(oldContent)));
-}
+// Las exenciones que se agregan con la firma del dueño sobre la historia, cuándo una es nueva y su constancia en el repo
+const exenciones = require('./lib/exemptions.js');
+const { EXENCIONES, esExencionNueva } = exenciones;
 // la regla del cambio de estado a mano es la misma para la herramienta de edición y para la consola
 const { transicionAMano, isCriticalStatus, EN_IMPLEMENTACION } = require('./lib/story-transition.js');
 // El estado del encabezado, con fines de renglón de Windows y comillas simples o dobles.
@@ -155,8 +126,10 @@ function comoSeFirmaAca(firma, filePath, sesion) {
 /**
  * Una exención que se agrega a una historia (ver `esExencionNueva`, también al crearla) la decide la persona, en
  * cualquier estado: sin su firma en la ventana sobre esta historia, `{ block }` que nombra el comando; con ella, pasa
- * (null) y queda la constancia con la sesión. El agente que escribe la historia no se exime solo. Con dos nuevas en la
- * misma escritura, cada una pide la suya, y el escape se anota sólo si pasan todas: si una frena, la escritura no ocurre.
+ * (null) y queda la constancia con la sesión, y en el repo (`.tycon/exemptions.jsonl`), que los portones del commit y de
+ * CI piden. Sin poder anotarla en el repo, frena: la exención no se commitearía. El agente que escribe la historia no se
+ * exime solo. Con dos nuevas en la misma escritura, cada una pide la suya, y el escape se anota sólo si pasan todas: si
+ * una frena, la escritura no ocurre.
  */
 function exencionNueva(event, oldContent, newContent, casa) {
   const nuevas = EXENCIONES.filter((ex) => esExencionNueva(ex.campo, oldContent, newContent));
@@ -175,6 +148,18 @@ function exencionNueva(event, oldContent, newContent, casa) {
   };
   // el camino es el de la firma: la ventana, la delegación o la terminal
   if (!frenada) {
+    const archivo = event.tool_input.file_path;
+    const raiz = require('./lib/story-discovery.js').findRepoRoot(archivo);
+    try {
+      if (!raiz) throw new Error('no encontré la raíz del repo de la historia');
+      for (const { ex, r } of firmas) {
+        exenciones.anotar(raiz, { story: exenciones.idDe(newContent) || storyId, campo: ex.campo, archivo: path.relative(raiz, archivo).split(path.sep).join('/'),
+          via: r.constancia.via, sesion: event.session_id });
+      }
+    } catch (e) {
+      anotar({ veredicto: 'bloqueo' });
+      return { block: `🚨 BLOQUEADO — la firma de ${firmas.map(({ ex }) => ex.campo).join(' y ')} sobre la story ${storyId} vale, pero no pude anotar su constancia en el repo (${exenciones.RUTA}): ${e.message}.\nSin ella, el portón del commit y el de CI frenan la exención. Arreglá eso y pedile la firma de nuevo a la persona.\n` };
+    }
     for (const { ex, r } of firmas) anotar({ veredicto: 'escape', via: r.constancia.via, sesion: event.session_id, escape: ex.campo });
     return null;
   }
@@ -394,6 +379,43 @@ function findRepoRoots(filePath) {
  * tramo no se encuentra, el resultado es el archivo de antes con los renglones `status:` que el parche agrega puestos en
  * el encabezado: lo que no se pudo aplicar se juzga por lo que el parche escribe.
  */
+/**
+ * Lo que escribe un Edit de Claude Code: el reemplazo de `oldStr` por `newStr` en `oldContent`, o null si no lo
+ * encuentra (el Edit falla). La herramienta lo encuentra aunque el archivo traiga comillas curvas y `oldStr` rectas, y
+ * reemplaza el tramo del archivo: acá igual, o una historia con comillas curvas dejaría pasar cualquier cambio. Se usa una
+ * función de reemplazo: `String.replace(str, newStr)` interpreta `$&`/`$1`/`$$` en `newStr`, y daría otro contenido.
+ */
+function reemplazoDelEdit(oldContent, oldStr, newStr, todos) {
+  if (oldStr && oldContent.includes(oldStr)) {
+    return todos ? oldContent.split(oldStr).join(newStr) : oldContent.replace(oldStr, () => newStr);
+  }
+  // cada comilla curva es un carácter y la recta también: las posiciones del texto plano son las del archivo
+  const recta = (t) => t.replace(/[‘’‚‛]/g, "'").replace(/[“”„‟]/g, '"');
+  const plano = recta(oldContent);
+  const buscado = recta(oldStr);
+  if (!buscado || !plano.includes(buscado)) return null;
+  let out = '';
+  let desde = 0;
+  for (let i = plano.indexOf(buscado); i >= 0; i = todos ? plano.indexOf(buscado, desde) : -1) {
+    out += oldContent.slice(desde, i) + newStr;
+    desde = i + buscado.length;
+  }
+  return out + oldContent.slice(desde);
+}
+
+/** El destino de un Update de Codex con `*** Move to:` para `filePath`, resuelto contra el cwd del evento, o null. */
+function destinoDelParche(event, filePath) {
+  const ti = event.tool_input || {};
+  const parche = String(ti.command || ti.patch || ti.input || '').replace(/\r\n/g, '\n');
+  const cwd = (event.cwd && String(event.cwd)) || process.cwd();
+  const bloque = parche.split(/\n(?=\*\*\* (?:Add|Update|Delete) File: )/).find((b) => {
+    const m = b.match(/^\*\*\* Update File: (.+)$/m);
+    return m && path.resolve(cwd, m[1].trim()) === path.resolve(filePath);
+  });
+  const m = bloque && bloque.match(/^\*\*\* Move to: (.+)$/m);
+  return m ? path.resolve(cwd, m[1].trim()) : null;
+}
+
 function contenidoPorParche(event, filePath, oldContent) {
   const ti = event.tool_input || {};
   const parche = String(ti.command || ti.patch || ti.input || '').replace(/\r\n/g, '\n');
@@ -560,8 +582,13 @@ function handle(event, { casa } = {}) {
   const tool = event.tool_name;
   if (tool !== 'Edit' && tool !== 'Write') return null;
 
-  const filePath = event.tool_input?.file_path;
-  if (!filePath) return null;
+  const origen = event.tool_input?.file_path;
+  if (!origen) return null;
+  // Codex: un Update con `*** Move to:` escribe el destino con lo que queda del origen; se juzga en el destino, aunque
+  // el origen no sea un `.md`
+  const destino = event.tool_name_raw === 'apply_patch' ? destinoDelParche(event, origen) : null;
+  const filePath = destino || origen;
+  if (destino) event = { ...event, tool_input: { ...event.tool_input, file_path: destino } };
 
   // Sólo `.md`; que SEA una story lo decide el frontmatter, más abajo. No se filtra por ruta: un
   // filtro tipo `specs/stories/` apagaría el freno en los repos con otro layout, sin un solo mensaje.
@@ -569,14 +596,15 @@ function handle(event, { casa } = {}) {
 
   // Reconstruir el NEW state.
   let newContent;
-  const oldContent = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : '';
+  const leer = (p) => (fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '');
+  const oldContent = leer(filePath);
 
   if (tool === 'Write') {
     newContent = event.tool_input.content || '';
   } else if (event.tool_name_raw === 'apply_patch') {
     // Codex: el Edit trae el parche, no el reemplazo. Sin poder aplicarlo, un `+status: review|done` cuenta como el
     // paso a ese estado (del lado que frena)
-    newContent = contenidoPorParche(event, filePath, oldContent);
+    newContent = contenidoPorParche(event, origen, destino ? leer(origen) : oldContent);
   } else {
     // Edit — aplicar mentalmente el reemplazo.
     let oldStr = event.tool_input.old_string || '';
@@ -586,17 +614,10 @@ function handle(event, { casa } = {}) {
       const aCrlf = (t) => t.replace(/\r?\n/g, '\r\n');
       if (oldContent.includes(aCrlf(oldStr))) { oldStr = aCrlf(oldStr); newStr = aCrlf(newStr); }
     }
-    if (!oldContent.includes(oldStr)) {
-      // El Edit va a fallar de todas formas (old_string no matchea). Dejá pasar
-      // — Claude Code va a reportar el error real.
-      return null;
-    }
-    // Usar función de reemplazo — `String.replace(str, newStr)` interpreta
-    // `$&`/`$1`/`$$` en newStr como patrones especiales, así que un new_string con `$` daría
-    // un newContent distinto al que Edit escribe realmente. La forma `() => newStr` lo evita.
-    newContent = event.tool_input.replace_all === true
-      ? oldContent.split(oldStr).join(newStr)
-      : oldContent.replace(oldStr, () => newStr);
+    newContent = reemplazoDelEdit(oldContent, oldStr, newStr, event.tool_input.replace_all === true);
+    // El Edit va a fallar de todas formas (old_string no matchea). Dejá pasar
+    // — Claude Code va a reportar el error real.
+    if (newContent === null) return null;
   }
 
   // La exención nueva en una historia la decide la persona, en cualquier estado.

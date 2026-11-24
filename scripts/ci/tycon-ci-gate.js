@@ -612,6 +612,16 @@ try {
   approvalsLib = require(path.join(skills, 'tycon-pipeline', 'scripts', 'lib', 'approvals.js'));
 } catch (e) { approvalsFalta = e.message; }
 
+// La constancia del dueño de una exención, en el repo: un renglón de `.tycon/exemptions.jsonl` con la historia y la
+// exención. La anota el gancho del encabezado con la firma (lib/exemptions.js del skill); acá se lee con lo propio del
+// portón, que corre también donde el skill no está. Un renglón ilegible no cuenta.
+const CONSTANCIAS_DE_EXENCIONES = '.tycon/exemptions.jsonl';
+function tieneConstanciaDeExencion(texto, story, campo) {
+  return String(texto || '').split('\n').some((l) => {
+    try { const r = JSON.parse(l); return !!r && String(r.story) === String(story) && r.campo === campo; } catch (_e) { return false; }
+  });
+}
+
 // `ref`: la historia en la que se busca el rastro de una corrida anterior al control (la base del pedido).
 function revisarAprobaciones(repo, storyId, storyPath, ref = 'origin/main') {
   const hallazgos = [];
@@ -937,6 +947,22 @@ function revisar({ repo, base, staged, hoy = hoyUtc() }) {
       }
       continue;
     }
+    // Una exención que el diff agrega a una historia, como la lee este portón (`<campo>: true` en el frontmatter), trae la
+    // constancia del dueño en el repo, en cualquier estado: no sólo al pasar a review o done, que puede llegar en otro
+    // pedido con la exención ya en la base. Lo de antes y el archivo de constancias se leen sólo si hay una exención
+    const exentaAhora = EXENCIONES.filter((c) => new RegExp(`^${c}:\\s*true\\b`, 'm').test(fmNuevo));
+    if (exentaAhora.length) {
+      const antes = contenidoEn(repo, refDeAntes(), rel);
+      const fmAntes = (antes !== null && frontmatter(antes)) || '';
+      const nuevas = exentaAhora.filter((c) => !new RegExp(`^${c}:\\s*true\\b`, 'm').test(fmAntes));
+      const constancias = nuevas.length ? contenidoEn(repo, refNuevo, CONSTANCIAS_DE_EXENCIONES) : null;
+      const faltan = nuevas.filter((c) => !tieneConstanciaDeExencion(constancias, idBruto, c));
+      if (faltan.length) {
+        hallazgos.push({ archivo: rel, story: idBruto, regla: 'exencion-sin-constancia',
+          mensaje: `agrega ${faltan.map((c) => `\`${c}\``).join(' y ')} y \`${CONSTANCIAS_DE_EXENCIONES}\` no trae su constancia para la historia ${idBruto}. Eximir una historia lo decide el dueño: con su firma de la exención sobre la historia, el arnés anota la constancia al escribirla, y se commitea con ella.` });
+      }
+    }
+
     const estadoNuevo = String(escalar(fmNuevo, 'status') || '').toLowerCase();
     if (!LISTOS.has(estadoNuevo)) continue;
 
@@ -1181,9 +1207,22 @@ function selftest() {
   fs.mkdirSync(path.join(tmp, '.advisors', 'pipeline-runs', '1.1-20260825'), { recursive: true });
   const completo = revisar({ hoy: HOY_FIJO, repo: tmp, base });
 
+  // las exenciones viajan con la constancia del dueño en el repo (lib/exemptions.js del skill)
+  const constancias = path.join(tmp, '.tycon', 'exemptions.jsonl');
+  const escribirConstancias = () => {
+    fs.mkdirSync(path.dirname(constancias), { recursive: true });
+    fs.writeFileSync(constancias, ['dod_runtime_exempt', 'advisors_exempt'].map((campo) => JSON.stringify({ story: '1.1', campo, archivo: 'specs/stories/1-1.md', via: 'autoprueba' })).join('\n') + '\n');
+  };
+  escribirConstancias();
   conStory(story('done', 'dod_runtime_exempt: true\ndod_runtime_exempt_reason: autoprueba\nadvisors_exempt: true\nadvisors_exempt_reason: autoprueba\n'));
   fs.rmSync(path.join(tmp, '.advisors'), { recursive: true, force: true });
   const exenta = revisar({ hoy: HOY_FIJO, repo: tmp, base });
+  // la misma exención sin su constancia frena
+  fs.rmSync(constancias);
+  sh('add', '-A'); sh('-c', 'user.email=b@b', '-c', 'user.name=b', 'commit', '-q', '-m', 'sin constancia');
+  const exentaSinConstancia = revisar({ hoy: HOY_FIJO, repo: tmp, base });
+  escribirConstancias();
+  sh('add', '-A'); sh('-c', 'user.email=b@b', '-c', 'user.name=b', 'commit', '-q', '-m', 'constancia');
 
   conStory('---\nstory: "1.1"\nstatus: done\n# falta el cierre\n');
   const roto = revisar({ hoy: HOY_FIJO, repo: tmp, base });
@@ -1505,6 +1544,7 @@ function selftest() {
     ['con evidencia de cierre queda sólo el de revisores', JSON.stringify(reglas(soloDod)) === JSON.stringify(['sin-constancia-de-revisores'])],
     ['con las dos cosas, limpio', completo.hallazgos.length === 0],
     ['las exenciones declaradas del dev se respetan', exenta.hallazgos.length === 0],
+    ['una exención agregada sin su constancia en el repo frena', exentaSinConstancia.hallazgos.some((h) => h.regla === 'exencion-sin-constancia')],
     ['un frontmatter que no cierra se caza (las tools lo saltean en silencio)', reglas(roto).includes('frontmatter-roto')],
     ['una story que NO transiciona no se revisa', sinTransicion.revisadas.length === 0 && sinTransicion.hallazgos.length === 0],
     ['un reporte que menciona `story:` en el CUERPO no es una story rota', !medicion.hallazgos.some((h) => h.regla === 'frontmatter-roto')],

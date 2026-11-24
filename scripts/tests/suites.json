@@ -515,6 +515,12 @@
       "requiere": []
     },
     {
+      "__nota": "fila 90: una exención agregada a una historia viaja con la constancia del dueño en `.tycon/exemptions.jsonl`; el gancho del encabezado la anota con la firma, el freno del commit y el portón de CI frenan sin ella, y el archivo no se escribe a mano. Repos de git temporales, HOME temporal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/exemptions-record.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.48: la clave `stack` de team-repos.json, leída desde el árbol del arnés.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/stack-config.test.js",

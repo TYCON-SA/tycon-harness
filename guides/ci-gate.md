@@ -25,8 +25,12 @@ presente», «ejecución registrada» o «no medido». Un ✅ no quiere decir «
   «ejecución registrada: no declara FAIL»), aunque la corrida no haya probado nada.
 - **Lo escrito en la máquina del dev no tiene procedencia**: el registro de autoría y el de aprobaciones son «ejecución
   registrada»: tienen forma válida, no prueban quién los escribió.
-- **La exención no se firma en el servidor**: se exige y se muestra su razón (`<campo>_reason`), no quién la autorizó.
-  Una exención sin razón avisa hasta el 2026-12-03 y frena desde ese día (`exencion-sin-razon`).
+- **La exención no se firma en el servidor**: se exige y se muestra su razón (`<campo>_reason`). Una exención sin razón
+  avisa hasta el 2026-12-03 y frena desde ese día (`exencion-sin-razon`). La firma del dueño viaja en el repo: una
+  exención que el diff agrega a una historia, en cualquier estado, frena sin su renglón en `.tycon/exemptions.jsonl`
+  (`exencion-sin-constancia`). Ese renglón lo anota el arnés cuando el dueño firma la exención sobre la historia; una
+  exención escrita a mano, por consola o con un parche no lo trae. El renglón no prueba quién lo escribió: los frenos de
+  escritura de la máquina no dejan escribirlo a mano.
 - **Es opt-in por repo**: un repo sin el pipeline, o sin la política que lo exige, no tiene red del servidor y no da
   error. Lo cuenta el inventario de cada noche.
 - **Sólo mira historias que pasan a `review`/`done`**: un cambio de código que no toca una historia pasa (§«Lo que este

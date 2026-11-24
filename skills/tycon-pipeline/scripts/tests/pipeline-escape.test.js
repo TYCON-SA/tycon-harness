@@ -283,6 +283,40 @@ test('T92 FrontmatterWrite_ExencionNueva_LoQueLosLectoresVen: dos pasos, cuerpo,
   }
 });
 
+// FrontmatterWrite_ComillasCurvasYMoveTo (pase adversarial del #1577): la herramienta Edit encuentra el texto aunque la
+// historia traiga comillas curvas y old_string rectas, y un parche de Codex con «Move to» escribe el destino. El freno los
+// juzga igual que la herramienta: la exención y el paso a done siguen pidiendo su firma
+test('T93 FrontmatterWrite_ComillasCurvasYMoveTo: el Edit con comillas rectas y el parche que mueve a la historia se juzgan', () => {
+  const home = nuevaHome([deLaPersona('seguí')], 'Edit');
+  const frena = (evento, que) => { const r = correr(ENCABEZADO, home, evento); assert.strictEqual(r.status, 2, `${que}: ${r.stderr}`); };
+  const pasa = (evento, que) => { const r = correr(ENCABEZADO, home, evento); assert.strictEqual(r.status, 0, `${que}: ${r.stderr}`); };
+  const curvas = () => {
+    const h = historia(home, 'in-progress');
+    fs.writeFileSync(h, fs.readFileSync(h, 'utf8').replace(/^title: .*$/m, 'title: “Algo”').replace('Texto.', 'Texto ‘citado’.'));
+    return h;
+  };
+  const editar = (file, de, a2) => ({ tool_name: 'Edit', tool_input: { file_path: file, old_string: de, new_string: a2 } });
+  for (const campo of ['advisors_exempt', 'dod_runtime_exempt']) {
+    frena(editar(curvas(), 'title: "Algo"', `title: "Algo"\n${campo}: true`), `${campo} con comillas rectas sobre curvas`);
+  }
+  frena(editar(curvas(), 'title: "Algo"\nstatus: in-progress', 'title: "Algo"\nstatus: done'), 'el paso a done con comillas rectas sobre curvas');
+  // un cambio cualquiera con comillas rectas sobre curvas sigue pasando, y uno que no encuentra nada también (el Edit falla)
+  pasa(editar(curvas(), "Texto 'citado'.", "Texto 'citado' de nuevo."), 'un cambio del cuerpo con comillas rectas');
+  pasa(editar(curvas(), 'no está', `advisors_exempt: true`), 'un Edit que no encuentra el texto');
+  // Codex: un borrador que no es .md, movido a la historia con «Move to»
+  const dir = path.join(home, 'repo', 'specs');
+  const borrador = path.join(dir, 'borrador.txt');
+  fs.writeFileSync(borrador, '---\nepic: 9\nstory: "9.9"\ntitle: "Algo"\nstatus: in-progress\nadvisors_exempt: true\n---\n\nTexto.\n');
+  const destino = path.join(dir, 'story-9.9-movida.md');
+  const mover = { tool_name: 'Edit', tool_name_raw: 'apply_patch', cwd: dir, tool_input: { file_path: borrador,
+    command: '*** Begin Patch\n*** Update File: borrador.txt\n*** Move to: story-9.9-movida.md\n@@\n-Texto.\n+Texto ok.\n*** End Patch\n' } };
+  frena(mover, 'Codex: Move to desde un .txt hacia la historia');
+  // el mismo parche sin la exención en el borrador pasa: mover no es eximirse
+  fs.writeFileSync(borrador, fs.readFileSync(borrador, 'utf8').replace('advisors_exempt: true\n', ''));
+  pasa(mover, 'Codex: Move to sin exención');
+  assert.ok(!fs.existsSync(destino), 'el freno no escribe el destino');
+});
+
 // ── Los avisos no recetan los escapes ─────────────────────────────────────────────────────────────────────────────────
 
 // Lo que le da al agente el escape como salida: el comando o el renglón que lo activa.

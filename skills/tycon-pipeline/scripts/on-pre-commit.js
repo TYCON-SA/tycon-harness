@@ -1613,6 +1613,16 @@ function main() {
     const storyId = stagedFm.story || path.basename(specRel, '.md');
     estadoDe.set(specRel, String(stagedFm.status || '').toLowerCase());
 
+    // Una exención que este commit agrega a la historia viaja con la constancia del dueño en el repo (lib/exemptions.js),
+    // en cualquier estado y se haya escrito por donde se haya escrito. El archivo de constancias se lee sólo si hay una
+    // exención nueva. Frena siempre: no es una transición `review → done` que sólo avisa
+    const exencionesSinConstancia = require('./lib/exemptions.js').faltan({ viejo: head, nuevo: staged,
+      leer: () => getStagedFileContent(cwd, require('./lib/exemptions.js').RUTA) });
+    if (exencionesSinConstancia.length) {
+      violations.push({ specRel, storyId, reason: 'exencion-sin-constancia', campos: exencionesSinConstancia, siempreFrena: true });
+      continue;
+    }
+
     // Trigger 1: status transition.
     // 🔴 `review → done` también se juzga. Sólo
     // contar la ENTRADA a {review, done} desde afuera deja la transición interna sin disparar
@@ -1940,8 +1950,8 @@ function main() {
   }
 
   // Lo que viene de una transición interna `review → done` AVISA en vez de bloquear (ver arriba).
-  const avisos = violations.filter((v) => soloAviso.has(v.specRel));
-  const bloqueantes = violations.filter((v) => !soloAviso.has(v.specRel));
+  const avisos = violations.filter((v) => soloAviso.has(v.specRel) && !v.siempreFrena);
+  const bloqueantes = violations.filter((v) => !soloAviso.has(v.specRel) || v.siempreFrena);
   anotarDecisionesDelCierre({ violations, soloAviso, pasos, estadoDe, avisosSelfAudit, sesion: event.session_id });
   if (avisosSelfAudit.length) {
     const av = ['⚠️  AVISO — self-audit incompleto (ACCOV-C8 es opcional desde 2026-09-16, story 7.2 del arnés: no frena)'];
@@ -2038,6 +2048,9 @@ function main() {
       lines.push('                  "sin_testigo": "<motivo>" }');
       lines.push('           Viaja en el commit y se ve en el PR — a diferencia de un interruptor, deja rastro y se puede contar.');
       lines.push('       (c) Kill-switch de emergencia: TYCON_ROSTER_GATE=off (queda sin rastro en el diff: usalo sólo si (b) no aplica).');
+    } else if (v.reason === 'exencion-sin-constancia') {
+      lines.push(`     La historia ${require('./lib/exemptions.js').mensajeDeFalta(v.campos, v.storyId)}`);
+      lines.push('     Una exención escrita a mano, por consola o con un parche no la trae: sacala de la historia, o pedile la firma a la persona.');
     } else if (v.reason === 'no-criteria') {
       lines.push(`     No encontré los criterios de ${v.specRel}: ${v.motivo}.`);
       lines.push('     Sin criterios no hay contra qué medir la evidencia del cierre. Arreglo: un título `## Acceptance Criteria`');

@@ -30,7 +30,12 @@ function repoDeJuguete(t) {
   const env = { ...process.env, GIT_AUTHOR_DATE: '2026-11-10T12:00:00Z', GIT_COMMITTER_DATE: '2026-11-10T12:00:00Z' };
   const git = (...a) => execFileSync('git', ['-C', dir, '-c', 'user.email=b@b', '-c', 'user.name=b', '-c', 'maintenance.auto=false', ...a], { stdio: 'pipe', encoding: 'utf8', env });
   const escribir = (rel, txt) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), txt); };
-  const story = (estado, extra = '') => escribir('specs/1-1.md', `---\nstory: "1.1"\nepic: "1"\nstatus: ${estado}\n${extra}---\n# Story 1.1\n`);
+  // una exención viaja con la constancia del dueño en el repo (lib/exemptions.js): la historia de juguete la trae
+  const story = (estado, extra = '') => {
+    escribir('specs/1-1.md', `---\nstory: "1.1"\nepic: "1"\nstatus: ${estado}\n${extra}---\n# Story 1.1\n`);
+    const campos = [...extra.matchAll(/^(advisors_exempt|dod_runtime_exempt):\s*true\b/gm)].map((m) => m[1]);
+    if (campos.length) escribir('.tycon/exemptions.jsonl', campos.map((campo) => `${JSON.stringify({ story: '1.1', campo, archivo: 'specs/1-1.md', via: 'prueba' })}\n`).join(''));
+  };
   story('in-progress');
   git('init', '-q', '-b', 'main', '.');
   git('add', '-A'); git('commit', '-q', '-m', 'base');

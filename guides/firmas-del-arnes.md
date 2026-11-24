@@ -151,6 +151,10 @@ Quedan sólo del dueño, aunque un perfil las liste: `control-change` y todo el 
 `escape:TYCON_NO_DEEP_REVIEW` y `escape:no-deep-review`); `escape:TYCON_TEST_GATE`; `escape:story-skill-bypass`;
 `escape:dod_runtime_exempt`; `escape:advisors_exempt`; y decir que no a la prueba con navegador (`browser-test`).
 
+La firma de una exención (`escape:dod_runtime_exempt`, `escape:advisors_exempt`) deja además su constancia en el repo de
+la historia, en `.tycon/exemptions.jsonl`, y se commitea con ella: el portón del commit y el de CI frenan una exención
+que se agrega sin su renglón, se haya escrito por donde se haya escrito. Ese archivo no se escribe a mano.
+
 ## Quién firma cada nivel
 
 El nivel que rige es el mayor entre la tabla de arriba y lo que suba el perfil (`approvals.levels`). Quién lo firma
