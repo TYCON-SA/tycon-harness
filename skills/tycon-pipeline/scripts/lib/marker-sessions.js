@@ -8,7 +8,7 @@
  * locales van relativos a esta carpeta.
  */
 const {
-  ACTIVE_DIR, STALE_HOURS, STATE_DIR, STEPS_LIB, appendLog, at, avisarOficina,
+  ACTIVE_DIR, STALE_HOURS, STATE_DIR, STEPS_LIB, appendLog, avisarOficina,
   cerrarEjecucion, conRutas, estado, firmaDelDueno, frenarSiIlegible,
   frenarSiPerdida, fs, huellaDelPlan, marcaDe, markerFilePath, nowIso, parkedPath, path, porDe,
   pruneStale, readMarker, sessionLiveness, syncSessionState, untilIso,

@@ -9,7 +9,7 @@
  */
 const {
   MARKER_JS, PEDIDA, PREVIO, PROPIA, SCRIPTS_DIR, STATE_DIR, anotarAprobacion,
-  anotarFirma, appendLog, at, carpetaDeLaCorrida, cmd, comprobarLoRevisado,
+  anotarFirma, appendLog, at, carpetaDeLaCorrida, comprobarLoRevisado,
   delegatedSigning, esFecha, estado, fechaLocal, firmaDelDueno, fs,
   hermanosDeLaCorrida, nn, nowIso, os, ownerWindow, path, porDe, readMarker,
   reposParaComparar, resolveStoryPath, trabajarSobreElDestino, writeMarker,
@@ -75,17 +75,43 @@ function runtimeWaiverConOk(storyPath, argv, m) {
     process.exit(2);
   }
   const wd = require('./waiver-display.js');
-  // sólo la historia de la corrida abierta: una copia en otra ruta mostraría a la persona otra cosa que la que se firma
-  if (!wd.esLaDelMarcador(storyPath, m)) {
-    console.error(`🚫 marker.js runtime-waiver: no se firmó — ${storyPath} no es la historia de la corrida abierta en ${estado.SID !== PROPIA ? `la sesión ${estado.SID}` : 'esta sesión'}${m && m.storyPath ? ` (${m.storyPath})` : ''}.`);
+  const tanda = val('--batch');
+  if (argv.includes('--batch') && (!tanda || String(tanda).startsWith('-'))) {
+    console.error('marker.js runtime-waiver: --batch sin el nombre de la tanda.');
     process.exit(2);
   }
-  // la matriz de «Preparar el commit»: con tanda anotada, los criterios sin correr de las otras tandas no niegan la firma
-  const matrix = wd.matrixForSignature(storyPath, m);
+  if (m) {
+    // con una corrida abierta, la tanda es la que anotó la corrida: otra pedida a mano mediría otra cosa
+    if (tanda) {
+      console.error(`🚫 marker.js runtime-waiver: no se firmó — hay una ejecución abierta en ${estado.SID !== PROPIA ? `la sesión ${estado.SID}` : 'esta sesión'}, y manda la tanda de la ejecución (${m.batch || 'sin tanda: todas'}): pedila sin --batch.`);
+      process.exit(2);
+    }
+    // sólo la historia de la corrida abierta: una copia en otra ruta mostraría a la persona otra cosa que la que se firma
+    if (!wd.esLaDelMarcador(storyPath, m)) {
+      console.error(`🚫 marker.js runtime-waiver: no se firmó — ${storyPath} no es la historia de la corrida abierta en ${estado.SID !== PROPIA ? `la sesión ${estado.SID}` : 'esta sesión'}${m.storyPath ? ` (${m.storyPath})` : ''}.`);
+      process.exit(2);
+    }
+  } else if (!require('../runtime-matrix.js').discoverRepoRoot(storyPath)) {
+    // sin corrida, la constancia queda en el repo de la historia (`.tycon/runtime-waivers.jsonl`), para commitearla: el
+    // mismo repo que la matriz toma como `repoRoot`. Fuera de git no hay dónde, y la firma va a la terminal
+    console.error(`🚫 marker.js runtime-waiver: no se firmó — ${storyPath} no está en un repo git: sin una corrida abierta, la firma desde la sesión deja su constancia en el repo de la historia, para commitearla.`);
+    console.error(`   La firma una persona en su terminal: node ${MARKER_JS} runtime-waiver ${storyPath} --terminal`);
+    process.exit(2);
+  }
+  // la matriz de «Preparar el commit»: con tanda anotada, los criterios sin correr de las otras tandas no niegan la firma.
+  // Sin corrida, la tanda pedida con --batch, medida igual (el cuadro calcula la misma: scripts/lib/owner-window.js)
+  const matrix = wd.matrixForSignature(storyPath, m, { batch: m ? null : tanda });
   if (matrix.structuralError) { console.error(`marker.js runtime-waiver: la matriz no computa (${matrix.structuralError}).`); process.exit(2); }
+  // una tanda pedida que la matriz no pudo medir sola (sin criterios, o sin la lista de cambios): firmar con ella
+  // dejaría pasar criterios de otras tandas
+  if (tanda && !matrix.batch) {
+    const porQue = (matrix.warnings || []).find((w) => /mido todas las tandas/.test(w));
+    console.error(`🚫 marker.js runtime-waiver: no se firmó — no pude medir sólo la tanda ${tanda}${porQue ? ` (${porQue})` : ''}.`);
+    process.exit(2);
+  }
   const deOtraTanda = matrix.batch ? pedidos.filter((n) => !matrix.acs.includes(n)) : [];
   if (deOtraTanda.length) {
-    console.error(`🚫 marker.js runtime-waiver: no se firmó — AC ${deOtraTanda.join(', ')} no es de la tanda medida (${matrix.batch}): se firma en la corrida de su tanda.`);
+    console.error(`🚫 marker.js runtime-waiver: no se firmó — AC ${deOtraTanda.join(', ')} no es de la tanda medida (${matrix.batch}): se firma ${m ? 'en la corrida de su tanda' : 'con --batch de su tanda'}.`);
     process.exit(2);
   }
   // los que cubre el rojo esperado vigente de la deuda ya tienen su salida: no frenan la exención de los imposibles
@@ -112,12 +138,15 @@ function runtimeWaiverConOk(storyPath, argv, m) {
   const declHashByAc = {};
   for (const n of pedidos) declHashByAc[n] = waiver.declHashFor(matrix.perAc[n].declReason, matrix.perAc[n].coveredBy);
   const repoRoot = matrix.repoRoot || null;
+  // la sesión que pidió la firma: va dentro del ok, que entra en la cadena (cambiarla a mano descarta la firma)
+  const sesion = PROPIA !== '_nosession' ? PROPIA : null;
   const entry = waiver.appendWaiver({
     story: matrix.key || matrix.sid, acs: pedidos, matrixHash: matrix.hash, approvedBy: e.quien, nowIso: nowIso(), declHashByAc,
     logPath: repoRoot ? waiver.repoWaiverLogPath(repoRoot) : undefined,
-    ok: { tipo: e.tipo, quien: e.quien, via: e.via },
+    ok: { tipo: e.tipo, quien: e.quien, via: e.via, ...(sesion ? { sesion } : {}) },
   });
-  appendLog('gates.log', { type: 'RUNTIME_WAIVER', story: matrix.sid, acs: pedidos, matrixHash: matrix.hash, approvedBy: e.quien, via: e.via });
+  appendLog('gates.log', { type: 'RUNTIME_WAIVER', story: matrix.sid, acs: pedidos, matrixHash: matrix.hash, approvedBy: e.quien, via: e.via,
+    ...(sesion ? { sesion } : {}), ...(matrix.batch ? { batch: matrix.batch } : {}) });
   const mk = { ...(m || {}), repoPath: repoRoot || (m && m.repoPath) || null, storyId: (m && m.storyId) || matrix.sid, storyPath };
   for (const n of pedidos) {
     anotarAprobacion(mk, { que: `AC ${n} imposible de verificar en vivo`, via: e.via, tipo: e.tipo, quien: e.quien, ...(e.delegacion ? { delegacion: e.delegacion } : {}) });
@@ -215,9 +244,12 @@ function cmdReviewAsk(argv) {
   process.exit(0);
 }
 
-// `review-answer --kind plan|code --choice review|skip|wait [--for-session <D>]`: anota la respuesta a la pregunta de
-// revisar. La corre quien la recibe: la propia sesión o, con `--for-session`, sólo la designada. No es una firma y no
-// escribe el marcador destino: sólo un renglón `review-answer` en gates.log.
+// `review-answer --kind plan|code --choice review|skip|wait [--for-session <D>] [--by-profile]`: anota la respuesta a la
+// pregunta de revisar. La corre quien la recibe: la propia sesión o, con `--for-session`, sólo la designada. No escribe el
+// marcador destino: sólo un renglón `review-answer` en gates.log. «skip» del código lo contesta el dueño: pide la firma
+// `review-skip` (su ventana, su click o su «aprobado», nunca la delegación), y su vía queda en el renglón. Con
+// `--by-profile` lo anota sin firma, con `por: 'perfil'`, sólo si el dueño cuenta como ausente y la celda de «dueño
+// ausente» dice `skip` para ese diff (plan-review.js skipPorElPerfil).
 function cmdReviewAnswer(argv) {
   const pr = require('./plan-review.js');
   const { val } = opcionesDe(argv);
@@ -236,7 +268,24 @@ function cmdReviewAnswer(argv) {
   const kind = val('--kind');
   const h = pr.huellaDe({ estado: STATE_DIR, sesion, kind });
   if (h.codigo) { console.error(`🔒 marker.js review-answer: ${h.motivo}. No se escribió nada.`); process.exit(h.codigo); }
-  const r = pr.anotarRespuesta({ estado: STATE_DIR, sesion, kind, choice: val('--choice'), quien: ajena ? `coordinadora ${PROPIA}` : `sesión ${PROPIA}`, huella: h.huella, motivo: val('--reason') || null });
+  const choice = val('--choice');
+  const porPerfil = argv.includes('--by-profile');
+  if (porPerfil && !(kind === 'code' && choice === 'skip')) {
+    console.error('🔒 marker.js review-answer: --by-profile vale sólo para --kind code --choice skip. No se escribió nada.');
+    process.exit(2);
+  }
+  let via = null;
+  if (kind === 'code' && choice === 'skip') {
+    if (porPerfil) {
+      const c = pr.skipPorElPerfil({ estado: STATE_DIR, sesion, huella: h.huella });
+      if (c.codigo) { console.error(`🔒 marker.js review-answer --by-profile: ${c.motivo}. No se escribió nada.`); process.exit(c.codigo); }
+    } else {
+      const f = firmaDelDueno('review-skip', `contestar «skip» a la pregunta del pase del código de la sesión ${sesion}`);
+      via = f.via || null;
+    }
+  }
+  const r = pr.anotarRespuesta({ estado: STATE_DIR, sesion, kind, choice, quien: ajena ? `coordinadora ${PROPIA}` : `sesión ${PROPIA}`, huella: h.huella, motivo: val('--reason') || null,
+    via, por: porPerfil ? 'perfil' : null });
   if (r.codigo) { console.error(`🔒 marker.js review-answer: ${r.motivo}. No se escribió nada.`); process.exit(r.codigo); }
   process.stdout.write(`respuesta anotada para la sesión ${sesion}: ${val('--choice')} (${kind}).\n`);
   process.exit(0);
@@ -249,7 +298,9 @@ function cmdOwnerAway(argv) {
   const { val } = opcionesDe(argv);
   const accion = argv[0];
   if (accion === 'set') {
-    const r = oa.set({ estado: STATE_DIR, quien: `sesión ${PROPIA}`, frase: val('--phrase') });
+    // la frase la tipeó la persona en esta sesión, en los últimos 30 minutos: el agente no se pone la marca solo
+    const ap = require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'owner-approvals.js'));
+    const r = oa.set({ estado: STATE_DIR, quien: `sesión ${PROPIA}`, frase: val('--phrase'), verificar: (frase) => ap.fraseTipeadaReciente({ sesion: PROPIA, frase }) });
     if (r.codigo) { console.error(`🔒 marker.js owner-away set: ${r.motivo}. No se escribió nada.`); process.exit(r.codigo); }
     process.stdout.write(`marca de ausente puesta (${r.mark.setAt}): las revisiones siguen la celda de «persona ausente» hasta que la persona vuelva o pasen 24 h.\n`);
     process.exit(0);
@@ -465,6 +516,43 @@ function cmdCompareWaiver(argv) {
   anotarAprobacion(m, { que: `exencion de la comparacion ${command}`, via: entrada.via, tipo: entrada.tipo, quien: entrada.quien, ...porDe(firmaDada),
     ...(entrada.delegacion ? { delegacion: entrada.delegacion } : {}) });
   console.error(`✅ ${command} eximido de la comparación con main (${constancia.tipo === 'manual' ? 'manual' : 'por delegación'}, ${constancia.quien}). «Preparar el commit» lo avisa, y el texto del pedido también.`);
+  process.exit(0);
+}
+
+// `sign-atdd-skip --story S --reason R [--terminal]`: la firma del dueño que saltea «pruebas primero» en la ejecución
+// de S (lib/atdd-skip.js). La ejecución sale de la última muestra de S que anotó el pedido (`--no-atdd`, `set-flag
+// atddBypass` o el portón previo), no del marcador: en la terminal del dueño no hay sesión. Sin muestra sale 1 sin
+// escribir nada; la cita, el reenvío y el --ok no firman.
+function cmdSignAtddSkip(argv) {
+  const sk = require('./atdd-skip.js');
+  const { val, tiene } = opcionesDe(argv);
+  if (tiene('--terminal')) {
+    const waiver = require('./runtime-waiver.js');
+    if (waiver.esWindows() && process.env[waiver.MARCA_VENTANA] !== '1') {
+      console.error('🪟 Abro una ventana nueva para la firma: seguí ahí.');
+      const v = waiver.abrirVentana({ script: MARKER_JS, args: ['sign-atdd-skip', ...argv] });
+      if (v.estado === 'vencida' || v.estado === 'no-abrio') { console.error(`🔒 marker.js sign-atdd-skip: ${v.estado === 'vencida' ? 'la ventana venció sin firmar' : `no pude abrir la ventana (${v.motivo})`} — no se firmó nada.`); process.exit(1); }
+      process.exit(v.codigo === 0 ? 0 : (v.codigo || 1));
+    }
+    if (waiver.esWindows()) waiver.dentroDeLaVentana();
+  }
+  const ow = require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+  const r = sk.firmar({
+    story: (val('--story') || '').trim(), motivo: (val('--reason') || '').trim(), argv: process.argv.slice(1), sesion: estado.SID || null,
+    exigir: (o) => ow.exigir(o),
+    aprobar: (linea, entrada) => {
+      const m = readMarker();
+      if (m && String(m.storyId) === String(linea.story)) anotarAprobacion(m, entrada);
+      else require('./approvals.js').anotar(linea.carpeta, entrada);
+    },
+  });
+  if (r.codigo !== 0) {
+    console.error(`🔒 marker.js sign-atdd-skip: no se firmó el salteo — ${r.motivo}`);
+    process.exit(r.codigo);
+  }
+  if (r.aviso) console.error(`⚠️  ${r.aviso}`);
+  appendLog('gates.log', { name: 'atdd-skip-recorded', status: 'ok', story: r.linea.story, camino: r.linea.camino, via: r.linea.via, huella: r.linea.huella });
+  console.error(`✅ salteo de «pruebas primero» firmado (historia ${r.linea.story}, vía ${r.linea.via}, huella ${r.linea.huella}). Vale para esa ejecución entera.`);
   process.exit(0);
 }
 
@@ -715,7 +803,8 @@ function firmaDeLaDesignacion(firma, resumen, antes, alNegar) {
 
 // `designate-relay` designa ESTA sesión, en esta máquina, como la coordinadora: la que ordena las sesiones. Sin frase,
 // con el click del dueño en el cuadro que dice qué sesión es y en qué carpeta (firma `designation-set`): el arnés no lee
-// ninguna frase, y anota la designación y su confirmación en un paso. Con `--approved-by "<el dev>" --quote "<su frase>"`,
+// ninguna frase; con el rol del perfil anota la designación y su confirmación en un paso, y sin él sólo la designación
+// (la sesión ordena y no firma por nadie). Con `--approved-by "<el dev>" --quote "<su frase>"`,
 // el respaldo: la frase nombra el rol (el de `approvals.relay_session` o, sin perfil, «coordinadora») y, con el rol del
 // perfil, la sesión firma en nombre del dueño cuando él la confirma (scripts/lib/delegated-signing.js
 // `confirm-designation`); sin él, las firmas siguen yendo a la ventana del dueño. Una designación nueva reemplaza a la
@@ -732,11 +821,10 @@ function cmdDesignateRelay(argv) {
     process.exit(1);
   }
   const e = r.entrada;
-  // sin el rol en el perfil la frase no se puede confirmar: con otra confirmada en pie, la línea quedaría pendiente para siempre
-  // el rol se mira como lo mira el click (sesionQueReenvia): es lo que pide confirm-designation para confirmar
-  const confirmada = cw.designacionConfirmada();
-  if (confirmada && !confirmada.error && confirmada.sesion !== e.sesion && !cw.sesionQueReenvia().valor) {
-    console.error(`🚫 marker.js designate-relay: no se designó nada — la sesión ${confirmada.sesion} es la coordinadora confirmada, y sin approvals.relay_session en el perfil esta designación no se puede confirmar. Primero hay que retirarla: desde su pestaña, node ${MARKER_JS} withdraw-relay; si ya no vive, desde ésta, node ${MARKER_JS} withdraw-relay --session ${confirmada.sesion}.`);
+  // el rol se mira con sesionQueReenvia: es lo que pide confirm-designation para confirmar
+  const tapa = confirmadaEnPie(cw, e.sesion, () => Boolean(cw.sesionQueReenvia().valor));
+  if (tapa) {
+    console.error(`🚫 marker.js designate-relay: no se designó nada — ${tapa}.`);
     process.exit(1);
   }
   appendLog('gates.log', { name: cw.DESIGNACION, status: 'ok', ts: nowIso(), sesion: e.sesion, rol: e.rol, quien: e.quien, cita: e.cita, cita_cuando: e.cita_cuando });
@@ -752,10 +840,21 @@ function cmdDesignateRelay(argv) {
     process.exit(0);
   }
   if (r.firma) console.error(`✅ Esta sesión (${e.sesion}) es la «${e.rol}» de esta máquina, designada por ${e.quien}. Vale cuando una persona la confirma: corré node scripts/lib/delegated-signing.js confirm-designation en esta pestaña y aprobala con un click, o confirmala en su terminal`);
-  else console.error(`✅ Esta sesión (${e.sesion}) es la «${e.rol}» de esta máquina, designada por ${e.quien}: ordena esta máquina, y las firmas siguen yendo a la ventana de la persona${r.aviso ? ` (${r.aviso.replace(/: nadie reenvía$/, '')})` : ' (el perfil del equipo no tiene approvals.relay_session)'}.`);
+  else console.error(`✅ Esta sesión (${e.sesion}) es la «${e.rol}» de esta máquina, designada por ${e.quien}: ordena esta máquina, y las firmas siguen yendo a la ventana de la persona (${porQueNoFirma(r.aviso)}).`);
   console.error(`   Antes de seguir, leé tus reglas completas: ${path.join(SCRIPTS_DIR, '..', '..', '..', 'guides', 'coordination.md')}`);
   process.exit(0);
 }
+
+// Sin el rol en el perfil una designación nueva no se puede confirmar: con otra confirmada en pie, quedaría pendiente
+// para siempre. El motivo para no designar, o null. `firma()` dice si el perfil nombra el rol; se mira sólo si hace falta.
+function confirmadaEnPie(cw, sesion, firma) {
+  const confirmada = cw.designacionConfirmada();
+  if (!confirmada || confirmada.error || confirmada.sesion === sesion || firma()) return null;
+  return `la sesión ${confirmada.sesion} es la coordinadora confirmada, y sin approvals.relay_session en el perfil esta designación no se puede confirmar. Primero hay que retirarla: desde su pestaña, node ${MARKER_JS} withdraw-relay; si ya no vive, desde ésta, node ${MARKER_JS} withdraw-relay --session ${confirmada.sesion}`;
+}
+
+// Por qué la sesión ordena y no firma: lo que no se pudo leer del perfil, o que el perfil no tiene la clave.
+const porQueNoFirma = (aviso) => (aviso ? aviso.replace(/: nadie reenvía$/, '') : 'el perfil del equipo no tiene approvals.relay_session');
 
 // Una prueba (`TYCON_TEST_RUN=1`, la marca que pone smoke-run.sh) no escribe la designación del estado real de la
 // máquina (historia 8.314): sale 2 sin escribir. Si no se puede saber, también.
@@ -772,26 +871,37 @@ function designarPorClick(cw) {
     console.error(`🚫 marker.js designate-relay: no se nombró a la coordinadora — no pude comprobar el click: ${motivo}.`);
     for (const l of respaldosDeDesignar(sesion)) console.error(l);
   };
+  // el rol de ordenar: el del perfil, que firma por la persona, o sin perfil el de fábrica, que sólo ordena
+  const coord = cw.rolDeCoordinar();
+  // se lee de nuevo en cada llamada: lo que se anota es lo que el cuadro mostró, y sin el rol nunca se confirma
   const antes = () => {
     if (!/^[\w-]+$/.test(String(sesion || '')) || sesion === '_nosession') return { codigo: 1, motivo: 'la sesión no dice su identificador' };
-    const declarada = cw.sesionQueReenvia();
-    if (!declarada.valor) return { codigo: 1, motivo: `la organización no usa una sesión que reenvía el ok de un dev (approvals.relay_session del perfil del equipo)${declarada.aviso ? `: ${declarada.aviso}` : ''}` };
-    return null;
+    const ahora = cw.rolDeCoordinar();
+    if (ahora.rol !== coord.rol || ahora.firma !== coord.firma) return { codigo: 1, motivo: 'el perfil del equipo cambió mientras se esperaba la firma: corré el comando de nuevo' };
+    const tapa = confirmadaEnPie(cw, sesion, () => coord.firma);
+    return tapa ? { codigo: 1, motivo: tapa, enPie: true } : null;
   };
-  // antes de pedir la firma: sin id de sesión o sin rol en el perfil, el click no tendría qué nombrar
+  // antes de pedir la firma: sin id de sesión el click no tendría qué nombrar, y con otra confirmada en pie que esta
+  // designación no puede reemplazar, el click se gastaría; los respaldos no sirven para eso: hay que retirarla
   const previo = antes();
+  if (previo && previo.enPie) { console.error(`🚫 marker.js designate-relay: no se nombró a la coordinadora — ${previo.motivo}.`); process.exit(previo.codigo); }
   if (previo) { noSeNombro(previo.motivo); process.exit(previo.codigo); }
-  const rol = cw.sesionQueReenvia().valor;
-  const r = firmaDeLaDesignacion('designation-set', `la sesión ${sesion} pasa a ser la «${rol}» de esta máquina`, antes, noSeNombro);
-  appendLog('gates.log', { name: cw.DESIGNACION, status: 'ok', ts: nowIso(), sesion, rol, quien: 'la persona', via: r.via });
+  const r = firmaDeLaDesignacion('designation-set', `la sesión ${sesion} pasa a ser la «${coord.rol}» de esta máquina`, antes, noSeNombro);
+  appendLog('gates.log', { name: cw.DESIGNACION, status: 'ok', ts: nowIso(), sesion, rol: coord.rol, quien: 'la persona', via: r.via });
   const quedo = cw.ultimaDesignacion();
   if (!quedo || quedo.error || quedo.sesion !== sesion) {
     console.error(`🚫 marker.js designate-relay: no pude dejar la designación en el registro del arnés${quedo && quedo.error ? ` (${quedo.error})` : ''}.`);
     process.exit(2);
   }
-  // el mismo click la confirma: el renglón se ata a esta designación por su hora, sin frase
-  appendLog('gates.log', delegatedSigning().confirmationRecord(quedo, nowIso(), { via: r.via }));
-  console.error(`✅ Esta sesión (${sesion}) es la «${rol}» de esta máquina, nombrada por la persona con ${r.via === 'click' ? 'su click' : 'su terminal'}.`);
+  const con = r.via === 'click' ? 'su click' : 'su terminal';
+  if (coord.firma) {
+    // el mismo click la confirma: el renglón se ata a esta designación por su hora, sin frase
+    appendLog('gates.log', delegatedSigning().confirmationRecord(quedo, nowIso(), { via: r.via }));
+    console.error(`✅ Esta sesión (${sesion}) es la «${coord.rol}» de esta máquina, nombrada por la persona con ${con}.`);
+  } else {
+    // sin el rol en el perfil no hay confirmación: la sesión no firma por nadie
+    console.error(`✅ Esta sesión (${sesion}) es la «${coord.rol}» de esta máquina, nombrada por la persona con ${con}: ordena esta máquina, y las firmas siguen yendo a la ventana de la persona (${porQueNoFirma(coord.aviso)}).`);
+  }
   console.error(`   Antes de seguir, leé tus reglas completas: ${path.join(SCRIPTS_DIR, '..', '..', '..', 'guides', 'coordination.md')}`);
   process.exit(0);
 }
@@ -1171,7 +1281,7 @@ function cmdSignFile(firma, archivo) {
 module.exports = {
   carpetaParaLaFirma, quienFirmo, firmadoEnLaTerminal, sinCorrerFueraDeLaDeuda, runtimeWaiverConOk, opcionesDe,
   cmdPlanReview, cmdReviewAsk, cmdReviewAnswer, cmdOwnerAway, cmdWaiveCritical, cmdCompareWaiver,
-  cmdSignAdversarialSkip, cmdDeclarePending, cmdApprovePending, firmasDeLaCorrida, cmdApproveSave, cmdSaveCheck,
+  cmdSignAdversarialSkip, cmdSignAtddSkip, cmdDeclarePending, cmdApprovePending, firmasDeLaCorrida, cmdApproveSave, cmdSaveCheck,
   respaldosDeDesignar, firmaDeLaDesignacion, cmdDesignateRelay, negarSiEsPruebaSobreLoReal, designarPorClick,
   vidaDeLaSesion, cmdWithdrawRelay, cmdMarkTested, cmdRuntimeWaiver, cmdSignFile,
 };

@@ -3621,21 +3621,32 @@ function computeSpecStaleness(fm, hoyMs) {
 }
 
 /**
- * Congela la vuelta de revisores (historia 8.161): sella el repo de la historia y el del código y arma la copia de sólo
- * lectura de cada uno en la carpeta de estado (lib/frozen-tree.js). `{ repos }` o `{ error }`: sin sello o sin copia la
- * vuelta no se lanza, nunca se revisa la carpeta viva en silencio. Una ruta fuera de todo repo de git no tiene árbol
- * que sellar: no suma copia.
+ * Congela la vuelta de revisores (historia 8.161): sella el repo de la historia, el del código y cada repo hermano
+ * declarado, y arma la copia de sólo lectura de cada uno en la carpeta de estado (lib/frozen-tree.js). Los hermanos
+ * entran como en el pase: así «Preparar» compara también su código con lo revisado, y el arreglo de un hallazgo del
+ * pase en un hermano lo cubre la vuelta siguiente. `{ repos, aviso? }` o `{ error }`: sin sello o sin copia de la
+ * historia o del código la vuelta no se lanza, nunca se revisa la carpeta viva en silencio. Un hermano que no se deja
+ * sellar no frena la vuelta: se lee vivo, como antes, y `aviso` lo dice; entonces el arreglo de un hallazgo del pase
+ * en ese hermano sigue frenando el cierre del pase. Una ruta fuera de todo repo de git no tiene árbol que sellar: no
+ * suma copia.
  */
 function congelarVuelta({ story, repo, iter }) {
   const ft = require('./lib/frozen-tree.js');
-  const { repos, error } = ft.reposDe([story, repo]);
-  if (error) return { error };
-  if (!repos.length) return { repos: [] };
+  const base = ft.reposDe([story, repo]);
+  if (base.error) return { error: base.error };
+  if (!base.repos.length) return { repos: [] };
   let storyId = null;
   try { storyId = story ? parseFrontmatterPipeline(readText(story)).story || null : null; } catch { storyId = null; }
-  return ft.sealAndFreeze({
+  const congelar = (repos) => ft.sealAndFreeze({
     stateDir: stateDirOf(os.homedir()), sid: sessionIdFileKey(), etiqueta: `rev-iter${iter || 1}`, repos, tipo: 'revisores', story: storyId,
   });
+  const pase = ft.reposDelPase({ story, repo });
+  const conHermanos = !pase.error && pase.repos.length > base.repos.length ? congelar(pase.repos) : null;
+  if (conHermanos && !conHermanos.error) return conHermanos;
+  const sinHermanos = congelar(base.repos);
+  const motivo = pase.error || (conHermanos && conHermanos.error);
+  if (!motivo || sinHermanos.error) return sinHermanos;
+  return { ...sinHermanos, aviso: `los repos hermanos no se sellaron (${motivo}): los revisores los leen vivos, y un arreglo del pase en ellos frena su cierre` };
 }
 
 /** Suma al contexto de los revisores (el compartido y los recortados) la copia y el sello de cada repo. */
@@ -5246,6 +5257,7 @@ function equivalenciasDeModelos() {
 //      diff toca una de esas rutas, corre AUNQUE el risk-class dé LOW. Está en el 4to
 //      lugar a propósito: no puede pisar el kill-switch ni el `off` del dueño del repo, pero sí
 //      gana sobre el criterio por tamaño de diff, que puede dejar pasar un defecto en superficie compartida.
+//   4d) el código va a un repo hermano con su corrida a la vista (lib/delegated-pass.js): esa corrida decide el pase.
 //   5) default → risk-class (NORMAL run / LOW skip). Si el repo NO declaró superficie compartida,
 //      el skip por LOW se decide a ciegas y el veredicto lo dice (`shared_surface_declared:false`).
 // Corre UNA vez por corrida (default: se lanza al cierre de «Correr las pruebas» y el paso del pase adversarial es el join; TYCON_5B_EARLY=0 → se lanza en su paso), NUNCA por re-loop D.i
@@ -5444,7 +5456,17 @@ function deepReviewGateDeLaCorrida({ args, corrida, casa, userInfo, mostrar = fa
   const ej = ejecucionDeLaCorrida(args, corrida);
   const constancia = ej ? sk.vigente({ ...ej, casa, userInfo })
     : { ok: false, motivo: 'no hay una ejecución abierta de esta story', ninguna: true };
-  const result = computeDeepReviewGate({ ...args, adversarialSkipRecord: constancia, marcador: corrida || null });
+  // el pase que le toca a la corrida del repo hermano: sólo con una corrida de esta story y sin la constancia, que ya saltea.
+  // Lo que no se pudo mirar no deja el pase: el portón sigue como siempre y lo dice
+  let paseDelegado = null;
+  if (ej && !constancia.ok) {
+    try {
+      paseDelegado = require('./lib/delegated-pass.js').paseDelegado({ repo: args.repo, story: args.story, files: args.files, filesDeclarado: args.filesDeclarado, marcador: corrida });
+    } catch (e) {
+      paseDelegado = { ok: false, motivo: `no pude mirar si el pase le toca al repo hermano (${e && e.message})` };
+    }
+  }
+  const result = computeDeepReviewGate({ ...args, adversarialSkipRecord: constancia, marcador: corrida || null, paseDelegado });
   let texto = '';
   // Sin corrida no hay ejecución que firmar: la constancia nombra carpeta y comienzo, y no se ofrecen comandos.
   if (result.skip_request && mostrar && !ej) {
@@ -5536,6 +5558,21 @@ function criterioDelPase(args) {
   if (runSize.size === 'liviana') {
     return { run: false, risk: 'liviana', model: null, run_size: 'liviana', reason: `corrida liviana (${runSize.reason}) → sin pase adversarial; override: --deep-review o marker.js set-size completa --reason "<por qué>"` };
   }
+  // 4d) El código va a un repo hermano y su corrida se ve: esa corrida, con su portón, decide el pase sobre ese código.
+  //     Lo mira `deepReviewGateDeLaCorrida` (lib/delegated-pass.js); sin la mirada, o con algo que falte, se sigue
+  //     como siempre y el veredicto dice por qué (`delegation`).
+  const pd = args.paseDelegado || null;
+  if (pd && pd.ok) {
+    return { run: false, risk: 'delegated', model: null, decision: 'delegate', delegated_to: pd.hermanos,
+      reason: `${pd.motivo}: esta corrida no corre el pase ni pregunta (${pd.hermanos.map((h) => `la ejecución de ${h.nombre}, sesión ${h.sesion || '?'}`).join('; ')})` };
+  }
+  const delegacion = pd ? { delegation: { ok: false, motivo: pd.motivo } } : {};
+  const veredicto = criterioDeLaMatriz(args, { model, extras });
+  return veredicto && typeof veredicto === 'object' ? { ...veredicto, ...delegacion } : veredicto;
+}
+
+// La matriz de la organización (lib/review-policy.js `codeReview`): delicada o no, chica o grande, con la densidad.
+function criterioDeLaMatriz(args, { model, extras }) {
   // 5) La matriz de la organización (lib/review-policy.js `codeReview`): delicada o no, chica o grande.
   const rc = computeRiskClass(args);
   // `computeRiskClass` devuelve `{risk:'NORMAL', error, ...}` SIN `criteria` cuando --story es
@@ -6621,6 +6658,16 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
     process.stderr.write(`ℹ️  La vuelta ${iter} pasa el tope de ${tope.value} como vuelta chica: desde la última vuelta sólo cambiaron textos, y la revisan ${require('./lib/review-change-policy.js').REVISORES_DE_LA_VUELTA_CHICA.join(', ')}, sin firma.\n`);
     return null;
   }
+  // al tope sin nada abierto no hay nada que decidir: no frena, no devuelve revisores y dice que siga. Sin poder leer los
+  // hallazgos no es «nada abierto», y un crítico arreglado que su revisor todavía no confirmó necesita una vuelta más:
+  // los dos frenan como siempre
+  const porConfirmar = !ab.length ? revisoresPorConfirmar({ ...args, iter }) : null;
+  const nadaPorConfirmar = !!porConfirmar && !porConfirmar.error && !porConfirmar.agregar.length && !porConfirmar.fuera.length;
+  if (!paraOtra && !noMirado && h.existe && !ab.length && nadaPorConfirmar) {
+    if (args.extraRound) return `🛑 La vuelta ${iter} no necesita la vuelta extra ni la firma: no quedó nada abierto. Pedí el set sin --extra-round.\n`;
+    anotar({ name: 'review-cap-shown', status: 'ok', tope: tope.value, abiertos: [] });
+    return { sinAbiertos: `ℹ️  Llegaste al tope de ${tope.value} vueltas de revisores (${de}) y no quedó nada abierto: no hace falta otra vuelta. Seguí con «Probar en vivo» y «Preparar el pull request».\n` };
+  }
   const avisos = [...tope.problems, ...pre.problems].map((p) => `   ⚠️  ${p}`);
   const tramite = vueltaExtraDeTramite();
   if (args.extraRound && args.delegated) {
@@ -6657,7 +6704,13 @@ function topeDeVueltas({ args, iter, rr, runDir, repoAbs, storyId, vueltaChica =
   }
   const renglones = [`🛑 Llegaste al tope de ${tope.value} vueltas de revisores (${de}): no devuelvo el set de la vuelta ${iter}.`, ...avisos];
   if (noMirado) renglones.push(`   No pude mirar lo abierto (${noMirado}): escribí los hallazgos con pipeline.js write-findings y volvé a pedirlo.`);
-  else if (!ab.length) renglones.push('   No quedó nada abierto: seguí con «Probar en vivo» y «Preparar el commit».');
+  else if (porConfirmar && porConfirmar.error) renglones.push(`   No quedó nada abierto en findings.json, pero no pude mirar lo que queda por confirmar (${porConfirmar.error}).`);
+  else if (porConfirmar && (porConfirmar.agregar.length || porConfirmar.fuera.length)) {
+    renglones.push('   No quedó nada abierto en findings.json, pero un crítico arreglado espera que su revisor lo confirme:');
+    for (const r of porConfirmar.agregar) renglones.push(`     · ${r.name}: ${r.reason}`);
+    for (const l of porConfirmar.fuera) renglones.push(`     · ${l}`);
+    renglones.push('   Una vuelta más con --extra-round lo confirma; si no, el cierre pide eximirlo.');
+  } else if (!ab.length) renglones.push('   No quedó nada abierto: seguí con «Probar en vivo» y «Preparar el commit».');
   if (bloquean.length) {
     renglones.push(`   Quedó abierto algo de seguridad o de datos (${bloquean.length}): lo decide una persona. Mostrale esto y preguntale qué hace:`);
     for (const l of rr.resumen(bloquean)) renglones.push(`     · ${l}`);
@@ -6717,6 +6770,17 @@ function emptyWorkGate(args) {
   return `🛑 La carpeta de la story no tiene ningún cambio contra ${principal}: ni commits propios ni cambios sin commitear (${repo}).\n` +
     '   Los revisores leerían la rama principal y dirían «no está el código»: la vuelta se perdería.\n' +
     '   Causa típica: algo apartó los cambios mientras tanto (un `git stash` de fondo, un checkout). Recuperalos y volvé a pedir la vuelta.\n';
+}
+
+// Lo que devuelve el freno de abajo: el tope sin nada abierto (`{ sinAbiertos }`) no frena: sale 0, sin revisores, con
+// su aviso; un texto frena (sale 3).
+function salidaDelFreno(r) {
+  if (r && r.sinAbiertos) {
+    process.stderr.write(r.sinAbiertos);
+    process.stdout.write(`${JSON.stringify({ mode: 'cap-nothing-open', rerun: [], all: [], note: r.sinAbiertos.trim() }, null, 2)}\n`);
+    process.exit(0);
+  }
+  if (r) { process.stderr.write(r); process.exit(3); }
 }
 
 // El freno de la tercera vuelta de `smart-reloop` y `advisors`: null si puede seguir, o el mensaje llano de por qué no.
@@ -7705,8 +7769,7 @@ function main() {
     if (filesErr) { process.stderr.write(filesErr); process.exit(2); }
     const emptyWork = emptyWorkGate(args);
     if (emptyWork) { process.stderr.write(emptyWork); process.exit(2); }
-    const rethinkBlock = rethinkGate(args);
-    if (rethinkBlock) { process.stderr.write(rethinkBlock); process.exit(3); }
+    salidaDelFreno(rethinkGate(args));
     if (process.env[PRECHEQUEO] === '1') process.exit(0);
     const set = computeAdvisorSet(args);
     // Descuento automático de advisors cubiertos por mech-check (coherente
@@ -7760,6 +7823,7 @@ function main() {
       process.exitCode = 2;
       return;
     }
+    if (congelada.aviso) process.stderr.write(`⚠️  pipeline.js advisors: ${congelada.aviso}.\n`);
     set.frozen = congelada.repos;
     const ctx = buildAdvisorContext({ repo: args.repo, story: args.story, files: args.files, iter: args.iter });
     contextoConLaCopia(ctx, congelada.repos);
@@ -7849,8 +7913,7 @@ function main() {
     // el set se calcula antes del freno de vueltas: una vuelta chica (sólo textos) pasa el tope sin firma
     const conModelos = conModelosDeLaCorrida(args);
     const result = computeSmartReloop(conModelos);
-    const rethinkBlock = rethinkGate(args, { vueltaChica: result.mode === 'small-round' });
-    if (rethinkBlock) { process.stderr.write(rethinkBlock); process.exit(3); }
+    salidaDelFreno(rethinkGate(args, { vueltaChica: result.mode === 'small-round' }));
     // el chequeo antes de la ventana termina en la firma (owner-window.js): si llegó acá sin pasar por ella, no dice que sí
     if (process.env[PRECHEQUEO] === '1') process.exit(0);
     const avisosModelos = result._avisos || [];
@@ -7920,6 +7983,7 @@ function main() {
       process.exitCode = 2;
       return;
     }
+    if (congelada.aviso) process.stderr.write(`⚠️  pipeline.js smart-reloop: ${congelada.aviso}.\n`);
     result.frozen = congelada.repos;
     const ctx = buildAdvisorContext({ repo: args.repo, story: args.story, files: args.files, iter: args.iter });
     contextoConLaCopia(ctx, congelada.repos);

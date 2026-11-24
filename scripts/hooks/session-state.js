@@ -11,6 +11,7 @@
  *           PostToolUse, PostToolUseFailure (la herramienta falló), UserPromptSubmit, Stop → ya no espera · SessionEnd → borra el archivo
  *           Con un permiso abierto, el PostToolUse de otra herramienta (una en paralelo, un agente de la sesión) no lo
  *           cierra: sólo el de la misma herramienta. Dos usos a la vez de la misma lo pueden cerrar antes de tiempo.
+ *           El de otra anota en el permiso cuándo se movió la sesión (`movedAt`, a lo sumo una vez por minuto).
  *   Codex:  SessionStart → crea el archivo (sin nombre ni pid: Codex no da uno estable). Su arranque no trae `turn_id`:
  *           se lo reconoce por la carpeta de su conversación (toolOf), y el próximo momento corrige un archivo mal creado
  *           UserPromptSubmit → ocupada (`busy: true`) y ya no espera · Stop → parada (`busy: false`)
@@ -40,6 +41,7 @@ const WAIT_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode', 'mcp__spokenly__a
 const PERMISSION = 'un permiso';
 const ANSWER = 'una respuesta';
 const DETAIL_MAX = 200;
+const MOVED_EVERY_MS = 60 * 1000;
 // de dónde sale qué pide cada herramienta, en este orden
 const DETAIL_KEYS = ['command', 'file_path', 'notebook_path', 'path', 'url', 'pattern'];
 
@@ -148,7 +150,13 @@ function decide(d, codex, cur = null, now = Date.now()) {
   // compara, y lo cierra el final de cualquier herramienta, como antes
   // el comando que falló (salió distinto de 0) llega como PostToolUseFailure, no como PostToolUse: cierra igual
   const after = ev === 'PostToolUse' || ev === 'PostToolUseFailure';
-  if (after && open && open.via === 'request' && open.tool !== d.tool_name) return null;
+  // la sesión sigue moviéndose con el permiso abierto (otra herramienta, o un agente suyo al que le negaron el pedido):
+  // se anota cuándo, a lo sumo una vez por minuto, para que la coordinadora no la dé por trabada (coordination.js)
+  if (after && open && open.via === 'request' && open.tool !== d.tool_name) {
+    const moved = Date.parse(open.movedAt);
+    if (Number.isFinite(moved) && now - moved < MOVED_EVERY_MS) return null;
+    return { patch: { permission: { ...open, movedAt: new Date(now).toISOString() } } };
+  }
   if (after || ev === 'UserPromptSubmit' || ev === 'Stop') return { patch: { waitingForOwner: false, waitingFor: null, permission: null } };
   if (ev === 'SessionStart') return { patch: {} };
   return null;

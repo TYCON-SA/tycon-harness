@@ -255,6 +255,9 @@ function leerPedido(args, ctx) {
   const p = r.value;
   if (!p || typeof p !== 'object' || Number(p.pullRequestId) !== n) return no('no_medido', `az contestó el pedido !${n} sin forma`);
   if (String((p.repository && p.repository.name) || '').toLowerCase() !== String(repo.repo).toLowerCase()) return no('no_encontrado', `el pedido !${n} no es de ${repo.repo}`);
+  // el número es de toda la organización: un repo con el mismo nombre en otro proyecto no es éste
+  const proyecto = p.repository && p.repository.project && p.repository.project.name;
+  if (repo.project && String(proyecto || '').toLowerCase() !== String(repo.project).toLowerCase()) return no('no_encontrado', `el pedido !${n} no es del proyecto ${repo.project}`);
   const entro = p.status === 'completed';
   // el commit que la fusión dejó en la rama destino; con el pedido abierto o abandonado, el de prueba no sirve
   const fusion = String((p.lastMergeCommit && p.lastMergeCommit.commitId) || '');
@@ -268,6 +271,8 @@ function leerPedido(args, ctx) {
       mergedAt: entro && p.closedDate ? String(p.closedDate) : null,
       mergeCommit: entro && /^[0-9a-f]{40}$/i.test(fusion) ? fusion.toLowerCase() : null,
       title: String(p.title || ''),
+      // la rama de origen sin `refs/heads/`; null si Azure no la dio (quien la lee no la toma por ninguna)
+      sourceBranch: /^refs\/heads\/./.test(String(p.sourceRefName || '')) ? String(p.sourceRefName).slice('refs/heads/'.length) : null,
     },
   };
 }

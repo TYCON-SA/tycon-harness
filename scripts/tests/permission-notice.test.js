@@ -170,6 +170,26 @@ test('T7 SiguioOSeCerro_BorraElPermiso @story-8.202 @ac-4', () => {
   assert.strictEqual(s.waitingForOwner, true, 'ni baja la espera');
 });
 
+// 🔴 Falla con: con un permiso abierto, nada anotaba que la sesión siguió con otra herramienta (el pedido cierra el
+// tramo trabajado y `lastEventAt` queda vacío): un agente al que le negaron algo y siguió trabajando salía como trabado
+// hasta el final del turno (fila 70, pase adversarial).
+test('T7b PostToolUseDeOtraHerramienta_AnotaQueSeMovio_UnaVezPorMinuto', () => {
+  const t = toy();
+  const T0 = mins(30);
+  SS.handle(ev(OTRA, { tool_name: 'Bash', tool_input: { command: 'npm i' } }), {}, t.home, T0);
+  const otra = (ms) => SS.handle({ session_id: OTRA, hook_event_name: 'PostToolUse', tool_name: 'Read' }, {}, t.home, ms);
+  otra(T0 + 120000);
+  const a = readState(t, OTRA);
+  assert.strictEqual(a.permission.movedAt, new Date(T0 + 120000).toISOString());
+  assert.strictEqual(a.permission.tool, 'Bash', 'el permiso sigue anotado');
+  assert.strictEqual(a.waitingForOwner, true, 'y la espera también');
+  assert.ok(!a.workingSince, 'no reabre el tramo trabajado');
+  otra(T0 + 150000);
+  assert.strictEqual(readState(t, OTRA).permission.movedAt, new Date(T0 + 120000).toISOString(), 'a los 30 s no vuelve a escribir');
+  SS.handle({ session_id: OTRA, hook_event_name: 'PostToolUseFailure', tool_name: 'Grep' }, {}, t.home, T0 + 190000);
+  assert.strictEqual(readState(t, OTRA).permission.movedAt, new Date(T0 + 190000).toISOString(), 'pasado el minuto, sí; también una que falló');
+});
+
 test('T8 EscuchasDelCuadro_ConElGancho_NoEsAjeno @story-8.202 @ac-5', () => {
   const list = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'hooks-list.json'), 'utf8'));
   const hooks = (list.hooks || list).filter((h) => h.event === 'PermissionRequest' && /session-state\.js$/.test(h.spec));
@@ -217,6 +237,37 @@ test('T9b OwnerWait_PermisoSinConfirmar_DiceQueNoEstaConfirmado', () => {
   }
 });
 
+// 🔴 Falla con: el permiso que pide un agente de una sesión de fondo no se anuncia. La sesión principal sigue «ocupada»
+// (espera a su agente) y el aviso sólo miraba la que Claude Code da esperando: una noche entera trabada sin que nadie se
+// enterara (fila 70, DemoTracking, 22/11).
+test('T9c OwnerWait_PermisoDeUnAgente_LaSesionFiguraOcupada_LoAnuncia', () => {
+  const t = toy();
+  // ocupada desde antes del pedido, y nada pasó en la sesión desde entonces
+  claudeFile(t, OTRA, 'hora-mensajes', { status: 'busy', statusUpdatedAt: mins(30) });
+  frenada(t, OTRA, 'Bash', 'cd /tmp/capt34 && python3 -', 20);
+  const r = vuelta(t);
+  assert.strictEqual(r.lines.length, 1, JSON.stringify(r));
+  assert.match(r.lines[0], /^hora-mensajes espera un permiso desde las \d\d:\d\d que pidió un agente suyo \(la sesión figura ocupada y no se movió desde entonces\): Bash cd \/tmp\/capt34 && python3 -\. Para entrar: claude attach hora-mensajes$/);
+  // si la sesión se movió hace poco con el permiso abierto (un «No» y el agente siguió con otra herramienta), no está trabada
+  const t2 = toy();
+  claudeFile(t2, OTRA, 'hora-mensajes', { status: 'busy', statusUpdatedAt: mins(30) });
+  stateFile(t2, OTRA, { waitingForOwner: true, waitingFor: 'un permiso', permission: { tool: 'Bash', detail: 'npm i', since: new Date(mins(20)).toISOString(), via: 'request' } });
+  SS.handle({ session_id: OTRA, hook_event_name: 'PostToolUse', tool_name: 'Read' }, {}, t2.home, mins(5));
+  assert.deepStrictEqual(vuelta(t2).lines, [], 'se movió hace 5 minutos');
+  // y si después se quedó quieta del todo, sale
+  assert.strictEqual(vuelta(t2, { now: NOW + 7 * 60000 }).lines.length, 1, 'quieta 12 minutos desde que se movió por última vez');
+  // un permiso de hace menos que el tope de un comando en primer plano puede ser uno aprobado que todavía corre
+  const t4 = toy();
+  claudeFile(t4, OTRA, 'hora-mensajes', { status: 'busy', statusUpdatedAt: mins(30) });
+  frenada(t4, OTRA, 'Bash', 'npm test', 9);
+  assert.deepStrictEqual(vuelta(t4).lines, [], 'pedido hace 9 minutos: puede estar corriendo');
+  // ocupada desde después del pedido: la conversación principal lo resolvió y siguió
+  const t3 = toy();
+  claudeFile(t3, OTRA, 'hora-mensajes', { status: 'busy', statusUpdatedAt: mins(1) });
+  frenada(t3, OTRA, 'Bash', 'npm i', 20);
+  assert.deepStrictEqual(vuelta(t3).lines, [], 'ocupada desde después del pedido');
+});
+
 test('T10 OwnerWait_YaAnunciada_NoTerminaDeNuevo @story-8.202 @ac-6', () => {
   const t = toy();
   claudeFile(t, OTRA, 'hora-mensajes', { status: 'waiting' });
@@ -237,6 +288,38 @@ test('T11 OwnerWait_SesionSiguio_AvisaUnaVez @story-8.202 @ac-7', () => {
   const r = vuelta(t);
   assert.deepStrictEqual(r.lines.sort(), ['hora-mensajes siguió: el permiso ya no está abierto', 'tercera siguió: el permiso ya no está abierto']);
   assert.deepStrictEqual(vuelta(t).lines, [], 'una sola vez');
+});
+
+// 🔴 Falla con: owner-wait termina (y despierta a la coordinadora, que lo relanza) con una novedad que no pide nada, como
+// «siguió», o se traga esa línea en vez de darla con la próxima que sí pide algo (fila 83 b)
+test('T11b OwnerWait_SiguioNoDespierta_SaleConLaProxima — lo que no pide acción queda para la próxima novedad', () => {
+  const t = toy();
+  claudeFile(t, OTRA, 'hora-mensajes', { status: 'waiting' });
+  claudeFile(t, 'tercera-3', 'tercera', { status: 'waiting' });
+  frenada(t, OTRA);
+  frenada(t, 'tercera-3', 'Bash', 'npm i');
+  assert.strictEqual(vuelta(t).wake, true, 'dos trabadas nuevas: despierta');
+  stateFile(t, OTRA, { permission: null, waitingForOwner: false, waitingFor: null });
+  const quieta = vuelta(t);
+  assert.deepStrictEqual(quieta.lines, ['hora-mensajes siguió: el permiso ya no está abierto']);
+  assert.strictEqual(quieta.wake, false, '«siguió» no pide nada: no despierta');
+  // la siguiente que sí pide algo sale con la que quedó guardada, aunque vengan en la misma vuelta o en otra
+  claudeFile(t, 'tercera-3', 'tercera', { status: 'waiting', dead: true });
+  const r = vuelta(t);
+  assert.strictEqual(r.wake, true);
+  assert.deepStrictEqual(r.lines, ['hora-mensajes siguió: el permiso ya no está abierto', 'tercera se cerró con un permiso abierto']);
+  assert.deepStrictEqual(vuelta(t).lines, [], 'la guardada sale una sola vez');
+  // el comando entero: con sólo «siguió» sigue esperando; con algo que pide acción termina y lo dice todo
+  const t2 = toy();
+  claudeFile(t2, OTRA, 'hora-mensajes', { status: 'waiting' });
+  claudeFile(t2, 'tercera-3', 'tercera', { status: 'waiting' });
+  frenada(t2, OTRA);
+  frenada(t2, 'tercera-3', 'Bash', 'npm i');
+  vuelta(t2);
+  stateFile(t2, OTRA, { permission: null, waitingForOwner: false, waitingFor: null });
+  claudeFile(t2, 'tercera-3', 'tercera', { status: 'waiting', dead: true });
+  const fin = C.ownerWait({ ...t2.opts, sessionId: COORD, env: { TYCON_OWNER_WAIT_POLL_MS: '1' } });
+  assert.deepStrictEqual(fin.text.split('\n').sort(), ['hora-mensajes siguió: el permiso ya no está abierto', 'tercera se cerró con un permiso abierto']);
 });
 
 test('T12 OwnerWait_SesionMurio_LoDice @story-8.202 @ac-7', () => {

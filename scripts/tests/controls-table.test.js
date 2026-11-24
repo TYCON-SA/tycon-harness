@@ -51,16 +51,16 @@ test('ControlsTable_CuentaPorFrenoYRegla', (t) => {
 // 🔴 Falla con: una firma delegada contada como de la persona, o las vías mezcladas.
 test('ControlsTable_CuentaLasFirmasPorVia', (t) => {
   const { casa } = casaNueva(t, { 'frenos.jsonl': [], 'signatures.jsonl': [
-    { ts: '2026-10-30T10:00:00Z', signature: 'save', via: 'window', delegated: false },
-    { ts: '2026-10-30T11:00:00Z', signature: 'save', via: 'delegation', delegated: true },
+    { ts: '2026-10-30T10:00:00Z', signature: 'pending-approval', via: 'window', delegated: false },
+    { ts: '2026-10-30T11:00:00Z', signature: 'pending-approval', via: 'delegation', delegated: true },
     { ts: '2026-10-30T12:00:00Z', signature: 'extra-round', via: 'terminal', delegated: false },
   ] });
   const r = ct.tabla({ home: casa });
   assert.deepStrictEqual(r.conteo.firmas.map((f) => [f.firma, f.total, f.delegadas, f.vias]), [
     ['extra-round', 1, 0, { terminal: 1 }],
-    ['save', 2, 1, { delegation: 1, window: 1 }],
+    ['pending-approval', 2, 1, { delegation: 1, window: 1 }],
   ]);
-  assert.match(r.md, /\| save \| 2 \| 1 \| delegation: 1, window: 1 \|/);
+  assert.match(r.md, /\| pending-approval \| 2 \| 1 \| delegation: 1, window: 1 \|/);
   assert.match(r.md, /Ningún freno anotó/);
 });
 

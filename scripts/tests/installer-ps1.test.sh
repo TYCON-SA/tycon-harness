@@ -73,8 +73,10 @@ no() { suite_check; TOTAL=$((TOTAL+1)); FAILURES=$((FAILURES+1)); echo "❌ inst
 brief() { tail -2 "$1" 2>/dev/null | sed $'s/\x1b\\[[0-9;]*m//g' | tr '\n' ' ' | cut -c1-"${2:-300}"; }   # <archivo> [largo]: el final de una salida, en un renglón y sin colores
 
 # ── el clon de laboratorio: el repo único (scripts/ + skills/ y agents/ de juguete en la raíz) ─────────────────
+# De integrations/ sólo los query-notice.js de cada conector: sin ellos el refresco de la lista de proyectos no tiene
+# quién lo haga (AC 36). Los manifiestos no: con ellos el instalador sumaría los ganchos de cada integración.
 CLONE="$T/clone"; mkdir -p "$CLONE/agents" "$CLONE/skills/tycon-pipeline"
-( cd "$ROOT" && tar cf - --exclude=scripts/tests --exclude=node_modules --exclude=.bench scripts claude-md-blocks ) | ( cd "$CLONE" && tar xf - )
+( cd "$ROOT" && tar cf - --exclude=scripts/tests --exclude=node_modules --exclude=.bench scripts claude-md-blocks integrations/*/scripts/query-notice.js ) | ( cd "$CLONE" && tar xf - )
 [ -f "$CLONE/scripts/install-tycon-hooks.ps1" ] || { echo "❌ installer-ps1: no pude armar el clon de laboratorio"; exit 1; }
 printf '# skill de juguete\n' > "$CLONE/skills/tycon-pipeline/SKILL.md"
 printf '# revisor de juguete\n' > "$CLONE/agents/lab-reviewer.md"
@@ -1386,7 +1388,8 @@ if [ "$RC" -eq 0 ] && [ "$R" = ok ] && [ "$(hhash "$HI")" = "$V1" ]; then ok "(v
 else no "(v) T26 instalado (rc $RC): ${R} · $(brief "$T/v2.out" 200)"; fi
 # T69 · con una herramienta de horas elegida y sus filas en la tabla de nombres de tools, el plan predice el bloque igual
 # que lo escribe el sync: instalado, «keep» (no «update» por el lugar de las filas sin expandir)
-CINT="$T/clone-int"; mkdir -p "$CINT"; ( cd "$CLONE" && tar cf - . ) | ( cd "$CINT" && tar xf - ); cp -R "$ROOT/integrations" "$CINT/integrations"
+# el clon ya trae integrations/ (los query-notice.js): se copia su CONTENIDO, no la carpeta adentro de la que ya está
+CINT="$T/clone-int"; mkdir -p "$CINT/integrations"; ( cd "$CLONE" && tar cf - . ) | ( cd "$CINT" && tar xf - ); cp -R "$ROOT/integrations/." "$CINT/integrations/"
 TT_ONE="$(node -e 'const I=require(process.argv[1]);const ms=I.listManifests({dir:process.argv[2]}).manifests.filter((m)=>m.kind==="timeTracking"&&require("fs").existsSync(process.argv[2]+"/"+m.name+"/tool-names.md"));console.log(ms.length?ms[0].name:"")' "$ROOT/scripts/lib/integrations.js" "$ROOT/integrations")"
 HT="$(new_home plan-time)"
 LAB_INSTALLER="$CINT/scripts/install-tycon-hooks.ps1" installer "$HT" "${HELD[@]}" "${TEAM[@]}" TYCON_NO_CLAUDEMD_SYNC=0 "TYCON_TIME_TRACKING=$TT_ONE" > "$T/vt1.out" 2>&1
@@ -1600,8 +1603,10 @@ w4_defects_section() {
   h="$(new_home 'w4 espacio acentó')"; mkdir -p "$h/.claude" "$W/bin-az"; ln -s "$CLONE" "$h/.claude/tycon-claude-guides"
   printf '#!/bin/sh\n# az de mentira: sólo la lista de proyectos\ncase "$*" in *"project list"*) echo %s ;; *) exit 1 ;; esac\n' "'[{\"name\":\"Lab\"}]'" > "$W/bin-az/az"; chmod +x "$W/bin-az/az"
   PS1_ENTRY="$h/.claude/tycon-claude-guides/scripts/install-tycon-hooks.ps1" installer "$h" "PATH=$W/bin-az:$T/bin:$PATH" TYCON_NO_AZ_PROJECTS_REFRESH=0 TYCON_ADO_ORG=https://dev.azure.com/acme -- > "$W/x4.out" 2>&1; rc=$?
+  # el refresco corre de fondo: con la máquina cargada (la suite entera en CI) tarda más de 15 s; se espera hasta 60 s y
+  # se sigue apenas aparece la lista
   local cache="$h/.claude/.tycon-pipeline/az-projects.json" i=0
-  while [ ! -s "$cache" ] && [ "$i" -lt 30 ]; do sleep 0.5; i=$((i+1)); done
+  while [ ! -s "$cache" ] && [ "$i" -lt 120 ]; do sleep 0.5; i=$((i+1)); done
   if [ "$rc" -eq 0 ] && grep -q '"Lab"' "$cache" 2>/dev/null; then ok "(x) AC 36 · una carpeta de usuario con espacio y acento: el refresco de fondo recibe la ruta entera y deja la lista de proyectos"
   else no "(x) AC 36 · refresco de fondo con espacio y acento (rc $rc): $([ -s "$cache" ] && echo 'la lista salió sin el proyecto' || echo 'no dejó la lista') · $(grep -F 'failed-query-notice' "$NODE_CALLS" | tail -1 | cut -c1-200) · $(brief "$W/x4.out" 200)"; fi
   # (x4b) la subida de corridas al buzón: sin ella, las corridas de una

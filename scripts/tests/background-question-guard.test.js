@@ -270,7 +270,7 @@ test('T10 FirmaEnLanzada_TextoALaCoordinadora @story-8.211 @ac-12', (t) => {
   const cuadro = oa.cuadroDe({ firma: 'plan-approval', destino: 's', que: 'aprobar el plan', detalle: 'la cita: «x»', siSaleMal: 'se rehace', huella: 'abcd1234' });
   const coord = { name: 'Coordinadora', sid: COORD };
   // varias firmas, o un cuadro que no se pudo armar: también a la coordinadora, sin «mostrale»
-  for (const [ids, c] of [[['plan-approval', 'save'], cuadro], [['plan-approval'], { error: 'no se pudo' }], [['plan-approval'], null]]) {
+  for (const [ids, c] of [[['plan-approval', 'pending-approval'], cuadro], [['plan-approval'], { error: 'no se pudo' }], [['plan-approval'], null]]) {
     const r = ow.negarSinVentana('esta sesión corre de fondo', ids, 's', c, true, false, coord);
     assert.match(r.texto, /SendMessage/, JSON.stringify(ids));
     assert.doesNotMatch(r.texto, /mostrale AskUserQuestion/);
@@ -288,7 +288,8 @@ test('T10 FirmaEnLanzada_TextoALaCoordinadora @story-8.211 @ac-12', (t) => {
   const lanzada = ow.negarSinVentana('esta sesión corre de fondo', ['plan-approval'], 's', cuadro, true, false, coord);
   assert.match(lanzada.texto, /SendMessage/);
   assert.match(lanzada.texto, /Coordinadora/);
-  assert.match(lanzada.texto, new RegExp(cuadro.pregunta.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  // sin la lista, la pregunta no viaja para que la copien (fila 149): la firma va a la terminal
+  assert.doesNotMatch(lanzada.texto, new RegExp(cuadro.pregunta.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.doesNotMatch(lanzada.texto, /mostrale AskUserQuestion/);
   const anotada = ow.negarSinVentana('esta sesión corre de fondo', ['plan-approval'], 's', cuadro, true, true, coord);
   assert.match(anotada.texto, /ya quedó anotado/);
@@ -622,4 +623,132 @@ test('T26 BgGuard_LoQueQuedabaDeLaVuelta2 @story-8.232 @ac-9 @ac-12', (t) => {
   assert.ok(r && r.decision === 'deny', JSON.stringify(r));
   SL.sesiones = () => { throw new Error('sin sesiones'); };
   assert.strictEqual(decidir(maquinaConOtra(t), mensaje(OTRA)), null);
+});
+
+const literal = (s) => new RegExp(String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+
+// 🔴 Falla con: sin la lista de firmas, el freno le pide a la sesión que la coordinadora abrió mandarle «esta pregunta
+//    exacta» para que la copie en su cuadro. Copiada por dos agentes no queda igual, y el click del dueño no vale.
+test('T30 FirmaEnLanzada_SinLista_NoPideCopiarLaPregunta @fila-149', () => {
+  const cuadro = oa.cuadroDe({ firma: 'plan-approval', destino: 's', que: 'aprobar el plan', detalle: 'la cita: «x»', siSaleMal: 'se rehace', huella: 'abcd1234' });
+  const coord = { name: 'Coordinadora', sid: COORD };
+  const r = ow.negarSinVentana('esta sesión corre de fondo', ['plan-approval'], 's', cuadro, true, false, coord, 'la lista de firmas está apagada en esta máquina');
+  assert.doesNotMatch(r.texto, literal(cuadro.pregunta), 'no trae la pregunta para copiarla');
+  assert.doesNotMatch(r.texto, /sin cambiarle una letra|pregunta exacta/);
+  // dice por qué no le llega a la coordinadora, le avisa a ella y da la terminal
+  assert.match(r.texto, /la lista de firmas está apagada en esta máquina/);
+  assert.match(r.texto, /SendMessage/);
+  assert.match(r.texto, /Coordinadora/);
+  assert.match(r.texto, /--terminal/);
+  // varias firmas: tampoco se manda la pregunta de cada una
+  const varias = ow.negarSinVentana('esta sesión corre de fondo', ['plan-approval', 'save'], 's', cuadro, true, false, coord, 'la lista de firmas está apagada en esta máquina');
+  assert.doesNotMatch(varias.texto, /se la mandás|la pregunta de cada una/);
+});
+
+// 🔴 Falla con: la sesión repite el comando antes de que el dueño firme (el caso del 23/11 a las 15:50), y el freno lo
+//    compara contra un click viejo y le dice que muestre la pregunta otra vez.
+test('T31 FirmaEnLanzada_NoRepetirAntesDelAviso @fila-149', () => {
+  const cuadro = oa.cuadroDe({ firma: 'plan-approval', destino: 's', que: 'aprobar el plan', detalle: 'la cita: «x»', siSaleMal: 'se rehace', huella: 'abcd1234' });
+  const coord = { name: 'Coordinadora', sid: COORD };
+  const sinLista = ow.negarSinVentana('esta sesión corre de fondo', ['plan-approval'], 's', cuadro, true, false, coord, 'la lista de firmas está apagada en esta máquina');
+  assert.match(sinLista.texto, /No repitas el comando hasta que/);
+  const anotada = ow.negarSinVentana('esta sesión corre de fondo', ['plan-approval'], 's', cuadro, true, true, coord);
+  assert.match(anotada.texto, /No repitas el comando hasta que/);
+  // un click a otra pregunta no manda a mostrarla de nuevo: el motivo dice sólo que el click fue a otra
+  const otra = `${cuadro.pregunta} (la de antes)`;
+  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'bg-question-click-'));
+  try {
+    const dir = path.join(casa, '.claude', 'projects', '-r');
+    fs.mkdirSync(dir, { recursive: true });
+    const ts = '2026-11-04T23:10:00.000Z';
+    const ruta = path.join(dir, 's.jsonl');
+    fs.writeFileSync(ruta, [
+      { type: 'assistant', timestamp: ts, message: { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_x', name: 'AskUserQuestion', input: { questions: [{ question: otra }] } }] } },
+      { type: 'user', timestamp: ts, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_x', content: 'ok' }] },
+        toolUseResult: { questions: [{ question: otra, options: cuadro.opciones.map((label) => ({ label })) }], answers: { [otra]: oa.APRUEBA } },
+        permissionDecision: { decision: 'accept', source: 'user_temporary' } },
+    ].map((l) => JSON.stringify(l)).join('\n') + '\n');
+    const v = oa.clickEnLaTranscripcion(ruta, { tool_use_id: 'toolu_x', ts, sesion: 's', pregunta: otra, respuesta: oa.APRUEBA },
+      { pregunta: cuadro.pregunta, opciones: cuadro.opciones, sello: cuadro.sello, casa });
+    assert.strictEqual(v.ok, false);
+    assert.match(v.motivo, /no es la que armó el guion/);
+    assert.doesNotMatch(v.motivo, /mostrala/);
+  } finally { fs.rmSync(casa, { recursive: true, force: true }); }
+});
+
+// 🔴 Falla con: el freno no sabe decir por qué el pedido no llega a la lista de la coordinadora (la lista apagada en la
+//    máquina, o prendida sin una coordinadora confirmada y viva).
+test('T32 PorQueSinLista_ApagadaOSinCoordinadora @fila-149', (t) => {
+  const toy = maquina(t);
+  // el ambiente vacío: el de quien corre la prueba (TYCON_PROFILE=0 en las portables) taparía el perfil de juguete
+  assert.match(ow.porQueSinLista({ casa: toy.casa, arnes: toy.arnes, env: {} }), /apagada.*approvals\.signature_list/);
+  fs.writeFileSync(path.join(toy.arnes, 'team-profile.json'), JSON.stringify({ approvals: { ...PERFIL.approvals, signature_list: 'on' } }));
+  // un pedido que sí se anotaría: lo que falta es la coordinadora para la lista
+  const cuadro = oa.cuadroDe({ firma: 'plan-approval', destino: 's', que: 'aprobar el plan', siSaleMal: 'se rehace', huella: 'abcd1234' });
+  const prendida = ow.porQueSinLista({ casa: toy.casa, arnes: toy.arnes, env: {}, sesion: 's', destino: 's', pendientes: ['plan-approval'], cuadro });
+  assert.match(prendida, /coordinadora/);
+  assert.doesNotMatch(prendida, /apagada/);
+});
+
+// 🔴 Falla con (lo encontró el pase): con la lista prendida y la coordinadora viva, un pedido que no se anota por algo
+//    suyo (varias firmas juntas, otra sesión destino, un cuadro que no se armó) le echa la culpa a la coordinadora.
+test('T33 PorQueSinLista_ListaPrendida_DiceLoDelPedido @fila-149', (t) => {
+  const toy = maquina(t);
+  fs.writeFileSync(path.join(toy.arnes, 'team-profile.json'), JSON.stringify({ approvals: { ...PERFIL.approvals, signature_list: 'on' } }));
+  const cuadro = oa.cuadroDe({ firma: 'plan-approval', destino: 's', que: 'aprobar el plan', siSaleMal: 'se rehace', huella: 'abcd1234' });
+  const por = (o) => ow.porQueSinLista({ casa: toy.casa, arnes: toy.arnes, env: {}, sesion: 's', destino: 's', pendientes: ['plan-approval'], cuadro, ...o });
+  assert.match(por({ pendientes: ['plan-approval', 'save'] }), /varias firmas/);
+  assert.match(por({ destino: 'ses-otra' }), /otra sesión/);
+  assert.match(por({ cuadro: { error: 'no se pudo' } }), /no se pudo armar/);
+  for (const o of [{ pendientes: ['plan-approval', 'save'] }, { destino: 'ses-otra' }, { cuadro: { error: 'x' } }]) {
+    assert.doesNotMatch(por(o), /no da a la coordinadora|no figura/, JSON.stringify(o));
+  }
+});
+
+// Un cuadro de aprobación escrito a mano (MacBook, 23/11): la coordinadora le mostró al dueño su propio texto, con la
+// opción de aprobar pero sin el código que imprimió el guion. El click quedó anotado, no aprobó nada y el dueño tuvo
+// que clickear otra vez. El freno lo niega antes de mostrarlo, en cualquier sesión, y dice qué hacer
+const conOpciones = (texto, opciones = [oa.APRUEBA, oa.NIEGA]) => ({ questions: [{ question: texto, header: 'Aprobar', multiSelect: false,
+  options: opciones.map((label) => ({ label, description: `${label}.` })) }] });
+const SELLO_COMPLETO = /\bfirma [\w:.-]+ · sesi[oó]n [\w-]+ · c[oó]digo [\w-]+/;
+
+test('T-fila149 CuadroDeAprobacionSinCodigo_SeNiegaAntesDelClick', (t) => {
+  const toy = casaNueva(t);
+  // una sesión con la persona delante: ni lanzada ni de fondo
+  const sid = 'ses-persona';
+  const aMano = decidir(toy, evento(sid, 'AskUserQuestion', conOpciones('¿Abro el arreglo rápido de la 3.6 con 51 archivos?')));
+  assert.ok(aMano && aMano.decision === 'deny', 'sin el código del guion, se niega');
+  assert.match(aMano.reason, /«Sí, aprobar»/);
+  assert.match(aMano.reason, /código/);
+  assert.match(aMano.reason, /exactamente como la imprimió/);
+  // el aviso no se confunde con un cuadro de aprobación: no trae un sello ni nombra una firma
+  assert.doesNotMatch(aMano.reason, SELLO_COMPLETO);
+  assert.doesNotMatch(aMano.reason, /\bfirma\b/i);
+  // con el código del guion al final, pasa
+  const delGuion = oa.cuadroDe({ firma: 'save', destino: sid, que: 'guardar los cambios', queHace: ['el comando: marker.js approve-save'], siSaleMal: 'se revierte el commit', huella: 'ab12cd34' });
+  assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', conOpciones(delGuion.pregunta, delGuion.opciones))), null);
+  // el pedido de permiso, tal cual lo arma signature-list.js: su código empieza con «permiso» y va antes del pedido; pasa
+  const permiso = require('../lib/signature-list.js').cuadroDePermiso({ id: 'permiso-1a2b3c4d', destino: 'ses-x', huella: '6c60386e1234',
+    herramienta: 'Bash', carpeta: '/r', pedido: 'git push origin wt/x' });
+  assert.match(permiso.pregunta, /\(permiso permiso-1a2b3c4d · sesión ses-x · código 6c60386e\)/);
+  assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', conOpciones(permiso.pregunta, permiso.opciones))), null);
+  // una etiqueta que se ve igual sigue siendo la de aprobar: espacio duro, carácter invisible, coma ancha
+  for (const etiqueta of ['Sí, aprobar', 'Sí, aprobar​', 'Sí， aprobar', 'Sí, aprobar️', 'Sí, apro͏bar', 'Sí,⠀aprobar', 'Sí,ㅤaprobar']) {
+    assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', conOpciones('¿Abro el arreglo?', [etiqueta, 'No']))).decision, 'deny', JSON.stringify(etiqueta));
+  }
+  // sin la opción de aprobar, es una pregunta como cualquier otra
+  assert.strictEqual(decidir(toy, evento(sid)), null);
+  // las preguntas de decisión de la coordinadora siguen pasando, aunque su etiqueta apruebe: sólo cuenta la de los cuadros
+  // de firma
+  for (const etiqueta of ['Sí, que entre', 'Sí, a done', 'Aprobado', 'Apruebo', 'Sí, aprobar el plan', 'Sí, aprobar (Recomendado)']) {
+    assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', conOpciones('¿Entra la 8.163 C?', [etiqueta, 'No']))), null, etiqueta);
+  }
+  // la etiqueta con espacios de más sigue siendo la de los cuadros de firma
+  assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', conOpciones('¿Abro el arreglo?', [' Sí, aprobar ', 'No']))).decision, 'deny');
+  // dos preguntas en un cuadro: alcanza con que una de aprobación venga sin código
+  const dos = { questions: [...conOpciones(delGuion.pregunta, delGuion.opciones).questions, ...conOpciones('¿Y también el plan?').questions] };
+  assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', dos)).decision, 'deny');
+  // el dictado no tiene opciones: no cambia; y con el freno apagado, pasa
+  assert.strictEqual(decidir(toy, evento(sid, 'mcp__spokenly__ask_user_dictation', { question: '¿Abro el arreglo?' })), null);
+  assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', conOpciones('¿Abro el arreglo?')), { TYCON_BG_QUESTION_GUARD: '0' }), null);
 });
