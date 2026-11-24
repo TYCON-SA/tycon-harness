@@ -227,9 +227,9 @@ test('F174 Aislada_HereDocDeBash_Anda: en el encierro, desde una carpeta no admi
 
 // fila 214: el freno de la consola corre dentro de la corrida aislada desde una carpeta que no es la de lanzamiento (la
 // prueba en vivo lo corre en el árbol público). El bash 3.2 de macOS escribe el temporal de un here-string en /var/tmp,
-// /tmp o la carpeta actual, y el encierro se los niega: el freno no leía lo que le contestaban sus lectores y negaba
-// todo. El freno no usa here-strings; el encierro no se afloja (admitir /var/tmp dejaba pisar el here document de un bash
-// de afuera, como el freno de otra sesión).
+// /tmp o la carpeta actual, y el encierro se los niega: el freno no leía lo que le contestaban sus lectores y, según el
+// lugar, negaba o dejaba pasar. El freno no usa here-strings; el encierro no se afloja (admitir /var/tmp dejaba pisar el
+// here document de un bash de afuera, como el freno de otra sesión).
 const GUARD_PRE = path.join(RAIZ, 'scripts', 'hooks', 'safety-guard-pre.sh');
 test('F214 Freno_SinHereStrings: el freno de la consola no usa here-strings ni here documents', () => {
   const malos = fs.readFileSync(GUARD_PRE, 'utf8').split('\n')
@@ -282,6 +282,41 @@ test('F214 T2 Aislada_EnlacePlantadoConOtraCaja_NoSeAdmite: un enlace duro «SH-
     assert.match(salida(s), /sh-thd/, `${nombre}: dice por qué: ${salida(s)}`);
     fs.rmSync(path.join(sesion, nombre), { force: true });
   }
+});
+
+// fila 218: la ventana de permiso corre run-base-controls.sh con bash para clasificar y prechequear la firma de un cambio
+// de control. Le pasaba su programa a node con un here document, y dentro del encierro, desde una carpeta que no es la
+// de lanzamiento, bash no podía crear su temporal: la firma se negaba con ese error. Se lo pasa sin archivo temporal.
+const BASE_CONTROLS = path.join(RAIZ, 'scripts', 'ci', 'run-base-controls.sh');
+test('F218 BaseControls_SinHereDocument: la parte de bash de run-base-controls.sh no usa here documents ni here-strings', () => {
+  const lineas = fs.readFileSync(BASE_CONTROLS, 'utf8').split('\n');
+  // la parte de bash termina donde empieza el programa de node
+  const fin = lineas.indexOf("'use strict';");
+  assert.ok(fin > 0, 'encuentro dónde empieza el programa de node');
+  const malos = lineas.slice(0, fin)
+    .map((l, i) => ({ l, i: i + 1 }))
+    .filter(({ l }) => !/^\s*#/.test(l) && /(^|[^<'"])<<(<|-?\s*(\\|['"])?[A-Za-z_][A-Za-z0-9_]*)/.test(l))
+    .map(({ l, i }) => `${i}: ${l.trim()}`);
+  assert.deepStrictEqual(malos, []);
+});
+
+test('F218 Aislada_BaseControlsDesdeOtraCarpeta_LlegaANode: dentro del encierro, run-base-controls.sh corrido desde una carpeta no admitida le pasa su programa a node', { skip: ENCIERRO ? false : 'sin el encierro del sistema' }, (t) => {
+  const c = cuenta(t);
+  const afuera = path.join(c.b, 'afuera');
+  fs.mkdirSync(afuera);
+  const r = repo(path.join(c.b, 'repo'), {
+    '.advisors/dod-runtime/g.js': [
+      "const { spawnSync } = require('child_process');",
+      // un pedido mal escrito: lo contesta el programa de node, así que llegar a esa respuesta prueba que lo recibió
+      "const h = spawnSync('/bin/bash', [process.argv[3], 'classify', '--root', process.argv[2], '--base', 'HEAD', '--entries', 'no-es-json'], { cwd: process.argv[2], encoding: 'utf8' });",
+      "console.log('CONTROLES ' + h.status + ' ' + ((h.stdout || '') + (h.stderr || '')).split('\\n').filter((x) => /no es JSON|temp file|here document/.test(x)).join(' | '));",
+    ].join('\n'),
+  });
+  const g = path.join(r, '.advisors', 'dod-runtime', 'g.js');
+  const s = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.33', ['--', process.execPath, g, afuera, BASE_CONTROLS], { cwd: r, env: ambiente(c) });
+  assert.match(salida(s), /CONTROLES 2 .*--entries no es JSON/, salida(s));
+  assert.doesNotMatch(salida(s), /cannot create temp file/, salida(s));
+  assert.deepStrictEqual(fs.readdirSync(afuera).filter((f) => /^sh-thd-/i.test(f)), [], 'nada en la carpeta de afuera');
 });
 
 test('F174 T2 Aislada_HijoSinLasVariablesDeLaRed_EscribeEnSuLaboratorio: un hijo con HOME de juguete y sin las variables TYCON_ escribe en su casa de juguete; la casa de la cuenta sigue frenada', { skip: !POSIX }, (t) => {
