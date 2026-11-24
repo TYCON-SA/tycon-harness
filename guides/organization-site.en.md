@@ -246,7 +246,10 @@ so and the row comes back to "Your decision" with the reason. The work item type
 
 Each card says **what happened** in plain words, with the finding's data. For a runs finding, for example: "Between 21/10
 and 24/10, 4 runs ended without the adversarial pass, the review that tries to break what was already approved. Stories:
-4.1, 4.3. Machines: mac-a, mac-b." With an analysis, it says **why** it happens, what it **recommends** and what
+4.1, 4.3. Machines: mac-a, mac-b. Sessions: Ponzio-5, Carrizo-4." Each session's name is the name the session had on
+its machine during the run, and it only shows if it has the shape of a session name (letters without accents, numbers,
+hyphen or underscore, no spaces, up to 40 characters); runs with a name without that shape, or with no name, are counted
+apart ("2 runs without a name"). A run closed before the harness recorded the names does not have it. With an analysis, it says **why** it happens, what it **recommends** and what
 fixing it would do, and whether the night's model or a person wrote it (the analysis is in Spanish). Without one, it
 says why. If the night left a proposal, it says the AI model that reviews every night wrote it, and its button is
 highlighted. The buttons to decide are always in view, under the heading **Decide**.
@@ -815,6 +818,12 @@ be, to copy it and open the request by hand.
   `marker.js withdraw-relay`. It is recognized by its
   conversation, not by its name: it keeps counting after the session restarts, and has to be designated again after a
   new chat or a `/clear`. A session with the same name cannot relay.
+  Then comes **who signs each commit in a run** (`approvals.local_commit`). "No one: the agent commits on its own" is
+  the default: the person approves the pull request, and the commit, which is local and can be undone, asks for nothing.
+  "The coordinator, before each commit" adds a second look: the agent does not commit without its ok to save
+  (`marker.js approve-save`), and a change after the ok needs another one. If the profile does not delegate the `save`
+  signature, the person gives it in the window. The site does not propose it to a layer that requires a harness version
+  that cannot read it yet.
   Below it is **who signs each thing**: one row for each signature in the catalog
   (`guides/firmas-del-arnes.md`), with three choices. "In the owner's window" is the default: the owner answers in the
   permission window; where the window does not reach, approves with a click in the options box or a written "aprobado";

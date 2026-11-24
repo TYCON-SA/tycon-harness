@@ -122,14 +122,18 @@ tope.
 
 **Con `--repo <repo>` en lugar de `--cwd`, `open` arma la carpeta solo.** Crea una copia hermana del repo,
 `<repo>--wt-<nombre>`, desde la punta de `origin/main`, en la rama `wt/<nombre>` (o la de `--branch`), y abre la sesión
-ahí. Claude Code la acepta sin pedir nada si la carpeta principal del repo ya está aprobada: el dueño aprueba una vez
-cada repo, no cada carpeta. Va al lado y no adentro por un **límite medido**: la aprobación de una carpeta no cubre las
-de adentro, así que cada worktree nuevo pide su propia aprobación. Si la copia o la rama ya existen, `open` se niega en una línea y no pisa lo que hay. Si no
-puede traer `main` o crear la copia, dice el primer renglón del error y no abre: nunca arranca desde una punta vieja sin
-decirlo. Si el lanzador contesta que la carpeta no está aprobada, `open` borra la copia y la rama que acaba de crear,
-nombra la carpeta principal para abrirla una vez y agrega que, si ya está aprobada, se puede abrir con `--slot`. El
-encargo le dice a la sesión que, al terminar, deje todo commiteado, empujado y con su pedido abierto. La copia no se
-borra al cerrar la sesión: la saca el barrido de copias, como a cualquier otra, cuando su rama ya entró a `main`.
+ahí. Con Claude Code 2.1.312 la aceptaba sin pedir nada si la carpeta principal estaba aprobada; desde Claude Code
+2.1.330 la sesión de fondo pide aprobar cada copia aparte, aunque la principal lo esté. Va al lado y no adentro por un
+**límite medido**: la aprobación de una carpeta no cubre las de adentro, así que
+cada worktree nuevo pide su propia aprobación. Si la copia o la rama ya existen, `open` se niega en una línea y no pisa
+lo que hay. Si no puede traer `main` o crear la copia, dice el primer renglón del error y no abre: nunca arranca desde
+una punta vieja sin decirlo. Si el lanzador contesta que la carpeta no está aprobada, `open` deja la copia y su rama, y
+dice en una línea que esa copia (no la principal) no está aprobada, con lo que contestó Claude Code: la aprueba una
+persona una vez (`cd` a la copia y `claude`) y la sesión se vuelve a abrir ahí con el mismo nombre y `--reuse`. Con
+`--reuse`, `open` no crea nada: reusa la copia de ese nombre en la rama del trabajo, y no abre si hay una sesión viva
+adentro. Cualquier otra falla del lanzador borra la copia y la rama que acaba de crear. El encargo le dice a la sesión
+que, al terminar, deje todo commiteado, empujado y con su pedido abierto. La copia no se borra al cerrar la sesión: la
+saca el barrido de copias, como a cualquier otra, cuando su rama ya entró a `main`.
 
 Para dejar lista una máquina antes de la primera apertura, `node scripts/tools/prepare-machine.js --repo <repo>` dice de
 a una qué falta (la carpeta principal sin aprobar, el freno viejo, la confirmación de la coordinadora) y con qué
@@ -150,9 +154,10 @@ está en modo plan (la sesión nueva quedaría esperando que alguien apruebe su 
 la coordinadora, que lo anota con cada mensaje de la persona. **Límite conocido:** si alguien le cambia el modo con
 Shift+Tab y no le manda un mensaje después, `open` copia el modo anterior. Una sesión abierta a mano, o antes de este
 cambio, que se trabó así, la coordinadora la para y la relanza:
-`claude --bg --resume <id> -n <nombre> --permission-mode <su modo> --remote-control <nombre> -- <encargo>`. Para
+`claude --bg --resume <id> -n <nombre> --permission-mode <su modo> --remote-control <nombre> -- <encargo>` (relanzada así no
+queda anotada como abierta por la coordinadora). Para
 parar una sesión de fondo va `coordination.js stop --name <nombre>`: busca el id de fondo que anotó la sesión y corre
-`claude stop` con él. No borra nada, y la sesión se retoma con `claude respawn <id>`. A mano, `claude stop <id>` y
+`claude stop` con él. No borra nada, y la sesión se retoma con `coordination.js relaunch --id <id>`. A mano, `claude stop <id>` y
 `claude rm <id>` piden el id que muestra `claude agents`: ni el nombre ni el ref que muestra ListAgents (los seis
 caracteres entre corchetes) sirven, y contestan que no la encuentran (medido el 2026-11-01 y el 2026-11-15).
 
@@ -160,15 +165,32 @@ caracteres entre corchetes) sirven, y contestan que no la encuentran (medido el 
 
 Con Codex, las sesiones las abre el dueño: Codex no tiene un lanzador de sesiones de fondo con nombre.
 
+### Lo que la coordinadora ve de Codex
+
+Medido con Codex 0.162.1. La coordinadora va en Claude Code; desde ahí:
+
+- **Ve las sesiones de Codex por su actividad**, de la base de Codex. No sabe si una espera un permiso: con el cuadro
+  de permiso abierto, Codex no lo anota en la base ni en el registro de la sesión. Por eso `status` dice «no sé si
+  espera un permiso» en cada sesión de Codex. `codex agents` es una pantalla para una persona: no se lee desde un comando.
+- **Les puede dejar un mensaje** con `codex queue --thread <id> --message <texto>`. Queda en la cola de Codex. Que una
+  sesión abierta lo lea no se midió. A una sesión terminada también le contesta «Queued», sin error.
+- **El permiso de una sesión de Codex no le llega**: se contesta en la pestaña de Codex. Lo que Codex trae para eso
+  (`exec_permission_approvals`, `request_permissions_tool`) está en desarrollo y apagado. Las firmas de Codex siguen
+  por terminal.
+- **La revisión automática de permisos** (`approvals_reviewer = "auto_review"`) no se pudo comparar con el modo
+  automático de Claude: en la prueba, Codex no pidió permiso y el aislamiento negó el comando.
+
 ### La opción `--slot`: los puestos fijos
 
-Una versión de Claude Code que pida aprobar cada copia, aunque la principal ya esté aprobada, deja a `open --repo` sin
-abrir. Para ese caso queda `open --repo <repo> --slot`: en lugar de crear una copia, toma un puesto fijo libre del repo
-y abre la sesión ahí, en la rama del trabajo. Hay tantos puestos como el tope y siempre son las mismas carpetas, así que
-el dueño los aprueba una sola vez: `node scripts/tools/work-slots.js pending-trust` lista los que faltan, cada uno con
-su `cd`, y no lista los de un repo cuya carpeta principal ya está aprobada. Sin puesto libre, `open --slot` lo dice y no
-abre. El encargo le dice a la sesión cómo soltar el puesto al terminar; si el lanzador falla, el puesto vuelve a quedar
-libre. Al cerrar, un puesto se suelta, no se borra. Nada crea puestos si no se piden. Cómo son:
+Claude Code 2.1.330 pide aprobar cada copia, aunque la principal ya esté aprobada. Para no aprobar una carpeta nueva por
+trabajo queda `open --repo <repo> --slot`: en lugar de crear una copia, toma un puesto fijo libre del repo y abre la
+sesión ahí, en la rama del trabajo. Hay tantos puestos como el tope y siempre son las mismas carpetas, así que el dueño
+los aprueba una sola vez: `node scripts/tools/work-slots.js pending-trust` lista, cada uno con su `cd`, los que no
+tienen su propia aprobación anotada; la de la principal no cuenta, y como Claude Code 2.1.330 no anota la de los
+puestos, dice que no sabe en lugar de darlos por aprobados. Sin puesto libre, `open --slot` lo dice y no abre. El
+encargo le dice a la sesión cómo soltar el puesto al terminar. Si el lanzador contesta que el puesto no está aprobado,
+el puesto queda tomado con su rama y se reintenta con `--slot --reuse`, o se suelta con `release`; ante otra falla
+vuelve a quedar libre. Al cerrar, un puesto se suelta, no se borra. Nada crea puestos si no se piden. Cómo son:
 `guides/git-worktrees.md` §8.
 
 ## Cerrar una sesión
@@ -189,7 +211,9 @@ Lo que no puede mirar (una carpeta que no anotó o que ya no está, git que no c
 **Una sesión interactiva no se cierra.** La verifica igual y avisa: esa pestaña la cierra la persona.
 
 **Parar no es cerrar.** `coordination.js stop --name <nombre>` para una sesión de fondo sin mirar si quedó limpia y sin
-borrarla; la misma regla de quién puede. Se retoma con `claude respawn <id>`.
+borrarla; la misma regla de quién puede. Se retoma con `coordination.js relaunch --id <id>`: corre `claude respawn`, espera a
+verla viva y la anota como abierta por la coordinadora, como `open`. Relanzada a mano con `claude respawn <id>` no queda
+anotada, y sus firmas de rutina caen en la lista del dueño.
 
 **Límites.** Mira la carpeta donde está la sesión ahora: otro worktree que haya dejado no lo ve, ni lo guardado con `git
 stash`. Una rama borrada sin entrar ya no se ve. Una rama que entró aplastada en un solo commit sale como que no entró. Un
@@ -354,7 +378,9 @@ examen son llamadas al modelo y no piden turno. Lo controla el arnés, no la mem
   `gates_running` (sesión, suites y hora de cada portón), y la línea que dice quién tiene el lugar. Al lado de un solo
   portón de hasta 40 suites, con memoria libre, el pase se lanza. El pase de una sesión cerrada no cuenta.
 - **Cómo se libera cada uno.** La ejecución grande suelta su turno al terminar; el de un proceso muerto, o de más de tres
-  horas, se libera solo. El pase no tiene archivo de turno: ocupa la máquina desde que se lanza hasta que su sesión anota
+  horas, se libera solo. Por eso `heavy-turn.js take` pide `--process <pid>`, el proceso que corre lo pesado (en un
+  guion, `$$`): sin él, el turno quedaría atado a la consola del comando, que termina enseguida, y se soltaría solo sin
+  que nadie se entere. `release` pide el mismo. El pase no tiene archivo de turno: ocupa la máquina desde que se lanza hasta que su sesión anota
   el resultado (`marker.js mark-adversarial-result`, con cualquier veredicto, también `no-medido`) o el salteo
   (`marker.js mark-adversarial-skipped`). Si se relanza, vuelve a ocuparla. Una sesión que se cerró lo libera, y pasada una
   hora ya no frena, porque puede estar terminado o colgado, y se dice.
@@ -373,15 +399,17 @@ examen son llamadas al modelo y no piden turno. Lo controla el arnés, no la mem
   que lo pide recibe el «esperá» con el nombre de la reserva. Con una ejecución grande corriendo no reserva (sale 77 y dice
   quién la tiene). Se suelta con `heavy-turn.js release --reserve`, vence a los 90 minutos (una tanda de revisores o un
   pase; las tres horas son las de una suite) y, si la sesión de la coordinadora se cerró, a los 10. Con
-  `--to <sesión>`, la reserva dice qué sesión lanza lo reservado (su pase sin el pipeline, el punto que sigue). Es
-  para el pase, no para sus suites: el portón de esa sesión espera como el de cualquiera hasta que se suelte.
+  `--to <sesión>`, la reserva es de esa sesión: lanza lo reservado (su pase sin el pipeline, el punto que sigue) y su
+  portón toma el turno sin otro «arrancá», aunque estuviera en la fila. Es para una cosa por vez: si su portón ya corre,
+  el gancho del pase lo avisa; con el pase en vuelo, nada frena a su portón, así que la sesión no lo corre hasta que el
+  pase termine. Las demás sesiones esperan hasta que se suelte.
 - **El pase sin el pipeline también pide turno.** Una sesión sin una ejecución del pipeline (la que abrió la coordinadora para
   un arreglo, o una suelta) lanza su pase con la herramienta Agent o Workflow, sin marcador que lo cuente. El 23/11 a las
   05:45, con varios de esos a la vez, la máquina se quedó sin procesos. El gancho `agile-pass-turn.js` mira cada
   lanzamiento: todo Workflow (el abanico de agentes que llena la máquina) y un Agent cuya descripción o tipo dice
   adversarial (los revisores chicos y las búsquedas no; el pedido no se mira). Si la sesión no tiene el «arrancá» (`grant --to`) ni una reserva para ella
-  (`reserve --for "<qué>" --to <sesión>`), avisa a la sesión y a la persona con quién tiene el turno, y lo anota en
-  `gates.log` (`agile-pass-turn`). Hoy sólo avisa: si pasa a frenar lo decide el dueño con esa medición (`MODO` en el
+  (`reserve --for "<qué>" --to <sesión>`), o si con esa reserva ya corre su portón, avisa a la sesión y a la persona con
+  quién tiene el turno, y lo anota en `gates.log` (`agile-pass-turn`). Hoy sólo avisa: si pasa a frenar lo decide el dueño con esa medición (`MODO` en el
   gancho). No mira sin coordinadora, en la coordinadora misma ni en una sesión del pipeline. `TYCON_AGILE_PASS_TURN=0` lo
   apaga.
 
@@ -400,7 +428,18 @@ que no están trabajando, primero las que esperan algo, que son las que se pierd
 cerrá las quietas que no esperan nada. Si no se puede leer (otra plataforma, un comando que falla) dice «no medida» y
 no supone nada. Sólo la lee el comando `status`: el aviso de cada turno y el freno del cierre no la miden. Una sesión
 que Claude Code ya cerró sale en «Cerradas por Claude Code» con lo que esperaba (su nota de `marker.js doing
---waiting-for`) y desde cuándo, arriba de las demás, con su `claude respawn`.
+--waiting-for`) y desde cuándo, arriba de las demás, con su `coordination.js relaunch --id`.
+
+### Los procesos del usuario
+
+Cada usuario tiene un tope de procesos (en macOS, `kern.maxprocperuid`; en la Mac mini, 2666). Con el tope no arranca
+ningún comando: ni los ganchos ni los frenos. Pasó el 23/11 a las 05:45, con varios pases
+adversariales a la vez y una prueba colgada, y se cayó el MCP de Telegram. `coordination.js status` cuenta los procesos del usuario (`ps -U`): desde el
+70 % del tope dice cuántos hay y de cuánto es el tope. Qué hacer: antes de lanzar algo pesado (un pase, mutantes, una
+suite), pedí que frenen los pases y los guiones de fondo que no hacen falta. Si no se pueden contar (otra plataforma, un
+comando que falla) dice «no medidos» y no supone nada; si `ps` no arranca por falta de procesos, dice que está en el
+tope. Como la memoria de intercambio, sólo los cuenta el comando
+`status`.
 
 ## Las revisiones automáticas: qué hace la coordinadora
 
@@ -419,15 +458,22 @@ una, la coordinadora:
   aprueba el plan de rutina sin click: alcanza en los dos casos. Con `person`, el plan de rutina lo firma siempre una
   persona. Rechazado o sin veredicto, el plan espera. Un plan delicado, y su maqueta, los firma sólo el dueño con su
   click o su «aprobado» (también en la pestaña de la coordinadora), aunque el perfil nombre `plan-approval:delicada`.
+  Desde esa pestaña el comando lleva la cita: `marker.js complete-step approve-plan --approved '<la cita de la persona>'
+  --for-session <sesión>`; sin ella no se firma ni se arma el cuadro.
   **El plan que aprueba es el de una parte**: si la ejecución anotó su tanda (`set-batch`) y la parte vale (con su
   `files:` o, sin `files:`, con los archivos que la historia le ata a la tanda más los que no ata a ninguna), la delicada
   se mide por la parte, y el plan queda atado a su lista: editar código fuera de ella frena, y al cerrar se mide el diff
   entero; si sale delicado, el plan vuelve al dueño. El pase adversarial sigue por la historia entera.
 - **Da el turno del pase del código.** Del código no lanza nada: con el dueño ausente, contesta en su nombre la pregunta
   cuya celda dice `review` (`review-answer --for-session`, con «dueño ausente» como motivo), y el pase lo lanza la
-  propia sesión con su turno, como siempre. Que `skip` y `wait` pidan el click del dueño es la fila 113.
+  propia sesión con su turno, como siempre. Si la celda dice `skip`, lo anota con `--by-profile`: el guion comprueba
+  que el dueño cuenta como ausente y que la celda dice eso, y anota `por: perfil`. Fuera de ese caso, «skip» del código
+  lo contesta el dueño: pide la firma `review-skip`, su click o su «aprobado» en tu pestaña, nunca la delegación.
 - **Pone la marca de ausente** cuando el dueño dice que se va («seguí en autónomo», «me voy», «hasta mañana» o algo
-  parecido): `marker.js owner-away set --phrase "<lo que dijo>"`. Lo juzga ella, no una lista de frases. La marca se borra
+  parecido): `marker.js owner-away set --phrase "<lo que dijo>"`. Lo juzga ella, no una lista de frases, pero la frase
+  tiene que estar en un mensaje que el dueño tipeó en su pestaña en los últimos 30 minutos: uno de otra sesión, de un
+  canal o de un programa no cuenta, y sin poder leer sus mensajes sale 2. Sin la marca, el dueño cuenta como ausente igual
+  por los minutos sin respuesta. La marca se borra
   sola cuando el dueño vuelve: un mensaje suyo, un mensaje de la oficina verificado, una firma suya o a las 24 horas. La
   oficina la muestra mientras está puesta.
 
@@ -510,6 +556,10 @@ probarla.
 - **Cómo se pasan, con coordinadora.** Si está confirmada y viva, pasa todas ella. La sesión de fondo no muestra el cuadro ni
   manda mensajes: el freno le dice que espere el aviso. Cuando la persona escribe, a la coordinadora le llega un aviso: que
   conteste lo que escribió y corra `coordination.js owner-next`.
+- **Sin la lista, con coordinadora.** La sesión de fondo no le manda la pregunta para que la copie: copiada a mano no
+  queda igual y el click no vale. El freno dice por qué el pedido no le llega a su lista (la lista apagada, o sin una
+  coordinadora confirmada y viva) y da el comando de la terminal. La sesión le avisa qué se decide y ese comando, y no
+  repite el suyo hasta que ella le avise que el dueño firmó.
 - **Cómo se pasan, sin coordinadora.** Le llega el mismo aviso a la sesión destino, una vez por renglón, y ella corre
   `owner-next`. Si la persona ya contestó «aprobado» a ese cuadro, no se pregunta de nuevo.
 - **Qué da `owner-next`.** Un renglón, el más viejo: un cuadro para mostrar sin cambiarle una letra, con un rótulo («Firma 2/5»),
@@ -695,9 +745,13 @@ click. Mira cada 2 segundos y termina con una línea por novedad, y terminar la 
 - «<sesión> espera un permiso desde las HH:MM: <herramienta> <qué pide>. Para entrar: claude attach <sesión>»: se lo
   pasa al dueño con la sesión, qué pide y su recomendación. El permiso lo contesta una persona, en la pestaña de la
   sesión o con `claude attach`.
+- «… que pidió un agente suyo (la sesión figura ocupada y no se movió desde entonces)»: el permiso lo pidió un agente
+  de la sesión. Claude Code la sigue dando ocupada, porque espera a su agente; sale si está ocupada desde antes del
+  pedido y lleva 11 minutos sin moverse (más que lo que puede correr un comando aprobado). Se trata igual que el de
+  arriba.
 - «<sesión> siguió: el permiso ya no está abierto» o «<sesión> se cerró con un permiso abierto»: se le avisa al dueño si
   se lo había pedido.
-- «<sesión>: la cerró Claude Code a las HH:MM por falta de memoria, quieta N min. Para levantarla: claude respawn <id>»:
+- «<sesión>: la cerró Claude Code a las HH:MM por falta de memoria, quieta N min. Para levantarla: coordination.js relaunch --id <id>»:
   Claude Code cierra solo las sesiones de fondo quietas cuando la máquina se queda sin memoria, y no se puede evitar
   desde el arnés. La coordinadora decide si la levanta: levantarla vuelve a ocupar memoria y cuenta para el tope.
 
@@ -729,7 +783,8 @@ coordinadora lo muestra sin cambiarle una letra, con «Sí, aprobar» y «No».
   mismo si la coordinadora muere o deja de ser la designada mientras espera.
 - **No se lleva, y sale la ventana de siempre sin demora:** una pestaña abierta, otro modo (automático, sin permisos,
   aceptar ediciones, plan), sin coordinadora confirmada y viva, sin `owner-wait`, la lista apagada, la propia
-  coordinadora, Codex, y en Windows un comando por PowerShell. Tampoco un pedido que no se puede mostrar entero (más de
+  coordinadora, Codex, y en Windows un comando por PowerShell. En una sesión de fondo, el motivo queda en «Trabadas» y
+  en `gates.log`, así una espera de toda la noche no pasa sin rastro. Tampoco un pedido que no se puede mostrar entero (más de
   1500 caracteres, caracteres que no se ven o se ven en blanco, un salto de línea en una ruta o una dirección, datos que
   el cuadro no muestra): la sesión queda trabada con ese motivo.
   Las herramientas que lleva son Bash, PowerShell, Edit, Write, NotebookEdit y WebFetch; el cuadro de preguntas y el
@@ -1034,7 +1089,7 @@ Salen de un día entero coordinando varias sesiones. Cada una dice qué hacer y 
   libre arriba del piso; el aviso lo dijo y se ignoró. Esta regla la mide un freno (arriba, «El tope»).
 - **Con la fila de la suite larga no se abre una sesión para programar.** Si más de dos sesiones esperan turno de suite o
   portón, una sesión nueva se abre sólo para trabajo que no pide suite: escribir una historia, revisar o investigar. Las
-  que sólo esperan su turno se pueden cerrar y retomar con su misma conversación cuando les toca (`claude respawn <id>`),
+  que sólo esperan su turno se pueden cerrar y retomar con su misma conversación cuando les toca (`coordination.js relaunch --id <id>`),
   con el orden anotado. Por qué: la suite corre de a una; una sesión más no adelanta nada, alarga la fila y ocupa memoria.
 - **Un rojo no se deja, aunque no sea del cambio propio.** Se avisa y se arregla antes de seguir. Por qué: los rojos
   tolerados tapan a los nuevos.

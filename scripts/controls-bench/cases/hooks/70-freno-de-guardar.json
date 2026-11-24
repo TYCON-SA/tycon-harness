@@ -56,6 +56,8 @@
         },
         {
           "id": "freno-de-guardar-pedido-preparado-pregunta",
+          "tools": ["claude"],
+          "asymmetry": "En Codex la pregunta de un gancho sale como negativa con la pregunta y cómo aprobarlo a mano (medición 562: Codex no soporta «ask» y corre el comando). La dirección codex la cubre freno-de-guardar-pedido-preparado-en-codex-niega.",
           "type": "must-emit",
           "_por_que": "con «Preparar el pull request» cerrado y el código de su foto, abrir el pedido pregunta en la ventana con la evidencia.",
           "setup": [
@@ -75,6 +77,35 @@
               "ABRO EL PULL REQUEST",
               "«gh pr create»",
               "Pruebas:"
+            ]
+          }
+        },
+        {
+          "id": "freno-de-guardar-pedido-preparado-en-codex-niega",
+          "tools": ["codex"],
+          "asymmetry": "Formato exclusivo de Codex: Claude Code sí muestra la ventana de permiso y su dirección es freno-de-guardar-pedido-preparado-pregunta.",
+          "type": "must-emit",
+          "_por_que": "en Codex no hay ventana de permiso: el pedido preparado sale como negativa con la pregunta y cómo aprobarlo a mano, nunca como «ask», que Codex no soporta y deja correr el comando.",
+          "setup": [
+            "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base && echo x > app.js",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; R=$(pwd -P); B=$(git symbolic-ref --short HEAD); I=\"$R/.git/bench-foto\"; rm -f \"$I\"; A=$(GIT_INDEX_FILE=\"$I\" git read-tree HEAD && GIT_INDEX_FILE=\"$I\" git add -A && GIT_INDEX_FILE=\"$I\" git write-tree); rm -f \"$I\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\",\"run-tests\",\"reviewers\",\"findings\",\"prepare-commit\"],\"stepsPending\":[],\"prepareCommitHuellas\":[{\"repo\":\"%s\",\"rama\":\"%s\",\"base\":null,\"arbol\":\"%s\"}]}' \"$R\" \"$R\" \"$B\" \"$A\" > \"$S/active/bench-freno.json\""
+          ],
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "gh pr create --fill"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "\"permissionDecision\":\"deny\"",
+              "ABRO EL PULL REQUEST",
+              "Codex no muestra la ventana de permiso",
+              "gh pr create --fill"
+            ],
+            "stdout_not_re": [
+              "\"permissionDecision\":\"ask\""
             ]
           }
         },
@@ -103,6 +134,8 @@
         },
         {
           "id": "freno-de-guardar-pedido-con-el-alias-que-declara-el-conector-pregunta",
+          "tools": ["claude"],
+          "asymmetry": "En Codex la pregunta de un gancho sale como negativa con la pregunta y cómo aprobarlo a mano (medición 562: Codex no soporta «ask» y corre el comando). La dirección codex la cubre freno-de-guardar-pedido-preparado-en-codex-niega.",
           "type": "must-emit",
           "_por_que": "con el pedido preparado, el alias que declara el conector pregunta en la ventana, y la pregunta nombra la forma.",
           "setup": [
@@ -163,6 +196,8 @@
         },
         {
           "id": "freno-de-guardar-empuje-a-main-preparado-pregunta",
+          "tools": ["claude"],
+          "asymmetry": "En Codex la pregunta de un gancho sale como negativa con la pregunta y cómo aprobarlo a mano (medición 562: Codex no soporta «ask» y corre el comando). La dirección codex la cubre freno-de-guardar-pedido-preparado-en-codex-niega.",
           "type": "must-emit",
           "_por_que": "empujar a una rama compartida (acá, HEAD en main) sale hacia el equipo como un pedido: preparado, pregunta con la evidencia.",
           "setup": [
@@ -277,6 +312,8 @@
         },
         {
           "id": "freno-de-guardar-merge-del-pedido-pregunta",
+          "tools": ["claude"],
+          "asymmetry": "En Codex la pregunta de un gancho sale como negativa con la pregunta y cómo aprobarlo a mano (medición 562: Codex no soporta «ask» y corre el comando). La dirección codex la cubre freno-de-guardar-pedido-preparado-en-codex-niega.",
           "type": "must-emit",
           "_por_que": "con el pedido preparado, mergearlo pregunta en la ventana, y la pregunta nombra la forma.",
           "setup": [
@@ -299,6 +336,8 @@
         },
         {
           "id": "freno-de-guardar-pedido-de-azure-pregunta",
+          "tools": ["claude"],
+          "asymmetry": "En Codex la pregunta de un gancho sale como negativa con la pregunta y cómo aprobarlo a mano (medición 562: Codex no soporta «ask» y corre el comando). La dirección codex la cubre freno-de-guardar-pedido-preparado-en-codex-niega.",
           "type": "must-emit",
           "_por_que": "con el pedido preparado, el pedido de otra plataforma pregunta igual, y la pregunta nombra la forma.",
           "setup": [
@@ -371,6 +410,8 @@
         },
         {
           "id": "freno-de-guardar-comando-desde-una-variable-pregunta",
+          "tools": ["claude"],
+          "asymmetry": "En Codex la pregunta de un gancho sale como negativa con la pregunta y cómo aprobarlo a mano (medición 562: Codex no soporta «ask» y corre el comando). La dirección codex la cubre freno-de-guardar-pedido-preparado-en-codex-niega.",
           "type": "must-emit",
           "_por_que": "lo que no se lee con certeza, en una corrida, pregunta igual: no se sabe qué guardaría.",
           "setup": [
@@ -393,6 +434,8 @@
         },
         {
           "id": "freno-de-guardar-shell-que-lee-de-un-tubo-pregunta",
+          "tools": ["claude"],
+          "asymmetry": "En Codex la pregunta de un gancho sale como negativa con la pregunta y cómo aprobarlo a mano (medición 562: Codex no soporta «ask» y corre el comando). La dirección codex la cubre freno-de-guardar-pedido-preparado-en-codex-niega.",
           "type": "must-emit",
           "_por_que": "lo que no se lee con certeza, en una corrida, pregunta igual: no se sabe qué guardaría.",
           "setup": [
@@ -415,6 +458,8 @@
         },
         {
           "id": "freno-de-guardar-el-texto-no-repite-el-comando",
+          "tools": ["claude"],
+          "asymmetry": "En Codex la pregunta de un gancho sale como negativa con la pregunta y cómo aprobarlo a mano (medición 562: Codex no soporta «ask» y corre el comando). La dirección codex la cubre freno-de-guardar-pedido-preparado-en-codex-niega.",
           "type": "must-emit",
           "_por_que": "con el pedido preparado, empujar a main pregunta en la ventana y nombra la forma. Nunca repite el comando: puede traer una credencial.",
           "setup": [
@@ -507,6 +552,8 @@
         },
         {
           "id": "freno-de-guardar-pedido-del-camino-rapido-pregunta",
+          "tools": ["claude"],
+          "asymmetry": "En Codex la pregunta de un gancho sale como negativa con la pregunta y cómo aprobarlo a mano (medición 562: Codex no soporta «ask» y corre el comando). La dirección codex la cubre freno-de-guardar-pedido-preparado-en-codex-niega.",
           "type": "must-emit",
           "_por_que": "con un camino rápido abierto y firmado, el pedido pregunta en la ventana, con el motivo del carril.",
           "setup": [

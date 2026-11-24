@@ -3,6 +3,8 @@
  * owner-away.js — la marca del dueño ausente. La pone quien recibe el mensaje del dueño cuando dice que se va (la
  * coordinadora, o la propia sesión si no hay coordinadora): con la marca puesta, las revisiones siguen la celda de «dueño
  * ausente» enseguida, sin esperar los minutos sin respuesta. No hay una lista de frases: lo juzga quien recibe el mensaje.
+ * Pero la frase tiene que estar en un mensaje tipeado por la persona en esa sesión en los últimos 30 minutos (`verificar`):
+ * el agente no se pone la marca solo. Sin eso, el dueño cuenta como ausente igual por los minutos sin respuesta.
  *
  * Se borra sola cuando el dueño vuelve: un mensaje tipeado por la persona (el gancho de cada mensaje), un mensaje de la
  * oficina verificado, una firma suya posterior a la marca (los renglones `<firma>-signed` de gates.log por ventana,
@@ -41,11 +43,20 @@ function leer(estado) {
 }
 
 /** Pone la marca: `quien` (la sesión o su nombre) y `frase` (lo que dijo el dueño). `{ codigo: 0, mark }` o `{ codigo: 2, motivo }`. */
+/**
+ * Pone la marca. `verificar(frase)` → `{ ok, motivo }`: que la frase la haya tipeado la persona (marker.js le pasa
+ * owner-approvals.js `fraseTipeadaReciente` de la sesión que corre el comando). Sin el ok, sale 2 y no escribe nada.
+ */
 function set(o = {}) {
   const frase = String(o.frase || '').trim();
   const quien = String(o.quien || '').trim();
   if (!frase) return { codigo: 2, motivo: 'falta la frase del dueño (--phrase "<lo que dijo>")' };
   if (!quien) return { codigo: 2, motivo: 'falta quién pone la marca' };
+  if (o.verificar) {
+    let v;
+    try { v = o.verificar(frase); } catch (e) { v = { ok: false, motivo: `no pude comprobar la frase (${(e && e.message) || e})` }; }
+    if (!v || !v.ok) return { codigo: 2, motivo: (v && v.motivo) || 'la frase no se pudo comprobar' };
+  }
   const estado = estadoDe(o);
   const ahora = o.ahora == null ? Date.now() : o.ahora;
   const mark = { setAt: new Date(ahora).toISOString(), quien, frase: frase.slice(0, 300) };

@@ -20,7 +20,6 @@
  *
  * Un control mal escrito, o que no termina en su tope, no es verde: frena con «no medido».
  */
-const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
