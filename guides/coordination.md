@@ -753,7 +753,8 @@ click. Mira cada 2 segundos y termina con una línea por novedad, y terminar la 
   pedido y lleva 11 minutos sin moverse (más que lo que puede correr un comando aprobado). Se trata igual que el de
   arriba.
 - «<sesión> siguió: el permiso ya no está abierto» o «<sesión> se cerró con un permiso abierto»: se le avisa al dueño si
-  se lo había pedido.
+  se lo había pedido. «Siguió» no pide nada y no la despierta, igual que «… ya no espera a la persona»: esas líneas
+  quedan guardadas y salen delante de la próxima novedad que sí la despierta.
 - «<sesión>: la cerró Claude Code a las HH:MM por falta de memoria, quieta N min. Para levantarla: coordination.js relaunch --id <id>»:
   Claude Code cierra solo las sesiones de fondo quietas cuando la máquina se queda sin memoria, y no se puede evitar
   desde el arnés. La coordinadora decide si la levanta: levantarla vuelve a ocupar memoria y cuenta para el tope.
@@ -781,15 +782,16 @@ coordinadora lo muestra sin cambiarle una letra, con «Sí, aprobar» y «No».
   Rechazar sólo niega: nunca aprueba.
 - **Lo aprueba sólo la persona, con su click en la pestaña de la coordinadora.** La coordinadora nunca, ni por
   delegación (`approvals.delegated_signing` no lo cubre), ni con un «aprobado» escrito, ni tocando la lista.
-- **Sin respuesta en `coordination.permission_wait_minutes`** (10 sin valor, de 1 a 30), el gancho sale sin decidir: vuelve la
-  ventana de siempre en esa sesión, que queda en las «Trabadas» con el motivo, y un click tardío no aprueba nada. Lo
-  mismo si la coordinadora muere o deja de ser la designada mientras espera.
-- **No se lleva, y sale la ventana de siempre sin demora:** una pestaña abierta, otro modo (automático, sin permisos,
-  aceptar ediciones, plan), sin coordinadora confirmada y viva, sin `owner-wait`, la lista apagada, la propia
-  coordinadora, Codex, y en Windows un comando por PowerShell. En una sesión de fondo, el motivo queda en «Trabadas» y
-  en `gates.log`, así una espera de toda la noche no pasa sin rastro. Tampoco un pedido que no se puede mostrar entero (más de
-  1500 caracteres, caracteres que no se ven o se ven en blanco, un salto de línea en una ruta o una dirección, datos que
-  el cuadro no muestra): la sesión queda trabada con ese motivo.
+- **Una sesión de fondo nunca queda esperando un permiso.** Lo que el cuadro no resuelve se niega con su motivo y una
+  salida (hacerlo de otra forma, seguir sin él o pedírselo a la coordinadora), y queda en `gates.log` como
+  `negado-de-fondo`. Pasa sin respuesta en `coordination.permission_wait_minutes` (10 sin valor, de 1 a 30), si la
+  coordinadora muere o deja de ser la designada mientras espera, y cuando el pedido no se lleva: otro modo (automático,
+  sin permisos, aceptar ediciones, plan), sin coordinadora confirmada y viva, sin `owner-wait`, la lista apagada, en
+  Windows un comando por PowerShell, o un pedido que no se puede mostrar entero (más de 1500 caracteres, caracteres que
+  no se ven o se ven en blanco, un salto de línea en una ruta o una dirección, datos que el cuadro no muestra). Un click
+  tardío no aprueba nada.
+- **Sale la ventana de siempre** sólo donde hay quien la conteste o el gancho no actúa: una pestaña abierta, la propia
+  coordinadora, Codex y el gancho apagado.
   Las herramientas que lleva son Bash, PowerShell, Edit, Write, NotebookEdit y WebFetch; el cuadro de preguntas y el
   plan, nunca.
 - **Si la persona contesta en la ventana de la sesión** o la sesión se cierra, el gancho muere y su renglón se cierra

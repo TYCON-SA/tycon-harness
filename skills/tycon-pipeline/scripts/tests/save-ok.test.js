@@ -383,7 +383,7 @@ test('ApproveSave_ForSession_OtraCorrida_Sale2 (T11) @story-8.143 @ac-8', () => 
   assert.strictEqual(r(null).codigo, 2, 'sin corrida');
 });
 
-// 🔴 Falla con: el paso de preparar el commit que vuelve a pedir la constancia del ok, o que deja que un mensaje de otra
+// 🔴 Falla con: el paso de preparar el pull request que vuelve a pedir la constancia del ok, o que deja que un mensaje de otra
 // sesión saltee la ventana de permiso.
 test('PrepareCommit_GuardarEnLaVentana (T15) @story-8.143 @ac-9', () => {
   const texto = fs.readFileSync(path.join(__dirname, '..', '..', 'steps', 'step-11-prepare-commit.md'), 'utf8');

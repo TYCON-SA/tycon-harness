@@ -290,6 +290,38 @@ test('T11 OwnerWait_SesionSiguio_AvisaUnaVez @story-8.202 @ac-7', () => {
   assert.deepStrictEqual(vuelta(t).lines, [], 'una sola vez');
 });
 
+// 🔴 Falla con: owner-wait termina (y despierta a la coordinadora, que lo relanza) con una novedad que no pide nada, como
+// «siguió», o se traga esa línea en vez de darla con la próxima que sí pide algo (fila 83 b)
+test('T11b OwnerWait_SiguioNoDespierta_SaleConLaProxima — lo que no pide acción queda para la próxima novedad', () => {
+  const t = toy();
+  claudeFile(t, OTRA, 'hora-mensajes', { status: 'waiting' });
+  claudeFile(t, 'tercera-3', 'tercera', { status: 'waiting' });
+  frenada(t, OTRA);
+  frenada(t, 'tercera-3', 'Bash', 'npm i');
+  assert.strictEqual(vuelta(t).wake, true, 'dos trabadas nuevas: despierta');
+  stateFile(t, OTRA, { permission: null, waitingForOwner: false, waitingFor: null });
+  const quieta = vuelta(t);
+  assert.deepStrictEqual(quieta.lines, ['hora-mensajes siguió: el permiso ya no está abierto']);
+  assert.strictEqual(quieta.wake, false, '«siguió» no pide nada: no despierta');
+  // la siguiente que sí pide algo sale con la que quedó guardada, aunque vengan en la misma vuelta o en otra
+  claudeFile(t, 'tercera-3', 'tercera', { status: 'waiting', dead: true });
+  const r = vuelta(t);
+  assert.strictEqual(r.wake, true);
+  assert.deepStrictEqual(r.lines, ['hora-mensajes siguió: el permiso ya no está abierto', 'tercera se cerró con un permiso abierto']);
+  assert.deepStrictEqual(vuelta(t).lines, [], 'la guardada sale una sola vez');
+  // el comando entero: con sólo «siguió» sigue esperando; con algo que pide acción termina y lo dice todo
+  const t2 = toy();
+  claudeFile(t2, OTRA, 'hora-mensajes', { status: 'waiting' });
+  claudeFile(t2, 'tercera-3', 'tercera', { status: 'waiting' });
+  frenada(t2, OTRA);
+  frenada(t2, 'tercera-3', 'Bash', 'npm i');
+  vuelta(t2);
+  stateFile(t2, OTRA, { permission: null, waitingForOwner: false, waitingFor: null });
+  claudeFile(t2, 'tercera-3', 'tercera', { status: 'waiting', dead: true });
+  const fin = C.ownerWait({ ...t2.opts, sessionId: COORD, env: { TYCON_OWNER_WAIT_POLL_MS: '1' } });
+  assert.deepStrictEqual(fin.text.split('\n').sort(), ['hora-mensajes siguió: el permiso ya no está abierto', 'tercera se cerró con un permiso abierto']);
+});
+
 test('T12 OwnerWait_SesionMurio_LoDice @story-8.202 @ac-7', () => {
   const t = toy();
   claudeFile(t, OTRA, 'hora-mensajes', { status: 'waiting' });

@@ -119,6 +119,8 @@ test('advisorsRunSinceStart: sin log / step5-start solo / completo', () => {
   const volverCasa = ponerCarpetaPersonal(tmpHome);
   const prevSid = process.env.CLAUDE_CODE_SESSION_ID;
   process.env.CLAUDE_CODE_SESSION_ID = sid;
+  // pipeline.js y sus partes de lib/, que son las que resuelven las rutas al cargar
+  for (const k of Object.keys(require.cache)) if (/[\\/]lib[\\/]pipeline-[^\\/]+\.js$/.test(k)) delete require.cache[k];
   delete require.cache[require.resolve(path.join(SCRIPTS, 'pipeline.js'))];
   const pl = require(path.join(SCRIPTS, 'pipeline.js'));
   try {
@@ -141,6 +143,7 @@ test('advisorsRunSinceStart: sin log / step5-start solo / completo', () => {
   } finally {
     volverCasa();
     if (prevSid === undefined) delete process.env.CLAUDE_CODE_SESSION_ID; else process.env.CLAUDE_CODE_SESSION_ID = prevSid;
+    for (const k of Object.keys(require.cache)) if (/[\\/]lib[\\/]pipeline-[^\\/]+\.js$/.test(k)) delete require.cache[k];
     delete require.cache[require.resolve(path.join(SCRIPTS, 'pipeline.js'))];
     fs.rmSync(tmpHome, { recursive: true, force: true });
   }

@@ -144,6 +144,7 @@ function avisoDeLoQueContó({ rel, via, fusion, commit, historia, regla, ajenas,
     const inicio = commit ? `entró igual a lo probado en ${commit}` : 'ya estaba en main como se probó';
     return `${rel}${carga ? ` (lo carga ${carga})` : ''}: ${inicio}${despues ? `; después lo cambiaron: ${despues}` : ''} → la evidencia sigue contando.`;
   }
+  if (via === 'solo-marcas') return `${rel}: esta historia sólo le cambió marcas @story/@ac → la evidencia sigue contando.`;
   return via
     ? `${rel}: lo trajo la fusión ${fusion} de esta historia, igual a como estaba su rama a la hora de la evidencia; se supone que la evidencia corrió sobre esa rama → sigue contando.`
     : `${rel}: lo cambió el commit ${commit} de la historia ${historia}, sólo en una prueba → la evidencia sigue contando.`;
@@ -1145,7 +1146,7 @@ function alcanceDeMedida(m) {
 const SALIDAS_DE_MEDIDA = 'Tres salidas: se mide de nuevo (re-correr el humo vía smoke-run.sh); se cambia el criterio (y eso cambia la historia); '
   + 'o se declara imposible en `runtime_not_verifiable:` con su prueba y lo firma una persona (`marker.js runtime-waiver`).';
 
-/** Los renglones que imprimen el freno del commit y «Preparar el commit» para los criterios con la marca que no salieron verdes. */
+/** Los renglones que imprimen el freno del commit y «Preparar el pull request» para los criterios con la marca que no salieron verdes. */
 function lineasDeMedida(r) {
   const out = [];
   const de = (n) => `AC #${n}: ${textoDeMedida(r.perAc[n]) || 'sin medición'}`;
@@ -2456,7 +2457,7 @@ function compute(opts) {
   let waived = new Set();
   let chain = { ok: true, brokenAt: -1, total: 0 };
   // Las firmas de ESTA story que la cadena descartó. Se mira la cadena del registro de la HOME y la del
-  // repo, y lo descartado se dice: si no, «Preparar el commit» diría «esperan waiver» sin aclarar que el dev ya firmó.
+  // repo, y lo descartado se dice: si no, «Preparar el pull request» diría «esperan waiver» sin aclarar que el dev ya firmó.
   let descartadas = { acs: [], lines: [] };
   try {
     const waiverLib = require(path.join(__dirname, 'lib', 'runtime-waiver.js'));
@@ -2630,7 +2631,7 @@ function compute(opts) {
   for (const w of avisos) warnings.push(w);
 
   // Un AC de pantalla sin imagen bloquea como uno sin correr y tampoco se puede waivear: va también en `notRun`, que es la
-  // lista que imprimen el freno del commit y el cierre de «Preparar el commit». `sinImagen` dice cuáles son de pantalla.
+  // lista que imprimen el freno del commit y el cierre de «Preparar el pull request». `sinImagen` dice cuáles son de pantalla.
   const notRun = acs.filter((n) => perAc[n].verdict === 'NOT-RUN' || sinImagen.includes(n));
   const accionNoEjercida = acs.filter((n) => perAc[n].verdict === 'RUNTIME-PARCIAL');
   const notVerifiablePend = acs.filter((n) => perAc[n].verdict === 'NOT-VERIFIABLE');
@@ -3027,7 +3028,7 @@ function main() {
 /**
  * Las opciones de tanda que salen del marcador de una ejecución: la tanda anotada, la lista de lo que cambió el repo
  * del código desde el arranque (lo commiteado durante la corrida y lo nuevo sin rastrear) y ese repo. Una sola función
- * para la matriz de «Preparar el commit», la de la línea de comando y la de la firma. La tanda vale sólo si el marcador
+ * para la matriz de «Preparar el pull request», la de la línea de comando y la de la firma. La tanda vale sólo si el marcador
  * es de la misma historia (la misma ruta real); con el de otra, `{ batch: null, otraHistoria: true }`. Sin `repoPath` o
  * sin `baseSha` no hay lista (`changed: null`): la matriz mide todas las tandas y lo dice.
  */
