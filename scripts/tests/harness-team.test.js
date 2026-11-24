@@ -1664,6 +1664,11 @@ test('T33c Team_RenamesMap_SplitScript_NameInItsPartsCounts', () => {
   put('scripts/ci/split.js', "'use strict';\n// el despachador: carga sus partes\nrequire('./lib/split-args.js');\n");
   put('scripts/ci/lib/split-args.js', "'use strict';\n// las opciones del guion partido\nconst OPTIONS = ['marks'];\nmodule.exports = OPTIONS;\n");
   put('scripts/ci/lib/other-args.js', "'use strict';\nconst OPTIONS = ['elsewhere'];\nmodule.exports = OPTIONS;\n");
+  // un guion hermano cuyo nombre empieza igual (split-extra.js): sus partes (lib/split-extra-*.js) son suyas, no de split.js
+  put('scripts/ci/split-extra.js', "'use strict';\nrequire('./lib/split-extra-args.js');\n");
+  put('scripts/ci/lib/split-extra-args.js', "'use strict';\nconst OPTIONS = ['sibling-only'];\nmodule.exports = OPTIONS;\n");
+  // una ruta con barras invertidas en la lista de la versión: en Windows apunta a otro archivo, no es una parte
+  put('scripts/ci/lib/split-x\\..\\..\\b.js', "'use strict';\nconst OPTIONS = ['backslashed'];\nmodule.exports = OPTIONS;\n");
   fs.writeFileSync(relmFile, JSON.stringify(relm));
   const judge = (extra) => {
     fs.rmSync(path.join(lab, 'layer'), { recursive: true, force: true });
@@ -1680,6 +1685,14 @@ test('T33c Team_RenamesMap_SplitScript_NameInItsPartsCounts', () => {
   // en ningún lado: no está
   const nada = judge({ kind: 'option', old: 'nunca', new: 'never-there', where: 'scripts/ci/split.js', batch: 'X' });
   assert.ok(nada.problems.some((x) => /entries\[8\].*never-there/.test(x.reason)), JSON.stringify(nada.problems));
+  // sólo en la parte de un guion hermano que empieza igual: no está en split.js, y sí en el hermano
+  const hermano = judge({ kind: 'option', old: 'hermano', new: 'sibling-only', where: 'scripts/ci/split.js', batch: 'X' });
+  assert.ok(hermano.problems.some((x) => /entries\[8\].*sibling-only.*scripts\/ci\/split\.js/.test(x.reason)), JSON.stringify(hermano.problems));
+  const delHermano = judge({ kind: 'option', old: 'hermano', new: 'sibling-only', where: 'scripts/ci/split-extra.js', batch: 'X' });
+  assert.equal(delHermano.ok, true, JSON.stringify(delHermano.problems));
+  // sólo en una ruta con barras invertidas: no cuenta como parte
+  const barras = judge({ kind: 'option', old: 'barras', new: 'backslashed', where: 'scripts/ci/split.js', batch: 'X' });
+  assert.ok(barras.problems.some((x) => /entries\[8\].*backslashed/.test(x.reason)), JSON.stringify(barras.problems));
 });
 
 // el árbol real: sólo en el clon del equipo (el reparto no viaja en la copia)

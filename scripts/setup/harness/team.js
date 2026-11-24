@@ -723,12 +723,18 @@ function renamesProblems(layerDir, versionDir, idx) {
     if (!texts.has(p)) { try { texts.set(p, fs.readFileSync(path.join(versionDir, ...p.split('/')), 'utf8')); } catch (e) { texts.set(p, { error: (e && (e.code || e.message)) || String(e) }); } }
     return texts.get(p);
   };
-  // las partes de un guion partido que trae la versión: `<carpeta>/lib/<nombre>-*.<ext>`, sin subcarpetas
+  // las partes de un guion partido que trae la versión: `<carpeta>/lib/<nombre>-*.<ext>`, sin subcarpetas ni barras
+  // invertidas. Las de un guion hermano cuyo nombre empieza igual (`<nombre>-<algo>.<ext>` en la misma carpeta) son suyas
   const partsOf = (p) => {
     const m = /^(.*\/)?([^/]+)\.(js|mjs|cjs)$/.exec(p);
     if (!m) return [];
-    const pre = `${m[1] || ''}lib/${m[2]}-`;
-    return idx.paths.filter((x) => x.startsWith(pre) && x.endsWith(`.${m[3]}`) && !x.slice(pre.length).includes('/'));
+    const dir = m[1] || '';
+    const ext = `.${m[3]}`;
+    const pre = `${dir}lib/${m[2]}-`;
+    const hermanos = idx.paths.filter((x) => x.startsWith(`${dir}${m[2]}-`) && x.endsWith(ext) && !x.slice(dir.length).includes('/'))
+      .map((x) => `${dir}lib/${x.slice(dir.length, -ext.length)}-`);
+    return idx.paths.filter((x) => x.startsWith(pre) && x.endsWith(ext) && !x.slice(pre.length).includes('/') && !x.includes('\\')
+      && !hermanos.some((h) => x.startsWith(h)));
   };
   // la regla de rutas del lector, envuelta: es código de la versión y esta función nunca tira
   const pathWhy = (p, kind) => { try { return LN.pathProblem(p, kind); } catch (err) { return `no se pudo juzgar con el lector de la versión (${(err && err.message) || err})`; } };
