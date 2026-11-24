@@ -29,6 +29,9 @@
  *   T51 el chat de ejemplo: globos dibujados, marcados como ilustrativos, que no se comparan
  *   T52-T56 la maqueta mirada con un navegador a 1440 y 390 px: se lee bien, el detector encuentra lo que se pisa,
  *           desborda o parte una palabra, sin navegador no dice «limpio», y el freno de la aprobación
+ *   T62 status ubica la maqueta sin calcular la matriz de la story
+ *   T63 el lugar sin la matriz es el mismo que el de la guía del tester: número repetido, exenta, id con letras
+ *   T64 con la matriz que no computa, el lugar que usan los pasos que aprueban la maqueta sigue frenando; status no
  *
  * El ejemplo es inventado a propósito (facturas): lo que se publica no lleva el rubro de un cliente.
  * Correr: node --test skills/tycon-pipeline/scripts/tests/mockup.test.js < /dev/null
@@ -1181,4 +1184,65 @@ test('T61 Shots_LoQueSeVeEncimaDeUnaCapa_Cuenta: capa invisible, dos capas encim
     assert.ok(!r.error, r.error);
     assert.ok(r.findings.some((x) => x.kind === 'se pisan'), `${nombre}: ${JSON.stringify(r.findings)}`);
   }
+});
+
+// 🔴 Falla con: status calculaba la matriz entera de la story (lee el registro de los portones, recorre las historias del
+// repo, llama a git) sólo para saber la clave; en una máquina con mucha historia tardaba más de dos minutos
+test('T62 Mockup_Status_SinCalcularLaMatriz: status ubica la maqueta sin calcular la matriz de la story', () => {
+  const repo = mundo();
+  const s = story(repo, ['src/components/Facturas.tsx']);
+  const marca = path.join(TMP, 't62', 'llamadas.txt');
+  const gancho = path.join(TMP, 't62', 'gancho.js');
+  // el gancho es un texto fijo: las rutas le llegan por el ambiente, no se escriben dentro del código
+  escribir(gancho, [
+    'const m = require(process.env.T62_MATRIX_MODULE);',
+    'const original = m.compute;',
+    "m.compute = function (...a) { require('fs').appendFileSync(process.env.T62_CALLS_FILE, 'compute\\n'); return original.apply(this, a); };",
+  ].join('\n'));
+  const r = run(['status', '--story', s, '--json'], { env: {
+    NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --require "${gancho}"`.trim(), T62_MATRIX_MODULE: path.join(SK, 'runtime-matrix.js'), T62_CALLS_FILE: marca,
+  } });
+  assert.strictEqual(r.rc, 0, r.all);
+  const st = JSON.parse(r.out);
+  assert.strictEqual(st.screen, true);
+  assert.strictEqual(st.path, path.join(repo, 'specs', 'qa', '1.1-mockup.html'));
+  assert.ok(!fs.existsSync(marca), `status calculó la matriz: ${fs.existsSync(marca) ? fs.readFileSync(marca, 'utf8') : ''}`);
+});
+
+test('T63 Mockup_LugarSinMatriz_IgualQueLaGuia: la carpeta y la clave sin la matriz son las de la guía del tester', () => {
+  const { qaLocation, qaPlace } = require(path.join(SK, 'qa-guide.js'));
+  const comun = story(mundo(), ['src/components/Facturas.tsx']);
+  // el número repetido en otra story del repo: la clave lleva el tema
+  const repoRep = mundo();
+  const repetida = story(repoRep, ['src/components/Facturas.tsx']);
+  story(repoRep, ['src/Otro.cs'], [], 'story-1.1-otra.md');
+  // exenta y con el número repetido: la guía usa el número
+  const repoEx = mundo();
+  const exenta = story(repoEx, ['src/components/Facturas.tsx'], ['dod_runtime_exempt: true', 'dod_runtime_exempt_reason: "prueba"']);
+  story(repoEx, ['src/Otro.cs'], [], 'story-1.1-otra.md');
+  const letras = story(mundo(), ['src/components/Facturas.tsx'], [], 'story-R-9-x.md', 'R-9');
+  for (const s of [comun, repetida, exenta, letras]) {
+    const guia = qaLocation(s);
+    const lugar = qaPlace(s);
+    assert.deepStrictEqual({ qaDir: lugar.qaDir, qk: lugar.qk, sid: lugar.sid }, { qaDir: guia.qaDir, qk: guia.qk, sid: guia.sid }, s);
+  }
+  assert.notStrictEqual(qaPlace(repetida).qk, '1.1', 'con el número repetido, la clave no es el número solo');
+  assert.strictEqual(qaPlace(exenta).qk, '1.1');
+  // una story que no existe no tiene lugar
+  assert.throws(() => qaPlace(path.join(repoEx, 'specs', 'stories', 'no-existe.md')));
+});
+
+// 🔴 Falla con: al sacar la matriz del lugar de la maqueta, los pasos que la aprueban dejaban de frenar una story cuya
+// matriz no computa (sin criterios legibles): ese freno vivía en el cálculo del lugar
+test('T64 Mockup_MatrizQueNoComputa_LaAprobacionFrena: el lugar de los pasos que aprueban frena; el de status no', () => {
+  const { mockupPaths } = require(MOCKUP);
+  const repo = mundo();
+  const s = path.join(repo, 'specs', 'stories', 'story-1.1-x.md');
+  escribir(s, ['---', 'epic: 1', 'story: "1.1"', 'title: "La lista de facturas"', 'status: in-progress', 'files_to_modify:',
+    '  - src/components/Facturas.tsx', '---', '', '# Story 1.1', '', 'Sin criterios todavía.', ''].join('\n'));
+  assert.throws(() => mockupPaths(s), /la matriz no computa/);
+  assert.strictEqual(mockupPaths(s, { checkMatrix: false }).mockup, path.join(repo, 'specs', 'qa', '1.1-mockup.html'));
+  const r = run(['status', '--story', s, '--json']);
+  assert.strictEqual(r.rc, 0, r.all);
+  assert.strictEqual(JSON.parse(r.out).path, path.join(repo, 'specs', 'qa', '1.1-mockup.html'));
 });
