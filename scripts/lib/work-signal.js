@@ -6,7 +6,7 @@
 // horas que eligió la organización (`integrations.timeTracking`): la carpeta `integrations/<nombre>/` cuyo manifiesto
 // dice `kind: "timeTracking"`. La integración lo recibe por la entrada estándar, como un objeto JSON:
 //
-//   { event, storyId, title, repo, sessionId, at, stateDir, settings, missing }
+//   { event, storyId, title, repo, sessionId, at, stateDir, settings, missing, mcpServer }
 //
 //   · `event`: start · activity · stop · sweep (cerrar lo que quedó abierto sin actividad) · entry (qué entrada tiene
 //     abierta esta sesión: no abre ni cierra nada).
@@ -14,6 +14,8 @@
 //   · `stateDir`: la carpeta donde la integración guarda su estado en esta máquina.
 //   · `settings`: los ajustes que declara su manifiesto, por su última parte (`url`, `token`); `missing`, los que faltan,
 //     con dónde se ponen. Los secretos viajan por la entrada estándar: el núcleo nunca los pone en un argumento.
+//   · `mcpServer`: el servidor MCP de la integración tal como lo registró esta máquina (`integrations.mcp_servers` de
+//     ~/.claude/tycon.json; si no, el `mcp.server` del manifiesto), o null si la integración no tiene MCP.
 //
 // `stop` devuelve por la salida lo que informe la integración (`{"seconds":1080}`) o `{}`; `entry`, el id de la entrada
 // abierta (`{"entryId":"…"}`) o `{}`, y el núcleo lo usa como evidencia de la acción del agente; cualquier evento puede traer
@@ -63,6 +65,9 @@ function chosen({ env = process.env, home } = {}) {
     const there = all.manifests.filter((m) => m.kind === KIND).map((m) => m.name);
     return { manifest: null, value: t.value, warning: `integración de horas desconocida: «${t.value}» (las que hay: ${there.length ? there.join(', ') : 'ninguna'}); se trata como ninguna`, config: l.config };
   }
+  // el nombre con que esta máquina registró el servidor MCP de la integración, si no es el del manifiesto
+  const propio = manifest.mcp && (l.config.valores.integraciones.mcp_servers || {})[manifest.name];
+  if (propio) return { manifest: { ...manifest, mcp: { ...manifest.mcp, server: propio } }, value: t.value, warning: '', config: l.config };
   return { manifest, value: t.value, warning: '', config: l.config };
 }
 
@@ -101,6 +106,7 @@ function emit(event, fields = {}, { env = process.env, home } = {}) {
   const payload = {
     event, storyId: fields.storyId || null, title: fields.title || null, repo: fields.repo || null, sessionId: fields.sessionId || null,
     at: nowUtc(), stateDir: path.join(INT.tyconHome(env), 'state', 'time-tracking', c.manifest.name), settings, missing,
+    mcpServer: c.manifest.mcp ? c.manifest.mcp.server : null,
   };
   if (!fs.existsSync(c.manifest.onWork)) {
     warnings.push(`${c.manifest.name}: no encuentro el guion que escucha el evento (${path.relative(c.manifest.dir, c.manifest.onWork)}); sigo sin registrar`);

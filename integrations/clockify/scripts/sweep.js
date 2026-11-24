@@ -43,6 +43,7 @@ const {
   heartbeatIdleMinutes,
   cleanStaleHeartbeats,
   cleanEmptyActiveFiles,
+  mcpTool,
 } = require('./lib');
 
 function main() {
@@ -148,7 +149,7 @@ ${blocks.join('\n\n')}
 
 ## Acción, por cada uno
 
-1. mcp__clockify__update-clockify-time-entry con workspaceId, projectId, timeEntryId,
+1. ${mcpTool('update-clockify-time-entry')} con workspaceId, projectId, timeEntryId,
    description, start = startedAt, **end = lastActivity**.
    🔴 end = lastActivity, NUNCA "ahora": un huérfano viejo inventaría días de trabajo.
 2. Borrar la entry del state de SU PROPIA sesión: ~/.claude/clocki/active/<sessionId>.json,
