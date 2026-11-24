@@ -3363,8 +3363,11 @@ function parcheNombraConstancia(texto, isControlApproval) {
  */
 function yaHayOrigin(carpeta) {
   if (!fs.existsSync(carpeta)) return false;
+  // git en inglés: su error se reconoce por el texto. Sin la biblioteca no se sabe, y el freno frena
+  let env;
+  try { env = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).idiomaFijo(); } catch (_) { return null; }
   const git = (argv) => require('child_process').spawnSync('git', ['-C', carpeta, ...argv], {
-    windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000, env: { ...process.env, LC_ALL: 'C', LANGUAGE: 'C' },
+    windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000, env,
   });
   const r = git(['remote']);
   if (r.error || r.status !== 0) return !r.error && /not a git repository/i.test(String(r.stderr)) ? false : null;
