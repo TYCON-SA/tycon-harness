@@ -72,7 +72,7 @@ function markerPath(sessionId) {
   const safe = String(sessionId || '_nosession').replace(/[/\\]/g, '_');
   return path.join(ACTIVE_DIR, `${safe}.json`);
 }
-// El pedido de la exención de la matriz para la historia de la corrida, como lo da «Preparar el commit»: lo corre el
+// El pedido de la exención de la matriz para la historia de la corrida, como lo da «Preparar el pull request»: lo corre el
 // agente, y el arnés le pone el renglón y el cuadro en la lista del dueño.
 function waiverCommand(marker) {
   const raw = marker && marker.storyPath ? String(marker.storyPath) : '<historia>';
@@ -192,7 +192,7 @@ const CLOSURE = /(^|[^\p{L}])(listo|listos|termin[eé]|terminad[oa]s?|terminamos
 /**
  * La línea de pasos pendientes del marcador, o null. Sale sólo si el último mensaje afirma un cierre o el evento no trae
  * mensaje: así aparece cuando el modelo narra que terminó, y no en cada pausa normal del pipeline. Un modelo que narra
- * con otras palabras no la dispara; para ése la red es el freno de orden de «Preparar el commit».
+ * con otras palabras no la dispara; para ése la red es el freno de orden de «Preparar el pull request».
  */
 function pendingStepsLine(marker, event) {
   if (!marker || !marker.storyId) return null;
@@ -320,7 +320,7 @@ function main() {
   }
 
   // Pasos del pipeline sin cerrar, cuando el mensaje afirma un cierre (o el evento no trae mensaje): lo dicho no cierra
-  // ningún paso. Es un aviso; el freno es el de «Preparar el commit».
+  // ningún paso. Es un aviso; el freno es el de «Preparar el pull request».
   try {
     const line = pendingStepsLine(marker, event);
     if (line) toPerson = toPerson ? `${toPerson}\n${line}` : line;

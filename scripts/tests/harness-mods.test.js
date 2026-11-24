@@ -569,7 +569,7 @@ test('T9 Cartel_OtraVuelta_DiceQueFalta @story-8.195 @ac-9 — con otra vuelta: 
   assert.ok(pipelineTable(run).includes('| 7. Revisores (vuelta 2) | falta otra vuelta |'), pipelineTable(run));
 });
 
-test('T9b Cartel_UltimoPasoOtraVez_CuentaDesdeLosRevisores @story-8.195 @ac-4 @ac-9 — «Preparar el commit» pedido otra vez cuenta desde el último cierre de los revisores, no desde su arranque de ayer', async () => {
+test('T9b Cartel_UltimoPasoOtraVez_CuentaDesdeLosRevisores @story-8.195 @ac-4 @ac-9 — «Preparar el pull request» pedido otra vez cuenta desde el último cierre de los revisores, no desde su arranque de ayer', async () => {
   // lo cazó el pase adversarial: el renglón decía «1205 min en este paso», contados desde el arranque del día anterior
   const { readRun, boardLine } = await mod('run.mjs');
   const m = terminada({

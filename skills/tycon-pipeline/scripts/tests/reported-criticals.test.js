@@ -380,11 +380,10 @@ test('Findings_CoreReviewersCloseWithVerdict — los revisores del núcleo y el 
   for (const { agent } of CORE_REVIEWERS) {
     const def = fs.readFileSync(path.join(raiz, 'agents', `${agent}.md`), 'utf8');
     assert.match(def, RE_PIDE_VEREDICTO, `${agent}: no pide cerrar con la regla una vez por hallazgo`);
-    // 🔴 sin la forma «resueltos (…)» en su definición, el revisor de cobertura confirmaba el arreglo en la prosa, el
-    // arnés sólo veía bajar la cuenta, y un hallazgo nuevo con el mismo código pedía la exención del dueño (fila 140)
-    if (agent === 'tycon-ac-coverage-checker') {
-      assert.match(def, /Veredicto: hallazgos \([A-Z][A-Z0-9]*-C\d+\) · bloquea: sí · resueltos \(/, `${agent}: no enseña la parte «resueltos (…)» del veredicto`);
-    }
+    // 🔴 sin la forma «resueltos (…)» en su definición, el revisor confirma el arreglo en la prosa, el arnés sólo ve bajar
+    // la cuenta, y un hallazgo nuevo con el mismo código pide otra vuelta o la exención del dueño
+    assert.match(def, /Veredicto: hallazgos \([A-Z][A-Z0-9]*-C\d+\) · bloquea: sí · resueltos \(/, `${agent}: no enseña la parte «resueltos (…)» del veredicto`);
+    assert.match(def, /Veredicto: limpio · resueltos \(/, `${agent}: no enseña «resueltos (…)» con el veredicto limpio`);
     // ninguno escribe su detalle a un archivo: ninguno tiene las herramientas de escritura ni de edición (alguno tiene la
     // consola, para leer), y su definición no se lo pide
     const herramientas = (def.match(/^tools:(.*)$/m) || [])[1];
