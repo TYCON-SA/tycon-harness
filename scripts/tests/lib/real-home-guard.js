@@ -38,8 +38,14 @@ const raw = { appendFileSync: fs.appendFileSync, readFileSync: fs.readFileSync, 
 const realOrSelf = (p) => { try { return raw.realpathSync(p); } catch (_) { return p; } };
 
 const OWNER = !process.env[ROOTS_VAR];
+const self = `--require "${__filename.replace(/\\/g, '/')}"`;
+// Un hijo que heredó la red pero perdió sus variables (un laboratorio que limpia lo que empieza con TYCON_ y deja
+// NODE_OPTIONS) no toma su HOME de juguete por la casa real: frenaría su propio laboratorio. Toma la casa de la cuenta.
+function casaDeLaCuenta() {
+  try { return os.userInfo().homedir || os.homedir(); } catch (_) { return os.homedir(); }
+}
 if (OWNER) {
-  const home = os.homedir();
+  const home = String(process.env.NODE_OPTIONS || '').includes(self) ? casaDeLaCuenta() : os.homedir();
   const named = [path.join(home, '.tycon'), path.join(home, '.claude'), path.join(home, '.codex')];
   const asked = String(process.env.TYCON_HOME || '').trim();
   if (asked && path.isAbsolute(asked)) named.push(asked);
@@ -47,7 +53,6 @@ if (OWNER) {
   process.env[ROOTS_VAR] = JSON.stringify([...new Set(named.flatMap((p) => [path.resolve(p), realOrSelf(p)]))]);
   process.env[LOG_VAR] = path.join(os.tmpdir(), `tycon-real-home-guard-${process.pid}-${Date.now()}.jsonl`);
   // los `node` que la suite lance con el ambiente heredado cargan la misma red (comillas: una ruta con espacios)
-  const self = `--require "${__filename.replace(/\\/g, '/')}"`;
   if (!String(process.env.NODE_OPTIONS || '').includes(self)) process.env.NODE_OPTIONS = `${process.env.NODE_OPTIONS || ''} ${self}`.trim();
 }
 const ROOTS = JSON.parse(process.env[ROOTS_VAR]).map(fold);

@@ -181,6 +181,53 @@ test('Aislada_HijoSinRed_ElEncierroLoAnota @story-8.314 @ac-2', { skip: ENCIERRO
   assert.ok(fs.existsSync(path.join(r, 'f.txt')), 'escribió en su repo');
 });
 
+test('F174 Aislada_HereDocDeBash_Anda: en el encierro, desde una carpeta no admitida, el bash del sistema escribe el temporal de su here document; otra escritura ahí sigue negada', { skip: ENCIERRO ? false : 'sin el encierro del sistema' }, (t) => {
+  // fila 174: el bash 3.2 de macOS no mira TMPDIR para un here document; si no puede escribir en /var/tmp ni en /tmp (el
+  // encierro se lo niega), lo escribe en la carpeta actual como «sh-thd-<n>». Negado, un freno de bash que lo usa no
+  // decide y falla cerrado. El humo corre desde la carpeta de la sesión, que no es una raíz admitida.
+  const c = cuenta(t);
+  const sesion = path.join(c.b, 'sesion');
+  fs.mkdirSync(sesion);
+  const r = repo(path.join(c.b, 'repo'), {
+    '.advisors/dod-runtime/g.js': [
+      "const { spawnSync } = require('child_process');",
+      "const h = spawnSync('/bin/bash', ['-c', 'cat <<FIN\\nheredoc-ok\\nFIN'], { encoding: 'utf8' });",
+      "console.log('HEREDOC ' + (h.stdout || '').trim() + ' ' + (h.stderr || '').trim());",
+      "const o = spawnSync('/bin/bash', ['-c', 'echo x > otro.txt'], { encoding: 'utf8' });",
+      "console.log('OTRO ' + o.status);",
+    ].join('\n'),
+  });
+  const g = path.join(r, '.advisors', 'dod-runtime', 'g.js');
+  const s = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.32', ['--', process.execPath, g], { cwd: sesion, env: ambiente(c) });
+  assert.match(salida(s), /HEREDOC heredoc-ok/, salida(s));
+  assert.doesNotMatch(salida(s), /cannot create temp file/, salida(s));
+  assert.match(salida(s), /OTRO [1-9]/, salida(s));
+  assert.ok(!fs.existsSync(path.join(sesion, 'otro.txt')), 'otra escritura en la carpeta de la sesión sigue negada');
+  assert.deepStrictEqual(fs.readdirSync(sesion).filter((f) => f.startsWith('sh-thd-')), [], 'bash borra su temporal');
+});
+
+test('F174 T2 Aislada_HijoSinLasVariablesDeLaRed_EscribeEnSuLaboratorio: un hijo con HOME de juguete y sin las variables TYCON_ escribe en su casa de juguete; la casa de la cuenta sigue frenada', { skip: !POSIX }, (t) => {
+  // fila 174: un guion de laboratorio limpia lo que empieza con TYCON_ para su hijo y deja NODE_OPTIONS; el hijo carga la
+  // red sin sus raíces y no tiene que tomar su HOME de juguete por la casa real
+  const c = cuenta(t);
+  const destinoReal = path.join(c.casa, '.tycon', 'state', 'del-hijo.txt');
+  const r = repo(path.join(c.b, 'repo'), {
+    '.advisors/dod-runtime/g.js': [
+      "const fs = require('fs'); const os = require('os'); const path = require('path'); const { spawnSync } = require('child_process');",
+      "const juguete = fs.mkdtempSync(path.join(os.tmpdir(), 'juguete-'));",
+      "const env = {}; for (const [k, v] of Object.entries(process.env)) if (!k.startsWith('TYCON_')) env[k] = v;",
+      "Object.assign(env, { HOME: juguete, USERPROFILE: juguete });",
+      "const hijo = \"const fs = require('fs'); const path = require('path'); fs.mkdirSync(path.join(process.env.HOME, '.claude', '.tycon-pipeline'), { recursive: true }); fs.writeFileSync(path.join(process.env.HOME, '.claude', '.tycon-pipeline', 'x.jsonl'), 'x'); console.log('LAB ok'); try { fs.writeFileSync(process.argv[1], 'x'); console.log('REAL escribió'); } catch (e) { console.log('REAL ' + e.code); }\";",
+      "const h = spawnSync(process.execPath, ['-e', hijo, process.argv[2]], { env, encoding: 'utf8' });",
+      "console.log('HIJO ' + h.status + ' ' + (h.stdout || '').trim().replace(/\\n/g, ' | ') + ' ' + (h.stderr || '').trim().split('\\n')[0]);",
+    ].join('\n'),
+  });
+  const s = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.33', ['--', process.execPath, '.advisors/dod-runtime/g.js', destinoReal], { cwd: r, env: ambiente(c) });
+  assert.match(salida(s), /LAB ok/, salida(s));
+  assert.doesNotMatch(salida(s), /REAL escribió/, salida(s));
+  assert.ok(!fs.existsSync(destinoReal), 'la casa de la cuenta sigue frenada');
+});
+
 test('T4 Aislada_RepoDentroDeLoVigilado_SeEscribe @story-8.314 @ac-2', { skip: !POSIX }, (t) => {
   const c = cuenta(t);
   const r = repo(path.join(c.casa, '.claude', 'worktrees', 'r'), {
