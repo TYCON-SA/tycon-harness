@@ -175,6 +175,6 @@ se pone `packs.default` en la configuración de la máquina (`~/.claude/tycon.js
    llano y sin los IDs, qué mira cada regla, cuáles frenan la historia y cuáles sólo avisan, y cuántos casos del examen
    salieron bien.
 8. **La copia de respaldo, una sola vez.** Un perfil local vive sólo en esa máquina: `doctor` lo muestra como aviso. Ofrecé
-   una sola vez subirlo a GitHub o a Azure DevOps: un repo privado vacío, y desde la carpeta del perfil
+   una sola vez subirlo a GitHub o a Azure DevOps (en GitLab el perfil todavía no va): un repo privado vacío, y desde la carpeta del perfil
    `git remote add origin <dirección>` y `git push -u origin main`; después `harness.js install --team <dirección>`,
    para que el arnés lo lea de ahí. Si dice que no, no lo vuelvas a ofrecer: el aviso de `doctor` queda, y no frena nada.

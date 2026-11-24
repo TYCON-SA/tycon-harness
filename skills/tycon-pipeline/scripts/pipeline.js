@@ -111,6 +111,7 @@ function main() {
   if (cmd === 'story-review-gate') return cargar('pipeline-reviewers.js').cmdStoryReviewGate(cmd, args);
   if (cmd === 'story-review-record') return cargar('pipeline-reviewers.js').cmdStoryReviewRecord(cmd, args);
   if (cmd === 'validation-record') return cargar('pipeline-reviewers.js').cmdValidationRecord(cmd, args);
+  if (cmd === 'move-story') return cargar('pipeline-reviewers.js').cmdMoveStory(cmd, args);
   if (cmd === 'tooling-expected') return cargar('pipeline-start.js').cmdToolingExpected(cmd, args);
   if (cmd === 'model-hint') return cargar('pipeline-next.js').cmdModelHint(cmd, args);
   if (cmd === 'deep-review-gate') return cargar('pipeline-deep-review.js').cmdDeepReviewGate(cmd, args);
@@ -223,7 +224,10 @@ function main() {
 
 
 if (require.main === module) {
-  // Las opciones y subcomandos viejos siguen andando hasta el retiro
+  // Las opciones y subcomandos viejos siguen andando hasta el retiro: --breve es --brief, --marcas es --marks,
+  // qa-legibilidad es qa-readability y validadores es validators. Los nombres nuevos se escriben acá aunque los lean las
+  // partes de lib/: el instalador busca el nombre nuevo de cada entrada del mapa de renombres en el texto de este
+  // archivo, y sin él no instala la capa del equipo.
   require('./lib/legacy-names.js').aliasArgv('skills/tycon-pipeline/scripts/pipeline.js');
   try {
     main();
