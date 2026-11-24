@@ -366,7 +366,7 @@ if [ -f "$ARNES/.tycon-release.json" ] && [ ! -d "$ARNES/.git" ]; then
   # (2>&1: el motivo de python viaja en la variable, así `muere` lo imprime; cazador de fallos silenciosos de la D)
   # shellcheck disable=SC2046
   REPO_GITHUB="$(/usr/bin/python3 -I - "$ARNES" "$ESTADO_RELEASE" "$API_GITHUB" "$HOME_LEIDA/.tycon/config.json" "$LISTA_VERIFICADA" "$GIT_GITHUB" "$PREVIO_COMMIT" "${ARCHIVOS[@]}" "$MAPA_NOMBRES" $(extras_de_setup) 2>&1 <<'PY'
-import hashlib, json, os, re, sys, time, urllib.request, urllib.error
+import base64, hashlib, json, os, re, sys, time, urllib.request, urllib.error
 arnes, estado, api, token_file, lista, gitbase, previo = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6], sys.argv[7]
 freno = sys.argv[8:]   # lo que se copia a /opt (ARCHIVOS, el mapa de nombres y lo de setup): tiene que ser igual al de la punta (paso 5)
 def muere(m): sys.stderr.write(m + "\n"); sys.exit(2)
@@ -406,14 +406,25 @@ def tree_of(items):
     body = b"".join(("%s %s\0" % (mode, name)).encode("utf-8") + bytes.fromhex(sha) for name, mode, sha in entries)
     return hashlib.sha1(b"tree %d\0" % len(body) + body).hexdigest()
 arbol = tree_of(entradas)
-if arbol != m.get("tree"): muere("el árbol de la versión bajada recalculado desde el disco (%s) no es el del manifiesto (%s): la carpeta no es la que se bajó" % (arbol[:7], str(m.get("tree"))[:7]))
+def arbol_distinto(): muere("el árbol de la versión bajada recalculado desde el disco (%s) no es el del manifiesto (%s): la carpeta no es la que se bajó" % (arbol[:7], str(m.get("tree"))[:7]))
+# La copia de una versión numerada por su etiqueta lleva en version.json el número de la etiqueta: al bajarla, el
+# instalador lo reescribe y el manifiesto anota el blob del texto nuevo, con el árbol del commit (release.js,
+# stampVersion). Ese árbol se recalcula en el paso 4, con el version.json de git del commit que da GitHub, y lo del disco
+# tiene que ser el estampado de ése.
+estampado = None
+if arbol != m.get("tree"):
+    try:
+        with open(os.path.join(arnes, "version.json"), encoding="utf-8-sig") as fh: estampado = json.load(fh)
+    except Exception: estampado = None
+    if not (any(rel == "version.json" for _, rel, _ in entradas) and isinstance(estampado, dict) and isinstance(estampado.get("installed"), str) and "floor" in estampado): arbol_distinto()
 # 3. el estado de la máquina: de qué repo y de qué commit se bajó
 try:
     with open(estado, encoding="utf-8") as f: s = json.load(f)
 except Exception as e: muere("el estado del arnés (%s) no se lee: %s — sin él no sé de qué repo se bajó la versión" % (estado, e))
 src = next((x for x in (s.get("sources") or []) if isinstance(x, dict) and x.get("kind") == "release"), None) if isinstance(s, dict) else None
 if not src: muere("el estado del arnés (%s) no registra una versión bajada: ¿la mudanza terminó?" % estado)
-if src.get("tree") != arbol: muere("el árbol de la versión bajada (%s) no es el que registra el estado (%s): la carpeta no es la que se instaló" % (arbol[:7], str(src.get("tree"))[:7]))
+def estado_distinto(): muere("el árbol de la versión bajada (%s) no es el que registra el estado (%s): la carpeta no es la que se instaló" % (arbol[:7], str(src.get("tree"))[:7]))
+if estampado is None and src.get("tree") != arbol: estado_distinto()
 commit = str(src.get("commit") or "")
 if not re.match(r"^[0-9a-f]{40}$", commit): muere("el estado no registra el commit de la versión bajada")
 url = str(src.get("url") or "")
@@ -467,6 +478,24 @@ st, c = get("/repos/%s/git/commits/%s" % (repo, commit))
 if st == 404: muere("GitHub no encuentra el commit %s en %s (404): sin permiso guardado, el permiso no ve el repo, o el commit no existe — harness.js config set github.token, y harness.js doctor" % (commit[:7], repo))
 if st != 200 or not isinstance(c, dict): muere("GitHub contestó %s al pedir el commit %s de %s: no instalo" % (st, commit[:7], repo))
 gh_tree = str(((c.get("tree") or {}).get("sha")) or "")
+if estampado is not None:
+    # el version.json de git del commit: su texto y su blob, el que va en el árbol
+    st6, vj = get("/repos/%s/contents/version.json?ref=%s" % (repo, commit))
+    try: texto_git = base64.b64decode(vj["content"]) if st6 == 200 and isinstance(vj, dict) and vj.get("encoding") == "base64" else None
+    except Exception: texto_git = None
+    if texto_git is None: muere("GitHub contestó %s al pedir el version.json del commit %s de %s: sin él no puedo verificar el version.json de la versión bajada, que lleva el número de su etiqueta — no instalo" % (st6, commit[:7], repo))
+    blob_git = hashlib.sha1(b"blob %d\0" % len(texto_git) + texto_git).hexdigest()
+    try: de_git = json.loads(texto_git.decode("utf-8-sig"))
+    except Exception: de_git = None
+    # el estampado es el de git con el número de la etiqueta, el número de git como piso y la nota de la copia: nada más
+    resto = lambda d: {k: v for k, v in d.items() if k not in ("version", "floor", "installed")}
+    if not (isinstance(de_git, dict) and de_git.get("numbering") == "merge-tag" and estampado.get("floor") == de_git.get("version")
+            and estampado.get("version") == m.get("version") and resto(estampado) == resto(de_git)):
+        muere("el version.json de la versión bajada no es el del commit %s de %s con el número de su etiqueta: cambia algo más que el número — no se instala como freno" % (commit[:7], repo))
+    entradas = [(mode, rel, blob_git if rel == "version.json" else h) for mode, rel, h in entradas]
+    arbol = tree_of(entradas)
+    if arbol != m.get("tree"): arbol_distinto()
+    if src.get("tree") != arbol: estado_distinto()
 if gh_tree != arbol: muere("el árbol de la carpeta (%s) NO es el del commit %s en GitHub (%s): la carpeta no es lo publicado, no se instala como freno" % (arbol[:7], commit[:7], gh_tree[:7]))
 puntas = {}
 # sin permiso, las puntas de UN pedido a info/refs (story 8.34); si github.com no contesta o no es git, por la API
