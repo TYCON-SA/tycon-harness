@@ -1204,6 +1204,8 @@ test('Comentario_ConUnaComilla_NoEscondeElRenglonSiguiente (fila 217, el freno)'
     frena(`echo a\\\n#b; cp /tmp/falso.json '${res}'`);
     frena(`echo $'a\\'b # c'; cp /tmp/falso.json '${res}'`);
     frena(`echo $'\\'' # '\ncp /tmp/falso.json '${res}'`);
+    // un `#` pegado a un carácter escapado o al cierre de `$(…)` es parte de la palabra, no un comentario
+    for (const pegado of ['a\\ #b', 'a\\;#b', 'a\\&#b', 'a\\(#b', '$(date)#b', '$((1+1))#b']) frena(`echo ${pegado} > '${res}'`);
     // un comentario con una comilla y nada escondido, o un `#` que no empieza una palabra, sigue pasando
     pasa("echo hola # it's fine\nls -la");
     pasa("echo 'a # b' && echo \"c # d\"");

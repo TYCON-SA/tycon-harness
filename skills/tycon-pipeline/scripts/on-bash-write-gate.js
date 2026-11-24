@@ -1611,7 +1611,8 @@ function sinComentarios(cmd) {
     if (c === '\\') {
       out += c + (s[i + 1] || '');
       i++;
-      if (s[i] !== '\n') anterior = s[i] || c;
+      // lo escapado es parte de una palabra (`a\ #b` es una sola): no la corta
+      if (s[i] !== '\n') anterior = 'x';
       continue;
     }
     if (c === '#' && !anidado && !invertidas && (anterior === '' || /[\s;&|()]/.test(anterior))) {
@@ -1626,7 +1627,13 @@ function sinComentarios(cmd) {
     if (c === "'" || c === '"') q = c;
     else if (c === '`') invertidas = !invertidas;
     else if (anidado && (c === '(' || c === '{')) anidado++;
-    else if (anidado && (c === ')' || c === '}')) anidado--;
+    else if (anidado && (c === ')' || c === '}')) {
+      // el cierre de `$(…)` o `${…}` sigue la palabra (`$(date)#b` es una sola)
+      anidado--;
+      out += c;
+      anterior = 'x';
+      continue;
+    }
     out += c;
     anterior = c;
   }
