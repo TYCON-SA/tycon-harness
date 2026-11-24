@@ -1250,6 +1250,15 @@ test('CopiaPorOtroProgramaOEnvoltorio_AlEstado_Frena (fila 223, el freno)', () =
     frena(`env -S cp ${S} '${res}'`);
     frena(`env -iS cp ${S} '${res}'`);
     frena(`env --split-string=cp ${S} '${res}'`);
+    // de la segunda vuelta: el valor de `-S` se lee como palabras del `env` (una opción, un texto vacío); la `S` de una
+    // variable pegada a `-u` (`-uSSH_AUTH_SOCK`) no es `-S`; y lo que el shell pega al nombre del programa no es del nombre
+    frena(`env -S -i cp ${S} '${res}'`);
+    frena(`env --split=cp ${S} '${res}'`);
+    frena(`env -S '' cp ${S} '${res}'`);
+    for (const u of ['-uSSH_AUTH_SOCK', '-uSHELL', '-uPS1']) frena(`env ${u} cp ${S} '${res}'`);
+    for (const pegado of ['cp>log', 'cp>>log', 'cp>|log', 'cp<<<x', 'cp$x', 'cp${x}', 'cp$()', 'cp``', "cp$''", 'mv$x', 'rsync$x -a', 'install$x', 'env cp$x']) {
+      frena(`${pegado} ${S} '${res}'`);
+    }
     // lo de siempre sigue pasando
     pasa(`install -m 644 ${S} '${repo}/copia.json'`);
     pasa(`rsync -a ${S} '${repo}/copia.json'`);
@@ -1287,6 +1296,14 @@ test('CpAlEstado_ConRedireccionRara_Frena (fila 224, el freno)', () => {
     frena(`echo \\>|&cp ${S} '${res}'`);
     // `>!` (zsh: pisa el archivo aunque el shell no deje pisar) escribe en lo que sigue, como `>|`
     for (const op of ['>!', '>! ', '>>!', '&>!']) frena(`echo x ${op}'${res}'`);
+    // de la segunda vuelta: con un número par de barras el `>` no está escapado y `>|` no parte; zsh pisa también con
+    // `>&!` y `>&|`; en bash `>!` delante es `>` al archivo `!`, y lo que sigue es el comando; un `$(` o `${` partido por el
+    // `;` o la tubería de adentro deja una palabra que no se resuelve, no el origen como destino
+    for (const antes of ['\\\\', 'a\\\\', '\\\\\\\\']) frena(`cp ${S} ${antes}>|x '${res}'`);
+    for (const op of ['>&!', '>&! ', '>&|', '>&| ', '>>&!', '>>&|', '2>&!']) frena(`echo x ${op}'${res}'`);
+    for (const op of ['>!', '>>!', '&>!', '2>!', 'X=1 >!', 'env >!', 'nohup >!']) frena(`${op} cp ${S} '${res}'`);
+    frena(`>! sed -i.bak s/a/b/ '${res}'`);
+    for (const entrada of ['<<<$(true; true)', '<<<$(true|true)', '<<<${x:-a; b}']) frena(`cp ${S} ${entrada} '${res}'`);
     // lo de siempre sigue pasando
     pasa(`cp ${S} '${repo}/copia.json' <<<x"y"`);
     pasa(`HOLA=1 >/dev/null cp ${S} '${repo}/copia.json'`);
