@@ -2587,6 +2587,52 @@ test('F159 T9 Open_SinRespuesta_DiceCómoSacarLoQueCreó: si el lanzador no vuel
   assert.doesNotMatch(r3.message, /worktree remove|release/);
 });
 
+const acceptedFolders = (t) => { try { return JSON.parse(fs.readFileSync(WS.acceptedFile(t.home), 'utf8')).folders; } catch { return []; } };
+
+test('F159 T10 Open_PrefiereUnPuestoYaAceptado: sin --slot, con un puesto libre donde Claude Code ya abrió una sesión, abre ahí y no crea copia; sin ninguno libre así, crea la copia como siempre', () => {
+  const t = toy({ profile: { coordination: { max_working: 3 } } });
+  const repo = toyRepo(t);
+  WS.ensure({ ...t.opts, repo, count: 2 });
+  WS.noteAccepted({ home: t.home, folder: slotOf(repo, 2) });
+  const r = C.open({ ...t.opts, ...caller(t), repo, name: 'n1', task: 'algo', launcher: launcher(t) });
+  assert.strictEqual(r.ok, true, r.message);
+  assert.strictEqual(fs.realpathSync(launched(t).cwd), slotOf(repo, 2));
+  assert.strictEqual(branchIn(slotOf(repo, 2)), 'wt/n1');
+  assert.strictEqual(fs.existsSync(copyOf(repo, 'n1')), false, 'no crea copia');
+  assert.match(launched(t).argv[launched(t).argv.length - 1], /release/);
+  assert.match(r.message, /puesto 2/);
+  assert.strictEqual(branchIn(slotOf(repo, 1)), '', 'el puesto sin aceptar sigue libre');
+  // el único puesto aceptado está tomado: la siguiente va a una copia, y no toma el que no se sabe si está aprobado
+  const r2 = C.open({ ...t.opts, ...caller(t), now: NOW + 1000, repo, name: 'n2', task: 'algo', launcher: launcher(t) });
+  assert.strictEqual(r2.ok, true, r2.message);
+  assert.strictEqual(fs.realpathSync(launched(t).cwd), copyOf(repo, 'n2'));
+  assert.strictEqual(branchIn(slotOf(repo, 1)), '', 'el puesto sin aceptar sigue libre');
+  // el puesto aceptado, suelto pero con la sesión que lo usó todavía viva adentro: no se prefiere
+  assert.strictEqual(WS.release({ ...t.opts, slot: slotOf(repo, 2) }).ok, true);
+  session(t, 'quedo-abierta', 'quedó', { cwd: slotOf(repo, 2) });
+  const r3 = C.open({ ...t.opts, ...caller(t), now: NOW + 2000, repo, name: 'n3', task: 'algo', launcher: launcher(t) });
+  assert.strictEqual(r3.ok, true, r3.message);
+  assert.strictEqual(fs.realpathSync(launched(t).cwd), copyOf(repo, 'n3'), 'dos sesiones en la misma carpeta no');
+  assert.strictEqual(branchIn(slotOf(repo, 2)), '', 'el puesto con la sesión viva sigue libre');
+});
+
+test('F159 T11 Open_AnotaElPuestoQueAbrió: una apertura buena en un puesto lo anota como aceptado y un «not trusted» ahí lo saca; una copia no se anota, y sin --slot no se crean puestos', () => {
+  const t = toy({ profile: { coordination: { max_working: 3 } } });
+  const repo = toyRepo(t);
+  const r0 = C.open({ ...t.opts, ...caller(t), repo, name: 'n0', task: 'algo', launcher: launcher(t) });
+  assert.strictEqual(r0.ok, true, r0.message);
+  assert.strictEqual(fs.existsSync(slotOf(repo, 1)), false, 'sin --slot no crea puestos');
+  assert.deepStrictEqual(acceptedFolders(t), [], 'una copia no se anota');
+  const r1 = C.open({ ...t.opts, ...caller(t), now: NOW + 1000, repo, slot: true, name: 'n1', task: 'algo', launcher: launcher(t) });
+  assert.strictEqual(r1.ok, true, r1.message);
+  assert.deepStrictEqual(acceptedFolders(t), [slotOf(repo, 1)]);
+  assert.strictEqual(WS.release({ ...t.opts, slot: slotOf(repo, 1) }).ok, true);
+  // más tarde Claude Code dice que no está aprobada: deja de contar como aceptada
+  const r2 = C.open({ ...t.opts, ...caller(t), now: NOW + 2000, repo, slot: true, name: 'n2', task: 'algo', launcher: launcher(t, 'untrusted') });
+  assert.strictEqual(r2.ok, false);
+  assert.deepStrictEqual(acceptedFolders(t), []);
+});
+
 test('8.187 T5b Open_NombreAuto_SaltaLasCopiasQueQuedaron @story-8.187 @ac-5: sin --name no elige un nombre cuya copia todavía existe, aunque su rama sea otra', () => {
   const t = toy({ profile: { coordination: { max_working: 3, session_names: ['Norte', 'Sur'] } } });
   const repo = toyRepo(t);

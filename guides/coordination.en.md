@@ -192,8 +192,11 @@ Claude Code 2.1.330 asks to approve each copy, even with the main folder approve
 each job there is `open --repo <repo> --slot`: instead of creating a copy, it takes a free fixed slot of the repo and
 opens the session there, on the job's branch. There are as many slots as the cap and they are always the same folders,
 so the owner approves them only once: `node scripts/tools/work-slots.js pending-trust` lists, each with its `cd`, those
-without their own recorded approval; the main folder's does not count, and since Claude Code 2.1.330 does not record the
-slots' approval, it says it does not know instead of taking them as approved. With no free slot, `open --slot` says so
+with no approval in sight, and `prepare-machine.js` names them all in one note. What counts is the slot's own recorded
+approval or a background session that already opened there (`open` records it, and drops it if Claude Code later says
+no); the main folder's does not count, and with neither it says it does not know instead of taking it as approved.
+Without `--slot`, `open` still uses a free slot where a session already opened before creating a new copy, and says so in
+its message; if there is none, it creates the copy as always. With no free slot, `open --slot` says so
 and does not open. The task tells the session how to release the slot when it is done. If the launcher answers that the
 slot is not approved, the slot stays taken with its branch and is retried with `--slot --reuse`, or released with
 `release`; on any other failure it is free again. On closing, a slot is released, not deleted. Nothing creates slots
