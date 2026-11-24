@@ -13,7 +13,7 @@ Pull requests are welcome. This repository is where the harness is written, not 
 - **Two GitHub limits with forks**: CodeQL does not analyze a pull request from a fork, and `main` needs its results.
   So a maintainer copies your commits, unchanged, to a branch of this repository and opens a pull request from it:
   CodeQL runs there, and your commits enter `main` with your name. Your pull request gets a note pointing to the new
-  one. Also, on a fork owned by an organization GitHub does not offer «Allow edits by maintainers»: if you can, fork to
+  one. Nothing is merged without the analysis, except in an emergency that the repository owner decides and signs. Also, on a fork owned by an organization GitHub does not offer «Allow edits by maintainers»: if you can, fork to
   your personal account.
 - **How we review**: first we leave review comments on your pull request, saying what to change and why: you get the
   first chance to fix it. Please turn on «Allow edits by maintainers», so we can add a fix to your same pull request if
@@ -63,7 +63,8 @@ Si nunca colaboraste en este repo, el camino es éste:
 - **CodeQL no analiza un pull request que viene de un fork**, y `main` exige sus resultados: el pedido queda trabado
   aunque todo lo demás esté en verde. Lo que hacemos: un mantenedor copia tus commits, sin cambiarlos, a una rama de
   este repo y abre el pull request desde ahí. CodeQL corre en ese pedido, y tus commits entran a `main` a tu nombre.
-  Tu pedido queda con una nota que apunta al nuevo. No se mergea sin el análisis.
+  Tu pedido queda con una nota que apunta al nuevo. Sin el análisis no se mergea, salvo una urgencia que decide el
+  dueño del repo, con su firma.
 - **En un fork de una organización, GitHub no ofrece «Allow edits by maintainers»**: la casilla no aparece, o no
   sirve. Si podés, hacé el fork en tu cuenta personal. Si tiene que ser el de la organización, el arreglo que
   sumemos va en ese pedido nuevo, encima de tus commits.
