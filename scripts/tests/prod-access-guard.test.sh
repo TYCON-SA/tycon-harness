@@ -1474,5 +1474,29 @@ fi
 if [ -z "$t12_falta" ]; then ok "T-puerta-12 Guia_LosLimitesReales @story-8.254 @ac-8 (sin «no tiene la clave», con los cinco límites y el cuadro propio)"
 else no "T-puerta-12 Guia_LosLimitesReales @story-8.254 @ac-8 — falta:$t12_falta"; fi
 
+# ── T3 ProdGuard_ArchivoConSaltoFinal_SinRenglonVacio @story-8.283 @ac-5 @ac-6 ─────────────────────────
+# El salto de línea final del archivo no deja un renglón vacío en el comando listo; los de adentro quedan. Un salto
+# final de Windows (\r\n) tampoco lo deja; un retorno de carro adentro sigue frenando.
+mkdir -p "$TMP/q83"
+printf 'select 1,\n  2\nfrom t\n\n' > "$TMP/q83/final.sql"
+printf 'select 1,\n  2\nfrom t\r\n' > "$TMP/q83/crlf.sql"
+printf 'select 1\r\nfrom t\r\n' > "$TMP/q83/cr-adentro.sql"
+listo83(){ node -e '
+  const t = require("fs").readFileSync(process.argv[1], "utf8"); const i = t.indexOf(process.argv[2]);
+  if (i < 0) process.exit(1);
+  const m = /^\S+ \S+ (?:\x27(?:[^\x27]|\x27\\\x27\x27)*\x27)/.exec(t.slice(i)); if (!m) process.exit(1); process.stdout.write(m[0]);' "$TMP/err" "$PUERTA $PROD '"; }
+esperado83="$PUERTA $PROD 'select 1,
+  2
+from t'"
+for f in final.sql crlf.sql; do
+  rc="$(corre "$PUERTA $PROD --file $TMP/q83/$f")"
+  L="$(listo83)" || L=""
+  if [ "$rc" = 2 ] && [ "$L" = "$esperado83" ]; then ok "8.283 T3 ProdGuard_ArchivoConSaltoFinal_SinRenglonVacio · $f"
+  else no "8.283 T3 ProdGuard_ArchivoConSaltoFinal_SinRenglonVacio · $f (rc=$rc) — listo: $(printf '%s' "$L" | tail -c 40 | od -c | head -2)"; fi
+done
+rc="$(corre "$PUERTA $PROD --file $TMP/q83/cr-adentro.sql")"
+if [ "$rc" = 2 ] && grep -qF "control" "$TMP/err" && ! grep -qF "$PUERTA $PROD '" "$TMP/err"; then ok "8.283 T3 ProdGuard_ArchivoConSaltoFinal_SinRenglonVacio · un retorno de carro adentro sigue frenando"
+else no "8.283 T3 ProdGuard_ArchivoConSaltoFinal_SinRenglonVacio · el retorno de carro adentro pasó (rc=$rc) — err: $(head -c 200 "$TMP/err")"; fi
+
 echo "— prod-guard: $pasaron ok, $fallos fallos —"
 [ "$fallos" -eq 0 ]
