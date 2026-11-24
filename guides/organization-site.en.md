@@ -246,7 +246,10 @@ so and the row comes back to "Your decision" with the reason. The work item type
 
 Each card says **what happened** in plain words, with the finding's data. For a runs finding, for example: "Between 21/10
 and 24/10, 4 runs ended without the adversarial pass, the review that tries to break what was already approved. Stories:
-4.1, 4.3. Machines: mac-a, mac-b." With an analysis, it says **why** it happens, what it **recommends** and what
+4.1, 4.3. Machines: mac-a, mac-b. Sessions: Ponzio-5, Carrizo-4." Each session's name is the name the session had on
+its machine during the run, and it only shows if it has the shape of a session name (letters without accents, numbers,
+hyphen or underscore, no spaces, up to 40 characters); runs with a name without that shape, or with no name, are counted
+apart ("2 runs without a name"). A run closed before the harness recorded the names does not have it. With an analysis, it says **why** it happens, what it **recommends** and what
 fixing it would do, and whether the night's model or a person wrote it (the analysis is in Spanish). Without one, it
 says why. If the night left a proposal, it says the AI model that reviews every night wrote it, and its button is
 highlighted. The buttons to decide are always in view, under the heading **Decide**.
@@ -1860,6 +1863,15 @@ version you install.
 hook with the `stable` digest (`imgURL=<image>@sha256:…`). The hook is a secret (`SITE_RENDER_DEPLOY_HOOK`): it never
 shows in the log. Render does it in the background; the next night's check without a session confirms it. If Render
 rejects the image (a 404), it has to be from the same registry and name as the service's.
+
+**If it was installed by tag** (optional): with the Render API key (`SITE_RENDER_API_KEY`, secret) and the service id
+(`SITE_RENDER_SERVICE_ID`, the `srv-…` in its URL), the nightly asks Render which image the service runs before asking
+for the redeploy. If it is pinned by tag (`:stable`, `:latest`), the result is `no_pudo` with the reason "installed by
+tag" and the site band shows just like on Azure. If Render does not answer, it is `no_pudo` with its code, never "up to
+date". Without both variables, everything stays as before. In Azure Pipelines they go in the pipeline's "Variables"
+(the key as secret); in GitHub, the key as a secret and the id as a repo variable. Render has no read-only keys: a key
+opens every workspace of its user. Create it from a user that is only in the site's workspace, and revoke it from
+"Account Settings → API Keys" if it leaks.
 
 ### Your own machine
 

@@ -37,7 +37,7 @@ AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PUERTA="$AQUI/scripts/production/tycon-prod-sql"
 HOOK="$AQUI/scripts/hooks/prod-firewall-close.js"
 FRENO="$AQUI/scripts/hooks/prod-access-guard.js"
-GUIA="$AQUI/guides/produccion-con-permiso.md"
+GUIA="$AQUI/guides/production-with-permission.md"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 fallos=0; pasaron=0
 ok(){ echo "✅ prod-azure-admin: $1"; pasaron=$((pasaron+1)); }

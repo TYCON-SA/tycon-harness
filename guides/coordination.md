@@ -5,8 +5,8 @@ que una de ellas, **la coordinadora**, ordene a las demás. La coordinadora deci
 las sesiones, cuida que la máquina no se sature y le pasa al dueño sólo lo suyo.
 
 Es una receta, no un modo: nada cambia en una máquina donde nadie designó una coordinadora. Para que ordene alcanza un
-paso: en cada máquina, el dueño escribe en el chat de la sesión elegida «Esta sesión es la coordinadora», y esa sesión
-corre `marker.js designate-relay` con esa cita.
+paso: en cada máquina, el dueño le pide a la sesión elegida que sea la coordinadora, esa sesión corre
+`marker.js designate-relay` y el dueño hace click en el cuadro.
 
 La coordinadora hace dos cosas, y sólo la segunda pide el perfil del equipo:
 
@@ -18,15 +18,14 @@ La coordinadora hace dos cosas, y sólo la segunda pide el perfil del equipo:
    todo lo que firma va a la ventana del dueño, y `confirm-designation` se niega. Si la organización saca la clave del
    perfil, una confirmación vieja deja de valer.
 
-Cómo se nombra: en cada máquina, el dueño le pide a la sesión elegida, con sus palabras, que sea la coordinadora. Con el
-perfil, esa sesión corre `marker.js designate-relay` sin frase: el freno da un cuadro con «Sí» y «No» que dice qué sesión
-es y en qué carpeta, y con el click del dueño queda nombrada y confirmada. El arnés no lee la frase. Para dejar de serlo,
+Cómo se nombra: en cada máquina, el dueño le pide a la sesión elegida, con sus palabras, que sea la coordinadora. Esa
+sesión corre `marker.js designate-relay` sin frase: el freno da un cuadro con «Sí» y «No» que dice qué sesión es y en
+qué carpeta, y con el click del dueño queda nombrada (con el perfil, también confirmada; sin él, ordena y no firma). El arnés no lee la frase. Para dejar de serlo,
 `marker.js withdraw-relay`, con su propio cuadro. Las dos firmas son sólo del dueño, con su click en la pestaña de esa
 sesión: no se delegan. Si a esa sesión la abrió de fondo otra coordinadora (`coordination.js open`), el cuadro se
 muestra igual en su pestaña y la sesión le avisa a la coordinadora que la abrió: el dueño lo contesta ahí o por
 control remoto. Donde el click no se puede comprobar, el comando dice por qué y da los respaldos: la terminal del
-dueño (`designate-relay --terminal`) o la frase (`--quote` y después `confirm-designation`). Sin perfil, por ahora se
-nombra con la frase (`designate-relay --approved-by '<el dev>' --quote '<su frase>'`).
+dueño (`designate-relay --terminal`) o la frase (`--quote` y después `confirm-designation`).
 
 Una designación por frase de OTRA sesión, anotada cuando ya hay una coordinadora confirmada, no la desplaza: queda **sin
 confirmar** hasta que el dueño la confirme (`confirm-designation`, desde la pestaña de cualquiera de las dos), y
@@ -186,8 +185,11 @@ Claude Code 2.1.330 pide aprobar cada copia, aunque la principal ya esté aproba
 trabajo queda `open --repo <repo> --slot`: en lugar de crear una copia, toma un puesto fijo libre del repo y abre la
 sesión ahí, en la rama del trabajo. Hay tantos puestos como el tope y siempre son las mismas carpetas, así que el dueño
 los aprueba una sola vez: `node scripts/tools/work-slots.js pending-trust` lista, cada uno con su `cd`, los que no
-tienen su propia aprobación anotada; la de la principal no cuenta, y como Claude Code 2.1.330 no anota la de los
-puestos, dice que no sabe en lugar de darlos por aprobados. Sin puesto libre, `open --slot` lo dice y no abre. El
+tienen aprobación a la vista, y `prepare-machine.js` los nombra a todos en una nota. Cuenta la aprobación propia del
+puesto o una sesión de fondo que ya abrió ahí (la anota `open` y la saca si Claude Code después dice que no); la de la
+principal no cuenta, y sin ninguna de las dos dice que no sabe en lugar de darlo por aprobado. Sin `--slot`, `open` usa
+igual un puesto libre donde ya abrió una sesión antes que crear una copia nueva, y lo dice en su mensaje; si no hay
+ninguno así, crea la copia como siempre. Sin puesto libre, `open --slot` lo dice y no abre. El
 encargo le dice a la sesión cómo soltar el puesto al terminar. Si el lanzador contesta que el puesto no está aprobado,
 el puesto queda tomado con su rama y se reintenta con `--slot --reuse`, o se suelta con `release`; ante otra falla
 vuelve a quedar libre. Al cerrar, un puesto se suelta, no se borra. Nada crea puestos si no se piden. Cómo son:
@@ -466,9 +468,14 @@ una, la coordinadora:
   entero; si sale delicado, el plan vuelve al dueño. El pase adversarial sigue por la historia entera.
 - **Da el turno del pase del código.** Del código no lanza nada: con el dueño ausente, contesta en su nombre la pregunta
   cuya celda dice `review` (`review-answer --for-session`, con «dueño ausente» como motivo), y el pase lo lanza la
-  propia sesión con su turno, como siempre. Que `skip` y `wait` pidan el click del dueño es la fila 113.
+  propia sesión con su turno, como siempre. Si la celda dice `skip`, lo anota con `--by-profile`: el guion comprueba
+  que el dueño cuenta como ausente y que la celda dice eso, y anota `por: perfil`. Fuera de ese caso, «skip» del código
+  lo contesta el dueño: pide la firma `review-skip`, su click o su «aprobado» en tu pestaña, nunca la delegación.
 - **Pone la marca de ausente** cuando el dueño dice que se va («seguí en autónomo», «me voy», «hasta mañana» o algo
-  parecido): `marker.js owner-away set --phrase "<lo que dijo>"`. Lo juzga ella, no una lista de frases. La marca se borra
+  parecido): `marker.js owner-away set --phrase "<lo que dijo>"`. Lo juzga ella, no una lista de frases, pero la frase
+  tiene que estar en un mensaje que el dueño tipeó en su pestaña en los últimos 30 minutos: uno de otra sesión, de un
+  canal o de un programa no cuenta, y sin poder leer sus mensajes sale 2. Sin la marca, el dueño cuenta como ausente igual
+  por los minutos sin respuesta. La marca se borra
   sola cuando el dueño vuelve: un mensaje suyo, un mensaje de la oficina verificado, una firma suya o a las 24 horas. La
   oficina la muestra mientras está puesta.
 
@@ -528,7 +535,8 @@ El dueño firma desde el celular, con un click en el cuadro de la coordinadora. 
   pueda tomar; si no hay, la pregunta va al dueño al instante.
 - **El `owner-wait` de fondo no le quita el click al dueño**: el freno lo deja pasar, si corre exactamente como lo pide su
   aviso. Tampoco el vigilante de sólo lectura de un pedido
-  (`coordination.js pr-wait --repo <org/repo> --number <n>`), que además deja firmar por delegación (`guides/firmas-del-arnes.md`, «Aprobar en
+  (`coordination.js pr-wait --repo <org/repo> --number <n>`), ni la espera de que una historia abra su pedido
+  (`pr-wait --repo <org/repo> --story <historia>`). Los dos además dejan firmar por delegación (`guides/firmas-del-arnes.md`, «Aprobar en
   nombre del dueño»). Cualquier otra consola de fondo viva sí lo frena: se cierra antes de pedir el cuadro.
 - **Un pedido sin código lo aprueba la coordinadora**: si trae sólo historias, registros, evidencia, memoria o
   documentación, la coordinadora da en nombre del dueño las dos aprobaciones del merge (el mensaje y la subida) y le
@@ -773,15 +781,16 @@ coordinadora lo muestra sin cambiarle una letra, con «Sí, aprobar» y «No».
   Rechazar sólo niega: nunca aprueba.
 - **Lo aprueba sólo la persona, con su click en la pestaña de la coordinadora.** La coordinadora nunca, ni por
   delegación (`approvals.delegated_signing` no lo cubre), ni con un «aprobado» escrito, ni tocando la lista.
-- **Sin respuesta en `coordination.permission_wait_minutes`** (10 sin valor, de 1 a 30), el gancho sale sin decidir: vuelve la
-  ventana de siempre en esa sesión, que queda en las «Trabadas» con el motivo, y un click tardío no aprueba nada. Lo
-  mismo si la coordinadora muere o deja de ser la designada mientras espera.
-- **No se lleva, y sale la ventana de siempre sin demora:** una pestaña abierta, otro modo (automático, sin permisos,
-  aceptar ediciones, plan), sin coordinadora confirmada y viva, sin `owner-wait`, la lista apagada, la propia
-  coordinadora, Codex, y en Windows un comando por PowerShell. En una sesión de fondo, el motivo queda en «Trabadas» y
-  en `gates.log`, así una espera de toda la noche no pasa sin rastro. Tampoco un pedido que no se puede mostrar entero (más de
-  1500 caracteres, caracteres que no se ven o se ven en blanco, un salto de línea en una ruta o una dirección, datos que
-  el cuadro no muestra): la sesión queda trabada con ese motivo.
+- **Una sesión de fondo nunca queda esperando un permiso.** Lo que el cuadro no resuelve se niega con su motivo y una
+  salida (hacerlo de otra forma, seguir sin él o pedírselo a la coordinadora), y queda en `gates.log` como
+  `negado-de-fondo`. Pasa sin respuesta en `coordination.permission_wait_minutes` (10 sin valor, de 1 a 30), si la
+  coordinadora muere o deja de ser la designada mientras espera, y cuando el pedido no se lleva: otro modo (automático,
+  sin permisos, aceptar ediciones, plan), sin coordinadora confirmada y viva, sin `owner-wait`, la lista apagada, en
+  Windows un comando por PowerShell, o un pedido que no se puede mostrar entero (más de 1500 caracteres, caracteres que
+  no se ven o se ven en blanco, un salto de línea en una ruta o una dirección, datos que el cuadro no muestra). Un click
+  tardío no aprueba nada.
+- **Sale la ventana de siempre** sólo donde hay quien la conteste o el gancho no actúa: una pestaña abierta, la propia
+  coordinadora, Codex y el gancho apagado.
   Las herramientas que lleva son Bash, PowerShell, Edit, Write, NotebookEdit y WebFetch; el cuadro de preguntas y el
   plan, nunca.
 - **Si la persona contesta en la ventana de la sesión** o la sesión se cierra, el gancho muere y su renglón se cierra

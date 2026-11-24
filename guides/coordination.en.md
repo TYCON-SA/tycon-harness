@@ -5,8 +5,8 @@ them, **the coordinator**, to organize the rest. The coordinator decides what is
 names the sessions, keeps the machine from being overloaded, and passes the owner only what is theirs.
 
 It is a recipe, not a mode: nothing changes on a machine where nobody designated a coordinator. For her to organize, one
-step is enough: on each machine, the owner writes "Esta sesión es la coordinadora" (or "This session is the
-coordinator") in the chat of the chosen session, and that session runs `marker.js designate-relay` with that quote.
+step is enough: on each machine, the owner asks the chosen session to be the coordinator, that session runs
+`marker.js designate-relay` and the owner clicks in the box.
 
 The coordinator does two things, and only the second needs the team profile:
 
@@ -20,16 +20,16 @@ The coordinator does two things, and only the second needs the team profile:
    `confirm-designation` refuses. If the organization removes the key from the profile, an old confirmation stops
    counting.
 
-How she is named: on each machine, the owner asks the chosen session, in their own words, to be the coordinator. With
-the profile, that session runs `marker.js designate-relay` with no sentence: the guard gives a box with "Sí" and "No"
-that says which session it is and in which folder, and with the owner's click it is named and confirmed. The harness
+How she is named: on each machine, the owner asks the chosen session, in their own words, to be the coordinator. That
+session runs `marker.js designate-relay` with no sentence: the guard gives a box with "Sí" and "No" that says which
+session it is and in which folder, and with the owner's click it is named (with the profile, also confirmed; without
+it, she organizes and does not sign). The harness
 does not read the sentence. To stop being it, `marker.js withdraw-relay`, with its own box. Both signatures belong only
 to the owner, with a click in that session's tab: they are never delegated. If another coordinator opened that session
 in the background (`coordination.js open`), the box is still shown in its tab and the session tells the coordinator
 that opened it: the owner answers there or through remote control. Where the click cannot be checked, the
 command says why and gives the fallbacks: the owner's terminal (`designate-relay --terminal`) or the sentence
-(`--quote`, then `confirm-designation`). Without a profile, for now she is named with the sentence
-(`designate-relay --approved-by '<the dev>' --quote '<their sentence>'`).
+(`--quote`, then `confirm-designation`).
 
 A sentence designation of ANOTHER session, written when there is already a confirmed coordinator, does not replace her:
 it stays **unconfirmed** until the owner confirms it (`confirm-designation`, from either session's tab), and
@@ -192,8 +192,11 @@ Claude Code 2.1.330 asks to approve each copy, even with the main folder approve
 each job there is `open --repo <repo> --slot`: instead of creating a copy, it takes a free fixed slot of the repo and
 opens the session there, on the job's branch. There are as many slots as the cap and they are always the same folders,
 so the owner approves them only once: `node scripts/tools/work-slots.js pending-trust` lists, each with its `cd`, those
-without their own recorded approval; the main folder's does not count, and since Claude Code 2.1.330 does not record the
-slots' approval, it says it does not know instead of taking them as approved. With no free slot, `open --slot` says so
+with no approval in sight, and `prepare-machine.js` names them all in one note. What counts is the slot's own recorded
+approval or a background session that already opened there (`open` records it, and drops it if Claude Code later says
+no); the main folder's does not count, and with neither it says it does not know instead of taking it as approved.
+Without `--slot`, `open` still uses a free slot where a session already opened before creating a new copy, and says so in
+its message; if there is none, it creates the copy as always. With no free slot, `open --slot` says so
 and does not open. The task tells the session how to release the slot when it is done. If the launcher answers that the
 slot is not approved, the slot stays taken with its branch and is retried with `--slot --reuse`, or released with
 `release`; on any other failure it is free again. On closing, a slot is released, not deleted. Nothing creates slots
@@ -467,9 +470,15 @@ the coordinator:
   still goes by the whole story.
 - **Gives the code pass its turn.** She launches nothing for the code: with the owner away, she answers on the owner's
   behalf the question whose cell says `review` (`review-answer --for-session`, with «owner away» as the reason), and the
-  session itself launches the pass with its turn, as always. Having `skip` and `wait` ask for the owner's click is row 113.
+  session itself launches the pass with its turn, as always. If the cell says `skip`, she records it with `--by-profile`:
+  the script checks that the owner counts as away and that the cell says so, and records `por: perfil`. Outside that
+  case, a code «skip» is the owner's answer: it asks for the `review-skip` signature, their click or their «approved» in
+  your tab, never the delegation.
 - **Sets the away mark** when the owner says they are leaving («go on autonomously», «I'm off», «see you tomorrow» or
-  similar): `marker.js owner-away set --phrase "<what they said>"`. She judges it, not a list of phrases. The mark clears
+  similar): `marker.js owner-away set --phrase "<what they said>"`. She judges it, not a list of phrases, but the phrase
+  must be in a message the owner typed in her tab in the last 30 minutes: one from another session, a channel or a program
+  does not count, and if their messages cannot be read it exits 2. Without the mark, the owner still counts as away after
+  the minutes without an answer. The mark clears
   itself when the owner comes back: a message of theirs, a verified office message, a signature of theirs, or after 24
   hours. The office shows it while it is set.
 
@@ -533,7 +542,8 @@ The owner signs from the phone, with a click in the coordinator's box. For that 
   the queue, if there is something it can take; if not, the question goes to the owner right away.
 - **The background `owner-wait` does not take the click away from the owner**: the brake lets it through if it runs
   exactly as its notice asks. Neither does the read-only watcher of a pull request
-  (`coordination.js pr-wait --repo <org/repo> --number <n>`), which also keeps delegated signing possible
+  (`coordination.js pr-wait --repo <org/repo> --number <n>`), nor the wait for a story to open its pull request
+  (`pr-wait --repo <org/repo> --story <story>`). Both also keep delegated signing possible
   (`guides/firmas-del-arnes.md`, «Aprobar en nombre del dueño»). Any other live background console does stop it: close
   it before asking for the box.
 - **A request without code is approved by the coordinator**: if it brings only stories, records, evidence, memory or
@@ -778,16 +788,17 @@ letter, with «Sí, aprobar» and «No».
   Rejecting only denies: it never approves.
 - **Only the person approves it, with a click in the coordinator's tab.** Never the coordinator: not by delegation
   (`approvals.delegated_signing` does not cover it), not with a typed «aprobado», not by touching the list.
-- **With no answer within `coordination.permission_wait_minutes`** (10 with no value, from 1 to 30), the hook leaves
-  without deciding: the usual window comes back in that session, which stays among the stuck ones ("Trabadas") with the
-  reason, and a late click approves nothing. The same if the coordinator dies or stops being the designated one while it
-  waits.
-- **Not carried, and the usual window comes at once:** an open tab, another mode (auto, no permissions, accept edits,
-  plan), no confirmed and alive coordinator, no `owner-wait`, the list off, the coordinator herself, Codex, and on
-  Windows a PowerShell command. Neither is a request that cannot be shown whole (over 1500 characters, characters that
-  are not seen or look blank, a line break in a path or an address, data the box does not show): the session stays
-  stuck with that reason. The tools it carries are Bash,
-  PowerShell, Edit, Write, NotebookEdit and WebFetch; the question box and the plan, never.
+- **A background session never waits for a permission.** Whatever the box does not settle is denied with its reason
+  and a way out (do it another way, go on without it, or ask the coordinator), and it is logged in `gates.log` as
+  `negado-de-fondo`. That happens with no answer within `coordination.permission_wait_minutes` (10 with no value, from 1
+  to 30), if the coordinator dies or stops being the designated one while it waits, and when the request is not carried:
+  another mode (auto, no permissions, accept edits, plan), no confirmed and alive coordinator, no `owner-wait`, the list
+  off, a PowerShell command on Windows, or a request that cannot be shown whole (over 1500 characters, characters that
+  are not seen or look blank, a line break in a path or an address, data the box does not show). A late click approves
+  nothing.
+- **The usual window comes** only where someone can answer it or the hook does not act: an open tab, the coordinator
+  herself, Codex and the hook turned off. The tools it carries are Bash, PowerShell, Edit, Write, NotebookEdit and
+  WebFetch; the question box and the plan, never.
 - **If the person answers in the session's window** or the session closes, the hook dies and its row closes by itself:
   a click is never asked for a request that no longer waits.
 

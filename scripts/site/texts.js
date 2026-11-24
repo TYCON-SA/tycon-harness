@@ -639,6 +639,9 @@ const TEXTOS = {
   'mant.paso.esteProblema': { es: 'tuvo este problema: {nombre}', en: 'had this problem: {nombre}' },
   'mant.paso.historias': { es: 'Historias: {lista}.', en: 'Stories: {lista}.' },
   'mant.paso.maquinas': { es: 'Máquinas: {lista}.', en: 'Machines: {lista}.' },
+  'mant.paso.sesiones': { es: 'Sesiones: {lista}.', en: 'Sessions: {lista}.' },
+  'mant.paso.sesionesSinNombre': { es: 'Sesiones: {lista} ({k} ejecuciones sin nombre).', en: 'Sessions: {lista} ({k} runs without a name).' },
+  'mant.paso.sesionesSinNombreUna': { es: 'Sesiones: {lista} (una ejecución sin nombre).', en: 'Sessions: {lista} (one run without a name).' },
   'mant.paso.yMas': { es: ' y {n} más', en: ' and {n} more' },
   // lo que sigue a «terminó»: qué control faltó, dicho para quien no lo conoce
   'mant.como.sinAdversarial': { es: 'sin el pase adversarial, la revisión que intenta romper lo que ya se aprobó', en: 'without the adversarial pass, the review that tries to break what was already approved' },
@@ -2651,7 +2654,7 @@ const TEXTOS = {
   'control.on-dod-evidence-guard': { es: 'Frena que el agente escriba a mano las pruebas de que algo funciona.', en: 'Blocks the agent from hand-writing the evidence that something works.' },
   'control.on-edit': { es: 'Anota qué archivos toca cada historia y avisa si editás los de una sin su proceso.', en: 'Records which files each story touches and warns when you edit a story\'s files outside its process.' },
   'control.on-frontmatter-write': { es: 'Frena marcar una historia como terminada sin la evidencia de que funciona.', en: 'Blocks marking a story as done without evidence that it works.' },
-  'control.on-planning-artifact': { es: 'Avisa si un documento de planificación nuevo no declara qué documento aprobado reemplaza o concilia.', en: 'Warns when a new planning document does not say which approved document it reconciles or replaces.' },
+  'control.on-planning-artifact': { es: 'Frena un PRD aprobado sin la validación de otro agente, y avisa si un documento de planificación no dice su método y su proceso o no declara qué documento aprobado concilia.', en: 'Stops a PRD approved without another agent\'s validation, and warns when a planning document does not state its method and process or which approved document it reconciles.' },
   'control.on-story-gate': { es: 'Frena editar código sin un proceso activo ni un plan aprobado.', en: 'Blocks editing code without an active process or an approved plan.' },
   'control.on-story-skill-gate': { es: 'Frena crear una historia a mano sin usar la herramienta que las crea.', en: 'Blocks writing a story by hand instead of using the tool that creates stories.' },
   'control.on-write-collision': { es: 'Avisa si vas a editar un archivo que otra sesión ya está tocando.', en: 'Warns when you are about to edit a file another session is already changing.' },
