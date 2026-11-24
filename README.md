@@ -26,6 +26,8 @@ For a small change, the process provides a short path, with fewer steps. To cont
 
 Once finished, the work moves on through the continuous integration and deployment pipeline. The harness brings ready-made pipelines for some platforms; for the others, it joins the one the organization already has. There it is built, the tests are run again and it is deployed to a test environment. In the pipelines the harness brings, production is reached only with a person's approval.
 
+The harness works with GitHub, Azure DevOps and GitLab (the public one or a self-managed install): each story's work item, the change request and its CI go through any of the three. GitLab has limits: the harness does not read its merge queue, its deployments or a branch's approval rule yet; the team repo goes on GitHub or Azure DevOps, and the nightly processes and the site do not use GitLab repos yet. The details are in [GitLab as the team's platform](guides/integrations/gitlab-platform.md).
+
 And none of this depends on the model not forgetting or on the developer reminding it: the controls live outside the model. For example, if an agent tries to close a story without the evidence of its tests, the harness stops it on the machine. Before the work joins the code, the continuous integration pipeline verifies that the story carries the evidence of its tests and the record of who reviewed it. If a control has to be skipped, it is recorded and the person in charge sees it. Loosening a control is always approved by a person. And every night, the harness's controls are put to the test with examples built for that purpose: what each one has to stop and what it has to let through.
 
 So each piece of work that goes through the process is left with its story, its tests, which reviewers ran and who approved what was delicate. And what comes in through the short path, or directly outside the harness, is not lost: the site counts how many changes came in without a story. When a client asks how AI is used to work on their product, everything is recorded and can be shown. The stories, the evidence of the tests and the record of the reviewers are stored in the project's own repositories.
@@ -318,7 +320,7 @@ An example: at ACME, Pedro is the admin and Juan writes code.
    where each setting lives, in [With or without the site](getting-started/reference.md#with-or-without-the-site).
 3. Juan installs with npx and the team repo: `npx @tyconsa/harness@latest --team acme/harness-team-profile` if it is on
    GitHub, or `npx @tyconsa/harness@latest --team <the repo's address>` if it is on Azure DevOps (the address's form
-   is in [Azure DevOps](guides/integrations/ado-projects.md#la-url-de-un-repo)). Since only the team sees that repo, before downloading anything the line checks that it can read
+   is in [Azure DevOps](guides/integrations/ado-projects.md#la-url-de-un-repo)); the team repo cannot go on GitLab yet. Since only the team sees that repo, before downloading anything the line checks that it can read
    it and, if not, asks him for read permission. From then on, every update also brings him what belongs to the team.
 
 How the harness extends for your organization, with a worked example, in an

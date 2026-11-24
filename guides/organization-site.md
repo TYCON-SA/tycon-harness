@@ -927,7 +927,7 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
 - **Estimaciones**: la unidad en que estima la organización (horas, días o puntos), las horas de un día de trabajo (de
   1 a 24; vacío, 8) y las horas que vale un punto (vacío: sin tasa, y con puntos el error no se calcula). Abajo dice la
   unidad que leen hoy las máquinas. Cambiar la unidad no reescribe lo ya estimado. La estimación vigente de cada
-  historia llega también a su pedido de trabajo, en Azure DevOps o GitHub. Queda en `team-repos.json` →
+  historia llega también a su pedido de trabajo, en Azure DevOps, GitHub o GitLab. Queda en `team-repos.json` →
   `estimates`, en el repo del perfil; el perfil tiene que pedir una versión del arnés que lea la clave. Lo revisa quien
   mantiene.
 - **Pase adversarial**: cuándo corre el pase que ejecuta el código de una historia para buscarle defectos. Automático
@@ -1954,7 +1954,7 @@ un dato). Es la configuración de la organización, no la de ninguna máquina.
   leer».
 - **Se guarda con una rama y un pedido, nunca en la rama principal** (`scripts/lib/repo-proposal.js`): desde el clon
   temporal que el sitio ya tiene, sin tocar su árbol ni su índice. El pedido se abre por la API REST de Azure DevOps o
-  de GitHub y dice quién lo pidió. Un pedido por archivo. Si el archivo cambió desde que se abrió la sección, o ya hay un
+  de GitHub, donde viven los repos que configura el sitio (en GitLab todavía no van), y dice quién lo pidió. Un pedido por archivo. Si el archivo cambió desde que se abrió la sección, o ya hay un
   pedido abierto sobre él, no se crea nada.
 - **Sin una política que pida revisión en `main`, «Proponer» queda apagado.** En Azure DevOps vale una política
   «Minimum number of reviewers» sobre toda la rama, o una «Required reviewers» con filtro de ruta, y con el filtro

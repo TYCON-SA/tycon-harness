@@ -950,7 +950,7 @@ be, to copy it and open the request by hand.
 - **Estimates**: the unit your organization estimates in (hours, days or points), the hours in a
   working day (1 to 24; empty, 8) and the hours a point is worth (empty: no rate, and with points the error is not
   calculated). Below, the unit the machines read today. Changing the unit does not rewrite what was already estimated.
-  Each story's current estimate also reaches its work item, in Azure DevOps or GitHub.
+  Each story's current estimate also reaches its work item, in Azure DevOps, GitHub or GitLab.
   It lives in `team-repos.json` → `estimates`, in the profile repo; the profile has to require a harness version that
   reads the key. A maintainer reviews it.
 - **Adversarial pass**: when the pass that runs a story's code to hunt for defects runs. Automatic (the
@@ -1993,7 +1993,8 @@ data). It is the configuration of the organization, not that of any machine.
   can read it. A section whose reader cannot read its key yet says so.
 - **It saves with a branch and a pull request, never on the main branch** (`scripts/lib/repo-proposal.js`): from the
   temporary clone the site already has, without touching its working tree or its index. The request is opened through
-  the REST API of Azure DevOps or GitHub and says who asked for it. One request per file. If the file changed since the
+  the REST API of Azure DevOps or GitHub, where the repos the site configures live (not on GitLab yet), and says who
+  asked for it. One request per file. If the file changed since the
   section was opened, or there is already an open request on it, nothing is created.
 - **Without a policy that requires review on `main`, "Proponer" stays off.** On Azure DevOps a "Minimum number of
   reviewers" policy on the whole branch counts, or a "Required reviewers" one with a path filter; with the filter,

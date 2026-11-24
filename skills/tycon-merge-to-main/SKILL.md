@@ -179,7 +179,7 @@ Seguí EN ORDEN los 10 steps definidos en `steps/`:
 8. **step-08-hitl-push.md** — HITL #2: confirmar push. Cancelar deja merge local sin push.
    (En modo `pr` no hay merge local: cancelar acá simplemente no pushea la source ni crea el PR.)
 9. **step-09-push.md** — push + retry una vez si race condition. **(modo `push`)**
-9b. **step-09b-create-change-request.md** — **(modo `pr`, Azure DevOps o GitHub)** push de la
+9b. **step-09b-create-change-request.md** — **(modo `pr`: Azure DevOps, GitHub u otra plataforma que atiende la capa)** push de la
     source y el pedido de cambio con auto-completar por `platform.js change-request open`, con el
     mensaje del Step 2 como texto. Nunca aplasta ni reordena commits: con squash se rompen las notas
     de versión de plugins y forms. El repo se **deriva del remoto `origin`** (lo da el plan), nunca
