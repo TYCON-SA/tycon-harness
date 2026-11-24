@@ -126,13 +126,18 @@ if runs T42; then
   printf '{"over":false}\n' > "$S/response-style/log.jsonl"; printf '{"over":false}\n' > "$S/blocking-meter/log.jsonl"
   OUT="$(in_home "$H" node -e 'const m = require(process.argv[1]).local(); process.stdout.write(JSON.stringify({ freno: m.freno, estilo: m.estilo, bloqueo: m.bloqueo }))' "$ROOT/scripts/nightly/dashboard/dashboard.js" 2>&1)"
   case "$OUT" in *"el registro del freno de mano"*|*"el medidor de estilo"*|*"el medidor de bloqueo"*) bad "el tablero no encontró los registros en el estado: $OUT" ;; *'"freno"'*) ok "el tablero lee el freno y los medidores del estado" ;; *) bad "el tablero no contestó: $OUT" ;; esac
-  # la auditoría: observaciones frescas en el estado; con la variable, la de la variable
+  # la auditoría: observaciones frescas en el estado; con la variable, la de la variable. La grabación la decide la
+  # integración instincts (TYCON_INSTINCTS la prende para probar), no TYCON_INSTINCT_MINING, que ya no decide nada: la
+  # prueba la vacía, porque la máquina que corre puede traerla prendida
   mkdir -p "$H/.claude" "$S/tycon-observations"; printf '{"hooks":{"PostToolUse":[{"command":"instinct-observe.sh"}]}}' > "$H/.claude/settings.json"
   printf '{}\n' > "$S/tycon-observations/2026-11.jsonl"
-  OUT="$(in_home "$H" TYCON_INSTINCT_MINING=1 node -e 'const c = require(process.argv[1]).checkLearningLoop().checks.find((x) => /observations con actividad/.test(x.name)); process.stdout.write(String(c && c.passed))' "$ROOT/scripts/lib/harness-audit.js" 2>&1)"
+  # 🔴 la integración apagada con la grabadora registrada no es una pieza muerta: ningún chequeo de instintos falla
+  OUT="$(in_home "$H" TYCON_INSTINCT_MINING= TYCON_INSTINCTS=0 node -e 'const m = require(process.argv[1]).checkLearningLoop().checks.filter((x) => /instinct/.test(x.name) && !x.passed); process.stdout.write(JSON.stringify(m.map((x) => x.name)))' "$ROOT/scripts/lib/harness-audit.js" 2>&1)"
+  [ "$OUT" = "[]" ] && ok "con la integración apagada la auditoría no pide la variable vieja" || bad "con la integración apagada la auditoría marcó: $OUT"
+  OUT="$(in_home "$H" TYCON_INSTINCT_MINING= TYCON_INSTINCTS=1 node -e 'const c = require(process.argv[1]).checkLearningLoop().checks.find((x) => /observations con actividad/.test(x.name)); process.stdout.write(String(c && c.passed))' "$ROOT/scripts/lib/harness-audit.js" 2>&1)"
   [ "$OUT" = true ] && ok "la auditoría encuentra las observaciones en el estado" || bad "la auditoría no las encontró: $OUT"
   OTRA="$H/obs-de-la-variable"; mkdir -p "$OTRA"; printf '{}\n' > "$OTRA/2026-11.jsonl"; rm -rf "$S/tycon-observations"
-  OUT="$(in_home "$H" TYCON_INSTINCT_MINING=1 TYCON_INSTINCT_OBS_DIR="$OTRA" node -e 'const c = require(process.argv[1]).checkLearningLoop().checks.find((x) => /observations con actividad/.test(x.name)); process.stdout.write(String(c && c.passed) + " " + (c && c.file))' "$ROOT/scripts/lib/harness-audit.js" 2>&1)"
+  OUT="$(in_home "$H" TYCON_INSTINCT_MINING= TYCON_INSTINCTS=1 TYCON_INSTINCT_OBS_DIR="$OTRA" node -e 'const c = require(process.argv[1]).checkLearningLoop().checks.find((x) => /observations con actividad/.test(x.name)); process.stdout.write(String(c && c.passed) + " " + (c && c.file))' "$ROOT/scripts/lib/harness-audit.js" 2>&1)"
   [ "$OUT" = "true $OTRA" ] && ok "con TYCON_INSTINCT_OBS_DIR la auditoría lee ésa" || bad "con la variable la auditoría dio: $OUT"
   # los que no se pueden correr en una prueba (la subida al buzón, la prueba de fuego con sesiones reales, el registro
   # de fallos del aviso de instintos) se miden por su fuente: piden la carpeta a loose-logs.js y no nombran la ruta vieja

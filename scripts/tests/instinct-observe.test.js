@@ -236,6 +236,15 @@ test('T9 Notice_OncePerMachine_AndLegacyVarsNotice @story-4.7 @ac-9 — un aviso
   assert.strictEqual(notice.decide({ prendida: false, env: {}, stateDir: path.join(l.home, 'nada') }).text, null, 'apagada y sin variables viejas: silencio');
 });
 
+// 🔴 Falla con: el instalador o la auditoría que todavía deciden con TYCON_INSTINCT_MINING o TYCON_INSTINCT_OBSERVER y
+// avisan que falta una variable que ya no prende nada (fila 160). Sólo el aviso de arranque las nombra, para decirlo.
+test('T9b LegacyVars_NoScriptDecidesWithThem — ningún guion del arnés lee las variables viejas de instintos', () => {
+  const lecturas = require(path.join(RAIZ, 'scripts', 'lib', 'env-switches.js')).lecturas(RAIZ);
+  for (const v of ['TYCON_INSTINCT_MINING', 'TYCON_INSTINCT_OBSERVER']) {
+    assert.ok(!lecturas.has(v), `${v} la lee todavía: ${JSON.stringify(lecturas.get(v))}`);
+  }
+});
+
 test('T33 Forwarder_RunsNodeAndLogsLegacyUse @story-4.7 @ac-8 — el .sh viejo reenvía a node', () => {
   const l = lab();
   const text = fs.readFileSync(FORWARDER, 'utf8');
