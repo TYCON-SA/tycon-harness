@@ -288,16 +288,25 @@ test('F214 T2 Aislada_EnlacePlantadoConOtraCaja_NoSeAdmite: un enlace duro «SH-
 // de control. Le pasaba su programa a node con un here document, y dentro del encierro, desde una carpeta que no es la
 // de lanzamiento, bash no podía crear su temporal: la firma se negaba con ese error. Se lo pasa sin archivo temporal.
 const BASE_CONTROLS = path.join(RAIZ, 'scripts', 'ci', 'run-base-controls.sh');
-test('F218 BaseControls_SinHereDocument: la parte de bash de run-base-controls.sh no usa here documents ni here-strings', () => {
+test('F218 BaseControls_SinHereDocument: lo que bash corre de run-base-controls.sh no usa here documents ni here-strings', () => {
   const lineas = fs.readFileSync(BASE_CONTROLS, 'utf8').split('\n');
-  // la parte de bash termina donde empieza el programa de node
-  const fin = lineas.indexOf("'use strict';");
-  assert.ok(fin > 0, 'encuentro dónde empieza el programa de node');
-  const malos = lineas.slice(0, fin)
+  // bash corre hasta el exec de node, que lo reemplaza: lo de después (el programa) no lo corre nunca
+  const fin = lineas.findIndex((l) => /^[^#]*\bexec node - /.test(l));
+  assert.ok(fin > 0, 'encuentro el exec de node');
+  const malos = lineas.slice(0, fin + 1)
     .map((l, i) => ({ l, i: i + 1 }))
     .filter(({ l }) => !/^\s*#/.test(l) && /(^|[^<'"])<<(<|-?\s*(\\|['"])?[A-Za-z_][A-Za-z0-9_]*)/.test(l))
     .map(({ l, i }) => `${i}: ${l.trim()}`);
   assert.deepStrictEqual(malos, []);
+});
+
+test('F218 BaseControls_SinElPrograma_NoPudeCorrer: si no encuentra su programa sale 9, nunca 0 con un programa vacío', { skip: !POSIX }, (t) => {
+  const c = cuenta(t);
+  const copia = path.join(c.b, 'run-base-controls.sh');
+  fs.writeFileSync(copia, fs.readFileSync(BASE_CONTROLS, 'utf8').replace(/^: <<'JS'\n/m, ''));
+  const r = spawnSync('bash', [copia, 'check-inventory', '--root', c.b], { cwd: c.b, encoding: 'utf8' });
+  assert.strictEqual(r.status, 9, `${r.stdout}${r.stderr}`);
+  assert.match(r.stdout, /no pude correr: no pude leer el programa de node/);
 });
 
 test('F218 Aislada_BaseControlsDesdeOtraCarpeta_LlegaANode: dentro del encierro, run-base-controls.sh corrido desde una carpeta no admitida le pasa su programa a node', { skip: ENCIERRO ? false : 'sin el encierro del sistema' }, (t) => {
