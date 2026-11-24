@@ -120,7 +120,7 @@ Agent(
 
 Si la fase de código pasó sin chequeo previo (por ejemplo un spike o un arreglo en ejecución no planeado), «Revisores»
 (`step-07-reviewers.md`) invoca en paralelo `tycon-spec-first-checker` con `phase: post-implementation` sobre
-`modified_files` para detectar deriva residual antes de preparar el commit.
+`modified_files` para detectar deriva residual antes de preparar el pull request.
 
 ### Referencias
 
@@ -268,7 +268,7 @@ cierra como deuda y **sigue hasta el commit**.
 4. Las pruebas: primero, ajustarlas para que verifiquen la deuda mantenida y documentada (verde normal). Sólo si no se
    puede, con el mismo permiso: `marker.js expect-red <control> --tests <T2,T5>`, que registra el rojo como esperado.
 5. Seguir el pipeline: los revisores corren sobre lo que sí cambió (pruebas, historia, documentación), el pase
-   adversarial con su regla de siempre, y «Preparar el commit» pone la línea `Deuda: <DEF-id> — <motivo>`.
+   adversarial con su regla de siempre, y «Preparar el pull request» pone la línea `Deuda: <DEF-id> — <motivo>`.
 
 Apagar el modo autónomo o cerrar la ejecución no es una salida: deja la historia como si hubiera terminado, sin deuda.
 

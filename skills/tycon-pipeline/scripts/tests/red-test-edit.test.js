@@ -124,7 +124,7 @@ test('RedOldTest_WithNote_Passes_AndTravels (T2) @story-8.166 @ac-2', (t) => {
   assert.strictEqual(renglones.length, 1);
   assert.ok(renglones[0].includes(prueba) && renglones[0].includes('dependía de la hora del día'), 'un renglón por prueba en el mensaje del commit');
   // y los guiones las usan: el contexto de los revisores y el cierre del commit
-  assert.match(fs.readFileSync(path.join(SCRIPTS, 'pipeline.js'), 'utf8'), /bloqueParaRevisores\(/, 'buildAdvisorContext lleva la nota');
+  assert.match(require('./lib/pipeline-source.js')(SCRIPTS), /bloqueParaRevisores\(/, 'buildAdvisorContext lleva la nota');
   assert.match(require('./lib/marker-source.js')(SCRIPTS), /renglonesParaElCommit\(/, 'prepare-commit imprime los renglones');
 });
 

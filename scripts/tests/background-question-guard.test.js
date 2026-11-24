@@ -704,3 +704,51 @@ test('T33 PorQueSinLista_ListaPrendida_DiceLoDelPedido @fila-149', (t) => {
     assert.doesNotMatch(por(o), /no da a la coordinadora|no figura/, JSON.stringify(o));
   }
 });
+
+// Un cuadro de aprobación escrito a mano (MacBook, 23/11): la coordinadora le mostró al dueño su propio texto, con la
+// opción de aprobar pero sin el código que imprimió el guion. El click quedó anotado, no aprobó nada y el dueño tuvo
+// que clickear otra vez. El freno lo niega antes de mostrarlo, en cualquier sesión, y dice qué hacer
+const conOpciones = (texto, opciones = [oa.APRUEBA, oa.NIEGA]) => ({ questions: [{ question: texto, header: 'Aprobar', multiSelect: false,
+  options: opciones.map((label) => ({ label, description: `${label}.` })) }] });
+const SELLO_COMPLETO = /\bfirma [\w:.-]+ · sesi[oó]n [\w-]+ · c[oó]digo [\w-]+/;
+
+test('T-fila149 CuadroDeAprobacionSinCodigo_SeNiegaAntesDelClick', (t) => {
+  const toy = casaNueva(t);
+  // una sesión con la persona delante: ni lanzada ni de fondo
+  const sid = 'ses-persona';
+  const aMano = decidir(toy, evento(sid, 'AskUserQuestion', conOpciones('¿Abro el arreglo rápido de la 3.6 con 51 archivos?')));
+  assert.ok(aMano && aMano.decision === 'deny', 'sin el código del guion, se niega');
+  assert.match(aMano.reason, /«Sí, aprobar»/);
+  assert.match(aMano.reason, /código/);
+  assert.match(aMano.reason, /exactamente como la imprimió/);
+  // el aviso no se confunde con un cuadro de aprobación: no trae un sello ni nombra una firma
+  assert.doesNotMatch(aMano.reason, SELLO_COMPLETO);
+  assert.doesNotMatch(aMano.reason, /\bfirma\b/i);
+  // con el código del guion al final, pasa
+  const delGuion = oa.cuadroDe({ firma: 'save', destino: sid, que: 'guardar los cambios', queHace: ['el comando: marker.js approve-save'], siSaleMal: 'se revierte el commit', huella: 'ab12cd34' });
+  assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', conOpciones(delGuion.pregunta, delGuion.opciones))), null);
+  // el pedido de permiso, tal cual lo arma signature-list.js: su código empieza con «permiso» y va antes del pedido; pasa
+  const permiso = require('../lib/signature-list.js').cuadroDePermiso({ id: 'permiso-1a2b3c4d', destino: 'ses-x', huella: '6c60386e1234',
+    herramienta: 'Bash', carpeta: '/r', pedido: 'git push origin wt/x' });
+  assert.match(permiso.pregunta, /\(permiso permiso-1a2b3c4d · sesión ses-x · código 6c60386e\)/);
+  assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', conOpciones(permiso.pregunta, permiso.opciones))), null);
+  // una etiqueta que se ve igual sigue siendo la de aprobar: espacio duro, carácter invisible, coma ancha
+  for (const etiqueta of ['Sí, aprobar', 'Sí, aprobar​', 'Sí， aprobar', 'Sí, aprobar️', 'Sí, apro͏bar', 'Sí,⠀aprobar', 'Sí,ㅤaprobar']) {
+    assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', conOpciones('¿Abro el arreglo?', [etiqueta, 'No']))).decision, 'deny', JSON.stringify(etiqueta));
+  }
+  // sin la opción de aprobar, es una pregunta como cualquier otra
+  assert.strictEqual(decidir(toy, evento(sid)), null);
+  // las preguntas de decisión de la coordinadora siguen pasando, aunque su etiqueta apruebe: sólo cuenta la de los cuadros
+  // de firma
+  for (const etiqueta of ['Sí, que entre', 'Sí, a done', 'Aprobado', 'Apruebo', 'Sí, aprobar el plan', 'Sí, aprobar (Recomendado)']) {
+    assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', conOpciones('¿Entra la 8.163 C?', [etiqueta, 'No']))), null, etiqueta);
+  }
+  // la etiqueta con espacios de más sigue siendo la de los cuadros de firma
+  assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', conOpciones('¿Abro el arreglo?', [' Sí, aprobar ', 'No']))).decision, 'deny');
+  // dos preguntas en un cuadro: alcanza con que una de aprobación venga sin código
+  const dos = { questions: [...conOpciones(delGuion.pregunta, delGuion.opciones).questions, ...conOpciones('¿Y también el plan?').questions] };
+  assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', dos)).decision, 'deny');
+  // el dictado no tiene opciones: no cambia; y con el freno apagado, pasa
+  assert.strictEqual(decidir(toy, evento(sid, 'mcp__spokenly__ask_user_dictation', { question: '¿Abro el arreglo?' })), null);
+  assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', conOpciones('¿Abro el arreglo?')), { TYCON_BG_QUESTION_GUARD: '0' }), null);
+});

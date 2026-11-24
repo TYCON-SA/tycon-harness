@@ -128,7 +128,7 @@ Core advisor en **Revisores** del `tycon-pipeline`, en paralelo con `tycon-plugi
 - Si la story NO tiene bloque `pipelines:` Y el diff no tiene `*.skip()` → advisor abort early con OK (no aplica).
 - Si cualquiera de las dos condiciones se cumple → advisor corre completo.
 
-**Bloqueo de commit prep**: si retorna ≥1 finding CRITICAL (`DEFTR-C1` o `DEFTR-C2`), el `tycon-pipeline` debe pausar antes de «Preparar el commit» y mostrar el reporte al usuario. El usuario decide: (a) completar la documentación faltante y re-correr, (b) override explícito con razón (registrado en engram).
+**Bloqueo de commit prep**: si retorna ≥1 finding CRITICAL (`DEFTR-C1` o `DEFTR-C2`), el `tycon-pipeline` debe pausar antes de «Preparar el pull request» y mostrar el reporte al usuario. El usuario decide: (a) completar la documentación faltante y re-correr, (b) override explícito con razón (registrado en engram).
 
 ## Why this advisor exists
 
@@ -156,6 +156,13 @@ Tu reporte final se estructura SIEMPRE así:
    ```text
    Veredicto: limpio
    Veredicto: hallazgos (SEC-C1, SEC-C1, SEC-W2) · bloquea: sí
+   ```
+   Si el prompt trae lo que reportaste en la vuelta anterior, sumá al renglón los críticos de esa vuelta que confirmás
+   arreglados, una vez por hallazgo, aunque hoy reportes otro con el mismo código. Sin esa parte el arnés no da el arreglo
+   por comprobado, y cuesta otra vuelta o la exención del dueño:
+   ```text
+   Veredicto: hallazgos (SEC-C1) · bloquea: sí · resueltos (SEC-C1, SEC-C3)
+   Veredicto: limpio · resueltos (SEC-C1)
    ```
 
 **Tope duro: 1000 caracteres de prosa** (600 si el prompt no pide lo contrario). Sin hallazgos:
