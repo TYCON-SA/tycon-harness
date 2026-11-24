@@ -155,9 +155,18 @@ const subpaths = (rutas) => [...new Set(rutas.flatMap((p) => [p, real(p)]))].map
 // `fatales` y `mensaje`: una escritura negada adentro de esas carpetas mata al proceso, y el sistema la anota en su
 // registro con `mensaje`. Una negación común sólo queda anotada para los programas del sistema (bash, touch), nunca para
 // node; la que mata, para todos
-function perfilSandbox(escribibles, { red = false, fatales = [], mensaje = null } = {}) {
+// El bash 3.2 de macOS no mira TMPDIR para un here document: si no puede escribir en /var/tmp ni en /tmp (el encierro se
+// lo niega) lo escribe en la carpeta actual como «sh-thd-<n>» y lo borra enseguida. Negado, un freno de bash que lo usa no
+// decide y falla cerrado. `heredoc` son las carpetas actuales con que se lanza el comando: ahí, y sólo ahí, se deja
+// escribir ese nombre, salvo en las carpetas fatales (su regla va última). Una carpeta que no se puede escribir como
+// expresión sin ambigüedad (comillas, saltos de línea) no se admite.
+const escaparRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const heredocs = (dirs) => [...new Set(dirs.filter(Boolean).flatMap((d) => [path.resolve(d), real(d)]))]
+  .filter((d) => !/["\n\r]/.test(d))
+  .map((d) => `(regex #"^${escaparRegex(d)}/sh-thd-[0-9]+$")`).join(' ');
+function perfilSandbox(escribibles, { red = false, fatales = [], mensaje = null, heredoc = [] } = {}) {
   const permitidas = subpaths(escribibles);
-  const base = `(version 1)(allow default)${red ? '' : '(deny network*)'}(deny file-write* (require-not (require-any ${permitidas} (subpath "/dev"))))`;
+  const base = `(version 1)(allow default)${red ? '' : '(deny network*)'}(deny file-write* (require-not (require-any ${permitidas} ${heredocs(heredoc)} (subpath "/dev"))))`;
   if (!fatales.length) return base;
   // la regla que mata va última: entre las que coinciden manda la última
   return `${base}(deny file-write* (require-all (require-any ${subpaths(fatales)}) (require-not (require-any ${permitidas} (subpath "/dev"))))`
