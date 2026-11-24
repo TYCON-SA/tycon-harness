@@ -519,6 +519,43 @@ function cmdCompareWaiver(argv) {
   process.exit(0);
 }
 
+// `sign-atdd-skip --story S --reason R [--terminal]`: la firma del dueño que saltea «pruebas primero» en la ejecución
+// de S (lib/atdd-skip.js). La ejecución sale de la última muestra de S que anotó el pedido (`--no-atdd`, `set-flag
+// atddBypass` o el portón previo), no del marcador: en la terminal del dueño no hay sesión. Sin muestra sale 1 sin
+// escribir nada; la cita, el reenvío y el --ok no firman.
+function cmdSignAtddSkip(argv) {
+  const sk = require('./atdd-skip.js');
+  const { val, tiene } = opcionesDe(argv);
+  if (tiene('--terminal')) {
+    const waiver = require('./runtime-waiver.js');
+    if (waiver.esWindows() && process.env[waiver.MARCA_VENTANA] !== '1') {
+      console.error('🪟 Abro una ventana nueva para la firma: seguí ahí.');
+      const v = waiver.abrirVentana({ script: MARKER_JS, args: ['sign-atdd-skip', ...argv] });
+      if (v.estado === 'vencida' || v.estado === 'no-abrio') { console.error(`🔒 marker.js sign-atdd-skip: ${v.estado === 'vencida' ? 'la ventana venció sin firmar' : `no pude abrir la ventana (${v.motivo})`} — no se firmó nada.`); process.exit(1); }
+      process.exit(v.codigo === 0 ? 0 : (v.codigo || 1));
+    }
+    if (waiver.esWindows()) waiver.dentroDeLaVentana();
+  }
+  const ow = require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+  const r = sk.firmar({
+    story: (val('--story') || '').trim(), motivo: (val('--reason') || '').trim(), argv: process.argv.slice(1), sesion: estado.SID || null,
+    exigir: (o) => ow.exigir(o),
+    aprobar: (linea, entrada) => {
+      const m = readMarker();
+      if (m && String(m.storyId) === String(linea.story)) anotarAprobacion(m, entrada);
+      else require('./approvals.js').anotar(linea.carpeta, entrada);
+    },
+  });
+  if (r.codigo !== 0) {
+    console.error(`🔒 marker.js sign-atdd-skip: no se firmó el salteo — ${r.motivo}`);
+    process.exit(r.codigo);
+  }
+  if (r.aviso) console.error(`⚠️  ${r.aviso}`);
+  appendLog('gates.log', { name: 'atdd-skip-recorded', status: 'ok', story: r.linea.story, camino: r.linea.camino, via: r.linea.via, huella: r.linea.huella });
+  console.error(`✅ salteo de «pruebas primero» firmado (historia ${r.linea.story}, vía ${r.linea.via}, huella ${r.linea.huella}). Vale para esa ejecución entera.`);
+  process.exit(0);
+}
+
 // `sign-adversarial-skip --story S --reason R [--terminal]`: la firma del dueño que saltea el pase adversarial de la
 // ejecución de S (lib/adversarial-skip.js). La ejecución y el camino salen de la última muestra de S que anotó el
 // pedido; sin muestra sale 1 sin escribir nada. La firma va por la ventana de permiso o por la terminal del dueño; la
@@ -1244,7 +1281,7 @@ function cmdSignFile(firma, archivo) {
 module.exports = {
   carpetaParaLaFirma, quienFirmo, firmadoEnLaTerminal, sinCorrerFueraDeLaDeuda, runtimeWaiverConOk, opcionesDe,
   cmdPlanReview, cmdReviewAsk, cmdReviewAnswer, cmdOwnerAway, cmdWaiveCritical, cmdCompareWaiver,
-  cmdSignAdversarialSkip, cmdDeclarePending, cmdApprovePending, firmasDeLaCorrida, cmdApproveSave, cmdSaveCheck,
+  cmdSignAdversarialSkip, cmdSignAtddSkip, cmdDeclarePending, cmdApprovePending, firmasDeLaCorrida, cmdApproveSave, cmdSaveCheck,
   respaldosDeDesignar, firmaDeLaDesignacion, cmdDesignateRelay, negarSiEsPruebaSobreLoReal, designarPorClick,
   vidaDeLaSesion, cmdWithdrawRelay, cmdMarkTested, cmdRuntimeWaiver, cmdSignFile,
 };

@@ -573,6 +573,9 @@ function leerArchivoDeConsulta(ruta) {
   try { buf = fs.readFileSync(abs); } catch (e) { return { error: `no pude leer ${ruta} (${e.code || e.message})` }; }
   let texto;
   try { texto = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (_) { return { error: `${ruta} no es texto UTF-8` }; }
+  // el salto de línea del final del archivo (también el de Windows) dejaría un renglón vacío en el cuadro; los de adentro
+  // quedan, y un retorno de carro adentro sigue frenando
+  texto = texto.replace(/(?:\r?\n)+$/, '');
   const engano = caracterQueEngana(texto);
   if (engano) return { error: `${ruta} ${engano}` };
   return { texto };

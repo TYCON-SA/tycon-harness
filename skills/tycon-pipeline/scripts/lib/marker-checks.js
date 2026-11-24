@@ -801,6 +801,15 @@ function cmdSetFlag(flag, valRaw, extra = []) {
     console.error('marker.js set-flag: no hay marker activo para esta sesión');
     process.exit(1);
   }
+  // prender el escape es un pedido: sin la firma del dueño para esta ejecución no se escribe, y el pedido queda anotado
+  // para que la pueda dar (lib/atdd-skip.js)
+  if (flag === 'atddBypass' && valor) {
+    const d = require('./atdd-skip.js').decidir({ marker, pide: true, camino: 'set-flag atddBypass' });
+    if (!d.saltea) {
+      console.error(d.texto);
+      process.exit(2);
+    }
+  }
   marker[flag] = valor;
   if (flag === 'atddBypass') {
     if (valor) marker.atddBypassReason = motivo;

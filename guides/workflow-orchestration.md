@@ -591,6 +591,24 @@ La Regla 11 atrapa el drift implementación↔spec. La Regla 12 atrapa el drift 
 
 Si el artefacto nuevo cambia un modelo (navegación, layout, flujo) que estaba en un artefacto **firmado por el cliente**, ese cambio requiere CR registrado (ver `signed-scope-guardrails.md`). Redefinir en un spec interno algo que el cliente firmó, sin CR, es cambio de scope firmado no autorizado — aunque "solo sea un documento".
 
+### Regla 12.4 — Los controles de planificación, con BMAD o sin él
+
+Medido al comparar una planificación con BMAD y otra sin él: BMAD costó US$ 20-48 contra US$ 26, y lo que más valió fueron
+sus validaciones. Además, 53 de 57 decisiones las había propuesto el agente. Estos tres controles valen con cualquier
+método; ninguno pide BMAD.
+
+1. **Un PRD no se aprueba sin la validación de otro agente.** Aprobarlo es escribir `estado: aprobado` (o
+   `status: approved`) en su cabecera. En ese momento el control de `on-planning-artifact` frena si la cabecera no trae
+   `validacion: <ruta del informe, desde la raíz del repo>` y `escrito_por: <quién lo escribió>`, o si el informe no dice
+   `validado_por: <otro agente>` en su cabecera, distinto de quien lo escribió. El informe de validación de BMAD
+   (`validationTarget:` sobre ese PRD) vale tal cual.
+2. **Cada documento de planificación dice cómo se hizo.** Su cabecera lleva `metodo:` (`bmad`, `sin-bmad` u `otro`) y
+   `proceso:` (qué pasos se siguieron). Si falta, un aviso lo pide; no frena. La cabecera de BMAD (`stepsCompleted:`)
+   cuenta como el método.
+3. **Se mide si la persona eligió la sugerencia del agente.** `node scripts/metrics/suggestion-choices.js --transcript
+   <conversación> --json` cuenta los cuadros de opciones con una opción recomendada y si la respuesta fue esa. Cada
+   corrida del pipeline lo guarda en su volcado (`consumo.decisiones`). Lo que se responde fuera de un cuadro no se cuenta.
+
 
 ## §13 — Alta de pipeline de CI en repo nuevo: el `trigger.paths.include` se revisa contra el repo ENTERO
 
