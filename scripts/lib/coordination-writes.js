@@ -51,9 +51,28 @@ function leerMemo(file) {
   return null;
 }
 
-// la memoria que no se puede guardar se anota una vez por proceso: sin ella cada llamada lee el registro entero
-let memoSinGuardarAnotada = false;
-function guardarMemo(file, memo, stateDir) {
+/**
+ * La memoria que no se puede guardar se anota una vez por sesión: el gancho es un proceso nuevo en cada comando, así
+ * que la marca es un archivo por sesión en la raíz del estado, al lado del registro de errores, no en la carpeta de la
+ * memoria (la que falla). Sin sesión, o sin poder escribir la marca, se anota cada vez: nunca calla.
+ */
+function anotarUnaVez(stateDir, sessionId, texto) {
+  const sid = sessionId == null ? '' : String(sessionId);
+  if (ID.test(sid)) {
+    try {
+      fs.writeFileSync(path.join(stateDir, `coordination-memo-aviso-${sid}`), '', { flag: 'wx' });
+    } catch (e) {
+      if (e && e.code === 'EEXIST') {
+        let yaAnotada = false;
+        try { yaAnotada = fs.statSync(path.join(stateDir, `coordination-memo-aviso-${sid}`)).isFile(); } catch { /* no se pudo mirar */ }
+        if (yaAnotada) return;
+      }
+    }
+  }
+  anotar(stateDir, texto);
+}
+
+function guardarMemo(file, memo, stateDir, sessionId) {
   try {
     // una máquina sin coordinadora no tiene la carpeta: sin ella cada llamada leería el registro entero
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -61,7 +80,7 @@ function guardarMemo(file, memo, stateDir) {
     fs.writeFileSync(tmp, JSON.stringify(memo), 'utf8');
     fs.renameSync(tmp, file);
   } catch (e) {
-    if (!memoSinGuardarAnotada) { memoSinGuardarAnotada = true; anotar(stateDir, `no pude guardar la memoria de quién coordina (${e.code || e.message}): cada llamada lee el registro entero`); }
+    anotarUnaVez(stateDir, sessionId, `no pude guardar la memoria de quién coordina (${e.code || e.message}): cada llamada lee el registro entero`);
   }
 }
 
@@ -116,9 +135,10 @@ function leerAgregado(log, desde, size) {
 
 /**
  * Quién coordina: `{ session }` (null si nadie) o `{ error }` si el registro no se pudo leer. Con memoria: ver la
- * cabecera.
+ * cabecera. `sessionId`, si viene, es la sesión que pregunta: con él, la memoria que no se pudo guardar se anota una vez
+ * por sesión.
  */
-function currentCoordinator({ home, stateDir } = {}) {
+function currentCoordinator({ home, stateDir, sessionId } = {}) {
   const dir = stateDir || stateDirOf(home);
   const log = path.join(dir, 'gates.log');
   const memoFile = path.join(dir, 'coordination', MEMO);
@@ -141,7 +161,7 @@ function currentCoordinator({ home, stateDir } = {}) {
       const estado = plegar(memo.estado, texto);
       const session = sesionDe(estado);
       // el renglón a medio escribir queda para la próxima: la memoria guarda hasta el último fin de renglón
-      guardarMemo(memoFile, { size: hasta, mtimeMs: hasta === st.size ? st.mtimeMs : -1, ino: st.ino, tail: colaDe(log, hasta), session, estado }, dir);
+      guardarMemo(memoFile, { size: hasta, mtimeMs: hasta === st.size ? st.mtimeMs : -1, ino: st.ino, tail: colaDe(log, hasta), session, estado }, dir, sessionId);
       return { session };
     } catch (e) { return { error: `no pude leer lo agregado al registro del arnés (${e.code || e.message})` }; }
   }
@@ -155,7 +175,7 @@ function currentCoordinator({ home, stateDir } = {}) {
   const estado = waivers().plegarRenglones(waivers().estadoInicial(), texto);
   const session = sesionDe(estado);
   try {
-    guardarMemo(memoFile, { size: hasta, mtimeMs: hasta === st.size ? st.mtimeMs : -1, ino: st.ino, tail: colaDe(log, hasta), session, estado }, dir);
+    guardarMemo(memoFile, { size: hasta, mtimeMs: hasta === st.size ? st.mtimeMs : -1, ino: st.ino, tail: colaDe(log, hasta), session, estado }, dir, sessionId);
   } catch { /* sin memoria: la próxima lee entero */ }
   return { session };
 }
@@ -288,7 +308,7 @@ function judge({ sessionId, files, home, stateDir, installedRoots, env = process
   const dir = stateDir || stateDirOf(home);
   const sid = sessionId == null ? '' : String(sessionId);
   if (!ID.test(sid)) { anotar(dir, `el evento no trae un session_id legible (${JSON.stringify(sessionId)}): pasa`); return null; }
-  const quien = currentCoordinator({ home, stateDir: dir });
+  const quien = currentCoordinator({ home, stateDir: dir, sessionId: sid });
   if (quien.error) { anotar(dir, `${quien.error}: pasa`); return null; }
   if (!quien.session || quien.session !== sid) return null;
   const lista = typeof files === 'function' ? files() : files;

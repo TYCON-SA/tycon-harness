@@ -79,6 +79,7 @@ const LEVELS_EN = Object.freeze({
   'manual-test': 'mark a criterion as tested by hand',
   'browser-test:no': 'say no to the browser test',
   'adversarial-skip': 'skip the adversarial pass',
+  'atdd-skip': 'skip "tests first" for a run',
   'review-skip': 'answer «skip» to the question of whether to run the adversarial pass on the code (only the owner: their window, click or typed «approved»)',
   'lost-run': 'give up on a run as lost and close it',
   'lost-run:particion': 'close a lost run that the split of its story into batches left without purpose',
@@ -125,6 +126,7 @@ const LEVELS = Object.freeze([
   ['manual-test', 2, AMBOS, 'marcar un criterio como probado a mano'],
   ['browser-test:no', 2, AMBOS, 'decir que no a la prueba con navegador'],
   ['adversarial-skip', 2, AMBOS, 'saltear el pase adversarial'],
+  ['atdd-skip', 2, AMBOS, 'saltear «pruebas primero» en una ejecución'],
   ['review-skip', 2, AMBOS, 'contestar «skip» a la pregunta de si correr el pase adversarial sobre el código (sólo el dueño: su ventana, su click o su «aprobado»)'],
   ['lost-run', 2, AMBOS, 'dar por perdida una ejecución y cerrarla'],
   ['escape:force-manual', 2, AMBOS, 'marcar a mano el estado de un control'],
@@ -266,6 +268,7 @@ const SI_SALE_MAL = Object.freeze({
   'lost-run': 'la ejecución se cierra y lo que le faltaba queda sin hacer',
   'lost-run:particion': 'se cierra una ejecución que la historia partida ya no necesitaba; lo hecho sigue en la copia de trabajo y se retoma con su tanda',
   'adversarial-skip': 'el código entra sin el pase adversarial, y un error que él encontraría puede llegar a main',
+  'atdd-skip': 'el código entra sin que sus pruebas se hayan escrito antes, y una prueba hecha a la medida del código puede no ver un error',
   'review-skip': 'el código entra sin el pase adversarial que la celda preguntaba, y un error que él encontraría puede llegar a main',
   'pending-approval': 'queda un pendiente de más en la lista; se cierra a mano',
   'adhoc-lane': 'la sesión escribe código sin historia; se cierra el arreglo, y nada entra a main sin revisión',
@@ -296,6 +299,7 @@ const APPROVES_EN = {
   'lost-run': 'give up a run as lost and close it',
   'lost-run:particion': 'close a lost run that the split of its story into batches left without purpose',
   'adversarial-skip': 'skip the adversarial pass with a signed record',
+  'atdd-skip': 'skip "tests first" for a run, with a signed record',
   'review-skip': 'answer «skip» to the code pass question',
   'pending-approval': 'open a new item in the pending list',
   'adhoc-lane': "open a session's quick fix, with no story",
@@ -356,6 +360,7 @@ const SIGNATURES = Object.freeze([
   // antes de la firma que la historia se partió después de la apertura
   { id: LOST_RUN_PARTICION, approves: 'cerrar una ejecución perdida que la partición de su historia en tandas dejó sin objeto', command: 'marker.js clear-session <S> --lost --partition', otherSession: 'yes', terminal: 'marker.js clear-session <S> --lost --partition --terminal' },
   { id: 'adversarial-skip', approves: 'saltear el pase adversarial con constancia', command: 'marker.js sign-adversarial-skip --story <S> --reason <R>', otherSession: 'no', terminal: 'marker.js sign-adversarial-skip --story <S> --reason <R> --terminal' },
+  { id: 'atdd-skip', approves: 'saltear «pruebas primero» en una ejecución, con constancia', command: 'marker.js sign-atdd-skip --story <S> --reason <R>', otherSession: 'no', terminal: 'marker.js sign-atdd-skip --story <S> --reason <R> --terminal' },
   // la pregunta del pase del código la contesta la coordinadora en la pestaña donde el dueño contesta: su click o su
   // «aprobado» ahí, nunca la delegación. Con el dueño ausente y la celda en skip, `--by-profile` no pide firma
   { id: 'review-skip', approves: 'contestar «skip» a la pregunta del pase del código', command: 'marker.js review-answer --kind code --choice skip', otherSession: 'yes', terminal: 'marker.js review-answer --kind code --choice skip --terminal' },
@@ -433,6 +438,7 @@ const SENSITIVE = Object.freeze([
   // ponerse la marca solo
   'scripts/lib/owner-approvals.js', 'scripts/lib/owner-away.js',
   'skills/tycon-pipeline/scripts/lib/approvals.js', 'skills/tycon-pipeline/scripts/lib/adversarial-skip.js',
+  'skills/tycon-pipeline/scripts/lib/atdd-skip.js',
   'skills/tycon-pipeline/scripts/lib/save-ok.js',
   // los que consumen o exigen una firma por un camino armado (`require(path.join(...))`, que la clausura no ve)
   'skills/tycon-pipeline/scripts/dispatch.js', 'skills/tycon-pipeline/scripts/on-*.js',
