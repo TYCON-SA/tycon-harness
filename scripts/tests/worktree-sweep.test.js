@@ -544,3 +544,63 @@ test('T4d 8.164-DosPasadasSinMostrar_SeSuman @story-8.164 @ac-4 — lo que borr�
   const r = arranque(L);
   assert.match(r.out, /borré 2 ya mergeada\(s\)/, r.out);
 });
+
+test('T5d 8.164-MarcadorDeSesionViva_NoSeCierra @story-8.164 @ac-5 — una sesión viva que arrancó en otra carpeta y entró a ésta: su marcador terminado no se cierra y la carpeta queda', () => {
+  const L = lugar();
+  const wt = carpeta(L, 'producto-wt-entro', 'feat/entro');
+  mergear(L, 'feat/entro');
+  const m = marcador(L, 's-entro', wt);
+  const sesiones = path.join(L.home, '.claude', 'sessions');
+  fs.mkdirSync(sesiones, { recursive: true });
+  fs.writeFileSync(path.join(sesiones, '1.json'), JSON.stringify({ sessionId: 's-entro', pid: process.pid, cwd: L.base }));
+  const r = correr(L, ['--force']);
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.ok(fs.existsSync(wt), `borró la carpeta de una sesión viva\n${r.out}`);
+  assert.ok(fs.existsSync(m), 'cerró el marcador de una sesión viva');
+  assert.match(r.out, /producto-wt-entro \([^)]*sesión viva[^)]*s-entro/, r.out);
+});
+
+test('T5e 8.164-EjecucionAbiertaDeOtra_NoCierraElMarcador @story-8.164 @ac-5 — con una ejecución abierta de otra sesión adentro, el marcador terminado no se cierra', () => {
+  const L = lugar();
+  const wt = carpeta(L, 'producto-wt-compartida', 'feat/compartida');
+  mergear(L, 'feat/compartida');
+  const m = marcador(L, 's-terminada', wt);
+  abrirEn(L, wt, 's-otra', '9.3');
+  const r = correr(L, ['--force']);
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.ok(fs.existsSync(wt), r.out);
+  assert.ok(fs.existsSync(m), 'cerró el marcador aunque la carpeta no se podía borrar');
+  assert.match(r.out, /producto-wt-compartida \(tiene una ejecución abierta \(story 9\.3, sesión s-otra\)\)/, r.out);
+});
+
+test('T5f 8.164-SesionVivaSinCarpeta_NoBorra @story-8.164 @ac-5 — una sesión viva cuyo archivo no dice su carpeta no deja borrar ninguna', () => {
+  const L = lugar();
+  const wt = carpeta(L, 'producto-wt-dudosa', 'feat/dudosa');
+  mergear(L, 'feat/dudosa');
+  const sesiones = path.join(L.home, '.claude', 'sessions');
+  fs.mkdirSync(sesiones, { recursive: true });
+  fs.writeFileSync(path.join(sesiones, '1.json'), JSON.stringify({ sessionId: 's-rara', pid: process.pid, cwd: 7 }));
+  const r = correr(L, ['--force']);
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.ok(fs.existsSync(wt), `borró sin saber dónde trabaja una sesión viva\n${r.out}`);
+  assert.match(r.out, /producto-wt-dudosa \([^)]*no dice su carpeta/, r.out);
+});
+
+test('T6b 8.164-IgnoradosQueSePierden_Quedan @story-8.164 @ac-6 — lo que git ignora y no se vuelve a armar deja la carpeta; las dependencias no', () => {
+  const L = lugar();
+  const notas = carpeta(L, 'producto-wt-notas', 'feat/notas');
+  const deps = carpeta(L, 'producto-wt-deps', 'feat/deps');
+  mergear(L, 'feat/notas');
+  mergear(L, 'feat/deps');
+  fs.appendFileSync(path.join(L.repo, '.git', 'info', 'exclude'), 'scratchpad/\nnode_modules/\n.env.local\n');
+  fs.mkdirSync(path.join(notas, 'scratchpad'), { recursive: true });
+  fs.writeFileSync(path.join(notas, 'scratchpad', 'notas.md'), 'lo que no está en git\n');
+  fs.writeFileSync(path.join(notas, '.env.local'), 'CLAVE=x\n');
+  fs.mkdirSync(path.join(deps, 'node_modules', 'x'), { recursive: true });
+  fs.writeFileSync(path.join(deps, 'node_modules', 'x', 'index.js'), '\n');
+  const r = correr(L, ['--force']);
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.ok(fs.existsSync(notas), `borró notas y un .env que git ignora\n${r.out}`);
+  assert.match(r.out, /producto-wt-notas \(tiene 2 archivo\(s\) que git ignora y se perderían/, r.out);
+  assert.ok(!fs.existsSync(deps), `node_modules se vuelve a armar: la carpeta tenía que borrarse\n${r.out}`);
+});

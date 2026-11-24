@@ -198,10 +198,11 @@ function sweep({ repos, cwd, story = null, idleMs = 0, now = Date.now(), dryRun 
   const res = { removed: [], kept: [], branchKept: [], checked: 0, unreadable: [], cursor: '' };
   // las ejecuciones abiertas (gates.log), leídas una vez y sólo si alguna carpeta llega a borrarse (@story-8.318)
   let abiertas;
-  const abiertaEn = (wt) => {
+  // `salvo`: la sesión cuya ejecución terminada se va a cerrar, que no cuenta como la de otra
+  const abiertaEn = (wt, { salvo = null } = {}) => {
     if (abiertas === undefined) abiertas = ejecucionesAbiertas(home);
     if (!abiertas.ok) return { why: `no pude ver si tiene una ejecución abierta (${abiertas.error})` };
-    const a = abiertas.lib.abiertasDentro(wt, { eventos: abiertas.eventos }).abiertas[0];
+    const a = abiertas.lib.abiertasDentro(wt, { eventos: abiertas.eventos }).abiertas.find((x) => !salvo || x.sesion !== salvo);
     return a ? { why: `tiene una ejecución abierta (story ${a.story || '?'}, sesión ${a.sesion})` } : null;
   };
   // los marcadores, las firmas pendientes y las sesiones vivas: también una vez, y sólo si alguna llega a borrarse
@@ -249,6 +250,10 @@ function juzgarCarpeta({ repo, target, w }, { res, name, cwd, story, idleMs, now
   const ev = evidenciaIgnorada(w.path);
   if (ev === null) { res.kept.push({ name, why: 'no pude ver si tiene evidencia ignorada en .advisors' }); return; }
   if (ev) { res.kept.push({ name, why: `tiene ${ev} archivo(s) de evidencia sin guardar en .advisors`, cambios: true }); return; }
+  // `git worktree remove` borra sin quejarse lo que git ignora: sólo se deja borrar lo que se vuelve a armar solo
+  const ign = ignoradosQueSePierden(w.path);
+  if (ign === null) { res.kept.push({ name, why: 'no pude ver qué archivos ignorados tiene' }); return; }
+  if (ign.length) { res.kept.push({ name, why: `tiene ${ign.length} archivo(s) que git ignora y se perderían (${ign.slice(0, 3).join(', ')}${ign.length > 3 ? ', …' : ''})`, cambios: true }); return; }
   const head = git(w.path, ['rev-parse', 'HEAD']).out;
   if (!head) { res.kept.push({ name, why: 'no pude leer su HEAD' }); return; }
   const merged = git(repo, ['merge-base', '--is-ancestor', head, target.sha]).ok;
@@ -257,6 +262,9 @@ function juzgarCarpeta({ repo, target, w }, { res, name, cwd, story, idleMs, now
   // la carpeta de una sesión viva no se toca, aunque esté quieta
   const viva = sesionVivaEn(contexto(), w.path);
   if (viva) { res.kept.push({ name, why: viva }); return; }
+  // una ejecución abierta de OTRA sesión adentro: la carpeta queda, y el marcador de la terminada no se cierra
+  const ajena = abiertaEn(w.path, { salvo: marcadorDe(contexto(), w.path) });
+  if (ajena) { res.kept.push({ name, why: ajena.why }); return; }
   // el marcador de una ejecución terminada se cierra antes de borrar; con cualquier otro, la carpeta queda
   const marca = juzgarMarcadores(contexto(), w.path, { home, dryRun });
   if (marca) { res.kept.push({ name, why: marca }); return; }
@@ -268,7 +276,8 @@ function juzgarCarpeta({ repo, target, w }, { res, name, cwd, story, idleMs, now
   if (!rm.ok) {
     // otra pasada pudo borrarla en el medio: lo que ya no está no es un error
     if (!fs.existsSync(w.path)) return;
-    res.kept.push({ name, why: `git no la quiso borrar (${rm.err.split('\n')[0] || 'sin motivo'})` });
+    const cerrado = marcadorDe(contexto(), w.path) ? ' (su marcador ya estaba cerrado)' : '';
+    res.kept.push({ name, why: `git no la quiso borrar${cerrado} (${rm.err.split('\n')[0] || 'sin motivo'})` });
     return;
   }
   res.removed.push(name);
@@ -284,6 +293,19 @@ function evidenciaIgnorada(wt) {
   const r = git(wt, ['status', '--porcelain', '--ignored=traditional', '--untracked-files=all', '--', '.advisors']);
   if (!r.ok) return null;
   return r.out.split('\n').filter((l) => l.startsWith('!! ') && !RUN_OPEN_COPY.test(l.slice(3).replace(/^"|"$/g, ''))).length;
+}
+
+// lo ignorado que se vuelve a armar solo (dependencias, índices, salidas de compilación y de pruebas, cachés): borrarlo
+// no pierde nada. Cualquier otra cosa que git ignora (notas, `.env`, una base local, ajustes del editor) se perdería.
+const SE_REARMA = new Set(['node_modules', '.codegraph', '.bench', '.dashboard', '__pycache__', '.pytest_cache', '.mypy_cache',
+  'dist', 'build', 'out', 'coverage', '.next', '.nuxt', '.turbo', '.cache', 'bin', 'obj', 'target', '.gradle', '.DS_Store']);
+
+/** Lo que git ignora en `wt` y se perdería al borrarla (sin `.advisors`, que se mira aparte); null si no se pudo mirar. */
+function ignoradosQueSePierden(wt) {
+  const r = git(wt, ['status', '--porcelain', '--ignored=matching', '--untracked-files=normal']);
+  if (!r.ok) return null;
+  return r.out.split('\n').filter((l) => l.startsWith('!! ')).map((l) => l.slice(3).replace(/^"|"$/g, '').replace(/\/$/, ''))
+    .filter((p) => p && !p.split('/').some((parte) => SE_REARMA.has(parte) || parte === '.advisors') && !/\.py[co]$/.test(p));
 }
 
 /**
@@ -328,8 +350,10 @@ function leerContexto(home) {
         throw new Error(`${f} no se puede leer`);
       }
       const pid = Number(s && s.pid);
-      if (!Number.isInteger(pid) || pid <= 0 || typeof s.cwd !== 'string') continue;
+      if (!Number.isInteger(pid) || pid <= 0) continue;
       if (!pidAlive(pid)) continue;
+      // una sesión viva que no dice su carpeta no se puede proteger: como un archivo ilegible, no deja borrar
+      if (typeof s.cwd !== 'string' || !s.cwd) throw new Error(`${f} no dice su carpeta`);
       ctx.vivas.push({ sid: String(s.sessionId || f.slice(0, -5)), name: typeof s.name === 'string' && s.name.trim() ? s.name.trim() : null, cwd: s.cwd });
     }
   } catch (e) {
@@ -365,10 +389,13 @@ function juzgarMarcadores(ctx, wt, { home, dryRun }) {
   // un marcador con una ruta que no es texto no dice de qué carpeta es: no deja borrar ninguna (como uno ilegible)
   const raros = ctx.marcadores.filter(({ m }) => (m.repoPath != null && typeof m.repoPath !== 'string') || (m.storyPath != null && typeof m.storyPath !== 'string'));
   if (raros.length) return `no pude leer las rutas del marcador ${raros.map((x) => x.sid).join(', ')}: no sé de qué carpeta es`;
-  const deAca = ctx.marcadores.filter(({ m }) => inside(m.repoPath, wt) || (typeof m.storyPath === 'string' && path.isAbsolute(m.storyPath) && inside(path.dirname(m.storyPath), wt)));
+  const deAca = marcadoresDe(ctx, wt);
   if (!deAca.length) return null;
   if (deAca.length > 1) return `tiene ${deAca.length} ejecuciones (sesiones ${deAca.map((x) => x.sid).sort().join(', ')})`;
   const { sid, m } = deAca[0];
+  // la sesión de la ejecución sigue viva, aunque haya arrancado en otra carpeta y entrado a ésta después
+  if (!ctx.vivas) return `no pude ver las sesiones vivas (${ctx.vivasError})`;
+  if (ctx.vivas.some((v) => v.sid === sid)) return `su ejecución es de una sesión viva (sesión ${sid})`;
   const estacionada = estacionadaDe(sid, m, home);
   if (estacionada) return `su ejecución está estacionada (sesión ${sid}${estacionada === true ? '' : `: ${estacionada}`})`;
   const fin = terminada(m);
@@ -384,6 +411,19 @@ function juzgarMarcadores(ctx, wt, { home, dryRun }) {
   // otra pasada pudo cerrarlo en el medio: «no había marcador» no es un error
   if (r.status === 0 || /no había marcador de esa sesión/.test(r.stderr || '')) return null;
   return `no pude cerrar su marcador (sesión ${sid}: ${String(r.stderr || r.error || '').split('\n')[0] || `salió ${r.status}`})`;
+}
+
+/** Los marcadores cuya carpeta (`repoPath`, o la de su `storyPath`) es `wt` o está adentro. */
+function marcadoresDe(ctx, wt) {
+  return ctx.marcadores.filter(({ m }) => (typeof m.repoPath === 'string' && inside(m.repoPath, wt))
+    || (typeof m.storyPath === 'string' && path.isAbsolute(m.storyPath) && inside(path.dirname(m.storyPath), wt)));
+}
+
+/** La sesión del único marcador de `wt`, o null (ninguno, varios, o los marcadores no se pudieron leer). */
+function marcadorDe(ctx, wt) {
+  if (ctx.ilegibles.length) return null;
+  const deAca = marcadoresDe(ctx, wt);
+  return deAca.length === 1 ? deAca[0].sid : null;
 }
 
 /** true, el motivo de una estacionada, o null. Lo lee open-runs.js si viene con el arnés; si no, por su archivo. */
