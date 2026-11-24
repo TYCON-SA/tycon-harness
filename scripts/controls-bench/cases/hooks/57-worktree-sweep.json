@@ -1,5 +1,5 @@
 {
-  "__doc": "Carpetas de trabajo ya mergeadas (2026-10-16, pedido del dueño: «borrá solas las carpetas ya mergeadas»; ese día había 30 worktrees y 28 ya estaban mergeados). Al arrancar, una vez por día, worktree-sweep.js borra los worktrees limpios con HEAD en origin/main y nombra los que tienen trabajo sin tocarlos. Con git de verdad: un remoto desnudo, su clon en repos/ y dos worktrees mergeados, uno de ellos con un archivo sin seguimiento.",
+  "__doc": "Carpetas de trabajo ya mergeadas (2026-10-16, pedido del dueño: «borrá solas las carpetas ya mergeadas»; ese día había 30 worktrees y 28 ya estaban mergeados). Al arrancar, worktree-sweep.js dice lo que dejó la pasada anterior y lanza la suya de fondo; la pasada borra los worktrees limpios con HEAD en origin/main y nombra los que tienen trabajo sin tocarlos. Con git de verdad: un remoto desnudo, su clon en repos/ y dos worktrees mergeados, uno de ellos con un archivo sin seguimiento.",
   "hooks": [
     {
       "hook": "worktree-sweep.js (carpetas de trabajo ya mergeadas se borran solas)",
@@ -10,12 +10,13 @@
         {
           "id": "borra-la-mergeada-y-nombra-la-que-tiene-cambios",
           "type": "must-emit",
-          "__doc": "Una carpeta limpia y mergeada se borra con su rama; la mergeada con un archivo sin seguimiento se nombra y queda. ROJO PREVIO: borrar una carpeta con cambios (se pierde trabajo), o no borrar nada (se juntan 30 carpetas).",
+          "__doc": "Una carpeta limpia y mergeada se borra con su rama; la mergeada con un archivo sin seguimiento se nombra y queda. ROJO PREVIO: borrar una carpeta con cambios (se pierde trabajo), o no borrar nada (se juntan 30 carpetas). Desde la 8.164 la pasada corre de fondo y el arranque dice lo que dejó la anterior: la preparación corre esa pasada (--pass) y el arranque la cuenta.",
           "setup": [
             "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness tcg/skills/tycon-pipeline/scripts/lib && cp $TCG/scripts/hooks/worktree-sweep.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && cp $TCG/skills/tycon-pipeline/scripts/lib/open-runs.js $TCG/skills/tycon-pipeline/scripts/lib/state-dir.js $TCG/skills/tycon-pipeline/scripts/lib/session-id.js tcg/skills/tycon-pipeline/scripts/lib/",
             "git init -q --bare -b main remoto.git && git clone -q remoto.git repos/producto 2>/dev/null && git -c user.email=b@b.test -c user.name=b -C repos/producto commit -q --allow-empty -m uno && git -C repos/producto push -q origin HEAD:main",
             "git -C repos/producto worktree add -q -b feat/hecha ../producto-wt-hecha HEAD && git -c user.email=b@b.test -c user.name=b -C repos/producto-wt-hecha commit -q --allow-empty -m trabajo && git -c user.email=b@b.test -c user.name=b -C repos/producto merge -q --no-ff -m merge feat/hecha && git -C repos/producto push -q origin HEAD:main && git -C repos/producto fetch -q origin",
-            "git -C repos/producto worktree add -q -b feat/sucia ../producto-wt-sucia origin/main && git -c user.email=b@b.test -c user.name=b -C repos/producto-wt-sucia commit -q --allow-empty -m trabajo && git -c user.email=b@b.test -c user.name=b -C repos/producto merge -q --no-ff -m merge2 feat/sucia && git -C repos/producto push -q origin HEAD:main && git -C repos/producto fetch -q origin && echo cambio > repos/producto-wt-sucia/nuevo.txt"
+            "git -C repos/producto worktree add -q -b feat/sucia ../producto-wt-sucia origin/main && git -c user.email=b@b.test -c user.name=b -C repos/producto-wt-sucia commit -q --allow-empty -m trabajo && git -c user.email=b@b.test -c user.name=b -C repos/producto merge -q --no-ff -m merge2 feat/sucia && git -C repos/producto push -q origin HEAD:main && git -C repos/producto fetch -q origin && echo cambio > repos/producto-wt-sucia/nuevo.txt",
+            "TYCON_REPOS_ROOT=\"$FIXTURE/repos\" TYCON_WORKTREE_SWEEP_IDLE_HOURS=0 node tcg/scripts/hooks/worktree-sweep.js --pass"
           ],
           "stdin": {
             "source": "startup"
@@ -27,7 +28,7 @@
           "expect": {
             "stdout_re": [
               "borré 1 ya mergeada\\(s\\) \\(producto-wt-hecha\\)",
-              "no toqué 1 con trabajo: producto-wt-sucia \\(tiene cambios\\)"
+              "no toqué 1 con trabajo: producto-wt-sucia \\(tiene 1 archivo\\(s\\) con cambios\\)"
             ],
             "file_contains": [
               {

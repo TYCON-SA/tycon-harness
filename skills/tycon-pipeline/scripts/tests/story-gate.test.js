@@ -1176,6 +1176,58 @@ test('PlanReview_RunnerListUnreadable_SaysWhy (T28, el freno) @story-8.267 @ac-2
 // 🔴 Mutaciones: mirar sólo el primer `--out`, aceptar un destino que no se puede leer, o aceptar el corredor del arnés
 // con un `--args` que no es el pedido que preparó el arnés: con cualquiera, la sesión escribe un «aprobado» que no es el
 // de su plan (T28, las tres formas de falsificar el resultado).
+// 🔴 Fila 217. Mutación: partir el comando sin saber que un comentario termina en el salto de renglón. Una comilla abierta
+// adentro del comentario se tomaba como comilla y juntaba los renglones siguientes en el mismo tramo, como texto entre
+// comillas: lo que el shell corre ahí (pisar el resultado de la revisión, escribir el pedido) no lo miraba ningún control.
+test('Comentario_ConUnaComilla_NoEscondeElRenglonSiguiente (fila 217, el freno)', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'plan-review', 's1'), { recursive: true });
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const res = path.join(E, 'plan-review', 's1', 's1.resultado.json');
+  const args = path.join(E, 'plan-review', 's1', 's1.args.json');
+  const arnes = path.join(SCRIPTS, '..', '..', '..');
+  conEnv(SIN_REGISTRO, () => {
+    const frena = (cmd) => { const r = bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }); assert.ok(r && r.block, JSON.stringify(cmd)); };
+    const pasa = (cmd) => assert.equal(bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }), null, JSON.stringify(cmd));
+    frena(`echo hola # '\ncp /tmp/falso.json '${res}'\n# '`);
+    frena(`echo hola # "\necho '{"veredicto":"aprobado"}' > '${args}'\n# "`);
+    frena(`true # it's\nrm -rf '${E}/plan-review'`);
+    frena(`echo hola; # '\ncp /tmp/falso.json '${res}'`);
+    // un `<<EOF` adentro de un comentario no abre un heredoc: el renglón siguiente corre
+    frena(`echo hola # <<EOF\ncp /tmp/falso.json '${res}'\nEOF`);
+    frena(`echo hola # <<'EOF'\ncp /tmp/falso.json '${res}'\nEOF`);
+    // del pase entero: donde el shell no ve un comentario, no se saca nada. Adentro de comillas invertidas o de `${…}`,
+    // después de una continuación de renglón (el shell junta los renglones), y adentro de `$'…'`, que deja escapar su comilla
+    frena(`echo \`true #x\`; cp /tmp/falso.json '${res}'`);
+    frena(`echo \${HOLA:-a #b}; cp /tmp/falso.json '${res}'`);
+    frena(`echo a\\\n#b; cp /tmp/falso.json '${res}'`);
+    frena(`echo $'a\\'b # c'; cp /tmp/falso.json '${res}'`);
+    frena(`echo $'\\'' # '\ncp /tmp/falso.json '${res}'`);
+    // un `#` pegado a un carácter escapado o al cierre de `$(…)` es parte de la palabra, no un comentario
+    for (const pegado of ['a\\ #b', 'a\\;#b', 'a\\&#b', 'a\\(#b', '$(date)#b', '$((1+1))#b']) frena(`echo ${pegado} > '${res}'`);
+    // del tercer agente: un blanco que el shell no toma como blanco (`\r`, `\v`, `\f`, un espacio duro o uno de Unicode),
+    // un `#` pegado al cierre de `<(…)`, `@(…)` o `a=(…)`, y uno adentro de los paréntesis de `[[ … ]]`
+    for (const b of ['\r', '\v', '\f', ' ', ' ']) frena(`echo a${b}#b; cp /tmp/falso.json '${res}'`);
+    for (const pegado of ['cat <(echo a)#b', 'echo @(a)#b', 'a=(x)#b']) frena(`${pegado}; cp /tmp/falso.json '${res}'`);
+    frena(`[[ x =~ ((a) #b) ]]; cp /tmp/falso.json '${res}'`);
+    frena(`[[ x == (#b) ]]; cp /tmp/falso.json '${res}'`);
+    // después de cerrar un subshell, con un blanco, el comentario sigue siendo comentario
+    frena(`( : ) # '\ncp /tmp/falso.json '${res}'`);
+    // de la vuelta final: una comilla doble adentro de `$(…)`, `${…}` o comillas invertidas que están entre comillas
+    // dobles abre otro texto, no cierra el de afuera; y en zsh, `(a|b)#x` es un patrón (el `#` sigue el cierre)
+    frena(`echo "$(echo "a #b")"; cp /tmp/falso.json '${res}'`);
+    frena(`echo "\${HOLA:-"a #b"}"; cp /tmp/falso.json '${res}'`);
+    frena(`echo "\`echo "a #b"\`"; cp /tmp/falso.json '${res}'`);
+    frena(`[[ a == (a|b)#x ]]; cp /tmp/falso.json '${res}'`);
+    frena(`case x in (a)#x) :;; esac; cp /tmp/falso.json '${res}'`);
+    // un comentario con una comilla y nada escondido, o un `#` que no empieza una palabra, sigue pasando
+    pasa("echo hola # it's fine\nls -la");
+    pasa("echo 'a # b' && echo \"c # d\"");
+    pasa('echo ${#HOME} $# x#y');
+  });
+});
+
 test('PlanReview_ForgedResult_ThreeWays_Blocked (T28, el freno) @story-8.267 @ac-23', () => {
   const { stateDir, repo } = corridaAbierta();
   const E = stateDir;

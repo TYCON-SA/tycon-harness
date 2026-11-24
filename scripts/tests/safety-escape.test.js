@@ -1887,6 +1887,7 @@ test('T28 FrenoDeSeguridad_RenglonForjado_NoApruebaNada @story-8.139 @ac-28 — 
     ['escape:set-autonomous', ['node', M, 'set-autonomous', 'false']],
     ['adhoc-lane',['node', M, 'adhoc', 'set', '{"reason":"autorizo el arreglo rápido"}']],
     ['adhoc-lane:sobre-cupo', ['node', M, 'adhoc', 'set', '{"reason":"autorizo el arreglo rápido","maxFiles":9}']],
+    ['adhoc-lane:ci-rojo', ['node', M, 'adhoc', 'set', '--ci-red', '6910', '--check', 'Manifest', '--reason', 'autorizo el arreglo del rojo', '--data', 'sin-cambio', '--file', 'plugin.json']],
     ['adhoc-lane:datos', ['node', M, 'adhoc', 'allow-data-change', '--changed', 'el botón pide al proceso', '--recommends', 'pasar', '--why', 'autorizo el cambio']],
     ['adhoc-lane:guardado-ajeno', ['node', M, 'adhoc', 'allow-foreign-save']],
     ['autonomy-resume', ['node', M, 'resume-autonomy']],

@@ -1433,13 +1433,16 @@ function decidirCarril({ command, cwd, sid, home }) {
     if (registrar && rama) return { freno: rama };
     const pruebas = esDelCarril ? frenoDeLasPruebas(carril, sid, home, { registrar, medida: m }) : null;
     if (registrar && pruebas) return { freno: pruebas };
+    // el arreglo de un rojo de CI: el control que falló, otra vez, en local
+    const ciRojo = esDelCarril && carril.ciRojo ? require('./ci-red-lane.js').frenoAlGuardar(carril) : null;
+    if (registrar && ciRojo) return { freno: ciRojo };
     const pantalla = esDelCarril ? frenoDePantalla(carril, sid, home, delCarril, { registrar, medida: m }) : null;
     if (registrar && pantalla && pantalla.texto) return { freno: pantalla };
     const datos = esDelCarril ? frenoDeDatos(carril, sid, home, delCarril, { sinSeguir: subeLoSinSeguir, registrar, medida: m }) : null;
     if (registrar && datos && datos.texto) return { freno: { texto: datos.texto } };
     const riesgo = frenoDelRiesgo(carril, sid, home, delComando, { registrar, medida: m, alDia });
     if (registrar && riesgo) return { freno: riesgo };
-    return { m, frenaria: !!(tope || lista || rama || pruebas || (pantalla && pantalla.texto) || (datos && datos.texto) || riesgo), pantalla, datos };
+    return { m, frenaria: !!(tope || lista || rama || pruebas || ciRojo || (pantalla && pantalla.texto) || (datos && datos.texto) || riesgo), pantalla, datos };
   };
   let v = vuelta(a, false, []);
   if (v.frenaria) {
@@ -1631,7 +1634,7 @@ function frenoDeLaLista(a, sid, home, { registrar = true, medida, sinSeguir = tr
       const abs = path.join(repo, rel);
       // sin la lista de lo sensible, el delegado no guarda nada: lo firma una persona
       if (delegado && (!esSensible || esSensible(rel))) sensibles.push(abs);
-      if (LISTA.fueraDeLaLista({ lista: a.allowedFiles, filePath: abs, real: abs, repoRoot: repo, home, delegado })) fuera.push(abs);
+      if (LISTA.fueraDeLaLista({ lista: a.allowedFiles, filePath: abs, real: abs, repoRoot: repo, home, delegado, estricta: Boolean(a.ciRojo) })) fuera.push(abs);
     }
   }
   const nombres = (fs_) => fs_.slice(0, gate.TOPE_DE_NOMBRES).map((f) => `   · ${f}`).join('\n');
@@ -1975,6 +1978,9 @@ function basesAlDia(a, sid, home) {
  * mide, trae `main` y vuelve a medir por su cuenta.
  */
 function frenoDelRiesgo(a, sid, home, reposDelComando = [], { medida, alDia = [], registrar = true } = {}) {
+  // el arreglo de un rojo de CI no pide revisores ni pase: lo sensible no entra en su lista (lib/ci-red-lane.js), y lo
+  // frena el control que había fallado
+  if (a && a.ciRojo) return null;
   const base = require('./adhoc-base.js');
   if (!medida) {
     const medir = (carril) => base.medirLoPropio(carril, { repos: reposDelComando });
