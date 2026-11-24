@@ -205,7 +205,7 @@ if [ "$SALIDA_F" = "block - -" ]; then ok "T6 ManagedTemplate_ConsoleHookBlocksO
 else no "T6 ManagedTemplate_ConsoleHookBlocksOnFailure · onFailure quedó así (consola, arranque, cierre): «${SALIDA_F}»"; fi
 
 # T33q · la guía dice qué pasa cuando el freno no contesta a tiempo, y hasta dónde llega el corte de Claude Code.
-GUIA_Q="$AQUI/guides/produccion-con-permiso.md"
+GUIA_Q="$AQUI/guides/production-with-permission.md"
 if grep -q "no contesta a tiempo" "$GUIA_Q" && grep -qi "frena" "$GUIA_Q" && grep -qi "reinstal" "$GUIA_Q" \
    && grep -q "30 s" "$GUIA_Q" && grep -q "Claude Code" "$GUIA_Q"; then ok "T33q · la guía dice qué pasa cuando el freno no contesta a tiempo y el límite de los 30 s"
 else no "T33q · la guía no explica qué pasa cuando el freno no contesta a tiempo (o le falta el límite de los 30 s)"; fi

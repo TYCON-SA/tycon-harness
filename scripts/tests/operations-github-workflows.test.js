@@ -856,8 +856,11 @@ test('T28 2.33-Nocturno_ConexionPropiaYOrden (GitHub) @story-2.33 @ac-10 @ac-11 
   assert.match(t, /uses: azure\/login@[0-9a-f]{40} # v\d/);
   assert.match(t, /client-id: \$\{\{ vars\.SITE_UPDATE_CLIENT_ID \}\}/, 'su propia aplicación de Entra, no la de la copia');
   const secretos = [...t.matchAll(/secrets\.([A-Za-z_]+)/g)].map((x) => x[1]);
-  assert.deepStrictEqual([...new Set(secretos)].sort(), ['SITE_RENDER_DEPLOY_HOOK'], 'el único secreto, el hook de Render');
+  assert.deepStrictEqual([...new Set(secretos)].sort(), ['SITE_RENDER_API_KEY', 'SITE_RENDER_DEPLOY_HOOK'], 'los secretos, sólo los de Render');
   assert.match(t, /^ {10}SITE_RENDER_DEPLOY_HOOK: \$\{\{ secrets\.SITE_RENDER_DEPLOY_HOOK \}\}$/m, 'sólo como variable de un paso');
+  // @story-8.328 @ac-5 @ac-7 — T16: la llave de la API y el servicio, optativos, sólo como variables de un paso
+  assert.match(t, /^ {10}SITE_RENDER_API_KEY: \$\{\{ secrets\.SITE_RENDER_API_KEY \}\}$/m);
+  assert.match(t, /^ {10}SITE_RENDER_SERVICE_ID: \$\{\{ vars\.SITE_RENDER_SERVICE_ID \}\}$/m);
   assert.match(t, /^concurrency:\n {2}group: [^\n]+\n {2}cancel-in-progress: false$/m);
   assert.deepStrictEqual(check(t).filter((b) => ['pull-request-target', 'uses-by-sha'].includes(b.rule)), []);
   assert.match(fs.readFileSync(path.join(DIR, 'README.md'), 'utf8'), /site-update\.yml/);

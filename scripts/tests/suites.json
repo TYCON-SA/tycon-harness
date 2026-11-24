@@ -168,6 +168,11 @@
       "requiere": []
     },
     {
+      "raiz": "arnes",
+      "ruta": "tests/bench-usage.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 7.53: sondas de comportamiento — el agente de verdad (claude -p) en un laboratorio con HOME vacío y sólo el gancho medido, para ver si sigue cumpliendo una regla que dejó de estar siempre a la vista. Sin claude o sin sesión: NO MEDIDO.",
       "raiz": "arnes",
       "ruta": "tests/behavior-probes.test.sh",
@@ -492,6 +497,11 @@
       "requiere": []
     },
     {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/planning-controls.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.48: la lista única de lo que es código, de lo que es prueba y de las marcas de prueba salteada.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/code-files.test.js",
@@ -740,6 +750,12 @@
       "requiere": []
     },
     {
+      "__nota": "saltear pruebas primero pide la firma del dueño por ejecución (atdd-skip): sin ella no saltea, con la de otra ejecución tampoco, y se firma desde una terminal sin sesión (8.283).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/atdd-skip.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el freno del ok de guardar: el gancho del comando frena el commit, el push y los pedidos de una corrida sin la constancia vigente, y los de una corrida que cerró sin ella; clear sin el ok sale 2.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/save-brake.test.js",
@@ -939,6 +955,18 @@
       "gate_only_when_touching": [
         "scripts/controls-bench/**",
         "scripts/lib/**"
+      ]
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/subtraction-test.test.js",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/tools/**",
+        "scripts/controls-bench/**",
+        "scripts/setup/**",
+        "scripts/lib/**",
+        "scripts/metrics/**"
       ]
     },
     {
@@ -1691,7 +1719,17 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/suggestion-choices.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/runs-review.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/adversarial-skip-one-signature.test.js",
       "requiere": []
     },
     {
@@ -1738,6 +1776,11 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/adversarial-skip-signed.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/delegated-pass.test.js",
       "requiere": []
     },
     {
@@ -2539,6 +2582,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/office-page-english.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/office-conversation.test.js",
       "requiere": []
     },
@@ -2550,6 +2598,11 @@
     {
       "raiz": "arnes",
       "ruta": "tests/office-task-numbers.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/office-board-forecast.test.js",
       "requiere": []
     },
     {
@@ -3524,6 +3577,12 @@
       "__nota": "encolar o mergear un pedido de alguien de afuera del equipo lo aprueba el dueño (regla GIT-C7): el lector (scripts/lib/external-pr.js), el freno de la sesión de verdad con una casa de juguete y el cuadro de la firma. GitHub es un gh falso en el PATH. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/external-pr.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "los pedidos y los issues de gente de afuera del equipo en el repo público (scripts/lib/outside-contributions.js, con la regla del freno de pedidos de afuera): el renglón del resumen diario (open-prs.js --outside-from, y su forma en daily-summary.js) y el del arranque (stuck-pr-notice.js). GitHub es un gh de juguete por TYCON_GH_CMD; casas temporales. No medido no es cero. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/outside-contributions.test.js",
       "requiere": []
     },
     {
@@ -5261,6 +5320,18 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.83: los cinco comandos del marcador (set, complete-step, adopt-session, restore, clear) anotan la sesión que los corre, con su nombre, en marker.sesiones (una por sesión, hasta 10) y el volcado del cierre la lleva; no poder leer el nombre nunca frena. HOME de prueba por caso, con sesiones inventadas; sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/marker-session-names.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.83: el nombre de una sesión por su id con los lectores de /wip (archivo de sesión de Claude, el último /rename, Codex); un nombre armado de la carpeta es sin nombre; nunca tira. Casas temporales; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/session-name.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.67 (tanda B): la carpeta de los repos puede ser más de una y estar fuera de la carpeta personal. Fuera del home votan todos los ancestros menos la raíz del disco; rutas.repos y TYCON_REPOS_ROOT aceptan varias y `set` guarda la lista; root es la primera de roots; las sesiones dan una raíz por grupo (desde la segunda, con al menos dos repos); las repetidas o anidadas se sacan; sin raíz, el motivo trae el comando; los que recorren repos ven los de todas. Hogares, configuraciones y repos de juguete; sin red.",
       "raiz": "arnes",
       "ruta": "tests/repos-roots.test.js",
@@ -5381,7 +5452,7 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.31 (T9 a T14): los avisos de dependencias como issues de GitHub (scripts/nightly/dependencies/github-issues.js) con un gh de mentira (tests/lib/fake-gh.js) — crear con etiquetas, marca y asignado verificado; no repetir; tope y reintentos; cerrar sólo lo suyo y reabrir lo que cerró; borrado, movido y 401; el volcado con la clave <repo>#<n>; la elección de plataforma de work-items.js por team-repos.json; y el cruce del nocturno con números de issue repetidos entre repos. Sin red.",
+      "__nota": "story 8.31 (T9 a T14): los avisos de dependencias como issues de GitHub (integrations/github/scripts/dependency-notices.js) con un gh de mentira (tests/lib/fake-gh.js) — crear con etiquetas, marca y asignado verificado; no repetir; tope y reintentos; cerrar sólo lo suyo y reabrir lo que cerró; borrado, movido y 401; el volcado con la clave <repo>#<n>; la elección de plataforma de work-items.js por team-repos.json; y el cruce del nocturno con números de issue repetidos entre repos. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/github-issues.test.js",
       "requiere": [],

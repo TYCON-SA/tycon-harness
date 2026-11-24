@@ -79,6 +79,7 @@ const LEVELS_EN = Object.freeze({
   'manual-test': 'mark a criterion as tested by hand',
   'browser-test:no': 'say no to the browser test',
   'adversarial-skip': 'skip the adversarial pass',
+  'atdd-skip': 'skip "tests first" for a run',
   'review-skip': 'answer «skip» to the question of whether to run the adversarial pass on the code (only the owner: their window, click or typed «approved»)',
   'lost-run': 'give up on a run as lost and close it',
   'lost-run:particion': 'close a lost run that the split of its story into batches left without purpose',
@@ -125,6 +126,7 @@ const LEVELS = Object.freeze([
   ['manual-test', 2, AMBOS, 'marcar un criterio como probado a mano'],
   ['browser-test:no', 2, AMBOS, 'decir que no a la prueba con navegador'],
   ['adversarial-skip', 2, AMBOS, 'saltear el pase adversarial'],
+  ['atdd-skip', 2, AMBOS, 'saltear «pruebas primero» en una ejecución'],
   ['review-skip', 2, AMBOS, 'contestar «skip» a la pregunta de si correr el pase adversarial sobre el código (sólo el dueño: su ventana, su click o su «aprobado»)'],
   ['lost-run', 2, AMBOS, 'dar por perdida una ejecución y cerrarla'],
   ['escape:force-manual', 2, AMBOS, 'marcar a mano el estado de un control'],
@@ -203,7 +205,7 @@ const POR_VARIABLE = [
   ['TYCON_NEW_NAMES', '0', 'apagar el control de nombres nuevos en lo que se publica'],
   ['TYCON_TEST_GATE', '1', 'saltear el portón de pruebas del commit'],
   ['DOD_BYPASS', '1', 'saltear los controles del commit (queda anotado)'],
-  ['TYCON_NO_DEEP_REVIEW', '1', 'apagar el pase adversarial de una ejecución'],
+  ['TYCON_NO_DEEP_REVIEW', '1', 'pedir que se saltee el pase adversarial (esta firma no lo saltea: eso lo firma adversarial-skip)'],
   ['TYCON_STATUS_GATE', 'off', 'cambiar a mano el estado de una story'],
   ['TYCON_MUTATION_CHECK', 'off', 'saltear el chequeo de mutantes de las pruebas'],
   ['TYCON_STORY_REVIEW', '0', 'saltear la revisión de la historia antes del plan'],
@@ -221,7 +223,7 @@ const CON_NOMBRE = [
   ['no-mutation', 'cerrar «Correr las pruebas» sin el chequeo de mutantes, con motivo', 'marker.js complete-step run-tests --no-mutation --reason <motivo>'],
   ['ALLOW_DOD_EVIDENCE_WRITE', 'escribir a mano la evidencia de la prueba en vivo', 'file'],
   ['dod_runtime_exempt', 'eximir una story de la prueba en vivo', 'file'],
-  ['no-deep-review', 'saltear el pase adversarial de una ejecución', 'pipeline.js start --no-deep-review'],
+  ['no-deep-review', 'correr los guiones del pase adversarial con un --env-file, que puede cambiar su decisión', 'node --env-file=<archivo> pipeline.js start|deep-review-gate (o marker.js mark-adversarial-skipped)'],
   ['cambiar-el-estado', 'cambiar a mano el estado de una story', 'file'],
   ['merge-bypass', 'mergear salteando la cola y la CI de main, o aflojar las políticas de la rama', 'gh pr merge <n> --admin (o un merge, una regla o una política por la API)'],
   ['external-pr', 'encolar o mergear un pull request de alguien de afuera del equipo', 'el comando que encola o mergea el pull request (o la API)'],
@@ -235,8 +237,8 @@ const SI_SALE_MAL = Object.freeze({
   'escape:TYCON_NEW_NAMES': 'un nombre viejo o interno sale en lo que se publica',
   'escape:TYCON_TEST_GATE': 'el commit entra sin correr las pruebas, y una prueba rota llega al pedido',
   'escape:DOD_BYPASS': 'el commit entra sin ningún control de cierre, y un criterio sin probar puede llegar a main; queda anotado',
-  'escape:TYCON_NO_DEEP_REVIEW': 'la ejecución sigue sin el pase adversarial, y un error que él encontraría puede llegar a main',
-  'escape:no-deep-review': 'la ejecución arranca sin el pase adversarial, y un error que él encontraría puede llegar a main',
+  'escape:TYCON_NO_DEEP_REVIEW': 'nada: la variable sólo pide saltear el pase, y el pase corre igual; saltearlo lo firma adversarial-skip',
+  'escape:no-deep-review': 'el archivo trae una variable que cambia la decisión del pase, y un cambio que lo necesitaba puede quedar sin él',
   'escape:TYCON_STATUS_GATE': 'la historia cambia de estado sin los controles del orquestador, y puede quedar como hecha sin estarlo',
   'escape:cambiar-el-estado': 'el estado de la historia se escribe a mano, y puede quedar como hecha sin estarlo',
   'escape:TYCON_MUTATION_CHECK': 'las pruebas cuentan sin el chequeo de mutantes, y una prueba que no verifica nada pasa por buena',
@@ -266,6 +268,7 @@ const SI_SALE_MAL = Object.freeze({
   'lost-run': 'la ejecución se cierra y lo que le faltaba queda sin hacer',
   'lost-run:particion': 'se cierra una ejecución que la historia partida ya no necesitaba; lo hecho sigue en la copia de trabajo y se retoma con su tanda',
   'adversarial-skip': 'el código entra sin el pase adversarial, y un error que él encontraría puede llegar a main',
+  'atdd-skip': 'el código entra sin que sus pruebas se hayan escrito antes, y una prueba hecha a la medida del código puede no ver un error',
   'review-skip': 'el código entra sin el pase adversarial que la celda preguntaba, y un error que él encontraría puede llegar a main',
   'pending-approval': 'queda un pendiente de más en la lista; se cierra a mano',
   'adhoc-lane': 'la sesión escribe código sin historia; se cierra el arreglo, y nada entra a main sin revisión',
@@ -275,7 +278,7 @@ const SI_SALE_MAL = Object.freeze({
   'autonomy-resume': 'la sesión vuelve a iterar sola sobre un rojo que quizá necesitaba otra mirada',
   save: 'se guarda en el repo y se abre el pedido; se revierte con otro commit',
   'designation-confirm': 'esa sesión firma en tu nombre lo que el perfil delega, hasta que se designe otra',
-  'designation-set': 'una sesión que no querías firma en tu nombre lo que el perfil delega, hasta que la retires o nombres otra',
+  'designation-set': 'una sesión que no querías ordena esta máquina (y, con el perfil, firma en tu nombre lo que el perfil le delega), hasta que la retires o nombres otra',
   'designation-withdraw': 'las firmas que delegabas vuelven a vos hasta que nombres otra coordinadora',
 });
 
@@ -296,6 +299,7 @@ const APPROVES_EN = {
   'lost-run': 'give up a run as lost and close it',
   'lost-run:particion': 'close a lost run that the split of its story into batches left without purpose',
   'adversarial-skip': 'skip the adversarial pass with a signed record',
+  'atdd-skip': 'skip "tests first" for a run, with a signed record',
   'review-skip': 'answer «skip» to the code pass question',
   'pending-approval': 'open a new item in the pending list',
   'adhoc-lane': "open a session's quick fix, with no story",
@@ -309,7 +313,7 @@ const APPROVES_EN = {
   'escape:TYCON_NEW_NAMES': 'turn off the new names control on what is published',
   'escape:TYCON_TEST_GATE': "skip the commit's test gate",
   'escape:DOD_BYPASS': "skip the commit's controls (it is logged)",
-  'escape:TYCON_NO_DEEP_REVIEW': "turn off a run's adversarial pass",
+  'escape:TYCON_NO_DEEP_REVIEW': 'ask to skip the adversarial pass (this signature does not skip it: adversarial-skip does)',
   'escape:TYCON_STATUS_GATE': "change a story's status by hand",
   'escape:TYCON_MUTATION_CHECK': 'skip the mutation check of the tests',
   'escape:TYCON_STORY_REVIEW': "skip the story's review before planning",
@@ -324,7 +328,7 @@ const APPROVES_EN = {
   'escape:trust-ran': 'count the reviewers without the record that they ran',
   'escape:ALLOW_DOD_EVIDENCE_WRITE': 'write the live test evidence by hand',
   'escape:dod_runtime_exempt': 'exempt a story from the live test',
-  'escape:no-deep-review': "skip a run's adversarial pass",
+  'escape:no-deep-review': "run the adversarial pass scripts with an --env-file, which can change its decision",
   'escape:cambiar-el-estado': "change a story's status by hand",
   'escape:merge-bypass': "merge skipping main's queue and CI, or loosen the branch policies",
   'escape:external-pr': 'queue or merge a pull request from someone outside the team',
@@ -356,6 +360,7 @@ const SIGNATURES = Object.freeze([
   // antes de la firma que la historia se partió después de la apertura
   { id: LOST_RUN_PARTICION, approves: 'cerrar una ejecución perdida que la partición de su historia en tandas dejó sin objeto', command: 'marker.js clear-session <S> --lost --partition', otherSession: 'yes', terminal: 'marker.js clear-session <S> --lost --partition --terminal' },
   { id: 'adversarial-skip', approves: 'saltear el pase adversarial con constancia', command: 'marker.js sign-adversarial-skip --story <S> --reason <R>', otherSession: 'no', terminal: 'marker.js sign-adversarial-skip --story <S> --reason <R> --terminal' },
+  { id: 'atdd-skip', approves: 'saltear «pruebas primero» en una ejecución, con constancia', command: 'marker.js sign-atdd-skip --story <S> --reason <R>', otherSession: 'no', terminal: 'marker.js sign-atdd-skip --story <S> --reason <R> --terminal' },
   // la pregunta del pase del código la contesta la coordinadora en la pestaña donde el dueño contesta: su click o su
   // «aprobado» ahí, nunca la delegación. Con el dueño ausente y la celda en skip, `--by-profile` no pide firma
   { id: 'review-skip', approves: 'contestar «skip» a la pregunta del pase del código', command: 'marker.js review-answer --kind code --choice skip', otherSession: 'yes', terminal: 'marker.js review-answer --kind code --choice skip --terminal' },
@@ -386,7 +391,7 @@ const SIGNATURES = Object.freeze([
   { id: 'designation-confirm', approves: 'confirmar qué sesión es la coordinadora de esta máquina', command: 'delegated-signing.js confirm-designation', otherSession: 'no', terminal: 'delegated-signing.js confirm-designation --terminal' },
   // nombrar y retirar a la coordinadora: el click del dueño en la pestaña de esa sesión, nunca por delegación
   { id: 'designation-set', approves: 'nombrar a esta sesión coordinadora de la máquina', command: 'marker.js designate-relay', otherSession: 'no', terminal: 'marker.js designate-relay --terminal',
-    soloClick: true, descripciones: Object.freeze(['Esa sesión firma en tu nombre lo que el perfil delega, hasta que se nombre otra o la retires.', 'No cambia nada.']) },
+    soloClick: true, descripciones: Object.freeze(['Esa sesión ordena la máquina hasta que se nombre otra o la retires; con el perfil, también firma lo que el perfil le delega.', 'No cambia nada.']) },
   { id: 'designation-withdraw', approves: 'retirar a esta sesión de coordinadora de la máquina', command: 'marker.js withdraw-relay', otherSession: 'no', terminal: 'marker.js withdraw-relay --terminal',
     soloClick: true, descripciones: Object.freeze(['La sesión deja de firmar en tu nombre: las firmas vuelven a vos hasta que nombres otra.', 'No cambia nada: sigue siendo la coordinadora.']) },
   ...POR_VARIABLE.map(([nombre, valor, approves]) => ({
@@ -433,6 +438,7 @@ const SENSITIVE = Object.freeze([
   // ponerse la marca solo
   'scripts/lib/owner-approvals.js', 'scripts/lib/owner-away.js',
   'skills/tycon-pipeline/scripts/lib/approvals.js', 'skills/tycon-pipeline/scripts/lib/adversarial-skip.js',
+  'skills/tycon-pipeline/scripts/lib/atdd-skip.js',
   'skills/tycon-pipeline/scripts/lib/save-ok.js',
   // los que consumen o exigen una firma por un camino armado (`require(path.join(...))`, que la clausura no ve)
   'skills/tycon-pipeline/scripts/dispatch.js', 'skills/tycon-pipeline/scripts/on-*.js',
@@ -446,6 +452,8 @@ const SENSITIVE = Object.freeze([
   // lo que sale de esos dos y del freno de guiones al partirlos sigue siendo sensible: lo que carga un sensible, lo es
   'skills/tycon-pipeline/scripts/lib/marker-*.js', 'skills/tycon-pipeline/scripts/lib/pipeline-*.js',
   'skills/tycon-pipeline/scripts/lib/bash-gate-*.js',
+  // el nombre de la sesión lo carga el marcador al escribir: corre dentro de él
+  'scripts/lib/session-name.js',
   'skills/tycon-pipeline/scripts/lib/adversarial-verdict.js', 'skills/tycon-pipeline/scripts/lib/critical-waivers.js',
   'skills/tycon-pipeline/scripts/lib/runtime-waiver.js', 'skills/tycon-pipeline/scripts/test-gate.sh',
   'skills/tycon-pipeline/scripts/lib/test-gate-*.js', 'skills/tycon-pipeline/scripts/lib/test-scope.js',

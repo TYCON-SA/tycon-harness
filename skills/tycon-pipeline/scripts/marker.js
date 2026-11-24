@@ -204,6 +204,7 @@ const cmdReviewAnswer = (...a) => parte(() => require('./lib/marker-signatures.j
 const cmdReviewAsk = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdReviewAsk(...a);
 const cmdRuntimeWaiver = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdRuntimeWaiver(...a);
 const cmdSaveCheck = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdSaveCheck(...a);
+const cmdSignAtddSkip = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdSignAtddSkip(...a);
 const cmdSignAdversarialSkip = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdSignAdversarialSkip(...a);
 const cmdSignFile = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdSignFile(...a);
 const cmdWaiveCritical = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdWaiveCritical(...a);
@@ -348,6 +349,9 @@ switch (cmd) {
     break;
   case 'approve-pending':
     cmdApprovePending(process.argv.slice(3));
+    break;
+  case 'sign-atdd-skip':
+    cmdSignAtddSkip(process.argv.slice(3));
     break;
   case 'approve-save':
     cmdApproveSave(process.argv.slice(3));
