@@ -518,10 +518,18 @@ function cmdCompleteStep(nRaw, flags) {
       r.reason = `${r.reason} (repos hermanos: ${hermanosError}; esos no se miraron)`;
       console.error(`⚠️  freno ATDD: repos hermanos — ${hermanosError}; esos no se miraron.`);
     }
-    // El flag `atddBypass` (el escape que dicta el portón pre-edit) vale también acá: un solo
-    // bypass declarado cubre la corrida entera — obligar a declararlo dos veces con dos nombres
-    // distintos dejaría al dev contra una segunda pared, y contradiría el texto del propio mensaje de bloqueo.
-    const bypass = opts.includes('--no-atdd') || marker.atddBypass === true;
+    // `--no-atdd` y la marca `atddBypass` (la del portón previo) son el mismo pedido, y saltean sólo con la firma del
+    // dueño para esta ejecución (lib/atdd-skip.js): una firma cubre la ejecución entera. Se pide sólo si el freno frena.
+    const pide = opts.includes('--no-atdd') || marker.atddBypass === true;
+    let bypass = false;
+    let pedido = null;
+    if (r.verdict === 'blocked' && pide) {
+      const d = require('./atdd-skip.js').decidir({ marker, pide, camino: opts.includes('--no-atdd') ? 'complete-step implement --no-atdd' : 'la marca atddBypass' });
+      bypass = d.saltea;
+      if (!bypass) pedido = d.texto;
+    } else if (opts.includes('--no-atdd')) {
+      console.error('ℹ️  --no-atdd no hizo falta: el freno de pruebas primero no frena esta ejecución.');
+    }
     appendLog('gates.log', {
       name: 'atdd',
       status: r.verdict,
@@ -533,13 +541,14 @@ function cmdCompleteStep(nRaw, flags) {
     });
     if (r.verdict === 'blocked' && !bypass) {
       console.error(atddBlockMessage(r));
+      if (pedido) console.error(pedido);
       process.exit(1);
     }
     if (r.verdict === 'blocked' && bypass) {
       // El bypass NO es silencioso: queda en bypass.log con el detalle, igual que DOD_BYPASS.
       appendLog('bypass.log', { kind: 'ATDD_BYPASS', story: marker.storyId, firstTest: r.firstTest, firstImpl: r.firstImpl,
         reason: marker.atddBypassReason || motivoDe(opts) || null });
-      console.error('⚠️  ATDD saltado con --no-atdd (queda en bypass.log).');
+      console.error('⚠️  ATDD saltado con la firma de una persona (queda en bypass.log).');
       console.error(`   código primero: ${r.firstImpl} · test después: ${r.firstTest}`);
     }
     if (r.verdict === 'warn-no-tests' || r.verdict === 'warn-unknown') {

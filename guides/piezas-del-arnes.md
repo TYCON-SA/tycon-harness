@@ -228,7 +228,7 @@ En [pieces/machine.md](pieces/machine.md):
 - [scripts/hooks/failed-query-notice.js](pieces/machine.md#scriptshooksfailed-query-noticejs)
 - [scripts/hooks/context-size-notice.js](pieces/machine.md#scriptshookscontext-size-noticejs)
 - [scripts/hooks/wait-notice.js](pieces/machine.md#scriptshookswait-noticejs)
-- [scripts/hooks/prod-access-guard.js](pieces/machine.md#scriptshooksprod-access-guardjs) _(scripts/hooks/prod-access-guard.js + scripts/production/ + guides/produccion-con-permiso.md)_
+- [scripts/hooks/prod-access-guard.js](pieces/machine.md#scriptshooksprod-access-guardjs) _(scripts/hooks/prod-access-guard.js + scripts/production/ + guides/production-with-permission.md)_
 - [claude-md-blocks/budget.json](pieces/machine.md#claude-md-blocksbudgetjson) _(claude-md-blocks/budget.json + scripts/ci/check-claude-md-blocks.js)_
 - [scripts/hooks/harness-bootstrap-heal.sh](pieces/machine.md#scriptshooksharness-bootstrap-healsh)
 - [tycon-pipeline/scripts/lib/guides-heal.js](pieces/machine.md#tycon-pipelinescriptslibguides-healjs) _(tycon-pipeline/scripts/lib/guides-heal.js (en agent-skills) + scripts/hooks/branch-guard-notice.js)_
