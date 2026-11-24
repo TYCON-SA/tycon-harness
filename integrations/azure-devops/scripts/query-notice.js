@@ -21,8 +21,9 @@ const path = require('path');
 const programas = ['az'];
 const LEE = new Set(['list', 'show', 'ls', 'get', 'query', 'search', 'check', 'status', 'diff', 'version', 'validate']);
 const ESCRIBE = new Set(['login', 'logout', 'configure', 'create', 'delete', 'update', 'set', 'add', 'remove', 'import', 'upload', 'push', 'publish', 'queue', 'cancel', 'approve', 'vote', 'complete', 'merge', 'install', 'run', 'rerun', 'reject', 'abandon', 'reactivate', 'download']);
-// las opciones globales que pueden ir antes del grupo y llevan valor (`az -o json repos pr list`)
-const conValor = new Set(['-o', '--output', '--query', '--subscription']);
+// las opciones con valor que pueden ir antes del grupo (`az -o json repos pr list`) o entre el grupo y el verbo
+// (`az repos pr --org u list`, `az repos pr -p X show`)
+const conValor = new Set(['-o', '--output', '--query', '--subscription', '--org', '--organization', '--project', '-p']);
 // un método que no es GET, con espacio, con «=» o pegado a la opción corta: `az devops invoke --http-method POST`,
 // `az rest --method=put`, `az rest -m delete`, `az rest -mput`
 const NO_GET = (opciones) => new RegExp(`(?:^|\\s)(?:${opciones})\\s*['"]?(?!GET\\b)[A-Za-z]`, 'i');

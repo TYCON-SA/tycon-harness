@@ -75,7 +75,9 @@ const programaDe = (primero) => path.basename(String(primero).replace(/\\/g, '/'
 /**
  * Las palabras del comando que no son opciones, hasta la primera opción que viene DESPUÉS de ellas: el grupo y el verbo.
  * Las opciones globales que van antes del grupo (`gh -R o/r pr list`, `az --only-show-errors repos …`) se saltean, y con
- * ellas su valor si el conector dice que lleva uno (`conValor`) y no viene pegado con «=».
+ * ellas su valor si el conector dice que lleva uno (`conValor`) y no viene pegado con «=». Entre el grupo y el verbo
+ * (`<programa> <grupo> --opción valor <verbo>`) se saltea sólo una opción de `conValor`, con su valor: cualquier otra
+ * corta, para que el valor de una opción de texto (un título que dice «list») no se lea como verbo.
  */
 function palabras(argv, conValor) {
   let i = 1;
@@ -84,7 +86,12 @@ function palabras(argv, conValor) {
     if (!o.includes('=') && conValor && conValor.has(o)) i++;
   }
   const pos = [];
-  for (; i < argv.length && !argv[i].startsWith('-'); i++) pos.push(argv[i]);
+  while (i < argv.length) {
+    const o = argv[i];
+    if (!o.startsWith('-')) { pos.push(o); i++; continue; }
+    if (!conValor || !conValor.has(o.split('=')[0])) break;
+    i += o.includes('=') ? 1 : 2;
+  }
   return pos;
 }
 

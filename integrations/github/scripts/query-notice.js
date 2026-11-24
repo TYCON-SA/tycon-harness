@@ -6,7 +6,7 @@
  */
 const programas = ['gh'];
 const LEE = new Set(['list', 'view', 'status', 'checks', 'diff', 'watch', 'search']);
-// las opciones que pueden ir antes del grupo y llevan valor (`gh -R o/r pr list`)
+// las opciones con valor que pueden ir antes del grupo (`gh -R o/r pr list`) o entre el grupo y el verbo (`gh pr -R o/r list`)
 const conValor = new Set(['-R', '--repo']);
 // un método que no es GET, con espacio, con «=» o pegado (`-X POST`, `-X=POST`, `-XPOST`, `--method=POST`), o campos que
 // se mandan, también con el valor pegado a la opción corta (`-f a=b`, `-fa=b`, `-Fa=b`)

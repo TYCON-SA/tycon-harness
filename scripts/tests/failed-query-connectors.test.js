@@ -88,3 +88,17 @@ test('FailedQuery_FormasQueNoSeVeian: opción antes del subcomando, search, rest
   for (const c of ['az repos pr list --project Inexistente', 'az.cmd repos pr list --project Inexistente', 'C:\\x\\az.exe repos pr list --project Inexistente',
     'az --only-show-errors repos pr list --project Inexistente']) assert.deepStrictEqual(A.proyectos(c, AY), ['Inexistente'], c);
 });
+
+// 🔴 Falla con: las palabras se cortan en la primera opción después del grupo, y `gh pr -R o/r list` queda en «pr»
+test('FailedQuery_OpcionEntreElGrupoYElVerbo: una opción con valor del conector entre el grupo y el verbo no corta la consulta', () => {
+  const H = require(HOOK);
+  const clase = (s) => H.clasificar(s).clase;
+  for (const c of ['gh pr -R o/r list', 'gh pr --repo o/r view 3', 'gh pr --repo=o/r list', 'gh issue -R o/r list --state all',
+    'az repos pr --org https://dev.azure.com/acme list', 'az repos pr --project X list', 'az repos pr -p X show --id 3',
+    'az repos pr --organization=https://dev.azure.com/acme list', 'az pipelines runs -o json list']) assert.strictEqual(clase(c), 'consulta', c);
+  // una opción que no es del conector sigue cortando: su valor no se lee como verbo
+  for (const c of ['gh pr create --title list', 'gh pr create -R o/r --title list', 'gh pr --web list',
+    'az repos pr create --title list', 'az repos pr create --org u --title show', 'az repos pr --description list create']) assert.strictEqual(clase(c), 'otro', c);
+  const A = require(path.join(ROOT, 'integrations', 'azure-devops', 'scripts', 'query-notice.js'));
+  assert.deepStrictEqual(A.proyectos('az repos pr --org https://dev.azure.com/acme list --project Inexistente', H.AYUDA), ['Inexistente']);
+});
