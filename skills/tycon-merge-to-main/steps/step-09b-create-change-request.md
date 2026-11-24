@@ -4,7 +4,8 @@
 abre un pedido `source → target` que **entra solo** cuando su control da verde. La aprobación humana ya ocurrió en los
 HITL de este skill: **no hay clics extra en la plataforma**.
 
-El pedido lo abre la capa de plataforma del arnés, igual en Azure DevOps y en GitHub:
+El pedido lo abre la capa de plataforma del arnés, igual en Azure DevOps, en GitHub y en otra plataforma que la
+organización declara en `team-repos.json` y atiende su conector (`host: platform` en el plan):
 
 ```
 cd '<carpeta del repo>' && node "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/lib/platform/platform.js" change-request open --repo '<repo>' --auto-complete --args '@<argsFile>'
@@ -18,6 +19,8 @@ La capa elige el conector por la plataforma del repo y devuelve un JSON: `{ ok: 
   el pedido). El modo es siempre `auto`: el servidor lo completa cuando sus políticas dan verde.
 - **GitHub**: abre o actualiza el pedido y, si el repo permite el auto-merge, lo prende (modo `auto`). Si no lo
   permite, espera el control declarado y mergea con un commit de merge atado a la punta (modo `espera-y-mergea`).
+- **Otra plataforma por la capa** (`host: platform`): lo que hace al abrir lo dice la guía de su conector
+  (`guides/integrations/`). El paso no cambia: el conector devuelve el mismo JSON, con su `modo`.
 
 ## Por qué existe
 
@@ -52,12 +55,13 @@ Del JSON:
 - `mode` y `configFrom` (de dónde se leyó: `repo` o `maintainers`). Con `mode: "push"` **este step no corre**: sigue el
   Step 9. Si sale 2, no pudo leer la configuración (o es el clon del público y no la encontró): decí el motivo y pará,
   no es `push`.
-- `step`: `9b` (Azure DevOps) o `9c` (GitHub) siguen los dos por este paso. Con `9`, el plan dice por qué en `notes`
+- `step`: `9b` (Azure DevOps, u otra plataforma por la capa) o `9c` (GitHub) siguen por este paso. Con `9`, el plan dice por qué en `notes`
   (un `origin` de otro servidor, una carpeta local, sin `origin`): seguí el Step 9.
 - `suites`: 🔴 si bajó a `"machine"` (el paso 0 había dicho `server`), **volver al 7.2** y correr las suites completas
   en esta máquina, sobre el merge de prueba del 7.0, antes de abrir el pedido; con verde, seguí acá con la línea `Tests:`
   nueva en el mensaje.
-- El repo: en Azure DevOps `org`, `project` y `name`; en GitHub `ghRepo` (`dueño/repo`). Salen del remoto `origin`,
+- El repo: en Azure DevOps `org`, `project` y `name`; en GitHub `ghRepo` (`dueño/repo`); con `host: platform`, `repo`:
+  la identidad que declara `team-repos.json` para ese remoto, tal como la dedujo su conector. Salen del remoto `origin`,
   nunca del nombre de la carpeta: el nombre de la carpeta miente (un clon descartable se llama `scratch`).
 - En GitHub, además: `check` (el control a esperar: con `suites: "server"` y un pipeline de pruebas completas declarado
   en `team-repos.json → merge_suites`, el declarado; si no, `merge.check` del repo), `canMerge` y `version` (qué número
@@ -74,7 +78,7 @@ abortes: ofrecé este paso al dev («este repo ya exige pedido; ¿lo abro con el
 
 ### 9b.2 — Poner la rama al día y subir la versión (sólo GitHub)
 
-En Azure DevOps este punto no aplica: seguí en el 9b.3.
+En Azure DevOps y con `host: platform` este punto no aplica: seguí en el 9b.3.
 
 En GitHub, una rama que no nació de la punta de la destino choca (en un repo que numera por pedido, todo pedido cambia
 el mismo renglón de `version.json`), y una regla de rama puede exigir que el pedido esté al día:
@@ -143,7 +147,10 @@ En Azure DevOps la rama la borra el servidor al completar. El conector de GitHub
 El repo va en una línea, literal, con lo que dio el plan:
 
 - Azure DevOps: `{"platform":"azure","org":"<org>","project":"<project>","repo":"<name>"}`;
-- GitHub: `{"platform":"github","org":"<dueño>","repo":"<repo>"}`.
+- GitHub: `{"platform":"github","org":"<dueño>","repo":"<repo>"}`;
+- Una plataforma por la capa (`host: platform`): el campo `repo` del plan, tal cual, en JSON de una línea. No se arma a
+  mano ni se le saca nada: trae lo que el nombre no dice (su servidor, sus grupos), y sin eso el pedido puede ir a
+  otro servidor.
 
 ```bash
 cd '<carpeta del repo>' && node "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/lib/platform/platform.js" change-request open --repo '<repo en JSON>' --auto-complete --args '@<argsFile>'
@@ -186,7 +193,7 @@ Con `ok: true`, el valor trae `id`, `url`, `modo`, `reused` (el pedido ya estaba
 | `modo: espera-y-mergea`, `merged: true` | GitHub: el control dio verde y el conector mergeó atado a la punta | verificar la versión y borrar la rama (abajo) |
 | `rechazado` | un control terminó en rojo, un conflicto, un merge que la plataforma rechazó, el freno de publicación, o un pedido que no se pudo abrir (ya hay uno de esa rama, no hay commits de diferencia) | no entra. `detail` dice la causa y, si el pedido quedó abierto, su número y su dirección: reportarlo con el enlace |
 | `no_medido` | el control no terminó en el tope | el pedido queda abierto. Volver a correr el 9b.5 lo reusa y vuelve a esperar: no se pierde nada |
-| `sin_credencial` | la plataforma no aceptó la credencial (401 o 403) | decir el motivo y el comando para entrar (`az login` o `gh auth login`); la rama ya está empujada |
+| `sin_credencial` | la plataforma no aceptó la credencial (401 o 403) | decir el motivo y el comando para entrar (`az login`, `gh auth login`, o el que trae `detail` con `host: platform`); la rama ya está empujada |
 | `red` | la red se cayó, también después de abrir | volver a correr el 9b.5: reusa el pedido si quedó abierto |
 | `sin_plataforma` | la capa no sabe la plataforma del repo, o falta su herramienta | decir el motivo; la rama ya está empujada y el pedido se puede abrir a mano |
 
@@ -248,15 +255,15 @@ mergeadas: decirlo en una línea.
 - **Un clon del repo público del arnés** (no trae `.tycon/advisors.yaml`) → el plan lee el modo y el control del clon de
   mantenimiento (`configFrom: "maintainers"`). Si no los encuentra **sale 2** con lo que falta (por ejemplo, declarar
   `paths.maintainers`): parar con ese motivo. Nunca seguir por el Step 9.
-- **Un `origin` que no es de Azure DevOps ni de GitHub** → el plan dice `step: "9"` y por qué: en ese servidor el skill
-  no sabe abrir pedidos.
+- **Un `origin` que no es de Azure DevOps ni de GitHub, ni de un repo que `team-repos.json` declara en otra
+  plataforma** → el plan dice `step: "9"` y por qué: en ese servidor el skill no sabe abrir pedidos.
 
 ## Output del step
 
 ```json
 {
   "mode": "pr",
-  "platform": "azure | github",
+  "platform": "azure | github | <la del campo repo del plan>",
   "pr_id": 123,
   "pr_url": "https://...",
   "modo": "auto | espera-y-mergea",
