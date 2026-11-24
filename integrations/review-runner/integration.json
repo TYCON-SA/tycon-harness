@@ -1,5 +1,5 @@
 {
-  "__doc": "Con qué corren la revisión del plan y la del código (workflow-lite.js). La organización elige la lista en team-repos.json → review_runner.order (de fábrica claude); si uno falla o llega a su tope, el agente se relanza con el siguiente. Cada corredor dice cómo se lanza, dónde deja la respuesta, de qué proveedor salen sus modelos, cómo se reconoce su tope y si corre confinado: en el modo código sólo corre uno confinado. Guía: guides/automatic-reviews.md.",
+  "__doc": "Con qué corren la revisión del plan y la del código (workflow-lite.js). La organización elige la lista en team-repos.json → review_runner.order (de fábrica claude); si uno falla o llega a su tope, el agente se relanza con el siguiente. Cada corredor dice cómo se lanza, dónde deja la respuesta, de qué proveedor salen sus modelos, cómo se reconoce su tope y si corre confinado: en el modo código sólo corre uno confinado. `bin_paths` dice, por sistema, dónde buscar su programa cuando no está en el PATH (una sesión de una extensión del editor no siempre lo tiene): con `~` y `*`, gana el más nuevo. Guía: guides/automatic-reviews.md.",
   "name": "review-runner",
   "label": "Revisores automáticos",
   "kind": "reviewRunner",
@@ -10,6 +10,11 @@
     "claude": {
       "label": "Claude",
       "bin": "claude",
+      "bin_paths": {
+        "darwin": ["~/.vscode/extensions/anthropic.claude-code-*/resources/native-binary/claude", "~/.cursor/extensions/anthropic.claude-code-*/resources/native-binary/claude", "~/.local/bin/claude", "~/.claude/local/claude"],
+        "linux": ["~/.vscode/extensions/anthropic.claude-code-*/resources/native-binary/claude", "~/.cursor/extensions/anthropic.claude-code-*/resources/native-binary/claude", "~/.local/bin/claude", "~/.claude/local/claude"],
+        "win32": ["~/.vscode/extensions/anthropic.claude-code-*/resources/native-binary/claude.exe", "~/.cursor/extensions/anthropic.claude-code-*/resources/native-binary/claude.exe", "~/.local/bin/claude.exe"]
+      },
       "args": ["-p", "--output-format", "json", "--no-session-persistence", "--strict-mcp-config"],
       "model_flag": "--model",
       "schema_flag": "--json-schema",
