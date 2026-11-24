@@ -1649,6 +1649,39 @@ test('T33 Team_RenamesMapThirdExactPath_ShapeValidated_OldVariableOptionAndState
   assert.equal(TEAM.checkAgainstVersion(l2.dir, [{ path: 'perfil-equipo.json' }, { path: 'scripts/metrics/corridas-buzon.json' }], bare, { env: {} }).ok, true, 'la capa de la A1 sigue pasando');
 });
 
+// ── T33c: un guion partido en lib/<nombre>-*.js ───────────────────────────────────────────────────────────────
+// Un guion grande se parte en un despachador y sus partes de lib/ (marker.js, pipeline.js): el nombre de una opción
+// puede quedar sólo en una parte. Si el validador lo busca sólo en el despachador, un mapa sano rechaza la capa y la
+// actualización se cae en cada máquina.
+// 🔴 Falla con: un validador que mira sólo el archivo `where` (rechaza el mapa sano), o que mira cualquier archivo de
+//    lib/ (deja pasar un nombre que sólo tiene la parte de otro guion).
+test('T33c Team_RenamesMap_SplitScript_NameInItsPartsCounts', () => {
+  const lab = casa('t33c');
+  const v = mapVersion(lab);
+  const relmFile = path.join(v, '.tycon-release.json');
+  const relm = JSON.parse(fs.readFileSync(relmFile, 'utf8'));
+  const put = (p, text) => { const f = path.join(v, ...p.split('/')); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, text); relm.files.push({ path: p, blob: TEAM.blobOf(Buffer.from(text)) }); };
+  put('scripts/ci/split.js', "'use strict';\n// el despachador: carga sus partes\nrequire('./lib/split-args.js');\n");
+  put('scripts/ci/lib/split-args.js', "'use strict';\n// las opciones del guion partido\nconst OPTIONS = ['marks'];\nmodule.exports = OPTIONS;\n");
+  put('scripts/ci/lib/other-args.js', "'use strict';\nconst OPTIONS = ['elsewhere'];\nmodule.exports = OPTIONS;\n");
+  fs.writeFileSync(relmFile, JSON.stringify(relm));
+  const judge = (extra) => {
+    fs.rmSync(path.join(lab, 'layer'), { recursive: true, force: true });
+    const m = saneMap(); m.entries.push(extra);
+    const l = mapLayer(lab, m);
+    return TEAM.checkAgainstVersion(l.dir, l.files, v, { env: {} });
+  };
+  // el nombre sólo en una parte del guion: está
+  const ok = judge({ kind: 'option', old: 'marcas', new: 'marks', where: 'scripts/ci/split.js', batch: 'X' });
+  assert.equal(ok.ok, true, JSON.stringify(ok.problems));
+  // el nombre sólo en la parte de OTRO guion: no está
+  const ajeno = judge({ kind: 'option', old: 'otro', new: 'elsewhere', where: 'scripts/ci/split.js', batch: 'X' });
+  assert.ok(ajeno.problems.some((x) => /entries\[8\].*elsewhere.*scripts\/ci\/split\.js/.test(x.reason)), JSON.stringify(ajeno.problems));
+  // en ningún lado: no está
+  const nada = judge({ kind: 'option', old: 'nunca', new: 'never-there', where: 'scripts/ci/split.js', batch: 'X' });
+  assert.ok(nada.problems.some((x) => /entries\[8\].*never-there/.test(x.reason)), JSON.stringify(nada.problems));
+});
+
 // el árbol real: sólo en el clon del equipo (el reparto no viaja en la copia)
 const IN_REPO_33 = fs.existsSync(path.join(ROOT, 'scripts', 'publishing', 'replacements.json')) && fs.existsSync(path.join(ROOT, MAP_PATH));
 test('T33 Team_RenamesMapThirdExactPath_ShapeValidated_OldVariableOptionAndStateFileResolvedOnLayerMachine_UnderSizeCap · el mapa real contra lo que publica HEAD', { skip: !IN_REPO_33 && 'el mapa y el reparto no viajan en la copia' }, () => {
