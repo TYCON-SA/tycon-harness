@@ -93,7 +93,7 @@ const nombraExencion = (texto) => EXENCIONES.some((ex) => new RegExp(`${ex.campo
 /** El texto que dice qué falta, para los dos portones: la exención, la historia y cómo se firma. */
 function mensajeDeFalta(campos, story) {
   return `agrega ${campos.map((c) => `\`${c}\``).join(' y ')} y \`${RUTA}\` no trae su constancia para la historia ${story || '(sin `story:`)'}. `
-    + 'Eximir una historia lo decide el dueño: con su firma de la exención sobre la historia, el arnés anota la constancia '
+    + 'Eximir una historia lo decide la persona: con su firma de la exención sobre la historia, el arnés anota la constancia '
     + 'al escribirla, y se commitea con ella.';
 }
 

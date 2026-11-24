@@ -365,6 +365,8 @@ else
   # on-pre-commit: story a done con corrida de revisores posterior al corte y SIN roster → frena por roster
   R2="$TMP/r72b"; repo72 "$R2"
   node -e 'const fs=require("fs");const p=process.argv[1];fs.writeFileSync(p,fs.readFileSync(p,"utf8").replace("status: in-progress","status: done\ndod_runtime_exempt: true\ndod_runtime_exempt_reason: \"prueba\""))' "$R2/specs/historia-confidencial.md"
+  # la exención viaja con la constancia firmada: sin ella el freno corta antes, por la exención, y no mide el roster
+  mkdir -p "$R2/.tycon" && printf '%s\n' '{"story":"9.1","campo":"dod_runtime_exempt","archivo":"specs/historia-confidencial.md","via":"ventana","sesion":"s72","ts":"2026-09-15T12:00:00Z"}' > "$R2/.tycon/exemptions.jsonl"
   git -C "$R2" add -A
   mkdir -p "$R2/.advisors/pipeline-runs/9.1-20260915-1200" && echo '[]' > "$R2/.advisors/pipeline-runs/9.1-20260915-1200/findings.json"
   ev_pc="$(node -e 'process.stdout.write(JSON.stringify({tool_name:"Bash",session_id:"s72",cwd:process.argv[1],tool_input:{command:"git commit -m \"cierre de historia-confidencial, avisar a juan.perez@cliente.com\""}}))' "$R2")"

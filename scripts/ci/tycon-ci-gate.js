@@ -978,7 +978,7 @@ function revisar({ repo, base, staged, hoy = hoyUtc() }) {
       const faltan = nuevas.filter((c) => !tieneConstanciaDeExencion(constancias, idDeLaConstancia(idBruto), c, rel));
       if (faltan.length) {
         hallazgos.push({ archivo: rel, story: idBruto, regla: 'exencion-sin-constancia',
-          mensaje: `agrega ${faltan.map((c) => `\`${c}\``).join(' y ')} y \`${CONSTANCIAS_DE_EXENCIONES}\` no trae su constancia para la historia ${idBruto}. Eximir una historia lo decide el dueño: con su firma de la exención sobre la historia, el arnés anota la constancia al escribirla, y se commitea con ella.` });
+          mensaje: `agrega ${faltan.map((c) => `\`${c}\``).join(' y ')} y \`${CONSTANCIAS_DE_EXENCIONES}\` no trae su constancia para la historia ${idBruto}. Eximir una historia lo decide la persona: con su firma de la exención sobre la historia, el arnés anota la constancia al escribirla, y se commitea con ella.` });
       }
     }
 
