@@ -225,6 +225,92 @@ test('F174 Aislada_HereDocDeBash_Anda: en el encierro, desde una carpeta no admi
   assert.match(salida(s2), /sh-thd/, `dice por qué el here document queda negado: ${salida(s2)}`);
 });
 
+// fila 214: un guion que corre un freno de bash desde otra carpeta (la prueba en vivo lo corre en el árbol público) caía
+// en «cannot create temp file for here document»: el bash 3.2 de macOS no mira TMPDIR, prueba /var/tmp y /tmp, y si el
+// encierro se los niega usa la carpeta actual, que sólo se admitía para la carpeta de lanzamiento
+const VAR_TMP = (() => { try { return fs.realpathSync('/var/tmp'); } catch (_) { return null; } })();
+// los temporales vacíos que dejan procesos muertos no cuentan; un enlace duro con ese nombre, sí
+// nombres de una sola corrida en la carpeta compartida, sin leer el reloj
+const alAzar = () => require('crypto').randomInt(1e9);
+const varTmpLibre = () => {
+  try {
+    return !fs.readdirSync(VAR_TMP).filter((n) => /^sh-thd-[0-9]+$/.test(n)).some((n) => fs.lstatSync(path.join(VAR_TMP, n)).nlink > 1);
+  } catch (_) { return false; }
+};
+test('F214 Aislada_HereStringDesdeOtraCarpeta_Anda: el temporal va a /var/tmp con su nombre; otro nombre ahí sigue negado', { skip: !ENCIERRO ? 'sin el encierro del sistema' : (!VAR_TMP || !varTmpLibre() ? '/var/tmp ya tiene un sh-thd-<n>: el encierro no la admite' : false) }, (t) => {
+  const c = cuenta(t);
+  const afuera = path.join(c.b, 'afuera');
+  fs.mkdirSync(afuera);
+  const otro = path.join(VAR_TMP, `otro-${process.pid}-${alAzar()}.txt`);
+  // un nombre que el perfil admite, para el enlace duro: no lo crea bash, así que se borra al terminar
+  const conNombre = path.join(VAR_TMP, `sh-thd-${alAzar()}`);
+  t.after(() => { fs.rmSync(otro, { force: true }); fs.rmSync(conNombre, { force: true }); });
+  const victima = path.join(afuera, 'victima.txt');
+  fs.writeFileSync(victima, 'intacto\n');
+  const r = repo(path.join(c.b, 'repo'), {
+    '.advisors/dod-runtime/g.js': [
+      "const { spawnSync } = require('child_process');",
+      "const [afuera, otro, victima, conNombre, varTmp] = process.argv.slice(2);",
+      // el freno de la consola corre así: bash del sistema, here-strings, desde una carpeta que no es la de lanzamiento
+      "const h = spawnSync('/bin/bash', ['-c', 'read x <<< \"desde-afuera\"; echo \"$x\"; cat <<FIN\\nheredoc-afuera\\nFIN'], { cwd: afuera, encoding: 'utf8' });",
+      "console.log('HERE ' + (h.stdout || '').trim().split('\\n').join(' ') + ' ' + (h.stderr || '').trim());",
+      "const o = spawnSync('/bin/bash', ['-c', 'echo x > \"$1\"', '_', otro], { encoding: 'utf8' });",
+      "console.log('OTRO ' + o.status);",
+      // el nombre admitido no sirve para llegar a un archivo negado: el enlace duro se niega al crearlo
+      "const l = spawnSync('/bin/ln', [victima, conNombre], { encoding: 'utf8' });",
+      "console.log('ENLACE ' + l.status);",
+      "const m = spawnSync('/bin/chmod', ['777', varTmp], { encoding: 'utf8' });",
+      "console.log('CHMOD ' + m.status);",
+    ].join('\n'),
+  });
+  const g = path.join(r, '.advisors', 'dod-runtime', 'g.js');
+  const s = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.33', ['--', process.execPath, g, afuera, otro, victima, conNombre, VAR_TMP], { cwd: r, env: ambiente(c) });
+  assert.match(salida(s), /HERE desde-afuera heredoc-afuera/, salida(s));
+  assert.doesNotMatch(salida(s), /cannot create temp file/, salida(s));
+  assert.deepStrictEqual(fs.readdirSync(afuera).filter((f) => f.startsWith('sh-thd-')), [], 'nada en la carpeta de afuera');
+  assert.match(salida(s), /OTRO [1-9]/, salida(s));
+  assert.ok(!fs.existsSync(otro), 'otro nombre en /var/tmp sigue negado');
+  assert.match(salida(s), /ENLACE [1-9]/, salida(s));
+  assert.ok(!fs.existsSync(conNombre), 'no quedó el enlace');
+  assert.strictEqual(fs.readFileSync(victima, 'utf8'), 'intacto\n');
+  assert.match(salida(s), /CHMOD [1-9]/, salida(s));
+});
+
+test('F214 T2 Aislada_VarTmpConUnEnlaceDuroPlantado_NoSeAdmite: con un sh-thd-<n> que es un enlace duro, /var/tmp no se admite y se avisa; uno vacío suelto, sí', { skip: !ENCIERRO ? 'sin el encierro del sistema' : (!VAR_TMP || !varTmpLibre() ? '/var/tmp ya tiene un sh-thd-<n> con un enlace duro' : false) }, (t) => {
+  const c = cuenta(t);
+  const afuera = path.join(c.b, 'afuera');
+  fs.mkdirSync(afuera);
+  const r = repo(path.join(c.b, 'repo'), {
+    '.advisors/dod-runtime/g.js': "const h = require('child_process').spawnSync('/bin/bash', ['-c', 'read x <<< \"hola\"; echo \"$x\"'], { cwd: process.argv[2], encoding: 'utf8' }); console.log('HERE ' + (h.stdout || '').trim() + ' ' + (h.stderr || '').trim());\n",
+  });
+  const correr = () => humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.33', ['--', process.execPath, path.join(r, '.advisors', 'dod-runtime', 'g.js'), afuera], { cwd: r, env: ambiente(c) });
+  // un temporal vacío que dejó un proceso muerto no cambia nada
+  const suelto = path.join(VAR_TMP, `sh-thd-${alAzar()}`);
+  fs.writeFileSync(suelto, '');
+  t.after(() => fs.rmSync(suelto, { force: true }));
+  assert.match(salida(correr()), /HERE hola/, 'con un temporal suelto, anda');
+  // plantado desde afuera antes de la corrida: un enlace duro con ese nombre escribiría el archivo al que apunta
+  const victima = path.join(c.b, 'victima.txt');
+  fs.writeFileSync(victima, 'intacto\n');
+  const plantado = path.join(VAR_TMP, `sh-thd-${alAzar()}`);
+  fs.linkSync(victima, plantado);
+  t.after(() => fs.rmSync(plantado, { force: true }));
+  const s = correr();
+  assert.match(salida(s), /cannot create temp file/, salida(s));
+  assert.match(salida(s), new RegExp(`${VAR_TMP.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} tiene un sh-thd-<n> con un enlace duro`), `dice por qué: ${salida(s)}`);
+  assert.strictEqual(fs.readFileSync(victima, 'utf8'), 'intacto\n');
+});
+
+test('F214 PerfilSandbox_VarTmp_SoloElNombreDelTemporal: el perfil admite la carpeta como literal y el nombre sh-thd-<n>, nada más', () => {
+  const CP = require(path.join(SK, 'lib', 'compare-previous.js'));
+  const sin = CP.perfilSandbox(['/x'], { red: true });
+  assert.doesNotMatch(sin, /var\/tmp/, 'sin pedirlo no se admite');
+  const con = CP.perfilSandbox(['/x'], { red: true, tmpDelSistema: '/private/var/tmp' });
+  assert.match(con, /\(literal "\/private\/var\/tmp"\)/);
+  assert.match(con, /\(regex #"\^\/private\/var\/tmp\/sh-thd-\[0-9\]\+\$"\)/);
+  assert.doesNotMatch(con, /\(subpath "\/private\/var\/tmp"\)/, 'la carpeta entera no');
+});
+
 test('F174 T2 Aislada_HijoSinLasVariablesDeLaRed_EscribeEnSuLaboratorio: un hijo con HOME de juguete y sin las variables TYCON_ escribe en su casa de juguete; la casa de la cuenta sigue frenada', { skip: !POSIX }, (t) => {
   // fila 174: un guion de laboratorio limpia lo que empieza con TYCON_ para su hijo y deja NODE_OPTIONS; el hijo carga la
   // red sin sus raíces y no tiene que tomar su HOME de juguete por la casa real
