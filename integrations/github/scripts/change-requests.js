@@ -469,9 +469,10 @@ function listaConCola(ctx, repo, deadlineMs, motivos = null) {
     if (!prs || !Array.isArray(prs.nodes)) return no('no_medido', 'GitHub contestó los pedidos abiertos sin forma');
     for (const p of prs.nodes) if (p && Number.isInteger(p.number)) value.push(deGraphql(p));
     if (!prs.pageInfo || !prs.pageInfo.hasNextPage) {
-      const hasta = topeDe(desde, deadlineMs);
-      const leidos = conAnalisis(ctx, repo, value, gh, { hasta });
-      return { ok: true, value: motivos ? conMotivoDeCaida(ctx, repo, leidos, motivos.known, hasta) : leidos };
+      // el análisis sigue con su corte de siempre (toma la hora límite como duración, y no corta): cortarlo de verdad deja
+      // pedidos listos sin su análisis, y quien lee la lista lo toma por «no está listo»
+      const leidos = conAnalisis(ctx, repo, value, gh, { hasta: Number(deadlineMs) > 0 ? desde + Number(deadlineMs) * 0.8 : Infinity });
+      return { ok: true, value: motivos ? conMotivoDeCaida(ctx, repo, leidos, motivos.known, topeDe(desde, deadlineMs)) : leidos };
     }
     after = prs.pageInfo.endCursor;
   }
