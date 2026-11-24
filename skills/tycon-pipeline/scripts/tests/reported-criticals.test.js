@@ -1141,6 +1141,15 @@ test('Resueltos_RenglonPartido — la lista de resueltos sigue en el renglón de
   // sin cierre antes de un renglón vacío u otro veredicto, la lista no se traga lo que sigue
   assert.deepEqual(rc.extractResolved('Veredicto: limpio · resueltos (SEC-C1,\n\nSEC-C3)'), []);
   assert.deepEqual(rc.extractResolved('Veredicto: limpio · resueltos (SEC-C1,\nVeredicto: hallazgos (SEC-C3) · bloquea: sí'), []);
+  // sólo sigue un renglón que es la lista misma (códigos y comas hasta el paréntesis): el «)» de la prosa de abajo no la
+  // cierra, y un crítico abierto ahí sigue contando
+  for (const abajo of ['- [SEC-C4] abierto (ver x)', '[SEC-C4] crítico abierto (ver foo)', 'Nota: [SEC-C4] sigue abierto (ver arriba)', 'SEC-C4 sigue roto (detalle)']) {
+    const texto = `Veredicto: hallazgos (SEC-C1) · resueltos (SEC-C2,\n${abajo}`;
+    assert.deepEqual(rc.extractResolved(texto), [], abajo);
+    assert.ok(rc.extractCriticals(texto).some((c) => c.rule === 'SEC-C4') || !/\[SEC-C4\]/.test(abajo), `${abajo}: ${JSON.stringify(rc.extractCriticals(texto))}`);
+  }
+  // la lista partida con el resto del renglón después del paréntesis también se lee
+  assert.deepEqual(rc.extractResolved('Veredicto: limpio · resueltos (SEC-C1,\n  SEC-C3) · bloquea: no').map((r) => r.rule), ['SEC-C1', 'SEC-C3']);
 });
 
 test('Resueltos_SoloElUltimoRenglon @story-8.296 — un veredicto citado de la vuelta anterior no confirma nada', () => {
