@@ -591,6 +591,9 @@ function fraseTipeadaReciente({ casa = os.homedir(), sesion, frase, ahora = Date
   if (!ruta) return { ok: false, motivo: SIN_MENSAJES_DE_LA_PERSONA, sinTranscripcion: true };
   let rs;
   try { rs = renglones(ruta, { tope: true }); } catch (_) { return { ok: false, motivo: SIN_MENSAJES_DE_LA_PERSONA, sinTranscripcion: true }; }
+  // el lector salta los renglones que no son JSON (uno a medio escribir no tapa a los demás): un archivo sin ningún
+  // registro de la transcripción es uno roto, no una conversación vacía
+  if (!rs.some((r) => r && typeof r === 'object' && typeof r.type === 'string')) return { ok: false, motivo: SIN_MENSAJES_DE_LA_PERSONA, sinTranscripcion: true };
   // la frase, palabra por palabra, dentro de las palabras del mensaje: «me voy» está en «me voy, seguí», «e» no
   const contiene = (texto) => {
     const p = palabras(texto);

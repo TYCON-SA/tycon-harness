@@ -701,7 +701,10 @@ marca de delicada del plan se mide por la parte más lo que el cambio toca, con 
 afloja: una parte que no es delicada la aprueba la revisión automática, en vez del dueño (medido el 31/10: 82 de 115
 partes recientes dejan de ser delicadas). Ese
 plan queda atado a la lista de la parte, la que quedó al aprobar: editar código fuera de ella frena, y al cerrar se
-mide el diff entero; si sale delicado, «Aprobar el plan» vuelve al dueño y el código queda en la rama. El pase
+mide el diff entero; si sale delicado, «Aprobar el plan» vuelve al dueño y el código queda en la rama. Si la revisión
+aprobó el plan antes de anotar la tanda, anotarla con el plan igual no lo reabre cuando la parte declara `files:`: el
+plan queda atado a esa lista, la que la historia declaraba al anotarla (después no se amplía); sin `files:` declarado,
+o con el plan cambiado, «Aprobar el plan» vuelve a pendiente. El pase
 adversarial, su modelo y la revisión de la historia siguen por la historia entera. Una historia cuyas partes no
 declaran `files:` ni le atan ningún archivo a la tanda se sigue midiendo entera: la ganancia llega cuando las historias
 dicen de qué parte es cada archivo (`story-format.md` §1.1, «La parte que vale»).
