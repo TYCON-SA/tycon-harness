@@ -446,6 +446,8 @@ const SENSITIVE = Object.freeze([
   // lo que sale de esos dos y del freno de guiones al partirlos sigue siendo sensible: lo que carga un sensible, lo es
   'skills/tycon-pipeline/scripts/lib/marker-*.js', 'skills/tycon-pipeline/scripts/lib/pipeline-*.js',
   'skills/tycon-pipeline/scripts/lib/bash-gate-*.js',
+  // el nombre de la sesión lo carga el marcador al escribir: corre dentro de él
+  'scripts/lib/session-name.js',
   // lo que el cierre del marcador carga para decir que la sesión termina: corre dentro de él
   'skills/tycon-pipeline/scripts/lib/resume-state.js',
   'skills/tycon-pipeline/scripts/lib/adversarial-verdict.js', 'skills/tycon-pipeline/scripts/lib/critical-waivers.js',
