@@ -340,7 +340,10 @@ function leerContexto(home) {
     if (e && e.code === 'ENOENT') ctx.firmas = [];
     else ctx.firmasError = (e && (e.code || e.message)) || 'error';
   }
-  const sesiones = path.join(claudeDirOf(home), 'sessions');
+  const claude = claudeDirOf(home);
+  // sin la biblioteca que sabe dónde está la carpeta de Claude Code, no se ven las sesiones vivas: no se borra nada
+  if (!claude) { ctx.vivasError = 'no está scripts/setup/harness/tycon-home.js'; return ctx; }
+  const sesiones = path.join(claude, 'sessions');
   try {
     ctx.vivas = [];
     for (const f of fs.readdirSync(sesiones).filter((x) => x.endsWith('.json'))) {
@@ -363,10 +366,11 @@ function leerContexto(home) {
   return ctx;
 }
 
+/** La carpeta de Claude Code, de scripts/setup/harness/tycon-home.js; null si la biblioteca no está o no carga. */
 function claudeDirOf(home) {
   const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
-  try { if (fs.existsSync(lib)) return require(lib).claudeDir(home); } catch (_) { /* la de siempre */ }
-  return path.join(home || os.homedir(), '.claude');
+  try { if (fs.existsSync(lib)) return require(lib).claudeDir(home); } catch (_) { /* sin la biblioteca */ }
+  return null;
 }
 
 function pidAlive(pid) {
