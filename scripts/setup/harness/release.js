@@ -1855,6 +1855,23 @@ function refreshTeamWithNewCode(ctx, state, harnessDir, { log = null, timeoutMs:
   return { status: 'failed', answered: true, lines: lines.length ? lines : ['capa del equipo: la versión nueva tampoco la acepta — sigue la de antes'] };
 }
 
+/**
+ * «Al día» no se dice con una versión que falló al instalarse y no se reintenta sola (`state.failed`, más nueva que la
+ * instalada): pasa cuando lo publicado después todavía no tiene número, o tiene el mismo en otro commit. Se dice la
+ * falla, y el estado es el de «ya falló» (`skipped`), que no borra el aviso de que la actualización viene fallando. Una
+ * falla cortada (`interrupted`) la reintenta el arranque, y una que no es más nueva que la instalada ya no vale.
+ */
+function failedNotUpToDate(c0, state, src, applyHint) {
+  const f = state && state.failed;
+  if (c0.status !== 'up_to_date' || !isObject(f) || f.reason === 'interrupted') return c0;
+  const cmp = VO.compare(String(f.commit || ''), src.version);
+  if (cmp !== null && cmp <= 0) return c0;
+  const at = Date.parse(f.at || '');
+  const hora = Number.isNaN(at) ? '—' : `${new Date(at).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+  const notes = (c0.lines || []).filter((l) => !/^arnés al día/.test(l));
+  return { status: 'skipped', code: 0, lines: [`la última actualización falló: la versión ${f.commit || '—'} no se instaló (${f.reason || 'salud'}), a las ${hora}; se vuelve a intentar sola con la próxima versión publicada (o ${applyHint})`, ...notes] };
+}
+
 /** ¿La versión publicada es la que la retención deshizo? La retención la nombra por número o por commit. */
 function holdNamesTarget(hold, t) {
   const named = [hold.commit, hold.sources && hold.sources.harness].filter(Boolean);
@@ -1900,7 +1917,7 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
       if (log) { log(`update: al día; terceros que faltaban: ${missing.length}, siguen faltando: ${still.length}`); for (const n of tp.notes) log(`update: ${n}`); }   // el porqué, también en el registro (el arranque descarta las líneas)
     }
   }
-  if (c0.status !== 'new') return withTeam(c0);
+  if (c0.status !== 'new') return withTeam(failedNotUpToDate(c0, state, src, H.releaseApplyHint));
   const t = c0.target;
   const what = `${src.version} → ${t.version} (${t.ref} ${sha7(t.commit)})`;
   // con la actualización fijada por el equipo, la retención de una vuelta atrás vale mientras lo publicado sea lo deshecho:
@@ -2627,5 +2644,5 @@ module.exports = {
   resolvePublic, numberAt, tagNumberOf, tagsByApi, tagsFor, tagCommit, pendingTag, PENDING_TAG_SAY_MS, trustedCache, fromCache, adoptTag, treeNumberOk, stampVersion,
   download, readManifest, restoreThirdParty, swap, swapBack, repair, cleanupDeferred, isNamed, makeSource, shortPlanOf,
   convertLayout, swapLinks, swapBackLinks, repairLinks,
-  cmdInstall, update, rollback, auditTree, refreshTeam, refreshTeamWithNewCode,
+  cmdInstall, update, failedNotUpToDate, rollback, auditTree, refreshTeam, refreshTeamWithNewCode,
 };
