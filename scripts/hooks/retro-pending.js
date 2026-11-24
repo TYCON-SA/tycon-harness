@@ -468,6 +468,10 @@ function corregir(argv) {
 const CONSULTAS = path.join(STATE_DIR, 'retro-pending-consultas.json');
 const CAPA = path.join(__dirname, '..', 'lib', 'platform', 'platform.js');
 const CONSULTA_CADA_MS = 10 * 60000;
+/** La capa de plataforma cargada, o null si no se puede cargar (quien la usa lo trata como «no sé»). */
+function capaDePlataforma() {
+  try { return require(CAPA); } catch { return null; }
+}
 const CONSULTAS_POR_PASADA = 3;
 const topeDeConsulta = () => Number(process.env.TYCON_RETRO_ASK_PR_MS) > 0 ? Number(process.env.TYCON_RETRO_ASK_PR_MS) : 10000;
 
@@ -559,16 +563,31 @@ function sinSecretos(t) {
 }
 
 /**
- * La identidad del repo de `dir` para la capa de plataforma, sacada de su `origin`: `{ valor }` o `{ problema }`. Sólo
- * los dos hosts que la capa sabe nombrar; con otro, no se sabe a quién preguntarle.
+ * La identidad del repo de `dir` para la capa de plataforma, sacada de su `origin`: `{ valor }` o `{ problema }`. La da
+ * la capa: la de Azure DevOps y la de GitHub por su servidor (`identityFromRemote`), la de cualquier otro servidor por el
+ * conector de la plataforma que lo declara en team-repos.json (`identityOfRemoteUrl`). Un servidor que nadie declara no
+ * tiene plataforma, y «no pude mirar» (el archivo o el conector fallaron) se dice como problema, no como identidad.
  */
 function identidadParaLaCapa(dir) {
-  let id = null;
-  try { id = resolverRemoto(dir).id; } catch { id = null; }
-  if (id && id.org && id.proyecto && id.repo) return { valor: { platform: 'azure', org: id.org, project: id.proyecto, repo: id.repo } };
-  const partes = id && id.host === 'github.com' ? String(id.ruta || '').split('/') : [];
-  if (partes.length === 2 && partes[0] && partes[1]) return { valor: { platform: 'github', org: partes[0], repo: id.nombre || partes[1] } };
-  return { problema: id ? `no sé en qué plataforma vive el origin de ${dir} (${id.host})` : `no sé en qué plataforma vive ${dir}: no tiene un origin legible` };
+  let r = null;
+  try { r = resolverRemoto(dir); } catch { r = null; }
+  const id = r && r.id;
+  if (!id) return { problema: `no sé en qué plataforma vive ${dir}: no tiene un origin legible` };
+  const capa = capaDePlataforma();
+  if (!capa) return { problema: `no sé en qué plataforma vive el origin de ${dir}: no pude cargar la capa de plataforma` };
+  const partes = String(id.ruta || '').split('/');
+  const donde = id.org && id.proyecto && id.repo ? { host: 'azure', org: id.org, project: id.proyecto, name: id.repo }
+    : id.host === 'github.com' && partes.length === 2 && partes[0] && partes[1] ? { host: 'github', ghRepo: `${partes[0]}/${id.nombre || partes[1]}` }
+      : null;
+  if (donde) {
+    const valor = capa.identityFromRemote(donde);
+    if (valor) return { valor };
+  } else {
+    let valor = null;
+    try { valor = capa.identityOfRemoteUrl(r.url); } catch (e) { return { problema: `no sé en qué plataforma vive el origin de ${dir}: ${sinSecretos(String((e && e.message) || e))}` }; }
+    if (valor) return { valor };
+  }
+  return { problema: `no sé en qué plataforma vive el origin de ${dir} (${id.host})` };
 }
 
 /**
@@ -925,6 +944,8 @@ function record(event) {
     if (e) anotadas.push(e);
   }
   if (ghResueltos.length !== pedidosGh.length) pedidoSinUbicar = true;
+  // el aviso nombra GitHub sólo si el pedido sin ubicar es de `gh`; uno de la capa puede ser de cualquier plataforma
+  const sinUbicarDeGh = pedidosGh.some((p) => !p.resuelto && !p.capa);
   // 🔴 Cada entrega se juzga por SÍ MISMA. Un dedup por directorio descartaría entregas
   // que nadie juzgó todavía: con `git push origin dev && git push origin main` desde una
   // sesión parada en dev, el primer push consumiría el repo, `anotar` devolvería null (no nombra main,
@@ -956,7 +977,7 @@ function record(event) {
   if (pedidoSinUbicar || (irresoluble && (isPrCreate || puntos.some((p) => !p.resuelto && !p.mencion && /\bpush\b[^|;&\n]*\b(main|master)\b/.test(p.st || cmd))))) {
     const motivosAz = puntos.filter((p) => isPrCreate && !p.resuelto && p.motivo).map((p) => p.motivo);
     const que = pedidoSinUbicar
-      ? 'ese pedido de GitHub hacia main (la carpeta o el repo los arma la terminal, o el --repo del comando no es el origin de esa carpeta)'
+      ? `ese pedido ${sinUbicarDeGh ? 'de GitHub ' : ''}hacia main (la carpeta o el repo los arma la terminal, o el --repo del comando no es el origin de esa carpeta)`
       : isPrCreate
         ? `ese pedido de merge a main (az repos pr create: ${[...new Set(motivosAz)].join('; ') || 'no se sabe en qué repo corrió'})`
         : 'ese push a main (una variable que el comando no define, o un git adentro de otro comando)';
@@ -1290,15 +1311,24 @@ function pedidosDeCapa(cmd, cwd) {
     let repo = null;
     const crudo = valor('--repo');
     try { repo = crudo && crudo.trim().startsWith('{') ? JSON.parse(crudo) : null; } catch { repo = null; }
-    const quiere = (repo ? [repo.org, repo.project, repo.repo].filter(Boolean).join('/') : String(crudo || '')).toLowerCase();
+    // un repo que vive en grupos (`namespace`) se nombra como lo nombra la capa (`grupo/sub/repo`), que es la ruta de su
+    // origin; el de Azure y el de GitHub, como siempre
+    const enGrupos = repo && typeof repo === 'object' && repo.namespace ? capaDePlataforma() : null;
+    const quiere = (enGrupos ? enGrupos.nameOf(enGrupos.repoOf(repo)) : repo ? [repo.org, repo.project, repo.repo].filter(Boolean).join('/') : String(crudo || '')).toLowerCase();
     // desde la carpeta que agrupa los repos, `--repo` elige al hijo cuyo origin es ese repo
     const root = git(dir, ['rev-parse', '--show-toplevel']) || hijoConOrigen(dir, quiere);
     if (!root) { out.push({ resuelto: false }); continue; }
     const origen = identidadRemoto(git(root, ['remote', 'get-url', 'origin']));
     if (!quiere || !origen || origen.ruta !== quiere) { out.push({ resuelto: false }); continue; }
+    // la plataforma y, si el `--repo` nombra su servidor, que sea el del origin: los dice la identidad de la capa
+    const deLaCapa = enGrupos || !origen.org ? identidadParaLaCapa(root).valor : null;
+    if (enGrupos && (!deLaCapa || (repo.host !== undefined && repo.host !== null && String(origen.host || '').toLowerCase() !== String(repo.host).toLowerCase()))) {
+      out.push({ resuelto: false });
+      continue;
+    }
     const rama = typeof args.sourceBranch === 'string' ? ramaCorta(args.sourceBranch) : null;
     out.push({ resuelto: true, dir: root, target: ramaCorta(args.targetBranch), sha: rama ? puntaDeLaRama(root, rama) : puntaDeLaRamaActual(root),
-      origen: rama || git(root, ['rev-parse', '--abbrev-ref', 'HEAD']) || null, plataforma: origen.org ? 'azure' : 'github', capa: true });
+      origen: rama || git(root, ['rev-parse', '--abbrev-ref', 'HEAD']) || null, plataforma: (deLaCapa && deLaCapa.platform) || (origen.org ? 'azure' : 'github'), capa: true });
   }
   return out;
 }
@@ -1763,4 +1793,6 @@ function main() {
   if (mode === 'gate') return gate(event);
   if (mode === 'notice') return notice(event);
 }
-try { main(); } catch { /* fail-open: nunca rompe push, stop ni arranque */ }
+// Como gancho (y con `--report`/`--correct`) corre como programa; cargado con `require`, sólo expone la identidad.
+if (require.main === module) { try { main(); } catch { /* fail-open: nunca rompe push, stop ni arranque */ } }
+else module.exports = { identidadParaLaCapa };
