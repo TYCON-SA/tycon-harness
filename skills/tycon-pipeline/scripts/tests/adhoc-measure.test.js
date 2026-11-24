@@ -149,8 +149,8 @@ test('T1 Medida_UnaSola_LasDosViejasNoExisten @story-8.190 @ac-1', () => {
   assert.strictEqual(typeof m.medirLoPropio, 'function');
   assert.strictEqual(m.archivosDelCarril, undefined);
   assert.strictEqual(m.propiosDelCarril, undefined);
-  // marker.js con sus partes de lib/
-  const partes = fs.readdirSync(path.join(SCRIPTS, 'lib')).filter((f) => /^marker-.+\.js$/.test(f)).map((f) => `lib/${f}`);
+  // marker.js y pipeline.js con sus partes de lib/
+  const partes = fs.readdirSync(path.join(SCRIPTS, 'lib')).filter((f) => /^(?:marker|pipeline)-.+\.js$/.test(f)).map((f) => `lib/${f}`);
   for (const rel of ['lib/adhoc-base.js', 'lib/save-brake.js', 'lib/adhoc-screen.js', 'lib/source-signals.js', 'pipeline.js', 'marker.js', ...partes]) {
     const txt = fs.readFileSync(path.join(SCRIPTS, rel), 'utf8');
     assert.doesNotMatch(txt, /archivosDelCarril|propiosDelCarril/, rel);

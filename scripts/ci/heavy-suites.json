@@ -261,10 +261,21 @@
         "scripts/tests/release-api-count.p2.test.sh"
       ]
     },
-    "harness-tools.test.sh": {
-      "why": "Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado; decisión del dueño, 2026-10-08, story 8.22 tramo G). Entró a main ese mismo día con la story 8.23 y no tenía peso medido: la encontró el pase adversarial del tramo. Prueba los enchufes de cada herramienta (Claude Code y Codex), así que suma a los patrones del grupo lo propio de su tema: el adaptador de Codex (adapters/codex/**) y lo que lo arma (build/**). Hasta ese día se elegía por su `gate_only_when_touching` de suites.json, que incluía scripts/lib/** y scripts/hooks/**; ése sigue siendo el del portón de cada story.",
+    "harness-tools.p1.test.sh": {
+      "why": "Una de las dos partes de harness-tools.test.sh (partida el 2026-11-24); el criterio es el de la suite entera. Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado; decisión del dueño, 2026-10-08, story 8.22 tramo G). Entró a main ese mismo día con la story 8.23 y no tenía peso medido: la encontró el pase adversarial del tramo. Prueba los enchufes de cada herramienta (Claude Code y Codex), así que suma a los patrones del grupo lo propio de su tema: el adaptador de Codex (adapters/codex/**) y lo que lo arma (build/**). Hasta ese día se elegía por su `gate_only_when_touching` de suites.json, que incluía scripts/lib/** y scripts/hooks/**; ése sigue siendo el del portón de cada story.",
       "group": "installer",
       "patterns": [
+        "scripts/tests/harness-tools.p1.test.sh",
+        "scripts/tests/harness-tools.test.sh",
+        "adapters/codex/**",
+        "build/**"
+      ]
+    },
+    "harness-tools.p2.test.sh": {
+      "why": "Una de las dos partes de harness-tools.test.sh (partida el 2026-11-24); el criterio es el de la suite entera. Suite del laboratorio del instalador: corre en la rama sólo cuando el cambio toca el instalador (grupo `installer`, arriba, con su costo aceptado; decisión del dueño, 2026-10-08, story 8.22 tramo G). Entró a main ese mismo día con la story 8.23 y no tenía peso medido: la encontró el pase adversarial del tramo. Prueba los enchufes de cada herramienta (Claude Code y Codex), así que suma a los patrones del grupo lo propio de su tema: el adaptador de Codex (adapters/codex/**) y lo que lo arma (build/**). Hasta ese día se elegía por su `gate_only_when_touching` de suites.json, que incluía scripts/lib/** y scripts/hooks/**; ése sigue siendo el del portón de cada story.",
+      "group": "installer",
+      "patterns": [
+        "scripts/tests/harness-tools.p2.test.sh",
         "scripts/tests/harness-tools.test.sh",
         "adapters/codex/**",
         "build/**"
@@ -441,8 +452,11 @@
       ]
     },
     "prod-access-guard.test.sh": {
-      "why": "~21 s en la validación 170 #11961 (2026-10-05). Prueba una pieza que instala el instalador: hereda `shared` —el instalador y todo lo que instala— y suma su propia prueba, el laboratorio (scripts/tests/lib/), los datos de prueba y las carpetas que la prueba nombra. Ante la duda, la carpeta entra. Un cambio que no toca nada de eso (guías, nocturnos, métricas sueltas, CI) no la corre en la rama; el banco nocturno la corre siempre. 2026-10-06 (story 8.22, AC 7): `reads_md` — su T33 lee el texto de guides/production-with-permission.md: se elige con la lista entera del cambio, .md incluidos.",
+      "why": "~21 s en la validación 170 #11961 (2026-10-05). Prueba una pieza que instala el instalador: hereda `shared` —el instalador y todo lo que instala— y suma su propia prueba, el laboratorio (scripts/tests/lib/), los datos de prueba y las carpetas que la prueba nombra. Ante la duda, la carpeta entra. Un cambio que no toca nada de eso (guías, nocturnos, métricas sueltas, CI) no la corre en la rama; el banco nocturno la corre siempre. 2026-10-06 (story 8.22, AC 7): `reads_md` — su T33 lee el texto de guides/production-with-permission.md: se elige con la lista entera del cambio, .md incluidos. `deps`: \"graph\" (rojos nocturnos del 2026-11-24) — sus cinco líneas que el lector toma por «recorre el repo» son textos de casos que se le pasan al freno (`git grep -O…`, `grep -rn … scripts`): el freno los juzga, la prueba no los corre. graph_whole_lines: 5 y graph_whole_sha: la cantidad y la huella de esas líneas cuando se revisaron; si cambian, vuelve a depender de todo hasta que alguien las mire.",
       "reads_md": true,
+      "deps": "graph",
+      "graph_whole_lines": 5,
+      "graph_whole_sha": "fa54ccd0efa6",
       "patterns": [
         "scripts/tests/prod-access-guard.test.sh",
         "scripts/tests/lib/**",

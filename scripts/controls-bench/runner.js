@@ -94,6 +94,40 @@ const LIST = argv.includes('--list');
 const { nombreDeReporte } = require('./report-name.js');
 const VERBOSE = argv.includes('--verbose');
 
+const USO = `Uso: node runner.js [--tool claude|codex|both] [--only <texto>] [--only-not-on <sistema>]
+                 [--baseline write|check] [--json <ruta>] [--list] [--verbose] [--help]
+
+  --tool         con qué herramienta (claude de fábrica; both compara las dos)
+  --only         sólo los casos cuya clave (<gancho>::<id>) contiene el texto
+  --only-not-on  sólo los casos declarados para este sistema y no para ése (linux, darwin, win32)
+  --baseline     write fija la línea de base; check falla si un verde se puso rojo
+  --json         dónde dejar el reporte, además de .bench/
+  --list         lista los casos sin correrlos
+  --verbose      muestra la salida de cada caso`;
+// las opciones con su valor en la palabra que sigue, las que van solas, y los valores que aceptan
+const CON_VALOR = { '--tool': ['claude', 'codex', 'both'], '--only': null, '--only-not-on': null, '--baseline': ['write', 'check'], '--json': null };
+const SOLAS = ['--list', '--verbose'];
+
+/**
+ * null si se entienden todos los argumentos; si no, por qué no. Una opción que no conoce, un valor pegado con `=` o que
+ * falta no se ignoran: ignorados, el banco corre entero en vez de lo que se pidió.
+ */
+function problemaDeArgumentos(args) {
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (SOLAS.includes(a)) continue;
+    if (Object.prototype.hasOwnProperty.call(CON_VALOR, a)) {
+      const v = args[i + 1];
+      if (v === undefined || v.startsWith('--')) return `${a} necesita un valor`;
+      if (CON_VALOR[a] && !CON_VALOR[a].includes(v)) return `${a} acepta ${CON_VALOR[a].join(', ')}, no «${v}»`;
+      i++;
+      continue;
+    }
+    return a.startsWith('-') ? `no conozco la opción ${a}` : `no esperaba «${a}»`;
+  }
+  return null;
+}
+
 // ---------- helpers ----------
 function subst(str, vars) {
   return String(str).replace(/\$\{(\w+)\}/g, (_, k) => (k in vars ? vars[k] : `\${${k}}`));
@@ -827,11 +861,17 @@ function main(ctx) {
 // script que no hace nada — un caso que pasa igual no prueba nada. Dos ejecutores del mismo caso
 // serían el drift de mañana.
 // Lo de Windows se exporta para probarlo con la plataforma inyectada (scripts/tests/bench-portable.test.js).
-module.exports = { runCase, loadCaseFiles, main, clasificarCartel, interpreterFor, isolationEnv, setupEnv, hookEnv, forBash, pathShapes, benchShell, sandboxRoot, fileVars, missingOnPath, cannotMeasure };
+module.exports = { runCase, loadCaseFiles, main, problemaDeArgumentos, clasificarCartel, interpreterFor, isolationEnv, setupEnv, hookEnv, forBash, pathShapes, benchShell, sandboxRoot, fileVars, missingOnPath, cannotMeasure };
 
 // 🔴 `process.exitCode`, NO `process.exit()`. Este guión lo ejecuta otro proceso y le parsea la
 // salida; en Node las escrituras a una tubería son ASINCRÓNICAS y `process.exit()` mata el proceso
 // con parte de lo escrito todavía en el aire: un informe de ~10 KB llega cortado en 8192 bytes y el consumidor lo
 // lee como «no pude», nunca como un error. `main` acá es sincrónica y no deja manejadores abiertos, así que con
 // `exitCode` el proceso termina solo, cuando termina de escribir.
-if (require.main === module) process.exitCode = main();
+if (require.main === module) {
+  // la ayuda y los argumentos que no entiende salen antes de mirar un solo caso
+  const problema = problemaDeArgumentos(argv);
+  if (argv.includes('--help') || argv.includes('-h')) console.log(USO);
+  else if (problema) { console.error(`runner.js: ${problema}\n\n${USO}`); process.exitCode = 2; }
+  else process.exitCode = main();
+}

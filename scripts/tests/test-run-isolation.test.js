@@ -466,6 +466,23 @@ test('Pase_CasaDeLaboratorioEnWindows_NoSeNiega @story-8.314 @ac-6', (t) => {
   assert.strictEqual(salio({ USERPROFILE: path.join(c.casa, 'Documents') }), 3, 'adentro, fuera del temporal');
 });
 
+// 🔴 mutación: que la red viaje sólo en variables del ambiente. Un comando que las limpia pierde lo que vigila la red,
+// el registro que mira `exec` y las carpetas admitidas.
+test('T8 IsolatedRun_CarriesRootsWithGuard @story-8.321 @ac-1 @ac-3', { skip: !POSIX }, async (t) => {
+  const c = cuenta(t);
+  const fuera = carpeta(t, 'aislada-ve-');
+  const visto = path.join(fuera, 'visto.json');
+  const guion = path.join(fuera, 've.js');
+  fs.writeFileSync(guion, `require('fs').writeFileSync(${JSON.stringify(visto)}, JSON.stringify(process[Symbol.for('tycon.real-home-guard')] || null));\n`);
+  const codigo = await iso().exec({ argv: [process.execPath, guion], raices: [fuera], env: ambiente(c), userInfo: c.userInfo, cwd: fuera, err: () => {} });
+  assert.strictEqual(codigo, 0);
+  const red = JSON.parse(fs.readFileSync(visto, 'utf8'));
+  assert.ok(red, 'la red viaja con lo que vigila');
+  for (const d of ['.tycon', '.claude', '.codex']) assert.ok(red.roots.includes(path.join(c.casa, d)), `vigila ${d}: ${red.roots}`);
+  assert.match(red.log, /intentos\.jsonl$/);
+  assert.ok(red.allow.includes(fuera), `admite la raíz del humo: ${red.allow}`);
+});
+
 test('T99 RedDeLasPruebas_NadaTocoLaCasaReal @story-8.314', () => {
   assert.deepStrictEqual(GUARD.attempts(), [], GUARD.describe());
 });

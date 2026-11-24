@@ -3,7 +3,7 @@
 // compare-previous-gate.test.js — cuándo se compara y qué pasa con la diferencia.
 //
 //   T12      los candidatos: sólo los comandos modificados que existen en main, sin las pruebas, cada uno de su repo
-//   T13-T16  el freno de «Preparar el commit»: sin humo ni exención, diferencia sin declarar, declarada, sin candidatos
+//   T13-T16  el freno de «Preparar el pull request»: sin humo ni exención, diferencia sin declarar, declarada, sin candidatos
 //   T24-T27  la exención con firma, la del frontmatter no cuenta, «no comparado» no cumple, el aviso de cada exención
 //   T28, T34 qué humo cubre qué candidato: por subcomando, por palabra completa, y por declaración con `--covers`
 //   T31      la firma en el catálogo y en la ventana; sin el perfil, la coordinadora no la firma
@@ -110,7 +110,7 @@ function historia(repo, { modificar = [], cuerpo = [], frontmatter = [] } = {}) 
   return storyPath;
 }
 
-// El laboratorio de un repo: la historia y el comando viven en el mismo repo; el marcador está en «Preparar el commit».
+// El laboratorio de un repo: la historia y el comando viven en el mismo repo; el marcador está en «Preparar el pull request».
 function laboratorio({ archivos = { 'cli.js': CLI }, cambios = { 'cli.js': enGet }, modificar = ['cli.js'], cuerpo = [], frontmatter = [], sid = 's-gate', batch = null } = {}) {
   const base = tmp('cpg-');
   const home = path.join(base, 'home');

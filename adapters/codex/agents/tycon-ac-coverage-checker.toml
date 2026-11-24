@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-ac-coverage-checker.md
-# source_sha256: a0c1752d1627bfa1e242be80ce63dd17a5d044205df4021290d3faef01f2548d
+# source_sha256: 1c948028bc3869f1417e0cd0575e93b66ce257d1e5e950f527bc99cbd29b1167
 # Se despliega como $CODEX_HOME/tycon-ac-coverage-checker.config.toml y se invoca: codex exec -p tycon-ac-coverage-checker
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 
@@ -149,7 +149,7 @@ checkout LIMPIO —y `mtime` de un archivo versionado NUNCA es «cuándo cambió
 producto»: en un clon es la hora del checkout—) viven en
 `~/.claude/tycon-harness/guides/accov-governance-protocol.md`
 (extraídas 2026-06-09 — aplican 1 vez al transicionar a review/done, no en
-cada vuelta de Revisores). El orquestador las lee on-demand en «Probar en vivo» y «Preparar el commit»
+cada vuelta de Revisores). El orquestador las lee on-demand en «Probar en vivo» y «Preparar el pull request»
 y este advisor las cita por ID si detecta sus patrones, sin re-derivar el protocolo.
 
 **ACCOV-C9 (meta-audit del self-audit) está RETIRADA desde el 2026-09-16**:
@@ -238,7 +238,7 @@ Heurística:
 
 ## Integración con el pipeline
 
-Core advisor en **Revisores** del `tycon-pipeline`, en paralelo con los demás advisors post-implementación. Falla CRITICAL bloquea «Preparar el commit» si hay ACCOV-C1/C2 (con override explícito del dev si decide \"es falso positivo del grep\" — registra razón en engram).
+Core advisor en **Revisores** del `tycon-pipeline`, en paralelo con los demás advisors post-implementación. Falla CRITICAL bloquea «Preparar el pull request» si hay ACCOV-C1/C2 (con override explícito del dev si decide \"es falso positivo del grep\" — registra razón en engram).
 
 **Caller de Revisores** debe pasar:
 - `story_path`

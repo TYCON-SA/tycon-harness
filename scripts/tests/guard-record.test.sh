@@ -527,6 +527,11 @@ SES_PC="$SES_LAB/cierre"; repo72 "$SES_PC"
 node -e 'const fs=require("fs");const p=process.argv[1];fs.writeFileSync(p,fs.readFileSync(p,"utf8").replace("status: in-progress","status: done\ndod_runtime_exempt: true\ndod_runtime_exempt_reason: \"prueba\""))' "$SES_PC/specs/historia-confidencial.md"
 git -C "$SES_PC" add -A
 mkdir -p "$SES_PC/.advisors/pipeline-runs/9.1-20260915-1200" && echo '[]' > "$SES_PC/.advisors/pipeline-runs/9.1-20260915-1200/findings.json"
+# un clon de juguete del arnés con un remoto que la costura trata como público: el freno de publicación mira sólo un `gh`
+# que corre desde un clon así, y la carpeta de las pruebas no lo es en el árbol armado (el privado con el público encima)
+SES_PUB="$SES_LAB/publico"; mkdir -p "$SES_LAB/remoto-publico"; git init -q --bare -b main "$SES_LAB/remoto-publico/arnes.git"
+git init -q -b main "$SES_PUB"; mkdir -p "$SES_PUB/scripts"; printf '#!/bin/sh\n' > "$SES_PUB/scripts/install-tycon-hooks.sh"
+git -C "$SES_PUB" remote add origin "$SES_LAB/remoto-publico/arnes.git"
 
 # los frenos: freno|ruta del gancho|comando|carpeta|variables (separadas por espacio)
 SES_FRENOS=(
@@ -534,7 +539,7 @@ SES_FRENOS=(
   "test-scope-guard|$TS|npm test -- scripts/tests/uno.test.ts|$AQUI|"
   "pr-sin-auto-complete|$P2|az repos pr create --source-branch x --target-branch main --title t|$AQUI|"
   "pr-uno-por-repo|$P1|az repos pr create --source-branch x --target-branch main --title t|$AQUI|TYCON_PR_ONE_PER_REPO=1"
-  "public-push-guard|$AQUI/scripts/hooks/public-push-guard.js|gh pr create --title t --body b|$AQUI|"
+  "public-push-guard|$AQUI/scripts/hooks/public-push-guard.js|gh pr create --title t --body b|$SES_PUB|TYCON_PUBLIC_PUSH_TREAT_AS_PUBLIC=$SES_LAB/remoto-publico"
   "push-referencia-fantasma|$PF|git push origin HEAD|$SES_PUSH|"
   "engram-manifest|$AQUI/scripts/hooks/engram-pre-commit.sh|git commit -m cambio-secreto|$SES_ENG|TYCON_ENGRAM_HOOK=1 ENGRAM_BIN=/usr/bin/true"
   "session-cap-guard|$AQUI/scripts/hooks/session-cap-guard.js|claude --bg -n x -- y|$SES_LAB|TYCON_PROFILE=$SES_LAB/perfil.json"

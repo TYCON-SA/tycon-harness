@@ -246,7 +246,7 @@ const STORY_CONDITIONALS = Object.freeze([
     decider: { module: 'skills/tycon-pipeline/scripts/lib/run-size.js', fn: 'classifyStory' },
     decide: (fn, probe) => fn({ files: probe.files }).size === 'liviana',
     probes: { yes: { files: ['docs/guia.md'] }, no: { files: ['src/a.js'] } } },
-  { id: 'adversarial', steps: ['adversarial-pass'], code: 'skills/tycon-pipeline/scripts/pipeline.js', guide: 'skills/tycon-pipeline/steps/step-08-adversarial-pass.md', textKey: 'segun.adversarial',
+  { id: 'adversarial', steps: ['adversarial-pass'], code: 'skills/tycon-pipeline/scripts/lib/pipeline-deep-review.js', guide: 'skills/tycon-pipeline/steps/step-08-adversarial-pass.md', textKey: 'segun.adversarial',
     decider: { module: 'skills/tycon-pipeline/scripts/pipeline.js', fn: 'computeDeepReviewGate' },
     decide: (fn, probe, ctx) => fn({ story: ctx.story, repo: ctx.repo, files: probe.files }).run === true,
     probes: { yes: { story: STORY_PANTALLA('src/auth/sesion.js'), files: ['src/auth/sesion.js'] }, no: { story: STORY_PANTALLA('docs/guia.md'), files: ['docs/guia.md'] } } },

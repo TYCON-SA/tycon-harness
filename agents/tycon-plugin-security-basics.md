@@ -127,6 +127,13 @@ Tu reporte final se estructura SIEMPRE así:
    Veredicto: limpio
    Veredicto: hallazgos (SEC-C1, SEC-C1, SEC-W2) · bloquea: sí
    ```
+   Si el prompt trae lo que reportaste en la vuelta anterior, sumá al renglón los críticos de esa vuelta que confirmás
+   arreglados, una vez por hallazgo, aunque hoy reportes otro con el mismo código. Sin esa parte el arnés no da el arreglo
+   por comprobado, y cuesta otra vuelta o la exención del dueño:
+   ```text
+   Veredicto: hallazgos (SEC-C1) · bloquea: sí · resueltos (SEC-C1, SEC-C3)
+   Veredicto: limpio · resueltos (SEC-C1)
+   ```
 
 **Tope duro: 1000 caracteres de prosa** (600 si el prompt no pide lo contrario). Sin hallazgos:
 `Limpio, 0 hallazgos.` y nada más — enumerar todo lo que revisaste y salió bien es el modo más común de
