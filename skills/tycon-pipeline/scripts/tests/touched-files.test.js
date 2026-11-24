@@ -383,6 +383,29 @@ test('T16 Touched_TreeOption_CommitsBeforeBase_StaysUnknown @story-8.279 @ac-28 
   assert.equal(r.must_measure, true, JSON.stringify(r));
 });
 
+test('T16b Touched_TreeOption_NoMainBranch_StaysUnknown @story-8.279 @ac-28 — sin rama principal contra la que contar, una rama con sus papeles commiteados sigue sin saberse, como hoy', () => {
+  // 🔴 rojo si: con la opción, «no hay rama principal» pasa a «se sabe, hay que medir» cuando el diff trae algo (T16 lo
+  //    mira sólo con lo tocado vacío) → sin poder contar los commits anteriores a la base, lo de una tanda anterior queda
+  //    fuera de lo tocado.
+  const { touchedFiles } = require(LIB);
+  const opts = (L, extra = {}) => ({ repo: L.repo, storyPath: '', baseRef: L.base, baseSource: 'marker', ...extra });
+  // el mismo caso con rama principal se sabe (AC 27): lo que cambia es sólo que no hay contra qué contar
+  const conMain = labConRama();
+  commitear(conMain, 'LEAME.md');
+  const sabido = touchedFiles(opts(conMain, { onlyCommitsBeforeBase: true }));
+  assert.equal(sabido.known, true, JSON.stringify(sabido));
+  const L = lab();
+  git(L.repo, 'branch', '-M', 'trabajo');
+  commitear(L, 'LEAME.md');
+  const con = touchedFiles(opts(L, { onlyCommitsBeforeBase: true }));
+  assert.equal(con.known, false, JSON.stringify(con));
+  assert.match(con.reason, /no hay rama principal/, JSON.stringify(con));
+  assert.equal(con.must_measure, undefined, JSON.stringify(con));
+  const sin = touchedFiles(opts(L));
+  assert.equal(sin.known, false, `sin la opción, como hoy: ${JSON.stringify(sin)}`);
+  assert.match(sin.reason, /no hay rama principal/, JSON.stringify(sin));
+});
+
 test('T20 Touched_TreeOption_GateRecordIsNotCode @story-8.279 @ac-28 @ac-30 — la constancia que reescribe el portón no es código: la respuesta no cambia entre corridas', () => {
   // 🔴 rojo si: la constancia cuenta como código a la vista → la segunda corrida se saltea los commits anteriores a la base.
   const { touchedFiles } = require(LIB);
