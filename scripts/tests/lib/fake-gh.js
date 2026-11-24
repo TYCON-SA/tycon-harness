@@ -136,8 +136,20 @@ if (method === 'GET' && (m = base.match(/^repos\/([^/]+\/[^/]+)\/actions\/workfl
   out({ total_count: l.length, workflow_runs: pag(l) });
 }
 if (method === 'GET' && (m = base.match(/^repos\/([^/]+\/[^/]+)\/actions\/runs$/))) {
-  const l = ((st.runs || {})[m[1]] || []).filter((r) => !q.status || r.status === q.status);
+  const l = ((st.runs || {})[m[1]] || []).filter((r) => (!q.status || r.status === q.status) && (!q.event || r.event === q.event));
   out({ total_count: l.length, workflow_runs: pag(l) });
+}
+// Los trabajos de una corrida: "jobs": { "<id de la corrida>": [ { id, name, conclusion } ] }. El registro de un trabajo:
+// "job_logs": { "<id del trabajo>": "<texto>" }, en texto plano como lo da GitHub (no es JSON); sin registro, 404.
+if (method === 'GET' && (m = base.match(/^repos\/([^/]+\/[^/]+)\/actions\/runs\/(\d+)\/jobs$/))) {
+  const l = (st.jobs || {})[m[2]] || [];
+  out({ total_count: l.length, jobs: pag(l) });
+}
+if (method === 'GET' && (m = base.match(/^repos\/([^/]+\/[^/]+)\/actions\/jobs\/(\d+)\/logs$/))) {
+  const t = (st.job_logs || {})[m[2]];
+  if (t === undefined) err(404, 'Not Found');
+  process.stdout.write(String(t));
+  process.exit(0);
 }
 if (method === 'GET' && (m = base.match(/^repos\/([^/]+\/[^/]+)$/))) {
   const db = (st.default_branch || {})[m[1]];
