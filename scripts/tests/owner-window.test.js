@@ -1330,6 +1330,7 @@ function frenosDeArchivo(t) {
   const evidencia = path.join(repo, '.advisors', 'dod-runtime', '9.99-20261027.md');
   return [
     ['dod_runtime_exempt', historia, (casa, s) => paso(fw().handle(ev(s, historia, viejo.replace('status: in-progress', 'status: in-progress\ndod_runtime_exempt: true')), { casa }))],
+    ['advisors_exempt', historia, (casa, s) => paso(fw().handle(ev(s, historia, viejo.replace('status: in-progress', 'status: in-progress\nadvisors_exempt: true')), { casa }))],
     ['cambiar-el-estado', historia, (casa, s) => paso(fw().handle(ev(s, historia, viejo.replace('status: in-progress', 'status: ready-for-dev')), { casa }))],
     ['ALLOW_DOD_EVIDENCE_WRITE', evidencia, (casa, s) => paso(eg().handle(ev(s, evidencia, '# evidencia\n'), { casa }))],
     ['story-skill-bypass', nueva, (casa, s) => {

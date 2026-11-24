@@ -242,9 +242,14 @@ function isPlanReviewRecord(p) { return PLAN_REVIEW_DIR.test(norm(String(p || ''
 // en el estado de la cuenta, en una de sus dos carpetas (la carpeta misma también)
 const TERMINAL_ACKS_DIR = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/terminal-acknowledgments(\/|$)/i;
 function isTerminalAcknowledgmentsRecord(p) { return TERMINAL_ACKS_DIR.test(norm(String(p || ''))); }
-/** ¿Es una constancia firmada que no se escribe a mano? `control-approvals`, `adversarial-skip-record`, `pending-approvals`, `owner-approvals`, `terminal-acknowledgments`, `launched-sessions`, `office-mailbox`, `reported-criticals`, `plan-review` o null. */
+// Las constancias de las exenciones de las historias (lib/exemptions.js): las anota sólo el gancho del encabezado, con la
+// firma del dueño, y los portones del commit y de CI las piden. Escribir una es eximirse solo. En cualquier repo
+const EXEMPTIONS_FILE = /(^|\/)\.tycon\/exemptions\.jsonl$/i;
+function isExemptionsRecord(p) { return EXEMPTIONS_FILE.test(norm(String(p || ''))); }
+/** ¿Es una constancia firmada que no se escribe a mano? `control-approvals`, `adversarial-skip-record`, `pending-approvals`, `owner-approvals`, `terminal-acknowledgments`, `launched-sessions`, `office-mailbox`, `reported-criticals`, `plan-review`, `exemptions` o null. */
 function signedRecordKind(p) {
   if (isPlanReviewRecord(p)) return 'plan-review';
+  if (isExemptionsRecord(p)) return 'exemptions';
   if (isControlApproval(p)) return 'control-approvals';
   if (isPendingApprovalsRecord(p)) return 'pending-approvals';
   if (isOwnerApprovalsRecord(p)) return 'owner-approvals';
@@ -313,6 +318,9 @@ function computeStoryGate({
   }
   if (isPlanReviewRecord(filePath) || isPlanReviewRecord(real)) {
     return { action: 'block', kind: 'plan-review', reason: 'escritura a mano de la constancia de la revisión del plan' };
+  }
+  if (isExemptionsRecord(filePath) || isExemptionsRecord(real)) {
+    return { action: 'block', kind: 'exemptions', reason: 'escritura a mano de la constancia de una exención' };
   }
   // El arreglo rápido que abrió la coordinadora por delegación no toca lo sensible: eso lo firma el dueño. Antes del
   // portón apagado y del pase de los repos del arnés, que es donde están esos archivos. La lista de lo sensible vive en el
@@ -691,6 +699,15 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '  escribe desde la oficina o en su pestaña.',
     ].filter((l) => l !== '').join('\n');
   }
+  if (r.kind === 'exemptions') {
+    return [
+      '⛔ la constancia de una exención no se escribe a mano',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  La anota sólo el arnés cuando la persona firma la exención sobre la historia, y los portones del commit y de CI',
+      '  la piden: escribirla es eximirse solo. Si la historia necesita una exención, pedile la firma a la persona.',
+    ].filter((l) => l !== '').join('\n');
+  }
   if (r.kind === 'advisor-runs') {
     return [
       '⛔ el registro de corridas de los revisores no se toca a mano',
@@ -898,7 +915,7 @@ function storyByConsoleMessage(rutas, via) {
 module.exports = {
   MODO_FUERA_DEL_GRUPO,
   markerDeleteMessage, storyByConsoleMessage,
-  computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, isTerminalAcknowledgmentsRecord, isLaunchedSessionsRecord, isOfficeMailboxRecord, isReportedCriticalsRecord, isAdvisorRunsRecord, isPlanReviewRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
+  computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, isTerminalAcknowledgmentsRecord, isLaunchedSessionsRecord, isOfficeMailboxRecord, isReportedCriticalsRecord, isAdvisorRunsRecord, isPlanReviewRecord, isExemptionsRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
   STORY_INTENT_PATTERNS,
   DEFAULT_ADHOC_MAX_FILES, DELEGATED_ADHOC_MAX_FILES, cupoDelegado, cupoAlDeclarar, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS, MARKER_REL,
 };

@@ -1118,8 +1118,8 @@ if [[ "$_ow_mira" == "1" ]]; then
 fi
 ESC_CARTEL=""
 
-# ESC-C5: el permiso de escribir a mano la evidencia de la prueba en vivo (`ALLOW_DOD_EVIDENCE_WRITE`) y la exención de
-# esa prueba (`dod_runtime_exempt: true`) escritos por la terminal los decide la persona, que los firma con
+# ESC-C5: el permiso de escribir a mano la evidencia de la prueba en vivo (`ALLOW_DOD_EVIDENCE_WRITE`) y las exenciones de
+# esa prueba y de los revisores (`dod_runtime_exempt: true`, `advisors_exempt: true`) escritos por la terminal los decide la persona, que los firma con
 # `marker.js sign-file` y deja la escritura al Edit o Write. Frena un comando que crea, toca o copia un archivo con ese
 # nombre (`touch`, `cp`, una redirección, `tee`, un intérprete, `New-Item`, `Set-Content`, …) y uno que escribe la
 # exención en un `.md` (`sed -i`, `perl -i`, `>`, `>>`, `tee`); mirarlo, buscarlo, borrarlo o sacar la exención no frena.
@@ -1127,7 +1127,7 @@ ESC_CARTEL=""
 # Por la herramienta de escribir archivos, la exención la mira on-frontmatter-write.js y el permiso, on-dod-evidence-guard.js.
 _c5_esc=""
 shopt -s nocasematch
-if [[ "$_esc_cmd" == *allow_dod_evidence_write* || "$_esc_cmd" == *dod_runtime_exempt* ]]; then _c5_esc="?"; fi
+if [[ "$_esc_cmd" == *allow_dod_evidence_write* || "$_esc_cmd" == *dod_runtime_exempt* || "$_esc_cmd" == *advisors_exempt* ]]; then _c5_esc="?"; fi
 shopt -u nocasematch
 if [[ -n "$_c5_esc" ]]; then
   _c5_esc=""
@@ -1153,9 +1153,11 @@ if [[ -n "$_c5_esc" ]]; then
   fi
   shopt -u nocasematch
   _c5_crea="(^|[^a-z0-9_-])(touch|cp|mv|install|ln|tee|node|python3?|perl|ruby|deno|bun|new-item|ni|set-content|sc|add-content|ac|out-file|copy-item|move-item)([[:space:]][^;&|]*)?allow_dod_evidence_write|>[[:space:]]*[^;&|[:space:]]*allow_dod_evidence_write"
-  # sacar una línea con sed (`/…dod_runtime_exempt…/d`) no la agrega
-  _c5_sin_borrar="$(printf '%s' "$_c5_min" | sed -E 's#/[^/]*dod_runtime_exempt[^/]*/d##g')" || _c5_sin_borrar="$_c5_min"
-  _c5_exenta="dod_runtime_exempt:[[:space:]]*true"
+  # sacar una línea con sed (`/…dod_runtime_exempt…/d`, `/…advisors_exempt…/d`) no la agrega
+  _c5_sin_borrar="$(printf '%s' "$_c5_min" | sed -E 's#/[^/]*(dod_runtime_exempt|advisors_exempt)[^/]*/d##g')" || _c5_sin_borrar="$_c5_min"
+  _c5_exenta="(dod_runtime_exempt|advisors_exempt):[[:space:]]*true"
+  _c5_de_revisores="advisors_exempt:[[:space:]]*true"
+  _c5_de_la_prueba="dod_runtime_exempt:[[:space:]]*true"
   # la redirección es `>` o `>>` sueltos: `=>` o `->` dentro de un código no escriben un archivo
   _c5_md="(^|[^=<>-])>>?[[:space:]]*[^;&|[:space:]>]*\.md|(^|[^a-z0-9_-])tee[[:space:]][^;&|]*\.md"
   # sed o perl que editan en el lugar: la bandera como palabra suelta (`-i`, `-Ei`, `-pi`, `-i.bak`, `--in-place`; no el
@@ -1166,6 +1168,7 @@ if [[ -n "$_c5_esc" ]]; then
     _c5_esc="ALLOW_DOD_EVIDENCE_WRITE"
   elif [[ "$_c5_sin_borrar" =~ $_c5_exenta ]] && { [[ "$_c5_sin_borrar" =~ $_c5_md ]] || { [[ "$_c5_sin_borrar" =~ $_c5_inplace ]] && [[ "$_c5_sin_borrar" =~ $_c5_un_md ]]; }; }; then
     _c5_esc="dod_runtime_exempt"
+    if [[ "$_c5_sin_borrar" =~ $_c5_de_revisores ]] && ! [[ "$_c5_sin_borrar" =~ $_c5_de_la_prueba ]]; then _c5_esc="advisors_exempt"; fi
   fi
   if [[ -n "$_c5_esc" ]]; then
     _c5_sid="$(read_field session_id 2>/dev/null)" || _c5_sid=""
@@ -1188,6 +1191,10 @@ if [[ -n "$_c5_esc" ]]; then
       block "ESC-C5" \
         "El permiso ALLOW_DOD_EVIDENCE_WRITE deja escribir a mano la evidencia de la prueba en vivo, que tiene que salir de una prueba que corrió." \
         "Corré la prueba en vivo con su guion (el gate E2E del proyecto o el macro del humo): la evidencia la escribe él."
+    elif [[ "$_c5_esc" == "advisors_exempt" ]]; then
+      block "ESC-C5" \
+        "Agregar advisors_exempt: true a una historia la exime de los revisores." \
+        "Corré los revisores de la historia en su ejecución del pipeline. Si de verdad no hay nada que revisar, decíselo a la persona. ¿Sólo la nombrabas en un texto (un heredoc)? Este freno mira el comando entero: escribí ese texto en un archivo."
     else
       block "ESC-C5" \
         "Agregar dod_runtime_exempt: true a una historia la exime de la prueba en vivo." \
