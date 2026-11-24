@@ -21,16 +21,18 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *                                               origin/main si no existe); imprime su cd
  *   release [<puesto>]                          lo deja sobre main sin rama y libre; la rama queda. Con cambios sin
  *                                               commitear no lo suelta
- *   pending-trust [--repo <r>]                  los puestos sin su propia aprobación anotada en Claude Code (los que
- *                                               pueden faltar), cada uno con el cd para aprobarlo; sin repo, los de
- *                                               todos los repos con puestos
+ *   pending-trust [--repo <r>]                  los puestos sin aprobación a la vista (los que pueden faltar), cada
+ *                                               uno con el cd para aprobarlo; sin repo, los de todos los repos con
+ *                                               puestos
  *
  * El repo por defecto es el de la carpeta actual. Los repos con puestos quedan anotados en
- * `<estado>/coordination/slots.json`, para que `pending-trust` los encuentre. La aprobación se mira en la
- * configuración de Claude Code (`~/.claude.json`, o la de `CLAUDE_CONFIG_DIR`), por la ruta exacta del puesto; de ese
- * archivo no se imprime nada más que rutas. Un puesto cuenta como aprobado sólo con su propia entrada: la de su carpeta
- * principal no alcanza (con Claude Code 2.1.330 la sesión de fondo pide aprobar cada puesto aparte, y esa aprobación no
- * queda anotada en ese archivo), así que sin entrada propia no se sabe y el puesto sale en la lista.
+ * `<estado>/coordination/slots.json`, para que `pending-trust` los encuentre. Un puesto cuenta como aprobado con su
+ * propia entrada en la configuración de Claude Code (`~/.claude.json`, o la de `CLAUDE_CONFIG_DIR`, por la ruta exacta
+ * del puesto; de ese archivo no se imprime nada más que rutas), o si una sesión de fondo ya abrió ahí: lo anota
+ * `coordination.js open` en `<estado>/coordination/accepted-folders.json`, y lo saca si después Claude Code contesta que
+ * la carpeta no está aprobada. La entrada de la carpeta principal no alcanza: con Claude Code 2.1.330 la sesión de fondo
+ * pide aprobar cada puesto aparte, y esa aprobación no queda anotada en su configuración. Sin ninguna de las dos no se
+ * sabe, y el puesto sale en la lista.
  */
 const fs = require('fs');
 const os = require('os');
@@ -186,19 +188,32 @@ function withLock(common, fn) {
   try { return fn(); } finally { try { fs.rmdirSync(lock); } catch { /* ya no está */ } }
 }
 
-/** Toma el primer puesto libre y cambia ahí a la rama. `{ ok, path, n, branch, created }` o `{ ok: false, message }`. */
+/**
+ * Toma el primer puesto libre y cambia ahí a la rama. `{ ok, path, n, branch, created }` o `{ ok: false, message }`. Con
+ * `trusted` (una función que dice si Claude Code ya aceptó una carpeta) sólo toma un puesto que ya está y que ya fue
+ * aceptado, sin crear los que falten; si no hay ninguno libre así, `{ ok: false, none: true, message }`.
+ */
 function take(opts = {}) {
   const branch = String(opts.branch || '');
   if (!branch || branch.startsWith('-') || git(opts.repo || process.cwd(), ['check-ref-format', '--branch', branch]).problem) {
     return no(`«${branch}» no es un nombre de rama válido: no tomé ningún puesto.`);
   }
-  const e = ensure(opts);
-  if (!e.ok) return e;
-  const r = mainCheckout(e.main, opts.home);
+  let main;
+  if (opts.trusted) {
+    const m = mainCheckout(opts.repo || process.cwd(), opts.home);
+    if (m.problem) return no(`No hay puestos: ${m.problem}.`);
+    main = m.main;
+  } else {
+    const e = ensure(opts);
+    if (!e.ok) return e;
+    main = e.main;
+  }
+  const r = mainCheckout(main, opts.home);
   return withLock(r.common, () => {
     const p = present(r.main);
     if (p.problem) return no(`No pude listar los worktrees de ${r.main} (${p.problem}).`);
-    const s = p.slots.find((x) => x.free);
+    const s = p.slots.find((x) => x.free && (!opts.trusted || opts.trusted(x.path)));
+    if (!s && opts.trusted) return { ok: false, none: true, message: `En ${r.main} no hay un puesto libre que Claude Code ya haya aceptado: no tomé ninguno.` };
     if (!s) return no(`En ${r.main} no hay puesto libre (${p.slots.length - p.slots.filter((x) => x.free).length} de ${p.slots.length} ocupados): no tomé ninguno.`);
     const exists = !git(r.main, ['rev-parse', '--verify', '-q', `refs/heads/${branch}`]).problem;
     if (!exists) git(r.main, ['fetch', '-q', 'origin', 'main']);
@@ -230,35 +245,68 @@ function release(opts = {}) {
 
 const claudeConfigFile = (home, env) => (env && env.CLAUDE_CONFIG_DIR ? path.join(env.CLAUDE_CONFIG_DIR, '.claude.json') : path.join(home, '.claude.json'));
 
+// Las carpetas donde una sesión de fondo ya abrió: Claude Code las aceptó. Roto o sin archivo, ninguna.
+const acceptedFile = (home) => path.join(stateDir(home || os.homedir()), 'coordination', 'accepted-folders.json');
+function readAccepted(home) {
+  try {
+    const d = JSON.parse(fs.readFileSync(acceptedFile(home), 'utf8'));
+    return new Set(Array.isArray(d.folders) ? d.folders.filter((f) => typeof f === 'string') : []);
+  } catch { return new Set(); }
+}
+
+/** Anota una carpeta donde Claude Code abrió una sesión de fondo, o la saca con `accepted: false`. Tira si no puede. */
+function noteAccepted({ home, folder, accepted = true }) {
+  const real = fs.existsSync(folder) ? fs.realpathSync(folder) : path.resolve(folder);
+  const set = readAccepted(home);
+  if (accepted === set.has(real)) return;
+  if (accepted) set.add(real); else set.delete(real);
+  const file = acceptedFile(home);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, `${JSON.stringify({ folders: [...set].sort() }, null, 2)}\n`);
+  fs.renameSync(tmp, file);
+}
+
 /**
- * Los puestos sin su propia aprobación anotada: los que pueden faltar. Nunca dice que están aprobados sin la entrada de
- * cada uno. `{ ok, pending: [rutas], message }` o `{ ok: false, message }`.
+ * Qué carpetas aprobó Claude Code, hasta donde se puede ver: su propia entrada en la configuración, o una sesión de fondo
+ * que ya abrió ahí. `{ trusted: (ruta real) => bool }` o `{ problem }` si la configuración no se pudo leer.
  */
-function pendingTrust(opts = {}) {
+function trustCheck(opts = {}) {
   const home = opts.home || os.homedir();
-  const repos = opts.repo ? [opts.repo] : readRegistry(home);
   const file = claudeConfigFile(home, opts.env || process.env);
   let projects = {};
   try {
     projects = (JSON.parse(fs.readFileSync(file, 'utf8')) || {}).projects || {};
   } catch (e) {
-    if (e.code !== 'ENOENT') return no(`No pude leer ${file} (${e.code || 'no es JSON'}): no sé qué puestos están aprobados.`);
+    if (e.code !== 'ENOENT') return { problem: `No pude leer ${file} (${e.code || 'no es JSON'}): no sé qué puestos están aprobados.` };
   }
-  const trusted = (p) => Boolean(projects[p] && projects[p].hasTrustDialogAccepted === true);
+  const accepted = readAccepted(home);
+  return { trusted: (p) => Boolean((projects[p] && projects[p].hasTrustDialogAccepted === true) || accepted.has(p)) };
+}
+
+/**
+ * Los puestos sin aprobación a la vista: los que pueden faltar. Nunca da uno por aprobado sin su propia entrada o una
+ * sesión de fondo que ya abrió ahí. `{ ok, pending: [rutas], message }` o `{ ok: false, message }`.
+ */
+function pendingTrust(opts = {}) {
+  const home = opts.home || os.homedir();
+  const repos = opts.repo ? [opts.repo] : readRegistry(home);
+  const tc = trustCheck({ ...opts, home });
+  if (tc.problem) return no(tc.problem);
   const pending = [];
   let total = 0;
   for (const repo of repos) {
     const l = list({ ...opts, repo });
     if (!l.ok) return no(l.message);
     total += l.slots.length;
-    // sólo la entrada del puesto prueba algo: la de su carpeta principal valía con 2.1.312 y con 2.1.330 ya no
-    for (const s of l.slots) if (!trusted(s.path)) pending.push(s.path);
+    // la entrada de su carpeta principal valía con 2.1.312 y con 2.1.330 ya no
+    for (const s of l.slots) if (!tc.trusted(s.path)) pending.push(s.path);
   }
   let message;
   if (pending.length) {
-    message = `${pending.length} puesto(s) sin su propia aprobación anotada: no sé si Claude Code los tiene aprobados (Claude Code 2.1.330 los aprueba aparte y no lo anota). Si al abrir una sesión ahí dice que la carpeta no está aprobada, abrí claude una vez en esa carpeta (aceptá si pregunta y salí):`;
+    message = `${pending.length} puesto(s) sin aprobación a la vista: no sé si Claude Code los tiene aprobados (Claude Code 2.1.330 los aprueba aparte y no lo anota). Si al abrir una sesión ahí dice que la carpeta no está aprobada, abrí claude una vez en esa carpeta (aceptá si pregunta y salí):`;
   } else if (total) {
-    message = `Los ${total} puesto(s) están aprobados en Claude Code: cada uno tiene su propia aprobación anotada.`;
+    message = `Los ${total} puesto(s) están aprobados en Claude Code: cada uno tiene su propia aprobación anotada o ya abrió ahí una sesión de fondo.`;
   } else {
     message = repos.length ? 'Los repos anotados no tienen puestos todavía.' : 'Todavía no hay puestos en ningún repo.';
   }
@@ -315,4 +363,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { ensure, list, take, release, pendingTrust, slotPath };
+module.exports = { ensure, list, take, release, pendingTrust, slotPath, trustCheck, noteAccepted, acceptedFile };

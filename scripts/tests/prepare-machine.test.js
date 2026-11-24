@@ -257,6 +257,28 @@ test('F159 T1 Preparar_PrincipalAprobada_NoPrometeLasCopias: con la principal ap
   assert.strictEqual(r2.items.filter((i) => i.ok === 'nota').length, 0, text(r2));
 });
 
+test('F159 T12 Preparar_ListaLosPuestosDeUnaVez: con la principal aprobada, una sola nota nombra todos los puestos sin aprobación a la vista, cada uno con su cd; el aprobado o donde ya abrió una sesión no sale; sigue «lista»', () => {
+  const WS = require(path.join(ROOT, 'scripts', 'tools', 'work-slots.js'));
+  const t = toy();
+  const a = repo(t, 'a');
+  const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.invalid', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.invalid' };
+  spawnSync('git', ['-C', a, 'commit', '-q', '--allow-empty', '-m', 'uno'], { env });
+  assert.strictEqual(WS.ensure({ home: t.home, arnes: t.arnes, env: {}, repo: a, count: 3 }).ok, true);
+  const slotN = (n) => path.join(path.dirname(a), `a--slot-${n}`);
+  fs.writeFileSync(path.join(t.home, '.claude.json'), JSON.stringify(trusted(a, slotN(1))));
+  WS.noteAccepted({ home: t.home, folder: slotN(3) });
+  const r = PM.check({ ...t.opts, repos: [a] });
+  assert.strictEqual(r.code, 0, text(r));
+  const notas = r.items.filter((i) => i.ok === 'nota' && /puesto/.test(i.text));
+  assert.strictEqual(notas.length, 1, text(r));
+  assert.ok(notas[0].text.includes(`cd '${slotN(2)}' && claude`), notas[0].text);
+  assert.ok(!notas[0].text.includes(`'${slotN(1)}'`) && !notas[0].text.includes(`'${slotN(3)}'`), notas[0].text);
+  assert.match(text(r), /\blista\b/);
+  // todos aprobados o aceptados: ninguna nota de puestos
+  WS.noteAccepted({ home: t.home, folder: slotN(2) });
+  assert.strictEqual(PM.check({ ...t.opts, repos: [a] }).items.filter((i) => i.ok === 'nota' && /puesto/.test(i.text)).length, 0);
+});
+
 test('8.187 T15b Preparar_LoQueNoPudoMirar_NoEsLoQueFalta @story-8.187 @ac-13: un aviso del freno de «no pude» y un CLAUDE.md ilegible salen como «no pude mirar» (2); los renglones de continuación van con su aviso', { skip: process.platform === 'win32' ? 'permisos POSIX' : false }, () => {
   const t = toy({ prod: { viejo: false, avisos: ['🔴 el FRENO de producción no está instalado', '   Instalalo (pide tu contraseña del Mac, una vez): open x'] } });
   const r = PM.check({ ...t.opts, repos: [] });

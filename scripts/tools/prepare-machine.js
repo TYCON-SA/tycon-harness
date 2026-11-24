@@ -13,7 +13,9 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *   · la advertencia del modo sin permisos de Claude Code;
  *   · cada carpeta principal de `--repo` sin aprobar en Claude Code, o con imports externos del CLAUDE.md sin aceptar.
  *     Sus copias y sus puestos no se dan por aprobados: con Claude Code 2.1.330 la sesión de fondo pide aprobar cada
- *     uno aparte, aunque la principal lo esté, y no lo anota donde se pueda mirar. Lo dice en una nota.
+ *     uno aparte, aunque la principal lo esté, y no lo anota donde se pueda mirar. Una nota nombra de una vez todos los
+ *     puestos sin aprobación a la vista (scripts/tools/work-slots.js `pending-trust`), cada uno con su cd; un repo sin
+ *     puestos, dice cómo crearlos.
  *
  * SÓLO LEE Y DICE: no escribe en ningún lado, no acepta nada por la persona y no llama a `sudo`. Lo que no pudo mirar
  * lo dice en su línea y nunca dice «lista».
@@ -212,7 +214,7 @@ function bypassItems({ home }) {
 
 function repoItems({ repos, home, env, platform }) {
   const items = [];
-  let approvedMain = false;
+  const approvedMains = [];
   const file = env && env.CLAUDE_CONFIG_DIR ? path.join(env.CLAUDE_CONFIG_DIR, '.claude.json') : path.join(home, '.claude.json');
   const cfg = readJson(file);
   const projects = cfg.ok ? ((cfg.value || {}).projects || {}) : null;
@@ -226,7 +228,7 @@ function repoItems({ repos, home, env, platform }) {
       items.push({ ok: false, text: `${m.main}: sin aprobar en Claude Code. Abrila una vez y aceptá la carpeta (y los imports del CLAUDE.md, si pregunta):`, command: openIn(m.main, platform) });
       continue;
     }
-    approvedMain = true;
+    approvedMains.push(m.main);
     if (p.hasClaudeMdExternalIncludesApproved) continue;
     const ext = hasExternalImports(m.main, home);
     if (ext === null) {
@@ -238,9 +240,25 @@ function repoItems({ repos, home, env, platform }) {
       items.push({ ok: false, text: `${m.main}: su CLAUDE.md importa archivos de afuera y los imports no están aceptados. Abrila una vez y aceptalos:`, command: openIn(m.main, platform) });
     }
   }
-  // la principal aprobada no prueba nada de sus copias ni de sus puestos: no se dan por aprobados
-  if (approvedMain) {
-    items.push({ ok: 'nota', text: 'las copias y los puestos de esos repos: no sé si Claude Code los tiene aprobados (Claude Code 2.1.330 pide aprobar cada uno aparte, aunque la principal lo esté). Si al abrir una sesión ahí dice que la carpeta no está aprobada, abrí claude una vez en esa carpeta (aceptá si pregunta y salí)' });
+  // la principal aprobada no prueba nada de sus copias ni de sus puestos (Claude Code 2.1.330 pide aprobar cada uno
+  // aparte): los puestos son fijos, así que los que no tienen aprobación a la vista se piden todos de una vez
+  if (approvedMains.length) {
+    const workSlots = require('./work-slots.js');
+    const pending = [];
+    let sinPuestos = false;
+    for (const main of approvedMains) {
+      const l = workSlots.list({ home, env, repo: main });
+      if (l.ok && !l.slots.length) sinPuestos = true;
+      const t = l.ok ? workSlots.pendingTrust({ home, env, repo: main }) : l;
+      if (!t.ok) { items.push({ ok: 'nota', text: `${main}: no pude saber qué puestos tiene aprobados (${t.message})` }); continue; }
+      pending.push(...t.pending);
+    }
+    if (pending.length) {
+      items.push({ ok: 'nota', text: `los puestos sin aprobación a la vista: no sé si Claude Code los tiene aprobados (2.1.330 pide aprobar cada uno aparte, aunque la principal lo esté). Abrí claude una vez en cada uno, aceptá si pregunta y salí: ${pending.map((p) => openIn(p, platform)).join(' · ')}` });
+    }
+    if (sinPuestos) {
+      items.push({ ok: 'nota', text: `las copias de los repos sin puestos: no sé si Claude Code las tiene aprobadas (2.1.330 pide aprobar cada copia nueva aparte). Los puestos fijos se aprueban una vez y la coordinadora los prefiere: se crean con node ${quote(path.join(__dirname, 'work-slots.js'), platform)} ensure --repo <carpeta>, y después abrí claude una vez en cada uno` });
+    }
   }
   return items;
 }
