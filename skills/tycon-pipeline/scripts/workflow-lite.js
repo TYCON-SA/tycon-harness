@@ -29,7 +29,10 @@
  * anota en `<carpeta>/PEDIDOS.json` y cuenta como muerta («sin respuesta»). La sesión lanza un agente de Claude por
  * pedido, cada uno escribe su respuesta, y se vuelve a correr hasta que no quedan pedidos. El guion es el mismo.
  *
- * Uso:  node workflow-lite.js <script.workflow.js> --args '<json>' [--out <file>] [--agents-dir <carpeta>]
+ * `--args-file <archivo>` da los mismos args que `--args`, leídos de un archivo JSON (con o sin BOM). Es la forma para
+ * args grandes: en Windows la línea de comando tiene tope (unos 32 KB) y los de la revisión del plan lo pasan.
+ *
+ * Uso:  node workflow-lite.js <script.workflow.js> --args '<json>' | --args-file <archivo> [--out <file>] [--agents-dir <carpeta>]
  *       node workflow-lite.js --selftest
  * Env:  TYCON_WFLITE_JOBS (cap de agentes concurrentes, default 4)
  *       TYCON_WFLITE_MODEL_MAP (json label→slug; default desde equivalences.json si existe)
@@ -545,10 +548,25 @@ async function main() {
   const argv = process.argv.slice(2);
   if (argv.includes('--selftest')) return selftest();
   const scriptPath = argv[0];
-  if (!scriptPath || !fs.existsSync(scriptPath)) { console.error('uso: workflow-lite.js <script.workflow.js> --args <json> [--out <file>] [--runners <a,b>] [--agents-dir <carpeta>]'); return 1; }
+  if (!scriptPath || !fs.existsSync(scriptPath)) { console.error('uso: workflow-lite.js <script.workflow.js> --args <json> | --args-file <archivo> [--out <file>] [--runners <a,b>] [--agents-dir <carpeta>]'); return 1; }
   const ai = argv.indexOf('--args');
-  const rawArgs = ai >= 0 ? argv[ai + 1] : '{}';
-  let argsValue; try { argsValue = JSON.parse(rawArgs); } catch (_) { argsValue = rawArgs; }
+  // `--args-file <archivo>` o `--args-file=<archivo>`, como lo lee el freno de la consola: una sola vez
+  const conArchivo = argv.filter((x) => x === '--args-file' || x.startsWith('--args-file='));
+  let argsValue;
+  if (conArchivo.length) {
+    // los args de un archivo: uno que no se lee o que no es JSON no corre el pase con otros args
+    if (ai >= 0) { console.error('workflow-lite: --args y --args-file a la vez: los args van de una sola forma'); return 1; }
+    if (conArchivo.length > 1) { console.error('workflow-lite: --args-file más de una vez: los args van de una sola forma'); return 1; }
+    const afi = argv.indexOf(conArchivo[0]);
+    const argsFile = conArchivo[0].startsWith('--args-file=') ? conArchivo[0].slice('--args-file='.length) : argv[afi + 1];
+    if (!argsFile || argsFile.startsWith('--')) { console.error('workflow-lite: --args-file sin archivo'); return 1; }
+    let texto;
+    try { texto = fs.readFileSync(argsFile, 'utf8'); } catch (e) { console.error(`workflow-lite: --args-file ${argsFile}: no se pudo leer (${e.code || e.message})`); return 1; }
+    try { argsValue = JSON.parse(texto.replace(/^﻿/, '')); } catch (e) { console.error(`workflow-lite: --args-file ${argsFile}: no es JSON (${e.message})`); return 1; }
+  } else {
+    const rawArgs = ai >= 0 ? argv[ai + 1] : '{}';
+    try { argsValue = JSON.parse(rawArgs); } catch (_) { argsValue = rawArgs; }
+  }
   const oi = argv.indexOf('--out');
   const di = argv.indexOf('--agents-dir');
   const agentsDir = di >= 0 ? argv[di + 1] : null;

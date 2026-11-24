@@ -10,7 +10,8 @@
  *
  * `cierre` es la marca única de cómo terminó: `completa` (no estaba abierta), `abortada` (se cerró abierta), `deuda` (la
  * escribe `marker.js close-as-debt`; la ejecución sigue hasta el commit, y el `clear` del final la conserva) y
- * `abandonada` (la sesión terminó sin `clear`; la marca quien sube la ejecución). `clear` no pisa un `cierre` ya escrito. La vía de una abortada sale del registro de
+ * `abandonada` (la sesión terminó sin `clear`; la marca quien sube la ejecución) y `reemplazada` (`clear --replaced-by
+ * <commit>`: su arreglo ya entró a main por otro lado, comprobado por lib/replaced-run.js). `clear` no pisa un `cierre` ya escrito. La vía de una abortada sale del registro de
  * escapes del freno de seguridad: la última línea de esta sesión con `escape: cerrar-la-ejecucion`, posterior al
  * arranque de la ejecución; sin ella, `sin-registro`.
  *
@@ -29,7 +30,8 @@ const { ORDER_REQUIRES, isPending } = require('./steps.js');
 const { veredictoPaseAdversarial } = require('./adversarial-verdict.js');
 const { stateDir } = require('./state-dir.js');
 
-const ESTADOS = ['completa', 'deuda', 'abortada', 'abandonada'];
+// `reemplazada`: abierta, y su arreglo ya entró a main por otro lado (lib/replaced-run.js, `marker.js clear --replaced-by`)
+const ESTADOS = ['completa', 'deuda', 'abortada', 'abandonada', 'reemplazada'];
 const ACEPTADOS = ['sin-medir', 'sin-acotar'];
 
 /** Los pasos que `prepare-commit` necesita hechos, directa o indirectamente. */
@@ -100,9 +102,15 @@ function escapeDeCierre(frenos, sid, desde, escape = 'cerrar-la-ejecucion') {
 const VIAS_DE_CIERRE = ['persona', 'reenvio', 'ventana', 'delegacion', 'click', 'mensaje', 'automatica'];
 
 /** El `cierre` que deja `clear`. Uno ya escrito (`deuda`) se devuelve tal cual. */
-function cierreDe(marker, { sid, home, ahora = new Date().toISOString() } = {}) {
+function cierreDe(marker, { sid, home, ahora = new Date().toISOString(), reemplazo = null } = {}) {
   const m = marker || {};
   if (m.cierre && typeof m.cierre === 'object' && ESTADOS.includes(m.cierre.estado)) return m.cierre;
+  // su arreglo ya está en main, comprobado (lib/replaced-run.js): no pide el pase ni los pasos que le faltaban
+  if (reemplazo && reemplazo.ok) {
+    const quedaba = abierta(estado(m)) ? `; quedaba: ${motivoDe(estado(m))}` : '';
+    return { estado: 'reemplazada', motivo: `su arreglo entró a main con ${reemplazo.commit} (${path.basename(reemplazo.repo)}: ${reemplazo.archivos.join(', ')})${quedaba}`,
+      commit: reemplazo.commit, archivos: reemplazo.archivos, at: ahora };
+  }
   const e = estado(m);
   if (!abierta(e)) {
     const motivo = motivoDe(e);
@@ -129,7 +137,9 @@ function consulta(sid, home) {
   }
   try {
     const e = estado(m);
-    return { hay: true, autonomo: m.autonomous === true, abierta: abierta(e), detenida: !!e.detenida, motivo: motivoDe(e), desde: m.startedAt };
+    // una reemplazada ya terminó: su arreglo está en main
+    const cerrada = !!(m.cierre && m.cierre.estado === 'reemplazada');
+    return { hay: true, autonomo: m.autonomous === true, abierta: !cerrada && abierta(e), detenida: !cerrada && !!e.detenida, motivo: motivoDe(e), desde: m.startedAt };
   } catch (err) {
     return { hay: '?', motivo: `no pude leer el estado del marcador (${err.message})` };
   }
@@ -161,8 +171,22 @@ if (require.main === module) {
       // Sin `startedAt` en la podada, la hora es su último toque, y va con «antes de». El restore a medias o terminado se
       // busca en la sesión que el restore escribe: la de `--for-session`, si la trae. Uno terminado no hace nada: no se firma
       const aperturaDe = (s, modo, propia) => or.aperturaParaSalida(s, { modo, cwd: process.cwd(), estado: stateDir(), propia });
+      // `clear --replaced-by <commit>`: si el arreglo ya está en main, la ejecución se cierra sin firma. Acá se comprueba
+      // sin traer main; el guion lo vuelve a comprobar después de traerlo
+      const reemplazo = (l) => {
+        if (l.sub !== 'clear') return false;
+        const rr = require('./replaced-run.js');
+        const sha = rr.shaDe(l.args);
+        if (!sha) return false;
+        let m = null;
+        try { m = JSON.parse(fs.readFileSync(path.join(stateDir(), 'active', `${sid}.json`), 'utf8')); } catch (_) { return false; }
+        // una detenida espera la decisión del dueño: la cierra él
+        if (m && m.needs_human === true) return false;
+        return rr.comprobar({ marker: m, sha }).ok;
+      };
       pedidas = todas.map((l) => {
         const s = salidaPerdida(l);
+        if (!s && reemplazo(l)) return { l, esc: null };
         if (!s) return { l, esc: escapeDe(l, sid, cmd) };
         const ap = s.sesion ? aperturaDe(s.sesion, l.sub === 'restore' ? 'restore' : 'lost', s.destino || sid) : null;
         if (ap && ap.deDonde === 'terminado') return { l, esc: null };

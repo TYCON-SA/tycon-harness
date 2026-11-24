@@ -67,6 +67,8 @@
  *   marker.js doing "<qué hago>" | doing clear  → anota (o borra) qué hace esta sesión sin story, para /wip; NO es un
  *                                                  permiso. `doing clear-orphan <sid>`: la de otra sesión que no vive.
  *                                                  Con una story abierta sólo anota `doing --waiting-for "<qué espera>"`.
+ *   marker.js conditions "<texto>"              → anota en la ejecución las condiciones que puso el dev al pedirla
+ *                                                  (o «ninguna»): `next` las pide antes de cada punto de control
  *   marker.js adopt-session <sessionId>         → ADOPTA el marker completo de otra
  *                                                  sesión (resume cross-session sin pérdida:
  *                                                  filesTouched/iterations/checks/dodRuntimeChecked
@@ -186,6 +188,7 @@ const cmdTouch = (...a) => parte(() => require('./lib/marker-lifecycle.js'), 'ma
 const cmdWaitingOnMain = (...a) => parte(() => require('./lib/marker-lifecycle.js'), 'marker-lifecycle.js').cmdWaitingOnMain(...a);
 const cmdAdoptSession = (...a) => parte(() => require('./lib/marker-sessions.js'), 'marker-sessions.js').cmdAdoptSession(...a);
 const cmdClearSession = (...a) => parte(() => require('./lib/marker-sessions.js'), 'marker-sessions.js').cmdClearSession(...a);
+const cmdConditions = (...a) => parte(() => require('./lib/marker-sessions.js'), 'marker-sessions.js').cmdConditions(...a);
 const cmdDoing = (...a) => parte(() => require('./lib/marker-sessions.js'), 'marker-sessions.js').cmdDoing(...a);
 const cmdFindByStory = (...a) => parte(() => require('./lib/marker-sessions.js'), 'marker-sessions.js').cmdFindByStory(...a);
 const cmdListAll = (...a) => parte(() => require('./lib/marker-sessions.js'), 'marker-sessions.js').cmdListAll(...a);
@@ -403,6 +406,9 @@ switch (cmd) {
     break;
   case 'doing':
     cmdDoing(arg1, arg2);
+    break;
+  case 'conditions':
+    cmdConditions(process.argv.slice(3));
     break;
   case 'waiting-on-main':
     cmdWaitingOnMain(process.argv.slice(3));
