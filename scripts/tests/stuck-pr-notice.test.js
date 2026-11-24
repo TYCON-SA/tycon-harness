@@ -786,7 +786,7 @@ test('Requeue_AutoMergeBeforePush_NotQueued — con el auto-merge puesto antes d
 
 // 🔴 Falla con: decir «quedó fuera de la cola después del empuje» sin decir cuándo. Un pedido con el auto-merge puesto a
 // las 14:21 y un merge de main a las 17:22 del mismo día se leyó dos días después como un empuje de recién, y mandó a
-// buscar quién lo había tocado (fila 166).
+// buscar quién lo había tocado.
 test('Requeue_PushAge_SaysWhen — el aviso dice hace cuánto llegó la punta, no sólo «después del empuje»', () => {
   const ahora = Date.parse('2026-11-23T19:30:00Z');
   const p = listo(1419, { lastQueueDrop: null, autoComplete: true, autoMergeSince: '2026-11-21T14:21:12Z', headCommittedAt: '2026-11-21T17:22:58Z', mergeStatus: 'UNKNOWN' });
