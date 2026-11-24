@@ -904,7 +904,7 @@ test('el mensaje del freno dice de quién es el escape y nombra la receta', () =
 
 // 🔴 Falla con: no contar como escritura el `--output` de git. `git log --output=specs/h.md` (también `diff` y `show`,
 // con la ruta aparte, abreviada como `--out=` o entre comillas) escribe el archivo que nombra, y el freno no lo veía, ni
-// para una historia ni para una constancia (fila 168).
+// para una historia ni para una constancia.
 test('GitConOutput_EscribeLoQueNombra: git log, diff o show con --output frenan como una escritura', () => {
   const { estado, repo } = corralConHistorias();
   conEnv(ENV, () => {
