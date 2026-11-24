@@ -76,7 +76,7 @@ const PARA_OTRA_SESION = {
   'runtime-waiver': { firma: 'runtime-waiver', marcador: true },
   // cerrar como deuda, el rojo esperado de la matriz y apagar el modo autónomo: sobre la ejecución abierta del destino
   'close-as-debt': { firma: 'escape:cerrar-como-deuda', marcador: true },
-  // el rojo esperado, de la matriz o de un control: la misma firma
+  // el rojo esperado de la matriz; el de un control va con la firma de cerrar como deuda (reglaParaOtra)
   'expect-red': { firma: 'escape:rojo-esperado-de-la-matriz', marcador: true },
   'set-autonomous': { firma: 'escape:set-autonomous', marcador: true, si: (a) => !['true', '1', 'on'].includes(a[3]) },
   'clear-session': { firma: 'lost-run', nombra: 3, si: (a) => a.includes('--lost') && !a.includes('--partition') },
@@ -102,10 +102,12 @@ const reglaParaOtra = (argv) => {
   // el freno de los datos, sólo para dejarlo pasar: descartar o pasar a historia tocan el carril de la sesión sin firma
   if (argv[2] === 'adhoc' && argv[3] === 'allow-data-change') return { firma: 'adhoc-lane:datos', si: (a) => a[a.indexOf('--recommends') + 1] === 'pasar' };
   if (argv[2] === 'sign-file') return { firma: `escape:${argv[3]}` };
+  // el rojo esperado de un control: la firma de cerrar como deuda, con el mismo criterio que el freno
+  if (argv[2] === 'expect-red' && ownerWindow().esRojoDeUnControl(argv[3])) return { firma: 'escape:cerrar-como-deuda', marcador: true };
   return PARA_OTRA_SESION[argv[2]];
 };
 
-const ownerWindow = () => require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+function ownerWindow() { return require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'owner-window.js')); }
 
 /** Con `--for-session` a otra sesión: el subcomando tiene que ser una firma que se corre así; si no, sale 2 sin escribir. */
 function paraOtraSesion(argv) {

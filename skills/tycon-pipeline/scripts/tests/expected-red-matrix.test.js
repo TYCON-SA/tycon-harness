@@ -442,6 +442,10 @@ test('8.323-ExpectRedDeUnControl_LaVentanaDaSuCuadro — el control, las pruebas
   const comando = `${MARKER} expect-red tests --tests T2,T5`;
   assert.strictEqual(ow.canonicaDe(comando).id, 'escape:cerrar-como-deuda', 'el rojo de un control pide la firma de cerrar como deuda');
   assert.strictEqual(ow.canonicaDe(`${MARKER} expect-red 'acmatrix ' --tests T1 --until 2026-12-01`).id, 'escape:rojo-esperado-de-la-matriz', 'con un espacio sigue siendo la matriz');
+  // para otra sesión, el guion elige la misma firma que el freno
+  const ms = require(path.join(SCRIPTS, 'lib', 'marker-shared.js'));
+  assert.strictEqual(ms.reglaParaOtra(['node', 'marker.js', 'expect-red', 'tests', '--tests', 'T2']).firma, 'escape:cerrar-como-deuda');
+  assert.strictEqual(ms.reglaParaOtra(['node', 'marker.js', 'expect-red', 'acmatrix ', '--tests', 'T1']).firma, 'escape:rojo-esperado-de-la-matriz');
   const cuadro = ow.cuadroPara({ firma: 'escape:cerrar-como-deuda', comando, palabras: null, destino: 's-er', cwd: E.repo, casa: E.home, sesion: 's-er' });
   assert.ok(!cuadro.error, cuadro.error);
   const todo = JSON.stringify(cuadro);

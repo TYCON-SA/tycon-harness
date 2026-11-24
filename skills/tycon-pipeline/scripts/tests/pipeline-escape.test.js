@@ -606,6 +606,18 @@ test('TresFirmasDelFreno_ConElTramiteDelPerfil_NiElRojoDeUnControlNiOtraSesion',
   // la propia sesión sí: apagar su lazo sigue siendo de trámite si el perfil lo dice
   const propia = otra.pedir(otra.comando(['set-autonomous', 'false']), { tramite });
   assert.deepStrictEqual([propia.decision, propia.via], ['allow', 'automatica'], propia.texto);
+  // el rojo esperado de la matriz para otra sesión, con su deuda y su criterio: tampoco sale por trámite
+  const matriz = laboratorioOtraSesion(t);
+  fs.appendFileSync(matriz.stories[DESTINO], ['## Acceptance Criteria', '', '1. **Given** algo, **Then** resultado uno.', '',
+    '### Tests', '', '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|', '| T1 | `a.uno` | 1 | integration | x | y |', '',
+    '## Dev Agent Record', '', '- Deuda: DEF-9.91-juguete — falta la librería', ''].join('\n'));
+  cambiar(matriz, DESTINO, (m) => { m.cierre = { estado: 'deuda', deuda: 'DEF-9.91-juguete', motivo: 'x', via: 'ventana', at: new Date().toISOString() }; m.checks = { acmatrix: 'red:exit=1' }; });
+  const d = new Date();
+  const hoy = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const rojo = matriz.pedir(matriz.comando(['expect-red', 'acmatrix', '--tests', 'T1', '--until', hoy, '--for-session', DESTINO]), { tramite });
+  assert.deepStrictEqual(rojo.firmas, ['escape:rojo-esperado-de-la-matriz'], rojo.texto);
+  assert.notStrictEqual(rojo.via, 'automatica', `el rojo de la matriz de otra sesión no sale por trámite: ${rojo.texto}`);
+  assert.notStrictEqual(rojo.decision, 'allow', rojo.texto);
 });
 
 test('Guion_ForSession_Delegada_SeisLlaves (T7) @story-8.142 @ac-4', (t) => {
