@@ -81,6 +81,8 @@ const GUION_ESCRIBE = /\b(?:writeFileSync|writeFile|appendFileSync|appendFile|cr
 const FORMAS_DE_ESCRIBIR = [
   String.raw`(?:^|[\s;&|(])(?:[^\s;&|()'"]*[\\/])?\\?(?:rm|del|erase|unlink|remove-item|ri|mv|move|mi|move-item|rename-item|ren|cp|copy|copy-item|install|rsync|ditto|scp|dd|truncate|ln)(?:\.exe)?(?=\s)`,
   String.raw`\bgit\b[^\n;&|]*\s(?:checkout|restore|rm|mv)\b`,
+  // `--output` de log, diff, show y los que aceptan las opciones de diff, también abreviada (`--out=…`)
+  String.raw`\bgit\b[^\n;&|]*\s--ou(?:t(?:p(?:ut?)?)?)?(?=[=\s])`,
   String.raw`\b(?:curl|wget)\b[^\n;&|]*\s(?:-o|-O|--output)`,
   String.raw`>{1,2}(?![&>])(?!\s*/dev/(?:null|stdout|stderr)\b)`,
   String.raw`\btee\b`,
@@ -587,6 +589,30 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
     if (/^(?:\w+=\S+\s+)*(?:sudo\s+)?truncate\b/.test(seg.trim())) {
       const t = lastWord(seg);
       if (t && !t.startsWith('-')) out.add(t);
+    }
+  }
+
+  // 7) git con `--output` (log, diff, show y los que aceptan las opciones de diff) escribe el archivo que nombra, pegado
+  //    con `=` o en la palabra que sigue; git acepta abreviar la opción (`--out=…`). Con `git -C <carpeta>` una ruta
+  //    relativa es desde esa carpeta: cuentan las dos.
+  for (const seg of splitSegments(s)) {
+    const words = (seg.match(new RegExp(Q, 'g')) || []).map((w) => { const mm = w.match(new RegExp(`^${Q}$`)); return mm ? tok(mm, 1) : null; }).filter((w) => w != null);
+    let k = 0;
+    while (k < words.length && (/^\w+=/.test(words[k]) || ['sudo', 'env', 'command', 'exec', 'nice', 'nohup', 'time'].includes(words[k]))) k++;
+    if (path.basename(words[k] || '') !== 'git') continue;
+    let carpeta = null;
+    for (let i = k + 1; i < words.length; i++) {
+      const w = words[i];
+      if (w === '-C' && words[i + 1]) { carpeta = words[++i]; continue; }
+      const nombre = w.split('=')[0];
+      if (!(nombre.length >= 4 && '--output'.startsWith(nombre))) continue;
+      // `--output='specs/h.md'` llega en dos palabras: la opción con su `=` y el valor citado
+      const crudo = w.includes('=') && !w.endsWith('=') ? w.slice(w.indexOf('=') + 1) : words[++i];
+      // con sus comillas resueltas, como lo deja el shell
+      const valor = crudo ? palabraDelShell(crudo) : '';
+      if (!valor) continue;
+      out.add(valor);
+      if (carpeta && !path.isAbsolute(valor)) out.add(path.join(carpeta, valor));
     }
   }
 
