@@ -178,6 +178,62 @@ test('MoveStory_OtherFolderWithSprintStatus_Warns', () => {
   assert.match(r.out, /sprint-status\.yaml/);
 });
 
+// 🔴 Falla con: un comando que mueve primero y escribe las constancias después: si la escritura falla, la historia queda
+//    movida y sin validar, y el comando dice que no se movió.
+test('MoveStory_RecordWriteFails_NothingMoves', { skip: process.platform === 'win32' || (process.getuid && process.getuid() === 0) }, () => {
+  const l = lab('no-escribe');
+  validar(l);
+  const dir = path.dirname(VR.recordFile(l.home, l.de));
+  fs.chmodSync(dir, 0o500);
+  try {
+    const r = mover(l);
+    assert.equal(r.status, 1, r.out);
+    assert.match(r.out, /no moví nada/);
+    assert.equal(fs.existsSync(l.de), true, 'la historia sigue en su ruta');
+    assert.equal(fs.existsSync(l.a), false);
+    assert.equal(git(l.repo, 'status', '--porcelain'), '', 'git no quedó con un renombre a medias');
+  } finally { fs.chmodSync(dir, 0o700); }
+});
+
+// La clave de una constancia es el repo más la ruta: la comparten las copias del mismo repo (worktrees, ramas).
+// 🔴 Falla con: un comando que borra la constancia de la ruta vieja (otra copia todavía tiene la historia ahí) o que pisa
+//    la de la ruta nueva cuando es de otra historia.
+test('MoveStory_OtherCopies_OldRecordKept_NewKeyOfOtherStoryNotOverwritten', () => {
+  const l = lab('copias');
+  validar(l);
+  const r = mover(l);
+  assert.equal(r.status, 0, r.out);
+  // otra copia sigue con la historia en la ruta vieja: su validación sigue vigente
+  fs.writeFileSync(l.de, HISTORIA);
+  assert.equal(VR.readRecord(l.home, l.de).estado, 'current', 'la constancia de la ruta vieja sigue');
+
+  const m = lab('copias-otra');
+  validar(m);
+  // otra copia tiene OTRA historia validada en la ruta nueva
+  const otra = HISTORIA.replace('Hace algo.', 'Hace otra cosa.');
+  fs.writeFileSync(m.a, otra);
+  validar(m, m.a);
+  fs.rmSync(m.a);
+  const r2 = mover(m);
+  assert.equal(r2.status, 1, r2.out);
+  assert.match(r2.out, /otro contenido/);
+  assert.equal(fs.existsSync(m.de), true, 'no se movió');
+  fs.writeFileSync(m.a, otra);
+  assert.equal(VR.readRecord(m.home, m.a).estado, 'current', 'la constancia de la otra historia no se pisó');
+});
+
+// Otra copia ya movió la misma historia: la clave nueva tiene la constancia del mismo contenido, y se puede mover.
+test('MoveStory_NewKeyAlreadyHasSameContent_Moves', () => {
+  const l = lab('misma');
+  validar(l);
+  fs.writeFileSync(l.a, HISTORIA);
+  validar(l, l.a);
+  fs.rmSync(l.a);
+  const r = mover(l);
+  assert.equal(r.status, 0, r.out);
+  assert.equal(VR.readRecord(l.home, l.a).estado, 'current', r.out);
+});
+
 test('MoveStory_Usage_Exits2', () => {
   const l = lab('uso');
   const env = { ...process.env, HOME: l.home };
