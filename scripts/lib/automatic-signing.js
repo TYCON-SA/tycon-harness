@@ -15,7 +15,7 @@
  */
 
 // lo que el arnés nunca firma solo, aunque el perfil lo liste: lo mismo que nunca se delega
-const SOLO_DEL_DUENO = new Set(['adversarial-skip']);
+const SOLO_DEL_DUENO = new Set(['adversarial-skip', 'review-skip']);
 // lo que nunca sale solo aunque se delegue: la constancia tiene que nombrar a la persona que dio el ok, y la del trámite
 // dice «el arnés» (write-findings la rechazaría después). Va por la delegación, que nombra al dueño, o por su click
 const SIEMPRE_CON_PERSONA = new Map([['critical-waiver', 'un crítico lo decide una persona: va por la delegación o por el click del dueño, no como trámite']]);

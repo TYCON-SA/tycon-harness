@@ -52,6 +52,12 @@
 // persona, de todos sus repos, con una consulta por lugar: una búsqueda en GitHub y una por cada organización de Azure de los
 // repos declarados. Quién es sale de las herramientas de la máquina; lo que no se puede saber o leer se dice en `fallos`.
 //
+// LO DE AFUERA, si el repo `public` es de GitHub: un renglón por cada pedido o issue abierto de gente de afuera del equipo
+// («pedido de afuera esperando: #N de <cuenta>, hace X h; su CI espera aprobación»), de scripts/lib/outside-contributions.js
+// con la regla del freno de pedidos de afuera. Lo lee la lectura de fondo y lo deja en `outside-contributions.json`; el
+// arranque muestra esa foto (con su edad, si pasó de 10 minutos) y, si está vieja, lanza otra. Sin foto de menos de
+// 24 h, o con una lectura que no se pudo hacer, «no medido».
+//
 // Nunca rompe el arranque: sale 0 siempre.
 // Variables: TYCON_STUCK_PR_HOURS (1), TYCON_GREEN_IDLE_MIN (10). Off: TYCON_STUCK_PR_NOTICE=0.
 const fs = require('fs');
@@ -91,6 +97,7 @@ function reposDelArnes(tree) {
   const r = TR.load(archivo);
   if (!r.ok) { const p = r.problems[0] || {}; return { problema: `team-repos.json: ${p.path ? `${p.path}: ` : ''}${p.message || 'no se lee'}` }; }
   const d = r.data;
+  const publico = d.public && d.public.platform === 'github' ? `${d.public.org}/${d.public.repo}` : null;
   const vistos = new Set();
   const repos = [];
   for (const x of [d.public, d.profile, d.operations, d.maintainers, ...(Array.isArray(d.harness_copies) ? d.harness_copies : [])]) {
@@ -99,7 +106,7 @@ function reposDelArnes(tree) {
     vistos.add(k);
     repos.push(x);
   }
-  return { repos };
+  return { repos, publico };
 }
 
 const claveDe = (repo) => [repo.org, repo.project, repo.repo].filter((v) => v != null && v !== '').join('/');
@@ -165,6 +172,28 @@ function lanzarRefresco(tree, dir, home) {
 }
 
 const propiosDe = (dir) => path.join(dir, 'own-prs.json');
+const afueraDe = (dir) => path.join(dir, 'outside-contributions.json');
+
+/** La foto de lo de afuera del repo público: `{ at, repo, medicion }`. */
+function leerAfuera(publico, tree, ahora) {
+  const OC = require(path.join(ROOT, 'scripts', 'lib', 'outside-contributions.js'));
+  let medicion;
+  try { medicion = OC.measure({ repo: publico, arnes: tree, cwd: tree, now: ahora }); } catch (e) { medicion = { ok: false, reason: `se cayó (${(e && e.message) || e})` }; }
+  return { at: new Date(ahora).toISOString(), repo: publico, medicion };
+}
+
+/** Los renglones del arranque, de la foto; `vieja` si hace falta otra lectura. */
+function lineasDeAfuera(publico, dir, ahora) {
+  const OC = require(path.join(ROOT, 'scripts', 'lib', 'outside-contributions.js'));
+  const foto = leerJson(afueraDe(dir));
+  const edad = foto && foto.repo === publico ? ahora - Date.parse(foto.at) : NaN;
+  if (!(edad >= 0 && edad < 24 * HORA_MS) || !foto.medicion) {
+    return { vieja: true, lineas: ['pedidos e issues de afuera: no medido (todavía no hay una lectura de hoy; sale en el próximo arranque)'] };
+  }
+  const lineas = OC.lines(foto.medicion).map((l) => limpio(l, 300));
+  if (lineas.length && edad >= FOTO_MS && foto.medicion.ok) lineas.push(`   (lectura de hace ${haceDe(edad)})`);
+  return { vieja: edad >= FOTO_MS, lineas };
+}
 const PROPIOS_TOPE = 1000;
 const QUERY_PROPIOS = 'query { viewer { login } search(query: "is:pr is:open author:@me archived:false", type: ISSUE, first: 100) { nodes { ... on PullRequest { number title isDraft headRefName isInMergeQueue mergeable autoMergeRequest { enabledAt } author { login } repository { nameWithOwner } } } } }';
 
@@ -228,6 +257,7 @@ async function refrescar(tree) {
     const leidas = await leer(declarados.repos, tree, refrescoMs());
     escribirJson(fotoDe(dir), { at: new Date(ahora).toISOString(), repos: declarados.repos.map(claveDe), lecturas: leidas });
     escribirJson(propiosDe(dir), leerPropios({ repos: declarados.repos, ahora }));
+    if (declarados.publico) escribirJson(afueraDe(dir), leerAfuera(declarados.publico, tree, ahora));
     reencolarLosListos(dir, declarados.repos, leidas, ahora);
   } finally {
     try { fs.rmSync(candadoDe(dir), { force: true }); } catch { /* vence solo */ }
@@ -695,6 +725,11 @@ async function main() {
   trabados.sort((a, b) => b.ms - a.ms || a.creado - b.creado || a.number - b.number);
   for (const t of trabados.slice(0, MAX_LINEAS)) console.log(t.linea);
   if (trabados.length > MAX_LINEAS) console.log(`   (+${trabados.length - MAX_LINEAS} más)`);
+  if (declarados.publico) {
+    const afuera = lineasDeAfuera(declarados.publico, dir, ahora);
+    if (afuera.vieja) lanzarRefresco(tree, dir);
+    for (const l of afuera.lineas) console.log(l);
+  }
 }
 
 // Si algo falla después de saber que el repo aplica, se dice; antes, se calla. El arranque nunca se rompe.

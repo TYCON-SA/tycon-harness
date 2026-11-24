@@ -5,8 +5,8 @@ que una de ellas, **la coordinadora**, ordene a las demás. La coordinadora deci
 las sesiones, cuida que la máquina no se sature y le pasa al dueño sólo lo suyo.
 
 Es una receta, no un modo: nada cambia en una máquina donde nadie designó una coordinadora. Para que ordene alcanza un
-paso: en cada máquina, el dueño escribe en el chat de la sesión elegida «Esta sesión es la coordinadora», y esa sesión
-corre `marker.js designate-relay` con esa cita.
+paso: en cada máquina, el dueño le pide a la sesión elegida que sea la coordinadora, esa sesión corre
+`marker.js designate-relay` y el dueño hace click en el cuadro.
 
 La coordinadora hace dos cosas, y sólo la segunda pide el perfil del equipo:
 
@@ -18,15 +18,14 @@ La coordinadora hace dos cosas, y sólo la segunda pide el perfil del equipo:
    todo lo que firma va a la ventana del dueño, y `confirm-designation` se niega. Si la organización saca la clave del
    perfil, una confirmación vieja deja de valer.
 
-Cómo se nombra: en cada máquina, el dueño le pide a la sesión elegida, con sus palabras, que sea la coordinadora. Con el
-perfil, esa sesión corre `marker.js designate-relay` sin frase: el freno da un cuadro con «Sí» y «No» que dice qué sesión
-es y en qué carpeta, y con el click del dueño queda nombrada y confirmada. El arnés no lee la frase. Para dejar de serlo,
+Cómo se nombra: en cada máquina, el dueño le pide a la sesión elegida, con sus palabras, que sea la coordinadora. Esa
+sesión corre `marker.js designate-relay` sin frase: el freno da un cuadro con «Sí» y «No» que dice qué sesión es y en
+qué carpeta, y con el click del dueño queda nombrada (con el perfil, también confirmada; sin él, ordena y no firma). El arnés no lee la frase. Para dejar de serlo,
 `marker.js withdraw-relay`, con su propio cuadro. Las dos firmas son sólo del dueño, con su click en la pestaña de esa
 sesión: no se delegan. Si a esa sesión la abrió de fondo otra coordinadora (`coordination.js open`), el cuadro se
 muestra igual en su pestaña y la sesión le avisa a la coordinadora que la abrió: el dueño lo contesta ahí o por
 control remoto. Donde el click no se puede comprobar, el comando dice por qué y da los respaldos: la terminal del
-dueño (`designate-relay --terminal`) o la frase (`--quote` y después `confirm-designation`). Sin perfil, por ahora se
-nombra con la frase (`designate-relay --approved-by '<el dev>' --quote '<su frase>'`).
+dueño (`designate-relay --terminal`) o la frase (`--quote` y después `confirm-designation`).
 
 Una designación por frase de OTRA sesión, anotada cuando ya hay una coordinadora confirmada, no la desplaza: queda **sin
 confirmar** hasta que el dueño la confirme (`confirm-designation`, desde la pestaña de cualquiera de las dos), y
@@ -466,9 +465,14 @@ una, la coordinadora:
   entero; si sale delicado, el plan vuelve al dueño. El pase adversarial sigue por la historia entera.
 - **Da el turno del pase del código.** Del código no lanza nada: con el dueño ausente, contesta en su nombre la pregunta
   cuya celda dice `review` (`review-answer --for-session`, con «dueño ausente» como motivo), y el pase lo lanza la
-  propia sesión con su turno, como siempre. Que `skip` y `wait` pidan el click del dueño es la fila 113.
+  propia sesión con su turno, como siempre. Si la celda dice `skip`, lo anota con `--by-profile`: el guion comprueba
+  que el dueño cuenta como ausente y que la celda dice eso, y anota `por: perfil`. Fuera de ese caso, «skip» del código
+  lo contesta el dueño: pide la firma `review-skip`, su click o su «aprobado» en tu pestaña, nunca la delegación.
 - **Pone la marca de ausente** cuando el dueño dice que se va («seguí en autónomo», «me voy», «hasta mañana» o algo
-  parecido): `marker.js owner-away set --phrase "<lo que dijo>"`. Lo juzga ella, no una lista de frases. La marca se borra
+  parecido): `marker.js owner-away set --phrase "<lo que dijo>"`. Lo juzga ella, no una lista de frases, pero la frase
+  tiene que estar en un mensaje que el dueño tipeó en su pestaña en los últimos 30 minutos: uno de otra sesión, de un
+  canal o de un programa no cuenta, y sin poder leer sus mensajes sale 2. Sin la marca, el dueño cuenta como ausente igual
+  por los minutos sin respuesta. La marca se borra
   sola cuando el dueño vuelve: un mensaje suyo, un mensaje de la oficina verificado, una firma suya o a las 24 horas. La
   oficina la muestra mientras está puesta.
 

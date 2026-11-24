@@ -2583,8 +2583,8 @@ test('Precheck_AprobarElPlan_FueraDeOrdenNiegaYEnOrdenNoEscribe', (t) => {
 
 // Las otras firmas de guion con requisitos propios pasan por el mismo chequeo. Quedan sin chequeo el carril, que no
 // tiene requisitos antes de la firma, y las cuatro firmas sobre un archivo.
-const CON_REQUISITOS = ['plan-approval', 'extra-round', 'save', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver',
-  'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran', 'adhoc-lane', 'adhoc-lane:sobre-cupo',
+const CON_REQUISITOS = ['plan-approval', 'extra-round', 'save', 'atdd-skip', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver',
+  'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'review-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran', 'adhoc-lane', 'adhoc-lane:sobre-cupo',
   'designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno', 'autonomy-resume', 'lost-run:particion', 'escape:no-mutation'];
 
 // 🔴 Falla con: una firma de guion con requisitos que abre la ventana sin preguntarle antes al guion.
@@ -2592,6 +2592,7 @@ test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => 
   assert.deepStrictEqual([...ow.CON_PRECHEQUEO].sort(), [...CON_REQUISITOS].sort());
   const otras = [
     ['adversarial-skip', `node ${MARKER} sign-adversarial-skip --story /r/specs/story-9.99.md --reason "sin código"`],
+    ['atdd-skip', `node ${MARKER} sign-atdd-skip --story /r/specs/story-9.99.md --reason "sólo guías"`],
     ['pending-approval', `node ${MARKER} approve-pending --id DEF-nuevo --repo /r`],
     ['escape:force-manual', `node ${MARKER} set-check dod green --force-manual`],
     ['escape:trust-ran', `node ${PIPELINE} check-count --repo /r --story /r/specs/story-9.99.md --trust-ran --ran a`],
@@ -2609,6 +2610,8 @@ test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => 
     ['escape:no-mutation', `node ${MARKER} complete-step run-tests --no-mutation --reason "refactor sin código nuevo"`],
     // volver al modo autónomo: sin detención, con el botón de pánico o con el «No» del dueño se niega antes del cuadro
     ['autonomy-resume', `node ${MARKER} resume-autonomy`],
+    // contestar «skip» a la pregunta del pase del código: sin pregunta o sin diff legible, el guion se niega antes del cuadro
+    ['review-skip', `node ${MARKER} review-answer --kind code --choice skip`],
   ];
   const vistas = new Set();
   for (const [firma, cmd] of [...GUIONES, ...otras]) {

@@ -57,6 +57,10 @@ function mundo(prs, teamRepos) {
   // el repo público vive en GitHub: su gh de mentira no tiene pedidos abiertos
   const ghState = path.join(tmp('spn-gh-'), 'estado.json');
   fs.writeFileSync(ghState, '{}');
+  // y nada de afuera, leído recién (lo de afuera se prueba en outside-contributions.test.js)
+  fs.mkdirSync(stateDir(home), { recursive: true });
+  fs.writeFileSync(path.join(stateDir(home), 'outside-contributions.json'), JSON.stringify({ at: new Date().toISOString(), repo: 'acme/harness',
+    medicion: { ok: true, prs: [], issues: [], capped: false } }));
   const w = { tree, home, fix, az, ghState, cwd: repoGit(HARNESS_URL) };
   ponerPedidos(w, prs);
   return w;

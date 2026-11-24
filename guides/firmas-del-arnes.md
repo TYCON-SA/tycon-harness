@@ -93,6 +93,8 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 | `manual-test` | 2 · excepción | dev y mantenimiento | marcar un criterio como probado a mano | `manual-test`, `escape:ALLOW_DOD_EVIDENCE_WRITE` |
 | `browser-test:no` | 2 · excepción | dev y mantenimiento | decir que no a la prueba con navegador | `browser-test` |
 | `adversarial-skip` | 2 · excepción | dev y mantenimiento | saltear el pase adversarial | `adversarial-skip`, `escape:TYCON_NO_DEEP_REVIEW`, `escape:no-deep-review` |
+| `atdd-skip` | 2 · excepción | dev y mantenimiento | saltear «pruebas primero» en una ejecución | `atdd-skip` |
+| `review-skip` | 2 · excepción | dev y mantenimiento | contestar «skip» a la pregunta de si correr el pase adversarial sobre el código (sólo el dueño: su ventana, su click o su «aprobado») | `review-skip` |
 | `lost-run` | 2 · excepción | dev y mantenimiento | dar por perdida una ejecución y cerrarla | `lost-run`, `escape:cerrar-la-ejecucion`, `escape:cerrar-como-deuda`, `escape:rojo-esperado-de-la-matriz` |
 | `escape:force-manual` | 2 · excepción | dev y mantenimiento | marcar a mano el estado de un control | `escape:force-manual` |
 | `escape:trust-ran` | 2 · excepción | dev y mantenimiento | contar revisores sin constancia de que corrieron | `escape:trust-ran` |
@@ -146,7 +148,7 @@ Quedan sólo del dueño, aunque un perfil las liste: `control-change` y todo el 
 `emergency`, `escape:merge-bypass`, `escape:external-pr`, y las retiradas `escape:TYCON_SAFETY_OFF` y
 `escape:TYCON_PROD_LINT`, que ya no apagan nada); `designation-set`,
 `designation-confirm` y `designation-withdraw`; `adhoc-lane:datos` y `adhoc-lane:sobre-cupo`; `escape:DOD_BYPASS`; `adversarial-skip` (con
-`escape:TYCON_NO_DEEP_REVIEW` y `escape:no-deep-review`); `escape:TYCON_TEST_GATE`; `escape:story-skill-bypass`;
+`escape:TYCON_NO_DEEP_REVIEW` y `escape:no-deep-review`); `atdd-skip`; `escape:TYCON_TEST_GATE`; `escape:story-skill-bypass`;
 `escape:dod_runtime_exempt`; y decir que no a la prueba con navegador (`browser-test`).
 
 ## Quién firma cada nivel
@@ -296,7 +298,8 @@ Lo que tiene que cumplir esa aprobación:
 - **El cambio de controles se aprueba con un click**, como las demás firmas de la máquina, o en tu terminal. La CI sigue
   siendo la segunda llave: un pedido que cambia un control pide la constancia de `control-change`, y sin ella sale en
   rojo. Antes del cuadro, la sesión te muestra la salida de `run-base-controls.sh pending` y el diff de esas rutas; nada
-  lo frena, es lo que se espera de ella. El cuadro dice cuántos archivos y en qué zonas, y el por qué sale de los commits.
+  lo frena, es lo que se espera de ella. El cuadro dice qué cambia, por qué y el riesgo, con lo que escribió la sesión en
+  sus commits; cuántos archivos toca y de qué zonas va en el detalle.
 - **El cambio de controles se explica primero.** El cuadro de `control-change` dice, después de lo que se aprueba, qué
   cambia en el comportamiento del control (qué deja de frenar, qué empieza a frenar), por qué y el riesgo concreto de ese
   cambio. Lo escribe la sesión que hizo el cambio, en sus commits, con tres renglones: `Cambia-control: …`,
@@ -468,6 +471,8 @@ vuelve a pedir la firma del dueño.
 | `lost-run` | dar por perdida una ejecución y cerrarla | `marker.js clear-session --lost (o restore)` | sí | `marker.js clear-session --lost --terminal (o restore --terminal)` |
 | `lost-run:particion` | cerrar una ejecución perdida que la partición de su historia en tandas dejó sin objeto | `marker.js clear-session <S> --lost --partition` | sí | `marker.js clear-session <S> --lost --partition --terminal` |
 | `adversarial-skip` | saltear el pase adversarial con constancia | `marker.js sign-adversarial-skip --story <S> --reason <R>` | no, en la pestaña de esa sesión | `marker.js sign-adversarial-skip --story <S> --reason <R> --terminal` |
+| `atdd-skip` | saltear «pruebas primero» en una ejecución, con constancia | `marker.js sign-atdd-skip --story <S> --reason <R>` | no, en la pestaña de esa sesión | `marker.js sign-atdd-skip --story <S> --reason <R> --terminal` |
+| `review-skip` | contestar «skip» a la pregunta del pase del código | `marker.js review-answer --kind code --choice skip` | sí | `marker.js review-answer --kind code --choice skip --terminal` |
 | `pending-approval` | abrir un pendiente nuevo en la lista de pendientes | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta>` | sí | `marker.js approve-pending --id <CÓDIGO> --repo <carpeta> --terminal` |
 | `adhoc-lane` | abrir el arreglo rápido de una sesión, sin historia | `marker.js adhoc set '<json>'` | sí | `marker.js adhoc set --reason "<motivo>" [--max-files N] --data sin-cambio --file <ruta> --terminal --for-session <id>` |
 | `adhoc-lane:sobre-cupo` | abrir un arreglo rápido que pasa el tope de archivos del camino corto, aunque se recomienda una historia | `marker.js adhoc set '<json con maxFiles mayor que el tope, por defecto 8>'` | sí | `marker.js adhoc set --reason "<motivo>" --max-files <N> --data sin-cambio --file <ruta> --terminal --for-session <id>` |
@@ -737,6 +742,11 @@ agente sin preguntar; se deshacen, y lo que no se deshace ya tiene su firma de c
 `approvals.local_commit: coordinator`: entonces el commit de una ejecución no guarda sin ese ok vigente, que la
 coordinadora da por delegación con los controles de siempre (ejecución limpia, nada sensible, aviso entregado). Si el
 perfil no dice con certeza quién firma el commit, la ventana pregunta.
+
+Saltear «pruebas primero» en una ejecución (`atdd-skip`) lo firma el dueño, como saltear el pase adversarial: el agente
+lo pide con `complete-step implement --no-atdd` o `set-flag atddBypass`, el pedido anota la muestra, y el dueño firma
+`marker.js sign-atdd-skip --story <S> --reason <R>` en la ventana o en su terminal. Vale para la ejecución entera y se
+pide sólo cuando el freno frena.
 
 El control del commit corre además el freno de publicación sobre lo que agrega ese commit: lo que el empuje frenaría (un
 secreto, un nombre de la lista) frena el commit, y no queda historia que reescribir. La ventana ya preguntó, así que ese

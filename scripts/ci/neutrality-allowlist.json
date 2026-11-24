@@ -8,7 +8,7 @@
     {"path":"guides/firmas-del-arnes.md","ceiling":3,"reason":"texto que explica qué pasa en una plataforma (una guía, un comando, un revisor o una captura del sitio)"},
     {"path":"guides/maintaining/piezas-en-detalle.md","ceiling":6,"reason":"texto que explica qué pasa en una plataforma (una guía, un comando, un revisor o una captura del sitio)"},
     {"path":"guides/maintaining/publicacion-espejo.md","ceiling":10,"reason":"texto que explica qué pasa en una plataforma (una guía, un comando, un revisor o una captura del sitio)"},
-    {"path":"guides/produccion-con-permiso.md","ceiling":1,"reason":"texto que explica qué pasa en una plataforma (una guía, un comando, un revisor o una captura del sitio)"},
+    {"path":"guides/production-with-permission.md","ceiling":1,"reason":"texto que explica qué pasa en una plataforma (una guía, un comando, un revisor o una captura del sitio)"},
     {"path":"guides/safety-guard.md","ceiling":2,"reason":"texto que explica qué pasa en una plataforma (una guía, un comando, un revisor o una captura del sitio)"},
     {"path":"guides/sitio-de-la-organizacion/capturas/configuracion-avisos.html","ceiling":1,"reason":"texto que explica qué pasa en una plataforma (una guía, un comando, un revisor o una captura del sitio)"},
     {"path":"guides/sitio-de-la-organizacion/capturas/configuracion-claude.html","ceiling":1,"reason":"texto que explica qué pasa en una plataforma (una guía, un comando, un revisor o una captura del sitio)"},
