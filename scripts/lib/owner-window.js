@@ -135,6 +135,7 @@ const CONSULTA_WINDOWS = "[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-C
  * que llegue hasta el sistema: con esta lectura nunca llegaría.
  */
 function leerArbolWindows({ spawnSync = require('child_process').spawnSync } = {}) {
+  require('./owner-approvals.js').anotarEtapa('leyendo la lista de procesos de Windows (con PowerShell)');
   const env = { ...process.env };
   for (const k of Object.keys(env)) if (/^(PSModulePath$|COR_|CORECLR_|COMPLUS_|DOTNET_)/i.test(k)) delete env[k];
   let r;
@@ -1393,6 +1394,18 @@ const PLAZO_DEL_PRECHEQUEO_MS = 12000;
 const MARGEN_DEL_FRENO_MS = 3000;
 const MINIMO_DEL_CHEQUEO_MS = 1000;
 
+/** Lo que le queda al freno de seguridad antes de que lo corte su reloj, en ms; null si no lo consulta el freno. */
+function quedaAlFreno(env, ahora = Date.now()) {
+  const tope = String((env || process.env).TYCON_SAFETY_DEADLINE_S || '');
+  return /^[1-9][0-9]{8,11}$/.test(tope) ? Number(tope) * 1000 - ahora : null;
+}
+
+/** La negativa de una firma aprobada sin tiempo para firmar: la aprobación sigue sin usar, y dice cómo seguir. */
+function sinTiempoParaFirmar(queda, ids, sesion) {
+  const t = terminalDe(ids, sesion);
+  return { decision: 'deny', firmas: ids, texto: `al freno le quedan ${Math.max(0, Math.round(queda / 1000))} s antes de que lo corte su reloj, y no alcanzan para firmar y contestar: la aprobación sigue sin usar. Volvé a correr el mismo comando. Si se repite, subí TYCON_SAFETY_TIMEOUT_S (hasta 50) en el entorno de la herramienta, o abrí una sesión nueva: una conversación larga hace más lenta la confirmación${t ? `. Si nada de eso alcanza, la firma se da en tu terminal: ${t}` : ''}.` };
+}
+
 /** El plazo del chequeo de `firma`, en ms: el suyo, acotado por lo que le queda al freno; 0 = no hay tiempo. */
 function plazoDelChequeo(firma, env, ahora = Date.now()) {
   const propio = PLAZO_DEL_CHEQUEO[firma] || PLAZO_DEL_PRECHEQUEO_MS;
@@ -1414,6 +1427,7 @@ function plazoDelChequeo(firma, env, ahora = Date.now()) {
 function comprobarConElGuion({ firma, palabras, cwd, sesion, casa, env, via = null }) {
   // el de los controles de la base vive en scripts/ci y es de la consola; los demás, al lado del pipeline y de node
   const nombre = base(palabras[0]);
+  require('./owner-approvals.js').anotarEtapa(`corriendo el chequeo de ${nombre} antes de la firma`);
   const sh = nombre.endsWith('.sh');
   const guion = sh ? path.join(__dirname, '..', 'ci', nombre) : path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', nombre);
   const plazo = plazoDelChequeo(firma, env);
@@ -1560,7 +1574,8 @@ const envSwitches = () => require('./env-switches.js');
  * `aviso` y un renglón ESCAPE_NOTICE_PERIOD por sesión, variable y día; `antesDelCorte(variable, ahora)` se pasa en las
  * pruebas. Primero mira el período de aviso (`periodoDeAviso`), salvo que ya lo haya pasado y lo diga `sinAviso`.
  */
-function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, tramite, huellaDeLaMaquina, clasificar = clasificarConElGuion, comprobar = comprobarConElGuion, userInfo, aprobador = approverOf, aprobaciones, plataforma = process.platform, gitBash = buscarGitBash, lista, topes, sinAviso = [] } = {}) {
+function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, tramite, huellaDeLaMaquina, clasificar = clasificarConElGuion, comprobar = comprobarConElGuion, userInfo, aprobador = approverOf, aprobaciones, plataforma = process.platform, gitBash = buscarGitBash, lista, topes, sinAviso = [], env = process.env } = {}) {
+  const arranque = Date.now();
   // la declaración de un pendiente no es una firma, pero vale como de la sesión que la corre: con una variable de sesión
   // en el comando, una sesión declararía por otra y después aprobaría lo suyo por delegación. Va antes que todo, también
   // del período de aviso, y mira la palabra del subcomando, se escriba como se escriba el guion
@@ -1928,6 +1943,10 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   // nunca queda un pedido vigente con una aprobación sin gastar. Si el pedido no se puede escribir, se devuelve
   const oa = aprobada ? (aprobaciones || require('./owner-approvals.js')) : null;
   if (aprobada) {
+    // al freno de seguridad le tiene que quedar tiempo para el pedido y la respuesta: si su reloj lo corta después de
+    // gastarla, el comando no corre y la aprobación queda usada. Sin ese tiempo se niega sin gastarla
+    const queda = quedaAlFreno(env, ahora + (Date.now() - arranque));
+    if (queda !== null && queda < MARGEN_DEL_FRENO_MS) return sinTiempoParaFirmar(queda, pendientes, paraTerminal);
     const u = oa.consumir(casa, aprobada.aprobacion, { ahora, firma: pendientes[0], sesion });
     if (!u.ok) return negarSinVentana(u.motivo, pendientes, paraTerminal);
   }

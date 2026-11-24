@@ -649,6 +649,58 @@ test('Transcripcion_ClickDeLaPersona_Vale_DeUnGanchoOtraRespuestaOtraHoraNo', (t
   assert.ok(!oa.validarEnClaude({ ...click(), pregunta: otra }, CTX(casa)).ok, 'un click a otra pregunta no firma');
 });
 
+// --- una conversación larga: se confirma leyendo desde el final -----------------------------------------------------
+
+// Una sesión de varios días junta decenas de MB. Con el freno de seguridad cortando a los 20 s, confirmar el click o el
+// «aprobado» leyendo la conversación entera desde el principio, una vez por aprobación reciente, no llegaba a tiempo.
+const LECTOR = require('../../skills/tycon-pipeline/scripts/lib/jsonl-lines.js');
+
+/** Cuántos bytes lee del disco lo que corra después, de a trozos chicos para que se note. */
+function cuantoLee(t) {
+  const original = fs.readSync;
+  const trozo = LECTOR.LIMITE.trozo;
+  let n = 0;
+  LECTOR.LIMITE.trozo = 64 * 1024;
+  fs.readSync = function contar(...a) { const r = original.apply(this, a); n += r; return r; };
+  t.after(() => { fs.readSync = original; LECTOR.LIMITE.trozo = trozo; });
+  return () => n;
+}
+// renglones de hace 10 horas, de 2 KB cada uno: 1500 son unos 3 MB de conversación vieja
+const VIEJOS = Array.from({ length: 1500 }, (_, i) => agente(`renglón viejo ${i} ${'x'.repeat(2000)}`, hace(600)));
+
+test('T1 Transcripcion_Larga_ElClickSeConfirmaLeyendoDesdeElFinal', (t) => {
+  // 🔴 Falla con: leer la conversación entera desde el principio para confirmar un click que está al final.
+  const casa = casaNueva(t);
+  const ruta = transcripcion(casa, 'ses-a', [...VIEJOS, cuadro('toolu_1'), respuesta('toolu_1')]);
+  const leido = cuantoLee(t);
+  const r = oa.validarEnClaude(click(), CTX(casa));
+  assert.ok(r.ok, r.motivo);
+  assert.ok(leido() < 512 * 1024, `leyó ${leido()} bytes de ${fs.statSync(ruta).size}`);
+});
+
+test('T2 Transcripcion_Larga_ElAprobadoSeConfirmaLeyendoDesdeElFinal', (t) => {
+  // 🔴 Falla con: interpretar todos los renglones de la conversación para confirmar un «aprobado» que está al final.
+  const casa = casaNueva(t);
+  const ruta = transcripcion(casa, 'ses-a', [...VIEJOS, agente(PIDE), tipeado('Aprobado')]);
+  const leido = cuantoLee(t);
+  const r = oa.validarEnClaude(mensaje(), CTX(casa));
+  assert.ok(r.ok, r.motivo);
+  assert.ok(leido() < 512 * 1024, `leyó ${leido()} bytes de ${fs.statSync(ruta).size}`);
+  // lo que el agente dijo antes del «aprobado» sigue siendo lo que se mira: sin la pregunta, no vale
+  transcripcion(casa, 'ses-a', [...VIEJOS, agente(PIDE, hace(5)), tipeado('otra cosa', hace(4)), agente('listo, sigo'), tipeado('Aprobado')]);
+  assert.ok(!oa.validarEnClaude(mensaje(), CTX(casa)).ok, 'un «aprobado» que no contesta la pregunta');
+});
+
+test('T3 Transcripcion_RenglonMasLargoQueUnTrozo_SeLeeEntero', (t) => {
+  // 🔴 Falla con: partir un renglón largo al leer desde el final, de a trozos, y perder la respuesta del cuadro.
+  const casa = casaNueva(t);
+  const grande = { ...respuesta('toolu_1'), relleno: 'y'.repeat(300 * 1024) };
+  transcripcion(casa, 'ses-a', [...VIEJOS.slice(0, 50), cuadro('toolu_1'), grande, agente('x'.repeat(200 * 1024))]);
+  cuantoLee(t);
+  const r = oa.validarEnClaude(click(), CTX(casa));
+  assert.ok(r.ok, r.motivo);
+});
+
 // --- los ganchos que escuchan el cuadro ------------------------------------------------------------------------------
 
 // Un gancho nuevo del arnés sobre el cuadro, olvidado en la lista, invalida todos los clicks de la máquina (pasó con

@@ -2724,7 +2724,8 @@ const aprobacionesDePrueba = ({ coordinadora = null } = {}) => ({
 });
 const pedirSinVentana = (casa, cmd, o = {}) => ow.decidir({ evento: evento(cmd, { ...DE_LA_COORD, permission_mode: 'bypassPermissions', ...(o.evento || {}) }),
   escapes: o.escapes || [], arbol: o.arbol || arbolDelFreno(), pid: 201, casa, ahora: o.ahora || AHORA, delegacion: o.delegacion || SIN_DELEGACION,
-  clasificar: () => null, comprobar: () => null, aprobador: DEL_ARNES, aprobaciones: o.aprobaciones || aprobacionesDePrueba(o), topes: o.topes, lanzarAviso: o.lanzarAviso });
+  clasificar: () => null, comprobar: () => null, aprobador: DEL_ARNES, aprobaciones: o.aprobaciones || aprobacionesDePrueba(o), topes: o.topes, lanzarAviso: o.lanzarAviso,
+  ...(o.env ? { env: o.env } : {}) });
 const anotarAprobacion = (casa, sesion, extra = {}) => oaReal.anotar(casa, { tipo: 'mensaje', sesion, ts: new Date(AHORA - 60000).toISOString(), texto: 'Aprobado',
   herramienta: { pid: 100, inicio: INICIO }, ...extra });
 const PERDIDA = `node ${MARKER} clear-session ses-a --lost`;
@@ -3145,6 +3146,22 @@ test('HechoYAvisado_MandaPorLosCanalesDeLaSesion', (t) => {
   assert.match(llamadas[0].texto, /Hecho y avisado/);
   const PA = require('../lib/pending-approvals.js');
   assert.ok(PA.VIAS.includes('avisado'), 'el control del commit acepta lo que escribe la rutina');
+});
+
+test('T4 Aprobacion_SinTiempoParaContestar_NoLaGasta', (t) => {
+  // 🔴 Falla con: gastar la aprobación cuando al freno de seguridad casi no le queda tiempo. Su reloj lo corta antes de
+  //    contestar, el comando no corre, y el click quedó usado: la persona tiene que aprobar de nuevo, y se repite.
+  const casa = casaNueva(t);
+  anotarAprobacion(casa, 'ses-coord');
+  const enSegundos = (s) => ({ TYCON_SAFETY_DEADLINE_S: String(Math.floor(AHORA / 1000) + s) });
+  const corto = pedirSinVentana(casa, PERDIDA, { env: enSegundos(1) });
+  assert.strictEqual(corto.decision, 'deny', corto.texto);
+  assert.match(corto.texto, /sin usar/, 'dice que la aprobación sigue sin usar');
+  assert.match(corto.texto, /TYCON_SAFETY_TIMEOUT_S/, 'y la salida');
+  assert.strictEqual(vigentes(casa).length, 0, 'sin pedido escrito');
+  // con tiempo, la misma aprobación firma
+  const con = pedirSinVentana(casa, PERDIDA, { env: enSegundos(15) });
+  assert.deepStrictEqual([con.decision, con.via], ['allow', 'mensaje'], con.texto);
 });
 
 test('Aprobacion_MensajeAnotado_FirmaUnaVezYElGuionLaUsa', (t) => {

@@ -490,6 +490,8 @@ function transcripcionDe(casa, sesion) {
  * lo traen; con `tope`, una que pasa del tope no se lee (`code: 'ETOPE'`).
  */
 const renglones = (ruta, opciones) => lector().leerRenglones(ruta, opciones);
+// desde el final: una aprobación es de los últimos 30 minutos, y lo que la confirma está cerca del final de la conversación
+const desdeElFinal = (ruta, opciones) => lector().leerDesdeElFinal(ruta, opciones);
 
 const bloques = (r) => (r && r.message && Array.isArray(r.message.content) ? r.message.content : []);
 const textoDe = (r) => {
@@ -533,12 +535,26 @@ function controlRemotoDelProceso(casa, pid, sesion) {
  */
 function mensajeEnLaTranscripcion(ruta, a, { sello, destino, pregunta } = {}) {
   let rs;
-  // el «aprobado» necesita los renglones en orden: no se filtra, y una transcripción que pasa del tope no se lee
-  try { rs = renglones(ruta, { tope: true }); } catch (e) {
+  const t = String(a.texto || '').trim();
+  // el «aprobado» necesita los renglones en orden: no se filtra, y una transcripción que pasa del tope no se lee. Desde
+  // el final, hasta pasar la hora del registro (ahí ya se juntó el «aprobado», o no está) y, de ahí para atrás, hasta el
+  // primer texto del agente o el mensaje anterior de la persona: es donde termina lo que se mira antes del «aprobado»
+  const limite = Date.parse(a.ts) - MARGEN_MS;
+  const esElAprobado = (x) => x && x.type === 'user' && String(textoDe(x) || '').trim() === t && cerca(x, a.ts);
+  let pasado = false;
+  const hasta = (juntados, hora) => {
+    const x = juntados[juntados.length - 1];
+    if (!pasado) {
+      if (!(hora < limite)) return false;
+      pasado = true;
+      if (!juntados.slice(0, -1).some(esElAprobado)) return true;
+    }
+    return Boolean(x && ((x.type === 'user' && x.origin && x.origin.kind === 'human' && textoDe(x) !== null) || (x.type === 'assistant' && textoDe(x))));
+  };
+  try { rs = desdeElFinal(ruta, { tope: true, hasta }); } catch (e) {
     if (e.code === 'ETOPE') return { ok: false, motivo: `la transcripción de esta pestaña pasa de ${lector().tamanoDelTope()}: un «aprobado» escrito no se puede confirmar; aprobá con el click del cuadro o en la terminal`, noLeida: true };
     return { ok: false, motivo: `no pude leer la transcripción (${e.code || e.message})`, noLeida: true };
   }
-  const t = String(a.texto || '').trim();
   // el renglón más cercano a la hora del registro: dos «aprobado» seguidos no se validan contra el mismo
   let i = -1;
   let distancia = Infinity;
@@ -659,9 +675,13 @@ function nombraLaMismaFirmaYSesion(pregunta, sello) {
 function clickEnLaTranscripcion(ruta, a, { pregunta, opciones, descripciones, sello, casa } = {}) {
   if (!a.tool_use_id) return { ok: false, motivo: 'el click no dice qué cuadro contestó' };
   let rs;
-  // sólo los renglones que nombran ese cuadro: el resto de la transcripción no se convierte en objetos
-  try { rs = renglones(ruta, { filtro: a.tool_use_id }); } catch (e) { return { ok: false, motivo: `no pude leer la transcripción (${e.code || e.message})`, noLeida: true }; }
-  const llamado = rs.some((r) => r && r.type === 'assistant' && bloques(r).some((b) => b && b.type === 'tool_use' && b.id === a.tool_use_id && b.name === CUADRO));
+  // sólo los renglones que nombran ese cuadro, desde el final: se corta al encontrar el cuadro, que va antes que su
+  // respuesta; el resto de la transcripción no se convierte en objetos
+  const esElCuadro = (r) => r && r.type === 'assistant' && bloques(r).some((b) => b && b.type === 'tool_use' && b.id === a.tool_use_id && b.name === CUADRO);
+  try { rs = desdeElFinal(ruta, { filtro: a.tool_use_id, hasta: (juntados) => esElCuadro(juntados[juntados.length - 1]) }); } catch (e) {
+    return { ok: false, motivo: `no pude leer la transcripción (${e.code || e.message})`, noLeida: true };
+  }
+  const llamado = rs.some(esElCuadro);
   if (!llamado) return { ok: false, motivo: 'el cuadro no está en la transcripción de la sesión' };
   const r = rs.find((x) => bloques(x).some((b) => b && b.type === 'tool_result' && b.tool_use_id === a.tool_use_id));
   if (!r) return { ok: false, motivo: 'la respuesta del cuadro no está en la transcripción' };
@@ -1161,6 +1181,16 @@ function buscarPermiso({ casa, cuadro, coordinadora, carpeta = null, desde = 0, 
 }
 
 /**
+ * Anota en qué está el freno de seguridad (en el archivo que nombra `TYCON_SAFETY_STAGE_FILE`, que pone el freno): si su
+ * reloj lo corta, lo dice. Sin dónde anotarlo, no pasa nada.
+ */
+function anotarEtapa(texto, env = process.env) {
+  const archivo = env.TYCON_SAFETY_STAGE_FILE;
+  if (!archivo) return;
+  try { fs.writeFileSync(archivo, String(texto).slice(0, 200)); } catch (_) { /* el corte dice lo de siempre */ }
+}
+
+/**
  * La confirmación con lo que deja Claude Code: la transcripción de la sesión donde se aprobó y, para el click, los
  * ganchos que escuchan el cuadro, en la carpeta de la firma y en la de la pestaña donde se contestó (`cwdAprobacion`).
  * `linea`: la del proceso de la herramienta que lo mostró. El «aprobado» sólo tiene que traer el sello: el texto lo
@@ -1169,6 +1199,9 @@ function buscarPermiso({ casa, cuadro, coordinadora, carpeta = null, desde = 0, 
 function validarEnClaude(a, { casa = os.homedir(), cwd, cuadro, destino, linea, cwdAprobacion } = {}) {
   const ruta = transcripcionDe(casa, a.sesion);
   if (!ruta) return { ok: false, motivo: `no encontré la transcripción de la sesión ${a.sesion}`, noLeida: true };
+  let mb = null;
+  try { mb = Math.round(fs.statSync(ruta).size / (1024 * 1024)); } catch (_) { mb = null; }
+  anotarEtapa(`confirmando ${a.tipo === 'mensaje' ? 'el «aprobado»' : 'el click'} en la conversación de la sesión${mb === null ? '' : `, de ${mb} MB`}`);
   if (a.tipo === 'mensaje') return mensajeEnLaTranscripcion(ruta, a, { sello: cuadro.sello, destino, pregunta: cuadro.pregunta });
   for (const c of [...new Set([cwd, cwdAprobacion].filter(Boolean))]) {
     const e = escuchasDelCuadro({ casa, cwd: c, linea });
@@ -1178,6 +1211,6 @@ function validarEnClaude(a, { casa = os.homedir(), cwd, cuadro, destino, linea, 
   return clickEnLaTranscripcion(ruta, a, { pregunta: cuadro.pregunta, opciones: cuadro.opciones, descripciones: cuadro.descripciones, sello: cuadro.sello, casa });
 }
 
-module.exports = { VENCE_MIN, ENVUELTO, PERMITIDOS, TIPEADO, APRUEBA, NIEGA, PREGUNTA_CAMBIADA, LARGO_EN_TELEFONO, DETALLE_TITULO, carpeta, esAprobacion, mensajeDeLaPersona, respuestaDelCuadro, aprobadasDelCuadro, cuadroDe, recortar, sinRutas, renglonDelTope, notasDelCuadro, traeElSello, lanzadoPorLaHerramienta,
+module.exports = { VENCE_MIN, anotarEtapa, ENVUELTO, PERMITIDOS, TIPEADO, APRUEBA, NIEGA, PREGUNTA_CAMBIADA, LARGO_EN_TELEFONO, DETALLE_TITULO, carpeta, esAprobacion, mensajeDeLaPersona, respuestaDelCuadro, aprobadasDelCuadro, cuadroDe, recortar, sinRutas, renglonDelTope, notasDelCuadro, traeElSello, lanzadoPorLaHerramienta,
   anotar, leerSesion, consumir, devolver, transcripcionDe, fraseTipeadaReciente, SIN_MENSAJES_DE_LA_PERSONA, controlRemotoDelProceso, mensajeEnLaTranscripcion, clickEnLaTranscripcion, capas, hooksDePlugins, ganchosDelEncabezado, banderasDe, alcanzaAlCuadro, esPermitido,
   escuchasDelCuadro, procesoQueLaAnoto, coordinadoraConfirmada, buscar, buscarPermiso, validarEnClaude, plataformaDe, constanciaDeLaTerminal };
