@@ -627,6 +627,12 @@
       "requiere": []
     },
     {
+      "__nota": "cada nombre nuevo de la tabla propia de nombres viejos está en el texto de su guion: si no, el instalador no apila la capa del equipo (renamesProblems de team.js).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/legacy-names-where-text.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "los args del pase llegan en un archivo (--args-file): en Windows la línea de comando no aguanta los de la revisión del plan.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/workflow-lite-args-file.test.js",
