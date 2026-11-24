@@ -195,6 +195,11 @@ la corrida y arma su copia de sólo lectura, el pase devuelve los mismos `sellos
 `mark-adversarial-result` sale 2 si no los trae, si le falta un repo o si alguno es otro, y si una copia cambió después
 de armarla. Un relanzamiento vuelve a correr `freeze-adversarial` antes del `Workflow`.
 
+El código de un repo hermano que cambió después del lanzamiento también frena el cierre, salvo un caso: con hallazgos
+confirmados, ese cambio es el arreglo, y si la última vuelta de revisores sella ese hermano, no frena. Queda anotado
+(`frozen-sibling`, `al-re-loop`) y lo revisa la próxima vuelta de revisores, como el arreglo del repo principal:
+«Preparar» frena si lo guardado no es lo revisado. Sin hallazgos, o con un hermano que no se pudo comparar, frena.
+
 `runDir` es donde el verificador **guarda la prueba que confirmó** cada hallazgo:
 `<RUN_DIR>/step-05b-probes/<lente>-<n>/` con los archivos de la prueba (con `.txt` agregado al
 nombre, para que nada los compile) y un `COMO-SE-CORRIO.txt` con el comando y la salida. Si el

@@ -131,12 +131,18 @@ function waitGroups(rows) {
   return groups;
 }
 
+/** «espera <lo que espera>», sin repetir la palabra cuando ya la trae (`espera a main (main-1)`). */
+function waitPhrase(waitingFor) {
+  const s = String(waitingFor);
+  return /^espera\b/i.test(s) ? s : `espera ${s}`;
+}
+
 /** El renglón de una espera. El trabajo de otro proyecto no se nombra. */
 function waitText(f) {
   const who = f.quien || 'sin nombre';
   if (f.dueno) return `${who}: ${f.linea || 'espera al dueño'}`;
   if (f.choca) return `${who}: choca con main`;
-  return f.otro ? `${who}: espera algo de otro proyecto` : `${who}: espera ${f.waitingFor}`;
+  return f.otro ? `${who}: espera algo de otro proyecto` : `${who}: ${waitPhrase(f.waitingFor)}`;
 }
 
 if (require.main === module) {
@@ -144,4 +150,4 @@ if (require.main === module) {
   process.stdout.write(`${JSON.stringify(computeRisk(JSON.parse(fs.readFileSync(0, 'utf8'))))}\n`);
 }
 
-module.exports = { card, failedCard, actionFor, riskOfRun, newBudget, markerOf, waitGroups, waitText };
+module.exports = { card, failedCard, actionFor, riskOfRun, newBudget, markerOf, waitGroups, waitText, waitPhrase };

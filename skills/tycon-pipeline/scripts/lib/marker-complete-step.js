@@ -10,7 +10,7 @@
 const {
   CONTROLES_DEL_PASO, MARKER_JS, ORDER_REQUIRES_OLD, PEDIDA, PROPIA,
   SCRIPTS_DIR, STATE_DIR, STEPS_LIB, anotarAprobacion, anotarFirma,
-  anotarOtraVuelta, antesDeLaRevision, appendLog, at, avisarBajaDePantalla,
+  anotarOtraVuelta, antesDeLaRevision, appendLog, avisarBajaDePantalla,
   comprobarLoRevisado, conHoraDelPaso, deudaDeLaMatriz, dondeViveLaHistoria,
   estado, firmaDelDueno, formasDeFirmarArchivo, fs, hermanosDeLaCorrida,
   homeCommand, huellaDelPlan, markerFilePath, markerScreenRule, markerStoryIsUi,

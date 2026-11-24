@@ -1466,6 +1466,64 @@ test('Pase_PropiaDelHermanoConRepo_NoFrenaElCierre — la prueba propia declarad
   assert.match(salida(codigo), /Front: src\/x\.js$/m);
 });
 
+// Arreglar los hallazgos del pase en un repo hermano obligaba a relanzar el pase entero: el cierre frenaba cualquier
+// cambio del hermano, y la vuelta de revisores, que cubre los arreglos del repo principal, no sellaba los hermanos.
+function corridaConHermano(sid) {
+  const front = repoDeJuguete('Front', { 'src/x.js': 'module.exports = 1;\n', 'tests/x.test.js': '// prueba\n' });
+  const C = corrida(sid, { antesDeArrancar: (codigo) => {
+    fs.mkdirSync(path.join(codigo.repo, '.tycon'), { recursive: true });
+    fs.writeFileSync(path.join(codigo.repo, '.tycon', 'advisors.yaml'), `evidence:\n  companion_repos:\n    - ${path.relative(codigo.repo, front.repo)}\n`);
+    codigo.git('add', '.');
+    codigo.git('commit', '-qm', 'declara el hermano');
+  } });
+  const cerrarPase = (confirmados) => {
+    const f = path.join(tmp('ft-res-'), 'step-05b-adversarial.json');
+    fs.writeFileSync(f, JSON.stringify({ confirmed: Array.from({ length: confirmados }, (_, i) => ({ lens: 'x', summary: `y${i}` })), sellos: C.marcador().adversarial.sellos }));
+    const destino = confirmados ? ['--tests', '0', '--deferred', String(confirmados), '--reason', 'caso de prueba'] : [];
+    return C.correr('marker.js', ['mark-adversarial-result', String(confirmados), '--type', '5b', '--result', f, '--run', 'r1', ...destino]);
+  };
+  return { ...C, front, cerrarPase };
+}
+const HERMANO_CAMBIADO = /el código de un repo hermano cambió/;
+
+test('Revisores_LaVueltaSellaLosHermanos — la vuelta de revisores congela cada repo hermano, y guardar un hermano distinto de lo revisado frena', () => {
+  // 🔴 rojo si: la vuelta sella sólo la historia y el código → el arreglo del hermano no tiene contra qué compararse al guardar.
+  const C = corridaConHermano('s-ft-hermano-vuelta');
+  const { r } = C.vuelta();
+  assert.strictEqual(r.status, 0, salida(r));
+  const v = ft().ultimaVuelta(C.estado(), C.sid, 'revisores');
+  assert.ok(v && (v.repos || []).some((x) => x.repo === C.front.repo), `la vuelta sella el hermano: ${JSON.stringify(v)}`);
+  fs.writeFileSync(path.join(C.front.repo, 'src', 'x.js'), 'module.exports = 2;\n');
+  const p = prepararCommit(C);
+  assert.strictEqual(p.status, 2, salida(p));
+  assert.match(salida(p), MISMATCH);
+  assert.match(salida(p), /src\/x\.js/);
+});
+
+test('Pase_ArregloDelHermanoConHallazgos_QuedaParaLaVuelta — con hallazgos, el arreglo del hermano no frena el cierre y queda anotado; sin hallazgos frena como antes', () => {
+  // 🔴 rojo si: el cierre frena cualquier cambio del hermano → arreglar los hallazgos obliga a relanzar el pase entero.
+  const C = corridaConHermano('s-ft-hermano-arreglo');
+  assert.strictEqual(C.vuelta().r.status, 0);
+  const l = C.correr('marker.js', ['mark-adversarial-launched', 'r1', '4']);
+  assert.strictEqual(l.status, 0, salida(l));
+  fs.writeFileSync(path.join(C.front.repo, 'src', 'x.js'), 'module.exports = 2;\n');
+  const con = C.cerrarPase(1);
+  assert.strictEqual(con.status, 0, salida(con));
+  assert.doesNotMatch(salida(con), HERMANO_CAMBIADO, salida(con));
+  assert.match(salida(con), /lo revisa la próxima vuelta de revisores/);
+  const anotado = gatesDe(C).filter((g) => g.name === 'frozen-sibling');
+  assert.deepStrictEqual(anotado.map((g) => g.status), ['al-re-loop']);
+  assert.deepStrictEqual(anotado[0].repos, [{ repo: C.front.repo, files: ['src/x.js'] }]);
+  // sin hallazgos no hay nada que arreglar: un cambio del hermano es código que nadie miró
+  const S = corridaConHermano('s-ft-hermano-sin');
+  assert.strictEqual(S.vuelta().r.status, 0);
+  assert.strictEqual(S.correr('marker.js', ['mark-adversarial-launched', 'r1', '4']).status, 0);
+  fs.writeFileSync(path.join(S.front.repo, 'src', 'x.js'), 'module.exports = 2;\n');
+  const sin = S.cerrarPase(0);
+  assert.strictEqual(sin.status, 2, salida(sin));
+  assert.match(salida(sin), HERMANO_CAMBIADO);
+});
+
 // ¿El disco de las pruebas distingue mayúsculas? APFS y NTFS no; ext4 sí.
 const sinDistinguirMayusculas = (() => {
   const d = tmp('ft-mayus-');
