@@ -6,7 +6,7 @@
  * Lo que cambia mientras corre (los avisos del portón, la sesión para la que se trabaja) y las rutas del despachador
  * se leen de `estadoPipeline`, en el módulo compartido, en el momento de usarlos.
  */
-const { estadoPipeline, MODELOS, RUNS_DIR, STEPS_TABLE, at, ejecucionDeLaCorrida, esCodex, evidenceDirForStory, exists, fs, harnessWorkSignal, os, packsLib, parseFrontmatterPipeline, path, pedidoDeSalteo, readSessionMarker, readText, resolveSessionId, runDirKey, sessionIdFileKey, sessionLogPath, stateDirOf } = require('./pipeline-shared.js');
+const { estadoPipeline, MODELOS, RUNS_DIR, STEPS_TABLE, ejecucionDeLaCorrida, evidenceDirForStory, fs, harnessWorkSignal, os, packsLib, parseFrontmatterPipeline, path, pedidoDeSalteo, readSessionMarker, readText, resolveSessionId, runDirKey, sessionIdFileKey, sessionLogPath, stateDirOf } = require('./pipeline-shared.js');
 const { computeModelHint, conModelosDeLaCorrida, decirModelos } = require('./pipeline-models.js');
 const { computeGitignoreNeeds, e2eConfig, gitIgnoraProbe } = require('./pipeline-reports.js');
 const { computeRiskClass, computeRunSize, runSizeLib } = require('./pipeline-risk.js');

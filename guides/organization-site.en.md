@@ -22,6 +22,9 @@ things: their tasks, their change requests, their runs. Whoever maintains the ha
 the **Configuration** tab, where the organization is customized (who is responsible for what, the
 notice channel, the thresholds).
 
+The site reads and configures GitHub or Azure DevOps repos. It does not use GitLab repos yet: an organization that
+works on GitLab has the harness on each machine, but the site does not show those repos.
+
 **The words the site uses**, for whoever does not program:
 
 - **The harness:** the set of rules, controls and helpers the team uses to program with Claude. This site shows what the
@@ -950,7 +953,7 @@ be, to copy it and open the request by hand.
 - **Estimates**: the unit your organization estimates in (hours, days or points), the hours in a
   working day (1 to 24; empty, 8) and the hours a point is worth (empty: no rate, and with points the error is not
   calculated). Below, the unit the machines read today. Changing the unit does not rewrite what was already estimated.
-  Each story's current estimate also reaches its work item, in Azure DevOps or GitHub.
+  Each story's current estimate also reaches its work item, in Azure DevOps, GitHub or GitLab.
   It lives in `team-repos.json` → `estimates`, in the profile repo; the profile has to require a harness version that
   reads the key. A maintainer reviews it.
 - **Adversarial pass**: when the pass that runs a story's code to hunt for defects runs. Automatic (the

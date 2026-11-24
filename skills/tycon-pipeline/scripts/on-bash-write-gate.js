@@ -74,7 +74,7 @@ const path = require('path');
 
 // en un repo sin historias, la palabra suelta no alcanza: cuenta una constancia o la ruta de una historia (de otro repo),
 // también armada por partes (`Path('specs') / n`, `os.path.join('stories', f)`, `'specs/' + n + '.md'`)
-const NOMBRA_RUTA_DE_HISTORIA = /control-changes|(?:^|[\\/'"`\s])(?:\.?specs?|stories)[\\/][^\s'"`]*\.md\b|\bstory-[\w.-]*\.md\b|['"`](?:\.\/)?(?:\.?specs?|stories)\/?['"`]/i;
+const NOMBRA_RUTA_DE_HISTORIA = /control-changes|exemptions\.jsonl|(?:^|[\\/'"`\s])(?:\.?specs?|stories)[\\/][^\s'"`]*\.md\b|\bstory-[\w.-]*\.md\b|['"`](?:\.\/)?(?:\.?specs?|stories)\/?['"`]/i;
 // las llamadas de un guion que escriben, copian, mueven o borran un archivo
 const GUION_ESCRIBE = /\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|copyFileSync|copyFile|cpSync|renameSync|rename|replace|unlinkSync|rmSync|truncateSync|write_text|write_bytes|copy|copyfile|copy2|copytree|move|remove|unlink|truncate)\s*\(|\bopen\s*\([^)]*,\s*["'][^"']*[wax+]|\bFile\.(?:write|delete|rename)\b|\bFileUtils\.\w+/;
 // las formas de escribir, borrar, mover o reponer un archivo desde un comando, sin contar un `open(` que puede ser de lectura
@@ -254,7 +254,7 @@ function lastWord(seg) {
 }
 
 /**
- * Limpia del comando lo que NO es comando:
+ * Limpia del comando lo que NO es comando (sus comentarios, apagados con `conComentariosApagados`):
  *  - los CUERPOS de los heredocs (el mensaje de commit HEREDOC del equipo, un .md escrito por heredoc que
  *    cita `> src/x.ts` o `a.ts -> b.ts`) — se conserva la línea de apertura (`cat > f <<EOF`), que es donde
  *    está el target real;
@@ -262,8 +262,10 @@ function lastWord(seg) {
  *    `grep "sed -i"`), para que su contenido no se lea como redirecciones ni como archivos.
  */
 function stripNonCommandText(s) {
-  // Heredocs: <<EOF / <<-EOF / <<'EOF' / <<"EOF" … hasta la línea que es sólo el delimitador.
-  let t = String(s).replace(/((?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)(?:[\s\S]*?\n)??[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
+  // Heredocs: <<EOF / <<-EOF / <<'EOF' / <<"EOF" … hasta la línea que es sólo el delimitador, con el mismo lector que
+  // los tramos (`quitarCuerposDeHeredoc`): un `<<EOF` adentro de un comentario no abre nada, y lo de abajo corre. Después,
+  // los comentarios: una comilla adentro de uno no abre un texto entre comillas que se vacía con lo de abajo
+  let t = conComentariosApagados(quitarCuerposDeHeredoc(s));
   // Strings entre comillas que no siguen a un operador de redirección / tee: se vacían (quedan las comillas), salvo
   // los que pueden ser un nombre de archivo (sin espacios ni operadores): `cp a "<dir>/b.md"` sigue nombrando su destino.
   t = t.replace(/(^|[^>\w])(?<!tee[ \t]+)(?<!>[ \t]*)(['"])((?:\\.|(?!\2)[^\\])*)\2/g,
@@ -709,7 +711,7 @@ const CLASES_POSIX = {
   punct: '\\p{P}\\p{S}', space: '\\s', upper: '\\p{Lu}', xdigit: '0-9a-fA-F',
 };
 // la palabra entera: «historial», «storage» o «restore» no nombran una historia
-const MENCIONA_HISTORIA = /control-changes|\bstor(?:y|ies)\b|\bhistorias?\b/i;
+const MENCIONA_HISTORIA = /control-changes|exemptions\.jsonl|\bstor(?:y|ies)\b|\bhistorias?\b/i;
 
 /**
  * ¿La carpeta está en un repo con historias? Su raíz de git (sin git, la carpeta misma) con `.tycon/`, o con alguna
@@ -1580,12 +1582,174 @@ function quitarCuerposDeHeredoc(cmd) {
   return out.join('\n');
 }
 
+// Las dos lecturas del comando (ver `handle`): en una se apagan sus comentarios, en la otra no. `apagoAlgo` dice si la
+// primera apagó alguno: si no, las dos lecturas son la misma
+let leerComentarios = true;
+let apagoAlgo = false;
+// la segunda lectura sólo decide: no anota lo que el comando escribe ni lo que borra (ya lo anotó la primera)
+let soloDecidir = false;
+// lo que se apaga adentro de un comentario: lo que abre o cierra algo para los lectores del freno (una comilla, un escape,
+// una sustitución, un paréntesis, una llave, un heredoc)
+const ABRE_O_CIERRA = /['"`\\$(){}<]/;
+// las palabras después de las cuales viene otro comando: ahí un `case` o un `esac` es la palabra del shell
+const SIGUE_UN_COMANDO = new Set(['then', 'do', 'else', 'elif', 'if', 'while', 'until', '{', '!', 'time']);
+
+/**
+ * El comando con sus comentarios apagados: desde un `#` que empieza una palabra hasta el salto de renglón, el texto queda
+ * pero sin lo que abre o cierra algo (`ABRE_O_CIERRA`). Una comilla o un `<<EOF` adentro de un comentario no abren nada y
+ * el renglón siguiente corre, como en el shell: sin esto, esa comilla juntaba lo de abajo con el comentario y nadie lo
+ * miraba. Como el texto queda, si algo se toma por comentario sin serlo, lo que sigue en ese renglón se sigue mirando. Se
+ * usa sobre el comando ya sin los cuerpos de sus heredocs (lo de adentro de un cuerpo no es del shell).
+ *
+ * Un `#` es comentario sólo cuando es seguro, en bash y en zsh:
+ *  - empieza una palabra: después de un espacio, un tab, un salto de renglón, `;`, `&` o `|`. Un `\r` o un espacio de
+ *    Unicode son parte de la palabra, como lo escapado, el cierre de unas comillas, de un paréntesis o de una llave; una
+ *    continuación de renglón (`\` y salto) no corta la palabra, porque el shell junta los renglones;
+ *  - afuera de todo, o sólo adentro de un `case`: adentro de comillas, de comillas invertidas, de `${…}` o de cualquier
+ *    paréntesis el `#` puede ser texto, y no se apaga nada. Las comillas se anidan como en el shell: una comilla doble
+ *    adentro de `"$(…)"` abre otro texto. `$'…'` deja escapar su comilla. El `)` de un patrón de `case` no cierra nada.
+ */
+function conComentariosApagados(cmd) {
+  const s = String(cmd || '');
+  if (!leerComentarios || !s.includes('#')) return s;
+  let out = '';
+  // lo abierto, de afuera hacia adentro: `'`, `"`, `$'`, `` ` ``, `(` (también `$(` y `<(`), `{` (el de `${`), `(p` (el
+  // paréntesis que abre un patrón de `case`) y los `case`, según dónde se está: el sujeto, un patrón o un cuerpo
+  const abiertos = [];
+  const arriba = () => abiertos[abiertos.length - 1];
+  const cambiarArriba = (e) => { abiertos[abiertos.length - 1] = e; };
+  // el último carácter que cuenta para saber si un `#` empieza una palabra: una continuación de renglón no cuenta
+  let anterior = '';
+  const empiezaPalabra = () => anterior === '' || anterior === ' ' || anterior === '\t' || anterior === '\n' || anterior === ';' || anterior === '&' || anterior === '|';
+  // la palabra que se está leyendo afuera de comillas (null entre palabras): si va donde va un comando, y si tiene algo
+  // citado o escapado (entonces no es `case` ni `esac`)
+  let palabra = null;
+  let alPrincipio = true;
+  const enPalabra = (limpia) => {
+    if (palabra === null) palabra = { texto: '', alComienzo: alPrincipio, limpia };
+    else if (!limpia) palabra.limpia = false;
+  };
+  const sigueLaPalabra = () => { palabra = { texto: '', alComienzo: false, limpia: false }; };
+  const terminarPalabra = () => {
+    if (palabra === null) return;
+    const { texto, alComienzo, limpia } = palabra;
+    palabra = null;
+    alPrincipio = false;
+    if (!limpia) return;
+    const a = arriba();
+    if (a === 'case-sujeto') { if (texto === 'in') cambiarArriba('case-patron'); return; }
+    if (a === 'case-patron') { if (texto === 'esac') abiertos.pop(); return; }
+    if (!alComienzo) return;
+    if (texto === 'case') abiertos.push('case-sujeto');
+    else if (texto === 'esac' && a === 'case-cuerpo') abiertos.pop();
+    else if (SIGUE_UN_COMANDO.has(texto)) alPrincipio = true;
+  };
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    const a = arriba();
+    if (a === "'") { out += c; if (c === "'") { abiertos.pop(); sigueLaPalabra(); anterior = 'x'; } continue; }
+    if (a === "$'" || a === '"') {
+      if (c === '\\') { out += c + (s[i + 1] || ''); i++; continue; }
+      if (c === (a === '"' ? '"' : "'")) { out += c; abiertos.pop(); sigueLaPalabra(); anterior = 'x'; continue; }
+      if (a === '"' && c === '`') { out += c; abiertos.push('`'); palabra = null; alPrincipio = true; continue; }
+      if (a === '"' && c === '$' && (s[i + 1] === '(' || s[i + 1] === '{')) {
+        out += c + s[i + 1];
+        i++;
+        abiertos.push(s[i]);
+        palabra = null;
+        alPrincipio = s[i] === '(';
+        continue;
+      }
+      out += c;
+      continue;
+    }
+    // afuera de comillas: arriba de todo, o adentro de `$(…)`, `${…}`, comillas invertidas, paréntesis o un `case`
+    if (c === '\\') {
+      if (s[i + 1] === '\n') { out += '\\\n'; i++; continue; }
+      enPalabra(false);
+      out += c + (s[i + 1] || '');
+      i++;
+      anterior = 'x';
+      continue;
+    }
+    if (c === '#' && palabra === null && empiezaPalabra() && abiertos.every((e) => e.startsWith('case'))) {
+      let fin = s.indexOf('\n', i);
+      if (fin < 0) fin = s.length;
+      for (; i < fin; i++) out += ABRE_O_CIERRA.test(s[i]) ? ' ' : s[i];
+      apagoAlgo = true;
+      i--;
+      continue;
+    }
+    if (c === "'" || c === '"') { enPalabra(false); abiertos.push(c); out += c; continue; }
+    // `$$` es el número del proceso: la comilla que lo siga es simple común, no `$'…'`
+    if (c === '$' && s[i + 1] === '$') { enPalabra(true); out += '$$'; i++; anterior = '$'; continue; }
+    if (c === '$' && s[i + 1] === "'") { enPalabra(false); abiertos.push("$'"); out += "$'"; i++; continue; }
+    if (c === '$' && (s[i + 1] === '(' || s[i + 1] === '{')) {
+      out += c + s[i + 1];
+      i++;
+      abiertos.push(s[i]);
+      palabra = null;
+      alPrincipio = s[i] === '(';
+      continue;
+    }
+    if (c === '`') {
+      if (a === '`') { terminarPalabra(); abiertos.pop(); sigueLaPalabra(); } else { abiertos.push('`'); palabra = null; alPrincipio = true; }
+      out += c;
+      anterior = 'x';
+      continue;
+    }
+    if (c === '(') {
+      const patron = a === 'case-patron' && palabra === null;
+      palabra = null;
+      abiertos.push(patron ? '(p' : '(');
+      alPrincipio = !patron;
+      out += c;
+      anterior = c;
+      continue;
+    }
+    if (c === ')') {
+      terminarPalabra();
+      // el cierre de un patrón de `case` (con su `(` o sin él): lo que sigue es su cuerpo, donde va un comando
+      let patron = false;
+      if (a === '(') abiertos.pop();
+      else if (a === '(p') { abiertos.pop(); patron = arriba() === 'case-patron'; }
+      else if (a === 'case-patron') patron = true;
+      if (patron) { cambiarArriba('case-cuerpo'); palabra = null; alPrincipio = true; } else sigueLaPalabra();
+      out += c;
+      anterior = 'x';
+      continue;
+    }
+    if (c === '}' && a === '{') { terminarPalabra(); abiertos.pop(); sigueLaPalabra(); out += c; anterior = 'x'; continue; }
+    if (c === ';' || c === '&' || c === '|' || c === '\n') {
+      terminarPalabra();
+      // un `&` pegado a una redirección (`>&1`, `&>`) no separa comandos
+      if (c === '&' && (anterior === '>' || anterior === '<' || s[i + 1] === '>')) { out += c; anterior = c; continue; }
+      // `;;`, `;&` y `;;&` cierran un cuerpo de `case`: lo que sigue es un patrón
+      if (c === ';' && arriba() === 'case-cuerpo' && (s[i + 1] === ';' || s[i + 1] === '&')) {
+        cambiarArriba('case-patron');
+        out += c + s[i + 1];
+        i++;
+        if (s[i] === ';' && s[i + 1] === '&') { out += '&'; i++; }
+      } else out += c;
+      anterior = s[i];
+      alPrincipio = true;
+      continue;
+    }
+    if (c === ' ' || c === '\t' || c === '<' || c === '>') { terminarPalabra(); out += c; anterior = c; continue; }
+    enPalabra(true);
+    if (palabra.texto.length < 8) palabra.texto += c;
+    out += c;
+    anterior = c;
+  }
+  return out;
+}
+
 /**
  * Los tramos de un comando (`;`, `&&`, `||`, `|`, salto de línea), sin cortar adentro de las comillas ni de los heredocs.
- * Lo escapado con `\` no corta ni cierra comillas dobles, como en el shell.
+ * Lo escapado con `\` no corta ni cierra comillas dobles, como en el shell. Con los comentarios apagados (`conComentariosApagados`).
  */
 function tramos(cmd) {
-  const s = quitarCuerposDeHeredoc(cmd);
+  const s = conComentariosApagados(quitarCuerposDeHeredoc(cmd));
   const out = [];
   let q = null;
   let actual = '';
@@ -2356,13 +2520,26 @@ function salidaAjenaALaRevision(cmd, cwd, stateDir, installedRoots) {
     const lista = w[ri].startsWith('--runners=') ? w[ri].slice('--runners='.length) : w[ri + 1];
     return !!lista && lista === corredoresDeLaOrganizacion().lista;
   };
-  // el pedido que preparó el arnés: `--args "$(cat '<carpeta de la revisión>/<destino>.args.json')"`, una sola vez
-  const pedidoDelArnes = (tramo) => {
+  // el pedido que preparó el arnés, una sola vez y de una sola forma: `--args-file '<carpeta de la revisión>/<destino>.args.json'`
+  // (la que imprime marker.js plan-review), o la de antes, `--args "$(cat '<…>.args.json')"`, que sigue en las corridas
+  // que ya la tenían impresa
+  const pedidoDelArnes = (tramo, w) => {
+    const delPedido = (ruta) => {
+      const archivo = resolveTarget(ruta, cwd, process.platform, { homeVariable: true });
+      return /\.args\.json$/.test(archivo) && enLaRevision(archivo);
+    };
     const todos = String(tramo).match(/(?:^|\s)--args(?:=|\s)/g) || [];
+    const conArchivo = w.filter((x) => x === '--args-file' || x.startsWith('--args-file='));
+    if (conArchivo.length) {
+      if (conArchivo.length !== 1 || todos.length) return false;
+      const i = w.indexOf(conArchivo[0]);
+      const ruta = conArchivo[0].startsWith('--args-file=') ? conArchivo[0].slice('--args-file='.length) : w[i + 1];
+      // una ruta que no se lee hasta correr (una variable, una sustitución) no es la que preparó el arnés
+      return !!ruta && !/[$`]/.test(ruta) && delPedido(ruta);
+    }
     const m = String(tramo).match(/(?:^|\s)--args\s+"\$\(cat\s+(?:'([^']+)'|([^\s'"()$`]+))\)"(?=\s|$)/);
     if (todos.length !== 1 || !m) return false;
-    const archivo = resolveTarget(m[1] || m[2], cwd, process.platform, { homeVariable: true });
-    return /\.args\.json$/.test(archivo) && enLaRevision(archivo);
+    return delPedido(m[1] || m[2]);
   };
   for (const tramo of tramos(cmd)) {
     const w = palabras(tramo);
@@ -2377,7 +2554,7 @@ function salidaAjenaALaRevision(cmd, cwd, stateDir, installedRoots) {
       const abs = opaco ? null : resolveTarget(destino, cwd, process.platform, { homeVariable: true });
       if (opaco ? !nombraLaRevision : !enLaRevision(abs)) continue;
       const corredor = !opaco && destinos.length === 1 && /^(?:.*[\\/])?node(?:js)?(?:\.exe)?$/i.test(w[0] || '') && w[1] && w[2]
-        && delArnes(w[1], 'workflow-lite.js') && delArnes(w[2], 'adversarial-verify.workflow.js') && pedidoDelArnes(tramo)
+        && delArnes(w[1], 'workflow-lite.js') && delArnes(w[2], 'adversarial-verify.workflow.js') && pedidoDelArnes(tramo, w)
         && opcionesDelArnes(w);
       if (!corredor) return abs || destino;
     }
@@ -2868,8 +3045,17 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
   // `$PWD`, `${PWD}` y `$(pwd)` son la carpeta que se está mirando (la de un `cd`, no la de partida)
   const conPwd = (raw) => String(raw).replace(/\$\{PWD\}|\$PWD(?!\w)|\$\(pwd\)|`pwd`/g, () => base);
   const abs = (raw) => resolveTarget(expandirRuta(cmd, conPwd(raw)).valor, base, process.platform, { homeVariable: true });
-  const es = (raw) => isControlApproval(String(raw)) || isControlApproval(abs(raw))
-    || (cdSinResolver && !path.isAbsolute(String(raw)) && /control-changes/i.test(String(raw)));
+  // la constancia de las exenciones (lib/exemptions.js), también nombrada con un comodín que la alcanza
+  // (`.tycon/exempt*.jsonl`, `exemptions*` después de un `cd .tycon`)
+  const comodinDeExenciones = (raw) => {
+    if (!/[*?[]/.test(String(raw))) return false;
+    const a = abs(raw);
+    if (!/(^|[\\/])\.tycon$/i.test(path.dirname(a))) return false;
+    const patron = path.basename(a).replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
+    try { return new RegExp(`^${patron}$`, 'i').test('exemptions.jsonl'); } catch (_) { return true; }
+  };
+  const es = (raw) => isControlApproval(String(raw)) || isControlApproval(abs(raw)) || comodinDeExenciones(raw)
+    || (cdSinResolver && !path.isAbsolute(String(raw)) && /control-changes|exemptions/i.test(String(raw)));
   const esRuta = (p) => isControlApproval(p) || isControlApproval(`${p}/`);
   const out = [];
   // se lee también con la continuación de renglón juntada: `cat <<'EOF' \` y abajo `> constancia` es una redirección del
@@ -2921,7 +3107,7 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
     for (const m of limpio.matchAll(/(?<![<\d&])(?:\d?>>?|&>>?|\d?<>)\|?\s*((?:\$\([^()]*\)|'[^']*'|"(?:\\.|[^"\\])*"|\\.|[^\s<>;&|'"\\])+)/g)) {
       if (!fuera(m.index)) continue;
       const destino = sinCierreDeGrupo(palabraDelShell(m[1]));
-      if (es(destino) || (/\$\(|`/.test(destino) && /control-changes|gates\.log/i.test(destino))) out.push(destino);
+      if (es(destino) || (/\$\(|`/.test(destino) && /control-changes|gates\.log|exemptions\.jsonl/i.test(destino))) out.push(destino);
     }
     // cada argumento es la palabra entera del shell, con sus comillas resueltas (`cp x .tycon/'control-changes.jsonl'`),
     // y sin el `)` que cierra un paréntesis (`(cd d && touch f)`)
@@ -3032,7 +3218,7 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
     if (c === 'truncate' || c === 'gtruncate') { out.push(...posicionales(args, /^-[sr]$|^--(?:size|reference)$/).filter(es)); continue; }
     // lo que sale de una sustitución de proceso corre en el shell (`source <(echo …)`, `bash <(…)`): no se puede ver
     // antes; si el comando nombra una constancia, no pasa
-    if (['source', '.', ...SHELLS_QUE_LEEN_COMANDOS].includes(c) && /<\(/.test(tramo) && /control-changes|gates\.log/i.test(String(cmd))) {
+    if (['source', '.', ...SHELLS_QUE_LEEN_COMANDOS].includes(c) && /<\(/.test(tramo) && /control-changes|gates\.log|exemptions\.jsonl/i.test(String(cmd))) {
       out.push(`${tramo.trim()} (corre en el shell lo que sale de una sustitución de proceso)`);
       continue;
     }
@@ -3059,7 +3245,7 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
       // listar (por la entrada estándar, que todavía no existe) dentro de un repo, no pasa
       const lista = contenidoDelArchivo(c, args, tramo, abs);
       if (lista === null) { if (destinos.some(dentroDeUnRepo)) out.push(`${tramo.trim()} (no se puede ver si trae una constancia)`); continue; }
-      if (lista.some((e) => /control-changes/i.test(e) || destinos.some((d) => esRuta(path.join(d, e))))) out.push(`${tramo.trim()} (trae una constancia)`);
+      if (lista.some((e) => /control-changes|exemptions\.jsonl/i.test(e) || destinos.some((d) => esRuta(path.join(d, e))))) out.push(`${tramo.trim()} (trae una constancia)`);
       continue;
     }
     // otros que extraen y que el freno no sabe listar: `pax -r`, `ditto -x`, `python3 -m zipfile|tarfile -e`. A la
@@ -3390,7 +3576,7 @@ function parchesDePatch(args) {
 /** ¿El texto de un parche nombra una constancia? Con las rutas que git escribe entre comillas y con escapes octales. */
 function parcheNombraConstancia(texto, isControlApproval) {
   const t = String(texto).replace(/\\([0-7]{3})/g, (_, o) => String.fromCharCode(parseInt(o, 8)));
-  if (/control-changes/i.test(t)) return true;
+  if (/control-changes|exemptions\.jsonl/i.test(t)) return true;
   const rutas = [];
   for (const linea of t.split(/\r?\n/)) {
     let m = /^diff --git "?a\/(.+?)"? "?b\/(.+?)"?$/.exec(linea);
@@ -3741,7 +3927,7 @@ function nombresDeConstancia(dir, tope = 20000) {
     for (const e of entradas) {
       if (++vistos > tope) return null;
       const r = path.join(rel, e.name);
-      if (/^control-changes/i.test(e.name)) out.push(r);
+      if (/^control-changes|^exemptions\.jsonl$/i.test(e.name)) out.push(r);
       let carpeta = e.isDirectory();
       // un enlace a una carpeta se sigue (`cp -L`, `rsync -L`); el tope corta un enlace que vuelve sobre sí
       if (e.isSymbolicLink()) { try { carpeta = fs.statSync(path.join(dir, r)).isDirectory(); } catch (_) { carpeta = false; } }
@@ -5282,6 +5468,7 @@ function logHookError(e, rotulo = 'falla atrapada') {
  * que el comando corra: si `git rm` falla, el archivo sigue y la corrida lo tiene de más, no de menos.
  */
 function anotarBorradosDeLaStory({ stateDir, sessionId, marker, rutas, via }) {
+  if (soloDecidir) return;
   const archivo = path.join(stateDir, 'active', `${String(sessionId || '_nosession').replace(/[/\\]/g, '_')}.json`);
   try {
     const m = JSON.parse(fs.readFileSync(archivo, 'utf8'));
@@ -5318,7 +5505,7 @@ function anotarBorradosDeLaStory({ stateDir, sessionId, marker, rutas, via }) {
 function anotarEscriturasConsola(stateDir, sessionId, rutas, kind = null) {
   const legacy = require('./lib/legacy-names.js');
   const where = 'skills/tycon-pipeline/scripts/on-bash-write-gate.js';
-  if (!rutas.length || legacy.readEnv('TYCON_NO_RUN_CHANGE', { where }) === '1') return;
+  if (soloDecidir || !rutas.length || legacy.readEnv('TYCON_NO_RUN_CHANGE', { where }) === '1') return;
   const nueva = path.join(stateDir, 'console-writes');
   let dir;
   try { dir = legacy.prepareStateWrite(nueva, { where }); } catch (e) {
@@ -6106,7 +6293,29 @@ function constanciasSinHuella(event, opts = {}) {
   return null;
 }
 
+/**
+ * Lo que decide el freno sobre un comando. Lo lee dos veces si tiene comentarios: con sus comentarios apagados
+ * (`conComentariosApagados`) y sin apagarlos, y frena si cualquiera de las dos frena. Así, apagar los comentarios nunca
+ * deja pasar algo que la lectura sin apagarlos frena, aunque algo se tome por comentario sin serlo. La segunda lectura
+ * sólo decide: no anota escrituras ni borrados, que ya anotó la primera.
+ */
 function handle(event, opts = {}) {
+  apagoAlgo = false;
+  const r = handleUnaLectura(event, opts);
+  if ((r && r.block) || !apagoAlgo) return r;
+  leerComentarios = false;
+  soloDecidir = true;
+  try {
+    const comoAntes = handleUnaLectura(event, opts);
+    if (comoAntes && comoAntes.block) return comoAntes;
+  } finally {
+    leerComentarios = true;
+    soloDecidir = false;
+  }
+  return r;
+}
+
+function handleUnaLectura(event, opts = {}) {
   {
     let perdida = null;
     try { perdida = ejecucionPerdida(event); } catch (e) { logHookError(e); perdida = { block: `🔴 EJECUCIÓN PERDIDA — no pude revisar las piezas de la ejecución (${e.message}): frena hasta poder mirarlas.\n` }; }

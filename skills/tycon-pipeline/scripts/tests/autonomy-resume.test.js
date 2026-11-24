@@ -597,10 +597,14 @@ test('T12 SetAutonomousTrue_ConDetencion_SeNiega @story-8.298 @ac-13 @ac-19', (t
   r = marker(c, ['set-autonomous', 'true']);
   assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
   assert.strictEqual(leerMarcador(c).autonomous, true);
+  // apagarlo lo firma una persona (la ventana, acá dada por pasada)
   r = marker(c, ['set-autonomous', 'false']);
+  assert.strictEqual(r.status, 1, `${r.stdout}${r.stderr}`);
+  assert.strictEqual(leerMarcador(c).autonomous, true);
+  r = marker(c, ['set-autonomous', 'false'], { ventana: {} });
   assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
   assert.strictEqual(leerMarcador(c).autonomous, false);
-  // y `false` sigue siendo un escape del freno; `true`, no
+  // y `false` escrito de otra forma sigue siendo un escape del freno (la forma exacta la pide su guion); `true`, no
   const [apagar] = mc.llamadas(`node ${MARKER} set-autonomous false`, { shell: 'bash' });
   const [prender] = mc.llamadas(`node ${MARKER} set-autonomous true`, { shell: 'bash' });
   assert.strictEqual(mc.escapeDe(apagar, S), 'set-autonomous');

@@ -20,6 +20,9 @@ Es una página web para toda la organización. Cada persona entra con la cuenta 
 tareas, sus pedidos de cambio, sus ejecuciones. Quienes mantienen el arnés ven todo, y además tienen la pestaña
 **Configuración**, donde se personaliza la organización (quién es responsable de qué, el canal del aviso, los umbrales).
 
+El sitio lee y configura repos de GitHub o de Azure DevOps. Los de GitLab todavía no los usa: una organización que
+trabaja en GitLab tiene el arnés en cada máquina, pero el sitio no muestra esos repos.
+
 **Las palabras que usa el sitio**, para quien no programa:
 
 - **El arnés:** el conjunto de reglas, controles y ayudantes con que el equipo programa con Claude. Este sitio muestra
@@ -927,7 +930,7 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
 - **Estimaciones**: la unidad en que estima la organización (horas, días o puntos), las horas de un día de trabajo (de
   1 a 24; vacío, 8) y las horas que vale un punto (vacío: sin tasa, y con puntos el error no se calcula). Abajo dice la
   unidad que leen hoy las máquinas. Cambiar la unidad no reescribe lo ya estimado. La estimación vigente de cada
-  historia llega también a su pedido de trabajo, en Azure DevOps o GitHub. Queda en `team-repos.json` →
+  historia llega también a su pedido de trabajo, en Azure DevOps, GitHub o GitLab. Queda en `team-repos.json` →
   `estimates`, en el repo del perfil; el perfil tiene que pedir una versión del arnés que lea la clave. Lo revisa quien
   mantiene.
 - **Pase adversarial**: cuándo corre el pase que ejecuta el código de una historia para buscarle defectos. Automático

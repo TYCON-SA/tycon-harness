@@ -428,7 +428,14 @@ function exec({ argv, raices = [], env = process.env, userInfo, cwd = process.cw
       if (enc.nombre === 'sandbox-exec' && encierroAbre()) {
         marca = `tycon-aislada-${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
         desde = Date.now() - 2000;
-        const perfil = cp().perfilSandbox([base, ...admitidas], { red: true, fatales: raicesVigiladas, mensaje: marca });
+        // el temporal de here document de bash, sólo en la carpeta actual y si no hay ya uno con ese nombre: adentro no se
+        // pueden crear enlaces, pero uno que ya estaba escribiría el archivo al que apunta. Se compara como el encierro y el
+        // disco de la Mac: sin mayúsculas y con «ſ» como «s» (`/iu`); un «SH-THD-<n>» plantado es el mismo nombre
+        const actual = cwd || process.cwd();
+        let yaHay = true;
+        try { yaHay = fs.readdirSync(actual).some((n) => /^sh-thd-[0-9]+$/iu.test(n)); } catch (_) { /* sin leerla, no se admite */ }
+        if (yaHay) err(`[aislada] ⚠️ ${actual} ya tiene un sh-thd-<n> o no se pudo leer: el here document del bash del sistema queda negado ahí (un enlace con ese nombre escribiría otro archivo)\n`);
+        const perfil = cp().perfilSandbox([base, ...admitidas], { red: true, fatales: raicesVigiladas, mensaje: marca, heredoc: yaHay ? [] : [actual] });
         lanzar = ['/usr/bin/sandbox-exec', ['-p', perfil, ...argv]];
       } else err(`[aislada] ⚠️ sin el encierro del sistema (${enc.nombre === 'sandbox-exec' ? 'el sistema no deja abrirlo: esta sesión ya corre encerrada' : enc.corta}): frena sólo la red de escritura de node\n`);
     }

@@ -2385,6 +2385,45 @@ test('T9 Config_CapMachineWins_FolderMachineOnly @story-8.122 @ac-9: el tope de 
   assert.match(err.motivo, /es de la máquina/);
 });
 
+test('Config_McpServers_MachineOnly — integrations.mcp_servers: válido en la máquina, roto en el perfil o con un nombre que no es de servidor', () => {
+  const hm = casa();
+  maquina(hm, { integrations: { mcp_servers: { clockify: 'reloj-de-acme' } } });
+  const m = cargar({ home: hm, arnes: arnesCon({}) });
+  assert.deepEqual(m.errores, []);
+  assert.deepEqual(m.valores.integraciones.mcp_servers, { clockify: 'reloj-de-acme' });
+  const enPerfil = cargar({ home: casa(), arnes: arnesCon({ integrations: { mcp_servers: { clockify: 'reloj' } } }) });
+  const err = enPerfil.errores.find((e) => /mcp_servers/.test(e.clave));
+  assert.ok(err, JSON.stringify(enPerfil.errores.map((e) => e.clave)));
+  assert.match(err.motivo, /es de la máquina/);
+  const hm2 = casa();
+  for (const malo of [{ clockify: 'a b' }, { clockify: 'reloj__x' }, { Clockify: 'a', clockify: 'b' }]) {
+    const hm2 = casa();
+    maquina(hm2, { integrations: { mcp_servers: malo } });
+    assert.ok(cargar({ home: hm2, arnes: arnesCon({}) }).errores.some((e) => /mcp_servers/.test(e.clave)), JSON.stringify(malo));
+  }
+});
+
+test('Config_McpServers_NotWrittenWithAnOldGuard — set no la escribe con un freno instalado que no la conoce; con el de hoy, sí', () => {
+  const home = casa();
+  const dir = tmp('tcfg-mcp-guard-');
+  const nuevo = fs.readFileSync(path.join(SCRIPTS, 'production', 'guard-libs', 'lib', 'tycon-config.js'), 'utf8');
+  const viejo = nuevo.replace("    mcp_servers: 'aceptada',\n", '');
+  assert.notStrictEqual(viejo, nuevo, 'la copia del freno conoce la clave');
+  fs.writeFileSync(path.join(dir, 'viejo.js'), viejo);
+  fs.writeFileSync(path.join(dir, 'nuevo.js'), nuevo);
+  const file = path.join(home, '.claude', 'tycon.json');
+  let out = cli(['set', 'integrations.mcp_servers', '{"clockify":"reloj"}'], { home, env: { TYCON_PROFILE: '0', TYCON_GUARD_LIB_FOR_TEST: path.join(dir, 'viejo.js') } });
+  assert.equal(out.status, 2, out.stdout);
+  assert.match(out.stderr, /no lo escribí.*mcp_servers.*install-guard\.sh/s);
+  assert.ok(!fs.existsSync(file), 'no escribió nada');
+  out = cli(['set', 'integrations.mcp_servers', 'reloj'], { home, env: { TYCON_PROFILE: '0', TYCON_GUARD_LIB_FOR_TEST: path.join(dir, 'nuevo.js') } });
+  assert.equal(out.status, 2, 'un valor que no es JSON no se escribe');
+  out = cli(['set', 'integrations.mcp_servers', '{"clockify":"reloj"}'], { home, env: { TYCON_PROFILE: '0', TYCON_GUARD_LIB_FOR_TEST: path.join(dir, 'nuevo.js') } });
+  assert.equal(out.status, 0, out.stderr);
+  assert.match(out.stdout, /\{"clockify":"reloj"\}/, 'dice el valor escrito, no [object Object]');
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).integrations.mcp_servers, { clockify: 'reloj' });
+});
+
 test('Config_SessionNames_ThemeOrList — coordination.session_names: a factory theme or a list, the machine wins, a bad value is broken', () => {
   // a factory theme in the profile and a list in the machine file: the machine wins
   const home = casa();

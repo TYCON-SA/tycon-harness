@@ -171,7 +171,8 @@ test('T1b RunCloseGate_DeudaYaNoCubrePasarARevision @story-8.139 @ac-29 — con 
   }
 });
 
-// la forma canónica de force-manual y trust-ran la firma su guion en la ventana: acá, la que el freno sigue frenando
+// la forma canónica de force-manual, trust-ran y los escapes del cierre la firma su guion en la ventana: acá, la que el
+// freno sigue frenando
 const FUERA_DE_FORMA = 'cd /tmp &&';
 
 test('T2 RunCloseGate_TrustRanYaNoCubreForceManual @story-8.140 @ac-2 @story-8.139 @ac-29 — con trust-ran ya autorizado, force-manual del control de revisores pide su propia ventana', () => {
@@ -183,7 +184,7 @@ test('T2 RunCloseGate_TrustRanYaNoCubreForceManual @story-8.140 @ac-2 @story-8.1
 });
 
 test('T3 RunCloseGate_AlReves_Frena @story-8.140 @ac-4 — la segunda frase no cubre la primera', () => {
-  const a = lector(corral(ROJO, [escape(5)]), `${MK} close-as-debt --reason "x" --debt DEF-9.9-x`);
+  const a = lector(corral(ROJO, [escape(5)]), `${FUERA_DE_FORMA} ${MK} close-as-debt --reason "x" --debt DEF-9.9-x`);
   assert.deepStrictEqual([a.frena.map((f) => f[0]), a.cubre.length], [['cerrar como deuda'], 0]);
   const b = lector(corral(VERDE, [escape(5, { escape: 'force-manual' })]), `${FUERA_DE_FORMA} ${PL} check-count --story s --trust-ran`);
   assert.deepStrictEqual([b.frena.map((f) => f[0]), b.cubre.length], [['trust-ran'], 0]);

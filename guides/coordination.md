@@ -693,6 +693,28 @@ sesión, porque el pedido no dice de qué copia sale: si es de otro repo, se eli
 desde la rama de integración más cercana: una ruta de riesgo alto que trajo `dev`, en una rama nacida de `dev`, ya pasó por su
 propio pedido y no pide revisores; lo de riesgo alto que la rama cambió, sí.
 
+**El rojo de CI de un pedido ya revisado tiene su propio camino corto.** Cuando la espera de la compilación (la lanza
+`marker.js clear`) avisa «en rojo», el arreglo no abre otra ejecución: la sesión del pedido corre `marker.js adhoc set
+--ci-red <pedido> --check "<el control que falló>" --reason "<qué se arregla>" --data sin-cambio --file <ruta>`, con la
+firma `adhoc-lane:ci-rojo`. La aprueba el dueño, o vos si el perfil la tiene en `delegated_signing`; por delegación le
+llega al dueño una línea con el pedido, el control y los archivos. Abre sólo sobre el pedido en rojo de esa sesión, con
+la punta en el commit que dio rojo, hasta 3 archivos del repo del pedido (pruebas incluidas), sin lo sensible, sin la
+compilación ni la carpeta `.tycon/` del repo, y con el control que falló declarado para correr en local (sin él, va por
+el camino corto de siempre). La ventana dice si la lista toca una ruta de riesgo alto. No pide plan, revisores ni pase:
+antes de guardar corren otra vez todos los controles de CI que el repo declara en local, y las pruebas tocadas. Un
+arreglo común y el del rojo no se mezclan: se cierra uno y se abre el otro. Después de empujar, `marker.js adhoc
+ci-wait` espera la compilación y, con verde, cierra el arreglo.
+
+**Los revisores de un arreglo no ensanchan su alcance.** Desde la segunda vuelta de revisores, lo que encuentran fuera de
+las líneas que cambió el arreglo pasa a seguimiento (`deuda: fuera-del-arreglo`) y no abre otra vuelta; un crítico
+también, y sale primero.
+
+**Una ejecución abierta cuyo arreglo ya entró a main por otro lado** (un commit del dueño, otro pedido) se cierra con
+`marker.js clear --replaced-by <commit>`. El arnés lee main del servidor y comprueba que el commit está ahí, que es
+posterior al arranque de la ejecución y que toca todos los archivos que ella editó en ese repo: si es así, la cierra `reemplazada`, sin el
+pase, los pasos ni la firma que le faltaban. Si no lo puede comprobar, no cierra así y queda la salida de siempre (la
+firma de cerrar la ejecución). Una ejecución detenida, que espera la decisión del dueño, la sigue cerrando él.
+
 **Un cambio de los datos no es camino corto.** Al abrir, la sesión responde si el cambio cambia de dónde sale un dato o
 quién lo puede ver (`"datos": "sin-cambio"` o `"cambian"`); con «cambian» no abre, y un carril abierto no cambia. Al
 guardar, el freno busca en las líneas que el carril agrega o borra las señales del paquete del stack (una llamada a un

@@ -135,6 +135,7 @@ const CONSULTA_WINDOWS = "[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-C
  * que llegue hasta el sistema: con esta lectura nunca llegaría.
  */
 function leerArbolWindows({ spawnSync = require('child_process').spawnSync } = {}) {
+  require('./owner-approvals.js').anotarEtapa('leyendo la lista de procesos de Windows (con PowerShell)');
   const env = { ...process.env };
   for (const k of Object.keys(env)) if (/^(PSModulePath$|COR_|CORECLR_|COMPLUS_|DOTNET_)/i.test(k)) delete env[k];
   let r;
@@ -525,6 +526,34 @@ function topesDelCaminoCorto(casa) {
 }
 
 /**
+ * Si la ejecución sobre la que trabaja `set-autonomous` (la de `--for-session`, o la del evento) tiene el modo autónomo
+ * prendido. Sin ejecución, no (el guion sale sin hacer nada). Sin `donde`, con la sesión que no se lee o con un marcador
+ * que no se lee, cuenta como prendido: no poder mirar no es poder pasar.
+ */
+function autonomoPrendido(args, donde) {
+  if (!donde) return true;
+  const i = args.indexOf('--for-session');
+  const sid = i >= 0 ? args[i + 1] : donde.sesion;
+  if (!/^[\w-]+$/.test(String(sid || ''))) return true;
+  try {
+    const r = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'run-close.js')).consulta(sid, donde.casa);
+    return r.hay === '?' || (r.hay === true && r.autonomo === true);
+  } catch (_) { return true; }
+}
+
+/**
+ * Si el control de `expect-red <control>` es un control común y no la matriz: escrito tal cual, sin espacios alrededor
+ * que cambien qué es, y que no sea una opción. Un control que no se lee tal cual puede ser la matriz. `palabra`:
+ * `{ texto, literal }` o un texto (literal).
+ */
+function esRojoDeUnControl(palabra) {
+  if (palabra == null) return false;
+  const w = typeof palabra === 'object' ? palabra : { texto: palabra, literal: true };
+  const c = String(w.texto == null ? '' : w.texto).trim();
+  return !!w.literal && c !== '' && !c.startsWith('-') && c !== 'acmatrix';
+}
+
+/**
  * La firma que pide un llamado a un guion. `donde` (`{ cwd, casa, sesion }`, la carpeta y la sesión del evento): con él,
  * la lista de un `adhoc set` se clasifica contra la carpeta del pedido, donde `<Nombre>/<ruta>` nombra un repo hermano,
  * como la clasifica el guion; sin él, cada ruta tal como viene.
@@ -550,6 +579,12 @@ function firmaDeLlamado(guion, sub, args, llamada = null, topes = null, donde = 
       if (pideDespues('--no-mutation')) return 'escape:no-mutation';
     }
     if (sub === 'approve-mockup') return 'plan-approval';
+    // cerrar como deuda y el rojo esperado de un control van con la misma firma; el de la matriz, con la suya, que
+    // muestra los criterios y la fecha. Un control que no se lee tal cual puede ser la matriz
+    if (sub === 'close-as-debt') return 'escape:cerrar-como-deuda';
+    if (sub === 'expect-red') return esRojoDeUnControl(pal[0]) ? 'escape:cerrar-como-deuda' : 'escape:rojo-esperado-de-la-matriz';
+    // apagar el modo autónomo, si la ejecución lo tiene prendido (o no se sabe): ya apagado no hay nada que firmar
+    if (sub === 'set-autonomous') return !(pal[0] && pal[0].literal && ['true', '1', 'on'].includes(a[0])) && autonomoPrendido(a, donde) ? 'escape:set-autonomous' : null;
     if (sub === 'waive-critical') return 'critical-waiver';
     if (sub === 'mark-tested') return 'manual-test';
     if (sub === 'runtime-waiver') return 'runtime-waiver';
@@ -1034,9 +1069,10 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
   let m = null;
   try { m = casa === undefined || !destino ? null : marcadorEn(path.join(stateDir(casa), 'active', `${destino}.json`)); } catch (_) { m = null; }
   const fuentes = require('./signature-sources.js');
-  // un escape no trae las palabras de un guion de firma; el rojo esperado de la matriz las necesita para mostrar sus
-  // criterios, y las lee del comando sin envolturas (envuelto, la fuente no tiene qué mostrar y no hay cuadro)
-  const palabrasDeLaFuente = palabras || (firma === 'escape:rojo-esperado-de-la-matriz' || firma === PEDIDO_DE_AFUERA ? canonica(comando) : null);
+  // un escape no trae las palabras de un guion de firma; el rojo esperado las necesita para mostrar los criterios de la
+  // matriz, o el control y sus pruebas (con la firma de cerrar como deuda), y las lee del comando sin envolturas
+  // (envuelto, la fuente no tiene qué mostrar y no hay cuadro)
+  const palabrasDeLaFuente = palabras || (['escape:rojo-esperado-de-la-matriz', 'escape:cerrar-como-deuda', PEDIDO_DE_AFUERA].includes(firma) ? canonica(comando) : null);
   // el cuadro dice el tope con la misma lectura que usa el freno para decidir
   let partes = fuentes.partesDe({ firma, palabras: palabrasDeLaFuente, comando, cwd, marcador: m, estado: casa === undefined ? null : stateDir(casa), destino, topes: topesDelCaminoCorto(casa), casa });
   // una fuente que dice que no hay nada que firmar: sin cuadro, el pedido se niega
@@ -1354,12 +1390,18 @@ function clasificarConElGuion(palabras, cwd) {
 // rechaza después es una firma perdida.
 const PRECHEQUEO = 'TYCON_SIGN_PRECHECK';
 const PRECHEQUEO_OK = 'tycon-sign-precheck: ok';
+// cerrar en deuda, el rojo esperado y apagar el modo autónomo sobre la ejecución de OTRA sesión no salen por trámite: la
+// firma de trámite no mira quién la pide, y cualquier sesión le apagaría el lazo a otra. Los pide la coordinadora por
+// delegación, o los firma el dueño
+const SIN_TRAMITE_PARA_OTRA = new Set(['escape:cerrar-como-deuda', 'escape:rojo-esperado-de-la-matriz', 'escape:set-autonomous']);
 // por dónde llegó la aprobación que el freno va a gastar (`click` o `mensaje`), para el chequeo previo; vacía sin aprobación
 const PRECHEQUEO_VIA = 'TYCON_SIGN_PRECHECK_VIA';
 // las firmas de guion con requisitos propios; el carril y las firmas sobre un archivo no comprueban nada antes de firmar
 // (`adhoc-lane`: el largo del motivo y un tope menor que lo ya tocado se niegan antes de la ventana)
 const CON_PRECHEQUEO = new Set(['extra-round', 'save', 'atdd-skip', 'plan-approval', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver', 'adhoc-lane', SOBRE_CUPO,
   'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'review-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran',
+  // una deuda sin anotar, un rojo esperado sin ejecución en deuda o con la fecha fuera del tope, una ejecución que no hay
+  'escape:cerrar-como-deuda', 'escape:rojo-esperado-de-la-matriz', 'escape:set-autonomous',
   // saltear los mutantes sin motivo, o en un paso que no corre las pruebas
   'escape:no-mutation',
   // nombrar sin id de sesión, o retirar desde una sesión que no es la coordinadora, se niega sin gastar el click
@@ -1393,6 +1435,18 @@ const PLAZO_DEL_PRECHEQUEO_MS = 12000;
 const MARGEN_DEL_FRENO_MS = 3000;
 const MINIMO_DEL_CHEQUEO_MS = 1000;
 
+/** Lo que le queda al freno de seguridad antes de que lo corte su reloj, en ms; null si no lo consulta el freno. */
+function quedaAlFreno(env, ahora = Date.now()) {
+  const tope = String((env || process.env).TYCON_SAFETY_DEADLINE_S || '');
+  return /^[1-9][0-9]{8,11}$/.test(tope) ? Number(tope) * 1000 - ahora : null;
+}
+
+/** La negativa de una firma aprobada sin tiempo para firmar: la aprobación sigue sin usar, y dice cómo seguir. */
+function sinTiempoParaFirmar(queda, ids, sesion) {
+  const t = terminalDe(ids, sesion);
+  return { decision: 'deny', firmas: ids, texto: `al freno le quedan ${Math.max(0, Math.round(queda / 1000))} s antes de que lo corte su reloj, y no alcanzan para firmar y contestar: la aprobación sigue sin usar. Volvé a correr el mismo comando. Si se repite, subí TYCON_SAFETY_TIMEOUT_S (hasta 50) en el entorno de la herramienta, o abrí una sesión nueva: una conversación larga hace más lenta la confirmación${t ? `. Si nada de eso alcanza, la firma se da en tu terminal: ${t}` : ''}.` };
+}
+
 /** El plazo del chequeo de `firma`, en ms: el suyo, acotado por lo que le queda al freno; 0 = no hay tiempo. */
 function plazoDelChequeo(firma, env, ahora = Date.now()) {
   const propio = PLAZO_DEL_CHEQUEO[firma] || PLAZO_DEL_PRECHEQUEO_MS;
@@ -1414,12 +1468,16 @@ function plazoDelChequeo(firma, env, ahora = Date.now()) {
 function comprobarConElGuion({ firma, palabras, cwd, sesion, casa, env, via = null }) {
   // el de los controles de la base vive en scripts/ci y es de la consola; los demás, al lado del pipeline y de node
   const nombre = base(palabras[0]);
+  const etapa = require('./owner-approvals.js').anotarEtapa;
+  etapa(`corriendo el chequeo de ${nombre} antes de la firma`);
   const sh = nombre.endsWith('.sh');
   const guion = sh ? path.join(__dirname, '..', 'ci', nombre) : path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', nombre);
   const plazo = plazoDelChequeo(firma, env);
   if (!plazo) return { sinRespuesta: 'no quedó tiempo para el chequeo del guion antes de que corte el freno' };
   const r = require('child_process').spawnSync(sh ? 'bash' : process.execPath, [guion, ...palabras.slice(1)], { windowsHide: true, cwd: cwd || process.cwd(), encoding: 'utf8', timeout: plazo,
     env: { ...(env || process.env), ...(casa ? { HOME: casa, USERPROFILE: casa } : {}), [PRECHEQUEO]: '1', [PRECHEQUEO_VIA]: via || '', ...(sesion ? { CLAUDE_CODE_SESSION_ID: sesion } : {}) } });
+  // lo que sigue ya no es el chequeo: si el corte llega después, no lo culpa
+  etapa(`decidiendo la firma, después del chequeo de ${nombre}`);
   if (r.error && r.error.code === 'ETIMEDOUT') return { sinRespuesta: `el chequeo del guion no terminó en ${Math.round(plazo / 1000)} s` };
   if (r.error || r.status === null) return null;
   if (r.status === 0) return String(r.stdout).split('\n').includes(PRECHEQUEO_OK) ? { ok: true } : null;
@@ -1498,11 +1556,14 @@ function pasaDelCupoDelegado(palabras, tope = topesDelCaminoCorto().delegado, cw
 
 /**
  * ¿La firma pasa por la pestaña en Windows (la ventana, el cuadro o el «aprobado», desde la consola Bash de Git)? null si
- * pasa, o el motivo. No pasan los escapes (entre ellos todo `sign-file`) ni los guiones de consola `.sh`. La usan
- * `decidir` y el texto del freno (`ofrecerEnWindows`): una sola lista (@story-8.319).
+ * pasa, o el motivo. No pasan los escapes que ningún guion comprueba (los de una variable, y los de `marker.js` que mira
+ * sólo el freno) ni los guiones de consola `.sh`. Un escape que comprueba su guion (`set-check --force-manual`,
+ * `check-count --trust-ran`, `sign-file`) sí pasa: en su forma exacta es una firma de guion, y fuera de ella el freno lo ve
+ * como escape y se corre otra vez solo y en su forma. La usan `decidir` y el texto del freno (`ofrecerEnWindows`): una
+ * sola lista (@story-8.319).
  */
 function noPasaEnWindows({ escapes = [], palabras = null } = {}) {
-  if (escapes.length) return 'en Windows un escape no se aprueba en la pestaña';
+  if (escapes.some((id) => { const s = firmaDe(id); return !s || s.kind !== 'guion'; })) return 'en Windows un escape no se aprueba en la pestaña';
   // el guion de consola se identifica con el número de proceso de Git Bash, que no es el de Windows: nunca se comprobaría
   if (palabras && palabras[0] && base(palabras[0]).endsWith('.sh')) return 'en Windows un guion de consola no se puede comprobar en la pestaña';
   return null;
@@ -1560,7 +1621,8 @@ const envSwitches = () => require('./env-switches.js');
  * `aviso` y un renglón ESCAPE_NOTICE_PERIOD por sesión, variable y día; `antesDelCorte(variable, ahora)` se pasa en las
  * pruebas. Primero mira el período de aviso (`periodoDeAviso`), salvo que ya lo haya pasado y lo diga `sinAviso`.
  */
-function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, tramite, huellaDeLaMaquina, clasificar = clasificarConElGuion, comprobar = comprobarConElGuion, userInfo, aprobador = approverOf, aprobaciones, plataforma = process.platform, gitBash = buscarGitBash, lista, topes, sinAviso = [] } = {}) {
+function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.pid, casa, ahora = Date.now(), delegacion, tramite, huellaDeLaMaquina, clasificar = clasificarConElGuion, comprobar = comprobarConElGuion, userInfo, aprobador = approverOf, aprobaciones, plataforma = process.platform, gitBash = buscarGitBash, lista, topes, sinAviso = [], env = process.env } = {}) {
+  const arranque = Date.now();
   // la declaración de un pendiente no es una firma, pero vale como de la sesión que la corre: con una variable de sesión
   // en el comando, una sesión declararía por otra y después aprobaría lo suyo por delegación. Va antes que todo, también
   // del período de aviso, y mira la palabra del subcomando, se escriba como se escriba el guion
@@ -1708,6 +1770,7 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   // conoce recién acá. Pasa por lo mismo que lo que sale sin persona: el cupo del camino corto y el control previo del
   // guion; lo que eso niega va a una persona, con los controles del árbol de siempre
   if (!automatica.ok && firmaGuion === REFIRMA && !escapes.length) automatica = deTramite(pendientes);
+  if (automatica.ok && destino !== sesion && SIN_TRAMITE_PARA_OTRA.has(firmaGuion)) automatica = { ok: false, motivo: null };
   // un click o un «aprobado» de la persona a ESTE pedido (el cuadro de este comando, con su sello) gana a la firma de
   // trámite: si la persona aprobó, la firma es suya y queda con su vía. Acá sólo se mira; se gasta más abajo, donde se
   // gastan todas. El cuadro se arma sólo si hay alguna aprobación anotada sin vencer: sin ella, el trámite sigue igual
@@ -1928,6 +1991,10 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
   // nunca queda un pedido vigente con una aprobación sin gastar. Si el pedido no se puede escribir, se devuelve
   const oa = aprobada ? (aprobaciones || require('./owner-approvals.js')) : null;
   if (aprobada) {
+    // al freno de seguridad le tiene que quedar tiempo para el pedido y la respuesta: si su reloj lo corta después de
+    // gastarla, el comando no corre y la aprobación queda usada. Sin ese tiempo se niega sin gastarla
+    const queda = quedaAlFreno(env, ahora + (Date.now() - arranque));
+    if (queda !== null && queda < MARGEN_DEL_FRENO_MS) return sinTiempoParaFirmar(queda, pendientes, paraTerminal);
     const u = oa.consumir(casa, aprobada.aprobacion, { ahora, firma: pendientes[0], sesion });
     if (!u.ok) return negarSinVentana(u.motivo, pendientes, paraTerminal);
   }
@@ -2595,7 +2662,7 @@ function quienFirmo({ via, sesion, automatica } = {}, persona) {
   return { tipo: 'manual', quien: persona, via: via === 'terminal' ? 'terminal' : 'ventana' };
 }
 
-module.exports = { plazoDelChequeo, detalleDe, retiraA, tituloDeLaFirma, avisarFirmaADistancia, renglonALaVista, textoDeLosCriterios, formaCanonica, historiaDelPedido, claveDelPedido, carpetaDelPedido, VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, padres, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
+module.exports = { esRojoDeUnControl, plazoDelChequeo, detalleDe, retiraA, tituloDeLaFirma, avisarFirmaADistancia, renglonALaVista, textoDeLosCriterios, formaCanonica, historiaDelPedido, claveDelPedido, carpetaDelPedido, VENCE_MIN, PRECHEQUEO, PRECHEQUEO_OK, PRECHEQUEO_VIA, PLAZO_DEL_PRECHEQUEO_MS, CON_PRECHEQUEO, comprobarConElGuion, carpeta, quienFirmo, leerArbol, leerArbolWindows, conPadresValidos, arbolDeLaPlataforma, palabrasDeWindows, gitBashDe, desenvolverWindows, esConsolaDeWindows, esHerramienta, padres, desenvolver, canonica, canonicaDe, firmasDelComando, cuadroPara, queDeLaExcepcion, renglonDeLaExcepcion, decidir, verificar, firmar, porTerminal, exigir, fijarDestino, marcadorEn, vencerPedidos,
   rutaReal, firmarArchivo, consumirArchivo, confirmarConsumos, comoSeFirma, comoSeFirmaEnLaTerminal, enLaTerminal, formasDeFirmar, sinFormaDeTerminal, noPasaEnWindows, ofrecerEnWindows, ofreceTrasDecidir, markerEstable,
   SIN_SESION_TERMINAL, esAnfitrionDeFondoDe, negarSinVentana, porQueSinLista, CHEQUEO_ANTES_DEL_CUADRO, pasaDelCupoDelegado, rutinaSinPermisos, lanzarAvisoDeFirma, correrAvisoDeFirma, salirTrasElAviso };
 

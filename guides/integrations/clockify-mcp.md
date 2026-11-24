@@ -61,6 +61,21 @@ claude mcp add \
 Invalid environment variable format: clockify
 ```
 
+### Si tu servidor tiene otro nombre
+
+El arnés supone que el servidor se llama `clockify`, y con ese nombre arma las herramientas que le pide usar al agente
+(`mcp__clockify__create-clockify-time-entry` y las demás). Si en tu máquina lo registraste con otro nombre, decíselo una
+vez:
+
+```bash
+node ~/.tycon/harness/scripts/lib/tycon-config.js set integrations.mcp_servers '{"clockify":"<tu nombre>"}'
+```
+
+Queda en `~/.claude/tycon.json`, sólo en tu máquina: el perfil del equipo no puede ponerlo. Si el freno de producción
+instalado es anterior a esta clave, el comando no la escribe y te dice cómo ponerlo al día primero.
+
+Límite: el despliegue del servidor a Codex todavía lo busca por `clockify`. Con otro nombre, Codex no lo recibe.
+
 ### Sacar tu API key
 
 1. Loguearte a Clockify (https://clockify.me).

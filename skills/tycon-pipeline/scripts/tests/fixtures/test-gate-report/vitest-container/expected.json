@@ -61,7 +61,13 @@
       "git": true,
       "head": "0000acme",
       "dirty": "def"
-    }
+    },
+    "failed_tests": [
+      {
+        "file": "src/price.test.ts",
+        "name": "acme suma bien"
+      }
+    ]
   },
   "sellada": {
     "kind": "tests-result-sellado",
