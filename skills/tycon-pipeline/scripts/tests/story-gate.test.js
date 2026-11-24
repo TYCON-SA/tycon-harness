@@ -1197,6 +1197,13 @@ test('Comentario_ConUnaComilla_NoEscondeElRenglonSiguiente (fila 217, el freno)'
     // un `<<EOF` adentro de un comentario no abre un heredoc: el renglón siguiente corre
     frena(`echo hola # <<EOF\ncp /tmp/falso.json '${res}'\nEOF`);
     frena(`echo hola # <<'EOF'\ncp /tmp/falso.json '${res}'\nEOF`);
+    // del pase entero: donde el shell no ve un comentario, no se saca nada. Adentro de comillas invertidas o de `${…}`,
+    // después de una continuación de renglón (el shell junta los renglones), y adentro de `$'…'`, que deja escapar su comilla
+    frena(`echo \`true #x\`; cp /tmp/falso.json '${res}'`);
+    frena(`echo \${HOLA:-a #b}; cp /tmp/falso.json '${res}'`);
+    frena(`echo a\\\n#b; cp /tmp/falso.json '${res}'`);
+    frena(`echo $'a\\'b # c'; cp /tmp/falso.json '${res}'`);
+    frena(`echo $'\\'' # '\ncp /tmp/falso.json '${res}'`);
     // un comentario con una comilla y nada escondido, o un `#` que no empieza una palabra, sigue pasando
     pasa("echo hola # it's fine\nls -la");
     pasa("echo 'a # b' && echo \"c # d\"");
