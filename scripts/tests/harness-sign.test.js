@@ -22,6 +22,7 @@
  *   T16 · el agente no corre `sign` ni la biblioteca de la emergencia.
  *   T17 · un número de pedido usado o vencido no sirve.
  *   T21 · mirar si hay una emergencia de commit vigente no la gasta.
+ *   T22 · el pedido queda en la casa de HOME (la de quien corre el freno); el permiso se sigue leyendo de la cuenta.
  */
 const test = require('node:test');
 const assert = require('node:assert');
@@ -276,7 +277,8 @@ test('T11 · la emergencia la firma sólo la terminal, nunca la ventana ni la de
 });
 
 // El freno real lee los permisos de la casa de la cuenta (real-home.js: HOME no la cambia), así que la prueba firma ahí,
-// con un comando que no existe en ninguna otra parte, y borra lo suyo al terminar.
+// con un comando que no existe en ninguna otra parte, y borra lo suyo al terminar. El pedido queda en la casa de prueba
+// del freno (su HOME), y la firma lo busca ahí.
 test('T13 · el freno de seguridad deja pasar el comando firmado, tal cual y una sola vez', (t) => {
   const HOOK = path.join(RAIZ, 'scripts', 'hooks', 'safety-guard-pre.sh');
   const marca = `${process.pid}-${Date.now()}`;
@@ -284,11 +286,11 @@ test('T13 · el freno de seguridad deja pasar el comando firmado, tal cual y una
   const firmado = `sqlcmd -Q "DROP DATABASE prueba_${marca.replace(/-/g, '_')}"`;
   const reg = registro();
   t.after(() => {
-    for (const dir of [sign.carpeta(), path.join(sign.carpeta(), 'pedidos')]) {
-      for (const f of fs.readdirSync(dir)) {
-        const p = path.join(dir, f);
-        try { if (fs.statSync(p).isFile() && fs.readFileSync(p, 'utf8').includes(marca.replace(/-/g, '_'))) fs.rmSync(p); } catch (_) { /* ya no está */ }
-      }
+    let archivos = [];
+    try { archivos = fs.readdirSync(sign.carpeta()); } catch (_) { archivos = []; }
+    for (const f of archivos) {
+      const p = path.join(sign.carpeta(), f);
+      try { if (fs.statSync(p).isFile() && fs.readFileSync(p, 'utf8').includes(marca.replace(/-/g, '_'))) fs.rmSync(p); } catch (_) { /* ya no está */ }
     }
   });
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-sign-freno-'));
@@ -304,7 +306,8 @@ test('T13 · el freno de seguridad deja pasar el comando firmado, tal cual y una
   assert.ok(m, `el cartel no da el número: ${r.stderr}`);
   assert.strictEqual(freno(firmado).stderr.includes(`--request ${m[1]}`), true, 'repetirlo reusa el mismo número');
   const tty = terminal();
-  assert.strictEqual(sign.sign({ id: 'emergency', reason: 'limpiar la carpeta de la prueba', request: m[1], tty, append: reg.append, signer: 'prueba', levels: {}, origen: DE_LA_PERSONA }).code, 0);
+  assert.ok(fs.existsSync(path.join(sign.carpetaPedidos(home), `${m[1]}.json`)), 'el pedido queda en la casa del freno');
+  assert.strictEqual(sign.sign({ id: 'emergency', reason: 'limpiar la carpeta de la prueba', request: m[1], casaDelPedido: home, tty, append: reg.append, signer: 'prueba', levels: {}, origen: DE_LA_PERSONA }).code, 0);
   assert.ok(tty.preguntas[0].includes(`Comando: ${firmado}`), 'la terminal muestra lo que leyó el freno');
   // otro texto no la consume
   r = freno(`${firmado} `);
@@ -609,4 +612,28 @@ test('Sign_Windows_TresPalabras @story-8.248 @ac-19', (t) => {
   r = firmar(casa, { id: 'emergency', reason: 'limpiar', request: n, append: reg.append, tty: adentro(true) });
   assert.strictEqual(r.code, 0, r.lines.join('\n'));
   assert.strictEqual(reg.renglones.length, 1);
+});
+
+// 🔴 Falla con: el freno, con la HOME de una prueba, deja el pedido en la casa de la cuenta (la tomaba del sistema), y la
+//    ejecución aislada, que no deja escribir ahí, corta la prueba (fila 161).
+test('T22 · el pedido queda en la casa de HOME y un permiso puesto ahí no abre nada @fila-161', (t) => {
+  const casa = casaNueva(t);
+  const consume = (comando) => spawnSync(process.execPath, [path.join(RAIZ, 'scripts', 'lib', 'harness-sign.js'), 'consume'], {
+    input: comando, encoding: 'utf8', env: { ...process.env, HOME: casa, USERPROFILE: casa } });
+  // stable-data: es el texto que se le pasa al freno, que nunca lo corre
+  const comando = `rm -rf /tmp/acme-fila161-${process.pid}-${Date.now()}`;
+  let r = consume(comando);
+  assert.strictEqual(r.status, 1, r.stderr);
+  const m = /pedido=([0-9a-f]{8})/.exec(r.stdout);
+  assert.ok(m, r.stdout);
+  assert.ok(fs.existsSync(path.join(sign.carpetaPedidos(casa), `${m[1]}.json`)), 'el pedido está en la casa de HOME');
+  // un permiso escrito en esa casa (lo que podría dejar quien cambia HOME) no se consume: el permiso se lee de la cuenta
+  const huella = require('crypto').createHash('sha256').update(comando).digest('hex');
+  const forjado = path.join(sign.carpeta(casa), `${huella}.json`);
+  fs.mkdirSync(path.dirname(forjado), { recursive: true });
+  fs.writeFileSync(forjado, JSON.stringify({ comando, sha256: huella, motivo: 'forjado', firmante: 'agente', repo: null, ts: new Date().toISOString() }));
+  r = consume(comando);
+  assert.strictEqual(r.status, 1, 'sigue frenado');
+  assert.match(r.stdout, new RegExp(`pedido=${m[1]}`), 'reusa el mismo pedido');
+  assert.ok(fs.existsSync(forjado), 'el permiso forjado no se tocó');
 });

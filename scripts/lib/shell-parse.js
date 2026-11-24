@@ -87,6 +87,18 @@ function delimitadorDelShell(palabra) {
 }
 
 /**
+ * El texto sin los espacios y tabs de sus puntas. A mano: con `[ \t]+$`, una tirada larga de espacios en el medio de la
+ * línea es cuadrática (el motor prueba la tirada desde cada posición) y el freno pasa de su tope de tiempo.
+ */
+function sinBlancosDeLasPuntas(t) {
+  let a = 0;
+  let b = t.length;
+  while (a < b && (t[a] === ' ' || t[a] === '\t')) a++;
+  while (b > a && (t[b - 1] === ' ' || t[b - 1] === '\t')) b--;
+  return t.slice(a, b);
+}
+
+/**
  * Los heredocs del texto, en orden: `{ indice, fin, delim, comillas, resto, cuerpo }`. `indice` es la posición del `<<`
  * y `fin` la del final de la línea que lo cierra. `delim` es el que usa el shell y `comillas` dice si la palabra traía
  * comillas o barras (entonces el shell no expande el cuerpo). `resto` es lo que sigue a la palabra en su línea.
@@ -102,7 +114,7 @@ function heredocs(texto) {
     lineas = new Map();
     for (let ini = 0; ini <= s.length;) {
       let fin = s.indexOf('\n', ini); if (fin < 0) fin = s.length;
-      const t = s.slice(ini, fin).replace(/^[ \t]+|[ \t]+$/g, '');
+      const t = sinBlancosDeLasPuntas(s.slice(ini, fin));
       if (!lineas.has(t)) lineas.set(t, []);
       lineas.get(t).push([ini, fin]);
       ini = fin + 1;
@@ -1671,7 +1683,7 @@ module.exports = {
   // si un comando puede correr un texto, y qué hay entre comillas (los frenos de escritura y de sesiones)
   ejecutaTexto, citados, posicionesFueraDeComillas,
   // lo que el freno de producción lee sin crecer con el cuadrado del largo del comando
-  SHELL_ANTES, SHELL_DESPUES, textosEntreComillas, largoDeEspecificadorPrintf, sinBarrasFinales,
+  SHELL_ANTES, SHELL_DESPUES, textosEntreComillas, largoDeEspecificadorPrintf, sinBarrasFinales, sinBlancosDeLasPuntas,
   // las de siempre
   programasPorEntrada,
   sinHeredocs, segmentos, tokens, PREFIJOS, expandir, variablesDelComando, SIN_RESOLVER,

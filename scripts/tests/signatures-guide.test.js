@@ -26,7 +26,7 @@ const GUIA = path.join(RAIZ, 'guides', 'firmas-del-arnes.md');
 // todas las firmas que piden los frenos hoy, escritas a mano para que una que se pierda del catálogo se note: cada escape
 // es su propia entrada
 const DE_LA_STORY = ['plan-approval', 'extra-round', 'refresh-after-main', 'control-change', 'critical-waiver',
-  'runtime-waiver', 'compare-waiver', 'manual-test', 'browser-test', 'lost-run', 'lost-run:particion', 'adversarial-skip', 'pending-approval', 'adhoc-lane', 'adhoc-lane:sobre-cupo', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno',
+  'runtime-waiver', 'compare-waiver', 'manual-test', 'browser-test', 'lost-run', 'lost-run:particion', 'adversarial-skip', 'review-skip', 'pending-approval', 'adhoc-lane', 'adhoc-lane:sobre-cupo', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno',
   // volver al modo autónomo una ejecución detenida: sólo el click o la terminal del dueño
   'autonomy-resume',
   'escape:TYCON_SAFETY_OFF', 'escape:TYCON_PROD_LINT', 'escape:TYCON_NEW_NAMES', 'escape:TYCON_TEST_GATE',
@@ -238,7 +238,7 @@ const TABLA_DE_NIVELES = [
   ['compare-waiver', 1, ['dev', 'mant']], ['refresh-after-main', 1, ['mant']], ['lost-run:particion', 1, ['dev', 'mant']],
   ['save:sensible', 2, ['dev', 'mant']], ['adhoc-lane:datos', 2, ['dev', 'mant']], ['adhoc-lane:guardado-ajeno', 2, ['dev', 'mant']], ['autonomy-resume', 2, ['dev', 'mant']], ['adhoc-lane:sobre-cupo', 2, ['dev', 'mant']], ['escape:DOD_BYPASS', 2, ['dev', 'mant']],
   ['critical-waiver', 2, ['dev', 'mant']], ['runtime-waiver', 2, ['dev', 'mant']], ['manual-test', 2, ['dev', 'mant']],
-  ['browser-test:no', 2, ['dev', 'mant']], ['adversarial-skip', 2, ['dev', 'mant']], ['lost-run', 2, ['dev', 'mant']],
+  ['browser-test:no', 2, ['dev', 'mant']], ['adversarial-skip', 2, ['dev', 'mant']], ['review-skip', 2, ['dev', 'mant']], ['lost-run', 2, ['dev', 'mant']],
   ['escape:force-manual', 2, ['dev', 'mant']], ['escape:trust-ran', 2, ['dev', 'mant']],
   ['escape:TYCON_TEST_GATE', 2, ['dev', 'mant']], ['escape:TYCON_STATUS_GATE', 2, ['dev', 'mant']],
   ['escape:TYCON_MUTATION_CHECK', 2, ['dev', 'mant']], ['escape:TYCON_STORY_REVIEW', 2, ['dev', 'mant']],
@@ -271,7 +271,7 @@ test('niveles T1 Catalogo_TablaDeNiveles', () => {
   const cat = require(CATALOGO);
   assert.deepStrictEqual(cat.LEVELS.map((l) => [l.id, l.level, [...l.profiles]]), TABLA_DE_NIVELES);
   const cuenta = [1, 2, 3].map((n) => cat.LEVELS.filter((l) => l.level === n).length);
-  assert.deepStrictEqual(cuenta, [9, 24, 7], '9 de rutina (con compare-waiver y lost-run:particion), 24 de excepción (con adhoc-lane:guardado-ajeno, autonomy-resume y red-control-test-edit), 7 irreversibles (con external-pr)');
+  assert.deepStrictEqual(cuenta, [9, 25, 7], '9 de rutina (con compare-waiver y lost-run:particion), 25 de excepción (con adhoc-lane:guardado-ajeno, autonomy-resume, red-control-test-edit y review-skip), 7 irreversibles (con external-pr)');
   for (const l of cat.LEVELS) assert.ok(typeof l.approves === 'string' && l.approves.trim(), `${l.id}: falta qué aprueba`);
 });
 
@@ -400,4 +400,16 @@ test('T19 SignaturesGuide_NotifiedSection_NamesMockupAndPending @story-8.255 @ac
   const seccion = fin >= 0 ? resto.slice(0, fin) : resto;
   for (const comando of ['approve-mockup', 'approve-pending']) assert.ok(seccion.includes(comando), `la sección no nombra ${comando}`);
   assert.match(seccion, /control\s+previo/, 'la sección dice la regla');
+});
+
+// 🔴 Falla con: la guía sin decir que el cambio de un control se aprueba con un click, que la CI sigue pidiendo la
+// constancia, o qué muestra el agente antes del cuadro.
+test('8.176-Guia_ControlChange_ConUnClickYLaCi @story-8.176 @ac-8', () => {
+  const guia = fs.readFileSync(GUIA, 'utf8');
+  const i = guia.indexOf('**El cambio de controles se aprueba con un click**');
+  assert.ok(i >= 0, 'la guía tiene el párrafo del click para control-change');
+  const parrafo = guia.slice(i, guia.indexOf('\n\n', i) < 0 ? undefined : guia.indexOf('\n\n', i)).replace(/\s+/g, ' ');
+  for (const re of [/`control-change`/, /constancia/, /sale en rojo/, /run-base-controls\.sh pending/, /diff/, /cuántos archivos/, /terminal/]) {
+    assert.match(parrafo, re, `el párrafo dice ${re}`);
+  }
 });

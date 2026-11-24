@@ -201,6 +201,25 @@ test('Delegada_StoryLimpia_Firma (T5) @story-8.143 @ac-4 @ac-6', (t) => {
   assert.match(o2[0][1], /salteado por la regla/);
 });
 
+// 🔴 Falla con: el ok de cada commit que pide el perfil (`approvals.local_commit: coordinator`) firmado por la
+// coordinadora con un crítico abierto o con un cambio sensible: tiene los mismos controles que el ok de guardar de hoy.
+test('8.242-Perfil_Coordinadora_DelegacionConSusControles (T25) @story-8.242 @ac-15', (t) => {
+  const a = repo(t);
+  escribir(a, 'LEEME.md', 'cambiado\n');
+  const m = corridaLimpia([a]);
+  assert.strictEqual(porDelegacion(m, { repos: [a] }).codigo, 0, 'la corrida limpia: la coordinadora firma');
+  const orden = [];
+  const critico = porDelegacion(m, { repos: [a], orden, findings: [{ rule_id: 'X-C1', severity: 'CRITICAL', disposition: 'open' }] });
+  assert.strictEqual(critico.codigo, 2);
+  assert.match(critico.motivo, /CRITICAL[\s\S]*Lo firma una persona/);
+  assert.strictEqual(orden.length, 0, 'sin firma no hay aviso');
+  const s = repo(t, { 'scripts/lib/otro.js': 'y\n' });
+  escribir(s, 'scripts/lib/notify.js', 'a\n');
+  const sensible = porDelegacion(corridaLimpia([s]), { repos: [s] });
+  assert.strictEqual(sensible.codigo, 2);
+  assert.match(sensible.motivo, /scripts\/lib\/notify\.js[\s\S]*Lo firma una persona/);
+});
+
 test('Delegada_NoLimpia_Sale2 (T6) @story-8.143 @ac-4', (t) => {
   const a = repo(t);
   escribir(a, 'LEEME.md', 'cambiado\n');

@@ -37,6 +37,8 @@
 #       · 6 la suite salió 0 sin ninguna prueba corrida, o sin informe que lo cuente (no es verde).
 #       · 7 «sin acotar»: la corrida del repo hermano no pudo acotarse a lo tocado (no se sabe qué se tocó, o ninguna
 #       suite lo lee) y no corrió nada: no es verde ni rojo; la cubre la CI del pedido (esta máquina no comprueba que salga verde).
+#       · 8 «entorno sin preparar»: el entorno de pruebas que declara la organización para el repo no quedó listo y no
+#       se corrió NADA (lib/test-environment.js; tests-result.json con `env_not_ready` y el motivo)
 #
 # Sin `python3`, `timeout` ni `realpath`: en Windows no son
 # requisito. El informe es lib/test-gate-report.js.
@@ -56,6 +58,8 @@ unset NODE_TEST_CONTEXT
 # la corrida completa. Es la que se repite primero después de un rojo (ver «Primero la suite que falló», en la rama de
 # suites.json). Se saca antes de leer los posicionales.
 SUITE_ONLY=""
+# Los argumentos tal cual, para volver a lanzar el portón dentro de su entorno de pruebas (ver «El entorno de pruebas»).
+_TG_ORIG=("$@")
 _TG_ARGS=()
 while [[ $# -gt 0 ]]; do
   if [[ "$1" == "--suite" ]]; then
@@ -312,6 +316,11 @@ correr_hermanos_al_salir() {
       echo "[test-gate] ⚠️  el repo hermano $(basename "$root") salió 7 sin la constancia de «sin acotar»: es un rojo" >&2
       hrc=1
     fi
+    # 8: el entorno de pruebas del hermano no quedó listo y su suite no corrió (lib/test-environment.js)
+    # (con su constancia: una suite que sale 8 de verdad es un rojo, y lo dice el informe del hermano)
+    if [[ "$hrc" == "8" ]] && node -e 'try{process.exit(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).env_not_ready===true?0:1)}catch(e){process.exit(1)}' "$root/.advisors/tests-result.json"; then
+      echo "🟡 [test-gate] el repo hermano $(basename "$root"): entorno sin preparar, su suite no corrió (no es verde)" >&2
+    fi
     # 78: el hermano espera a main (lib/main-check.js); su espera quedó anotada con su repo
     [[ "$hrc" == "78" ]] && echo "🟡 [test-gate] el repo hermano $(basename "$root") espera a main" >&2
     filas+="${root}"$'\x1f'"${scope}"$'\x1f'"${archivos}"$'\x1f'"${hrc}"$'\n'
@@ -423,11 +432,30 @@ correr_partes() {
   rm -f "$OUT_FILE"
   echo "[test-gate] la story toca ${partes//,/, }: corre cada proyecto" >&2
   IFS=',' read -r -a _lista <<< "$partes"
+  # Una parte que ya dio verde en esta story y en la que nada cambió desde entonces conserva ese verde y no corre
+  # (lib/part-keep.js dice cuándo: nunca una de navegador, nunca sin story). TYCON_TEST_GATE_ALL_PARTS=1 corre todas.
+  local rama huella despues motivo kept
+  rama="$(git -C "$REPO" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
   for scope in "${_lista[@]}"; do
     [[ -z "$scope" ]] && continue
     out="$OUT_DIR/tests-result.part-${scope//\//_}.json"
-    hrc=0
-    TYCON_TEST_GATE_PART=1 TYCON_TEST_GATE_OUT_FILE="$out" TYCON_TEST_SCOPE= bash "$SCRIPT_DIR/test-gate.sh" "$REPO" "${story_abs:-$STORY_ARG}" "$scope" < /dev/null || hrc=$?
+    hrc=0; kept=0
+    huella="$(node "$SCRIPT_DIR/lib/part-keep.js" fingerprint --repo "$REPO" --scope "$scope" --scopes "$partes" --story-file "${story_abs:-$STORY_ARG}" < /dev/null)" || huella=""
+    if [[ -n "$huella" && "${TYCON_TEST_GATE_ALL_PARTS:-}" != "1" ]] \
+      && motivo="$(node "$SCRIPT_DIR/lib/part-keep.js" decide --previous "$out" --current "$huella" --story "$STORY_ID" --branch "$rama" < /dev/null)"; then
+      kept=1
+      echo "[test-gate] parte $scope: conservo su verde ($motivo)" >&2
+    else
+      [[ -n "$huella" && -n "${motivo:-}" ]] && echo "[test-gate] parte $scope: corre ($motivo)" >&2
+      TYCON_TEST_GATE_PART=1 TYCON_TEST_GATE_OUT_FILE="$out" TYCON_TEST_SCOPE= bash "$SCRIPT_DIR/test-gate.sh" "$REPO" "${story_abs:-$STORY_ARG}" "$scope" < /dev/null || hrc=$?
+      # con un verde se anota la huella de después de correr (con lo que la herramienta escribió en lo ignorado, como
+      # bin/), sólo si lo versionado no cambió mientras corría: con eso el próximo arreglo sabe si esta parte cambió
+      if [[ "$hrc" == "0" && -n "$huella" ]]; then
+        despues="$(node "$SCRIPT_DIR/lib/part-keep.js" fingerprint --repo "$REPO" --scope "$scope" --scopes "$partes" --story-file "${story_abs:-$STORY_ARG}" < /dev/null)" || despues=""
+        node "$SCRIPT_DIR/lib/part-keep.js" stamp --artifact "$out" --before "$huella" --current "$despues" --story "$STORY_ID" --branch "$rama" < /dev/null || true
+      fi
+    fi
+    motivo=""
     # 75: otra corrida de las pruebas está en marcha en este repo; no se juntan partes ni se corren hermanos
     if [[ "$hrc" == "75" ]]; then
       TG_NO_COMPANIONS="otra corrida de las pruebas está en marcha en este repo"
@@ -440,7 +468,7 @@ correr_partes() {
     if [[ "$hrc" == "7" ]] && ! es_sin_acotar "$out"; then hrc=1; fi
     # 78: la parte espera a main (lib/main-check.js); su espera quedó anotada, sumada a la de las otras partes
     [[ "$hrc" == "78" ]] && echo "🟡 [test-gate] la parte $scope espera a main" >&2
-    filas+="${scope}"$'\x1f'"${hrc}"$'\n'
+    filas+="${scope}"$'\x1f'"${hrc}"$'\x1f'"${kept}"$'\n'
     # un rojo de verdad gana sobre la espera a main (78), ésta sobre «sin acotar» (7), y éste sobre verde
     final="$(combinar_salida "$final" "$hrc")"
   done
@@ -451,10 +479,12 @@ correr_partes() {
     // la carpeta viaja como argumento propio, no dentro de las filas: el bash de Git en Windows convierte una ruta
     // suelta a la forma que lee node, y una ruta pegada a otros campos no
     const parts = filas.split("\n").filter(Boolean).map((l) => {
-      const [scope, exit] = l.split("\x1f");
+      const [scope, exit, kept] = l.split("\x1f");
       const file = p.join(dir, `tests-result.part-${scope.replace(/\//g, "_")}.json`);
       let a = null; try { a = JSON.parse(fs.readFileSync(file, "utf8")); } catch (_e) { a = null; }
-      return { scope, exit: Number(exit), green: Number(exit) === 0, runner: a ? a.runner : null, totals: a ? a.totals : {}, artifact: file };
+      // una parte conservada no corrió: su artefacto es el de su verde, y se dice de cuándo
+      const conservada = kept === "1" ? { kept: true, kept_from: a ? a.ts : null } : {};
+      return { scope, exit: Number(exit), green: Number(exit) === 0, runner: a ? a.runner : null, totals: a ? a.totals : {}, artifact: file, ...conservada };
     });
     const suma = (k) => parts.reduce((n, x) => n + (Number.isFinite(x.totals && x.totals[k]) ? x.totals[k] : 0), 0);
     // cero pruebas corridas entre todas las partes no es verde (salida 6), como en una corrida de un solo proyecto
@@ -766,6 +796,20 @@ if [[ -n "$_NO_LANZA" ]]; then
   echo "[test-gate] constancia de que no se pudo correr → $OUT_FILE" >&2
   marcar_tests_en_rojo 5 "$_RAZON"
   exit 5
+fi
+
+# --- El entorno de pruebas ------------------------------------------------------------------------------------------
+# La organización puede declarar cómo se prepara el entorno de pruebas de un repo (`stack.test_environments` de
+# team-repos.json: una base local, un servidor levantado, variables, la versión de Node). Se prepara recién acá, cuando
+# la suite va a correr: los cortes de arriba (sin story, alcance ambiguo, sin herramienta, sin pruebas) no preparan nada.
+# Si este repo tiene uno y esta corrida todavía no lo preparó, el portón se vuelve a lanzar dentro de
+# lib/test-environment.js: toma el candado del entorno (otra corrida que lo usa → 75, sin tocarlo), prepara, corre el
+# portón con lo preparado (también los repos hermanos, que lo heredan), desarma y sale con la salida del portón. Si no
+# queda listo, no corre nada y sale 8, «entorno sin preparar»: ni verde ni rojo. `TYCON_TEST_ENV=off` lo apaga.
+_TG_ENTORNO="$(node "$SCRIPT_DIR/lib/test-environment.js" name "$REPO" --story "$STORY_ARG")" || _TG_ENTORNO=""
+if [[ -n "$_TG_ENTORNO" ]]; then
+  trap - EXIT
+  exec node "$SCRIPT_DIR/lib/test-environment.js" run "$REPO" --story "$STORY_ARG" -- bash "$SCRIPT_DIR/test-gate.sh" ${_TG_ORIG[@]+"${_TG_ORIG[@]}"}
 fi
 
 # --- Correr la suite (UNA vez) vía run-check → exit code real + gates.log ----

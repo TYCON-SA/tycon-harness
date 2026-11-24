@@ -37,6 +37,9 @@
   { "path": "skills/tycon-pipeline/scripts/lib/marker-adversarial.js", "contains": "--type 5b", "reason": "Es el valor que se guarda como tipo del resultado del pase adversarial (el otro es «revision»); el comando lo acepta con ese nombre." },
   { "path": "skills/tycon-pipeline/scripts/lib/marker-checks.js", "contains": "--type 5b", "reason": "Es el valor que se guarda como tipo del resultado del pase adversarial (el otro es «revision»); el comando lo acepta con ese nombre." },
   { "path": "skills/tycon-pipeline/scripts/lib/marker-shared.js", "contains": "--type 5b", "reason": "Es el valor que se guarda como tipo del resultado del pase adversarial (el otro es «revision»); el comando lo acepta con ese nombre." },
+  { "path": "skills/tycon-pipeline/scripts/lib/marker-adversarial.js", "contains": "--type 5b", "reason": "Es el valor que se guarda como tipo del resultado del pase adversarial (el otro es «revision»); el comando lo acepta con ese nombre." },
+  { "path": "skills/tycon-pipeline/scripts/lib/marker-checks.js", "contains": "--type 5b", "reason": "Es el valor que se guarda como tipo del resultado del pase adversarial (el otro es «revision»); el comando lo acepta con ese nombre." },
+  { "path": "skills/tycon-pipeline/scripts/lib/marker-shared.js", "contains": "--type 5b", "reason": "Es el valor que se guarda como tipo del resultado del pase adversarial (el otro es «revision»); el comando lo acepta con ese nombre." },
   { "path": "skills/tycon-pipeline/scripts/lib/marker-shared.js", "contains": "5b --relaunch", "reason": "Es el argumento del comando que anota el lanzamiento del pase adversarial; el comando lo acepta con ese nombre." },
   { "path": "skills/tycon-pipeline/scripts/lib/marker-adversarial.js", "contains": "— 5b (el del pipeline)", "reason": "Nombra el valor que acepta --type para el pase adversarial; el comando lo acepta con ese nombre." },
   { "path": "skills/tycon-pipeline/scripts/lib/marker-adversarial.js", "contains": "step-05b-adversarial", "reason": "Es el nombre del archivo del pase adversarial en la carpeta de una ejecución; las ejecuciones ya guardadas lo usan." },
@@ -53,5 +56,7 @@
   { "path": "skills/tycon-pipeline/scripts/pipeline.js", "contains": "5b --relaunch", "reason": "Es el argumento del comando que anota el lanzamiento del pase adversarial; el comando lo acepta con ese nombre." },
   { "path": "skills/tycon-pipeline/scripts/pipeline.js", "contains": "--type 5b", "reason": "Es el valor que se guarda como tipo del resultado del pase adversarial; el comando lo acepta con ese nombre." },
   { "path": "skills/tycon-pipeline/scripts/pipeline.js", "contains": "step-05b-adversarial", "reason": "Es el nombre del archivo del pase adversarial en la carpeta de una ejecución; las ejecuciones ya guardadas lo usan." },
-  { "path": "skills/tycon-pipeline/scripts/lib/run-lines.js", "contains": "step-05b-adversarial", "reason": "Es el nombre del archivo del pase adversarial en la carpeta de una ejecución; las ejecuciones ya guardadas lo usan." }
+  { "path": "skills/tycon-pipeline/scripts/lib/run-lines.js", "contains": "step-05b-adversarial", "reason": "Es el nombre del archivo del pase adversarial en la carpeta de una ejecución; las ejecuciones ya guardadas lo usan." },
+  { "path": "skills/tycon-pipeline/scripts/lib/steps.js", "contains": "--type 5b", "reason": "Es el valor que se guarda como tipo del resultado del pase adversarial; el comando lo acepta con ese nombre." },
+  { "path": "skills/tycon-pipeline/scripts/lib/steps.js", "contains": "step-05b-adversarial", "reason": "Es el nombre del archivo del pase adversarial en la carpeta de una ejecución; las ejecuciones ya guardadas lo usan." }
 ]

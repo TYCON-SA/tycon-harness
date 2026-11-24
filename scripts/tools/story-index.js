@@ -392,7 +392,148 @@ function addToChangeLog(abs, line) {
   fs.writeFileSync(abs, `${text.slice(0, start)}${eol}${line}${eol}${rest}`);
 }
 
-function migrate(repo, report, date) {
+// ── el texto a mano de los índices ─────────────────────────────────────────────────────────────
+// Un índice a mano guarda más que la nota de cada renglón: bloques de comentarios encima de un renglón, el encabezado
+// y el estado de cada épica, notas en las columnas de epics.md y la prosa de cada épica. Al migrar, cada renglón de ese
+// texto termina en un solo lugar: el Change Log de su historia, specs/epics-intro.md, o «Notas sin historia» del informe.
+
+// un renglón de comentario que es sólo adorno (═══, ───, ===) no es texto
+const adorno = (t) => !/[\p{L}\p{N}]/u.test(t);
+
+/**
+ * Los comentarios de un sprint-status.yaml a mano, atados a lo que sigue: `{ porClave: Map clave → [renglón], epicas:
+ * Map épica → { renglones, estado, retro }, sueltos: [renglón], adornos }`. Un bloque de comentarios va con el renglón
+ * de historia o de épica que le sigue; el que queda antes de `development_status:` o al final, suelto.
+ */
+function sprintHandText(text) {
+  const porClave = new Map();
+  const epicas = new Map();
+  const sueltos = [];
+  let adornos = 0;
+  let bloque = [];
+  let enLista = false;
+  // la épica cuyo renglón `epic-N:` vino último y todavía no tiene historias: lo que sigue es de ella, no de la primera
+  let epicaAbierta = null;
+  // el bloque arrancó con un título de épica entre adornos («── Épica <n> — … ──»): es de esa épica
+  let epicaDelBloque = null;
+  const epica = (n) => { if (!epicas.has(n)) epicas.set(n, { renglones: [], estado: null, retro: null }); return epicas.get(n); };
+  for (const line of String(text).split(/\r?\n/)) {
+    const com = /^\s*#\s?(.*)$/.exec(line);
+    if (com) {
+      const t = com[1].trimEnd();
+      if (!t.trim() || adorno(t)) { if (t.trim()) adornos++; continue; }
+      const titulo = /^[\s─═=—-]*Épica\s+(\d+(?:\.\d+)*)\b/.exec(t);
+      if (titulo && !bloque.length) epicaDelBloque = titulo[1];
+      bloque.push(t.trim().replace(/^[─═=\s]+|[─═=\s]+$/g, ''));
+      continue;
+    }
+    if (!line.trim()) continue;
+    if (/^development_status:\s*$/.test(line)) { sueltos.push(...bloque); bloque = []; epicaDelBloque = null; enLista = true; continue; }
+    if (!enLista) {
+      // una nota al final de una clave de arriba (`last_updated: … # …`) también es texto a mano
+      const nota = /^[^#]*?\s#\s*(.+)$/.exec(line);
+      sueltos.push(...bloque, ...(nota ? [nota[1].trim()] : []));
+      bloque = [];
+      continue;
+    }
+    const ep = /^\s*epic-([\w.]+?)(-retrospective)?\s*:\s*([^\s#]+)\s*(?:#\s*(.*))?$/.exec(line);
+    if (ep) {
+      const e = epica(ep[1]);
+      e.renglones.push(...bloque);
+      if (ep[4] && ep[4].trim()) e.renglones.push(ep[4].trim());
+      if (ep[2]) e.retro = ep[3]; else { e.estado = ep[3]; epicaAbierta = ep[1]; }
+      bloque = [];
+      epicaDelBloque = null;
+      continue;
+    }
+    const st = /^\s*(\d+-[^\s:#]+)\s*:/.exec(line);
+    if (st) {
+      const deEpica = epicaDelBloque || (epicaAbierta && st[1].split('-')[0] === String(epicaAbierta).split('.')[0] ? epicaAbierta : null);
+      if (bloque.length && deEpica) epica(deEpica).renglones.push(...bloque);
+      else if (bloque.length) porClave.set(st[1], [...(porClave.get(st[1]) || []), ...bloque]);
+      bloque = [];
+      epicaDelBloque = null;
+      epicaAbierta = null;
+      continue;
+    }
+    sueltos.push(...bloque);
+    bloque = [];
+  }
+  sueltos.push(...bloque);
+  return { porClave, epicas, sueltos, adornos };
+}
+
+/** Las celdas de un renglón de tabla markdown, con `\|` como texto. */
+function celdas(line) {
+  const sin = line.trim().replace(/^\|/, '').replace(/\|$/, '');
+  return sin.split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, '|'));
+}
+
+/**
+ * El texto a mano de un epics.md: `{ porId: Map id → [«Columna: valor»], epicas: Map épica → { titulo, renglones },
+ * titulos: Map id → título del renglón, sueltos: [renglón] }`. De cada renglón de tabla salen las columnas que no son
+ * la historia ni el título (el título va aparte: es nota sólo si no es el de la historia); de la de la
+ * ficha se saca la ruta de la historia (eso lo arma el generado). Lo que está antes de la primera épica, suelto.
+ */
+function epicsHandText(text) {
+  const porId = new Map();
+  const titulos = new Map();
+  const epicas = new Map();
+  const sueltos = [];
+  let cur = null;
+  let cabecera = null;
+  for (const line of String(text).split(/\r?\n/)) {
+    const h = /^## Épica (\S+?)(?: — (.*?))?\s*$/.exec(line);
+    if (h) { cur = { titulo: (h[2] || '').trim(), renglones: [] }; epicas.set(h[1], cur); cabecera = null; continue; }
+    if (/^\|/.test(line.trim())) {
+      const cs = celdas(line);
+      if (cs.every((c) => /^:?-{3,}:?$/.test(c))) continue;
+      const pareceId = (c) => /^\d+(?:\.\d+)+$/.test(String(c).replace(/[*_`~]/g, '').trim());
+      // una tabla sin cabecera: su primera fila ya es una historia, con columnas sin nombre
+      if (!cabecera && !pareceId(cs[0])) { cabecera = cs; continue; }
+      if (/^(story|historia|#)$/i.test(cs[0])) { cabecera = cs; continue; }
+      if (!cabecera) cabecera = [];
+      const id = cs[0].replace(/[*_`~]/g, '').trim();
+      const notas = [];
+      // el título del renglón: va como nota sólo si no es el de la historia (eso lo decide quien migra)
+      if (cs[1]) titulos.set(id, cs[1]);
+      cs.forEach((c, i) => {
+        if (i < 2) return;
+        const v = c.replace(/`specs\/story-[^`]+\.md`/g, '').replace(/^[\s·—-]+|[\s·—-]+$/g, '').trim();
+        if (v) notas.push(`${cabecera[i] || `columna ${i + 1}`}: ${v}`);
+      });
+      if (notas.length) porId.set(id, [...(porId.get(id) || []), ...notas]);
+      continue;
+    }
+    cabecera = /^\s*$/.test(line) ? cabecera : null;
+    if (!line.trim()) { if (cur && cur.renglones.length) cur.renglones.push(''); continue; }
+    if (cur) cur.renglones.push(line); else sueltos.push(line);
+  }
+  for (const e of epicas.values()) while (e.renglones.length && !e.renglones[e.renglones.length - 1]) e.renglones.pop();
+  return { porId, titulos, epicas, sueltos };
+}
+
+/** El texto de `specs/epics-intro.md`: por épica, su título, su prosa y lo que el sprint-status decía de ella. */
+function introText(epicas, date) {
+  const md = ['# Las épicas', '', `> Título y prosa de cada épica. Lo leen los índices generados (scripts/tools/story-index.js). Armado el ${date}`,
+    '> con el texto que estaba a mano en specs/epics.md y specs/sprint-status.yaml.'];
+  const orden = [...epicas.keys()].sort((a, b) => cmpNums(nums(a), nums(b)));
+  for (const n of orden) {
+    const e = epicas.get(n);
+    md.push('', `## Épica ${n}${e.titulo ? ` — ${e.titulo}` : ''}`, '');
+    if (e.prosa.length) md.push(...e.prosa, '');
+    if (e.estado || e.retro) md.push(`Estado de la épica en el índice a mano: ${e.estado || 'sin estado'}${e.retro ? `; retrospectiva: ${e.retro}` : ''}.`, '');
+    if (e.delSprint.length) md.push('Lo que decía el sprint-status.yaml:', '', ...e.delSprint.map((r) => `> ${r}`), '');
+  }
+  return `${md.join('\n').replace(/\n+$/, '')}\n`;
+}
+
+/**
+ * `saltear`: números de historia que la migración no toca (una historia mínima que no se puede crear todavía, por
+ * ejemplo porque su cierre pide una firma que falta). Su renglón no pasa a historia mínima, su texto va entero al
+ * informe, y el informe dice que quedan fuera de los índices generados hasta que se sume su historia.
+ */
+function migrate(repo, report, date, { saltear = [] } = {}) {
   let old = '';
   // sin el archivo no hay nada que migrar; uno que está y no se lee no es un índice vacío
   try { old = fs.readFileSync(path.join(repo, SPRINT), 'utf8'); } catch (e) {
@@ -408,19 +549,45 @@ function migrate(repo, report, date) {
     console.log('🔒 story-index: no migro: hay historias que no se pueden leer (arriba la ruta)');
     return 1;
   }
+  // un índice que ya es el generado no tiene texto a mano: migrarlo otra vez leería su cabecera como notas
+  if (!handWritten(repo)) {
+    console.log(`🔒 story-index: no migro: ${SPRINT} y ${EPICS} ya son los generados (traen su cabecera). La migración es una sola vez`);
+    return 1;
+  }
+  // la prosa de cada épica va a specs/epics-intro.md; lo que ya está ahí no se pisa
+  const introPrevia = readIntro(repo);
+  if (introPrevia.problem) { console.log(`🔒 story-index: no migro: ${introPrevia.problem}`); return 1; }
+  let epicsOld = '';
+  try { epicsOld = fs.readFileSync(path.join(repo, EPICS), 'utf8'); } catch (e) {
+    if (!e || e.code !== 'ENOENT') { console.log(`🔒 story-index: no migro: ${EPICS} está y no se puede leer (${(e && e.code) || e})`); return 1; }
+  }
+  const aMano = sprintHandText(old);
+  const deEpics = epicsHandText(epicsOld);
   const byId = new Map(c.stories.map((s) => [fullId(s), s]));
+  const historiaDeClave = new Map();
   const distintas = [];
   const sinArchivo = [];
   const ambiguas = [];
   const conNota = [];
   const invalidas = [];
+  const salteadas = [];
   for (const e of entries) {
     // la clave arma un nombre de archivo: con una barra o un `..` saldría de specs/, y no se toca
     if (/[/\\]|(^|-)\.\.?(-|$)/.test(e.key)) { invalidas.push(e); continue; }
+    // un renglón pedido aparte, sin historia con archivo: no pasa a historia mínima
+    if (e.ids.some((x) => saltear.includes(x.id) && !byId.has(x.id))) { salteadas.push(e); continue; }
     // la lectura de la clave que coincide con una historia existente; sin ninguna, sólo vale una clave sin dudas
-    const found = e.ids.filter((x) => byId.has(x.id));
+    let found = e.ids.filter((x) => byId.has(x.id));
+    // con dos lecturas que existen (`<n>.<m>` y `<n>.<m>.1`), decide el nombre del archivo: el resto de la clave es su slug
+    if (found.length > 1) {
+      // la clave y el nombre del archivo pueden llevar un punto o un guion en el mismo lugar («de-la-<n>.<m>»)
+      const sinPuntos = (t) => String(t).replace(/\./g, '-');
+      const porNombre = found.filter((x) => sinPuntos(slugOf(byId.get(x.id).rel)) === sinPuntos(x.slug));
+      if (porNombre.length === 1) found = porNombre;
+    }
     if (found.length === 1) {
       const s = byId.get(found[0].id);
+      historiaDeClave.set(e.key, s);
       if (s.status !== e.status) distintas.push({ e, s });
       if (e.note) conNota.push({ s, note: e.note });
       continue;
@@ -447,6 +614,54 @@ function migrate(repo, report, date) {
       '## Change Log', '', `- ${date}: creada al pasar los índices a generados: era un renglón de sprint-status.yaml sin archivo.${note}`, '',
     ].join('\n'));
   }
+  // cada renglón del texto a mano, a un solo lugar (las historias mínimas ya están escritas); la cuenta va al informe
+  // las notas al final de un renglón: las de una historia y las de una sin archivo, que van a su historia mínima
+  const cuenta = { changeLog: conNota.length + sinArchivo.filter((e) => e.note).length, intro: 0, sinHistoria: 0 };
+  const sinHistoria = [];
+  const suelto = (origen, renglones) => { for (const r of renglones) { sinHistoria.push(`${origen}: ${r}`); cuenta.sinHistoria++; } };
+  for (const e of salteadas) if (e.note) suelto(`sprint-status.yaml, renglón \`${e.key}\` (salteado a pedido)`, [e.note]);
+  for (const [clave, renglones] of aMano.porClave) {
+    // la historia del renglón, o la historia mínima que acaba de reservar su número
+    const s = historiaDeClave.get(clave);
+    const minimo = !s && sinArchivo.find((x) => x.key === clave);
+    if (!s && !minimo) { suelto(`sprint-status.yaml, encima de \`${clave}\``, renglones); continue; }
+    addToChangeLog(path.join(repo, s ? s.rel : minima(minimo)),`- ${date}: comentario de su renglón en sprint-status.yaml (del índice), al pasar los índices a generados: ${renglones.join(' ')}`);
+    cuenta.changeLog += renglones.length;
+  }
+  const plano = (t) => String(t || '').replace(/[*_`]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+  for (const id of new Set([...deEpics.porId.keys(), ...deEpics.titulos.keys()])) {
+    const s = byId.get(id);
+    const minimo = !s && sinArchivo.find((x) => x.id === id);
+    // el título a mano es nota cuando dice otra cosa que el de la historia (el generado muestra el del frontmatter)
+    const titulo = deEpics.titulos.get(id);
+    const tituloPropio = titulo && (!s || plano(titulo) !== plano(s.title)) ? [`Título: ${titulo}`] : [];
+    const notas = [...tituloPropio, ...(deEpics.porId.get(id) || [])];
+    if (!notas.length) continue;
+    if (!s && !minimo) { suelto(`epics.md, renglón de la ${id}`, notas); continue; }
+    addToChangeLog(path.join(repo, s ? s.rel : minima(minimo)),`- ${date}: notas de su renglón en epics.md (del índice), al pasar los índices a generados: ${notas.join('; ')}`);
+    cuenta.changeLog += notas.length;
+  }
+  suelto('sprint-status.yaml', aMano.sueltos);
+  suelto('epics.md', deEpics.sueltos);
+  const epicas = new Map();
+  const epica = (n) => { if (!epicas.has(n)) epicas.set(n, { titulo: '', prosa: [], estado: null, retro: null, delSprint: [] }); return epicas.get(n); };
+  for (const [n, e] of deEpics.epicas) { const x = epica(n); x.titulo = e.titulo; x.prosa = e.renglones; }
+  for (const [n, e] of aMano.epicas) { const x = epica(n); x.estado = e.estado; x.retro = e.retro; x.delSprint = e.renglones; }
+  const nuevas = new Map();
+  for (const [n, e] of epicas) {
+    const renglones = [...e.prosa.filter((r) => r.trim()), ...e.delSprint, ...(e.estado || e.retro ? [`estado ${e.estado || 'sin estado'}${e.retro ? `, retrospectiva ${e.retro}` : ''}`] : [])];
+    // una épica que ya tiene su introducción no se toca: lo del índice va al informe, entero
+    if (introPrevia.has(n)) { suelto(`la épica ${n} (ya tiene su introducción en ${INTRO})`, renglones); continue; }
+    nuevas.set(n, e);
+    // el renglón del estado lo arma la migración con `epic-N:`: no es texto a mano y no se cuenta
+    cuenta.intro += e.prosa.filter((r) => r.trim()).length + e.delSprint.length;
+  }
+  if (nuevas.size) {
+    const previo = fs.existsSync(path.join(repo, INTRO)) ? fs.readFileSync(path.join(repo, INTRO), 'utf8') : null;
+    const texto = introText(nuevas, date);
+    fs.writeFileSync(path.join(repo, INTRO), previo ? `${previo.replace(/\n*$/, '\n')}${texto.slice(texto.indexOf('\n## '))}` : texto);
+  }
+  const totalTexto = cuenta.changeLog + cuenta.intro + cuenta.sinHistoria;
   const lines = [
     `# Migración de los índices de historias a generados (${date})`, '',
     `Renglones de historia en el sprint-status.yaml escrito a mano: ${entries.length}. Con el estado distinto del de su`,
@@ -458,8 +673,16 @@ function migrate(repo, report, date) {
     ...(sinArchivo.length ? sinArchivo.map((e) => `- \`${e.key}\`: ${e.status}${e.note ? ` — ${e.note}` : ''}`) : ['- ninguna']), '',
     '## Ambiguos (no se tocan)', '',
     ...(ambiguas.length ? ambiguas.map((e) => `- \`${e.key}\`: ${e.status} — la clave es ambigua: puede ser ${e.ids.map((x) => x.id).join(' o ')}${e.note ? ` (${e.note})` : ''}`) : ['- ninguno']), '',
+    '## Salteadas a pedido (quedan fuera de los índices generados hasta que se sume su historia)', '',
+    ...(salteadas.length ? salteadas.map((e) => `- \`${e.key}\`: ${e.status} — no pasa a historia mínima en esta migración; su texto, entero, en «Notas sin historia»`) : ['- ninguna']), '',
     '## Claves que no van en un nombre de archivo (no se tocan)', '',
     ...(invalidas.length ? invalidas.map((e) => `- \`${e.key}\`: ${e.status} — tiene una barra o un «..»: no va en un nombre de archivo`) : ['- ninguna']), '',
+    '## El texto escrito a mano', '',
+    `Renglones de texto a mano en los dos índices: ${totalTexto}. Al Change Log de su historia: ${cuenta.changeLog}. A`,
+    `${INTRO}: ${cuenta.intro}. A «Notas sin historia»: ${cuenta.sinHistoria}. Renglones de adorno (═══, ───), que no son`,
+    `texto: ${aMano.adornos}.`, '',
+    '## Notas sin historia', '',
+    ...(sinHistoria.length ? sinHistoria.map((r) => `- ${r}`) : ['- ninguna']), '',
   ];
   fs.mkdirSync(path.dirname(path.resolve(repo, report)), { recursive: true });
   fs.writeFileSync(path.resolve(repo, report), lines.join('\n'));
@@ -489,7 +712,8 @@ function main(argv) {
   if (argv.includes('--migrate')) {
     const report = arg(argv, '--report');
     if (!report) { console.error('story-index.js --migrate: falta --report <archivo>'); return 2; }
-    return migrate(repo, report, arg(argv, '--date') || new Date().toISOString().slice(0, 10));
+    const saltear = String(arg(argv, '--skip') || '').split(',').map((x) => x.trim()).filter(Boolean);
+    return migrate(repo, report, arg(argv, '--date') || new Date().toISOString().slice(0, 10), { saltear });
   }
   const write = argv.includes('--write');
   if (!write && !argv.includes('--check')) { console.error('story-index.js: falta --write o --check'); return 2; }
@@ -508,6 +732,6 @@ function main(argv) {
   return 1;
 }
 
-module.exports = { build, buildFromIndex, handWritten, collect, render, readIntro, keyOf, slugOf, writeFiles, differences, guard, regenerateOnMain, migrate, oldEntries, EPICS, SPRINT, INTRO };
+module.exports = { build, buildFromIndex, handWritten, collect, render, readIntro, keyOf, slugOf, writeFiles, differences, guard, regenerateOnMain, migrate, oldEntries, sprintHandText, epicsHandText, EPICS, SPRINT, INTRO };
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));

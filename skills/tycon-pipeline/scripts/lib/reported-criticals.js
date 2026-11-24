@@ -153,7 +153,7 @@ function readSessionStrict(stateDir, sessionKey) {
 }
 
 /**
- * Un revisor del set salió. `o`: { stateDir, sessionKey, advisor, story, run, launcher, toolUseId }. La vuelta es su
+ * Un revisor del set salió (o uno de código, fuera del set: `outsideSet`). `o`: { stateDir, sessionKey, advisor, story, run, launcher, toolUseId, outsideSet }. La vuelta es su
  * número de salida en la corrida, contado en este mismo registro. `toolUseId` (el del lanzamiento en Claude Code) ata la
  * salida con el agente que le toca (`recordLaunchAgent`). Devuelve el renglón anotado.
  */
@@ -163,6 +163,8 @@ function recordLaunched(o) {
   return append(o.stateDir, o.sessionKey, {
     kind: 'launched', advisor: o.advisor, iter: previas + 1, story: o.story ?? null, run: o.run ?? null, launcher: o.launcher || null,
     ...(o.toolUseId ? { tool_use_id: o.toolUseId } : {}),
+    // un revisor de código lanzado fuera del set de la vuelta (on-advisor-run.js): cuenta igual, y se ve que fue a mano
+    ...(o.outsideSet ? { outside_set: true } : {}),
   });
 }
 

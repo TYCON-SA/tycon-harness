@@ -159,6 +159,20 @@ las sesiones de la máquina sin consola. En `on-bash-write-gate.js`, en Windows 
 análisis trabado en una llamada del sistema tampoco se corta: pasa a los 600 s. Un programa que el análisis haya
 lanzado puede seguir corriendo después de que el freno frenó.
 
+**Cuando `safety-guard-pre.sh` corta por su reloj, se mide qué paso tardó.** Con `TYCON_SAFETY_TRACE=1` (en el `env` de
+`settings.json`, o en la terminal desde donde se abre la herramienta) el freno anota en `safety-guard-times.jsonl`, en
+la carpeta de los registros sueltos, un renglón por cada node que lanza (y lo que lanzan ellos): cuándo arrancó y cuánto
+tardó. También anota su propio total al salir. Un node que no llegó a terminar porque lo cortó el reloj deja sólo su
+arranque: ése se comió el tiempo. Anota el guion y su subcomando, nunca los valores del comando, y no cambia ninguna
+decisión. Con una ruta en vez de `1`, anota ahí.
+
+**El chequeo antes de la ventana usa sólo lo que le queda al freno.** Antes de abrir la ventana de permiso de una firma,
+el guion comprueba si la negaría: así el «Sí» no se pierde en un comando que iba a fallar. Ese chequeo espera hasta
+12 s, pero con la máquina cargada lo que corre antes ya gastó parte de los 20 s, y el reloj del freno cortaba el comando
+sin abrir la ventana. Ahora el freno le pasa a la ventana el segundo en que lo corta su reloj, y el chequeo termina 3 s
+antes. Si no queda ni un segundo, no se corre. En los dos casos la ventana se abre igual y la firma la sigue dando el
+dueño: el guion vuelve a comprobar todo al firmar, así que no se pierde nada.
+
 ## Saltear el freno: lo decide la persona
 
 Cada salteo es una firma de la persona, con su comando; la lista entera está en
