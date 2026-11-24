@@ -97,10 +97,16 @@ function verdictLines(text) {
     // si lo que ya trae es sólo códigos; sin cierre, el renglón queda solo: una lista sin cerrar no se traga lo que sigue,
     // ni el «)» de la prosa (o el de un paréntesis dentro de la lista) la cierra
     if (resolvedListOpen(line)) {
+      // cada renglón que sigue ya es sólo códigos hasta su «)»: la lista se cierra con el primero que lo trae, y basta
+      // mirar ése (releer todo lo juntado en cada vuelta tarda segundos con miles de renglones)
       let junto = line;
       let k = i;
-      while (resolvedListOpen(junto) && k + 1 < lines.length && continuesList(lines[k + 1])) junto += ` ${lines[++k]}`;
-      if (!resolvedListOpen(junto)) { line = junto; i = k; }
+      let abierta = true;
+      while (abierta && k + 1 < lines.length && continuesList(lines[k + 1])) {
+        junto += ` ${lines[++k]}`;
+        abierta = !lines[k].includes(')');
+      }
+      if (!abierta) { line = junto; i = k; }
     }
     out.push({ i: start, j: i, line });
   }

@@ -1159,6 +1159,11 @@ test('Resueltos_RenglonPartido — la lista de resueltos sigue en el renglón de
   rc.extractCriticals(`Veredicto: hallazgos (X-C1) · resueltos (\n${'SEC-C1 '.repeat(40)}zz`);
   rc.extractCriticals(`Veredicto: hallazgos (X-C1) · resueltos (\n${'SEC-C1'.repeat(40)}!`);
   assert.ok(Date.now() - desde < 1000, `tardó ${Date.now() - desde} ms`);
+  // una lista de miles de renglones se junta mirando sólo el renglón nuevo, no todo lo juntado cada vez
+  const larga = Date.now();
+  rc.extractCriticals(`Veredicto: limpio · resueltos (\n${'A-C1\n'.repeat(10000)}`);
+  rc.extractResolved(`Veredicto: limpio · resueltos (\n${'A-C1,\n'.repeat(10000)}A-C1)`);
+  assert.ok(Date.now() - larga < 1000, `la lista larga tardó ${Date.now() - larga} ms`);
 });
 
 test('Resueltos_SoloElUltimoRenglon @story-8.296 — un veredicto citado de la vuelta anterior no confirma nada', () => {
