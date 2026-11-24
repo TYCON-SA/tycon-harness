@@ -545,12 +545,15 @@ async function main() {
   const scriptPath = argv[0];
   if (!scriptPath || !fs.existsSync(scriptPath)) { console.error('uso: workflow-lite.js <script.workflow.js> --args <json> | --args-file <archivo> [--out <file>] [--runners <a,b>] [--agents-dir <carpeta>]'); return 1; }
   const ai = argv.indexOf('--args');
-  const afi = argv.indexOf('--args-file');
+  // `--args-file <archivo>` o `--args-file=<archivo>`, como lo lee el freno de la consola: una sola vez
+  const conArchivo = argv.filter((x) => x === '--args-file' || x.startsWith('--args-file='));
   let argsValue;
-  if (afi >= 0) {
+  if (conArchivo.length) {
     // los args de un archivo: uno que no se lee o que no es JSON no corre el pase con otros args
     if (ai >= 0) { console.error('workflow-lite: --args y --args-file a la vez: los args van de una sola forma'); return 1; }
-    const argsFile = argv[afi + 1];
+    if (conArchivo.length > 1) { console.error('workflow-lite: --args-file más de una vez: los args van de una sola forma'); return 1; }
+    const afi = argv.indexOf(conArchivo[0]);
+    const argsFile = conArchivo[0].startsWith('--args-file=') ? conArchivo[0].slice('--args-file='.length) : argv[afi + 1];
     if (!argsFile || argsFile.startsWith('--')) { console.error('workflow-lite: --args-file sin archivo'); return 1; }
     let texto;
     try { texto = fs.readFileSync(argsFile, 'utf8'); } catch (e) { console.error(`workflow-lite: --args-file ${argsFile}: no se pudo leer (${e.code || e.message})`); return 1; }

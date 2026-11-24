@@ -32,9 +32,9 @@ function guionEco(lab) {
   return wf;
 }
 
-function correr(lab, extra) {
+function correr(lab, extra, { conOut = true } = {}) {
   const out = path.join(lab, 'r.json');
-  const r = spawnSync(process.execPath, [LITE, guionEco(lab), ...extra, '--out', out], { cwd: lab, encoding: 'utf8', timeout: 60000 });
+  const r = spawnSync(process.execPath, [LITE, guionEco(lab), ...extra, ...(conOut ? ['--out', out] : [])], { cwd: lab, encoding: 'utf8', timeout: 60000 });
   return { r, out };
 }
 
@@ -60,7 +60,7 @@ test('T2 ArgsFile_ConBOM — un archivo guardado con BOM se lee igual', (t) => {
   assert.strictEqual(JSON.parse(fs.readFileSync(out, 'utf8')).eco.n, 7);
 });
 
-test('T3 ArgsFile_ArchivoMalo_Sale1SinCorrer — que no existe, que no es JSON, sin ruta, o con --args a la vez', (t) => {
+test('T3 ArgsFile_ArchivoMalo_Sale1SinCorrer — que no existe, que no es JSON, sin ruta, repetido, o con --args a la vez', (t) => {
   const lab = carpeta(t);
   const roto = path.join(lab, 'roto.json');
   fs.writeFileSync(roto, '{ esto no es json');
@@ -69,8 +69,10 @@ test('T3 ArgsFile_ArchivoMalo_Sale1SinCorrer — que no existe, que no es JSON, 
   const casos = [
     [['--args-file', path.join(lab, 'no-esta.json')], /no se pudo leer/],
     [['--args-file', roto], /no es JSON/],
-    [['--args-file'], /sin archivo/],
+    [['--args-file', '--runners', 'x'], /sin archivo/],
+    [['--args-file='], /sin archivo/],
     [['--args', '{}', '--args-file', bueno], /una sola/],
+    [['--args-file', bueno, '--args-file', bueno], /más de una vez/],
   ];
   for (const [extra, motivo] of casos) {
     const { r, out } = correr(lab, extra);
@@ -78,6 +80,19 @@ test('T3 ArgsFile_ArchivoMalo_Sale1SinCorrer — que no existe, que no es JSON, 
     assert.match(r.stderr, motivo, extra.join(' '));
     assert.ok(!fs.existsSync(out), `${extra.join(' ')}: no escribe el resultado`);
   }
+  // como último argumento de verdad, sin nada después
+  const { r } = correr(lab, ['--args-file'], { conOut: false });
+  assert.strictEqual(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stderr, /sin archivo/);
+});
+
+test('T6 ArgsFile_ConIgual — --args-file=<archivo> se lee igual que con espacio', (t) => {
+  const lab = carpeta(t);
+  const archivo = path.join(lab, 'args.json');
+  fs.writeFileSync(archivo, JSON.stringify({ repo: lab, n: 9 }));
+  const { r, out } = correr(lab, [`--args-file=${archivo}`]);
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(JSON.parse(fs.readFileSync(out, 'utf8')).eco.n, 9);
 });
 
 // 🔴 Falla con: el comando de la revisión del plan que pega el JSON en la línea de comando (`--args "$(cat …)"`).
