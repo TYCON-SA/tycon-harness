@@ -4372,9 +4372,24 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.23 (tanda C, T21, T22, T23 y T26): cada herramienta, sus enchufes — install detecta Claude Code y Codex (el ejecutable o su configuración propia), las nombra en el plan y --tool las fija; una máquina SÓLO con Codex instala, se actualiza por su hook de arranque y se desinstala sin nada nuevo en ~/.claude (el estado nace en ~/.tycon/state), con AGENTS.md desde los bloques entre marcas; el MCP de Codex sin ~/.claude.json, el servidor que falta dicho y writable_roots; sumar una herramienta después (install --tool) y sacar una sola (uninstall --tool). Sobre la máquina de juguete y el servidor de versiones de juguete, con `claude` y `codex` de mentira (harness_lab_tools).",
+      "__nota": "Parte 1 de 2 de tests/harness-tools.test.sh (2026-11-24, fila 48: entera tardaba 138 a 143 s sola en una Mac, más del doble de su peso, y salía roja por tiempo en la validación del privado; parte 1: T40, T41, T42, T43, T50, T44, T45, T47, T48, T54, T55, T49, T53, T51, T52 y T13; parte 2: T21, T22, T23, T26 y T26b. El archivo entero no se registra, scripts/tests/lib/suite-parts.sh).",
       "raiz": "arnes",
-      "ruta": "tests/harness-tools.test.sh",
+      "ruta": "tests/harness-tools.p1.test.sh",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/setup/**",
+        "scripts/lib/**",
+        "scripts/hooks/**",
+        "build/**",
+        "adapters/codex/**",
+        "scripts/tests/lib/**",
+        "scripts/tests/fixtures/**"
+      ]
+    },
+    {
+      "__nota": "Parte 2 de 2 de tests/harness-tools.test.sh (2026-11-24, fila 48: entera tardaba 138 a 143 s sola en una Mac, más del doble de su peso, y salía roja por tiempo en la validación del privado; parte 1: T40, T41, T42, T43, T50, T44, T45, T47, T48, T54, T55, T49, T53, T51, T52 y T13; parte 2: T21, T22, T23, T26 y T26b. El archivo entero no se registra, scripts/tests/lib/suite-parts.sh).",
+      "raiz": "arnes",
+      "ruta": "tests/harness-tools.p2.test.sh",
       "requiere": [],
       "gate_only_when_touching": [
         "scripts/setup/**",
