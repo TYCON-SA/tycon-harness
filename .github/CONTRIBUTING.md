@@ -19,7 +19,8 @@ Pull requests are welcome. This repository is where the harness is written, not 
   first chance to fix it. Please turn on «Allow edits by maintainers», so we can add a fix to your same pull request if
   needed. If we finish it ourselves (because it is urgent, or you do not answer), the fix goes on top of your commits,
   which keep your name, with credit in the pull request and in the history. Accepted contributions are named in the
-  release notes.
+  release notes: once a week, under Releases, «Contribuciones de afuera» lists who contributed and through which pull
+  request.
 - **Big change? Open an issue first**: say what you want to do, so we can agree on it before you work. A small fix can
   go straight to a pull request.
 - **Green CI**: the `public-ci` check and CodeQL code scanning must both pass. Run the CI locally with
@@ -78,7 +79,8 @@ Si nunca colaboraste en este repo, el camino es éste:
    con los forks»).
 3. **Si lo completamos nosotros**, por urgencia o porque no respondés, el arreglo va encima de tus commits. Tus commits
    quedan a tu nombre, y el crédito queda en el pedido y en la historia del repo.
-4. **Las contribuciones aceptadas se nombran** en las notas de la versión publicada.
+4. **Las contribuciones aceptadas se nombran** en las notas de la versión publicada: una vez por semana, en Releases,
+   «Contribuciones de afuera» dice quién contribuyó y por qué pedido entró.
 
 ## Lo que tiene que dar verde
 

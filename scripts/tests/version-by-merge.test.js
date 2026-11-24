@@ -346,6 +346,13 @@ test('T15 Workflows_OnlyCiAndTagger_TaggerHasItsExactShape', () => {
   assert.ok(broken('  push:\n', '  pull_request_target:\n  push:\n').includes('pull-request-target'));
   assert.ok(broken('actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1', `actions/checkout@${'e'.repeat(40)}`).includes('shape'), 'con escritura, otro sha de la acción: rojo');
   assert.ok(broken('run: node scripts/ci/version-tag.js', 'env:\n          T: ${{ secrets.X }}\n        run: node scripts/ci/version-tag.js').includes('secrets'));
+  // la versión de la semana va DESPUÉS de etiquetar, y es el único paso con el token de la corrida (crear una release es
+  // una llamada a la API): en el paso que etiqueta, o con otro nombre, es rojo
+  const tagStep = text.indexOf('node scripts/ci/version-tag.js tag');
+  assert.ok(tagStep > 0 && text.indexOf('node scripts/ci/weekly-release.js --sha "${GITHUB_SHA}"') > tagStep, 'la versión de la semana, después de etiquetar');
+  assert.ok(broken('run: node scripts/ci/version-tag.js', 'env:\n          GITHUB_TOKEN: ${{ github.token }}\n        run: node scripts/ci/version-tag.js').includes('secrets'), 'el token en el paso que etiqueta: rojo');
+  assert.ok(broken('GITHUB_TOKEN: ${{ github.token }}', 'GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}').includes('secrets'), 'el token por el contexto de secretos: rojo');
+  assert.ok(broken('MAINTAINER_LOGINS: ${{ vars.MAINTAINER_LOGINS }}', 'MAINTAINER_LOGINS: ${{ github.token }}').includes('secrets'), 'el token en otro renglón: rojo');
   // el control de la CI sigue igual
   assert.deepStrictEqual(WF.check(fs.readFileSync(path.join(dir, 'ci.yml'), 'utf8')), []);
 });
