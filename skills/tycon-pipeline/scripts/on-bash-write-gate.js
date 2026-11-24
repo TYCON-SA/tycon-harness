@@ -254,7 +254,7 @@ function lastWord(seg) {
 }
 
 /**
- * Limpia del comando lo que NO es comando:
+ * Limpia del comando lo que NO es comando (también sus comentarios, con `sinComentarios`):
  *  - los CUERPOS de los heredocs (el mensaje de commit HEREDOC del equipo, un .md escrito por heredoc que
  *    cita `> src/x.ts` o `a.ts -> b.ts`) — se conserva la línea de apertura (`cat > f <<EOF`), que es donde
  *    está el target real;
@@ -264,6 +264,8 @@ function lastWord(seg) {
 function stripNonCommandText(s) {
   // Heredocs: <<EOF / <<-EOF / <<'EOF' / <<"EOF" … hasta la línea que es sólo el delimitador.
   let t = String(s).replace(/((?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)(?:[\s\S]*?\n)??[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
+  // los comentarios: una comilla adentro de uno no abre un texto entre comillas que se vacía con lo de abajo
+  t = sinComentarios(t);
   // Strings entre comillas que no siguen a un operador de redirección / tee: se vacían (quedan las comillas), salvo
   // los que pueden ser un nombre de archivo (sin espacios ni operadores): `cp a "<dir>/b.md"` sigue nombrando su destino.
   t = t.replace(/(^|[^>\w])(?<!tee[ \t]+)(?<!>[ \t]*)(['"])((?:\\.|(?!\2)[^\\])*)\2/g,
@@ -1581,11 +1583,38 @@ function quitarCuerposDeHeredoc(cmd) {
 }
 
 /**
+ * El comando sin sus comentarios: lo que sigue a un `#` que empieza una palabra, fuera de comillas, hasta el salto de
+ * renglón, que queda. Una comilla adentro de un comentario no abre nada y el renglón siguiente corre, como en el shell:
+ * sin esto, esa comilla juntaba lo de abajo con el comentario y nadie lo miraba. Se usa sobre el comando ya sin los cuerpos
+ * de sus heredocs (lo de adentro de un cuerpo no es del shell).
+ */
+function sinComentarios(cmd) {
+  const s = String(cmd || '');
+  if (!s.includes('#')) return s;
+  let out = '';
+  let q = null;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '\\' && q !== "'") { out += c + (s[i + 1] || ''); i++; continue; }
+    if (q) { out += c; if (c === q) q = null; continue; }
+    if (c === "'" || c === '"') { q = c; out += c; continue; }
+    if (c === '#' && (i === 0 || /[\s;&|()]/.test(s[i - 1]))) {
+      const fin = s.indexOf('\n', i);
+      if (fin < 0) break;
+      i = fin - 1;
+      continue;
+    }
+    out += c;
+  }
+  return out;
+}
+
+/**
  * Los tramos de un comando (`;`, `&&`, `||`, `|`, salto de línea), sin cortar adentro de las comillas ni de los heredocs.
- * Lo escapado con `\` no corta ni cierra comillas dobles, como en el shell.
+ * Lo escapado con `\` no corta ni cierra comillas dobles, como en el shell. Sin los comentarios (`sinComentarios`).
  */
 function tramos(cmd) {
-  const s = quitarCuerposDeHeredoc(cmd);
+  const s = sinComentarios(quitarCuerposDeHeredoc(cmd));
   const out = [];
   let q = null;
   let actual = '';
