@@ -304,10 +304,16 @@ test('F218 BaseControls_SinHereDocument: lo que bash corre de run-base-controls.
 test('F218 BaseControls_PorTuberia_NoSaleVerde: lanzado desde una tubería, no termina en 0 sin correr nada', { skip: !POSIX }, (t) => {
   // sed abre la misma fuente que bash: si es una tubería, se comía lo que a bash le faltaba leer y bash terminaba en 0
   const c = cuenta(t);
-  // la tubería la arma bash: la entrada que pone node es un socket en Linux, y /dev/stdin no se abre sobre un socket
-  const porTuberia = spawnSync('bash', ['-c', 'cat "$1" | bash /dev/stdin check-inventory --root "$2"', 'bash', BASE_CONTROLS, c.b], { cwd: c.b, encoding: 'utf8' });
+  // la tubería la arma bash, en un guion propio (la entrada que pone node es un socket en Linux, y /dev/stdin no se abre
+  // sobre un socket); el guion y la carpeta le llegan como argumentos
+  const lanzar = (nombre, renglon) => {
+    const guion = path.join(c.b, nombre);
+    fs.writeFileSync(guion, `${renglon}\n`);
+    return spawnSync('bash', [guion, BASE_CONTROLS, c.b], { cwd: c.b, encoding: 'utf8' });
+  };
+  const porTuberia = lanzar('por-tuberia.sh', 'cat "$1" | bash /dev/stdin check-inventory --root "$2"');
   assert.strictEqual(porTuberia.status, 9, `cat … | bash /dev/stdin: ${porTuberia.stdout}${porTuberia.stderr}`);
-  const porSustitucion = spawnSync('bash', ['-c', 'bash <(cat "$1") check-inventory --root "$2"', 'bash', BASE_CONTROLS, c.b], { cwd: c.b, encoding: 'utf8' });
+  const porSustitucion = lanzar('por-sustitucion.sh', 'bash <(cat "$1") check-inventory --root "$2"');
   assert.strictEqual(porSustitucion.status, 9, `bash <(cat …): ${porSustitucion.stdout}${porSustitucion.stderr}`);
   assert.match(porSustitucion.stdout, /no pude correr/);
 });
