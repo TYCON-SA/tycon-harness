@@ -627,6 +627,12 @@
       "requiere": []
     },
     {
+      "__nota": "cada nombre nuevo de la tabla propia de nombres viejos está en el texto de su guion: si no, el instalador no apila la capa del equipo (renamesProblems de team.js).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/legacy-names-where-text.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el permiso de escribir evidencia a mano y la exención de la prueba en vivo los autoriza la persona; los avisos no le dan al agente la receta de los escapes (story 8.96).",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/pipeline-escape.test.js",
@@ -3461,6 +3467,12 @@
       "__nota": "story 8.3 (tanda A): el lector de configuración del arnés — precedencia variable › máquina › perfil › apagado, falla fuerte en comandos y aviso-sin-frenar en hooks (con el hook real engram-pre-commit.sh), lo personal fuera del perfil.",
       "raiz": "arnes",
       "ruta": "tests/tycon-config.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "fila 120: el control de la revisión que prueba que la máquina, una variable o un perfil que no es el del árbol no pisan las claves que vale sólo el perfil del equipo; sin el filtro, o con una clave afuera, frena; lo que no puede medir no es verde",
+      "raiz": "arnes",
+      "ruta": "tests/check-profile-only.test.js",
       "requiere": []
     },
     {

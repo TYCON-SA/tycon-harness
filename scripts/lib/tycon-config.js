@@ -350,11 +350,9 @@ const PROFILE_WINS = Object.freeze(['packs.default']);
 const RETIRADAS = Object.freeze({
   'adversarial.model_question': 'ya no hace nada: el pase adversarial no ofrece Fable — se puede borrar',
 });
-// Las claves que vale SÓLO el perfil del equipo: ni una variable ni el archivo de la máquina las cambian. El
-// perfil es versionado y se cambia con un pedido; la variable y el archivo de la máquina los puede escribir el agente que
-// implementa, y esta clave abre la puerta a eximir un crítico: si las leyera, el agente se la abriría solo. Lo que el
-// archivo de la máquina tenga escrito queda en `shadowed` con `by: 'solo-perfil'` y `explain` lo dice; `set` no la escribe.
-const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files', 'approvals.delegation_wait_minutes', 'pull_requests.team_authors', 'approvals.local_commit']);
+// Las claves que vale SÓLO el perfil del equipo: ni una variable ni el archivo de la máquina las cambian. Viven en
+// profile-only.js, un archivo chico que pide la constancia del dueño en cada cambio; el porqué está ahí.
+const PROFILE_ONLY = require('./profile-only.js');
 // Hasta dónde puede subir cada tope del camino corto. El delegado, hasta 6: sube lo
 // mínimo, porque con riesgo normal ese carril no lleva revisores ni pase adversarial, y una historia de 6 archivos ya deja
 // de saltearse el pase. El de la firma común, hasta 12: evita el click aparte en un arreglo de 9 archivos y lo mantiene en
