@@ -36,11 +36,13 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *   relaunch --id <id>       relanza una sesión de fondo parada con claude respawn <id> y la anota como abierta por la
  *                            coordinadora, como open: relanzada a mano no cuenta como suya
  *   owner-wait               lo lanza la coordinadora confirmada, de fondo: mira cada 2 s y termina, con una línea por
- *                            novedad, cuando otra sesión queda frenada en un permiso, cuando una frenada sigue o se
- *                            cierra, cuando Claude Code cierra una sesión de fondo, o cuando el permiso de una sesión de
+ *                            novedad, cuando otra sesión queda frenada en un permiso, cuando una frenada se cierra,
+ *                            cuando Claude Code cierra una sesión de fondo, o cuando el permiso de una sesión de
  *                            fondo le llega como cuadro (scripts/hooks/permission-relay.js; cada renglón se anuncia una
- *                            vez). Terminar la despierta. Uno por máquina; sin coordinadora confirmada, o desde otra
- *                            sesión, sale enseguida. Sin owner-wait vivo, el gancho de permisos no lleva nada
+ *                            vez). Terminar la despierta. Lo que no pide nada (la frenada que siguió, la que ya no
+ *                            espera a la persona) no la despierta: sale con la próxima novedad. Uno por máquina; sin
+ *                            coordinadora confirmada, o desde otra sesión, sale enseguida. Sin owner-wait vivo, el
+ *                            gancho de permisos no lleva nada
  *   pr-wait --repo <org/repo> --number <n> [--interval <s>]
  *                            el vigilante de sólo lectura de un pedido: repite sólo su lectura por la capa de plataforma
  *                            (cada 120 s por defecto) y termina con 0 e imprime el estado cuando deja de estar abierto;
@@ -114,6 +116,8 @@ const GIT_TIMEOUT_MS = 20000;
 // owner-wait mira cada tanto (TYCON_OWNER_WAIT_POLL_MS para las pruebas); una frenada sin anunciar sale en el turno de la
 // coordinadora desde esta edad
 const OWNER_WAIT_POLL_MS = 2000;
+// cuántas líneas que no piden nada guarda owner-wait hasta la próxima novedad (las más viejas se caen)
+const OWNER_WAIT_KEPT_MAX = 20;
 const STALLED_NOTICE_MS = 2 * 60000;
 // lo de «Tu firma» se lee armando la oficina entera (unos 8 s): owner-wait lo mira a lo sumo cada dos minutos, con un tope
 const OWNER_WAIT_SLOW_MS = 2 * 60000;
@@ -1150,6 +1154,8 @@ function readAnnounced(home) {
     waits: obj(a && a.waits), retired: obj(a && a.retired), delegables: obj(a && a.delegables), agents: obj(a && a.agents), permisos: obj(a && a.permisos),
     owner: { leidoAt: Number.isFinite(o.leidoAt) ? o.leidoAt : null, esperas: obj(o.esperas), motivos: obj(o.motivos),
       fallas: Number.isInteger(o.fallas) && o.fallas > 0 ? o.fallas : 0 },
+    // lo que no pidió nada y espera la próxima novedad para salir con ella
+    guardadas: Array.isArray(a && a.guardadas) ? a.guardadas.filter((l) => typeof l === 'string').slice(-OWNER_WAIT_KEPT_MAX) : [],
   };
 }
 
@@ -1220,7 +1226,7 @@ function openSignatureSessions(home, opts, now) {
  * vez; con avisos de la oficina, anuncia y no retira.
  * Devuelve si cambió lo anunciado.
  */
-function ownerWaitTurn(opts, a, lines, { home, me, stalled, now }) {
+function ownerWaitTurn(opts, a, lines, { home, me, stalled, now, quiet = new Set() }) {
   const o = a.owner;
   if (o.leidoAt != null && o.leidoAt <= now && now - o.leidoAt < OWNER_WAIT_SLOW_MS) return false;
   const lectura = readOwnerWaits(opts) || { error: 'sin respuesta' };
@@ -1253,7 +1259,9 @@ function ownerWaitTurn(opts, a, lines, { home, me, stalled, now }) {
       // la oficina saca de «Tu firma» a la sesión ocupada (le llegó un mensaje, corre un comando) aunque su plan siga sin
       // aprobar: esa espera se retira sólo con el plan aprobado o la corrida cerrada
       if (prev.espera === PLAN_WAIT && planStillUnapproved(home, sid)) continue;
-      lines.push(`${quoted(prev.quien, LABEL_MAX)} ya no espera a la persona`);
+      const ya = `${quoted(prev.quien, LABEL_MAX)} ya no espera a la persona`;
+      lines.push(ya);
+      quiet.add(ya);
     }
     delete o.esperas[sid];
   }
@@ -1364,8 +1372,10 @@ function otherProjectStalled(home, stalled, sessions, now) {
 }
 
 /**
- * Una vuelta de owner-wait, sin dormir: `{ lines, stop }`. `lines` son las novedades, que quedan anotadas como
- * anunciadas; `stop` es que su coordinadora ya no lo es (murió o se designó otra), y entonces no dice nada.
+ * Una vuelta de owner-wait, sin dormir: `{ lines, wake, stop }`. `lines` son las novedades, que quedan anotadas como
+ * anunciadas; `wake` es que alguna pide algo y la coordinadora tiene que enterarse ya. Las que no piden nada (la frenada
+ * que siguió, la que ya no espera a la persona) no despiertan: quedan guardadas y salen delante de la próxima vuelta que
+ * despierta. `stop` es que su coordinadora ya no lo es (murió o se designó otra), y entonces no dice nada.
  */
 function ownerWaitOnce(opts = {}) {
   const home = opts.home || require('os').homedir();
@@ -1380,6 +1390,8 @@ function ownerWaitOnce(opts = {}) {
   const sessions = sessionsBySid(path.join(claudeDir(home), 'sessions'), unread, null);
   const a = readAnnounced(home);
   const lines = [];
+  // las líneas de esta vuelta que no piden nada
+  const quiet = new Set();
   const now = new Set();
   const others = otherProjectStalled(home, s.stalled, sessions, opts.now == null ? Date.now() : Number(opts.now));
   // si se saca una ya anunciada, el archivo se escribe aunque la vuelta no traiga novedades: si no, la próxima vez que
@@ -1405,7 +1417,11 @@ function ownerWaitOnce(opts = {}) {
     // sin poder leer el estado, no se sabe si siguió: la espera queda anunciada hasta la próxima lectura buena
     if (unread.length) continue;
     const live = sessions.get(sid);
-    lines.push(live && live.alive ? `${prev.session} siguió: el permiso ya no está abierto` : `${prev.session} se cerró con un permiso abierto`);
+    if (live && live.alive) {
+      const siguio = `${prev.session} siguió: el permiso ya no está abierto`;
+      lines.push(siguio);
+      quiet.add(siguio);
+    } else lines.push(`${prev.session} se cerró con un permiso abierto`);
     delete a.waits[sid];
   }
   for (const x of s.retired.filter((y) => y.sid !== me)) {
@@ -1435,9 +1451,15 @@ function ownerWaitOnce(opts = {}) {
   const at = opts.now == null ? Date.now() : Number(opts.now);
   const routed = delegatedTurn(opts, a, lines, { home, me, now: at, sessions });
   const asked = permissionTurn(opts, a, lines, { home, now: at, sessions });
-  const read = ownerWaitTurn(opts, a, lines, { home, me, stalled: s.stalled.map((x) => x.sid), now: at });
-  if (lines.length || read || dropped || routed || asked) writeJson(ownerWaitFile(home), a);
-  return { lines, stop: false };
+  const read = ownerWaitTurn(opts, a, lines, { home, me, stalled: s.stalled.map((x) => x.sid), now: at, quiet });
+  // una que pide algo despierta, aunque venga junto a una que no, y lleva delante las guardadas; si ninguna pide nada,
+  // se guardan para la próxima
+  const wake = lines.some((l) => !quiet.has(l));
+  const guardadas = a.guardadas.length;
+  let out = lines;
+  if (wake) { out = [...a.guardadas, ...lines]; a.guardadas = []; } else if (lines.length) a.guardadas = [...a.guardadas, ...lines].slice(-OWNER_WAIT_KEPT_MAX);
+  if (lines.length || guardadas || read || dropped || routed || asked) writeJson(ownerWaitFile(home), a);
+  return { lines: out, wake, stop: false };
 }
 
 /**
@@ -1460,7 +1482,7 @@ function ownerWait(opts = {}) {
       const r = ownerWaitOnce({ ...opts, home });
       // termina sin novedades pero nunca mudo: sale el motivo, así quien lo lanzó no lo lee como «nada que avisar»
       if (r.stop) return { code: 0, text: r.why || 'dejo de esperar' };
-      if (r.lines.length) return { code: 0, text: r.lines.join('\n') };
+      if (r.wake) return { code: 0, text: r.lines.join('\n') };
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, poll);
     }
   } finally {

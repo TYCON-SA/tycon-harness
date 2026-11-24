@@ -750,7 +750,8 @@ click. Mira cada 2 segundos y termina con una línea por novedad, y terminar la 
   pedido y lleva 11 minutos sin moverse (más que lo que puede correr un comando aprobado). Se trata igual que el de
   arriba.
 - «<sesión> siguió: el permiso ya no está abierto» o «<sesión> se cerró con un permiso abierto»: se le avisa al dueño si
-  se lo había pedido.
+  se lo había pedido. «Siguió» no pide nada y no la despierta, igual que «… ya no espera a la persona»: esas líneas
+  quedan guardadas y salen delante de la próxima novedad que sí la despierta.
 - «<sesión>: la cerró Claude Code a las HH:MM por falta de memoria, quieta N min. Para levantarla: coordination.js relaunch --id <id>»:
   Claude Code cierra solo las sesiones de fondo quietas cuando la máquina se queda sin memoria, y no se puede evitar
   desde el arnés. La coordinadora decide si la levanta: levantarla vuelve a ocupar memoria y cuenta para el tope.
