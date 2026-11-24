@@ -44,6 +44,12 @@ if (require.main === module) { try { require('./node-floor.js').guard(); } catch
 //   <modelo> = un nivel, «economy» | «balanced» | «strong» | «max» (MODEL_LEVELS), o el nombre del
 //   modelo, «haiku» | «sonnet» | «opus» | «fable» (MODEL_NAMES), en el mismo orden; copias de models.js del skill. Quien la resuelve
 //   es skills/tycon-pipeline/scripts/lib/models.js (`readOrgModels`, el único que la lee).
+//     "control_profiles": {             opcional — el perfil por modelo (lib/control-profile.js)
+//       "relaxed": [ { "control": <clave de scripts/metrics/controls-classification.json>, "profile": «fuertes» | «resto»,
+//                      "review_before": <AAAA-MM-DD>, "approved_by": <quién aprobó>, "approved_on": <AAAA-MM-DD> } ] }
+//                                       un control que el dueño relajó deja de frenar sólo para ese perfil hasta la fecha.
+//                                       Una exigencia nunca se relaja, aunque esté acá (lo decide control-profile.js). Un
+//                                       problema adentro deja la sección sin usar: todo prendido, como sin la sección
 //     "weekly_review": {                opcional — la revisión de la semana (scripts/nightly/weekly-review/)
 //       "enabled"?: <bool>, "budget_usd"?: <número, más de 0 y hasta 100>, "max_chars"?: <entero, 10.000 a 2.000.000> }
 //                                       por defecto prendida, US$5 y 600.000; uno mal escrito cae al de por defecto
@@ -91,7 +97,7 @@ const REPO_KEYS = { azure: ['org', 'project', 'repo'], github: ['org', 'repo'], 
 const OPTIONAL_REPO_KEYS = { gitlab: ['host'] };
 const optionalKeys = (platform) => OPTIONAL_REPO_KEYS[platform] || [];
 const REQUIRED = ['public', 'profile', 'operations'];
-const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'story_index', 'models', 'wait_notice', 'coverage', 'review', 'stack', 'weekly_review', 'estimates', 'context_notice', 'deep_review', 'plan_review', 'review_runner'];
+const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'story_index', 'models', 'wait_notice', 'coverage', 'review', 'stack', 'weekly_review', 'estimates', 'context_notice', 'deep_review', 'plan_review', 'review_runner', 'control_profiles'];
 // El umbral del aviso de contexto: tokens enteros de 100.000 a 900.000. Lo lee scripts/hooks/context-size-notice.js,
 // después de TYCON_CONTEXT_NOTICE_TOKENS de la máquina y antes de los 300.000 de fábrica.
 const CONTEXT_NOTICE_KEYS = ['tokens'];
@@ -699,6 +705,35 @@ function contextNoticeProblems(value) {
   return out;
 }
 
+// los perfiles del perfil por modelo y las claves de cada relajación
+const CONTROL_PROFILES = ['fuertes', 'resto'];
+const RELAXED_KEYS = ['control', 'profile', 'review_before', 'approved_by', 'approved_on'];
+const FECHA = /^\d{4}-\d{2}-\d{2}$/;
+// una fecha AAAA-MM-DD que existe en el calendario (`9999-99-99` o un 30 de febrero, no)
+function fechaQueExiste(t) {
+  if (!FECHA.test(String(t || ''))) return false;
+  const d = new Date(`${t}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === t;
+}
+/** Los problemas de `control_profiles`; `[]` si está bien. */
+function controlProfilesProblems(value) {
+  if (!isObject(value)) return [{ path: 'control_profiles', message: 'tiene que ser un objeto (el perfil por modelo)' }];
+  const out = [];
+  for (const k of Object.keys(value)) if (!fieldComment(k, value[k]) && k !== 'relaxed') out.push({ path: `control_profiles.${k}`, message: 'clave desconocida' });
+  if (value.relaxed === undefined) return out;
+  if (!Array.isArray(value.relaxed)) return [...out, { path: 'control_profiles.relaxed', message: 'tiene que ser una lista de relajaciones' }];
+  value.relaxed.forEach((e, i) => {
+    const at = `control_profiles.relaxed.${i}`;
+    if (!isObject(e)) { out.push({ path: at, message: 'tiene que ser un objeto' }); return; }
+    for (const k of Object.keys(e)) if (!fieldComment(k, e[k]) && !RELAXED_KEYS.includes(k)) out.push({ path: `${at}.${k}`, message: 'clave desconocida' });
+    if (typeof e.control !== 'string' || !e.control.trim()) out.push({ path: `${at}.control`, message: 'falta el control (su clave en la clasificación)' });
+    if (!CONTROL_PROFILES.includes(e.profile)) out.push({ path: `${at}.profile`, message: `tiene que ser ${CONTROL_PROFILES.join(' o ')}` });
+    for (const k of ['review_before', 'approved_on']) if (!fechaQueExiste(e[k])) out.push({ path: `${at}.${k}`, message: 'tiene que ser una fecha AAAA-MM-DD que exista' });
+    if (typeof e.approved_by !== 'string' || !e.approved_by.trim()) out.push({ path: `${at}.approved_by`, message: 'falta quién lo aprobó' });
+  });
+  return out;
+}
+
 /** Los problemas de `deep_review`; `[]` si está bien. */
 function deepReviewProblems(value) {
   if (!isObject(value)) return [{ path: 'deep_review', message: 'tiene que ser un objeto (la política del pase adversarial)' }];
@@ -949,10 +984,13 @@ function parse(text) {
   const sectionRunner = isObject(doc) && doc.review_runner !== undefined ? reviewRunnerProblems(doc.review_runner) : [];
   // y con `story_index`: un modo mal escrito deja los índices a mano, como siempre, y lo dice
   const sectionStoryIndex = isObject(doc) && doc.story_index !== undefined ? storyIndexProblems(doc.story_index) : [];
+  // y con `control_profiles`: una relajación mal escrita deja la sección sin usar (todo prendido), no sin el archivo
+  const sectionControlProfiles = isObject(doc) && doc.control_profiles !== undefined ? controlProfilesProblems(doc.control_profiles) : [];
   let data = problems.length ? null : doc;
-  if (data && (sectionModels.length || sectionWait.length || sectionCoverage.length || sectionReview.length || sectionStack.length || sectionWeekly.length || sectionEstimates.length || sectionContext.length || sectionDeep.length || sectionPlan.length || sectionRunner.length || sectionStoryIndex.length)) {
+  if (data && (sectionControlProfiles.length || sectionModels.length || sectionWait.length || sectionCoverage.length || sectionReview.length || sectionStack.length || sectionWeekly.length || sectionEstimates.length || sectionContext.length || sectionDeep.length || sectionPlan.length || sectionRunner.length || sectionStoryIndex.length)) {
     data = { ...doc };
     if (sectionStoryIndex.length) delete data.story_index;
+    if (sectionControlProfiles.length) delete data.control_profiles;
     if (sectionContext.length) delete data.context_notice;
     // las secciones de las revisiones pierden sólo la clave mala: una política bien escrita no cae por un corte mal escrito
     for (const [k, probs] of [['deep_review', sectionDeep], ['review', sectionReview], ['plan_review', sectionPlan], ['review_runner', sectionRunner]]) {
@@ -983,6 +1021,7 @@ function parse(text) {
     ...(sectionPlan.length ? { plan_review: sectionPlan } : {}),
     ...(sectionRunner.length ? { review_runner: sectionRunner } : {}),
     ...(sectionStoryIndex.length ? { story_index: sectionStoryIndex } : {}),
+    ...(sectionControlProfiles.length ? { control_profiles: sectionControlProfiles } : {}),
   };
   return { ok: problems.length === 0, data, problems, ...(Object.keys(sections).length ? { sectionProblems: sections } : {}) };
 }
@@ -1036,7 +1075,7 @@ function privateRepoRef(data) {
   return `${m.project}/_git/${m.repo}`;
 }
 
-module.exports = { VERSION, PLATFORMS, HARNESS_PLATFORMS, CONNECTORS, connectorOf, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, PROVIDERS, NIGHTLY_PROVIDERS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, STORY_INDEX_MODES, storyIndexProblems, storyIndexFor, modelsProblems, reviewProblems, contextNoticeProblems, deepReviewProblems, DEEP_REVIEW_VALUES, modelsAboveCeiling, modelsOutsideAllowed, nightlyLevel, suitesWithoutPipeline, suitesWithRule, stackProblems, environmentsProblems, weeklyReviewProblems, estimatesProblems, ESTIMATES_UNITS, ESTIMATES_HOURS_PER_DAY, WAIT_NOTICE_PEER_MAX, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
+module.exports = { CONTROL_PROFILES, controlProfilesProblems, VERSION, PLATFORMS, HARNESS_PLATFORMS, CONNECTORS, connectorOf, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, PROVIDERS, NIGHTLY_PROVIDERS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, STORY_INDEX_MODES, storyIndexProblems, storyIndexFor, modelsProblems, reviewProblems, contextNoticeProblems, deepReviewProblems, DEEP_REVIEW_VALUES, modelsAboveCeiling, modelsOutsideAllowed, nightlyLevel, suitesWithoutPipeline, suitesWithRule, stackProblems, environmentsProblems, weeklyReviewProblems, estimatesProblems, ESTIMATES_UNITS, ESTIMATES_HOURS_PER_DAY, WAIT_NOTICE_PEER_MAX, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);
