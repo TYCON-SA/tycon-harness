@@ -17,8 +17,10 @@ installer, production, a migration, or declares `sensible:`. In doubt, delicate.
 
 - **The away mark** is set. Whoever gets the owner's message saying they are leaving («go on autonomously», «I'm off»,
   «see you tomorrow» or similar) sets it: the coordinator, or the session itself if there is no coordinator, with
-  `marker.js owner-away set --phrase "<what they said>"`. It clears itself when the owner comes back: a message typed
-  by them, a verified office message, a signature of theirs, or after 24 hours. The office shows it while it is set.
+  `marker.js owner-away set --phrase "<what they said>"`. The phrase must be in a message the owner typed in that tab in
+  the last 30 minutes; otherwise it exits 2 and does not set the mark. It clears itself when the owner comes back: a
+  message typed by them, a verified office message, a signature of theirs, or after 24 hours. The office shows it while
+  it is set.
   With the mark set, `owner-next` does not build a signature's question box: it says to tell the owner through the
   notification channels and to wait until they write, and the signature stays on the list unchanged.
 - Or a review's question has been waiting `plan_review.owner_away_minutes` minutes without an answer (built-in 20). The
