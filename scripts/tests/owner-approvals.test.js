@@ -737,6 +737,23 @@ test('T8 AnotarEtapa_SoloEnElArchivoDelFrenoYSinSeguirEnlaces', (t) => {
   assert.strictEqual(fs.readFileSync(propio, 'utf8'), 'leyendo');
 });
 
+test('T10 AnotarEtapa_EnlaceDuroOTuberia_NoSeTocan', { skip: process.platform === 'win32' && 'sin enlaces duros ni tuberías de prueba en Windows' }, (t) => {
+  // 🔴 Falla con: escribir la etapa en un enlace duro a un archivo ajeno (lo pisa), o abrir una tubería sin lector (el
+  //    freno se queda esperando hasta su corte).
+  const casa = casaNueva(t);
+  const ajeno = path.join(casa, 'importante.txt');
+  fs.writeFileSync(ajeno, 'no tocar');
+  const duro = path.join(casa, 'tycon-sg-etapa-7');
+  fs.linkSync(ajeno, duro);
+  oa.anotarEtapa('leyendo', { TYCON_SAFETY_STAGE_FILE: duro });
+  assert.strictEqual(fs.readFileSync(ajeno, 'utf8'), 'no tocar', 'un enlace duro no se pisa');
+  const tuberia = path.join(casa, 'tycon-sg-etapa-8');
+  require('child_process').execFileSync('mkfifo', [tuberia]);
+  // en otro proceso: si se queda esperando, se corta a los 5 s y la prueba lo dice
+  const r = require('child_process').spawnSync(process.execPath, ['-e', `require(${JSON.stringify(require.resolve('../lib/owner-approvals.js'))}).anotarEtapa('leyendo', { TYCON_SAFETY_STAGE_FILE: ${JSON.stringify(tuberia)} })`], { timeout: 5000 });
+  assert.ok(!r.error && r.status === 0, `una tubería sin lector deja esperando: ${r.error ? r.error.code : r.status}`);
+});
+
 test('T9 ValidarEnClaude_AnotaQueEstaConfirmandoEnLaConversacion', (t) => {
   // 🔴 Falla con: que la confirmación no anote su etapa: el corte del freno no diría que se le fue el tiempo ahí.
   const casa = casaNueva(t);

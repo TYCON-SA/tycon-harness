@@ -1427,13 +1427,16 @@ function plazoDelChequeo(firma, env, ahora = Date.now()) {
 function comprobarConElGuion({ firma, palabras, cwd, sesion, casa, env, via = null }) {
   // el de los controles de la base vive en scripts/ci y es de la consola; los demás, al lado del pipeline y de node
   const nombre = base(palabras[0]);
-  require('./owner-approvals.js').anotarEtapa(`corriendo el chequeo de ${nombre} antes de la firma`);
+  const etapa = require('./owner-approvals.js').anotarEtapa;
+  etapa(`corriendo el chequeo de ${nombre} antes de la firma`);
   const sh = nombre.endsWith('.sh');
   const guion = sh ? path.join(__dirname, '..', 'ci', nombre) : path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', nombre);
   const plazo = plazoDelChequeo(firma, env);
   if (!plazo) return { sinRespuesta: 'no quedó tiempo para el chequeo del guion antes de que corte el freno' };
   const r = require('child_process').spawnSync(sh ? 'bash' : process.execPath, [guion, ...palabras.slice(1)], { windowsHide: true, cwd: cwd || process.cwd(), encoding: 'utf8', timeout: plazo,
     env: { ...(env || process.env), ...(casa ? { HOME: casa, USERPROFILE: casa } : {}), [PRECHEQUEO]: '1', [PRECHEQUEO_VIA]: via || '', ...(sesion ? { CLAUDE_CODE_SESSION_ID: sesion } : {}) } });
+  // lo que sigue ya no es el chequeo: si el corte llega después, no lo culpa
+  etapa(`decidiendo la firma, después del chequeo de ${nombre}`);
   if (r.error && r.error.code === 'ETIMEDOUT') return { sinRespuesta: `el chequeo del guion no terminó en ${Math.round(plazo / 1000)} s` };
   if (r.error || r.status === null) return null;
   if (r.status === 0) return String(r.stdout).split('\n').includes(PRECHEQUEO_OK) ? { ok: true } : null;

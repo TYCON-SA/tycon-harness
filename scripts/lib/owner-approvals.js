@@ -1187,13 +1187,17 @@ function buscarPermiso({ casa, cuadro, coordinadora, carpeta = null, desde = 0, 
  */
 function anotarEtapa(texto, env = process.env) {
   const archivo = env.TYCON_SAFETY_STAGE_FILE;
-  // sólo el archivo que nombra el freno (tycon-sg-etapa-<su número>), y sin seguir un enlace: la variable la puede traer
-  // cualquier comando, y el freno no pisa un archivo ajeno con su texto
+  // sólo el archivo que nombra el freno (tycon-sg-etapa-<su número>), común y con un solo nombre, sin seguir un enlace y
+  // sin esperar: la variable la puede traer cualquier comando, y el freno no pisa un archivo ajeno con su texto ni se
+  // queda esperando una tubería
   if (!archivo || !/^tycon-sg-etapa-\d+$/.test(path.basename(String(archivo)))) return;
   let fd = null;
   try {
-    fd = fs.openSync(archivo, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | (fs.constants.O_NOFOLLOW || 0), 0o600);
-    fs.writeSync(fd, String(texto).slice(0, 200));
+    fd = fs.openSync(archivo, fs.constants.O_WRONLY | fs.constants.O_CREAT | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0), 0o600);
+    const st = fs.fstatSync(fd);
+    if (!st.isFile() || st.nlink !== 1) return;
+    fs.ftruncateSync(fd, 0);
+    fs.writeSync(fd, String(texto).slice(0, 200), 0);
   } catch (_) { /* el corte dice lo de siempre */ } finally { if (fd !== null) try { fs.closeSync(fd); } catch (_) { /* nada que cerrar */ } }
 }
 
