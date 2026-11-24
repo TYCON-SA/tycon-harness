@@ -1098,3 +1098,12 @@ test('T44 Nightly_RevisionPromptSanitizesDecidedProposals — lo ya decidido que
   assert.ok(r.m.revisiones.length > 0, 'la noche hizo el pedido de revisión');
   assert.ok(!r.m.revisiones.join('\n').includes(valor), 'lo decidido llega al modelo saneado');
 });
+
+test('T45 Nightly_PromptCutEqualsFilterCut — la consigna al modelo dice el mismo corte de confianza que aplican la noche y el observador', () => {
+  const O = require(path.join(RAIZ, 'scripts', 'instincts', 'instinct-observer.js'));
+  assert.strictEqual(O.MIN_CONFIDENCE, 0.85, 'el corte es 0,85');
+  assert.strictEqual(N.MIN_CONFIANZA, O.MIN_CONFIDENCE, 'la noche corta con el número del observador');
+  const consigna = O.buildPrompt([{ key: 'p|Bash|x', count: 3, items: [] }], 3);
+  const cortes = [...consigna.matchAll(/Confidence < ([\d.]+)/g)].map((m) => Number(m[1]));
+  assert.deepStrictEqual(cortes, [O.MIN_CONFIDENCE], `la consigna nombra un solo corte, el mismo: ${cortes}`);
+});
