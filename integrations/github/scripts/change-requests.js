@@ -588,4 +588,4 @@ function asignados(args, ctx) {
 
 module.exports = { 'change-request.open': abrirPedido, 'change-request.list': listarPedidos, 'change-request.read': leerPedido, 'assigned.list': asignados };
 // los ayudantes que reusa la lectura de la CI y de la cola (y la limpieza, para las pruebas), fuera del mapa de operaciones
-for (const [k, v] of Object.entries({ todas, controles, repoDe, MALOS, sinSalteos, deGraphql, conAnalisis, topeDe })) Object.defineProperty(module.exports, k, { value: v, enumerable: false });
+for (const [k, v] of Object.entries({ todas, controles, repoDe, MALOS, sinSalteos, deGraphql, conAnalisis, analisisDelRepo, topeDe })) Object.defineProperty(module.exports, k, { value: v, enumerable: false });

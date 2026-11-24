@@ -61,6 +61,8 @@ function mundo(prs, teamRepos) {
   fs.mkdirSync(stateDir(home), { recursive: true });
   fs.writeFileSync(path.join(stateDir(home), 'outside-contributions.json'), JSON.stringify({ at: new Date().toISOString(), repo: 'acme/harness',
     medicion: { ok: true, prs: [], issues: [], capped: false } }));
+  // ni alertas de seguridad abiertas en main, leído recién (se prueban al final de este archivo)
+  fs.writeFileSync(path.join(stateDir(home), 'main-security-alerts.json'), JSON.stringify({ at: new Date().toISOString(), lecturas: {} }));
   const w = { tree, home, fix, az, ghState, cwd: repoGit(HARNESS_URL) };
   ponerPedidos(w, prs);
   return w;
@@ -73,12 +75,14 @@ function escribirEstado(w, estado) { fs.mkdirSync(stateDir(w.home), { recursive:
 const clave = (n, repo = 'harness-maintainers') => `acme/Harness/${repo}#${n}`;
 const llamadas = (w) => { try { return fs.readFileSync(path.join(w.fix, 'llamadas.log'), 'utf8').split('\n').filter((l) => /pullRequests/.test(l)).length; } catch { return 0; } };
 
+const entorno = (w, extra = {}) => ({
+  PATH: process.env.PATH, HOME: w.home, TYCON_TREE: w.tree, TYCON_ADO_CMD: w.az, FIXAZ: w.fix, TYCON_PROFILE: '0',
+  TYCON_GH_CMD: FAKE_GH, FAKE_GH_STATE: w.ghState,
+  TYCON_HARNESS_IDENTITIES: HARNESS_URL, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', ...extra,
+});
+
 function correr(w, extra = {}, cwd = w.cwd) {
-  const env = {
-    PATH: process.env.PATH, HOME: w.home, TYCON_TREE: w.tree, TYCON_ADO_CMD: w.az, FIXAZ: w.fix, TYCON_PROFILE: '0',
-    TYCON_GH_CMD: FAKE_GH, FAKE_GH_STATE: w.ghState,
-    TYCON_HARNESS_IDENTITIES: HARNESS_URL, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', ...extra,
-  };
+  const env = entorno(w, extra);
   const t0 = Date.now();
   const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ source: 'startup', cwd, session_id: 't' }), env, encoding: 'utf8', timeout: 30000 });
   return { rc: r.status, out: String(r.stdout || '').trim(), err: String(r.stderr || ''), ms: Date.now() - t0 };
@@ -1255,4 +1259,72 @@ test('Connector_GithubDeadline_IsAnHourNotADuration — el tope de la lectura es
   assert.strictEqual(topeDe(1000, 11000), 9000, 'el 80 % de lo que falta hasta la hora límite');
   assert.strictEqual(topeDe(1000, undefined), Infinity, 'sin hora límite, sin tope');
   assert.ok(topeDe(Date.now(), Date.now() + 90000) < Date.now() + 90000, 'un tope de 90 s no cae en otro siglo');
+});
+
+// ── Las alertas de seguridad abiertas en main ────────────────────────────────────────────────────────────────────────
+// 🔴 Falla con: el chequeo de antes de encolar mira las referencias del pedido (/merge y /head); una alerta que el
+// análisis abre recién en main después de que el pedido entró —una línea que se movió y que ya no reconoce como la que
+// estaba cerrada— no la veía nadie hasta que alguien miraba la pestaña de seguridad.
+
+const alertasArchivo = (w) => path.join(stateDir(w.home), 'main-security-alerts.json');
+function alerta(n, o = {}) {
+  return {
+    number: n, state: 'open', created_at: HACE(125),
+    rule: { id: 'js/shell-command-injection-from-environment', severity: 'warning', security_severity_level: 'medium' },
+    most_recent_instance: { location: { path: 'skills/x/test-environment.js', start_line: 176 } }, ...o,
+  };
+}
+function ponerAlertas(w, alertas, fail) {
+  const st = JSON.parse(fs.readFileSync(w.ghState, 'utf8'));
+  st.code_scanning = { 'acme/harness': { alerts: alertas } };
+  if (fail) st.fail = fail;
+  fs.writeFileSync(w.ghState, JSON.stringify(st));
+}
+function refrescar(w) {
+  const r = spawnSync(process.execPath, [HOOK, '--refresh', w.tree], { env: entorno(w), encoding: 'utf8', timeout: 30000 });
+  assert.strictEqual(r.status, 0, r.stderr);
+}
+
+test('MainAlerts_OpenOnMain_StartAndCoordinatorSayIt — una alerta abierta en main sale al arrancar y en cada turno de la coordinadora', () => {
+  const w = mundo([]);
+  ponerAlertas(w, [alerta(190), alerta(191, { state: 'dismissed' })]);
+  refrescar(w);
+  const foto = JSON.parse(fs.readFileSync(alertasArchivo(w), 'utf8'));
+  assert.deepStrictEqual(foto.lecturas['acme/harness'].value.map((a) => a.number), [190], 'sólo las abiertas');
+  const r = correr(w);
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.match(r.out, /⚠️ main de harness: 1 alerta de seguridad abierta — #190 js\/shell-command-injection-from-environment en skills\/x\/test-environment\.js:176 \(hace 2 h\)/, r.out);
+  assert.match(r.out, /El chequeo de antes de encolar no la ve: se arregla con un pedido/, r.out);
+  // los privados no tienen la operación: no son una lectura fallida
+  assert.doesNotMatch(r.out, /alertas de seguridad de main: no medido/, r.out);
+  const c = SPN().coordinatorLines({ home: w.home, tree: w.tree });
+  assert.ok(c.lines.some((l) => /main de harness: 1 alerta de seguridad abierta — #190/.test(l)), c.lines.join('\n'));
+  // dos o más: la primera y cuántas más
+  ponerAlertas(w, [alerta(190), alerta(192, { created_at: HACE(30), most_recent_instance: { location: { path: 'a.js', start_line: 1 } } })]);
+  refrescar(w);
+  assert.match(correr(w).out, /main de harness: 2 alertas de seguridad abiertas — #190 .* y 1 más/);
+});
+
+test('MainAlerts_NoneOrNoAnalysis_Silent; una lectura que falla es «no medido»', () => {
+  // sin análisis en el repo (lo de fábrica del gh de mentira) y con análisis sin alertas: nada
+  const w = mundo([]);
+  refrescar(w);
+  assert.doesNotMatch(correr(w).out, /alerta/, 'sin análisis');
+  ponerAlertas(w, []);
+  refrescar(w);
+  assert.doesNotMatch(correr(w).out, /alerta/, 'con análisis y nada abierto');
+  // la lectura de las alertas falla: se dice, no se calla
+  ponerAlertas(w, [alerta(190)], { 'GET repos/acme/harness/code-scanning/alerts': { status: 500, message: 'se cayó' } });
+  refrescar(w);
+  const r = correr(w);
+  assert.match(r.out, /alertas de seguridad de main: no medido en harness/, r.out);
+  assert.doesNotMatch(r.out, /#190/, r.out);
+});
+
+test('MainAlerts_WithoutPhoto_SaysNotMeasured — sin una lectura de las últimas 24 h, «no medido», nunca callado', () => {
+  const w = mundo([]);
+  fs.writeFileSync(alertasArchivo(w), JSON.stringify({ at: HACE(25 * 60), lecturas: { 'acme/harness': { ok: true, value: [alerta(190)] } } }));
+  const r = correr(w, { TYCON_STUCK_PR_REFRESH_MS: '2000' });
+  assert.match(r.out, /alertas de seguridad de main: no medido \(todavía no hay una lectura de hoy/, r.out);
+  assert.doesNotMatch(r.out, /#190/, 'una foto vieja no dice si sigue abierta');
 });
