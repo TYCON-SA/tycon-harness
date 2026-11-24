@@ -31,6 +31,10 @@
  *           una falla niega. A una sesión con persona delante se le escribe como siempre. Corre en la máquina de quien
  *           manda: un mensaje desde otra máquina no lo ve.
  *
+ * Claude: PreToolUse de AskUserQuestion, en cualquier sesión: niega el cuadro con una opción que aprueba («Sí, aprobar»)
+ *           cuya pregunta no trae el código que imprimió el guion. Ese click no aprueba nada (owner-approvals.js lo compara
+ *           con la pregunta del guion) y la persona lo pierde; el texto dice que la muestre tal cual, o que use otra etiqueta.
+ *
  * Toda pregunta, no sólo la de firma: una pregunta libre de la sesión también le llegaba a la persona por una pestaña que
  * no mira. ExitPlanMode no: es la salida del modo plan, y negarla dejaría a la sesión encerrada ahí.
  *
@@ -62,6 +66,30 @@ function textoDe(input) {
   const i = input && typeof input === 'object' ? input : {};
   if (Array.isArray(i.questions)) return i.questions.map((q) => (q && q.question) || '').join(' ');
   return String(i.question || i.prompt || i.message || i.text || '');
+}
+
+// lo que se le dice a la sesión que arma un cuadro de aprobación sin el código del guion. No trae un sello ni nombra una
+// firma: el aviso no tiene que parecerse al cuadro que pide
+const SIN_CODIGO = 'Este cuadro trae la opción «Sí, aprobar», pero su pregunta no trae el código que imprimió el comando del arnés '
+  + '(«… · código …»). Un click ahí no aprueba nada y la persona lo pierde. Mostrá la pregunta exactamente como la imprimió el '
+  + 'comando, sin cambiarle una letra; si no es una aprobación del arnés, usá otra etiqueta para esa opción.';
+
+/**
+ * Un cuadro con una opción que aprueba (la que el registro de clicks anota como aprobación) y una pregunta sin el código
+ * del guion: `{ decision: 'deny', reason }` o null. Ese click no aprueba nada, porque owner-approvals.js lo compara con la
+ * pregunta del guion, código incluido, y la persona lo pierde: se avisa antes de mostrarlo. El código puede ir en el medio
+ * (el pedido de permiso de signature-list.js lo lleva antes del pedido). Sin poder leer qué opción aprueba, pasa.
+ */
+function decidirAprobacionSinCodigo(input, home) {
+  const qs = input && typeof input === 'object' && Array.isArray(input.questions) ? input.questions : [];
+  let aprueba;
+  try { aprueba = require('../lib/owner-approvals.js').esAprobacion; } catch (e) {
+    logError(home, `no pude leer qué opción aprueba (${(e && e.message) || e}): el cuadro pasó sin mirar si trae el código`);
+    return null;
+  }
+  const sinCodigo = qs.some((q) => q && Array.isArray(q.options) && q.options.some((o) => o && typeof o.label === 'string' && aprueba(o.label))
+    && !SELLO.test(String(q.question || '')));
+  return sinCodigo ? { decision: 'deny', reason: SIN_CODIGO } : null;
 }
 
 /** ¿La firma sólo la aprueba un click en la pestaña que trabaja? Sin la lista de firmas, no, y queda anotado. */
@@ -356,6 +384,11 @@ function decidir(evento, { home = os.homedir(), env = process.env, arnes, ahora 
     return decidirMensaje({ home, sid, to, env, arnes });
   }
   if (!QUESTION_TOOLS.has(d.tool_name)) return null;
+  // en cualquier sesión: un cuadro de aprobación sin el código del guion no aprueba nada
+  if (d.tool_name === 'AskUserQuestion') {
+    const sinCodigo = decidirAprobacionSinCodigo(d.tool_input, home);
+    if (sinCodigo) return sinCodigo;
+  }
   const sid = d.session_id;
   if (!sid || !/^[\w-]+$/.test(String(sid))) return null;
   const c = coordinadoraDeLaLanzada({ home, sid, env, arnes });

@@ -704,3 +704,38 @@ test('T33 PorQueSinLista_ListaPrendida_DiceLoDelPedido @fila-149', (t) => {
     assert.doesNotMatch(por(o), /no da a la coordinadora|no figura/, JSON.stringify(o));
   }
 });
+
+// Un cuadro de aprobación escrito a mano (MacBook, 23/11): la coordinadora le mostró al dueño su propio texto, con la
+// opción de aprobar pero sin el código que imprimió el guion. El click quedó anotado, no aprobó nada y el dueño tuvo
+// que clickear otra vez. El freno lo niega antes de mostrarlo, en cualquier sesión, y dice qué hacer
+const conOpciones = (texto, opciones = [oa.APRUEBA, oa.NIEGA]) => ({ questions: [{ question: texto, header: 'Aprobar', multiSelect: false,
+  options: opciones.map((label) => ({ label, description: `${label}.` })) }] });
+const SELLO_COMPLETO = /\bfirma [\w:.-]+ · sesi[oó]n [\w-]+ · c[oó]digo [\w-]+/;
+
+test('T-fila149 CuadroDeAprobacionSinCodigo_SeNiegaAntesDelClick', (t) => {
+  const toy = casaNueva(t);
+  // una sesión con la persona delante: ni lanzada ni de fondo
+  const sid = 'ses-persona';
+  const aMano = decidir(toy, evento(sid, 'AskUserQuestion', conOpciones('¿Abro el arreglo rápido de la 3.6 con 51 archivos?')));
+  assert.ok(aMano && aMano.decision === 'deny', 'sin el código del guion, se niega');
+  assert.match(aMano.reason, /«Sí, aprobar»/);
+  assert.match(aMano.reason, /código/);
+  assert.match(aMano.reason, /exactamente como la imprimió/);
+  // el aviso no se confunde con un cuadro de aprobación: no trae un sello ni nombra una firma
+  assert.doesNotMatch(aMano.reason, SELLO_COMPLETO);
+  assert.doesNotMatch(aMano.reason, /\bfirma\b/i);
+  // con el código del guion al final, pasa
+  const delGuion = oa.cuadroDe({ firma: 'save', destino: sid, que: 'guardar los cambios', queHace: ['el comando: marker.js approve-save'], siSaleMal: 'se revierte el commit', huella: 'ab12cd34' });
+  assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', conOpciones(delGuion.pregunta, delGuion.opciones))), null);
+  // con el código en el medio (el pedido de permiso lo lleva antes del pedido), pasa
+  const permiso = '¿Aprobás este pedido de Bash? (firma permiso · sesión ses-x · código ab12cd34) Carpeta: /r. Pedido:\nls';
+  assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', conOpciones(permiso))), null);
+  // sin la opción de aprobar, es una pregunta como cualquier otra
+  assert.strictEqual(decidir(toy, evento(sid)), null);
+  // dos preguntas en un cuadro: alcanza con que una de aprobación venga sin código
+  const dos = { questions: [...conOpciones(delGuion.pregunta, delGuion.opciones).questions, ...conOpciones('¿Y también el plan?').questions] };
+  assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', dos)).decision, 'deny');
+  // el dictado no tiene opciones: no cambia; y con el freno apagado, pasa
+  assert.strictEqual(decidir(toy, evento(sid, 'mcp__spokenly__ask_user_dictation', { question: '¿Abro el arreglo?' })), null);
+  assert.strictEqual(decidir(toy, evento(sid, 'AskUserQuestion', conOpciones('¿Abro el arreglo?')), { TYCON_BG_QUESTION_GUARD: '0' }), null);
+});

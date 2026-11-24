@@ -465,6 +465,28 @@ test('T7 OwnerApprovals_QuestionMismatch_LogUnwritable_SameDenial @story-8.276 @
   assert.strictEqual(sin.motivo, r.motivo);
 });
 
+// Una firma que se chequea mira todos los clicks recientes de la pestaña. El renglón se escribía por cada uno que no
+// coincidía, también por los de otra firma o sin sello, y la pista llevaba al click equivocado
+test('T8 OwnerApprovals_QuestionMismatch_LogsOnlyForThisSignatureAndSession', (t) => {
+  const casa = casaNueva(t);
+  const probar = (pregunta, id) => {
+    transcripcion(casa, 'ses-a', [cuadro(id, pregunta), respuesta(id, { pregunta })]);
+    return oa.validarEnClaude({ ...click(id), pregunta }, CTX(casa));
+  };
+  const deOtraFirma = armar('control-change').pregunta;
+  const deOtraSesion = armar(FIRMA, 'ses-b').pregunta;
+  const sinSello = '¿Abrir el arreglo rápido de la sesión?';
+  for (const [pregunta, id] of [[deOtraFirma, 'toolu_2'], [deOtraSesion, 'toolu_3'], [sinSello, 'toolu_4']]) {
+    assert.strictEqual(probar(pregunta, id).ok, false, 'un click a otra pregunta no vale');
+  }
+  assert.ok(!fs.existsSync(registroDeErrores(casa)), 'ni otra firma, ni otra sesión, ni un click sin sello dejan el renglón');
+  // la misma firma y sesión con otro código sí lo deja: es el click a esta firma con otra fuente
+  assert.strictEqual(probar(armar(FIRMA, 'ses-a', 'ffff0000').pregunta, 'toolu_5').ok, false);
+  const log = fs.readFileSync(registroDeErrores(casa), 'utf8').trim().split('\n');
+  assert.strictEqual(log.length, 1, 'un renglón, el del click a esta firma');
+  assert.ok(log[0].includes(CUADRO.sello), 'con el sello de esta firma');
+});
+
 const SOBRE_CUPO = 'adhoc-lane:sobre-cupo';
 const DESCRIPCIONES = ['La sesión sigue con el arreglo. Pasa el tope de archivos del camino corto: lo elegís vos, en lugar de una historia.',
   'No se abre el arreglo, y el trabajo va por una historia.'];

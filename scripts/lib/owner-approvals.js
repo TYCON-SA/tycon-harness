@@ -632,6 +632,13 @@ function anotarPreguntaDistinta({ casa, sello, sesion, esperada, recibida }) {
   } catch (_) { /* sin registro: la negativa es la misma */ }
 }
 
+/** ¿Los dos sellos son de la misma firma y la misma sesión (con cualquier código)? Sin uno de los dos, no. */
+function deLaMismaFirmaYSesion(uno, otro) {
+  const firmaYSesion = (s) => { const t = String(s || ''); const i = t.lastIndexOf('código '); return i > 0 ? t.slice(0, i) : null; };
+  const a = firmaYSesion(uno);
+  return a !== null && a === firmaYSesion(otro);
+}
+
 /**
  * El cuadro en la transcripción: la pregunta es la que armó el guion, la respuesta es la del registro, a esa hora, y no la
  * dio un gancho. `{ ok }` o `{ ok: false, motivo }`.
@@ -656,7 +663,9 @@ function clickEnLaTranscripcion(ruta, a, { pregunta, opciones, descripciones, se
   if (!dijo.ok) return { ok: false, motivo: `en la transcripción, ${dijo.motivo}` };
   if (dijo.pregunta !== a.pregunta || dijo.respuesta !== a.respuesta) return { ok: false, motivo: 'la respuesta del cuadro en la transcripción no es la del registro' };
   if (!pregunta || dijo.pregunta !== pregunta) {
-    anotarPreguntaDistinta({ casa, sello, sesion: a.sesion, esperada: pregunta, recibida: dijo.pregunta });
+    // el renglón, sólo para un click a esta misma firma y sesión: cada firma que se chequea mira todos los clicks recientes
+    // de la pestaña, y uno a otra firma, o sin sello, no dice nada de ésta
+    if (deLaMismaFirmaYSesion(selloAlFinal(dijo.pregunta), sello)) anotarPreguntaDistinta({ casa, sello, sesion: a.sesion, esperada: pregunta, recibida: dijo.pregunta });
     // con el mismo sello, la firma y lo que se firma son los mismos: lo que cambió es el texto
     const mismoSello = !!pregunta && !!selloAlFinal(pregunta) && selloAlFinal(dijo.pregunta) === selloAlFinal(pregunta);
     return { ok: false, motivo: mismoSello ? PREGUNTA_CAMBIADA : 'la pregunta del cuadro no es la que armó el guion para esta firma: el click fue a otra pregunta' };
