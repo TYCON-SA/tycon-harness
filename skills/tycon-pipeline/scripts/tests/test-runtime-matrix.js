@@ -1726,6 +1726,83 @@ withWaiverLog(() => {
       JSON.stringify({ v: rX.perAc[1].verdict, s: rX.simulados }));
   }
 
+  // T105 — el mismo portón corrió dos specs y sólo uno simula: la fila cuyo spec no simula cuenta en vivo; la otra no.
+  // 🔴 mutación: con la descalificación por portón, otro spec que fabrica un 409 le quita la evidencia a éste
+  {
+    const f = makeWorkspace();
+    const fe = frente(f, { 'tests/story-9-9.spec.ts': SPEC_REAL, 'tests/story-9-9-diseno.spec.ts': SPEC_SIMULADO });
+    writeGate(f.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9', f.gatesLog, true, null, 0, fe);
+    const r = calc(f);
+    check('T105a RuntimeMatrix_OtroSpecDelPortonSimula_EsteCuentaEnVivo',
+      r.perAc[3].verdict === 'RUNTIME' && !simDe(r, 3).length, JSON.stringify({ v3: r.perAc[3].verdict, s: r.simulados }));
+
+    // al revés: el spec de la fila es el que simula, y otro spec del portón es real → no cuenta
+    const g = makeWorkspace();
+    const feG = frente(g, { 'tests/story-9-9.spec.ts': SPEC_SIMULADO, 'tests/story-9-9-otro.spec.ts': SPEC_REAL });
+    writeGate(g.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9', g.gatesLog, true, null, 0, feG);
+    const rG = calc(g);
+    check('T105b RuntimeMatrix_ElSpecDeLaFilaSimula_NoCuentaAunqueOtroSeaReal',
+      rG.perAc[3].verdict === 'NOT-RUN' && simDe(rG, 3).length === 1 && /story-9-9\.spec\.ts$/.test(simDe(rG, 3)[0].archivo),
+      JSON.stringify({ v3: rG.perAc[3].verdict, s: rG.simulados }));
+
+    // la fila que no nombra su spec se juzga por el portón entero, como siempre
+    const h = makeWorkspace();
+    cambiarHistoria(h, '`story-9-9.spec.ts::flujo`', '`story-9-9 flujo`');
+    const feH = frente(h, { 'tests/story-9-9.spec.ts': SPEC_REAL, 'tests/story-9-9-diseno.spec.ts': SPEC_SIMULADO });
+    writeGate(h.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9', h.gatesLog, true, null, 0, feH);
+    const rH = calc(h);
+    check('T105c RuntimeMatrix_FilaSinSuSpec_SeJuzgaPorElPortonEntero',
+      rH.perAc[3].verdict === 'NOT-RUN' && simDe(rH, 3).length === 1, JSON.stringify({ v3: rH.perAc[3].verdict, s: rH.simulados }));
+
+    // 🔴 mutación: en un portón donde un spec simula, el título @ac-3 de ese spec acreditaría la fila del spec limpio
+    const k = makeWorkspace();
+    const feK = frente(k, { 'tests/story-9-9.spec.ts': SPEC_REAL, 'tests/story-9-9-diseno.spec.ts': SPEC_SIMULADO });
+    writeGate(k.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9', k.gatesLog, true, ['flujo @ac-1 @ac-3'], 0, feK);
+    const rK = calc(k);
+    check('T105d RuntimeMatrix_TituloDelSpecSimulado_NoAcreditaLaFilaDelLimpio',
+      rK.perAc[3].verdict !== 'RUNTIME', JSON.stringify({ v3: rK.perAc[3].verdict }));
+    const p = makeWorkspace();
+    const feP = frente(p, { 'tests/story-9-9.spec.ts': SPEC_REAL, 'tests/story-9-9-diseno.spec.ts': SPEC_SIMULADO });
+    writeGate(p.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9', p.gatesLog, true, ['mira @ac-3', 'flujo @ac-1 @ac-3'], 0, feP);
+    const rP = calc(p);
+    check('T105d …y el título del spec limpio sí',
+      rP.perAc[3].verdict === 'RUNTIME', JSON.stringify({ v3: rP.perAc[3].verdict }));
+
+    // 🔴 mutación: el mismo título escrito en el spec limpio y en el que simula no se sabe de cuál es: no acredita
+    const q = makeWorkspace();
+    const feQ = frente(q, { 'tests/story-9-9.spec.ts': SPEC_REAL.replace("'mira @ac-3'", "'flujo @ac-3'"), 'tests/story-9-9-diseno.spec.ts': SPEC_SIMULADO });
+    writeGate(q.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9', q.gatesLog, true, ['flujo @ac-1 @ac-3'], 0, feQ);
+    const rQ = calc(q);
+    check('T105e RuntimeMatrix_TituloEnLosDosSpecs_NoAcredita',
+      rQ.perAc[3].verdict !== 'RUNTIME', JSON.stringify({ v3: rQ.perAc[3].verdict }));
+
+    // 🔴 mutación: un título que no está escrito en ningún spec limpio (uno armado en el que simula) no acredita
+    const u = makeWorkspace();
+    const feU = frente(u, { 'tests/story-9-9.spec.ts': SPEC_REAL, 'tests/story-9-9-diseno.spec.ts': SPEC_SIMULADO });
+    writeGate(u.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9', u.gatesLog, true, ['armado @ac-3'], 0, feU);
+    const rU = calc(u);
+    check('T105f RuntimeMatrix_TituloQueNoEstaEnNingunLimpio_NoAcredita',
+      rU.perAc[3].verdict !== 'RUNTIME', JSON.stringify({ v3: rU.perAc[3].verdict }));
+
+    // 🔴 mutación: una fila que nombra dos specs se juzgaba sólo por el primero; si el segundo simula, no cuenta
+    const v = makeWorkspace();
+    cambiarHistoria(v, '`story-9-9.spec.ts::flujo`', '`story-9-9.spec.ts::flujo` y `story-9-9-diseno.spec.ts`');
+    const feV = frente(v, { 'tests/story-9-9.spec.ts': SPEC_REAL, 'tests/story-9-9-diseno.spec.ts': SPEC_SIMULADO });
+    writeGate(v.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9', v.gatesLog, true, null, 0, feV);
+    const rV = calc(v);
+    check('T105g RuntimeMatrix_FilaConDosSpecs_ElSegundoSimula_NoCuenta',
+      rV.perAc[3].verdict === 'NOT-RUN' && simDe(rV, 3).length === 1, JSON.stringify({ v3: rV.perAc[3].verdict, s: rV.simulados }));
+
+    // 🔴 mutación: una fila que nombra un spec que el portón no leyó se juzga por el portón entero
+    const w = makeWorkspace();
+    cambiarHistoria(w, '`story-9-9.spec.ts::flujo`', '`story-9-9.spec.ts::flujo` (reemplaza a `viejo.spec.ts`)');
+    const feW = frente(w, { 'tests/story-9-9.spec.ts': SPEC_REAL, 'tests/story-9-9-diseno.spec.ts': SPEC_SIMULADO });
+    writeGate(w.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9', w.gatesLog, true, null, 0, feW);
+    const rW = calc(w);
+    check('T105h RuntimeMatrix_FilaQueNombraUnSpecQueNoCorrio_PorElPortonEntero',
+      rW.perAc[3].verdict === 'NOT-RUN', JSON.stringify({ v3: rW.perAc[3].verdict, s: rW.simulados }));
+  }
+
   // T2 — el mismo criterio declarado espera la firma de la persona, y con la firma queda perdonado.
   withWaiverLog(() => {
     const f = makeWorkspace({ ack: ['runtime_not_verifiable:', '  - ac: 1', '    reason: "sólo se probó con el servidor simulado"', '    covered_by: E1'] });
@@ -1962,8 +2039,17 @@ withWaiverLog(() => {
     const feM = frente(m, { 'tests/real.spec.ts': SPEC_REAL, 'tests/sim.spec.ts': SPEC_SIMULADO });
     writeGate(m.dodDir, '9.9', recentCompact(), 'PASS', 'real.spec.ts sim.spec.ts', m.gatesLog, true, null, 0, feM);
     const rM = calc(m);
-    check('T9 un portón con un filtro real y otro simulado es simulado entero @story-8.220 @ac-1',
-      rM.perAc[1].verdict === 'NOT-RUN' && simDe(rM, 1).length > 0, JSON.stringify({ v: rM.perAc[1].verdict, s: rM.simulados }));
+    // un portón con un filtro real y otro simulado: la fila se juzga por su spec, así que un spec vecino que fabrica un
+    // 409 no le quita la evidencia a la que no simula nada
+    check('T9 un portón con un filtro real y otro simulado: la fila del real cuenta en vivo @story-8.220 @ac-1',
+      rM.perAc[1].verdict === 'RUNTIME' && !simDe(rM, 1).length, JSON.stringify({ v: rM.perAc[1].verdict, s: rM.simulados }));
+    const n = makeWorkspace();
+    cambiarHistoria(n, '| E1 | `story-9-9.spec.ts::flujo` | 1,3 | e2e | x | y |', '| E1 | `sim.spec.ts::flujo` | 1 | e2e | x | y |');
+    const feN = frente(n, { 'tests/real.spec.ts': SPEC_REAL, 'tests/sim.spec.ts': SPEC_SIMULADO });
+    writeGate(n.dodDir, '9.9', recentCompact(), 'PASS', 'real.spec.ts sim.spec.ts', n.gatesLog, true, null, 0, feN);
+    const rN = calc(n);
+    check('T9 …y la fila del simulado no @story-8.220 @ac-1',
+      rN.perAc[1].verdict === 'NOT-RUN' && simDe(rN, 1).length > 0, JSON.stringify({ v: rN.perAc[1].verdict, s: rN.simulados }));
   }
 
   // T10 — cada vía de simulación, una por caso.
@@ -2210,6 +2296,24 @@ withWaiverLog(() => {
     check('T4 Matrix_Batch_SharedOrUnattributedFile_NoReturn @story-8.240 @ac-2',
       !compartido.structuralError && (compartido.returnedAcs || []).length === 0 && JSON.stringify(compartido.acs) === JSON.stringify(vacia.acs),
       JSON.stringify({ c: compartido.structuralError || compartido.returnedAcs, acs: compartido.acs, vacia: vacia.acs }));
+  }
+  {
+    // 🔴 Falla con: el archivo de pruebas de una pantalla trae la prueba de la tanda medida (T1, del AC 1) y las de otras
+    //    dos tandas, y sólo éstas la declaran en `tests:`. La corrida de la A suma su prueba ahí y la matriz pide como
+    //    bloqueantes los criterios de la B y la C (reportado por un producto; reproducido con esta
+    //    historia de juguete).
+    const TRES = ['  - name: A-la-primera', '    status: pending', '    acs: [1]', '  - name: B-la-segunda', '    status: pending', '    acs: [2]',
+      '    tests: [T6]', '  - name: C-la-tercera', '    status: pending', '    acs: [3]', '    tests_pending: [T7]'];
+    const FILAS = ['| T5 | `src/d.js::edita` | 1 | e2e | x | y |', '| T6 | `src/d.js::lista` | 2 | e2e | x | y |', '| T7 | `src/d.js::exporta` | 3 | e2e | x | y |'];
+    const f = atada(TRES, [], [], FILAS);
+    const r = correr(f, ['src/d.js']);
+    // sin la prueba de la tanda medida en el archivo, sigue siendo de las otras: vuelven
+    const ajeno = atada(TRES, [], [], FILAS.slice(1));
+    const r2 = correr(ajeno, ['src/d.js']);
+    check('Matrix_Batch_SharedTestFileWithMeasuredBatchTest_NoReturn',
+      !r.structuralError && (r.returnedAcs || []).length === 0 && !r.acs.includes(2) && !r.acs.includes(3)
+        && JSON.stringify(r.outOfBatchAcs) === '[2,3]' && !r2.structuralError && JSON.stringify(r2.returnedAcs) === '[2,3]',
+      JSON.stringify({ e: r.structuralError, acs: r.acs, ret: r.returnedAcs, out: r.outOfBatchAcs, ajeno: r2.structuralError || r2.returnedAcs }));
   }
   {
     const f = atada(LISTA, B_ARCH);

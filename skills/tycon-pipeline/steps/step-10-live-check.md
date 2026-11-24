@@ -755,6 +755,12 @@ marcador tenga tanda.
 Un criterio de la propia tanda declarado imposible de probar se firma como cualquier otro: la firma mide la misma
 tanda que «Preparar el commit». Por terminal, con `--for-session <la sesión de la corrida>`.
 
+**Humos sólo para lo que el navegador no cubrió.** Primero el portón E2E, después la matriz, y recién entonces los humos:
+sólo para los criterios que la matriz deja sin evidencia en vivo (staging, servicios de afuera, caídas). Un spec del portón
+que pasó contra el backend real, sobre el código de ahora, ya es la evidencia en vivo de los criterios que nombra
+(`@ac-N` o la tabla de pruebas): un humo encima repite la misma prueba, y los humos repetidos llegan a ser la mayor parte
+del tiempo de verificación de una historia.
+
 - **VERDE** → todos los ACs tienen evidencia runtime (gate E2E / smokes vía
   `smoke-run.sh`) o son imposibles-declarados con la firma del dev vigente → avanzar.
 - **ROJO** → el artefacto `<sid>-runtime-matrix.md` lista los ACs `CODE-ONLY` /
@@ -803,6 +809,14 @@ la evidencia de los criterios 2 y 3, y la de los demás sigue contando. El rengl
 «venció por <archivo>, que prueba los criterios 2 y 3»: se re-corren sólo esos. Vence toda la evidencia, como siempre,
 si cambió un archivo de código, si la prueba no nombra criterios de la historia o no se deja leer, o si no se sabe
 quién la cambió (un commit sin historia que ya está en main, o la resolución de una fusión).
+
+**Un humo que dice qué repos ejercita no lo vence un cambio en otro.** En una historia de varios repos, `smoke-run.sh
+… --exercises Back -- curl …` anota que ese humo prueba sólo el repo `Back` (el nombre de su carpeta). Después, un
+archivo de código declarado que cambia en otro repo de la historia (el sitio, por ejemplo) no vence ese humo, y la matriz
+lo avisa: «cambió en <repo>, y el humo dice que ejercita sólo Back». Un cambio en `Back` lo vence como siempre, y
+también una prueba declarada de cualquier repo o un archivo que no se pudo comparar. Se
+declara sólo lo que el comando de verdad toca: un humo por el navegador ejercita el sitio y el backend. Sin la opción, o
+si nombra un repo que no es de la historia, lo vence un cambio en cualquiera.
 
 `complete-step prepare-commit` exige `checks.acmatrix=green` (provenance run-check) — sin este
 sub-step el pipeline NO llega a commit prep. `on-pre-commit.js` además RE-COMPUTA

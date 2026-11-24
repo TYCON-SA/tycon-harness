@@ -157,6 +157,11 @@ copia de trabajo del equipo):
    el click de una persona, aun sin permisos: nadie mira, y tu guion queda parado. Si necesitás una carpeta vacía,
    armá OTRA con \`mktemp -d /tmp/probe.XXXXXX\`; lo que dejás en /tmp no se limpia. Usá rutas absolutas en vez de
    \`cd <carpeta> && …\`.
+6. Corré cada guion CON UNA CASA DE PRUEBA, nunca con la de la persona: los ganchos y guiones del arnés escriben su
+   estado y su registro de fallas en la carpeta personal, y una sonda que los hace fallar a propósito con la casa real
+   ensucia el registro que mide los frenos. Armá la casa adentro del laboratorio y pasala en cada comando:
+   \`mkdir -p "$LAB/casa" && HOME="$LAB/casa" USERPROFILE="$LAB/casa" TYCON_HOME= node …\` (o exportalas al comienzo del
+   guion). Un guion que necesita algo de la casa real lo copia a la de prueba.
 
 HERRAMIENTAS DE CÓDIGO (usá la mejor disponible, en este orden): (1) si el harness expone tools
 mcp__codegraph*__* o mcp__codebase_memory__* (buscalas con ToolSearch), usalas para lookup de símbolos,
@@ -247,11 +252,12 @@ const FINDINGS_SCHEMA = {
 
 // El cazador de código devuelve además la base contra la que miró y la carpeta donde guardó su prueba ('' sólo con
 // hallazgos); las dos son requeridas: sin ellas, el corredor lo da por muerto. Y `base_existe`, lo que dijo
-// `git cat-file -e` de esa base: en `false`, la lente no cuenta. El modo plan sigue con FINDINGS_SCHEMA: sus cazadores
-// leen y no corren nada.
+// `git cat-file -e` de esa base: en `false`, la lente no cuenta. `git_rechazado`, el rechazo de la herramienta cuando no
+// dejó correr git (una sesión aislada en otra carpeta, un freno): la lente tampoco cuenta, pero con ese motivo y no con
+// «la base no existe». El modo plan sigue con FINDINGS_SCHEMA: sus cazadores leen y no corren nada.
 const HUNT_SCHEMA = {
   ...FINDINGS_SCHEMA,
-  properties: { ...FINDINGS_SCHEMA.properties, base: { type: 'string' }, base_existe: { type: 'boolean' }, probe_dir: { type: 'string' } },
+  properties: { ...FINDINGS_SCHEMA.properties, base: { type: 'string' }, base_existe: { type: 'boolean' }, git_rechazado: { type: 'string' }, probe_dir: { type: 'string' } },
   required: ['lens', 'base', 'probe_dir', 'findings'],
 }
 
@@ -273,9 +279,15 @@ function pedidoCazador(key) {
   const dir = carpetaDeCaza(key)
   return `
 
+CÓMO CORRER GIT: de a uno, en su forma simple. Un comando por llamada, sin ; && || ni tubos, y el código de salida se lee
+del resultado de la herramienta (no agregues «echo $?»). Una sesión aislada en otra carpeta rechaza un git compuesto
+sobre otro repo sin correrlo.
+
 ANTES DE NADA, que la base exista: corré  git -C ${REPO} cat-file -e ${BASE}^{commit}
-Si sale distinto de 0, la base no está en el repo: devolvé base_existe = false y findings = [] y no revises nada (sin
-base no hay contra qué comparar, y un «sin hallazgos» sería mentira). Si sale 0, base_existe = true y seguí.
+Si la herramienta RECHAZA el comando sin correrlo (un aviso de sesión aislada, de un freno o de un permiso), eso no dice
+nada de la base: devolvé git_rechazado = la primera línea del rechazo, findings = [] y no revises nada.
+Si corrió y sale distinto de 0, la base no está en el repo: devolvé base_existe = false y findings = [] y no revises nada
+(sin base no hay contra qué comparar, y un «sin hallazgos» sería mentira). Si sale 0, base_existe = true y seguí.
 
 CONTRA QUÉ SE COMPARA (no-negociable): el cambio de la historia es TODO lo distinto de la base ${BASE}, también lo que
 todavía no está commiteado (en este paso el trabajo suele estar sin commitear):
@@ -786,6 +798,10 @@ const hunts = await parallel(
 function juzgarLente(key, r) {
   const h = r && r.hunt
   if (!h || !Array.isArray(h.findings) || typeof h.probe_dir !== 'string') return { motivo: 'su cazador no contestó' }
+  // la herramienta no dejó correr git: no se sabe si la base existe, y el motivo es ése
+  if (typeof h.git_rechazado === 'string' && h.git_rechazado.trim()) {
+    return { motivo: `git no pudo correr en esta sesión (${h.git_rechazado.replace(/\s+/g, ' ').trim().slice(0, 160)}): no hubo contra qué comparar` }
+  }
   if (!coincideBase(h.base, BASE)) return { motivo: `comparó contra ${h.base || '(nada)'}, no contra ${BASE}` }
   // una base que no está en el repo: el diff falla y «sin hallazgos» no midió nada
   if (h.base_existe === false) return { motivo: `la base ${BASE} no existe en el repo: no hubo contra qué comparar` }

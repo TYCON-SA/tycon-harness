@@ -77,6 +77,38 @@ set -u
 # Límites conocidos: el corte de lo lanzado usa `pgrep`; donde no está (el Git Bash de Windows), el freno sale 2 recién
 # cuando termina lo que espera. Sin `ps -o` el freno se reconoce sólo por /proc/<pid>/cmdline, y sin ninguno de los
 # dos el reloj no actúa.
+# ── Cuánto tarda cada paso (TYCON_SAFETY_TRACE) ──────────────────────────────────────────────────────────────────────
+# Para encontrar el paso que se vuelve lento con la máquina cargada: con `TYCON_SAFETY_TRACE=1` (o la ruta de un archivo),
+# cada node que lanza el freno, y lo que lanzan ellos, anota cuándo arranca y cuánto tardó (scripts/lib/safety-trace.js,
+# que carga NODE_OPTIONS), y el freno anota su total al salir. Un node que corta el reloj deja sólo su arranque. Por
+# defecto va a safety-guard-times.jsonl, en la carpeta de los registros sueltos. No cambia ninguna decisión.
+SG_TRACE=""
+if [[ -n "${TYCON_SAFETY_TRACE:-}" && "${TYCON_SAFETY_TRACE}" != "0" ]]; then
+  sg_ms() { perl -MTime::HiRes=time -e 'printf "%d", time*1000' 2>/dev/null || printf '%s000' "$(date +%s)"; }
+  _sg_t0="$(sg_ms)"
+  SG_TRACE="$TYCON_SAFETY_TRACE"
+  if [[ "$SG_TRACE" == "1" ]]; then
+    SG_TRACE=""
+    _sg_sd="$(dirname "${BASH_SOURCE[0]}")/../lib/state-dir.sh"
+    if [ -f "$_sg_sd" ] && . "$_sg_sd" 2>/dev/null; then SG_TRACE="$(tycon_logs_dir 2>/dev/null)/safety-guard-times.jsonl"; fi
+  fi
+  _sg_pre="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/safety-trace.js"
+  if [[ -z "$SG_TRACE" || ! -f "$_sg_pre" ]] || ! mkdir -p "$(dirname "$SG_TRACE")" 2>/dev/null; then SG_TRACE=""; fi
+fi
+# El total del freno, al salir por cualquier lado (también cuando lo corta su reloj). Corre dentro de la trampa de salida:
+# no puede fallar ni cambiar la salida, por eso suelta la trampa de error y no hace cuentas con lo que no sea un número.
+sg_trace_fin() {
+  [[ -n "$SG_TRACE" ]] || return 0
+  trap - ERR
+  local fin
+  fin="$(sg_ms 2>/dev/null)" || fin=""
+  [[ "$fin" =~ ^[0-9]+$ && "${_sg_t0:-}" =~ ^[0-9]+$ ]] || return 0
+  printf '{"ts":"%s","corrida":"%s","pid":%s,"guion":"safety-guard-pre.sh","evento":"termina","ms":%s,"salida":%s}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$TYCON_SAFETY_TRACE_RUN" "$$" "$(( fin - _sg_t0 ))" "${1:-0}" >> "$SG_TRACE" 2>/dev/null || true
+  return 0
+}
+if [[ -n "$SG_TRACE" ]]; then trap 'sg_trace_fin "$?"' EXIT; fi
+
 SG_CLOCK_S="${TYCON_SAFETY_TIMEOUT_S:-20}"
 # sin ceros adelante: «09» o «060» no son un número de segundos para la cuenta de bash
 if ! [[ "$SG_CLOCK_S" =~ ^[1-9][0-9]?$ ]] || (( SG_CLOCK_S > 50 )); then SG_CLOCK_S=20; fi
@@ -159,6 +191,22 @@ INPUT="$(cat 2>/dev/null)" || INPUT=""
 _hn="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/harness-node.sh"
 { [ -f "$_hn" ] && . "$_hn" 2>/dev/null; } || harness_node_bin() { echo node; }
 HNODE="$(harness_node_bin)"
+# La medición por paso (TYCON_SAFETY_TRACE, arriba): cada node del freno carga safety-trace.js. En Git Bash node no
+# entiende las rutas /c/…, y dentro de las comillas de NODE_OPTIONS borra la barra invertida de C:\…: van con barras
+# hacia adelante (cygpath -m). Antes de ponerla se prueba que carga: si no, un node que el freno usa para decidir saldría 1.
+if [[ -n "$SG_TRACE" ]]; then
+  _sg_pre_n="$_sg_pre"; _sg_file_n="$SG_TRACE"
+  if command -v cygpath >/dev/null 2>&1; then
+    _sg_pre_n="$(cygpath -m "$_sg_pre" 2>/dev/null || printf '%s' "$_sg_pre")"
+    _sg_file_n="$(cygpath -m "$SG_TRACE" 2>/dev/null || printf '%s' "$SG_TRACE")"
+  fi
+  _sg_opts="${NODE_OPTIONS:+$NODE_OPTIONS }--require \"$_sg_pre_n\""
+  if NODE_OPTIONS="$_sg_opts" "$HNODE" -e 0 >/dev/null 2>&1; then
+    export TYCON_SAFETY_TRACE_FILE="$_sg_file_n" TYCON_SAFETY_TRACE_RUN="$$-$_sg_t0" NODE_OPTIONS="$_sg_opts"
+  else
+    SG_TRACE=""
+  fi
+fi
 HAS_JQ=0; HAS_NODE=0
 if command -v jq >/dev/null 2>&1; then HAS_JQ=1; fi
 if command -v "$HNODE" >/dev/null 2>&1; then HAS_NODE=1; fi
@@ -263,7 +311,12 @@ ow_gate() {
   lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/owner-window.js" || lib=""
   if [[ -n "$lib" && -f "$lib" ]] && command -v "$HNODE" >/dev/null 2>&1; then
     for k in "$@"; do args+=(--escape "$k"); done
-    out="$(printf '%s' "$INPUT" | "$HNODE" "$lib" gate ${args[@]+"${args[@]}"} 2>/dev/null)" || out=""
+    # el segundo en que corta el reloj de este freno, para que el chequeo del guion antes de la ventana use sólo lo que
+    # queda (owner-window.js): SECONDS cuenta desde que arrancó el freno, antes que el reloj, y se resta uno por el redondeo
+    local tope=""
+    tope="$(date +%s 2>/dev/null)" || tope=""
+    if [[ "$tope" =~ ^[0-9]+$ ]]; then tope=$(( tope + SG_CLOCK_S - SECONDS - 1 )); else tope=""; fi
+    out="$(printf '%s' "$INPUT" | TYCON_SAFETY_DEADLINE_S="$tope" "$HNODE" "$lib" gate ${args[@]+"${args[@]}"} 2>/dev/null)" || out=""
     while IFS= read -r k; do
       case "$k" in
         decision=*) OW_DECISION="${k#decision=}" ;;
@@ -551,13 +604,17 @@ fi
 # una variable, una copia con otro nombre o un comodín; para eso `sign` mira además quién lo lanzó y no firma si viene
 # de la herramienta. Un comando que sólo lee la biblioteca (`grep`, `cat`, `git log`…) no la corre: eso lo decide el
 # lector de marker-command.js, y si no está, se cae o no contesta en 5 s, frena. La salida va a un archivo: un programa
-# colgado que dejó un hijo no la deja abierta.
+# colgado que dejó un hijo no la deja abierta. El archivo va en $TMPDIR con plantilla: en macOS, `mktemp` sin argumentos
+# usa la carpeta temporal del sistema aunque $TMPDIR diga otra, y en un encierro que sólo deja escribir en $TMPDIR (la
+# corrida aislada de los humos) no lo crearía, y el freno frenaría lo que sólo lee. Con un $TMPDIR que no sirve (borrado
+# por la limpieza de temporales, sin permiso), prueba en la carpeta temporal del sistema, sin $TMPDIR: en Linux, `mktemp`
+# sin argumentos también la usa y volvería a fallar. Si tampoco se puede, frena.
 _firma_solo_lee() {
   tool_is_ps && return 1
   local _lib _salida _pid _vigia _respuesta
   _lib="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/skills/tycon-pipeline/scripts/lib/marker-command.js" || return 1
   [[ -f "$_lib" ]] && command -v "$HNODE" >/dev/null 2>&1 || return 1
-  _salida="$(mktemp 2>/dev/null)" || return 1
+  _salida="$(mktemp "${TMPDIR:-/tmp}/safety-guard-firma.XXXXXX" 2>/dev/null || env -u TMPDIR mktemp 2>/dev/null)" || return 1
   printf '%s' "$CMD" | "$HNODE" "$_lib" --sign-gate >"$_salida" 2>/dev/null &
   _pid=$!
   ( sleep 5; kill -9 "$_pid" 2>/dev/null ) >/dev/null 2>&1 &
@@ -2105,7 +2162,8 @@ if [[ "$CMD" =~ $GIT_C4_MASS_ADD ]]; then
   # Con una firma esperando la ventana de permiso no hay nada que avisar: el aviso sale con código 1, que haría correr
   # el comando sin la ventana, y la persona ya mira el comando en ella.
   if [[ -n "$GIT_C4_BLIND" && -z "$OW_ASK_JSON" ]]; then
-    trap 'git_c4_blind_notice "$?"' EXIT
+    # reemplaza la trampa de la medición (TYCON_SAFETY_TRACE): el total se anota antes del aviso
+    trap '_sg_rc=$?; sg_trace_fin "$_sg_rc"; git_c4_blind_notice "$_sg_rc"' EXIT
   fi
 fi
 CMD="$CMD_SHOWN"   # las reglas de abajo miran el comando tal como llegó
