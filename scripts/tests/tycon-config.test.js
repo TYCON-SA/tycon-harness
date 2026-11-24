@@ -2396,8 +2396,11 @@ test('Config_McpServers_MachineOnly — integrations.mcp_servers: válido en la 
   assert.ok(err, JSON.stringify(enPerfil.errores.map((e) => e.clave)));
   assert.match(err.motivo, /es de la máquina/);
   const hm2 = casa();
-  maquina(hm2, { integrations: { mcp_servers: { clockify: 'a b' } } });
-  assert.ok(cargar({ home: hm2, arnes: arnesCon({}) }).errores.some((e) => /mcp_servers/.test(e.clave)));
+  for (const malo of [{ clockify: 'a b' }, { clockify: 'reloj__x' }, { Clockify: 'a', clockify: 'b' }]) {
+    const hm2 = casa();
+    maquina(hm2, { integrations: { mcp_servers: malo } });
+    assert.ok(cargar({ home: hm2, arnes: arnesCon({}) }).errores.some((e) => /mcp_servers/.test(e.clave)), JSON.stringify(malo));
+  }
 });
 
 test('Config_McpServers_NotWrittenWithAnOldGuard — set no la escribe con un freno instalado que no la conoce; con el de hoy, sí', () => {
@@ -2417,6 +2420,7 @@ test('Config_McpServers_NotWrittenWithAnOldGuard — set no la escribe con un fr
   assert.equal(out.status, 2, 'un valor que no es JSON no se escribe');
   out = cli(['set', 'integrations.mcp_servers', '{"clockify":"reloj"}'], { home, env: { TYCON_PROFILE: '0', TYCON_GUARD_LIB_FOR_TEST: path.join(dir, 'nuevo.js') } });
   assert.equal(out.status, 0, out.stderr);
+  assert.match(out.stdout, /\{"clockify":"reloj"\}/, 'dice el valor escrito, no [object Object]');
   assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).integrations.mcp_servers, { clockify: 'reloj' });
 });
 

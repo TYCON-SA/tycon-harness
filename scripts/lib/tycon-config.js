@@ -1166,10 +1166,15 @@ function validarTipo(tipo, valor) {
     }
     case 'servidores-mcp': {
       if (!esObjeto(valor)) return `tiene que ser un objeto { "<integración>": "<servidor MCP>" }, no ${JSON.stringify(valor)}`;
+      const vistas = new Set();
       for (const [k, v] of Object.entries(valor)) {
         if (esComentario(k)) continue;
         if (!/^[a-z0-9][a-z0-9_-]*$/i.test(k.trim())) return `«${k}» no es el nombre de una integración (letras, números, - o _)`;
-        if (typeof v !== 'string' || !/^[A-Za-z0-9_-]+$/.test(v.trim())) return `el servidor de «${k}» tiene que ser un nombre de letras, números, - o _, no ${JSON.stringify(v)}`;
+        // la integración se busca en minúsculas: dos claves que sólo difieren en eso se pisarían sin aviso
+        if (vistas.has(k.trim().toLowerCase())) return `«${k}» está dos veces (las mayúsculas no cuentan)`;
+        vistas.add(k.trim().toLowerCase());
+        // sin `__` adentro: el nombre de la herramienta es `mcp__<servidor>__<tool>`, y con `__` el servidor no se separa
+        if (typeof v !== 'string' || !/^[A-Za-z0-9_-]+$/.test(v.trim()) || v.includes('__')) return `el servidor de «${k}» tiene que ser un nombre de letras, números, - o _ (sin «__»), no ${JSON.stringify(v)}`;
       }
       return null;
     }
@@ -2043,7 +2048,7 @@ function cli(argv) {
     if (rangoDe(tipo) && /^\d+$/.test(String(crudo).trim())) valorNuevo = Number(String(crudo).trim());
     const r = setKey(os.homedir(), clave, valorNuevo);
     if (!r.ok) { process.stderr.write(`tycon-config.js set: ${r.reason}\n`); process.exit(2); }
-    const fmt = (x) => (x === null || x === undefined ? '(sin valor)' : Array.isArray(x) ? x.join(',') : String(x));
+    const fmt = (x) => (x === null || x === undefined ? '(sin valor)' : Array.isArray(x) ? x.join(',') : typeof x === 'object' ? JSON.stringify(x) : String(x));
     process.stdout.write(`${clave}: ${fmt(r.before)} → ${fmt(r.after)} en ${r.file}\n`);
     process.stdout.write('se aplica en el próximo arranque, o ya con `harness.js apply`; para ver antes qué cambia, `harness.js apply --dry-run`\n');
     if (r.warning) process.stdout.write(`${r.warning}\n`);

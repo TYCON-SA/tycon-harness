@@ -74,6 +74,8 @@ node ~/.tycon/harness/scripts/lib/tycon-config.js set integrations.mcp_servers '
 Queda en `~/.claude/tycon.json`, sólo en tu máquina: el perfil del equipo no puede ponerlo. Si el freno de producción
 instalado es anterior a esta clave, el comando no la escribe y te dice cómo ponerlo al día primero.
 
+Límite: el despliegue del servidor a Codex todavía lo busca por `clockify`. Con otro nombre, Codex no lo recibe.
+
 ### Sacar tu API key
 
 1. Loguearte a Clockify (https://clockify.me).

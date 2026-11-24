@@ -342,6 +342,7 @@ test('Clockify_McpServerFromMachine — las acciones nombran el servidor MCP com
   assert.match(run(undefined).action, /mcp__reloj__create-clockify-time-entry/);
   // un nombre que no es un nombre de servidor no se usa
   assert.match(run('a b; rm').action, /mcp__reloj__create-clockify-time-entry/);
+  assert.match(run('a__b').action, /mcp__reloj__create-clockify-time-entry/);
 });
 
 // ── Los manifiestos y sus rutas: un manifiesto mal escrito queda roto con aviso, nunca frena la instalación ─────────
