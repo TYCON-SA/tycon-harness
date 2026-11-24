@@ -434,7 +434,18 @@ function exec({ argv, raices = [], env = process.env, userInfo, cwd = process.cw
         let yaHay = true;
         try { yaHay = fs.readdirSync(actual).some((n) => /^sh-thd-[0-9]+$/.test(n)); } catch (_) { /* sin leerla, no se admite */ }
         if (yaHay) err(`[aislada] ⚠️ ${actual} ya tiene un sh-thd-<n> o no se pudo leer: el here document del bash del sistema queda negado ahí (un enlace con ese nombre escribiría otro archivo)\n`);
-        const perfil = cp().perfilSandbox([base, ...admitidas], { red: true, fatales: raicesVigiladas, mensaje: marca, heredoc: yaHay ? [] : [actual] });
+        // y en la carpeta temporal del sistema, la primera que prueba bash, para un here document desde cualquier carpeta
+        // actual (un freno de bash que el comando corre desde otro repo). Ahí suelen quedar temporales vacíos de procesos
+        // que murieron: bash crea el suyo con un nombre nuevo y no los abre. Lo que no se admite es un enlace duro con
+        // ese nombre, que escribiría el archivo al que apunta; uno simbólico lo niega el encierro al escribir
+        const varTmp = real('/var/tmp');
+        let varTmpTiene = true;
+        try {
+          varTmpTiene = fs.readdirSync(varTmp).filter((n) => /^sh-thd-[0-9]+$/.test(n))
+            .some((n) => { try { const st = fs.lstatSync(path.join(varTmp, n)); return st.isFile() && st.nlink > 1; } catch (_) { return true; } });
+        } catch (_) { /* sin leerla, no se admite */ }
+        if (varTmpTiene) err(`[aislada] ⚠️ ${varTmp} tiene un sh-thd-<n> con un enlace duro, o no se pudo leer: el here document del bash del sistema queda negado ahí, y desde otra carpeta que no sea ${actual} falla\n`);
+        const perfil = cp().perfilSandbox([base, ...admitidas], { red: true, fatales: raicesVigiladas, mensaje: marca, heredoc: yaHay ? [] : [actual], tmpDelSistema: varTmpTiene ? null : varTmp });
         lanzar = ['/usr/bin/sandbox-exec', ['-p', perfil, ...argv]];
       } else err(`[aislada] ⚠️ sin el encierro del sistema (${enc.nombre === 'sandbox-exec' ? 'el sistema no deja abrirlo: esta sesión ya corre encerrada' : enc.corta}): frena sólo la red de escritura de node\n`);
     }
