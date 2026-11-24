@@ -21,6 +21,8 @@
         },
         {
           "id": "camino-corto-pruebas-en-verde-pregunta",
+          "tools": ["claude"],
+          "asymmetry": "En Codex la pregunta de un gancho sale como negativa con la pregunta y cómo aprobarlo a mano (medición 562: Codex no soporta «ask» y corre el comando). La dirección codex la cubre freno-de-guardar-pedido-preparado-en-codex-niega.",
           "type": "must-emit",
           "_por_que": "el mismo carril con la corrida en verde y la huella de lo que se guarda: el pull request pregunta (el commit pasa sin pregunta).",
           "setup": [
@@ -61,6 +63,8 @@
         },
         {
           "id": "camino-corto-rama-sobre-cupo-en-otra-rama-pregunta",
+          "tools": ["claude"],
+          "asymmetry": "En Codex la pregunta de un gancho sale como negativa con la pregunta y cómo aprobarlo a mano (medición 562: Codex no soporta «ask» y corre el comando). La dirección codex la cubre freno-de-guardar-pedido-preparado-en-codex-niega.",
           "type": "must-emit",
           "_por_que": "el mismo carril sobre cupo en otra rama, con las pruebas en verde: no frena por la rama, y el pull request pregunta (el commit pasa sin pregunta).",
           "setup": [

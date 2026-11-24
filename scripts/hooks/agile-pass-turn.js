@@ -51,7 +51,8 @@ function esPase(toolName, toolInput) {
  * La decisión, pura: `{ status, message }`. `status`: `fuera` (no se mira), `con-turno`, `aviso` o `freno`. `d` trae lo
  * que se lee de la máquina: `coordinadora()` (el id de la designada y viva, o null), `tieneCorrida(sid)`, `arranca()`
  * (el «arrancá» vigente, `{ to }`, o null), `reserva()` (`{ what, to, toSession }` vigente, o null), `corriendo()` (textos
- * de las ejecuciones grandes) y `pases()` (textos de los pases en vuelo de otras sesiones).
+ * de las ejecuciones grandes), `propias(sid)` (las de esa sesión) y `pases()` (textos de los pases en vuelo de otras
+ * sesiones).
  */
 function decidir({ toolName, toolInput, sid, modo = MODO }, d) {
   if (!esPase(toolName, toolInput)) return { status: 'fuera', message: null };
@@ -59,13 +60,21 @@ function decidir({ toolName, toolInput, sid, modo = MODO }, d) {
   if (!coord || !sid || coord === sid || d.tieneCorrida(sid)) return { status: 'fuera', message: null };
   const g = d.arranca();
   const r = d.reserva();
-  if ((g && g.to === sid) || (r && r.to === sid)) return { status: 'con-turno', message: null };
+  const que = toolName === 'Workflow' ? 'un Workflow (un abanico de agentes)' : 'un pase adversarial';
+  if (g && g.to === sid) return { status: 'con-turno', message: null };
+  if (r && r.to === sid) {
+    // la reserva es para una cosa por vez: si el portón de esta sesión ya tomó el turno con ella, el pase espera
+    const propias = d.propias(sid);
+    if (!propias.length) return { status: 'con-turno', message: null };
+    const message = `Lanzás ${que} con la reserva de la coordinadora, pero con esa reserva ya corre ${propias.join(' y ')}, de esta sesión: es para una cosa por vez. Lanzalo cuando termine.`
+      + (modo === 'block' ? '' : ' Hoy sólo se avisa.');
+    return { status: modo === 'block' ? 'freno' : 'aviso', message };
+  }
   const quien = [
     ...d.corriendo(),
     ...d.pases(),
     ...(r ? [`la reserva de la coordinadora para «${r.what}»${r.toSession ? ` de ${r.toSession}` : ''}`] : []),
   ];
-  const que = toolName === 'Workflow' ? 'un Workflow (un abanico de agentes)' : 'un pase adversarial';
   const message = `Lanzás ${que} sin el turno de tarea pesada de esta máquina. ${quien.length ? `Lo tiene: ${quien.join(' · ')}.` : 'Nadie lo tiene, pero la coordinadora no te lo dio.'} `
     + 'Pedile turno a la coordinadora (te lo da con heavy-turn.js grant --to <sesión>, o reserve --for "<qué>" --to <sesión>) y lanzalo cuando te lo dé: varios pases a la vez dejan la máquina sin procesos.'
     + (modo === 'block' ? '' : ' Hoy sólo se avisa.');
@@ -87,6 +96,7 @@ function lectores(home, now) {
     arranca: () => HT.grantInForce({ home, now }),
     reserva: () => HT.reserveInForce({ home, now }),
     corriendo: () => HT.holders({ home, now }).map((h) => HT.describe(h)),
+    propias: (sid) => HT.holders({ home, now }).filter((h) => h.sid === sid).map((h) => HT.describe(h)),
     pases: () => require(path.join(ROOT, 'scripts', 'tools', 'coordination.js')).heavyPassesInFlight({ home, now })
       .passes.filter((p) => !p.stale).map((p) => `el pase de ${p.storyId ? `la ${p.storyId}` : 'una sesión sin story'} (${p.session})`),
   };
@@ -129,7 +139,7 @@ function main() {
   if (r.salida) process.stdout.write(`${JSON.stringify(r.salida)}\n`);
 }
 
-module.exports = { MODO, NOMBRE, esPase, decidir, responder };
+module.exports = { MODO, NOMBRE, esPase, decidir, responder, lectores };
 
 if (require.main === module) {
   try { main(); } catch { /* nunca romper un lanzamiento */ }

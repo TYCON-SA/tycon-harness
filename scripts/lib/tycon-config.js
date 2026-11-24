@@ -275,7 +275,10 @@ const VOCABULARIO = Object.freeze({
   // normal y un click tardío no aprueba nada. No afloja nada: el permiso lo aprueba igual un click de la persona. Con el
   // orden de siempre. Sin valor, 10; el gancho tiene un plazo de 31 minutos, por eso el tope es 30.
   // `max_awaiting_review`: cuántas cosas pueden esperar la revisión de la persona (firmas, terminados sin cerrar, carpetas sin guardar, pedidos trabados) antes de que la coordinadora deje de abrir sesiones (scripts/lib/review-load.js). Con el orden de siempre. Sin valor, 8.
-  coordination: Object.freeze({ max_working: 'entero:1-20', owner_folder: 'ruta', session_names: 'nombres-de-sesion', second_heavy_min_free_pct: 'entero:1-100', max_stories_in_cycle: 'entero:1-20', permission_wait_minutes: 'entero:1-30', max_awaiting_review: 'entero:1-50' }),
+  // `light_list`: un archivo markdown con trabajo liviano para las sesiones que quedan quietas o esperan algo de afuera
+  // (la lista de la coordinadora): sus renglones abiertos se suman a la fila liviana del tablero. Con el orden de
+  // siempre. Sin valor, sólo el tablero.
+  coordination: Object.freeze({ max_working: 'entero:1-20', owner_folder: 'ruta', session_names: 'nombres-de-sesion', second_heavy_min_free_pct: 'entero:1-100', max_stories_in_cycle: 'entero:1-20', permission_wait_minutes: 'entero:1-30', max_awaiting_review: 'entero:1-50', light_list: 'ruta' }),
   // La oficina de /office. `quiet_minutes`: cuántos minutos sin novedades tiene que pasar una sesión que trabaja para que
   // la página diga «sin novedades desde las HH:MM». Sin valor, 15.
   office: Object.freeze({ quiet_minutes: 'entero:1-1440' }),
@@ -587,6 +590,7 @@ const VARIABLES = Object.freeze({
   'coordination.max_stories_in_cycle': ['TYCON_COORDINATION_MAX_STORIES_IN_CYCLE'],
   'coordination.permission_wait_minutes': ['TYCON_COORDINATION_PERMISSION_WAIT_MINUTES'],
   'coordination.max_awaiting_review': ['TYCON_COORDINATION_MAX_AWAITING_REVIEW'],
+  'coordination.light_list': ['TYCON_COORDINATION_LIGHT_LIST'],
   'maintenance.worktree_idle_hours': ['TYCON_WORKTREE_SWEEP_IDLE_HOURS'],
 });
 
@@ -1522,7 +1526,7 @@ function coordinacion(config) {
     ? { value: defecto, origin: 'sin-valor' }
     : { value: v[clave], origin: o[`coordination.${clave}`] });
   return { max_working: con('max_working', 3), owner_folder: con('owner_folder', null), session_names: con('session_names', null), second_heavy_min_free_pct: con('second_heavy_min_free_pct', 50), max_stories_in_cycle: con('max_stories_in_cycle', 4), permission_wait_minutes: con('permission_wait_minutes', 10),
-    max_awaiting_review: con('max_awaiting_review', 8) };
+    max_awaiting_review: con('max_awaiting_review', 8), light_list: con('light_list', null) };
 }
 /**
  * Lo que la máquina limpia sola, según una configuración YA cargada: `{ worktree_idle_hours, temp_days,

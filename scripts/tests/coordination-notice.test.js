@@ -1768,7 +1768,7 @@ test('8.289 T2 Aviso_EsperaDeAfuera_DiceLoLiviano @story-8.289 @ac-3: nombra la 
   const n = C.capNotice({ ...t.opts, readMemory: mem(55) });
   const lines = outsideLines(n);
   assert.strictEqual(lines.length, 1, n);
-  assert.match(lines[0], /^Coordinación: Ana espera que entre el pedido 6578 desde las \d\d:\d\d: dale algo liviano de la fila — T-12 «papeleo de la 8\.1», «sin número», T-15 «choque del 6600»\.$/, lines[0]);
+  assert.match(lines[0], /^Coordinación: Ana espera que entre el pedido 6578 desde las \d\d:\d\d: dale algo liviano de la fila — T-12 «papeleo de la 8\.1», «sin número», T-15 «choque del 6600» \(y 1 más en la fila\)\.$/, lines[0]);
   assert.ok(!/T-16|T-17|T-9/.test(lines[0]), lines[0]);
   // lo que viene de la nota y del tablero no cierra el bloque del aviso
   // 🔴 mutación: sacar el saneador de lo que espera, del título o de la historia de una fila
@@ -1806,6 +1806,48 @@ test('8.289 T3 Aviso_SinNadaLiviano_LoDice @story-8.289 @ac-4 @ac-5: sin liviana
     assert.doesNotMatch(n, /nada liviano/);
     assert.match(n, broken ? /No pude leer .*el tablero .*roto/ : /No pude leer .*el tablero .*no está/, n);
   }
+});
+
+// ── La lista de trabajo liviano (coordination.light_list): nadie queda quieto mientras quede algo en ella ──
+const lista = (t, texto) => { const f = path.join(t.root, 'lista.md'); fs.writeFileSync(f, texto); return { ...t.opts, env: { TYCON_COORDINATION_LIGHT_LIST: f } }; };
+const LISTA = '# Lista\n\n## Defectos\n\n- ~~ya cerrado~~ — cerrado\n- El aviso de retro mira sólo el primer push · (326)\n  - un detalle indentado no es otra fila\n- **La nota de repensar** cae en otra carpeta (35)\n- Uno\n- Dos\n';
+
+test('Lista_EsperandoConFilaVacia_DaLoDeLaLista: con la fila del tablero vacía y la lista con algo, nunca «nada liviano»', () => {
+  // 🔴 mutación: leer sólo el tablero → «la fila no tiene nada liviano» con la lista llena
+  const t = toy();
+  outsideNote(t, 's-1', 'Ana', 'que entre el pedido 6578', 30);
+  board(t, [row('T-16', 'de alguien', { quien: 'Beto' })]);
+  const n = C.capNotice(lista(t, LISTA));
+  assert.doesNotMatch(n, /nada liviano/, n);
+  assert.match(n, /Ana espera que entre el pedido 6578 desde las \d\d:\d\d: dale algo liviano de la fila — «El aviso de retro mira sólo el primer push», «La nota de repensar cae en otra carpeta \(35\)», «Uno» \(y 1 más en la fila\)\./, n);
+  assert.doesNotMatch(n, /ya cerrado|detalle indentado/, n);
+  // sin tablero, la lista alcanza: no es «no pude leer»
+  const t2 = toy();
+  outsideNote(t2, 's-1', 'Ana', 'que entre el pedido 6578', 30);
+  const n2 = C.capNotice(lista(t2, LISTA));
+  assert.match(n2, /dale algo liviano de la fila — «El aviso de retro/, n2);
+  assert.doesNotMatch(n2, /No pude leer/, n2);
+});
+
+test('Lista_QuietaDiezMinutos_RecibeTrabajo: una quieta hace 10 min o más recibe lo liviano; antes, el texto de siempre', () => {
+  // 🔴 mutación: dejar a la quieta con «cerrala o dale trabajo» con la lista llena
+  const t = toy();
+  bg(t, 's-u', 'Uma', 20);
+  const n = C.capNotice(lista(t, LISTA));
+  assert.match(n, /Coordinación: Uma está quieta hace 20 min: dale algo liviano — «El aviso de retro mira sólo el primer push»/, n);
+  // sin lista, como hoy
+  const t2 = toy();
+  bg(t2, 's-u', 'Uma', 20);
+  assert.match(C.capNotice(t2.opts), /Coordinación: Uma está quieta hace 20 min: cerrala o dale trabajo\./);
+});
+
+test('Lista_Ilegible_LoDice: una lista declarada que no se lee va a «No pude leer», nunca a «nada liviano»', () => {
+  const t = toy();
+  outsideNote(t, 's-1', 'Ana', 'que entre el pedido 6578', 30);
+  board(t, [row('T-16', 'de alguien', { quien: 'Beto' })]);
+  const n = C.capNotice({ ...t.opts, env: { TYCON_COORDINATION_LIGHT_LIST: path.join(t.root, 'no-esta.md') } });
+  assert.doesNotMatch(n, /nada liviano/, n);
+  assert.match(n, /No pude leer .*la lista de trabajo liviano/, n);
 });
 
 test('8.289 T4 Aviso_HistoriaConLugarYMemoria_ProponeSesionNueva @story-8.289 @ac-6 @ac-8: propone una sesión nueva, nunca la que espera; sin la que espera no mide', () => {
@@ -2104,6 +2146,42 @@ test('Memoria_SwapBordeYComaDecimal_Avisa @story-8.274 @ac-19 @ac-20', () => {
   const t = toy();
   const text = C.statusText(C.status({ ...t.opts, noTranscripts: true, readSwap: () => mac('vm.swapusage: total = 1000.00M  used = 854.00M  free = 146.00M') }));
   assert.match(text, /Memoria de intercambio casi llena: 14 % libre/);
+});
+
+// 🔴 mutación: comparar al revés el 70 %, redondear para arriba (un 69,9 % avisaría), callar cuando no se mide, o leer
+// los procesos sin que `status` los pida.
+test('Procesos_CercaDelTope_Avisa (fila 126 b)', () => {
+  const t = toy();
+  const at = (r) => C.statusText(C.status({ ...t.opts, noTranscripts: true, readProcs: () => r }));
+  const high = at({ used: 1867, max: 2666, pct: 70, why: null });
+  assert.match(high, /Procesos del usuario cerca del tope: 1867 de 2666 \(70 %\)\. Con el tope no arranca ningún comando, ni los ganchos ni los frenos\./, high);
+  assert.match(high, /pedí que frenen los pases y los guiones de fondo que no hacen falta/);
+  assert.doesNotMatch(at({ used: 1866, max: 2666, pct: 69, why: null }), /Procesos del usuario/, 'debajo del 70 % no dice nada');
+  assert.match(at({ used: null, max: null, pct: null, why: 'no sé medirlos en linux' }), /Procesos del usuario: no medidos \(no sé medirlos en linux\)/);
+  // `ps` que no arranca por falta de procesos es el tope, no una medición que falló
+  const tope = at({ used: null, max: null, pct: null, why: 'spawnSync ps EAGAIN' });
+  assert.match(tope, /Procesos del usuario en el tope: no pude arrancar ni `ps` para contarlos \(EAGAIN\)/, tope);
+  assert.doesNotMatch(tope, /no medidos/);
+  // sin pedirlos, `status` no los lee (el aviso de cada turno y el freno del cierre): nada que decir; el comando `status`
+  // sí los pide
+  assert.strictEqual(C.status({ ...t.opts, noTranscripts: true }).procs, null);
+  assert.strictEqual(C.STATUS_READS.procs, true, 'el comando status pide los procesos');
+  assert.strictEqual(C.STATUS_READS.swap, true, 'el comando status pide la memoria de intercambio');
+  // el lector: el tope de sysctl y la cuenta de ps; lo ilegible y otra plataforma, null con el motivo
+  const HT = require(path.join(ROOT, 'scripts', 'tools', 'heavy-turn.js'));
+  const pids = (n) => Array.from({ length: n }, (_, i) => `  ${100 + i}`).join('\n');
+  // el tope lo da la primera llamada (`-n kern.maxprocperuid`); la cuenta, la segunda (`-U <uid> -o pid=`)
+  const mac = (max, n) => HT.userProcs({ platform: 'darwin', uid: 501, run: (prog, args) => {
+    if (args[0] === '-n') { assert.deepStrictEqual([prog, ...args], ['sysctl', '-n', 'kern.maxprocperuid']); return `${max}\n`; }
+    assert.deepStrictEqual([prog, ...args], ['ps', '-U', '501', '-o', 'pid=']);
+    return `${pids(n)}\n`;
+  } });
+  assert.deepStrictEqual(mac(2666, 1867), { used: 1867, max: 2666, pct: 70, why: null });
+  assert.strictEqual(mac(2666, 1866).pct, 69, 'un 69,9 % no sube al 70');
+  assert.match(mac('nada', 10).why, /kern\.maxprocperuid no dio un número/);
+  assert.match(mac(2666, 0).why, /ps no listó/);
+  assert.match(HT.userProcs({ platform: 'darwin', run: () => { throw new Error('EAGAIN'); } }).why, /EAGAIN/);
+  assert.deepStrictEqual(HT.userProcs({ platform: 'linux' }), { used: null, max: null, pct: null, why: 'no sé medirlos en linux' });
 });
 
 // 🔴 mutación: pegar la hora de una nota vieja a una espera que vino de otro lado (la del pipeline): la espera parece

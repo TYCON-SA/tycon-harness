@@ -270,12 +270,16 @@ test('T12 TestGate_Environment_LockHeld_Exit75_WithoutPreparing', () => {
   assert.ok(!fs.existsSync(lock), 'al terminar suelta el candado');
 });
 
-test('T13 TestEnvironment_SignalDuringPrepare_StopsAndTearsDown', async () => {
+test('T13 TestEnvironment_SignalDuringPrepare_StopsAndTearsDown', async (t) => {
   const registro = path.join(tmp('te-reg-'), 'log');
   const pidFile = path.join(tmp('te-pid-'), 'pid');
+  // las rutas llegan por el entorno que hereda el paso, no dentro del texto del comando
+  process.env.ACME_PROCESS_FILE = pidFile;
+  process.env.ACME_LOG = registro;
+  t.after(() => { delete process.env.ACME_PROCESS_FILE; delete process.env.ACME_LOG; });
   const env = { name: 'acme-sig', label: 'acme-sig', requires: [], timeout_s: 60,
-    prepare: `(sleep 300 >/dev/null 2>&1 & echo $! > ${JSON.stringify(pidFile)}); sleep 30`,
-    teardown: `echo desarmado >> ${JSON.stringify(registro)}` };
+    prepare: '(sleep 300 >/dev/null 2>&1 & echo $! > "$ACME_PROCESS_FILE"); sleep 30',
+    teardown: 'echo desarmado >> "$ACME_LOG"' };
   const d = tmp('te-sig-');
   const p = tenv.run(d, { environment: env, storyArg: '', cmd: ['true'], lockDir: tmp('te-lock-') });
   for (let i = 0; i < 50 && !leer(pidFile).trim(); i++) await new Promise((r) => setTimeout(r, 100));
@@ -322,4 +326,27 @@ test('T15 TestGate_Environment_SuiteRepeat_NotReady_KeepsFullRunArtifact', () =>
     encoding: 'utf8', cwd: d, env: { ...env, HOME: tmp('te-home-'), PATH: `${bin}:${process.env.PATH}`, TYCON_GUIDES_DIR: guides, TMPDIR: tmp('te-lock-') } });
   assert.equal(r.status, 8, r.stderr);
   assert.equal(fs.readFileSync(art, 'utf8'), '{"de":"la completa"}', 'la repetición de una suite no pisa la constancia de la completa');
+});
+
+// 🔴 Falla con: la ruta de node y la del volcado van en el comando de bash, en el texto o como argumentos después de
+//    `-c` (alertas de CodeQL js/shell-command-injection-from-environment #188 y #190): todo lo que sigue a `-c` cuenta
+//    como parte del comando.
+test('T16 TestEnvironment_Step_PathsInTheEnvironment_NotInTheCommand', async () => {
+  const d = tmp('te-args-');
+  const dump = path.join(d, "it's $(echo x) env.json");
+  const { script, env } = tenv.stepScript('export ACME_TEST_SQL=z', dump);
+  assert.ok(!script.includes(dump), 'la ruta del volcado no va en el texto');
+  assert.ok(!script.includes(process.execPath), 'la de node tampoco');
+  assert.deepEqual(env, { __tycon_node: process.execPath, __tycon_out: dump }, 'van en el ambiente de bash');
+  assert.deepEqual(tenv.stepScript('true', undefined), { script: 'true', env: {} }, 'sin volcado, el comando tal cual');
+  // con esa ruta el volcado anda, sin argumentos, y ni el comando ni el volcado ven las dos variables
+  const base = { ...process.env };
+  const r = await tenv.step('export ACME_TEST_SQL=z; echo "args=$#"; echo "vistas=$(env | grep -c "^__tycon_")"', { cwd: d, env: base, timeoutS: 30, dump, logFile: path.join(d, 'log') });
+  assert.equal(r.code, 0, r.output);
+  assert.match(r.output, /args=0/);
+  assert.match(r.output, /vistas=0/);
+  const volcado = JSON.parse(fs.readFileSync(dump, 'utf8'));
+  assert.ok(!('__tycon_node' in volcado) && !('__tycon_out' in volcado), 'el volcado no las trae');
+  assert.equal(tenv.envAfterPrepare(dump, base).env.ACME_TEST_SQL, 'z');
+  assert.ok(!fs.existsSync(path.join(d, 'x')), 'el $(…) de la ruta no corrió');
 });
