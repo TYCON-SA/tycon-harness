@@ -185,8 +185,11 @@ Claude Code 2.1.330 pide aprobar cada copia, aunque la principal ya esté aproba
 trabajo queda `open --repo <repo> --slot`: en lugar de crear una copia, toma un puesto fijo libre del repo y abre la
 sesión ahí, en la rama del trabajo. Hay tantos puestos como el tope y siempre son las mismas carpetas, así que el dueño
 los aprueba una sola vez: `node scripts/tools/work-slots.js pending-trust` lista, cada uno con su `cd`, los que no
-tienen su propia aprobación anotada; la de la principal no cuenta, y como Claude Code 2.1.330 no anota la de los
-puestos, dice que no sabe en lugar de darlos por aprobados. Sin puesto libre, `open --slot` lo dice y no abre. El
+tienen aprobación a la vista, y `prepare-machine.js` los nombra a todos en una nota. Cuenta la aprobación propia del
+puesto o una sesión de fondo que ya abrió ahí (la anota `open` y la saca si Claude Code después dice que no); la de la
+principal no cuenta, y sin ninguna de las dos dice que no sabe en lugar de darlo por aprobado. Sin `--slot`, `open` usa
+igual un puesto libre donde ya abrió una sesión antes que crear una copia nueva, y lo dice en su mensaje; si no hay
+ninguno así, crea la copia como siempre. Sin puesto libre, `open --slot` lo dice y no abre. El
 encargo le dice a la sesión cómo soltar el puesto al terminar. Si el lanzador contesta que el puesto no está aprobado,
 el puesto queda tomado con su rama y se reintenta con `--slot --reuse`, o se suelta con `release`; ante otra falla
 vuelve a quedar libre. Al cerrar, un puesto se suelta, no se borra. Nada crea puestos si no se piden. Cómo son:
