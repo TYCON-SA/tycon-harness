@@ -616,11 +616,14 @@ try {
 // exención. La anota el gancho del encabezado con la firma (lib/exemptions.js del skill); acá se lee con lo propio del
 // portón, que corre también donde el skill no está. Un renglón ilegible no cuenta.
 const CONSTANCIAS_DE_EXENCIONES = '.tycon/exemptions.jsonl';
-function tieneConstanciaDeExencion(texto, story, campo) {
+// la historia y el archivo, las dos cosas: un número de historia se repite entre archivos
+function tieneConstanciaDeExencion(texto, story, campo, archivo) {
   return String(texto || '').split('\n').some((l) => {
-    try { const r = JSON.parse(l); return !!r && String(r.story) === String(story) && r.campo === campo; } catch (_e) { return false; }
+    try { const r = JSON.parse(l); return !!r && String(r.story) === String(story) && r.campo === campo && r.archivo === archivo; } catch (_e) { return false; }
   });
 }
+// el `story:` como lo anota el gancho: sin comillas ni comentario
+const idDeLaConstancia = (id) => String(id || '').replace(/\s+#.*$/, '').trim().replace(/^["']|["']$/g, '');
 
 // `ref`: la historia en la que se busca el rastro de una corrida anterior al control (la base del pedido).
 function revisarAprobaciones(repo, storyId, storyPath, ref = 'origin/main') {
@@ -910,6 +913,19 @@ function revisar({ repo, base, staged, hoy = hoyUtc() }) {
     if (hayCabeza === undefined) { try { git(repo, ['rev-parse', '--verify', '-q', 'HEAD']); hayCabeza = true; } catch (_e) { hayCabeza = false; } }
     return hayCabeza ? refViejo : null;
   };
+  // Los renombres del diff (nuevo → origen), una vez y sólo si una historia los pide
+  let renombres;
+  const origenDelRenombre = (rel) => {
+    if (renombres === undefined) {
+      renombres = new Map();
+      const de = refDeAntes();
+      try {
+        const out = de ? git(repo, ['diff', '-M', '--name-status', '--diff-filter=R', ...(staged ? ['--cached', de] : [de, 'HEAD'])]) : '';
+        for (const l of String(out).split('\n')) { const p = l.split('\t'); if (p.length === 3 && /^R/.test(p[0])) renombres.set(p[2], p[1]); }
+      } catch (_e) { /* sin renombres que leer: lo de antes es lo de la misma ruta */ }
+    }
+    return renombres.get(rel) || null;
+  };
 
   for (const rel of files) {
     const nuevo = contenidoEn(repo, refNuevo, rel);
@@ -950,13 +966,16 @@ function revisar({ repo, base, staged, hoy = hoyUtc() }) {
     // Una exención que el diff agrega a una historia, como la lee este portón (`<campo>: true` en el frontmatter), trae la
     // constancia del dueño en el repo, en cualquier estado: no sólo al pasar a review o done, que puede llegar en otro
     // pedido con la exención ya en la base. Lo de antes y el archivo de constancias se leen sólo si hay una exención
+    // Lo de antes es el archivo de origen si la historia se renombró, y cuenta sólo si era la misma historia (`story:`)
     const exentaAhora = EXENCIONES.filter((c) => new RegExp(`^${c}:\\s*true\\b`, 'm').test(fmNuevo));
     if (exentaAhora.length) {
-      const antes = contenidoEn(repo, refDeAntes(), rel);
+      const origen = origenDelRenombre(rel);
+      const antes = contenidoEn(repo, refDeAntes(), rel) ?? (origen ? contenidoEn(repo, refDeAntes(), origen) : null);
       const fmAntes = (antes !== null && frontmatter(antes)) || '';
-      const nuevas = exentaAhora.filter((c) => !new RegExp(`^${c}:\\s*true\\b`, 'm').test(fmAntes));
+      const eraEsta = !!fmAntes && idDeLaConstancia(escalar(fmAntes, 'story')) === idDeLaConstancia(idBruto);
+      const nuevas = exentaAhora.filter((c) => !(eraEsta && new RegExp(`^${c}:\\s*true\\b`, 'm').test(fmAntes)));
       const constancias = nuevas.length ? contenidoEn(repo, refNuevo, CONSTANCIAS_DE_EXENCIONES) : null;
-      const faltan = nuevas.filter((c) => !tieneConstanciaDeExencion(constancias, idBruto, c));
+      const faltan = nuevas.filter((c) => !tieneConstanciaDeExencion(constancias, idDeLaConstancia(idBruto), c, rel));
       if (faltan.length) {
         hallazgos.push({ archivo: rel, story: idBruto, regla: 'exencion-sin-constancia',
           mensaje: `agrega ${faltan.map((c) => `\`${c}\``).join(' y ')} y \`${CONSTANCIAS_DE_EXENCIONES}\` no trae su constancia para la historia ${idBruto}. Eximir una historia lo decide el dueño: con su firma de la exención sobre la historia, el arnés anota la constancia al escribirla, y se commitea con ella.` });

@@ -76,22 +76,22 @@ test('T1 Exenciones_Faltan_LeeElArchivoSoloConUnaNueva', () => {
   let leidas = 0;
   const leer = (texto) => () => { leidas++; return texto; };
   // sin exención nueva no lee nada: un commit que no agrega una no paga
-  assert.deepStrictEqual(EX.faltan({ viejo: historia('in-progress'), nuevo: historia('done'), leer: leer('') }), []);
-  assert.deepStrictEqual(EX.faltan({ viejo: historia('in-progress', exenta('advisors_exempt')), nuevo: historia('done', exenta('advisors_exempt')), leer: leer('') }), []);
-  assert.deepStrictEqual(EX.faltan({ viejo: null, nuevo: '# una guía\n\nadvisors_exempt: true\n', leer: leer('') }), []);
+  assert.deepStrictEqual(EX.faltan({ archivo: REL, viejo: historia('in-progress'), nuevo: historia('done'), leer: leer('') }), []);
+  assert.deepStrictEqual(EX.faltan({ archivo: REL, viejo: historia('in-progress', exenta('advisors_exempt')), nuevo: historia('done', exenta('advisors_exempt')), leer: leer('') }), []);
+  assert.deepStrictEqual(EX.faltan({ archivo: REL, viejo: null, nuevo: '# una guía\n\nadvisors_exempt: true\n', leer: leer('') }), []);
   assert.strictEqual(leidas, 0, 'no leyó el archivo de constancias');
   // nueva, sin constancia; con la de otra historia o de la otra exención tampoco
   for (const campo of ['advisors_exempt', 'dod_runtime_exempt']) {
     const otro = campo === 'advisors_exempt' ? 'dod_runtime_exempt' : 'advisors_exempt';
-    assert.deepStrictEqual(EX.faltan({ viejo: historia('in-progress'), nuevo: historia('in-progress', exenta(campo)), leer: leer('') }), [campo]);
-    assert.deepStrictEqual(EX.faltan({ viejo: historia('in-progress'), nuevo: historia('in-progress', exenta(campo)), leer: leer(constancia(campo, '9.10')) }), [campo]);
-    assert.deepStrictEqual(EX.faltan({ viejo: historia('in-progress'), nuevo: historia('in-progress', exenta(campo)), leer: leer(constancia(otro)) }), [campo]);
+    assert.deepStrictEqual(EX.faltan({ archivo: REL, viejo: historia('in-progress'), nuevo: historia('in-progress', exenta(campo)), leer: leer('') }), [campo]);
+    assert.deepStrictEqual(EX.faltan({ archivo: REL, viejo: historia('in-progress'), nuevo: historia('in-progress', exenta(campo)), leer: leer(constancia(campo, '9.10')) }), [campo]);
+    assert.deepStrictEqual(EX.faltan({ archivo: REL, viejo: historia('in-progress'), nuevo: historia('in-progress', exenta(campo)), leer: leer(constancia(otro)) }), [campo]);
     // con la suya, nada; también en una historia nueva, y con un renglón ilegible al lado
-    assert.deepStrictEqual(EX.faltan({ viejo: historia('in-progress'), nuevo: historia('in-progress', exenta(campo)), leer: leer(`no es json\n${constancia(campo)}`) }), []);
-    assert.deepStrictEqual(EX.faltan({ viejo: null, nuevo: historia('done', exenta(campo)), leer: leer(constancia(campo)) }), []);
+    assert.deepStrictEqual(EX.faltan({ archivo: REL, viejo: historia('in-progress'), nuevo: historia('in-progress', exenta(campo)), leer: leer(`no es json\n${constancia(campo)}`) }), []);
+    assert.deepStrictEqual(EX.faltan({ archivo: REL, viejo: null, nuevo: historia('done', exenta(campo)), leer: leer(constancia(campo)) }), []);
   }
   // sin poder leer el archivo, ninguna tiene constancia
-  assert.deepStrictEqual(EX.faltan({ viejo: '', nuevo: historia('done', exenta('advisors_exempt')), leer: () => { throw new Error('no hay'); } }), ['advisors_exempt']);
+  assert.deepStrictEqual(EX.faltan({ archivo: REL, viejo: '', nuevo: historia('done', exenta('advisors_exempt')), leer: () => { throw new Error('no hay'); } }), ['advisors_exempt']);
 });
 
 test('T2 PreCommit_ExencionSinConstancia_Frena: en cualquier estado, se haya escrito por donde se haya escrito', (t) => {
@@ -161,7 +161,7 @@ test('T4 Encabezado_ExencionFirmada_AnotaLaConstanciaEnElRepo; sin repo, frena',
     const p = correr(r.home, agregar(f, campo));
     assert.strictEqual(p.status, 0, `${campo}: ${p.stderr}`);
     const texto = fs.readFileSync(path.join(r.dir, EX.RUTA), 'utf8');
-    assert.ok(EX.tieneConstancia(texto, '9.9', campo), texto);
+    assert.ok(EX.tieneConstancia(texto, '9.9', campo, REL), texto);
     const renglon = JSON.parse(texto.trim().split('\n').pop());
     assert.strictEqual(renglon.archivo, REL);
     assert.strictEqual(renglon.sesion, SID);
@@ -208,4 +208,45 @@ test('T6 Consola_ArchivoDeConstancias_NoSeEscribe; leerlo, sí', (t) => {
     assert.strictEqual(p.status, 2, `${cmd}: ${p.stderr}`);
   }
   assert.strictEqual(consola('cat .tycon/exemptions.jsonl').status, 0, 'leerlo pasa');
+  // nombrada con una sustitución o con un comodín que la alcanza (pase adversarial de la fila 90)
+  for (const cmd of [`echo '${fila}' >> $(echo .tycon)/exemptions.jsonl`, `echo '${fila}' >> .tycon/exempt*.jsonl`,
+    `echo '${fila}' >> .tycon/exemptions.json[l]`, `cd .tycon && echo '${fila}' >> exemptions*`]) {
+    const p = consola(cmd);
+    assert.strictEqual(p.status, 2, `${cmd}: ${p.stderr}`);
+  }
+  // un comodín que no la alcanza pasa
+  assert.strictEqual(consola('echo x >> .tycon/notas-*.txt').status, 0, 'otro archivo de .tycon con comodín');
+});
+
+// Pase adversarial de la fila 90: la constancia es de una historia en un archivo, y «ya estaba» es de la misma historia
+test('T7 Constancia_DeLaHistoriaYSuArchivo: otro archivo con el mismo número, o un archivo exento que cambia de historia, la piden', (t) => {
+  const OTRO = 'specs/story-9.9-otra.md';
+  const historiaEn = (id, extra = '') => historia('in-progress', extra).replace('story: "9.9"', `story: "${id}"`);
+  // la constancia de la historia en su archivo no le sirve a otro archivo con el mismo número
+  const otro = { [REL]: historia('in-progress', exenta('advisors_exempt')), [EX.RUTA]: constancia('advisors_exempt') };
+  const a = repo(t, otro, { [OTRO]: historia('in-progress', exenta('advisors_exempt')) });
+  assert.strictEqual(preCommit(a).code, 2, 'pre-commit: otro archivo con el mismo número');
+  a.git('commit', '-q', '--no-verify', '-m', 'otro');
+  assert.ok(reglas(portonCI(a, '--base', a.base).j).includes('exencion-sin-constancia'), 'CI: otro archivo con el mismo número');
+  // un archivo exento de antes que pasa a declarar otra historia no le pasa la exención
+  const b = repo(t, { [REL]: historia('in-progress', exenta('advisors_exempt')) }, { [REL]: historiaEn('8.5', exenta('advisors_exempt')) });
+  assert.strictEqual(preCommit(b).code, 2, 'pre-commit: cambia de historia');
+  b.git('commit', '-q', '--no-verify', '-m', 'otra historia');
+  assert.ok(reglas(portonCI(b, '--base', b.base).j).includes('exencion-sin-constancia'), 'CI: cambia de historia');
+});
+
+test('T8 Renombre_YComentario_NoFrenanDeMas: `git mv` de una exenta de antes, y `story:` con comentario', (t) => {
+  // una historia exenta de antes del cambio (sin constancia) se mueve de carpeta: no agrega nada
+  const r = repo(t, { [REL]: historia('in-progress', exenta('advisors_exempt')) });
+  fs.mkdirSync(path.join(r.dir, 'specs', 'cerradas'), { recursive: true });
+  r.git('mv', REL, 'specs/cerradas/story-9.9-algo.md');
+  assert.strictEqual(preCommit(r).code, 0, 'pre-commit: git mv');
+  r.git('commit', '-q', '--no-verify', '-m', 'mueve');
+  assert.ok(!reglas(portonCI(r, '--base', r.base).j).includes('exencion-sin-constancia'), 'CI: git mv');
+  // `story: 9.9 # tanda` con su constancia firmada (el gancho anota 9.9): pasa en el commit y en CI
+  const conComentario = historia('in-progress', exenta('advisors_exempt')).replace('story: "9.9"', 'story: 9.9 # tanda');
+  const c = repo(t, { [REL]: historia('in-progress') }, { [REL]: conComentario, [EX.RUTA]: constancia('advisors_exempt') });
+  assert.strictEqual(preCommit(c).code, 0, 'pre-commit: comentario');
+  c.git('commit', '-q', '--no-verify', '-m', 'comentario');
+  assert.ok(!reglas(portonCI(c, '--base', c.base).j).includes('exencion-sin-constancia'), 'CI: comentario');
 });

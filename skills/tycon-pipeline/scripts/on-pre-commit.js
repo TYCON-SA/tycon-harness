@@ -1601,6 +1601,19 @@ function main() {
   const estadoDe = new Map();    // constancia: specRel → estado nuevo (para la huella)
   const avisosSelfAudit = [];    // ACCOV-C8 opcional: self-audits presentes e incompletos — avisan, no frenan
 
+  // Los renombres de lo que se commitea (nuevo → origen), una vez y sólo si alguna historia los pide
+  let renombres;
+  const origenDelRenombre = (rel) => {
+    if (renombres === undefined) {
+      renombres = new Map();
+      try {
+        const out = execFileSync('git', ['diff', '--cached', '-M', '--name-status', '--diff-filter=R'], { windowsHide: true, cwd, encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
+        for (const l of out.split('\n')) { const p = l.split('\t'); if (p.length === 3 && /^R/.test(p[0])) renombres.set(p[2], p[1]); }
+      } catch { /* sin renombres que leer: lo de antes es lo de la misma ruta */ }
+    }
+    return renombres.get(rel.split(path.sep).join('/')) || null;
+  };
+
   for (const specRel of specFiles) {
     const staged = stagedByFile.get(specRel) ?? getStagedFileContent(cwd, specRel);
     const head = getHeadFileContent(cwd, specRel);
@@ -1614,10 +1627,13 @@ function main() {
     estadoDe.set(specRel, String(stagedFm.status || '').toLowerCase());
 
     // Una exención que este commit agrega a la historia viaja con la constancia del dueño en el repo (lib/exemptions.js),
-    // en cualquier estado y se haya escrito por donde se haya escrito. El archivo de constancias se lee sólo si hay una
-    // exención nueva. Frena siempre: no es una transición `review → done` que sólo avisa
-    const exencionesSinConstancia = require('./lib/exemptions.js').faltan({ viejo: head, nuevo: staged,
-      leer: () => getStagedFileContent(cwd, require('./lib/exemptions.js').RUTA) });
+    // en cualquier estado y se haya escrito por donde se haya escrito. Lo de antes es el archivo de origen si la historia
+    // se renombró (`git mv` de una ya exenta no agrega nada). Los renombres y el archivo de constancias se leen sólo si
+    // la historia nombra una exención. Frena siempre: no es una transición `review → done` que sólo avisa
+    const ex = require('./lib/exemptions.js');
+    const exencionesSinConstancia = !ex.nombraExencion(staged) ? [] : ex.faltan({
+      viejo: head || (origenDelRenombre(specRel) ? getHeadFileContent(cwd, origenDelRenombre(specRel)) : head),
+      nuevo: staged, archivo: specRel.split(path.sep).join('/'), leer: () => getStagedFileContent(cwd, ex.RUTA) });
     if (exencionesSinConstancia.length) {
       violations.push({ specRel, storyId, reason: 'exencion-sin-constancia', campos: exencionesSinConstancia, siempreFrena: true });
       continue;

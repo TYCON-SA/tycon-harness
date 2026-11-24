@@ -42,43 +42,53 @@ function lectoresDe(campo) {
   return [(c) => ancho.test(c), (c) => estrecho.test(c), (c) => ancho.test(encabezadoAncho(c) || '')];
 }
 
-// Nueva: algún lector la ve en lo que queda escrito y no la veía antes. «Ya estaba» cuenta sólo si ese mismo lector la
-// concedía en una historia
-function esExencionNueva(campo, viejo, nuevo) {
-  if (!esHistoriaAncha(nuevo)) return false;
-  const antesEraHistoria = !!viejo && esHistoriaAncha(viejo);
-  return lectoresDe(campo).some((ve) => ve(nuevo) && !(antesEraHistoria && ve(viejo)));
-}
-
-/** Los campos de las exenciones que `nuevo` agrega respecto de `viejo` (null o '' si la historia es nueva). */
-const nuevas = (viejo, nuevo) => EXENCIONES.filter((ex) => esExencionNueva(ex.campo, viejo, nuevo)).map((ex) => ex.campo);
-
-/** El `story:` del encabezado, sin comillas, o null. */
+/** El `story:` del encabezado, sin comillas ni comentario, o null. */
 function idDe(texto) {
   const m = /^\s*story\s*:\s*["']?([^"'\s#]+)/m.exec(encabezadoAncho(texto) || '');
   return m ? m[1] : null;
 }
 
-/** ¿El texto del archivo de constancias trae la de `campo` para la historia `story`? Un renglón ilegible no cuenta. */
-function tieneConstancia(texto, story, campo) {
+// Nueva: algún lector la ve en lo que queda escrito y no la veía antes. «Ya estaba» cuenta sólo si ese mismo lector la
+// concedía en una historia con el mismo `story:`: un archivo exento que pasa a ser otra historia no le pasa su exención
+function esExencionNueva(campo, viejo, nuevo) {
+  if (!esHistoriaAncha(nuevo)) return false;
+  const antesEraEsta = !!viejo && esHistoriaAncha(viejo) && idDe(viejo) === idDe(nuevo);
+  return lectoresDe(campo).some((ve) => ve(nuevo) && !(antesEraEsta && ve(viejo)));
+}
+
+/** Los campos de las exenciones que `nuevo` agrega respecto de `viejo` (null o '' si la historia es nueva). */
+const nuevas = (viejo, nuevo) => EXENCIONES.filter((ex) => esExencionNueva(ex.campo, viejo, nuevo)).map((ex) => ex.campo);
+
+/**
+ * ¿El texto del archivo de constancias trae la de `campo` para la historia `story` en el archivo `archivo` (ruta desde
+ * la raíz del repo, con `/`)? Las dos cosas: un número de historia se repite entre archivos. Un renglón ilegible no cuenta.
+ */
+function tieneConstancia(texto, story, campo, archivo) {
   return String(texto || '').split('\n').some((l) => {
-    try { const r = JSON.parse(l); return !!r && String(r.story) === String(story) && r.campo === campo; } catch { return false; }
+    try {
+      const r = JSON.parse(l);
+      return !!r && String(r.story) === String(story) && r.campo === campo && r.archivo === archivo;
+    } catch { return false; }
   });
 }
 
 /**
- * Los campos de las exenciones que `nuevo` agrega a una historia y no tienen su constancia. `leer()` devuelve el texto
- * del archivo de constancias tal como se commitea, y se llama sólo si hay alguna exención nueva: lo demás no lee nada.
- * Sin poder leerlo, o sin `story:` en la historia, ninguna tiene constancia.
+ * Los campos de las exenciones que `nuevo` agrega a la historia del archivo `archivo` y no tienen su constancia. `viejo`
+ * es lo que había antes en ese archivo (o en el de origen, si se renombró). `leer()` devuelve el texto del archivo de
+ * constancias tal como se commitea, y se llama sólo si hay alguna exención nueva: lo demás no lee nada. Sin poder leerlo,
+ * o sin `story:` en la historia, ninguna tiene constancia.
  */
-function faltan({ viejo, nuevo, leer }) {
+function faltan({ viejo, nuevo, archivo, leer }) {
   const campos = nuevas(viejo, nuevo);
   if (!campos.length) return [];
   const story = idDe(nuevo);
   let texto = '';
   try { texto = leer() || ''; } catch { texto = ''; }
-  return campos.filter((c) => !story || !tieneConstancia(texto, story, c));
+  return campos.filter((c) => !story || !tieneConstancia(texto, story, c, archivo));
 }
+
+/** ¿El texto nombra alguna exención? Para no leer lo de antes de una historia que no la trae. */
+const nombraExencion = (texto) => EXENCIONES.some((ex) => new RegExp(`${ex.campo}\\s*["']?\\s*:`).test(String(texto || '')));
 
 /** El texto que dice qué falta, para los dos portones: la exención, la historia y cómo se firma. */
 function mensajeDeFalta(campos, story) {
@@ -94,4 +104,4 @@ function anotar(repoRoot, { story, campo, archivo, via, sesion, ts = new Date().
   fs.appendFileSync(f, `${JSON.stringify({ story: String(story), campo, archivo, via, sesion, ts })}\n`);
 }
 
-module.exports = { RUTA, EXENCIONES, encabezadoAncho, esHistoriaAncha, lectoresDe, esExencionNueva, nuevas, idDe, tieneConstancia, faltan, mensajeDeFalta, anotar };
+module.exports = { RUTA, EXENCIONES, encabezadoAncho, esHistoriaAncha, lectoresDe, esExencionNueva, nuevas, idDe, tieneConstancia, faltan, nombraExencion, mensajeDeFalta, anotar };

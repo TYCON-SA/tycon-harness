@@ -2832,8 +2832,17 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
   // `$PWD`, `${PWD}` y `$(pwd)` son la carpeta que se está mirando (la de un `cd`, no la de partida)
   const conPwd = (raw) => String(raw).replace(/\$\{PWD\}|\$PWD(?!\w)|\$\(pwd\)|`pwd`/g, () => base);
   const abs = (raw) => resolveTarget(expandirRuta(cmd, conPwd(raw)).valor, base, process.platform, { homeVariable: true });
-  const es = (raw) => isControlApproval(String(raw)) || isControlApproval(abs(raw))
-    || (cdSinResolver && !path.isAbsolute(String(raw)) && /control-changes/i.test(String(raw)));
+  // la constancia de las exenciones (lib/exemptions.js), también nombrada con un comodín que la alcanza
+  // (`.tycon/exempt*.jsonl`, `exemptions*` después de un `cd .tycon`)
+  const comodinDeExenciones = (raw) => {
+    if (!/[*?[]/.test(String(raw))) return false;
+    const a = abs(raw);
+    if (!/(^|[\\/])\.tycon$/i.test(path.dirname(a))) return false;
+    const patron = path.basename(a).replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
+    try { return new RegExp(`^${patron}$`, 'i').test('exemptions.jsonl'); } catch (_) { return true; }
+  };
+  const es = (raw) => isControlApproval(String(raw)) || isControlApproval(abs(raw)) || comodinDeExenciones(raw)
+    || (cdSinResolver && !path.isAbsolute(String(raw)) && /control-changes|exemptions/i.test(String(raw)));
   const esRuta = (p) => isControlApproval(p) || isControlApproval(`${p}/`);
   const out = [];
   // se lee también con la continuación de renglón juntada: `cat <<'EOF' \` y abajo `> constancia` es una redirección del
@@ -2869,7 +2878,7 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
     for (const m of limpio.matchAll(/(?<![<\d&])(?:\d?>>?|&>>?|\d?<>)\|?\s*((?:\$\([^()]*\)|'[^']*'|"(?:\\.|[^"\\])*"|\\.|[^\s<>;&|'"\\])+)/g)) {
       if (!fuera(m.index)) continue;
       const destino = sinCierreDeGrupo(palabraDelShell(m[1]));
-      if (es(destino) || (/\$\(|`/.test(destino) && /control-changes|gates\.log/i.test(destino))) out.push(destino);
+      if (es(destino) || (/\$\(|`/.test(destino) && /control-changes|gates\.log|exemptions\.jsonl/i.test(destino))) out.push(destino);
     }
     // cada argumento es la palabra entera del shell, con sus comillas resueltas (`cp x .tycon/'control-changes.jsonl'`),
     // y sin el `)` que cierra un paréntesis (`(cd d && touch f)`)
