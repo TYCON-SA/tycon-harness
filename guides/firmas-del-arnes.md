@@ -139,7 +139,7 @@ delega nada.
 | Se delega, si el perfil la nombra | Cómo la firma la coordinadora |
 |---|---|
 | `save:sensible`: guardar cuando un commit toca algo de lo sensible | con `save` (`approve-save --for-session`), con la historia limpia y el aviso entregado al dueño |
-| `runtime-waiver`, `manual-test`, `critical-waiver`, `lost-run`, `escape:force-manual`, `escape:trust-ran` (y `extra-round`, que ya era rutina) | con el comando de la firma y `--for-session <sesión>`; si la sesión la pide para sí, el freno la desvía a la coordinadora |
+| `manual-test`, `critical-waiver`, `lost-run`, `escape:force-manual`, `escape:trust-ran` (y `extra-round`, que ya era rutina) | con el comando de la firma y `--for-session <sesión>`; si la sesión la pide para sí, el freno la desvía a la coordinadora |
 | `escape:ALLOW_DOD_EVIDENCE_WRITE`, `escape:cambiar-el-estado`, `escape:red-control-test-edit` | `marker.js sign-file <firma> <archivo> --for-session <sesión>`: deja la constancia que usa el Edit o Write de esa sesión |
 | `adhoc-lane:guardado-ajeno` | `marker.js adhoc allow-foreign-save --for-session <sesión>` |
 | `escape:TYCON_STATUS_GATE`, `escape:set-autonomous`, `escape:cerrar-la-ejecucion`, `escape:cerrar-como-deuda`, `escape:rojo-esperado-de-la-matriz` | el perfil las acepta, pero su comando corre sólo en la sesión que trabaja y la coordinadora no tiene cómo firmarlas desde su pestaña: hasta que tengan esa vía, las sigue aprobando una persona. Una ejecución perdida la cierra la coordinadora con `lost-run` |
@@ -149,7 +149,8 @@ Quedan sólo del dueño, aunque un perfil las liste: `control-change` y todo el 
 `escape:TYCON_PROD_LINT`, que ya no apagan nada); `designation-set`,
 `designation-confirm` y `designation-withdraw`; `adhoc-lane:datos` y `adhoc-lane:sobre-cupo`; `escape:DOD_BYPASS`; `adversarial-skip` (con
 `escape:TYCON_NO_DEEP_REVIEW` y `escape:no-deep-review`); `atdd-skip`; `escape:TYCON_TEST_GATE`; `escape:story-skill-bypass`;
-`escape:dod_runtime_exempt`; y decir que no a la prueba con navegador (`browser-test`).
+`escape:dod_runtime_exempt` y `runtime-waiver` (aceptar un criterio imposible de probar en vivo: tampoco sale como
+trámite); y decir que no a la prueba con navegador (`browser-test`).
 
 ## Quién firma cada nivel
 
@@ -770,8 +771,9 @@ frenos) y quedan en `gates.log`. Antes de todo pull request que se crea o se mer
 compartida (`main`, `master`, `dev`, `release/*`, o una rama que no se sabe), el gancho le pregunta a la persona en la
 ventana de permiso de siempre, con la evidencia de la ejecución; con el sí, sale. En una ejecución, antes de preguntar
 frena si el paso «Preparar el pull request» no cerró o si el código cambió desde su foto. Lo lee también escondido en `bash -c`, con `-C` o desde una variable. Los comandos de pedido son los que
-declaran los conectores de plataforma (`rawCommands` de su `integration.json`) con `pr` y que terminan en `create`,
-`new` o `merge`; si alguna integración no se puede leer, un comando que dice `pr` es una duda. Una frase en el chat o
+declaran los conectores de plataforma en `changeRequestCommands` de su `integration.json`, y además los de
+`rawCommands` que dicen `pr` y terminan en `create`, `new` o `merge`; si alguna integración no se puede leer, un
+comando que dice `pr` es una duda. Una frase en el chat o
 un mensaje de otra sesión no saltean la ventana. En una pestaña que no pide permisos (la ventana se aprobaría sola), el
 gancho abre el pull request sin preguntar y lo dice en pantalla, con la misma evidencia. Cerrar la ejecución ya no pide nada. Lo delicado (frenos, firmas,
 controles, producción) lo cubre la firma de control del pedido, que es del dueño y no cambia.

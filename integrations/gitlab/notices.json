@@ -1,0 +1,5 @@
+{
+  "notices": [
+    { "id": "reglas-de-la-plataforma", "text": "rules.md", "when": "after-command", "commands": ["glab mr", "glab ci", "glab api", "glab issue"] }
+  ]
+}
