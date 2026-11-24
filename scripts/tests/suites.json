@@ -690,6 +690,12 @@
       "requiere": []
     },
     {
+      "__nota": "lo barato del costo del pipeline: antes de «Aprobar el plan» y de «Hallazgos», next dice qué falta en disco (las condiciones del pedido, el informe de cada revisor); el cierre de la historia pide cerrar la sesión.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/resume-state.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 1.29: la revisión automática del plan — qué es delicado, el modo plan del pase, la revisión que lanza la coordinadora y su constancia, la aprobación por delegación sólo con el veredicto aprobado, el corte sin persona en la CI y que ningún plan se aprueba solo.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/plan-review.test.js",

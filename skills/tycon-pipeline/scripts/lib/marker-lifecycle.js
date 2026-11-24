@@ -1117,6 +1117,7 @@ function cmdClear(rest = []) {
   // acuerde de correr `pipeline.js timing-report` antes del clear. Best-effort:
   // un fallo acá JAMÁS bloquea el clear.
   let cerradaEnClear = false;
+  let cierreDicho = false;
   let marcadorAntes = null;
   frenarSiIlegible(markerFilePath(estado.SID), estado.SID, 'clear');
   try { marcadorAntes = readMarker(); } catch (_e) { marcadorAntes = null; }
@@ -1287,6 +1288,8 @@ function cmdClear(rest = []) {
         process.stderr.write(`[corrida] pedidos abiertos, compilación corriendo: no están listos todavía (${esperados.map((x) => `#${x.numero} de ${x.nombre}`).join(', ')}). `
           + 'El aviso de «listos para aprobar» llega cuando todas den verde; no pidas la aprobación antes.\n');
       }
+      // la historia terminó: la sesión se cierra. Va antes de la oferta, que tiene que quedar última (se lee con «| tail»)
+      if (marker.storyId) { process.stdout.write(`${require('./resume-state.js').CIERRE_DE_SESION}\n`); cierreDicho = true; }
       // La oferta de la instalación completa al cerrar la primera historia: sale del cierre mecánico, después
       // de archivar el volcado (el volcado de ESTA corrida es la evidencia de que se cerró). Va a la salida estándar para
       // que el agente la muestre tal cual; un error se dice en un renglón y nunca frena el cierre.
@@ -1307,6 +1310,9 @@ function cmdClear(rest = []) {
   // y los clones de los humos comparados (historia 8.167)
   try { require('./compare-previous.js').limpiar(STATE_DIR, estado.SID); } catch (e) { process.stderr.write(`[marker] no pude borrar los clones de los humos comparados (${e.message}): los barre la próxima comparación\n`); }
   syncSessionState(estado.SID);
+  // la historia terminó: la sesión se cierra, y la próxima arranca sin arrastrar esta conversación (si el archivo de la
+  // ejecución falló antes de decirlo)
+  if (!cierreDicho && marcadorAntes && marcadorAntes.storyId) process.stdout.write(`${require('./resume-state.js').CIERRE_DE_SESION}\n`);
 }
 
 function cmdIsActive() {

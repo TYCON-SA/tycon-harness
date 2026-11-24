@@ -245,6 +245,9 @@ firma de control del dueño, que no cambia.
    para aprobar», «en rojo» con la etapa que falló, o «no medido» con el motivo. No le digas a la persona que el pedido
    está listo, ni pidas su aprobación, antes del aviso de «listos». Con un rojo, se arregla y se vuelve a empujar.
    El resultado también queda en `pr-build-wait/<sesión>-resultado.json` de la carpeta del estado.
+8. Después del cierre, **la sesión termina**: `marker.js clear` lo dice en su último renglón. No arranques otra historia en
+   esta sesión; la próxima va en una sesión nueva (o tras `/clear`). Releer la conversación entera en cada turno se llevó
+   más de la mitad del costo de una ejecución medida, y el estado de la siguiente vive en disco.
 
 ## Decisiones
 
