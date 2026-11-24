@@ -391,7 +391,7 @@ function motivoDelRegistro(texto) {
   const lineas = String(texto).split(/\r?\n/).map((l) => l.replace(/\x1b\[[0-9;]*m/g, '').replace(/^\S*\d{4}-\d\d-\d\dT[\d:.]+Z\s/, ''));
   const base = lineas.map((l) => /❌ base-controls: rojo — (.+)$/.exec(l)).find(Boolean);
   if (base && /afloja un control sin la constancia/.test(base[1])) {
-    return { kind: 'constancia', text: 'falta la constancia del dueño: el pedido afloja un control; el comando para pedirla lo da `run-base-controls.sh pending`' };
+    return { kind: 'constancia', text: 'falta la constancia: main cambió y la cola, que mide contra el de hoy, ya frena lo que el pedido afloja; traé main y pedila con `run-base-controls.sh pending --root . --base origin/main --range origin/main...HEAD`' };
   }
   if (base) return { kind: 'controles', text: `base-controls: ${base[1].slice(0, 160)}` };
   const suites = [...new Set(lineas.map((l) => /^\s*·\s+(?:tests\/)?(\S+)\s+\(exit\b/.exec(l)).filter(Boolean).map((x) => x[1]))];

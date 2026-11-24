@@ -1167,7 +1167,7 @@ test('Notice_GithubDroppedForCi_SaysWhatFailed — la lectura de fondo lee el re
   assert.strictEqual(f.status, 0, f.stderr);
   const r = correr(w);
   assert.strictEqual(r.rc, 0, r.err);
-  assert.match(r.out, /pedido 842 \(harness\) se cayó de la cola hace 30 min: la CI combinada salió en rojo \(falta la constancia del dueño: el pedido afloja un control; el comando para pedirla lo da `run-base-controls\.sh pending`\)\./, r.out);
+  assert.match(r.out, /pedido 842 \(harness\) se cayó de la cola hace 30 min: la CI combinada salió en rojo \(falta la constancia: main cambió y la cola, que mide contra el de hoy, ya frena lo que el pedido afloja; traé main y pedila con `run-base-controls\.sh pending --root \. --base origin\/main --range origin\/main\.\.\.HEAD`\)\./, r.out);
   assert.match(r.out, /pedido 843 \(harness\) se cayó de la cola hace 30 min: la CI combinada salió en rojo \(en rojo: office-page-english\.test\.js\)\./, r.out);
 });
 
