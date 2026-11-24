@@ -29,6 +29,10 @@ test('FailedQuery_LoDeCadaPlataformaLoTraeSuConector: el gancho no nombra ningun
   assert.strictEqual(clase('gh api repos/acme/x'), 'consulta');
   assert.strictEqual(clase('gh api -X POST repos/acme/x'), 'otro');
   assert.strictEqual(clase('curl https://acme.invalid/x'), 'consulta');
+  // las opciones se saltean sólo en los programas de un conector, que dice cuáles llevan valor: en los demás, el valor
+  // de una opción que el gancho no conoce no se toma por el verbo
+  assert.strictEqual(clase('npm --prefix list install foo'), 'otro');
+  assert.strictEqual(clase('npm view foo'), 'consulta');
 });
 
 test('FailedQuery_ElAvisoDelProyectoYElRefrescoSiguenAndando: con la lista guardada, el proyecto que no existe se avisa', () => {

@@ -132,7 +132,10 @@ function clasificar(texto) {
   // sólo la salida ESTÁNDAR: `2>/dev/null` es stderr y no cambia lo que se ve en pantalla
   if (/(?:^|[^\d&>])(?:1?>>?|&>)\s*(?!&)\S/.test(limpio)) return { clase: 'otro', cmd, argv };
   const conector = CONECTORES.find((c) => c.programas.includes(cmdL));
-  const pos = palabras(argv, conector && conector.conValor);
+  // las opciones de antes del grupo se saltean sólo en un programa de un conector, que dice cuáles llevan valor; en los
+  // demás, una opción que el gancho no conoce corta, y su valor no se toma por el verbo
+  const pos = conector ? palabras(argv, conector.conValor) : [];
+  if (!conector) for (let i = 1; i < argv.length && !argv[i].startsWith('-'); i++) pos.push(argv[i]);
   if (conector) return { clase: conector.clasificar({ pos, limpio }) === 'consulta' ? 'consulta' : 'otro', cmd, argv };
   if (cmd === 'curl') {
     const escribe = /(?:^|\s)(?:-X|--request)\s+(?:POST|PUT|PATCH|DELETE)\b|(?:^|\s)(?:-d|--data(?:-\w+)?|-F|--form|-T|--upload-file)\b|(?:^|\s)-O\b|(?:^|\s)(?:-o|--output)\s+(?!-\s|-$)\S/.test(limpio);
