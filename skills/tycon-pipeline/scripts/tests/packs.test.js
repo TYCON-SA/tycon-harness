@@ -668,7 +668,8 @@ test('Nucleo_SinNombresDePaquetes', (t) => {
 //    definición en agents/ del núcleo; y el escalamiento de mech-check de una familia que no es del núcleo (WIRING) va al
 //    revisor del paquete ACTIVO que declara ese prefijo, o queda sin escalar y se dice ───────────────────────────────────
 test('T21 Pipeline_NamesNoneOfThirteen', () => {
-  const texto = fs.readFileSync(PIPELINE, 'utf8');
+  // pipeline.js con sus partes de lib/
+  const texto = require('./lib/pipeline-source.js')(SCRIPTS);
   const nombrados = [...new Set([...texto.matchAll(/'((?:tycon-)?[a-z0-9]+(?:-[a-z0-9]+)*-(?:reviewer|checker|analyzer|conventions|security|basics|coverage|validator|audit|capturer|hunter))'/g)].map((m) => m[1]))];
   assert.ok(nombrados.length >= 10, `pipeline.js nombra revisores del núcleo: ${nombrados.join(', ')}`);
   const sinDefinicion = nombrados.filter((n) => !fs.existsSync(path.join(RAIZ, 'agents', `${n}.md`)));

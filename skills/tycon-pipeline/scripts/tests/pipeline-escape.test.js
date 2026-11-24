@@ -209,7 +209,8 @@ const DE_LA_PERSONA = /autorizo|la persona|lo decide (?:el dev|la persona)/i;
 const EMISOR = /console\.(?:error|log|warn)\(|\.push\(|stderr\.write\(|mensaje:|^\s*(?:[:?+]\s*)?['"`]/;
 const AVISOS = [
   'skills/tycon-pipeline/scripts/marker.js',
-  'skills/tycon-pipeline/scripts/pipeline.js',
+  // pipeline.js con sus partes de lib/
+  ...require(path.join(__dirname, 'lib', 'pipeline-source.js')).files().map((f) => path.relative(RAIZ, f)),
   'skills/tycon-pipeline/scripts/on-frontmatter-write.js',
   'skills/tycon-pipeline/scripts/on-pre-commit.js',
   'skills/tycon-pipeline/scripts/on-dod-evidence-guard.js',

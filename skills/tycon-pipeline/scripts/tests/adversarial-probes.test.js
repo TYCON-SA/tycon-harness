@@ -160,7 +160,7 @@ test('el hunter guarda su prueba en caza-<lente>, no en la carpeta ni con el tex
 });
 
 test('la carpeta de la corrida queda fuera de git: el .gitignore canónico ignora todo salvo roster y findings', () => {
-  const src = fs.readFileSync(path.join(SCRIPTS, 'pipeline.js'), 'utf8');
+  const src = require('./lib/pipeline-source.js')(SCRIPTS);
   const bloque = src.slice(src.indexOf('const GITIGNORE_ADVISORS'), src.indexOf('];', src.indexOf('const GITIGNORE_ADVISORS')));
   assert.match(bloque, /'\*\*\/\.advisors\/pipeline-runs\/\*\/\*'/, 'todo lo de una corrida se ignora…');
   assert.doesNotMatch(bloque, /step-05b-probes/, '…y las pruebas no tienen excepción: no viajan (traen código de cliente y credenciales tapadas a mano)');
