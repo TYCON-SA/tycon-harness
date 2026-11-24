@@ -284,7 +284,7 @@ session_in() { # $1=nombre de la carpeta de sesión $2=cwd
 session_in "-Users-dev-product-a" "$H16/Proyectos/ProductoA"
 session_in "-Users-dev-harness" "$H16/Infra/harness"
 session_in "-Users-dev-skills-old" "$H16/Infra/skills-old"
-cp "$TCG/scripts/lib/repos-root.js" "$TCG/scripts/lib/tycon-config.js" "$H16/Infra/harness/scripts/lib/" || bad "T16e no pude copiar repos-root.js"
+cp "$TCG/scripts/lib/repos-root.js" "$TCG/scripts/lib/tycon-config.js" "$TCG/scripts/lib/profile-only.js" "$H16/Infra/harness/scripts/lib/" || bad "T16e no pude copiar repos-root.js"
 got="$(env -u TYCON_REPOS_ROOT -u TYCON_SKILLS_DIR HOME="$H16" node -e '
 const { resolveReposRoot } = require(process.argv[1]);
 const r = resolveReposRoot("", { home: process.argv[2], clon: process.argv[3], tmp: process.argv[4], env: {}, sinConfig: true });
@@ -385,7 +385,7 @@ root_at() { # $1=HOME $2=lib → la salida en ROOT_OUT, el código en ROOT_RC y 
   ROOT_ERR="$(cat "$err")"
 }
 for c in sane broken-rule broken-neighbor no-rule; do   # la búsqueda de la raíz y el lector de configuración que carga
-  cp "$TCG/scripts/lib/repos-root.js" "$TCG/scripts/lib/tycon-config.js" "$G16/$c/scripts/lib/" || bad "T16h no pude copiar las bibliotecas a $c"
+  cp "$TCG/scripts/lib/repos-root.js" "$TCG/scripts/lib/tycon-config.js" "$TCG/scripts/lib/profile-only.js" "$G16/$c/scripts/lib/" || bad "T16h no pude copiar las bibliotecas a $c"
 done
 root_at "$G16/home" "$G16/sane/scripts/lib/repos-root.js"
 if [ "$ROOT_RC" -eq 0 ] && [ -z "$ROOT_ERR" ]; then ok "T16h (control) clon sano: la raíz de repos contesta con código 0 y sin avisos"
