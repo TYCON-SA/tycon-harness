@@ -2620,8 +2620,9 @@ function doctorItems(ctx, state, { fetch = false, channel = null } = {}) {
   // la espera del tope de la API: hasta qué hora, y que se baja sola después
   { const until = Date.parse(state.api_limited_until || '') || null; if (until && Date.now() < until) add('warn', `${limitText({ token: GA.readToken({ env: ctx.env }).token }, until)}: la versión nueva se baja sola en el primer arranque después de esa hora`); }
   if (fetch) {
-    const c = check(ctx, state, { channel: now });
-    add(c.status === 'unknown' || c.status === 'blocked' ? 'warn' : 'ok', `red: ${c.lines[0].replace(/^harness\.js update: /, '')}`);
+    // con una actualización que falló, «al día» no se dice: la misma regla que `update --check` (failedNotUpToDate)
+    const c = failedNotUpToDate(check(ctx, state, { channel: now }), state, src);
+    add(['unknown', 'blocked', 'skipped'].includes(c.status) ? 'warn' : 'ok', `red: ${c.lines[0].replace(/^harness\.js update: /, '')}`);
   }
   // el permiso guardado que venció contra el repo público: amarillo, nunca rojo — la máquina se actualiza igual
   if (tokenExpired(ctx.env) || (state.token_expired_notice && GA.readToken({ env: ctx.env }).token)) add('warn', EXPIRED_TOKEN_TEXT);
