@@ -211,6 +211,18 @@ test('F174 Aislada_HereDocDeBash_Anda: en el encierro, desde una carpeta no admi
   assert.deepStrictEqual(fs.readdirSync(sesion).filter((f) => f.startsWith('sh-thd-')), [], 'bash borra su temporal');
   assert.match(salida(s), /AFUERA [1-9]/, salida(s));
   assert.ok(!fs.existsSync(path.join(afuera, 'sh-thd-777')), 'el nombre del temporal en otra carpeta sigue negado');
+  // un enlace duro con ese nombre que ya estaba en la carpeta actual no sirve para escribir el archivo al que apunta: con
+  // un sh-thd-<n> ya presente, la carpeta no se admite
+  const victima = path.join(afuera, 'victima.txt');
+  fs.writeFileSync(victima, 'intacto\n');
+  fs.linkSync(victima, path.join(sesion, 'sh-thd-11'));
+  const enlace = repo(path.join(c.b, 'repo2'), {
+    '.advisors/dod-runtime/g.js': "const r = require('child_process').spawnSync('/bin/bash', ['-c', 'echo PWNED > sh-thd-11'], { encoding: 'utf8' }); console.log('ENLACE ' + r.status);\n",
+  });
+  const s2 = humo(SMOKE, path.join(enlace, '.advisors', 'dod-runtime'), '9.32', ['--', process.execPath, path.join(enlace, '.advisors', 'dod-runtime', 'g.js')], { cwd: sesion, env: ambiente(c) });
+  assert.match(salida(s2), /ENLACE [1-9]/, salida(s2));
+  assert.strictEqual(fs.readFileSync(victima, 'utf8'), 'intacto\n', 'el archivo del enlace no cambió');
+  assert.match(salida(s2), /sh-thd/, `dice por qué el here document queda negado: ${salida(s2)}`);
 });
 
 test('F174 T2 Aislada_HijoSinLasVariablesDeLaRed_EscribeEnSuLaboratorio: un hijo con HOME de juguete y sin las variables TYCON_ escribe en su casa de juguete; la casa de la cuenta sigue frenada', { skip: !POSIX }, (t) => {
