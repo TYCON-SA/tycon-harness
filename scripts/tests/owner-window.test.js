@@ -119,10 +119,13 @@ const GUIONES = [
   ['browser-test', `node ${E2E} defer --repo /r --story s.md --no "no, después"`, [E2E, 'defer', '--repo', '/r', '--story', 's.md', '--no', 'no, después']],
   ['control-change', `bash ${CONTROLES} approve`, [CONTROLES, 'approve']],
 ];
+// la casa de cada firma de GUIONES: la exención, con la ejecución de ses-a sobre su historia (con la de otra historia, la
+// ventana niega antes del cuadro); las demás, la de siempre
+const casaParaLaFirma = (t, firma) => (firma === 'runtime-waiver' ? conLaEjecucionDe(casaNueva(t), HISTORIA) : casaNueva(t));
 
 test('OwnerWindow_FirmaReconocida_PideVentanaYAnota (T7)', (t) => {
   for (const [firma, cmd] of GUIONES) {
-    const casa = casaNueva(t);
+    const casa = casaParaLaFirma(t, firma);
     const r = pedir(casa, cmd);
     assert.strictEqual(r.decision, 'ask', `${cmd}: ${r.texto}`);
     assert.deepStrictEqual(r.firmas, [firma], cmd);
@@ -133,7 +136,7 @@ test('OwnerWindow_FirmaReconocida_PideVentanaYAnota (T7)', (t) => {
       : / approve-mockup /.test(cmd) ? 'Volver a aprobar la maqueta de una story'
         : `${s.approves.charAt(0).toUpperCase()}${s.approves.slice(1)}`;
     assert.ok(r.texto.includes(`¿${que}?`), `${cmd}: el texto dice qué aprueba`);
-    assert.match(r.texto, /9\.99/, `${cmd}: el texto dice la story`);
+    assert.match(r.texto, firma === 'runtime-waiver' ? /9\.91/ : /9\.99/, `${cmd}: el texto dice la story`);
     assert.match(r.texto, /ses-a/, `${cmd}: el texto dice la sesión destino`);
     const v = vigentes(casa);
     assert.strictEqual(v.length, 1, `${cmd}: un registro`);
@@ -159,7 +162,7 @@ test('OwnerWindow_FirmaReconocida_PideVentanaYAnota (T7)', (t) => {
 
 test('OwnerWindow_GuionAprobado_FirmaConVentana (T8)', (t) => {
   for (const [firma, cmd, argv] of GUIONES) {
-    const casa = casaNueva(t);
+    const casa = casaParaLaFirma(t, firma);
     assert.strictEqual(pedir(casa, cmd).decision, 'ask');
     const v = ow.verificar({ firma, argv, pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000 });
     assert.ok(v.ok, `${cmd}: ${v.motivo}`);
@@ -360,8 +363,8 @@ test('OwnerWindow_DespuesDeUnNo_OtraVentana (T12)', (t) => {
 });
 
 test('OwnerWindow_Codex_Niega (T13)', (t) => {
-  for (const [, cmd] of GUIONES) {
-    const casa = casaNueva(t);
+  for (const [firma, cmd] of GUIONES) {
+    const casa = casaParaLaFirma(t, firma);
     const r = pedir(casa, cmd, { evento: { turn_id: 'turn-1' } });
     assert.strictEqual(r.decision, 'deny', cmd);
     assert.match(r.texto, /--terminal|en tu terminal/, cmd);
@@ -375,7 +378,7 @@ test('OwnerWindow_Codex_Niega (T13)', (t) => {
 test('OwnerWindow_SinPantalla_NiegaConLaTerminal (T14)', (t) => {
   for (const extra of [' -p', ' --print', ' --print=json']) {
     for (const [firma, cmd] of GUIONES) {
-      const casa = casaNueva(t);
+      const casa = casaParaLaFirma(t, firma);
       const r = pedir(casa, cmd, { arbol: arbolDelFreno({ tool: herramienta(extra) }) });
       assert.strictEqual(r.decision, 'deny', `${extra} ${cmd}`);
       const s = require('../lib/signatures.js').SIGNATURES.find((x) => x.id === firma);
@@ -430,8 +433,11 @@ test('OwnerWindow_Terminal_FirmaYSinTtySaleDos (T15)', (t) => {
   }
 });
 
-/** Una historia con un criterio declarado imposible de probar en vivo, cuya prueba corrió en verde: queda pendiente de firma. */
-function historiaConCriterio(t) {
+/**
+ * Una historia con un criterio declarado imposible de probar en vivo, cuya prueba corrió en verde: queda pendiente de firma.
+ * Con `sinCorrer`, además el AC 2, sin prueba ni evidencia: queda sin correr y el guion niega la firma por él.
+ */
+function historiaConCriterio(t, { sinCorrer = false } = {}) {
   // en una carpeta propia: la matriz mira las hermanas del repo, y las de la carpeta temporal son miles
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ow-crit-'));
   if (t) t.after(() => fs.rmSync(base, { recursive: true, force: true }));
@@ -442,18 +448,176 @@ function historiaConCriterio(t) {
   const story = path.join(repo, 'specs', 'story-9.91-juguete.md');
   fs.writeFileSync(story, ['---', 'story: "9.91"', 'status: in-progress', 'runtime_not_verifiable:', '  - ac: 1', '    reason: "el servicio externo no tiene ambiente de prueba"',
     '    covered_by: T1', '---', '', '# Story 9.91', '', '## Acceptance Criteria', '', '1. **Given** un pedido **Then** el aviso queda en el servicio externo.',
-    '2. **Given** otro pedido **Then** se ve en pantalla.', '', '### Tests', '', '| # | Test | AC | Nivel | Escenario | Resultado esperado |', '|---|---|---|---|---|---|',
+    ...(sinCorrer ? ['2. **Given** otro pedido **Then** se ve en pantalla.'] : []), '', '### Tests', '', '| # | Test | AC | Nivel | Escenario | Resultado esperado |', '|---|---|---|---|---|---|',
     '| T1 | `Aviso_QuedaRegistrado` | 1 | unit | x | y |', ''].join('\n'));
   fs.mkdirSync(path.join(repo, '.advisors'));
   fs.writeFileSync(path.join(repo, '.advisors', 'tests-result.json'), JSON.stringify({ ts: new Date().toISOString(), story_id: '9.91', suite_green: true }));
   return { repo, story };
 }
 
+// 🔴 Falla con: `runtime-waiver --acs` sobre una historia con criterios sin correr que niega con «no es un criterio
+//    pendiente de firma» en vez del motivo real y la lista entera de los que faltan correr (el que da la forma sin --acs).
+test('OwnerWindow_RuntimeWaiver_ConAcs_DiceLosSinCorrer', (t) => {
+  const { story } = historiaConCriterio(t, { sinCorrer: true });
+  for (const acs of ['2', '1,2']) {
+    const r = pedir(casaSinEjecucion(t), `node ${MARKER} runtime-waiver ${story} --acs ${acs}`);
+    assert.strictEqual(r.decision, 'deny', r.texto);
+    assert.match(r.texto, /hay criterios SIN CORRER que no se pueden eximir: AC #2\. Los corre el agente/, r.texto);
+    assert.doesNotMatch(r.texto, /no es un criterio pendiente de firma/, r.texto);
+  }
+});
+
+/** La ejecución de ses-a sobre la historia `h` (la de `historiaConCriterio`): la firma sobre la historia de la ejecución. */
+function conLaEjecucionDe(casa, h) {
+  fs.writeFileSync(path.join(casa, '.claude', '.tycon-pipeline', 'active', 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.91', storyPath: h.story, repoPath: h.repo }));
+  return casa;
+}
+
+/** Una casa sin ejecución abierta en ses-a: la firma sin corrida, que vale sobre cualquier historia de un repo. */
+function casaSinEjecucion(t) {
+  const casa = casaNueva(t);
+  fs.rmSync(path.join(casa, '.claude', '.tycon-pipeline', 'active', 'ses-a.json'));
+  return casa;
+}
+
+// 🔴 Falla con: la ejecución abierta en la propia sesión es de otra historia, la ventana arma el cuadro, y el guion niega
+//    después del click porque firma sólo sobre la historia de esa ejecución: el click del dueño se gasta.
+test('OwnerWindow_RuntimeWaiver_MarcadorPropioDeOtraHistoria_NiegaAntesDelCuadro', (t) => {
+  const { repo, story } = historiaConCriterio(t);
+  const cmd = `node ${MARKER} runtime-waiver ${story} --acs 1`;
+  // casaNueva: la ejecución de ses-a es la de la historia 9.99
+  const r = pedir(casaNueva(t), cmd);
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.match(r.texto, /story-9\.91-juguete\.md no es la historia de la ejecución abierta en esta sesión \(story-9\.99\.md\)/, r.texto);
+  assert.ok(!r.cuadro || r.cuadro.error, 'sin cuadro');
+  // pedida para otra sesión, el motivo de siempre
+  const cuadro = (sesion, c) => ow.cuadroPara({ firma: 'runtime-waiver', comando: c, palabras: ow.canonica(c), destino: 'ses-a', sesion, casa: casaNueva(t), cwd: repo });
+  assert.match(cuadro('ses-coord', `${cmd} --for-session ses-a`).error, /story-9\.91-juguete\.md no es la historia de la ejecución de la sesión ses-a$/);
+  // sin ejecución abierta en la sesión, el cuadro
+  assert.strictEqual(pedir(casaSinEjecucion(t), cmd).decision, 'ask');
+});
+
+// 🔴 Falla con: el aviso de --acs sumado sin achicar lo demás: con varios criterios de razón larga la pregunta pasaba el
+//    tope del teléfono. Cuenta dentro del tope: lo demás se achica y va al detalle, nunca el aviso.
+test('OwnerWindow_RuntimeWaiver_ConAcs_AvisoEntraEnElTope', (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ow-largo-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const repo = path.join(base, 'repo');
+  fs.mkdirSync(path.join(repo, 'specs'), { recursive: true });
+  fs.mkdirSync(path.join(repo, '.advisors'));
+  assert.strictEqual(spawnSync('git', ['init', '-q', repo]).status, 0);
+  const razon = 'el servicio externo de terceros no tiene ambiente de prueba y la integración con la entidad bancaria sólo corre en producción con datos reales '.repeat(2).trim();
+  const ns = [1, 2, 3, 4, 5, 6];
+  const story = path.join(repo, 'specs', 'story-9.91-largo.md');
+  fs.writeFileSync(story, ['---', 'story: "9.91"', 'status: in-progress', 'runtime_not_verifiable:', ...ns.flatMap((n) => [`  - ac: ${n}`, `    reason: "${razon}"`, `    covered_by: T${n}`]), '---', '',
+    '# Story 9.91', '', '## Acceptance Criteria', '', ...ns.map((n) => `${n}. **Given** un pedido número ${n} con muchos detalles de contexto **Then** el aviso ${n} queda en el servicio externo de la entidad.`),
+    '', '### Tests', '', '| # | Test | AC | Nivel | Escenario | Resultado esperado |', '|---|---|---|---|---|---|', ...ns.map((n) => `| T${n} | \`Aviso${n}_Registrado\` | ${n} | unit | x | y |`), ''].join('\n'));
+  fs.writeFileSync(path.join(repo, '.advisors', 'tests-result.json'), JSON.stringify({ ts: new Date().toISOString(), story_id: '9.91', suite_green: true }));
+  // con la ejecución de esa historia abierta en ses-a: el cuadro nombra la historia, y es el largo de verdad
+  const casa = casaNueva(t);
+  fs.writeFileSync(path.join(casa, '.claude', '.tycon-pipeline', 'active', 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.91', storyPath: story, repoPath: repo }));
+  const cmd = `node ${MARKER} runtime-waiver ${story} --acs ${ns.join(',')}`;
+  const q = ow.cuadroPara({ firma: 'runtime-waiver', comando: cmd, palabras: ow.canonica(cmd), destino: 'ses-a', sesion: 'ses-a', casa, cwd: repo });
+  assert.ok(!q.error, q.error);
+  assert.strictEqual(q.pasaElTope, false, `${q.largo} letras: ${q.pregunta}`);
+  assert.ok(q.pregunta.includes('Ojo: si la historia tiene otros criterios sin correr, la firma se niega después de este click.'), q.pregunta);
+  // lo que no entró va al detalle, entero
+  assert.ok(q.detalle.some((l) => l.startsWith('Qué hace: AC 1:')), q.detalle.join('\n'));
+});
+
+/** La historia con el AC 2 sin correr y nombrado por T2 en la tabla: una deuda con T2 en su rojo esperado lo cubre. */
+function historiaEnDeuda(t) {
+  const h = historiaConCriterio(t, { sinCorrer: true });
+  const fila = '| T1 | `Aviso_QuedaRegistrado` | 1 | unit | x | y |';
+  fs.writeFileSync(h.story, fs.readFileSync(h.story, 'utf8').replace(fila, `${fila}\n| T2 | \`Pantalla_SeVe\` | 2 | unit | x | y |`));
+  return h;
+}
+
+/** Una casa con la ejecución de ses-a sobre la historia, en deuda, con T2 en su rojo esperado hasta `until`. */
+function casaEnDeuda(t, { repo, story, until }) {
+  const casa = casaNueva(t);
+  fs.writeFileSync(path.join(casa, '.claude', '.tycon-pipeline', 'active', 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.91', storyPath: story, repoPath: repo,
+    cierre: { estado: 'deuda', deuda: 'D-1' }, checks: { acmatrix: 'rojo-esperado:exit=1' }, expectedRed: { acmatrix: { tests: ['T2'], deuda: 'D-1', until } } }));
+  return casa;
+}
+
+// 🔴 Falla con: sin --acs (todos los pendientes), otro criterio de la historia sin correr, y la ventana que arma el cuadro
+//    y pregunta: después el guion niega la firma por el sin correr y el click del dueño no sirve.
+test('OwnerWindow_RuntimeWaiver_OtroSinCorrer_NiegaAntesDelCuadro', (t) => {
+  const { story } = historiaConCriterio(t, { sinCorrer: true });
+  const cmd = `node ${MARKER} runtime-waiver ${story}`;
+  let r = pedir(casaSinEjecucion(t), cmd);
+  assert.strictEqual(r.decision, 'deny', `${cmd}: ${r.texto}`);
+  assert.match(r.texto, /hay criterios SIN CORRER que no se pueden eximir: AC #2\. Los corre el agente/, r.texto);
+  assert.doesNotMatch(r.texto, /no es un criterio pendiente de firma/, r.texto);
+  assert.ok(!r.cuadro || r.cuadro.error, `${cmd}: sin cuadro`);
+  // con la misma regla que el guion: en deuda vigente, el sin correr que cubre su rojo esperado no frena el cuadro
+  const h = historiaEnDeuda(t);
+  r = pedir(casaEnDeuda(t, { ...h, until: '2099-12-31' }), `node ${MARKER} runtime-waiver ${h.story}`);
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  assert.match(r.texto, /AC 1: .*el criterio: Given un pedido/, r.texto);
+});
+
+// 🔴 Falla con: con --acs la ventana mide sólo esos criterios y no ve otro sin correr de la historia: el cuadro que no
+//    avisa, en la pregunta que ve el dueño, que en ese caso la firma se niega después del click.
+test('OwnerWindow_RuntimeWaiver_ConAcs_AvisaDeOtrosSinCorrer', (t) => {
+  const AVISO = 'Ojo: si la historia tiene otros criterios sin correr, la firma se niega después de este click.';
+  for (const sinCorrer of [true, false]) {
+    const { repo, story } = historiaConCriterio(t, { sinCorrer });
+    const cmd = `node ${MARKER} runtime-waiver ${story} --acs 1`;
+    const r = pedir(casaSinEjecucion(t), cmd);
+    assert.strictEqual(r.decision, 'ask', r.texto);
+    assert.ok(r.texto.includes(AVISO), r.texto);
+    const q = ow.cuadroPara({ firma: 'runtime-waiver', comando: cmd, palabras: ow.canonica(cmd), destino: 'ses-a', sesion: 'ses-a', casa: casaSinEjecucion(t), cwd: repo });
+    assert.ok(q.pregunta.includes(`${AVISO} `), q.pregunta);
+    assert.strictEqual(q.pasaElTope, false, `${q.largo} letras`);
+  }
+  // sin --acs la ventana mide la historia entera: no hace falta el aviso
+  const { story } = historiaConCriterio(t);
+  const r = pedir(casaSinEjecucion(t), `node ${MARKER} runtime-waiver ${story}`);
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  assert.ok(!r.texto.includes('Ojo:'), r.texto);
+});
+
+// 🔴 Falla con: la ventana que con --acs arma la matriz de toda la historia (con decenas de humos pasa el reloj de 20 s
+//    del freno y la firma no sale): con --acs mide sólo esos criterios, y sin --acs, la historia entera.
+test('OwnerWindow_RuntimeWaiver_ConAcs_MideSoloEsosCriterios', (t) => {
+  const { story } = historiaConCriterio(t, { sinCorrer: true });
+  const rmx = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'runtime-matrix.js'));
+  const original = rmx.compute;
+  let medidas = [];
+  rmx.compute = (opts, ...resto) => { medidas.push(opts && opts.soloAcs ? [...opts.soloAcs] : 'entera'); return original.call(rmx, opts, ...resto); };
+  t.after(() => { rmx.compute = original; });
+  pedir(casaSinEjecucion(t), `node ${MARKER} runtime-waiver ${story} --acs 1`);
+  assert.deepStrictEqual(medidas, [[1]]);
+  medidas = [];
+  pedir(casaSinEjecucion(t), `node ${MARKER} runtime-waiver ${story}`);
+  assert.deepStrictEqual(medidas, ['entera']);
+});
+
+// 🔴 Falla con: la ejecución en deuda cuyo rojo esperado vigente cubre el criterio sin correr, y la ventana que niega
+//    con «hay criterios SIN CORRER» cuando el guion no lo cuenta (no frena) y dice que no es un criterio pendiente.
+test('OwnerWindow_RuntimeWaiver_ConAcs_EnDeudaCuentaComoElGuion', (t) => {
+  const { repo, story } = historiaEnDeuda(t);
+  const enDeuda = (until) => pedir(casaEnDeuda(t, { repo, story, until }), `node ${MARKER} runtime-waiver ${story} --acs 2`);
+  // vigente: el AC 2 lo cubre la deuda, y el motivo es el del guion
+  let r = enDeuda('2099-12-31');
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.match(r.texto, /el AC 2 no es un criterio pendiente de firma/, r.texto);
+  assert.doesNotMatch(r.texto, /SIN CORRER/, r.texto);
+  // vencida: frena como siempre
+  r = enDeuda('2020-01-01');
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.match(r.texto, /hay criterios SIN CORRER que no se pueden eximir: AC #2\. Los corre el agente/, r.texto);
+});
+
 test('OwnerWindow_RuntimeWaiver_PasaPorLaVentana (T16)', (t) => {
   const { repo, story } = historiaConCriterio(t);
   // la ventana muestra cada criterio con su texto, por qué no se prueba en vivo y qué lo cubre: no sólo el número
+  // la exención, sobre la historia de la ejecución abierta en la sesión
+  const casaDeLaHistoria = () => conLaEjecucionDe(casaNueva(t), { repo, story });
   for (const cmd of [`node ${MARKER} runtime-waiver ${story} --acs 1`, `node ${MARKER} runtime-waiver ${story}`]) {
-    const r = pedir(casaNueva(t), cmd);
+    const r = pedir(casaDeLaHistoria(), cmd);
     assert.strictEqual(r.decision, 'ask', r.texto);
     assert.deepStrictEqual(r.firmas, ['runtime-waiver']);
     assert.match(r.texto, /AC 1: .*el criterio: Given un pedido Then el aviso queda en el servicio externo\./, cmd);
@@ -462,12 +626,12 @@ test('OwnerWindow_RuntimeWaiver_PasaPorLaVentana (T16)', (t) => {
     assert.doesNotMatch(r.texto, /AC 2/);
   }
   // la historia con la ruta relativa al directorio del pedido
-  const rel = pedir(casaNueva(t), `node ${MARKER} runtime-waiver specs/story-9.91-juguete.md --acs 1`, { evento: { cwd: repo } });
+  const rel = pedir(casaDeLaHistoria(), `node ${MARKER} runtime-waiver specs/story-9.91-juguete.md --acs 1`, { evento: { cwd: repo } });
   assert.strictEqual(rel.decision, 'ask', rel.texto);
   assert.match(rel.texto, /AC 1: .*el criterio: Given un pedido/);
   // sin criterios que mostrar, el dueño firmaría a ciegas: se niega con la terminal
   for (const cmd of [`node ${MARKER} runtime-waiver /r/specs/story-9.99.md`, `node ${MARKER} runtime-waiver ${story} --acs 2`]) {
-    const r = pedir(casaNueva(t), cmd);
+    const r = pedir(casaDeLaHistoria(), cmd);
     assert.strictEqual(r.decision, 'deny', cmd);
     assert.match(r.texto, /criterio/);
     assert.match(r.texto, /--terminal/);
@@ -600,8 +764,8 @@ test('OwnerWindow_Indecidible_Niega (T19)', (t) => {
   lector.llamadas = cae;
   lector.tramos = cae;
   try {
-    for (const [, c] of GUIONES) {
-      r = pedir(casaNueva(t), c);
+    for (const [firma, c] of GUIONES) {
+      r = pedir(casaParaLaFirma(t, firma), c);
       assert.strictEqual(r.decision, 'deny', c);
       assert.match(r.texto, /no se pudo leer el comando/);
     }
@@ -1256,13 +1420,13 @@ test('OwnerWindow_ConBuiltin_SeDesenvuelveTalCual', (t) => {
 test('OwnerWindow_ConBuiltin_ElClickDelDuenoFirmaElGuion', (t) => {
   // el caso medido: el freno pidió la firma, el dueño la aprobó, y el guion tiene que reconocer la consola que lo lanzó
   const [firma, cmd, argv] = GUIONES[4];
-  let casa = casaNueva(t);
+  let casa = casaParaLaFirma(t, firma);
   assert.strictEqual(pedir(casa, cmd).decision, 'ask');
   const v = ow.verificar({ firma, argv, pid: 301, arbol: arbolDelGuion(casa, cmd, { consola: envolverConBuiltin(casa, cmd) }), casa, ahora: AHORA + 60000 });
   assert.ok(v.ok, v.motivo);
   assert.strictEqual(vigentes(casa).length, 0, 'el registro quedó consumido');
   // la misma consola lanzada por la consola de un agente no firma: el guion sigue exigiendo la herramienta arriba
-  casa = casaNueva(t);
+  casa = casaParaLaFirma(t, firma);
   pedir(casa, cmd);
   const agente = { pid: 250, ppid: 100, inicio: INICIO, comando: envolverConBuiltin(casa, 'zsh -c x') };
   const r = ow.verificar({ firma, argv, pid: 301, arbol: arbolDelGuion(casa, cmd, { consola: envolverConBuiltin(casa, cmd), padre: 250, extra: [agente] }), casa, ahora: AHORA + 60000 });
@@ -1272,8 +1436,8 @@ test('OwnerWindow_ConBuiltin_ElClickDelDuenoFirmaElGuion', (t) => {
 });
 
 test('OwnerWindow_ConBuiltin_ElFrenoVeLaConsolaDeFondo', (t) => {
-  const [, cmd] = GUIONES[4];
-  const casa = casaNueva(t);
+  const [firma, cmd] = GUIONES[4];
+  const casa = casaParaLaFirma(t, firma);
   const fondo = envolverConBuiltin(casa, 'sleep 600').replace(' < /dev/null', '');
   const r = pedir(casa, cmd, { arbol: arbolDelFreno({ extra: [{ pid: 400, ppid: 100, inicio: INICIO, comando: fondo }] }) });
   assert.strictEqual(r.decision, 'deny', r.texto);
@@ -1423,7 +1587,7 @@ test('Constancias_DicenViaQuienYDestino_SinCita (T46) @story-8.139 @ac-30', (t) 
   };
   // por la ventana, cada firma `guion`
   for (const [firma, cmd, argv] of GUIONES) {
-    const casa = casaNueva(t);
+    const casa = casaParaLaFirma(t, firma);
     pedir(casa, cmd);
     const e = ow.exigir({ firma, argv, pid: 301, arbol: arbolDelGuion(casa, cmd), casa, ahora: AHORA + 60000, propia: 'ses-a' });
     assert.strictEqual(e.codigo, 0, `${cmd}: ${e.motivo}`);
@@ -2454,7 +2618,7 @@ const EXTRA = GUIONES.find((g) => g[0] === 'extra-round');
 // 🔴 Falla con: la ventana abierta (o su registro escrito) para un comando que el guion iba a rechazar.
 test('Precheck_GuionQueSeNegaria_NoAbreLaVentana', (t) => {
   for (const [firma, cmd] of GUIONES.filter((g) => ow.CON_PRECHEQUEO.has(g[0]))) {
-    const casa = casaNueva(t);
+    const casa = casaParaLaFirma(t, firma);
     let visto = null;
     const r = pedir(casa, cmd, { comprobar: (o) => { visto = o; return { niega: '🛑 falta la nota de la tercera vuelta' }; } });
     assert.strictEqual(r.decision, 'deny', `${cmd}: ${r.texto}`);
@@ -2615,7 +2779,7 @@ test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => 
   ];
   const vistas = new Set();
   for (const [firma, cmd] of [...GUIONES, ...otras]) {
-    const casa = casaNueva(t);
+    const casa = casaParaLaFirma(t, firma);
     let visto = null;
     // el reloj de la prueba es de octubre: la firma con fecha de corte se mira como ya vigente
     const r = pedir(casa, cmd, { comprobar: (o) => { visto = o; return { niega: 'falta un requisito' }; }, antesDelCorte: () => false });
@@ -3971,7 +4135,8 @@ test('OwnerNext_DaElCuadro_LaSesionRepite (T11) — @story-8.153 @ac-11', (t) =>
   // la pregunta de owner-next es la de `decidir` en la sesión destino, letra por letra, con la coordinadora en otra carpeta
   const carpeta = path.dirname(HISTORIA.story);
   for (const [cmd, firma] of [[MANUAL_T, 'manual-test'], [`node ${MARKER} runtime-waiver ${HISTORIA.story} --acs 1`, 'runtime-waiver'], [SIGN_FILE('dod_runtime_exempt', 'specs/x.md'), 'escape:dod_runtime_exempt']]) {
-    const casa = casaDeLista(t);
+    // la exención, sobre la historia de la ejecución abierta en ses-a
+    const casa = firma === 'runtime-waiver' ? conLaEjecucionDe(casaDeLista(t), HISTORIA) : casaDeLista(t);
     const neg = pedirConLista(casa, cmd, { evento: { cwd: carpeta } });
     assert.strictEqual(neg.decision, 'deny', neg.texto);
     assert.deepStrictEqual(neg.firmas, [firma]);
@@ -4179,14 +4344,14 @@ test('OwnerWindow_RuntimeWaiver_LaMatrizSeCalculaUnaVezPorConsulta', (t) => {
   t.after(() => { rmx.compute = original; });
   for (const [extra, acs] of [[{}, ''], [{ permission_mode: 'bypassPermissions' }, ''], [{}, ' --acs 1'], [{ permission_mode: 'bypassPermissions' }, ' --acs 1']]) {
     veces = 0;
-    const r = pedir(casaNueva(t), `node ${MARKER} runtime-waiver ${story}${acs}`, { evento: extra });
+    const r = pedir(casaSinEjecucion(t), `node ${MARKER} runtime-waiver ${story}${acs}`, { evento: extra });
     assert.match(r.texto, /AC 1: .*el criterio: Given un pedido/, `${JSON.stringify(extra)}${acs}`);
     assert.strictEqual(veces, 1, `${JSON.stringify(extra)}${acs}: la matriz se calculó ${veces} veces`);
   }
   // la memoria es de una consulta: la misma historia, editada entre dos consultas con la misma casa, se vuelve a calcular
   // y el cuadro muestra lo que se va a firmar ahora, no lo de la consulta anterior
   const otra = historiaConCriterio(t);
-  const casa = casaNueva(t);
+  const casa = casaSinEjecucion(t);
   const cmd = `node ${MARKER} runtime-waiver ${otra.story}`;
   assert.match(pedir(casa, cmd).texto, /el aviso queda en el servicio externo\./);
   fs.writeFileSync(otra.story, fs.readFileSync(otra.story, 'utf8').replace('el aviso queda en el servicio externo', 'el pago queda en el banco'));

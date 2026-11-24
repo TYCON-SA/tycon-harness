@@ -219,13 +219,14 @@ const primeraOracion = (s) => { const t = enUnRenglon(s); const m = /^(.+?[.!?])
  * completo (`completoEnPalabras`; la ruta `completo`, en el detalle), qué pasa si sale mal, y al final la cita de la
  * sesión, que no reemplaza nada de lo anterior. `criterios`: los números de los criterios que se eximen o se marcan; van
  * todos, antes de «Qué hace», porque un número que no se ve no se aprobó. `nota`: por qué no se pudo leer la fuente; va
- * al final de «Qué hace». Ninguna ruta absoluta se ve: se dice por el nombre de su archivo, y entera en el detalle.
+ * al final de «Qué hace». `aviso`: lo que pasa después del click y la fuente no pudo medir antes; va en su oración, después
+ * de «Qué hace». Ninguna ruta absoluta se ve: se dice por el nombre de su archivo, y entera en el detalle.
  *
  * El tope: la pregunta con su sello entra en `LARGO_EN_TELEFONO`, achicando en orden (el título al detalle, la cita a su
  * primera oración, «Qué hace» a un renglón, la revisión sin notas, los criterios en tramos, la cita al detalle, «Completo
- * en» al detalle, «Qué hace» al lugar que queda). Lo que se aprueba, la sesión, los números de los criterios, los archivos,
- * «si sale mal», lo que hace cada opción y el sello no se sacan; si igual no entra, `pasaElTope` lo dice y la pregunta se
- * da entera (`renglonDelTope`). Los cuadros del click del dueño no se achican: llevan lo que hace cada opción. Con
+ * en» al detalle, «Qué hace» al lugar que queda y, con un aviso que no entra, «Qué hace» al detalle). Lo que se aprueba,
+ * la sesión, los números de los criterios, el aviso, los archivos, «si sale mal», lo que hace cada opción y el sello no
+ * se sacan; si igual no entra, `pasaElTope` lo dice y la pregunta se da entera (`renglonDelTope`). Los cuadros del click del dueño no se achican: llevan lo que hace cada opción. Con
  * `todoQueHace` (el guardado ajeno) nada se corta, se resume ni se cambia: la fuente promete que todo lo que se aprueba
  * está a la vista.
  *
@@ -279,7 +280,7 @@ function cuadroQueExplica({ firma, destino, que, explica, queHace = [], archivos
     ...(soloClick ? { soloClick: true, descripciones } : {}), ...(clickDelDueno && !soloClick ? { clickDelDueno: true } : {}) };
 }
 
-function cuadroDeSiempre({ firma, destino, que, historia = null, criterios = [], queHace = [], todoQueHace = false, nota = null, archivos = [], completo = null, completoEnPalabras = null, revision = null, siSaleMal, cita = null, huella, soloClick = false, clickDelDueno = false, descripciones = null, comando = null }) {
+function cuadroDeSiempre({ firma, destino, que, historia = null, criterios = [], queHace = [], todoQueHace = false, nota = null, aviso = null, archivos = [], completo = null, completoEnPalabras = null, revision = null, siSaleMal, cita = null, huella, soloClick = false, clickDelDueno = false, descripciones = null, comando = null }) {
   const sello = `firma ${firma} · sesión ${destino} · código ${huella}`;
   // lo que se ve: en un renglón y sin rutas absolutas (el guardado ajeno, tal cual)
   const vista = (s) => (todoQueHace ? String(s == null ? '' : s) : sinRutas(enUnRenglon(s)));
@@ -301,13 +302,16 @@ function cuadroDeSiempre({ firma, destino, que, historia = null, criterios = [],
       partes.push(!historia.titulo ? `Historia ${id} (sin título en su archivo), sesión ${ses}.` : titulo ? `Historia ${id}, «${titulo}», sesión ${ses}.` : `Historia ${id}, sesión ${ses}.`);
     } else if (destino) partes.push(`Sesión ${ses}.`);
     if (nums.length) partes.push(`Criterios: AC ${criteriosEnPalabras(nums, nivel >= 5)}.`);
-    if (lineas.length) {
+    // en el nivel 8 (sólo con aviso) «Qué hace» va entero al detalle, para que el aviso entre
+    if (lineas.length && nivel < 8) {
       const cuantas = todoQueHace ? lineas.length : nivel >= 3 ? 1 : LINEAS_QUE_HACE;
       const vistas = todoQueHace ? lineas : lineas.slice(0, cuantas).map((l) => sinPunto(recortar(vista(l), largoQueHace)));
       const resto = lineas.length - vistas.length;
       const mas = resto ? ` · y ${resto} más en el detalle` : '';
       partes.push(`Qué hace: ${vistas.join(' · ')}${mas}${nota ? ` ${sinPunto(recortar(vista(nota), LARGO_DE_LINEA))}` : ''}.`);
     }
+    // lo que pasa después del click y la fuente no pudo medir antes (`aviso`): va siempre, en una oración propia
+    if (aviso) partes.push(`${sinPunto(recortar(vista(aviso), LARGO_DE_LINEA))}.`);
     const zonas = require('./file-zones.js').zonasDe(archivos);
     if (zonas) partes.push(`Archivos: ${zonas}.`);
     if (todo && nivel < 7) partes.push(`Completo en: ${sinPunto(recortar(completoEnPalabras ? enUnRenglon(completoEnPalabras) : sinRutas(todo), LARGO_DE_FRASE))}.`);
@@ -331,6 +335,8 @@ function cuadroDeSiempre({ firma, destino, que, historia = null, criterios = [],
   // con todo lo demás achicado, «Qué hace» toma el lugar que queda, sin bajar de 60 letras
   let largoQueHace = LARGO_DE_LINEA;
   if (nivel === 7) while (largoQueHace > MINIMO_QUE_HACE && armar(nivel, largoQueHace).length > LARGO_EN_TELEFONO) largoQueHace -= 5;
+  // el aviso no se saca: si con todo achicado no entra, «Qué hace» va al detalle
+  if (nivel === 7 && aviso && armar(nivel, largoQueHace).length > LARGO_EN_TELEFONO) nivel = 8;
   const pregunta = armar(nivel, largoQueHace);
   const texto = pregunta.slice(0, pregunta.length - sello.length - 3);
 
@@ -343,6 +349,7 @@ function cuadroDeSiempre({ firma, destino, que, historia = null, criterios = [],
     if (lineas.length > vistas.length || !lineas.every(entero)) lineas.forEach((l) => detalle.push(`Qué hace: ${l}`));
     if (nota && !entero(nota)) detalle.push(`Nota: ${enUnRenglon(nota)}`);
   }
+  if (aviso && !entero(aviso)) detalle.push(`Aviso: ${enUnRenglon(aviso)}`);
   if (historia && historia.titulo && !texto.includes(`«${vista(historia.titulo)}»`)) detalle.push(`Título: ${enUnRenglon(historia.titulo)}`);
   // sin la palabra «sesión»: el detalle va al lado de la pregunta, y un «aprobado» no puede leerlo como otra sesión
   if (cita && !entero(cita)) detalle.push(`Cita: ${enUnRenglon(cita)}`);

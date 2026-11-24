@@ -1004,6 +1004,13 @@ const cuadro = (E, args, sid) => {
   const cmd = `node ${path.join(SCRIPTS, 'marker.js')} runtime-waiver ${E.story}${args.length ? ` ${args.join(' ')}` : ''}`;
   return owLib().cuadroPara({ firma: 'runtime-waiver', comando: cmd, palabras: owLib().canonica(cmd), destino: sid, sesion: sid, cwd: E.repo, casa: E.home });
 };
+// la matriz que mide la ventana lee los humos del gates.log de la casa del proceso, que en uso real es la del guion: el
+// cuadro armado en este proceso, con la casa de la prueba
+const conLaCasa = (E, fn) => {
+  const antes = process.env.HOME;
+  process.env.HOME = E.home;
+  try { return fn(); } finally { if (antes === undefined) delete process.env.HOME; else process.env.HOME = antes; }
+};
 
 test('F154-1 RuntimeWaiver_SinCorrida_FirmaYAnotaLaSesion — sin corrida, la firma por el cuadro sale y su renglón dice la sesión', () => {
   const E = entorno();
@@ -1123,8 +1130,10 @@ test('F154-8 Cuadro_SinCorrida_Batch_MismosCriteriosQueElGuion — el cuadro nom
   assert.match(q.pregunta, new RegExp(`tanda ${A}`), q.pregunta);
   assert.match(q.pregunta, /AC 1: /, q.pregunta);
   assert.doesNotMatch(q.pregunta, /AC 2/, q.pregunta);
-  // sin --batch, el cuadro muestra los dos: la tanda cambia lo que se firma, y la huella
-  const todas = cuadro(E, [], 's-f8');
+  // sin --batch, el cuadro muestra los dos: la tanda cambia lo que se firma, y la huella. El AC 3, que ninguna firma
+  // exime, se corre antes: sin correr, la ventana niega antes del cuadro, como el guion
+  E.humo([3]);
+  const todas = conLaCasa(E, () => cuadro(E, [], 's-f8'));
   assert.match(todas.pregunta, /AC 2/, todas.pregunta);
   assert.doesNotMatch(todas.pregunta, /tanda/, todas.pregunta);
   assert.notStrictEqual(todas.sello, q.sello);

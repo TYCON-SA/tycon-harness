@@ -858,26 +858,56 @@ function criteriosSinMemo(palabras, cwd, { casa, destino, sesion }) {
   // en orden: la fuente de la huella y la pregunta no cambian con el orden en que se escribieron
   const pedidos = i >= 0 ? [...new Set(String(palabras[i + 1] || '').split(',').map((x) => Number(x.trim())).filter((n) => Number.isInteger(n) && n > 0))].sort((a, b) => a - b) : null;
   if (pedidos && !pedidos.length) return { error: '--acs no dice qué criterios: sin ellos a la vista no se firma' };
+  // la matriz que mide el guion: con --batch, la de esa tanda; con la ejecución de la historia a la vista, la de su tanda;
+  // si no, la historia entera. Con --acs, sólo los humos de esos criterios, para decidir dentro del reloj del freno: el
+  // criterio sale igual que en el guion, y los demás criterios no se miden. Una sola vez por consulta
+  let mm = m;
+  if (!mm && sesion) {
+    try { mm = marcadorEn(path.join(stateDir(casa), 'active', `${sesion}.json`)); } catch (_) { mm = null; }
+    // la ejecución abierta en esta misma sesión es de otra historia: el guion firma sólo sobre la suya y niega después del
+    // click. Pedida para otra sesión, eso ya se dijo arriba
+    if (mm && mm.storyId && !wd.esLaDelMarcador(abs, mm)) {
+      return { error: `${path.basename(abs)} no es la historia de la ejecución abierta en esta sesión${mm.storyPath ? ` (${path.basename(String(mm.storyPath))})` : ''}` };
+    }
+  }
+  if (mm && !wd.esLaDelMarcador(abs, mm)) mm = null;
   let c;
+  let matriz;
   try {
-    // con --batch, la matriz de esa tanda, la misma que mide el guion (waiver-display.js matrixForSignature); con --acs,
-    // sólo los humos de esos criterios, para decidir dentro del reloj del freno: el criterio sale igual que en el guion
-    const medida = tanda ? wd.matrixForSignature(abs, null, { batch: tanda, acs: pedidos }) : null;
-    if (medida && !medida.structuralError && !medida.batch) {
-      const porQue = (medida.warnings || []).find((w) => /mido todas las tandas/.test(w));
+    matriz = tanda ? wd.matrixForSignature(abs, null, { batch: tanda, acs: pedidos }) : wd.matrixForSignature(abs, mm, { acs: pedidos });
+    if (tanda && !matriz.structuralError && !matriz.batch) {
+      const porQue = (matriz.warnings || []).find((w) => /mido todas las tandas/.test(w));
       return { error: `no pude medir sólo la tanda ${tanda}${porQue ? ` (${una(porQue, 200)})` : ''}` };
     }
-    const deOtra = medida && !medida.structuralError ? (pedidos || []).filter((n) => !(medida.acs || []).includes(n)) : [];
+    const deOtra = tanda && !matriz.structuralError ? (pedidos || []).filter((n) => !(matriz.acs || []).includes(n)) : [];
     if (deOtra.length) return { error: `el AC ${deOtra.join(', ')} no es de la tanda ${tanda}: se firma con la suya` };
-    c = medida && medida.structuralError ? { error: medida.structuralError } : wd.criteriosDe(abs, pedidos || [], medida);
-    if (!c.error && !pedidos) c = wd.criteriosDe(abs, c.matrix.notVerifiable || [], c.matrix);
+    c = wd.criteriosDe(abs, pedidos || (matriz.notVerifiable || []), matriz);
   } catch (e) { return { error: `no pude armar los criterios (${una((e && e.message) || String(e), 200)})` }; }
   if (c.error) return { error: `no pude armar los criterios: la matriz no computa (${una(c.error, 200)})` };
   const faltan = (pedidos || []).filter((n) => !c.lista.some((x) => x.ac === n));
+  // con criterios sin correr el guion rechaza la firma por eso, con la lista entera: la ventana niega antes del cuadro con
+  // el mismo motivo (el click no se gasta), no con «no está pendiente de firma». En deuda, los que cubre su rojo esperado
+  // vigente no cuentan: la misma cuenta del guion. Con --acs cuenta sólo los pedidos: los demás no se midieron, y la
+  // matriz los daría por sin correr
+  let sinCorrer = matriz.notRun || [];
+  if (sinCorrer.length && mm && mm.cierre && mm.cierre.estado === 'deuda') {
+    try { sinCorrer = require(path.join(LIB, 'marker-signatures.js')).sinCorrerFueraDeLaDeuda(mm, matriz); } catch (e) {
+      return { error: `no pude contar los criterios sin correr de la deuda (${una((e && e.message) || String(e), 200)})` };
+    }
+  }
+  if (pedidos) sinCorrer = sinCorrer.filter((n) => pedidos.includes(n));
+  if (sinCorrer.length) {
+    const otros = faltan.filter((n) => !sinCorrer.includes(n));
+    return { error: `hay criterios SIN CORRER que no se pueden eximir: AC ${sinCorrer.map((n) => `#${n}`).join(', ')}. Los corre el agente${otros.length ? `; además, el AC ${otros.join(', ')} no es un criterio pendiente de firma` : ''}` };
+  }
   if (faltan.length) return { error: `el AC ${faltan.join(', ')} no es un criterio pendiente de firma en ${path.basename(abs)}` };
   if (!c.lista.length) return { error: `${path.basename(abs)} no tiene criterios pendientes de firma${tanda ? ` en la tanda ${tanda}` : ''}` };
-  return { lista: c.lista, historia: abs, texto: textoDeLosCriterios(c.lista), ...(tanda ? { tanda: c.matrix.batch } : {}) };
+  // `parcial`: con --acs no se midieron los demás criterios, y el cuadro avisa que otro sin correr niega después del click
+  return { lista: c.lista, historia: abs, texto: textoDeLosCriterios(c.lista), ...(tanda ? { tanda: c.matrix.batch } : {}), ...(pedidos ? { parcial: true } : {}) };
 }
+
+// el aviso del cuadro de `runtime-waiver --acs`: la ventana midió sólo esos criterios, y el guion mide la historia entera
+const AVISO_OTROS_SIN_CORRER = 'Ojo: si la historia tiene otros criterios sin correr, la firma se niega después de este click';
 
 // lo medido y la cota de un criterio con cota (`medida`, de waiver-display.js); nada en uno sin marca
 const loMedido = (x) => (x && x.medida ? `; lo medido: ${una(x.medida, 120)}` : '');
@@ -1031,7 +1061,8 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
     // tanda, la fuente la suma: el click dado a una tanda no vale para otra
     partes = { criterios: c.lista.map((x) => x.ac), queHace: lineas, queHaceALaVista: c.lista.map(renglonALaVista), completo: c.historia,
       completoEnPalabras: m && m.storyId ? fuentes.laHistoria(m) : `la historia ${path.basename(c.historia)}`,
-      fuente: [...(c.tanda ? [`la tanda: ${c.tanda}`] : []), ...lineas].join('\n'), que: queDeLaExcepcion(c.lista, c.tanda) };
+      fuente: [...(c.tanda ? [`la tanda: ${c.tanda}`] : []), ...lineas].join('\n'), que: queDeLaExcepcion(c.lista, c.tanda),
+      ...(c.parcial ? { aviso: AVISO_OTROS_SIN_CORRER } : {}) };
   }
   let delComando = [];
   if (!partes) {
@@ -1043,7 +1074,7 @@ function cuadroPara({ firma, comando, palabras, destino, cwd, casa, sesion, memo
   // ruta resuelta: una ruta relativa desde otra carpeta es otro archivo, y el click dado a uno no vale para el otro
   const real = archivoDelPedido(firma, sinDestino, cwd);
   const huella = sha256(`${delPedido}\0${partes.fuente || ''}${real ? `\0${real}` : ''}`).slice(0, 8);
-  const q = require('./owner-approvals.js').cuadroDe({ firma, destino, que: partes.que || s.approves, historia: fuentes.historiaDe(m), criterios: partes.criterios, queHace: partes.queHaceALaVista || partes.queHace, todoQueHace: !!partes.todoQueHace, nota: partes.nota, archivos: partes.archivos,
+  const q = require('./owner-approvals.js').cuadroDe({ firma, destino, que: partes.que || s.approves, historia: fuentes.historiaDe(m), criterios: partes.criterios, queHace: partes.queHaceALaVista || partes.queHace, todoQueHace: !!partes.todoQueHace, nota: partes.nota, aviso: partes.aviso, archivos: partes.archivos,
     completo: partes.completo, completoEnPalabras: partes.completoEnPalabras, revision: partes.revision, siSaleMal: partes.siSaleMal || s.ifWrong, cita: partes.cita, huella, soloClick: s.soloClick, clickDelDueno: s.clickDelDueno, descripciones: s.descripciones,
     // sólo la fuente que lee la explicación del cambio la trae (null si la leyó y no hay): las demás, el cuadro de siempre
     ...(partes.explica !== undefined ? { explica: partes.explica } : {}),

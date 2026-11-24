@@ -953,7 +953,7 @@ test('8.176-SinCuadro_VariasFirmasConUnaDeControl_NoMandaAPending (T10b) @story-
   const r = pedirControl(c, `node ${MARKER} runtime-waiver ${c.ruta} --acs 1`, { sesion: 'ses-a' });
   assert.strictEqual(r.decision, 'deny', r.texto);
   assert.deepStrictEqual(r.firmas, ['runtime-waiver']);
-  assert.match(r.texto, /el AC 1 no es un criterio pendiente de firma/, r.texto);
+  assert.match(r.texto, /hay criterios SIN CORRER que no se pueden eximir: AC #1\. Los corre el agente/, r.texto);
   assert.doesNotMatch(r.texto, /run-base-controls\.sh pending/, r.texto);
   // con dos firmas, la ventana dice las dos: no la pregunta de la primera
   const dos = ['escape:TYCON_TEST_GATE', 'escape:TYCON_STATUS_GATE'];
