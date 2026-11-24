@@ -111,6 +111,11 @@ function companionRoots(repo, storyPath, opts) {
         out.push(k);
       }
     }
+  } catch (e) {
+    // si algo tira a mitad de camino, los avisos guardados salen igual: no se sabe cuáles hermanos toca la historia
+    HERMANO_ACTUAL = null;
+    if (propia) { CAPTURA = null; for (const a of propia) avisar(a.texto); }
+    throw e;
   } finally {
     HERMANO_ACTUAL = null;
     if (propia) CAPTURA = null;
@@ -125,27 +130,69 @@ function companionRoots(repo, storyPath, opts) {
   return out;
 }
 
+// en Windows y en Mac el disco no distingue mayúsculas: `front/x` nombra al hermano `Front`
+const sinMayusculas = (s) => (process.platform === 'win32' || process.platform === 'darwin' ? String(s).toLowerCase() : String(s));
+
 /**
- * Los hermanos que la historia toca: donde declara archivos (`files_to_create` y `files_to_modify`). Un archivo cuenta
- * para el hermano donde existe (como `companionTargets`), y uno que todavía no existe, por el nombre del hermano
- * (`<hermano>/x`, `../<hermano>/x` o `(<hermano>) x`). Un `Set` de rutas reales, o null si no hay con qué elegir: la
- * historia no se puede leer o no declara ningún archivo.
+ * Los hermanos que la historia toca, de `roots`: un `Set` de rutas reales, o null si no hay con qué elegir (la historia
+ * no se puede leer o no declara ningún archivo). Un hermano está tocado si:
+ *   · la historia declara un archivo en él (`files_to_create`, `files_to_modify` o `files_to_delete`): donde el archivo
+ *     existe (como `companionTargets`); si no existe todavía (o ya no), por el nombre del hermano adelante (`<hermano>/x`,
+ *     `../<hermano>/x`) o por `(<repo>) x`, con `<repo>` como lo resuelve `resolveRepoRef`;
+ *   · o tiene cambios propios (`conCambiosPropios`): un hermano que la corrida cambió sin declararlo también se sella y se
+ *     mira, porque su código no puede quedar sin revisar.
  */
 function hermanosDeLaStory(repo, storyPath, roots) {
   let contenido;
   try { contenido = fs.readFileSync(storyPath, 'utf8'); } catch (_) { return null; }
   const ts = require('./test-scope.js');
-  const declarados = ts.parseDeclaredFiles(contenido);
+  const declarados = [...ts.parseDeclaredFiles(contenido), ...ts.parseFilesToDelete(contenido)];
   if (!declarados.length) return null;
   const out = new Set();
+  const porNombre = new Map(roots.map((c) => [sinMayusculas(label(c)), real(c)]));
   for (const decl of declarados) {
     const r = resolveDeclared(decl, repo, roots);
     if (r.where === 'companion') { out.add(real(r.root)); continue; }
     const conRepo = parseRepoPrefixed(decl);
-    const d = String(conRepo ? `${conRepo.ref}/${conRepo.rest}` : decl).replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\.\.\//, '');
-    for (const c of roots) if (d.startsWith(`${label(c)}/`)) out.add(real(c));
+    if (conRepo) {
+      const { root } = resolveRepoRef(conRepo.ref, repo, roots);
+      const raiz = root ? roots.find((c) => real(c) === real(root)) : null;
+      if (raiz) { out.add(real(raiz)); continue; }
+      const nombre = porNombre.get(sinMayusculas(path.basename(conRepo.ref)));
+      if (nombre) out.add(nombre);
+      continue;
+    }
+    const d = String(decl).replace(/\\/g, '/').replace(/^(\.\.?\/)+/, '');
+    const primero = sinMayusculas(d.split('/')[0]);
+    if (porNombre.has(primero)) out.add(porNombre.get(primero));
+    // `../<carpeta>/<hermano declarado como subcarpeta>/x`: adentro de la raíz del hermano o de su carpeta declarada
+    const abs = path.resolve(repo, String(decl).replace(/\\/g, '/'));
+    for (const c of roots) {
+      const decl0 = DECLARADO.get(real(c));
+      if (adentro(abs, c) || (decl0 && adentro(abs, decl0))) out.add(real(c));
+    }
   }
+  for (const c of roots) if (!out.has(real(c)) && conCambiosPropios(c)) out.add(real(c));
   return out;
+}
+
+/**
+ * ¿El repo hermano tiene cambios propios? Sin commitear, o commits que su rama principal (la de `origin/HEAD`,
+ * `origin/main`, `origin/master`, `main` o `master`, la primera que exista) no tiene. Sin ninguna rama principal no hay
+ * contra qué medir, y cuenta como cambiado (se sella de más, nunca de menos). Una carpeta que no es un repo git, no.
+ */
+function conCambiosPropios(dir) {
+  const correr = (args) => spawnSync('git', ['-C', dir, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env: entornoDeGit() });
+  const estado = correr(['status', '--porcelain']);
+  if (estado.error || estado.status !== 0) return false;
+  if (String(estado.stdout || '').trim()) return true;
+  const cabeza = correr(['symbolic-ref', '-q', 'refs/remotes/origin/HEAD']);
+  const candidatas = [cabeza.status === 0 ? String(cabeza.stdout || '').trim() : null,
+    'refs/remotes/origin/main', 'refs/remotes/origin/master', 'refs/heads/main', 'refs/heads/master'].filter(Boolean);
+  const principal = candidatas.find((ref) => correr(['show-ref', '--verify', '--quiet', ref]).status === 0);
+  if (!principal) return true;
+  const r = correr(['rev-list', '--count', `${principal}..HEAD`]);
+  return r.error || r.status !== 0 ? true : Number(String(r.stdout || '').trim()) > 0;
 }
 
 /**

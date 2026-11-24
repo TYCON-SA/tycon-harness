@@ -148,7 +148,8 @@ function verify(repo, copy, tree) {
   if (!fs.existsSync(copy)) return { ok: false, error: `la copia de la vuelta no está (${copy}): repo ${repo}, sello ${tree}` };
   return conIndiceAparte((indice) => {
     const env = { GIT_INDEX_FILE: indice };
-    const base = [`--git-dir=${g.dir}`, `--work-tree=${copy}`];
+    // la copia vive más adentro que la carpeta viva: en Windows, también acá con rutas largas
+    const base = [...gitDeLaCopia(), `--git-dir=${g.dir}`, `--work-tree=${copy}`];
     const rt = git([...base, 'read-tree', tree], env);
     if (!rt.ok) return { ok: false, error: `no pude comprobar la copia de ${repo}: git read-tree ${tree} (${unaLinea(rt.err)})` };
     const add = git([...base, 'add', '-A'], env);
