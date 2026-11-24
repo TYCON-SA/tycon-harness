@@ -528,7 +528,7 @@ alinear_issues(){ # <ficha> <pr> merged|closed|reopened <motivo>
   [ "$(escalar "$FICHA" alineado)" != "$N:$DEC" ] || return 0
   ID=$(basename "$FICHA" .yaml)
   # 🔴 Sólo los repos que la organización declara (`github:` activo en repos.json, el mismo criterio que
-  # github-issues.js): la ficha viene del trabajo que corrió código de los productos, y un `pedidos:` adulterado no
+  # el aviso de dependencias del conector de GitHub): la ficha viene del trabajo que corrió código de los productos, y un `pedidos:` adulterado no
   # puede cerrar issues de cualquier repo que alcance el token. Sin repos.json legible no se toca ninguno.
   if ! LISTA=$(node -e 'const fs=require("fs"); const n=require(require("path").resolve(process.argv[1]));
                         let c; try { c=JSON.parse(fs.readFileSync("scripts/nightly/dependencies/repos.json","utf8")); }

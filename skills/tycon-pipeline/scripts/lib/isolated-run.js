@@ -318,20 +318,59 @@ function arranqueDeLaRed(lleva) {
 
 // La hora del registro del sistema, en UTC con su zona: la hora local de node y la del sistema pueden ser distintas (TZ)
 const horaDelRegistro = (ms) => `${new Date(ms).toISOString().slice(0, 19).replace('T', ' ')}+0000`;
-/**
- * Las rutas de las escrituras que el encierro negó con la marca de esta corrida: las de las carpetas vigiladas, que
- * matan al proceso. Un registro que no se puede leer no es «ninguna»: `{ error }`.
- */
-function negadasDelEncierro(marca, desde) {
+// El registro del sistema muestra lo que negó el encierro con atraso, más con la máquina cargada: al terminar, la
+// corrida deja una marca de cierre por el mismo camino (una negación anotada, de un programa del sistema) y lee hasta
+// verla, con un tope
+const CIERRE_ESPERA_MS = 30000;
+const CIERRE_PAUSA_MS = 500;
+const cierreDe = (marca) => `${marca}-cierre`;
+const dormirSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+/** Los mensajes del registro del sistema con la marca, desde `desde`: `{ eventos }` o `{ error }`. */
+function leerRegistro(marca, desde) {
   const r = spawnSync('/usr/bin/log', ['show', '--start', horaDelRegistro(desde), '--style', 'ndjson',
     '--predicate', `eventMessage CONTAINS "${marca}"`],
   { encoding: 'utf8', windowsHide: true, timeout: 60000, maxBuffer: 64 * 1024 * 1024 });
   if (r.error || r.status !== 0) return { error: r.error ? (r.error.code || r.error.message) : `salió ${r.status}` };
-  const rutas = [];
+  const eventos = [];
   for (const l of String(r.stdout).split('\n')) {
     let o;
     try { o = JSON.parse(l); } catch (_) { continue; }
-    const texto = String((o && o.eventMessage) || '');
+    eventos.push(String((o && o.eventMessage) || ''));
+  }
+  return { eventos };
+}
+/**
+ * La marca de cierre: `touch` sobre una carpeta que el encierro le niega con el mensaje `<marca>-cierre`. Pasa por el
+ * mismo camino que las negaciones de la corrida, después de todas ellas.
+ */
+function marcarCierre(base, marca) {
+  const dir = path.join(base, 'cierre');
+  fs.mkdirSync(dir, { recursive: true });
+  const q = (s) => `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  const perfil = `(version 1)(allow default)(deny file-write* (subpath ${q(dir)}) (subpath ${q(real(dir))}) (with message ${q(cierreDe(marca))}))`;
+  spawnSync('/usr/bin/sandbox-exec', ['-p', perfil, '/usr/bin/touch', path.join(dir, 'x')], { windowsHide: true, stdio: 'ignore', timeout: 5000 });
+}
+/**
+ * Las rutas de las escrituras que el encierro negó con la marca de esta corrida: las de las carpetas vigiladas, que
+ * matan al proceso. Lee el registro hasta ver la marca de cierre: lo que se negó antes ya está ahí. Un registro que no se
+ * puede leer, o que no muestra la marca de cierre en `espera`, no es «ninguna»: `{ error }`. Para las pruebas: `leer`,
+ * `ahora` y `dormir`.
+ */
+function negadasDelEncierro(marca, desde, { leer = leerRegistro, espera = CIERRE_ESPERA_MS, pausa = CIERRE_PAUSA_MS, ahora = Date.now, dormir = dormirSync } = {}) {
+  const cierre = cierreDe(marca);
+  const hasta = ahora() + espera;
+  let eventos;
+  for (;;) {
+    const r = leer(marca, desde);
+    if (r.error) return { error: r.error };
+    eventos = r.eventos || [];
+    if (eventos.some((t) => t.includes(cierre))) break;
+    if (ahora() >= hasta) return { error: `el registro del sistema no mostró la marca de cierre en ${Math.round(espera / 1000)} s` };
+    dormir(pausa);
+  }
+  const rutas = [];
+  for (const texto of eventos) {
+    if (texto.includes(cierre)) continue;
     // `Sandbox: node(123) deny(1) file-write-create /ruta` y debajo la marca; el renglón del propio `log` no es así
     if (!/Sandbox: .*deny\(\d+\)/.test(texto)) continue;
     const m = /deny\(\d+\) \S+ ([^\n]+)/.exec(texto);
@@ -415,6 +454,7 @@ function exec({ argv, raices = [], env = process.env, userInfo, cwd = process.cw
       }
       if (marca) {
         // lo que la red no vio: un proceso sin NODE_OPTIONS que quiso escribir en una carpeta vigilada
+        marcarCierre(base, marca);
         const negadas = negadasDelEncierro(marca, desde);
         if (negadas.error) {
           err(`[aislada] ⛔ no pude leer el registro del encierro (${negadas.error}): no sé si el comando intentó escribir en la casa de la cuenta\n`);
@@ -429,7 +469,7 @@ function exec({ argv, raices = [], env = process.env, userInfo, cwd = process.cw
   });
 }
 
-module.exports = { decide, exec, programas, esLaboratorio, sinEnvolturas, noSeAdmite };
+module.exports = { decide, exec, programas, esLaboratorio, sinEnvolturas, noSeAdmite, negadasDelEncierro };
 
 if (require.main === module) {
   const argv = process.argv.slice(2);

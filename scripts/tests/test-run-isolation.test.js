@@ -181,6 +181,37 @@ test('Aislada_HijoSinRed_ElEncierroLoAnota @story-8.314 @ac-2', { skip: ENCIERRO
   assert.ok(fs.existsSync(path.join(r, 'f.txt')), 'escribió en su repo');
 });
 
+// 🔴 Falla con: la corrida lee el registro del sistema una sola vez al terminar; con la máquina cargada la negación todavía
+// no llegó, la lectura sale vacía y la corrida da verde aunque un proceso quiso escribir en la casa (fila 170)
+test('Aislada_RegistroAtrasado_EsperaLaMarcaDeCierre @story-8.314 @ac-2: lo negado se lee aunque el registro llegue tarde', () => {
+  const { negadasDelEncierro } = require(ISO);
+  const marca = 'tycon-aislada-1-abc';
+  const negada = `Sandbox: node(9) deny(1) file-write-create /casa/.tycon/state/x\n${marca}`;
+  const cierre = `Sandbox: touch(10) deny(1) file-write-create /base/cierre/x\n${marca}-cierre`;
+  let reloj = 0;
+  const opts = (vueltas) => {
+    let n = 0;
+    return { espera: 10000, pausa: 100, ahora: () => reloj, dormir: (ms) => { reloj += ms; }, leer: () => { n += 1; return { eventos: n < vueltas ? [] : [negada, cierre] }; } };
+  };
+  // las dos primeras lecturas todavía no traen nada: espera la marca de cierre y encuentra la negada
+  assert.deepStrictEqual(negadasDelEncierro(marca, 0, opts(3)), ['/casa/.tycon/state/x']);
+  // con la marca de cierre y sin negadas, ninguna
+  reloj = 0;
+  assert.deepStrictEqual(negadasDelEncierro(marca, 0, { ...opts(1), leer: () => ({ eventos: [cierre] }) }), []);
+});
+
+test('Aislada_RegistroSinMarcaDeCierre_NoEsVerde @story-8.314 @ac-2: si la marca de cierre no llega, no se sabe y no da verde', () => {
+  const { negadasDelEncierro } = require(ISO);
+  let reloj = 0;
+  let lecturas = 0;
+  const r = negadasDelEncierro('tycon-aislada-2-def', 0, { espera: 1000, pausa: 100, ahora: () => reloj, dormir: (ms) => { reloj += ms; }, leer: () => { lecturas += 1; return { eventos: [] }; } });
+  assert.ok(r && r.error, `sin la marca de cierre tiene que decir que no sabe: ${JSON.stringify(r)}`);
+  assert.match(r.error, /marca de cierre/);
+  assert.ok(lecturas > 1, 'volvió a leer mientras esperaba');
+  // un registro que no se puede leer tampoco es «ninguna»
+  assert.ok(negadasDelEncierro('m', 0, { leer: () => ({ error: 'salió 1' }) }).error);
+});
+
 test('T4 Aislada_RepoDentroDeLoVigilado_SeEscribe @story-8.314 @ac-2', { skip: !POSIX }, (t) => {
   const c = cuenta(t);
   const r = repo(path.join(c.casa, '.claude', 'worktrees', 'r'), {

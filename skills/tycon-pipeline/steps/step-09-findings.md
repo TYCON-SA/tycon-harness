@@ -202,7 +202,7 @@ stories sanas con hallazgos que eran del propio control.
   = follow-up documentado; `open` = accionable sin resolver.
 - Escribe `<run-dir>/findings.json` (mismo dir que `step-06-consolidated-report.md`). Devuelve counts
   (critical/warning + por disposition). Un run con 0 findings igual escribe `[]` (el artefacto SIEMPRE existe).
-- **Enforcement**: «Preparar el commit» corre `pipeline.js findings-status` como pre-condición (exit 3 si falta) — no
+- **Enforcement**: «Preparar el pull request» corre `pipeline.js findings-status` como pre-condición (exit 3 si falta) — no
   se puede llegar al commit-prep sin el artefacto.
 
 ```json
@@ -361,7 +361,7 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-ste
 - `findings.json` (array estructurado en el dir de pipeline-runs)
 - `has_critical`, `has_warning`, `total_issues: N`
 - `should_proceed: true|false`, `had_override: true|false`
-- `auto_flowed_with_warnings: true|false` + lista de warnings (incl. auto-waived con razón): «Preparar el commit» los incluye en el commit message
+- `auto_flowed_with_warnings: true|false` + lista de warnings (incl. auto-waived con razón): «Preparar el pull request» los incluye en el commit message
 - `user_feedback` si pidió cambios
 
-Siguiente: lo que indique `pipeline.js next`. Si hubo arreglos de código, primero «Revisores, vuelta N+1» (regla D.i); después «Probar en vivo» (`step-10-live-check.md`). «Preparar el commit» sólo se abre con «Probar en vivo» cerrado.
+Siguiente: lo que indique `pipeline.js next`. Si hubo arreglos de código, primero «Revisores, vuelta N+1» (regla D.i); después «Probar en vivo» (`step-10-live-check.md`). «Preparar el pull request» sólo se abre con «Probar en vivo» cerrado.

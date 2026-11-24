@@ -212,7 +212,7 @@ test('T23b RojoComun_FrenaPrepareCommitSinDeuda — un control en rojo frena el 
   assert.match(r.stderr, /tests: red:exit=1 — aceptado por la deuda DEF-9\.9-angular/);
 });
 
-test('T24 Deuda_LlegaAlCommit @story-8.93 @ac-12 — la línea Deuda: sale al preparar el commit y el volcado dice deuda', () => {
+test('T24 Deuda_LlegaAlCommit @story-8.93 @ac-12 — la línea Deuda: sale al preparar el pull request y el volcado dice deuda', () => {
   const E = entorno({ todo: '- [ ] [DEF-9.9-angular] subir angular\n' });
   E.arrancar('s-t24');
   assert.strictEqual(E.correr('marker.js', CERRAR, 's-t24').status, 0);
@@ -222,7 +222,7 @@ test('T24 Deuda_LlegaAlCommit @story-8.93 @ac-12 — la línea Deuda: sale al pr
   E.escribir('s-t24', { ...m, stepsCompleted: hechos, stepsPending: ['prepare-commit'], checks: { tests: 'green', advisors: 'green' } });
   const r = E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], 's-t24');
   assert.match(r.stderr, /Deuda: DEF-9\.9-angular — la librería no tiene versión compatible/);
-  assert.strictEqual(E.leer('s-t24').cierre.estado, 'deuda', 'preparar el commit no toca el cierre');
+  assert.strictEqual(E.leer('s-t24').cierre.estado, 'deuda', 'preparar el pull request no toca el cierre');
   // `clear` conserva el cierre escrito: el volcado dice deuda, nunca completa
   const c = E.correr('marker.js', ['clear', '--discard'], 's-t24');
   assert.strictEqual(c.status, 0, c.stderr);
@@ -305,7 +305,7 @@ const HASTA_EL_ULTIMO = ['start', 'validate-story', 'plan', 'approve-plan', 'imp
 const REVISORES = '2026-01-01T10:00:00.000Z';
 const DESPUES = (min) => `2026-01-01T10:${String(min).padStart(2, '0')}:00.000Z`;
 
-/** Una ejecución lista para «Preparar el commit», con los revisores cerrados a las 10:00 y los cambios que se le pasan. */
+/** Una ejecución lista para «Preparar el pull request», con los revisores cerrados a las 10:00 y los cambios que se le pasan. */
 function listaParaElUltimo(E, sid, { cambios = [], timings = {}, extra = {} } = {}) {
   E.arrancar(sid, { autorizada: false });
   E.escribir(sid, {

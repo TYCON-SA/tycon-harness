@@ -20,9 +20,12 @@ const path = require('path');
 
 const programas = ['az'];
 const LEE = new Set(['list', 'show', 'ls', 'get', 'query', 'search', 'check', 'status', 'diff', 'version', 'validate']);
-const ESCRIBE = new Set(['login', 'logout', 'configure', 'create', 'delete', 'update', 'set', 'add', 'remove', 'import', 'upload', 'push', 'publish', 'queue', 'cancel', 'approve', 'vote', 'complete', 'merge', 'install', 'run', 'rerun', 'reject', 'abandon', 'reactivate', 'download']);
-// las opciones globales que pueden ir antes del grupo y llevan valor (`az -o json repos pr list`)
-const conValor = new Set(['-o', '--output', '--query', '--subscription']);
+const ESCRIBE = new Set(['login', 'logout', 'configure', 'create', 'delete', 'update', 'set', 'add', 'remove', 'import', 'upload', 'push', 'publish', 'queue', 'cancel', 'approve', 'vote', 'set-vote', 'complete', 'merge', 'install', 'run', 'rerun', 'reject', 'abandon', 'reactivate', 'download']);
+// las opciones con valor que pueden ir antes del grupo (`az -o json repos pr list`) o entre el grupo y el verbo
+// (`az repos pr --org u list`, `az repos pr -p X show`)
+const conValor = new Set(['-o', '--output', '--query', '--subscription', '--org', '--organization', '--project', '-p']);
+// las palabras que el conector reconoce como verbo: ya vista una, una opción de `conValor` corta (scripts/hooks/failed-query-notice.js)
+const esVerbo = (p) => LEE.has(p) || ESCRIBE.has(p);
 // un método que no es GET, con espacio, con «=» o pegado a la opción corta: `az devops invoke --http-method POST`,
 // `az rest --method=put`, `az rest -m delete`, `az rest -mput`
 const NO_GET = (opciones) => new RegExp(`(?:^|\\s)(?:${opciones})\\s*['"]?(?!GET\\b)[A-Za-z]`, 'i');
@@ -54,7 +57,7 @@ function proyectos(cmd, { segmentos, tokens, PREFIJOS, programaDe, palabras }) {
     const argv = tokens(seg.texto.replace(PREFIJOS, ''));
     // `az`, `az.cmd`, `C:\…\az.exe`, `AZ` (lo lee el gancho como a cualquier programa)
     if (!argv.length || programaDe(argv[0]).toLowerCase() !== 'az') continue;
-    const pos = palabras(argv, conValor);
+    const pos = palabras(argv, conValor, esVerbo);
     const habla = CON_PROYECTO.has(pos[0]) || (pos[0] === 'devops' && !['configure', 'login', 'logout', 'project', 'extension', 'user'].includes(pos[1]));
     if (!habla) continue;
     for (let j = 1; j < argv.length; j++) {
@@ -130,4 +133,4 @@ function refrescar(org, { stateDir }) {
   return 0;
 }
 
-module.exports = { programas, conValor, clasificar, avisos, refrescar, proyectos };
+module.exports = { programas, conValor, esVerbo, clasificar, avisos, refrescar, proyectos };
