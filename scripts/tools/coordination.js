@@ -1455,10 +1455,10 @@ function ownerWaitOnce(opts = {}) {
   // una que pide algo despierta, aunque venga junto a una que no, y lleva delante las guardadas; si ninguna pide nada,
   // se guardan para la próxima
   const wake = lines.some((l) => !quiet.has(l));
-  const guardadas = a.guardadas.length;
   let out = lines;
   if (wake) { out = [...a.guardadas, ...lines]; a.guardadas = []; } else if (lines.length) a.guardadas = [...a.guardadas, ...lines].slice(-OWNER_WAIT_KEPT_MAX);
-  if (lines.length || guardadas || read || dropped || routed || asked) writeJson(ownerWaitFile(home), a);
+  // las guardadas cambian sólo en una vuelta con líneas: sin novedades, el archivo no se reescribe cada 2 s
+  if (lines.length || read || dropped || routed || asked) writeJson(ownerWaitFile(home), a);
   return { lines: out, wake, stop: false };
 }
 
