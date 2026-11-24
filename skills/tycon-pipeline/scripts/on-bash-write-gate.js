@@ -74,7 +74,7 @@ const path = require('path');
 
 // en un repo sin historias, la palabra suelta no alcanza: cuenta una constancia o la ruta de una historia (de otro repo),
 // también armada por partes (`Path('specs') / n`, `os.path.join('stories', f)`, `'specs/' + n + '.md'`)
-const NOMBRA_RUTA_DE_HISTORIA = /control-changes|(?:^|[\\/'"`\s])(?:\.?specs?|stories)[\\/][^\s'"`]*\.md\b|\bstory-[\w.-]*\.md\b|['"`](?:\.\/)?(?:\.?specs?|stories)\/?['"`]/i;
+const NOMBRA_RUTA_DE_HISTORIA = /control-changes|exemptions\.jsonl|(?:^|[\\/'"`\s])(?:\.?specs?|stories)[\\/][^\s'"`]*\.md\b|\bstory-[\w.-]*\.md\b|['"`](?:\.\/)?(?:\.?specs?|stories)\/?['"`]/i;
 // las llamadas de un guion que escriben, copian, mueven o borran un archivo
 const GUION_ESCRIBE = /\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|copyFileSync|copyFile|cpSync|renameSync|rename|replace|unlinkSync|rmSync|truncateSync|write_text|write_bytes|copy|copyfile|copy2|copytree|move|remove|unlink|truncate)\s*\(|\bopen\s*\([^)]*,\s*["'][^"']*[wax+]|\bFile\.(?:write|delete|rename)\b|\bFileUtils\.\w+/;
 // las formas de escribir, borrar, mover o reponer un archivo desde un comando, sin contar un `open(` que puede ser de lectura
@@ -673,7 +673,7 @@ const CLASES_POSIX = {
   punct: '\\p{P}\\p{S}', space: '\\s', upper: '\\p{Lu}', xdigit: '0-9a-fA-F',
 };
 // la palabra entera: «historial», «storage» o «restore» no nombran una historia
-const MENCIONA_HISTORIA = /control-changes|\bstor(?:y|ies)\b|\bhistorias?\b/i;
+const MENCIONA_HISTORIA = /control-changes|exemptions\.jsonl|\bstor(?:y|ies)\b|\bhistorias?\b/i;
 
 /**
  * ¿La carpeta está en un repo con historias? Su raíz de git (sin git, la carpeta misma) con `.tycon/`, o con alguna
@@ -2989,7 +2989,7 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
     if (c === 'truncate' || c === 'gtruncate') { out.push(...posicionales(args, /^-[sr]$|^--(?:size|reference)$/).filter(es)); continue; }
     // lo que sale de una sustitución de proceso corre en el shell (`source <(echo …)`, `bash <(…)`): no se puede ver
     // antes; si el comando nombra una constancia, no pasa
-    if (['source', '.', ...SHELLS_QUE_LEEN_COMANDOS].includes(c) && /<\(/.test(tramo) && /control-changes|gates\.log/i.test(String(cmd))) {
+    if (['source', '.', ...SHELLS_QUE_LEEN_COMANDOS].includes(c) && /<\(/.test(tramo) && /control-changes|gates\.log|exemptions\.jsonl/i.test(String(cmd))) {
       out.push(`${tramo.trim()} (corre en el shell lo que sale de una sustitución de proceso)`);
       continue;
     }
@@ -3016,7 +3016,7 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
       // listar (por la entrada estándar, que todavía no existe) dentro de un repo, no pasa
       const lista = contenidoDelArchivo(c, args, tramo, abs);
       if (lista === null) { if (destinos.some(dentroDeUnRepo)) out.push(`${tramo.trim()} (no se puede ver si trae una constancia)`); continue; }
-      if (lista.some((e) => /control-changes/i.test(e) || destinos.some((d) => esRuta(path.join(d, e))))) out.push(`${tramo.trim()} (trae una constancia)`);
+      if (lista.some((e) => /control-changes|exemptions\.jsonl/i.test(e) || destinos.some((d) => esRuta(path.join(d, e))))) out.push(`${tramo.trim()} (trae una constancia)`);
       continue;
     }
     // otros que extraen y que el freno no sabe listar: `pax -r`, `ditto -x`, `python3 -m zipfile|tarfile -e`. A la
@@ -3308,7 +3308,7 @@ function parchesDePatch(args) {
 /** ¿El texto de un parche nombra una constancia? Con las rutas que git escribe entre comillas y con escapes octales. */
 function parcheNombraConstancia(texto, isControlApproval) {
   const t = String(texto).replace(/\\([0-7]{3})/g, (_, o) => String.fromCharCode(parseInt(o, 8)));
-  if (/control-changes/i.test(t)) return true;
+  if (/control-changes|exemptions\.jsonl/i.test(t)) return true;
   const rutas = [];
   for (const linea of t.split(/\r?\n/)) {
     let m = /^diff --git "?a\/(.+?)"? "?b\/(.+?)"?$/.exec(linea);
@@ -3617,7 +3617,7 @@ function nombresDeConstancia(dir, tope = 20000) {
     for (const e of entradas) {
       if (++vistos > tope) return null;
       const r = path.join(rel, e.name);
-      if (/^control-changes/i.test(e.name)) out.push(r);
+      if (/^control-changes|^exemptions\.jsonl$/i.test(e.name)) out.push(r);
       let carpeta = e.isDirectory();
       // un enlace a una carpeta se sigue (`cp -L`, `rsync -L`); el tope corta un enlace que vuelve sobre sí
       if (e.isSymbolicLink()) { try { carpeta = fs.statSync(path.join(dir, r)).isDirectory(); } catch (_) { carpeta = false; } }
