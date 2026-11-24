@@ -66,8 +66,9 @@ guarantees:
   gate reads it.
 - **The session cannot write itself the verdict**: the state's `plan-review/` folder is protected against what the
   agent writes, moves or deletes, and the result only counts from the path the preparation named (the runner's
-  `--out`). The harness runner passes only with the request the harness prepared (`--args "$(cat '<…>.args.json')"`):
-  with a hand-made request, another `--out`, a destination in a variable or relative after a `cd`, or reviewers of its
+  `--out`). The harness runner passes only with the request the harness prepared, given once (`--args-file
+  '<…>.args.json'`; the args go in a file because on Windows they do not fit on the command line): with a hand-made
+  request, another `--out`, a destination in a variable or relative after a `cd`, or reviewers of its
   own (`--agents-dir`, another `--runners` list), the brake stops it. With Claude Code's
   Workflow tool the result goes through the session, does not reach that path, and the plan waits for a person.
 - **The session cannot remove the click**: the `TYCON_PLAN_ROUTINE_APPROVAL` variable only tightens (`person`); set to

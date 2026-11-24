@@ -1227,6 +1227,36 @@ test('PlanReview_ForgedResult_ThreeWays_Blocked (T28, el freno) @story-8.267 @ac
   });
 });
 
+// 🔴 Mutaciones: un freno que sólo conoce `--args "$(cat …)"` frena el comando que imprime marker.js plan-review (los args
+// van por `--args-file` porque en Windows no entran en la línea de comando); o uno que acepta `--args-file` con un archivo
+// que no es el pedido del arnés, repetido, junto con `--args` o en una variable.
+test('PlanReview_ArgsFile_ElComandoDelArnesPasa_LasFalsificacionesNo (T28, el freno)', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'plan-review', 's1'), { recursive: true });
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const res = path.join(E, 'plan-review', 's1', 's1.resultado.json');
+  const args = path.join(E, 'plan-review', 's1', 's1.args.json');
+  const arnes = path.join(SCRIPTS, '..', '..', '..');
+  const lite = path.join(SCRIPTS, 'workflow-lite.js');
+  const wf = path.join(SCRIPTS, 'adversarial-verify.workflow.js');
+  const PR = require(path.join(SCRIPTS, 'lib', 'plan-review.js'));
+  conEnv(SIN_REGISTRO, () => {
+    const pasa = (cmd) => assert.equal(bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }), null, cmd);
+    const frena = (cmd) => { const r = bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }); assert.ok(r && r.block, cmd); };
+    // el comando tal como lo arma la revisión del plan: sin lista de corredores, y con la de la organización
+    pasa(PR.comandoLite(args, res, { order: [], integration: { runners: {} } }));
+    pasa(PR.comandoLite(args, res));
+    pasa(`node '${lite}' '${wf}' --args-file=${args} --out '${res}'`);
+    // otro archivo, dos veces, junto con --args, en una variable o con revisores propios
+    frena(`node '${lite}' '${wf}' --args-file /tmp/mio.args.json --out '${res}'`);
+    frena(`node '${lite}' '${wf}' --args-file '${args}' --args-file /tmp/mio.args.json --out '${res}'`);
+    frena(`node '${lite}' '${wf}' --args-file '${args}' --args '{}' --out '${res}'`);
+    frena(`A=${args}; node '${lite}' '${wf}' --args-file "$A" --out '${res}'`);
+    frena(`node '${lite}' '${wf}' --args-file '${args}' --out '${res}' --agents-dir /tmp/mis-agentes`);
+  });
+});
+
 // ── 8.317: con una historia abierta, el código fuera del grupo de la historia ─────────────────────────────────────────
 
 const OTRO = '/w/Otro';

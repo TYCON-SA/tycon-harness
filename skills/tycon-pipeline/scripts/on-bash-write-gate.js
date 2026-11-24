@@ -2356,13 +2356,26 @@ function salidaAjenaALaRevision(cmd, cwd, stateDir, installedRoots) {
     const lista = w[ri].startsWith('--runners=') ? w[ri].slice('--runners='.length) : w[ri + 1];
     return !!lista && lista === corredoresDeLaOrganizacion().lista;
   };
-  // el pedido que preparó el arnés: `--args "$(cat '<carpeta de la revisión>/<destino>.args.json')"`, una sola vez
-  const pedidoDelArnes = (tramo) => {
+  // el pedido que preparó el arnés, una sola vez y de una sola forma: `--args-file '<carpeta de la revisión>/<destino>.args.json'`
+  // (la que imprime marker.js plan-review), o la de antes, `--args "$(cat '<…>.args.json')"`, que sigue en las corridas
+  // que ya la tenían impresa
+  const pedidoDelArnes = (tramo, w) => {
+    const delPedido = (ruta) => {
+      const archivo = resolveTarget(ruta, cwd, process.platform, { homeVariable: true });
+      return /\.args\.json$/.test(archivo) && enLaRevision(archivo);
+    };
     const todos = String(tramo).match(/(?:^|\s)--args(?:=|\s)/g) || [];
+    const conArchivo = w.filter((x) => x === '--args-file' || x.startsWith('--args-file='));
+    if (conArchivo.length) {
+      if (conArchivo.length !== 1 || todos.length) return false;
+      const i = w.indexOf(conArchivo[0]);
+      const ruta = conArchivo[0].startsWith('--args-file=') ? conArchivo[0].slice('--args-file='.length) : w[i + 1];
+      // una ruta que no se lee hasta correr (una variable, una sustitución) no es la que preparó el arnés
+      return !!ruta && !/[$`]/.test(ruta) && delPedido(ruta);
+    }
     const m = String(tramo).match(/(?:^|\s)--args\s+"\$\(cat\s+(?:'([^']+)'|([^\s'"()$`]+))\)"(?=\s|$)/);
     if (todos.length !== 1 || !m) return false;
-    const archivo = resolveTarget(m[1] || m[2], cwd, process.platform, { homeVariable: true });
-    return /\.args\.json$/.test(archivo) && enLaRevision(archivo);
+    return delPedido(m[1] || m[2]);
   };
   for (const tramo of tramos(cmd)) {
     const w = palabras(tramo);
@@ -2377,7 +2390,7 @@ function salidaAjenaALaRevision(cmd, cwd, stateDir, installedRoots) {
       const abs = opaco ? null : resolveTarget(destino, cwd, process.platform, { homeVariable: true });
       if (opaco ? !nombraLaRevision : !enLaRevision(abs)) continue;
       const corredor = !opaco && destinos.length === 1 && /^(?:.*[\\/])?node(?:js)?(?:\.exe)?$/i.test(w[0] || '') && w[1] && w[2]
-        && delArnes(w[1], 'workflow-lite.js') && delArnes(w[2], 'adversarial-verify.workflow.js') && pedidoDelArnes(tramo)
+        && delArnes(w[1], 'workflow-lite.js') && delArnes(w[2], 'adversarial-verify.workflow.js') && pedidoDelArnes(tramo, w)
         && opcionesDelArnes(w);
       if (!corredor) return abs || destino;
     }

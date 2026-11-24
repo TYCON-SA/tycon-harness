@@ -169,8 +169,9 @@ Completion Notes / HITL de «Aprobar el plan» / Change Log — R1/R2/D3/etc.) p
 invocar la tool `Workflow`:
 
 > **Bajo Codex** (la sesión no tiene la tool `Workflow`): correr EL MISMO
-> script vía el runner propio, EN SEGUNDO PLANO:
-> `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/workflow-lite.js <mismo scriptPath> --args '<mismo JSON de args>' --out <RUN_DIR>/step-05b-adversarial.json`
+> script vía el runner propio, EN SEGUNDO PLANO. Los args van en un archivo, no en la línea de comando (en Windows no
+> entran): escribir el mismo JSON de args en `<RUN_DIR>/adversarial-args.json` y correr
+> `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/workflow-lite.js <mismo scriptPath> --args-file <RUN_DIR>/adversarial-args.json --out <RUN_DIR>/step-05b-adversarial.json`
 > Todo lo demás del step es idéntico (marker, join, decisiones post-output). Paridad verificada
 > con bug plantado confirmado por ambas vías. Sin resume cross-sesión:
 > un workflow huérfano bajo codex cae SIEMPRE en la rama "relanzar" de este step.
@@ -316,8 +317,9 @@ lee las respuestas, y el archivo de resultado sale del guion, no se escribe a ma
 ```bash
 W=~/.claude/agent-skills/skills/tycon-pipeline/scripts
 node $W/marker.js mark-adversarial-launched claude-<sello> 5b --relaunch   # --relaunch sólo si ya había un lanzamiento
+# los args, con model: "sonnet", van escritos en <RUN_DIR>/adversarial-args.json (en la línea de comando no entran en Windows)
 # vuelta 1: deja seis pedidos (uno por cazador) y sale 3
-node $W/workflow-lite.js $W/adversarial-verify.workflow.js --args '<mismo JSON de args, model: "sonnet">' \
+node $W/workflow-lite.js $W/adversarial-verify.workflow.js --args-file <RUN_DIR>/adversarial-args.json \
   --out <RUN_DIR>/step-05b-adversarial.json --agents-dir <RUN_DIR>/adversarial-agentes
 ```
 
