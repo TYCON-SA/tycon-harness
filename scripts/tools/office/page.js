@@ -21,6 +21,8 @@ const EN={
   "← Volver a todas":"← Back to all","Te toca a vos":"Your turn","Etiquetas":"Labels","Siempre":"Always","Al pasar el mouse":"On mouse over",
   "Arrastrá para girar · ⌘ o Ctrl más rueda, o pellizco, para acercar · tocá a alguien o el panel de la pared para ver el detalle":"Drag to turn · ⌘ or Ctrl plus wheel, or pinch, to zoom · tap someone or the wall panel to see the detail",
   "Las sesiones":"The sessions",
+  "Lo que te necesita":"What needs you",
+  "Las firmas y los cuadros se contestan donde dice cada uno. Desde acá sólo se contesta una espera en texto, y nada de lo que escribas acá firma, aprueba ni contesta un cuadro.":"Signatures and dialogs are answered where each one says. From here you can only answer a text wait, and nothing you write here signs, approves or answers a dialog.",
   "«Prometido» es la hora que dio la ejecución al arrancar; «Termina» es la de ahora, que se recalcula al entrar a cada paso y queda fija hasta el próximo. La diferencia sale en rojo si va más de 15 minutos tarde y en verde si va más de 15 minutos antes.":"«Promised» is the time the run gave when it started; «Ends» is the current one, recalculated when each step starts and fixed until the next. The difference shows in red if it is more than 15 minutes late and in green if it is more than 15 minutes early.",
   "El trabajo":"The work","Tablas":"Tables","Kanban":"Kanban","Buscar":"Search","Ir":"Go","Ver como tabla":"See as a table","Trabajo":"Work","Estado":"State",
   "Fin estimado":"Estimated end","Sesión":"Session","Carpeta":"Folder","Las sesiones trabajando en la oficina":"The sessions working in the office","Acercar":"Zoom in","Alejar":"Zoom out","Conversación":"Conversation",
