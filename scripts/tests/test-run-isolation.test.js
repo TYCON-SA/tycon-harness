@@ -195,15 +195,22 @@ test('F174 Aislada_HereDocDeBash_Anda: en el encierro, desde una carpeta no admi
       "console.log('HEREDOC ' + (h.stdout || '').trim() + ' ' + (h.stderr || '').trim());",
       "const o = spawnSync('/bin/bash', ['-c', 'echo x > otro.txt'], { encoding: 'utf8' });",
       "console.log('OTRO ' + o.status);",
+      // el nombre del temporal no sirve para escribir fuera de la carpeta actual
+      "const f = spawnSync('/bin/bash', ['-c', 'echo x > ' + process.argv[2] + '/sh-thd-777'], { encoding: 'utf8' });",
+      "console.log('AFUERA ' + f.status);",
     ].join('\n'),
   });
+  const afuera = path.join(c.b, 'afuera');
+  fs.mkdirSync(afuera);
   const g = path.join(r, '.advisors', 'dod-runtime', 'g.js');
-  const s = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.32', ['--', process.execPath, g], { cwd: sesion, env: ambiente(c) });
+  const s = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.32', ['--', process.execPath, g, afuera], { cwd: sesion, env: ambiente(c) });
   assert.match(salida(s), /HEREDOC heredoc-ok/, salida(s));
   assert.doesNotMatch(salida(s), /cannot create temp file/, salida(s));
   assert.match(salida(s), /OTRO [1-9]/, salida(s));
   assert.ok(!fs.existsSync(path.join(sesion, 'otro.txt')), 'otra escritura en la carpeta de la sesión sigue negada');
   assert.deepStrictEqual(fs.readdirSync(sesion).filter((f) => f.startsWith('sh-thd-')), [], 'bash borra su temporal');
+  assert.match(salida(s), /AFUERA [1-9]/, salida(s));
+  assert.ok(!fs.existsSync(path.join(afuera, 'sh-thd-777')), 'el nombre del temporal en otra carpeta sigue negado');
 });
 
 test('F174 T2 Aislada_HijoSinLasVariablesDeLaRed_EscribeEnSuLaboratorio: un hijo con HOME de juguete y sin las variables TYCON_ escribe en su casa de juguete; la casa de la cuenta sigue frenada', { skip: !POSIX }, (t) => {

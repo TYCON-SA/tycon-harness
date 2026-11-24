@@ -347,7 +347,7 @@ function exec({ argv, raices = [], env = process.env, userInfo, cwd = process.cw
       if (enc.nombre === 'sandbox-exec' && encierroAbre()) {
         marca = `tycon-aislada-${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
         desde = Date.now() - 2000;
-        const perfil = cp().perfilSandbox([base, ...admitidas], { red: true, fatales: raicesVigiladas, mensaje: marca });
+        const perfil = cp().perfilSandbox([base, ...admitidas], { red: true, fatales: raicesVigiladas, mensaje: marca, heredoc: [cwd || process.cwd()] });
         lanzar = ['/usr/bin/sandbox-exec', ['-p', perfil, ...argv]];
       } else err(`[aislada] ⚠️ sin el encierro del sistema (${enc.nombre === 'sandbox-exec' ? 'el sistema no deja abrirlo: esta sesión ya corre encerrada' : enc.corta}): frena sólo la red de escritura de node\n`);
     }
