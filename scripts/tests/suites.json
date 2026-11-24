@@ -5267,6 +5267,18 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.83: los cinco comandos del marcador (set, complete-step, adopt-session, restore, clear) anotan la sesión que los corre, con su nombre, en marker.sesiones (una por sesión, hasta 10) y el volcado del cierre la lleva; no poder leer el nombre nunca frena. HOME de prueba por caso, con sesiones inventadas; sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/marker-session-names.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.83: el nombre de una sesión por su id con los lectores de /wip (archivo de sesión de Claude, el último /rename, Codex); un nombre armado de la carpeta es sin nombre; nunca tira. Casas temporales; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/session-name.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.67 (tanda B): la carpeta de los repos puede ser más de una y estar fuera de la carpeta personal. Fuera del home votan todos los ancestros menos la raíz del disco; rutas.repos y TYCON_REPOS_ROOT aceptan varias y `set` guarda la lista; root es la primera de roots; las sesiones dan una raíz por grupo (desde la segunda, con al menos dos repos); las repetidas o anidadas se sacan; sin raíz, el motivo trae el comando; los que recorren repos ven los de todas. Hogares, configuraciones y repos de juguete; sin red.",
       "raiz": "arnes",
       "ruta": "tests/repos-roots.test.js",

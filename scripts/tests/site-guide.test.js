@@ -527,3 +527,14 @@ test('T20 4.14-Guide_LearningsSectionsUpdated @story-4.14 @ac-19 — las guías 
   assert.ok(!operaciones.includes('sólo con los números'), 'la guía de los pipelines tampoco');
   assert.ok(require('./lib/pieces-guide.js').piecesText(ROOT).includes('recomendaciones.json'), 'la ficha nombra el archivo de la noche');
 });
+
+test('T12 2.83-Guia_SesionesEnLaFicha @story-2.83 @ac-16 — las dos guías traen las sesiones en la tarjeta de ejecuciones', () => {
+  const casos = [
+    [GUIA, ['Máquinas: mac-a, mac-b. Sesiones: Ponzio-5, Carrizo-4.', 'el nombre que tenía la sesión en su máquina', 'forma de nombre de sesión', 'antes de que el arnés anotara los nombres']],
+    [GUIA_EN, ['Machines: mac-a, mac-b. Sessions: Ponzio-5, Carrizo-4.', 'the name the session had on its machine', 'shape of a session name', 'before the harness recorded the names']],
+  ];
+  for (const [guia, frases] of casos) {
+    const t = leer(guia).replace(/\s+/g, ' ');
+    for (const f of frases) assert.ok(t.includes(f), `${path.basename(guia)}: dice «${f}»`);
+  }
+});
