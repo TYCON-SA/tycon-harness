@@ -63,7 +63,9 @@ const PARA_OTRA_SESION = {
   // el plan con su nombre o con el número del marcador viejo, con la firma: la persona, o la coordinadora por delegación
   // con la revisión automática (sin firma no se escribe en la ejecución de otra sesión)
   'complete-step': { firma: 'plan-approval', marcador: true,
-    si: (a) => (a[3] === 'approve-plan' || a[3] === '3') && ['--approved', '--mockup-approved', '--terminal'].some((f) => a.includes(f)) },
+    si: (a) => (a[3] === 'approve-plan' || a[3] === '3') && ['--approved', '--mockup-approved', '--terminal'].some((f) => a.includes(f)),
+    // el paso del plan sin ninguna de esas: la firma es ésa, sólo le falta la cita (lo dice paraOtraSesion)
+    sinCita: (a) => a[3] === 'approve-plan' || a[3] === '3' },
   'approve-mockup': { firma: 'plan-approval', marcador: true },
   'waive-critical': { firma: 'critical-waiver', marcador: true },
   // eximir un comando de la comparación con main (historia 8.167): sobre la corrida abierta del destino
@@ -144,6 +146,11 @@ function paraOtraSesion(argv) {
   if (argv[2] === 'clear') no(`clear cierra la ejecución de la propia sesión; la de otra sesión se cierra con marker.js clear-session ${PEDIDA} (y si quedó perdida, clear-session ${PEDIDA} --lost --for-session ${PEDIDA})`);
   const t = reglaParaOtra(argv);
   const s = t && require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'signatures.js')).SIGNATURES.find((x) => x.id === t.firma);
+  // el plan sin --approved ni --terminal es la firma de otra sesión sin su cita: se dice qué falta y el comando, sin firmar
+  if (t && t.si && !t.si(argv) && t.sinCita && t.sinCita(argv) && s && s.otherSession === 'yes') {
+    const paso = `${argv[2]} ${argv[3]}`;
+    no(`«${paso}» firma el plan de otra sesión y le falta la cita de la persona que lo aprobó. Con la cita, el freno arma el cuadro: node ${MARKER_JS} ${paso} --approved '<la cita de la persona>' --for-session ${PEDIDA}; o en la terminal de la persona: node ${MARKER_JS} ${paso} --terminal --for-session ${PEDIDA}`);
+  }
   if (!t || (t.si && !t.si(argv)) || !s || s.otherSession !== 'yes') no(`«${argv.slice(2, 4).join(' ')}» no es una firma que se pida para otra sesión`);
   if (t.nombra && String(argv[t.nombra] || '').replace(/[/\\]/g, '_') !== PEDIDA) no(`el comando nombra la sesión ${argv[t.nombra]}, y la firma es para ${PEDIDA}`);
   estado.SID = PEDIDA;
@@ -340,8 +347,36 @@ function avisarOficina(sesion = estado.SID) {
   try { require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'office-event.js')).notify(sesion); } catch (_e) { /* la vigilancia de la oficina lo ve después */ }
 }
 
+// Las sesiones que pasaron por la corrida, con su nombre (`marker.sesiones`, scripts/lib/session-name.js): la entrada de
+// la sesión que corre el comando se pone al día en los cinco comandos que marcan el arranque, cada paso, cada pase de
+// sesión y el cierre. El nombre se lee una vez por comando. Leerlo nunca frena ni cambia la salida: si no se puede, la
+// entrada queda sin nombre (o, sin la librería, la lista queda como estaba) y sale una línea con el código.
+const COMANDOS_CON_NOMBRE = new Set(['set', 'complete-step', 'adopt-session', 'restore', 'clear']);
+let nombreDelComando;
+function conSesionNombrada(marker) {
+  if (PREVIO || estado.SOLO_LECTURA || estado.SID !== PROPIA || estado.SID === '_nosession' || !COMANDOS_CON_NOMBRE.has(process.argv[2])) return marker;
+  if (!marker || typeof marker !== 'object' || !marker.storyId) return marker;
+  if (nombreDelComando === undefined) {
+    try {
+      const lib = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'session-name.js'));
+      nombreDelComando = { lib, leido: lib.nombreDeSesion({ sid: estado.SID, home: os.homedir() }), visto: nowIso() };
+      if (nombreDelComando.leido.problema) process.stderr.write(`[marker] no pude leer el nombre de la sesión (${nombreDelComando.leido.problema})\n`);
+    } catch (_e) {
+      nombreDelComando = null;
+      process.stderr.write('[marker] no pude leer el nombre de la sesión (sin-libreria)\n');
+    }
+  }
+  if (!nombreDelComando) return marker;
+  try {
+    const { lib, leido, visto } = nombreDelComando;
+    marker.sesiones = lib.conSesion(marker.sesiones, { id: estado.SID, nombre: leido.nombre, cortado: leido.cortado, visto });
+  } catch (_e) { /* la lista queda como estaba: el marcador se escribe igual */ }
+  return marker;
+}
+
 function writeMarker(marker) {
   sinFirmaNoSeEscribe();
+  conSesionNombrada(marker);
   ensureActiveDir();
   pruneStale();
   const p = markerFilePath(estado.SID);
@@ -457,7 +492,9 @@ function vueltaCongeladaComprobada(tipo, quien) {
 /**
  * Lo que se guarda, ¿es lo revisado? (historia 8.161, decisión 3). Sella cada repo de la última vuelta de revisores
  * (nunca la del pase) y compara con su sello: los archivos distintos, sin el papeleo, frenan con el comando de la
- * vuelta (`reviewed-tree-mismatch`). Una vuelta sin sello (de antes) no se compara: se dice y queda en gates.log.
+ * vuelta (`reviewed-tree-mismatch`). Lo sin commitear adentro de un submódulo o de un repo anidado, que el sello no ve
+ * (anota de cada uno sólo su commit), también frena; uno que no se puede mirar, también. Una vuelta sin sello (de antes)
+ * no se compara: se dice y queda en gates.log.
  */
 function comprobarLoRevisado(marker, quien) {
   const ft = require('./frozen-tree.js');
@@ -471,6 +508,8 @@ function comprobarLoRevisado(marker, quien) {
   const storyAbs = resolveStoryPath(marker.storyPath, marker);
   const realDe = (p) => { try { return fs.realpathSync(p); } catch (_e) { return path.resolve(p); } };
   const distintos = [];
+  // lo de adentro de un submódulo o repo anidado: otra vuelta no lo arregla, hay que commitearlo en su repo o descartarlo
+  const adentro = [];
   const papeleo = [];
   const deMain = [];
   const sinSepararMain = [];
@@ -490,6 +529,9 @@ function comprobarLoRevisado(marker, quien) {
   for (const r of v.repos) {
     const ahora = ft.seal(r.repo);
     if (ahora.error) frenar(`no pude sellar lo que se guarda para compararlo con lo revisado (${ahora.error}).`);
+    const anidados = ft.anidadosConCambios(r.repo, ahora.tree);
+    if (anidados.error) frenar(`no pude comparar lo que se guarda con lo revisado en ${path.basename(r.repo)}: ${anidados.error}.`);
+    for (const f of anidados.files) { distintos.push({ repo: r.repo, f }); adentro.push(f); }
     const rel = storyAbs ? path.relative(realDe(r.repo), realDe(storyAbs)) : null;
     // lo que trajo main en archivos que la corrida no tocó no es «no revisado»: se separa con el punto en común con main
     // del sello y el de ahora, del mismo repo
@@ -517,6 +559,7 @@ function comprobarLoRevisado(marker, quien) {
     console.error(`marker.js ${quien} BLOQUEADO — lo que se guarda no es lo revisado: cambió después de la última vuelta de revisores (${v.etiqueta}):`);
     for (const d of distintos) console.error(`   · ${d.f} (${path.basename(d.repo)})`);
     for (const s of sinSepararMain) console.error(`  No pude separar lo que trajo main (${s}): cuenta como cambio.`);
+    if (adentro.length) console.error('  Lo de adentro de un submódulo o repo anidado no lo ve la vuelta: commitealo en su repo, o descartalo, y después corré otra vuelta.');
     console.error(`  Corré otra vuelta: pipeline.js smart-reloop --story ${marker.storyPath || '<historia>'} --repo ${marker.repoPath || '<repo>'} --iter ${iter} --files "<el diff completo, como hoy>".`);
     console.error('  La vuelta re-revisa lo que cambió desde su foto; con el sello nuevo, este paso sigue.');
     process.exit(2);
@@ -746,6 +789,83 @@ function trabajarSobreElDestino(ow, r) {
 
 // La sesión que pidió la firma para otra, para las constancias: `{ por }`, o nada si es la propia.
 const porDe = (firma) => (firma && firma.constancia && firma.constancia.por ? { por: firma.constancia.por } : {});
+
+// ¿La firma la contestó una persona? Su click en el cuadro, su «aprobado» escrito, su terminal, o su «sí» en la ventana
+// de permiso de la herramienta (owner-window.js: el freno pide la ventana sólo en una pestaña que pregunta, y su registro
+// queda atado a este comando). La ventana no nombra a quién (approvals.js `deLaPersona`: el quién sale de las opciones),
+// pero la contestó una persona; la delegación, la revisión, el trámite y «hecho y avisado», no.
+const conPersona = (via) => via === 'ventana' || require('./approvals.js').deLaPersona(via, 'persona') !== null;
+
+// El modo de una aprobación según la firma que la respaldó: `user` sólo si la contestó una persona, como el plan; si no,
+// la vía misma (`automatica` para la firma de trámite, que owner-window.js devuelve como delegación).
+function modoDeLaFirma(firma) {
+  const via = firma && (firma.via || (firma.constancia && firma.constancia.via));
+  if (!(firma && firma.automatica) && conPersona(via)) return 'user';
+  return firma && firma.automatica ? 'automatica' : String(via || 'sin-persona');
+}
+
+// La cita de una opción (`--approved`, `--mockup-approved`): la palabra que sigue, salvo que sea otra opción. Sin esto
+// `--mockup-approved --for-session <s>` dejaba «--for-session» como la cita de quien aprobó.
+const citaDe = (v) => (typeof v === 'string' && v.trim() && !v.startsWith('--') ? v : null);
+
+// Las vías con que una aprobación quedó sin persona: la delegación, la revisión automática, la firma de trámite y
+// «hecho y avisado». La maqueta aprobada con el plan no guardaba su vía: es la del plan del mismo comando (la misma hora).
+const SIN_PERSONA_EN_LA_CONSTANCIA = new Set(['delegacion', 'revision', 'automatica', 'avisado']);
+function hechaSinPersona(ap, plan) {
+  if (!ap) return false;
+  if (SIN_PERSONA_EN_LA_CONSTANCIA.has(ap.mode)) return true;
+  const via = ap.via || (plan && plan !== ap && plan.at && plan.at === ap.at ? plan.via : null);
+  return SIN_PERSONA_EN_LA_CONSTANCIA.has(via);
+}
+// Lo que se guarda de la aprobación que reemplaza `--replace-delegated`.
+const reemplazada = (ap) => ({ via: ap.via || null, mode: ap.mode || null, text: ap.text || null, at: ap.at || null, ...(ap.por ? { por: ap.por } : {}) });
+
+// El control previo de `--replace-delegated`: firma sólo la persona, a ESTE pedido. owner-window.js pasa `delegacion`
+// para todo lo que sale sin ella (la delegación, el trámite, «hecho y avisado»); su registro dice si fue el click o el
+// «aprobado» (el del cuadro de este comando, con su sello), o el «sí» en la ventana de este comando (sin vía).
+// En el chequeo previo del freno, sin registro y sin una vía sin persona, la persona todavía puede contestar: no se
+// niega, y el freno ofrece la ventana y el cuadro (como `antesDelPlan`). Al correr de verdad siempre hay registro, y
+// cuenta sólo su vía.
+function soloLaPersona(via, registro) {
+  if (!registro && via !== 'delegacion') return null;
+  const v = registro ? (registro.via || 'ventana') : via;
+  if (conPersona(v)) return null;
+  return { codigo: 2, motivo: 'reemplazar una firma hecha por delegación pide el click, el «aprobado» o el «sí» en la ventana de una persona a este pedido, o su terminal: por la delegación o como trámite no se reemplaza' };
+}
+
+// ¿La aprobación `ap` es de una persona y sigue valiendo para la huella de ahora (`shaAhora`)? `campo` es dónde guarda
+// la suya (`planSha` el plan, `sha256` la maqueta). Si las dos huellas están y difieren, lo aprobado cambió y la
+// aprobación vieja ya no vale; sin alguna de las dos no se sabe si cambió, y cuenta como vigente.
+function aprobadaPorPersona(ap, shaAhora, campo, plan) {
+  if (!ap || ap.mode !== 'user' || hechaSinPersona(ap, plan)) return false;
+  return !(ap[campo] && shaAhora && ap[campo] !== shaAhora);
+}
+
+// El control previo de una firma que reescribiría lo que ya aprobó una persona (`protegidos`: 'plan', 'maqueta'): sin
+// persona (la delegación, la revisión, la firma de trámite o «hecho y avisado», que owner-window.js pasa como
+// `delegacion`) no se escribe y sale 2; la persona sí puede volver a aprobar. `{ codigo, motivo }` o null.
+function noPisaLaPersona(protegidos, via) {
+  if (!protegidos.length || via !== 'delegacion') return null;
+  const que = protegidos.includes('plan')
+    ? `el plan${protegidos.includes('maqueta') ? ' (y su maqueta)' : ''} ya lo aprobó una persona; un trámite no lo pisa`
+    : 'la maqueta ya la aprobó una persona; un trámite no la pisa';
+  return { codigo: 2, motivo: `${que}. Para aprobarlo de nuevo, que lo apruebe la persona (su click o su «aprobado» a este pedido, o su terminal). No se escribió nada.` };
+}
+
+// Quién aprobó la maqueta, para approvals.jsonl (lo lee el portón de la CI): la persona con su click, su «aprobado» o su
+// terminal, a nombre del usuario de la máquina; sin persona (la firma de trámite, la delegación, la revisión, «hecho y
+// avisado»), quien firmó de verdad, como el plan. Un nombre escrito en el comando (--approved-by) cuenta sólo con la
+// ventana, como siempre: nunca vuelve manual una firma que no tuvo persona.
+function quienDeLaMaqueta(firma, optVal) {
+  const persona = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona';
+  const deLaPersona = require('./approvals.js').deLaPersona(firma && firma.via, persona);
+  if (deLaPersona) return deLaPersona;
+  if (firma && (firma.automatica || SIN_PERSONA_EN_LA_CONSTANCIA.has(firma.via))) {
+    const q = firma.via === 'revision' && !firma.sesion ? { quien: 'revisión automática de la propia sesión' } : ownerWindow().quienFirmo(firma, persona);
+    return { tipo: 'automatica', quien: q.quien, ...(q.delegacion ? { delegacion: q.delegacion } : {}) };
+  }
+  return quienDeLasOpciones(optVal);
+}
 
 // El renglón `<firma>-signed` en gates.log: estricto. Sin él, el ok de guardar por delegación no ve la exención firmada
 // y la historia saldría limpia; si no se puede escribir, el comando falla a la vista y la firma no cuenta.
@@ -1263,11 +1383,12 @@ module.exports = {
   signatureCommand, STEPS_LIB, posixRelative, STATE_DIR, ACTIVE_DIR, LEGACY_MARKER_PATH, STALE_HOURS, PROPIA, PEDIDA,
   PREVIO, LOGS_DEL_CHEQUEO, PARA_OTRA_SESION, PARTICION, reglaParaOtra, ownerWindow, paraOtraSesion, ensureActiveDir,
   nowIso, markerFilePath, firmadaDespuesDe, pruneStale, appendLog, conRutas, readOwnMarkerRaw, readMarker,
-  sinFirmaNoSeEscribe, avisarOficina, writeMarker, syncSessionState, cerrarEjecucion, frenarSiIlegible, frenarSiPerdida,
+  sinFirmaNoSeEscribe, avisarOficina, conSesionNombrada, writeMarker, syncSessionState, cerrarEjecucion, frenarSiIlegible, frenarSiPerdida,
   perdidaSinFrenar, vueltaCongeladaComprobada, comprobarLoRevisado, sellosDe, veredictoPaseAdversarial, paseAtendido,
   mensajeDelPaseAdversarial, PLAN_FILE, planDeLaCorrida, huellaDelPlan, planEnLaConversacion, planParaLaPersona,
   planVisto, anotarAprobacion, quienDeLasOpciones, CONTROLES_DEL_PASO, ORDER_REQUIRES_OLD, firmaDelDueno,
-  antesDeLaRevision, trabajarSobreElDestino, porDe, anotarFirma, idsDeEspera, doingFileOf, anotarOtraVuelta,
+  antesDeLaRevision, trabajarSobreElDestino, porDe, conPersona, modoDeLaFirma, citaDe, hechaSinPersona, reemplazada,
+  soloLaPersona, aprobadaPorPersona, noPisaLaPersona, quienDeLaMaqueta, anotarFirma, idsDeEspera, doingFileOf, anotarOtraVuelta,
   PASO_ARRANCABLE, arrancable, anotarArranque, VALID_CHECKS, resolveStoryPath, markerStoryIsUi, markerScreenRule,
   screenRule, TANDAS_MEDIDAS, tandasMedidasDe, avisarBajaDePantalla, TESTS_FAILED_PENDING, testsNotMeasuredLine,
   COLA_BYTES_RETENIDOS, RUN_CHECK_BUSY, SENALES_RUN_CHECK, VALID_FLAGS, EXTERNAL_FLAGS, HARNESS_COMMAND, OLD_FLAGS,

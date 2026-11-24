@@ -364,13 +364,20 @@ function raiseHands(agents, signatures, sidOf, coordinatorName) {
 // Lo trabado, por a quién espera: la primera sesión abierta que nombra su espera, o el dueño; si no nombra a nadie, «otra
 // cosa». La tanda más grande primero, y «otra cosa» al final.
 const OWNER_WAIT = Symbol('el dueño');
+// A quién espera una sesión «esperando»: la primera sesión que nombra su espera, o el dueño si no nombra ninguna y lo
+// nombra a él; null si no nombra a nadie
+function waitedBy(a, names) {
+  const said = String(a.termina || '').replace(/^espera /, '');
+  return names.find((n) => n !== a.nombre && new RegExp(`(?<![\\p{L}\\p{N}])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'iu').test(said)) || (/(?<![\p{L}\p{N}])dueñ[oa](?![\p{L}\p{N}])/iu.test(said) ? OWNER_WAIT : null);
+}
+const waitsForOwner = (a, names) => waitedBy(a, names) === OWNER_WAIT;
 function stuckGroups(agents, coordinatorName) {
   const groups = new Map();
   const names = agents.map((a) => a.nombre).filter(Boolean);
   for (const a of agents) {
     if (a.estado !== 'esperando') continue;
     const said = String(a.termina || '').replace(/^espera /, '');
-    const who = names.find((n) => n !== a.nombre && new RegExp(`(?<![\\p{L}\\p{N}])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'iu').test(said)) || (/(?<![\p{L}\p{N}])dueñ[oa](?![\p{L}\p{N}])/iu.test(said) ? OWNER_WAIT : null);
+    const who = waitedBy(a, names);
     if (!groups.has(who)) groups.set(who, []);
     groups.get(who).push(`${a.nombre}: ${said}`);
   }
@@ -875,6 +882,7 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
   kanban.linea = boardLine(kanban, { trabado: meta.trabado });
   const esperan = placeWaits({ agents, kanban, sidOf, waitOf, ownerCard });
   if (esperan) meta.esperan = esperan;
+  meta.teNecesita = ownerNeeds({ agents, kanban, board });
   const facts = boardFacts({ agents, storyOfAgent, sidOf, board, prAnswers, halfwayCards, nowMs });
   // la tabla dice lo mismo que las tarjetas, en llano
   const rows = agents.filter((a) => a.tipo).map((a) => ({ work: a.titulo || '', state: a.mientras ? `${a.haciendo} Mientras tanto: ${a.mientras}.` : a.haciendo, end: a.fin ? a.fin.hora + (a.fin.dif ? ` · ${a.fin.dif}` : '') : '', session: a.nombre, folder: a.carpeta || '' }));
@@ -929,6 +937,60 @@ function placeWaits({ agents, kanban, sidOf, waitOf, ownerCard }) {
   const groups = waitCard.waitGroups(rows);
   if (!groups.dueno.length && !groups.main.length && !groups.sesion.length) return null;
   return Object.fromEntries(Object.entries(groups).map(([k, list]) => [k, list.map(waitCard.waitText)]));
+}
+
+// La opción que alguien anotó como recomendada en el texto de una espera, una firma o una línea del tablero: «recomiendo: A»,
+// con los dos puntos y sin un «no» delante, hasta el fin del texto o, si la marca abre un paréntesis, hasta el que lo
+// cierra. Sin esa marca no hay recomendación: la página lo dice y no la inventa.
+function recommendedIn(text) {
+  const s = String(text || '');
+  const m = /(?<![\p{L}\p{N}])recomiendo:\s*/iu.exec(s);
+  if (!m) return null;
+  const before = s.slice(0, m.index);
+  if (/(?<![\p{L}\p{N}])no\s+(?:lo\s+|la\s+)?$/iu.test(before)) return null;
+  let rest = s.slice(m.index + m[0].length);
+  if (/\(\s*$/.test(before)) {
+    let depth = 1;
+    for (let j = 0; j < rest.length; j += 1) {
+      if (rest[j] === '(') depth += 1;
+      else if (rest[j] === ')' && --depth === 0) { rest = rest.slice(0, j); break; }
+    }
+  }
+  return rest.trim() || null;
+}
+
+/**
+ * Lo que te necesita, para la página de la oficina local: `[{ clase, que, quien?, donde, porque?, recomendada? }]`, en
+ * cuatro clases: `firma` (las tarjetas de «Tu firma»), `cuadro` (la sesión con una pregunta en su pantalla), `espera` (la
+ * sesión que anotó que espera al dueño, como en «lo trabado») y `tablero` (lo que te toca según el tablero). `porque` es el
+ * riesgo de su ficha, si la tiene. Sólo la espera se contesta desde la página: lo demás dice dónde se contesta.
+ */
+function ownerNeeds({ agents, kanban, board }) {
+  const out = [];
+  const add = (it, text) => { const r = recommendedIn(text); out.push({ ...it, ...(r ? { recomendada: r } : {}) }); };
+  const porque = (ficha) => (ficha && ficha.riesgo ? { porque: ficha.riesgo } : {});
+  const enSuChat = (n) => `en el chat de ${n}, con el click`;
+  const COORD = 'con la coordinadora';
+  for (const t of kanban.columnas.find((c) => c.id === 'firma').tarjetas) {
+    const quien = String(t.quien || '').trim();
+    // «vos» en una firma de la lista es el dueño, no una sesión
+    const nombrada = Boolean(quien) && quien !== '—' && !/^vos$/iu.test(quien);
+    const donde = t.origen === 'tablero' ? COORD
+      : t.origen === 'lista' ? 'en el chat de la coordinadora, que te trae el cuadro'
+        : t.origen === 'medio' ? `la sesión${nombrada ? ` ${quien}` : ''} está cerrada: retomala o decidilo ${COORD}`
+          : nombrada ? enSuChat(quien) : 'en el chat de la sesión que la pidió, con el click';
+    add({ clase: 'firma', que: String(t.titulo || 'Una firma'), ...(nombrada ? { quien } : {}), donde, ...porque(t.ficha) }, t.titulo);
+  }
+  const names = agents.map((a) => a.nombre).filter(Boolean);
+  for (const a of agents) {
+    if (a.estado === 'pregunta') add({ clase: 'cuadro', que: a.haciendo || 'Te hizo una pregunta en su pantalla.', quien: a.nombre, donde: enSuChat(a.nombre), ...porque(a.ficha) }, a.haciendo);
+    else if (a.estado === 'esperando' && waitsForOwner(a, names)) {
+      const said = String(a.termina || '').replace(/^espera /, '');
+      add({ clase: 'espera', que: said, quien: a.nombre, donde: 'acá: tu respuesta le llega como un mensaje de la oficina' }, said);
+    }
+  }
+  for (const line of (board && board.teToca) || []) add({ clase: 'tablero', que: String(line), donde: COORD }, line);
+  return out;
 }
 
 /**
@@ -2279,6 +2341,11 @@ function markRecipients(data, env, states, sdir, { isAlive, startOf, cxNames = n
   // con el mismo nombre que le pone la oficina a una sesión de Codex sin nombre en su archivo
   const codex = new Set(states.filter((s) => s.tool === 'codex' && (s.name || s.session)).map((s) => s.name || cxNames.get(s.session) || String(s.session).slice(0, 8)));
   env.recipients = new Map();
+  // quien espera al dueño en texto: sólo a ésa le llega una respuesta de la página de lo que te necesita
+  const waitsOwner = new Set((((data.meta || {}).teNecesita) || []).filter((i) => i.clase === 'espera').map((i) => i.quien));
+  // dos sesiones con el mismo nombre comparten la entrada: a ninguna le llega una respuesta de esa página
+  const names = (data.agents || []).map((a) => a && a.nombre).filter(Boolean);
+  const repeated = new Set(names.filter((n, i) => names.indexOf(n) !== i));
   for (const a of data.agents || []) {
     if (!a || !a.nombre) continue;
     const e = env.files.get(a.nombre);
@@ -2291,7 +2358,7 @@ function markRecipients(data, env, states, sdir, { isAlive, startOf, cxNames = n
       recibe = w.alive ? 'si' : (Number.isFinite(w.deliveredAt) ? 'espera-cierre' : 'sin-vigilante');
     }
     a.recibe = recibe;
-    env.recipients.set(a.nombre, { sid: e ? e.sid : null, recibe, estado: a.estado, ocupada: WORKING.includes(a.estado), cuadro: ASKS_OWNER.has(a.estado) });
+    env.recipients.set(a.nombre, { sid: e ? e.sid : null, recibe, estado: a.estado, ocupada: WORKING.includes(a.estado), cuadro: ASKS_OWNER.has(a.estado), esperaDueno: waitsOwner.has(a.nombre) && !repeated.has(a.nombre), ...(repeated.has(a.nombre) ? { repetido: true } : {}) });
   }
 }
 

@@ -10,12 +10,13 @@
 const {
   MARKER_JS, PASO_ARRANCABLE, PREVIO, PROPIA, SCRIPTS_DIR, STATE_DIR, STEPS_LIB,
   VALID_PIPELINE_STATUSES, VALID_STATUSES, anotarAprobacion, anotarArranque,
-  anotarSalteoEnElRegistro, antesDeLaRevision, appendLog, at,
+  anotarSalteoEnElRegistro, antesDeLaRevision, appendLog,
   carpetaDeLaCorrida, conHoraDelPaso, dondeViveLaHistoria, estado,
   firmaDelDueno, formasDeFirmarArchivo, fs, huellaDelPlan, nn, nowIso, os,
-  ownerWindow, path, porDe, quienDeLasOpciones, quitarSalteoDelRegistro,
+  ownerWindow, path, porDe, quitarSalteoDelRegistro,
   readMarker, readOwnMarkerRaw, resolveStoryPath, sellosDe, syncSessionState,
   trabajarSobreElDestino, vueltaCongeladaComprobada, writeMarker,
+  citaDe, conPersona, hechaSinPersona, modoDeLaFirma, quienDeLaMaqueta, reemplazada, soloLaPersona, aprobadaPorPersona, noPisaLaPersona,
 } = require('./marker-shared.js');
 const frenarEstadoSiEsperaMain = (...a) => require('./marker-lifecycle.js').frenarEstadoSiEsperaMain(...a);
 
@@ -329,7 +330,11 @@ function cmdApproveMockup(flags) {
   if (!marker) { console.error('marker.js approve-mockup: no hay marker activo para esta sesión'); process.exit(1); }
   const opts = Array.isArray(flags) ? flags : [];
   const i = opts.indexOf('--approved');
-  const cita = i >= 0 ? (opts[i + 1] || '') : (opts.includes('--terminal') ? 'firmado en la terminal' : '');
+  const cita = (i >= 0 && citaDe(opts[i + 1])) || (opts.includes('--terminal') ? 'firmado en la terminal' : '');
+  // --replace-delegated: la maqueta aprobada sin persona la vuelve a aprobar el dueño, sólo con su click o su «aprobado»
+  // a este pedido, o en su terminal (`soloLaPersona`); con cualquier otra vía sale sin escribir nada
+  const reemplaza = opts.includes('--replace-delegated');
+  const maquetaPrevia = marker.mockupApproval || null;
   if (!STEPS_LIB.isDone(marker, 'approve-plan')) {
     console.error(`marker.js approve-mockup: la maqueta se aprueba con el plan: complete-step ${STEPS_LIB.schemeOf(marker) === 2 ? 'approve-plan' : '3'} --approved "<cita>" --mockup-approved "<cita>"`);
     process.exit(2);
@@ -341,6 +346,10 @@ function cmdApproveMockup(flags) {
     process.exit(1);
   };
   if (!cita.trim()) no('falta --approved "<cita: quién aprobó la maqueta y por qué vía>"');
+  if (reemplaza && !hechaSinPersona(maquetaPrevia, marker.planApproval)) {
+    no(maquetaPrevia ? `--replace-delegated: la maqueta ya la aprobó una persona (${maquetaPrevia.via || maquetaPrevia.mode}): no hay una firma por delegación que reemplazar. No se escribió nada.`
+      : '--replace-delegated: no hay una maqueta aprobada que reemplazar. No se escribió nada.');
+  }
   const mk = require('../mockup.js');
   let sc;
   try { sc = mk.screenStory(resolveStoryPath(marker.storyPath, marker) || marker.storyPath); } catch (e) {
@@ -362,22 +371,38 @@ function cmdApproveMockup(flags) {
   // sin persona, la maqueta la reaprueba sólo la coordinadora con la revisión que ella lanzó; la de la propia sesión no
   // cuenta para una pantalla (como la aprobación del plan sin --approved: una historia con pantalla no se aprueba sola)
   const porLaRevision = antesDeLaRevision({ marker });
-  const antesDeLaMaqueta = (via) => {
+  // la maqueta que ya aprobó una persona con esta misma huella no la reescribe una firma sin persona
+  const deLaPersona = aprobadaPorPersona(maquetaPrevia, sha, 'sha256', marker.planApproval) ? ['maqueta'] : [];
+  const antesDeLaMaqueta = (via, registro) => {
+    const pisa = noPisaLaPersona(deLaPersona, via);
+    if (pisa) return pisa;
+    if (reemplaza) { const n = soloLaPersona(via, registro); if (n) return n; }
     if (via !== 'delegacion') return null;
     if (PROPIA === estado.SID) return { codigo: 1, motivo: 'la maqueta de una pantalla la reaprueba una persona o la coordinadora: la revisión que lanzó la propia sesión no cuenta para una pantalla' };
     return porLaRevision(via);
   };
   const firma = firmaDelDueno('plan-approval', `maqueta de ${marker.storyId}: ${cita}`, { antes: antesDeLaMaqueta });
+  // lo comprobó el control previo; si igual llegara otra vía, no se escribe una firma de persona sin ella
+  if (reemplaza && !conPersona(firma.via)) no(`--replace-delegated: la firma llegó por ${firma.via || 'otra vía'}, no de la persona. No se escribió nada.`);
+  if (deLaPersona.length && !conPersona(firma.via)) {
+    appendLog('gates.log', { name: 'mockup-approval', status: 'blocked', story: marker.storyId, motivo: 'ya la aprobó una persona', via: firma.via || null });
+    console.error(`marker.js approve-mockup BLOQUEADO — ${noPisaLaPersona(deLaPersona, 'delegacion').motivo}`);
+    process.exit(2);
+  }
   const at = nowIso();
   try { mk.writeApproval({ approvalPath: p.approval, mockupPath: p.mockup, story: marker.storyId, sha256: sha, approvedAt: at }); } catch (e) {
     no(`no pude escribir la aprobación de la maqueta (${p.approval}): ${e.code || e.message}`);
   }
-  marker.mockupApproval = { file: p.mockup, sha256: sha, mode: 'user', text: cita, at, ...firma.constancia };
+  // `user` sólo con la vía de una persona (modoDeLaFirma); con la vía en la constancia
+  marker.mockupApproval = { file: p.mockup, sha256: sha, mode: modoDeLaFirma(firma), text: cita, at, ...firma.constancia,
+    ...(reemplaza && maquetaPrevia ? { reemplaza: reemplazada(maquetaPrevia) } : {}) };
   if (!marker.mockupDecision || marker.mockupDecision.screen !== true) marker.mockupDecision = { screen: true, signal: sc.signal || null, at };
-  appendLog('gates.log', { name: 'mockup-approval', status: 'ok', story: marker.storyId, sha256: sha.slice(0, 12), reapproval: !!prev, ...(prev ? { previous: prev.slice(0, 12) } : {}) });
+  appendLog('gates.log', { name: 'mockup-approval', status: 'ok', story: marker.storyId, sha256: sha.slice(0, 12), reapproval: !!prev, ...(prev ? { previous: prev.slice(0, 12) } : {}),
+    ...(reemplaza ? { replaced: maquetaPrevia.via || maquetaPrevia.mode || null } : {}) });
   {
     const optVal = (name) => { const k = opts.indexOf(name); return k >= 0 ? nn(opts[k + 1], '') : null; };
-    anotarAprobacion(marker, { que: 'maqueta', cuando: at, via: 'approve-mockup', ...quienDeLasOpciones(optVal), ...porDe(firma) });
+    // la persona a su nombre; sin persona, quien firmó de verdad (como la maqueta aprobada con el plan)
+    anotarAprobacion(marker, { que: 'maqueta', cuando: at, via: `approve-mockup${reemplaza ? ' --replace-delegated' : ''}`, ...quienDeLaMaqueta(firma, optVal), ...porDe(firma) });
   }
   writeMarker(marker);
   console.log(JSON.stringify({ ok: true, file: p.mockup, approval: p.approval, sha256: sha, reapproval: !!prev }, null, 2));

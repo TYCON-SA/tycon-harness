@@ -108,9 +108,19 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
   function preguntar(carpeta, pedido, env = base) {
     // con `log.showSignature` prendido, git escribe la firma de cada commit antes del formato pedido y se leería como un commit
     const args = pedido[0] === 'log' ? ['log', '--no-show-signature', ...pedido.slice(1)] : pedido;
-    const clave = `${env === base ? '' : 'indice\0'}${carpeta}\0${args.join('\0')}`;
-    if (!respuestas.has(clave)) respuestas.set(clave, correrGit(carpeta, args, env));
+    // lo que contesta lo mismo desde cualquier carpeta del repo se pregunta una vez, desde su raíz
+    const donde = delRepo(pedido) ? raizDe(carpeta) || carpeta : carpeta;
+    const clave = `${env === base ? '' : 'indice\0'}${donde}\0${args.join('\0')}`;
+    if (!respuestas.has(clave)) respuestas.set(clave, correrGit(donde, args, env));
     return respuestas.get(clave);
+  }
+
+  // Una pregunta sobre commits y referencias, sin ninguna ruta (ni `--` ni «revisión:archivo»): su respuesta es la del repo.
+  // `rev-parse` sólo con lo que no depende de la carpeta: `--git-common-dir` y `--show-toplevel` contestan según dónde corre.
+  function delRepo(pedido) {
+    if (pedido.includes('--') || pedido.some((a) => a.includes(':'))) return false;
+    if (pedido[0] === 'rev-parse') return pedido.includes('--verify') || pedido.includes('--is-shallow-repository');
+    return ['log', 'rev-list', 'merge-base', 'cat-file'].includes(pedido[0]);
   }
 
   function raizDe(carpeta) {
@@ -628,7 +638,15 @@ function crearJuez({ correrGit = correrGitDeVerdad, repoDelIndice = null, histor
     return criteriosDeLaPrueba(archivo, path.dirname(archivo), path.basename(archivo), desde);
   }
 
-  return { vigencia, commitDeLaEvidencia, entrada, criteriosDe };
+  // El nombre del repo de un archivo (el de su checkout principal, como el ancla), o null si git no contesta.
+  const repos = new Map();
+  function repoDe(archivo) {
+    const carpeta = path.dirname(archivo);
+    if (!repos.has(carpeta)) repos.set(carpeta, nombreDelRepo(carpeta));
+    return repos.get(carpeta);
+  }
+
+  return { vigencia, commitDeLaEvidencia, entrada, criteriosDe, repoDe };
 }
 
 /** Por qué no cuenta, en una frase para el aviso de la matriz. Sin rutas ni texto de git: la matriz viaja por git. */

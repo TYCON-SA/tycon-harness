@@ -35,7 +35,7 @@ El script además:
   `~/.claude/.tycon-pipeline/advisor-context/<sid>-iter<N>.md`. Es el **INPUT PRIMARIO**
   de cada advisor — pasalo en el prompt en vez de hacer que cada subagente re-lea todo.
 - **`frozen`**: lo que se revisa, congelado (historia 8.161). Al lanzar la vuelta, `advisors` y `smart-reloop` sellan el
-  repo de la historia y el del código y arman una copia de sólo lectura de cada uno en la carpeta de estado del
+  repo de la historia, el del código y cada repo hermano declarado, y arman una copia de sólo lectura de cada uno en la carpeta de estado del
   pipeline: `[{ repo, tree, copy }]`. El `context_file` nombra cada copia y su sello: **los revisores leen la copia, no
   la carpeta viva**. Si no se puede sellar o copiar, la vuelta no se lanza (sale 2 con el motivo). La foto de la vuelta
   (`snapshot-iter`) guarda ese sello, y «Preparar el commit» compara lo que se guarda contra él.
@@ -600,10 +600,13 @@ tope, `smart-reloop` no devuelve el set y dice qué quedó abierto:
   preguntale: una vuelta más (`smart-reloop … --extra-round --approved-by "<la persona>"`, que la persona aprueba en
   la ventana de permiso, o con `--terminal`; la cita ya no la autoriza), o eximirlo (`marker.js waive-critical`). Si
   el perfil del equipo lista la vuelta extra como trámite (`approvals.delegated_signing`), la da el arnés solo, sin
-  ventana, y el aviso del tope lo dice: no la firma una persona. Eximir el crítico sigue siendo de una persona.
+  ventana, y el aviso del tope lo dice: no la firma una persona ni hace falta el dueño; la corre la propia sesión. El
+  cierre de «Hallazgos» lo dice igual. Eximir el crítico sigue siendo de una persona.
   Sin eso, `complete-step prepare-commit` no cierra.
 - **lo demás** queda como deuda visible y el recorrido sigue sin otra vuelta: en `findings.json` con
   `"disposition": "deferred"` y `"deuda": "tope"` (`write-findings`), después `write-followups`.
+- **nada**: con `findings.json` leído y nada abierto, no frena. Sale 0, sin revisores (`"mode": "cap-nothing-open"`),
+  y dice que sigas con «Probar en vivo». Sin `findings.json`, o sin poder leerlo, no es «nada»: frena como antes.
 
 **El validador de stories en el re-loop**: `smart-reloop` lo saca
 del set cuando ya devolvió **dos veredictos limpios seguidos** después de implementar; lo dice en

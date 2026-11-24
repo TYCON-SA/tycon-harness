@@ -127,7 +127,13 @@ const MOTIVOS_DE_LA_ENTRADA = new Set(['otra-version', 'cambio-posterior', 'otro
 const RIESGO_SIN_COBERTURA = 'si otra historia lo rompe, ninguna prueba de noche lo va a avisar';
 
 // Por qué una evidencia siguió contando aunque el archivo cambió: lo que el control afloja se dice.
-function avisoDeLoQueContó({ rel, via, fusion, commit, historia, regla, ajenas, sinHistoria, carga }) {
+// Los motivos del juez que dicen que el archivo cambió desde la evidencia (lib/evidence-vs-commit.js): los demás dicen que
+// no se pudo comparar.
+const CAMBIOS_DEL_ARCHIVO = new Set(['cambio-posterior', 'otro-repo', 'sin-commitear', 'otra-version']);
+
+function avisoDeLoQueContó({ rel, via, fusion, commit, historia, regla, ajenas, sinHistoria, carga, repo, ejercita }) {
+  if (regla === 'repo-no-ejercitado') return `${rel}: cambió en ${repo}, y el humo dice que ejercita sólo ${ejercita.join(', ')} → la evidencia sigue contando.`;
+  if (regla === 'archivo-no-ejercitado') return `${rel}: cambió, y según la columna Archivos de la tabla de pruebas no lo ejercita ninguna prueba de los criterios de esta evidencia → sigue contando.`;
   if (regla === 'entrada') {
     // el código declarado nombra todas sus fusiones; lo que carga una prueba puede haber cambiado decenas de veces
     const tope = (l) => (carga && l.length > TOPE_DE_FUSIONES ? `${l.slice(0, TOPE_DE_FUSIONES).join(', ')} y ${l.length - TOPE_DE_FUSIONES} más` : l.join(', '));
@@ -167,7 +173,7 @@ function tandasNoMedidasDe(content, rel, pedidas) {
 }
 
 // La regla de atar un archivo a una tanda vive en lib/batch-scope.js: la parte que se programa y la matriz la usan igual
-const { sinPunto, renglonesDeLista, esRegistroDeCorrida, tandasQueNombran } = require(path.join(__dirname, 'lib', 'batch-scope.js'));
+const { sinPunto, renglonesDeLista, esRegistroDeCorrida, tandasQueNombran, filasQueNombran } = require(path.join(__dirname, 'lib', 'batch-scope.js'));
 
 /**
  * Las tandas a las que la historia ata un archivo que cambió la corrida. `c` es la ruta que da git, relativa a
@@ -176,17 +182,25 @@ const { sinPunto, renglonesDeLista, esRegistroDeCorrida, tandasQueNombran } = re
  * `nombra` de siempre, con la ruta de git y con la del renglón que le corresponde. Un cambio en `.advisors/` es el
  * registro de la ejecución: no se ata, aunque un renglón lo nombre de otra forma.
  */
-function tandasDelCambio(content, c, { codeRepo, lugares, real }) {
+function tandasDelCambio(content, c, o) {
   if (esRegistroDeCorrida(c)) return [];
+  const nombres = new Set();
+  for (const r of rutasDelCambio(content, c, o)) for (const t of tandasQueNombran(content, r)) nombres.add(t.name);
+  return [...nombres];
+}
+
+/**
+ * Las rutas con que la historia puede nombrar un archivo que cambió la corrida: la de git y la de cada renglón de la
+ * lista que es ese archivo.
+ */
+function rutasDelCambio(content, c, { codeRepo, lugares, real }) {
   const fm = (String(content).match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || '';
   const abs = real(path.resolve(codeRepo, c));
   const rutas = new Set([sinPunto(String(c))]);
   for (const it of renglonesDeLista(fm)) {
     if (lugares.some((l) => real(path.resolve(l, it.ruta)) === abs)) rutas.add(it.ruta);
   }
-  const nombres = new Set();
-  for (const r of rutas) for (const t of tandasQueNombran(content, r)) nombres.add(t.name);
-  return [...nombres];
+  return [...rutas];
 }
 
 // ---------------------------------------------------------------- parsing helpers
@@ -399,7 +413,7 @@ function sinComentariosDe(texto) {
  * que no es un texto literal o una relativa que no resuelve a un archivo dejan esa prueba juzgada sólo por la lista, y
  * se dice una vez por prueba en `warnings`.
  */
-function codigoQueCarganLasPruebas(codeFiles, sid, warnings) {
+function codigoQueCarganLasPruebas(codeFiles, sid, warnings, declaradosCargados = []) {
   const { isTestPath } = require('./lib/atdd-order.js');
   const marca = new RegExp(`@story-${String(sid).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w.])`);
   const enLaLista = new Set(codeFiles.map((f) => path.resolve(f.abs)));
@@ -432,7 +446,9 @@ function codigoQueCarganLasPruebas(codeFiles, sid, warnings) {
       const base = path.resolve(path.dirname(f.abs), carga);
       const destino = [base, ...EXTENSIONES_DE_CARGA.map((x) => `${base}${x}`), ...EXTENSIONES_DE_CARGA.map((x) => path.join(base, `index${x}`))].find(esArchivo);
       if (!destino) { dudosa = true; continue; }
-      if (enLaLista.has(destino)) continue;
+      // un archivo de la lista lo juzga el recorrido de la lista; lo que la prueba carga de ahí lo ejercita igual que si
+      // la tabla lo dijera (columna Archivos), y gana a la tabla
+      if (enLaLista.has(destino)) { declaradosCargados.push({ abs: destino, criterios: criterios.length ? criterios : null }); continue; }
       out.push({ abs: destino, rel: path.relative(raiz, destino), mt: mtimeMs(destino), prueba: f.rel, criterios: criterios.length ? criterios : null });
     }
     if (dudosa) noPude();
@@ -950,6 +966,8 @@ function readSmokeLedger(evidenceDirs, sid, gatesLogPath) {
   const entries = [];
   let mirror = '';
   try { mirror = fs.readFileSync(gatesLogPath, 'utf8'); } catch { /* sin gates.log → nada verifica */ }
+  // los renglones de humos del espejo, una vez: el espejo tiene decenas de miles de renglones y la historia, decenas de humos
+  const humosDelEspejo = mirror.split('\n').filter((l) => l.includes('"type":"smoke-run"'));
   for (const dir of evidenceDirs) {
     const f = path.join(dir, `${sid}-smoke-ledger.jsonl`);
     if (!isFile(f)) continue;
@@ -967,8 +985,7 @@ function readSmokeLedger(evidenceDirs, sid, gatesLogPath) {
       // acs»), y se filtra en vez de tomar la primera coincidencia, para tolerar dos corridas de la
       // misma story en el mismo segundo.
       const acsStr = `"acs":${JSON.stringify(e.acs)}`;
-      const confirmadas = mirror.split('\n').filter((l) =>
-        l.includes('"type":"smoke-run"') && l.includes(`"ts":"${e.ts}"`) &&
+      const confirmadas = humosDelEspejo.filter((l) => l.includes(`"ts":"${e.ts}"`) &&
         l.includes(`"story":"${e.story}"`) && l.includes(acsStr) && l.includes('"exit":0'));
       const mirrored = confirmadas.length > 0;
       // El ancla cuenta sólo si una línea confirmada del espejo trae la misma: el registro viaja con el código y se edita.
@@ -987,6 +1004,9 @@ function readSmokeLedger(evidenceDirs, sid, gatesLogPath) {
       // `--environment` (contra qué entorno corrió: `staging`): cuenta sólo si una línea confirmada del espejo trae el mismo
       const entorno = typeof e.environment === 'string' && confirmadas.some((l) => l.includes(`"environment":${JSON.stringify(e.environment)}`))
         ? e.environment : null;
+      // `--exercises` (qué repos ejercita el humo): cuenta sólo si una línea confirmada del espejo trae la misma lista
+      const ejercita = Array.isArray(e.exercises) && e.exercises.length && e.exercises.every((r) => typeof r === 'string' && /^[A-Za-z0-9._-]+$/.test(r))
+        && confirmadas.some((l) => l.includes(`"exercises":${JSON.stringify(e.exercises)}`)) ? e.exercises : null;
       // Lo que midió el humo (`duration_ms`, `measures`) decide el veredicto de un criterio con cota: se confirma contra
       // el espejo leyendo cada renglón, por igualdad exacta y `measures` entero. Nunca por «el texto contiene»:
       // `"duration_ms":100` está contenido en `"duration_ms":1005`.
@@ -1004,7 +1024,7 @@ function readSmokeLedger(evidenceDirs, sid, gatesLogPath) {
       // La imagen que el humo guardó con `--capture`, verificada contra el espejo como la salida.
       const imagen = mirrored ? imagenDelHumo(e, dir, confirmadas) : { ruta: null, problema: null };
       // `linea`: la línea entera, para encontrar en git el commit de ESTA corrida; un checkout puede dejarle el `\r`.
-      entries.push({ ...e, path: f, linea: line.replace(/\r$/, ''), tsMs: Date.parse(e.ts), mirrored, ancla, sello, mutatesOk, entorno, medidaConfirmada, evidenceKind: classifyCmd(e.cmd),
+      entries.push({ ...e, path: f, linea: line.replace(/\r$/, ''), tsMs: Date.parse(e.ts), mirrored, ancla, sello, mutatesOk, entorno, ejercita, medidaConfirmada, evidenceKind: classifyCmd(e.cmd),
         v2, salidaProblema, visual: imagen.ruta, visualProblema: imagen.problema });
     }
   }
@@ -1391,6 +1411,9 @@ function compute(opts) {
   const { content, fm } = readStory(storyPath);
   const sid = storyIdFrom(fm, storyPath);
   const env = opts.env || process.env;
+  // `soloAcs`: la matriz de esos criterios y nada más (la ventana de una firma). Mide sólo los humos que los nombran: el
+  // veredicto de un criterio no depende de los humos de otro. El resultado dice `parcial` y no sirve de matriz entera.
+  const soloAcs = Array.isArray(opts.soloAcs) && opts.soloAcs.length ? new Set(opts.soloAcs.map(Number)) : null;
   const escotillas = escotillasVigentes(env, opts.today || new Date());
   const LEGACY_NO_MUTATION_CHECK = escotillas.vigentes.has('TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK');
   const LEGACY_SMOKE_KINDS = escotillas.vigentes.has('TYCON_RUNTIME_MATRIX_LEGACY');
@@ -1439,12 +1462,29 @@ function compute(opts) {
   const testsByAc = {};
   const testIds = [];
   const unreadableTests = [];
+  // los criterios de cada prueba con id: dicen si un archivo de pruebas compartido trae una prueba de la tanda medida
+  const acsDeLaPrueba = new Map();
   for (const r of table.rows) {
     const id = r.tid || `(sin id: ${r.name})`;
     if (r.tid) testIds.push(r.tid);
     const c = r.acCell == null ? { acs: r.acRefs, legible: true, todos: false } : acsDeLaCelda(r.acCell);
     if (!c.legible) unreadableTests.push(id);
+    if (r.tid) acsDeLaPrueba.set(r.tid, c.todos ? [...acSet] : c.acs);
     for (const n of (c.todos ? [...acSet] : c.acs)) (testsByAc[n] = testsByAc[n] || []).push(id);
+  }
+  // Qué archivos declarados ejercitan las pruebas de cada criterio (la columna `Archivos` de la tabla). Lo declara la
+  // historia, antes de programar, y no quien corre el humo: así quien se ahorra repetirlo no elige el alcance. Un criterio
+  // con una prueba sin la columna, nombrado por una celda AC ilegible, o sin ninguna prueba, queda sin saber (null) y
+  // vence como siempre
+  const archivosPorCriterio = new Map();
+  for (const r of table.rows) {
+    const c = r.acCell == null ? { acs: r.acRefs, legible: true, todos: false } : acsDeLaCelda(r.acCell);
+    for (const n of (!c.legible || c.todos ? [...acSet] : c.acs)) {
+      if (!c.legible || !r.archivos || archivosPorCriterio.get(n) === null) { archivosPorCriterio.set(n, null); continue; }
+      const s = archivosPorCriterio.get(n) || new Set();
+      for (const a of r.archivos) s.add(sinPunto(a));
+      archivosPorCriterio.set(n, s);
+    }
   }
 
   // La tanda medida: la de la ejecución (`opts.batch`, que la sesión anota con `marker.js set-batch`) o las que cierra
@@ -1516,8 +1556,13 @@ function compute(opts) {
     const lugares = [...new Set([repoRoot, wsRoot, ...evCfg.roots, ...enRama, codeRepo].filter(Boolean))];
     const bloqueadas = new Set(tandas.filter((t) => String(t.status || '').toLowerCase() === 'blocked').map((t) => t.name));
     for (const c of opts.changed) {
-      const atadas = tandasDelCambio(content, String(c), { codeRepo: codeRepo || '.', lugares, real: companionLib.real });
+      const donde = { codeRepo: codeRepo || '.', lugares, real: companionLib.real };
+      const atadas = tandasDelCambio(content, String(c), donde);
       if (!atadas.length || atadas.some((n) => pedidas.includes(n))) continue;
+      // una fila de la tabla de pruebas que nombra el archivo y prueba un criterio de la tanda medida lo hace también
+      // suyo: el archivo de pruebas de una pantalla, con la prueba de la tanda medida y las de otras, es compartido
+      const deLaMedida = (id) => (acsDeLaPrueba.get(id) || []).some((a) => propios.has(a));
+      if (rutasDelCambio(content, String(c), donde).some((r) => filasQueNombran(content, r).some(deLaMedida))) continue;
       const activas = atadas.filter((n) => !bloqueadas.has(n));
       for (const n of activas.length ? activas : atadas) vuelven.set(n, [...new Set([...(vuelven.get(n) || []), String(c)])]);
     }
@@ -1704,7 +1749,8 @@ function compute(opts) {
       if (mt > kindMtime[kind]) kindMtime[kind] = mt;
     }
   }
-  const cargados = codigoQueCarganLasPruebas(codeFiles, sid, warnings);
+  const declaradosCargados = [];
+  const cargados = codigoQueCarganLasPruebas(codeFiles, sid, warnings, declaradosCargados);
   if (deTandaBloqueada.length) {
     warnings.push(`Todavía sin crear, de una tanda bloqueada: ${deTandaBloqueada.map((d) => `${d.rel} (${d.tandas.join(', ')})`).join(' · ')}. ` +
       'No anulan la evidencia; vuelven a contar cuando su tanda deje de estar bloqueada.');
@@ -1736,7 +1782,7 @@ function compute(opts) {
     numero: sid, clave: evKey, archivo: companionLib.real(opts.keyStoryPath || storyPath), catalogo: () => catalogoDeHistorias(repoRoot, companionLib.real),
     pedidos: () => { pedidosLeidos = pedidosLeidos || require('./lib/story-requests.js').leer({ dirs: evidenceDirs }); return pedidosLeidos; },
   };
-  const juez = evidenceVsCommit.crearJuez({ repoDelIndice: repoRoot, historia: repoRoot ? historiaPropia : null });
+  const juez = evidenceVsCommit.crearJuez({ repoDelIndice: repoRoot, historia: repoRoot ? historiaPropia : null, correrGit: opts.correrGit });
   const vigencias = new Map();
   const dejadasContar = new Set();
 
@@ -1778,6 +1824,60 @@ function compute(opts) {
       }
     }
     return conPruebaDeNoche;
+  };
+  // Los repos de la historia: los de su código declarado. Un humo que dice qué repos ejercita (`--exercises`) no vence por
+  // un archivo de otro; si nombra uno que no es de la historia, el nombre puede estar mal escrito, y entonces vale para
+  // todos, como sin la opción: un error de tipeo no puede dejar una evidencia sin vencer nunca.
+  let reposDeLaHistoria;
+  const ejercitaDe = (evidencia) => {
+    if (!evidencia.ejercita) return null;
+    if (!reposDeLaHistoria) reposDeLaHistoria = new Set(codeFiles.map((f) => juez.repoDe(f.abs)).filter(Boolean));
+    return evidencia.ejercita.every((r) => reposDeLaHistoria.has(r)) ? new Set(evidencia.ejercita) : null;
+  };
+  // El repo de un archivo que el humo no ejercita, o null (lo ejercita, el humo no lo dice, o git no contesta).
+  const repoNoEjercitado = (ejercita, abs) => {
+    if (!ejercita) return null;
+    const repo = juez.repoDe(abs);
+    return repo && !ejercita.has(repo) ? repo : null;
+  };
+  // Lo que ejercitan las pruebas de cada criterio, con los nombres de la columna Archivos comprobados contra el código
+  // declarado: un nombre que la historia no declara puede estar mal escrito, y entonces ese criterio queda sin saber
+  // (vence como siempre) y se avisa una vez. Un error de tipeo no puede dejar una evidencia sin vencer nunca. Una prueba
+  // nombrada en la celda no es código que se ejercita: no cuenta, y una celda que sólo nombra pruebas deja el criterio sin
+  // saber. Lo que una prueba con `@ac-N` carga de la lista lo ejercita N aunque la tabla no lo diga: la carga gana.
+  let ejercitados;
+  const ejercitadosDe = (n) => {
+    if (!ejercitados) {
+      ejercitados = new Map();
+      const codigo = new Set(codeFiles.filter((f) => !esPruebaDeclarada(f)).map((f) => sinPunto(f.declarado)));
+      const pruebas = new Set(codeFiles.filter(esPruebaDeclarada).map((f) => sinPunto(f.declarado)));
+      const malos = new Set();
+      const soloPruebas = [];
+      for (const [m, s] of archivosPorCriterio) {
+        const fuera = s ? [...s].filter((a) => !codigo.has(a) && !pruebas.has(a)) : [];
+        for (const a of fuera) malos.add(a);
+        const deCodigo = s ? new Set([...s].filter((a) => codigo.has(a))) : null;
+        if (s && !fuera.length && !deCodigo.size) soloPruebas.push(m);
+        ejercitados.set(m, s && !fuera.length && deCodigo.size ? deCodigo : null);
+      }
+      const porRuta = new Map(codeFiles.filter((f) => !esPruebaDeclarada(f)).map((f) => [path.resolve(f.abs), sinPunto(f.declarado)]));
+      for (const c of declaradosCargados) {
+        const rel = porRuta.get(path.resolve(c.abs));
+        if (!rel) continue;
+        for (const [m, s] of ejercitados) if (s && (!c.criterios || c.criterios.includes(m))) s.add(rel);
+      }
+      if (malos.size) warnings.push(`La columna Archivos de la tabla de pruebas nombra archivos que la historia no declara (${[...malos].join(', ')}): sus criterios vencen como siempre.`);
+      if (soloPruebas.length) warnings.push(`La columna Archivos de la tabla de pruebas nombra sólo pruebas para el criterio ${soloPruebas.join(', ')}: una prueba no es lo que se ejercita, así que vence como siempre.`);
+    }
+    return ejercitados.has(n) ? ejercitados.get(n) : null;
+  };
+  // Los criterios de la evidencia cuyas pruebas ejercitan el archivo `f`, más los que no se sabe; null si son todos (la
+  // evidencia vence entera, como siempre).
+  const criteriosQueEjercitan = (evidencia, f) => {
+    const deLaEvidencia = (evidencia.acs || acs).filter((n) => acs.includes(n));
+    const rel = sinPunto(f.declarado);
+    const afectados = deLaEvidencia.filter((n) => { const s = ejercitadosDe(n); return !s || s.has(rel); });
+    return afectados.length === deLaEvidencia.length ? null : afectados;
   };
   /**
    * La segunda pasada: ¿la evidencia cuenta por el código con que la historia entró a main? null si no se aplica y queda lo
@@ -1841,8 +1941,25 @@ function compute(opts) {
       let v = { cuenta: true };
       const contadas = [];
       const porCriterio = [];
+      const ejercita = ejercitaDe(evidencia);
+      // el código declarado que cambió en un repo que el humo no ejercita no lo vence: sigue contando, y se avisa. Sólo si
+      // el juez dice que cambió: si no pudo comparar, no se sabe. Las pruebas, lo que cargan y la segunda pasada (la entrada
+      // a main) no hacen este corte: vencen como siempre
+      const deOtroRepo = (r, f) => {
+        const repo = !r.cuenta && CAMBIOS_DEL_ARCHIVO.has(r.motivo) && !esPruebaDeclarada(f) && repoNoEjercitado(ejercita, f.abs);
+        if (repo) contadas.push({ regla: 'repo-no-ejercitado', rel: f.rel, repo, ejercita: [...ejercita] });
+        return Boolean(repo);
+      };
       for (const f of codeFiles) {
         const r = juez.vigencia({ archivo: f.abs, mtimeMs: f.mt, evidencia });
+        if (deOtroRepo(r, f)) continue;
+        // el código declarado que cambió vence sólo los criterios cuyas pruebas lo ejercitan (columna Archivos de la
+        // tabla); si no lo ejercita ninguna, la evidencia sigue contando, y se avisa. Sólo si el juez dice que cambió
+        if (!r.cuenta && CAMBIOS_DEL_ARCHIVO.has(r.motivo) && !esPruebaDeclarada(f)) {
+          const afectados = criteriosQueEjercitan(evidencia, f);
+          if (afectados && !afectados.length) { contadas.push({ regla: 'archivo-no-ejercitado', rel: f.rel }); continue; }
+          if (afectados) { porCriterio.push({ criterios: afectados, rel: f.rel, ejercitado: true }); continue; }
+        }
         if (!r.cuenta && r.regla === 6 && Array.isArray(r.criterios) && r.criterios.length) { porCriterio.push({ ...r, rel: f.rel }); continue; }
         if (!r.cuenta) { v = { ...r, rel: f.rel, sinCopia: f.sinCopia }; break; }
         if (r.via === 'fusion-propia' || r.regla === 6) contadas.push({ ...r, rel: f.rel });
@@ -1878,7 +1995,7 @@ function compute(opts) {
     return vigencias.get(ev);
   };
   const vigenciaGate = (g) => vigenciaDe(g, { ruta: g.path, tsMs: g.ts, ancla: g.ancla });
-  const vigenciaHumo = (e) => vigenciaDe(e, { ruta: e.path, tsMs: e.tsMs, linea: e.linea, ancla: e.ancla, sello: e.sello, acs: e.acs });
+  const vigenciaHumo = (e) => vigenciaDe(e, { ruta: e.path, tsMs: e.tsMs, linea: e.linea, ancla: e.ancla, sello: e.sello, acs: e.acs, ejercita: e.ejercita });
   // ¿Una evidencia que cuenta vale para el criterio `n`? No, si una prueba que la historia corrigió después lo nombra.
   const valePara = (ev, n) => !(vigencias.get(ev) && vigencias.get(ev).vencidos.has(n));
   // «venció por <archivo>, que prueba los criterios 2 y 3»: lo que dice el renglón del criterio vencido
@@ -1888,6 +2005,7 @@ function compute(opts) {
     if (p.sinNoche) return 'cuenta sólo por su entrada a main, y al criterio le falta una prueba que corra de noche';
     const lista = p.criterios.length === 1 ? `el criterio ${p.criterios[0]}`
       : `los criterios ${p.criterios.slice(0, -1).join(', ')} y ${p.criterios[p.criterios.length - 1]}`;
+    if (p.ejercitado) return `venció por ${p.rel}, que según la tabla de pruebas ejercitan las pruebas de ${lista}`;
     return p.carga ? `venció por ${p.rel}, que carga ${p.carga} (prueba ${lista})` : `venció por ${p.rel}, que prueba ${lista}`;
   };
   // Un archivo de un hermano que no tiene copia en la rama de la historia se juzga en el declarado: el aviso dice contra
@@ -1936,6 +2054,8 @@ function compute(opts) {
   const listaSim = (hs) => hs.slice(0, 3).map((h) => `${relSim(h.archivo)}:${h.linea} (${h.via})`).join(', ') + (hs.length > 3 ? ` y ${hs.length - 3} más` : '');
   for (const g of freshPassGates) {
     const hallazgos = [];
+    // lo que simuló cada spec del portón (con lo que importa): una fila se juzga por su spec, no por el portón entero
+    const porArchivo = new Map();
     // Sin filtro, el portón corrió todos los specs: se miran todos.
     for (const filtro of (g.specFilters.length ? g.specFilters : [''])) {
       const { archivos, motivo, problemas } = specsDelFiltro(g.frontendDir, filtro, [repoRoot, wsRoot]);
@@ -1950,6 +2070,7 @@ function compute(opts) {
         const d = simulatedServer.deArchivo(a);
         if (!d.leido) { warnings.push(`Gate E2E ${path.basename(g.path)}: no pude leer ${relSim(a)} (${d.motivo}): no sé si simuló el servidor.`); continue; }
         hallazgos.push(...d.hallazgos);
+        porArchivo.set(a, d.hallazgos);
         for (const o of d.omitidos) warnings.push(`Gate E2E ${path.basename(g.path)}: ${relSim(a)} importa ${o.de} y no pude leerlo (${o.motivo}): no sé si simuló el servidor.`);
       }
     }
@@ -1959,8 +2080,33 @@ function compute(opts) {
       continue;
     }
     g.simulado = hallazgos;
+    g.simuladoPorArchivo = porArchivo;
+    // Los títulos de lo que pasó no dicen de qué spec son. En un portón donde algún spec simula, un título acredita un
+    // criterio sólo si está escrito en un spec que no simula y en ninguno que simula; si no se puede saber, no acredita.
+    const textoDe = (a) => { try { return fs.readFileSync(a, 'utf8'); } catch (_) { return ''; } };
+    const limpios = [...porArchivo].filter(([, h]) => !h.length).map(([a]) => textoDe(a));
+    const sucios = [...porArchivo].filter(([, h]) => h.length).map(([a]) => textoDe(a));
+    // el título sin las marcas que el portón le suma al final (las de su describe), buscado como el comienzo de un texto
+    // entre comillas: una palabra suelta en un comentario no lo ata a un spec
+    const nucleo = (t) => String(t).replace(/(\s+@[\w.:-]+)+\s*$/, '').trim();
+    const escrito = (x, c) => ["'", '"', '`'].some((q) => x.includes(q + c));
+    g.titulosEnVivo = (g.titulos || []).filter((t) => {
+      const c = nucleo(t);
+      return c.length > 0 && limpios.some((x) => escrito(x, c)) && !sucios.some((x) => escrito(x, c));
+    });
   }
   const noSimulado = (g) => !(g.simulado && g.simulado.length);
+  // Lo que simuló el portón en lo que corrió una fila de la tabla. Si la fila nombra su spec y el portón lo corrió, cuenta
+  // sólo ese spec (con lo que importa): otro spec del mismo portón que fabrica una respuesta no le quita la evidencia a
+  // éste. Si la fila no nombra su spec, o el portón no lo corrió, cuenta el portón entero, como siempre. null = nada.
+  const simuladoParaLaFila = (g, specs) => {
+    if (noSimulado(g)) return null;
+    const propios = [...g.simuladoPorArchivo.keys()].filter((a) => specs.includes(path.basename(a)));
+    // por sus specs sólo si el portón los leyó a todos; uno que nombra y el portón no leyó la deja en el portón entero
+    if (!specs.length || specs.some((s) => !propios.some((a) => path.basename(a) === s))) return g.simulado;
+    const h = propios.flatMap((a) => g.simuladoPorArchivo.get(a));
+    return h.length ? h : null;
+  };
   for (const g of allGates.filter((x) => x.verdict === 'PASS' && !vigenciaGate(x).cuenta)) {
     const v = vigenciaGate(g);
     warnings.push(noLeido(v)
@@ -1972,7 +2118,8 @@ function compute(opts) {
   }
 
   // --- evidencia runtime 2: smoke ledger (frescura bloqueante por entry)
-  const ledger = readSmokeLedger(evidenceDirs, evKey, gatesLogPath);
+  const registro = readSmokeLedger(evidenceDirs, evKey, gatesLogPath);
+  const ledger = soloAcs ? registro.filter((e) => e.acs.some((n) => soloAcs.has(Number(n)))) : registro;
   // La evidencia VIEJA de un número repetido (`<id>-*`): no cuenta para ninguna story —pertenecer es
   // explícito y esos archivos no dicen a cuál— y no se toca. Se NOMBRA, con su ruta.
   const orphans = evidenceKeyLib.legacyFiles(evidenceDirs, keyInfo);
@@ -2126,14 +2273,17 @@ function compute(opts) {
       const specToken = (r.name.match(/([\w.-]+\.spec\.[tj]s)/) || [])[1] || null;
       const deLaFila = freshPassGates.filter((g) => g.specFilters.some((sf) =>
         r.name.includes(sf) || r.raw.includes(sf) || (specToken && sf.includes(specToken))));
-      const gate = deLaFila.find(noSimulado);
+      // todos los specs que nombra la fila (con su extensión entera): se juzga por ellos, no sólo por el primero
+      const specsDeLaFila = [...new Set([...r.name.matchAll(/([\w.-]+\.spec\.(?:[tj]sx?|mjs|cjs))(?![\w])/g)].map((m) => m[1]))];
+      const enVivo = deLaFila.filter((g) => !simuladoParaLaFila(g, specsDeLaFila));
+      const gate = enVivo[0];
       // Sólo portones que corrieron con el servidor simulado: la fila es evidencia de código, con lo que simuló.
-      const simulados = gate ? [] : deLaFila.filter((g) => !noSimulado(g));
+      const simulados = gate ? [] : deLaFila.filter((g) => simuladoParaLaFila(g, specsDeLaFila));
       if (simulados.length) {
-        return { row: r, tier: 'code', ref: `${path.basename(simulados[0].path)}, servidor simulado`, simulado: simulados.flatMap((g) => g.simulado) };
+        return { row: r, tier: 'code', ref: `${path.basename(simulados[0].path)}, servidor simulado`, simulado: simulados.flatMap((g) => simuladoParaLaFila(g, specsDeLaFila)) };
       }
       // `gates`: los que valen en vivo para la fila; cada criterio toma el primero que vale para él
-      return { row: r, tier: gate ? 'runtime' : 'none', ref: gate ? path.basename(gate.path) : null, gates: deLaFila.filter(noSimulado) };
+      return { row: r, tier: gate ? 'runtime' : 'none', ref: gate ? path.basename(gate.path) : null, gates: enVivo };
     }
     const kind = kindOf(r.name, fePaths);
     const tr = greenByKind[kind] || (kindsPresent.has(kind) ? null : soloTr);
@@ -2185,7 +2335,9 @@ function compute(opts) {
         const vigentes = re.gates.filter((g) => valePara(g, n));
         const conTitulos = (g) => Array.isArray(g.titulos) && g.titulos.length > 0;
         // sin títulos cuenta sólo si ningún portón vigente los anotó: uno viejo no le gana a uno que dice qué corrió
-        let gate = vigentes.find((g) => conTitulos(g) && g.titulos.some((t) => tituloNombraAc(t, n, sid)))
+        // en un portón donde algún spec simula, sólo cuentan los títulos de los specs que no simulan
+        const titulosQueCuentan = (g) => (g.titulosEnVivo || g.titulos);
+        let gate = vigentes.find((g) => conTitulos(g) && titulosQueCuentan(g).some((t) => tituloNombraAc(t, n, sid)))
           || (vigentes.some(conTitulos) ? undefined : vigentes.find((g) => !conTitulos(g)));
         if (!gate && vigentes.length && historiaVieja) {
           // la regla de antes, con el aviso de lo que le falta para la de ahora
@@ -2508,8 +2660,10 @@ function compute(opts) {
     // los criterios que se comprueban en staging: sin correr todavía (no frenan) y, para done, sin su humo de staging
     enStaging, stagingFalta,
     exencionesC8: exenciones, sinImagen, avisos, simulados, aceptadoSinCobertura,
-    hash, warnings, green, evidenceDirs, wsRoot, waivedAcs: [...waived], chainOk: chain.ok, waiverDiscarded,
+    // una matriz parcial no es verde ni tiene huella: nada que pida la entera la puede tomar por ella
+    hash: soloAcs ? null : hash, warnings, green: soloAcs ? false : green, evidenceDirs, wsRoot, waivedAcs: [...waived], chainOk: chain.ok, waiverDiscarded,
     repoRoot,
+    ...(soloAcs ? { parcial: [...soloAcs].sort((a, b) => a - b) } : {}),
     // la tanda medida (la de la ejecución, o las que cierra el commit) y los criterios de las otras que quedaron afuera
     batch: midiendoTanda ? pedidas.join(', ') : null, outOfBatchAcs: [...outOfBatchAcs].sort((a, b) => a - b),
     blockedAcs: [...blockedAcs].sort((a, b) => a - b), fueraDeTanda,

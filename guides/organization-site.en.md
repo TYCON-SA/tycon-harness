@@ -246,7 +246,10 @@ so and the row comes back to "Your decision" with the reason. The work item type
 
 Each card says **what happened** in plain words, with the finding's data. For a runs finding, for example: "Between 21/10
 and 24/10, 4 runs ended without the adversarial pass, the review that tries to break what was already approved. Stories:
-4.1, 4.3. Machines: mac-a, mac-b." With an analysis, it says **why** it happens, what it **recommends** and what
+4.1, 4.3. Machines: mac-a, mac-b. Sessions: Ponzio-5, Carrizo-4." Each session's name is the name the session had on
+its machine during the run, and it only shows if it has the shape of a session name (letters without accents, numbers,
+hyphen or underscore, no spaces, up to 40 characters); runs with a name without that shape, or with no name, are counted
+apart ("2 runs without a name"). A run closed before the harness recorded the names does not have it. With an analysis, it says **why** it happens, what it **recommends** and what
 fixing it would do, and whether the night's model or a person wrote it (the analysis is in Spanish). Without one, it
 says why. If the night left a proposal, it says the AI model that reviews every night wrote it, and its button is
 highlighted. The buttons to decide are always in view, under the heading **Decide**.
@@ -815,6 +818,12 @@ be, to copy it and open the request by hand.
   `marker.js withdraw-relay`. It is recognized by its
   conversation, not by its name: it keeps counting after the session restarts, and has to be designated again after a
   new chat or a `/clear`. A session with the same name cannot relay.
+  Then comes **who signs each commit in a run** (`approvals.local_commit`). "No one: the agent commits on its own" is
+  the default: the person approves the pull request, and the commit, which is local and can be undone, asks for nothing.
+  "The coordinator, before each commit" adds a second look: the agent does not commit without its ok to save
+  (`marker.js approve-save`), and a change after the ok needs another one. If the profile does not delegate the `save`
+  signature, the person gives it in the window. The site does not propose it to a layer that requires a harness version
+  that cannot read it yet.
   Below it is **who signs each thing**: one row for each signature in the catalog
   (`guides/firmas-del-arnes.md`), with three choices. "In the owner's window" is the default: the owner answers in the
   permission window; where the window does not reach, approves with a click in the options box or a written "aprobado";
@@ -824,7 +833,8 @@ be, to copy it and open the request by hand.
   agent: if the coordinator decides to approve it on its own, the harness cannot tell it apart from the owner's ok, so
   delegate only low-risk things. "Owner only" (`approvals.owner_only`) locks it: the site does not offer to delegate it,
   and it does not offer it for what cannot be signed from another session's tab either. The fixed notice says so:
-  "Loosening a control is always signed by a person, at their terminal; this does not change that." Without a
+  "Loosening a control is always approved by a person, with a click or at their terminal, and the emergency only at
+  their terminal: it is not delegated." Without a
   designated session, delegation does nothing, and the section warns about it. Delegation applies only on the machines
   in the list below (`approvals.delegated_machines`), named by their fingerprint: the ones the runs mailbox saw are
   added with a button, and another one by typing its fingerprint. By default, on none. All of it counts only from
@@ -1029,6 +1039,52 @@ What the person sees in the section, and what the agent does when asked for a to
 - **Where the profile clone is**: `harness.js team-config --no-open` says which folder this machine uses (the
   `paths.team` key). If there is none, clone the `profile` repo from `team-repos.json` into a folder of your own.
 - **The request** goes to the profile repo's main branch, **without auto-complete**: an admin reads and approves it.
+
+#### A repo's test environment
+
+Some suites need something set up before they run: a local database in a container, a running server, the variables the
+tests use to find it, a pinned Node version for Playwright. Without it, the database tests get skipped and the browser
+tests fail, and the test gate counts that as broken code. Every story rediscovers it.
+
+- **Where it is declared**: in `stack.test_environments` of `team-repos.json`, like the test runners. Never in the repo
+  under test: the organization decides the command, even when it calls a script in the repo. The site does not edit it
+  yet: it goes as a request to the profile repo, with the same validation as above.
+- **An entry**:
+
+  ```json
+  { "name": "acme-local", "label": "Acme local database and server",
+    "repos": [ { "platform": "github", "org": "acme", "repo": "acme-stories" },
+               { "platform": "github", "org": "acme", "repo": "acme-backend" },
+               { "platform": "github", "org": "acme", "repo": "acme-web" } ],
+    "prepare": "bash {sibling:acme-backend}/scripts/test-env/server.sh 5021 && source {sibling:acme-backend}/scripts/test-env/variables.sh 5021",
+    "teardown": "bash {sibling:acme-backend}/scripts/test-env/server.sh 5021 stop",
+    "requires": ["ACME_TEST_SQL"], "timeout_s": 600 }
+  ```
+
+  - `repos`: the repos it applies to, in this file's `<repo>` shape. A repo goes in one environment only.
+  - `prepare`: runs with bash from the folder under test. Whatever it leaves exported (also with `source`) reaches the
+    suite and `teardown`. `teardown` (optional) takes it down at the end, however the suite ends.
+  - `{repo}` is the folder under test; `{sibling:<name>}`, another repo's folder. A companion repo of the story is found
+    the way the gate finds it to run its suite (its copy on the story's branch), so the server that starts is the one for
+    the code under test. Otherwise, the repo next to it: with the folder under test named `<repo>--<suffix>`,
+    `<name>--<suffix>` first. Both come already quoted.
+  - `requires` (optional): the variables the setup has to leave set. `timeout_s` (optional, 1 to 3600; 600 if omitted):
+    the time limit for each command.
+- **What the gate does**: it sets the environment up only when the suite is about to run, and takes it down at the end,
+  after the companion repos. A repo with no tests of its own (the stories repo, for example) does not set it up: each
+  companion that runs its suite does. Parts and companions of a run that already set it up inherit it and do not set it
+  up again. The report records it in `test_environment`.
+- **What is left running**: taking it down also stops whatever the setup left running (a server), even if `teardown`
+  did not stop it. Whatever has to outlive the run is started separately, like a container. A cut (Ctrl-C) in the middle
+  of the setup takes it down anyway, and if a run dies without taking it down, the next one stops what it left. On
+  Windows that last part is not possible: there only `teardown` stops it.
+- **One run per environment**: two runs of the same environment share what it starts (a fixed port, a database). If
+  another run is using it, the gate neither sets it up nor takes it down and exits 75, as when another test run is in
+  progress.
+- **If it is not ready** (the setup fails, passes its time limit or does not leave a `requires` variable), the gate does
+  not run the suite and exits **8, "test environment not ready"**: neither green nor red. Whatever the setup left half
+  done is taken down anyway.
+- **To turn it off** on a machine or in a CI that sets up the environment on its own: `TYCON_TEST_ENV=off`.
 
 ### Installation and updates
 
