@@ -5,8 +5,8 @@ que una de ellas, **la coordinadora**, ordene a las demás. La coordinadora deci
 las sesiones, cuida que la máquina no se sature y le pasa al dueño sólo lo suyo.
 
 Es una receta, no un modo: nada cambia en una máquina donde nadie designó una coordinadora. Para que ordene alcanza un
-paso: en cada máquina, el dueño escribe en el chat de la sesión elegida «Esta sesión es la coordinadora», y esa sesión
-corre `marker.js designate-relay` con esa cita.
+paso: en cada máquina, el dueño le pide a la sesión elegida que sea la coordinadora, esa sesión corre
+`marker.js designate-relay` y el dueño hace click en el cuadro.
 
 La coordinadora hace dos cosas, y sólo la segunda pide el perfil del equipo:
 
@@ -18,15 +18,14 @@ La coordinadora hace dos cosas, y sólo la segunda pide el perfil del equipo:
    todo lo que firma va a la ventana del dueño, y `confirm-designation` se niega. Si la organización saca la clave del
    perfil, una confirmación vieja deja de valer.
 
-Cómo se nombra: en cada máquina, el dueño le pide a la sesión elegida, con sus palabras, que sea la coordinadora. Con el
-perfil, esa sesión corre `marker.js designate-relay` sin frase: el freno da un cuadro con «Sí» y «No» que dice qué sesión
-es y en qué carpeta, y con el click del dueño queda nombrada y confirmada. El arnés no lee la frase. Para dejar de serlo,
+Cómo se nombra: en cada máquina, el dueño le pide a la sesión elegida, con sus palabras, que sea la coordinadora. Esa
+sesión corre `marker.js designate-relay` sin frase: el freno da un cuadro con «Sí» y «No» que dice qué sesión es y en
+qué carpeta, y con el click del dueño queda nombrada (con el perfil, también confirmada; sin él, ordena y no firma). El arnés no lee la frase. Para dejar de serlo,
 `marker.js withdraw-relay`, con su propio cuadro. Las dos firmas son sólo del dueño, con su click en la pestaña de esa
 sesión: no se delegan. Si a esa sesión la abrió de fondo otra coordinadora (`coordination.js open`), el cuadro se
 muestra igual en su pestaña y la sesión le avisa a la coordinadora que la abrió: el dueño lo contesta ahí o por
 control remoto. Donde el click no se puede comprobar, el comando dice por qué y da los respaldos: la terminal del
-dueño (`designate-relay --terminal`) o la frase (`--quote` y después `confirm-designation`). Sin perfil, por ahora se
-nombra con la frase (`designate-relay --approved-by '<el dev>' --quote '<su frase>'`).
+dueño (`designate-relay --terminal`) o la frase (`--quote` y después `confirm-designation`).
 
 Una designación por frase de OTRA sesión, anotada cuando ya hay una coordinadora confirmada, no la desplaza: queda **sin
 confirmar** hasta que el dueño la confirme (`confirm-designation`, desde la pestaña de cualquiera de las dos), y
