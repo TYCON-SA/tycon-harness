@@ -1150,6 +1150,15 @@ test('Resueltos_RenglonPartido — la lista de resueltos sigue en el renglón de
   }
   // la lista partida con el resto del renglón después del paréntesis también se lee
   assert.deepEqual(rc.extractResolved('Veredicto: limpio · resueltos (SEC-C1,\n  SEC-C3) · bloquea: no').map((r) => r.rule), ['SEC-C1', 'SEC-C3']);
+  // un «(» de prosa dentro de la lista: el «)» de abajo cierra ése, no la lista; el crítico sigue abierto
+  const anidado = 'Veredicto: hallazgos (SEC-C1) · bloquea: sí · resueltos (SEC-C3 (nota\nSEC-C1)';
+  assert.deepEqual(rc.extractResolved(anidado), []);
+  assert.deepEqual(rc.extractCriticals(anidado).map((c) => c.rule).sort(), ['SEC-C1', 'SEC-C3']);
+  // un renglón largo de códigos con texto al final no se queda mirando la lista para siempre
+  const desde = Date.now();
+  rc.extractCriticals(`Veredicto: hallazgos (X-C1) · resueltos (\n${'SEC-C1 '.repeat(40)}zz`);
+  rc.extractCriticals(`Veredicto: hallazgos (X-C1) · resueltos (\n${'SEC-C1'.repeat(40)}!`);
+  assert.ok(Date.now() - desde < 1000, `tardó ${Date.now() - desde} ms`);
 });
 
 test('Resueltos_SoloElUltimoRenglon @story-8.296 — un veredicto citado de la vuelta anterior no confirma nada', () => {

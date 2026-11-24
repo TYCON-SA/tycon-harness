@@ -51,8 +51,27 @@ const hashOf = (text) => crypto.createHash('sha256').update(String(text || '')).
 // la parte del renglón de veredicto con lo que el revisor confirma resuelto de su vuelta anterior: «· resueltos (SPEC-C3)»
 const RE_RESOLVED = /·\s*resueltos\s*\(([^)]*)\)/i;
 const RE_RESOLVED_OPEN = /·\s*resueltos\s*\(/i;
-// un renglón que sigue la lista de resueltos: sólo códigos, comas y espacios, hasta su paréntesis o el fin del renglón
-const RE_LIST_CONTINUES = new RegExp(`^\\s*(?:${CODE}\\s*,?\\s*)+(?:\\)|$)`);
+const RE_CODE_EXACT = new RegExp(`^${CODE}$`);
+
+/** ¿El texto son sólo códigos críticos separados por comas o espacios? Palabra por palabra: sin vueltas atrás. */
+function onlyCodes(text, { empty }) {
+  const words = String(text).split(/[\s,]+/).filter(Boolean);
+  return words.length ? words.every((w) => RE_CODE_EXACT.test(w)) : empty;
+}
+
+/** ¿El renglón tiene una lista «resueltos (» abierta y sin nada más que códigos hasta acá? */
+function resolvedListOpen(line) {
+  const m = RE_RESOLVED_OPEN.exec(line);
+  if (!m) return false;
+  const rest = line.slice(m.index + m[0].length);
+  return !rest.includes(')') && onlyCodes(rest, { empty: true });
+}
+
+/** ¿El renglón sigue la lista de resueltos? Al menos un código, y sólo códigos hasta su paréntesis o el fin. */
+function continuesList(line) {
+  const close = line.indexOf(')');
+  return onlyCodes(close >= 0 ? line.slice(0, close) : line, { empty: false });
+}
 
 /** Cada código de un texto con cuántas veces aparece. */
 function codesIn(text) {
@@ -74,14 +93,14 @@ function verdictLines(text) {
     if (/hallazgos\s*\(/i.test(line) && !/\)/.test(line.slice(line.search(/hallazgos\s*\(/i)))) {
       while (i + 1 < lines.length && !/\)/.test(line.slice(line.search(/hallazgos\s*\(/i)))) line += ` ${lines[++i]}`;
     }
-    // «resueltos (…)» partido sigue en los renglones de abajo que son la lista misma (códigos y comas hasta el paréntesis);
-    // sin cierre, el renglón queda solo: una lista sin cerrar no se traga lo que sigue, ni el «)» de la prosa la cierra
-    const resueltosAbierto = (l) => { const k = l.search(RE_RESOLVED_OPEN); return k >= 0 && !/\)/.test(l.slice(k)); };
-    if (resueltosAbierto(line)) {
+    // «resueltos (…)» partido sigue en los renglones de abajo que son la lista misma (códigos y comas hasta el paréntesis),
+    // si lo que ya trae es sólo códigos; sin cierre, el renglón queda solo: una lista sin cerrar no se traga lo que sigue,
+    // ni el «)» de la prosa (o el de un paréntesis dentro de la lista) la cierra
+    if (resolvedListOpen(line)) {
       let junto = line;
       let k = i;
-      while (resueltosAbierto(junto) && k + 1 < lines.length && RE_LIST_CONTINUES.test(lines[k + 1])) junto += ` ${lines[++k]}`;
-      if (!resueltosAbierto(junto)) { line = junto; i = k; }
+      while (resolvedListOpen(junto) && k + 1 < lines.length && continuesList(lines[k + 1])) junto += ` ${lines[++k]}`;
+      if (!resolvedListOpen(junto)) { line = junto; i = k; }
     }
     out.push({ i: start, j: i, line });
   }
