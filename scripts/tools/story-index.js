@@ -380,14 +380,17 @@ function oldEntries(text) {
   return out;
 }
 
-/** Suma un renglón al principio del Change Log de una historia (lo crea si no está), con los finales de renglón del archivo. */
+/**
+ * Suma un renglón al principio del Change Log de una historia, con los finales de renglón del archivo. El Change Log que
+ * ya está puede ser de cualquier nivel (`## Change Log` o `### Change Log` dentro del Dev Agent Record); sin ninguno,
+ * lo crea al final.
+ */
 function addToChangeLog(abs, line) {
   const text = fs.readFileSync(abs, 'utf8');
   const eol = text.includes('\r\n') ? '\r\n' : '\n';
-  const head = `${eol}## Change Log${eol}`;
-  const at = text.indexOf(head);
-  if (at < 0) { fs.writeFileSync(abs, `${text.replace(/(\r?\n)*$/, eol)}${eol}## Change Log${eol}${eol}${line}${eol}`); return; }
-  const start = at + head.length;
+  const m = /(^|\r?\n)#{2,6} Change Log[ \t]*\r?\n/.exec(text);
+  if (!m) { fs.writeFileSync(abs, `${text.replace(/(\r?\n)*$/, eol)}${eol}## Change Log${eol}${eol}${line}${eol}`); return; }
+  const start = m.index + m[0].length;
   const rest = text.slice(start).replace(/^(\r?\n)*/, '');
   fs.writeFileSync(abs, `${text.slice(0, start)}${eol}${line}${eol}${rest}`);
 }
@@ -399,6 +402,16 @@ function addToChangeLog(abs, line) {
 
 // un renglón de comentario que es sólo adorno (═══, ───, ===) no es texto
 const adorno = (t) => !/[\p{L}\p{N}]/u.test(t);
+
+// ¿El renglón arranca con el número de la historia de la clave? La clave `<épica>-<n>-<nombre>` da `<épica>.<n>`, y el
+// número tiene que terminar ahí: otro dígito o un punto después es otra historia
+function nombraLaHistoria(t, clave) {
+  const partes = [];
+  for (const p of String(clave).split('-')) { if (!/^\d+$/.test(p)) break; partes.push(p); }
+  if (partes.length < 2) return false;
+  const id = partes.join('.').replace(/\./g, '\\.');
+  return new RegExp(`^${id}(?![\\d.])`).test(String(t));
+}
 
 /**
  * Los comentarios de un sprint-status.yaml a mano, atados a lo que sigue: `{ porClave: Map clave → [renglón], epicas:
@@ -449,7 +462,13 @@ function sprintHandText(text) {
     const st = /^\s*(\d+-[^\s:#]+)\s*:/.exec(line);
     if (st) {
       const deEpica = epicaDelBloque || (epicaAbierta && st[1].split('-')[0] === String(epicaAbierta).split('.')[0] ? epicaAbierta : null);
-      if (bloque.length && deEpica) epica(deEpica).renglones.push(...bloque);
+      // un bloque de la épica que, desde un renglón, arranca con el número de esta historia (su número y una nota): de ahí
+      // en adelante es de la historia
+      const corte = deEpica ? bloque.findIndex((t) => nombraLaHistoria(t, st[1])) : -1;
+      if (corte >= 0) {
+        epica(deEpica).renglones.push(...bloque.slice(0, corte));
+        porClave.set(st[1], [...(porClave.get(st[1]) || []), ...bloque.slice(corte)]);
+      } else if (bloque.length && deEpica) epica(deEpica).renglones.push(...bloque);
       else if (bloque.length) porClave.set(st[1], [...(porClave.get(st[1]) || []), ...bloque]);
       bloque = [];
       epicaDelBloque = null;
