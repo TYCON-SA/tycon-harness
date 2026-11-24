@@ -2621,6 +2621,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.321: un guion de laboratorio que limpia las TYCON_* y arma su casa corre igual dentro de la ejecución aislada de smoke-run.sh que suelto, y la casa de la cuenta sigue protegida. Repos y casas de juguete, sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/lab-inside-isolation.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/office-messages.test.js",
       "requiere": []
