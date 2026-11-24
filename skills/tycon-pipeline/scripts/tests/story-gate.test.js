@@ -1251,6 +1251,36 @@ test('CopiaPorOtroProgramaOEnvoltorio_AlEstado_Frena (fila 223, el freno)', () =
   });
 });
 
+// 🔴 Fila 224. Mutación: leer la palabra de una redirección hasta la primera comilla, y reconocer sólo un descriptor de
+// una cifra. Lo que seguía de la palabra (`<<<x"y"`, `<'a b'c`), un `10<x`, un `{fd}<x`, o una redirección delante del
+// comando con un descriptor largo, con `{fd}`, con `>|` o detrás de una variable quedaban como el último argumento o
+// como el comando, y el `cp` al resultado de la revisión pasaba sin que ningún control lo viera.
+test('CpAlEstado_ConRedireccionRara_Frena (fila 224, el freno)', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'plan-review', 's1'), { recursive: true });
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const res = path.join(E, 'plan-review', 's1', 's1.resultado.json');
+  const S = path.join(repo, 'falso.json');
+  fs.writeFileSync(S, '{}');
+  const arnes = path.join(SCRIPTS, '..', '..', '..');
+  conEnv(SIN_REGISTRO, () => {
+    const frena = (cmd) => { const r = bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }); assert.ok(r && r.block, JSON.stringify(cmd)); };
+    const pasa = (cmd) => assert.equal(bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }), null, JSON.stringify(cmd));
+    // la palabra de la redirección, con comillas o escapes pegados
+    for (const entrada of [`<<<$'x'`, '<<<x"y"', `<<<"a b"c`, `<<<'it''s'`, '<<<$(echo x y)', '<<<${HOLA:-a b}', '<<<a\\ b', '< f"g"', `<'a b'c`]) {
+      frena(`cp ${S} '${res}' ${entrada}`);
+    }
+    // un descriptor de dos cifras o con nombre
+    for (const entrada of ['10<x', '12<x', '{fd}<x', '{fd}<<<x']) frena(`cp ${S} '${res}' ${entrada}`);
+    // una redirección delante del comando: descriptor largo, con nombre, `>|`, o detrás de una variable
+    for (const delante of ['10>f', '{fd}>f', 'HOLA=1 >f', 'HOLA=1 > f', '>|f']) frena(`${delante} cp ${S} '${res}'`);
+    // lo de siempre sigue pasando
+    pasa(`cp ${S} '${repo}/copia.json' <<<x"y"`);
+    pasa(`HOLA=1 >/dev/null cp ${S} '${repo}/copia.json'`);
+  });
+});
+
 // 🔴 Mutaciones: mirar sólo el primer `--out`, aceptar un destino que no se puede leer, o aceptar el corredor del arnés
 // con un `--args` que no es el pedido que preparó el arnés: con cualquiera, la sesión escribe un «aprobado» que no es el
 // de su plan (T28, las tres formas de falsificar el resultado).

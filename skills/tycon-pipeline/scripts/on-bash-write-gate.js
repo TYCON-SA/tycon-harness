@@ -176,7 +176,8 @@ try { ({ nativePath } = require('./lib/path-shape.js')); } catch (e) { logHookEr
 const Q = `(?:'([^']*)'|"([^"]*)"|([^\\s'"|;&<>]+))`; // token: 'x' | "x" | bare
 function tok(m, i) { return m[i] ?? m[i + 1] ?? m[i + 2] ?? null; }
 
-const SEPARADOR_DE_SEGMENTOS = /&&|\|\||\|&|;|\||\n|(?<![<>&|\\])&(?![&>])/;
+// (el `|` de `>|`, que pisa el archivo aunque el shell no deje pisar, no separa)
+const SEPARADOR_DE_SEGMENTOS = /&&|\|\||(?<!>)\|&|;|(?<!>)\||\n|(?<![<>&|\\])&(?![&>])/;
 function splitSegments(cmd) {
   // Separadores de comandos (no dentro de comillas — aproximación: split simple alcanza para lo
   // que buscamos; las comillas raras caen del lado conservador = no se extrae nada).
@@ -201,7 +202,8 @@ function sinPalabrasDeBloque(seg) {
   let t = String(seg).trim();
   for (let antes = null; antes !== t;) {
     antes = t;
-    t = t.replace(/^(?:(?:do|then|else|elif|if|while|until|time|!)(?=[\s({])|[({])\s*/, '');
+    // (el `{` de un descriptor con nombre, `{fd}>f`, no abre un grupo)
+    t = t.replace(/^(?:(?:do|then|else|elif|if|while|until|time|!)(?=[\s({])|\(|\{(?![A-Za-z_]\w*\}[<>]))\s*/, '');
   }
   // el `)` del paréntesis que se sacó adelante, pegado al último archivo (`(sed -i … docs/a.js)`): sólo los que sobran,
   // para no tocar un `$(…)` del final
@@ -223,12 +225,21 @@ function sinPalabrasDeBloque(seg) {
  * entrada (`< f`, `<<< palabra`, `<<EOF`, `<<-'EOF'`), cuyo archivo o delimitador no es un argumento del comando. Sin la
  * barra suelta del final (`cp a b \` sin renglón siguiente), que tampoco es el último argumento.
  */
+// La palabra de una redirección, como la lee el shell: con lo citado, `$'…'`, `$(…)`, `${…}` y lo escapado pegado
+// (`<<<x"y"`, `<'a b'c`, `<<<$(echo x y)`, `<<<a\ b`). Cada pieza empieza distinto: no hay dos formas de leer lo mismo
+const PALABRA_DE_REDIRECCION = String.raw`(?:\$'(?:\\.|[^'\\])*'|\$"(?:\\.|[^"\\])*"|'[^']*'|"(?:\\.|[^"\\])*"|\$\([^)]*\)|\$\{[^}]*\}|\\.|[^\s'"\\|;&<>$]|\$(?![('{"]))+`;
+// el descriptor de una redirección: una o más cifras, o un nombre (`{fd}`), al principio de una palabra
+const DESCRIPTOR = String.raw`(?:\d+|\{[A-Za-z_]\w*\})`;
+// (la palabra va en su propio grupo opcional: un `?` pegado al `+` de la palabra la volvería perezosa, de una letra)
+const REDIRECCION_DE_SALIDA_CON_PALABRA = new RegExp(String.raw`[ \t]*(?:&|(?<!\S)${DESCRIPTOR})?>{1,2}(?:\||&)?[ \t]*(?:${PALABRA_DE_REDIRECCION})?`, 'g');
+const REDIRECCION_DE_ENTRADA_CON_PALABRA = new RegExp(String.raw`(?:(?<!\S)${DESCRIPTOR})?<(?:<<|<-?|&|>)?[ \t]*(?:${PALABRA_DE_REDIRECCION})?`, 'g');
+
 function palabrasDelComando(seg) {
   // un comentario al final no es parte del comando
   const sinComentario = String(seg).replace(/(^|\s)#.*$/, '');
   const sinRedir = sinComentario
-    .replace(/[ \t]*(?:&|\d)?>{1,2}(?:\||&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ')
-    .replace(/(?:(?<!\S)\d)?<(?:<<|<-?|&|>)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ');
+    .replace(REDIRECCION_DE_SALIDA_CON_PALABRA, ' ')
+    .replace(REDIRECCION_DE_ENTRADA_CON_PALABRA, ' ');
   const words = (sinRedir.trim().match(new RegExp(Q, 'g')) || []).map((w) => {
     const mm = w.match(new RegExp(`^${Q}$`));
     return mm ? tok(mm, 1) : null;
@@ -237,8 +248,9 @@ function palabrasDelComando(seg) {
   return words;
 }
 
-// Una redirección delante del comando (`> f cp a b`, `2>/dev/null cp a b`, `<<<x cp a b`): el comando es lo que sigue
-const REDIRECCION_DELANTE = /(?:(?:&|\d)?>{1,2}(?:\||&)?|\d?<(?:<<|<-?|&|>)?)[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)[ \t]*/y;
+// Una redirección delante del comando (`> f cp a b`, `10>f cp a b`, `{fd}>f cp a b`, `<<<x cp a b`): el comando es lo
+// que sigue
+const REDIRECCION_DELANTE = new RegExp(String.raw`(?:(?:&|${DESCRIPTOR})?>{1,2}(?:\||&)?|${DESCRIPTOR}?<(?:<<|<-?|&|>)?)[ \t]*${PALABRA_DE_REDIRECCION}[ \t]*`, 'y');
 function sinRedireccionesDelante(seg) {
   const t = String(seg).trim();
   let i = 0;
@@ -261,11 +273,13 @@ const opcionesDelEnvoltorio = (n) => (opcionesConValor ||= { ...ENVOLTORIOS_CON_
 // los envoltorios que, después de sus opciones, llevan una palabra suya antes del comando: la duración, la prioridad, la
 // máscara de procesadores
 const CON_PALABRA_PROPIA = new Set(['timeout', 'chrt', 'taskset']);
+// el principio de una palabra que es una redirección (`>f`, `2>`, `{fd}<x`, `&>f`, `>|f`)
+const EMPIEZA_REDIRECCION = new RegExp(String.raw`^(?:&|${DESCRIPTOR})?(?:>{1,2}(?:\||&)?|<(?:<<|<-?|&|>)?)`);
 
 /**
  * El tramo desde el programa que corre, con el programa por su nombre (`/bin/cp` y `\cp` son `cp`): sin las variables de
- * delante ni los envoltorios que corren otro comando (`env -i X=1`, `command`, `nohup`, `sudo -u x`, `timeout 5`,
- * `busybox`), con sus opciones. '' si no queda programa.
+ * delante, las redirecciones (`HOLA=1 >f cp`) ni los envoltorios que corren otro comando (`env -i X=1`, `command`,
+ * `nohup`, `sudo -u x`, `timeout 5`, `busybox`), con sus opciones. '' si no queda programa.
  */
 function desdeElPrograma(seg) {
   const t = String(seg).trim();
@@ -277,6 +291,9 @@ function desdeElPrograma(seg) {
   let propia = false;
   for (let m = pieza.exec(t); m; m = pieza.exec(t)) {
     if (saltar) { saltar--; continue; }
+    // una redirección no es el programa; si su palabra va aparte (`> f`), tampoco la que sigue
+    const redireccion = EMPIEZA_REDIRECCION.exec(m[0]);
+    if (redireccion) { if (redireccion[0].length === m[0].length) saltar = 1; continue; }
     const w = palabraDelShell(m[0]);
     if (opciones !== null && w.startsWith('-')) { if (opciones && opciones.test(w)) saltar = 1; continue; }
     if (opciones !== null && propia) { opciones = null; propia = false; continue; }
