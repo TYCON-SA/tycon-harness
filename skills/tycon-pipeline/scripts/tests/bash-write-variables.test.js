@@ -917,12 +917,18 @@ test('GitConOutput_EscribeLoQueNombra: git log, diff o show con --output frenan 
       "git log --output='specs/story-x.md'",
       'git -C specs log --output=story-x.md',
       'env GIT_PAGER=cat git log --output=specs/story-x.md',
+      // detrás de otro comando que lo lanza, y en un alias de `-c`
+      'echo HEAD | xargs git diff --output=specs/story-x.md',
+      'find . -name x -exec git log --output=specs/story-x.md \\;',
+      "git -c 'alias.d=diff --output=specs/story-x.md' d",
     ]) assert.equal(freno(c), HISTORIA, c);
     assert.match(freno('git log --output=.github/control-changes/abc.json'), /constancia de cambio de control/);
     for (const c of [
       'git log --oneline -3 specs/story-x.md',
       'git log --output-indicator-new=x specs/story-x.md',
       'git diff --output=/tmp/x.diff',
+      "git -c 'alias.l=log --oneline' l",
+      'echo HEAD | xargs git log --oneline',
     ]) assert.equal(freno(c), '', c);
   });
 });

@@ -332,10 +332,22 @@ test('T28 RemoteAddOrigin_FrenaSoloSiYaHayOrigin_YSacarOriginFrena', () => {
     [`git remote set-url origin ${URL}`, sinRemotos], ['git remote rename origin viejo', c.repo],
     ['git config --remove-section remote.origin', c.repo], ['git config remove-section remote.origin', c.repo],
     ['git config --rename-section remote.origin remote.viejo', c.repo], ['git config rename-section remote.x remote.origin', c.repo],
-    ['git config set remote.origin.mirror true', c.repo]]) {
+    ['git config set remote.origin.mirror true', c.repo],
+    // con una opción con valor antes del subcomando, y con una que no conoce
+    ['git config --file .git/config remove-section remote.origin', c.repo], ['git config -f .git/config rename-section remote.origin remote.x', c.repo],
+    ['git config --worktree --unknown-option z remove-section remote.origin', c.repo], ['git config --file .git/config set remote.origin.mirror true', c.repo]]) {
     const r = c.correr(cmd, cwd);
     assert.ok(r && r.block && ORIGIN.test(r.block), `frena: ${cmd}`);
   }
+  // sin origin en la configuración pero con sus copias (lo sacaron editando .git/config a mano): lo tuvo, `add` frena
+  const resto = path.join(c.raiz, 'resto');
+  fs.mkdirSync(resto);
+  git(resto, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(resto, 'a'), 'a');
+  git(resto, 'add', '-A'); git(resto, 'commit', '-q', '-m', 'base');
+  git(resto, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  const r = c.correr(`git remote add origin ${URL}`, resto);
+  assert.ok(r && r.block && ORIGIN.test(r.block), 'con las copias de origin, add frena');
   for (const cmd of ['git config --get remote.origin.mirror', 'git config get remote.origin.mirror', 'git config --unset remote.origin.tagopt',
     'git config --remove-section remote.upstream']) {
     const r = c.correr(cmd);

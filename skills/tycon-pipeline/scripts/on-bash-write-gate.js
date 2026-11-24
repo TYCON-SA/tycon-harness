@@ -594,18 +594,18 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
 
   // 7) git con `--output` (log, diff, show y los que aceptan las opciones de diff) escribe el archivo que nombra, pegado
   //    con `=` o en la palabra que sigue; git acepta abreviar la opción (`--out=…`). Con `git -C <carpeta>` una ruta
-  //    relativa es desde esa carpeta: cuentan las dos.
+  //    relativa es desde esa carpeta: cuentan las dos. `git` se busca en cualquier lugar del tramo: detrás de `env`,
+  //    `xargs` o `find -exec` también corre.
+  const esOutput = (w) => { const nombre = w.split('=')[0]; return nombre.length >= 4 && '--output'.startsWith(nombre); };
   for (const seg of splitSegments(s)) {
     const words = (seg.match(new RegExp(Q, 'g')) || []).map((w) => { const mm = w.match(new RegExp(`^${Q}$`)); return mm ? tok(mm, 1) : null; }).filter((w) => w != null);
-    let k = 0;
-    while (k < words.length && (/^\w+=/.test(words[k]) || ['sudo', 'env', 'command', 'exec', 'nice', 'nohup', 'time'].includes(words[k]))) k++;
-    if (path.basename(words[k] || '') !== 'git') continue;
+    const k = words.findIndex((w) => path.basename(w) === 'git');
+    if (k < 0) continue;
     let carpeta = null;
     for (let i = k + 1; i < words.length; i++) {
       const w = words[i];
       if (w === '-C' && words[i + 1]) { carpeta = words[++i]; continue; }
-      const nombre = w.split('=')[0];
-      if (!(nombre.length >= 4 && '--output'.startsWith(nombre))) continue;
+      if (!esOutput(w)) continue;
       // `--output='specs/h.md'` llega en dos palabras: la opción con su `=` y el valor citado
       const crudo = w.includes('=') && !w.endsWith('=') ? w.slice(w.indexOf('=') + 1) : words[++i];
       // con sus comillas resueltas, como lo deja el shell
@@ -613,6 +613,16 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
       if (!valor) continue;
       out.add(valor);
       if (carpeta && !path.isAbsolute(valor)) out.add(path.join(carpeta, valor));
+    }
+  }
+  // un alias de git que lleva `--output` (`git -c 'alias.d=diff --output=specs/h.md' d`): su definición se lee del
+  // comando tal cual, porque entre comillas con espacios no queda en el texto que se mira arriba
+  for (const m of raw.matchAll(/\balias\.[^\s=]+=([^\n'"]*)/gi)) {
+    const partes = m[1].trim().split(/\s+/);
+    for (let i = 0; i < partes.length; i++) {
+      if (!esOutput(partes[i])) continue;
+      const valor = partes[i].includes('=') && !partes[i].endsWith('=') ? partes[i].slice(partes[i].indexOf('=') + 1) : partes[i + 1];
+      if (valor) out.add(valor);
     }
   }
 
@@ -3347,16 +3357,21 @@ function parcheNombraConstancia(texto, isControlApproval) {
  * `extra.tramo`: el tramo entero, con lo de antes del comando · `extra.anidado(cmd)`: lo mismo para un comando adentro.
  */
 /**
- * ¿El repo de `carpeta` ya tiene un remoto `origin`? true o false; null si git no contestó. Una carpeta que no existe o
- * que todavía no es un repo (el `git init` del mismo comando) no lo tiene.
+ * ¿El repo de `carpeta` ya tiene, o tuvo, un remoto `origin`? true o false; null si git no contestó. Lo tuvo si quedan
+ * sus copias (`refs/remotes/origin/…`): sacado editando .git/config a mano, `add` lo pondría a apuntar a otro lado. Una
+ * carpeta que no existe o que todavía no es un repo (el `git init` del mismo comando) no lo tiene.
  */
 function yaHayOrigin(carpeta) {
   if (!fs.existsSync(carpeta)) return false;
-  const r = require('child_process').spawnSync('git', ['-C', carpeta, 'remote'], {
+  const git = (argv) => require('child_process').spawnSync('git', ['-C', carpeta, ...argv], {
     windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000, env: { ...process.env, LC_ALL: 'C', LANGUAGE: 'C' },
   });
-  if (!r.error && r.status === 0) return String(r.stdout).split(/\r?\n/).includes('origin');
-  return !r.error && /not a git repository/i.test(String(r.stderr)) ? false : null;
+  const r = git(['remote']);
+  if (r.error || r.status !== 0) return !r.error && /not a git repository/i.test(String(r.stderr)) ? false : null;
+  if (String(r.stdout).split(/\r?\n/).includes('origin')) return true;
+  const copias = git(['for-each-ref', '--count=1', '--format=%(refname)', 'refs/remotes/origin/']);
+  if (copias.error || copias.status !== 0) return null;
+  return String(copias.stdout).trim() !== '';
 }
 
 function constanciasDeOtraRama(c, args, base, isControlApproval, extra = {}) {
@@ -3410,7 +3425,12 @@ function constanciasDeOtraRama(c, args, base, isControlApproval, extra = {}) {
     return out;
   }
   if (c === 'git config') {
-    const sueltos = args.filter((w) => !w.startsWith('-'));
+    // sin los valores de las opciones que llevan uno (`--file .git/config`), que no son la clave ni el subcomando
+    const sueltos = [];
+    for (let i = 0; i < args.length; i++) {
+      if (/^(?:-f|--file|--blob|-t|--type|--default|--comment|--value)$/.test(args[i])) { i++; continue; }
+      if (!args[i].startsWith('-')) sueltos.push(args[i]);
+    }
     // la forma con subcomando (`git config set|unset|remove-section|rename-section <clave>`) y la de opciones
     const sub = /^(?:get|list|set|unset|remove-section|rename-section)$/.test(sueltos[0] || '') ? sueltos[0] : null;
     const clave = sub ? sueltos[1] : sueltos[0];
@@ -3421,7 +3441,10 @@ function constanciasDeOtraRama(c, args, base, isControlApproval, extra = {}) {
     // `git remote add origin` lo pone a apuntar a otro lado
     const seccion = sub ? /^(?:remove-section|rename-section)$/.test(sub) : args.some((w) => /^--(?:remove-section|rename-section)$/.test(w));
     const nombres = sub ? sueltos.slice(1, 3) : sueltos.slice(0, 2);
-    if (pone || (seccion && nombres.some((n) => /^remote\.origin$/i.test(n)))) out.push('cambiar a dónde apunta origin deja de probar qué está en la rama principal');
+    // con una opción que no conozco antes del subcomando, la palabra del subcomando vale donde esté
+    const suelta = sueltos.findIndex((w) => /^(?:remove-section|rename-section)$/.test(w));
+    const deOrigin = (ns) => ns.some((n) => /^remote\.origin$/i.test(n));
+    if (pone || (seccion && deOrigin(nombres)) || (suelta >= 0 && deOrigin(sueltos.slice(suelta + 1, suelta + 3)))) out.push('cambiar a dónde apunta origin deja de probar qué está en la rama principal');
     return out;
   }
   if (c === 'git remote') {
