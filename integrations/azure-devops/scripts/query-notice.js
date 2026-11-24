@@ -21,11 +21,20 @@ const path = require('path');
 const programas = ['az'];
 const LEE = new Set(['list', 'show', 'ls', 'get', 'query', 'search', 'check', 'status', 'diff', 'version', 'validate']);
 const ESCRIBE = new Set(['login', 'logout', 'configure', 'create', 'delete', 'update', 'set', 'add', 'remove', 'import', 'upload', 'push', 'publish', 'queue', 'cancel', 'approve', 'vote', 'complete', 'merge', 'install', 'run', 'rerun', 'reject', 'abandon', 'reactivate', 'download']);
+// las opciones globales que pueden ir antes del grupo y llevan valor (`az -o json repos pr list`)
+const conValor = new Set(['-o', '--output', '--query', '--subscription']);
+// un método que no es GET, con espacio, con «=» o pegado a la opción corta: `az devops invoke --http-method POST`,
+// `az rest --method=put`, `az rest -m delete`, `az rest -mput`
+const NO_GET = (opciones) => new RegExp(`(?:^|\\s)(?:${opciones})\\s*['"]?(?!GET\\b)[A-Za-z]`, 'i');
+const ESCRIBE_INVOKE = NO_GET('--http-method[=\\s]');
+const ESCRIBE_REST = NO_GET('--method[=\\s]|-m[=\\s]?');
 
-/** 'consulta' u 'otro', con las palabras sin opciones del comando (`pos`) y el segmento sin prefijos (`limpio`). */
+/** 'consulta' u 'otro', con el grupo y el verbo del comando (`pos`) y el segmento sin prefijos (`limpio`). */
 function clasificar({ pos, limpio }) {
   if (pos.some((p) => ESCRIBE.has(p))) return 'otro';
-  const invoke = pos[0] === 'devops' && pos.includes('invoke') && !/--http-method\s+(?!GET\b)/i.test(limpio);
+  // `az rest` sin método es un GET
+  if (pos[0] === 'rest') return ESCRIBE_REST.test(limpio) ? 'otro' : 'consulta';
+  const invoke = pos[0] === 'devops' && pos.includes('invoke') && !ESCRIBE_INVOKE.test(limpio);
   return LEE.has(pos[pos.length - 1]) || invoke ? 'consulta' : 'otro';
 }
 
@@ -35,7 +44,7 @@ const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CON_PROYECTO = new Set(['repos', 'pipelines', 'boards', 'artifacts']);
 
 /** los valores de --project/-p de los segmentos az que HABLAN de un proyecto */
-function proyectos(cmd, { segmentos, tokens, PREFIJOS }) {
+function proyectos(cmd, { segmentos, tokens, PREFIJOS, programaDe, palabras }) {
   const out = [];
   const segs = segmentos(cmd);
   for (let i = 0; i < segs.length; i++) {
@@ -43,8 +52,9 @@ function proyectos(cmd, { segmentos, tokens, PREFIJOS }) {
     let fin = i; while (segs[fin] && segs[fin].sep === '|') fin++;
     if (segs[fin] && segs[fin].sep === '&') continue;           // al fondo por el shell: su resultado no está acá
     const argv = tokens(seg.texto.replace(PREFIJOS, ''));
-    if (!argv.length || path.basename(argv[0]) !== 'az') continue;
-    const pos = []; for (let j = 1; j < argv.length && !argv[j].startsWith('-'); j++) pos.push(argv[j]);
+    // `az`, `az.cmd`, `C:\…\az.exe`, `AZ` (lo lee el gancho como a cualquier programa)
+    if (!argv.length || programaDe(argv[0]).toLowerCase() !== 'az') continue;
+    const pos = palabras(argv, conValor);
     const habla = CON_PROYECTO.has(pos[0]) || (pos[0] === 'devops' && !['configure', 'login', 'logout', 'project', 'extension', 'user'].includes(pos[1]));
     if (!habla) continue;
     for (let j = 1; j < argv.length; j++) {
@@ -120,4 +130,4 @@ function refrescar(org, { stateDir }) {
   return 0;
 }
 
-module.exports = { programas, clasificar, avisos, refrescar, proyectos };
+module.exports = { programas, conValor, clasificar, avisos, refrescar, proyectos };

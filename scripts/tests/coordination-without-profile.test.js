@@ -157,8 +157,10 @@ test('T5 SinPerfil_Coordinate_EnLaDesignada_DaElEstado @story-8.199 @ac-5: la de
   assert.match(r.text, /dueño/);
   const otra = C.coordinate({ ...m.opts, env: { ...m.env, CLAUDE_CODE_SESSION_ID: 'otra-1' } });
   assert.strictEqual(otra.code, 1);
-  assert.match(otra.text, /Esta sesión es la coordinadora/);
-  assert.match(otra.text, /designate-relay/);
+  // fila 148: sin perfil también se nombra con el click, y dice que sin perfil no firma
+  assert.match(otra.text, /designate-relay\n/);
+  assert.match(otra.text, /el dueño hace click/);
+  assert.match(otra.text, /ordena la máquina y no firma/);
   assert.doesNotMatch(otra.text, /no usa una coordinadora/);
 });
 
@@ -188,7 +190,10 @@ test('T9 SinPerfil_LimpiarConversacion_DiceComoRecuperarla @story-8.199 @ac-7: t
   const n = C.guideNotice({ ...m.opts, sessionId: 'nueva', source: 'clear', title: 'Coordinadora', transcript });
   assert.ok(n, 'dice algo');
   assert.match(n, /era la coordinadora/);
-  assert.match(n, /«Esta sesión es la coordinadora»/);
+  // fila 148: sin perfil también se recupera con el pedido de la persona y su click, no con la frase
+  assert.match(n, /te lo pida con sus palabras/);
+  assert.match(n, /designate-relay: el freno te da un cuadro/);
+  assert.doesNotMatch(n, /«Esta sesión es la coordinadora»/);
 });
 
 test('T10 SinPerfil_Espera_VaALaCoordinadora @story-8.199 @ac-8: la espera de otra sesión va primero a la designada viva', (t) => {
