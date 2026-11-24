@@ -104,7 +104,7 @@ const RESPUESTA = (id) => JSON.stringify({ ok: true, value: { id, url: `https://
 
 // ── el skill de merge ────────────────────────────────────────────────────────────────────────────────────────────────
 
-test('T1 MergeSkill_NombraLaCapa @story-1.2 @ac-1', () => {
+test('T1 MergeSkill_NombraLaCapa', () => {
   const lineas = fs.readFileSync(path.join(ROOT, 'skills', 'tycon-merge-to-main', 'SKILL.md'), 'utf8').split('\n');
   const modo = lineas.find((l) => l.startsWith('| `mode` |'));
   const paso9b = lineas.find((l) => /^9b\. \*\*step-09b/.test(l));
@@ -116,7 +116,7 @@ test('T1 MergeSkill_NombraLaCapa @story-1.2 @ac-1', () => {
 
 // ── el pedido anotado y su entrada ───────────────────────────────────────────────────────────────────────────────────
 
-test('T2 RetroPending_GitlabEsperando @story-1.2 @ac-2', () => {
+test('T2 RetroPending_GitlabEsperando', () => {
   const m = mundo();
   const { dir, punta } = repo(ORIGEN_GL);
   const lab = laboratorio(m);
@@ -128,7 +128,7 @@ test('T2 RetroPending_GitlabEsperando @story-1.2 @ac-2', () => {
   assert.deepStrictEqual([e.repoPath, e.sha, e.pr, e.plataforma, e.estado], [dir, punta.slice(0, 12), 7, 'gitlab', 'esperando']);
 });
 
-test('T3 RetroPending_GitlabEntra @story-1.2 @ac-2', () => {
+test('T3 RetroPending_GitlabEntra', () => {
   const { dir } = repo(ORIGEN_GL);
   // el pedido entra: el commit de la fusión queda en la línea de main
   git(dir, ['merge', '--quiet', '--no-ff', '-m', 'fusion del pedido 7', 'dev']);
@@ -154,8 +154,8 @@ test('T3 RetroPending_GitlabEntra @story-1.2 @ac-2', () => {
  * `identidadParaLaCapa` del gancho, cargado con `require` en un proceso aparte (con la entrada cerrada: un gancho que
  * corriera su `main` al cargarse no cuelga la prueba) y con el árbol y las integraciones de `m` en su entorno.
  */
-function identidad(dir, m) {
-  const programa = `const f = require(${JSON.stringify(path.join(ROOT, 'scripts', 'hooks', 'retro-pending.js'))}).identidadParaLaCapa;
+function identidad(dir, m, gancho = path.join(ROOT, 'scripts', 'hooks', 'retro-pending.js')) {
+  const programa = `const f = require(${JSON.stringify(gancho)}).identidadParaLaCapa;
     process.stdout.write(JSON.stringify(typeof f === 'function' ? f(${JSON.stringify(dir)}) : { sinFuncion: true }));`;
   const r = spawnSync(process.execPath, ['-e', programa], { env: env(tmp('casa-'), m), encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30000 });
   assert.strictEqual(r.status, 0, r.stderr);
@@ -164,7 +164,7 @@ function identidad(dir, m) {
   return d;
 }
 
-test('T4 RetroPending_IdentidadPorLaCapa @story-1.2 @ac-3', () => {
+test('T4 RetroPending_IdentidadPorLaCapa', () => {
   const m = mundo();
   assert.deepStrictEqual(identidad(repo(ORIGEN_GL).dir, m), { valor: GL });
   // la de Azure y la de GitHub, como las armaba el gancho antes de la capa (la ruta del origin sin mayúsculas)
@@ -173,9 +173,32 @@ test('T4 RetroPending_IdentidadPorLaCapa @story-1.2 @ac-3', () => {
   assert.deepStrictEqual(identidad(repo('git@github.com:acme/producto.git').dir, m), { valor: { platform: 'github', org: 'acme', repo: 'producto' } });
 });
 
-test('T5 RetroPending_OriginSinPlataforma @story-1.2 @ac-4', () => {
+test('T5 RetroPending_OriginSinPlataforma', () => {
   const m = mundo();
   const r = identidad(repo('https://git.otro-servidor.example/equipo/servicio.git').dir, m);
   assert.strictEqual(r.valor, undefined, 'no inventa una identidad');
   assert.match(r.problema, /no sé en qué plataforma vive/);
+});
+
+/** Una copia del gancho con sus bibliotecas menos la capa de plataforma: `require` de la capa falla. */
+function ganchoSinCapa() {
+  const arnes = tmp('sin-capa-');
+  fs.mkdirSync(path.join(arnes, 'scripts', 'hooks'), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, 'scripts', 'hooks', 'retro-pending.js'), path.join(arnes, 'scripts', 'hooks', 'retro-pending.js'));
+  const lib = path.join(ROOT, 'scripts', 'lib');
+  fs.cpSync(lib, path.join(arnes, 'scripts', 'lib'), { recursive: true, filter: (src) => path.relative(lib, src).split(path.sep)[0] !== 'platform' });
+  return path.join(arnes, 'scripts', 'hooks', 'retro-pending.js');
+}
+
+test('T9 RetroPending_SinCapaAzureGithubIgual', () => {
+  const m = mundo();
+  const gancho = ganchoSinCapa();
+  // Azure y GitHub no dependen de la capa: la misma identidad que en T4
+  assert.deepStrictEqual(identidad(repo('https://dev.azure.com/acme/Prod/_git/producto').dir, m, gancho),
+    { valor: { platform: 'azure', org: 'acme', project: 'prod', repo: 'producto' } });
+  assert.deepStrictEqual(identidad(repo('git@github.com:acme/producto.git').dir, m, gancho), { valor: { platform: 'github', org: 'acme', repo: 'producto' } });
+  // otro servidor sí la necesita, y lo dice
+  const r = identidad(repo(ORIGEN_GL).dir, m, gancho);
+  assert.strictEqual(r.valor, undefined, 'no inventa una identidad');
+  assert.match(r.problema, /no pude cargar la capa de plataforma/);
 });

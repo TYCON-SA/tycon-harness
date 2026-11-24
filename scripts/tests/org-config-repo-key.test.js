@@ -29,7 +29,7 @@ const libres = (clave, todos, usados) => todos.filter((x) => usados.map(clave).i
 
 const GL = (namespace, host) => ({ platform: 'gitlab', ...(host ? { host } : {}), namespace, repo: 'servicio' });
 
-test('T6 SitioTecnologia_GitlabMismoNombre @story-1.2 @ac-5', () => {
+test('T6 SitioTecnologia_GitlabMismoNombre', () => {
   const clave = claveDeRepo();
   const a = GL('producto/plataforma', 'gitlab.example.com');
   const b = GL('producto/otra', 'gitlab.example.com');
@@ -37,7 +37,7 @@ test('T6 SitioTecnologia_GitlabMismoNombre @story-1.2 @ac-5', () => {
   assert.deepStrictEqual(libres(clave, [a, b], [a]), [b], 'usar uno deja al otro en la lista de libres');
 });
 
-test('T7 SitioTecnologia_GitlabOtroServidor @story-1.2 @ac-5', () => {
+test('T7 SitioTecnologia_GitlabOtroServidor', () => {
   const clave = claveDeRepo();
   const propio = GL('producto/plataforma', 'gitlab.example.com');
   const publico = GL('producto/plataforma');
@@ -46,7 +46,7 @@ test('T7 SitioTecnologia_GitlabOtroServidor @story-1.2 @ac-5', () => {
   assert.strictEqual(clave(GL('Producto/Plataforma', 'GitLab.Example.com')), clave(propio), 'sin mayúsculas, como la identidad del lector');
 });
 
-test('Regresión: las claves de Azure DevOps y GitHub quedan como estaban @story-1.2 @ac-6', () => {
+test('Regresión: las claves de Azure DevOps y GitHub quedan como estaban', () => {
   const clave = claveDeRepo();
   assert.strictEqual(clave({ platform: 'azure', org: 'Acme', project: 'Prod%20A', repo: 'Back' }), 'azure/acme/prod a/back');
   assert.strictEqual(clave({ platform: 'github', org: 'acme', repo: 'web' }), 'github/acme//web');

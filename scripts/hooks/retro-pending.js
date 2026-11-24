@@ -563,30 +563,25 @@ function sinSecretos(t) {
 }
 
 /**
- * La identidad del repo de `dir` para la capa de plataforma, sacada de su `origin`: `{ valor }` o `{ problema }`. La da
- * la capa: la de Azure DevOps y la de GitHub por su servidor (`identityFromRemote`), la de cualquier otro servidor por el
- * conector de la plataforma que lo declara en team-repos.json (`identityOfRemoteUrl`). Un servidor que nadie declara no
- * tiene plataforma, y «no pude mirar» (el archivo o el conector fallaron) se dice como problema, no como identidad.
+ * La identidad del repo de `dir` para la capa de plataforma, sacada de su `origin`: `{ valor }` o `{ problema }`. La de
+ * Azure DevOps y la de GitHub se arman acá, por su servidor, sin cargar la capa: una integración rota no deja sin ubicar
+ * los pedidos de las dos plataformas de siempre. La de cualquier otro servidor la da la capa, por el conector de la
+ * plataforma que lo declara en team-repos.json (`identityOfRemoteUrl`). Un servidor que nadie declara no tiene
+ * plataforma, y «no pude mirar» (la capa, el archivo o el conector fallaron) se dice como problema, no como identidad.
  */
 function identidadParaLaCapa(dir) {
   let r = null;
   try { r = resolverRemoto(dir); } catch { r = null; }
   const id = r && r.id;
   if (!id) return { problema: `no sé en qué plataforma vive ${dir}: no tiene un origin legible` };
+  if (id.org && id.proyecto && id.repo) return { valor: { platform: 'azure', org: id.org, project: id.proyecto, repo: id.repo } };
+  const partes = id.host === 'github.com' ? String(id.ruta || '').split('/') : [];
+  if (partes.length === 2 && partes[0] && partes[1]) return { valor: { platform: 'github', org: partes[0], repo: id.nombre || partes[1] } };
   const capa = capaDePlataforma();
   if (!capa) return { problema: `no sé en qué plataforma vive el origin de ${dir}: no pude cargar la capa de plataforma` };
-  const partes = String(id.ruta || '').split('/');
-  const donde = id.org && id.proyecto && id.repo ? { host: 'azure', org: id.org, project: id.proyecto, name: id.repo }
-    : id.host === 'github.com' && partes.length === 2 && partes[0] && partes[1] ? { host: 'github', ghRepo: `${partes[0]}/${id.nombre || partes[1]}` }
-      : null;
-  if (donde) {
-    const valor = capa.identityFromRemote(donde);
-    if (valor) return { valor };
-  } else {
-    let valor = null;
-    try { valor = capa.identityOfRemoteUrl(r.url); } catch (e) { return { problema: `no sé en qué plataforma vive el origin de ${dir}: ${sinSecretos(String((e && e.message) || e))}` }; }
-    if (valor) return { valor };
-  }
+  let valor = null;
+  try { valor = capa.identityOfRemoteUrl(r.url); } catch (e) { return { problema: `no sé en qué plataforma vive el origin de ${dir}: ${sinSecretos(String((e && e.message) || e))}` }; }
+  if (valor) return { valor };
   return { problema: `no sé en qué plataforma vive el origin de ${dir} (${id.host})` };
 }
 

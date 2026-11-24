@@ -5489,13 +5489,13 @@
       "requiere": []
     },
     {
-      "__nota": "story 1.2: un repo de una plataforma declarada por la capa (no Azure DevOps ni GitHub) hace el ciclo del merge: el skill de merge la nombra por la capa (host: platform), el reclamo de la retrospectiva (scripts/hooks/retro-pending.js) anota su pedido con la identidad que da la capa y, cuando entra, reclama el commit que dejó en main; un origin de un servidor que nadie declara sigue sin plataforma. Repos de juguete con git de verdad, una copia del gancho y el glab de mentira. Sin red.",
+      "__nota": "un repo de una plataforma declarada por la capa (no Azure DevOps ni GitHub) hace el ciclo del merge: el skill de merge la nombra por la capa (host: platform), el reclamo de la retrospectiva (scripts/hooks/retro-pending.js) anota su pedido con la identidad que da la capa y, cuando entra, reclama el commit que dejó en main; un origin de un servidor que nadie declara sigue sin plataforma. Repos de juguete con git de verdad, una copia del gancho y el glab de mentira. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/retro-pending-platform.test.js",
       "requiere": []
     },
     {
-      "__nota": "story 1.2: la clave con que el formulario «Tu tecnología» del sitio (scripts/lib/org-config.js) distingue los repos de la organización: uno que vive en grupos suma su grupo y su servidor, y las claves de Azure DevOps y GitHub quedan como estaban. Sin red.",
+      "__nota": "la clave con que el formulario «Tu tecnología» del sitio (scripts/lib/org-config.js) distingue los repos de la organización: uno que vive en grupos suma su grupo y su servidor, y las claves de Azure DevOps y GitHub quedan como estaban. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/org-config-repo-key.test.js",
       "requiere": []
