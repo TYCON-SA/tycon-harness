@@ -12,7 +12,7 @@
     ".github/control-changes/bc5ab7f28eb612c52b3dc7a3dd05950dc4acf5fd2042ecdd7a3e1125ddaa51b3.json": 1,
     "guides/maintaining/piezas-en-detalle.md": 5,
     "guides/maintaining/publicacion-espejo.md": 3,
-    "guides/produccion-con-permiso.md": 1,
+    "guides/production-with-permission.md": 1,
     "guides/safety-guard.md": 1,
     "pipelines/operations/README.md": 3,
     "pipelines/operations/dependency-audit.yml": 4,

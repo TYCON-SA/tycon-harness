@@ -214,7 +214,8 @@ test('T1b Pedido_NumeroEnLasFormasDeAz_YSinNumeroNoFrena: un pedido creado no es
 const ORIGEN = { azure: 'https://dev.azure.com/acme/producto/_git/acme-backend', github: 'https://github.com/acme/acme-backend' };
 function conOrigen(dir, plataforma = 'azure') { git(dir, ['remote', 'add', 'origin', ORIGEN[plataforma]]); return dir; }
 /** El pedido 101 como lo contesta el az de verdad a `repos pr show` (lo que lee el conector). */
-const pedidoAz = (o = {}) => JSON.stringify({ pullRequestId: 101, status: 'active', isDraft: false, title: 'pedido', repository: { name: 'acme-backend' }, ...o });
+// como contesta `az repos pr show`: el repo trae su proyecto, y el pedido de otro proyecto con el mismo nombre no es éste
+const pedidoAz = (o = {}) => JSON.stringify({ pullRequestId: 101, status: 'active', isDraft: false, title: 'pedido', repository: { name: 'acme-backend', project: { name: 'producto' } }, ...o });
 /** Ídem el gh de verdad a `api repos/<dueño>/<repo>/pulls/101`. */
 const pedidoGh = (o = {}) => JSON.stringify({ number: 101, state: 'open', title: 'pedido', draft: false, node_id: 'n101', ...o });
 

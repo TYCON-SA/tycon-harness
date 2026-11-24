@@ -757,6 +757,9 @@ test('T28 2.33-Nocturno_ConexionPropiaYOrden (Azure) @story-2.33 @ac-10 @ac-11 �
   assert.match(t, /scripts\/site\/deploy\/update-site\.js --platform "\$\(SITE_PLATFORM\)"/);
   assert.match(t, /--operations-json operations\.json --state-dir \.dashboard\/site-update/, 'el modo sale de operations.json; el resultado, a los datos');
   assert.match(t, /SITE_RENDER_DEPLOY_HOOK: \$\(SITE_RENDER_DEPLOY_HOOK\)/, 'el hook de Render, de una variable secreta (nunca escrito)');
+  // @story-8.328 @ac-5 @ac-7 — T16: la llave de la API y el servicio, optativos, de variables (nunca escritos)
+  assert.match(t, /SITE_RENDER_API_KEY: \$\(SITE_RENDER_API_KEY\)/);
+  assert.match(t, /SITE_RENDER_SERVICE_ID: \$\(SITE_RENDER_SERVICE_ID\)/);
   assert.doesNotMatch(t, /https:\/\/api\.render\.com\/deploy/, 'ningún hook escrito');
   assert.match(t, /push-nightly-data\.js save[\s\S]*-- \.dashboard\/site-update/, 'el resultado se guarda en operaciones');
   assert.match(read('README.md'), /site-update\.yml/);

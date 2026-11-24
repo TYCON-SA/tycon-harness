@@ -140,16 +140,18 @@ Si la fase de código pasó sin chequeo previo (por ejemplo un spike o un arregl
 > de test: la edición no ocurre, sin importar qué skill esté ejecutando. Por qué: con las tareas ya implementadas antes
 > de ningún test, el gate del cierre avisa cuando el trabajo ya está hecho. (El clasificador no cuenta la story `.md`
 > bajo `specs/` como «test»: contarla dejaba el gate del cierre verde en todas las ejecuciones.) Escape consciente para
-> refactors sobre red preexistente: `marker.js set-flag atddBypass true --reason "<por qué>"` (sin motivo se niega; el
-> motivo queda en `bypass.log`). Un guion de medición de `tasks/measurement-<algo>/` que la story no declara no cuenta
+> refactors sobre red preexistente: `marker.js set-flag atddBypass true --reason "<por qué>"` (sin motivo se niega; sin
+> la firma del dueño tampoco: anota el pedido y da el comando de `sign-atdd-skip`; el motivo queda en `bypass.log`). Un guion de medición de `tasks/measurement-<algo>/` que la story no declara no cuenta
 > como código, y uno de `scripts/ci/pruebas/` o `scripts/ci/tests/` cuenta como prueba.
 >
 > **Qué NO bloquea** (calibrado para no dar falsos positivos): una story sin código (docs/specs) pasa; un refactor que
 > toca código y ningún test **avisa pero pasa** (la red son los tests preexistentes); un marcador sin `fileEvents`
 > avisa `unknown` y pasa. Los tres casos quedan medidos en `gates.log`.
 >
-> **Escape consciente**: `marker.js complete-step implement --no-atdd --reason "<por qué>"` — queda en `bypass.log` con
-> el detalle y el motivo.
+> **Escape consciente**: `marker.js complete-step implement --no-atdd --reason "<por qué>"` — lo firma el dueño, no el
+> agente: sin su firma para la ejecución (`marker.js sign-atdd-skip --story <S> --reason <R>`, en la ventana o con
+> `--terminal`) frena igual y deja el pedido anotado. Una firma vale para la ejecución entera (también para la marca
+> `atddBypass` del portón previo) y queda en `bypass.log` con el detalle y el motivo. Sólo se pide cuando el freno frena.
 >
 > **Por qué existe**: el ATDD era la ÚNICA regla del pipeline sin gate mecánico, y por eso era la que se salteaba. Sin
 > gate, escribir código y después test, tarea por tarea, sólo lo detecta una persona leyendo el transcript. Y un test
@@ -312,7 +314,7 @@ no se saltea (detalle en `step-06-run-tests.md` §«Modo autónomo»).
 node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step implement
 ```
 
-Aplica el freno ATDD (ver 4.0). Para el escape consciente, `--no-atdd`.
+Aplica el freno ATDD (ver 4.0). Para el escape consciente, `--no-atdd`, con la firma del dueño.
 
 ## Output de este paso
 

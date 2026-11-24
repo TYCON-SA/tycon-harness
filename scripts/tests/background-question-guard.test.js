@@ -270,7 +270,7 @@ test('T10 FirmaEnLanzada_TextoALaCoordinadora @story-8.211 @ac-12', (t) => {
   const cuadro = oa.cuadroDe({ firma: 'plan-approval', destino: 's', que: 'aprobar el plan', detalle: 'la cita: «x»', siSaleMal: 'se rehace', huella: 'abcd1234' });
   const coord = { name: 'Coordinadora', sid: COORD };
   // varias firmas, o un cuadro que no se pudo armar: también a la coordinadora, sin «mostrale»
-  for (const [ids, c] of [[['plan-approval', 'save'], cuadro], [['plan-approval'], { error: 'no se pudo' }], [['plan-approval'], null]]) {
+  for (const [ids, c] of [[['plan-approval', 'pending-approval'], cuadro], [['plan-approval'], { error: 'no se pudo' }], [['plan-approval'], null]]) {
     const r = ow.negarSinVentana('esta sesión corre de fondo', ids, 's', c, true, false, coord);
     assert.match(r.texto, /SendMessage/, JSON.stringify(ids));
     assert.doesNotMatch(r.texto, /mostrale AskUserQuestion/);

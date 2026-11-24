@@ -596,9 +596,11 @@ for args in "$PROD --file $TMP/consulta.sql --sha256 $H64" "$PROD --file $TMP/co
   else no "6.6 T9 Gate_File_Refused · «${args//$TMP\//}» rc=$rc · $(head -c 200 "$TMP/err")"; fi
 done
 
-# T3 · el comando que arma el freno, corrido por la puerta, le da al cliente los bytes del archivo, salto final incluido
+# T3 · el comando que arma el freno, corrido por la puerta, le da al cliente los bytes del archivo sin los saltos de línea
+# del final (8.283, AC 5-6: el cuadro no deja un renglón vacío); los de adentro quedan
 mundo ok
 printf "select 'a''b' as x,\t\"c\" -- \$(id) \\\\ # ; | fin\nfrom T where n = 'it''s'\n-- tercera\n" > "$TMP/raro.sql"
+printf "select 'a''b' as x,\t\"c\" -- \$(id) \\\\ # ; | fin\nfrom T where n = 'it''s'\n-- tercera" > "$TMP/raro-sin-final.sql"
 payload="$(CMD="/opt/tycon/bin/tycon-prod-sql $PROD --file $TMP/raro.sql" node -e 'process.stdout.write(JSON.stringify({tool_name:"Bash",hook_event_name:"PreToolUse",cwd:"/tmp",tool_input:{command:process.env.CMD}}))')"
 printf '%s' "$payload" | env HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" TYCON_PROD_SESSION_SINCE=0 node "$HOOK" >/dev/null 2>"$TMP/hook-err"
 LISTO="$(node -e '
@@ -608,7 +610,7 @@ LISTO="$(node -e '
   if (!m) process.exit(1); process.stdout.write(m[0]);' "$TMP/hook-err" "/opt/tycon/bin/tycon-prod-sql $PROD '")" || LISTO=""
 if [ -n "$LISTO" ]; then
   eval "puerta ${LISTO#/opt/tycon/bin/tycon-prod-sql }" >/dev/null
-  if cmp -s "$TMP/raro.sql" "$TMP/sqlcmd-q.bin"; then ok "6.6 T3 Guard_File_InlineCommandRunsSameBytes · el cliente recibe byte a byte el archivo"
+  if cmp -s "$TMP/raro-sin-final.sql" "$TMP/sqlcmd-q.bin"; then ok "6.6 T3 Guard_File_InlineCommandRunsSameBytes · el cliente recibe byte a byte el archivo, sin el salto final"
   else no "6.6 T3 Guard_File_InlineCommandRunsSameBytes · el cliente recibió otra cosa: $(od -c "$TMP/sqlcmd-q.bin" 2>/dev/null | head -3)"; fi
 else no "6.6 T3 Guard_File_InlineCommandRunsSameBytes · el freno no dio el comando — err: $(head -c 200 "$TMP/hook-err")"; fi
 
