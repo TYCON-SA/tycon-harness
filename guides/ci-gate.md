@@ -27,6 +27,8 @@ presente», «ejecución registrada» o «no medido». Un ✅ no quiere decir «
   registrada»: tienen forma válida, no prueban quién los escribió.
 - **La exención no se firma en el servidor**: se exige y se muestra su razón (`<campo>_reason`), no quién la autorizó.
   Una exención sin razón avisa hasta el 2026-12-03 y frena desde ese día (`exencion-sin-razon`).
+- **La evidencia atada al cambio no prueba que la evidencia sea verdadera**: detecta una edición posterior o una
+  evidencia anterior al código (§«La evidencia atada al cambio»).
 - **Es opt-in por repo**: un repo sin el pipeline, o sin la política que lo exige, no tiene red del servidor y no da
   error. Lo cuenta el inventario de cada noche.
 - **Sólo mira historias que pasan a `review`/`done`**: un cambio de código que no toca una historia pasa (§«Lo que este
@@ -79,6 +81,7 @@ sería peor que no tenerlo.
 |---|---|
 | **Frontmatter legible** | Una story cuyo frontmatter no cierra. Las tools del arnés no dan error con eso: la **saltean en silencio** (medido en un producto del equipo: 4 stories invisibles durante 2 meses, una tapando una deuda de evidencia). |
 | **Evidencia de cierre** | Una story que pasa a `review`/`done` sin su `.advisors/dod-runtime/<id>-*.md` **en el repo** (un `.md` real: la matriz por AC, el self-audit y el plan manual no cuentan — 2026-09-05). Es la mitad del gate local que no depende de la sesión. Si el código vive en otro repo, la evidencia igual nace acá: ver §"Stories en un repo, código en otro". Escape declarado: `dod_runtime_exempt: true` + razón, que lo decide la persona (el arnés le pide la firma `marker.js sign-file dod_runtime_exempt <historia>` en cualquier estado, también al crear la story). La evidencia se busca en git (en el índice con `--staged`), y de lo que dice sólo se lee si declara FAIL (§«Límite conocido»). |
+| **Evidencia atada al cambio** | En el pedido, una evidencia de cierre anterior al código declarado que el pedido cambia (`evidencia-vieja`), o un registro de humos cuyas salidas o capturas no son las que anotó (`registro-de-humo-inconsistente`). Usa la regla del freno local (`evidence-vs-commit.js`); sin ella, o sin respuesta de git, `evidencia-no-comparada`. Avisa hasta el 2026-12-09 y frena desde ese día (§«La evidencia atada al cambio»). |
 | **Constancia de revisores** | Una story que pasa a `done` sin una corrida del pipeline en el repo (`.advisors/pipeline-runs/<id>-…`). Es el ADVISORS-GATE del pre-commit en su mitad verificable desde el servidor (la otra mitad vive en el `gates.log` local). Escape: `advisors_exempt: true` + razón. |
 
 | **Índice de memoria** (2026-09-17) | Un cambio que deja la memoria de engram a medio declarar: entradas que la rama base declara y este cambio ya no, o archivos de memoria nuevos sin entrada. `engram sync --import` lee el ÍNDICE, no la carpeta, así que un archivo sin entrada **no existe para las demás máquinas y no da error**; y una entrada perdida no vuelve sola. Mismo criterio que el freno del commit (`scripts/lib/manifest-engram.js`) y misma asimetría: lo que este cambio ROMPE frena, lo heredado y lo no comparable avisan. Sólo lee algo si el diff toca `.engram/`. **Acá importa especialmente**: es lo único que ve los commits hechos fuera del asistente — la web de Azure, otra máquina, un hook salteado. |
@@ -389,3 +392,27 @@ ni en git ni en el disco) sigue frenando.
 criterios menciona la evidencia ni si cada mención es un ✅; eso lo hace el freno local (`parseAcsFromEvidence`, y la
 matriz por criterio). Quien lea un ✅ del portón tiene que saber que es «hay evidencia y no declara FAIL», no «la
 evidencia aprobó».
+
+## La evidencia atada al cambio
+
+En el pedido, el portón mira si la evidencia de cierre es de este código. Toma el código que la historia declara
+(`files_to_modify` y `files_to_create`) y que el pedido cambia. Alguna evidencia de cierre tiene que valer para todos
+esos archivos, con la regla del freno local (`evidence-vs-commit.js` del skill): el archivo tiene que ser igual en el
+commit que guardó la evidencia y en el pedido. Si ninguna vale, sale `evidencia-vieja`, y hace falta una ejecución
+commiteada después del cambio. Cada línea del registro de humos cuenta como una evidencia, con el commit que la agregó.
+
+El registro de humos se mira además por sus huellas. Cada línea `v:2` anota el sha256 de su salida (`output_sha`) y de su
+captura (`capture_sha`). El portón lo recalcula sobre lo que guarda git: si es distinto, o el archivo no está, sale
+`registro-de-humo-inconsistente`. Las líneas sin `v:2` se saltean, y la salida dice cuántas.
+
+**Lo que no prueba.** Detecta una edición posterior o una evidencia anterior al código; no prueba que la evidencia sea
+verdadera.
+
+**No medido, y se dice.** No se mide cuando la historia no declara código, ni cuando el código declarado vive en otro
+repo: ahí avisa «no verificable desde este repo» y no frena. Tampoco antes del commit (`--staged`), porque ahí la mide la
+matriz del freno del commit. Un registro sin ninguna línea `v:2` deja sus huellas sin medir. Si git no contesta, o la
+regla del skill no carga, sale `evidencia-no-comparada`: «no pude comparar» no es «está bien». Las huellas no necesitan
+esa regla y corren igual.
+
+**Entra avisando.** Todo esto avisa hasta el 2026-12-09 y frena desde ese día (`EVIDENCE_BOUND_FROM`). Lo que ya frenaba
+sigue frenando.
