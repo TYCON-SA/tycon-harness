@@ -1634,7 +1634,7 @@ function frenoDeLaLista(a, sid, home, { registrar = true, medida, sinSeguir = tr
       const abs = path.join(repo, rel);
       // sin la lista de lo sensible, el delegado no guarda nada: lo firma una persona
       if (delegado && (!esSensible || esSensible(rel))) sensibles.push(abs);
-      if (LISTA.fueraDeLaLista({ lista: a.allowedFiles, filePath: abs, real: abs, repoRoot: repo, home, delegado })) fuera.push(abs);
+      if (LISTA.fueraDeLaLista({ lista: a.allowedFiles, filePath: abs, real: abs, repoRoot: repo, home, delegado, estricta: Boolean(a.ciRojo) })) fuera.push(abs);
     }
   }
   const nombres = (fs_) => fs_.slice(0, gate.TOPE_DE_NOMBRES).map((f) => `   · ${f}`).join('\n');

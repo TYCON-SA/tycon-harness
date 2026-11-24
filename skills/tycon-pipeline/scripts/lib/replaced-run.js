@@ -48,6 +48,11 @@ function editadosPorRepo(marker) {
   return porRepo;
 }
 
+/** Lo que la ejecución editó de código (`code` distinto de false), por repo. */
+function codigoPorRepo(marker) {
+  return editadosPorRepo({ fileEvents: ((marker && marker.fileEvents) || []).filter((e) => e && e.code !== false) });
+}
+
 function comprobar({ marker, sha, fetch = false } = {}) {
   if (!SHA.test(String(sha || ''))) return { ok: false, motivo: `--replaced-by va con el commit que entró a main (de 7 a 40 letras hexadecimales), no «${String(sha || '').slice(0, 60)}»` };
   const editados = editadosPorRepo(marker);
@@ -89,6 +94,12 @@ function comprobar({ marker, sha, fetch = false } = {}) {
     if (sinTocar.length) {
       vistos.push(`${path.basename(repo)}: el commit deja sin tocar ${sinTocar.length} de los archivos que editó la ejecución (${sinTocar.slice(0, 5).join(', ')}${sinTocar.length > 5 ? ', …' : ''})`);
       continue;
+    }
+    // el código de la ejecución en otro repo no lo cubre un commit de éste; lo que no pide otra vuelta de revisores
+    // (la historia, una guía: `code: false`) no cuenta
+    const otros = [...codigoPorRepo(marker)].filter(([r]) => r !== repo);
+    if (otros.length) {
+      return { ok: false, motivo: `la ejecución editó también código en ${otros.map(([r, fs_]) => `${path.basename(r)} (${[...fs_].slice(0, 3).join(', ')}${fs_.size > 3 ? ', …' : ''})`).join('; ')}: un commit de ${path.basename(repo)} no dice que ese arreglo entró a main` };
     }
     return { ok: true, repo, archivos: toca };
   }

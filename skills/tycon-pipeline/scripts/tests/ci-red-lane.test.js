@@ -140,6 +140,23 @@ test('CiRedLane_OutsideListOrOverCap_Blocks (T16) @story-8.322 @ac-13', (t) => {
   const d = saveBrake.decidir({ command: 'git commit -m arreglo', cwd: m.repo, sid: 's1', home: m.home });
   assert.ok(d && d.texto, JSON.stringify(d));
   assert.match(d.texto, /src\/a\.js|lista/, d.texto);
+  // la prueba de un archivo de la lista, por su nombre, no entra sin estar en la lista: el tope de 3 no se pasa con pruebas
+  const LISTA = require(path.join(SCRIPTS, 'lib', 'adhoc-list.js'));
+  const lista = [path.join(m.repo, 'plugin.json'), path.join(m.repo, 'src', 'a.js')];
+  for (const rel of ['src/a.test.js', 'otra/__tests__/a.js', 'tests/a.spec.ts']) {
+    const abs = path.join(m.repo, rel);
+    assert.strictEqual(LISTA.fueraDeLaLista({ lista, filePath: abs, real: abs, repoRoot: m.repo }), null, `${rel}: el camino corto común la deja pasar`);
+    assert.ok(LISTA.fueraDeLaLista({ lista, filePath: abs, real: abs, repoRoot: m.repo, estricta: true }), `${rel}: el del rojo la deja pasar`);
+  }
+  git(m.repo, 'reset', '-q', '--hard');
+  fs.writeFileSync(path.join(m.state, 'adhoc', 's1.json'), JSON.stringify({ reason: 'saca defaultSettings del manifiesto', maxFiles: 3, files: [],
+    allowedFiles: lista, declaredAt: ts, lastTouch: ts, firmadaEn: ts, via: 'ventana', ciRojo: r.ciRojo, datos: 'sin-cambio' }));
+  escribir(m.repo, 'src/a.js', 'cambiado\n');
+  escribir(m.repo, 'src/a.test.js', 'la prueba\n');
+  git(m.repo, 'add', '-A');
+  const p = saveBrake.decidir({ command: 'git commit -m arreglo', cwd: m.repo, sid: 's1', home: m.home });
+  assert.ok(p && p.texto, `guardó una prueba fuera de la lista: ${JSON.stringify(p)}`);
+  assert.match(p.texto, /a\.test\.js/, p.texto);
 });
 
 // 🔴 Falla con: guardar el arreglo sin correr los controles de CI en local, o corriendo sólo el que nombró la sesión.
@@ -151,8 +168,12 @@ test('CiRedLane_Save_RunsFailedCheck (T17) @story-8.322 @ac-14', () => {
   assert.ok(rojo, 'guardó con un control declarado en rojo');
   assert.strictEqual(rojo.texto, '🔒 GUARDAR: el arreglo del rojo de CI del pedido #6910 todavía no pasa los controles de CI que corren en local: Lint sale 1 en local');
   let corrido = null;
-  assert.strictEqual(lane.frenoAlGuardar(carril, { controlesDe: () => declarado, correr: (repo, o) => { corrido = [repo, Boolean(o && o.soloNombre)]; return { codigo: 0 }; } }), null);
+  assert.strictEqual(lane.frenoAlGuardar(carril, { controlesDe: () => declarado, correr: (repo, o) => { corrido = [repo, Boolean(o && o.soloNombre)]; return { codigo: 0, corridos: ['Manifest check', 'Lint'] }; } }), null);
   assert.deepStrictEqual(corrido, ['/r/backend', false], 'corrió uno solo, o en otro repo');
+  // el control nombrado que no corrió (su `whenFile` no está en el repo) no es un verde: no guarda
+  assert.match((lane.frenoAlGuardar(carril, { controlesDe: () => declarado, correr: () => ({ codigo: 0, corridos: ['Lint'] }) }) || {}).texto || '',
+    /el control «Manifest check» no corrió en local/);
+  assert.strictEqual(lane.frenoAlGuardar(carril, { controlesDe: () => declarado, correr: () => ({ codigo: 0, corridos: ['Manifest check', 'Lint'] }) }), null);
   // el control que dejó de estar declarado: sin él nada frena el arreglo, y no guarda
   assert.match(lane.frenoAlGuardar(carril, { controlesDe: () => ({ controles: [], errores: [] }), correr: () => assert.fail('corrió un control que no está declarado') }).texto,
     /el control «Manifest check» ya no está declarado para correr en local en backend: sin él no se guarda/);
@@ -188,6 +209,9 @@ test('CiRedLane_Refuses_GreenOtherOrClosed (T20) @story-8.322 @ac-16', (t) => {
   assert.match(abrir(mundo(t), { control: '  ' }).problema, /--check/);
   // un control que el repo no declara para correr en local: nada frenaría el arreglo antes de empujar
   assert.match(abrir(mundo(t), { control: 'nombre-inventado' }).problema, /«nombre-inventado» no es un control de CI que backend declare para correr en local \(«Manifest check»\)/);
+  // declarado, pero con una condición que el repo no cumple: al guardar no correría, y nada frenaría el arreglo
+  assert.match(abrir(mundo(t), { controlesDe: () => ({ controles: [{ nombre: 'Manifest check', whenFile: 'no-existe.json' }], errores: [] }) }).problema || '',
+    /«Manifest check» no corre en backend: pide no-existe\.json/);
   // un arreglo común no se le suma al del rojo: le sacaría los revisores con otra firma
   const c = mundo(t);
   fs.mkdirSync(path.join(c.state, 'adhoc'), { recursive: true });

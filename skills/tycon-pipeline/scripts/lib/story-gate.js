@@ -348,9 +348,10 @@ function computeStoryGate({
   // esté apagado; el de una persona, sólo con el portón prendido. La comparación vive en `lib/adhoc-list.js`.
   if (adhoc && adhoc.reason && Array.isArray(adhoc.allowedFiles) && !(marker && marker.storyId)) {
     const delegado = adhoc.via === 'delegacion' || adhoc.via === 'avisado';
-    if (delegado || listGateEnabled !== false) {
+    // el arreglo de un rojo de CI va sin revisores: su lista frena siempre, y sin dejar pasar pruebas por su nombre
+    if (delegado || listGateEnabled !== false || adhoc.ciRojo) {
       const fuera = require('./adhoc-list.js').fueraDeLaLista({
-        lista: adhoc.allowedFiles, filePath, real, repoRoot: adhocRepoRoot, home: homeDir, delegado,
+        lista: adhoc.allowedFiles, filePath, real, repoRoot: adhocRepoRoot, home: homeDir, delegado, estricta: Boolean(adhoc.ciRojo),
       });
       if (fuera) {
         // el archivo de un repo al lado que no vale como hermano: el texto dice por qué no se puede sumar a la lista

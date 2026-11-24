@@ -163,6 +163,18 @@ test('ReplacedBy_OtherFiles_Refuses (T25) @story-8.322 @ac-23', (t) => {
   assert.strictEqual(parcial.status, 1, parcial.stderr);
   assert.match(parcial.stderr, /deja sin tocar .*src\/otro\.js/);
   assert.ok(marcador(c).storyId, 'borró la ejecución');
+  // código editado en otro repo: un commit de un repo no dice que ese otro arreglo entró a main
+  const vecino = path.join(path.dirname(c.repo), 'frontend');
+  spawnSync('git', ['init', '-q', '-b', 'main', vecino]);
+  escribir(vecino, 'src/fix.ts');
+  fs.writeFileSync(path.join(c.estado, 'active', `${SID}.json`), JSON.stringify({ ...dos, fileEvents: [...dos.fileEvents, { path: path.join(vecino, 'src', 'fix.ts'), ts: hace(20), code: true }] }));
+  assert.deepStrictEqual(frena(c, `node ${MARKER} clear --replaced-by ${c.enMain}`), ['cerrar la ejecución']);
+  const dosRepos = cerrar(c, '--replaced-by', c.enMain);
+  assert.strictEqual(dosRepos.status, 1, dosRepos.stderr);
+  assert.match(dosRepos.stderr, /la ejecución editó también código en frontend \(src\/fix\.ts\)/);
+  // lo que no es código (la historia, una guía) en otro repo no cuenta: no pide otra vuelta de revisores
+  fs.writeFileSync(path.join(c.estado, 'active', `${SID}.json`), JSON.stringify({ ...dos, fileEvents: [...dos.fileEvents, { path: path.join(vecino, 'src', 'fix.ts'), ts: hace(20), code: false }] }));
+  assert.deepStrictEqual(frena(c, `node ${MARKER} clear --replaced-by ${c.enMain}`), [], 'un archivo que no es código en otro repo pidió la firma');
   fs.writeFileSync(path.join(c.estado, 'active', `${SID}.json`), JSON.stringify(dos));
   // sin archivos anotados no hay con qué comparar
   const m = marcador(c);

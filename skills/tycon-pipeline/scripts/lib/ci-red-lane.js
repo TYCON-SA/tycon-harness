@@ -40,7 +40,8 @@ function resultadoDeLaSesion(stateDir, sesion) {
  * ¿Se puede abrir el arreglo? `pedido` (número), `control` (el nombre del control que falló), `allowedFiles` (absolutas),
  * `tope` (de archivos, pruebas incluidas).
  */
-function validarApertura({ stateDir, sesion, pedido, control, allowedFiles = [], tope, controlesDe = (repo) => require('./ci-local-checks.js').controlesDe(repo) }) {
+function validarApertura({ stateDir, sesion, pedido, control, allowedFiles = [], tope, controlesDe = (repo) => require('./ci-local-checks.js').controlesDe(repo),
+  tieneArchivo = (repo, nombre) => require('./ci-local-checks.js').tieneArchivo(repo, nombre) }) {
   const r = resultadoDeLaSesion(stateDir, sesion);
   if (r.problema) return { problema: r.problema };
   const p = (r.pedidos || []).find((x) => Number(x.numero) === Number(pedido));
@@ -61,9 +62,14 @@ function validarApertura({ stateDir, sesion, pedido, control, allowedFiles = [],
   // el control que falló tiene que poder correr en local: es lo único que frena el arreglo antes de empujar
   const { controles, errores } = controlesDe(repo);
   if (errores.length) return { problema: `no pude leer los controles de CI que corren en local en ${p.nombre}: ${errores.join('; ')}` };
-  if (!controles.some((x) => x.nombre === String(control).trim())) {
+  const nombrado = controles.find((x) => x.nombre === String(control).trim());
+  if (!nombrado) {
     const hay = controles.map((x) => `«${x.nombre}»`).join(', ');
     return { problema: `«${String(control).trim()}» no es un control de CI que ${p.nombre} declare para correr en local (${hay || 'no declara ninguno'}): sin él nada frena el arreglo antes de empujar, y va por el camino corto de siempre` };
+  }
+  // declarado con una condición que el repo no cumple: al guardar no correría, y nada frenaría el arreglo
+  if (nombrado.whenFile && tieneArchivo(repo, nombrado.whenFile) !== true) {
+    return { problema: `«${nombrado.nombre}» no corre en ${p.nombre}: pide ${nombrado.whenFile} en la raíz del repo, y sin correr no frena el arreglo; va por el camino corto de siempre` };
   }
   const punta = git(repo, ['rev-parse', 'HEAD']);
   if (punta.status !== 0) return { problema: `no pude leer la punta de ${p.nombre} (${String(punta.stderr || '').trim() || 'git no contestó'})` };
@@ -83,6 +89,8 @@ function frenoAlGuardar(carril, { correr = (repo, o) => require('./ci-local-chec
   if (!declarado) return { texto: `🔒 GUARDAR: el control «${c.control}» ya no está declarado para correr en local en ${c.nombre}: sin él no se guarda el arreglo del rojo de CI del pedido #${c.pedido}` };
   const r = correr(c.repo, {});
   if (r.codigo !== 0) return { texto: `🔒 GUARDAR: el arreglo del rojo de CI del pedido #${c.pedido} todavía no pasa los controles de CI que corren en local: ${r.motivo}` };
+  // uno que se saltó por su condición (`whenFile`) no es un verde
+  if (!(r.corridos || []).includes(c.control)) return { texto: `🔒 GUARDAR: el control «${c.control}» no corrió en local en ${c.nombre} (su condición no se cumple en el repo): sin él no se guarda el arreglo del rojo de CI del pedido #${c.pedido}` };
   return null;
 }
 
