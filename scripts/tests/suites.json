@@ -745,6 +745,12 @@
       "requiere": []
     },
     {
+      "__nota": "saltear pruebas primero pide la firma del dueño por ejecución (atdd-skip): sin ella no saltea, con la de otra ejecución tampoco, y se firma desde una terminal sin sesión (8.283).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/atdd-skip.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el freno del ok de guardar: el gancho del comando frena el commit, el push y los pedidos de una corrida sin la constancia vigente, y los de una corrida que cerró sin ella; clear sin el ok sale 2.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/save-brake.test.js",
@@ -2576,6 +2582,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/office-board-forecast.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/test-run-isolation.test.js",
       "requiere": []
     },
@@ -3546,6 +3557,12 @@
       "__nota": "encolar o mergear un pedido de alguien de afuera del equipo lo aprueba el dueño (regla GIT-C7): el lector (scripts/lib/external-pr.js), el freno de la sesión de verdad con una casa de juguete y el cuadro de la firma. GitHub es un gh falso en el PATH. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/external-pr.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "los pedidos y los issues de gente de afuera del equipo en el repo público (scripts/lib/outside-contributions.js, con la regla del freno de pedidos de afuera): el renglón del resumen diario (open-prs.js --outside-from, y su forma en daily-summary.js) y el del arranque (stuck-pr-notice.js). GitHub es un gh de juguete por TYCON_GH_CMD; casas temporales. No medido no es cero. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/outside-contributions.test.js",
       "requiere": []
     },
     {

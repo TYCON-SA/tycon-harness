@@ -5,8 +5,8 @@ them, **the coordinator**, to organize the rest. The coordinator decides what is
 names the sessions, keeps the machine from being overloaded, and passes the owner only what is theirs.
 
 It is a recipe, not a mode: nothing changes on a machine where nobody designated a coordinator. For her to organize, one
-step is enough: on each machine, the owner writes "Esta sesión es la coordinadora" (or "This session is the
-coordinator") in the chat of the chosen session, and that session runs `marker.js designate-relay` with that quote.
+step is enough: on each machine, the owner asks the chosen session to be the coordinator, that session runs
+`marker.js designate-relay` and the owner clicks in the box.
 
 The coordinator does two things, and only the second needs the team profile:
 
@@ -20,16 +20,16 @@ The coordinator does two things, and only the second needs the team profile:
    `confirm-designation` refuses. If the organization removes the key from the profile, an old confirmation stops
    counting.
 
-How she is named: on each machine, the owner asks the chosen session, in their own words, to be the coordinator. With
-the profile, that session runs `marker.js designate-relay` with no sentence: the guard gives a box with "Sí" and "No"
-that says which session it is and in which folder, and with the owner's click it is named and confirmed. The harness
+How she is named: on each machine, the owner asks the chosen session, in their own words, to be the coordinator. That
+session runs `marker.js designate-relay` with no sentence: the guard gives a box with "Sí" and "No" that says which
+session it is and in which folder, and with the owner's click it is named (with the profile, also confirmed; without
+it, she organizes and does not sign). The harness
 does not read the sentence. To stop being it, `marker.js withdraw-relay`, with its own box. Both signatures belong only
 to the owner, with a click in that session's tab: they are never delegated. If another coordinator opened that session
 in the background (`coordination.js open`), the box is still shown in its tab and the session tells the coordinator
 that opened it: the owner answers there or through remote control. Where the click cannot be checked, the
 command says why and gives the fallbacks: the owner's terminal (`designate-relay --terminal`) or the sentence
-(`--quote`, then `confirm-designation`). Without a profile, for now she is named with the sentence
-(`designate-relay --approved-by '<the dev>' --quote '<their sentence>'`).
+(`--quote`, then `confirm-designation`).
 
 A sentence designation of ANOTHER session, written when there is already a confirmed coordinator, does not replace her:
 it stays **unconfirmed** until the owner confirms it (`confirm-designation`, from either session's tab), and

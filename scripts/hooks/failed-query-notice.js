@@ -27,7 +27,8 @@
  *  2. Lo propio de cada plataforma, como «ese proyecto no existe en la organización». Lo dice su conector.
  *
  * LO DE CADA PLATAFORMA lo trae su conector, en `integrations/<conector>/scripts/query-notice.js` del mismo árbol:
- * `programas` (los comandos suyos), `clasificar({ pos, limpio })` → 'consulta' u 'otro', y si tiene, `avisos(cmd,
+ * `programas` (los comandos suyos), `conValor` (las opciones que pueden ir antes del grupo y llevan valor, para saltearlas),
+ * `clasificar({ pos, limpio })` → 'consulta' u 'otro', y si tiene, `avisos(cmd,
  * ayuda)` y `refrescar(org, ayuda)` (lo que corre `--refresh`; el instalador lo lanza cada 7 días). Este gancho no
  * nombra ninguna plataforma. Suelto, sin la carpeta de conectores al lado, mira sólo lo neutro.
  *
@@ -67,8 +68,28 @@ const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'har
 // La definición es una sola y la comparten este hook, el freno de
 // sesiones y el freno de producción: ver scripts/lib/shell-parse.js.
 const { segmentos, tokens, PREFIJOS } = require(require('path').join(__dirname, '..', 'lib', 'shell-parse.js'));
-// lo que el gancho le pasa a cada conector: el mismo cortador y la carpeta del estado
-const AYUDA = Object.freeze({ segmentos, tokens, PREFIJOS, stateDir: stateDirOf });
+
+/** El nombre del programa: en Windows llega `<programa>.cmd` o `C:\\…\\<programa>.exe`, y PowerShell no distingue mayúsculas. */
+const programaDe = (primero) => path.basename(String(primero).replace(/\\/g, '/')).replace(/\.(?:exe|cmd|bat)$/i, '');
+
+/**
+ * Las palabras del comando que no son opciones, hasta la primera opción que viene DESPUÉS de ellas: el grupo y el verbo.
+ * Las opciones globales que van antes del grupo (`gh -R o/r pr list`, `az --only-show-errors repos …`) se saltean, y con
+ * ellas su valor si el conector dice que lleva uno (`conValor`) y no viene pegado con «=».
+ */
+function palabras(argv, conValor) {
+  let i = 1;
+  while (i < argv.length && argv[i].startsWith('-')) {
+    const o = argv[i++];
+    if (!o.includes('=') && conValor && conValor.has(o)) i++;
+  }
+  const pos = [];
+  for (; i < argv.length && !argv[i].startsWith('-'); i++) pos.push(argv[i]);
+  return pos;
+}
+
+// lo que el gancho le pasa a cada conector: el mismo cortador, cómo se lee el programa y sus palabras, y la carpeta del estado
+const AYUDA = Object.freeze({ segmentos, tokens, PREFIJOS, programaDe, palabras, stateDir: stateDirOf });
 
 // Lo de cada plataforma, de su conector (ver la cabecera). Uno que está y no carga se saltea: el gancho no frena nada.
 const CONECTORES = (() => {
@@ -103,16 +124,18 @@ function clasificar(texto) {
   const limpio = texto.replace(PREFIJOS, '');
   const argv = tokens(limpio);
   if (!argv.length) return { clase: 'otro', cmd: '', argv };
-  // en Windows llega `<programa>.cmd` o `C:\\…\\<programa>.exe`, y PowerShell no distingue mayúsculas
-  const cmd = path.basename(argv[0].replace(/\\/g, '/')).replace(/\.(?:exe|cmd|bat)$/i, '');
+  const cmd = programaDe(argv[0]);
   const cmdL = cmd.toLowerCase();
   if (cmd === 'echo' || cmd === 'printf') return { clase: 'echo', cmd, argv };
   if (cmdL === 'write-host' || cmdL === 'write-output') return { clase: 'echo', cmd: 'echo', argv };
   // la salida va a un archivo (o a la nada): el vacío en pantalla es lo esperado
   // sólo la salida ESTÁNDAR: `2>/dev/null` es stderr y no cambia lo que se ve en pantalla
   if (/(?:^|[^\d&>])(?:1?>>?|&>)\s*(?!&)\S/.test(limpio)) return { clase: 'otro', cmd, argv };
-  const pos = []; for (let i = 1; i < argv.length && !argv[i].startsWith('-'); i++) pos.push(argv[i]);
-  const conector = CONECTORES.find((c) => c.programas.includes(cmd));
+  const conector = CONECTORES.find((c) => c.programas.includes(cmdL));
+  // las opciones de antes del grupo se saltean sólo en un programa de un conector, que dice cuáles llevan valor; en los
+  // demás, una opción que el gancho no conoce corta, y su valor no se toma por el verbo
+  const pos = conector ? palabras(argv, conector.conValor) : [];
+  if (!conector) for (let i = 1; i < argv.length && !argv[i].startsWith('-'); i++) pos.push(argv[i]);
   if (conector) return { clase: conector.clasificar({ pos, limpio }) === 'consulta' ? 'consulta' : 'otro', cmd, argv };
   if (cmd === 'curl') {
     const escribe = /(?:^|\s)(?:-X|--request)\s+(?:POST|PUT|PATCH|DELETE)\b|(?:^|\s)(?:-d|--data(?:-\w+)?|-F|--form|-T|--upload-file)\b|(?:^|\s)-O\b|(?:^|\s)(?:-o|--output)\s+(?!-\s|-$)\S/.test(limpio);
@@ -216,7 +239,7 @@ function avisos(cmd, stdout, stderr, opciones = {}) {
   return out;
 }
 
-module.exports = { avisos, segmentos, clasificar, consultasEnmascaradas, salidaAtribuida, tokens };
+module.exports = { avisos, segmentos, clasificar, consultasEnmascaradas, salidaAtribuida, tokens, AYUDA };
 
 // ── medición sobre transcripciones reales (lo que el hook VE: toolUseResult) ─────────────────
 function medir(archivos) {
