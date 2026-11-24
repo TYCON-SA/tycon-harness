@@ -79,8 +79,7 @@ function medir() {
   // un perfil que no es el del árbol, nombrado por variable: tampoco manda en estas claves
   const otroPerfil = path.join(lab, 'perfil-de-laboratorio.json');
   fs.writeFileSync(otroPerfil, `${JSON.stringify(perfil, null, 2)}\n`);
-  env.TYCON_PROFILE = otroPerfil;
-  const c = C.cargar({ home: lab, env, arnes: ROOT });
+  const c = C.cargar({ home: lab, env: Object.assign({}, env, { TYCON_PROFILE: otroPerfil }), arnes: ROOT });
   const rotas = c.errores.filter((e) => lista.includes(e.clave));
   if (rotas.length) noPude(`un valor de laboratorio no valida: ${rotas.map((e) => `${e.clave} (${e.motivo})`).join('; ')}`);
   const pisadas = [];

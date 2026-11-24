@@ -12,7 +12,7 @@
           "type": "must-stay-quiet",
           "__doc": "Con TYCON_GUARD_AUTO_UPDATE=0 no mira nada ni lanza nada. ROJO PREVIO: un interruptor que no apaga deja a la persona sin forma de frenar una actualización que falla en cada arranque.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness home && cp $TCG/scripts/hooks/guard-auto-update.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/"
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness home && cp $TCG/scripts/hooks/guard-auto-update.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/profile-only.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/"
           ],
           "stdin": { "source": "startup" },
           "env": { "TYCON_GUARD_AUTO_UPDATE": "0", "HOME": "${FIXTURE}/home" },
@@ -23,7 +23,7 @@
           "type": "must-stay-quiet",
           "__doc": "En el sandbox de evaluación (TYCON_EVAL_SANDBOX=1) no lanza nada: una evaluación no puede pedir root. ROJO PREVIO: una corrida de evaluación disparando sudo en la máquina de quien la corre.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness home && cp $TCG/scripts/hooks/guard-auto-update.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/"
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness home && cp $TCG/scripts/hooks/guard-auto-update.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/profile-only.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/"
           ],
           "stdin": { "source": "startup" },
           "env": { "TYCON_EVAL_SANDBOX": "1", "HOME": "${FIXTURE}/home" },
@@ -34,7 +34,7 @@
           "type": "must-stay-quiet",
           "__doc": "Con una HOME sin arnés bajado ni perfil en «solo», calla y sale 0, haya o no freno en la máquina: no hay versión publicada contra la que comparar, y de fábrica se actualiza con la contraseña. ROJO PREVIO: lanzar sudo sin saber a qué versión, o trabar el arranque con un error.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness home && cp $TCG/scripts/hooks/guard-auto-update.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/"
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness home && cp $TCG/scripts/hooks/guard-auto-update.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js $TCG/scripts/lib/profile-only.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/"
           ],
           "stdin": { "source": "startup" },
           "env": { "HOME": "${FIXTURE}/home" },
