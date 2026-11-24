@@ -786,3 +786,42 @@ test('T18 Coordinadora_ParaLaDetenida_ConElClickVuelveAlAutonomo', (t) => {
   assert.deepStrictEqual([d.autonomous, d.iter, d.escalationsResolved.length, d.escalationsResolved[0].decision.via], [true, 0, 1, 'click']);
   assert.ok(!fs.existsSync(marcadorDe(c, COORD)), 'el marcador de la coordinadora no se crea');
 });
+
+/**
+ * Un módulo que envuelve `exigir` de la ventana y, después de la firma, cierra la ejecución: con `AFTER_SIGN=borrar`
+ * borra el marcador de `AFTER_SIGN_MARKER`. El texto es fijo: la ruta viaja por el ambiente.
+ */
+function trasLaFirma() {
+  const f = path.join(tmp('preload-'), 'tras-la-firma.js');
+  fs.writeFileSync(f, [
+    "const Module = require('module'); const fs = require('fs'); const orig = Module._load;",
+    'const cambiar = () => { const a = process.env.AFTER_SIGN_MARKER;',
+    "  if (process.env.AFTER_SIGN === 'borrar') fs.rmSync(a, { force: true }); };",
+    'Module._load = function (req) { const m = orig.apply(this, arguments);',
+    "  if (/owner-window\\.js$/.test(req) && !m.__envuelto) { const ex = m.exigir; m.__envuelto = true;",
+    '    m.exigir = (o) => { const r = ex(o); cambiar(); return r; };',
+    '    m.exigir.porPasada = ex.porPasada; }',
+    '  return m; };',
+  ].join('\n'));
+  return f;
+}
+
+// Fila 219: las dos salidas de apagar el modo autónomo que no escriben.
+// 🔴 Falla con: pedir la firma (o escribir) para apagar lo que ya estaba apagado; o escribir el marcador, o anotar el
+//    apagado en gates.log, cuando la ejecución se cerró mientras la persona firmaba.
+test('F219-T2 SetAutonomousFalse_YaApagadoOCerradaMientrasSeFirmaba_NoEscribe @fila-219', (t) => {
+  const c = casaNueva(t);
+  const m = escribirMarcador(c, { autonomous: false });
+  let r = marker(c, ['set-autonomous', 'false']);
+  assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.match(r.stdout, /ya estaba apagado/);
+  assert.deepStrictEqual(leerMarcador(c), m, 'ya apagado: no toca el marcador');
+  assert.ok(!gates(c).some((g) => g.name === 'set-autonomous'), 'ya apagado: nada en gates.log');
+  // la ejecución se cierra mientras la persona firma
+  escribirMarcador(c);
+  r = marker(c, ['set-autonomous', 'false'], { ventana: {}, preload: trasLaFirma(), env: { AFTER_SIGN: 'borrar', AFTER_SIGN_MARKER: marcadorDe(c) } });
+  assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /No se escribió nada/);
+  assert.ok(!fs.existsSync(marcadorDe(c)), 'no vuelve a escribir el marcador cerrado');
+  assert.ok(!gates(c).some((g) => g.name === 'set-autonomous'), 'cerrada: nada en gates.log');
+});

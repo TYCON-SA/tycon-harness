@@ -164,9 +164,17 @@ HEAD **ya en origin/main**, con `git worktree remove` sin `--force` y `git branc
 - **Al cerrar la story** (`/tycon-pipeline close`, paso 9): `node <arnés>/scripts/hooks/worktree-sweep.js --story <N.M>`
   trae origin y borra los worktrees cuya rama nombra la story. Los que tienen cambios o commits sin mergear los nombra
   y no los toca.
-- **Al arrancar sesión**, una vez por día, en todos los repos conocidos: lo mismo, más dos resguardos para no pisar a
-  otra sesión viva — no toca un worktree usado en las últimas 4 horas (`TYCON_WORKTREE_SWEEP_IDLE_HOURS`) ni uno recién
-  creado sin trabajo propio. Lo que deja con trabajo lo nombra en una línea.
+- **Al arrancar sesión**, en cada arranque y de fondo, en todos los repos conocidos: lo mismo, más los resguardos
+  para no pisar a otra sesión viva. No toca:
+  - un worktree usado en las últimas horas: `maintenance.worktree_idle_hours` del perfil, 4 de fábrica, que
+    `TYCON_WORKTREE_SWEEP_IDLE_HOURS` pisa en la máquina;
+  - uno recién creado sin trabajo propio;
+  - uno que es la carpeta de una sesión viva;
+  - uno con una ejecución sin terminar, estacionada o con una firma pendiente.
+
+  Si adentro hay una ejecución terminada, cierra su marcador antes de borrar. El arranque dice lo que dejó la pasada
+  anterior. Lo que deja con trabajo lo nombra una vez por día. Una vez por semana cuenta las ramas remotas ya mergeadas
+  y da el comando para borrarlas.
 
 Nunca toca el checkout principal, uno bloqueado (`git worktree lock`) ni el de la sesión. Apagar:
 `TYCON_WORKTREE_SWEEP=0`. Ver qué haría: `--force --dry-run`.
