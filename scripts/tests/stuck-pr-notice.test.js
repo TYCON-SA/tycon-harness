@@ -1123,3 +1123,65 @@ test('Requeue_DropCommitUnknown_NotGuessedByDates — sin saber con qué punta c
   assert.match(r.out, /pedido 1537 \(harness\) se cayó de la cola hace 30 min: la plataforma dice «manual»\. No lo re-encolo: GitHub no dice con qué punta cayó, y no lo adivino por fechas; si ya tiene el arreglo, encolalo a mano con gh pr merge 1537 -R acme\/harness --merge \(con cola de merge: gh api graphql -f query='mutation.*enqueuePullRequest.*' -f id=PR_kw1537\) · fix\/1537/);
   assert.match(r.out, /pedido 1538 \(harness\) se cayó de la cola hace 30 min: la CI combinada salió en rojo\. No lo re-encolo: GitHub no dice con qué punta cayó/);
 });
+
+// ── por qué la CI combinada de la cola salió en rojo ─────────────────────────────────────────────────────────────
+
+/** Corre la lectura de fondo del aviso, con el mismo ambiente que el arranque. */
+function refrescarAhora(w, extra = {}) {
+  const env = {
+    PATH: process.env.PATH, HOME: w.home, TYCON_TREE: w.tree, TYCON_ADO_CMD: w.az, FIXAZ: w.fix, TYCON_PROFILE: '0',
+    TYCON_GH_CMD: FAKE_GH, FAKE_GH_STATE: w.ghState,
+    TYCON_HARNESS_IDENTITIES: HARNESS_URL, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', ...extra,
+  };
+  return spawnSync(process.execPath, [HOOK, '--refresh', w.tree], { env, encoding: 'utf8', timeout: 30000 });
+}
+
+/** Un mundo con dos pedidos caídos de la cola por la CI combinada, con la misma punta, y las corridas de la cola. */
+function mundoConCaidasDeCI() {
+  const w = mundo([]);
+  const caida = (n) => ({ kind: 'removed', reason: 'failed_checks', at: HACE(30), before_sha: 'c'.repeat(40), before_parents: ['d'.repeat(40), `${n}`.padStart(40, 'b')] });
+  const cola = (n) => `gh-readonly-queue/main/pr-${n}-${'d'.repeat(40)}`;
+  fs.writeFileSync(w.ghState, JSON.stringify({
+    pulls: { 'acme/harness': [ghPull(842, { queue_drop: caida(842) }), ghPull(843, { queue_drop: caida(843) })] },
+    runs: { 'acme/harness': [
+      { id: 9, event: 'merge_group', head_branch: cola(842), conclusion: 'failure', created_at: HACE(40) },
+      { id: 10, event: 'merge_group', head_branch: cola(843), conclusion: 'failure', created_at: HACE(40) },
+      { id: 11, event: 'pull_request', head_branch: 'fix/843', conclusion: 'failure', created_at: HACE(35) },
+    ] },
+    jobs: {
+      9: [{ id: 91, name: 'public-ci', conclusion: 'failure' }, { id: 92, name: 'Node 24 · checks', conclusion: 'failure' }],
+      10: [{ id: 101, name: 'Node 24 · suites-3-of-5', conclusion: 'failure' }],
+    },
+    job_logs: {
+      91: 'Todos los jobs terminaron bien\n',
+      92: '2026-11-24T01:00:00.0000000Z ❌ base-controls: rojo — el pedido afloja un control sin la constancia del dueño: scripts/lib/x.js. La firma, desde una sesión…\n',
+      101: '2026-11-24T02:01:17.0000000Z ❌ public-ci: portable-suites — rojo (exit 1)\n2026-11-24T02:01:17.0100000Z         · tests/office-page-english.test.js (exit 1)\n',
+    },
+  }));
+  return w;
+}
+
+test('Notice_GithubDroppedForCi_SaysWhatFailed — la lectura de fondo lee el registro de la corrida de la cola que falló', () => {
+  const w = mundoConCaidasDeCI();
+  const f = refrescarAhora(w);
+  assert.strictEqual(f.status, 0, f.stderr);
+  const r = correr(w);
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.match(r.out, /pedido 842 \(harness\) se cayó de la cola hace 30 min: la CI combinada salió en rojo \(falta la constancia del dueño: el pedido afloja un control; el comando para pedirla lo da `run-base-controls\.sh pending`\)\./, r.out);
+  assert.match(r.out, /pedido 843 \(harness\) se cayó de la cola hace 30 min: la CI combinada salió en rojo \(en rojo: office-page-english\.test\.js\)\./, r.out);
+});
+
+test('Notice_GithubDroppedForCi_StartDoesNotReadLogs_KnownNotReread — el arranque no lee registros, y lo ya leído no se vuelve a leer', () => {
+  const w = mundoConCaidasDeCI();
+  const log = path.join(tmp('spn-ghlog-'), 'llamadas.jsonl');
+  const r = correr(w, { FAKE_GH_LOG: log });
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.match(r.out, /pedido 843 \(harness\) se cayó de la cola hace 30 min: la CI combinada salió en rojo\. No lo re-encolo/, 'sin la lectura de fondo, la línea de siempre');
+  const registros = () => fs.readFileSync(log, 'utf8').split('\n').filter((l) => /actions\/jobs\/\d+\/logs/.test(l)).length;
+  assert.strictEqual(fs.existsSync(log) ? registros() : 0, 0, 'el arranque no leyó ningún registro');
+  assert.strictEqual(refrescarAhora(w, { FAKE_GH_LOG: log }).status, 0);
+  const primera = registros();
+  assert.ok(primera >= 2, `la lectura de fondo leyó los registros: ${primera}`);
+  assert.strictEqual(refrescarAhora(w, { FAKE_GH_LOG: log }).status, 0);
+  assert.strictEqual(registros(), primera, 'la segunda lectura de fondo no vuelve a leer lo que ya sabe');
+});

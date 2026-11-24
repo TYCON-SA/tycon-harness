@@ -385,7 +385,64 @@ function conAnalisis(ctx, repo, pedidos, llamar = gh, { hasta = Infinity, ahora 
 }
 
 /** Con `queue: true` y sin rama: los abiertos de una sola consulta GraphQL, sin leer los controles de cada uno. */
-function listaConCola(ctx, repo, deadlineMs) {
+// Lo que dice el registro de un trabajo de la cola que salió en rojo: que falta la constancia del dueño, otro rojo de
+// base-controls, las suites en rojo o el paso rojo de la CI pública. null si no dice ninguna de esas cosas.
+function motivoDelRegistro(texto) {
+  const lineas = String(texto).split(/\r?\n/).map((l) => l.replace(/\x1b\[[0-9;]*m/g, '').replace(/^\S*\d{4}-\d\d-\d\dT[\d:.]+Z\s/, ''));
+  const base = lineas.map((l) => /❌ base-controls: rojo — (.+)$/.exec(l)).find(Boolean);
+  if (base && /afloja un control sin la constancia/.test(base[1])) {
+    return { kind: 'constancia', text: 'falta la constancia del dueño: el pedido afloja un control; el comando para pedirla lo da `run-base-controls.sh pending`' };
+  }
+  if (base) return { kind: 'controles', text: `base-controls: ${base[1].slice(0, 160)}` };
+  const suites = [...new Set(lineas.map((l) => /^\s*·\s+(?:tests\/)?(\S+)\s+\(exit\b/.exec(l)).filter(Boolean).map((x) => x[1]))];
+  if (suites.length) return { kind: 'suites', text: `en rojo: ${suites.slice(0, 3).join(', ')}${suites.length > 3 ? ` y ${suites.length - 3} más` : ''}` };
+  const paso = lineas.map((l) => /❌ public-ci: (\S+) — rojo/.exec(l)).find(Boolean);
+  return paso ? { kind: 'paso', text: `el paso ${paso[1]} en rojo` } : null;
+}
+
+/**
+ * Por qué la CI combinada de la cola sacó al pedido `n`: la corrida de la cola de ese pedido más nueva que terminó mal
+ * antes de la caída (`at`), y en el registro de sus trabajos en rojo, lo que dice `motivoDelRegistro` (el trabajo que
+ * sólo junta a los demás va al final). `{ kind, text }`, o null si no se encuentra o no se pudo leer.
+ */
+function motivoDeLaCola(ctx, repo, n, at) {
+  const r = gh(ctx, 'GET', `repos/${repo}/actions/runs?event=merge_group&per_page=100`);
+  if (r.problem || !r.value || !Array.isArray(r.value.workflow_runs)) return null;
+  const deLaCola = new RegExp(`^gh-readonly-queue/[^/]+/pr-${Number(n)}-`);
+  const hasta = Date.parse(at);
+  const corridas = r.value.workflow_runs
+    .filter((x) => x && deLaCola.test(String(x.head_branch || '')) && MALOS.has(x.conclusion) && !(Date.parse(x.created_at) > hasta))
+    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+  if (!corridas.length) return null;
+  const j = gh(ctx, 'GET', `repos/${repo}/actions/runs/${Number(corridas[0].id)}/jobs?filter=latest&per_page=100`);
+  if (j.problem || !j.value || !Array.isArray(j.value.jobs)) return null;
+  const rojos = j.value.jobs.filter((x) => x && MALOS.has(x.conclusion)).sort((a, b) => (a.name === 'public-ci') - (b.name === 'public-ci'));
+  for (const job of rojos) {
+    const l = gh(ctx, 'GET', `repos/${repo}/actions/jobs/${Number(job.id)}/logs`, null, { texto: true });
+    const m = l.problem ? null : motivoDelRegistro(l.value);
+    if (m) return m;
+  }
+  const nombres = rojos.map((x) => String(x.name || '')).filter((x) => x && x !== 'public-ci');
+  return nombres.length ? { kind: 'trabajo', text: `en rojo: ${nombres.slice(0, 2).join(', ')}` } : null;
+}
+
+/**
+ * Suma `lastQueueDrop.detail` a los que la cola sacó por su CI con la punta de ahora, salvo los que ya se saben
+ * (`conocidos`: claves `<número>@<fecha de la caída>`). Para hasta `hasta` (ms): lo que no llegó queda sin detalle.
+ */
+function conMotivoDeCaida(ctx, repo, pedidos, conocidos, hasta) {
+  const ya = new Set(Array.isArray(conocidos) ? conocidos.map(String) : []);
+  for (const p of pedidos) {
+    const d = p.lastQueueDrop;
+    if (!d || d.cause !== 'ci' || (d.commit && d.commit !== p.sourceCommit) || ya.has(`${p.number}@${d.at}`)) continue;
+    if (Date.now() > hasta) break;
+    const m = motivoDeLaCola(ctx, repo, p.number, d.at);
+    if (m) d.detail = m;
+  }
+  return pedidos;
+}
+
+function listaConCola(ctx, repo, deadlineMs, motivos = null) {
   const desde = Date.now();
   const [owner, name] = repo.split('/');
   const value = [];
@@ -403,7 +460,11 @@ function listaConCola(ctx, repo, deadlineMs) {
     const prs = g.value && g.value.data && g.value.data.repository && g.value.data.repository.pullRequests;
     if (!prs || !Array.isArray(prs.nodes)) return no('no_medido', 'GitHub contestó los pedidos abiertos sin forma');
     for (const p of prs.nodes) if (p && Number.isInteger(p.number)) value.push(deGraphql(p));
-    if (!prs.pageInfo || !prs.pageInfo.hasNextPage) return { ok: true, value: conAnalisis(ctx, repo, value, gh, { hasta: Number(deadlineMs) > 0 ? desde + Number(deadlineMs) * 0.8 : Infinity }) };
+    if (!prs.pageInfo || !prs.pageInfo.hasNextPage) {
+      const hasta = Number(deadlineMs) > 0 ? desde + Number(deadlineMs) * 0.8 : Infinity;
+      const leidos = conAnalisis(ctx, repo, value, gh, { hasta });
+      return { ok: true, value: motivos ? conMotivoDeCaida(ctx, repo, leidos, motivos.known, hasta) : leidos };
+    }
     after = prs.pageInfo.endCursor;
   }
   return no('no_medido', `tope de ${MAX_CONSULTAS} consultas: la lista no se leyó entera`);
@@ -455,7 +516,10 @@ function leerPedido(args, ctx) {
 function listarPedidos(args, ctx) {
   const repo = repoDe(ctx);
   if (!repo) return no('rechazado', 'el repo no trae dueño/nombre de GitHub (team-repos.json)');
-  if (args.queue === true && !args.sourceBranch) return listaConCola(ctx, repo, args.deadlineMs);
+  if (args.queue === true && !args.sourceBranch) {
+    const motivos = args.queueDropDetail && typeof args.queueDropDetail === 'object' ? args.queueDropDetail : null;
+    return listaConCola(ctx, repo, args.deadlineMs, motivos);
+  }
   // con `sourceBranch`, los abiertos de esa rama, cada uno leído entero: la lista de GitHub no trae `mergeable`. Se
   // filtra por `head.ref` y no con `head=<dueño>:<rama>`: con un repo transferido o una organización renombrada, el
   // dueño del origin es el viejo y GitHub contesta ese filtro con una lista vacía, sin error (la sesión saldría libre);
