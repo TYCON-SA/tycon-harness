@@ -48,7 +48,10 @@ la máquina está cargada, y esperan si la carga pasa el doble de los núcleos; 
 declaran `gate_only_when_touching` se DIFIEREN si la story no toca esas carpetas (hoy export-real: sólo corre si la
 story toca `scripts/publishing/**`). Lo diferido queda en `tests-result.json` → `totals.deferred_suites`, con el motivo.
 Si el repo declara `test_gate` en `.test-gate.yaml`, en su raíz (commiteado), corren sólo las suites que leen lo tocado y la
-completa la corre la CI del pedido; si ninguna lo lee, sale 0 y lo dice. Si lo tocado incluye una pieza central (un
+completa la corre la CI del pedido; si ninguna lo lee, sale 0 y lo dice. Un repo cuya suite no debe correr en la máquina
+(le pega a la base de otra persona, a un servicio compartido) lo declara con `scope: none`, `full_suite_by` (quién la
+corre) y `reason` (por qué): el portón no corre nada ahí y sale 3, «sin medir», con el motivo; los repos hermanos corren
+igual. Es la forma de decirlo, en vez de un alcance falso, y cambiarlo pide la firma del dueño. Si lo tocado incluye una pieza central (un
 archivo de código que nombran 40 suites o más), de las que la nombran corren sólo las que nombran la función o el
 subcomando que cambió, o se llaman como ella; las demás quedan diferidas para la CI del pedido, y la salida dice
 «<pieza>: corrieron k de las N suites que la nombran (para correrlas todas: TYCON_GATE_ALL_SUITES=1)». Si no se sabe qué
