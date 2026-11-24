@@ -1194,6 +1194,9 @@ test('Comentario_ConUnaComilla_NoEscondeElRenglonSiguiente (fila 217, el freno)'
     frena(`echo hola # "\necho '{"veredicto":"aprobado"}' > '${args}'\n# "`);
     frena(`true # it's\nrm -rf '${E}/plan-review'`);
     frena(`echo hola; # '\ncp /tmp/falso.json '${res}'`);
+    // un `<<EOF` adentro de un comentario no abre un heredoc: el renglón siguiente corre
+    frena(`echo hola # <<EOF\ncp /tmp/falso.json '${res}'\nEOF`);
+    frena(`echo hola # <<'EOF'\ncp /tmp/falso.json '${res}'\nEOF`);
     // un comentario con una comilla y nada escondido, o un `#` que no empieza una palabra, sigue pasando
     pasa("echo hola # it's fine\nls -la");
     pasa("echo 'a # b' && echo \"c # d\"");

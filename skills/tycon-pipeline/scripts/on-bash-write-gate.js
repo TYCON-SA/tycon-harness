@@ -262,10 +262,10 @@ function lastWord(seg) {
  *    `grep "sed -i"`), para que su contenido no se lea como redirecciones ni como archivos.
  */
 function stripNonCommandText(s) {
-  // Heredocs: <<EOF / <<-EOF / <<'EOF' / <<"EOF" … hasta la línea que es sólo el delimitador.
-  let t = String(s).replace(/((?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)(?:[\s\S]*?\n)??[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
+  // Heredocs: <<EOF / <<-EOF / <<'EOF' / <<"EOF" … hasta la línea que es sólo el delimitador, con el mismo lector que
+  // los tramos (`quitarCuerposDeHeredoc`): un `<<EOF` adentro de un comentario no abre nada, y lo de abajo corre. Después,
   // los comentarios: una comilla adentro de uno no abre un texto entre comillas que se vacía con lo de abajo
-  t = sinComentarios(t);
+  let t = sinComentarios(quitarCuerposDeHeredoc(s));
   // Strings entre comillas que no siguen a un operador de redirección / tee: se vacían (quedan las comillas), salvo
   // los que pueden ser un nombre de archivo (sin espacios ni operadores): `cp a "<dir>/b.md"` sigue nombrando su destino.
   t = t.replace(/(^|[^>\w])(?<!tee[ \t]+)(?<!>[ \t]*)(['"])((?:\\.|(?!\2)[^\\])*)\2/g,
