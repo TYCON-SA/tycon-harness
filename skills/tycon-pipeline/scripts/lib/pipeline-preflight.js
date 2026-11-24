@@ -292,12 +292,13 @@ function computeDepGate({ repo, story }) {
   const storyAbs = story ? (path.isAbsolute(story) ? story : path.join(repo, story)) : null;
   const storyText = storyAbs ? readText(storyAbs) : '';
   // 🔴 Stories de dos repos: el código —y sus dependencias— pueden vivir en un repo hermano declarado
-  //    (`evidence.companion_repos`). Mirando sólo el repo de la story, un paquete nuevo del hermano no se vería.
+  //    (`evidence.companion_repos`). Mirando sólo el repo de la story, un paquete nuevo del hermano no se vería. Se
+  //    miran los hermanos que la story toca (con archivos declarados): uno declarado y sin tocar no es de esta story.
   let raices = [repo];
   let hermanosError = null;
   const hermanosFaltan = [];
   try {
-    raices = [repo, ...companionLib.companionRoots(repo, storyAbs, { onMissing: (nombre, quien) => hermanosFaltan.push({ repo: nombre, motivo: `declarado en ${quien} y no está en disco` }) })];
+    raices = [repo, ...companionLib.touchedRoots(repo, storyAbs, { onMissing: (nombre, quien) => hermanosFaltan.push({ repo: nombre, motivo: `declarado en ${quien} y no está en disco` }) })];
   } catch (e) { hermanosError = e.message; }
   const diffs = [];
   const sinMedir = [];

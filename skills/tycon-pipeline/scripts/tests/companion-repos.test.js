@@ -1299,3 +1299,85 @@ test('Hermanos_SoloElAtrasado_LoUsaYLoDice (T9) @story-8.274 @ac-11', () => {
   assert.equal(r.eleccion, l.wt);
   assert.match(r.avisos, /pub está 2 commits atrás de main \(rama story\/9\.1-x, en [^)]+\): un rojo puede ser algo ya arreglado/);
 });
+
+// ── Fila 215: los pasos miran los hermanos que la historia toca, no todos los declarados ─────────────────────────────
+
+/**
+ * La historia vive en `Back` y declara archivos sólo en `Front`. `Back` declara además a `Otro`, que la historia no toca
+ * y trae una ruta muy larga (como el repo de Windows que frenó el congelado). Los tres en la misma carpeta.
+ */
+function laboratorioDeTres({ story } = {}) {
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-tres-')));
+  const largo = Array.from({ length: 8 }, (_, i) => `carpeta-con-un-nombre-bastante-largo-${i}`).join('/');
+  const back = repoGit(path.join(raiz, 'Back'), {
+    'src/A.cs': 'class A {}\n',
+    'specs/s.md': story || STORY({ modificar: ['src/A.cs', 'app/src/X.tsx'], crear: ['Front/app/src/Nuevo.tsx'] }),
+    '.tycon/advisors.yaml': 'evidence:\n  companion_repos:\n    - Front\n    - Otro\n',
+  });
+  const front = repoGit(path.join(raiz, 'Front'), {
+    'app/package.json': JSON.stringify({ name: 'app', version: '1.0.0', dependencies: { react: '18.3.1' } }, null, 2) + '\n',
+    'app/src/X.tsx': 'export const X = () => null;\n',
+  });
+  const otro = repoGit(path.join(raiz, 'Otro'), {
+    'package.json': JSON.stringify({ name: 'otro', version: '1.0.0', dependencies: {} }, null, 2) + '\n',
+    [`${largo}/archivo-de-un-repo-que-la-historia-no-toca.txt`]: 'x\n',
+  });
+  return { raiz, back, front, otro, story: path.join(back, 'specs', 's.md'), largo };
+}
+const cr = () => require(path.join(SCRIPTS, 'lib', 'companion-repos.js'));
+
+test('Fila215 T1 TouchedRoots_OnlySiblingsWithDeclaredFiles — sólo los hermanos con archivos declarados; la lista entera no cambia', () => {
+  // 🔴 rojo si: no hay forma de pedir sólo los hermanos que la historia toca (el congelado, dep-gate y los revisores
+  //    trabajan sobre todos los declarados)
+  const l = laboratorioDeTres();
+  assert.deepStrictEqual(cr().touchedRoots(l.back, l.story), [l.front]);
+  // la evidencia y el portón siguen con todos: la lista entera es la de siempre
+  assert.deepStrictEqual(cr().companionRoots(l.back, l.story), [l.front, l.otro]);
+  // un archivo que la historia va a crear y todavía no existe cuenta por el nombre del hermano
+  const sinX = laboratorioDeTres({ story: STORY({ crear: ['Front/app/src/Nuevo.tsx'] }) });
+  assert.deepStrictEqual(cr().touchedRoots(sinX.back, sinX.story), [sinX.front]);
+  // sin historia no hay con qué elegir: todos
+  assert.deepStrictEqual(cr().touchedRoots(l.back, null), [l.front, l.otro]);
+});
+
+test('Fila215 T2 ReposDelPase_SinElHermanoNoTocado — el congelado del pase y de los revisores no sella ni copia a Otro', () => {
+  // 🔴 rojo si: reposDelPase toma todos los declarados: copia a Otro, con su ruta larga, aunque la historia no lo toca
+  const l = laboratorioDeTres();
+  const ft = require(path.join(SCRIPTS, 'lib', 'frozen-tree.js'));
+  const r = ft.reposDelPase({ story: l.story, repo: l.back });
+  assert.ok(!r.error, r.error);
+  assert.deepStrictEqual(r.hermanos, [l.front]);
+  assert.ok(!r.repos.includes(l.otro), r.repos.join(', '));
+  // y la copia de un repo con una ruta larga sale entera
+  const home = casa();
+  const c = ft.freeze(l.otro, git(l.otro, 'rev-parse', 'HEAD^{tree}').trim(), path.join(home, 'copia'));
+  assert.ok(!c.error, c.error);
+  assert.ok(fs.existsSync(path.join(home, 'copia', l.largo, 'archivo-de-un-repo-que-la-historia-no-toca.txt')));
+});
+
+test('Fila215 T3 CopiaEnWindows_ConRutasLargas — en Windows el git de la copia lleva core.longpaths=true', () => {
+  const ft = require(path.join(SCRIPTS, 'lib', 'frozen-tree.js'));
+  assert.deepStrictEqual(ft.gitDeLaCopia('win32'), ['-c', 'core.longpaths=true']);
+  assert.deepStrictEqual(ft.gitDeLaCopia('darwin'), []);
+});
+
+test('Fila215 T4 DepGate_SoloLosHermanosTocados — un paquete nuevo en Otro no entra; uno en Front sí', () => {
+  // 🔴 rojo si: dep-gate diffea todos los declarados
+  const l = laboratorioDeTres();
+  fs.writeFileSync(path.join(l.otro, 'package.json'), JSON.stringify({ name: 'otro', version: '1.0.0', dependencies: { 'paquete-de-otro': '1.0.0' } }, null, 2) + '\n');
+  fs.writeFileSync(path.join(l.front, 'app', 'package.json'), JSON.stringify({ name: 'app', version: '1.0.0', dependencies: { react: '18.3.1', 'paquete-de-front': '1.0.0' } }, null, 2) + '\n');
+  const r = spawnSync(process.execPath, [PIPELINE, 'dep-gate', '--repo', l.back, '--story', l.story], { encoding: 'utf8', env: entorno(casa(), 'sid-fila215') });
+  const salida = `${r.stdout}\n${r.stderr}`;
+  assert.match(salida, /paquete-de-front/);
+  assert.doesNotMatch(salida, /paquete-de-otro/);
+});
+
+test('Fila215 T5 AvisosDeHermanos_SoloLosTocados — el aviso del checkout principal sale para Front y no para Otro', () => {
+  // 🔴 rojo si: con la historia en una rama, «se lee del checkout principal» sale por cada hermano declarado
+  const l = laboratorioDeTres();
+  git(l.back, 'switch', '-q', '-c', 'feat/9-26-historia');
+  const codigo = `const c = require(${JSON.stringify(path.join(SCRIPTS, 'lib', 'companion-repos.js'))}); c.companionRoots(${JSON.stringify(l.back)}, ${JSON.stringify(l.story)});`;
+  const r = spawnSync(process.execPath, ['-e', codigo], { encoding: 'utf8', env: entorno(casa(), 'sid-fila215-avisos') });
+  assert.match(r.stderr, /Front se lee del checkout principal/);
+  assert.doesNotMatch(r.stderr, /Otro se lee del checkout principal/);
+});

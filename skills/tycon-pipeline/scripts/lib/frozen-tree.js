@@ -103,24 +103,38 @@ function permisos(dir, escribible) {
 }
 
 /**
+ * Lo que va delante del git que arma la copia: en Windows, `core.longpaths=true`. Sin él, un archivo con una ruta de
+ * más de 260 caracteres corta la copia con «Filename too long», aunque el repo tenga esa opción apagada.
+ */
+function gitDeLaCopia(platform = process.platform) {
+  return platform === 'win32' ? ['-c', 'core.longpaths=true'] : [];
+}
+
+/**
  * La copia de sólo lectura del árbol `tree` de `repo` en `dir` (que no tiene que existir): `{ copy }` o `{ error }`.
- * Una copia a medias se borra: nunca queda una que no sea la del sello.
+ * Una copia a medias se borra: nunca queda una que no sea la del sello. Si no se puede borrar, el error lo dice.
  */
 function freeze(repo, tree, dir) {
   const g = gitDirDe(repo);
   if (g.error) return { error: `no pude armar la copia de ${repo}: ${g.error}` };
-  if (fs.existsSync(dir)) remover(dir);
+  const vieja = fs.existsSync(dir) ? remover(dir) : null;
+  if (vieja) return { error: `no pude armar la copia de ${repo}: la de antes no se pudo borrar (${vieja}): borrá ${dir}` };
   try { fs.mkdirSync(dir, { recursive: true }); } catch (e) { return { error: `no pude armar la copia de ${repo} en ${dir}: ${unaLinea(e.message)}` }; }
+  const largas = gitDeLaCopia();
   const r = conIndiceAparte((indice) => {
     const env = { GIT_INDEX_FILE: indice };
-    const rt = git([`--git-dir=${g.dir}`, 'read-tree', tree], env);
+    const rt = git([...largas, `--git-dir=${g.dir}`, 'read-tree', tree], env);
     if (!rt.ok) return { error: `no pude armar la copia de ${repo}: git read-tree ${tree} (${unaLinea(rt.err)})` };
-    const co = git([`--git-dir=${g.dir}`, `--work-tree=${dir}`, 'checkout-index', '-a', '-f'], env);
+    const co = git([...largas, `--git-dir=${g.dir}`, `--work-tree=${dir}`, 'checkout-index', '-a', '-f'], env);
     if (!co.ok) return { error: `no pude armar la copia de ${repo} en ${dir}: git checkout-index (${unaLinea(co.err)})` };
     return { copy: dir };
   });
-  if (r.error) { remover(dir); return r; }
-  try { permisos(dir, false); } catch (e) { remover(dir); return { error: `no pude dejar de sólo lectura la copia de ${repo}: ${unaLinea(e.message)}` }; }
+  const sinLaCopia = (error) => {
+    const quedo = remover(dir);
+    return { error: quedo ? `${error}; y la copia a medias no se pudo borrar (${quedo}): borrá ${dir}` : error };
+  };
+  if (r.error) return sinLaCopia(r.error);
+  try { permisos(dir, false); } catch (e) { return sinLaCopia(`no pude dejar de sólo lectura la copia de ${repo}: ${unaLinea(e.message)}`); }
   return r;
 }
 
@@ -145,10 +159,11 @@ function verify(repo, copy, tree) {
   });
 }
 
-/** Borra una carpeta de copias aunque sea de sólo lectura. */
+/** Borra una carpeta de copias aunque sea de sólo lectura. null si quedó borrada; si no, el motivo. */
 function remover(dir) {
   try { permisos(dir, true); } catch (_) { /* lo que no se pudo, lo intenta el borrado */ }
-  fs.rmSync(dir, { recursive: true, force: true });
+  try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { return unaLinea(e.message); }
+  return fs.existsSync(dir) ? 'sigue en el disco' : null;
 }
 
 // un nombre que se vuelve carpeta: sin barras, y nunca «.», «..» ni con punto adelante (saldría de su carpeta)
@@ -169,7 +184,8 @@ function copyDir(stateDir, sid, etiqueta, repo) {
 function remove(stateDir, sid) {
   const d = path.join(raizDeCopias(stateDir), seguro(sid));
   if (!dentroDe(raizDeCopias(stateDir), d)) throw new Error(`remove: ${d} no queda dentro de ${raizDeCopias(stateDir)}`);
-  if (fs.existsSync(d)) remover(d);
+  const quedo = fs.existsSync(d) ? remover(d) : null;
+  if (quedo) throw new Error(`remove: no pude borrar ${d} (${quedo})`);
 }
 
 /**
@@ -185,7 +201,8 @@ function sweep(stateDir) {
     // sólo lo que pudo crear este módulo: un nombre que ya es seguro y queda dentro de la carpeta de las copias
     if (sid !== seguro(sid) || !dentroDe(raiz, path.join(raiz, sid))) continue;
     if (fs.existsSync(path.join(stateDir, 'active', `${sid}.json`))) continue;
-    try { remover(path.join(raiz, sid)); barridas.push(sid); } catch (_) { /* la próxima vuelta lo vuelve a intentar */ }
+    // la que no se pudo borrar, la próxima vuelta lo vuelve a intentar
+    if (!remover(path.join(raiz, sid))) barridas.push(sid);
   }
   return barridas.sort();
 }
@@ -238,7 +255,8 @@ function evidenciaSinHermanos(repo) {
 
 /**
  * Los repos del pase adversarial: los de la vuelta (la historia y el repo del código) más cada repo hermano declarado
- * (`.tycon/advisors.yaml → evidence.companion_repos`, con la misma lista que usa el portón de pruebas). `{ repos, hermanos }`
+ * (`.tycon/advisors.yaml → evidence.companion_repos`) en el que la historia declara archivos (`touchedRoots`, como el
+ * portón de pruebas). `{ repos, hermanos }`
  * o `{ error }`: una configuración que no se deja leer no es «sin hermanos», y un hermano que no se puede sellar tampoco.
  */
 function reposDelPase({ story, repo }) {
@@ -253,7 +271,8 @@ function reposDelPase({ story, repo }) {
       if (cfg.missing.length) return { error: `${r} declara repos hermanos que no están en disco: ${cfg.missing.join(', ')}` };
       if (cfg.blockPresent && !cfg.roots.length && !cfg.fePaths.length && !evidenciaSinHermanos(r)) return { error: `${r} tiene el bloque evidence: y no pude leer de él ningún repo hermano` };
     }
-    hermanos = require('./companion-repos.js').companionRoots(repo, story || null);
+    // sólo los hermanos que la historia toca (con archivos declarados): uno declarado y sin tocar no se sella ni se copia
+    hermanos = require('./companion-repos.js').touchedRoots(repo, story || null);
   } catch (e) {
     return { error: `no pude leer los repos hermanos de ${repo}: ${unaLinea(e.message)}` };
   }
@@ -754,7 +773,7 @@ function procedencia(repo, { env = process.env, home = os.homedir(), proceso = '
 }
 
 module.exports = {
-  seal, puntoComunConMain, freeze, verify, changed, anidadosConCambios, copyDir, remove, sweep, reposDe, reposDelPase, hermanosCambiados, sealAndFreeze, vueltas, ultimaVuelta, seccionDelContexto, sinPapeleoDeLaHistoria, procedencia,
+  seal, puntoComunConMain, freeze, gitDeLaCopia, verify, changed, anidadosConCambios, copyDir, remove, sweep, reposDe, reposDelPase, hermanosCambiados, sealAndFreeze, vueltas, ultimaVuelta, seccionDelContexto, sinPapeleoDeLaHistoria, procedencia,
   contenidoDelSello, tipoContraElSello, vueltaCerradaDeLosRevisores, tiposDesdeLaVuelta,
 };
 

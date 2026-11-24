@@ -93,18 +93,71 @@ function companionRoots(repo, storyPath, opts) {
   const out = [];
   const rama = ramaDe(repoDeLaStory || repo);
   const numero = numeroDeLaStory(storyPath);
-  for (const f of fuentes) {
-    const cfg = parseEvidenceConfig(f);
-    if (opts && typeof opts.onMissing === 'function') for (const m of cfg.missing) opts.onMissing(m, f);
-    if (opts && typeof opts.onWarning === 'function') for (const w of cfg.warnings) opts.onWarning(w, f);
-    for (const r of cfg.roots) {
-      const k = enLaMismaRama(real(r), rama, numero);
-      if (vistos.has(k)) continue;
-      vistos.add(k);
-      out.push(k);
+  // con historia, los avisos de cada hermano se guardan hasta saber cuáles toca; sin ella, salen como siempre
+  const propia = storyPath && !CAPTURA ? [] : null;
+  const deQuien = new Map();
+  if (propia) CAPTURA = propia;
+  try {
+    for (const f of fuentes) {
+      const cfg = parseEvidenceConfig(f);
+      if (opts && typeof opts.onMissing === 'function') for (const m of cfg.missing) opts.onMissing(m, f);
+      if (opts && typeof opts.onWarning === 'function') for (const w of cfg.warnings) opts.onWarning(w, f);
+      for (const r of cfg.roots) {
+        HERMANO_ACTUAL = real(r);
+        const k = enLaMismaRama(real(r), rama, numero);
+        deQuien.set(real(r), k);
+        if (vistos.has(k)) continue;
+        vistos.add(k);
+        out.push(k);
+      }
+    }
+  } finally {
+    HERMANO_ACTUAL = null;
+    if (propia) CAPTURA = null;
+  }
+  if (propia) {
+    const tocados = hermanosDeLaStory(repo, storyPath, out);
+    for (const a of propia) {
+      const k = a.de ? deQuien.get(a.de) : null;
+      if (!tocados || !k || tocados.has(real(k))) avisar(a.texto);
     }
   }
   return out;
+}
+
+/**
+ * Los hermanos que la historia toca: donde declara archivos (`files_to_create` y `files_to_modify`). Un archivo cuenta
+ * para el hermano donde existe (como `companionTargets`), y uno que todavía no existe, por el nombre del hermano
+ * (`<hermano>/x`, `../<hermano>/x` o `(<hermano>) x`). Un `Set` de rutas reales, o null si no hay con qué elegir: la
+ * historia no se puede leer o no declara ningún archivo.
+ */
+function hermanosDeLaStory(repo, storyPath, roots) {
+  let contenido;
+  try { contenido = fs.readFileSync(storyPath, 'utf8'); } catch (_) { return null; }
+  const ts = require('./test-scope.js');
+  const declarados = ts.parseDeclaredFiles(contenido);
+  if (!declarados.length) return null;
+  const out = new Set();
+  for (const decl of declarados) {
+    const r = resolveDeclared(decl, repo, roots);
+    if (r.where === 'companion') { out.add(real(r.root)); continue; }
+    const conRepo = parseRepoPrefixed(decl);
+    const d = String(conRepo ? `${conRepo.ref}/${conRepo.rest}` : decl).replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\.\.\//, '');
+    for (const c of roots) if (d.startsWith(`${label(c)}/`)) out.add(real(c));
+  }
+  return out;
+}
+
+/**
+ * Los hermanos que la historia toca (`hermanosDeLaStory`), de los que da `companionRoots`. Es lo que miran los pasos que
+ * sólo trabajan sobre el código de la historia: el congelado del pase y de los revisores, y dep-gate. La evidencia y el
+ * portón de pruebas siguen con `companionRoots` y `companionTargets`. Sin historia, o si no hay con qué elegir, todos.
+ */
+function touchedRoots(repo, storyPath, opts) {
+  const todos = companionRoots(repo, storyPath, opts);
+  if (!storyPath || !todos.length) return todos;
+  const tocados = hermanosDeLaStory(repo, storyPath, todos);
+  return tocados ? todos.filter((r) => tocados.has(real(r))) : todos;
 }
 
 /**
@@ -151,7 +204,12 @@ function limpiarRamas() { RAMAS.clear(); }
 
 // Cada aviso, una vez por proceso: varios lugares de un mismo comando preguntan por los mismos hermanos.
 const AVISADOS = new Set();
+// Mientras `companionRoots` resuelve los hermanos de una historia, el aviso de cada uno espera a saber si la historia lo
+// toca (`hermanosDeLaStory`): el de un hermano declarado que la historia no toca no se dice.
+let CAPTURA = null;
+let HERMANO_ACTUAL = null;
 function avisar(texto) {
+  if (CAPTURA) { CAPTURA.push({ texto, de: HERMANO_ACTUAL }); return; }
   if (AVISADOS.has(texto)) return;
   AVISADOS.add(texto);
   process.stderr.write(`[hermanos] ⚠️  ${texto}\n`);
@@ -646,7 +704,7 @@ function anclasDeLaEvidencia(repo, historia) {
 
 module.exports = {
   anclasDeLaEvidencia, nombreDelRepo,
-  companionRoots, ramaDe, RAMA_DE_LA_CORRIDA, limpiarRamas, enLaMismaRama, mainAlDia, mainCambioDespues, ramaNombraLaStory, numeroDeLaStory, gitRootOf, label, ownerOf, groupByRepo, resolveDeclared, parseRepoPrefixed, resolveRepoRef,
+  companionRoots, touchedRoots, hermanosDeLaStory, ramaDe, RAMA_DE_LA_CORRIDA, limpiarRamas, enLaMismaRama, mainAlDia, mainCambioDespues, ramaNombraLaStory, numeroDeLaStory, gitRootOf, label, ownerOf, groupByRepo, resolveDeclared, parseRepoPrefixed, resolveRepoRef,
   companionTargets, declaredHere, declaredIn, declaredFor, real,
 };
 
