@@ -412,8 +412,16 @@ function pidioEntrarAntes(p) {
   return fechas.length && Number.isFinite(t) && t < Math.max(...fechas) ? p.autoMergeSince : null;
 }
 
-/** Cómo quedó fuera de la cola uno que se puede re-encolar: por qué cayó, o el empuje (también el del auto-merge). */
-const comoQuedoAfuera = (p) => { const c = decisionDeCaida(p); return c && c.vuelve ? c.como : 'después del empuje'; };
+/**
+ * Cómo quedó fuera de la cola uno que se puede re-encolar: por qué cayó, o el empuje (también el del auto-merge), con
+ * hace cuánto llegó esa punta. Sin la hora, «después del empuje» se lee como algo de recién aunque haya sido hace días.
+ */
+const comoQuedoAfuera = (p, ahora) => {
+  const c = decisionDeCaida(p);
+  if (c && c.vuelve && c.como !== 'después del empuje') return c.como;
+  const t = Math.max(...[Date.parse(p.headCommittedAt), Date.parse(p.headPushedAt)].filter(Number.isFinite));
+  return Number.isFinite(t) && Number.isFinite(ahora) ? `después del empuje de hace ${haceDe(Math.max(0, ahora - t))}` : 'después del empuje';
+};
 
 /** La línea de una caída de la cola que no vuelve sola: cuándo, por qué cayó y por qué no se re-encola. */
 function lineaDeCaida(repo, p, ahora) {
@@ -448,7 +456,7 @@ function motivoParaNo(p) {
  * Los pedidos para re-encolar y los que quedaron afuera con su motivo: `{ encolar: [{ clave, repo, number, nodeId,
  * punta }], esperan: [{ clave, linea }] }`. Un pedido ya intentado con la misma punta no se vuelve a intentar.
  */
-function paraReencolar(repos, leidas, intentos = {}) {
+function paraReencolar(repos, leidas, intentos = {}, ahora = Date.now()) {
   const encolar = [];
   const esperan = [];
   for (const repo of repos) {
@@ -460,7 +468,7 @@ function paraReencolar(repos, leidas, intentos = {}) {
       const clave = `${claveDe(repo)}#${p.number}`;
       const motivo = motivoParaNo(p);
       if (motivo) {
-        esperan.push({ clave, linea: `⚠️ pedido ${p.number} (${limpio(repo.repo, 60)}) quedó fuera de la cola ${comoQuedoAfuera(p)}: no lo re-encolo porque ${motivo} · ${limpio(p.sourceBranch, 120)}` });
+        esperan.push({ clave, linea: `⚠️ pedido ${p.number} (${limpio(repo.repo, 60)}) quedó fuera de la cola ${comoQuedoAfuera(p, ahora)}: no lo re-encolo porque ${motivo} · ${limpio(p.sourceBranch, 120)}` });
         continue;
       }
       const antes = intentos[clave];
@@ -510,7 +518,7 @@ function leerIntentos(dir) {
 function reencolarLosListos(dir, repos, leidas, ahora, opciones = {}) {
   const { intentos, problema } = leerIntentos(dir);
   if (problema) return;
-  const { encolar } = paraReencolar(repos, leidas, intentos);
+  const { encolar } = paraReencolar(repos, leidas, intentos, ahora);
   if (!encolar.length) return;
   const pendientes = Object.fromEntries(encolar.map((e) => [e.clave, { punta: e.punta, nodeId: e.nodeId, at: new Date(ahora).toISOString(), ok: false, detalle: 'sin respuesta todavía' }]));
   try { escribirJson(reencoladosDe(dir), { ...intentos, ...pendientes }); } catch { return; }
@@ -535,7 +543,7 @@ function lineasDeReencolado(repos, leidas, intentos, ahora) {
       const que = volvio ? `lo re-encolé hace ${haceDe(ahora - Date.parse(i.at))} y volvió a caerse; con esta punta no lo intento otra vez`
         : i.ok ? `lo re-encolé hace ${haceDe(ahora - Date.parse(i.at))}`
           : `no pude re-encolarlo (${limpio(i.detalle, 120)}); encolalo a mano${ID_PEDIDO.test(String(i.nodeId || '')) ? ` con ${comandoDeLaCola(i.nodeId)}` : ''}`;
-      lineas.push(`⚠️ pedido ${p.number} (${limpio(repo.repo, 60)}) quedó fuera de la cola ${comoQuedoAfuera(p)}: ${que} · ${limpio(p.sourceBranch, 120)}`);
+      lineas.push(`⚠️ pedido ${p.number} (${limpio(repo.repo, 60)}) quedó fuera de la cola ${comoQuedoAfuera(p, ahora)}: ${que} · ${limpio(p.sourceBranch, 120)}`);
     }
   }
   return lineas;
@@ -614,7 +622,7 @@ function coordinatorLines({ home = os.homedir(), tree = path.resolve(process.env
   const todas = [...reglaSinAnalisis(declarados.repos, foto.lecturas),
     ...caidasDeLaCola(declarados.repos, foto.lecturas, now),
     ...lineasDeReencolado(declarados.repos, foto.lecturas, intentos, now),
-    ...paraReencolar(declarados.repos, foto.lecturas, intentos).esperan.map((e) => e.linea),
+    ...paraReencolar(declarados.repos, foto.lecturas, intentos, now).esperan.map((e) => e.linea),
     ...trabados.map((t) => t.linea)];
   const lines = todas.slice(0, MAX_LINEAS);
   if (todas.length > MAX_LINEAS) lines.push(`   (+${todas.length - MAX_LINEAS} más)`);
@@ -702,7 +710,7 @@ async function main() {
   // los que quedaron fuera de la cola después de un empuje: lo que hizo la lectura de fondo, o por qué no los re-encola
   const { intentos, problema: sinIntentos } = leerIntentos(dir);
   if (sinIntentos) console.log(`pedidos re-encolados: ${limpio(sinIntentos, 200)}`);
-  for (const linea of [...reglaSinAnalisis(declarados.repos, leidas), ...lineasDeReencolado(declarados.repos, leidas, intentos, ahora), ...paraReencolar(declarados.repos, leidas, intentos).esperan.map((e) => e.linea)]) {
+  for (const linea of [...reglaSinAnalisis(declarados.repos, leidas), ...lineasDeReencolado(declarados.repos, leidas, intentos, ahora), ...paraReencolar(declarados.repos, leidas, intentos, ahora).esperan.map((e) => e.linea)]) {
     trabados.push({ ms: Number.MAX_SAFE_INTEGER, creado: Infinity, number: 0, linea });
   }
   let sinGuardar = false;

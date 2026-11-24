@@ -185,8 +185,11 @@ Claude Code 2.1.330 pide aprobar cada copia, aunque la principal ya esté aproba
 trabajo queda `open --repo <repo> --slot`: en lugar de crear una copia, toma un puesto fijo libre del repo y abre la
 sesión ahí, en la rama del trabajo. Hay tantos puestos como el tope y siempre son las mismas carpetas, así que el dueño
 los aprueba una sola vez: `node scripts/tools/work-slots.js pending-trust` lista, cada uno con su `cd`, los que no
-tienen su propia aprobación anotada; la de la principal no cuenta, y como Claude Code 2.1.330 no anota la de los
-puestos, dice que no sabe en lugar de darlos por aprobados. Sin puesto libre, `open --slot` lo dice y no abre. El
+tienen aprobación a la vista, y `prepare-machine.js` los nombra a todos en una nota. Cuenta la aprobación propia del
+puesto o una sesión de fondo que ya abrió ahí (la anota `open` y la saca si Claude Code después dice que no); la de la
+principal no cuenta, y sin ninguna de las dos dice que no sabe en lugar de darlo por aprobado. Sin `--slot`, `open` usa
+igual un puesto libre donde ya abrió una sesión antes que crear una copia nueva, y lo dice en su mensaje; si no hay
+ninguno así, crea la copia como siempre. Sin puesto libre, `open --slot` lo dice y no abre. El
 encargo le dice a la sesión cómo soltar el puesto al terminar. Si el lanzador contesta que el puesto no está aprobado,
 el puesto queda tomado con su rama y se reintenta con `--slot --reuse`, o se suelta con `release`; ante otra falla
 vuelve a quedar libre. Al cerrar, un puesto se suelta, no se borra. Nada crea puestos si no se piden. Cómo son:
@@ -532,7 +535,8 @@ El dueño firma desde el celular, con un click en el cuadro de la coordinadora. 
   pueda tomar; si no hay, la pregunta va al dueño al instante.
 - **El `owner-wait` de fondo no le quita el click al dueño**: el freno lo deja pasar, si corre exactamente como lo pide su
   aviso. Tampoco el vigilante de sólo lectura de un pedido
-  (`coordination.js pr-wait --repo <org/repo> --number <n>`), que además deja firmar por delegación (`guides/firmas-del-arnes.md`, «Aprobar en
+  (`coordination.js pr-wait --repo <org/repo> --number <n>`), ni la espera de que una historia abra su pedido
+  (`pr-wait --repo <org/repo> --story <historia>`). Los dos además dejan firmar por delegación (`guides/firmas-del-arnes.md`, «Aprobar en
   nombre del dueño»). Cualquier otra consola de fondo viva sí lo frena: se cierra antes de pedir el cuadro.
 - **Un pedido sin código lo aprueba la coordinadora**: si trae sólo historias, registros, evidencia, memoria o
   documentación, la coordinadora da en nombre del dueño las dos aprobaciones del merge (el mensaje y la subida) y le
@@ -777,15 +781,16 @@ coordinadora lo muestra sin cambiarle una letra, con «Sí, aprobar» y «No».
   Rechazar sólo niega: nunca aprueba.
 - **Lo aprueba sólo la persona, con su click en la pestaña de la coordinadora.** La coordinadora nunca, ni por
   delegación (`approvals.delegated_signing` no lo cubre), ni con un «aprobado» escrito, ni tocando la lista.
-- **Sin respuesta en `coordination.permission_wait_minutes`** (10 sin valor, de 1 a 30), el gancho sale sin decidir: vuelve la
-  ventana de siempre en esa sesión, que queda en las «Trabadas» con el motivo, y un click tardío no aprueba nada. Lo
-  mismo si la coordinadora muere o deja de ser la designada mientras espera.
-- **No se lleva, y sale la ventana de siempre sin demora:** una pestaña abierta, otro modo (automático, sin permisos,
-  aceptar ediciones, plan), sin coordinadora confirmada y viva, sin `owner-wait`, la lista apagada, la propia
-  coordinadora, Codex, y en Windows un comando por PowerShell. En una sesión de fondo, el motivo queda en «Trabadas» y
-  en `gates.log`, así una espera de toda la noche no pasa sin rastro. Tampoco un pedido que no se puede mostrar entero (más de
-  1500 caracteres, caracteres que no se ven o se ven en blanco, un salto de línea en una ruta o una dirección, datos que
-  el cuadro no muestra): la sesión queda trabada con ese motivo.
+- **Una sesión de fondo nunca queda esperando un permiso.** Lo que el cuadro no resuelve se niega con su motivo y una
+  salida (hacerlo de otra forma, seguir sin él o pedírselo a la coordinadora), y queda en `gates.log` como
+  `negado-de-fondo`. Pasa sin respuesta en `coordination.permission_wait_minutes` (10 sin valor, de 1 a 30), si la
+  coordinadora muere o deja de ser la designada mientras espera, y cuando el pedido no se lleva: otro modo (automático,
+  sin permisos, aceptar ediciones, plan), sin coordinadora confirmada y viva, sin `owner-wait`, la lista apagada, en
+  Windows un comando por PowerShell, o un pedido que no se puede mostrar entero (más de 1500 caracteres, caracteres que
+  no se ven o se ven en blanco, un salto de línea en una ruta o una dirección, datos que el cuadro no muestra). Un click
+  tardío no aprueba nada.
+- **Sale la ventana de siempre** sólo donde hay quien la conteste o el gancho no actúa: una pestaña abierta, la propia
+  coordinadora, Codex y el gancho apagado.
   Las herramientas que lleva son Bash, PowerShell, Edit, Write, NotebookEdit y WebFetch; el cuadro de preguntas y el
   plan, nunca.
 - **Si la persona contesta en la ventana de la sesión** o la sesión se cierra, el gancho muere y su renglón se cierra
