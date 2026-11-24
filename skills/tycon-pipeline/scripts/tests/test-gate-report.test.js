@@ -86,8 +86,8 @@ function conRuta(texto, nombre, repoRun) {
   return texto.split('<REPO_RUN>').join(valor);
 }
 
-function armarCaso(nombre) {
-  const dir = path.join(FIXTURES, nombre);
+function armarCaso(nombre, fixtures = FIXTURES) {
+  const dir = path.join(fixtures, nombre);
   const c = JSON.parse(fs.readFileSync(path.join(dir, 'case.json'), 'utf8'));
   const tmp = tmpReal('tgr-caso-');
   const repo = path.join(tmp, 'repo');
@@ -1001,4 +1001,66 @@ test('T79 TestGate_WorkFiles_GoToTmpdir — los archivos de trabajo de la puerta
   const r = spawnSync('bash', [GATE, repo, '9.12'], { encoding: 'utf8', env, timeout: 180000 });
   assert.strictEqual(r.status, 0, r.stderr);
   assert.ok(fs.readdirSync(tmpdir).some((n) => /^test-gate-/.test(n)), `nada de la puerta en TMPDIR: ${fs.readdirSync(tmpdir)}`);
+});
+
+test('T80 TestGate_FailedTestNames_FromTrxAndJestJson — el informe dice el nombre de cada prueba que falló, del trx y del json de jest/vitest', () => {
+  // 🔴 rojo si: el informe sólo cuenta las fallas (totals.failed) y no dice cuáles son: quien lee la constancia no puede
+  //    saber si son las mismas que ya fallaban antes del cambio.
+  const NS = 'http://microsoft.com/schemas/VisualStudio/TeamTest/2010';
+  const trx = (resultados) => `<?xml version="1.0" encoding="utf-8"?>\n<TestRun xmlns="${NS}"><Results>${resultados}</Results>`
+    + '<ResultSummary outcome="Failed"><Counters total="3" executed="3" passed="1" failed="2" /></ResultSummary></TestRun>\n';
+  const fixtures = tmpReal('tgr-nombres-');
+  // .NET: dos ensamblados; uno con una falla y una que pasa, otro con una falla parametrizada y una que se cortó
+  const dn = path.join(fixtures, 'dotnet-nombres');
+  fs.cpSync(path.join(FIXTURES, 'dotnet-two-assemblies'), dn, { recursive: true });
+  fs.writeFileSync(path.join(dn, 'results', 'acme-a', 'test-gate.trx'), trx(
+    `<UnitTestResult testName="Acme.Orders.Tests.ImporterTests.Importa_Pedido" outcome="Failed" />`
+    + `<UnitTestResult testName="Acme.Orders.Tests.ImporterTests.Pasa" outcome="Passed" />`));
+  fs.writeFileSync(path.join(dn, 'results', 'acme-b', 'test-gate.trx'), trx(
+    `<UnitTestResult testName="Acme.Orders.Tests.PriceTests.Suma(a: 1, b: &quot;x&quot;)" outcome="Failed" />`
+    + `<UnitTestResult testName="Acme.Orders.Tests.PriceTests.SeCorta" outcome="Timeout" />`));
+  let caso = armarCaso('dotnet-nombres', fixtures);
+  let { rc, stderr, got } = correrInforme(caso, [process.execPath, REPORT], { TYCON_GUIDES_DIR: tmpReal('tgr-sin-org-') });
+  assert.strictEqual(rc, 0, stderr);
+  assert.deepStrictEqual(got.tests_result.failed_tests, [
+    { name: 'Acme.Orders.Tests.ImporterTests.Importa_Pedido' },
+    { name: 'Acme.Orders.Tests.PriceTests.Suma(a: 1, b: "x")' },
+    { name: 'Acme.Orders.Tests.PriceTests.SeCorta' },
+  ]);
+  // jest: el nombre completo, o los títulos de arriba con el de la prueba; el archivo relativo al proyecto; un archivo
+  // que no llegó a correr se nombra igual
+  const js = path.join(fixtures, 'jest-nombres');
+  fs.cpSync(path.join(FIXTURES, 'vitest-container'), js, { recursive: true });
+  fs.rmSync(path.join(js, 'results', 'vitest.json'));
+  fs.writeFileSync(path.join(js, 'results', 'jest.json'), JSON.stringify({
+    numTotalTests: 4, numPassedTests: 1, numFailedTests: 2, numPendingTests: 0, success: false,
+    testResults: [
+      { name: '<REPO_RUN>/src/price.test.ts', status: 'failed', assertionResults: [
+        { title: 'suma', fullName: 'precio suma', ancestorTitles: ['precio'], status: 'failed' },
+        { title: 'resta', ancestorTitles: ['precio', 'con descuento'], status: 'failed' },
+        { title: 'pasa', fullName: 'precio pasa', ancestorTitles: ['precio'], status: 'passed' }] },
+      { name: '<REPO_RUN>/src/cart.test.ts', status: 'failed', message: 'Cannot find module', assertionResults: [] },
+      { name: '<REPO_RUN>/src/ok.test.ts', status: 'passed', assertionResults: [{ title: 'ok', status: 'passed' }] },
+    ],
+  }));
+  const cj = JSON.parse(fs.readFileSync(path.join(js, 'case.json'), 'utf8'));
+  fs.writeFileSync(path.join(js, 'case.json'), JSON.stringify({ ...cj, runner: 'jest' }));
+  caso = armarCaso('jest-nombres', fixtures);
+  ({ rc, stderr, got } = correrInforme(caso, [process.execPath, REPORT], { TYCON_GUIDES_DIR: tmpReal('tgr-sin-org-') }));
+  assert.strictEqual(rc, 0, stderr);
+  assert.deepStrictEqual(got.tests_result.failed_tests, [
+    { file: 'src/price.test.ts', name: 'precio suma' },
+    { file: 'src/price.test.ts', name: 'precio con descuento resta' },
+    { file: 'src/cart.test.ts', name: null, did_not_run: true },
+  ]);
+  // sin fallas, el campo no está
+  assert.ok(!('failed_tests' in (JSON.parse(fs.readFileSync(path.join(FIXTURES, 'jest-after-commit', 'expected.json'), 'utf8')).tests_result || {})));
+});
+
+test('T80 …con muchas fallas, la lista se corta y dice cuántas más', () => {
+  const { nombresDeFallas } = require(REPORT);
+  const muchas = Array.from({ length: 130 }, (_, i) => ({ title: `p${i}`, status: 'failed' }));
+  const r = nombresDeFallas({ runner: 'jest', jestJson: { testResults: [{ name: '/r/a.test.js', status: 'failed', assertionResults: muchas }] }, repoRun: '/r' });
+  assert.strictEqual(r.failed_tests.length, 100);
+  assert.strictEqual(r.failed_tests_more, 30);
 });

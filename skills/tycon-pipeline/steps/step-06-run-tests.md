@@ -145,6 +145,12 @@ ahí, es heredada (`measured_on: "base"`); verde ahí, el rojo es del cambio y f
 por qué. Queda escrito en `base_check`. Topes: `TYCON_INHERITED_BASE_MAX` suites (3; 0 la apaga) y
 `TYCON_INHERITED_BASE_TIMEOUT_S` segundos por suite (600).
 
+Con .NET (y con otra herramienta que deja un trx) y con jest o vitest, `tests-result.json` dice además cuáles
+pruebas fallaron: `failed_tests`, con el nombre de cada una (y el archivo, en jest y vitest). Va hasta 100, y
+`failed_tests_more` dice cuántas más hubo. Un archivo de jest que no llegó a correr va con `did_not_run: true`. Sirve
+para comparar con las que ya fallaban antes del cambio. Hoy no perdona nada: en estos repos, una falla de antes
+todavía frena.
+
 Una repetición sola que sale verde también saca su falla de la constancia de la completa (`tests-result.json`, la que
 lee el revisor de pruebas, y su copia que viaja), si es de esa misma completa: cuando no queda ninguna otra causa de
 rojo, la constancia queda en verde con `suite_green_by: "repeticiones"`. Si la constancia es de otra corrida, de antes
