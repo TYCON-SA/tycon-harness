@@ -28,7 +28,7 @@ const TEXTOS = [
   'agents/tycon-retrospective-capturer.md', 'commands/tycon-dashboard.md', 'commands/tycon-vigilante.md',
   'skills/tycon-story-work-item/SKILL.md', 'skills/tycon-pipeline/steps/step-01-start.md', 'skills/tycon-pipeline/steps/close-work-item.md',
   'skills/tycon-merge-to-main/steps/step-09b-create-change-request.md', 'guides/ci-gate.md', 'guides/git-commit-conventions.md',
-  'guides/advisor-rules-catalog.md', 'guides/workflow-orchestration.md', 'guides/safety-guard.md', 'guides/produccion-con-permiso.md',
+  'guides/advisor-rules-catalog.md', 'guides/workflow-orchestration.md', 'guides/safety-guard.md', 'guides/production-with-permission.md',
   ...require('./lib/pieces-guide.js').piecesFiles(ROOT), 'guides/organization-site.md', 'guides/organization-site.en.md',
   'guides/maintaining/installation-mechanism.md', 'guides/maintaining/piezas-en-detalle.md', 'guides/maintaining/publicacion-espejo.md',
 ];
@@ -36,7 +36,7 @@ const TEXTOS = [
 // freno o el detector de publicación reconocen para frenar, o describen una pieza sólo de Azure DevOps que la mudanza
 // de lo sólo-ADO lleva a su conector, con su texto. Cada uno se reconoce por un pedazo del renglón y un archivo.
 const SE_QUEDAN = [
-  { file: 'guides/produccion-con-permiso.md', has: '`az rest` con el método delete', why: 'Azure en la nube (el freno de producción), no la plataforma del equipo' },
+  { file: 'guides/production-with-permission.md', has: '`az rest` con el método delete', why: 'Azure en la nube (el freno de producción), no la plataforma del equipo' },
   { file: 'guides/maintaining/piezas-en-detalle.md', has: '**Producción con permiso**', why: 'Azure en la nube (el freno de producción), no la plataforma del equipo' },
   { file: 'guides/safety-guard.md', has: '| **GIT-C5** |', why: 'el freno reconoce las formas de cada plataforma: es lo que frena' },
   { file: 'guides/maintaining/publicacion-espejo.md', has: '| La organización de Azure DevOps |', why: 'el detector de publicación reconoce las direcciones de Azure DevOps: es lo que frena' },

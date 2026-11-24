@@ -1603,8 +1603,10 @@ w4_defects_section() {
   h="$(new_home 'w4 espacio acentó')"; mkdir -p "$h/.claude" "$W/bin-az"; ln -s "$CLONE" "$h/.claude/tycon-claude-guides"
   printf '#!/bin/sh\n# az de mentira: sólo la lista de proyectos\ncase "$*" in *"project list"*) echo %s ;; *) exit 1 ;; esac\n' "'[{\"name\":\"Lab\"}]'" > "$W/bin-az/az"; chmod +x "$W/bin-az/az"
   PS1_ENTRY="$h/.claude/tycon-claude-guides/scripts/install-tycon-hooks.ps1" installer "$h" "PATH=$W/bin-az:$T/bin:$PATH" TYCON_NO_AZ_PROJECTS_REFRESH=0 TYCON_ADO_ORG=https://dev.azure.com/acme -- > "$W/x4.out" 2>&1; rc=$?
+  # el refresco corre de fondo: con la máquina cargada (la suite entera en CI) tarda más de 15 s; se espera hasta 60 s y
+  # se sigue apenas aparece la lista
   local cache="$h/.claude/.tycon-pipeline/az-projects.json" i=0
-  while [ ! -s "$cache" ] && [ "$i" -lt 30 ]; do sleep 0.5; i=$((i+1)); done
+  while [ ! -s "$cache" ] && [ "$i" -lt 120 ]; do sleep 0.5; i=$((i+1)); done
   if [ "$rc" -eq 0 ] && grep -q '"Lab"' "$cache" 2>/dev/null; then ok "(x) AC 36 · una carpeta de usuario con espacio y acento: el refresco de fondo recibe la ruta entera y deja la lista de proyectos"
   else no "(x) AC 36 · refresco de fondo con espacio y acento (rc $rc): $([ -s "$cache" ] && echo 'la lista salió sin el proyecto' || echo 'no dejó la lista') · $(grep -F 'failed-query-notice' "$NODE_CALLS" | tail -1 | cut -c1-200) · $(brief "$W/x4.out" 200)"; fi
   # (x4b) la subida de corridas al buzón: sin ella, las corridas de una

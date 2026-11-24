@@ -920,6 +920,20 @@ function leerTranscripcion(ruta) {
   return { lineas, ilegibles };
 }
 
+/**
+ * Si la persona eligió la opción que sugería el agente, en los cuadros que se abrieron en el tramo de la corrida (regla
+ * 12.4, suggestion-choices.js). La respuesta se busca en toda la conversación: puede llegar después del tramo. Sin el
+ * medidor, `no_medido`.
+ */
+function decisionesDe(todas, delTramo) {
+  try {
+    const { cuadros_detalle: _detalle, ...cuenta } = require('./suggestion-choices.js').contar(todas, delTramo);
+    return { estado: 'medido', ...cuenta };
+  } catch (e) {
+    return { estado: 'no_medido', motivo: `no pude contar las decisiones: ${e.code || e.message}` };
+  }
+}
+
 /** Índice de llamadas a herramienta con comando, y sus resultados. */
 function indexarComandos(lineas) {
   const usos = new Map();
@@ -1199,6 +1213,8 @@ function rescatarCorrida(volcado, opciones) {
       } else {
         dump.consumo = codex.bloque;
       }
+      // Codex no tiene cuadros de opciones: no hay de dónde contar si la persona eligió la sugerencia
+      if (dump.consumo && !dump.consumo.decisiones) dump.consumo.decisiones = { estado: 'no_medido', motivo: 'una sesión de Codex no tiene cuadros de opciones' };
       res.consumo = dump.consumo;
       res.no_persistido = escribirVolcado(volcado, dump);
       return res;
@@ -1218,7 +1234,8 @@ function rescatarCorrida(volcado, opciones) {
       return res;
     }
     // Sin la clave `tokens`, a propósito: un cero se lee como «esta corrida no consumió nada».
-    dump.consumo = { estado: ubi.estado, motivo: ubi.motivo, proveedor, medido_en: new Date().toISOString() };
+    dump.consumo = { estado: ubi.estado, motivo: ubi.motivo, proveedor, medido_en: new Date().toISOString(),
+      decisiones: { estado: 'no_medido', motivo: `sin la conversación: ${ubi.motivo}` } };
     res.consumo = dump.consumo;
     res.no_persistido = escribirVolcado(volcado, dump);
     return res;
@@ -1234,7 +1251,8 @@ function rescatarCorrida(volcado, opciones) {
       res.no_persistido = escribirVolcado(volcado, dump);
       return res;
     }
-    dump.consumo = { estado: 'no_medido', motivo: leido.error, proveedor, medido_en: new Date().toISOString() };
+    dump.consumo = { estado: 'no_medido', motivo: leido.error, proveedor, medido_en: new Date().toISOString(),
+      decisiones: { estado: 'no_medido', motivo: leido.error } };
     res.consumo = dump.consumo;
     res.no_persistido = escribirVolcado(volcado, dump);
     return res;
@@ -1263,6 +1281,8 @@ function rescatarCorrida(volcado, opciones) {
     const k = costo(c.paraCosto, precios(), { ahora, proveedor });
     if (k) c.costo = k;
   }
+  // sin nada de esta corrida en la conversación, las decisiones tampoco se miden: un cero diría «no hubo cuadros»
+  c.decisiones = c.estado === 'no_medido' ? { estado: 'no_medido', motivo: c.motivo } : decisionesDe(leido.lineas, delTramo.lineas);
   dump.consumo = c;
   res.consumo = c;
 

@@ -47,6 +47,7 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *                            con 2 si la lectura falla tres veces seguidas. De fondo no le quita a la coordinadora la
  *                            firma por delegación (scripts/lib/owner-window.js)
  *   keep-free --reason "<por qué>"
+ *   keep-idle --reason "<por qué>"   (por qué la coordinadora deja quietas a sesiones con trabajo liviano a mano)
  *                            la coordinadora anota por qué deja lugares libres: con lugar, memoria libre y una historia
  *                            lista, el freno del cierre del turno (scripts/hooks/coordination-fill-gate.js, `fillCheck`)
  *                            no la deja cerrar hasta que abra una sesión o deje este motivo, que vale 30 minutos y cubre
@@ -939,19 +940,13 @@ function coordinate(opts = {}) {
   if (d && d.error) return { code: 1, text: `No pude saber cuál es la coordinadora: ${d.error}.` };
   if (!d || !sid || d.sesion !== sid) {
     const marker = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
-    // sin el rol en el perfil, el click no tiene qué nombrar: se nombra con la frase
-    if (!r.firma) {
-      return { code: 1, text: [
-        `Esta sesión no es la ${rol.valor} de esta máquina${d ? ' (hay otra designada)' : ''}.`,
-        `Para que lo sea, el dueño escribe en este chat «Esta sesión es la ${rol.valor}», y después esta sesión corre:`,
-        `  node ${marker} designate-relay --approved-by '<el dueño>' --quote '<su frase, textual>'`,
-      ].join('\n') };
-    }
+    // con perfil o sin él se nombra con el click (sin el rol en el perfil, el de fábrica: ordena y no firma)
     return { code: 1, text: [
       `Esta sesión no es la ${rol.valor} de esta máquina${d ? ' (hay otra designada)' : ''}.`,
       `Para que lo sea, el dueño se lo pide a esta sesión con sus palabras, y esta sesión corre:`,
       `  node ${marker} designate-relay`,
       'El freno da un cuadro con «Sí» y «No» que dice qué sesión es y en qué carpeta: el dueño hace click y queda nombrada.',
+      ...(r.firma ? [] : ['Sin approvals.relay_session en el perfil del equipo, ordena la máquina y no firma: las firmas siguen yendo a la ventana del dueño.']),
       `Para dejar de serlo, la misma forma: node ${marker} withdraw-relay`,
       `Si el click no se puede comprobar, el comando dice por qué y da los respaldos (su terminal, o su frase con --quote).`,
     ].join('\n') };
@@ -1014,14 +1009,7 @@ function lostDesignation(opts, sid) {
   const rol = { valor: r.rol };
   if (titleIn(path.join(path.dirname(opts.transcript), `${d.sesion}.jsonl`)) !== opts.title) return null;
   const marker = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
-  // sin el rol en el perfil, el click no tiene qué nombrar: se recupera con la frase
-  if (!r.firma) {
-    return [
-      `Coordinación: esta sesión era la ${rol.valor} de esta máquina y dejó de serlo al limpiar la conversación: para el arnés es otra conversación.`,
-      `Decile a la persona que, si quiere que siga siéndolo, escriba en este chat «Esta sesión es la ${rol.valor}». La frase la escribe ella, nunca vos.`,
-      `Con su frase, corré node ${marker} designate-relay --approved-by '<la persona>' --quote '<su frase, textual>' y seguí lo que te diga.`,
-    ].join('\n');
-  }
+  // con perfil o sin él se recupera con el click
   return [
     `Coordinación: esta sesión era la ${rol.valor} de esta máquina y dejó de serlo al limpiar la conversación: para el arnés es otra conversación.`,
     `Decile a la persona que, si quiere que siga siéndolo, te lo pida con sus palabras. El pedido es de ella, nunca tuyo.`,
@@ -1971,6 +1959,8 @@ function deliveredLines(home, out) {
 
 // La memoria libre que pide una sesión nueva desde el aviso: la propuesta no sale debajo, ni sin poder medirla.
 const PROPOSE_MIN_FREE_PCT = 40;
+// Los minutos quieta desde los que el aviso le ofrece a una sesión el trabajo liviano, no sólo «cerrala»
+const QUIET_LIGHT_MIN = 10;
 const outsideNoticeFile = (home, sid) => path.join(coordinationDir(home), `outside-notice-${sid}.json`);
 
 /**
@@ -1978,18 +1968,43 @@ const outsideNoticeFile = (home, sid) => path.join(coordinationDir(home), `outsi
  * `stories` (lo mismo, con historia). «Sin dueño» es `quien` vacío o «Sin sesión», lo que el tablero escribe en una fila
  * que nadie tomó. Un tablero que no está o que no se lee devuelve `problem`: «no pude leer» no es «no hay nada».
  */
-function boardRows(home) {
+function boardRows(home, opts = {}) {
+  const list = listRows(home, opts);
+  const withList = (b) => ({ ...b, light: [...b.light, ...list.rows], listProblem: list.problem });
   const B = require('./office/board.js');
   let read;
-  try { read = B.readBoardRaw(stateDir(home)); } catch (e) { return { light: [], stories: [], problem: `el tablero (${label(e.message, 160)})` }; }
-  if (read.text === null) return { light: [], stories: [], problem: 'el tablero (no está)' };
+  try { read = B.readBoardRaw(stateDir(home)); } catch (e) { return withList({ light: [], stories: [], problem: `el tablero (${label(e.message, 160)})` }); }
+  if (read.text === null) return withList({ light: [], stories: [], problem: list.rows.length ? null : 'el tablero (no está)' });
   const free = (r) => { const q = typeof r.quien === 'string' ? r.quien.trim().toLowerCase() : ''; return !q || q === 'sin sesión'; };
   const open = B.orderRows(read.raw.pendientes.filter((r) => r && typeof r === 'object' && r.estado === 'sin-empezar' && free(r)));
   const hasStory = (r) => typeof r.historia === 'string' ? r.historia.trim() !== '' : r.historia != null;
-  return { light: open.filter((r) => !hasStory(r)), stories: open.filter(hasStory), problem: null };
+  return withList({ light: open.filter((r) => !hasStory(r)), stories: open.filter(hasStory), problem: null });
+}
+
+/**
+ * Los renglones abiertos de la lista de trabajo liviano (`coordination.light_list`, un markdown): cada viñeta de primer
+ * nivel que no está tachada (`- ~~…~~`), con su texto hasta el primer « · » o « — ». Sin la clave, ninguno; un archivo
+ * que no se lee lo dice en `problem`: «no pude leer» no es «no hay nada».
+ */
+function listRows(home, opts = {}) {
+  const r = recipe({ home, arnes: opts.arnes, env: opts.env });
+  const file = r.light_list && r.light_list.value;
+  if (!file) return { rows: [], problem: null };
+  let text;
+  try { text = fs.readFileSync(String(file), 'utf8'); } catch (e) { return { rows: [], problem: `la lista de trabajo liviano ${label(file, 120)} (${e.code || e.message})` }; }
+  const rows = [];
+  for (const l of text.split(/\r?\n/)) {
+    const m = /^[-*] +(.+)$/.exec(l);
+    if (!m || /^~~/.test(m[1].trim())) continue;
+    const titulo = m[1].replace(/\*\*|`/g, '').split(/ · | — /)[0].trim();
+    if (titulo) rows.push({ titulo, lista: true });
+  }
+  return { rows, problem: null };
 }
 // Una fila para el texto: su número y su título, o sólo el título (el número lo pone board.js al guardar).
 const rowText = (r) => { const title = `«${label(r.titulo || 'sin título', 80)}»`; return r.id ? `${label(r.id)} ${title}` : title; };
+// Las tres primeras filas livianas, y cuántas más hay
+const lightText = (rows) => `${rows.slice(0, 3).map(rowText).join(', ')}${rows.length > 3 ? ` (y ${rows.length - 3} más en la fila)` : ''}`;
 
 /**
  * ¿Salen los renglones de `field` en este turno? Salen cuando lo que dicen (`key`) cambió desde lo anotado para esta
@@ -2032,11 +2047,14 @@ function outsideWaitLines(opts, sid, s, working, cap, getBoard, problems) {
   if (!waiting.length) { noteSaid(opts, sid, 'outside', '', problems); return []; }
   const b = getBoard();
   if (b.problem) problems.push(b.problem);
+  if (b.listProblem) problems.push(b.listProblem);
   const light = b.light.slice(0, 3);
   const lines = waiting.map((w) => {
     const head = `Coordinación: ${w.session} ${require('../lib/owner-wait-card.js').waitPhrase(w.waitingFor)}${w.since == null ? '' : ` desde las ${hhmm(w.since)}`}`;
-    if (b.problem) return `${head}.`;
-    return light.length ? `${head}: dale algo liviano de la fila — ${light.map(rowText).join(', ')}.` : `${head}: la fila no tiene nada liviano: que siga vigilando su pedido.`;
+    // con algo liviano (del tablero o de la lista) se ofrece aunque el tablero no se lea: esperar no es estar ocupada
+    if (light.length) return `${head}: dale algo liviano de la fila — ${lightText(b.light)}.`;
+    if (b.problem || b.listProblem) return `${head}.`;
+    return `${head}: la fila no tiene nada liviano: que siga vigilando su pedido.`;
   });
   const story = b.stories[0];
   let proposal = '';
@@ -2139,7 +2157,20 @@ function capNotice(opts = {}) {
     const n = (k) => (c.partes[k] === null ? '?' : c.partes[k]);
     lines.push(`Coordinación: ${c.total} cosas esperan revisión de la persona (tope ${c.tope.value}): ${n('firmas')} firmas, ${n('terminados')} terminados, ${n('carpetas')} carpetas, ${n('pedidos')} pedidos (foto ${edadDeFoto(s.review.edadMs)}). Antes de abrir otra, cerrá o guardá algo.`);
   }
-  for (const q of s.quiet.filter((x) => x.sid !== sid)) lines.push(`Coordinación: ${q.session} está quieta hace ${q.minutes} min: cerrala o dale trabajo.`);
+  // el tablero (y la lista liviana) se lee una vez por turno, y sólo si algún renglón lo pide
+  let boardCache = null;
+  const getBoard = () => boardCache || (boardCache = boardRows(opts.home || require('os').homedir(), opts));
+  const quietas = s.quiet.filter((x) => x.sid !== sid);
+  if (quietas.length) {
+    // una quieta con trabajo liviano a mano recibe el trabajo, no sólo «cerrala»
+    let light = [];
+    try { light = getBoard().light; } catch (e) { problems.push(`la fila liviana (${e.code || e.message})`); }
+    for (const q of quietas) {
+      lines.push(light.length && q.minutes >= QUIET_LIGHT_MIN
+        ? `Coordinación: ${q.session} está quieta hace ${q.minutes} min: dale algo liviano — ${lightText(light)}.`
+        : `Coordinación: ${q.session} está quieta hace ${q.minutes} min: cerrala o dale trabajo.`);
+    }
+  }
   for (const a of (s.agentSilent || []).filter((x) => x.sid !== sid)) lines.push(`Coordinación: ${agentSilentLine(a)}. Preguntale qué espera (SendMessage), o que detenga ese agente y lo relance.`);
   for (const b of (s.busySilent || []).filter((x) => x.sid !== sid)) lines.push(`Coordinación: ${busySilentLine(b)} Preguntale si sigue (SendMessage); si no contesta, avisale al dueño.`);
   for (const b of (s.backgroundStalled || []).filter((x) => x.sid !== sid)) lines.push(`Coordinación: ${backgroundStalledLine(b)}: preguntale si la corta.`);
@@ -2190,9 +2221,6 @@ function capNotice(opts = {}) {
   for (const w of s.suiteWaiting.filter((x) => x.sid !== sid && x.worked).sort((a, b) => a.since - b.since)) {
     lines.push(`Coordinación: ${w.session} anotó a las ${hhmm(w.since)} que espera turno y trabajó después: preguntale si sigue esperando.`);
   }
-  // el tablero se lee una vez por turno, y sólo si algún renglón lo pide
-  let boardCache = null;
-  const getBoard = () => boardCache || (boardCache = boardRows(opts.home || require('os').homedir()));
   try { lines.push(...longQueueLines(opts, sid, s, queue, working, cap, getBoard, problems)); } catch (e) { problems.push(`la fila del portón larga (${e.code || e.message})`); }
   try { lines.push(...outsideWaitLines(opts, sid, s, working, cap, getBoard, problems)); } catch (e) { problems.push(`las que esperan algo de afuera (${e.code || e.message})`); }
   lines.push(...greenPrLines(opts, problems));
@@ -2358,6 +2386,147 @@ function fillCheck(opts = {}) {
   out.block = true;
   out.reason = fillReason(out);
   return out;
+}
+
+// ── Nadie quieto: las sesiones quietas o que esperan algo de afuera reciben trabajo liviano ──
+// Los minutos quieta o esperando desde los que el cierre del turno de la coordinadora pide darle trabajo o un motivo
+const IDLE_GATE_MIN = 10;
+const IDLE_REASON_TTL_MS = 30 * 60000;
+const idleReasonFile = (home) => path.join(coordinationDir(home), 'idle-reason.json');
+// lo que llega como mensaje a mitad de un turno sin empezar otro: el aviso de un freno del cierre, una tarea de fondo que
+// terminó, un recordatorio del sistema
+const MID_TURN_TEXT = /^(Stop hook feedback|<task-notification>|<system-reminder>)/;
+// los recordatorios que Claude Code pone adelante del mensaje de la persona: se sacan antes de mirar qué escribió
+const REMINDER_OPEN = '<system-reminder>';
+const REMINDER_CLOSE = '</system-reminder>';
+/**
+ * El texto sin sus recordatorios, en una pasada: cuenta aperturas y cierres, así un recordatorio adentro de otro sale
+ * entero, y una apertura sin cierre se come el resto del texto. Cada búsqueda se guarda hasta que la pasada la deja
+ * atrás: miles de aperturas sin cierre no vuelven a buscar el cierre desde cada una.
+ */
+function withoutReminders(text) {
+  const s = String(text);
+  let nextOpen = s.indexOf(REMINDER_OPEN);
+  let nextClose = s.indexOf(REMINDER_CLOSE);
+  const openFrom = (j) => { if (nextOpen !== -1 && nextOpen < j) nextOpen = s.indexOf(REMINDER_OPEN, j); return nextOpen; };
+  const closeFrom = (j) => { if (nextClose !== -1 && nextClose < j) nextClose = s.indexOf(REMINDER_CLOSE, j); return nextClose; };
+  let out = '';
+  let i = 0;
+  while (i < s.length) {
+    const o = openFrom(i);
+    if (o === -1) { out += s.slice(i); break; }
+    out += s.slice(i, o);
+    let depth = 1;
+    let j = o + REMINDER_OPEN.length;
+    while (depth > 0) {
+      const c = closeFrom(j);
+      if (c === -1) { j = s.length; break; }
+      const p = openFrom(j);
+      if (p !== -1 && p < c) { depth += 1; j = p + REMINDER_OPEN.length; } else { depth -= 1; j = c + REMINDER_CLOSE.length; }
+    }
+    i = j;
+  }
+  return out;
+}
+
+/**
+ * Los destinatarios de los mensajes que la coordinadora mandó en este turno (`SendMessage` después del último mensaje
+ * que no es resultado de una herramienta), leídos de su conversación. `{ to: Set, problem }`: sin poder leerla, problem.
+ */
+function messagedThisTurn(transcriptPath) {
+  if (!transcriptPath) return { to: new Set(), problem: 'no sé dónde está la conversación de la coordinadora' };
+  let lines;
+  try { lines = fs.readFileSync(String(transcriptPath), 'utf8').split('\n'); } catch (e) { return { to: new Set(), problem: `la conversación de la coordinadora (${e.code || e.message})` }; }
+  const to = new Set();
+  for (let i = lines.length - 1; i >= 0; i--) {
+    let r;
+    try { r = lines[i] ? JSON.parse(lines[i]) : null; } catch { continue; }
+    if (!r || !r.message || r.isSidechain) continue;
+    const c = r.message.content;
+    if (r.type === 'user') {
+      // empieza el turno un mensaje de la persona o de otra sesión; no lo empiezan un resultado de herramienta, ni lo
+      // que el arnés suma a mitad del turno (el aviso de un freno del cierre, una tarea de fondo que terminó, un recordatorio)
+      if (Array.isArray(c) && c.some((x) => x && x.type === 'tool_result')) continue;
+      if (r.isMeta) continue;
+      // lo empieza un bloque que no es texto (una imagen, un documento) o, bloque por bloque y sin los recordatorios, un
+      // texto que queda y no es de mitad de turno. Uno con sólo recordatorios o avisos no lo empieza. Sin texto, o con el
+      // texto vacío o en blanco, lo empieza, como antes de mirar los recordatorios
+      if (Array.isArray(c) && c.some((x) => x && typeof x === 'object' && x.type !== 'text')) break;
+      const textos = typeof c === 'string' ? [c] : Array.isArray(c) ? c.filter((x) => x && x.type === 'text').map((x) => String(x.text == null ? '' : x.text)) : [];
+      if (!textos.join('').trim()) break;
+      if (!textos.some((t) => { const real = withoutReminders(t).trim(); return real !== '' && !MID_TURN_TEXT.test(real); })) continue;
+      break;
+    }
+    if (r.type === 'assistant' && Array.isArray(c)) {
+      for (const x of c) if (x && x.type === 'tool_use' && x.name === 'SendMessage' && x.input && x.input.to) to.add(String(x.input.to).trim());
+    }
+  }
+  return { to, problem: null };
+}
+
+/**
+ * ¿La coordinadora deja quieta a una sesión con trabajo liviano a mano? `{ block, why, idle, light, reason, problems }`:
+ * frena si alguna otra sesión está quieta o esperando algo de afuera hace `IDLE_GATE_MIN` minutos o más, la fila liviana
+ * (el tablero y la lista) tiene algo, y en este turno la coordinadora no le mandó un mensaje. Un motivo vigente
+ * (`keep-idle`) que nombra a todas las quietas lo calla. Lo que no se puede leer nunca frena: va a `problems`.
+ */
+function idleCheck(opts = {}) {
+  const home = opts.home || require('os').homedir();
+  const now = opts.now == null ? Date.now() : Number(opts.now);
+  const sid = sessionOf(opts);
+  const out = { block: false, why: null, idle: [], light: [], reason: null, problems: [] };
+  const who = coordinatorRole(opts, sid);
+  if (!who) return { ...out, why: 'no-coordinadora' };
+  const s = status({ ...opts, home, now, noTranscripts: true, readMemory: MUTE_MEMORY });
+  if (who.problem || s.problems.length) return { ...out, why: 'estado-ilegible', problems: who.problem ? [who.problem, ...s.problems] : [...s.problems] };
+  const quietas = s.quiet.filter((q) => q.sid !== sid && q.minutes >= IDLE_GATE_MIN).map((q) => ({ sid: q.sid, session: q.session, what: `quieta hace ${q.minutes} min` }));
+  const esperan = (s.outsideWaiting || []).filter((w) => w.sid !== sid && w.since != null && now - w.since >= IDLE_GATE_MIN * 60000)
+    .map((w) => ({ sid: w.sid, session: w.session, what: `${require('../lib/owner-wait-card.js').waitPhrase(w.waitingFor)} desde las ${hhmm(w.since)}` }));
+  const seen = new Set();
+  out.idle = [...quietas, ...esperan].filter((x) => (seen.has(x.sid) ? false : seen.add(x.sid)));
+  if (!out.idle.length) return { ...out, why: 'nadie-quieto' };
+  const b = boardRows(home, opts);
+  if (b.listProblem) out.problems.push(b.listProblem);
+  out.light = b.light;
+  if (!out.light.length) return { ...out, why: 'sin-trabajo-liviano' };
+  const m = messagedThisTurn(opts.transcriptPath);
+  if (m.problem) return { ...out, why: 'conversacion-ilegible', problems: [...out.problems, m.problem] };
+  out.idle = out.idle.filter((x) => !m.to.has(x.session) && !m.to.has(String(x.sid)));
+  if (!out.idle.length) return { ...out, why: 'avisadas' };
+  if (!opts.ignoreReason) {
+    let rec = null;
+    try { rec = readJson(idleReasonFile(home), null); } catch (e) { out.problems.push(`el motivo de las quietas (${label(e.code || e.message, 120)}): lo cuento como no anotado`); }
+    if (rec && Number(rec.expiresAt) > now && Array.isArray(rec.sids) && out.idle.every((x) => rec.sids.includes(String(x.sid)))) return { ...out, why: 'motivo-vigente' };
+  }
+  out.block = true;
+  out.reason = [
+    `Coordinación: no dejes quieta a ninguna sesión con trabajo liviano a mano. Sin un mensaje tuyo en este turno: ${out.idle.map((x) => `${x.session} (${x.what})`).join(' · ')}.`,
+    `Lo liviano de la fila: ${lightText(out.light)}.`,
+    `Mandale algo por SendMessage, o anotá por qué no (por ejemplo «sin memoria» o «tope de máquina»): node "${__filename}" keep-idle --reason "<por qué>" (vale 30 min y queda anotado).`,
+  ].join('\n');
+  return out;
+}
+
+/** `keep-idle --reason`: anota por qué la coordinadora deja quietas a esas sesiones. `{ code, message }`, como keep-free. */
+function keepIdle(opts = {}) {
+  const reason = opts.reason;
+  if (typeof reason !== 'string' || !reason.trim()) return { code: 2, message: 'keep-idle pide --reason "<por qué no les das trabajo>".' };
+  if (FS.reasonLength(reason) < FS.MIN_REASON) return { code: 2, message: `El motivo tiene menos de ${FS.MIN_REASON} letras: decí por qué no les das trabajo.` };
+  const r = idleCheck({ ...opts, ignoreReason: true, transcriptPath: null });
+  if (r.why === 'no-coordinadora') return { code: 1, message: 'keep-idle lo corre la coordinadora designada: esta sesión no lo es.' };
+  if (r.why === 'estado-ilegible') return { code: 1, message: `No pude leer el estado de la máquina (${label(r.problems.join(' · '), 200)}).` };
+  const home = opts.home || require('os').homedir();
+  const now = opts.now == null ? Date.now() : Number(opts.now);
+  // sin conversación que leer, idleCheck se corta antes de filtrar: el motivo cubre a todas las quietas que hay
+  const s = status({ ...opts, home, now, noTranscripts: true, readMemory: MUTE_MEMORY });
+  const me = sessionOf(opts);
+  const sids = [...s.quiet.map((q) => q.sid), ...(s.outsideWaiting || []).map((w) => w.sid)].filter((x) => x && x !== me).map(String);
+  const rec = { at: now, expiresAt: now + IDLE_REASON_TTL_MS, sid: me, reason: FS.cleanReason(reason), sids: [...new Set(sids)] };
+  try {
+    writeJson(idleReasonFile(home), rec);
+    fs.appendFileSync(path.join(coordinationDir(home), 'idle-reason.jsonl'), `${JSON.stringify(rec)}\n`);
+  } catch (e) { return { code: 1, message: `No pude anotar el motivo (${label(e.code || e.message, 120)}).` }; }
+  return { code: 0, message: `Anotado: vale hasta las ${hhmm(new Date(rec.expiresAt).toISOString())} para ${rec.sids.length} sesión(es) quieta(s) o esperando; si aparece otra, el freno vuelve.` };
 }
 
 /**
@@ -3451,18 +3620,22 @@ function fullSessionName(home, sid, opts = {}) {
   return unreadable ? { problem: unreadable } : null;
 }
 
+// el nombre de `close` y `stop` se busca exacto entre las sesiones que hay, y nunca va a un comando: alcanza con que sea
+// una sola línea. La persona nombra sus sesiones con espacios («Coordinadora DemoTack»), y status las lista así
+const NOMBRE_BUSCADO_RE = /^[^\u0000-\u001f\u007f]{1,200}$/;
+
 /**
  * La sesión de `--name` para `close` y `stop`, con la regla de quién la puede tocar: la coordinadora designada o una
- * persona en su terminal, nunca otra sesión ni ella misma. Entre las del mismo nombre cuenta la única viva; sin vivas,
- * la única que haya. `w` trae las palabras del comando (`cmd`, `inf`, `hecho`, `tercera`, `reflexivo`).
- * `{ error }` o `{ home, sid, s, sessions }`.
+ * persona en su terminal, nunca otra sesión ni ella misma. `--name` es su nombre exacto, como lo lista status (con
+ * espacios si los tiene), o su id. Entre las del mismo nombre cuenta la única viva; sin vivas, la única que haya. `w` trae
+ * las palabras del comando (`cmd`, `inf`, `hecho`, `tercera`, `reflexivo`). `{ error }` o `{ home, sid, s, sessions }`.
  */
 function namedSession(opts, w) {
   const home = opts.home || require('os').homedir();
   const env = opts.env || process.env;
   const name = opts.name;
   const nada = `no ${w.hecho} nada.`;
-  if (!name || !NAME_RE.test(String(name))) return { error: `${w.cmd} va con --name <el nombre de la sesión>: ${nada}` };
+  if (typeof name !== 'string' || !name.trim() || !NOMBRE_BUSCADO_RE.test(name)) return { error: `${w.cmd} va con --name <el nombre de la sesión, o su id>: ${nada}` };
   if (isCodex(env) && !opts.launcher) return { error: `Codex no tiene sesiones de fondo que ${w.inf}: ${nada}` };
   // el nombre lo escribe la coordinadora o una persona en su terminal: una sesión de trabajo no toca a otra
   const caller = sessionOf({ ...opts, env });
@@ -3476,7 +3649,11 @@ function namedSession(opts, w) {
   // que anotó la sesión, porque dos nombres que empiezan igual quedan iguales en la lista
   const listed = listedName(name);
   const found = [];
-  for (const [sid, s] of sessions.entries()) {
+  // por su id: la sesión de ese id; si otra sesión se llama así, es ambiguo y no se toca ninguna
+  if (sessions.has(name)) {
+    if ([...sessions.entries()].some(([sid, s]) => sid !== name && s.name === listed)) return { error: `Hay más de una sesión «${name}» (un id y un nombre): ${nada}` };
+    found.push([name, sessions.get(name)]);
+  } else for (const [sid, s] of sessions.entries()) {
     if (s.name !== listed) continue;
     if (listed === name) { found.push([sid, s]); continue; }
     const full = fullSessionName(home, sid, opts);
@@ -3833,7 +4010,12 @@ function main(argv) {
     (r.code === 0 ? process.stdout : process.stderr).write(`${r.code === 0 ? '' : 'coordination.js: '}${r.message}\n`);
     return r.code;
   }
-  process.stderr.write('uso: coordination.js status [--json] | coordinate | signature --kind <tema> --title <qué> --cwd <carpeta> -- <comando...> | signature-done <id> | owner-next [--after <id>] | owner-reject <id> | open [--name <n>|auto] (--cwd <carpeta> | --repo <repo> [--branch <rama>]) -- <encargo> | close --name <n> | stop --name <n> | owner-wait | pr-wait --repo <org/repo> --number <n> [--interval <s>] | keep-free --reason "<por qué>"\n');
+  if (cmd === 'keep-idle') {
+    const r = keepIdle({ ...base, reason: f.reason });
+    (r.code === 0 ? process.stdout : process.stderr).write(`${r.code === 0 ? '' : 'coordination.js: '}${r.message}\n`);
+    return r.code;
+  }
+  process.stderr.write('uso: coordination.js status [--json] | coordinate | signature --kind <tema> --title <qué> --cwd <carpeta> -- <comando...> | signature-done <id> | owner-next [--after <id>] | owner-reject <id> | open [--name <n>|auto] (--cwd <carpeta> | --repo <repo> [--branch <rama>]) -- <encargo> | close --name <n> | stop --name <n> | owner-wait | pr-wait --repo <org/repo> --number <n> [--interval <s>] | keep-free --reason "<por qué>" | keep-idle --reason "<por qué>"\n');
   return 2;
 }
 
@@ -3843,6 +4025,6 @@ if (require.main === module) {
   else process.exitCode = code;
 }
 
-module.exports = { LAUNCH_TIMEOUT_MS, relaunch, STATUS_READS, flags, plansWaiting, planWaitLines, ownerNextPlans, planAwayLines, reviewAskLines, questionRelays, questionRelay, questionRelayLines, questionRelaysFile, planRequestLines, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, launchedMatches, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, ownerWaitAlive, permissionTurn, relayNoteOf, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN, reviewVerdict, fullSessionName, ownerReplyLines,
+module.exports = { LAUNCH_TIMEOUT_MS, relaunch, STATUS_READS, flags, idleCheck, keepIdle, messagedThisTurn, IDLE_GATE_MIN, plansWaiting, planWaitLines, ownerNextPlans, planAwayLines, reviewAskLines, questionRelays, questionRelay, questionRelayLines, questionRelaysFile, planRequestLines, siblingCopy, heavyPassesInFlight, passFinished, launchedFile, readLaunched, noteLaunched, pruneLaunched, launchedBy, launchedMatches, status, statusText, readPending, capNotice, fillCheck, keepFree, recordOwnerReply, guideNotice, listNotice, ownerNextText, ownerWaitsNote, readOwnerWaits, readAnnounced, OWNER_WAIT_SLOW_MS, liveCoordinator, adversarialTurn, coordinate, signature, signatureBody, signatureDone, open, close, capCheck, noteOpened, callerPermissionMode, coordinationDir, stop, ownerWait, ownerWaitOnce, ownerWaitAlive, permissionTurn, relayNoteOf, prWait, claudeLauncher, resolveLauncher, launchArgv, ORIGIN, reviewVerdict, fullSessionName, ownerReplyLines,
   // la oficina cuenta las historias en curso con las mismas ejecuciones y las mismas sesiones vivas que la coordinadora
   stoppedRuns, markersBySid, codexThreads, CODEX_IDLE_MS };
