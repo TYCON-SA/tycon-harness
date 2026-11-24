@@ -1372,6 +1372,16 @@
     },
     {
       "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/ci-red-lane.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/replaced-run-close.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/main-check.test.js",
       "requiere": []
     },

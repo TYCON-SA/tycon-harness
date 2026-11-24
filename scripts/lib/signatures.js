@@ -55,6 +55,10 @@ const MANT = Object.freeze(['mant']);
 const TOPE = 8;
 const ADHOC = 'adhoc-lane';
 const SOBRE_CUPO = 'adhoc-lane:sobre-cupo';
+// el arreglo de un rojo de CI de un pedido abierto y ya revisado: atado al pedido y al control que falló, sin plan ni
+// revisores, con un tope propio de archivos
+const CI_ROJO = 'adhoc-lane:ci-rojo';
+const TOPE_CI_ROJO = 3;
 // cerrar una ejecución perdida que la partición de su historia dejó sin objeto: la forma de rutina de `lost-run`
 const LOST_RUN_PARTICION = 'lost-run:particion';
 
@@ -70,6 +74,7 @@ const LEVELS_EN = Object.freeze({
   'refresh-after-main': 're-sign the controls after pulling main, with no change of your own',
   'save:sensible': 'save when a commit touches something sensitive',
   'adhoc-lane:sobre-cupo': 'open a quick fix that goes past the file limit of the short path, though a story is recommended (only implementation files count, not tests or guides)',
+  'adhoc-lane:ci-rojo': 'open the fix of a CI red on an open pull request, with no plan or reviewers (up to 3 implementation files; the failed control and the touched tests run before saving)',
   'adhoc-lane:datos': 'let a quick fix that changes where a piece of data comes from, or who can see it, go through without a story (only the owner\'s click)',
   'adhoc-lane:guardado-ajeno': 'let a save that is not part of a quick fix waiting for its reviewers go through once, with what it saves in view (a person\'s click or terminal, or the coordinator if the profile delegates it)',
   'autonomy-resume': 'put a run the closing control stopped back into autonomous mode, with the rounds reset (only the owner\'s click or terminal)',
@@ -113,6 +118,7 @@ const LEVELS = Object.freeze([
   ['save', 1, AMBOS, 'guardar: commit, push y pull requests, si ningún commit toca algo de lo sensible'],
   ['browser-test:prepare', 1, AMBOS, 'preparar la prueba con navegador'],
   ['adhoc-lane', 1, AMBOS, 'abrir un arreglo rápido sin historia, dentro del cupo'],
+  ['adhoc-lane:ci-rojo', 1, AMBOS, 'abrir el arreglo de un rojo de CI de un pull request abierto, sin plan ni revisores (hasta 3 archivos, pruebas incluidas; antes de guardar corren los controles de CI en local y las pruebas tocadas)'],
   ['compare-waiver', 1, AMBOS, 'eximir de la comparación con main a un comando que la historia modifica (delegable sólo si el perfil la suma a approvals.delegated_signing)'],
   ['refresh-after-main', 1, MANT, 'refirmar los controles tras traer main, sin cambio propio'],
   ['lost-run:particion', 1, AMBOS, 'cerrar una ejecución perdida que la partición de su historia en tandas dejó sin objeto (delegable sólo si el perfil la suma a approvals.delegated_signing)'],
@@ -277,6 +283,7 @@ const SI_SALE_MAL = Object.freeze({
   'pending-approval': 'queda un pendiente de más en la lista; se cierra a mano',
   'adhoc-lane': 'la sesión escribe código sin historia; se cierra el arreglo, y nada entra a main sin revisión',
   'adhoc-lane:sobre-cupo': 'un cambio grande entra sin el plan ni las pruebas de una historia; se cierra el arreglo, y nada entra a main sin revisión',
+  'adhoc-lane:ci-rojo': 'un arreglo chico entra al pedido sin otra vuelta de revisores; lo frena el control que había fallado, y se revierte con otro commit',
   'adhoc-lane:datos': 'un cambio de permisos o de la fuente de un dato llega a producción sin que nadie revise quién lo ve, y una persona sin permiso puede quedar trabada',
   'adhoc-lane:guardado-ajeno': 'se guarda una vez algo que no es del camino corto mientras el carril espera sus revisores; si en verdad era del carril, entra sin ellos y se revierte con otro commit',
   'autonomy-resume': 'la sesión vuelve a iterar sola sobre un rojo que quizá necesitaba otra mirada',
@@ -308,6 +315,7 @@ const APPROVES_EN = {
   'pending-approval': 'open a new item in the pending list',
   'adhoc-lane': "open a session's quick fix, with no story",
   'adhoc-lane:sobre-cupo': 'open a quick fix that goes past the file limit of the short path, though a story is recommended',
+  'adhoc-lane:ci-rojo': 'open the fix of a CI red on an open pull request, with no plan or reviewers',
   'adhoc-lane:datos': 'let a quick fix that changes where a piece of data comes from, or who can see it, go through without a story',
   'adhoc-lane:guardado-ajeno': 'let a save that is not part of a quick fix waiting for its reviewers go through once, with what it saves in view',
   'autonomy-resume': 'put a run the closing control stopped back into autonomous mode, with the rounds reset',
@@ -379,6 +387,10 @@ const SIGNATURES = Object.freeze([
     // como el freno de los datos: sólo el click del dueño, en la pestaña que trabaja o en la de la coordinadora vigente, o su
     // terminal; nunca la delegación, un «aprobado» escrito ni la ventana de permiso
     clickDelDueno: true, descripciones: Object.freeze(['La sesión sigue con el arreglo. Pasa el tope de archivos del camino corto: lo elegís vos, en lugar de una historia.', 'No se abre el arreglo, y el trabajo va por una historia.']) },
+  // el arreglo del rojo de CI de un pedido abierto: el dueño en la ventana, su click o su terminal, o la coordinadora si el
+  // perfil lo delega
+  { id: CI_ROJO, approves: 'abrir el arreglo de un rojo de CI de un pull request abierto, sin plan ni revisores', command: 'marker.js adhoc set --ci-red <pedido> --check <control> --reason <motivo> --data sin-cambio --file <ruta>', otherSession: 'yes',
+    terminal: 'marker.js adhoc set --ci-red <pedido> --check <control> --reason "<motivo>" --data sin-cambio --file <ruta> --terminal --for-session <id>' },
   // dejar pasar el freno de los datos: sólo el click del dueño, en la pestaña que trabaja o en la de la coordinadora vigente
   // (que lo pide para esa sesión con --for-session); nunca un «aprobado» escrito, la delegación ni la ventana de permiso
   { id: 'adhoc-lane:datos', approves: 'dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia', command: 'marker.js adhoc allow-data-change --changed <qué cambió> --recommends pasar --why <por qué>', otherSession: otraSinDelegar('adhoc-lane:datos'),
@@ -477,6 +489,9 @@ const SENSITIVE = Object.freeze([
   'skills/tycon-pipeline/scripts/smoke-run.sh', 'skills/tycon-pipeline/scripts/lib/evidence-vs-commit.js',
   'skills/tycon-pipeline/scripts/lib/commit-story.js', 'skills/tycon-pipeline/scripts/lib/story-requests.js',
   'skills/tycon-pipeline/scripts/lib/nightly-coverage.js',
+  // el arreglo de un rojo de CI sin plan ni revisores, el cierre de una ejecución reemplazada sin firma y lo que una vuelta
+  // de arreglo deja a seguimiento: los cargan marker.js y pipeline.js
+  'skills/tycon-pipeline/scripts/lib/ci-red-lane.js', 'skills/tycon-pipeline/scripts/lib/replaced-run.js', 'skills/tycon-pipeline/scripts/lib/fix-scope.js',
   // lo que decide si el dueño se entera
   'scripts/lib/notify.js', 'scripts/lib/notify-mail.js', 'scripts/lib/tycon-*-notify.sh',
   'scripts/lib/integrations.js', 'scripts/lib/tycon-config.js',
@@ -515,6 +530,13 @@ function firmaDelPedidoAdhoc(args = [], tope = TOPE, { cwd = null } = {}) {
   };
   if (String(a[0] || '').startsWith('--')) {
     if (a.some((w) => w.startsWith('--max-files=') || w.startsWith('--file='))) return SOBRE_CUPO;
+    // el arreglo de un rojo de CI: su propia firma, con su tope; un cupo pedido o más archivos que el tope, pruebas
+    // incluidas, no es esta vía
+    if (a.includes('--ci-red') || a.some((w) => w.startsWith('--ci-red='))) {
+      if (a.includes('--max-files') || a.some((w) => w.startsWith('--ci-red='))) return SOBRE_CUPO;
+      const deLaLista = a.flatMap((w, i) => (w === '--file' ? [a[i + 1]] : []));
+      return deLaLista.length <= TOPE_CI_ROJO ? CI_ROJO : SOBRE_CUPO;
+    }
     const lista = a.flatMap((w, i) => (w === '--file' ? [a[i + 1]] : []));
     if (lista.length && !dentro(codigoDe(lista))) return SOBRE_CUPO;
     const i = a.indexOf('--max-files');
@@ -587,4 +609,4 @@ function delegable(id, raised) {
 // Lo que no tiene vuelta atrás: sólo se firma en la terminal de la persona, nunca con un click ni con un «aprobado»
 const ONLY_IN_TERMINAL = Object.freeze(['escape:TYCON_SAFETY_OFF', 'escape:TYCON_PROD_LINT', 'emergency']);
 
-module.exports = { TOPE, SOBRE_CUPO, LOST_RUN_PARTICION, firmaDelPedidoAdhoc, SIGNATURES, LEVELS, GROUPS, FIRMAS_DE_ARCHIVO, SENSITIVE, REQUIERE_SENSIBLE, NOT_DELEGATED, DELEGABLE_EXCEPTIONS, PARA_OTRA_SESION_SIN_DELEGAR, DELEGABLE_FORMS, PLAN_DELICADO, SAVE_SENSIBLE, ONLY_IN_TERMINAL, ids, groupNames, formNames, isId, isForm, expand, effectiveLevel, delegatedLevel, delegable };
+module.exports = { TOPE, SOBRE_CUPO, CI_ROJO, TOPE_CI_ROJO, LOST_RUN_PARTICION, firmaDelPedidoAdhoc, SIGNATURES, LEVELS, GROUPS, FIRMAS_DE_ARCHIVO, SENSITIVE, REQUIERE_SENSIBLE, NOT_DELEGATED, DELEGABLE_EXCEPTIONS, PARA_OTRA_SESION_SIN_DELEGAR, DELEGABLE_FORMS, PLAN_DELICADO, SAVE_SENSIBLE, ONLY_IN_TERMINAL, ids, groupNames, formNames, isId, isForm, expand, effectiveLevel, delegatedLevel, delegable };

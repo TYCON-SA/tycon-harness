@@ -199,6 +199,8 @@ test('Wait_Red_NotReady (T10) @story-8.322 @ac-9', async () => {
   assert.strictEqual(t.split('\n')[0], 'Historia 2.4: un pedido tiene la compilación en rojo. No está listo: arreglá el rojo y volvé a empujar.');
   assert.match(t, /· #6910 de backend: compilación en ROJO \(Backend CI · Package\)/);
   assert.doesNotMatch(t, /listos para aprobar/);
+  // y el camino corto, con el pedido puesto (8.322 B, AC 9)
+  assert.match(t.split('\n').pop(), /^Un rojo chico se arregla sin otra corrida: marker\.js adhoc set --ci-red 6910 --check "<el control que falló>"/);
   // GitHub: la conclusión «failure» de un control
   assert.strictEqual(espera.etapaQueFallo(lectura('failed', [{ pipeline: null, name: 'manifest', result: 'failure' }])), 'manifest');
 });
