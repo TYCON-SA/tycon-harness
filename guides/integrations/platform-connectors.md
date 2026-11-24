@@ -48,6 +48,7 @@ operación sin pedirle nada: `node scripts/lib/platform/platform.js choose <oper
   "operations": ["work-item.create", "work-item.read", "change-request.open", "ci.read"],
   "capabilities": { "completedHours": "comment", "estimate": "comment", "workItemType": "label", "autoComplete": "auto-or-wait" },
   "rawCommands": ["forge pr create", "forge issue close"],
+  "changeRequestCommands": ["forge pr create"],
   "settings": [{ "key": "acme-forge.token", "type": "secreto", "env": "TYCON_ACME_FORGE_TOKEN" }]
 }
 ```
@@ -69,6 +70,9 @@ operación sin pedirle nada: `node scripts/lib/platform/platform.js choose <oper
 - `rawCommands` son los comandos crudos de la plataforma que no se corren a mano porque hay una operación que los
   reemplaza (crear un pedido, cerrar uno). Los frenos los leen de acá (`platform.js raw-command '<comando>'`): un
   conector nuevo no toca ningún freno, declara sus comandos.
+- `changeRequestCommands` son los de `rawCommands` que crean o juntan un pedido de cambio, con sus alias. El freno de
+  guardar los pasa por la ventana de la persona dentro de una ejecución, como un `git push` a una rama compartida. Cada
+  uno tiene que estar en `rawCommands`: si no, el lector frena el manifiesto.
 - `settings` declara sus claves de configuración; las de `type: "secreto"` no se escriben nunca en el perfil del equipo:
   cada persona las carga en su máquina.
 

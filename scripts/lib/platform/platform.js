@@ -446,9 +446,10 @@ async function conformance(name, opts = {}) {
 }
 
 /**
- * Los comandos crudos que declaran los conectores de plataforma en `rawCommands`: `[{ name, words }]`, con las palabras
- * del comando (`['gh', 'pr', 'create']`). Lanza si alguna integración no se puede leer: sin ella no se sabe qué comandos
- * declara.
+ * Los comandos crudos que declaran los conectores de plataforma en `rawCommands`: `[{ name, words, changeRequest }]`, con
+ * las palabras del comando (`['gh', 'pr', 'create']`) y `changeRequest` si el conector lo declara además en
+ * `changeRequestCommands` (crea o junta un pedido). Lanza si alguna integración no se puede leer: sin ella no se sabe qué
+ * comandos declara.
  */
 function rawCommands(opts = {}) {
   const leidas = INT.listManifests({ env: opts.env || process.env });
@@ -456,7 +457,10 @@ function rawCommands(opts = {}) {
     throw new Error(`no pude leer ${leidas.problems.map((p) => `${p.name} (${p.reasons.join('; ')})`).join(' · ')}`);
   }
   return leidas.manifests.filter((m) => m.kind === 'platform')
-    .flatMap((m) => (m.rawCommands || []).map((c) => ({ name: m.name, words: c.trim().split(/\s+/) })));
+    .flatMap((m) => {
+      const pedidos = new Set((m.changeRequestCommands || []).map((c) => c.trim()));
+      return (m.rawCommands || []).map((c) => ({ name: m.name, words: c.trim().split(/\s+/), changeRequest: pedidos.has(c.trim()) }));
+    });
 }
 
 /**

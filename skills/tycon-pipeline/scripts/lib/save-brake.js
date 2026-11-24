@@ -739,17 +739,19 @@ function nombraUnGuardado(ps) {
 }
 
 // Los comandos de la plataforma, de lo que declaran sus conectores (`rawCommands`): `{ programas, pedidos }`, los
-// programas que nombran y, como listas de palabras, los pedidos que guardan (los que dicen `pr` y crean o mergean,
-// también con el alias `new`). null si alguna integración no se puede leer.
+// programas que nombran y, como listas de palabras, los pedidos que guardan: los que el conector declara que crean o
+// juntan un pedido (`changeRequestCommands`), y además los que dicen `pr` y crean o mergean (también con el alias
+// `new`), para un conector que no los declara. null si alguna integración no se puede leer.
 function deLaPlataforma() {
   let dichos;
   try {
     dichos = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'platform', 'platform.js')).rawCommands();
   } catch (_) { return null; }
-  const ws = dichos.map((c) => c.words.map(normal));
+  const ws = dichos.map((c) => ({ words: c.words.map(normal), changeRequest: c.changeRequest === true }));
   return {
-    programas: new Set(ws.map((w) => w[0])),
-    pedidos: ws.filter((w) => w.length > 2 && w.includes('pr') && /^(create|new|merge)$/.test(w[w.length - 1])),
+    programas: new Set(ws.map((c) => c.words[0])),
+    pedidos: ws.filter((c) => c.changeRequest || (c.words.length > 2 && c.words.includes('pr') && /^(create|new|merge)$/.test(c.words[c.words.length - 1])))
+      .map((c) => c.words),
   };
 }
 

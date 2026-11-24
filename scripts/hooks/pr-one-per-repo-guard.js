@@ -105,10 +105,12 @@ function pedidosDeGitHub(comando, cwd) {
       const i = t.findIndex((x) => /(^|[\\/])platform\.js$/.test(x));
       if (i < 0 || !(t[i + 1] === 'change-request.open' || (t[i + 1] === 'change-request' && t[i + 2] === 'open'))) continue;
       const valor = (n) => { const k = t.indexOf(n, i); return k >= 0 ? t[k + 1] : undefined; };
-      // el repo se lee como lo lee la capa: `org/repo`, `grupo/sub/repo` (un repo en un namespace) o su identidad en JSON
-      const P = require('../lib/platform/platform.js');
+      // el repo se lee como lo lee la capa: `org/repo`, `grupo/sub/repo` (un repo en un namespace) o su identidad en JSON.
+      // Si la capa no carga, el pedido va sin repo: la revisión dice que no verificó, y sigue con los de Azure de la línea
+      let P = null;
+      try { P = require('../lib/platform/platform.js'); } catch { P = null; }
       const crudo = valor('--repo');
-      const leido = crudo ? P.repoOf(crudo) : null;
+      const leido = crudo && P ? P.repoOf(crudo) : null;
       const repo = leido && typeof leido === 'object' && typeof leido.repo === 'string' && (typeof leido.org === 'string' || typeof leido.namespace === 'string') ? leido : null;
       let args = {};
       const a = valor('--args');

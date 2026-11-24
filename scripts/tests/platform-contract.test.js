@@ -753,3 +753,31 @@ test('T123 PrRead_GivesTheSourceBranch — leer un pedido devuelve su rama de or
   assert.strictEqual(await az(62), 'dev');
   assert.strictEqual(await az(63), null, 'algo que no es una rama, null');
 });
+
+// 🔴 Falla con: un conector cuyos comandos crudos de pedido (crear o juntar) el freno de guardar no lee como pedido —
+// salen de una corrida sin la ventana de la persona—, o un manifiesto que declara como pedido un comando que no está en
+// su lista de comandos crudos.
+test('T124 ChangeRequestCommands_SaveBrakeAsks — cada comando de pedido que declara un conector pasa por el freno de guardar', () => {
+  const freno = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'save-brake.js'));
+  const leidas = INT.listManifests();
+  assert.deepStrictEqual(leidas.problems, []);
+  const plataformas = leidas.manifests.filter((m) => m.kind === 'platform');
+  assert.ok(plataformas.length >= 2, 'hay conectores de plataforma que medir');
+  for (const m of plataformas) {
+    assert.ok(m.changeRequestCommands.length, `${m.name}: declara qué comandos crudos crean o juntan un pedido`);
+    for (const c of m.changeRequestCommands) {
+      const leidos = freno.comandosQueGuardan(`${c} --title x`, os.tmpdir()).filter((x) => x.tipo === 'pr');
+      assert.deepStrictEqual(leidos.map((x) => x.forma), [c.trim()], `${m.name}: «${c}» pasa por la ventana`);
+    }
+  }
+  // un comando de pedido que no está entre los crudos es un manifiesto roto
+  const dir = tmp('int-');
+  const origen = plataformas[0];
+  copiar(origen.dir, path.join(dir, origen.name));
+  const archivo = path.join(dir, origen.name, 'integration.json');
+  const man = JSON.parse(fs.readFileSync(archivo, 'utf8'));
+  man.changeRequestCommands = [...man.changeRequestCommands, 'otro pedido create'];
+  fs.writeFileSync(archivo, JSON.stringify(man));
+  const rota = INT.listManifests({ dir });
+  assert.ok(rota.problems.some((p) => p.name === origen.name && p.reasons.some((r) => /changeRequestCommands.*otro pedido create.*no está en «rawCommands»/.test(r))), JSON.stringify(rota.problems));
+});

@@ -505,7 +505,8 @@ test('T18 Core_Neutrality_StillGreen @ac-11', () => {
   for (const t of ['glab mr create --fill', 'glab api projects/1', 'glab issue close 3', 'https://gitlab.com/grupo/repo', 'un host /api/v4/projects']) {
     assert.ok(manifiesto.hardSignals.some((s) => new RegExp(s).test(t)), `ninguna señal declarada reconoce «${t}»`);
   }
-  // los frenos reconocen los comandos crudos del conector, también por sus alias
+  // la capa reconoce los comandos crudos del conector, también por sus alias (que el freno de guardar los pase por la
+  // ventana lo mide T19)
   for (const cmd of ['glab mr create --fill', 'glab mr new', 'glab mr merge 5', 'glab mr accept 5', 'glab issue create -t x', 'glab issue new -t x', 'glab issue close 3']) {
     assert.strictEqual(P().rawCommandOf(cmd), 'gitlab', cmd);
   }
@@ -513,6 +514,19 @@ test('T18 Core_Neutrality_StillGreen @ac-11', () => {
   // ninguna casa hoy con una línea del núcleo: la lista de permitidos no nombra a GitLab
   const lista = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'ci', 'neutrality-allowlist.json'), 'utf8'));
   assert.ok(!JSON.stringify(lista.entries).toLowerCase().includes('gitlab'));
+});
+
+// 🔴 Falla con: un pedido de GitLab escrito a mano (`glab mr create`, `glab mr merge`) que el freno de guardar no lee
+// como pedido, y que en una corrida sale sin pasar por la ventana de la persona; o un issue o una lectura que sí pasa
+test('T19 Gitlab_RawChangeRequest_SaveBrakeAsks @ac-11', () => {
+  const freno = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'save-brake.js'));
+  const pedidos = (cmd) => freno.comandosQueGuardan(cmd, os.tmpdir()).filter((c) => c.tipo === 'pr');
+  for (const [cmd, forma] of [['glab mr create --fill', 'glab mr create'], ['glab mr new -t x', 'glab mr new'], ['glab mr merge 5', 'glab mr merge'], ['glab mr accept 5', 'glab mr accept'], ['glab -R grupo/repo mr create --fill', 'glab mr create']]) {
+    assert.deepStrictEqual(pedidos(cmd).map((c) => c.forma), [forma], cmd);
+  }
+  for (const cmd of ['glab issue create -t x', 'glab issue close 3', 'glab mr view 5', 'glab mr list']) {
+    assert.deepStrictEqual(pedidos(cmd), [], `${cmd}: no crea ni junta un pedido`);
+  }
 });
 
 test('T20 Gitlab_NestedNamespace_EncodedPath @ac-13', async () => {
