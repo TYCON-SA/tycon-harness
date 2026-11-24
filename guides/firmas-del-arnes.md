@@ -139,7 +139,7 @@ delega nada.
 | Se delega, si el perfil la nombra | Cómo la firma la coordinadora |
 |---|---|
 | `save:sensible`: guardar cuando un commit toca algo de lo sensible | con `save` (`approve-save --for-session`), con la historia limpia y el aviso entregado al dueño |
-| `runtime-waiver`, `manual-test`, `critical-waiver`, `lost-run`, `escape:force-manual`, `escape:trust-ran` (y `extra-round`, que ya era rutina) | con el comando de la firma y `--for-session <sesión>`; si la sesión la pide para sí, el freno la desvía a la coordinadora |
+| `manual-test`, `critical-waiver`, `lost-run`, `escape:force-manual`, `escape:trust-ran` (y `extra-round`, que ya era rutina) | con el comando de la firma y `--for-session <sesión>`; si la sesión la pide para sí, el freno la desvía a la coordinadora |
 | `escape:ALLOW_DOD_EVIDENCE_WRITE`, `escape:cambiar-el-estado`, `escape:red-control-test-edit` | `marker.js sign-file <firma> <archivo> --for-session <sesión>`: deja la constancia que usa el Edit o Write de esa sesión |
 | `adhoc-lane:guardado-ajeno` | `marker.js adhoc allow-foreign-save --for-session <sesión>` |
 | `escape:TYCON_STATUS_GATE`, `escape:set-autonomous`, `escape:cerrar-la-ejecucion`, `escape:cerrar-como-deuda`, `escape:rojo-esperado-de-la-matriz` | el perfil las acepta, pero su comando corre sólo en la sesión que trabaja y la coordinadora no tiene cómo firmarlas desde su pestaña: hasta que tengan esa vía, las sigue aprobando una persona. Una ejecución perdida la cierra la coordinadora con `lost-run` |
@@ -149,7 +149,8 @@ Quedan sólo del dueño, aunque un perfil las liste: `control-change` y todo el 
 `escape:TYCON_PROD_LINT`, que ya no apagan nada); `designation-set`,
 `designation-confirm` y `designation-withdraw`; `adhoc-lane:datos` y `adhoc-lane:sobre-cupo`; `escape:DOD_BYPASS`; `adversarial-skip` (con
 `escape:TYCON_NO_DEEP_REVIEW` y `escape:no-deep-review`); `atdd-skip`; `escape:TYCON_TEST_GATE`; `escape:story-skill-bypass`;
-`escape:dod_runtime_exempt`; y decir que no a la prueba con navegador (`browser-test`).
+`escape:dod_runtime_exempt` y `runtime-waiver` (aceptar un criterio imposible de probar en vivo: tampoco sale como
+trámite); y decir que no a la prueba con navegador (`browser-test`).
 
 ## Quién firma cada nivel
 
@@ -488,7 +489,7 @@ vuelve a pedir la firma del dueño.
 | `escape:TYCON_NEW_NAMES` | apagar el control de nombres nuevos en lo que se publica | `TYCON_NEW_NAMES=0 <comando>` | no, en la pestaña de esa sesión | `TYCON_NEW_NAMES=0 <comando>` |
 | `escape:TYCON_TEST_GATE` | saltear el portón de pruebas del commit | `TYCON_TEST_GATE=1 <comando>` | no, en la pestaña de esa sesión | `TYCON_TEST_GATE=1 <comando>` |
 | `escape:DOD_BYPASS` | saltear los controles del commit (queda anotado) | `DOD_BYPASS=1 <comando>` | no, en la pestaña de esa sesión | `DOD_BYPASS=1 <comando>` |
-| `escape:TYCON_NO_DEEP_REVIEW` | apagar el pase adversarial de una ejecución | `TYCON_NO_DEEP_REVIEW=1 <comando>` | no, en la pestaña de esa sesión | `TYCON_NO_DEEP_REVIEW=1 <comando>` |
+| `escape:TYCON_NO_DEEP_REVIEW` | pedir que se saltee el pase adversarial (esta firma no lo saltea: eso lo firma adversarial-skip) | `TYCON_NO_DEEP_REVIEW=1 <comando>` | no, en la pestaña de esa sesión | `TYCON_NO_DEEP_REVIEW=1 <comando>` |
 | `escape:TYCON_STATUS_GATE` | cambiar a mano el estado de una story | `TYCON_STATUS_GATE=off <comando>` | no, en la pestaña de esa sesión | `TYCON_STATUS_GATE=off <comando>` |
 | `escape:TYCON_MUTATION_CHECK` | saltear el chequeo de mutantes de las pruebas | `TYCON_MUTATION_CHECK=off <comando>` | no, en la pestaña de esa sesión | `TYCON_MUTATION_CHECK=off <comando>` |
 | `escape:TYCON_STORY_REVIEW` | saltear la revisión de la historia antes del plan | `TYCON_STORY_REVIEW=0 <comando>` | no, en la pestaña de esa sesión | `TYCON_STORY_REVIEW=0 <comando>` |
@@ -503,7 +504,7 @@ vuelve a pedir la firma del dueño.
 | `escape:no-mutation` | cerrar «Correr las pruebas» sin el chequeo de mutantes, con motivo | `marker.js complete-step run-tests --no-mutation --reason <motivo>` | no, en la pestaña de esa sesión | `marker.js complete-step run-tests --no-mutation --reason <motivo> --terminal --for-session <sesión>` |
 | `escape:ALLOW_DOD_EVIDENCE_WRITE` | escribir a mano la evidencia de la prueba en vivo | `marker.js sign-file ALLOW_DOD_EVIDENCE_WRITE <archivo>` | sí | `marker.js sign-file ALLOW_DOD_EVIDENCE_WRITE <archivo> --terminal --for-session <sesión del agente>` |
 | `escape:dod_runtime_exempt` | eximir una story de la prueba en vivo | `marker.js sign-file dod_runtime_exempt <archivo>` | sí | `marker.js sign-file dod_runtime_exempt <archivo> --terminal --for-session <sesión del agente>` |
-| `escape:no-deep-review` | saltear el pase adversarial de una ejecución | `pipeline.js start --no-deep-review` | no, en la pestaña de esa sesión | `el mismo comando` |
+| `escape:no-deep-review` | correr los guiones del pase adversarial con un --env-file, que puede cambiar su decisión | `node --env-file=<archivo> pipeline.js start|deep-review-gate (o marker.js mark-adversarial-skipped)` | no, en la pestaña de esa sesión | `el mismo comando` |
 | `escape:cambiar-el-estado` | cambiar a mano el estado de una story | `marker.js sign-file cambiar-el-estado <archivo>` | sí | `marker.js sign-file cambiar-el-estado <archivo> --terminal --for-session <sesión del agente>` |
 | `escape:merge-bypass` | mergear salteando la cola y la CI de main, o aflojar las políticas de la rama | `gh pr merge <n> --admin (o un merge, una regla o una política por la API)` | no, en la pestaña de esa sesión | `el mismo comando` |
 | `escape:external-pr` | encolar o mergear un pull request de alguien de afuera del equipo | `el comando que encola o mergea el pull request (o la API)` | no, en la pestaña de esa sesión | `el mismo comando` |
@@ -616,6 +617,13 @@ igual, sólo esta forma exacta, para cualquier plataforma:
 - `node <coordination.js> pr-wait --repo <organización/repo> --number <número>`, con `--interval <segundos>` opcional y
   el `coordination.js` de este mismo arnés: repite sólo la lectura del pedido por la capa de plataforma, y termina
   cuando deja de estar abierto.
+- `node <coordination.js> pr-wait --repo <organización/repo> --story <historia>`, con el mismo `--interval` opcional:
+  espera a que la historia abra su pedido. Lee sólo la lista de pedidos abiertos, y termina con el número y el título
+  del pedido cuando aparece uno de la rama `story/<historia>`, o con la historia al principio del título («8.32 A: …»)
+  o al principio de un paréntesis («(8.32 A)»). Un título que sólo la cita no cuenta, ni un revert, ni el de la rama
+  de un bot de dependencias.
+- En las dos, `--repo` también va como `<organización>/<proyecto>/<repo>`: un repo de Azure DevOps que `team-repos.json`
+  no declara, leído con su proyecto, sin mirar el perfil.
 
 Los números van escritos tal cual, y la línea no lleva nada más: ni tubos, ni `&&` o `;`, ni redirecciones, ni nada
 armado con `$`. Cualquier otra consola de fondo sigue frenando, también el vigilante propio de una plataforma o un bucle
@@ -694,7 +702,10 @@ marca de delicada del plan se mide por la parte más lo que el cambio toca, con 
 afloja: una parte que no es delicada la aprueba la revisión automática, en vez del dueño (medido el 31/10: 82 de 115
 partes recientes dejan de ser delicadas). Ese
 plan queda atado a la lista de la parte, la que quedó al aprobar: editar código fuera de ella frena, y al cerrar se
-mide el diff entero; si sale delicado, «Aprobar el plan» vuelve al dueño y el código queda en la rama. El pase
+mide el diff entero; si sale delicado, «Aprobar el plan» vuelve al dueño y el código queda en la rama. Si la revisión
+aprobó el plan antes de anotar la tanda, anotarla con el plan igual no lo reabre cuando la parte declara `files:`: el
+plan queda atado a esa lista, la que la historia declaraba al anotarla (después no se amplía); sin `files:` declarado,
+o con el plan cambiado, «Aprobar el plan» vuelve a pendiente. El pase
 adversarial, su modelo y la revisión de la historia siguen por la historia entera. Una historia cuyas partes no
 declaran `files:` ni le atan ningún archivo a la tanda se sigue midiendo entera: la ganancia llega cuando las historias
 dicen de qué parte es cada archivo (`story-format.md` §1.1, «La parte que vale»).
@@ -760,8 +771,9 @@ frenos) y quedan en `gates.log`. Antes de todo pull request que se crea o se mer
 compartida (`main`, `master`, `dev`, `release/*`, o una rama que no se sabe), el gancho le pregunta a la persona en la
 ventana de permiso de siempre, con la evidencia de la ejecución; con el sí, sale. En una ejecución, antes de preguntar
 frena si el paso «Preparar el pull request» no cerró o si el código cambió desde su foto. Lo lee también escondido en `bash -c`, con `-C` o desde una variable. Los comandos de pedido son los que
-declaran los conectores de plataforma (`rawCommands` de su `integration.json`) con `pr` y que terminan en `create`,
-`new` o `merge`; si alguna integración no se puede leer, un comando que dice `pr` es una duda. Una frase en el chat o
+declaran los conectores de plataforma en `changeRequestCommands` de su `integration.json`, y además los de
+`rawCommands` que dicen `pr` y terminan en `create`, `new` o `merge`; si alguna integración no se puede leer, un
+comando que dice `pr` es una duda. Una frase en el chat o
 un mensaje de otra sesión no saltean la ventana. En una pestaña que no pide permisos (la ventana se aprobaría sola), el
 gancho abre el pull request sin preguntar y lo dice en pantalla, con la misma evidencia. Cerrar la ejecución ya no pide nada. Lo delicado (frenos, firmas,
 controles, producción) lo cubre la firma de control del pedido, que es del dueño y no cambia.

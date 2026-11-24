@@ -251,6 +251,37 @@ test('F174 T2 Aislada_HijoSinLasVariablesDeLaRed_EscribeEnSuLaboratorio: un hijo
   assert.ok(!fs.existsSync(destinoReal), 'la casa de la cuenta sigue frenada');
 });
 
+// 🔴 Falla con: la corrida lee el registro del sistema una sola vez al terminar; con la máquina cargada la negación todavía
+// no llegó, la lectura sale vacía y la corrida da verde aunque un proceso quiso escribir en la casa (fila 170)
+test('Aislada_RegistroAtrasado_EsperaLaMarcaDeCierre @story-8.314 @ac-2: lo negado se lee aunque el registro llegue tarde', () => {
+  const { negadasDelEncierro } = require(ISO);
+  const marca = 'tycon-aislada-1-abc';
+  const negada = `Sandbox: node(9) deny(1) file-write-create /casa/.tycon/state/x\n${marca}`;
+  const cierre = `Sandbox: touch(10) deny(1) file-write-create /base/cierre/x\n${marca}-cierre`;
+  let reloj = 0;
+  const opts = (vueltas) => {
+    let n = 0;
+    return { espera: 10000, pausa: 100, ahora: () => reloj, dormir: (ms) => { reloj += ms; }, leer: () => { n += 1; return { eventos: n < vueltas ? [] : [negada, cierre] }; } };
+  };
+  // las dos primeras lecturas todavía no traen nada: espera la marca de cierre y encuentra la negada
+  assert.deepStrictEqual(negadasDelEncierro(marca, 0, opts(3)), ['/casa/.tycon/state/x']);
+  // con la marca de cierre y sin negadas, ninguna
+  reloj = 0;
+  assert.deepStrictEqual(negadasDelEncierro(marca, 0, { ...opts(1), leer: () => ({ eventos: [cierre] }) }), []);
+});
+
+test('Aislada_RegistroSinMarcaDeCierre_NoEsVerde @story-8.314 @ac-2: si la marca de cierre no llega, no se sabe y no da verde', () => {
+  const { negadasDelEncierro } = require(ISO);
+  let reloj = 0;
+  let lecturas = 0;
+  const r = negadasDelEncierro('tycon-aislada-2-def', 0, { espera: 1000, pausa: 100, ahora: () => reloj, dormir: (ms) => { reloj += ms; }, leer: () => { lecturas += 1; return { eventos: [] }; } });
+  assert.ok(r && r.error, `sin la marca de cierre tiene que decir que no sabe: ${JSON.stringify(r)}`);
+  assert.match(r.error, /marca de cierre/);
+  assert.ok(lecturas > 1, 'volvió a leer mientras esperaba');
+  // un registro que no se puede leer tampoco es «ninguna»
+  assert.ok(negadasDelEncierro('m', 0, { leer: () => ({ error: 'salió 1' }) }).error);
+});
+
 test('T4 Aislada_RepoDentroDeLoVigilado_SeEscribe @story-8.314 @ac-2', { skip: !POSIX }, (t) => {
   const c = cuenta(t);
   const r = repo(path.join(c.casa, '.claude', 'worktrees', 'r'), {
@@ -503,6 +534,23 @@ test('Pase_CasaDeLaboratorioEnWindows_NoSeNiega @story-8.314 @ac-6', (t) => {
   assert.strictEqual(salio({ USERPROFILE: path.join(c.casa, 'AppData', 'Local', 'Temp', 'tycon-lab-prueba-x') }), null, 'la que da labHouse');
   assert.strictEqual(salio({ USERPROFILE: c.casa }), 3, 'la casa de la cuenta');
   assert.strictEqual(salio({ USERPROFILE: path.join(c.casa, 'Documents') }), 3, 'adentro, fuera del temporal');
+});
+
+// 🔴 mutación: que la red viaje sólo en variables del ambiente. Un comando que las limpia pierde lo que vigila la red,
+// el registro que mira `exec` y las carpetas admitidas.
+test('T8 IsolatedRun_CarriesRootsWithGuard @story-8.321 @ac-1 @ac-3', { skip: !POSIX }, async (t) => {
+  const c = cuenta(t);
+  const fuera = carpeta(t, 'aislada-ve-');
+  const visto = path.join(fuera, 'visto.json');
+  const guion = path.join(fuera, 've.js');
+  fs.writeFileSync(guion, `require('fs').writeFileSync(${JSON.stringify(visto)}, JSON.stringify(process[Symbol.for('tycon.real-home-guard')] || null));\n`);
+  const codigo = await iso().exec({ argv: [process.execPath, guion], raices: [fuera], env: ambiente(c), userInfo: c.userInfo, cwd: fuera, err: () => {} });
+  assert.strictEqual(codigo, 0);
+  const red = JSON.parse(fs.readFileSync(visto, 'utf8'));
+  assert.ok(red, 'la red viaja con lo que vigila');
+  for (const d of ['.tycon', '.claude', '.codex']) assert.ok(red.roots.includes(path.join(c.casa, d)), `vigila ${d}: ${red.roots}`);
+  assert.match(red.log, /intentos\.jsonl$/);
+  assert.ok(red.allow.includes(fuera), `admite la raíz del humo: ${red.allow}`);
 });
 
 test('T99 RedDeLasPruebas_NadaTocoLaCasaReal @story-8.314', () => {

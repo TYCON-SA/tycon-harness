@@ -165,7 +165,7 @@ Abrir el pull request o empujar a una rama compartida sin autorización explíci
 fuera de una ejecución sin ella. Aplica incluso cuando todo está verde y el trabajo parece completo.
 
 **Correcto:** en una ejecución, el agente commitea y empuja su rama de trabajo; la persona aprueba el pull request en la
-ventana de permiso, con la evidencia adelante. Fuera de una ejecución, preparar el commit (staging, mensaje), mostrarlo al
+ventana de permiso, con la evidencia adelante. Fuera de una ejecución, preparar el pull request (staging, mensaje), mostrarlo al
 usuario, esperar aprobación.
 
 ---
@@ -190,7 +190,7 @@ Esta sección define **cuándo invocar subagentes advisor** en conjunto con los 
 
 ### Regla general
 
-Después de **implementar código** o **modificar artefactos críticos**, en el pipeline o con un skill BMAD usado a mano, invocar los advisors Core correspondientes **antes de preparar el commit**.
+Después de **implementar código** o **modificar artefactos críticos**, en el pipeline o con un skill BMAD usado a mano, invocar los advisors Core correspondientes **antes de preparar el pull request**.
 
 ### Skills BMAD que disparan advisors
 

@@ -225,7 +225,7 @@ test('T6 ExtraRoundAndEscapes_NotExempted', () => {
   }
   for (const raro of [
     `F=--extra-round; ${P} smart-reloop --files ${M} $F`, `${P} smart-reloop --files ${M} "$F"`, `${P} smart-reloop --files ${M} $(echo --extra-round)`,
-    `${P} check-count --trust-ran --files ${M}`, `${P} deep-review-gate --no-deep-review --files ${M}`,
+    `${P} check-count --trust-ran --files ${M}`, `node --env-file=x ${c.pipeline} start --files ${M}`,
     `node --env-file=x ${c.pipeline} deep-review-gate --files ${M}`,
   ]) {
     assert.strictEqual(freno(raro), GRANDE, raro);

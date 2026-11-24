@@ -87,7 +87,7 @@ test('Platform_Resolve_ByRepoIdentity @story-8.85 @ac-2', () => {
   assert.deepStrictEqual(de(GH).value, { connector: 'github', origin: 'repo' });
   // la traducción de team-repos.json al nombre del conector vive en un solo lugar
   const TR = require(path.join(ROOT, 'scripts', 'lib', 'team-repos.js'));
-  assert.deepStrictEqual([TR.connectorOf('azure'), TR.connectorOf('github'), TR.connectorOf('gitlab')], ['azure-devops', 'github', null]);
+  assert.deepStrictEqual([TR.connectorOf('azure'), TR.connectorOf('github'), TR.connectorOf('bitbucket')], ['azure-devops', 'github', null]);
   // una operación de repo sin repo es un uso incorrecto, no una elección
   const sinRepo = P().choose('ci.read', { env: m.env });
   assert.strictEqual(sinRepo.ok, false);
@@ -288,10 +288,10 @@ test('Credentials_Missing_SaysCommandNeverPrints @story-8.85 @ac-28', async () =
 });
 
 test('Platform_UnknownValue_TreatedAsNone @story-8.85 @ac-29', () => {
-  const m = mundo({ platform: { default: 'gitlab' } });
+  const m = mundo({ platform: { default: 'bitbucket' } });
   const r = P().choose('work-item.create', { env: m.env });
   assert.deepStrictEqual([r.ok, r.reason], [false, 'sin_plataforma']);
-  assert.match(r.detail, /plataforma desconocida: «gitlab»/);
+  assert.match(r.detail, /plataforma desconocida: «bitbucket»/);
 });
 
 test('Connector_FolderMissing_SaysWhich @story-8.85 @ac-29', () => {
@@ -351,9 +351,9 @@ test('Manifest_HardSignals_ValidatedByReader @story-8.85 @ac-25', () => {
     assert.ok(!INT.find(n, { dir: d }), `${n} no se carga`);
     assert.match(de(n), rx, n);
   }
-  // los dos conectores de verdad declaran las señales del AC 25
-  const juntas = ['azure-devops', 'github'].flatMap((n) => INT.find(n, { kind: 'platform', dir: path.join(ROOT, 'integrations') }).hardSignals);
-  for (const t of ['az repos pr create', 'https://dev.azure.com/acme', '_apis/build', 'System.Title', 'Microsoft.VSTS.Scheduling', '.tycon/ado-config.yaml', 'AZURE_DEVOPS_EXT_PAT', 'SYSTEM_ACCESSTOKEN', 'gh pr view', 'gh api repos', 'https://api.github.com/x']) {
+  // los conectores de verdad declaran sus señales
+  const juntas = ['azure-devops', 'github', 'gitlab'].flatMap((n) => INT.find(n, { kind: 'platform', dir: path.join(ROOT, 'integrations') }).hardSignals);
+  for (const t of ['az repos pr create', 'https://dev.azure.com/acme', '_apis/build', 'System.Title', 'Microsoft.VSTS.Scheduling', '.tycon/ado-config.yaml', 'AZURE_DEVOPS_EXT_PAT', 'SYSTEM_ACCESSTOKEN', 'gh pr view', 'gh api repos', 'https://api.github.com/x', 'glab mr create', 'glab api projects/1', 'https://gitlab.com/grupo/repo']) {
     assert.ok(juntas.some((p) => new RegExp(p).test(t)), `ninguna señal declarada reconoce «${t}»`);
   }
 });
@@ -654,6 +654,8 @@ test('T122 PrRead_ContractAndConnectors @story-2.81 @ac-65', async () => {
     prAzure(24, { status: 'completed', closedDate: MERGED }),
     prAzure(25, { status: 'abandoned', closedDate: MERGED }),
     prAzure(26, { repository: { name: 'OtroRepo', project: { name: 'Producto' } } }),
+    // el mismo nombre de repo en otro proyecto de la organización: el número es de toda la organización
+    prAzure(27, { repository: { name: 'Backend', project: { name: 'OtroProyecto' } } }),
   ]));
   const az = (number) => P().run('change-request.read', { number }, { env: w.env, repo: AZ });
   r = await az(21);
@@ -667,10 +669,13 @@ test('T122 PrRead_ContractAndConnectors @story-2.81 @ac-65', async () => {
   assert.deepStrictEqual([r.value.state, r.value.mergedAt], ['merged', MERGED]);
   r = await az(25);
   assert.deepStrictEqual([r.value.state, r.value.mergedAt], ['closed', null]);
-  for (const n of [999, 26]) {
+  for (const n of [999, 26, 27]) {
     r = await az(n);
     assert.deepStrictEqual([r.ok, r.reason], [false, 'no_encontrado'], `${n}: ${JSON.stringify(r)}`);
   }
+  // el proyecto se compara sin mayúsculas, y un repo sin proyecto en su identidad no lo mira
+  r = await P().run('change-request.read', { number: 23 }, { env: w.env, repo: { ...AZ, project: 'producto' } });
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
 });
 
 test('T22 Conector_LeerPedido_DevuelveMergeCommit @story-8.205 @ac-3', async () => {
@@ -747,4 +752,32 @@ test('T123 PrRead_GivesTheSourceBranch — leer un pedido devuelve su rama de or
   assert.strictEqual(await az(61), 'story/61');
   assert.strictEqual(await az(62), 'dev');
   assert.strictEqual(await az(63), null, 'algo que no es una rama, null');
+});
+
+// 🔴 Falla con: un conector cuyos comandos crudos de pedido (crear o juntar) el freno de guardar no lee como pedido —
+// salen de una corrida sin la ventana de la persona—, o un manifiesto que declara como pedido un comando que no está en
+// su lista de comandos crudos.
+test('T124 ChangeRequestCommands_SaveBrakeAsks — cada comando de pedido que declara un conector pasa por el freno de guardar', () => {
+  const freno = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'save-brake.js'));
+  const leidas = INT.listManifests();
+  assert.deepStrictEqual(leidas.problems, []);
+  const plataformas = leidas.manifests.filter((m) => m.kind === 'platform');
+  assert.ok(plataformas.length >= 2, 'hay conectores de plataforma que medir');
+  for (const m of plataformas) {
+    assert.ok(m.changeRequestCommands.length, `${m.name}: declara qué comandos crudos crean o juntan un pedido`);
+    for (const c of m.changeRequestCommands) {
+      const leidos = freno.comandosQueGuardan(`${c} --title x`, os.tmpdir()).filter((x) => x.tipo === 'pr');
+      assert.deepStrictEqual(leidos.map((x) => x.forma), [c.trim()], `${m.name}: «${c}» pasa por la ventana`);
+    }
+  }
+  // un comando de pedido que no está entre los crudos es un manifiesto roto
+  const dir = tmp('int-');
+  const origen = plataformas[0];
+  copiar(origen.dir, path.join(dir, origen.name));
+  const archivo = path.join(dir, origen.name, 'integration.json');
+  const man = JSON.parse(fs.readFileSync(archivo, 'utf8'));
+  man.changeRequestCommands = [...man.changeRequestCommands, 'otro pedido create'];
+  fs.writeFileSync(archivo, JSON.stringify(man));
+  const rota = INT.listManifests({ dir });
+  assert.ok(rota.problems.some((p) => p.name === origen.name && p.reasons.some((r) => /changeRequestCommands.*otro pedido create.*no está en «rawCommands»/.test(r))), JSON.stringify(rota.problems));
 });

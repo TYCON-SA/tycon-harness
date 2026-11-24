@@ -15,11 +15,13 @@
  *     coordinadora (owner-approvals.js `buscarPermiso`): lo gasta y devuelve `allow` para esa sola vez, sin agregar
  *     ninguna regla permanente;
  *   - el «No» (`coordination.js owner-reject`, que marca el renglón): devuelve `deny`, con un motivo que lo dice;
- *   - la coordinadora: si murió o dejó de ser la designada, sale sin decidir.
- * Pasado `coordination.permission_wait_minutes` (10 sin valor), sale sin decidir y un click tardío ya no aprueba nada.
+ *   - la coordinadora: si murió o dejó de ser la designada, el reenvío no decide.
+ * Pasado `coordination.permission_wait_minutes` (10 sin valor), el reenvío no decide y un click tardío ya no aprueba nada.
  *
- * Salir sin decidir es lo de siempre: Claude Code muestra la ventana de permiso, como sin este gancho, y la sesión queda
- * trabada. Nada se afloja: lo que hoy se pide sigue pidiéndose, y un click vale sólo para ese pedido. Al irse saca su
+ * Lo que el reenvío no decide en una sesión de fondo se niega, con su motivo y una salida: nadie contesta esa ventana, y
+ * mientras espera la sesión no lee mensajes. Queda en gates.log como `negado-de-fondo`. Sólo con persona delante, en
+ * Codex o con el gancho apagado sale sin decidir y Claude Code muestra la ventana de siempre. Nada se afloja: lo que hoy
+ * se pide sigue pidiéndose o se niega, y un click vale sólo para ese pedido. Al irse saca su
  * renglón; si Claude Code lo mata, el renglón se cierra solo, porque su proceso ya no vive (signature-list.js).
  *
  * El texto del cuadro no puede ser el de otro pedido: los campos de un renglón (la ruta, la dirección, la celda) no llevan
@@ -243,7 +245,7 @@ function decidir(evento, opts = {}) {
       anotarMotivo(casa, sesion, { herramienta, motivo: `no se lleva al cuadro: ${a.motivo}`, ahora: ahora(), desde: inicio });
       anotarDecision(casa, { sesion, estado: 'no-se-lleva', herramienta, pedido: null, motivo: a.motivo });
     }
-    return { decision: null, motivo: a.motivo };
+    return { decision: null, motivo: a.motivo, deFondo: Boolean(a.anotar) };
   }
   const { sesion, herramienta, coordinadora } = a;
   const p = pedidoDe(herramienta, evento.tool_input);
@@ -252,7 +254,7 @@ function decidir(evento, opts = {}) {
   if (noSeLleva) {
     anotarMotivo(casa, sesion, { herramienta, motivo: `no se lleva al cuadro: ${noSeLleva}`, ahora: ahora(), desde: inicio });
     anotarDecision(casa, { sesion, estado: 'no-se-lleva', herramienta, pedido: p.pedido, coordinadora, motivo: noSeLleva });
-    return { decision: null, motivo: noSeLleva };
+    return { decision: null, motivo: noSeLleva, deFondo: true };
   }
   const { pedido } = p;
   const { carpeta } = c;
@@ -260,8 +262,8 @@ function decidir(evento, opts = {}) {
   const plazo = esperaMs(casa, env);
   const r = L.anotarPermiso({ casa, herramienta, pedido, carpeta, sesion, pid: process.pid, ahora: ahora(), relay: true, huella: huellaDe(herramienta, evento.tool_input) });
   if (!r.ok) {
-    logError(casa, `${r.motivo}: el pedido de ${sesion} va a la ventana normal`);
-    return { decision: null, motivo: r.motivo };
+    logError(casa, `${r.motivo}: el pedido de ${sesion} no llega al cuadro y se niega`);
+    return { decision: null, motivo: r.motivo, deFondo: true };
   }
   // el motivo de un pedido anterior no es de éste, que sí llegó como cuadro
   try { fs.unlinkSync(archivoDelMotivo(casa, sesion)); } catch (e) { if (e.code !== 'ENOENT') logError(casa, `no pude borrar el motivo viejo de ${sesion} (${e.code || e.message})`); }
@@ -271,7 +273,7 @@ function decidir(evento, opts = {}) {
     try { L.renglonDelGancho(casa, id, { quitar: true }); } catch (e) { logError(casa, `no pude sacar ${id} de la lista (${e.message}): se cierra solo cuando este gancho termine`); }
     if (decision === null && estado !== 'sin-renglon') anotarMotivo(casa, sesion, { herramienta, motivo, ahora: ahora(), desde: inicio });
     anotarDecision(casa, { sesion, estado, id, herramienta, pedido, coordinadora, motivo: decision === null ? motivo : null, esperaS: Math.round((ahora() - desde) / 1000) });
-    return { decision, motivo, id };
+    return { decision, motivo, id, deFondo: true };
   };
   for (;;) {
     let fila;
@@ -291,15 +293,33 @@ function decidir(evento, opts = {}) {
   }
 }
 
+/**
+ * Lo que el reenvío deja sin decidir en una sesión de fondo (no se lleva al cuadro, venció la espera, se fue la
+ * coordinadora) se niega con su motivo: nadie contesta esa ventana, y mientras espera la sesión no lee mensajes. Queda en
+ * gates.log como `negado-de-fondo`. Con persona delante, en Codex o con el gancho apagado no hay `deFondo`: sin decidir.
+ */
+function negarSiNadieContesta(r, casa, evento = {}) {
+  if (!r || r.decision !== null || !r.deFondo) return r;
+  anotarDecision(casa, { sesion: String(evento.session_id || ''), estado: 'negado-de-fondo', id: r.id || null, herramienta: String(evento.tool_name || ''), pedido: null, motivo: r.motivo });
+  return { ...r, decision: 'deny', nadieContesta: true };
+}
+
 /** Lo que el gancho escribe para Claude Code: nada sin decidir; si no, la decisión para esa sola vez, sin reglas. */
 function salida(r) {
   if (!r || (r.decision !== 'allow' && r.decision !== 'deny')) return '';
-  const decision = r.decision === 'allow' ? { behavior: 'allow' }
-    : { behavior: 'deny', message: 'La persona dijo que no a este pedido, desde la pestaña de la coordinadora: no corre. Seguí sin él, o avisale a la coordinadora qué necesitás y por qué.' };
+  // el motivo puede nombrar campos del pedido o una ruta de error: va en un solo renglón y con tope
+  const motivo = String(r.motivo || 'sin motivo').replace(/\s+/g, ' ').trim().slice(0, 200);
+  const message = r.nadieContesta
+    ? `Esta sesión es de fondo y nadie contesta su ventana de permiso (${motivo}): el pedido se niega para que la sesión no quede trabada. Hacelo de otra forma que no pida permiso, seguí sin él, o mandale a la coordinadora qué necesitás y por qué.`
+    : 'La persona dijo que no a este pedido, desde la pestaña de la coordinadora: no corre. Seguí sin él, o avisale a la coordinadora qué necesitás y por qué.';
+  const decision = r.decision === 'allow' ? { behavior: 'allow' } : { behavior: 'deny', message };
   return JSON.stringify({ hookSpecificOutput: { hookEventName: 'PermissionRequest', decision } });
 }
 
-module.exports = { HERRAMIENTAS, PEDIDO_MAX, pedidoDe, huellaDe, carpetaDe, alcance, decidir, salida, esperaMs };
+/** La salida entera para un evento: el reenvío y, si queda sin decidir en una sesión de fondo, la negativa. */
+const paraClaude = (evento, opts = {}) => salida(negarSiNadieContesta(decidir(evento, opts), opts.casa, evento));
+
+module.exports = { HERRAMIENTAS, PEDIDO_MAX, pedidoDe, huellaDe, carpetaDe, alcance, decidir, negarSiNadieContesta, salida, paraClaude, esperaMs };
 
 if (require.main === module) {
   let casa = null;
@@ -311,7 +331,7 @@ if (require.main === module) {
     if (!evento || evento.hook_event_name !== 'PermissionRequest' || !HERRAMIENTAS.has(String(evento.tool_name || ''))) process.exit(0);
     // la casa donde anota el click el gancho del cuadro (owner-approval-record.js), que no mira HOME
     casa = require(path.join(ROOT, 'scripts', 'lib', 'real-home.js')).casaDeLaCuenta();
-    const out = salida(decidir(evento, { casa }));
+    const out = paraClaude(evento, { casa });
     if (out) process.stdout.write(out);
   } catch (e) {
     if (casa) logError(casa, `${(e && e.message) || e}: salí sin decidir`);

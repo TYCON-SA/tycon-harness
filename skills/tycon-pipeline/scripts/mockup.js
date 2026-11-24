@@ -705,14 +705,14 @@ function compareWithScreens({ texts, screens, md }) {
   return { missing, extras, declared, unreadable, warnings };
 }
 
-/** Los argumentos de `qa-guide.js --check` en «Preparar el commit»: con la maqueta aprobada en el marcador, su huella. */
+/** Los argumentos de `qa-guide.js --check` en «Preparar el pull request»: con la maqueta aprobada en el marcador, su huella. */
 function qaGuideCheckArgs(storyPath, marker) {
   const sha = marker && marker.mockupApproval && marker.mockupApproval.sha256;
   return [path.join(__dirname, 'qa-guide.js'), '--check', '--story', storyPath, ...(sha ? ['--mockup-sha', sha] : [])];
 }
 
 /**
- * Qué hace «Preparar el commit» con la maqueta. `{ block, skip, compare, screenNow }`:
+ * Qué hace «Preparar el pull request» con la maqueta. `{ block, skip, compare, screenNow }`:
  *   block   — la story ganó una pantalla después de aprobar el plan sin maqueta (el paso «Aprobar el plan» anotó `screen: false`).
  *   skip    — tenía maqueta aprobada y no se detecta pantalla: no se compara, se dice y se anota.
  *   compare — hay maqueta aprobada y la story sigue con pantalla (o no se pudo leer: «no pude mirar» no saltea).

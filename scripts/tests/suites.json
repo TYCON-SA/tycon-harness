@@ -168,6 +168,11 @@
       "requiere": []
     },
     {
+      "raiz": "arnes",
+      "ruta": "tests/bench-usage.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 7.53: sondas de comportamiento — el agente de verdad (claude -p) en un laboratorio con HOME vacío y sólo el gancho medido, para ver si sigue cumpliendo una regla que dejó de estar siempre a la vista. Sin claude o sin sesión: NO MEDIDO.",
       "raiz": "arnes",
       "ruta": "tests/behavior-probes.test.sh",
@@ -886,6 +891,16 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/production-notice-cases.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/pre-commit-hook.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/readme-index.test.js",
       "requiere": []
     },
@@ -1446,13 +1461,13 @@
       "requiere": []
     },
     {
-      "__nota": "un criterio con cota fuera de la cota o sin medición: la matriz, «Preparar el commit» y el control del commit lo nombran con lo medido y la cota; la deuda no lo exime; la pregunta de la firma por terminal muestra lo medido. Comandos reales con HOME temporal",
+      "__nota": "un criterio con cota fuera de la cota o sin medición: la matriz, «Preparar el pull request» y el control del commit lo nombran con lo medido y la cota; la deuda no lo exime; la pregunta de la firma por terminal muestra lo medido. Comandos reales con HOME temporal",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/matrix-out-of-bound-message.test.js",
       "requiere": []
     },
     {
-      "__nota": "en una historia paraguas la tanda se anota una vez (set-batch), «Preparar el commit» mide sólo esa tanda, y el control del commit mide todas al pasar a review y la que se cierra al cerrar una tanda. Comandos reales con HOME temporal (8.239)",
+      "__nota": "en una historia paraguas la tanda se anota una vez (set-batch), «Preparar el pull request» mide sólo esa tanda, y el control del commit mide todas al pasar a review y la que se cierra al cerrar una tanda. Comandos reales con HOME temporal (8.239)",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/matrix-by-batch.test.js",
       "requiere": []
@@ -1724,6 +1739,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/adversarial-skip-one-signature.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/reviewers-cost.test.sh",
       "requiere": []
     },
@@ -1766,6 +1786,11 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/adversarial-skip-signed.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/delegated-pass.test.js",
       "requiere": []
     },
     {
@@ -2037,7 +2062,7 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.167 (T12-T16, T24-T28, T31, T34): los candidatos, el freno de «Preparar el commit», la exención firmada y la cobertura por declaración. Repos de juguete, la firma por la ventana de prueba, sin red.",
+      "__nota": "story 8.167 (T12-T16, T24-T28, T31, T34): los candidatos, el freno de «Preparar el pull request», la exención firmada y la cobertura por declaración. Repos de juguete, la firma por la ventana de prueba, sin red.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/compare-previous-gate.test.js",
       "requiere": []
@@ -2567,6 +2592,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/office-page-english.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/office-conversation.test.js",
       "requiere": []
     },
@@ -2588,6 +2618,12 @@
     {
       "raiz": "arnes",
       "ruta": "tests/test-run-isolation.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.321: un guion de laboratorio que limpia las TYCON_* y arma su casa corre igual dentro de la ejecución aislada de smoke-run.sh que suelto, y la casa de la cuenta sigue protegida. Repos y casas de juguete, sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/lab-inside-isolation.test.js",
       "requiere": []
     },
     {
@@ -3590,6 +3626,12 @@
       "requiere": []
     },
     {
+      "__nota": "la evidencia atada al cambio en el portón de CI (scripts/ci/tycon-ci-gate.js): la evidencia de cierre anterior al código que cambia el pedido, las huellas del registro de humos y lo que no se pudo comparar, que avisan hasta su fecha y frenan desde ella.",
+      "raiz": "arnes",
+      "ruta": "tests/ci-gate-evidence-bound.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la lista de lo que espera a la persona (scripts/lib/signature-list.js): el registro, lo que lo cierra, la pasada de a una y la llave.",
       "raiz": "arnes",
       "ruta": "tests/signature-list.test.js",
@@ -3767,6 +3809,12 @@
       "__nota": "La capa de plataforma (scripts/lib/platform/platform.js): las diez operaciones del contrato, quién elige la plataforma de cada una (el repo o el perfil, sin adivinar), los motivos cerrados, el conector de mentira y los dos de verdad contra el az y el gh de mentira, las credenciales que faltan sin imprimirlas, y la elección en el perfil y en el sitio.",
       "raiz": "arnes",
       "ruta": "tests/platform-contract.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "El conector de GitLab por la capa de plataforma, contra el glab de mentira: la identidad con namespace de grupos anidados y host en team-repos.json, el servidor de un repo sin declarar, el pedido de trabajo como issue, el merge request, la CI por estados de commit, lo asignado, las lecturas de varias páginas, sin glab y sin red, merge-pr.js y story-index.js con un remoto de GitLab, los pasos 0 y 9b del skill de merge y el freno de un pedido por repo.",
+      "raiz": "arnes",
+      "ruta": "tests/platform-gitlab.test.js",
       "requiere": []
     },
     {
@@ -4372,9 +4420,24 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.23 (tanda C, T21, T22, T23 y T26): cada herramienta, sus enchufes — install detecta Claude Code y Codex (el ejecutable o su configuración propia), las nombra en el plan y --tool las fija; una máquina SÓLO con Codex instala, se actualiza por su hook de arranque y se desinstala sin nada nuevo en ~/.claude (el estado nace en ~/.tycon/state), con AGENTS.md desde los bloques entre marcas; el MCP de Codex sin ~/.claude.json, el servidor que falta dicho y writable_roots; sumar una herramienta después (install --tool) y sacar una sola (uninstall --tool). Sobre la máquina de juguete y el servidor de versiones de juguete, con `claude` y `codex` de mentira (harness_lab_tools).",
+      "__nota": "Parte 1 de 2 de tests/harness-tools.test.sh (2026-11-24, fila 48: entera tardaba 138 a 143 s sola en una Mac, más del doble de su peso, y salía roja por tiempo en la validación del privado; parte 1: T40, T41, T42, T43, T50, T44, T45, T47, T48, T54, T55, T49, T53, T51, T52 y T13; parte 2: T21, T22, T23, T26 y T26b. El archivo entero no se registra, scripts/tests/lib/suite-parts.sh).",
       "raiz": "arnes",
-      "ruta": "tests/harness-tools.test.sh",
+      "ruta": "tests/harness-tools.p1.test.sh",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/setup/**",
+        "scripts/lib/**",
+        "scripts/hooks/**",
+        "build/**",
+        "adapters/codex/**",
+        "scripts/tests/lib/**",
+        "scripts/tests/fixtures/**"
+      ]
+    },
+    {
+      "__nota": "Parte 2 de 2 de tests/harness-tools.test.sh (2026-11-24, fila 48: entera tardaba 138 a 143 s sola en una Mac, más del doble de su peso, y salía roja por tiempo en la validación del privado; parte 1: T40, T41, T42, T43, T50, T44, T45, T47, T48, T54, T55, T49, T53, T51, T52 y T13; parte 2: T21, T22, T23, T26 y T26b. El archivo entero no se registra, scripts/tests/lib/suite-parts.sh).",
+      "raiz": "arnes",
+      "ruta": "tests/harness-tools.p2.test.sh",
       "requiere": [],
       "gate_only_when_touching": [
         "scripts/setup/**",
@@ -5432,7 +5495,7 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.31 (T9 a T14): los avisos de dependencias como issues de GitHub (scripts/nightly/dependencies/github-issues.js) con un gh de mentira (tests/lib/fake-gh.js) — crear con etiquetas, marca y asignado verificado; no repetir; tope y reintentos; cerrar sólo lo suyo y reabrir lo que cerró; borrado, movido y 401; el volcado con la clave <repo>#<n>; la elección de plataforma de work-items.js por team-repos.json; y el cruce del nocturno con números de issue repetidos entre repos. Sin red.",
+      "__nota": "story 8.31 (T9 a T14): los avisos de dependencias como issues de GitHub (integrations/github/scripts/dependency-notices.js) con un gh de mentira (tests/lib/fake-gh.js) — crear con etiquetas, marca y asignado verificado; no repetir; tope y reintentos; cerrar sólo lo suyo y reabrir lo que cerró; borrado, movido y 401; el volcado con la clave <repo>#<n>; la elección de plataforma de work-items.js por team-repos.json; y el cruce del nocturno con números de issue repetidos entre repos. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/github-issues.test.js",
       "requiere": [],

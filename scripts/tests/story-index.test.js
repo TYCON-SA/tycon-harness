@@ -731,3 +731,49 @@ test('Migrate_ExistingIntroIsNotOverwritten (T24) @story-8.227 @ac-1', () => {
   assert.strictEqual(leer(dir, 'specs/epics-intro.md'), antes, 'la introducción que ya estaba no cambia');
   assert.match(fs.readFileSync(informe, 'utf8'), /la épica 1 \(ya tiene su introducción.*\): Épica 1: un título viejo/, 'lo del índice va al informe, entero');
 });
+
+test('Migrate_BlockThatNamesTheFirstStoryOfItsEpic_GoesToThatStory (T28) @story-8.227 @ac-1', () => {
+  // encima de la primera historia de una épica, la prosa de la épica y la nota de la historia vienen en un solo bloque:
+  // desde el renglón que arranca con el número de la historia, el bloque es de ella
+  const sprint = ['development_status:', '  # Épica 1: Lo primero', '  epic-1: in-progress',
+    '  # Prosa de la épica, escrita después de su renglón.', '  # 1.2 ESTACIONADA el 2026-09-18 (decisión del dev).',
+    '  # Lo que falta: la medición.', '  1-2-alfa: backlog', '  1-9-gamma: backlog', ''];
+  const dir = jugueteAMano('t28', { sprint });
+  const r = correr(['--repo', dir, '--migrate', '--report', path.join(dir, 'specs', 'qa', 'm.md')]);
+  assert.strictEqual(r.code, 0, r.out);
+  const alfa = leer(dir, 'specs/story-1.2-alfa.md');
+  assert.match(alfa, /1\.2 ESTACIONADA el 2026-09-18 \(decisión del dev\)\. Lo que falta: la medición\./);
+  const intro = leer(dir, 'specs/epics-intro.md');
+  assert.match(intro, /Prosa de la épica, escrita después de su renglón\./, 'lo de antes sigue siendo de la épica');
+  assert.doesNotMatch(intro, /ESTACIONADA|Lo que falta/, 'y la nota de la historia no queda en la épica');
+  // una barra invertida en la nota no cambia a quién va ni se pierde
+  const barra = jugueteAMano('t28d', { sprint: ['development_status:', '  epic-1: in-progress', '  # Prosa de la épica.',
+    '  # 1.2 la ruta C:\\dir\\a.md quedó así.', '  1-2-alfa: backlog', ''] });
+  assert.strictEqual(correr(['--repo', barra, '--migrate', '--report', path.join(barra, 'specs', 'qa', 'm.md')]).code, 0);
+  assert.ok(leer(barra, 'specs/story-1.2-alfa.md').includes('1.2 la ruta C:\\dir\\a.md quedó así.'), 'la nota con la barra va entera a la historia');
+  assert.ok(!leer(barra, 'specs/epics-intro.md').includes('C:\\dir'), 'y no queda en la épica');
+  // un número que sigue con otro dígito es otra historia: el número tiene que terminar ahí
+  const otra = jugueteAMano('t28b', { sprint: ['development_status:', '  epic-1: in-progress', '  # 1.20 es otra historia.', '  1-2-alfa: backlog', ''] });
+  assert.strictEqual(correr(['--repo', otra, '--migrate', '--report', path.join(otra, 'specs', 'qa', 'm.md')]).code, 0);
+  assert.match(leer(otra, 'specs/epics-intro.md'), /1\.20 es otra historia\./);
+  // salteada a pedido: la nota que la nombra va entera al informe, no a la épica
+  const salt = jugueteAMano('t28c', { sprint: ['development_status:', '  epic-1: in-progress', '  # 1.x: lo de la épica.',
+    '  # 1.50 se sigue en el plan.', '  1-50-perdida: done', '  1-2-alfa: done', ''] });
+  const informe = path.join(salt, 'specs', 'qa', 'm.md');
+  assert.strictEqual(correr(['--repo', salt, '--migrate', '--report', informe, '--skip', '1.50']).code, 0);
+  assert.match(fs.readFileSync(informe, 'utf8'), /encima de `1-50-perdida`: 1\.50 se sigue en el plan\./);
+  const introSalt = leer(salt, 'specs/epics-intro.md');
+  assert.match(introSalt, /1\.x: lo de la épica\./);
+  assert.doesNotMatch(introSalt, /1\.50 se sigue/);
+});
+
+test('Migrate_ChangeLogOfAnotherLevel_IsUsed_NotDuplicated (T29) @story-8.227 @ac-1', () => {
+  const dir = jugueteAMano('t29', { sprint: ['development_status:', '  1-2-alfa: done   # nota de alfa', ''] });
+  fs.writeFileSync(path.join(dir, 'specs', 'story-1.2-alfa.md'),
+    `${historia(1, '1.2', 'Alfa', 'done')}\n## Dev Agent Record\n\n### Change Log\n\n- antes\n\n## Review Follow-ups\n\n- nada\n`);
+  const r = correr(['--repo', dir, '--migrate', '--report', path.join(dir, 'specs', 'qa', 'm.md')]);
+  assert.strictEqual(r.code, 0, r.out);
+  const alfa = leer(dir, 'specs/story-1.2-alfa.md');
+  assert.strictEqual((alfa.match(/^#+ Change Log$/gm) || []).length, 1, 'un solo Change Log: el que ya estaba');
+  assert.match(alfa, /### Change Log\n\n[^\n]*nota de alfa[^\n]*\n- antes\n\n## Review Follow-ups/, 'la nota arriba, en el de nivel 3');
+});

@@ -65,7 +65,7 @@ test('Tooling_FindsToolsOnEveryPlatform_RunCheckUsesGitBash', async (t) => {
         for (const call of calls) assert.strictEqual(call[0], c.finder, `${c.platform}: buscó con ${call[0]}, no con ${c.finder}`);
       }
     } finally { fs.rmSync(repo, { recursive: true, force: true }); }
-    assert.ok(!fs.readFileSync(path.join(SCRIPTS, 'pipeline.js'), 'utf8').includes('/usr/bin/which'), 'pipeline.js no nombra /usr/bin/which');
+    assert.ok(!require('./lib/pipeline-source.js')(SCRIPTS).includes('/usr/bin/which'), 'pipeline.js (con sus partes) no nombra /usr/bin/which');
   });
 
   await t.test('findBinary: una ruta absoluta se mira en el disco; la salida vacía es «no está»', () => {

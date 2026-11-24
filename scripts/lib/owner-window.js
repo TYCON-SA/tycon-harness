@@ -305,12 +305,17 @@ function esOwnerWait(comando) {
  * plataforma), con el mismo lector y las mismas reglas que `esOwnerWait` (un solo tramo, todas las palabras literales,
  * sin redirecciones ni nada armado):
  *   node <coordination.js de este arnés> pr-wait --repo <org/repo> --number <n> [--interval <s>]
- * `<n>` y `<s>` son enteros positivos escritos tal cual, y `<org/repo>` una palabra `organización/repo`. Un bucle de
+ *   node <coordination.js de este arnés> pr-wait --repo <org/repo> --story <historia> [--interval <s>]
+ * `<n>` y `<s>` son enteros positivos escritos tal cual, `<historia>` un número de historia (`8.326`, `25`) y
+ * `<org/repo>` una palabra `organización/repo` u `organización/proyecto/repo` (un repo de Azure DevOps escrito entero, el
+ * proyecto con espacios si los tiene). La segunda espera a que la historia abra su pedido: también sólo lee. Un bucle de
  * consola escrito a mano, o el vigilante propio de una plataforma, no es esta forma: desde su línea no se sabe si además
  * escribe.
  */
 const ENTERO = /^[1-9]\d*$/;
 const ORG_REPO = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
+const HISTORIA = /^\d+(?:\.\d+)*$/;
+const ORG_PROYECTO_REPO = /^[A-Za-z0-9._-]+\/(?:[A-Za-z0-9._-][A-Za-z0-9._ -]*[A-Za-z0-9._-]|[A-Za-z0-9._-])\/[A-Za-z0-9._-]+$/;
 function esVigilanteDeLectura(comando) {
   let t;
   try { t = markerCommand().tramos(String(comando), 'bash'); } catch (_) { return false; }
@@ -319,8 +324,9 @@ function esVigilanteDeLectura(comando) {
   if (p.some((x) => !x.literal || /^\d*[<>&|]/.test(x.texto) || /[\r\n]/.test(x.texto))) return false;
   const w = p.map((x) => x.texto);
   const intervalo = (resto) => resto.length === 0 || (resto.length === 2 && resto[0] === '--interval' && ENTERO.test(resto[1]));
-  if (NODES.has(base(w[0])) && path.isAbsolute(w[1] || '') && w[2] === 'pr-wait' && w[3] === '--repo' && ORG_REPO.test(w[4] || '')
-    && w[5] === '--number' && ENTERO.test(w[6] || '') && intervalo(w.slice(7))) {
+  const cual = (w[5] === '--number' && ENTERO.test(w[6] || '')) || (w[5] === '--story' && HISTORIA.test(w[6] || ''));
+  if (NODES.has(base(w[0])) && path.isAbsolute(w[1] || '') && w[2] === 'pr-wait' && w[3] === '--repo' && (ORG_REPO.test(w[4] || '') || ORG_PROYECTO_REPO.test(w[4] || ''))
+    && cual && intervalo(w.slice(7))) {
     const propio = real(COORDINACION);
     return propio !== null && real(w[1]) === propio;
   }
@@ -692,19 +698,28 @@ function destinoDe(palabras, sesion, firma) {
   return i >= 0 ? palabras[i + 1] || '' : sesion;
 }
 
-/** ¿El escape por variable viene en su forma de siempre (la asignación literal al principio del comando, una vez)? */
+/**
+ * ¿El escape por variable viene a la vista, una vez? La asignación literal al principio del comando, o un primer tramo
+ * `export NOMBRE=valor` seguido de otro comando: cada comando de la consola corre en su propio shell, así que es la misma
+ * asignación, y el dueño ve el nombre y el valor en la ventana igual.
+ */
 function variableALaVista(nombre, valor, comando) {
   let t;
   try { t = markerCommand().tramos(String(comando), 'bash'); } catch (_) { return false; }
   if (!t.tramos.length) return false;
   const w = t.tramos[0].palabras;
-  let i = 0;
-  let esta = false;
-  for (; i < w.length && /^[A-Za-z_]\w*=/.test(w[i].texto); i++) {
-    if (!w[i].literal) return false;
-    if (w[i].texto === `${nombre}=${valor}`) esta = true;
+  const exportada = w.length === 2 && w[0].literal && w[0].texto === 'export' && t.tramos.length > 1 && t.tramos[1].tras !== '|';
+  if (exportada) {
+    if (!w[1].literal || w[1].texto !== `${nombre}=${valor}` || !t.tramos[1].palabras.length) return false;
+  } else {
+    let i = 0;
+    let esta = false;
+    for (; i < w.length && /^[A-Za-z_]\w*=/.test(w[i].texto); i++) {
+      if (!w[i].literal) return false;
+      if (w[i].texto === `${nombre}=${valor}`) esta = true;
+    }
+    if (!esta || i >= w.length) return false;
   }
-  if (!esta || i >= w.length) return false;
   const veces = String(comando).match(new RegExp(`(^|[^\\w])${escRe(nombre)}(?![\\w])`, 'g')) || [];
   return veces.length === 1;
 }
@@ -868,7 +883,16 @@ function criteriosSinMemo(palabras, cwd, { casa, destino, sesion }) {
   } catch (e) { return { error: `no pude armar los criterios (${una((e && e.message) || String(e), 200)})` }; }
   if (c.error) return { error: `no pude armar los criterios: la matriz no computa (${una(c.error, 200)})` };
   const faltan = (pedidos || []).filter((n) => !c.lista.some((x) => x.ac === n));
-  if (faltan.length) return { error: `el AC ${faltan.join(', ')} no es un criterio pendiente de firma en ${path.basename(abs)}` };
+  // el motivo de cada uno, el mismo que da el guion de la firma: uno sin correr no se exime, lo corre el agente
+  const porQueNo = (n) => {
+    const a = c.matrix.perAc && c.matrix.perAc[n];
+    if ((c.matrix.notRun || []).includes(n)) return `el AC ${n} está SIN CORRER: un criterio sin correr no se exime, lo corre el agente`;
+    if (!a) return `el AC ${n} no es un criterio de la historia`;
+    if (a.verdict === 'RUNTIME') return `el AC ${n} ya corrió en vivo: no hace falta eximirlo`;
+    if (a.verdict === 'WAIVED-USER') return `el AC ${n} ya está eximido`;
+    return `el AC ${n} está ${a.verdict} y no declarado imposible de probar en vivo con su prueba (runtime_not_verifiable): no es un criterio pendiente de firma`;
+  };
+  if (faltan.length) return { error: `${faltan.map(porQueNo).join('; ')} en ${path.basename(abs)}` };
   if (!c.lista.length) return { error: `${path.basename(abs)} no tiene criterios pendientes de firma${tanda ? ` en la tanda ${tanda}` : ''}` };
   return { lista: c.lista, historia: abs, texto: textoDeLosCriterios(c.lista), ...(tanda ? { tanda: c.matrix.batch } : {}) };
 }

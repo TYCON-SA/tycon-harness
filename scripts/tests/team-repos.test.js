@@ -52,7 +52,7 @@ test('TeamRepos_Problems_CarryTheKeyPath_AndNoPartialData', () => {
   delete doc.profile;
   doc.version = 2;
   doc.public.project = 'nope';
-  doc.operations = { platform: 'gitlab', org: 'acme', repo: 'x' };
+  doc.operations = { platform: 'bitbucket', org: 'acme', repo: 'x' };
   doc.harness_copies[1].repo = '';
   doc.maintainers.org = 'a/b';
   doc.extra = true;
@@ -151,7 +151,7 @@ test('TeamRepos_HarnessCopies_MeasuresOnlyMaintainers (DEF-8.30-copias-del-arnes
     assert.strictEqual(r.stdout, '', 'con un problema no hay lista a medias');
     assert.match(r.stderr, /harness_copies\.0\.repo/);
     assert.strictEqual(cli(path.join(dir, 'no-such.json'), '--harness-copies', 'azure').status, 2, '«no pude leer» no es «no hay copias»');
-    assert.strictEqual(cli(file, '--harness-copies', 'gitlab').status, 2, 'una plataforma desconocida es un error de uso');
+    assert.strictEqual(cli(file, '--harness-copies', 'bitbucket').status, 2, 'una plataforma desconocida es un error de uso');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

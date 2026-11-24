@@ -81,6 +81,8 @@ const GUION_ESCRIBE = /\b(?:writeFileSync|writeFile|appendFileSync|appendFile|cr
 const FORMAS_DE_ESCRIBIR = [
   String.raw`(?:^|[\s;&|(])(?:[^\s;&|()'"]*[\\/])?\\?(?:rm|del|erase|unlink|remove-item|ri|mv|move|mi|move-item|rename-item|ren|cp|copy|copy-item|install|rsync|ditto|scp|dd|truncate|ln)(?:\.exe)?(?=\s)`,
   String.raw`\bgit\b[^\n;&|]*\s(?:checkout|restore|rm|mv)\b`,
+  // `--output` de log, diff, show y los que aceptan las opciones de diff, también abreviada (`--out=…`)
+  String.raw`\bgit\b[^\n;&|]*\s--ou(?:t(?:p(?:ut?)?)?)?(?=[=\s])`,
   String.raw`\b(?:curl|wget)\b[^\n;&|]*\s(?:-o|-O|--output)`,
   String.raw`>{1,2}(?![&>])(?!\s*/dev/(?:null|stdout|stderr)\b)`,
   String.raw`\btee\b`,
@@ -587,6 +589,40 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
     if (/^(?:\w+=\S+\s+)*(?:sudo\s+)?truncate\b/.test(seg.trim())) {
       const t = lastWord(seg);
       if (t && !t.startsWith('-')) out.add(t);
+    }
+  }
+
+  // 7) git con `--output` (log, diff, show y los que aceptan las opciones de diff) escribe el archivo que nombra, pegado
+  //    con `=` o en la palabra que sigue; git acepta abreviar la opción (`--out=…`). Con `git -C <carpeta>` una ruta
+  //    relativa es desde esa carpeta: cuentan las dos. `git` se busca en cualquier lugar del tramo: detrás de `env`,
+  //    `xargs` o `find -exec` también corre.
+  const esOutput = (w) => { const nombre = w.split('=')[0]; return nombre.length >= 4 && '--output'.startsWith(nombre); };
+  for (const seg of splitSegments(s)) {
+    const words = (seg.match(new RegExp(Q, 'g')) || []).map((w) => { const mm = w.match(new RegExp(`^${Q}$`)); return mm ? tok(mm, 1) : null; }).filter((w) => w != null);
+    const k = words.findIndex((w) => path.basename(w) === 'git');
+    if (k < 0) continue;
+    let carpeta = null;
+    for (let i = k + 1; i < words.length; i++) {
+      const w = words[i];
+      if (w === '-C' && words[i + 1]) { carpeta = words[++i]; continue; }
+      if (!esOutput(w)) continue;
+      // `--output='specs/h.md'` llega en dos palabras: la opción con su `=` y el valor citado
+      const crudo = w.includes('=') && !w.endsWith('=') ? w.slice(w.indexOf('=') + 1) : words[++i];
+      // con sus comillas resueltas, como lo deja el shell
+      const valor = crudo ? palabraDelShell(crudo) : '';
+      if (!valor) continue;
+      out.add(valor);
+      if (carpeta && !path.isAbsolute(valor)) out.add(path.join(carpeta, valor));
+    }
+  }
+  // un alias de git que lleva `--output` (`git -c 'alias.d=diff --output=specs/h.md' d`): su definición se lee del
+  // comando tal cual, porque entre comillas con espacios no queda en el texto que se mira arriba
+  for (const m of raw.matchAll(/\balias\.[^\s=]+=([^\n'"]*)/gi)) {
+    const partes = m[1].trim().split(/\s+/);
+    for (let i = 0; i < partes.length; i++) {
+      if (!esOutput(partes[i])) continue;
+      const valor = partes[i].includes('=') && !partes[i].endsWith('=') ? partes[i].slice(partes[i].indexOf('=') + 1) : partes[i + 1];
+      if (valor) out.add(valor);
     }
   }
 
@@ -2851,7 +2887,23 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
   if (ejecuta) todos.push(...citados(cmd).flatMap((c) => comandosAnidados(c)).flatMap((sub) => tramos(sub)).flatMap((t) => t.split(/(?<![&>|])&(?![&>])/)));
   const bases = carpetasDeLosCdDeConstancias(todos, cmd, [cwd, sesion]);
   cdSinResolver = bases.sinResolver;
-  for (const tramo of todos) for (const raiz of bases.carpetas) {
+  // `cd /otro && git merge <sha>` con todo encadenado detrás: ese git corre en la carpeta del cd, y en la de partida no se
+  // mira (un commit que sólo existe en la otra carpeta no se puede ver desde la de partida, y frenaba un merge que no corre
+  // ahí). Vale sólo para un `git <subcomando>` escrito tal cual en el primer nivel: sin opciones antes del subcomando
+  // (`-c core.worktree=…`), sin un programa delante que lo corra en otra carpeta (`sudo -D`) y sin que corra también
+  // anidado en otro programa o en un texto. Tampoco si una variable de git apunta a otro repo (`GIT_DIR=…`). Todo lo
+  // demás se sigue mirando en todas las carpetas
+  const partir = (t) => tramos(t).flatMap((x) => x.split(/(?<![&>|])&(?![&>])/)).map((x) => x.trim());
+  const soloEnElCd = bases.unico && !/\bGIT_[A-Z_]+\b/.test(String(cmd)) && todoCorreDespuesDelCd(cmd);
+  const deArriba = soloEnElCd ? new Set(lecturas.flatMap(partir)) : new Set();
+  const deAdentro = soloEnElCd ? new Set([...lecturas.flatMap((t) => [...comandosAnidados(t).slice(1), ...comandosPorOtroPrograma(t, cwd)]),
+    ...(ejecuta ? citados(cmd).flatMap((c) => comandosAnidados(c)) : [])].flatMap(partir)) : new Set();
+  const delCd = bases.carpetas.filter((d) => d === bases.unico || ![cwd, sesion].includes(d));
+  const carpetasDe = (tramo) => {
+    const t = String(tramo).trim();
+    return soloEnElCd && deArriba.has(t) && !deAdentro.has(t) && /^git\s+[a-z]/.test(t) ? delCd : bases.carpetas;
+  };
+  for (const tramo of todos) for (const raiz of carpetasDe(tramo)) {
     base = raiz;
     // sin las redirecciones de lectura con su archivo (`< lista`): no son argumentos de la copia. La carpeta de `env -C`
     // ya está entre las bases: se saca para que lo que corre `env` quede como el comando
@@ -3194,26 +3246,37 @@ const TOPE_DE_CARPETAS_DE_CD = 24;
  * (`cd a && cd b` da `a/b`). No se decide cuál vale: se miran todas, y basta una que caiga en una constancia para frenar.
  * Así un `cd` adentro de un paréntesis no cambia dónde se resuelve lo de afuera, que se sigue mirando desde la de partida.
  * `sinResolver`: hubo un `cd` con una variable o una sustitución que no se puede saber adónde va.
+ * `unico`: la carpeta, si todos los `cd` del comando van a la misma ruta absoluta; si alguno vuelve (`cd -`, `popd`,
+ * `pushd +N`), va a otra, a una relativa (que `CDPATH` puede llevar a otro lado) o no se resuelve, es null.
  */
 function carpetasDeLosCdDeConstancias(tramosDelComando, cmd, partida) {
   const carpetas = [...new Set(partida.filter(Boolean))];
   let sinResolver = false;
+  const absolutos = new Set();
+  let otroCd = false;
   for (const tramo of tramosDelComando) {
     // `env -C <carpeta> …` corre lo que sigue en esa carpeta
     const { carpetas: conEnv } = pelarEnv(tramo);
     const words = conEnv.length ? ['cd', ...conEnv] : palabrasEnteras(sinPalabrasDelShell(tramo)).filter((w) => w !== '');
     if (words[0] === 'builtin') words.shift();
     const programa = nombreDeComando(words[0]);
+    // lo que cambia la carpeta del shell sin que se vea adónde: volver (`popd`), un guion o un texto que corre en el mismo
+    // shell (`source`, `.`, `eval`), un alias, o una variable como programa (`$C /otra`, que puede ser un `cd`). Un
+    // programa aparte (`bash f.sh`, `git`) no cambia la carpeta del shell que lo lanza
+    if (['popd', 'source', '.', 'eval', 'alias'].includes(programa) || /[$`]/.test(String(words[0] || ''))) otroCd = true;
     if (programa !== 'cd' && programa !== 'pushd' && programa !== 'chdir') continue;
     // el primer argumento que no es una opción (`cd -P d`); `cd -` y `pushd +N` vuelven a una carpeta ya juntada
     const destino = words.slice(1).find((w) => w === '-' || !/^[-+]/.test(w));
-    if (destino === '-') continue;
+    if (destino === '-') { otroCd = true; continue; }
     if (destino === undefined) {
+      otroCd = true;
       if (!words.slice(1).some((w) => /^\+\d+$|^-\d+$/.test(w))) carpetas.push(os.homedir());
       continue;
     }
     const ex = expandirRuta(cmd, destino);
     if (ex.sinResolver.length || /\$|`/.test(String(ex.valor))) { sinResolver = true; continue; }
+    if (path.isAbsolute(String(ex.valor))) absolutos.add(resolveTarget(ex.valor, '/', process.platform, { homeVariable: true }));
+    else otroCd = true;
     for (const desde of [...carpetas]) {
       if (carpetas.length >= TOPE_DE_CARPETAS_DE_CD) break;
       const dir = resolveTarget(ex.valor, desde, process.platform, { homeVariable: true });
@@ -3222,7 +3285,35 @@ function carpetasDeLosCdDeConstancias(tramosDelComando, cmd, partida) {
     // con demasiados `cd`, lo que quede afuera del tope no se sabe dónde cae
     if (carpetas.length >= TOPE_DE_CARPETAS_DE_CD) sinResolver = true;
   }
-  return { carpetas, sinResolver };
+  const unico = !sinResolver && !otroCd && absolutos.size === 1 ? [...absolutos][0] : null;
+  return { carpetas, sinResolver, unico };
+}
+
+/**
+ * Si el comando empieza con un `cd` (o `pushd`, `chdir`) y todo lo demás va encadenado con `&&` o `|`: así nada corre en
+ * la carpeta de partida, porque si el `cd` falla el `&&` corta. Un `;`, un salto de línea, `||`, un `&` suelto, un
+ * paréntesis, llaves o una comilla invertida fuera de comillas pueden correr algo en la carpeta de partida (o no se sabe):
+ * entonces no.
+ */
+function todoCorreDespuesDelCd(cmd) {
+  const s = quitarCuerposDeHeredoc(String(cmd));
+  if (!/^\s*(?:builtin\s+)?(?:cd|pushd|chdir)\s/.test(s)) return false;
+  let q = null;
+  let encadenado = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '\\' && q !== "'") { i++; continue; }
+    if (q) { if (c === q) q = null; continue; }
+    if (c === "'" || c === '"') { q = c; continue; }
+    if (c === '&' && s[i + 1] === '&') { encadenado = true; i++; continue; }
+    if (c === '|' && s[i + 1] === '|') return false;
+    // el primer separador es el `&&` del cd: `cd d | x` corre el cd en otro proceso
+    if (c === '|') { if (!encadenado) return false; continue; }
+    if (c === ';' || c === '\n' || c === '\r' || c === '(' || c === ')' || c === '{' || c === '}' || c === '`') return false;
+    // `2>&1`, `>&2`, `&>archivo` y `|&` son redirecciones, no un `&` que manda al fondo
+    if (c === '&' && !/[>&|]/.test(s[i - 1] || '') && s[i + 1] !== '>') return false;
+  }
+  return encadenado;
 }
 
 // una palabra del shell entera: comillas pegadas a texto, escapes y texto suelto, hasta un blanco o un operador
@@ -3320,6 +3411,27 @@ function parcheNombraConstancia(texto, isControlApproval) {
  * contesta, la ref no se pudo mirar y no pasa. Fuera de alcance: editar a mano los archivos de `.git`.
  * `extra.tramo`: el tramo entero, con lo de antes del comando · `extra.anidado(cmd)`: lo mismo para un comando adentro.
  */
+/**
+ * ¿El repo de `carpeta` ya tiene, o tuvo, un remoto `origin`? true o false; null si git no contestó. Lo tuvo si quedan
+ * sus copias (`refs/remotes/origin/…`): sacado editando .git/config a mano, `add` lo pondría a apuntar a otro lado. Una
+ * carpeta que no existe o que todavía no es un repo (el `git init` del mismo comando) no lo tiene.
+ */
+function yaHayOrigin(carpeta) {
+  if (!fs.existsSync(carpeta)) return false;
+  // git en inglés: su error se reconoce por el texto. Sin la biblioteca no se sabe, y el freno frena
+  let env;
+  try { env = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).idiomaFijo(); } catch (_) { return null; }
+  const git = (argv) => require('child_process').spawnSync('git', ['-C', carpeta, ...argv], {
+    windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000, env,
+  });
+  const r = git(['remote']);
+  if (r.error || r.status !== 0) return !r.error && /not a git repository/i.test(String(r.stderr)) ? false : null;
+  if (String(r.stdout).split(/\r?\n/).includes('origin')) return true;
+  const copias = git(['for-each-ref', '--count=1', '--format=%(refname)', 'refs/remotes/origin/']);
+  if (copias.error || copias.status !== 0) return null;
+  return String(copias.stdout).trim() !== '';
+}
+
 function constanciasDeOtraRama(c, args, base, isControlApproval, extra = {}) {
   const { spawnSync } = require('child_process');
   const git = (argv) => {
@@ -3371,15 +3483,36 @@ function constanciasDeOtraRama(c, args, base, isControlApproval, extra = {}) {
     return out;
   }
   if (c === 'git config') {
-    const sueltos = args.filter((w) => !w.startsWith('-'));
-    if (!args.some((w) => /^--(?:get|get-all|get-regexp|list|unset|unset-all)$|^-l$/.test(w)) && sueltos.length >= 2 && /^remote\.origin\./i.test(sueltos[0])) out.push('cambiar a dónde apunta origin deja de probar qué está en la rama principal');
+    // sin los valores de las opciones que llevan uno (`--file .git/config`), que no son la clave ni el subcomando
+    const sueltos = [];
+    for (let i = 0; i < args.length; i++) {
+      if (/^(?:-f|--file|--blob|-t|--type|--default|--comment|--value)$/.test(args[i])) { i++; continue; }
+      if (!args[i].startsWith('-')) sueltos.push(args[i]);
+    }
+    // la forma con subcomando (`git config set|unset|remove-section|rename-section <clave>`) y la de opciones
+    const sub = /^(?:get|list|set|unset|remove-section|rename-section)$/.test(sueltos[0] || '') ? sueltos[0] : null;
+    const clave = sub ? sueltos[1] : sueltos[0];
+    const lee = sub ? /^(?:get|list)$/.test(sub) : args.some((w) => /^--(?:get|get-all|get-regexp|list)$|^-l$/.test(w));
+    const quita = sub ? sub === 'unset' : args.some((w) => /^--(?:unset|unset-all)$/.test(w));
+    const pone = !lee && !quita && (sub ? sub === 'set' : sueltos.length >= 2) && /^remote\.origin\./i.test(clave || '');
+    // borrar la sección de origin, o renombrarla (desde o hacia origin), también cuenta: sin origin, después
+    // `git remote add origin` lo pone a apuntar a otro lado
+    const seccion = sub ? /^(?:remove-section|rename-section)$/.test(sub) : args.some((w) => /^--(?:remove-section|rename-section)$/.test(w));
+    const nombres = sub ? sueltos.slice(1, 3) : sueltos.slice(0, 2);
+    // con una opción que no conozco antes del subcomando, la palabra del subcomando vale donde esté
+    const suelta = sueltos.findIndex((w) => /^(?:remove-section|rename-section)$/.test(w));
+    const deOrigin = (ns) => ns.some((n) => /^remote\.origin$/i.test(n));
+    if (pone || (seccion && deOrigin(nombres)) || (suelta >= 0 && deOrigin(sueltos.slice(suelta + 1, suelta + 3)))) out.push('cambiar a dónde apunta origin deja de probar qué está en la rama principal');
     return out;
   }
   if (c === 'git remote') {
     const sub = args.find((w) => !w.startsWith('-'));
     const resto = args.slice(args.indexOf(sub) + 1).filter((w) => !w.startsWith('-'));
     const automatico = args.some((w) => /^(?:-a|--auto|-d|--delete)$/.test(w));
-    if ((/^(?:set-url|add|remove|rm)$/.test(sub || '') && resto[0] === 'origin') || (sub === 'rename' && resto[1] === 'origin') || (sub === 'set-head' && resto[0] === 'origin' && !automatico)) {
+    // `add origin` en un repo sin origin no cambia a dónde apunta: no apuntaba a ningún lado. Como sacar origin frena
+    // (`remove`, `rename origin …`, `git config`), un repo sin origin no lo tuvo, o lo perdió editando .git a mano.
+    const nuevo = sub === 'add' && resto[0] === 'origin' && yaHayOrigin(base) === false;
+    if ((/^(?:set-url|add|remove|rm)$/.test(sub || '') && resto[0] === 'origin' && !nuevo) || (sub === 'rename' && (resto[0] === 'origin' || resto[1] === 'origin')) || (sub === 'set-head' && resto[0] === 'origin' && !automatico)) {
       out.push('cambiar a dónde apunta origin deja de probar qué está en la rama principal');
     }
     return out;
