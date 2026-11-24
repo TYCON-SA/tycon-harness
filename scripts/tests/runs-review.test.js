@@ -1888,3 +1888,76 @@ test('8.256-T3 RunsReview_EscapesFromTheList @story-8.256 @ac-4 @ac-6 @ac-27', (
   assert.deepStrictEqual(regla(juntos, 'RR-ESCAPE').map((x) => `${x.categoria}:${x.cuenta}`).sort(),
     ['RUNTIME_MATRIX_LEGACY:1', 'RUNTIME_MATRIX_NO_MUTATION_CHECK:1', 'STORY_REVIEW_OFF:1']);
 });
+
+// ── Las sesiones de cada caso ───────────────────────────────────────────────────────────────────────
+
+/** Un volcado con las sesiones de la corrida en su marcador, como las anota marker.js. */
+const conSesiones = (v, sesiones) => ({ ...v, marker: { ...v.marker, sesiones } });
+const hora = (h, m = 0) => `${HOY}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00.000Z`;
+const casosPorBase = (op) => Object.fromEntries(fichas(op).flatMap((f) => f.casos || []).map((c) => [c.base, c]));
+
+// T7 2.83-Caso_SesionesConForma @story-2.83 @ac-8 @ac-11
+// 🔴 Falla con: un nombre con espacios o cortado en la ficha, un nombre repetido dos veces, otro orden que el de `visto`,
+//    una unión de más de 120 caracteres, o la cabecera sin la excepción a «ningún texto libre sale».
+test('T7 2.83-Caso_SesionesConForma @story-2.83 @ac-8 @ac-11', async () => {
+  const largo = (c) => `${c}${'x'.repeat(39)}`;
+  const base1 = `1.1-${HOY}T1519`;
+  const base2 = `1.2-${HOY}T1600`;
+  const mb = buzon({ 'acme-0000aaaa': { corridas: [
+    { base: base1, hilo: [], volcado: conSesiones(volcado({ sid: SID(1), pendientes: [7] }), [
+      { id: SID(1), nombre: 'Carrizo-4', visto: hora(10) },
+      { id: SID(2), nombre: 'Ponzio-5', visto: hora(11) },
+      { id: SID(3), nombre: 'Carrizo-4', visto: hora(12) },
+      { id: SID(4), nombre: 'Coord MAC MIN', visto: hora(12, 30) },
+      { id: SID(5), nombre: `${'c'.repeat(39)}…`, cortado: true, visto: hora(13) },
+    ]) },
+    { base: base2, hilo: [], volcado: conSesiones(volcado({ sid: SID(6), pendientes: [7] }), [
+      { id: SID(6), nombre: largo('A'), visto: hora(10) },
+      { id: SID(7), nombre: largo('B'), visto: hora(11) },
+      { id: SID(8), nombre: largo('C'), visto: hora(12) },
+    ]) },
+  ] } });
+  const op = ops();
+  const r = await correr(mb, op);
+  assert.strictEqual(r.codigo, 0);
+  const casos = casosPorBase(op);
+  assert.strictEqual(casos[base1].sesiones, 'Carrizo-4+Ponzio-5');
+  assert.strictEqual(casos[base2].sesiones, `${largo('B')}+${largo('C')}`, 'salen los más viejos hasta que entre en 120');
+  const dir = path.join(op, 'inbox', 'runs-review', 'pending');
+  for (const f of fichas(op)) assert.deepStrictEqual(CYCLE.problemasDeForma(CYCLE.parsear(fs.readFileSync(path.join(dir, f.f), 'utf8'))), [], 'la ficha sigue con su forma');
+  // la cabecera del guion nombra la excepción
+  const cabecera = fs.readFileSync(path.join(ROOT, 'scripts', 'nightly', 'runs-review', 'runs-review.js'), 'utf8').split('\nconst fs = ')[0];
+  assert.match(cabecera, /NINGÚN TEXTO LIBRE SALE[\s\S]*nombre de la sesión[\s\S]*`sesiones`/);
+});
+
+// T8 2.83-Caso_SinNombreYVolcadoViejo @story-2.83 @ac-9
+// 🔴 Falla con: un caso con `sesiones` vacío en lugar de null, la clave en un volcado sin la lista de sesiones, o la
+//    migración de fichas viejas armando casos con la clave.
+test('T8 2.83-Caso_SinNombreYVolcadoViejo @story-2.83 @ac-9', async () => {
+  const base1 = `1.1-${HOY}T1519`;
+  const base2 = `1.2-${HOY}T1600`;
+  const mb = buzon({ 'acme-0000aaaa': { corridas: [
+    { base: base1, hilo: [], volcado: conSesiones(volcado({ sid: SID(1), pendientes: [7] }), [
+      { id: SID(1), nombre: null, visto: hora(10) }, { id: SID(2), nombre: 'con espacios', visto: hora(11) }]) },
+    { base: base2, hilo: [], volcado: volcado({ sid: SID(2), pendientes: [7] }) },
+  ] } });
+  const op = ops();
+  await correr(mb, op);
+  const casos = casosPorBase(op);
+  assert.strictEqual(casos[base1].sesiones, null);
+  assert.ok(!('sesiones' in casos[base2]), 'un volcado sin marker.sesiones da un caso sin la clave');
+  // una ficha vieja por ejecución, migrada: su caso sin la clave
+  const op2 = ops();
+  const dir = path.join(op2, 'inbox', 'runs-review', 'pending');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, '2026-10-20-acme-0000aaaa-e0000000000000a1-abcdef.yaml'), ['# Ficha de la revisión nocturna de las ejecuciones.',
+    'id: "e0000000000000a1"', 'fecha: "2026-10-20"', 'maquina: "acme-0000aaaa"', 'story: "1.1"', 'base: "1.1-2026-10-20T1000"',
+    'archivada: null', 'cierre: null', `reglas: ${JSON.stringify([{ regla: 'RR-CIERRE', categoria: 'derivada', cuenta: 1 }])}`,
+    'sin_hilo: false', 'escapes_registro: "medido"', 'enlace: "https://sitio.ejemplo.test/corridas?abrir=e0000000000000a1"',
+    'veredicto: "pendiente"', 'vista_por_ultima_vez: "2026-10-20"', ''].join('\n'));
+  const m = RR.migrar({ ops: op2, today: HOY });
+  assert.strictEqual(m.casos, 1, JSON.stringify(m));
+  const migrados = fichas(op2).flatMap((f) => f.casos || []);
+  assert.strictEqual(migrados.length, 1);
+  assert.ok(!('sesiones' in migrados[0]), 'la migrada sin la clave');
+});

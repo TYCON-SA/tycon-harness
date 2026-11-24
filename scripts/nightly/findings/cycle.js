@@ -204,7 +204,17 @@ function ordenar(f) {
   return out;
 }
 
-const huellaDe = (c) => crypto.createHash('sha1').update(JSON.stringify(c)).digest('hex').slice(0, 8);
+// La huella de un caso es el caso entero, menos `sesiones` (los nombres de sus sesiones, de la revisión de las
+// ejecuciones): la noche los filtra con una regla que puede cambiar, y el mismo volcado leído otra noche no es otro caso.
+// Un caso sin esa clave da la huella de siempre.
+const huellaDe = (c) => {
+  let base = c;
+  if (c && typeof c === 'object' && Object.prototype.hasOwnProperty.call(c, 'sesiones')) {
+    const { sesiones: _s, ...resto } = c;
+    base = resto;
+  }
+  return crypto.createHash('sha1').update(JSON.stringify(base)).digest('hex').slice(0, 8);
+};
 
 /**
  * Suma casos nuevos (sin repetir) y guarda los 50 más nuevos; `casos_total` cuenta todos los distintos que hubo. Un
@@ -219,7 +229,17 @@ function conCasos(f, nuevos, errores = []) {
   let hechos = f.hechos || null;
   (nuevos || []).forEach((c, i) => {
     const h = huellaDe(c);
-    if (vistas.has(h)) return;
+    if (vistas.has(h)) {
+      // un caso ya contado que vuelve con nombres de sesiones los deja en el guardado que no tiene ninguno; uno que ya
+      // los tiene no se pisa
+      if (c && typeof c.sesiones === 'string') {
+        const guardado = casos.find((x) => x && huellaDe(x) === h);
+        if (guardado && (guardado.sesiones === null || guardado.sesiones === undefined)) {
+          casos[casos.indexOf(guardado)] = { ...guardado, sesiones: c.sesiones };
+        }
+      }
+      return;
+    }
     vistas.add(h);
     huellas.push(h);
     casos.push(c);

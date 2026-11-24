@@ -943,6 +943,18 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/subtraction-test.test.js",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/tools/**",
+        "scripts/controls-bench/**",
+        "scripts/setup/**",
+        "scripts/lib/**",
+        "scripts/metrics/**"
+      ]
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/guide-runner.test.js",
       "requiere": [],
       "gate_only_when_touching": [
@@ -5258,6 +5270,18 @@
       "__nota": "story 2.78: el cierre (marker.js clear) pone las firmas de la ejecución en su volcado y no falla por ellas (sin hora de arranque: «no medido»). HOME de prueba por caso; el registro de la cuenta no cambia. Sin red.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/marker-archive-signatures.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.83: los cinco comandos del marcador (set, complete-step, adopt-session, restore, clear) anotan la sesión que los corre, con su nombre, en marker.sesiones (una por sesión, hasta 10) y el volcado del cierre la lleva; no poder leer el nombre nunca frena. HOME de prueba por caso, con sesiones inventadas; sin red.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/marker-session-names.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.83: el nombre de una sesión por su id con los lectores de /wip (archivo de sesión de Claude, el último /rename, Codex); un nombre armado de la carpeta es sin nombre; nunca tira. Casas temporales; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/session-name.test.js",
       "requiere": []
     },
     {
