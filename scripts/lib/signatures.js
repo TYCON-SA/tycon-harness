@@ -216,10 +216,10 @@ const POR_VARIABLE = [
 const CON_NOMBRE = [
   ['story-skill-bypass', 'escribir una story sin la skill de stories', 'file'],
   ['red-control-test-edit', 'editar una prueba vieja de un control que estaba en rojo', 'file'],
-  ['set-autonomous', 'cambiar el modo autónomo de una ejecución', 'marker.js set-autonomous'],
+  ['set-autonomous', 'cambiar el modo autónomo de una ejecución', 'marker.js set-autonomous false [--for-session <D>]'],
   ['cerrar-la-ejecucion', 'cerrar una ejecución con un control en rojo', 'marker.js clear'],
-  ['cerrar-como-deuda', 'cerrar una ejecución dejando lo que falta como deuda', 'marker.js close-as-debt'],
-  ['rojo-esperado-de-la-matriz', 'llevar al commit criterios sin evidencia en vivo, hasta una fecha', 'marker.js expect-red acmatrix --tests <T1,T2> --until <AAAA-MM-DD>'],
+  ['cerrar-como-deuda', 'cerrar una ejecución dejando lo que falta como deuda, o dejar en esa deuda un control en rojo esperado', 'marker.js close-as-debt --reason "<texto>" --debt <DEF-id> [--for-session <D>]'],
+  ['rojo-esperado-de-la-matriz', 'llevar al commit criterios sin evidencia en vivo, hasta una fecha', 'marker.js expect-red acmatrix --tests <T1,T2> --until <AAAA-MM-DD> [--for-session <D>]'],
   ['force-manual', 'marcar a mano el estado de un control', 'marker.js set-check <control> <estado> --force-manual [--for-session <D>]'],
   ['trust-ran', 'contar los revisores sin la constancia de que corrieron', 'pipeline.js check-count --repo <r> --story <s> --trust-ran [--for-session <D>]'],
   ['no-mutation', 'cerrar «Correr las pruebas» sin el chequeo de mutantes, con motivo', 'marker.js complete-step run-tests --no-mutation --reason <motivo>'],
@@ -251,7 +251,7 @@ const SI_SALE_MAL = Object.freeze({
   'escape:red-control-test-edit': 'la prueba de un control se corrige para que pase, y el control puede quedar apagado sin que nadie lo decida',
   'escape:set-autonomous': 'la ejecución cambia cómo se frena sola ante un control en rojo',
   'escape:cerrar-la-ejecucion': 'la ejecución se cierra con un control en rojo, y lo que frenaba queda sin arreglar',
-  'escape:cerrar-como-deuda': 'la ejecución se cierra y lo que falta queda anotado como deuda, sin hacer',
+  'escape:cerrar-como-deuda': 'la ejecución se cierra y lo que falta queda anotado como deuda, sin hacer, o el control queda en rojo hasta el commit',
   'escape:rojo-esperado-de-la-matriz': 'el commit entra con esos criterios sin evidencia en vivo hasta la fecha, y una falla que la prueba en vivo encontraría llega al pedido',
   'escape:force-manual': 'un control queda en el estado escrito a mano, aunque nadie lo haya medido',
   'escape:trust-ran': 'los revisores cuentan como corridos sin constancia, y uno que no corrió pasa por corrido',
@@ -326,7 +326,7 @@ const APPROVES_EN = {
   'escape:red-control-test-edit': "edit a control's old test that was failing",
   'escape:set-autonomous': "change a run's autonomous mode",
   'escape:cerrar-la-ejecucion': 'close a run with a control in red',
-  'escape:cerrar-como-deuda': 'close a run leaving what is missing as debt',
+  'escape:cerrar-como-deuda': 'close a run leaving what is missing as debt, or take a red check of that debt to the commit',
   'escape:rojo-esperado-de-la-matriz': 'take criteria without live evidence to the commit, until a date',
   'escape:force-manual': "set a control's state by hand",
   'escape:trust-ran': 'count the reviewers without the record that they ran',
@@ -344,10 +344,14 @@ const APPROVES_EN = {
 const FIRMAS_DE_ARCHIVO = Object.freeze(CON_NOMBRE.filter((f) => f[2] === 'file').map((f) => f[0]));
 // los escapes que pide su propio guion, con su forma canónica: la terminal es esa forma con --terminal
 const POR_GUION = Object.freeze(['force-manual', 'trust-ran']);
+// los escapes del cierre que pide el marcador, como los de POR_GUION, pero que siguen en el grupo que se delega junto
+const POR_EL_MARCADOR = Object.freeze(['set-autonomous', 'cerrar-como-deuda', 'rojo-esperado-de-la-matriz']);
+// el rojo esperado de un control va con la firma de cerrar como deuda: la terminal nombra las dos formas exactas
+const OTRA_FORMA_EN_LA_TERMINAL = Object.freeze({ 'cerrar-como-deuda': 'marker.js expect-red <control> --tests <T1,T2> --terminal' });
 // los escapes que pide su paso, en la sesión que lo corre: el guion pide la firma justo antes de saltear, y no se pide
 // para otra sesión ni entra al grupo que se delega junto
 const POR_SU_PASO = Object.freeze(['no-mutation']);
-const kindDe = (id) => (!id.startsWith('escape:') || [...FIRMAS_DE_ARCHIVO, ...POR_GUION, ...POR_SU_PASO].includes(id.slice('escape:'.length)) ? 'guion' : 'freno');
+const kindDe = (id) => (!id.startsWith('escape:') || [...FIRMAS_DE_ARCHIVO, ...POR_GUION, ...POR_EL_MARCADOR, ...POR_SU_PASO].includes(id.slice('escape:'.length)) ? 'guion' : 'freno');
 const sobreArchivo = (nombre) => `marker.js sign-file ${nombre} <archivo>`;
 
 const SIGNATURES = Object.freeze([
@@ -406,7 +410,10 @@ const SIGNATURES = Object.freeze([
     // la terminal de la persona no tiene la sesión en el ambiente: sin --for-session la constancia no la usaría nadie
     // la coordinadora la pide para otra sesión sólo si es de las que el perfil puede delegar
     if (command === 'file') return { id: `escape:${nombre}`, approves, command: sobreArchivo(nombre), otherSession: DELEGABLE_EXCEPTIONS.includes(`escape:${nombre}`) ? 'yes' : otraSinDelegar(`escape:${nombre}`), terminal: `${sobreArchivo(nombre)} --terminal --for-session <sesión del agente>` };
-    if (POR_GUION.includes(nombre)) return { id: `escape:${nombre}`, approves, command, otherSession: 'yes', terminal: `${command.replace(' [--for-session <D>]', '')} --terminal` };
+    if (POR_GUION.includes(nombre) || POR_EL_MARCADOR.includes(nombre)) {
+      const otra = OTRA_FORMA_EN_LA_TERMINAL[nombre];
+      return { id: `escape:${nombre}`, approves, command, otherSession: 'yes', terminal: `${command.replace(' [--for-session <D>]', '')} --terminal${otra ? `, o ${otra}` : ''}` };
+    }
     if (POR_SU_PASO.includes(nombre)) return { id: `escape:${nombre}`, approves, command, otherSession: 'no', terminal: `${command} --terminal --for-session <sesión>` };
     return { id: `escape:${nombre}`, approves, command, otherSession: 'no', terminal: 'el mismo comando' };
   }),

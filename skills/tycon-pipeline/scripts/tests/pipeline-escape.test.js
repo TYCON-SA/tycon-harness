@@ -420,10 +420,11 @@ function laboratorioOtraSesion(t) {
     assert.strictEqual(set.status, 0, set.stderr);
     for (const n of ['0', '1', '2']) lab.marker(sid, ['complete-step', n], {});
   }
-  /** El pedido de la ventana, como lo arma el freno ante el comando de ses-coord. */
-  lab.pedir = (cmd, { delegacion = () => ({ ok: false, motivo: 'sin delegación en la prueba' }) } = {}) => ow.decidir({
+  /** El pedido de la ventana, como lo arma el freno ante el comando de ses-coord; `tramite`: qué firmas da el arnés solo. */
+  lab.pedir = (cmd, { delegacion = () => ({ ok: false, motivo: 'sin delegación en la prueba' }), tramite = null } = {}) => ow.decidir({
     evento: { session_id: COORD, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: cmd } },
-    escapes: [], arbol: arbolDelFreno(), pid: 201, casa: home, ahora: AHORA, delegacion, clasificar: () => null });
+    escapes: [], arbol: arbolDelFreno(), pid: 201, casa: home, ahora: AHORA, delegacion, clasificar: () => null,
+    ...(tramite ? { tramite, huellaDeLaMaquina: () => ({ huella: HUELLA }) } : {}) });
   /** El guion que corre ses-coord con la ventana aprobada (el árbol del comando); `sesionEn`: su variable de sesión al salir. */
   lab.correr = (args) => {
     const cmd = `node ${MARKER} ${args.map(comillas).join(' ')}`;
@@ -661,6 +662,88 @@ test('ExcepcionesDeTramite_ForSession_ElGuionFirmaPorDelegacion', (t) => {
     designar(otro);
     assert.strictEqual(otro.pedir(otro.comando(armar(otro)), { delegacion: delegacion(PERFIL) }).decision, 'ask', `${firma} sin delegar`);
   }
+});
+
+// 🔴 Falla con: cerrar como deuda, el rojo esperado de la matriz y apagar el modo autónomo, delegados en el perfil, no
+// se pueden correr para otra sesión (los pedía el freno de seguridad en la sesión propia): le llegaban al dueño.
+test('TresFirmasDelFreno_ForSession_LaCoordinadoraLasFirmaPorDelegacion', (t) => {
+  const designar = (lab) => {
+    const d = { name: 'relay-designation', status: 'ok', ts: new Date(AHORA - 3600000).toISOString(), sesion: COORD, rol: 'coordinadora', quien: 'dueño', cita: 'Esta sesión es la coordinadora' };
+    fs.appendFileSync(path.join(lab.estadoDir, 'gates.log'), `${[d, DS.confirmationRecord(d, new Date(AHORA - 3500000).toISOString())].map((l) => JSON.stringify(l)).join('\n')}\n`);
+  };
+  const delegacion = (perfil) => (o) => DS.delegaSinVentana({ ...o, perfil: () => perfil, huella: () => ({ huella: HUELLA }) });
+  const destino = (lab) => JSON.parse(lab.leer(DESTINO));
+  const cambiar = (lab, f) => { const m = destino(lab); f(m); fs.writeFileSync(lab.marcador(DESTINO), JSON.stringify(m)); };
+  // la historia de ses-a con un criterio, su prueba y su deuda anotada
+  const conDeuda = (lab) => fs.appendFileSync(lab.stories[DESTINO], ['## Acceptance Criteria', '', '1. **Given** algo, **Then** resultado uno.', '',
+    '### Tests', '', '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|', '| T1 | `a.uno` | 1 | integration | x | y |', '',
+    '## Dev Agent Record', '', '- Deuda: DEF-9.91-juguete — falta la librería', ''].join('\n'));
+  const d = new Date();
+  const hoy = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const casos = [
+    ['escape:set-autonomous', (lab) => cambiar(lab, (m) => { m.autonomous = true; }), ['set-autonomous', 'false', '--for-session', DESTINO],
+      (m) => assert.strictEqual(m.autonomous, false)],
+    ['escape:cerrar-como-deuda', (lab) => conDeuda(lab), ['close-as-debt', '--reason', 'falta la librería', '--debt', 'DEF-9.91-juguete', '--for-session', DESTINO],
+      (m) => assert.deepStrictEqual([m.cierre.estado, m.cierre.deuda, m.cierre.via, m.cierre.por], ['deuda', 'DEF-9.91-juguete', 'delegacion', COORD])],
+    ['escape:rojo-esperado-de-la-matriz', (lab) => { conDeuda(lab); cambiar(lab, (m) => { m.cierre = { estado: 'deuda', deuda: 'DEF-9.91-juguete', motivo: 'x', via: 'ventana', at: new Date().toISOString() }; m.checks = { acmatrix: 'red:exit=1' }; }); },
+      ['expect-red', 'acmatrix', '--tests', 'T1', '--until', hoy, '--for-session', DESTINO],
+      (m) => assert.deepStrictEqual([m.checks.acmatrix, m.expectedRed.acmatrix.until, m.expectedRed.acmatrix.via], ['rojo-esperado:exit=1', hoy, 'delegacion'])],
+  ];
+  for (const [firma, preparar, args, comprobar] of casos) {
+    const lab = laboratorioOtraSesion(t);
+    designar(lab);
+    preparar(lab);
+    const p = lab.pedir(lab.comando(args), { delegacion: delegacion({ ...PERFIL, delegated_signing: [firma] }) });
+    assert.deepStrictEqual([p.decision, p.via], ['allow', 'delegacion'], `${firma}: ${p.texto}`);
+    const r = lab.correr(args);
+    assert.strictEqual(r.status, 0, `${firma}: ${r.stdout}${r.stderr}`);
+    comprobar(destino(lab));
+    assert.deepStrictEqual(lab.gates().filter((g) => g.name === `${firma}-signed`).map((g) => g.via), ['delegacion'], firma);
+    assert.strictEqual(lab.vigentes().length, 0, `${firma}: el pedido se gasta`);
+    // sin su nombre en el perfil, la misma firma pide la ventana del dueño
+    const otro = laboratorioOtraSesion(t);
+    designar(otro);
+    preparar(otro);
+    assert.strictEqual(otro.pedir(otro.comando(args), { delegacion: delegacion(PERFIL) }).decision, 'ask', `${firma} sin delegar`);
+  }
+});
+
+// 🔴 Falla con: el rojo esperado de un control bajo la firma de la matriz, que el perfil da por trámite: el arnés deja
+// solo las pruebas o la compilación en rojo hasta el commit; o una sesión cualquiera que, por trámite, le apaga el modo
+// autónomo a otra (hallazgos del pase adversarial de la 8.323).
+test('TresFirmasDelFreno_ConElTramiteDelPerfil_NiElRojoDeUnControlNiOtraSesion', (t) => {
+  // el perfil vivo: la firma de la matriz y la de apagar el lazo son de trámite; la de cerrar como deuda, no
+  const tramite = (ids) => (ids.every((id) => ['escape:rojo-esperado-de-la-matriz', 'escape:set-autonomous'].includes(id)) ? { ok: true } : { ok: false, motivo: 'no es de trámite' });
+  const cambiar = (lab, sid, f) => { const m = JSON.parse(lab.leer(sid)); f(m); fs.writeFileSync(lab.marcador(sid), JSON.stringify(m)); };
+  // el rojo esperado de un control, en la propia sesión y en deuda: pide la firma de cerrar como deuda, que no es de trámite
+  const lab = laboratorioOtraSesion(t);
+  cambiar(lab, COORD, (m) => { m.cierre = { estado: 'deuda', deuda: 'DEF-9.92-juguete', motivo: 'x', via: 'ventana', at: new Date().toISOString() }; m.checks = { tests: 'red:exit=1' }; });
+  const control = lab.pedir(lab.comando(['expect-red', 'tests', '--tests', 'T2']), { tramite });
+  assert.deepStrictEqual(control.firmas, ['escape:cerrar-como-deuda'], control.texto);
+  assert.notStrictEqual(control.via, 'automatica', `el rojo de un control no sale por trámite: ${control.texto}`);
+  assert.notStrictEqual(control.decision, 'allow', control.texto);
+  // apagar el modo autónomo de otra sesión, sin coordinadora designada: tampoco sale por trámite
+  const otra = laboratorioOtraSesion(t);
+  for (const sid of [COORD, DESTINO]) cambiar(otra, sid, (m) => { m.autonomous = true; });
+  const apagar = otra.pedir(otra.comando(['set-autonomous', 'false', '--for-session', DESTINO]), { tramite });
+  assert.deepStrictEqual(apagar.firmas, ['escape:set-autonomous'], apagar.texto);
+  assert.notStrictEqual(apagar.via, 'automatica', `apagarle el lazo a otra sesión no sale por trámite: ${apagar.texto}`);
+  assert.notStrictEqual(apagar.decision, 'allow', apagar.texto);
+  // la propia sesión sí: apagar su lazo sigue siendo de trámite si el perfil lo dice
+  const propia = otra.pedir(otra.comando(['set-autonomous', 'false']), { tramite });
+  assert.deepStrictEqual([propia.decision, propia.via], ['allow', 'automatica'], propia.texto);
+  // el rojo esperado de la matriz para otra sesión, con su deuda y su criterio: tampoco sale por trámite
+  const matriz = laboratorioOtraSesion(t);
+  fs.appendFileSync(matriz.stories[DESTINO], ['## Acceptance Criteria', '', '1. **Given** algo, **Then** resultado uno.', '',
+    '### Tests', '', '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|', '| T1 | `a.uno` | 1 | integration | x | y |', '',
+    '## Dev Agent Record', '', '- Deuda: DEF-9.91-juguete — falta la librería', ''].join('\n'));
+  cambiar(matriz, DESTINO, (m) => { m.cierre = { estado: 'deuda', deuda: 'DEF-9.91-juguete', motivo: 'x', via: 'ventana', at: new Date().toISOString() }; m.checks = { acmatrix: 'red:exit=1' }; });
+  const d = new Date();
+  const hoy = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const rojo = matriz.pedir(matriz.comando(['expect-red', 'acmatrix', '--tests', 'T1', '--until', hoy, '--for-session', DESTINO]), { tramite });
+  assert.deepStrictEqual(rojo.firmas, ['escape:rojo-esperado-de-la-matriz'], rojo.texto);
+  assert.notStrictEqual(rojo.via, 'automatica', `el rojo de la matriz de otra sesión no sale por trámite: ${rojo.texto}`);
+  assert.notStrictEqual(rojo.decision, 'allow', rojo.texto);
 });
 
 test('Guion_ForSession_Delegada_SeisLlaves (T7) @story-8.142 @ac-4', (t) => {

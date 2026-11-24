@@ -2593,7 +2593,8 @@ test('Precheck_AprobarElPlan_FueraDeOrdenNiegaYEnOrdenNoEscribe', (t) => {
 // tiene requisitos antes de la firma, y las cuatro firmas sobre un archivo.
 const CON_REQUISITOS = ['plan-approval', 'extra-round', 'save', 'atdd-skip', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver',
   'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'review-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran', 'adhoc-lane', 'adhoc-lane:sobre-cupo',
-  'designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno', 'autonomy-resume', 'lost-run:particion', 'escape:no-mutation'];
+  'designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno', 'autonomy-resume', 'lost-run:particion', 'escape:no-mutation',
+  'escape:cerrar-como-deuda', 'escape:rojo-esperado-de-la-matriz', 'escape:set-autonomous'];
 
 // 🔴 Falla con: una firma de guion con requisitos que abre la ventana sin preguntarle antes al guion.
 test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => {
@@ -2620,6 +2621,10 @@ test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => 
     ['autonomy-resume', `node ${MARKER} resume-autonomy`],
     // contestar «skip» a la pregunta del pase del código: sin pregunta o sin diff legible, el guion se niega antes del cuadro
     ['review-skip', `node ${MARKER} review-answer --kind code --choice skip`],
+    // cerrar como deuda, el rojo esperado de la matriz y apagar el modo autónomo (8.323): una deuda sin anotar, un rojo
+    // esperado sin ejecución en deuda o una ejecución que no hay se niegan antes de la ventana
+    ['escape:cerrar-como-deuda', `node ${MARKER} close-as-debt --reason "falta la prueba en vivo" --debt DEF-9.99-a`],
+    ['escape:rojo-esperado-de-la-matriz', `node ${MARKER} expect-red acmatrix --tests T1 --until 2026-11-30`],
   ];
   const vistas = new Set();
   for (const [firma, cmd] of [...GUIONES, ...otras]) {
@@ -2638,6 +2643,17 @@ test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => 
   const r = pedir(casaNueva(t), `bash ${CONTROLES} approve --base origin/main`, { clasificar: () => ({ clase: 'refresh-after-main', refirma_de: 'abc' }),
     comprobar: (o) => { visto = o; return { niega: 'falta un requisito' }; } });
   assert.strictEqual(r.decision, 'deny', r.texto);
+  vistas.add(visto.firma);
+  // apagar el modo autónomo (8.323) pide firma sólo con la ejecución prendida: su casa la trae
+  const conAutonomo = casaNueva(t);
+  const activos = path.join(require('../../skills/tycon-pipeline/scripts/lib/state-dir.js').stateDir(conAutonomo), 'active');
+  fs.mkdirSync(activos, { recursive: true });
+  fs.writeFileSync(path.join(activos, 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.99', autonomous: true }));
+  visto = null;
+  const ra = pedir(conAutonomo, `node ${MARKER} set-autonomous false --for-session ses-a`, { comprobar: (o) => { visto = o; return { niega: 'falta un requisito' }; }, antesDelCorte: () => false });
+  assert.strictEqual(ra.decision, 'deny', ra.texto);
+  assert.match(ra.texto, /No abrí la ventana.*falta un requisito/);
+  assert.strictEqual(visto && visto.firma, 'escape:set-autonomous');
   vistas.add(visto.firma);
   // el ok de guardar tiene sus pruebas arriba; pasar el tope, la suya: su chequeo corre después del click
   assert.deepStrictEqual(CON_REQUISITOS.filter((f) => !vistas.has(f)), ['save', 'adhoc-lane:sobre-cupo'], 'cada firma con su comando');

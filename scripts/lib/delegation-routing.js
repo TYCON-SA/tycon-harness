@@ -49,6 +49,10 @@ const RUTAS = Object.freeze({
   // cambiar a mano el estado de una historia (sign-file cambiar-el-estado <archivo>): la constancia es de la sesión
   // destino; el archivo, en la posición 3, tiene que venir absoluto
   'escape:cambiar-el-estado': Object.freeze({ rutas: [], conPunto: [], absoluta: 3 }),
+  // los escapes del cierre que pide el marcador, sobre la ejecución abierta del destino: sin rutas
+  'escape:set-autonomous': Object.freeze({ rutas: [], conPunto: [] }),
+  'escape:cerrar-como-deuda': Object.freeze({ rutas: [], conPunto: [] }),
+  'escape:rojo-esperado-de-la-matriz': Object.freeze({ rutas: [], conPunto: [] }),
 });
 
 const no = (motivo, callar = false) => ({ ok: false, motivo, callar });
