@@ -219,17 +219,40 @@ function sinPalabrasDeBloque(seg) {
 }
 
 /**
- * Los destinos de un cp / mv: con `-t` / `--target-directory` (también `-rt`, `-t<carpeta>`), la carpeta y cada archivo
- * que llega a ella; si no, el último token una vez sacadas las redirecciones del final (`cp a b 2>&1`).
+ * Las palabras de un tramo sin su comentario del final ni sus redirecciones: las de salida (`2>&1`, `> f`) y las de
+ * entrada (`< f`, `<<< palabra`, `<<EOF`, `<<-'EOF'`), cuyo archivo o delimitador no es un argumento del comando. Sin la
+ * barra suelta del final (`cp a b \` sin renglón siguiente), que tampoco es el último argumento.
  */
-function cpMvDest(seg) {
+function palabrasDelComando(seg) {
   // un comentario al final no es parte del comando
-  const sinComentario = seg.replace(/(^|\s)#.*$/, '');
-  const sinRedir = sinComentario.replace(/[ \t]*(?:&|\d)?>{1,2}(?:\||&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ');
+  const sinComentario = String(seg).replace(/(^|\s)#.*$/, '');
+  const sinRedir = sinComentario
+    .replace(/[ \t]*(?:&|\d)?>{1,2}(?:\||&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ')
+    .replace(/(?:(?<!\S)\d)?<(?:<<|<-?|&|>)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ');
   const words = (sinRedir.trim().match(new RegExp(Q, 'g')) || []).map((w) => {
     const mm = w.match(new RegExp(`^${Q}$`));
     return mm ? tok(mm, 1) : null;
   }).filter(Boolean);
+  if (words[words.length - 1] === '\\') words.pop();
+  return words;
+}
+
+// Una redirección delante del comando (`> f cp a b`, `2>/dev/null cp a b`, `<<<x cp a b`): el comando es lo que sigue
+const REDIRECCION_DELANTE = /(?:(?:&|\d)?>{1,2}(?:\||&)?|\d?<(?:<<|<-?|&|>)?)[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)[ \t]*/y;
+function sinRedireccionesDelante(seg) {
+  const t = String(seg).trim();
+  let i = 0;
+  REDIRECCION_DELANTE.lastIndex = 0;
+  while (REDIRECCION_DELANTE.test(t)) i = REDIRECCION_DELANTE.lastIndex;
+  return t.slice(i);
+}
+
+/**
+ * Los destinos de un cp / mv: con `-t` / `--target-directory` (también `-rt`, `-t<carpeta>`), la carpeta y cada archivo
+ * que llega a ella; si no, el último argumento (`palabrasDelComando`, sin redirecciones: `cp a b 2>&1`, `cp a b <<<x`).
+ */
+function cpMvDest(seg) {
+  const words = palabrasDelComando(sinRedireccionesDelante(seg));
   // con varios -t vale el último, como en cp
   let dir = null;
   const fuera = new Set([0]);   // el nombre del comando, y lo que nombra la carpeta
@@ -244,13 +267,6 @@ function cpMvDest(seg) {
   if (dir === null) { const t = words.slice(1).filter((w) => !w.startsWith('-')).pop(); return t ? [t] : []; }
   const fuentes = words.filter((w, i) => !fuera.has(i) && !w.startsWith('-'));
   return [dir, ...fuentes.map((f) => `${dir.replace(/[\\/]+$/, '')}/${f.split(/[\\/]/).pop()}`)];
-}
-
-function lastWord(seg) {
-  const words = seg.trim().match(new RegExp(Q, 'g')) || [];
-  if (!words.length) return null;
-  const m = words[words.length - 1].match(new RegExp(`^${Q}$`));
-  return m ? tok(m, 1) : null;
 }
 
 /**
@@ -464,12 +480,24 @@ function subcomandosComoComodin(cmd, seguro) {
   return { cmd: texto, destinos };
 }
 
-/** Devuelve los paths (tal cual aparecen) que el comando escribe. */
+/**
+ * Devuelve los paths (tal cual aparecen) que el comando escribe. Lo mira con los renglones como vienen y, si el comando
+ * tiene continuaciones de renglón, también unidos como los une el shell (`cp a \` y `b` abajo es `cp a b`): cuentan los
+ * destinos de las dos lecturas, así unir los renglones nunca hace ver menos que no unirlos.
+ */
 function extractWriteTargets(cmd, { keep = null } = {}) {
   const out = new Set();
   const raw = String(cmd || '');
   const s = stripNonCommandText(raw);
+  destinosDeEscritura(raw, s, keep, out);
+  // los cuerpos de los heredocs ya no están (`stripNonCommandText`): se puede unir aunque el comando tenga uno
+  const unidos = sinContinuaciones(s, { sinCuerpos: true });
+  if (unidos !== s) destinosDeEscritura(raw, unidos, keep, out);
+  return [...out];
+}
 
+/** Agrega a `out` los destinos de escritura de `s` (el comando ya sin lo que no es comando); `raw`, el comando entero. */
+function destinosDeEscritura(raw, s, keep, out) {
   // 1) redirecciones: `> f`, `>> f`, `2> f`, `&> f`, `>| f`, `>& f` (no `>&2`, no `<`)
   const reRedirect = new RegExp(`(?:^|[^<>&])(?:&|\\d)?>{1,2}(?:\\||&(?![\\d-]))?[ \\t]*${Q}`, 'g');
   let m;
@@ -527,8 +555,9 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
     }
     // 4) cp / mv / ln → destino = último token del segmento (un enlace también deja un archivo en su destino). También
     //    las formas de PowerShell de cp y mv (Copy-Item / Move-Item y sus alias copy / cpi / move / mi; no distingue
-    //    mayúsculas): por la herramienta PowerShell de Windows.
-    if (/^(?:\w+=\S+\s+)*(?:sudo\s+)?(?:cp|mv|ln)\b/.test(seg.trim()) || /^(?:copy-item|move-item|copy|cpi|move|mi)\b/i.test(seg.trim())) {
+    //    mayúsculas): por la herramienta PowerShell de Windows. Una redirección delante (`> f cp a b`) no es el comando.
+    const comando = sinRedireccionesDelante(seg);
+    if (/^(?:\w+=\S+\s+)*(?:sudo\s+)?(?:cp|mv|ln)\b/.test(comando) || /^(?:copy-item|move-item|copy|cpi|move|mi)\b/i.test(comando)) {
       for (const t of cpMvDest(seg)) out.add(t);
     }
   }
@@ -588,8 +617,8 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
   const reDd = /\bdd\b[^\n|;&]*?\bof=(['"]?)([^\s'"]+)\1/g;
   while ((m = reDd.exec(s))) out.add(m[2]);
   for (const seg of splitSegments(s)) {
-    if (/^(?:\w+=\S+\s+)*(?:sudo\s+)?truncate\b/.test(seg.trim())) {
-      const t = lastWord(seg);
+    if (/^(?:\w+=\S+\s+)*(?:sudo\s+)?truncate\b/.test(sinRedireccionesDelante(seg))) {
+      const t = palabrasDelComando(sinRedireccionesDelante(seg)).pop();
       if (t && !t.startsWith('-')) out.add(t);
     }
   }
@@ -627,8 +656,6 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
       if (valor) out.add(valor);
     }
   }
-
-  return [...out];
 }
 
 // ── lo que el registro tampoco ve: un intérprete que escribe en un destino armado, y borrar o deshacer ────────────
@@ -873,9 +900,10 @@ const sinGrupo = (w) => {
  * un heredoc no une nada: en su cuerpo la barra es texto, y unir la línea de cierre correría el cierre a un renglón posterior
  * y borraría lo que hay en el medio.
  */
-function sinContinuaciones(cmd) {
+function sinContinuaciones(cmd, { sinCuerpos = false } = {}) {
   const s = String(cmd);
-  if (s.includes('<<')) return s;
+  // con `sinCuerpos`, quien llama ya sacó los cuerpos de los heredocs: une igual
+  if (!sinCuerpos && s.includes('<<')) return s;
   let out = '';
   let q = null;
   for (let i = 0; i < s.length; i++) {

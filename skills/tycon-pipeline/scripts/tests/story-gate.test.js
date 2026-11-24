@@ -1173,6 +1173,41 @@ test('PlanReview_RunnerListUnreadable_SaysWhy (T28, el freno) @story-8.267 @ac-2
   assert.strictEqual(bien.motivo, null);
 });
 
+// 🔴 Fila 222. Mutación: tomar como destino de un `cp` la última palabra del renglón. Con una barra al final (el shell une
+// el renglón siguiente), un `<<<`, un `<<EOF` o una redirección delante del comando, esa palabra no es el destino, y el
+// `cp` escribía el resultado de la revisión sin que ningún control lo viera.
+test('CpAlEstado_ConBarraAlFinalOEntradaRedirigida_Frena (fila 222, el freno)', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'plan-review', 's1'), { recursive: true });
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const res = path.join(E, 'plan-review', 's1', 's1.resultado.json');
+  const S = path.join(repo, 'falso.json');
+  fs.writeFileSync(S, '{}');
+  const arnes = path.join(SCRIPTS, '..', '..', '..');
+  conEnv(SIN_REGISTRO, () => {
+    const frena = (cmd) => { const r = bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }); assert.ok(r && r.block, JSON.stringify(cmd)); };
+    const pasa = (cmd) => assert.equal(bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }), null, JSON.stringify(cmd));
+    // la barra al final une el renglón siguiente: el destino sigue siendo el resultado
+    frena(`cp ${S} '${res}' \\\n  `);
+    frena(`cp ${S} '${res}' \\\n && true`);
+    frena(`cp ${S} '${res}' \\`);
+    // y una barra en el medio corre el destino al renglón de abajo
+    frena(`cp ${S} \\\n'${res}'`);
+    // lo que entra por la entrada no es un argumento: ni la palabra de `<<<`, ni el delimitador de un heredoc, ni `< f`
+    frena(`cp ${S} '${res}'<<<E`);
+    frena(`cp ${S} '${res}' <<EOF`);
+    frena(`cp ${S} '${res}' <<-'EOF'\nEOF`);
+    frena(`cp ${S} '${res}' < /dev/null`);
+    // una redirección delante del comando: el comando es lo que sigue
+    frena(`> EOF cp ${S} '${res}'`);
+    frena(`2>/dev/null cp ${S} '${res}'`);
+    // lo de siempre sigue pasando: un cp a otro lado con la barra al final, y uno que lee de un heredoc
+    pasa(`cp ${S} '${repo}/copia.json' \\\n  `);
+    pasa(`cp ${S} '${repo}/copia.json' <<<E`);
+  });
+});
+
 // 🔴 Mutaciones: mirar sólo el primer `--out`, aceptar un destino que no se puede leer, o aceptar el corredor del arnés
 // con un `--args` que no es el pedido que preparó el arnés: con cualquiera, la sesión escribe un «aprobado» que no es el
 // de su plan (T28, las tres formas de falsificar el resultado).
