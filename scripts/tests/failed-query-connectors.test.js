@@ -102,3 +102,22 @@ test('FailedQuery_OpcionEntreElGrupoYElVerbo: una opción con valor del conector
   const A = require(path.join(ROOT, 'integrations', 'azure-devops', 'scripts', 'query-notice.js'));
   assert.deepStrictEqual(A.proyectos('az repos pr --org https://dev.azure.com/acme list --project Inexistente', H.AYUDA), ['Inexistente']);
 });
+
+// 🔴 Falla con: después de saltear una opción del conector, la redirección (`2>&1`, `2>/dev/null`) se juntaba como una
+// palabra más, y el conector de Azure, que decide por la última, perdía el verbo (los casos del banco con `-o tsv 2>&1`)
+test('FailedQuery_RedireccionNoEsPalabra: una redirección corta las palabras, con o sin una opción del conector antes', () => {
+  const H = require(HOOK);
+  const clase = (s) => H.clasificar(s).clase;
+  for (const c of ['az pipelines runs list -o tsv 2>&1', 'az pipelines runs list --project P -o tsv 2>/dev/null', 'az repos pr --org u list 2>&1',
+    'az pipelines runs list 2>&1', 'gh pr -R o/r list 2>&1']) assert.strictEqual(clase(c), 'consulta', c);
+  for (const c of ['az repos pr create --org u 2>&1', 'gh pr create -R o/r 2>&1']) assert.strictEqual(clase(c), 'otro', c);
+  // y el gancho entero avisa la consulta enmascarada, como fijan los casos del banco (39-consulta-fallida-notice.json)
+  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'fq-redir-'));
+  for (const command of ['az pipelines runs list --project P -o tsv 2>&1 | head -3', 'az pipelines runs list --project P -o tsv 2>&1 || true',
+    'cd /repo\nfor p in a b; do az pipelines runs list --project $p -o tsv 2>/dev/null | head -3; done', 'az repos pr --org u list 2>&1 | head -3']) {
+    const input = JSON.stringify({ tool_name: 'Bash', tool_input: { command }, tool_response: { stdout: '', stderr: '' } });
+    const r = spawnSync(process.execPath, [HOOK], { input, encoding: 'utf8', env: { ...process.env, HOME: casa, USERPROFILE: casa } });
+    assert.strictEqual(r.status, 2, `${command}: ${r.stderr}`);
+    assert.match(r.stderr, /VACÍO/, command);
+  }
+});

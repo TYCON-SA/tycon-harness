@@ -88,6 +88,8 @@ function palabras(argv, conValor) {
   const pos = [];
   while (i < argv.length) {
     const o = argv[i];
+    // una redirección (`2>&1`, `>`, `2>/dev/null`, `<in`) no es el grupo ni el verbo: corta, como una opción
+    if (/^[0-9&]*[<>]/.test(o)) break;
     if (!o.startsWith('-')) { pos.push(o); i++; continue; }
     if (!conValor || !conValor.has(o.split('=')[0])) break;
     i += o.includes('=') ? 1 : 2;
