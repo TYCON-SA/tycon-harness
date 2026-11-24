@@ -200,7 +200,7 @@ function main(argv) {
   console.error('\n   Forma aceptada (sólo estas claves; «base» es opcional y dice a qué base entra la puerta):');
   console.error('   {"servers":[{"host":"x.database.windows.net","environment":"production","keychain":"tycon-prod-x","base":"xdb"},');
   console.error('               {"host":"acme-test.example.com","environment":"non-production"}]}');
-  console.error('   Detalle: guides/produccion-con-permiso.md');
+  console.error('   Detalle: guides/production-with-permission.md');
   return 1;
 }
 

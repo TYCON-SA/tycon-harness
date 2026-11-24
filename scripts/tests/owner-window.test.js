@@ -2584,7 +2584,7 @@ test('Precheck_AprobarElPlan_FueraDeOrdenNiegaYEnOrdenNoEscribe', (t) => {
 
 // Las otras firmas de guion con requisitos propios pasan por el mismo chequeo. Quedan sin chequeo el carril, que no
 // tiene requisitos antes de la firma, y las cuatro firmas sobre un archivo.
-const CON_REQUISITOS = ['plan-approval', 'extra-round', 'save', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver',
+const CON_REQUISITOS = ['plan-approval', 'extra-round', 'save', 'atdd-skip', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver',
   'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'review-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran', 'adhoc-lane', 'adhoc-lane:sobre-cupo',
   'designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno', 'autonomy-resume', 'lost-run:particion', 'escape:no-mutation'];
 
@@ -2593,6 +2593,7 @@ test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => 
   assert.deepStrictEqual([...ow.CON_PRECHEQUEO].sort(), [...CON_REQUISITOS].sort());
   const otras = [
     ['adversarial-skip', `node ${MARKER} sign-adversarial-skip --story /r/specs/story-9.99.md --reason "sin código"`],
+    ['atdd-skip', `node ${MARKER} sign-atdd-skip --story /r/specs/story-9.99.md --reason "sólo guías"`],
     ['pending-approval', `node ${MARKER} approve-pending --id DEF-nuevo --repo /r`],
     ['escape:force-manual', `node ${MARKER} set-check dod green --force-manual`],
     ['escape:trust-ran', `node ${PIPELINE} check-count --repo /r --story /r/specs/story-9.99.md --trust-ran --ran a`],
@@ -4340,12 +4341,50 @@ test('OwnerWindow_WatcherOtherShapes_StillBlocks @story-8.270 @ac-14 @ac-15 @ac-
   assert.strictEqual(pedir(casa, GUIONES[0][1], { arbol: conVigilante(casa, `node "${COORD_PROPIO}" owner-wait`) }).decision, 'ask');
 });
 
+// pr-wait --story: la espera de que una historia abra su pedido también es de sólo lectura
+test('OwnerWindow_ReadOnlyWatcherStory_DelegatedSignAllowed: con pr-wait --story de fondo, la coordinadora firma por delegación; otra forma niega', (t) => {
+  for (const linea of [`node "${COORD_PROPIO}" pr-wait --repo acme/arnes --story 8.326`, `node ${COORD_PROPIO} pr-wait --repo acme/arnes --story 25 --interval 60`]) {
+    const casa = casaNueva(t);
+    const r = pedirConDelegacion(casa, ADHOC_EN_CUPO, { arbol: conVigilante(casa, linea) });
+    assert.deepStrictEqual([r.decision, r.via], ['allow', 'delegacion'], `${linea}: ${r.texto}`);
+  }
+  for (const linea of [
+    `node "${COORD_PROPIO}" pr-wait --repo acme/arnes --story $S`, // armada
+    `node "${COORD_PROPIO}" pr-wait --repo acme/arnes --story 8.326 --number 7`, // las dos
+    `node "${COORD_PROPIO}" pr-wait --repo acme/arnes --story x8`, // no es una historia
+    `node "${COORD_PROPIO}" pr-wait --repo acme/arnes --story 8.`,
+    `node "${COORD_PROPIO}" pr-wait --repo acme/arnes --story 8.326 | tee PALABRA-CONOCIDA`,
+    `node "${COORD_PROPIO}" pr-wait --story 8.326 --repo acme/arnes`, // otro orden
+  ]) {
+    const casa = casaNueva(t);
+    const r = pedirConDelegacion(casa, ADHOC_EN_CUPO, { arbol: conVigilante(casa, linea) });
+    assert.strictEqual(r.decision, 'deny', linea);
+    assert.doesNotMatch(r.texto, /PALABRA-CONOCIDA|tee /, linea);
+  }
+});
+
+// pr-wait con el repo de Azure DevOps escrito entero (<org>/<proyecto>/<repo>) también es de sólo lectura
+test('OwnerWindow_ReadOnlyWatcherOrgProjectRepo_DelegatedSignAllowed: con --repo <org>/<proyecto>/<repo> de fondo, la coordinadora firma por delegación', (t) => {
+  for (const linea of [`node "${COORD_PROPIO}" pr-wait --repo acme/Seguimiento/seguimiento-backend --number 7`,
+    `node "${COORD_PROPIO}" pr-wait --repo "acme/Acme Formularios Propios/formularios-app" --story 2.1 --interval 60`]) {
+    const casa = casaNueva(t);
+    const r = pedirConDelegacion(casa, ADHOC_EN_CUPO, { arbol: conVigilante(casa, linea) });
+    assert.deepStrictEqual([r.decision, r.via], ['allow', 'delegacion'], `${linea}: ${r.texto}`);
+  }
+  for (const linea of [`node "${COORD_PROPIO}" pr-wait --repo a/b/c/d --number 7`, `node "${COORD_PROPIO}" pr-wait --repo a//c --number 7`,
+    `node "${COORD_PROPIO}" pr-wait --repo "a/b;c/d" --number 7`]) {
+    const casa = casaNueva(t);
+    assert.strictEqual(pedirConDelegacion(casa, ADHOC_EN_CUPO, { arbol: conVigilante(casa, linea) }).decision, 'deny', linea);
+  }
+});
+
 test('Guide_DelegatedSign_NamesReadOnlyWatchers @story-8.270 @ac-17 — la guía de las firmas nombra el vigilante y por qué lo demás frena', () => {
   const guia = fs.readFileSync(path.join(RAIZ, 'guides', 'firmas-del-arnes.md'), 'utf8');
   const inicio = guia.indexOf('## Aprobar en nombre del dueño');
   assert.ok(inicio >= 0, 'falta la sección de la firma por delegación');
   const seccion = guia.slice(inicio, guia.indexOf('\n## ', inicio + 5));
   assert.ok(seccion.includes('pr-wait --repo <organización/repo> --number <número>'));
+  assert.ok(seccion.includes('pr-wait --repo <organización/repo> --story <historia>'), 'la guía no nombra la espera de una historia');
   assert.doesNotMatch(seccion, /gh pr checks|gh run watch/);
   assert.match(seccion, /sólo lectura/);
   assert.match(seccion, /Cualquier otra consola de fondo sigue frenando/);

@@ -10,7 +10,7 @@
 #   T28-T36, T63 — el guion: sin argumentos, entorno descartado, sólo la versión bajada, origen fijado, red, árbol, sólo
 #                  avanza, registro e idempotencia, candado.
 #   T37-T41      — el instalador: --allow-auto-update (guion, regla validada con visudo, dueños) y --remove-auto-update.
-#   T43          — la guía produccion-con-permiso.md nombra el riesgo.
+#   T43          — la guía production-with-permission.md nombra el riesgo.
 #   T55-T57, T60-T62 — lo que eligió la organización (guard.update) y la marca de root.
 #
 # 🔴 Nada acá toca el sistema de verdad: raíz de sistema falsa (TYCON_PROD_ROOT), HOME falso, «GitHub» de juguete
@@ -24,7 +24,7 @@ INSTALADOR="$AQUI/scripts/production/install-guard.sh"
 GUION="$AQUI/scripts/production/update-guard.sh"
 PLANTILLA="$AQUI/scripts/production/sudoers.tycon-guard.template"
 AVISO="$AQUI/scripts/hooks/guard-update-notice.js"
-GUIA="$AQUI/guides/produccion-con-permiso.md"
+GUIA="$AQUI/guides/production-with-permission.md"
 TMP="$(mktemp -d)"
 SRV_PID=""
 trap '[ -n "$SRV_PID" ] && kill "$SRV_PID" 2>/dev/null; rm -rf "$TMP"' EXIT

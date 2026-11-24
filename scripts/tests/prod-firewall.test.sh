@@ -476,7 +476,7 @@ if [[ "$l" == *'"exit":0'* ]] && [[ "$l" != *"lock create"* ]] && ! registro | g
 else no "6.4 T8 · registro: $(registro | tail -2)"; fi
 
 # ── T9 · la guía ────────────────────────────────────────────────────────────────────────────────────────────────
-GUIA="$AQUI/guides/produccion-con-permiso.md"
+GUIA="$AQUI/guides/production-with-permission.md"
 faltan=""
 for f in "CanNotDelete" "--locks" "lo pone una persona" "permiso de locks" "az lock create" "ScopeLocked" "suscripción" \
          "--close-firewall\` también falla con" "queda abierta. Por eso no pongas el candado"; do

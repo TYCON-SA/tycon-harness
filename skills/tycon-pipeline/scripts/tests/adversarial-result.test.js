@@ -169,13 +169,16 @@ test('T1 SetFlag_DeepReviewDone_SeNiega @story-1.8 @ac-1', () => {
 test('T2 SetFlag_OtrasBanderas_SiguenAndando @story-1.8 @ac-2', () => {
   const home = casa(); const SID = 't2';
   writeFakeMarker(home, SID);
-  for (const f of ['atddBypass', 'waitingForHuman']) {
-    // el escape del freno de pruebas primero pide su motivo
-    const r = correr(home, SID, ['set-flag', f, 'true', ...(f === 'atddBypass' ? ['--reason', 'refactor sobre red existente'] : [])]);
-    assert.equal(r.status, 0, `${f}: ${r.stderr}`);
-    assert.equal(r.stdout.trim(), `${f}: true`);
-    assert.equal(leerMarker(home, SID)[f], true);
-  }
+  const r = correr(home, SID, ['set-flag', 'waitingForHuman', 'true']);
+  assert.equal(r.status, 0, `waitingForHuman: ${r.stderr}`);
+  assert.equal(r.stdout.trim(), 'waitingForHuman: true');
+  assert.equal(leerMarker(home, SID).waitingForHuman, true);
+  // el escape del freno de pruebas primero pide además la firma del dueño: sin ella sale 2 y no escribe
+  // (con la firma, la T4 de 8.283 en unit.test.js)
+  const escape = correr(home, SID, ['set-flag', 'atddBypass', 'true', '--reason', 'refactor sobre red existente']);
+  assert.equal(escape.status, 2, escape.stderr);
+  assert.match(escape.stderr, /sign-atdd-skip/);
+  assert.equal(leerMarker(home, SID).atddBypass, undefined);
   // las de hechos externos las pone el arnés: set-flag sale 2 y no escribe (Casos: external-flags.test.js)
   for (const f of ['workSignalStarted', 'adoMarkedActive']) {
     const r = correr(home, SID, ['set-flag', f, 'true']);
