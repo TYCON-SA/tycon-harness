@@ -1661,7 +1661,9 @@ test('T33c Team_RenamesMap_SplitScript_NameInItsPartsCounts', () => {
   const relmFile = path.join(v, '.tycon-release.json');
   const relm = JSON.parse(fs.readFileSync(relmFile, 'utf8'));
   const put = (p, text) => { const f = path.join(v, ...p.split('/')); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, text); relm.files.push({ path: p, blob: TEAM.blobOf(Buffer.from(text)) }); };
-  put('scripts/ci/split.js', "'use strict';\n// el despachador: carga sus partes\nrequire('./lib/split-args.js');\n");
+  put('scripts/ci/split.js', "'use strict';\n// el despachador: carga sus partes\nrequire('./lib/split-args.js');\nrequire('./lib/split-extra-named.js');\n");
+  // una parte que por su nombre podría ser del hermano (lib/split-extra-*.js), pero que el despachador nombra: es suya
+  put('scripts/ci/lib/split-extra-named.js', "'use strict';\nconst OPTIONS = ['named-by-dispatcher'];\nmodule.exports = OPTIONS;\n");
   put('scripts/ci/lib/split-args.js', "'use strict';\n// las opciones del guion partido\nconst OPTIONS = ['marks'];\nmodule.exports = OPTIONS;\n");
   put('scripts/ci/lib/other-args.js', "'use strict';\nconst OPTIONS = ['elsewhere'];\nmodule.exports = OPTIONS;\n");
   // un guion hermano cuyo nombre empieza igual (split-extra.js): sus partes (lib/split-extra-*.js) son suyas, no de split.js
@@ -1690,6 +1692,9 @@ test('T33c Team_RenamesMap_SplitScript_NameInItsPartsCounts', () => {
   assert.ok(hermano.problems.some((x) => /entries\[8\].*sibling-only.*scripts\/ci\/split\.js/.test(x.reason)), JSON.stringify(hermano.problems));
   const delHermano = judge({ kind: 'option', old: 'hermano', new: 'sibling-only', where: 'scripts/ci/split-extra.js', batch: 'X' });
   assert.equal(delHermano.ok, true, JSON.stringify(delHermano.problems));
+  // la parte dudosa que el despachador nombra cuenta para él: rechazarla tiraría la actualización de todo el equipo
+  const nombrada = judge({ kind: 'option', old: 'nombrada', new: 'named-by-dispatcher', where: 'scripts/ci/split.js', batch: 'X' });
+  assert.equal(nombrada.ok, true, JSON.stringify(nombrada.problems));
   // sólo en una ruta con barras invertidas: no cuenta como parte
   const barras = judge({ kind: 'option', old: 'barras', new: 'backslashed', where: 'scripts/ci/split.js', batch: 'X' });
   assert.ok(barras.problems.some((x) => /entries\[8\].*backslashed/.test(x.reason)), JSON.stringify(barras.problems));
