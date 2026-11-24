@@ -157,14 +157,16 @@ test('T16 Freeze_AlteredCopy_Blocks @story-8.161 @ac-16 — la copia alterada no
 const { spawnSync } = require('child_process');
 const RAIZ = path.join(SCRIPTS, '..', '..', '..');
 // `antesDeArrancar(codigo)`: lo que el repo del código ya trae cuando arranca la corrida
-function corrida(sid, { masHistorias = {}, antesDeArrancar = null } = {}) {
+// `declaraTambien`: archivos de más en `files_to_modify` (los de un repo hermano, con su nombre adelante: sólo los
+// hermanos con archivos declarados se sellan)
+function corrida(sid, { masHistorias = {}, antesDeArrancar = null, declaraTambien = [] } = {}) {
   const base = tmp('ft-corrida-');
   const home = path.join(base, 'home');
   fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
   fs.symlinkSync(RAIZ, path.join(home, '.claude', 'agent-skills'));
   fs.symlinkSync(RAIZ, path.join(home, '.claude', 'tycon-harness'));
   const historias = repoDeJuguete('historias', {
-    'specs/story-9.9-sello.md': ['---', 'story: "9.9"', 'title: "sello"', 'status: ready-for-dev', 'files_to_modify:', '  - src/a.js', '---',
+    'specs/story-9.9-sello.md': ['---', 'story: "9.9"', 'title: "sello"', 'status: ready-for-dev', 'files_to_modify:', '  - src/a.js', ...declaraTambien.map((f) => `  - ${f}`), '---',
       '# Story 9.9', '', '## Acceptance Criteria', '', '1. **Given** algo, **Then** resultado.', '', '### Tests', '',
       '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|', '| T1 | `a.caso1` | 1 | unit | x | y |', '',
       '## Tasks / Subtasks', '', '- [ ] Task 1: hacerlo (AC: 1)', '', '## Change Log', '', '- hoy: escrita', ''].join('\n'),
@@ -1439,7 +1441,7 @@ test('Pase_HermanoCambiado_FrenaElCierre — si el código de un hermano cambió
 test('Pase_PropiaDelHermanoConRepo_NoFrenaElCierre — la prueba propia declarada como `(<repo>) <ruta>` no cuenta como cambio del hermano; el código sí', () => {
   // 🔴 rojo si: el cierre toma el `--in` crudo y lo resuelve contra la raíz del hermano → la forma `(Front) tests/x.test.js`,
   // la que pide el paso del pase, frena el cierre como si el hermano hubiera cambiado.
-  const C = corrida('s-ft-hermano');
+  const C = corrida('s-ft-hermano', { declaraTambien: ['Front/src/x.js'] });
   const front = repoDeJuguete('Front', { 'src/x.js': 'module.exports = 1;\n', 'tests/x.test.js': '// prueba\n' });
   fs.mkdirSync(path.join(C.codigo.repo, '.tycon'), { recursive: true });
   fs.writeFileSync(path.join(C.codigo.repo, '.tycon', 'advisors.yaml'),
@@ -1470,7 +1472,7 @@ test('Pase_PropiaDelHermanoConRepo_NoFrenaElCierre — la prueba propia declarad
 // cambio del hermano, y la vuelta de revisores, que cubre los arreglos del repo principal, no sellaba los hermanos.
 function corridaConHermano(sid) {
   const front = repoDeJuguete('Front', { 'src/x.js': 'module.exports = 1;\n', 'tests/x.test.js': '// prueba\n' });
-  const C = corrida(sid, { antesDeArrancar: (codigo) => {
+  const C = corrida(sid, { declaraTambien: ['Front/src/x.js'], antesDeArrancar: (codigo) => {
     fs.mkdirSync(path.join(codigo.repo, '.tycon'), { recursive: true });
     fs.writeFileSync(path.join(codigo.repo, '.tycon', 'advisors.yaml'), `evidence:\n  companion_repos:\n    - ${path.relative(codigo.repo, front.repo)}\n`);
     codigo.git('add', '.');
