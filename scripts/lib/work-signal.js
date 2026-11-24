@@ -15,7 +15,7 @@
 //   · `settings`: los ajustes que declara su manifiesto, por su última parte (`url`, `token`); `missing`, los que faltan,
 //     con dónde se ponen. Los secretos viajan por la entrada estándar: el núcleo nunca los pone en un argumento.
 //   · `mcpServer`: el servidor MCP de la integración tal como lo registró esta máquina (`integrations.mcp_servers` de
-//     ~/.claude/tycon.json; si no, el `mcp.server` del manifiesto), o null si la integración no tiene MCP.
+//     la configuración de la máquina; si no, el `mcp.server` del manifiesto), o null si la integración no tiene MCP.
 //
 // `stop` devuelve por la salida lo que informe la integración (`{"seconds":1080}`) o `{}`; `entry`, el id de la entrada
 // abierta (`{"entryId":"…"}`) o `{}`, y el núcleo lo usa como evidencia de la acción del agente; cualquier evento puede traer

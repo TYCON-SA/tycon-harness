@@ -965,7 +965,7 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
         continue;
       }
       if (esPerfil && ruta === 'integraciones.mcp_servers') {
-        errores.push({ archivo, clave: rutaEnArchivo, motivo: 'el nombre de un servidor MCP es de la máquina, no del equipo: cada persona registra el suyo — va en ~/.claude/tycon.json' });
+        errores.push({ archivo, clave: rutaEnArchivo, motivo: 'el nombre de un servidor MCP es de la máquina, no del equipo: cada persona registra el suyo — va en la configuración de la máquina (`tycon-config.js set integrations.mcp_servers`)' });
         continue;
       }
       if (esPerfil && ruta === 'coordination.owner_folder') {

@@ -426,7 +426,7 @@ function minutesBetween(isoA, isoB) {
 }
 
 // El nombre de una herramienta del MCP de Clockify, con el servidor como lo registró esta máquina: el que trae el evento
-// del núcleo, si no el de `integrations.mcp_servers.clockify` de ~/.claude/tycon.json, y si no «clockify» (el del
+// del núcleo, si no el de `integrations.mcp_servers.clockify` de la configuración de la máquina, y si no «clockify» (el del
 // manifiesto).
 const SERVIDOR_VALIDO = /^(?!.*__)[A-Za-z0-9_-]+$/;
 function mcpServer(fromEvent) {
