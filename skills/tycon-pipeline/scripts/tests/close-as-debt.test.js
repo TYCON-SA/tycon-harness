@@ -56,9 +56,12 @@ function entorno({ todo = null, enHistoria = false } = {}) {
   // las sesiones con la firma dada en la ventana, con su vía (`ventana`, `click` o `mensaje`)
   const firmadas = new Map();
   const { conVentana } = require(path.join(RAIZ, 'scripts', 'tests', 'lib', 'window-passed.js'));
-  const correr = (script, args, sid) => spawnSync(process.execPath, [path.join(SCRIPTS, script), ...args], {
-    encoding: 'utf8', env: firmadas.has(sid) ? conVentana(env(sid), firmadas.get(sid) === 'ventana' ? {} : { via: firmadas.get(sid) }) : env(sid), input: '', cwd: repo,
-  });
+  // `preload`: otro módulo que se carga después de la ventana
+  const correr = (script, args, sid, { preload = null } = {}) => {
+    const e = firmadas.has(sid) ? conVentana(env(sid), firmadas.get(sid) === 'ventana' ? {} : { via: firmadas.get(sid) }) : env(sid);
+    if (preload) e.NODE_OPTIONS = `${e.NODE_OPTIONS || ''} --require ${preload}`.trim();
+    return spawnSync(process.execPath, [path.join(SCRIPTS, script), ...args], { encoding: 'utf8', env: e, input: '', cwd: repo });
+  };
   const dir = () => [path.join(home, '.tycon', 'state'), path.join(home, '.claude', '.tycon-pipeline')].find((d) => fs.existsSync(path.join(d, 'active')));
   const activo = (sid) => path.join(dir(), 'active', `${sid}.json`);
   const leer = (sid) => JSON.parse(fs.readFileSync(activo(sid), 'utf8'));
@@ -177,6 +180,46 @@ test('8.323-ExpectRedDeUnControl_LoFirmaComoElRojoEsperado — sin la firma no s
   assert.strictEqual(con.leer('s-er2').checks.tests, 'rojo-esperado:exit=1');
   const log = fs.readFileSync(path.join(con.dir(), 'gates.log'), 'utf8').trim().split('\n').map((l) => { try { return JSON.parse(l); } catch (_) { return {}; } });
   assert.ok(log.some((l) => l.name === 'expect-red' && l.check === 'tests' && l.via === 'click'), 'el registro anota la vía');
+});
+
+/** Un módulo que envuelve `exigir` de la ventana y corre `cuerpo` después de la firma (la ejecución cambia mientras se firma). */
+function trasLaFirma(cuerpo) {
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'preload-')), 'tras-la-firma.js');
+  fs.writeFileSync(f, [
+    "const Module = require('module'); const fs = require('fs'); const orig = Module._load;",
+    'Module._load = function (req) { const m = orig.apply(this, arguments);',
+    "  if (/owner-window\\.js$/.test(req) && !m.__envuelto) { const ex = m.exigir; m.__envuelto = true;",
+    `    m.exigir = (o) => { const r = ex(o); ${cuerpo} return r; };`,
+    '    m.exigir.porPasada = ex.porPasada; }',
+    '  return m; };',
+  ].join('\n'));
+  return f;
+}
+
+// Fila 219: lo que cambia mientras la persona firma no se escribe sobre lo nuevo.
+// 🔴 Falla con: dejar en rojo esperado un control que se puso verde mientras se firmaba; o cerrar como deuda una
+//    ejecución que se cerró en el medio (vuelve a escribir su marcador).
+test('F219-T3 ExpectRedYCloseAsDebt_CambiaMientrasSeFirma_NoEscribe @fila-219', () => {
+  const deuda = { estado: 'deuda', motivo: 'sin versión compatible', deuda: 'DEF-9.9-angular', via: 'ventana', at: '2026-10-22T20:00:00Z' };
+  const E = entorno({ todo: '- [ ] [DEF-9.9-angular] subir angular\n' });
+  E.arrancar('s-f219');
+  E.escribir('s-f219', { ...E.leer('s-f219'), cierre: deuda, checks: { tests: 'red:exit=1' }, checksProvenance: { tests: 'test-gate' } });
+  const marcador = JSON.stringify(E.activo('s-f219'));
+  const verde = trasLaFirma(`const m = JSON.parse(fs.readFileSync(${marcador}, 'utf8')); m.checks.tests = 'green'; fs.writeFileSync(${marcador}, JSON.stringify(m));`);
+  const r = E.correr('marker.js', ['expect-red', 'tests', '--tests', 'T2'], 's-f219', { preload: verde });
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, /la ejecución cambió mientras se firmaba/);
+  const m = E.leer('s-f219');
+  assert.strictEqual(m.checks.tests, 'green', 'el control que se puso verde queda verde');
+  assert.strictEqual(m.expectedRed, undefined, 'no anota el rojo esperado');
+  // cerrar como deuda una ejecución que se cierra mientras se firma
+  const C = entorno({ todo: '- [ ] [DEF-9.9-angular] subir angular\n' });
+  C.arrancar('s-f219b');
+  const borrar = trasLaFirma(`fs.rmSync(${JSON.stringify(C.activo('s-f219b'))}, { force: true });`);
+  const c = C.correr('marker.js', CERRAR, 's-f219b', { preload: borrar });
+  assert.strictEqual(c.status, 2, c.stderr);
+  assert.match(c.stderr, /No se escribió nada/);
+  assert.ok(!fs.existsSync(C.activo('s-f219b')), 'no vuelve a escribir el marcador cerrado');
 });
 
 test('T23 RojoEsperado_LoAceptanSoloEnDeuda @story-8.93 @ac-11 — el cierre del turno y prepare-commit lo aceptan sólo con deuda; ESC-C3 sigue', () => {
