@@ -46,7 +46,9 @@ const REPO = (A && A.repo) || '.'
 // Los sellos de lo que se congeló al lanzar el pase (marker.js mark-adversarial-launched): vuelven tal cual en el
 // resultado, y `mark-adversarial-result` los compara con los del lanzamiento, repo por repo.
 const SELLOS = (A && A.sellos && typeof A.sellos === 'object' && !Array.isArray(A.sellos)) ? A.sellos : null
-const conSellos = (r) => (SELLOS ? { ...r, sellos: SELLOS } : r)
+// El resultado lleva además el repo y la base del pase: quien lo anota comprueba con git que la base está en el repo,
+// y sin ella ninguna lente cuenta, diga lo que diga su cazador.
+const conSellos = (r) => ({ ...r, ...(SELLOS ? { sellos: SELLOS } : {}), ...(BASE_VALIDA ? { base_del_pase: { repo: REPO, base: BASE } } : {}) })
 const FILES = (A && Array.isArray(A.files)) ? A.files : []
 const STORY = (A && A.storyPath) || '(no provista)'
 const DECISIONS = (A && A.decisions) || '(ninguna declarada — usá el criterio: no re-flaggees lo que el diff documenta como decisión intencional)'
@@ -776,15 +778,31 @@ if (!BASE_VALIDA) {
 // cruzar lentes si cada lente ya verificó lo suyo — y el grueso de los duplicados medidos son el
 // mismo defecto visto por lentes distintas. Lo que se paga: la cola del cazador más lento. Lo que se
 // gana: ~40 % de los verificadores.
+//
+// Un cazador que dice que la base no está en el repo se relanza una vez, solo: quien lanzó el pase la sacó de ese mismo
+// repo (git -C REPO merge-base), y lo que se vio es un cazador que corrió git en su propia carpeta, otro repo. Sin esto,
+// una lente sin medir obliga a repetir el pase entero. Si la segunda vez lo repite, la lente queda sin medir y quien
+// anota el resultado comprueba la base con git en el repo (lib/adversarial-verdict.js).
+const dijoSinBase = (h) => !!h && h.base_existe === false && !(typeof h.git_rechazado === 'string' && h.git_rechazado.trim())
+const otraVezSinBase = `
+
+SEGUNDA VEZ: en tu vuelta anterior dijiste que la base ${BASE} no está en el repo. Quien lanzó el pase la sacó de ese
+mismo repo (git -C ${REPO} merge-base): puede que hayas corrido git en tu propia carpeta, que puede ser otro repo.
+Comprobalo de nuevo con -C, y corré cada git con -C ${REPO}:  git -C ${REPO} cat-file -e ${BASE}^{commit}
+Sólo si sale 0, base_existe = true y seguí. Si sale distinto de 0, devolvé base_existe = false y findings = []: no la
+des por buena sin verla salir 0 (quien anota el resultado la vuelve a comprobar con git).`
+const cazar = (lens, extra = '') => agent(`${COMMON}\n\n${lens.prompt}${pedidoCazador(lens.key)}${extra}`, {
+  label: extra ? `hunt-otra-vez:${lens.key}` : `hunt:${lens.key}`,
+  phase: 'Hunt',
+  schema: HUNT_SCHEMA,
+  agentType: 'general-purpose',
+  model: MODEL,
+})
 const hunts = await parallel(
   LENSES.map((lens) => () =>
-    agent(`${COMMON}\n\n${lens.prompt}${pedidoCazador(lens.key)}`, {
-      label: `hunt:${lens.key}`,
-      phase: 'Hunt',
-      schema: HUNT_SCHEMA,
-      agentType: 'general-purpose',
-      model: MODEL,
-    }).then((h) => ({ lens: lens.key, hunt: h }))
+    cazar(lens).then((h) => (dijoSinBase(h)
+      ? cazar(lens, otraVezSinBase).then((h2) => ({ lens: lens.key, hunt: h2, otraVez: true }))
+      : { lens: lens.key, hunt: h }))
   )
 )
 
@@ -803,8 +821,12 @@ function juzgarLente(key, r) {
     return { motivo: `git no pudo correr en esta sesión (${h.git_rechazado.replace(/\s+/g, ' ').trim().slice(0, 160)}): no hubo contra qué comparar` }
   }
   if (!coincideBase(h.base, BASE)) return { motivo: `comparó contra ${h.base || '(nada)'}, no contra ${BASE}` }
-  // una base que no está en el repo: el diff falla y «sin hallazgos» no midió nada
-  if (h.base_existe === false) return { motivo: `la base ${BASE} no existe en el repo: no hubo contra qué comparar` }
+  // una base que no está en el repo: el diff falla y «sin hallazgos» no midió nada. Se anota dónde y cuál, para que quien
+  // anota el resultado la busque con git y diga si de verdad falta
+  if (h.base_existe === false) {
+    const veces = r.otraVez ? 'dijo dos veces' : 'dijo'
+    return { motivo: `su cazador ${veces} que la base ${BASE} no existe en el repo: no hubo contra qué comparar`, sinBase: { repo: REPO, base: BASE } }
+  }
   if (!h.findings.length && String(h.probe_dir).replace(/\/+$/, '') !== carpetaDeCaza(key)) return { motivo: 'no guardó la prueba que corrió' }
   return { ok: true }
 }
@@ -814,9 +836,10 @@ const lentes = LENSES.map((lens, i) => {
   const h = r && r.hunt
   const base = h && typeof h.base === 'string' ? h.base : null
   const probeDir = h && typeof h.probe_dir === 'string' ? h.probe_dir : null
+  const otraVez = r && r.otraVez ? { otra_vez: true } : {}
   return j.ok
-    ? { lens: lens.key, estado: 'medida', count: h.findings.length, base, probe_dir: probeDir }
-    : { lens: lens.key, estado: 'sin-medir', count: 0, base, probe_dir: probeDir, motivo: j.motivo }
+    ? { lens: lens.key, estado: 'medida', count: h.findings.length, base, probe_dir: probeDir, ...otraVez }
+    : { lens: lens.key, estado: 'sin-medir', count: 0, base, probe_dir: probeDir, motivo: j.motivo, ...otraVez, ...(j.sinBase ? { sin_base: j.sinBase } : {}) }
 })
 const lentesSinMedir = lentes.filter((l) => l.estado === 'sin-medir').map((l) => l.lens)
 const motivosDeLentes = Object.fromEntries(lentes.filter((l) => l.motivo).map((l) => [l.lens, l.motivo]))
@@ -1053,4 +1076,5 @@ return {
   verificadores: VERIFIERS,
   respuestas_descartadas: descartadas,
   ...(SELLOS ? { sellos: SELLOS } : {}),
+  base_del_pase: { repo: REPO, base: BASE },
 }

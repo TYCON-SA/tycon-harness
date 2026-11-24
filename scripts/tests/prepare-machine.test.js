@@ -171,7 +171,7 @@ test('8.187 T28 Preparar_YGuia_DanElComandoDelPermiso @story-8.187 @ac-25: con a
   const out = text(PM.check({ ...t.opts, repos: [] }));
   assert.ok(out.includes(`sudo bash '${path.join(t.arnes, 'scripts', 'production', 'install-guard.sh')}' --allow-auto-update`), out);
   assert.match(out, /contraseña/);
-  const guide = fs.readFileSync(path.join(ROOT, 'guides', 'produccion-con-permiso.md'), 'utf8');
+  const guide = fs.readFileSync(path.join(ROOT, 'guides', 'production-with-permission.md'), 'utf8');
   assert.match(guide, /install-guard\.sh --allow-auto-update/);
   assert.match(guide, /guard\.update: auto/);
 });

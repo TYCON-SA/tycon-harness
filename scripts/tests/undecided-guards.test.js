@@ -52,7 +52,7 @@ test('T9b UndecidedGuards_ClockColumnIsTrue @story-8.308 @ac-9 — dos frenos ti
 });
 
 test('T9c UndecidedGuards_ProductionGuideSaysHowItCloses @story-8.308 @ac-9 — la guía de producción dice desde qué versión se cierra y cómo se sale', () => {
-  const guia = leer('guides/produccion-con-permiso.md');
+  const guia = leer('guides/production-with-permission.md');
   assert.doesNotMatch(guia, /límite que el arnés no puede cerrar/);
   assert.match(guia, /onFailure/);
   assert.match(guia, /2\.1\.295/);

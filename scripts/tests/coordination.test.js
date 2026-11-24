@@ -256,8 +256,11 @@ test('T6 Coordinate_NoRole_SaysHowToTurnItOn @story-8.122 @ac-6 @story-8.199 @ac
   const r = coordinate(t, { CLAUDE_CODE_SESSION_ID: 'otra-1' });
   assert.strictEqual(r.code, 1);
   assert.doesNotMatch(r.text, /no usa una coordinadora/);
-  assert.match(r.text, /Esta sesión es la coordinadora/);
-  assert.match(r.text, /designate-relay/);
+  // fila 148: sin perfil el click también la nombra (la frase queda de respaldo); y dice que sin perfil no firma
+  assert.match(r.text, /designate-relay\n/);
+  assert.match(r.text, /el dueño hace click/);
+  assert.doesNotMatch(r.text, /«Esta sesión es la coordinadora»/);
+  assert.match(r.text, /ordena la máquina y no firma/);
 });
 
 test('T7 Coordinate_Codex_CannotCoordinate @story-8.122 @ac-7: en Codex lo dice y sale', () => {
@@ -1456,6 +1459,32 @@ test('Close_LauncherFails: si no se puede parar no se borra, y sin id de fondo n
 // ── Stopping a session by its name ───────────────────────────────────────────────────────────────────────────────────
 
 const stopIt = (t, name, extra = {}) => C.stop({ ...t.closeOpts, name, ...extra, launcher: extra.launcher || closer(t) });
+
+// 🔴 Falla con: `close --name` y `stop --name` piden la forma de los nombres que abre la coordinadora, y una sesión que la
+// persona nombró con espacios («Coordinadora DemoTack», como la lista status) no se puede cerrar ni parar sin /rename.
+test('Fila158_CloseStop_NombreConEspaciosOElId: el nombre exacto de la sesión, con espacios, o su id', () => {
+  const t = closeLab();
+  session(t, 'sid-con-espacios', 'Coordinadora DemoTack', { cwd: t.repo, kind: 'bg', jobId: 'job-espacios', startedAt: 1000 });
+  const r = closeIt(t, 'Coordinadora DemoTack');
+  assert.strictEqual(r.ok, true, r.message);
+  assert.deepStrictEqual(closed(t), ['stop job-espacios', 'rm job-espacios']);
+  // por el id de la sesión
+  const u = closeLab();
+  session(u, 'sid-por-id', 'Otra con espacios', { cwd: u.repo, kind: 'bg', jobId: 'job-por-id', startedAt: 1000, status: 'busy' });
+  const s = stopIt(u, 'sid-por-id');
+  assert.strictEqual(s.ok, true, s.message);
+  assert.deepStrictEqual(closed(u), ['stop job-por-id']);
+  // un nombre de varias líneas, vacío o sólo espacios no busca nada
+  for (const malo of ['dos\nlineas', '', '   ']) assert.match(stopIt(u, malo).message, /va con --name/);
+  // un nombre que no es de ninguna sesión sigue sin tocar nada
+  assert.match(closeIt(u, 'Nadie se llama así').message, /No encuentro la sesión «Nadie se llama así»/);
+  // el id de una sesión que es el nombre de otra: ambiguo, no se toca ninguna
+  const v = closeLab();
+  session(v, 'sid-victima', 'Victima', { cwd: v.repo, kind: 'bg', jobId: 'job-victima', startedAt: 1000 });
+  session(v, 'sid-otra', 'sid-victima', { cwd: v.repo, kind: 'bg', jobId: 'job-otra', startedAt: 1000 });
+  assert.match(closeIt(v, 'sid-victima').message, /Hay más de una sesión «sid-victima»/);
+  assert.deepStrictEqual(closed(v), [], 'no cerró ninguna');
+});
 
 test('T7 Stop_PorNombre_ParaConElId @story-8.284 @ac-14: para con el id que anotó la sesión, sin mirar si quedó limpia y sin borrar', () => {
   const t = closeLab();
