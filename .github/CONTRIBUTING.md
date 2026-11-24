@@ -10,6 +10,11 @@ Pull requests are welcome. This repository is where the harness is written, not 
 - **From a fork**: fork the repository, make a branch, and open a pull request to `main`. Because you are an outside
   contributor, the CI waits until a maintainer clicks «Approve and run workflows»: this is for safety, so code from
   outside does not run before someone has looked at it. After that, the CI runs as on any other pull request.
+- **How we review**: first we leave review comments on your pull request, saying what to change and why: you get the
+  first chance to fix it. Please turn on «Allow edits by maintainers», so we can add a fix to your same pull request if
+  needed. If we finish it ourselves (because it is urgent, or you do not answer), the fix goes on top of your commits,
+  which keep your name, with credit in the pull request and in the history. Accepted contributions are named in the
+  release notes.
 - **Big change? Open an issue first**: say what you want to do, so we can agree on it before you work. A small fix can
   go straight to a pull request.
 - **Green CI**: the `public-ci` check and CodeQL code scanning must both pass. Run the CI locally with
@@ -46,6 +51,16 @@ Si nunca colaboraste en este repo, el camino es éste:
 4. Esperá a que un mantenedor apruebe la corrida. Como venís de afuera, la CI no arranca sola: un mantenedor aprieta
    «Approve and run workflows». Es por seguridad, para que el código de afuera no corra sin que alguien lo mire antes.
 5. Después la CI corre como en cualquier pull request, y lo que tiene que dar verde es lo mismo (la sección siguiente).
+
+## Cómo revisamos tu pull request
+
+1. **Primero, comentarios en tu pedido.** Dejamos comentarios de revisión con lo que hay que cambiar y por qué. La
+   primera oportunidad de arreglarlo es tuya.
+2. **Activá «Allow edits by maintainers».** Es una casilla del pull request. Con ella, si hace falta, sumamos un
+   arreglo sobre tu mismo pedido, sin abrir otro.
+3. **Si lo completamos nosotros**, por urgencia o porque no respondés, el arreglo va encima de tus commits. Tus commits
+   quedan a tu nombre, y el crédito queda en el pedido y en la historia del repo.
+4. **Las contribuciones aceptadas se nombran** en las notas de la versión publicada.
 
 ## Lo que tiene que dar verde
 
