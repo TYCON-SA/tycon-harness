@@ -539,7 +539,8 @@ The owner signs from the phone, with a click in the coordinator's box. For that 
   the queue, if there is something it can take; if not, the question goes to the owner right away.
 - **The background `owner-wait` does not take the click away from the owner**: the brake lets it through if it runs
   exactly as its notice asks. Neither does the read-only watcher of a pull request
-  (`coordination.js pr-wait --repo <org/repo> --number <n>`), which also keeps delegated signing possible
+  (`coordination.js pr-wait --repo <org/repo> --number <n>`), nor the wait for a story to open its pull request
+  (`pr-wait --repo <org/repo> --story <story>`). Both also keep delegated signing possible
   (`guides/firmas-del-arnes.md`, «Aprobar en nombre del dueño»). Any other live background console does stop it: close
   it before asking for the box.
 - **A request without code is approved by the coordinator**: if it brings only stories, records, evidence, memory or
