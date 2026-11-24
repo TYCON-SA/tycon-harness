@@ -376,7 +376,7 @@ function cmdAdhoc(sub, payloadJson) {
     const a = io.readAdhoc(STATE_DIR, estado.SID);
     if (!a || !a.ciRojo) { console.error('marker.js adhoc ci-wait: esta sesión no tiene abierto el arreglo de un rojo de CI.'); process.exit(2); }
     const pedidos = require('./ci-red-lane.js').esperaTrasEmpujar(a);
-    if (!pedidos) { console.error(`marker.js adhoc ci-wait: no pude leer la punta de ${a.ciRojo.nombre}.`); process.exit(1); }
+    if (!Array.isArray(pedidos)) { console.error(`marker.js adhoc ci-wait: ${(pedidos && pedidos.problema) || `no pude leer la punta de ${a.ciRojo.nombre}`}.`); process.exit(1); }
     const dir = path.join(STATE_DIR, 'pr-build-wait');
     fs.mkdirSync(dir, { recursive: true });
     const archivo = path.join(dir, `${estado.SID}-${Date.now()}.json`);
@@ -663,6 +663,11 @@ function cmdAdhoc(sub, payloadJson) {
     // el arreglo de un rojo de CI: sólo sobre el pedido en rojo de esta sesión, dentro de su repo y su tope, sin lo sensible
     if (payload.ciRojo !== undefined) {
       // sobre un arreglo común abierto heredaría su lista y su tope: se cierra uno y se abre el otro
+      // la firma del rojo se calcula de las banderas: en JSON siempre sería otra, y el tope no diría por qué
+      if (!String(process.argv[4] || '').startsWith('--')) {
+        console.error('marker.js adhoc set: el arreglo de un rojo de CI se pide con banderas (--ci-red <pedido> --check "<control>" --reason … --data … --file …), no en JSON.');
+        process.exit(2);
+      }
       if (actual && !actual.ciRojo) {
         console.error('marker.js adhoc set: esta sesión tiene abierto un arreglo rápido común; el arreglo de un rojo de CI no se abre encima. Cerralo (marker.js adhoc clear) y pedí el del rojo.');
         process.exit(2);

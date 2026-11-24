@@ -94,13 +94,27 @@ function frenoAlGuardar(carril, { correr = (repo, o) => require('./ci-local-chec
   return null;
 }
 
-/** La lista de la espera de la compilación tras empujar el arreglo: el pedido con la punta nueva. */
+/** La punta de `rama` en el servidor (`origin`), o null si no se puede leer. */
+function puntaEmpujada(repo, rama) {
+  if (!rama) return null;
+  const r = spawnSync('git', ['-C', repo, 'ls-remote', 'origin', `refs/heads/${rama}`], { encoding: 'utf8', windowsHide: true, timeout: 60000 });
+  return r.status === 0 ? (String(r.stdout).match(/^([0-9a-f]{40})\s/m) || [])[1] || null : null;
+}
+
+/**
+ * La lista de la espera de la compilación tras empujar el arreglo: el pedido con la punta empujada. La copia tiene que
+ * estar parada en ella: el verde de otro commit (main, uno sin empujar) no dice nada del pedido. `{ problema }` si no.
+ */
 function esperaTrasEmpujar(carril) {
   const c = carril && carril.ciRojo;
   if (!c) return null;
   const punta = git(c.repo, ['rev-parse', 'HEAD']);
-  if (punta.status !== 0) return null;
-  return [{ repo: c.repo, nombre: c.nombre, numero: c.pedido, rama: c.rama, commit: punta.stdout.trim() }];
+  if (punta.status !== 0) return { problema: `no pude leer la punta de ${c.nombre}` };
+  const local = punta.stdout.trim();
+  const empujada = puntaEmpujada(c.repo, c.rama);
+  if (!empujada) return { problema: `no pude leer en el servidor la rama del pedido #${c.pedido} (${c.rama || 'sin rama anotada'})` };
+  if (empujada !== local) return { problema: `la punta de la copia (${local.slice(0, 12)}) no es la empujada del pedido #${c.pedido} (${empujada.slice(0, 12)}): empujá el arreglo a ${c.rama}, pará la copia ahí y corré ci-wait de nuevo` };
+  return [{ repo: c.repo, nombre: c.nombre, numero: c.pedido, rama: c.rama, commit: local }];
 }
 
-module.exports = { validarApertura, frenoAlGuardar, esperaTrasEmpujar, resultadoDeLaSesion };
+module.exports = { validarApertura, frenoAlGuardar, esperaTrasEmpujar, puntaEmpujada, resultadoDeLaSesion };

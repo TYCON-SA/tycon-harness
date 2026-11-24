@@ -158,12 +158,24 @@ async function main(argv) {
     pedidos: lista.pedidos || [], leer: lectorReal(),
     topeMs: entero(process.env.TYCON_PR_BUILD_WAIT_MIN, 90) * 60000, cadaMs: entero(process.env.TYCON_PR_BUILD_WAIT_POLL_S, 60) * 1000,
   });
-  process.stdout.write(`${avisar({ stateDir: stateDir(), session: lista.session, storyId: lista.storyId, resultado })}\n`);
+  // el arreglo de un rojo de CI: si la punta del pedido se movió mientras esperaba, el verde es de un commit que ya no es
+  // el del pedido; no se da por listo
+  const movida = lista.closeAdhoc && resultado.estado === 'listos' ? puntaMovida(lista) : null;
+  const final = movida ? { estado: 'no-medido', pedidos: resultado.pedidos.map((p) => ({ ...p, veredicto: 'no-medido', motivo: movida })) } : resultado;
+  process.stdout.write(`${avisar({ stateDir: stateDir(), session: lista.session, storyId: lista.storyId, resultado: final })}\n`);
   // el arreglo de un rojo de CI (marker.js adhoc ci-wait): con verde se cierra, como lo cerraría la sesión
-  if (lista.closeAdhoc && resultado.estado === 'listos') cerrarArreglo(lista.session, { pedido: (lista.pedidos[0] || {}).numero, stateDir: stateDir() });
-  return resultado.estado === 'listos' ? 0 : 1;
+  if (lista.closeAdhoc && final.estado === 'listos') cerrarArreglo(lista.session, { pedido: (lista.pedidos[0] || {}).numero, stateDir: stateDir() });
+  return final.estado === 'listos' ? 0 : 1;
+}
+
+/** ¿La punta del pedido esperado cambió en el servidor? El motivo, o null si sigue siendo la esperada. */
+function puntaMovida(lista) {
+  const p = (lista && lista.pedidos && lista.pedidos[0]) || {};
+  const ahora = require('./ci-red-lane.js').puntaEmpujada(p.repo, p.rama);
+  if (!ahora) return `no pude leer en el servidor la rama del pedido #${p.numero} para ver si su punta sigue siendo la esperada`;
+  return ahora === p.commit ? null : `la punta del pedido #${p.numero} cambió mientras esperaba (${String(p.commit).slice(0, 12)} → ${ahora.slice(0, 12)}): corré marker.js adhoc ci-wait de nuevo`;
 }
 
 if (require.main === module) main(process.argv.slice(2)).then((c) => process.exit(c), (e) => { process.stderr.write(`pr-build-wait: ${e.message}\n`); process.exit(2); });
 
-module.exports = { esperar, texto, avisar, etapaQueFallo, lectorReal, cerrarArreglo, main };
+module.exports = { esperar, texto, avisar, etapaQueFallo, lectorReal, cerrarArreglo, puntaMovida, main };

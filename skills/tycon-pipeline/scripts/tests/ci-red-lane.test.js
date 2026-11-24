@@ -238,6 +238,13 @@ test('CiRedLane_Refuses_GreenOtherOrClosed (T20) @story-8.322 @ac-16', (t) => {
     { cwd: n.repo, encoding: 'utf8', env: { ...process.env, HOME: n.home, USERPROFILE: n.home, CLAUDE_CODE_SESSION_ID: 's1' } });
   assert.strictEqual(r.status, 2, r.stderr);
   assert.match(r.stderr, /marker\.js adhoc set: la compilación del pedido #6910 no está en rojo/);
+  // en JSON no va: lo dice, en vez de un tope que la lista no pasa
+  const j = mundo(t);
+  const enJson = spawnSync(process.execPath, [MARKER, 'adhoc', 'set', JSON.stringify({ ciRojo: 6910, control: 'Manifest check', reason: 'saca defaultSettings del manifiesto', datos: 'sin-cambio', allowedFiles: ['plugin.json'] })],
+    { cwd: j.repo, encoding: 'utf8', env: { ...process.env, HOME: j.home, USERPROFILE: j.home, CLAUDE_CODE_SESSION_ID: 's1' } });
+  assert.strictEqual(enJson.status, 2, enJson.stderr);
+  assert.match(enJson.stderr, /el arreglo de un rojo de CI se pide con banderas/);
+  assert.doesNotMatch(enJson.stderr, /más de 3 archivos/);
 });
 
 // 🔴 Falla con: no relanzar la espera con la punta nueva tras empujar, o no cerrar el arreglo con el verde.
@@ -247,8 +254,21 @@ test('CiRedLane_Push_RelaunchesWait_ClosesOnGreen (T21) @story-8.322 @ac-17 @ac-
   escribir(m.repo, 'plugin.json', JSON.stringify({ name: 'X', version: '1.0.0' }));
   git(m.repo, 'commit', '-qam', 'el arreglo');
   const nueva = git(m.repo, 'rev-parse', 'HEAD').stdout.trim();
+  // sin empujar, la punta de la copia no es la del pedido: un verde suyo no dice nada del pedido
+  assert.match((lane.esperaTrasEmpujar({ ciRojo: r.ciRojo }) || {}).problema || '', /no es la empujada del pedido #6910/);
+  git(m.repo, 'push', '-q', 'origin', 'story/2.4');
   assert.deepStrictEqual(lane.esperaTrasEmpujar({ ciRojo: r.ciRojo }), [{ repo: m.repo, nombre: 'backend', numero: 6910, rama: 'story/2.4', commit: nueva }]);
   assert.strictEqual(lane.esperaTrasEmpujar({ reason: 'otro' }), null);
+  // parada en otro commit en verde (main): tampoco
+  git(m.repo, 'checkout', '-q', 'main');
+  assert.match((lane.esperaTrasEmpujar({ ciRojo: r.ciRojo }) || {}).problema || '', /no es la empujada del pedido #6910/);
+  git(m.repo, 'checkout', '-q', 'story/2.4');
+  // la punta que se movió mientras esperaba: el verde del commit esperado no cierra el arreglo
+  const lista = { session: 's1', closeAdhoc: true, pedidos: [{ repo: m.repo, nombre: 'backend', numero: 6910, rama: 'story/2.4', commit: nueva }] };
+  assert.strictEqual(espera.puntaMovida(lista), null);
+  escribir(m.repo, 'src/a.js', 'otro arreglo\n');
+  git(m.repo, 'commit', '-qam', 'otro empuje'); git(m.repo, 'push', '-q', 'origin', 'story/2.4');
+  assert.match(espera.puntaMovida(lista) || '', /la punta del pedido #6910 cambió mientras esperaba/);
   // con el verde, la espera cierra el arreglo en nombre de la sesión
   let llamada = null;
   assert.strictEqual(espera.cerrarArreglo('s1', { correr: (cmd, args, o) => { llamada = { args, sesion: o.env.CLAUDE_CODE_SESSION_ID }; return { status: 0 }; } }), true);
