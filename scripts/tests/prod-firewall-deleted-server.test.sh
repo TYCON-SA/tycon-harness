@@ -168,7 +168,7 @@ else no "T15 · salida: $(cat "$TMP/hook.out") · az: $(cat "$TMP/az.log")"; fi
 URI='https://management.azure.com/subscriptions/sub-1/providers/Microsoft.Sql/checkNameAvailability?api-version=2023-08-01'
 CUERPO='{"name":"acme-sql","type":"Microsoft.Sql/servers"}'
 consulta="$(grep '^rest ' "$TMP/t1-az-llamadas")"
-GUIA="$AQUI/guides/produccion-con-permiso.md"
+GUIA="$AQUI/guides/production-with-permission.md"
 if [ "$(printf '%s\n' "$consulta" | grep -c .)" = 1 ] \
    && [ "$consulta" = "rest --method post --uri $URI --headers Content-Type=application/json --body $CUERPO --query available -o json" ] \
    && ! grep -qE 'FAKE_|TMPLOG|TYCON_|CLAUDE_CODE|SQLCMD' "$TMP/t1-az-entorno" && ! grep -q "$CLAVE_MARCA" "$TMP/t1-az-entorno" \

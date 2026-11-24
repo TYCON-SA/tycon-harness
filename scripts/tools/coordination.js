@@ -940,19 +940,13 @@ function coordinate(opts = {}) {
   if (d && d.error) return { code: 1, text: `No pude saber cuál es la coordinadora: ${d.error}.` };
   if (!d || !sid || d.sesion !== sid) {
     const marker = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
-    // sin el rol en el perfil, el click no tiene qué nombrar: se nombra con la frase
-    if (!r.firma) {
-      return { code: 1, text: [
-        `Esta sesión no es la ${rol.valor} de esta máquina${d ? ' (hay otra designada)' : ''}.`,
-        `Para que lo sea, el dueño escribe en este chat «Esta sesión es la ${rol.valor}», y después esta sesión corre:`,
-        `  node ${marker} designate-relay --approved-by '<el dueño>' --quote '<su frase, textual>'`,
-      ].join('\n') };
-    }
+    // con perfil o sin él se nombra con el click (sin el rol en el perfil, el de fábrica: ordena y no firma)
     return { code: 1, text: [
       `Esta sesión no es la ${rol.valor} de esta máquina${d ? ' (hay otra designada)' : ''}.`,
       `Para que lo sea, el dueño se lo pide a esta sesión con sus palabras, y esta sesión corre:`,
       `  node ${marker} designate-relay`,
       'El freno da un cuadro con «Sí» y «No» que dice qué sesión es y en qué carpeta: el dueño hace click y queda nombrada.',
+      ...(r.firma ? [] : ['Sin approvals.relay_session en el perfil del equipo, ordena la máquina y no firma: las firmas siguen yendo a la ventana del dueño.']),
       `Para dejar de serlo, la misma forma: node ${marker} withdraw-relay`,
       `Si el click no se puede comprobar, el comando dice por qué y da los respaldos (su terminal, o su frase con --quote).`,
     ].join('\n') };
@@ -1015,14 +1009,7 @@ function lostDesignation(opts, sid) {
   const rol = { valor: r.rol };
   if (titleIn(path.join(path.dirname(opts.transcript), `${d.sesion}.jsonl`)) !== opts.title) return null;
   const marker = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
-  // sin el rol en el perfil, el click no tiene qué nombrar: se recupera con la frase
-  if (!r.firma) {
-    return [
-      `Coordinación: esta sesión era la ${rol.valor} de esta máquina y dejó de serlo al limpiar la conversación: para el arnés es otra conversación.`,
-      `Decile a la persona que, si quiere que siga siéndolo, escriba en este chat «Esta sesión es la ${rol.valor}». La frase la escribe ella, nunca vos.`,
-      `Con su frase, corré node ${marker} designate-relay --approved-by '<la persona>' --quote '<su frase, textual>' y seguí lo que te diga.`,
-    ].join('\n');
-  }
+  // con perfil o sin él se recupera con el click
   return [
     `Coordinación: esta sesión era la ${rol.valor} de esta máquina y dejó de serlo al limpiar la conversación: para el arnés es otra conversación.`,
     `Decile a la persona que, si quiere que siga siéndolo, te lo pida con sus palabras. El pedido es de ella, nunca tuyo.`,
@@ -3633,18 +3620,22 @@ function fullSessionName(home, sid, opts = {}) {
   return unreadable ? { problem: unreadable } : null;
 }
 
+// el nombre de `close` y `stop` se busca exacto entre las sesiones que hay, y nunca va a un comando: alcanza con que sea
+// una sola línea. La persona nombra sus sesiones con espacios («Coordinadora DemoTack»), y status las lista así
+const NOMBRE_BUSCADO_RE = /^[^\u0000-\u001f\u007f]{1,200}$/;
+
 /**
  * La sesión de `--name` para `close` y `stop`, con la regla de quién la puede tocar: la coordinadora designada o una
- * persona en su terminal, nunca otra sesión ni ella misma. Entre las del mismo nombre cuenta la única viva; sin vivas,
- * la única que haya. `w` trae las palabras del comando (`cmd`, `inf`, `hecho`, `tercera`, `reflexivo`).
- * `{ error }` o `{ home, sid, s, sessions }`.
+ * persona en su terminal, nunca otra sesión ni ella misma. `--name` es su nombre exacto, como lo lista status (con
+ * espacios si los tiene), o su id. Entre las del mismo nombre cuenta la única viva; sin vivas, la única que haya. `w` trae
+ * las palabras del comando (`cmd`, `inf`, `hecho`, `tercera`, `reflexivo`). `{ error }` o `{ home, sid, s, sessions }`.
  */
 function namedSession(opts, w) {
   const home = opts.home || require('os').homedir();
   const env = opts.env || process.env;
   const name = opts.name;
   const nada = `no ${w.hecho} nada.`;
-  if (!name || !NAME_RE.test(String(name))) return { error: `${w.cmd} va con --name <el nombre de la sesión>: ${nada}` };
+  if (typeof name !== 'string' || !name.trim() || !NOMBRE_BUSCADO_RE.test(name)) return { error: `${w.cmd} va con --name <el nombre de la sesión, o su id>: ${nada}` };
   if (isCodex(env) && !opts.launcher) return { error: `Codex no tiene sesiones de fondo que ${w.inf}: ${nada}` };
   // el nombre lo escribe la coordinadora o una persona en su terminal: una sesión de trabajo no toca a otra
   const caller = sessionOf({ ...opts, env });
@@ -3658,7 +3649,11 @@ function namedSession(opts, w) {
   // que anotó la sesión, porque dos nombres que empiezan igual quedan iguales en la lista
   const listed = listedName(name);
   const found = [];
-  for (const [sid, s] of sessions.entries()) {
+  // por su id: la sesión de ese id; si otra sesión se llama así, es ambiguo y no se toca ninguna
+  if (sessions.has(name)) {
+    if ([...sessions.entries()].some(([sid, s]) => sid !== name && s.name === listed)) return { error: `Hay más de una sesión «${name}» (un id y un nombre): ${nada}` };
+    found.push([name, sessions.get(name)]);
+  } else for (const [sid, s] of sessions.entries()) {
     if (s.name !== listed) continue;
     if (listed === name) { found.push([sid, s]); continue; }
     const full = fullSessionName(home, sid, opts);

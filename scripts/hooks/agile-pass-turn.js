@@ -35,6 +35,8 @@ const NOMBRE = 'agile-pass-turn';
 const MODO = 'warn';
 const HERRAMIENTAS_DE_AGENTE = new Set(['Agent', 'Task']);
 const DICE_PASE = /adversari/i;
+// el «para qué» de un turno tomado para lanzar un pase o un Workflow (heavy-turn.js take --what …)
+const PARA_UN_PASE = /\b(pase|adversari\w*|workflow)\b/i;
 
 /**
  * ¿Este lanzamiento es un pase? Todo Workflow; un Agent sólo si su descripción o su tipo de agente dicen «adversarial».
@@ -70,6 +72,15 @@ function decidir({ toolName, toolInput, sid, modo = MODO }, d) {
       + (modo === 'block' ? '' : ' Hoy sólo se avisa.');
     return { status: modo === 'block' ? 'freno' : 'aviso', message };
   }
+  // el turno que ya tiene esta sesión: tomado para un pase o un Workflow, es el de lo que lanza (se toma y después se
+  // lanza); tomado para otra cosa (su portón), lanzar el pase encima serían dos ejecuciones grandes de una sesión
+  const propios = d.propios ? d.propios(sid) : [];
+  if (propios.length) {
+    if (propios.some((p) => PARA_UN_PASE.test(String(p.what || '')))) return { status: 'con-turno', message: null };
+    const message = `Lanzás ${que}, pero el turno de esta sesión es para ${propios.map((p) => p.texto).join(' y ')}: es para una cosa por vez. Lanzalo cuando termine.`
+      + (modo === 'block' ? '' : ' Hoy sólo se avisa.');
+    return { status: modo === 'block' ? 'freno' : 'aviso', message };
+  }
   const quien = [
     ...d.corriendo(),
     ...d.pases(),
@@ -97,6 +108,7 @@ function lectores(home, now) {
     reserva: () => HT.reserveInForce({ home, now }),
     corriendo: () => HT.holders({ home, now }).map((h) => HT.describe(h)),
     propias: (sid) => HT.holders({ home, now }).filter((h) => h.sid === sid).map((h) => HT.describe(h)),
+    propios: (sid) => HT.holders({ home, now }).filter((h) => h.sid === sid).map((h) => ({ texto: HT.describe(h), what: h.what })),
     pases: () => require(path.join(ROOT, 'scripts', 'tools', 'coordination.js')).heavyPassesInFlight({ home, now })
       .passes.filter((p) => !p.stale).map((p) => `el pase de ${p.storyId ? `la ${p.storyId}` : 'una sesión sin story'} (${p.session})`),
   };
