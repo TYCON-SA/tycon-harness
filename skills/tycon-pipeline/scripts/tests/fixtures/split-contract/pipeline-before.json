@@ -240,6 +240,13 @@
       "stderr": "validation-record: --story inválido: null\n",
       "archivos": {}
     },
+    "pipeline-move-story-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "move-story: --story <ruta de hoy> y --to <ruta nueva> requeridos\n",
+      "archivos": {}
+    },
     "pipeline-tooling-expected": {
       "status": 0,
       "signal": null,

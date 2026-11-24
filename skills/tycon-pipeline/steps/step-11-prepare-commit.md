@@ -84,7 +84,7 @@ El comando frena en código lo siguiente (no hace falta repetir la verificación
 - **Las aprobaciones en el repo de la story** (`approvals-story-repo`, se evalúa SIEMPRE y no se abre con `DOD_BYPASS`):
   vuelve a copiar el registro de aprobaciones al repo de la story y lo revisa con la regla del portón de CI (el plan, y
   la maqueta si se aprobó); lo que falte frena nombrando la corrida, y se anota con
-  `marker.js complete-step approve-plan --approved "<cita>" --out-of-order` (o `advisors_exempt` si se cerró sin pipeline).
+  `marker.js complete-step approve-plan --approved "<cita>" --out-of-order` (o la exención `advisors_exempt`, con la firma de la persona sobre la historia, si se cerró sin pipeline).
 - **Eximiciones de críticos, vueltas de revisores y los demás controles de cierre** que el comando nombra al frenar
   (waivers, tope de vueltas, maqueta, comprobaciones manuales): se resuelven como dice su mensaje.
 

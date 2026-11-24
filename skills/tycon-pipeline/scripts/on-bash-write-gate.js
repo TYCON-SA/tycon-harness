@@ -74,7 +74,7 @@ const path = require('path');
 
 // en un repo sin historias, la palabra suelta no alcanza: cuenta una constancia o la ruta de una historia (de otro repo),
 // también armada por partes (`Path('specs') / n`, `os.path.join('stories', f)`, `'specs/' + n + '.md'`)
-const NOMBRA_RUTA_DE_HISTORIA = /control-changes|(?:^|[\\/'"`\s])(?:\.?specs?|stories)[\\/][^\s'"`]*\.md\b|\bstory-[\w.-]*\.md\b|['"`](?:\.\/)?(?:\.?specs?|stories)\/?['"`]/i;
+const NOMBRA_RUTA_DE_HISTORIA = /control-changes|exemptions\.jsonl|(?:^|[\\/'"`\s])(?:\.?specs?|stories)[\\/][^\s'"`]*\.md\b|\bstory-[\w.-]*\.md\b|['"`](?:\.\/)?(?:\.?specs?|stories)\/?['"`]/i;
 // las llamadas de un guion que escriben, copian, mueven o borran un archivo
 const GUION_ESCRIBE = /\b(?:writeFileSync|writeFile|appendFileSync|appendFile|createWriteStream|copyFileSync|copyFile|cpSync|renameSync|rename|replace|unlinkSync|rmSync|truncateSync|write_text|write_bytes|copy|copyfile|copy2|copytree|move|remove|unlink|truncate)\s*\(|\bopen\s*\([^)]*,\s*["'][^"']*[wax+]|\bFile\.(?:write|delete|rename)\b|\bFileUtils\.\w+/;
 // las formas de escribir, borrar, mover o reponer un archivo desde un comando, sin contar un `open(` que puede ser de lectura
@@ -709,7 +709,7 @@ const CLASES_POSIX = {
   punct: '\\p{P}\\p{S}', space: '\\s', upper: '\\p{Lu}', xdigit: '0-9a-fA-F',
 };
 // la palabra entera: «historial», «storage» o «restore» no nombran una historia
-const MENCIONA_HISTORIA = /control-changes|\bstor(?:y|ies)\b|\bhistorias?\b/i;
+const MENCIONA_HISTORIA = /control-changes|exemptions\.jsonl|\bstor(?:y|ies)\b|\bhistorias?\b/i;
 
 /**
  * ¿La carpeta está en un repo con historias? Su raíz de git (sin git, la carpeta misma) con `.tycon/`, o con alguna
@@ -2868,8 +2868,17 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
   // `$PWD`, `${PWD}` y `$(pwd)` son la carpeta que se está mirando (la de un `cd`, no la de partida)
   const conPwd = (raw) => String(raw).replace(/\$\{PWD\}|\$PWD(?!\w)|\$\(pwd\)|`pwd`/g, () => base);
   const abs = (raw) => resolveTarget(expandirRuta(cmd, conPwd(raw)).valor, base, process.platform, { homeVariable: true });
-  const es = (raw) => isControlApproval(String(raw)) || isControlApproval(abs(raw))
-    || (cdSinResolver && !path.isAbsolute(String(raw)) && /control-changes/i.test(String(raw)));
+  // la constancia de las exenciones (lib/exemptions.js), también nombrada con un comodín que la alcanza
+  // (`.tycon/exempt*.jsonl`, `exemptions*` después de un `cd .tycon`)
+  const comodinDeExenciones = (raw) => {
+    if (!/[*?[]/.test(String(raw))) return false;
+    const a = abs(raw);
+    if (!/(^|[\\/])\.tycon$/i.test(path.dirname(a))) return false;
+    const patron = path.basename(a).replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
+    try { return new RegExp(`^${patron}$`, 'i').test('exemptions.jsonl'); } catch (_) { return true; }
+  };
+  const es = (raw) => isControlApproval(String(raw)) || isControlApproval(abs(raw)) || comodinDeExenciones(raw)
+    || (cdSinResolver && !path.isAbsolute(String(raw)) && /control-changes|exemptions/i.test(String(raw)));
   const esRuta = (p) => isControlApproval(p) || isControlApproval(`${p}/`);
   const out = [];
   // se lee también con la continuación de renglón juntada: `cat <<'EOF' \` y abajo `> constancia` es una redirección del
@@ -2921,7 +2930,7 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
     for (const m of limpio.matchAll(/(?<![<\d&])(?:\d?>>?|&>>?|\d?<>)\|?\s*((?:\$\([^()]*\)|'[^']*'|"(?:\\.|[^"\\])*"|\\.|[^\s<>;&|'"\\])+)/g)) {
       if (!fuera(m.index)) continue;
       const destino = sinCierreDeGrupo(palabraDelShell(m[1]));
-      if (es(destino) || (/\$\(|`/.test(destino) && /control-changes|gates\.log/i.test(destino))) out.push(destino);
+      if (es(destino) || (/\$\(|`/.test(destino) && /control-changes|gates\.log|exemptions\.jsonl/i.test(destino))) out.push(destino);
     }
     // cada argumento es la palabra entera del shell, con sus comillas resueltas (`cp x .tycon/'control-changes.jsonl'`),
     // y sin el `)` que cierra un paréntesis (`(cd d && touch f)`)
@@ -3032,7 +3041,7 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
     if (c === 'truncate' || c === 'gtruncate') { out.push(...posicionales(args, /^-[sr]$|^--(?:size|reference)$/).filter(es)); continue; }
     // lo que sale de una sustitución de proceso corre en el shell (`source <(echo …)`, `bash <(…)`): no se puede ver
     // antes; si el comando nombra una constancia, no pasa
-    if (['source', '.', ...SHELLS_QUE_LEEN_COMANDOS].includes(c) && /<\(/.test(tramo) && /control-changes|gates\.log/i.test(String(cmd))) {
+    if (['source', '.', ...SHELLS_QUE_LEEN_COMANDOS].includes(c) && /<\(/.test(tramo) && /control-changes|gates\.log|exemptions\.jsonl/i.test(String(cmd))) {
       out.push(`${tramo.trim()} (corre en el shell lo que sale de una sustitución de proceso)`);
       continue;
     }
@@ -3059,7 +3068,7 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
       // listar (por la entrada estándar, que todavía no existe) dentro de un repo, no pasa
       const lista = contenidoDelArchivo(c, args, tramo, abs);
       if (lista === null) { if (destinos.some(dentroDeUnRepo)) out.push(`${tramo.trim()} (no se puede ver si trae una constancia)`); continue; }
-      if (lista.some((e) => /control-changes/i.test(e) || destinos.some((d) => esRuta(path.join(d, e))))) out.push(`${tramo.trim()} (trae una constancia)`);
+      if (lista.some((e) => /control-changes|exemptions\.jsonl/i.test(e) || destinos.some((d) => esRuta(path.join(d, e))))) out.push(`${tramo.trim()} (trae una constancia)`);
       continue;
     }
     // otros que extraen y que el freno no sabe listar: `pax -r`, `ditto -x`, `python3 -m zipfile|tarfile -e`. A la
@@ -3390,7 +3399,7 @@ function parchesDePatch(args) {
 /** ¿El texto de un parche nombra una constancia? Con las rutas que git escribe entre comillas y con escapes octales. */
 function parcheNombraConstancia(texto, isControlApproval) {
   const t = String(texto).replace(/\\([0-7]{3})/g, (_, o) => String.fromCharCode(parseInt(o, 8)));
-  if (/control-changes/i.test(t)) return true;
+  if (/control-changes|exemptions\.jsonl/i.test(t)) return true;
   const rutas = [];
   for (const linea of t.split(/\r?\n/)) {
     let m = /^diff --git "?a\/(.+?)"? "?b\/(.+?)"?$/.exec(linea);
@@ -3741,7 +3750,7 @@ function nombresDeConstancia(dir, tope = 20000) {
     for (const e of entradas) {
       if (++vistos > tope) return null;
       const r = path.join(rel, e.name);
-      if (/^control-changes/i.test(e.name)) out.push(r);
+      if (/^control-changes|^exemptions\.jsonl$/i.test(e.name)) out.push(r);
       let carpeta = e.isDirectory();
       // un enlace a una carpeta se sigue (`cp -L`, `rsync -L`); el tope corta un enlace que vuelve sobre sí
       if (e.isSymbolicLink()) { try { carpeta = fs.statSync(path.join(dir, r)).isDirectory(); } catch (_) { carpeta = false; } }

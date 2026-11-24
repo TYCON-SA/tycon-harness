@@ -1330,6 +1330,7 @@ function frenosDeArchivo(t) {
   const evidencia = path.join(repo, '.advisors', 'dod-runtime', '9.99-20261027.md');
   return [
     ['dod_runtime_exempt', historia, (casa, s) => paso(fw().handle(ev(s, historia, viejo.replace('status: in-progress', 'status: in-progress\ndod_runtime_exempt: true')), { casa }))],
+    ['advisors_exempt', historia, (casa, s) => paso(fw().handle(ev(s, historia, viejo.replace('status: in-progress', 'status: in-progress\nadvisors_exempt: true')), { casa }))],
     ['cambiar-el-estado', historia, (casa, s) => paso(fw().handle(ev(s, historia, viejo.replace('status: in-progress', 'status: ready-for-dev')), { casa }))],
     ['ALLOW_DOD_EVIDENCE_WRITE', evidencia, (casa, s) => paso(eg().handle(ev(s, evidencia, '# evidencia\n'), { casa }))],
     ['story-skill-bypass', nueva, (casa, s) => {
@@ -2724,7 +2725,8 @@ const aprobacionesDePrueba = ({ coordinadora = null } = {}) => ({
 });
 const pedirSinVentana = (casa, cmd, o = {}) => ow.decidir({ evento: evento(cmd, { ...DE_LA_COORD, permission_mode: 'bypassPermissions', ...(o.evento || {}) }),
   escapes: o.escapes || [], arbol: o.arbol || arbolDelFreno(), pid: 201, casa, ahora: o.ahora || AHORA, delegacion: o.delegacion || SIN_DELEGACION,
-  clasificar: () => null, comprobar: () => null, aprobador: DEL_ARNES, aprobaciones: o.aprobaciones || aprobacionesDePrueba(o), topes: o.topes, lanzarAviso: o.lanzarAviso });
+  clasificar: () => null, comprobar: () => null, aprobador: DEL_ARNES, aprobaciones: o.aprobaciones || aprobacionesDePrueba(o), topes: o.topes, lanzarAviso: o.lanzarAviso,
+  ...(o.env ? { env: o.env } : {}) });
 const anotarAprobacion = (casa, sesion, extra = {}) => oaReal.anotar(casa, { tipo: 'mensaje', sesion, ts: new Date(AHORA - 60000).toISOString(), texto: 'Aprobado',
   herramienta: { pid: 100, inicio: INICIO }, ...extra });
 const PERDIDA = `node ${MARKER} clear-session ses-a --lost`;
@@ -3147,6 +3149,22 @@ test('HechoYAvisado_MandaPorLosCanalesDeLaSesion', (t) => {
   assert.ok(PA.VIAS.includes('avisado'), 'el control del commit acepta lo que escribe la rutina');
 });
 
+test('T4 Aprobacion_SinTiempoParaContestar_NoLaGasta', (t) => {
+  // 🔴 Falla con: gastar la aprobación cuando al freno de seguridad casi no le queda tiempo. Su reloj lo corta antes de
+  //    contestar, el comando no corre, y el click quedó usado: la persona tiene que aprobar de nuevo, y se repite.
+  const casa = casaNueva(t);
+  anotarAprobacion(casa, 'ses-coord');
+  const enSegundos = (s) => ({ TYCON_SAFETY_DEADLINE_S: String(Math.floor(AHORA / 1000) + s) });
+  const corto = pedirSinVentana(casa, PERDIDA, { env: enSegundos(1) });
+  assert.strictEqual(corto.decision, 'deny', corto.texto);
+  assert.match(corto.texto, /sin usar/, 'dice que la aprobación sigue sin usar');
+  assert.match(corto.texto, /TYCON_SAFETY_TIMEOUT_S/, 'y la salida');
+  assert.strictEqual(vigentes(casa).length, 0, 'sin pedido escrito');
+  // con tiempo, la misma aprobación firma
+  const con = pedirSinVentana(casa, PERDIDA, { env: enSegundos(15) });
+  assert.deepStrictEqual([con.decision, con.via], ['allow', 'mensaje'], con.texto);
+});
+
 test('Aprobacion_MensajeAnotado_FirmaUnaVezYElGuionLaUsa', (t) => {
   const casa = casaNueva(t);
   anotarAprobacion(casa, 'ses-coord');
@@ -3538,6 +3556,55 @@ test('Windows_UnEscapeYUnGuionDeConsola_VanALaTerminal', (t) => {
   const sh = pedirWin(casa, `bash ${CONTROLES} approve`, { aprobaciones: conClick() });
   assert.strictEqual(sh.decision, 'deny');
   assert.match(sh.texto, /en Windows un guion de consola no se puede comprobar en la pestaña/);
+  assert.strictEqual(vigentes(casa).length, 0);
+});
+
+test('Windows_ForceManualEnSuFormaExacta_FirmaConElClick_YElGuionLoConsume', (t) => {
+  // En su forma exacta, `set-check --force-manual` es una firma de guion: el freno no la pasa como escape, y en Windows se
+  // firma con el click o el «aprobado», como las otras. 🔴 Falla con: tratarla como un escape, que va sólo por la terminal.
+  const casa = casaNueva(t);
+  const usos = [];
+  const cmd = `node ${MARKER} set-check tests green --force-manual`;
+  const r = pedirWin(casa, cmd, { aprobaciones: conClick(usos) });
+  assert.strictEqual(r.decision, 'allow', r.texto);
+  assert.strictEqual(r.via, 'click');
+  assert.deepStrictEqual(usos, ['a1'], 'la aprobación se gasta una vez');
+  const v = verificarWin(casa, 'escape:force-manual', [MARKER, 'set-check', 'tests', 'green', '--force-manual'], arbolGuionWin(casa, cmd));
+  assert.ok(v.ok, v.motivo);
+  assert.strictEqual(v.registro.via, 'click');
+  assert.strictEqual(vigentes(casa).length, 0, 'consumido');
+});
+
+test('Windows_ForceManualFueraDeSuForma_PideLaFormaExacta_SinMandarALaTerminal', (t) => {
+  // Fuera de su forma exacta (con un tubo atrás, `2>&1 | tail`), el freno la pasa como escape. Se niega sin gastar la
+  // aprobación, y lo que le ofrece es correrla sola y en su forma exacta, donde el click firma.
+  // 🔴 Falla con: decirle que un escape va sólo por la terminal: el agente no la repite en su forma, y la persona, que ya
+  //    aprobó en el cuadro, tiene que ir a la terminal.
+  const casa = casaNueva(t);
+  const usos = [];
+  const cmd = `node ${MARKER} set-check tests green --force-manual 2>&1 | tail -15`;
+  const escapes = ['escape:force-manual'];
+  const r = pedirWin(casa, cmd, { escapes, aprobaciones: conClick(usos) });
+  assert.strictEqual(r.decision, 'deny');
+  assert.match(r.texto, /la firma va en su forma exacta, sola/, r.texto);
+  assert.deepStrictEqual(usos, [], 'la aprobación no se gasta');
+  const ofrece = (tool_name) => ow.ofreceTrasDecidir(r, { evento: evento(cmd, { tool_name }), escapes, plataforma: 'win32', gitBash: CON_GIT });
+  assert.strictEqual(ofrece('Bash'), '', 'desde la consola Bash de Git, el texto de siempre: con el cuadro');
+  const ps = ofrece('PowerShell');
+  assert.match(ps, /solo y en su forma exacta, por la consola Bash de Git/, ps);
+  assert.doesNotMatch(ps, /un escape no se aprueba en la pestaña/, ps);
+});
+
+test('Windows_UnEscapeSinGuionQueLoCompruebe_SigueEnLaTerminal', (t) => {
+  // Un escape que ningún guion comprueba (el de una variable, o uno de marker.js que sólo mira el freno, como
+  // `marker.js clear`) sigue sólo en la terminal. 🔴 Falla con: dejarlo pasar con el click, o no decir la terminal.
+  const casa = casaNueva(t);
+  for (const [cmd, id] of [['TYCON_TEST_GATE=1 ls', 'escape:TYCON_TEST_GATE'], [`node ${MARKER} clear`, 'escape:cerrar-la-ejecucion']]) {
+    const r = pedirWin(casa, cmd, { escapes: [id], aprobaciones: conClick() });
+    assert.strictEqual(r.decision, 'deny', id);
+    assert.match(r.texto, /en Windows un escape no se aprueba en la pestaña/, id);
+    assert.match(ow.ofreceTrasDecidir(r, { evento: evento(cmd), escapes: [id], plataforma: 'win32', gitBash: CON_GIT }), /va sólo en la terminal/, id);
+  }
   assert.strictEqual(vigentes(casa).length, 0);
 });
 

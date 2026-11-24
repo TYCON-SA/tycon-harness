@@ -220,6 +220,7 @@ const CASOS_PIPELINE = [
   { id: 'story-review-gate', argv: ['story-review-gate', '--story', '{STORY}', '--repo', '{REPO}'] },
   { id: 'story-review-record-sin-args', argv: ['story-review-record'] },
   { id: 'validation-record-sin-args', argv: ['validation-record'] },
+  { id: 'move-story-sin-args', argv: ['move-story'] },
   { id: 'tooling-expected', argv: ['tooling-expected', '--repo', '{REPO}'] },
   { id: 'model-hint', argv: ['model-hint', '--story', '{STORY}', '--files', 'src/a.js'] },
   { id: 'deep-review-gate', argv: ['deep-review-gate', '--repo', '{REPO}', '--story', '{STORY}', '--files', 'src/a.js'] },

@@ -104,6 +104,7 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 | `escape:TYCON_MUTATION_CHECK` | 2 · excepción | dev y mantenimiento | saltear el chequeo de mutantes de las pruebas | `escape:TYCON_MUTATION_CHECK`, `escape:no-mutation` |
 | `escape:TYCON_STORY_REVIEW` | 2 · excepción | dev y mantenimiento | saltear la revisión de la historia antes del plan | `escape:TYCON_STORY_REVIEW` |
 | `escape:story-skill-bypass` | 2 · excepción | dev y mantenimiento | escribir una historia sin la skill de historias | `escape:story-skill-bypass` |
+| `escape:advisors_exempt` | 2 · excepción | dev y mantenimiento | eximir una historia de los revisores | `escape:advisors_exempt` |
 | `escape:red-control-test-edit` | 2 · excepción | dev y mantenimiento | editar una prueba vieja de un control que estaba en rojo | `escape:red-control-test-edit` |
 | `escape:set-autonomous` | 2 · excepción | dev y mantenimiento | cambiar el modo autónomo de una ejecución | `escape:set-autonomous` |
 | `designation-confirm` | 2 · excepción | dev y mantenimiento | confirmar qué sesión es la coordinadora de esta máquina | `designation-confirm` |
@@ -150,8 +151,12 @@ Quedan sólo del dueño, aunque un perfil las liste: `control-change` y todo el 
 `escape:TYCON_PROD_LINT`, que ya no apagan nada); `designation-set`,
 `designation-confirm` y `designation-withdraw`; `adhoc-lane:datos` y `adhoc-lane:sobre-cupo`; `escape:DOD_BYPASS`; `adversarial-skip` (con
 `escape:TYCON_NO_DEEP_REVIEW` y `escape:no-deep-review`); `atdd-skip`; `escape:TYCON_TEST_GATE`; `escape:story-skill-bypass`;
-`escape:dod_runtime_exempt` y `runtime-waiver` (aceptar un criterio imposible de probar en vivo: tampoco sale como
-trámite); y decir que no a la prueba con navegador (`browser-test`).
+`escape:dod_runtime_exempt`; `escape:advisors_exempt`; `runtime-waiver` (aceptar un criterio imposible de probar
+en vivo: tampoco sale como trámite); y decir que no a la prueba con navegador (`browser-test`).
+
+La firma de una exención (`escape:dod_runtime_exempt`, `escape:advisors_exempt`) deja además su constancia en el repo de
+la historia, en `.tycon/exemptions.jsonl`, y se commitea con ella: el portón del commit y el de CI frenan una exención
+que se agrega sin su renglón, se haya escrito por donde se haya escrito. Ese archivo no se escribe a mano.
 
 ## Quién firma cada nivel
 
@@ -402,16 +407,19 @@ Esto no firma en Windows:
 - **La consola PowerShell.** Su línea no dice qué comando corre, así que no se puede comparar con lo que aprobaste. El
   freno lo niega antes de usar tu aprobación, y dice que se corra por Bash o con `--terminal`.
 - **La delegación y «hecho y avisado».** Nada se firma sin una acción tuya.
-- **Un escape y un guion de consola** (`run-base-controls.sh`). Van en tu terminal: un escape no deja un pedido que el guion
-  pueda comprobar, y el guion de consola se identifica con un número de proceso de Git Bash, que no es el de Windows.
+- **Un escape que ningún guion comprueba y un guion de consola** (`run-base-controls.sh`). Van en tu terminal. El escape
+  de una variable, o el de `marker.js` que mira sólo el freno (cerrar la ejecución, apagar el modo autónomo), no deja
+  un pedido que un guion pueda comprobar. El guion de consola se identifica con un número de proceso de Git Bash, que no
+  es el de Windows. Un escape que comprueba su guion (`set-check --force-manual`, `check-count --trust-ran`,
+  `sign-file`) sí se firma con tu click o tu «aprobado»: corrido solo y en su forma exacta, es una firma de guion.
 
 Una consola de fondo viva frena, y también una PowerShell viva, porque no se puede leer qué corre. Se cierra, o se firma en
 la terminal.
 
 **El freno ofrece sólo lo que anda en tu consola.** En Windows la firma por cuadro o por «aprobado» anda sólo desde la
 consola Bash de Git. Si el agente pidió la firma desde la consola PowerShell, el freno no le ofrece la ventana, el cuadro
-ni el «aprobado»: le dice que la corra por la consola Bash de Git (si está) o te da la forma de la terminal. Un escape o un
-guion `.sh` van sólo por la terminal, también desde Bash de Git. La lista de firmas guarda con qué consola se pidió cada
+ni el «aprobado»: le dice que la corra por la consola Bash de Git (si está) o te da la forma de la terminal. Un escape que
+ningún guion comprueba o un guion `.sh` van sólo por la terminal, también desde Bash de Git. La lista de firmas guarda con qué consola se pidió cada
 una, y `owner-next` le da a la coordinadora la terminal en lugar del cuadro cuando el cuadro no firmaría; lo mismo con una
 firma que no se da desde la pestaña de otra sesión.
 
@@ -445,9 +453,11 @@ la forma no coincide, se niega y queda `--terminal`.
 
 La columna «¿Desde otra sesión?» dice si el comando se puede correr desde la pestaña de otra sesión (medido el
 2026-10-26). Un escape se firma en la pestaña de la propia sesión (con la ventana, o con tu click o tu «aprobado» dado ahí
-o en la coordinadora) o corriendo el comando en tu terminal, donde no hay freno; en Windows, sólo en tu terminal. Dos
-escapes, `escape:force-manual` y `escape:trust-ran`, los pide su guion en su forma exacta, como las firmas de guion:
-desde otra sesión van con `--for-session <D>`.
+o en la coordinadora) o corriendo el comando en tu terminal, donde no hay freno; en Windows, sólo en tu terminal. Los
+escapes que pide su guion en su forma exacta, como las firmas de guion (`escape:force-manual`, `escape:trust-ran` y los
+de `sign-file`), se firman igual que ellas, también en Windows con tu click o tu «aprobado»; desde otra sesión van con
+`--for-session <D>`. Con un tubo atrás (`2>&1 | tail`) o una envoltura dejan de estar en su forma: el freno los niega
+sin gastar tu aprobación, y se corren otra vez solos.
 
 La columna «Firmarla en la terminal» es la otra salida, para quien la prefiera o donde hace falta (ver «Aprobar sin
 terminal»). En Windows la terminal no se lee: cada uno de esos comandos abre una ventana nueva con el mismo comando, y ahí
@@ -506,6 +516,7 @@ vuelve a pedir la firma del dueño.
 | `escape:no-mutation` | cerrar «Correr las pruebas» sin el chequeo de mutantes, con motivo | `marker.js complete-step run-tests --no-mutation --reason <motivo>` | no, en la pestaña de esa sesión | `marker.js complete-step run-tests --no-mutation --reason <motivo> --terminal --for-session <sesión>` |
 | `escape:ALLOW_DOD_EVIDENCE_WRITE` | escribir a mano la evidencia de la prueba en vivo | `marker.js sign-file ALLOW_DOD_EVIDENCE_WRITE <archivo>` | sí | `marker.js sign-file ALLOW_DOD_EVIDENCE_WRITE <archivo> --terminal --for-session <sesión del agente>` |
 | `escape:dod_runtime_exempt` | eximir una story de la prueba en vivo | `marker.js sign-file dod_runtime_exempt <archivo>` | sí | `marker.js sign-file dod_runtime_exempt <archivo> --terminal --for-session <sesión del agente>` |
+| `escape:advisors_exempt` | eximir una story de los revisores | `marker.js sign-file advisors_exempt <archivo>` | sí | `marker.js sign-file advisors_exempt <archivo> --terminal --for-session <sesión del agente>` |
 | `escape:no-deep-review` | correr los guiones del pase adversarial con un --env-file, que puede cambiar su decisión | `node --env-file=<archivo> pipeline.js start|deep-review-gate (o marker.js mark-adversarial-skipped)` | no, en la pestaña de esa sesión | `el mismo comando` |
 | `escape:cambiar-el-estado` | cambiar a mano el estado de una story | `marker.js sign-file cambiar-el-estado <archivo>` | sí | `marker.js sign-file cambiar-el-estado <archivo> --terminal --for-session <sesión del agente>` |
 | `escape:merge-bypass` | mergear salteando la cola y la CI de main, o aflojar las políticas de la rama | `gh pr merge <n> --admin (o un merge, una regla o una política por la API)` | no, en la pestaña de esa sesión | `el mismo comando` |
@@ -532,7 +543,7 @@ sin objeto: un perfil que ya delega `lost-run` no la delega sin pedirla por su i
 | `refresh-after-main` | `refresh-after-main` |
 | `adversarial-skip` | `adversarial-skip` |
 | `critical-waiver` | `critical-waiver` |
-| `escape-phrases` | `escape:TYCON_SAFETY_OFF`, `escape:TYCON_PROD_LINT`, `escape:TYCON_NEW_NAMES`, `escape:TYCON_TEST_GATE`, `escape:DOD_BYPASS`, `escape:TYCON_NO_DEEP_REVIEW`, `escape:TYCON_STATUS_GATE`, `escape:TYCON_MUTATION_CHECK`, `escape:TYCON_STORY_REVIEW`, `escape:story-skill-bypass`, `escape:set-autonomous`, `escape:cerrar-la-ejecucion`, `escape:cerrar-como-deuda`, `escape:rojo-esperado-de-la-matriz`, `escape:ALLOW_DOD_EVIDENCE_WRITE`, `escape:dod_runtime_exempt`, `escape:no-deep-review`, `escape:cambiar-el-estado` |
+| `escape-phrases` | `escape:TYCON_SAFETY_OFF`, `escape:TYCON_PROD_LINT`, `escape:TYCON_NEW_NAMES`, `escape:TYCON_TEST_GATE`, `escape:DOD_BYPASS`, `escape:TYCON_NO_DEEP_REVIEW`, `escape:TYCON_STATUS_GATE`, `escape:TYCON_MUTATION_CHECK`, `escape:TYCON_STORY_REVIEW`, `escape:story-skill-bypass`, `escape:set-autonomous`, `escape:cerrar-la-ejecucion`, `escape:cerrar-como-deuda`, `escape:rojo-esperado-de-la-matriz`, `escape:ALLOW_DOD_EVIDENCE_WRITE`, `escape:dod_runtime_exempt`, `escape:advisors_exempt`, `escape:no-deep-review`, `escape:cambiar-el-estado` |
 | `plan-approval` | `plan-approval` |
 | `browser-test` | `browser-test` |
 | `runtime-waiver` | `runtime-waiver` |

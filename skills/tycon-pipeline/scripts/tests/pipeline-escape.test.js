@@ -192,6 +192,131 @@ test('T10 FrontmatterWrite_ExencionQueYaEstaba_Pasa @story-8.96 — la que ya es
   assert.strictEqual(correr(ENCABEZADO, home, { tool_name: 'Write', tool_input: { file_path: borrador, content: juntas } }).status, 2);
 });
 
+// ── La exención de los revisores ──────────────────────────────────────────────────────────────────────────────────────
+
+// FrontmatterWrite_ExencionDeRevisores_PideLaFirma: `advisors_exempt` saltea los revisores al cerrar la historia, como
+// `dod_runtime_exempt` saltea la prueba en vivo. Agregarla, también al crearla, la decide el dueño con su firma sobre esa
+// historia; la que ya estaba y una guía que la nombra pasan
+test('T90 FrontmatterWrite_ExencionDeRevisores_PideLaFirma: agregar advisors_exempt pide la firma del dueño sobre la historia', () => {
+  const home = nuevaHome([deLaPersona('seguí')], 'Edit');
+  const agregar = (f, linea = 'advisors_exempt: true') => ({ tool_name: 'Edit',
+    tool_input: { file_path: f, old_string: 'qa_guide: off\n', new_string: `${linea}\nadvisors_exempt_reason: "modo ágil"\nqa_guide: off\n` } });
+  for (const st of ['draft', 'in-progress', 'review']) {
+    const r = correr(ENCABEZADO, home, agregar(historia(home, st)));
+    assert.strictEqual(r.status, 2, `${st}: ${r.stderr}`);
+    assert.match(r.stderr, /la exime de los revisores/);
+    assert.match(r.stderr, /marker\.js"? sign-file advisors_exempt /);
+  }
+  for (const forma of ['advisors_exempt: "true"', '  advisors_exempt: true', 'advisors_exempt: true # ágil']) {
+    assert.strictEqual(correr(ENCABEZADO, home, agregar(historia(home, 'in-progress'), forma)).status, 2, forma);
+  }
+  // al crearla
+  const nueva = path.join(home, 'repo', 'specs', 'story-9.11-nueva.md');
+  const crear = correr(ENCABEZADO, home, { tool_name: 'Write', tool_input: { file_path: nueva, content: '---\nepic: 9\nstory: "9.11"\ntitle: "Nueva"\nstatus: done\nadvisors_exempt: true\n---\n\n# Story 9.11\n' } });
+  assert.strictEqual(crear.status, 2, crear.stderr);
+  // con la frase de la persona no pasa
+  const conFrase = nuevaHome([deLaPersona('Autorizo advisors_exempt')], 'Edit');
+  assert.strictEqual(correr(ENCABEZADO, conFrase, agregar(historia(conFrase, 'in-progress'))).status, 2);
+  // la que ya estaba pasa; una guía que la nombra, también
+  const ya = historia(home, 'in-progress', 'advisors_exempt: true\n');
+  assert.strictEqual(correr(ENCABEZADO, home, { tool_name: 'Edit', tool_input: { file_path: ya, old_string: 'Texto.', new_string: 'Texto nuevo.' } }).status, 0);
+  const guia = path.join(home, 'repo', 'guia.md');
+  assert.strictEqual(correr(ENCABEZADO, home, { tool_name: 'Write', tool_input: { file_path: guia, content: '# Guía\n\nadvisors_exempt: true\n' } }).status, 0);
+  // la exención de la prueba en vivo sigue pidiendo la suya
+  assert.match(correr(ENCABEZADO, home, agregarExencion(historia(home, 'in-progress'))).stderr, /sign-file dod_runtime_exempt /);
+});
+
+// Firmas_ExencionDeRevisores_SoloDelDueno: la firma está en el catálogo, sobre un archivo, y no se delega aunque el perfil
+// la liste: saltear los revisores es una excepción, y las excepciones pasan por el click del dueño
+test('T91 Firmas_ExencionDeRevisores_SoloDelDueno: escape:advisors_exempt en el catálogo, sobre un archivo y nunca delegada', () => {
+  const sig = require(path.join(RAIZ, 'scripts', 'lib', 'signatures.js'));
+  const e = sig.SIGNATURES.find((x) => x.id === 'escape:advisors_exempt');
+  assert.ok(e, 'está en el catálogo');
+  assert.match(e.command, /marker\.js sign-file advisors_exempt <archivo>/);
+  const del = require(path.join(RAIZ, 'scripts', 'lib', 'delegated-signing.js'));
+  assert.ok(del.NUNCA_DELEGABLES.has('escape:advisors_exempt'), 'nunca delegable');
+  assert.match(del.NUNCA_DELEGABLES.get('escape:advisors_exempt'), /sólo del dueño/);
+});
+
+// FrontmatterWrite_ExencionNueva_LoQueLosLectoresVen (pase adversarial): la exención es nueva si algún lector que la
+// concede pasa de no verla a verla. «Ya estaba» no cuenta en un archivo que no era historia, ni en un renglón que ningún
+// lector concede (sangrado en el cuerpo, entre comillas). El encabezado se lee como el portón de CI (con un espacio
+// después de las rayas o la marca de orden de bytes), un Edit con renglones de Windows se aplica como lo aplica la
+// herramienta, y un parche de Codex que no se puede reconstruir igual cuenta la exención que agrega
+test('T92 FrontmatterWrite_ExencionNueva_LoQueLosLectoresVen: dos pasos, cuerpo, comillas, encabezado ancho, Windows y Codex', () => {
+  for (const campo of ['advisors_exempt', 'dod_runtime_exempt']) {
+    const home = nuevaHome([deLaPersona('seguí')], 'Edit');
+    const dir = path.join(home, 'repo', 'specs');
+    const frena = (evento, que) => { const r = correr(ENCABEZADO, home, evento); assert.strictEqual(r.status, 2, `${campo}, ${que}: ${r.stderr}`); };
+    const pasa = (evento, que) => { const r = correr(ENCABEZADO, home, evento); assert.strictEqual(r.status, 0, `${campo}, ${que}: ${r.stderr}`); };
+    const editar = (file, de, a2) => ({ tool_name: 'Edit', tool_input: { file_path: file, old_string: de, new_string: a2 } });
+    // en dos pasos: primero sin story ni status (no es historia), después se le agregan
+    const dos = path.join(dir, 'story-9.50-dos.md');
+    fs.mkdirSync(dir, { recursive: true });
+    const sinHistoria = `---\nepic: 9\ntitle: "Dos"\n${campo}: true\n---\n\n# Dos\n`;
+    pasa({ tool_name: 'Write', tool_input: { file_path: dos, content: sinHistoria } }, 'un archivo que no es historia');
+    fs.writeFileSync(dos, sinHistoria);
+    frena(editar(dos, 'title: "Dos"\n', 'story: "9.50"\nstatus: in-progress\ntitle: "Dos"\n'), 'en dos pasos');
+    // un ejemplo sangrado en el cuerpo no es la exención: agregarla al encabezado la pide; editar otra parte, no
+    const conEjemplo = historia(home, 'in-progress');
+    fs.writeFileSync(conEjemplo, fs.readFileSync(conEjemplo, 'utf8').replace('Texto.\n', `Texto.\n\n    ${campo}: true\n`));
+    frena(editar(conEjemplo, 'qa_guide: off\n', `${campo}: true\nqa_guide: off\n`), 'con un ejemplo en el cuerpo');
+    pasa(editar(conEjemplo, '## Story', '## La historia'), 'editar otra parte de una historia con el ejemplo');
+    // de entre comillas a sin comillas
+    const comillas = historia(home, 'in-progress', `${campo}: "true"\n`);
+    frena(editar(comillas, `${campo}: "true"`, `${campo}: true`), 'de entre comillas a sin comillas');
+    // el encabezado con un espacio después de las rayas, o con la marca de orden de bytes
+    for (const [que, cambiar] of [['rayas con espacio', (t) => t.replace(/^---\n/, '--- \n')], ['marca de orden de bytes', (t) => '\uFEFF' + t]]) {
+      const h = historia(home, 'in-progress');
+      fs.writeFileSync(h, cambiar(fs.readFileSync(h, 'utf8')));
+      frena(editar(h, 'qa_guide: off\n', `${campo}: true\nqa_guide: off\n`), que);
+    }
+    // una historia con renglones de Windows y un Edit de varios renglones con \n
+    const crlf = historia(home, 'in-progress');
+    fs.writeFileSync(crlf, fs.readFileSync(crlf, 'utf8').replace(/\n/g, '\r\n'));
+    frena(editar(crlf, 'status: in-progress\nqa_guide: off\n', `status: in-progress\n${campo}: true\nqa_guide: off\n`), 'renglones de Windows');
+    // parches de Codex que no se reconstruyen igual: un tramo sólo con lo agregado, y el primero sin @@
+    for (const [que, cuerpo] of [['sólo agregado', `@@\n+${campo}: true`], ['sin @@', ` status: in-progress\n+${campo}: true\n qa_guide: off`]]) {
+      const h = historia(home, 'in-progress');
+      frena({ tool_name: 'Edit', tool_name_raw: 'apply_patch', tool_input: { file_path: h, command: `*** Begin Patch\n*** Update File: ${h}\n${cuerpo}\n*** End Patch\n` } }, `Codex, ${que}`);
+    }
+  }
+});
+
+// FrontmatterWrite_ComillasCurvasYMoveTo (pase adversarial del #1577): la herramienta Edit encuentra el texto aunque la
+// historia traiga comillas curvas y old_string rectas, y un parche de Codex con «Move to» escribe el destino. El freno los
+// juzga igual que la herramienta: la exención y el paso a done siguen pidiendo su firma
+test('T93 FrontmatterWrite_ComillasCurvasYMoveTo: el Edit con comillas rectas y el parche que mueve a la historia se juzgan', () => {
+  const home = nuevaHome([deLaPersona('seguí')], 'Edit');
+  const frena = (evento, que) => { const r = correr(ENCABEZADO, home, evento); assert.strictEqual(r.status, 2, `${que}: ${r.stderr}`); };
+  const pasa = (evento, que) => { const r = correr(ENCABEZADO, home, evento); assert.strictEqual(r.status, 0, `${que}: ${r.stderr}`); };
+  const curvas = () => {
+    const h = historia(home, 'in-progress');
+    fs.writeFileSync(h, fs.readFileSync(h, 'utf8').replace(/^title: .*$/m, 'title: “Algo”').replace('Texto.', 'Texto ‘citado’.'));
+    return h;
+  };
+  const editar = (file, de, a2) => ({ tool_name: 'Edit', tool_input: { file_path: file, old_string: de, new_string: a2 } });
+  for (const campo of ['advisors_exempt', 'dod_runtime_exempt']) {
+    frena(editar(curvas(), 'title: "Algo"', `title: "Algo"\n${campo}: true`), `${campo} con comillas rectas sobre curvas`);
+  }
+  frena(editar(curvas(), 'title: "Algo"\nstatus: in-progress', 'title: "Algo"\nstatus: done'), 'el paso a done con comillas rectas sobre curvas');
+  // un cambio cualquiera con comillas rectas sobre curvas sigue pasando, y uno que no encuentra nada también (el Edit falla)
+  pasa(editar(curvas(), "Texto 'citado'.", "Texto 'citado' de nuevo."), 'un cambio del cuerpo con comillas rectas');
+  pasa(editar(curvas(), 'no está', `advisors_exempt: true`), 'un Edit que no encuentra el texto');
+  // Codex: un borrador que no es .md, movido a la historia con «Move to»
+  const dir = path.join(home, 'repo', 'specs');
+  const borrador = path.join(dir, 'borrador.txt');
+  fs.writeFileSync(borrador, '---\nepic: 9\nstory: "9.9"\ntitle: "Algo"\nstatus: in-progress\nadvisors_exempt: true\n---\n\nTexto.\n');
+  const destino = path.join(dir, 'story-9.9-movida.md');
+  const mover = { tool_name: 'Edit', tool_name_raw: 'apply_patch', cwd: dir, tool_input: { file_path: borrador,
+    command: '*** Begin Patch\n*** Update File: borrador.txt\n*** Move to: story-9.9-movida.md\n@@\n-Texto.\n+Texto ok.\n*** End Patch\n' } };
+  frena(mover, 'Codex: Move to desde un .txt hacia la historia');
+  // el mismo parche sin la exención en el borrador pasa: mover no es eximirse
+  fs.writeFileSync(borrador, fs.readFileSync(borrador, 'utf8').replace('advisors_exempt: true\n', ''));
+  pasa(mover, 'Codex: Move to sin exención');
+  assert.ok(!fs.existsSync(destino), 'el freno no escribe el destino');
+});
+
 // ── Los avisos no recetan los escapes ─────────────────────────────────────────────────────────────────────────────────
 
 // Lo que le da al agente el escape como salida: el comando o el renglón que lo activa.
@@ -201,12 +326,13 @@ const RECETAS = [
   /DOD_BYPASS=1/,
   /touch\b[^\n]*ALLOW_DOD_EVIDENCE_WRITE/,
   /dod_runtime_exempt: true/,
+  /advisors_exempt: true/,
 ];
 // Un renglón que nombra el escape y dice que lo decide la persona, con su frase, no es una receta.
 const DE_LA_PERSONA = /autorizo|la persona|lo decide (?:el dev|la persona)/i;
 // En el código, sólo cuentan los textos que se le muestran al agente; en las instrucciones, todo renglón.
 // (cualquier `.push(` de renglones de un aviso, no sólo `lines`: el validador encontró uno en `pl.push`)
-const EMISOR = /console\.(?:error|log|warn)\(|\.push\(|stderr\.write\(|mensaje:|^\s*(?:[:?+]\s*)?['"`]/;
+const EMISOR = /console\.(?:error|log|warn)\(|\.push\(|stderr\.write\(|estricto\(|mensaje:|^\s*(?:[:?+]\s*)?['"`]/;
 const AVISOS = [
   'skills/tycon-pipeline/scripts/marker.js',
   // pipeline.js con sus partes de lib/
