@@ -8,7 +8,7 @@
 # el repo de operaciones, arma el árbol, clona los repos de `scripts/nightly/dependencies/repos.json` (entradas
 # `github: <dueño>/<repo>`), lee el estado de los avisos, mira las dependencias, crea los avisos, manda el resumen y
 # guarda la foto y las fichas en el repo de operaciones. Lo que cambia a propósito:
-#   · los avisos al equipo de cada producto son ISSUES en el repo del producto (scripts/nightly/dependencies/github-issues.js,
+#   · los avisos al equipo de cada producto son ISSUES en el repo del producto (integrations/github/scripts/dependency-notices.js,
 #     elegido por `work-items.js` porque `team-repos.json` dice `operations.platform: github`), no Bugs de Azure Boards;
 #   · la decisión es un PULL REQUEST por hallazgo en el repo de operaciones (scripts/ci/open-pr-per-finding.sh
 #     --platform github), igual que en Azure: mergearlo es «hay que arreglarlo», cerrarlo sin mergear es «no aplica»
