@@ -451,7 +451,7 @@ o en la coordinadora) o corriendo el comando en tu terminal, donde no hay freno;
 escapes que pide su guion en su forma exacta, como las firmas de guion (`escape:force-manual`, `escape:trust-ran` y los
 de `sign-file`), se firman igual que ellas, también en Windows con tu click o tu «aprobado»; desde otra sesión van con
 `--for-session <D>`. Con un tubo atrás (`2>&1 | tail`) o una envoltura dejan de estar en su forma: el freno los niega
-sin gastar tu aprobación y pide correrlos solos.
+sin gastar tu aprobación, y se corren otra vez solos.
 
 La columna «Firmarla en la terminal» es la otra salida, para quien la prefiera o donde hace falta (ver «Aprobar sin
 terminal»). En Windows la terminal no se lee: cada uno de esos comandos abre una ventana nueva con el mismo comando, y ahí
