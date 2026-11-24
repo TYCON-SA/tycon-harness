@@ -82,6 +82,19 @@ function waiverCommand(marker) {
   return `${cmd} runtime-waiver ${/\s/.test(story) ? `"${story}"` : story}`;
 }
 
+/**
+ * La firma que esta sesión ya pidió y que en Windows va sólo a la terminal de la persona: el renglón «solo terminal» de la
+ * lista del dueño (owner-window.js `anotarEnWindows`), abierto y para esta sesión. null si no hay, o si la lista no se
+ * puede leer: sin saber, el cierre frena como siempre.
+ */
+function firmaDeTerminalPendiente(sessionId) {
+  try {
+    const sl = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signature-list.js'));
+    const { filas } = sl.abiertos(os.homedir());
+    return filas.find((f) => f && f.tipo === 'firma' && f.windows === 'solo-terminal' && f.destino === sessionId && f.id) || null;
+  } catch (_) { return null; }
+}
+
 function readMarker(sessionId) {
   try { return JSON.parse(fs.readFileSync(markerPath(sessionId), 'utf8')); } catch { return null; }
 }
@@ -383,6 +396,17 @@ function main() {
       const ids = [...new Set(esperas.map((w) => w.id).filter(Boolean))].join(', ') || 'sin id';
       toPerson = [toPerson, `main está roto en ${suites}: espero a main (${ids}). No es un rojo de la historia; la historia sigue cuando main pase.`].filter(Boolean).join('\n');
     }
+    return allowStop();
+  }
+
+  // Rojo, con una firma que la sesión ya pidió y que en Windows va sólo a la terminal de la persona (su renglón «solo
+  // terminal» en la lista del dueño): el agente ya preguntó y espera, como con `waitingForHuman`, sin marcarlo a mano. Una
+  // vez por renglón: el cierre siguiente con el mismo renglón vuelve a frenar, y la corrida sigue vigilada.
+  const pedida = firmaDeTerminalPendiente(sessionId);
+  if (pedida && marker.waitedSignature !== pedida.id) {
+    marker.waitedSignature = pedida.id;
+    writeMarker(sessionId, marker);
+    toPerson = [toPerson, `La corrida espera tu firma en la terminal: ${pedida.title || pedida.firma}. Está en tu lista de firmas, con su comando.`].filter(Boolean).join('\n');
     return allowStop();
   }
 
