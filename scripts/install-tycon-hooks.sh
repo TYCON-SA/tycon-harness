@@ -612,7 +612,7 @@ TMP_REPORT=$(mktemp)   # lo limpia _tycon_cleanup (el handler único de salida �
 # escritas en settings.json (hooks y permisos), settings.local.json, ~/.codex/hooks.json, ~/.git-hooks/* y el
 # LaunchAgent del examen. Se reescriben ANTES del bloque de hooks, así éste encuentra el hook nuevo ya registrado y no
 # lo duplica. Compara la ruta COMPLETA (`runs.js` está dentro de `upload-runs.js`), recarga un LaunchAgent sólo si
-# estaba cargado, y con el mapa vacío no toca nada. El .ps1 llama al mismo guion. Guía: guides/maintaining/nombres-en-ingles.md.
+# estaba cargado, y con el mapa vacío no toca nada. El .ps1 llama al mismo guion. Guía: guides/maintaining/english-names.md.
 RENAMED_N=0; RENAMED_OUT=""
 if command -v node >/dev/null 2>&1 && [[ -f "$SCRIPT_DIR/lib/legacy-names.js" ]]; then
   _LN_ARGS=(--migrate-machine --guides "$(dirname "$SCRIPT_DIR")" --skills "$AGENT_SKILLS_REPO")

@@ -350,7 +350,7 @@
       "reason": "un dato de la guía, no una referencia para seguir: la carpeta local (sin versionar) donde el grabador deja lo descartado. El repo del equipo no la ve porque no la tiene versionada; en el público cae bajo una carpeta no pública, y ahí hace falta la declaración"
     },
     {
-      "file": "guides/maintaining/nombres-en-ingles.md",
+      "file": "guides/maintaining/english-names.md",
       "form": "team-path",
       "value": "perfil-equipo.json",
       "reason": "un dato de la guía: el nombre de antes del perfil del equipo, que el arnés sigue leyendo sin fecha de retiro; el archivo vive en el repo del perfil de cada organización, no en esta copia"

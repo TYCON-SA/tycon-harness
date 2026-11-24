@@ -44,7 +44,7 @@ la fila aplica.
 | **Agregar o tocar una integración** (avisos, registro de horas, índice de código, revisores propios, cualquier herramienta de afuera) — la regla innegociable: el núcleo no nombra herramientas | `guides/constitution.md` |
 | Memoria persistente con engram (si la integración está prendida) | `guides/integrations/engram-workflow.md` |
 | Commit, push, merge, cualquier cosa de git | `guides/git-commit-conventions.md` |
-| Nombrar algo que ejecuta la máquina · frenó el freno de castellano · renombrar sin romper a nadie (`renames.json`) | `guides/maintaining/nombres-en-ingles.md` |
+| Nombrar algo que ejecuta la máquina · frenó el freno de castellano · renombrar sin romper a nadie (`renames.json`) | `guides/maintaining/english-names.md` |
 | Qué palabra va en una guía en castellano (historia, revisor, ejecución, arnés, portón, historial) · avisó el control de las palabras de las guías | `guides/maintaining/vocabulary.md` |
 | Escribir o revisar los comentarios del código (qué hace y por qué, en presente; sin historia ni referencias internas) | `guides/maintaining/code-style.md` |
 | Sumar o actualizar una skill de terceros · de quién es cada cosa y con qué licencia | el manifiesto `scripts/publishing/third-party-skills.json` + `guides/maintaining/publicacion-espejo.md` §«Las skills de terceros» |

@@ -340,7 +340,7 @@ _scripts/publishing/ + guides/maintaining/publicacion-espejo.md_
 
 ## scripts/lib/legacy-names.js
 
-_scripts/lib/legacy-names.js/.sh/.ps1 + scripts/lib/renames.json + guides/maintaining/nombres-en-ingles.md_
+_scripts/lib/legacy-names.js/.sh/.ps1 + scripts/lib/renames.json + guides/maintaining/english-names.md_
 
 **Qué es:** Biblioteca que hace que un nombre viejo siga andando mientras dura el renombre a inglés, según el mapa `renames.json`.
 
@@ -354,7 +354,7 @@ _scripts/lib/legacy-names.js/.sh/.ps1 + scripts/lib/renames.json + guides/mainta
 
 ## scripts/ci/legacy-options.sh y legacy-options.js
 
-_scripts/ci/legacy-options.sh/.js + guides/maintaining/nombres-en-ingles.md_
+_scripts/ci/legacy-options.sh/.js + guides/maintaining/english-names.md_
 
 **Qué es:** Traductor que pasa las opciones viejas de los pipelines de producto a las nuevas en los guiones de `scripts/ci`.
 
@@ -368,7 +368,7 @@ _scripts/ci/legacy-options.sh/.js + guides/maintaining/nombres-en-ingles.md_
 
 ## scripts/publishing/spanish-names.js
 
-_scripts/publishing/ + scripts/lib/spanish-words.json + guides/maintaining/nombres-en-ingles.md_
+_scripts/publishing/ + scripts/lib/spanish-words.json + guides/maintaining/english-names.md_
 
 **Qué es:** El freno de nombres nuevos en castellano en lo que ejecuta la máquina: rutas, opciones, subcomandos, variables y claves.
 

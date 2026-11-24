@@ -293,7 +293,7 @@ lo resuelve `close-work-item.md` al cerrar. Nunca en silencio: una línea que di
    ```
    Otro `connector`, u `ok: false` → una línea («la historia no tiene pedido de trabajo (`work_item:`); se crea con la
    skill de creación o al cerrar», o el `detail`) y seguir. Con `azure-devops`:
-   la búsqueda por título de `~/.claude/tycon-harness/guides/integrations/ado-en-el-nucleo.md`, §«El Arranque».
+   la búsqueda por título de `~/.claude/tycon-harness/guides/integrations/ado-in-the-core.md`, §«El Arranque».
    Un match único → proponer «Encontré el pedido #{id} '{title}' que parece corresponder a esta story. ¿Agrego
    `work_item: {id}` al frontmatter y lo paso a activo?»; si confirma, escribirlo con
    `node ~/.claude/tycon-harness/scripts/lib/platform/work-item-field.js set <story_path> {id}` y seguir. Varios →

@@ -369,7 +369,7 @@ test('Papeles_Comunidad_SusSecciones', () => {
   assert.doesNotMatch(contributing, /does not run on pull requests from a fork|no corre sobre un pull request/i, 'CONTRIBUTING: la CI sí corre en un pedido de un fork, una vez aprobada');
   assert.match(contributing, /abrí un issue/, 'CONTRIBUTING: falta el consejo de abrir un issue antes de un cambio grande');
   assert.ok(contributing.includes('bash scripts/ci/public-ci.sh'), 'CONTRIBUTING: falta cómo correr lo mismo que la CI');
-  assert.ok(contributing.includes('guides/maintaining/nombres-en-ingles.md'), 'CONTRIBUTING: falta la regla de nombres en inglés');
+  assert.ok(contributing.includes('guides/maintaining/english-names.md'), 'CONTRIBUTING: falta la regla de nombres en inglés');
   assert.match(contributing, /nombres inventados/, 'CONTRIBUTING: falta la regla de ejemplos con nombres inventados');
   assert.match(contributing, /Apache-2\.0/, 'CONTRIBUTING: falta que una contribución entra bajo Apache-2.0');
   assert.match(contributing, /\bCLA\b/, 'CONTRIBUTING: tiene que decir que no hay CLA');

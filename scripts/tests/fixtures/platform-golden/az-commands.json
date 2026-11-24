@@ -106,7 +106,7 @@
     "`az pipelines runs list` responde por PROYECTO y con atraso; no es la cola. La cola se le pregunta",
     "az devops invoke --area build --resource timeline \\"
   ],
-  "guides/integrations/ado-en-el-nucleo.md": [
+  "guides/integrations/ado-in-the-core.md": [
     "**Best-effort de validación**: si la auto-derivación produce un path, una vez por sesión chequear que el iteration exista (`az boards iteration project list --project <p>`). Si NO existe, fallback a backlog + warning al dev. NO bloquear creación del WI.",
     "**Por qué**: con `ado_iteration_path: \"\"` en la config, un WI cae en el backlog (`IterationPath=<proyecto>`) aunque la story tenga `sprint: <N>` en el frontmatter, y hay que moverlo a mano con `az boards work-item update --iteration \"<proyecto>\\Sprint <N>\"`. Resolver el IterationPath desde el sprint de la story cierra ese gap.",
     "- **Azure DevOps**: la misma secuencia de `az repos pr` de siempre (reusa el pedido abierto de ese par de ramas o lo",

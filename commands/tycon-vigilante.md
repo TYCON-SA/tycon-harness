@@ -72,7 +72,7 @@ mail; este borrador es el diagnóstico que lo acompaña"*.
 ## approve &lt;id&gt;
 
 > **Mirá primero si hay un PR abierto de ese hallazgo** (los pedidos de cambio de la rama `vigilante/<id>`: con
-> Azure DevOps, el comando de `~/.claude/tycon-harness/guides/integrations/ado-en-el-nucleo.md`, §«El vigilante»).
+> Azure DevOps, el comando de `~/.claude/tycon-harness/guides/integrations/ado-in-the-core.md`, §«El vigilante»).
 > ya mueve el borrador a `promoted/`. Si el PR está mergeado, saltá al paso 2 —
 > mover el archivo de nuevo a mano genera un conflicto con lo que ya hizo el merge.
 

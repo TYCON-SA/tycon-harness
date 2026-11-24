@@ -13,7 +13,7 @@ cd '<carpeta del repo>' && node "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness
 La capa elige el conector por la plataforma del repo y devuelve un JSON: `{ ok: true, value }` o
 `{ ok: false, reason, detail }`. **Leé el JSON, no lo supongas.**
 
-- **Azure DevOps**: la misma secuencia de siempre (`~/.claude/tycon-harness/guides/integrations/ado-en-el-nucleo.md`; reusa el pedido abierto de ese par de ramas o lo
+- **Azure DevOps**: la misma secuencia de siempre (`~/.claude/tycon-harness/guides/integrations/ado-in-the-core.md`; reusa el pedido abierto de ese par de ramas o lo
   crea, fija el mensaje de merge «Merged PR N: asunto», prende el auto-completar sin aplastar y lo verifica releyendo
   el pedido). El modo es siempre `auto`: el servidor lo completa cuando sus políticas dan verde.
 - **GitHub**: abre o actualiza el pedido y, si el repo permite el auto-merge, lo prende (modo `auto`). Si no lo

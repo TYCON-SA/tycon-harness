@@ -517,7 +517,7 @@ out="$(retiro 2026-11-21)"; rc=$?
 if [ "$rc" -eq 0 ] && [ "$(grep -c . <<<"$out")" = 1 ] && grep -q 'TYCON_NO_LAB_OLD' <<<"$out" && grep -q 'TYCON_NO_LAB_NEW' <<<"$out" \
    && grep -q -- '--lab-old' <<<"$out" && grep -q -- '--lab-new' <<<"$out" && grep -q 'scripts/lab/x.js' <<<"$out" \
    && grep -q 'scripts/lab/old.js' <<<"$out" && grep -q 'scripts/lab/new.js' <<<"$out" && grep -q 'entorno' <<<"$out" \
-   && grep -q '2026-11-20' <<<"$out" && grep -q 'nombres-en-ingles.md' <<<"$out" && ! grep -q 'TYCON_LAB_GONE' <<<"$out"; then
+   && grep -q '2026-11-20' <<<"$out" && grep -q 'english-names.md' <<<"$out" && ! grep -q 'TYCON_LAB_GONE' <<<"$out"; then
   ok "T57 pasada la fecha: UNA línea con cada nombre viejo de los últimos 14 días, su nuevo y dónde cambiarlo"
 else bad "T57 pasada la fecha (rc=$rc): $out"; fi
 usos "$U_FAR"
