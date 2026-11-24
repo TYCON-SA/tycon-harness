@@ -74,8 +74,11 @@ story causó en otro lado. Cuesta ~2 min; aparecer todas juntas recién en el me
 
 - El gate exporta `TYCON_TEST_GATE=1` → `run-check` anota `provenance=test-gate`.
 - Si el repo no tiene suite completa, o hay que cerrar igual: declarar el control a mano lo decide la persona, no el
-  agente («autorizo force-manual» en su mensaje); queda en `gates.log`. `TYCON_TEST_GATE` escrita por el agente la frena
-  el freno de seguridad: la pone sólo el gate.
+  agente; queda en `gates.log`. Se firma como las firmas de guion, también en Windows: la persona aprueba con el click o
+  el «aprobado», y el agente corre `marker.js set-check <control> <estado> --force-manual` solo y en su forma exacta, sin
+  un tubo atrás (`2>&1 | tail`) ni `cd … &&`. Fuera de su forma, el freno lo niega y pide correrlo solo; la terminal
+  queda para quien la prefiera. `TYCON_TEST_GATE` escrita por el agente la frena el freno de seguridad: la pone sólo el
+  gate.
 
 ### Salidas del gate
 
