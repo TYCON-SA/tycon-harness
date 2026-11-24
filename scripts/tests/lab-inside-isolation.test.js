@@ -219,14 +219,15 @@ test('T10 LabInsideIsolation_BackgroundChild_StillStarts @story-8.321 @ac-3', { 
   const fuera = carpeta(t, 'lab-fondo-');
   const marca = path.join(fuera, 'nieto.txt');
   const guion = path.join(fuera, 'fondo.js');
-  const nieto = `require('fs').writeFileSync(${JSON.stringify(marca)}, 'corrió')`;
+  // el código de cada node es fijo: la ruta de la marca le llega al nieto por sus argumentos, no escrita en el código
   fs.writeFileSync(guion, [
     "const { spawn } = require('child_process');",
-    `const h = spawn(process.execPath, ['-e', ${JSON.stringify(`setTimeout(() => require('child_process').spawnSync(process.execPath, ['-e', ${JSON.stringify(nieto)}], { stdio: 'inherit' }), 1500);`)}], { detached: true, stdio: 'ignore' });`,
+    "const nieto = \"require('fs').writeFileSync(process.argv[1], 'corrió')\";",
+    "const h = spawn(process.execPath, ['-e', \"setTimeout(() => require('child_process').spawnSync(process.execPath, ['-e', process.argv[1], process.argv[2]], { stdio: 'inherit' }), 1500);\", nieto, process.argv[2]], { detached: true, stdio: 'ignore' });",
     'h.unref();',
     '',
   ].join('\n'));
-  const codigo = await require(path.join(SK, 'lib', 'isolated-run.js')).exec({ argv: [process.execPath, guion], raices: [fuera], env: { ...ambiente(c), TYCON_COMPARE_SANDBOX: 'off' }, userInfo: () => ({ homedir: c.casa }), cwd: fuera, err: () => {} });
+  const codigo = await require(path.join(SK, 'lib', 'isolated-run.js')).exec({ argv: [process.execPath, guion, marca], raices: [fuera], env: { ...ambiente(c), TYCON_COMPARE_SANDBOX: 'off' }, userInfo: () => ({ homedir: c.casa }), cwd: fuera, err: () => {} });
   assert.strictEqual(codigo, 0);
   const hasta = Date.now() + 8000;
   while (!fs.existsSync(marca) && Date.now() < hasta) await new Promise((r) => setTimeout(r, 200));
