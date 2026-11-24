@@ -401,16 +401,19 @@ Esto no firma en Windows:
 - **La consola PowerShell.** Su línea no dice qué comando corre, así que no se puede comparar con lo que aprobaste. El
   freno lo niega antes de usar tu aprobación, y dice que se corra por Bash o con `--terminal`.
 - **La delegación y «hecho y avisado».** Nada se firma sin una acción tuya.
-- **Un escape y un guion de consola** (`run-base-controls.sh`). Van en tu terminal: un escape no deja un pedido que el guion
-  pueda comprobar, y el guion de consola se identifica con un número de proceso de Git Bash, que no es el de Windows.
+- **Un escape que ningún guion comprueba y un guion de consola** (`run-base-controls.sh`). Van en tu terminal. El escape
+  de una variable, o el de `marker.js` que mira sólo el freno (cerrar la ejecución, apagar el modo autónomo), no deja
+  un pedido que un guion pueda comprobar. El guion de consola se identifica con un número de proceso de Git Bash, que no
+  es el de Windows. Un escape que comprueba su guion (`set-check --force-manual`, `check-count --trust-ran`,
+  `sign-file`) sí se firma con tu click o tu «aprobado»: corrido solo y en su forma exacta, es una firma de guion.
 
 Una consola de fondo viva frena, y también una PowerShell viva, porque no se puede leer qué corre. Se cierra, o se firma en
 la terminal.
 
 **El freno ofrece sólo lo que anda en tu consola.** En Windows la firma por cuadro o por «aprobado» anda sólo desde la
 consola Bash de Git. Si el agente pidió la firma desde la consola PowerShell, el freno no le ofrece la ventana, el cuadro
-ni el «aprobado»: le dice que la corra por la consola Bash de Git (si está) o te da la forma de la terminal. Un escape o un
-guion `.sh` van sólo por la terminal, también desde Bash de Git. La lista de firmas guarda con qué consola se pidió cada
+ni el «aprobado»: le dice que la corra por la consola Bash de Git (si está) o te da la forma de la terminal. Un escape que
+ningún guion comprueba o un guion `.sh` van sólo por la terminal, también desde Bash de Git. La lista de firmas guarda con qué consola se pidió cada
 una, y `owner-next` le da a la coordinadora la terminal en lugar del cuadro cuando el cuadro no firmaría; lo mismo con una
 firma que no se da desde la pestaña de otra sesión.
 
@@ -444,9 +447,11 @@ la forma no coincide, se niega y queda `--terminal`.
 
 La columna «¿Desde otra sesión?» dice si el comando se puede correr desde la pestaña de otra sesión (medido el
 2026-10-26). Un escape se firma en la pestaña de la propia sesión (con la ventana, o con tu click o tu «aprobado» dado ahí
-o en la coordinadora) o corriendo el comando en tu terminal, donde no hay freno; en Windows, sólo en tu terminal. Dos
-escapes, `escape:force-manual` y `escape:trust-ran`, los pide su guion en su forma exacta, como las firmas de guion:
-desde otra sesión van con `--for-session <D>`.
+o en la coordinadora) o corriendo el comando en tu terminal, donde no hay freno; en Windows, sólo en tu terminal. Los
+escapes que pide su guion en su forma exacta, como las firmas de guion (`escape:force-manual`, `escape:trust-ran` y los
+de `sign-file`), se firman igual que ellas, también en Windows con tu click o tu «aprobado»; desde otra sesión van con
+`--for-session <D>`. Con un tubo atrás (`2>&1 | tail`) o una envoltura dejan de estar en su forma: el freno los niega
+sin gastar tu aprobación, y se corren otra vez solos.
 
 La columna «Firmarla en la terminal» es la otra salida, para quien la prefiera o donde hace falta (ver «Aprobar sin
 terminal»). En Windows la terminal no se lee: cada uno de esos comandos abre una ventana nueva con el mismo comando, y ahí

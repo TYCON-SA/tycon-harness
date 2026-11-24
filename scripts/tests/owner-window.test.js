@@ -3558,6 +3558,55 @@ test('Windows_UnEscapeYUnGuionDeConsola_VanALaTerminal', (t) => {
   assert.strictEqual(vigentes(casa).length, 0);
 });
 
+test('Windows_ForceManualEnSuFormaExacta_FirmaConElClick_YElGuionLoConsume', (t) => {
+  // En su forma exacta, `set-check --force-manual` es una firma de guion: el freno no la pasa como escape, y en Windows se
+  // firma con el click o el «aprobado», como las otras. 🔴 Falla con: tratarla como un escape, que va sólo por la terminal.
+  const casa = casaNueva(t);
+  const usos = [];
+  const cmd = `node ${MARKER} set-check tests green --force-manual`;
+  const r = pedirWin(casa, cmd, { aprobaciones: conClick(usos) });
+  assert.strictEqual(r.decision, 'allow', r.texto);
+  assert.strictEqual(r.via, 'click');
+  assert.deepStrictEqual(usos, ['a1'], 'la aprobación se gasta una vez');
+  const v = verificarWin(casa, 'escape:force-manual', [MARKER, 'set-check', 'tests', 'green', '--force-manual'], arbolGuionWin(casa, cmd));
+  assert.ok(v.ok, v.motivo);
+  assert.strictEqual(v.registro.via, 'click');
+  assert.strictEqual(vigentes(casa).length, 0, 'consumido');
+});
+
+test('Windows_ForceManualFueraDeSuForma_PideLaFormaExacta_SinMandarALaTerminal', (t) => {
+  // Fuera de su forma exacta (con un tubo atrás, `2>&1 | tail`), el freno la pasa como escape. Se niega sin gastar la
+  // aprobación, y lo que le ofrece es correrla sola y en su forma exacta, donde el click firma.
+  // 🔴 Falla con: decirle que un escape va sólo por la terminal: el agente no la repite en su forma, y la persona, que ya
+  //    aprobó en el cuadro, tiene que ir a la terminal.
+  const casa = casaNueva(t);
+  const usos = [];
+  const cmd = `node ${MARKER} set-check tests green --force-manual 2>&1 | tail -15`;
+  const escapes = ['escape:force-manual'];
+  const r = pedirWin(casa, cmd, { escapes, aprobaciones: conClick(usos) });
+  assert.strictEqual(r.decision, 'deny');
+  assert.match(r.texto, /la firma va en su forma exacta, sola/, r.texto);
+  assert.deepStrictEqual(usos, [], 'la aprobación no se gasta');
+  const ofrece = (tool_name) => ow.ofreceTrasDecidir(r, { evento: evento(cmd, { tool_name }), escapes, plataforma: 'win32', gitBash: CON_GIT });
+  assert.strictEqual(ofrece('Bash'), '', 'desde la consola Bash de Git, el texto de siempre: con el cuadro');
+  const ps = ofrece('PowerShell');
+  assert.match(ps, /solo y en su forma exacta, por la consola Bash de Git/, ps);
+  assert.doesNotMatch(ps, /un escape no se aprueba en la pestaña/, ps);
+});
+
+test('Windows_UnEscapeSinGuionQueLoCompruebe_SigueEnLaTerminal', (t) => {
+  // Un escape que ningún guion comprueba (el de una variable, o uno de marker.js que sólo mira el freno, como
+  // `marker.js clear`) sigue sólo en la terminal. 🔴 Falla con: dejarlo pasar con el click, o no decir la terminal.
+  const casa = casaNueva(t);
+  for (const [cmd, id] of [['TYCON_TEST_GATE=1 ls', 'escape:TYCON_TEST_GATE'], [`node ${MARKER} clear`, 'escape:cerrar-la-ejecucion']]) {
+    const r = pedirWin(casa, cmd, { escapes: [id], aprobaciones: conClick() });
+    assert.strictEqual(r.decision, 'deny', id);
+    assert.match(r.texto, /en Windows un escape no se aprueba en la pestaña/, id);
+    assert.match(ow.ofreceTrasDecidir(r, { evento: evento(cmd), escapes: [id], plataforma: 'win32', gitBash: CON_GIT }), /va sólo en la terminal/, id);
+  }
+  assert.strictEqual(vigentes(casa).length, 0);
+});
+
 test('Windows_Verificar_NoAceptaUnaImitacion', (t) => {
   const casa = casaNueva(t);
   assert.strictEqual(pedirWin(casa, W_ADHOC, { aprobaciones: conClick() }).decision, 'allow');

@@ -1515,11 +1515,14 @@ function pasaDelCupoDelegado(palabras, tope = topesDelCaminoCorto().delegado, cw
 
 /**
  * ¿La firma pasa por la pestaña en Windows (la ventana, el cuadro o el «aprobado», desde la consola Bash de Git)? null si
- * pasa, o el motivo. No pasan los escapes (entre ellos todo `sign-file`) ni los guiones de consola `.sh`. La usan
- * `decidir` y el texto del freno (`ofrecerEnWindows`): una sola lista (@story-8.319).
+ * pasa, o el motivo. No pasan los escapes que ningún guion comprueba (los de una variable, y los de `marker.js` que mira
+ * sólo el freno) ni los guiones de consola `.sh`. Un escape que comprueba su guion (`set-check --force-manual`,
+ * `check-count --trust-ran`, `sign-file`) sí pasa: en su forma exacta es una firma de guion, y fuera de ella el freno lo ve
+ * como escape y se corre otra vez solo y en su forma. La usan `decidir` y el texto del freno (`ofrecerEnWindows`): una
+ * sola lista (@story-8.319).
  */
 function noPasaEnWindows({ escapes = [], palabras = null } = {}) {
-  if (escapes.length) return 'en Windows un escape no se aprueba en la pestaña';
+  if (escapes.some((id) => { const s = firmaDe(id); return !s || s.kind !== 'guion'; })) return 'en Windows un escape no se aprueba en la pestaña';
   // el guion de consola se identifica con el número de proceso de Git Bash, que no es el de Windows: nunca se comprobaría
   if (palabras && palabras[0] && base(palabras[0]).endsWith('.sh')) return 'en Windows un guion de consola no se puede comprobar en la pestaña';
   return null;

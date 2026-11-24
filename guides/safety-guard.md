@@ -216,7 +216,10 @@ lo aceptan `TYCON_SAFETY_OFF`, `TYCON_PROD_LINT`, la emergencia ni saltear el pa
 (casi siempre el mismo con `--terminal`). Es la única forma en Codex, que no tiene ventana de permiso, y la de lo que no
 acepta el click. También es la forma de toda firma que el freno no puede decidir: el comando escondido detrás de otro (`cd … && <firma>`), la
 herramienta lanzada por otra herramienta o por su consola, una consola de fondo viva, o en Windows la consola PowerShell
-y las formas de consola que no son la medida. En Windows, además, un escape se firma siempre ahí. El cartel de cada freno trae el comando de la terminal.
+y las formas de consola que no son la medida. En Windows, además, se firma ahí un escape que ningún guion comprueba: el de
+una variable, o uno de `marker.js` que mira sólo el freno, como cerrar la ejecución. Uno que comprueba su guion
+(`set-check --force-manual`, `check-count --trust-ran`, `sign-file`) se firma como las firmas de guion: con el click o el
+«aprobado», corrido solo y en su forma exacta (sin un tubo atrás como `2>&1 | tail`). El cartel de cada freno trae el comando de la terminal.
 En Windows la firma por cuadro o por «aprobado» anda sólo desde la consola Bash de Git: desde la consola PowerShell el
 freno no ofrece ni la ventana, ni el cuadro, ni el «aprobado», sino la consola Bash de Git o la terminal, con un solo
 comando para las tres consolas (`node "<ruta>/marker.js" … --terminal --for-session <sesión>`; detalle en
