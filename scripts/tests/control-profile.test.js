@@ -37,6 +37,19 @@ function arbol({ perfil, clasif = CLASIF } = {}) {
   fs.writeFileSync(path.join(t, 'scripts', 'metrics', 'controls-classification.json'), JSON.stringify(clasif));
   return t;
 }
+/**
+ * Una copia de laboratorio del arnés sobre un árbol de juguete: el freno corre desde ahí y lee el perfil de su propio
+ * árbol, como en una máquina (ninguna variable elige el árbol). Devuelve la ruta del freno copiado.
+ */
+function arnesDeLaboratorio(t) {
+  for (const d of ['scripts/lib', 'scripts/setup/harness', 'skills/tycon-pipeline/scripts/lib', 'integrations']) {
+    fs.cpSync(path.join(ROOT, d), path.join(t, d), { recursive: true });
+  }
+  const freno = path.join(t, 'scripts', 'hooks', 'pr-one-per-repo-guard.js');
+  fs.mkdirSync(path.dirname(freno), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, 'scripts', 'hooks', 'pr-one-per-repo-guard.js'), freno);
+  return freno;
+}
 const modelo = (m) => () => (m ? { model: m } : { model: null, noMedido: 'sin conversación' });
 const decidir = (o) => CP.decide({ control: 'pr-uno-por-repo', sessionId: 's1', home: tmp('casa-'), now: AHORA, modelOf: modelo('claude-opus-5-5'), ...o });
 
@@ -78,6 +91,36 @@ test('ControlProfile_Escapes_AllOn — un id ajeno con «opus» adentro, una fec
   assert.match(r.motivo, /2 conversaciones/);
 });
 
+// 🔴 Falla con: decide tomaba el árbol de TYCON_TREE, una variable que el agente puede poner, y con eso leía un perfil que
+// relaja el freno y ejecutaba el team-repos.js de esa carpeta.
+test('ControlProfile_TreeVariable_Ignored — la variable no elige el árbol, y el código que lee el perfil es siempre el del arnés', () => {
+  const t = arbol({ perfil: { relaxed: [relajacion()] } });
+  const marca = path.join(tmp('marca-'), 'corrio');
+  fs.mkdirSync(path.join(t, 'scripts', 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(t, 'scripts', 'lib', 'team-repos.js'),
+    `require('fs').writeFileSync(${JSON.stringify(marca)}, '');\nmodule.exports = require(${JSON.stringify(path.join(ROOT, 'scripts', 'lib', 'team-repos.js'))});\n`);
+  // con la variable apuntando a una carpeta que relaja (en el ambiente del proceso y en el que se le pase), el árbol sigue
+  // siendo el del arnés, que no relaja nada
+  const antes = process.env.TYCON_TREE;
+  process.env.TYCON_TREE = t;
+  let r;
+  try {
+    r = CP.decide({ control: 'pr-uno-por-repo', sessionId: 's1', home: tmp('casa-'), now: AHORA, modelOf: modelo('claude-opus-5-5'), env: { ...process.env } });
+  } finally {
+    if (antes === undefined) delete process.env.TYCON_TREE; else process.env.TYCON_TREE = antes;
+  }
+  assert.strictEqual(r.on, true, r.motivo);
+  // el árbol de juguete de las pruebas se lee, pero con el team-repos.js del arnés
+  assert.strictEqual(decidir({ tree: t }).on, false);
+  assert.ok(!fs.existsSync(marca), 'no ejecuta el team-repos.js de otra carpeta');
+});
+
+// 🔴 Falla con: el patrón de «fuertes» aceptaba cualquier sufijo, y un modelo local llamado opus-lite contaba como fuerte.
+test('ControlProfile_StrongNeedsAnthropicId — fuerte es el nombre solo o un id de Anthropic con su versión', () => {
+  assert.deepStrictEqual(['opus-lite', 'fable-local-llama', 'opus-x', 'claude-opus-lite', 'claude-fable'].map(CP.perfilDe), Array(5).fill('resto'));
+  assert.deepStrictEqual(['opus', 'fable', 'claude-opus-5-5', 'claude-fable-5-1', 'claude-opus-4-1-20250805', 'Claude-Fable-5'].map(CP.perfilDe), Array(6).fill('fuertes'));
+});
+
 test('T21 ControlProfile_ExigenciaListed_Ignored — el perfil nombra una exigencia: se ignora, avisa una vez por día y sigue prendida', () => {
   const t = arbol({ perfil: { relaxed: [relajacion({ control: 'safety-guard' })] } });
   const casa = tmp('casa-');
@@ -109,6 +152,7 @@ test('ControlProfile_BadSection_AllOnAndSaid — una relajación mal escrita dej
 // 🔴 Falla con: un freno que no pregunta al perfil, o que no anota el paso por el perfil (la tabla dejaría de contarlo).
 test('T19 ControlProfile_HookRelaxed_PassesAndRecords — el freno de un pedido por repo, relajado para fuertes: con opus no frena y anota paso-por-perfil', () => {
   const t = arbol({ perfil: { relaxed: [relajacion()] } });
+  const freno = arnesDeLaboratorio(t);
   const casa = tmp('casa-');
   const sid = 'sesion-de-prueba-perfil';
   fs.mkdirSync(path.join(casa, '.claude', 'projects', 'p'), { recursive: true });
@@ -121,9 +165,9 @@ test('T19 ControlProfile_HookRelaxed_PassesAndRecords — el freno de un pedido 
   fs.writeFileSync(path.join(bin, 'az'), `#!/usr/bin/env bash\nfor a in "$@"; do [ "$a" = policy ] && { cat "${fix}/policy.json"; exit 0; }; done\ncat "${fix}/prs.json"\n`);
   fs.chmodSync(path.join(bin, 'az'), 0o755);
   const CREAR = 'az repos pr create --org https://x --project Totora --repository FrontEnd --source-branch ci/nueva --target-branch main --title t';
-  const correr = () => spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'hooks', 'pr-one-per-repo-guard.js')], {
+  const correr = () => spawnSync(process.execPath, [freno], {
     input: JSON.stringify({ session_id: sid, tool_input: { command: CREAR } }), encoding: 'utf8',
-    env: { ...process.env, HOME: casa, USERPROFILE: casa, TYCON_TREE: t, TYCON_PR_ONE_PER_REPO: '1', PATH: `${bin}:${process.env.PATH}` },
+    env: { ...process.env, HOME: casa, USERPROFILE: casa, TYCON_PR_ONE_PER_REPO: '1', PATH: `${bin}:${process.env.PATH}` },
   });
   const frenos = () => { try { return fs.readFileSync(path.join(require('../setup/harness/tycon-home.js').stateDir(casa), 'frenos.jsonl'), 'utf8'); } catch (_) { return ''; } };
   conv('claude-opus-5-5');

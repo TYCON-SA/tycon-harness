@@ -29,9 +29,9 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..', '..');
 const FUERTES = ['opus', 'fable'];
 
-// un modelo de Claude de un perfil fuerte: el nombre solo (`opus`) o el id de Anthropic (`claude-opus-5-5`). Otro id que
-// sólo contiene la palabra (el de otro proveedor) no lo es
-const FUERTE = new RegExp(`^(claude-)?(${FUERTES.join('|')})(-[\\w.-]*)?$`, 'i');
+// un modelo de Claude de un perfil fuerte: el nombre solo (`opus`) o el id de Anthropic con su versión (`claude-opus-5-5`).
+// Otro id que sólo contiene la palabra (el de otro proveedor) o la lleva con otro sufijo (`opus-lite`) no lo es
+const FUERTE = new RegExp(`^(?:(?:${FUERTES.join('|')})|claude-(?:${FUERTES.join('|')})-\\d[\\w.-]*)$`, 'i');
 /** El perfil de un modelo leído: «fuertes», «resto», o null si no hay modelo. */
 function perfilDe(modelo) {
   if (!modelo || typeof modelo !== 'string') return null;
@@ -62,7 +62,8 @@ function modeloUnico(sid, home) {
 }
 
 const hoyDe = (now) => new Date(now).toISOString().slice(0, 10);
-const treeDe = (tree, env) => tree || env.TYCON_TREE || ROOT;
+// el árbol es siempre el del arnés; `tree` lo pasan sólo las pruebas. Una variable no lo elige: el agente la puede poner
+const treeDe = (tree) => tree || ROOT;
 
 function leerJson(ruta) {
   try { return { data: JSON.parse(fs.readFileSync(ruta, 'utf8').replace(/^﻿/, '')) }; } catch (e) {
@@ -72,8 +73,8 @@ function leerJson(ruta) {
 
 /** Las relajaciones vigentes de un control, del perfil del equipo; `[]` si no hay ninguna o la sección no vale. */
 function relajacionesDe(control, tree) {
-  let TR;
-  try { TR = require(path.join(tree, 'scripts', 'lib', 'team-repos.js')); } catch (_) { TR = require('./team-repos.js'); }
+  // el que lee el perfil es el del arnés: nunca se ejecuta código de la carpeta del perfil
+  const TR = require('./team-repos.js');
   let texto;
   try { texto = fs.readFileSync(path.join(tree, 'team-repos.json'), 'utf8'); } catch (_) { return []; }
   const r = TR.parse(texto.replace(/^﻿/, ''));
@@ -92,9 +93,9 @@ function avisoDiario(control, home, now) {
   return `el perfil del equipo relaja ${control}, que es una exigencia: no se relaja para ningún modelo, sigue frenando`;
 }
 
-function decide({ control, sessionId, tree = null, home = os.homedir(), now = Date.now(), env = process.env, modelOf = null } = {}) {
+function decide({ control, sessionId, tree = null, home = os.homedir(), now = Date.now(), modelOf = null } = {}) {
   try {
-    const raiz = treeDe(tree, env);
+    const raiz = treeDe(tree);
     const relajaciones = relajacionesDe(control, raiz);
     if (!relajaciones.length) return { on: true, motivo: 'el perfil del equipo no relaja este control' };
     const cls = leerJson(path.join(raiz, 'scripts', 'metrics', 'controls-classification.json'));
