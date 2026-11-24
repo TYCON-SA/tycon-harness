@@ -427,6 +427,11 @@ const SHORT_PATH_SINCE = '2026.11.08.99';
  */
 const PULL_REQUESTS_SINCE = '2026.11.20.99';
 /**
+ * 🔴 La primera versión del arnés cuyo lector conoce `maintenance` en el perfil del equipo (las horas de quietud del
+ * barrido de carpetas de trabajo). Provisoria hasta la etiqueta del merge que la trae, como PULL_REQUESTS_SINCE.
+ */
+const MAINTENANCE_SINCE = '2026.11.24.99';
+/**
  * 🔴 La primera versión del arnés cuyo lector conoce `approvals.signature_list` (la lista de lo que espera a la persona):
  * la etiqueta del merge que la trae, como LEVELS_SINCE. Un lector anterior la leería como una clave desconocida, y una
  * clave rota de `approvals` deja sin ninguna firma delegada.
@@ -516,7 +521,7 @@ function capaConMinima(layerText, minima) {
 function pedidasDelPerfil({ doc, actual }) {
   const cambia = (k) => !isObject(actual) || canonico(actual[k]) !== canonico(isObject(doc) ? doc[k] : undefined);
   // las claves del perfil que una versión anterior no sabe leer, con la versión que las lee y su mensaje
-  const pedidas = [['response', RESPONSE_SINCE, 'org.capaSinResponse'], ['approvals', APPROVALS_SINCE, 'org.capaSinApprovals'], ['qa', QA_SINCE, 'org.capaSinQa'], ['guard', GUARD_SINCE, 'org.capaSinGuard'], ['coordination', COORDINATION_SINCE, 'org.capaSinCoordination'], ['switches', SWITCHES_SINCE, 'org.capaSinSwitches'], ['site', SITE_SINCE, 'org.capaSinSite'], ['office', OFFICE_SINCE, 'org.capaSinOffice'], ['short_path', SHORT_PATH_SINCE, 'org.capaSinShortPath'], ['pull_requests', PULL_REQUESTS_SINCE, 'org.capaSinPullRequests']]
+  const pedidas = [['response', RESPONSE_SINCE, 'org.capaSinResponse'], ['approvals', APPROVALS_SINCE, 'org.capaSinApprovals'], ['qa', QA_SINCE, 'org.capaSinQa'], ['guard', GUARD_SINCE, 'org.capaSinGuard'], ['coordination', COORDINATION_SINCE, 'org.capaSinCoordination'], ['switches', SWITCHES_SINCE, 'org.capaSinSwitches'], ['site', SITE_SINCE, 'org.capaSinSite'], ['office', OFFICE_SINCE, 'org.capaSinOffice'], ['short_path', SHORT_PATH_SINCE, 'org.capaSinShortPath'], ['pull_requests', PULL_REQUESTS_SINCE, 'org.capaSinPullRequests'], ['maintenance', MAINTENANCE_SINCE, 'org.capaSinMaintenance']]
     .filter(([k]) => isObject(doc) && doc[k] !== undefined && cambia(k));
   // una clave nueva dentro de una sección que ya se leía: la pide sólo si el pedido la trae
   const firma = isObject(doc) && isObject(doc.approvals) ? doc.approvals.delegated_signing : undefined;
