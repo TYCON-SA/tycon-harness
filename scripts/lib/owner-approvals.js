@@ -537,17 +537,17 @@ function mensajeEnLaTranscripcion(ruta, a, { sello, destino, pregunta } = {}) {
   let rs;
   const t = String(a.texto || '').trim();
   // el «aprobado» necesita los renglones en orden: no se filtra, y una transcripción que pasa del tope no se lee. Desde
-  // el final, hasta pasar la hora del registro (ahí ya se juntó el «aprobado», o no está) y, de ahí para atrás, hasta el
-  // primer texto del agente o el mensaje anterior de la persona: es donde termina lo que se mira antes del «aprobado»
+  // el final, hasta pasar la hora del registro con el «aprobado» ya juntado (un renglón de hora vieja antes de llegar a
+  // él no corta: sin «aprobado», se lee todo, como antes) y, de ahí para atrás, hasta el primer texto del agente o el
+  // mensaje anterior de la persona: es donde termina lo que se mira antes del «aprobado»
   const limite = Date.parse(a.ts) - MARGEN_MS;
   const esElAprobado = (x) => x && x.type === 'user' && String(textoDe(x) || '').trim() === t && cerca(x, a.ts);
   let pasado = false;
   const hasta = (juntados, hora) => {
     const x = juntados[juntados.length - 1];
     if (!pasado) {
-      if (!(hora < limite)) return false;
+      if (!(hora < limite) || !juntados.slice(0, -1).some(esElAprobado)) return false;
       pasado = true;
-      if (!juntados.slice(0, -1).some(esElAprobado)) return true;
     }
     return Boolean(x && ((x.type === 'user' && x.origin && x.origin.kind === 'human' && textoDe(x) !== null) || (x.type === 'assistant' && textoDe(x))));
   };
@@ -675,10 +675,11 @@ function nombraLaMismaFirmaYSesion(pregunta, sello) {
 function clickEnLaTranscripcion(ruta, a, { pregunta, opciones, descripciones, sello, casa } = {}) {
   if (!a.tool_use_id) return { ok: false, motivo: 'el click no dice qué cuadro contestó' };
   let rs;
-  // sólo los renglones que nombran ese cuadro, desde el final: se corta al encontrar el cuadro, que va antes que su
-  // respuesta; el resto de la transcripción no se convierte en objetos
+  // sólo los renglones que nombran ese cuadro, desde el final: se corta en el cuadro, que va antes que su respuesta, una
+  // vez juntada la respuesta (un cuadro repetido después no corta antes); el resto no se convierte en objetos
   const esElCuadro = (r) => r && r.type === 'assistant' && bloques(r).some((b) => b && b.type === 'tool_use' && b.id === a.tool_use_id && b.name === CUADRO);
-  try { rs = desdeElFinal(ruta, { filtro: a.tool_use_id, hasta: (juntados) => esElCuadro(juntados[juntados.length - 1]) }); } catch (e) {
+  const esLaRespuesta = (r) => bloques(r).some((b) => b && b.type === 'tool_result' && b.tool_use_id === a.tool_use_id);
+  try { rs = desdeElFinal(ruta, { filtro: a.tool_use_id, hasta: (juntados) => esElCuadro(juntados[juntados.length - 1]) && juntados.some(esLaRespuesta) }); } catch (e) {
     return { ok: false, motivo: `no pude leer la transcripción (${e.code || e.message})`, noLeida: true };
   }
   const llamado = rs.some(esElCuadro);
@@ -1186,8 +1187,14 @@ function buscarPermiso({ casa, cuadro, coordinadora, carpeta = null, desde = 0, 
  */
 function anotarEtapa(texto, env = process.env) {
   const archivo = env.TYCON_SAFETY_STAGE_FILE;
-  if (!archivo) return;
-  try { fs.writeFileSync(archivo, String(texto).slice(0, 200)); } catch (_) { /* el corte dice lo de siempre */ }
+  // sólo el archivo que nombra el freno (tycon-sg-etapa-<su número>), y sin seguir un enlace: la variable la puede traer
+  // cualquier comando, y el freno no pisa un archivo ajeno con su texto
+  if (!archivo || !/^tycon-sg-etapa-\d+$/.test(path.basename(String(archivo)))) return;
+  let fd = null;
+  try {
+    fd = fs.openSync(archivo, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | (fs.constants.O_NOFOLLOW || 0), 0o600);
+    fs.writeSync(fd, String(texto).slice(0, 200));
+  } catch (_) { /* el corte dice lo de siempre */ } finally { if (fd !== null) try { fs.closeSync(fd); } catch (_) { /* nada que cerrar */ } }
 }
 
 /**
@@ -1200,8 +1207,9 @@ function validarEnClaude(a, { casa = os.homedir(), cwd, cuadro, destino, linea, 
   const ruta = transcripcionDe(casa, a.sesion);
   if (!ruta) return { ok: false, motivo: `no encontré la transcripción de la sesión ${a.sesion}`, noLeida: true };
   let mb = null;
-  try { mb = Math.round(fs.statSync(ruta).size / (1024 * 1024)); } catch (_) { mb = null; }
-  anotarEtapa(`confirmando ${a.tipo === 'mensaje' ? 'el «aprobado»' : 'el click'} en la conversación de la sesión${mb === null ? '' : `, de ${mb} MB`}`);
+  try { mb = fs.statSync(ruta).size / (1024 * 1024); } catch (_) { mb = null; }
+  const tamano = mb === null ? '' : mb < 1 ? ', de menos de 1 MB' : `, de ${Math.round(mb)} MB`;
+  anotarEtapa(`confirmando ${a.tipo === 'mensaje' ? 'el «aprobado»' : 'el click'} en la conversación de la sesión${tamano}`);
   if (a.tipo === 'mensaje') return mensajeEnLaTranscripcion(ruta, a, { sello: cuadro.sello, destino, pregunta: cuadro.pregunta });
   for (const c of [...new Set([cwd, cwdAprobacion].filter(Boolean))]) {
     const e = escuchasDelCuadro({ casa, cwd: c, linea });

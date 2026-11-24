@@ -701,6 +701,54 @@ test('T3 Transcripcion_RenglonMasLargoQueUnTrozo_SeLeeEntero', (t) => {
   assert.ok(r.ok, r.motivo);
 });
 
+test('T6 Transcripcion_CuadroRepetidoDespuesDeLaRespuesta_ElClickVale', (t) => {
+  // 🔴 Falla con: cortar la lectura desde el final en el primer renglón del cuadro, antes de juntar su respuesta.
+  const casa = casaNueva(t);
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1'), respuesta('toolu_1'), cuadro('toolu_1', PIDE, hace(0.5))]);
+  const r = oa.validarEnClaude(click(), CTX(casa));
+  assert.ok(r.ok, r.motivo);
+});
+
+test('T7 Transcripcion_RenglonPosteriorConHoraVieja_ElAprobadoVale', (t) => {
+  // 🔴 Falla con: cortar la lectura desde el final en el primer renglón de hora vieja, aunque esté después del «aprobado»
+  //    (un resumen o un renglón copiado de antes), sin haber llegado al «aprobado».
+  const casa = casaNueva(t);
+  transcripcion(casa, 'ses-a', [agente(PIDE), tipeado('Aprobado'), agente('lo de antes, resumido', hace(600))]);
+  const r = oa.validarEnClaude(mensaje(), CTX(casa));
+  assert.ok(r.ok, r.motivo);
+});
+
+test('T8 AnotarEtapa_SoloEnElArchivoDelFrenoYSinSeguirEnlaces', (t) => {
+  // 🔴 Falla con: escribir la etapa en cualquier ruta que traiga la variable, o seguir un enlace: el freno pisaría un
+  //    archivo ajeno con su texto.
+  const casa = casaNueva(t);
+  const ajeno = path.join(casa, 'importante.txt');
+  fs.writeFileSync(ajeno, 'no tocar');
+  oa.anotarEtapa('leyendo', { TYCON_SAFETY_STAGE_FILE: ajeno });
+  assert.strictEqual(fs.readFileSync(ajeno, 'utf8'), 'no tocar', 'una ruta que no es la del freno no se escribe');
+  if (process.platform !== 'win32') {
+    const enlace = path.join(casa, 'tycon-sg-etapa-123');
+    fs.symlinkSync(ajeno, enlace);
+    oa.anotarEtapa('leyendo', { TYCON_SAFETY_STAGE_FILE: enlace });
+    assert.strictEqual(fs.readFileSync(ajeno, 'utf8'), 'no tocar', 'el nombre del freno, pero un enlace: no se sigue');
+  }
+  const propio = path.join(casa, 'tycon-sg-etapa-456');
+  oa.anotarEtapa('leyendo', { TYCON_SAFETY_STAGE_FILE: propio });
+  assert.strictEqual(fs.readFileSync(propio, 'utf8'), 'leyendo');
+});
+
+test('T9 ValidarEnClaude_AnotaQueEstaConfirmandoEnLaConversacion', (t) => {
+  // 🔴 Falla con: que la confirmación no anote su etapa: el corte del freno no diría que se le fue el tiempo ahí.
+  const casa = casaNueva(t);
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1'), respuesta('toolu_1')]);
+  const etapa = path.join(casa, 'tycon-sg-etapa-1');
+  const antes = process.env.TYCON_SAFETY_STAGE_FILE;
+  process.env.TYCON_SAFETY_STAGE_FILE = etapa;
+  t.after(() => { if (antes === undefined) delete process.env.TYCON_SAFETY_STAGE_FILE; else process.env.TYCON_SAFETY_STAGE_FILE = antes; });
+  oa.validarEnClaude(click(), CTX(casa));
+  assert.match(fs.readFileSync(etapa, 'utf8'), /^confirmando el click en la conversación de la sesión, de menos de 1 MB$/);
+});
+
 // --- los ganchos que escuchan el cuadro ------------------------------------------------------------------------------
 
 // Un gancho nuevo del arnés sobre el cuadro, olvidado en la lista, invalida todos los clicks de la máquina (pasó con
