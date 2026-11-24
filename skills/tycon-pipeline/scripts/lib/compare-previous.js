@@ -2,7 +2,7 @@
 /**
  * El humo comparado (historia 8.167): un comando que el cambio toca se corre con `main` y con el cambio, aislados, y se
  * comparan su código de salida y su salida normalizada. Deja el resultado en `compare-previous.json` de la carpeta de la
- * corrida; «Preparar el commit» frena por una diferencia que la historia no declara.
+ * corrida; «Preparar el pull request» frena por una diferencia que la historia no declara.
  *
  * Cómo se aísla cada corrida:
  *   - Dos clones locales del repo del comando, sin remoto (no un worktree: compartiría el `.git` del repo real). El de
@@ -155,9 +155,18 @@ const subpaths = (rutas) => [...new Set(rutas.flatMap((p) => [p, real(p)]))].map
 // `fatales` y `mensaje`: una escritura negada adentro de esas carpetas mata al proceso, y el sistema la anota en su
 // registro con `mensaje`. Una negación común sólo queda anotada para los programas del sistema (bash, touch), nunca para
 // node; la que mata, para todos
-function perfilSandbox(escribibles, { red = false, fatales = [], mensaje = null } = {}) {
+// El bash 3.2 de macOS no mira TMPDIR para un here document: si no puede escribir en /var/tmp ni en /tmp (el encierro se
+// lo niega) lo escribe en la carpeta actual como «sh-thd-<n>» y lo borra enseguida. Negado, un freno de bash que lo usa no
+// decide y falla cerrado. `heredoc` son las carpetas actuales con que se lanza el comando: ahí, y sólo ahí, se deja
+// escribir ese nombre, salvo en las carpetas fatales (su regla va última). Una carpeta que no se puede escribir como
+// expresión sin ambigüedad (comillas, saltos de línea) no se admite.
+const escaparRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const heredocs = (dirs) => [...new Set(dirs.filter(Boolean).flatMap((d) => [path.resolve(d), real(d)]))]
+  .filter((d) => !/["\n\r]/.test(d))
+  .map((d) => `(regex #"^${escaparRegex(d)}/sh-thd-[0-9]+$")`).join(' ');
+function perfilSandbox(escribibles, { red = false, fatales = [], mensaje = null, heredoc = [] } = {}) {
   const permitidas = subpaths(escribibles);
-  const base = `(version 1)(allow default)${red ? '' : '(deny network*)'}(deny file-write* (require-not (require-any ${permitidas} (subpath "/dev"))))`;
+  const base = `(version 1)(allow default)${red ? '' : '(deny network*)'}(deny file-write* (require-not (require-any ${permitidas} ${heredocs(heredoc)} (subpath "/dev"))))`;
   if (!fatales.length) return base;
   // la regla que mata va última: entre las que coinciden manda la última
   return `${base}(deny file-write* (require-all (require-any ${subpaths(fatales)}) (require-not (require-any ${permitidas} (subpath "/dev"))))`
@@ -1013,7 +1022,7 @@ function ultimas(entradas) {
 }
 
 /**
- * Lo que decide «Preparar el commit». `entradas`: las del informe verificadas y del código de ahora; `exenciones`: Map
+ * Lo que decide «Preparar el pull request». `entradas`: las del informe verificadas y del código de ahora; `exenciones`: Map
  * archivo → constancia vigente. `{ faltan: [{ archivo, repo?, subcomandos, motivo }], noDeclaradas: [entrada],
  * cubiertos: [{ archivo, por, como, covers? }], avisos: [texto], notas: [texto] }`.
  */
@@ -1117,7 +1126,7 @@ function delCodigoDeAhora(entradas, storyPath) {
 }
 
 /**
- * El freno de «Preparar el commit» (AC 11-14, 20-22): calcula los candidatos y juzga el informe y las exenciones.
+ * El freno de «Preparar el pull request» (AC 11-14, 20-22): calcula los candidatos y juzga el informe y las exenciones.
  * `{ medido, candidatos, bloquea, lineas, avisos, juicio }`. Sin candidatos no hace nada (`candidatos: []`). Escribe los
  * avisos en `compare-avisos.md` de la corrida, para el texto del pedido.
  */
@@ -1200,7 +1209,7 @@ if (require.main === module) {
     let cmd = val('--cmd-json');
     try { cmd = cmd ? JSON.parse(cmd) : undefined; } catch (_) { /* el texto tal cual */ }
     // la carpeta de la corrida: la que se pasa, o la de la historia del marcador de la sesión (la misma que calcula el
-    // freno de «Preparar el commit»); sin marcador, la de sus clones
+    // freno de «Preparar el pull request»); sin marcador, la de sus clones
     let runDir = val('--run-dir');
     if (!runDir) {
       try {
@@ -1214,7 +1223,7 @@ if (require.main === module) {
     }
     if (!runDir) {
       runDir = carpetaDeLaSesion(stateDir, sid);
-      // el freno de «Preparar el commit» busca el informe en la carpeta de la corrida: acá no lo va a encontrar
+      // el freno de «Preparar el pull request» busca el informe en la carpeta de la corrida: acá no lo va a encontrar
       process.stderr.write(`[compare] ⚠️ no encontré la carpeta de la corrida de la sesión ${sid}: el informe queda en ${runDir} y el freno no lo va a ver. Pasá --run-dir.\n`);
     }
     compararHumo({ argv: comando, cmd, cwd: process.cwd(), runDir, sid, stateDir, covers, entradaF: val('--stdin-file') || undefined })

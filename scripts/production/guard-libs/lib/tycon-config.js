@@ -164,6 +164,7 @@ const VOCABULARIO = Object.freeze({
     // perfil o un archivo de la máquina que las trae
     timeTracking: 'aceptada',
     platform: 'aceptada',
+    mcp_servers: 'aceptada',
   }),
   // La política de actualización del arnés (story 8.13, AC 12): valores CERRADOS (`opcion:a|b`). Un valor fuera de la
   // lista es un error (8.3 AC 2), nunca «apagado» ni el default. `TYCON_UPDATE=0` (apagar del todo) no es una clave:

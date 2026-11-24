@@ -28,6 +28,10 @@
  *      índice con `--staged`) y de lo que dice sólo se lee si declara FAIL. Lo que eso agrega avisa hasta
  *      STRICT_EVIDENCE_FROM y frena desde ese día; también la carpeta de corrida que, por la fecha en que entró en git,
  *      pide registro de autoría.
+ *  2c. **Evidencia atada al cambio** — en el pedido, alguna evidencia de cierre tiene que valer para el código declarado
+ *      que el pedido cambia, con la regla del freno local (`evidence-vs-commit.js`); y cada salida y captura que anota
+ *      el registro de humos tiene que ser la que guarda git. Avisa hasta EVIDENCE_BOUND_FROM y frena desde ese día.
+ *      Detecta una edición posterior o una evidencia anterior al código; no prueba que la evidencia sea verdadera.
  *   3. **Constancia de revisores** — una story que pasa a `done` tiene que tener una corrida del
  *      pipeline en el repo (`.advisors/pipeline-runs/<id>-…`). Es el ADVISORS-GATE del pre-commit,
  *      en su mitad verificable desde el servidor (la otra mitad vive en el `gates.log` local).
@@ -38,15 +42,17 @@
  * Todos corren sin modelo, sin red y sin estado de sesión, pero no verifican lo mismo. Cada chequeo dice su nivel en la
  * salida y en `--json` (`verificacion`):
  *
- *   · LOS QUE VERIFICA EL SERVIDOR él mismo con el repo: el frontmatter legible (1), el índice de memoria (5) y el
- *     examen del revisor que cambia (6, recalcula el puntaje).
+ *   · LOS QUE VERIFICA EL SERVIDOR él mismo con el repo: el frontmatter legible (1), la evidencia atada al cambio y las
+ *     huellas del registro de humos (2c), el índice de memoria (5) y el examen del revisor que cambia (6, recalcula el
+ *     puntaje).
  *   · LOS QUE SÓLO MIRAN QUE EXISTA un archivo con el nombre esperado: la evidencia de cierre (2) y la constancia de
  *     revisores (3). Una evidencia que dice «hola» los pasa.
  *   · Los que leen un registro con forma válida de que algo corrió («ejecución registrada»): el registro de autoría (4),
  *     el de aprobaciones (4b) y el veredicto de la evidencia («no declara FAIL»). Que tenga forma válida no prueba que lo
  *     escribió el pipeline.
  *   · «No medido»: un chequeo que esta vez no se hizo (el examen sin su control junto a este guion, el índice local o
- *     que no se pudo comparar, la regla que no cargó, el chequeo que una exención perdona). Nunca va como verificado.
+ *     que no se pudo comparar, la regla que no cargó, el chequeo que una exención perdona, la evidencia atada antes del
+ *     commit o con el código en otro repo). Nunca va como verificado.
  *
  * El servidor no re-ejecuta nada: no compila, no corre pruebas, no levanta la app. Las exenciones se listan con su
  * razón, que se exige (`exencion-sin-razon`: avisa hasta EXEMPT_REASON_FROM y frena desde ese día), pero no se firman
@@ -64,6 +70,7 @@
  */
 'use strict';
 
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
@@ -144,6 +151,12 @@ const EXENCIONES = ['dod_runtime_exempt', 'advisors_exempt'];
 // carpeta de corrida que por su fecha en git pide registro de autoría. Lo que ya frenaba sigue frenando desde el primer
 // día. Ninguna variable de ambiente la mueve.
 const STRICT_EVIDENCE_FROM = '2026-12-07';
+
+// La evidencia atada al cambio entra avisando, con la misma regla y su propia fecha: la evidencia de cierre anterior al
+// código que el pedido cambia, el registro de humos que no coincide con sus salidas y capturas, y lo que no se pudo
+// comparar. Ninguna variable de ambiente la mueve.
+const EVIDENCE_BOUND_FROM = '2026-12-09';
+const LO_QUE_NO_PRUEBA = 'Este chequeo detecta una edición posterior o una evidencia anterior al código; no prueba que la evidencia sea verdadera.';
 
 /** La fecha UTC del día, `AAAA-MM-DD`. */
 function hoyUtc() { return new Date().toISOString().slice(0, 10); }
@@ -574,7 +587,7 @@ function revisarAutoria(repo, storyId, storyPath) {
     if (ilegible) {
       // Presente y roto: frena siempre, haya corte o no.
       hallazgos.push({ regla: 'registro-de-autoria-invalido',
-        mensaje: `\`${nombre}/review-roster.json\` no se puede leer (${ilegible}). Un registro ilegible no es un registro: regeneralo corriendo los revisores, o declará \`advisors_exempt: true\` con su razón.` });
+        mensaje: `\`${nombre}/review-roster.json\` no se puede leer (${ilegible}). Un registro ilegible no es un registro: regeneralo corriendo los revisores; la exención de los revisores (\`advisors_exempt: true\` con su razón) la decide la persona, con su firma sobre la historia.` });
       continue;
     }
     if (!roster) continue;
@@ -592,7 +605,7 @@ function revisarAutoria(repo, storyId, storyPath) {
   }
   if (!algunoPostCutoff) return hallazgos; // run viejo: la ausencia no se le puede reclamar
   hallazgos.push({ regla: 'sin-registro-de-autoria',
-    mensaje: `pasa a \`done\` y ningún \`.advisors/pipeline-runs/${prefijoDeEvidencia(storyId, storyPath)}*/\` trae \`review-roster.json\` (quién implementó y quiénes revisaron). Lo escribe solo el hook al cerrar la ronda de revisores; si esta story se cerró sin pipeline, declaralo con \`advisors_exempt: true\` + su razón.` });
+    mensaje: `pasa a \`done\` y ningún \`.advisors/pipeline-runs/${prefijoDeEvidencia(storyId, storyPath)}*/\` trae \`review-roster.json\` (quién implementó y quiénes revisaron). Lo escribe solo el hook al cerrar la ronda de revisores; si esta story se cerró sin pipeline, la exención (\`advisors_exempt: true\` + su razón) la decide la persona, con su firma sobre la historia.` });
   return hallazgos;
 }
 
@@ -611,6 +624,19 @@ try {
   const skills = require(path.join(__dirname, '..', 'lib', 'skills-dir.js')).resolveSkillsDirs().skills;
   approvalsLib = require(path.join(skills, 'tycon-pipeline', 'scripts', 'lib', 'approvals.js'));
 } catch (e) { approvalsFalta = e.message; }
+
+// La constancia del dueño de una exención, en el repo: un renglón de `.tycon/exemptions.jsonl` con la historia y la
+// exención. La anota el gancho del encabezado con la firma (lib/exemptions.js del skill); acá se lee con lo propio del
+// portón, que corre también donde el skill no está. Un renglón ilegible no cuenta.
+const CONSTANCIAS_DE_EXENCIONES = '.tycon/exemptions.jsonl';
+// la historia y el archivo, las dos cosas: un número de historia se repite entre archivos
+function tieneConstanciaDeExencion(texto, story, campo, archivo) {
+  return String(texto || '').split('\n').some((l) => {
+    try { const r = JSON.parse(l); return !!r && String(r.story) === String(story) && r.campo === campo && r.archivo === archivo; } catch (_e) { return false; }
+  });
+}
+// el `story:` como lo anota el gancho: sin comillas ni comentario
+const idDeLaConstancia = (id) => String(id || '').replace(/\s+#.*$/, '').trim().replace(/^["']|["']$/g, '');
 
 // `ref`: la historia en la que se busca el rastro de una corrida anterior al control (la base del pedido).
 function revisarAprobaciones(repo, storyId, storyPath, ref = 'origin/main') {
@@ -642,7 +668,7 @@ function revisarAprobaciones(repo, storyId, storyPath, ref = 'origin/main') {
     if (!reg.existe) {
       if (hay('sin-registro-de-aprobaciones')) {
         hallazgos.push({ regla: 'sin-registro-de-aprobaciones',
-          mensaje: `\`${nombre}/\` llegó a los revisores y no trae \`${approvalsLib.FILE}\` (qué se aprobó, cuándo y si fue una persona o un agente). Lo escribe marker.js al aprobar el plan. Si está en disco y no en el commit, el \`.gitignore\` lo traga: falta \`!**/.advisors/pipeline-runs/*/approvals.jsonl\` (el arranque del pipeline la agrega). Si la story se cerró sin pipeline, declaralo con \`advisors_exempt: true\` + su razón.` });
+          mensaje: `\`${nombre}/\` llegó a los revisores y no trae \`${approvalsLib.FILE}\` (qué se aprobó, cuándo y si fue una persona o un agente). Lo escribe marker.js al aprobar el plan. Si está en disco y no en el commit, el \`.gitignore\` lo traga: falta \`!**/.advisors/pipeline-runs/*/approvals.jsonl\` (el arranque del pipeline la agrega). Si la story se cerró sin pipeline, la exención (\`advisors_exempt: true\` + su razón) la decide la persona, con su firma sobre la historia.` });
       } else if (llegoARevisores) {
         avisos.push({ regla: 'sin-registro-de-aprobaciones',
           mensaje: `\`${nombre}/\` no trae \`${approvalsLib.FILE}\`, y la ejecución no tenía por qué dejarlo acá: su registro de revisores no declara que anote aprobaciones (un arnés anterior al registro de aprobaciones), o arrancó antes de que el registro llegara al repo de la story: no se sabe quién aprobó el plan. Avisa y no frena.` });
@@ -874,7 +900,171 @@ function revisarIndiceDeMemoria(repo, base, staged) {
 }
 
 // `hoy` (`AAAA-MM-DD`): contra él se comparan las fechas de corte escritas en el código. Por defecto, la fecha UTC del día.
-function revisar({ repo, base, staged, hoy = hoyUtc() }) {
+// ── La evidencia atada al cambio ────────────────────────────────────────────────────────────────
+// Que la evidencia exista y no declare FAIL no dice de qué código es. Acá se mira con git: si el código declarado que el
+// pedido cambia es posterior a toda la evidencia de cierre, y si el registro de humos coincide con las salidas y
+// capturas que anota. La regla de la primera es la del freno local (`evidence-vs-commit.js` del skill), buscada como
+// `evidence-key.js`: si no carga, no se compara y se dice. La segunda no la necesita.
+
+/** Las bibliotecas del skill que usa la evidencia atada, o `{ error }`. */
+function reglaDelJuez() {
+  try {
+    const skills = require(path.join(__dirname, '..', 'lib', 'skills-dir.js')).resolveSkillsDirs().skills;
+    const lib = (nombre) => require(path.join(skills, 'tycon-pipeline', 'scripts', 'lib', nombre));
+    return { juez: lib('evidence-vs-commit.js'), declarados: lib('test-scope.js'), codigo: lib('code-files.js'), historias: lib('story-discovery.js') };
+  } catch (e) {
+    return { error: String((e && e.code) || (e && e.message) || e).split('\n')[0] };
+  }
+}
+
+// La ruta real, o la misma si no existe: el juez compara la historia con su catálogo por la ruta real.
+const realOTal = (p) => { try { return fs.realpathSync(p); } catch (_e) { return p; } };
+
+/** Todos los archivos que cambia el pedido, `Set` o `{ error }`. */
+function archivosDelPedido(repo, base) {
+  try { return new Set(git(repo, ['diff', '--name-only', `${base}...HEAD`]).split('\n').filter(Boolean)); } catch (_e) {
+    try { return new Set(git(repo, ['diff', '--name-only', base, 'HEAD']).split('\n').filter(Boolean)); } catch (_e2) { return { error: `no pude comparar contra \`${base}\`` }; }
+  }
+}
+
+/**
+ * La punta del pedido, si HEAD es la fusión que arma el servidor (su primer padre es la rama destino, o un commit de ella)
+ * y el segundo no está en la rama destino: lo que la rama destino trae en esa fusión no es del pedido. Si no, null: el
+ * pedido es HEAD.
+ */
+function puntaDelPedido(repo, base) {
+  try {
+    const padres = git(repo, ['rev-list', '--parents', '-n', '1', 'HEAD']).trim().split(' ').slice(1);
+    if (padres.length !== 2) return null;
+    const esDeLaBase = (c) => { try { git(repo, ['merge-base', '--is-ancestor', c, base]); return true; } catch (_e) { return false; } };
+    return esDeLaBase(padres[0]) && !esDeLaBase(padres[1]) ? padres[1] : null;
+  } catch (_e) { return null; }
+}
+
+/**
+ * Un ejecutor de git que pregunta por `punta` donde el juez pregunta por HEAD: el juez compara siempre contra HEAD, y en
+ * la fusión del servidor HEAD trae también lo de la rama destino. `symbolic-ref` queda como está: pregunta por la rama.
+ */
+const aLaPunta = (correr, punta) => (carpeta, args, env) => correr(carpeta, args[0] === 'symbolic-ref' ? args
+  : args.map((a) => (a === 'HEAD' ? punta : a.replace(/^HEAD:/, `${punta}:`).replace(/\.\.HEAD$/, `..${punta}`))), env);
+
+/**
+ * La evidencia de cierre en git que puede atar el cambio: cada `.md` que no declara FAIL, por su última versión (se
+ * reescribe con el mismo nombre), y cada línea del registro de humos con `ts` y salida 0, con su texto, porque el juez
+ * busca el commit que la agregó. Una evidencia que falla no ata nada, aunque sea posterior al código.
+ */
+function evidenciasParaJuzgar({ repo, dodEnGit, punta, correr }) {
+  const out = [];
+  for (const { rel, nombre } of dodEnGit) {
+    const ruta = path.join(repo, rel);
+    const txt = contenidoEn(repo, punta, rel);
+    if (txt === null || txt.includes('\u0000')) continue;
+    if (!ES_EVIDENCIA_ADEMAS.some((re) => re.test(nombre))) {
+      if (evidenciaDeclaraFail(txt)) continue;
+      const u = correr(repo, ['--literal-pathspecs', 'log', '-1', '--format=%H %ct', punta, '--', rel]);
+      const [commit, hora] = u.codigo === 0 ? u.salida.trim().split(' ') : [];
+      out.push({ rel, ruta, md: true, commit: commit || null, tsMs: Number(hora) * 1000 });
+      continue;
+    }
+    for (const crudo of txt.split('\n')) {
+      const linea = crudo.replace(/\r$/, '');
+      let j;
+      try { j = JSON.parse(linea); } catch (_e) { continue; }
+      if (j && typeof j === 'object' && typeof j.ts === 'string' && j.exit === 0) out.push({ rel, ruta, linea, tsMs: Date.parse(j.ts) });
+    }
+  }
+  return out;
+}
+
+/**
+ * Un `.md` por su última versión: vale para `rel` si el archivo es igual en el commit que la escribió y en la punta del
+ * pedido (la regla 4 del juez, que lo juzgaría por su primera versión). La ruta va literal: con corchetes no es un patrón.
+ * Devuelve lo mismo que `vigencia`.
+ */
+function vigenciaDelMd({ correr, repo, punta, ev, rel }) {
+  if (!ev.commit) return { cuenta: false, motivo: 'sin-respuesta' };
+  const d = correr(repo, ['--literal-pathspecs', 'diff-tree', '--quiet', '-r', ev.commit, punta, '--', rel]);
+  if (d.codigo === 0) return { cuenta: true };
+  if (d.codigo !== 1) return { cuenta: false, motivo: 'sin-respuesta' };
+  const u = correr(repo, ['--literal-pathspecs', 'log', '-1', '--format=%h', punta, '--', rel]);
+  return { cuenta: false, motivo: 'cambio-posterior', commit: u.codigo === 0 ? u.salida.trim() || null : null };
+}
+
+/**
+ * ¿Alguna evidencia vale para todo el código declarado que el pedido cambia? `{ vale }` con la que vale; `{ duda }` si
+ * ninguna vale y alguna no se pudo comparar (git no contestó: no es «vieja»); si no, `{ vieja }` con los archivos de la
+ * más nueva y por qué no vale. La fecha del disco no se mira (el checkout la pone): decide git.
+ */
+function juzgarEvidencia({ juez, correr, repo, punta, tocados, evidencias, enPalabras }) {
+  let vieja = null;
+  let duda = null;
+  // la más nueva primero: es la que más probablemente vale, y si ninguna vale es la que nombra el aviso
+  for (const ev of [...evidencias].sort((a, b) => (b.tsMs || 0) - (a.tsMs || 0))) {
+    const contra = [];
+    let sinRespuesta = false;
+    for (const rel of tocados) {
+      const r = ev.md ? vigenciaDelMd({ correr, repo, punta, ev, rel })
+        : juez.vigencia({ archivo: path.join(repo, rel), mtimeMs: Infinity, evidencia: { ruta: ev.ruta, tsMs: ev.tsMs, linea: ev.linea } });
+      if (r.cuenta) continue;
+      if (r.motivo === 'sin-respuesta' || r.motivo === 'sin-hora') { sinRespuesta = true; duda = duda || `${ev.rel}: ${enPalabras(r)}`; break; }
+      contra.push(`\`${rel}\` (${enPalabras(r)})`);
+    }
+    if (!sinRespuesta && !contra.length) return { vale: ev };
+    if (!sinRespuesta && !vieja) vieja = { ev, contra };
+  }
+  return duda ? { duda } : { vieja };
+}
+
+/**
+ * La ruta declarada como la guarda git en este repo, o null si no está: sin `./`, con barras normales y, si no está tal
+ * cual, con otra caja si hay una sola que coincide.
+ */
+function rutaEnEsteRepo(declarada, enGit, porCaja) {
+  const r = String(declarada).replace(/\\/g, '/').replace(/^(\.\/)+/, '').replace(/\/(\.\/)+/g, '/');
+  if (enGit.has(r)) return r;
+  const otras = porCaja.get(r.toLowerCase());
+  return otras && otras.length === 1 ? otras[0] : null;
+}
+
+/** El sha256 de lo que guarda git en `ref:rel`, o null. La salida se compara sin los `\r` de fin de línea, como la matriz. */
+function huellaEnGit(repo, ref, rel, binario) {
+  let bytes;
+  try { bytes = execFileSync('git', ['-C', repo, 'show', `${ref}:${rel}`], { stdio: ['ignore', 'pipe', 'ignore'], timeout: 20000, maxBuffer: 64 * 1024 * 1024 }); } catch (_e) { return null; }
+  return crypto.createHash('sha256').update(binario ? bytes : bytes.toString('utf8').replace(/\r\n/g, '\n')).digest('hex');
+}
+
+/**
+ * Las huellas del registro de humos: cada salida y captura que anota una línea `v:2`, recalculada sobre lo que guarda git
+ * al lado del registro. Las líneas sin `v:2` (formato viejo, o que no se leen) se saltean y se cuentan.
+ * `{ registros, v2, salteadas, malas }`.
+ */
+function huellasDelRegistro(repo, ref, dodEnGit) {
+  const registros = dodEnGit.filter(({ nombre }) => ES_EVIDENCIA_ADEMAS.some((re) => re.test(nombre)));
+  let v2 = 0;
+  let salteadas = 0;
+  const malas = [];
+  for (const { rel } of registros) {
+    const carpeta = path.posix.dirname(rel);
+    for (const linea of String(contenidoEn(repo, ref, rel) || '').split('\n')) {
+      if (!linea.trim()) continue;
+      let j;
+      try { j = JSON.parse(linea); } catch (_e) { salteadas += 1; continue; }
+      if (!j || typeof j !== 'object' || j.v !== 2) { salteadas += 1; continue; }
+      v2 += 1;
+      for (const [campo, huella, binario] of [['output', 'output_sha', false], ['capture', 'capture_sha', true]]) {
+        if (j[campo] == null && j[huella] == null) continue;
+        const sub = typeof j[campo] === 'string' ? j[campo] : '';
+        if (!sub || path.posix.isAbsolute(sub) || sub.split(/[\\/]/).includes('..')) { malas.push(`\`${rel}\` anota en \`${campo}\` una ruta que no es de su carpeta`); continue; }
+        const real = huellaEnGit(repo, ref, `${carpeta}/${sub}`, binario);
+        if (real === null) malas.push(`\`${carpeta}/${sub}\` no está en git`);
+        else if (real !== j[huella]) malas.push(`\`${carpeta}/${sub}\` no es lo que anotó el humo`);
+      }
+    }
+  }
+  return { registros: registros.length, v2, salteadas, malas };
+}
+
+function revisar({ repo, base, staged, hoy = hoyUtc(), juezGit }) {
   const hallazgos = [];
   const avisos = [];
   const revisadas = [];
@@ -900,6 +1090,25 @@ function revisar({ repo, base, staged, hoy = hoyUtc() }) {
     if (hayCabeza === undefined) { try { git(repo, ['rev-parse', '--verify', '-q', 'HEAD']); hayCabeza = true; } catch (_e) { hayCabeza = false; } }
     return hayCabeza ? refViejo : null;
   };
+  // Los renombres del diff (nuevo → origen), una vez y sólo si una historia los pide
+  let renombres;
+  const origenDelRenombre = (rel) => {
+    if (renombres === undefined) {
+      renombres = new Map();
+      const de = refDeAntes();
+      try {
+        const out = de ? git(repo, ['diff', '-M', '--name-status', '--diff-filter=R', ...(staged ? ['--cached', de] : [de, 'HEAD'])]) : '';
+        for (const l of String(out).split('\n')) { const p = l.split('\t'); if (p.length === 3 && /^R/.test(p[0])) renombres.set(p[2], p[1]); }
+      } catch (_e) { /* sin renombres que leer: lo de antes es lo de la misma ruta */ }
+    }
+    return renombres.get(rel) || null;
+  };
+  // Para la evidencia atada, una vez por corrida y sólo si alguna historia lo pide: lo que cambia el pedido y la regla
+  // del juez. `juezGit` es el git del juez (lo inyectan las pruebas).
+  let delPedido;
+  const cambiosDelPedido = () => (delPedido !== undefined ? delPedido : (delPedido = archivosDelPedido(repo, base)));
+  let regla;
+  const reglaCargada = () => (regla !== undefined ? regla : (regla = reglaDelJuez()));
 
   for (const rel of files) {
     const nuevo = contenidoEn(repo, refNuevo, rel);
@@ -937,6 +1146,25 @@ function revisar({ repo, base, staged, hoy = hoyUtc() }) {
       }
       continue;
     }
+    // Una exención que el diff agrega a una historia, como la lee este portón (`<campo>: true` en el frontmatter), trae la
+    // constancia del dueño en el repo, en cualquier estado: no sólo al pasar a review o done, que puede llegar en otro
+    // pedido con la exención ya en la base. Lo de antes y el archivo de constancias se leen sólo si hay una exención
+    // Lo de antes es el archivo de origen si la historia se renombró, y cuenta sólo si era la misma historia (`story:`)
+    const exentaAhora = EXENCIONES.filter((c) => new RegExp(`^${c}:\\s*true\\b`, 'm').test(fmNuevo));
+    if (exentaAhora.length) {
+      const origen = origenDelRenombre(rel);
+      const antes = contenidoEn(repo, refDeAntes(), rel) ?? (origen ? contenidoEn(repo, refDeAntes(), origen) : null);
+      const fmAntes = (antes !== null && frontmatter(antes)) || '';
+      const eraEsta = !!fmAntes && idDeLaConstancia(escalar(fmAntes, 'story')) === idDeLaConstancia(idBruto);
+      const nuevas = exentaAhora.filter((c) => !(eraEsta && new RegExp(`^${c}:\\s*true\\b`, 'm').test(fmAntes)));
+      const constancias = nuevas.length ? contenidoEn(repo, refNuevo, CONSTANCIAS_DE_EXENCIONES) : null;
+      const faltan = nuevas.filter((c) => !tieneConstanciaDeExencion(constancias, idDeLaConstancia(idBruto), c, rel));
+      if (faltan.length) {
+        hallazgos.push({ archivo: rel, story: idBruto, regla: 'exencion-sin-constancia',
+          mensaje: `agrega ${faltan.map((c) => `\`${c}\``).join(' y ')} y \`${CONSTANCIAS_DE_EXENCIONES}\` no trae su constancia para la historia ${idBruto}. Eximir una historia lo decide la persona: con su firma de la exención sobre la historia, el arnés anota la constancia al escribirla, y se commitea con ella.` });
+      }
+    }
+
     const estadoNuevo = String(escalar(fmNuevo, 'status') || '').toLowerCase();
     if (!LISTOS.has(estadoNuevo)) continue;
 
@@ -1002,8 +1230,10 @@ function revisar({ repo, base, staged, hoy = hoyUtc() }) {
     // en git, el disco decide como siempre: si tampoco está ahí frena como hoy; si está, sale por la regla de fecha.
     const gitDod = !exentaDod && prefijoDeLaStory() ? listaDeGit() : null;
     const dodEnGit = gitDod && gitDod.lista ? evidenciaEnGit(gitDod.lista, prefijoDeLaStory()) : [];
+    let veredicto = null;
     if (dodEnGit.length) {
       const v = veredictoDeEvidencia(repo, refNuevo, dodEnGit);
+      veredicto = v.estado;
       if (v.estado === 'no-leido') nivel('veredicto-de-la-evidencia', NIVELES.NO_MEDIDO);
       else nivel('veredicto-de-la-evidencia', NIVELES.REGISTRO, v.estado === 'pasa' ? 'no declara FAIL' : 'declara FAIL');
       if (v.estado === 'falla') {
@@ -1027,6 +1257,85 @@ function revisar({ repo, base, staged, hoy = hoyUtc() }) {
         mensaje: !prefDod
           ? `pasa a \`${estadoNuevo}\` y no pude calcular la clave de la story ${idBruto} (${rel}) para buscar su evidencia de cierre: sin clave no se da evidencia por buena (el motivo está en el aviso del portón). No es «no hay evidencia»: es «no la pude buscar» — no lo tapes con \`dod_runtime_exempt\`.`
           : `pasa a \`${estadoNuevo}\` y no hay \`.advisors/dod-runtime/${prefDod}*.md\` en el repo. Si de verdad no hay nada que verificar corriendo la app, eximirla lo decide la persona («autorizo dod_runtime_exempt» en su mensaje), con su razón en la story.` });
+    }
+
+    // (2c) la evidencia atada al cambio: lo que encuentra sale por su fecha (EVIDENCE_BOUND_FROM)
+    if (exentaDod) nivel('evidencia-atada', NIVELES.NO_MEDIDO, 'exenta');
+    else {
+      const atada = (reglaDe, mensaje) => {
+        const { canal, cuando, antes } = porFecha(EVIDENCE_BOUND_FROM);
+        canal.push({ archivo: rel, story: idBruto, regla: reglaDe, mensaje: `${mensaje} ${cuando}.`, ...(antes ? { porFechaAtada: true } : {}) });
+      };
+      // las huellas del registro de humos: sin la regla del juez, con lo que guarda git (el índice con `--staged`)
+      const h = dodEnGit.length ? huellasDelRegistro(repo, refNuevo, dodEnGit) : { registros: 0 };
+      if (h.registros) {
+        nivel('huellas-del-registro', h.v2 ? NIVELES.SERVIDOR : NIVELES.NO_MEDIDO, h.v2 ? null : 'ninguna línea v:2');
+        if (h.v2 && h.salteadas) nivel('huellas-del-registro-sin-v2', NIVELES.NO_MEDIDO, `${h.salteadas} ${h.salteadas === 1 ? 'línea sin v:2 salteada' : 'líneas sin v:2 salteadas'}`);
+        if (h.malas.length) atada('registro-de-humo-inconsistente', `pasa a \`${estadoNuevo}\` y su registro de humos no coincide con lo que guardó: ${h.malas.join(', ')}. ${LO_QUE_NO_PRUEBA}`);
+      }
+      // la evidencia contra el código declarado que el pedido cambia. Antes del commit no se mide: lo mide la matriz del
+      // freno del commit, con el archivo sin commitear
+      const libs = staged ? null : reglaCargada();
+      const declarados = libs && !libs.error ? libs.declarados.parseDeclaredFiles(nuevo, { allForms: true }) : [];
+      const esCodigo = (f) => libs.codigo.isCode(f) || libs.codigo.extOf(f) === '.sql';
+      if (staged) {
+        nivel('evidencia-atada', NIVELES.NO_MEDIDO, 'antes del commit la mide la matriz del freno del commit; acá, en el pedido');
+      } else if (libs.error) {
+        nivel('evidencia-atada', NIVELES.NO_MEDIDO, 'no cargó la regla');
+        atada('evidencia-no-comparada', `pasa a \`${estadoNuevo}\` y no pude comparar: no cargó la regla (${libs.error}). Sin ella no sé si su evidencia de cierre es anterior al código que cambia el pedido. No es «está bien»: es «no lo pude comparar».`);
+      } else if (!declarados.filter(esCodigo).length) {
+        nivel('evidencia-atada', NIVELES.NO_MEDIDO, 'la historia no declara código');
+      } else {
+        const lista = listaDeGit();
+        const enGitAhora = new Set(lista.lista || []);
+        const codigo = declarados.filter(esCodigo);
+        const porCaja = new Map();
+        for (const g of enGitAhora) porCaja.set(g.toLowerCase(), [...(porCaja.get(g.toLowerCase()) || []), g]);
+        const aca = [...new Set(codigo.map((f) => rutaEnEsteRepo(f, enGitAhora, porCaja)).filter(Boolean))];
+        const afuera = codigo.length - codigo.filter((f) => rutaEnEsteRepo(f, enGitAhora, porCaja)).length;
+        const cambios = cambiosDelPedido();
+        if (lista.error || cambios.error) {
+          nivel('evidencia-atada', NIVELES.NO_MEDIDO, 'git no contestó');
+          atada('evidencia-no-comparada', `pasa a \`${estadoNuevo}\` y no pude comparar su evidencia de cierre con el código que cambia el pedido: ${lista.error || cambios.error}. No es «está bien»: es «no lo pude comparar».`);
+        } else if (!aca.length) {
+          nivel('evidencia-atada', NIVELES.NO_MEDIDO, 'el código declarado vive en otro repo');
+          avisos.push({ archivo: rel, story: idBruto, regla: 'evidencia-atada-otro-repo',
+            mensaje: `declara ${codigo.length} archivo(s) de código que no están en este repo: la evidencia atada al cambio es no verificable desde este repo. Avisa y no frena.` });
+        } else {
+          const tocados = aca.filter((f) => cambios.has(f));
+          const deAfuera = afuera ? `; ${afuera} declarado(s) fuera de este repo, sin verificar` : '';
+          if (!tocados.length) nivel('evidencia-atada', NIVELES.SERVIDOR, `el pedido no cambia el código declarado de este repo${deAfuera}`);
+          else if (!dodEnGit.length) nivel('evidencia-atada', NIVELES.NO_MEDIDO, 'sin evidencia de cierre en git');
+          else {
+            const historia = {
+              numero: idBruto, clave: String(prefijoDeLaStory()).replace(/-$/, ''), archivo: realOTal(path.join(repo, rel)),
+              catalogo: () => {
+                try {
+                  const d = libs.historias.discoverStories(repo, { cache: false });
+                  return d.partial ? null : [...d.stories, ...(d.excluded || [])].filter((s) => s && s.path && s.id).map((s) => ({ numero: String(s.id), archivo: realOTal(path.resolve(repo, s.path)) }));
+                } catch (_e) { return null; }
+              },
+            };
+            // en la fusión del servidor se juzga la punta del pedido: lo que trae la rama destino no es del pedido
+            const correrBase = juezGit || libs.juez.correrGitDeVerdad;
+            const punta = puntaDelPedido(repo, base);
+            const correr = punta ? aLaPunta(correrBase, punta) : correrBase;
+            const evidencias = evidenciasParaJuzgar({ repo, dodEnGit, punta: punta || 'HEAD', correr });
+            const j = evidencias.length
+              ? juzgarEvidencia({ juez: libs.juez.crearJuez({ correrGit: correr, historia }), correr, repo, punta: punta || 'HEAD', tocados, evidencias, enPalabras: libs.juez.motivoEnPalabras })
+              : veredicto === 'pasa' ? { duda: 'ninguna evidencia de cierre trae una hora que la regla pueda usar' } : { sinEvidencia: true };
+            if (j.sinEvidencia) nivel('evidencia-atada', NIVELES.NO_MEDIDO, 'ninguna evidencia de cierre que no falle (lo dice el veredicto)');
+            else if (j.vale) nivel('evidencia-atada', NIVELES.SERVIDOR, `vale ${j.vale.rel}${deAfuera}`);
+            else if (j.duda) {
+              nivel('evidencia-atada', NIVELES.NO_MEDIDO, 'git no contestó');
+              atada('evidencia-no-comparada', `pasa a \`${estadoNuevo}\` y no pude comparar su evidencia de cierre con el código que cambia el pedido: ${j.duda}. No es «está bien»: es «no lo pude comparar».`);
+            } else {
+              nivel('evidencia-atada', NIVELES.SERVIDOR, 'ninguna evidencia vale');
+              atada('evidencia-vieja', `pasa a \`${estadoNuevo}\` y ninguna evidencia de cierre vale para el código que cambia este pedido: ${j.vieja.contra.join(', ')}. Hace falta una ejecución commiteada después de ese cambio. ${LO_QUE_NO_PRUEBA}`);
+            }
+          }
+        }
+      }
     }
 
     // (3) constancia de que los revisores auditaron la story, EN ESTE repo
@@ -1062,7 +1371,7 @@ function revisar({ repo, base, staged, hoy = hoyUtc() }) {
       destino.push({ archivo: rel, story: idBruto, regla: 'sin-constancia-de-revisores',
         mensaje: !pref
           ? `pasa a \`done\` y no pude calcular la clave de la story ${idBruto} (${rel}) para buscar su carpeta de revisores: sin clave no se da constancia por buena (el motivo está en el aviso del portón). No es «no hay constancia»: es «no la pude buscar».`
-          : `pasa a \`done\` y no hay \`.advisors/pipeline-runs/${pref}*/\` en el repo${pref !== `${idBruto}-` ? ` (el número ${idBruto} se repite en el repo: la carpeta lleva la clave de esta story; las \`${idBruto}-*\` viejas no dicen de cuál son y no cuentan)` : ''}. Escape del dev: \`advisors_exempt: true\` + su razón.` });
+          : `pasa a \`done\` y no hay \`.advisors/pipeline-runs/${pref}*/\` en el repo${pref !== `${idBruto}-` ? ` (el número ${idBruto} se repite en el repo: la carpeta lleva la clave de esta story; las \`${idBruto}-*\` viejas no dicen de cuál son y no cuentan)` : ''}. La exención (\`advisors_exempt: true\` + su razón) la decide la persona, con su firma sobre la historia.` });
     }
 
     // (4) el que escribió el código no puede ser el que lo revisó — y tiene que estar ESCRITO
@@ -1106,7 +1415,7 @@ function revisar({ repo, base, staged, hoy = hoyUtc() }) {
             mensaje: `\`${c.rel}/\` trae en el nombre el ${c.fechaNombre}, antes del corte del registro de autoría, y entró en git el ${c.fechaGit}, después. No se le exige el registro (una ejecución vieja que entró por squash o por una migración); si no lo es, revisalo. Avisa y no frena.` });
         }
         if (a.exige.length) {
-          estricto('sin-registro-de-autoria', `pasa a \`done\` y ninguna carpeta de ejecución trae en git un \`review-roster.json\` válido, y lo piden: ${a.exige.map((c) => `\`${c.rel}/\` (${c.motivo})`).join(', ')}. La fecha sale de git, no del nombre: el nombre lo elige quien crea la carpeta. Lo escribe el hook al cerrar la ronda de revisores; si esta story se cerró sin pipeline, declaralo con \`advisors_exempt: true\` + su razón.`);
+          estricto('sin-registro-de-autoria', `pasa a \`done\` y ninguna carpeta de ejecución trae en git un \`review-roster.json\` válido, y lo piden: ${a.exige.map((c) => `\`${c.rel}/\` (${c.motivo})`).join(', ')}. La fecha sale de git, no del nombre: el nombre lo elige quien crea la carpeta. Lo escribe el hook al cerrar la ronda de revisores; si esta story se cerró sin pipeline, la exención (\`advisors_exempt: true\` + su razón) la decide la persona, con su firma sobre la historia.`);
         }
       }
     }
@@ -1181,9 +1490,22 @@ function selftest() {
   fs.mkdirSync(path.join(tmp, '.advisors', 'pipeline-runs', '1.1-20260825'), { recursive: true });
   const completo = revisar({ hoy: HOY_FIJO, repo: tmp, base });
 
+  // las exenciones viajan con la constancia del dueño en el repo (lib/exemptions.js del skill)
+  const constancias = path.join(tmp, '.tycon', 'exemptions.jsonl');
+  const escribirConstancias = () => {
+    fs.mkdirSync(path.dirname(constancias), { recursive: true });
+    fs.writeFileSync(constancias, ['dod_runtime_exempt', 'advisors_exempt'].map((campo) => JSON.stringify({ story: '1.1', campo, archivo: 'specs/stories/1-1.md', via: 'autoprueba' })).join('\n') + '\n');
+  };
+  escribirConstancias();
   conStory(story('done', 'dod_runtime_exempt: true\ndod_runtime_exempt_reason: autoprueba\nadvisors_exempt: true\nadvisors_exempt_reason: autoprueba\n'));
   fs.rmSync(path.join(tmp, '.advisors'), { recursive: true, force: true });
   const exenta = revisar({ hoy: HOY_FIJO, repo: tmp, base });
+  // la misma exención sin su constancia frena
+  fs.rmSync(constancias);
+  sh('add', '-A'); sh('-c', 'user.email=b@b', '-c', 'user.name=b', 'commit', '-q', '-m', 'sin constancia');
+  const exentaSinConstancia = revisar({ hoy: HOY_FIJO, repo: tmp, base });
+  escribirConstancias();
+  sh('add', '-A'); sh('-c', 'user.email=b@b', '-c', 'user.name=b', 'commit', '-q', '-m', 'constancia');
 
   conStory('---\nstory: "1.1"\nstatus: done\n# falta el cierre\n');
   const roto = revisar({ hoy: HOY_FIJO, repo: tmp, base });
@@ -1505,6 +1827,7 @@ function selftest() {
     ['con evidencia de cierre queda sólo el de revisores', JSON.stringify(reglas(soloDod)) === JSON.stringify(['sin-constancia-de-revisores'])],
     ['con las dos cosas, limpio', completo.hallazgos.length === 0],
     ['las exenciones declaradas del dev se respetan', exenta.hallazgos.length === 0],
+    ['una exención agregada sin su constancia en el repo frena', exentaSinConstancia.hallazgos.some((h) => h.regla === 'exencion-sin-constancia')],
     ['un frontmatter que no cierra se caza (las tools lo saltean en silencio)', reglas(roto).includes('frontmatter-roto')],
     ['una story que NO transiciona no se revisa', sinTransicion.revisadas.length === 0 && sinTransicion.hallazgos.length === 0],
     ['un reporte que menciona `story:` en el CUERPO no es una story rota', !medicion.hallazgos.some((h) => h.regla === 'frontmatter-roto')],
@@ -1622,12 +1945,23 @@ function main() {
     if (!total) continue;
     console.log(`   aprobaciones de ${a.story}: ${a.manual} ${a.manual === 1 ? 'manual' : 'manuales'} · ${a.automatica} ${a.automatica === 1 ? 'automática' : 'automáticas'}${a.sinNombrar ? ` (${a.sinNombrar} sin nombrar)` : ''}`);
   }
-  const avisosDeStory = (r.avisos || []).filter((h) => !/^indice-de-memoria/.test(h.regla) && h.regla !== 'roster-incoherente' && h.regla !== 'storyid-sin-story' && !/^reviewer-/.test(h.regla) && h.regla !== 'sin-registro-de-aprobaciones' && h.regla !== 'exencion-sin-razon' && !h.porFecha && h.regla !== 'carpeta-fecha-contradictoria');
+  const avisosDeStory = (r.avisos || []).filter((h) => !/^indice-de-memoria/.test(h.regla) && h.regla !== 'roster-incoherente' && h.regla !== 'storyid-sin-story' && !/^reviewer-/.test(h.regla) && h.regla !== 'sin-registro-de-aprobaciones' && h.regla !== 'exencion-sin-razon' && !h.porFecha && h.regla !== 'carpeta-fecha-contradictoria' && !h.porFechaAtada && h.regla !== 'evidencia-atada-otro-repo');
   // Lo que el portón empieza a frenar con la lectura por git y del veredicto: su propio bloque, por la fecha.
   const avisosPorFecha = (r.avisos || []).filter((h) => h.porFecha);
   if (avisosPorFecha.length) {
     console.error(`\n⚠️  AVISO — lo que el portón empieza a frenar (avisa hasta el ${STRICT_EVIDENCE_FROM}; desde ese día frena):`);
     for (const h of avisosPorFecha) console.error(`   · [${h.regla}] ${h.archivo}: ${h.mensaje}`);
+  }
+  // La evidencia atada al cambio, con su propia fecha, y la que no se puede verificar desde este repo.
+  const avisosAtada = (r.avisos || []).filter((h) => h.porFechaAtada);
+  if (avisosAtada.length) {
+    console.error(`\n⚠️  AVISO — la evidencia atada al cambio (avisa hasta el ${EVIDENCE_BOUND_FROM}; desde ese día frena):`);
+    for (const h of avisosAtada) console.error(`   · [${h.regla}] ${h.archivo}: ${h.mensaje}`);
+  }
+  const avisosDeOtroRepo = (r.avisos || []).filter((h) => h.regla === 'evidencia-atada-otro-repo');
+  if (avisosDeOtroRepo.length) {
+    console.error('\n⚠️  AVISO — evidencia atada al cambio que este repo no puede verificar (no frena):');
+    for (const h of avisosDeOtroRepo) console.error(`   · [${h.regla}] ${h.archivo}: ${h.mensaje}`);
   }
   const avisosDeFecha = (r.avisos || []).filter((h) => h.regla === 'carpeta-fecha-contradictoria');
   if (avisosDeFecha.length) {
@@ -1709,4 +2043,4 @@ if (require.main === module) process.exitCode = main();
 // `mdDelDiff` y `contenidoEn` se exportan para que `cierre-recortado` T12 pueda
 // EJECUTARLAS en vez de comparar sus bytes contra `main`. Comparar texto no distingue una mejora
 // de un deterioro: cualquier cambio sale rojo.
-module.exports = { EXEMPT_REASON_FROM, STRICT_EVIDENCE_FROM, evidenciaDeclaraFail, fechaDeCarpeta, NIVELES, nivelDelExamen, nivelDeBusqueda, nivelDelIndice, razonDe, llaveFrena, revisar, revisarAprobaciones, frontmatter, declaraSerStory, escalar, hayEvidencia, prefijoDeEvidencia, runDirsDeStory, validarRoster, advisoresEnFindings, FUENTES_SINTETICAS, esEvidenciaDeCierre, NO_ES_EVIDENCIA_DE_CIERRE, ES_EVIDENCIA_ADEMAS, mdDelDiff, contenidoEn };
+module.exports = { EXEMPT_REASON_FROM, STRICT_EVIDENCE_FROM, EVIDENCE_BOUND_FROM, evidenciaDeclaraFail, fechaDeCarpeta, NIVELES, nivelDelExamen, nivelDeBusqueda, nivelDelIndice, razonDe, llaveFrena, revisar, revisarAprobaciones, frontmatter, declaraSerStory, escalar, hayEvidencia, prefijoDeEvidencia, runDirsDeStory, validarRoster, advisoresEnFindings, FUENTES_SINTETICAS, esEvidenciaDeCierre, NO_ES_EVIDENCIA_DE_CIERRE, ES_EVIDENCIA_ADEMAS, mdDelDiff, contenidoEn };

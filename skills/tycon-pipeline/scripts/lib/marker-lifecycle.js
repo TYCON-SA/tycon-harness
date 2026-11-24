@@ -102,7 +102,7 @@ function cmdSet(payloadJson) {
       appendLog('bypass.log', { kind: 'MARKER_SET_EXTERNAL_FLAG_DISCARDED', flag: k, storyId: payload.storyId });
     }
   }
-  // La tanda de la ejecución achica la matriz de «Preparar el commit»: la escribe sólo `set-batch`, que la valida
+  // La tanda de la ejecución achica la matriz de «Preparar el pull request»: la escribe sólo `set-batch`, que la valida
   // contra la historia y no la cambia. Un `get | … | set` que la trae como estaba pasa.
   for (const k of ['batch', 'batchSetAt']) {
     if (!Object.prototype.hasOwnProperty.call(payload, k)) continue;
@@ -113,7 +113,7 @@ function cmdSet(payloadJson) {
   }
   // 🔴 Anti-leak cross-story: el spread de abajo preserva
   // campos ante un `set` de la MISMA story — pero si esta sesión arranca una story NUEVA sobre un
-  // marker viejo sin clear (pipeline cancelado, crash, "listo" antes de «Preparar el commit»), la story B
+  // marker viejo sin clear (pipeline cancelado, crash, "listo" antes de «Preparar el pull request»), la story B
   // heredaría el ciclo de vida de la A: `deepReviewDone=true` heredado → computeNext saltea el pase adversarial
   // de B EN SILENCIO; `checks.build=green` y `dodRuntimeChecked` heredados → gates mintiendo.
   // Por eso, al cambiar de storyId, los campos de CICLO DE VIDA DE
@@ -173,14 +173,14 @@ function cmdSet(payloadJson) {
       // nueva arranques de la vieja, y `anotarArranque` se niega a pisar uno existente.
       stepTimings,
       // Lo del pase adversarial es de la corrida. Heredado, B contaría como suyas las pruebas
-      // promovidas de A en `--tests`, y con el freno de «Preparar el commit» heredaría el salteo de A y cerraría ese
+      // promovidas de A en `--tests`, y con el freno de «Preparar el pull request» heredaría el salteo de A y cerraría ese
       // paso sin su propio pase adversarial.
       adversarialPasses, adversarialRegressions, adversarialSkip,
       // El veredicto del portón (y el temprano apagado) son de la corrida: heredado, `next` le pediría a
       // la story nueva lanzar el pase con los archivos de la vieja, o le dejaría apagado el temprano.
       adversarialGate,
       // La maqueta aprobada y la decisión de «Aprobar el plan» son de la story. Heredadas, la story B usaría la
-      // maqueta de A (o su «sin pantalla») en «Preparar el commit».
+      // maqueta de A (o su «sin pantalla») en «Preparar el pull request».
       mockupApproval, mockupDecision,
       // el tamaño de la corrida (y su forzado a mano) es de la story.
       size, size_reason, estimate_min, estimate_source, sizeForced,
@@ -218,7 +218,7 @@ function cmdSet(payloadJson) {
     for (const p of existing.stepsPending || []) if (!nuevos.has(String(p))) payload.stepsPending.push(p);
   }
   // Ni marcar hechos los que no lo estaban: un paso se cierra con `complete-step`, que corre sus frenos. Un `set` de la
-  // misma historia con «Preparar el commit» en `stepsCompleted` se saltearía el de código sin revisar.
+  // misma historia con «Preparar el pull request» en `stepsCompleted` se saltearía el de código sin revisar.
   // Listas sin esquema legible (números y nombres mezclados) no se tocan: las rechaza entera la validación de más abajo.
   const esquemaDelPedido = () => STEPS_LIB.schemeOf({ stepScheme: payload.stepScheme !== undefined ? payload.stepScheme : existing.stepScheme,
     stepsCompleted: payload.stepsCompleted, stepsPending: Array.isArray(payload.stepsPending) ? payload.stepsPending : (existing.stepsPending || []) });
@@ -1117,6 +1117,7 @@ function cmdClear(rest = []) {
   // acuerde de correr `pipeline.js timing-report` antes del clear. Best-effort:
   // un fallo acá JAMÁS bloquea el clear.
   let cerradaEnClear = false;
+  let cierreDicho = false;
   let marcadorAntes = null;
   frenarSiIlegible(markerFilePath(estado.SID), estado.SID, 'clear');
   try { marcadorAntes = readMarker(); } catch (_e) { marcadorAntes = null; }
@@ -1287,6 +1288,8 @@ function cmdClear(rest = []) {
         process.stderr.write(`[corrida] pedidos abiertos, compilación corriendo: no están listos todavía (${esperados.map((x) => `#${x.numero} de ${x.nombre}`).join(', ')}). `
           + 'El aviso de «listos para aprobar» llega cuando todas den verde; no pidas la aprobación antes.\n');
       }
+      // la historia terminó: la sesión se cierra. Va antes de la oferta, que tiene que quedar última (se lee con «| tail»)
+      if (marker.storyId) { process.stdout.write(`${require('./resume-state.js').CIERRE_DE_SESION}\n`); cierreDicho = true; }
       // La oferta de la instalación completa al cerrar la primera historia: sale del cierre mecánico, después
       // de archivar el volcado (el volcado de ESTA corrida es la evidencia de que se cerró). Va a la salida estándar para
       // que el agente la muestre tal cual; un error se dice en un renglón y nunca frena el cierre.
@@ -1307,6 +1310,9 @@ function cmdClear(rest = []) {
   // y los clones de los humos comparados (historia 8.167)
   try { require('./compare-previous.js').limpiar(STATE_DIR, estado.SID); } catch (e) { process.stderr.write(`[marker] no pude borrar los clones de los humos comparados (${e.message}): los barre la próxima comparación\n`); }
   syncSessionState(estado.SID);
+  // la historia terminó: la sesión se cierra, y la próxima arranca sin arrastrar esta conversación (si el archivo de la
+  // ejecución falló antes de decirlo)
+  if (!cierreDicho && marcadorAntes && marcadorAntes.storyId) process.stdout.write(`${require('./resume-state.js').CIERRE_DE_SESION}\n`);
 }
 
 function cmdIsActive() {

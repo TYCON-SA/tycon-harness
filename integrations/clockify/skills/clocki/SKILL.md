@@ -34,6 +34,11 @@ renombramos): `mcp__clockify__create-clockify-time-entry`, `...update-clockify-t
 bajos en Codex. **NUNCA concluyas "la tool no existe" por el separador**: mirá qué tool de Clockify
 está disponible y usá esa. Este es el modo de falla que apagaba el tracking en silencio bajo Codex.
 
+**El servidor también puede llamarse distinto en tu máquina.** `mcp__clockify__` en este skill quiere decir «el servidor
+de Clockify de tu sesión». Si la máquina lo registró con otro nombre, lo declara en `~/.claude/tycon.json`
+(`node ~/.tycon/harness/scripts/lib/tycon-config.js get integrations.mcp_servers`), y los avisos del arnés ya lo traen
+con ese nombre (`mcp__<servidor>__create-clockify-time-entry`). Usá el que nombra el aviso, o el que exponga tu sesión.
+
 ## 🔴 Regla atómica close+open (anti-billing-gap)
 
 **NUNCA usar `mcp__clockify__update-clockify-time-entry` directo para "cerrar y seguir trabajando"** — eso deja billing gap. Pattern obligatorio:

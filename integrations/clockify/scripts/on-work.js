@@ -16,18 +16,19 @@ const lib = require('./lib.js');
 
 function handle(ev) {
   if (!ev || typeof ev !== 'object') return {};
+  const tool = (name) => lib.mcpTool(name, ev.mcpServer);
   const description = `Story ${ev.storyId || '?'}${ev.title ? ` — ${ev.title}` : ''}`.slice(0, 100);
   let found = null;
   try { found = ev.repo && ev.sessionId ? lib.findActiveEntryForCwd(lib.readActive(), lib.normalizeCwd(ev.repo), ev.sessionId) : null; } catch (_) { found = null; }
   if (ev.event === 'entry') return found ? { entryId: found.entry.entryId } : {};
   if (ev.event === 'start') {
-    if (found) return { action: `ya hay una entrada abierta de esta sesión en Clockify (${found.entry.entryId}, «${found.entry.description || ''}»): si es de otra historia, cerrala con mcp__clockify__update-clockify-time-entry antes de abrir la de «${description}»` };
-    return { action: `abrí la entrada de Clockify con mcp__clockify__create-clockify-time-entry, descripción «${description}», el proyecto que se llama como la carpeta del repo y la hora local; guardala en ${lib.sessionFilePath(ev.sessionId || '<sesión>')} (la skill clocki, «Flujo de start»)` };
+    if (found) return { action: `ya hay una entrada abierta de esta sesión en Clockify (${found.entry.entryId}, «${found.entry.description || ''}»): si es de otra historia, cerrala con ${tool('update-clockify-time-entry')} antes de abrir la de «${description}»` };
+    return { action: `abrí la entrada de Clockify con ${tool('create-clockify-time-entry')}, descripción «${description}», el proyecto que se llama como la carpeta del repo y la hora local; guardala en ${lib.sessionFilePath(ev.sessionId || '<sesión>')} (la skill clocki, «Flujo de start»)` };
   }
   if (ev.event === 'stop') {
-    const sum = `sumá las entradas de Clockify de la historia ${ev.storyId || '?'} con mcp__clockify__list-clockify-time-entries (la skill clocki, «Cierre desde el pipeline»): ése es el tiempo para CompletedWork`;
+    const sum = `sumá las entradas de Clockify de la historia ${ev.storyId || '?'} con ${tool('list-clockify-time-entries')} (la skill clocki, «Cierre desde el pipeline»): ése es el tiempo para CompletedWork`;
     if (!found) return { action: `${sum}; no hay entrada abierta de esta sesión que cerrar` };
-    return { action: `cerrá la entrada de Clockify ${found.entry.entryId} con mcp__clockify__update-clockify-time-entry con el fin ahora (hora local), sacala de ${lib.sessionFilePath(ev.sessionId)}, y ${sum}`, entryId: found.entry.entryId };
+    return { action: `cerrá la entrada de Clockify ${found.entry.entryId} con ${tool('update-clockify-time-entry')} con el fin ahora (hora local), sacala de ${lib.sessionFilePath(ev.sessionId)}, y ${sum}`, entryId: found.entry.entryId };
   }
   return {};
 }

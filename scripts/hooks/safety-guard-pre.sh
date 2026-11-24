@@ -119,8 +119,19 @@ sg_identity() {
   printf '%s' "$s"
 }
 _sg_id="$(sg_identity $$)"
+# Lo que el freno está haciendo, para que el corte lo diga: lo anotan sus partes lentas (la lista de procesos de Windows,
+# el chequeo de un guion, la conversación donde se confirma una aprobación) en este archivo. En Git Bash, node no
+# entiende las rutas /c/…: va con barras hacia adelante (cygpath -m)
+SG_ETAPA="${TMPDIR:-/tmp}/tycon-sg-etapa-$$"
+rm -f "$SG_ETAPA" 2>/dev/null || true
+TYCON_SAFETY_STAGE_FILE="$SG_ETAPA"
+if command -v cygpath >/dev/null 2>&1; then TYCON_SAFETY_STAGE_FILE="$(cygpath -m "$SG_ETAPA" 2>/dev/null || printf '%s' "$SG_ETAPA")"; fi
+export TYCON_SAFETY_STAGE_FILE
 sg_clock_fired() {
-  echo "⛔ TYCON safety-guard: el freno no terminó de mirar el comando en ${SG_CLOCK_S} s y lo frena: pasado el tope de la herramienta, el comando correría sin mirar. Si se repite, decíselo a la persona: algo deja esperando al freno." >&2
+  local etapa=""
+  [[ -s "$SG_ETAPA" ]] && etapa="$(head -c 200 "$SG_ETAPA" 2>/dev/null | tr -d '\n')"
+  rm -f "$SG_ETAPA" 2>/dev/null
+  echo "⛔ TYCON safety-guard: el freno no terminó de mirar el comando en ${SG_CLOCK_S} s y lo frena: pasado el tope de la herramienta, el comando correría sin mirar.${etapa:+ Estaba ${etapa}.} Para seguir: volvé a correr el comando; si se repite, subí TYCON_SAFETY_TIMEOUT_S (hasta 50) en el entorno de la herramienta, o abrí una sesión nueva (una conversación larga hace más lenta la confirmación de una firma). Si nada de eso alcanza, decíselo a la persona." >&2
   exit 2
 }
 trap 'sg_clock_fired' TERM
@@ -317,6 +328,12 @@ ow_gate() {
     tope="$(date +%s 2>/dev/null)" || tope=""
     if [[ "$tope" =~ ^[0-9]+$ ]]; then tope=$(( tope + SG_CLOCK_S - SECONDS - 1 )); else tope=""; fi
     out="$(printf '%s' "$INPUT" | TYCON_SAFETY_DEADLINE_S="$tope" "$HNODE" "$lib" gate ${args[@]+"${args[@]}"} 2>/dev/null)" || out=""
+    # la ventana ya contestó: lo que anotó no es lo que el freno hace después
+    rm -f "$SG_ETAPA" 2>/dev/null || true
+    # Lo que contestan los lectores se lee con `< <(printf …)`, nunca con un here-string: el bash 3.2 de macOS escribe el
+    # temporal de un here-string en /var/tmp, /tmp o la carpeta actual, y dentro de un encierro que no lo deja (la corrida
+    # aislada de los humos, con el freno corrido desde otro repo) no lee lo que le contestan: según el lugar, niega o deja
+    # pasar
     while IFS= read -r k; do
       case "$k" in
         decision=*) OW_DECISION="${k#decision=}" ;;
@@ -328,7 +345,7 @@ ow_gate() {
         json=*) OW_JSON="${k#json=}" ;;
         ofrece=*) OW_OFRECE="${k#ofrece=}" ;;
       esac
-    done <<< "$out"
+    done < <(printf '%s\n' "$out")
   fi
   case "$OW_DECISION" in ask|allow|none) ;; *) OW_DECISION="deny" ;; esac
   if [[ "$OW_DECISION" == "ask" && -z "$OW_JSON" ]]; then OW_DECISION="deny"; fi
@@ -415,7 +432,7 @@ emergencia_vale() {
       pedido=*) [[ "${k#pedido=}" =~ ^[0-9a-f]{8}$ ]] && EMERGENCIA_PEDIDO="${k#pedido=}" ;;
       motivo=*) EMERGENCIA_AVISO="${k#motivo=}" ;;
     esac
-  done <<< "$out"
+  done < <(printf '%s\n' "$out")
   return 1
 }
 
@@ -869,14 +886,14 @@ if [[ "$_esc_cmd" == *[Mm][Aa][Rr][Kk][Ee][Rr]* || "$_esc_cmd" == *[Pp][Ii][Pp][
       frena=*) _c3_frenos+=("${_c3_l#frena=}") ;;
       detalle=*) _c3_detalle="${_c3_l#detalle=}" ;;
     esac
-  done <<< "$_c3_out"
+  done < <(printf '%s\n' "$_c3_out")
   # Cada escape va a la ventana de permiso (más abajo, después de ESC-C7), con lo que hace falta para frenar con su
   # motivo si la ventana lo niega: «<clave>\t<escape>\t<subcomando>\t<argumento>». La salida de una ejecución perdida
   # (con `desde`: lib/open-runs.js) es la firma `lost-run`, que la ventana lee del comando; se anota aparte.
   _c3_negables=(); _c3_perdida=""
   for _c3_f in ${_c3_frenos[@]+"${_c3_frenos[@]}"}; do
     _c3_desde=""
-    IFS=$'\t' read -r _c3_esc _c3_sub _c3_a1 _c3_desde <<< "$_c3_f" || true
+    IFS=$'\t' read -r _c3_esc _c3_sub _c3_a1 _c3_desde < <(printf '%s\n' "$_c3_f") || true
     _c3_regla="ESC-C3"
     case "$_c3_esc" in
       "cerrar la ejecución") _c3_clave="cerrar-la-ejecucion" ;;
@@ -933,7 +950,7 @@ if [[ "$_c5_mira" == "1" ]]; then
       escondido=*) [[ -n "$_c5_escondido" ]] || _c5_escondido="${_c5_l#escondido=}" ;;
       forma=*) [[ -n "$_c5_forma" ]] || _c5_forma="${_c5_l#forma=}" ;;
     esac
-  done <<< "$_c5_out"
+  done < <(printf '%s\n' "$_c5_out")
   if [[ -n "$_c5_escondido" ]]; then
     block "GIT-C5" \
       "Mergear salteando la cola y la CI de main, o aflojar las políticas de la rama, así escrito no se puede firmar: ${_c5_escondido%.}." \
@@ -971,7 +988,7 @@ if [[ "$_c7_mira" == "1" ]]; then
       frena=*) [[ -n "$_c7_frena" ]] || _c7_frena="${_c7_l#frena=}" ;;
       firma=*) [[ -n "$_c7_firma" ]] || _c7_firma="${_c7_l#firma=}" ;;
     esac
-  done <<< "$_c7_out"
+  done < <(printf '%s\n' "$_c7_out")
   if [[ -n "$_c7_frena" ]]; then
     block "GIT-C7" \
       "Encolar o mergear un pedido sin saber de quién es no pasa: ${_c7_frena%.}." \
@@ -1010,8 +1027,9 @@ ow_negar() { # la ventana negó: frena con el motivo de la firma
   alt="$OW_OFRECE"
   regla="$(ow_regla "$OW_FIRMA")" || regla="ESC-C3"
   if [[ "$regla" == "ESC-C1" ]]; then esc_c1_negar "${OW_FIRMA#escape:}"; fi
-  for f in ${_c3_negables[@]+"${_c3_negables[@]}"}; do
-    IFS=$'\t' read -r clave esc sub a1 <<< "$f" || true
+  # todos por un solo descriptor (el 9, para que lo que corre adentro no lea los renglones): en una función, el bash 3.2
+  # no cierra el de cada `< <(…)` hasta que vuelve, y con uno por vuelta dejaba de leer pasados los 253
+  while IFS=$'\t' read -r -u 9 clave esc sub a1; do
     [[ "escape:$clave" == "$OW_FIRMA" ]] || continue
     ESC_CARTEL="$OW_TEXTO${alt:+
 $alt}
@@ -1039,7 +1057,7 @@ Primero lo que no necesita a la persona: lo de «Alternativa». Si no se puede, 
           "Cerrar la ejecución ahora (marker.js ${sub}) la archiva como si hubiera terminado, y no terminó: ${_c3_motivo:-tiene algo pendiente}." \
           "Terminá lo pendiente. Si no se puede, decíselo a la persona." ;;
     esac
-  done
+  done 9< <(printf '%s\n' ${_c3_negables[@]+"${_c3_negables[@]}"})
   ESC_CARTEL="$OW_TEXTO"
   case "$OW_FIRMA" in
     plan-approval) block "ESC-C6" \
@@ -1094,7 +1112,7 @@ if [[ "$_ow_mira" == "1" ]]; then
     none)
       # la salida de una ejecución perdida que la ventana no reconoce como su firma (otro subcomando): no se firma acá
       if [[ -n "$_c3_perdida" ]]; then
-        IFS=$'\t' read -r _c3_sub _c3_a1 <<< "$_c3_perdida" || true
+        IFS=$'\t' read -r _c3_sub _c3_a1 < <(printf '%s\n' "$_c3_perdida") || true
         ESC_CARTEL="Esto lo decide una persona, no el agente: la salida de una ejecución perdida se firma con marker.js clear-session <sesión> --lost, en la ventana de permiso o en su terminal (--terminal)."
         BLOCK_MOTIVO="ejecucion-perdida"
         block "ESC-C3" \
@@ -1105,8 +1123,8 @@ if [[ "$_ow_mira" == "1" ]]; then
 fi
 ESC_CARTEL=""
 
-# ESC-C5: el permiso de escribir a mano la evidencia de la prueba en vivo (`ALLOW_DOD_EVIDENCE_WRITE`) y la exención de
-# esa prueba (`dod_runtime_exempt: true`) escritos por la terminal los decide la persona, que los firma con
+# ESC-C5: el permiso de escribir a mano la evidencia de la prueba en vivo (`ALLOW_DOD_EVIDENCE_WRITE`) y las exenciones de
+# esa prueba y de los revisores (`dod_runtime_exempt: true`, `advisors_exempt: true`) escritos por la terminal los decide la persona, que los firma con
 # `marker.js sign-file` y deja la escritura al Edit o Write. Frena un comando que crea, toca o copia un archivo con ese
 # nombre (`touch`, `cp`, una redirección, `tee`, un intérprete, `New-Item`, `Set-Content`, …) y uno que escribe la
 # exención en un `.md` (`sed -i`, `perl -i`, `>`, `>>`, `tee`); mirarlo, buscarlo, borrarlo o sacar la exención no frena.
@@ -1114,7 +1132,7 @@ ESC_CARTEL=""
 # Por la herramienta de escribir archivos, la exención la mira on-frontmatter-write.js y el permiso, on-dod-evidence-guard.js.
 _c5_esc=""
 shopt -s nocasematch
-if [[ "$_esc_cmd" == *allow_dod_evidence_write* || "$_esc_cmd" == *dod_runtime_exempt* ]]; then _c5_esc="?"; fi
+if [[ "$_esc_cmd" == *allow_dod_evidence_write* || "$_esc_cmd" == *dod_runtime_exempt* || "$_esc_cmd" == *advisors_exempt* ]]; then _c5_esc="?"; fi
 shopt -u nocasematch
 if [[ -n "$_c5_esc" ]]; then
   _c5_esc=""
@@ -1140,9 +1158,11 @@ if [[ -n "$_c5_esc" ]]; then
   fi
   shopt -u nocasematch
   _c5_crea="(^|[^a-z0-9_-])(touch|cp|mv|install|ln|tee|node|python3?|perl|ruby|deno|bun|new-item|ni|set-content|sc|add-content|ac|out-file|copy-item|move-item)([[:space:]][^;&|]*)?allow_dod_evidence_write|>[[:space:]]*[^;&|[:space:]]*allow_dod_evidence_write"
-  # sacar una línea con sed (`/…dod_runtime_exempt…/d`) no la agrega
-  _c5_sin_borrar="$(printf '%s' "$_c5_min" | sed -E 's#/[^/]*dod_runtime_exempt[^/]*/d##g')" || _c5_sin_borrar="$_c5_min"
-  _c5_exenta="dod_runtime_exempt:[[:space:]]*true"
+  # sacar una línea con sed (`/…dod_runtime_exempt…/d`, `/…advisors_exempt…/d`) no la agrega
+  _c5_sin_borrar="$(printf '%s' "$_c5_min" | sed -E 's#/[^/]*(dod_runtime_exempt|advisors_exempt)[^/]*/d##g')" || _c5_sin_borrar="$_c5_min"
+  _c5_exenta="(dod_runtime_exempt|advisors_exempt):[[:space:]]*true"
+  _c5_de_revisores="advisors_exempt:[[:space:]]*true"
+  _c5_de_la_prueba="dod_runtime_exempt:[[:space:]]*true"
   # la redirección es `>` o `>>` sueltos: `=>` o `->` dentro de un código no escriben un archivo
   _c5_md="(^|[^=<>-])>>?[[:space:]]*[^;&|[:space:]>]*\.md|(^|[^a-z0-9_-])tee[[:space:]][^;&|]*\.md"
   # sed o perl que editan en el lugar: la bandera como palabra suelta (`-i`, `-Ei`, `-pi`, `-i.bak`, `--in-place`; no el
@@ -1153,6 +1173,7 @@ if [[ -n "$_c5_esc" ]]; then
     _c5_esc="ALLOW_DOD_EVIDENCE_WRITE"
   elif [[ "$_c5_sin_borrar" =~ $_c5_exenta ]] && { [[ "$_c5_sin_borrar" =~ $_c5_md ]] || { [[ "$_c5_sin_borrar" =~ $_c5_inplace ]] && [[ "$_c5_sin_borrar" =~ $_c5_un_md ]]; }; }; then
     _c5_esc="dod_runtime_exempt"
+    if [[ "$_c5_sin_borrar" =~ $_c5_de_revisores ]] && ! [[ "$_c5_sin_borrar" =~ $_c5_de_la_prueba ]]; then _c5_esc="advisors_exempt"; fi
   fi
   if [[ -n "$_c5_esc" ]]; then
     _c5_sid="$(read_field session_id 2>/dev/null)" || _c5_sid=""
@@ -1175,6 +1196,10 @@ if [[ -n "$_c5_esc" ]]; then
       block "ESC-C5" \
         "El permiso ALLOW_DOD_EVIDENCE_WRITE deja escribir a mano la evidencia de la prueba en vivo, que tiene que salir de una prueba que corrió." \
         "Corré la prueba en vivo con su guion (el gate E2E del proyecto o el macro del humo): la evidencia la escribe él."
+    elif [[ "$_c5_esc" == "advisors_exempt" ]]; then
+      block "ESC-C5" \
+        "Agregar advisors_exempt: true a una historia la exime de los revisores." \
+        "Corré los revisores de la historia en su ejecución del pipeline. Si de verdad no hay nada que revisar, decíselo a la persona. ¿Sólo la nombrabas en un texto (un heredoc)? Este freno mira el comando entero: escribí ese texto en un archivo."
     else
       block "ESC-C5" \
         "Agregar dod_runtime_exempt: true a una historia la exime de la prueba en vivo." \
@@ -1427,7 +1452,7 @@ if [[ "$CMD" == *git* ]] && { [[ "$CMD" == *reset* || "$CMD" == *stash* || "$CMD
       _c6_motivos=""
       while IFS= read -r _c6_l; do
         [[ "$_c6_l" == frena=* ]] && _c6_motivos+="${_c6_motivos:+; }${_c6_l#frena=}"
-      done <<< "$_c6_out"
+      done < <(printf '%s\n' "$_c6_out")
       if [[ -n "$_c6_motivos" ]]; then
         block "GIT-C6" \
           "${_c6_motivos}. Esos cambios pueden ser de otra sesión o de la persona." \
@@ -2330,7 +2355,7 @@ if [[ "$CMD" == *settings*.json* ]]; then
     _c2_motivos=""
     while IFS= read -r _c2_l; do
       [[ "$_c2_l" == frena=* ]] && _c2_motivos+="${_c2_motivos:+; }${_c2_l#frena=}"
-    done <<< "$_c2_out"
+    done < <(printf '%s\n' "$_c2_out")
     if [[ -n "$_c2_motivos" ]]; then
       block "HARNESS-C2" \
         "El comando saca un control del arnés de la configuración de la herramienta: ${_c2_motivos}." \

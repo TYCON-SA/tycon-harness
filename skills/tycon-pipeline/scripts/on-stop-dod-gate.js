@@ -72,7 +72,7 @@ function markerPath(sessionId) {
   const safe = String(sessionId || '_nosession').replace(/[/\\]/g, '_');
   return path.join(ACTIVE_DIR, `${safe}.json`);
 }
-// El pedido de la exención de la matriz para la historia de la corrida, como lo da «Preparar el commit»: lo corre el
+// El pedido de la exención de la matriz para la historia de la corrida, como lo da «Preparar el pull request»: lo corre el
 // agente, y el arnés le pone el renglón y el cuadro en la lista del dueño.
 function waiverCommand(marker) {
   const raw = marker && marker.storyPath ? String(marker.storyPath) : '<historia>';
@@ -80,6 +80,19 @@ function waiverCommand(marker) {
   // marker.js vive al lado de este guion: la ruta sale de acá, sin escribir la carpeta de la herramienta
   const cmd = `node "${path.join(__dirname, 'marker.js')}"`;
   return `${cmd} runtime-waiver ${/\s/.test(story) ? `"${story}"` : story}`;
+}
+
+/**
+ * La firma que esta sesión ya pidió y que en Windows va sólo a la terminal de la persona: el renglón «solo terminal» de la
+ * lista del dueño (owner-window.js `anotarEnWindows`), abierto y para esta sesión. null si no hay, o si la lista no se
+ * puede leer: sin saber, el cierre frena como siempre.
+ */
+function firmaDeTerminalPendiente(sessionId) {
+  try {
+    const sl = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signature-list.js'));
+    const { filas } = sl.abiertos(os.homedir());
+    return filas.find((f) => f && f.tipo === 'firma' && f.windows === 'solo-terminal' && f.destino === sessionId && f.id) || null;
+  } catch (_) { return null; }
 }
 
 function readMarker(sessionId) {
@@ -192,7 +205,7 @@ const CLOSURE = /(^|[^\p{L}])(listo|listos|termin[eé]|terminad[oa]s?|terminamos
 /**
  * La línea de pasos pendientes del marcador, o null. Sale sólo si el último mensaje afirma un cierre o el evento no trae
  * mensaje: así aparece cuando el modelo narra que terminó, y no en cada pausa normal del pipeline. Un modelo que narra
- * con otras palabras no la dispara; para ése la red es el freno de orden de «Preparar el commit».
+ * con otras palabras no la dispara; para ése la red es el freno de orden de «Preparar el pull request».
  */
 function pendingStepsLine(marker, event) {
   if (!marker || !marker.storyId) return null;
@@ -320,7 +333,7 @@ function main() {
   }
 
   // Pasos del pipeline sin cerrar, cuando el mensaje afirma un cierre (o el evento no trae mensaje): lo dicho no cierra
-  // ningún paso. Es un aviso; el freno es el de «Preparar el commit».
+  // ningún paso. Es un aviso; el freno es el de «Preparar el pull request».
   try {
     const line = pendingStepsLine(marker, event);
     if (line) toPerson = toPerson ? `${toPerson}\n${line}` : line;
@@ -383,6 +396,17 @@ function main() {
       const ids = [...new Set(esperas.map((w) => w.id).filter(Boolean))].join(', ') || 'sin id';
       toPerson = [toPerson, `main está roto en ${suites}: espero a main (${ids}). No es un rojo de la historia; la historia sigue cuando main pase.`].filter(Boolean).join('\n');
     }
+    return allowStop();
+  }
+
+  // Rojo, con una firma que la sesión ya pidió y que en Windows va sólo a la terminal de la persona (su renglón «solo
+  // terminal» en la lista del dueño): el agente ya preguntó y espera, como con `waitingForHuman`, sin marcarlo a mano. Una
+  // vez por renglón: el cierre siguiente con el mismo renglón vuelve a frenar, y la corrida sigue vigilada.
+  const pedida = firmaDeTerminalPendiente(sessionId);
+  if (pedida && marker.waitedSignature !== pedida.id) {
+    marker.waitedSignature = pedida.id;
+    writeMarker(sessionId, marker);
+    toPerson = [toPerson, `La corrida espera tu firma en la terminal: ${pedida.title || pedida.firma}. Está en tu lista de firmas, con su comando.`].filter(Boolean).join('\n');
     return allowStop();
   }
 

@@ -369,6 +369,24 @@ function anotarHerencia({ story, desde, hereda, huellaPlan, herencia, via }) {
   process.stderr.write(`[marker] ${via}: ${herencia}.\n`);
 }
 
+// Las condiciones que puso el dev al pedir la historia, en el marcador: así una sesión nueva retoma sin releer la
+// conversación (lib/resume-state.js). «ninguna» también se anota: dice que se miró.
+function cmdConditions(rest = []) {
+  const texto = rest.join(' ').trim();
+  if (!texto) {
+    console.error('conditions: falta el texto — marker.js conditions "<las condiciones del pedido, o ninguna>"');
+    process.exit(2);
+  }
+  const marker = readMarker();
+  if (!marker) {
+    console.error('conditions: esta sesión no tiene una ejecución en curso');
+    process.exit(1);
+  }
+  marker.requestConditions = { texto: texto.slice(0, 4000), at: nowIso() };
+  writeMarker(marker);
+  console.log('condiciones del pedido anotadas en la ejecución');
+}
+
 function cmdDoing(sub, arg) {
   const dir = path.join(STATE_DIR, 'doing');
   const safe = (s) => String(s).replace(/[/\\]/g, '_');
@@ -546,5 +564,5 @@ function cmdAdoptSession(sid) {
 
 module.exports = {
   listAllMarkers, cmdListAll, cmdFindByStory, sacarMarca, corridasDe, cmdPark, cmdUnpark, cmdClearSession,
-  reemplazadaPorParticion, cmdSalidaPerdida, cmdDoing, cmdAdoptSession,
+  reemplazadaPorParticion, cmdSalidaPerdida, cmdConditions, cmdDoing, cmdAdoptSession,
 };

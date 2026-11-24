@@ -51,7 +51,7 @@ const DIAS_SIN_REPORTAR = 7;
 const TOPE_MODELO = 20;
 const TOPE_RECOMENDAR = 30;
 const TANDA = 15;                 // el tope de buildPrompt
-const MIN_CONFIANZA = 0.85;
+const MIN_CONFIANZA = O.MIN_CONFIDENCE; // el mismo corte que dice la consigna de buildPrompt
 const PROPUESTAS = 'inbox/instincts/propuestas';
 const INFORMES = '.dashboard/instincts';
 const RECOMENDACIONES = `${INFORMES}/recomendaciones.json`;
@@ -652,7 +652,7 @@ function parseArgs(argv) {
   return a;
 }
 
-module.exports = { correrNoche, findTeamCandidates, huella, leerEspejo, archivoDecidido, motivoDeRuido, MOTIVOS, RUTAS, PROPUESTAS, RECOMENDACIONES };
+module.exports = { correrNoche, findTeamCandidates, huella, leerEspejo, archivoDecidido, motivoDeRuido, MOTIVOS, RUTAS, PROPUESTAS, RECOMENDACIONES, MIN_CONFIANZA };
 
 if (require.main === module) {
   const a = parseArgs(process.argv.slice(2));

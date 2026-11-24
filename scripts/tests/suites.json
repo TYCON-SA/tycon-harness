@@ -168,6 +168,11 @@
       "requiere": []
     },
     {
+      "raiz": "arnes",
+      "ruta": "tests/bench-usage.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 7.53: sondas de comportamiento — el agente de verdad (claude -p) en un laboratorio con HOME vacío y sólo el gancho medido, para ver si sigue cumpliendo una regla que dejó de estar siempre a la vista. Sin claude o sin sesión: NO MEDIDO.",
       "raiz": "arnes",
       "ruta": "tests/behavior-probes.test.sh",
@@ -515,6 +520,12 @@
       "requiere": []
     },
     {
+      "__nota": "fila 90: una exención agregada a una historia viaja con la constancia del dueño en `.tycon/exemptions.jsonl`; el gancho del encabezado la anota con la firma, el freno del commit y el portón de CI frenan sin ella, y el archivo no se escribe a mano. Repos de git temporales, HOME temporal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/exemptions-record.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.48: la clave `stack` de team-repos.json, leída desde el árbol del arnés.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/stack-config.test.js",
@@ -622,6 +633,24 @@
       "requiere": []
     },
     {
+      "__nota": "cada nombre nuevo de la tabla propia de nombres viejos está en el texto de su guion: si no, el instalador no apila la capa del equipo (renamesProblems de team.js).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/legacy-names-where-text.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "pipeline.js move-story mueve una historia de carpeta igual byte a byte y pasa a la ruta nueva su validación vigente; la vencida queda en la vieja y sale con 3.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/story-move.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "los args del pase llegan en un archivo (--args-file): en Windows la línea de comando no aguanta los de la revisión del plan.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/workflow-lite-args-file.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el permiso de escribir evidencia a mano y la exención de la prueba en vivo los autoriza la persona; los avisos no le dan al agente la receta de los escapes (story 8.96).",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/pipeline-escape.test.js",
@@ -664,6 +693,12 @@
       "__nota": "story 8.62: el plan que se aprueba solo (riesgo bajo) se muestra igual — sin plan escrito no cierra el paso 3, con plan lo imprime; los pasos 2, 3 y 8 y la nota de risk-class lo dicen.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/plan-visible.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "lo barato del costo del pipeline: antes de «Aprobar el plan» y de «Hallazgos», next dice qué falta en disco (las condiciones del pedido, el informe de cada revisor); el cierre de la historia pide cerrar la sesión.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/resume-state.test.js",
       "requiere": []
     },
     {
@@ -882,6 +917,16 @@
     {
       "raiz": "arnes",
       "ruta": "tests/production-notice-root.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/production-notice-cases.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/pre-commit-hook.test.js",
       "requiere": []
     },
     {
@@ -1446,13 +1491,13 @@
       "requiere": []
     },
     {
-      "__nota": "un criterio con cota fuera de la cota o sin medición: la matriz, «Preparar el commit» y el control del commit lo nombran con lo medido y la cota; la deuda no lo exime; la pregunta de la firma por terminal muestra lo medido. Comandos reales con HOME temporal",
+      "__nota": "un criterio con cota fuera de la cota o sin medición: la matriz, «Preparar el pull request» y el control del commit lo nombran con lo medido y la cota; la deuda no lo exime; la pregunta de la firma por terminal muestra lo medido. Comandos reales con HOME temporal",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/matrix-out-of-bound-message.test.js",
       "requiere": []
     },
     {
-      "__nota": "en una historia paraguas la tanda se anota una vez (set-batch), «Preparar el commit» mide sólo esa tanda, y el control del commit mide todas al pasar a review y la que se cierra al cerrar una tanda. Comandos reales con HOME temporal (8.239)",
+      "__nota": "en una historia paraguas la tanda se anota una vez (set-batch), «Preparar el pull request» mide sólo esa tanda, y el control del commit mide todas al pasar a review y la que se cierra al cerrar una tanda. Comandos reales con HOME temporal (8.239)",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/matrix-by-batch.test.js",
       "requiere": []
@@ -2047,7 +2092,7 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.167 (T12-T16, T24-T28, T31, T34): los candidatos, el freno de «Preparar el commit», la exención firmada y la cobertura por declaración. Repos de juguete, la firma por la ventana de prueba, sin red.",
+      "__nota": "story 8.167 (T12-T16, T24-T28, T31, T34): los candidatos, el freno de «Preparar el pull request», la exención firmada y la cobertura por declaración. Repos de juguete, la firma por la ventana de prueba, sin red.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/compare-previous-gate.test.js",
       "requiere": []
@@ -2603,6 +2648,12 @@
     {
       "raiz": "arnes",
       "ruta": "tests/test-run-isolation.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.321: un guion de laboratorio que limpia las TYCON_* y arma su casa corre igual dentro de la ejecución aislada de smoke-run.sh que suelto, y la casa de la cuenta sigue protegida. Repos y casas de juguete, sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/lab-inside-isolation.test.js",
       "requiere": []
     },
     {
@@ -3443,6 +3494,12 @@
       "requiere": []
     },
     {
+      "__nota": "fila 120: el control de la revisión que prueba que la máquina, una variable o un perfil que no es el del árbol no pisan las claves que vale sólo el perfil del equipo; sin el filtro, o con una clave afuera, frena; lo que no puede medir no es verde",
+      "raiz": "arnes",
+      "ruta": "tests/check-profile-only.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "los frenos y medidores que la organización cambia desde el sitio (switches del perfil, wait_notice.enabled): sin clave como hoy, la organización los enciende, un freno no se apaga desde el perfil, una clave ilegible no cambia nada.",
       "raiz": "arnes",
       "ruta": "tests/org-switches.test.js",
@@ -3605,6 +3662,12 @@
       "requiere": []
     },
     {
+      "__nota": "la evidencia atada al cambio en el portón de CI (scripts/ci/tycon-ci-gate.js): la evidencia de cierre anterior al código que cambia el pedido, las huellas del registro de humos y lo que no se pudo comparar, que avisan hasta su fecha y frenan desde ella.",
+      "raiz": "arnes",
+      "ruta": "tests/ci-gate-evidence-bound.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la lista de lo que espera a la persona (scripts/lib/signature-list.js): el registro, lo que lo cierra, la pasada de a una y la llave.",
       "raiz": "arnes",
       "ruta": "tests/signature-list.test.js",
@@ -3656,6 +3719,12 @@
       "__nota": "el modelo de una sesión (scripts/lib/session-model.js): el primer modelo real de su conversación, leído por tramos; sin conversación, ilegible o sin modelo, «no medido» con el motivo. Segundos.",
       "raiz": "arnes",
       "ruta": "tests/session-model.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el perfil por modelo (scripts/lib/control-profile.js): una preferencia firmada y relajada para un perfil deja de frenar sólo para sus modelos; exigencia, sin modelo, sin firmar o vencida, todo prendido. Con el freno de un pedido por repo y un az de mentira. Segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/control-profile.test.js",
       "requiere": []
     },
     {
@@ -3782,6 +3851,12 @@
       "__nota": "La capa de plataforma (scripts/lib/platform/platform.js): las diez operaciones del contrato, quién elige la plataforma de cada una (el repo o el perfil, sin adivinar), los motivos cerrados, el conector de mentira y los dos de verdad contra el az y el gh de mentira, las credenciales que faltan sin imprimirlas, y la elección en el perfil y en el sitio.",
       "raiz": "arnes",
       "ruta": "tests/platform-contract.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "El conector de GitLab por la capa de plataforma, contra el glab de mentira: la identidad con namespace de grupos anidados y host en team-repos.json, el servidor de un repo sin declarar, el pedido de trabajo como issue, el merge request, la CI por estados de commit, lo asignado, las lecturas de varias páginas, sin glab y sin red, merge-pr.js y story-index.js con un remoto de GitLab, los pasos 0 y 9b del skill de merge y el freno de un pedido por repo.",
+      "raiz": "arnes",
+      "ruta": "tests/platform-gitlab.test.js",
       "requiere": []
     },
     {
@@ -4387,9 +4462,24 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.23 (tanda C, T21, T22, T23 y T26): cada herramienta, sus enchufes — install detecta Claude Code y Codex (el ejecutable o su configuración propia), las nombra en el plan y --tool las fija; una máquina SÓLO con Codex instala, se actualiza por su hook de arranque y se desinstala sin nada nuevo en ~/.claude (el estado nace en ~/.tycon/state), con AGENTS.md desde los bloques entre marcas; el MCP de Codex sin ~/.claude.json, el servidor que falta dicho y writable_roots; sumar una herramienta después (install --tool) y sacar una sola (uninstall --tool). Sobre la máquina de juguete y el servidor de versiones de juguete, con `claude` y `codex` de mentira (harness_lab_tools).",
+      "__nota": "Parte 1 de 2 de tests/harness-tools.test.sh (2026-11-24, fila 48: entera tardaba 138 a 143 s sola en una Mac, más del doble de su peso, y salía roja por tiempo en la validación del privado; parte 1: T40, T41, T42, T43, T50, T44, T45, T47, T48, T54, T55, T49, T53, T51, T52 y T13; parte 2: T21, T22, T23, T26 y T26b. El archivo entero no se registra, scripts/tests/lib/suite-parts.sh).",
       "raiz": "arnes",
-      "ruta": "tests/harness-tools.test.sh",
+      "ruta": "tests/harness-tools.p1.test.sh",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/setup/**",
+        "scripts/lib/**",
+        "scripts/hooks/**",
+        "build/**",
+        "adapters/codex/**",
+        "scripts/tests/lib/**",
+        "scripts/tests/fixtures/**"
+      ]
+    },
+    {
+      "__nota": "Parte 2 de 2 de tests/harness-tools.test.sh (2026-11-24, fila 48: entera tardaba 138 a 143 s sola en una Mac, más del doble de su peso, y salía roja por tiempo en la validación del privado; parte 1: T40, T41, T42, T43, T50, T44, T45, T47, T48, T54, T55, T49, T53, T51, T52 y T13; parte 2: T21, T22, T23, T26 y T26b. El archivo entero no se registra, scripts/tests/lib/suite-parts.sh).",
+      "raiz": "arnes",
+      "ruta": "tests/harness-tools.p2.test.sh",
       "requiere": [],
       "gate_only_when_touching": [
         "scripts/setup/**",
@@ -5258,6 +5348,12 @@
       "__nota": "el número de versión lo pone el merge: la etiqueta v<número> sobre cada merge a main (scripts/ci/version-tag.js y .github/workflows/version-tag.yml). Dos merges no toman el mismo número y el número no baja; las máquinas con y sin clon leen la etiqueta, una punta sin etiqueta espera en silencio (y lo dice pasadas unas horas) y no queda recordada con el piso; el paso version de la CI pública; y los únicos dos workflows del repo público, con su forma exacta. Repos de juguete con git de verdad y clientes de mentira: sin red, unos segundos.",
       "raiz": "arnes",
       "ruta": "tests/version-by-merge.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "una máquina con una actualización que falló no está «al día»: la mirada dice la versión que falló, el motivo y la hora, y no borra el aviso de la falla.",
+      "raiz": "arnes",
+      "ruta": "tests/release-check-failed.test.js",
       "requiere": []
     },
     {

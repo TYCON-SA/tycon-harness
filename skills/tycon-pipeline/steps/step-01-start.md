@@ -80,7 +80,7 @@ dice en `actions_done`; si esa rama ya existe, pausa nombrándola. La marca sola
 
 ### PIPE-C5 — la story ya está `in-progress` sin marcador activo (CRITICAL, bloquea)
 
-Es un pipeline abandonado (sesión cerrada sin «Preparar el commit»). Mostrar la fecha del último cambio del
+Es un pipeline abandonado (sesión cerrada sin «Preparar el pull request»). Mostrar la fecha del último cambio del
 frontmatter (`git log`) y ofrecer: **retomar** (resumen de engram, `git status`, seguir donde quedó), **reiniciar**
 (`marker.js update-story-status "<STORY_PATH>" "ready-for-dev"` y volver a arrancar; lo no commiteado se pierde con un
 `git checkout`) o **cancelar**.
@@ -183,6 +183,16 @@ El resultado de los chequeos (`branch`, `branch_guard_passed`, `cross_session_pa
 parte de este paso. Se pasa a «Validar la historia» sólo con `branch_guard_passed: true` (o `had_main_override: true`
 con confirmación explícita) Y `cross_session_passed: true` (o la opción b/c de PIPE-C0).
 
+**Las condiciones del pedido, en disco.** Antes de seguir, anotá lo que puso el dev al pedir la historia y no está en la
+historia (qué no hacer, a quién preguntar, qué correr y qué no). Si no puso ninguna, anotá «ninguna»:
+
+```bash
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js conditions "<las condiciones, o ninguna>"
+```
+
+Así una sesión nueva retoma la ejecución sin releer esta conversación. `next` lo vuelve a pedir en «Aprobar el plan» y
+en «Hallazgos» si falta (`checkpoint_disk`), junto con el informe de cada revisor lanzado.
+
 **En una historia paraguas** (varias tandas en `pipelines`), la ejecución que entrega UNA tanda arranca con ella:
 
 ```bash
@@ -195,7 +205,7 @@ sobre la misma historia sólo choca si entrega la misma tanda, o si no anotó ni
 vez: con la misma tanda no cambia nada, con otra pausa, y sin tanda anotada la anota. Si la tanda no se pudo anotar,
 `start` sale 1 con el comando a mano; hasta anotarla, la matriz mide todas las tandas.
 
-Desde ahí «Preparar el commit» le pide la evidencia en vivo de esa tanda, no la de todas. Una ejecución que arrancó sin
+Desde ahí «Preparar el pull request» le pide la evidencia en vivo de esa tanda, no la de todas. Una ejecución que arrancó sin
 `--batch` la anota a mano, una vez:
 
 ```bash

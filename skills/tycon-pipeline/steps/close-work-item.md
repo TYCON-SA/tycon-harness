@@ -48,7 +48,7 @@ Antes de postear nada en ADO, validar que se cumple TODO esto:
    en verde (punto 1), y el control local de `review → done` (hoy avisa) y el portón de CI siguen mirando. Medido: cero
    hallazgos en todo el registro.
 4. **Merge a main hecho** (vía `/tycon-merge-to-main` o manual) — para tener el CI run definitivo y, si aplica, el PR link.
-5. **Frontmatter `status:`** debe estar en `review` (después de «Preparar el commit») o `done` (si dev ya lo movió manualmente). NO ejecutar este cierre sobre `ready-for-dev`/`in-progress` — es señal de que el flujo no completó «Preparar el commit».
+5. **Frontmatter `status:`** debe estar en `review` (después de «Preparar el pull request») o `done` (si dev ya lo movió manualmente). NO ejecutar este cierre sobre `ready-for-dev`/`in-progress` — es señal de que el flujo no completó «Preparar el pull request».
 6. **Si la story NO tiene id de pedido de trabajo** → NO skipear el pedido con "N/A". Resolver en este orden (ver sección "Creación retroactiva del pedido" abajo):
    a. Si el repo tiene la configuración del pedido de trabajo (`.tycon/work-items.yaml`, o su nombre viejo de Azure DevOps) → **CREAR el pedido retroactivamente** (hijo del Epic mapeado en `epic_links`), escribir `work_item:` en el frontmatter, y continuar con el cierre normal (comment + cierre + horas). NO preguntar al dev por un ID que no existe.
    b. Si el dev SABE que ya existe un WI (creado a mano fuera del flujo) → preguntar el ID, NO grep por título (puede haber WIs con títulos similares).
@@ -188,7 +188,7 @@ configuración del pedido de trabajo:
 4. **Continuar con el cierre normal** (comment + cierre con las horas). El comment anota "**Pedido creado
    retroactivamente** <fecha> (la story se cerró sin la skill de creación)".
 5. **Preparar** el commit del frontmatter actualizado y **pedir autorización al dev** antes de
-   ejecutarlo — igual que «Preparar el commit», y por la misma regla (`SKILL.md` §"Anti-patterns (lo que NO
+   ejecutarlo — igual que «Preparar el pull request», y por la misma regla (`SKILL.md` §"Anti-patterns (lo que NO
    hace)" y `guides/git-commit-conventions.md`: el pipeline NO ejecuta `git commit` ni `git push`
    sin aprobación explícita). Mensaje sugerido: `chore(story-<id>): link work_item`.
 
@@ -331,7 +331,7 @@ no se pregunta de nuevo. Sin ese ok, el pipeline no commitea ni empuja nada (reg
 node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js clear
 ```
 
-(Si «Preparar el commit» ya lo había cleaneado y este cierre viene independiente, el clear acá es no-op silencioso.)
+(Si «Preparar el pull request» ya lo había cleaneado y este cierre viene independiente, el clear acá es no-op silencioso.)
 
 ## Acción — borrar las carpetas de trabajo de la story (2026-10-16)
 
@@ -386,7 +386,7 @@ Mensaje al dev al final:
 - ❌ NO transicionar state sin postear comment — el comment es la evidencia de auditoría.
 - ❌ NO postear comment sin confirmar la lista de commits con el dev — falsos positivos del grep llenan ADO de basura.
 - ❌ NO cerrar work items que NO sean User Story (Epic, Feature, Task siguen reglas distintas — este step es específico a stories).
-- ❌ NO ejecutar este step sobre una story en `ready-for-dev` o `in-progress` — es señal de que el flujo no completó «Preparar el commit». `review` (lo normal, después de «Preparar el commit») y `done` (si el dev ya lo movió a mano) son los DOS estados válidos de entrada, y están en la pre-condición 5.
+- ❌ NO ejecutar este step sobre una story en `ready-for-dev` o `in-progress` — es señal de que el flujo no completó «Preparar el pull request». `review` (lo normal, después de «Preparar el pull request») y `done` (si el dev ya lo movió a mano) son los DOS estados válidos de entrada, y están en la pre-condición 5.
 - ❌ NO inventar `time_tracked` cuando la herramienta de horas no informa tiempo. Mejor omitir el campo que postear un número fabricado — la trazabilidad de horas es billing-grade.
 - ❌ NO usar wall-clock (`merge_date - first_commit_date`) como sustituto del tiempo registrado. Eso es lead time, NO trabajo real.
 

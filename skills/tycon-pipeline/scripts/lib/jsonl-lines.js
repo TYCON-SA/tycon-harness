@@ -60,4 +60,52 @@ function leerRenglones(file, { filtro = null, tope = false } = {}) {
   } finally { fs.closeSync(fd); }
 }
 
-module.exports = { LIMITE, tamanoDelTope, leerRenglones };
+/**
+ * Los renglones de un registro `.jsonl` leídos desde el final, de a trozos, hasta que `hasta` diga basta: lo que está al
+ * final de una conversación larga se encuentra sin leer lo de antes. Un renglón partido entre dos lecturas, o más largo
+ * que un trozo, se une antes de interpretarse; uno a medio escribir no tapa a los demás.
+ *   · `filtro` y `tope`: como en `leerRenglones`.
+ *   · `hasta(registros, hora)`: se llama después de cada renglón interpretado, con los registros juntados hasta ahí (del
+ *     más nuevo al más viejo) y la hora del renglón (`timestamp`, en ms; NaN si no la trae). `true` corta la lectura.
+ * Devuelve los registros en el orden del archivo.
+ */
+function leerDesdeElFinal(file, { filtro = null, tope = false, hasta = () => false } = {}) {
+  const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NONBLOCK || 0));
+  try {
+    const st = fs.fstatSync(fd);
+    if (!st.isFile()) throw Object.assign(new Error('no es un archivo común'), { code: 'ENOTREG' });
+    if (tope && st.size > LIMITE.bytes) throw Object.assign(new Error(`pasa de ${tamanoDelTope()}`), { code: 'ETOPE' });
+    const busca = filtro == null ? null : Buffer.from(String(filtro), 'utf8');
+    const juntados = [];
+    // true corta: el renglón ya se juntó
+    const interpretar = (b) => {
+      if (!b.length || (busca && !b.includes(busca))) return false;
+      const l = b.toString('utf8');
+      if (!l.trim()) return false;
+      let r;
+      try { r = JSON.parse(l); } catch (_e) { return false; }
+      juntados.push(r);
+      return Boolean(hasta(juntados, r && typeof r.timestamp === 'string' ? Date.parse(r.timestamp) : NaN));
+    };
+    const buf = Buffer.alloc(Math.max(1, LIMITE.trozo));
+    // el principio de un renglón que empieza antes de lo leído: termina en un salto de línea, o en el final del archivo
+    let cola = Buffer.alloc(0);
+    for (let pos = st.size; pos > 0;) {
+      const n = Math.min(buf.length, pos);
+      pos -= n;
+      const leidos = fs.readSync(fd, buf, 0, n, pos);
+      if (leidos <= 0) break;
+      const junto = Buffer.concat([buf.subarray(0, leidos), cola]);
+      let fin = junto.length;
+      for (let i = fin > 0 ? junto.lastIndexOf(10, fin - 1) : -1; i >= 0; i = fin > 0 ? junto.lastIndexOf(10, fin - 1) : -1) {
+        if (interpretar(junto.subarray(i + 1, fin))) return juntados.reverse();
+        fin = i;
+      }
+      cola = junto.subarray(0, fin);
+    }
+    interpretar(cola);
+    return juntados.reverse();
+  } finally { fs.closeSync(fd); }
+}
+
+module.exports = { LIMITE, tamanoDelTope, leerRenglones, leerDesdeElFinal };

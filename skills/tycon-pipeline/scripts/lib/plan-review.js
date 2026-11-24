@@ -511,7 +511,8 @@ function preparar({ lanza, destino, estado, designada, config, home = require('o
 }
 
 /**
- * El comando de workflow-lite.js que corre el pase en modo plan: `--args` lleva el texto JSON, no la ruta. Con la lista
+ * El comando de workflow-lite.js que corre el pase en modo plan: los args van por la ruta de su archivo (`--args-file`),
+ * no pegados en la línea de comando, que en Windows tiene tope y no los aguanta. Con la lista
  * de corredores de la organización (`order`), la nombra; el comentario dice con qué revisor corre.
  */
 function comandoLite(argsFile, out, { order, integration } = {}) {
@@ -528,7 +529,7 @@ function comandoLite(argsFile, out, { order, integration } = {}) {
   }
   const nombres = Array.isArray(lista) && lista.length ? lista : null;
   const labels = nombres ? nombres.map((n) => (integ && integ.runners && integ.runners[n] && integ.runners[n].label) || n) : [];
-  return `node ${q(path.join(sc, 'workflow-lite.js'))} ${q(path.join(sc, 'adversarial-verify.workflow.js'))} --args "$(cat ${q(argsFile)})" --out ${q(out)}` +
+  return `node ${q(path.join(sc, 'workflow-lite.js'))} ${q(path.join(sc, 'adversarial-verify.workflow.js'))} --args-file ${q(argsFile)} --out ${q(out)}` +
     (nombres ? ` --runners ${nombres.join(',')}  # revisor: ${labels.join(', luego ')}` : '');
 }
 

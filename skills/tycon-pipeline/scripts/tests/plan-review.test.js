@@ -382,7 +382,7 @@ test('PlanReview_ResultadoYComandoDelPase (pase adversarial) @story-1.29 @ac-3 @
   assert.strictEqual(PR().veredictoDe({ ...APROBADO, modo: 'codigo' }), 'sin-veredicto');
   assert.strictEqual(PR().veredictoDe({ ...APROBADO, veredicto: 'rechazado' }), 'sin-veredicto');
   assert.strictEqual(PR().veredictoDe({ ...APROBADO, veredicto: 'aprobado' }), 'aprobado');
-  // el comando de workflow-lite.js que imprime la revisión le pasa los args como texto JSON, no una ruta
+  // el comando de workflow-lite.js que imprime la revisión le pasa la ruta del archivo de args, no su texto
   const lab = laboratorio(t);
   const env = { ...lab.env, CLAUDE_CODE_SESSION_ID: COORD };
   const p = PR().preparar({ lanza: COORD, destino: DESTINO, estado: lab.estado, home: lab.home, delegacion: delegacionReal() });
@@ -390,7 +390,8 @@ test('PlanReview_ResultadoYComandoDelPase (pase adversarial) @story-1.29 @ac-3 @
   assert.ok(p.argsFile && fs.existsSync(p.argsFile), 'los args quedan en un archivo');
   assert.deepStrictEqual(JSON.parse(fs.readFileSync(p.argsFile, 'utf8')), p.args);
   const lite = PR().comandoLite(p.argsFile, '/tmp/resultado.json');
-  assert.match(lite, /--args "\$\(cat '/);
+  assert.ok(lite.includes(`--args-file '${p.argsFile}'`), lite);
+  assert.doesNotMatch(lite, /\$\(cat/);
   assert.match(lite, /--out '\/tmp\/resultado\.json'/);
   assert.ok(env);
 });
@@ -1109,7 +1110,7 @@ test('AutoAprobacion_NadieLaOfrece (T23) @story-1.29 @ac-22', (t) => {
   assert.match(falta.stderr, /falta la aprobación del plan/);
   assert.doesNotMatch(falta.stderr, /--auto-approved/);
   for (const f of ['skills/tycon-pipeline/scripts/lib/story-gate.js', 'skills/tycon-pipeline/steps/step-03-plan.md', 'skills/tycon-pipeline/steps/step-04-approve-plan.md',
-    'skills/tycon-pipeline/SKILL.md', 'skills/tycon-pipeline/scripts/pipeline.js', 'guides/firmas-del-arnes.md', 'scripts/site/texts.js']) {
+    'skills/tycon-pipeline/SKILL.md', ...require(path.join(__dirname, 'lib', 'pipeline-source.js')).files().map((f) => path.relative(RAIZ, f)), 'guides/firmas-del-arnes.md', 'scripts/site/texts.js']) {
     assert.doesNotMatch(fs.readFileSync(path.join(RAIZ, f), 'utf8'), /--auto-approved/, f);
   }
 });
@@ -1750,7 +1751,7 @@ test('PlanReview_DelicadaEsperaYLosDocsDicenLaRegla (T24) @story-8.267 @ac-19', 
   assert.match(leer('skills/tycon-pipeline/SKILL.md'), /un plan de rutina se aprueba con el aprobado de su revisión, con o sin\s+coordinadora; uno delicado, siempre el dev/);
   assert.doesNotMatch(leer('skills/tycon-pipeline/SKILL.md'), /ningún plan se aprueba solo/);
   // la regla vieja no queda en ningún texto que lee una persona o la sesión
-  for (const f of ['skills/tycon-pipeline/scripts/lib/story-gate.js', 'skills/tycon-pipeline/scripts/pipeline.js', 'scripts/site/texts.js']) {
+  for (const f of ['skills/tycon-pipeline/scripts/lib/story-gate.js', ...require(path.join(__dirname, 'lib', 'pipeline-source.js')).files().map((f) => path.relative(RAIZ, f)), 'scripts/site/texts.js']) {
     assert.doesNotMatch(leer(f), /ningún plan se aprueba solo|no plan approves itself/i, `${f} dice la regla vieja`);
   }
   const s4 = leer('skills/tycon-pipeline/steps/step-04-approve-plan.md');

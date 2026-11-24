@@ -2,7 +2,7 @@
 /**
  * compare-previous-guides.test.js — los pasos y el formato dicen cómo se compara con main (@story-8.167).
  *
- * El freno de «Preparar el commit» por la comparación con main sólo sirve si quien implementa sabe cuándo comparar,
+ * El freno de «Preparar el pull request» por la comparación con main sólo sirve si quien implementa sabe cuándo comparar,
  * qué no queda aislado, cómo se resuelve una diferencia y cómo se pide la exención. Si los textos no lo dicen, el agente
  * choca con el freno sin saber la salida, o escribe la exención en el frontmatter, que no exime.
  *

@@ -3,8 +3,8 @@
 // close-as-debt.test.js — una historia que terminó por su salida prevista («si no se puede, queda como deuda») se cierra
 // con `marker.js close-as-debt --reason <texto> --debt <DEF-id>`: el marcador recibe `cierre = deuda` y la ejecución
 // sigue hasta el commit. La deuda tiene que estar anotada en la historia o en `tasks/todo.md`. `expect-red` registra un
-// control en rojo como esperado, sólo en una ejecución en deuda. La frase de la persona la pide el freno de seguridad
-// (ESC-C4, en safety-escape.test.js): acá se corren los comandos directo.
+// control en rojo como esperado, sólo en una ejecución en deuda. Cerrar como deuda lo firma una persona en la ventana de
+// permiso (o la coordinadora por delegación): acá la ventana se da por pasada (tests/lib/window-passed.js).
 //
 // Corre los comandos reales con un HOME temporal y el id de sesión fijado en el proceso hijo.
 //
@@ -53,21 +53,21 @@ function entorno({ todo = null, enHistoria = false } = {}) {
     ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0', TYCON_HOME: '',
     TYCON_TIME_TRACKING: 'none', TYCON_MUTATION_CHECK: 'off', TYCON_WAIT_NOTICE: '',
   });
+  // las sesiones con la firma dada en la ventana, con su vía (`ventana`, `click` o `mensaje`)
+  const firmadas = new Map();
+  const { conVentana } = require(path.join(RAIZ, 'scripts', 'tests', 'lib', 'window-passed.js'));
   const correr = (script, args, sid) => spawnSync(process.execPath, [path.join(SCRIPTS, script), ...args], {
-    encoding: 'utf8', env: env(sid), input: '', cwd: repo,
+    encoding: 'utf8', env: firmadas.has(sid) ? conVentana(env(sid), firmadas.get(sid) === 'ventana' ? {} : { via: firmadas.get(sid) }) : env(sid), input: '', cwd: repo,
   });
   const dir = () => [path.join(home, '.tycon', 'state'), path.join(home, '.claude', '.tycon-pipeline')].find((d) => fs.existsSync(path.join(d, 'active')));
   const activo = (sid) => path.join(dir(), 'active', `${sid}.json`);
   const leer = (sid) => JSON.parse(fs.readFileSync(activo(sid), 'utf8'));
   const escribir = (sid, m) => fs.writeFileSync(activo(sid), JSON.stringify(m));
-  // lo que deja el freno de seguridad cuando la persona dijo «autorizo cerrar como deuda» (ESC-C4); el arranque, antes
-  const arrancar = (sid, { autorizada = true, via = 'persona' } = {}) => {
+  // la persona aprueba en la ventana lo que esa sesión pida después del arranque; el arranque, antes
+  const arrancar = (sid, { autorizada = true, via = 'ventana' } = {}) => {
     const r = correr('pipeline.js', ['start', '--story', story, '--repo', repo, '--brief'], sid);
     assert.strictEqual(r.status, 0, r.stderr + r.stdout);
-    if (autorizada) {
-      require(path.join(RAIZ, 'scripts', 'lib', 'guard-record.js')).anotar({ freno: 'safety-guard', regla: 'ESC-C4', veredicto: 'escape', cmd: 'x',
-        home, via, sesion: sid, escape: 'cerrar-como-deuda' });
-    }
+    if (autorizada) firmadas.set(sid, via);
   };
   return { home, repo, story, correr, leer, escribir, activo, arrancar, dir };
 }
@@ -120,21 +120,21 @@ test('T21 CloseAsDebt_EscribeCierreYSigue @story-8.93 @ac-10 — el cierre es de
   assert.deepStrictEqual(m.stepsPending, antes.stepsPending, 'los pasos que faltan siguen pendientes');
   assert.ok(fs.existsSync(E.activo('s-t21')), 'no archivó: la ejecución sigue hasta el commit');
   assert.match(r.stdout, /sigue hasta el commit/);
-  assert.strictEqual(m.cierre.via, 'persona');
-  // sin la constancia del freno (la llamada no pasó por él): no cierra
+  assert.strictEqual(m.cierre.via, 'ventana');
+  // sin la firma en la ventana: no cierra
   const sin = entorno({ todo: '- [ ] [DEF-9.9-angular] subir angular\n' });
   sin.arrancar('s-t21b', { autorizada: false });
   const n = sin.correr('marker.js', CERRAR, 's-t21b');
-  assert.strictEqual(n.status, 2, n.stderr);
-  assert.match(n.stderr, /ventana de permiso/);
+  assert.strictEqual(n.status, 1, n.stderr);
+  assert.match(n.stderr, /no pasó por la ventana/);
   assert.doesNotMatch(n.stderr, /autorizo/, 'el aviso no enseña la frase');
   assert.strictEqual(sin.leer('s-t21b').cierre, undefined);
-  // aprobada en la ventana de permiso: cierra, y anota esa vía
+  // aprobada con un click en el cuadro de opciones: cierra, y anota esa vía
   const ven = entorno({ todo: '- [ ] [DEF-9.9-angular] subir angular\n' });
-  ven.arrancar('s-t21c', { via: 'ventana' });
+  ven.arrancar('s-t21c', { via: 'click' });
   const v = ven.correr('marker.js', CERRAR, 's-t21c');
   assert.strictEqual(v.status, 0, v.stderr);
-  assert.strictEqual(ven.leer('s-t21c').cierre.via, 'ventana');
+  assert.strictEqual(ven.leer('s-t21c').cierre.via, 'click');
 });
 
 test('T22 ExpectRed_SoloEnDeuda @story-8.93 @ac-11 — un rojo esperado se registra sólo en una ejecución en deuda', () => {
@@ -155,6 +155,28 @@ test('T22 ExpectRed_SoloEnDeuda @story-8.93 @ac-11 — un rojo esperado se regis
   assert.strictEqual(E.correr('marker.js', ['expect-red', 'tests'], 's-t22').status, 2);
   E.escribir('s-t22', { ...E.leer('s-t22'), checks: { ...E.leer('s-t22').checks, build: 'green' } });
   assert.strictEqual(E.correr('marker.js', ['expect-red', 'build', '--tests', 'T1'], 's-t22').status, 2);
+});
+
+// 🔴 Falla con: el rojo esperado de un control escrito sin firma: el freno ya no lo pide (8.323, diseño A) y el guion no
+// miraba nada, así que sin esto se registraba solo.
+test('8.323-ExpectRedDeUnControl_LoFirmaComoElRojoEsperado — sin la firma no se registra; con ella, sí, y anota la vía', () => {
+  const deuda = { estado: 'deuda', motivo: 'sin versión compatible', deuda: 'DEF-9.9-angular', via: 'ventana', at: '2026-10-22T20:00:00Z' };
+  const sin = entorno({ todo: '- [ ] [DEF-9.9-angular] subir angular\n' });
+  sin.arrancar('s-er1', { autorizada: false });
+  sin.escribir('s-er1', { ...sin.leer('s-er1'), cierre: deuda, checks: { tests: 'red:exit=1' }, checksProvenance: { tests: 'test-gate' } });
+  const n = sin.correr('marker.js', ['expect-red', 'tests', '--tests', 'T2,T5'], 's-er1');
+  assert.strictEqual(n.status, 1, n.stderr);
+  assert.match(n.stderr, /no pasó por la ventana/);
+  assert.strictEqual(sin.leer('s-er1').checks.tests, 'red:exit=1', 'sin la firma no cambia');
+  assert.strictEqual(sin.leer('s-er1').expectedRed, undefined);
+  const con = entorno({ todo: '- [ ] [DEF-9.9-angular] subir angular\n' });
+  con.arrancar('s-er2', { via: 'click' });
+  con.escribir('s-er2', { ...con.leer('s-er2'), cierre: deuda, checks: { tests: 'red:exit=1' }, checksProvenance: { tests: 'test-gate' } });
+  const s = con.correr('marker.js', ['expect-red', 'tests', '--tests', 'T2,T5'], 's-er2');
+  assert.strictEqual(s.status, 0, s.stderr);
+  assert.strictEqual(con.leer('s-er2').checks.tests, 'rojo-esperado:exit=1');
+  const log = fs.readFileSync(path.join(con.dir(), 'gates.log'), 'utf8').trim().split('\n').map((l) => { try { return JSON.parse(l); } catch (_) { return {}; } });
+  assert.ok(log.some((l) => l.name === 'expect-red' && l.check === 'tests' && l.via === 'click'), 'el registro anota la vía');
 });
 
 test('T23 RojoEsperado_LoAceptanSoloEnDeuda @story-8.93 @ac-11 — el cierre del turno y prepare-commit lo aceptan sólo con deuda; ESC-C3 sigue', () => {
@@ -212,7 +234,7 @@ test('T23b RojoComun_FrenaPrepareCommitSinDeuda — un control en rojo frena el 
   assert.match(r.stderr, /tests: red:exit=1 — aceptado por la deuda DEF-9\.9-angular/);
 });
 
-test('T24 Deuda_LlegaAlCommit @story-8.93 @ac-12 — la línea Deuda: sale al preparar el commit y el volcado dice deuda', () => {
+test('T24 Deuda_LlegaAlCommit @story-8.93 @ac-12 — la línea Deuda: sale al preparar el pull request y el volcado dice deuda', () => {
   const E = entorno({ todo: '- [ ] [DEF-9.9-angular] subir angular\n' });
   E.arrancar('s-t24');
   assert.strictEqual(E.correr('marker.js', CERRAR, 's-t24').status, 0);
@@ -222,7 +244,7 @@ test('T24 Deuda_LlegaAlCommit @story-8.93 @ac-12 — la línea Deuda: sale al pr
   E.escribir('s-t24', { ...m, stepsCompleted: hechos, stepsPending: ['prepare-commit'], checks: { tests: 'green', advisors: 'green' } });
   const r = E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], 's-t24');
   assert.match(r.stderr, /Deuda: DEF-9\.9-angular — la librería no tiene versión compatible/);
-  assert.strictEqual(E.leer('s-t24').cierre.estado, 'deuda', 'preparar el commit no toca el cierre');
+  assert.strictEqual(E.leer('s-t24').cierre.estado, 'deuda', 'preparar el pull request no toca el cierre');
   // `clear` conserva el cierre escrito: el volcado dice deuda, nunca completa
   const c = E.correr('marker.js', ['clear', '--discard'], 's-t24');
   assert.strictEqual(c.status, 0, c.stderr);
@@ -305,7 +327,7 @@ const HASTA_EL_ULTIMO = ['start', 'validate-story', 'plan', 'approve-plan', 'imp
 const REVISORES = '2026-01-01T10:00:00.000Z';
 const DESPUES = (min) => `2026-01-01T10:${String(min).padStart(2, '0')}:00.000Z`;
 
-/** Una ejecución lista para «Preparar el commit», con los revisores cerrados a las 10:00 y los cambios que se le pasan. */
+/** Una ejecución lista para «Preparar el pull request», con los revisores cerrados a las 10:00 y los cambios que se le pasan. */
 function listaParaElUltimo(E, sid, { cambios = [], timings = {}, extra = {} } = {}) {
   E.arrancar(sid, { autorizada: false });
   E.escribir(sid, {

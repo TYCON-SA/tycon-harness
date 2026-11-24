@@ -23,7 +23,7 @@
  * [SEC-C3]» también cuenta (el agente lo anota con su motivo). Un reporte sin el renglón de veredicto no se lee; un
  * veredicto con otra forma («**Veredicto**: GREEN», «## Veredicto») tampoco.
  *
- * `cross` es el cruce que corren `write-findings` y los cierres de «Hallazgos» y «Preparar el commit». Una corrida sin
+ * `cross` es el cruce que corren `write-findings` y los cierres de «Hallazgos» y «Preparar el pull request». Una corrida sin
  * ningún renglón (empezó antes de que existiera el registro) lo dice y sigue como antes.
  */
 
@@ -50,6 +50,28 @@ const hashOf = (text) => crypto.createHash('sha256').update(String(text || '')).
 
 // la parte del renglón de veredicto con lo que el revisor confirma resuelto de su vuelta anterior: «· resueltos (SPEC-C3)»
 const RE_RESOLVED = /·\s*resueltos\s*\(([^)]*)\)/i;
+const RE_RESOLVED_OPEN = /·\s*resueltos\s*\(/i;
+const RE_CODE_EXACT = new RegExp(`^${CODE}$`);
+
+/** ¿El texto son sólo códigos críticos separados por comas o espacios? Palabra por palabra: sin vueltas atrás. */
+function onlyCodes(text, { empty }) {
+  const words = String(text).split(/[\s,]+/).filter(Boolean);
+  return words.length ? words.every((w) => RE_CODE_EXACT.test(w)) : empty;
+}
+
+/** ¿El renglón tiene una lista «resueltos (» abierta y sin nada más que códigos hasta acá? */
+function resolvedListOpen(line) {
+  const m = RE_RESOLVED_OPEN.exec(line);
+  if (!m) return false;
+  const rest = line.slice(m.index + m[0].length);
+  return !rest.includes(')') && onlyCodes(rest, { empty: true });
+}
+
+/** ¿El renglón sigue la lista de resueltos? Al menos un código, y sólo códigos hasta su paréntesis o el fin. */
+function continuesList(line) {
+  const close = line.indexOf(')');
+  return onlyCodes(close >= 0 ? line.slice(0, close) : line, { empty: false });
+}
 
 /** Cada código de un texto con cuántas veces aparece. */
 function codesIn(text) {
@@ -70,6 +92,21 @@ function verdictLines(text) {
     const start = i;
     if (/hallazgos\s*\(/i.test(line) && !/\)/.test(line.slice(line.search(/hallazgos\s*\(/i)))) {
       while (i + 1 < lines.length && !/\)/.test(line.slice(line.search(/hallazgos\s*\(/i)))) line += ` ${lines[++i]}`;
+    }
+    // «resueltos (…)» partido sigue en los renglones de abajo que son la lista misma (códigos y comas hasta el paréntesis),
+    // si lo que ya trae es sólo códigos; sin cierre, el renglón queda solo: una lista sin cerrar no se traga lo que sigue,
+    // ni el «)» de la prosa (o el de un paréntesis dentro de la lista) la cierra
+    if (resolvedListOpen(line)) {
+      // cada renglón que sigue ya es sólo códigos hasta su «)»: la lista se cierra con el primero que lo trae, y basta
+      // mirar ése (releer todo lo juntado en cada vuelta tarda segundos con miles de renglones)
+      let junto = line;
+      let k = i;
+      let abierta = true;
+      while (abierta && k + 1 < lines.length && continuesList(lines[k + 1])) {
+        junto += ` ${lines[++k]}`;
+        abierta = !lines[k].includes(')');
+      }
+      if (!abierta) { line = junto; i = k; }
     }
     out.push({ i: start, j: i, line });
   }

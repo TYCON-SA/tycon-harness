@@ -29,7 +29,7 @@ El workflow se lanza **al cierre de «Implementar»** (ver `step-06-run-tests.md
   lanzamiento tiene menos de 45 min y esa sesión sigue viva (su conversación cambió hace menos de 10
   min), **ESPERAR** su resultado (`esperar-pase-ajeno`: lo anota esa sesión; acá se cierra el turno
   como en el join pasivo); si no, **RELANZAR** (`relanzar-pase-ajeno`). Si ya tiene resultado, está
-  atendido y no se relanza (relanzar un pase cerrado bloquea «Preparar el commit»). Para relanzar, ANUNCIAR en 1
+  atendido y no se relanza (relanzar un pase cerrado bloquea «Preparar el pull request»). Para relanzar, ANUNCIAR en 1
   línea *"el pase adversarial de la sesión <id> quedó sin resultado — lo relanzo (~20-40 min): <why>"*
   y, como en un retome NO están en contexto ni el gate ni las decisiones: **(a)** re-evaluar el gate
   (§Cuándo corre) para obtener el `model` fresco, **(b)** recuperar `decisions` del
@@ -59,7 +59,7 @@ El workflow se lanza **al cierre de «Implementar»** (ver `step-06-run-tests.md
 La bandera que lee `pipeline.js next` no se escribe a mano, y `complete-step prepare-commit` **frena** si el pase
 se lanzó y su resultado no está (freno `adversarial-result-gate`; `DOD_BYPASS` no lo abre). Medido antes
 de cablearlo: 4 de 9 corridas que lanzaron el pase lo cerraron con la bandera y sin
-anotar qué encontró, y 3 de esas 4 pasaron «Preparar el commit» igual. Anotar el resultado sin haber procesado la
+anotar qué encontró, y 3 de esas 4 pasaron «Preparar el pull request» igual. Anotar el resultado sin haber procesado la
 notificación sigue siendo mentira: el número de confirmados es el real.
 
 > **Por qué existe**: un review adversarial multi-agente *después* del pipeline caza bugs reales que los
@@ -169,8 +169,9 @@ Completion Notes / HITL de «Aprobar el plan» / Change Log — R1/R2/D3/etc.) p
 invocar la tool `Workflow`:
 
 > **Bajo Codex** (la sesión no tiene la tool `Workflow`): correr EL MISMO
-> script vía el runner propio, EN SEGUNDO PLANO:
-> `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/workflow-lite.js <mismo scriptPath> --args '<mismo JSON de args>' --out <RUN_DIR>/step-05b-adversarial.json`
+> script vía el runner propio, EN SEGUNDO PLANO. Los args van en un archivo, no en la línea de comando (en Windows no
+> entran): escribir el mismo JSON de args en `<RUN_DIR>/adversarial-args.json` y correr
+> `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/workflow-lite.js <mismo scriptPath> --args-file <RUN_DIR>/adversarial-args.json --out <RUN_DIR>/step-05b-adversarial.json`
 > Todo lo demás del step es idéntico (marker, join, decisiones post-output). Paridad verificada
 > con bug plantado confirmado por ambas vías. Sin resume cross-sesión:
 > un workflow huérfano bajo codex cae SIEMPRE en la rama "relanzar" de este step.
@@ -316,8 +317,9 @@ lee las respuestas, y el archivo de resultado sale del guion, no se escribe a ma
 ```bash
 W=~/.claude/agent-skills/skills/tycon-pipeline/scripts
 node $W/marker.js mark-adversarial-launched claude-<sello> 5b --relaunch   # --relaunch sólo si ya había un lanzamiento
+# los args, con model: "sonnet", van escritos en <RUN_DIR>/adversarial-args.json (en la línea de comando no entran en Windows)
 # vuelta 1: deja seis pedidos (uno por cazador) y sale 3
-node $W/workflow-lite.js $W/adversarial-verify.workflow.js --args '<mismo JSON de args, model: "sonnet">' \
+node $W/workflow-lite.js $W/adversarial-verify.workflow.js --args-file <RUN_DIR>/adversarial-args.json \
   --out <RUN_DIR>/step-05b-adversarial.json --agents-dir <RUN_DIR>/adversarial-agentes
 ```
 

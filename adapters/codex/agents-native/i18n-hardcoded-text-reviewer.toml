@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/i18n-hardcoded-text-reviewer.md
-# source_sha256: 342aa8bf5cb8261982fc10e0435fb7e59cb1df7f3c4b8e57072c1da00f4440ee
+# source_sha256: 0c47098487ba77ee2c69c531a04b2337e59bfdebacec9de6417d37b0e91b7397
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/i18n-hardcoded-text-reviewer.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "i18n-hardcoded-text-reviewer").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
@@ -133,6 +133,15 @@ cada hallazgo una vez por hallazgo (dos del mismo tipo, dos veces); también sin
 ```text
 Veredicto: limpio
 Veredicto: hallazgos (I18N-C1, I18N-C1, I18N-W2) · bloquea: sí
+```
+
+Si el prompt trae lo que reportaste en la vuelta anterior, sumá al renglón los críticos de esa vuelta que confirmás
+arreglados, una vez por hallazgo, aunque hoy reportes otro con el mismo código. Sin esa parte el arnés no da el arreglo
+por comprobado, y cuesta otra vuelta o la exención del dueño:
+
+```text
+Veredicto: hallazgos (I18N-C1) · bloquea: sí · resueltos (I18N-C1, I18N-C2)
+Veredicto: limpio · resueltos (I18N-C1)
 ```
 
 Lo lee el arnés: anota cada regla crítica con cuántas veces la reportaste, y no deja cerrar la historia si los hallazgos

@@ -84,7 +84,7 @@ El comando frena en código lo siguiente (no hace falta repetir la verificación
 - **Las aprobaciones en el repo de la story** (`approvals-story-repo`, se evalúa SIEMPRE y no se abre con `DOD_BYPASS`):
   vuelve a copiar el registro de aprobaciones al repo de la story y lo revisa con la regla del portón de CI (el plan, y
   la maqueta si se aprobó); lo que falte frena nombrando la corrida, y se anota con
-  `marker.js complete-step approve-plan --approved "<cita>" --out-of-order` (o `advisors_exempt` si se cerró sin pipeline).
+  `marker.js complete-step approve-plan --approved "<cita>" --out-of-order` (o la exención `advisors_exempt`, con la firma de la persona sobre la historia, si se cerró sin pipeline).
 - **Eximiciones de críticos, vueltas de revisores y los demás controles de cierre** que el comando nombra al frenar
   (waivers, tope de vueltas, maqueta, comprobaciones manuales): se resuelven como dice su mensaje.
 
@@ -245,6 +245,9 @@ firma de control del dueño, que no cambia.
    para aprobar», «en rojo» con la etapa que falló, o «no medido» con el motivo. No le digas a la persona que el pedido
    está listo, ni pidas su aprobación, antes del aviso de «listos». Con un rojo, se arregla y se vuelve a empujar.
    El resultado también queda en `pr-build-wait/<sesión>-resultado.json` de la carpeta del estado.
+8. Después del cierre, **la sesión termina**: `marker.js clear` lo dice en su último renglón. No arranques otra historia en
+   esta sesión; la próxima va en una sesión nueva (o tras `/clear`). Releer la conversación entera en cada turno se llevó
+   más de la mitad del costo de una ejecución medida, y el estado de la siguiente vive en disco.
 
 ## Decisiones
 
@@ -312,7 +315,7 @@ adicional (smoke check DoD Gate 2, debugging, ajustes a la spec, integration tes
 fix-up). Si el registro ya se cerró, ese trabajo no se trackea y el dev pierde horas
 facturables.
 
-**Patrón observado (2026-05-12):** tras preparar el commit, el agente cerró el registro
+**Patrón observado (2026-05-12):** tras preparar el pull request, el agente cerró el registro
 "por prolijidad". Después el usuario pidió 27min adicionales de DoD smoke + commits +
 integration tests, todos sin tracking. Tuvo que recuperarse manualmente con un entry
 retroactivo. **No vuelva a pasar.**

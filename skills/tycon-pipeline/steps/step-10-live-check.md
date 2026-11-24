@@ -1,6 +1,6 @@
 # Probar en vivo
 
-**Objetivo**: bloquear el avance a «Preparar el commit» hasta que exista evidencia
+**Objetivo**: bloquear el avance a «Preparar el pull request» hasta que exista evidencia
 de Definition of Done runtime — smoke check ejecutado, E2E specs corridos,
 artefacto persistido en `.advisors/dod-runtime/<story-id>-<timestamp>.md`.
 
@@ -11,7 +11,7 @@ artefacto persistido en `.advisors/dod-runtime/<story-id>-<timestamp>.md`.
 protocolo de cierre ACCOV-C7..C10 (cero checklist-manual al user, self-audit
 C8 —opcional desde 2026-09-16—, meta-audit C9 —retirada el 2026-09-16—,
 convergencia C10) vive fuera del advisor
-y SOLO aplica acá y en «Preparar el commit»: si no se lee en este momento, es invisible.
+y SOLO aplica acá y en «Preparar el pull request»: si no se lee en este momento, es invisible.
 
 
 ## 📍 Dónde va la evidencia — se RESUELVE, no se adivina (2026-09-05)
@@ -35,7 +35,7 @@ divergen. Un solo original, en el repo de la story. El registro de revisores (`r
 y `findings.json` de la corrida sí se PROYECTAN solos al repo de la story (los escribe el arnés:
 `write-findings` y el hook `on-advisor-run.js`), porque el portón los exige ahí para `done`.
 
-🔴 Y cuando la story vive en OTRO repo, esa evidencia hay que COMMITEARLA AHÍ: «Preparar el commit» stagea en
+🔴 Y cuando la story vive en OTRO repo, esa evidencia hay que COMMITEARLA AHÍ: «Preparar el pull request» stagea en
 `repoPath` (el código); en el repo de la story quedan untracked `.advisors/dod-runtime/<id>-*` y
 `.advisors/pipeline-runs/<corrida>/{review-roster,findings}.json`, y el portón de CI sólo ve lo que
 viaja en el PR de ese repo. Van en el mismo commit que cambia el `status:` de la story
@@ -135,7 +135,7 @@ skill (ver `SKILL.md` sección "Configuración de diseño").
 ## Trigger del step
 
 «Probar en vivo» corre **siempre que «Hallazgos» (HITL approve) avanza con `approved: true`**
-y antes de «Preparar el commit». No es opcional: el marker.js bloquea
+y antes de «Preparar el pull request». No es opcional: el marker.js bloquea
 `complete-step prepare-commit` si `dodRuntimeChecked !== true`.
 
 ## Skip-conditions (documentadas — usar SOLO si verificablemente aplica)
@@ -163,7 +163,7 @@ Si ninguna condición se cumple → **el step DEBE correr**.
 🔴 **El salteo deja constancia** (2026-10-03): `complete-step prepare-commit` pide `dodRuntimeChecked` siempre, también cuando
 el step no corre. Por eso `pipeline.js next` devuelve «Probar en vivo» aunque la story esté exenta, con el comando en su nota:
 `marker.js mark-dod-runtime-checked '{"verdict":"PASS","evidencePath":"exenta: <la razón del frontmatter>"}'`. Antes
-`next` lo daba por salteado y mandaba a preparar el commit, y el freno aparecía recién ahí.
+`next` lo daba por salteado y mandaba a preparar el pull request, y el freno aparecía recién ahí.
 
 ## 🟢 Pre-flight hook check (SPEED-2, recomendado ANTES del Edit del frontmatter)
 
@@ -190,7 +190,7 @@ Pre-condiciones evaluadas (MVP):
 
 Skip-cases: target ya == current / target NO es review-done / story exenta (la exención la decidió la persona) / story sin runtime tests → `ready_to_edit: true` con razón.
 
-Por qué: sin preflight, cada precondition que falta cuesta un ciclo de hook-block entre «Probar en vivo» y «Preparar el commit». Con preflight: una llamada upfront identifica TODAS las preconditions + cómo satisfacerlas.
+Por qué: sin preflight, cada precondition que falta cuesta un ciclo de hook-block entre «Probar en vivo» y «Preparar el pull request». Con preflight: una llamada upfront identifica TODAS las preconditions + cómo satisfacerlas.
 
 ## 🟢 Macro determinístico (SPEED-3, recomendado para stories backend)
 
@@ -477,7 +477,7 @@ El gate del proyecto (el script que el repo declaró en `e2e.gate`) hace, por co
 
 **El orquestador DEBE chequear el exit code del script**:
 - exit 0 → continuar (gate verde).
-- exit != 0 → **STOP. NO avanzar a «Preparar el commit». NO escribir `status: done`.** El remedio
+- exit != 0 → **STOP. NO avanzar a «Preparar el pull request». NO escribir `status: done`.** El remedio
   lo dice el código, y confundirlos hace perder el run arreglando lo que no está roto:
   **1** → loop a «Implementar» (fix los tests rojos) · **3** → levantar el stack y re-correr ·
   **2** → el filtro no matcheó: corregir el nombre del spec · **4** → los specs se
@@ -532,7 +532,7 @@ gate de specs, que no existen todavía):
 - **Curl NO cuenta** para ACs de UI (ejerce el endpoint, no el render). El smoke driven
   es *adicional* al DODRT-C1 curl de los endpoints nuevos (si los hay).
 
-**Sin ese smoke driven → «Probar en vivo» = INCOMPLETE → bloquea «Preparar el commit»**, AUNQUE el `status` quede
+**Sin ese smoke driven → «Probar en vivo» = INCOMPLETE → bloquea «Preparar el pull request»**, AUNQUE el `status` quede
 `in-progress`. El "commit WIP de una UI cableada" NO es un escape: si la feature está
 montada en la app (feature-wiring positivo), su render se verifica driven en este run.
 
@@ -555,7 +555,7 @@ de TODOS los casos como si se hubieran verificado, y racionalizar el gate Playwr
 `files_to_modify` que son un comando (`require.main === module` o cabecera `#!`), existen en `main` y la historia
 cambió. Las pruebas no son candidatos (lo de una carpeta `tests/` o terminado en `.test.js`). Por candidato dice su repo
 (sale de la corrida) y los subcomandos o funciones que el cambio toca. Sin candidatos, no se compara nada. Con
-candidatos, cada uno necesita un humo comparado que lo cubra, o una exención firmada; si no, «Preparar el commit» frena.
+candidatos, cada uno necesita un humo comparado que lo cubra, o una exención firmada; si no, «Preparar el pull request» frena.
 Un archivo que no se pudo mirar (su versión de `main`, su diff o el archivo de ahora no se leen) sale «no medido» con
 su motivo: no frena, y no es «sin candidatos».
 
@@ -578,7 +578,7 @@ correrlo.
   el archivo. Límite: una función que nadie llama por su nombre (o que se llama de forma dinámica) cuenta como fuera de
   todo subcomando. Un guion de laboratorio que llama a los comandos por dentro los declara con
   `--covers <archivo>[:<subcomando>]` (sólo con `{raiz}` en el comando y si están en la lista); quedan «cubierto por
-  declaración», y «Preparar el commit» lo avisa como a una exención.
+  declaración», y «Preparar el pull request» lo avisa como a una exención.
 - **Topes**: hasta 10 humos comparados por corrida (`TYCON_COMPARE_MAX`; cuentan los que compararon contra el código
   de ahora: un «no comparado» o un humo de un código que ya cambió no gastan el tope), 60 segundos por cada una de las dos corridas
   (`TYCON_COMPARE_TIMEOUT_MS`; después `SIGTERM` y a los 5 segundos `SIGKILL`) y 5 minutos en total
@@ -681,7 +681,7 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js \
   mark-dod-runtime-checked '{"evidencePath": "<abs path>", "verdict": "PASS"}'
 ```
 
-Esto setea `marker.dodRuntimeChecked = true` y registra la evidencia. «Preparar el commit»
+Esto setea `marker.dodRuntimeChecked = true` y registra la evidencia. «Preparar el pull request»
 chequea este flag antes de proceder. El `evidencePath` es la ruta de una evidencia que ya escribió un script: el
 `<storyId>-e2e-gate-*.md` del gate E2E o el `<storyId>-smoke-ledger.jsonl` de `smoke-run.sh` (con una story exenta,
 `"exenta: <la razón del frontmatter>"`). No hace falta escribir un archivo nuevo para dárselo.
@@ -689,7 +689,7 @@ chequea este flag antes de proceder. El `evidencePath` es la ruta de una evidenc
 **Registrar el check `dod` — SIEMPRE, independientemente del modo autónomo**: es lo que
 `complete-step prepare-commit` exige para toda story de UI (el candado mira `checks.dod` verde con
 provenance `run-check`, sin mirar si la corrida es `--autonomous`). 🔴 Saltearlo «porque
-estoy en HITL» frena «Preparar el commit» más adelante, sin que se entienda por qué.
+estoy en HITL» frena «Preparar el pull request» más adelante, sin que se entienda por qué.
 **Forma canónica: `run-check`** — ejecuta el comando del gate, captura el exit code REAL
 él mismo y setea el check con `provenance=run-check` (queda en `gates.log`). NO es self-report:
 
@@ -723,12 +723,12 @@ apps dieron 0 — la garantía anti-self-report no se afloja.
 `set-check dod green --manual` queda SOLO para excepciones: veredicto COMPUESTO
 que no es un único comando (ej: DODRT-C1 curl real + gate e2e combinados) o story
 exenta por la persona (la exención cuenta como satisfecha, no como rojo).
-Queda marcado `provenance=manual` y logueado — «Preparar el commit» lo anuncia como "check no
+Queda marcado `provenance=manual` y logueado — «Preparar el pull request» lo anuncia como "check no
 verificado mecánicamente".
 
 🔴 Si `dod` queda `red:...`, el Stop-hook DoD gate bloquea el cierre del turno →
 el agente vuelve a «Implementar» a arreglar el path roto y re-corre el gate runtime. Cuando
-el verdict es PASS, el check pasa a `green` y el portón deja avanzar a «Preparar el commit».
+el verdict es PASS, el check pasa a `green` y el portón deja avanzar a «Preparar el pull request».
 
 ### 🔴 Parte 6 — Matriz de verificación runtime por AC (DODRT-C6, MANDATORY — 2026-07-10)
 
@@ -753,7 +753,7 @@ la lista de cambios; `--batch` solo, sin lista, mide todas las tandas y lo dice.
 marcador tenga tanda.
 
 Un criterio de la propia tanda declarado imposible de probar se firma como cualquier otro: la firma mide la misma
-tanda que «Preparar el commit». Por terminal, con `--for-session <la sesión de la corrida>`.
+tanda que «Preparar el pull request». Por terminal, con `--for-session <la sesión de la corrida>`.
 
 **Humos sólo para lo que el navegador no cubrió.** Primero el portón E2E, después la matriz, y recién entonces los humos:
 sólo para los criterios que la matriz deja sin evidencia en vivo (staging, servicios de afuera, caídas). Un spec del portón
@@ -998,7 +998,7 @@ si falla, sin bypass por env var — igual que la matriz):
    salvo que su línea traiga `keep: <por qué>` (no frena y el candado la imprime siempre). Las líneas `differs:` no
    son marcas: declaran una diferencia con la maqueta (capa 10).
 9. **La maqueta aprobada, intacta**: con `<clave>-mockup-approval.json` (o con la huella que le pasa el
-   «Preparar el commit» desde el marcador, `--mockup-sha`), la maqueta está en el disco, su huella es la aprobada y pasa
+   «Preparar el pull request» desde el marcador, `--mockup-sha`), la maqueta está en el disco, su huella es la aprobada y pasa
    `mockup.js check`. Si cambió, se le muestra de nuevo a quien la aprueba y `approve-mockup`. Sin aprobación ni
    `--mockup-sha` (story aprobada antes de que existiera la maqueta, o el chequeo corrido fuera del pipeline) no se compara y se dice.
 10. **Lo construido tiene los textos de la maqueta**: el archivo de la pantalla nombra la maqueta (`mockup:`) y cada
@@ -1043,7 +1043,7 @@ stack está ARRIBA — diagnosticarlo como "servers down" y re-levantarlo devuel
 vez (por eso el 4 no comparte código con el 3).
 
 Si verdict === "PASS" (gate del proyecto exit 0 + DODRT-C1 curl real verde) → marker
-actualizado → avanzar a «Preparar el commit».
+actualizado → avanzar a «Preparar el pull request».
 
 **`PARTIAL` / `review-pending-smoke` ELIMINADO** (2026-05-20): ya no existe el
 estado intermedio "E2E pendientes". O el gate Playwright corre verde (scoped en

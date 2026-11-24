@@ -224,7 +224,7 @@ compara lo construido contra ella.
 
 Si la maqueta cambia después (un arreglo de legibilidad cambió un texto), se le muestra de nuevo a quien la aprueba y
 `marker.js approve-mockup --approved "<cita>"`. Es el mismo comando si la story ganó una pantalla después de aprobar el
-plan: «Preparar el commit» lo frena hasta que esté.
+plan: «Preparar el pull request» lo frena hasta que esté.
 
 ## Superficie visual del plan (opt-in — `visual_plan`)
 

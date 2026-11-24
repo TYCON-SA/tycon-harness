@@ -118,7 +118,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   del gate en verde; las guías marcan `✅ verificado-por-mí` vs `🔲 para-que-lo-pruebe-el-user` (ACCOV-C7).
   Para UI, `prepare-commit` exige `checks.dod` verde con provenance `run-check`
   (`run-check dod -- npx playwright test <spec> --workers=1`); `set-check dod --manual` está rechazado;
-  `--force-manual` (en `set-check`) lo decide la persona. No-UI: `mark-dod-runtime-checked` con evidencia.
+  `--force-manual` lo firma la persona. No-UI: `mark-dod-runtime-checked` con evidencia.
 - **F.ii — matriz runtime por AC (DODRT-C6, HARD)**: `marker.js run-check acmatrix -- node
   <skill>/scripts/runtime-matrix.js --story <abs spec>`; `prepare-commit` la exige verde (run-check). Cada
   AC queda RUNTIME / CODE-ONLY / SIN-EVIDENCIA. `NOT-RUN` → lo corre el agente (E2E, o smoke vía
@@ -133,8 +133,8 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   enumerados; la evidencia sale del repo de la story (+ `evidence.companion_repos` declarados en
   `.tycon/advisors.yaml`), nunca de hermanos por vecindad.
 - **F.iv — ADVISORS-GATE**: a `done` no se llega sin constancia de advisors en este repo (run dir con
-  reportes de «Revisores» o `check=advisors green` con el `repoPath`). Escapes del dev:
-  `advisors_exempt: true` + `advisors_exempt_reason:`, o `TYCON_ADVISORS_GATE=off`.
+  reportes de «Revisores» o `check=advisors green` con el `repoPath`). Escapes: `advisors_exempt`
+  firmado por la persona, o `TYCON_ADVISORS_GATE=off` (sólo local).
 - **G.i**: un plan de rutina se aprueba con el aprobado de su revisión, con o sin
   coordinadora; uno delicado, siempre el dev (risk-class); con `plan_review.routine_approval: person`, una persona.
   Push, scope: human-gate.

@@ -176,6 +176,9 @@ const VOCABULARIO = Object.freeze({
     // conector de integrations/; uno que no existe no rompe la configuración: la capa lo dice y lo trata como sin elegir.
     // Lo atado a un repo (pedidos de cambio, la CI) va por la plataforma del repo en team-repos.json, no por acá.
     platform: 'plataforma',
+    // `mcp_servers`: el nombre con que ESTA máquina registró el servidor MCP de una integración, cuando no es el de su
+    // manifiesto (`mcp.server`): `{ "<integración>": "<servidor>" }`. Sólo de la máquina: cada persona registra el suyo.
+    mcp_servers: 'servidores-mcp',
   }),
   // La política de actualización del arnés (story 8.13, AC 12): valores CERRADOS (`opcion:a|b`). Un valor fuera de la
   // lista es un error (8.3 AC 2), nunca «apagado» ni el default. `TYCON_UPDATE=0` (apagar del todo) no es una clave:
@@ -350,11 +353,9 @@ const PROFILE_WINS = Object.freeze(['packs.default']);
 const RETIRADAS = Object.freeze({
   'adversarial.model_question': 'ya no hace nada: el pase adversarial no ofrece Fable — se puede borrar',
 });
-// Las claves que vale SÓLO el perfil del equipo: ni una variable ni el archivo de la máquina las cambian. El
-// perfil es versionado y se cambia con un pedido; la variable y el archivo de la máquina los puede escribir el agente que
-// implementa, y esta clave abre la puerta a eximir un crítico: si las leyera, el agente se la abriría solo. Lo que el
-// archivo de la máquina tenga escrito queda en `shadowed` con `by: 'solo-perfil'` y `explain` lo dice; `set` no la escribe.
-const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files', 'approvals.delegation_wait_minutes', 'pull_requests.team_authors', 'approvals.local_commit']);
+// Las claves que vale SÓLO el perfil del equipo: ni una variable ni el archivo de la máquina las cambian. Viven en
+// profile-only.js, un archivo chico que pide la constancia del dueño en cada cambio; el porqué está ahí.
+const PROFILE_ONLY = require('./profile-only.js');
 // Hasta dónde puede subir cada tope del camino corto. El delegado, hasta 6: sube lo
 // mínimo, porque con riesgo normal ese carril no lleva revisores ni pase adversarial, y una historia de 6 archivos ya deja
 // de saltearse el pase. El de la firma común, hasta 12: evita el click aparte en un arreglo de 9 archivos y lo mantiene en
@@ -663,6 +664,7 @@ function normalizarValor(tipo, valor, home, clave) {
   if (tipo === 'cuentas') return valor.map((v) => v.trim());
   if (tipo === 'maquinas') return valor.map((m) => ({ id: m.id.trim(), label: m.label.trim() }));
   if (tipo === 'niveles') return { ...valor };
+  if (tipo === 'servidores-mcp') return Object.fromEntries(Object.keys(valor).filter((k) => !esComentario(k)).map((k) => [k.trim().toLowerCase(), String(valor[k]).trim()]));
   if (tipo === 'nombres-de-sesion') return Array.isArray(valor) ? valor.map((v) => String(v).trim()) : String(valor).trim().toLowerCase();
   // una lista de opciones sigue siendo lista y un valor solo sigue solo: quien lo lee pregunta con `delegaFirma`
   if (subsetOf(tipo) || tipo === 'firmas' || tipo === 'firmas-ids') return Array.isArray(valor) ? valor.map((v) => v.trim()) : String(valor).trim();
@@ -962,6 +964,10 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
         errores.push({ archivo, clave: rutaEnArchivo, motivo: 'el proveedor de modelos es de la máquina, no del equipo — va en ~/.claude/tycon.json (`tycon-config.js set models.provider <proveedor>`) o en TYCON_MODEL_PROVIDER' });
         continue;
       }
+      if (esPerfil && ruta === 'integraciones.mcp_servers') {
+        errores.push({ archivo, clave: rutaEnArchivo, motivo: 'el nombre de un servidor MCP es de la máquina, no del equipo: cada persona registra el suyo — va en la configuración de la máquina (`tycon-config.js set integrations.mcp_servers`)' });
+        continue;
+      }
       if (esPerfil && ruta === 'coordination.owner_folder') {
         errores.push({ archivo, clave: rutaEnArchivo, motivo: 'la carpeta de firmas del dueño es de la máquina, no del equipo — va en la configuración de la máquina (`tycon-config.js set coordination.owner_folder <carpeta>`) o en TYCON_COORDINATION_OWNER_FOLDER' });
         continue;
@@ -1155,6 +1161,20 @@ function validarTipo(tipo, valor) {
         if (base === null) return `«${id}» no está en la tabla de niveles (guides/firmas-del-arnes.md, «Los niveles»)`;
         if (!Number.isInteger(n) || n < 1 || n > 3) return `el nivel de «${id}» tiene que ser un entero de 1 a 3, no ${JSON.stringify(n)}`;
         if (n < base) return `«${id}» es de nivel ${base} en la tabla: el perfil sólo puede subir un nivel, no bajarlo a ${n}`;
+      }
+      return null;
+    }
+    case 'servidores-mcp': {
+      if (!esObjeto(valor)) return `tiene que ser un objeto { "<integración>": "<servidor MCP>" }, no ${JSON.stringify(valor)}`;
+      const vistas = new Set();
+      for (const [k, v] of Object.entries(valor)) {
+        if (esComentario(k)) continue;
+        if (!/^[a-z0-9][a-z0-9_-]*$/i.test(k.trim())) return `«${k}» no es el nombre de una integración (letras, números, - o _)`;
+        // la integración se busca en minúsculas: dos claves que sólo difieren en eso se pisarían sin aviso
+        if (vistas.has(k.trim().toLowerCase())) return `«${k}» está dos veces (las mayúsculas no cuentan)`;
+        vistas.add(k.trim().toLowerCase());
+        // sin `__` adentro: el nombre de la herramienta es `mcp__<servidor>__<tool>`, y con `__` el servidor no se separa
+        if (typeof v !== 'string' || !/^[A-Za-z0-9_-]+$/.test(v.trim()) || v.includes('__')) return `el servidor de «${k}» tiene que ser un nombre de letras, números, - o _ (sin «__»), no ${JSON.stringify(v)}`;
       }
       return null;
     }
@@ -1741,7 +1761,7 @@ const GUARD_INSTALL = 'sudo bash ~/.tycon/harness/scripts/production/install-gua
 // Las claves que no se escriben si el freno instalado no las conoce: las guarda una sesión a pedido de la persona, y un
 // aviso de «configuración ROTA» en cada sesión por haber elegido nombres es un costo que no vale. Se escribe después de
 // poner al día el freno.
-const GUARD_FIRST = Object.freeze(['coordination.session_names']);
+const GUARD_FIRST = Object.freeze(['coordination.session_names', 'integraciones.mcp_servers']);
 // Lo mismo, por valor: una opción nueva de una clave que el freno instalado ya conoce. Con un freno anterior, `auto` en
 // el archivo de la máquina es una opción fuera de su lista y la configuración entera queda ROTA para él. El perfil del
 // equipo no cuenta: el freno instalado no lo lee.
@@ -2021,10 +2041,14 @@ function cli(argv) {
     if (tipo === 'rutas') { const l = String(crudo).split(path.delimiter).map((x) => x.trim()).filter(Boolean); if (l.length > 1) valorNuevo = l; }
     // los nombres de sesión separados por comas se guardan como lista; sin comas, es el id de un tema
     if (tipo === 'nombres-de-sesion') valorNuevo = nombresDeTexto(crudo);
+    // los servidores MCP, como objeto JSON: {"clockify":"reloj"}
+    if (tipo === 'servidores-mcp') {
+      try { valorNuevo = JSON.parse(crudo); } catch (_) { process.stderr.write(`${clave}: vale «${crudo}»; tiene que ser un objeto JSON, como {"clockify":"reloj"}\n`); process.exit(2); }
+    }
     if (rangoDe(tipo) && /^\d+$/.test(String(crudo).trim())) valorNuevo = Number(String(crudo).trim());
     const r = setKey(os.homedir(), clave, valorNuevo);
     if (!r.ok) { process.stderr.write(`tycon-config.js set: ${r.reason}\n`); process.exit(2); }
-    const fmt = (x) => (x === null || x === undefined ? '(sin valor)' : Array.isArray(x) ? x.join(',') : String(x));
+    const fmt = (x) => (x === null || x === undefined ? '(sin valor)' : Array.isArray(x) ? x.join(',') : typeof x === 'object' ? JSON.stringify(x) : String(x));
     process.stdout.write(`${clave}: ${fmt(r.before)} → ${fmt(r.after)} en ${r.file}\n`);
     process.stdout.write('se aplica en el próximo arranque, o ya con `harness.js apply`; para ver antes qué cambia, `harness.js apply --dry-run`\n');
     if (r.warning) process.stdout.write(`${r.warning}\n`);

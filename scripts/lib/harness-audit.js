@@ -934,8 +934,13 @@ function checkPipelineWiring() {
   const coverageTest = path.join(SKILLS_DIR, 'tycon-pipeline/scripts/tests/test-pipeline-coverage.js');
   // (del núcleo: los de un stack viven en su paquete y no se nombran en pipeline.js)
   const probe = ['tycon-e2e-realness-checker', 'tycon-silent-failure-hunter', 'llm-cost-reviewer'];
+  // pipeline.js está partido en lib/pipeline-*.js: el texto del guion es el del despachador más sus partes
+  const libDir = path.join(SKILLS_DIR, 'tycon-pipeline/scripts/lib');
+  let partes = [];
+  try { partes = fs.readdirSync(libDir).filter((f) => /^pipeline-.+\.js$/.test(f)).map((f) => path.join(libDir, f)); } catch { /* sin lib/: sólo el despachador */ }
+  const textoPipeline = exists(pipelineJs) ? [pipelineJs, ...partes].map((f) => safeRead(f) || '').join('\n') : '';
   for (const a of probe) {
-    const inJs = exists(pipelineJs) && safeRead(pipelineJs).includes(a);
+    const inJs = textoPipeline.includes(a);
     const inCoverageTest = exists(coverageTest) && safeRead(coverageTest).includes(a);
     checks.push({
       name: `Advisor "${a}" cableado en pipeline.js + guardado por test-pipeline-coverage.js`,
