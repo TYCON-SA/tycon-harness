@@ -330,6 +330,10 @@ ow_gate() {
     out="$(printf '%s' "$INPUT" | TYCON_SAFETY_DEADLINE_S="$tope" "$HNODE" "$lib" gate ${args[@]+"${args[@]}"} 2>/dev/null)" || out=""
     # la ventana ya contestó: lo que anotó no es lo que el freno hace después
     rm -f "$SG_ETAPA" 2>/dev/null || true
+    # Lo que contestan los lectores se lee con `< <(printf …)`, nunca con un here-string: el bash 3.2 de macOS escribe el
+    # temporal de un here-string en /var/tmp, /tmp o la carpeta actual, y dentro de un encierro que no lo deja (la corrida
+    # aislada de los humos, con el freno corrido desde otro repo) no lee lo que le contestan: según el lugar, niega o deja
+    # pasar
     while IFS= read -r k; do
       case "$k" in
         decision=*) OW_DECISION="${k#decision=}" ;;
@@ -341,7 +345,7 @@ ow_gate() {
         json=*) OW_JSON="${k#json=}" ;;
         ofrece=*) OW_OFRECE="${k#ofrece=}" ;;
       esac
-    done <<< "$out"
+    done < <(printf '%s\n' "$out")
   fi
   case "$OW_DECISION" in ask|allow|none) ;; *) OW_DECISION="deny" ;; esac
   if [[ "$OW_DECISION" == "ask" && -z "$OW_JSON" ]]; then OW_DECISION="deny"; fi
@@ -428,7 +432,7 @@ emergencia_vale() {
       pedido=*) [[ "${k#pedido=}" =~ ^[0-9a-f]{8}$ ]] && EMERGENCIA_PEDIDO="${k#pedido=}" ;;
       motivo=*) EMERGENCIA_AVISO="${k#motivo=}" ;;
     esac
-  done <<< "$out"
+  done < <(printf '%s\n' "$out")
   return 1
 }
 
@@ -882,14 +886,14 @@ if [[ "$_esc_cmd" == *[Mm][Aa][Rr][Kk][Ee][Rr]* || "$_esc_cmd" == *[Pp][Ii][Pp][
       frena=*) _c3_frenos+=("${_c3_l#frena=}") ;;
       detalle=*) _c3_detalle="${_c3_l#detalle=}" ;;
     esac
-  done <<< "$_c3_out"
+  done < <(printf '%s\n' "$_c3_out")
   # Cada escape va a la ventana de permiso (más abajo, después de ESC-C7), con lo que hace falta para frenar con su
   # motivo si la ventana lo niega: «<clave>\t<escape>\t<subcomando>\t<argumento>». La salida de una ejecución perdida
   # (con `desde`: lib/open-runs.js) es la firma `lost-run`, que la ventana lee del comando; se anota aparte.
   _c3_negables=(); _c3_perdida=""
   for _c3_f in ${_c3_frenos[@]+"${_c3_frenos[@]}"}; do
     _c3_desde=""
-    IFS=$'\t' read -r _c3_esc _c3_sub _c3_a1 _c3_desde <<< "$_c3_f" || true
+    IFS=$'\t' read -r _c3_esc _c3_sub _c3_a1 _c3_desde < <(printf '%s\n' "$_c3_f") || true
     _c3_regla="ESC-C3"
     case "$_c3_esc" in
       "cerrar la ejecución") _c3_clave="cerrar-la-ejecucion" ;;
@@ -946,7 +950,7 @@ if [[ "$_c5_mira" == "1" ]]; then
       escondido=*) [[ -n "$_c5_escondido" ]] || _c5_escondido="${_c5_l#escondido=}" ;;
       forma=*) [[ -n "$_c5_forma" ]] || _c5_forma="${_c5_l#forma=}" ;;
     esac
-  done <<< "$_c5_out"
+  done < <(printf '%s\n' "$_c5_out")
   if [[ -n "$_c5_escondido" ]]; then
     block "GIT-C5" \
       "Mergear salteando la cola y la CI de main, o aflojar las políticas de la rama, así escrito no se puede firmar: ${_c5_escondido%.}." \
@@ -984,7 +988,7 @@ if [[ "$_c7_mira" == "1" ]]; then
       frena=*) [[ -n "$_c7_frena" ]] || _c7_frena="${_c7_l#frena=}" ;;
       firma=*) [[ -n "$_c7_firma" ]] || _c7_firma="${_c7_l#firma=}" ;;
     esac
-  done <<< "$_c7_out"
+  done < <(printf '%s\n' "$_c7_out")
   if [[ -n "$_c7_frena" ]]; then
     block "GIT-C7" \
       "Encolar o mergear un pedido sin saber de quién es no pasa: ${_c7_frena%.}." \
@@ -1023,8 +1027,9 @@ ow_negar() { # la ventana negó: frena con el motivo de la firma
   alt="$OW_OFRECE"
   regla="$(ow_regla "$OW_FIRMA")" || regla="ESC-C3"
   if [[ "$regla" == "ESC-C1" ]]; then esc_c1_negar "${OW_FIRMA#escape:}"; fi
-  for f in ${_c3_negables[@]+"${_c3_negables[@]}"}; do
-    IFS=$'\t' read -r clave esc sub a1 <<< "$f" || true
+  # todos por un solo descriptor (el 9, para que lo que corre adentro no lea los renglones): en una función, el bash 3.2
+  # no cierra el de cada `< <(…)` hasta que vuelve, y con uno por vuelta dejaba de leer pasados los 253
+  while IFS=$'\t' read -r -u 9 clave esc sub a1; do
     [[ "escape:$clave" == "$OW_FIRMA" ]] || continue
     ESC_CARTEL="$OW_TEXTO${alt:+
 $alt}
@@ -1052,7 +1057,7 @@ Primero lo que no necesita a la persona: lo de «Alternativa». Si no se puede, 
           "Cerrar la ejecución ahora (marker.js ${sub}) la archiva como si hubiera terminado, y no terminó: ${_c3_motivo:-tiene algo pendiente}." \
           "Terminá lo pendiente. Si no se puede, decíselo a la persona." ;;
     esac
-  done
+  done 9< <(printf '%s\n' ${_c3_negables[@]+"${_c3_negables[@]}"})
   ESC_CARTEL="$OW_TEXTO"
   case "$OW_FIRMA" in
     plan-approval) block "ESC-C6" \
@@ -1107,7 +1112,7 @@ if [[ "$_ow_mira" == "1" ]]; then
     none)
       # la salida de una ejecución perdida que la ventana no reconoce como su firma (otro subcomando): no se firma acá
       if [[ -n "$_c3_perdida" ]]; then
-        IFS=$'\t' read -r _c3_sub _c3_a1 <<< "$_c3_perdida" || true
+        IFS=$'\t' read -r _c3_sub _c3_a1 < <(printf '%s\n' "$_c3_perdida") || true
         ESC_CARTEL="Esto lo decide una persona, no el agente: la salida de una ejecución perdida se firma con marker.js clear-session <sesión> --lost, en la ventana de permiso o en su terminal (--terminal)."
         BLOCK_MOTIVO="ejecucion-perdida"
         block "ESC-C3" \
@@ -1447,7 +1452,7 @@ if [[ "$CMD" == *git* ]] && { [[ "$CMD" == *reset* || "$CMD" == *stash* || "$CMD
       _c6_motivos=""
       while IFS= read -r _c6_l; do
         [[ "$_c6_l" == frena=* ]] && _c6_motivos+="${_c6_motivos:+; }${_c6_l#frena=}"
-      done <<< "$_c6_out"
+      done < <(printf '%s\n' "$_c6_out")
       if [[ -n "$_c6_motivos" ]]; then
         block "GIT-C6" \
           "${_c6_motivos}. Esos cambios pueden ser de otra sesión o de la persona." \
@@ -2350,7 +2355,7 @@ if [[ "$CMD" == *settings*.json* ]]; then
     _c2_motivos=""
     while IFS= read -r _c2_l; do
       [[ "$_c2_l" == frena=* ]] && _c2_motivos+="${_c2_motivos:+; }${_c2_l#frena=}"
-    done <<< "$_c2_out"
+    done < <(printf '%s\n' "$_c2_out")
     if [[ -n "$_c2_motivos" ]]; then
       block "HARNESS-C2" \
         "El comando saca un control del arnés de la configuración de la herramienta: ${_c2_motivos}." \
