@@ -43,4 +43,4 @@ function isRecorded(home, storyPath, storyId) {
   }
 }
 
-module.exports = { RECORD_DIR, writeRecord, isRecorded };
+module.exports = { RECORD_DIR, recordFile, writeRecord, isRecorded };

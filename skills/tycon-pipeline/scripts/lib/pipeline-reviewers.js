@@ -786,6 +786,127 @@ function cmdValidationRecord(cmd, args) {
   }
 }
 
+// ── move-story: mover una historia de carpeta con su validación ─────────────────────────────────────────────────────
+// Las constancias de la validación y de la revisión previa se guardan con la clave de la ruta de la historia y valen
+// mientras su huella coincida con el contenido; la de primera vez, con su ruta real. Un `mv` a mano las deja en la ruta
+// vieja, y reescribir la historia en la ruta nueva no la deja igual byte a byte. `move-story` mueve el archivo tal cual
+// (con `git mv` si git lo sigue) y pasa a la clave nueva cada constancia vigente. La que ya no coincide con el contenido
+// queda donde estaba, y se dice: la historia se mueve sin ella.
+
+const realDe = (p) => { try { return fs.realpathSync.native(p); } catch { return null; } };
+const gitEn = (cwd, argv) => require('child_process').spawnSync('git', ['-C', cwd, ...argv], { encoding: 'utf8', timeout: 15000, windowsHide: true });
+
+/** La raíz real del repo de una carpeta; null fuera de git. */
+function raizDelRepo(dir) {
+  const r = gitEn(dir, ['rev-parse', '--show-toplevel']);
+  return r.status === 0 && r.stdout.trim() ? (realDe(r.stdout.trim()) || r.stdout.trim()) : null;
+}
+
+/** El número de la historia, del `story:` de su encabezado; null si el archivo no es una historia. */
+function numeroDeHistoria(texto) {
+  const fm = String(texto).match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  const m = fm && fm[1].match(/^story\s*:\s*["']?([^"'\s#]+)/m);
+  return m ? m[1] : null;
+}
+
+/** Los marcadores de corrida de la máquina que nombran esta historia (la guardan relativa al repo de la corrida). */
+function corridasDeLaHistoria(home, real) {
+  const dir = path.join(stateDirOf(home), 'active');
+  let nombres = [];
+  try { nombres = fs.readdirSync(dir).filter((f) => f.endsWith('.json')); } catch { return []; }
+  const out = [];
+  for (const f of nombres) {
+    let m = null;
+    try { m = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch { continue; }
+    if (!m || !m.storyPath) continue;
+    const p = path.isAbsolute(m.storyPath) ? m.storyPath : path.join(m.repoPath || '', m.storyPath);
+    if (realDe(p) === real) out.push(m.sessionId || f.replace(/\.json$/, ''));
+  }
+  return out;
+}
+
+/**
+ * Mueve la historia `de` a `a`. Devuelve { codigo, lineas }: 0 movida, con su validación si tenía · 1 no se movió ·
+ * 3 movida, y alguna constancia quedó en la ruta vieja porque el contenido cambió después de escribirla.
+ */
+function moverHistoria({ home, de, a }) {
+  const FT = require('./first-time-record.js');
+  const no = (motivo) => ({ codigo: 1, lineas: [`move-story: no se movió: ${motivo}`] });
+  const deReal = realDe(de);
+  if (!deReal || !fs.statSync(deReal).isFile()) return no(`no existe ${de}`);
+  if (!/\.md$/i.test(a)) return no(`el destino tiene que ser un .md (${a})`);
+  const aAbs = path.resolve(a);
+  if (fs.existsSync(aAbs)) return no(`ya existe ${a}`);
+  const aDir = realDe(path.dirname(aAbs));
+  if (!aDir) return no(`no existe la carpeta de destino ${path.dirname(a)}`);
+  const aReal = path.join(aDir, path.basename(aAbs));
+  const numero = numeroDeHistoria(fs.readFileSync(deReal, 'utf8'));
+  if (!numero) return no(`${de} no es una historia (no tiene \`story:\` en su encabezado)`);
+  const raiz = raizDelRepo(path.dirname(deReal));
+  if (raiz !== raizDelRepo(aDir)) return no('el destino está en otro repo: la validación es del repo y de la ruta de la historia');
+  const abiertas = corridasDeLaHistoria(home, deReal);
+  if (abiertas.length) return no(`la corrida abierta de la sesión ${abiertas.join(', ')} usa esta historia: terminala o sacala antes de moverla`);
+
+  // las constancias, leídas con la ruta de hoy: después de mover, esa ruta ya no lleva a ellas
+  const constancias = [['la validación', validationRecord], ['la revisión previa', storyReviewRecord]].map(([nombre, R]) => ({
+    nombre, R, leida: R.readRecord(home, deReal), archivos: [...new Set([R.recordFile(home, deReal), R.recordFileViejo(home, deReal)])],
+  }));
+  const primeraVez = FT.isRecorded(home, deReal, numero) ? FT.recordFile(home, deReal) : null;
+
+  const seguida = raiz && gitEn(raiz, ['ls-files', '--error-unmatch', '--', deReal]).status === 0;
+  if (seguida) {
+    const r = gitEn(raiz, ['mv', '--', deReal, aReal]);
+    if (r.status !== 0) return no(`git mv falló: ${(r.stderr || '').trim()}`);
+  } else {
+    fs.renameSync(deReal, aReal);
+  }
+
+  const rel = (p) => path.relative(raiz || process.cwd(), p).split(path.sep).join('/');
+  const lineas = [`move-story: ${rel(deReal)} → ${rel(aReal)}, el mismo contenido${seguida ? ' (git mv)' : ''}`];
+  let codigo = 0;
+  for (const c of constancias) {
+    if (c.leida.estado === 'none') continue;
+    if (c.leida.estado === 'stale') {
+      codigo = 3;
+      lineas.push(`⚠️  ${c.nombre}: la validación quedó en la ruta vieja: el contenido cambió después de escribirla. La historia se movió sin ella: hay que volver a validarla.`);
+      continue;
+    }
+    const nuevo = c.R.recordFile(home, aReal);
+    fs.mkdirSync(path.dirname(nuevo), { recursive: true });
+    fs.writeFileSync(nuevo, `${JSON.stringify({ ...c.leida.record, path: aReal }, null, 2)}\n`);
+    for (const f of c.archivos) if (f !== nuevo) { try { fs.unlinkSync(f); } catch { /* no estaba con esa clave */ } }
+    lineas.push(`${c.nombre}: pasó a la ruta nueva${c.leida.estado === 'current' ? ', vigente' : ''}`);
+  }
+  if (constancias.every((c) => c.leida.estado === 'none')) lineas.push('no tenía validación: no había nada que pasar');
+  if (primeraVez) {
+    FT.writeRecord(home, aReal, numero);
+    try { fs.unlinkSync(primeraVez); } catch { /* ya no estaba */ }
+    lineas.push('la constancia de primera vez: pasó a la ruta nueva');
+  }
+
+  // el estado del sprint que cuenta es el de la carpeta de la historia: un cambio de carpeta lo deja en la vieja
+  const deDir = path.dirname(deReal);
+  if (deDir !== aDir) {
+    const sprint = path.join(deDir, 'sprint-status.yaml');
+    const clave = `${numero.replace(/\./g, '-')}-`;
+    let t = '';
+    try { t = fs.readFileSync(sprint, 'utf8'); } catch { t = ''; }
+    if (t.split(/\r?\n/).some((l) => l.trim().startsWith(clave))) {
+      lineas.push(`ℹ️  el renglón de la historia en ${rel(sprint)} no se movió: el estado del sprint que cuenta es el de la carpeta de la historia (${rel(path.join(aDir, 'sprint-status.yaml'))})`);
+    }
+  }
+  return { codigo, lineas };
+}
+
+function cmdMoveStory(cmd, args) {
+  // Uso: pipeline.js move-story --story <ruta de hoy> --to <ruta nueva>. Sale con 0 movida, 1 no se movió y 3 movida con
+  // alguna constancia que quedó en la ruta vieja.
+  if (!args.story || !args.to) { process.stderr.write('move-story: --story <ruta de hoy> y --to <ruta nueva> requeridos\n'); process.exit(2); }
+  const r = moverHistoria({ home: os.homedir(), de: args.story, a: args.to });
+  for (const l of r.lineas) (r.codigo === 1 ? process.stderr : process.stdout).write(`${l}\n`);
+  process.exit(r.codigo);
+}
+
 function cmdOrgRules(cmd, args) {
   // Las reglas de la organización (stack.rules): cada una con su valor y de dónde salió, y los problemas. Nunca tira:
   // sin configuración salen las de fábrica.
@@ -870,4 +991,4 @@ function cmdMechCheck(cmd, args) {
   process.exit(result.findings.some((f) => f.severity === 'CRITICAL') ? 2 : 0);
 }
 
-module.exports = { cmdAdvisors, cmdSiblings, cmdValidators, cmdCheckCount, cmdLintConfig, cmdAdvisorRuns, cmdReviewersRun, cmdMechCheck, cmdOrgRules, cmdStoryReviewGate, cmdStoryReviewRecord, cmdValidationRecord, advisorsRunSinceStart, CORE_REVIEWERS, coreReviewersDrift, coreReviewerNames, codeReviewerNames, computeValidadores, aplicarTamanoALosRevisores };
+module.exports = { cmdAdvisors, cmdSiblings, cmdValidators, cmdCheckCount, cmdLintConfig, cmdAdvisorRuns, cmdReviewersRun, cmdMechCheck, cmdOrgRules, cmdStoryReviewGate, cmdStoryReviewRecord, cmdValidationRecord, cmdMoveStory,advisorsRunSinceStart, CORE_REVIEWERS, coreReviewersDrift, coreReviewerNames, codeReviewerNames, computeValidadores, aplicarTamanoALosRevisores };
