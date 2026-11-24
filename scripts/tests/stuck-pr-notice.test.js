@@ -788,6 +788,22 @@ test('Requeue_AutoMergeBeforePush_NotQueued — con el auto-merge puesto antes d
   assert.strictEqual(SPN().paraReencolar([ghRepo], leidasDe(p), {}).encolar.length, 1);
 });
 
+// 🔴 Falla con: decir «quedó fuera de la cola después del empuje» sin decir cuándo. Un pedido con el auto-merge puesto a
+// las 14:21 y un merge de main a las 17:22 del mismo día se leyó dos días después como un empuje de recién, y mandó a
+// buscar quién lo había tocado.
+test('Requeue_PushAge_SaysWhen — el aviso dice hace cuánto llegó la punta, no sólo «después del empuje»', () => {
+  const ahora = Date.parse('2026-11-23T19:30:00Z');
+  const p = listo(1419, { lastQueueDrop: null, autoComplete: true, autoMergeSince: '2026-11-21T14:21:12Z', headCommittedAt: '2026-11-21T17:22:58Z', mergeStatus: 'UNKNOWN' });
+  const r = SPN().paraReencolar([ghRepo], leidasDe(p), {}, ahora);
+  assert.match(r.esperan[0].linea, /pedido 1419 \(harness\) quedó fuera de la cola después del empuje de hace 50 h: no lo re-encolo porque no está limpio \(UNKNOWN\)/);
+  // un empuje forzado posterior al commit cuenta desde el empuje
+  const forzado = listo(1420, { lastQueueDrop: null, autoComplete: true, autoMergeSince: '2026-11-21T14:21:12Z', headCommittedAt: '2026-11-21T17:22:58Z', headPushedAt: '2026-11-23T19:00:00Z', mergeStatus: 'UNKNOWN' });
+  assert.match(SPN().paraReencolar([ghRepo], leidasDe(forzado), {}, ahora).esperan[0].linea, /después del empuje de hace 30 min:/);
+  // sin ninguna fecha de la punta, queda como antes
+  const sinFecha = listo(1421, { headCommittedAt: '', mergeStatus: 'UNKNOWN' });
+  assert.match(SPN().paraReencolar([ghRepo], leidasDe(sinFecha), {}, ahora).esperan[0].linea, /después del empuje: no lo re-encolo/);
+});
+
 test('Requeue_NotWhen — sin aprobar, no limpio, no verde, borrador, de un bot, en la cola, sin empuje posterior o nunca pidió entrar: no', () => {
   const casos = [
     [{ reviewDecision: 'CHANGES_REQUESTED' }, /pidieron cambios/],
@@ -803,7 +819,7 @@ test('Requeue_NotWhen — sin aprobar, no limpio, no verde, borrador, de un bot,
     const r = SPN().paraReencolar([ghRepo], leidasDe(listo(7, o)), {});
     assert.deepStrictEqual(r.encolar, [], JSON.stringify(o));
     assert.strictEqual(r.esperan.length, 1, JSON.stringify(o));
-    assert.match(r.esperan[0].linea, /pedido 7 \(harness\) quedó fuera de la cola después del empuje: no lo re-encolo porque/);
+    assert.match(r.esperan[0].linea, /pedido 7 \(harness\) quedó fuera de la cola después del empuje de hace \d+ (?:min|h): no lo re-encolo porque/);
     assert.match(r.esperan[0].linea, motivo);
   }
   // los que no cuentan: ni re-encolar ni avisar por esto
@@ -846,12 +862,12 @@ test('Requeue_CoordinatorSeesItEveryTurn — la caída, el re-encolado y el que 
   const r = SPN().coordinatorLines({ home: w.home, tree: w.tree, now: ahora });
   const texto = r.lines.join('\n');
   assert.match(texto, /pedido 1037 \(harness\) se cayó de la cola hace 30 min: la CI combinada salió en rojo/);
-  assert.match(texto, /pedido 1039 \(harness\) quedó fuera de la cola después del empuje: lo re-encolé hace 5 min/);
-  assert.match(texto, /pedido 1038 \(harness\) quedó fuera de la cola después del empuje: no lo re-encolo porque sus comprobaciones no están en verde \(PENDING\)/);
+  assert.match(texto, /pedido 1039 \(harness\) quedó fuera de la cola después del empuje de hace \d+ (?:min|h): lo re-encolé hace 5 min/);
+  assert.match(texto, /pedido 1038 \(harness\) quedó fuera de la cola después del empuje de hace \d+ (?:min|h): no lo re-encolo porque sus comprobaciones no están en verde \(PENDING\)/);
   // el intento fallido se dice con cómo encolarlo a mano
   fs.writeFileSync(path.join(dir, 'requeued-prs.json'), JSON.stringify({ 'acme/harness#1039': { punta: 'c1039', nodeId: 'PR_kw1039', at: hace(5), ok: false, detalle: 'gh: boom' } }));
   assert.match(SPN().coordinatorLines({ home: w.home, tree: w.tree, now: ahora }).lines.join('\n'),
-    /pedido 1039 \(harness\) quedó fuera de la cola después del empuje: no pude re-encolarlo \(gh: boom\); encolalo a mano con gh api graphql -f query='mutation.*enqueuePullRequest.*' -f id=PR_kw1039/);
+    /pedido 1039 \(harness\) quedó fuera de la cola después del empuje de hace \d+ (?:min|h): no pude re-encolarlo \(gh: boom\); encolalo a mano con gh api graphql -f query='mutation.*enqueuePullRequest.*' -f id=PR_kw1039/);
 });
 
 test('Requeue_FromGithubRead_SaysWhyNot — de la lectura de GitHub de punta a punta: caído, empujado después y sin verde', () => {
@@ -861,7 +877,7 @@ test('Requeue_FromGithubRead_SaysWhyNot — de la lectura de GitHub de punta a p
       before_parents: ['main'.padStart(40, '0'), 'vieja'.padStart(40, '0')] } })]);
   const r = correr(w);
   assert.strictEqual(r.rc, 0, r.err);
-  assert.match(r.out, /pedido 1038 \(harness\) quedó fuera de la cola después del empuje: no lo re-encolo porque sus comprobaciones no están en verde \(PENDING\)/);
+  assert.match(r.out, /pedido 1038 \(harness\) quedó fuera de la cola después del empuje de hace \d+ (?:min|h): no lo re-encolo porque sus comprobaciones no están en verde \(PENDING\)/);
   assert.doesNotMatch(r.out, /pedido 1038 \(harness\) se cayó de la cola/, 'con una punta nueva, la caída ya no es la noticia');
 });
 
@@ -1126,4 +1142,117 @@ test('Requeue_DropCommitUnknown_NotGuessedByDates — sin saber con qué punta c
   const r = correr(w);
   assert.match(r.out, /pedido 1537 \(harness\) se cayó de la cola hace 30 min: la plataforma dice «manual»\. No lo re-encolo: GitHub no dice con qué punta cayó, y no lo adivino por fechas; si ya tiene el arreglo, encolalo a mano con gh pr merge 1537 -R acme\/harness --merge \(con cola de merge: gh api graphql -f query='mutation.*enqueuePullRequest.*' -f id=PR_kw1537\) · fix\/1537/);
   assert.match(r.out, /pedido 1538 \(harness\) se cayó de la cola hace 30 min: la CI combinada salió en rojo\. No lo re-encolo: GitHub no dice con qué punta cayó/);
+});
+
+// ── por qué la CI combinada de la cola salió en rojo ─────────────────────────────────────────────────────────────
+
+/** Corre la lectura de fondo del aviso, con el mismo ambiente que el arranque. */
+function refrescarAhora(w, extra = {}) {
+  const env = {
+    PATH: process.env.PATH, HOME: w.home, TYCON_TREE: w.tree, TYCON_ADO_CMD: w.az, FIXAZ: w.fix, TYCON_PROFILE: '0',
+    TYCON_GH_CMD: FAKE_GH, FAKE_GH_STATE: w.ghState,
+    TYCON_HARNESS_IDENTITIES: HARNESS_URL, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', ...extra,
+  };
+  return spawnSync(process.execPath, [HOOK, '--refresh', w.tree], { env, encoding: 'utf8', timeout: 30000 });
+}
+
+/** Un mundo con dos pedidos caídos de la cola por la CI combinada, con la misma punta, y las corridas de la cola. */
+function mundoConCaidasDeCI() {
+  const w = mundo([]);
+  const caida = (n) => ({ kind: 'removed', reason: 'failed_checks', at: HACE(30), before_sha: 'c'.repeat(40), before_parents: ['d'.repeat(40), `${n}`.padStart(40, 'b')] });
+  const cola = (n) => `gh-readonly-queue/main/pr-${n}-${'d'.repeat(40)}`;
+  fs.writeFileSync(w.ghState, JSON.stringify({
+    pulls: { 'acme/harness': [ghPull(842, { queue_drop: caida(842) }), ghPull(843, { queue_drop: caida(843) })] },
+    runs: { 'acme/harness': [
+      { id: 9, event: 'merge_group', head_branch: cola(842), conclusion: 'failure', created_at: HACE(40) },
+      { id: 10, event: 'merge_group', head_branch: cola(843), conclusion: 'failure', created_at: HACE(40) },
+      { id: 11, event: 'pull_request', head_branch: 'fix/843', conclusion: 'failure', created_at: HACE(35) },
+    ] },
+    jobs: {
+      9: [{ id: 91, name: 'public-ci', conclusion: 'failure' }, { id: 92, name: 'Node 24 · checks', conclusion: 'failure' }],
+      10: [{ id: 101, name: 'Node 24 · suites-3-of-5', conclusion: 'failure' }],
+    },
+    job_logs: {
+      91: 'Todos los jobs terminaron bien\n',
+      92: '2026-11-24T01:00:00.0000000Z ❌ base-controls: rojo — el pedido afloja un control sin la constancia del dueño: scripts/lib/x.js. La firma, desde una sesión…\n',
+      101: '2026-11-24T02:01:17.0000000Z ❌ public-ci: portable-suites — rojo (exit 1)\n2026-11-24T02:01:17.0100000Z         · tests/office-page-english.test.js (exit 1)\n',
+    },
+  }));
+  return w;
+}
+
+test('Notice_GithubDroppedForCi_SaysWhatFailed — la lectura de fondo lee el registro de la corrida de la cola que falló', () => {
+  const w = mundoConCaidasDeCI();
+  const f = refrescarAhora(w);
+  assert.strictEqual(f.status, 0, f.stderr);
+  const r = correr(w);
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.match(r.out, /pedido 842 \(harness\) se cayó de la cola hace 30 min: la CI combinada salió en rojo \(falta la constancia: la cola mide contra el main de hoy, que ya frena lo que el pedido afloja; traé main y corré `bash scripts\/ci\/run-base-controls\.sh pending --root \. --base origin\/main --range origin\/main\.\.\.HEAD`\)\./, r.out);
+  assert.match(r.out, /pedido 843 \(harness\) se cayó de la cola hace 30 min: la CI combinada salió en rojo \(en rojo: office-page-english\.test\.js\)\./, r.out);
+});
+
+test('Notice_GithubDroppedForCi_StartDoesNotReadLogs_KnownNotReread — el arranque no lee registros, y lo ya leído no se vuelve a leer', () => {
+  const w = mundoConCaidasDeCI();
+  const log = path.join(tmp('spn-ghlog-'), 'llamadas.jsonl');
+  const r = correr(w, { FAKE_GH_LOG: log });
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.match(r.out, /pedido 843 \(harness\) se cayó de la cola hace 30 min: la CI combinada salió en rojo\. No lo re-encolo/, 'sin la lectura de fondo, la línea de siempre');
+  const registros = () => fs.readFileSync(log, 'utf8').split('\n').filter((l) => /actions\/jobs\/\d+\/logs/.test(l)).length;
+  assert.strictEqual(fs.existsSync(log) ? registros() : 0, 0, 'el arranque no leyó ningún registro');
+  assert.strictEqual(refrescarAhora(w, { FAKE_GH_LOG: log }).status, 0);
+  const primera = registros();
+  assert.ok(primera >= 2, `la lectura de fondo leyó los registros: ${primera}`);
+  assert.strictEqual(refrescarAhora(w, { FAKE_GH_LOG: log }).status, 0);
+  assert.strictEqual(registros(), primera, 'la segunda lectura de fondo no vuelve a leer lo que ya sabe');
+});
+
+/** Cuántas veces la lectura de fondo pidió las corridas de la cola, según el registro de llamadas de gh. */
+const corridasPedidas = (log) => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter((l) => /actions\/runs\?event=merge_group/.test(l)).length : 0);
+
+test('Notice_GithubDroppedForCi_NoReasonFound_NotRereadEveryRefresh — sin motivo encontrado, tampoco se vuelve a leer', () => {
+  const w = mundoConCaidasDeCI();
+  const st = JSON.parse(fs.readFileSync(w.ghState, 'utf8'));
+  st.runs['acme/harness'] = [];
+  fs.writeFileSync(w.ghState, JSON.stringify(st));
+  const log = path.join(tmp('spn-ghlog-'), 'llamadas.jsonl');
+  assert.strictEqual(refrescarAhora(w, { FAKE_GH_LOG: log }).status, 0);
+  const primera = corridasPedidas(log);
+  assert.ok(primera >= 1, `la primera lectura buscó las corridas: ${primera}`);
+  assert.strictEqual(refrescarAhora(w, { FAKE_GH_LOG: log }).status, 0);
+  assert.strictEqual(corridasPedidas(log), primera, 'la segunda no las vuelve a buscar');
+  const r = correr(w);
+  assert.match(r.out, /pedido 842 \(harness\) se cayó de la cola hace 30 min: la CI combinada salió en rojo\. No lo re-encolo/, 'sin motivo, la línea de siempre');
+});
+
+test('Notice_GithubDroppedForCi_OldDropStillOpen_NotRereadAlternately — una caída de más de 14 días con el pedido abierto no se lee una vez sí y otra no', () => {
+  const w = mundoConCaidasDeCI();
+  const st = JSON.parse(fs.readFileSync(w.ghState, 'utf8'));
+  for (const p of st.pulls['acme/harness']) p.queue_drop.at = HACE(15 * 24 * 60);
+  for (const x of st.runs['acme/harness']) x.created_at = HACE(15 * 24 * 60 + 10);
+  fs.writeFileSync(w.ghState, JSON.stringify(st));
+  const log = path.join(tmp('spn-ghlog-'), 'llamadas.jsonl');
+  for (let i = 0; i < 3; i++) assert.strictEqual(refrescarAhora(w, { FAKE_GH_LOG: log }).status, 0);
+  assert.strictEqual(corridasPedidas(log), 2, 'sólo la primera lectura busca las corridas de los dos pedidos');
+});
+
+test('Notice_GithubDroppedForCi_CancelledRunOrJob_NotTakenForTheFailure — lo que la cola canceló al sacar el pedido no se toma por lo que falló', () => {
+  const w = mundoConCaidasDeCI();
+  const st = JSON.parse(fs.readFileSync(w.ghState, 'utf8'));
+  st.runs['acme/harness'].push({ id: 12, event: 'merge_group', head_branch: `gh-readonly-queue/main/pr-842-${'d'.repeat(40)}`, conclusion: 'cancelled', created_at: HACE(35) });
+  st.jobs[12] = [{ id: 121, name: 'Node 24 · suites-1-of-5', conclusion: 'cancelled' }];
+  st.jobs[10].unshift({ id: 102, name: 'Node 24 · suites-2-of-5', conclusion: 'cancelled' });
+  delete st.job_logs[101];
+  fs.writeFileSync(w.ghState, JSON.stringify(st));
+  assert.strictEqual(refrescarAhora(w).status, 0);
+  const r = correr(w);
+  assert.match(r.out, /pedido 842 \(harness\) se cayó de la cola hace 30 min: la CI combinada salió en rojo \(falta la constancia:/, r.out);
+  assert.match(r.out, /pedido 843 \(harness\) se cayó de la cola hace 30 min: la CI combinada salió en rojo \(en rojo: Node 24 · suites-3-of-5\)\./, r.out);
+  assert.doesNotMatch(r.out, /suites-[12]-of-5/, 'un trabajo cancelado no se nombra como el rojo');
+});
+
+test('Connector_GithubDeadline_IsAnHourNotADuration — el tope de la lectura es la hora límite, como en los demás conectores', () => {
+  const { topeDe } = require(path.join(ROOT, 'integrations', 'github', 'scripts', 'change-requests.js'));
+  assert.strictEqual(topeDe(1000, 11000), 9000, 'el 80 % de lo que falta hasta la hora límite');
+  assert.strictEqual(topeDe(1000, undefined), Infinity, 'sin hora límite, sin tope');
+  assert.ok(topeDe(Date.now(), Date.now() + 90000) < Date.now() + 90000, 'un tope de 90 s no cae en otro siglo');
 });

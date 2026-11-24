@@ -28,6 +28,9 @@ const { spawnSync } = require('child_process');
 const SCRIPTS = path.join(__dirname, '..');
 const SKILL = path.join(SCRIPTS, '..');
 const MARKER = path.join(SCRIPTS, 'marker.js');
+// la raíz del arnés que se prueba: el control de CI en local busca el arnés por TYCON_GUIDES_DIR, y en el árbol armado
+// (el privado adelgazado con el público encima) no lo encuentra de otro modo en una casa de juguete
+const ARNES = path.resolve(SKILL, '..', '..');
 // «skip» del código lo contesta la persona (firma review-skip): la prueba da su click
 const { conVentana } = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'tests', 'lib', 'window-passed.js'));
 const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
@@ -547,7 +550,7 @@ test('T28 Paso8_DodBypass_NoAbreEsteFreno @story-1.8 @ac-21', () => {
     repoPath: repo, storyPath: null, stepsCompleted: [0, 1, 2, 3, 4, 5, 6, 7], stepsPending: [8],
     dodRuntimeChecked: false, adversarial: lanzamiento('wf_BYP'),
   });
-  const r = correr(home, SID, ['complete-step', '8'], { env: { DOD_BYPASS: '1' } });
+  const r = correr(home, SID, ['complete-step', '8'], { env: { DOD_BYPASS: '1', TYCON_GUIDES_DIR: ARNES } });
   assert.equal(r.status, 2, r.stderr);
   assert.match(r.stderr, /el pase adversarial se lanzó \(wf_BYP/, 'el exit 2 sale de ESTE freno');
   assert.match(r.stderr, /no se abre con DOD_BYPASS/);
@@ -555,7 +558,7 @@ test('T28 Paso8_DodBypass_NoAbreEsteFreno @story-1.8 @ac-21', () => {
   const m = leerMarker(home, SID);
   m.adversarialPasses = [{ ts: DESPUES, tipo: '5b', confirmados: 0 }];
   fs.writeFileSync(archivoMarker(home, SID), JSON.stringify(m));
-  const r2 = correr(home, SID, ['complete-step', '8'], { env: { DOD_BYPASS: '1' } });
+  const r2 = correr(home, SID, ['complete-step', '8'], { env: { DOD_BYPASS: '1', TYCON_GUIDES_DIR: ARNES } });
   assert.equal(r2.status, 0, r2.stderr);
 });
 

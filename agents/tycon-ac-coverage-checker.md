@@ -139,7 +139,7 @@ checkout LIMPIO —y `mtime` de un archivo versionado NUNCA es «cuándo cambió
 producto»: en un clon es la hora del checkout—) viven en
 `~/.claude/tycon-harness/guides/accov-governance-protocol.md`
 (extraídas 2026-06-09 — aplican 1 vez al transicionar a review/done, no en
-cada vuelta de Revisores). El orquestador las lee on-demand en «Probar en vivo» y «Preparar el commit»
+cada vuelta de Revisores). El orquestador las lee on-demand en «Probar en vivo» y «Preparar el pull request»
 y este advisor las cita por ID si detecta sus patrones, sin re-derivar el protocolo.
 
 **ACCOV-C9 (meta-audit del self-audit) está RETIRADA desde el 2026-09-16**:
@@ -228,7 +228,7 @@ Heurística:
 
 ## Integración con el pipeline
 
-Core advisor en **Revisores** del `tycon-pipeline`, en paralelo con los demás advisors post-implementación. Falla CRITICAL bloquea «Preparar el commit» si hay ACCOV-C1/C2 (con override explícito del dev si decide "es falso positivo del grep" — registra razón en engram).
+Core advisor en **Revisores** del `tycon-pipeline`, en paralelo con los demás advisors post-implementación. Falla CRITICAL bloquea «Preparar el pull request» si hay ACCOV-C1/C2 (con override explícito del dev si decide "es falso positivo del grep" — registra razón en engram).
 
 **Caller de Revisores** debe pasar:
 - `story_path`

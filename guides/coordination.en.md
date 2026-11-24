@@ -759,7 +759,8 @@ is the only background console with which the owner can still sign with a click.
   coordinator passes it to the owner with the session, what it asks for and a recommendation. A person answers the
   permission, in the session's tab or with `claude attach`.
 - "<session> siguió: el permiso ya no está abierto" or "<session> se cerró con un permiso abierto": the owner is told if
-  they had been asked.
+  they had been asked. "Siguió" asks for nothing and does not wake the coordinator, like "… ya no espera a la persona":
+  those lines are kept and come out ahead of the next news that does wake it.
 - "<session>: la cerró Claude Code a las HH:MM por falta de memoria, quieta N min. Para levantarla: coordination.js relaunch --id <id>":
   Claude Code closes quiet background sessions on its own when the machine runs out of memory, and the harness cannot
   prevent it. The coordinator decides whether to bring it back: that uses memory again and counts for the cap.
@@ -788,16 +789,17 @@ letter, with «Sí, aprobar» and «No».
   Rejecting only denies: it never approves.
 - **Only the person approves it, with a click in the coordinator's tab.** Never the coordinator: not by delegation
   (`approvals.delegated_signing` does not cover it), not with a typed «aprobado», not by touching the list.
-- **With no answer within `coordination.permission_wait_minutes`** (10 with no value, from 1 to 30), the hook leaves
-  without deciding: the usual window comes back in that session, which stays among the stuck ones ("Trabadas") with the
-  reason, and a late click approves nothing. The same if the coordinator dies or stops being the designated one while it
-  waits.
-- **Not carried, and the usual window comes at once:** an open tab, another mode (auto, no permissions, accept edits,
-  plan), no confirmed and alive coordinator, no `owner-wait`, the list off, the coordinator herself, Codex, and on
-  Windows a PowerShell command. Neither is a request that cannot be shown whole (over 1500 characters, characters that
-  are not seen or look blank, a line break in a path or an address, data the box does not show): the session stays
-  stuck with that reason. The tools it carries are Bash,
-  PowerShell, Edit, Write, NotebookEdit and WebFetch; the question box and the plan, never.
+- **A background session never waits for a permission.** Whatever the box does not settle is denied with its reason
+  and a way out (do it another way, go on without it, or ask the coordinator), and it is logged in `gates.log` as
+  `negado-de-fondo`. That happens with no answer within `coordination.permission_wait_minutes` (10 with no value, from 1
+  to 30), if the coordinator dies or stops being the designated one while it waits, and when the request is not carried:
+  another mode (auto, no permissions, accept edits, plan), no confirmed and alive coordinator, no `owner-wait`, the list
+  off, a PowerShell command on Windows, or a request that cannot be shown whole (over 1500 characters, characters that
+  are not seen or look blank, a line break in a path or an address, data the box does not show). A late click approves
+  nothing.
+- **The usual window comes** only where someone can answer it or the hook does not act: an open tab, the coordinator
+  herself, Codex and the hook turned off. The tools it carries are Bash, PowerShell, Edit, Write, NotebookEdit and
+  WebFetch; the question box and the plan, never.
 - **If the person answers in the session's window** or the session closes, the hook dies and its row closes by itself:
   a click is never asked for a request that no longer waits.
 

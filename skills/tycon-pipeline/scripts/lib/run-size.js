@@ -15,7 +15,7 @@
  * `deep_review: always` del repo vuelven completa la corrida aunque todo sea texto.
  *
  * El tiempo estimado sale de las corridas archivadas en esta máquina (`timing-history/*.json`, el marcador de cada una
- * al cerrarse): la mediana de las del mismo tamaño que llegaron a preparar el commit. Las que no guardaron su tamaño se clasifican por lo que tocaron.
+ * al cerrarse): la mediana de las del mismo tamaño que llegaron a preparar el pull request. Las que no guardaron su tamaño se clasifican por lo que tocaron.
  * Sin ninguna, un número fijo por tamaño, dicho como «estimado sin historia».
  *
  * Funciones puras salvo `estimate`, que lee la carpeta que se le pasa.
@@ -199,7 +199,7 @@ function estimate({ size, historyDir }) {
   for (const n of names) {
     let m;
     try { m = JSON.parse(fs.readFileSync(path.join(historyDir, n), 'utf8')).marker; } catch (_) { unreadable += 1; continue; }
-    // sólo las que llegaron a preparar el commit: una abandonada a la mitad tira la mediana para abajo
+    // sólo las que llegaron a preparar el pull request: una abandonada a la mitad tira la mediana para abajo
     if (!m || !require('./steps.js').isDone(m, 'prepare-commit') || archivedSize(m) !== sizeName) continue;
     const min = runMinutes(m);
     if (min !== null) mins.push(min);

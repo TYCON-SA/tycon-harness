@@ -539,9 +539,10 @@ test('T47 Porton_LineaDeBaseDeLaBaseIlegible_Frena: si la línea de base de la b
 // ── El examen en los controles del commit, antes de la firma ─────────────────────────────────────────────────
 // El tramo del control del commit, cortado hasta su `fi` de primer nivel y corrido en el arnés de juguete: el mismo que
 // corren «Preparar el pull request» y el ok de guardar en sólo lectura, antes de pedir la firma.
-const HOOK = path.join(ROOT, '.githooks', 'pre-commit-checks');
+// el gancho del arnés público, también en el árbol armado (ver publicHarnessHook)
+const HOOK = () => require('./lib/pre-commit-hook.js').publicHarnessHook(ROOT);
 function examBlock() {
-  const hook = fs.readFileSync(HOOK, 'utf8');
+  const hook = fs.readFileSync(HOOK(), 'utf8');
   const from = hook.indexOf('# ── El examen del revisor tocado');
   assert.ok(from > 0, 'el control del commit tiene el tramo del examen');
   return hook.slice(from, hook.indexOf('\nfi\n', from) + 4);

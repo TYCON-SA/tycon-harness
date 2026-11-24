@@ -75,11 +75,11 @@ function lab({ clave }) {
   return l;
 }
 
-function puerta(l) {
+function puerta(l, extra = {}) {
   const env = { ...process.env };
   for (const k of DEL_ENTORNO) delete env[k];
   const r = spawnSync('bash', [TEST_GATE, l.repo], { cwd: l.repo, encoding: 'utf8', timeout: 120000,
-    env: { ...env, HOME: l.home, USERPROFILE: l.home, CLAUDE_CODE_SESSION_ID: SID, TG_STATE: l.state, TYCON_SKILLS_DIR: l.skills } });
+    env: { ...env, HOME: l.home, USERPROFILE: l.home, CLAUDE_CODE_SESSION_ID: SID, TG_STATE: l.state, TYCON_SKILLS_DIR: l.skills, ...extra } });
   return { status: r.status, out: `${r.stdout}\n${r.stderr}` };
 }
 const corridas = (l) => { try { return fs.readFileSync(path.join(l.state, 'corridas'), 'utf8').split('\n').filter(Boolean).sort(); } catch (_) { return []; } };
@@ -213,7 +213,11 @@ test('T19 ScopedGate_AnnouncesSizeBeforeTurn @story-8.279 @ac-4 — el acotado d
 });
 
 test('T20 ScopedGate_LargeAnnouncesAlmostFull @story-8.279 @ac-5 — un acotado de cien suites o más dice «casi una completa», antes de pedir el turno y sin repetir el aviso lento', () => {
-  // 🔴 mutación: el renglón sale después de `turn.take`, o se imprime además el «🔴 portón lento» de siempre.
+  // 🔴 mutación: el renglón sale después de `turn.take`, o se imprime además el «🔴 portón lento» de siempre (el aviso
+  //    lento sin callar: `callado: false`).
+  // El aviso lento sólo existe con menos de 3 carriles: con los de la máquina (3 o más en casi todas, y en la CI) la
+  // prueba no podía fallar aunque saliera dos veces. Se fijan 2 carriles, y se comprueba que el corredor los tomó.
+  const CARRILES = { TYCON_SUITES_MAX_WORKERS: '2' };
   const l = lab({ clave: true });
   // con el tope de la máquina de fábrica (60) un acotado no llega a cien: este repo lo sube (va en el commit de abajo)
   fs.appendFileSync(path.join(l.repo, '.test-gate.yaml'), '  max_local_suites: 200\n');
@@ -231,8 +235,10 @@ test('T20 ScopedGate_LargeAnnouncesAlmostFull @story-8.279 @ac-5 — un acotado 
   m.baseSha = git(l.repo, 'rev-parse', 'HEAD').stdout.trim();
   fs.writeFileSync(mf, JSON.stringify(m));
   fs.writeFileSync(path.join(l.repo, 'lib', 'acme.js'), 'module.exports = 2;\n');
-  const r = puerta(l);
+  const r = puerta(l, CARRILES);
   assert.equal(r.status, 0, r.out);
+  // el caso en que el aviso lento existe: dos carriles para cien suites o más
+  assert.match(r.out, /\b2 a la vez por TYCON_SUITES_MAX_WORKERS\b/, r.out);
   const ms = [...r.out.matchAll(RENGLON)];
   assert.equal(ms.length, 1, r.out);
   assert.deepEqual([ms[0][1], ms[0][2]], ['101', '102'], r.out);

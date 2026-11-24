@@ -88,3 +88,48 @@ test('FailedQuery_FormasQueNoSeVeian: opción antes del subcomando, search, rest
   for (const c of ['az repos pr list --project Inexistente', 'az.cmd repos pr list --project Inexistente', 'C:\\x\\az.exe repos pr list --project Inexistente',
     'az --only-show-errors repos pr list --project Inexistente']) assert.deepStrictEqual(A.proyectos(c, AY), ['Inexistente'], c);
 });
+
+// 🔴 Falla con: las palabras se cortan en la primera opción después del grupo, y `gh pr -R o/r list` queda en «pr»
+test('FailedQuery_OpcionEntreElGrupoYElVerbo: una opción con valor del conector entre el grupo y el verbo no corta la consulta', () => {
+  const H = require(HOOK);
+  const clase = (s) => H.clasificar(s).clase;
+  for (const c of ['gh pr -R o/r list', 'gh pr --repo o/r view 3', 'gh pr --repo=o/r list', 'gh issue -R o/r list --state all',
+    'az repos pr --org https://dev.azure.com/acme list', 'az repos pr --project X list', 'az repos pr -p X show --id 3',
+    'az repos pr --organization=https://dev.azure.com/acme list', 'az pipelines runs -o json list']) assert.strictEqual(clase(c), 'consulta', c);
+  // una opción que no es del conector sigue cortando: su valor no se lee como verbo
+  for (const c of ['gh pr create --title list', 'gh pr create -R o/r --title list', 'gh pr --web list',
+    'az repos pr create --title list', 'az repos pr create --org u --title show', 'az repos pr --description list create']) assert.strictEqual(clase(c), 'otro', c);
+  const A = require(path.join(ROOT, 'integrations', 'azure-devops', 'scripts', 'query-notice.js'));
+  assert.deepStrictEqual(A.proyectos('az repos pr --org https://dev.azure.com/acme list --project Inexistente', H.AYUDA), ['Inexistente']);
+});
+
+// 🔴 Falla con: después de saltear una opción del conector, la redirección (`2>&1`, `2>/dev/null`) se juntaba como una
+// palabra más, y el conector de Azure, que decide por la última, perdía el verbo (los casos del banco con `-o tsv 2>&1`)
+test('FailedQuery_RedireccionNoEsPalabra: una redirección corta las palabras, con o sin una opción del conector antes', () => {
+  const H = require(HOOK);
+  const clase = (s) => H.clasificar(s).clase;
+  for (const c of ['az pipelines runs list -o tsv 2>&1', 'az pipelines runs list --project P -o tsv 2>/dev/null', 'az repos pr --org u list 2>&1',
+    'az pipelines runs list 2>&1', 'gh pr -R o/r list 2>&1']) assert.strictEqual(clase(c), 'consulta', c);
+  for (const c of ['az repos pr create --org u 2>&1', 'gh pr create -R o/r 2>&1']) assert.strictEqual(clase(c), 'otro', c);
+  // y el gancho entero avisa la consulta enmascarada, como fijan los casos del banco (39-consulta-fallida-notice.json)
+  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'fq-redir-'));
+  for (const command of ['az pipelines runs list --project P -o tsv 2>&1 | head -3', 'az pipelines runs list --project P -o tsv 2>&1 || true',
+    'cd /repo\nfor p in a b; do az pipelines runs list --project $p -o tsv 2>/dev/null | head -3; done', 'az repos pr --org u list 2>&1 | head -3']) {
+    const input = JSON.stringify({ tool_name: 'Bash', tool_input: { command }, tool_response: { stdout: '', stderr: '' } });
+    const r = spawnSync(process.execPath, [HOOK], { input, encoding: 'utf8', env: { ...process.env, HOME: casa, USERPROFILE: casa } });
+    assert.strictEqual(r.status, 2, `${command}: ${r.stderr}`);
+    assert.match(r.stderr, /VACÍO/, command);
+  }
+});
+
+// 🔴 Falla con: ya visto el verbo, una opción del conector se salteaba igual y la palabra suelta que venía después (una
+// variable, un número) pasaba a ser la última, que es la que mira el conector de Azure; una redirección antes del verbo
+// cortaba las palabras; y una escritura con `-p x show` detrás se leía como consulta (la vuelta corta del 24/11)
+test('FailedQuery_VerboYaVisto_LaOpcionCorta: la opción del conector se saltea sólo antes del verbo, y la redirección no corta', () => {
+  const H = require(HOOK);
+  const clase = (s) => H.clasificar(s).clase;
+  for (const c of ['az repos pr list --project p $X', 'az repos pr list --org u "$@"', 'az repos pr list -p p 5', 'az repos pr list --org=u ~/x',
+    'az repos pr 2>&1 list', 'az repos pr 2>/dev/null list', 'az 2>&1 repos pr list', 'az repos pr 2> err.txt list',
+    'az repos pr --org u list', 'gh pr -R o/r list']) assert.strictEqual(clase(c), 'consulta', c);
+  for (const c of ['az repos pr set-vote -p x show', 'az repos pr create --org u list', 'gh pr create -R o/r list']) assert.strictEqual(clase(c), 'otro', c);
+});

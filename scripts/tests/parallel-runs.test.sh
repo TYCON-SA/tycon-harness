@@ -304,15 +304,23 @@ o16="$(CLAUDE_CODE_SESSION_ID=sin-marcador node -e 'console.log(require("path").
 f16=""; [ "$o16" = 1.9-20261002000000 ] || f16="$f16 sello-manda($o16)"
 # tres arranques seguidos: la carpeta con sufijo lleva el MISMO sello que la que chocó (no uno de un segundo después),
 # y una carpeta que todavía no existe bajo un repo nombrado por un enlace (/var → /private/var en macOS) es de ese repo
+# Con el reloj de verdad, y con dos que cambian de segundo en el medio: entre el primer arranque y el segundo (el
+# segundo lleva el sello nuevo y el tercero, que choca con él, lleva ESE sello y su número), y dentro del segundo
+# arranque, que choca con el primero (su número va con el sello del primero, no con uno de un segundo después). Cada
+# reloj en su minuto: las carpetas de uno no chocan con las del otro
+for reloj16 in "" 2026-11-24T08:32:49.900Z 2026-11-24T08:33:49.600Z; do
 o16="$(node -e '
-  const [sk, repo, story] = process.argv.slice(1); const rd = require(sk + "/lib/run-dir.js"), path = require("path");
+  const [sk, repo, story, reloj] = process.argv.slice(1);
+  if (reloj) { const Real = Date; let t = Real.parse(reloj); global.Date = class extends Real { constructor(...a) { if (a.length) super(...a); else { super(t); t += 300; } } }; }
+  const rd = require(sk + "/lib/run-dir.js"), path = require("path");
   const n = [0, 1, 2].map(() => path.basename(rd.createRunDir(repo, "1.9", story)));
-  const sellos = new Set(n.map((x) => (/-(\d{14})/.exec(x) || [])[1]));
-  const sufijos = n.slice(1).every((x) => x.startsWith(n[0]) || /-\d{14}$/.test(x));
-  console.log((sellos.size === 1 || sufijos ? "sello-ok" : "sello-distinto:" + n.join(",")) + " "
+  // cada carpeta termina en un sello, o es una de antes (la que chocó) con su número
+  const ok = n.every((x, i) => /-\d{14}$/.test(x) || n.slice(0, i).includes(x.replace(/-\d+$/, "")));
+  console.log((ok ? "sello-ok" : "sello-distinto:" + n.join(",")) + " "
     + (rd.bajoElRepo(path.join(repo, ".advisors", "pipeline-runs", "1.9-29990101000000"), repo) ? "enlace-ok" : "enlace-no"));
-' "$SK" "$M16" "$M16/specs/1-9-x.md" 2>&1 | tail -1)"
+' "$SK" "$M16" "$M16/specs/1-9-x.md" "$reloj16" 2>&1 | tail -1)"
 [ "$o16" = "sello-ok enlace-ok" ] || f16="$f16 $o16"
+done
 # una carpeta de corridas que está y no se lee no es «ninguna»: no se abre otra a ciegas, y se dice
 chmod 000 "$M16/.advisors/pipeline-runs"
 o16="$(CLAUDE_CODE_SESSION_ID=sin-marcador node -e 'console.log(String(require(process.argv[1] + "/pipeline.js").resolveRunDir(process.argv[2], "1.9", true, process.argv[3])))' "$SK" "$M16" "$M16/specs/1-9-x.md" 2>"$TMP/t16.err")"
