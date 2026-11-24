@@ -118,6 +118,8 @@ test('ControlProfile_TreeVariable_Ignored — la variable no elige el árbol, y 
 // 🔴 Falla con: el patrón de «fuertes» aceptaba cualquier sufijo, y un modelo local llamado opus-lite contaba como fuerte.
 test('ControlProfile_StrongNeedsAnthropicId — fuerte es el nombre solo o un id de Anthropic con su versión', () => {
   assert.deepStrictEqual(['opus-lite', 'fable-local-llama', 'opus-x', 'claude-opus-lite', 'claude-fable'].map(CP.perfilDe), Array(5).fill('resto'));
+  // después de la versión sólo va la fecha: otro sufijo es de otro modelo
+  assert.deepStrictEqual(['claude-opus-5-5-lite', 'claude-opus-5-5-distill', 'claude-opus-4-5-latest', 'claude-opus-5-5-1234'].map(CP.perfilDe), Array(4).fill('resto'));
   assert.deepStrictEqual(['opus', 'fable', 'claude-opus-5-5', 'claude-fable-5-1', 'claude-opus-4-1-20250805', 'Claude-Fable-5'].map(CP.perfilDe), Array(6).fill('fuertes'));
 });
 

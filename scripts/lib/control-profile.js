@@ -29,9 +29,10 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..', '..');
 const FUERTES = ['opus', 'fable'];
 
-// un modelo de Claude de un perfil fuerte: el nombre solo (`opus`) o el id de Anthropic con su versión (`claude-opus-5-5`).
-// Otro id que sólo contiene la palabra (el de otro proveedor) o la lleva con otro sufijo (`opus-lite`) no lo es
-const FUERTE = new RegExp(`^(?:(?:${FUERTES.join('|')})|claude-(?:${FUERTES.join('|')})-\\d[\\w.-]*)$`, 'i');
+// un modelo de Claude de un perfil fuerte: el nombre solo (`opus`) o el id de Anthropic con su versión y, si la trae, su
+// fecha (`claude-opus-5-5`, `claude-opus-4-1-20250805`). Otro id que sólo contiene la palabra (el de otro proveedor) o la
+// lleva con otro sufijo (`opus-lite`, `claude-opus-5-5-lite`) no lo es
+const FUERTE = new RegExp(`^(?:(?:${FUERTES.join('|')})|claude-(?:${FUERTES.join('|')})-\\d+(?:-\\d+)?(?:-\\d{8})?)$`, 'i');
 /** El perfil de un modelo leído: «fuertes», «resto», o null si no hay modelo. */
 function perfilDe(modelo) {
   if (!modelo || typeof modelo !== 'string') return null;
