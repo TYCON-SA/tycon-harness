@@ -47,7 +47,8 @@
             "printf '%s' '{\"version\":1,\"public\":{\"platform\":\"github\",\"org\":\"acme\",\"repo\":\"harness\"},\"profile\":{\"platform\":\"azure\",\"org\":\"acme\",\"project\":\"Harness\",\"repo\":\"harness-team-profile\"},\"operations\":{\"platform\":\"azure\",\"org\":\"acme\",\"project\":\"Harness\",\"repo\":\"harness-team-operations\"},\"maintainers\":{\"platform\":\"azure\",\"org\":\"acme\",\"project\":\"Harness\",\"repo\":\"harness-maintainers\"}}' > team-repos.json",
             "git init -q repo && git -C repo remote add origin https://dev.azure.com/acme/Harness/_git/harness",
             "node -e 'const p=Object.assign({pullRequestId:5,isDraft:false,mergeStatus:\"conflicts\",status:\"active\",title:\"pedido 5\",autoCompleteSetBy:{id:\"q\"},sourceRefName:\"refs/heads/story/5\",creationDate:\"2026-10-25T10:00:00Z\",lastMergeSourceCommit:{commitId:\"c5\"},repository:{name:\"harness-maintainers\"}},{\"isDraft\":true,\"mergeStatus\":\"succeeded\"});require(\"fs\").writeFileSync(\"fixaz/prs-0.json\",JSON.stringify({count:1,value:[p]}))'",
-            "node -e 'const d=require(process.env.FIXTURE+\"/tcg/scripts/setup/harness/tycon-home.js\").stateDir(process.env.HOME);require(\"fs\").mkdirSync(d,{recursive:true});require(\"fs\").writeFileSync(d+\"/stuck-prs.json\",JSON.stringify({\"acme/Harness/harness-maintainers#5\":{estado:\"clean+borrador\",punta:\"c5\",vistoDesde:new Date(Date.now()-120*60000).toISOString()}}))'"
+            "node -e 'const d=require(process.env.FIXTURE+\"/tcg/scripts/setup/harness/tycon-home.js\").stateDir(process.env.HOME);require(\"fs\").mkdirSync(d,{recursive:true});require(\"fs\").writeFileSync(d+\"/stuck-prs.json\",JSON.stringify({\"acme/Harness/harness-maintainers#5\":{estado:\"clean+borrador\",punta:\"c5\",vistoDesde:new Date(Date.now()-120*60000).toISOString()}}))'",
+            "node -e 'const d=require(process.env.FIXTURE+\"/tcg/scripts/setup/harness/tycon-home.js\").stateDir(process.env.HOME);require(\"fs\").mkdirSync(d,{recursive:true});require(\"fs\").writeFileSync(d+\"/outside-contributions.json\",JSON.stringify({at:new Date().toISOString(),repo:\"acme/harness\",medicion:{ok:true,prs:[],issues:[]}}))'"
           ],
           "stdin": {
             "source": "startup",
@@ -57,7 +58,8 @@
           "expect": {},
           "files": {
             "az.js": "// el az de mentira lanzado con Node: en Windows un guion de bash sin extensión no se puede lanzar directo\nconst path = require('path');\nconst r = require('child_process').spawnSync(process.env.CLAUDE_CODE_GIT_BASH_PATH || 'bash', [path.join(__dirname, 'az', 'az'), ...process.argv.slice(2)], { stdio: 'inherit' });\nprocess.exit(r.status === null ? 1 : r.status);\n"
-          }
+          },
+          "__doc": "Con una lectura de hoy de lo de afuera, vacía: el caso mide el borrador sin choque, no la lectura de fondo."
         },
         {
           "id": "grita-no-medido-si-az-falla",

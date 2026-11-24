@@ -29,6 +29,10 @@ test('FailedQuery_LoDeCadaPlataformaLoTraeSuConector: el gancho no nombra ningun
   assert.strictEqual(clase('gh api repos/acme/x'), 'consulta');
   assert.strictEqual(clase('gh api -X POST repos/acme/x'), 'otro');
   assert.strictEqual(clase('curl https://acme.invalid/x'), 'consulta');
+  // las opciones se saltean sólo en los programas de un conector, que dice cuáles llevan valor: en los demás, el valor
+  // de una opción que el gancho no conoce no se toma por el verbo
+  assert.strictEqual(clase('npm --prefix list install foo'), 'otro');
+  assert.strictEqual(clase('npm view foo'), 'consulta');
 });
 
 test('FailedQuery_ElAvisoDelProyectoYElRefrescoSiguenAndando: con la lista guardada, el proyecto que no existe se avisa', () => {
@@ -61,4 +65,26 @@ test('FailedQuery_ElAvisoDelProyectoYElRefrescoSiguenAndando: con la lista guard
   const S = require(path.join(suelto, 'scripts', 'hooks', 'failed-query-notice.js'));
   assert.strictEqual(S.clasificar('az repos pr list').clase, 'otro');
   assert.strictEqual(S.clasificar('curl https://acme.invalid/x').clase, 'consulta');
+});
+
+// 🔴 Falla con: la lista de palabras del comando se corta en la primera opción (`gh -R o/r pr list`, `az --only-show-errors
+// repos …` no son consultas), `gh search` y `az rest` no están, el proyecto de `az.cmd`/`az.exe` no se mira, y un método de
+// escritura pegado a su opción (`--method=POST`, `-XPOST`) pasa por lectura
+test('FailedQuery_FormasQueNoSeVeian: opción antes del subcomando, search, rest, az.cmd y método con «=»', () => {
+  const H = require(HOOK);
+  const clase = (s) => H.clasificar(s).clase;
+  for (const c of ['gh -R o/r pr list', 'gh --repo o/r pr view 3', 'gh search prs foo', 'gh search issues --owner acme x',
+    'az --only-show-errors repos pr list', 'az -o json repos pr list', 'az rest --url https://x', 'az rest --method get --url https://x',
+    'az rest -m GET --url https://x', 'AZ.CMD repos pr list']) assert.strictEqual(clase(c), 'consulta', c);
+  for (const c of ['gh api repos/x --method=POST', 'gh api -XPOST x', 'gh api -X post x', 'gh -R o/r pr create --title t',
+    'az devops invoke --area wit --http-method=POST', 'az rest --method post --url https://x', 'az rest --method=PUT --url https://x',
+    'az rest -m delete --url https://x', 'gh api repos/x -X=POST', 'gh api x -fname=v', 'gh api x -Fa=b', 'az rest -mput --url u',
+    'az rest -m=patch --url u']) assert.strictEqual(clase(c), 'otro', c);
+  // las de siempre no cambian
+  for (const c of ['gh pr list -R o/r', 'gh api repos/x --method GET', 'gh api -XGET x', 'gh api x -X=GET', 'az rest -mget --url u',
+    'az repos pr list --project X']) assert.strictEqual(clase(c), 'consulta', c);
+  const A = require(path.join(ROOT, 'integrations', 'azure-devops', 'scripts', 'query-notice.js'));
+  const AY = H.AYUDA;
+  for (const c of ['az repos pr list --project Inexistente', 'az.cmd repos pr list --project Inexistente', 'C:\\x\\az.exe repos pr list --project Inexistente',
+    'az --only-show-errors repos pr list --project Inexistente']) assert.deepStrictEqual(A.proyectos(c, AY), ['Inexistente'], c);
 });
