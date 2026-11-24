@@ -74,6 +74,11 @@ const PARA_OTRA_SESION = {
   // un control declarado a mano y un criterio que no se prueba en vivo: los firma la persona, en la ventana o la terminal
   'set-check': { firma: 'escape:force-manual', marcador: true, si: (a) => a.includes('--force-manual') },
   'runtime-waiver': { firma: 'runtime-waiver', marcador: true },
+  // cerrar como deuda, el rojo esperado de la matriz y apagar el modo autónomo: sobre la ejecución abierta del destino
+  'close-as-debt': { firma: 'escape:cerrar-como-deuda', marcador: true },
+  // el rojo esperado, de la matriz o de un control: la misma firma
+  'expect-red': { firma: 'escape:rojo-esperado-de-la-matriz', marcador: true },
+  'set-autonomous': { firma: 'escape:set-autonomous', marcador: true, si: (a) => !['true', '1', 'on'].includes(a[3]) },
   'clear-session': { firma: 'lost-run', nombra: 3, si: (a) => a.includes('--lost') && !a.includes('--partition') },
   // el ok de guardar: sobre la corrida abierta del destino, la que vio el dueño
   'approve-save': { firma: 'save', marcador: true },

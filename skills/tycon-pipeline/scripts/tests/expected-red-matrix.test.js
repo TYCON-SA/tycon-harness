@@ -90,9 +90,14 @@ function entorno(opciones = {}) {
     ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0', TYCON_HOME: '',
     TYCON_TIME_TRACKING: 'none', TYCON_MUTATION_CHECK: 'off', TYCON_WAIT_NOTICE: '',
   });
-  const correr = (script, args, sid, extra = {}) => spawnSync(process.execPath, [path.join(SCRIPTS, script), ...args], {
-    encoding: 'utf8', env: { ...env(sid), ...extra }, input: '', cwd: repo,
-  });
+  // la sesión con una firma aprobada en la ventana para su próximo comando (tests/lib/window-passed.js): se gasta en él
+  const conFirma = new Set();
+  const { conVentana } = require(path.join(RAIZ, 'scripts', 'tests', 'lib', 'window-passed.js'));
+  const correr = (script, args, sid, extra = {}) => {
+    const base = { ...env(sid), ...extra };
+    const firmada = conFirma.delete(sid);
+    return spawnSync(process.execPath, [path.join(SCRIPTS, script), ...args], { encoding: 'utf8', env: firmada ? conVentana(base) : base, input: '', cwd: repo });
+  };
   const dir = () => [path.join(home, '.tycon', 'state'), path.join(home, '.claude', '.tycon-pipeline')].find((d) => fs.existsSync(path.join(d, 'active')));
   const activo = (sid) => path.join(dir(), 'active', `${sid}.json`);
   const leer = (sid) => JSON.parse(fs.readFileSync(activo(sid), 'utf8'));
@@ -111,13 +116,9 @@ function entorno(opciones = {}) {
     fs.mkdirSync(dodDir, { recursive: true });
     LEDGER.append({ dodDir, gatesLog, story: '9.9', acs, ...(cmd ? { cmd } : {}) });
   };
-  // la constancia que deja el freno cuando la persona aprueba la firma del rojo esperado de la matriz
-  const firmar = (sid, { pruebas, hasta, escape = 'rojo-esperado-de-la-matriz' }) => {
-    const detalle = pruebas ? require(path.join(SCRIPTS, 'lib', 'marker-command.js')).detalleDelRojoEsperado('acmatrix', pruebas, hasta) : undefined;
-    const r = require(path.join(RAIZ, 'scripts', 'lib', 'guard-record.js')).anotar({ freno: 'safety-guard', regla: 'ESC-C4', veredicto: 'escape',
-      cmd: 'x', home, via: 'ventana', sesion: sid, escape, detalle });
-    assert.ok(r.escrito, JSON.stringify(r));
-  };
+  // la persona aprueba en la ventana el próximo comando de esa sesión (la firma vale para ese comando: su lista y su
+  // fecha las ata el registro de la ventana, que se prueba en owner-window.test.js)
+  const firmar = (sid) => { conFirma.add(sid); };
   return { home, repo, story, git, correr, leer, escribir, activo, arrancar, humo, dir, gates, firmar };
 }
 
@@ -357,33 +358,34 @@ test('T7 ExpectRed_Acmatrix_NeedsUntil @story-8.252 @ac-7 — sin fecha, vencida
   assert.strictEqual(r.status, 2, r.stderr);
   assert.match(r.stderr, /--until/);
   sinEscribir();
-  E.firmar('s-t7', { pruebas: T, hasta: fecha(-1) });
+  E.firmar('s-t7');
   r = expectRed(E, 's-t7', T, fecha(-1));
   assert.strictEqual(r.status, 2, r.stderr);
   assert.match(r.stderr, /anterior a hoy/);
   sinEscribir();
-  E.firmar('s-t7', { pruebas: T, hasta: fecha(15) });
+  E.firmar('s-t7');
   r = expectRed(E, 's-t7', T, fecha(15));
   assert.strictEqual(r.status, 2, r.stderr);
   assert.match(r.stderr, /14 días/);
   assert.match(r.stderr, new RegExp(fecha(14)));
   sinEscribir();
-  E.firmar('s-t7', { pruebas: ['T1', 'T9'], hasta: fecha(7) });
+  E.firmar('s-t7');
   r = expectRed(E, 's-t7', ['T1', 'T9'], fecha(7));
   assert.strictEqual(r.status, 2, r.stderr);
   assert.match(r.stderr, /T9/);
   assert.match(r.stderr, /### Tests/);
   sinEscribir();
-  E.firmar('s-t7', { pruebas: T, hasta: fecha(7) });
+  E.firmar('s-t7');
   r = expectRed(E, 's-t7', T, fecha(7));
   assert.strictEqual(r.status, 0, r.stderr);
   const m = E.leer('s-t7');
   assert.strictEqual(m.checks.acmatrix, 'rojo-esperado:exit=1');
   assert.deepStrictEqual(m.expectedRed.acmatrix.tests, T);
   assert.strictEqual(m.expectedRed.acmatrix.until, fecha(7));
-  // otro control sigue como hoy: sin --until y sin la firma nueva
+  // otro control, sin --until: desde la 8.323 lleva la misma firma del rojo esperado
   const otro = paraElRojoEsperado('s-t7b');
   otro.escribir('s-t7b', { ...otro.leer('s-t7b'), checks: { ...otro.leer('s-t7b').checks, tests: 'red:exit=1' } });
+  otro.firmar('s-t7b');
   r = otro.correr('marker.js', ['expect-red', 'tests', '--tests', 'T2'], 's-t7b');
   assert.strictEqual(r.status, 0, r.stderr);
   assert.strictEqual(otro.leer('s-t7b').checks.tests, 'rojo-esperado:exit=1');
@@ -430,12 +432,32 @@ test('T9 Matrix_TestsCoverAcs @story-8.252 @ac-2 — qué pruebas nombran cada c
   assert.deepStrictEqual(c.uncovered, [1, 2, 3, 4, 5]);
 });
 
-test('T10 ExpectRed_Acmatrix_AsksPermission @story-8.252 @ac-9 — la firma propia: la pide el freno, la ventana muestra criterios, pruebas y fecha, y vale una vez para su lista', () => {
+// 🔴 Falla con: el rojo esperado de un control sin cuadro en la ventana: la fuente pedía la fecha y la matriz, así que la
+// firma de un control (8.323) no se podía dar nunca (hallazgo del pase adversarial).
+test('8.323-ExpectRedDeUnControl_LaVentanaDaSuCuadro — el control, las pruebas y la deuda, sin fecha ni matriz', () => {
+  const MARKER = 'node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js';
+  const E = paraElRojoEsperado('s-er');
+  const ow = require(path.join(RAIZ, 'scripts', 'lib', 'owner-window.js'));
+  const comando = `${MARKER} expect-red tests --tests T2,T5`;
+  const cuadro = ow.cuadroPara({ firma: 'escape:rojo-esperado-de-la-matriz', comando, palabras: null, destino: 's-er', cwd: E.repo, casa: E.home, sesion: 's-er' });
+  assert.ok(!cuadro.error, cuadro.error);
+  const todo = JSON.stringify(cuadro);
+  assert.match(todo, /tests/);
+  assert.match(todo, /T2, T5/);
+  assert.match(todo, new RegExp(DEUDA));
+  assert.doesNotMatch(todo, /vence|AC \d/, 'sin fecha ni criterios de la matriz');
+  // sin la lista de pruebas no hay cuadro
+  const sin = ow.cuadroPara({ firma: 'escape:rojo-esperado-de-la-matriz', comando: `${MARKER} expect-red tests`, palabras: null, destino: 's-er', cwd: E.repo, casa: E.home, sesion: 's-er' });
+  assert.ok(sin.error, JSON.stringify(sin));
+});
+
+test('T10 ExpectRed_Acmatrix_AsksPermission @story-8.252 @ac-9 — la firma propia: la pide su guion (escondida, el freno), la ventana muestra criterios, pruebas y fecha, y vale una vez', () => {
   const mc = require(path.join(SCRIPTS, 'lib', 'marker-command.js'));
   const MARKER = 'node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js';
   const hasta = fecha(7);
   const comando = `${MARKER} expect-red acmatrix --tests T1,T2,T3 --until ${hasta}`;
-  // el freno: con una ejecución (aunque esté en verde, como al renovar), pide la firma nueva con su huella
+  // el freno: la forma exacta la pide el guion en la ventana, no el freno; escrita de otra forma (con un `cd` delante),
+  // el freno la sigue frenando con su huella, aunque la ejecución esté en verde (como al renovar)
   const E = paraElRojoEsperado('s-t10');
   E.escribir('s-t10', { ...E.leer('s-t10'), checks: { tests: 'green', advisors: 'green', acmatrix: 'rojo-esperado:exit=1' },
     expectedRed: { acmatrix: { tests: ['T1'], deuda: DEUDA, at: ahora(), until: fecha(3) } }, stepsPending: [] });
@@ -444,15 +466,21 @@ test('T10 ExpectRed_Acmatrix_AsksPermission @story-8.252 @ac-9 — la firma prop
   });
   let g = gate(comando);
   assert.strictEqual(g.status, 0, g.stderr);
+  assert.doesNotMatch(g.stdout, /^frena=/m, `la forma exacta la firma su guion: ${g.stdout}`);
+  g = gate(`cd ${E.repo} && ${comando}`);
+  assert.strictEqual(g.status, 0, g.stderr);
   assert.match(g.stdout, /^frena=rojo esperado de la matriz\texpect-red\tacmatrix$/m, g.stdout);
   assert.match(g.stdout, new RegExp(`^detalle=${mc.detalleDelRojoEsperado('acmatrix', ['T1', 'T2', 'T3'], hasta)}$`, 'm'), g.stdout);
   // la huella no depende del orden ni de las repeticiones de la lista; cambia con la lista o la fecha
   assert.strictEqual(mc.detalleDelRojoEsperado('acmatrix', ['T3', 'T1', 'T2', 'T1'], hasta), mc.detalleDelRojoEsperado('acmatrix', ['T1', 'T2', 'T3'], hasta));
   assert.notStrictEqual(mc.detalleDelRojoEsperado('acmatrix', ['T1', 'T2'], hasta), mc.detalleDelRojoEsperado('acmatrix', ['T1', 'T2', 'T3'], hasta));
   assert.notStrictEqual(mc.detalleDelRojoEsperado('acmatrix', ['T1', 'T2', 'T3'], fecha(8)), mc.detalleDelRojoEsperado('acmatrix', ['T1', 'T2', 'T3'], hasta));
-  // otro control sigue pidiendo «cerrar como deuda», sin huella
+  // otro control (8.323): la misma firma del rojo esperado; la forma exacta la pide su guion, la escondida la frena el
+  // freno, sin la huella de la matriz
   g = gate(`${MARKER} expect-red tests --tests T2`);
-  assert.match(g.stdout, /^frena=cerrar como deuda\texpect-red\ttests$/m, g.stdout);
+  assert.doesNotMatch(g.stdout, /^frena=/m, g.stdout);
+  g = gate(`cd ${E.repo} && ${MARKER} expect-red tests --tests T2`);
+  assert.match(g.stdout, /^frena=rojo esperado de la matriz\texpect-red\ttests$/m, g.stdout);
   assert.doesNotMatch(g.stdout, /^detalle=/m);
   // la ventana: lo que se aprueba trae los criterios con su texto, las pruebas y la fecha
   const ow = require(path.join(RAIZ, 'scripts', 'lib', 'owner-window.js'));
@@ -466,41 +494,36 @@ test('T10 ExpectRed_Acmatrix_AsksPermission @story-8.252 @ac-9 — la firma prop
   // envuelto, no se ve qué se firma: sin criterios a la vista, no hay cuadro
   const envuelto = ow.cuadroPara({ firma: 'escape:rojo-esperado-de-la-matriz', comando: `bash -c '${comando}'`, palabras: null, destino: 's-t10', cwd: E.repo, casa: E.home, sesion: 's-t10' });
   assert.ok(envuelto.error, JSON.stringify(envuelto));
-  // marker.js: sin constancia no escribe; con la de otra lista u otra fecha tampoco; con la suya sí, y una sola vez
+  // marker.js: sin la firma en la ventana no escribe; con ella sí, una vez, y la vía queda anotada
   const R = paraElRojoEsperado('s-t10b');
   const T = ['T1', 'T2', 'T3'];
   let r = expectRed(R, 's-t10b', T, hasta);
-  assert.strictEqual(r.status, 2, r.stderr);
-  assert.match(r.stderr, /ventana de permiso/);
-  R.firmar('s-t10b', { pruebas: ['T1', 'T2'], hasta });
-  R.firmar('s-t10b', { pruebas: T, hasta: fecha(8) });
-  R.firmar('s-t10b', { pruebas: T, hasta, escape: 'cerrar-como-deuda' });
-  r = expectRed(R, 's-t10b', T, hasta);
-  assert.strictEqual(r.status, 2, r.stderr);
+  assert.strictEqual(r.status, 1, r.stderr);
+  assert.match(r.stderr, /no pasó por la ventana/);
   assert.strictEqual(R.leer('s-t10b').expectedRed, undefined);
-  R.firmar('s-t10b', { pruebas: T, hasta });
+  R.firmar('s-t10b');
   r = expectRed(R, 's-t10b', T, hasta);
   assert.strictEqual(r.status, 0, r.stderr);
-  // la misma constancia no sirve para otra escritura (renovar con la misma lista y fecha)
+  assert.strictEqual(R.leer('s-t10b').expectedRed.acmatrix.via, 'ventana');
+  // otra escritura (renovar con la misma lista y fecha) pide otra firma
   r = expectRed(R, 's-t10b', T, hasta);
-  assert.strictEqual(r.status, 2, r.stderr);
-  assert.match(r.stderr, /ventana de permiso/);
+  assert.strictEqual(r.status, 1, r.stderr);
 });
 
 test('T12 ExpectRed_Acmatrix_Renew @story-8.252 @ac-7 — renovar dentro del tope cambia la fecha; más allá, no; una medición más en rojo vuelve a rojo y se firma de nuevo', () => {
   const E = paraElRojoEsperado('s-t12');
   const T = ['T1', 'T2', 'T3'];
-  E.firmar('s-t12', { pruebas: T, hasta: fecha(3) });
+  E.firmar('s-t12');
   let r = expectRed(E, 's-t12', T, fecha(3));
   assert.strictEqual(r.status, 0, r.stderr);
   // renovar dentro del tope: cambia la fecha y lo anota
-  E.firmar('s-t12', { pruebas: T, hasta: fecha(10) });
+  E.firmar('s-t12');
   r = expectRed(E, 's-t12', T, fecha(10));
   assert.strictEqual(r.status, 0, r.stderr);
   assert.strictEqual(E.leer('s-t12').expectedRed.acmatrix.until, fecha(10));
   assert.match(E.gates(), new RegExp(`"name":"acmatrix-debt-renewed"[^\\n]*"until":"${fecha(10)}"`));
   // más allá del tope: no escribe y dice el tope
-  E.firmar('s-t12', { pruebas: T, hasta: fecha(20) });
+  E.firmar('s-t12');
   r = expectRed(E, 's-t12', T, fecha(20));
   assert.strictEqual(r.status, 2, r.stderr);
   assert.match(r.stderr, new RegExp(fecha(14)));
@@ -510,9 +533,9 @@ test('T12 ExpectRed_Acmatrix_Renew @story-8.252 @ac-7 — renovar dentro del top
   r = E.correr('marker.js', ['run-check', 'acmatrix', '--', process.execPath, '-e', 'process.exit(1)'], 's-t12');
   assert.strictEqual(E.leer('s-t12').checks.acmatrix, 'red:exit=1', r.stderr + r.stdout);
   r = expectRed(E, 's-t12', T, fecha(12));
-  assert.strictEqual(r.status, 2, 'sin la firma nueva no vuelve al rojo esperado');
+  assert.strictEqual(r.status, 1, 'sin la firma nueva no vuelve al rojo esperado');
   assert.strictEqual(E.leer('s-t12').checks.acmatrix, 'red:exit=1');
-  E.firmar('s-t12', { pruebas: T, hasta: fecha(12) });
+  E.firmar('s-t12');
   r = expectRed(E, 's-t12', T, fecha(12));
   assert.strictEqual(r.status, 0, r.stderr);
   assert.strictEqual(E.leer('s-t12').checks.acmatrix, 'rojo-esperado:exit=1');
@@ -525,14 +548,14 @@ test('T12 ExpectRed_Acmatrix_Renew @story-8.252 @ac-7 — renovar dentro del top
 test('ExpectRed_Acmatrix_RenewLogUnwritable_KeepsOldDate — si la renovación no se puede anotar, la fecha nueva no se guarda', () => {
   const E = paraElRojoEsperado('s-t12b');
   const T = ['T1', 'T2', 'T3'];
-  E.firmar('s-t12b', { pruebas: T, hasta: fecha(3) });
+  E.firmar('s-t12b');
   let r = expectRed(E, 's-t12b', T, fecha(3));
   assert.strictEqual(r.status, 0, r.stderr);
   // el gates.log no se deja escribir: es una carpeta
   const gatesLog = path.join(E.dir(), 'gates.log');
   fs.rmSync(gatesLog);
   fs.mkdirSync(gatesLog);
-  E.firmar('s-t12b', { pruebas: T, hasta: fecha(10) });
+  E.firmar('s-t12b');
   r = expectRed(E, 's-t12b', T, fecha(10));
   assert.notStrictEqual(r.status, 0, 'sin el renglón de la renovación, la renovación no se acepta');
   assert.match(r.stderr, /gates\.log/);
@@ -742,7 +765,7 @@ test('T21 ExpectRed_UntilWithSpaces_SameFingerprint @story-8.252 @ac-9 — la fe
   assert.strictEqual(mc.detalleDelRojoEsperado('acmatrix', ['T1'], ' 2026-11-20 '), mc.detalleDelRojoEsperado('acmatrix', ['T1'], '2026-11-20'));
   const E = paraElRojoEsperado('s-t21');
   const gate = spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'run-close.js'), '--gate', '--session', 's-t21', '--command-stdin', '--shell', 'bash'], {
-    input: `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js expect-red acmatrix --tests T1 --until ' ${fecha(7)}'`,
+    input: `cd ${E.repo} && node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js expect-red acmatrix --tests T1 --until ' ${fecha(7)}'`,
     encoding: 'utf8', cwd: E.repo, env: { ...process.env, HOME: E.home, USERPROFILE: E.home, TYCON_HOME: '' },
   });
   assert.strictEqual(gate.status, 0, gate.stderr);
