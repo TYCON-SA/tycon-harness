@@ -546,7 +546,7 @@ function porComando(command, cuerpo, depth = 0, ctx = nuevoCtx([process.cwd()], 
     // un alias o una función de la copia del shell: se lee lo que corre (un alias no se expande dentro de sí mismo). Las
     // copias se leen sólo si el nombre no es un programa del PATH o si el comando dice algo de guardar: `ls`, `npm test`
     // o `git status` no las tocan
-    const consultar = !enElPathDelHook(ps[0]) || ps.some((w) => PARECE_GUARDAR.has(w));
+    const consultar = !enElPathDelHook(ps[0]) || ps.some(diceGuardar(PARECE_GUARDAR));
     if (consultar && /^[\w.:+@%-]+$/.test(ps[0]) && !ctx.expandidos.includes(ps[0])) {
       const copia = copiaDelShell(ctx.home);
       const alias = copia.alias.get(ps[0]);
@@ -570,7 +570,7 @@ function porComando(command, cuerpo, depth = 0, ctx = nuevoCtx([process.cwd()], 
           const propio = { ...ctx, dudas: [] };
           porComando(texto, cuerpo, depth + 1, propio);
           volver(ctx, propio);
-          if (propio.dudas.length && (nombraUnGuardado([texto]) || ps.slice(1).some((w) => PARECE_GUARDAR.has(w)))) dudar();
+          if (propio.dudas.length && (nombraUnGuardado([texto]) || ps.slice(1).some(diceGuardar(PARECE_GUARDAR)))) dudar();
         }
         ctx.expandidos = previos;
         return cierra;
@@ -722,6 +722,16 @@ function gitsDelShell(command, cwd, home) {
 
 // las palabras que, después de un comando escondido en una variable, dicen que puede guardar
 const PALABRAS_QUE_GUARDAN = new Set(['commit', 'push', 'pr', 'repos']);
+
+// Las palabras de un pedido de la plataforma entre el programa y el verbo (en `<programa> <grupo> create`, el grupo),
+// de los comandos de pedido que declaran los conectores: dicen guardar igual que las de las listas fijas. Sin la lista
+// de los conectores, sólo las fijas.
+function palabrasDePedido() {
+  const p = deLaPlataforma();
+  return new Set(p ? p.pedidos.flatMap((w) => w.slice(1, -1)) : []);
+}
+// ¿Esta palabra dice guardar, por la lista fija o por un pedido de la plataforma?
+const diceGuardar = (fija) => { const deLosPedidos = palabrasDePedido(); return (w) => fija.has(w) || deLosPedidos.has(w); };
 
 // ¿Las palabras de un programa que no es git nombran un git o un pedido que guarda (`watch git commit`, `find -exec git
 // push`, `node -e "…execSync('git push')"`)? Se parten también los textos entre comillas. Sin la lista de los
@@ -879,7 +889,7 @@ function leerComando(command, cwd, depth = 0, dudas = [], home) {
   function leer(ps, cmd, ctx) {
     // el comando desde una variable: no se sabe qué corre
     if (programaVariable(ps[0])) {
-      if (ps.slice(1).some((p) => PALABRAS_QUE_GUARDAN.has(p))) opaco(ctx.dirs[0]);
+      if (ps.slice(1).some(diceGuardar(PALABRAS_QUE_GUARDAN))) opaco(ctx.dirs[0]);
       return;
     }
     // la forma con guion (`git-commit`, `…/git-core/git-push`) es el mismo subcomando
@@ -904,7 +914,7 @@ function leerComando(command, cwd, depth = 0, dudas = [], home) {
       return;
     }
     // un programa que no se encuentra (ni del shell, ni en el PATH, ni alias o función de la sesión) y dice guardar
-    if (noSeEncuentra(ps[0], ctx.home, ctx.dirs[0]) && ps.slice(1).some((w) => PARECE_GUARDAR.has(w))) { ctx.dudar(); return; }
+    if (noSeEncuentra(ps[0], ctx.home, ctx.dirs[0]) && ps.slice(1).some(diceGuardar(PARECE_GUARDAR))) { ctx.dudar(); return; }
     // los que cambian archivos antes de un commit o un push
     const args = ps.slice(1);
     if (ESCRIBEN.has(cmd) || (cmd === 'sed' && args.some((a) => /^(-i|--in-place)/.test(a))) || (cmd === 'perl' && args.some((a) => /^-\w*i/.test(a)))) {

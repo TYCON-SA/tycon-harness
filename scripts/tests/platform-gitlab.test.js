@@ -527,6 +527,11 @@ test('T19 Gitlab_RawChangeRequest_SaveBrakeAsks @ac-11', () => {
   for (const cmd of ['glab issue create -t x', 'glab issue close 3', 'glab mr view 5', 'glab mr list']) {
     assert.deepStrictEqual(pedidos(cmd), [], `${cmd}: no crea ni junta un pedido`);
   }
+  // el programa escondido en una variable: no se sabe qué corre, y una palabra de pedido lo vuelve opaco (pide la
+  // ventana), como `$X pr create`
+  for (const cmd of ['$X mr create --fill', 'V=glab; $V mr merge 1']) {
+    assert.ok(freno.comandosQueGuardan(cmd, os.tmpdir()).some((c) => c.opaco), cmd);
+  }
 });
 
 test('T20 Gitlab_NestedNamespace_EncodedPath @ac-13', async () => {
