@@ -138,3 +138,30 @@ test('T11 Translate_WhatAPhraseCaptures — lo que captura una frase también se
   assert.strictEqual(traducir('No se pudo quitar: la oficina no contestó'), 'Could not remove: the office did not answer');
   assert.strictEqual(traducir('Agrandar la oficina de mac-mini'), 'Enlarge the office of mac-mini', 'un dato que no conoce queda igual');
 });
+
+// Fila 175 (24/11): los textos que arma «Lo que te necesita» (cada cosa, dónde se contesta, por qué sólo vos, la opción
+// recomendada) salían en castellano: la T2 mide sólo los textos fijos de la plantilla.
+test('T12 WhatNeedsYou_BuiltTexts_InEnglish — lo que arma «Lo que te necesita» sale en inglés, con el dato como vino', () => {
+  const { traducir } = block({ source: 'local', browser: 'en-US' });
+  const casos = {
+    'Dónde se contesta: en la ventana de permiso': 'Where to answer it: en la ventana de permiso',
+    'Por qué sólo vos: es tu firma': 'Why only you: es tu firma',
+    'Recomendada: aprobar': 'Recommended: aprobar',
+    'Sin una opción recomendada anotada.': 'No recommended option noted.',
+    'Para contestarla desde acá, abrí la oficina viva con /office.': 'To answer it from here, open the live office with /office.',
+    'Firma · Tandas: el plan de la 9.9': 'Signature · Tandas: el plan de la 9.9',
+    'Cuadro: ¿sigo?': 'Question box: ¿sigo?',
+    'Del tablero · T-41: revisar': 'From the board · T-41: revisar',
+    'Pendiente: algo': 'Pending: algo',
+  };
+  for (const [es, en] of Object.entries(casos)) assert.strictEqual(traducir(es), en, es);
+  // cada texto fijo de los renglones de esta sección tiene su inglés: un texto nuevo sin traducir hace fallar esto
+  const seccion = /const NECESITA_CLASE=[\s\S]*?\nfunction pintarNecesita/.exec(CODE)[0];
+  // los textos fijos: cada literal entre comillas, leído de a uno desde el principio (así no se toma código entre dos), con
+  // una palabra, menos las claves y las clases (todo en minúsculas y guiones)
+  const textos = [...seccion.matchAll(/"((?:[^"\\\n]|\\.)*)"/g)].map((m) => m[1])
+    .filter((t) => /[A-Za-záéíóúñ]{3}/.test(t) && !/^[a-z-]+$/.test(t));
+  assert.ok(textos.length >= 9, `encontré los textos de la sección (${textos.length}: ${textos.join(' | ')})`);
+  // el que termina en «: » lleva un dato atrás
+  for (const t of textos) { const con = t.endsWith(': ') ? `${t}dato` : t; assert.notStrictEqual(traducir(con), con, `«${t}» no tiene su inglés`); }
+});
