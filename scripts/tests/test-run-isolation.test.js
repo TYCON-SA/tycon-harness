@@ -290,14 +290,26 @@ test('F214 T2 Aislada_EnlacePlantadoConOtraCaja_NoSeAdmite: un enlace duro «SH-
 const BASE_CONTROLS = path.join(RAIZ, 'scripts', 'ci', 'run-base-controls.sh');
 test('F218 BaseControls_SinHereDocument: lo que bash corre de run-base-controls.sh no usa here documents ni here-strings', () => {
   const lineas = fs.readFileSync(BASE_CONTROLS, 'utf8').split('\n');
-  // bash corre hasta el exec de node, que lo reemplaza: lo de después (el programa) no lo corre nunca
-  const fin = lineas.findIndex((l) => /^[^#]*\bexec node - /.test(l));
-  assert.ok(fin > 0, 'encuentro el exec de node');
-  const malos = lineas.slice(0, fin + 1)
+  // bash corre lo de antes de la marca del programa (el exec lo reemplaza antes de llegar): ahí no hay ningún `<<`, ni
+  // siquiera dentro de una cadena, así ninguna forma de here document o here-string se escapa
+  const fin = lineas.indexOf(": <<'JS'");
+  assert.ok(fin > 0, 'encuentro la marca del programa');
+  const malos = lineas.slice(0, fin)
     .map((l, i) => ({ l, i: i + 1 }))
-    .filter(({ l }) => !/^\s*#/.test(l) && /(^|[^<'"])<<(<|-?\s*(\\|['"])?[A-Za-z_][A-Za-z0-9_]*)/.test(l))
+    .filter(({ l }) => !/^\s*#/.test(l) && l.includes('<<'))
     .map(({ l, i }) => `${i}: ${l.trim()}`);
   assert.deepStrictEqual(malos, []);
+});
+
+test('F218 BaseControls_PorTuberia_NoSaleVerde: lanzado desde una tubería, no termina en 0 sin correr nada', { skip: !POSIX }, (t) => {
+  // sed abre la misma fuente que bash: si es una tubería, se comía lo que a bash le faltaba leer y bash terminaba en 0
+  const c = cuenta(t);
+  const texto = fs.readFileSync(BASE_CONTROLS, 'utf8');
+  const porEntrada = spawnSync('bash', ['/dev/stdin', 'check-inventory', '--root', c.b], { cwd: c.b, input: texto, encoding: 'utf8' });
+  assert.strictEqual(porEntrada.status, 9, `bash /dev/stdin: ${porEntrada.stdout}${porEntrada.stderr}`);
+  const porSustitucion = spawnSync('bash', ['-c', 'bash <(cat "$1") check-inventory --root "$2"', 'bash', BASE_CONTROLS, c.b], { cwd: c.b, encoding: 'utf8' });
+  assert.strictEqual(porSustitucion.status, 9, `bash <(cat …): ${porSustitucion.stdout}${porSustitucion.stderr}`);
+  assert.match(porSustitucion.stdout, /no pude correr/);
 });
 
 test('F218 BaseControls_SinElPrograma_NoPudeCorrer: si no encuentra su programa sale 9, nunca 0 con un programa vacío', { skip: !POSIX }, (t) => {
