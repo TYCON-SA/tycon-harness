@@ -181,6 +181,76 @@ test('Aislada_HijoSinRed_ElEncierroLoAnota @story-8.314 @ac-2', { skip: ENCIERRO
   assert.ok(fs.existsSync(path.join(r, 'f.txt')), 'escribió en su repo');
 });
 
+test('F174 Aislada_HereDocDeBash_Anda: en el encierro, desde una carpeta no admitida, el bash del sistema escribe el temporal de su here document; otra escritura ahí sigue negada', { skip: ENCIERRO ? false : 'sin el encierro del sistema' }, (t) => {
+  // fila 174: el bash 3.2 de macOS no mira TMPDIR para un here document; si no puede escribir en /var/tmp ni en /tmp (el
+  // encierro se lo niega), lo escribe en la carpeta actual como «sh-thd-<n>». Negado, un freno de bash que lo usa no
+  // decide y falla cerrado. El humo corre desde la carpeta de la sesión, que no es una raíz admitida.
+  const c = cuenta(t);
+  const sesion = path.join(c.b, 'sesion');
+  fs.mkdirSync(sesion);
+  const r = repo(path.join(c.b, 'repo'), {
+    '.advisors/dod-runtime/g.js': [
+      "const { spawnSync } = require('child_process');",
+      "const h = spawnSync('/bin/bash', ['-c', 'cat <<FIN\\nheredoc-ok\\nFIN'], { encoding: 'utf8' });",
+      "console.log('HEREDOC ' + (h.stdout || '').trim() + ' ' + (h.stderr || '').trim());",
+      "const o = spawnSync('/bin/bash', ['-c', 'echo x > otro.txt'], { encoding: 'utf8' });",
+      "console.log('OTRO ' + o.status);",
+      // el nombre del temporal no sirve para escribir fuera de la carpeta actual
+      "const f = spawnSync('/bin/bash', ['-c', 'echo x > ' + process.argv[2] + '/sh-thd-777'], { encoding: 'utf8' });",
+      "console.log('AFUERA ' + f.status);",
+    ].join('\n'),
+  });
+  const afuera = path.join(c.b, 'afuera');
+  fs.mkdirSync(afuera);
+  const g = path.join(r, '.advisors', 'dod-runtime', 'g.js');
+  const s = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.32', ['--', process.execPath, g, afuera], { cwd: sesion, env: ambiente(c) });
+  assert.match(salida(s), /HEREDOC heredoc-ok/, salida(s));
+  assert.doesNotMatch(salida(s), /cannot create temp file/, salida(s));
+  assert.match(salida(s), /OTRO [1-9]/, salida(s));
+  assert.ok(!fs.existsSync(path.join(sesion, 'otro.txt')), 'otra escritura en la carpeta de la sesión sigue negada');
+  assert.deepStrictEqual(fs.readdirSync(sesion).filter((f) => f.startsWith('sh-thd-')), [], 'bash borra su temporal');
+  assert.match(salida(s), /AFUERA [1-9]/, salida(s));
+  assert.ok(!fs.existsSync(path.join(afuera, 'sh-thd-777')), 'el nombre del temporal en otra carpeta sigue negado');
+  // un enlace duro con ese nombre que ya estaba en la carpeta actual no sirve para escribir el archivo al que apunta: con
+  // un sh-thd-<n> ya presente, la carpeta no se admite
+  const victima = path.join(afuera, 'victima.txt');
+  fs.writeFileSync(victima, 'intacto\n');
+  fs.linkSync(victima, path.join(sesion, 'sh-thd-11'));
+  const enlace = repo(path.join(c.b, 'repo2'), {
+    '.advisors/dod-runtime/g.js': "const r = require('child_process').spawnSync('/bin/bash', ['-c', 'echo PWNED > sh-thd-11'], { encoding: 'utf8' }); console.log('ENLACE ' + r.status);\n",
+  });
+  const s2 = humo(SMOKE, path.join(enlace, '.advisors', 'dod-runtime'), '9.32', ['--', process.execPath, path.join(enlace, '.advisors', 'dod-runtime', 'g.js')], { cwd: sesion, env: ambiente(c) });
+  assert.match(salida(s2), /ENLACE [1-9]/, salida(s2));
+  assert.strictEqual(fs.readFileSync(victima, 'utf8'), 'intacto\n', 'el archivo del enlace no cambió');
+  assert.match(salida(s2), /sh-thd/, `dice por qué el here document queda negado: ${salida(s2)}`);
+});
+
+test('F174 T2 Aislada_HijoSinLasVariablesDeLaRed_EscribeEnSuLaboratorio: un hijo con HOME de juguete y sin las variables TYCON_ escribe en su casa de juguete; la casa de la cuenta sigue frenada', { skip: !POSIX }, (t) => {
+  // fila 174: un guion de laboratorio limpia lo que empieza con TYCON_ para su hijo y deja NODE_OPTIONS; el hijo carga la
+  // red sin sus raíces y no tiene que tomar su HOME de juguete por la casa real
+  const c = cuenta(t);
+  const destinoReal = path.join(c.casa, '.tycon', 'state', 'del-hijo.txt');
+  const r = repo(path.join(c.b, 'repo'), {
+    '.advisors/dod-runtime/g.js': [
+      "const fs = require('fs'); const os = require('os'); const path = require('path'); const { spawnSync } = require('child_process');",
+      "const juguete = fs.mkdtempSync(path.join(os.tmpdir(), 'juguete-'));",
+      "const env = {}; for (const [k, v] of Object.entries(process.env)) if (!k.startsWith('TYCON_')) env[k] = v;",
+      "Object.assign(env, { HOME: juguete, USERPROFILE: juguete });",
+      "const hijo = \"const fs = require('fs'); const path = require('path'); fs.mkdirSync(path.join(process.env.HOME, '.claude', '.tycon-pipeline'), { recursive: true }); fs.writeFileSync(path.join(process.env.HOME, '.claude', '.tycon-pipeline', 'x.jsonl'), 'x'); console.log('LAB ok'); try { fs.writeFileSync(process.argv[1], 'x'); console.log('REAL escribió'); } catch (e) { console.log('REAL ' + e.code); }\";",
+      "const h = spawnSync(process.execPath, ['-e', hijo, process.argv[2]], { env, encoding: 'utf8' });",
+      "console.log('HIJO ' + h.status + ' ' + (h.stdout || '').trim().replace(/\\n/g, ' | ') + ' ' + (h.stderr || '').trim().split('\\n')[0]);",
+    ].join('\n'),
+  });
+  const s = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.33', ['--', process.execPath, '.advisors/dod-runtime/g.js', destinoReal], { cwd: r, env: ambiente(c) });
+  assert.match(salida(s), /LAB ok/, salida(s));
+  // la casa de la cuenta de esta prueba es una carpeta temporal que llega por HOME. Sin el encierro del sistema (Linux,
+  // Windows), el hijo sin sus variables protege la casa de la cuenta del sistema (os.userInfo), que acá es otra: sólo
+  // con el encierro se puede ver que la de la prueba sigue frenada, sin escribir en la de verdad
+  if (process.platform !== 'darwin' || /sin el encierro del sistema/.test(salida(s))) return;
+  assert.doesNotMatch(salida(s), /REAL escribió/, salida(s));
+  assert.ok(!fs.existsSync(destinoReal), 'la casa de la cuenta sigue frenada');
+});
+
 // 🔴 Falla con: la corrida lee el registro del sistema una sola vez al terminar; con la máquina cargada la negación todavía
 // no llegó, la lectura sale vacía y la corrida da verde aunque un proceso quiso escribir en la casa (fila 170)
 test('Aislada_RegistroAtrasado_EsperaLaMarcaDeCierre @story-8.314 @ac-2: lo negado se lee aunque el registro llegue tarde', () => {
