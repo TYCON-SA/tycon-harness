@@ -681,7 +681,7 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
   });
   let pre = hipotetico(false);
   let esDelArnes = false;
-  if (pre.action === 'block' && pre.kind !== 'state-dir' && pre.kind !== 'installed-tree' && pre.kind !== 'control-approvals' && isHarnessRepo(abs)) { esDelArnes = true; pre = hipotetico(true); }
+  if (pre.action === 'block' && pre.kind !== 'state-dir' && pre.kind !== 'installed-tree' && pre.kind !== 'control-approvals' && pre.kind !== 'git-config' && isHarnessRepo(abs)) { esDelArnes = true; pre = hipotetico(true); }
   // Si con un repo "hipotéticamente bajo el arnés" ya pasa, pasa (no-código, harness, marker OK, ad-hoc OK).
   // Si bloquea por state-dir, installed-tree o plan, bloquea sin mirar el repo. Sólo no-lane / adhoc-cap dependen del repo.
   let repo = { repoRoot: null, repoHasTycon: false, repoHasStories: false, discoveryPartial: false };
