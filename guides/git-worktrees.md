@@ -187,7 +187,8 @@ La coordinadora abre cada sesión de fondo en una copia hermana del repo (`<repo
 (`guides/coordination.md`, «Abrir y nombrar las sesiones»). Claude Code 2.1.330 pide aprobar cada copia aparte, aunque
 la principal esté aprobada. Los **puestos** quedan como opción, con `coordination.js open --repo <repo> --slot`, para no
 aprobar una carpeta nueva por trabajo: son worktrees que no se borran, siempre las mismas carpetas, aprobadas una vez,
-y cada trabajo cambia de rama adentro. Nada crea puestos si no se piden.
+y cada trabajo cambia de rama adentro. Sin `--slot`, `open` usa un puesto libre donde ya abrió una sesión de fondo antes
+que crear una copia. Nada crea puestos si no se piden.
 
 ```
 <parent>/<RepoName>--slot-<n>      # n de 1 al tope de sesiones (coordination.max_working; 3 sin valor)
@@ -205,7 +206,7 @@ El guion es `scripts/tools/work-slots.js` (node: anda igual en Windows); `tycon-
 node scripts/tools/work-slots.js take --branch <rama>   # toma el primero libre y cambia ahí a la rama; imprime su cd
 node scripts/tools/work-slots.js release                # desde el puesto: lo deja sobre main, libre; la rama queda
 node scripts/tools/work-slots.js list                   # libres y ocupados, cada uno con su cd
-node scripts/tools/work-slots.js pending-trust          # los que no tienen su propia aprobación anotada, con su cd
+node scripts/tools/work-slots.js pending-trust          # los que no tienen aprobación a la vista, con su cd
 ```
 
 `take` crea la rama desde origin/main si no existe; `release` se niega si quedan cambios sin commitear. La coordinadora
@@ -213,8 +214,9 @@ abre una sesión de fondo en un puesto con `coordination.js open --repo <repo> -
 
 Para aprobarlos de una tanda, el dueño corre cada línea que imprime `pending-trust` (`cd "<puesto>" && claude`) y acepta
 la pregunta de Claude Code. Es una vez por puesto; la aprobación la da una persona, el guion no la escribe. Un puesto
-sale en la lista mientras no tenga su propia aprobación anotada: la de la carpeta principal no cuenta, y como Claude
-Code 2.1.330 no anota la de los puestos, la lista dice que no sabe en lugar de darlos por aprobados.
+sale en la lista mientras no tenga su propia aprobación anotada ni una sesión de fondo que ya abrió ahí (la anota
+`coordination.js open`, y la saca si Claude Code después contesta que no): la de la carpeta principal no cuenta, y como
+Claude Code 2.1.330 no anota la de los puestos, la lista dice que no sabe en lugar de darlos por aprobados.
 
 ---
 

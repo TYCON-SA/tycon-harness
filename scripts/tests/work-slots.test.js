@@ -215,6 +215,36 @@ test('F159 T1 PendingTrust_SoloLaEntradaPropiaCuenta: un puesto con su propia ap
   assert.doesNotMatch(none.message, /todos aprobados|están aprobados/);
 });
 
+test('F159 T10 PendingTrust_CuentaDondeYaAbrióUnaSesión: un puesto donde una sesión de fondo ya abrió cuenta como aprobado aunque Claude Code no lo anote; si después dijo que no, vuelve a la lista; un registro roto no aprueba nada', () => {
+  const t = toy({ cap: 2 });
+  S.ensure(t.opts);
+  S.noteAccepted({ home: t.home, folder: slot(t, 2) });
+  assert.deepStrictEqual(S.pendingTrust(t.opts).pending, [slot(t, 1)]);
+  S.noteAccepted({ home: t.home, folder: slot(t, 2), accepted: false });
+  assert.deepStrictEqual(S.pendingTrust(t.opts).pending, [slot(t, 1), slot(t, 2)]);
+  S.noteAccepted({ home: t.home, folder: slot(t, 1) });
+  S.noteAccepted({ home: t.home, folder: slot(t, 2) });
+  assert.match(S.pendingTrust(t.opts).message, /aprobados/);
+  fs.writeFileSync(S.acceptedFile(t.home), '{roto');
+  assert.deepStrictEqual(S.pendingTrust(t.opts).pending, [slot(t, 1), slot(t, 2)]);
+});
+
+test('F159 T11 Take_SoloUnoYaAceptado: con trusted toma el primer puesto libre ya aceptado; no crea puestos, no toma uno sin aceptar y, sin ninguno, dice none', () => {
+  const t = toy({ cap: 2 });
+  const sinPuestos = S.take({ ...t.opts, branch: 'wt/x', trusted: () => true });
+  assert.strictEqual(sinPuestos.ok, false);
+  assert.strictEqual(sinPuestos.none, true);
+  assert.strictEqual(fs.existsSync(slot(t, 1)), false, 'no crea puestos');
+  S.ensure(t.opts);
+  const r = S.take({ ...t.opts, branch: 'wt/x', trusted: (p) => p === slot(t, 2) });
+  assert.strictEqual(r.ok, true, r.message);
+  assert.strictEqual(r.path, slot(t, 2));
+  assert.strictEqual(branchOf(slot(t, 1)), '', 'el que no se sabe si está aprobado sigue libre');
+  const otra = S.take({ ...t.opts, branch: 'wt/y', trusted: (p) => p === slot(t, 2) });
+  assert.strictEqual(otra.none, true, 'el aceptado ya está tomado');
+  assert.strictEqual(branchOf(slot(t, 1)), '');
+});
+
 test('S12 AgentSkills_Refused: el clon de las skills no lleva puestos (su freno mira la ruta literal)', () => {
   const t = toy({ cap: 1 });
   const skills = path.join(t.root, 'home', '.claude', 'agent-skills');
