@@ -39,7 +39,6 @@
     {"path":"scripts/ci/push-nightly-data.js","ceiling":1,"reason":"el autor por defecto de los commits que guardan los pipelines de Azure de la noche"},
     {"path":"scripts/ci/queue-validation.js","ceiling":19,"reason":"archivo mixto: la cola de validación tiene par en GitHub y sólo su corte de validaciones viejas es de Azure DevOps (decisión 10)"},
     {"path":"scripts/controls-bench/exam-smoke.sh","ceiling":1,"reason":"nombra la variable del token de Azure DevOps para sacarla del ambiente del examen"},
-    {"path":"scripts/hooks/failed-query-notice.js","ceiling":3,"reason":"archivo mixto: lógica neutra y lógica de una plataforma juntas; se parte en DEF-8.85-G-archivos-mixtos y este techo baja"},
     {"path":"scripts/hooks/pr-auto-complete-guard.js","ceiling":14,"reason":"freno o aviso que reconoce el comando crudo de cada plataforma para decidir si frena (el CLI es su entrada, no una llamada)"},
     {"path":"scripts/hooks/pr-one-per-repo-guard.js","ceiling":8,"reason":"freno o aviso que reconoce el comando crudo de cada plataforma para decidir si frena (el CLI es su entrada, no una llamada)"},
     {"path":"scripts/hooks/prod-access-guard.js","ceiling":2,"reason":"freno o aviso que reconoce el comando crudo de cada plataforma para decidir si frena (el CLI es su entrada, no una llamada)"},

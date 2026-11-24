@@ -83,16 +83,36 @@ function leerMarcador(stateDir, sessionId) {
  * La matriz de una firma: la de «Preparar el commit» (la tanda, la lista de cambios y el repo del código del marcador),
  * para que los criterios sin correr de las otras tandas no nieguen la firma de uno de la tanda. La tanda vale sólo si el
  * marcador es de esa misma historia; con el de otra, o sin marcador, mide todas.
+ *
+ * Sin marcador, `batch` (el `--batch` de una firma sin corrida abierta) mide esa tanda como la mide una corrida con
+ * tanda, con lo que cambió la rama en lugar de lo que cambió la corrida (`cambiosDeLaRama`). El guion y el cuadro la
+ * calculan acá: así lo que se muestra es lo que se firma.
+ *
  * `acs`: los criterios que se van a mostrar. Con ellos, la matriz mide sólo esos (`parcial`): el freno la arma antes de
- * la ventana y tiene que alcanzar a decidir dentro de su reloj.
+ * la ventana y tiene que alcanzar a decidir dentro de su reloj. Vale junto con la tanda: la tanda decide qué criterios
+ * entran y `acs` qué humos se miden, y el veredicto de un criterio pedido sale igual que en la matriz de la tanda.
  */
-function matrixForSignature(storyPath, marker, acs = null) {
+function matrixForSignature(storyPath, marker, { batch = null, acs = null } = {}) {
   const rm = require('../runtime-matrix.js');
+  const solo = Array.isArray(acs) && acs.length ? { soloAcs: acs } : {};
+  if (!marker && batch != null) return rm.compute({ storyPath, batch: String(batch), changed: cambiosDeLaRama(storyPath), ...solo });
   const delMarcador = marker && marker.storyPath
     ? { ...marker, storyPath: path.isAbsolute(marker.storyPath) ? marker.storyPath : path.join(marker.repoPath || process.cwd(), marker.storyPath) }
     : null;
   const op = rm.opcionesDeTandaDelMarcador(delMarcador, storyPath);
-  return rm.compute({ storyPath, ...(op.batch ? op : {}), ...(Array.isArray(acs) && acs.length ? { soloAcs: acs } : {}) });
+  return rm.compute({ storyPath, ...(op.batch ? op : {}), ...solo });
+}
+
+/**
+ * Lo que cambió la rama de la historia: desde su punto en común con main, o lo sin commitear si no hay main. Hace de la
+ * lista de cambios de la corrida cuando no hay corrida: un archivo que la rama tocó y la historia ata sólo a otra tanda
+ * devuelve sus criterios. null sin repo git o si git no contesta: la matriz mide todas las tandas y lo dice.
+ */
+function cambiosDeLaRama(storyPath) {
+  const repo = require('../runtime-matrix.js').discoverRepoRoot(storyPath);
+  if (!repo) return null;
+  const punto = require('./frozen-tree.js').puntoComunConMain(repo);
+  return require('./ui-signal.js').changedFiles(repo, punto.sha || undefined);
 }
 
 /**
@@ -156,7 +176,7 @@ function preparar({ sessionId, stateDir, storyPath, acs }) {
   if (!marker || !marker.storyId) return null;
   const abs = path.isAbsolute(storyPath) ? storyPath : path.join(marker.repoPath || process.cwd(), storyPath);
   if (!fs.existsSync(abs) || !esLaDelMarcador(abs, marker)) return null;
-  const c = criteriosDe(abs, acs, matrixForSignature(abs, marker, acs));
+  const c = criteriosDe(abs, acs, matrixForSignature(abs, marker, { acs }));
   if (c.error) return { reminder: `no pude armar los criterios para mostrarlos (la matriz no computa: ${c.error}): así no se pueden firmar hasta arreglarlo.` };
   const storyId = String(c.matrix.sid || marker.storyId);
   const faltan = c.lista.filter((x) => { const v = mostrado({ stateDir, sessionId, storyId, ac: x.ac, sha: x.sha }); return !v || v.error; });
