@@ -1853,7 +1853,8 @@ test('T7 OwnerWait_UnaVezCadaDosMinutosYEntreProcesos @story-8.219 @ac-7: owner-
     // una lectura fallida no despierta a la coordinadora (owner-wait terminaría): se reintenta, y a la tercera se dice
     assert.deepStrictEqual(vuelta(600), [], 'la primera falla no termina la espera');
     assert.deepStrictEqual(vuelta(720), [], 'la segunda tampoco');
-    assert.deepStrictEqual(vuelta(840), ['no pude mirar lo de Tu firma (3 veces seguidas): «la oficina salió con 1»']);
+    // «ya no espera» no despertó a la coordinadora: quedó guardado y sale delante de la novedad siguiente
+    assert.deepStrictEqual(vuelta(840), ['«Ana» ya no espera a la persona', 'no pude mirar lo de Tu firma (3 veces seguidas): «la oficina salió con 1»']);
     assert.deepStrictEqual(vuelta(960), [], 'el mismo motivo, una vez');
     assert.ok(owner().esperas['s-b'], 'la lectura fallida no retira');
     // una lectura buena vuelve a contar desde cero
@@ -1927,7 +1928,8 @@ test('OwnerWait_PlanSinFirmar_NoDiceYaNoEspera: una sesión ocupada con el plan 
       // la espera cerrada de verdad: la corrida que se cierra sin aprobar el plan también lo dice
       lectura = oficina('idle');
       marker(t, DORA, plan);
-      assert.deepStrictEqual(vuelta(600), ['«Dora» («9.1 Algo») espera de la persona: «que apruebes el plan»'], `lista ${lista}`);
+      // «ya no espera» quedó guardado (no despierta) y sale delante de la espera nueva
+      assert.deepStrictEqual(vuelta(600), ['«Dora» ya no espera a la persona', '«Dora» («9.1 Algo») espera de la persona: «que apruebes el plan»'], `lista ${lista}`);
       lectura = oficina('busy');
       fs.rmSync(path.join(t.state, 'active', `${DORA}.json`));
       assert.deepStrictEqual(vuelta(720), ['«Dora» ya no espera a la persona'], `lista ${lista}: sin la corrida, ya no espera`);

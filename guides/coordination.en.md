@@ -759,7 +759,8 @@ is the only background console with which the owner can still sign with a click.
   coordinator passes it to the owner with the session, what it asks for and a recommendation. A person answers the
   permission, in the session's tab or with `claude attach`.
 - "<session> siguió: el permiso ya no está abierto" or "<session> se cerró con un permiso abierto": the owner is told if
-  they had been asked.
+  they had been asked. "Siguió" asks for nothing and does not wake the coordinator, like "… ya no espera a la persona":
+  those lines are kept and come out ahead of the next news that does wake it.
 - "<session>: la cerró Claude Code a las HH:MM por falta de memoria, quieta N min. Para levantarla: coordination.js relaunch --id <id>":
   Claude Code closes quiet background sessions on its own when the machine runs out of memory, and the harness cannot
   prevent it. The coordinator decides whether to bring it back: that uses memory again and counts for the cap.
