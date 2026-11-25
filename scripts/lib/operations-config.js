@@ -134,7 +134,29 @@ const BRAND_NAME_MAX = 80;
 const NOTIFY_KEYS = ['channel', 'mail_from', 'mail_to'];
 const NOTIFY_CHANNELS = ['telegram', 'slack', 'teams', 'mail'];
 const MAILBOX_KEYS = ['provider', 'account', 'container', 'threads'];
-const MAILBOX_PROVIDERS = ['azure-blob'];
+// los proveedores del buzón: azure-blob, que atiende el núcleo, y los de los conectores de buzón de integrations/
+// (kind mailbox). Cada conector dice sus campos (`CAMPOS_DEL_BUZON`) y los valida (`problemasDelBuzon`)
+function mailboxConnectors() {
+  try { return require('./integrations.js').mailboxConnectors(); } catch (_) { return []; }
+}
+const MAILBOX_PROVIDERS = ['azure-blob', ...mailboxConnectors().map((c) => c.provider).filter((p) => p !== 'azure-blob')];
+/** El conector de buzón de un proveedor, cargado, o null (azure-blob, uno desconocido o uno que no carga). */
+function mailboxConnector(provider) {
+  if (provider === 'azure-blob') return null;
+  try { return require('./integrations.js').mailboxConnector(provider); } catch (_) { return null; }
+}
+/** Los campos de `site.mailbox` de un proveedor, además de provider y threads; null si no se conoce. */
+function mailboxFields(provider) {
+  if (provider === 'azure-blob') return ['account', 'container'];
+  const c = mailboxConnector(provider);
+  return c && Array.isArray(c.CAMPOS_DEL_BUZON) ? [...c.CAMPOS_DEL_BUZON] : null;
+}
+/** El nombre para mostrar de cada proveedor del buzón: `{ <proveedor>: <nombre> }`. */
+function mailboxLabels() {
+  const out = { 'azure-blob': 'Azure Blob Storage' };
+  for (const c of mailboxConnectors()) if (c.provider !== 'azure-blob') out[c.provider] = c.label;
+  return out;
+}
 const REFRESH_MIN = 5;
 const REFRESH_MAX = 120;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -152,7 +174,7 @@ const HIDDEN_KEYS = ['reason', 'hidden_by', 'hidden_on'];
 const HIDDEN_REASONS = ['not_team', 'hidden'];
 const PROJECT_KEYS = ['add', 'remove'];
 // El nombre de la carpeta de una máquina en el buzón. COPIADA de scripts/metrics/upload-runs.js (no se importa: este
-// lector viaja solo y no carga nada fuera de fs). T23 de scripts/tests/team-repos.test.js exige que las dos sean iguales.
+// lector viaja solo y no carga nada fuera de fs, salvo la lista de conectores del buzón, siempre dentro de un try). T23 de scripts/tests/team-repos.test.js exige que las dos sean iguales.
 const FORMA_MAQUINA = /^[a-z0-9][a-z0-9._-]*$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -250,13 +272,31 @@ function siteProblems(site) {
   const mb = site.mailbox;
   if (mb !== undefined) {
     if (!isObject(mb)) problems.push({ path: 'site.mailbox', message: 'tiene que ser un objeto { provider, account, container }' });
-    else {
-      problems.push(...siteKeyProblems(mb, MAILBOX_KEYS, 'site.mailbox'));
+    else if (mb.provider !== 'azure-blob' && mailboxConnector(mb.provider)) {
+      // un proveedor de un conector: sus campos, y los valida el conector
+      // un conector que carga pero no dice sus campos, o cuya validación tira, es un problema del proveedor: nunca tira
+      // la lectura del perfil entero
+      const c = mailboxConnector(mb.provider);
+      const campos = mailboxFields(mb.provider);
+      if (!campos) problems.push({ path: 'site.mailbox.provider', message: `el conector de «${mb.provider}» no declara sus campos (CAMPOS_DEL_BUZON): no se puede validar el buzón` });
+      else problems.push(...siteKeyProblems(mb, ['provider', ...campos, 'threads'], 'site.mailbox'));
+      let delConector = [];
+      try { delConector = typeof c.problemasDelBuzon === 'function' ? c.problemasDelBuzon(mb) : []; } catch (e) { delConector = [{ path: 'site.mailbox.provider', message: `el conector de «${mb.provider}» falló al validar el buzón (${e.message})` }]; }
+      for (const p of (Array.isArray(delConector) ? delConector : [])) problems.push({ path: p.path, message: p.message });
+      if (mb.threads !== undefined && typeof mb.threads !== 'boolean') problems.push({ path: 'site.mailbox.threads', message: 'tiene que ser true o false' });
+    } else {
+      // con un proveedor desconocido, el problema es el proveedor: los campos de cualquier proveedor no se cuentan aparte
+      const conocido = mb.provider === 'azure-blob' || mb.provider === undefined;
+      const todos = conocido ? MAILBOX_KEYS : [...MAILBOX_KEYS, ...MAILBOX_PROVIDERS.flatMap((p) => mailboxFields(p) || [])];
+      problems.push(...siteKeyProblems(mb, todos, 'site.mailbox'));
       if (!MAILBOX_PROVIDERS.includes(mb.provider)) problems.push({ path: 'site.mailbox.provider', message: `tiene que ser uno de: ${MAILBOX_PROVIDERS.join(', ')}` });
       // 🔴 la cuenta y el contenedor arman el host y la ruta adonde va la credencial del buzón: sólo la forma de Azure
       //    Storage (la misma que exige upload-runs.js). Un «host.malo/x?» mandaría la SAS o el token a otro servidor.
-      if (typeof mb.account !== 'string' || !ACCOUNT.test(mb.account)) problems.push({ path: 'site.mailbox.account', message: 'tiene que tener la forma de una cuenta de almacenamiento (3 a 24 minúsculas o números)' });
-      if (typeof mb.container !== 'string' || !CONTAINER.test(mb.container)) problems.push({ path: 'site.mailbox.container', message: 'tiene que tener la forma de un contenedor (3 a 63 minúsculas, números o guiones)' });
+      //    Con un proveedor desconocido no se piden: el problema es el proveedor
+      if (conocido) {
+        if (typeof mb.account !== 'string' || !ACCOUNT.test(mb.account)) problems.push({ path: 'site.mailbox.account', message: 'tiene que tener la forma de una cuenta de almacenamiento (3 a 24 minúsculas o números)' });
+        if (typeof mb.container !== 'string' || !CONTAINER.test(mb.container)) problems.push({ path: 'site.mailbox.container', message: 'tiene que tener la forma de un contenedor (3 a 63 minúsculas, números o guiones)' });
+      }
       if (mb.threads !== undefined && typeof mb.threads !== 'boolean') problems.push({ path: 'site.mailbox.threads', message: 'tiene que ser true o false' });
     }
   }
@@ -294,7 +334,7 @@ function siteProblems(site) {
 
 /**
  * Los identificadores de ficha que el sitio sabe mostrar. Es una copia de los de scripts/site/tabs/cards.js porque el
- * lector viaja solo (no carga nada fuera de fs); una prueba compara las dos listas (Casos: scripts/tests/site-config.test.js).
+ * lector viaja solo (no carga nada fuera de fs, salvo la lista de conectores del buzón); una prueba compara las dos listas (Casos: scripts/tests/site-config.test.js).
  */
 const CARD_IDS = Object.freeze([
   'contrato_v2', 'fechas_declaradas', 'backlog', 'estados_sin_diccionario', 'tiempo_por_etapa', 'edad_estado', 'sin_historia', 'dod', 'rework',
@@ -617,7 +657,7 @@ function ownerFor(data, project) {
   return Object.prototype.hasOwnProperty.call(bp, project) ? bp[project] : data.owners.default;
 }
 
-module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, OFFICES_KEYS, OFFICES_VISIBILITY, INVITATION_KEYS, CARD_IDS,ACCESS_KEYS, ACCESS_ROLES, BRAND_KEYS, BRAND_LOGO, NOTIFY_CHANNELS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, HIDDEN_KEYS, HIDDEN_REASONS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, SEVERITIES, WORK_ITEM_KEYS, FINDINGS_KEYS, RESOLVE_AFTER_MIN, RESOLVE_AFTER_MAX, WORK_ITEM_RESERVED, parse, load, ownerFor, workItemFieldOk };
+module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, OFFICES_KEYS, OFFICES_VISIBILITY, INVITATION_KEYS, CARD_IDS,ACCESS_KEYS, ACCESS_ROLES, BRAND_KEYS, BRAND_LOGO, NOTIFY_CHANNELS, MAILBOX_PROVIDERS, mailboxFields, mailboxLabels, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, HIDDEN_KEYS, HIDDEN_REASONS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, SEVERITIES, WORK_ITEM_KEYS, FINDINGS_KEYS, RESOLVE_AFTER_MIN, RESOLVE_AFTER_MAX, WORK_ITEM_RESERVED, parse, load, ownerFor, workItemFieldOk };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

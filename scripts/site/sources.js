@@ -194,8 +194,25 @@ function prepararClonDeEscritura({ dir, url, git = 'git' }) {
   } catch (e) { return { motivo: `no se pudo armar el clon de escritura (${e.code || e.message})` }; }
 }
 
-/** Los módulos de cloud/ (lo de cada nube): el núcleo les pide el buzón o un token sin nombrar a ninguna. */
+/**
+ * Los módulos de cloud/ (lo de cada nube) y los conectores de buzón de integrations/ (kind mailbox): el núcleo les pide
+ * el buzón o un token sin nombrar a ninguno.
+ */
 function nubes(log = () => {}) {
+  const out = nubesDeCloud(log);
+  let conectores = [];
+  try { conectores = require('../lib/integrations.js').mailboxConnectors(); } catch (e) { log(`no se pudieron leer los conectores de buzón (${(e && e.code) || (e && e.name) || 'error'})`); }
+  for (const c of conectores) {
+    try {
+      const m = require(c.file);
+      if (m && typeof m === 'object' && !Object.prototype.hasOwnProperty.call(m, '__archivo')) Object.defineProperty(m, '__archivo', { value: c.file, enumerable: false });
+      out.push(m);
+    } catch (e) { log(`el conector de buzón «${c.provider}» no carga (${(e && e.name) || 'error'}): ese buzón no está disponible`); }
+  }
+  return out;
+}
+
+function nubesDeCloud(log) {
   const dir = path.join(__dirname, 'cloud');
   let archivos = [];
   try { archivos = fs.readdirSync(dir).filter((f) => /^[a-z][a-z0-9-]*\.js$/.test(f)).sort(); } catch (e) { log(`no se pudo leer cloud/ (${e.code || e.message})`); return []; }
@@ -924,7 +941,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       // disco del sitio guarda los resúmenes, nunca las conversaciones); y el espejo poda lo que ya no está en el buzón
       // la bajada recorre el espejo en el disco montado: con el módulo de la nube cargado de cloud/, en un hilo aparte
       // (el principal contesta las sondas); una nube dada a mano (las pruebas) corre acá
-      const opts = { cuenta: mb.account, contenedor: mb.container, credencial: cfg.mailboxCredencial, dir: dirBuzon, urlBase: urlBuzon, sinHilos: !conHilos, budgetMs: presupuestoBuzonMs,
+      const opts = { cuenta: mb.account, contenedor: mb.container, buzon: mb, credencial: cfg.mailboxCredencial, dir: dirBuzon, urlBase: urlBuzon, sinHilos: !conHilos, budgetMs: presupuestoBuzonMs,
         resumenes: conHilos, topeBytesHilos: conHilos ? topeConversacionesBytes : null, hiloTopeBytes: conHilos ? topeConversacionBytes : null, podar: true, confiarIndice: !verificar, jornadas: true, log: (l) => log(`buzón: ${l}`) };
       r = nube.__archivo ? await require('./summaries.js').bajarEnWorker({ modulo: nube.__archivo, ...opts }) : await nube.bajarBuzon(opts);
     } catch (e) { r = { codigo: 1, res: { estado: 'sin_red', motivo: `error inesperado al bajar: ${e.message}` } }; }
@@ -1110,7 +1127,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       const mb = conf && isObject(conf.site) && isObject(conf.site.mailbox) ? conf.site.mailbox : null;
       const nube = mb ? lasNubes().find((n) => Array.isArray(n.PROVEEDORES_DE_BUZON) && n.PROVEEDORES_DE_BUZON.includes(mb.provider)) : null;
       if (!mb || !nube || !cfg.mailboxCredencial) return { leido: false, motivo: 'sin_buzon' };
-      const opts = { cuenta: mb.account, contenedor: mb.container, credencial: cfg.mailboxCredencial, dir: dirBuzon, urlBase: urlBuzon, sinHilos: true, soloHuellas: true, budgetMs: presupuestoBuzonMs, log: (l) => log(`huellas a pedido: ${l}`) };
+      const opts = { cuenta: mb.account, contenedor: mb.container, buzon: mb, credencial: cfg.mailboxCredencial, dir: dirBuzon, urlBase: urlBuzon, sinHilos: true, soloHuellas: true, budgetMs: presupuestoBuzonMs, log: (l) => log(`huellas a pedido: ${l}`) };
       let r;
       try { r = nube.__archivo ? await require('./summaries.js').bajarEnWorker({ modulo: nube.__archivo, ...opts }) : await nube.bajarBuzon(opts); }
       catch (e) { r = { codigo: 1, res: { estado: 'sin_red', motivo: e.message } }; }
@@ -1212,7 +1229,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       const mb = conf && isObject(conf.site) && isObject(conf.site.mailbox) ? conf.site.mailbox : null;
       const nube = mb ? lasNubes().find((n) => Array.isArray(n.PROVEEDORES_DE_BUZON) && n.PROVEEDORES_DE_BUZON.includes(mb.provider)) : null;
       if (!mb || !nube || typeof nube.bajarUnaCorrida !== 'function' || !cfg.mailboxCredencial) return { codigo: 1, res: { estado: 'sin_configurar', motivo: 'el buzón no está configurado en el sitio' } };
-      return nube.bajarUnaCorrida({ cuenta: mb.account, contenedor: mb.container, credencial: cfg.mailboxCredencial, urlBase: urlBuzon, maquina, base, dir });
+      return nube.bajarUnaCorrida({ cuenta: mb.account, contenedor: mb.container, buzon: mb, credencial: cfg.mailboxCredencial, urlBase: urlBuzon, maquina, base, dir });
     },
     /** ¿la ÚLTIMA bajada del buzón terminó entera?, y cuántas enteras hubo (la pestaña arma con una entera). */
     // `armable`: la pestaña puede armar (entera, o con todos los volcados y registros); `pendientes`: archivos de

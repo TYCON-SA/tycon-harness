@@ -1791,6 +1791,7 @@ const TEXTOS = {
   'pantalla.servicio2': { es: 'Servicio', en: 'Service' },
   'pantalla.cuenta2': { es: 'Cuenta', en: 'Account' },
   'pantalla.carpeta2': { es: 'Carpeta', en: 'Folder' },
+  'pantalla.bucket': { es: 'Bucket', en: 'Bucket' },
   'pantalla.elegiElServicio': { es: 'elegí el servicio', en: 'choose the service' },
   'pantalla.elTextoNoEstaBien': { es: 'El texto no está bien escrito: ', en: 'The text is malformed: ' },
   'pantalla.pipeline2': { es: ' (pipeline ', en: ' (pipeline ' },

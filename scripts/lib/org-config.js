@@ -2084,12 +2084,30 @@ ${trabajandoJs}
     var buzon = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.dondeDejanSusCorridasLas') }), el('p', { class: 'sub-d', text: T('pantalla.lasContrasenasNoVanAca') }));
     var f = el('div', { class: 'fila' });
     var servicios = (s.extras && s.extras.servicios) || null;
-    var SERVICIO = { 'azure-blob': 'Azure Blob Storage' };
-    [['provider', T('pantalla.servicio2')], ['account', T('pantalla.cuenta2')], ['container', T('pantalla.carpeta2')]].forEach(function (par) {
-      var k = par[0]; var poner = function (v) { site.mailbox = site.mailbox || {}; if (v === '') delete site.mailbox[k]; else site.mailbox[k] = v; };
-      if (k === 'provider' && servicios) f.appendChild(selector(par[1], mb[k], [['', T('pantalla.elegiElServicio')]].concat(servicios.map(function (x) { return [x, SERVICIO[x] || x]; })), poner, 'site.mailbox.' + k, pr));
-      else f.appendChild(campo(par[1], mb[k], function (v) { site.mailbox = site.mailbox || {}; site.mailbox[k] = v; }, 'site.mailbox.' + k, pr));
-    });
+    // el nombre y los campos de cada servicio vienen del lector (los de un conector, de su manifiesto); sin ellos, Azure
+    var SERVICIO = Object.assign({ 'azure-blob': 'Azure Blob Storage' }, (s.extras && s.extras.nombres) || {});
+    var CAMPOS = Object.assign({ 'azure-blob': ['account', 'container'] }, (s.extras && s.extras.campos) || {});
+    var ETIQUETA = { account: T('pantalla.cuenta2'), container: T('pantalla.carpeta2'), bucket: T('pantalla.bucket') };
+    // los campos del servicio guardado; al elegir otro, se dibujan los del nuevo
+    var camposDe = el('div', { class: 'fila' });
+    var dibujarCampos = function (servicio) {
+      while (camposDe.firstChild) camposDe.removeChild(camposDe.firstChild);
+      (CAMPOS[servicio] || CAMPOS['azure-blob']).forEach(function (k) {
+        camposDe.appendChild(campo(ETIQUETA[k] || k, mb[k], function (v) { site.mailbox = site.mailbox || {}; site.mailbox[k] = v; }, 'site.mailbox.' + k, pr));
+      });
+    };
+    var ponerServicio = function (v) {
+      site.mailbox = site.mailbox || {};
+      if (v === '') delete site.mailbox.provider; else site.mailbox.provider = v;
+      // los campos de otro servicio no quedan en el buzón: serían claves que el nuevo no conoce
+      var suyos = CAMPOS[v] || CAMPOS['azure-blob'];
+      Object.keys(CAMPOS).forEach(function (x) { CAMPOS[x].forEach(function (k) { if (suyos.indexOf(k) < 0) delete site.mailbox[k]; }); });
+      dibujarCampos(v);
+    };
+    if (servicios) f.appendChild(selector(T('pantalla.servicio2'), mb.provider, [['', T('pantalla.elegiElServicio')]].concat(servicios.map(function (x) { return [x, SERVICIO[x] || x]; })), ponerServicio, 'site.mailbox.provider', pr));
+    else f.appendChild(campo(T('pantalla.servicio2'), mb.provider, function (v) { site.mailbox = site.mailbox || {}; site.mailbox.provider = v; }, 'site.mailbox.provider', pr));
+    f.appendChild(camposDe);
+    dibujarCampos(mb.provider);
     buzon.appendChild(f);
     avanzado.appendChild(buzon);
     if (s.avisoLista) lista.appendChild(el('div', { class: 'aviso', text: s.avisoLista }));
