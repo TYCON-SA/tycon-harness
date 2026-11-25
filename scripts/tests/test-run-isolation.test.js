@@ -612,6 +612,42 @@ test('T8 IsolatedRun_CarriesRootsWithGuard @story-8.321 @ac-1 @ac-3', { skip: !P
   assert.ok(red.allow.includes(fuera), `admite la raíz del humo: ${red.allow}`);
 });
 
+// fila 88c: una prueba en vivo que necesita Claude Code corre en la casa aparte con una llave de prueba propia, pasada
+// sólo para esa corrida; la credencial de quien la lanza nunca llega al comando, y la llave no se muestra
+const LLAVE_DE_PRUEBA = 'llave-de-prueba-0000-de-juguete';
+const LLAVE_DE_AFUERA = 'llave-de-afuera-1111-de-juguete';
+function humoQueMiraLaLlave(t) {
+  const c = cuenta(t);
+  const r = repo(path.join(c.b, 'repo'), {
+    '.advisors/dod-runtime/llave.js': [
+      'const e = process.env;',
+      `console.log('llave=' + (e.ANTHROPIC_API_KEY === ${JSON.stringify(LLAVE_DE_PRUEBA)} ? 'la-de-prueba' : e.ANTHROPIC_API_KEY ? 'otra' : 'ninguna'));`,
+      "console.log('token=' + (e.ANTHROPIC_AUTH_TOKEN || e.CLAUDE_CODE_OAUTH_TOKEN ? 'llego' : 'no'));",
+      "console.log('nombre-de-prueba=' + (e.TYCON_TEST_ANTHROPIC_API_KEY ? 'llego' : 'no'));",
+    ].join('\n'),
+  });
+  const ev = path.join(r, '.advisors', 'dod-runtime');
+  return (extra) => humo(SMOKE, ev, '9.33', ['--', process.execPath, '.advisors/dod-runtime/llave.js'], { cwd: r, env: ambiente(c, extra) });
+}
+test('F88c Aislada_LlaveDePrueba_LlegaComoLaDeAnthropic_YLaDeAfueraNo: con TYCON_TEST_ANTHROPIC_API_KEY, la casa aparte recibe esa llave como ANTHROPIC_API_KEY; la credencial de afuera no llega y la llave no se muestra', (t) => {
+  const correr = humoQueMiraLaLlave(t);
+  const r = correr({ TYCON_TEST_ANTHROPIC_API_KEY: LLAVE_DE_PRUEBA, ANTHROPIC_API_KEY: LLAVE_DE_AFUERA, ANTHROPIC_AUTH_TOKEN: LLAVE_DE_AFUERA, CLAUDE_CODE_OAUTH_TOKEN: LLAVE_DE_AFUERA });
+  assert.strictEqual(r.status, 0, salida(r));
+  assert.match(salida(r), /llave=la-de-prueba/);
+  assert.match(salida(r), /token=no/);
+  assert.match(salida(r), /nombre-de-prueba=no/);
+  assert.ok(!salida(r).includes(LLAVE_DE_PRUEBA), `la llave no se muestra: ${salida(r)}`);
+  assert.ok(!salida(r).includes(LLAVE_DE_AFUERA), `la de afuera tampoco: ${salida(r)}`);
+});
+test('F88c Aislada_SinLlaveDePrueba_LaDeAfueraNoLlega: sin la llave de prueba, la credencial de Anthropic de quien lanza el humo no llega a la casa aparte', (t) => {
+  const correr = humoQueMiraLaLlave(t);
+  const r = correr({ ANTHROPIC_API_KEY: LLAVE_DE_AFUERA, ANTHROPIC_AUTH_TOKEN: LLAVE_DE_AFUERA, CLAUDE_CODE_OAUTH_TOKEN: LLAVE_DE_AFUERA });
+  assert.strictEqual(r.status, 0, salida(r));
+  assert.match(salida(r), /llave=ninguna/);
+  assert.match(salida(r), /token=no/);
+  assert.ok(!salida(r).includes(LLAVE_DE_AFUERA), salida(r));
+});
+
 test('T99 RedDeLasPruebas_NadaTocoLaCasaReal @story-8.314', () => {
   assert.deepStrictEqual(GUARD.attempts(), [], GUARD.describe());
 });
