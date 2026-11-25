@@ -1250,6 +1250,13 @@ test('CopiaAlEstado_AdentroDeUnaSustitucion_Frena (fila 247, el freno)', () => {
     const conBlanco = `"${E}/plan-review/s1/a b.json"`;
     frena(`echo x >${' '.repeat(40)}${conBlanco}`);
     frena(`echo x | tee${' '.repeat(40)}${conBlanco}`);
+    // de la segunda vuelta: un heredoc adentro de una sustitución no se come los renglones de abajo hasta el delimitador
+    // de otro, y lo roto adentro de una comilla invertida no tapa la redirección de afuera
+    frena(`x=$(cat <<'EOF'\nfoo\nEOF\n)\ncp ${S} '${res}'\ngit commit -m "$(cat <<'EOF'\nmsg\nEOF\n)"`);
+    frena(`$(cat <<'EOF'\nm\nEOF\n)cp a git commit -m "it's" > '${res}' | #$(cat <<'EOF'\nm\nEOF\n)`);
+    const roto = `\`"it's"$('it'')'>'$(\` >> ${res}`;
+    frena(roto);
+    assert.ok(bash.extractWriteTargets(roto).includes(res), roto);
     // lo de todos los días sigue pasando
     pasa(`echo $(cp ${S} '${repo}/copia.json')`);
     pasa(`x="$(git log -1 --format='%h > %s')"`);

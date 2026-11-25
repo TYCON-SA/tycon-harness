@@ -326,8 +326,19 @@ test('on-bash-write-gate (fila 247): una historia escrita adentro de "$(…)" o 
     const r = bash.handle(ev(cmd), { stateDir: st });
     assert.ok(r && r.block, JSON.stringify(cmd.slice(0, 40)));
   }
+  // de la segunda vuelta: un apóstrofo en el mensaje de un commit no es una comilla, y no esconde la escritura de al lado
+  // (sobre una historia que ya está)
+  const commit = (cuerpo) => `git commit -m "$(cat <<'EOF'\n${cuerpo}\nEOF\n)"`;
+  const conHistoria = mkRepo();
+  fs.writeFileSync(path.join(conHistoria, 'specs', '9-9.md'), S99);
+  for (const cmd of [`${commit("it's")}\necho x > specs/9-9.md\n${commit("it's")}`, `${commit('a ( b')}\ncp a specs/9-9.md\necho ")"`]) {
+    const r = bash.handle({ ...ev(cmd), cwd: conHistoria }, { stateDir: st });
+    assert.ok(r && r.block, JSON.stringify(cmd.slice(0, 60)));
+  }
   // lo de todos los días sigue igual
   assert.deepStrictEqual(bash.extractWriteTargets(`git commit -m "$(cat <<'EOF'\nfix: cp a > specs/x.md\nEOF\n)"`), []);
+  assert.deepStrictEqual(bash.extractWriteTargets(commit("fix: don't write > specs/9-9.md")), []);
+  assert.deepStrictEqual(bash.extractWriteTargets(`gh pr create --body "$(cat <<'EOF'\n- it's a bug: cat > specs/9-9.md\nEOF\n)"`), []);
   assert.deepStrictEqual(bash.extractWriteTargets(`gh pr create --body "$(cat <<'EOF'\n- mv a > b\nEOF\n)"`), []);
   assert.deepStrictEqual(bash.extractWriteTargets(`echo "hola $(date) > x"; echo '$(cp a b)'`), []);
   assert.deepStrictEqual(bash.extractWriteTargets(`x=$(git commit -m "msg > specs/x.md")`), []);
