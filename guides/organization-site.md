@@ -1875,6 +1875,12 @@ sin arrancar nada.
 0 3 * * * node /opt/arnes/scripts/site/deploy/local/start.js --secrets-file /etc/sitio/sitio.env --update --image ghcr.io/<organización>/<repo>
 ```
 
+El resultado de cada noche y el estado del actualizador quedan en `/etc/sitio/site-update/` (al lado del archivo de
+secretos; otra carpeta con `SITE_UPDATE_DIR`). `compose.yaml` la monta en el sitio, de sólo lectura: si quedó instalado
+por etiqueta, quien administra ve la misma banda que en Azure. **Si lo instalaste antes de esta versión**, volvé a
+arrancarlo una vez con `start.js --secrets-file …` para que el contenedor monte la carpeta; hasta entonces el sitio sigue
+como antes y la banda no aparece.
+
 Con systemd, un `.service` de tipo `oneshot` con la misma orden y un `.timer` con `OnCalendar=*-*-* 03:00`. **Watchtower**
 queda como alternativa (la copia que mantiene la comunidad, limitada al contenedor del sitio con `--label-enable`): no
 prueba ni vuelve atrás, y tiene el socket de Docker, o sea, es administrador de la máquina.

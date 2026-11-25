@@ -35,7 +35,7 @@
  *                       a la API de Render qué imagen corre el servicio)
  *   node update-site.js --platform local --compose <compose.yaml> --site-url http://127.0.0.1:8080 --image <…> --mode auto
  *   SALIDA: 0 al_dia, aviso, actualizado o pedido · 1 no_pudo o vuelto_atras · 2 uso. `TYCON_AZ_CMD` y `TYCON_DOCKER_CMD`
- *   cambian los ejecutables (las pruebas usan dobles).
+ *   cambian los ejecutables y `TYCON_SITE_REGISTRY_URL` el registro (las pruebas usan dobles).
  */
 const fs = require('fs');
 const path = require('path');
@@ -410,6 +410,7 @@ async function main(argv) {
   const modo = op('--mode') ? (['auto', 'notice'].includes(op('--mode')) ? op('--mode') : null) : (op('--operations-json') ? modoDe(op('--operations-json')) : 'notice');
   const r = await actualizar({
     plataforma, modo, imagen: op('--image'), estadoDir: op('--state-dir'), dryRun: argv.includes('--dry-run'), demo: argv.includes('--demo'),
+    urlRegistro: process.env.TYCON_SITE_REGISTRY_URL || null,
     log: (l) => process.stdout.write(`[sitio] ${l}\n`),
     azure: { grupo: op('--resource-group'), app: op('--app'), suscripcion: op('--subscription'), url: op('--site-url') },
     render: { hook: process.env.SITE_RENDER_DEPLOY_HOOK || null, url: op('--site-url'), api: { clave: variableCargada('SITE_RENDER_API_KEY'), servicio: variableCargada('SITE_RENDER_SERVICE_ID') } },

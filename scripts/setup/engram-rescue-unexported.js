@@ -113,7 +113,7 @@ const DB = path.join(os.homedir(), '.engram', 'engram.db');
 }
 const audit = require(path.join(__dirname, '..', 'lib', 'harness-audit.js'));
 // Misma raíz que usa el audit — nunca una carpeta escrita a mano (ver lib/repos-root.js). Sin raíz no se
-// rescata nada y se dice; un ~/.claude/tycon.json roto tira: un comando frena.
+// rescata nada y se dice; un ~/.tycon/config.json roto tira: un comando frena.
 // todas las carpetas de repos (puede haber más de una): cada repo se busca en la que lo tiene
 const REPOS_ROOTS = (() => {
   const r = require(path.join(__dirname, '..', 'lib', 'repos-root.js')).resolveReposRoot();

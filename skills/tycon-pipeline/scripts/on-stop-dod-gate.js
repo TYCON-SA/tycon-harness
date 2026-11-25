@@ -2,7 +2,7 @@
 /**
  * tycon-pipeline Stop hook — portón de Definition of Done para el MODO AUTÓNOMO (Nivel 1).
  *
- * Diseño: ~/.claude/tycon-harness/tasks/pipeline-autonomy-design.md.
+ * Diseño: ~/.tycon/harness/tasks/pipeline-autonomy-design.md.
  *
  * Cuando Claude intenta terminar su turno: si hay un pipeline en modo `autonomous` y el
  * portón DoD NO está verde, BLOQUEA el stop + devuelve los fallos → Claude está obligado a
