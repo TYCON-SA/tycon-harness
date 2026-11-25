@@ -51,7 +51,12 @@ function leido(archivo) {
     : fs.readFileSync(path.join(ROOT, archivo), 'utf8');
   if (archivo.endsWith('.sh')) return t.replace(/\\(["$])/g, '$1');
   if (archivo.endsWith('.json')) return t.replace(/\\"/g, '"');
+  // las rutas que el código pide a tycon-home.js se leen como lo que imprimen: el pipeline instalado (pipelineRel) y el
+  // lugar del arnés (placeRel en harness.js, PLACE_REL y relDeCasa en sus piezas)
+  const lugar = path.relative(os.homedir(), require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js')).placePath(os.homedir())).split(path.sep).join('/');
   return t
+    .replace(/(?:require\('\.\/home-command\.js'\)\.)?pipelineRel\((['"`])(.*?)\1\)/g, (_, _q, r) => `'${HC().pipelineRel(r)}'`)
+    .replace(/\$\{(?:placeRel\(\)|PLACE_REL|relDeCasa\(require\('\.\/place\.js'\)\.placePath\(os\.homedir\(\)\)\))\}/g, lugar)
     .replace(/\$\{\s*homeCommand\((['"`])(.*?)\1\)\s*\}/g, (_, _q, r) => `node "$HOME/${r}"`)
     .replace(/\$\{\s*signatureCommand\((['"`])(.*?)\1\)\s*\}/g, (_, _q, r) => `node "${CARPETA}/${r}"`);
 }
@@ -289,7 +294,7 @@ test('T8 MensajesConConstante_ConHome_YLasFirmasSiguen @story-8.218 @ac-8 — la
   assert.strictEqual(gate.MARKER_JS, `"$HOME/${MARKER_REL}"`);
   assert.strictEqual(gate.MARKER_REL, MARKER_REL);
   assert.strictEqual(skillGate.MARKER_JS, `"$HOME/${MARKER_REL}"`);
-  assert.match(fs.readFileSync(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'on-frontmatter-write.js'), 'utf8'),
+  assert.match(leido('skills/tycon-pipeline/scripts/on-frontmatter-write.js'),
     /const marker = homePath\('\.claude\/agent-skills\/skills\/tycon-pipeline\/scripts\/marker\.js'\);/);
   // carteles que no son firma: la forma con $HOME y sus argumentos
   const borrar = gate.markerDeleteMessage(['/r/.claude/.tycon-pipeline/active/s.json'], 'Bash');

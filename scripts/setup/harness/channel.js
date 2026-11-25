@@ -2,7 +2,7 @@
 // channel.js — la política de actualización: canal (`latest` | `stable`) y aplicación (`auto` | `ask`).
 //
 // Vive en la configuración del arnés (`scripts/lib/tycon-config.js`, sección `update`, vocabulario cerrado): variable de
-// entorno (`TYCON_UPDATE_CHANNEL`, `TYCON_UPDATE_APPLY`) › `~/.claude/tycon.json` › `team-profile.json` (o `perfil-equipo.json`, el nombre anterior) › el default.
+// entorno (`TYCON_UPDATE_CHANNEL`, `TYCON_UPDATE_APPLY`) › `~/.tycon/config.json` › `team-profile.json` (o `perfil-equipo.json`, el nombre anterior) › el default.
 // Sin que nadie diga nada: `stable` + `ask`. El perfil del equipo trae `latest` + `auto`; la copia pública no trae perfil.
 // Un valor fuera del vocabulario es un ERROR, no «apagado». `TYCON_UPDATE=0` apaga la actualización del todo
 // (`startup` queda en importar engram + aplicador + salud).
@@ -15,8 +15,8 @@
 // hasta que sale una versión posterior a la deshecha (`holdStands`).
 //
 // Mientras `tycon-config.js` no conozca la sección `update` (otra pieza la suma), su ausencia se
-// trata como «sin valor» y se leen las variables y `~/.claude/tycon.json` directamente, con las mismas reglas; cuando la
-// sección exista, manda `tycon-config`. `set` escribe SÓLO `update.channel` en `~/.claude/tycon.json` (atómico, preserva
+// trata como «sin valor» y se leen las variables y `~/.tycon/config.json` directamente, con las mismas reglas; cuando la
+// sección exista, manda `tycon-config`. `set` escribe SÓLO `update.channel` en `~/.tycon/config.json` (atómico, preserva
 // el resto del archivo).
 //
 // Funciones puras respecto del HOME: reciben `home` y `env`.
@@ -37,11 +37,11 @@ const SKILLS_SEPARATE = 'separate';
 const SKILLS_UNIFIED = 'unified';
 
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
-const machineFile = (home) => (config.rutaMaquina ? config.rutaMaquina(home) : path.join(home, '.claude', 'tycon.json'));
+const machineFile = (home) => (config.rutaMaquina ? config.rutaMaquina(home) : require('./tycon-home.js').legacyConfigFile(home));
 const vocabularyHasUpdate = () => Boolean(config.VOCABULARIO && config.VOCABULARIO.update);
 const invalid = (where, key, v, allowed) => `${where} · ${key} · vale «${v}»; tiene que ser ${allowed.join(' o ')}`;
 
-/** Lee `~/.claude/tycon.json` a mano (respaldo): `{ data }`, `{ data: null }` si no está, `{ error }` si está roto. */
+/** Lee `~/.tycon/config.json` a mano (respaldo): `{ data }`, `{ data: null }` si no está, `{ error }` si está roto. */
 function readMachine(home) {
   const file = machineFile(home);
   let text;
@@ -170,18 +170,18 @@ function holdStands(hold, tips, policy) {
 }
 
 // La copia del lector de configuración que instala el freno de producción (con sudo; se actualiza sólo al reinstalarlo)
-// lee el mismo ~/.claude/tycon.json y rechaza una sección que no conoce: si es anterior a la sección `update`, escribirla
+// lee el mismo ~/.tycon/config.json y rechaza una sección que no conoce: si es anterior a la sección `update`, escribirla
 // la deja en «configuración ROTA» hasta reinstalar el freno. Se avisa.
 const GUARD_LIB = '/opt/tycon/lib/tycon-config.js';
 function guardWarning(guardLib) {
   try {
     if (!fs.existsSync(guardLib)) return null;
     if (/\bupdate\s*:/.test(fs.readFileSync(guardLib, 'utf8'))) return null;
-    return `ojo: el freno de producción instalado (${guardLib}) es anterior a la sección «update» y va a decir «configuración ROTA» hasta reinstalarlo: sudo bash ~/.claude/${require('./place.js').PLACE_NAME}/scripts/production/install-guard.sh`;
+    return `ojo: el freno de producción instalado (${guardLib}) es anterior a la sección «update» y va a decir «configuración ROTA» hasta reinstalarlo: sudo bash ~/${path.relative(os.homedir(), require('./place.js').placePath(os.homedir())).split(path.sep).join('/')}/scripts/production/install-guard.sh`;
   } catch (_) { return null; }
 }
 
-/** Fija `update.channel` en `~/.claude/tycon.json` y nada más. `warning`: el aviso del freno de producción, si aplica. */
+/** Fija `update.channel` en `~/.tycon/config.json` y nada más. `warning`: el aviso del freno de producción, si aplica. */
 function set(home = os.homedir(), value, { guardLib = GUARD_LIB } = {}) {
   const v = value === undefined ? '' : String(value).trim();
   if (!CHANNELS.includes(v)) return { ok: false, reason: `canal «${v}»: tiene que ser ${CHANNELS.join(' o ')}`, file: machineFile(home) };

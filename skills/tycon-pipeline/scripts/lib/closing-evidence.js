@@ -11,8 +11,8 @@
  *
  * Cuatro copias de un criterio son el drift de mañana. Por eso hay
  * UNA definición: la importan los dos hooks del skill, y el portón de CI —que corre en un agente
- * sin `~/.claude/`, así que no puede importarla— lleva una COPIA deliberada que
- * `~/.claude/tycon-harness/scripts/tests/closing-evidence-parity.test.js` compara contra ésta en
+ * sin la carpeta de Claude Code, así que no puede importarla— lleva una COPIA deliberada que
+ * `~/.tycon/harness/scripts/tests/closing-evidence-parity.test.js` compara contra ésta en
  * cada corrida, con el mismo mecanismo que ya cuida la paridad del roster.
  *
  * ── Qué NO es evidencia de cierre, y por qué ─────────────────────────────────────────────────

@@ -7,7 +7,7 @@
 # story) no deja a ninguna capa mecánica saber si de verdad corrió. Este
 # wrapper corre el comando, captura el EXIT CODE REAL y lo appendea a:
 #   1. <evidence-dir>/<story>-smoke-ledger.jsonl        (el repo)
-#   2. ~/.claude/.tycon-pipeline/gates.log              (espejo global, append-only)
+#   2. ~/.tycon/state/gates.log              (espejo global, append-only)
 # runtime-matrix.js solo cuenta entries que existen EN AMBOS (anti escritura a
 # mano del ledger) y con exit 0.
 #
@@ -474,7 +474,7 @@ ENTRY=$(printf '{"ts":"%s","story":"%s","acs":%s,"cmd":%s,"exit":%d,"via":"smoke
 
 printf '%s\n' "$ENTRY" >> "$EVIDENCE_DIR/$STORY_ID-smoke-ledger.jsonl"
 
-MIRROR_DIR="$HOME/.claude/.tycon-pipeline"
+MIRROR_DIR="$(node "$(cd "$(dirname "$0")" && pwd)/lib/state-dir.js")"
 mkdir -p "$MIRROR_DIR"
 # la procedencia también va al espejo (fuera del repo): editarla en el registro del repo se nota al compararlos
 printf '{"type":"smoke-run","ts":"%s","repoPath":%s,"story":"%s","acs":%s,"exit":%d%s,"v":2%s%s%s,"target":%s}\n' \

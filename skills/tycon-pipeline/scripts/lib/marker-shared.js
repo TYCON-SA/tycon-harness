@@ -25,7 +25,7 @@ const path = require('path');
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', '..', '..', '..', 'scripts', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 const { resolveSessionId } = require('./session-id.js');
-const { homeCommand, signatureCommand } = require('./home-command.js');
+const { homeCommand, signatureCommand, pipelineRel } = require('./home-command.js');
 // la tabla de los pasos: nombres, orden, equivalencia con el marcador viejo
 const STEPS_LIB = require('./steps.js');
 const { posixRelative } = require('./path-forms.js');   // rutas relativas al repo con `/`, también en Windows
@@ -589,8 +589,8 @@ function sellosDe(v) {
 const { veredictoPaseAdversarial, paseAtendido } = require('./adversarial-verdict.js');
 
 function mensajeDelPaseAdversarial(v) {
-  const cmdResultado = `${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run ${v.runId || '<runId>'} --model <modelo> --tests <k promovidas> [--own <p> --in "<rutas de prueba>"] [--deferred <d> --reason "<por qué>"]`;
-  const cmdSalteo = `${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} mark-adversarial-skipped --files <archivos de código del diff>`;
+  const cmdResultado = `${homeCommand(pipelineRel('scripts/marker.js'))} mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run ${v.runId || '<runId>'} --model <modelo> --tests <k promovidas> [--own <p> --in "<rutas de prueba>"] [--deferred <d> --reason "<por qué>"]`;
+  const cmdSalteo = `${homeCommand(pipelineRel('scripts/marker.js'))} mark-adversarial-skipped --files <archivos de código del diff>`;
   const e = (s) => console.error(s);
   if (v.motivo === 'registro-ilegible') {
     e(`marker.js complete-step prepare-commit BLOQUEADO — no pude leer el registro de pases adversariales: el campo \`${v.campo}\` del marker no es una lista.`);
@@ -619,8 +619,8 @@ function mensajeDelPaseAdversarial(v) {
     e(`marker.js complete-step prepare-commit BLOQUEADO — el pase adversarial (${cuando}) quedó NO MEDIDO: ${p.motivo_no_medido || 'no revisó todo'}.`);
     if (p.resultado) e(`  El resultado, con el texto de cada hallazgo: ${p.resultado}`);
     e('  Un pase que no revisó todo es un pase que falta. Relanzalo y anotá el resultado nuevo:');
-    e(`    ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} mark-adversarial-launched <runId nuevo> 5b --relaunch`);
-    e(`    ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} mark-adversarial-result <N> --type 5b --result <RUN_DIR>/step-05b-adversarial.json …`);
+    e(`    ${homeCommand(pipelineRel('scripts/marker.js'))} mark-adversarial-launched <runId nuevo> 5b --relaunch`);
+    e(`    ${homeCommand(pipelineRel('scripts/marker.js'))} mark-adversarial-result <N> --type 5b --result <RUN_DIR>/step-05b-adversarial.json …`);
     e(`  Si Codex no contesta y no hay herramienta Workflow: ${SALIDA_APROBADA}.`);
     e('  Abandonarlo lo firma una persona, no el agente: `mark-adversarial-skipped --files …` anota el pedido y da los comandos de `marker.js sign-adversarial-skip`.');
     return;
