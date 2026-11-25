@@ -6,7 +6,7 @@
 # a nivel user-scope (todos los proyectos de la máquina lo usan).
 #
 # Uso:
-#   bash ~/.claude/tycon-harness/integrations/clockify/scripts/install-mcp.sh
+#   bash ~/.tycon/harness/integrations/clockify/scripts/install-mcp.sh
 #
 # Windows users: usar install-mcp.ps1 (PowerShell), en esta misma carpeta.
 #

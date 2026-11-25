@@ -16,7 +16,7 @@ CFG="$(cd "$(dirname "$0")/.." && pwd)/lib/tycon-config.js"
 if [ -f "$CFG" ] && command -v node >/dev/null 2>&1; then
   ESTADO="$(node "$CFG" key engram 2>&1)"; rc=$?
   if [ "$rc" = 2 ]; then echo "$ESTADO" >&2; exit 2; fi
-  if [ "$rc" = 3 ]; then echo "engram apagado en esta máquina — no hay versión que validar (prender: integrations.engram=true en ~/.claude/tycon.json o TYCON_ENGRAM=1)"; exit 0; fi
+  if [ "$rc" = 3 ]; then echo "engram apagado en esta máquina — no hay versión que validar (prender: integrations.engram=true en ~/.tycon/config.json o TYCON_ENGRAM=1)"; exit 0; fi
 fi
 
 echo "== 1. versión =="
