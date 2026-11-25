@@ -710,7 +710,18 @@ function scriptsInline(cmd) {
 // igual el mismo comando. Sólo se usa esta función; las variables las sigue resolviendo command-vars.js. Sin el lector
 // (una instalación a medias) el portón carga igual, y cada cuerpo de heredoc cuenta como programa: frena de más
 let lectorDeEntrada;
+// lo que leyó para los últimos comandos: el freno lo pide unas cinco veces por comando, y con una tubería larga de
+// here-strings cada lectura tarda segundos
+const ENTRADAS_LEIDAS = new Map();
 function programasPorEntrada(raw) {
+  const ya = ENTRADAS_LEIDAS.get(raw);
+  if (ya) return ya;
+  const leidos = leerProgramasPorEntrada(raw);
+  if (ENTRADAS_LEIDAS.size >= 8) ENTRADAS_LEIDAS.delete(ENTRADAS_LEIDAS.keys().next().value);
+  ENTRADAS_LEIDAS.set(raw, leidos);
+  return leidos;
+}
+function leerProgramasPorEntrada(raw) {
   if (lectorDeEntrada === undefined) {
     try { ({ programasPorEntrada: lectorDeEntrada } = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'shell-parse.js'))); } catch (e) { logHookError(e); lectorDeEntrada = null; }
   }
@@ -1564,6 +1575,12 @@ function* aperturasDeHeredoc(linea) {
       i++;
     } else if (c === '#' && (i === 0 || /[\s;&|()]/.test(linea[i - 1]))) {
       return;
+    } else if (c === '$' && linea[i + 1] === "'") {
+      // `$'…'`: una comilla escapada no lo cierra (`$'it\'s <<Z'` es un texto)
+      let j = i + 2;
+      while (j < linea.length && linea[j] !== "'") j += linea[j] === '\\' ? 2 : 1;
+      if (j >= linea.length) return;
+      i = j;
     } else if (c === "'") {
       const cierra = linea.indexOf("'", i + 1);
       if (cierra < 0) return;
@@ -5282,11 +5299,13 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
     return r.error || r.status !== 0 || String(r.stdout).trim() !== '';
   };
   for (const abs of repuestos) if (!otros.has(abs) && !conCambios(abs)) vistos.delete(abs);
-  // el cuerpo de un heredoc que reescribe el archivo entero (`>`, no `>>`)
+  // los cuerpos de los heredocs que reescriben el archivo entero (`>`, no `>>`); con varios para el mismo archivo, se
+  // miran todos
   const enteros = new Map();
   for (const h of heredocs(cmd)) {
     if (!h.target || !new RegExp(`(?:^|[^>])>\\s*['"]?${h.target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(cmd)) continue;
-    enteros.set(resolveTarget(expandirRuta(cmd, h.target).valor, cwd, process.platform, { homeVariable: true }), h.body);
+    const abs = resolveTarget(expandirRuta(cmd, h.target).valor, cwd, process.platform, { homeVariable: true });
+    enteros.set(abs, [...(enteros.get(abs) || []), h.body]);
   }
   const sinResolver = cdSinResolver.map((t) => `(la carpeta de \`${t}\`, que no sé resolver: puede tener historias)`);
   return [...sinResolver, ...[...vistos].filter((abs) => {
@@ -5304,10 +5323,13 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
         && !require('./lib/story-transition.js').transicionAMano(abs, antes, despues)) return false;
     }
     if (estado !== 'draft') return true;
-    // el estado del encabezado del cuerpo (todos sus `status:` en borrador), no un `status: draft` cualquiera más abajo
-    const fm = /^---\s*\n([\s\S]*?)\n---/.exec(enteros.get(abs) || '');
-    const estados = fm ? [...fm[1].matchAll(/^["']?status["']?\s*:\s*["']?([\w-]+)/gm)].map((m) => m[1].toLowerCase()) : [];
-    return !(estados.length && estados.every((e) => e === 'draft'));
+    // el estado del encabezado de cada cuerpo (todos sus `status:` en borrador), no un `status: draft` cualquiera más
+    // abajo: frena si alguno deja de estar en borrador
+    return (enteros.get(abs) || ['']).some((cuerpo) => {
+      const fm = /^---\s*\n([\s\S]*?)\n---/.exec(cuerpo);
+      const estados = fm ? [...fm[1].matchAll(/^["']?status["']?\s*:\s*["']?([\w-]+)/gm)].map((m) => m[1].toLowerCase()) : [];
+      return !(estados.length && estados.every((e) => e === 'draft'));
+    });
   })];
 }
 
@@ -5449,9 +5471,11 @@ function frenoBorrarYArmados({ cmd, cwd, stateDir, sessionId, io, isInside, via,
  * propósito) y el target de SU línea de apertura (`cat > f <<EOF` / `cat <<EOF > f` / `tee f <<EOF`),
  * o null si la línea no redirige a un archivo. La atribución importa: el cuerpo de un heredoc que
  * reescribe una story EXISTENTE no se le atribuye a cualquier `.md` nuevo del mismo comando.
- * Uno por renglón, la primera apertura que cierra, con la lectura de siempre (`aperturasComoAntes`): da lo mismo que la
- * expresión que la buscaba desde cada separador, que con miles de `<<<` en un renglón era cúbica. Va por renglones, con
- * los cierres en un índice.
+ * Dos lecturas, sin repetir una apertura (renglón y lugar): la de siempre (`aperturasComoAntes`, uno por renglón, la
+ * primera que cierra), que da lo mismo que la expresión que la buscaba desde cada separador, y la del lector de los
+ * destinos (`heredocsCerrados`), que no abre en un comentario y lee uno detrás del otro los heredocs de un renglón. Un
+ * `<<Z` en un comentario o en el cuerpo de otro heredoc abre uno falso en la de siempre, que se traga el de verdad: con las
+ * dos, el de verdad se lee igual. Va por renglones, con los cierres en un índice.
  */
 function heredocs(cmd) {
   const s = String(cmd || '');
@@ -5459,18 +5483,31 @@ function heredocs(cmd) {
   const lineas = s.split('\n');
   const cierreTras = cierresDe(lineas);
   const out = [];
+  const vistas = new Set();
+  // el destino, una vez por renglón: los otros `<<` del renglón no son destinos, y con miles de heredocs en uno leerlo por
+  // cada heredoc crece con el cuadrado
+  const destinoDe = new Map();
+  const sumar = (n, inicio, fin, desde, cierre) => {
+    if (vistas.has(`${n}:${inicio}`)) return;
+    vistas.add(`${n}:${inicio}`);
+    if (!destinoDe.has(n)) {
+      // el renglón que lo abre, sin el `<<` y su palabra
+      const linea = lineas[n];
+      const t = extractWriteTargets(`${linea.slice(0, inicio)} ${linea.slice(fin)}`);
+      destinoDe.set(n, t.length === 1 ? t[0] : null);
+    }
+    out.push({ body: lineas.slice(desde, cierre).join('\n'), target: destinoDe.get(n) });
+  };
   for (let n = 0; n < lineas.length - 1; n++) {
     for (const { inicio, fin, delimitador } of aperturasComoAntes(lineas[n])) {
       const cierre = cierreTras(delimitador, n);
       if (cierre < 0) continue;
-      // el renglón que lo abre, sin el `<<` y su palabra
-      const linea = lineas[n];
-      const t = extractWriteTargets(`${linea.slice(0, inicio)} ${linea.slice(fin)}`);
-      out.push({ body: lineas.slice(n + 1, cierre).join('\n'), target: t.length === 1 ? t[0] : null });
+      sumar(n, inicio, fin, n + 1, cierre);
       n = cierre;
       break;
     }
   }
+  for (const h of heredocsCerrados(lineas)) sumar(h.abre, h.operador.inicio, h.operador.fin, h.desde, h.cierre);
   return out;
 }
 /** Compat: sólo los cuerpos. */
@@ -6937,10 +6974,13 @@ function handleCarrilEHistoria(event, opts = {}) {
       const sameFile = (a, b) => String(a).replace(/\\/g, '/').toLowerCase() === String(b).replace(/\\/g, '/').toLowerCase();
       const resolveT = (t) => { const d = resueltos.find((x) => x.raw === t); return d ? d.abs : resolveTarget(t, cwd); };
       for (const abs of mdDraft) {
-        const own = hds.find((h) => h.target && sameFile(resolveT(h.target), abs));
-        // con `>>` el cuerpo del heredoc no es el archivo entero: no se sabe qué estado queda
-        const r = sio.evaluate({ absPath: abs, content: own && !/>>/.test(cmd) ? own.body : null, sessionId, via, event, stateDir });
-        if (r.verdict.action === 'block') return { block: r.message + '\n' };
+        // con varios cuerpos para el archivo (dos heredocs en un renglón, dos lecturas), frena si cualquiera frena
+        const propios = hds.filter((h) => h.target && sameFile(resolveT(h.target), abs));
+        for (const own of propios.length ? propios : [null]) {
+          // con `>>` el cuerpo del heredoc no es el archivo entero: no se sabe qué estado queda
+          const r = sio.evaluate({ absPath: abs, content: own && !/>>/.test(cmd) ? own.body : null, sessionId, via, event, stateDir });
+          if (r.verdict.action === 'block') return { block: r.message + '\n' };
+        }
       }
     }
     if (mdNew.length) {
@@ -6956,26 +6996,29 @@ function handleCarrilEHistoria(event, opts = {}) {
       const inline = hds.length ? null : inlineStoryText(cmd, declares);
       const renamedStory = renameOrCopyOfExistingStory(cmd, cwd);
       for (const abs of mdNew) {
-        const own = hds.find((h) => h.target && sameFile(resolveT(h.target), abs));
-        let content = own ? own.body : null;
-        if (!content && !own && mdNew.length === 1) content = orphanBody || inline;
-        // `mv`/`cp` desde una story EXISTENTE: es renombrar/duplicar, no crear. Pasa y queda medido.
-        if (!content && renamedStory && sameFile(renamedStory.dest, abs)) {
-          sio.logUnknown({ absPath: abs, sessionId, via, stateDir, kind: 'unknown-rename', reason: `renombrado/copia de una story existente (${path.basename(renamedStory.src)})` });
-          continue;
+        // con varios cuerpos para el archivo (dos heredocs en un renglón, dos lecturas), frena si cualquiera frena
+        const propios = hds.filter((h) => h.target && sameFile(resolveT(h.target), abs));
+        for (const own of propios.length ? propios : [null]) {
+          let content = own ? own.body : null;
+          if (!content && !own && mdNew.length === 1) content = orphanBody || inline;
+          // `mv`/`cp` desde una story EXISTENTE: es renombrar/duplicar, no crear. Pasa y queda medido.
+          if (!content && renamedStory && sameFile(renamedStory.dest, abs)) {
+            sio.logUnknown({ absPath: abs, sessionId, via, stateDir, kind: 'unknown-rename', reason: `renombrado/copia de una story existente (${path.basename(renamedStory.src)})` });
+            continue;
+          }
+          const r = sio.evaluate({
+            absPath: abs, content, nameHint: !content && nameSuggestsStory(abs),
+            sessionId, via, event, stateDir,
+          });
+          if (r.verdict.action === 'block') return { block: r.message + '\n' };
         }
-        const r = sio.evaluate({
-          absPath: abs, content, nameHint: !content && nameSuggestsStory(abs),
-          sessionId, via, event, stateDir,
-        });
-        if (r.verdict.action === 'block') return { block: r.message + '\n' };
       }
     }
   }
   return null;
 }
 
-module.exports = { handle, sinComentarioAlFinal, sinCierre, blancoPorRedireccion, splitSegments, SHELL_CON_C, BORRA_O_MUEVE, guionesEnArchivo, carpetasQueBorraOMueve, borraEjecucionAbierta, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA, frenaLaRed, quitarCuerposDeHeredoc, vaAUnShell };
+module.exports = { handle, programasPorEntrada, sinComentarioAlFinal, sinCierre, blancoPorRedireccion, splitSegments, SHELL_CON_C, BORRA_O_MUEVE, guionesEnArchivo, carpetasQueBorraOMueve, borraEjecucionAbierta, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA, frenaLaRed, quitarCuerposDeHeredoc, vaAUnShell };
 
 if (require.main === module) {
   const cruda = leerEntrada();
