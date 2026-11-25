@@ -156,16 +156,20 @@ else no "T4 · rc=$rc · $(head -c 600 "$TMP/freno.err")"; fi
 # ── T5 · la consulta que dio el freno: el firewall la rechaza, y la puerta dice qué hacer ────────────────────────
 : > "$TMP/cuadro.log"
 r="$(correr "$LEER")"
-ABRIR="$(comando_en "$TMP/out" "--open-firewall [^ ]+")"
-if [ "$r" = "puerta:1" ] && [ "$ABRIR" = "$RUTA --open-firewall $PROD" ] && grep -q "No hace falta el portal" "$TMP/out"; then
-  ok "T5 Emergencia_RechazoDelFirewall_LaPuertaDaElComandoParaAbrirlo"
+# Abrir el firewall lo corre la persona en su terminal (el modo automático del asistente lo frena, fila 248): el mensaje
+# lo dice de entrada y trae el comando para copiar, a nombre de la sesión que lo pidió.
+ABRIR="$(comando_en "$TMP/out" "--open-firewall [^ ]+ --session [^ ]+")"
+if [ "$r" = "puerta:1" ] && [ "$ABRIR" = "$RUTA --open-firewall $PROD --session $SES_A" ] && grep -q "No hace falta el portal" "$TMP/out" \
+   && grep -qi "en su terminal" "$TMP/out"; then
+  ok "T5 Emergencia_RechazoDelFirewall_LaPuertaDaElComandoParaLaTerminalDeLaPersona"
 else no "T5 · $r · abrir=«${ABRIR}» · $(tail -c 500 "$TMP/out")"; fi
 
-# ── T6 · el comando que dio la puerta: pasa el freno y abre la regla, con cuadro ─────────────────────────────────
+# ── T6 · la persona corre ese comando en su terminal: abre la regla con cuadro, a nombre de la sesión ────────────
 : > "$TMP/cuadro.log"
-r="$(correr "$ABRIR")"
-if [ "$r" = "puerta:0" ] && grep -q " $IP_PUB$" "$TMP/az-reglas" && [ "$(wc -l < "$TMP/cuadro.log" | tr -d ' ')" = 1 ]; then
-  ok "T6 Emergencia_AbrirFirewall_PasaElFrenoYAbreUnaReglaConCuadro"
+SES=""; eval "puerta ${ABRIR#"$RUTA" }" >/dev/null; r="puerta:$(cat "$TMP/rc" 2>/dev/null)"; SES=$SES_A
+if [ "$r" = "puerta:0" ] && grep -q " $IP_PUB$" "$TMP/az-reglas" && [ "$(wc -l < "$TMP/cuadro.log" | tr -d ' ')" = 1 ] \
+   && grep -q "$SES_A" "$CASA/.claude/.tycon-pipeline/production-firewall.json"; then
+  ok "T6 Emergencia_AbrirFirewallEnLaTerminal_AbreUnaReglaConCuadro_DeLaSesion"
 else no "T6 · $r · reglas=$(cat "$TMP/az-reglas") · cuadros=$(wc -l < "$TMP/cuadro.log") · $(head -c 300 "$TMP/err")"; fi
 
 # ── T7 · la consulta conecta y muestra la base llena; el cambio corre por la puerta, con su cuadro ───────────────

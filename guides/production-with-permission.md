@@ -47,8 +47,9 @@ lo aprueba **la persona frente a la Mac**, que tiene que poder autorizar ese cam
 
 1. **Probá la conexión**: `/opt/tycon/bin/tycon-prod-sql <host> 'select 1'`.
 2. **Si la rechaza el firewall** (error 40615, «is not allowed to access the server»), la puerta lo dice y da el
-   comando: `/opt/tycon/bin/tycon-prod-sql --open-firewall <host>`. Abre la regla de esta máquina, con cuadro, y la
-   regla se cierra sola al terminar la sesión.
+   comando para copiar: `/opt/tycon/bin/tycon-prod-sql --open-firewall <host> --session <id>`. **Lo corre la persona en
+   su terminal**, no el asistente: el modo automático de Claude Code frena esa orden. Abre la regla de esta máquina,
+   con cuadro, a nombre de la sesión que la pidió, y la regla se cierra sola cuando esa sesión termina, o a las 8 h.
 3. **Mirá el estado** por la puerta, no por `az`: el tamaño y el tope con
    `'select name, size/128 as mb, max_size/128 as max_mb from sys.database_files'`, y la edición y el nivel con
    `'select edition, service_objective from sys.database_service_objectives'`. Miden la base a la que entra la
@@ -374,10 +375,19 @@ el comando de Azure que crearía la regla, aunque lo autorices en el chat. El ca
   clave, y lee la IP del rechazo («Client with IP address … is not allowed»). No llama a ningún
   servicio externo ni lee el Llavero. Si la conexión llega a pedir la clave, ya tenés acceso y no abre
   nada.
-- **Se cierra sola**: al terminar la sesión del asistente que la abrió, un hook de la configuración
+- **Se cierra sola**: al terminar la sesión del asistente que la pidió, un hook de la configuración
   administrada (`prod-firewall-close.js`) la cierra, salvo que otra sesión viva la siga usando. Si el
   fin de sesión no corrió (ventana cerrada de golpe, sesión caída), el mismo hook la cierra al arrancar
-  la próxima sesión y lo dice en una línea. Cerrar no pide cuadro.
+  cualquier sesión de la máquina (también una compactación o un `/clear`) y lo dice en una línea.
+  Cerrar no pide cuadro.
+- **Cuánto dura de verdad**: lo que vive la sesión que la pidió, con un tope de **8 h** desde que se abrió
+  con su cuadro. «Viva» se mira por su proceso, que Claude Code anota en `~/.claude/sessions` (igual en
+  macOS, Linux y Windows), así que una sesión que espera a la persona sigue viva. Si ese registro no
+  está, el respaldo es la actividad de su conversación en los últimos 3 minutos, y el hook lo dice al
+  cerrar. El tope se aplica en el primer comando, arranque o fin de sesión de la máquina después de las
+  8 h (el freno de producción lanza el cierre aparte), y el aviso trae el comando para volver a abrirla.
+  Una regla sin una fecha de apertura que se pueda leer cuenta como vencida. Abierta desde la terminal sin `--session`, la regla no
+  es de ninguna sesión y se cierra en el próximo arranque de cualquiera.
 - **Si el servidor se borró** con la regla abierta, la regla se fue con él. Al abrir, la puerta anota la
   suscripción y el grupo del servidor. Al cerrar, pregunta por ese servidor ahí: si Azure contesta que
   no existe, y tampoco está en otra suscripción, lo da por cerrado y lo dice. Si se movió, la cierra
