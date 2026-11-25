@@ -122,6 +122,10 @@ function escribirJson(archivo, valor) {
 
 // Una lectura que no llegó a hacerse porque se acabó el tope: la sigue la lectura de fondo
 const esTope = (r) => Boolean(r && r.ok === false && r.reason === 'no_medido' && /^tope/.test(String(r.detail || '')));
+// Una lectura incompleta: la lista cortada por el tope, o un pedido cuyo análisis de seguridad no llegó a leerse antes de
+// la hora límite (`codeScanning.sinTiempo`). No es «no está listo»: lo dice la próxima lectura.
+const lecturaIncompleta = (r) => esTope(r)
+  || Boolean(r && r.ok && Array.isArray(r.value) && r.value.some((p) => p && p.codeScanning && p.codeScanning.sinTiempo === true));
 const fotoDe = (dir) => path.join(dir, 'stuck-prs-photo.json');
 const candadoDe = (dir) => path.join(dir, 'stuck-prs-refresh.lock');
 const refrescoMs = () => { const v = Number(readVar('TYCON_STUCK_PR_REFRESH_MS')); return Number.isFinite(v) && v > 0 ? v : 90000; };
@@ -177,7 +181,7 @@ function guardarMotivos(dir, repos, leidas, motivos, ahora) {
  * lee con el tope; una lectura incompleta no se guarda como foto (la guarda la lectura de fondo) y devuelve la foto
  * anterior, si la hay, para lo que no llegó: `{ leidas, incompleta, anterior }`.
  */
-async function lecturas(repos, tree, dir, ahora) {
+async function lecturas(repos, tree, dir, ahora, leerAhora = (rs) => leer(rs, tree, TOPE_MS)) {
   const claves = repos.map(claveDe);
   const foto = leerJson(fotoDe(dir));
   const deEstos = Boolean(foto && foto.lecturas && JSON.stringify(foto.repos) === JSON.stringify(claves));
@@ -185,12 +189,31 @@ async function lecturas(repos, tree, dir, ahora) {
     const edad = ahora - Date.parse(foto.at);
     if (edad >= 0 && edad < FOTO_MS) return { leidas: foto.lecturas, incompleta: false, anterior: null };
   }
-  const leidas = await leer(repos, tree, TOPE_MS);
-  const incompleta = Object.values(leidas).some(esTope);
+  const leidas = await leerAhora(repos);
+  const incompleta = Object.values(leidas).some(lecturaIncompleta);
   if (!incompleta) {
     try { escribirJson(fotoDe(dir), { at: new Date(ahora).toISOString(), repos: claves, lecturas: leidas }); } catch { /* sin foto, la próxima lee otra vez */ }
   }
   return { leidas, incompleta, anterior: deEstos ? foto : null };
+}
+
+/**
+ * Lo que no llegó a leerse entero, de la foto anterior de menos de 24 h que tenga ese repo leído: cambia `leidas` y
+ * devuelve `{ leidas, fotoVieja, lecturaDeHace }` (la hora de esa foto y, por repo, su edad).
+ */
+function conLaFotoAnterior(repos, leidas, anterior, ahora) {
+  let fotoVieja = null;
+  const lecturaDeHace = {};
+  for (const repo of repos) {
+    const k = claveDe(repo);
+    const vieja = anterior && anterior.lecturas[k];
+    if (lecturaIncompleta(leidas[k]) && vieja && vieja.ok && ahora - Date.parse(anterior.at) < 24 * HORA_MS) {
+      leidas[k] = vieja;
+      fotoVieja = anterior.at;
+      lecturaDeHace[k] = ahora - Date.parse(anterior.at);
+    }
+  }
+  return { leidas, fotoVieja, lecturaDeHace };
 }
 
 /** Lanza la lectura de fondo, salvo que ya haya una corriendo. Devuelve si quedó una corriendo. */
@@ -692,17 +715,7 @@ async function main() {
   const { leidas, incompleta, anterior } = await lecturas(declarados.repos, tree, dir, ahora);
   // lo que no llegó a leerse sigue de fondo; mientras tanto vale la foto anterior, con su edad, si tiene esa lectura
   const deFondo = incompleta && lanzarRefresco(tree, dir);
-  let fotoVieja = null;
-  const lecturaDeHace = {};
-  for (const repo of declarados.repos) {
-    const k = claveDe(repo);
-    const vieja = anterior && anterior.lecturas[k];
-    if (esTope(leidas[k]) && vieja && vieja.ok && ahora - Date.parse(anterior.at) < 24 * HORA_MS) {
-      leidas[k] = vieja;
-      fotoVieja = anterior.at;
-      lecturaDeHace[k] = ahora - Date.parse(anterior.at);
-    }
-  }
+  const { fotoVieja, lecturaDeHace } = conLaFotoAnterior(declarados.repos, leidas, anterior, ahora);
   const horas = (() => { const v = Number(readVar('TYCON_STUCK_PR_HOURS')); return Number.isFinite(v) && v > 0 ? v : 1; })();
 
   const estadoArchivo = path.join(dir, 'stuck-prs.json');
@@ -781,7 +794,7 @@ async function main() {
 
 // Si algo falla después de saber que el repo aplica, se dice; antes, se calla. El arranque nunca se rompe.
 let aplica = false;
-module.exports = { verdesSinEntrar, analisisNoVerde, reglaSinAnalisis, coordinatorLines, comandoParaEncolar, leerPropios, llamadaDe, salidaDe, paraReencolar, reencolar, reencolarLosListos };
+module.exports = { lecturaIncompleta, lecturas, conLaFotoAnterior, verdesSinEntrar, analisisNoVerde, reglaSinAnalisis, coordinatorLines, comandoParaEncolar, leerPropios, llamadaDe, salidaDe, paraReencolar, reencolar, reencolarLosListos };
 if (require.main !== module) { /* lo usa la coordinadora: no corre el arranque */ } else if (process.argv[2] === '--refresh') {
   refrescar(path.resolve(process.argv[3] || ROOT)).catch(() => { /* la próxima lo intenta otra vez */ }).finally(() => process.exit(0));
 } else main().catch((e) => {
