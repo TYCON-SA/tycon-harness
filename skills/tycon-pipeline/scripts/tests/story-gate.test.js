@@ -1438,6 +1438,9 @@ test('DestinosAlEstado_DetrasDeEnvoltoriosYSustituciones_SeLeen (fila 228, el fr
   // una sustitución pegada al nombre de un envoltorio o de tee
   visto(`nohup$(:/ ) cp ${S} '${res}'`);
   visto(`tee$(:/ ) '${res}' < ${S}`);
+  // un destino escrito con el citado ANSI-C, con o sin escapes
+  visto(`echo x > $'${res}'`);
+  visto(`cp ${S} $'${res.slice(0, -1)}\\x6e'`);
   // lo de siempre no suma destinos
   assert.deepEqual(bash.extractWriteTargets(`echo "$(git log -1)"; env -S 'true'`), []);
   assert.deepEqual(bash.extractWriteTargets(`time -p ls; noglob echo a*`), []);

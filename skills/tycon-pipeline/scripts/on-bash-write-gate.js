@@ -397,8 +397,7 @@ function programaEntre(piezas, info = null) {
     if (redireccion) { if (redireccion[0].length === pieza.length) saltar = 1; continue; }
     // una redirección pegada detrás (`cp>/dev/null`, `X=1>f`) termina la palabra: cuenta lo de antes
     const crudo = pieza.slice(0, antesDeUnaRedireccion(pieza));
-    // (un `$'…'` con sus escapes: `$'\x63p'` es `cp`)
-    const w = palabraDelShell(crudo.replace(/\$'((?:\\[\s\S]|[^'\\])*)'/g, (m, x) => `'${ansiC(x).replace(/'/g, "'\\''")}'`));
+    const w = palabraConAnsi(crudo);
     if (opciones !== null && w.startsWith('-')) {
       // el texto de `env -S`, que quien llama lee como otro comando: en qué pieza está y lo que va pegado
       const s = envoltorio === 'env' && /^(?:-[i0v]*S|--split-string=?)([\s\S]*)$/.exec(w);
@@ -424,6 +423,11 @@ function programaEntre(piezas, info = null) {
 
 // lo que zsh pone delante de un comando sin cambiar cuál corre: `noglob cp`, `nocorrect cp`, `- cp`
 const MODIFICADORES_DE_ZSH = new Set(['noglob', 'nocorrect', '-']);
+
+/** `palabraDelShell`, también con el citado ANSI-C y sus escapes: `$'\x63p'` es `cp`. */
+function palabraConAnsi(w) {
+  return palabraDelShell(String(w).replace(/\$'((?:\\[\s\S]|[^'\\])*)'/g, (m, x) => `'${ansiC(x).replace(/'/g, "'\\''")}'`));
+}
 
 // los programas que copian o mueven a un destino que es su último argumento (o la carpeta de `-t`); el nombre entero
 // (`install.sh` es un guion, no `install`), y lo que el shell pega detrás no es parte del nombre (`cp>log`, `cp$x`)
@@ -711,7 +715,7 @@ function destinosPorElPartidor(raw, keep, out, hondo = 0) {
     const c = p.parseSimpleCommand(sinPalabrasDeBloque(tramo));
     for (const r of c.redirections) {
       if (!r.write || r.target == null) continue;
-      const t = palabraDelShell(r.target);
+      const t = palabraConAnsi(r.target);
       if (t && !/^\/dev\//.test(t)) out.add(t);
     }
     const info = {};
@@ -719,12 +723,12 @@ function destinosPorElPartidor(raw, keep, out, hondo = 0) {
     // el texto de `env -S` (o `--split-string`), que env parte en palabras y corre con las que siguen
     if (info.envS && hondo < HONDO_DE_ENV_S) {
       const { k, pegado } = info.envS;
-      const valor = pegado || (k + 1 < c.words.length ? palabraDelShell(c.words[k + 1]) : '');
+      const valor = pegado || (k + 1 < c.words.length ? palabraConAnsi(c.words[k + 1]) : '');
       destinosPorElPartidor(`${valor} ${c.words.slice(pegado ? k + 1 : k + 2).join(' ')}`, keep, out, hondo + 1);
     }
     if (!programa) continue;
     const resto = c.words.slice(programa.k + 1);
-    const palabras = [programa.n, ...resto.map(palabraDelShell)];
+    const palabras = [programa.n, ...resto.map(palabraConAnsi)];
     // una sustitución suelta puede no dar ninguna palabra: el destino puede ser cualquiera de las de antes
     if (resto.some((w) => /^(?:\$\(|`)/.test(w))) palabras.sinCerrar = true;
     if (COPIA.test(programa.n)) for (const t of destinosDeCpMv(palabras)) out.add(t);
@@ -768,13 +772,6 @@ function cierreDeParentesis(s, i) {
   return -1;
 }
 
-/** ¿El carácter `k` de `t` está escapado (una cantidad impar de barras delante)? */
-function escapado(t, k) {
-  let barras = 0;
-  while (k - 1 - barras >= 0 && t[k - 1 - barras] === '\\') barras++;
-  return barras % 2 === 1;
-}
-
 /**
  * Los tramos del comando como los parte el shell, sin sus comentarios: corta en `;`, `&&`, `||`, `|`, `|&`, `&` y el salto
  * de renglón que están fuera de comillas y de sustituciones; no en el `|` de `>|` o `>&|` ni en el `&` de una redirección
@@ -783,9 +780,12 @@ function escapado(t, k) {
 function tramosDelShell(texto, hondo = 0) {
   const s = String(texto);
   const out = [];
+  // el tramo que se arma, y sus dos últimas letras sueltas (sin escapar ni citadas; vacía detrás de otra cosa): mirar la
+  // punta del tramo armado lo recompone entero cada vez
   let cur = '';
-  const cortar = () => { if (cur.trim()) out.push(cur); cur = ''; };
-  const trasRedireccion = () => { const k = cur.length - 1; return cur[k] === '>' && !escapado(cur, k); };
+  let cola = '';
+  const agregar = (t, suelta = false) => { cur += t; cola = suelta ? (cola + t).slice(-2) : ''; };
+  const cortar = () => { if (cur.trim()) out.push(cur); cur = ''; cola = ''; };
   // los comandos de adentro de una sustitución (entre `desde` y `fin`) también son tramos; más hondo que el tope, quedan
   // las otras lecturas
   const adentro = (desde, fin) => {
@@ -794,11 +794,11 @@ function tramosDelShell(texto, hondo = 0) {
   };
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
-    if (c === '\\') { if (s[i + 1] !== '\n') cur += s.slice(i, i + 2); i++; continue; }
+    if (c === '\\') { if (s[i + 1] !== '\n') agregar(s.slice(i, i + 2)); i++; continue; }
     if (c === "'" || (c === '$' && s[i + 1] === "'")) {
       let j = c === '$' ? i + 2 : i + 1;
       while (j < s.length && s[j] !== "'") j += c === '$' && s[j] === '\\' ? 2 : 1;
-      cur += s.slice(i, j + 1);
+      agregar(s.slice(i, j + 1));
       i = j;
       continue;
     }
@@ -812,35 +812,35 @@ function tramosDelShell(texto, hondo = 0) {
         if (f > j) { if (s[j] === '`') adentro(j + 1, f); else if (s[j + 1] === '(') adentro(j + 2, f); j = f + 1; continue; }
         j++;
       }
-      cur += s.slice(i, j + 1);
+      agregar(s.slice(i, j + 1));
       i = j;
       continue;
     }
     // (`<(…)` y `>(…)` también: su tubería de adentro no parte el tramo)
     const proceso = (c === '<' || c === '>') && s[i + 1] === '(';
     const fin = proceso ? cierreDeParentesis(s, i + 1) : finDeSustitucion(s, i);
-    if (fin === -1) { cur += s.slice(i); break; }
+    if (fin === -1) { agregar(s.slice(i)); break; }
     if (fin > i) {
       if (c === '`') adentro(i + 1, fin); else if (s[i + 1] === '(') adentro(i + 2, fin);
-      cur += s.slice(i, fin + 1);
+      agregar(s.slice(i, fin + 1));
       i = fin;
       continue;
     }
-    if (c === '#' && (cur === '' || /\s/.test(cur[cur.length - 1]))) { while (i + 1 < s.length && s[i + 1] !== '\n') i++; continue; }
+    if (c === '#' && (cur.length === 0 || /\s/.test(cola.slice(-1)))) { while (i + 1 < s.length && s[i + 1] !== '\n') i++; continue; }
     if (c === '\n' || c === ';') { cortar(); continue; }
     if (c === '|') {
-      if (trasRedireccion() || (cur.endsWith('>&') && !escapado(cur, cur.length - 2))) { cur += c; continue; }
+      if (cola.endsWith('>') || cola === '>&') { agregar(c, true); continue; }
       if (s[i + 1] === '|' || s[i + 1] === '&') i++;
       cortar();
       continue;
     }
     if (c === '&') {
       if (s[i + 1] === '&') { i++; cortar(); continue; }
-      if (s[i + 1] === '>' || trasRedireccion() || cur.endsWith('<')) { cur += c; continue; }
+      if (s[i + 1] === '>' || cola.endsWith('>') || cola.endsWith('<')) { agregar(c, true); continue; }
       cortar();
       continue;
     }
-    cur += c;
+    agregar(c, true);
   }
   cortar();
   return out;
@@ -850,6 +850,7 @@ function tramosDelShell(texto, hondo = 0) {
  * Agrega a `out` los archivos que edita en su lugar un `sed -i` / `--in-place` o un `perl -i` / `-pi` / `-ni` que empieza
  * `head`: todo token con extensión de código, o que quien llama quiere mirar igual (`keep`). `raw`, el comando entero.
  */
+const sufijoVacioDe = { raw: null, hay: false };
 function destinosDelSedEnSitio(head, raw, keep, out) {
   const isSedI = /^sed\b/.test(head) && /(^|\s)(-i\b|-[a-zA-Z]*i[a-zA-Z]*\b(?=\s)|--in-place)/.test(head);
   // (con el separador de registro en el mismo grupo: `-0pi`, `-0777pi`)
@@ -861,8 +862,10 @@ function destinosDelSedEnSitio(head, raw, keep, out) {
   let args = 0;
   let esValorDeE = false;   // lo que sigue a -e / --expression es la expresión, no un archivo
   let anterior = null;
-  // en el comando escrito, ¿hay un `-i ''` de verdad (el sufijo vacío de Mac) o es una expresión que se vació?
-  const sufijoVacio = /(^|\s)-i\s+(''|"")(\s|$)/.test(raw);
+  // en el comando escrito, ¿hay un `-i ''` de verdad (el sufijo vacío de Mac) o es una expresión que se vació? (una vez
+  // por comando: con miles de `sed -i` en uno, buscarlo en cada uno lo recorre entero cada vez)
+  if (sufijoVacioDe.raw !== raw) { sufijoVacioDe.raw = raw; sufijoVacioDe.hay = /(^|\s)-i\s+(''|"")(\s|$)/.test(raw); }
+  const sufijoVacio = sufijoVacioDe.hay;
   for (const w of words.slice(1)) {
     const mm = w.match(new RegExp(`^${Q}$`));
     const t = mm ? tok(mm, 1) : null;

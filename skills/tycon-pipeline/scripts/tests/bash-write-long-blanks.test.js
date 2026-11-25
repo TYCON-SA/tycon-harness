@@ -16,6 +16,8 @@
  *   BLANKS4  los segmentos, las redirecciones, el `sh -c` y la de borrados dan lo mismo que las expresiones de antes
  *   BLANKS5  los destinos se leen en menos de 1,5 s con 150 KB de `$(` o `${` sin cerrar detrás de `>` o `<`
  *   BLANKS7  los destinos de un `cp` se leen en menos de 1,5 s con 100 KB de blancos o tabuladores entre sus palabras
+ *   BLANKS8  los destinos se leen en menos de 1,5 s con 200 KB de `>|` o `>&|` seguidos, y con `sed -i` repetidos el
+ *            tiempo crece como el largo, no como su cuadrado
  * 🔴 Nada toca el HOME real: el gancho corre en un proceso hijo con una casa de juguete.
  */
 const { test } = require('node:test');
@@ -158,4 +160,23 @@ test('BLANKS7 CopiaConUnaTiradaDeBlancos_LeeSusDestinosEnUnaPasada', () => {
     assert.ok(destinos.includes('/tmp/destino'), JSON.stringify(destinos));
     assert.ok(ms < 1500, `${JSON.stringify(blanco)}: tardó ${ms} ms`);
   }
+});
+
+// 🔴 Fila 228. Mutaciones: mirar la punta del tramo que se arma (`cur[cur.length - 1]`) para saber si un `|` es de `>|`, y
+// buscar el `-i ''` de sed en el comando entero por cada `sed -i`. La primera recompone el tramo entero en cada `|`; la
+// segunda recorre el comando una vez por cada sed: con 200 KB, segundos.
+test('BLANKS8 TuberiasTrasRedireccionYSedRepetido_LeenEnUnaPasada', () => {
+  const n = 200 * 1024;
+  // stable-data: el reloj mide cuánto tarda la lectura, que es lo que se prueba
+  const tarda = (comando) => { const desde = Date.now(); bash.extractWriteTargets(comando); return Date.now() - desde; };
+  for (const comando of [`echo x ${'>|'.repeat(n / 2)}`, `echo x ${'>&|'.repeat(Math.ceil(n / 3))}`]) {
+    const ms = tarda(comando);
+    assert.ok(ms < 1500, `${comando.slice(0, 20)}…: tardó ${ms} ms`);
+  }
+  // miles de `sed -i` llevan su tiempo aunque se lean en una pasada: lo que se mira es cómo crece. Con cuatro veces el
+  // largo, una pasada tarda unas cuatro veces más; recorrer el comando por cada sed, unas dieciséis
+  const sed = (kb) => 'sed -i f.ts; '.repeat(Math.ceil((kb * 1024) / 13));
+  const chico = Math.max(1, Math.min(tarda(sed(50)), tarda(sed(50))));
+  const grande = tarda(sed(200));
+  assert.ok(grande / chico < 9 && grande < 6000, `sed -i repetido: 50 KB ${chico} ms, 200 KB ${grande} ms`);
 });
