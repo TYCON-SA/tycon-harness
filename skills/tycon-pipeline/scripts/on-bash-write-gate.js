@@ -357,30 +357,13 @@ function cierreDeUnaSustitucion(t, i, prof = 0) {
 
 /**
  * El delimitador del heredoc cuya palabra empieza en `t[k]` (justo después de `<<`): `{ delim, dash, fin }`, con `fin`
- * donde termina la palabra, o null si no hay palabra. `<<-` deja tabs delante del cierre; las comillas y la barra de la
- * palabra no son parte del delimitador (`<<'EOF'`, `<<\EOF`).
+ * donde termina la palabra, o null si no hay una. La palabra se lee con la misma expresión que `delimitadoresQueAbre`:
+ * los heredocs que salta el cierre son los mismos cuyos cuerpos saca `quitarCuerposDeHeredoc`.
  */
 function delimitadorDeHeredoc(t, k) {
-  const dash = t[k] === '-';
-  if (dash) k++;
-  while (t[k] === ' ' || t[k] === '\t') k++;
-  let delim = '';
-  while (k < t.length && !/[\s;&|<>()]/.test(t[k])) {
-    const q = t[k];
-    if (q === "'" || q === '"') {
-      const e = t.indexOf(q, k + 1);
-      if (e < 0) return null;
-      delim += t.slice(k + 1, e);
-      k = e + 1;
-    } else if (q === '\\') {
-      delim += t[k + 1] || '';
-      k += 2;
-    } else {
-      delim += q;
-      k++;
-    }
-  }
-  return delim ? { delim, dash, fin: k } : null;
+  DELIMITADOR_DE_HEREDOC.lastIndex = k;
+  const m = DELIMITADOR_DE_HEREDOC.exec(t);
+  return m ? { delim: m[2], dash: m[0].startsWith('-'), fin: DELIMITADOR_DE_HEREDOC.lastIndex } : null;
 }
 
 /** Dónde sigue `t` después de los cuerpos de los heredocs `abiertos`, uno detrás del otro desde `pos`; -1 si alguno no cierra. */
@@ -1765,7 +1748,8 @@ function* delimitadoresQueAbre(linea) {
 function heredocsCerrados(lineas) {
   const renglonesDe = new Map();
   lineas.forEach((linea, n) => {
-    const clave = sinBlancosAlBorde(linea);
+    // el renglón que dejó un cuerpo ya sacado (`MARCA_DE_CUERPO` y su delimitador) también lo cierra
+    const clave = linea[0] === MARCA_DE_CUERPO ? linea.slice(1) : sinBlancosAlBorde(linea);
     if (renglonesDe.has(clave)) renglonesDe.get(clave).push(n); else renglonesDe.set(clave, [n]);
   });
   const cierreTras = (delimitador, n) => {
@@ -1807,7 +1791,9 @@ function quitarCuerposDeHeredoc(cmd, marcar = false) {
   let n = 0;
   for (const { abre, cierre } of heredocsCerrados(lineas)) {
     while (n <= abre) out.push(lineas[n++]);
-    out.push(marcar ? MARCA_DE_CUERPO + sinBlancosAlBorde(lineas[cierre]) : '');
+    // un cuerpo que ya estaba sacado conserva su marca
+    const marca = lineas[cierre][0] === MARCA_DE_CUERPO ? lineas[cierre] : MARCA_DE_CUERPO + sinBlancosAlBorde(lineas[cierre]);
+    out.push(marcar ? marca : '');
     n = cierre + 1;
   }
   while (n < lineas.length) out.push(lineas[n++]);

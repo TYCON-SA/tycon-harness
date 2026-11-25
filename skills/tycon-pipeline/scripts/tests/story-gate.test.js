@@ -1257,6 +1257,13 @@ test('CopiaAlEstado_AdentroDeUnaSustitucion_Frena (fila 247, el freno)', () => {
     const roto = `\`"it's"$('it'')'>'$(\` >> ${res}`;
     frena(roto);
     assert.ok(bash.extractWriteTargets(roto).includes(res), roto);
+    // de la tercera vuelta: adentro de la sustitución, el cuerpo ya sacado cierra su heredoc, y un renglón igual al
+    // delimitador más abajo (el de otro heredoc, o uno suelto) no se come la escritura del medio
+    for (const cmd of [`x=$(cat <<'EOF'\nx\nEOF\ncp ${S} ${res}\ngit commit -m "$(cat <<'EOF'\nmsg\nEOF\n)"\n)`,
+      `$(cat <<END\nEND\n>${res}\nEND)`]) {
+      frena(cmd);
+      assert.ok(bash.extractWriteTargets(cmd).includes(res), cmd);
+    }
     // lo de todos los días sigue pasando
     pasa(`echo $(cp ${S} '${repo}/copia.json')`);
     pasa(`x="$(git log -1 --format='%h > %s')"`);
