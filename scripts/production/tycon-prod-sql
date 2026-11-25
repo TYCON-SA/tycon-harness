@@ -266,20 +266,36 @@ aprobar(){ # $1 = lo que muestra el cuadro, $2 = la forma (consulta | reclasific
     muere "el cuadro de producción necesita la sesión de la Mac: abrí la terminal en la Mac, no por SSH"
   fi
   [ -x "$OSASCRIPT" ] || muere "no encuentro el programa del cuadro de aprobación ($OSASCRIPT): sin cuadro no se aprueba nada, así que no sigo."
-  local respuesta pide
+  local respuesta pide salida=0 que motivo causa
   pide="$(quien_pide)"
   tomar_turno "$pide"
   respuesta="$(env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin LANG=en_US.UTF-8 \
     /usr/bin/perl -e 'alarm shift @ARGV; exec @ARGV or exit 127' "$((CUADRO_ESPERA + 10))" "$OSASCRIPT" "${CUADRO_GUION[@]}" "$pide
 
-$1" 2>/dev/null)" || respuesta=""
+$1" 2>/dev/null)" || { salida=$?; respuesta=""; }
   soltar_turno
   # 🔴 Al vencer, `osascript` sale 0 con «gave up:true»: la salida 0 sola no es una aprobación. Vale sólo esta respuesta exacta.
-  if [ "$respuesta" != "button returned:Aprobar, gave up:false" ]; then
-    anotar "\"host\":\"$HOST\",\"accion\":\"rechazada\",\"forma\":\"$2\",\"exit\":2"
-    muere "la persona no aprobó esta $([ "$2" = consulta ] && echo sentencia || echo operación) (rechazó el cuadro, se venció a los ${CUADRO_ESPERA} s o el cuadro no se pudo abrir): no se leyó la clave ni se cambió nada."
-  fi
-  APROBACION=',"aprobacion":"cuadro-propio"'
+  [ "$respuesta" = "button returned:Aprobar, gave up:false" ] && { APROBACION=',"aprobacion":"cuadro-propio"'; return 0; }
+  # Lo que no aprueba se dice con su causa: con una frase para las tres, quien pide no sabe si alguien vio el cuadro. Se
+  # reconocen sólo las dos respuestas exactas; lo que no se entiende cuenta como un cuadro que no se pudo abrir.
+  [ "$2" = consulta ] && que=sentencia || que=operación
+  case "$respuesta" in
+    "button returned:, gave up:true")
+      motivo=vencido
+      causa="el cuadro se venció a los ${CUADRO_ESPERA} s sin respuesta. Si la puerta corrió de fondo, nadie lo vio: correla en primer plano, con un tope de 5 minutos, y avisale antes a la persona qué cuadro va a aparecer" ;;
+    "button returned:Rechazar, gave up:false")
+      motivo=rechazado
+      causa="apretó «Rechazar» en el cuadro" ;;
+    *)
+      motivo=sin-cuadro
+      if [ "$salida" = 142 ]; then causa="el programa del cuadro no contestó en $((CUADRO_ESPERA + 10)) s y se cortó"
+      elif [ "$salida" = 127 ]; then causa="no se pudo correr el programa del cuadro ($OSASCRIPT)"
+      elif [ "$salida" != 0 ]; then causa="el programa del cuadro salió con el código $salida"
+      else causa="el programa del cuadro contestó algo que la puerta no entiende"; fi
+      causa="el cuadro no se pudo abrir ($causa)" ;;
+  esac
+  anotar "\"host\":\"$HOST\",\"accion\":\"rechazada\",\"motivo\":\"$motivo\",\"forma\":\"$2\",\"exit\":2"
+  muere "la persona no aprobó esta $que: $causa. No se leyó la clave ni se cambió nada."
 }
 
 # ── la ayuda ───────────────────────────────────────────────────────────────────────────────────
