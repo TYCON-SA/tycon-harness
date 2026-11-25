@@ -130,7 +130,7 @@ function salirPorLaRed(e, texto) {
     try {
       process.stderr.write([
         '⛔ tycon-pipeline — EL FRENO FALLÓ Y ESTE COMANDO ESCRIBE UNA HISTORIA O UNA CONSTANCIA',
-        `  No pude mirar qué escribe. La falla quedó en ${path.join(carpetaDelEstado(), 'hook-errors.log')}.`,
+        `  No pude mirar qué escribe. La falla quedó en ${registroDeFallas()}.`,
         '  Una historia se edita con la herramienta de edición (Edit/Write); una constancia la firma una persona.',
         '',
       ].join('\n'));
@@ -231,7 +231,7 @@ function salirSinCargar(e) {
     process.stderr.write([
       '⛔ tycon-pipeline — EL FRENO DE ESCRITURAS NO PUDO CARGARSE ENTERO: ningún comando corre hasta repararlo',
       `  ${cual}`,
-      `  La falla quedó en ${path.join(carpetaDelEstado(), 'hook-errors.log')}. Reinstalá el arnés desde tu terminal; \`/tycon-harness\` dice si quedó bien instalado.`,
+      `  La falla quedó en ${registroDeFallas()}. Reinstalá el arnés desde tu terminal; \`/tycon-harness\` dice si quedó bien instalado.`,
       '',
     ].join('\n'));
   } catch { /* sin dónde decirlo, frena igual */ }
@@ -6204,9 +6204,25 @@ function logHookError(e, rotulo = 'falla atrapada') {
   try {
     const dir = carpetaDelEstado();
     fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(path.join(dir, 'hook-errors.log'),
-      `[${new Date().toISOString()}] on-bash-write-gate ${rotulo}: ${(e && e.stack) || e}\n\n`, 'utf8');
+    const desde = esCopiaQueNoEsLaInstalada() ? ` (copia en ${RAIZ_DEL_ARNES})` : '';
+    fs.appendFileSync(registroDeFallas(),
+      `[${new Date().toISOString()}] on-bash-write-gate${desde} ${rotulo}: ${(e && e.stack) || e}\n\n`, 'utf8');
   } catch { /* noop */ }
+}
+
+// En una máquina con el arnés instalado, el registro de fallas (`hook-errors.log`) mide los frenos que corren de verdad:
+// una copia que no es la instalada (la de una prueba, la de un laboratorio en la carpeta de trabajo de una sesión) anota
+// en un registro aparte, para no ensuciar esa medición. Sin instalación (un clon, o la casa de una prueba), o si no se
+// puede saber, el registro de siempre.
+function esCopiaQueNoEsLaInstalada() {
+  try {
+    const arbol = require('./lib/installed-tree.js');
+    const raices = arbol.roots({ home: os.homedir() });
+    return raices.length > 0 && !arbol.inside(raices, RAIZ_DEL_ARNES);
+  } catch { return false; }
+}
+function registroDeFallas() {
+  return path.join(carpetaDelEstado(), esCopiaQueNoEsLaInstalada() ? 'hook-errors-copies.log' : 'hook-errors.log');
 }
 
 /**
