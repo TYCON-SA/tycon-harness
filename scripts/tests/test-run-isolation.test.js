@@ -625,6 +625,7 @@ const SIN_HERE_DOCUMENTS = [
   'scripts/hooks/git-pre-push-global.sh',
   'scripts/hooks/engram-pre-commit.sh',
   'scripts/lib/legacy-names.sh',
+  'scripts/ci/check-bash32-quoting.sh',
 ];
 test('F226 GuionesDeLosControles_SinHereDocuments: los guiones de bash del camino de los controles no usan here documents ni here-strings', () => {
   const malos = [];
