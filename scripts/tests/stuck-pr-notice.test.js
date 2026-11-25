@@ -1256,3 +1256,30 @@ test('Connector_GithubDeadline_IsAnHourNotADuration — el tope de la lectura es
   assert.strictEqual(topeDe(1000, undefined), Infinity, 'sin hora límite, sin tope');
   assert.ok(topeDe(Date.now(), Date.now() + 90000) < Date.now() + 90000, 'un tope de 90 s no cae en otro siglo');
 });
+
+// Fila 172b (24/11): con el análisis cortado de verdad a la hora límite, un pedido listo que no llegó a leer su análisis
+// sale «sin tiempo». Para el aviso eso es una lectura incompleta, como el tope de la lista: no se guarda como foto (si no,
+// por 10 minutos diría «no está listo» y no lo re-encolaría), y mientras tanto vale la foto anterior de ese repo.
+test('F172b SinTiempoDelAnalisis_EsLecturaIncompleta — no se guarda como foto y vale la anterior de ese repo', async () => {
+  const N = require(HOOK);
+  const sinTiempo = { ok: true, value: [{ number: 5, draft: false, mergeState: 'clean', codeScanning: { estado: 'no-se-pudo', motivo: 'no hubo tiempo de leer sus alertas en esta lectura', sinTiempo: true } }] };
+  const fallida = { ok: true, value: [{ number: 6, draft: false, mergeState: 'clean', codeScanning: { estado: 'no-se-pudo', motivo: 'no pude leer las alertas abiertas del pedido' } }] };
+  const tope = { ok: false, reason: 'no_medido', detail: 'tope de 5 s' };
+  assert.strictEqual(N.lecturaIncompleta(sinTiempo), true, 'un análisis sin tiempo deja la lectura incompleta');
+  assert.strictEqual(N.lecturaIncompleta(tope), true, 'el tope de la lista, como siempre');
+  assert.strictEqual(N.lecturaIncompleta(fallida), false, 'una lectura del análisis que falló no es falta de tiempo');
+  assert.strictEqual(N.lecturaIncompleta({ ok: true, value: [] }), false);
+  // la lectura del arranque: incompleta, sin foto nueva, y la foto anterior para ese repo
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'spn-172b-'));
+  const repo = { platform: 'github', org: 'acme', repo: 'harness' };
+  const ahora = Date.now();
+  const vieja = { ok: true, value: [{ number: 5, draft: false, mergeState: 'clean', codeScanning: { estado: 'verde', motivo: null } }] };
+  fs.writeFileSync(path.join(dir, 'stuck-prs-photo.json'), JSON.stringify({ at: new Date(ahora - 20 * 60000).toISOString(), repos: ['acme/harness'], lecturas: { 'acme/harness': vieja } }));
+  const antes = fs.readFileSync(path.join(dir, 'stuck-prs-photo.json'), 'utf8');
+  const r = await N.lecturas([repo], '/nada', dir, ahora, async () => ({ 'acme/harness': sinTiempo }));
+  assert.strictEqual(r.incompleta, true);
+  assert.strictEqual(fs.readFileSync(path.join(dir, 'stuck-prs-photo.json'), 'utf8'), antes, 'no pisó la foto');
+  const completas = N.conLaFotoAnterior([repo], r.leidas, r.anterior, ahora);
+  assert.deepStrictEqual(completas.leidas['acme/harness'], vieja, 'vale la foto anterior de ese repo');
+  assert.ok(completas.lecturaDeHace['acme/harness'] >= 20 * 60000);
+});
