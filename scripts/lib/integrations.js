@@ -173,8 +173,9 @@ function problemsOf(m, folder) {
     if (m.changeRequestApi !== undefined) out.push(...problemasDeLaApi(m.changeRequestApi));
     if (m.changeRequestAutoComplete !== undefined) {
       const ok = Array.isArray(m.changeRequestAutoComplete) && m.changeRequestAutoComplete.every((c) => isObject(c)
-        && typeof c.command === 'string' && c.command.trim().split(/\s+/).length >= 2 && typeof c.option === 'string' && /^--[a-z][a-z0-9-]*$/.test(c.option));
-      if (!ok) out.push('«changeRequestAutoComplete» es una lista de { command: "<programa> <palabras>", option: "--<opción>" }');
+        && typeof c.command === 'string' && c.command.trim().split(/\s+/).length >= 2 && typeof c.option === 'string' && /^--[a-z][a-z0-9-]*$/.test(c.option)
+        && (c.values === undefined || (Array.isArray(c.values) && c.values.length && c.values.every((v) => typeof v === 'string' && /^[A-Za-z0-9_-]+$/.test(v)))));
+      if (!ok) out.push('«changeRequestAutoComplete» es una lista de { command: "<programa> <palabras>", option: "--<opción>", values?: [valores que juntan] }');
     }
   } else {
     for (const k of ['changeRequestCommands', 'changeRequestApi', 'changeRequestAutoComplete']) {

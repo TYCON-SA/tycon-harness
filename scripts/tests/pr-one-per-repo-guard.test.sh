@@ -64,6 +64,18 @@ rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "$GL")
 { [ "$rc" -eq 0 ] && grep -q "NO verifiqué" "$TMP/err.txt" && grep -q "acme/grupo/widgets" "$TMP/err.txt"; } && ok "un pedido de GitLab crudo se mira: sin poder consultar, pasa, lo dice y nombra el repo" || no "🔴 el glab mr create pasó sin mirar ($rc): $(head -c 200 "$TMP/err.txt")"
 rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "$GL && $CREAR")
 { [ "$rc" -eq 2 ] && grep -q "2845" "$TMP/err.txt"; } && ok "🔴 con un pedido de GitLab en la misma línea, el de Azure se sigue frenando" || no "🔴 el glab de adelante tapó el pedido de Azure ($rc)"
+# del pase adversarial: `-R=` y `-Rvalor` se leen; listar, ver o comentar con la palabra «create» en un valor no es crear
+rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "glab mr create -R=acme/grupo/widgets --source-branch feat/x --title t")
+{ [ "$rc" -eq 0 ] && grep -q "acme/grupo/widgets" "$TMP/err.txt" && ! grep -q "no sé a qué repo" "$TMP/err.txt"; } && ok "glab mr create -R=… lee el repo" || no "-R= no se leyó ($rc): $(head -c 200 "$TMP/err.txt")"
+for no_crea in "glab mr list --title create" "glab mr view create" "glab mr note create -m x" "glab mr update 5 --title create"; do
+  rc=$(corre "$no_crea")
+  { [ "$rc" -eq 0 ] && ! grep -q "NO verifiqué" "$TMP/err.txt"; } && ok "«${no_crea}» no es crear" || no "«${no_crea}» se tomó como crear ($rc): $(head -c 160 "$TMP/err.txt")"
+done
+# sin -R y con un remoto que la lista del equipo no conoce, el repo sale del camino del remoto
+git init -q "$TMP/clon-gl" && git -C "$TMP/clon-gl" remote add origin git@gitlab.acme.test:acme/grupo/widgets.git
+printf '{"cwd":"%s","tool_input":{"command":"glab mr create --source-branch feat/x --title t"}}' "$TMP/clon-gl" \
+  | PATH="$TMP/bin:$PATH" node "$HOOK" >"$TMP/out.txt" 2>"$TMP/err.txt"; rc=$?
+{ [ "$rc" -eq 0 ] && grep -q "acme/grupo/widgets" "$TMP/err.txt" && ! grep -q "no sé a qué repo" "$TMP/err.txt"; } && ok "sin -R, el repo sale del camino del remoto" || no "el remoto no dio el repo ($rc): $(head -c 200 "$TMP/err.txt")"
 rc=$(corre "glab mr list -R acme/grupo/widgets")
 { [ "$rc" -eq 0 ] && ! grep -q "NO verifiqué" "$TMP/err.txt"; } && ok "listar pedidos de GitLab no es crear: el freno no lo mira" || no "listar se tomó como crear ($rc): $(head -c 200 "$TMP/err.txt")"
 

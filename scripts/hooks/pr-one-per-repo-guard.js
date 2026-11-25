@@ -147,15 +147,26 @@ function pedidosDeOtrosConectores(comando, cwd) {
     const bin = require('path').basename(String(t[i] || '').replace(/\\/g, '/')).replace(/\.(exe|cmd)$/i, '');
     for (const d of crean) {
       if (d.words[0] !== bin) continue;
-      // las palabras del comando en orden, con opciones en el medio
-      let j = i + 1;
-      const enOrden = d.words.slice(1).every((w) => { while (j < t.length && t[j] !== w) j++; return j++ < t.length; });
-      if (!enOrden) continue;
+      // las palabras del comando son las primeras sin guion, saltando una opción y su valor: `mr list --title create`
+      // no crea, `-R acme/x mr create` sí. Una opción seguida de la palabra que se espera se toma sin valor
+      const esperadas = d.words.slice(1);
+      let n = 0;
+      for (let j = i + 1; j < t.length && n < esperadas.length; j++) {
+        if (t[j].startsWith('-')) {
+          if (!t[j].includes('=') && !/^-[A-Za-z]./.test(t[j]) && t[j + 1] !== esperadas[n]) j++;
+          continue;
+        }
+        if (t[j] !== esperadas[n]) break;
+        n++;
+      }
+      if (n < esperadas.length) continue;
       const valor = (...nombres) => {
         for (let k = i + 1; k < t.length; k++) {
           for (const n of nombres) {
             if (t[k] === n) return t[k + 1];
             if (n.startsWith('--') && t[k].startsWith(`${n}=`)) return t[k].slice(n.length + 1);
+            // la opción corta con el valor pegado: `-R=acme/x`, `-Racme/x`
+            if (!n.startsWith('--') && t[k].length > 2 && t[k].startsWith(n)) return t[k].slice(2).replace(/^=/, '');
           }
         }
         return undefined;
@@ -169,6 +180,12 @@ function pedidosDeOtrosConectores(comando, cwd) {
         try {
           const url = execFileSync('git', ['-C', cwd || process.cwd(), 'remote', 'get-url', 'origin'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10000 }).trim();
           repo = P.identityOfRemoteUrl(url) || null;
+          // sin el repo en la lista del equipo, el camino del remoto: `git@servidor:grupo/sub/repo.git`
+          if (!repo) {
+            const camino = url.replace(/^[a-z+]+:\/\/[^/]+\//i, '').replace(/^[^@/]+@[^:]+:/, '').replace(/\.git$/, '').replace(/\/+$/, '');
+            const leido = /^[\w.-]+(\/[\w.-]+)+$/.test(camino) ? P.repoOf(camino) : null;
+            repo = leido && typeof leido === 'object' && typeof leido.repo === 'string' ? { platform: d.name, ...leido } : null;
+          }
         } catch { repo = null; }
       }
       const donde = repo ? P.nameOf(repo) : (crudo || '(el repo de la carpeta)');

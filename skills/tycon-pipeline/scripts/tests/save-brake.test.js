@@ -1946,6 +1946,18 @@ test('F189b SaveBrake_PedidoPorLaApi_YElAutoCompletar_SeLeen', (t) => {
     'glab api --method PUT projects/1/merge_requests/3/merge',
     'az repos pr update --id 5 --auto-complete true',
     'az repos pr update --id 5 --auto-complete',
+    // del pase adversarial: el valor pegado a la opción corta, las rutas de una instalación propia y juntar con el estado
+    'gh api -X=POST repos/acme/x/pulls',
+    'gh api -ftitle=t repos/acme/x/pulls',
+    'gh api -Ftitle=t -Fhead=b repos/acme/x/pulls',
+    `gh api graphql -fquery='mutation { mergePullRequest(input: {pullRequestId: "x"}) { clientMutationId } }'`,
+    'gh api /api/v3/repos/acme/x/pulls -f title=t',
+    'gh api https://ghe.acme.test/api/v3/repos/acme/x/pulls -f title=t',
+    'gh api REPOS/Acme/X/Pulls -f title=t',
+    'glab api -X PUT /api/v4/projects/1/merge_requests/3/merge',
+    'glab api -ftitle=t projects/1/merge_requests',
+    'az repos pr update --id 5 --status completed',
+    'az repos pr update --id 5 --auto-complete=true',
   ];
   for (const cmd of guardan) assert.ok(leidos(cmd).some((c) => c.tipo === 'pr'), `«${cmd}» se lee como pedido: ${JSON.stringify(leidos(cmd))}`);
   const noGuardan = [
@@ -1957,6 +1969,10 @@ test('F189b SaveBrake_PedidoPorLaApi_YElAutoCompletar_SeLeen', (t) => {
     'glab api projects/1/merge_requests',
     'az repos pr update --id 5 --title otro',
     'az repos pr update --id 5 --auto-complete false',
+    'az repos pr update --id 5 --auto-complete n',
+    'az repos pr update --id 5 --auto-complete f',
+    'az repos pr update --id 5 --status active',
+    `gh api graphql -f query='query { repository(owner: "a", name: "b") { pullRequest(number: 1) { title } } }'`,
   ];
   for (const cmd of noGuardan) assert.ok(!leidos(cmd).some((c) => c.tipo === 'pr' || c.opaco), `«${cmd}» no guarda: ${JSON.stringify(leidos(cmd))}`);
   const opacos = [
@@ -1965,6 +1981,9 @@ test('F189b SaveBrake_PedidoPorLaApi_YElAutoCompletar_SeLeen', (t) => {
     'gh api graphql -F query=@consulta.graphql',
     'gh api graphql -f query="$CONSULTA"',
     'az repos pr update --id 5 --auto-complete $AC',
+    'gh api graphql --input consulta.json',
+    'glab api graphql --input consulta.json',
+    'gh api -X POST',
   ];
   for (const cmd of opacos) assert.ok(leidos(cmd).some((c) => c.opaco || c.tipo === 'pr'), `«${cmd}» no se puede leer: no pasa como inofensivo: ${JSON.stringify(leidos(cmd))}`);
 });

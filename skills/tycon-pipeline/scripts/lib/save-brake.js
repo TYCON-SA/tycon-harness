@@ -818,42 +818,54 @@ function pedidoPorLaApi(ps, cmd, apis) {
     let opaco = false;
     let campos = false;
     let ruta = null;
+    let desdeArchivo = false;
     const valores = [];
     for (let j = i + 1; j < ps.length; j++) {
       const w = ps[j];
       const igual = /^(--[a-z-]+)=([\s\S]*)$/.exec(w);
-      const pegado = /^-X(.+)$/.exec(w);
-      const op = igual ? igual[1] : pegado ? '-X' : w;
+      // una opción corta con el valor pegado, con o sin `=`: `-XPOST`, `-X=POST`, `-ftitle=t`, `-fquery=…`
+      const pegado = !igual && /^-[A-Za-z][\s\S]+$/.exec(w) && API_CON_VALOR.has(w.slice(0, 2)) ? w.slice(0, 2) : null;
+      const op = igual ? igual[1] : pegado || w;
       let valor;
       if (igual) valor = igual[2];
-      else if (pegado) valor = pegado[1];
+      else if (pegado) valor = w.slice(2).replace(/^=/, '');
       else if (API_CON_VALOR.has(w)) { j++; valor = ps[j]; }
       if (op === '-X' || op === '--method') {
         if (valor === undefined || conVariable(valor)) opaco = true;
         else metodo = String(valor).toUpperCase();
         continue;
       }
-      if (API_CAMPOS.has(op)) { campos = true; if (valor !== undefined) valores.push(String(valor)); continue; }
+      if (API_CAMPOS.has(op)) {
+        campos = true;
+        // el cuerpo entero desde un archivo (o la entrada): una consulta de graphql que no se lee
+        if (op === '--input') desdeArchivo = true;
+        else if (valor !== undefined) valores.push(String(valor));
+        continue;
+      }
       if (API_CON_VALOR.has(op) || w.startsWith('-')) continue;
       if (ruta === null) { ruta = w; if (conVariable(w)) opaco = true; }
     }
     if (opaco) return { opaco: true };
-    if (ruta === null) continue;
-    const camino = ruta.replace(/^https?:\/\/[^/]+\//, '').replace(/^\/+/, '').replace(/[?#][\s\S]*$/, '').replace(/\/+$/, '');
+    // con un método que escribe o con campos y sin la ruta (que llega por `xargs`, por ejemplo): no se sabe adónde va
+    if (ruta === null) { if (campos || (metodo && metodo !== 'GET')) return { opaco: true }; continue; }
+    // sin el servidor, la barra, la consulta ni el prefijo de una instalación propia (`api/v3/`, `api/v4/`), en minúsculas
+    const camino = ruta.replace(/^https?:\/\/[^/]+\//, '').replace(/^\/+/, '').replace(/[?#][\s\S]*$/, '').replace(/\/+$/, '')
+      .replace(/^api\/v\d+\//i, '').toLowerCase();
     if (camino === 'graphql') {
       const mutaciones = api.graphql || [];
       if (!mutaciones.length) continue;
       // la consulta que viene de un archivo o de una variable no se lee
-      if (valores.some((v) => /^([A-Za-z_]+=)?@/.test(v) || conVariable(v))) return { opaco: true };
+      if (desdeArchivo || valores.some((v) => /^([A-Za-z_]+=)?@/.test(v) || conVariable(v))) return { opaco: true };
       const texto = valores.join('\n');
-      if (mutaciones.some((n) => new RegExp(`\\b${n}\\b`).test(texto))) return { forma: `${api.command} graphql` };
+      // una mutación: el nombre en una consulta que dice `mutation` (un campo de una consulta de lectura no cuenta)
+      if (/\bmutation\b/.test(texto) && mutaciones.some((n) => new RegExp(`\\b${n}\\b`).test(texto))) return { forma: `${api.command} graphql` };
       continue;
     }
     const verbo = metodo || (campos ? 'POST' : 'GET');
     const tramos = camino.split('/');
     for (const r of api.routes || []) {
       const patron = r.path.split('/');
-      if (r.method === verbo && patron.length === tramos.length && patron.every((t, k) => t === '*' || t === tramos[k])) {
+      if (r.method === verbo && patron.length === tramos.length && patron.every((t, k) => t === '*' || t.toLowerCase() === tramos[k])) {
         return { forma: `${api.command} ${verbo} ${r.path}` };
       }
     }
@@ -877,7 +889,10 @@ function autoCompletarDe(ps, cmd, autos) {
       const siguiente = ps[j + 1];
       const v = w.includes('=') ? w.slice(w.indexOf('=') + 1) : (siguiente !== undefined && !siguiente.startsWith('-') ? siguiente : 'true');
       if (conVariable(v)) return { opaco: true };
-      if (!/^(false|0|no|off)$/i.test(v)) return { forma: `${a.command} ${a.option}` };
+      // con `values`, sólo esos valores juntan el pedido (`--status completed`); sin ella, cualquiera que no lo apague
+      if (Array.isArray(a.values) ? a.values.some((x) => String(x).toLowerCase() === v.toLowerCase()) : !/^(false|f|0|n|no|off)$/i.test(v)) {
+        return { forma: `${a.command} ${a.option}${Array.isArray(a.values) ? ` ${v}` : ''}` };
+      }
     }
   }
   return null;
