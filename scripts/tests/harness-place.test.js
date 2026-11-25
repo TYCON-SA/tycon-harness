@@ -454,8 +454,11 @@ test('T37 CodeMessagesAndUsageComments_PlacePath', () => {
     assert.ok(e.why && e.why.length > 10, `${e.path}: sin motivo`);
     assert.ok(PLACE_PATH_RX.test(read(e.path)), `${e.path}: declarado en place_text y no nombra el lugar`);
   }
-  // el comando que el aviso le propone a la persona existe afuera: nombra el lugar
-  if (here('scripts/hooks/branch-guard-notice.js')) assert.ok(PLACE_PATH_RX.test(read('scripts/hooks/branch-guard-notice.js')), 'branch-guard-notice.js: el comando no nombra el lugar');
+  // el comando que el aviso le propone a la persona existe afuera: nombra el lugar, escrito o pedido a tycon-home.js
+  if (here('scripts/hooks/branch-guard-notice.js')) {
+    const aviso = read('scripts/hooks/branch-guard-notice.js');
+    assert.ok(PLACE_PATH_RX.test(aviso) || /\.placePath\(/.test(aviso), 'branch-guard-notice.js: el comando no nombra el lugar ni lo pide a tycon-home.js');
+  }
   // advisor-runner deja leer los dos nombres (reconocedor declarado): la ruta vieja sigue ahí, a propósito
   assert.ok(LIST.recognizers.some((e) => e.path === 'scripts/controls-bench/advisor-runner.js'), 'advisor-runner.js: reconocedor declarado');
 });

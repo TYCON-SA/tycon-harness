@@ -79,6 +79,23 @@ printf '{"cwd":"%s","tool_input":{"command":"glab mr create --source-branch feat
 rc=$(corre "glab mr list -R acme/grupo/widgets")
 { [ "$rc" -eq 0 ] && ! grep -q "NO verifiqué" "$TMP/err.txt"; } && ok "listar pedidos de GitLab no es crear: el freno no lo mira" || no "listar se tomó como crear ($rc): $(head -c 200 "$TMP/err.txt")"
 
+# ---------------------------------------------------------------- 1b3. 🔴 el pedido dentro de otra orden (fila 244)
+# `bash -c '…'`, `sudo …` y `xargs …` corren el comando de adentro: el pedido se mira igual que suelto.
+for envuelto in "bash -c '$GL'" "sh -c \"$GL\"" "sudo $GL" "sudo -E $GL" "xargs $GL < /dev/null" "env A=b $GL"; do
+  rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "$envuelto")
+  { [ "$rc" -eq 0 ] && grep -q "NO verifiqué" "$TMP/err.txt" && grep -q "acme/grupo/widgets" "$TMP/err.txt"; } && ok "«${envuelto%% *} …» de GitLab se mira" || no "🔴 «${envuelto}» pasó sin mirar ($rc): $(head -c 160 "$TMP/err.txt")"
+done
+for envuelto in "bash -c '$CREAR'" "sudo $CREAR" "xargs $CREAR < /dev/null"; do
+  rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "$envuelto")
+  { [ "$rc" -eq 2 ] && grep -q "2845" "$TMP/err.txt"; } && ok "«${envuelto%% *} …» de Azure se frena con otro construyendo" || no "🔴 «${envuelto}» de Azure pasó ($rc)"
+done
+for envuelto in "bash -c '$GH'" "xargs $GH < /dev/null"; do
+  rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "$envuelto")
+  { [ "$rc" -eq 0 ] && grep -q "NO verifiqué" "$TMP/err.txt"; } && ok "«${envuelto%% *} …» de GitHub se mira" || no "🔴 «${envuelto}» de GitHub pasó sin mirar ($rc): $(head -c 160 "$TMP/err.txt")"
+done
+rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "bash -c 'glab mr list -R acme/grupo/widgets'")
+{ [ "$rc" -eq 0 ] && ! grep -q "NO verifiqué" "$TMP/err.txt"; } && ok "listar dentro de bash -c no es crear" || no "listar dentro de bash -c se tomó como crear ($rc)"
+
 # ---------------------------------------------------------------- 1c. 🔴 un pedido de Azure abierto por la capa de plataforma
 # El paso del merge abre los pedidos de Azure con `platform.js change-request open`, no con `az repos pr create`: el freno
 # los mira con `az`, igual que al crear a mano, y frena con otro construyendo.

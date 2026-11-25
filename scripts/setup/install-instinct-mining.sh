@@ -27,7 +27,7 @@
 #   export TYCON_INSTINCT_THROTTLE_SECONDS=43200   # default 12h
 #   export TYCON_INSTINCT_NOTIFY=1                 # Telegram notify on
 #   export TYCON_INSTINCT_TELEGRAM_BOT_TOKEN=...   # bot token
-#   export TYCON_INSTINCT_TELEGRAM_CHAT_ID=...     # chat_id (sin default: si no está, sale de ~/.claude/tycon.json → telegram.chat_id o del plugin de Telegram)
+#   export TYCON_INSTINCT_TELEGRAM_CHAT_ID=...     # chat_id (sin default: si no está, sale de ~/.tycon/config.json → telegram.chat_id o del plugin de Telegram)
 #   export TYCON_OBSERVER_MODEL=claude-haiku-4-5   # model override
 
 set -euo pipefail

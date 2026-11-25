@@ -686,6 +686,11 @@
     },
     {
       "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adversarial-multi-repo.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/approvals.test.js",
       "requiere": []
     },
@@ -1528,6 +1533,12 @@
       "__nota": "qué criterios tienen una prueba que corre de noche, lo que pide la regla de la entrada a firmas y frenos (8.310)",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/nightly-coverage.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "un criterio declarado imposible de probar en vivo queda cubierto sin firma si la última noche, de hace menos de 36 h, corrió en verde su prueba y esa prueba ya estaba en main. Lab con un repo de git de verdad",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/nightly-green.test.js",
       "requiere": []
     },
     {
