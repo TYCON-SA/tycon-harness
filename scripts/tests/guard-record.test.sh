@@ -319,13 +319,11 @@ fi
 # ══ Los tres hooks del CIERRE también dejan constancia ══════════════════════════════
 # El número que decide si el cierre recortado alcanza —cuántas veces `on-frontmatter-write` y
 # `on-pre-commit` rechazan una evidencia— sale de esa constancia: esos hooks (en agent-skills) la anotan.
-# Los hooks se corren REALES desde agent-skills (`TYCON_SKILLS_DIR` apunta a un clon mientras el
-# cambio no está en main). Si la casa no los trae (una casa de prueba, la CI), se toman de la carpeta skills/ del árbol
-# que se prueba, que los trae. Sin ninguno de los dos, la parte no se puede medir y lo dice.
-SKILLS72="${TYCON_SKILLS_DIR:-$HOME/.claude/agent-skills/skills}"
-if [ -z "${TYCON_SKILLS_DIR:-}" ] && [ ! -f "$SKILLS72/tycon-pipeline/scripts/on-frontmatter-write.js" ] && [ -f "$AQUI/skills/tycon-pipeline/scripts/on-frontmatter-write.js" ]; then
-  SKILLS72="$AQUI/skills"
-fi
+# Los hooks se corren REALES. La carpeta sale de skills-dir.js, como en el resto del arnés: `TYCON_SKILLS_DIR` (la raíz
+# de un clon o su carpeta de skills), si no el propio árbol que se prueba cuando trae sus skills, y si no lo instalado.
+# Así, una prueba corrida en un clon de trabajo mide los ganchos de ese clon, no los instalados. Sin ganchos en la
+# carpeta que resuelve, la parte no se puede medir y lo dice.
+SKILLS72="$(node "$AQUI/scripts/lib/skills-dir.js" --skills 2>/dev/null)" || SKILLS72="${TYCON_SKILLS_DIR:-$HOME/.claude/agent-skills/skills}"
 FW="$SKILLS72/tycon-pipeline/scripts/on-frontmatter-write.js"
 PC="$SKILLS72/tycon-pipeline/scripts/on-pre-commit.js"
 EG="$SKILLS72/tycon-pipeline/scripts/on-dod-evidence-guard.js"
@@ -356,7 +354,7 @@ lineas_limpias(){ HOME="$CASA" node -e '
 de72(){ grep -o "\"freno\":\"$1\",\"regla\":\"[a-z-]*\",\"veredicto\":\"[a-z]*\"" "$(REG)" 2>/dev/null | sed 's/"freno":"[^"]*",//' | tr '\n' ' '; }
 
 if [ ! -f "$FW" ] || [ ! -f "$PC" ] || [ ! -f "$EG" ]; then
-  no "7.2 NO MEDIDO: no encontré los hooks del cierre en $SKILLS72 (TYCON_SKILLS_DIR) — sin agent-skills no se puede verificar"
+  no "7.2 NO MEDIDO: no encontré los hooks del cierre en $SKILLS72 (TYCON_SKILLS_DIR, las skills del árbol o las instaladas) — sin ellos no se puede verificar"
 else
   # ── T1 — Constancia_HooksDelCierre_AnotanBloqueoYPaso ─────────────────────────────────────
   # 🔴 Rojo si los hooks de agent-skills no anotan: cero líneas.
