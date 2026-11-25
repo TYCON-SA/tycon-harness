@@ -155,8 +155,8 @@ function renderBoard(){const body=document.getElementById("boardBody"),k=DATA.ka
   // las historias abiertas en main del proyecto de la coordinadora, con su proyecto y de cuándo es el dato
   const A=k.abiertas;if(A&&A.linea){body.appendChild(el("p","sum abiertas",(A.principal?A.principal.nombre+" · ":"")+A.linea));if(A.hora)body.appendChild(el("p","none",A.hora));}
   const cols=el("div","cols");
-  // «Sin sesión» no cuenta las historias plegadas: tienen su propio número en su línea
-  (k.columnas||[]).forEach(c=>{const col=el("div","col"),list=c.tarjetas||[];col.style.setProperty("--k",KC[c.id]||"var(--line)");col.appendChild(el("h3",null,c.nombre+" · "+list.filter(i=>!i.otro&&i.local!==true).length));
+  // «Sin sesión» no cuenta las historias plegadas: tienen su propio número en su línea. En «Terminados hoy» las cerradas en main sí cuentan
+  (k.columnas||[]).forEach(c=>{const col=el("div","col"),list=c.tarjetas||[];col.style.setProperty("--k",KC[c.id]||"var(--line)");col.appendChild(el("h3",null,c.nombre+" · "+list.filter(i=>!i.otro&&(c.id!=="sinEmpezar"||i.local!==true)).length));
     if(c.nota)col.appendChild(el("p","none",c.nota));
     // si las historias de tus proyectos no se pudieron leer, o la lectura es vieja, «Sin sesión» lo dice
     const notaHistorias=c.id==="sinEmpezar"&&DATA.kanban.historias?DATA.kanban.historias.nota:"";if(notaHistorias)col.appendChild(el("p","none",notaHistorias));
