@@ -18,6 +18,11 @@
  * Las raíces se fijan UNA vez, en el primer proceso, y viajan por el ambiente: un hijo con `HOME` de juguete no las
  * vuelve a calcular (frenaría su propio laboratorio).
  *
+ * La ejecución aislada de un humo (skills/tycon-pipeline/scripts/lib/isolated-run.js) no las manda sólo por el ambiente:
+ * carga la red con un archivo de arranque que antes deja en el proceso lo que vigila (`CARRIED`: raíces, registro y
+ * carpetas admitidas). Eso gana sobre las tres variables: un guion de laboratorio que limpia las `TYCON_*`, o que las
+ * vacía, y conserva `NODE_OPTIONS`, sigue con la red de la ejecución y no se toma por la primera.
+ *
  * Las carpetas admitidas (`TYCON_REAL_HOME_GUARD_ALLOW`, una lista JSON) se pueden escribir aunque caigan adentro de una
  * raíz: la raíz del repo de un humo aislado (skills/tycon-pipeline/scripts/lib/isolated-run.js), que puede vivir bajo
  * `.claude/worktrees/`.
@@ -37,9 +42,22 @@ const fold = (p) => (FOLD ? p.toLowerCase() : p);
 const raw = { appendFileSync: fs.appendFileSync, readFileSync: fs.readFileSync, rmSync: fs.rmSync, realpathSync: fs.realpathSync };
 const realOrSelf = (p) => { try { return raw.realpathSync(p); } catch (_) { return p; } };
 
-const OWNER = !process.env[ROOTS_VAR];
+// lo que trajo el arranque de una ejecución aislada; con eso, las variables del ambiente no cuentan
+const CARRIED_KEY = Symbol.for('tycon.real-home-guard');
+const carried = (() => {
+  const c = process[CARRIED_KEY];
+  if (!c || !Array.isArray(c.roots) || !c.roots.length || typeof c.log !== 'string' || !c.log) return null;
+  return { roots: c.roots.map(String), log: c.log, allow: Array.isArray(c.allow) ? c.allow.map(String) : [] };
+})();
+const OWNER = !carried && !process.env[ROOTS_VAR];
+const self = `--require "${__filename.replace(/\\/g, '/')}"`;
+// Un hijo que heredó la red pero perdió sus variables (un laboratorio que limpia lo que empieza con TYCON_ y deja
+// NODE_OPTIONS) no toma su HOME de juguete por la casa real: frenaría su propio laboratorio. Toma la casa de la cuenta.
+function casaDeLaCuenta() {
+  try { return os.userInfo().homedir || os.homedir(); } catch (_) { return os.homedir(); }
+}
 if (OWNER) {
-  const home = os.homedir();
+  const home = String(process.env.NODE_OPTIONS || '').includes(self) ? casaDeLaCuenta() : os.homedir();
   const named = [path.join(home, '.tycon'), path.join(home, '.claude'), path.join(home, '.codex')];
   const asked = String(process.env.TYCON_HOME || '').trim();
   if (asked && path.isAbsolute(asked)) named.push(asked);
@@ -47,13 +65,13 @@ if (OWNER) {
   process.env[ROOTS_VAR] = JSON.stringify([...new Set(named.flatMap((p) => [path.resolve(p), realOrSelf(p)]))]);
   process.env[LOG_VAR] = path.join(os.tmpdir(), `tycon-real-home-guard-${process.pid}-${Date.now()}.jsonl`);
   // los `node` que la suite lance con el ambiente heredado cargan la misma red (comillas: una ruta con espacios)
-  const self = `--require "${__filename.replace(/\\/g, '/')}"`;
   if (!String(process.env.NODE_OPTIONS || '').includes(self)) process.env.NODE_OPTIONS = `${process.env.NODE_OPTIONS || ''} ${self}`.trim();
 }
-const ROOTS = JSON.parse(process.env[ROOTS_VAR]).map(fold);
-const LOG = process.env[LOG_VAR];
+const ROOTS = (carried ? carried.roots : JSON.parse(process.env[ROOTS_VAR])).map(fold);
+const LOG = carried ? carried.log : process.env[LOG_VAR];
 let ALLOW = [];
-try { ALLOW = (JSON.parse(process.env[ALLOW_VAR] || '[]') || []).map(String).map(fold); } catch (_) { ALLOW = []; }
+if (carried) ALLOW = carried.allow.map(fold);
+else try { ALLOW = (JSON.parse(process.env[ALLOW_VAR] || '[]') || []).map(String).map(fold); } catch (_) { ALLOW = []; }
 
 const asPath = (p) => {
   if (typeof p === 'string') return p;
@@ -158,4 +176,4 @@ if (OWNER) {
   });
 }
 
-module.exports = { attempts, describe, roots: () => JSON.parse(process.env[ROOTS_VAR]), ROOTS_VAR, LOG_VAR, ALLOW_VAR };
+module.exports = { attempts, describe, roots: () => (carried ? carried.roots.slice() : JSON.parse(process.env[ROOTS_VAR])), ROOTS_VAR, LOG_VAR, ALLOW_VAR, CARRIED_KEY };

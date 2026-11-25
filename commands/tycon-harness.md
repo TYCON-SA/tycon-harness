@@ -20,7 +20,7 @@ de cada uno:
 |---|---|---|
 | `node <arnés>/scripts/setup/harness.js version` | número de versión, de dónde salió y el canal | 0 bien · otro: no está instalado o su estado no se lee (decí lo que imprimió) |
 | `node <arnés>/scripts/setup/harness.js doctor` | si está sano: una línea por pieza; `✓` bien, `!` aviso, rojo lo que falla; la última línea cuenta | 0 sin rojos · 1 algo en rojo |
-| `node <arnés>/scripts/setup/harness.js update --check` | si hay versión nueva; **no la baja ni la aplica** | 0 al día · 3 hay nueva (o otra sesión está actualizando: lo dice el texto) · 2 no pudo mirar |
+| `node <arnés>/scripts/setup/harness.js update --check` | si hay versión nueva; **no la baja ni la aplica** | 0 nada que bajar: al día, o la última actualización falló y lo dice el texto (entonces no está al día) · 3 hay nueva (o otra sesión está actualizando: lo dice el texto) · 2 no pudo mirar |
 
 Un `update --check` que sale 2 **no** es «estás al día»: es «no pude preguntar» (sin red, sin permiso sobre el repo).
 Decilo así, con el motivo que imprimió.

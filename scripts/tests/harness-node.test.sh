@@ -320,7 +320,7 @@ else
   bash -c '. "$1"; "$(harness_node_bin)" -e 1' _ "$HELPER"; [ -s "$BASE/wrapper.log" ] && ok "T22 lo que lanza el ayudante corre con el envoltorio" || bad "T22 el envoltorio no se usó"
 fi
 PATH_BEFORE="$PATH"; bash -c '. "$1"' _ "$HELPER"; [ "$PATH" = "$PATH_BEFORE" ] && ok "T22 cargar el ayudante no cambia el PATH" || bad "T22 cambió el PATH"
-if grep -nE "execFileSync\(\s*['\"]node['\"]" "$RAIZ/skills/tycon-pipeline/scripts/dispatch.js" "$RAIZ/skills/tycon-pipeline/scripts/pipeline.js" >/dev/null; then bad "T22 dispatch.js o pipeline.js todavía lanzan execFileSync('node', …)"; else ok "T22 dispatch.js y pipeline.js lanzan con process.execPath"; fi
+if grep -nE "execFileSync\(\s*['\"]node['\"]" "$RAIZ/skills/tycon-pipeline/scripts/dispatch.js" "$RAIZ/skills/tycon-pipeline/scripts/pipeline.js" "$RAIZ"/skills/tycon-pipeline/scripts/lib/pipeline-*.js >/dev/null; then bad "T22 dispatch.js o pipeline.js todavía lanzan execFileSync('node', …)"; else ok "T22 dispatch.js y pipeline.js lanzan con process.execPath"; fi
 # (instinct-trigger.sh no lanza node: sólo repara la línea de arranque, y no está en la lista)
 for h in safety-guard-pre.sh test-scope-guard-pre.sh harness-bootstrap-heal.sh engram-pre-commit.sh git-pre-commit-global.sh git-pre-push-global.sh; do
   grep -q 'harness-node.sh' "$RAIZ/scripts/hooks/$h" && ok "T22 $h carga el ayudante" || bad "T22 $h no carga scripts/lib/harness-node.sh"

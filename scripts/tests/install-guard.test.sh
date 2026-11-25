@@ -950,8 +950,8 @@ json.dump({"schema": 1, "version": "2026.10.08.1", "ref": "main", "commit": sys.
   }
   COMMIT30="$(G30 rev-parse HEAD)"
   ARBOL30="$(manifiesto30)"
-  estado30(){ # $1 = árbol que registra el estado, $2 = commit (por defecto, el HEAD actual del repo de laboratorio)
-    printf '{ "schema": 1, "mode": "managed", "source": "public", "tree": "%s", "sources": [ { "name": "harness", "kind": "release", "url": "https://github.com/lab-org/arnes-lab", "repo": "lab-org/arnes-lab", "ref": "main", "commit": "%s", "tree": "%s", "version": "2026.10.08.1" } ], "channel": "stable", "version": { "number": "2026.10.08.1" }, "managed": [] }\n' "$ARNES30" "${2:-$(G30 rev-parse HEAD)}" "$1" > "$ESTADO30"
+  estado30(){ # $1 = árbol que registra el estado, $2 = commit (por defecto, el HEAD actual del repo de laboratorio), $3 = versión (por defecto, la del manifiesto)
+    printf '{ "schema": 1, "mode": "managed", "source": "public", "tree": "%s", "sources": [ { "name": "harness", "kind": "release", "url": "https://github.com/lab-org/arnes-lab", "repo": "lab-org/arnes-lab", "ref": "main", "commit": "%s", "tree": "%s", "version": "%s" } ], "channel": "stable", "version": { "number": "%s" }, "managed": [] }\n' "$ARNES30" "${2:-$(G30 rev-parse HEAD)}" "$1" "${3:-2026.10.08.1}" "${3:-2026.10.08.1}" > "$ESTADO30"
   }
   estado30 "$ARBOL30"
   instala30(){ PATH="$TMP/bin:$PATH" TYCON_ADO_ORG="https://dev.azure.com/lab-org" TYCON_PROD_TEST_PATH="$TMP/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" TYCON_PROD_NODE_LOCAL=1 TYCON_PROD_ROOT="$SYS30" TYCON_PROD_HARNESS="$ARNES30" TYCON_PROD_STATE="$ESTADO30" TYCON_RELEASE_API="$API30" TYCON_PROD_ACCEPT_ORIGIN=1 HOME="$CASA30" bash "$INSTALADOR" --no-sudo >"$TMP/inst-30" 2>&1; }
@@ -1057,6 +1057,37 @@ PY
   ' "$NOTICE32" "$CONST32" "$CONST32V" 2>&1)"
   [ "$salida" = "true,false,false" ] && ok "T32q · la constancia dice si el freno instalado ya es el de la copia propia (sí con la nueva; no con la de antes ni sin constancia)" || no "T32q · instaladoConCopiaPropia contestó «${salida}» (esperaba true,false,false)"
   # (c) de punta a punta. El aviso honra la raíz de laboratorio sólo si /opt/tycon no existe de verdad: en una máquina
+  # T32w · el juicio de «la actualización del arnés no terminó», sin raíz de laboratorio (corre también con el freno
+  # instalado): el candado de un proceso vivo, el estado en otra versión que la carpeta, y el gemelo (al día, sin candado)
+  CASA32W="$TMP/casa-32w"; rm -rf "$CASA32W"; mkdir -p "$CASA32W/.tycon/state/harness"
+  cp "$ESTADO30" "$CASA32W/.tycon/state/harness-state.json"
+  juicio32w(){ HOME="$CASA32W" env -u TF_BUILD node -e 'const m = require(process.argv[1]); process.stdout.write(String(m.actualizacionSinTerminar(process.argv[2])))' "$NOTICE32" "$1" 2>&1; }
+  s="$(juicio32w "$ARNES30")"
+  [ "$s" = "null" ] && ok "T32w · con el estado en la versión de la carpeta y sin candado, la actualización está terminada" || no "T32w · al día salió «${s}»"
+  MEDIAS32W="$TMP/arnes-32w-a-medias"; rm -rf "$MEDIAS32W"; mkdir -p "$MEDIAS32W"
+  python3 -c '
+import json, sys
+m = json.load(open(sys.argv[1])); m["tree"] = "f" * 40; m["version"] = "2026.10.09.1"; json.dump(m, open(sys.argv[2], "w"))' "$ARNES30/.tycon-release.json" "$MEDIAS32W/.tycon-release.json"
+  s="$(juicio32w "$MEDIAS32W")"
+  printf '%s' "$s" | grep "se está actualizando" | grep "2026.10.09.1" | grep "2026.10.08.1" >/dev/null && ok "T32w · con el estado en otra versión que la carpeta: «se está actualizando», con las dos versiones" || no "T32w · a medias salió «${s}»"
+  sleep 60 & VIVO32W=$!
+  mkdir -p "$CASA32W/.tycon/state/harness/harness.lock"; printf '%s\n%s\ntoken-32w\n' "$VIVO32W" "$(hostname)" > "$CASA32W/.tycon/state/harness/harness.lock/pid"
+  s="$(juicio32w "$ARNES30")"
+  [ "$s" = "null" ] && ok "T32w · el candado de un proceso vivo (lo toma también cada arranque del arnés) no cuenta: con la carpeta y el estado de acuerdo, terminada" || no "T32w · con el candado salió «${s}»"
+  kill "$VIVO32W" 2>/dev/null; wait "$VIVO32W" 2>/dev/null
+  rm -rf "$CASA32W/.tycon/state/harness/harness.lock"
+  # una casa sin ~/.tycon/state (la de antes): el estado se lee de la carpeta de siempre, la que da stateDir()
+  rm -rf "$CASA32W/.tycon/state"; mkdir -p "$CASA32W/.claude/.tycon-pipeline"; cp "$ESTADO30" "$CASA32W/.claude/.tycon-pipeline/harness-state.json"
+  s="$(juicio32w "$MEDIAS32W")"
+  printf '%s' "$s" | grep "se está actualizando" >/dev/null && ok "T32w · con el estado sólo donde siempre: lo lee de ahí" || no "T32w · con el estado donde siempre salió «${s}»"
+  # una versión con caracteres de la terminal no llega cruda al aviso
+  python3 -c '
+import json, sys
+m = json.load(open(sys.argv[1])); m["version"] = "2026.10.09.1\u001b[31mROJO"; json.dump(m, open(sys.argv[1], "w"))' "$MEDIAS32W/.tycon-release.json"
+  s="$(juicio32w "$MEDIAS32W")"
+  case "$s" in *"$(printf '\033')"*) no "T32w · la versión llegó con un escape de la terminal: «${s}»" ;; *) ok "T32w · la versión llega sin caracteres de la terminal" ;; esac
+  rm -rf "$CASA32W" "$MEDIAS32W"
+
   # con el freno se saltea DICIÉNDOLO y lo mide la validación, que corre sin freno instalado.
   if [ -d /opt/tycon ]; then
     echo "⏭ instalar-freno: T32h-o salteados — con el freno instalado, el aviso ignora la raíz de laboratorio; los mide la validación."
@@ -1086,6 +1117,24 @@ PY
     # el rojo muestra las líneas que decide la condición, no los primeros 400 caracteres: un rojo con «quedó viejo» y
     # «repos-root.js» a la vista podría dejar fuera del recorte lo que lo hizo fallar
     else no "T32i · con una versión nueva — $(printf '%s\n' "$out" | grep -E 'quedó viejo|repos-root\.js|alguien lo cambió' | head -8 | cut -c1-300) [$(printf '%s' "$out" | wc -l | tr -d ' ') líneas]"; fi
+    # la actualización del arnés todavía no terminó: la carpeta ya trae la versión nueva y el estado registra otra (o la
+    # actualización tiene su candado). Reinstalar ahora frena: el aviso dice que se espere, no «reinstalalo»
+    MEDIAS32="$TMP/arnes-32-a-medias"; rm -rf "$MEDIAS32"; cp -R "$NUEVA32" "$MEDIAS32"
+    python3 -c '
+import json, sys
+p = sys.argv[1]; m = json.load(open(p)); m["tree"] = "f" * 40; json.dump(m, open(p, "w"), indent=1)' "$MEDIAS32/.tycon-release.json"
+    out="$(aviso32 "$MEDIAS32")"
+    if printf '%s' "$out" | grep "se está actualizando" >/dev/null && ! printf '%s' "$out" | grep "reinstalalo" >/dev/null && printf '%s' "$out" | grep "repos-root.js" >/dev/null; then
+      ok "T32u · con la actualización del arnés sin terminar (el estado en otra versión que la carpeta): no dice «reinstalalo», dice que se espere"
+    else no "T32u · con la actualización a medias — $(printf '%s\n' "$out" | grep -E 'quedó viejo|reinstal|actualizando|repos-root\.js' | head -6 | cut -c1-300)"; fi
+    CANDADO32="$CASA32/.tycon/state/harness/harness.lock"
+    sleep 60 & VIVO32=$!
+    mkdir -p "$CANDADO32"; printf '%s\n%s\ntoken-32\n' "$VIVO32" "$(hostname)" > "$CANDADO32/pid"
+    out="$(aviso32 "$NUEVA32")"
+    if printf '%s' "$out" | grep "el freno quedó viejo: reinstalalo" >/dev/null && ! printf '%s' "$out" | grep "se está actualizando" >/dev/null; then
+      ok "T32v · con el candado del arnés tomado y la carpeta y el estado de acuerdo (un arranque cualquiera): sigue «reinstalalo» (el instalador espera el candado solo)"
+    else no "T32v · con el candado tomado — $(printf '%s\n' "$out" | grep -E 'quedó viejo|reinstal|actualizando' | head -6 | cut -c1-300)"; fi
+    kill "$VIVO32" 2>/dev/null; wait "$VIVO32" 2>/dev/null; rm -rf "$CANDADO32"
     cp "$INST32" "$TMP/guardada-32.js"; printf '\n// retocada en /opt\n' >> "$INST32"
     out="$(aviso32 "$ARNES30")"
     if printf '%s' "$out" | grep "alguien lo cambió" >/dev/null && printf '%s' "$out" | grep "repos-root.js" >/dev/null; then ok "T32j · gemelo: tocar una biblioteca en /opt sigue gritando «alguien lo cambió» y la nombra"
@@ -1159,7 +1208,64 @@ json.dump(m, open(p, "w"), indent=1)' "$COMPARTIDA32/.tycon-release.json"
   estado30 "$(printf 'b%.0s' $(seq 1 40))"
   if ! instala30 && grep -q 'no es el que registra el estado' "$TMP/inst-30"; then ok "T30i · un árbol distinto del que registra el estado frena y lo dice"
   else no "T30i · con el estado de otro árbol: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-200)"; fi
+  # (c2) el estado registra la versión de antes: la actualización del arnés cambió la carpeta y todavía no grabó el estado
+  # (está corriendo, o quedó a medias). Se dicen las dos versiones y qué hacer, no sólo dos árboles
+  estado30 "$(printf 'b%.0s' $(seq 1 40))" "" "2026.10.07.9"
+  if ! instala30 && grep -q '2026.10.08.1' "$TMP/inst-30" && grep -q '2026.10.07.9' "$TMP/inst-30" && grep -q 'harness.js update' "$TMP/inst-30"; then
+    ok "T30i2 · la carpeta y el estado en versiones distintas: frena, dice las dos versiones y que se termine la actualización"
+  else no "T30i2 · con el estado en la versión de antes: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-300)"; fi
   estado30 "$ARBOL30"
+  # (c3) 🔴 la actualización del arnés tiene el candado: el instalador la espera, no lee la carpeta a medio cambiar
+  CANDADO30="$CASA30/.tycon/state/harness/harness.lock"
+  sleep 300 & VIVO30=$!
+  mkdir -p "$CANDADO30"; printf '%s\n%s\ntoken-30\n' "$VIVO30" "$(hostname)" > "$CANDADO30/pid"
+  rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"
+  if ! TYCON_GUARD_UPDATE_WAIT_S=2 instala30 && grep -q 'se está actualizando' "$TMP/inst-30"; then ok "T30n2 · con la actualización del arnés corriendo (su candado, de un proceso vivo): espera, y al vencer la espera frena y lo dice"
+  else no "T30n2 · con el candado tomado: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-300)"; fi
+  [ -d "$SYS30/opt/tycon" ] && no "T30n2 · …y además dejó algo en /opt/tycon" || ok "T30n2 · …sin dejar nada en /opt"
+  # (c4) el candado se suelta durante la espera: sigue e instala
+  ( sleep 3; rm -rf "$CANDADO30" ) &
+  if TYCON_GUARD_UPDATE_WAIT_S=30 instala30 && grep -q 'espero a que termine' "$TMP/inst-30"; then ok "T30o2 · la actualización del arnés termina durante la espera: el instalador esperó, siguió e instaló"
+  else no "T30o2 · con el candado soltado durante la espera: $(grep -E '⛔|espero' "$TMP/inst-30" | head -2 | cut -c1-300)"; fi
+  # (c4b) 🔴 el candado vive en el HOME y el instalador corre como root: un «pid» que es un enlace no se sigue (ni se
+  # muestra lo que tiene el archivo al que apunta), y una carpeta del candado que es un enlace tampoco
+  rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt" "$CANDADO30"
+  printf 'SECRETO-DE-OTRO-ARCHIVO\n' > "$TMP/secreto-30"; ln -s "$TMP/secreto-30" "$CANDADO30/pid"; touch -t 203001010000 "$CANDADO30"
+  if TYCON_GUARD_UPDATE_WAIT_S=4 instala30 && ! grep -q 'SECRETO-DE-OTRO-ARCHIVO' "$TMP/inst-30" && ! grep -q 'espero a que termine' "$TMP/inst-30"; then
+    ok "T30q2 · un «pid» del candado que es un enlace no se sigue: no espera, no muestra lo que apunta, instala"
+  else no "T30q2 · con el pid como enlace: $(grep -E '⛔|espero|SECRETO' "$TMP/inst-30" | head -2 | cut -c1-300)"; fi
+  rm -rf "$CANDADO30"; mkdir -p "$TMP/otro-candado-30"; printf '%s\n%s\nt\n' "$VIVO30" "$(hostname)" > "$TMP/otro-candado-30/pid"; ln -s "$TMP/otro-candado-30" "$CANDADO30"
+  rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"
+  if TYCON_GUARD_UPDATE_WAIT_S=4 instala30 && ! grep -q 'espero a que termine' "$TMP/inst-30"; then ok "T30q2 · una carpeta del candado que es un enlace no se sigue"
+  else no "T30q2 · con la carpeta del candado como enlace: $(grep -E '⛔|espero' "$TMP/inst-30" | head -2 | cut -c1-300)"; fi
+  rm -f "$CANDADO30"
+  # (c4c) las reglas de huérfano de lock.js: un dueño vivo tomado antes del último arranque de la máquina (su número ya
+  # es de otro proceso) y los pid 0 y 1 no son una actualización corriendo
+  for caso in "vivo-2020" "0" "1"; do
+    rm -rf "$SYS30/opt/tycon" "$CANDADO30"; mkdir -p "$SYS30/opt" "$CANDADO30"
+    if [ "$caso" = vivo-2020 ]; then printf '%s\n%s\nt\n' "$VIVO30" "$(hostname)" > "$CANDADO30/pid"; touch -t 202001010000 "$CANDADO30"
+    else printf '%s\n%s\nt\n' "$caso" "$(hostname)" > "$CANDADO30/pid"; fi
+    if TYCON_GUARD_UPDATE_WAIT_S=4 instala30 && ! grep -q 'espero a que termine' "$TMP/inst-30"; then ok "T30r2 · un candado «${caso}» no es una actualización corriendo: instala sin esperar"
+    else no "T30r2 · con el candado «${caso}»: $(grep -E '⛔|espero' "$TMP/inst-30" | head -2 | cut -c1-300)"; fi
+  done
+  # (c4d) el modo sin contraseña (el que corre solo en cada arranque): con el candado tomado espera, frena sin anotar el
+  # intento como fallido y suelta su propio candado de root. Usa lo que dejó instalado el caso de arriba
+  rm -rf "$CANDADO30"; mkdir -p "$CANDADO30"; printf '%s\n%s\nt\n' "$VIVO30" "$(hostname)" > "$CANDADO30/pid"
+  printf '{}\n' > "$SYS30/opt/tycon/production/auto-update.json"
+  rm -f "$SYS30/opt/tycon/production/update-log.jsonl"
+  TYCON_GUARD_UPDATE_WAIT_S=2 PATH="$TMP/bin:$PATH" TYCON_ADO_ORG="https://dev.azure.com/lab-org" TYCON_PROD_TEST_PATH="$TMP/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" TYCON_PROD_NODE_LOCAL=1 TYCON_PROD_ROOT="$SYS30" TYCON_PROD_HARNESS="$ARNES30" TYCON_PROD_STATE="$ESTADO30" TYCON_RELEASE_API="$API30" HOME="$CASA30" bash "$INSTALADOR" --no-sudo --auto-update >"$TMP/inst-30" 2>&1
+  rc30=$?
+  if [ "$rc30" != 0 ] && grep -q 'se está actualizando' "$TMP/inst-30" && [ ! -e "$SYS30/opt/tycon/production/update-log.jsonl" ] && [ ! -d "$SYS30/opt/tycon/production/update.lock" ]; then
+    ok "T30s2 · sin contraseña, con la actualización del arnés corriendo: espera, frena sin anotarlo como intento fallido y suelta su candado"
+  else no "T30s2 · el modo sin contraseña con el candado tomado (rc=${rc30}, registro: $([ -e "$SYS30/opt/tycon/production/update-log.jsonl" ] && echo escrito || echo no), candado de root: $([ -d "$SYS30/opt/tycon/production/update.lock" ] && echo quedó || echo suelto)): $(grep -E '⛔' "$TMP/inst-30" | head -1 | cut -c1-300)"; fi
+  rm -f "$SYS30/opt/tycon/production/auto-update.json"
+  # (c5) un candado de un proceso que ya no existe no frena: es de una actualización que murió (el arnés lo libera solo)
+  kill "$VIVO30" 2>/dev/null; wait "$VIVO30" 2>/dev/null
+  mkdir -p "$CANDADO30"; printf '%s\n%s\ntoken-30\n' "$VIVO30" "$(hostname)" > "$CANDADO30/pid"
+  if TYCON_GUARD_UPDATE_WAIT_S=30 instala30; then ok "T30p2 · un candado de un proceso que ya no existe no frena la instalación"
+  else no "T30p2 · con un candado huérfano: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-300)"; fi
+  # lo que instalaron T30o2 y T30p2 se va: los casos de abajo miran que una instalación frenada no deje nada en /opt
+  rm -rf "$CANDADO30" "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"
   # (d) y un archivo que falta
   mv "$ARNES30/scripts/production/guard-libs/lib/guard-record.js" "$TMP/guard-record.30"
   if ! instala30 && grep -q 'guard-record.js (falta)' "$TMP/inst-30"; then ok "T30j · un archivo que falta en la versión bajada frena y lo nombra"
@@ -1186,6 +1292,35 @@ PY
   else no "T30k · el forjado pasó o frenó por otro motivo: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
   [ -d "$SYS30/opt/tycon" ] && no "T30k · …y dejó algo en /opt/tycon" || ok "T30l · …sin dejar nada en /opt"
   G30 checkout -q -- scripts/production/guard-libs/lib/skills-dir.js; rm -f "$SRC30/.git/forjado.idx"; cp "$AQUI/scripts/production/guard-libs/lib/skills-dir.js" "$ARNES30/scripts/production/guard-libs/lib/skills-dir.js"; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
+  # (e2) 🔴 la versión numerada por su etiqueta: al bajarla, el instalador reescribe version.json con el número de la
+  # etiqueta (release.js, stampVersion) y anota en el manifiesto el blob del texto nuevo, con el árbol del commit. El
+  # árbol se recalcula con el version.json de git de ese commit, y lo del disco tiene que ser el estampado de ése.
+  cp "$AQUI/version.json" "$SRC30/version.json"; G30 add -A >/dev/null; G30 commit -q -m "con version.json numerado por etiqueta" >/dev/null; G30 push -q "$BARE30" main >/dev/null 2>&1
+  cp "$AQUI/version.json" "$ARNES30/version.json"; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
+  estampa30(){ node -e '
+const fs = require("fs"), path = require("path");
+const [release, dir, version] = process.argv.slice(1);
+const p = path.join(dir, ".tycon-release.json"), m = JSON.parse(fs.readFileSync(p, "utf8"));
+if (!require(release).stampVersion(dir, m.files, version)) { console.error("no estampó version.json"); process.exit(1); }
+m.version = version; fs.writeFileSync(p, JSON.stringify(m, null, 1) + "\n");' "$AQUI/scripts/setup/harness/release.js" "$ARNES30" 2026.11.24.7; }
+  rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"
+  if estampa30 && instala30 && [ -f "$SYS30/opt/tycon/hooks/prod-access-guard.js" ]; then ok "T30v · la versión numerada por su etiqueta, con version.json estampado, se instala"
+  else no "T30v · con version.json estampado: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
+  # (e3) 🔴 un version.json que dice ser el estampado pero cambia otra cosa: el manifiesto anota su blob, así que el
+  # archivo «coincide»; no es el estampado del de git y no se instala
+  rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"
+  node -e '
+const fs = require("fs"), path = require("path"), crypto = require("crypto");
+const dir = process.argv[1], f = path.join(dir, "version.json"), p = path.join(dir, ".tycon-release.json");
+const j = JSON.parse(fs.readFileSync(f, "utf8")); j.note = "otra nota, escrita a mano"; const texto = JSON.stringify(j, null, 2) + "\n";
+fs.writeFileSync(f, texto);
+const m = JSON.parse(fs.readFileSync(p, "utf8")), b = Buffer.from(texto);
+m.files.find((x) => x.path === "version.json").blob = crypto.createHash("sha1").update(Buffer.concat([Buffer.from("blob " + b.length + "\0"), b])).digest("hex");
+fs.writeFileSync(p, JSON.stringify(m, null, 1) + "\n");' "$ARNES30"
+  if ! instala30 && grep -q 'version.json' "$TMP/inst-30" && ! grep -q 'recalculado desde el disco' "$TMP/inst-30"; then ok "T30w · un version.json que no es el estampado del de git frena y lo nombra"
+  else no "T30w · el version.json retocado pasó o frenó por otro motivo: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
+  [ -d "$SYS30/opt/tycon" ] && no "T30w · …y dejó algo en /opt/tycon" || ok "T30x · …sin dejar nada en /opt"
+  cp "$AQUI/version.json" "$ARNES30/version.json"; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
   # (f) la versión instalada ya no es la punta publicada (alguien publicó otra). Con más de 30
   # publicaciones por día, una cada ~10 min, exigir la punta exacta haría casi imposible instalar el freno. Vale un commit
   # PUBLICADO de main (GitHub: «behind» respecto de la punta) cuyo freno sea byte a byte el de la punta: instala y avisa.

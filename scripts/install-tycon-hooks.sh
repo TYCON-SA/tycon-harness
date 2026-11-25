@@ -735,20 +735,6 @@ if [[ -s "$TMP_REPORT" ]]; then
     fi
   fi
 fi
-
-# ============================================================
-# Detección de features muertos: hooks registrados
-# en settings.json cuya env var de activación está apagada salen en silencio
-# (exit 0) y el feature parece vivo pero no produce NADA. Ejemplo:
-# instinct-mining con hooks registrados y 0 observations
-# cuando TYCON_INSTINCT_MINING no está exportada en la máquina.
-# ============================================================
-if grep -q 'instinct-observe.sh' "$SETTINGS" 2>/dev/null && [[ "${TYCON_INSTINCT_MINING:-0}" != "1" ]]; then
-  echo "⚠ tycon: instinct-mining REGISTRADO pero APAGADO — el hook está en settings.json pero TYCON_INSTINCT_MINING≠1 (no graba nada). Agregá 'export TYCON_INSTINCT_MINING=1' a tu shell rc o removelo. Ver guides/integrations/instinct-mining.md"
-fi
-if grep -q 'instinct-observer' "$SETTINGS" 2>/dev/null && [[ "${TYCON_INSTINCT_OBSERVER:-0}" != "1" ]]; then
-  echo "⚠ tycon: instinct-observer REGISTRADO pero APAGADO — TYCON_INSTINCT_OBSERVER≠1 (nunca propone instincts). Agregá 'export TYCON_INSTINCT_OBSERVER=1' a tu shell rc o removelo. Ver guides/integrations/instinct-mining.md"
-fi
 fi
 # ▲ CLAUDE_OFF
 

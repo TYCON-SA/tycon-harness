@@ -700,6 +700,24 @@ test('BS5 Status_SessionThatEnteredAWorktree_TasksUnderItsRepo: arrancó en el r
   assert.deepStrictEqual(C.status(stallOpts(t, NOW + 20 * 60000, procs())).backgroundStalled.map((b) => b.session), ['Wanda']);
 });
 
+// 🔴 mutación: contar como viva una tarea abierta de una sesión que ya no tiene ninguna consola que la corra (una tarea
+// cortada que quedó sin su renglón de cierre avisaba por horas a una sesión que no tenía nada).
+test('BS6 Status_OpenTaskWithoutAnyConsole_IsNotWaiting: sin ninguna consola de la sesión, una tarea abierta es un registro viejo y no avisa', () => {
+  const t = toy();
+  bg(t, 'bg-v', 'Vera', 2, { status: 'busy' });
+  bgTask(t, 'bg-v', 'b6', { minutesAgo: 7 * 60 });
+  // la sesión sólo tiene su servidor de herramientas: ninguna consola, ninguna tarea de fondo que pueda estar corriendo
+  const sinConsola = () => ({ list: [{ pid: 9100, ppid: process.pid, cpu: 3, shell: false }] });
+  C.status(stallOpts(t, NOW, sinConsola));
+  assert.deepStrictEqual(C.status(stallOpts(t, NOW + 60 * 60000, sinConsola)).backgroundStalled, [], 'sin consolas no hay tarea viva');
+  // gemelo: la misma tarea, con una consola quieta colgando de la sesión, sí avisa
+  const g = toy();
+  bg(g, 'bg-v', 'Vera', 2, { status: 'busy' });
+  bgTask(g, 'bg-v', 'b6', { minutesAgo: 7 * 60 });
+  C.status(stallOpts(g, NOW, procs()));
+  assert.deepStrictEqual(C.status(stallOpts(g, NOW + 60 * 60000, procs())).backgroundStalled.map((b) => b.session), ['Vera']);
+});
+
 // 🔴 mutación: acusar sin poder leer los procesos, pedirle al `ps` la línea de comando o guardar el nombre que trae
 // argumentos (en macOS un programa los pone en su nombre).
 test('BS4 Processes_NeverAskTheCommandLine_UnreadableAccusesNobody: sólo número, padre, CPU y si es una consola', () => {

@@ -427,6 +427,11 @@ const SHORT_PATH_SINCE = '2026.11.08.99';
  */
 const PULL_REQUESTS_SINCE = '2026.11.20.99';
 /**
+ * 🔴 La primera versión del arnés cuyo lector conoce `maintenance` en el perfil del equipo (las horas de quietud del
+ * barrido de carpetas de trabajo). Provisoria hasta la etiqueta del merge que la trae, como PULL_REQUESTS_SINCE.
+ */
+const MAINTENANCE_SINCE = '2026.11.24.99';
+/**
  * 🔴 La primera versión del arnés cuyo lector conoce `approvals.signature_list` (la lista de lo que espera a la persona):
  * la etiqueta del merge que la trae, como LEVELS_SINCE. Un lector anterior la leería como una clave desconocida, y una
  * clave rota de `approvals` deja sin ninguna firma delegada.
@@ -516,7 +521,7 @@ function capaConMinima(layerText, minima) {
 function pedidasDelPerfil({ doc, actual }) {
   const cambia = (k) => !isObject(actual) || canonico(actual[k]) !== canonico(isObject(doc) ? doc[k] : undefined);
   // las claves del perfil que una versión anterior no sabe leer, con la versión que las lee y su mensaje
-  const pedidas = [['response', RESPONSE_SINCE, 'org.capaSinResponse'], ['approvals', APPROVALS_SINCE, 'org.capaSinApprovals'], ['qa', QA_SINCE, 'org.capaSinQa'], ['guard', GUARD_SINCE, 'org.capaSinGuard'], ['coordination', COORDINATION_SINCE, 'org.capaSinCoordination'], ['switches', SWITCHES_SINCE, 'org.capaSinSwitches'], ['site', SITE_SINCE, 'org.capaSinSite'], ['office', OFFICE_SINCE, 'org.capaSinOffice'], ['short_path', SHORT_PATH_SINCE, 'org.capaSinShortPath'], ['pull_requests', PULL_REQUESTS_SINCE, 'org.capaSinPullRequests']]
+  const pedidas = [['response', RESPONSE_SINCE, 'org.capaSinResponse'], ['approvals', APPROVALS_SINCE, 'org.capaSinApprovals'], ['qa', QA_SINCE, 'org.capaSinQa'], ['guard', GUARD_SINCE, 'org.capaSinGuard'], ['coordination', COORDINATION_SINCE, 'org.capaSinCoordination'], ['switches', SWITCHES_SINCE, 'org.capaSinSwitches'], ['site', SITE_SINCE, 'org.capaSinSite'], ['office', OFFICE_SINCE, 'org.capaSinOffice'], ['short_path', SHORT_PATH_SINCE, 'org.capaSinShortPath'], ['pull_requests', PULL_REQUESTS_SINCE, 'org.capaSinPullRequests'], ['maintenance', MAINTENANCE_SINCE, 'org.capaSinMaintenance']]
     .filter(([k]) => isObject(doc) && doc[k] !== undefined && cambia(k));
   // una clave nueva dentro de una sección que ya se leía: la pide sólo si el pedido la trae
   const firma = isObject(doc) && isObject(doc.approvals) ? doc.approvals.delegated_signing : undefined;
@@ -4032,10 +4037,22 @@ ${trabajandoJs}
   var TEC_ARCHIVOS = { dotnet: '.sln, .csproj', vitest: 'package.json (vitest)', jest: 'package.json (jest)', node: 'package.json (node --test)' };
   // el nombre para personas: el de fábrica, o el «label» que le puso la organización a su receta; si no, el id
   function nombreDe(r) { return TEC_NOMBRES[r.name] || (typeof r.label === 'string' && r.label) || r.name; }
-  // un <repo> de team-repos.json en una línea: «azure · org/proyecto/repo» o «github · org/repo»
+  // un <repo> de team-repos.json en una línea: «azure · org/proyecto/repo», «github · org/repo» o, uno que vive en
+  // grupos, «<plataforma> · grupo/sub/repo (servidor)»
   function repoEnTexto(x) {
     if (!esObjeto(x)) return '?';
-    return (x.platform || '?') + ' · ' + [x.org, x.project, x.repo].filter(function (v) { return v != null && v !== ''; }).join('/');
+    var servidor = x.namespace && x.host ? ' (' + x.host + ')' : '';
+    return (x.platform || '?') + ' · ' + [x.org, x.namespace, x.project, x.repo].filter(function (v) { return v != null && v !== ''; }).join('/') + servidor;
+  }
+  // La clave con que se distinguen los repos: como la identidad del lector, sin mayúsculas y con los %20 de una ruta
+  // copiada de la web leídos como espacio. Un repo que vive en grupos suma su grupo y su servidor: dos con el mismo
+  // nombre en grupos o servidores distintos son dos repos. La de uno sin grupo es la de siempre.
+  function claveDeRepo(x) {
+    if (!x || typeof x !== 'object' || Array.isArray(x)) return '';
+    var sinEscapes = function (v) { try { return decodeURIComponent(String(v || '')); } catch (e) { return String(v || ''); } };
+    var partes = [x.platform, x.org, x.project || '', x.repo];
+    if (x.namespace) partes = partes.concat(['@' + x.namespace, '@' + (x.host || '')]);
+    return partes.map(sinEscapes).join('/').toLowerCase();
   }
   function stackDe(d) { if (!esObjeto(d.stack)) d.stack = {}; return d.stack; }
   function limpiarStack(d) {
@@ -4062,9 +4079,7 @@ ${trabajandoJs}
     // el filtro de cada repo y el de por defecto: se ven y se editan, cada renglón con su «Quitar», y «Agregar un repo»
     // elige de los repos de la organización (los da el servidor); lo demás de la receta viaja intacto en la copia
     var repos = Array.isArray(r.repos) ? r.repos : [];
-    // como la identidad del lector: sin mayúsculas y con los %20 de una ruta copiada de la web leídos como espacio
-    var sinEscapes = function (v) { try { return decodeURIComponent(String(v || '')); } catch (e) { return String(v || ''); } };
-    var clave = function (x) { return esObjeto(x) ? [x.platform, x.org, x.project || '', x.repo].map(sinEscapes).join('/').toLowerCase() : ''; };
+    var clave = claveDeRepo;
     var porRepo = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.tecFiltroPorRepo') }), el('p', { class: 'sub-d', text: T('pantalla.tecFiltroPorRepoAyuda') }),
       campo(T('pantalla.tecFiltroPorDefecto'), r.args_default, function (v) { if (v === '') delete r.args_default; else r.args_default = v; }, 'runner.args_default', []));
     repos.forEach(function (x, i) {

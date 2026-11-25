@@ -635,6 +635,9 @@ test('OwnerWindow_CasaFalsa_NoVale (T20)', (t) => {
 test('OwnerWindow_FirmaDelFreno_VentanaSinRegistro (T34)', (t) => {
   const forma = [
     ['escape:TYCON_TEST_GATE', 'TYCON_TEST_GATE=1 bash scripts/test-gate.sh /r /r/s.md'],
+    // cada comando de la consola corre en su propio shell: `export` como primer tramo es la misma asignación, a la vista
+    ['escape:TYCON_TEST_GATE', 'export TYCON_TEST_GATE=1; bash scripts/test-gate.sh /r /r/s.md'],
+    ['escape:TYCON_TEST_GATE', 'export TYCON_TEST_GATE=1 && bash scripts/test-gate.sh /r /r/s.md'],
     ['escape:TYCON_SAFETY_OFF', 'TYCON_SAFETY_OFF=1 git push --force origin x'],
     ['escape:TYCON_PROD_LINT', 'TYCON_PROD_LINT=0 git commit -m x'],
     ['escape:set-autonomous', `node ${MARKER} set-autonomous false`],
@@ -650,8 +653,10 @@ test('OwnerWindow_FirmaDelFreno_VentanaSinRegistro (T34)', (t) => {
     assert.strictEqual(registros(casa).length, 0, `${cmd}: sin registro`);
   }
   const escondida = [
-    ['escape:TYCON_TEST_GATE', 'export TYCON_TEST_GATE=1; bash scripts/test-gate.sh /r /r/s.md'],
     ['escape:TYCON_TEST_GATE', 'env TYCON_TEST_GATE=1 bash scripts/test-gate.sh /r /r/s.md'],
+    ['escape:TYCON_TEST_GATE', 'export TYCON_TEST_GATE=1 | bash scripts/test-gate.sh /r /r/s.md'],
+    ['escape:TYCON_TEST_GATE', 'export TYCON_TEST_GATE=1 TYCON_TEST_GATE=1; bash scripts/test-gate.sh'],
+    ['escape:TYCON_TEST_GATE', 'export TYCON_TEST_GATE=1'],
     ['escape:TYCON_TEST_GATE', 'V=TYCON_TEST_GATE; export $V=1; bash scripts/test-gate.sh'],
     ['escape:set-autonomous', `cd /r && node ${MARKER} set-autonomous false`],
     ['escape:set-autonomous', `S=set-autonomous; node ${MARKER} $S false`],
@@ -1325,6 +1330,7 @@ function frenosDeArchivo(t) {
   const evidencia = path.join(repo, '.advisors', 'dod-runtime', '9.99-20261027.md');
   return [
     ['dod_runtime_exempt', historia, (casa, s) => paso(fw().handle(ev(s, historia, viejo.replace('status: in-progress', 'status: in-progress\ndod_runtime_exempt: true')), { casa }))],
+    ['advisors_exempt', historia, (casa, s) => paso(fw().handle(ev(s, historia, viejo.replace('status: in-progress', 'status: in-progress\nadvisors_exempt: true')), { casa }))],
     ['cambiar-el-estado', historia, (casa, s) => paso(fw().handle(ev(s, historia, viejo.replace('status: in-progress', 'status: ready-for-dev')), { casa }))],
     ['ALLOW_DOD_EVIDENCE_WRITE', evidencia, (casa, s) => paso(eg().handle(ev(s, evidencia, '# evidencia\n'), { casa }))],
     ['story-skill-bypass', nueva, (casa, s) => {
@@ -1804,11 +1810,13 @@ test('TresFirmas_OwnerOnly_NoSeDelegan (T12) @story-8.142 @ac-9', (t) => {
     const r = pedir(casa, cmd, { evento: DE_LA_COORD, delegacion });
     assert.strictEqual(r.decision, 'ask', `${firma}: ${r.texto}`);
     assert.notStrictEqual(registroVigente(casa).via, 'delegacion', firma);
-    // y con las mismas llaves sin el candado, la delegación la firma: la diferencia es owner_only
+    // y con las mismas llaves sin el candado, la delegación la firma: la diferencia es owner_only. Salvo runtime-waiver,
+    // que nunca se delega: aceptar un criterio imposible de probar en vivo espera al dueño aunque el perfil la liste
     const casa2 = casaConDesignada(t);
     const [, cmd2] = tresParaOtra(casa2).find(([f]) => f === firma);
     const libre = pedir(casa2, cmd2, { evento: DE_LA_COORD, delegacion: delegacionReal({ perfil: { ...PERFIL, delegated_signing: [firma], owner_only: [] } }) });
-    assert.strictEqual(libre.decision, 'allow', `${firma}: ${libre.texto}`);
+    assert.strictEqual(libre.decision, firma === 'runtime-waiver' ? 'ask' : 'allow', `${firma}: ${libre.texto}`);
+    if (firma === 'runtime-waiver') assert.notStrictEqual(registroVigente(casa2).via, 'delegacion', firma);
   }
 });
 
@@ -2585,7 +2593,8 @@ test('Precheck_AprobarElPlan_FueraDeOrdenNiegaYEnOrdenNoEscribe', (t) => {
 // tiene requisitos antes de la firma, y las cuatro firmas sobre un archivo.
 const CON_REQUISITOS = ['plan-approval', 'extra-round', 'save', 'atdd-skip', 'control-change', 'refresh-after-main', 'critical-waiver', 'runtime-waiver',
   'manual-test', 'browser-test', 'lost-run', 'adversarial-skip', 'review-skip', 'pending-approval', 'escape:force-manual', 'escape:trust-ran', 'adhoc-lane', 'adhoc-lane:sobre-cupo',
-  'designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno', 'autonomy-resume', 'lost-run:particion', 'escape:no-mutation'];
+  'designation-set', 'designation-withdraw', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno', 'autonomy-resume', 'lost-run:particion', 'escape:no-mutation',
+  'escape:cerrar-como-deuda', 'escape:rojo-esperado-de-la-matriz', 'escape:set-autonomous'];
 
 // 🔴 Falla con: una firma de guion con requisitos que abre la ventana sin preguntarle antes al guion.
 test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => {
@@ -2612,6 +2621,10 @@ test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => 
     ['autonomy-resume', `node ${MARKER} resume-autonomy`],
     // contestar «skip» a la pregunta del pase del código: sin pregunta o sin diff legible, el guion se niega antes del cuadro
     ['review-skip', `node ${MARKER} review-answer --kind code --choice skip`],
+    // cerrar como deuda, el rojo esperado de la matriz y apagar el modo autónomo (8.323): una deuda sin anotar, un rojo
+    // esperado sin ejecución en deuda o una ejecución que no hay se niegan antes de la ventana
+    ['escape:cerrar-como-deuda', `node ${MARKER} close-as-debt --reason "falta la prueba en vivo" --debt DEF-9.99-a`],
+    ['escape:rojo-esperado-de-la-matriz', `node ${MARKER} expect-red acmatrix --tests T1 --until 2026-11-30`],
   ];
   const vistas = new Set();
   for (const [firma, cmd] of [...GUIONES, ...otras]) {
@@ -2630,6 +2643,17 @@ test('Precheck_LasFirmasConRequisitos_NoAbrenLaVentanaSiElGuionSeNiega', (t) => 
   const r = pedir(casaNueva(t), `bash ${CONTROLES} approve --base origin/main`, { clasificar: () => ({ clase: 'refresh-after-main', refirma_de: 'abc' }),
     comprobar: (o) => { visto = o; return { niega: 'falta un requisito' }; } });
   assert.strictEqual(r.decision, 'deny', r.texto);
+  vistas.add(visto.firma);
+  // apagar el modo autónomo (8.323) pide firma sólo con la ejecución prendida: su casa la trae
+  const conAutonomo = casaNueva(t);
+  const activos = path.join(require('../../skills/tycon-pipeline/scripts/lib/state-dir.js').stateDir(conAutonomo), 'active');
+  fs.mkdirSync(activos, { recursive: true });
+  fs.writeFileSync(path.join(activos, 'ses-a.json'), JSON.stringify({ sessionId: 'ses-a', storyId: '9.99', autonomous: true }));
+  visto = null;
+  const ra = pedir(conAutonomo, `node ${MARKER} set-autonomous false --for-session ses-a`, { comprobar: (o) => { visto = o; return { niega: 'falta un requisito' }; }, antesDelCorte: () => false });
+  assert.strictEqual(ra.decision, 'deny', ra.texto);
+  assert.match(ra.texto, /No abrí la ventana.*falta un requisito/);
+  assert.strictEqual(visto && visto.firma, 'escape:set-autonomous');
   vistas.add(visto.firma);
   // el ok de guardar tiene sus pruebas arriba; pasar el tope, la suya: su chequeo corre después del click
   assert.deepStrictEqual(CON_REQUISITOS.filter((f) => !vistas.has(f)), ['save', 'adhoc-lane:sobre-cupo'], 'cada firma con su comando');
@@ -2717,7 +2741,8 @@ const aprobacionesDePrueba = ({ coordinadora = null } = {}) => ({
 });
 const pedirSinVentana = (casa, cmd, o = {}) => ow.decidir({ evento: evento(cmd, { ...DE_LA_COORD, permission_mode: 'bypassPermissions', ...(o.evento || {}) }),
   escapes: o.escapes || [], arbol: o.arbol || arbolDelFreno(), pid: 201, casa, ahora: o.ahora || AHORA, delegacion: o.delegacion || SIN_DELEGACION,
-  clasificar: () => null, comprobar: () => null, aprobador: DEL_ARNES, aprobaciones: o.aprobaciones || aprobacionesDePrueba(o), topes: o.topes, lanzarAviso: o.lanzarAviso });
+  clasificar: () => null, comprobar: () => null, aprobador: DEL_ARNES, aprobaciones: o.aprobaciones || aprobacionesDePrueba(o), topes: o.topes, lanzarAviso: o.lanzarAviso,
+  ...(o.env ? { env: o.env } : {}) });
 const anotarAprobacion = (casa, sesion, extra = {}) => oaReal.anotar(casa, { tipo: 'mensaje', sesion, ts: new Date(AHORA - 60000).toISOString(), texto: 'Aprobado',
   herramienta: { pid: 100, inicio: INICIO }, ...extra });
 const PERDIDA = `node ${MARKER} clear-session ses-a --lost`;
@@ -3140,6 +3165,22 @@ test('HechoYAvisado_MandaPorLosCanalesDeLaSesion', (t) => {
   assert.ok(PA.VIAS.includes('avisado'), 'el control del commit acepta lo que escribe la rutina');
 });
 
+test('T4 Aprobacion_SinTiempoParaContestar_NoLaGasta', (t) => {
+  // 🔴 Falla con: gastar la aprobación cuando al freno de seguridad casi no le queda tiempo. Su reloj lo corta antes de
+  //    contestar, el comando no corre, y el click quedó usado: la persona tiene que aprobar de nuevo, y se repite.
+  const casa = casaNueva(t);
+  anotarAprobacion(casa, 'ses-coord');
+  const enSegundos = (s) => ({ TYCON_SAFETY_DEADLINE_S: String(Math.floor(AHORA / 1000) + s) });
+  const corto = pedirSinVentana(casa, PERDIDA, { env: enSegundos(1) });
+  assert.strictEqual(corto.decision, 'deny', corto.texto);
+  assert.match(corto.texto, /sin usar/, 'dice que la aprobación sigue sin usar');
+  assert.match(corto.texto, /TYCON_SAFETY_TIMEOUT_S/, 'y la salida');
+  assert.strictEqual(vigentes(casa).length, 0, 'sin pedido escrito');
+  // con tiempo, la misma aprobación firma
+  const con = pedirSinVentana(casa, PERDIDA, { env: enSegundos(15) });
+  assert.deepStrictEqual([con.decision, con.via], ['allow', 'mensaje'], con.texto);
+});
+
 test('Aprobacion_MensajeAnotado_FirmaUnaVezYElGuionLaUsa', (t) => {
   const casa = casaNueva(t);
   anotarAprobacion(casa, 'ses-coord');
@@ -3235,13 +3276,13 @@ test('Aprobacion_RutinaSinAprobacion_SigueHechaYAvisada_ConAprobacionEsDeLaPerso
 });
 
 test('Aprobacion_GanaALaDelegacion_LaFirmaEsDeLaPersonaYSeUsaUnaVez', (t) => {
-  const delegaTodo = delegacionReal({ perfil: { ...PERFIL, delegated_signing: ['plan-approval', 'save', 'runtime-waiver'] } });
-  const RUNTIME = `node ${MARKER} runtime-waiver ${HISTORIA.story} --acs 1 --for-session ses-a`;
+  const delegaTodo = delegacionReal({ perfil: { ...PERFIL, delegated_signing: ['plan-approval', 'save', 'escape:force-manual'] } });
+  const FORZADO = `node ${MARKER} set-check dod green --force-manual --for-session ses-a`;
   const casos = [['plan-approval', PLAN, PLAN_ARGV], ['save', SAVE, SAVE_ARGV],
-    ['runtime-waiver', RUNTIME, [MARKER, 'runtime-waiver', HISTORIA.story, '--acs', '1', '--for-session', 'ses-a']]];
+    ['escape:force-manual', FORZADO, [MARKER, 'set-check', 'dod', 'green', '--force-manual', '--for-session', 'ses-a']]];
   for (const [firma, cmd, argv] of casos) {
     const casa = casaConDesignada(t);
-    if (firma === 'runtime-waiver') tresParaOtra(casa);
+    if (firma === 'escape:force-manual') tresParaOtra(casa);
     const pide = (modo) => pedir(casa, cmd, { evento: { ...DE_LA_COORD, ...(modo ? { permission_mode: modo } : {}) }, delegacion: delegaTodo, aprobaciones: aprobacionesDePrueba() });
     // sin aprobación, la delegación como siempre: el guion decide con sus controles
     assert.strictEqual(pide('bypassPermissions').via, 'delegacion', firma);
@@ -3531,6 +3572,55 @@ test('Windows_UnEscapeYUnGuionDeConsola_VanALaTerminal', (t) => {
   const sh = pedirWin(casa, `bash ${CONTROLES} approve`, { aprobaciones: conClick() });
   assert.strictEqual(sh.decision, 'deny');
   assert.match(sh.texto, /en Windows un guion de consola no se puede comprobar en la pestaña/);
+  assert.strictEqual(vigentes(casa).length, 0);
+});
+
+test('Windows_ForceManualEnSuFormaExacta_FirmaConElClick_YElGuionLoConsume', (t) => {
+  // En su forma exacta, `set-check --force-manual` es una firma de guion: el freno no la pasa como escape, y en Windows se
+  // firma con el click o el «aprobado», como las otras. 🔴 Falla con: tratarla como un escape, que va sólo por la terminal.
+  const casa = casaNueva(t);
+  const usos = [];
+  const cmd = `node ${MARKER} set-check tests green --force-manual`;
+  const r = pedirWin(casa, cmd, { aprobaciones: conClick(usos) });
+  assert.strictEqual(r.decision, 'allow', r.texto);
+  assert.strictEqual(r.via, 'click');
+  assert.deepStrictEqual(usos, ['a1'], 'la aprobación se gasta una vez');
+  const v = verificarWin(casa, 'escape:force-manual', [MARKER, 'set-check', 'tests', 'green', '--force-manual'], arbolGuionWin(casa, cmd));
+  assert.ok(v.ok, v.motivo);
+  assert.strictEqual(v.registro.via, 'click');
+  assert.strictEqual(vigentes(casa).length, 0, 'consumido');
+});
+
+test('Windows_ForceManualFueraDeSuForma_PideLaFormaExacta_SinMandarALaTerminal', (t) => {
+  // Fuera de su forma exacta (con un tubo atrás, `2>&1 | tail`), el freno la pasa como escape. Se niega sin gastar la
+  // aprobación, y lo que le ofrece es correrla sola y en su forma exacta, donde el click firma.
+  // 🔴 Falla con: decirle que un escape va sólo por la terminal: el agente no la repite en su forma, y la persona, que ya
+  //    aprobó en el cuadro, tiene que ir a la terminal.
+  const casa = casaNueva(t);
+  const usos = [];
+  const cmd = `node ${MARKER} set-check tests green --force-manual 2>&1 | tail -15`;
+  const escapes = ['escape:force-manual'];
+  const r = pedirWin(casa, cmd, { escapes, aprobaciones: conClick(usos) });
+  assert.strictEqual(r.decision, 'deny');
+  assert.match(r.texto, /la firma va en su forma exacta, sola/, r.texto);
+  assert.deepStrictEqual(usos, [], 'la aprobación no se gasta');
+  const ofrece = (tool_name) => ow.ofreceTrasDecidir(r, { evento: evento(cmd, { tool_name }), escapes, plataforma: 'win32', gitBash: CON_GIT });
+  assert.strictEqual(ofrece('Bash'), '', 'desde la consola Bash de Git, el texto de siempre: con el cuadro');
+  const ps = ofrece('PowerShell');
+  assert.match(ps, /solo y en su forma exacta, por la consola Bash de Git/, ps);
+  assert.doesNotMatch(ps, /un escape no se aprueba en la pestaña/, ps);
+});
+
+test('Windows_UnEscapeSinGuionQueLoCompruebe_SigueEnLaTerminal', (t) => {
+  // Un escape que ningún guion comprueba (el de una variable, o uno de marker.js que sólo mira el freno, como
+  // `marker.js clear`) sigue sólo en la terminal. 🔴 Falla con: dejarlo pasar con el click, o no decir la terminal.
+  const casa = casaNueva(t);
+  for (const [cmd, id] of [['TYCON_TEST_GATE=1 ls', 'escape:TYCON_TEST_GATE'], [`node ${MARKER} clear`, 'escape:cerrar-la-ejecucion']]) {
+    const r = pedirWin(casa, cmd, { escapes: [id], aprobaciones: conClick() });
+    assert.strictEqual(r.decision, 'deny', id);
+    assert.match(r.texto, /en Windows un escape no se aprueba en la pestaña/, id);
+    assert.match(ow.ofreceTrasDecidir(r, { evento: evento(cmd), escapes: [id], plataforma: 'win32', gitBash: CON_GIT }), /va sólo en la terminal/, id);
+  }
   assert.strictEqual(vigentes(casa).length, 0);
 });
 
@@ -4340,12 +4430,50 @@ test('OwnerWindow_WatcherOtherShapes_StillBlocks @story-8.270 @ac-14 @ac-15 @ac-
   assert.strictEqual(pedir(casa, GUIONES[0][1], { arbol: conVigilante(casa, `node "${COORD_PROPIO}" owner-wait`) }).decision, 'ask');
 });
 
+// pr-wait --story: la espera de que una historia abra su pedido también es de sólo lectura
+test('OwnerWindow_ReadOnlyWatcherStory_DelegatedSignAllowed: con pr-wait --story de fondo, la coordinadora firma por delegación; otra forma niega', (t) => {
+  for (const linea of [`node "${COORD_PROPIO}" pr-wait --repo acme/arnes --story 8.326`, `node ${COORD_PROPIO} pr-wait --repo acme/arnes --story 25 --interval 60`]) {
+    const casa = casaNueva(t);
+    const r = pedirConDelegacion(casa, ADHOC_EN_CUPO, { arbol: conVigilante(casa, linea) });
+    assert.deepStrictEqual([r.decision, r.via], ['allow', 'delegacion'], `${linea}: ${r.texto}`);
+  }
+  for (const linea of [
+    `node "${COORD_PROPIO}" pr-wait --repo acme/arnes --story $S`, // armada
+    `node "${COORD_PROPIO}" pr-wait --repo acme/arnes --story 8.326 --number 7`, // las dos
+    `node "${COORD_PROPIO}" pr-wait --repo acme/arnes --story x8`, // no es una historia
+    `node "${COORD_PROPIO}" pr-wait --repo acme/arnes --story 8.`,
+    `node "${COORD_PROPIO}" pr-wait --repo acme/arnes --story 8.326 | tee PALABRA-CONOCIDA`,
+    `node "${COORD_PROPIO}" pr-wait --story 8.326 --repo acme/arnes`, // otro orden
+  ]) {
+    const casa = casaNueva(t);
+    const r = pedirConDelegacion(casa, ADHOC_EN_CUPO, { arbol: conVigilante(casa, linea) });
+    assert.strictEqual(r.decision, 'deny', linea);
+    assert.doesNotMatch(r.texto, /PALABRA-CONOCIDA|tee /, linea);
+  }
+});
+
+// pr-wait con el repo de Azure DevOps escrito entero (<org>/<proyecto>/<repo>) también es de sólo lectura
+test('OwnerWindow_ReadOnlyWatcherOrgProjectRepo_DelegatedSignAllowed: con --repo <org>/<proyecto>/<repo> de fondo, la coordinadora firma por delegación', (t) => {
+  for (const linea of [`node "${COORD_PROPIO}" pr-wait --repo acme/Seguimiento/seguimiento-backend --number 7`,
+    `node "${COORD_PROPIO}" pr-wait --repo "acme/Acme Formularios Propios/formularios-app" --story 2.1 --interval 60`]) {
+    const casa = casaNueva(t);
+    const r = pedirConDelegacion(casa, ADHOC_EN_CUPO, { arbol: conVigilante(casa, linea) });
+    assert.deepStrictEqual([r.decision, r.via], ['allow', 'delegacion'], `${linea}: ${r.texto}`);
+  }
+  for (const linea of [`node "${COORD_PROPIO}" pr-wait --repo a/b/c/d --number 7`, `node "${COORD_PROPIO}" pr-wait --repo a//c --number 7`,
+    `node "${COORD_PROPIO}" pr-wait --repo "a/b;c/d" --number 7`]) {
+    const casa = casaNueva(t);
+    assert.strictEqual(pedirConDelegacion(casa, ADHOC_EN_CUPO, { arbol: conVigilante(casa, linea) }).decision, 'deny', linea);
+  }
+});
+
 test('Guide_DelegatedSign_NamesReadOnlyWatchers @story-8.270 @ac-17 — la guía de las firmas nombra el vigilante y por qué lo demás frena', () => {
   const guia = fs.readFileSync(path.join(RAIZ, 'guides', 'firmas-del-arnes.md'), 'utf8');
   const inicio = guia.indexOf('## Aprobar en nombre del dueño');
   assert.ok(inicio >= 0, 'falta la sección de la firma por delegación');
   const seccion = guia.slice(inicio, guia.indexOf('\n## ', inicio + 5));
   assert.ok(seccion.includes('pr-wait --repo <organización/repo> --number <número>'));
+  assert.ok(seccion.includes('pr-wait --repo <organización/repo> --story <historia>'), 'la guía no nombra la espera de una historia');
   assert.doesNotMatch(seccion, /gh pr checks|gh run watch/);
   assert.match(seccion, /sólo lectura/);
   assert.match(seccion, /Cualquier otra consola de fondo sigue frenando/);

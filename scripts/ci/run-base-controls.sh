@@ -72,7 +72,21 @@ command -v node >/dev/null 2>&1 || { echo "no pude correr: no encuentro node en 
 command -v git >/dev/null 2>&1 || { echo "no pude correr: no encuentro git en el PATH"; exit 9; }
 # la carpeta de este guion, para cargar la ventana de permiso de su mismo árbol (la pone siempre este guion)
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || { echo "no pude correr: no encuentro la carpeta del guion"; exit 9; }
-BASE_CONTROLS_STDIN_INTERACTIVE="${STDIN_INTERACTIVE}" BASE_CONTROLS_SELF_DIR="${SELF_DIR}" exec node - "$@" <<'JS'
+# El programa de node va entre `: <<'JS'` y el renglón «JS», y se le pasa por la entrada leído de este archivo, sin here
+# document: el bash 3.2 de macOS escribe el temporal de uno en /var/tmp, /tmp o la carpeta actual, y dentro de un encierro
+# que no lo deja (la corrida aislada, con la ventana de permiso clasificando una firma desde otra carpeta) no arrancaba.
+# Ese `: <<'JS'` no corre nunca (el exec reemplaza a bash antes): guarda el programa como texto para `bash -n` y es la
+# marca por la que lo lee la ventana de Windows (run-base-controls-window.js). Se lee una vez antes de lanzarlo, y sin él
+# no corre nada: un programa vacío saldría 0. Va todo en un solo grupo: bash lo lee entero antes de correrlo, así sed no
+# se come lo que a bash le falta leer cuando el guion le llega por una tubería (`bash <(git show …)`), que terminaba en 0
+# sin correr nada.
+{
+  PROGRAMA="$(sed -e '1,/^: [<][<].JS.$/d' -e '/^JS$/,$d' "${BASH_SOURCE[0]:-}")" || PROGRAMA=""
+  [ -n "${PROGRAMA}" ] || { echo "no pude correr: no pude leer el programa de node de ${BASH_SOURCE[0]:-la entrada}"; exit 9; }
+  BASE_CONTROLS_STDIN_INTERACTIVE="${STDIN_INTERACTIVE}" BASE_CONTROLS_SELF_DIR="${SELF_DIR}" exec node - "$@" < <(printf '%s\n' "${PROGRAMA}")
+  echo "no pude correr: no pude lanzar node"; exit 9
+}
+: <<'JS'
 'use strict';
 const fs = require('fs');
 const os = require('os');

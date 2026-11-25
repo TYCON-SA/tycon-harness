@@ -384,3 +384,16 @@ test('DeclarePending_AnotaLaSesionDelProceso_YElFrenoNiegaLaVariable', (t) => {
   assert.strictEqual(ow.decidir({ evento: evento(sinJs), casa, sinAviso: ['x'] }).decision, 'deny', 'el guion sin «.js»');
   assert.strictEqual(ow.decidir({ evento: evento(`node ${marker} declare-pending --id DEF-uno`), casa, sinAviso: ['x'] }).decision, 'none');
 });
+
+// @story-8.274 @ac-16
+// 🔴 Falla con: `runtime-waiver` que sale como trámite, o que pasa a la coordinadora por delegación, aunque el perfil la
+//    liste: aceptar un criterio imposible de probar en vivo espera el click o la terminal del dueño, que lo quiere ver.
+test('RuntimeWaiver_NeverRoutineNorDelegated_WaitsForTheOwner @story-8.274 @ac-16', () => {
+  const perfil = () => ({ delegated_signing: ['runtime-waiver', 'plan-approval'] });
+  const r = A.esDeTramite({ firma: 'runtime-waiver', perfil });
+  assert.strictEqual(r.ok, false, 'listada en el perfil, igual no es de trámite');
+  assert.match(r.motivo, /dueño/, r.motivo);
+  assert.strictEqual(A.todasDeTramite(['runtime-waiver'], { perfil }).ok, false);
+  assert.ok(require('../lib/delegated-signing.js').NUNCA_DELEGABLES.has('runtime-waiver'), 'tampoco se delega a la coordinadora');
+  assert.ok(A.esDeTramite({ firma: 'plan-approval', perfil }).ok, 'lo demás del perfil sigue igual');
+});

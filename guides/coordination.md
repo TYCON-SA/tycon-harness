@@ -185,8 +185,11 @@ Claude Code 2.1.330 pide aprobar cada copia, aunque la principal ya esté aproba
 trabajo queda `open --repo <repo> --slot`: en lugar de crear una copia, toma un puesto fijo libre del repo y abre la
 sesión ahí, en la rama del trabajo. Hay tantos puestos como el tope y siempre son las mismas carpetas, así que el dueño
 los aprueba una sola vez: `node scripts/tools/work-slots.js pending-trust` lista, cada uno con su `cd`, los que no
-tienen su propia aprobación anotada; la de la principal no cuenta, y como Claude Code 2.1.330 no anota la de los
-puestos, dice que no sabe en lugar de darlos por aprobados. Sin puesto libre, `open --slot` lo dice y no abre. El
+tienen aprobación a la vista, y `prepare-machine.js` los nombra a todos en una nota. Cuenta la aprobación propia del
+puesto o una sesión de fondo que ya abrió ahí (la anota `open` y la saca si Claude Code después dice que no); la de la
+principal no cuenta, y sin ninguna de las dos dice que no sabe en lugar de darlo por aprobado. Sin `--slot`, `open` usa
+igual un puesto libre donde ya abrió una sesión antes que crear una copia nueva, y lo dice en su mensaje; si no hay
+ninguno así, crea la copia como siempre. Sin puesto libre, `open --slot` lo dice y no abre. El
 encargo le dice a la sesión cómo soltar el puesto al terminar. Si el lanzador contesta que el puesto no está aprobado,
 el puesto queda tomado con su rama y se reintenta con `--slot --reuse`, o se suelta con `release`; ante otra falla
 vuelve a quedar libre. Al cerrar, un puesto se suelta, no se borra. Nada crea puestos si no se piden. Cómo son:
@@ -532,7 +535,8 @@ El dueño firma desde el celular, con un click en el cuadro de la coordinadora. 
   pueda tomar; si no hay, la pregunta va al dueño al instante.
 - **El `owner-wait` de fondo no le quita el click al dueño**: el freno lo deja pasar, si corre exactamente como lo pide su
   aviso. Tampoco el vigilante de sólo lectura de un pedido
-  (`coordination.js pr-wait --repo <org/repo> --number <n>`), que además deja firmar por delegación (`guides/firmas-del-arnes.md`, «Aprobar en
+  (`coordination.js pr-wait --repo <org/repo> --number <n>`), ni la espera de que una historia abra su pedido
+  (`pr-wait --repo <org/repo> --story <historia>`). Los dos además dejan firmar por delegación (`guides/firmas-del-arnes.md`, «Aprobar en
   nombre del dueño»). Cualquier otra consola de fondo viva sí lo frena: se cierra antes de pedir el cuadro.
 - **Un pedido sin código lo aprueba la coordinadora**: si trae sólo historias, registros, evidencia, memoria o
   documentación, la coordinadora da en nombre del dueño las dos aprobaciones del merge (el mensaje y la subida) y le
@@ -689,6 +693,28 @@ sesión, porque el pedido no dice de qué copia sale: si es de otro repo, se eli
 desde la rama de integración más cercana: una ruta de riesgo alto que trajo `dev`, en una rama nacida de `dev`, ya pasó por su
 propio pedido y no pide revisores; lo de riesgo alto que la rama cambió, sí.
 
+**El rojo de CI de un pedido ya revisado tiene su propio camino corto.** Cuando la espera de la compilación (la lanza
+`marker.js clear`) avisa «en rojo», el arreglo no abre otra ejecución: la sesión del pedido corre `marker.js adhoc set
+--ci-red <pedido> --check "<el control que falló>" --reason "<qué se arregla>" --data sin-cambio --file <ruta>`, con la
+firma `adhoc-lane:ci-rojo`. La aprueba el dueño, o vos si el perfil la tiene en `delegated_signing`; por delegación le
+llega al dueño una línea con el pedido, el control y los archivos. Abre sólo sobre el pedido en rojo de esa sesión, con
+la punta en el commit que dio rojo, hasta 3 archivos del repo del pedido (pruebas incluidas), sin lo sensible, sin la
+compilación ni la carpeta `.tycon/` del repo, y con el control que falló declarado para correr en local (sin él, va por
+el camino corto de siempre). La ventana dice si la lista toca una ruta de riesgo alto. No pide plan, revisores ni pase:
+antes de guardar corren otra vez todos los controles de CI que el repo declara en local, y las pruebas tocadas. Un
+arreglo común y el del rojo no se mezclan: se cierra uno y se abre el otro. Después de empujar, `marker.js adhoc
+ci-wait` espera la compilación y, con verde, cierra el arreglo.
+
+**Los revisores de un arreglo no ensanchan su alcance.** Desde la segunda vuelta de revisores, lo que encuentran fuera de
+las líneas que cambió el arreglo pasa a seguimiento (`deuda: fuera-del-arreglo`) y no abre otra vuelta; un crítico
+también, y sale primero.
+
+**Una ejecución abierta cuyo arreglo ya entró a main por otro lado** (un commit del dueño, otro pedido) se cierra con
+`marker.js clear --replaced-by <commit>`. El arnés lee main del servidor y comprueba que el commit está ahí, que es
+posterior al arranque de la ejecución y que toca todos los archivos que ella editó en ese repo: si es así, la cierra `reemplazada`, sin el
+pase, los pasos ni la firma que le faltaban. Si no lo puede comprobar, no cierra así y queda la salida de siempre (la
+firma de cerrar la ejecución). Una ejecución detenida, que espera la decisión del dueño, la sigue cerrando él.
+
 **Un cambio de los datos no es camino corto.** Al abrir, la sesión responde si el cambio cambia de dónde sale un dato o
 quién lo puede ver (`"datos": "sin-cambio"` o `"cambian"`); con «cambian» no abre, y un carril abierto no cambia. Al
 guardar, el freno busca en las líneas que el carril agrega o borra las señales del paquete del stack (una llamada a un
@@ -749,7 +775,8 @@ click. Mira cada 2 segundos y termina con una línea por novedad, y terminar la 
   pedido y lleva 11 minutos sin moverse (más que lo que puede correr un comando aprobado). Se trata igual que el de
   arriba.
 - «<sesión> siguió: el permiso ya no está abierto» o «<sesión> se cerró con un permiso abierto»: se le avisa al dueño si
-  se lo había pedido.
+  se lo había pedido. «Siguió» no pide nada y no la despierta, igual que «… ya no espera a la persona»: esas líneas
+  quedan guardadas y salen delante de la próxima novedad que sí la despierta.
 - «<sesión>: la cerró Claude Code a las HH:MM por falta de memoria, quieta N min. Para levantarla: coordination.js relaunch --id <id>»:
   Claude Code cierra solo las sesiones de fondo quietas cuando la máquina se queda sin memoria, y no se puede evitar
   desde el arnés. La coordinadora decide si la levanta: levantarla vuelve a ocupar memoria y cuenta para el tope.
@@ -777,15 +804,16 @@ coordinadora lo muestra sin cambiarle una letra, con «Sí, aprobar» y «No».
   Rechazar sólo niega: nunca aprueba.
 - **Lo aprueba sólo la persona, con su click en la pestaña de la coordinadora.** La coordinadora nunca, ni por
   delegación (`approvals.delegated_signing` no lo cubre), ni con un «aprobado» escrito, ni tocando la lista.
-- **Sin respuesta en `coordination.permission_wait_minutes`** (10 sin valor, de 1 a 30), el gancho sale sin decidir: vuelve la
-  ventana de siempre en esa sesión, que queda en las «Trabadas» con el motivo, y un click tardío no aprueba nada. Lo
-  mismo si la coordinadora muere o deja de ser la designada mientras espera.
-- **No se lleva, y sale la ventana de siempre sin demora:** una pestaña abierta, otro modo (automático, sin permisos,
-  aceptar ediciones, plan), sin coordinadora confirmada y viva, sin `owner-wait`, la lista apagada, la propia
-  coordinadora, Codex, y en Windows un comando por PowerShell. En una sesión de fondo, el motivo queda en «Trabadas» y
-  en `gates.log`, así una espera de toda la noche no pasa sin rastro. Tampoco un pedido que no se puede mostrar entero (más de
-  1500 caracteres, caracteres que no se ven o se ven en blanco, un salto de línea en una ruta o una dirección, datos que
-  el cuadro no muestra): la sesión queda trabada con ese motivo.
+- **Una sesión de fondo nunca queda esperando un permiso.** Lo que el cuadro no resuelve se niega con su motivo y una
+  salida (hacerlo de otra forma, seguir sin él o pedírselo a la coordinadora), y queda en `gates.log` como
+  `negado-de-fondo`. Pasa sin respuesta en `coordination.permission_wait_minutes` (10 sin valor, de 1 a 30), si la
+  coordinadora muere o deja de ser la designada mientras espera, y cuando el pedido no se lleva: otro modo (automático,
+  sin permisos, aceptar ediciones, plan), sin coordinadora confirmada y viva, sin `owner-wait`, la lista apagada, en
+  Windows un comando por PowerShell, o un pedido que no se puede mostrar entero (más de 1500 caracteres, caracteres que
+  no se ven o se ven en blanco, un salto de línea en una ruta o una dirección, datos que el cuadro no muestra). Un click
+  tardío no aprueba nada.
+- **Sale la ventana de siempre** sólo donde hay quien la conteste o el gancho no actúa: una pestaña abierta, la propia
+  coordinadora, Codex y el gancho apagado.
   Las herramientas que lleva son Bash, PowerShell, Edit, Write, NotebookEdit y WebFetch; el cuadro de preguntas y el
   plan, nunca.
 - **Si la persona contesta en la ventana de la sesión** o la sesión se cierra, el gancho muere y su renglón se cierra

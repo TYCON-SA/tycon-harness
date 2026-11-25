@@ -45,6 +45,23 @@ test('state-dir: Write bajo ~/.claude/.tycon-pipeline se deniega siempre, aun ap
   assert.equal(r.action, 'block'); assert.equal(r.kind, 'state-dir');
 });
 
+// 🔴 Falla con: la configuración de git de un clon se edita a mano con la herramienta de edición. Ahí está el `origin`,
+// y los controles que comparan contra main del servidor (`clear --replaced-by`, `ls-remote`) le creen; por consola
+// ya no se cambia (on-bash-write-gate.js, el caso `git remote`).
+test('git-config: la configuración de git de un clon no se edita a mano, en ningún repo y aun apagado', () => {
+  const frena = (filePath, extra = {}) => gate.computeStoryGate({ ...BASE, filePath, ...extra });
+  for (const f of [`${REPO}/.git/config`, '/w/Otro/.git/config', `${REPO}/.git/worktrees/wt1/config.worktree`, `${REPO}/.git/modules/sub/config`, 'C:\\w\\MiRepo\\.git\\config']) {
+    const r = frena(f, { gateEnabled: false });
+    assert.equal(r.action, 'block', f); assert.equal(r.kind, 'git-config', f);
+    assert.equal(frena(f, { isHarness: true, repoHasTycon: false, repoRoot: null }).kind, 'git-config', `${f}: también en un repo del arnés o sin arnés`);
+  }
+  // por el enlace: la ruta escrita es otra, la real es la configuración
+  assert.equal(frena('/tmp/x', { realFilePath: `${REPO}/.git/config` }).kind, 'git-config');
+  // lo que sólo se llama parecido pasa por su camino de siempre
+  for (const f of [`${REPO}/config`, `${REPO}/.github/config`, `${REPO}/.git/hooks/pre-commit`, `${REPO}/docs/.git-config.md`]) assert.notEqual(frena(f).kind, 'git-config', f);
+  assert.match(gate.blockMessage({ kind: 'git-config' }, { filePath: `${REPO}/.git/config` }), /git remote set-url/);
+});
+
 test('pass: no-código / harness / gate apagado / sin repo / repo=home / repo sin arnés', () => {
   assert.equal(gate.computeStoryGate({ ...BASE, filePath: `${REPO}/specs/s.md` }).action, 'pass');
   assert.equal(gate.computeStoryGate({ ...BASE, filePath: '/u/.claude/agent-skills/skills/x/a.js' }).action, 'pass');
@@ -1158,7 +1175,7 @@ test('PlanReview_FolderProtected_AndResultOnlyFromRunner (T28, el freno) @story-
       assert.ok(r && r.block, cmd);
     }
     // los dos del arnés pasan: el corredor del pase con su --out y marker.js plan-review
-    assert.equal(bash.handle(ev(`node '${lite}' '${wf}' --args "$(cat ${E}/plan-review/s1/s1.args.json)" --out '${res}'`), { stateDir, installedRoots: [arnes] }), null);
+    assert.equal(bash.handle(ev(`node '${lite}' '${wf}' --args-file '${E}/plan-review/s1/s1.args.json' --out '${res}'`), { stateDir, installedRoots: [arnes] }), null);
     assert.equal(bash.handle(ev(`node ${path.join(SCRIPTS, 'marker.js')} plan-review --result ${res} --model opus`), { stateDir, installedRoots: [arnes] }), null);
   });
 });
@@ -1173,9 +1190,96 @@ test('PlanReview_RunnerListUnreadable_SaysWhy (T28, el freno) @story-8.267 @ac-2
   assert.strictEqual(bien.motivo, null);
 });
 
+// 🔴 Fila 222. Mutación: tomar como destino de un `cp` la última palabra del renglón. Con una barra al final (el shell une
+// el renglón siguiente), un `<<<`, un `<<EOF` o una redirección delante del comando, esa palabra no es el destino, y el
+// `cp` escribía el resultado de la revisión sin que ningún control lo viera.
+test('CpAlEstado_ConBarraAlFinalOEntradaRedirigida_Frena (fila 222, el freno)', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'plan-review', 's1'), { recursive: true });
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const res = path.join(E, 'plan-review', 's1', 's1.resultado.json');
+  const S = path.join(repo, 'falso.json');
+  fs.writeFileSync(S, '{}');
+  const arnes = path.join(SCRIPTS, '..', '..', '..');
+  conEnv(SIN_REGISTRO, () => {
+    const frena = (cmd) => { const r = bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }); assert.ok(r && r.block, JSON.stringify(cmd)); };
+    const pasa = (cmd) => assert.equal(bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }), null, JSON.stringify(cmd));
+    // la barra al final une el renglón siguiente: el destino sigue siendo el resultado
+    frena(`cp ${S} '${res}' \\\n  `);
+    frena(`cp ${S} '${res}' \\\n && true`);
+    frena(`cp ${S} '${res}' \\`);
+    // y una barra en el medio corre el destino al renglón de abajo
+    frena(`cp ${S} \\\n'${res}'`);
+    // lo que entra por la entrada no es un argumento: ni la palabra de `<<<`, ni el delimitador de un heredoc, ni `< f`
+    frena(`cp ${S} '${res}'<<<E`);
+    frena(`cp ${S} '${res}' <<EOF`);
+    frena(`cp ${S} '${res}' <<-'EOF'\nEOF`);
+    frena(`cp ${S} '${res}' < /dev/null`);
+    // una redirección delante del comando: el comando es lo que sigue
+    frena(`> EOF cp ${S} '${res}'`);
+    frena(`2>/dev/null cp ${S} '${res}'`);
+    // lo de siempre sigue pasando: un cp a otro lado con la barra al final, y uno que lee de un heredoc
+    pasa(`cp ${S} '${repo}/copia.json' \\\n  `);
+    pasa(`cp ${S} '${repo}/copia.json' <<<E`);
+  });
+});
+
 // 🔴 Mutaciones: mirar sólo el primer `--out`, aceptar un destino que no se puede leer, o aceptar el corredor del arnés
 // con un `--args` que no es el pedido que preparó el arnés: con cualquiera, la sesión escribe un «aprobado» que no es el
 // de su plan (T28, las tres formas de falsificar el resultado).
+// 🔴 Fila 217. Mutación: partir el comando sin saber que un comentario termina en el salto de renglón. Una comilla abierta
+// adentro del comentario se tomaba como comilla y juntaba los renglones siguientes en el mismo tramo, como texto entre
+// comillas: lo que el shell corre ahí (pisar el resultado de la revisión, escribir el pedido) no lo miraba ningún control.
+test('Comentario_ConUnaComilla_NoEscondeElRenglonSiguiente (fila 217, el freno)', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'plan-review', 's1'), { recursive: true });
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const res = path.join(E, 'plan-review', 's1', 's1.resultado.json');
+  const args = path.join(E, 'plan-review', 's1', 's1.args.json');
+  const arnes = path.join(SCRIPTS, '..', '..', '..');
+  conEnv(SIN_REGISTRO, () => {
+    const frena = (cmd) => { const r = bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }); assert.ok(r && r.block, JSON.stringify(cmd)); };
+    const pasa = (cmd) => assert.equal(bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }), null, JSON.stringify(cmd));
+    frena(`echo hola # '\ncp /tmp/falso.json '${res}'\n# '`);
+    frena(`echo hola # "\necho '{"veredicto":"aprobado"}' > '${args}'\n# "`);
+    frena(`true # it's\nrm -rf '${E}/plan-review'`);
+    frena(`echo hola; # '\ncp /tmp/falso.json '${res}'`);
+    // un `<<EOF` adentro de un comentario no abre un heredoc: el renglón siguiente corre
+    frena(`echo hola # <<EOF\ncp /tmp/falso.json '${res}'\nEOF`);
+    frena(`echo hola # <<'EOF'\ncp /tmp/falso.json '${res}'\nEOF`);
+    // del pase entero: donde el shell no ve un comentario, no se saca nada. Adentro de comillas invertidas o de `${…}`,
+    // después de una continuación de renglón (el shell junta los renglones), y adentro de `$'…'`, que deja escapar su comilla
+    frena(`echo \`true #x\`; cp /tmp/falso.json '${res}'`);
+    frena(`echo \${HOLA:-a #b}; cp /tmp/falso.json '${res}'`);
+    frena(`echo a\\\n#b; cp /tmp/falso.json '${res}'`);
+    frena(`echo $'a\\'b # c'; cp /tmp/falso.json '${res}'`);
+    frena(`echo $'\\'' # '\ncp /tmp/falso.json '${res}'`);
+    // un `#` pegado a un carácter escapado o al cierre de `$(…)` es parte de la palabra, no un comentario
+    for (const pegado of ['a\\ #b', 'a\\;#b', 'a\\&#b', 'a\\(#b', '$(date)#b', '$((1+1))#b']) frena(`echo ${pegado} > '${res}'`);
+    // del tercer agente: un blanco que el shell no toma como blanco (`\r`, `\v`, `\f`, un espacio duro o uno de Unicode),
+    // un `#` pegado al cierre de `<(…)`, `@(…)` o `a=(…)`, y uno adentro de los paréntesis de `[[ … ]]`
+    for (const b of ['\r', '\v', '\f', ' ', ' ']) frena(`echo a${b}#b; cp /tmp/falso.json '${res}'`);
+    for (const pegado of ['cat <(echo a)#b', 'echo @(a)#b', 'a=(x)#b']) frena(`${pegado}; cp /tmp/falso.json '${res}'`);
+    frena(`[[ x =~ ((a) #b) ]]; cp /tmp/falso.json '${res}'`);
+    frena(`[[ x == (#b) ]]; cp /tmp/falso.json '${res}'`);
+    // después de cerrar un subshell, con un blanco, el comentario sigue siendo comentario
+    frena(`( : ) # '\ncp /tmp/falso.json '${res}'`);
+    // de la vuelta final: una comilla doble adentro de `$(…)`, `${…}` o comillas invertidas que están entre comillas
+    // dobles abre otro texto, no cierra el de afuera; y en zsh, `(a|b)#x` es un patrón (el `#` sigue el cierre)
+    frena(`echo "$(echo "a #b")"; cp /tmp/falso.json '${res}'`);
+    frena(`echo "\${HOLA:-"a #b"}"; cp /tmp/falso.json '${res}'`);
+    frena(`echo "\`echo "a #b"\`"; cp /tmp/falso.json '${res}'`);
+    frena(`[[ a == (a|b)#x ]]; cp /tmp/falso.json '${res}'`);
+    frena(`case x in (a)#x) :;; esac; cp /tmp/falso.json '${res}'`);
+    // un comentario con una comilla y nada escondido, o un `#` que no empieza una palabra, sigue pasando
+    pasa("echo hola # it's fine\nls -la");
+    pasa("echo 'a # b' && echo \"c # d\"");
+    pasa('echo ${#HOME} $# x#y');
+  });
+});
+
 test('PlanReview_ForgedResult_ThreeWays_Blocked (T28, el freno) @story-8.267 @ac-23', () => {
   const { stateDir, repo } = corridaAbierta();
   const E = stateDir;
@@ -1204,15 +1308,17 @@ test('PlanReview_ForgedResult_ThreeWays_Blocked (T28, el freno) @story-8.267 @ac
     frena(`cd ${E}/plan-review/s1 && node /tmp/mio.js --out s1.resultado.json`);
     frena(`pushd ${E}/plan-review/s1; node /tmp/mio.js --out=s1.resultado.json`);
     // 3b. el corredor con el pedido auténtico y revisores propios
-    frena(`node '${lite}' '${wf}' --args "$(cat '${args}')" --out '${res}' --agents-dir /tmp/mis-agentes`);
-    frena(`node '${lite}' '${wf}' --args "$(cat '${args}')" --out '${res}' --runners mio`);
+    frena(`node '${lite}' '${wf}' --args-file '${args}' --out '${res}' --agents-dir /tmp/mis-agentes`);
+    frena(`node '${lite}' '${wf}' --args-file '${args}' --out '${res}' --runners mio`);
+    // la forma vieja, con el pedido de verdad: el arnés ya no la imprime, y tiene los huecos de la fila 212
+    frena(`node '${lite}' '${wf}' --args "$(cat '${args}')" --out '${res}'`);
     // el comando que arma el arnés, con su pedido entre comillas simples, pasa; una variable en un --out que no nombra
     // la revisión, también
-    assert.equal(bash.handle(ev(`node '${lite}' '${wf}' --args "$(cat '${args}')" --out '${res}'`), { stateDir, installedRoots: [arnes] }), null);
+    assert.equal(bash.handle(ev(`node '${lite}' '${wf}' --args-file '${args}' --out '${res}'`), { stateDir, installedRoots: [arnes] }), null);
     // con la lista de corredores de la organización, como la escribe el arnés, también pasa
     const orden = require(path.join(SCRIPTS, 'lib', 'review-runner.js')).runnerOrder(require(path.join(SCRIPTS, 'lib', 'plan-review.js')).configDeLaOrganizacion().raw).order;
     if (Array.isArray(orden) && orden.length) {
-      assert.equal(bash.handle(ev(`node '${lite}' '${wf}' --args "$(cat '${args}')" --out '${res}' --runners ${orden.join(',')}`), { stateDir, installedRoots: [arnes] }), null);
+      assert.equal(bash.handle(ev(`node '${lite}' '${wf}' --args-file '${args}' --out '${res}' --runners ${orden.join(',')}`), { stateDir, installedRoots: [arnes] }), null);
     }
     assert.equal(bash.handle(ev(`cd /tmp && node /tmp/build.js --out dist.json`), { stateDir, installedRoots: [arnes] }), null);
     // «review» suelto no es la revisión del plan: un --out opaco con esa palabra en otro lado pasa (el pase adversarial
@@ -1225,6 +1331,113 @@ test('PlanReview_ForgedResult_ThreeWays_Blocked (T28, el freno) @story-8.267 @ac
     }
     assert.equal(bash.handle(ev(`node /tmp/build.js --out "$OUT/dist.json"`), { stateDir, installedRoots: [arnes] }), null);
   });
+});
+
+// 🔴 Mutaciones: un freno que sólo conoce `--args "$(cat …)"` frena el comando que imprime marker.js plan-review (los args
+// van por `--args-file` porque en Windows no entran en la línea de comando); o uno que acepta `--args-file` con un archivo
+// que no es el pedido del arnés, repetido, junto con `--args` o en una variable.
+test('PlanReview_ArgsFile_ElComandoDelArnesPasa_LasFalsificacionesNo (T28, el freno)', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'plan-review', 's1'), { recursive: true });
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const res = path.join(E, 'plan-review', 's1', 's1.resultado.json');
+  const args = path.join(E, 'plan-review', 's1', 's1.args.json');
+  const arnes = path.join(SCRIPTS, '..', '..', '..');
+  const lite = path.join(SCRIPTS, 'workflow-lite.js');
+  const wf = path.join(SCRIPTS, 'adversarial-verify.workflow.js');
+  const PR = require(path.join(SCRIPTS, 'lib', 'plan-review.js'));
+  conEnv(SIN_REGISTRO, () => {
+    const pasa = (cmd) => assert.equal(bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }), null, cmd);
+    const frena = (cmd) => { const r = bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }); assert.ok(r && r.block, cmd); };
+    // el comando tal como lo arma la revisión del plan: sin lista de corredores, y con la de la organización
+    pasa(PR.comandoLite(args, res, { order: [], integration: { runners: {} } }));
+    pasa(PR.comandoLite(args, res));
+    pasa(`node '${lite}' '${wf}' --args-file=${args} --out '${res}'`);
+    // otro archivo, dos veces, junto con --args, en una variable o con revisores propios
+    frena(`node '${lite}' '${wf}' --args-file /tmp/mio.args.json --out '${res}'`);
+    frena(`node '${lite}' '${wf}' --args-file '${args}' --args-file /tmp/mio.args.json --out '${res}'`);
+    frena(`node '${lite}' '${wf}' --args-file '${args}' --args '{}' --out '${res}'`);
+    frena(`A=${args}; node '${lite}' '${wf}' --args-file "$A" --out '${res}'`);
+    frena(`node '${lite}' '${wf}' --args-file '${args}' --out '${res}' --agents-dir /tmp/mis-agentes`);
+  });
+});
+
+// 🔴 Fila 212. Mutaciones: aceptar el pedido por estar «adentro» de la carpeta (un `..` adentro sale), por el nombre de la
+// carpeta (`.tycon-pipeline/plan-review` en cualquier lado), con palabras que el freno lee distinto que el shell (una barra
+// invertida, comillas pegadas, un señuelo en un comentario), con `~` (el freno la expande donde el shell no) o con una ruta
+// relativa (el freno la resuelve contra la carpeta de la sesión y el shell, después de `pushd`, contra otra); el pedido de
+// otra sesión, o la forma vieja `--args "$(cat …)"`, que tiene los mismos huecos. Con cualquiera, el pase corre con un
+// plan inventado y su resultado sale con el número del pedido. Pasa sólo la ruta exacta que preparó el arnés.
+test('PlanReview_ArgsFile_SoloLaRutaExactaDelArnes (fila 212, el freno)', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  for (const s of ['s1', 's2']) fs.mkdirSync(path.join(E, 'plan-review', s), { recursive: true });
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const res = path.join(E, 'plan-review', 's1', 's1.resultado.json');
+  const args = path.join(E, 'plan-review', 's1', 's1.args.json');
+  fs.writeFileSync(args, '{"planTexto":"PLAN REAL"}\n');
+  fs.writeFileSync(path.join(E, 'plan-review', 's2', 's2.args.json'), '{"planTexto":"OTRA SESION"}\n');
+  // lo que arma la sesión: un pedido falso afuera, y una carpeta con el nombre de la revisión fuera del estado
+  const afuera = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fila212-')));
+  const falso = path.join(afuera, 'mio.args.json');
+  fs.writeFileSync(falso, '{"planTexto":"PLAN FALSO"}\n');
+  const conNombre = path.join(afuera, '.tycon-pipeline', 'plan-review', 's1', 's1.args.json');
+  fs.mkdirSync(path.dirname(conNombre), { recursive: true });
+  fs.writeFileSync(conNombre, '{"planTexto":"PLAN FALSO"}\n');
+  const arnes = path.join(SCRIPTS, '..', '..', '..');
+  const lite = path.join(SCRIPTS, 'workflow-lite.js');
+  const wf = path.join(SCRIPTS, 'adversarial-verify.workflow.js');
+  const PR = require(path.join(SCRIPTS, 'lib', 'plan-review.js'));
+  try {
+    conEnv(SIN_REGISTRO, () => {
+      const pasa = (cmd) => assert.equal(bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }), null, cmd);
+      const frena = (cmd) => { const r = bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }); assert.ok(r && r.block, cmd); };
+      const corre = (pedido) => `node '${lite}' '${wf}' --args-file ${pedido} --out '${res}'`;
+      // el comando del arnés, tal cual o con la ruta pegada a la opción, pasa
+      pasa(PR.comandoLite(args, res, { order: [], integration: { runners: {} } }));
+      pasa(PR.comandoLite(args, res));
+      pasa(`node '${lite}' '${wf}' --args-file=${args} --out '${res}'`);
+      pasa(`node '${lite}' '${wf}' --args-file='${args}' --out '${res}'`);
+      // a. un `..` adentro de la carpeta de la revisión
+      frena(corre(`'${path.join(E, 'plan-review')}/${path.relative(path.join(E, 'plan-review'), falso)}'`));
+      // b. una carpeta con el nombre de la revisión, fuera del estado
+      frena(corre(`'${conNombre}'`));
+      // c. palabras que el freno lee distinto que el shell, con el pedido de verdad de señuelo en un comentario
+      // la opción partida para el freno y entera para el shell, armada por partes
+      const partida = (resto) => ['--args', resto].join('-');
+      frena(`node '${lite}' '${wf}' ${partida('fil\\e')} '${falso}' --out '${res}' # --args-file '${args}'`);
+      frena(`node '${lite}' '${wf}' ${partida("fil''e")} '${falso}' --out '${res}' # --args-file '${args}'`);
+      frena(`node '${lite}' '${wf}' x'--args-file' '${falso}' --args-file '${args}' --out '${res}'`);
+      frena(`node '${lite}' '${wf}' "--args-file" '${falso}' --out '${res}'`);
+      // d. `~`, que el freno expande y el shell no (entre comillas, o pegada a la opción)
+      frena(corre(`'~/${path.relative(os.homedir(), args)}'`));
+      frena(`node '${lite}' '${wf}' --args-file=~/${path.relative(os.homedir(), args)} --out '${res}'`);
+      // e. una ruta relativa, después de cambiar de carpeta
+      frena(`pushd '${afuera}' >/dev/null; ${corre(path.relative(repo, args))}`);
+      frena(`( cd '${afuera}' && ${corre(path.relative(repo, args))} )`);
+      // el pedido de otra sesión, o uno que no es la pareja del --out
+      frena(corre(`'${path.join(E, 'plan-review', 's2', 's2.args.json')}'`));
+      // la forma vieja, con su pedido de verdad: tiene los mismos huecos, y el arnés ya no la imprime
+      frena(`node '${lite}' '${wf}' --args "$(cat '${args}')" --out '${res}'`);
+      // de la vuelta corta: un programa propio llamado node, o el corredor con otro comando delante o escondido en el
+      // renglón siguiente a un comentario con una comilla (el shell termina el comentario en el salto de renglón)
+      const exacto = `'${lite}' '${wf}' --args-file '${args}' --out '${res}'`;
+      for (const n of ['./node', `${afuera}/node`, `${afuera}/nodejs`]) frena(`${n} ${exacto}`);
+      frena(`export PATH='${afuera}':$PATH; node ${exacto}`);
+      frena(`true; node ${exacto}`);
+      frena(`node ${exacto} # '\ncp '${falso}' '${res}'\n# '`);
+      frena(`node ${exacto}\ncp '${falso}' '${res}'`);
+      // de la segunda vuelta: un `\r` (el shell lo deja en la última palabra), o un blanco que el shell no toma como blanco
+      // (un espacio duro, `\f`, `\v`) antes de otro renglón, donde el shell corre un comando con ese nombre
+      frena(`node ${exacto}\r`);
+      frena(`node ${exacto}\r\n`);
+      for (const b of [' ', '\f', '\v']) frena(`node ${exacto}\n${b}`);
+      // con su comentario de siempre, y un salto de renglón al final, pasa
+      pasa(`node ${exacto}  # revisor: Claude\n`);
+      pasa(`node ${exacto}\n\n  \t`);
+    });
+  } finally { fs.rmSync(afuera, { recursive: true, force: true }); }
 });
 
 // ── 8.317: con una historia abierta, el código fuera del grupo de la historia ─────────────────────────────────────────

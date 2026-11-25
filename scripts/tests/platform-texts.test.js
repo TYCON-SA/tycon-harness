@@ -90,3 +90,11 @@ test('Guide_ListsEveryOperation @story-8.85 @ac-23', () => {
   assert.match(guia, /capabilities/);
   assert.match(guia, /rawCommands/);
 });
+
+test('PlatformTexts_DraftFieldsInGuide (T9) @story-8.332 @ac-9', () => {
+  const guia = read('guides/integrations/platform-connectors.md');
+  // los dos campos del borrador y del «listo», y lo que trae cada opción
+  for (const campo of ['draftOptions', 'readyCommands', 'separateValue', 'abbreviations', '"when"', '"unless"']) assert.ok(guia.includes(campo), `la guía nombra ${campo}`);
+  assert.match(guia, /borrador/);
+  assert.match(guia, /«Preparar el pull request»/);
+});

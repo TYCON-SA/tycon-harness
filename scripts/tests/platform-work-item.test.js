@@ -326,7 +326,8 @@ test('WorkItem_FieldName_NeutralWithAlias @story-8.85 @ac-8', () => {
   const snap = fs.readFileSync(path.join(ROOT, 'scripts', 'nightly', 'projects', 'snapshot.js'), 'utf8');
   const hook = fs.readFileSync(STORY_HOOK, 'utf8');
   const como = fs.readFileSync(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'how-it-works.js'), 'utf8');
-  const pipe = fs.readFileSync(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'pipeline.js'), 'utf8');
+  // pipeline.js con sus partes de lib/
+  const pipe = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'tests', 'lib', 'pipeline-source.js'))(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts'));
   const visual = fs.readFileSync(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'visual-plan.js'), 'utf8');
   for (const [n, t] of [['snapshot.js', snap], ['on-story-create.js', hook], ['how-it-works.js', como], ['pipeline.js', pipe], ['visual-plan.js', visual]]) {
     assert.match(t, /work-item-field\.js/, `${n} lee el campo con el lector común`);

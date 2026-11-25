@@ -167,7 +167,7 @@ function cmdCompleteStep(nRaw, flags) {
     }
   }
 
-  // ── «Preparar el commit» no cierra con código sin revisar ──
+  // ── «Preparar el pull request» no cierra con código sin revisar ──
   // Un cambio de código posterior al último cierre de los revisores (la regla de `next`, lib/steps.js) pide otra vuelta
   // antes: lo que se commitea es lo revisado. Una prueba o un texto no la piden. `--out-of-order` no lo saltea: no es
   // el orden, es lo que se commitea. Con Hallazgos abierto también frena: `next` espera a que cierre, este paso no.
@@ -429,7 +429,7 @@ function cmdCompleteStep(nRaw, flags) {
     if (mockupPlan) {
       anotarAprobacion(marker, { que: 'maqueta', cuando: at3, via: `complete-step ${n} --mockup-approved`, ...quienDeLaMaqueta(firmaPlan, optVal), ...porDe(firmaPlan) });
     }
-    // La decisión se anota SIEMPRE, para que «Preparar el commit» vea una pantalla que apareció después del plan.
+    // La decisión se anota SIEMPRE, para que «Preparar el pull request» vea una pantalla que apareció después del plan.
     marker.mockupDecision = { screen: sc.screen, signal: sc.signal || null, at: at3 };
     if (mockupPlan) {
       // `user` sólo con la vía de una persona (modoDeLaFirma); con la vía en la constancia
@@ -664,11 +664,11 @@ function cmdCompleteStep(nRaw, flags) {
     }
   }
 
-  // ── Hallazgos y «Preparar el commit» — un crítico lo decide una persona ──
+  // ── Hallazgos y «Preparar el pull request» — un crítico lo decide una persona ──
   // Cada CRITICAL `waived` de findings.json tiene que tener su constancia (`waive-critical`, con el ok de una persona).
   // No hay exención automática «sin nombrar»: dejaría que el agente se eximiera solo. El 8 lo vuelve a mirar porque el 7 sólo corre con críticos y findings.json se puede
   // reescribir a mano después. No poder leer los hallazgos se dice (en el 7 siempre tienen que estar).
-  // Hallazgos frena sin findings.json; Preparar el commit lo vuelve a mirar (como hoy el 7 y el 8 del marcador viejo).
+  // Hallazgos frena sin findings.json; Preparar el pull request lo vuelve a mirar (como hoy el 7 y el 8 del marcador viejo).
   if (controles.has('waivers')) {
     const cierraHallazgos = controles.has('findings-close');
     let rd = null;
@@ -693,7 +693,7 @@ function cmdCompleteStep(nRaw, flags) {
     const v = rd ? cw.verificarExenciones(rd, { story: marker.storyId }) : { faltan: [], ilegibles: 0, existe: false };
     if (cierraHallazgos && !motivo && rd && !v.existe) motivo = 'falta findings.json (pipeline.js write-findings)';
     if (motivo) {
-      // Hallazgos no se cierra sin hallazgos que mirar; Preparar el commit lo dice y sigue (sin corrida que mirar lo
+      // Hallazgos no se cierra sin hallazgos que mirar; Preparar el pull request lo dice y sigue (sin corrida que mirar lo
       // frenan sus propios portones)
       appendLog('gates.log', { name: 'critical-waivers', status: cierraHallazgos ? 'blocked' : 'not-checked', story: marker.storyId, step: n, error: motivo });
       if (cierraHallazgos) {
@@ -702,7 +702,7 @@ function cmdCompleteStep(nRaw, flags) {
       }
       console.error(`⚠️  complete-step ${n}: ${motivo}: no pude mirar si hay críticos eximidos sin el ok de una persona.`);
     }
-    // un findings.json que está y no se lee frena: es justo el que se pudo reescribir a mano. En Preparar el commit lo
+    // un findings.json que está y no se lee frena: es justo el que se pudo reescribir a mano. En Preparar el pull request lo
     // frena con su propio mensaje el control de findings.json que sigue (computeFindingsStatus); acá, Hallazgos
     if (v.error && v.existe && cierraHallazgos) {
       appendLog('gates.log', { name: 'critical-waivers', status: 'blocked', story: marker.storyId, step: n, error: v.error });
@@ -759,7 +759,7 @@ function cmdCompleteStep(nRaw, flags) {
     }
   }
 
-  // Gate de DoD — «Preparar el commit». El orquestador puede llegar a
+  // Gate de DoD — «Preparar el pull request». El orquestador puede llegar a
   // ese paso sin pasar «Probar en vivo» (DoD). Dos regímenes:
   //   - Story de UI (DODRT-C5.1): exige el gate `dod` en VERDE por run-check
   //     (el exit code REAL de un `npx playwright test`, no falseable) o `--force-manual` (escape
@@ -891,7 +891,7 @@ function cmdCompleteStep(nRaw, flags) {
 
     // 🔴 `findings.json` lo exige el FRENO, no una instrucción del step. Un artefacto que se puede
     // escribir vacío a propósito («un run sin hallazgos igual escribe el archivo») y un `findings-status`
-    // que vive sólo en el markdown de la guía de «Preparar el commit» dependen de que el orquestador se acuerde de correrlo:
+    // que vive sólo en el markdown de la guía de «Preparar el pull request» dependen de que el orquestador se acuerde de correrlo:
     // algunas corridas no lo dejan. Y
     // sin el archivo «no escribí» y «no encontré nada» son indistinguibles: la tabla por regla de
     // `poda.js` decide retiros con media muestra y puede retirar una regla porque su revisor «nunca
@@ -928,7 +928,7 @@ function cmdCompleteStep(nRaw, flags) {
     }
     // 🔴 El pase adversarial ATENDIDO. Lanzado → su resultado anotado después del último
     // lanzamiento; no lanzado → el salteo que decidió el portón. Sin este control, un pase cerrado sin
-    // resultado pasa a «Preparar el commit». Se evalúa SIEMPRE (no sólo si
+    // resultado pasa a «Preparar el pull request». Se evalúa SIEMPRE (no sólo si
     // los frenos de arriba pasaron: los dos mensajes salen en la misma corrida), deja su línea en toda llamada, y
     // NO se abre con DOD_BYPASS: el arreglo siempre está a mano y esa variable la puede poner el propio agente.
     let bloqueoAdversarial = null;
@@ -980,7 +980,7 @@ function cmdCompleteStep(nRaw, flags) {
           console.error(`   En una corrida vieja (${viejas.join(', ')}), \`approve-plan\` no sirve: anota en la abierta. Si su plan se`);
           console.error('   aprobó, se trae su línea desde la carpeta del mismo nombre del repo del código.');
         }
-        console.error('   Si la story se cerró sin pipeline, lo declara con `advisors_exempt: true` y su razón.');
+        console.error('   Si la story se cerró sin pipeline, la exención de los revisores (`advisors_exempt`) la decide la persona, con su firma sobre la historia.');
       } else {
         appendLog('gates.log', { name: 'approvals-story-repo', status: 'ok', story: marker.storyId || null, step: 8, proyecciones: r.proyecciones.length });
       }

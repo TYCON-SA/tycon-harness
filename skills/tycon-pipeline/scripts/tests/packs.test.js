@@ -48,13 +48,17 @@ const LECTOR_CONOCE_LA_CLAVE = (() => {
   try { const v = require(LECTOR_REAL).VOCABULARIO; return !!(v && v.packs && v.packs.default); } catch (_e) { return false; }
 })();
 /** Un arnés de laboratorio: la marca de clon que pide harness-path, el lector (`real` = copia del de la máquina; un
- *  texto = ése tal cual) y, si se pasa, su `perfil-equipo.json`. */
-function arnesDeLaboratorio({ lector = 'real', perfil } = {}) {
+ *  texto = ése tal cual, y `junto` = el archivo de donde salió) y, si se pasa, su `perfil-equipo.json`. */
+function arnesDeLaboratorio({ lector = 'real', perfil, junto } = {}) {
   const d = tmp('packs-arnes-');
   fs.mkdirSync(path.join(d, 'scripts', 'lib'), { recursive: true });
   fs.writeFileSync(path.join(d, 'scripts', 'install-tycon-hooks.sh'), '#!/bin/sh\n');
   const texto = lector === 'real' ? fs.readFileSync(LECTOR_REAL, 'utf8') : lector;
   fs.writeFileSync(path.join(d, 'scripts', 'lib', 'tycon-config.js'), texto);
+  // lo que el lector carga a su lado (las claves que vale sólo el perfil), del mismo arnés que el lector
+  const origen = lector === 'real' ? LECTOR_REAL : junto;
+  const vecino = origen ? path.join(path.dirname(origen), 'profile-only.js') : null;
+  if (vecino && fs.existsSync(vecino)) fs.copyFileSync(vecino, path.join(d, 'scripts', 'lib', 'profile-only.js'));
   if (perfil !== undefined) fs.writeFileSync(path.join(d, 'perfil-equipo.json'), JSON.stringify(perfil, null, 2) + '\n');
   return d;
 }
@@ -668,7 +672,8 @@ test('Nucleo_SinNombresDePaquetes', (t) => {
 //    definición en agents/ del núcleo; y el escalamiento de mech-check de una familia que no es del núcleo (WIRING) va al
 //    revisor del paquete ACTIVO que declara ese prefijo, o queda sin escalar y se dice ───────────────────────────────────
 test('T21 Pipeline_NamesNoneOfThirteen', () => {
-  const texto = fs.readFileSync(PIPELINE, 'utf8');
+  // pipeline.js con sus partes de lib/
+  const texto = require('./lib/pipeline-source.js')(SCRIPTS);
   const nombrados = [...new Set([...texto.matchAll(/'((?:tycon-)?[a-z0-9]+(?:-[a-z0-9]+)*-(?:reviewer|checker|analyzer|conventions|security|basics|coverage|validator|audit|capturer|hunter))'/g)].map((m) => m[1]))];
   assert.ok(nombrados.length >= 10, `pipeline.js nombra revisores del núcleo: ${nombrados.join(', ')}`);
   const sinDefinicion = nombrados.filter((n) => !fs.existsSync(path.join(RAIZ, 'agents', `${n}.md`)));
@@ -1037,7 +1042,7 @@ test('8.29 · T6 Packs_DefaultFollowsTheProfile @story-8.29 @ac-6 — en un repo
     if (!conoceLaRegla) { t.skip(`NO MEDIDO: este árbol no trae lector y el de la máquina (${lector || 'no encontrado'}) es anterior a la regla «el perfil gana en los paquetes»`); return; }
   }
   const textoDelLector = fs.readFileSync(lector, 'utf8');
-  const arnesDeLaboratorio829 = ({ perfil } = {}) => arnesDeLaboratorio({ lector: textoDelLector, perfil });
+  const arnesDeLaboratorio829 = ({ perfil } = {}) => arnesDeLaboratorio({ lector: textoDelLector, perfil, junto: lector });
   const otro = { ...JSON.parse(JSON.stringify(PRUEBA)), name: 'otro' };
   otro.reviewers = [{ agent: 'rev-otro', group: 'base', when: { detection: 'csModified' }, surface: { paths: ['**/*.cs'] }, depth: 'standard', prefixes: ['RO'] }];
   const packsDir = paquetes({ prueba: PRUEBA, otro });

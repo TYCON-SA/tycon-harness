@@ -25,8 +25,14 @@ presente», «ejecución registrada» o «no medido». Un ✅ no quiere decir «
   «ejecución registrada: no declara FAIL»), aunque la corrida no haya probado nada.
 - **Lo escrito en la máquina del dev no tiene procedencia**: el registro de autoría y el de aprobaciones son «ejecución
   registrada»: tienen forma válida, no prueban quién los escribió.
-- **La exención no se firma en el servidor**: se exige y se muestra su razón (`<campo>_reason`), no quién la autorizó.
-  Una exención sin razón avisa hasta el 2026-12-03 y frena desde ese día (`exencion-sin-razon`).
+- **La exención no se firma en el servidor**: se exige y se muestra su razón (`<campo>_reason`). Una exención sin razón
+  avisa hasta el 2026-12-03 y frena desde ese día (`exencion-sin-razon`). La firma del dueño viaja en el repo: una
+  exención que el diff agrega a una historia, en cualquier estado, frena sin su renglón en `.tycon/exemptions.jsonl`
+  (`exencion-sin-constancia`). Ese renglón lo anota el arnés cuando el dueño firma la exención sobre la historia; una
+  exención escrita a mano, por consola o con un parche no lo trae. El renglón no prueba quién lo escribió: los frenos de
+  escritura de la máquina no dejan escribirlo a mano.
+- **La evidencia atada al cambio no prueba que la evidencia sea verdadera**: detecta una edición posterior o una
+  evidencia anterior al código (§«La evidencia atada al cambio»).
 - **Es opt-in por repo**: un repo sin el pipeline, o sin la política que lo exige, no tiene red del servidor y no da
   error. Lo cuenta el inventario de cada noche.
 - **Sólo mira historias que pasan a `review`/`done`**: un cambio de código que no toca una historia pasa (§«Lo que este
@@ -79,11 +85,12 @@ sería peor que no tenerlo.
 |---|---|
 | **Frontmatter legible** | Una story cuyo frontmatter no cierra. Las tools del arnés no dan error con eso: la **saltean en silencio** (medido en un producto del equipo: 4 stories invisibles durante 2 meses, una tapando una deuda de evidencia). |
 | **Evidencia de cierre** | Una story que pasa a `review`/`done` sin su `.advisors/dod-runtime/<id>-*.md` **en el repo** (un `.md` real: la matriz por AC, el self-audit y el plan manual no cuentan — 2026-09-05). Es la mitad del gate local que no depende de la sesión. Si el código vive en otro repo, la evidencia igual nace acá: ver §"Stories en un repo, código en otro". Escape declarado: `dod_runtime_exempt: true` + razón, que lo decide la persona (el arnés le pide la firma `marker.js sign-file dod_runtime_exempt <historia>` en cualquier estado, también al crear la story). La evidencia se busca en git (en el índice con `--staged`), y de lo que dice sólo se lee si declara FAIL (§«Límite conocido»). |
-| **Constancia de revisores** | Una story que pasa a `done` sin una corrida del pipeline en el repo (`.advisors/pipeline-runs/<id>-…`). Es el ADVISORS-GATE del pre-commit en su mitad verificable desde el servidor (la otra mitad vive en el `gates.log` local). Escape: `advisors_exempt: true` + razón. |
+| **Evidencia atada al cambio** | En el pedido, una evidencia de cierre anterior al código declarado que el pedido cambia (`evidencia-vieja`), o un registro de humos cuyas salidas o capturas no son las que anotó (`registro-de-humo-inconsistente`). Usa la regla del freno local (`evidence-vs-commit.js`); sin ella, o sin respuesta de git, `evidencia-no-comparada`. Avisa hasta el 2026-12-09 y frena desde ese día (§«La evidencia atada al cambio»). |
+| **Constancia de revisores** | Una story que pasa a `done` sin una corrida del pipeline en el repo (`.advisors/pipeline-runs/<id>-…`). Es el ADVISORS-GATE del pre-commit en su mitad verificable desde el servidor (la otra mitad vive en el `gates.log` local). Escape declarado: `advisors_exempt: true` + razón, que lo decide la persona (el arnés le pide la firma `marker.js sign-file advisors_exempt <historia>` y deja su renglón en `.tycon/exemptions.jsonl`). |
 
 | **Índice de memoria** (2026-09-17) | Un cambio que deja la memoria de engram a medio declarar: entradas que la rama base declara y este cambio ya no, o archivos de memoria nuevos sin entrada. `engram sync --import` lee el ÍNDICE, no la carpeta, así que un archivo sin entrada **no existe para las demás máquinas y no da error**; y una entrada perdida no vuelve sola. Mismo criterio que el freno del commit (`scripts/lib/manifest-engram.js`) y misma asimetría: lo que este cambio ROMPE frena, lo heredado y lo no comparable avisan. Sólo lee algo si el diff toca `.engram/`. **Acá importa especialmente**: es lo único que ve los commits hechos fuera del asistente — la web de Azure, otra máquina, un hook salteado. |
-| **Registro de autoría** (2026-08-30) | Una story que pasa a `done` sin decir **quién la implementó y quiénes la revisaron** — o diciéndolo mal. Es la respuesta del arnés al *play* del playbook "que un revisor con IA mire cada PR en CI": acá la revisión ya ocurre antes del PR y con más contexto, así que en vez de re-revisar en el servidor se **verifica** que la hizo otro. Frena si: falta el `review-roster.json` del run (a partir del corte), si el que implementó figura como revisor, o si el archivo no se puede leer. **Un advisor con hallazgos que el registro no lista AVISA y no frena desde el 2026-09-22**: en sus dos apariciones falló la regla y no lo que vigila —una vez con las fuentes que escribe el propio pipeline; otra, con la vuelta o el modelo pegados al nombre del revisor, frenando 5 stories sanas de un pull request—, y cero atrapadas reales. Se baja y no se borra porque un control cuyas únicas fallas son propias termina apagado entero con `advisors_exempt: true`, y ahí se pierden las tres que sí sirven. Vuelve a frenar con `TYCON_ROSTER_NAMES=block`; la causa se ataca eligiendo el firmante de los revisores que corrieron, en vez de tipearlo, y con eso se revisa si vuelve a frenar o si sobra. Escape: el mismo `advisors_exempt: true` + razón. |
-| **Registro de aprobaciones** (2026-10-19) | Una story que pasa a `review`/`done` con una aprobación de un **agente anotada como de una persona**. Cada corrida deja `approvals.jsonl`: qué se aprobó (el plan, la maqueta, cada AC imposible de verificar, la exención de un CRITICAL), cuándo, el commit, el tipo y quién. Dos tipos: **manual** (una persona con nombre, `--approved-by <correo o usuario>`) y **automática** (un agente con cuál y su modelo, o una regla). Lo que aprueba un agente por delegación de una persona es automático y nombra la delegación (`--delegated-by <persona> --agent "<nombre> (<modelo>)"`); sin tipo o sin quién, automática «sin nombrar». Frena siempre si una línea manual nombra a un agente, una regla, una delegación o a nadie, o si el registro no se lee. Frena también si una corrida que llegó a los revisores **y declara anotar aprobaciones** (su `review-roster.json` trae `registro_aprobaciones`, que pone el arnés desde que anota aprobaciones) no trae el registro, o lo trae sin la línea del plan. Sin esa marca —un dev con el arnés de antes, cuyo portón en CI ya es el nuevo— la falta avisa y no frena: la fecha no dice qué arnés corrió en la máquina. Lista cuántas fueron manuales y cuántas automáticas. Ante la duda, automática: quien es persona se nombra con su correo. **Límite**: el registro distingue tipos, no prueba identidad — un agente que escribe el correo de una persona en `--approved-by` queda manual; lo único firmado de verdad es lo que pasa por la terminal (la matriz, `runtime-waiver`). `advisors_exempt: true` + razón perdona que falte el registro, no una línea mala. |
+| **Registro de autoría** (2026-08-30) | Una story que pasa a `done` sin decir **quién la implementó y quiénes la revisaron** — o diciéndolo mal. Es la respuesta del arnés al *play* del playbook "que un revisor con IA mire cada PR en CI": acá la revisión ya ocurre antes del PR y con más contexto, así que en vez de re-revisar en el servidor se **verifica** que la hizo otro. Frena si: falta el `review-roster.json` del run (a partir del corte), si el que implementó figura como revisor, o si el archivo no se puede leer. **Un advisor con hallazgos que el registro no lista AVISA y no frena desde el 2026-09-22**: en sus dos apariciones falló la regla y no lo que vigila —una vez con las fuentes que escribe el propio pipeline; otra, con la vuelta o el modelo pegados al nombre del revisor, frenando 5 stories sanas de un pull request—, y cero atrapadas reales. Se baja y no se borra porque un control cuyas únicas fallas son propias termina apagado entero con la exención `advisors_exempt`, y ahí se pierden las tres que sí sirven. Vuelve a frenar con `TYCON_ROSTER_NAMES=block`; la causa se ataca eligiendo el firmante de los revisores que corrieron, en vez de tipearlo, y con eso se revisa si vuelve a frenar o si sobra. Escape: el mismo `advisors_exempt: true` + razón. |
+| **Registro de aprobaciones** (2026-10-19) | Una story que pasa a `review`/`done` con una aprobación de un **agente anotada como de una persona**. Cada corrida deja `approvals.jsonl`: qué se aprobó (el plan, la maqueta, cada AC imposible de verificar, la exención de un CRITICAL), cuándo, el commit, el tipo y quién. Dos tipos: **manual** (una persona con nombre, `--approved-by <correo o usuario>`) y **automática** (un agente con cuál y su modelo, o una regla). Lo que aprueba un agente por delegación de una persona es automático y nombra la delegación (`--delegated-by <persona> --agent "<nombre> (<modelo>)"`); sin tipo o sin quién, automática «sin nombrar». Frena siempre si una línea manual nombra a un agente, una regla, una delegación o a nadie, o si el registro no se lee. Frena también si una corrida que llegó a los revisores **y declara anotar aprobaciones** (su `review-roster.json` trae `registro_aprobaciones`, que pone el arnés desde que anota aprobaciones) no trae el registro, o lo trae sin la línea del plan. Sin esa marca —un dev con el arnés de antes, cuyo portón en CI ya es el nuevo— la falta avisa y no frena: la fecha no dice qué arnés corrió en la máquina. Lista cuántas fueron manuales y cuántas automáticas. Ante la duda, automática: quien es persona se nombra con su correo. **Límite**: el registro distingue tipos, no prueba identidad — un agente que escribe el correo de una persona en `--approved-by` queda manual; lo único firmado de verdad es lo que pasa por la terminal (la matriz, `runtime-waiver`). La exención `advisors_exempt` con su razón, que la persona firma sobre la historia, perdona que falte el registro, no una línea mala. |
 
 🔴 **El corte por fecha es mecánico y sin configuración**: el nombre del run dir trae su timestamp
 (`<id>-YYYYMMDD…`). Un run anterior al estreno de la pieza no puede tener registro, así que su
@@ -389,3 +396,36 @@ ni en git ni en el disco) sigue frenando.
 criterios menciona la evidencia ni si cada mención es un ✅; eso lo hace el freno local (`parseAcsFromEvidence`, y la
 matriz por criterio). Quien lea un ✅ del portón tiene que saber que es «hay evidencia y no declara FAIL», no «la
 evidencia aprobó».
+
+## La evidencia atada al cambio
+
+En el pedido, el portón mira si la evidencia de cierre es de este código. Toma el código que la historia declara
+(`files_to_modify` y `files_to_create`) y que el pedido cambia. Alguna evidencia de cierre tiene que valer para todos
+esos archivos, con la regla del freno local (`evidence-vs-commit.js` del skill): el archivo tiene que ser igual en el
+commit que guardó la evidencia y en el pedido. Si ninguna vale, sale `evidencia-vieja`, y hace falta una ejecución
+commiteada después del cambio. Cada línea del registro de humos con salida 0 cuenta como una evidencia, con el commit que
+la agregó; un `.md` que no declara FAIL cuenta por su última versión, porque se reescribe con el mismo nombre. Una
+evidencia que falla no ata nada. En el servidor el pedido llega fusionado con la rama destino: se juzga la punta del
+pedido, y lo que la rama destino cambió en esos archivos no vence su evidencia.
+
+**Lo que no mira.** Sólo el código que cambia este pedido. Si el código cambió en un pedido anterior y la historia se
+cierra en otro, ese otro no lo ve.
+
+**Lo que vence igual que el freno local.** Si la rama del pedido trae la rama destino después de su evidencia, y la rama
+destino cambió un archivo declarado, la evidencia vence, como en la matriz del freno local: hay que volver a correrla.
+
+El registro de humos se mira además por sus huellas. Cada línea `v:2` anota el sha256 de su salida (`output_sha`) y de su
+captura (`capture_sha`). El portón lo recalcula sobre lo que guarda git: si es distinto, o el archivo no está, sale
+`registro-de-humo-inconsistente`. Las líneas sin `v:2` se saltean, y la salida dice cuántas.
+
+**Lo que no prueba.** Detecta una edición posterior o una evidencia anterior al código; no prueba que la evidencia sea
+verdadera.
+
+**No medido, y se dice.** No se mide cuando la historia no declara código, ni cuando el código declarado vive en otro
+repo: ahí avisa «no verificable desde este repo» y no frena. Tampoco antes del commit (`--staged`), porque ahí la mide la
+matriz del freno del commit. Un registro sin ninguna línea `v:2` deja sus huellas sin medir. Si git no contesta, o la
+regla del skill no carga, sale `evidencia-no-comparada`: «no pude comparar» no es «está bien». Las huellas no necesitan
+esa regla y corren igual.
+
+**Entra avisando.** Todo esto avisa hasta el 2026-12-09 y frena desde ese día (`EVIDENCE_BOUND_FROM`). Lo que ya frenaba
+sigue frenando.
