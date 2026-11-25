@@ -806,6 +806,9 @@ test('PlatformContract_DraftFields (T8) @story-8.332 @ac-8', () => {
   assert.ok(listo && listo.words.join(' ') === 'gh pr ready' && listo.ready.unless.length, JSON.stringify(listo));
   const update = crudos.find((c) => c.name === 'azure-devops' && c.ready);
   assert.ok(update && update.ready.when.some((o) => o.name === '--draft' && o.separateValue === true) && update.ready.abbreviations === true, JSON.stringify(update));
+  // az cambia `@archivo` por lo que trae antes de leer sus opciones: el conector lo declara en los dos campos
+  assert.strictEqual(update.ready.argumentFiles, '@', JSON.stringify(update));
+  assert.strictEqual(crudos.find((c) => c.name === 'azure-devops' && c.draft).draft.argumentFiles, '@');
   assert.ok(!crudos.some((c) => c.name === 'gitlab' && (c.draft || c.ready)), 'GitLab, ninguno');
   assert.strictEqual(P().rawCommandOf('gh pr ready 12'), null, 'marcar listo no es un comando que la capa reemplaza');
   // un campo mal formado deja el manifiesto roto, con su motivo; sin los campos es válido
@@ -824,6 +827,8 @@ test('PlatformContract_DraftFields (T8) @story-8.332 @ac-8', () => {
     ['nombremalo', { draftOptions: [{ command: 'x pr create', options: [{ name: 'draft', separateValue: false }] }] }, /la opción «draft» se escribe/],
     ['separadomalo', { draftOptions: [{ command: 'x pr create', options: [{ name: '--draft', separateValue: 'no' }] }] }, /«separateValue» es true o false/],
     ['abreviamalo', { draftOptions: [{ command: 'x pr create', options: [opcion], abbreviations: 'si' }] }, /«abbreviations» es true o false/],
+    ['archivomalo', { draftOptions: [{ command: 'x pr create', options: [opcion], argumentFiles: '@@' }] }, /«argumentFiles» es un solo signo/],
+    ['archivoletra', { readyCommands: [{ command: 'x pr ready', argumentFiles: 'a' }] }, /«argumentFiles» es un solo signo/],
     ['repetido', { draftOptions: [{ command: 'x pr create', options: [opcion] }, { command: 'x pr create', options: [opcion] }] }, /«draftOptions»: «x pr create» está dos veces/],
     ['listonolista', { readyCommands: 'x pr ready' }, /«readyCommands» es una lista/],
     ['losdos', { readyCommands: [{ command: 'x pr ready', when: [opcion], unless: [opcion] }] }, /«readyCommands»: «x pr ready» lleva «when» o «unless», no los dos/],

@@ -110,7 +110,8 @@ function optionProblems(opts, who) {
 /**
  * Los motivos por los que los campos del borrador de un conector no valen. Los lee el freno de guardar:
  *   · `draftOptions`: por cada comando que crea un pedido (uno de `changeRequestCommands`), las opciones que lo hacen
- *     borrador, y si el programa acepta una opción larga acortada (`abbreviations`);
+ *     borrador, si el programa acepta una opción larga acortada (`abbreviations`) y con qué letra empieza una palabra
+ *     que el programa cambia por lo que trae un archivo antes de leer sus opciones (`argumentFiles`, por ejemplo `@`);
  *   · `readyCommands`: los comandos que pasan un borrador a listo. Cada uno lleva la opción que tiene que aparecer en
  *     falso para marcarlo listo (`when`), o la que lo descarta (`unless`); sin ninguna de las dos, siempre lo marca.
  * Un campo mal escrito deja el manifiesto roto: el freno no puede adivinar qué es un borrador.
@@ -119,7 +120,10 @@ function draftFieldProblems(m) {
   const out = [];
   const palabras = (c) => String(c).trim().split(/\s+/).filter(Boolean).join(' ');
   const pedidos = Array.isArray(m.changeRequestCommands) ? m.changeRequestCommands.map(palabras) : [];
-  const abrevia = (x, who) => (x.abbreviations !== undefined && typeof x.abbreviations !== 'boolean' ? [`${who}: «abbreviations» es true o false`] : []);
+  const abrevia = (x, who) => [
+    ...(x.abbreviations !== undefined && typeof x.abbreviations !== 'boolean' ? [`${who}: «abbreviations» es true o false`] : []),
+    ...(x.argumentFiles !== undefined && !(typeof x.argumentFiles === 'string' && /^[^\sA-Za-z0-9-]$/.test(x.argumentFiles)) ? [`${who}: «argumentFiles» es un solo signo (por ejemplo «@»)`] : []),
+  ];
   if (m.draftOptions !== undefined) {
     if (!Array.isArray(m.draftOptions)) out.push('«draftOptions» es una lista: por cada comando que crea un pedido, las opciones que lo hacen borrador');
     else {

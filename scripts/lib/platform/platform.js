@@ -449,8 +449,8 @@ async function conformance(name, opts = {}) {
  * Los comandos crudos que declaran los conectores de plataforma en `rawCommands`: `[{ name, words, changeRequest, draft? }]`,
  * con las palabras del comando (`['gh', 'pr', 'create']`), `changeRequest` si el conector lo declara además en
  * `changeRequestCommands` (crea o junta un pedido) y `draft` si declara en `draftOptions` las opciones que lo hacen
- * borrador (`{ options, abbreviations }`). Después, aparte, los de `readyCommands`, que pasan un borrador a listo:
- * `{ name, words, changeRequest: false, ready: { when, unless, abbreviations } }`. No son comandos que la capa reemplaza:
+ * borrador (`{ options, abbreviations, argumentFiles }`). Después, aparte, los de `readyCommands`, que pasan un borrador
+ * a listo: `{ name, words, changeRequest: false, ready: { when, unless, abbreviations, argumentFiles } }`. No son comandos que la capa reemplaza:
  * los lee el freno de guardar. Lanza si alguna integración no se puede leer: sin ella no se sabe qué comandos declara.
  */
 function rawCommands(opts = {}) {
@@ -462,13 +462,14 @@ function rawCommands(opts = {}) {
   return leidas.manifests.filter((m) => m.kind === 'platform')
     .flatMap((m) => {
       const pedidos = new Set((m.changeRequestCommands || []).map((c) => palabras(c).join(' ')));
-      const borradores = new Map((m.draftOptions || []).map((d) => [palabras(d.command).join(' '), { options: d.options, abbreviations: d.abbreviations === true }]));
+      const archivos = (x) => (typeof x.argumentFiles === 'string' ? x.argumentFiles : null);
+      const borradores = new Map((m.draftOptions || []).map((d) => [palabras(d.command).join(' '), { options: d.options, abbreviations: d.abbreviations === true, argumentFiles: archivos(d) }]));
       const crudos = (m.rawCommands || []).map((c) => {
         const k = palabras(c).join(' ');
         return { name: m.name, words: palabras(c), changeRequest: pedidos.has(k), ...(borradores.has(k) ? { draft: borradores.get(k) } : {}) };
       });
       const listos = (m.readyCommands || []).map((r) => ({ name: m.name, words: palabras(r.command), changeRequest: false,
-        ready: { when: r.when || null, unless: r.unless || null, abbreviations: r.abbreviations === true } }));
+        ready: { when: r.when || null, unless: r.unless || null, abbreviations: r.abbreviations === true, argumentFiles: archivos(r) } }));
       return [...crudos, ...listos];
     });
 }

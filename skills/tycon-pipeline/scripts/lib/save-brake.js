@@ -833,19 +833,27 @@ function leerOpciones(args, opciones, abreviaturas) {
 // ¿El pedido sale como borrador? Sólo si la última aparición es la opción sola o un «sí» claro, no puede ser el valor
 // de otra opción y nada después puede meter otra: en la duda no es borrador. `masPalabras`: el programa recibe además
 // palabras que no se ven (las que agrega `xargs`).
+// Una palabra que no se ve entera antes de que el programa la lea: la que trae una variable o una sustitución (el
+// shell la puede partir, o traer otra opción entera: `--draft=false`), o la que el programa cambia por lo que dice un
+// archivo antes de leer sus opciones (`argumentFiles`, la letra que declara el conector).
+const palabraOpaca = (w, argumentFiles) => conVariable(w) || (!!argumentFiles && String(w).startsWith(argumentFiles));
+
 function esBorrador(args, draft, masPalabras) {
-  if (masPalabras) return false;
-  const { apariciones, inyectables } = leerOpciones(args, draft.options, draft.abbreviations);
+  if (masPalabras || args.some((w) => palabraOpaca(w, draft.argumentFiles))) return false;
+  const { apariciones } = leerOpciones(args, draft.options, draft.abbreviations);
   const u = apariciones[apariciones.length - 1];
-  return !!u && u.valor === 'si' && !u.suelta && !inyectables.some((i) => i > u.i);
+  return !!u && u.valor === 'si' && !u.suelta;
 }
 
-// ¿La opción del borrador está escrita con un «sí», pero no se lee con certeza (detrás de otra opción que puede tomarla
-// como su valor)? Sólo para decir cómo escribirla: no lo hace borrador.
+// ¿Por qué una opción del borrador escrita con un «sí» no lo hace borrador? `posicion` (detrás de otra opción que puede
+// tomarla como su valor), `opaca` (el comando trae una palabra que no se ve entera) o null. Sólo para decir cómo
+// escribirlo.
 function borradorDudoso(args, draft) {
   const { apariciones } = leerOpciones(args, draft.options, draft.abbreviations);
   const u = apariciones[apariciones.length - 1];
-  return !!u && u.valor === 'si' && u.suelta;
+  if (!u || u.valor !== 'si') return null;
+  if (args.some((w) => palabraOpaca(w, draft.argumentFiles))) return 'opaca';
+  return u.suelta ? 'posicion' : null;
 }
 
 // ¿El comando pasa el borrador a listo? Cuenta cualquier aparición que pueda serlo, aunque otra la pise. Con `when`, la
@@ -855,8 +863,9 @@ function borradorDudoso(args, draft) {
 function marcaListo(args, ready, masPalabras) {
   const lista = ready.when || ready.unless;
   if (!lista) return true;
+  if (masPalabras || args.some((w) => palabraOpaca(w, ready.argumentFiles))) return true;
   const { apariciones, inyectables } = leerOpciones(args, lista, ready.abbreviations);
-  if (masPalabras || inyectables.length || apariciones.some((a) => a.valor !== 'si' || a.suelta)) return true;
+  if (inyectables.length || apariciones.some((a) => a.valor !== 'si' || a.suelta)) return true;
   return ready.unless ? !apariciones.length : false;
 }
 
@@ -1002,7 +1011,8 @@ function leerComando(command, cwd, depth = 0, dudas = [], home) {
       if (p) {
         const draft = plataforma.borradores.get(p.forma);
         const claro = !!draft && esBorrador(args, draft, ctx.xargs);
-        guardar({ tipo: 'pr', forma: p.forma, dir: ctx.dirs[0], palabras: args, ...(claro ? { borrador: true } : {}), ...(draft && !claro && borradorDudoso(args, draft) ? { borradorDudoso: true } : {}) });
+        const dudoso = draft && !claro ? borradorDudoso(args, draft) : null;
+        guardar({ tipo: 'pr', forma: p.forma, dir: ctx.dirs[0], palabras: args, ...(claro ? { borrador: true } : {}), ...(dudoso ? { borradorDudoso: dudoso } : {}) });
         return;
       }
       const l = pedidoDe(ps, cmd, plataforma.listos.map((x) => x.words));
@@ -1239,7 +1249,10 @@ function okDeGuardarQueNoCubre(m, dirs) {
   return null;
 }
 const PISTA_DESTINO = ' Si el empuje va a tu rama de trabajo, escribí el destino: `git push -u origin <rama>`.';
-const PISTA_BORRADOR = '   Si es un borrador, escribí su opción justo después del comando, antes de las otras: detrás de otra opción puede ser su valor y no se lee como borrador.';
+const PISTA_BORRADOR = {
+  posicion: '   Si es un borrador, escribí su opción justo después del comando, antes de las otras: detrás de otra opción puede ser su valor y no se lee como borrador.',
+  opaca: '   Si es un borrador, escribí el comando entero, sin variables, sustituciones ni archivos de argumentos: lo que traen puede ser otra opción que lo publica.',
+};
 const textoEscribe = (que) => `🔒 este comando cambia el código antes de que salga (${que}): corré el cambio aparte y, si cambió el código, volvé a preparar el pull request.`;
 // el paso cerrado, por su nombre (también en un marcador sin el número de esquema) o, en el esquema viejo, por su
 // número de entonces (el 8)
@@ -1457,7 +1470,8 @@ function decidir({ command, cwd, sid, home, arnes }) {
     const p = prepDe();
     const salida = cs.some((c) => c.tipo === 'pr') && !pasoCerrado ? `\n${textoSalidaDelPedido(m.storyId, sid)}` : '';
     // la opción del borrador está, pero no se lee con certeza (puede ser el valor de otra opción): cómo escribirla
-    const dudoso = !pasoCerrado && cs.some((c) => c.tipo === 'pr' && c.borradorDudoso) ? `\n${PISTA_BORRADOR}` : '';
+    const conDuda = !pasoCerrado ? cs.find((c) => c.tipo === 'pr' && c.borradorDudoso) : null;
+    const dudoso = conDuda ? `\n${PISTA_BORRADOR[conDuda.borradorDudoso]}` : '';
     if (p.texto) return { texto: `${p.texto}${pista ? PISTA_DESTINO : ''}${dudoso}${salida}` };
     return { pregunta: preguntaDelPedido({ forma: haciaElEquipo.forma, m, repos: p.repos }) };
   }

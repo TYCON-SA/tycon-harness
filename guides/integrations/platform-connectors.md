@@ -90,10 +90,15 @@ operación sin pedirle nada: `node scripts/lib/platform/platform.js choose <oper
   - Cada opción es `{ "name", "separateValue" }`: el nombre corto (`-d`) o largo (`--draft`), y si el programa le lee
     el valor separado (`--draft false`, en Azure DevOps) o sólo junto (`--draft=false`, en GitHub, donde
     `gh pr ready --undo 12` es la opción sola y el número del pedido).
+  - `argumentFiles`, en los dos campos: la letra con que empieza una palabra que el programa cambia por lo que trae un
+    archivo antes de leer sus opciones (`"@"` en Azure DevOps: `az … @o.txt`). Esa palabra puede traer cualquier
+    opción, también la que publica el pedido.
 
   La lectura es estricta. Al crear, es borrador sólo la última aparición escrita sola o con un «sí» (`true`, `yes`,
-  `1`), que no pueda ser el valor de la opción de antes y sin una variable después. Al marcar listo, cuenta cualquier
-  aparición que pueda serlo: un «no», una variable, un valor que no se entiende. GitLab no declara estos campos: un
+  `1`), que no pueda ser el valor de la opción de antes, y en un comando sin palabras que no se ven enteras: una
+  variable, una sustitución o un archivo de argumentos pueden traer `--draft=false`. Al marcar listo, cuenta cualquier
+  aparición que pueda serlo, y cualquier palabra que no se ve entera: un «no», una variable, un valor que no se
+  entiende, un archivo de argumentos. GitLab no declara estos campos: un
   borrador ahí pasa a listo sacándole «Draft:» al título o con la acción rápida `/ready` en un comentario, y el freno no
   ve ninguno de los dos. Marcar listo por la API (`gh api … markPullRequestReadyForReview`) tampoco se ve.
   `scripts/lib/integrations.js` rechaza un campo mal escrito.

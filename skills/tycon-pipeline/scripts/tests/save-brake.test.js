@@ -1943,6 +1943,8 @@ const LISTOS = [
   ['az repos pr update --id 12 --draft "$X"', 'az repos pr update'], ['az repos pr update --id 12 --draft quizas', 'az repos pr update'],
   // al marcar listo cuenta cualquier aparición que pueda serlo, aunque otra la pise
   ['az repos pr update --id 12 --draft false --draft true', 'az repos pr update'], ['gh pr ready --undo=false --undo 12', 'gh pr ready'],
+  // una palabra que no se ve entera (un archivo de argumentos, una sustitución) puede traer la opción que lo publica
+  ['az repos pr update --id 12 @o.txt', 'az repos pr update'], ["gh pr ready --undo -R $(printf 'x --undo=false') 12", 'gh pr ready'],
 ];
 
 // 🔴 Falla con: un borrador que frena antes de «Preparar» (el equipo no ve el código y la CI no corre), una pregunta que
@@ -1977,7 +1979,10 @@ test('SaveBrake_NotClearDraftBeforePrepare_Blocks (T2) @story-8.332 @ac-2', (t) 
   for (const cmd of ['gh pr create --fill', 'gh pr create --draft=false --fill', 'gh pr create --draft --draft=false --fill', 'gh pr create --draft=$X --fill',
     'gh pr create --fill --body "--draft"', 'gh pr create -- --draft', 'az repos pr create --draft false --title x', 'az repos pr create --draft no --title x',
     'az repos pr create --draft 0 --title x', 'az repos pr create --draft --draft false --title x', 'az repos pr create --draft "$X" --title x',
-    'az repos pr create -d borrador --title x', 'glab mr create --draft --fill']) {
+    'az repos pr create -d borrador --title x', 'glab mr create --draft --fill',
+    // lo que trae una variable, una sustitución o un archivo de argumentos puede ser otra opción que lo publica
+    'gh pr create --draft --fill "$X"', "gh pr create --draft --title $(printf 'x --draft=false')",
+    'az repos pr create --draft --squash "$X" --title x', 'az repos pr create --draft --title x @o.txt']) {
     const d = decide(h, cmd, a);
     assert.ok(d && d.texto, `«${cmd}» frena: ${JSON.stringify(d)}`);
     assert.match(d.texto, SIN_PREPARAR, cmd);
@@ -1990,6 +1995,7 @@ test('SaveBrake_NotClearDraftBeforePrepare_Blocks (T2) @story-8.332 @ac-2', (t) 
   assert.ok(dudoso && dudoso.texto, JSON.stringify(dudoso));
   assert.match(dudoso.texto, /Si es un borrador, escribí su opción justo después del comando/);
   assert.doesNotMatch(decide(h, 'gh pr create --draft=false --fill', a).texto, /Si es un borrador/, 'sin la opción en «sí», no hay pista');
+  assert.match(decide(h, 'gh pr create --draft --title "$T"', a).texto, /Si es un borrador, escribí el comando entero, sin variables/);
 });
 
 // 🔴 Falla con: un borrador que después de «Preparar» sale con el código cambiado desde la foto.
