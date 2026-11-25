@@ -79,3 +79,37 @@ test('SafetyGuardClock_LeadingZero_UsesDefault — «02» o «060» no se leen c
   assert.strictEqual(r.status, 2, r.stderr);
   assert.match(r.stderr, /no terminó de mirar el comando en 20 s/);
 });
+/** El registro de fallas de la casa de prueba (la carpeta del estado depende de la casa), o '' si no hay. */
+function registroDe(home) {
+  const hallados = [];
+  const buscar = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) buscar(p); else if (e.name === 'hook-errors.log') hallados.push(p); } };
+  buscar(home);
+  return hallados.map((p) => fs.readFileSync(p, 'utf8')).join('');
+}
+
+function correrEnCasa(command, { bin, env = {} } = {}) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sg-clock-home-'));
+  const input = JSON.stringify({ tool_name: 'Bash', tool_input: { command }, session_id: 'sg-clock', cwd: os.tmpdir() });
+  const r = spawnSync('bash', [GUARD], {
+    input, encoding: 'utf8', timeout: 60000,
+    env: { ...process.env, HOME: home, PATH: bin ? `${bin}${path.delimiter}${process.env.PATH}` : process.env.PATH, ...env },
+  });
+  return { ...r, registro: registroDe(home) };
+}
+
+test('T6 SafetyGuardClock_SlowOrCut_LogsWhereItWas — el freno lento o cortado deja en el registro cuánto tardó y en qué paso', { skip: SKIP }, () => {
+  // 🔴 rojo si: un freno que tarda más de la mitad de su reloj no deja rastro, o el corte sólo lo dice en la pantalla.
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'sg-clock-bin-'));
+  // jq de juguete: la primera vez tarda 3 s y falla (el freno sigue con node); las demás, falla enseguida
+  fs.writeFileSync(path.join(bin, 'jq'), `#!/bin/sh\nif [ ! -e "${bin}/ya" ]; then : > "${bin}/ya"; sleep 3; fi\nexit 1\n`, { mode: 0o755 });
+  const lento = correrEnCasa('ls', { bin, env: { TYCON_SAFETY_TIMEOUT_S: '5' } });
+  assert.strictEqual(lento.status, 0, lento.stderr);
+  assert.match(lento.registro, /^\[[^\]]+\] safety-guard LENTO: tardó [3-4] s, con un tope de 5 s; el paso más lento: leyendo la entrada \([3-4] s\)\n/);
+  const cortado = correrEnCasa('ls', { bin: binConJqLento('printf "confirmando el click en una conversación de 20 MB" > "$TYCON_SAFETY_STAGE_FILE"'), env: { TYCON_SAFETY_TIMEOUT_S: '2' } });
+  assert.strictEqual(cortado.status, 2, cortado.stderr);
+  assert.match(cortado.registro, /safety-guard FRENÓ POR FALLA: no terminó en 2 s; estaba confirmando el click en una conversación de 20 MB/);
+  assert.doesNotMatch(cortado.registro, /LENTO/, 'el corte no se anota dos veces');
+  const rapido = correrEnCasa('ls', { env: { TYCON_SAFETY_TIMEOUT_S: '20' } });
+  assert.strictEqual(rapido.status, 0, rapido.stderr);
+  assert.strictEqual(rapido.registro, '', 'uno rápido no deja renglón');
+});

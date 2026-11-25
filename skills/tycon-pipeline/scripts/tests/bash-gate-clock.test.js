@@ -34,6 +34,9 @@ if (workerData.modo === 'net') {
 }
 const entrada = fs.readFileSync(0, 'utf8');
 require(process.env.CLOCK_LIB).entregarEntrada(parentPort, workerData, entrada);
+if (modo === 'slow' || modo === 'slow-hung') require(process.env.CLOCK_LIB).anotarPaso('leyendo un guion de juguete');
+if (modo === 'slow') spawnSync('sleep', ['1.4']);
+if (modo === 'slow-hung') for (;;);
 if (modo === 'loop') for (;;);
 if (modo === 'regex') /(a+)+$/.test('a'.repeat(60) + 'b');
 if (modo === 'hung') spawnSync('sleep', ['30']);
@@ -190,4 +193,37 @@ test('T3b BashGateClock_ClockDoesNotLoad_RunsAsToday @story-8.308 @ac-3 — sin 
     assert.strictEqual(f.correr(command).status, salida, command);
     assert.match(f.registro(), /on-bash-write-gate FAILED OPEN/, command);
   }
+});
+
+// 🔴 Falla con: un freno que tarda más de la mitad de su reloj no deja rastro, o el corte no dice en qué paso estaba.
+test('T7 BashGateClock_SlowOrCut_LogsWhereItWas — el freno lento o cortado anota cuánto tardó y en qué paso', (t) => {
+  const c = corral(t);
+  const { contar } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'hooks', 'hook-failures-notice.js'));
+  let r = c.correr('slow');
+  assert.deepStrictEqual([r.status, r.stdout], [0, 'largo 2'], r.stderr);
+  const lento = c.registro();
+  assert.match(lento, /^\[[^\]]+\] on-bash-write-gate LENTO: decidió en \d+ ms, con un tope de 2 s; el paso más lento: leyendo un guion de juguete \(\d+ ms\)\n/);
+  // tardar no es fallar: el aviso de arranque no lo cuenta
+  assert.strictEqual(contar(lento, Date.parse(/^\[([^\]]+)\]/.exec(lento)[1])).size, 0, lento);
+  fs.rmSync(c.log, { force: true });
+  r = c.correr('slow-hung');
+  noDecidio(r, 'lento y trabado');
+  assert.match(c.registro(), /on-bash-write-gate FRENÓ POR FALLA: no contestó en 2 s; el último paso: leyendo un guion de juguete/);
+  fs.rmSync(c.log, { force: true });
+  r = c.correr('healthy');
+  assert.strictEqual(r.status, 0);
+  assert.strictEqual(c.registro(), '', 'uno rápido no deja renglón');
+});
+
+// 🔴 Falla con: el freno de verdad no anota sus pasos, y el renglón de lo lento no dice dónde se fue el tiempo.
+test('T7b BashGateClock_RealGate_SlowStepIsNamed — el freno de verdad dice en qué paso se le fue el tiempo', (t) => {
+  const c = corral(t);
+  const previa = path.join(c.dir, 'lenta.js');
+  // el paso del stash se demora 3,2 s (sin lanzar procesos), con un reloj de 6 s: el arranque del freno de verdad, con la
+  // máquina cargada, se come parte del reloj
+  fs.writeFileSync(previa, "const M = require('module'); const c = M._load; M._load = function (p, ...r) { if (String(p).endsWith('stash-guard.js')) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3200); return c.call(this, p, ...r); };\n");
+  const f = freno(t, ['-r', previa]);
+  const r = f.correr('git stash list', { TYCON_BASH_GATE_TIMEOUT_S: '6' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(f.registro(), /on-bash-write-gate LENTO: decidió en \d+ ms, con un tope de 6 s; el paso más lento: mirando un stash \((3[2-9]|[4-9]\d)\d\d ms\)/);
 });
