@@ -1,11 +1,11 @@
 {
   "__doc": "Story 8.23 (AC 4): el techo de «.claude» en el código. Por archivo, cuántas veces aparece «.claude» fuera de los enchufes de Claude Code (clase B: settings.json, settings.local.json, CLAUDE.md, skills/, agents/, commands/, projects/, plugins/, channels/, ~/.claude.json) y fuera de los archivos de legacy-home-names.json. Barrido: los archivos rastreados de scripts/, skills/, agents/, build/ y adapters/, sin pruebas (tests/, *.test.*, fixtures/, controls-bench/cases/) ni prosa (.md); los comentarios cuentan. La regla: el techo SÓLO BAJA. Un archivo que sube frena nombrando sus líneas (pedile la ruta a scripts/setup/harness/tycon-home.js); uno que baja frena pidiendo bajar el techo. Re-medir: node scripts/tests/tycon-home.test.js --measure > scripts/tests/fixtures/dot-claude-ceiling.json. Lo compara scripts/tests/tycon-home.test.js (T3). El cero se exige en la tanda E.",
   "__last_change": {
-    "date": "2026-11-12",
-    "direction": "igual: dos archivos cambian de ruta",
-    "reason": "Los dos guiones que sólo sirven en Azure DevOps (validate-pipeline-in-ado.sh y grant-new-product-permissions.js) se mudan de scripts/ci/ a su conector, integrations/azure-devops/scripts/, con el mismo número; nadie sube. Total 795."
+    "date": "2026-11-25",
+    "direction": "baja: de 791 a 780",
+    "reason": "El estado del registro de horas sale de la carpeta de los registros sueltos (scripts/lib/loose-logs.js): los cinco guiones de la integración de horas dejan de armar la ruta a mano, y el aviso de las retrospectivas, sin esa carpeta, sella en la temporal. Nadie sube."
   },
-  "total": 791,
+  "total": 780,
   "files": {
     "adapters/codex/agents-native/tycon-ac-coverage-checker.toml": 1,
     "adapters/codex/agents-native/tycon-dod-runtime-checker.toml": 3,
@@ -30,13 +30,8 @@
     "integrations/azure-devops/scripts/on-story-create.js": 1,
     "integrations/azure-devops/scripts/validate-pipeline-in-ado.sh": 2,
     "integrations/clockify/integration.json": 2,
-    "integrations/clockify/scripts/clocki-enforce.js": 2,
     "integrations/clockify/scripts/install-mcp.ps1": 2,
     "integrations/clockify/scripts/install-mcp.sh": 1,
-    "integrations/clockify/scripts/lib.js": 3,
-    "integrations/clockify/scripts/on-prompt.js": 3,
-    "integrations/clockify/scripts/sweep.js": 1,
-    "integrations/clockify/scripts/touch-activity.js": 1,
     "integrations/instincts/integration.json": 2,
     "integrations/instincts/scripts/instincts-notice.js": 1,
     "scripts/ci/check-trigger-without-docs.js": 1,
@@ -62,7 +57,7 @@
     "scripts/hooks/prod-firewall-close.js": 1,
     "scripts/hooks/production-notice.js": 1,
     "scripts/hooks/retro-pending.js": 3,
-    "scripts/hooks/retro-staleness-notice.js": 3,
+    "scripts/hooks/retro-staleness-notice.js": 2,
     "scripts/hooks/safety-guard-pre.sh": 26,
     "scripts/hooks/session-collision-guard.js": 1,
     "scripts/install-tycon-hooks.ps1": 15,

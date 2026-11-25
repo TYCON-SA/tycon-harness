@@ -74,7 +74,7 @@ pwsh $HOME\.claude\agent-skills\skills\clocki\scripts\install-clocki-hooks.ps1
 
 El install script:
 - Verifica que Node.js esté en PATH.
-- Crea `~/.claude/clocki/` con defaults (`idleTimeoutMinutes: 15`, etc).
+- Crea `<estado>/` con defaults (`idleTimeoutMinutes: 15`, etc).
 - Parcha `~/.claude/settings.json` agregando tres hooks (SessionStart, UserPromptSubmit, PostToolUse) **sin pisar** hooks existentes (idempotente — corrible varias veces sin duplicar).
 - Reiniciás la sesión de Claude Code → listo.
 
@@ -93,7 +93,11 @@ scripts/
 └── install-clocki-hooks.ps1          # installer Windows
 ```
 
-### `~/.claude/clocki/` (estado local por-dev, NO commiteado)
+### `<estado>/` (estado local por-dev, NO commiteado)
+
+`<estado>` es la carpeta `clocki/` de los registros sueltos del arnés: `~/.tycon/state/clocki/` en una máquina con la
+casa propia del arnés, `~/.claude/clocki/` si no. La mudanza del aplicador la pasa a la carpeta del estado y deja en el
+lugar viejo un enlace (en Windows, una unión de carpetas), así que lo que nombra la ruta vieja sigue andando.
 
 ```
 active.json                           # timers activos por cwd
@@ -103,7 +107,7 @@ settings.json                         # config: idleTimeoutMinutes, intentKeywor
 
 ## Settings que podés tunear
 
-Editá `~/.claude/clocki/settings.json`:
+Editá `<estado>/settings.json`:
 
 ```json
 {
@@ -119,7 +123,7 @@ Editá `~/.claude/clocki/settings.json`:
 
 ## Anti-patterns
 
-- ❌ **NO** se commitea `~/.claude/clocki/` a ningún repo — es estado per-dev (active.json contiene IDs específicos de tu cuenta de Clockify).
+- ❌ **NO** se commitea `<estado>/` a ningún repo — es estado per-dev (active.json contiene IDs específicos de tu cuenta de Clockify).
 - ❌ **NO** se hardcodea workspace/project ID en el repo — auto-match + cache lo resuelve por dev.
 - ❌ **NO** se cierra el timer cuando termina `tycon-pipeline` — el commit + push + review también es trabajo en esa story. El idle-timeout lo cierra cuando efectivamente pares.
 - ❌ **NO** se loguea API key de Clockify a `active.json` ni a logs — los scripts no manejan la key, solo el agente la usa via MCP.
@@ -131,7 +135,7 @@ Editá `~/.claude/clocki/settings.json`:
 - Mirá el log del pipeline: `.advisors/pipeline-runs/<story-id>-*/step-01-start.md` debería existir y decir `integración: clockify` y `status: ok`.
 
 **Cuando empiezo a trabajar el agente no me pregunta nada:**
-- Mirá `~/.claude/clocki/active.json` — si ya hay timer activo en este cwd, no propone otro.
+- Mirá `<estado>/active.json` — si ya hay timer activo en este cwd, no propone otro.
 - Cerralo con `/clocki stop` y probá de nuevo. Si seguís sin trigger, fijate si tu prompt tiene alguno de los `intentKeywords` (en `settings.json`).
 
 **Timer no se cierra cuando dejo de trabajar:**
@@ -139,13 +143,13 @@ Editá `~/.claude/clocki/settings.json`:
 - Para cerrar ya, abrí una sesión y tipeá `/clocki stop` o esperá al sweep automático.
 
 **Auto-match elige el project equivocado:**
-- Borrá la entry del cwd en `~/.claude/clocki/project-cache.json`.
+- Borrá la entry del cwd en `<estado>/project-cache.json`.
 - Próximo `clocki:start` te ofrece la lista de projects para elegir manualmente. Esa elección se cachea.
 - También podés usar `/clocki config` para configurar explícitamente.
 
 **Quiero deshabilitar clocki temporalmente:**
 - Editá `~/.claude/settings.json` y comentá / sacá los tres hooks (`SessionStart`, `UserPromptSubmit`, `PostToolUse` que apuntan a `clocki/scripts/*.js`).
-- O renombrá `~/.claude/clocki/` a `~/.claude/clocki.disabled/` — los scripts no encuentran el state dir y exitean sin hacer nada (exit 0 siempre).
+- O renombrá `<estado>/` a `<estado>.disabled/` — los scripts no encuentran el state dir y exitean sin hacer nada (exit 0 siempre).
 
 **El skill no aparece al tipear /clocki:**
 - Verificá que `~/.claude/agent-skills/skills/clocki/SKILL.md` exista.
