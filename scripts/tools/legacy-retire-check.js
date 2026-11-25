@@ -22,8 +22,17 @@
  * 🔴 Mira el código de salida de cada consulta (`az`, la bajada del buzón) antes de leer su salida: una que falla es
  * «no pude medir» de ese repo o del buzón, nunca «sin usos» (regla ADO 5).
  *
+ * Con `--home`, en vez del mapa mide los tres lugares viejos de la casa de Claude Code que se retiran: el nombre viejo
+ * del lugar del arnés, `.tycon-pipeline` y `tycon.json`. Cada máquina se lee de su `place.json` del buzón, la más
+ * nueva por huella, sin su correo. Un lugar sale `con-uso` si una máquina registra con él algo que no es un permiso (un
+ * permiso lo saca el retiro), y `sin-medir` si una máquina no lo cuenta (una versión que no lo sube). Una máquina sin la
+ * versión bajada va en `machines_not_moved`, y una callada en la ventana, en `machines_unreported`. La fecha es la más
+ * tardía de las `retire_after` de legacy-home-names.json.
+ *
  * Uso: node scripts/tools/legacy-retire-check.js [--json] [--today AAAA-MM-DD] [--map <f>] [--sources <f>]
  *        [--mirror <dir>] [--no-download] [--parity <f>] [--repos-root <dir>] [--az <ejecutable>]
+ *      node scripts/tools/legacy-retire-check.js --home [--json] [--today AAAA-MM-DD] [--homes <f>] [--mirror <dir>]
+ *        [--no-download]
  * Salida: 2 si una consulta falló o una máquina esperada no reportó · si no, 1 si la fecha no llegó o alguna entrada no
  *         está limpia · si no, 0. El retiro parcial se arma con el `--json`, nunca con el código de salida.
  */
@@ -65,7 +74,8 @@ function parseArgs(argv) {
     const x = argv[i];
     if (x === '--json') a.json = true;
     else if (x === '--no-download') a.download = false;
-    else if (['--today', '--map', '--sources', '--mirror', '--parity', '--repos-root', '--az'].includes(x)) a[x.slice(2).replace('-r', 'R')] = need(++i, x);
+    else if (x === '--home') a.home = true;
+    else if (['--today', '--map', '--sources', '--mirror', '--parity', '--repos-root', '--az', '--homes'].includes(x)) a[x.slice(2).replace('-r', 'R')] = need(++i, x);
     else throw new Error(`opción desconocida: ${x}`);
   }
   if (a.today !== undefined && !isDay(a.today)) throw new Error(`--today tiene que ser AAAA-MM-DD (es «${a.today}»)`);
@@ -86,7 +96,18 @@ function defaults(a) {
   out.sources = a.sources || LN.readEnv('TYCON_SOURCES_JSON', { where: 'legacy-retire-check.js' }) || path.join(ROOT, 'scripts', 'nightly', 'dashboard', 'sources.json');
   out.mirror = a.mirror || LN.readEnv('TYCON_MAILBOX_DIR', { where: 'legacy-retire-check.js' }) || path.join(stateDir(), 'corridas-buzon');
   out.az = a.az || 'az';
+  out.homes = a.homes || path.join(ROOT, 'scripts', 'tests', 'fixtures', 'legacy-home-names.json');
   return out;
+}
+
+/** La bajada del buzón antes de leer el espejo: lo que falló, o null. */
+function downloadMailbox() {
+  const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'metrics', 'download-runs.js'), '--json', '--no-threads'], { windowsHide: true, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  let j = null;
+  try { j = JSON.parse(r.stdout); } catch (_) { /* abajo */ }
+  if (r.status !== 0 || !j) return { source: 'buzon', query: 'download-runs', error: `la bajada del buzón salió ${r.status}${j && j.motivo ? `: ${j.motivo}` : ''}` };
+  if (DOWNLOAD_UNREAD.has(j.estado)) return { source: 'buzon', query: 'download-runs', error: `esta máquina no puede leer el buzón (${j.estado}${j.motivo ? `: ${j.motivo}` : ''})` };
+  return null;
 }
 
 /** Un ejecutable de az (o el de laboratorio, un .js): `{ ok, json, error }`, mirando el código de salida primero. */
@@ -252,11 +273,8 @@ function check(o) {
 
   // (b) el buzón
   if (o.download) {
-    const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'metrics', 'download-runs.js'), '--json', '--no-threads'], { windowsHide: true, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-    let j = null;
-    try { j = JSON.parse(r.stdout); } catch (_) { /* abajo */ }
-    if (r.status !== 0 || !j) failed.push({ source: 'buzon', query: 'download-runs', error: `la bajada del buzón salió ${r.status}${j && j.motivo ? `: ${j.motivo}` : ''}` });
-    else if (DOWNLOAD_UNREAD.has(j.estado)) failed.push({ source: 'buzon', query: 'download-runs', error: `esta máquina no puede leer el buzón (${j.estado}${j.motivo ? `: ${j.motivo}` : ''})` });
+    const f = downloadMailbox();
+    if (f) failed.push(f);
   }
   let mailbox = { reported: new Set(), uses: [], failed: [] };
   if (!failed.some((f) => f.source === 'buzon')) {
@@ -351,13 +369,129 @@ function check(o) {
   };
 }
 
+// los tres lugares viejos que se retiran, y de dónde sale cada uno en el place.json de una máquina (el nombre viejo del
+// lugar lo sube upload-runs.js desde antes, como `legacy`; los otros dos, en `old_places`)
+const OLD_PLACES = [
+  { name: require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js')).LEGACY_PLACE_NAME, of: (j) => (j.registered_by_legacy ? { registered: j.registered_by_legacy } : null) },
+  { name: '.tycon-pipeline', of: (j) => (j.old_places && j.old_places['.tycon-pipeline']) || null },
+  { name: 'tycon.json', of: (j) => (j.old_places && j.old_places['tycon.json']) || null },
+];
+
+/** Un lugar en una máquina: `con-uso` (y en qué archivos), `sin-medir` o `limpia`. Un permiso no es un uso. */
+function placeInMachine(d) {
+  const reg = d && d.registered;
+  if (!reg || reg.status === 'no_medido' || typeof reg.total !== 'number') return { state: 'sin-medir' };
+  const files = Object.entries(reg.files || {}).filter(([, x]) => x && Number(x.count) > Number(x.permissions || 0)).map(([f]) => f).sort();
+  if (files.length) return { state: 'con-uso', files };
+  // un archivo que no se pudo leer pudo tener un uso
+  return { state: reg.unreadable ? 'sin-medir' : 'limpia' };
+}
+
+/**
+ * El place.json más nuevo de cada máquina del espejo, por su huella. Una carpeta sin huella que otra nombra como su
+ * carpeta de antes (`folder.previous_folder`) es la misma máquina antes de la mudanza del buzón: no cuenta. Lanza si no
+ * puede leer el espejo; un place.json roto va en `broken`.
+ */
+function readPlaces(mirror) {
+  let folders;
+  try { folders = fs.readdirSync(mirror, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch (e) {
+    throw new Error(`no pude leer el espejo del buzón ${mirror} (${e.code || e.message})`);
+  }
+  const read = [];
+  const broken = [];
+  for (const m of folders) {
+    let j;
+    try { j = JSON.parse(fs.readFileSync(path.join(mirror, m, 'registros', 'place.json'), 'utf8')); } catch (e) {
+      if (e.code !== 'ENOENT') broken.push({ source: 'buzon', query: `place.json de ${m}`, error: `no se pudo leer (${e.code || e.name})` });
+      continue;
+    }
+    if (!j || !isDay(j.day)) { broken.push({ source: 'buzon', query: `place.json de ${m}`, error: 'no trae su día' }); continue; }
+    read.push({ folder: m, j });
+  }
+  const before = new Set(read.map((x) => x.j.folder && x.j.folder.previous_folder).filter(Boolean));
+  const byMachine = new Map();
+  for (const x of read) {
+    const fp = x.j.machine_id && x.j.machine_id.fingerprint;
+    if (!fp && before.has(x.folder)) continue;
+    const key = fp || `carpeta:${x.folder}`;
+    const was = byMachine.get(key);
+    if (!was || x.j.day > was.j.day) byMachine.set(key, x);
+  }
+  return { machines: [...byMachine.values()], broken };
+}
+
+function checkHome(o) {
+  const today = o.today;
+  const windowFrom = addDays(today, -WINDOW_DAYS);
+  const failed = [];
+  const reasons = [];
+  let date = null;
+  try {
+    const h = readJson(o.homes, 'las rutas viejas declaradas');
+    const dates = [...(h.entries || []), ...(h.until_d || [])].map((e) => e && e.retire_after).filter(isDay).sort();
+    date = dates.length ? dates[dates.length - 1] : null;
+  } catch (e) { failed.push({ source: 'rutas', query: 'legacy-home-names.json', error: e.message }); }
+  if (o.download) {
+    const f = downloadMailbox();
+    if (f) failed.push(f);
+  }
+  let read = null;
+  if (!failed.some((f) => f.source === 'buzon')) {
+    try { read = readPlaces(o.mirror); } catch (e) { failed.push({ source: 'buzon', query: 'espejo', error: e.message }); }
+  }
+  if (read) failed.push(...read.broken);
+
+  const machines = [];
+  const unreported = [];
+  const notMoved = [];
+  for (const { folder, j } of (read ? read.machines : [])) {
+    const code = (j.folder && j.folder.code) || folder;
+    if (j.day < windowFrom) { unreported.push(code); continue; }
+    const mode = (j.install && j.install.mode) || null;
+    if (mode !== 'managed') notMoved.push(code);
+    const places = Object.fromEntries(OLD_PLACES.map((p) => [p.name, placeInMachine(p.of(j))]));
+    machines.push({ code, day: j.day, mode, version: (j.install && j.install.version) || null, places });
+  }
+  // sin buzón, o sin ninguna máquina en la ventana, no hay evidencia de nada: ningún lugar sale limpio
+  const noEvidence = !read || !machines.length;
+  const places = OLD_PLACES.map((p) => {
+    const uses = machines.filter((m) => m.places[p.name].state === 'con-uso').map((m) => ({ machine: m.code, files: m.places[p.name].files }));
+    const unmeasured = machines.filter((m) => m.places[p.name].state === 'sin-medir').map((m) => m.code);
+    const state = uses.length ? 'con-uso' : (noEvidence || unmeasured.length ? 'sin-medir' : 'limpia');
+    return { name: p.name, state, uses, unmeasured };
+  });
+  notMoved.sort();
+  unreported.sort();
+
+  if (!date) reasons.push('la lista de rutas viejas no tiene fecha de retiro (retire_after)');
+  else if (today < date) reasons.push(`la fecha de retiro todavía no llegó: ${date}`);
+  for (const p of places.filter((x) => x.state === 'con-uso')) reasons.push(`${p.name}: con uso en ${p.uses.map((u) => `${u.machine} (${u.files.join(', ')})`).join(', ')}`);
+  for (const p of places.filter((x) => x.state === 'sin-medir')) reasons.push(`${p.name}: sin medir${p.unmeasured.length ? ` en ${p.unmeasured.join(', ')}` : ''}`);
+  if (notMoved.length) reasons.push(`${notMoved.length} máquina(s) sin la versión bajada: ${notMoved.join(', ')}`);
+  if (unreported.length) reasons.push(`${unreported.length} máquina(s) sin reportar en la ventana: ${unreported.join(', ')}`);
+  for (const f of failed) reasons.push(`no pude medir ${f.source}: ${f.error}`);
+
+  const code = failed.length || unreported.length ? 2 : (reasons.length ? 1 : 0);
+  return {
+    code,
+    report: {
+      today, retire_after: date, window_from: windowFrom, places, machines,
+      machines_not_moved: notMoved, machines_unreported: unreported, failed_queries: failed, reasons,
+    },
+  };
+}
+
 function main(argv) {
   let o;
   try { o = defaults(parseArgs(argv)); } catch (e) { process.stderr.write(`legacy-retire-check: ${e.message}\n`); return 2; }
   let r;
-  try { r = check(o); } catch (e) { process.stderr.write(`legacy-retire-check: no pude medir: ${e.message}\n`); return 2; }
+  try { r = o.home ? checkHome(o) : check(o); } catch (e) { process.stderr.write(`legacy-retire-check: no pude medir: ${e.message}\n`); return 2; }
   if (o.json) process.stdout.write(`${JSON.stringify(r.report, null, 1)}\n`);
-  else {
+  else if (o.home) {
+    const n = (s) => r.report.places.filter((p) => p.state === s).length;
+    process.stdout.write(`${r.code === 0 ? 'Se pueden retirar los tres lugares viejos' : r.code === 1 ? 'Todavía no se retiran los lugares viejos' : 'No pude medir todo'} (${r.report.today}, ${r.report.machines.length} máquina(s)): ${n('limpia')} limpio(s), ${n('con-uso')} con uso, ${n('sin-medir')} sin medir.\n`);
+    for (const m of r.report.reasons) process.stdout.write(`  · ${m}\n`);
+  } else {
     const n = (s) => r.report.entries.filter((e) => e.state === s).length;
     process.stdout.write(`${r.code === 0 ? 'Se puede retirar todo' : r.code === 1 ? 'Todavía no se retira todo' : 'No pude medir todo'} (${r.report.today}): ${n('limpia')} limpia(s), ${n('con-uso')} con uso, ${n('sin-medir')} sin medir, ${n('sin-fuente')} sin fuente.\n`);
     for (const m of r.report.reasons) process.stdout.write(`  · ${m}\n`);
@@ -366,4 +500,4 @@ function main(argv) {
 }
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
-module.exports = { main, check, parseArgs };
+module.exports = { main, check, checkHome, parseArgs };

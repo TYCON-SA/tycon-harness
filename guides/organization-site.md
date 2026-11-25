@@ -914,6 +914,11 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   «sin novedades desde las HH:MM» (de 1 a 1440; sin valor, 15). Lo mide la página con su propio reloj, sin preguntarle
   nada a la máquina; una sesión en un paso largo sigue viva y sólo se marca callada. Queda en `team-profile.json` →
   `office.quiet_minutes`.
+- **Lo que la máquina limpia sola**: tres números. Cuántas horas sin uso pasan antes de borrar una carpeta de trabajo
+  ya mergeada (de 0 a 720; sin valor, 4). Cuántos días sin tocar pasan antes de borrar la carpeta temporal de una sesión
+  que ya no vive (de 1 a 365; sin valor, 2). Con cuánto disco libre, en porcentaje, avisa el arranque (de 1 a 99; sin
+  valor, 15). Nunca se borra algo con trabajo sin guardar, y el aviso de disco sólo muestra los comandos de limpieza.
+  Una máquina puede pisar los tres en su configuración. Queda en `team-profile.json` → `maintenance`.
 - **Integraciones**: qué servicios usa cada máquina (el reloj de horas, la memoria, el buzón, la noche, el índice de
   código de CodeGraph); una máquina puede apagar una para ella sola. Con CodeGraph prendido, el instalador se lo instala
   a cada dev y el arnés avisa si una máquina no lo tiene. Queda en `team-profile.json`, en el repo del perfil. Lo
@@ -1871,6 +1876,12 @@ sin arrancar nada.
 # todas las noches a las 03:00: resuelve stable, recrea con SITE_IMAGE=<imagen>@<huella>, prueba /livez y vuelve atrás si falla
 0 3 * * * node /opt/arnes/scripts/site/deploy/local/start.js --secrets-file /etc/sitio/sitio.env --update --image ghcr.io/<organización>/<repo>
 ```
+
+El resultado de cada noche y el estado del actualizador quedan en `/etc/sitio/site-update/` (al lado del archivo de
+secretos; otra carpeta con `SITE_UPDATE_DIR`). `compose.yaml` la monta en el sitio, de sólo lectura: si quedó instalado
+por etiqueta, quien administra ve la misma banda que en Azure. **Si lo instalaste antes de esta versión**, volvé a
+arrancarlo una vez con `start.js --secrets-file …` para que el contenedor monte la carpeta; hasta entonces el sitio sigue
+como antes y la banda no aparece.
 
 Con systemd, un `.service` de tipo `oneshot` con la misma orden y un `.timer` con `OnCalendar=*-*-* 03:00`. **Watchtower**
 queda como alternativa (la copia que mantiene la comunidad, limitada al contenedor del sitio con `--label-enable`): no

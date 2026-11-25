@@ -927,6 +927,7 @@ function criteriosSinMemo(palabras, cwd, { casa, destino, sesion }) {
     if (!a) return `el AC ${n} no es un criterio de la historia`;
     if (a.verdict === 'RUNTIME') return `el AC ${n} ya corrió en vivo: no hace falta eximirlo`;
     if (a.verdict === 'WAIVED-USER') return `el AC ${n} ya está eximido`;
+    if (a.verdict === 'COVERED-NIGHTLY') return `el AC ${n} ya lo cubre la noche, que corrió en verde su prueba: no hace falta eximirlo`;
     return `el AC ${n} está ${a.verdict} y no declarado imposible de probar en vivo con su prueba (runtime_not_verifiable): no es un criterio pendiente de firma`;
   };
   if (faltan.length) return { error: `${faltan.map(porQueNo).join('; ')} en ${path.basename(abs)}` };
