@@ -167,6 +167,26 @@ if quiere nuevo; then
     || no "🔴 T8 Message_NoAddress_DoesNotInvent — rc=$rc; el mensaje trae una URL: $(salida | grep -oE 'https?://[^ ]*' | head -1)"
 fi
 
+# ── T7b · la versión sin marcar no es la activa: el rojo lo dice y nombra la activa (fila 238) ─────────────
+# Un dev entró al panel, miró la versión activa (1.0.3) y no encontró las opciones: estaban en la nueva (identificador
+# 366), subida pero sin marcar. El rojo ya daba el identificador; ahora dice que esa versión NO es la activa y cuál lo es.
+t7b() { base; previa_nueva "$FALTA_X"
+  resp_m GET /api/admin/plugins '[{"pluginId":5,"name":"miplugin","version":"1.0.6","isDefault":true},{"pluginId":7,"name":"miplugin","version":"1.0.7","isDefault":false},{"pluginId":9,"name":"otro","version":"2.0.0","isDefault":true}]' 200; }
+# sin poder leer la lista, el rojo igual dice que no es la activa, sin nombrar una
+t7c() { base; previa_nueva "$FALTA_X"; resp_m GET /api/admin/plugins '{"error":"boom"}' 500; }
+if quiere nuevo; then
+  rc=$(corre t7b)
+  [ "$rc" = "1" ] && salida | grep -q "1.0.7 (identificador 7).*NO es la activa" && salida | grep -q "la activa es la 1.0.6 (identificador 5)" \
+    && salida | grep -q "Plugins → historial → el engranaje de la 1.0.7" && salida | grep -q " /admin/settings/plugins/7)" \
+    && ! salida | grep -q "2.0.0" && ! salida | grep -qE 'https?://' \
+    && ok "T7b Message_SaysNotTheActiveVersion — el rojo dice que la versión subida NO es la activa y nombra la activa de ese plugin, sin URL" \
+    || no "🔴 T7b Message_SaysNotTheActiveVersion — rc=$rc: $(salida | grep -iE 'activa|panel' | head -3)"
+  rc=$(corre t7c)
+  [ "$rc" = "1" ] && salida | grep -q "NO es la activa" && ! salida | grep -q "la activa es la" \
+    && ok "T7b Message_ListUnreadable_StillSaysNotActive — sin la lista, dice que no es la activa y no inventa cuál lo es" \
+    || no "🔴 T7b Message_ListUnreadable_StillSaysNotActive — rc=$rc: $(salida | grep -iE 'activa|panel' | head -3)"
+fi
+
 # ── T9 · la versión ya arrancó ────────────────────────────────────────────────────────────────
 t9() { base; previa_nueva "$FALTA_X"; resp /api/admin/plugins/7/set-default/preview "{\"pluginId\":7,\"pluginName\":\"miplugin\",\"targetVersion\":\"1.0.7\",\"missingSettings\":$FALTA_X,\"alreadyStarted\":true,\"manifestDeclaresSettings\":true,\"manifestUnreadable\":false,\"migrationAnalysisFailed\":false,\"pendingCount\":0,\"rollbackCount\":0}" 200; }
 if quiere nuevo; then
