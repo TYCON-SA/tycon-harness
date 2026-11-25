@@ -108,6 +108,37 @@ function baseDelPase(repo) {
 }
 
 /**
+ * Los archivos de código del cambio congelado de `repo`, relativos a él: lo distinto entre la base y el sello (lo
+ * commiteado, lo que no y lo nuevo, porque el sello lo tiene todo). Sin base no se sabe qué cambió, y cuenta todo el
+ * código del sello: un repo con código y sin base frena de más, nunca de menos. `{ files }` o `{ error }` en una línea.
+ */
+function archivosDeCodigo(repo, base, sello) {
+  const r = git(['-C', repo, ...(base ? ['diff', '--name-only', '-z', base, sello] : ['ls-tree', '-r', '--name-only', '-z', sello])]);
+  if (!r.ok) return { error: `${path.basename(repo)}: no pude leer el cambio (${unaLinea(r.err)})` };
+  const { isCode } = require('./code-files.js');
+  return { files: r.crudo.split('\0').filter((f) => f && isCode(f)) };
+}
+
+/**
+ * La lista del pase adversarial (historia 8.330, D1 y D2.1), desde los repos congelados con su base: los que tienen
+ * archivos de código en su cambio, cada uno con su base y sus archivos relativos a él. Un repo sin código queda afuera.
+ * Uno sin base y con código no se puede revisar: va a `frenan` con el motivo, y el pase no se lanza. `archivosDe` se
+ * pasa en las pruebas.
+ */
+function listaDelPase(repos, { archivosDe = archivosDeCodigo } = {}) {
+  const lista = [];
+  const frenan = [];
+  for (const r of repos || []) {
+    const a = archivosDe(r.repo, r.base || null, r.sello);
+    if (a.error) { frenan.push({ repo: r.repo, motivo: a.error }); continue; }
+    if (!a.files.length) continue;
+    if (!r.base) { frenan.push({ repo: r.repo, motivo: `tiene código en el cambio y no tiene base: ${r.sin_base || 'sin rama principal'}` }); continue; }
+    lista.push({ repo: r.repo, base: r.base, files: a.files });
+  }
+  return { repos: lista, frenan };
+}
+
+/**
  * Deja los archivos de una carpeta de sólo lectura (o, con `escribible`, les devuelve el permiso al dueño). Las carpetas
  * quedan escribibles por su dueño: así cualquiera que limpia su carpeta temporal la puede borrar; un archivo agregado o
  * cambiado lo atrapa `verify`, que vuelve a sellar la copia.
@@ -435,32 +466,67 @@ function ultimaVuelta(stateDir, sid, tipo) {
 }
 
 /**
- * Sella y congela cada repo de una vuelta y la anota: `{ repos: [{ repo, tree, copy }] }` o `{ error }` con el primer
- * motivo. Una vuelta no se lanza a medias: si un repo falla, se borran las copias que ya se armaron. Antes barre las
- * copias de las corridas que ya no están abiertas; una vuelta de revisores nueva borra las copias de las anteriores
- * (al guardar se compara contra la última).
+ * Una copia de esta sesión, de cualquier vuelta, del mismo repo y el mismo sello, que sigue en disco y pasa `verify`
+ * (nadie la tocó): `{ copy, etiqueta }` con la vuelta que la armó, o null. De la más nueva a la más vieja.
  */
-function sealAndFreeze({ stateDir, sid, etiqueta, repos, tipo = 'revisores', story = null }) {
+function copiaReusable(previas, repo, tree) {
+  for (const v of [...previas].reverse()) {
+    for (const r of v.repos || []) {
+      if (r.repo !== repo || r.tree !== tree || !r.copy) continue;
+      let esta = false;
+      try { esta = fs.existsSync(r.copy); } catch (_) { esta = false; }
+      if (esta && verify(repo, r.copy, tree).ok) return { copy: r.copy, etiqueta: r.reusada_de || v.etiqueta };
+    }
+  }
+  return null;
+}
+
+/**
+ * Sella y congela cada repo de una vuelta y la anota: `{ repos: [{ repo, tree, copy, reusada_de? }] }` o `{ error }`
+ * con el primer motivo. Un repo con una copia de esta sesión del mismo sello que nadie tocó la reusa y anota de qué
+ * vuelta salió (historia 8.330): el pase y la primera vuelta de revisores no copian dos veces lo mismo. Una vuelta no se
+ * lanza a medias: si un repo falla, se borran las copias que ya se armaron (nunca una reusada). Antes barre las copias
+ * de las corridas que ya no están abiertas; una vuelta de revisores nueva borra las copias de las anteriores (al guardar
+ * se compara contra la última), menos las que ella misma usa y las de `noBorrar`: las del pase abierto, que lee el
+ * marcador quien congela la vuelta. `noBorrar: null` es que no se sabe cuáles son: no se borra ninguna que nombre un pase.
+ */
+function sealAndFreeze({ stateDir, sid, etiqueta, repos, tipo = 'revisores', story = null, noBorrar = [] }) {
   sweep(stateDir);
+  const previas = vueltas(stateDir, sid);
   const out = [];
+  const nuevas = [];
+  const deshacer = () => { for (const c of nuevas) remover(c); };
   for (const repo of repos) {
     const s = seal(repo);
-    if (s.error) { for (const r of out) remover(r.copy); return { error: s.error }; }
-    const f = freeze(repo, s.tree, copyDir(stateDir, sid, etiqueta, repo));
-    if (f.error) { for (const r of out) remover(r.copy); return { error: f.error }; }
+    if (s.error) { deshacer(); return { error: s.error }; }
+    const reusable = copiaReusable(previas, repo, s.tree);
+    let copy = reusable && reusable.copy;
+    if (!reusable) {
+      const f = freeze(repo, s.tree, copyDir(stateDir, sid, etiqueta, repo));
+      if (f.error) { deshacer(); return { error: f.error }; }
+      copy = f.copy;
+      nuevas.push(copy);
+    }
     // sin el punto en común con main el sello vale igual: al guardar, lo que trajo main cuenta como cambio
     const pm = puntoComunConMain(repo);
-    out.push({ repo, tree: s.tree, copy: f.copy, ...(pm.sha ? { mainBase: pm.sha } : {}) });
+    out.push({ repo, tree: s.tree, copy, ...(pm.sha ? { mainBase: pm.sha } : {}), ...(reusable ? { reusada_de: reusable.etiqueta } : {}) });
   }
   if (tipo === 'revisores') {
-    for (const v of vueltas(stateDir, sid).filter((x) => x.tipo === 'revisores' && x.etiqueta !== etiqueta)) {
-      for (const r of v.repos || []) { try { if (r.copy && fs.existsSync(r.copy)) remover(r.copy); } catch (_) { /* la barre la próxima */ } }
+    const quedan = new Set(out.map((r) => r.copy));
+    const protegidas = Array.isArray(noBorrar) ? noBorrar
+      : previas.filter((v) => v.tipo === 'pase').flatMap((v) => (v.repos || []).map((r) => r.copy));
+    for (const c of protegidas) if (c) quedan.add(c);
+    for (const v of previas.filter((x) => x.tipo === 'revisores' && x.etiqueta !== etiqueta)) {
+      for (const r of v.repos || []) {
+        if (!r.copy || quedan.has(r.copy)) continue;
+        try { if (fs.existsSync(r.copy)) remover(r.copy); } catch (_) { /* la barre la próxima */ }
+      }
     }
   }
   try {
     fs.appendFileSync(registroDeVueltas(stateDir, sid), `${JSON.stringify({ ts: new Date().toISOString(), tipo, etiqueta, story, repos: out })}\n`, 'utf8');
   } catch (e) {
-    for (const r of out) remover(r.copy);
+    deshacer();
     return { error: `no pude anotar la vuelta congelada: ${unaLinea(e.message)}` };
   }
   return { repos: out };
@@ -799,7 +865,7 @@ function procedencia(repo, { env = process.env, home = os.homedir(), proceso = '
 }
 
 module.exports = {
-  seal, puntoComunConMain, baseDelPase, freeze, gitDeLaCopia, verify, changed, anidadosConCambios, copyDir, remove, sweep, reposDe, reposDelPase, hermanosCambiados, sealAndFreeze, vueltas, ultimaVuelta, seccionDelContexto, sinPapeleoDeLaHistoria, procedencia,
+  seal, puntoComunConMain, baseDelPase, archivosDeCodigo, listaDelPase, freeze, gitDeLaCopia, verify, changed, anidadosConCambios, copyDir, remove, sweep, reposDe, reposDelPase, hermanosCambiados, sealAndFreeze, vueltas, ultimaVuelta, seccionDelContexto, sinPapeleoDeLaHistoria, procedencia,
   contenidoDelSello, tipoContraElSello, vueltaCerradaDeLosRevisores, tiposDesdeLaVuelta,
 };
 
@@ -808,4 +874,25 @@ module.exports = {
 if (require.main === module && process.argv[2] === 'procedencia') {
   const p = procedencia(process.argv[3] || null, { proceso: process.argv[4] || 'sin-nombre' });
   process.stdout.write(JSON.stringify(p).slice(1, -1));
+}
+
+// `node frozen-tree.js lista-del-pase <archivo>`: con la salida de `marker.js freeze-adversarial` guardada en <archivo>,
+// la lista del pase (`repos: [{ repo, base, files }]`, lo que va a los args del Workflow) y los repos que frenan. Sale 0
+// con la lista, 2 si algún repo con código no tiene base (el pase no se lanza: lo dice cada `frenan`) y 1 si no pudo leer.
+if (require.main === module && process.argv[2] === 'lista-del-pase') {
+  let congelado = null;
+  try { congelado = JSON.parse(fs.readFileSync(process.argv[3] || '', 'utf8')); } catch (e) {
+    process.stderr.write(`frozen-tree.js lista-del-pase: no pude leer la salida de freeze-adversarial (${unaLinea(e.message)})\n`);
+    process.exit(1);
+  }
+  if (!congelado || !Array.isArray(congelado.repos)) {
+    process.stderr.write('frozen-tree.js lista-del-pase: la salida de freeze-adversarial no trae `repos`\n');
+    process.exit(1);
+  }
+  const l = listaDelPase(congelado.repos);
+  process.stdout.write(JSON.stringify(l, null, 2) + '\n');
+  if (l.frenan.length) {
+    for (const f of l.frenan) process.stderr.write(`🔴 el pase no se lanza: ${f.repo} ${f.motivo}\n`);
+    process.exit(2);
+  }
 }
