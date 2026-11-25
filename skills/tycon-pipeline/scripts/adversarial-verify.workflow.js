@@ -42,12 +42,22 @@ const A = (typeof args === 'string')
   ? ((() => { try { return JSON.parse(args) } catch { return {} } })())
   : (args || {})
 
-const REPO = (A && A.repo) || '.'
+// La lista del pase (historia 8.330): cada repo de la historia con su base y sus archivos de código, relativos a él.
+// La arma el paso con `frozen-tree.js lista-del-pase`. Sin `repos`, `repo`, `base` y `files` sueltos son una lista de
+// uno, y el pase de un solo repo es el de siempre. Un repo de la lista sin archivos no tiene nada que revisar.
+const REPOS = (A && Array.isArray(A.repos))
+  ? A.repos.filter((r) => r && typeof r.repo === 'string' && r.repo.trim() && Array.isArray(r.files) && r.files.length)
+    .map((r) => ({ repo: r.repo.trim(), base: String(r.base || '').trim(), files: r.files }))
+  : [{ repo: (A && A.repo) || '.', base: String((A && A.base) || '').trim(), files: (A && Array.isArray(A.files)) ? A.files : [] }]
+const VARIOS = REPOS.length > 1
+const REPO = REPOS.length ? REPOS[0].repo : ((A && A.repo) || '.')
 // Los sellos de lo que se congeló al lanzar el pase (marker.js mark-adversarial-launched): vuelven tal cual en el
 // resultado, y `mark-adversarial-result` los compara con los del lanzamiento, repo por repo.
 const SELLOS = (A && A.sellos && typeof A.sellos === 'object' && !Array.isArray(A.sellos)) ? A.sellos : null
-const conSellos = (r) => (SELLOS ? { ...r, sellos: SELLOS } : r)
-const FILES = (A && Array.isArray(A.files)) ? A.files : []
+// El resultado lleva además el repo y la base del pase: quien lo anota comprueba con git que la base está en el repo,
+// y sin ella ninguna lente cuenta, diga lo que diga su cazador. Con varios repos, una lista con la base de cada uno.
+const conSellos = (r) => ({ ...r, ...(SELLOS ? { sellos: SELLOS } : {}), ...(BASE_VALIDA ? { base_del_pase: BASE_DEL_PASE } : {}) })
+const FILES = REPOS.length ? (VARIOS ? REPOS.flatMap((r) => r.files) : REPOS[0].files) : []
 const STORY = (A && A.storyPath) || '(no provista)'
 const DECISIONS = (A && A.decisions) || '(ninguna declarada — usá el criterio: no re-flaggees lo que el diff documenta como decisión intencional)'
 const MODEL = (A && A.model) || 'sonnet'
@@ -58,8 +68,18 @@ const RUN_DIR = String((A && A.runDir) || `${REPO}/.advisors/pipeline-runs/adver
 const PROBES_DIR = `${RUN_DIR}/step-05b-probes`
 // La base contra la que se mira el cambio: el `merge-base` de HEAD con `origin/main` que calcula el paso. Sin ella cada
 // cazador elige contra qué comparar, y un `main` local atrasado le muestra un cambio que no es el de la historia.
-const BASE = String((A && A.base) || '').trim()
-const BASE_VALIDA = /^[0-9a-f]{7,40}$/i.test(BASE)
+const BASE = REPOS.length ? REPOS[0].base : ''
+const esBase = (b) => /^[0-9a-f]{7,40}$/i.test(b)
+const BASE_VALIDA = REPOS.length > 0 && REPOS.every((r) => esBase(r.base))
+const BASE_DEL_PASE = VARIOS ? REPOS.map((r) => ({ repo: r.repo, base: r.base })) : { repo: REPO, base: BASE }
+// La copia de sólo lectura que `marker.js freeze-adversarial` armó con el sello de cada repo (`copias`, junto a
+// `sellos`): con las dos, se revisa lo congelado y no la carpeta viva, que puede cambiar mientras el pase la mira. Sin
+// ellas (el guion lanzado a mano), la carpeta viva, como antes.
+const selloDe = (repo) => SELLOS && typeof SELLOS[repo] === 'string' && /^[0-9a-f]{40,64}$/i.test(SELLOS[repo]) ? SELLOS[repo] : ''
+const COPIAS = (A && A.copias && typeof A.copias === 'object' && !Array.isArray(A.copias)) ? A.copias : {}
+const copiaDe = (repo) => selloDe(repo) && typeof COPIAS[repo] === 'string' ? COPIAS[repo].trim() : ''
+const SELLO = selloDe(REPO)
+const COPIA = copiaDe(REPO)
 
 // Agrupar los hallazgos por causa antes de verificarlos. Se apaga con la variable
 // TYCON_5B_GROUP=0 —como los demás recortes del arnés— o con `agrupar: false` en los args (que es
@@ -119,13 +139,32 @@ function avisoNoMedido(sinMedir, sinVeredicto, motivos) {
   return `adversarial-verify: 🔴 pase NO MEDIDO — ${partes.join('; ')}. No es verde ni «sin hallazgos»: relanzá el pase, o ${SALIDA_APROBADA}.`
 }
 
-const COMMON = `
-Repo: ${REPO}
+// Con varios repos, cada uno con su base, su copia (si hay) y sus archivos debajo.
+const CABECERA_VARIOS = `
+Repos de la historia: el cambio vive en ${REPOS.length} repos, y cada uno se revisa contra SU base. Los archivos de cada
+repo son relativos a ese repo.
+${REPOS.map((r) => `- ${r.repo}  (base ${r.base})${copiaDe(r.repo) ? `
+  copia congelada de ese repo (sello ${selloDe(r.repo)}): ${copiaDe(r.repo)}` : ''}
+  archivos del diff a auditar:
+${r.files.map((f) => '    - ' + f).join('\n')}`).join('\n')}${REPOS.some((r) => copiaDe(r.repo)) ? `
+LO QUE SE REVISA ES LA VERSIÓN CONGELADA (no-negociable): al lanzar el pase se selló cada repo y se armó una copia de
+sólo lectura de su sello. El código de un repo con copia se lee AHÍ, no en el repo: la carpeta viva puede cambiar
+mientras revisás, y el resultado se ata a esos sellos. Las rutas del diff son relativas a la raíz de la copia. Una
+prueba que necesita las dependencias instaladas de un repo (sus paquetes) puede tomarlas de ese repo; el código que
+revisás sale de su copia.` : ''}`
+
+const COMMON = `${VARIOS ? CABECERA_VARIOS : `
+Repo: ${REPO}${COPIA ? `
+LO QUE SE REVISA ES LA VERSIÓN CONGELADA (no-negociable): al lanzar el pase se selló el repo (sello ${SELLO}) y se armó
+una copia de sólo lectura de ese sello en ${COPIA}. Leé el código AHÍ, no en ${REPO}: la carpeta viva puede cambiar
+mientras revisás, y el resultado se ata a ese sello. Las rutas del diff son relativas a la raíz de la copia. Una prueba
+que necesita las dependencias instaladas del repo (sus paquetes) puede tomarlas de ${REPO}; el código que revisás sale
+de la copia.` : ''}`}
 Story: ${STORY}
 Si la story tiene una sección «## Ajustes después de la firma», lo que lista es parte de lo pedido aunque todavía no
 esté en el cuerpo: auditá el código también contra esos ajustes.
-Archivos del diff a auditar (LEÉ EL CÓDIGO REAL EN DISCO, no asumas):
-${FILES.map((f) => '- ' + f).join('\n')}
+${VARIOS ? 'Los archivos del diff a auditar están arriba, debajo de su repo (LEÉ EL CÓDIGO REAL EN DISCO, no asumas).' : `Archivos del diff a auditar (LEÉ EL CÓDIGO REAL EN DISCO, no asumas):
+${FILES.map((f) => '- ' + f).join('\n')}`}
 
 Sos un verificador ADVERSARIAL de correctitud. A diferencia de un linter que lee el diff, vos EJECUTÁS
 el código: bundleá/compilá/parseá y corré PROBES reales (usá la misma forma en que los tests del proyecto
@@ -260,6 +299,23 @@ const HUNT_SCHEMA = {
   properties: { ...FINDINGS_SCHEMA.properties, base: { type: 'string' }, base_existe: { type: 'boolean' }, git_rechazado: { type: 'string' }, probe_dir: { type: 'string' } },
   required: ['lens', 'base', 'probe_dir', 'findings'],
 }
+// Con varios repos, cada hallazgo dice en qué repo está (`repo`, la ruta tal cual figura en el pedido), y el cazador
+// devuelve en `bases` la base de cada repo con lo que dijo git de ella, en vez de una sola `base`.
+const ITEM_DEL_HALLAZGO = FINDINGS_SCHEMA.properties.findings.items
+const HUNT_SCHEMA_VARIOS = {
+  ...FINDINGS_SCHEMA,
+  properties: {
+    ...FINDINGS_SCHEMA.properties,
+    findings: { type: 'array', items: { ...ITEM_DEL_HALLAZGO, properties: { repo: { type: 'string' }, ...ITEM_DEL_HALLAZGO.properties }, required: ['repo', ...ITEM_DEL_HALLAZGO.required] } },
+    bases: {
+      type: 'array',
+      items: { type: 'object', additionalProperties: false, properties: { repo: { type: 'string' }, base: { type: 'string' }, base_existe: { type: 'boolean' } }, required: ['repo', 'base', 'base_existe'] },
+    },
+    git_rechazado: { type: 'string' },
+    probe_dir: { type: 'string' },
+  },
+  required: ['lens', 'bases', 'probe_dir', 'findings'],
+}
 
 // ¿La base que dijo el cazador es la pedida? Una es prefijo de la otra y la más corta tiene 7 o más caracteres.
 function coincideBase(dicha, pedida) {
@@ -275,13 +331,16 @@ const carpetaDeCaza = (key) => `${PROBES_DIR}/caza-${key}`
 
 // Lo que sólo recibe un cazador de código: contra qué se compara y dónde guarda lo que corrió. Ni los verificadores ni
 // el modo «un hallazgo» lo reciben: ellos reproducen un hallazgo, no recorren el cambio.
+const COMO_CORRER_GIT = `CÓMO CORRER GIT: de a uno, en su forma simple. Un comando por llamada, sin ; && || ni tubos, y el código de salida se lee
+del resultado de la herramienta (no agregues «echo $?»). Una sesión aislada en otra carpeta rechaza un git compuesto
+sobre otro repo sin correrlo.`
+
 function pedidoCazador(key) {
+  if (VARIOS) return pedidoCazadorVarios(key)
   const dir = carpetaDeCaza(key)
   return `
 
-CÓMO CORRER GIT: de a uno, en su forma simple. Un comando por llamada, sin ; && || ni tubos, y el código de salida se lee
-del resultado de la herramienta (no agregues «echo $?»). Una sesión aislada en otra carpeta rechaza un git compuesto
-sobre otro repo sin correrlo.
+${COMO_CORRER_GIT}
 
 ANTES DE NADA, que la base exista: corré  git -C ${REPO} cat-file -e ${BASE}^{commit}
 Si la herramienta RECHAZA el comando sin correrlo (un aviso de sesión aislada, de un freno o de un permiso), eso no dice
@@ -291,16 +350,55 @@ Si corrió y sale distinto de 0, la base no está en el repo: devolvé base_exis
 
 CONTRA QUÉ SE COMPARA (no-negociable): el cambio de la historia es TODO lo distinto de la base ${BASE}, también lo que
 todavía no está commiteado (en este paso el trabajo suele estar sin commitear):
-  git -C ${REPO} diff ${BASE}              (lo commiteado y lo modificado del árbol de trabajo, contra la base)
-  git -C ${REPO} status --porcelain        (los archivos nuevos sin seguir, que el diff no muestra)
+${COPIA ? `  git -C ${REPO} diff ${BASE} ${SELLO}
+(el sello es el árbol congelado, con lo no commiteado y los archivos nuevos: no hace falta mirar el estado de la carpeta
+viva, que puede haber cambiado después)` : `  git -C ${REPO} diff ${BASE}              (lo commiteado y lo modificado del árbol de trabajo, contra la base)
+  git -C ${REPO} status --porcelain        (los archivos nuevos sin seguir, que el diff no muestra)`}
 Nunca compares contra \`main\`, \`master\` ni otra rama local: pueden estar atrasadas y mostrarte un cambio que no es el
 de la historia. Devolvé base = "${BASE}".
 
-LA PRUEBA QUE CORRISTE SE GUARDA, AUNQUE NO ENCUENTRES NADA (obligatorio — sin ella tu lente no cuenta como revisada):
+${pruebaDeLaCaza(dir)}`
+}
+
+// Con varios repos (historia 8.330): un solo cazador por lente, que comprueba la base de cada repo en ese repo y caza en
+// todos, cada uno contra su base.
+function pedidoCazadorVarios(key) {
+  const dir = carpetaDeCaza(key)
+  return `
+
+${COMO_CORRER_GIT}
+
+ANTES DE NADA, que la base de CADA repo exista: corré, uno por uno,
+${REPOS.map((r) => `  git -C ${r.repo} cat-file -e ${r.base}^{commit}`).join('\n')}
+Si la herramienta RECHAZA un comando sin correrlo (un aviso de sesión aislada, de un freno o de un permiso), eso no dice
+nada de la base: devolvé git_rechazado = la primera línea del rechazo, findings = [] y no revises nada.
+Si corrió y sale distinto de 0 en un repo, la base no está en ese repo: devolvé ese repo con base_existe = false,
+findings = [] y no revises nada (sin base no hay contra qué comparar, y un «sin hallazgos» sería mentira). Si sale 0 en
+todos, seguí.
+
+CONTRA QUÉ SE COMPARA (no-negociable): el cambio de la historia en cada repo es TODO lo distinto de SU base, también lo
+que todavía no está commiteado (en este paso el trabajo suele estar sin commitear):
+${REPOS.map((r) => (copiaDe(r.repo)
+    ? `  git -C ${r.repo} diff ${r.base} ${selloDe(r.repo)}      (su sello: el árbol congelado, con lo no commiteado y los archivos nuevos)`
+    : `  git -C ${r.repo} diff ${r.base}              (lo commiteado y lo modificado del árbol de trabajo, contra su base)
+  git -C ${r.repo} status --porcelain        (los archivos nuevos sin seguir, que el diff no muestra)`)).join('\n')}
+Nunca compares contra \`main\`, \`master\` ni otra rama local, ni un repo contra la base de otro: pueden mostrarte un
+cambio que no es el de la historia. Devolvé bases = una entrada por repo, con su ruta y su base tal cual figuran acá y lo
+que dijo git:
+${REPOS.map((r) => `  { "repo": "${r.repo}", "base": "${r.base}", "base_existe": <true o false> }`).join('\n')}
+
+CADA HALLAZGO DICE EN QUÉ REPO ESTÁ: repo = la ruta del repo tal cual figura arriba, y file relativo a ese repo.
+
+${pruebaDeLaCaza(dir)}`
+}
+
+// La prueba de la caza se guarda siempre, con o sin hallazgos.
+function pruebaDeLaCaza(dir) {
+  return `LA PRUEBA QUE CORRISTE SE GUARDA, AUNQUE NO ENCUENTRES NADA (obligatorio — sin ella tu lente no cuenta como revisada):
 1. Creá la carpeta ${dir}
 2. Copiá ahí cada archivo que escribiste para probar (el guion, los datos de entrada), con ".txt" agregado al nombre
    (probe.js → probe.js.txt), para que ningún compilador ni corredor de pruebas lo levante.
-3. Escribí ${dir}/COMO-SE-CORRIO.txt con cada comando que corriste, desde qué carpeta, y lo que mostró (unas líneas).
+3. Escribí ${dir}/COMO-SE-CORRIO.txt con cada comando que corriste, desde qué carpeta${VARIOS ? ' y sobre qué repo' : ''}, y lo que mostró (unas líneas).
 4. Tapá credenciales en lo que guardás: cadenas de conexión, contraseñas, tokens, claves → <REDACTED>.
 5. Devolvé probe_dir = "${dir}". Si encontraste hallazgos, probe_dir puede ser "": los reproduce un verificador.`
 }
@@ -390,7 +488,7 @@ SI CONFIRMÁS, GUARDÁ LA PRUEBA ANTES DE BORRARLA (obligatorio — es lo único
    probe.test.ts → probe.test.ts.txt). El ".txt" es a propósito: que ningún compilador ni corredor de
    pruebas del repo lo levante. Si modificaste un archivo existente del repo, guardá sólo tu parte o el
    diff (git diff > cambio.diff.txt), no el archivo entero.
-3. Escribí ${dir}/COMO-SE-CORRIO.txt con: el comando EXACTO que corriste, desde qué carpeta, y la parte de
+3. Escribí ${dir}/COMO-SE-CORRIO.txt con: el comando EXACTO que corriste, desde qué carpeta${VARIOS ? ' y sobre qué repo' : ''}, y la parte de
    la salida que muestra el comportamiento incorrecto (lo esperado contra lo observado; unas líneas, no el log entero).
 4. Tapá credenciales en lo que guardás: cadenas de conexión, contraseñas, tokens, claves → <REDACTED>.
 5. Recién después borrá la prueba del repo: cada archivo por su ruta absoluta, sin comodines ni -r (y verificá que no
@@ -763,7 +861,9 @@ if (FILES.length === 0) {
     aviso: 'adversarial-verify: 🔴 pase NO MEDIDO — sin archivos de código en args.files, no se revisó nada.' })
 }
 if (!BASE_VALIDA) {
-  const aviso = 'adversarial-verify: 🔴 pase NO MEDIDO — falta args.base, o no es un hash (git merge-base HEAD origin/main después de git fetch origin main): sin base, cada cazador elige contra qué comparar.'
+  const aviso = VARIOS
+    ? `adversarial-verify: 🔴 pase NO MEDIDO — sin base, o una base que no es un hash, en ${REPOS.filter((r) => !esBase(r.base)).map((r) => r.repo).join(', ')} (la de cada repo sale de marker.js freeze-adversarial): sin base, cada cazador elige contra qué comparar.`
+    : 'adversarial-verify: 🔴 pase NO MEDIDO — falta args.base, o no es un hash (git merge-base HEAD origin/main después de git fetch origin main): sin base, cada cazador elige contra qué comparar.'
   log(aviso)
   return conSellos({ confirmed: [], all_lenses: [], lentes: [], lentes_sin_medir: [], detalle: [], medido: false, aviso })
 }
@@ -776,15 +876,41 @@ if (!BASE_VALIDA) {
 // cruzar lentes si cada lente ya verificó lo suyo — y el grueso de los duplicados medidos son el
 // mismo defecto visto por lentes distintas. Lo que se paga: la cola del cazador más lento. Lo que se
 // gana: ~40 % de los verificadores.
+//
+// Un cazador que dice que la base no está en el repo se relanza una vez, solo: quien lanzó el pase la sacó de ese mismo
+// repo (git -C REPO merge-base), y lo que se vio es un cazador que corrió git en su propia carpeta, otro repo. Sin esto,
+// una lente sin medir obliga a repetir el pase entero. Si la segunda vez lo repite, la lente queda sin medir y quien
+// anota el resultado comprueba la base con git en el repo (lib/adversarial-verdict.js).
+const gitRechazado = (h) => typeof h.git_rechazado === 'string' && !!h.git_rechazado.trim()
+// Con varios repos, los repos cuya base el cazador dijo que no está.
+const sinBaseDeVarios = (h) => REPOS.filter((r) => (Array.isArray(h.bases) ? h.bases : []).some((b) => b && b.repo === r.repo && b.base_existe === false))
+const dijoSinBase = (h) => !!h && !gitRechazado(h) && (VARIOS ? sinBaseDeVarios(h).length > 0 : h.base_existe === false)
+const otraVezSinBase = (h) => (VARIOS ? `
+
+SEGUNDA VEZ: en tu vuelta anterior dijiste que la base de ${sinBaseDeVarios(h).map((r) => r.repo).join(', ')} no está en
+su repo. Quien lanzó el pase la sacó de ese mismo repo (git -C <repo> merge-base): puede que hayas corrido git en tu
+propia carpeta, que puede ser otro repo. Comprobalo de nuevo con -C, cada una en su repo:
+${sinBaseDeVarios(h).map((r) => `  git -C ${r.repo} cat-file -e ${r.base}^{commit}`).join('\n')}
+Sólo si sale 0, base_existe = true y seguí. Si sale distinto de 0, devolvé ese repo con base_existe = false y
+findings = []: no la des por buena sin verla salir 0 (quien anota el resultado la vuelve a comprobar con git).` : `
+
+SEGUNDA VEZ: en tu vuelta anterior dijiste que la base ${BASE} no está en el repo. Quien lanzó el pase la sacó de ese
+mismo repo (git -C ${REPO} merge-base): puede que hayas corrido git en tu propia carpeta, que puede ser otro repo.
+Comprobalo de nuevo con -C, y corré cada git con -C ${REPO}:  git -C ${REPO} cat-file -e ${BASE}^{commit}
+Sólo si sale 0, base_existe = true y seguí. Si sale distinto de 0, devolvé base_existe = false y findings = []: no la
+des por buena sin verla salir 0 (quien anota el resultado la vuelve a comprobar con git).`)
+const cazar = (lens, extra = '') => agent(`${COMMON}\n\n${lens.prompt}${pedidoCazador(lens.key)}${extra}`, {
+  label: extra ? `hunt-otra-vez:${lens.key}` : `hunt:${lens.key}`,
+  phase: 'Hunt',
+  schema: VARIOS ? HUNT_SCHEMA_VARIOS : HUNT_SCHEMA,
+  agentType: 'general-purpose',
+  model: MODEL,
+})
 const hunts = await parallel(
   LENSES.map((lens) => () =>
-    agent(`${COMMON}\n\n${lens.prompt}${pedidoCazador(lens.key)}`, {
-      label: `hunt:${lens.key}`,
-      phase: 'Hunt',
-      schema: HUNT_SCHEMA,
-      agentType: 'general-purpose',
-      model: MODEL,
-    }).then((h) => ({ lens: lens.key, hunt: h }))
+    cazar(lens).then((h) => (dijoSinBase(h)
+      ? cazar(lens, otraVezSinBase(h)).then((h2) => ({ lens: lens.key, hunt: h2, otraVez: true }))
+      : { lens: lens.key, hunt: h }))
   )
 )
 
@@ -799,12 +925,27 @@ function juzgarLente(key, r) {
   const h = r && r.hunt
   if (!h || !Array.isArray(h.findings) || typeof h.probe_dir !== 'string') return { motivo: 'su cazador no contestó' }
   // la herramienta no dejó correr git: no se sabe si la base existe, y el motivo es ése
-  if (typeof h.git_rechazado === 'string' && h.git_rechazado.trim()) {
+  if (gitRechazado(h)) {
     return { motivo: `git no pudo correr en esta sesión (${h.git_rechazado.replace(/\s+/g, ' ').trim().slice(0, 160)}): no hubo contra qué comparar` }
   }
-  if (!coincideBase(h.base, BASE)) return { motivo: `comparó contra ${h.base || '(nada)'}, no contra ${BASE}` }
-  // una base que no está en el repo: el diff falla y «sin hallazgos» no midió nada
-  if (h.base_existe === false) return { motivo: `la base ${BASE} no existe en el repo: no hubo contra qué comparar` }
+  const veces = r.otraVez ? 'dijo dos veces' : 'dijo'
+  if (VARIOS) {
+    // cada repo, contra su base: con uno solo comparado contra otra cosa, la lente no midió el cambio de ese repo
+    const bases = Array.isArray(h.bases) ? h.bases : []
+    for (const x of REPOS) {
+      const b = bases.find((y) => y && y.repo === x.repo)
+      if (!b || !coincideBase(b.base, x.base)) return { motivo: `en ${x.repo} comparó contra ${(b && b.base) || '(nada)'}, no contra ${x.base}` }
+    }
+    const falta = sinBaseDeVarios(h)[0]
+    if (falta) return { motivo: `su cazador ${veces} que la base ${falta.base} no existe en ${falta.repo}: no hubo contra qué comparar`, sinBase: { repo: falta.repo, base: falta.base } }
+  } else {
+    if (!coincideBase(h.base, BASE)) return { motivo: `comparó contra ${h.base || '(nada)'}, no contra ${BASE}` }
+    // una base que no está en el repo: el diff falla y «sin hallazgos» no midió nada. Se anota dónde y cuál, para que
+    // quien anota el resultado la busque con git y diga si de verdad falta
+    if (h.base_existe === false) {
+      return { motivo: `su cazador ${veces} que la base ${BASE} no existe en el repo: no hubo contra qué comparar`, sinBase: { repo: REPO, base: BASE } }
+    }
+  }
   if (!h.findings.length && String(h.probe_dir).replace(/\/+$/, '') !== carpetaDeCaza(key)) return { motivo: 'no guardó la prueba que corrió' }
   return { ok: true }
 }
@@ -813,10 +954,13 @@ const lentes = LENSES.map((lens, i) => {
   const j = juzgarLente(lens.key, r)
   const h = r && r.hunt
   const base = h && typeof h.base === 'string' ? h.base : null
+  // con varios repos, la base que dijo de cada uno
+  const bases = VARIOS && h && Array.isArray(h.bases) ? { bases: h.bases } : {}
   const probeDir = h && typeof h.probe_dir === 'string' ? h.probe_dir : null
+  const otraVez = r && r.otraVez ? { otra_vez: true } : {}
   return j.ok
-    ? { lens: lens.key, estado: 'medida', count: h.findings.length, base, probe_dir: probeDir }
-    : { lens: lens.key, estado: 'sin-medir', count: 0, base, probe_dir: probeDir, motivo: j.motivo }
+    ? { lens: lens.key, estado: 'medida', count: h.findings.length, base, ...bases, probe_dir: probeDir, ...otraVez }
+    : { lens: lens.key, estado: 'sin-medir', count: 0, base, ...bases, probe_dir: probeDir, motivo: j.motivo, ...otraVez, ...(j.sinBase ? { sin_base: j.sinBase } : {}) }
 })
 const lentesSinMedir = lentes.filter((l) => l.estado === 'sin-medir').map((l) => l.lens)
 const motivosDeLentes = Object.fromEntries(lentes.filter((l) => l.motivo).map((l) => [l.lens, l.motivo]))
@@ -830,8 +974,10 @@ for (const r of hunts.filter(Boolean)) {
 }
 
 // El texto de un hallazgo, tal cual lo reportó su cazador: lo que queda en `detalle`.
-const textoDe = (f) => ({ lens: f.lens, idxEnLente: f.idxEnLente, severity: f.severity, file: f.file, line: f.line ?? null,
+const textoDe = (f) => ({ lens: f.lens, idxEnLente: f.idxEnLente, ...(VARIOS ? { repo: f.repo || null } : {}), severity: f.severity, file: f.file, line: f.line ?? null,
   summary: f.summary, repro: f.repro, confidence: f.confidence })
+// Con varios repos, el verificador sabe en qué repo está el archivo del hallazgo.
+const repoDelHallazgo = (f) => (VARIOS ? `repo=${f.repo || '(el cazador no lo dijo)'}\n` : '')
 
 if (todos.length === 0) {
   if (lentesSinMedir.length) {
@@ -901,7 +1047,7 @@ const veredictos = POR_LENTE ? await (async () => {
       ' Si NO podés reproducir el comportamiento incorrecto, o si es una de las decisiones de diseño aprobadas, o si el hunter' +
       ' erró la semántica → REFUTED. Solo CONFIRMED si reprodujiste el bug con inputs concretos observados. Ante la duda: REFUTED.' +
       ' Devolvé una respuesta por hallazgo, con su id tal cual, y en probe_dir la carpeta donde guardaste su prueba.\n\nHALLAZGOS:\n' +
-      items.map((x) => `ID=${x.id}\nseverity=${x.h.severity}\nfile=${x.h.file}${x.h.line ? ':' + x.h.line : ''}\nsummary=${x.h.summary}\n` +
+      items.map((x) => `ID=${x.id}\nseverity=${x.h.severity}\n${repoDelHallazgo(x.h)}file=${x.h.file}${x.h.line ? ':' + x.h.line : ''}\nsummary=${x.h.summary}\n` +
         `repro=${x.h.repro}\nconfidence=${x.h.confidence}\ncarpeta de su prueba: ${PROBES_DIR}/${x.h.lens}-${x.h.idxEnLente}`).join('\n\n') +
       guardarPrueba(`${PROBES_DIR}/<lente>-<n>`),
     { label: `verify:${lens}`, phase: 'Verify', schema: LENS_VERDICT_SCHEMA, agentType: 'general-purpose', model: MODEL },
@@ -926,7 +1072,7 @@ const veredictos = POR_LENTE ? await (async () => {
         ` intentá REPRODUCIRLO con un probe real (bundleá/compilá + ejecutá). Si NO podés reproducir el comportamiento` +
         ` incorrecto, o si es una de las decisiones de diseño aprobadas, o si el hunter erró la semántica → REFUTED.` +
         ` Solo CONFIRMED si reprodujiste el bug con inputs concretos observados. Ante la duda: REFUTED.\n\nFINDING:\n` +
-        `severity=${rep.severity}\nfile=${rep.file}${rep.line ? ':' + rep.line : ''}\nsummary=${rep.summary}\nrepro=${rep.repro}\nconfidence=${rep.confidence}` +
+        `severity=${rep.severity}\n${repoDelHallazgo(rep)}file=${rep.file}${rep.line ? ':' + rep.line : ''}\nsummary=${rep.summary}\nrepro=${rep.repro}\nconfidence=${rep.confidence}` +
         mismaClase +
         guardarPrueba(`${PROBES_DIR}/${rep.lens}-${rep.idxEnLente}`),
       {
@@ -1053,4 +1199,5 @@ return {
   verificadores: VERIFIERS,
   respuestas_descartadas: descartadas,
   ...(SELLOS ? { sellos: SELLOS } : {}),
+  base_del_pase: BASE_DEL_PASE,
 }

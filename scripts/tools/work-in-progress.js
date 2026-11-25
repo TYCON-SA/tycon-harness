@@ -280,6 +280,8 @@ function codexNames(codexHome, unreadable) {
   try {
     const { DatabaseSync } = require('node:sqlite');
     db = new DatabaseSync(path.join(codexHome, newest), { readOnly: true });
+    // Codex toma su base unos instantes mientras escribe: se espera hasta un segundo antes de decir que no se pudo leer
+    db.exec('PRAGMA busy_timeout = 1000');
     for (const r of db.prepare("SELECT id, name FROM threads WHERE name IS NOT NULL AND name <> ''").all()) out.set(String(r.id), cut(oneLine(String(r.name)), NAME_MAX));
   } catch (e) {
     unreadable.push(`los nombres de las sesiones de Codex (${newest}) no se pudieron leer: ${oneLine((e && e.message) || e).slice(0, 120)}`);
@@ -435,7 +437,7 @@ function enteringEnd(marker, entry, nowMs, info = {}) {
   }
   const t8 = (marker.stepTimings || {})['prepare-commit'] || (marker.stepTimings || {})['8'];
   const done = Date.parse(t8 && t8.completedAt);
-  if (!Number.isFinite(done)) return 'sin estimación (espera la CI o la cola; sin la hora de cierre de «Preparar el commit»)';
+  if (!Number.isFinite(done)) return 'sin estimación (espera la CI o la cola; sin la hora de cierre de «Preparar el pull request»)';
   const fixed = done + entry.ms;
   info.at = fixed;
   info.late = nowMs > fixed;

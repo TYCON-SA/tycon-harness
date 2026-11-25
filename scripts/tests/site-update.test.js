@@ -633,3 +633,74 @@ test('Regresion_SalidaRara_NoEsEtiqueta @story-8.234 @ac-27 — una salida que n
     }
   } finally { await reg.cerrar(); }
 });
+
+// ── Render con la credencial de su API: pregunta qué imagen corre el servicio ─────────────────────────────────────────
+/** La API de Render, de juguete: `GET /v1/services/<id>` contesta `status` con `cuerpo`; anota la cabecera de la llave. */
+async function apiDeRender(status, cuerpo) {
+  const pedidos = [];
+  const srv = http.createServer((req, res) => { pedidos.push({ url: req.url, auth: req.headers.authorization || null }); res.writeHead(status, { 'content-type': 'application/json' }); res.end(typeof cuerpo === 'string' ? cuerpo : JSON.stringify(cuerpo)); });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  return { base: `http://127.0.0.1:${srv.address().port}/v1`, pedidos, cerrar: () => new Promise((r) => srv.close(r)) };
+}
+const LLAVE = `rnd_${crypto.randomBytes(6).toString('hex')}`;
+
+// 🔴 Falla con: un sitio de Render instalado por etiqueta sigue «al día» o «pedido» en silencio, aunque el equipo cargó
+//    la credencial con la que se puede preguntar qué corre.
+test('T6 UpdateSite_Render_ConCredencial_PorEtiqueta_NoPudo @story-8.328 @ac-5', async () => {
+  const reg = await registro();
+  const hook = await hookDeJuguete(200);
+  const api = await apiDeRender(200, { id: 'srv-acme', imagePath: `${IMAGEN}:latest` });
+  try {
+    const registroLog = [];
+    const r = await UP.actualizar({ ...base(reg, { log: (l) => registroLog.push(l) }), plataforma: 'render', modo: 'auto', render: { hook: hook.url, api: { clave: LLAVE, servicio: 'srv-acme', base: api.base } } });
+    assert.strictEqual(r.resultado, 'no_pudo', JSON.stringify(r));
+    assert.match(r.motivo, /^instalado por etiqueta/);
+    assert.strictEqual(hook.pedidos.length, 0, 'no se pidió el redespliegue');
+    assert.strictEqual(api.pedidos[0].url, '/v1/services/srv-acme');
+    assert.strictEqual(api.pedidos[0].auth, `Bearer ${LLAVE}`);
+    assert.ok(!`${JSON.stringify(r)}\n${registroLog.join('\n')}`.includes(LLAVE), 'la llave no sale');
+    // por huella, sigue como hoy
+    const api2 = await apiDeRender(200, { id: 'srv-acme', imagePath: `${IMAGEN}@${VIEJA}` });
+    try {
+      const s = await UP.actualizar({ ...base(reg), plataforma: 'render', modo: 'auto', render: { hook: hook.url, api: { clave: LLAVE, servicio: 'srv-acme', base: api2.base } } });
+      assert.strictEqual(s.resultado, 'pedido', JSON.stringify(s));
+    } finally { await api2.cerrar(); }
+  } finally { await reg.cerrar(); await hook.cerrar(); await api.cerrar(); }
+});
+
+// 🔴 Falla con: con la credencial cargada, una API que no contesta o contesta sin la imagen se lee como «al día».
+test('T7 UpdateSite_Render_ConCredencial_SinRespuesta_NoEsAlDia @story-8.328 @ac-6', async () => {
+  const reg = await registro();
+  const hook = await hookDeJuguete(200);
+  try {
+    for (const [status, cuerpo] of [[500, { error: 'x' }], [200, { id: 'srv-acme' }], [200, 'no es json']]) {
+      const api = await apiDeRender(status, cuerpo);
+      try {
+        const r = await UP.actualizar({ ...base(reg), plataforma: 'render', modo: 'auto', render: { hook: hook.url, api: { clave: LLAVE, servicio: 'srv-acme', base: api.base } } });
+        assert.strictEqual(r.resultado, 'no_pudo', `${status} ${JSON.stringify(cuerpo)}: ${JSON.stringify(r)}`);
+        assert.match(r.motivo, /^no se pudo leer la imagen que corre/);
+      } finally { await api.cerrar(); }
+    }
+    assert.strictEqual(hook.pedidos.length, 0);
+  } finally { await reg.cerrar(); await hook.cerrar(); }
+});
+
+// No-regresión: sin la credencial, Render sigue con lo último que pidió y el hook, sin preguntarle nada a la API.
+test('T8 UpdateSite_Render_SinCredencial_ComoHoy @story-8.328 @ac-7', async () => {
+  const reg = await registro();
+  const hook = await hookDeJuguete(200);
+  try {
+    for (const api of [undefined, null, { clave: '', servicio: 'srv-acme' }, { clave: LLAVE, servicio: '' }]) {
+      const r = await UP.actualizar({ ...base(reg), plataforma: 'render', modo: 'auto', render: { hook: hook.url, ...(api === undefined ? {} : { api }) } });
+      assert.strictEqual(r.resultado, 'pedido', `${JSON.stringify(api)}: ${JSON.stringify(r)}`);
+    }
+  } finally { await reg.cerrar(); await hook.cerrar(); }
+  // Azure Pipelines pasa `$(NOMBRE)` tal cual cuando la variable no está cargada: cuenta como sin credencial.
+  const antes = process.env.SITE_RENDER_API_KEY;
+  try {
+    process.env.SITE_RENDER_API_KEY = '$(SITE_RENDER_API_KEY)';
+    assert.strictEqual(UP.variableCargada('SITE_RENDER_API_KEY'), '');
+    process.env.SITE_RENDER_API_KEY = LLAVE;
+    assert.strictEqual(UP.variableCargada('SITE_RENDER_API_KEY'), LLAVE);
+  } finally { if (antes === undefined) delete process.env.SITE_RENDER_API_KEY; else process.env.SITE_RENDER_API_KEY = antes; }
+});

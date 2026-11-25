@@ -580,18 +580,36 @@ function isUiStory(content, fm, repoRoot) {
   return require(path.join(__dirname, 'lib', 'ui-signal.js')).touchesUiParts(fm, content, repoRoot);
 }
 
-// Dónde viven la guía del tester, las revisiones de legibilidad y la maqueta de una story, y con qué clave.
-// La maqueta la ubica esta MISMA función, para que su nombre y el que busca la revisión no puedan discrepar.
-// La guía se nombra con la CLAVE de la story: con un número que se repite en el repo, dos stories que
-// comparten la carpeta qa/ escribirían y leerían el mismo `<id>-pasos.md`, y el chequeo de una daría por buena la guía de la
-// otra. Con número único la clave es el número: el nombre de siempre. Si la matriz no computa, tira: no hay clave.
+// Dónde viven la guía del tester, las revisiones de legibilidad y la maqueta de una story, y con qué clave, sin calcular la
+// matriz. La guía y la maqueta se ubican con esta MISMA función, para que su nombre y el que busca la revisión no puedan
+// discrepar. La guía se nombra con la CLAVE de la story: con un número que se repite en el repo, dos stories que comparten
+// la carpeta qa/ escribirían y leerían el mismo `<id>-pasos.md`, y el chequeo de una daría por buena la guía de la otra.
+// Con número único la clave es el número: el nombre de siempre. Una story exenta se nombra con su número, como en la
+// matriz. Si la clave no se puede calcular, tira. La matriz entera no hace falta para esto, y tarda: lee el registro de los
+// portones, recorre las historias del repo y llama a git; en una máquina con mucha historia pasaba de los dos minutos.
+function qaPlace(storyPath) {
+  const abs = path.resolve(storyPath);
+  const ek = require(path.join(__dirname, 'lib', 'evidence-key.js'));
+  let content;
+  try { content = fs.readFileSync(abs, 'utf8'); } catch (e) { throw new Error(`no pude leer la story (${e.code || e.message})`); }
+  const fm = (content.match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || '';
+  const sid = ek.storyIdFrom(fm, abs);
+  let qk = sid;
+  if (!/^dod_runtime_exempt:\s*true\b/m.test(fm)) {
+    try { qk = ek.evidenceKey(abs, { id: sid }).key || sid; } catch (e) {
+      throw new Error(`no pude calcular la clave de la evidencia de la story: ${e.message}`);
+    }
+  }
+  const qaDir = require(path.join(__dirname, 'lib', 'qa-dir.js')).qaDirFor(abs, [qk, sid]);
+  return { qaDir, qk, sid };
+}
+
+// El lugar de `qaPlace` más la matriz de la story, que la guía del tester necesita. Si la matriz no computa, tira.
 function qaLocation(storyPath) {
   const abs = path.resolve(storyPath);
   const matrix = require(path.join(__dirname, 'runtime-matrix.js')).compute({ storyPath: abs });
   if (matrix.structuralError) throw new Error(`la matriz no computa (${matrix.structuralError})`);
-  const sid = matrix.sid;
-  const qk = matrix.key || sid;
-  const qaDir = require(path.join(__dirname, 'lib', 'qa-dir.js')).qaDirFor(abs, [qk, sid]);
+  const { qaDir, qk, sid } = qaPlace(abs);
   return { qaDir, qk, sid, repoRoot: matrix.repoRoot, matrix };
 }
 
@@ -786,7 +804,7 @@ function uiReadabilityCheck({ content, fm, qaDir, qk, repoRoot, storyPath }) {
 // El dueño aprueba una maqueta con el plan (mockup.js) y queda su
 // huella; acá se exige que (9) la maqueta aprobada esté intacta, y (10) lo construido tenga sus textos. Sin aprobación
 // anotada (stories sin aprobación, o el chequeo corrido fuera del pipeline) no se compara y se dice; con
-// `--mockup-sha` (lo pasa «Preparar el commit» desde el marcador) borrar el archivo de aprobación no saltea la comparación.
+// `--mockup-sha` (lo pasa «Preparar el pull request» desde el marcador) borrar el archivo de aprobación no saltea la comparación.
 function mockupLayers({ qaDir, qk, mockupSha, screens }) {
   const mk = require(path.join(__dirname, 'mockup.js'));
   const problems = []; const notes = [];
@@ -1234,7 +1252,7 @@ function main() {
   process.exit(0);
 }
 
-module.exports = { estadoDelArnes, contarCriterios, cuandoEnLlano, parseAcsWithText, parseTestsFull, parsePasos, tienePasos, parseDefaultRole, resolveRoles, parsePasosSequence, detectJargon, JARGON_ALLOW, qaGuideTerms, isUiStory, renderHtml, qaLocation, parseOpenApp, teamLines, mockupLayers };
+module.exports = { estadoDelArnes, contarCriterios, cuandoEnLlano, parseAcsWithText, parseTestsFull, parsePasos, tienePasos, parseDefaultRole, resolveRoles, parsePasosSequence, detectJargon, JARGON_ALLOW, qaGuideTerms, isUiStory, renderHtml, qaLocation, qaPlace, parseOpenApp, teamLines, mockupLayers };
 if (require.main === module) {
   // La opción vieja sigue andando hasta el retiro
   require('./lib/legacy-names.js').aliasArgv('skills/tycon-pipeline/scripts/qa-guide.js');

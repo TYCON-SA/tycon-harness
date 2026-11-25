@@ -111,9 +111,14 @@ buzon() {
   echo "token-bueno" > "$1/token"
   node "${BASE}/buzon.js" "$1" > "$1/servidor.log" 2>&1 &
   PIDS="${PIDS} $!"; disown "$!" 2>/dev/null
-  local i=0; while [ ! -s "$1/puerto" ] && [ "${i}" -lt 100 ]; do sleep 0.05; i=$((i+1)); done
-  URL_BUZON="http://127.0.0.1:$(cat "$1/puerto")"
+  # se espera a que el servidor diga su puerto, con un tope amplio: con la máquina cargada node tarda en arrancar, y un
+  # buzón sin puerto deja la dirección sin número y pone en rojo los casos que siguen, sin decir por qué
+  local i=0; while [ ! -s "$1/puerto" ] && [ "${i}" -lt 600 ]; do sleep 0.05; i=$((i+1)); done
+  [ -s "$1/puerto" ] || mal "el buzón de mentira de $1 no dijo su puerto en 30 s: $(head -c 300 "$1/servidor.log" 2>/dev/null)"
+  URL_BUZON="http://127.0.0.1:$(cat "$1/puerto" 2>/dev/null)"
 }
+# cerrado <puerto>: espera hasta 10 s a que nadie escuche en ese puerto
+cerrado() { local i=0; while (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null && [ "${i}" -lt 200 ]; do sleep 0.05; i=$((i+1)); done; }
 # blob <buzon> <nombre> [bytes] — un blob en el contenedor «corridas»
 blob() { mkdir -p "$(dirname "$1/blobs/corridas/$2")"; head -c "${3:-1500}" /dev/urandom > "$1/blobs/corridas/$2"; }
 config() { printf '{"cuenta":"cuentadeprueba","contenedor":"corridas","tenant":"11111111-2222-3333-4444-555555555555","politica":"p","vence":"2099-01-01","sas":"si=p&sig=x"}\n' > "$1"; }
@@ -254,7 +259,7 @@ bajar "${T}" "${T}/bin/az" --budget-ms 200
 BJ=$(campo "${T}" bajados); ST=$(campo "${T}" sin_tiempo)
 [ "${RC}" -eq 0 ] && [ "${ST}" -gt 0 ] 2>/dev/null && [ "$((BJ + ST))" = "80" ] && ok "T10c tope chico: bajados ${BJ} + sin_tiempo ${ST} = 80" || mal "T10c rc=${RC} bajados=${BJ} sin_tiempo=${ST}"
 T="${BASE}/t10d"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
-for p in ${PIDS}; do :; done; kill "${p}" 2>/dev/null; sleep 0.2
+for p in ${PIDS}; do :; done; kill "${p}" 2>/dev/null; cerrado "$(cat "${T}/b/puerto")"
 bajar "${T}" "${T}/bin/az"
 [ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "sin_red" ] && [ ! -e "${T}/estado/corridas-buzon" ] && ok "T10d puerto cerrado → exit 1, sin_red, sin carpeta" || mal "T10d sin red → rc=${RC} estado=$(campo "${T}" estado)"
 # los nombres que no se bajan se NOMBRAN, no sólo se cuentan
@@ -340,7 +345,8 @@ instalar9() {  # <líneas esperadas> <VAR=valor>...
   # dato de entrada, y el caso de abajo la apaga para probar que apaga sólo lo suyo.
   env "${SIN_LLAVES[@]}" HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" STATE_DIR="${T}/home/.claude/.tycon-pipeline" CHECK_ONLY=0 TYCON_INTEG_MAILBOX=1 PROFILE_FULL=1 "$@" \
     bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
-  local n=0; while [ "${n}" -lt 40 ]; do [ "$(wc -l < "${T}/orden.txt" | tr -d ' ')" -ge "${esperadas}" ] && break; sleep 0.25; n=$((n+1)); done
+  # lo esperado, con un tope amplio (los pasos son procesos de fondo que con la máquina cargada tardan en arrancar)
+  local n=0; while [ "${n}" -lt 240 ]; do [ "$(wc -l < "${T}/orden.txt" | tr -d ' ')" -ge "${esperadas}" ] && break; sleep 0.25; n=$((n+1)); done
   sleep 1   # por si aparece algo que no debía
 }
 instalar9 3 TYCON_X=0

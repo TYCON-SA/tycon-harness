@@ -583,15 +583,20 @@ const VERDE = {
 const ROJO = { ...VERDE, checks: { tests: 'red:exit=1' } };
 
 test('T3 EscC3_SetAutonomousFalse_SinFrase_Frena @story-8.92 — apagar el lazo con las pruebas en rojo, sin la frase', () => {
-  // `TRUE` en mayúsculas también apaga: marker.js compara exacto
-  for (const c of [CMD.apagar, CMD.apagarCero, CMD.apagarOff, `${MARKER} set-autonomous TRUE`]) {
+  // `TRUE` en mayúsculas también apaga: marker.js compara exacto. La forma exacta la pide su guion en la ventana (8.323;
+  // Codex no tiene: va a la terminal); la escondida (detrás de un `cd`), el cartel de siempre
+  for (const [c, exacta] of [[CMD.apagar, true], [CMD.apagarCero, true], [CMD.apagarOff, false], [`${MARKER} set-autonomous TRUE`, true]]) {
     assert.notStrictEqual(veredicto(freno(c, { home: homeConMarcador(ROJO, [deLaPersona('arreglá las pruebas')]) })), 'allow', c);
     const r = freno(c, { codex: true, home: homeConMarcador(ROJO, [deLaPersona('arreglá las pruebas')]) });
     assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
     assert.match(r.stderr, /ESC-C3/);
-    assert.match(r.stderr, /lo decide ella/);
-    assert.match(r.stderr, /close-as-debt/);
-    assert.match(r.stderr, /Esta firma se da en tu terminal: el mismo comando\./);
+    if (exacta) assert.match(r.stderr, /Esta firma se da en tu terminal: marker\.js set-autonomous false --terminal/, c);
+    else {
+      assert.match(r.stderr, /lo decide ella/, c);
+      assert.match(r.stderr, /close-as-debt/, c);
+      // la escondida no se firma: la terminal es la forma exacta
+      assert.match(r.stderr, /Esta firma se da en tu terminal: marker\.js set-autonomous false --terminal/, c);
+    }
     assert.doesNotMatch(r.stderr, /TYCON_SAFETY_OFF=1/, 'el cartel no da la receta');
   }
 });
@@ -600,7 +605,8 @@ test('T3 EscC3_SetAutonomousFalse_SinFrase_Frena @story-8.92 — apagar el lazo 
 // 🔴 Falla con: el cartel que abre con «si quiere hacerlo igual, lo dice ella» y deja la salida sin la persona para
 //    después: con el cartel así, el agente pide la frase sin intentar antes la salida.
 test('EscC3_Cartel_PrimeroLaSalidaSinFrase — el cartel ofrece primero lo que el agente puede hacer solo, y no pide ninguna frase', () => {
-  const r = freno(CMD.apagar, { codex: true, home: homeConMarcador(ROJO, [deLaPersona('arreglá las pruebas')]) });
+  // la forma escondida: la exacta la pide su guion en la ventana (8.323) y no lleva este cartel
+  const r = freno(CMD.apagarOff, { codex: true, home: homeConMarcador(ROJO, [deLaPersona('arreglá las pruebas')]) });
   assert.strictEqual(r.status, 2, r.stderr);
   const sinFrase = r.stderr.indexOf('Primero lo que no necesita a la persona');
   assert.ok(sinFrase >= 0, r.stderr);
@@ -780,7 +786,16 @@ const DEUDA = {
 };
 
 test('T19 EscC4_CloseAsDebtYExpectRed_VanALaVentana @story-8.93 @ac-10 @ac-11 — en verde y en rojo frena o pide la ventana; la frase no firma', () => {
-  for (const c of [DEUDA.cerrar, DEUDA.rojo]) {
+  // `close-as-debt` en su forma exacta la pide su guion en la ventana (8.323; en Codex, la terminal con esa forma); detrás
+  // de un `cd`, o el rojo esperado de un control que no es la matriz, el cartel de siempre
+  const DEUDA_ESCONDIDA = 'cd /tmp && node marker.js close-as-debt --reason "sin versión compatible" --debt DEF-9.9-angular';
+  // la escondida no se firma: la de la terminal es la forma exacta. El rojo esperado de un control lleva la firma de
+  // cerrar como deuda (8.323), que nombra las dos formas exactas
+  const TERMINAL = {
+    deuda: /Esta firma se da en tu terminal: marker\.js close-as-debt --reason "<texto>" --debt <DEF-id> --terminal/,
+    rojo: /Esta firma se da en tu terminal: marker\.js close-as-debt --reason "<texto>" --debt <DEF-id> --terminal, o marker\.js expect-red <control> --tests <T1,T2> --terminal/,
+  };
+  for (const [c, terminal] of [[DEUDA.cerrar, TERMINAL.deuda], [DEUDA_ESCONDIDA, TERMINAL.deuda], [DEUDA.rojo, TERMINAL.rojo]]) {
     for (const marcador of [VERDE, ROJO]) {
       // sin frase, o dicha por el agente: no deja pasar, en verde y en rojo; en Codex frena con el camino de la terminal
       for (const conversacion of [[deLaPersona('seguí')], [deLaPersona('seguí'), delAgente(FRASE_DEUDA, 1)]]) {
@@ -788,7 +803,7 @@ test('T19 EscC4_CloseAsDebtYExpectRed_VanALaVentana @story-8.93 @ac-10 @ac-11 �
         const r = freno(c, { codex: true, home: homeConMarcador(marcador, conversacion) });
         assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
         assert.match(r.stderr, /ESC-C4/);
-        assert.match(r.stderr, /Esta firma se da en tu terminal: el mismo comando\./);
+        assert.match(r.stderr, terminal, c);
         assert.doesNotMatch(r.stderr, /TYCON_SAFETY_OFF=1|«autorizo /, 'el cartel no da la receta ni pide una frase');
       }
     }
@@ -952,6 +967,28 @@ test('T10 EscC5_ExencionPorLaTerminal_Frena @story-8.96 — agregar la exención
   }
 });
 
+// EscC5_ExencionDeRevisoresPorLaTerminal_Frena (pase adversarial): la exención de los revisores, igual que la de la prueba
+// en vivo, no se escribe por la consola; leerla, buscarla o sacarla no frena
+test('T10b EscC5_ExencionDeRevisoresPorLaTerminal_Frena — agregar advisors_exempt con sed, perl, una redirección o un heredoc', () => {
+  for (const c of [
+    `sed -i '' 's/^qa_guide: off/qa_guide: off\\nadvisors_exempt: true/' specs/story-9.9.md`,
+    `perl -pi -e 's/^status:/advisors_exempt: true\\nstatus:/' specs/story-9.9.md`,
+    `printf 'advisors_exempt: "true"\\n' >> specs/story-9.9.md`,
+    `echo "advisors_exempt: true" | tee -a specs/story-9.9.md`,
+    "cat > specs/story-9.20-nueva.md <<'EOF'\n---\nstory: \"9.20\"\nstatus: done\nadvisors_exempt: true\n---\nEOF",
+  ]) {
+    const r = freno(c, { conversacion: [deLaPersona('seguí')] });
+    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
+    assert.match(r.stderr, /ESC-C5/, c);
+    assert.match(r.stderr, /la exime de los revisores/, c);
+    assert.match(r.stderr, /marker\.js"? sign-file advisors_exempt <archivo>/, c);
+  }
+  for (const c of ['grep -n advisors_exempt specs/*.md', `grep -c 'advisors_exempt: true' specs/story-9.9.md > /tmp/n.txt`,
+    `sed -i '' '/^advisors_exempt: true/d' specs/story-9.9.md`]) {
+    assert.strictEqual(freno(c).status, 0, c);
+  }
+});
+
 // ESC-C6: la cita de la aprobación del plan está en lo que dijo la persona
 const RESPUESTA_PREGUNTA = 'Apruebo el plan (Recomendado)';
 const pregunta = (min = 3) => ({ type: 'assistant', timestamp: hace(min), message: { role: 'assistant',
@@ -1092,10 +1129,11 @@ test('T19 EscC6_CitaDeUnRechazoYSeleccionMultiple @story-8.96 — ni una cita sa
   assert.notStrictEqual(veredicto(sin), 'allow', sin.stderr);
 });
 
-// ── El pase adversarial no lo apaga el agente (@story-8.104) ────────────────────────────────────────────────────────────
-// `TYCON_NO_DEEP_REVIEW` (ESC-C1, con cualquier valor que no sea 0 ni vacío) y `--no-deep-review` (ESC-C3, en
-// `pipeline.js start|deep-review-gate` y `marker.js mark-adversarial-skipped`) piden «autorizo TYCON_NO_DEEP_REVIEW» o
-// «autorizo no-deep-review» de la persona: las dos frases valen para los dos nombres.
+// ── El pase adversarial no lo apaga el agente (@story-8.104, @story-8.238) ─────────────────────────────────────────────
+// `TYCON_NO_DEEP_REVIEW` y `--no-deep-review` son pedidos: el pase sólo se saltea con la firma `adversarial-skip`, y el freno
+// no les pide otra (8.238). Lo que sigue frenando: un `--env-file` delante de `pipeline.js start|deep-review-gate` o de
+// `marker.js mark-adversarial-skipped` (ESC-C3), que puede traer una variable que cambia la decisión del pase. Las
+// pruebas de las frases usan otro escape de ESC-C1, `TYCON_TEST_GATE`.
 const NDR = 'TYCON_NO_DEEP_REVIEW';
 const SALTEAR = `${MARKER} mark-adversarial-skipped --files a.js`;
 const NDR_FRENA = [
@@ -1107,50 +1145,57 @@ const NDR_FRENA = [
 ];
 const NDR_FLAG = '--no' + '-deep-review';
 const START_NDR = `${PIPELINE} start --story s.md ${NDR_FLAG}`;
+// un `--env-file` delante del guion del pase: sigue frenando siempre, también sin ejecución
+const ENV_FILE = '--env-file=x.env';
+const START_ENV = `${PIPELINE.replace(/^node /, `node ${ENV_FILE} `)} start --story s.md`;
+// otro escape de ESC-C1 para las pruebas de las frases
+const TG = 'TYCON_TEST' + '_GATE';
+const TG_FRENA = `${TG}=1 bash scripts/test-gate.sh /r /r/s.md`;
+const TRUST = '--trust-' + 'ran';
 
-test('T1 EscC1_NoDeepReviewSinFrase_Frena @story-8.104 @ac-3 — la variable escrita por el agente, con cualquier valor que la activa', () => {
+test('T1 EscC1_NoDeepReview_EsUnPedido @story-8.104 @story-8.238 @ac-2 — la variable no pide firma: el pase sólo se saltea con adversarial-skip', () => {
   for (const [herramienta, c] of NDR_FRENA) {
-    assert.notStrictEqual(veredicto(freno(c, { herramienta, conversacion: [deLaPersona('seguí con la historia')] })), 'allow', c);
     const r = freno(c, { herramienta, codex: true, conversacion: [deLaPersona('seguí con la historia')] });
-    assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
-    assert.match(r.stderr, /ESC-C1/, c);
-    assert.match(r.stderr, /Esta firma se da en tu terminal: TYCON_NO_DEEP_REVIEW=1 <comando>\./, 'el cartel dice cómo se firma');
-    // el cartel repite el comando que frenó y dice cómo se firma en la terminal; fuera de eso no trae la receta
-    const resto = r.stderr.replace(/^Comando:.*$/m, '').replace(/Esta firma se da en tu terminal: [^\n]*/g, '');
-    assert.doesNotMatch(resto, /TYCON_NO_DEEP_REVIEW=1 /, 'el cartel no trae la receta');
+    assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
+    assert.doesNotMatch(r.stderr, /ESC-C1/, c);
   }
 });
 
 test('T2 EscC1_NoDeepReviewConFrase_NoFirma @story-8.104 @ac-3 @ac-6 — con la frase de la persona, por cualquiera de los dos nombres, no deja pasar', () => {
-  for (const f of [`dale, autorizo ${NDR}`, `autorizo no-deep-review`]) {
-    noFirmaLaFrase(NDR_FRENA[0][1], { conversacion: [deLaPersona(f, 5)] });
+  for (const f of [`dale, autorizo ${TG}`, `autorizo ${TG}`]) {
+    noFirmaLaFrase(TG_FRENA, { conversacion: [deLaPersona(f, 5)] });
   }
 });
 
 test('T3 RespuestaDeOpciones_NoAutoriza @story-8.104 @ac-5 — la respuesta a una pregunta del agente no cuenta, ni una corrida sin persona', () => {
   const preguntaPase = { type: 'assistant', timestamp: hace(4), message: { role: 'assistant',
-    content: [{ type: 'tool_use', id: 'q1', name: 'AskUserQuestion', input: { questions: [{ question: '¿Corro el pase adversarial?', options: [{ label: `autorizo ${NDR}` }, { label: 'Correlo' }] }] } }] } };
+    content: [{ type: 'tool_use', id: 'q1', name: 'AskUserQuestion', input: { questions: [{ question: '¿Corro el pase adversarial?', options: [{ label: `autorizo ${TG}` }, { label: 'Correlo' }] }] } }] } };
   const eligio = { type: 'user', timestamp: hace(3),
-    toolUseResult: { questions: [{ question: '¿Corro el pase adversarial?' }], answers: { '¿Corro el pase adversarial?': `autorizo ${NDR}` } },
-    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'q1', content: `Your questions have been answered: "¿Corro el pase adversarial?"="autorizo ${NDR}".` }] } };
-  noFirmaLaFrase(NDR_FRENA[0][1], { conversacion: [preguntaPase, eligio, deLaPersona('seguí sin el pase')] });
-  // sin ningún turno de una persona ni sesión designada: el pase no se apaga
-  const sola = freno(NDR_FRENA[0][1], { codex: true, conversacion: [delAgente('sigo sin el pase')] });
+    toolUseResult: { questions: [{ question: '¿Corro el pase adversarial?' }], answers: { '¿Corro el pase adversarial?': `autorizo ${TG}` } },
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'q1', content: `Your questions have been answered: "¿Corro el pase adversarial?"="autorizo ${TG}".` }] } };
+  noFirmaLaFrase(TG_FRENA, { conversacion: [preguntaPase, eligio, deLaPersona('seguí sin el pase')] });
+  // sin ningún turno de una persona ni sesión designada: el escape no pasa
+  const sola = freno(TG_FRENA, { codex: true, conversacion: [delAgente('sigo sin el pase')] });
   assert.strictEqual(sola.status, 2, sola.stderr);
   assert.match(sola.stderr, /Esta firma se da en tu terminal/, 'el cartel dice cómo se firma');
 });
 
-test('T5 EscC3_NoDeepReviewEnStartSinFrase_Frena @story-8.104 @ac-4 — la bandera en start, sin ejecución abierta todavía, pide la frase', () => {
-  const sin = freno(START_NDR, { codex: true, conversacion: [deLaPersona('implementemos la story s.md')] });
+test('T5 EscC3_EnvFileEnStartSinFrase_Frena @story-8.104 @story-8.238 @ac-3 — la bandera es un pedido; un --env-file delante, sin ejecución todavía, frena', () => {
+  const pedido = freno(START_NDR, { codex: true, conversacion: [deLaPersona('implementemos la story s.md')] });
+  assert.strictEqual(pedido.status, 0, pedido.stderr);
+  const sin = freno(START_ENV, { codex: true, conversacion: [deLaPersona('implementemos la story s.md')] });
   assert.strictEqual(sin.status, 2, sin.stderr);
   assert.match(sin.stderr, /ESC-C3/);
   assert.match(sin.stderr, /pase adversarial/, 'el cartel es el del pase');
   assert.doesNotMatch(sin.stderr, /Cerrar la ejecución ahora/, 'no el de cerrar la ejecución');
   assert.match(sin.stderr, /Esta firma se da en tu terminal/);
-  for (const f of ['autorizo no-deep-review', `autorizo ${NDR}`]) noFirmaLaFrase(START_NDR, { conversacion: [deLaPersona(f)] });
-  // también en mark-adversarial-skipped y deep-review-gate, con la ejecución abierta
+  for (const f of ['autorizo no-deep-review', `autorizo ${NDR}`]) noFirmaLaFrase(START_ENV, { conversacion: [deLaPersona(f)] });
+  // en mark-adversarial-skipped y deep-review-gate, con la ejecución abierta: la bandera pasa, el --env-file frena
   for (const c of [`${SALTEAR} ${NDR_FLAG}`, `${PIPELINE} deep-review-gate --repo r --story s --files a.js ${NDR_FLAG}`]) {
-    assert.notStrictEqual(veredicto(freno(c, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) })), 'allow', c);
+    const r = freno(c, { codex: true, home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
+    assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
+  }
+  for (const c of [SALTEAR.replace(/^node /, `node ${ENV_FILE} `), `${PIPELINE.replace(/^node /, `node ${ENV_FILE} `)} deep-review-gate --repo r --story s --files a.js`]) {
     const r = freno(c, { codex: true, home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
     assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
     assert.match(r.stderr, /ESC-C3/);
@@ -1177,6 +1222,9 @@ test('T11 ValoresDeFiles_NoSonLaBandera @story-8.104 @ac-4 — los archivos de -
     `${MARKER} mark-adversarial-skipped --files $W/a.js $W/b.js`,
     `A=x.js; ${PIPELINE} check-count --repo r --story s --files $A`,
     `${PIPELINE} check-count --repo r --story s --files $W/scripts/a.sh $W/guides/b.md`,
+    // la bandera del pase escondida: un pedido, no un escape (8.238)
+    `F="${NDR_FLAG}"; ${MARKER} mark-adversarial-skipped --files a.js $F`,
+    `${PIPELINE} start --story s.md $X`,
   ];
   for (const c of pasan) {
     const r = freno(c, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
@@ -1184,9 +1232,7 @@ test('T11 ValoresDeFiles_NoSonLaBandera @story-8.104 @ac-4 — los archivos de -
   }
   const frenan = [
     'F=--trust-' + `ran; ${PIPELINE} check-count --repo r --story s --files $F`,
-    `F="${NDR_FLAG}"; ${MARKER} mark-adversarial-skipped --files a.js $F`,
     `${PIPELINE} check-count --repo r --story s --files $X`,
-    `${PIPELINE} start --story s.md $X`,
   ];
   for (const c of frenan) {
     const r = freno(c, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
@@ -1195,8 +1241,17 @@ test('T11 ValoresDeFiles_NoSonLaBandera @story-8.104 @ac-4 — los archivos de -
   }
 });
 
-test('T12 FormasQueElLectorNoVeia_Frenan @story-8.104 @ac-4 @ac-5 — el shell entrega la bandera y el lector tiene que verla', () => {
+test('T12 FormasQueElLectorNoVeia_Frenan @story-8.104 @story-8.238 @ac-4 @ac-5 — el shell entrega los escapes y el lector tiene que verlos; la bandera del pase es un pedido', () => {
+  // lo que sigue frenando: un --env-file delante del guion del pase, y los escapes que no son el pase
   const frenan = [
+    `node --env-file=/tmp/e ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js start --story s.md`,
+    'OPTS="--files a.js --trust-' + `ran"; ${PIPELINE} check-count --repo r --story s $OPTS`,
+    `${PIPELINE} check-count --repo r --story s --strict $X`,
+    'F=--force-' + `manual; ${MARKER} set-check tests green --files $F`,
+  ];
+  // la bandera del pase escondida o armada por el shell: un pedido, no un escape (8.238). El pase se saltea sólo con
+  // la firma adversarial-skip
+  const pedidos = [
     `${PIPELINE} start --repo . -- ${NDR_FLAG}`,
     `${PIPELINE} start --repo . --no-deep-{review,x}`,
     `${PIPELINE} start --repo . $'--no-deep-\\x72eview'`,
@@ -1205,40 +1260,36 @@ test('T12 FormasQueElLectorNoVeia_Frenan @story-8.104 @ac-4 @ac-5 — el shell e
     `${PIPELINE} deep-review-gate --files x "$(echo --no-deep-)"review`,
     `${PIPELINE} deep-review-gate --files "$(cat lista)"`,
     `echo F=--ok; for F in ${NDR_FLAG}; do ${PIPELINE} start --repo . $F; done`,
-    `node --env-file=/tmp/e ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js start --story s.md`,
-    // del pase adversarial: una variable con varias palabras, xargs, el subcomando de marker.js en una variable,
-    // `$@` y `${X:-…}` después de --files
     `OPTS="--story s.md ${NDR_FLAG}"; ${PIPELINE} start $OPTS`,
-    'OPTS="--files a.js --trust-' + `ran"; ${PIPELINE} check-count --repo r --story s $OPTS`,
     `echo ${NDR_FLAG} | xargs ${PIPELINE} start --story s.md`,
     `S=mark-adversarial-skipped; ${MARKER} $S ${NDR_FLAG}`,
     `${MARKER} $S ${NDR_FLAG}`,
     `${PIPELINE} deep-review-gate --files "$@"`,
     `${PIPELINE} deep-review-gate --files \${X:-${NDR_FLAG}}`,
-    // de la vuelta 2: una opción sin valor que no estaba en la lista, y las variables sin valor conocido
     `${PIPELINE} start --allow-missing-files $(echo ${NDR_FLAG})`,
-    `${PIPELINE} check-count --repo r --story s --strict $X`,
     `echo F=--ok; ${PIPELINE} start --repo . $F`,
     `read F; ${PIPELINE} start --repo . $F`,
     `printf -v F x; ${PIPELINE} start --repo . $F`,
     `F=a; F=${NDR_FLAG}; ${PIPELINE} start --repo . $F`,
     `F=a; F+=b; ${PIPELINE} start --repo . $F`,
-    'F=--force-' + `manual; ${MARKER} set-check tests green --files $F`,
-    // el subcomando en una variable vacía o con varias palabras, y un valor que el shell parte en palabras
     `S=; ${PIPELINE} $S start ${NDR_FLAG}`,
     `S="start ${NDR_FLAG}"; ${PIPELINE} $S`,
     `${PIPELINE} start --story $(echo s.md ${NDR_FLAG})`,
     `read S2; ${PIPELINE} start --story $S2`,
   ];
+  for (const c of pedidos) {
+    const r = freno(c, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
+    assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
+  }
   for (const c of frenan) {
     const r = freno(c, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
     assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
     assert.match(r.stderr, /ESC-C3/, c);
   }
   // ninguna frase deja pasar: retirada, o dicha y nombrada después
-  for (const [c, conv] of [[NDR_FRENA[0][1], [deLaPersona(`autorizo ${NDR}`, 10), deLaPersona('no, olvidalo: no autorizo no-deep-review', 3)]],
-    [START_NDR, [deLaPersona('autorizo no-deep-review. Con no-deep-review el run es más rápido')]],
-    [START_NDR, [deLaPersona('autorizo no-deep-review', 5), deLaPersona('ok, seguí con el no-deep-review entonces', 3)]]]) {
+  for (const [c, conv] of [[TG_FRENA, [deLaPersona(`autorizo ${TG}`, 10), deLaPersona(`no, olvidalo: no autorizo ${TG}`, 3)]],
+    [START_ENV, [deLaPersona('autorizo no-deep-review. Con no-deep-review el run es más rápido')]],
+    [START_ENV, [deLaPersona('autorizo no-deep-review', 5), deLaPersona('ok, seguí con el no-deep-review entonces', 3)]]]) {
     noFirmaLaFrase(c, { conversacion: conv });
   }
   // lo de todos los días sigue pasando
@@ -1255,8 +1306,8 @@ test('T12 FormasQueElLectorNoVeia_Frenan @story-8.104 @ac-4 @ac-5 — el shell e
 // (sin node, o se cae), los comandos que nombran los guiones frenan.
 const RUTA_PARTIDA = "cd ~/.claude/agent-skills/skills/tycon-p''ipeline/scripts &&";
 const PARTIDO = {
-  start: `${RUTA_PARTIDA} node ./pipe''line.js start --story s.md ${NDR_FLAG}`,
-  saltear: `${RUTA_PARTIDA} node ./mar''ker.js mark-adversarial-skipped --files a.js ${NDR_FLAG}`,
+  start: `${RUTA_PARTIDA} node ${ENV_FILE} ./pipe''line.js start --story s.md`,
+  saltear: `${RUTA_PARTIDA} node ${ENV_FILE} ./mar''ker.js mark-adversarial-skipped --files a.js`,
   forzar: `${RUTA_PARTIDA} node ./mar''ker.js set-check tests green --force-manual`,
   revisores: `${RUTA_PARTIDA} node ./pipe''line.js check-count --trust-` + 'ran',
   cerrar: `${RUTA_PARTIDA} node ./mar""ker.js clear`,
@@ -1356,19 +1407,19 @@ test('T10 Guia_NombresPartidosYArmados @story-8.107 @ac-7 — la guía dice cóm
 
 test('T11 GuionEscondido_Frena @story-8.107 @ac-1 — el nombre del guion armado por el shell llega al lector', () => {
   const casos = [
-    [VERDE, `${RUTA_PARTIDA} node ./pipelin?.js start --story s.md ${NDR_FLAG}`],
-    [VERDE, `${RUTA_PARTIDA} node ./pipe[l]ine.js start --story s.md ${NDR_FLAG}`],
-    [VERDE, `${RUTA_PARTIDA} node ./pipeline.j{s,x} start --story s.md ${NDR_FLAG}`],
-    [VERDE, `${RUTA_PARTIDA} node ./pipe\\\nline.js start --story s.md ${NDR_FLAG}`],
-    [VERDE, `${RUTA_PARTIDA} node ./p* start --story s.md ${NDR_FLAG}`],
+    [VERDE, `${RUTA_PARTIDA} node ./pipelin?.js check-count ${TRUST}`],
+    [VERDE, `${RUTA_PARTIDA} node ./pipe[l]ine.js check-count ${TRUST}`],
+    [VERDE, `${RUTA_PARTIDA} node ./pipeline.j{s,x} check-count ${TRUST}`],
+    [VERDE, `${RUTA_PARTIDA} node ./pipe\\\nline.js check-count ${TRUST}`],
+    [VERDE, `${RUTA_PARTIDA} node ./p* check-count ${TRUST}`],
     [ROJO, `${RUTA_PARTIDA} node ./mar$'k'er.js clear`],
     [ROJO, `${RUTA_PARTIDA} node ./mar$"k"er.js clear`],
     // `node` con ruta, una opción con su valor aparte y `bun run`
-    [VERDE, `${RUTA_PARTIDA} /usr/local/bin/node ./pipelin?.js start --story s.md ${NDR_FLAG}`],
+    [VERDE, `${RUTA_PARTIDA} /usr/local/bin/node ./pipelin?.js check-count ${TRUST}`],
     [ROJO, `${RUTA_PARTIDA} node -r x ./mar*.js clear`],
-    [VERDE, `${RUTA_PARTIDA} bun run ./pipelin?.js start --story s.md ${NDR_FLAG}`],
-    [VERDE, `${RUTA_PARTIDA} node --import x ./pipelin?.js start --story s.md ${NDR_FLAG}`],
-    [VERDE, `${RUTA_PARTIDA} node ./pipe\\\r\nline.js start --story s.md ${NDR_FLAG}`],
+    [VERDE, `${RUTA_PARTIDA} bun run ./pipelin?.js check-count ${TRUST}`],
+    [VERDE, `${RUTA_PARTIDA} node --import x ./pipelin?.js check-count ${TRUST}`],
+    [VERDE, `${RUTA_PARTIDA} node ./pipe\\\r\nline.js check-count ${TRUST}`],
   ];
   for (const [marcador, c] of casos) {
     const r = freno(c, { home: homeConMarcador(marcador, [deLaPersona('seguí')]) });
@@ -1594,11 +1645,11 @@ test('NodeInlineCode_IsNotAScript', () => {
 test('NodeVisibleCall_StillBlocks', () => {
   const P = '~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js';
   for (const c of [
-    `node -e 'f({})' && node ${P} start --story s.md --no-deep-review`,
-    'node -e pipeline.js start --no-deep-review',
+    `node -e 'f({})' && node ${P} check-count ${TRUST}`,
+    `node -e pipeline.js check-count ${TRUST}`,
     'node $S $a $b',
   ]) {
-    const r = freno(c, { conversacion: [deLaPersona('seguí')] });
+    const r = freno(c, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
     assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
     assert.match(r.stderr, /ESC-C3/, c);
   }
@@ -1656,6 +1707,8 @@ test('GuionConNombreFijo_NoSeEsconde', () => {
     // la bandera en `close` no apaga nada: sólo `start` la lee
     'S=x; F=--no-deep-review; node $S/pipeline.js close $F',
     'S=x; F="--no-deep-review"; node $S/pipeline.js close $F',
+    // en start también: es un pedido (8.238)
+    'S=x; F="--no-deep-review"; node "$S/pipeline.js" start "$F"',
   ]) {
     const r = freno(c, { conversacion: [deLaPersona('seguí')] });
     assert.strictEqual(r.status, 0, `${c}: ${r.stderr}`);
@@ -1668,9 +1721,9 @@ test('GuionConNombreFijo_NoSeEsconde', () => {
     'read S; node $S/a.js $X $Y',
     'node ${S:-x}/a.js $X $Y',
     // conocer el guion no deja pasar la bandera escondida en otra variable
-    'S=x; F="--no-deep-review"; node "$S/pipeline.js" start "$F"',
+    `S=x; F="${TRUST}"; node "$S/pipeline.js" check-count "$F"`,
   ]) {
-    const r = freno(c, { conversacion: [deLaPersona('seguí')] });
+    const r = freno(c, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) });
     assert.strictEqual(r.status, 2, `${c}: ${r.stderr}`);
     assert.match(r.stderr, /ESC-C3/, c);
   }
@@ -1707,11 +1760,11 @@ exit "\${PIPESTATUS[0]}"
     // en Windows, una muestra: cada llamada al freno cuesta segundos y la lista entera pasa el tope de la suite en el
     // ensayo de Windows; los mismos casos corren completos en T22 contra el jq real de Windows
     ...(process.platform === 'win32' ? ESC_C3_FRENA.slice(0, 3) : ESC_C3_FRENA).map(([herramienta, c]) => [ROJO, herramienta, c]),
-    [VERDE, 'Bash', `${RUTA_PARTIDA} node ./pipe\\\nline.js start --story s.md ${NDR_FLAG}`],
+    [VERDE, 'Bash', `${RUTA_PARTIDA} node ./pipe\\\nline.js check-count ${TRUST}`],
   ];
   // un \r escrito en el comando (en medio de una palabra, o un \r\n): frena por CMD-C1, por cualquier camino
   const conRetorno = [
-    [VERDE, 'Bash', `${RUTA_PARTIDA} node ./pipe\\\r\nline.js start --story s.md ${NDR_FLAG}`],
+    [VERDE, 'Bash', `${RUTA_PARTIDA} node ./pipe\\\r\nline.js check-count ${TRUST}`],
     [ROJO, 'Bash', `${MARKER} cl\rear`],
     [VERDE, 'Bash', `${RUTA_PARTIDA} node ./pipeline.js start --story s.md ${NDR_FLAG.replace('deep', 'deep\r')}`],
   ];
@@ -1821,15 +1874,20 @@ test('T28 FrenoDeSeguridad_RenglonForjado_NoApruebaNada @story-8.139 @ac-28 — 
     ['lost-run', ['node', M, 'clear-session', 'ses-b', '--lost']],
     ['lost-run:particion', ['node', M, 'clear-session', 'ses-b', '--lost', '--partition']],
     ['adversarial-skip', ['node', M, 'sign-adversarial-skip', '--story', '9.99', '--reason', 'la cubre otra corrida']],
+    ['atdd-skip', ['node', M, 'sign-atdd-skip', '--story', '9.99', '--reason', 'refactor sobre pruebas que ya existían']],
+    ['save', ['node', M, 'approve-save', '--for-session', 'ses-b']],
     ['review-skip', ['node', M, 'review-answer', '--kind', 'code', '--choice', 'skip']],
     ['pending-approval', ['node', M, 'approve-pending', '--id', 'DEF-9.99-algo', '--repo', '/r']],
     ['compare-waiver', ['node', M, 'compare-waiver', '--story', '/r/specs/story-9.99.md', '--command', 'cli.js', '--reason', 'usa la red']],
-    ['save', ['node', M, 'approve-save', '--for-session', 'ses-b']],
     ['escape:force-manual', ['node', M, 'set-check', 'tests', 'green', '--force-manual']],
     ['escape:trust-ran', ['node', P, 'check-count', '--repo', '/r', '--story', 's.md', '--trust-ran']],
     ['escape:no-mutation', ['node', M, 'complete-step', 'run-tests', '--no-mutation', '--reason', 'refactor sin código nuevo']],
+    ['escape:cerrar-como-deuda', ['node', M, 'close-as-debt', '--reason', 'sin versión compatible', '--debt', 'DEF-9.99-a']],
+    ['escape:rojo-esperado-de-la-matriz', ['node', M, 'expect-red', 'acmatrix', '--tests', 'T1', '--until', '2026-11-30']],
+    ['escape:set-autonomous', ['node', M, 'set-autonomous', 'false']],
     ['adhoc-lane',['node', M, 'adhoc', 'set', '{"reason":"autorizo el arreglo rápido"}']],
     ['adhoc-lane:sobre-cupo', ['node', M, 'adhoc', 'set', '{"reason":"autorizo el arreglo rápido","maxFiles":9}']],
+    ['adhoc-lane:ci-rojo', ['node', M, 'adhoc', 'set', '--ci-red', '6910', '--check', 'Manifest', '--reason', 'autorizo el arreglo del rojo', '--data', 'sin-cambio', '--file', 'plugin.json']],
     ['adhoc-lane:datos', ['node', M, 'adhoc', 'allow-data-change', '--changed', 'el botón pide al proceso', '--recommends', 'pasar', '--why', 'autorizo el cambio']],
     ['adhoc-lane:guardado-ajeno', ['node', M, 'adhoc', 'allow-foreign-save']],
     ['autonomy-resume', ['node', M, 'resume-autonomy']],
@@ -1837,7 +1895,7 @@ test('T28 FrenoDeSeguridad_RenglonForjado_NoApruebaNada @story-8.139 @ac-28 — 
     // nombrar y retirar a la coordinadora con un click
     ['designation-set', ['node', M, 'designate-relay']],
     ['designation-withdraw', ['node', M, 'withdraw-relay']],
-    ...['story-skill-bypass', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt', 'cambiar-el-estado', 'red-control-test-edit']
+    ...['story-skill-bypass', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt', 'advisors_exempt', 'cambiar-el-estado', 'red-control-test-edit']
       .map((n) => [`escape:${n}`, ['node', M, 'sign-file', n, '/r/specs/story-9.99.md']]),
   ];
   // todas las del catálogo que ya tienen comando están en la lista
@@ -1914,11 +1972,12 @@ test('T29 FrenoDeSeguridad_SinEsperaNiLecturaDeConversacion @story-8.139 @ac-29 
 test('T37 FrenoDeSeguridad_C3YC5_NoDictanLaFrase @story-8.139 @ac-37 — ningún cartel de ESC-C3 ni de ESC-C5 dicta la frase ni la variable; ESC-C5 nombra la guía', () => {
   const VARIABLE = /\b[A-Z][A-Z0-9_]{2,}=/;
   const casos = [
-    ['ESC-C3', CMD.apagar, { home: homeConMarcador(ROJO, [deLaPersona('seguí')]) }],
+    // la forma escondida: la exacta la pide su guion en la ventana (8.323)
+    ['ESC-C3', CMD.apagarOff, { home: homeConMarcador(ROJO, [deLaPersona('seguí')]) }],
     ['ESC-C3', CMD.cerrar, { home: homeConMarcador(ROJO, [deLaPersona('seguí')]) }],
     ['ESC-C3', `bash -c '${MARKER} set-check tests green --force-manual'`, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) }],
     ['ESC-C3', `cd /tmp && ${PIPELINE} check-count --trust-ran --ran a,b`, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) }],
-    ['ESC-C3', START_NDR, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) }],
+    ['ESC-C3', START_ENV, { home: homeConMarcador(VERDE, [deLaPersona('seguí')]) }],
     ['ESC-C5', `touch ${PERMISO}`, { conversacion: [deLaPersona('seguí')] }],
     ['ESC-C5', `echo "dod_runtime_exempt: true" | tee -a specs/story-9.9.md`, { conversacion: [deLaPersona('seguí')] }],
   ];
@@ -2075,6 +2134,30 @@ test('T11 EscC1_MutationCheckOff_AsksSignature @story-8.256 @ac-10 @ac-15 @ac-26
   assert.strictEqual(veredicto(antes), 'allow', antes.stderr);
   assert.match(antes.stdout, /desde 2099-01-01 esto pide la firma del dueño/);
   assert.deepStrictEqual(renglonesDe(antes.home).filter((x) => x.kind === 'ESCAPE_NOTICE_PERIOD').map((x) => x.variable), ['TYCON_MUTATION_CHECK']);
+});
+
+// T11b EscC1_ExportSameAsInline @story-8.256 @ac-10 @ac-12
+// 🔴 Falla con: `export NOMBRE=valor && …` (o con `;`) que el guion de la ventana niega por «viene escondido» mientras la
+//    misma asignación delante del comando va a la ventana: cada comando de la consola corre en su propio shell, y el
+//    dueño ve el nombre y el valor igual.
+test('T11b EscC1_ExportSameAsInline @story-8.256 @ac-10 @ac-12', () => {
+  const pasada = arbolConCorte('2000-01-01');
+  const m = path.join(pasada.dir, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+  const p = path.join(pasada.dir, 'skills', 'tycon-pipeline', 'scripts', 'pipeline.js');
+  const casos = [
+    [`TYCON_MUTATION_CHECK=off node ${m} complete-step run-tests`, [`export TYCON_MUTATION_CHECK=off; node ${m} complete-step run-tests`, `export TYCON_MUTATION_CHECK=off && node ${m} complete-step run-tests`]],
+    [`TYCON_STORY_REVIEW=0 node ${p} validators --story s.md --repo .`, [`export TYCON_STORY_REVIEW=0 && node ${p} validators --story s.md --repo .`]],
+  ];
+  for (const [enLinea, conExport] of casos) {
+    for (const permisos of ['bypassPermissions', 'default']) {
+      const base = veredicto(freno(enLinea, { hook: pasada.hook, permisos }));
+      for (const cmd of conExport) {
+        const r = freno(cmd, { hook: pasada.hook, permisos });
+        assert.doesNotMatch(r.stderr, /viene escondido/, `${cmd} (${permisos})`);
+        assert.strictEqual(veredicto(r), base, `${cmd} (${permisos}): la misma decisión que con la variable delante (${base}); ${r.stderr}`);
+      }
+    }
+  }
 });
 
 // T13 EscC1_StoryReviewZero_AsksSignature @story-8.256 @ac-12

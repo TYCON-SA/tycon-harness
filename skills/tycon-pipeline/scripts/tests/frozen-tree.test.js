@@ -157,14 +157,16 @@ test('T16 Freeze_AlteredCopy_Blocks @story-8.161 @ac-16 — la copia alterada no
 const { spawnSync } = require('child_process');
 const RAIZ = path.join(SCRIPTS, '..', '..', '..');
 // `antesDeArrancar(codigo)`: lo que el repo del código ya trae cuando arranca la corrida
-function corrida(sid, { masHistorias = {}, antesDeArrancar = null } = {}) {
+// `declaraTambien`: archivos de más en `files_to_modify` (los de un repo hermano, con su nombre adelante: sólo los
+// hermanos con archivos declarados se sellan)
+function corrida(sid, { masHistorias = {}, antesDeArrancar = null, declaraTambien = [] } = {}) {
   const base = tmp('ft-corrida-');
   const home = path.join(base, 'home');
   fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
   fs.symlinkSync(RAIZ, path.join(home, '.claude', 'agent-skills'));
   fs.symlinkSync(RAIZ, path.join(home, '.claude', 'tycon-harness'));
   const historias = repoDeJuguete('historias', {
-    'specs/story-9.9-sello.md': ['---', 'story: "9.9"', 'title: "sello"', 'status: ready-for-dev', 'files_to_modify:', '  - src/a.js', '---',
+    'specs/story-9.9-sello.md': ['---', 'story: "9.9"', 'title: "sello"', 'status: ready-for-dev', 'files_to_modify:', '  - src/a.js', ...declaraTambien.map((f) => `  - ${f}`), '---',
       '# Story 9.9', '', '## Acceptance Criteria', '', '1. **Given** algo, **Then** resultado.', '', '### Tests', '',
       '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|', '| T1 | `a.caso1` | 1 | unit | x | y |', '',
       '## Tasks / Subtasks', '', '- [ ] Task 1: hacerlo (AC: 1)', '', '## Change Log', '', '- hoy: escrita', ''].join('\n'),
@@ -239,7 +241,7 @@ test('T4 Adversarial_ResultCarriesLaunchedTree @story-8.161 @ac-3 — el resulta
   assert.ok((C.marcador().adversarialPasses || []).length === 1, 'lo guarda');
 });
 
-// «Preparar el commit» hasta el freno de lo revisado: los pasos de antes, por fuera del orden
+// «Preparar el pull request» hasta el freno de lo revisado: los pasos de antes, por fuera del orden
 const prepararCommit = (C) => C.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order']);
 const MISMATCH = /lo que se guarda no es lo revisado/;
 
@@ -1043,7 +1045,7 @@ test('T2 ReviewersRound_BloqueSubidoSobreComentario_NoPideVuelta @story-8.217 @a
   try { assert.strictEqual(require(path.join(SCRIPTS, 'lib', 'steps.js')).otraVueltaDe(C.marcador()), null); } finally { process.env.HOME = antes; }
 });
 
-test('T3 ReviewedTree_ComentarioMovido_NoFrenaYLoDice @story-8.217 @ac-2 — «Preparar el commit» sigue y lo anota', () => {
+test('T3 ReviewedTree_ComentarioMovido_NoFrenaYLoDice @story-8.217 @ac-2 — «Preparar el pull request» sigue y lo anota', () => {
   const C = corridaRevisada('s-ft-8217-t3');
   C.editar('src/a.js', A_MOVIDO);
   const r = prepararCommit(C);
@@ -1232,7 +1234,7 @@ test('T80h Rethink_VueltaChica_SinNota: la tercera vuelta, si es chica, no pide 
   assert.match(salida(v2.r), /repens|nota/i);
 });
 
-test('T80e ReviewedTree_ComentarioCambiado_NoFrena_TextoSi: «Preparar el commit» perdona un comentario cambiado y frena un texto', () => {
+test('T80e ReviewedTree_ComentarioCambiado_NoFrena_TextoSi: «Preparar el pull request» perdona un comentario cambiado y frena un texto', () => {
   const C = corridaRevisada('s-ft-80e');
   C.editar('src/a.js', A_REVISADO.replace('la suma de los dos', 'la suma de a y b'), { evento: false });
   const r = prepararCommit(C);
@@ -1439,7 +1441,7 @@ test('Pase_HermanoCambiado_FrenaElCierre — si el código de un hermano cambió
 test('Pase_PropiaDelHermanoConRepo_NoFrenaElCierre — la prueba propia declarada como `(<repo>) <ruta>` no cuenta como cambio del hermano; el código sí', () => {
   // 🔴 rojo si: el cierre toma el `--in` crudo y lo resuelve contra la raíz del hermano → la forma `(Front) tests/x.test.js`,
   // la que pide el paso del pase, frena el cierre como si el hermano hubiera cambiado.
-  const C = corrida('s-ft-hermano');
+  const C = corrida('s-ft-hermano', { declaraTambien: ['Front/src/x.js'] });
   const front = repoDeJuguete('Front', { 'src/x.js': 'module.exports = 1;\n', 'tests/x.test.js': '// prueba\n' });
   fs.mkdirSync(path.join(C.codigo.repo, '.tycon'), { recursive: true });
   fs.writeFileSync(path.join(C.codigo.repo, '.tycon', 'advisors.yaml'),
@@ -1470,7 +1472,7 @@ test('Pase_PropiaDelHermanoConRepo_NoFrenaElCierre — la prueba propia declarad
 // cambio del hermano, y la vuelta de revisores, que cubre los arreglos del repo principal, no sellaba los hermanos.
 function corridaConHermano(sid) {
   const front = repoDeJuguete('Front', { 'src/x.js': 'module.exports = 1;\n', 'tests/x.test.js': '// prueba\n' });
-  const C = corrida(sid, { antesDeArrancar: (codigo) => {
+  const C = corrida(sid, { declaraTambien: ['Front/src/x.js'], antesDeArrancar: (codigo) => {
     fs.mkdirSync(path.join(codigo.repo, '.tycon'), { recursive: true });
     fs.writeFileSync(path.join(codigo.repo, '.tycon', 'advisors.yaml'), `evidence:\n  companion_repos:\n    - ${path.relative(codigo.repo, front.repo)}\n`);
     codigo.git('add', '.');
@@ -1680,4 +1682,113 @@ test('PrepareCommit_SubmoduloDelPrincipal_FrenaSiCambiaAdentro — lo sin commit
   }
   assert.strictEqual(r.status, 2, salida(r));
   assert.match(salida(r), /no pude ver el estado del submódulo anidado/, salida(r));
+});
+
+// ── Reusar la copia del pase (historia 8.330) ─────────────────────────────────────────────────────────────────────
+// Caso: el pase y la primera vuelta de revisores sellaban y copiaban los mismos repos dos veces (con un repo grande,
+// cientos de MB cada vez), aunque nada hubiera cambiado entre los dos.
+const congelarElPase = (C) => {
+  const r = C.correr('marker.js', ['freeze-adversarial']);
+  assert.strictEqual(r.status, 0, salida(r));
+  return ft().ultimaVuelta(C.estado(), C.sid, 'pase');
+};
+const tocarLaCopia = (copia, rel) => {
+  fs.chmodSync(path.join(copia, rel), 0o644);
+  fs.appendFileSync(path.join(copia, rel), '// tocada a mano\n');
+};
+
+test('T7 SealAndFreeze_ReusaLaCopiaDelPase @story-8.330 @ac-7 — sin cambios entre el pase y la vuelta 1, la vuelta usa la copia del pase y no arma otra', () => {
+  // 🔴 rojo si: la vuelta vuelve a copiar lo que el pase ya copió con el mismo sello.
+  const C = corrida('s-ft-reusa');
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'a.js'), 'module.exports = 10;\n');
+  const pase = congelarElPase(C);
+  const { r, json } = C.vuelta();
+  assert.strictEqual(r.status, 0, salida(r));
+  const v = ft().ultimaVuelta(C.estado(), C.sid, 'revisores');
+  assert.strictEqual(v.repos.length, pase.repos.length, JSON.stringify(v));
+  for (const x of v.repos) {
+    const delPase = pase.repos.find((p) => p.repo === x.repo);
+    assert.ok(delPase, `el pase congeló ${x.repo}`);
+    assert.strictEqual(x.copy, delPase.copy, 'la copia del pase');
+    assert.strictEqual(x.reusada_de, pase.etiqueta, 'y anota de dónde salió');
+    assert.ok(!fs.existsSync(ft().copyDir(C.estado(), C.sid, 'rev-iter1', x.repo)), 'no se armó la copia de la vuelta');
+  }
+  // el contexto de los revisores nombra la copia que usan
+  const ctx = fs.readFileSync(json.context_file, 'utf8');
+  for (const p of pase.repos) assert.ok(ctx.includes(p.copy), `el contexto nombra ${p.copy}`);
+});
+
+test('T8 SealAndFreeze_CambioOCopiaTocada_CopiaDeNuevo_Vuelta2NoBorraLaQueNombra @story-8.330 @ac-8 — lo que cambió o se tocó se copia de nuevo, lo demás se reusa, y la vuelta 2 no borra lo que usa', () => {
+  // 🔴 rojo si: se reusa una copia de otro sello o una tocada a mano, o la vuelta 2 borra una copia que ella misma nombra.
+  const C = corridaConHermano('s-ft-reusa-cambio');
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'a.js'), 'module.exports = 10;\n');
+  const pase = congelarElPase(C);
+  const copiaDelPase = (repo) => pase.repos.find((p) => p.repo === repo).copy;
+  // el código cambia después del pase; la copia de la historia se toca a mano; el hermano queda igual
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'a.js'), 'module.exports = 11;\n');
+  tocarLaCopia(copiaDelPase(C.historias.repo), path.join('specs', 'story-9.9-sello.md'));
+  assert.strictEqual(C.vuelta().r.status, 0);
+  const v1 = ft().ultimaVuelta(C.estado(), C.sid, 'revisores');
+  const en = (v, repo) => v.repos.find((x) => x.repo === repo);
+  for (const repo of [C.codigo.repo, C.historias.repo]) {
+    assert.strictEqual(en(v1, repo).reusada_de, undefined, `${path.basename(repo)} se copia de nuevo`);
+    assert.strictEqual(en(v1, repo).copy, ft().copyDir(C.estado(), C.sid, 'rev-iter1', repo));
+    assert.deepStrictEqual(ft().verify(repo, en(v1, repo).copy, en(v1, repo).tree), { ok: true });
+  }
+  assert.strictEqual(en(v1, C.front.repo).reusada_de, pase.etiqueta, 'el hermano sin cambios se reusa');
+  assert.strictEqual(en(v1, C.front.repo).copy, copiaDelPase(C.front.repo));
+  // la vuelta 2, sin cambios: reusa lo de la vuelta 1, y borrar las copias de la vuelta 1 no toca las que ella nombra
+  assert.strictEqual(C.vuelta(2).r.status, 0);
+  const v2 = ft().ultimaVuelta(C.estado(), C.sid, 'revisores');
+  for (const x of v2.repos) assert.ok(fs.existsSync(x.copy), `la vuelta 2 no borró la copia que usa: ${x.copy}`);
+  assert.strictEqual(en(v2, C.codigo.repo).copy, en(v1, C.codigo.repo).copy);
+});
+
+// Hallazgo del pase (integration-contracts): una vuelta que se relanza con la misma etiqueta rearmaba su copia en la
+// misma carpeta, aunque el pase abierto la estuviera leyendo porque la reusó.
+test('T8c SealAndFreeze_MismaEtiqueta_NoPisaLaCopiaQueElPaseReuso @story-8.330 @ac-8 — relanzar la vuelta 1 con un cambio arma su copia aparte; la del pase sigue siendo la de su sello', () => {
+  // 🔴 rojo si: la vuelta relanzada vuelve a armar su copia en la carpeta que el pase reusó y la pisa con otro sello.
+  const C = corrida('s-ft-reusa-misma-etiqueta');
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'a.js'), 'module.exports = 10;\n');
+  assert.strictEqual(C.vuelta().r.status, 0);
+  const pase = congelarElPase(C);
+  const delPase = pase.repos.find((p) => p.repo === C.codigo.repo);
+  assert.strictEqual(delPase.copy, ft().copyDir(C.estado(), C.sid, 'rev-iter1', C.codigo.repo), 'el pase reusó la copia de la vuelta 1');
+  const l = C.correr('marker.js', ['mark-adversarial-launched', 'r1', '4']);
+  assert.strictEqual(l.status, 0, salida(l));
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'a.js'), 'module.exports = 11;\n');
+  assert.strictEqual(C.vuelta().r.status, 0, 'la vuelta 1 se relanza con el cambio');
+  assert.deepStrictEqual(ft().verify(C.codigo.repo, delPase.copy, delPase.tree), { ok: true }, 'la copia que lee el pase sigue siendo la de su sello');
+  const v = ft().ultimaVuelta(C.estado(), C.sid, 'revisores').repos.find((x) => x.repo === C.codigo.repo);
+  assert.notStrictEqual(v.copy, delPase.copy, 'la vuelta relanzada armó su copia aparte');
+  assert.deepStrictEqual(ft().verify(C.codigo.repo, v.copy, v.tree), { ok: true });
+});
+
+test('T8b SealAndFreeze_Vuelta2_NoBorraLaCopiaDelPaseAbierto @story-8.330 @ac-8 — la copia del pase que reusó la vuelta 1 sigue en disco mientras el pase no se anota', () => {
+  // 🔴 rojo si: la vuelta 2 borra, con las copias de la vuelta 1, la copia que el pase abierto sigue leyendo.
+  const C = corrida('s-ft-reusa-abierto');
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'a.js'), 'module.exports = 10;\n');
+  const pase = congelarElPase(C);
+  const copiaDelCodigo = pase.repos.find((p) => p.repo === C.codigo.repo).copy;
+  const l = C.correr('marker.js', ['mark-adversarial-launched', 'r1', '4']);
+  assert.strictEqual(l.status, 0, salida(l));
+  assert.strictEqual(C.vuelta().r.status, 0);
+  assert.strictEqual(ft().ultimaVuelta(C.estado(), C.sid, 'revisores').repos.find((x) => x.repo === C.codigo.repo).copy, copiaDelCodigo, 'la vuelta 1 reusó la copia del pase');
+  // un arreglo en el código: la vuelta 2 copia de nuevo el código y borra lo de la vuelta 1, menos lo del pase abierto
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'a.js'), 'module.exports = 11;\n');
+  assert.strictEqual(C.vuelta(2).r.status, 0);
+  assert.ok(fs.existsSync(copiaDelCodigo), 'la copia del pase abierto sigue en disco');
+  // anotado el pase, la vuelta siguiente sí la borra
+  const f = path.join(tmp('ft-res-'), 'step-05b-adversarial.json');
+  fs.writeFileSync(f, JSON.stringify({ confirmed: [], sellos: C.marcador().adversarial.sellos }));
+  C.correr('marker.js', ['mark-adversarial-result', '0', '--type', '5b', '--result', f, '--run', 'r1']);
+  assert.ok((C.marcador().adversarialPasses || []).some((p) => p.tipo === '5b'), 'el pase quedó anotado');
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'a.js'), 'module.exports = 12;\n');
+  // la tercera vuelta pide la nota de «repensar el enfoque», como en una corrida de verdad
+  const nota = C.correr('marker.js', ['rethink', '--iter', '3', '--repeated', 'nada se repitió: la prueba cambia el código en cada vuelta',
+    '--keep', 'el enfoque sigue igual: la prueba sólo mira qué copias quedan en disco']);
+  assert.strictEqual(nota.status, 0, salida(nota));
+  const v3 = C.vuelta(3);
+  assert.strictEqual(v3.r.status, 0, salida(v3.r));
+  assert.ok(!fs.existsSync(copiaDelCodigo), 'anotado el pase, la vuelta siguiente la borra');
 });

@@ -164,9 +164,17 @@ HEAD **ya en origin/main**, con `git worktree remove` sin `--force` y `git branc
 - **Al cerrar la story** (`/tycon-pipeline close`, paso 9): `node <arnés>/scripts/hooks/worktree-sweep.js --story <N.M>`
   trae origin y borra los worktrees cuya rama nombra la story. Los que tienen cambios o commits sin mergear los nombra
   y no los toca.
-- **Al arrancar sesión**, una vez por día, en todos los repos conocidos: lo mismo, más dos resguardos para no pisar a
-  otra sesión viva — no toca un worktree usado en las últimas 4 horas (`TYCON_WORKTREE_SWEEP_IDLE_HOURS`) ni uno recién
-  creado sin trabajo propio. Lo que deja con trabajo lo nombra en una línea.
+- **Al arrancar sesión**, en cada arranque y de fondo, en todos los repos conocidos: lo mismo, más los resguardos
+  para no pisar a otra sesión viva. No toca:
+  - un worktree usado en las últimas horas: `maintenance.worktree_idle_hours` del perfil, 4 de fábrica, que
+    `TYCON_WORKTREE_SWEEP_IDLE_HOURS` pisa en la máquina;
+  - uno recién creado sin trabajo propio;
+  - uno que es la carpeta de una sesión viva;
+  - uno con una ejecución sin terminar, estacionada o con una firma pendiente.
+
+  Si adentro hay una ejecución terminada, cierra su marcador antes de borrar. El arranque dice lo que dejó la pasada
+  anterior. Lo que deja con trabajo lo nombra una vez por día. Una vez por semana cuenta las ramas remotas ya mergeadas
+  y da el comando para borrarlas.
 
 Nunca toca el checkout principal, uno bloqueado (`git worktree lock`) ni el de la sesión. Apagar:
 `TYCON_WORKTREE_SWEEP=0`. Ver qué haría: `--force --dry-run`.
@@ -179,7 +187,8 @@ La coordinadora abre cada sesión de fondo en una copia hermana del repo (`<repo
 (`guides/coordination.md`, «Abrir y nombrar las sesiones»). Claude Code 2.1.330 pide aprobar cada copia aparte, aunque
 la principal esté aprobada. Los **puestos** quedan como opción, con `coordination.js open --repo <repo> --slot`, para no
 aprobar una carpeta nueva por trabajo: son worktrees que no se borran, siempre las mismas carpetas, aprobadas una vez,
-y cada trabajo cambia de rama adentro. Nada crea puestos si no se piden.
+y cada trabajo cambia de rama adentro. Sin `--slot`, `open` usa un puesto libre donde ya abrió una sesión de fondo antes
+que crear una copia. Nada crea puestos si no se piden.
 
 ```
 <parent>/<RepoName>--slot-<n>      # n de 1 al tope de sesiones (coordination.max_working; 3 sin valor)
@@ -197,7 +206,7 @@ El guion es `scripts/tools/work-slots.js` (node: anda igual en Windows); `tycon-
 node scripts/tools/work-slots.js take --branch <rama>   # toma el primero libre y cambia ahí a la rama; imprime su cd
 node scripts/tools/work-slots.js release                # desde el puesto: lo deja sobre main, libre; la rama queda
 node scripts/tools/work-slots.js list                   # libres y ocupados, cada uno con su cd
-node scripts/tools/work-slots.js pending-trust          # los que no tienen su propia aprobación anotada, con su cd
+node scripts/tools/work-slots.js pending-trust          # los que no tienen aprobación a la vista, con su cd
 ```
 
 `take` crea la rama desde origin/main si no existe; `release` se niega si quedan cambios sin commitear. La coordinadora
@@ -205,8 +214,9 @@ abre una sesión de fondo en un puesto con `coordination.js open --repo <repo> -
 
 Para aprobarlos de una tanda, el dueño corre cada línea que imprime `pending-trust` (`cd "<puesto>" && claude`) y acepta
 la pregunta de Claude Code. Es una vez por puesto; la aprobación la da una persona, el guion no la escribe. Un puesto
-sale en la lista mientras no tenga su propia aprobación anotada: la de la carpeta principal no cuenta, y como Claude
-Code 2.1.330 no anota la de los puestos, la lista dice que no sabe en lugar de darlos por aprobados.
+sale en la lista mientras no tenga su propia aprobación anotada ni una sesión de fondo que ya abrió ahí (la anota
+`coordination.js open`, y la saca si Claude Code después contesta que no): la de la carpeta principal no cuenta, y como
+Claude Code 2.1.330 no anota la de los puestos, la lista dice que no sabe en lugar de darlos por aprobados.
 
 ---
 

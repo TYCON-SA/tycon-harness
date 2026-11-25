@@ -38,6 +38,8 @@ const AHORA = Date.parse('2026-11-19T15:00:00.000Z');
 const evento = (command, extra = {}) => ({ session_id: 'ses-a', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, ...extra });
 const PLAN = `node ${MARKER} complete-step approve-plan --approved "dale"`;
 const ESCAPE = `node ${MARKER} sign-file ALLOW_DOD_EVIDENCE_WRITE /repo/.advisors/dod-runtime/9.9.md`;
+// un escape que ningún guion comprueba (el de una variable): en Windows va sólo por la terminal
+const ESCAPE_VAR = 'TYCON_TEST_GATE=1 ls';
 const GUION_SH = `bash ${RBC} approve --root /repo --entries '[]'`;
 const ofrece = (cmd, o = {}) => ow.ofrecerEnWindows({ evento: evento(cmd, o.evento), escapes: o.escapes || [], firmas: o.firmas, plataforma: o.plataforma || 'win32', gitBash: o.gitBash || CON_GIT });
 
@@ -46,7 +48,7 @@ const ofrece = (cmd, o = {}) => ow.ofrecerEnWindows({ evento: evento(cmd, o.even
 test('T1 Freno_WindowsPowerShell_SinCuadroNiAprobado @story-8.319 @ac-1', () => {
   const ps = { tool_name: 'PowerShell' };
   const plan = ofrece(PLAN, { evento: ps, firmas: ['plan-approval'] });
-  const esc = ofrece(ESCAPE, { evento: ps, escapes: ['escape:ALLOW_DOD_EVIDENCE_WRITE'], firmas: ['escape:ALLOW_DOD_EVIDENCE_WRITE'] });
+  const esc = ofrece(ESCAPE_VAR, { evento: ps, escapes: ['escape:TYCON_TEST_GATE'], firmas: ['escape:TYCON_TEST_GATE'] });
   const sh = ofrece(GUION_SH, { evento: ps, firmas: ['control-change'] });
   for (const [que, t] of [['plan', plan], ['escape', esc], ['.sh', sh]]) {
     assert.ok(t, `${que}: en Windows PowerShell hay texto`);
@@ -70,11 +72,13 @@ test('T2 Freno_WindowsSinGitBash_SoloTerminal @story-8.319 @ac-1', () => {
 test('T3 Freno_WindowsBashYOtras_SegunLaFirma @story-8.319 @ac-2', () => {
   // en win32 con Bash: la que pasa, el texto de hoy (vacío: ow_negar usa su texto fijo con cuadro); las otras dos, terminal
   assert.strictEqual(ofrece(PLAN, { firmas: ['plan-approval'] }), '');
-  assert.match(ofrece(ESCAPE, { escapes: ['escape:ALLOW_DOD_EVIDENCE_WRITE'], firmas: ['escape:ALLOW_DOD_EVIDENCE_WRITE'] }), /va sólo en la terminal/);
+  assert.match(ofrece(ESCAPE_VAR, { escapes: ['escape:TYCON_TEST_GATE'], firmas: ['escape:TYCON_TEST_GATE'] }), /va sólo en la terminal/);
+  // un escape que comprueba su guion (aunque llegue como escape, fuera de su forma): como las firmas de guion
+  assert.strictEqual(ofrece(ESCAPE, { escapes: ['escape:ALLOW_DOD_EVIDENCE_WRITE'], firmas: ['escape:ALLOW_DOD_EVIDENCE_WRITE'] }), '');
   assert.match(ofrece(GUION_SH, { firmas: ['control-change'] }), /va sólo en la terminal/);
   // en darwin y linux, el texto de hoy, letra por letra: ow_negar no recibe nada que lo cambie
   for (const plataforma of ['darwin', 'linux']) {
-    for (const [cmd, o] of [[PLAN, {}], [ESCAPE, { escapes: ['escape:ALLOW_DOD_EVIDENCE_WRITE'] }], [GUION_SH, {}]]) {
+    for (const [cmd, o] of [[PLAN, {}], [ESCAPE_VAR, { escapes: ['escape:TYCON_TEST_GATE'] }], [GUION_SH, {}]]) {
       assert.strictEqual(ofrece(cmd, { ...o, plataforma, evento: { tool_name: 'PowerShell' } }), '', `${plataforma}: ${cmd}`);
     }
   }
@@ -338,9 +342,34 @@ test('T16 Guias_DicenLaViaDeWindows @story-8.319 @ac-16', () => {
   }
 });
 
+test('T16b Guias_ElEscapeQueComprobaSuGuion_ConElClickEnSuFormaExacta', () => {
+  // 🔴 Falla con: que el paso 6 o el SKILL digan sólo «lo decide la persona» (el agente pregunta, la persona aprueba y en
+  //    Windows la mandan a la terminal), o que las guías digan que en Windows todo escape va sólo por la terminal.
+  const leer = (...r) => fs.readFileSync(path.join(RAIZ, ...r), 'utf8').replace(/\s+/g, ' ');
+  const paso6 = leer('skills', 'tycon-pipeline', 'steps', 'step-06-run-tests.md');
+  const skill = leer('skills', 'tycon-pipeline', 'SKILL.md');
+  assert.match(paso6, /--force-manual/);
+  assert.match(paso6, /click o el «aprobado»/);
+  assert.match(paso6, /también en Windows/);
+  assert.match(paso6, /solo y en su forma exacta/);
+  // el SKILL no tiene lugar para la regla entera (está en el paso de las pruebas): dice quién la firma
+  assert.match(skill, /`--force-manual` lo firma la persona\./);
+  for (const g of ['firmas-del-arnes.md', 'safety-guard.md']) {
+    const t = leer('guides', g);
+    assert.doesNotMatch(t, /En Windows, además, un escape se firma siempre ahí/, g);
+    assert.match(t, /escape que ningún guion comprueba/, g);
+    assert.match(t, /set-check --force-manual/, g);
+  }
+});
+
 test('T17 Decidir_NoCambia @story-8.319 @ac-15', () => {
   // los veredictos de decidir sobre Windows los fija owner-window.test.js; acá, que los motivos de siempre siguen
   assert.strictEqual(ow.noPasaEnWindows({ escapes: ['escape:x'] }), 'en Windows un escape no se aprueba en la pestaña');
+  assert.strictEqual(ow.noPasaEnWindows({ escapes: ['escape:TYCON_TEST_GATE'] }), 'en Windows un escape no se aprueba en la pestaña');
+  assert.strictEqual(ow.noPasaEnWindows({ escapes: ['escape:cerrar-la-ejecucion'] }), 'en Windows un escape no se aprueba en la pestaña');
+  // un escape que comprueba su guion pasa como las firmas de guion; con otro que no, no
+  assert.strictEqual(ow.noPasaEnWindows({ escapes: ['escape:force-manual'] }), null);
+  assert.strictEqual(ow.noPasaEnWindows({ escapes: ['escape:force-manual', 'escape:TYCON_TEST_GATE'] }), 'en Windows un escape no se aprueba en la pestaña');
   assert.strictEqual(ow.noPasaEnWindows({ palabras: [RBC, 'approve'] }), 'en Windows un guion de consola no se puede comprobar en la pestaña');
   assert.strictEqual(ow.noPasaEnWindows({ palabras: [MARKER, 'mark-tested'] }), null);
   // los veredictos de decidir los corre su suite (owner-window.test.js, en la lista de suites): acá, el de Windows

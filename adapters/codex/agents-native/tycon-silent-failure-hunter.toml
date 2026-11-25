@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-silent-failure-hunter.md
-# source_sha256: 9d1a86b10a2dc26fddf3eb41eeb3784df41982dccc7828704ea6d92e4c28fbb4
+# source_sha256: 9ad1f2d6f988cc9d863ba7a3acc0786cbc227814a29eff91811f9a1421d5b320
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-silent-failure-hunter.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-silent-failure-hunter").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
@@ -376,6 +376,13 @@ Tu reporte final se estructura SIEMPRE así:
    ```text
    Veredicto: limpio
    Veredicto: hallazgos (SEC-C1, SEC-C1, SEC-W2) · bloquea: sí
+   ```
+   Si el prompt trae lo que reportaste en la vuelta anterior, sumá al renglón los críticos de esa vuelta que confirmás
+   arreglados, una vez por hallazgo, aunque hoy reportes otro con el mismo código. Sin esa parte el arnés no da el arreglo
+   por comprobado, y cuesta otra vuelta o la exención del dueño:
+   ```text
+   Veredicto: hallazgos (SEC-C1) · bloquea: sí · resueltos (SEC-C1, SEC-C3)
+   Veredicto: limpio · resueltos (SEC-C1)
    ```
 
 **Tope duro: 1000 caracteres de prosa** (600 si el prompt no pide lo contrario). Sin hallazgos:

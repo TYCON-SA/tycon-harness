@@ -147,3 +147,52 @@ test('T12 CodeScanning_AlertaSoloEnLaPunta_EsRojo — una alerta anotada en refs
   const dos = leer([nodo(12, [corrida()])], [CONFIGURADO, [/code-scanning\/alerts\?ref=refs%2Fpull%2F12%2F(merge|head)/, { value: [{ number: 171 }] }]]).pedidos[0];
   assert.match(dos.codeScanning.motivo, /^1 alerta/);
 });
+
+/**
+ * Un gh de mentira para la lista con la cola: la consulta GraphQL contesta con el pedido `n` limpio y con su análisis en
+ * verde; cualquier otra ruta, 404. Anota cada ruta pedida.
+ */
+function ghConUnPedido(n) {
+  const fs = require('fs');
+  const os = require('os');
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'gh-un-pedido-'));
+  const bin = path.join(d, 'gh.js');
+  const log = path.join(d, 'rutas.log');
+  fs.writeFileSync(bin, `'use strict';
+const fs = require('fs');
+const a = process.argv.slice(2);
+const ruta = a[a.indexOf('--method') + 4];
+fs.appendFileSync(${JSON.stringify(log)}, ruta + '\\n');
+if (ruta === 'graphql') {
+  process.stdout.write(JSON.stringify({ data: { repository: { pullRequests: { nodes: [${JSON.stringify(nodo(n, [corrida()]))}], pageInfo: { hasNextPage: false, endCursor: null } } } } }));
+  process.exit(0);
+}
+process.stderr.write('gh: Not Found (HTTP 404)');
+process.exit(1);
+`);
+  return { bin, rutas: () => fs.readFileSync(log, 'utf8').trim().split('\n') };
+}
+
+// Fila 172b (24/11): `deadlineMs` es la hora límite, como en el conector de Azure DevOps y en quien llama; el análisis la
+// tomaba como una duración, y su corte caía en otro siglo. Con la hora límite ya pasada, no lee el análisis y lo dice.
+test('T13 CodeScanning_LaHoraLimite_EsUnaHora_YSinTiempoLoMarca — pasada la hora límite no se lee, y queda marcado sin tiempo', () => {
+  const listar = (gh, deadlineMs) => CR()['change-request.list']({ queue: true, deadlineMs }, { env: { ...process.env, TYCON_GH_CMD: gh.bin }, repo: { org: 'acme', repo: 'widgets' } });
+  const tarde = ghConUnPedido(13);
+  // stable-data: el conector mide el corte contra el reloj de ahora; la hora límite va un segundo antes o un minuto después
+  const r = listar(tarde, Date.now() - 1000);
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.strictEqual(r.value[0].codeScanning.estado, 'no-se-pudo', JSON.stringify(r.value[0].codeScanning));
+  assert.match(r.value[0].codeScanning.motivo, /no hubo tiempo/);
+  assert.strictEqual(r.value[0].codeScanning.sinTiempo, true, 'marcado sin tiempo: quien lee la lista lo distingue de una lectura fallida');
+  assert.deepStrictEqual(tarde.rutas(), ['graphql'], 'no salió a leer el análisis');
+  // con tiempo, sale a leerlo (acá GitHub contesta 404: no se pudo, por otro motivo) y no queda marcado sin tiempo
+  const aTiempo = ghConUnPedido(13);
+  const s = listar(aTiempo, Date.now() + 60000);
+  assert.doesNotMatch(String(s.value[0].codeScanning.motivo), /no hubo tiempo/, JSON.stringify(s.value[0].codeScanning));
+  assert.ok(!s.value[0].codeScanning.sinTiempo);
+  assert.ok(aTiempo.rutas().some((x) => /code-scanning/.test(x)), 'leyó el análisis');
+  // lo que se corta en el medio también queda marcado
+  let t = 0;
+  const medio = CR().conAnalisis({}, 'acme/widgets', [CR().deGraphql(nodo(1, [corrida()]))], github([CONFIGURADO]).llamar, { hasta: 0.5, ahora: () => t++ });
+  assert.strictEqual(medio[0].codeScanning.sinTiempo, true, JSON.stringify(medio[0].codeScanning));
+});

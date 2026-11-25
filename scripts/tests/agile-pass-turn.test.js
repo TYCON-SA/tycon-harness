@@ -31,6 +31,7 @@ const maquina = (cambios = {}) => ({
   reserva: () => null,
   corriendo: () => [],
   propias: () => [],
+  propios: () => [],
   pases: () => [],
   ...cambios,
 });
@@ -105,6 +106,20 @@ test('APT7 ConReserva_SiSuPortonYaCorre_Avisa (fila 130)', () => {
     assert.match(propias[0], /Uma/);
     assert.doesNotMatch(propias[0], /Bea/);
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
+
+// 🔴 Falla con (fila 138): la sesión que tomó el turno para su pase lo lanza y el aviso le dice «sin el turno… lo tiene»
+// ella misma; o el turno que la sesión tomó para otra cosa (su portón) deja lanzar el pase encima, o lo dice confuso.
+test('APT8 TurnoPropio_ParaSuPase_ConTurno_ParaOtraCosa_Avisa (fila 138)', () => {
+  const paraElPase = maquina({ propios: (s) => (s === 'ses-a' ? [{ texto: 'Uma (pase adversarial fila 9, desde las 10:05)', what: 'pase adversarial fila 9' }] : []) });
+  assert.deepStrictEqual(G.decidir(pase, paraElPase), { status: 'con-turno', message: null });
+  assert.strictEqual(G.decidir({ toolName: 'Workflow', toolInput: {}, sid: 'ses-a' }, maquina({ propios: () => [{ texto: 'Uma (workflow de revisores)', what: 'workflow de revisores' }] })).status, 'con-turno');
+  const paraOtra = G.decidir(pase, maquina({ propios: (s) => (s === 'ses-a' ? [{ texto: 'Uma (40 suites, desde las 10:05)', what: '40 suites' }] : []) }));
+  assert.strictEqual(paraOtra.status, 'aviso');
+  assert.match(paraOtra.message, /el turno de esta sesión es para Uma \(40 suites, desde las 10:05\): es para una cosa por vez\. Lanzalo cuando termine\. Hoy sólo se avisa\./);
+  assert.doesNotMatch(paraOtra.message, /sin el turno/);
+  // el turno de otra sesión sigue avisando como antes
+  assert.match(G.decidir(pase, maquina({ corriendo: () => ['Bea (pase de la 9.9)'], propios: (s) => (s === 'ses-b' ? [{ texto: 'Bea', what: 'pase de la 9.9' }] : []) })).message, /sin el turno de tarea pesada de esta máquina\. Lo tiene: Bea/);
 });
 
 // 🔴 mutación: en modo freno, dejar pasar o frenar con otro motivo.

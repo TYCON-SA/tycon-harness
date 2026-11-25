@@ -908,3 +908,34 @@ test('el mensaje del freno dice de quién es el escape y nombra la receta', () =
   assert.match(m, /replace-section\.js/, 'la receta para un reemplazo grande');
   assert.match(m, /ambiente de la sesión/, 'el escape no se pone desde el comando');
 });
+
+// 🔴 Falla con: no contar como escritura el `--output` de git. `git log --output=specs/h.md` (también `diff` y `show`,
+// con la ruta aparte, abreviada como `--out=` o entre comillas) escribe el archivo que nombra, y el freno no lo veía, ni
+// para una historia ni para una constancia.
+test('GitConOutput_EscribeLoQueNombra: git log, diff o show con --output frenan como una escritura', () => {
+  const { estado, repo } = corralConHistorias();
+  conEnv(ENV, () => {
+    const freno = (c) => tituloDe(bash.handle(ev(c, repo), { stateDir: estado, installedRoots: [] }));
+    for (const c of [
+      'git log --output=specs/story-x.md',
+      'git diff --output specs/story-x.md',
+      'git show --out=specs/story-x.md HEAD',
+      'git log --ou=specs/story-x.md',
+      "git log --output='specs/story-x.md'",
+      'git -C specs log --output=story-x.md',
+      'env GIT_PAGER=cat git log --output=specs/story-x.md',
+      // detrás de otro comando que lo lanza, y en un alias de `-c`
+      'echo HEAD | xargs git diff --output=specs/story-x.md',
+      'find . -name x -exec git log --output=specs/story-x.md \\;',
+      "git -c 'alias.d=diff --output=specs/story-x.md' d",
+    ]) assert.equal(freno(c), HISTORIA, c);
+    assert.match(freno('git log --output=.github/control-changes/abc.json'), /constancia de cambio de control/);
+    for (const c of [
+      'git log --oneline -3 specs/story-x.md',
+      'git log --output-indicator-new=x specs/story-x.md',
+      'git diff --output=/tmp/x.diff',
+      "git -c 'alias.l=log --oneline' l",
+      'echo HEAD | xargs git log --oneline',
+    ]) assert.equal(freno(c), '', c);
+  });
+});

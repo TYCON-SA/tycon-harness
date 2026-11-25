@@ -20,6 +20,9 @@ Es una página web para toda la organización. Cada persona entra con la cuenta 
 tareas, sus pedidos de cambio, sus ejecuciones. Quienes mantienen el arnés ven todo, y además tienen la pestaña
 **Configuración**, donde se personaliza la organización (quién es responsable de qué, el canal del aviso, los umbrales).
 
+El sitio lee y configura repos de GitHub o de Azure DevOps. Los de GitLab todavía no los usa: una organización que
+trabaja en GitLab tiene el arnés en cada máquina, pero el sitio no muestra esos repos.
+
 **Las palabras que usa el sitio**, para quien no programa:
 
 - **El arnés:** el conjunto de reglas, controles y ayudantes con que el equipo programa con Claude. Este sitio muestra
@@ -927,7 +930,7 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
 - **Estimaciones**: la unidad en que estima la organización (horas, días o puntos), las horas de un día de trabajo (de
   1 a 24; vacío, 8) y las horas que vale un punto (vacío: sin tasa, y con puntos el error no se calcula). Abajo dice la
   unidad que leen hoy las máquinas. Cambiar la unidad no reescribe lo ya estimado. La estimación vigente de cada
-  historia llega también a su pedido de trabajo, en Azure DevOps o GitHub. Queda en `team-repos.json` →
+  historia llega también a su pedido de trabajo, en Azure DevOps, GitHub o GitLab. Queda en `team-repos.json` →
   `estimates`, en el repo del perfil; el perfil tiene que pedir una versión del arnés que lea la clave. Lo revisa quien
   mantiene.
 - **Pase adversarial**: cuándo corre el pase que ejecuta el código de una historia para buscarle defectos. Automático
@@ -1826,6 +1829,15 @@ huella de la versión que instalás.
 huella de `stable` (`imgURL=<imagen>@sha256:…`). El hook es un secreto (`SITE_RENDER_DEPLOY_HOOK`): nunca sale en el
 registro. Render lo hace de fondo; la prueba sin sesión de la noche siguiente lo confirma. Si Render rechaza la imagen (un
 404), tiene que ser del mismo registro y nombre que la del servicio.
+
+**Si quedó instalado por etiqueta** (optativo): con la llave de la API de Render (`SITE_RENDER_API_KEY`, secreta) y el id
+del servicio (`SITE_RENDER_SERVICE_ID`, el `srv-…` de su URL), el nocturno le pregunta a Render qué imagen corre el
+servicio antes de pedir el redespliegue. Si está fijada por etiqueta (`:stable`, `:latest`), el resultado sale `no_pudo`
+con el motivo «instalado por etiqueta» y la banda del sitio aparece igual que en Azure. Si Render no contesta, sale
+`no_pudo` con su código, nunca «al día». Sin las dos variables, todo sigue como antes. En Azure Pipelines se cargan en
+«Variables» del pipeline (la llave, como secreta); en GitHub, la llave como secreto y el id como variable del repo.
+Render no tiene llaves de sólo lectura: una llave abre todos los espacios de trabajo de su usuario. Creala desde un
+usuario que sólo esté en el espacio del sitio, y revocala desde «Account Settings → API Keys» si se filtra.
 
 ### Una máquina propia
 

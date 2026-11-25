@@ -22,6 +22,9 @@ things: their tasks, their change requests, their runs. Whoever maintains the ha
 the **Configuration** tab, where the organization is customized (who is responsible for what, the
 notice channel, the thresholds).
 
+The site reads and configures GitHub or Azure DevOps repos. It does not use GitLab repos yet: an organization that
+works on GitLab has the harness on each machine, but the site does not show those repos.
+
 **The words the site uses**, for whoever does not program:
 
 - **The harness:** the set of rules, controls and helpers the team uses to program with Claude. This site shows what the
@@ -950,7 +953,7 @@ be, to copy it and open the request by hand.
 - **Estimates**: the unit your organization estimates in (hours, days or points), the hours in a
   working day (1 to 24; empty, 8) and the hours a point is worth (empty: no rate, and with points the error is not
   calculated). Below, the unit the machines read today. Changing the unit does not rewrite what was already estimated.
-  Each story's current estimate also reaches its work item, in Azure DevOps or GitHub.
+  Each story's current estimate also reaches its work item, in Azure DevOps, GitHub or GitLab.
   It lives in `team-repos.json` → `estimates`, in the profile repo; the profile has to require a harness version that
   reads the key. A maintainer reviews it.
 - **Adversarial pass**: when the pass that runs a story's code to hunt for defects runs. Automatic (the
@@ -1863,6 +1866,15 @@ version you install.
 hook with the `stable` digest (`imgURL=<image>@sha256:…`). The hook is a secret (`SITE_RENDER_DEPLOY_HOOK`): it never
 shows in the log. Render does it in the background; the next night's check without a session confirms it. If Render
 rejects the image (a 404), it has to be from the same registry and name as the service's.
+
+**If it was installed by tag** (optional): with the Render API key (`SITE_RENDER_API_KEY`, secret) and the service id
+(`SITE_RENDER_SERVICE_ID`, the `srv-…` in its URL), the nightly asks Render which image the service runs before asking
+for the redeploy. If it is pinned by tag (`:stable`, `:latest`), the result is `no_pudo` with the reason "installed by
+tag" and the site band shows just like on Azure. If Render does not answer, it is `no_pudo` with its code, never "up to
+date". Without both variables, everything stays as before. In Azure Pipelines they go in the pipeline's "Variables"
+(the key as secret); in GitHub, the key as a secret and the id as a repo variable. Render has no read-only keys: a key
+opens every workspace of its user. Create it from a user that is only in the site's workspace, and revoke it from
+"Account Settings → API Keys" if it leaks.
 
 ### Your own machine
 

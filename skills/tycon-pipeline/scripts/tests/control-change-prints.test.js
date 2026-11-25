@@ -309,6 +309,52 @@ test('T27 Empuje_DespuesDeUnCdConSustitucionSinComillasOComodin_FrenaSinMirar', 
   }
 });
 
+// 🔴 Falla con: frenar `git remote add origin` en un repo que todavía no tiene origin (no cambia a dónde apunta: no
+//    apuntaba a ningún lado), o dejarlo pasar cuando origin ya está. Como `add` pasa sin origin, sacar origin tiene que
+//    frenar por cualquier camino: `remote rename origin …` y la sección de `git config` (borrarla o renombrarla, en sus dos formas).
+test('T28 RemoteAddOrigin_FrenaSoloSiYaHayOrigin_YSacarOriginFrena', () => {
+  const c = corral();
+  const sinRemotos = path.join(c.raiz, 'sin-remotos');
+  fs.mkdirSync(path.join(sinRemotos, '.github', 'control-changes'), { recursive: true });
+  git(sinRemotos, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(sinRemotos, '.github', 'control-changes', 'a.json'), FIRMA);
+  git(sinRemotos, 'add', '-A'); git(sinRemotos, 'commit', '-q', '-m', 'base');
+  const vacia = path.join(c.raiz, 'vacia');
+  fs.mkdirSync(vacia);
+  const ORIGIN = /apunta origin/;
+  const URL = 'https://host.example/org/repo.git';
+  for (const [cmd, cwd] of [[`git remote add origin ${URL}`, sinRemotos], [`git remote add -f origin ${URL}`, sinRemotos],
+    [`git -C sin-remotos remote add origin ${URL}`, c.raiz], [`git init && git remote add origin ${URL}`, vacia]]) {
+    const r = c.correr(cmd, cwd);
+    assert.ok(!(r && r.block && ORIGIN.test(r.block)), `sin origin, pasa: ${cmd}`);
+  }
+  for (const [cmd, cwd] of [[`git remote add origin ${URL}`, c.repo], [`git -C repo remote add origin ${URL}`, c.raiz],
+    [`git remote set-url origin ${URL}`, sinRemotos], ['git remote rename origin viejo', c.repo],
+    ['git config --remove-section remote.origin', c.repo], ['git config remove-section remote.origin', c.repo],
+    ['git config --rename-section remote.origin remote.viejo', c.repo], ['git config rename-section remote.x remote.origin', c.repo],
+    ['git config set remote.origin.mirror true', c.repo],
+    // con una opción con valor antes del subcomando, y con una que no conoce
+    ['git config --file .git/config remove-section remote.origin', c.repo], ['git config -f .git/config rename-section remote.origin remote.x', c.repo],
+    ['git config --worktree --unknown-option z remove-section remote.origin', c.repo], ['git config --file .git/config set remote.origin.mirror true', c.repo]]) {
+    const r = c.correr(cmd, cwd);
+    assert.ok(r && r.block && ORIGIN.test(r.block), `frena: ${cmd}`);
+  }
+  // sin origin en la configuración pero con sus copias (lo sacaron editando .git/config a mano): lo tuvo, `add` frena
+  const resto = path.join(c.raiz, 'resto');
+  fs.mkdirSync(resto);
+  git(resto, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(resto, 'a'), 'a');
+  git(resto, 'add', '-A'); git(resto, 'commit', '-q', '-m', 'base');
+  git(resto, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  const r = c.correr(`git remote add origin ${URL}`, resto);
+  assert.ok(r && r.block && ORIGIN.test(r.block), 'con las copias de origin, add frena');
+  for (const cmd of ['git config --get remote.origin.mirror', 'git config get remote.origin.mirror', 'git config --unset remote.origin.tagopt',
+    'git config --remove-section remote.upstream']) {
+    const r = c.correr(cmd);
+    assert.ok(!(r && r.block && ORIGIN.test(r.block)), `pasa: ${cmd}`);
+  }
+});
+
 test('T7 SinConstanciasNuevas_OComandosQueNoSonCommitNiPush_ComoAntes', () => {
   const c = corral();
   assert.strictEqual(c.correr('git commit -m x'), null);

@@ -2214,6 +2214,8 @@ function codexAgentThreads(codexHome, problems) {
   try {
     const { DatabaseSync } = require('node:sqlite');
     db = new DatabaseSync(path.join(codexHome, newest), { readOnly: true });
+    // Codex toma su base unos instantes mientras escribe: se espera hasta un segundo antes de decir que no se pudo leer
+    db.exec('PRAGMA busy_timeout = 1000');
     const cols = new Set(db.prepare('PRAGMA table_info(threads)').all().map((c) => c.name));
     const where = [cols.has('source') ? "source = 'exec'" : null, cols.has('thread_source') ? "thread_source = 'subagent'" : null].filter(Boolean);
     if (!where.length) return unknown();
@@ -2418,10 +2420,13 @@ function closedSessionLastAt(home, name) {
 }
 
 /** Mueve el tablero con los hechos de la foto. La foto sale igual si falla: el motivo va una vez a lo que no se pudo leer. */
-function syncBoardFromPhoto(sdir, facts, complete, problems, { now, home, sync = boardTool.sync } = {}) {
+function syncBoardFromPhoto(sdir, facts, complete, problems, { now, home, sync = boardTool.sync, photo = sync === boardTool.sync ? boardTool.photo : null } = {}) {
   try {
     const r = sync(sdir, facts, { complete, now, home });
     if (r && r.aviso) problems.push(r.aviso);
+    // la foto del día de cuántas quedan, también en un día sin cambios en el tablero
+    const p = photo ? photo(sdir, { now }) : null;
+    if (p && p.aviso) problems.push(p.aviso);
     return r;
   } catch (e) {
     problems.push(`el tablero no se movió solo: ${e.message}`);
@@ -2884,4 +2889,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { answers, workedAfterWait, hiddenCardsLine, otherProjectsOf, readOpenPrs, ownerWaitsOf, closedByPid,removeClosed, markRecipients, markClosedSessions, closedSessionLastAt, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, boardLine, findTask, boardEditedNotice, syncBoardFromPhoto, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive, buildTables, rowPrsNow, applyRowPrs, settleRowPrs, workCards, readTranscripts, readLastWrites, machineLoad, memoryCommand, MODULES, openStories };
+module.exports = { answers, codexAgentThreads, workedAfterWait, hiddenCardsLine, otherProjectsOf, readOpenPrs, ownerWaitsOf, closedByPid,removeClosed, markRecipients, markClosedSessions, closedSessionLastAt, prsNamedIn, waitedPrsSaid, askWaitingPrs, tokensTxt, tokensCard, buildOffice, buildBoard, boardLine, findTask, boardEditedNotice, syncBoardFromPhoto, page, importMap, moduleSource, collect, createEnvelopes, conversationOf, waysOfWorking, openFile, openLive, deskSlots, readSiteUrl, readQuietMinutes, plain, plainWhole, runningTests, cardPr, codexAgentsUnder, claudeAgentsActive, buildTables, rowPrsNow, applyRowPrs, settleRowPrs, workCards, readTranscripts, readLastWrites, machineLoad, memoryCommand, MODULES, openStories };

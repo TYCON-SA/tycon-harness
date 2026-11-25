@@ -29,7 +29,10 @@
  * anota en `<carpeta>/PEDIDOS.json` y cuenta como muerta («sin respuesta»). La sesión lanza un agente de Claude por
  * pedido, cada uno escribe su respuesta, y se vuelve a correr hasta que no quedan pedidos. El guion es el mismo.
  *
- * Uso:  node workflow-lite.js <script.workflow.js> --args '<json>' [--out <file>] [--agents-dir <carpeta>]
+ * `--args-file <archivo>` da los mismos args que `--args`, leídos de un archivo JSON (con o sin BOM). Es la forma para
+ * args grandes: en Windows la línea de comando tiene tope (unos 32 KB) y los de la revisión del plan lo pasan.
+ *
+ * Uso:  node workflow-lite.js <script.workflow.js> --args '<json>' | --args-file <archivo> [--out <file>] [--agents-dir <carpeta>]
  *       node workflow-lite.js --selftest
  * Env:  TYCON_WFLITE_JOBS (cap de agentes concurrentes, default 4)
  *       TYCON_WFLITE_MODEL_MAP (json label→slug; default desde equivalences.json si existe)
@@ -352,6 +355,7 @@ function makeAgent(opts, corredor) {
         process.stderr.write(`wflite ▸ ${label} con ${runner.label} (intento ${attempt})\n`);
         let res;
         let leido;
+        let donde = null;
         try { fs.rmSync(outFile, { force: true }); } catch (_) {}
         if (stub) {
           res = await spawnAgent(stub.split(' '), prompt, opts.cwd, opts.timeoutMs);
@@ -359,8 +363,8 @@ function makeAgent(opts, corredor) {
           if (leido.failed) leido.limit = esTope(res);
         } else {
           const c = RR.commandFor(name, runner, { model: modelo, schema: strict, schemaFile, outFile, cwd: opts.cwd, customCommand: lista.customCommand, prompt });
-          res = await spawnAgent([c.bin, ...c.args], prompt, opts.cwd, opts.timeoutMs, { stdin: c.input === 'stdin', env: c.env });
-          let fileText = null;
+          donde = RR.resolveBin(runner, c.bin);
+          res = await spawnAgent([donde.bin || c.bin, ...c.args], prompt, opts.cwd, opts.timeoutMs, { stdin: c.input === 'stdin', env: c.env });          let fileText = null;
           if (c.answer === 'file' || c.answer === 'file-env') { try { fileText = fs.readFileSync(outFile, 'utf8'); } catch (_) { fileText = null; } }
           leido = RR.readAnswer(runner, { stdout: res.out, stderr: res.err, code: res.code, fileText });
           if (leido.failed && !leido.limit) leido.limit = esTope(res);
@@ -382,7 +386,11 @@ function makeAgent(opts, corredor) {
           corredor.fallosSeguidos[name] = (corredor.fallosSeguidos[name] || 0) + 1;
           const noLanzo = res.code === -1;
           if (noLanzo || corredor.fallosSeguidos[name] >= FALLOS_PARA_CAIDO) {
-            const por = noLanzo ? `no se pudo lanzar (${causa})` : `falló ${corredor.fallosSeguidos[name]} veces seguidas (${causa})`;
+            // sin el programa: dónde se buscó y la salida aprobada, que no lanza nada desde acá
+            const dondeBusco = noLanzo && donde && donde.bin === null
+              ? `: no está en ${donde.buscado.join(' ni en ')}; la salida aprobada es --agents-dir <carpeta> (los agentes los lanza la sesión)`
+              : '';
+            const por = noLanzo ? `no se pudo lanzar (${causa})${dondeBusco}` : `falló ${corredor.fallosSeguidos[name]} veces seguidas (${causa})`;
             corredor.caidos[name] = { causa: por, hora: horaCorta(), label };
             process.stderr.write(`wflite ✖ ${label}: ${runner.label} ${por} — no lo vuelvo a probar en esta corrida\n`);
           }
@@ -540,10 +548,25 @@ async function main() {
   const argv = process.argv.slice(2);
   if (argv.includes('--selftest')) return selftest();
   const scriptPath = argv[0];
-  if (!scriptPath || !fs.existsSync(scriptPath)) { console.error('uso: workflow-lite.js <script.workflow.js> --args <json> [--out <file>] [--runners <a,b>] [--agents-dir <carpeta>]'); return 1; }
+  if (!scriptPath || !fs.existsSync(scriptPath)) { console.error('uso: workflow-lite.js <script.workflow.js> --args <json> | --args-file <archivo> [--out <file>] [--runners <a,b>] [--agents-dir <carpeta>]'); return 1; }
   const ai = argv.indexOf('--args');
-  const rawArgs = ai >= 0 ? argv[ai + 1] : '{}';
-  let argsValue; try { argsValue = JSON.parse(rawArgs); } catch (_) { argsValue = rawArgs; }
+  // `--args-file <archivo>` o `--args-file=<archivo>`, como lo lee el freno de la consola: una sola vez
+  const conArchivo = argv.filter((x) => x === '--args-file' || x.startsWith('--args-file='));
+  let argsValue;
+  if (conArchivo.length) {
+    // los args de un archivo: uno que no se lee o que no es JSON no corre el pase con otros args
+    if (ai >= 0) { console.error('workflow-lite: --args y --args-file a la vez: los args van de una sola forma'); return 1; }
+    if (conArchivo.length > 1) { console.error('workflow-lite: --args-file más de una vez: los args van de una sola forma'); return 1; }
+    const afi = argv.indexOf(conArchivo[0]);
+    const argsFile = conArchivo[0].startsWith('--args-file=') ? conArchivo[0].slice('--args-file='.length) : argv[afi + 1];
+    if (!argsFile || argsFile.startsWith('--')) { console.error('workflow-lite: --args-file sin archivo'); return 1; }
+    let texto;
+    try { texto = fs.readFileSync(argsFile, 'utf8'); } catch (e) { console.error(`workflow-lite: --args-file ${argsFile}: no se pudo leer (${e.code || e.message})`); return 1; }
+    try { argsValue = JSON.parse(texto.replace(/^﻿/, '')); } catch (e) { console.error(`workflow-lite: --args-file ${argsFile}: no es JSON (${e.message})`); return 1; }
+  } else {
+    const rawArgs = ai >= 0 ? argv[ai + 1] : '{}';
+    try { argsValue = JSON.parse(rawArgs); } catch (_) { argsValue = rawArgs; }
+  }
   const oi = argv.indexOf('--out');
   const di = argv.indexOf('--agents-dir');
   const agentsDir = di >= 0 ? argv[di + 1] : null;

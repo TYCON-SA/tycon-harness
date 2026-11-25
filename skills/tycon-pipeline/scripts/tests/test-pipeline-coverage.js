@@ -15,7 +15,8 @@
 const fs = require('fs');
 const path = require('path');
 
-const SRC = fs.readFileSync(path.join(__dirname, '..', 'pipeline.js'), 'utf8');
+// pipeline.js con sus partes de lib/: lo que se busca puede vivir en una de ellas
+const SRC = require('./lib/pipeline-source.js')(path.join(__dirname, '..'));
 // Los agentes de este mismo checkout, como los paquetes: con los del arnés instalado, la prueba mediría otra versión y
 // fallaría en una máquina sin arnés.
 const AGENTS_DIR = path.resolve(__dirname, '..', '..', '..', '..', 'agents');

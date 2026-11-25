@@ -9,6 +9,7 @@
  * `TYCON_REVIEW_RUNNER_FILE` cambia la integración: la usan sólo las pruebas.
  */
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..', '..', '..', '..');
@@ -84,6 +85,54 @@ function commandFor(name, runner, { model, schema, schemaFile, outFile, cwd, cus
   return { name, label: runner.label || name, bin, args, env, input: runner.prompt, cwd, shell: false, answer: runner.answer, outFile };
 }
 
+const esArchivo = (p) => { try { return fs.statSync(p).isFile(); } catch (_) { return false; } };
+const escRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** Los archivos que cumplen `patron` (con `~` y `*` dentro de un tramo), del más nuevo al más viejo. */
+function expandir(patron, home) {
+  const tramos = String(patron).replace(/^~(?=$|[\\/])/, home).split(/[\\/]+/);
+  // el primer tramo vacío es la raíz; en Windows, la unidad («C:»)
+  let actuales = [tramos[0] === '' ? path.sep : `${tramos[0]}${path.sep}`];
+  for (const t of tramos.slice(1).filter(Boolean)) {
+    const siguientes = [];
+    for (const base of actuales) {
+      if (!t.includes('*')) { siguientes.push(path.join(base, t)); continue; }
+      const re = new RegExp(`^${t.split('*').map(escRe).join('.*')}$`);
+      let nombres = [];
+      try { nombres = fs.readdirSync(base); } catch (_) { nombres = []; }
+      for (const n of nombres) if (re.test(n)) siguientes.push(path.join(base, n));
+    }
+    actuales = siguientes;
+  }
+  const cuando = (f) => { try { return fs.statSync(f).mtimeMs; } catch (_) { return 0; } };
+  return actuales.filter(esArchivo).sort((a, b) => cuando(b) - cuando(a));
+}
+
+/**
+ * El programa de un corredor: `bin` tal cual si trae carpeta o está en el PATH (en Windows, con las extensiones de
+ * PATHEXT); si no, el más nuevo de los lugares que declara su integración para este sistema (`bin_paths`, con `~` y
+ * `*`). Una sesión de una extensión del editor no siempre tiene al corredor en el PATH. → `{ bin, desde }`, o
+ * `{ bin: null, buscado }` con dónde se buscó.
+ */
+function resolveBin(runner, bin, { env = process.env, platform = process.platform, home = os.homedir() } = {}) {
+  const nombre = String(bin || '');
+  if (!nombre) return { bin: null, buscado: [] };
+  if (/[\\/]/.test(nombre)) return { bin: nombre, desde: 'ruta' };
+  const windows = platform === 'win32';
+  const extensiones = windows ? ['', ...String(env.PATHEXT || '.EXE;.CMD;.BAT;.COM').split(';').filter(Boolean)] : [''];
+  for (const dir of String(env.PATH || env.Path || '').split(windows ? ';' : ':').filter(Boolean)) {
+    if (extensiones.some((e) => esArchivo(path.join(dir, `${nombre}${e}`)))) return { bin: nombre, desde: 'PATH' };
+  }
+  const buscado = ['el PATH'];
+  const lugares = runner && isObject(runner.bin_paths) && Array.isArray(runner.bin_paths[platform]) ? runner.bin_paths[platform] : [];
+  for (const patron of lugares) {
+    buscado.push(String(patron));
+    const hallado = expandir(patron, home)[0];
+    if (hallado) return { bin: hallado, desde: String(patron) };
+  }
+  return { bin: null, buscado };
+}
+
 /** ¿El texto es el del tope de uso del corredor? Su patrón, o el de siempre. */
 const patronesMalos = new Set();
 function isLimit(runner, text) {
@@ -151,4 +200,4 @@ function readAnswer(runner, { stdout = '', stderr = '', code = 0, fileText = nul
   return out;
 }
 
-module.exports = { DEFAULT_ORDER, LIMIT_RE, loadIntegration, runnerOrder, pickRunners, commandFor, readAnswer, isLimit, tokensOf, usageOf };
+module.exports = { DEFAULT_ORDER, LIMIT_RE, loadIntegration, runnerOrder, pickRunners, commandFor, resolveBin, readAnswer, isLimit, tokensOf, usageOf };

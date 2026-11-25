@@ -18,8 +18,8 @@ const { registroDe, conElProceso } = require('../hooks/owner-approval-record.js'
 const AHORA = Date.parse('2026-11-01T23:30:00Z');
 const hace = (min) => new Date(AHORA - min * 60000).toISOString();
 const SIEMPRE = () => ({ ok: true });
-const FIRMA = 'save';
-const armar = (firma = FIRMA, destino = 'ses-a', huella = 'ab12cd34') => oa.cuadroDe({ firma, destino, que: 'guardar los cambios', queHace: ['el comando: marker.js approve-save'], siSaleMal: 'se revierte el commit', huella });
+const FIRMA = 'pending-approval';
+const armar = (firma = FIRMA, destino = 'ses-a', huella = 'ab12cd34') => oa.cuadroDe({ firma, destino, que: 'abrir el pendiente DEF-nuevo', queHace: ['el comando: marker.js approve-pending --id DEF-nuevo'], siSaleMal: 'se revierte el commit', huella });
 const CUADRO = armar();
 const PIDE = CUADRO.pregunta;
 const CTX = (casa, o = {}) => ({ casa, cuadro: CUADRO, destino: 'ses-a', ...o });
@@ -103,8 +103,8 @@ test('TraeElSello_EnteroYSinNombrarOtraSesion', () => {
   const o = { sello: CUADRO.sello, destino: 'ses-a' };
   assert.ok(oa.traeElSello(`Te pido esto: ${CUADRO.sello}. ¿Lo aprobás?`, o));
   assert.ok(!oa.traeElSello('¿Apruebo el formato del resumen?', o));
-  assert.ok(!oa.traeElSello('firma save, sesión ses-a', o), 'sin el código del comando no es el sello');
-  assert.ok(!oa.traeElSello(armar('save', 'ses-a', 'distinto1').sello, o), 'el sello de otro comando no aprueba éste');
+  assert.ok(!oa.traeElSello('firma pending-approval, sesión ses-a', o), 'sin el código del comando no es el sello');
+  assert.ok(!oa.traeElSello(armar(FIRMA, 'ses-a', 'distinto1').sello, o), 'el sello de otro comando no aprueba éste');
   assert.ok(!oa.traeElSello(`${CUADRO.sello} y también sesión ses-b`, o), 'un texto que enumera sesiones no vale');
   assert.ok(!oa.traeElSello(`${CUADRO.sello}, el arreglo de la sesión Sivori`, o), 'un nombre después de «sesión» cuenta como otra');
   assert.ok(oa.traeElSello(`${CUADRO.sello}, como en la sesión anterior`, o), '«sesión anterior» no nombra ninguna');
@@ -114,7 +114,7 @@ test('TraeElSello_EnteroYSinNombrarOtraSesion', () => {
 
 test('Transcripcion_AprobadoParaOtraSesionEnLaMismaPestana_NoFirmaLaPropia', (t) => {
   const casa = casaNueva(t);
-  const otra = armar('save', 'ses-b').pregunta;
+  const otra = armar(FIRMA, 'ses-b').pregunta;
   transcripcion(casa, 'ses-a', [agente(otra), tipeado('Aprobado')]);
   assert.match(oa.validarEnClaude(mensaje(), CTX(casa)).motivo, /no trae/);
   transcripcion(casa, 'ses-a', [cuadro('toolu_1', otra), respuesta('toolu_1', { pregunta: otra })]);
@@ -124,16 +124,16 @@ test('Transcripcion_AprobadoParaOtraSesionEnLaMismaPestana_NoFirmaLaPropia', (t)
 test('Transcripcion_DosAprobadoSeguidos_CadaUnoConSuPregunta', (t) => {
   const casa = casaNueva(t);
   const critica = armar('critical-waiver', 'ses-b');
-  const guardar = armar('save', 'ses-b');
+  const pendiente = armar(FIRMA, 'ses-b');
   // la sesión ses-a es la coordinadora: dos «aprobado» a un minuto, para dos firmas
-  transcripcion(casa, 'ses-a', [agente(critica.pregunta, hace(3)), tipeado('Aprobado', hace(2)), agente(guardar.pregunta, hace(1.5)), tipeado('Aprobado', hace(1))]);
+  transcripcion(casa, 'ses-a', [agente(critica.pregunta, hace(3)), tipeado('Aprobado', hace(2)), agente(pendiente.pregunta, hace(1.5)), tipeado('Aprobado', hace(1))]);
   const primero = mensaje('Aprobado', hace(2));
   const segundo = mensaje('Aprobado', hace(1));
   const con = (c) => ({ casa, cuadro: c, destino: 'ses-b' });
   assert.ok(oa.validarEnClaude(primero, con(critica)).ok);
-  assert.ok(oa.validarEnClaude(segundo, con(guardar)).ok);
+  assert.ok(oa.validarEnClaude(segundo, con(pendiente)).ok);
   assert.ok(!oa.validarEnClaude(segundo, con(critica)).ok, 'el segundo no exime el crítico');
-  assert.ok(!oa.validarEnClaude(primero, con(guardar)).ok, 'el primero no guarda');
+  assert.ok(!oa.validarEnClaude(primero, con(pendiente)).ok, 'el primero no abre el pendiente');
 });
 
 test('Transcripcion_AprobadoConSoloElSello_DiceQueFaltaLaPregunta', (t) => {
@@ -465,6 +465,40 @@ test('T7 OwnerApprovals_QuestionMismatch_LogUnwritable_SameDenial @story-8.276 @
   assert.strictEqual(sin.motivo, r.motivo);
 });
 
+// Una firma que se chequea mira todos los clicks recientes de la pestaña. El renglón se escribía por cada uno que no
+// coincidía, también por los de otra firma o sin sello, y la pista llevaba al click equivocado
+test('T8 OwnerApprovals_QuestionMismatch_LogsOnlyForThisSignatureAndSession', (t) => {
+  const casa = casaNueva(t);
+  const probar = (pregunta, id) => {
+    transcripcion(casa, 'ses-a', [cuadro(id, pregunta), respuesta(id, { pregunta })]);
+    return oa.validarEnClaude({ ...click(id), pregunta }, CTX(casa));
+  };
+  const deOtraFirma = armar('control-change').pregunta;
+  const deOtraSesion = armar(FIRMA, 'ses-b').pregunta;
+  const sinSello = '¿Abrir el arreglo rápido de la sesión?';
+  for (const [pregunta, id] of [[deOtraFirma, 'toolu_2'], [deOtraSesion, 'toolu_3'], [sinSello, 'toolu_4']]) {
+    assert.strictEqual(probar(pregunta, id).ok, false, 'un click a otra pregunta no vale');
+  }
+  assert.ok(!fs.existsSync(registroDeErrores(casa)), 'ni otra firma, ni otra sesión, ni un click sin sello dejan el renglón');
+  // la misma firma y sesión con otro código sí lo deja: es el click a esta firma con otra fuente
+  assert.strictEqual(probar(armar(FIRMA, 'ses-a', 'ffff0000').pregunta, 'toolu_5').ok, false);
+  const renglones = () => fs.readFileSync(registroDeErrores(casa), 'utf8').trim().split('\n').filter((l) => l.includes('owner-approvals: la pregunta del cuadro'));
+  const log = renglones();
+  assert.strictEqual(log.length, 1, 'un renglón, el del click a esta firma');
+  assert.ok(log[0].includes(CUADRO.sello), 'con el sello de esta firma');
+  // el cuadro de esta firma retocado a mano la sigue nombrando: un punto al final, comillas, el sello sin tildes
+  const retocados = [`${PIDE}.`, `«${PIDE}»`, PIDE.replace('sesión', 'sesion').replace('código', 'codigo'),
+    PIDE.replace('(firma', '(Firma').replace('sesión', 'Sesión'), PIDE.replace(' · sesión', ' · sesión'), PIDE.replace(' · código', '\n· código')];
+  retocados.forEach((pregunta, n) => assert.strictEqual(probar(pregunta, `toolu_${6 + n}`).ok, false));
+  assert.strictEqual(renglones().length, 1 + retocados.length, 'cada click retocado de esta firma deja su renglón');
+  // otro cuadro que cita este sello en el medio termina con el suyo: no culpa a esta firma. Tampoco un pedido de permiso
+  // cuyo pedido nombra este sello
+  const queCita = armar('control-change', 'ses-a', 'cc00cc00').pregunta.replace('¿', `¿(cita: «${CUADRO.sello}») `);
+  const permiso = `¿Aprobás este pedido de Bash? (permiso permiso-1a2b3c4d · sesión ses-a · código 6c60386e) Carpeta: /r. Pedido:\necho "(${CUADRO.sello})"`;
+  [queCita, permiso].forEach((pregunta, n) => assert.strictEqual(probar(pregunta, `toolu_${20 + n}`).ok, false));
+  assert.strictEqual(renglones().length, 1 + retocados.length, 'un cuadro que sólo cita este sello no deja renglón');
+});
+
 const SOBRE_CUPO = 'adhoc-lane:sobre-cupo';
 const DESCRIPCIONES = ['La sesión sigue con el arreglo. Pasa el tope de archivos del camino corto: lo elegís vos, en lugar de una historia.',
   'No se abre el arreglo, y el trabajo va por una historia.'];
@@ -613,6 +647,123 @@ test('Transcripcion_ClickDeLaPersona_Vale_DeUnGanchoOtraRespuestaOtraHoraNo', (t
   const otra = '¿Apruebo el formato del resumen?';
   transcripcion(casa, 'ses-a', [cuadro('toolu_1', otra), respuesta('toolu_1', { pregunta: otra })]);
   assert.ok(!oa.validarEnClaude({ ...click(), pregunta: otra }, CTX(casa)).ok, 'un click a otra pregunta no firma');
+});
+
+// --- una conversación larga: se confirma leyendo desde el final -----------------------------------------------------
+
+// Una sesión de varios días junta decenas de MB. Con el freno de seguridad cortando a los 20 s, confirmar el click o el
+// «aprobado» leyendo la conversación entera desde el principio, una vez por aprobación reciente, no llegaba a tiempo.
+const LECTOR = require('../../skills/tycon-pipeline/scripts/lib/jsonl-lines.js');
+
+/** Cuántos bytes lee del disco lo que corra después, de a trozos chicos para que se note. */
+function cuantoLee(t) {
+  const original = fs.readSync;
+  const trozo = LECTOR.LIMITE.trozo;
+  let n = 0;
+  LECTOR.LIMITE.trozo = 64 * 1024;
+  fs.readSync = function contar(...a) { const r = original.apply(this, a); n += r; return r; };
+  t.after(() => { fs.readSync = original; LECTOR.LIMITE.trozo = trozo; });
+  return () => n;
+}
+// renglones de hace 10 horas, de 2 KB cada uno: 1500 son unos 3 MB de conversación vieja
+const VIEJOS = Array.from({ length: 1500 }, (_, i) => agente(`renglón viejo ${i} ${'x'.repeat(2000)}`, hace(600)));
+
+test('T1 Transcripcion_Larga_ElClickSeConfirmaLeyendoDesdeElFinal', (t) => {
+  // 🔴 Falla con: leer la conversación entera desde el principio para confirmar un click que está al final.
+  const casa = casaNueva(t);
+  const ruta = transcripcion(casa, 'ses-a', [...VIEJOS, cuadro('toolu_1'), respuesta('toolu_1')]);
+  const leido = cuantoLee(t);
+  const r = oa.validarEnClaude(click(), CTX(casa));
+  assert.ok(r.ok, r.motivo);
+  assert.ok(leido() < 512 * 1024, `leyó ${leido()} bytes de ${fs.statSync(ruta).size}`);
+});
+
+test('T2 Transcripcion_Larga_ElAprobadoSeConfirmaLeyendoDesdeElFinal', (t) => {
+  // 🔴 Falla con: interpretar todos los renglones de la conversación para confirmar un «aprobado» que está al final.
+  const casa = casaNueva(t);
+  const ruta = transcripcion(casa, 'ses-a', [...VIEJOS, agente(PIDE), tipeado('Aprobado')]);
+  const leido = cuantoLee(t);
+  const r = oa.validarEnClaude(mensaje(), CTX(casa));
+  assert.ok(r.ok, r.motivo);
+  assert.ok(leido() < 512 * 1024, `leyó ${leido()} bytes de ${fs.statSync(ruta).size}`);
+  // lo que el agente dijo antes del «aprobado» sigue siendo lo que se mira: sin la pregunta, no vale
+  transcripcion(casa, 'ses-a', [...VIEJOS, agente(PIDE, hace(5)), tipeado('otra cosa', hace(4)), agente('listo, sigo'), tipeado('Aprobado')]);
+  assert.ok(!oa.validarEnClaude(mensaje(), CTX(casa)).ok, 'un «aprobado» que no contesta la pregunta');
+});
+
+test('T3 Transcripcion_RenglonMasLargoQueUnTrozo_SeLeeEntero', (t) => {
+  // 🔴 Falla con: partir un renglón largo al leer desde el final, de a trozos, y perder la respuesta del cuadro.
+  const casa = casaNueva(t);
+  const grande = { ...respuesta('toolu_1'), relleno: 'y'.repeat(300 * 1024) };
+  transcripcion(casa, 'ses-a', [...VIEJOS.slice(0, 50), cuadro('toolu_1'), grande, agente('x'.repeat(200 * 1024))]);
+  cuantoLee(t);
+  const r = oa.validarEnClaude(click(), CTX(casa));
+  assert.ok(r.ok, r.motivo);
+});
+
+test('T6 Transcripcion_CuadroRepetidoDespuesDeLaRespuesta_ElClickVale', (t) => {
+  // 🔴 Falla con: cortar la lectura desde el final en el primer renglón del cuadro, antes de juntar su respuesta.
+  const casa = casaNueva(t);
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1'), respuesta('toolu_1'), cuadro('toolu_1', PIDE, hace(0.5))]);
+  const r = oa.validarEnClaude(click(), CTX(casa));
+  assert.ok(r.ok, r.motivo);
+});
+
+test('T7 Transcripcion_RenglonPosteriorConHoraVieja_ElAprobadoVale', (t) => {
+  // 🔴 Falla con: cortar la lectura desde el final en el primer renglón de hora vieja, aunque esté después del «aprobado»
+  //    (un resumen o un renglón copiado de antes), sin haber llegado al «aprobado».
+  const casa = casaNueva(t);
+  transcripcion(casa, 'ses-a', [agente(PIDE), tipeado('Aprobado'), agente('lo de antes, resumido', hace(600))]);
+  const r = oa.validarEnClaude(mensaje(), CTX(casa));
+  assert.ok(r.ok, r.motivo);
+});
+
+test('T8 AnotarEtapa_SoloEnElArchivoDelFrenoYSinSeguirEnlaces', (t) => {
+  // 🔴 Falla con: escribir la etapa en cualquier ruta que traiga la variable, o seguir un enlace: el freno pisaría un
+  //    archivo ajeno con su texto.
+  const casa = casaNueva(t);
+  const ajeno = path.join(casa, 'importante.txt');
+  fs.writeFileSync(ajeno, 'no tocar');
+  oa.anotarEtapa('leyendo', { TYCON_SAFETY_STAGE_FILE: ajeno });
+  assert.strictEqual(fs.readFileSync(ajeno, 'utf8'), 'no tocar', 'una ruta que no es la del freno no se escribe');
+  if (process.platform !== 'win32') {
+    const enlace = path.join(casa, 'tycon-sg-etapa-123');
+    fs.symlinkSync(ajeno, enlace);
+    oa.anotarEtapa('leyendo', { TYCON_SAFETY_STAGE_FILE: enlace });
+    assert.strictEqual(fs.readFileSync(ajeno, 'utf8'), 'no tocar', 'el nombre del freno, pero un enlace: no se sigue');
+  }
+  const propio = path.join(casa, 'tycon-sg-etapa-456');
+  oa.anotarEtapa('leyendo', { TYCON_SAFETY_STAGE_FILE: propio });
+  assert.strictEqual(fs.readFileSync(propio, 'utf8'), 'leyendo');
+});
+
+test('T10 AnotarEtapa_EnlaceDuroOTuberia_NoSeTocan', { skip: process.platform === 'win32' && 'sin enlaces duros ni tuberías de prueba en Windows' }, (t) => {
+  // 🔴 Falla con: escribir la etapa en un enlace duro a un archivo ajeno (lo pisa), o abrir una tubería sin lector (el
+  //    freno se queda esperando hasta su corte).
+  const casa = casaNueva(t);
+  const ajeno = path.join(casa, 'importante.txt');
+  fs.writeFileSync(ajeno, 'no tocar');
+  const duro = path.join(casa, 'tycon-sg-etapa-7');
+  fs.linkSync(ajeno, duro);
+  oa.anotarEtapa('leyendo', { TYCON_SAFETY_STAGE_FILE: duro });
+  assert.strictEqual(fs.readFileSync(ajeno, 'utf8'), 'no tocar', 'un enlace duro no se pisa');
+  const tuberia = path.join(casa, 'tycon-sg-etapa-8');
+  require('child_process').execFileSync('mkfifo', [tuberia]);
+  // en otro proceso: si se queda esperando, se corta a los 5 s y la prueba lo dice
+  const r = require('child_process').spawnSync(process.execPath, ['-e', `require(${JSON.stringify(require.resolve('../lib/owner-approvals.js'))}).anotarEtapa('leyendo', { TYCON_SAFETY_STAGE_FILE: ${JSON.stringify(tuberia)} })`], { timeout: 5000 });
+  assert.ok(!r.error && r.status === 0, `una tubería sin lector deja esperando: ${r.error ? r.error.code : r.status}`);
+});
+
+test('T9 ValidarEnClaude_AnotaQueEstaConfirmandoEnLaConversacion', (t) => {
+  // 🔴 Falla con: que la confirmación no anote su etapa: el corte del freno no diría que se le fue el tiempo ahí.
+  const casa = casaNueva(t);
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1'), respuesta('toolu_1')]);
+  const etapa = path.join(casa, 'tycon-sg-etapa-1');
+  const antes = process.env.TYCON_SAFETY_STAGE_FILE;
+  process.env.TYCON_SAFETY_STAGE_FILE = etapa;
+  t.after(() => { if (antes === undefined) delete process.env.TYCON_SAFETY_STAGE_FILE; else process.env.TYCON_SAFETY_STAGE_FILE = antes; });
+  oa.validarEnClaude(click(), CTX(casa));
+  assert.match(fs.readFileSync(etapa, 'utf8'), /^confirmando el click en la conversación de la sesión, de menos de 1 MB$/);
 });
 
 // --- los ganchos que escuchan el cuadro ------------------------------------------------------------------------------
@@ -1083,9 +1234,9 @@ test('T5 OwnerApprovals_ManyClicks_ReasonOfThisSignature @story-8.287 @ac-8 @ac-
   assert.strictEqual(oa.buscar({ casa: casa2, sesion: 'ses-a', cuadro: CUADRO, ahora: AHORA, plataformas: ['claude', 'codex'] }).motivo,
     'la aprobación no vale: no hay un click para esta firma: los 2 clicks recientes son de otras firmas');
   // un click a esta firma, con su sello, cuya pregunta difiere sólo en «Qué hace»: niega por la pregunta y lo anota
-  const conRuta = (queHace, huella = 'ab12cd34') => oa.cuadroDe({ firma: FIRMA, destino: 'ses-a', que: 'guardar los cambios', queHace: [queHace], siSaleMal: 'se revierte el commit', huella });
-  const delGuion = conRuta('el comando: marker.js approve-save');
-  const delCuadro = conRuta('el comando: marker.js approve-save --all');
+  const conRuta = (queHace, huella = 'ab12cd34') => oa.cuadroDe({ firma: FIRMA, destino: 'ses-a', que: 'abrir el pendiente DEF-nuevo', queHace: [queHace], siSaleMal: 'se revierte el commit', huella });
+  const delGuion = conRuta('el comando: marker.js approve-pending');
+  const delCuadro = conRuta('el comando: marker.js approve-pending --all');
   assert.strictEqual(delGuion.sello, delCuadro.sello, 'el mismo código de la firma');
   const casa3 = casaNueva(t);
   transcripcion(casa3, 'ses-a', [cuadro('toolu_4', delCuadro.pregunta), respuesta('toolu_4', { pregunta: delCuadro.pregunta })]);
@@ -1094,11 +1245,11 @@ test('T5 OwnerApprovals_ManyClicks_ReasonOfThisSignature @story-8.287 @ac-8 @ac-
     `la aprobación no vale: ${oa.PREGUNTA_CAMBIADA}`);
   const log = fs.readFileSync(registroDeErrores(casa3), 'utf8').trim().split('\n');
   assert.strictEqual(log.length, 1);
-  const enCompleto = delGuion.pregunta.indexOf('approve-save.') + 'approve-save'.length;
+  const enCompleto = delGuion.pregunta.indexOf('approve-pending.') + 'approve-pending'.length;
   assert.match(log[0], new RegExp(`primer carácter distinto: ${enCompleto} `), 'difiere en «Qué hace»');
   assert.ok(log[0].includes(delGuion.sello));
   // con un click aprobado más viejo a esta misma firma con otro código: el motivo sigue siendo el de la pregunta
-  const viejo = conRuta('el comando: marker.js approve-save', 'ee11ee11');
+  const viejo = conRuta('el comando: marker.js approve-pending', 'ee11ee11');
   assert.notStrictEqual(viejo.sello, delGuion.sello);
   const casa4 = casaNueva(t);
   transcripcion(casa4, 'ses-a', [cuadro('toolu_5', viejo.pregunta, hace(5)), respuesta('toolu_5', { pregunta: viejo.pregunta, ts: hace(4) }),
@@ -1241,7 +1392,7 @@ test('T47 OwnerApprovals_ReadFailure_IsNoLeida @story-8.234 @ac-15: una lectura 
 //    consume sin firmar (el dueño tendría que volver a pedir todo), o un motivo que no dice que cambió el texto.
 test('T13 OwnerApprovals_OldFormatClick_NotSigned_RowStays @story-8.275 @ac-16 @ac-17', (t) => {
   // la pregunta vieja: otro texto, con el mismo sello al final (el sello no depende del formato)
-  const VIEJA = `¿Guardar los cambios? Sesión ses-a. Qué hace: el comando: marker.js approve-save. Archivos: a.js, b.js. Si sale mal: se revierte el commit. (${CUADRO.sello})`;
+  const VIEJA = `¿Abrir el pendiente? Sesión ses-a. Qué hace: el comando: marker.js approve-pending. Archivos: a.js, b.js. Si sale mal: se revierte el commit. (${CUADRO.sello})`;
   const ALTERADA = `${PIDE.slice(0, 20)}X${PIDE.slice(21)}`;
   for (const [nombre, vista] of [['formato viejo', VIEJA], ['texto alterado', ALTERADA]]) {
     const casa = casaNueva(t);

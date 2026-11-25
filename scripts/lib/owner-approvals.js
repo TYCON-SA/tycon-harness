@@ -490,6 +490,8 @@ function transcripcionDe(casa, sesion) {
  * lo traen; con `tope`, una que pasa del tope no se lee (`code: 'ETOPE'`).
  */
 const renglones = (ruta, opciones) => lector().leerRenglones(ruta, opciones);
+// desde el final: una aprobación es de los últimos 30 minutos, y lo que la confirma está cerca del final de la conversación
+const desdeElFinal = (ruta, opciones) => lector().leerDesdeElFinal(ruta, opciones);
 
 const bloques = (r) => (r && r.message && Array.isArray(r.message.content) ? r.message.content : []);
 const textoDe = (r) => {
@@ -533,12 +535,26 @@ function controlRemotoDelProceso(casa, pid, sesion) {
  */
 function mensajeEnLaTranscripcion(ruta, a, { sello, destino, pregunta } = {}) {
   let rs;
-  // el «aprobado» necesita los renglones en orden: no se filtra, y una transcripción que pasa del tope no se lee
-  try { rs = renglones(ruta, { tope: true }); } catch (e) {
+  const t = String(a.texto || '').trim();
+  // el «aprobado» necesita los renglones en orden: no se filtra, y una transcripción que pasa del tope no se lee. Desde
+  // el final, hasta pasar la hora del registro con el «aprobado» ya juntado (un renglón de hora vieja antes de llegar a
+  // él no corta: sin «aprobado», se lee todo, como antes) y, de ahí para atrás, hasta el primer texto del agente o el
+  // mensaje anterior de la persona: es donde termina lo que se mira antes del «aprobado»
+  const limite = Date.parse(a.ts) - MARGEN_MS;
+  const esElAprobado = (x) => x && x.type === 'user' && String(textoDe(x) || '').trim() === t && cerca(x, a.ts);
+  let pasado = false;
+  const hasta = (juntados, hora) => {
+    const x = juntados[juntados.length - 1];
+    if (!pasado) {
+      if (!(hora < limite) || !juntados.slice(0, -1).some(esElAprobado)) return false;
+      pasado = true;
+    }
+    return Boolean(x && ((x.type === 'user' && x.origin && x.origin.kind === 'human' && textoDe(x) !== null) || (x.type === 'assistant' && textoDe(x))));
+  };
+  try { rs = desdeElFinal(ruta, { tope: true, hasta }); } catch (e) {
     if (e.code === 'ETOPE') return { ok: false, motivo: `la transcripción de esta pestaña pasa de ${lector().tamanoDelTope()}: un «aprobado» escrito no se puede confirmar; aprobá con el click del cuadro o en la terminal`, noLeida: true };
     return { ok: false, motivo: `no pude leer la transcripción (${e.code || e.message})`, noLeida: true };
   }
-  const t = String(a.texto || '').trim();
   // el renglón más cercano a la hora del registro: dos «aprobado» seguidos no se validan contra el mismo
   let i = -1;
   let distancia = Infinity;
@@ -591,6 +607,9 @@ function fraseTipeadaReciente({ casa = os.homedir(), sesion, frase, ahora = Date
   if (!ruta) return { ok: false, motivo: SIN_MENSAJES_DE_LA_PERSONA, sinTranscripcion: true };
   let rs;
   try { rs = renglones(ruta, { tope: true }); } catch (_) { return { ok: false, motivo: SIN_MENSAJES_DE_LA_PERSONA, sinTranscripcion: true }; }
+  // el lector salta los renglones que no son JSON (uno a medio escribir no tapa a los demás): un archivo sin ningún
+  // registro de la transcripción es uno roto, no una conversación vacía
+  if (!rs.some((r) => r && typeof r === 'object' && typeof r.type === 'string')) return { ok: false, motivo: SIN_MENSAJES_DE_LA_PERSONA, sinTranscripcion: true };
   // la frase, palabra por palabra, dentro de las palabras del mensaje: «me voy» está en «me voy, seguí», «e» no
   const contiene = (texto) => {
     const p = palabras(texto);
@@ -633,15 +652,37 @@ function anotarPreguntaDistinta({ casa, sello, sesion, esperada, recibida }) {
 }
 
 /**
+ * ¿El sello propio de la pregunta clickeada es de la firma y la sesión de `sello` (con cualquier código)? El propio es el
+ * último que trae: otro cuadro puede citar este sello en el medio (la cita de un criterio, un pedido) y termina con el
+ * suyo. Un pedido de permiso lleva su sello antes del pedido: ése nunca es de esta firma. Se compara sin tildes, sin
+ * mayúsculas y con los espacios juntados: un cuadro de esta firma retocado a mano (un punto al final, comillas, «Sesion»,
+ * un salto de renglón) la sigue nombrando. Sin sello, no.
+ */
+function nombraLaMismaFirmaYSesion(pregunta, sello) {
+  const plano = (s) => String(s || '').normalize('NFKD').replace(/[\p{M}\p{Cf}]/gu, '').replace(/\s+/g, ' ').toLowerCase();
+  const SELLOS = /\b(firma|permiso) ([\w:.-]+) · sesion ([\w-]+) · codigo /g;
+  const suyos = [...plano(pregunta).matchAll(SELLOS)];
+  const esta = [...plano(sello).matchAll(SELLOS)][0];
+  if (!esta || !suyos.length || suyos.some((m) => m[1] === 'permiso')) return false;
+  const propio = suyos[suyos.length - 1];
+  return propio[1] === esta[1] && propio[2] === esta[2] && propio[3] === esta[3];
+}
+
+/**
  * El cuadro en la transcripción: la pregunta es la que armó el guion, la respuesta es la del registro, a esa hora, y no la
  * dio un gancho. `{ ok }` o `{ ok: false, motivo }`.
  */
 function clickEnLaTranscripcion(ruta, a, { pregunta, opciones, descripciones, sello, casa } = {}) {
   if (!a.tool_use_id) return { ok: false, motivo: 'el click no dice qué cuadro contestó' };
   let rs;
-  // sólo los renglones que nombran ese cuadro: el resto de la transcripción no se convierte en objetos
-  try { rs = renglones(ruta, { filtro: a.tool_use_id }); } catch (e) { return { ok: false, motivo: `no pude leer la transcripción (${e.code || e.message})`, noLeida: true }; }
-  const llamado = rs.some((r) => r && r.type === 'assistant' && bloques(r).some((b) => b && b.type === 'tool_use' && b.id === a.tool_use_id && b.name === CUADRO));
+  // sólo los renglones que nombran ese cuadro, desde el final: se corta en el cuadro, que va antes que su respuesta, una
+  // vez juntada la respuesta (un cuadro repetido después no corta antes); el resto no se convierte en objetos
+  const esElCuadro = (r) => r && r.type === 'assistant' && bloques(r).some((b) => b && b.type === 'tool_use' && b.id === a.tool_use_id && b.name === CUADRO);
+  const esLaRespuesta = (r) => bloques(r).some((b) => b && b.type === 'tool_result' && b.tool_use_id === a.tool_use_id);
+  try { rs = desdeElFinal(ruta, { filtro: a.tool_use_id, hasta: (juntados) => esElCuadro(juntados[juntados.length - 1]) && juntados.some(esLaRespuesta) }); } catch (e) {
+    return { ok: false, motivo: `no pude leer la transcripción (${e.code || e.message})`, noLeida: true };
+  }
+  const llamado = rs.some(esElCuadro);
   if (!llamado) return { ok: false, motivo: 'el cuadro no está en la transcripción de la sesión' };
   const r = rs.find((x) => bloques(x).some((b) => b && b.type === 'tool_result' && b.tool_use_id === a.tool_use_id));
   if (!r) return { ok: false, motivo: 'la respuesta del cuadro no está en la transcripción' };
@@ -656,7 +697,9 @@ function clickEnLaTranscripcion(ruta, a, { pregunta, opciones, descripciones, se
   if (!dijo.ok) return { ok: false, motivo: `en la transcripción, ${dijo.motivo}` };
   if (dijo.pregunta !== a.pregunta || dijo.respuesta !== a.respuesta) return { ok: false, motivo: 'la respuesta del cuadro en la transcripción no es la del registro' };
   if (!pregunta || dijo.pregunta !== pregunta) {
-    anotarPreguntaDistinta({ casa, sello, sesion: a.sesion, esperada: pregunta, recibida: dijo.pregunta });
+    // el renglón, sólo para un click a esta misma firma y sesión: cada firma que se chequea mira todos los clicks recientes
+    // de la pestaña, y uno a otra firma, o sin sello, no dice nada de ésta
+    if (nombraLaMismaFirmaYSesion(dijo.pregunta, sello)) anotarPreguntaDistinta({ casa, sello, sesion: a.sesion, esperada: pregunta, recibida: dijo.pregunta });
     // con el mismo sello, la firma y lo que se firma son los mismos: lo que cambió es el texto
     const mismoSello = !!pregunta && !!selloAlFinal(pregunta) && selloAlFinal(dijo.pregunta) === selloAlFinal(pregunta);
     return { ok: false, motivo: mismoSello ? PREGUNTA_CAMBIADA : 'la pregunta del cuadro no es la que armó el guion para esta firma: el click fue a otra pregunta' };
@@ -1139,6 +1182,26 @@ function buscarPermiso({ casa, cuadro, coordinadora, carpeta = null, desde = 0, 
 }
 
 /**
+ * Anota en qué está el freno de seguridad (en el archivo que nombra `TYCON_SAFETY_STAGE_FILE`, que pone el freno): si su
+ * reloj lo corta, lo dice. Sin dónde anotarlo, no pasa nada.
+ */
+function anotarEtapa(texto, env = process.env) {
+  const archivo = env.TYCON_SAFETY_STAGE_FILE;
+  // sólo el archivo que nombra el freno (tycon-sg-etapa-<su número>), común y con un solo nombre, sin seguir un enlace y
+  // sin esperar: la variable la puede traer cualquier comando, y el freno no pisa un archivo ajeno con su texto ni se
+  // queda esperando una tubería
+  if (!archivo || !/^tycon-sg-etapa-\d+$/.test(path.basename(String(archivo)))) return;
+  let fd = null;
+  try {
+    fd = fs.openSync(archivo, fs.constants.O_WRONLY | fs.constants.O_CREAT | (fs.constants.O_NOFOLLOW || 0) | (fs.constants.O_NONBLOCK || 0), 0o600);
+    const st = fs.fstatSync(fd);
+    if (!st.isFile() || st.nlink !== 1) return;
+    fs.ftruncateSync(fd, 0);
+    fs.writeSync(fd, String(texto).slice(0, 200), 0);
+  } catch (_) { /* el corte dice lo de siempre */ } finally { if (fd !== null) try { fs.closeSync(fd); } catch (_) { /* nada que cerrar */ } }
+}
+
+/**
  * La confirmación con lo que deja Claude Code: la transcripción de la sesión donde se aprobó y, para el click, los
  * ganchos que escuchan el cuadro, en la carpeta de la firma y en la de la pestaña donde se contestó (`cwdAprobacion`).
  * `linea`: la del proceso de la herramienta que lo mostró. El «aprobado» sólo tiene que traer el sello: el texto lo
@@ -1147,6 +1210,10 @@ function buscarPermiso({ casa, cuadro, coordinadora, carpeta = null, desde = 0, 
 function validarEnClaude(a, { casa = os.homedir(), cwd, cuadro, destino, linea, cwdAprobacion } = {}) {
   const ruta = transcripcionDe(casa, a.sesion);
   if (!ruta) return { ok: false, motivo: `no encontré la transcripción de la sesión ${a.sesion}`, noLeida: true };
+  let mb = null;
+  try { mb = fs.statSync(ruta).size / (1024 * 1024); } catch (_) { mb = null; }
+  const tamano = mb === null ? '' : mb < 1 ? ', de menos de 1 MB' : `, de ${Math.round(mb)} MB`;
+  anotarEtapa(`confirmando ${a.tipo === 'mensaje' ? 'el «aprobado»' : 'el click'} en la conversación de la sesión${tamano}`);
   if (a.tipo === 'mensaje') return mensajeEnLaTranscripcion(ruta, a, { sello: cuadro.sello, destino, pregunta: cuadro.pregunta });
   for (const c of [...new Set([cwd, cwdAprobacion].filter(Boolean))]) {
     const e = escuchasDelCuadro({ casa, cwd: c, linea });
@@ -1156,6 +1223,6 @@ function validarEnClaude(a, { casa = os.homedir(), cwd, cuadro, destino, linea, 
   return clickEnLaTranscripcion(ruta, a, { pregunta: cuadro.pregunta, opciones: cuadro.opciones, descripciones: cuadro.descripciones, sello: cuadro.sello, casa });
 }
 
-module.exports = { VENCE_MIN, ENVUELTO, PERMITIDOS, TIPEADO, APRUEBA, NIEGA, PREGUNTA_CAMBIADA, LARGO_EN_TELEFONO, DETALLE_TITULO, carpeta, esAprobacion, mensajeDeLaPersona, respuestaDelCuadro, aprobadasDelCuadro, cuadroDe, recortar, sinRutas, renglonDelTope, notasDelCuadro, traeElSello, lanzadoPorLaHerramienta,
+module.exports = { VENCE_MIN, anotarEtapa, ENVUELTO, PERMITIDOS, TIPEADO, APRUEBA, NIEGA, PREGUNTA_CAMBIADA, LARGO_EN_TELEFONO, DETALLE_TITULO, carpeta, esAprobacion, mensajeDeLaPersona, respuestaDelCuadro, aprobadasDelCuadro, cuadroDe, recortar, sinRutas, renglonDelTope, notasDelCuadro, traeElSello, lanzadoPorLaHerramienta,
   anotar, leerSesion, consumir, devolver, transcripcionDe, fraseTipeadaReciente, SIN_MENSAJES_DE_LA_PERSONA, controlRemotoDelProceso, mensajeEnLaTranscripcion, clickEnLaTranscripcion, capas, hooksDePlugins, ganchosDelEncabezado, banderasDe, alcanzaAlCuadro, esPermitido,
   escuchasDelCuadro, procesoQueLaAnoto, coordinadoraConfirmada, buscar, buscarPermiso, validarEnClaude, plataformaDe, constanciaDeLaTerminal };

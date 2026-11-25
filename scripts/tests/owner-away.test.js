@@ -265,3 +265,34 @@ test('T24 OwnerAway_NoTranscript_Exit2 @story-8.256 @ac-23 — sin transcripció
   assert.match(g.stderr, /no pude leer los mensajes de la persona/);
   assert.ok(!OA.get({ estado: L.estado }).mark);
 });
+
+// 🔴 Falla con: una transcripción rota se leía como legible y vacía, y el motivo era «no está en un mensaje tipeado»,
+// que manda a buscar una frase en vez de decir que no hay mensajes que leer.
+test('T24b OwnerAway_BrokenTranscript_SameReason @story-8.256 @ac-23 — una transcripción rota da el motivo de la que no se puede leer', (t) => {
+  const L = lab(t);
+  const dir = path.join(L.home, '.claude', 'projects', '-repo');
+  fs.mkdirSync(dir, { recursive: true });
+  const rotas = {
+    'texto suelto': 'esto no es una transcripción\nni esto tampoco\n',
+    'bytes sin sentido': Buffer.from([0xff, 0xfe, 0x00, 0x7b, 0x0a, 0x80, 0x81, 0x0a]),
+    'valores que no son registros': '42\n"me voy"\nnull\n[]\n',
+    'vacía': '',
+  };
+  for (const [caso, contenido] of Object.entries(rotas)) {
+    const sesion = `ses-rota-${Object.keys(rotas).indexOf(caso)}`;
+    fs.writeFileSync(path.join(dir, `${sesion}.jsonl`), contenido);
+    const verificar = (frase) => AP.fraseTipeadaReciente({ casa: L.home, sesion, frase, ahora: T0 });
+    const r = OA.set({ estado: L.estado, quien: 'coordinadora', frase: 'me voy', ahora: T0, verificar });
+    assert.strictEqual(r.codigo, 2, caso);
+    assert.strictEqual(r.motivo, SIN_TRANSCRIPCION, caso);
+    assert.ok(!OA.get({ estado: L.estado, ahora: T0 }).mark, `${caso}: sin marca`);
+  }
+  // un renglón a medio escribir al final no la vuelve ilegible: con un registro de verdad se busca la frase
+  const sesion = 'ses-media';
+  transcripcionDe(L.home, sesion, [{ texto: 'hasta mañana', min: 5, como: TIPEADO }]);
+  fs.appendFileSync(path.join(dir, `${sesion}.jsonl`), '{"type":"user","mess');
+  const r = OA.set({ estado: L.estado, quien: 'coordinadora', frase: 'me voy', ahora: T0,
+    verificar: (frase) => AP.fraseTipeadaReciente({ casa: L.home, sesion, frase, ahora: T0 }) });
+  assert.strictEqual(r.codigo, 2);
+  assert.match(r.motivo, /tipeado por la persona/);
+});

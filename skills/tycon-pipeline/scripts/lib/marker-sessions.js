@@ -142,6 +142,14 @@ function cmdClearSession(sid, rest = []) {
   }
   avisarOficina(safe);
   cerrarEjecucion(safe, m, { registrar: false, estado: 'abortada', motivo: estado.SID === safe ? 'clear-session de la propia sesión' : `clear-session desde la sesión ${estado.SID}` });
+  // cerrar la de otra sesión deja su renglón en el registro de los frenos: quién la cerró, y `escape` si estaba abierta
+  // (pasó por la firma del dueño, que el freno anota aparte) o `paso` si estaba completa. La huella, nunca la sesión ni
+  // la historia
+  if (estado.SID !== safe) {
+    let abierta = true;
+    try { const rc = require('./run-close.js'); abierta = rc.abierta(rc.estado(m)); } catch (_e) { /* sin poder medirla, abierta */ }
+    require('./closing-record.js').anotarCierre({ freno: 'clear-session', regla: 'otra-sesion', veredicto: abierta ? 'escape' : 'paso', huella: `${safe} ${m.storyId}`, sesion: estado.SID });
+  }
   syncSessionState(safe);
   process.stdout.write(`cleared: ${safe}.json\n`);
 }
@@ -369,6 +377,24 @@ function anotarHerencia({ story, desde, hereda, huellaPlan, herencia, via }) {
   process.stderr.write(`[marker] ${via}: ${herencia}.\n`);
 }
 
+// Las condiciones que puso el dev al pedir la historia, en el marcador: así una sesión nueva retoma sin releer la
+// conversación (lib/resume-state.js). «ninguna» también se anota: dice que se miró.
+function cmdConditions(rest = []) {
+  const texto = rest.join(' ').trim();
+  if (!texto) {
+    console.error('conditions: falta el texto — marker.js conditions "<las condiciones del pedido, o ninguna>"');
+    process.exit(2);
+  }
+  const marker = readMarker();
+  if (!marker) {
+    console.error('conditions: esta sesión no tiene una ejecución en curso');
+    process.exit(1);
+  }
+  marker.requestConditions = { texto: texto.slice(0, 4000), at: nowIso() };
+  writeMarker(marker);
+  console.log('condiciones del pedido anotadas en la ejecución');
+}
+
 function cmdDoing(sub, arg) {
   const dir = path.join(STATE_DIR, 'doing');
   const safe = (s) => String(s).replace(/[/\\]/g, '_');
@@ -546,5 +572,5 @@ function cmdAdoptSession(sid) {
 
 module.exports = {
   listAllMarkers, cmdListAll, cmdFindByStory, sacarMarca, corridasDe, cmdPark, cmdUnpark, cmdClearSession,
-  reemplazadaPorParticion, cmdSalidaPerdida, cmdDoing, cmdAdoptSession,
+  reemplazadaPorParticion, cmdSalidaPerdida, cmdConditions, cmdDoing, cmdAdoptSession,
 };

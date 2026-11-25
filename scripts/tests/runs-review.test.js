@@ -1450,6 +1450,8 @@ test('T96b Ejecuciones_PedidoCerrado_SoloConEjecucionNueva @story-4.11 @ac-29', 
 const freno = (escape, extra = {}) => ({ ts: `${HOY}T15:00:00.000Z`, freno: 'safety-guard', regla: 'ESC-C1', veredicto: 'escape', sha256: null, via: 'persona', sesion: 's', escape, ...extra });
 const conFrenos = (frenos, bypass = [], estado = 'medido') => ({ cobertura: { fuentes: { bypass: { estado: 'medido' }, frenos: { estado } } }, bypass, frenos });
 const NO_DEEP = `TYCON_NO_DEEP_REVIEW=1 ${PIPE} next`;
+// el escape de ejemplo de las autorizaciones: la variable del pase ya no es un escape de la noche (@story-8.238)
+const SKILL = `${MARKER} story-skill-bypass --reason x`;
 
 // T47 Escape_AutorizadoNoCreaFicha @story-4.11 @ac-38
 // 🔴 Falla con: no cruzar con frenos.jsonl (los cinco escapes siguen con ficha); aceptar la vía `ambiente` o
@@ -1471,10 +1473,11 @@ test('T47 Escape_AutorizadoNoCreaFicha @story-4.11 @ac-38', async () => {
   const ok = revisar(conversacion, { registros: conFrenos(autorizadas, bypass) });
   assert.deepStrictEqual(ok.reglas, [], 'cada escape con su línea: nada para la ficha');
   assert.strictEqual(ok.escapes_autorizados, 4);
-  assert.deepStrictEqual(revisar(cmd(NO_DEEP), { registros: conFrenos([freno('no-deep-review')]) }).reglas, [], 'el nombre de la bandera también autoriza');
+  const forzado = [{ ts: `${HOY}T15:00:01.000Z`, kind: 'ADVERSARIAL_SKIP_FORZADO', sessionId: 's' }];
+  assert.deepStrictEqual(revisar([], { registros: conFrenos([freno('no-deep-review')], forzado) }).reglas, [], 'el nombre de la bandera también autoriza la línea vieja');
   // el Sí del dueño en la ventana de permiso también autoriza
-  assert.deepStrictEqual(revisar(cmd(NO_DEEP), { registros: conFrenos([freno('TYCON_NO_DEEP_REVIEW', { via: 'ventana' })]) }).reglas, [], 'la vía ventana autoriza');
-  for (const via of ['click', 'mensaje']) assert.deepStrictEqual(revisar(cmd(NO_DEEP), { registros: conFrenos([freno('TYCON_NO_DEEP_REVIEW', { via })]) }).reglas, [], `la vía ${via} autoriza`);
+  assert.deepStrictEqual(revisar(cmd(SKILL), { registros: conFrenos([freno('story-skill-bypass', { via: 'ventana' })]) }).reglas, [], 'la vía ventana autoriza');
+  for (const via of ['click', 'mensaje']) assert.deepStrictEqual(revisar(cmd(SKILL), { registros: conFrenos([freno('story-skill-bypass', { via })]) }).reglas, [], `la vía ${via} autoriza`);
   // el salteo autorizado con la variable en línea: el freno deja UNA línea y marker.js una en bypass.log
   const salteo = cmd(`TYCON_NO_DEEP_REVIEW=1 node ${MARKER} mark-adversarial-skipped --files a.js`);
   const lineaSalteo = [{ ts: `${HOY}T15:00:01.000Z`, kind: 'ADVERSARIAL_SKIP_FORZADO', sessionId: 's' }];
@@ -1482,53 +1485,53 @@ test('T47 Escape_AutorizadoNoCreaFicha @story-4.11 @ac-38', async () => {
   const salteoOk = revisar(salteo, { registros: conFrenos([freno('TYCON_NO_DEEP_REVIEW')], lineaSalteo) });
   assert.deepStrictEqual([salteoOk.reglas, salteoOk.escapes_autorizados], [[], 1]);
   // sin archivar, la ventana va desde el arranque
-  const abierta = revisar(cmd(NO_DEEP), { volcado: volcado({ sid: 's', sinCerrar: true }), registros: conFrenos([freno('TYCON_NO_DEEP_REVIEW', { ts: `${HOY}T23:59:00.000Z` })]) });
+  const abierta = revisar(cmd(SKILL), { volcado: volcado({ sid: 's', sinCerrar: true }), registros: conFrenos([freno('story-skill-bypass', { ts: `${HOY}T23:59:00.000Z` })]) });
   assert.deepStrictEqual(regla(abierta, 'RR-ESCAPE'), []);
 
   // las líneas que no autorizan: el escape sigue con su ficha
   const contrarias = {
-    'vía ambiente': freno('TYCON_NO_DEEP_REVIEW', { via: 'ambiente' }),
-    'vía sin-conversacion': freno('TYCON_NO_DEEP_REVIEW', { via: 'sin-conversacion' }),
-    'otra sesión': freno('TYCON_NO_DEEP_REVIEW', { sesion: 'otra' }),
-    'antes del arranque': freno('TYCON_NO_DEEP_REVIEW', { ts: `${HOY}T09:00:00.000Z` }),
-    'después del archivo': freno('TYCON_NO_DEEP_REVIEW', { ts: `${HOY}T23:00:00.000Z` }),
+    'vía ambiente': freno('story-skill-bypass', { via: 'ambiente' }),
+    'vía sin-conversacion': freno('story-skill-bypass', { via: 'sin-conversacion' }),
+    'otra sesión': freno('story-skill-bypass', { sesion: 'otra' }),
+    'antes del arranque': freno('story-skill-bypass', { ts: `${HOY}T09:00:00.000Z` }),
+    'después del archivo': freno('story-skill-bypass', { ts: `${HOY}T23:00:00.000Z` }),
     'sin nombre': freno(undefined),
     'el nombre de otro escape': freno('DOD_BYPASS'),
-    'un paso, no un escape': freno('TYCON_NO_DEEP_REVIEW', { veredicto: 'paso' }),
+    'un paso, no un escape': freno('story-skill-bypass', { veredicto: 'paso' }),
   };
   for (const [caso, l] of Object.entries(contrarias)) {
-    const r = revisar(cmd(NO_DEEP), { registros: conFrenos([l]) });
-    assert.deepStrictEqual(regla(r, 'RR-ESCAPE').map((x) => `${x.categoria}:${x.cuenta}`), ['TYCON_NO_DEEP_REVIEW:1'], caso);
+    const r = revisar(cmd(SKILL), { registros: conFrenos([l]) });
+    assert.deepStrictEqual(regla(r, 'RR-ESCAPE').map((x) => `${x.categoria}:${x.cuenta}`), ['story-skill-bypass:1'], caso);
     assert.strictEqual(r.escapes_autorizados, 0, caso);
   }
   const suite = revisar(cmd('TYCON_FULL_SUITE=1 npm test'), { registros: conFrenos([freno('TYCON_FULL_SUITE')]) });
   assert.deepStrictEqual(regla(suite, 'RR-ESCAPE').map((x) => x.categoria), ['TYCON_FULL_SUITE'], 'la suite completa no está en la tabla');
-  for (const registros of [conFrenos([freno('TYCON_NO_DEEP_REVIEW')], [], 'no_medido'), { cobertura: { fuentes: { bypass: { estado: 'medido' }, frenos: { estado: 'medido' } } }, bypass: [] }, null]) {
-    const r = revisar(cmd(NO_DEEP), { registros });
+  for (const registros of [conFrenos([freno('story-skill-bypass')], [], 'no_medido'), { cobertura: { fuentes: { bypass: { estado: 'medido' }, frenos: { estado: 'medido' } } }, bypass: [] }, null]) {
+    const r = revisar(cmd(SKILL), { registros });
     assert.strictEqual(regla(r, 'RR-ESCAPE').length, 1, 'sin el registro medido no se autoriza');
     assert.strictEqual(r.escapes_autorizados, null, 'sin el registro, la cuenta no se sabe');
   }
 
   // uno a uno: dos escapes y una línea dejan uno con ficha; el apagado conserva su `con_frase`
-  const dos = revisar([...cmd(NO_DEEP), ...cmd(NO_DEEP), ...cmd(`${MARKER} set-autonomous false`), ...cmd(`${MARKER} set-autonomous off`)],
-    { registros: conFrenos([freno('TYCON_NO_DEEP_REVIEW'), freno('set-autonomous')]) });
+  const dos = revisar([...cmd(SKILL), ...cmd(SKILL), ...cmd(`${MARKER} set-autonomous false`), ...cmd(`${MARKER} set-autonomous off`)],
+    { registros: conFrenos([freno('story-skill-bypass'), freno('set-autonomous')]) });
   assert.strictEqual(regla(dos, 'RR-ESCAPE')[0].cuenta, 1);
   assert.deepStrictEqual(regla(dos, 'RR-APAGO').map((x) => [x.cuenta, x.con_frase]), [[1, null]]);
   assert.strictEqual(dos.escapes_autorizados, 2);
 
   // otra máquina: la misma sesión en el registro de otra carpeta del buzón no autoriza
   const mb = buzon({
-    'acme-0000aaaa': { corridas: [{ base: `1.1-${HOY}T1519`, volcado: volcado({ sid: SID(1) }), hilo: cmd(NO_DEEP) }], registros: { bypass: [], frenos: [] } },
-    'acme-0000bbbb': { registros: { bypass: [], frenos: [freno('TYCON_NO_DEEP_REVIEW', { sesion: SID(1) })] } },
+    'acme-0000aaaa': { corridas: [{ base: `1.1-${HOY}T1519`, volcado: volcado({ sid: SID(1) }), hilo: cmd(SKILL) }], registros: { bypass: [], frenos: [] } },
+    'acme-0000bbbb': { registros: { bypass: [], frenos: [freno('story-skill-bypass', { sesion: SID(1) })] } },
   });
   const op = ops();
   await correr(mb, op);
-  assert.deepStrictEqual(fichas(op).map((f) => f.causa), ['RR-ESCAPE:TYCON_NO_DEEP_REVIEW'], 'la línea de la otra máquina no cuenta');
+  assert.deepStrictEqual(fichas(op).map((f) => f.causa), ['RR-ESCAPE:story-skill-bypass'], 'la línea de la otra máquina no cuenta');
   assert.strictEqual(lastRun(op).escapes_autorizados, 0);
 
   // la misma ejecución en la carpeta vieja de la máquina y en la de código: cuentan los registros de las dos, si el
   // archivo de uniones del bajador dice que la vieja es de esa máquina
-  const dobles = (hilo = cmd(NO_DEEP)) => ({ base: `1.8-${HOY}T1519`, volcado: volcado({ sid: SID(8) }), hilo });
+  const dobles = (hilo = cmd(SKILL)) => ({ base: `1.8-${HOY}T1519`, volcado: volcado({ sid: SID(8) }), hilo });
   const UNIONES = {
     unida: JSON.stringify({ schema: 1, carpetas: { acme: { estado: 'unida', nueva: 'acme-0000aaaa', declarantes: 1, desde: null } } }),
     ninguna: JSON.stringify({ schema: 1, carpetas: {} }),
@@ -1541,30 +1544,30 @@ test('T47 Escape_AutorizadoNoCreaFicha @story-4.11 @ac-38', async () => {
     await correr(mb, o);
     return { fichas: fichas(o).map((f) => f.causa), cuenta: [lastRun(o).escapes_autorizados, lastRun(o).maquinas_sin_frenos] };
   };
-  const L8 = freno('TYCON_NO_DEEP_REVIEW', { sesion: SID(8) });
+  const L8 = freno('story-skill-bypass', { sesion: SID(8) });
   assert.deepStrictEqual(await dosCarpetas([], [L8]), { fichas: [], cuenta: [1, 0] }, 'la autorización de la carpeta de código cuenta');
   // las uniones medidas y sin esa carpeta: es otra máquina con la misma sesión, y no autoriza
-  assert.deepStrictEqual(await dosCarpetas([], [L8], { union: 'ninguna' }), { fichas: ['RR-ESCAPE:TYCON_NO_DEEP_REVIEW'], cuenta: [0, 0] }, 'otra máquina: no se juntan');
+  assert.deepStrictEqual(await dosCarpetas([], [L8], { union: 'ninguna' }), { fichas: ['RR-ESCAPE:story-skill-bypass'], cuenta: [0, 0] }, 'otra máquina: no se juntan');
   // sin poder leer las uniones no se sabe si son la misma máquina: no se juntan, y la cuenta queda sin medir
   for (const union of [false, 'rota']) {
-    assert.deepStrictEqual(await dosCarpetas([], [L8], { union }), { fichas: ['RR-ESCAPE:TYCON_NO_DEEP_REVIEW'], cuenta: [null, 1] }, `uniones ${union || 'ausentes'}: no medido`);
+    assert.deepStrictEqual(await dosCarpetas([], [L8], { union }), { fichas: ['RR-ESCAPE:story-skill-bypass'], cuenta: [null, 1] }, `uniones ${union || 'ausentes'}: no medido`);
   }
   // una carpeta con el registro roto pudo perder una autorización: la máquina queda sin medir aunque la otra mida
-  assert.deepStrictEqual(await dosCarpetas(['esto no es json'], [L8]), { fichas: ['RR-ESCAPE:TYCON_NO_DEEP_REVIEW'], cuenta: [null, 1] }, 'una carpeta rota: no medido');
-  assert.deepStrictEqual(await dosCarpetas(undefined, [L8]), { fichas: ['RR-ESCAPE:TYCON_NO_DEEP_REVIEW'], cuenta: [null, 1] }, 'una carpeta sin los frenos: no medido');
+  assert.deepStrictEqual(await dosCarpetas(['esto no es json'], [L8]), { fichas: ['RR-ESCAPE:story-skill-bypass'], cuenta: [null, 1] }, 'una carpeta rota: no medido');
+  assert.deepStrictEqual(await dosCarpetas(undefined, [L8]), { fichas: ['RR-ESCAPE:story-skill-bypass'], cuenta: [null, 1] }, 'una carpeta sin los frenos: no medido');
   // dos autorizaciones iguales en una carpeta son dos; la misma línea en las dos carpetas es una
-  const dosSalteos = [...cmd(NO_DEEP), ...cmd(NO_DEEP)];
+  const dosSalteos = [...cmd(SKILL), ...cmd(SKILL)];
   assert.deepStrictEqual(await dosCarpetas([], [L8, L8], { hilo: dosSalteos }), { fichas: [], cuenta: [2, 0] }, 'dos iguales en una carpeta');
-  assert.deepStrictEqual(await dosCarpetas([L8], [L8], { hilo: dosSalteos }), { fichas: ['RR-ESCAPE:TYCON_NO_DEEP_REVIEW'], cuenta: [1, 0] }, 'la misma en las dos carpetas');
+  assert.deepStrictEqual(await dosCarpetas([L8], [L8], { hilo: dosSalteos }), { fichas: ['RR-ESCAPE:story-skill-bypass'], cuenta: [1, 0] }, 'la misma en las dos carpetas');
 
   // sin la hora de arranque, o con una línea de la sesión sin hora legible, la ventana no se sabe: no medido
   const sinArranque = volcado({ sid: 's' });
   delete sinArranque.marker.startedAt;
   const cierreIlegible = volcado({ sid: 's' });
   cierreIlegible.archivedAt = 'mañana';
-  for (const [caso, v, l] of [['sin arranque', sinArranque, freno('TYCON_NO_DEEP_REVIEW')], ['hora ilegible', undefined, freno('TYCON_NO_DEEP_REVIEW', { ts: 'ayer' })],
-    ['cierre ilegible', cierreIlegible, freno('TYCON_NO_DEEP_REVIEW', { ts: `${HOY}T23:59:00.000Z` })]]) {
-    const r = revisar(cmd(NO_DEEP), { ...(v ? { volcado: v } : {}), registros: conFrenos([l]) });
+  for (const [caso, v, l] of [['sin arranque', sinArranque, freno('story-skill-bypass')], ['hora ilegible', undefined, freno('story-skill-bypass', { ts: 'ayer' })],
+    ['cierre ilegible', cierreIlegible, freno('story-skill-bypass', { ts: `${HOY}T23:59:00.000Z` })]]) {
+    const r = revisar(cmd(SKILL), { ...(v ? { volcado: v } : {}), registros: conFrenos([l]) });
     assert.deepStrictEqual([regla(r, 'RR-ESCAPE').length, r.escapes_autorizados], [1, null], caso);
   }
 });
@@ -1577,7 +1580,7 @@ test('T48 Resumen_EscapesAutorizados_SinRegistroNoMedido @story-4.11 @ac-39', as
   const corrida = (k, hilo) => ({ base: `1.${k}-${HOY}T1519`, volcado: volcado({ sid: SID(k) }), hilo });
   const centinela = { regla: 'ZZCENTINELA-regla', relevo: 'ZZCENTINELA-relevo', freno: 'ZZCENTINELA-freno' };
   const def = {
-    'acme-0000aaaa': { corridas: [corrida(1, cmd(NO_DEEP))], registros: { bypass: [], frenos: [freno('TYCON_NO_DEEP_REVIEW', { sesion: SID(1), ...centinela })] } },
+    'acme-0000aaaa': { corridas: [corrida(1, cmd(SKILL))], registros: { bypass: [], frenos: [freno('story-skill-bypass', { sesion: SID(1), ...centinela })] } },
     'acme-0000bbbb': { corridas: [corrida(2, cmd(`${MARKER} set-autonomous false`))], registros: { bypass: [],
       frenos: [freno('set-autonomous', { sesion: SID(2) }), freno('ZZCENTINELA-escape', { sesion: SID(2), ...centinela })] } },
     // sin ejecuciones miradas: no cuenta aunque no tenga el registro
@@ -1590,41 +1593,41 @@ test('T48 Resumen_EscapesAutorizados_SinRegistroNoMedido @story-4.11 @ac-39', as
   assert.deepStrictEqual(fichas(op), [], 'las dos autorizadas: ninguna ficha');
 
   // una máquina con dos ejecuciones miradas y sin el registro: «no se sabe», contada una vez
-  def['acme-0000dddd'] = { corridas: [corrida(3, cmd(NO_DEEP)), corrida(4, [])] };
-  def['acme-0000bbbb'].corridas.push(corrida(5, cmd(NO_DEEP)));
+  def['acme-0000dddd'] = { corridas: [corrida(3, cmd(SKILL)), corrida(4, [])] };
+  def['acme-0000bbbb'].corridas.push(corrida(5, cmd(SKILL)));
   const op2 = ops();
   await correr(buzon(def), op2);
   const b = lastRun(op2);
   assert.deepStrictEqual([b.escapes_autorizados, b.maquinas_sin_frenos], [null, 1]);
-  assert.deepStrictEqual(fichas(op2).map((f) => [f.causa, f.casos.length]), [['RR-ESCAPE:TYCON_NO_DEEP_REVIEW', 2]], 'la de la máquina sin registro y la que no tiene línea');
+  assert.deepStrictEqual(fichas(op2).map((f) => [f.causa, f.casos.length]), [['RR-ESCAPE:story-skill-bypass', 2]], 'la de la máquina sin registro y la que no tiene línea');
 
   // un registro con una línea rota es un registro a medias: «no se sabe», y su escape no se da por autorizado
   const op3 = ops();
-  await correr(buzon({ 'acme-0000eeee': { corridas: [corrida(6, cmd(NO_DEEP))],
-    registros: { bypass: [], frenos: [freno('TYCON_NO_DEEP_REVIEW', { sesion: SID(6) }), '{"ts":'] } } }), op3);
+  await correr(buzon({ 'acme-0000eeee': { corridas: [corrida(6, cmd(SKILL))],
+    registros: { bypass: [], frenos: [freno('story-skill-bypass', { sesion: SID(6) }), '{"ts":'] } } }), op3);
   const c = lastRun(op3);
   assert.deepStrictEqual([c.escapes_autorizados, c.maquinas_sin_frenos], [null, 1]);
-  assert.deepStrictEqual(fichas(op3).map((f) => f.causa), ['RR-ESCAPE:TYCON_NO_DEEP_REVIEW']);
+  assert.deepStrictEqual(fichas(op3).map((f) => f.causa), ['RR-ESCAPE:story-skill-bypass']);
 
   // un registro que descomprimido pasa el tope de 64 MiB es ilegible: no se lee entero ni autoriza
-  const dirGrande = buzon({ 'acme-0000ffff': { corridas: [corrida(7, cmd(NO_DEEP))], registros: { bypass: [], frenos: [] } } });
-  const linea = JSON.stringify(freno('TYCON_NO_DEEP_REVIEW', { sesion: SID(7) })) + '\n';
+  const dirGrande = buzon({ 'acme-0000ffff': { corridas: [corrida(7, cmd(SKILL))], registros: { bypass: [], frenos: [] } } });
+  const linea = JSON.stringify(freno('story-skill-bypass', { sesion: SID(7) })) + '\n';
   fs.writeFileSync(path.join(dirGrande, 'acme-0000ffff', 'registros', 'frenos.jsonl.gz'),
     zlib.gzipSync(Buffer.concat([Buffer.from(linea), Buffer.alloc(64 * 1024 * 1024 + 1, '\n')])));
   const op4 = ops();
   await correr(dirGrande, op4);
   const g = lastRun(op4);
   assert.deepStrictEqual([g.escapes_autorizados, g.maquinas_sin_frenos, g.ilegibles], [null, 1, 1]);
-  assert.deepStrictEqual(fichas(op4).map((f) => f.causa), ['RR-ESCAPE:TYCON_NO_DEEP_REVIEW']);
+  assert.deepStrictEqual(fichas(op4).map((f) => f.causa), ['RR-ESCAPE:story-skill-bypass']);
   // el tope es de los registros: una conversación que pasa los 64 MiB se lee entera
   const dirHilo = buzon({ 'acme-0000ffff': { corridas: [corrida(9, [])], registros: { bypass: [], frenos: [] } } });
-  const hilo = cmd(NO_DEEP).map((l) => JSON.stringify(l)).join('\n') + '\n';
+  const hilo = cmd(SKILL).map((l) => JSON.stringify(l)).join('\n') + '\n';
   fs.writeFileSync(path.join(dirHilo, 'acme-0000ffff', `1.9-${HOY}T1519.hilo.jsonl.gz`), zlib.gzipSync(Buffer.concat([Buffer.from(hilo), Buffer.alloc(64 * 1024 * 1024 + 1, '\n')])));
   const op5 = ops();
   await correr(dirHilo, op5);
   const gh = lastRun(op5);
   assert.deepStrictEqual([gh.sin_hilo, gh.ilegibles, gh.completo], [0, 0, true]);
-  assert.deepStrictEqual(fichas(op5).map((f) => f.causa), ['RR-ESCAPE:TYCON_NO_DEEP_REVIEW']);
+  assert.deepStrictEqual(fichas(op5).map((f) => f.causa), ['RR-ESCAPE:story-skill-bypass']);
   for (const o of [op, op2]) {
     const d = path.join(o, 'inbox', 'runs-review');
     const todo = fs.readdirSync(d, { recursive: true }).filter((f) => /\.(ya?ml|json)$/.test(f)).map((f) => fs.readFileSync(path.join(d, f), 'utf8')).join('\n');
@@ -1960,4 +1963,31 @@ test('T8 2.83-Caso_SinNombreYVolcadoViejo @story-2.83 @ac-9', async () => {
   const migrados = fichas(op2).flatMap((f) => f.casos || []);
   assert.strictEqual(migrados.length, 1);
   assert.ok(!('sesiones' in migrados[0]), 'la migrada sin la clave');
+});
+
+// Fila 219: desde la 8.323 el apagado en su forma exacta lo firma el marcador, y el freno no deja línea en frenos.jsonl
+// cuando la persona lo aprueba en la ventana. La firma queda en el registro común, que viaja en el volcado (`firmas`).
+// 🔴 Falla con: no leer las firmas del volcado (el apagado firmado sigue con ficha); aceptar la firma de trámite, la
+//    delegada o la de otro escape; dejar que una firma tape dos apagados; o contar la firma sin sumarla a los autorizados.
+test('F219-T1 RrApago_FirmadoEnLaVentana_NoEsFicha @fila-219', () => {
+  const firmas = (lineas) => ({ estado: 'leido', lineas, ilegibles: 0, recortadas: 0 });
+  const firma = (extra = {}) => ({ cuando: `${HOY}T15:00:00.000Z`, firma: 'escape:set-autonomous', nivel: 2, via: 'window', delegada: false, quien: 'x', pedida_por: null, razon: 'apagar', ...extra });
+  const conFirmas = (lineas) => { const v = volcado({ sid: 's' }); v.firmas = firmas(lineas); return v; };
+  const apagado = cmd(`${MARKER} set-autonomous false`);
+  for (const via of ['window', 'click', 'message', 'terminal']) {
+    const r = revisar(apagado, { volcado: conFirmas([firma({ via })]), registros: conFrenos([]) });
+    assert.deepStrictEqual(regla(r, 'RR-APAGO'), [], `la firma de una persona por ${via} autoriza el apagado`);
+    assert.strictEqual(r.escapes_autorizados, 1, `el apagado firmado por ${via} cuenta como autorizado`);
+  }
+  // sin el registro de frenos medido, la firma igual autoriza: viene del volcado, no de la máquina
+  assert.deepStrictEqual(regla(revisar(apagado, { volcado: conFirmas([firma()]) }), 'RR-APAGO'), [], 'la firma del volcado no depende de frenos.jsonl');
+  for (const [que, f] of [['de trámite', firma({ via: 'automatic', delegada: true })], ['delegada', firma({ via: 'delegation', delegada: true })],
+    ['de otro escape', firma({ firma: 'escape:cerrar-como-deuda' })]]) {
+    assert.strictEqual(regla(revisar(apagado, { volcado: conFirmas([f]), registros: conFrenos([]) }), 'RR-APAGO').length, 1, `la firma ${que} no autoriza`);
+  }
+  const dos = [...apagado, ...cmd(`${MARKER} set-autonomous false`, { min: 5 })];
+  assert.deepStrictEqual(regla(revisar(dos, { volcado: conFirmas([firma()]), registros: conFrenos([]) }), 'RR-APAGO').map((x) => x.cuenta), [1], 'una firma tapa un solo apagado');
+  // las firmas no medidas no autorizan nada
+  const sinMedir = volcado({ sid: 's' }); sinMedir.firmas = { estado: 'no_medido', motivo: 'x' };
+  assert.strictEqual(regla(revisar(apagado, { volcado: sinMedir, registros: conFrenos([]) }), 'RR-APAGO').length, 1, 'sin firmas medidas, sigue la ficha');
 });

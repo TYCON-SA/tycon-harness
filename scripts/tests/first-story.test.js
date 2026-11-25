@@ -13,7 +13,7 @@
  *   T12 · nunca dos veces: segundo cierre, completa elegida, perfil sin elegir, oferta ya anotada.
  *   T13 · sin persona (sesión no atendida o integración continua) no pregunta: un renglón con la orden.
  *   T14 · un error en la oferta no rompe el cierre.
- *   T15/T16 · el paso «preparar el commit» dice qué hacer, y el contrato del lector para la corrida de primera vez está escrito.
+ *   T15/T16 · el paso «preparar el pull request» dice qué hacer, y el contrato del lector para la corrida de primera vez está escrito.
  *
  * Nada toca el HOME real: cada caso arma su HOME de juguete; `lib/real-home-guard.js` lo mide y el último caso lo exige.
  *
@@ -475,7 +475,7 @@ test('8.54 T20 ClonDeSkillsAparte · el árbol del arnés sale del estado de la 
 
 // ─── lo que se lee ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-test('8.54 T15 Paso8_DiceQueHacer · el paso «preparar el commit» dice qué hacer con la oferta', () => {
+test('8.54 T15 Paso8_DiceQueHacer · el paso «preparar el pull request» dice qué hacer con la oferta', () => {
   const t = fs.readFileSync(path.join(RAIZ, 'skills', 'tycon-pipeline', 'steps', 'step-11-prepare-commit.md'), 'utf8');
   const sec = t.slice(t.indexOf('instalación completa'));
   assert.ok(t.includes('instalación completa'), 'el paso no nombra la oferta');
