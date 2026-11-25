@@ -44,6 +44,7 @@
 # Uso:
 #   deploy-plugin.sh --url <host> --user <u> --password <c> --zip <archivo> --endpoint <ruta>
 #                    [--environment staging|production] [--pending-options <archivo.json>]
+#                       [--settings-file <archivo.json>]
 #                       [--exclusions <números de migración excluidos a propósito>]
 #
 #   --environment: «production» tiene un nombre viejo en castellano que sigue andando hasta el retiro.
@@ -54,11 +55,16 @@
 #   SABIENDAS, con motivo y fecha. Forma: {"revision":"AAAA-MM-DD","opciones":[{"opcion":"X:Y",
 #   "motivo":"por qué"}]}. Lo NO declarado frena igual; una declaración vencida o sin fecha frena.
 #
+#   --settings-file: las opciones NO secretas, por entorno, que se cargan solas en la versión nueva cuando el host
+#   dice que faltan. Forma: {"staging":{"X:Y":"valor"},"production":{"X:Y":"valor"}} (en el repo del plugin,
+#   .tycon/plugin-settings.json). Nunca pisa un valor ya cargado; frena sin escribir nada con una clave con nombre de
+#   secreto, una cifrada en el host o una que el plugin.json del paquete no declara.
+#
 # Exit: 0 desplegado y verificado · 1 falló (con la anterior recuperada donde se pudo)
 #       2 no se pudo ni empezar (credenciales, archivo, login)
 set -u
 
-URL=""; USUARIO=""; CLAVE=""; ZIP=""; ENDPOINT=""; ENTORNO="staging"; PENDIENTES_ARCH=""; EXCLUSIONES=""; RETRO_APROBADO=no
+URL=""; USUARIO=""; CLAVE=""; ZIP=""; ENDPOINT=""; ENTORNO="staging"; PENDIENTES_ARCH=""; SETTINGS_ARCH=""; EXCLUSIONES=""; RETRO_APROBADO=no
 # Las opciones renombradas a inglés: los pipelines de los productos siguen pasando las viejas hasta
 # el retiro, y este guion corre en producción desde el artefacto arnes-ci (sólo scripts/ci): el traductor vive al lado.
 _AQUI_LO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -78,8 +84,9 @@ while [ $# -gt 0 ]; do
     --endpoint) ENDPOINT="$2"; shift 2 ;;
     --environment) ENTORNO="$2"; shift 2 ;;
     --pending-options) PENDIENTES_ARCH="$2"; shift 2 ;;
+    --settings-file) SETTINGS_ARCH="$2"; shift 2 ;;
     --exclusions) EXCLUSIONES="$2"; shift 2 ;;
-    -h|--help) sed -n '1,58p' "$0"; exit 0 ;;
+    -h|--help) sed -n '1,64p' "$0"; exit 0 ;;
     *) echo "[desplegar] argumento desconocido: $1" >&2; exit 2 ;;
   esac
 done
@@ -336,19 +343,26 @@ FALTAN=""; FALTAN_LINEAS=""; DETALLE=""; MEDIDO=si; YA_ARRANCO=no
 if printf '%s' "$PREV_BODY" | jq -e 'type == "object" and .manifestUnreadable == true' >/dev/null 2>&1; then
   fatal "el host no pudo leer el manifiesto (plugin.json) del paquete $NOMBRE_PLUGIN $VERSION_PLUGIN (identificador $PLUGIN_ID): las opciones que le faltarían no se pueden saber, y eso no es «no falta nada». El paquete está roto — no toqué nada, la versión anterior sigue cargada y marcada"
 fi
-if printf '%s' "$PREV_BODY" | jq -e 'type == "object" and has("missingSettings")' >/dev/null 2>&1; then
-  LECTURA=$(printf '%s' "$PREV_BODY" | jq -r '.missingSettings
+# leer_faltantes <cuerpo de una vista previa que trae missingSettings> — llena FALTAN, FALTAN_LINEAS, DETALLE y YA_ARRANCO
+leer_faltantes() {
+  local cuerpo="$1" lectura
+  FALTAN=""; FALTAN_LINEAS=""; DETALLE=""
+  lectura=$(printf '%s' "$cuerpo" | jq -r '.missingSettings
     | if type != "array" then error("no es una lista") else .[] end
     | if type == "object" and (.key | '"$CLAVE_OK"')
       then "\(.key)\t\(.reason // "" | tostring | gsub("[[:cntrl:]]"; " "))"
       else error("un elemento sin una clave legible") end' 2>&1)
-  [ $? -eq 0 ] || fatal "no pude leer la lista de opciones faltantes de la vista previa ($LECTURA) — una lista que no se pudo leer no es una lista vacía. Detalle: $(printf '%s' "$PREV_BODY" | head -c 300)"
+  [ $? -eq 0 ] || fatal "no pude leer la lista de opciones faltantes de la vista previa ($lectura) — una lista que no se pudo leer no es una lista vacía. Detalle: $(printf '%s' "$cuerpo" | head -c 300)"
   while IFS=$'\t' read -r OP MOT; do
     [ -n "$OP" ] || continue
     FALTAN="${FALTAN:+$FALTAN, }$OP"; FALTAN_LINEAS="${FALTAN_LINEAS}${OP}"$'\n'
     DETALLE="${DETALLE}   · $OP ($(motivo_llano "${MOT:-sin motivo}"))"$'\n'
-  done <<< "$LECTURA"
-  printf '%s' "$PREV_BODY" | jq -e '.alreadyStarted == true' >/dev/null 2>&1 && YA_ARRANCO=si
+  done <<< "$lectura"
+  printf '%s' "$cuerpo" | jq -e '.alreadyStarted == true' >/dev/null 2>&1 && YA_ARRANCO=si
+  return 0
+}
+if printf '%s' "$PREV_BODY" | jq -e 'type == "object" and has("missingSettings")' >/dev/null 2>&1; then
+  leer_faltantes "$PREV_BODY"
 elif [ "$CAMINO" = subida ] && printf '%s' "$UP_BODY" | jq -e 'type == "object" and has("missingSettings")' >/dev/null 2>&1; then
   LECTURA=$(printf '%s' "$UP_BODY" | jq -r '.missingSettings
     | if type != "array" then error("no es una lista") else .[] end
@@ -365,6 +379,92 @@ else
   MEDIDO=no
   constancia_puente no
   aviso "NO PUDO MEDIR la configuración de $NOMBRE_PLUGIN $VERSION_PLUGIN (identificador $PLUGIN_ID, $PUENTE_HOST): este host todavía no contesta qué opciones faltan; si acabás de corregir una configuración, subí el número de versión para volver al camino de la subida nueva, o actualizá el host. Si a esta versión le falta una opción, se va a encender sin ella"
+fi
+
+# 🔴 LAS OPCIONES NO SECRETAS SE CARGAN SOLAS; LOS SECRETOS, NUNCA.
+#
+# Con --settings-file, las opciones que la vista previa dice que faltan y que el archivo trae para el entorno se
+# escriben en la versión nueva, de a una y sin cifrar, con la escritura de configuración del host. Así el dev carga a
+# mano sólo los secretos. Reglas:
+#   · nunca se pisa: una opción que el host no reporta como faltante (heredada o cargada a mano) no se toca;
+#   · antes de escribir nada se mira el archivo entero, y frena si trae una clave con nombre de secreto, una que el
+#     host tiene marcada como cifrada o una que el paquete no declara en su plugin.json (la copia del
+#     plugin.json.example del repo);
+#   · después se vuelve a leer la vista previa: lo que siga faltando (los secretos) frena como siempre.
+# Sólo con un host que dice en la vista previa qué falta: sin eso no hay contra qué cargar ni cómo verificarlo.
+SECRETO_RE='password|secret|token|api_?key|connectionstring|clave|contrase(ñ|n)a'
+if [ -n "$SETTINGS_ARCH" ]; then
+  paso "2b/5 · Opciones no secretas del archivo de opciones ($SETTINGS_ARCH)"
+  case "$ENTORNO" in produccion) BLOQUE_ENT=production ;; *) BLOQUE_ENT="$ENTORNO" ;; esac
+  if [ "$MEDIDO" != si ] || ! printf '%s' "$PREV_BODY" | jq -e 'type == "object" and has("missingSettings")' >/dev/null 2>&1; then
+    aviso "no cargo el archivo de opciones: este host no dice en la vista previa qué opciones le faltan a $NOMBRE_PLUGIN $VERSION_PLUGIN, y sin eso no hay contra qué cargar ni cómo verificarlo"
+  elif [ -z "$FALTAN" ]; then
+    echo "   no falta ninguna opción: el archivo de opciones no hace falta"
+  else
+    [ -f "$SETTINGS_ARCH" ] && jq -e 'type == "object"' "$SETTINGS_ARCH" >/dev/null 2>&1 \
+      || fatal "el archivo de opciones ($SETTINGS_ARCH) no se puede leer como un objeto JSON — no cargué nada"
+    if ! jq -e --arg e "$BLOQUE_ENT" 'has($e) and (.[$e] | type == "object")' "$SETTINGS_ARCH" >/dev/null 2>&1; then
+      echo "   el archivo de opciones no trae valores para $BLOQUE_ENT: no cargo nada"
+    else
+      # 1) el archivo entero, antes de escribir nada: claves y valores legibles, y ninguna con nombre de secreto
+      MALAS=$(jq -r --arg e "$BLOQUE_ENT" --arg re "$SECRETO_RE" '.[$e] | to_entries[]
+        | select((.key | '"$CLAVE_OK"' | not) or (.value | type != "string") or (.value | test("[[:cntrl:]]"))
+                 or (.key | test($re; "i")))
+        | .key | tostring | gsub("[[:cntrl:]]"; " ")' "$SETTINGS_ARCH" 2>&1) \
+        || fatal "no pude revisar el archivo de opciones ($MALAS) — no cargué nada"
+      [ -z "$MALAS" ] || fatal "el archivo de opciones trae claves que no se cargan solas: $(printf '%s' "$MALAS" | tr '\n' ' ')— una clave con nombre de secreto, o con un valor que no es texto de una línea. Los secretos se cargan a mano en el panel; no cargué nada"
+      # 2) que el paquete las declare: el plugin.json del ZIP es la copia del plugin.json.example del repo
+      MANIF=""
+      if command -v unzip >/dev/null 2>&1; then MANIF=$(unzip -p "$ZIP" plugin.json 2>/dev/null)
+      elif command -v python3 >/dev/null 2>&1; then MANIF=$(python3 -c 'import sys, zipfile; sys.stdout.write(zipfile.ZipFile(sys.argv[1]).read("plugin.json").decode("utf-8"))' "$ZIP" 2>/dev/null)
+      fi
+      printf '%s' "$MANIF" | jq -e 'type == "object"' >/dev/null 2>&1 \
+        || fatal "no pude leer el plugin.json del paquete ($ZIP) para ver qué opciones declara — sin eso no cargo nada"
+      DECLARADAS=$(printf '%s' "$MANIF" | jq -r '.defaultSettings // {} | if type == "object" then keys[] else empty end' 2>&1) \
+        || fatal "no pude leer las opciones que declara el plugin.json del paquete ($DECLARADAS) — no cargué nada"
+      CLAVES_ARCH=$(jq -r --arg e "$BLOQUE_ENT" '.[$e] | keys[]' "$SETTINGS_ARCH")
+      FUERA=""
+      while IFS= read -r k; do
+        [ -n "$k" ] || continue
+        printf '%s\n' "$DECLARADAS" | grep -qxF -- "$k" || FUERA="${FUERA}${k} "
+      done < <(printf '%s\n' "$CLAVES_ARCH")
+      [ -z "$FUERA" ] || fatal "el archivo de opciones trae claves que el paquete no declara en su plugin.json: ${FUERA}— no cargué nada"
+      # 3) que el host no tenga ninguna como cifrada
+      CFG=$(api GET "/api/admin/plugins/${PLUGIN_ID}/config")
+      [ "$(codigo "$CFG")" = "200" ] && cuerpo "$CFG" | jq -e 'type == "array"' >/dev/null 2>&1 \
+        || fatal "no pude leer la configuración de la versión con identificador $PLUGIN_ID (HTTP $(codigo "$CFG")) para ver qué opciones son cifradas — no cargué nada"
+      EN_EL_HOST=$(cuerpo "$CFG" | jq -r '.[] | select(.isEncrypted == true) | .key | tostring' 2>&1) \
+        || fatal "no pude leer qué opciones tiene cifradas el host ($EN_EL_HOST) — no cargué nada"
+      CIFRADAS=""
+      while IFS= read -r k; do
+        [ -n "$k" ] || continue
+        printf '%s\n' "$EN_EL_HOST" | grep -qxF -- "$k" && CIFRADAS="${CIFRADAS}${k} "
+      done < <(printf '%s\n' "$CLAVES_ARCH")
+      [ -z "$CIFRADAS" ] || fatal "el archivo de opciones trae opciones que el host tiene marcadas como cifradas: ${CIFRADAS}— un secreto no se carga desde un archivo; no cargué nada"
+      # 4) se escriben sólo las que faltan; las demás se nombran y no se tocan
+      CARGADAS=0
+      while IFS= read -r k; do
+        [ -n "$k" ] || continue
+        if printf '%s' "$FALTAN_LINEAS" | grep -qxF -- "$k"; then
+          ITEM=$(jq -c --arg e "$BLOQUE_ENT" --arg k "$k" '{configItems: [{key: $k, value: .[$e][$k], isEncrypted: false}]}' "$SETTINGS_ARCH")
+          PUESTA=$(api PUT "/api/admin/plugins/${PLUGIN_ID}/config" -H "Content-Type: application/json" --data "$ITEM")
+          [ "$(codigo "$PUESTA")" = "200" ] || fatal "no pude cargar la opción $k en la versión con identificador $PLUGIN_ID (HTTP $(codigo "$PUESTA")): $(cuerpo "$PUESTA" | head -c 300)"
+          echo "   cargada desde el archivo: $k"
+          CARGADAS=$((CARGADAS + 1))
+        else
+          echo "   $k no falta en esta versión: no la toqué (el archivo no pisa un valor ya cargado)"
+        fi
+      done < <(jq -r --arg e "$BLOQUE_ENT" '.[$e] | keys[]' "$SETTINGS_ARCH")
+      # 5) lo que siga faltando, de una vista previa nueva
+      if [ "$CARGADAS" -gt 0 ]; then
+        PREVIA_C=$(api POST "/api/admin/plugins/${PLUGIN_ID}/set-default/preview" -H "Content-Type: application/json" --data '')
+        [ "$(codigo "$PREVIA_C")" = "200" ] && cuerpo "$PREVIA_C" | jq -e 'type == "object" and has("missingSettings")' >/dev/null 2>&1 \
+          || fatal "después de cargar $CARGADAS opción(es) del archivo, la vista previa no dijo qué sigue faltando (HTTP $(codigo "$PREVIA_C")) — «no sé» no es «nada»"
+        leer_faltantes "$(cuerpo "$PREVIA_C")"
+        [ -n "$FALTAN" ] || echo "   configuración: con lo cargado del archivo no falta ninguna opción"
+      fi
+    fi
+  fi
 fi
 
 # 🔴 UNA OPCIÓN PENDIENTE SE DECLARA; LO NO DECLARADO FRENA.
