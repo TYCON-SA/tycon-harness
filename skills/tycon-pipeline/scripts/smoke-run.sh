@@ -200,7 +200,7 @@ case "$DECIDE_RC" in
       AISLAR=(node "$ISOLATED_JS" exec)
       while IFS= read -r RAIZ_AISLADA; do
         [ -n "$RAIZ_AISLADA" ] && AISLAR+=(--root "$RAIZ_AISLADA")
-      done <<< "$(printf '%s\n' "$DECISION" | sed 1d)"
+      done < <(printf '%s\n' "$(printf '%s\n' "$DECISION" | sed 1d)")
       AISLAR+=(--)
     fi ;;
   2) exit 2 ;;
@@ -338,6 +338,13 @@ else
   T1="$(reloj)"
 fi
 
+# En la ejecución aislada, lo que el encierro niega sin matar (fuera de las carpetas vigiladas) no queda anotado: el comando
+# sólo dice que no pudo escribir, con el texto del sistema. Si eso está en su salida y falló, se dice qué hacer en una
+# línea, por la salida de error: no entra en la salida guardada ni repite el texto que se busca.
+if [ "$EXIT" != 0 ] && [ "${AISLAR[0]:-}" = node ] && [ -n "$SALIDA_TMP" ] && grep -qE 'Operation not permitted|cannot create temp file' "$SALIDA_TMP" 2>/dev/null; then
+  echo "[smoke-run] ⚠️ dentro de la ejecución aislada, el encierro le negó al comando escribir fuera de su casa aparte y de su repo (un here document o un temporal con otra carpeta): el encierro no se abre; corré esa suite como humo común" >&2
+fi
+
 # ── La duración y las medidas que imprimió el comando (`TYCON_MEASURE <nombre>=<valor><unidad>`) ──
 # Las medidas se leen del temporal, entero, antes de que el trap lo borre; sin temporal, sólo la duración. El mismo
 # fragmento va al registro y al espejo: la matriz confirma la medida contra el espejo, como el código de salida.
@@ -355,7 +362,7 @@ if [ -n "$ENTORNO" ]; then MUT_FIELD="$MUT_FIELD,\"environment\":\"$ENTORNO\""; 
 if [ -n "$EJERCITA" ]; then
   # los nombres ya se validaron (letras, números, punto, guion y guion bajo): van entre comillas sin escapar nada
   EJ_JSON=""
-  IFS=',' read -r -a EJ_LISTA <<< "$EJERCITA"
+  IFS=',' read -r -a EJ_LISTA < <(printf '%s\n' "$EJERCITA")
   for r in "${EJ_LISTA[@]}"; do EJ_JSON="$EJ_JSON${EJ_JSON:+,}\"$r\""; done
   MUT_FIELD="$MUT_FIELD,\"exercises\":[$EJ_JSON]"
 fi

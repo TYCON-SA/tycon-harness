@@ -350,15 +350,18 @@ function leerRegistro(marca, desde) {
   return { eventos };
 }
 /**
- * La marca de cierre: `touch` sobre una carpeta que el encierro le niega con el mensaje `<marca>-cierre`. Pasa por el
- * mismo camino que las negaciones de la corrida, después de todas ellas.
+ * La marca de cierre: node escribe en una carpeta que el encierro le niega, lo mata y lo anota con el mensaje
+ * `<marca>-cierre`, igual que una escritura de la corrida en una carpeta vigilada. Pasa por el mismo camino que esas
+ * negaciones, después de todas ellas: una de node que mata la anota sandboxd, con hasta 1,6 s de atraso medido con la
+ * máquina cargada, y la de `touch` sin matar la anotaba el kernel enseguida, antes que la de la corrida.
  */
 function marcarCierre(base, marca) {
   const dir = path.join(base, 'cierre');
   fs.mkdirSync(dir, { recursive: true });
   const q = (s) => `"${String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
-  const perfil = `(version 1)(allow default)(deny file-write* (subpath ${q(dir)}) (subpath ${q(real(dir))}) (with message ${q(cierreDe(marca))}))`;
-  spawnSync('/usr/bin/sandbox-exec', ['-p', perfil, '/usr/bin/touch', path.join(dir, 'x')], { windowsHide: true, stdio: 'ignore', timeout: 5000 });
+  const perfil = `(version 1)(allow default)(deny file-write* (subpath ${q(dir)}) (subpath ${q(real(dir))}) (with send-signal SIGKILL) (with message ${q(cierreDe(marca))}))`;
+  spawnSync('/usr/bin/sandbox-exec', ['-p', perfil, process.execPath, '-e', "require('fs').writeFileSync(process.argv[1], '')", path.join(dir, 'x')],
+    { windowsHide: true, stdio: 'ignore', timeout: 5000, env: { PATH: process.env.PATH || '' } });
 }
 /**
  * Las rutas de las escrituras que el encierro negó con la marca de esta corrida: las de las carpetas vigiladas, que
