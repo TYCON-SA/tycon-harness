@@ -1501,16 +1501,17 @@ function sinBlancosAlBorde(linea) {
 /**
  * Los heredocs que abre el renglón, en orden: `{ delimitador, inicio, fin }`, con `inicio` y `fin` los del operador con
  * su palabra (`<<-'EOF'`). No abren nada lo de adentro de comillas, lo escapado, lo que sigue a un `$((` ni lo que sigue a
- * un `#` que empieza una palabra: ahí el shell ve un comentario y el renglón siguiente corre.
+ * un `#` que empieza una palabra: ahí el shell ve un comentario y el renglón siguiente corre. Con `comentarios: false` el
+ * `#` no corta (no siempre es un comentario para el shell: `$(true)#x`, un espacio duro antes).
  */
-function* aperturasDeHeredoc(linea) {
+function* aperturasDeHeredoc(linea, { comentarios = true } = {}) {
   const aritmetica = linea.indexOf('$((');
   const tope = aritmetica < 0 ? linea.length : Math.min(linea.length, aritmetica + 3);
   for (let i = 0; i < tope; i++) {
     const c = linea[i];
     if (c === '\\') {
       i++;
-    } else if (c === '#' && (i === 0 || /[\s;&|()]/.test(linea[i - 1]))) {
+    } else if (comentarios && c === '#' && (i === 0 || /[\s;&|()]/.test(linea[i - 1]))) {
       return;
     } else if (c === "'") {
       const cierra = linea.indexOf("'", i + 1);
@@ -1540,13 +1541,14 @@ function* delimitadoresQueAbre(linea) {
  * uno detrás del otro) y `operador`, `{ inicio, fin }` del `<<` con su palabra en el renglón. Va por renglones, con los
  * cierres en un índice: con muchas aperturas sin cierre, una expresión que busca el cierre desde cada una es cuadrática.
  */
-function heredocsCerrados(lineas) {
+/** `cierreTras(delimitador, n)`: el primer renglón después de `n` que es el delimitador (sin blancos al borde), o -1. */
+function cierresDe(lineas) {
   const renglonesDe = new Map();
   lineas.forEach((linea, n) => {
     const clave = sinBlancosAlBorde(linea);
     if (renglonesDe.has(clave)) renglonesDe.get(clave).push(n); else renglonesDe.set(clave, [n]);
   });
-  const cierreTras = (delimitador, n) => {
+  return (delimitador, n) => {
     const renglones = renglonesDe.get(delimitador) || [];
     let bajo = 0;
     let alto = renglones.length;
@@ -1556,6 +1558,10 @@ function heredocsCerrados(lineas) {
     }
     return bajo < renglones.length ? renglones[bajo] : -1;
   };
+}
+
+function heredocsCerrados(lineas) {
+  const cierreTras = cierresDe(lineas);
   const out = [];
   for (let n = 0; n < lineas.length - 1; n++) {
     let cursor = n;
@@ -5325,22 +5331,28 @@ function frenoBorrarYArmados({ cmd, cwd, stateDir, sessionId, io, isInside, via,
  * propósito) y el target de SU línea de apertura (`cat > f <<EOF` / `cat <<EOF > f` / `tee f <<EOF`),
  * o null si la línea no redirige a un archivo. La atribución importa: el cuerpo de un heredoc que
  * reescribe una story EXISTENTE no se le atribuye a cualquier `.md` nuevo del mismo comando.
- * Uno por renglón, el primero, con el lector de renglones de `heredocsCerrados`: una expresión que busca la apertura
- * desde cada separador es cúbica con miles de `<<<` en un renglón.
+ * Uno por renglón: la primera apertura que cierra, sin cortar en un `#` (un `<<` aritmético, `(( 1 << 2 ))`, o un `#`
+ * que el shell no lee como comentario no esconden el heredoc de verdad que sigue; acá leer de más es el lado que frena).
+ * Va por renglones, con los cierres en un índice: una expresión que busca la apertura desde cada separador es cúbica con
+ * miles de `<<<` en un renglón.
  */
 function heredocs(cmd) {
   const s = String(cmd || '');
   if (!s.includes('<<')) return [];
   const lineas = s.split('\n');
+  const cierreTras = cierresDe(lineas);
   const out = [];
-  let anterior = -1;
-  for (const { abre, desde, cierre, operador } of heredocsCerrados(lineas)) {
-    if (abre === anterior) continue;
-    anterior = abre;
-    // el renglón que lo abre, sin el `<<` y su palabra
-    const linea = lineas[abre];
-    const t = extractWriteTargets(`${linea.slice(0, operador.inicio)} ${linea.slice(operador.fin)}`);
-    out.push({ body: lineas.slice(desde, cierre).join('\n'), target: t.length === 1 ? t[0] : null });
+  for (let n = 0; n < lineas.length - 1; n++) {
+    for (const { inicio, fin, delimitador } of aperturasDeHeredoc(lineas[n], { comentarios: false })) {
+      const cierre = cierreTras(delimitador, n);
+      if (cierre < 0) continue;
+      // el renglón que lo abre, sin el `<<` y su palabra
+      const linea = lineas[n];
+      const t = extractWriteTargets(`${linea.slice(0, inicio)} ${linea.slice(fin)}`);
+      out.push({ body: lineas.slice(n + 1, cierre).join('\n'), target: t.length === 1 ? t[0] : null });
+      n = cierre;
+      break;
+    }
   }
   return out;
 }

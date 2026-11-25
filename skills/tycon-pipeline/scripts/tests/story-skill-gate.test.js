@@ -314,6 +314,16 @@ test('on-bash-write-gate (F2): el heredoc de una story EXISTENTE no contagia a o
   assert.equal(hd[0].target, 'a.md');
 });
 
+// 🔴 Fila 225. Mutación: que la lectura de los heredocs corte el renglón en un `#` o se quede en la primera apertura sin
+// cierre del renglón: un `(( 1 << 2 ))`, `$[1<<2]`, `${n:1<<1}` o `$(true)#x` antes del heredoc de verdad lo escondía, y
+// una historia lista escrita a mano junto a otro `.md` pasaba sin la skill.
+test('on-bash-write-gate (fila 225): el heredoc detrás de un `<<` aritmético o de un `#` en su renglón se lee', () => {
+  for (const antes of ['(( n = 1 << 2 ));', 'echo $(true)#x >/dev/null;', 'echo ${n:1<<1} >/dev/null;', 'echo $[1<<2] >/dev/null;', 'i=1; ((i<<=1));', 'echo a #b;']) {
+    const hd = bash.heredocs(`cat > specs/notas.md <<'X'\nhola\nX\n${antes} cat > specs/plan-a.md <<'EOF'\n---\nstory: "9.9"\nEOF`);
+    assert.deepStrictEqual(hd.map((h) => h.body), ['hola', '---\nstory: "9.9"'], antes);
+  }
+});
+
 test('on-bash-write-gate (F3): mv/cp desde una story existente pasa (unknown-rename); un índice frena por nombre con el mensaje correcto', () => {
   const repo = mkRepo(); const st = mkState();
   fs.writeFileSync(path.join(repo, 'specs', 'story-a.md'), S99);
