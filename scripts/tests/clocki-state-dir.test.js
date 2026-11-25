@@ -94,7 +94,7 @@ test('T2 MoveOld_MovesClocki_LeavesLink @story-8.335 @ac-2 — la carpeta pasa e
   assert.strictEqual(fs.realpathSync(path.join(at, 'active', 's1.json')), fs.realpathSync(moved), 'el enlace lo resuelve');
   assert.match(r.stdout, /queda un enlace a la carpeta nueva/);
 
-  // una segunda corrida no lo toca: un enlace no se muda
+  // la segunda vez no lo toca: un enlace no se muda
   const again = spawnSync(process.execPath, [LOOSE_JS, '--move-old'], { env: envFor(home), encoding: 'utf8' });
   assert.ok(!/clocki/.test(again.stdout), again.stdout);
   assert.ok(isLink(at));

@@ -58,7 +58,7 @@ const lstat = (p) => { try { return fs.lstatSync(p); } catch (_) { return null; 
  * Muda a la carpeta del estado cada registro suelto que siga en la carpeta de Claude Code, en una máquina que vive en la
  * casa propia. Renombra (en el mismo disco no copia nada). Nunca pisa ni borra: si el destino ya existe, el viejo queda
  * donde está y se dice. Un enlace no se muda. Un renombre que falla (otro disco, una carpeta en uso) deja el viejo donde
- * está, y la próxima corrida del aplicador lo reintenta.
+ * está, y el aplicador lo reintenta la próxima vez que corre.
  *
  * Los de una integración con `linkOld` dejan un enlace en el lugar viejo. Si el enlace falla, el renombre se deshace,
  * para que nada quede mirando un lugar vacío. Si el lugar viejo reapareció entre el renombre y el enlace (un gancho de
@@ -81,14 +81,14 @@ function moveOld(home, ops = {}) {
     if (!st || st.isSymbolicLink()) continue;
     const dst = path.join(to, name);
     if (lstat(dst)) { out.kept.push([src, dst, `${dst} ya existe`]); continue; }
-    try { rename(src, dst); } catch (e) { out.kept.push([src, dst, `no pude moverlo (${e.code || e.message}); la próxima corrida del aplicador lo reintenta`]); continue; }
+    try { rename(src, dst); } catch (e) { out.kept.push([src, dst, `no pude moverlo (${e.code || e.message}); el aplicador lo reintenta la próxima vez que corra`]); continue; }
     if (!linked.has(name)) { out.moved.push([src, dst, '']); continue; }
     if (lstat(src)) { out.moved.push([src, dst, `; ${src} reapareció mientras lo mudaba: no lo toco ni lo enlazo, juntalos a mano si querés`]); continue; }
     try {
       link(dst, src);
       out.moved.push([src, dst, `; en ${src} queda un enlace a la carpeta nueva`]);
     } catch (e) {
-      try { rename(dst, src); out.kept.push([src, dst, `no pude dejar el enlace (${e.code || e.message}): lo devolví a su lugar; la próxima corrida del aplicador lo reintenta`]); } catch (e2) { out.moved.push([src, dst, `; no pude dejar el enlace (${e.code || e.message}) ni devolverlo (${e2.code || e2.message}): quedó sólo en la carpeta nueva`]); }
+      try { rename(dst, src); out.kept.push([src, dst, `no pude dejar el enlace (${e.code || e.message}): lo devolví a su lugar; el aplicador lo reintenta la próxima vez que corra`]); } catch (e2) { out.moved.push([src, dst, `; no pude dejar el enlace (${e.code || e.message}) ni devolverlo (${e2.code || e2.message}): quedó sólo en la carpeta nueva`]); }
     }
   }
   return out;
