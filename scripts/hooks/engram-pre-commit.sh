@@ -340,9 +340,7 @@ else
       [ -n "$d" ] || continue
       printf '%s' "$INPUT" | ENGRAM_HOOK_COMMIT_DIR="$d" bash "${BASH_SOURCE[0]}"; rc=$?
       if [ "$rc" = "2" ]; then WORST=2; elif [ "$rc" != "0" ] && [ "$WORST" = "0" ]; then WORST=1; fi
-    done <<EOF_DIRS
-$COMMIT_DIRS
-EOF_DIRS
+    done < <(printf '%s\n' "$COMMIT_DIRS")
     exit "$WORST"
   fi
 fi

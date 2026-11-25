@@ -53,9 +53,7 @@ _legacy_names_find() {
     if { [ "$2" = old ] && [ "$o" = "$3" ]; } || { [ "$2" = new ] && [ "$n" = "$3" ]; }; then
       printf '%s\t%s\t%s' "$o" "$n" "${r:-0}"; return 0
     fi
-  done <<EOF
-${_LEGACY_NAMES_LINES}
-EOF
+  done < <(printf '%s\n' "${_LEGACY_NAMES_LINES}")
   return 1
 }
 
