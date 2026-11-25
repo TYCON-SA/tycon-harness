@@ -264,9 +264,15 @@ lo esté mirando: el pedido se cancela solo, sin cambiar nada, y la sesión no s
 puerta pedida de fondo (`run_in_background`) y la pedida por el Monitor, que corre de fondo siempre. Frena todas las
 formas, también una lectura que no abre cuadro: la regla es una sola. Lo que hay que hacer es avisarle antes a la persona
 qué cuadro va a aparecer y qué tiene que hacer en él, y correr la puerta en primer plano con un tope de 5 minutos
-(`timeout: 300000`). El tope hace falta porque la consola de Claude Code corta a los 2 minutos, y la puerta puede
-esperar hasta 90 segundos su turno y otros 2 minutos el cuadro. Cada bloqueo queda anotado con la regla
+(`timeout: 300000`). El tope hace falta porque, al vencer el tope de la consola de Claude Code (2 minutos si no se pide
+otro), la consola no corta el comando: lo pasa a segundo plano, y el cuadro queda sin nadie que lo mire. La puerta
+puede esperar hasta 90 segundos su turno y otros 2 minutos el cuadro. Cada bloqueo queda anotado con la regla
 `puerta-de-fondo`.
+
+Lo que el freno todavía no ve:
+- **Un primer plano con un tope corto.** Lo dice el mensaje, pero no lo frena.
+- **Una sesión abierta de fondo por la coordinadora que corre la puerta en su propio primer plano.** El cuadro aparece
+  mientras la persona mira otra pestaña. Su primer renglón dice de qué carpeta y de qué sesión viene.
 
 **Cuando no se aprueba, la puerta dice por qué.** Sale con código 2, sin leer la clave ni cambiar nada, con uno de tres
 mensajes. Los tres empiezan igual, «la persona no aprobó esta sentencia» (u «operación»), y siguen con la causa:
