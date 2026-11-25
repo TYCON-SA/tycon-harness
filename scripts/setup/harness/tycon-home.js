@@ -47,6 +47,11 @@ class TyconHomeError extends Error {
 
 // la carpeta de Claude Code bajo el HOME: el arnés vive adentro, salvo en una máquina con casa propia
 function claudeDir(home) { return path.join(home || os.homedir(), '.claude'); }
+// la carpeta temporal de las sesiones de Claude Code (`/tmp/claude-<uid>`, con una carpeta por proyecto y, adentro, una
+// por sesión); null sin número de usuario (Windows), donde no se sabe cuál es
+function agentTempDir(uid = typeof process.getuid === 'function' ? process.getuid() : null) {
+  return uid === null || uid === undefined ? null : path.join('/tmp', `claude-${uid}`);
+}
 
 function placePath(home) { return path.join(claudeDir(home), PLACE_NAME); }
 function legacyPlacePath(home) { return path.join(claudeDir(home), LEGACY_PLACE_NAME); }
@@ -349,7 +354,7 @@ function strayTempLinks(at) {
 
 module.exports = {
   PLACE_NAME, LEGACY_PLACE_NAME, OWN_DIR_NAME, TyconHomeError, ownRootOf,
-  placePath, legacyPlacePath, isHarnessClone, resolvePlace, claudeDir,
+  placePath, legacyPlacePath, isHarnessClone, resolvePlace, claudeDir, agentTempDir,
   harnessDir, stateDir, configFile, backupsDir, installedSkillsDir, maintainedDir, dashboardDir, home, ownPaths, ownPathsOf, isReleaseMachine, maintainedPath,
   harnessNode,
   maintainersClone,
