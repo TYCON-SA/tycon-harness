@@ -322,6 +322,12 @@ test('on-bash-write-gate (fila 225): el heredoc detrás de un `<<` aritmético o
     const hd = bash.heredocs(`cat > specs/notas.md <<'X'\nhola\nX\n${antes} cat > specs/plan-a.md <<'EOF'\n---\nstory: "9.9"\nEOF`);
     assert.deepStrictEqual(hd.map((h) => h.body), ['hola', '---\nstory: "9.9"'], antes);
   }
+  // de la segunda vuelta: la lectura es la de siempre, con las comillas sin escapes desde el principio del renglón. Una
+  // comilla escapada en un comentario o en `$'…'` no deja abrir un heredoc falso que se trague el de verdad
+  const historia = `cat > specs/plan-a.md <<'EOF'\n---\nstory: "9.9"\nEOF`;
+  for (const antes of ["echo a # \\' <<Z", 'echo a # \\" <<Z', "(( n = 1 << 2 )); echo $'a\\'b\\' <<Z x'"]) {
+    assert.deepStrictEqual(bash.heredocs(`${antes}\n${historia}\nZ`).map((h) => h.body), ['---\nstory: "9.9"'], antes);
+  }
 });
 
 test('on-bash-write-gate (F3): mv/cp desde una story existente pasa (unknown-rename); un índice frena por nombre con el mensaje correcto', () => {
