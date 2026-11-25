@@ -8,8 +8,12 @@ if (require.main === module) { try { require('./node-floor.js').guard(); } catch
  * `smoke-run.sh` corre un humo comparado primero «de siempre», con el ambiente de quien lo llama; un guion que armaba su
  * casa de juguete en `process.env.HOME` escribió así en la máquina real (el tablero, la designación de la coordinadora).
  * Ahora esa pasada, y la de todo humo cuyo programa es un guion de laboratorio, corre acá:
- *   - `HOME` y `USERPROFILE` son una carpeta nueva de `mkdtemp`, con `TMPDIR`, `TMP` y `TEMP` adentro; `TYCON_HOME`,
- *     `CLAUDE_CONFIG_DIR` y `CODEX_HOME` no llegan; `TYCON_TEST_RUN=1` sí;
+ *   - `HOME` y `USERPROFILE` son una carpeta nueva de `mkdtemp`, con `TMPDIR`, `TMP` y `TEMP` adentro; `TYCON_HOME`
+ *     y `CODEX_HOME` no llegan; `CLAUDE_CONFIG_DIR` es la carpeta de Claude Code de la casa aparte; `TYCON_TEST_RUN=1`
+ *     sí;
+ *   - ninguna credencial de Claude Code de quien lo lanza llega (`ANTHROPIC_*`, `CLAUDE_CODE_USE_*`, el token de su
+ *     ingreso, el nombre del ítem del llavero); una prueba en vivo lleva su llave de prueba en
+ *     `TYCON_TEST_ANTHROPIC_API_KEY`, que adentro es `ANTHROPIC_API_KEY`;
  *   - la red de escritura de las pruebas (scripts/tests/lib/real-home-guard.js) frena todo `node` que escriba en las
  *     carpetas del arnés de la casa de la cuenta (la propia, la de Claude Code, la de Codex y `TYCON_HOME`: `vigiladas`),
  *     y lo anota; un intento anotado hace fallar el humo aunque el comando se haya tragado el error;
@@ -50,6 +54,13 @@ const TYCON_HOME_LIB = path.join(RAIZ, 'scripts', 'setup', 'harness', 'tycon-hom
 const ROOTS_VAR = 'TYCON_REAL_HOME_GUARD_ROOTS';
 const LOG_VAR = 'TYCON_REAL_HOME_GUARD_LOG';
 const ALLOW_VAR = 'TYCON_REAL_HOME_GUARD_ALLOW';
+// la llave de prueba de Anthropic que quien lanza el humo pasa sólo para esa corrida, y las variables con que Claude Code
+// toma una credencial que nunca llegan a la casa aparte: toda ANTHROPIC_* (la llave, el token, la pasarela, las cabeceras,
+// el perfil), el token de su ingreso, el proveedor de nube (con CLAUDE_CODE_USE_* deja de usar la llave) y el nombre del
+// ítem del llavero
+const TEST_KEY_VAR = 'TYCON_TEST_ANTHROPIC_API_KEY';
+const credencialDeAfuera = (k) => /^ANTHROPIC_/.test(k) || /^CLAUDE_CODE_USE_/.test(k)
+  || ['CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_SECURESTORAGE_CONFIG_DIR'].includes(k);
 
 const INTERPRETE = /^(node|bash|sh|zsh|python3?|ruby|perl|deno|bun|npx|tsx)$/;
 const SHELL = /^(bash|sh|zsh)$/;
@@ -409,6 +420,18 @@ function exec({ argv, raices = [], env = process.env, userInfo, cwd = process.cw
     const admitidas = [...new Set(raices.flatMap((r) => [path.resolve(r), real(r)]))];
     const nuevo = { ...env };
     for (const k of ['TYCON_HOME', 'CLAUDE_CONFIG_DIR', 'CODEX_HOME']) delete nuevo[k];
+    // la credencial de Anthropic de quien lanza el humo no llega a la casa aparte. Una prueba en vivo que necesita Claude
+    // Code lleva una llave de prueba propia, que se pasa sólo para esa corrida en TYCON_TEST_ANTHROPIC_API_KEY y adentro
+    // es ANTHROPIC_API_KEY. La llave no se muestra
+    const llaveDePrueba = env.TYCON_TEST_ANTHROPIC_API_KEY;
+    for (const k of Object.keys(nuevo)) if (credencialDeAfuera(k) || k === TEST_KEY_VAR) delete nuevo[k];
+    // la carpeta de Claude Code es la de la casa aparte, dicha: con CLAUDE_CONFIG_DIR puesta, el ítem del llavero de macOS
+    // lleva otro nombre y no es el de la sesión de quien lanza (borrada, `claude` pedía el mismo)
+    nuevo.CLAUDE_CONFIG_DIR = require(TYCON_HOME_LIB).claudeDir(home);
+    if (llaveDePrueba) {
+      nuevo.ANTHROPIC_API_KEY = llaveDePrueba;
+      err(`[aislada] la casa aparte lleva la llave de prueba (${TEST_KEY_VAR}) como ANTHROPIC_API_KEY; la credencial de afuera no llega\n`);
+    }
     Object.assign(nuevo, { HOME: home, USERPROFILE: home, TMPDIR: tmp, TMP: tmp, TEMP: tmp, TYCON_TEST_RUN: '1',
       // la cobertura de quien llama queda fuera del encierro: su aviso, distinto en cada corrida, ensuciaría la salida
       NODE_V8_COVERAGE: '',

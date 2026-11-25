@@ -9,7 +9,7 @@
 // Regla que implementa: "un control que hay que acordarse de invocar es un control que no corre".
 //
 // CÓMO MIDE: fecha de la última corrida = la más nueva entre los archivos del CAPTURER en
-// ~/.claude/tycon-harness/.dashboard/ — sólo los `metrics-*.json`, que es lo que escribe, uno por
+// ~/.tycon/harness/.dashboard/ — sólo los `metrics-*.json`, que es lo que escribe, uno por
 // corrida. La fecha se saca del NOMBRE del archivo (metrics-YYYY-MM-DD-*.json) — no del mtime,
 // porque un clone/pull fresco pisa los mtime y escondería el staleness justo cuando importa.
 // Fallback: mtime.
@@ -34,7 +34,7 @@ try {
   if (process.env.TYCON_RETRO_STALENESS === '0') process.exit(0);
 
   const thresholdDays = Number(process.env.TYCON_RETRO_STALENESS_DAYS || 7);
-  // El script vive en ~/.claude/tycon-harness/scripts/hooks/ → la raíz del repo es ../../. De qué árbol se leen los
+  // El script vive en ~/.tycon/harness/scripts/hooks/ → la raíz del repo es ../../. De qué árbol se leen los
   // .dashboard del nocturno lo decide tycon-home.js (el clon que se mantiene, o ninguno y el aviso calla); si este
   // archivo viaja suelto, éste
   const own = path.resolve(__dirname, '..', '..');
