@@ -1698,6 +1698,38 @@ test('T33c Team_RenamesMap_SplitScript_NameInItsPartsCounts', () => {
   assert.ok(barras.problems.some((x) => /entries\[8\].*backslashed/.test(x.reason)), JSON.stringify(barras.problems));
 });
 
+// ── T33d: el nombre nuevo entero, no dentro de otra palabra ────────────────────────────────────────────────────
+// El validador busca el nombre nuevo en el texto del guion. Si lo busca como subcadena, `mark` está en un texto que sólo
+// dice `marks` o `--mark-all`, y el mapa pasa con un nombre que el guion no lee.
+// 🔴 Falla con: un validador que busca el nombre con `includes` (deja pasar `mark`, `set` y `all` de abajo), o que pide
+//    bordes también contra los guiones de la opción (rechaza `--fast`, que el guion sí nombra).
+test('T33d Team_RenamesMap_NewNameInsideAnotherWord_IsMissing', () => {
+  const lab = casa('t33d');
+  const v = mapVersion(lab);
+  const relmFile = path.join(v, '.tycon-release.json');
+  const relm = JSON.parse(fs.readFileSync(relmFile, 'utf8'));
+  const text = "'use strict';\n// lee --marks y --mark-all; --fast; subcomando 'set-models'; preset\nconst OPTIONS = ['marks', 'mark-all', 'fast'];\nmodule.exports = OPTIONS;\n";
+  const f = path.join(v, 'scripts', 'ci', 'bordes.js'); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, text);
+  relm.files.push({ path: 'scripts/ci/bordes.js', blob: TEAM.blobOf(Buffer.from(text)) });
+  fs.writeFileSync(relmFile, JSON.stringify(relm));
+  const judge = (extra) => {
+    fs.rmSync(path.join(lab, 'layer'), { recursive: true, force: true });
+    const m = saneMap(); m.entries.push(extra);
+    const l = mapLayer(lab, m);
+    return TEAM.checkAgainstVersion(l.dir, l.files, v, { env: {} });
+  };
+  // dentro de otra palabra: no está
+  for (const [kind, name] of [['option', 'mark'], ['option', 'all'], ['subcommand', 'set'], ['value', 'models']]) {
+    const r = judge({ kind, old: 'viejo', new: name, where: 'scripts/ci/bordes.js', batch: 'X' });
+    assert.ok(r.problems.some((x) => new RegExp(`entries\\[8\\].*el nombre nuevo ${name} no está`).test(x.reason)), `${kind} ${name}: ${JSON.stringify(r.problems)}`);
+  }
+  // entero, con sus guiones o entre comillas: está
+  for (const [kind, name] of [['option', '--fast'], ['option', 'marks'], ['option', 'mark-all'], ['subcommand', 'set-models']]) {
+    const r = judge({ kind, old: 'viejo', new: name, where: 'scripts/ci/bordes.js', batch: 'X' });
+    assert.equal(r.ok, true, `${kind} ${name}: ${JSON.stringify(r.problems)}`);
+  }
+});
+
 // el árbol real: sólo en el clon del equipo (el reparto no viaja en la copia)
 const IN_REPO_33 = fs.existsSync(path.join(ROOT, 'scripts', 'publishing', 'replacements.json')) && fs.existsSync(path.join(ROOT, MAP_PATH));
 test('T33 Team_RenamesMapThirdExactPath_ShapeValidated_OldVariableOptionAndStateFileResolvedOnLayerMachine_UnderSizeCap · el mapa real contra lo que publica HEAD', { skip: !IN_REPO_33 && 'el mapa y el reparto no viajan en la copia' }, () => {
