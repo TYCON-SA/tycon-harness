@@ -2,7 +2,7 @@
 'use strict';
 // nightly-green.test.js — un criterio declarado imposible de probar en vivo queda cubierto sin la firma del dueño si la
 // última noche corrió en verde su prueba, y esa prueba ya estaba en el commit de main que midió la noche.
-// Nada mira la foto real: cada prueba arma la suya y la pasa por TYCON_SUITES_REPORT o por argumento.
+// Nada mira la foto real: cada prueba arma la suya y la pasa por argumento (`file`, o `nightPhoto` a la matriz).
 // stable-data: la hora de cada foto se arma desde la hora real, porque la matriz la compara con su propio reloj; los
 // commits de juguete llevan fecha fija.
 
@@ -81,20 +81,22 @@ test('NG2 NightlyGreen_ReadPhoto_SameWayAsTheNotice', (t) => {
   const dir = tmp(t, 'nightly-photo-');
   const file = path.join(dir, 'ultimo-suites.json');
   fs.writeFileSync(file, JSON.stringify({ ts: 'x' }));
-  // la variable manda
-  assert.deepStrictEqual(NG.readPhoto({ root: dir, env: { TYCON_SUITES_REPORT: file } }).rep, { ts: 'x' });
-  assert.match(NG.readPhoto({ root: dir, env: { TYCON_SUITES_REPORT: path.join(dir, 'no') } }).problem, /no hay foto/);
-  fs.writeFileSync(file, '{roto');
-  assert.match(NG.readPhoto({ root: dir, env: { TYCON_SUITES_REPORT: file } }).problem, /no se deja leer/);
+  // el archivo que pasa una prueba manda
+  assert.deepStrictEqual(NG.readPhoto({ root: dir, file }).rep, { ts: 'x' });
+  assert.match(NG.readPhoto({ root: dir, file: path.join(dir, 'no') }).problem, /no hay foto/);
   // la máquina que mantiene el arnés: lo publicado en su clon de mantenimiento
   const published = (state, text) => ({ resolve: () => ({ source: 'maintainers', dir }), readPublished: (d, rel) => { assert.strictEqual(rel, NG.PHOTO); return { state, text }; } });
-  assert.deepStrictEqual(NG.readPhoto({ root: dir, env: {}, nightData: published('ok', '{"ts":"y"}') }).rep, { ts: 'y' });
-  assert.match(NG.readPhoto({ root: dir, env: {}, nightData: published('missing', null) }).problem, /no hay foto/);
+  assert.deepStrictEqual(NG.readPhoto({ root: dir, nightData: published('ok', '{"ts":"y"}') }).rep, { ts: 'y' });
+  assert.match(NG.readPhoto({ root: dir, nightData: published('missing', null) }).problem, /no hay foto/);
+  // la variable del aviso no apunta la matriz a otra foto: con una foto buena en TYCON_SUITES_REPORT, sigue sin foto
+  assert.match(NG.readPhoto({ root: dir, env: { TYCON_SUITES_REPORT: file }, nightData: published('missing', null) }).problem, /no hay foto/);
+  fs.writeFileSync(file, '{roto');
+  assert.match(NG.readPhoto({ root: dir, file }).problem, /no se deja leer/);
   // una máquina sin los procesos nocturnos no tiene foto; la de un dev lee la que está al lado del arnés
-  assert.match(NG.readPhoto({ root: dir, env: {}, nightData: { resolve: () => ({ source: null, dir: null, problem: null }) } }).problem, /no recibe los procesos nocturnos/);
+  assert.match(NG.readPhoto({ root: dir, nightData: { resolve: () => ({ source: null, dir: null, problem: null }) } }).problem, /no recibe los procesos nocturnos/);
   fs.mkdirSync(path.join(dir, 'scripts', 'controls-bench'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'scripts', 'controls-bench', 'ultimo-suites.json'), '{"ts":"z"}');
-  assert.deepStrictEqual(NG.readPhoto({ root: dir, env: {}, nightData: { resolve: () => ({ source: 'own', dir }) } }).rep, { ts: 'z' });
+  assert.deepStrictEqual(NG.readPhoto({ root: dir, nightData: { resolve: () => ({ source: 'own', dir }) } }).rep, { ts: 'z' });
 });
 
 test('NG3 Matrix_DeclaredImpossible_CoveredByTheNight', (t) => {
@@ -114,7 +116,7 @@ test('NG3 Matrix_DeclaredImpossible_CoveredByTheNight', (t) => {
   const rm = require(path.join(SCRIPTS, 'runtime-matrix.js'));
   const matrix = (rep) => {
     fs.writeFileSync(report, JSON.stringify(rep));
-    return rm.compute({ storyPath: story, env: { ...process.env, TYCON_SUITES_REPORT: report } });
+    return rm.compute({ storyPath: story, nightPhoto: report });
   };
   const green = matrix(photo(L.git('rev-parse', 'HEAD')));
   assert.strictEqual(green.perAc[1].verdict, 'COVERED-NIGHTLY', JSON.stringify(green.warnings));

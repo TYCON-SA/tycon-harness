@@ -8,9 +8,10 @@
  *   2. la suite de esa prueba corrió esa noche y no quedó en rojo ni sin medir;
  *   3. la foto de esa noche tiene menos de 36 h.
  * La foto es `scripts/controls-bench/ultimo-suites.json`, leída por el mismo camino que el aviso de arranque
- * (scripts/hooks/bench-notice.js): la variable `TYCON_SUITES_REPORT`, lo publicado en el clon de mantenimiento, o la que
- * está al lado del arnés. Sin foto, ilegible, vieja o sin el commit que midió, no cubre: el criterio sigue esperando la
- * firma. Una noche roja la vuelve a pedir, porque la matriz se calcula con la foto de cada vez.
+ * (scripts/hooks/bench-notice.js): lo publicado en el clon de mantenimiento, o la que está al lado del arnés. La variable
+ * `TYCON_SUITES_REPORT` del aviso no vale acá: apuntaría la matriz a una foto cualquiera y cubriría un criterio sin firma.
+ * Sin foto, ilegible, vieja o sin el commit que midió, no cubre: el criterio sigue esperando la firma. Una noche roja la
+ * vuelve a pedir, porque la matriz se calcula con la foto de cada vez.
  */
 const fs = require('fs');
 const path = require('path');
@@ -36,9 +37,12 @@ function photoFromFile(file) {
   return parsePhoto(text, file);
 }
 
-/** La foto de las suites nocturnas: `{ rep, problem }`, con `rep` null si no hay una que se pueda usar. Nunca tira. */
-function readPhoto({ root = HARNESS_ROOT, env = process.env, nightData } = {}) {
-  if (env.TYCON_SUITES_REPORT) return photoFromFile(env.TYCON_SUITES_REPORT);
+/**
+ * La foto de las suites nocturnas: `{ rep, problem }`, con `rep` null si no hay una que se pueda usar. Nunca tira.
+ * `file` lo pasan sólo las pruebas, desde el código: ni la línea de comandos ni el entorno llegan acá.
+ */
+function readPhoto({ root = HARNESS_ROOT, nightData, file } = {}) {
+  if (file) return photoFromFile(file);
   let N = nightData;
   if (!N) { try { N = require(path.join(root, 'scripts', 'lib', 'night-data.js')); } catch (_) { N = null; } }
   if (N) {

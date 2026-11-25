@@ -2624,11 +2624,11 @@ function compute(opts) {
   }
   // Un criterio declarado imposible que nadie firmó queda cubierto sin la firma si la última noche corrió en verde su
   // prueba, y esa prueba ya estaba en main (lib/nightly-green.js). Sin foto, con una vieja o en rojo, sigue esperando la
-  // firma: la matriz se calcula con la foto de cada vez.
+  // firma: la matriz se calcula con la foto de cada vez. `opts.nightPhoto` lo pasan sólo las pruebas, desde el código.
   const sinFirmar = acs.filter((n) => perAc[n].verdict === 'NOT-VERIFIABLE' && criteriosDeNoche().has(n));
   if (sinFirmar.length) {
     const NG = require('./lib/nightly-green.js');
-    const foto = NG.readPhoto({ env });
+    const foto = NG.readPhoto({ file: opts.nightPhoto });
     const noche = foto.rep
       ? NG.nightlyCovered({ rep: foto.rep, story: sid, acs: sinFirmar, tests: codeFiles.filter(esPruebaDeclarada).map((f) => f.abs) })
       : { covered: new Map(), problems: [foto.problem] };
