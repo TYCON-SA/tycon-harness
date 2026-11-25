@@ -68,6 +68,8 @@ try { const ev = JSON.parse(payload || '{}'); cmd = (ev.tool_input || {}).comman
 // cae en «sin datos» y sale 0 EN SILENCIO — verde sin haber mirado. El compartido existe
 // porque un regex de una línea falla con facilidad.
 const az = require('../lib/az-pr.js');
+// los prefijos que corren el resto de la orden: el pedido de un conector se lee detrás de ellos
+const PREFIJOS_DE_ORDEN = new Set(['sudo', 'env', 'command', 'exec', 'nohup', 'time', 'nice']);
 const constancia = require('../lib/guard-record.js');
 let cwdDelEvento = ''; try { cwdDelEvento = String(JSON.parse(payload || '{}').cwd || ''); } catch { /* sin cwd */ }
 
@@ -143,7 +145,12 @@ function pedidosDeOtrosConectores(comando, cwd) {
   for (const seg of az.segmentos(comando)) {
     const t = seg.map((x) => x.texto);
     let i = 0;
-    while (i < t.length && (/^[A-Za-z_][A-Za-z0-9_]*=/.test(t[i]) || t[i] === 'env' || t[i] === 'command')) i++;
+    // lo que va delante del programa: variables y los prefijos que corren el resto (`sudo -E`, `env -i A=b`, `nice -n 5`)
+    while (i < t.length) {
+      if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(t[i])) { i++; continue; }
+      if (!PREFIJOS_DE_ORDEN.has(t[i])) break;
+      for (i++; i < t.length && /^-/.test(t[i]); ) i += /^-[nuCgpgh]$/.test(t[i]) ? 2 : 1;
+    }
     const bin = require('path').basename(String(t[i] || '').replace(/\\/g, '/')).replace(/\.(exe|cmd)$/i, '');
     for (const d of crean) {
       if (d.words[0] !== bin) continue;
