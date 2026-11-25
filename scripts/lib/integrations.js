@@ -168,7 +168,19 @@ function problemsOf(m, folder) {
       if (!(Array.isArray(m.changeRequestCommands) && m.changeRequestCommands.every((c) => typeof c === 'string' && c.trim()))) out.push('«changeRequestCommands» es una lista de textos');
       else for (const c of m.changeRequestCommands) if (!crudos.includes(c.trim())) out.push(`«changeRequestCommands»: «${c}» no está en «rawCommands»`);
     }
-  } else if (m.changeRequestCommands !== undefined) out.push('«changeRequestCommands» es sólo de un conector de plataforma (kind platform)');
+    // la API de pedidos de la plataforma (`changeRequestApi`) y los cambios que prenden el auto-completar
+    // (`changeRequestAutoComplete`): también los mira el freno de guardar
+    if (m.changeRequestApi !== undefined) out.push(...problemasDeLaApi(m.changeRequestApi));
+    if (m.changeRequestAutoComplete !== undefined) {
+      const ok = Array.isArray(m.changeRequestAutoComplete) && m.changeRequestAutoComplete.every((c) => isObject(c)
+        && typeof c.command === 'string' && c.command.trim().split(/\s+/).length >= 2 && typeof c.option === 'string' && /^--[a-z][a-z0-9-]*$/.test(c.option));
+      if (!ok) out.push('«changeRequestAutoComplete» es una lista de { command: "<programa> <palabras>", option: "--<opción>" }');
+    }
+  } else {
+    for (const k of ['changeRequestCommands', 'changeRequestApi', 'changeRequestAutoComplete']) {
+      if (m[k] !== undefined) out.push(`«${k}» es sólo de un conector de plataforma (kind platform)`);
+    }
+  }
   // `hardSignals`: los patrones de un comando o una dirección de su plataforma que el núcleo no puede sumar (los cuenta el
   // candado, scripts/ci/check-core-neutrality.js): así el núcleo no escribe ninguno
   if (m.hardSignals !== undefined) {
@@ -224,6 +236,26 @@ const cache = new Map();   // carpeta → { stamp, result }
  * Los manifiestos de la carpeta: `{ manifests: [{ name, label, kind, dir, onWork, hooks, dispatch, settings }], problems:
  * [{ name, reasons }] }`. Uno que no se lee o no vale queda en `problems` y no se usa. Sin carpeta, ninguno.
  */
+/**
+ * Lo que está mal en `changeRequestApi`: `{ command: "<programa> api", routes: [{ method, path }], graphql: [nombres] }`.
+ * Un `path` va sin la barra del principio, con un asterisco por cada tramo que cambia (el dueño, el repo, el número); `graphql`, los nombres de
+ * las mutaciones que crean, juntan o encolan un pedido.
+ */
+function problemasDeLaApi(api) {
+  const out = [];
+  if (!isObject(api) || typeof api.command !== 'string' || api.command.trim().split(/\s+/).length !== 2) {
+    return ['«changeRequestApi» es { command: "<programa> <subcomando>", routes, graphql }'];
+  }
+  const rutas = api.routes === undefined ? [] : api.routes;
+  if (!Array.isArray(rutas) || !rutas.every((r) => isObject(r) && /^(POST|PUT|PATCH|DELETE)$/.test(r.method) && typeof r.path === 'string' && /^[A-Za-z0-9_*.-]+(\/[A-Za-z0-9_*.-]+)*$/.test(r.path))) {
+    out.push('«changeRequestApi.routes» es una lista de { method: POST|PUT|PATCH|DELETE, path: "a/*/b" }');
+  }
+  const muts = api.graphql === undefined ? [] : api.graphql;
+  if (!Array.isArray(muts) || !muts.every((n) => typeof n === 'string' && /^[A-Za-z][A-Za-z0-9]*$/.test(n))) out.push('«changeRequestApi.graphql» es una lista de nombres de mutación');
+  if (!rutas.length && !muts.length) out.push('«changeRequestApi» sin rutas ni mutaciones no mira nada');
+  return out;
+}
+
 function listManifests({ env = process.env, dir = integrationsDir(env) } = {}) {
   let entries;
   try { entries = fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort(); } catch (e) {
@@ -249,7 +281,7 @@ function listManifests({ env = process.env, dir = integrationsDir(env) } = {}) {
       hooks: Array.isArray(m.hooks) ? m.hooks : [], dispatch: Array.isArray(m.dispatch) ? m.dispatch : [],
       skills: Array.isArray(m.skills) ? m.skills : [], settings: Array.isArray(m.settings) ? m.settings : [],
       mcp: m.mcp ? { server: m.mcp.server, machine: m.mcp.machine === true } : null,
-      ...(m.kind === 'platform' ? { connector: m.connector, operations: m.operations, capabilities: isObject(m.capabilities) ? m.capabilities : {}, rawCommands: Array.isArray(m.rawCommands) ? m.rawCommands : [], changeRequestCommands: Array.isArray(m.changeRequestCommands) ? m.changeRequestCommands : [], hardSignals: Array.isArray(m.hardSignals) ? m.hardSignals : [] } : {}),
+      ...(m.kind === 'platform' ? { connector: m.connector, operations: m.operations, capabilities: isObject(m.capabilities) ? m.capabilities : {}, rawCommands: Array.isArray(m.rawCommands) ? m.rawCommands : [], changeRequestCommands: Array.isArray(m.changeRequestCommands) ? m.changeRequestCommands : [], changeRequestApi: isObject(m.changeRequestApi) ? m.changeRequestApi : null, changeRequestAutoComplete: Array.isArray(m.changeRequestAutoComplete) ? m.changeRequestAutoComplete : [], hardSignals: Array.isArray(m.hardSignals) ? m.hardSignals : [] } : {}),
       offer: m.offer ? { does: m.offer.does, needs: m.offer.needs } : null,
     });
   }

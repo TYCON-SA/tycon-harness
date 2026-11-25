@@ -464,6 +464,20 @@ function rawCommands(opts = {}) {
 }
 
 /**
+ * Las otras formas de crear o juntar un pedido que declaran los conectores de plataforma: la API (`changeRequestApi`:
+ * el subcomando, las rutas y las mutaciones de graphql) y los cambios que prenden el auto-completar
+ * (`changeRequestAutoComplete`). `[{ name, api, autoComplete }]`. Lanza si alguna integración no se puede leer.
+ */
+function changeRequestSpecs(opts = {}) {
+  const leidas = INT.listManifests({ env: opts.env || process.env });
+  if (leidas.problems.length) {
+    throw new Error(`no pude leer ${leidas.problems.map((p) => `${p.name} (${p.reasons.join('; ')})`).join(' · ')}`);
+  }
+  return leidas.manifests.filter((m) => m.kind === 'platform')
+    .map((m) => ({ name: m.name, api: m.changeRequestApi || null, autoComplete: m.changeRequestAutoComplete || [] }));
+}
+
+/**
  * Qué conector reconoce un comando crudo de su plataforma (el `gh pr create` de GitHub, el pedido de Azure DevOps): el nombre, o null si
  * ninguno lo declara en `rawCommands`. Mira el binario de cada tramo del comando (después de `env` y de las variables) y
  * sus palabras, salteando las opciones; un texto entre comillas no es un comando.
@@ -553,4 +567,4 @@ function main(argv) {
 
 if (require.main === module) main(process.argv.slice(2)).then((code) => { process.exitCode = code; });
 
-module.exports = { choose, chosen, run, call, conformance, connector, identityFromRemote, identityOfRemoteUrl, identityByName, repoOf, nameOf, limpiar, summary, rawCommands, rawCommandOf, main, OPERATIONS, REASONS };
+module.exports = { choose, chosen, run, call, conformance, connector, identityFromRemote, identityOfRemoteUrl, identityByName, repoOf, nameOf, limpiar, summary, rawCommands, changeRequestSpecs, rawCommandOf, main, OPERATIONS, REASONS };

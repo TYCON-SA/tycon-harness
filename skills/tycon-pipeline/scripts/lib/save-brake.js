@@ -744,6 +744,7 @@ function nombraUnGuardado(ps) {
     const resto = ws.slice(i + 1);
     if (ws[i] === 'git' && resto.some((w) => w === 'commit' || w === 'push')) return true;
     if (plataforma && plataforma.pedidos.some((p) => p[0] === ws[i] && p.slice(1).every((w) => resto.includes(w)))) return true;
+    if (plataforma && plataforma.apis.some((a) => { const [prog, sub] = a.command.split(/\s+/); return prog === ws[i] && resto.includes(sub); })) return true;
   }
   return false;
 }
@@ -758,8 +759,17 @@ function deLaPlataforma() {
     dichos = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'platform', 'platform.js')).rawCommands();
   } catch (_) { return null; }
   const ws = dichos.map((c) => ({ words: c.words.map(normal), changeRequest: c.changeRequest === true }));
+  // la API de pedidos y los cambios que prenden el auto-completar (fila 189b): sin poder leerlos, como sin la lista
+  let specs;
+  try {
+    specs = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'platform', 'platform.js')).changeRequestSpecs();
+  } catch (_) { return null; }
+  const apis = specs.map((x) => x.api).filter(Boolean);
+  const autos = specs.flatMap((x) => x.autoComplete || []);
   return {
-    programas: new Set(ws.map((c) => c.words[0])),
+    programas: new Set([...ws.map((c) => c.words[0]), ...apis.map((a) => a.command.split(/\s+/)[0]), ...autos.map((a) => a.command.split(/\s+/)[0])]),
+    apis,
+    autos,
     pedidos: ws.filter((c) => c.changeRequest || (c.words.length > 2 && c.words.includes('pr') && /^(create|new|merge)$/.test(c.words[c.words.length - 1])))
       .map((c) => c.words),
   };
@@ -782,6 +792,93 @@ function pedidoDe(ps, cmd, pedidos) {
       else { ok = false; break; }
     }
     if (ok) return { forma: p.join(' ') };
+  }
+  return null;
+}
+
+// Las opciones de `<programa> api` que llevan valor (la palabra que sigue no es la ruta), y las que mandan campos: con
+// campos y sin método, la llamada es un POST
+const API_CON_VALOR = new Set(['-X', '--method', '-H', '--header', '-f', '--raw-field', '-F', '--field', '--input', '-q', '--jq',
+  '-t', '--template', '--hostname', '-p', '--preview', '--cache', '-R', '--repo']);
+const API_CAMPOS = new Set(['-f', '--raw-field', '-F', '--field', '--input']);
+
+// Un pedido creado o juntado por la API de la plataforma (un POST a la ruta de los pedidos, una mutación de graphql), de
+// las rutas que declaran los conectores (`changeRequestApi`): `{ forma }`, `{ opaco: true }` si el método, la ruta o la
+// consulta de graphql no se pueden leer (una variable, un archivo), o null.
+function pedidoPorLaApi(ps, cmd, apis) {
+  for (const api of apis) {
+    const [prog, sub] = api.command.split(/\s+/);
+    if (prog !== cmd) continue;
+    let i = 1;
+    while (i < ps.length && ps[i].startsWith('-')) i += API_CON_VALOR.has(ps[i]) ? 2 : 1;
+    if (i >= ps.length) continue;
+    if (conVariable(ps[i])) return { opaco: true };
+    if (ps[i] !== sub) continue;
+    let metodo = null;
+    let opaco = false;
+    let campos = false;
+    let ruta = null;
+    const valores = [];
+    for (let j = i + 1; j < ps.length; j++) {
+      const w = ps[j];
+      const igual = /^(--[a-z-]+)=([\s\S]*)$/.exec(w);
+      const pegado = /^-X(.+)$/.exec(w);
+      const op = igual ? igual[1] : pegado ? '-X' : w;
+      let valor;
+      if (igual) valor = igual[2];
+      else if (pegado) valor = pegado[1];
+      else if (API_CON_VALOR.has(w)) { j++; valor = ps[j]; }
+      if (op === '-X' || op === '--method') {
+        if (valor === undefined || conVariable(valor)) opaco = true;
+        else metodo = String(valor).toUpperCase();
+        continue;
+      }
+      if (API_CAMPOS.has(op)) { campos = true; if (valor !== undefined) valores.push(String(valor)); continue; }
+      if (API_CON_VALOR.has(op) || w.startsWith('-')) continue;
+      if (ruta === null) { ruta = w; if (conVariable(w)) opaco = true; }
+    }
+    if (opaco) return { opaco: true };
+    if (ruta === null) continue;
+    const camino = ruta.replace(/^https?:\/\/[^/]+\//, '').replace(/^\/+/, '').replace(/[?#][\s\S]*$/, '').replace(/\/+$/, '');
+    if (camino === 'graphql') {
+      const mutaciones = api.graphql || [];
+      if (!mutaciones.length) continue;
+      // la consulta que viene de un archivo o de una variable no se lee
+      if (valores.some((v) => /^([A-Za-z_]+=)?@/.test(v) || conVariable(v))) return { opaco: true };
+      const texto = valores.join('\n');
+      if (mutaciones.some((n) => new RegExp(`\\b${n}\\b`).test(texto))) return { forma: `${api.command} graphql` };
+      continue;
+    }
+    const verbo = metodo || (campos ? 'POST' : 'GET');
+    const tramos = camino.split('/');
+    for (const r of api.routes || []) {
+      const patron = r.path.split('/');
+      if (r.method === verbo && patron.length === tramos.length && patron.every((t, k) => t === '*' || t === tramos[k])) {
+        return { forma: `${api.command} ${verbo} ${r.path}` };
+      }
+    }
+  }
+  return null;
+}
+
+// Un cambio de un pedido que prende el auto-completar (la opción del conector, sin un valor apagado), de lo que declaran
+// los conectores (`changeRequestAutoComplete`): `{ forma }`, `{ opaco: true }` si el valor es una variable, o null
+// (también con el valor apagado: `false`, `0`, `no`, `off`).
+function autoCompletarDe(ps, cmd, autos) {
+  for (const a of autos) {
+    const palabras = a.command.split(/\s+/);
+    if (palabras[0] !== cmd) continue;
+    const p = pedidoDe(ps, cmd, [palabras]);
+    if (!p) continue;
+    if (p.opaco) return p;
+    for (let j = 1; j < ps.length; j++) {
+      const w = ps[j];
+      if (w !== a.option && !w.startsWith(`${a.option}=`)) continue;
+      const siguiente = ps[j + 1];
+      const v = w.includes('=') ? w.slice(w.indexOf('=') + 1) : (siguiente !== undefined && !siguiente.startsWith('-') ? siguiente : 'true');
+      if (conVariable(v)) return { opaco: true };
+      if (!/^(false|0|no|off)$/i.test(v)) return { forma: `${a.command} ${a.option}` };
+    }
   }
   return null;
 }
@@ -901,7 +998,7 @@ function leerComando(command, cwd, depth = 0, dudas = [], home) {
     const plataforma = deLaPlataforma();
     if (!plataforma && !INOFENSIVOS.has(cmd) && ps.slice(1).includes('pr')) { ctx.dudar(); return; }
     if (plataforma && plataforma.programas.has(cmd)) {
-      const p = pedidoDe(ps, cmd, plataforma.pedidos);
+      const p = pedidoDe(ps, cmd, plataforma.pedidos) || pedidoPorLaApi(ps, cmd, plataforma.apis) || autoCompletarDe(ps, cmd, plataforma.autos);
       if (p && p.opaco) opaco(ctx.dirs[0]);
       else if (p) guardar({ tipo: 'pr', forma: p.forma, dir: ctx.dirs[0], palabras: ps.slice(1) });
       return;
