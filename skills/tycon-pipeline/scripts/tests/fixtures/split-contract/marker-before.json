@@ -482,7 +482,7 @@
     "freeze-adversarial": {
       "status": 0,
       "signal": null,
-      "stdout": "{\n  \"sellos\": {\n    \"<RAIZ>/repo\": \"<HEX>\"\n  },\n  \"copias\": {\n    \"<RAIZ>/repo\": \"<RAIZ>/home/.claude/.tycon-pipeline/frozen/ses-contrato-8163/pase-<MS>/repo-<SELLO>\"\n  }\n}\n",
+      "stdout": "{\n  \"sellos\": {\n    \"<RAIZ>/repo\": \"<HEX>\"\n  },\n  \"copias\": {\n    \"<RAIZ>/repo\": \"<RAIZ>/home/.claude/.tycon-pipeline/frozen/ses-contrato-8163/pase-<MS>/repo-<SELLO>\"\n  },\n  \"repos\": [\n    {\n      \"repo\": \"<RAIZ>/repo\",\n      \"sello\": \"<HEX>\",\n      \"copia\": \"<RAIZ>/home/.claude/.tycon-pipeline/frozen/ses-contrato-8163/pase-<MS>/repo-<SELLO>\",\n      \"base\": null,\n      \"sin_base\": \"no se pudo traer origin (fatal: 'origin' does not appear to be a git repository)\"\n    }\n  ]\n}\n",
       "stderr": "",
       "archivos": {
         "HOME/.claude/.tycon-pipeline/frozen/ses-contrato-8163/vueltas.jsonl": "{\"ts\":\"<FECHA>\",\"tipo\":\"pase\",\"etiqueta\":\"pase-<MS>\",\"story\":\"9.1\",\"repos\":[{\"repo\":\"<RAIZ>/repo\",\"tree\":\"<HEX>\",\"copy\":\"<RAIZ>/home/.claude/.tycon-pipeline/frozen/ses-contrato-8163/pase-<MS>/repo-<SELLO>\",\"mainBase\":\"<HEX>\"}]}\n",
