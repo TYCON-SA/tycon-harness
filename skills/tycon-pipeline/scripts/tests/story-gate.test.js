@@ -1411,6 +1411,9 @@ test('EscrituraAlEstado_ConFormasDelShellQueLaExpresionNoLee_Frena (fila 228, el
     pasa(`echo x >! /dev/null`);
     pasa(`cat ${S} 1<>'${repo}/copia.json'`);
     pasa(`git status >'${repo}/a;b.txt'`);
+    // de la segunda vuelta: un origen o un destino que es la salida de un comando no se toma como destino
+    for (const cmd of ['cp $(pwd)/a /tmp/x', 'ln -sf $(which node) /tmp/node', 'rsync -a $(pwd)/ /tmp/x/',
+      'cp a "$(git rev-parse --show-toplevel)/x"']) pasa(cmd);
   });
 });
 
@@ -1435,6 +1438,8 @@ test('DestinosAlEstado_DetrasDeEnvoltoriosYSustituciones_SeLeen (fila 228, el fr
   // el programa detrás de `time -p`, de los modificadores de zsh, de `=cp` y de `$'cp'`
   for (const delante of ['time -p', 'noglob', 'nocorrect', 'sudo -iu root', 'sudo -nu root', 'sudo -T 5', 'sudo -R /']) visto(`${delante} cp ${S} '${res}'`);
   for (const nombre of ['=cp', "$'cp'", "$'\\x63p'"]) visto(`${nombre} ${S} '${res}'`);
+  // de la segunda vuelta: el valor pegado a una opción del envoltorio (`-uroot`, `-uP`) no hace saltar el programa
+  for (const delante of ['sudo -uroot', 'sudo -nuroot', 'sudo -ghost', 'sudo -Dtmp', 'env -uP', 'env -uHTTPS']) visto(`${delante} cp ${S} '${res}'`);
   // una sustitución pegada al nombre de un envoltorio o de tee
   visto(`nohup$(:/ ) cp ${S} '${res}'`);
   visto(`tee$(:/ ) '${res}' < ${S}`);

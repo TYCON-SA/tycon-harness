@@ -402,8 +402,10 @@ function programaEntre(piezas, info = null) {
       // el texto de `env -S`, que quien llama lee como otro comando: en qué pieza está y lo que va pegado
       const s = envoltorio === 'env' && /^(?:-[i0v]*S|--split-string=?)([\s\S]*)$/.exec(w);
       if (s && info) info.envS = { k, pegado: s[1] };
-      // también con las opciones juntas (`-iu root`): la última lleva el valor
-      if (opciones && (opciones.test(w) || (/^-[A-Za-z]{2,}$/.test(w) && opciones.test(`-${w.slice(-1)}`)))) saltar = 1;
+      // también con las opciones juntas (`-iu root`), si la primera que lleva valor es la última; antes, el resto de la
+      // palabra es su valor (`-uroot`, `-uP`) y el programa es la palabra que sigue
+      const juntas = /^-[A-Za-z]{2,}$/.test(w) && opciones && [...w.slice(1)].findIndex((l) => opciones.test(`-${l}`)) === w.length - 2;
+      if (opciones && (opciones.test(w) || juntas)) saltar = 1;
       continue;
     }
     if (opciones !== null && propia) { opciones = null; propia = false; continue; }
@@ -412,7 +414,7 @@ function programaEntre(piezas, info = null) {
     // si la palabra puede nombrar dos programas, cuenta el que escribe; si no, un envoltorio; si no, el de siempre. Una
     // sustitución pegada al nombre (`nohup$(:/ )`) puede no dar nada: el nombre sin ella también vale
     const nombres = nombresDelPrograma(w);
-    const todos = [...nombres, ...nombres.map((x) => x.replace(/\$\([^)]*\)|`[^`]*`|\$\{[^}]*\}/g, ''))];
+    const todos = [...nombres, ...nombres.map(sinSustitucionesCerradas)];
     const n = todos.find((x) => ESCRIBE_LO_QUE_NOMBRA.test(x)) || todos.find((x) => x === 'busybox' || ENVOLTORIOS.has(x) || MODIFICADORES_DE_ZSH.has(x)) || nombres[0];
     if (n === 'busybox' || MODIFICADORES_DE_ZSH.has(n)) continue;
     if (ENVOLTORIOS.has(n)) { opciones = opcionesDelEnvoltorio(n) || false; propia = CON_PALABRA_PROPIA.has(n); envoltorio = n; continue; }
@@ -423,6 +425,21 @@ function programaEntre(piezas, info = null) {
 
 // lo que zsh pone delante de un comando sin cambiar cuál corre: `noglob cp`, `nocorrect cp`, `- cp`
 const MODIFICADORES_DE_ZSH = new Set(['noglob', 'nocorrect', '-']);
+
+/**
+ * La palabra sin sus sustituciones que cierran (`nohup$(:/ )` es `nohup`); desde una que no cierra, queda como está. Una
+ * pasada: buscar el cierre con una expresión desde cada `$(` sin cerrar crece con el cuadrado del largo.
+ */
+function sinSustitucionesCerradas(w) {
+  let out = '';
+  for (let i = 0; i < w.length; i++) {
+    const fin = finDeSustitucion(w, i);
+    if (fin === -1) return out + w.slice(i);
+    if (fin > i) { i = fin; continue; }
+    out += w[i];
+  }
+  return out;
+}
 
 /** `palabraDelShell`, también con el citado ANSI-C y sus escapes: `$'\x63p'` es `cp`. */
 function palabraConAnsi(w) {
@@ -711,13 +728,12 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
 function destinosPorElPartidor(raw, keep, out, hondo = 0) {
   const p = partidorComun();
   if (!p || typeof p.sinHeredocs !== 'function' || typeof p.parseSimpleCommand !== 'function') return;
+  // un destino que es la salida de un comando (`"$(mktemp -d)"`, `$(pwd)/a`) no se sabe sin correrlo: esta lectura no lo
+  // suma, como las de antes, que tampoco lo leían; lo que corre adentro se lee como su propio tramo
+  const sumar = (t) => { if (t && !/^\/dev\//.test(t) && !/\$\(|`/.test(t)) out.add(t); };
   for (const tramo of tramosDelShell(hondo ? raw : p.sinHeredocs(raw))) {
     const c = p.parseSimpleCommand(sinPalabrasDeBloque(tramo));
-    for (const r of c.redirections) {
-      if (!r.write || r.target == null) continue;
-      const t = palabraConAnsi(r.target);
-      if (t && !/^\/dev\//.test(t)) out.add(t);
-    }
+    for (const r of c.redirections) if (r.write && r.target != null) sumar(palabraConAnsi(r.target));
     const info = {};
     const programa = programaEntre(c.words, info);
     // el texto de `env -S` (o `--split-string`), que env parte en palabras y corre con las que siguen
@@ -729,13 +745,17 @@ function destinosPorElPartidor(raw, keep, out, hondo = 0) {
     if (!programa) continue;
     const resto = c.words.slice(programa.k + 1);
     const palabras = [programa.n, ...resto.map(palabraConAnsi)];
-    // una sustitución suelta puede no dar ninguna palabra: el destino puede ser cualquiera de las de antes
-    if (resto.some((w) => /^(?:\$\(|`)/.test(w))) palabras.sinCerrar = true;
-    if (COPIA.test(programa.n)) for (const t of destinosDeCpMv(palabras)) out.add(t);
-    if (/^tee(?![\w.-])/.test(programa.n)) for (const t of palabras.slice(1)) if (!t.startsWith('-')) out.add(t);
-    if (/^rsync(?![\w.-])/.test(programa.n)) for (const t of archivosDeRsync(palabras)) out.add(t);
+    if (COPIA.test(programa.n)) {
+      for (const t of destinosDeCpMv(palabras)) sumar(t);
+      // una sustitución suelta al final puede no dar ninguna palabra (`cp a b $(true)`): el destino es la de antes
+      let fin = palabras.length;
+      while (fin > 2 && /^(?:\$\(|`)/.test(resto[fin - 2])) fin--;
+      if (fin < palabras.length) for (const t of destinosDeCpMv(palabras.slice(0, fin))) sumar(t);
+    }
+    if (/^tee(?![\w.-])/.test(programa.n)) for (const t of palabras.slice(1)) if (!t.startsWith('-')) sumar(t);
+    if (/^rsync(?![\w.-])/.test(programa.n)) for (const t of archivosDeRsync(palabras)) sumar(t);
     const ultimo = palabras[palabras.length - 1];
-    if (/^truncate(?![\w.-])/.test(programa.n) && palabras.length > 1 && !ultimo.startsWith('-')) out.add(ultimo);
+    if (/^truncate(?![\w.-])/.test(programa.n) && palabras.length > 1 && !ultimo.startsWith('-')) sumar(ultimo);
     destinosDelSedEnSitio([programa.n, ...resto].join(' '), raw, keep, out);
   }
 }
