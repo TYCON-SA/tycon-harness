@@ -1964,3 +1964,30 @@ test('T8 2.83-Caso_SinNombreYVolcadoViejo @story-2.83 @ac-9', async () => {
   assert.strictEqual(migrados.length, 1);
   assert.ok(!('sesiones' in migrados[0]), 'la migrada sin la clave');
 });
+
+// Fila 219: desde la 8.323 el apagado en su forma exacta lo firma el marcador, y el freno no deja línea en frenos.jsonl
+// cuando la persona lo aprueba en la ventana. La firma queda en el registro común, que viaja en el volcado (`firmas`).
+// 🔴 Falla con: no leer las firmas del volcado (el apagado firmado sigue con ficha); aceptar la firma de trámite, la
+//    delegada o la de otro escape; dejar que una firma tape dos apagados; o contar la firma sin sumarla a los autorizados.
+test('F219-T1 RrApago_FirmadoEnLaVentana_NoEsFicha @fila-219', () => {
+  const firmas = (lineas) => ({ estado: 'leido', lineas, ilegibles: 0, recortadas: 0 });
+  const firma = (extra = {}) => ({ cuando: `${HOY}T15:00:00.000Z`, firma: 'escape:set-autonomous', nivel: 2, via: 'window', delegada: false, quien: 'x', pedida_por: null, razon: 'apagar', ...extra });
+  const conFirmas = (lineas) => { const v = volcado({ sid: 's' }); v.firmas = firmas(lineas); return v; };
+  const apagado = cmd(`${MARKER} set-autonomous false`);
+  for (const via of ['window', 'click', 'message', 'terminal']) {
+    const r = revisar(apagado, { volcado: conFirmas([firma({ via })]), registros: conFrenos([]) });
+    assert.deepStrictEqual(regla(r, 'RR-APAGO'), [], `la firma de una persona por ${via} autoriza el apagado`);
+    assert.strictEqual(r.escapes_autorizados, 1, `el apagado firmado por ${via} cuenta como autorizado`);
+  }
+  // sin el registro de frenos medido, la firma igual autoriza: viene del volcado, no de la máquina
+  assert.deepStrictEqual(regla(revisar(apagado, { volcado: conFirmas([firma()]) }), 'RR-APAGO'), [], 'la firma del volcado no depende de frenos.jsonl');
+  for (const [que, f] of [['de trámite', firma({ via: 'automatic', delegada: true })], ['delegada', firma({ via: 'delegation', delegada: true })],
+    ['de otro escape', firma({ firma: 'escape:cerrar-como-deuda' })]]) {
+    assert.strictEqual(regla(revisar(apagado, { volcado: conFirmas([f]), registros: conFrenos([]) }), 'RR-APAGO').length, 1, `la firma ${que} no autoriza`);
+  }
+  const dos = [...apagado, ...cmd(`${MARKER} set-autonomous false`, { min: 5 })];
+  assert.deepStrictEqual(regla(revisar(dos, { volcado: conFirmas([firma()]), registros: conFrenos([]) }), 'RR-APAGO').map((x) => x.cuenta), [1], 'una firma tapa un solo apagado');
+  // las firmas no medidas no autorizan nada
+  const sinMedir = volcado({ sid: 's' }); sinMedir.firmas = { estado: 'no_medido', motivo: 'x' };
+  assert.strictEqual(regla(revisar(apagado, { volcado: sinMedir, registros: conFrenos([]) }), 'RR-APAGO').length, 1, 'sin firmas medidas, sigue la ficha');
+});

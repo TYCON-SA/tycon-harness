@@ -151,4 +151,4 @@ function correr(repo, { limite = Infinity, leerPaquetes } = {}) {
   return { codigo: 0, corridos, avisos };
 }
 
-module.exports = { controlesDe, correr, motivoDe, delRepo, ARCHIVO_DEL_REPO, RAIZ_DEL_ARNES };
+module.exports = { controlesDe, correr, motivoDe, delRepo, tieneArchivo, ARCHIVO_DEL_REPO, RAIZ_DEL_ARNES };

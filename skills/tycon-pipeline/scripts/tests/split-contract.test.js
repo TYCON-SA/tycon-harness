@@ -160,6 +160,7 @@ const CASOS = [
   { id: 'adhoc-desconocido', argv: ['adhoc', 'cualquiera'] },
   { id: 'doing', marcador: true, argv: ['doing', 'algo de la historia', '--until', '23:59'] },
   { id: 'doing-esperando', marcador: true, argv: ['doing', '--waiting-for', 'la firma del plan'] },
+  { id: 'conditions', marcador: true, argv: ['conditions', 'ninguna'] },
   { id: 'story-skill-bypass', argv: ['story-skill-bypass'] },
   { id: 'sign-file-sin-args', argv: ['sign-file'] },
   { id: 'approve-mockup-sin-args', marcador: true, argv: ['approve-mockup'] },

@@ -582,7 +582,21 @@ function autorizaciones(frenos, volcado) {
   return aut;
 }
 
-function reglasDelHilo(lineas, volcado, out, aut = null) {
+// Las vías del registro común de firmas en que firmó una persona: su sí en la ventana, su click, su «aprobado» o su terminal.
+const VIAS_DE_PERSONA = ['window', 'click', 'message', 'terminal'];
+
+/**
+ * Cuántos apagados del modo autónomo firmó una persona en esta ejecución, de las firmas que viajan en su volcado. La forma
+ * exacta la firma el marcador, y en la ventana el freno no deja línea en frenos.jsonl: la firma queda en el registro
+ * común. Las de trámite y las delegadas no cuentan; sin las firmas medidas, cero.
+ */
+function apagadosFirmados(volcado) {
+  const f = volcado && volcado.firmas;
+  if (!f || f.estado !== 'leido' || !Array.isArray(f.lineas)) return 0;
+  return f.lineas.filter((l) => l && l.firma === 'escape:set-autonomous' && VIAS_DE_PERSONA.includes(l.via) && l.delegada !== true).length;
+}
+
+function reglasDelHilo(lineas, volcado, out, aut = null, firmados = { quedan: 0, usados: 0 }) {
   // un hook que se pasó de tiempo (`hook_cancelled`, categoría `tiempo`) también es un aviso que no anduvo
   const hooks = (lineas || []).filter((o) => o && o.type === 'attachment' && o.attachment && (o.attachment.type === 'hook_non_blocking_error' || o.attachment.type === 'hook_cancelled'));
   for (const h of hooks) {
@@ -609,6 +623,7 @@ function reglasDelHilo(lineas, volcado, out, aut = null) {
     }
     const marker = argsDe(c.command, 'marker.js');
     let apagos = marker.filter((r) => r[0] === 'set-autonomous' && !PRENDE_AUTONOMO.includes(String(r[1]).toLowerCase())).length;
+    while (apagos && firmados.quedan) { apagos -= 1; firmados.quedan -= 1; firmados.usados += 1; }
     while (apagos && aut && aut.autoriza('RR-APAGO')) apagos -= 1;
     if (apagos) sumar(out, { regla: 'RR-APAGO', categoria: null, cuenta: apagos, con_frase: cierre ? cierre.via === 'persona' : null });
     for (const [bandera, { parte, nombre }] of partes) {
@@ -783,9 +798,10 @@ function revisar({ volcado, lineasHilo, registros }) {
   const sinHilo = lineasHilo === null || lineasHilo === undefined;
   const fuenteFrenos = registros && registros.cobertura && registros.cobertura.fuentes && registros.cobertura.fuentes.frenos;
   const aut = autorizaciones(fuenteFrenos && fuenteFrenos.estado === 'medido' && Array.isArray(registros.frenos) ? registros.frenos : null, volcado);
+  const firmados = { quedan: apagadosFirmados(volcado), usados: 0 };
   let hiloSinHooks = null;
   let cs = [];
-  if (!sinHilo) { const r = reglasDelHilo(lineasHilo, volcado, out, aut); hiloSinHooks = r.hilo_sin_hooks; cs = r.comandos; }
+  if (!sinHilo) { const r = reglasDelHilo(lineasHilo, volcado, out, aut, firmados); hiloSinHooks = r.hilo_sin_hooks; cs = r.comandos; }
   reglaDeCierre(volcado, out);
   const fuente = registros && registros.cobertura && registros.cobertura.fuentes && registros.cobertura.fuentes.bypass;
   // sin la lista única no se sabe qué renglón es un escape: la fila no se mide, no da cero
@@ -806,7 +822,7 @@ function revisar({ volcado, lineasHilo, registros }) {
   for (const v of vistos) if (!v.usado && !(aut && aut.autoriza(v.categoria))) sumar(out, { regla: 'RR-ESCAPE', categoria: v.categoria, cuenta: 1 });
   const reglas = [...out.values()].map((r) => { const x = { ...r }; for (const k of Object.keys(x)) if (x[k] === undefined) delete x[k]; return x; });
   return { reglas, sin_hilo: sinHilo, escapes_registro: medido ? 'medido' : 'no_medido', hilo_sin_hooks: hiloSinHooks,
-    escapes_autorizados: aut ? aut.cuenta : null };
+    escapes_autorizados: aut ? aut.cuenta + firmados.usados : (firmados.usados || null) };
 }
 
 module.exports = { CODIGOS, ESCAPES, VALOR_QUE_APAGA, EQUIVALENTES, ACCIONES_DE_PARTE, RUTAS_DEL_ARNES, RUTAS_INSTALADAS, CIERRE_DESDE, APARTE,

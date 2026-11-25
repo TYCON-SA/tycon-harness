@@ -66,9 +66,13 @@ guarantees:
   gate reads it.
 - **The session cannot write itself the verdict**: the state's `plan-review/` folder is protected against what the
   agent writes, moves or deletes, and the result only counts from the path the preparation named (the runner's
-  `--out`). The harness runner passes only with the request the harness prepared (`--args "$(cat '<…>.args.json')"`):
-  with a hand-made request, another `--out`, a destination in a variable or relative after a `cd`, or reviewers of its
-  own (`--agents-dir`, another `--runners` list), the brake stops it. With Claude Code's
+  `--out`). The harness runner passes only as `marker.js plan-review` prints it: with the request the harness
+  prepared, given once and by its exact path (`--args-file '<…>/<destination>.args.json'`, absolute, next to the
+  `--out` and in the state's review folder; the args go in a file because on Windows they do not fit on the command
+  line). With a hand-made request or one read from another path (a `..`, another folder with the same name, `~` or a
+  relative path), words the shell reads differently (a backslash, double quotes, `$`), another `--out`, a destination
+  in a variable or relative after a `cd`, the old `--args "$(cat …)"` form, or reviewers of its own (`--agents-dir`,
+  another `--runners` list), the brake stops it. With Claude Code's
   Workflow tool the result goes through the session, does not reach that path, and the plan waits for a person.
 - **The session cannot remove the click**: the `TYCON_PLAN_ROUTINE_APPROVAL` variable only tightens (`person`); set to
   `review` it does not remove the one the organization asks for. A misspelled approver key, or an organization

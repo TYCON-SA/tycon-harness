@@ -280,6 +280,8 @@ function codexNames(codexHome, unreadable) {
   try {
     const { DatabaseSync } = require('node:sqlite');
     db = new DatabaseSync(path.join(codexHome, newest), { readOnly: true });
+    // Codex toma su base unos instantes mientras escribe: se espera hasta un segundo antes de decir que no se pudo leer
+    db.exec('PRAGMA busy_timeout = 1000');
     for (const r of db.prepare("SELECT id, name FROM threads WHERE name IS NOT NULL AND name <> ''").all()) out.set(String(r.id), cut(oneLine(String(r.name)), NAME_MAX));
   } catch (e) {
     unreadable.push(`los nombres de las sesiones de Codex (${newest}) no se pudieron leer: ${oneLine((e && e.message) || e).slice(0, 120)}`);

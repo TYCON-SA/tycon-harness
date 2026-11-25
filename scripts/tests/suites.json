@@ -520,6 +520,12 @@
       "requiere": []
     },
     {
+      "__nota": "fila 90: una exención agregada a una historia viaja con la constancia del dueño en `.tycon/exemptions.jsonl`; el gancho del encabezado la anota con la firma, el freno del commit y el portón de CI frenan sin ella, y el archivo no se escribe a mano. Repos de git temporales, HOME temporal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/exemptions-record.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.48: la clave `stack` de team-repos.json, leída desde el árbol del arnés.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/stack-config.test.js",
@@ -639,6 +645,12 @@
       "requiere": []
     },
     {
+      "__nota": "los args del pase llegan en un archivo (--args-file): en Windows la línea de comando no aguanta los de la revisión del plan.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/workflow-lite-args-file.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el permiso de escribir evidencia a mano y la exención de la prueba en vivo los autoriza la persona; los avisos no le dan al agente la receta de los escapes (story 8.96).",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/pipeline-escape.test.js",
@@ -681,6 +693,12 @@
       "__nota": "story 8.62: el plan que se aprueba solo (riesgo bajo) se muestra igual — sin plan escrito no cierra el paso 3, con plan lo imprime; los pasos 2, 3 y 8 y la nota de risk-class lo dicen.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/plan-visible.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "lo barato del costo del pipeline: antes de «Aprobar el plan» y de «Hallazgos», next dice qué falta en disco (las condiciones del pedido, el informe de cada revisor); el cierre de la historia pide cerrar la sesión.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/resume-state.test.js",
       "requiere": []
     },
     {
@@ -1350,6 +1368,16 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/ci-red-close.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/ci-red-lane.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/replaced-run-close.test.js",
       "requiere": []
     },
     {
@@ -5486,6 +5514,18 @@
       "__nota": "las entradas del reclamo de la retrospectiva que anotaron el commit equivocado (scripts/hooks/retro-pending.js): la punta que contesta el remoto al abrir el pedido, la rama de origen, la corrección con quién y por qué (--correct), el aviso de «ya estaba en main» y la carpeta principal por nombre. Repos de juguete con git de verdad y un remoto en una carpeta. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/retro-pending-correct.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "un repo de una plataforma declarada por la capa (no Azure DevOps ni GitHub) hace el ciclo del merge: el skill de merge la nombra por la capa (host: platform), el reclamo de la retrospectiva (scripts/hooks/retro-pending.js) anota su pedido con la identidad que da la capa y, cuando entra, reclama el commit que dejó en main; un origin de un servidor que nadie declara sigue sin plataforma. Repos de juguete con git de verdad, una copia del gancho y el glab de mentira. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/retro-pending-platform.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la clave con que el formulario «Tu tecnología» del sitio (scripts/lib/org-config.js) distingue los repos de la organización: uno que vive en grupos suma su grupo y su servidor, y las claves de Azure DevOps y GitHub quedan como estaban. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/org-config-repo-key.test.js",
       "requiere": []
     },
     {

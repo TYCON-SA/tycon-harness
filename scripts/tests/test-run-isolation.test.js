@@ -225,6 +225,65 @@ test('F174 Aislada_HereDocDeBash_Anda: en el encierro, desde una carpeta no admi
   assert.match(salida(s2), /sh-thd/, `dice por qué el here document queda negado: ${salida(s2)}`);
 });
 
+// fila 214: el freno de la consola corre dentro de la corrida aislada desde una carpeta que no es la de lanzamiento (la
+// prueba en vivo lo corre en el árbol público). El bash 3.2 de macOS escribe el temporal de un here-string en /var/tmp,
+// /tmp o la carpeta actual, y el encierro se los niega: el freno no leía lo que le contestaban sus lectores y negaba
+// todo. El freno no usa here-strings; el encierro no se afloja (admitir /var/tmp dejaba pisar el here document de un bash
+// de afuera, como el freno de otra sesión).
+const GUARD_PRE = path.join(RAIZ, 'scripts', 'hooks', 'safety-guard-pre.sh');
+test('F214 Freno_SinHereStrings: el freno de la consola no usa here-strings ni here documents', () => {
+  const malos = fs.readFileSync(GUARD_PRE, 'utf8').split('\n')
+    .map((l, i) => ({ l, i: i + 1 }))
+    // un `<<<` o un `<<PALABRA` (con comillas, barra o guion) fuera de una cadena: lo que el freno sólo analiza como texto
+    // va entre comillas
+    .filter(({ l }) => !/^\s*#/.test(l) && /(^|[^<'"])<<(<(?!"\s*$)|-?\s*(\\|['"])?[A-Za-z_][A-Za-z0-9_]*)/.test(l))
+    .map(({ l, i }) => `${i}: ${l.trim()}`);
+  assert.deepStrictEqual(malos, []);
+});
+
+test('F214 Aislada_ElFrenoDesdeOtraCarpeta_Decide: dentro del encierro, el freno corrido desde una carpeta no admitida lee a sus lectores', { skip: ENCIERRO ? false : 'sin el encierro del sistema' }, (t) => {
+  const c = cuenta(t);
+  const afuera = path.join(c.b, 'afuera');
+  fs.mkdirSync(afuera);
+  const r = repo(path.join(c.b, 'repo'), {
+    '.advisors/dod-runtime/g.js': [
+      "const { spawnSync } = require('child_process');",
+      // un comando que pasa por los lectores del freno: su respuesta se lee renglón por renglón
+      "const ev = JSON.stringify({ tool_name: 'Bash', session_id: 's214', cwd: process.argv[2], tool_input: { command: 'gh pr merge 12 --merge' } });",
+      "const h = spawnSync('/bin/bash', [process.argv[3]], { cwd: process.argv[2], input: ev, encoding: 'utf8' });",
+      "console.log('FRENO ' + h.status + ' ' + ((h.stderr || '').match(/GIT-C[0-9]+/) || ['sin-regla'])[0] + ' ' + (h.stderr || '').split('\\n').filter((x) => /temp file|here document/.test(x)).join(' | '));",
+    ].join('\n'),
+  });
+  const g = path.join(r, '.advisors', 'dod-runtime', 'g.js');
+  const s = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.33', ['--', process.execPath, g, afuera, GUARD_PRE], { cwd: r, env: ambiente(c) });
+  // sin leer a sus lectores, el freno dejaba pasar este merge (salía 0); leyéndolos, lo frena con su regla
+  assert.match(salida(s), /FRENO 2 GIT-C7/, salida(s));
+  assert.doesNotMatch(salida(s), /cannot create temp file/, salida(s));
+  assert.deepStrictEqual(fs.readdirSync(afuera).filter((f) => /^sh-thd-/i.test(f)), [], 'nada en la carpeta de afuera');
+});
+
+test('F214 T2 Aislada_EnlacePlantadoConOtraCaja_NoSeAdmite: un enlace duro «SH-THD-<n>» en la carpeta de lanzamiento cuenta igual que en minúsculas', { skip: ENCIERRO ? false : 'sin el encierro del sistema' }, (t) => {
+  // el encierro y el disco de la Mac no distinguen mayúsculas (y pliegan «ſ» en «s»): el chequeo tampoco
+  const c = cuenta(t);
+  const sesion = path.join(c.b, 'sesion');
+  fs.mkdirSync(sesion);
+  const afuera = path.join(c.b, 'afuera');
+  fs.mkdirSync(afuera);
+  const victima = path.join(afuera, 'victima.txt');
+  fs.writeFileSync(victima, 'intacto\n');
+  for (const nombre of ['SH-THD-31', 'ſh-thd-32']) {
+    fs.linkSync(victima, path.join(sesion, nombre));
+    const r = repo(path.join(c.b, `repo-${nombre.length}-${nombre.charCodeAt(0)}`), {
+      '.advisors/dod-runtime/g.js': `const r = require('child_process').spawnSync('/bin/bash', ['-c', 'echo PWNED > ${nombre.toLowerCase()}'], { encoding: 'utf8' }); console.log('ENLACE ' + r.status);\n`,
+    });
+    const s = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.33', ['--', process.execPath, path.join(r, '.advisors', 'dod-runtime', 'g.js')], { cwd: sesion, env: ambiente(c) });
+    assert.match(salida(s), /ENLACE [1-9]/, `${nombre}: ${salida(s)}`);
+    assert.strictEqual(fs.readFileSync(victima, 'utf8'), 'intacto\n', `${nombre}: el archivo del enlace no cambió`);
+    assert.match(salida(s), /sh-thd/, `${nombre}: dice por qué: ${salida(s)}`);
+    fs.rmSync(path.join(sesion, nombre), { force: true });
+  }
+});
+
 test('F174 T2 Aislada_HijoSinLasVariablesDeLaRed_EscribeEnSuLaboratorio: un hijo con HOME de juguete y sin las variables TYCON_ escribe en su casa de juguete; la casa de la cuenta sigue frenada', { skip: !POSIX }, (t) => {
   // fila 174: un guion de laboratorio limpia lo que empieza con TYCON_ para su hijo y deja NODE_OPTIONS; el hijo carga la
   // red sin sus raíces y no tiene que tomar su HOME de juguete por la casa real

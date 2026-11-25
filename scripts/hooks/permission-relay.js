@@ -275,6 +275,16 @@ function decidir(evento, opts = {}) {
     anotarDecision(casa, { sesion, estado, id, herramienta, pedido, coordinadora, motivo: decision === null ? motivo : null, esperaS: Math.round((ahora() - desde) / 1000) });
     return { decision, motivo, id, deFondo: true };
   };
+  // el click de la persona en este cuadro: lo gasta y aprueba esa sola vez; null si no está (o no se pudo gastar)
+  const mirarElClick = (fila) => {
+    const b = oa().buscarPermiso({ casa, cuadro: L.cuadroDePermiso(fila), coordinadora, carpeta, desde: fila.at, ahora: ahora(), arbol: opts.arbol, validar: opts.validar });
+    if (b.ok) {
+      const gasto = oa().consumir(casa, b.aprobacion, { ahora: ahora(), firma: `permiso:${id}`, sesion });
+      if (gasto.ok) return cerrar('aprobado', 'la persona lo aprobó con su click', 'allow');
+      logError(casa, `el click para ${id} no se pudo gastar (${gasto.motivo}): sigo esperando`);
+    } else if (b.noLeida) logError(casa, `no pude confirmar el click para ${id} (${b.motivo}): sigo esperando`);
+    return null;
+  };
   for (;;) {
     let fila;
     try { fila = L.renglonDelGancho(casa, id).fila; } catch (e) { return cerrar('error', `no pude leer la lista de firmas (${e.message})`, null); }
@@ -282,13 +292,14 @@ function decidir(evento, opts = {}) {
     // un «No» sólo niega
     if (fila.rechazado) return cerrar('rechazado', 'la persona dijo que no', 'deny');
     if (L.coordinadoraViva(casa) !== coordinadora) return cerrar('sin-coordinadora', 'la coordinadora ya no está o dejó de ser la designada', null);
-    const b = oa().buscarPermiso({ casa, cuadro: L.cuadroDePermiso(fila), coordinadora, carpeta, desde: fila.at, ahora: ahora(), arbol: opts.arbol, validar: opts.validar });
-    if (b.ok) {
-      const gasto = oa().consumir(casa, b.aprobacion, { ahora: ahora(), firma: `permiso:${id}`, sesion });
-      if (gasto.ok) return cerrar('aprobado', 'la persona lo aprobó con su click', 'allow');
-      logError(casa, `el click para ${id} no se pudo gastar (${gasto.motivo}): sigo esperando`);
-    } else if (b.noLeida) logError(casa, `no pude confirmar el click para ${id} (${b.motivo}): sigo esperando`);
-    if (ahora() - fila.at >= plazo) return cerrar('vencido', `nadie contestó el cuadro en ${Math.round(plazo / 60000)} minutos`, null);
+    const aprobado = mirarElClick(fila);
+    if (aprobado) return aprobado;
+    if (ahora() - fila.at >= plazo) {
+      // un click anotado entre la mirada de recién y este vencimiento todavía cuenta: se mira una vez más
+      const ultimo = mirarElClick(fila);
+      if (ultimo) return ultimo;
+      return cerrar('vencido', `nadie contestó el cuadro en ${Math.round(plazo / 60000)} minutos`, null);
+    }
     dormir(pollMs);
   }
 }

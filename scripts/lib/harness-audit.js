@@ -955,8 +955,8 @@ function checkPipelineWiring() {
 
 // ============================================================
 // Categoría 8 — Learning Loop ("nadie vigila al vigilante"). Detecta
-// features de aprendizaje registrados pero apagados (instinct-mining sin
-// observations) y retrospective-capturer sin trigger (casi sin corridas).
+// features de aprendizaje prendidos que no producen nada (la grabadora de
+// instintos sin observations) y retrospective-capturer sin trigger (casi sin corridas).
 // Checks condicionados al estado DECLARADO de cada feature: si un feature
 // está apagado a propósito, su check se reporta como passed con
 // detail 'feature off' — un rojo perpetuo entrenaría a ignorar la categoría.
@@ -967,18 +967,19 @@ function checkLearningLoop() {
   const settingsRaw = safeRead(SETTINGS);
   const DAY = 24 * 3600 * 1000;
 
-  // (a) Si el hook instinct-observe está registrado, la env var debe estar prendida.
-  const miningRegistered = settingsRaw.includes('instinct-observe.sh');
-  const miningOn = process.env.TYCON_INSTINCT_MINING === '1';
-  checks.push({
-    name: 'instinct-mining: hook registrado ⇒ env var TYCON_INSTINCT_MINING=1 (no feature-dead)',
-    passed: !miningRegistered || miningOn,
-    file: SETTINGS,
-    severity: 'warning',
-    detail: { miningRegistered, miningOn },
-  });
+  // (a) y (b) La grabadora graba sólo con la integración instincts prendida, que decide el perfil del equipo o la máquina:
+  // apagada es una decisión, no una pieza muerta. Prendida y registrada (el .js o el .sh que le reenvía), tiene que
+  // haber observations recientes (<14d). Sin poder leer la integración, no se mide y se dice.
+  const miningRegistered = /instinct-observe\.(js|sh)/.test(settingsRaw);
+  let miningOn = false;
+  try {
+    const r = require(path.join(__dirname, 'tycon-config.js')).integracionParaHook('instincts');
+    if (!r.ok) throw new Error('la configuración del arnés está rota');
+    miningOn = r.prendida;
+  } catch (e) {
+    if (miningRegistered) checks.push({ name: `instinct-mining: NO MEDIDO — no pude leer la integración instincts (${e.message})`, passed: true, file: 'scripts/lib/tycon-config.js', severity: 'info' });
+  }
 
-  // (b) Si mining está prendido, debe haber observations recientes (<14d).
   if (miningRegistered && miningOn) {
     // donde graba la grabadora: la variable gana, como en la grabadora; si no, la carpeta de los registros sueltos
     const sueltos = (() => { try { return require('./loose-logs.js').looseLogsDir(HOME); } catch (_) { return null; } })();

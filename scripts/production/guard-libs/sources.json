@@ -3,9 +3,9 @@
   "files": [
     { "copy": "lib/shell-parse.js", "source": "scripts/lib/shell-parse.js", "reviewed": "e48cfb17e79dcfb6eb8c05d4dd92856723420fbe" },
     { "copy": "lib/repos-root.js", "source": "scripts/lib/repos-root.js", "reviewed": "7b4df4954fd7d3b97b1743eb7f362ac29b543195" },
-    { "copy": "lib/tycon-config.js", "source": "scripts/lib/tycon-config.js", "reviewed": "efebf0ab5ddb9eaeda2a275d268c386a81fae5b4" },
+    { "copy": "lib/tycon-config.js", "source": "scripts/lib/tycon-config.js", "reviewed": "51ad87e1ed0849de3441842d4fab43d0b5a469e3" },
     { "copy": "lib/skills-dir.js", "source": "scripts/lib/skills-dir.js", "reviewed": "78fba972b0cfae3f95f71f5335e6642dd2bd25bf" },
-    { "copy": "lib/guard-record.js", "source": "scripts/lib/guard-record.js", "reviewed": "c1ef9b88685e41759c3d7437e9e4b0d8b5a83a0c" },
+    { "copy": "lib/guard-record.js", "source": "scripts/lib/guard-record.js", "reviewed": "178be6d47d9eb5458349bc9d2db3352a084608c9" },
     { "copy": "lib/legacy-names.js", "source": "scripts/lib/legacy-names.js", "reviewed": "4980b859299fd8e4b2d0ccf248c13cd6997be089" },
     { "copy": "setup/harness/tycon-home.js", "source": "scripts/setup/harness/tycon-home.js", "reviewed": "ff2f1218d8e4f7b04e8884c4ec7a2f613ea8cd6c" }
   ]
