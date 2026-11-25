@@ -89,16 +89,13 @@ function storyIsExempt(content) {
   return /^dod_runtime_exempt:\s*true\b/m.test(content);
 }
 
-// La exención como la reconoce el más ancho de los lectores que la conceden (este hook, on-pre-commit, el portón de CI,
-// runtime-matrix, pipeline.js): en cualquier renglón del archivo, con sangría, con o sin comillas y con lo que siga
-// (un comentario). Si este control mirara menos que ellos, una forma que no ve pasaría sin la frase y valdría igual.
-const EXENTA = /^\s*dod_runtime_exempt:\s*["']?true\b/m;
+// Las exenciones que se agregan con la firma del dueño sobre la historia, cuándo una es nueva y su constancia en el repo
+const exenciones = require('./lib/exemptions.js');
+const { EXENCIONES, esExencionNueva } = exenciones;
 // la regla del cambio de estado a mano es la misma para la herramienta de edición y para la consola
 const { transicionAMano, isCriticalStatus, EN_IMPLEMENTACION } = require('./lib/story-transition.js');
 // El estado del encabezado, con fines de renglón de Windows y comillas simples o dobles.
 const estadoDe = (c) => { const m = /^status:\s*["']?([\w-]+)/m.exec(fmBlock(c)); return m ? m[1].toLowerCase() : ''; };
-// Una historia: un encabezado con `story:` o `status:`. Una guía que nombra la exención no lo tiene.
-const esHistoria = (c) => /^(?:story|status):/m.test(fmBlock(c));
 
 /**
  * La firma de la ventana sobre este archivo (`marker.js sign-file <firma> <archivo>`, scripts/lib/owner-window.js):
@@ -127,27 +124,48 @@ function comoSeFirmaAca(firma, filePath, sesion) {
 }
 
 /**
- * La exención de la prueba en vivo que se agrega a una historia (pasa de ausente o `false` a `true`, también al crearla)
- * la decide la persona, en cualquier estado: sin su firma en la ventana sobre esta historia, `{ block }` que nombra el
- * comando; con ella, pasa (null) y queda la constancia con la sesión. El agente que escribe la historia no se exime solo.
+ * Una exención que se agrega a una historia (ver `esExencionNueva`, también al crearla) la decide la persona, en
+ * cualquier estado: sin su firma en la ventana sobre esta historia, `{ block }` que nombra el comando; con ella, pasa
+ * (null) y queda la constancia con la sesión, y en el repo (`.tycon/exemptions.jsonl`), que los portones del commit y de
+ * CI piden. Sin poder anotarla en el repo, frena: la exención no se commitearía. El agente que escribe la historia no se
+ * exime solo. Con dos nuevas en la misma escritura, cada una pide la suya, y el escape se anota sólo si pasan todas: si
+ * una frena, la escritura no ocurre.
  */
 function exencionNueva(event, oldContent, newContent, casa) {
-  if (!EXENTA.test(newContent) || (oldContent && EXENTA.test(oldContent)) || !esHistoria(newContent)) return null;
+  const nuevas = EXENCIONES.filter((ex) => esExencionNueva(ex.campo, oldContent, newContent));
+  if (!nuevas.length) return null;
   // el estado de antes o el de después, para el mensaje; la historia nueva no tiene estado de antes
   const antes = estadoDe(oldContent || '');
   const estado = EN_IMPLEMENTACION.has(antes) ? antes : (estadoDe(newContent) || antes || 'sin estado');
-  const sid = event.session_id;
-  const r = firmaDeLaVentana('dod_runtime_exempt', event, event.tool_input.file_path, casa);
-  const ok = r.ok === true;
   const storyId = parseFrontmatter(newContent).story || '';
-  try {
-    const { rutaDeLaLib } = require('./lib/closing-record.js');
-    // el camino es el de la firma: la ventana, la delegación o la terminal
-    require(rutaDeLaLib()).anotar({ freno: 'on-frontmatter-write', regla: 'exencion-nueva', veredicto: ok ? 'escape' : 'bloqueo',
-      cmd: `${storyId}\0${estado}`, ...(ok ? { via: r.constancia.via, sesion: sid, escape: 'dod_runtime_exempt' } : {}) });
-  } catch { /* ayuda, no evidencia */ }
-  if (ok) return null;
-  const titulo = `🚨 BLOQUEADO — agregar la exención dod_runtime_exempt a la story ${storyId} (estado ${estado}) la exime de la prueba en vivo.`;
+  const firmas = nuevas.map((ex) => ({ ex, r: firmaDeLaVentana(ex.campo, event, event.tool_input.file_path, casa) }));
+  const frenada = firmas.find(({ r }) => r.ok !== true);
+  const anotar = (linea) => {
+    try {
+      const { rutaDeLaLib } = require('./lib/closing-record.js');
+      require(rutaDeLaLib()).anotar({ freno: 'on-frontmatter-write', regla: 'exencion-nueva', cmd: `${storyId}\0${estado}`, ...linea });
+    } catch { /* ayuda, no evidencia */ }
+  };
+  // el camino es el de la firma: la ventana, la delegación o la terminal
+  if (!frenada) {
+    const archivo = event.tool_input.file_path;
+    const raiz = require('./lib/story-discovery.js').findRepoRoot(archivo);
+    try {
+      if (!raiz) throw new Error('no encontré la raíz del repo de la historia');
+      for (const { ex, r } of firmas) {
+        exenciones.anotar(raiz, { story: exenciones.idDe(newContent) || storyId, campo: ex.campo, archivo: path.relative(raiz, archivo).split(path.sep).join('/'),
+          via: r.constancia.via, sesion: event.session_id });
+      }
+    } catch (e) {
+      anotar({ veredicto: 'bloqueo' });
+      return { block: `🚨 BLOQUEADO — la firma de ${firmas.map(({ ex }) => ex.campo).join(' y ')} sobre la story ${storyId} vale, pero no pude anotar su constancia en el repo (${exenciones.RUTA}): ${e.message}.\nSin ella, el portón del commit y el de CI frenan la exención. Arreglá eso y pedile la firma de nuevo a la persona.\n` };
+    }
+    for (const { ex, r } of firmas) anotar({ veredicto: 'escape', via: r.constancia.via, sesion: event.session_id, escape: ex.campo });
+    return null;
+  }
+  anotar({ veredicto: 'bloqueo' });
+  const { ex, r } = frenada;
+  const titulo = `🚨 BLOQUEADO — agregar la exención ${ex.campo} a la story ${storyId} (estado ${estado}) ${ex.saltea}.`;
   return {
     block: [
       titulo,
@@ -155,8 +173,7 @@ function exencionNueva(event, oldContent, newContent, casa) {
       'Eximir una historia lo decide la persona, no el agente, también mientras se escribe. Si la persona quiere,',
       'la firma, y con su «Sí» se repite esta escritura:',
       ...r.renglones.map((l) => `  · ${l}`),
-      'El camino normal es correr la prueba en vivo; si la historia no se puede terminar, dejarla como deuda',
-      '(marker.js close-as-debt).',
+      ...ex.camino,
       `(No hay firma: ${r.motivo}.)`,
     ].join('\n') + '\n',
   };
@@ -362,6 +379,43 @@ function findRepoRoots(filePath) {
  * tramo no se encuentra, el resultado es el archivo de antes con los renglones `status:` que el parche agrega puestos en
  * el encabezado: lo que no se pudo aplicar se juzga por lo que el parche escribe.
  */
+/**
+ * Lo que escribe un Edit de Claude Code: el reemplazo de `oldStr` por `newStr` en `oldContent`, o null si no lo
+ * encuentra (el Edit falla). La herramienta lo encuentra aunque el archivo traiga comillas curvas y `oldStr` rectas, y
+ * reemplaza el tramo del archivo: acá igual, o una historia con comillas curvas dejaría pasar cualquier cambio. Se usa una
+ * función de reemplazo: `String.replace(str, newStr)` interpreta `$&`/`$1`/`$$` en `newStr`, y daría otro contenido.
+ */
+function reemplazoDelEdit(oldContent, oldStr, newStr, todos) {
+  if (oldStr && oldContent.includes(oldStr)) {
+    return todos ? oldContent.split(oldStr).join(newStr) : oldContent.replace(oldStr, () => newStr);
+  }
+  // cada comilla curva es un carácter y la recta también: las posiciones del texto plano son las del archivo
+  const recta = (t) => t.replace(/[‘’‚‛]/g, "'").replace(/[“”„‟]/g, '"');
+  const plano = recta(oldContent);
+  const buscado = recta(oldStr);
+  if (!buscado || !plano.includes(buscado)) return null;
+  let out = '';
+  let desde = 0;
+  for (let i = plano.indexOf(buscado); i >= 0; i = todos ? plano.indexOf(buscado, desde) : -1) {
+    out += oldContent.slice(desde, i) + newStr;
+    desde = i + buscado.length;
+  }
+  return out + oldContent.slice(desde);
+}
+
+/** El destino de un Update de Codex con `*** Move to:` para `filePath`, resuelto contra el cwd del evento, o null. */
+function destinoDelParche(event, filePath) {
+  const ti = event.tool_input || {};
+  const parche = String(ti.command || ti.patch || ti.input || '').replace(/\r\n/g, '\n');
+  const cwd = (event.cwd && String(event.cwd)) || process.cwd();
+  const bloque = parche.split(/\n(?=\*\*\* (?:Add|Update|Delete) File: )/).find((b) => {
+    const m = b.match(/^\*\*\* Update File: (.+)$/m);
+    return m && path.resolve(cwd, m[1].trim()) === path.resolve(filePath);
+  });
+  const m = bloque && bloque.match(/^\*\*\* Move to: (.+)$/m);
+  return m ? path.resolve(cwd, m[1].trim()) : null;
+}
+
 function contenidoPorParche(event, filePath, oldContent) {
   const ti = event.tool_input || {};
   const parche = String(ti.command || ti.patch || ti.input || '').replace(/\r\n/g, '\n');
@@ -390,14 +444,18 @@ function contenidoPorParche(event, filePath, oldContent) {
     desde = i + despues.length;
   }
   if (aplicado) return texto;
+  // una exención que el parche agrega se suma al final del encabezado: Codex la escribe aunque el tramo no calce
+  // exacto, y quien la juzga tiene que verla (del lado que frena)
+  const exenciones = bloque.split('\n').filter((r) => r.startsWith('+') && EXENCIONES.some((ex) => new RegExp(`^\\s*${ex.campo}\\s*:`).test(r.slice(1)))).map((r) => r.slice(1));
   const agregados = bloque.split('\n').filter((r) => /^\+\s*status:/.test(r)).map((r) => r.slice(1));
-  if (!agregados.length) return oldContent;
+  if (!agregados.length && !exenciones.length) return oldContent;
+  if (!agregados.length) return oldContent.replace(/\n---/, () => `\n${exenciones.join('\n')}\n---`);
   // el estado nuevo reemplaza al del encabezado; uno con sangría es del bloque pipelines: se suma al final del encabezado
   let fm = oldContent;
   for (const r of agregados) {
     fm = /^\s/.test(r) ? fm.replace(/\n---/, () => `\n${r}\n---`) : fm.replace(/^status:.*$/m, () => r);
   }
-  return fm;
+  return exenciones.length ? fm.replace(/\n---/, () => `\n${exenciones.join('\n')}\n---`) : fm;
 }
 
 /**
@@ -470,6 +528,24 @@ function anotarDecision(regla, veredicto, storyId, estado) {
 
 const fmBlock = (c) => { const m = c.match(/^---\r?\n([\s\S]*?)\r?\n---/); return m ? m[1] : ''; };
 
+// ¿Una tanda del bloque pipelines pasa a done? Lo decide batchTransition (lib/story-checks.js), el mismo que usa
+// on-pre-commit: ante la duda, se mide (por nombre, por los renglones done con comillas y mayúsculas, o porque la
+// lectura del bloque es dudosa). Sólo el frontmatter: un `status: done` en la prosa o en un bloque de código no cuenta.
+// Sin el lector no se sabe qué tanda cambió: un frontmatter que cambia cuenta como transición. `detalle` es lo que dice
+// el cartel del freno.
+function tandaPasaADone(oldContent, newContent) {
+  try {
+    const t = require('./lib/story-checks.js').batchTransition(oldContent, newContent);
+    const partes = [];
+    if (t.turned.length) partes.push(`pasa a done ${t.turned.join(', ')}`);
+    if (t.doubtful) partes.push(`la lectura de las tandas es dudosa: ${[...t.doubtsBefore, ...t.doubtsAfter].join('; ')}`);
+    if (!partes.length && t.countUp) partes.push('suben los renglones de estado done');
+    return { transition: t.transition, detalle: partes.join(' · ') };
+  } catch (e) {
+    return { transition: fmBlock(oldContent) !== fmBlock(newContent), detalle: `no pude cargar el lector de tandas (${e.message})` };
+  }
+}
+
 /**
  * ¿El Edit/Write transiciona una STORY a review/done? Pura y sin salida: la usa la constancia de la
  * rama de exención, que corta ANTES de que el flujo principal lea la config del repo (y sus avisos).
@@ -487,8 +563,7 @@ function transicionDeStory(filePath, oldContent, newContent) {
     const oldS = (oldFm.status || '').toLowerCase();
     const newS = (newFm.status || '').toLowerCase();
     const statusTransition = isCriticalStatus(newS) && newS !== oldS;
-    const pipelineTransition = (fmBlock(newContent).match(/^\s+status:\s*done\b/gm) || []).length
-      > (fmBlock(oldContent).match(/^\s+status:\s*done\b/gm) || []).length;
+    const pipelineTransition = tandaPasaADone(oldContent, newContent).transition;
     return statusTransition || pipelineTransition ? { storyId: String(declaredId), estado: newS } : null;
   } catch {
     return null; // la constancia nunca decide nada: ante la duda, no anota
@@ -507,8 +582,13 @@ function handle(event, { casa } = {}) {
   const tool = event.tool_name;
   if (tool !== 'Edit' && tool !== 'Write') return null;
 
-  const filePath = event.tool_input?.file_path;
-  if (!filePath) return null;
+  const origen = event.tool_input?.file_path;
+  if (!origen) return null;
+  // Codex: un Update con `*** Move to:` escribe el destino con lo que queda del origen; se juzga en el destino, aunque
+  // el origen no sea un `.md`
+  const destino = event.tool_name_raw === 'apply_patch' ? destinoDelParche(event, origen) : null;
+  const filePath = destino || origen;
+  if (destino) event = { ...event, tool_input: { ...event.tool_input, file_path: destino } };
 
   // Sólo `.md`; que SEA una story lo decide el frontmatter, más abajo. No se filtra por ruta: un
   // filtro tipo `specs/stories/` apagaría el freno en los repos con otro layout, sin un solo mensaje.
@@ -516,29 +596,28 @@ function handle(event, { casa } = {}) {
 
   // Reconstruir el NEW state.
   let newContent;
-  const oldContent = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : '';
+  const leer = (p) => (fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '');
+  const oldContent = leer(filePath);
 
   if (tool === 'Write') {
     newContent = event.tool_input.content || '';
   } else if (event.tool_name_raw === 'apply_patch') {
     // Codex: el Edit trae el parche, no el reemplazo. Sin poder aplicarlo, un `+status: review|done` cuenta como el
     // paso a ese estado (del lado que frena)
-    newContent = contenidoPorParche(event, filePath, oldContent);
+    newContent = contenidoPorParche(event, origen, destino ? leer(origen) : oldContent);
   } else {
     // Edit — aplicar mentalmente el reemplazo.
-    const oldStr = event.tool_input.old_string || '';
-    const newStr = event.tool_input.new_string || '';
-    if (!oldContent.includes(oldStr)) {
-      // El Edit va a fallar de todas formas (old_string no matchea). Dejá pasar
-      // — Claude Code va a reportar el error real.
-      return null;
+    let oldStr = event.tool_input.old_string || '';
+    let newStr = event.tool_input.new_string || '';
+    // en un archivo con renglones de Windows la herramienta aplica el reemplazo aunque old_string venga con \n
+    if (!oldContent.includes(oldStr) && oldContent.includes('\r\n') && /(^|[^\r])\n/.test(oldStr)) {
+      const aCrlf = (t) => t.replace(/\r?\n/g, '\r\n');
+      if (oldContent.includes(aCrlf(oldStr))) { oldStr = aCrlf(oldStr); newStr = aCrlf(newStr); }
     }
-    // Usar función de reemplazo — `String.replace(str, newStr)` interpreta
-    // `$&`/`$1`/`$$` en newStr como patrones especiales, así que un new_string con `$` daría
-    // un newContent distinto al que Edit escribe realmente. La forma `() => newStr` lo evita.
-    newContent = event.tool_input.replace_all === true
-      ? oldContent.split(oldStr).join(newStr)
-      : oldContent.replace(oldStr, () => newStr);
+    newContent = reemplazoDelEdit(oldContent, oldStr, newStr, event.tool_input.replace_all === true);
+    // El Edit va a fallar de todas formas (old_string no matchea). Dejá pasar
+    // — Claude Code va a reportar el error real.
+    if (newContent === null) return null;
   }
 
   // La exención nueva en una historia la decide la persona, en cualquier estado.
@@ -583,15 +662,9 @@ function handle(event, { casa } = {}) {
   const statusTransition =
     isCriticalStatus(newS) && newS !== oldS;
 
-  // Trigger 2: pipeline.X.status: done en el new state que NO estaba antes.
-  // Heurística: contamos ocurrencias de `status: done` indentado (block pipelines).
-  // Contar SOLO dentro del bloque frontmatter (entre los dos `---`),
-  // no en todo el contenido — un spec que documente el pipeline con un `status: done`
-  // indentado en prosa/code-block NO debe disparar el gate (falso positivo que bloquearía
-  // edits no relacionados).
-  const oldDoneCount = (fmBlock(oldContent).match(/^\s+status:\s*done\b/gm) || []).length;
-  const newDoneCount = (fmBlock(newContent).match(/^\s+status:\s*done\b/gm) || []).length;
-  const pipelineTransition = newDoneCount > oldDoneCount;
+  // Trigger 2: una tanda del bloque pipelines que pasa a done (tandaPasaADone).
+  const tandas = tandaPasaADone(oldContent, newContent);
+  const pipelineTransition = tandas.transition;
 
   if (!statusTransition && !pipelineTransition) return null;
 
@@ -669,7 +742,7 @@ function handle(event, { casa } = {}) {
   lines.push(`  File: ${filePath}`);
   lines.push(`  Story: ${storyId}`);
   lines.push(`  ${statusTransition ? '→ status: ' + (oldFm.status || '?') + ' → ' + (newFm.status || '?') : ''}`);
-  lines.push(`  ${pipelineTransition ? `→ pipelines.*.status: done added (${oldDoneCount} → ${newDoneCount})` : ''}`);
+  lines.push(`  ${pipelineTransition ? `→ pipelines: ${tandas.detalle}` : ''}`);
   lines.push('');
   lines.push('La story declara tests runtime-dependent (Playwright/E2E/smoke) pero no');
   lines.push(`existe archivo de evidencia .advisors/dod-runtime/${prefijoDe(storyId, filePath) || '(sin clave: no se pudo calcular, ver el aviso de arriba) '}*.md en:`);

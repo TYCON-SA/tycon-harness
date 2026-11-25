@@ -13,6 +13,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const scan = require('./lib/hidden-window-scan.js');
 
@@ -47,9 +48,49 @@ test('T1 · HiddenWindow_EveryLaunchInScope_HidesTheWindow @story-8.266 @ac-1 @a
   const seen = new Set(launches.map((l) => l.file));
   const unseen = scan.scriptFiles(ROOT, INSIDE, Object.keys(OUTSIDE)).filter((file) => {
     const text = fs.readFileSync(path.join(ROOT, file), 'utf8');
-    return !seen.has(file) && !scan.isLegacyShim(text) && scan.usesChildProcess(text);
+    return !seen.has(file) && scan.usesChildProcess(text);
   });
   assert.deepStrictEqual(unseen, [], 'usan child_process de una forma que el escáner no reconoce: enseñásela (scripts/tests/lib/hidden-window-scan.js)');
+  // y en cualquier archivo, aunque tenga otros lanzamientos vistos: lo que llega al módulo de un modo que no se sigue
+  const noSeguidas = scan.scriptFiles(ROOT, INSIDE, Object.keys(OUTSIDE)).flatMap((file) => {
+    const text = fs.readFileSync(path.join(ROOT, file), 'utf8');
+    return scan.formasQueNoSigue(text).map((f) => `${file}:${f.line} (${f.forma})`);
+  });
+  assert.deepStrictEqual(noSeguidas, [], 'llegan a child_process de un modo que el escáner no sigue: escribilo con require(\'child_process\') y la función por su nombre');
+});
+
+test('T6 · HiddenWindow_Scanner_SaysWhatItCannotFollow', () => {
+  // las formas que el escáner no sigue no pasan calladas: cada una se nombra, aunque el archivo tenga otros lanzamientos
+  const casos = [
+    ["const cp = require('child_process'); cp[fn]('ls', [], { windowsHide: true });", /corchetes/],
+    ["const c = process.getBuiltinModule('child_process'); c.spawnSync('ls');", /como texto/],
+    ["const r = createRequire(import.meta.url)('node:child_process');", /como texto/],
+    ["const m = 'child_' + 'process'; const c = require(m);", /nombre armado/],
+    // pase adversarial: lo que el escáner tampoco sigue
+    ['const c = require(`child_process`); c.spawnSync(\'ls\');', /como texto/],
+    ["const c = require ('child_process'); c.spawnSync('ls');", /como texto/],
+    ["export { spawn } from 'child_process';", /como texto/],
+    ["import * as cp from 'node:child_process'; cp[fn]('ls', [], { windowsHide: true });", /corchetes/],
+    ["import cp from 'child_process'; cp[fn]('ls');", /corchetes/],
+  ];
+  for (const [texto, forma] of casos) {
+    const f = scan.formasQueNoSigue(`const { spawnSync } = require('child_process');\nspawnSync('ls', [], { windowsHide: true });\n${texto}\n`);
+    assert.equal(f.length, 1, `${texto}: ${JSON.stringify(f)}`);
+    assert.match(f[0].forma, forma);
+    assert.equal(f[0].line, 3);
+  }
+  // lo de siempre no se nombra: la carga reconocida, un comentario, un texto que es el código de otro guion
+  for (const texto of [
+    "const { spawnSync } = require('node:child_process');",
+    "import { spawn } from 'child_process';",
+    "// process.getBuiltinModule('child_process')",
+    "const guion = `const c = require('child_process'); c[fn]();`;",
+    "const p = require(path.join(__dirname, 'x.js'));",
+    "import * as cp from 'child_process'; cp.spawnSync('ls', [], { windowsHide: true });",
+    // el nombre partido sólo en un comentario o adentro de otro texto no hace sospechoso a un require de una variable
+    "// antes se armaba 'child_' + 'process'\nconst p = require(ruta);",
+    "const aviso = \"no uses 'child_' + 'process'\"; const p = require(ruta);",
+  ]) assert.deepStrictEqual(scan.formasQueNoSigue(texto), [], texto);
 });
 
 test('T2 · HiddenWindow_Scanner_FindsEveryForm @story-8.266 @ac-2', () => {
@@ -140,6 +181,44 @@ test('T4 · HiddenWindow_ExplicitFalse_OnlyFromTheList @story-8.266 @ac-3', () =
   assert.deepStrictEqual(check(launches, { 'a.js:listed': 'x', 'c.js:gone': 'y' }), { notAllowed: ['b.js:notListed'], stale: ['c.js:gone'] });
   // el árbol real: sólo las de la lista, y ninguna de la lista sobra
   assert.deepStrictEqual(check(treeLaunches(), SHOWN), { notAllowed: [], stale: [] });
+});
+
+test('T7 · HiddenWindow_LegacyShims_AreScannedAndHideTheWindow @story-8.266 @ac-1 @ac-2', () => {
+  // los atajos de nombres viejos los escribe la plantilla de legacy-names.js --write-shims; viven en el repo privado de
+  // quien mantiene y lanzan su destino con node: la plantilla pide la ventana oculta, y el escáner los lee como a
+  // cualquier guion (un atajo a mano con la marca y sin la opción también se ve)
+  const L = require(path.join(ROOT, 'scripts', 'lib', 'legacy-names.js'));
+  const lab = fs.mkdtempSync(path.join(os.tmpdir(), 'hidden-window-shims-'));
+  try {
+    const harness = path.join(lab, 'harness');
+    const skills = path.join(lab, 'agent-skills');
+    for (const f of [path.join(harness, 'scripts', 'tools', 'new-tool.js'), path.join(skills, 'skills', 'lab', 'new-tool.js')]) {
+      fs.mkdirSync(path.dirname(f), { recursive: true });
+      fs.writeFileSync(f, '#!/usr/bin/env node\nconsole.log(1);\n');
+    }
+    const entries = [
+      { kind: 'file', old: 'scripts/old-place/old-tool.js', new: 'scripts/tools/new-tool.js', batch: 'lab', callers: ['machine'] },
+      { kind: 'file', old: 'skills/lab/old-tool.js', new: 'skills/lab/new-tool.js', batch: 'lab', callers: ['other-repo'], repo: 'agent-skills' },
+    ];
+    const { written } = L.writeShims({ map: { entries }, root: harness, skillsRoot: skills });
+    assert.deepStrictEqual(written.sort(), ['scripts/old-place/old-tool.js', 'skills/lab/old-tool.js']);
+    const shims = [path.join(harness, 'scripts', 'old-place', 'old-tool.js'), path.join(skills, 'skills', 'lab', 'old-tool.js')];
+    for (const f of shims) {
+      const launches = scan.findLaunches(fs.readFileSync(f, 'utf8'));
+      assert.ok(launches.length > 0, `${f}: el escáner ve el lanzamiento del atajo`);
+      assert.deepStrictEqual(launches.map((l) => l.state), launches.map(() => 'hidden'), `${f}: el atajo lanza su destino con windowsHide: true`);
+      assert.deepStrictEqual(scan.formasQueNoSigue(fs.readFileSync(f, 'utf8')), [], `${f}: el atajo llega al módulo de un modo que el escáner sigue`);
+    }
+    // el recorrido del árbol no saltea los atajos: los generados salen ocultos, y uno con la marca sin la opción, sin ella
+    const old = fs.readFileSync(shims[0], 'utf8').replace(/, windowsHide: true \}/, ' }');
+    assert.notStrictEqual(old, fs.readFileSync(shims[0], 'utf8'), 'el laboratorio arma el atajo sin la opción');
+    fs.writeFileSync(path.join(harness, 'scripts', 'old-place', 'hand-shim.js'), old);
+    const seen = scan.scanTree(harness, ['scripts']).map((l) => `${l.file}:${l.state}`);
+    assert.deepStrictEqual(seen.filter((s) => s.startsWith('scripts/old-place/')).sort(),
+      ['scripts/old-place/hand-shim.js:missing', 'scripts/old-place/old-tool.js:hidden']);
+  } finally {
+    fs.rmSync(lab, { recursive: true, force: true });
+  }
 });
 
 test('T5 · HiddenWindow_Scope_NewFolderMustBeDeclared @story-8.266 @ac-2', () => {

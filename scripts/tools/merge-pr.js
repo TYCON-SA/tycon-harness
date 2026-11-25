@@ -398,8 +398,30 @@ function maintainersMergeConfig(deps = {}) {
 // ── de qué servidor es el repo ───────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * De qué servidor es `origin`: `azure`, `github`, `local` (una carpeta: el clon de un clon), `other` o `none` (sin
- * `origin`). Con `problem` si no se pudo leer — que no es lo mismo que no tener remoto.
+ * La identidad de un remoto cuyo servidor declara team-repos.json para alguna plataforma (una instalación propia): la
+ * deduce el conector de esa plataforma, por la capa. `{ identity }` (null si el archivo no está o ninguno lo reconoce) o
+ * `{ undetermined }` con el motivo si el archivo está y no se pudo leer, o si la capa o el conector fallaron: ahí no se
+ * sabe si el remoto es de una plataforma declarada.
+ */
+function declaredPlatformIdentity(url, deps) {
+  let read;
+  try { read = (deps.teamRepos || readTeamRepos)(); } catch (e) { return { undetermined: `${TEAM_REPOS_FILE}: ${firstLine(e && e.message) || 'no se pudo leer'}` }; }
+  if (!read || typeof read !== 'object') return { undetermined: `${TEAM_REPOS_FILE}: la lectura no devolvió nada` };
+  if (read.absent === true) return { identity: null };
+  if (!read.ok || !read.data) {
+    const p = (read.problems || [])[0] || {};
+    return { undetermined: `${TEAM_REPOS_FILE}: ${p.path ? `${p.path}: ` : ''}${p.message || 'no se pudo leer'}` };
+  }
+  try {
+    return { identity: require(path.join(TREE, 'scripts', 'lib', 'platform', 'platform.js')).identityOfRemoteUrl(url, { teamReposData: read.data, env: deps.env }) || null };
+  } catch (e) { return { undetermined: firstLine(e && e.message) || 'la capa de plataforma no contestó' }; }
+}
+
+/**
+ * De qué servidor es `origin`: `azure`, `github`, `platform` (el de otra plataforma que la organización declara: trae
+ * `identity`, la de team-repos.json), `local` (una carpeta: el clon de un clon), `other` o `none` (sin `origin`). Con
+ * `problem` si no se pudo leer — que no es lo mismo que no tener remoto. Un `other` con `undetermined` es uno del que no
+ * se pudo saber si es de una plataforma declarada.
  */
 function hostOf(repo, deps = {}) {
   const at = rootOf(repo, deps);
@@ -418,10 +440,13 @@ function hostOf(repo, deps = {}) {
   const parts = id.ruta.split('/');
   const asGithub = () => (parts.length === 2 ? { host: 'github', url, ghRepo: `${parts[0]}/${parts[1]}`, owner: parts[0], name: id.nombre } : { host: 'other', url });
   if (GITHUB_HOSTS.has(id.host)) return asGithub();
+  const declared = declaredPlatformIdentity(url, deps);
+  if (declared.identity) return { host: 'platform', url, identity: declared.identity, name: declared.identity.repo };
+  const other = () => (declared.undetermined ? { host: 'other', url, undetermined: declared.undetermined } : { host: 'other', url });
   // un alias de ssh (`git@trabajo:dueño/repo` o `trabajo:dueño/repo`, el de quien tiene varias cuentas): lo que es lo
   // dice ssh, no el nombre. Va por ssh toda dirección sin esquema (la forma `[usuario@]servidor:ruta`) y las `ssh://`
   if (isSshUrl(url) &&!/^-/.test(id.host) && GITHUB_HOSTS.has((deps.sshHost || realSshHost)(id.host, { env: deps.env }))) return asGithub();
-  return { host: 'other', url };
+  return other();
 }
 
 /** El archivo donde va el cuerpo del pedido (y el del commit de merge): en la carpeta temporal de la MÁQUINA —la que ven
@@ -655,7 +680,7 @@ function suitesRuleFor(where, config, deps) {
 function suitesDecision(where, config, target, deps = {}, keepMode = null) {
   const machine = (why) => `las suites corren en esta máquina: ${why}`;
   const notAsked = { asked: false, answer: 'not-asked', detail: null, mergeQueue: null };
-  const canPr = where.host === 'azure' || where.host === 'github';
+  const canPr = where.host === 'azure' || where.host === 'github' || where.host === 'platform';
   const r = suitesRuleFor(where, config, deps);
   if (r.unreadable) {
     return { mode: keepMode || config.mode, suites: 'machine', rule: null, ruleFrom: null, pipeline: null, platform: notAsked, legacyNote: null,
@@ -684,10 +709,13 @@ function suitesDecision(where, config, target, deps = {}, keepMode = null) {
   const now = deps.now || Date.now;
   const budget = { end: now() + PLAN_MS, failed: null };
   const declared = r.rule === 'automatico' ? r.pipeline : null;
-  const answer = where.host === 'azure'
-    ? azureBranchAnswer(where, target, declared, asker(deps.az || ((args, t) => realAz(args, { env: deps.env, timeoutMs: t })), 'az', budget, now))
-    : githubBranchAnswer(where, target, declared, asker(deps.gh || ((args, t) => realGh(args, { env: deps.env, timeoutMs: t })), 'gh', budget, now));
-  const platform = { asked: true, answer: answer.answer, detail: answer.detail, mergeQueue: answer.mergeQueue === undefined ? null : answer.mergeQueue };
+  // de la plataforma de un repo declarado no se sabe leer qué exige la rama: no se le pregunta a la CLI de otra
+  const answer = where.host === 'platform'
+    ? { answer: 'could-not-ask', detail: 'la plataforma de este repo no informa qué controles exige la rama' }
+    : where.host === 'azure'
+      ? azureBranchAnswer(where, target, declared, asker(deps.az || ((args, t) => realAz(args, { env: deps.env, timeoutMs: t })), 'az', budget, now))
+      : githubBranchAnswer(where, target, declared, asker(deps.gh || ((args, t) => realGh(args, { env: deps.env, timeoutMs: t })), 'gh', budget, now));
+  const platform = { asked: where.host !== 'platform', answer: answer.answer, detail: answer.detail, mergeQueue: answer.mergeQueue === undefined ? null : answer.mergeQueue };
   const pipeline = answer.pipeline || pipelineOf(r.pipeline);
   if (r.rule === 'confiar-en-el-servidor') {
     if (answer.answer === 'requires-none') return out('pr', 'machine', machine(`la regla confiar-en-el-servidor no se pudo cumplir: la rama no exige ningún control (${from})`), { platform, pipeline });
@@ -713,6 +741,10 @@ function plan({ repo: given, source, target, keepMode = null }, deps = {}) {
   if (where.problem) return stop(where.problem);
   const config = mergeConfigFor(repo, () => where, deps);
   if (config.problem) return stop(config.problem);
+  // con el merge por pedido, un remoto del que no se supo si es de una plataforma declarada no baja a empuje directo
+  if (where.undetermined && (keepMode || config.mode) === 'pr') {
+    return stop(`no sé si origin (${withoutCredentials(where.url)}) es de una plataforma que la organización declara: ${where.undetermined}. Sin saberlo, y con merge.mode: pr, no elijo un empuje directo`);
+  }
   const decided = suitesDecision(where, config, target, deps, keepMode);
   const mode = decided.mode;
   const check = checkOf(decided, where, config);
@@ -730,6 +762,9 @@ function plan({ repo: given, source, target, keepMode = null }, deps = {}) {
     step = '9c';
     canMerge = Boolean(check);
     if (!canMerge) notes.push(`falta declarar merge.check en ${config.declaredIn} (el nombre exacto del control de la validación): el pedido se crea y NO se mergea — un pedido trae varios controles y no se elige uno por cuenta propia`);
+  } else if (where.host === 'platform') {
+    // el pedido lo abre la capa con la identidad del repo (`repo`)
+    step = '9b';
   } else if (where.host === 'local') {
     notes.push('origin es una carpeta de esta máquina: el empuje va a esa carpeta, no a un servidor (paso 9)');
   } else if (where.host === 'none') {
@@ -743,6 +778,7 @@ function plan({ repo: given, source, target, keepMode = null }, deps = {}) {
   return Object.assign({ code: 0, host: where.host, mode, check, configFrom: config.configFrom, step, canMerge, notes },
     where.host === 'azure' ? { org: where.org, project: where.project, name: where.name } : {},
     where.host === 'github' ? { ghRepo: where.ghRepo, name: where.name } : {},
+    where.host === 'platform' ? { repo: where.identity, name: where.name } : {},
     bodyFiles(repo, source),
     { version: version && version.code === 0 ? { action: version.action, from: version.from || null, to: version.to || null, reason: version.reason || null } : null },
     { suites: decided.suites, suitesRule: decided.rule, suitesRuleFrom: decided.ruleFrom, suitesPipeline: decided.pipeline, platform: decided.platform,

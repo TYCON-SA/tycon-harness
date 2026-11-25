@@ -235,3 +235,26 @@ test('WorkSignal_StopAndActivity_Reach @story-7.40 @ac-2', () => {
   const mal = run(['pause', ...EV], o);
   assert.strictEqual(mal.status, 2);
 });
+
+// 🔴 Falla con: una máquina que registró el servidor MCP de la integración de horas con otro nombre que el del manifiesto,
+//    y el evento que igual le dice a la integración (y a quien verifica la acción) el nombre del manifiesto.
+test('WorkSignal_McpServerFromMachine — el nombre del servidor MCP de la integración lo puede cambiar cada máquina', () => {
+  const f = fakeIntegrations();
+  const manifiesto = path.join(f.dir, 'fake', 'integration.json');
+  fs.writeFileSync(manifiesto, JSON.stringify({ ...JSON.parse(fs.readFileSync(manifiesto, 'utf8')), mcp: { server: 'fake-mcp', machine: true } }));
+  const extra = { TYCON_TIME_TRACKING: 'fake' };
+  // sin la clave de la máquina: el del manifiesto
+  const l = lab();
+  assert.strictEqual(run(['start', ...EV], Object.assign({}, l, { dir: f.dir, extra })).status, 0);
+  // con la clave: el de la máquina
+  const l2 = lab();
+  fs.writeFileSync(path.join(l2.home, '.claude', 'tycon.json'), JSON.stringify({ integrations: { mcp_servers: { fake: 'otro-nombre-del-mcp' } } }));
+  const r2 = run(['start', ...EV], Object.assign({}, l2, { dir: f.dir, extra }));
+  assert.strictEqual(r2.status, 0, r2.stderr);
+  const got = fs.readFileSync(f.got, 'utf8').trim().split('\n').map((x) => JSON.parse(x));
+  assert.deepStrictEqual(got.map((e) => e.mcpServer), ['fake-mcp', 'otro-nombre-del-mcp']);
+  // lo mismo ve quien verifica la acción: el manifiesto elegido trae el servidor de la máquina
+  const ws = require(CLI);
+  const env = { ...process.env, HOME: l2.home, USERPROFILE: l2.home, TYCON_HOME: l2.tyconHome, TYCON_PROFILE: '0', TYCON_INTEGRATIONS_DIR: f.dir, TYCON_TIME_TRACKING: 'fake' };
+  assert.strictEqual(ws.chosen({ env, home: l2.home }).manifest.mcp.server, 'otro-nombre-del-mcp');
+});

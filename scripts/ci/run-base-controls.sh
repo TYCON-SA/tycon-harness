@@ -5,7 +5,12 @@
 # POR QUÉ EXISTE: la revisión de un pedido corría los controles tal como venían en el propio pedido. Un pedido que vaciaba
 # el pre-commit, borraba el guion de un control, sumaba su excepción a una lista o bajaba un modo de `block` a `warn` se
 # salteaba el control que lo tenía que frenar. Acá el control y su regla salen de la base (la punta de la rama destino; en
-# la cola de merge, la base del grupo) y el contenido, del pedido.
+# la cola de merge, la base del grupo) y el contenido, del pedido mezclado con la base, como lo mide la cola: si lo
+# revisado no trae la base (un merge que GitHub armó con un main viejo, o una rama atrasada), la mezcla se arma acá, y si
+# choca es rojo. Así un renombre de main no frena a un pedido atrasado, y lo que main endureció lo alcanza igual. Si el
+# pedido y main cambian la misma regla, no se ofrece la firma: lo firmado sería lo de la rama, y lo medido, la mezcla.
+# Límite: la mezcla usa los atributos de fusión del checkout, así que un `merge=union` que declara el pedido puede volver
+# limpia una mezcla que en GitHub choca.
 #
 # CÓMO: un COMMIT ARMADO. El árbol de la punta del pedido con cada archivo de regla del inventario
 # (scripts/ci/controls-from-base.json) en su versión de la base, en el disco y en el índice (hay controles que leen su
@@ -47,6 +52,9 @@
 #        (la cuenta de la noche: las constancias que salieron de <rev>, con y sin la firma del dueño; la llama
 #        scripts/ci/approvals-removed.js)
 #   bash scripts/ci/run-base-controls.sh classify --root <dir> --base <rev> --entries '<json>'   (la clase de la firma, en JSON)
+#   bash scripts/ci/run-base-controls.sh unnamed --hook <copia> --harness <arnés> [--public-hook <archivo>]
+#        (los controles del inventario del arnés que su gancho público llama y la copia propia del pre-commit de otro
+#        repo no; la copia los corre con el gancho público y TYCON_CHECKS_ONLY. Uno que el arnés no trae sale 1)
 #
 # LA REFIRMA TRAS TRAER MAIN. Traer main a un pedido con un cambio de control firmado cambia el blob de lo firmado y pide
 # firmar otra vez. Si `scripts/lib/refresh-after-main.js` comprueba que es sólo eso (`approve --base`), la firma la puede
@@ -69,7 +77,21 @@ command -v node >/dev/null 2>&1 || { echo "no pude correr: no encuentro node en 
 command -v git >/dev/null 2>&1 || { echo "no pude correr: no encuentro git en el PATH"; exit 9; }
 # la carpeta de este guion, para cargar la ventana de permiso de su mismo árbol (la pone siempre este guion)
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || { echo "no pude correr: no encuentro la carpeta del guion"; exit 9; }
-BASE_CONTROLS_STDIN_INTERACTIVE="${STDIN_INTERACTIVE}" BASE_CONTROLS_SELF_DIR="${SELF_DIR}" exec node - "$@" <<'JS'
+# El programa de node va entre `: <<'JS'` y el renglón «JS», y se le pasa por la entrada leído de este archivo, sin here
+# document: el bash 3.2 de macOS escribe el temporal de uno en /var/tmp, /tmp o la carpeta actual, y dentro de un encierro
+# que no lo deja (la corrida aislada, con la ventana de permiso clasificando una firma desde otra carpeta) no arrancaba.
+# Ese `: <<'JS'` no corre nunca (el exec reemplaza a bash antes): guarda el programa como texto para `bash -n` y es la
+# marca por la que lo lee la ventana de Windows (run-base-controls-window.js). Se lee una vez antes de lanzarlo, y sin él
+# no corre nada: un programa vacío saldría 0. Va todo en un solo grupo: bash lo lee entero antes de correrlo, así sed no
+# se come lo que a bash le falta leer cuando el guion le llega por una tubería (`bash <(git show …)`), que terminaba en 0
+# sin correr nada.
+{
+  PROGRAMA="$(sed -e '1,/^: [<][<].JS.$/d' -e '/^JS$/,$d' "${BASH_SOURCE[0]:-}")" || PROGRAMA=""
+  [ -n "${PROGRAMA}" ] || { echo "no pude correr: no pude leer el programa de node de ${BASH_SOURCE[0]:-la entrada}"; exit 9; }
+  BASE_CONTROLS_STDIN_INTERACTIVE="${STDIN_INTERACTIVE}" BASE_CONTROLS_SELF_DIR="${SELF_DIR}" exec node - "$@" < <(printf '%s\n' "${PROGRAMA}")
+  echo "no pude correr: no pude lanzar node"; exit 9
+}
+: <<'JS'
 'use strict';
 const fs = require('fs');
 const os = require('os');
@@ -89,7 +111,7 @@ const [cmd, ...rest] = enLaVentana ? JSON.parse(process.env.BASE_CONTROLS_WINDOW
 delete process.env.BASE_CONTROLS_WINDOW_ARGS;
 
 function usage(code) {
-  console.error('uso: bash scripts/ci/run-base-controls.sh run|pending --root <pedido> --base <rev> --range <base>...<punta> · check-inventory --root <dir> [--ref <rev>] · approve --root <dir> [--base <rev>] --entries <json> | --file <ruta> --rev <commit> · classify --root <dir> --base <rev> --entries <json> · removed-approvals --root <dir> --ref <rev> (--from <commit> | --since <fecha>) [--until <fecha>]');
+  console.error('uso: bash scripts/ci/run-base-controls.sh run|pending --root <pedido> --base <rev> --range <base>...<punta> · check-inventory --root <dir> [--ref <rev>] · approve --root <dir> [--base <rev>] --entries <json> | --file <ruta> --rev <commit> · classify --root <dir> --base <rev> --entries <json> · removed-approvals --root <dir> --ref <rev> (--from <commit> | --since <fecha>) [--until <fecha>] · unnamed --hook <copia> --harness <arnés> [--public-hook <archivo>]');
   process.exit(code);
 }
 function opt(name) {
@@ -203,6 +225,27 @@ function shimTarget(text) {
   return m ? m[1] : null;
 }
 
+// La copia propia del pre-commit en el privado adelgazado (declarada en «own» de .tycon/internal-forms.json) le pide al
+// gancho público del arnés que corra los controles del inventario que ella no nombra: llama a `run-base-controls.sh
+// unnamed` y le pasa la lista. Esa copia no deja controles sin paso, porque el inventario público ya obliga a que el
+// gancho público, o una pasada, corra cada uno. La declaración se lee de `formsRev`, en un pedido la base: un pedido
+// que trae su propia declaración (el del arnés, que no delega) no la hace valer. Y como la llamada se lee como texto,
+// cambiar una copia que delega pide la constancia del dueño (`analyze`): sacarle un control o dejar la delegación sin
+// efecto no entra sin firma.
+const FORMS = '.tycon/internal-forms.json';
+const DELEGATES = /\$\{?TCG\}?\/scripts\/ci\/run-base-controls\.sh"?\s+unnamed\b/;
+function delegatesUnnamed(root, rev, inv, hookText, formsRev = rev) {
+  const delegates = String(hookText || '').split('\n').some((raw) => {
+    const line = raw.trim();
+    return line && !line.startsWith('#') && !/^echo\b/.test(line) && DELEGATES.test(line);
+  });
+  if (!delegates) return false;
+  try {
+    const own = (JSON.parse(show(root, formsRev, FORMS) || '{}') || {}).own;
+    return !!own && typeof own === 'object' && !Array.isArray(own) && Object.prototype.hasOwnProperty.call(own, inv.hook);
+  } catch (_) { return false; }
+}
+
 // los guiones que llama el pre-commit: `$REPO_ROOT/…`, `$TCG/…` y `harness_publishing <guion>` (sin comentarios ni echo)
 function scriptsCalledByHook(text) {
   const out = new Set();
@@ -301,8 +344,11 @@ function resolveInventory(root, rev, inv) {
   return { rules, owner, closure, workflows, signOnChange };
 }
 
-/** Los problemas del inventario contra un árbol: guiones que faltan, controles sin entrada o que nada corre, datos sin clasificar. */
-function inventoryProblems(root, rev, inv) {
+/**
+ * Los problemas del inventario contra un árbol: guiones que faltan, controles sin entrada o que nada corre, datos sin
+ * clasificar. `formsRev`: de dónde sale la declaración de la copia que delega (en un pedido, la base).
+ */
+function inventoryProblems(root, rev, inv, formsRev = rev) {
   const problems = [];
   const exists = (p) => !!blobOf(root, rev, p);
   if (!Array.isArray(inv.passes) || !inv.passes.length) problems.push('el inventario no trae ninguna pasada («passes»): sin pasadas no corre ningún control');
@@ -339,9 +385,11 @@ function inventoryProblems(root, rev, inv) {
     else if (!listed.has(norm)) problems.push(`control sin inventariar: ${norm} (el destino del atajo ${p})`);
     else viaShim.add(norm);
   }
-  // un control del inventario que nada corre (ni el pre-commit, directo o por un atajo declarado, ni una pasada) sobra
+  // un control del inventario que nada corre (ni el pre-commit, directo o por un atajo declarado, ni una pasada) sobra;
+  // la copia del privado que delega en el gancho público (arriba) los corre todos
+  const delegated = delegatesUnnamed(root, rev, inv, hookText, formsRev);
   for (const c of inv.controls) {
-    if (!c.script || !exists(c.script) || c.script === SELF) continue;
+    if (!c.script || !exists(c.script) || c.script === SELF || delegated) continue;
     if (!called.has(c.script) && !viaShim.has(c.script) && !passText.includes(c.script)) problems.push(`ningún paso corre ${c.script}: lo llama el pre-commit o una pasada del inventario, o no es un control`);
   }
   const { rules, closure } = resolveInventory(root, rev, inv);
@@ -706,25 +754,56 @@ function analyze() {
   if (!m) notRun(`--range pide <base>...<punta> y recibió «${range}»`);
   const base = resolveCommit(root, baseArg);
   if (!base) notRun(`la base ${baseArg} no resuelve a un commit en ${root}: sin la base no hay de dónde correr los controles (y los del pedido no son la revisión)`);
-  const rangeBase = resolveCommit(root, m[1]); const tip = resolveCommit(root, m[2]);
-  if (!rangeBase || !tip) notRun(`la historia no alcanza para --range ${range} en ${root}`);
-  const mbR = git(root, ['merge-base', rangeBase, tip], { allowFail: true });
-  if (mbR.status !== 0) notRun(`no hay ancestro común entre ${m[1]} y ${m[2]}`);
-  const mb = trimNl(mbR.stdout);
+  const rangeBase = resolveCommit(root, m[1]); const revisado = resolveCommit(root, m[2]);
+  if (!rangeBase || !revisado) notRun(`la historia no alcanza para --range ${range} en ${root}`);
   // el commit revisado en GitHub es un merge cuyo PRIMER padre es la base (o una versión anterior de ella: main pudo
   // avanzar entre que GitHub armó el merge y la revisión, o el trabajo se volvió a correr): el pedido propiamente dicho es
   // su segundo padre. Una rama que termina en «merge de main» también es un merge, pero su primer padre es la rama, que
   // no está en la base, y el segundo es main: ahí el pedido es la punta misma (si no, las entradas a firmar saldrían con
   // los contenidos de main)
-  const parents = trimNl(git(root, ['rev-list', '--parents', '-n', '1', tip]).stdout).split(' ').slice(1);
+  const parents = trimNl(git(root, ['rev-list', '--parents', '-n', '1', revisado]).stdout).split(' ').slice(1);
   const primeroEnLaBase = parents.length === 2
     && git(root, ['merge-base', '--is-ancestor', parents[0], rangeBase], { allowFail: true }).status === 0;
-  const prHead = primeroEnLaBase ? parents[1] : null;
+  let prHead = primeroEnLaBase ? parents[1] : null;
+  // Lo que se mide es el pedido mezclado con la base, como lo mide la cola de merge. Si la base no está en lo revisado (un
+  // merge que GitHub armó con un main viejo, o una rama atrasada), se arma esa mezcla acá: así lo que main renombró o
+  // endureció después de que salió el pedido se mide con las reglas de main sobre un árbol que lo trae. Si la mezcla
+  // choca, no hay qué medir: rojo, y el pedido trae main
+  let tip = revisado;
+  let mezclado = false;
+  if (git(root, ['merge-base', '--is-ancestor', base, revisado], { allowFail: true }).status !== 0) {
+    // se mezcla lo revisado entero (lo que agrega un merge también se mide); la punta del pedido sólo ancla la firma
+    const pedido = prHead || revisado;
+    const mt = git(root, ['merge-tree', '--write-tree', '--name-only', base, revisado], { allowFail: true });
+    const salida = String(mt.stdout || '').split('\n');
+    if (mt.status === 1) {
+      const choques = salida.slice(1, salida.indexOf('')).filter(Boolean);
+      console.log(`❌ base-controls: rojo — el pedido choca con main${choques.length ? ` (${choques.map(safe).join(', ')})` : ''}: traé main y resolvé el choque. La revisión mide el pedido mezclado con la base, y con un choque no hay mezcla que medir`);
+      process.exit(1);
+    }
+    if (mt.status !== 0 || !/^[0-9a-f]{40,64}$/.test(salida[0].trim())) notRun(`no pude mezclar el pedido con la base (git merge-tree salió con ${mt.status}): sin la mezcla no sé qué mide la cola`);
+    tip = trimNl(git(root, ['commit-tree', salida[0].trim(), '-p', base, '-p', revisado, '-m', `el pedido ${short(pedido)} mezclado con la base ${short(base)}`], { env: IDENT }).stdout);
+    prHead = pedido;
+    mezclado = true;
+  }
+  // la mezcla es la base más el pedido: su ancestro es la base misma (con un rango que arranca en otra base, como el del
+  // privado, lo que trajo main contaría como del pedido)
+  let mb = base;
+  if (!mezclado) {
+    const mbR = git(root, ['merge-base', rangeBase, tip], { allowFail: true });
+    if (mbR.status !== 0) notRun(`no hay ancestro común entre ${m[1]} y ${m[2]}`);
+    mb = trimNl(mbR.stdout);
+  }
   const read = readInventory(root, base);
   if (read.missing) notRun(`la base ${short(base)} no trae ${INVENTORY}: no sé qué controles correr desde ella`);
   if (read.error) notRun(`el inventario de la base (${INVENTORY}) no se lee: ${read.error}`);
   const inv = read.inv;
   const { rules, owner, workflows, signOnChange } = resolveInventory(root, base, inv);
+  // la copia que delega en el gancho público (delegatesUnnamed): su llamada se lee como texto, así que cambiarla pide la
+  // constancia del dueño aunque la base y el pedido pasen. También la del pedido que empieza a delegar: con la
+  // declaración de la base, podría sumar una delegación que nunca corre y sacar un control en el mismo pedido
+  if (delegatesUnnamed(root, base, inv, show(root, base, inv.hook))
+    || delegatesUnnamed(root, tip, inv, show(root, tip, inv.hook), base)) signOnChange.add(inv.hook);
   const controlFiles = [...new Set([...rules, ...workflows.map((w) => w.path)])].sort();
   // un archivo que el pedido suma y que el código de un control carga en la punta también entra: la base no lo conoce,
   // y sin él la firma de un control que se afloja no lo ancla (se podría cambiar después con la firma valiendo). Lo que
@@ -747,9 +826,12 @@ function analyze() {
   // la constancia ancla lo que el dueño ve en su rama: el pedido, no el merge que arma GitHub
   const signedRev = prHead || tip;
   const entries = changed.map((p) => ({ path: p, blob: blobOf(root, signedRev, p) || 'borrado' }));
+  // con la mezcla, la firma ancla lo del pedido y se mide lo mezclado: si en una regla difieren (main la cambió o la
+  // renombró también), lo firmado no sería lo medido, y la constancia serviría después para otra cosa. Ahí no se firma
+  const desparejos = mezclado ? changed.filter((p) => blobOf(root, signedRev, p) !== blobOf(root, tip, p)) : [];
   const files = approvalFiles(inv);
   const target = approvalsTarget(changed, files, opt('--approvals-out'), files[0] || '.tycon/control-changes.jsonl');
-  return { root, base, baseArg, rangeBase, tip, mb, prHead, inv, rules, owner, workflows, signOnChange, controlFiles, changed, entries, hash: hashOf(entries), approvalsOut: target.out, noFolder: target.noFolder, hayCarpeta: target.hayCarpeta };
+  return { root, base, baseArg, rangeBase, tip, mb, prHead, mezclado, desparejos, inv, rules, owner, workflows, signOnChange, controlFiles, changed, entries, hash: hashOf(entries), approvalsOut: target.out, noFolder: target.noFolder, hayCarpeta: target.hayCarpeta };
 }
 function printChanges(a) {
   if (!a.changed.length) { console.log('base-controls: el pedido no cambia ningún archivo de regla ni workflow del inventario'); return; }
@@ -779,7 +861,7 @@ function alarm(a) {
     const before = blobOf(a.root, from, w.path); const after = blobOf(a.root, to, w.path);
     if (before === after || approvedEntry(approvals, w.path, after || 'borrado')) continue;
     const last = trimNl(git(a.root, ['log', '-1', '--format=%H', `${from}..${to}`, '--', w.path], { allowFail: true }).stdout || '') || to;
-    console.log(`⚠️ base-controls: aviso — main trajo ${w.path} en ${short(last)} sin constancia del dueño. Revisá qué cambió (git diff ${short(from)} ${short(to)} -- ${w.path}); si está bien, firmalo desde una sesión, con tu click en el cuadro de opciones o tu «aprobado» (o en una terminal, con --terminal): bash ${SELF} approve --root <repo> --file ${w.path} --rev ${short(to)}`);
+    console.log(`⚠️ base-controls: aviso — main trajo ${w.path} en ${short(last)} sin constancia del dueño. Revisá qué cambió (git diff ${short(from)} ${short(to)} -- ${w.path}); si está bien, lo firma el dueño: desde una sesión se corre este comando solo y él lo aprueba con su click en el cuadro de opciones o su «aprobado» (o lo corre él en una terminal, con --terminal): bash ${SELF} approve --root <repo> --file ${w.path} --rev ${short(to)}`);
   }
   for (const p of [...a.rules].sort()) {
     if (!p.endsWith('.json') || blobOf(a.root, from, p) === blobOf(a.root, to, p)) continue;
@@ -817,20 +899,70 @@ function cmdCheckInventory() {
   process.exit(problems.length ? 1 : 0);
 }
 
+// La lista para la copia propia del pre-commit de otro repo: los guiones del inventario del arnés que su gancho público
+// llama y la copia no, uno por renglón. Uno que el arnés no trae frena (sale 1 y lo nombra): ese control no podría correr.
+function cmdUnnamed() {
+  const hookArg = opt('--hook'); const harnessArg = opt('--harness');
+  if (!hookArg || !harnessArg) usage(2);
+  const harness = path.resolve(harnessArg);
+  const pub = path.resolve(opt('--public-hook') || path.join(harness, '.githooks', 'pre-commit-checks'));
+  const read = (f, what) => { try { return fs.readFileSync(f, 'utf8'); } catch (e) { return notRun(`no pude leer ${what} (${f}): ${e.code || e.message}`); } };
+  const real = (f) => { try { return fs.realpathSync(f); } catch (_) { return path.resolve(f); } };
+  if (real(pub) === real(hookArg)) notRun(`el gancho público (${pub}) es la misma copia: no hay a quién pedirle los controles que no nombra`);
+  let inv;
+  try { inv = JSON.parse(read(path.join(harness, INVENTORY), 'el inventario del arnés')); } catch (e) { notRun(`el inventario del arnés no se lee: ${e.message}`); }
+  if (!inv || !Array.isArray(inv.controls)) notRun('el inventario del arnés no trae «controls»');
+  const listed = new Map(inv.controls.filter((c) => c && typeof c.script === 'string').map((c) => [c.script, c]));
+  // un gancho que llama al atajo de un nombre viejo (declarado en el mapa de renombres del arnés) llama a su destino
+  let renames = [];
+  try { renames = JSON.parse(fs.readFileSync(path.join(harness, 'scripts', 'lib', 'renames.json'), 'utf8')).entries || []; } catch (_) { renames = []; }
+  const control = (p) => {
+    if (listed.has(p)) return p;
+    let shim = null;
+    try { shim = fs.readFileSync(path.join(harness, p), 'utf8'); } catch (_) { return null; }
+    const target = shimTarget(shim);
+    return target && listed.has(target) && renames.some((e) => e && e.kind === 'file' && e.old === p && e.new === target) ? target : null;
+  };
+  const named = new Set([...scriptsCalledByHook(read(path.resolve(hookArg), 'la copia del pre-commit'))].map(control).filter(Boolean));
+  // se pide con el nombre que usa el gancho público, que es el que su filtro reconoce
+  const unnamed = [...scriptsCalledByHook(read(pub, 'el gancho público'))]
+    .filter((s) => { const c = control(s); return c && c !== SELF && !named.has(c); }).sort();
+  const missing = unnamed.filter((s) => !fs.existsSync(path.join(harness, s)) && (listed.get(s) || {}).optional !== true);
+  if (missing.length) {
+    for (const s of missing) console.log(`falta ${s} en el arnés (${harness}): ese control no podría correr`);
+    process.exit(1);
+  }
+  for (const s of unnamed) if (fs.existsSync(path.join(harness, s))) console.log(s);
+  process.exit(0);
+}
+
 function cmdRun() {
   const a = analyze();
   const outArg = opt('--out');
   const work = outArg ? (fs.mkdirSync(outArg, { recursive: true }), fs.mkdtempSync(path.join(path.resolve(outArg), 'base-controls-'))) : fs.mkdtempSync(path.join(os.tmpdir(), 'base-controls-'));
   const reasons = [];
   try {
-    console.log(`base-controls: base ${short(a.base)} · ancestro ${short(a.mb)} · punta ${short(a.tip)}${a.prHead ? ` (merge; el pedido es ${short(a.prHead)})` : ''} · los controles y su regla salen de la base`);
+    console.log(`base-controls: base ${short(a.base)} · ancestro ${short(a.mb)} · punta ${short(a.tip)}${a.mezclado ? ` (el pedido ${short(a.prHead)} mezclado con la base)` : a.prHead ? ` (merge; el pedido es ${short(a.prHead)})` : ''} · los controles y su regla salen de la base`);
     // el inventario: el de la base contra la base (sus guiones están), y el del pedido contra el pedido (sus controles nuevos tienen entrada)
     const baseProblems = inventoryProblems(a.root, a.base, a.inv);
-    for (const p of baseProblems) console.log(`❌ base-controls: inventario de la base — ${p}`);
-    if (baseProblems.length) reasons.push('el inventario de la base no cuadra');
     const tipRead = readInventory(a.root, a.tip);
+    // Un problema de la base que el pedido deja bien no frena: cuando el público suma un control que la copia propia del
+    // hook del privado no llama, todo pedido del privado frenaría, también el que lo arregla. Se mira con el inventario
+    // DE LA BASE sobre el árbol del pedido: sacar el control del inventario del pedido no lo arregla. Sin un inventario
+    // del pedido que se lea, frena todo como siempre.
+    // Se perdona sólo «ningún paso corre X», y sólo si el pedido no cambia ningún archivo de control salvo el hook, ni el
+    // mapa de renombres: así no puede llamar al control y vaciarlo en el mismo pedido, ni llamarlo por un atajo nuevo. Un
+    // guion que falta no se perdona (el pedido lo traería con cualquier contenido).
+    const RENOMBRES = 'scripts/lib/renames.json';
+    const soloElHook = a.changed.every((f) => f === a.inv.hook) && blobOf(a.root, a.mb, RENOMBRES) === blobOf(a.root, a.tip, RENOMBRES);
+    const sigueEnElPedido = new Set(tipRead.inv ? inventoryProblems(a.root, a.tip, a.inv, a.base) : baseProblems);
+    const arreglados = soloElHook ? baseProblems.filter((p) => p.startsWith('ningún paso corre ') && !sigueEnElPedido.has(p)) : [];
+    const quedan = baseProblems.filter((p) => !arreglados.includes(p));
+    for (const p of arreglados) console.log(`· base-controls: inventario de la base — ${p} (el pedido lo arregla)`);
+    for (const p of quedan) console.log(`❌ base-controls: inventario de la base — ${p}`);
+    if (quedan.length) reasons.push('el inventario de la base no cuadra');
     if (tipRead.inv) {
-      const tipProblems = inventoryProblems(a.root, a.tip, tipRead.inv);
+      const tipProblems = inventoryProblems(a.root, a.tip, tipRead.inv, a.base);
       // los nombres y rutas salen del inventario del pedido: un salto de línea no arma una línea propia
       for (const p of tipProblems) console.log(`❌ base-controls: inventario del pedido — ${safe(p)}`);
       if (tipProblems.length) reasons.push('el inventario del pedido no cuadra');
@@ -865,7 +997,8 @@ function cmdRun() {
     if (!baseRes.length) reasons.push('no corrió ninguna pasada del inventario desde la base: no medido no es verde');
     const baseRed = baseRes.some((r) => !r.ok) || baseProblemsOfPr.length > 0;
     const prRed = prRes.some((r) => !r.ok);
-    if (prRed) reasons.push(`la pasada del pedido frena: ${prRes.filter((r) => !r.ok).map((r) => r.name).join(', ')}`);
+    // mezclado con la base, el pedido trae también lo que main endureció: el rojo puede venir de ahí, no del pedido
+    if (prRed) reasons.push(`la pasada del pedido frena: ${prRes.filter((r) => !r.ok).map((r) => r.name).join(', ')}${a.mezclado ? ' (se midió mezclado con la base: el rojo puede venir de una regla que main endureció; traé main para verlo en tu rama)' : ''}`);
     // una aprobación por delegación nueva (su hash no está en la base) ya no vale, salvo la refirma tras traer main que el
     // clasificador de la base comprueba sobre el pedido, para estas mismas entradas y a partir de esa constancia del dueño
     const approvals = readApprovals(a.root, a.tip, approvalFiles(a.inv));
@@ -884,7 +1017,9 @@ function cmdRun() {
     let approved = false;
     let refreshedOf = null;
     const mustSign = a.changed.filter((p) => a.signOnChange.has(p));
-    if ((baseRed || mustSign.length) && !prRed) {
+    if ((baseRed || mustSign.length) && !prRed && a.desparejos.length) {
+      reasons.push(DESPAREJOS(a.desparejos));
+    } else if ((baseRed || mustSign.length) && !prRed) {
       if (a.changed.length) {
         // la línea tiene que cuadrar entera: el hash del cambio, y sus reglas son las que dan ese hash
         const signed = approvals.some((x) => x && x.hash === a.hash && Array.isArray(x.rules) && hashOf(x.rules) === a.hash && !unproven.includes(x));
@@ -931,10 +1066,12 @@ function cmdRun() {
   }
 }
 
+const DESPAREJOS = (ps) => `el pedido y main cambian la misma regla (${ps.map(safe).join(', ')}): la firma ancla lo que tiene tu rama, y ahí no está lo de main. Traé main y pedí la firma después`;
 function cmdPending() {
   const a = analyze();
   printChanges(a);
   if (!a.changed.length) { console.log('base-controls: no hay nada que firmar'); return; }
+  if (a.desparejos.length) { console.log(`base-controls: ${DESPAREJOS(a.desparejos)}`); return; }
   console.log(`hash: ${a.hash}`);
   if (a.noFolder.length) { console.log(`base-controls: ${NO_FOLDER(a.noFolder, a.hayCarpeta)}`); return; }
   // las constancias del dueño (sin `via`) de lo commiteado, con el archivo de donde salió cada una
@@ -960,6 +1097,13 @@ function cmdPending() {
   let deMain = null;
   try { deMain = refreshedFrom(a, work, deDueno.map(({ x }) => x), baseApprovalHashes(a.root, a.base)); } finally { fs.rmSync(work, { recursive: true, force: true }); }
   if (deMain) { console.log(`base-controls: no hace falta firmar: es lo que el dueño firmó (${deMain.slice(0, 12)}) más lo que trajo main, con fusión limpia`); return; }
+  // si la revisión la va a exigir: siempre que cambie un archivo que firma siempre; si no, sólo cuando los controles de
+  // la base dan rojo con el pedido, y eso lo mide `run`, que corre las dos pasadas. Sin esto, el hash de arriba se lee
+  // como «hay que firmar» aunque el pedido entre sin constancia
+  const siempre = a.changed.filter((p) => a.signOnChange.has(p));
+  console.log(siempre.length
+    ? `base-controls: la revisión va a exigir la constancia: cambia ${siempre.join(', ')}, que firma siempre`
+    : 'base-controls: la revisión exige la constancia sólo si los controles de la base dan rojo con el pedido (lo mide `run`); con las dos pasadas en verde no la pide, salvo otro rojo (el inventario, una delegación sin probar)');
   const firma = signCommand(a.root, a.entries, a.approvalsOut, a.baseArg, { guion: selfPath() });
   console.log(`la firma, desde la sesión (el dueño la aprueba en la ventana de permiso, o, donde la ventana no llega, con su click en el cuadro de opciones o su «aprobado»): ${firma}`);
   console.log(`o, si prefiere, en su terminal: ${firma} --terminal`);
@@ -1215,6 +1359,36 @@ function approveByWindow(root, out, entries, c) {
   writeApproval(root, out, entries, refreshLine(entries, c.refirma_de, reg.maquina, reg.sesion));
 }
 
+// la biblioteca de las huellas de las constancias y la carpeta de estado de esta cuenta, o null si no están al lado
+function huellasDeLaMaquina() {
+  try {
+    const dir = process.env.BASE_CONTROLS_SELF_DIR || '';
+    const lib = require(path.join(dir, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'control-change-prints.js'));
+    const stateDir = require(path.join(dir, '..', 'setup', 'harness', 'tycon-home.js')).stateDir(os.homedir());
+    return { lib, stateDir };
+  } catch (e) { return { error: String((e && e.message) || e).split('\n')[0] }; }
+}
+
+// la huella de lo que escribió approve, en el registro de esta máquina: el freno de la consola la pide antes de commitear
+// o empujar la constancia. Sin poder anotarla, se dice: la constancia ya está escrita y se firma de nuevo para anotarla
+function anotarHuella(root, rel, texto) {
+  const h = huellasDeLaMaquina();
+  try {
+    if (h.error) throw new Error(h.error);
+    h.lib.anotar({ stateDir: h.stateDir, repo: root, archivo: rel, texto });
+  } catch (e) {
+    console.error(`⚠️ run-base-controls approve: la constancia quedó escrita, pero no pude anotar su huella en esta máquina (${e.message}): el freno la va a frenar antes del commit o del empuje. Firmala de nuevo para anotarla.`);
+  }
+}
+
+// ¿esta máquina ya tiene la huella de este texto? Sin poder mirar, «no»: la firma se pide de nuevo y la anota
+function huellaAnotada(texto) {
+  const h = huellasDeLaMaquina();
+  if (h.error) return false;
+  const c = h.lib.conocidas(h.stateDir);
+  return !c.error && c.huellas.has(h.lib.huellaDe(texto));
+}
+
 // por qué la firma no escribiría nada en la carpeta de constancias (la de este cambio ya está, o algo con su nombre), o null
 function yaEnLaCarpeta(root, out, entries) {
   if (!isApprovalDir(out)) return null;
@@ -1223,8 +1397,10 @@ function yaEnLaCarpeta(root, out, entries) {
   try { st = fs.lstatSync(path.join(root, rel)); } catch (_) { return null; }
   if (!st.isFile()) return `${safe(rel)} ya existe y no es un archivo común: no hace falta firmar, hay que mirarlo`;
   let prev = null;
-  try { prev = JSON.parse(fs.readFileSync(path.join(root, rel), 'utf8')); } catch (_) { prev = null; }
-  if (prev && holdsUp(prev) && prev.hash === hashOf(entries)) return `${safe(rel)} ya trae esta misma firma: no hace falta firmar de nuevo`;
+  let crudo = '';
+  try { crudo = fs.readFileSync(path.join(root, rel), 'utf8'); prev = JSON.parse(crudo); } catch (_) { prev = null; }
+  // la misma firma sin su huella en esta máquina (se firmó en otra): firmar de nuevo acá anota la huella sin tocar el archivo
+  if (prev && holdsUp(prev) && prev.hash === hashOf(entries)) return huellaAnotada(crudo) ? `${safe(rel)} ya trae esta misma firma: no hace falta firmar de nuevo` : null;
   return `${safe(rel)} ya existe y no es esta firma: miralo antes de pedir la firma`;
 }
 
@@ -1234,6 +1410,7 @@ function writeApproval(root, out, entries, line) {
     const dest = path.join(root, out);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.appendFileSync(dest, `${line}\n`);
+    anotarHuella(root, out, line);
     console.log(`✅ constancia escrita en ${out}: commiteala en el pedido.`);
     return;
   }
@@ -1254,13 +1431,19 @@ function writeApproval(root, out, entries, line) {
       }
       let prev = null; let why = 'no es esta firma';
       try { prev = JSON.parse(fs.readFileSync(dest, 'utf8')); } catch (e2) { why = e2.code ? `no lo pude leer (${e2.code})` : 'no es JSON'; }
-      if (prev && holdsUp(prev) && prev.hash === hash) { console.log(`✅ ya estaba firmado: ${rel} trae esta misma firma; no se tocó.`); return; }
+      if (prev && holdsUp(prev) && prev.hash === hash) {
+        // firmada en otra máquina: con la firma del dueño de acá, se anota su huella sin tocar el archivo
+        anotarHuella(root, rel, fs.readFileSync(dest, 'utf8'));
+        console.log(`✅ ya estaba firmado: ${rel} trae esta misma firma; no se tocó y su huella quedó anotada en esta máquina.`);
+        return;
+      }
       console.error(`run-base-controls approve: ${safe(rel)} ya existe y ${why}: no se tocó y no se firmó nada. Miralo antes de seguir.`);
       process.exit(1);
     }
     console.error(`run-base-controls approve: no pude escribir ${safe(rel)} (${e.code || e.message}): no se firmó nada.`);
     process.exit(1);
   }
+  anotarHuella(root, rel, line);
   console.log(`✅ constancia escrita en ${rel}: commiteala en el pedido.`);
 }
 
@@ -1271,6 +1454,7 @@ try {
   else if (cmd === 'approve') cmdApprove();
   else if (cmd === 'classify') cmdClassify();
   else if (cmd === 'removed-approvals') cmdRemovedApprovals();
+  else if (cmd === 'unnamed') cmdUnnamed();
   else if (cmd === '-h' || cmd === '--help') usage(0);
   else usage(2);
 } catch (e) {

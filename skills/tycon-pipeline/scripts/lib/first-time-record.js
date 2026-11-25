@@ -25,6 +25,11 @@ function recordFile(home, real) {
 function writeRecord(home, storyPath, storyId) {
   const real = realPath(storyPath);
   if (!real) throw new Error(`no existe la historia ${storyPath}`);
+  return writeRecordAt(home, real, storyId);
+}
+
+/** La constancia para una ruta real dada, exista o no todavía el archivo (la usa `move-story` antes de mover). */
+function writeRecordAt(home, real, storyId) {
   const f = recordFile(home, real);
   fs.mkdirSync(path.dirname(f), { recursive: true });
   fs.writeFileSync(f, `${JSON.stringify({ path: real, story: String(storyId), at: new Date().toISOString() }, null, 2)}\n`);
@@ -43,4 +48,4 @@ function isRecorded(home, storyPath, storyId) {
   }
 }
 
-module.exports = { RECORD_DIR, writeRecord, isRecorded };
+module.exports = { RECORD_DIR, recordFile, writeRecord, writeRecordAt, isRecorded };

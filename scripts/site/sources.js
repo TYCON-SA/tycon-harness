@@ -1101,9 +1101,45 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     return true;
   }
 
+  // La huella de una oficina recién dada de alta, sin esperar la pasada entera: la pide la revisión de cada minuto del
+  // centro cuando hay una máquina esperando. Baja sólo los archivos de huellas y relee las huellas del espejo; una bajada
+  // que no termina entera no cambia nada (con lo leído a medias se soltaría una clave cuya huella sigue ahí). Como mucho
+  // una por minuto, y nunca a la vez que un refresco: los dos escriben el mismo espejo.
+  const HUELLAS_A_PEDIDO_MS = 60000;
+  let huellasEnCurso = null;
+  let huellasUltima = -Infinity;
+  function leerHuellasAPedido() {
+    if (huellasEnCurso || enCurso || st.buzon.bajando) return Promise.resolve({ leido: false, motivo: 'ocupado' });
+    const t = ahora();
+    if (t - huellasUltima < HUELLAS_A_PEDIDO_MS) return Promise.resolve({ leido: false, motivo: 'tope' });
+    huellasUltima = t;
+    huellasEnCurso = (async () => {
+      const conf = st.ultimoBueno;
+      const mb = conf && isObject(conf.site) && isObject(conf.site.mailbox) ? conf.site.mailbox : null;
+      const nube = mb ? lasNubes().find((n) => Array.isArray(n.PROVEEDORES_DE_BUZON) && n.PROVEEDORES_DE_BUZON.includes(mb.provider)) : null;
+      if (!mb || !nube || !cfg.mailboxCredencial) return { leido: false, motivo: 'sin_buzon' };
+      const opts = { cuenta: mb.account, contenedor: mb.container, credencial: cfg.mailboxCredencial, dir: dirBuzon, urlBase: urlBuzon, sinHilos: true, soloHuellas: true, budgetMs: presupuestoBuzonMs, log: (l) => log(`huellas a pedido: ${l}`) };
+      let r;
+      try { r = nube.__archivo ? await require('./summaries.js').bajarEnWorker({ modulo: nube.__archivo, ...opts }) : await nube.bajarBuzon(opts); }
+      catch (e) { r = { codigo: 1, res: { estado: 'sin_red', motivo: e.message } }; }
+      const res = (r && r.res) || {};
+      if ((res.bajados || 0) > 0) espejoCambio();
+      if (!(r && r.codigo === 0 && res.completo === true)) {
+        log(`huellas a pedido: la bajada no terminó entera (${res.estado || 'sin estado'}${res.motivo ? `: ${res.motivo}` : ''}); las huellas no cambian`);
+        return { leido: false, motivo: 'bajada_a_medias' };
+      }
+      const h = leerHuellas(dirBuzon, log);
+      if (!h.medido) { log('huellas a pedido: el espejo no se pudo leer; las huellas no cambian'); return { leido: false, motivo: 'sin_leer' }; }
+      st.huellas = h;
+      return { leido: true };
+    })().finally(() => { huellasEnCurso = null; });
+    return huellasEnCurso;
+  }
+
   function refrescar() {
     if (enCurso) return enCurso;
-    enCurso = refrescarUnaVez().catch((e) => {
+    // una lectura de huellas a pedido en curso escribe el mismo espejo: el refresco espera que termine
+    enCurso = Promise.resolve(huellasEnCurso).catch(() => {}).then(() => refrescarUnaVez()).catch((e) => {
       // un refresco que se cae por algo inesperado deja el último modelo bueno, pero con banda (nunca en silencio)
       log(`el refresco falló de forma inesperada: ${e && e.stack ? e.stack : e}`);
       st.fallas.repo = st.fallas.repo || { desde: ahora(), estado: 'falla_interna' };
@@ -1151,6 +1187,8 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     personas: () => st.personas,
     /** Las huellas de oficina que subió cada carpeta del buzón (`leerHuellas`). */
     huellas: () => st.huellas,
+    /** Baja y relee sólo las huellas, sin la pasada entera: `{ leido, motivo? }` (ver `leerHuellasAPedido`). */
+    leerHuellasAPedido,
     /** Los días de horas y tokens del espejo (`tabs/workdays.js leerJornadas`), releídos sólo si el espejo cambió. */
     jornadas: () => {
       if (!jornadasLeidas || jornadasLeidas.generacion !== memoria.generacion) jornadasLeidas = { generacion: memoria.generacion, valor: require('./tabs/workdays.js').leerJornadas(dirBuzon) };

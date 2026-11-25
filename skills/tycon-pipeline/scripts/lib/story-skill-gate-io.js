@@ -24,8 +24,9 @@ const io = require('./story-gate-io.js');
 
 const DEFAULT_STATE_DIR = io.DEFAULT_STATE_DIR;
 const MARKS_DIR = 'skill-marks';
-// los resultados de la revisión adversaria que la dan por hecha (`pendiente` espera una respuesta; `no-medido` no cuenta)
-const REVISADA = new Set(['limpio', 'corregido', 'preguntado', 'saltado']);
+// los resultados de la revisión adversaria que la dan por hecha (`pendiente` espera una respuesta; `no-medido` no cuenta;
+// `revalidada` la escribe la vuelta del plan que aprobó un cambio técnico de la historia, story-revalidation.js)
+const REVISADA = new Set(['limpio', 'corregido', 'preguntado', 'saltado', 'revalidada']);
 const MARK_PURGE_MS = 24 * 3600 * 1000; // marcas de más de un día se borran al escribir una nueva
 
 function safeSid(sessionId) {

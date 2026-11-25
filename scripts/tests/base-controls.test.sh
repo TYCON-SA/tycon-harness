@@ -26,6 +26,9 @@
 #       abierto: aviso sin constancia, nada con constancia; el veredicto no cambia
 #   T17 BaseControls_RuleAdditionsListedPerFile — las excepciones que suma el pedido, listadas por archivo; la alarma
 #       cuenta la que trajo main
+#   T116 BaseControls_BaseMovedAfterFork_MeasuresTheMerge — main renombra un archivo de la lista después de que salió el
+#       pedido: se mide el pedido mezclado con el main actual (también un merge de GitHub armado sobre un main viejo), y
+#       uno que choca con main da rojo
 #   T19 BaseControls_ApprovalFolder_SignatureInItsOwnFile_Passes — la firma en <carpeta>/<hash>.json vale, y `pending`
 #       apunta la firma a la carpeta
 #   T20 BaseControls_ApprovalFolder_OldJsonlStillCounts — con la carpeta en el inventario, la firma del jsonl viejo vale
@@ -54,6 +57,13 @@
 #   T57 BaseControls_JudgeFiles_SignOnEveryChange — el inventario real marca con «sign_on_change» lo que decide la
 #       revisión (el juez, el inventario, el clasificador de la refirma, las bibliotecas de la firma y su ventana en
 #       Windows), y un pedido que cambia el juez o la ventana sin poner a prueba lo que afloja es rojo sin la constancia
+#   T115 BaseControls_SignatureCatalogsAndUntestedProductionFiles_SignOnEveryChange — el inventario real marca con
+#       «sign_on_change» los catálogos de quién firma qué y lo que el freno de producción instala o en lo que confía sin
+#       un banco que lo pruebe; `pending` dice si la revisión va a exigir la constancia o sólo con la base en rojo
+#   T116 BaseControls_ProfileOnlyKeys_SmallFileSignsOnEveryChange — las claves que vale sólo el perfil del equipo viven
+#       en profile-only.js, marcado, y tycon-config.js las lee de ahí sin una copia propia
+#   T120 BaseControls_ProfileOnlyFilter_RunsAsPassAndSignsOnChange — una pasada de la revisión prueba que la máquina no
+#       pisa esas claves, y su control pide la constancia en cada cambio (los casos del control: check-profile-only.test.js)
 #   T9 (8.152) BaseControls_BenchAgainstBase_IsARule — el inventario real tiene el guion del banco de la base como regla
 #       con «sign_on_change», y un pedido que lo cambia sin la constancia es rojo
 #   Las constancias del dueño (por nombre): borrar o reescribir una del ancestro es rojo y pide la firma, con ella pasa;
@@ -517,12 +527,14 @@ lacks "T16 el cambio firmado no avisa" "${T}/t16b.out" "sin constancia del dueñ
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 # T17 · las excepciones que se suman quedan listadas por archivo
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
-R="${T}/t17"; make_base "${R}"; pr "${R}"
-printf '%s\n' '{ "mode": "block", "allow": ["docs/permitido.txt", "docs/a.txt", "docs/b.txt"] }' > "${R}/scripts/ci/toy-rules.json"
+# la lista va en varias líneas: lo que suma main y lo que suma el pedido caen lejos y se mezclan sin choque
+R="${T}/t17"; make_base "${R}"
+printf '%s\n' '{' '  "mode": "block",' '  "allow": [' '    "docs/permitido.txt",' '    "docs/x1.txt",' '    "docs/x2.txt"' '  ]' '}' > "${R}/scripts/ci/toy-rules.json"; commit "${R}" "la lista en varias líneas"; pr "${R}"
+printf '%s\n' '{' '  "mode": "block",' '  "allow": [' '    "docs/permitido.txt",' '    "docs/x1.txt",' '    "docs/x2.txt",' '    "docs/a.txt",' '    "docs/b.txt"' '  ]' '}' > "${R}/scripts/ci/toy-rules.json"
 printf '%s\n' '{ "names": ["uno", "dos"] }' > "${R}/scripts/ci/toy-names.json"
 printf 'limpio\n' > "${R}/docs/a.txt"; commit "${R}"
 lab_git -C "${R}" checkout -q main
-printf '%s\n' '{ "mode": "block", "allow": ["docs/permitido.txt", "docs/de-main.txt"] }' > "${R}/scripts/ci/toy-rules.json"; commit "${R}" "main suma una"
+printf '%s\n' '{' '  "mode": "block",' '  "allow": [' '    "docs/de-main.txt",' '    "docs/permitido.txt",' '    "docs/x1.txt",' '    "docs/x2.txt"' '  ]' '}' > "${R}/scripts/ci/toy-rules.json"; commit "${R}" "main suma una"
 lab_git -C "${R}" checkout -q pedido
 run "${R}" "${T}/t17.out"
 is "T17 sumar excepciones que el contenido no usa no frena: verde" "0" "${RC}"
@@ -633,6 +645,94 @@ is "T10 el pedido que borra el inventario: rojo (borrar una regla que la base ti
 has "T10 corre el de la base y lo dice" "${T}/t10c.out" "el pedido no trae un inventario que se lea"
 has "T10 …nombrando lo borrado" "${T}/t10c.out" "el pedido borra scripts/ci/controls-from-base.json, que la base tiene"
 has "T10 …y el borrado se lista" "${T}/t10c.out" "scripts/ci/controls-from-base.json (el inventario): borrado"
+# un control nuevo que main inventarió sin que nada lo corra (llegó con la copia pública antes que su llamada): el pedido
+# que lo deja corriendo pasa, aunque el inventario de main siga roto; el que no lo arregla sigue en rojo
+R="${T}/t10f"; make_base "${R}"
+printf '#!/usr/bin/env bash\nexit 0\n' > "${R}/scripts/ci/nuevo.sh"
+inv "${R}" 'j.controls.push({name:"nuevo",script:"scripts/ci/nuevo.sh",rules:[]})'; commit "${R}" "control nuevo sin llamar"
+pr "${R}"; printf 'bash "$REPO_ROOT/scripts/ci/nuevo.sh" || exit 1\n' >> "${R}/.githooks/pre-commit-checks"; commit "${R}" "lo llama el pre-commit"
+run "${R}" "${T}/t10f.out"; is "T10 el pedido que deja bien el inventario pasa aunque main lo tenga roto" "0" "${RC}"
+has "T10 …y dice lo de main" "${T}/t10f.out" "ningún paso corre scripts/ci/nuevo.sh"
+R="${T}/t10g"; make_base "${R}"
+printf '#!/usr/bin/env bash\nexit 0\n' > "${R}/scripts/ci/nuevo.sh"
+inv "${R}" 'j.controls.push({name:"nuevo",script:"scripts/ci/nuevo.sh",rules:[]})'; commit "${R}" "control nuevo sin llamar"
+pr "${R}"; printf 'x\n' > "${R}/docs/x.txt"; commit "${R}"
+run "${R}" "${T}/t10g.out"; is "T10 el pedido que no lo arregla sigue en rojo" "1" "${RC}"
+# sólo se perdona el control que ningún paso ejecuta: un dato sin clasificar en main deja una regla sin proteger, y frena aunque el
+# pedido deje su inventario limpio
+R="${T}/t10h"; make_base "${R}"
+printf '{}\n' > "${R}/scripts/ci/toy-extra.json"; printf '%s\n' '# lee "scripts/ci/toy-extra.json"' >> "${R}/scripts/ci/toy-check.sh"; commit "${R}" "dato sin clasificar en main"
+pr "${R}"; inv "${R}" 'j.controls[0].rules.push("scripts/ci/toy-extra.json")'; commit "${R}" "lo clasifica"
+run "${R}" "${T}/t10h.out"; is "T10 un dato sin clasificar en main sigue en rojo aunque el pedido lo clasifique" "1" "${RC}"
+has "T10 …por el inventario de la base" "${T}/t10h.out" "el inventario de la base no cuadra"
+
+# T13 BaseInventory_FixedByPr_Passes @story-8.267 @ac-10 · main trae un control que su pre-commit no llama (el público
+# sumó un control y la copia propia del hook no lo llama todavía): el pedido que hace que el hook lo llame no frena por
+# el inventario de la base, y su pasada corre el control.
+# 🔴 Falla con: el problema de la base en `reasons` aunque el pedido lo arregle (todo pedido del privado frenado).
+huerfano_en_main() {
+  make_base "$1"
+  printf '#!/usr/bin/env bash\n# frena un archivo con la palabra HUERFANO\ngrep -rqs HUERFANO "$(git rev-parse --show-toplevel)/docs" && { echo "huerfano: frena"; exit 1; }\nexit 0\n' > "$1/scripts/ci/huerfano.sh"
+  inv "$1" 'j.controls.push({name:"huerfano",script:"scripts/ci/huerfano.sh",rules:[]})'; commit "$1" "control nuevo en main, sin el hook"
+  pr "$1"
+}
+R="${T}/t13"; huerfano_en_main "${R}"
+printf 'bash "$REPO_ROOT/scripts/ci/huerfano.sh" || exit 1\n' >> "${R}/.githooks/pre-commit-checks"; commit "${R}"
+run "${R}" "${T}/t13.out"
+is "T13 el pedido que arregla el inventario de la base: verde" "0" "${RC}"
+has "T13 lo dice sin frenar" "${T}/t13.out" "inventario de la base — ningún paso corre scripts/ci/huerfano.sh: lo llama el pre-commit o una pasada del inventario, o no es un control (el pedido lo arregla)"
+lacks "T13 …y no es un motivo" "${T}/t13.out" "el inventario de la base no cuadra"
+R="${T}/t13b"; huerfano_en_main "${R}"
+printf 'bash "$REPO_ROOT/scripts/ci/huerfano.sh" || exit 1\n' >> "${R}/.githooks/pre-commit-checks"; printf 'HUERFANO\n' > "${R}/docs/h.txt"; commit "${R}"
+run "${R}" "${T}/t13b.out"
+is "T13 la pasada del pedido corre el control: lo que el control frena, frena" "1" "${RC}"
+has "T13 …y es el control el que frena" "${T}/t13b.out" "huerfano: frena"
+
+# T14 BaseInventory_NotFixedByPr_StillRed @story-8.267 @ac-11 @ac-12 · el mismo problema en main y un pedido que no lo
+# arregla: sin tocar el hook, sacando el control de su propio inventario o borrando el inventario. Los tres, rojo como
+# hoy; y check-inventory sobre main sigue en rojo.
+# 🔴 Falla con: perdonar lo que el pedido no deja bien (un control que deja de correr porque el pedido lo saca del inventario).
+R="${T}/t14a"; huerfano_en_main "${R}"; printf 'x\n' > "${R}/docs/x.txt"; commit "${R}"
+run "${R}" "${T}/t14a.out"
+is "T14 el pedido que no toca el hook: rojo" "1" "${RC}"
+has "T14 …por el inventario de la base" "${T}/t14a.out" "❌ base-controls: inventario de la base — ningún paso corre scripts/ci/huerfano.sh"
+has "T14 …que es un motivo" "${T}/t14a.out" "el inventario de la base no cuadra"
+R="${T}/t14b"; huerfano_en_main "${R}"; inv "${R}" 'j.controls=j.controls.filter((c)=>c.name!=="huerfano")'; commit "${R}"
+run "${R}" "${T}/t14b.out"
+is "T14 el pedido que saca el control de su inventario: rojo" "1" "${RC}"
+has "T14 …sigue siendo el inventario de la base" "${T}/t14b.out" "el inventario de la base no cuadra"
+R="${T}/t14c"; huerfano_en_main "${R}"; printf 'bash "$REPO_ROOT/scripts/ci/huerfano.sh" || exit 1\n' >> "${R}/.githooks/pre-commit-checks"
+lab_git -C "${R}" rm -q scripts/ci/controls-from-base.json; commit "${R}"
+run "${R}" "${T}/t14c.out"
+is "T14 el pedido que llama al control pero borra su inventario: rojo" "1" "${RC}"
+has "T14 …por el inventario de la base" "${T}/t14c.out" "el inventario de la base no cuadra"
+bash "${SCRIPT}" check-inventory --root "${R}" --ref main > "${T}/t14d.out" 2>&1; RC=$?
+is "T14 check-inventory sobre main no cambia: rojo" "1" "${RC}"
+has "T14 …y lo nombra" "${T}/t14d.out" "ningún paso corre scripts/ci/huerfano.sh"
+
+# T15 BaseInventory_FixedByPr_NoEscape @story-8.267 @ac-11 · lo que parece arreglar el inventario de la base y deja un
+# control que no frena nada sigue en rojo: el pedido que llama al control y lo vacía en el mismo cambio, el que trae el
+# guion que la base nombra y no tenía (con cualquier contenido), y el que lo llama por un atajo con un mapa de renombres
+# propio.
+# 🔴 Falla con: perdonar el problema de la base sin mirar que el código del control quede como en la base.
+LLAMA='bash "$REPO_ROOT/scripts/ci/huerfano.sh" || exit 1'
+R="${T}/t15inva"; huerfano_en_main "${R}"; printf '%s\n' "${LLAMA}" >> "${R}/.githooks/pre-commit-checks"
+printf '#!/usr/bin/env bash\nexit 0\n' > "${R}/scripts/ci/huerfano.sh"; commit "${R}"
+run "${R}" "${T}/t15inva.out"
+is "T15 el pedido que llama al control y lo vacía: rojo" "1" "${RC}"
+has "T15 …por el inventario de la base" "${T}/t15inva.out" "el inventario de la base no cuadra"
+lacks "T15 …sin perdonarlo" "${T}/t15inva.out" "(el pedido lo arregla)"
+R="${T}/t15invb"; make_base "${R}"; inv "${R}" 'j.controls.push({name:"fantasma",script:"scripts/ci/fantasma.sh",rules:[]})'; commit "${R}" "fantasma en main"
+pr "${R}"; printf '#!/usr/bin/env bash\nexit 0\n' > "${R}/scripts/ci/fantasma.sh"
+printf '%s\n' 'bash "$REPO_ROOT/scripts/ci/fantasma.sh" || exit 1' >> "${R}/.githooks/pre-commit-checks"; commit "${R}"
+run "${R}" "${T}/t15invb.out"
+is "T15 el pedido que trae el guion que faltaba: rojo" "1" "${RC}"
+has "T15 …por el inventario de la base" "${T}/t15invb.out" "el inventario de la base no cuadra"
+R="${T}/t15invc"; huerfano_en_main "${R}"; printf '%s\n' "${LLAMA}" >> "${R}/.githooks/pre-commit-checks"
+mkdir -p "${R}/scripts/lib"; printf '{"entries":[]}\n' > "${R}/scripts/lib/renames.json"; commit "${R}"
+run "${R}" "${T}/t15invc.out"
+is "T15 el pedido que llama al control y cambia el mapa de renombres: rojo" "1" "${RC}"
+lacks "T15 …sin perdonarlo" "${T}/t15invc.out" "(el pedido lo arregla)"
 
 # T8 · una constancia no tapa un rojo que viene de otra regla que main endureció después
 R="${T}/t8d"; make_base "${R}"; pr "${R}"
@@ -648,7 +748,7 @@ LINE="$(node -e 'const e=JSON.parse(process.argv[1]);const t=e.map(x=>`${x.path}
 mkdir -p "${R}/.tycon"; printf '%s\n' "${LINE}" > "${R}/.tycon/control-changes.jsonl"; commit "${R}" "constancia"
 run "${R}" "${T}/t8d.out"
 is "T8 la constancia de un aflojamiento no tapa lo que main endureció: rojo" "1" "${RC}"
-has "T8 lo dice" "${T}/t8d.out" "la constancia cubre scripts/ci/toy-rules.json, pero la base sigue frenando"
+has "T8 lo dice: el pedido mezclado con main frena, y puede venir de main" "${T}/t8d.out" "se midió mezclado con la base: el rojo puede venir de una regla que main endureció"
 # la constancia del público tiene que poder commitearse: su archivo no está ignorado por el .gitignore del repo
 if [ -d "${ROOT}/.git" ] || [ -f "${ROOT}/.git" ]; then
   APPROVALS="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log([].concat(j.approvals)[0])' "${ROOT}/scripts/ci/controls-from-base.json")"
@@ -687,7 +787,7 @@ sed -i.bak 's/WORD="PROHIBIDO"/WORD="PROHIBIDO"; grep -rq OTRO "$REPO_ROOT\/docs
 commit "${R}" "main endurece"; lab_git -C "${R}" checkout -q pedido
 run "${R}" "${T}/t8i.out"
 is "T8 lo que main endureció alcanza al pedido viejo: rojo" "1" "${RC}"
-has "T8 dice que el pedido tiene que ponerse al día" "${T}/t8i.out" "el pedido tiene que ponerse al día"
+has "T8 dice que el rojo puede venir de lo que main endureció" "${T}/t8i.out" "se midió mezclado con la base: el rojo puede venir de una regla que main endureció"
 bash "${SCRIPT}" run --root "${T}/no-existe" --base main --range main...pedido > /dev/null 2>&1; is "T9 un --root que no existe: no pude correr" "9" "$?"
 bash "${SCRIPT}" pending --root "${T}/t7" --base main --range main...main > "${T}/t8e.out" 2>&1
 has "T8 pending sin cambios: no hay nada que firmar" "${T}/t8e.out" "no hay nada que firmar"
@@ -915,10 +1015,16 @@ if command -v script > /dev/null 2>&1 && [ "$(uname -s | cut -c1-5)" != MINGW ] 
   is "T22 approve a la carpeta firma (exit 0)" "0" "${RC}"
   if [ -f "${R}/${CARPETA}${H}.json" ] && [ "$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).hash)' "${R}/${CARPETA}${H}.json")" = "${H}" ]; then ok "T22 …en <hash>.json, con ese hash"; else no "T22 no escribió ${CARPETA}${H}.json: ${OUT}"; fi
   cp "${R}/${CARPETA}${H}.json" "${T}/t22-antes.json"
+  # la huella de lo que escribió queda en el registro de la máquina (fila 64): el freno de la consola la pide al commitear
+  SD="$(node -e 'process.stdout.write(require(process.argv[1]).stateDir(process.argv[2]))' "${ROOT}/scripts/setup/harness/tycon-home.js" "${HOME}")"
+  grep -q "\"name\":\"control-change-written\".*\"file\":\"${CARPETA}${H}.json\"" "${SD}/gates.log" 2>/dev/null && ok "T22 …y anota su huella en esta máquina" || no "T22 approve no anotó la huella de ${CARPETA}${H}.json"
+  # firmada en otra máquina (sin su huella acá): la misma firma de nuevo anota la huella sin tocar el archivo
+  grep -v '"name":"control-change-written"' "${SD}/gates.log" > "${T}/t22-gates" 2>/dev/null; cp "${T}/t22-gates" "${SD}/gates.log"
   aprobar "${CARPETA}"
   is "T22 la misma firma otra vez: exit 0" "0" "${RC}"
   case "${OUT}" in *"ya estaba firmado"*) ok "T22 …dice que ya estaba firmado";; *) no "T22 la segunda firma no dijo «ya estaba firmado»: ${OUT}";; esac
   cmp -s "${T}/t22-antes.json" "${R}/${CARPETA}${H}.json" && ok "T22 …y no tocó el archivo" || no "T22 la segunda firma reescribió el archivo"
+  grep -q "\"name\":\"control-change-written\".*\"file\":\"${CARPETA}${H}.json\"" "${SD}/gates.log" 2>/dev/null && ok "T22 …y anotó la huella que faltaba" || no "T22 la segunda firma no anotó la huella"
   printf '{"otra":"cosa"}\n' > "${R}/${CARPETA}${H}.json"; cp "${R}/${CARPETA}${H}.json" "${T}/t22-otro.json"
   aprobar "${CARPETA}"
   is "T22 el archivo ya está con otra cosa: exit 1" "1" "${RC}"
@@ -1027,17 +1133,20 @@ bash "${SCRIPT}" run --root "${R}" --base main --range main...t53-base > "${T}/t
 is "T36 la línea delegada que ya está en la base vale" "0" "${RC}"
 has "T36 …y lo dice nombrando la regla" "${T}/t53-base.out" "cambio de control aprobado: scripts/ci/toy-rules.json"
 lacks "T36 …sin el motivo de la nueva" "${T}/t53-base.out" "${NUEVA}"
-# la que ya está en la base conserva el chequeo de forma de la 8.116
+# la que ya está en la base conserva el chequeo de forma de la 8.116. El pedido se mide mezclado con su base: si la base
+# trajera la línea completa, ésa firmaría (como en la cola); por eso cada caso tiene su base, con la línea incompleta
 for falta in quote maquina signed_by_session; do
+  lab_git -C "${R}" checkout -q -b "t53-main-sin-${falta}" main~1; mkdir -p "${R}/.tycon"
+  firma_delegada "${ENTRIES}" "${falta}" > "${R}/.tycon/control-changes.jsonl"; commit "${R}" "la base con la delegada sin ${falta}"
   lab_git -C "${R}" checkout -q pedido; lab_git -C "${R}" checkout -q -b "t53-sin-${falta}"; mkdir -p "${R}/${CARPETA}"
   firma_delegada "${ENTRIES}" "${falta}" > "${R}/${CARPETA}${H}.json"; commit "${R}" "sin ${falta}"
-  bash "${SCRIPT}" run --root "${R}" --base main --range "main...t53-sin-${falta}" > "${T}/t53-${falta}.out" 2>&1; RC=$?
+  bash "${SCRIPT}" run --root "${R}" --base "t53-main-sin-${falta}" --range "t53-main-sin-${falta}...t53-sin-${falta}" > "${T}/t53-${falta}.out" 2>&1; RC=$?
   is "T53 la línea delegada sin ${falta} no firma (rojo)" "1" "${RC}"
   has "T53 …y dice qué le falta" "${T}/t53-${falta}.out" "es una firma por delegación sin ${falta}"
 done
 lab_git -C "${R}" checkout -q pedido; lab_git -C "${R}" checkout -q -b t53-jsonl; mkdir -p "${R}/.tycon"
 firma_delegada "${ENTRIES}" "quote" > "${R}/.tycon/control-changes.jsonl"; commit "${R}" "jsonl sin quote"
-bash "${SCRIPT}" run --root "${R}" --base main --range main...t53-jsonl > "${T}/t53-jsonl.out" 2>&1; RC=$?
+bash "${SCRIPT}" run --root "${R}" --base t53-main-sin-quote --range t53-main-sin-quote...t53-jsonl > "${T}/t53-jsonl.out" 2>&1; RC=$?
 is "T53 en el jsonl, la línea delegada sin quote tampoco firma" "1" "${RC}"
 has "T53 …y lo dice" "${T}/t53-jsonl.out" "es una firma por delegación sin quote"
 
@@ -1369,6 +1478,13 @@ bash "${SCRIPT}" run --root "${R}" --base main --range main...pedido > "${T}/ya-
 is "CatchingUpMainWithoutSignedChange: la revisión da verde" "0" "${RC}"
 
 # BaseControls_ApproveStillSkipsWindowForSigned @story-8.226 @ac-14: el chequeo antes de la ventana se niega
+# sin la huella de esta máquina (firmada en otra, fila 64) el chequeo deja firmar de nuevo, para anotarla
+( cd "${R}" && TYCON_SIGN_PRECHECK=1 bash "${SCRIPT}" approve --root "${R}" --base main --out "${CARPETA}" --entries "${E1}" < /dev/null ) > "${T}/ya-approve-sin-huella.out" 2>&1; RC=$?
+is "ApproveStillSkipsWindowForSigned: sin la huella de esta máquina, el chequeo previo deja firmar" "0" "${RC}"
+# con la huella anotada, como siempre
+SD="$(node -e 'process.stdout.write(require(process.argv[1]).stateDir(process.argv[2]))' "${ROOT}/scripts/setup/harness/tycon-home.js" "${HOME}")"
+node -e 'const [lib, sd, repo, rel, f] = process.argv.slice(1); require(lib).anotar({ stateDir: sd, repo, archivo: rel, texto: require("fs").readFileSync(f, "utf8") })' \
+  "${ROOT}/skills/tycon-pipeline/scripts/lib/control-change-prints.js" "${SD}" "${R}" "${CARPETA}${H1}.json" "${R}/${CARPETA}${H1}.json"
 ( cd "${R}" && TYCON_SIGN_PRECHECK=1 bash "${SCRIPT}" approve --root "${R}" --base main --out "${CARPETA}" --entries "${E1}" < /dev/null ) > "${T}/ya-approve.out" 2>&1; RC=$?
 is "ApproveStillSkipsWindowForSigned: el chequeo previo se niega" "1" "${RC}"
 has "ApproveStillSkipsWindowForSigned: …porque ya trae esta firma" "${T}/ya-approve.out" "ya trae esta misma firma: no hace falta firmar de nuevo"
@@ -1563,6 +1679,120 @@ run "${R}" "${T}/c10.out"
 is "WorkflowsAndDeletions_OtherChecksUnchanged: rojo, como hoy" "1" "${RC}"
 has "WorkflowsAndDeletions_OtherChecksUnchanged: …el borrado de la regla" "${T}/c10.out" "el pedido borra scripts/ci/toy-names.json, que la base tiene"
 has "WorkflowsAndDeletions_OtherChecksUnchanged: …y la marca del workflow" "${T}/c10.out" "ya no trae la base (falta «run-base-controls»)"
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# T115 · los catálogos de quién firma qué, y lo que el freno de producción instala o en lo que confía sin un banco que
+#        lo pruebe, piden la constancia en cada cambio; y `pending` dice si la revisión la va a exigir
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🔴 mutación: sin la marca, un pedido que saca una firma del catálogo (o cambia qué variable es una firma) entra sin
+# constancia si los controles de la base pasan; sin la línea de `pending`, su hash se lee como «hay que firmar» siempre
+CATALOGOS="scripts/hooks/prod-access-guard.js scripts/hooks/safety-guard-pre.sh skills/tycon-pipeline/scripts/on-bash-write-gate.js scripts/lib/signatures.js scripts/lib/env-switches.json scripts/lib/env-switches.js scripts/lib/automatic-signing.js scripts/lib/owner-away.js skills/tycon-pipeline/scripts/lib/control-change-prints.js skills/tycon-pipeline/scripts/lib/runtime-waiver.js skills/tycon-pipeline/scripts/lib/home-command.js scripts/production/install-guard.sh scripts/production/update-guard.sh scripts/production/node-shim.sh scripts/production/managed-settings.tycon-production.json.template scripts/production/sudoers.tycon-guard.template scripts/production/load-key.command.template scripts/production/origin-moves.json scripts/production/node-official.json"
+for p in ${CATALOGOS}; do
+  MARKED="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const c=j.controls.find(x=>x.name==="base-controls");console.log((c.rules||[]).some(r=>r&&r.path===process.argv[2]&&r.sign_on_change===true)?"si":"no")' "${ROOT}/scripts/ci/controls-from-base.json" "${p}")"
+  is "T115 el inventario real marca ${p} con «sign_on_change»" "si" "${MARKED}"
+  [ -f "${ROOT}/${p}" ] && ok "T115 …y ${p} existe" || no "T115 ${p} no existe: la marca no protege nada"
+done
+IN_CONTENT="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(j.content.includes("scripts/lib/env-switches.json")?"si":"no")' "${ROOT}/scripts/ci/controls-from-base.json")"
+is "T115 env-switches.json es regla, no contenido" "no" "${IN_CONTENT}"
+
+# T116 · las claves que vale sólo el perfil del equipo viven en un archivo chico que firma siempre, y la configuración
+# las lee de ahí: una copia propia en tycon-config.js (que se toca en casi cada pedido) se podría achicar sin constancia
+MARKED="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const c=j.controls.find(x=>x.name==="base-controls");console.log((c.rules||[]).some(r=>r&&r.path==="scripts/lib/profile-only.js"&&r.sign_on_change===true)?"si":"no")' "${ROOT}/scripts/ci/controls-from-base.json")"
+is "T116 el inventario real marca profile-only.js con «sign_on_change»" "si" "${MARKED}"
+mkdir -p "${T}/casa-t116"
+MISMA="$(HOME="${T}/casa-t116" node -e 'const C=require(process.argv[1]);const P=require(process.argv[2]);console.log(C.PROFILE_ONLY===P&&P.length>0?"si":"no")' "${ROOT}/scripts/lib/tycon-config.js" "${ROOT}/scripts/lib/profile-only.js" 2>&1)"
+is "T116 tycon-config.js lee la lista de profile-only.js" "si" "${MISMA}"
+PROPIA="$(grep -cE '^const PROFILE_ONLY = Object\.freeze\(' "${ROOT}/scripts/lib/tycon-config.js")"
+is "T116 tycon-config.js no declara una lista propia" "0" "${PROPIA}"
+
+# T120 · el código que aplica la lista (tycon-config.js) no firma: lo prueba una pasada de la revisión, cuyo control pide
+# la constancia en cada cambio. Sin la pasada, aflojar el filtro no da rojo en ningún lado; sin la marca, un pedido que
+# afloja el filtro y el control a la vez pasa las dos pasadas en verde.
+PASADA="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const p=(j.passes||[]).find(x=>x.name==="profile-only");console.log(p&&p.mode==="tree"&&p.cmd.join(" ")==="node scripts/ci/check-profile-only.js"?"si":"no")' "${ROOT}/scripts/ci/controls-from-base.json")"
+is "T120 el inventario real corre check-profile-only.js como pasada sobre el árbol" "si" "${PASADA}"
+MARKED="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const c=j.controls.find(x=>x.name==="base-controls");console.log((c.rules||[]).some(r=>r&&r.path==="scripts/ci/check-profile-only.js"&&r.sign_on_change===true)?"si":"no")' "${ROOT}/scripts/ci/controls-from-base.json")"
+is "T120 el inventario real marca check-profile-only.js con «sign_on_change»" "si" "${MARKED}"
+mkdir -p "${T}/casa-t120"
+HOME="${T}/casa-t120" USERPROFILE="${T}/casa-t120" node "${ROOT}/scripts/ci/check-profile-only.js" --root "${ROOT}" > "${T}/t120.out" 2>&1 < /dev/null
+is "T120 el control pasa sobre el árbol real" "0" "$?"
+R="${T}/t115a"; t55_base "${R}" 1
+bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido > "${T}/t115a.out" 2>&1
+has "T115 pending: con un archivo que firma siempre, dice que la revisión la va a exigir" "${T}/t115a.out" "la revisión va a exigir la constancia: cambia docs/modo.yaml, que firma siempre"
+R="${T}/t115b"; t55_base "${R}" 0
+bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido > "${T}/t115b.out" 2>&1
+has "T115 pending: sin un archivo que firma siempre, dice cuándo la exige" "${T}/t115b.out" "la revisión exige la constancia sólo si los controles de la base dan rojo con el pedido"
+has "T115 …y que otro rojo también la frena" "${T}/t115b.out" "salvo otro rojo (el inventario, una delegación sin probar)"
+lacks "T115 …y no dice que la va a exigir" "${T}/t115b.out" "la revisión va a exigir la constancia"
+# con la constancia ya commiteada, pending dice que no hace falta firmar, sin la línea de la exigencia
+R="${T}/t115c"; t55_base "${R}" 1
+bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido > "${T}/t115c-pending.out" 2>&1
+ENTRIES="$(sed -n "s/^.* --entries '\(.*\)'\$/\1/p" "${T}/t115c-pending.out" | head -n 1)"
+mkdir -p "${R}/.tycon"; firma "${ENTRIES}" > "${R}/.tycon/control-changes.jsonl"; commit "${R}" "constancia"
+bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido > "${T}/t115c.out" 2>&1
+has "T115 pending: con la constancia ya puesta, no hace falta firmar" "${T}/t115c.out" "no hace falta firmar"
+lacks "T115 …y no dice que la va a exigir" "${T}/t115c.out" "la revisión va a exigir la constancia"
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# T116 · main renombra un archivo de la lista (el archivo y su entrada) después de que salió el pedido, y el pedido edita
+# el nombre viejo: se mide el pedido mezclado con el main actual, como en la cola, con las reglas de main. Sin la mezcla,
+# las reglas de main caen sobre el árbol viejo y frenan un nombre que ya no existe. Si la mezcla choca, rojo, nunca verde
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+R="${T}/t116"; make_base "${R}"
+printf 'nada\n' > "${R}/docs/permitido.txt"; commit "${R}" "la base con el permitido"
+pr "${R}"; printf 'PROHIBIDO, pero en la lista\n' > "${R}/docs/permitido.txt"; commit "${R}"
+lab_git -C "${R}" checkout -q main
+lab_git -C "${R}" mv docs/permitido.txt docs/permitido-nuevo.txt
+printf '%s\n' '{ "mode": "block", "allow": ["docs/permitido-nuevo.txt"] }' > "${R}/scripts/ci/toy-rules.json"; commit "${R}" "main renombra"
+lab_git -C "${R}" checkout -q pedido
+run "${R}" "${T}/t116.out"
+is "T116 BaseControls_BaseMovedAfterFork_MeasuresTheMerge — el pedido atrasado se mide mezclado con main: verde (exit)" "0" "${RC}"
+lacks "T116 …sin rojo de la palabra en el nombre viejo" "${T}/t116.out" "toy: PROHIBIDO"
+has "T116 …y dice que midió la mezcla" "${T}/t116.out" "mezclado con la base"
+# lo mismo con el merge que arma GitHub sobre un main viejo: se rearma sobre el main actual
+lab_git -C "${R}" checkout -q -b gh-merge main~1
+lab_git -C "${R}" merge -q --no-ff --no-edit pedido > /dev/null 2>&1
+bash "${SCRIPT}" run --root "${R}" --base main --range main...gh-merge > "${T}/t116gh.out" 2>&1; RC=$?
+is "T116 …también con un merge de GitHub armado sobre un main viejo (exit)" "0" "${RC}"
+# lo que choca con main no se mide a medias
+lab_git -C "${R}" checkout -q -b pedido-choca main~1
+printf 'otra cosa del pedido\n' > "${R}/docs/leeme.txt"; commit "${R}"
+lab_git -C "${R}" checkout -q main; printf 'otra cosa de main\n' > "${R}/docs/leeme.txt"; commit "${R}" "main cambia leeme"
+bash "${SCRIPT}" run --root "${R}" --base main --range main...pedido-choca > "${T}/t116c.out" 2>&1; RC=$?
+is "T116 …un pedido que choca con main: rojo (exit)" "1" "${RC}"
+has "T116 …y dice que traiga main" "${T}/t116c.out" "el pedido choca con main"
+# main y el pedido tocan la misma regla y la mezcla es limpia: lo firmado (lo de la rama) no sería lo medido (la mezcla),
+# así que no se ofrece la firma: el pedido trae main antes. También cuando main la renombra
+R="${T}/t116d"; make_base "${R}"
+printf '%s\n' '{' '  "mode": "block",' '  "allow": [' '    "docs/permitido.txt",' '    "docs/x1.txt",' '    "docs/x2.txt"' '  ]' '}' > "${R}/scripts/ci/toy-rules.json"; commit "${R}" "la lista en varias líneas"
+pr "${R}"
+printf '%s\n' '{' '  "mode": "block",' '  "allow": [' '    "docs/permitido.txt",' '    "docs/x1.txt",' '    "docs/x2.txt",' '    "docs/malo.txt"' '  ]' '}' > "${R}/scripts/ci/toy-rules.json"
+printf 'PROHIBIDO\n' > "${R}/docs/malo.txt"; commit "${R}"
+lab_git -C "${R}" checkout -q main
+printf '%s\n' '{' '  "mode": "block",' '  "allow": [' '    "docs/de-main.txt",' '    "docs/permitido.txt",' '    "docs/x1.txt",' '    "docs/x2.txt"' '  ]' '}' > "${R}/scripts/ci/toy-rules.json"; commit "${R}" "main suma una"
+lab_git -C "${R}" checkout -q pedido
+run "${R}" "${T}/t116d.out"
+is "T116 …el pedido afloja una regla que main también cambió: rojo (exit)" "1" "${RC}"
+has "T116 …y pide traer main antes de la firma" "${T}/t116d.out" "el pedido y main cambian la misma regla (scripts/ci/toy-rules.json)"
+bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido > "${T}/t116d-pending.out" 2>&1
+has "T116 …pending tampoco ofrece la firma" "${T}/t116d-pending.out" "el pedido y main cambian la misma regla"
+lacks "T116 …ni da el comando" "${T}/t116d-pending.out" "approve --root"
+# un rango que arranca en otra base (como el del privado): lo que trajo main no cuenta como del pedido
+R="${T}/t116e"; make_base "${R}"; pr "${R}"; printf 'limpio\n' > "${R}/docs/del-pedido.txt"; commit "${R}"
+lab_git -C "${R}" checkout -q main
+printf '%s\n' '{ "mode": "block", "allow": ["docs/permitido.txt", "docs/de-main.txt"] }' > "${R}/scripts/ci/toy-rules.json"; commit "${R}" "main suma una"
+lab_git -C "${R}" checkout -q pedido
+bash "${SCRIPT}" run --root "${R}" --base main --range main~1...pedido > "${T}/t116e.out" 2>&1; RC=$?
+is "T116 …con el rango desde otra base, verde (exit)" "0" "${RC}"
+has "T116 …y lo que cambió main no figura como del pedido" "${T}/t116e.out" "el pedido no cambia ningún archivo de regla"
+# lo que agrega un merge propio también se mide: la mezcla sale de lo revisado, no de su segundo padre
+R="${T}/t116f"; make_base "${R}"; pr "${R}"; printf 'limpio\n' > "${R}/docs/inocente.txt"; commit "${R}"
+lab_git -C "${R}" checkout -q main; printf 'otra cosa\n' > "${R}/docs/de-main.txt"; commit "${R}" "main avanza"
+lab_git -C "${R}" checkout -q -b merge-propio main~1
+lab_git -C "${R}" merge -q --no-ff --no-commit pedido > /dev/null 2>&1
+printf 'PROHIBIDO\n' > "${R}/docs/malo.txt"; lab_git -C "${R}" add -A > /dev/null 2>&1; lab_git -C "${R}" commit -qm "merge con algo de más" > /dev/null 2>&1
+bash "${SCRIPT}" run --root "${R}" --base main --range main...merge-propio > "${T}/t116f.out" 2>&1; RC=$?
+is "T116 …lo que agrega un merge propio se mide: rojo (exit)" "1" "${RC}"
+has "T116 …con el rojo de la palabra" "${T}/t116f.out" "toy: PROHIBIDO en docs/malo.txt"
 
 echo
 if [ "${FAILS}" -eq 0 ]; then echo "✅ base-controls: ${TOTAL} verificaciones verdes"; exit 0; fi

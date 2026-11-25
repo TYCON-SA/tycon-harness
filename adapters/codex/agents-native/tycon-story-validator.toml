@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-story-validator.md
-# source_sha256: 741c4db26e7b09013d6cf5fec4ffce480a2b5eddec4ac33eee0b18c59f3d8b60
+# source_sha256: 0e8db768d51c465d67f8ad3ea5301f147fd9a98e8d8d98a8966e47afb95526cc
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-story-validator.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-story-validator").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
@@ -233,7 +233,7 @@ Se ejecuta antes de «Implementar» del pipeline, o de cualquier otro camino que
 ### Revisores — post-implementación (Gate 1 del DoD)
 Re-ejecuta el validator después del build gate («Implementar») y junto con los advisors paralelos. Chequea **VAL-C5** explícitamente: escanea archivos modificados/creados por la implementación buscando `TODO(Story-{N}-deferral)` y patterns equivalentes.
 
-Si encuentra deferrals abiertos del propio story → CRITICAL → bloquea «Preparar el commit» hasta cerrarlos.
+Si encuentra deferrals abiertos del propio story → CRITICAL → bloquea «Preparar el pull request» hasta cerrarlos.
 
 **Caller de Revisores** debe pasar al validator:
 - `story_path`: misma que en «Validar la historia»
@@ -273,6 +273,15 @@ detalle— termina con **exactamente uno** de estos renglones, solo, sin viñeta
 ```text
 Veredicto: limpio
 Veredicto: hallazgos (VAL-C8, VAL-C8, VAL-W15) · bloquea: sí
+```
+
+Si el prompt trae lo que reportaste en la vuelta anterior, sumá al renglón los críticos de esa vuelta que confirmás
+arreglados, una vez por hallazgo, aunque hoy reportes otro con el mismo código. Sin esa parte el arnés no da el arreglo
+por comprobado, y cuesta otra vuelta o la exención del dueño:
+
+```text
+Veredicto: hallazgos (VAL-C8) · bloquea: sí · resueltos (VAL-C8, VAL-C3)
+Veredicto: limpio · resueltos (VAL-C8)
 ```
 
 - `limpio` sólo con **cero hallazgos abiertos de tu catálogo** (VAL-*). Confirmar que lo reportado antes

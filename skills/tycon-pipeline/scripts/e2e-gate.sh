@@ -284,13 +284,12 @@ else
     case "$BASE_CFG" in *.ts|*.js) BASE_IMPORT="./${BASE_CFG%.*}" ;; *) BASE_IMPORT="./$BASE_CFG" ;; esac
     ENVOLTORIO="$PWD/.tycon-e2e-captures-$$.config.ts"
     trap 'rm -f "$ENVOLTORIO" "$ENVOLTORIO.err"' EXIT
-    cat > "$ENVOLTORIO" <<ENV
-// Generado por el gate E2E del arnés (story 7.24); se borra al terminar. Fuerza la captura sin tocar la config del repo.
-import base from '$BASE_IMPORT';
-const b: any = (base as any)?.default ?? base;
-const on = (u: any) => ({ ...(u || {}), screenshot: 'on' });
-export default { ...b, use: on(b.use), ...(Array.isArray(b.projects) ? { projects: b.projects.map((p: any) => ({ ...p, use: on(p.use) })) } : {}) };
-ENV
+    printf '%s\n' \
+      "// Generado por el gate E2E del arnés (story 7.24); se borra al terminar. Fuerza la captura sin tocar la config del repo." \
+      "import base from '$BASE_IMPORT';" \
+      "const b: any = (base as any)?.default ?? base;" \
+      "const on = (u: any) => ({ ...(u || {}), screenshot: 'on' });" \
+      "export default { ...b, use: on(b.use), ...(Array.isArray(b.projects) ? { projects: b.projects.map((p: any) => ({ ...p, use: on(p.use) })) } : {}) };" > "$ENVOLTORIO"
     if npx playwright test --config "$ENVOLTORIO" --list ${SPEC_FILTERS[@]+"${SPEC_FILTERS[@]}"} > /dev/null 2> "$ENVOLTORIO.err" < /dev/null; then
       CONFIG_ARGS=(--config "$ENVOLTORIO")
     else
@@ -323,7 +322,7 @@ if [ ${#CONFIG_ARGS[@]} -gt 0 ]; then
   fi
 fi
 
-read -r TOTAL PASSED FAILED SKIPPED <<< "$(node -e 'const l=require(process.argv[2]);const fs=require("fs");let j={};try{j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"))}catch(e){};const t=l.totals(j);console.log(t.total,t.passed,t.failed,t.skipped)' "$JSON_OUT" "$(dirname "${BASH_SOURCE[0]}")/lib/e2e-evidence.js")"
+read -r TOTAL PASSED FAILED SKIPPED < <(printf '%s\n' "$(node -e 'const l=require(process.argv[2]);const fs=require("fs");let j={};try{j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"))}catch(e){};const t=l.totals(j);console.log(t.total,t.passed,t.failed,t.skipped)' "$JSON_OUT" "$(dirname "${BASH_SOURCE[0]}")/lib/e2e-evidence.js")")
 
 TITULOS="$(node "$(dirname "${BASH_SOURCE[0]}")/lib/e2e-evidence.js" titles "$JSON_OUT")"
 
@@ -332,7 +331,7 @@ TITULOS="$(node "$(dirname "${BASH_SOURCE[0]}")/lib/e2e-evidence.js" titles "$JS
 # cero flujos ejercidos. La decisión vive en la librería del contrato, con sus tests
 # (tests/e2e-gate-verdict.test.js), para que no se re-copie mal en el gate de cada repo.
 LIB="$(dirname "${BASH_SOURCE[0]}")/lib/e2e-evidence.js"
-read -r VERDICT GATE_EXIT <<< "$(node -e 'const ev=require(process.argv[1]);const v=ev.veredicto({exitCode:+process.argv[2],total:+process.argv[3],passed:+process.argv[4],failed:+process.argv[5],skipped:+process.argv[6]});console.log(v.verdict, v.exit)' "$LIB" "$EXIT_CODE" "${TOTAL:-0}" "${PASSED:-0}" "${FAILED:-0}" "${SKIPPED:-0}")"
+read -r VERDICT GATE_EXIT < <(printf '%s\n' "$(node -e 'const ev=require(process.argv[1]);const v=ev.veredicto({exitCode:+process.argv[2],total:+process.argv[3],passed:+process.argv[4],failed:+process.argv[5],skipped:+process.argv[6]});console.log(v.verdict, v.exit)' "$LIB" "$EXIT_CODE" "${TOTAL:-0}" "${PASSED:-0}" "${FAILED:-0}" "${SKIPPED:-0}")")
 MOTIVO="$(node -e 'const ev=require(process.argv[1]);process.stdout.write(ev.veredicto({exitCode:+process.argv[2],total:+process.argv[3],passed:+process.argv[4],failed:+process.argv[5],skipped:+process.argv[6]}).motivo)' "$LIB" "$EXIT_CODE" "${TOTAL:-0}" "${PASSED:-0}" "${FAILED:-0}" "${SKIPPED:-0}")"
 
 # Los recorridos declarados que esta app NO tiene: sin esta línea, correr 1 de 5 se lee igual que

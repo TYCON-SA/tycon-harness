@@ -12,7 +12,7 @@
           "type": "must-emit",
           "__doc": "T58 · AC 33. La máquina tiene la marca y la organización volvió a «con la contraseña»: el aviso lo dice con el comando exacto para sacar el permiso. ROJO PREVIO: callar, y la máquina sigue actualizándose sola sin que nadie se entere.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness sys/opt/tycon/production && cp $TCG/scripts/hooks/guard-update-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness sys/opt/tycon/production && cp $TCG/scripts/hooks/guard-update-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js $(ls $TCG/scripts/lib/profile-only.js 2>/dev/null) tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
             "printf '{ \"guard\": { \"update\": \"password\" } }\\n' > tcg/team-profile.json && printf '{}\\n' > sys/opt/tycon/production/auto-update.json"
           ],
           "stdin": { "source": "startup" },
@@ -26,7 +26,7 @@
           "type": "must-emit",
           "__doc": "T58 · AC 33. La organización eligió «solo» y la máquina no tiene la marca: el aviso da el comando para instalar el permiso, con la contraseña de su persona. ROJO PREVIO: callar, o instalarlo solo (el sitio no puede dar root).",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness sys/opt/tycon/production && cp $TCG/scripts/hooks/guard-update-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness sys/opt/tycon/production && cp $TCG/scripts/hooks/guard-update-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js $(ls $TCG/scripts/lib/profile-only.js 2>/dev/null) tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
             "printf '{ \"guard\": { \"update\": \"auto\" } }\\n' > tcg/team-profile.json"
           ],
           "stdin": { "source": "startup" },
@@ -40,7 +40,7 @@
           "type": "must-stay-quiet",
           "__doc": "T58 · AC 33. Lo de fábrica: sin marca y con «con la contraseña» (sin la clave en el perfil). El aviso calla. ROJO PREVIO: hablar en cada arranque de todas las máquinas con el freno — un aviso de todos los días se deja de leer.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness sys/opt/tycon/production && cp $TCG/scripts/hooks/guard-update-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/setup/harness sys/opt/tycon/production && cp $TCG/scripts/hooks/guard-update-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/tycon-config.js $(ls $TCG/scripts/lib/profile-only.js 2>/dev/null) tcg/scripts/lib/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
             "printf '{}\\n' > tcg/team-profile.json"
           ],
           "stdin": { "source": "startup" },

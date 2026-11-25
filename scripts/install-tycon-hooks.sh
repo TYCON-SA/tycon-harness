@@ -13,7 +13,8 @@
 #     viejo, que no conoce esa variable) las sigue haciendo.
 #   - Opt-out via env var: `TYCON_NO_AUTOINSTALL=1` → exit 0 silencioso.
 #   - Sin Claude Code (`TYCON_HARNESS_CLAUDE=off`, lo pone harness.js): sólo lo de fondo de una lista cerrada, y nada
-#     en ~/.claude (ver «Sin Claude Code», más abajo).
+#     en ~/.claude (ver «Sin Claude Code», más abajo). Las skills, también las de terceros, las enlaza harness.js en
+#     ~/.codex/skills desde la versión bajada: no pasan por acá.
 #   - Atomic write (tmp + mv).
 #   - Cross-platform: bash + python3 + node (sin dependencia de jq).
 #
@@ -137,10 +138,14 @@ unset _SD_LIB
 # ============================================================
 # `TYCON_HARNESS_CLAUDE=off` lo pone harness.js en una máquina que instaló el arnés sin Claude Code (sólo Codex). En
 # ese modo corre una lista cerrada: el candado, el reporte y el plan; la lectura de la configuración y del perfil; los
-# tres hooks globales de git y la mirada al core.hooksPath local de los clones; la recolección de hallazgos y el buzón.
-# Todo lo demás —el lugar del arnés, los enlaces, settings.json, las skills, los bloques de CLAUDE.md, los comandos, el
-# rescate del hilo (lee conversaciones de Claude Code), el banco, las métricas— no corre, y nada se escribe en
-# ~/.claude. Cada bloque saltado lleva la guarda `CLAUDE_OFF`.
+# tres hooks globales de git y la mirada al core.hooksPath local de los clones; la recolección de hallazgos y el buzón;
+# las pruebas rápidas de las skills, el refresco de la lista de proyectos de Azure, los chequeos de engram y de sqlite3 y
+# el AGENTS.md puntero en los repos de proyecto (Codex los usa igual).
+# Todo lo demás —el lugar del arnés, los enlaces, settings.json, el paso de skills de este archivo, los bloques de
+# CLAUDE.md, los comandos, el rescate del hilo (lee conversaciones de Claude Code), el banco, las métricas— no corre, y
+# nada se escribe en ~/.claude. Las skills de esa máquina no faltan: las del arnés y las de terceros vienen en la versión
+# bajada (release.js repone las de terceros al instalar y al actualizar) y harness.js las enlaza en ~/.codex/skills.
+# Cada bloque saltado lleva la guarda `CLAUDE_OFF`.
 CLAUDE_OFF=0; [[ "${TYCON_HARNESS_CLAUDE:-}" == "off" ]] && CLAUDE_OFF=1
 
 # ============================================================
@@ -587,9 +592,9 @@ esac
 PROFILE_FULL=0; [[ "$PROFILE_STATE" == "ok" && "$TYCON_PROFILE_VALUE" != "minimal" ]] && PROFILE_FULL=1
 PROFILE_IS_MINIMAL=0; [[ "$PROFILE_STATE" == "ok" && "$TYCON_PROFILE_VALUE" == "minimal" ]] && PROFILE_IS_MINIMAL=1
 
-# ▼ CLAUDE_OFF: desde acá hasta «▲ CLAUDE_OFF» (los hooks de settings.json, los nombres viejos, las suites rápidas, el
-# lado Codex de este archivo, el AGENTS.md puntero, el banco, el examen, los bloques de CLAUDE.md, los comandos, la
-# paridad, los chequeos de engram y las métricas de etapa) no corre
+# ▼ CLAUDE_OFF: desde acá hasta «▲ CLAUDE_OFF» (los hooks de settings.json, los nombres viejos y lo que avisa de ellos)
+# no corre. Más abajo vuelve a cortarse, cada vez con lo suyo: el lado Codex de este archivo, el banco, el examen, los
+# bloques de CLAUDE.md, los comandos, la paridad y las métricas de etapa. Entre los cortes corre en los dos modos
 if [[ "$CLAUDE_OFF" != "1" ]]; then
 # ============================================================
 # Los hooks de settings.json
@@ -730,20 +735,8 @@ if [[ -s "$TMP_REPORT" ]]; then
     fi
   fi
 fi
-
-# ============================================================
-# Detección de features muertos: hooks registrados
-# en settings.json cuya env var de activación está apagada salen en silencio
-# (exit 0) y el feature parece vivo pero no produce NADA. Ejemplo:
-# instinct-mining con hooks registrados y 0 observations
-# cuando TYCON_INSTINCT_MINING no está exportada en la máquina.
-# ============================================================
-if grep -q 'instinct-observe.sh' "$SETTINGS" 2>/dev/null && [[ "${TYCON_INSTINCT_MINING:-0}" != "1" ]]; then
-  echo "⚠ tycon: instinct-mining REGISTRADO pero APAGADO — el hook está en settings.json pero TYCON_INSTINCT_MINING≠1 (no graba nada). Agregá 'export TYCON_INSTINCT_MINING=1' a tu shell rc o removelo. Ver guides/integrations/instinct-mining.md"
 fi
-if grep -q 'instinct-observer' "$SETTINGS" 2>/dev/null && [[ "${TYCON_INSTINCT_OBSERVER:-0}" != "1" ]]; then
-  echo "⚠ tycon: instinct-observer REGISTRADO pero APAGADO — TYCON_INSTINCT_OBSERVER≠1 (nunca propone instincts). Agregá 'export TYCON_INSTINCT_OBSERVER=1' a tu shell rc o removelo. Ver guides/integrations/instinct-mining.md"
-fi
+# ▲ CLAUDE_OFF
 
 # ============================================================
 # Suite de tests de la capa determinista.
@@ -769,7 +762,7 @@ fi
 UT_SKILLS=""; UT_PRESENT=()
 if [[ "$CHECK_ONLY" != "1" ]] && command -v node >/dev/null 2>&1; then
   if [[ ! -f "$SKILLS_DIR_JS" ]]; then
-    UT_SKILLS="$AGENT_SKILLS"   # sin la biblioteca (copia parcial): las instaladas, como siempre
+    UT_SKILLS="${AGENT_SKILLS:-}"   # sin la biblioteca (copia parcial): las instaladas, como siempre (sin Claude Code, ninguna)
   else
     UT_SKILLS="$(_skills_dir read --skills 2>/dev/null)" || UT_SKILLS=""
     if [[ -z "$UT_SKILLS" ]]; then
@@ -811,6 +804,9 @@ elif [[ ${#UT_PRESENT[@]} -gt 0 ]]; then
     echo "   Diagnóstico: node --test ${UT_PRESENT[*]}"
   fi
 fi
+
+# ▼ CLAUDE_OFF: desde acá hasta «▲ CLAUDE_OFF» (las suites diarias y el banco) no corre
+if [[ "$CLAUDE_OFF" != "1" ]]; then
 
 # ============================================================
 # Suite del descubridor de stories del backfill — throttle DIARIO.
@@ -868,6 +864,9 @@ BF_PRESENT=()
 # Reporte → scripts/controls-bench/.bench/ · lo cobra bench-notice.js al arranque.
 # Ver guides/maintaining/controls-bench.md. Opt-out: TYCON_BENCH_DAILY=0.
 # ============================================================
+fi
+# ▲ CLAUDE_OFF
+
 # ============================================================
 # Despliegue del lado Codex.
 #
@@ -934,6 +933,8 @@ case "${TYCON_HARNESS_CODEX:-}" in
   off) CODEX_ON=0 ;;
 esac
 
+# ▼ CLAUDE_OFF: desde acá hasta «▲ CLAUDE_OFF» (el despliegue de Codex en shell: sin Claude Code lo hace harness.js) no corre
+if [[ "$CLAUDE_OFF" != "1" ]]; then
 if [[ "$CODEX_ON" == "1" && "$CODEX_BY_HARNESS" != "1" ]] && command -v node >/dev/null 2>&1; then
   CODEX_DEPLOY_ALL="$(cd "$TCG_HOOKS_DIR/../.." && pwd)/build/deploy-codex-all.js"
   if [[ -f "$CODEX_DEPLOY_ALL" ]]; then
@@ -1015,6 +1016,8 @@ for n in sorted(os.listdir(sk)) if os.path.isdir(sk) else []:
 PY
   fi
 fi
+fi
+# ▲ CLAUDE_OFF
 
 # ── AGENTS.md puntero en los repos de proyecto ──────────────────────────────
 # El espejo automático cubre SOLO el CLAUDE.md GLOBAL; los de proyecto no se traducen
@@ -1082,6 +1085,9 @@ AGENTSMD
   done
   fi
 fi
+
+# ▼ CLAUDE_OFF: desde acá hasta «▲ CLAUDE_OFF» (el ambiente de las apps gráficas, el banco, el examen, los bloques de CLAUDE.md, los comandos y la paridad) no corre
+if [[ "$CLAUDE_OFF" != "1" ]]; then
 
 # ── Ambiente para apps GRÁFICAS en macOS ────────────────────────────────────
 # Los secretos de los MCP bajo Codex se leen del ambiente; el panel de Codex en VSCode no pasa
@@ -1271,13 +1277,6 @@ if [[ "${TYCON_HARNESS_SHARED_DONE:-0}" != "1" && "${TYCON_NO_COMMANDS_SYNC:-0}"
 fi
 
 # ============================================================
-# Versión de engram vs el pin del equipo. AVISA, nunca actualiza —
-# los chunks de `.engram/` se comparten por git y la deriva de versiones puede
-# partir la memoria en dos formatos con falla silenciosa. Ver el header de
-# check-engram-version.sh. Silencioso si coincide. Opt-out:
-# TYCON_NO_ENGRAM_VERSION_CHECK=1.
-# ============================================================
-# ============================================================
 # Paridad de INSTALACIÓN Claude↔Codex. Corre en CADA arranque, DE FONDO (~0.3s,
 # cero costo en el critical path) y DESPUÉS del sync de bloques: anidada bajo el stamp diario del banco sería el mismo
 # anti-patrón que deja a los deployers sin correr, y ANTES del sync gritaría un rojo de AGENTS.md que el propio
@@ -1287,7 +1286,16 @@ fi
 if [[ "$CHECK_ONLY" != "1" && "$PROFILE_FULL" == "1" ]] && command -v node >/dev/null 2>&1 && [[ -f "$SCRIPT_DIR/lib/harness-parity.js" ]]; then
   nohup "$HNODE" "$SCRIPT_DIR/lib/harness-parity.js" >/dev/null 2>&1 &
 fi
+fi
+# ▲ CLAUDE_OFF
 
+# ============================================================
+# Versión de engram vs el pin del equipo. AVISA, nunca actualiza —
+# los chunks de `.engram/` se comparten por git y la deriva de versiones puede
+# partir la memoria en dos formatos con falla silenciosa. Ver el header de
+# check-engram-version.sh. Silencioso si coincide. Opt-out:
+# TYCON_NO_ENGRAM_VERSION_CHECK=1. Corre también sin Claude Code: sus sellos van a la carpeta del estado.
+# ============================================================
 ENGRAM_VER_CHECK="$SCRIPT_DIR/setup/check-engram-version.sh"
 # Los tres chequeos de engram (versión, sqlite3, nombre de proyecto) sólo con la integración prendida.
 if [[ "$TYCON_INTEG_ENGRAM" == "1" && -f "$ENGRAM_VER_CHECK" ]]; then
@@ -1329,6 +1337,9 @@ ENGRAM_PROJECT_CHECK="$SCRIPT_DIR/setup/check-engram-project.sh"
 if [[ "$TYCON_INTEG_ENGRAM" == "1" && -f "$ENGRAM_PROJECT_CHECK" ]]; then
   bash "$ENGRAM_PROJECT_CHECK" "$PWD" 2>/dev/null || true
 fi
+
+# ▼ CLAUDE_OFF: desde acá hasta «▲ CLAUDE_OFF» (las métricas de etapa) no corre
+if [[ "$CLAUDE_OFF" != "1" ]]; then
 
 # ============================================================
 # Suites de prueba del arnés — NO CORREN ACÁ
@@ -1800,8 +1811,8 @@ fi
 # hook la ignora. Off: TYCON_NO_AZ_PROJECTS_REFRESH=1.
 # Sólo con Azure DevOps prendida (ado.org configurada): afuera, con `az` instalado por otro motivo,
 # el instalador no le pregunta a ninguna organización. La organización se le pasa: la del lector, no la de `az devops configure`.
-# Sin Claude Code no corre: la lista la lee un hook de Claude Code.
-if [[ "$CLAUDE_OFF" != "1" && "$TYCON_INTEG_ADO" == "1" && "${TYCON_NO_AZ_PROJECTS_REFRESH:-0}" != "1" && "$CHECK_ONLY" != "1" ]] && command -v az >/dev/null 2>&1; then
+# Corre también sin Claude Code: el mismo aviso lo usa Codex.
+if [[ "$TYCON_INTEG_ADO" == "1" && "${TYCON_NO_AZ_PROJECTS_REFRESH:-0}" != "1" && "$CHECK_ONLY" != "1" ]] && command -v az >/dev/null 2>&1; then
   AZ_CACHE="$STATE_DIR/az-projects.json"
   if [[ ! -f "$AZ_CACHE" ]] || [[ -n "$(find "$AZ_CACHE" -mtime +7 2>/dev/null)" ]]; then
     _ORG_REFRESCO="$(node "$SCRIPT_DIR/lib/tycon-config.js" get ado.org 2>/dev/null)" || _ORG_REFRESCO=""

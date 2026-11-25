@@ -1901,5 +1901,26 @@ subir_con_casa "${T}" "${T}/h" maq-a "${T}/casa"
 [ "${RC}" -eq 0 ] && [ "$(campo "${T}" valores_sin_comprobar)" != "true" ] && campo "${T}" valores_problemas | grep '.zshrc' >/dev/null && grep -q 'no se pudo leer' "${T}/err.txt" \
   && ok "T18 con un origen roto y otro legible, sube y dice cuál no leyó" || mal "T18c rc=${RC} problemas=$(campo "${T}" valores_problemas) $(head -c 200 "${T}/err.txt")"
 
+# ── Cuenta nueva · la llave pasa a otra cuenta y otro contenedor: cada máquina vuelve a subir todo ──
+# 🔴 Atrapa: un registro de subidas que no mira el destino → la máquina da por subido en el buzón nuevo lo que
+#    sólo llegó al viejo, y el nuevo queda vacío para siempre.
+T="${BASE}/cuenta-nueva"; buzon "${T}/b"; config "${T}/cfg.json"
+corrida "${T}/h" "6.1-2026-10-01T0900" 2000; corrida "${T}/h" "6.2-2026-10-02T0900" 3000
+subir "${T}" "${T}/h" "maq-a"
+[ "${RC}" -eq 0 ] && [ "$(campo "${T}" subidos)" = "4" ] || mal "Cuenta nueva: la primera subida no anduvo (rc=${RC}, subidos $(campo "${T}" subidos))"
+printf '{"cuenta":"cuentanueva","contenedor":"telemetry","tenant":"00000000-0000-0000-0000-000000000000","politica":"upload-prueba","vence":"2099-01-01","sas":"%s"}\n' \
+  "sv=2022-11-02&si=upload-prueba&sr=c&spr=https&sig=${FAKE_SIGNATURE}" > "${T}/cfg.json"
+subir "${T}" "${T}/h" "maq-a"
+LLEGARON=0
+for f in 6.1-2026-10-01T0900.json 6.1-2026-10-01T0900.hilo.jsonl.gz 6.2-2026-10-02T0900.json 6.2-2026-10-02T0900.hilo.jsonl.gz; do
+  cmp -s "${T}/h/${f}" "${T}/b/blobs/telemetry/maq-a/${f}" && LLEGARON=$((LLEGARON+1))
+done
+[ "${RC}" -eq 0 ] && [ "${LLEGARON}" = "4" ] && [ "$(campo "${T}" subidos)" = "4" ] \
+  && python3 -c "import json,sys; assert json.load(open(sys.argv[1]))['destino']=='cuentanueva/telemetry'" "${T}/estado/mailbox-uploads.json" 2>/dev/null \
+  && ok "Cuenta nueva: con la llave de otra cuenta y otro contenedor, los 4 archivos vuelven a subir, idénticos, y el registro anota el destino nuevo" \
+  || mal "Cuenta nueva: rc=${RC} subidos=$(campo "${T}" subidos) llegaron ${LLEGARON} de 4 al contenedor nuevo"
+ANTES=$(puts "${T}/b"); subir "${T}" "${T}/h" "maq-a"
+[ "${RC}" -eq 0 ] && [ "$(puts "${T}/b")" = "${ANTES}" ] && ok "Cuenta nueva: la pasada siguiente no sube nada (recuerda lo del buzón nuevo)" || mal "Cuenta nueva: la pasada siguiente subió $(( $(puts "${T}/b") - ANTES )) archivo(s)"
+
 echo
 [ "${FALLOS}" -eq 0 ] && { echo "subir-corridas: todo verde"; exit 0; } || { echo "${FALLOS} fallo(s)"; exit 1; }

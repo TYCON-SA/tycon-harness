@@ -47,6 +47,9 @@ function armar(t, { staged, disco }) {
   git('init', '-q', '-b', 'main', '.');
   fs.writeFileSync(path.join(repo, STORY), story('ready-for-dev', false));
   fs.writeFileSync(path.join(repo, 'otro.txt'), 'uno\n');
+  // la constancia del dueño de la exención, ya commiteada: los casos miden el `add` encadenado, no la firma
+  fs.mkdirSync(path.join(repo, '.tycon'), { recursive: true });
+  fs.writeFileSync(path.join(repo, '.tycon', 'exemptions.jsonl'), `${JSON.stringify({ story: '9.9', campo: 'dod_runtime_exempt', archivo: STORY, via: 'prueba' })}\n`);
   git('add', '.'); git('commit', '-q', '-m', 'base');
   fs.writeFileSync(path.join(repo, STORY), story('review', staged));
   git('add', STORY);

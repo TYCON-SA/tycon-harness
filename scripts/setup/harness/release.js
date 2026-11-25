@@ -608,6 +608,25 @@ function treeNumberOk(json, version) {
 }
 
 /**
+ * Estampa en el `version.json` de una versión bajada el número de su etiqueta, si el de git es el piso (`numbering:
+ * merge-tag`) y dice otro: `version` pasa a ser la etiqueta y `floor` guarda el piso. Actualiza el `blob` de esa entrada
+ * del manifiesto. Un version.json sin la marca, ilegible o que ya dice el número queda como vino.
+ */
+function stampVersion(dir, files, version) {
+  const file = path.join(dir, 'version.json');
+  let json;
+  try { json = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, '')); } catch (_) { return false; }
+  if (!VO.numberedByTag(json) || json.version === version) return false;
+  const stamped = Object.assign({ version, floor: json.version }, json, { version, floor: json.version,
+    installed: `el número de esta copia es el de su etiqueta (${VO.tagName(version)}); en git, «version» es el piso` });
+  const text = `${JSON.stringify(stamped, null, 2)}\n`;
+  fs.writeFileSync(file, text);
+  const entry = files.find((f) => f.path === 'version.json');
+  if (entry) entry.blob = lib('git-tree-hash.js').blobSha(Buffer.from(text));
+  return true;
+}
+
+/**
  * Baja el comprimido DEL COMMIT, lo recorre con el lector propio, verifica el árbol y deja la versión armada en
  * `incoming/<versión>/` con su manifiesto. `{ ok, dir, manifest }` o `{ ok: false, status, reason }` sin dejar nada.
  */
@@ -651,6 +670,10 @@ function download(ctx, c, repoName, { commit, version, ref, tagged = false, log 
         : `el número publicado (${version}) no coincide con el del árbol verificado de ${sha7(commit)} (${inTree || 'sin version.json'}) — no instalo nada` };
     }
   }
+  // con el número de una etiqueta, el version.json de git dice el piso: la copia instalada lleva el de su etiqueta, para
+  // que quien lo lea a mano sepa qué versión tiene. El manifiesto anota el contenido estampado (`doctor` no lo ve editado)
+  // y el árbol sigue siendo el del commit, ya verificado
+  if (version) stampVersion(dir, x.manifest, version);
   const manifest = { schema: 1, repo: repoName, ref, commit, tree: expectedTree, version, downloaded_at: nowIso(), files: x.manifest };
   fs.writeFileSync(path.join(dir, MANIFEST_NAME), `${JSON.stringify(manifest, null, 1)}\n`);
   if (log) log(`release: ${version || sha7(commit)} bajada y verificada en ${dir} (${x.manifest.length} archivos, árbol ${sha7(expectedTree)})`);
@@ -1832,6 +1855,25 @@ function refreshTeamWithNewCode(ctx, state, harnessDir, { log = null, timeoutMs:
   return { status: 'failed', answered: true, lines: lines.length ? lines : ['capa del equipo: la versión nueva tampoco la acepta — sigue la de antes'] };
 }
 
+/**
+ * «Al día» no se dice con una versión que falló al instalarse (`state.failed`, más nueva que la instalada): pasa cuando
+ * lo publicado después todavía no tiene número, o tiene el mismo en otro commit. Se dice la falla, y el estado es el de
+ * «ya falló» (`skipped`), que no borra el aviso de que la actualización viene fallando. Se mira DESPUÉS del refresco de
+ * la capa del equipo: con otra punta del equipo, la falla se borró y la versión se vuelve a mirar en el arranque
+ * siguiente. Una falla cortada (`interrupted`) la reintenta el arranque, y una que no es más nueva que la instalada ya
+ * no vale. Lo demás del resultado (la capa del equipo, las notas) sigue igual.
+ */
+function failedNotUpToDate(res, state, src) {
+  const f = state && state.failed;
+  if (res.status !== 'up_to_date' || !isObject(f) || f.reason === 'interrupted') return res;
+  const cmp = VO.compare(String(f.commit || ''), src.version);
+  if (cmp !== null && cmp <= 0) return res;
+  const at = Date.parse(f.at || '');
+  const hora = Number.isNaN(at) ? '—' : `${new Date(at).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+  const notes = (res.lines || []).filter((l) => !/^arnés al día/.test(l));
+  return Object.assign({}, res, { status: 'skipped', code: 0, lines: [`la última actualización falló: la versión ${f.commit || '—'} no se instaló (${f.reason || 'salud'}), a las ${hora}; la máquina sigue en ${src.version} y la próxima versión publicada se mira cuando tenga su número (harness.js doctor lo detalla)`, ...notes] });
+}
+
 /** ¿La versión publicada es la que la retención deshizo? La retención la nombra por número o por commit. */
 function holdNamesTarget(hold, t) {
   const named = [hold.commit, hold.sources && hold.sources.harness].filter(Boolean);
@@ -1877,7 +1919,7 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
       if (log) { log(`update: al día; terceros que faltaban: ${missing.length}, siguen faltando: ${still.length}`); for (const n of tp.notes) log(`update: ${n}`); }   // el porqué, también en el registro (el arranque descarta las líneas)
     }
   }
-  if (c0.status !== 'new') return withTeam(c0);
+  if (c0.status !== 'new') return failedNotUpToDate(withTeam(c0), state, src);
   const t = c0.target;
   const what = `${src.version} → ${t.version} (${t.ref} ${sha7(t.commit)})`;
   // con la actualización fijada por el equipo, la retención de una vuelta atrás vale mientras lo publicado sea lo deshecho:
@@ -2578,8 +2620,9 @@ function doctorItems(ctx, state, { fetch = false, channel = null } = {}) {
   // la espera del tope de la API: hasta qué hora, y que se baja sola después
   { const until = Date.parse(state.api_limited_until || '') || null; if (until && Date.now() < until) add('warn', `${limitText({ token: GA.readToken({ env: ctx.env }).token }, until)}: la versión nueva se baja sola en el primer arranque después de esa hora`); }
   if (fetch) {
-    const c = check(ctx, state, { channel: now });
-    add(c.status === 'unknown' || c.status === 'blocked' ? 'warn' : 'ok', `red: ${c.lines[0].replace(/^harness\.js update: /, '')}`);
+    // con una actualización que falló, «al día» no se dice: la misma regla que `update --check` (failedNotUpToDate)
+    const c = failedNotUpToDate(check(ctx, state, { channel: now }), state, src);
+    add(['unknown', 'blocked', 'skipped'].includes(c.status) ? 'warn' : 'ok', `red: ${c.lines[0].replace(/^harness\.js update: /, '')}`);
   }
   // el permiso guardado que venció contra el repo público: amarillo, nunca rojo — la máquina se actualiza igual
   if (tokenExpired(ctx.env) || (state.token_expired_notice && GA.readToken({ env: ctx.env }).token)) add('warn', EXPIRED_TOKEN_TEXT);
@@ -2601,8 +2644,8 @@ module.exports = {
   startup, cmdUpdate, cmdTeamRefresh, doctorItems, markHealth, healthDueAtStartup, startupHealth, versionLine, versionJson, FETCH_WINDOW_MS,
   MANIFEST_NAME, MAIN_REF, SYNC_REF, API_DEFAULT,
   githubRepoOf, repoOf, apiBase, client, explainFailure, tokenExpired, EXPIRED_TOKEN_TEXT, refCommit, versionAt, resolveChannel, check, locateVersion,
-  resolvePublic, numberAt, tagNumberOf, tagsByApi, tagsFor, tagCommit, pendingTag, PENDING_TAG_SAY_MS, trustedCache, fromCache, adoptTag, treeNumberOk,
+  resolvePublic, numberAt, tagNumberOf, tagsByApi, tagsFor, tagCommit, pendingTag, PENDING_TAG_SAY_MS, trustedCache, fromCache, adoptTag, treeNumberOk, stampVersion,
   download, readManifest, restoreThirdParty, swap, swapBack, repair, cleanupDeferred, isNamed, makeSource, shortPlanOf,
   convertLayout, swapLinks, swapBackLinks, repairLinks,
-  cmdInstall, update, rollback, auditTree, refreshTeam, refreshTeamWithNewCode,
+  cmdInstall, update, failedNotUpToDate, rollback, auditTree, refreshTeam, refreshTeamWithNewCode,
 };

@@ -46,6 +46,13 @@ const RUTAS = Object.freeze({
   'manual-test': Object.freeze({ rutas: [], conPunto: [] }),
   'lost-run': Object.freeze({ rutas: [], conPunto: [] }),
   'escape:force-manual': Object.freeze({ rutas: [], conPunto: [] }),
+  // cambiar a mano el estado de una historia (sign-file cambiar-el-estado <archivo>): la constancia es de la sesión
+  // destino; el archivo, en la posición 3, tiene que venir absoluto
+  'escape:cambiar-el-estado': Object.freeze({ rutas: [], conPunto: [], absoluta: 3 }),
+  // los escapes del cierre que pide el marcador, sobre la ejecución abierta del destino: sin rutas
+  'escape:set-autonomous': Object.freeze({ rutas: [], conPunto: [] }),
+  'escape:cerrar-como-deuda': Object.freeze({ rutas: [], conPunto: [] }),
+  'escape:rojo-esperado-de-la-matriz': Object.freeze({ rutas: [], conPunto: [] }),
 });
 
 const no = (motivo, callar = false) => ({ ok: false, motivo, callar });
@@ -126,11 +133,27 @@ function plazoMs({ casa, arnes, env } = {}) {
 }
 
 /**
+ * El motivo por el que la firma `firma` para `destino` la da una persona aunque el perfil se la delegue a la coordinadora,
+ * o null. Es el plan (y su maqueta, que se firma como el plan) de una historia delicada, medido como al aprobarlo
+ * (plan-review.js `planParaDelegar`); sin poder saber si es delicada, también. Lo preguntan el desvío (`delegable`) y
+ * owner-next (signature-list.js `viaQueAnda`) antes de ofrecerle la firma a la coordinadora.
+ */
+function deUnaPersona({ firma, casa, destino } = {}) {
+  if (firma !== 'plan-approval') return null;
+  let r;
+  try { r = require(path.join(SKILL_LIB, 'plan-review.js')).planParaDelegar({ estado: stateDir(casa), destino }); } catch (e) {
+    r = { motivo: `el plan de una historia delicada lo aprueba una persona, y no sé si ésta lo es (${e.message})` };
+  }
+  return r ? String(r.motivo) : null;
+}
+
+/**
  * ¿La coordinadora puede firmar `firma` para `destino`? `{ ok, coordinadora, cwdCoord, palabras, comando }`, o
  * `{ ok: false, motivo, callar }`: con `callar`, el motivo es lo normal (la firma no se delega, o no hay a quién) y no se
- * dice. `palabras`: las canónicas de la sesión, sin `--for-session`; `cwd`: la carpeta del pedido. `delegacion`: la de
- * verdad (`delegaSinVentana`) o la inyectada en las pruebas. Lo del perfil se pregunta antes de mirar si la coordinadora
- * vive: una firma que no se delega no dice «no hay coordinadora».
+ * dice; con `aLaPersona`, la firma la da una persona aunque el perfil la delegue (`deUnaPersona`). `palabras`: las
+ * canónicas de la sesión, sin `--for-session`; `cwd`: la carpeta del pedido. `delegacion`: la de verdad
+ * (`delegaSinVentana`) o la inyectada en las pruebas. Lo del perfil se pregunta antes de mirar si la coordinadora vive:
+ * una firma que no se delega no dice «no hay coordinadora».
  */
 function delegable({ firma, destino, casa, palabras, cwd, delegacion, plataforma = process.platform, arnes, env } = {}) {
   if (!sl().encendida({ casa, arnes, env })) return no('la lista de firmas está apagada', true);
@@ -164,6 +187,9 @@ function delegable({ firma, destino, casa, palabras, cwd, delegacion, plataforma
   if ((!r || !r.ok) && cat.delegatedLevel(firma) >= 2) return no(motivo, true);
   if (sl().coordinadoraViva(casa, ses) !== coord) return no('no hay coordinadora confirmada y viva');
   if (!r || !r.ok) return no(motivo);
+  // con el perfil de acuerdo, el plan de una historia delicada igual lo da una persona: no se le ofrece a la coordinadora
+  const dePersona = deUnaPersona({ firma, casa, destino });
+  if (dePersona) return { ...no(dePersona), aLaPersona: true };
   if (!cwdCoord) return no('no sé desde qué carpeta trabaja la coordinadora');
   if (!w) return no(ruteo.motivo);
   return { ok: true, coordinadora: coord, cwdCoord, palabras: w, comando: comandoDe(w) };
@@ -201,7 +227,8 @@ function vigente(f, { coord, ahora, plazo }) {
  * Lo que `owner-next` comprueba antes de darle el comando a la coordinadora: la forma del comando desviado, las llaves
  * (repetidas con lo que pidió la sesión, y tienen que dar el mismo comando) y el pedido en la conversación. `{ saltado }`
  * si el renglón no se da (no tiene la forma o no pasa las llaves); `{ ok: false, motivo }` si el pedido no se encuentra
- * (el renglón pasa al dueño); `{ ok: true, cwd }` si se da.
+ * o si la firma la da una persona (el plan de una historia delicada): el renglón pasa a la persona; `{ ok: true, cwd }`
+ * si se da.
  */
 function comprobarRenglon({ f, casa, delegacion, arnes, env }) {
   const d = f.delegable;
@@ -214,7 +241,7 @@ function comprobarRenglon({ f, casa, delegacion, arnes, env }) {
   const pedido = ow().canonicaDe(f.comando);
   if (!deSuFirma(pedido)) return { saltado: forma };
   const r = delegable({ firma: f.firma, destino: f.destino, casa, palabras: pedido.palabras, cwd: f.cwd, delegacion, arnes, env });
-  if (!r.ok) return { saltado: r.motivo };
+  if (!r.ok) return r.aLaPersona ? { ok: false, motivo: r.motivo } : { saltado: r.motivo };
   if (r.comando !== d.comando) return { saltado: 'su comando no es el que arma el desvío para ese pedido' };
   const c = pedidoEnLaConversacion({ casa, sesion: f.destino, toolUseId: d.tool_use_id, comando: f.comando });
   return c.ok ? { ok: true, cwd: r.cwdCoord } : { ok: false, motivo: c.motivo };
@@ -244,4 +271,4 @@ function deLaCoordinadora({ casa, filas, ahora = Date.now(), arnes, env } = {}) 
   return ids;
 }
 
-module.exports = { RUTAS, PLAZO_MIN, palabrasRuteadas, comandoDe, plazoMs, delegable, pedidoEnLaConversacion, vigente, comprobarRenglon, renglonDesviado, deLaCoordinadora };
+module.exports = { RUTAS, PLAZO_MIN, palabrasRuteadas, comandoDe, plazoMs, deUnaPersona, delegable, pedidoEnLaConversacion, vigente, comprobarRenglon, renglonDesviado, deLaCoordinadora };
