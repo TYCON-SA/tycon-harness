@@ -207,6 +207,34 @@ function estadoContraVersionBajada(instalado, rutaEnRepo, corre, dejado, antes) 
 const AVISO_VIEJO = 'el freno quedó viejo: reinstalalo';
 
 /**
+ * ¿La actualización del arnés todavía no terminó? Cambia la versión bajada primero y graba el estado después del
+ * aplicador: mientras su candado sea de un proceso vivo de esta máquina, o el estado registre otra versión que la
+ * carpeta, el instalador del freno espera o frena (install-guard.sh). → el por qué, o null. Un estado que no se lee no
+ * dice nada: el aviso sale como siempre.
+ */
+function actualizacionSinTerminar(bajada) {
+  const dir = stateDirOf(HOME);
+  try {
+    const [pid, host] = fs.readFileSync(path.join(dir, 'harness', 'harness.lock', 'pid'), 'utf8').split('\n');
+    const n = Number(pid);
+    if (Number.isInteger(n) && n > 0 && (!host || host === os.hostname())) {
+      let vivo = true;
+      try { process.kill(n, 0); } catch (e) { vivo = e.code === 'EPERM'; }
+      if (vivo) return `el arnés se está actualizando (proceso ${n})`;
+    }
+  } catch (_) { /* sin candado: no corre ninguna */ }
+  try {
+    const s = JSON.parse(fs.readFileSync(path.join(dir, 'harness-state.json'), 'utf8'));
+    const src = (Array.isArray(s && s.sources) ? s.sources : []).find((x) => x && x.kind === 'release');
+    const m = JSON.parse(fs.readFileSync(path.join(bajada, MANIFIESTO_BAJADA), 'utf8'));
+    if (src && typeof m.tree === 'string' && src.tree !== m.tree) {
+      return `el arnés se está actualizando: la carpeta ya trae la versión ${String(m.version || '?').slice(0, 40)} y el estado todavía registra la ${String(src.version || '?').slice(0, 40)}`;
+    }
+  } catch (_) { /* sin estado o manifiesto legible */ }
+  return null;
+}
+
+/**
  * Las bibliotecas que el freno INSTALADO requiere de verdad: dónde quedan en /opt/tycon y de qué
  * archivo del arnés salen. Un arnés que cambia sólo una de ellas (el lector de nombres, por ejemplo) deja al freno
  * instalado leyendo con la versión vieja, igual que si cambiara el hook: eso también es «quedó viejo».
@@ -368,14 +396,21 @@ function juzgar({ soloLeer = false, reporte = REPORTE, reindex = false } = {}) {
       } else if (viejas.length) {
         viejo = true;
         const desde = avisos.length;
-        avisos.push(`🔴 ${AVISO_VIEJO} (${viejas.map((v) => v.nombre).join(', ')}): el arnés publicó una versión nueva.`);
-        if (!instaladoConCopiaPropia(blobsDe(CONSTANCIA_INSTALADO))) avisos.push(TEXTO_COPIA_PROPIA);
-        // con el permiso de actualizarse sola y la organización en «auto», el por qué del atraso:
-        // se está actualizando, falló, está trabada, u otro instalador. Sin eso, la contraseña como siempre.
-        const gun = require(path.join(__dirname, 'guard-update-notice.js'));
-        const sola = existe(path.join(OPT, 'production', 'auto-update.json')) && gun.leerEleccion(ARNES).valor === 'auto';
-        if (sola) avisos.push(`   ${gun.atraso({ prod: path.join(OPT, 'production'), arnes: BAJADA || ARNES }).texto}`);
-        else avisos.push(`   Actualizalo (pide tu contraseña del Mac): open ${INSTALADOR}`);
+        // con la actualización del arnés sin terminar, reinstalar ahora frena: se dice que se espere
+        const sinTerminar = BAJADA ? actualizacionSinTerminar(BAJADA) : null;
+        if (sinTerminar) {
+          avisos.push(`🟠 el freno va a quedar viejo (${viejas.map((v) => v.nombre).join(', ')}): ${sinTerminar}.`);
+          avisos.push(`   Cuando termine (node ${path.join(BAJADA, 'scripts', 'setup', 'harness.js')} update --check dice que está al día), actualizalo: open ${INSTALADOR}`);
+        } else {
+          avisos.push(`🔴 ${AVISO_VIEJO} (${viejas.map((v) => v.nombre).join(', ')}): el arnés publicó una versión nueva.`);
+          if (!instaladoConCopiaPropia(blobsDe(CONSTANCIA_INSTALADO))) avisos.push(TEXTO_COPIA_PROPIA);
+          // con el permiso de actualizarse sola y la organización en «auto», el por qué del atraso:
+          // se está actualizando, falló, está trabada, u otro instalador. Sin eso, la contraseña como siempre.
+          const gun = require(path.join(__dirname, 'guard-update-notice.js'));
+          const sola = existe(path.join(OPT, 'production', 'auto-update.json')) && gun.leerEleccion(ARNES).valor === 'auto';
+          if (sola) avisos.push(`   ${gun.atraso({ prod: path.join(OPT, 'production'), arnes: BAJADA || ARNES }).texto}`);
+          else avisos.push(`   Actualizalo (pide tu contraseña del Mac): open ${INSTALADOR}`);
+        }
         viejoLineas.push(...avisos.slice(desde));
       } else if (bibliotecasFaltan.length) {
         aMediasPorBibliotecas();
@@ -513,7 +548,7 @@ function pieDeRaiz(indice, prod, cwd, reporte) {
 
 if (COMO_MODULO) {
   // para las pruebas: el juicio contra lo publicado, sin correr el aviso
-  module.exports = { juzgar, pieDeRaiz, sesionDentro, estadoContraPublicado, estadoContraVersionBajada, blobsDe, rutasViejas, AVISO_VIEJO, BIBLIOTECAS_DEL_FRENO, COPIA_PROPIA, TEXTO_COPIA_PROPIA, instaladoConCopiaPropia };
+  module.exports = { juzgar, pieDeRaiz, sesionDentro, estadoContraPublicado, estadoContraVersionBajada, blobsDe, rutasViejas, AVISO_VIEJO, BIBLIOTECAS_DEL_FRENO, COPIA_PROPIA, TEXTO_COPIA_PROPIA, instaladoConCopiaPropia, actualizacionSinTerminar };
 } else {
   try { main(); } catch (e) {
     // un aviso que se rompe no puede romper el arranque de la sesión

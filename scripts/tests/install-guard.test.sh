@@ -1057,6 +1057,28 @@ PY
   ' "$NOTICE32" "$CONST32" "$CONST32V" 2>&1)"
   [ "$salida" = "true,false,false" ] && ok "T32q · la constancia dice si el freno instalado ya es el de la copia propia (sí con la nueva; no con la de antes ni sin constancia)" || no "T32q · instaladoConCopiaPropia contestó «${salida}» (esperaba true,false,false)"
   # (c) de punta a punta. El aviso honra la raíz de laboratorio sólo si /opt/tycon no existe de verdad: en una máquina
+  # T32w · el juicio de «la actualización del arnés no terminó», sin raíz de laboratorio (corre también con el freno
+  # instalado): el candado de un proceso vivo, el estado en otra versión que la carpeta, y el gemelo (al día, sin candado)
+  CASA32W="$TMP/casa-32w"; rm -rf "$CASA32W"; mkdir -p "$CASA32W/.tycon/state/harness"
+  cp "$ESTADO30" "$CASA32W/.tycon/state/harness-state.json"
+  juicio32w(){ HOME="$CASA32W" env -u TF_BUILD node -e 'const m = require(process.argv[1]); process.stdout.write(String(m.actualizacionSinTerminar(process.argv[2])))' "$NOTICE32" "$1" 2>&1; }
+  s="$(juicio32w "$ARNES30")"
+  [ "$s" = "null" ] && ok "T32w · con el estado en la versión de la carpeta y sin candado, la actualización está terminada" || no "T32w · al día salió «${s}»"
+  MEDIAS32W="$TMP/arnes-32w-a-medias"; rm -rf "$MEDIAS32W"; mkdir -p "$MEDIAS32W"
+  python3 -c '
+import json, sys
+m = json.load(open(sys.argv[1])); m["tree"] = "f" * 40; m["version"] = "2026.10.09.1"; json.dump(m, open(sys.argv[2], "w"))' "$ARNES30/.tycon-release.json" "$MEDIAS32W/.tycon-release.json"
+  s="$(juicio32w "$MEDIAS32W")"
+  printf '%s' "$s" | grep "se está actualizando" | grep "2026.10.09.1" | grep "2026.10.08.1" >/dev/null && ok "T32w · con el estado en otra versión que la carpeta: «se está actualizando», con las dos versiones" || no "T32w · a medias salió «${s}»"
+  sleep 60 & VIVO32W=$!
+  mkdir -p "$CASA32W/.tycon/state/harness/harness.lock"; printf '%s\n%s\ntoken-32w\n' "$VIVO32W" "$(hostname)" > "$CASA32W/.tycon/state/harness/harness.lock/pid"
+  s="$(juicio32w "$ARNES30")"
+  printf '%s' "$s" | grep "se está actualizando (proceso $VIVO32W)" >/dev/null && ok "T32w · con el candado de un proceso vivo: «se está actualizando»" || no "T32w · con el candado salió «${s}»"
+  kill "$VIVO32W" 2>/dev/null; wait "$VIVO32W" 2>/dev/null
+  s="$(juicio32w "$ARNES30")"
+  [ "$s" = "null" ] && ok "T32w · con el candado de un proceso que ya no existe: terminada" || no "T32w · con un candado huérfano salió «${s}»"
+  rm -rf "$CASA32W" "$MEDIAS32W"
+
   # con el freno se saltea DICIÉNDOLO y lo mide la validación, que corre sin freno instalado.
   if [ -d /opt/tycon ]; then
     echo "⏭ instalar-freno: T32h-o salteados — con el freno instalado, el aviso ignora la raíz de laboratorio; los mide la validación."
@@ -1201,7 +1223,8 @@ json.dump(m, open(p, "w"), indent=1)' "$COMPARTIDA32/.tycon-release.json"
   mkdir -p "$CANDADO30"; printf '%s\n%s\ntoken-30\n' "$VIVO30" "$(hostname)" > "$CANDADO30/pid"
   if TYCON_GUARD_UPDATE_WAIT_S=30 instala30; then ok "T30p · un candado de un proceso que ya no existe no frena la instalación"
   else no "T30p · con un candado huérfano: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-300)"; fi
-  rm -rf "$CANDADO30"
+  # lo que instalaron T30o y T30p se va: los casos de abajo miran que una instalación frenada no deje nada en /opt
+  rm -rf "$CANDADO30" "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"
   # (d) y un archivo que falta
   mv "$ARNES30/scripts/production/guard-libs/lib/guard-record.js" "$TMP/guard-record.30"
   if ! instala30 && grep -q 'guard-record.js (falta)' "$TMP/inst-30"; then ok "T30j · un archivo que falta en la versión bajada frena y lo nombra"
