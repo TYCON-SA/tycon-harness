@@ -515,6 +515,9 @@ function caracterQueEngana(texto) {
 const TOPE_RENGLONES = 20;
 const COLUMNAS_CUADRO = 60;
 const TOPE_CARACTERES = 1200;
+// el tope de la consola que pide la puerta en primer plano, en ms: su turno espera hasta 90 s y el cuadro hasta 120 s,
+// así que 5 minutos los cubren con margen
+const TOPE_PUERTA_MS = 300000;
 // Todo lo que está desde U+1100 (donde empiezan los anchos) cuenta 2, y un emoji también: así no hace falta la tabla
 // entera de anchos de Unicode, y lo que en verdad es angosto se cuenta de más, nunca de menos.
 const ANCHO_DOBLE = /[\u{1100}-\u{10ffff}]|\p{Extended_Pictographic}/u;
@@ -827,8 +830,7 @@ function decidir(entrada) {
     // 🔴 La puerta no corre de fondo, con ninguna forma: abre un cuadro que vence a los 120 s, y de fondo nadie lo mira, así
     // que el pedido se cancela solo y la sesión no sabe por qué. Una lectura no abre cuadro, pero la regla es una sola: una
     // con excepciones es otra forma de equivocarse. El Monitor corre de fondo sin la marca `run_in_background`.
-    // Un primer plano con un tope corto no se frena: anda si la persona contesta antes de que venza, y si no, la consola
-    // lo pasa a segundo plano (el mensaje pide el tope de 5 minutos).
+    // Un primer plano con un tope corto termina de fondo, y también se frena: es el último chequeo de la puerta (abajo).
     const pedido = payload.tool_input || {};
     if (pedido.run_in_background === true || payload.tool_name === 'Monitor') {
       frenar('la puerta de producción no corre de fondo.', [
@@ -908,6 +910,43 @@ function decidir(entrada) {
       'Un alias o una función con ese nombre se queda con la sentencia antes de que llegue a la puerta.',
       'Sacalo de tu configuración del shell (o de este comando) y volvé a intentar.',
     ], { cmd });
+    // 🔴 En primer plano, la puerta lleva un tope de 5 minutos. Al vencer el tope de la consola de Claude Code (120 s
+    // si no se pide otro), la consola no corta el comando: lo pasa a segundo plano, y el cuadro queda abierto sin nadie
+    // que lo mire, como si se hubiera pedido de fondo. Por eso va con la misma regla. Es el último chequeo: si el
+    // comando se frena por su forma o por la puerta, el tope no lo arregla, y el mensaje que sirve es el de esa causa.
+    // Codex no llega acá: se frena antes, porque ahí la puerta no puede abrir el cuadro.
+    // El tope llega como número; un texto con el número se acepta, y otra cosa es un tope que no se entiende.
+    // El que aplica la consola sale también de su configuración, que llega en el entorno del freno: sin tope en el
+    // pedido vale BASH_DEFAULT_TIMEOUT_MS, BASH_MAX_TIMEOUT_MS recorta el pedido (salvo que el de fábrica sea mayor), y
+    // CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS pasa el comando a segundo plano a esa altura, pida lo que pida.
+    const comoNumero = (v) => (typeof v === 'number' || typeof v === 'string' ? Number(v) : NaN);
+    const sinTope = pedido.timeout === undefined || pedido.timeout === null;
+    const deFabrica = comoNumero(process.env.BASH_DEFAULT_TIMEOUT_MS);
+    const tope = sinTope && deFabrica >= TOPE_PUERTA_MS ? deFabrica : comoNumero(pedido.timeout);
+    const recortes = [['BASH_MAX_TIMEOUT_MS', !(deFabrica >= TOPE_PUERTA_MS)], ['CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS', true]];
+    for (const [nombre, cuenta] of recortes) {
+      const v = comoNumero(process.env[nombre]);
+      if (!cuenta || process.env[nombre] === undefined || process.env[nombre] === '' || !(v < TOPE_PUERTA_MS)) continue;
+      frenar(`la puerta de producción va en primer plano con un tope de 5 minutos, y la configuración de la consola lo baja (${nombre}=${String(process.env[nombre]).slice(0, 20)}).`, [
+        'Con esa variable, la consola pasa la puerta a segundo plano, o la corta, antes de los 5 minutos que pueden',
+        'tardar su turno y su cuadro, y el cuadro queda sin nadie que lo mire.',
+        `Decíselo a la persona: es su configuración. Con ${nombre} en ${TOPE_PUERTA_MS} o más (o sin ella), en el env de la`,
+        'configuración de la consola y en una sesión nueva, la puerta pasa.',
+      ], { cmd }, 'puerta-de-fondo');
+    }
+    if (!(Number.isFinite(tope) && tope >= TOPE_PUERTA_MS)) {
+      // hacia abajo: un tope de 299,9 s no se lee como el de 300 s que falta
+      const trae = sinTope ? 'no trae ninguno'
+        : Number.isFinite(tope) ? `trae uno de ${Math.floor(tope / 1000)} s`
+          : `trae uno que no se entiende (${String(pedido.timeout).slice(0, 40)})`;
+      frenar(`la puerta de producción va en primer plano con un tope de 5 minutos, y este pedido ${trae}.`, [
+        'La puerta puede esperar hasta 90 s su turno y hasta 120 s el cuadro. Al vencer el tope, la consola no corta',
+        'el comando: lo pasa a segundo plano, y el cuadro queda sin nadie que lo mire. Sin tope, la consola usa el suyo:',
+        '120 s, si su configuración no dice otro.',
+        `Corré el mismo comando en primer plano, con timeout: ${TOPE_PUERTA_MS} (en milisegundos). Antes, decile a la`,
+        'persona qué cuadro va a aparecer y qué tiene que hacer en él.',
+      ], { cmd }, 'puerta-de-fondo');
+    }
     recordDecision({ freno: 'prod-access-guard', regla: 'puerta-no-canonica', veredicto: 'paso', cmd });
     process.exit(0);                                    // forma canónica y limpia: que decida el cuadro
   }

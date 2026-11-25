@@ -179,6 +179,13 @@ HEAD **ya en origin/main**, con `git worktree remove` sin `--force` y `git branc
 Nunca toca el checkout principal, uno bloqueado (`git worktree lock`) ni el de la sesión. Apagar:
 `TYCON_WORKTREE_SWEEP=0`. Ver qué haría: `--force --dry-run`.
 
+**Los temporales de las sesiones también.** Claude Code guarda lo temporal de cada sesión en
+`/tmp/claude-<uid>/<proyecto>/<sesión>/` y no lo borra al cerrarla. Las copias que una sesión arma en su `scratchpad/`
+viven ahí. `scripts/hooks/temp-sweep.js`, una vez por día al arrancar, borra la carpeta de una sesión que ya no vive y
+que nadie tocó en `maintenance.temp_days` días (2 si el perfil no dice otra cosa). Si adentro hay un clon con cambios
+sin commitear, commits sin subir o una rama sin remoto, la deja y la nombra. Si no puede leer las sesiones, no borra
+ninguna. Ver qué haría: `node <arnés>/scripts/hooks/temp-sweep.js --force --dry-run`.
+
 ---
 
 ## 8. Puestos fijos: la opción `--slot`
