@@ -101,8 +101,9 @@ printf '# Snapshot file\n\n# Functions\n# Shell Options\n# Aliases\n# Check for 
   > "$CASA/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh"   # con SESSION_SINCE=0 vale cualquier hora
 
 # el freno, con la casa y la raíz falsas; imprime el exit code y deja el mensaje en freno.err
+# El evento lleva el tope de 5 minutos que pide la puerta en primer plano: sin él, el freno la frena por el tope.
 freno(){
-  local payload; payload="$(CMD="$1" node -e 'process.stdout.write(JSON.stringify({tool_name:"Bash",hook_event_name:"PreToolUse",cwd:"/tmp",tool_input:{command:process.env.CMD}}))')"
+  local payload; payload="$(CMD="$1" node -e 'process.stdout.write(JSON.stringify({tool_name:"Bash",hook_event_name:"PreToolUse",cwd:"/tmp",tool_input:{command:process.env.CMD,timeout:300000}}))')"
   printf '%s' "$payload" | env HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" TYCON_PROD_ROOT="$RAIZ" TYCON_PROD_SESSION_SINCE=0 \
     node "$FRENO" >"$TMP/freno.out" 2>"$TMP/freno.err"
   echo $?
