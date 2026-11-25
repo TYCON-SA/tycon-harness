@@ -154,7 +154,7 @@ function exencionNueva(event, oldContent, newContent, casa) {
       if (!raiz) throw new Error('no encontré la raíz del repo de la historia');
       for (const { ex, r } of firmas) {
         exenciones.anotar(raiz, { story: exenciones.idDe(newContent) || storyId, campo: ex.campo, archivo: path.relative(raiz, archivo).split(path.sep).join('/'),
-          via: r.constancia.via, sesion: event.session_id });
+          via: r.constancia.via, sesion: event.session_id, aprobacion: r.constancia.aprobacion || null });
       }
     } catch (e) {
       anotar({ veredicto: 'bloqueo' });

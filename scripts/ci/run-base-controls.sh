@@ -551,6 +551,16 @@ function readApprovalDir(root, rev, dir) {
 const approvedEntry = (approvals, p, blob) => approvals.some((a) => a && Array.isArray(a.rules) && a.rules.some((r) => r && r.path === p && r.blob === blob));
 // `by`: quién firmó — el dueño en su terminal o su ventana, la coordinadora en la ventana de la sesión designada
 const approvalLine = (entries, by = 'dueño') => JSON.stringify({ hash: hashOf(entries), rules: entries, at: new Date().toISOString().slice(0, 10), by });
+// La línea con el registro del cuadro que aprobó el dueño (scripts/lib/signed-record-approval.js): `r` es lo que devolvió
+// la firma. Sin la biblioteca al lado, la línea como estaba; sin una persona que aprobara (la delegación), también, y lo dice
+function withApprovalRecord(line, r, firma) {
+  let sra = null;
+  try { sra = require(path.join(process.env.BASE_CONTROLS_SELF_DIR || '', '..', 'lib', 'signed-record-approval.js')); } catch (_) { sra = null; }
+  if (!sra) return line;
+  const aprobacion = sra.aprobacionDe(r, firma);
+  if (!aprobacion) { console.error(`⚠️ run-base-controls approve: la constancia ${sra.SIN_CUADRO}.`); return line; }
+  return JSON.stringify(sra.conCuadro(JSON.parse(line), aprobacion));
+}
 // la refirma tras traer main, firmada por la sesión designada: la anterior del dueño, la máquina y la sesión del registro
 const refreshLine = (entries, refirmaDe, maquina, sesion) => JSON.stringify({ hash: hashOf(entries), rules: entries, at: new Date().toISOString().slice(0, 10), by: 'refirma', via: 'delegacion', clase: REFRESH, refirma_de: refirmaDe, maquina, signed_by_session: sesion });
 // los hashes de las constancias de la base, en cualquiera de las rutas de su inventario y sin mirar la forma: una
@@ -1102,7 +1112,7 @@ function approveInNewWindow(rw, root, out, entries) {
   for (const e of entries) console.error(`   ${safe(e.path)} (blob ${short(e.blob)})`);
   console.error(`La firma va a: ${safe(out)}${isApprovalDir(out) ? `${hashOf(entries)}.json` : ''}`);
   if (!rw.confirmarFrase({})) { console.error('run-base-controls approve: no se firmó nada.'); process.exit(1); }
-  writeApproval(root, out, entries, approvalLine(entries));
+  writeApproval(root, out, entries, withApprovalRecord(approvalLine(entries), { codigo: 0, via: 'terminal' }, 'control-change'));
 }
 
 function readFromTty(prompt) {
@@ -1174,7 +1184,7 @@ function cmdApprove() {
   const answer = readFromTty('Escribí «apruebo» para firmarlo: ');
   if (answer === null) { console.error('🔒 run-base-controls approve: no pude abrir /dev/tty: pide una terminal interactiva de verdad.'); process.exit(2); }
   if (answer !== 'apruebo') { console.error('run-base-controls approve: no se firmó nada.'); process.exit(1); }
-  writeApproval(root, out, entries, approvalLine(entries));
+  writeApproval(root, out, entries, withApprovalRecord(approvalLine(entries), { codigo: 0, via: 'terminal' }, 'control-change'));
 }
 
 // ¿la firma de `approve` es la refirma tras traer main (`refresh-after-main`) o un cambio de control? Sin `--base`, o ante
@@ -1309,7 +1319,7 @@ function approveByWindow(root, out, entries, c) {
   if (r.via !== 'delegacion') {
     let by = 'dueño';
     try { by = require(path.join(process.env.BASE_CONTROLS_SELF_DIR, '..', 'lib', 'delegated-signing.js')).signerOf(r); } catch (_) { /* sin la biblioteca, el de siempre */ }
-    writeApproval(root, out, entries, approvalLine(entries, by));
+    writeApproval(root, out, entries, withApprovalRecord(approvalLine(entries, by), r, firma));
     return;
   }
   const reg = r.registro || {};
@@ -1317,7 +1327,7 @@ function approveByWindow(root, out, entries, c) {
     console.error(`run-base-controls approve: la refirma no da lo mismo que el registro de la ventana (${safe(c ? c.motivo : 'sin clase')}): no se firmó nada. Va a la ventana del dueño, o a su terminal: ${terminal}`);
     process.exit(1);
   }
-  writeApproval(root, out, entries, refreshLine(entries, c.refirma_de, reg.maquina, reg.sesion));
+  writeApproval(root, out, entries, withApprovalRecord(refreshLine(entries, c.refirma_de, reg.maquina, reg.sesion), r, firma));
 }
 
 // la biblioteca de las huellas de las constancias y la carpeta de estado de esta cuenta, o null si no están al lado

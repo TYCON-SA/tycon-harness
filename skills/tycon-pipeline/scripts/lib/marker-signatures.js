@@ -34,8 +34,12 @@ function firmadoEnLaTerminal(firma, resumen) {
   const ow = require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
   const sesion = PROPIA !== '_nosession' ? PROPIA : estado.SID || null;
   ow.firmar({ firma, via: 'terminal', sesion, destino: estado.SID || null, resumen, anotar: anotarFirma });
-  return trabajarSobreElDestino(ow, { via: 'terminal', sesion, destino: estado.SID || null });
+  return trabajarSobreElDestino(ow, { codigo: 0, via: 'terminal', sesion, destino: estado.SID || null });
 }
+
+// Lo que el registro del cuadro guarda de la firma `r` para una constancia, o null si no la dio una persona (la
+// delegación, lo hecho y avisado, la firma de trámite): approvals.js `aprobacionDe`.
+const aprobacionDelCuadro = (r, firma) => require('./approvals.js').aprobacionDe(r, firma);
 
 /**
  * Lo que la deuda acepta de una matriz en rojo (DODRT-C6), o null si no aplica: sin la ejecución en deuda o sin el rojo
@@ -141,16 +145,18 @@ function runtimeWaiverConOk(storyPath, argv, m) {
   const repoRoot = matrix.repoRoot || null;
   // la sesión que pidió la firma: va dentro del ok, que entra en la cadena (cambiarla a mano descarta la firma)
   const sesion = PROPIA !== '_nosession' ? PROPIA : null;
+  // la exención y sus líneas manuales comparten el registro del cuadro: son la misma aprobación
+  const aprobacion = aprobacionDelCuadro(firma, 'runtime-waiver');
   const entry = waiver.appendWaiver({
     story: matrix.key || matrix.sid, acs: pedidos, matrixHash: matrix.hash, approvedBy: e.quien, nowIso: nowIso(), declHashByAc,
     logPath: repoRoot ? waiver.repoWaiverLogPath(repoRoot) : undefined,
-    ok: { tipo: e.tipo, quien: e.quien, via: e.via, ...(sesion ? { sesion } : {}) },
+    ok: { tipo: e.tipo, quien: e.quien, via: e.via, ...(sesion ? { sesion } : {}) }, aprobacion,
   });
   appendLog('gates.log', { type: 'RUNTIME_WAIVER', story: matrix.sid, acs: pedidos, matrixHash: matrix.hash, approvedBy: e.quien, via: e.via,
     ...(sesion ? { sesion } : {}), ...(matrix.batch ? { batch: matrix.batch } : {}) });
   const mk = { ...(m || {}), repoPath: repoRoot || (m && m.repoPath) || null, storyId: (m && m.storyId) || matrix.sid, storyPath };
   for (const n of pedidos) {
-    anotarAprobacion(mk, { que: `AC ${n} imposible de verificar en vivo`, via: e.via, tipo: e.tipo, quien: e.quien, ...(e.delegacion ? { delegacion: e.delegacion } : {}) });
+    anotarAprobacion(mk, { que: `AC ${n} imposible de verificar en vivo`, via: e.via, tipo: e.tipo, quien: e.quien, ...(e.delegacion ? { delegacion: e.delegacion } : {}), aprobacion });
   }
   if (repoRoot) console.error(`📌 Firmado en ${waiver.repoWaiverLogPath(repoRoot)} — commitealo: así vale en otra máquina y en CI.`);
   console.error(`✅ Firmado en la ventana de permiso (${e.quien}): story ${matrix.sid}, AC ${pedidos.join(',')}. Cadena: ${entry.chain}`);
@@ -408,7 +414,8 @@ function cmdWaiveCritical(argv) {
   }
   const linea = cw.anotar(runDir, constancia);
   anotarAprobacion(m, { que: `exencion ${rule}${file ? ` en ${file}` : ''}`, via: entrada.via, tipo: entrada.tipo, quien: entrada.quien, ...porDe(firmaDada),
-    ...(entrada.delegacion ? { delegacion: entrada.delegacion } : {}), ...(entrada.cita ? { cita: entrada.cita, cita_cuando: entrada.cita_cuando } : {}) });
+    ...(entrada.delegacion ? { delegacion: entrada.delegacion } : {}), ...(entrada.cita ? { cita: entrada.cita, cita_cuando: entrada.cita_cuando } : {}),
+    aprobacion: aprobacionDelCuadro(firmaDada, 'critical-waiver') });
   console.error(`✅ ${rule}${file ? ` en ${file}` : ''} eximido (${linea.tipo === 'manual' ? 'manual' : 'automático, por delegación'}, ${linea.quien}${linea.delegacion ? ` por ${linea.delegacion}` : ''}). Ahora sí se puede anotar como waived en findings.json.`);
   process.exit(0);
 }
@@ -515,7 +522,7 @@ function cmdCompareWaiver(argv) {
   }
   cw.anotar(runDir, constancia);
   anotarAprobacion(m, { que: `exencion de la comparacion ${command}`, via: entrada.via, tipo: entrada.tipo, quien: entrada.quien, ...porDe(firmaDada),
-    ...(entrada.delegacion ? { delegacion: entrada.delegacion } : {}) });
+    ...(entrada.delegacion ? { delegacion: entrada.delegacion } : {}), aprobacion: aprobacionDelCuadro(firmaDada, 'compare-waiver') });
   console.error(`✅ ${command} eximido de la comparación con main (${constancia.tipo === 'manual' ? 'manual' : 'por delegación'}, ${constancia.quien}). «Preparar el pull request» lo avisa, y el texto del pedido también.`);
   process.exit(0);
 }
@@ -761,7 +768,8 @@ function cmdApproveSave(argv) {
   writeMarker(fresco);
   const persona = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona';
   const q = quienFirmo(firma, persona);
-  anotarAprobacion(fresco, { que: 'el ok de guardar la story (commit, push y los pedidos)', via: q.via, tipo: q.tipo, quien: q.quien, ...porDe(firma), ...(q.delegacion ? { delegacion: q.delegacion } : {}) });
+  anotarAprobacion(fresco, { que: 'el ok de guardar la story (commit, push y los pedidos)', via: q.via, tipo: q.tipo, quien: q.quien, ...porDe(firma), ...(q.delegacion ? { delegacion: q.delegacion } : {}),
+    aprobacion: aprobacionDelCuadro(firma, 'save') });
   console.error(`✅ ok de guardar la story ${fresco.storyId} (${q.via}${ok.canales ? `, avisado por ${ok.canales.join(', ')}` : ''}). Antes de cada commit, push y pedido: marker.js save-check.`);
   process.exit(0);
 }
@@ -1056,7 +1064,8 @@ function cmdMarkTested(argv) {
   // primero el par en el registro del arnés (que el agente no escribe): sin él la marca no cuenta al cerrar
   for (const r of renglones) appendLog('gates.log', { name: 'manual-check', status: 'ok', story: String(m.storyId), ac: r.ac, ts, quien: r.quien, via: r.via, huella: mc.huellaMarca(r) });
   mc.anotar(runDir, renglones);
-  anotarAprobacion(m, { que: `prueba a mano de ${acs.length > 1 ? 'los criterios' : 'el criterio'} ${acs.join(', ')}`, via: entrada.via, tipo: 'manual', quien: entrada.quien, ...porDe(firmaDada), ...(entrada.delegacion ? { delegacion: entrada.delegacion } : {}), ...(entrada.cita ? { cita: entrada.cita, cita_cuando: entrada.cita_cuando } : {}) });
+  anotarAprobacion(m, { que: `prueba a mano de ${acs.length > 1 ? 'los criterios' : 'el criterio'} ${acs.join(', ')}`, via: entrada.via, tipo: 'manual', quien: entrada.quien, ...porDe(firmaDada), ...(entrada.delegacion ? { delegacion: entrada.delegacion } : {}), ...(entrada.cita ? { cita: entrada.cita, cita_cuando: entrada.cita_cuando } : {}),
+    aprobacion: aprobacionDelCuadro(firmaDada, 'manual-test') });
   console.error(`✅ ${acs.length > 1 ? 'Criterios' : 'Criterio'} ${acs.join(', ')} marcado${acs.length > 1 ? 's' : ''} como probado${acs.length > 1 ? 's' : ''} a mano por ${entrada.quien}.`);
   process.exit(0);
 }
@@ -1248,12 +1257,14 @@ function cmdRuntimeWaiver(storyArg, argv = []) {
     declHashByAc[n] = waiver.declHashFor(matrix.perAc[n].declReason, matrix.perAc[n].coveredBy);
   }
   const repoRoot = matrix.repoRoot || null;
+  // la firma en la terminal también deja su registro del cuadro, el mismo en la exención y en sus líneas manuales
+  const aprobacion = aprobacionDelCuadro({ codigo: 0, via: 'terminal' }, 'runtime-waiver');
   // `story` lleva la CLAVE de la story: con número único es el número de siempre; con número repetido,
   // `<tema>__<número>`, para que la firma no le valga a otra story del mismo número.
   const entry = waiver.appendWaiver({
     story: matrix.key || matrix.sid, acs: approved, matrixHash: matrix.hash, approvedBy, nowIso: nowIso(),
     declHashByAc,
-    logPath: repoRoot ? waiver.repoWaiverLogPath(repoRoot) : undefined,
+    logPath: repoRoot ? waiver.repoWaiverLogPath(repoRoot) : undefined, aprobacion,
   });
   if (repoRoot) {
     console.error(`\n📌 Firmado en ${waiver.repoWaiverLogPath(repoRoot)}`);
@@ -1263,7 +1274,7 @@ function cmdRuntimeWaiver(storyArg, argv = []) {
   // La firma por terminal es de una persona (el agente no tiene terminal): manual, una línea por AC.
   {
     const mk = { ...(m || {}), repoPath: repoRoot || (m && m.repoPath) || null, storyId: (m && m.storyId) || matrix.sid, storyPath };
-    for (const linea of require('./approvals.js').lineasDeFirmaPorTerminal(approved, approvedBy)) anotarAprobacion(mk, linea);
+    for (const linea of require('./approvals.js').lineasDeFirmaPorTerminal(approved, approvedBy)) anotarAprobacion(mk, { ...linea, aprobacion });
   }
   console.error(`\n✅ Waiver registrado (TTY): story ${matrix.sid}, ACs aprobados ${approved.join(',')}${rejected.length ? ` · rechazados ${rejected.join(',')}` : ''}, hash ${matrix.hash}, por ${approvedBy}.`);
   console.error(`   Pinneado al hash actual: si el código/evidencia cambian, se invalida solo.`);
@@ -1296,7 +1307,7 @@ function cmdSignFile(firma, archivo) {
     process.exit(1);
   }
   try {
-    ow.firmarArchivo({ firma, via: r.via, sesion, archivo });
+    ow.firmarArchivo({ firma, via: r.via, sesion, archivo, aprobacion: aprobacionDelCuadro(r, firma) });
   } catch (e) {
     console.error(`🔒 marker.js sign-file: la firma se dio, pero no pude dejar su constancia (${e.message})`);
     process.exit(1);

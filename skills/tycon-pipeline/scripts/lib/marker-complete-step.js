@@ -425,9 +425,12 @@ function cmdCompleteStep(nRaw, flags) {
       : porRevision ? { tipo: 'automatica', quien: `revisión automática (${revision.modelo})`, delegacion: `coordinadora (sesión ${PROPIA})` }
         : delDueno || quienDeLasOpciones(optVal);
     const viaPlan = autoRevision ? '· revisión automática de la propia sesión' : porRevision ? '· revisión automática' : reemplaza ? '--replace-delegated --approved' : '--approved';
-    anotarAprobacion(marker, { que: 'plan', cuando: at3, via: `complete-step ${n} ${viaPlan}`, ...quienPlan, ...porDe(firmaPlan) });
+    // el plan y la maqueta aprobados en el mismo comando comparten el registro del cuadro: son la misma aprobación
+    const aprobacionPlan = autoRevision ? null : require('./approvals.js').aprobacionDe(firmaPlan, 'plan-approval');
+    anotarAprobacion(marker, { que: 'plan', cuando: at3, via: `complete-step ${n} ${viaPlan}`, ...quienPlan, ...porDe(firmaPlan), aprobacion: aprobacionPlan });
     if (mockupPlan) {
-      anotarAprobacion(marker, { que: 'maqueta', cuando: at3, via: `complete-step ${n} --mockup-approved`, ...quienDeLaMaqueta(firmaPlan, optVal), ...porDe(firmaPlan) });
+      anotarAprobacion(marker, { que: 'maqueta', cuando: at3, via: `complete-step ${n} --mockup-approved`, ...quienDeLaMaqueta(firmaPlan, optVal), ...porDe(firmaPlan),
+        aprobacion: aprobacionPlan });
     }
     // La decisión se anota SIEMPRE, para que «Preparar el pull request» vea una pantalla que apareció después del plan.
     marker.mockupDecision = { screen: sc.screen, signal: sc.signal || null, at: at3 };

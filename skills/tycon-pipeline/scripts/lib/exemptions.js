@@ -97,11 +97,20 @@ function mensajeDeFalta(campos, story) {
     + 'al escribirla, y se commitea con ella.';
 }
 
-/** Anota la constancia de `campo` para la historia en el repo `repoRoot`. Lanza si no puede escribirla. */
-function anotar(repoRoot, { story, campo, archivo, via, sesion, ts = new Date().toISOString() }) {
+/**
+ * Anota la constancia de `campo` para la historia en el repo `repoRoot`. Lanza si no puede escribirla. `aprobacion` (de
+ * la firma de la persona): la línea lleva el registro del cuadro (scripts/lib/signed-record-approval.js), que la CI pide;
+ * sin ella, o sin la biblioteca al lado, va sin cuadro y lo dice.
+ */
+function anotar(repoRoot, { story, campo, archivo, via, sesion, ts = new Date().toISOString(), aprobacion = null, avisar = (t) => process.stderr.write(t) }) {
   const f = path.join(repoRoot, RUTA);
+  let linea = { story: String(story), campo, archivo, via, sesion, ts };
+  let sra = null;
+  try { sra = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'signed-record-approval.js')); } catch (_) { sra = null; }
+  if (sra && aprobacion) linea = sra.conCuadro(linea, aprobacion);
+  else if (sra) avisar(`⚠️ la constancia de ${campo} para la historia ${story} ${sra.SIN_CUADRO}\n`);
   fs.mkdirSync(path.dirname(f), { recursive: true });
-  fs.appendFileSync(f, `${JSON.stringify({ story: String(story), campo, archivo, via, sesion, ts })}\n`);
+  fs.appendFileSync(f, `${JSON.stringify(linea)}\n`);
 }
 
 module.exports = { RUTA, EXENCIONES, encabezadoAncho, esHistoriaAncha, lectoresDe, esExencionNueva, nuevas, idDe, tieneConstancia, faltan, nombraExencion, mensajeDeFalta, anotar };

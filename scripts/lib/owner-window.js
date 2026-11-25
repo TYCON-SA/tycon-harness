@@ -2323,8 +2323,12 @@ function deArchivo(firma) {
   if (!FIRMAS_DE_ARCHIVO.includes(firma)) throw new Error(`«${firma}» no es una firma sobre un archivo (${FIRMAS_DE_ARCHIVO.join(', ')})`);
 }
 
-/** La constancia de una firma sobre un archivo, para la sesión que lo va a escribir: la deja el guion después de firmar. */
-function firmarArchivo({ firma, via, sesion, archivo, cwd, casa, ahora = Date.now() } = {}) {
+/**
+ * La constancia de una firma sobre un archivo, para la sesión que lo va a escribir: la deja el guion después de firmar.
+ * `aprobacion`: lo que el registro del cuadro guarda de la aprobación de la persona (signed-record-approval.js
+ * `aprobacionDe`), para que quien escribe la constancia en el repo la lleve.
+ */
+function firmarArchivo({ firma, via, sesion, archivo, cwd, casa, ahora = Date.now(), aprobacion = null } = {}) {
   deArchivo(firma);
   if (!SESION.test(String(sesion || ''))) throw new Error('la constancia necesita la sesión que escribe el archivo');
   if (casa === undefined) casa = casaDeLaCuenta();
@@ -2332,7 +2336,7 @@ function firmarArchivo({ firma, via, sesion, archivo, cwd, casa, ahora = Date.no
   const destino = constanciaDe(casa, firma, sesion, real);
   fs.mkdirSync(path.dirname(destino), { recursive: true });
   const tmp = `${destino}.tmp-${process.pid}`;
-  fs.writeFileSync(tmp, JSON.stringify({ ts: new Date(ahora).toISOString(), firma, via, sesion, destino: sesion, archivo: real }), { mode: 0o600 });
+  fs.writeFileSync(tmp, JSON.stringify({ ts: new Date(ahora).toISOString(), firma, via, sesion, destino: sesion, archivo: real, ...(aprobacion ? { aprobacion } : {}) }), { mode: 0o600 });
   fs.renameSync(tmp, destino);
   return destino;
 }
