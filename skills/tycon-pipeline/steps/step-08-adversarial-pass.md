@@ -198,10 +198,15 @@ Workflow({
     base:      "<el hash de: git -C <repo> fetch origin main && git -C <repo> merge-base HEAD origin/main — si el fetch falla, no se lanza: se dice>",
     agrupar:   <false SÓLO si TYCON_5B_GROUP vale 0 — leela con la biblioteca del arnés, que acepta también su nombre viejo:
                `. "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/lib/legacy-names.sh"; legacy_env TYCON_5B_GROUP; echo "${TYCON_5B_GROUP:-}"`; si no, omitirlo>,
-    sellos:    <los `sellos` que devolvió `marker.js freeze-adversarial`, tal cual: { "<repo>": "<sello>" }>
+    sellos:    <los `sellos` que devolvió `marker.js freeze-adversarial`, tal cual: { "<repo>": "<sello>" }>,
+    copias:    <las `copias` que devolvió `marker.js freeze-adversarial`, tal cual: { "<repo>": "<carpeta de la copia>" }>
   }
 })
 ```
+
+`copias` le dice al pase dónde está la copia de sólo lectura de cada repo: con ella y su sello, los cazadores y los
+verificadores leen el código de la copia y comparan la base con el sello (`git -C <repo> diff <base> <sello>`), no con la
+carpeta viva, que puede cambiar mientras el pase la mira. Sin `copias`, el pase mira la carpeta viva.
 
 `sellos` ata el resultado a lo que se congeló antes de lanzar (historia 8.161): `freeze-adversarial` sella cada repo de
 la corrida y arma su copia de sólo lectura, el pase devuelve los mismos `sellos` en su resultado, y

@@ -62,6 +62,12 @@ const PROBES_DIR = `${RUN_DIR}/step-05b-probes`
 // cazador elige contra qué comparar, y un `main` local atrasado le muestra un cambio que no es el de la historia.
 const BASE = String((A && A.base) || '').trim()
 const BASE_VALIDA = /^[0-9a-f]{7,40}$/i.test(BASE)
+// La copia de sólo lectura que `marker.js freeze-adversarial` armó con el sello del repo (`copias`, junto a `sellos`):
+// con las dos, se revisa lo congelado y no la carpeta viva, que puede cambiar mientras el pase la mira. Sin ellas (el
+// guion lanzado a mano), la carpeta viva, como antes.
+const SELLO = SELLOS && typeof SELLOS[REPO] === 'string' && /^[0-9a-f]{40,64}$/i.test(SELLOS[REPO]) ? SELLOS[REPO] : ''
+const COPIAS = (A && A.copias && typeof A.copias === 'object' && !Array.isArray(A.copias)) ? A.copias : {}
+const COPIA = SELLO && typeof COPIAS[REPO] === 'string' ? COPIAS[REPO].trim() : ''
 
 // Agrupar los hallazgos por causa antes de verificarlos. Se apaga con la variable
 // TYCON_5B_GROUP=0 —como los demás recortes del arnés— o con `agrupar: false` en los args (que es
@@ -122,7 +128,12 @@ function avisoNoMedido(sinMedir, sinVeredicto, motivos) {
 }
 
 const COMMON = `
-Repo: ${REPO}
+Repo: ${REPO}${COPIA ? `
+LO QUE SE REVISA ES LA VERSIÓN CONGELADA (no-negociable): al lanzar el pase se selló el repo (sello ${SELLO}) y se armó
+una copia de sólo lectura de ese sello en ${COPIA}. Leé el código AHÍ, no en ${REPO}: la carpeta viva puede cambiar
+mientras revisás, y el resultado se ata a ese sello. Las rutas del diff son relativas a la raíz de la copia. Una prueba
+que necesita las dependencias instaladas del repo (sus paquetes) puede tomarlas de ${REPO}; el código que revisás sale
+de la copia.` : ''}
 Story: ${STORY}
 Si la story tiene una sección «## Ajustes después de la firma», lo que lista es parte de lo pedido aunque todavía no
 esté en el cuerpo: auditá el código también contra esos ajustes.
@@ -293,8 +304,10 @@ Si corrió y sale distinto de 0, la base no está en el repo: devolvé base_exis
 
 CONTRA QUÉ SE COMPARA (no-negociable): el cambio de la historia es TODO lo distinto de la base ${BASE}, también lo que
 todavía no está commiteado (en este paso el trabajo suele estar sin commitear):
-  git -C ${REPO} diff ${BASE}              (lo commiteado y lo modificado del árbol de trabajo, contra la base)
-  git -C ${REPO} status --porcelain        (los archivos nuevos sin seguir, que el diff no muestra)
+${COPIA ? `  git -C ${REPO} diff ${BASE} ${SELLO}
+(el sello es el árbol congelado, con lo no commiteado y los archivos nuevos: no hace falta mirar el estado de la carpeta
+viva, que puede haber cambiado después)` : `  git -C ${REPO} diff ${BASE}              (lo commiteado y lo modificado del árbol de trabajo, contra la base)
+  git -C ${REPO} status --porcelain        (los archivos nuevos sin seguir, que el diff no muestra)`}
 Nunca compares contra \`main\`, \`master\` ni otra rama local: pueden estar atrasadas y mostrarte un cambio que no es el
 de la historia. Devolvé base = "${BASE}".
 
