@@ -13,6 +13,8 @@
  *
  * En el repo sólo se escriben objetos en la base de git (como un `git add`): ni el árbol de trabajo ni el índice real.
  */
+// lo corre un paso (`frozen-tree.js lista-del-pase`): con un Node viejo dice cuál hace falta, antes de cualquier otro require
+if (require.main === module) { try { require('./node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
