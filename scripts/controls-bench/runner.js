@@ -639,7 +639,22 @@ function runCase(tool, hookDef, caseDef, ctx) {
   }
   // cómo frena el cartel de un caso que frena: se mide, no se juzga
   const cartel = caseDef.type === 'must-block' && res ? clasificarCartel(`${res.stderr || ''}\n${res.stdout || ''}`) : undefined;
-  return { pass: failures.length === 0, failures, exit: res.status, ...(cartel ? { cartel } : {}) };
+  const muestra = muestraDeLaSalida(failures, res);
+  return { pass: failures.length === 0, failures, exit: res.status, ...(cartel ? { cartel } : {}), ...(muestra ? { muestra } : {}) };
+}
+
+/**
+ * Lo que salió, cuando el caso buscaba un texto en una salida y no estaba: los primeros 200 caracteres de esa salida, en
+ * un renglón. Va aparte del motivo del fallo, que queda igual (la lista de rojos conocidos lo reconoce por su texto).
+ * Null si ningún fallo es de un texto que no apareció.
+ */
+function muestraDeLaSalida(failures, res) {
+  if (!res) return null;
+  const corta = (t) => { const s = String(t || '').replace(/\s+/g, ' ').trim(); return s ? s.slice(0, 200) : '(vacía)'; };
+  const m = {};
+  if (failures.some((f) => String(f).startsWith('stdout no matchea /'))) m.stdout = corta(res.stdout);
+  if (failures.some((f) => String(f).startsWith('stderr no matchea /'))) m.stderr = corta(res.stderr);
+  return Object.keys(m).length ? m : null;
 }
 
 /** Devuelve a cada carpeta de `dir` el permiso de entrar y escribir (sin seguir enlaces). Nunca tira. */
@@ -767,7 +782,8 @@ function main(ctx) {
         const mark = r.nomedido ? '🟡' : (r.pass ? '✅' : (gap ? '🟠' : '❌'));
         const why = gap ? `ROJO CONOCIDO (lo cierra ${gap.closes}: ${gap.note}) | `
           : (listed ? `está en known-gaps.json y falla por OTRO motivo (el declarado: /${listed.match.source}/): es un rojo nuevo | ` : '');
-        console.log(`${mark} [${t}] ${key}${r.pass ? '' : ' — ' + why + r.failures.join(' | ')}`);
+        const salio = r.muestra ? ` · salió: ${Object.entries(r.muestra).map(([k, v]) => `${k} «${v}»`).join(' · ')}` : '';
+        console.log(`${mark} [${t}] ${key}${r.pass ? '' : ' — ' + why + r.failures.join(' | ') + salio}`);
       }
     }
   }
