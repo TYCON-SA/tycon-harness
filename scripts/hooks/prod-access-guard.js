@@ -590,7 +590,8 @@ const TOPE_FIREWALL_MS = 8 * 3600 * 1000;
 function barrerFirewallVencido() {
   try {
     const os = require('os'); const fs = require('fs'); const path = require('path');
-    const dir =(() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* la de siempre */ } return path.join(os.homedir(), '.claude', '.tycon-pipeline'); })();
+    // la carpeta del estado la sabe tycon-home.js (en /opt viaja su copia al lado); sin ella no se barre acá
+    const dir = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')).stateDir(os.homedir());
     const estado = path.join(dir, 'production-firewall.json');
     if (!fs.existsSync(estado)) return;
     const reglas = (JSON.parse(fs.readFileSync(estado, 'utf8')).reglas) || [];
