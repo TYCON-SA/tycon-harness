@@ -44,7 +44,8 @@ works on GitLab has the harness on each machine, but the site does not show thos
   interval).
 - **The median:** the middle value; half of the runs are below it and half above.
 
-Each team machine uploads its runs to a shared place, the **runs mailbox**. At night, some harness processes check the
+Each team machine uploads its runs to a shared place, the **runs mailbox**: an Azure Blob Storage container or a Google
+Cloud Storage bucket, depending on the organization's cloud. At night, some harness processes check the
 dependencies (the third-party packages each product uses), the tests and the products, and leave what they measured in
 the organization's **operations repo**. The site reads those two places and shows them.
 
@@ -1328,7 +1329,9 @@ it is already off: with zero replicas no container runs.
 - **The organization's operations repo**, and an identity that can read it (that repo only). If you do not have it
   yet: how to create it and which files it holds, in the harness's `pipelines/operations/README.md` §2 (the examples, in
   `pipelines/operations/examples/`). The site only needs `operations.json`; the minimum, in the Docker trial.
-- **Optional: the runs mailbox**, if the organization collects the runs of its machines.
+- **Optional: the runs mailbox**, if the organization collects the runs of its machines. It can be an Azure Blob Storage
+  container or a Google Cloud Storage bucket; it is chosen in `site.mailbox.provider` (Azure when not declared). How to
+  set up the Google Cloud Storage one: `guides/integrations/gcs-mailbox.md`.
 - **A place to run a container** with HTTPS in front: a cloud, a free service or your own machine.
 
 ## Try it on your machine with Docker
@@ -1495,7 +1498,7 @@ Each installation says where each one is stored and how its value gets in. **No 
 | `SITE_SESSION_KEY` | signing the session | 32 random bytes, only for the site |
 | `SITE_OIDC_CLIENT_SECRET` | the sign-in | a registration only for the site, with no API permissions beyond `openid email profile` (with `github`, which is not OIDC, the site asks for `read:user user:email read:org`: read the account, its emails and whether it belongs to the organization); expires in 6 months at most |
 | `SITE_OPERATIONS_TOKEN` (or the platform identity, `SITE_OPERATIONS_IDENTITY=managed`, no secret) | reading the operations repo | an identity of its own with read access to that repo only; if it is a token, for one organization, code read only, 90 days; on GitHub, fine-grained, one repo, `contents: read` |
-| `SITE_MAILBOX_SAS` (or `SITE_MAILBOX_IDENTITY=managed`) | reading the runs in the mailbox | a read-and-list SAS (`rl`) tied to a stored access policy of the container, 6 months at most; or the platform identity with a read role on the container |
+| `SITE_MAILBOX_SAS` (or `SITE_MAILBOX_IDENTITY=managed`) | reading the runs in the mailbox | a read-and-list SAS (`rl`) tied to a stored access policy of the container, 6 months at most; or the platform identity with a read role on the container. With Google Cloud Storage, only `SITE_MAILBOX_IDENTITY=managed`: the site's service account with `roles/storage.objectViewer` on the bucket, no secret |
 | the notice channel | sending the morning notice | it does not reach the site: the night process uses it. Telegram: the token is for the whole bot, use a dedicated one. Slack or Teams: the webhook address IS the credential |
 | `SITE_OPERATIONS_WRITE_TOKEN` | proposing configuration changes from the site | on GitHub, fine-grained on the operations repo with `contents: write` and `pull_requests: write`; on Azure DevOps, a dedicated account with *Contribute*, *Create branch* and *Contribute to pull requests* on that repo only, *Force push* denied and no permission to bypass policies |
 | `SITE_PROFILE_REPO` and `SITE_PROFILE_TOKEN` | reading the team profile (where each repo lives, the packs) | part of the normal installation: without them the Configuration tab says "falta el repo del perfil" (the profile repo is missing). The address of the profile repo and a read-only code token on that repo (it can be the same permission as the operations repo's, if both live in the same organization) |
