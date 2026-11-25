@@ -60,6 +60,57 @@ function sinCorrerFueraDeLaDeuda(marker, matrix) {
 }
 
 /**
+ * Las comprobaciones de la firma por la ventana, sin firmar: `{ matrix, pedidos }` si la firma pasaría, o `{ rechazo: { code,
+ * lineas } }` con el porqué. Las usan la firma (`runtimeWaiverConOk`) y el chequeo previo (`check-runtime-waiver`), así
+ * que el chequeo dice exactamente lo que la firma va a decir.
+ */
+function pedidoDeFirma(storyPath, argv, m) {
+  const { val } = opcionesDe(argv);
+  let pedidos = [...new Set(String(val('--acs') || '').split(',').map((x) => Number(x.trim())).filter((n) => Number.isInteger(n) && n > 0))];
+  const no = (code, ...lineas) => ({ rechazo: { code, lineas } });
+  const wd = require('./waiver-display.js');
+  const tanda = val('--batch');
+  if (argv.includes('--batch') && (!tanda || String(tanda).startsWith('-'))) return no(2, 'marker.js runtime-waiver: --batch sin el nombre de la tanda.');
+  if (m) {
+    // con una corrida abierta, la tanda es la que anotó la corrida: otra pedida a mano mediría otra cosa
+    if (tanda) return no(2, `🚫 marker.js runtime-waiver: no se firmó — hay una ejecución abierta en ${estado.SID !== PROPIA ? `la sesión ${estado.SID}` : 'esta sesión'}, y manda la tanda de la ejecución (${m.batch || 'sin tanda: todas'}): pedila sin --batch.`);
+    // sólo la historia de la corrida abierta: una copia en otra ruta mostraría a la persona otra cosa que la que se firma
+    if (!wd.esLaDelMarcador(storyPath, m)) return no(2, `🚫 marker.js runtime-waiver: no se firmó — ${storyPath} no es la historia de la corrida abierta en ${estado.SID !== PROPIA ? `la sesión ${estado.SID}` : 'esta sesión'}${m.storyPath ? ` (${m.storyPath})` : ''}.`);
+  } else if (!require('../runtime-matrix.js').discoverRepoRoot(storyPath)) {
+    // sin corrida, la constancia queda en el repo de la historia (`.tycon/runtime-waivers.jsonl`), para commitearla: el
+    // mismo repo que la matriz toma como `repoRoot`. Fuera de git no hay dónde, y la firma va a la terminal
+    return no(2, `🚫 marker.js runtime-waiver: no se firmó — ${storyPath} no está en un repo git: sin una corrida abierta, la firma desde la sesión deja su constancia en el repo de la historia, para commitearla.`,
+      `   La firma una persona en su terminal: node ${MARKER_JS} runtime-waiver ${storyPath} --terminal`);
+  }
+  // la matriz de «Preparar el pull request»: con tanda anotada, los criterios sin correr de las otras tandas no niegan la firma.
+  // Sin corrida, la tanda pedida con --batch, medida igual (el cuadro calcula la misma: scripts/lib/owner-window.js)
+  const matrix = wd.matrixForSignature(storyPath, m, { batch: m ? null : tanda });
+  if (matrix.structuralError) return no(2, `marker.js runtime-waiver: la matriz no computa (${matrix.structuralError}).`);
+  // una tanda pedida que la matriz no pudo medir sola (sin criterios, o sin la lista de cambios): firmar con ella
+  // dejaría pasar criterios de otras tandas
+  if (tanda && !matrix.batch) {
+    const porQue = (matrix.warnings || []).find((w) => /mido todas las tandas/.test(w));
+    return no(2, `🚫 marker.js runtime-waiver: no se firmó — no pude medir sólo la tanda ${tanda}${porQue ? ` (${porQue})` : ''}.`);
+  }
+  const deOtraTanda = matrix.batch ? pedidos.filter((n) => !matrix.acs.includes(n)) : [];
+  if (deOtraTanda.length) return no(2, `🚫 marker.js runtime-waiver: no se firmó — AC ${deOtraTanda.join(', ')} no es de la tanda medida (${matrix.batch}): se firma ${m ? 'en la corrida de su tanda' : 'con --batch de su tanda'}.`);
+  // los que cubre el rojo esperado vigente de la deuda ya tienen su salida: no frenan la exención de los imposibles
+  const notRun = sinCorrerFueraDeLaDeuda(m, matrix);
+  if (notRun.length) {
+    // la pista de qué declarar la imprime sólo el chequeo previo: la salida de la firma queda como estaba
+    return { ...no(2, `🚫 marker.js runtime-waiver RECHAZADO — hay criterios SIN CORRER que no se pueden eximir: AC ${notRun.map((n) => '#' + n).join(', ')}. Los corre el agente.`),
+      pista: '   O, si de verdad no se pueden probar en vivo, se declaran en el frontmatter `runtime_not_verifiable:` (reason + covered_by).' };
+  }
+  const pend = new Set(matrix.notVerifiable || []);
+  // sin --acs, todos los pendientes: la ventana los muestra en el comando que la persona aprueba
+  if (!pedidos.length) pedidos = [...pend].sort((a, b) => a - b);
+  if (!pedidos.length) return no(2, 'marker.js runtime-waiver: no hay criterios declarados imposibles de probar en vivo pendientes de firma.');
+  const ajenos = pedidos.filter((n) => !pend.has(n));
+  if (ajenos.length) return no(2, `marker.js runtime-waiver: AC ${ajenos.join(', ')} no está(n) declarado(s) imposible(s) de probar en vivo y pendiente(s) de firma.`);
+  return { matrix, pedidos };
+}
+
+/**
  * `runtime-waiver <spec> --acs n,m --approved-by "<el dev>"`: firma los criterios declarados imposibles de probar en vivo
  * con la aprobación de la persona en la ventana de permiso, en la misma cadena que la firma por terminal
  * (la matriz la lee igual) y con su línea en approvals.jsonl. Sólo los criterios nombrados, y sólo si están pendientes.
@@ -67,65 +118,15 @@ function sinCorrerFueraDeLaDeuda(marker, matrix) {
 function runtimeWaiverConOk(storyPath, argv, m) {
   const waiver = require('./runtime-waiver.js');
   const { val } = opcionesDe(argv);
-  let pedidos = [...new Set(String(val('--acs') || '').split(',').map((x) => Number(x.trim())).filter((n) => Number.isInteger(n) && n > 0))];
   // lo firma la persona que vio el criterio: el ok reenviado por otra sesión no vale acá
   if (argv.includes('--relayed-by')) {
     console.error('🚫 marker.js runtime-waiver: no se firmó — el ok para un criterio que no se puede probar en vivo no se acepta reenviado');
     console.error('   por otra sesión: lo da la persona que lo vio, en la ventana de permiso o en su terminal.');
     process.exit(2);
   }
-  const wd = require('./waiver-display.js');
-  const tanda = val('--batch');
-  if (argv.includes('--batch') && (!tanda || String(tanda).startsWith('-'))) {
-    console.error('marker.js runtime-waiver: --batch sin el nombre de la tanda.');
-    process.exit(2);
-  }
-  if (m) {
-    // con una corrida abierta, la tanda es la que anotó la corrida: otra pedida a mano mediría otra cosa
-    if (tanda) {
-      console.error(`🚫 marker.js runtime-waiver: no se firmó — hay una ejecución abierta en ${estado.SID !== PROPIA ? `la sesión ${estado.SID}` : 'esta sesión'}, y manda la tanda de la ejecución (${m.batch || 'sin tanda: todas'}): pedila sin --batch.`);
-      process.exit(2);
-    }
-    // sólo la historia de la corrida abierta: una copia en otra ruta mostraría a la persona otra cosa que la que se firma
-    if (!wd.esLaDelMarcador(storyPath, m)) {
-      console.error(`🚫 marker.js runtime-waiver: no se firmó — ${storyPath} no es la historia de la corrida abierta en ${estado.SID !== PROPIA ? `la sesión ${estado.SID}` : 'esta sesión'}${m.storyPath ? ` (${m.storyPath})` : ''}.`);
-      process.exit(2);
-    }
-  } else if (!require('../runtime-matrix.js').discoverRepoRoot(storyPath)) {
-    // sin corrida, la constancia queda en el repo de la historia (`.tycon/runtime-waivers.jsonl`), para commitearla: el
-    // mismo repo que la matriz toma como `repoRoot`. Fuera de git no hay dónde, y la firma va a la terminal
-    console.error(`🚫 marker.js runtime-waiver: no se firmó — ${storyPath} no está en un repo git: sin una corrida abierta, la firma desde la sesión deja su constancia en el repo de la historia, para commitearla.`);
-    console.error(`   La firma una persona en su terminal: node ${MARKER_JS} runtime-waiver ${storyPath} --terminal`);
-    process.exit(2);
-  }
-  // la matriz de «Preparar el pull request»: con tanda anotada, los criterios sin correr de las otras tandas no niegan la firma.
-  // Sin corrida, la tanda pedida con --batch, medida igual (el cuadro calcula la misma: scripts/lib/owner-window.js)
-  const matrix = wd.matrixForSignature(storyPath, m, { batch: m ? null : tanda });
-  if (matrix.structuralError) { console.error(`marker.js runtime-waiver: la matriz no computa (${matrix.structuralError}).`); process.exit(2); }
-  // una tanda pedida que la matriz no pudo medir sola (sin criterios, o sin la lista de cambios): firmar con ella
-  // dejaría pasar criterios de otras tandas
-  if (tanda && !matrix.batch) {
-    const porQue = (matrix.warnings || []).find((w) => /mido todas las tandas/.test(w));
-    console.error(`🚫 marker.js runtime-waiver: no se firmó — no pude medir sólo la tanda ${tanda}${porQue ? ` (${porQue})` : ''}.`);
-    process.exit(2);
-  }
-  const deOtraTanda = matrix.batch ? pedidos.filter((n) => !matrix.acs.includes(n)) : [];
-  if (deOtraTanda.length) {
-    console.error(`🚫 marker.js runtime-waiver: no se firmó — AC ${deOtraTanda.join(', ')} no es de la tanda medida (${matrix.batch}): se firma ${m ? 'en la corrida de su tanda' : 'con --batch de su tanda'}.`);
-    process.exit(2);
-  }
-  // los que cubre el rojo esperado vigente de la deuda ya tienen su salida: no frenan la exención de los imposibles
-  const notRun = sinCorrerFueraDeLaDeuda(m, matrix);
-  if (notRun.length) {
-    console.error(`🚫 marker.js runtime-waiver RECHAZADO — hay criterios SIN CORRER que no se pueden eximir: AC ${notRun.map((n) => '#' + n).join(', ')}. Los corre el agente.`);
-    process.exit(2);
-  }
-  const pend = new Set(matrix.notVerifiable || []);
-  // sin --acs, todos los pendientes: la ventana los muestra en el comando que la persona aprueba
-  if (!pedidos.length) pedidos = [...pend].sort((a, b) => a - b);
-  if (!pedidos.length) { console.error('marker.js runtime-waiver: no hay criterios declarados imposibles de probar en vivo pendientes de firma.'); process.exit(2); }
-  const ajenos = pedidos.filter((n) => !pend.has(n));
-  if (ajenos.length) { console.error(`marker.js runtime-waiver: AC ${ajenos.join(', ')} no está(n) declarado(s) imposible(s) de probar en vivo y pendiente(s) de firma.`); process.exit(2); }
+  const pedido = pedidoDeFirma(storyPath, argv, m);
+  if (pedido.rechazo) { for (const l of pedido.rechazo.lineas) console.error(l); process.exit(pedido.rechazo.code); }
+  const { matrix, pedidos } = pedido;
   // la persona lo aprueba en la ventana de permiso; la cita en la conversación ya no alcanza
   if (val('--quote')) {
     console.error('🚫 marker.js runtime-waiver: no se firmó — la cita ya no firma un criterio que no se puede probar en vivo: lo aprueba la persona');
@@ -1066,6 +1067,31 @@ function cmdMarkTested(argv) {
 // La ÚNICA vía para saltear la verificación runtime por-AC. TTY-only por construcción:
 // el agente corre sin terminal controladora → promptTty() tira. El humano confirma en su
 // terminal. El agente NO puede ejecutar esto con éxito. Ver lib/runtime-waiver.js.
+/**
+ * `check-runtime-waiver [<spec>] [--acs n,m] [--batch <tanda>]`: si la firma por la ventana de esos criterios pasaría, sin
+ * firmar nada. Corre las comprobaciones de la firma (`pedidoDeFirma`) y lo dice en la salida: 0 pasaría, 1 no pasaría
+ * (con el porqué), 2 sin la historia. Es otro subcomando y no `runtime-waiver --check`: cualquier `runtime-waiver` es una
+ * firma para el arnés y le abriría al dueño el cuadro. Lo corre la coordinadora antes de pasarle el pedido al dueño.
+ */
+function cmdCheckRuntimeWaiver(storyArg, argv = []) {
+  const m = readMarker();
+  const crudo = storyArg || (m && (m.storyPath || m.specPath || m.storySpec));
+  const storyPath = resolveStoryPath(crudo, m);
+  if (!storyPath) {
+    console.error(`marker.js check-runtime-waiver: no encuentro la story (recibido: ${nn(crudo, '(nada — ni argumento ni marker)')}). El path va posicional y conviene absoluto.`);
+    process.exit(2);
+  }
+  const pedido = pedidoDeFirma(storyPath, argv, m);
+  if (pedido.rechazo) {
+    console.log(`no pasaría — la firma de ${storyPath} saldría rechazada así:`);
+    for (const l of pedido.rechazo.lineas) console.log(l);
+    if (pedido.pista) console.log(pedido.pista);
+    process.exit(1);
+  }
+  console.log(`pasaría: la firma de los criterios imposibles de probar en vivo AC ${pedido.pedidos.join(', ')} de ${pedido.matrix.sid} se aceptaría. No firmé nada.`);
+  process.exit(0);
+}
+
 function cmdRuntimeWaiver(storyArg, argv = []) {
   const waiver = require('./runtime-waiver.js');
 
@@ -1283,5 +1309,5 @@ module.exports = {
   cmdPlanReview, cmdReviewAsk, cmdReviewAnswer, cmdOwnerAway, cmdWaiveCritical, cmdCompareWaiver,
   cmdSignAdversarialSkip, cmdSignAtddSkip, cmdDeclarePending, cmdApprovePending, firmasDeLaCorrida, cmdApproveSave, cmdSaveCheck,
   respaldosDeDesignar, firmaDeLaDesignacion, cmdDesignateRelay, negarSiEsPruebaSobreLoReal, designarPorClick,
-  vidaDeLaSesion, cmdWithdrawRelay, cmdMarkTested, cmdRuntimeWaiver, cmdSignFile,
+  vidaDeLaSesion, cmdWithdrawRelay, cmdMarkTested, cmdRuntimeWaiver, cmdCheckRuntimeWaiver, cmdSignFile,
 };
