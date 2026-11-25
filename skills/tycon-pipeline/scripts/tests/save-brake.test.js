@@ -1921,6 +1921,73 @@ test('SaveBrake_Chdir_Sigue_YFallaDeGitVaAFallas @story-8.282 @ac-15 @ac-16', (t
   assert.deepStrictEqual(quieto.dudas, []);
 });
 
+// ── Un pedido por la API de la plataforma, y el auto-completar que se prende después (fila 189b) ─────────────────
+// El freno leía como pedido sólo los comandos de pedido de cada conector (`gh pr create`, `az repos pr create`…). El
+// mismo pedido creado o juntado por la API (`gh api -X POST …/pulls`, `glab api … /merge_requests/<n>/merge`, una
+// mutación de graphql) o el auto-completar prendido con `az repos pr update` salían sin la ventana dentro de una
+// ejecución. Ahora cada conector declara sus rutas de API de pedido y sus cambios que prenden el auto-completar.
+// 🔴 Falla con: un freno que no lee la API (los de «guardan» no salen como pedido), que lee cualquier llamada a la API
+//    como pedido (los de «no guardan»), o que da por leída una llamada que no se puede leer (los de «opacos»).
+test('F189b SaveBrake_PedidoPorLaApi_YElAutoCompletar_SeLeen', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  const leidos = (cmd) => brake().comandosQueGuardan(cmd, a, h);
+  const guardan = [
+    'gh api -X POST repos/acme/x/pulls -f title=t -f head=b -f base=main',
+    'gh api repos/acme/x/pulls -f title=t -f head=b',
+    'gh api --method PUT repos/acme/x/pulls/5/merge',
+    'gh api -XPUT /repos/acme/x/pulls/5/merge',
+    'gh api --method=POST repos/acme/x/pulls --input cuerpo.json',
+    'gh api https://api.github.com/repos/acme/x/pulls -f title=t',
+    `gh api graphql -f query='mutation { enablePullRequestAutoMerge(input: {pullRequestId: "x"}) { clientMutationId } }'`,
+    `gh api graphql -f query='mutation{mergePullRequest(input:{pullRequestId:"x"}){clientMutationId}}'`,
+    `gh api graphql -f 'query=mutation { enqueuePullRequest(input: {pullRequestId: "x"}) { clientMutationId } }'`,
+    'glab api -X POST projects/acme%2Fx/merge_requests -f title=t',
+    'glab api --method PUT projects/1/merge_requests/3/merge',
+    'az repos pr update --id 5 --auto-complete true',
+    'az repos pr update --id 5 --auto-complete',
+    // del pase adversarial: el valor pegado a la opción corta, las rutas de una instalación propia y juntar con el estado
+    'gh api -X=POST repos/acme/x/pulls',
+    'gh api -ftitle=t repos/acme/x/pulls',
+    'gh api -Ftitle=t -Fhead=b repos/acme/x/pulls',
+    `gh api graphql -fquery='mutation { mergePullRequest(input: {pullRequestId: "x"}) { clientMutationId } }'`,
+    'gh api /api/v3/repos/acme/x/pulls -f title=t',
+    'gh api https://ghe.acme.test/api/v3/repos/acme/x/pulls -f title=t',
+    'gh api REPOS/Acme/X/Pulls -f title=t',
+    'glab api -X PUT /api/v4/projects/1/merge_requests/3/merge',
+    'glab api -ftitle=t projects/1/merge_requests',
+    'az repos pr update --id 5 --status completed',
+    'az repos pr update --id 5 --auto-complete=true',
+  ];
+  for (const cmd of guardan) assert.ok(leidos(cmd).some((c) => c.tipo === 'pr'), `«${cmd}» se lee como pedido: ${JSON.stringify(leidos(cmd))}`);
+  const noGuardan = [
+    'gh api repos/acme/x/pulls',
+    'gh api -X GET repos/acme/x/pulls/5',
+    'gh api -X PATCH repos/acme/x/pulls/5 -f title=otro',
+    'gh api repos/acme/x/issues -f title=t',
+    `gh api graphql -f query='query { viewer { login } }'`,
+    'glab api projects/1/merge_requests',
+    'az repos pr update --id 5 --title otro',
+    'az repos pr update --id 5 --auto-complete false',
+    'az repos pr update --id 5 --auto-complete n',
+    'az repos pr update --id 5 --auto-complete f',
+    'az repos pr update --id 5 --status active',
+    `gh api graphql -f query='query { repository(owner: "a", name: "b") { pullRequest(number: 1) { title } } }'`,
+  ];
+  for (const cmd of noGuardan) assert.ok(!leidos(cmd).some((c) => c.tipo === 'pr' || c.opaco), `«${cmd}» no guarda: ${JSON.stringify(leidos(cmd))}`);
+  const opacos = [
+    'gh api -X $METODO repos/acme/x/pulls',
+    'gh api $RUTA -f title=t',
+    'gh api graphql -F query=@consulta.graphql',
+    'gh api graphql -f query="$CONSULTA"',
+    'az repos pr update --id 5 --auto-complete $AC',
+    'gh api graphql --input consulta.json',
+    'glab api graphql --input consulta.json',
+    'gh api -X POST',
+  ];
+  for (const cmd of opacos) assert.ok(leidos(cmd).some((c) => c.opaco || c.tipo === 'pr'), `«${cmd}» no se puede leer: no pasa como inofensivo: ${JSON.stringify(leidos(cmd))}`);
+});
+
 // ── el borrador del pedido antes de «Preparar el pull request» ──────────────────────────────────────────────────────
 // Un borrador no se puede mergear: antes de «Preparar» pregunta en la ventana, con su forma y su repo, en vez de frenar.
 // Pasarlo a listo es un pedido que guarda: antes de «Preparar» frena, y después se juzga con la foto. Lo que distingue

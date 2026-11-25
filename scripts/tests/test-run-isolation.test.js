@@ -181,6 +181,41 @@ test('Aislada_HijoSinRed_ElEncierroLoAnota @story-8.314 @ac-2', { skip: ENCIERRO
   assert.ok(fs.existsSync(path.join(r, 'f.txt')), 'escribió en su repo');
 });
 
+test('F161b Aislada_EscrituraNegadaFueraDeLoAdmitido_LoDiceEnUnaLinea: un comando que falla porque el encierro le negó escribir fuera de su casa y de su repo se lleva una línea con qué hacer', { skip: ENCIERRO ? false : 'sin el encierro del sistema' }, (t) => {
+  // un here document de bash o un temporal de mktemp con otra carpeta dan un «Operation not permitted» suelto: el
+  // encierro no se abre, y la línea dice que esa suite va como humo común
+  const c = cuenta(t);
+  const afuera = path.join(c.b, 'afuera');
+  fs.mkdirSync(afuera);
+  const r = repo(path.join(c.b, 'repo'), {
+    '.advisors/dod-runtime/g.js': [
+      "const { spawnSync } = require('child_process');",
+      "const h = spawnSync('/bin/sh', ['-c', 'echo x > \"$1\"', 'sh', process.argv[2]], { stdio: 'inherit' });",
+      'process.exit(h.status === null ? 1 : h.status);',
+    ].join('\n'),
+    '.advisors/dod-runtime/falla.js': "console.error('esperaba 2, vino 3'); process.exit(1);\n",
+  });
+  const ev = path.join(r, '.advisors', 'dod-runtime');
+  const correr = (d) => humo(SMOKE, ev, '9.32', ['--', process.execPath, '.advisors/dod-runtime/g.js', d], { cwd: r, env: ambiente(c) });
+  const negada = correr(path.join(afuera, 'f.txt'));
+  assert.notStrictEqual(negada.status, 0, salida(negada));
+  assert.ok(!fs.existsSync(path.join(afuera, 'f.txt')), 'el encierro lo negó');
+  const lineas = salida(negada).split('\n').filter((l) => l.includes('humo común'));
+  assert.strictEqual(lineas.length, 1, `una línea que dice qué hacer: ${salida(negada)}`);
+  assert.match(lineas[0], /\[smoke-run\]/);
+  assert.match(lineas[0], /no se abre/);
+  // la línea no repite el texto del sistema que se busca en la salida
+  assert.doesNotMatch(lineas[0], /Operation not permitted|cannot create temp file/);
+  // gemelo: el mismo comando que escribe en su repo sale 0 y no se lleva la línea
+  const bien = correr(path.join(r, 'f.txt'));
+  assert.strictEqual(bien.status, 0, salida(bien));
+  assert.ok(!salida(bien).includes('humo común'), salida(bien));
+  // gemelo: un comando que falla por otra cosa (una aserción, sin nada negado) tampoco
+  const otro = humo(SMOKE, ev, '9.32', ['--', process.execPath, '.advisors/dod-runtime/falla.js'], { cwd: r, env: ambiente(c) });
+  assert.notStrictEqual(otro.status, 0, salida(otro));
+  assert.ok(!salida(otro).includes('humo común'), salida(otro));
+});
+
 test('F174 Aislada_HereDocDeBash_Anda: en el encierro, desde una carpeta no admitida, el bash del sistema escribe el temporal de su here document; otra escritura ahí sigue negada', { skip: ENCIERRO ? false : 'sin el encierro del sistema' }, (t) => {
   // fila 174: el bash 3.2 de macOS no mira TMPDIR para un here document; si no puede escribir en /var/tmp ni en /tmp (el
   // encierro se lo niega), lo escribe en la carpeta actual como «sh-thd-<n>». Negado, un freno de bash que lo usa no

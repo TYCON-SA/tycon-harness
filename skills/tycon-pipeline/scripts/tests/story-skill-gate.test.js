@@ -314,10 +314,97 @@ test('on-bash-write-gate (F2): el heredoc de una story EXISTENTE no contagia a o
   assert.equal(hd[0].target, 'a.md');
 });
 
+// 🔴 Fila 225. Mutación: que la lectura de los heredocs corte el renglón en un `#` o se quede en la primera apertura sin
+// cierre del renglón: un `(( 1 << 2 ))`, `$[1<<2]`, `${n:1<<1}` o `$(true)#x` antes del heredoc de verdad lo escondía, y
+// una historia lista escrita a mano junto a otro `.md` pasaba sin la skill.
+test('on-bash-write-gate (fila 225): el heredoc detrás de un `<<` aritmético o de un `#` en su renglón se lee', () => {
+  for (const antes of ['(( n = 1 << 2 ));', 'echo $(true)#x >/dev/null;', 'echo ${n:1<<1} >/dev/null;', 'echo $[1<<2] >/dev/null;', 'i=1; ((i<<=1));', 'echo a #b;']) {
+    const hd = bash.heredocs(`cat > specs/notas.md <<'X'\nhola\nX\n${antes} cat > specs/plan-a.md <<'EOF'\n---\nstory: "9.9"\nEOF`);
+    assert.deepStrictEqual(hd.map((h) => h.body), ['hola', '---\nstory: "9.9"'], antes);
+  }
+  // de la segunda vuelta: la lectura es la de siempre, con las comillas sin escapes desde el principio del renglón. Una
+  // comilla escapada en un comentario o en `$'…'` no deja abrir un heredoc falso que se trague el de verdad
+  const historia = `cat > specs/plan-a.md <<'EOF'\n---\nstory: "9.9"\nEOF`;
+  for (const antes of ["echo a # \\' <<Z", 'echo a # \\" <<Z', "(( n = 1 << 2 )); echo $'a\\'b\\' <<Z x'"]) {
+    assert.deepStrictEqual(bash.heredocs(`${antes}\n${historia}\nZ`).map((h) => h.body), ['---\nstory: "9.9"'], antes);
+  }
+});
+
+// 🔴 Fila 240. Mutación: que se abra un heredoc con el `<<` de una cuenta o de una expansión (`(( n = 1 << true ))`,
+// `$[ 1 << true ]`, `${n:1<<true}`, `${n:-<<true}`): con un renglón `true` más abajo, «cierra», y lo del medio no se
+// miraba como comando. bash y zsh lo corren: una escritura al estado del pipeline o a una historia lista pasaba. Se prueban
+// los dos lectores: el de los destinos (`quitarCuerposDeHeredoc`) y el de los cuerpos (`heredocs()`).
+test('on-bash-write-gate (fila 240): un `<<` aritmético o de una expansión no abre heredoc ni esconde lo que sigue', () => {
+  const falsos = [['(( n = 1 << true ))', 'true'], ['(( n = 1 << 2 ))', '2'], ['echo $[ 1 << true ] >/dev/null', 'true'],
+    ['echo ${n:1<<true} >/dev/null', 'true'], ['n=1; echo ${n:-<<true} >/dev/null', 'true']];
+  const repo = mkRepo(); const st = mkState();
+  fs.writeFileSync(path.join(repo, 'specs', 'story-9-9.md'), S99);
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const estado = `echo x > ${path.join(st, 'suelto.json')}`;
+  const historia = 'echo x >> specs/story-9-9.md';
+  // sin el renglón de antes, los dos frenan: es lo que se escondía
+  assert.match(bash.handle(ev(estado), { stateDir: st }).block, /ESCRITURA DIRECTA AL ESTADO DEL PIPELINE/);
+  assert.match(bash.handle(ev(historia), { stateDir: st }).block, /HISTORIA ESCRITA POR CONSOLA/);
+  for (const [antes, cierre] of falsos) {
+    assert.ok(bash.quitarCuerposDeHeredoc(`${antes}\n${estado}\n${cierre}`).includes(estado), `${antes}: el destino se ve`);
+    const hd = bash.heredocs(`${antes}\ncat > specs/plan-a.md <<'EOF'\n---\nstory: "9.9"\nEOF\n${cierre}`);
+    assert.deepStrictEqual(hd.map((h) => h.body), ['---\nstory: "9.9"'], `${antes}: el heredoc de verdad se lee`);
+    const e = bash.handle(ev(`${antes}\n${estado}\n${cierre}`), { stateDir: st });
+    assert.match(e && e.block, /ESCRITURA DIRECTA AL ESTADO DEL PIPELINE/, `${antes}: el estado`);
+    const h = bash.handle(ev(`${antes}\n${historia}\n${cierre}`), { stateDir: st });
+    assert.match(h && h.block, /HISTORIA ESCRITA POR CONSOLA/, `${antes}: la historia`);
+  }
+  // lo de todos los días sigue igual: un heredoc detrás de una expansión cerrada, y el de una cuenta que es heredoc de verdad
+  assert.deepStrictEqual(bash.heredocs(`cat > "\${D}/notas.md" <<'X'\nhola\nX`).map((h) => h.body), ['hola']);
+  assert.ok(!bash.quitarCuerposDeHeredoc(`cat > "\${D}/notas.md" <<'X'\nhola\nX`).includes('hola'), 'el cuerpo detrás de `${D}` se quita');
+  assert.deepStrictEqual(bash.heredocs(`(( n = 1 << 2 )); cat > notas.md <<'X'\nhola\nX`).map((h) => h.body), ['hola']);
+});
+
+// 🔴 Fila 243. Mutaciones: leer los heredocs sólo con la lectura de siempre (que no mira el `#` ni lee uno detrás del otro
+// los heredocs de un renglón), que el lector de los destinos no sepa del `$'…'`, y juzgar sólo el primer cuerpo de un
+// archivo. Un `<<Z` en un comentario, o en el cuerpo del segundo heredoc de un renglón, abría uno falso que se tragaba el de
+// verdad, y una historia escrita por heredoc pasaba sin la skill; un `$'a\'b\' <<Z x'` escondía lo de abajo a los controles.
+test('on-bash-write-gate (fila 243): un heredoc falso en un comentario, en otro cuerpo o en `$\'…\'` no esconde el de verdad', () => {
+  const repo = mkRepo(); const st = mkState();
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const historia = `cat > specs/9-9.md <<'EOF'\n${S99}EOF`;
+  // sola frena: es lo que se escondía
+  assert.ok(bash.handle(ev(historia), { stateDir: st }).block, 'la historia sola frena');
+  for (const antes of ['echo a # <<Z', 'echo a #<<Z', 'true; # cat <<Z', 'cat <<A <<B\na\nA\nx <<Z\nB']) {
+    const cmd = `${antes}\n${historia}\nZ`;
+    assert.ok(bash.heredocs(cmd).some((h) => h.target === 'specs/9-9.md' && h.body === S99.replace(/\n$/, '')), `${antes}: el heredoc de verdad se lee`);
+    assert.ok(bash.handle(ev(cmd), { stateDir: st }).block, `${antes}: la historia frena`);
+  }
+  // con dos cuerpos para el mismo archivo, cuenta cualquiera: `cat <<A <<B` escribe el segundo
+  assert.ok(bash.handle(ev(`cat <<A <<B > specs/plan-b.md\nhola\nA\n${S99.replace('9.9', '9.8')}B`), { stateDir: st }).block, 'el segundo cuerpo de un renglón');
+  // el lector de los destinos: una comilla escapada en `$'…'` no cierra el texto, y su `<<Z` no abre un heredoc
+  const estado = `echo x > ${path.join(st, 'suelto.json')}`;
+  for (const antes of ["echo $'a\\'b\\' <<Z x'", "echo $'it\\'s <<Z'"]) {
+    assert.ok(bash.quitarCuerposDeHeredoc(`${antes}\n${estado}\nZ`).includes(estado), `${antes}: el destino se ve`);
+    assert.match(bash.handle(ev(`${antes}\n${estado}\nZ`), { stateDir: st }).block, /ESCRITURA DIRECTA AL ESTADO DEL PIPELINE/, antes);
+  }
+  // lo de todos los días sigue igual
+  assert.deepStrictEqual(bash.heredocs(`cat > notas.md <<'X'\nhola\nX`).map((h) => h.body), ['hola']);
+  assert.deepStrictEqual(bash.heredocs(`paste /dev/fd/3 3<<'A' <<'B'\nx\nA\ny\nB`).map((h) => h.body), ['x', 'y']);
+  assert.ok(!bash.quitarCuerposDeHeredoc(`echo $'a\\tb' <<X\nhola\nX`).includes('hola'), 'un heredoc de verdad detrás de un $\'…\' se quita');
+  assert.equal(bash.handle(ev(`echo a # <<Z\necho hola\nZ`), { stateDir: st }), null, 'un comentario con << sin nada protegido pasa');
+  // lo que llega a un intérprete por la entrada se lee una vez por comando: el freno lo pide unas cinco veces, y con una
+  // tubería larga de here-strings cada lectura tardaba segundos
+  const tuberia = `${'cat <<<x | '.repeat(50)}python3`;
+  assert.strictEqual(bash.programasPorEntrada(tuberia), bash.programasPorEntrada(tuberia), 'la segunda vez es la misma lectura');
+  // de la vuelta corta: el mismo cuerpo para la misma historia se juzga una vez (cada juicio lleva su tiempo; 60 tardaban 8 s)
+  const borrador = S99.replace('backlog', 'draft');
+  fs.writeFileSync(path.join(repo, 'specs', 'borrador.md'), borrador);
+  // stable-data: el reloj mide cuánto tarda el freno, que es lo que se prueba
+  const desde = Date.now();
+  assert.equal(bash.handle(ev(`cat > specs/borrador.md <<'A'\n${borrador}A\n`.repeat(60)), { stateDir: st }), null);
+  assert.ok(Date.now() - desde < 3000, `60 cuerpos iguales: ${Date.now() - desde} ms`);
+});
+
 // 🔴 Fila 243 (P10). Mutación: que el estado del pipeline se mire sólo en lo escrito a la vista, que `eval` no lea las
 // variables de afuera, que `su -c` no se lea como un shell, o que `parallel` no corra su orden. Por cualquiera, una
 // escritura al estado (o a una historia o una constancia) que corre adentro de otro programa pasaba.
-test('on-bash-write-gate (fila 243): lo que otro programa escribe en el estado, una historia o una constancia frena', () => {
+test('on-bash-write-gate (fila 243, P10): lo que otro programa escribe en el estado, una historia o una constancia frena', () => {
   const repo = mkRepo(); const st = mkState();
   fs.writeFileSync(path.join(repo, 'S'), 'x\n');
   fs.writeFileSync(path.join(repo, 'specs', 'story-9-9.md'), S99);

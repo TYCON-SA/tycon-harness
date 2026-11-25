@@ -8,6 +8,7 @@
   "capabilities": { "completedHours": "comment", "estimate": "project-or-comment","workItemType": "label", "autoComplete": "auto-or-wait" },
   "rawCommands": ["gh pr create", "gh pr new", "gh pr merge", "gh issue create", "gh issue edit", "gh issue close"],
   "changeRequestCommands": ["gh pr create", "gh pr new", "gh pr merge"],
+  "changeRequestApi": { "command": "gh api", "routes": [{ "method": "POST", "path": "repos/*/*/pulls" }, { "method": "PUT", "path": "repos/*/*/pulls/*/merge" }], "graphql": ["createPullRequest", "mergePullRequest", "enablePullRequestAutoMerge", "enqueuePullRequest"] },
   "draftOptions": [{ "command": "gh pr create", "options": [{ "name": "--draft", "separateValue": false }, { "name": "-d", "separateValue": false }], "abbreviations": false }, { "command": "gh pr new", "options": [{ "name": "--draft", "separateValue": false }, { "name": "-d", "separateValue": false }], "abbreviations": false }],
   "readyCommands": [{ "command": "gh pr ready", "unless": [{ "name": "--undo", "separateValue": false }], "abbreviations": false }],
   "hardSignals": ["\\bgh\\s+(pr|api)\\b", "api\\.github\\.com"]
