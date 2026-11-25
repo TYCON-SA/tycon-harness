@@ -102,13 +102,24 @@ function copiaDelFreno() {
   return raiz;
 }
 
+/** El registro de fallas que quedó en la casa, dondequiera que esté su carpeta del estado ('' si no hay). */
+function registroDe(dir) {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) { const t = registroDe(p); if (t) return t; } else if (e.name === 'hook-errors.log') return fs.readFileSync(p, 'utf8');
+  }
+  return '';
+}
+
 function correrCopia(raiz, comando) {
   const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-gate-copia-casa-'));
   try {
-    return spawnSync(process.execPath, [path.join(raiz, 'skills', 'tycon-pipeline', 'scripts', 'on-bash-write-gate.js')], {
+    const r = spawnSync(process.execPath, [path.join(raiz, 'skills', 'tycon-pipeline', 'scripts', 'on-bash-write-gate.js')], {
       input: JSON.stringify({ session_id: 'ses-partes', cwd: raiz, tool_name: 'Bash', tool_input: { command: comando } }),
       encoding: 'utf8', cwd: raiz, env: { ...process.env, HOME: casa, USERPROFILE: casa }, timeout: 60000,
     });
+    r.registro = registroDe(casa);
+    return r;
   } finally {
     fs.rmSync(casa, { recursive: true, force: true });
   }
@@ -128,6 +139,9 @@ test('BashGate_MissingPart_BlocksAndNamesIt @story-8.163 @ac-10 — sin una part
         const r = correrCopia(raiz, 'ls');
         assert.strictEqual(r.status, 2, `sin lib/${parte}, frena (salió ${r.status}: ${r.stderr})`);
         assert.ok(r.stderr.includes(`lib/${parte}`), `sin lib/${parte}, el mensaje la nombra (${r.stderr})`);
+        // también la red, que carga antes que la carpeta del estado: el aviso de arranque cuenta las fallas por este renglón
+        assert.match(r.registro, new RegExp(`on-bash-write-gate FRENÓ POR FALLA:[\\s\\S]*${parte.replace(/\./g, '\\.')}`),
+          `sin lib/${parte}, deja su renglón en hook-errors.log (${r.registro.slice(0, 300) || 'vacío'})`);
       } finally {
         fs.writeFileSync(archivo, guardado);
       }

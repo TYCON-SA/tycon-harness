@@ -81,7 +81,14 @@ const parte = (cargar) => {
     if (!falta) throw e;
     const motivo = `al freno de escrituras le falta una parte suya, lib/${falta[0]}`;
     if (require.main !== module) throw new Error(`${motivo} (reinstalá el arnés)`);
-    try { logHookError(e, 'FRENÓ POR FALLA'); } catch { /* sin la red no hay registro: lo dice el mensaje */ }
+    // el renglón va directo a la carpeta del estado: la red carga antes que el registro de más abajo, que con ella
+    // ausente todavía no sabe dónde escribir. El aviso de arranque cuenta las fallas por este renglón
+    try {
+      let dir;
+      try { const lib = path.join(__dirname, '..', '..', '..', 'scripts', 'setup', 'harness', 'tycon-home.js'); dir = require(lib).stateDir(os.homedir()); } catch { dir = os.tmpdir(); }
+      fs.mkdirSync(dir, { recursive: true });
+      fs.appendFileSync(path.join(dir, 'hook-errors.log'), `[${new Date().toISOString()}] on-bash-write-gate FRENÓ POR FALLA: ${(e && e.stack) || e}\n\n`, 'utf8');
+    } catch { /* sin dónde anotarlo, lo dice el mensaje */ }
     try {
       process.stderr.write(`⛔ tycon-pipeline — ${motivo}: el comando no corrió. Reinstalá el arnés; \`/tycon-harness\` dice si quedó bien instalado.\n`);
     } catch { /* sin dónde decirlo, frena igual */ }
