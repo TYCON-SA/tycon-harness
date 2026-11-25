@@ -983,7 +983,7 @@ else
       + s + "else\n" + s + "  bash scripts/ci/public-ci.sh --clean-machine --range \"origin/${BASE_REF#refs/heads/}...HEAD\"\n" + s + "fi\n");'
   altered "sin frenar una base sin el guion" "base-controls" 'return t.replace(/^ *git cat-file -e "\$\{BASE\}:scripts\/ci\/run-base-controls\.sh" \|\| .*\n/m, "");'
   # ── T4 · PublicCi_Guia_SinRamaDeArranque — la guía de detalle dice que sin el guion `ci.yml` frena ──
-  DETAIL="${ROOT}/guides/maintaining/piezas-en-detalle.md"
+  DETAIL="${ROOT}/guides/maintaining/pieces-in-detail.md"
   if [ -f "${DETAIL}" ]; then
     lacks "T4 la guía de detalle ya no habla de la rama de arranque" "${DETAIL}" "rama de arranque"
     has "T4 …y dice que sin el guion en la base ci.yml frena en rojo" "${DETAIL}" "Si la base no trae este guion, \`ci.yml\` frena en rojo «no pude correr»"

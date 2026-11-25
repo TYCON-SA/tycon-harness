@@ -1,8 +1,8 @@
 # La medición: el banco, las métricas, la oficina y el tablero
 
-Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cada una dice **qué es** la pieza,
+Las fichas de este grupo de [las piezas del arnés](../harness-pieces.md). Cada una dice **qué es** la pieza,
 **por qué existe**, **quién la usa** y **dónde se prueba**. El detalle de cada pieza está en
-[la guía de detalle](../maintaining/piezas-en-detalle.md), bajo el mismo título.
+[la guía de detalle](../maintaining/pieces-in-detail.md), bajo el mismo título.
 
 ## scripts/nightly/watcher/vigilante.js
 
@@ -16,7 +16,7 @@ _(scripts/nightly/watcher/vigilante.js + inbox/watcher/)_
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptsnightlywatchervigilantejs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptsnightlywatchervigilantejs)
 
 ## scripts/controls-bench/periodic-exam.js
 
@@ -28,7 +28,7 @@ _(scripts/nightly/watcher/vigilante.js + inbox/watcher/)_
 
 **Dónde se prueba:** `periodic-exam.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscontrols-benchperiodic-examjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscontrols-benchperiodic-examjs)
 
 ## scripts/ci/push-nightly-data.js
 
@@ -40,7 +40,7 @@ _(scripts/nightly/watcher/vigilante.js + inbox/watcher/)_
 
 **Dónde se prueba:** `scripts/tests/push-nightly-data.test.js`, `scripts/tests/pipelines-push-guard.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscipush-nightly-datajs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscipush-nightly-datajs)
 
 ## scripts/lib/result-travel.js
 
@@ -52,7 +52,7 @@ _(scripts/nightly/watcher/vigilante.js + inbox/watcher/)_
 
 **Dónde se prueba:** `scripts/tests/result-travel.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptslibresult-traveljs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptslibresult-traveljs)
 
 ## scripts/ci/carry-night-results.js
 
@@ -64,7 +64,7 @@ _(scripts/nightly/watcher/vigilante.js + inbox/watcher/)_
 
 **Dónde se prueba:** `scripts/tests/carry-night-results.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscicarry-night-resultsjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscicarry-night-resultsjs)
 
 ## pipelines/azure-pipelines-banco.yml
 
@@ -76,7 +76,7 @@ _(scripts/nightly/watcher/vigilante.js + inbox/watcher/)_
 
 **Dónde se prueba:** `scripts/tests/bench-unmeasured.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#pipelinesazure-pipelines-bancoyml)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#pipelinesazure-pipelines-bancoyml)
 
 ## scripts/ci/suites-shard.js
 
@@ -90,7 +90,7 @@ _(scripts/ci/suites-shard.js + scripts/ci/suites-weights.json)_
 
 **Dónde se prueba:** `scripts/tests/suites-shard.test.js`, `scripts/tests/pr-suites-shards.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscisuites-shardjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscisuites-shardjs)
 
 ## scripts/ci/suites-over-limit.json
 
@@ -104,7 +104,7 @@ _(scripts/ci/suites-over-limit.json + scripts/tests/lib/suite-parts.js + scripts
 
 **Dónde se prueba:** `scripts/tests/suite-parts.test.js`, `suites-coverage.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscisuites-over-limitjson)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscisuites-over-limitjson)
 
 ## scripts/tests/lib/product-lab.js
 
@@ -130,7 +130,7 @@ _(scripts/metrics/sdlc-stage-metrics.js + scripts/nightly/dashboard/dashboard.js
 
 **Dónde se prueba:** `scripts/tests/sdlc-transitions.test.js`, `scripts/tests/dashboard.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptsmetricssdlc-stage-metricsjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptsmetricssdlc-stage-metricsjs)
 
 ## scripts/metrics/tokens-digest.js
 
@@ -142,7 +142,7 @@ _(scripts/metrics/sdlc-stage-metrics.js + scripts/nightly/dashboard/dashboard.js
 
 **Dónde se prueba:** `scripts/tests/tokens-digest.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptsmetricstokens-digestjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptsmetricstokens-digestjs)
 
 ## scripts/metrics/reviewers-cost.js
 
@@ -154,7 +154,7 @@ _(scripts/metrics/sdlc-stage-metrics.js + scripts/nightly/dashboard/dashboard.js
 
 **Dónde se prueba:** `scripts/tests/reviewers-cost.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptsmetricsreviewers-costjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptsmetricsreviewers-costjs)
 
 ## scripts/metrics/run-change.js
 
@@ -166,7 +166,7 @@ _(scripts/metrics/sdlc-stage-metrics.js + scripts/nightly/dashboard/dashboard.js
 
 **Dónde se prueba:** `scripts/tests/run-change.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptsmetricsrun-changejs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptsmetricsrun-changejs)
 
 ## scripts/metrics/retro-heartbeat.js
 
@@ -180,7 +180,7 @@ Un pedido se reclama cuando entra, por su commit en main; el latido sólo acepta
 
 **Dónde se prueba:** `scripts/tests/retro-heartbeat.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptsmetricsretro-heartbeatjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptsmetricsretro-heartbeatjs)
 
 ## pipeline.js dod-checker-needed
 
@@ -194,7 +194,7 @@ _(pipeline.js dod-checker-needed · deferrals-open · qa-legibilidad (AgentSkill
 
 **Dónde se prueba:** `scripts/tests/guard-record.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#pipelinejs-dod-checker-needed)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#pipelinejs-dod-checker-needed)
 
 ## scripts/lib/validator-verdict.js
 
@@ -208,7 +208,7 @@ _(scripts/lib/validator-verdict.js + el re-loop del validador en pipeline.js (Ag
 
 **Dónde se prueba:** `scripts/tests/validator-verdict.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptslibvalidator-verdictjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptslibvalidator-verdictjs)
 
 ## scripts/metrics/step-times.js
 
@@ -222,7 +222,7 @@ _(scripts/metrics/step-times.js + el carril de cada commit en scripts/hooks/unpu
 
 **Dónde se prueba:** `scripts/tests/step-times.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptsmetricsstep-timesjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptsmetricsstep-timesjs)
 
 ## scripts/lib/office-messages.js
 
@@ -248,7 +248,7 @@ _(scripts/tools/work-in-progress.js + commands/wip.md; en 3D y en vivo: scripts/
 
 **Dónde se prueba:** `scripts/tests/`: `work-in-progress`, `office*`, `session-state`, `session-transcript`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptstoolswork-in-progressjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptstoolswork-in-progressjs)
 
 ## scripts/hooks/office-link-start.js
 
@@ -264,7 +264,7 @@ del sitio, y sólo un `update --yes` a mano la trajo.
 
 **Dónde se prueba:** `scripts/tests/`: `office-site-link`, `harness-team` (T43); el banco, caso 79
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptshooksoffice-link-startjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptshooksoffice-link-startjs)
 
 ## scripts/metrics/upload-runs.js
 
@@ -278,7 +278,7 @@ _(scripts/metrics/upload-runs.js + scripts/metrics/download-runs.js)_
 
 **Dónde se prueba:** `scripts/tests/upload-runs.test.sh`, `scripts/tests/download-runs.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptsmetricsupload-runsjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptsmetricsupload-runsjs)
 
 ## scripts/lib/merge-metrics.js
 
@@ -300,7 +300,7 @@ _(scripts/metrics/upload-runs.js + scripts/metrics/download-runs.js)_
 
 **Dónde se prueba:** `scripts/tests/people.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptslibpeoplejs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptslibpeoplejs)
 
 ## scripts/lib/guard-record.js
 
@@ -312,7 +312,7 @@ _(scripts/metrics/upload-runs.js + scripts/metrics/download-runs.js)_
 
 **Dónde se prueba:** `scripts/tests/guard-record.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptslibguard-recordjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptslibguard-recordjs)
 
 ## scripts/metrics/controls-table.js
 
@@ -334,7 +334,7 @@ _(scripts/metrics/upload-runs.js + scripts/metrics/download-runs.js)_
 
 **Dónde se prueba:** `scripts/tests/reducer.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptsnightlydashboardreducerjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptsnightlydashboardreducerjs)
 
 ## lib/installed-tree.js
 
@@ -358,7 +358,7 @@ _(test-gate.sh (AgentSkills) + la ficha «evaluaron el umbral»)_
 
 **Dónde se prueba:** `tycon-pipeline/scripts/tests/test-coverage-parser.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#test-gatesh)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#test-gatesh)
 
 ## scripts/nightly/dashboard/prune.js
 
@@ -372,7 +372,7 @@ _(scripts/nightly/dashboard/prune.js + scripts/metrics/collect-findings.js + scr
 
 **Dónde se prueba:** `scripts/tests/prune.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptsnightlydashboardprunejs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptsnightlydashboardprunejs)
 
 ## pipelines/azure-pipelines-tablero.yml
 
@@ -386,7 +386,7 @@ _(pipelines/azure-pipelines-tablero.yml + scripts/nightly/dashboard/seal.js + sc
 
 **Dónde se prueba:** `scripts/tests/dashboard.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#pipelinesazure-pipelines-tableroyml)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#pipelinesazure-pipelines-tableroyml)
 
 ## scripts/controls-bench/report-name.js
 
@@ -398,4 +398,4 @@ _(pipelines/azure-pipelines-tablero.yml + scripts/nightly/dashboard/seal.js + sc
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscontrols-benchreport-namejs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscontrols-benchreport-namejs)

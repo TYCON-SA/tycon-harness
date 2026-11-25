@@ -1228,9 +1228,9 @@ FUERA="$(grep -n 'blob\.core\.windows\.net' "${RAIZ}"/scripts/metrics/*.js "${RA
 [ -z "${FUERA}" ] && ok "2.24-T13 la única dirección del servicio en el código es la plantilla con cfg.cuenta" || mal "2.24-T13 dirección escrita: ${FUERA}"
 
 # ── T24 · Piezas_SoloCrearYSinVencimiento ── 🔴 Atrapa: «revisar en 2027-03» y «permisos `cw`».
-PIEZAS="${RAIZ}/guides/piezas-del-arnes.md"
-# la ficha corta (en su grupo, guides/pieces/) y su detalle (guides/maintaining/piezas-en-detalle.md, mismo título) se leen juntos
-SECCION="$(for f in "${PIEZAS}" "${RAIZ}"/guides/pieces/*.md "${RAIZ}/guides/maintaining/piezas-en-detalle.md"; do [ -f "$f" ] && awk '/upload-runs\.js/ && /^#/ {p=1; print; next} p && /^#/ {exit} p' "$f"; done)"
+PIEZAS="${RAIZ}/guides/harness-pieces.md"
+# la ficha corta (en su grupo, guides/pieces/) y su detalle (guides/maintaining/pieces-in-detail.md, mismo título) se leen juntos
+SECCION="$(for f in "${PIEZAS}" "${RAIZ}"/guides/pieces/*.md "${RAIZ}/guides/maintaining/pieces-in-detail.md"; do [ -f "$f" ] && awk '/upload-runs\.js/ && /^#/ {p=1; print; next} p && /^#/ {exit} p' "$f"; done)"
 CABECERA="$(sed -n '1,60p' "${SUBIR}")"
 if echo "${SECCION}" | grep 'sólo crear' >/dev/null && echo "${SECCION}" | grep 'sin vencimiento' >/dev/null && echo "${SECCION}" | grep 'UnauthorizedBlobOverwrite' >/dev/null \
    && echo "${CABECERA}" | grep 'sólo crear' >/dev/null && ! printf '%s\n%s' "${SECCION}" "${CABECERA}" | grep 'revisar en 2027-03' >/dev/null \

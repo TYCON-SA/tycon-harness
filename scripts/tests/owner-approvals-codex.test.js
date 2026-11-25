@@ -348,7 +348,7 @@ test('T11 Buscar_CodexWithoutTerminal_No — sin terminal, sin marca, otra marca
 
 // ── T16 ────────────────────────────────────────────────────────────────────────────────────────────────────────────
 test('T16 Docs_FirmasEnCodex_SaysWhatCounts — la guía dice qué constancia vale en Codex y para quién @ac-5', () => {
-  const guia = fs.readFileSync(path.join(RAIZ, 'guides', 'firmas-del-arnes.md'), 'utf8');
+  const guia = fs.readFileSync(path.join(RAIZ, 'guides', 'owner-signatures.md'), 'utf8');
   const i = guia.indexOf('### En Codex');
   assert.ok(i >= 0, 'falta §«En Codex»');
   const seccion = guia.slice(i, guia.indexOf('\n### ', i + 1));

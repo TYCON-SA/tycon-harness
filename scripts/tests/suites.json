@@ -3516,7 +3516,7 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.139 (tanda A): el catálogo de las firmas del dueño (scripts/lib/signatures.js) y su guía (guides/firmas-del-arnes.md) dicen lo mismo, y la guía dice que lo delegado no está protegido.",
+      "__nota": "story 8.139 (tanda A): el catálogo de las firmas del dueño (scripts/lib/signatures.js) y su guía (guides/owner-signatures.md) dicen lo mismo, y la guía dice que lo delegado no está protegido.",
       "raiz": "arnes",
       "ruta": "tests/signatures-guide.test.js",
       "requiere": []

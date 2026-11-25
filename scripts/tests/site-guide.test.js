@@ -208,7 +208,7 @@ test('T10 Portadas_EnlazanLaGuia @story-2.32 @ac-11', () => {
     const s = seccion(leer(path.join(ROOT, f)), titulo);
     assert.ok(s, `${f}: la sección «${titulo}»`);
     assert.ok(s.includes(`](${guia})`), `${f}: «${titulo}» no enlaza ${guia}`);
-    assert.doesNotMatch(s, /piezas-del-arnes\.md#scriptssite/, `${f}: «${titulo}» todavía manda a la ficha técnica`);
+    assert.doesNotMatch(s, /harness-pieces\.md#scriptssite/, `${f}: «${titulo}» todavía manda a la ficha técnica`);
   }
   const index = leer(path.join(ROOT, 'INDEX.md'));
   assert.match(index, /\| [^|]*(usar|uso|se usa)[^|]*\| `guides\/organization-site\.md`/i, 'la fila del INDEX dice que la guía también cuenta cómo se usa');

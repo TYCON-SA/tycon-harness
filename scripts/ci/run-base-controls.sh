@@ -59,7 +59,7 @@
 # SALIDAS: 0 verde · 1 rojo (o `approve` sin la firma) · 2 uso (o `approve --terminal` sin terminal) · 9 no pude correr (la última línea dice por qué). «No pude
 # correr» nunca cae a los controles del pedido: eso es el hueco que esto cierra.
 #
-# LOS LÍMITES (guides/piezas-del-arnes.md §scripts/ci/run-base-controls.sh): el propio workflow corre del pedido
+# LOS LÍMITES (guides/harness-pieces.md §scripts/ci/run-base-controls.sh): el propio workflow corre del pedido
 # (GitHub y Azure corren el del pedido), así que un pedido que deja de llamar a este guion no corre nada de la base: lo
 # frena el control de los workflows mientras todavía lo llame, y la alarma lo dice en el pedido siguiente. Las pruebas
 # (suites, banco) son del código del pedido. Y el contenido de un archivo de regla cambiado lo juzga sólo la pasada del

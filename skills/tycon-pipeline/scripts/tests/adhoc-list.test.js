@@ -1136,13 +1136,13 @@ test('T24 Guias_DicenLaForma — @story-8.316 @ac-18', () => {
   for (const [rel, frases] of [
     ['guides/coordination.md', [/<Nombre>\/<ruta>/, /rama principal del remoto/, /en los dos sentidos/, /se firma y se delega como una de un solo repo/, /no entra por ninguna vía/, /adhoc test --repo/]],
     ['guides/coordination.en.md', [/<Name>\/<path>/, /remote's main branch/, /both\s+ways/, /signed and delegated like a single-repo one/, /gets in by no route/, /adhoc test --repo/]],
-    ['guides/firmas-del-arnes.md', [/<Nombre>\/<ruta>/, /rama principal del remoto/, /en los dos\s+sentidos/, /se\s+delega\s+igual/, /no entra en la\s+lista por ninguna vía/, /adhoc test --repo/]],
+    ['guides/owner-signatures.md', [/<Nombre>\/<ruta>/, /rama principal del remoto/, /en los dos\s+sentidos/, /se\s+delega\s+igual/, /no entra en la\s+lista por ninguna vía/, /adhoc test --repo/]],
   ]) {
     const t = leer(rel);
     for (const re of frases) assert.match(t, re, `${rel}: ${re}`);
   }
   // la decisión vieja (sólo el click o la terminal para varios repos) no queda escrita
-  for (const rel of ['guides/coordination.md', 'guides/firmas-del-arnes.md']) assert.doesNotMatch(leer(rel), /de más de un repo no se delega|pero no se delega: lo firmás sólo con tu click/, rel);
+  for (const rel of ['guides/coordination.md', 'guides/owner-signatures.md']) assert.doesNotMatch(leer(rel), /de más de un repo no se delega|pero no se delega: lo firmás sólo con tu click/, rel);
 });
 
 // ── lo que encontró el pase adversarial (8.316) ─────────────────────────────────────────────────────────────────────

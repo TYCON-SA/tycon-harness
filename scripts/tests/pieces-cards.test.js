@@ -1,9 +1,9 @@
 'use strict';
 /**
  * La guía de piezas se lee rápido: cada ficha dice en pocas líneas qué es la pieza, por qué existe, quién la usa y
- * dónde se prueba. Está partida: `guides/piezas-del-arnes.md` es el índice (el árbol «Dónde vive cada cosa» y la lista
+ * dónde se prueba. Está partida: `guides/harness-pieces.md` es el índice (el árbol «Dónde vive cada cosa» y la lista
  * de las piezas de cada grupo) y las fichas viven en `guides/pieces/<grupo>.md`. El detalle de cada pieza vive en
- * `guides/maintaining/piezas-en-detalle.md`, con el mismo título `## <ruta>`; los casos con fecha, en el registro de
+ * `guides/maintaining/pieces-in-detail.md`, con el mismo título `## <ruta>`; los casos con fecha, en el registro de
  * incidentes de quien mantiene, que no se publica.
  *
  * Una ficha es todo lo que hay entre un `## <ruta>` de un archivo de grupo y el siguiente `## `. Queda fuera de las
@@ -20,7 +20,7 @@ const { INDEX, piecesFiles } = require('./lib/pieces-guide.js');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const GUIDE = path.join(ROOT, INDEX);
-const DETAIL = path.join(ROOT, 'guides', 'maintaining', 'piezas-en-detalle.md');
+const DETAIL = path.join(ROOT, 'guides', 'maintaining', 'pieces-in-detail.md');
 const CEILING = 800;
 const INDEX_SIZE_CEILING = 30 * 1024;
 const GROUP_SIZE_CEILING = 32 * 1024;
@@ -84,8 +84,8 @@ test('T2 Pieces_EveryCardUnderTheCeiling_SiteExcluded', () => {
 
 test('T3 Pieces_AnchorsStillResolve', () => {
   const anchors = {
-    'piezas-del-arnes.md': new Set(sections(read(GUIDE)).map((s) => slug(s.title))),
-    'piezas-en-detalle.md': fs.existsSync(DETAIL) ? new Set(sections(read(DETAIL)).map((s) => slug(s.title))) : new Set(),
+    'harness-pieces.md': new Set(sections(read(GUIDE)).map((s) => slug(s.title))),
+    'pieces-in-detail.md': fs.existsSync(DETAIL) ? new Set(sections(read(DETAIL)).map((s) => slug(s.title))) : new Set(),
   };
   for (const g of groups()) anchors[g.link] = new Set(sections(g.text).map((s) => slug(s.title)));
   const broken = [];
@@ -96,7 +96,7 @@ test('T3 Pieces_AnchorsStillResolve', () => {
       const p = path.join(dir, e.name);
       if (e.isDirectory()) walk(p);
       else if (e.name.endsWith('.md')) {
-        for (const m of read(p).matchAll(/\]\(([^)\s]*?(piezas-del-arnes\.md|piezas-en-detalle\.md|pieces\/[\w-]+\.md))#([^)\s]+)\)/g)) {
+        for (const m of read(p).matchAll(/\]\(([^)\s]*?(harness-pieces\.md|pieces-in-detail\.md|pieces\/[\w-]+\.md))#([^)\s]+)\)/g)) {
           checks++;
           const known = anchors[m[2]];
           if (!known || !known.has(decodeURIComponent(m[3]))) broken.push(`${path.relative(ROOT, p)} → ${m[2]}#${m[3]}`);
@@ -105,17 +105,17 @@ test('T3 Pieces_AnchorsStillResolve', () => {
     }
   };
   walk(ROOT);
-  assert.ok(fs.existsSync(DETAIL), 'falta guides/maintaining/piezas-en-detalle.md');
+  assert.ok(fs.existsSync(DETAIL), 'falta guides/maintaining/pieces-in-detail.md');
   assert.ok(checks > 50, `se revisaron ${checks} enlaces a un ancla; se esperaban más de 50`);
   assert.deepEqual(broken, [], `enlaces a un ancla que no existe:\n${broken.join('\n')}`);
 });
 
 test('T4 Pieces_NoDatedCaseInThePublicGuide', () => {
   const dated = [];
-  for (const s of sections(read(GUIDE))) if (DATED.test(s.body)) dated.push(`piezas-del-arnes.md · ${s.title}: ${s.body.match(DATED)[0]}`);
+  for (const s of sections(read(GUIDE))) if (DATED.test(s.body)) dated.push(`harness-pieces.md · ${s.title}: ${s.body.match(DATED)[0]}`);
   for (const c of cards()) if (DATED.test(c.body)) dated.push(`${c.file} · ${c.title}: ${c.body.match(DATED)[0]}`);
   if (fs.existsSync(DETAIL)) {
-    for (const s of sections(read(DETAIL))) if (DATED.test(s.body)) dated.push(`piezas-en-detalle.md · ${s.title}: ${s.body.match(DATED)[0]}`);
+    for (const s of sections(read(DETAIL))) if (DATED.test(s.body)) dated.push(`pieces-in-detail.md · ${s.title}: ${s.body.match(DATED)[0]}`);
   }
   assert.deepEqual(dated, [], `casos con fecha en una guía pública (van al registro de incidentes de quien mantiene):\n${dated.join('\n')}`);
 });
@@ -140,7 +140,7 @@ test('T5b Pieces_CeilingsMeasureTheirLaboratory', () => {
 
 test('T11 Pieces_EveryCardHasItsDetailSection', () => {
   // cada ficha que manda al detalle tiene ahí su sección con el mismo título
-  if (!fs.existsSync(DETAIL)) assert.fail('falta guides/maintaining/piezas-en-detalle.md');
+  if (!fs.existsSync(DETAIL)) assert.fail('falta guides/maintaining/pieces-in-detail.md');
   const inDetail = new Set(sections(read(DETAIL)).map((s) => s.title));
   const orphan = cards().filter((c) => /^\*\*Detalle:\*\*/m.test(c.body) && !inDetail.has(c.title)).map((c) => c.title);
   assert.deepEqual(orphan, [], `fichas que mandan a un detalle que no existe:\n${orphan.join('\n')}`);
@@ -151,7 +151,7 @@ test('T10 Pieces_OpeningNoteSaysHowToRead', () => {
   const text = read(GUIDE);
   const note = text.slice(0, text.search(/^## /m));
   for (const p of ['qué es', 'por qué existe', 'quién la usa', 'dónde se prueba']) assert.match(note.toLowerCase(), new RegExp(p), `la nota de apertura no dice «${p}»`);
-  assert.match(note, /maintaining\/piezas-en-detalle\.md/, 'la nota de apertura no manda a la guía de detalle');
+  assert.match(note, /maintaining\/pieces-in-detail\.md/, 'la nota de apertura no manda a la guía de detalle');
   assert.match(note, /pieces\//, 'la nota de apertura no dice que las fichas están en guides/pieces/');
 });
 

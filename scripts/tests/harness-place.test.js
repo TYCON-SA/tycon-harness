@@ -404,7 +404,7 @@ function sweepOffenders(root, files) {
 const PIECES = require('./lib/pieces-guide.js');
 const TEAM_PAPERS = ['INSTALL.md', 'onboarding/new-dev-harness-setup.md', 'onboarding/step-0-mac.md', 'onboarding/step-0-windows.md',
   ...PIECES.piecesFiles(ROOT), 'claude-md-blocks/names/tool-names.codex.md', 'commands/tycon-instincts.md'];
-const NAMES_THE_PLACE = ['INSTALL.md', 'onboarding/new-dev-harness-setup.md', 'guides/piezas-del-arnes.md', 'claude-md-blocks/names/tool-names.codex.md', 'commands/tycon-instincts.md'];
+const NAMES_THE_PLACE = ['INSTALL.md', 'onboarding/new-dev-harness-setup.md', 'guides/harness-pieces.md', 'claude-md-blocks/names/tool-names.codex.md', 'commands/tycon-instincts.md'];
 test('T35 TeamPapers_PlacePath_OldStartupDeclared_TwoNamesParagraphInternal', () => {
   // la verificación del import en los papeles del equipo: una máquina nueva escribe
   // `@~/.claude/<lugar>/README.md`, así que todo chequeo de CLAUDE.md que busca el import por el nombre viejo tiene que
@@ -464,7 +464,7 @@ test('T37 CodeMessagesAndUsageComments_PlacePath', () => {
 test('T38 Sweep_ScopeByExpression_LegacyPlacePathOnlyDeclared', () => {
   // la expresión del alcance: excluye la historia y nada más
   for (const f of ['specs/x.md', 'tasks/todo.md', 'inbox/a/b.md', `${'instincts'}/x`, '.advisors/x', '.engram/x', '.dashboard/x', 'guides/maintaining/incident-log.md', 'guides/decisions/x.md', 'scripts/tests/fixtures/startup-lines.json']) assert.ok(HISTORY_RX.test(f), `${f} es historia`);
-  for (const f of ['guides/piezas-del-arnes.md', 'INSTALL.md', 'agents/a.md', 'scripts/tests/fixtures/other.json', 'skills/x/SKILL.md']) assert.ok(!HISTORY_RX.test(f), `${f} no es historia`);
+  for (const f of ['guides/harness-pieces.md', 'INSTALL.md', 'agents/a.md', 'scripts/tests/fixtures/other.json', 'skills/x/SKILL.md']) assert.ok(!HISTORY_RX.test(f), `${f} no es historia`);
   // la expresión de la ruta vieja: la ruta en sus formas; el repo o el clon no
   for (const s of ['~/.claude/' + PLACE.LEGACY_PLACE_NAME + '/x', '$HOME/.claude/' + PLACE.LEGACY_PLACE_NAME, '%USERPROFILE%\\.claude\\' + PLACE.LEGACY_PLACE_NAME + '\\x',
     `path.join(h, '.claude', '${PLACE.LEGACY_PLACE_NAME}')`, '.claude\\\\' + PLACE.LEGACY_PLACE_NAME]) assert.ok(LEGACY_PATH_RX.test(s), `la ruta vieja: ${s}`);

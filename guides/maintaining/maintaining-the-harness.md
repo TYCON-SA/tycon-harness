@@ -57,7 +57,7 @@ repo).
 - **Dónde dejan sus datos**: el banco y las suites, en el repo de mantenimiento; la revisión de dependencias, el
   vigilante, el resumen diario, las métricas y el tablero, en el **repo de operaciones**, que también recibe sus
   pedidos. Cada máquina que mantiene el arnés declara sus dos clones (`paths.maintainers` y `paths.operations`) y los
-  avisos de arranque leen de ahí (`guides/piezas-del-arnes.md`).
+  avisos de arranque leen de ahí (`guides/harness-pieces.md`).
 - **El buzón de corridas**, en el almacenamiento de Azure: cada máquina sube ahí lo que midió.
 - **La capa del equipo** y los repos y pipelines de cada producto, si la organización los tiene ahí.
 

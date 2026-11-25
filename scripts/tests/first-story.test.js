@@ -489,9 +489,9 @@ test('8.54 T16 Contrato_Cabecera · la cabecera del lector y su ficha nombran is
   const cab = fs.readFileSync(LIB, 'utf8').split('*/')[0];
   assert.match(cab, /isFirstStory/);
   assert.match(cab, /no_medido/);
-  const ficha = fs.readFileSync(path.join(RAIZ, 'guides', 'maintaining', 'piezas-en-detalle.md'), 'utf8');
+  const ficha = fs.readFileSync(path.join(RAIZ, 'guides', 'maintaining', 'pieces-in-detail.md'), 'utf8');
   const i = ficha.indexOf('first-story.js');
-  assert.ok(i >= 0, 'piezas-en-detalle.md no tiene la ficha de first-story.js');
+  assert.ok(i >= 0, 'pieces-in-detail.md no tiene la ficha de first-story.js');
   assert.match(ficha.slice(i, i + 2500), /isFirstStory/);
   assert.match(ficha.slice(i, i + 2500), /no_medido/);
 });

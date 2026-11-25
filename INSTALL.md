@@ -3,7 +3,7 @@
 > Onboarding humano de **una sola vez** (setup por máquina, setup opcional, mantenimiento
 > del repo, troubleshooting). NO es contexto operativo para Claude: vive separada del índice
 > (`INDEX.md`) para no inflar el contexto que se carga por sesión. El índice es lo operativo de cada
-> sesión; el índice de las piezas es `guides/piezas-del-arnes.md`. La portada para personas es `README.md`.
+> sesión; el índice de las piezas es `guides/harness-pieces.md`. La portada para personas es `README.md`.
 
 ---
 
@@ -476,7 +476,7 @@ Asimetrías declaradas: `guides/maintaining/codex-divergence-inventory.md`.
 ### Agregar una guía nueva
 
 1. Crear el archivo `.md` en `guides/` con contenido en español y ejemplos copy-pasteables.
-2. Agregar la sección `## guides/nueva-guia.md` en **`guides/piezas-del-arnes.md`** —que es el índice
+2. Agregar la sección `## guides/nueva-guia.md` en **`guides/harness-pieces.md`** —que es el índice
    de las piezas—, con la línea en cursiva de sus rutas y el detalle: por qué existe,
    cómo se midió, su red de pruebas. El caso con nombre va al registro de incidentes, no a la guía. 🔴 **El índice (`INDEX.md`) ya no lista piezas**: se importa ENTERO en
    cada sesión y en cada subagente y tiene techo en bytes (`claude-md-blocks/budget.json` →
@@ -507,7 +507,7 @@ Si el cambio es mayor (ej: cambio de formato, regla nueva que cambia comportamie
 
 1. Remover el archivo.
 2. Remover las referencias: la fila de la tabla «Cuándo leer cada guía» y su sección de
-   `guides/piezas-del-arnes.md` (si el índice la enlazaba, sacar también el enlace: uno sin destino
+   `guides/harness-pieces.md` (si el índice la enlazaba, sacar también el enlace: uno sin destino
    frena el commit).
 3. Commit: `docs: descontinuar <guía> (motivo)`.
 

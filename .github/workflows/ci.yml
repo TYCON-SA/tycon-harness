@@ -100,7 +100,7 @@ jobs:
           # en un pedido BASE_REF es «main»; en la cola es «refs/heads/main»: se le saca el prefijo
           if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] || [ "${GITHUB_EVENT_NAME}" = "merge_group" ]; then
             # los controles y su regla salen de la base: en la cola, la base del grupo; en un pedido, la punta de la rama
-            # destino. Corre el public-ci.sh DE LA BASE, sobre el checkout del pedido (guides/piezas-del-arnes.md)
+            # destino. Corre el public-ci.sh DE LA BASE, sobre el checkout del pedido (guides/harness-pieces.md)
             # (el rango sale de la misma base: en la cola, desde main se colarían los cambios del grupo de adelante)
             BASE="${BASE_SHA:-$(git rev-parse --verify "origin/${BASE_REF#refs/heads/}^{commit}")}" || exit 1
             git cat-file -e "${BASE}^{commit}" || exit 1

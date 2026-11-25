@@ -1,8 +1,8 @@
 # Las integraciones y las guías de quien mantiene
 
-Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cada una dice **qué es** la pieza,
+Las fichas de este grupo de [las piezas del arnés](../harness-pieces.md). Cada una dice **qué es** la pieza,
 **por qué existe**, **quién la usa** y **dónde se prueba**. El detalle de cada pieza está en
-[la guía de detalle](../maintaining/piezas-en-detalle.md), bajo el mismo título.
+[la guía de detalle](../maintaining/pieces-in-detail.md), bajo el mismo título.
 
 ## guides/integrations/ado-queue-and-listings.md
 
@@ -14,7 +14,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesintegrationsado-queue-and-listingsmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesintegrationsado-queue-and-listingsmd)
 
 ## guides/integrations/clockify-mcp.md
 
@@ -26,7 +26,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesintegrationsclockify-mcpmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesintegrationsclockify-mcpmd)
 
 ## guides/integrations/clocki-tracking.md
 
@@ -38,7 +38,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesintegrationsclocki-trackingmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesintegrationsclocki-trackingmd)
 
 ## guides/integrations/codegraph-mcp.md
 
@@ -50,7 +50,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesintegrationscodegraph-mcpmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesintegrationscodegraph-mcpmd)
 
 ## guides/signed-scope-guardrails.md
 
@@ -62,7 +62,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidessigned-scope-guardrailsmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidessigned-scope-guardrailsmd)
 
 ## guides/integrations/ado-projects.md
 
@@ -74,7 +74,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesintegrationsado-projectsmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesintegrationsado-projectsmd)
 
 ## guides/safety-guard.md
 
@@ -86,7 +86,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidessafety-guardmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidessafety-guardmd)
 
 ## guides/maintaining/context-budget.md
 
@@ -98,7 +98,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesmaintainingcontext-budgetmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesmaintainingcontext-budgetmd)
 
 ## guides/maintaining/skill-scout.md
 
@@ -110,7 +110,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesmaintainingskill-scoutmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesmaintainingskill-scoutmd)
 
 ## guides/maintaining/rules-distill.md
 
@@ -122,7 +122,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesmaintainingrules-distillmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesmaintainingrules-distillmd)
 
 ## guides/maintaining/harness-audit.md
 
@@ -134,7 +134,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesmaintainingharness-auditmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesmaintainingharness-auditmd)
 
 ## guides/integrations/instinct-mining.md
 
@@ -146,7 +146,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** `instinct-observe.test.js`, `instinct-dirs.test.js`, `instinct-outside-tree.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesintegrationsinstinct-miningmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesintegrationsinstinct-miningmd)
 
 ## guides/harness-cost-tiering.md
 
@@ -158,4 +158,4 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesharness-cost-tieringmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesharness-cost-tieringmd)

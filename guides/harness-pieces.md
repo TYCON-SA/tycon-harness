@@ -5,7 +5,7 @@ cada grupo con la lista de sus piezas. Cada ficha dice, en pocas líneas, **qué
 **quién la usa** y **dónde se prueba**, con su guía si la tiene. Su título `## <ruta>` es la pieza: se busca por nombre, y en la lista va con los archivos que la acompañan.
 Una ficha nueva va al grupo que le toca y se suma a su lista; un grupo lleno se parte en dos.
 El detalle de cada pieza (cómo se calibra, qué mide, su red de pruebas) está en
-[la guía de detalle](maintaining/piezas-en-detalle.md), bajo el mismo título; el porqué de cada línea, en la cabecera del código.
+[la guía de detalle](maintaining/pieces-in-detail.md), bajo el mismo título; el porqué de cada línea, en la cabecera del código.
 
 ## Dónde vive cada cosa
 
@@ -27,7 +27,7 @@ scripts/controls-bench/ · scripts/metrics/ · scripts/production/ · scripts/pu
 guides/                     las guías para usar el arnés
   guides/integrations/       las integraciones opcionales (Azure DevOps, el registro de horas, CodeGraph, engram, instintos)
   guides/maintaining/        las de quien mantiene el arnés
-  guides/pieces/             las fichas de cada pieza, un archivo por grupo (el índice es guides/piezas-del-arnes.md)
+  guides/pieces/             las fichas de cada pieza, un archivo por grupo (el índice es guides/harness-pieces.md)
 claude-md-blocks/ · commands/ · adapters/ · build/
 mods/harness-mods/          los mods de Claude Code del arnés (el cartel de la corrida, /pipeline, /mods)
 pipelines/                  los seis azure-pipelines-*.yml
@@ -65,7 +65,7 @@ nueva, hasta que se retire.
 
 En [pieces/guides.md](pieces/guides.md):
 
-- [guides/piezas-del-arnes.md](pieces/guides.md#guidespiezas-del-arnesmd)
+- [guides/harness-pieces.md](pieces/guides.md#guidesharness-piecesmd)
 - [guides/what-the-harness-does.md](pieces/guides.md#guideswhat-the-harness-doesmd)
 - [artifacts/mapa-arnes.html](pieces/guides.md#artifactsmapa-arneshtml)
 - [story-format.md](pieces/guides.md#story-formatmd)

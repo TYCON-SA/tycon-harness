@@ -640,7 +640,7 @@ test('T23 Guias_DicenLaRegla @story-8.314 @ac-20', () => {
   }
   assert.match(leer('guides/coordination.md'), /sin confirmar/);
   assert.match(leer('guides/coordination.en.md'), /unconfirmed/);
-  assert.match(leer('guides/firmas-del-arnes.md'), /sin confirmar no desplaza/);
+  assert.match(leer('guides/owner-signatures.md'), /sin confirmar no desplaza/);
 });
 
 // ── Los hallazgos del pase adversarial (vuelta 1) ─────────────────────────────────────────────────────────────────

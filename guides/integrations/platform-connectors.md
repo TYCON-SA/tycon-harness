@@ -77,7 +77,7 @@ operación sin pedirle nada: `node scripts/lib/platform/platform.js choose <oper
   uno tiene que estar en `rawCommands`: si no, el lector frena el manifiesto.
 - `draftOptions` y `readyCommands` (opcionales) le dicen al freno de guardar cómo es un borrador en la plataforma. Un
   borrador no se puede mergear: antes de «Preparar el pull request» abrirlo pregunta en la ventana en vez de frenar,
-  y pasarlo a listo es un pedido que pide el paso cerrado (lo cuenta `guides/firmas-del-arnes.md`, en el freno de
+  y pasarlo a listo es un pedido que pide el paso cerrado (lo cuenta `guides/owner-signatures.md`, en el freno de
   guardar). Un conector sin estos campos es válido: su borrador no se reconoce y frena antes de «Preparar» como
   cualquier pedido.
   - `draftOptions`: por cada comando que crea un pedido (uno de `changeRequestCommands`), las opciones que lo hacen
