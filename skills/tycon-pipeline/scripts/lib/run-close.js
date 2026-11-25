@@ -184,10 +184,18 @@ if (require.main === module) {
         if (m && m.needs_human === true) return false;
         return rr.comprobar({ marker: m, sha }).ok;
       };
+      // `clear-session <sesión>` cierra la ejecución de la sesión nombrada: la de otra se mide con su marcador
+      // (`objetivo`). Una sesión que no se ve tal cual puede ser cualquiera: pide siempre
+      const deLaSesion = (l, esc) => {
+        if (!esc || l.sub !== 'clear-session') return { l, esc };
+        const v = l.args && l.args[0];
+        if (!v || !v.literal || !/^[\w-]+$/.test(v.texto)) return { l, esc, siempre: true };
+        return v.texto.toLowerCase() === String(sid || '').toLowerCase() ? { l, esc } : { l, esc, objetivo: v.texto };
+      };
       pedidas = todas.map((l) => {
         const s = salidaPerdida(l);
         if (!s && reemplazo(l)) return { l, esc: null };
-        if (!s) return { l, esc: escapeDe(l, sid, cmd) };
+        if (!s) return deLaSesion(l, escapeDe(l, sid, cmd));
         const ap = s.sesion ? aperturaDe(s.sesion, l.sub === 'restore' ? 'restore' : 'lost', s.destino || sid) : null;
         if (ap && ap.deDonde === 'terminado') return { l, esc: null };
         const desde = ap && ap.ts ? `${ap.antes ? 'antes de ' : ''}${ap.ts}` : '-';
@@ -207,7 +215,12 @@ if (require.main === module) {
   // un marcador que existe y no se puede leer se trata como abierto y con el modo autónomo prendido. Declarar un control
   // a mano o dar por corridos los revisores frena con la ejecución en verde también: el escape es el verde, no el rojo
   for (const pedida of pedidas || []) {
-    const { l, esc, siempre, perdida, desde } = pedida;
+    const { l, esc, siempre, perdida, desde, objetivo } = pedida;
+    // la ejecución de otra sesión, con su propio marcador; la propia, con la de esta sesión
+    let rr = r;
+    if (objetivo) { try { rr = consulta(objetivo); } catch (e) { rr = { hay: '?' }; } }
+    const hayDe = rr.hay === '?' ? '?' : rr.hay ? 1 : 0;
+    const abiertaDe = !!(rr.abierta || rr.detenida);
     // la salida de una ejecución perdida: además, desde cuándo vale la firma (nunca vacía: el freno parte el renglón por
     // tabuladores y dos seguidos se juntan)
     if (perdida) {
@@ -218,12 +231,12 @@ if (require.main === module) {
     // que no se pudo leer, también
     // los mutantes y la revisión de la historia por un `--env-file`, también: se piden como su variable
     const deArchivo = esc === 'TYCON_MUTATION_CHECK' || esc === 'TYCON_STORY_REVIEW';
-    if (hay === 0 && esc !== 'no-deep-review' && !deArchivo && !siempre) continue;
+    if (hayDe === 0 && esc !== 'no-deep-review' && !deArchivo && !siempre) continue;
     // cerrar como deuda, el rojo esperado de la matriz, declarar un control a mano y dar por corridos los revisores piden
     // la firma siempre que haya una ejecución: no dependen de cómo esté (renovar la fecha del rojo esperado se hace con la
     // ejecución en verde)
     const aplica = siempre || deArchivo || esc === 'cerrar como deuda' || esc === 'rojo esperado de la matriz' || esc === 'force-manual' || esc === 'trust-ran' || esc === 'no-deep-review' ? true
-      : esc === 'set-autonomous' ? hay === '?' || r.autonomo : hay === '?' || abiertaODetenida;
+      : esc === 'set-autonomous' ? hayDe === '?' || rr.autonomo : hayDe === '?' || abiertaDe;
     if (!aplica) continue;
     process.stdout.write(`frena=${esc}\t${una(l.sub || '?')}\t${una(l.args[0] ? l.args[0].texto : '')}\n`);
     // la huella de la lista y la fecha que va a mostrar la ventana: el freno la anota con la constancia

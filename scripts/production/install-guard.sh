@@ -216,6 +216,75 @@ motivo_eleccion(){
 # ¿la ruta es un enlace simbólico? Con el python de sistema, como root: el node de la máquina es del usuario, y los
 # operadores de enlace del shell no andan igual en Windows (el arnés los pasa por Node, y acá Node no entra)
 es_enlace(){ /usr/bin/python3 -I -c 'import os, sys; sys.exit(0 if os.path.islink(sys.argv[1]) else 1)' "$1"; }
+# El estado del arnés de la persona, donde lo busca el resto de este guion: ~/.tycon/state si está, si no donde siempre.
+estado_del_arnes(){ if [ -f "$HOME_LEIDA/.tycon/state/harness-state.json" ]; then printf '%s' "$HOME_LEIDA/.tycon/state/harness-state.json"; else printf '%s' "$CLAUDE_LEIDA/.tycon-pipeline/harness-state.json"; fi; }
+# La actualización del arnés cambia la versión bajada (~/.tycon/harness) y graba el estado recién después del aplicador:
+# leer las dos en ese tramo da una carpeta que no es la que registra el estado. Mientras su candado (el de lock.js, al lado
+# del estado) sea de un proceso vivo de esta máquina, se espera.
+# 🔴 El candado vive en el HOME, que el asistente escribe, y esto corre como root: se lee con el python del sistema, sin
+# seguir enlaces (ni la carpeta ni el archivo), con un tope de bytes, y del contenido sólo sale el pid validado. Lo que no
+# tiene la forma de lock.js no se espera. Las reglas de huérfano son las de lock.js (orphanReason): un dueño de esta
+# máquina que no vive, tomado antes del último arranque de la máquina o hace más de 2 h; uno de otra máquina, pasados
+# 10 minutos. pid 0 y 1 no son un dueño. Sin pid, un candado de menos de un minuto se acaba de tomar: cuenta como vivo.
+# TYCON_GUARD_UPDATE_WAIT_S cambia la espera, sólo sin sudo (las pruebas); con sudo, la de siempre.
+dueno_del_candado(){ # $1 = la carpeta del candado → «vivo <pid>», «vivo ?» (sin pid todavía) o «libre»
+  /usr/bin/python3 -I - "$1" <<'PY' 2>/dev/null || printf 'libre'
+import errno, os, re, socket, stat, subprocess, sys, time
+d = sys.argv[1]
+def libre(): print("libre"); sys.exit(0)
+try: st = os.lstat(d)
+except OSError: libre()
+if not stat.S_ISDIR(st.st_mode): libre()
+ahora = time.time(); edad = ahora - st.st_mtime
+try:
+    fd = os.open(os.path.join(d, "pid"), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+except OSError as e:
+    if e.errno == errno.ENOENT and 0 <= edad < 60: print("vivo ?"); sys.exit(0)
+    libre()
+try:
+    if not stat.S_ISREG(os.fstat(fd).st_mode): libre()
+    texto = os.read(fd, 512).decode("utf-8", "replace")
+finally: os.close(fd)
+renglones = texto.split("\n")
+pid, host = renglones[0].strip(), (renglones[1].strip() if len(renglones) > 1 else "")
+if not re.fullmatch(r"[0-9]{1,10}", pid) or int(pid) < 2: libre()
+if host and not re.fullmatch(r"[A-Za-z0-9._-]{1,255}", host): libre()
+# una hora del candado en el futuro no la escribe lock.js: no se espera
+if edad < -300: libre()
+# de otra máquina, como en lock.js: ocupado los primeros 10 minutos (no se puede mirar si su dueño vive)
+if host and host != socket.gethostname():
+    if edad < 600: print("vivo %s" % pid); sys.exit(0)
+    libre()
+if edad > 2 * 3600: libre()
+arranque = None
+try:
+    m = re.search(r"sec = ([0-9]+)", subprocess.run(["/usr/sbin/sysctl", "-n", "kern.boottime"], capture_output=True, text=True, timeout=5).stdout)
+    arranque = int(m.group(1)) if m else None
+except Exception: arranque = None
+if arranque is None:
+    try:
+        with open("/proc/stat") as fh: arranque = next((int(l.split()[1]) for l in fh if l.startswith("btime ")), None)
+    except Exception: arranque = None
+if arranque is not None and st.st_mtime < arranque - 300: libre()
+try: os.kill(int(pid), 0)
+except ProcessLookupError: libre()
+except PermissionError: pass
+print("vivo %s" % pid)
+PY
+}
+esperar_al_arnes(){ # $1 = el estado del arnés (harness-state.json)
+  local candado tope=180 esperado=0 dueno pid
+  candado="$(dirname "$1")/harness/harness.lock"
+  [ "$SIN_SUDO" = 1 ] && [[ "${TYCON_GUARD_UPDATE_WAIT_S:-}" =~ ^[0-9]+$ ]] && tope="$TYCON_GUARD_UPDATE_WAIT_S"
+  while :; do
+    dueno="$(dueno_del_candado "$candado")"
+    case "$dueno" in "vivo "[0-9]*|"vivo ?") pid="${dueno#vivo }" ;; *) return 0 ;; esac
+    [ "$esperado" = 0 ] && ok "el arnés se está actualizando (proceso ${pid}): espero a que termine antes de leer su carpeta"
+    # no es una falla del freno: no se anota como intento (el gancho reintenta en el próximo arranque)
+    [ "$esperado" -ge "$tope" ] && { NO_ANOTAR=1; muere "el arnés se está actualizando (proceso ${pid}) hace más de ${tope} s: esperá a que termine (node \"\$HOME/.tycon/harness/scripts/setup/harness.js\" update --check) y volvé a correr esto"; }
+    /bin/sleep 2; esperado=$((esperado + 2))
+  done
+}
 COMO_CAMBIARLO="se cambia en el sitio de la organización, pestaña Configuración → «Cómo se actualiza el freno de producción»"
 
 # sacar el permiso: la regla primero (sudo deja de permitirlo), después el guion, sus vecinos y la marca; nada se verifica
@@ -252,6 +321,8 @@ if [ "$AUTO" = 1 ]; then
   # 🔴 sin enlaces (pase adversarial de la vuelta 1): cp -RP copia un enlace como enlace, y lo que se verifica y lo que
   # se copia después seguirían pasando por un archivo del usuario, que puede cambiarlo entre las dos lecturas
   es_enlace "$ARNES" && muere "la versión bajada ($ARNES) es un enlace simbólico: la actualización sin contraseña no lo sigue"
+  # la copia, con la actualización del arnés terminada: si no, se copiaría una carpeta que el estado todavía no registra
+  if [ "$SIN_SUDO" = 1 ] && [ -n "${TYCON_PROD_STATE:-}" ]; then esperar_al_arnes "$TYCON_PROD_STATE"; else esperar_al_arnes "$(estado_del_arnes)"; fi
   COPIA_AUTO="$(/usr/bin/mktemp -d)" || muere "no pude crear una carpeta temporal"
   /bin/cp -RP "$ARNES" "$COPIA_AUTO/harness" || muere "no pude copiar la versión bajada ($ARNES)"
   # un find que falla es «no sé», nunca «sin enlaces»
@@ -352,6 +423,8 @@ if [ -f "$ARNES/.tycon-release.json" ] && [ ! -d "$ARNES/.git" ]; then
   if [ -z "$ESTADO_RELEASE" ]; then
     if [ -f "$HOME_LEIDA/.tycon/state/harness-state.json" ]; then ESTADO_RELEASE="$HOME_LEIDA/.tycon/state/harness-state.json"; else ESTADO_RELEASE="$CLAUDE_LEIDA/.tycon-pipeline/harness-state.json"; fi
   fi
+  # con la actualización del arnés terminada (la del modo sin contraseña ya esperó antes de copiar)
+  [ "$AUTO" = 1 ] || esperar_al_arnes "$ESTADO_RELEASE"
   LISTA_VERIFICADA="$(/usr/bin/mktemp)" || muere "no pude crear un archivo temporal"
   # la API de GitHub: con sudo, SIEMPRE la real (TYCON_RELEASE_API es sólo de las pruebas: un asistente no puede
   # apuntar la verificación a un servidor propio); el ancla contra «un repo ajeno que GitHub verifica igual» es la misma que
@@ -423,7 +496,9 @@ try:
 except Exception as e: muere("el estado del arnés (%s) no se lee: %s — sin él no sé de qué repo se bajó la versión" % (estado, e))
 src = next((x for x in (s.get("sources") or []) if isinstance(x, dict) and x.get("kind") == "release"), None) if isinstance(s, dict) else None
 if not src: muere("el estado del arnés (%s) no registra una versión bajada: ¿la mudanza terminó?" % estado)
-def estado_distinto(): muere("el árbol de la versión bajada (%s) no es el que registra el estado (%s): la carpeta no es la que se instaló" % (arbol[:7], str(src.get("tree"))[:7]))
+# la carpeta cambió de versión y el estado no: una actualización del arnés que quedó a medias (o que corría y se vio
+# antes de grabar el estado). Se dicen las dos versiones y qué hacer
+def estado_distinto(): muere("el árbol de la versión bajada (%s, versión %s) no es el que registra el estado (%s, versión %s): la carpeta cambió de versión y el estado no — la actualización del arnés quedó a medias o todavía corre. Corré node \"$HOME/.tycon/harness/scripts/setup/harness.js\" update --check (o harness.js update) y, cuando diga que está al día, volvé a correr esto" % (arbol[:7], str(m.get("version") or "?")[:40], str(src.get("tree"))[:7], str(src.get("version") or "?")[:40]))
 if estampado is None and src.get("tree") != arbol: estado_distinto()
 commit = str(src.get("commit") or "")
 if not re.match(r"^[0-9a-f]{40}$", commit): muere("el estado no registra el commit de la versión bajada")

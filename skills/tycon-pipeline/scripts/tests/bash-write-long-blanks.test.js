@@ -11,6 +11,8 @@
  *
  *   BLANKS1  el cierre y el comentario a mano dan lo mismo que las expresiones de antes (casos y textos al azar)
  *   BLANKS2  el recorte de las puntas a mano da lo mismo que la expresión de antes
+ *   BLANKS6  el gancho entero decide en menos de 5 s con 40 KB de `cp a b <<<x;` repetido, 40 KB de `<` detrás de un cp
+ *            y 200 KB de `cp a b \` en renglones continuados
  *   BLANKS3  el gancho entero decide en menos de 3 s con 40 KB en cinco formas (espacios en un heredoc, `;` en un
  *            heredoc, espacios en `bash -c`, espacios por un tubo a `sh`, renglones vacíos en un heredoc)
  *   BLANKS4  los segmentos, las redirecciones, el `sh -c` y la de borrados dan lo mismo que las expresiones de antes
@@ -18,6 +20,7 @@
  *   BLANKS7  los destinos de un `cp` se leen en menos de 1,5 s con 100 KB de blancos o tabuladores entre sus palabras
  *   BLANKS8  los destinos se leen en menos de 1,5 s con 200 KB de `>|` o `>&|` seguidos, y con `sed -i` repetidos el
  *            tiempo crece como el largo, no como su cuadrado
+ *   BLANKS9  los cuerpos de 3.000 heredocs en un renglón se leen en menos de 1,5 s
  * 🔴 Nada toca el HOME real: el gancho corre en un proceso hijo con una casa de juguete.
  */
 const { test } = require('node:test');
@@ -114,6 +117,22 @@ function correrElGancho(comando) {
   } finally { fs.rmSync(casa, { recursive: true, force: true }); }
 }
 
+// 🔴 mutación: la expresión de antes para los heredocs (cúbica con `<<<x;` repetido), juzgar cada `<<<` desde el
+// principio de su renglón, juzgar un `<<<` sin palabra, preguntar por la ruta real de un destino una vez por cada origen
+// de la copia, o copiar el resto de las palabras por cada palabra al buscar una edición en el lugar.
+test('BLANKS6 HereStringsYContinuaciones_EnCantidad_DecidenEnSegundos', () => {
+  const formas = {
+    '`cp a b <<<x;` repetido': 'cp a b <<<x; '.repeat(Math.ceil((40 * 1024) / 13)),
+    '`<` repetido': `cp a b ${'<'.repeat(40 * 1024)}`,
+    'renglones continuados': 'cp a b \\\n'.repeat(Math.ceil((200 * 1024) / 9)),
+  };
+  for (const [forma, comando] of Object.entries(formas)) {
+    const r = correrElGancho(comando);
+    assert.doesNotMatch(r.stderr, /no alcanzó a decidir/, forma);
+    assert.ok(r.ms < 5000, `${forma}: tardó ${r.ms} ms`);
+  }
+});
+
 // 🔴 mutación: volver a cualquiera de las seis expresiones: con 40 KB, el freno tarda segundos o no decide en 20 s.
 test('BLANKS3 TiradaLarga_EnCadaForma_DecideEnSegundos', () => {
   const n = 40 * 1024;
@@ -179,4 +198,16 @@ test('BLANKS8 TuberiasTrasRedireccionYSedRepetido_LeenEnUnaPasada', () => {
   const chico = Math.max(1, Math.min(tarda(sed(50)), tarda(sed(50))));
   const grande = tarda(sed(200));
   assert.ok(grande / chico < 9 && grande < 6000, `sed -i repetido: 50 KB ${chico} ms, 200 KB ${grande} ms`);
+});
+
+// 🔴 Fila 243. Mutación: leer el destino del renglón que abre un heredoc una vez por cada heredoc. Con las dos lecturas de
+// los cuerpos, un renglón con miles de heredocs se leía miles de veces entero: 3.000 tardaban más de 4 s.
+test('BLANKS9 MilesDeHeredocsEnUnRenglon_LeenSuDestinoUnaVez', () => {
+  const comando = `cat ${"<<'E' ".repeat(3000)}\n${'x\nE\n'.repeat(3000)}`;
+  // stable-data: el reloj mide cuánto tarda la lectura, que es lo que se prueba
+  const desde = Date.now();
+  const cuerpos = bash.heredocs(comando);
+  const ms = Date.now() - desde;
+  assert.equal(cuerpos.length, 3000);
+  assert.ok(ms < 1500, `tardó ${ms} ms`);
 });

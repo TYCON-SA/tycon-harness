@@ -8,5 +8,6 @@
   "capabilities": { "completedHours": "field", "estimate": "field", "workItemType": "label", "autoComplete": "auto-or-wait" },
   "rawCommands": ["glab mr create", "glab mr new", "glab mr merge", "glab mr accept", "glab issue create", "glab issue new", "glab issue update", "glab issue close"],
   "changeRequestCommands": ["glab mr create", "glab mr new", "glab mr merge", "glab mr accept"],
+  "changeRequestApi": { "command": "glab api", "routes": [{ "method": "POST", "path": "projects/*/merge_requests" }, { "method": "PUT", "path": "projects/*/merge_requests/*/merge" }], "graphql": ["mergeRequestCreate", "mergeRequestAccept"] },
   "hardSignals": ["\\bglab\\s+(mr|issue|api)\\b", "/api/v4/", "https?://gitlab\\.com"]
 }
