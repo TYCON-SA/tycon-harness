@@ -40,6 +40,15 @@ test('SafetyGuardClock_StuckReader_Blocks — un freno que se queda esperando fr
   assert.ok(r.ms < 15000, `tardó ${r.ms} ms`);
 });
 
+test('T5 SafetyGuardClock_SaysWhatItWasDoingAndTheWayOut — el corte dice en qué estaba y cómo seguir', { skip: SKIP }, () => {
+  // 🔴 rojo si: el corte sólo dice «algo deja esperando al freno», sin qué estaba haciendo ni qué hacer.
+  const r = correr('ls', { bin: binConJqLento('printf "confirmando el click en una conversación de 20 MB" > "$TYCON_SAFETY_STAGE_FILE"'), env: { TYCON_SAFETY_TIMEOUT_S: '2' } });
+  assert.strictEqual(r.status, 2, `salió ${r.status} en ${r.ms} ms\n${r.stderr}`);
+  assert.match(r.stderr, /Estaba confirmando el click en una conversación de 20 MB/);
+  assert.match(r.stderr, /TYCON_SAFETY_TIMEOUT_S/, 'la salida: subir el tope');
+  assert.match(r.stderr, /sesión nueva/, 'o una sesión nueva');
+});
+
 test('SafetyGuardClock_GrandchildHoldsOutput_IsCut — un nieto colgado con la salida abierta no estira la espera', { skip: SKIP }, () => {
   // 🔴 rojo si: sólo se mata al hijo → el nieto sigue con la salida del freno abierta y la herramienta espera hasta su tope.
   const r = correr('ls', { bin: binConJqLento('sleep 30 &'), env: { TYCON_SAFETY_TIMEOUT_S: '2' } });

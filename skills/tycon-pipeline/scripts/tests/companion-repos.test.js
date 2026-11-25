@@ -59,7 +59,8 @@ function repoGit(dir, archivos) {
   fs.mkdirSync(dir, { recursive: true });
   for (const [rel, texto] of Object.entries(archivos)) escribir(dir, rel, texto);
   git(dir, 'init', '-q', '-b', 'main');
-  git(dir, 'add', '-A');
+  // con rutas largas también en Windows (el laboratorio de la fila 215 trae una de más de 260 caracteres)
+  git(dir, '-c', 'core.longpaths=true', 'add', '-A');
   git(dir, '-c', 'user.email=lab@lab', '-c', 'user.name=lab', 'commit', '-q', '-m', 'base');
   return dir;
 }
@@ -429,6 +430,25 @@ test('companionRoots y la consulta de hermanos: una story ilegible falla y un he
   assert.match(r2.stderr, /Fantasma/, 'el hermano declarado que no está en disco se avisa con su nombre');
 });
 
+// 🔴 Falla con: con un solo proyecto con pruebas no había alcance que deducir, y el portón del hermano corría en su raíz,
+// donde no hay solución: frenaba con 4 («el alcance no es un proyecto») y no había dónde declararle la carpeta
+test('F209 companionTargets_SolucionEnUnaSubcarpeta_ElAlcanceEsEsaCarpeta: el único proyecto del hermano un nivel abajo', () => {
+  const { companionTargets } = require(COMPANION_LIB);
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-sln-')));
+  const sln = (rel) => `Microsoft Visual Studio Solution File, Format Version 12.00\nProject("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "App", "${rel}", "{11111111-1111-1111-1111-111111111111}"\nEndProject\n`;
+  const csproj = '<Project Sdk="Microsoft.NET.Sdk"></Project>\n';
+  repoGit(path.join(raiz, 'Api'), { 'Web/App.sln': sln('App\\App.csproj'), 'Web/App/App.csproj': csproj, 'Web/App/X.cs': 'class X {}\n', 'README.md': 'api\n' });
+  repoGit(path.join(raiz, 'Raiz'), { 'App.sln': sln('App\\App.csproj'), 'App/App.csproj': csproj, 'App/Y.cs': 'class Y {}\n' });
+  const back = repoGit(path.join(raiz, 'Back'), {
+    'specs/s.md': STORY({ modificar: ['Web/App/X.cs', 'App/Y.cs'] }),
+    '.tycon/advisors.yaml': 'evidence:\n  companion_repos:\n    - Api\n    - Raiz\n',
+  });
+  const porNombre = Object.fromEntries(companionTargets(back, path.join(back, 'specs', 's.md')).map((t) => [path.basename(t.root), t]));
+  assert.equal(porNombre.Api.scope, 'Web', 'la solución está en Web/: la corrida del hermano va ahí');
+  // con la solución en la raíz, sin alcance: lo decide su propio portón, como siempre
+  assert.equal(porNombre.Raiz.scope, '');
+});
+
 test('test-gate: si no se pudo averiguar qué hermanos toca la story, no sale verde', (t) => {
   if (process.getuid && process.getuid() === 0) { t.skip('como root la story sin permiso igual se lee'); return; }
   const lab = laboratorioDePruebas({ backConSuite: true });
@@ -695,6 +715,35 @@ test('T18 8.55-TestGate_Salida7DeOtroCorredor_EsRojo @story-8.55 @ac-5 @ac-7 —
   assert.match(String(m.checks.tests), /^red/, `checks.tests=${m.checks.tests}`);
 });
 
+test('T19 TestGate_VitestSinPaqueteDeCobertura_NoEsRojo — sin @vitest/coverage-v8 las pruebas se corren sin cobertura y se dice qué instalar', () => {
+  // 🔴 mutación: tomar la salida de vitest sin el paquete de la cobertura como el resultado de las pruebas deja el check
+  //    en rojo con todas las pruebas en verde, y el cierre del modo autónomo lo cuenta como una vuelta que no converge.
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'vitest-sin-cob-')));
+  const repo = repoGit(path.join(raiz, 'R'), {
+    'package.json': JSON.stringify({ name: 'r', version: '1.0.0', devDependencies: { vitest: '^2.0.0' } }) + '\n',
+    'src/a.test.ts': "import { test } from 'vitest'; test('ok', () => {});\n",
+  });
+  // un npx de juguete: con --coverage falta el paquete, como en un repo nuevo; sin él, las pruebas pasan
+  const bin = path.join(raiz, 'bin');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'npx'), [
+    '#!/bin/sh',
+    'case " $* " in *" --coverage "*) echo " MISSING DEPENDENCY  Cannot find dependency \'@vitest/coverage-v8\'" >&2; exit 1;; esac',
+    'out=""; prev=""; for a in "$@"; do [ "$prev" = "--outputFile" ] && out="$a"; prev="$a"; done',
+    'echo \'{"numTotalTests":3,"numPassedTests":3,"numFailedTests":0,"numPendingTests":0,"success":true,"testResults":[]}\' > "$out"',
+    'exit 0', ''].join('\n'));
+  fs.chmodSync(path.join(bin, 'npx'), 0o755);
+  const home = casa();
+  const archivoMarker = markerFalso(home, 'tcob', repo, path.join(repo, 'no-hay.md'));
+  const r = spawnSync('bash', [TEST_GATE, repo, '9.27'], { encoding: 'utf8', env: entorno(home, 'tcob', { PATH: `${bin}${path.delimiter}${process.env.PATH}` }), cwd: repo });
+  assert.match(r.stderr, /cobertura no medida: falta @vitest\/coverage-v8 \(instalalo en el repo: npm i -D @vitest\/coverage-v8\)/, `${r.stdout}\n${r.stderr}`);
+  const m = JSON.parse(fs.readFileSync(archivoMarker, 'utf8'));
+  assert.strictEqual(m.checks.tests, 'green', `checks.tests=${m.checks.tests}`);
+  assert.strictEqual(artefacto(repo).totals.passed, 3);
+  // quien lee sólo el informe (el revisor de cobertura) ve por qué no hay cobertura
+  assert.match(JSON.stringify(artefacto(repo)), /cobertura no medida: falta @vitest\/coverage-v8/);
+});
+
 test('T22 8.55-HermanoEnWorktree_RutaConPuntosSigueResolviendo @story-8.55 @ac-2 — «../<hermano>/x» se asigna al worktree del hermano', () => {
   // 🔴 mutación: con el hermano en su worktree, la ruta «../Front/x» de la story cae en el
   //    checkout compartido y deja de ser del hermano: `targets` la pierde sin aviso y su suite puede no correr.
@@ -784,9 +833,9 @@ function laboratorioPorNumero({ id = '1.4', backRama = 'docs/conciliacion-1-4-im
   });
   return { raiz, back, front: fs.realpathSync(front), backWt: fs.realpathSync(backWt), frontWts, story: path.join(backWt, 'specs', 's.md') };
 }
-/** `companionRoots` en un proceso aparte, para leer también sus avisos por stderr. */
-function hermanosConAvisos(repo, story) {
-  const r = spawnSync(process.execPath, ['-e', `process.stdout.write(JSON.stringify(require(${JSON.stringify(COMPANION_LIB)}).companionRoots(process.argv[1], process.argv[2])))`, repo, story], { encoding: 'utf8' });
+/** `companionRoots` en un proceso aparte, para leer también sus avisos por stderr. `env`: el entorno, si no el de la prueba. */
+function hermanosConAvisos(repo, story, env) {
+  const r = spawnSync(process.execPath, ['-e', `process.stdout.write(JSON.stringify(require(${JSON.stringify(COMPANION_LIB)}).companionRoots(process.argv[1], process.argv[2])))`, repo, story], { encoding: 'utf8', ...(env ? { env } : {}) });
   assert.equal(r.status, 0, r.stderr);
   return { roots: JSON.parse(r.stdout), avisos: r.stderr };
 }
@@ -875,20 +924,60 @@ test('T5 HermanoEnOtraRama_SeDice @story-7.34 @ac-5 — sin worktree, el checkou
   assert.equal(r.avisos, '', r.avisos);
 });
 
-test('companionRoots: con la cabeza suelta, el número de la story elige el worktree del hermano', () => {
-  // 🔴 mutación: sin rama se devuelve el declarado: el armado de un clon de prueba en un commit suelto mide el checkout
-  // compartido, no el código de la story.
+// Fila 123 del 23/11: desde una copia en un commit suelto, el portón tomó como hermanas las copias de OTRA sesión sólo por
+// el número de la historia, y pisó sus informes. Con la cabeza suelta no se adivina: vale la rama de la corrida que dejó
+// quien armó el clon (lib/private-tree.js cloneWithDisk). Y el número no elige una copia donde trabaja otra sesión viva.
+test('T7 HermanoPorNumero_CabezaSuelta_NoAdivina — en un commit suelto, el declarado y se dice', () => {
+  // 🔴 mutación: con la cabeza suelta el número elige el worktree de otra sesión
   const lab = laboratorioPorNumero();
   git(lab.backWt, 'checkout', '-q', '--detach');
   const { roots, avisos } = hermanosConAvisos(lab.backWt, lab.story);
-  assert.deepEqual(roots, [lab.frontWts[0]]);
-  assert.match(avisos, /nombra la story 1\.4/, avisos);
-  // Sin worktree que nombre la story, el declarado, y sin el aviso del checkout principal (no hay rama con qué compararlo).
+  assert.deepEqual(roots, [lab.front]);
+  assert.match(avisos, /commit suelto[^\n]*no elijo[^\n]*feat\/conciliacion-1-4-x/, avisos);
+  // Sin worktree que nombre la story, el declarado, y nada que decir.
   const sinNumero = laboratorioPorNumero({ frontRamas: ['feat/sin-numero'] });
   git(sinNumero.backWt, 'checkout', '-q', '--detach');
   const r = hermanosConAvisos(sinNumero.backWt, sinNumero.story);
   assert.deepEqual(r.roots, [sinNumero.front]);
   assert.equal(r.avisos, '', r.avisos);
+});
+
+test('T8 ArbolArmado_ClonEnCommitSuelto_EligePorLaRamaDeOrigen — el clon del árbol armado lleva la rama de la corrida', () => {
+  // 🔴 mutación: sin la rama de origen, el clon en un commit suelto mide el checkout compartido (el caso del 26/10)
+  const { cloneWithDisk } = require('../lib/private-tree.js');
+  const lab = laboratorioPorNumero();
+  const clon = path.join(lab.raiz, 'Back-clon');
+  cloneWithDisk(lab.backWt, clon);
+  const deLaStory = path.join(clon, 'specs', 's.md');
+  const { roots, avisos } = hermanosConAvisos(fs.realpathSync(clon), deLaStory);
+  assert.deepEqual(roots, [lab.frontWts[0]], avisos);
+  assert.match(avisos, /nombra la story 1\.4/, avisos);
+  // un clon a una versión fija (la del servidor o main) no es el código de la corrida: no lleva su rama
+  const fijo = path.join(lab.raiz, 'Back-fijo');
+  cloneWithDisk(lab.backWt, fijo, { at: execFileSync('git', ['-C', lab.backWt, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim() });
+  assert.deepEqual(hermanosConAvisos(fs.realpathSync(fijo), path.join(fijo, 'specs', 's.md')).roots, [lab.front]);
+});
+
+test('T9 HermanoPorNumero_OtraSesionViva_NoLoElige — dos sesiones sobre el mismo número: no elige la copia de la otra y lo dice', () => {
+  // 🔴 mutación: el número elige la copia donde trabaja otra sesión, y el portón pisa sus informes
+  const lab = laboratorioPorNumero();
+  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-casa-')));
+  const transcripcion = (sid, cwd) => {
+    const dir = path.join(home, '.claude', 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${sid}.jsonl`), `${JSON.stringify({ type: 'user', cwd, message: { content: 'sigo con la 1.4' } })}\n`);
+  };
+  const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: 'yo' };
+  delete env.TYCON_SESSION_ID; delete env.CODEX_SESSION_ID;
+  transcripcion('yo', lab.backWt);
+  transcripcion('otra', lab.frontWts[0]);
+  const r = hermanosConAvisos(lab.backWt, lab.story, env);
+  assert.deepEqual(r.roots, [lab.front]);
+  assert.match(r.avisos, /nombra la story 1\.4[^\n]*otra sesión[^\n]*no lo elijo/, r.avisos);
+  // la propia sesión trabajando en esa copia no la saca: se elige como siempre
+  const sola = laboratorioPorNumero();
+  transcripcion('yo', sola.frontWts[0]);
+  assert.deepEqual(hermanosConAvisos(sola.backWt, sola.story, env).roots, [sola.frontWts[0]]);
 });
 
 test('T6 TestGate_CorreElHermanoElegidoPorNumero @story-7.34 @ac-8 — el portón corre la suite del worktree elegido', () => {
@@ -1071,7 +1160,7 @@ test('T6 8.229-Companion_AbsoluteOrHome_NoFallback @story-8.229 @ac-6 — una ab
 
 // El checkout compartido en `main`, su `origin` y un worktree de la historia 9.1: lo que elige `enLaMismaRama` cuando la
 // historia está en la rama `main`. Corre en otro proceso: los avisos se dicen una vez por proceso.
-function laboratorioMain() {
+function laboratorioMain({ propio = true } = {}) {
   const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-main-')));
   const semilla = repoGit(path.join(raiz, 'semilla'), { 'a.js': '1\n' });
   const origen = path.join(raiz, 'origen.git');
@@ -1080,10 +1169,12 @@ function laboratorioMain() {
   execFileSync('git', ['clone', '-q', origen, pub]);
   const wt = path.join(raiz, 'pub-wt');
   git(pub, 'worktree', 'add', '-q', '-b', 'story/9.1-x', wt);
-  // la rama de la story tiene trabajo propio: no es una copia vieja que ya entró a main
-  escribir(wt, 'story.js', 'lo de la story\n');
-  git(wt, 'add', '-A');
-  git(wt, '-c', 'user.email=lab@lab', '-c', 'user.name=lab', 'commit', '-qm', 'lo de la story');
+  // la rama de la story tiene trabajo propio: no es una copia vieja que ya entró a main (salvo que la prueba pida esa copia)
+  if (propio) {
+    escribir(wt, 'story.js', 'lo de la story\n');
+    git(wt, 'add', '-A');
+    git(wt, '-c', 'user.email=lab@lab', '-c', 'user.name=lab', 'commit', '-qm', 'lo de la story');
+  }
   return { pub: fs.realpathSync(pub), wt: fs.realpathSync(wt) };
 }
 function elegir(declarado, rama, numero) {
@@ -1093,6 +1184,52 @@ function elegir(declarado, rama, numero) {
   return { eleccion: JSON.parse(r.stdout), avisos: r.stderr };
 }
 const NO_LO_ELIJO = /no está al día con origin\/main o tiene cambios: no lo elijo por el nombre de la rama/;
+
+// 🔴 Falla con: la historia lleva el prefijo de su producto (`BCRA-1.1`) y la rama del código del hermano nombra sólo el
+// número (`feature/1-1-consulta`): no se la reconocía, y el hermano se leía del checkout compartido, atrasado.
+test('CompanionRepos_NumeroConPrefijo_EligeElWorktreeQueNombraSoloElNumero', () => {
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-prefijo-')));
+  const pub = fs.realpathSync(repoGit(path.join(raiz, 'pub'), { 'a.js': '1\n' }));
+  const wt = path.join(raiz, 'pub-wt');
+  git(pub, 'worktree', 'add', '-q', '-b', 'feature/1-1-consulta', wt);
+  const r = elegir(pub, 'docs/specs-del-producto', 'BCRA-1.1');
+  assert.equal(r.eleccion, fs.realpathSync(wt), r.avisos);
+  assert.match(r.avisos, /único cuya rama nombra la story 1\.1 \(sin el prefijo BCRA\)/, r.avisos);
+  // una rama que nombra el número con el prefijo gana, como hoy
+  const conPrefijo = path.join(raiz, 'pub-wt-bcra');
+  git(pub, 'worktree', 'add', '-q', '-b', 'feature/bcra-1-1', conPrefijo);
+  assert.equal(elegir(pub, 'docs/specs-del-producto', 'BCRA-1.1').eleccion, fs.realpathSync(conPrefijo));
+  // sin la del prefijo y con dos que nombran sólo el número: no adivina
+  git(pub, 'worktree', 'remove', '--force', conPrefijo);
+  git(pub, 'worktree', 'add', '-q', '-b', 'fix/1-1-otra', path.join(raiz, 'pub-wt2'));
+  const dos = elegir(pub, 'docs/specs-del-producto', 'BCRA-1.1');
+  assert.equal(dos.eleccion, pub, dos.avisos);
+  assert.match(dos.avisos, /2 worktrees nombran la story 1\.1/, dos.avisos);
+});
+
+// Adentro de un gancho de git, o de un guion que corre otro repo, llegan GIT_DIR y GIT_WORK_TREE de ese repo: con ellos
+// `git -C <hermano>` preguntaba por el otro, y la búsqueda caía en el checkout compartido, que puede estar viejo.
+test('CompanionRepos_ConElGitDeOtroRepo_EncuentraElWorktree', () => {
+  const l = laboratorioMain();
+  const otro = repoGit(path.join(path.dirname(l.pub), 'otro'), { 'b.js': '1\n' });
+  git(otro, 'branch', 'story/9.1-x');
+  const r = spawnSync(process.execPath, ['-e', `process.stdout.write(JSON.stringify(require(${JSON.stringify(COMPANION_LIB)}).enLaMismaRama(...JSON.parse(process.argv[1]))))`,
+    JSON.stringify([l.pub, 'story/9.1-x', '9.1'])], { encoding: 'utf8', cwd: otro, env: { ...process.env, GIT_DIR: path.join(otro, '.git'), GIT_WORK_TREE: otro } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout), l.wt, r.stderr);
+  assert.doesNotMatch(r.stderr, /no pude leer la raíz git|no pude listar/);
+});
+
+// Lo que se pregunta después sobre el hermano encontrado (su nombre, su HEAD, lo que tiene sin commitear) también va sin
+// el GIT_DIR del otro repo: si no, se describe al hermano con los datos del repo de afuera.
+test('CompanionRepos_ConElGitDeOtroRepo_NombraAlHermano', () => {
+  const l = laboratorioMain();
+  const otro = repoGit(path.join(path.dirname(l.pub), 'otro'), { 'b.js': '1\n' });
+  const r = spawnSync(process.execPath, ['-e', `process.stdout.write(JSON.stringify(require(${JSON.stringify(COMPANION_LIB)}).nombreDelRepo(process.argv[1])))`,
+    l.pub], { encoding: 'utf8', cwd: otro, env: { ...process.env, GIT_DIR: path.join(otro, '.git'), GIT_WORK_TREE: otro } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(JSON.parse(r.stdout), path.basename(l.pub), r.stderr);
+});
 
 test('CompanionRepos_RamaMain_NoTomaElCompartidoSinMirar @story-8.282 @ac-18', () => {
   const casos = {
@@ -1144,4 +1281,186 @@ test('CompanionRepos_RamaDeHistoria_ComoHoy @story-8.282 @ac-19', () => {
   const r = elegir(l.pub, 'story/9.1-x', '9.1');
   assert.equal(r.eleccion, l.wt);
   assert.equal(r.avisos, '');
+});
+
+// El checkout compartido avanza `n` commits en main y los empuja: el worktree de la historia queda atrás.
+function avanzarMain(l, n) {
+  for (let i = 0; i < n; i += 1) {
+    escribir(l.pub, `main-${i}.js`, `${i}\n`);
+    git(l.pub, 'add', '-A');
+    git(l.pub, '-c', 'user.email=lab@lab', '-c', 'user.name=lab', 'commit', '-qm', `main ${i}`);
+  }
+  git(l.pub, 'push', '-q', 'origin', 'main');
+}
+
+test('Hermanos_RamaDeLaHistoriaAtrasada_EligeElAlDiaYAvisa (T8) @story-8.274 @ac-10', () => {
+  // la rama de la historia ya entró entera a main y quedó 3 atrás: se usa el checkout en main, al día, y se dice
+  for (const rama of ['wt/otro-nombre', 'story/9.1-x']) {
+    const l = laboratorioMain({ propio: false });
+    avanzarMain(l, 3);
+    const r = elegir(l.pub, rama, '9.1');
+    assert.equal(r.eleccion, l.pub, `${rama}: elige el clon al día`);
+    assert.match(r.avisos, /la rama story\/9\.1-x ya entró a main y está atrás de origin\/main \(3 commits\)/, rama);
+    assert.ok(r.avisos.includes(l.pub), `${rama}: nombra el clon que usa`);
+  }
+  // el ancla de la evidencia sigue la misma elección: queda sobre el clon que midió el portón, no sobre la rama vieja
+  const a = laboratorioMain({ propio: false });
+  avanzarMain(a, 3);
+  const esp = repoGit(path.join(path.dirname(a.pub), 'esp'), { '.tycon/advisors.yaml': 'evidence:\n  companion_repos:\n    - ../pub\n' });
+  git(esp, 'checkout', '-q', '-b', 'wt/otro-nombre');
+  const ancla = spawnSync(process.execPath, ['-e', `process.stdout.write(JSON.stringify(require(${JSON.stringify(COMPANION_LIB)}).anclasDeLaEvidencia(process.argv[1], '9.1')))`, esp], { encoding: 'utf8' });
+  assert.equal(ancla.status, 0, ancla.stderr);
+  assert.deepEqual(JSON.parse(ancla.stdout), [{ repo: 'pub', commit: git(a.pub, 'rev-parse', 'HEAD').trim() }]);
+  // con un commit propio sin mergear es el código de la historia: se usa igual, y se dice cuánto está atrás
+  const p = laboratorioMain();
+  escribir(p.wt, 'propio.js', 'de la historia\n');
+  git(p.wt, 'add', '-A');
+  git(p.wt, '-c', 'user.email=lab@lab', '-c', 'user.name=lab', 'commit', '-qm', 'propio');
+  avanzarMain(p, 3);
+  const propio = elegir(p.pub, 'wt/otro-nombre', '9.1');
+  assert.equal(propio.eleccion, p.wt);
+  assert.match(propio.avisos, /pub está 3 commits atrás de main \(rama story\/9\.1-x, en [^)]+\): un rojo puede ser algo ya arreglado/);
+  // una rama recién creada con el trabajo sin commitear tampoco entró a main: se usa
+  const sucia = laboratorioMain();
+  escribir(sucia.wt, 'a.js', 'a medio hacer\n');
+  avanzarMain(sucia, 3);
+  const sinCommitear = elegir(sucia.pub, 'wt/otro-nombre', '9.1');
+  assert.equal(sinCommitear.eleccion, sucia.wt);
+  assert.match(sinCommitear.avisos, /pub está 3 commits atrás de main/);
+  // al día, nada cambia ni se dice de más
+  const alDia = laboratorioMain();
+  assert.equal(elegir(alDia.pub, 'story/9.1-x', '9.1').avisos, '');
+});
+
+test('Hermanos_SoloElAtrasado_LoUsaYLoDice (T9) @story-8.274 @ac-11', () => {
+  // el checkout en main tampoco está al día (atrás de su origin/main): no hay otro clon al día, se usa la rama vieja
+  const l = laboratorioMain();
+  avanzarMain(l, 2);
+  git(l.pub, 'reset', '-q', '--hard', 'HEAD~1');
+  const r = elegir(l.pub, 'wt/otro-nombre', '9.1');
+  assert.equal(r.eleccion, l.wt);
+  assert.match(r.avisos, /pub está 2 commits atrás de main \(rama story\/9\.1-x, en [^)]+\): un rojo puede ser algo ya arreglado/);
+});
+
+// ── Fila 215: los pasos miran los hermanos que la historia toca, no todos los declarados ─────────────────────────────
+
+/**
+ * La historia vive en `Back` y declara archivos sólo en `Front`. `Back` declara además a `Otro`, que la historia no toca
+ * y trae una ruta muy larga (como el repo de Windows que frenó el congelado). Los tres en la misma carpeta.
+ */
+function laboratorioDeTres({ story } = {}) {
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-tres-')));
+  const largo = Array.from({ length: 8 }, (_, i) => `carpeta-con-un-nombre-bastante-largo-${i}`).join('/');
+  const back = repoGit(path.join(raiz, 'Back'), {
+    'src/A.cs': 'class A {}\n',
+    'specs/s.md': story || STORY({ modificar: ['src/A.cs', 'app/src/X.tsx'], crear: ['Front/app/src/Nuevo.tsx'] }),
+    '.tycon/advisors.yaml': 'evidence:\n  companion_repos:\n    - Front\n    - Otro\n',
+  });
+  const front = repoGit(path.join(raiz, 'Front'), {
+    'app/package.json': JSON.stringify({ name: 'app', version: '1.0.0', dependencies: { react: '18.3.1' } }, null, 2) + '\n',
+    'app/src/X.tsx': 'export const X = () => null;\n',
+  });
+  const otro = repoGit(path.join(raiz, 'Otro'), {
+    'package.json': JSON.stringify({ name: 'otro', version: '1.0.0', dependencies: {} }, null, 2) + '\n',
+    [`${largo}/archivo-de-un-repo-que-la-historia-no-toca.txt`]: 'x\n',
+  });
+  return { raiz, back, front, otro, story: path.join(back, 'specs', 's.md'), largo };
+}
+const cr = () => require(path.join(SCRIPTS, 'lib', 'companion-repos.js'));
+
+test('Fila215 T1 TouchedRoots_OnlySiblingsWithDeclaredFiles — sólo los hermanos con archivos declarados; la lista entera no cambia', () => {
+  // 🔴 rojo si: no hay forma de pedir sólo los hermanos que la historia toca (el congelado, dep-gate y los revisores
+  //    trabajan sobre todos los declarados)
+  const l = laboratorioDeTres();
+  assert.deepStrictEqual(cr().touchedRoots(l.back, l.story), [l.front]);
+  // la evidencia y el portón siguen con todos: la lista entera es la de siempre
+  assert.deepStrictEqual(cr().companionRoots(l.back, l.story), [l.front, l.otro]);
+  // un archivo que la historia va a crear y todavía no existe cuenta por el nombre del hermano
+  const sinX = laboratorioDeTres({ story: STORY({ crear: ['Front/app/src/Nuevo.tsx'] }) });
+  assert.deepStrictEqual(cr().touchedRoots(sinX.back, sinX.story), [sinX.front]);
+  // sin historia no hay con qué elegir: todos
+  assert.deepStrictEqual(cr().touchedRoots(l.back, null), [l.front, l.otro]);
+});
+
+test('Fila215 T2 ReposDelPase_SinElHermanoNoTocado — el congelado del pase y de los revisores no sella ni copia a Otro', () => {
+  // 🔴 rojo si: reposDelPase toma todos los declarados: copia a Otro, con su ruta larga, aunque la historia no lo toca
+  const l = laboratorioDeTres();
+  const ft = require(path.join(SCRIPTS, 'lib', 'frozen-tree.js'));
+  const r = ft.reposDelPase({ story: l.story, repo: l.back });
+  assert.ok(!r.error, r.error);
+  assert.deepStrictEqual(r.hermanos, [l.front]);
+  assert.ok(!r.repos.includes(l.otro), r.repos.join(', '));
+  // y la copia de un repo con una ruta larga sale entera
+  const home = casa();
+  const c = ft.freeze(l.otro, git(l.otro, 'rev-parse', 'HEAD^{tree}').trim(), path.join(home, 'copia'));
+  assert.ok(!c.error, c.error);
+  assert.ok(fs.existsSync(path.join(home, 'copia', l.largo, 'archivo-de-un-repo-que-la-historia-no-toca.txt')));
+});
+
+test('Fila215 T3 CopiaEnWindows_ConRutasLargas — en Windows el git de la copia lleva core.longpaths=true', () => {
+  const ft = require(path.join(SCRIPTS, 'lib', 'frozen-tree.js'));
+  assert.deepStrictEqual(ft.gitDeLaCopia('win32'), ['-c', 'core.longpaths=true']);
+  assert.deepStrictEqual(ft.gitDeLaCopia('darwin'), []);
+});
+
+test('Fila215 T4 DepGate_HermanoCambiadoSinDeclarar — un paquete nuevo en Otro, que la historia no declara pero la corrida cambió, se ve igual', () => {
+  // 🔴 rojo si: «tocado» es sólo lo declarado → la corrida cambia Otro sin nombrarlo y su dependencia nueva pasa sin pausa
+  const l = laboratorioDeTres();
+  fs.writeFileSync(path.join(l.otro, 'package.json'), JSON.stringify({ name: 'otro', version: '1.0.0', dependencies: { 'paquete-de-otro': '1.0.0' } }, null, 2) + '\n');
+  fs.writeFileSync(path.join(l.front, 'app', 'package.json'), JSON.stringify({ name: 'app', version: '1.0.0', dependencies: { react: '18.3.1', 'paquete-de-front': '1.0.0' } }, null, 2) + '\n');
+  const r = spawnSync(process.execPath, [PIPELINE, 'dep-gate', '--repo', l.back, '--story', l.story], { encoding: 'utf8', env: entorno(casa(), 'sid-fila215') });
+  const salida = `${r.stdout}\n${r.stderr}`;
+  assert.match(salida, /paquete-de-front/);
+  assert.match(salida, /paquete-de-otro/);
+  // y el congelado también lo sella: su código no queda sin revisar
+  const ft = require(path.join(SCRIPTS, 'lib', 'frozen-tree.js'));
+  assert.deepStrictEqual(ft.reposDelPase({ story: l.story, repo: l.back }).hermanos, [l.front, l.otro]);
+  // con commits propios (que su main no tiene) cuenta igual
+  const c = laboratorioDeTres();
+  git(c.otro, 'switch', '-q', '-c', 'feat/otro');
+  fs.writeFileSync(path.join(c.otro, 'nuevo.txt'), 'y\n');
+  git(c.otro, 'add', '-A');
+  git(c.otro, '-c', 'user.email=lab@lab', '-c', 'user.name=lab', 'commit', '-q', '-m', 'propio');
+  assert.deepStrictEqual(cr().touchedRoots(c.back, c.story), [c.front, c.otro]);
+});
+
+test('Fila215 T6 TouchedRoots_FormasDeDeclarar — a borrar, (<repo>) con otras mayúsculas o con su ruta, y el nombre en minúsculas', () => {
+  // 🔴 rojo si: el filtro mira sólo files_to_create/files_to_modify y compara el nombre del hermano tal cual
+  const conStory = (s) => { const l = laboratorioDeTres({ story: s }); return { l, t: cr().touchedRoots(l.back, l.story) }; };
+  let r = conStory(STORY({ modificar: ['src/A.cs'] }).replace('files_to_create: []', 'files_to_create: []\nfiles_to_delete:\n  - Otro/viejo.txt'));
+  assert.deepStrictEqual(r.t, [r.l.otro], 'un archivo a borrar en Otro');
+  r = conStory(STORY({ crear: ['(Otro) src/nuevo.js'] }));
+  assert.deepStrictEqual(r.t, [r.l.otro], '(Otro) x');
+  const conRuta = laboratorioDeTres();
+  fs.writeFileSync(conRuta.story, STORY({ crear: [`(${conRuta.otro}) src/nuevo.js`] }));
+  assert.deepStrictEqual(cr().touchedRoots(conRuta.back, conRuta.story), [conRuta.otro], '(<ruta de Otro>) x');
+  if (process.platform === 'darwin' || process.platform === 'win32') {
+    r = conStory(STORY({ crear: ['front/app/src/Nuevo.tsx', '(otro) src/x.js'] }));
+    assert.deepStrictEqual(r.t, [r.l.front, r.l.otro], 'con otras mayúsculas, donde el disco no las distingue');
+  }
+});
+
+test('Fila215 T7 ReposDelPase_HermanoSinGitNoTocado_NoFrena — uno declarado sin git y sin tocar no frena; si la historia lo toca, frena', () => {
+  const l = laboratorioDeTres();
+  const sinGit = path.join(l.raiz, 'SinGit');
+  fs.mkdirSync(sinGit);
+  fs.writeFileSync(path.join(sinGit, 'a.txt'), 'x\n');
+  fs.writeFileSync(path.join(l.back, '.tycon', 'advisors.yaml'), 'evidence:\n  companion_repos:\n    - Front\n    - Otro\n    - SinGit\n');
+  const ft = require(path.join(SCRIPTS, 'lib', 'frozen-tree.js'));
+  const r = ft.reposDelPase({ story: l.story, repo: l.back });
+  assert.ok(!r.error, r.error);
+  assert.deepStrictEqual(r.hermanos, [l.front]);
+  fs.writeFileSync(l.story, STORY({ modificar: ['src/A.cs', 'SinGit/a.txt'] }));
+  const tocado = ft.reposDelPase({ story: l.story, repo: l.back });
+  assert.match(tocado.error || '', /no es un repo git/);
+});
+
+test('Fila215 T5 AvisosDeHermanos_SoloLosTocados — el aviso del checkout principal sale para Front y no para Otro', () => {
+  // 🔴 rojo si: con la historia en una rama, «se lee del checkout principal» sale por cada hermano declarado
+  const l = laboratorioDeTres();
+  git(l.back, 'switch', '-q', '-c', 'feat/9-26-historia');
+  const codigo = `const c = require(${JSON.stringify(path.join(SCRIPTS, 'lib', 'companion-repos.js'))}); c.companionRoots(${JSON.stringify(l.back)}, ${JSON.stringify(l.story)});`;
+  const r = spawnSync(process.execPath, ['-e', codigo], { encoding: 'utf8', env: entorno(casa(), 'sid-fila215-avisos') });
+  assert.match(r.stderr, /Front se lee del checkout principal/);
+  assert.doesNotMatch(r.stderr, /Otro se lee del checkout principal/);
 });

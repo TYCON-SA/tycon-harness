@@ -29,7 +29,10 @@
  * anota en `<carpeta>/PEDIDOS.json` y cuenta como muerta («sin respuesta»). La sesión lanza un agente de Claude por
  * pedido, cada uno escribe su respuesta, y se vuelve a correr hasta que no quedan pedidos. El guion es el mismo.
  *
- * Uso:  node workflow-lite.js <script.workflow.js> --args '<json>' [--out <file>] [--agents-dir <carpeta>]
+ * `--args-file <archivo>` da los mismos args que `--args`, leídos de un archivo JSON (con o sin BOM). Es la forma para
+ * args grandes: en Windows la línea de comando tiene tope (unos 32 KB) y los de la revisión del plan lo pasan.
+ *
+ * Uso:  node workflow-lite.js <script.workflow.js> --args '<json>' | --args-file <archivo> [--out <file>] [--agents-dir <carpeta>]
  *       node workflow-lite.js --selftest
  * Env:  TYCON_WFLITE_JOBS (cap de agentes concurrentes, default 4)
  *       TYCON_WFLITE_MODEL_MAP (json label→slug; default desde equivalences.json si existe)
@@ -352,6 +355,7 @@ function makeAgent(opts, corredor) {
         process.stderr.write(`wflite ▸ ${label} con ${runner.label} (intento ${attempt})\n`);
         let res;
         let leido;
+        let donde = null;
         try { fs.rmSync(outFile, { force: true }); } catch (_) {}
         if (stub) {
           res = await spawnAgent(stub.split(' '), prompt, opts.cwd, opts.timeoutMs);
@@ -359,8 +363,8 @@ function makeAgent(opts, corredor) {
           if (leido.failed) leido.limit = esTope(res);
         } else {
           const c = RR.commandFor(name, runner, { model: modelo, schema: strict, schemaFile, outFile, cwd: opts.cwd, customCommand: lista.customCommand, prompt });
-          res = await spawnAgent([c.bin, ...c.args], prompt, opts.cwd, opts.timeoutMs, { stdin: c.input === 'stdin', env: c.env });
-          let fileText = null;
+          donde = RR.resolveBin(runner, c.bin);
+          res = await spawnAgent([donde.bin || c.bin, ...c.args], prompt, opts.cwd, opts.timeoutMs, { stdin: c.input === 'stdin', env: c.env });          let fileText = null;
           if (c.answer === 'file' || c.answer === 'file-env') { try { fileText = fs.readFileSync(outFile, 'utf8'); } catch (_) { fileText = null; } }
           leido = RR.readAnswer(runner, { stdout: res.out, stderr: res.err, code: res.code, fileText });
           if (leido.failed && !leido.limit) leido.limit = esTope(res);
@@ -382,7 +386,11 @@ function makeAgent(opts, corredor) {
           corredor.fallosSeguidos[name] = (corredor.fallosSeguidos[name] || 0) + 1;
           const noLanzo = res.code === -1;
           if (noLanzo || corredor.fallosSeguidos[name] >= FALLOS_PARA_CAIDO) {
-            const por = noLanzo ? `no se pudo lanzar (${causa})` : `falló ${corredor.fallosSeguidos[name]} veces seguidas (${causa})`;
+            // sin el programa: dónde se buscó y la salida aprobada, que no lanza nada desde acá
+            const dondeBusco = noLanzo && donde && donde.bin === null
+              ? `: no está en ${donde.buscado.join(' ni en ')}; la salida aprobada es --agents-dir <carpeta> (los agentes los lanza la sesión)`
+              : '';
+            const por = noLanzo ? `no se pudo lanzar (${causa})${dondeBusco}` : `falló ${corredor.fallosSeguidos[name]} veces seguidas (${causa})`;
             corredor.caidos[name] = { causa: por, hora: horaCorta(), label };
             process.stderr.write(`wflite ✖ ${label}: ${runner.label} ${por} — no lo vuelvo a probar en esta corrida\n`);
           }
@@ -421,13 +429,42 @@ function anotarUso(corredor, { clave, fase, nombre, modelo, usage }) {
   a.intentos += 1;
   for (const [k, v] of Object.entries(usage)) if (/_tokens$/.test(k) && Number.isFinite(v)) a[k] = (a[k] || 0) + v;
   corredor.usoPorAgente[clave] = a;
+  escribirUso(corredor, false);
 }
+
+/**
+ * Escribe el consumo hasta ahora en `corredor.usoFile`, si la corrida tiene uno: `{ pedido, completo, actualizado,
+ * tokens }`. Se escribe después de cada intento, así una corrida que se corta deja lo que ya gastó, con `completo: false`.
+ * Que no se pueda escribir no frena la corrida.
+ */
+function escribirUso(corredor, completo) {
+  if (!corredor.usoFile) return;
+  const porAgente = corredor.usoPorAgente || {};
+  const porFase = {};
+  let total = 0;
+  for (const a of Object.values(porAgente)) {
+    const suma = Object.entries(a).reduce((s, [k, v]) => (/_tokens$/.test(k) && Number.isFinite(v) ? s + v : s), 0);
+    porFase[a.fase] = (porFase[a.fase] || 0) + suma;
+    total += suma;
+  }
+  const texto = `${JSON.stringify({ pedido: corredor.pedido || null, completo: !!completo, actualizado: new Date().toISOString(),
+    tokens: { total, por_fase: porFase, por_agente: porAgente } }, null, 1)}\n`;
+  try {
+    const tmp = `${corredor.usoFile}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, texto);
+    fs.renameSync(tmp, corredor.usoFile);
+  } catch (e) { process.stderr.write(`wflite: no pude escribir el consumo en ${corredor.usoFile} (${e.code || e.message})\n`); }
+}
+
+/** El archivo donde una corrida con `--out <ruta>` deja su consumo al momento: la misma ruta, terminada en `.uso.json`. */
+const usoDe = (out) => `${String(out).replace(/\.json$/, '')}.uso.json`;
 
 async function runWorkflow(scriptPath, argsValue, opts) {
   let source = fs.readFileSync(scriptPath, 'utf8');
   // neutralizar el export (ilegal dentro de una función): mismo objeto, sin exportar
   source = source.replace(/^export const meta =/m, 'const meta =');
-  const corredor = { nombre: opts.agentsDir ? 'agentes-claude' : 'workflow-lite', muertos: [], tope: null, topes: {}, caidos: {}, fallosSeguidos: {}, usado: {}, vecesPorEtiqueta: {}, agentes: {}, tokensPorFase: {}, conTokens: false };
+  const corredor = { nombre: opts.agentsDir ? 'agentes-claude' : 'workflow-lite', muertos: [], tope: null, topes: {}, caidos: {}, fallosSeguidos: {}, usado: {}, vecesPorEtiqueta: {}, agentes: {}, tokensPorFase: {}, conTokens: false,
+    usoFile: opts.usoFile || null, pedido: argsValue && typeof argsValue === 'object' ? argsValue.pedido || null : null };
   // el modo del pase: el del plan revisa texto; el del código ejecuta pruebas y pide un corredor confinado
   const modo = argsValue && typeof argsValue === 'object' && argsValue.modo === 'plan' ? 'plan' : 'code';
   const agent = opts.agentsDir ? makeDirAgent(opts, corredor) : makeAgent({ ...opts, mode: opts.mode || modo }, corredor);
@@ -444,6 +481,7 @@ async function runWorkflow(scriptPath, argsValue, opts) {
   const fn = new AsyncFunction('args', 'log', 'agent', 'parallel', 'pipeline', source);
   const result = await fn(argsValue, log, agent, parallel, pipelineFn);
   if (typeof agent.cerrar === 'function') agent.cerrar();
+  if (corredor.usoPorAgente) escribirUso(corredor, true);
   if (result && typeof result === 'object' && !Array.isArray(result)) {
     const total = Object.values(corredor.tokensPorFase).reduce((a, b) => a + b, 0);
     result.corredor = { nombre: corredor.nombre, lista: corredor.lista || [], usado: corredor.usado, muertos: corredor.muertos, tope: corredor.tope,
@@ -510,10 +548,25 @@ async function main() {
   const argv = process.argv.slice(2);
   if (argv.includes('--selftest')) return selftest();
   const scriptPath = argv[0];
-  if (!scriptPath || !fs.existsSync(scriptPath)) { console.error('uso: workflow-lite.js <script.workflow.js> --args <json> [--out <file>] [--runners <a,b>] [--agents-dir <carpeta>]'); return 1; }
+  if (!scriptPath || !fs.existsSync(scriptPath)) { console.error('uso: workflow-lite.js <script.workflow.js> --args <json> | --args-file <archivo> [--out <file>] [--runners <a,b>] [--agents-dir <carpeta>]'); return 1; }
   const ai = argv.indexOf('--args');
-  const rawArgs = ai >= 0 ? argv[ai + 1] : '{}';
-  let argsValue; try { argsValue = JSON.parse(rawArgs); } catch (_) { argsValue = rawArgs; }
+  // `--args-file <archivo>` o `--args-file=<archivo>`, como lo lee el freno de la consola: una sola vez
+  const conArchivo = argv.filter((x) => x === '--args-file' || x.startsWith('--args-file='));
+  let argsValue;
+  if (conArchivo.length) {
+    // los args de un archivo: uno que no se lee o que no es JSON no corre el pase con otros args
+    if (ai >= 0) { console.error('workflow-lite: --args y --args-file a la vez: los args van de una sola forma'); return 1; }
+    if (conArchivo.length > 1) { console.error('workflow-lite: --args-file más de una vez: los args van de una sola forma'); return 1; }
+    const afi = argv.indexOf(conArchivo[0]);
+    const argsFile = conArchivo[0].startsWith('--args-file=') ? conArchivo[0].slice('--args-file='.length) : argv[afi + 1];
+    if (!argsFile || argsFile.startsWith('--')) { console.error('workflow-lite: --args-file sin archivo'); return 1; }
+    let texto;
+    try { texto = fs.readFileSync(argsFile, 'utf8'); } catch (e) { console.error(`workflow-lite: --args-file ${argsFile}: no se pudo leer (${e.code || e.message})`); return 1; }
+    try { argsValue = JSON.parse(texto.replace(/^﻿/, '')); } catch (e) { console.error(`workflow-lite: --args-file ${argsFile}: no es JSON (${e.message})`); return 1; }
+  } else {
+    const rawArgs = ai >= 0 ? argv[ai + 1] : '{}';
+    try { argsValue = JSON.parse(rawArgs); } catch (_) { argsValue = rawArgs; }
+  }
   const oi = argv.indexOf('--out');
   const di = argv.indexOf('--agents-dir');
   const agentsDir = di >= 0 ? argv[di + 1] : null;
@@ -523,7 +576,8 @@ async function main() {
   const runners = ri >= 0 ? String(argv[ri + 1] || '').split(',').map((x) => x.trim()).filter(Boolean) : null;
   if (ri >= 0 && !(runners && runners.length)) { console.error('workflow-lite: --runners sin lista'); return 1; }
   const cwd = (argsValue && argsValue.repo) || process.cwd();
-  const result = await runWorkflow(scriptPath, argsValue, { cwd, timeoutMs: 20 * 60 * 1000, agentsDir, runners });
+  const usoFile = oi >= 0 && argv[oi + 1] ? usoDe(argv[oi + 1]) : null;
+  const result = await runWorkflow(scriptPath, argsValue, { cwd, timeoutMs: 20 * 60 * 1000, agentsDir, runners, usoFile });
   const json = JSON.stringify(result, null, 1);
   if (oi >= 0) { fs.writeFileSync(argv[oi + 1], json + '\n'); console.log(`wflite: resultado → ${argv[oi + 1]}`); }
   else console.log(json);
@@ -539,7 +593,7 @@ async function main() {
   return 0;
 }
 
-module.exports = { slugFor, modelFor, anotarUso };
+module.exports = { slugFor, modelFor, anotarUso, escribirUso, usoDe };
 
 if (require.main === module) {
   main().then((c) => process.exit(c)).catch((e) => { console.error(`workflow-lite: ${e.message}`); process.exit(1); });

@@ -44,6 +44,7 @@
 # Uso:
 #   deploy-plugin.sh --url <host> --user <u> --password <c> --zip <archivo> --endpoint <ruta>
 #                    [--environment staging|production] [--pending-options <archivo.json>]
+#                       [--settings-file <archivo.json>]
 #                       [--exclusions <números de migración excluidos a propósito>]
 #
 #   --environment: «production» tiene un nombre viejo en castellano que sigue andando hasta el retiro.
@@ -54,11 +55,16 @@
 #   SABIENDAS, con motivo y fecha. Forma: {"revision":"AAAA-MM-DD","opciones":[{"opcion":"X:Y",
 #   "motivo":"por qué"}]}. Lo NO declarado frena igual; una declaración vencida o sin fecha frena.
 #
+#   --settings-file: las opciones NO secretas, por entorno, que se cargan solas en la versión nueva cuando el host
+#   dice que faltan. Forma: {"staging":{"X:Y":"valor"},"production":{"X:Y":"valor"}} (en el repo del plugin,
+#   .tycon/plugin-settings.json). Nunca pisa un valor ya cargado; frena sin escribir nada con una clave con nombre de
+#   secreto, una cifrada en el host o una que el plugin.json del paquete no declara.
+#
 # Exit: 0 desplegado y verificado · 1 falló (con la anterior recuperada donde se pudo)
 #       2 no se pudo ni empezar (credenciales, archivo, login)
 set -u
 
-URL=""; USUARIO=""; CLAVE=""; ZIP=""; ENDPOINT=""; ENTORNO="staging"; PENDIENTES_ARCH=""; EXCLUSIONES=""; RETRO_APROBADO=no
+URL=""; USUARIO=""; CLAVE=""; ZIP=""; ENDPOINT=""; ENTORNO="staging"; PENDIENTES_ARCH=""; SETTINGS_ARCH=""; EXCLUSIONES=""; RETRO_APROBADO=no
 # Las opciones renombradas a inglés: los pipelines de los productos siguen pasando las viejas hasta
 # el retiro, y este guion corre en producción desde el artefacto arnes-ci (sólo scripts/ci): el traductor vive al lado.
 _AQUI_LO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -78,8 +84,9 @@ while [ $# -gt 0 ]; do
     --endpoint) ENDPOINT="$2"; shift 2 ;;
     --environment) ENTORNO="$2"; shift 2 ;;
     --pending-options) PENDIENTES_ARCH="$2"; shift 2 ;;
+    --settings-file) SETTINGS_ARCH="$2"; shift 2 ;;
     --exclusions) EXCLUSIONES="$2"; shift 2 ;;
-    -h|--help) sed -n '1,58p' "$0"; exit 0 ;;
+    -h|--help) sed -n '1,64p' "$0"; exit 0 ;;
     *) echo "[desplegar] argumento desconocido: $1" >&2; exit 2 ;;
   esac
 done
@@ -326,7 +333,7 @@ MOTIVOS_LLANOS='{"opcion-nueva": "no existía en la versión de la que hereda", 
 motivo_llano() {
   local llano
   llano=$(jq -rn --arg m "$1" "${MOTIVOS_LLANOS}"' | .[$m] // empty' 2>/dev/null)
-  if [ -n "$llano" ]; then echo "$1: $llano"; else echo "$1"; fi
+  if [ -n "$llano" ]; then echo "$(una_linea "$1"): $llano"; else una_linea "$1"; echo; fi
 }
 # Una clave de opción es texto de una línea y no vacío. Una clave vacía se descartaría sin decirlo, y una con saltos
 # de línea partiría la lista (y podría colar un comando de Azure en la salida): la lectura falla si aparece una así.
@@ -336,19 +343,26 @@ FALTAN=""; FALTAN_LINEAS=""; DETALLE=""; MEDIDO=si; YA_ARRANCO=no
 if printf '%s' "$PREV_BODY" | jq -e 'type == "object" and .manifestUnreadable == true' >/dev/null 2>&1; then
   fatal "el host no pudo leer el manifiesto (plugin.json) del paquete $NOMBRE_PLUGIN $VERSION_PLUGIN (identificador $PLUGIN_ID): las opciones que le faltarían no se pueden saber, y eso no es «no falta nada». El paquete está roto — no toqué nada, la versión anterior sigue cargada y marcada"
 fi
-if printf '%s' "$PREV_BODY" | jq -e 'type == "object" and has("missingSettings")' >/dev/null 2>&1; then
-  LECTURA=$(printf '%s' "$PREV_BODY" | jq -r '.missingSettings
+# leer_faltantes <cuerpo de una vista previa que trae missingSettings> — llena FALTAN, FALTAN_LINEAS, DETALLE y YA_ARRANCO
+leer_faltantes() {
+  local cuerpo="$1" lectura
+  FALTAN=""; FALTAN_LINEAS=""; DETALLE=""
+  lectura=$(printf '%s' "$cuerpo" | jq -r '.missingSettings
     | if type != "array" then error("no es una lista") else .[] end
     | if type == "object" and (.key | '"$CLAVE_OK"')
       then "\(.key)\t\(.reason // "" | tostring | gsub("[[:cntrl:]]"; " "))"
       else error("un elemento sin una clave legible") end' 2>&1)
-  [ $? -eq 0 ] || fatal "no pude leer la lista de opciones faltantes de la vista previa ($LECTURA) — una lista que no se pudo leer no es una lista vacía. Detalle: $(printf '%s' "$PREV_BODY" | head -c 300)"
+  [ $? -eq 0 ] || fatal "no pude leer la lista de opciones faltantes de la vista previa ($lectura) — una lista que no se pudo leer no es una lista vacía. Detalle: $(printf '%s' "$cuerpo" | head -c 300)"
   while IFS=$'\t' read -r OP MOT; do
     [ -n "$OP" ] || continue
     FALTAN="${FALTAN:+$FALTAN, }$OP"; FALTAN_LINEAS="${FALTAN_LINEAS}${OP}"$'\n'
-    DETALLE="${DETALLE}   · $OP ($(motivo_llano "${MOT:-sin motivo}"))"$'\n'
-  done <<< "$LECTURA"
-  printf '%s' "$PREV_BODY" | jq -e '.alreadyStarted == true' >/dev/null 2>&1 && YA_ARRANCO=si
+    DETALLE="${DETALLE}   · $(una_linea "$OP") ($(motivo_llano "${MOT:-sin motivo}"))"$'\n'
+  done <<< "$lectura"
+  printf '%s' "$cuerpo" | jq -e '.alreadyStarted == true' >/dev/null 2>&1 && YA_ARRANCO=si
+  return 0
+}
+if printf '%s' "$PREV_BODY" | jq -e 'type == "object" and has("missingSettings")' >/dev/null 2>&1; then
+  leer_faltantes "$PREV_BODY"
 elif [ "$CAMINO" = subida ] && printf '%s' "$UP_BODY" | jq -e 'type == "object" and has("missingSettings")' >/dev/null 2>&1; then
   LECTURA=$(printf '%s' "$UP_BODY" | jq -r '.missingSettings
     | if type != "array" then error("no es una lista") else .[] end
@@ -357,7 +371,7 @@ elif [ "$CAMINO" = subida ] && printf '%s' "$UP_BODY" | jq -e 'type == "object" 
   while IFS= read -r OP; do
     [ -n "$OP" ] || continue
     FALTAN="${FALTAN:+$FALTAN, }$OP"; FALTAN_LINEAS="${FALTAN_LINEAS}${OP}"$'\n'
-    DETALLE="${DETALLE}   · $OP (sin motivo: la subida no lo informa)"$'\n'
+    DETALLE="${DETALLE}   · $(una_linea "$OP") (sin motivo: la subida no lo informa)"$'\n'
   done <<< "$LECTURA"
   echo "   el host todavía no contesta qué opciones le faltarían a esta versión: uso la lista que devolvió la subida"
   constancia_puente si
@@ -365,66 +379,6 @@ else
   MEDIDO=no
   constancia_puente no
   aviso "NO PUDO MEDIR la configuración de $NOMBRE_PLUGIN $VERSION_PLUGIN (identificador $PLUGIN_ID, $PUENTE_HOST): este host todavía no contesta qué opciones faltan; si acabás de corregir una configuración, subí el número de versión para volver al camino de la subida nueva, o actualizá el host. Si a esta versión le falta una opción, se va a encender sin ella"
-fi
-
-# 🔴 UNA OPCIÓN PENDIENTE SE DECLARA; LO NO DECLARADO FRENA.
-#
-# El host avisa qué opciones de configuración no tienen valor. Eso es lo único que dice sobre
-# configuración, y con la versión sin marcar no frena sola: si no se mira, el plugin queda corriendo
-# sin la configuración que su funcionalidad espera y nadie se entera. Por eso frena.
-#
-# Pero hay opciones que el equipo deja vacías A SABIENDAS: una credencial de un servicio externo que
-# todavía no existe, con el código preparado para devolver un error claro en el único endpoint que la
-# usa. Frenar por ésas no protege nada — sólo enseña a apagar el control.
-#
-# Entonces la puerta es la misma que se usa para las vulnerabilidades: se DECLARA, con motivo y
-# fecha de revisión. Una declaración vencida vuelve a frenar. Un archivo ilegible frena. Y una
-# opción faltante que no esté declarada frena igual — que es lo que el control existe para frenar.
-#
-# 🔴 LA FECHA SE VALIDA COMO FECHA. Comparada como texto, «pronto» o «2026-13-45» nunca vencerían y ampararían
-# para siempre. Y este archivo no ampara el caso del puente sin medir: ahí la lista de faltantes
-# no está vacía, es desconocida, y no hay nada contra qué declarar.
-fecha_valida() { # fecha_valida <AAAA-MM-DD> — una fecha del calendario, no sólo con la forma
-  local a m d tope
-  [[ "$1" =~ ^([0-9]{4})-([0-9]{2})-([0-9]{2})$ ]] || return 1
-  a=$((10#${BASH_REMATCH[1]})); m=$((10#${BASH_REMATCH[2]})); d=$((10#${BASH_REMATCH[3]}))
-  [ "$m" -ge 1 ] && [ "$m" -le 12 ] && [ "$d" -ge 1 ] || return 1
-  case "$m" in
-    2) tope=28; if [ $((a % 4)) -eq 0 ] && { [ $((a % 100)) -ne 0 ] || [ $((a % 400)) -eq 0 ]; }; then tope=29; fi ;;
-    4|6|9|11) tope=30 ;;
-    *) tope=31 ;;
-  esac
-  [ "$d" -le "$tope" ]
-}
-if [ -n "$FALTAN" ]; then
-  NO_DECLARADAS=""
-  if [ -n "${PENDIENTES_ARCH:-}" ] && [ -f "$PENDIENTES_ARCH" ]; then
-    jq -e . "$PENDIENTES_ARCH" >/dev/null 2>&1 \
-      || fatal "el archivo de opciones pendientes ($PENDIENTES_ARCH) no se puede leer — un permiso ilegible no es un permiso"
-    VENCE=$(jq -r '.revision // ""' "$PENDIENTES_ARCH")
-    HOY=$(date -u +%Y-%m-%d)
-    [ -n "$VENCE" ] || fatal "el archivo de opciones pendientes no tiene fecha de revisión — una deuda sin fecha es permanente en silencio"
-    fecha_valida "$VENCE" || fatal "la fecha de revisión del archivo de opciones pendientes («${VENCE}») no es una fecha AAAA-MM-DD del calendario — una fecha que no se puede leer no vence nunca y ampararía para siempre"
-    [ "$VENCE" \< "$HOY" ] && fatal "la declaración de opciones pendientes venció el $VENCE — o se configuran, o se re-declara con fecha nueva y su motivo"
-    # una clave por línea, leída tal cual: sin partir por comas ni expandir comodines contra la carpeta de trabajo
-    while IFS= read -r op; do
-      [ -n "$op" ] || continue
-      jq -e --arg o "$op" '.opciones[]? | select(.opcion == $o and (.motivo // "") != "")' "$PENDIENTES_ARCH" >/dev/null 2>&1 \
-        || NO_DECLARADAS="$NO_DECLARADAS $op"
-    done <<< "$FALTAN_LINEAS"
-  else
-    NO_DECLARADAS=" $FALTAN"
-  fi
-  if [ -n "$NO_DECLARADAS" ]; then
-    echo "   faltan opciones de configuración en $NOMBRE_PLUGIN $VERSION_PLUGIN (identificador $PLUGIN_ID):"
-    printf '%s' "$DETALLE"
-    echo "   Se cargan en el panel de administración, en la configuración de la versión con identificador $PLUGIN_ID."
-    [ "$YA_ARRANCO" = si ] && echo "   Esta versión ya arrancó; si cargaste un valor después, cargalo en ELLA."
-    fatal "el host dice que faltan opciones de configuración para $NOMBRE_PLUGIN $VERSION_PLUGIN (identificador $PLUGIN_ID) y NO están declaradas:$NO_DECLARADAS — con la versión sin marcar el host no frena solo. Se cargan en el panel, en la configuración de la versión con identificador $PLUGIN_ID. Si son pendientes a sabiendas, declaralas con motivo y fecha en el archivo de opciones pendientes"
-  fi
-  aviso "faltan opciones de configuración DECLARADAS como pendientes (revisar $VENCE): $FALTAN"
-elif [ "$MEDIDO" = si ]; then
-  echo "   configuración: no falta ninguna opción"
 fi
 
 # 🔴 LOS CONTADORES QUE NO VINIERON NO SON CERO. Los contadores de migraciones de la vista previa son nulables: si el
@@ -481,6 +435,183 @@ if [ "${RETROCESOS:-0}" -gt 0 ] 2>/dev/null; then
   # El host exige la aprobación EXPLÍCITA del retroceso al marcar como actual. Se enciende acá y
   # sólo acá: la aprobación la genera la lista de exclusiones deliberadas, no una bandera suelta.
   RETRO_APROBADO=si
+fi
+
+# 🔴 LAS OPCIONES NO SECRETAS SE CARGAN SOLAS; LOS SECRETOS, NUNCA.
+#
+# Con --settings-file, las opciones que la vista previa dice que faltan y que el archivo trae para el entorno se
+# escriben en la versión nueva, de a una y sin cifrar, con la escritura de configuración del host. Así el dev carga a
+# mano sólo los secretos. Reglas:
+#   · el archivo entero se mira al empezar, con todos sus bloques y falte algo o no: frena si trae un bloque que no es
+#     staging ni production, una clave o un valor que no se leen, o una clave que el paquete no declara en su
+#     plugin.json (la copia del plugin.json.example del repo). Así staging frena por un error del bloque de producción
+#     antes de que nadie apruebe;
+#   · una clave con nombre de secreto nunca se carga: se nombra en un aviso y se sigue con las demás. Para una opción
+#     nueva el host todavía no tiene la marca de cifrada, así que el nombre es la única defensa; la lista es amplia a
+#     propósito (una opción común con «token» en el nombre se carga a mano, y si falta la frena el control de abajo);
+#   · frena sin escribir nada si el archivo trae una opción que el host tiene marcada como cifrada;
+#   · nunca se pisa: una opción que el host no reporta como faltante (heredada o cargada a mano) no se toca;
+#   · después se vuelve a leer la vista previa: lo que siga faltando (los secretos) frena como siempre.
+# Escribe sólo con un host que dice en la vista previa qué falta: sin eso no hay contra qué cargar ni cómo verificarlo.
+# Corre después de los controles de migraciones y retrocesos, que frenan sin haber tocado nada.
+SECRETO_RE='pass|pwd|secret|token|key|llave|clave|contrase(ñ|n)a|cred|private|sign|sas|jwt|bearer|hash|hmac|pfx|conn(ection)?_?str'
+if [ -n "$SETTINGS_ARCH" ]; then
+  paso "2b/5 · Opciones no secretas del archivo de opciones ($SETTINGS_ARCH)"
+  case "$ENTORNO" in produccion) BLOQUE_ENT=production ;; *) BLOQUE_ENT="$ENTORNO" ;; esac
+  # 1) el archivo entero, con todos sus bloques
+  [ -f "$SETTINGS_ARCH" ] && jq -e 'type == "object"' "$SETTINGS_ARCH" >/dev/null 2>&1 \
+    || fatal "el archivo de opciones ($SETTINGS_ARCH) no se puede leer como un objeto JSON — no cargué nada"
+  OTROS=$(jq -r 'keys[] | select(. != "staging" and . != "production") | gsub("[[:cntrl:]]"; " ")' "$SETTINGS_ARCH")
+  [ -z "$OTROS" ] || fatal "el archivo de opciones trae bloques que no son de ningún entorno: $(printf '%s' "$OTROS" | tr '\n' ' ')— los bloques son staging y production; no cargué nada"
+  MALAS=$(jq -r 'to_entries[] | .key as $b
+    | if (.value | type) != "object" then "\($b) (no es un objeto)"
+      else .value | to_entries[]
+        | select((.key | '"$CLAVE_OK"' | not) or (.value | type != "string") or (.value | test("[[:cntrl:]]")))
+        | "\($b): \(.key | tostring | gsub("[[:cntrl:]]"; " "))" end' "$SETTINGS_ARCH" 2>&1) \
+    || fatal "no pude revisar el archivo de opciones ($MALAS) — no cargué nada"
+  [ -z "$MALAS" ] || fatal "el archivo de opciones trae claves que no se leen o valores que no son texto de una línea: $(printf '%s' "$MALAS" | tr '\n' ' ')— no cargué nada"
+  MANIF=""
+  if command -v unzip >/dev/null 2>&1; then MANIF=$(unzip -p "$ZIP" plugin.json 2>/dev/null)
+  elif command -v python3 >/dev/null 2>&1; then MANIF=$(python3 -c 'import sys, zipfile; sys.stdout.write(zipfile.ZipFile(sys.argv[1]).read("plugin.json").decode("utf-8"))' "$ZIP" 2>/dev/null)
+  fi
+  printf '%s' "$MANIF" | jq -e 'type == "object"' >/dev/null 2>&1 \
+    || fatal "no pude leer el plugin.json del paquete ($ZIP) para ver qué opciones declara — sin eso no cargo nada"
+  DECLARADAS=$(printf '%s' "$MANIF" | jq -r '.defaultSettings // {} | if type == "object" then keys[] else empty end' 2>&1) \
+    || fatal "no pude leer las opciones que declara el plugin.json del paquete ($DECLARADAS) — no cargué nada"
+  FUERA=""
+  while IFS=$'\t' read -r b k; do
+    [ -n "$k" ] || continue
+    printf '%s\n' "$DECLARADAS" | grep -qxF -- "$k" || FUERA="${FUERA}${b}: ${k} "
+  done < <(jq -r 'to_entries[] | .key as $b | .value | keys[] | "\($b)\t\(.)"' "$SETTINGS_ARCH")
+  [ -z "$FUERA" ] || fatal "el archivo de opciones trae claves que el paquete no declara en su plugin.json: $(una_linea "$FUERA")— no cargué nada"
+  # 2) las de nombre de secreto, de todos los bloques: se nombran y no se cargan
+  CON_NOMBRE=$(jq -r --arg re "$SECRETO_RE" 'to_entries[] | .key as $b | .value | keys[] | select(test($re; "i")) | "\($b): \(.)"' "$SETTINGS_ARCH" 2>&1) \
+    || fatal "no pude revisar los nombres del archivo de opciones ($CON_NOMBRE) — no cargué nada"
+  [ -z "$CON_NOMBRE" ] || aviso "el archivo de opciones trae claves con nombre de secreto, que nunca se cargan solas: $(printf '%s' "$CON_NOMBRE" | tr '\n' ' ')— si es un secreto, sacalo del archivo (un secreto no va en el repo) y cargalo a mano en el panel; si falta, el control de opciones pendientes lo dice"
+  SECRETAS_ENT=$(jq -r --arg e "$BLOQUE_ENT" --arg re "$SECRETO_RE" '(.[$e] // {}) | keys[] | select(test($re; "i"))' "$SETTINGS_ARCH")
+  if [ "$MEDIDO" != si ] || ! printf '%s' "$PREV_BODY" | jq -e 'type == "object" and has("missingSettings")' >/dev/null 2>&1; then
+    aviso "no cargo el archivo de opciones: este host no dice en la vista previa qué opciones le faltan a $NOMBRE_PLUGIN $VERSION_PLUGIN, y sin eso no hay contra qué cargar ni cómo verificarlo"
+  elif [ -z "$FALTAN" ]; then
+    echo "   no falta ninguna opción: el archivo de opciones no hace falta"
+  elif ! jq -e --arg e "$BLOQUE_ENT" 'has($e)' "$SETTINGS_ARCH" >/dev/null 2>&1; then
+    echo "   el archivo de opciones no trae valores para $BLOQUE_ENT: no cargo nada"
+  else
+    CLAVES_ARCH=$(jq -r --arg e "$BLOQUE_ENT" '.[$e] | keys[]' "$SETTINGS_ARCH")
+    # 3) que el host no tenga ninguna como cifrada
+    CFG=$(api GET "/api/admin/plugins/${PLUGIN_ID}/config")
+    [ "$(codigo "$CFG")" = "200" ] && cuerpo "$CFG" | jq -e 'type == "array"' >/dev/null 2>&1 \
+      || fatal "no pude leer la configuración de la versión con identificador $PLUGIN_ID (HTTP $(codigo "$CFG")) para ver qué opciones son cifradas — no cargué nada"
+    EN_EL_HOST=$(cuerpo "$CFG" | jq -r '.[] | select(.isEncrypted == true) | .key | tostring' 2>&1) \
+      || fatal "no pude leer qué opciones tiene cifradas el host ($EN_EL_HOST) — no cargué nada"
+    CIFRADAS=""
+    while IFS= read -r k; do
+      [ -n "$k" ] || continue
+      printf '%s\n' "$EN_EL_HOST" | grep -qxF -- "$k" && CIFRADAS="${CIFRADAS}${k} "
+    done < <(printf '%s\n' "$CLAVES_ARCH")
+    [ -z "$CIFRADAS" ] || fatal "el archivo de opciones trae opciones que el host tiene marcadas como cifradas: $(una_linea "$CIFRADAS")— un secreto no se carga desde un archivo; no cargué nada"
+    # 4) se escriben sólo las que faltan y no tienen nombre de secreto; las demás se nombran y no se tocan
+    CARGADAS=0
+    while IFS= read -r k; do
+      [ -n "$k" ] || continue
+      if printf '%s\n' "$SECRETAS_ENT" | grep -qxF -- "$k"; then
+        echo "   $(una_linea "$k") tiene nombre de secreto: no la cargo"
+      elif printf '%s' "$FALTAN_LINEAS" | grep -qxF -- "$k"; then
+        ITEM=$(jq -c --arg e "$BLOQUE_ENT" --arg k "$k" '{configItems: [{key: $k, value: .[$e][$k], isEncrypted: false}]}' "$SETTINGS_ARCH")
+        PUESTA=$(api PUT "/api/admin/plugins/${PLUGIN_ID}/config" -H "Content-Type: application/json" --data "$ITEM")
+        # una versión que ya corre se recarga con cada cambio de configuración, y si la recarga falla el host contesta
+        # error con el valor ya guardado: el error no prueba que no quedó escrita
+        [ "$(codigo "$PUESTA")" = "200" ] || fatal "no pude confirmar la carga de la opción $k en la versión con identificador $PLUGIN_ID (HTTP $(codigo "$PUESTA")): si la versión ya estaba corriendo, el host puede haber guardado el valor igual — mirala en el panel antes de volver a correr. Detalle: $(cuerpo "$PUESTA" | head -c 300)"
+        echo "   cargada desde el archivo: $(una_linea "$k")"
+        CARGADAS=$((CARGADAS + 1))
+      else
+        echo "   $(una_linea "$k") no falta en esta versión: no la toqué (el archivo no pisa un valor ya cargado)"
+      fi
+    done < <(printf '%s\n' "$CLAVES_ARCH")
+    # 5) lo que siga faltando, de una vista previa nueva
+    if [ "$CARGADAS" -gt 0 ]; then
+      PREVIA_C=$(api POST "/api/admin/plugins/${PLUGIN_ID}/set-default/preview" -H "Content-Type: application/json" --data '')
+      [ "$(codigo "$PREVIA_C")" = "200" ] && cuerpo "$PREVIA_C" | jq -e 'type == "object" and has("missingSettings")' >/dev/null 2>&1 \
+        || fatal "después de cargar $CARGADAS opción(es) del archivo, la vista previa no dijo qué sigue faltando (HTTP $(codigo "$PREVIA_C")) — «no sé» no es «nada»"
+      leer_faltantes "$(cuerpo "$PREVIA_C")"
+      [ -n "$FALTAN" ] || echo "   configuración: con lo cargado del archivo no falta ninguna opción"
+    fi
+  fi
+fi
+
+# 🔴 UNA OPCIÓN PENDIENTE SE DECLARA; LO NO DECLARADO FRENA.
+#
+# El host avisa qué opciones de configuración no tienen valor. Eso es lo único que dice sobre
+# configuración, y con la versión sin marcar no frena sola: si no se mira, el plugin queda corriendo
+# sin la configuración que su funcionalidad espera y nadie se entera. Por eso frena.
+#
+# Pero hay opciones que el equipo deja vacías A SABIENDAS: una credencial de un servicio externo que
+# todavía no existe, con el código preparado para devolver un error claro en el único endpoint que la
+# usa. Frenar por ésas no protege nada — sólo enseña a apagar el control.
+#
+# Entonces la puerta es la misma que se usa para las vulnerabilidades: se DECLARA, con motivo y
+# fecha de revisión. Una declaración vencida vuelve a frenar. Un archivo ilegible frena. Y una
+# opción faltante que no esté declarada frena igual — que es lo que el control existe para frenar.
+#
+# 🔴 LA FECHA SE VALIDA COMO FECHA. Comparada como texto, «pronto» o «2026-13-45» nunca vencerían y ampararían
+# para siempre. Y este archivo no ampara el caso del puente sin medir: ahí la lista de faltantes
+# no está vacía, es desconocida, y no hay nada contra qué declarar.
+fecha_valida() { # fecha_valida <AAAA-MM-DD> — una fecha del calendario, no sólo con la forma
+  local a m d tope
+  [[ "$1" =~ ^([0-9]{4})-([0-9]{2})-([0-9]{2})$ ]] || return 1
+  a=$((10#${BASH_REMATCH[1]})); m=$((10#${BASH_REMATCH[2]})); d=$((10#${BASH_REMATCH[3]}))
+  [ "$m" -ge 1 ] && [ "$m" -le 12 ] && [ "$d" -ge 1 ] || return 1
+  case "$m" in
+    2) tope=28; if [ $((a % 4)) -eq 0 ] && { [ $((a % 100)) -ne 0 ] || [ $((a % 400)) -eq 0 ]; }; then tope=29; fi ;;
+    4|6|9|11) tope=30 ;;
+    *) tope=31 ;;
+  esac
+  [ "$d" -le "$tope" ]
+}
+if [ -n "$FALTAN" ]; then
+  NO_DECLARADAS=""
+  if [ -n "${PENDIENTES_ARCH:-}" ] && [ -f "$PENDIENTES_ARCH" ]; then
+    jq -e . "$PENDIENTES_ARCH" >/dev/null 2>&1 \
+      || fatal "el archivo de opciones pendientes ($PENDIENTES_ARCH) no se puede leer — un permiso ilegible no es un permiso"
+    VENCE=$(jq -r '.revision // ""' "$PENDIENTES_ARCH")
+    HOY=$(date -u +%Y-%m-%d)
+    [ -n "$VENCE" ] || fatal "el archivo de opciones pendientes no tiene fecha de revisión — una deuda sin fecha es permanente en silencio"
+    fecha_valida "$VENCE" || fatal "la fecha de revisión del archivo de opciones pendientes («${VENCE}») no es una fecha AAAA-MM-DD del calendario — una fecha que no se puede leer no vence nunca y ampararía para siempre"
+    [ "$VENCE" \< "$HOY" ] && fatal "la declaración de opciones pendientes venció el $VENCE — o se configuran, o se re-declara con fecha nueva y su motivo"
+    # una clave por línea, leída tal cual: sin partir por comas ni expandir comodines contra la carpeta de trabajo
+    while IFS= read -r op; do
+      [ -n "$op" ] || continue
+      jq -e --arg o "$op" '.opciones[]? | select(.opcion == $o and (.motivo // "") != "")' "$PENDIENTES_ARCH" >/dev/null 2>&1 \
+        || NO_DECLARADAS="$NO_DECLARADAS $op"
+    done <<< "$FALTAN_LINEAS"
+  else
+    NO_DECLARADAS=" $FALTAN"
+  fi
+  if [ -n "$NO_DECLARADAS" ]; then
+    # 🔴 LA VERSIÓN SIN MARCAR NO ES LA QUE MUESTRA EL PANEL. El panel abre el plugin en su versión activa, y la nueva quedó
+    # subida sin marcar: un dev buscó las opciones en la activa y no las encontró. El rojo dice que ésta NO es la activa y,
+    # si la lista del host se puede leer, cuál lo es. Lo que viene del host se usa sólo si tiene la forma de una versión y
+    # de un identificador. Sin dirección: el guion conoce la de la API, no la del panel.
+    ACTIVA=""
+    LISTA=$(api GET "/api/admin/plugins")
+    if [ "$(codigo "$LISTA")" = 200 ]; then
+      ACTIVA=$(cuerpo "$LISTA" | jq -r --arg id "$PLUGIN_ID" --arg n "$NOMBRE_PLUGIN" '(if type=="array" then . else (.plugins // .data // .items // .value // []) end) | map(select(((.name // "" | ascii_downcase) == ($n | ascii_downcase)) and .isDefault==true and ((.pluginId|tostring)!=$id))) | .[0] // empty | "\(.version)\t\(.pluginId)"' 2>/dev/null) || ACTIVA=""
+      printf '%s' "$ACTIVA" | grep -qE '^[0-9A-Za-z.+-]{1,40}	[0-9]{1,12}$' || ACTIVA=""
+    fi
+    if [ -n "$ACTIVA" ]; then
+      NO_ACTIVA="la versión $VERSION_PLUGIN (identificador $PLUGIN_ID) quedó subida sin marcar: NO es la activa, y el panel abre el plugin en la activa (la activa es la ${ACTIVA%%	*} (identificador ${ACTIVA##*	}))"
+    else
+      NO_ACTIVA="la versión $VERSION_PLUGIN (identificador $PLUGIN_ID) quedó subida sin marcar: NO es la activa, y el panel abre el plugin en la activa"
+    fi
+    echo "   faltan opciones de configuración en $NOMBRE_PLUGIN $VERSION_PLUGIN (identificador $PLUGIN_ID):"
+    printf '%s' "$DETALLE"
+    echo "   Se cargan en el panel de administración, en la configuración de la versión con identificador $PLUGIN_ID."
+    echo "   Ojo: $NO_ACTIVA. En el panel: Plugins → historial → el engranaje de la $VERSION_PLUGIN (la ruta, después de la dirección del panel: /admin/settings/plugins/$PLUGIN_ID)."
+    [ "$YA_ARRANCO" = si ] && echo "   Esta versión ya arrancó; si cargaste un valor después, cargalo en ELLA."
+    fatal "el host dice que faltan opciones de configuración para $NOMBRE_PLUGIN $VERSION_PLUGIN (identificador $PLUGIN_ID) y NO están declaradas:$NO_DECLARADAS — con la versión sin marcar el host no frena solo. Se cargan en el panel, en la configuración de la versión con identificador $PLUGIN_ID: $NO_ACTIVA. Si son pendientes a sabiendas, declaralas con motivo y fecha en el archivo de opciones pendientes"
+  fi
+  aviso "faltan opciones de configuración DECLARADAS como pendientes (revisar $VENCE): $FALTAN"
+elif [ "$MEDIDO" = si ]; then
+  echo "   configuración: no falta ninguna opción"
 fi
 
 # ── 3. migraciones ───────────────────────────────────────────────────────────────────────────

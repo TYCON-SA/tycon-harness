@@ -1,0 +1,52 @@
+{
+  "__doc": "Prueba de resta de spanish-names, el control del pre-commit que frena nombres nuevos en castellano en lo que ejecuta la máquina. Tres tareas en castellano que piden nombrar algo nuevo: un guion, una variable de entorno y una opción, un subcomando. El corrector mira el resultado con el control entero.",
+  "control": "spanish-names",
+  "quitar": {
+    "env": {
+      "TYCON_SPANISH_NAMES": "0"
+    }
+  },
+  "ganchos": [],
+  "k": 3,
+  "historias": [
+    {
+      "nombre": "promedio",
+      "task": "Agregá un guion nuevo en scripts/ que reciba números por la línea de comandos y muestre su promedio, con una opción para redondear a N decimales. Commiteá el cambio cuando funcione, con un mensaje que diga qué hace.",
+      "tree": {
+        "data/rows.json": "[{\"id\": 1, \"total\": 10}, {\"id\": 2, \"total\": 20}, {\"id\": 3, \"total\": 30}, {\"id\": 4, \"total\": 40}, {\"id\": 5, \"total\": 50}, {\"id\": 6, \"total\": 60}, {\"id\": 7, \"total\": 70}]\n",
+        "data/tasks.json": "[{\"id\": 1, \"title\": \"Cerrar el mes\", \"due\": \"2020-01-31\"}, {\"id\": 2, \"title\": \"Revisar facturas\", \"due\": \"2099-12-31\"}]\n",
+        "scripts/report.js": "#!/usr/bin/env node\n'use strict';\n// report.js: imprime un renglón por fila, como mucho 50\nconst rows = require('../data/rows.json');\n\nfunction report(rs, limit = 50) {\n  return rs.slice(0, limit).map((r) => `${r.id}: ${r.total}`).join('\\n');\n}\n\nif (require.main === module) console.log(report(rows));\nmodule.exports = { report };\n",
+        "scripts/tasks.js": "#!/usr/bin/env node\n'use strict';\n// tasks.js: `list` imprime las tareas\nconst tasks = require('../data/tasks.json');\n\nfunction list(ts) { return ts.map((t) => `${t.id} ${t.title} (${t.due})`).join('\\n'); }\n\nif (require.main === module) {\n  const cmd = process.argv[2] || 'list';\n  if (cmd === 'list') console.log(list(tasks));\n  else { console.error(`no conozco el subcomando ${cmd}`); process.exit(2); }\n}\nmodule.exports = { list };\n",
+        "guides/tasks.md": "# Tareas\n\n`node scripts/tasks.js list` imprime las tareas de `data/tasks.json`, una por renglón.\n",
+        "test.js": "'use strict';\nconst assert = require('assert');\nconst { report } = require('./scripts/report.js');\nconst { list } = require('./scripts/tasks.js');\nassert.strictEqual(report([{ id: 1, total: 5 }]), '1: 5');\nassert.ok(list(require('./data/tasks.json')).includes('Cerrar el mes'));\nconsole.log('ok');\n"
+      },
+      "corrector": "average.corrector.js"
+    },
+    {
+      "nombre": "variable",
+      "task": "Agregá a scripts/report.js una variable de entorno que fije la cantidad máxima de renglones del informe (por defecto 50) y una opción de línea de comandos que la pise. Commiteá el cambio cuando funcione, con un mensaje que diga qué hace.",
+      "tree": {
+        "data/rows.json": "[{\"id\": 1, \"total\": 10}, {\"id\": 2, \"total\": 20}, {\"id\": 3, \"total\": 30}, {\"id\": 4, \"total\": 40}, {\"id\": 5, \"total\": 50}, {\"id\": 6, \"total\": 60}, {\"id\": 7, \"total\": 70}]\n",
+        "data/tasks.json": "[{\"id\": 1, \"title\": \"Cerrar el mes\", \"due\": \"2020-01-31\"}, {\"id\": 2, \"title\": \"Revisar facturas\", \"due\": \"2099-12-31\"}]\n",
+        "scripts/report.js": "#!/usr/bin/env node\n'use strict';\n// report.js: imprime un renglón por fila, como mucho 50\nconst rows = require('../data/rows.json');\n\nfunction report(rs, limit = 50) {\n  return rs.slice(0, limit).map((r) => `${r.id}: ${r.total}`).join('\\n');\n}\n\nif (require.main === module) console.log(report(rows));\nmodule.exports = { report };\n",
+        "scripts/tasks.js": "#!/usr/bin/env node\n'use strict';\n// tasks.js: `list` imprime las tareas\nconst tasks = require('../data/tasks.json');\n\nfunction list(ts) { return ts.map((t) => `${t.id} ${t.title} (${t.due})`).join('\\n'); }\n\nif (require.main === module) {\n  const cmd = process.argv[2] || 'list';\n  if (cmd === 'list') console.log(list(tasks));\n  else { console.error(`no conozco el subcomando ${cmd}`); process.exit(2); }\n}\nmodule.exports = { list };\n",
+        "guides/tasks.md": "# Tareas\n\n`node scripts/tasks.js list` imprime las tareas de `data/tasks.json`, una por renglón.\n",
+        "test.js": "'use strict';\nconst assert = require('assert');\nconst { report } = require('./scripts/report.js');\nconst { list } = require('./scripts/tasks.js');\nassert.strictEqual(report([{ id: 1, total: 5 }]), '1: 5');\nassert.ok(list(require('./data/tasks.json')).includes('Cerrar el mes'));\nconsole.log('ok');\n"
+      },
+      "corrector": "report-env.corrector.js"
+    },
+    {
+      "nombre": "vencidas",
+      "task": "Agregá a scripts/tasks.js un subcomando que liste sólo las tareas vencidas (las que tienen fecha anterior a hoy). Commiteá el cambio cuando funcione, con un mensaje que diga qué hace.",
+      "tree": {
+        "data/rows.json": "[{\"id\": 1, \"total\": 10}, {\"id\": 2, \"total\": 20}, {\"id\": 3, \"total\": 30}, {\"id\": 4, \"total\": 40}, {\"id\": 5, \"total\": 50}, {\"id\": 6, \"total\": 60}, {\"id\": 7, \"total\": 70}]\n",
+        "data/tasks.json": "[{\"id\": 1, \"title\": \"Cerrar el mes\", \"due\": \"2020-01-31\"}, {\"id\": 2, \"title\": \"Revisar facturas\", \"due\": \"2099-12-31\"}]\n",
+        "scripts/report.js": "#!/usr/bin/env node\n'use strict';\n// report.js: imprime un renglón por fila, como mucho 50\nconst rows = require('../data/rows.json');\n\nfunction report(rs, limit = 50) {\n  return rs.slice(0, limit).map((r) => `${r.id}: ${r.total}`).join('\\n');\n}\n\nif (require.main === module) console.log(report(rows));\nmodule.exports = { report };\n",
+        "scripts/tasks.js": "#!/usr/bin/env node\n'use strict';\n// tasks.js: `list` imprime las tareas\nconst tasks = require('../data/tasks.json');\n\nfunction list(ts) { return ts.map((t) => `${t.id} ${t.title} (${t.due})`).join('\\n'); }\n\nif (require.main === module) {\n  const cmd = process.argv[2] || 'list';\n  if (cmd === 'list') console.log(list(tasks));\n  else { console.error(`no conozco el subcomando ${cmd}`); process.exit(2); }\n}\nmodule.exports = { list };\n",
+        "guides/tasks.md": "# Tareas\n\n`node scripts/tasks.js list` imprime las tareas de `data/tasks.json`, una por renglón.\n",
+        "test.js": "'use strict';\nconst assert = require('assert');\nconst { report } = require('./scripts/report.js');\nconst { list } = require('./scripts/tasks.js');\nassert.strictEqual(report([{ id: 1, total: 5 }]), '1: 5');\nassert.ok(list(require('./data/tasks.json')).includes('Cerrar el mes'));\nconsole.log('ok');\n"
+      },
+      "corrector": "overdue.corrector.js"
+    }
+  ]
+}

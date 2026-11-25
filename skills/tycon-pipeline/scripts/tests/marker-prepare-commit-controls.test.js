@@ -22,6 +22,10 @@ const { spawnSync } = require('child_process');
 const SO = require('../lib/save-ok.js');
 
 const GIT_ENV = { GIT_AUTHOR_NAME: 'p', GIT_AUTHOR_EMAIL: 'p@p', GIT_COMMITTER_NAME: 'p', GIT_COMMITTER_EMAIL: 'p@p' };
+// Ningún paquete activo: estas pruebas miden el pre-commit del repo antes de la foto, no los controles de CI de los
+// paquetes. Con paquetes en el árbol (el de la noche trae los del equipo), sin esto los controles de CI en local buscan
+// el arnés instalado para saber cuáles activar, y la HOME de la prueba no lo trae.
+process.env.TYCON_PACKS_DEFAULT = 'none';
 function sh(dir, ...args) {
   const r = spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', env: { ...process.env, ...GIT_ENV } });
   if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${r.stderr}`);
@@ -202,7 +206,7 @@ test('PrepareCommit_PassesStoryToThePhoto @story-8.309 @ac-2 — con la historia
   assert.strictEqual(r.codigo, 2, JSON.stringify(r));
   assert.strictEqual(q.uso(), q.instalado);
   // el cierre de «Preparar» le pasa la historia, resuelta como en el resto de marker.js (también relativa al repo)
-  const marker = fs.readFileSync(path.join(__dirname, '..', 'marker.js'), 'utf8');
+  const marker = require('./lib/marker-source.js')(path.join(__dirname, '..'));
   assert.match(marker, /so\.fotoDelPedido\(\{ repos, story: resolveStoryPath\(marker\.storyPath, marker\) \|\| null \}\)/);
 });
 
@@ -225,6 +229,6 @@ test('8.242-PrepararElPedido_EsquemaViejo_ElPaso8TomaLaFoto @story-8.242 @ac-4',
   assert.strictEqual(S.closesStep(viejo, ['7'], 'prepare-commit'), false);
   assert.strictEqual(S.closesStep(nuevo, ['8'], 'prepare-commit'), false, 'en el esquema nuevo, «8» no es un paso');
   // marker.js toma la foto con la misma pregunta, no con el nombre suelto
-  const marker = fs.readFileSync(path.join(__dirname, '..', 'marker.js'), 'utf8');
+  const marker = require('./lib/marker-source.js')(path.join(__dirname, '..'));
   assert.match(marker, /STEPS_LIB\.closesStep\(marker, ids, 'prepare-commit'\)/);
 });

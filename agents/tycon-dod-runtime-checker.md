@@ -412,7 +412,7 @@ block-transition-to-done | proceed-to-done
 ## Cuándo invocar
 
 - **Antes de transicionar `status: review → done`** en el frontmatter (typically post-push, post-CI-run).
-- **Antes de «Preparar el commit» de una ejecución que cablea UI nueva** — aunque la story quede `in-progress` y los E2E estén diferidos (DODRT-C5).
+- **Antes de «Preparar el pull request» de una ejecución que cablea UI nueva** — aunque la story quede `in-progress` y los E2E estén diferidos (DODRT-C5).
 - Cuando el user pide explícito *"validá DoD"* / *"está realmente done?"* / *"podemos marcar done?"* / *"lo probaste?"*.
 
 ## Cuándo NO invocar

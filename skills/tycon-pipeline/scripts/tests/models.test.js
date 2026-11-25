@@ -301,7 +301,8 @@ test('T1 Defaults_UnSoloLugar_CopiasVerificadas @story-7.29 @ac-1', () => {
   fs.writeFileSync(sinModelo, '---\nname: x\ndescription: de prueba\n---\ncuerpo\n');
   assert.equal(gen.parseAdvisor(sinModelo).model, M.DEFAULTS.reviewers);
   // pipeline.js sin literales exactos de modelo en el código; workflow-lite.js sin nombres de Codex
-  const codigo = sinComentarios(fs.readFileSync(PIPELINE, 'utf8'));
+  // pipeline.js con sus partes de lib/
+  const codigo = sinComentarios(require('./lib/pipeline-source.js')(SCRIPTS));
   const literales = codigo.match(/['"](haiku|sonnet|opus|fable)['"]/g) || [];
   assert.deepStrictEqual(literales, [], 'pipeline.js tiene literales de modelo escritos');
   const eq = JSON.parse(fs.readFileSync(path.join(RAIZ, 'build', 'equivalences.json'), 'utf8')).models;

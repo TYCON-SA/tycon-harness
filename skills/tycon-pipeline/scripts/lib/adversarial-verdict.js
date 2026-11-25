@@ -1,12 +1,13 @@
 'use strict';
 /**
  * adversarial-verdict.js — ¿el pase adversarial está atendido? Y qué hacer con uno de otra sesión.
- * Lo usan `marker.js` (el freno de «Preparar el commit») y `pipeline.js` (`next`): una sola copia del criterio.
+ * Lo usan `marker.js` (el freno de «Preparar el pull request») y `pipeline.js` (`next`): una sola copia del criterio.
  *
  * `veredictoPaseAdversarial` vive acá y no en `marker.js` (que no exporta nada) para que `next` lo use: sin
- * él, `next` pediría relanzar siempre un pase de otra sesión —también uno ya cerrado, y relanzar un pase cerrado bloquea «Preparar el commit».
+ * él, `next` pediría relanzar siempre un pase de otra sesión —también uno ya cerrado, y relanzar un pase cerrado bloquea «Preparar el pull request».
  */
 
+const { spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -61,7 +62,7 @@ function veredictoPaseAdversarial(marker) {
 
 /**
  * Para `next`: «atendido» es `paso`, y también un `bloqueo` por `resultado-de-otro-lanzamiento`
- * —ése lo frena «Preparar el commit», y pedir otro lanzamiento desde `next` lo empeora—.
+ * —ése lo frena «Preparar el pull request», y pedir otro lanzamiento desde `next` lo empeora—.
  */
 function paseAtendido(v) {
   return !!v && (v.veredicto === 'paso' || v.motivo === 'resultado-de-otro-lanzamiento');
@@ -171,6 +172,61 @@ function motivoDeLente(l, { detalle, resultado, repo, desde }) {
 }
 
 /**
+ * El motivo de una lente que quedó sin medir porque su cazador dijo que la base no está en el repo, con lo que dice git
+ * en ese repo: la palabra del cazador no decide. Que esté quiere decir que el cazador miró en otra carpeta; que no esté,
+ * que la base del pase está mal. Si git no se puede correr, el motivo queda como vino.
+ */
+function motivoSinBase(l, desde, pase = []) {
+  const motivo = l.motivo || 'su cazador no contestó';
+  const s = l.sin_base;
+  // con la lista del pase, el repo donde el cazador no vio la base tiene que ser uno de los del pase: si no, ni se mira
+  if (s && typeof s.repo === 'string' && s.repo && pase.length && !pase.some((b) => mismoRepo(b.repo, s.repo, desde))) {
+    return `${motivo} — ${s.repo} no es un repo del pase: el cazador miró en otra carpeta; relanzá el pase`;
+  }
+  const esta = baseEnElRepo(s, desde);
+  if (esta === null) return motivo;
+  if (esta) return `${motivo} — git sí la encuentra en ${s.repo}: el cazador miró en otra carpeta; relanzá el pase`;
+  // con varios repos, la base de cada uno sale de su rama principal, que puede ser `master`
+  return pase.length > 1
+    ? `${motivo} — git tampoco la encuentra en ${s.repo}: relanzá con la base de la rama principal de ${s.repo} (la da marker.js freeze-adversarial)`
+    : `${motivo} — git tampoco la encuentra en ${s.repo}: relanzá con la base de git merge-base HEAD origin/main`;
+}
+
+/**
+ * La base del pase como lista `[{ repo, base }]` (historia 8.330): un pase de varios repos la trae así; uno de un solo
+ * repo, o uno de antes, trae un objeto, que es una lista de uno.
+ */
+function basesDelPase(b) {
+  if (Array.isArray(b)) return b.filter((x) => x && typeof x === 'object');
+  return b && typeof b === 'object' ? [b] : [];
+}
+
+const mismoRepo = (a, b, desde) => typeof a === 'string' && typeof b === 'string'
+  && real(path.resolve(desde || process.cwd(), a)) === real(path.resolve(desde || process.cwd(), b));
+
+// Las variables de git que llevan sus comandos a otro repo: la comprobación mira el repo del pase y nada más.
+const GIT_QUE_DESVIA = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_NAMESPACE'];
+
+/**
+ * ¿Está la base `{ repo, base }` en ese repo, según git? `true` o `false`; `null` si no se puede saber: sin los datos,
+ * una base que no es un hash, una carpeta que no es un repo de git o git que no corre. Un repo relativo (el guion usa «.»
+ * si no le pasan uno) se resuelve contra `desde`; sin él, no se puede saber.
+ */
+function baseEnElRepo(s, desde) {
+  if (!s || typeof s.repo !== 'string' || !s.repo || !/^[0-9a-f]{7,40}$/i.test(String(s.base || ''))) return null;
+  if (!path.isAbsolute(s.repo) && !(typeof desde === 'string' && path.isAbsolute(desde))) return null;
+  const repoAbs = path.resolve(desde || '/', s.repo);
+  const env = { ...process.env };
+  for (const k of GIT_QUE_DESVIA) delete env[k];
+  const correr = (...a) => spawnSync('git', ['-C', repoAbs, ...a], { stdio: 'ignore', timeout: 10000, windowsHide: true, env });
+  const repo = correr('rev-parse', '--git-dir');
+  if (repo.error || repo.status !== 0) return null;
+  const r = correr('cat-file', '-e', `${s.base}^{commit}`);
+  if (r.error || r.status === null) return null;
+  return r.status === 0;
+}
+
+/**
  * ¿El resultado del pase revisó todo? Recibe el objeto que devolvió el guion y devuelve
  * `{ medido, confirmados, lentes_sin_medir, hallazgos_sin_veredicto, motivo }`. Medido = todas las lentes con su
  * cazador contestado y ningún hallazgo sin veredicto. Un resultado sin el campo `lentes` o con la lista vacía
@@ -195,10 +251,28 @@ function medicionDelResultado(obj, opts = {}) {
   if (!obj.lentes.length) {
     return { medido: false, confirmados, lentes_sin_medir: [], hallazgos_sin_veredicto: 0, motivo: 'el pase no revisó ninguna lente (sin archivos de código)' };
   }
+  // la base del pase, comprobada con git en su repo (con varios repos, cada una en el suyo): si una no está, ninguna lente
+  // pudo comparar contra ella, diga lo que diga su cazador (uno al que se le insistió puede darla por buena sin verla)
+  const pase = basesDelPase(obj.base_del_pase);
+  const comprobadas = pase.map((b) => ({ b, esta: baseEnElRepo(b, opts.repo) }));
+  const falta = comprobadas.find((c) => c.esta === false);
+  if (falta) {
+    return { medido: false, confirmados, lentes_sin_medir: obj.lentes.map((l) => (l && l.lens) || '?'), hallazgos_sin_veredicto: 0,
+      motivo: `la base ${falta.b.base} no está en ${falta.b.repo} (lo dice git): ninguna lente pudo comparar contra ella; ` +
+        (pase.length > 1 ? 'relanzá con la base de la rama principal de ese repo (la da marker.js freeze-adversarial)' : 'relanzá con la base de git merge-base HEAD origin/main') };
+  }
+  const basesConfirmadas = comprobadas.length > 0 && comprobadas.every((c) => c.esta === true);
   const detalle = Array.isArray(obj.detalle) ? obj.detalle : [];
   const motivos = {};
   for (const l of obj.lentes) {
-    if (!l || l.estado !== 'medida') { motivos[(l && l.lens) || '?'] = (l && l.motivo) || 'su cazador no contestó'; continue; }
+    if (!l || l.estado !== 'medida') { motivos[(l && l.lens) || '?'] = l ? motivoSinBase(l, opts.repo, pase) : 'su cazador no contestó'; continue; }
+    // una lente cuyo cazador dijo primero que la base no estaba cuenta sólo si git confirma que está (con varios repos,
+    // todas): la segunda vuelta no vuelve verde una base que falta (sin el dato, en una carpeta sin git o con git que no
+    // corre, no cuenta)
+    if (l.otra_vez && !basesConfirmadas) {
+      motivos[l.lens || '?'] = 'su cazador dijo primero que la base no estaba y git no pudo confirmar que está: la segunda vuelta no alcanza';
+      continue;
+    }
     const m = motivoDeLente(l, { detalle, resultado: opts.resultado, repo: opts.repo, desde: opts.desde });
     if (m) motivos[l.lens || '?'] = m;
   }

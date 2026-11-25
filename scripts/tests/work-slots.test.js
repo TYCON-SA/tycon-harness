@@ -179,15 +179,70 @@ test('S11 PendingTrust_AllKnownRepos: sin repo, lista los puestos de todos los r
   assert.deepStrictEqual([...r.pending].sort(), [slot(t, 1), slot(u, 1)].sort());
 });
 
-test('8.187 T12 PendingTrust_PuestoDeRepoAprobado_NoPendiente @story-8.187 @ac-11: con la carpeta principal aprobada, sus puestos no quedan pendientes; con la principal sin aprobar, sí', () => {
+test('8.187 T12 PendingTrust_PrincipalAprobada_NoAlcanza @story-8.187 @ac-11: con la carpeta principal aprobada y sin entrada propia, sus puestos salen como «no sé», nunca como aprobados', () => {
+  // fila 159: con Claude Code 2.1.330 la sesión de fondo pide aprobar cada puesto aunque la principal esté aprobada, y
+  // no anota esa aprobación en ~/.claude.json; la regla de 2.1.312 (heredar la de la principal) decía «todos aprobados»
   const t = toy({ cap: 2 });
   S.ensure(t.opts);
   fs.writeFileSync(path.join(t.home, '.claude.json'), JSON.stringify({ projects: { [t.repo]: { hasTrustDialogAccepted: true } } }));
-  const ok = S.pendingTrust(t.opts);
-  assert.strictEqual(ok.ok, true, ok.message);
-  assert.deepStrictEqual(ok.pending, [], 'una copia de un repo aprobado no pregunta: no es pendiente');
+  const r = S.pendingTrust(t.opts);
+  assert.strictEqual(r.ok, true, r.message);
+  assert.deepStrictEqual(r.pending, [slot(t, 1), slot(t, 2)], 'la principal aprobada no prueba nada de sus puestos');
+  assert.match(r.message, /no sé/);
+  assert.doesNotMatch(r.message, /todos aprobados|están aprobados/);
   fs.writeFileSync(path.join(t.home, '.claude.json'), JSON.stringify({ projects: { [t.repo]: { hasTrustDialogAccepted: false } } }));
   assert.deepStrictEqual(S.pendingTrust(t.opts).pending, [slot(t, 1), slot(t, 2)]);
+});
+
+test('F159 T1 PendingTrust_SoloLaEntradaPropiaCuenta: un puesto con su propia aprobación anotada no sale; uno sin ella sale como «no sé», con su cd; sin configuración, ninguno se da por aprobado', () => {
+  const t = toy({ cap: 2 });
+  S.ensure(t.opts);
+  fs.writeFileSync(path.join(t.home, '.claude.json'), JSON.stringify({ projects: { [t.repo]: { hasTrustDialogAccepted: true }, [slot(t, 1)]: { hasTrustDialogAccepted: true } } }));
+  const r = S.pendingTrust(t.opts);
+  assert.deepStrictEqual(r.pending, [slot(t, 2)]);
+  assert.match(r.message, /no sé/);
+  assert.match(r.message, /abrí claude una vez/);
+  assert.doesNotMatch(r.message, /todos aprobados|están aprobados/);
+  const cli = run(t, 'pending-trust');
+  assert.strictEqual(cli.status, 0, cli.stderr);
+  assert.ok(cli.stdout.includes(`cd "${slot(t, 2)}" && claude`), cli.stdout);
+  assert.ok(!cli.stdout.includes(`"${slot(t, 1)}"`), cli.stdout);
+  assert.doesNotMatch(cli.stdout, /todos aprobados|están aprobados/);
+  // sin ~/.claude.json no hay evidencia de ninguno
+  fs.rmSync(path.join(t.home, '.claude.json'));
+  const none = S.pendingTrust(t.opts);
+  assert.deepStrictEqual(none.pending, [slot(t, 1), slot(t, 2)]);
+  assert.doesNotMatch(none.message, /todos aprobados|están aprobados/);
+});
+
+test('F159 T10 PendingTrust_CuentaDondeYaAbrióUnaSesión: un puesto donde una sesión de fondo ya abrió cuenta como aprobado aunque Claude Code no lo anote; si después dijo que no, vuelve a la lista; un registro roto no aprueba nada', () => {
+  const t = toy({ cap: 2 });
+  S.ensure(t.opts);
+  S.noteAccepted({ home: t.home, folder: slot(t, 2) });
+  assert.deepStrictEqual(S.pendingTrust(t.opts).pending, [slot(t, 1)]);
+  S.noteAccepted({ home: t.home, folder: slot(t, 2), accepted: false });
+  assert.deepStrictEqual(S.pendingTrust(t.opts).pending, [slot(t, 1), slot(t, 2)]);
+  S.noteAccepted({ home: t.home, folder: slot(t, 1) });
+  S.noteAccepted({ home: t.home, folder: slot(t, 2) });
+  assert.match(S.pendingTrust(t.opts).message, /aprobados/);
+  fs.writeFileSync(S.acceptedFile(t.home), '{roto');
+  assert.deepStrictEqual(S.pendingTrust(t.opts).pending, [slot(t, 1), slot(t, 2)]);
+});
+
+test('F159 T11 Take_SoloUnoYaAceptado: con trusted toma el primer puesto libre ya aceptado; no crea puestos, no toma uno sin aceptar y, sin ninguno, dice none', () => {
+  const t = toy({ cap: 2 });
+  const sinPuestos = S.take({ ...t.opts, branch: 'wt/x', trusted: () => true });
+  assert.strictEqual(sinPuestos.ok, false);
+  assert.strictEqual(sinPuestos.none, true);
+  assert.strictEqual(fs.existsSync(slot(t, 1)), false, 'no crea puestos');
+  S.ensure(t.opts);
+  const r = S.take({ ...t.opts, branch: 'wt/x', trusted: (p) => p === slot(t, 2) });
+  assert.strictEqual(r.ok, true, r.message);
+  assert.strictEqual(r.path, slot(t, 2));
+  assert.strictEqual(branchOf(slot(t, 1)), '', 'el que no se sabe si está aprobado sigue libre');
+  const otra = S.take({ ...t.opts, branch: 'wt/y', trusted: (p) => p === slot(t, 2) });
+  assert.strictEqual(otra.none, true, 'el aceptado ya está tomado');
+  assert.strictEqual(branchOf(slot(t, 1)), '');
 });
 
 test('S12 AgentSkills_Refused: el clon de las skills no lleva puestos (su freno mira la ruta literal)', () => {

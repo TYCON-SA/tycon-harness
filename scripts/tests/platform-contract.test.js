@@ -70,7 +70,7 @@ test('Platform_OperationsList_MatchesContract @story-8.85 @ac-1', () => {
   const ops = C().OPERATIONS;
   // el lector de configuración guarda su copia de las áreas: tienen que ser las mismas del contrato
   assert.deepStrictEqual([...require(path.join(ROOT, 'scripts', 'lib', 'tycon-config.js')).AREAS_PLATAFORMA], [...C().AREAS]);
-  assert.strictEqual(ops.length, 14, 'las catorce operaciones del dominio');
+  assert.strictEqual(ops.length, 15, 'las quince operaciones del dominio');
   for (const n of ['azure-devops', 'github']) {
     const man = JSON.parse(fs.readFileSync(path.join(ROOT, 'integrations', n, 'integration.json'), 'utf8'));
     assert.strictEqual(man.kind, 'platform', n);
@@ -87,7 +87,7 @@ test('Platform_Resolve_ByRepoIdentity @story-8.85 @ac-2', () => {
   assert.deepStrictEqual(de(GH).value, { connector: 'github', origin: 'repo' });
   // la traducción de team-repos.json al nombre del conector vive en un solo lugar
   const TR = require(path.join(ROOT, 'scripts', 'lib', 'team-repos.js'));
-  assert.deepStrictEqual([TR.connectorOf('azure'), TR.connectorOf('github'), TR.connectorOf('gitlab')], ['azure-devops', 'github', null]);
+  assert.deepStrictEqual([TR.connectorOf('azure'), TR.connectorOf('github'), TR.connectorOf('bitbucket')], ['azure-devops', 'github', null]);
   // una operación de repo sin repo es un uso incorrecto, no una elección
   const sinRepo = P().choose('ci.read', { env: m.env });
   assert.strictEqual(sinRepo.ok, false);
@@ -288,10 +288,10 @@ test('Credentials_Missing_SaysCommandNeverPrints @story-8.85 @ac-28', async () =
 });
 
 test('Platform_UnknownValue_TreatedAsNone @story-8.85 @ac-29', () => {
-  const m = mundo({ platform: { default: 'gitlab' } });
+  const m = mundo({ platform: { default: 'bitbucket' } });
   const r = P().choose('work-item.create', { env: m.env });
   assert.deepStrictEqual([r.ok, r.reason], [false, 'sin_plataforma']);
-  assert.match(r.detail, /plataforma desconocida: «gitlab»/);
+  assert.match(r.detail, /plataforma desconocida: «bitbucket»/);
 });
 
 test('Connector_FolderMissing_SaysWhich @story-8.85 @ac-29', () => {
@@ -351,9 +351,9 @@ test('Manifest_HardSignals_ValidatedByReader @story-8.85 @ac-25', () => {
     assert.ok(!INT.find(n, { dir: d }), `${n} no se carga`);
     assert.match(de(n), rx, n);
   }
-  // los dos conectores de verdad declaran las señales del AC 25
-  const juntas = ['azure-devops', 'github'].flatMap((n) => INT.find(n, { kind: 'platform', dir: path.join(ROOT, 'integrations') }).hardSignals);
-  for (const t of ['az repos pr create', 'https://dev.azure.com/acme', '_apis/build', 'System.Title', 'Microsoft.VSTS.Scheduling', '.tycon/ado-config.yaml', 'AZURE_DEVOPS_EXT_PAT', 'SYSTEM_ACCESSTOKEN', 'gh pr view', 'gh api repos', 'https://api.github.com/x']) {
+  // los conectores de verdad declaran sus señales
+  const juntas = ['azure-devops', 'github', 'gitlab'].flatMap((n) => INT.find(n, { kind: 'platform', dir: path.join(ROOT, 'integrations') }).hardSignals);
+  for (const t of ['az repos pr create', 'https://dev.azure.com/acme', '_apis/build', 'System.Title', 'Microsoft.VSTS.Scheduling', '.tycon/ado-config.yaml', 'AZURE_DEVOPS_EXT_PAT', 'SYSTEM_ACCESSTOKEN', 'gh pr view', 'gh api repos', 'https://api.github.com/x', 'glab mr create', 'glab api projects/1', 'https://gitlab.com/grupo/repo']) {
     assert.ok(juntas.some((p) => new RegExp(p).test(t)), `ninguna señal declarada reconoce «${t}»`);
   }
 });
@@ -654,6 +654,8 @@ test('T122 PrRead_ContractAndConnectors @story-2.81 @ac-65', async () => {
     prAzure(24, { status: 'completed', closedDate: MERGED }),
     prAzure(25, { status: 'abandoned', closedDate: MERGED }),
     prAzure(26, { repository: { name: 'OtroRepo', project: { name: 'Producto' } } }),
+    // el mismo nombre de repo en otro proyecto de la organización: el número es de toda la organización
+    prAzure(27, { repository: { name: 'Backend', project: { name: 'OtroProyecto' } } }),
   ]));
   const az = (number) => P().run('change-request.read', { number }, { env: w.env, repo: AZ });
   r = await az(21);
@@ -667,10 +669,13 @@ test('T122 PrRead_ContractAndConnectors @story-2.81 @ac-65', async () => {
   assert.deepStrictEqual([r.value.state, r.value.mergedAt], ['merged', MERGED]);
   r = await az(25);
   assert.deepStrictEqual([r.value.state, r.value.mergedAt], ['closed', null]);
-  for (const n of [999, 26]) {
+  for (const n of [999, 26, 27]) {
     r = await az(n);
     assert.deepStrictEqual([r.ok, r.reason], [false, 'no_encontrado'], `${n}: ${JSON.stringify(r)}`);
   }
+  // el proyecto se compara sin mayúsculas, y un repo sin proyecto en su identidad no lo mira
+  r = await P().run('change-request.read', { number: 23 }, { env: w.env, repo: { ...AZ, project: 'producto' } });
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
 });
 
 test('T22 Conector_LeerPedido_DevuelveMergeCommit @story-8.205 @ac-3', async () => {
@@ -740,4 +745,128 @@ test('DependencyNotices_LoDeAzureViveEnSuConector: work-items.js queda neutro y 
   assert.doesNotMatch(wi, /=== '(github|azure)'|'azure-devops'|Microsoft\.VSTS|TYCON_ADO_CMD|Project Administrators/);
   const lista = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'ci', 'neutrality-allowlist.json'), 'utf8'));
   assert.ok(!JSON.stringify(lista).includes('scripts/nightly/dependencies/work-items.js'), 'work-items.js sale de la lista de neutralidad');
+});
+
+// 🔴 Falla con: un conector que no devuelve la rama de origen del pedido (el freno de pedidos la necesita para juzgar
+// `--delete-source-branch` en un `update`).
+test('T123 PrRead_GivesTheSourceBranch — leer un pedido devuelve su rama de origen, en las dos plataformas', async () => {
+  const m = mundo({ platform: { default: 'github' } });
+  const env = { ...m.env, TYCON_GH_CMD: FAKE_GH, FAKE_GH_STATE: estadoGh({ pulls: { 'acme/portal': [
+    { number: 51, state: 'open', title: 'a', head: { ref: 'story/8.1-algo', sha: 'a1' }, base: { repo: { full_name: 'acme/portal' } }, user: { login: 'x', type: 'User' } },
+    { number: 52, state: 'open', title: 'b', head: { sha: 'b1' }, base: { repo: { full_name: 'acme/portal' } }, user: { login: 'x', type: 'User' } },
+  ] } }) };
+  const gh = async (number) => (await P().run('change-request.read', { number }, { env, repo: GH })).value.sourceBranch;
+  assert.strictEqual(await gh(51), 'story/8.1-algo');
+  assert.strictEqual(await gh(52), null, 'sin rama, null');
+  const w = mundoAzure([[]]);
+  fs.writeFileSync(path.join(w.fix, 'repos-pr.json'), JSON.stringify([prAzure(61), prAzure(62, { sourceRefName: 'refs/heads/dev' }), prAzure(63, { sourceRefName: 'refs/pull/63/merge' })]));
+  const az = async (number) => (await P().run('change-request.read', { number }, { env: w.env, repo: AZ })).value.sourceBranch;
+  assert.strictEqual(await az(61), 'story/61');
+  assert.strictEqual(await az(62), 'dev');
+  assert.strictEqual(await az(63), null, 'algo que no es una rama, null');
+});
+
+// 🔴 Falla con: un conector cuyos comandos crudos de pedido (crear o juntar) el freno de guardar no lee como pedido —
+// salen de una corrida sin la ventana de la persona—, o un manifiesto que declara como pedido un comando que no está en
+// su lista de comandos crudos.
+test('T124 ChangeRequestCommands_SaveBrakeAsks — cada comando de pedido que declara un conector pasa por el freno de guardar', () => {
+  const freno = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'save-brake.js'));
+  const leidas = INT.listManifests();
+  assert.deepStrictEqual(leidas.problems, []);
+  const plataformas = leidas.manifests.filter((m) => m.kind === 'platform');
+  assert.ok(plataformas.length >= 2, 'hay conectores de plataforma que medir');
+  for (const m of plataformas) {
+    assert.ok(m.changeRequestCommands.length, `${m.name}: declara qué comandos crudos crean o juntan un pedido`);
+    for (const c of m.changeRequestCommands) {
+      const leidos = freno.comandosQueGuardan(`${c} --title x`, os.tmpdir()).filter((x) => x.tipo === 'pr');
+      assert.deepStrictEqual(leidos.map((x) => x.forma), [c.trim()], `${m.name}: «${c}» pasa por la ventana`);
+    }
+  }
+  // un comando de pedido que no está entre los crudos es un manifiesto roto
+  const dir = tmp('int-');
+  const origen = plataformas[0];
+  copiar(origen.dir, path.join(dir, origen.name));
+  const archivo = path.join(dir, origen.name, 'integration.json');
+  const man = JSON.parse(fs.readFileSync(archivo, 'utf8'));
+  man.changeRequestCommands = [...man.changeRequestCommands, 'otro pedido create'];
+  fs.writeFileSync(archivo, JSON.stringify(man));
+  const rota = INT.listManifests({ dir });
+  assert.ok(rota.problems.some((p) => p.name === origen.name && p.reasons.some((r) => /changeRequestCommands.*otro pedido create.*no está en «rawCommands»/.test(r))), JSON.stringify(rota.problems));
+});
+
+// 🔴 Falla con: un conector cuyo borrador o cuyo «marcar listo» el freno de guardar no puede leer (lo declara mal y el
+// lector lo deja pasar), GitLab con un borrador que el freno no sabe cerrar, o el núcleo del freno nombrando la
+// herramienta de una plataforma.
+test('PlatformContract_DraftFields (T8) @story-8.332 @ac-8', () => {
+  const leidas = INT.listManifests();
+  assert.deepStrictEqual(leidas.problems, []);
+  const de = (n) => leidas.manifests.find((m) => m.name === n);
+  for (const n of ['github', 'azure-devops']) {
+    const m = de(n);
+    assert.ok(m.draftOptions.length, `${n}: declara cómo es un borrador`);
+    assert.ok(m.readyCommands.length, `${n}: declara cómo se marca listo`);
+    for (const d of m.draftOptions) assert.ok(m.changeRequestCommands.includes(d.command), `${n}: «${d.command}» crea un pedido`);
+  }
+  const gitlab = INT.listManifests({ dir: path.join(ROOT, 'integrations') }).manifests.find((m) => m.name === 'gitlab');
+  assert.ok(gitlab, 'el conector de GitLab se lee');
+  assert.deepStrictEqual([gitlab.draftOptions, gitlab.readyCommands], [[], []], 'GitLab no declara borrador ni listo');
+  // rawCommands() los devuelve: el borrador en el comando que crea, el listo aparte, que no es un comando crudo
+  const crudos = P().rawCommands();
+  const crear = crudos.find((c) => c.name === 'github' && c.words.join(' ') === 'gh pr create');
+  assert.ok(crear && crear.draft && crear.draft.options.some((o) => o.name === '--draft'), JSON.stringify(crear));
+  const listo = crudos.find((c) => c.name === 'github' && c.ready);
+  assert.ok(listo && listo.words.join(' ') === 'gh pr ready' && listo.ready.unless.length, JSON.stringify(listo));
+  const update = crudos.find((c) => c.name === 'azure-devops' && c.ready);
+  assert.ok(update && update.ready.when.some((o) => o.name === '--draft' && o.separateValue === true) && update.ready.abbreviations === true, JSON.stringify(update));
+  // az cambia `@archivo` por lo que trae antes de leer sus opciones: el conector lo declara en los dos campos
+  assert.strictEqual(update.ready.argumentFiles, '@', JSON.stringify(update));
+  // completar el pedido lo mergea: el conector lo declara como un valor de `--status`
+  assert.ok(update.ready.when.some((o) => o.name === '--status' && Array.isArray(o.values) && o.values.includes('completed')), JSON.stringify(update));
+  assert.strictEqual(crudos.find((c) => c.name === 'azure-devops' && c.draft).draft.argumentFiles, '@');
+  assert.ok(!crudos.some((c) => c.name === 'gitlab' && (c.draft || c.ready)), 'GitLab, ninguno');
+  assert.strictEqual(P().rawCommandOf('gh pr ready 12'), null, 'marcar listo no es un comando que la capa reemplaza');
+  // un campo mal formado deja el manifiesto roto, con su motivo; sin los campos es válido
+  const ok = { name: 'buena', label: 'Buena', kind: 'platform', connector: 'scripts/connector.js', operations: ['ci.read'],
+    rawCommands: ['x pr create', 'x pr update'], changeRequestCommands: ['x pr create'] };
+  const opcion = { name: '--draft', separateValue: false };
+  const d = tmp('manifiestos-');
+  const poner = (n, m) => { fs.mkdirSync(path.join(d, n), { recursive: true }); fs.writeFileSync(path.join(d, n, 'integration.json'), JSON.stringify({ ...m, name: n })); };
+  poner('buena', ok);
+  poner('completa', { ...ok, draftOptions: [{ command: 'x pr create', options: [opcion, { name: '-d', separateValue: false }], abbreviations: false }],
+    readyCommands: [{ command: 'x pr ready', unless: [{ name: '--undo', separateValue: false }] }, { command: 'x pr update', when: [opcion], abbreviations: true }] });
+  const MALOS = [
+    ['nolista', { draftOptions: { command: 'x pr create' } }, /«draftOptions» es una lista/],
+    ['noescrea', { draftOptions: [{ command: 'x pr update', options: [opcion] }] }, /«draftOptions»: «x pr update» no está en «changeRequestCommands»/],
+    ['sinopciones', { draftOptions: [{ command: 'x pr create', options: [] }] }, /«draftOptions»: «x pr create» lleva una lista de opciones/],
+    ['nombremalo', { draftOptions: [{ command: 'x pr create', options: [{ name: 'draft', separateValue: false }] }] }, /la opción «draft» se escribe/],
+    ['separadomalo', { draftOptions: [{ command: 'x pr create', options: [{ name: '--draft', separateValue: 'no' }] }] }, /«separateValue» es true o false/],
+    ['abreviamalo', { draftOptions: [{ command: 'x pr create', options: [opcion], abbreviations: 'si' }] }, /«abbreviations» es true o false/],
+    ['archivomalo', { draftOptions: [{ command: 'x pr create', options: [opcion], argumentFiles: '@@' }] }, /«argumentFiles» es un solo signo/],
+    ['valoresmalos', { readyCommands: [{ command: 'x pr update', when: [{ name: '--status', separateValue: true, values: [] }] }] }, /«values» es una lista de valores escritos/],
+    ['archivoletra', { readyCommands: [{ command: 'x pr ready', argumentFiles: 'a' }] }, /«argumentFiles» es un solo signo/],
+    ['repetido', { draftOptions: [{ command: 'x pr create', options: [opcion] }, { command: 'x pr create', options: [opcion] }] }, /«draftOptions»: «x pr create» está dos veces/],
+    ['listonolista', { readyCommands: 'x pr ready' }, /«readyCommands» es una lista/],
+    ['losdos', { readyCommands: [{ command: 'x pr ready', when: [opcion], unless: [opcion] }] }, /«readyCommands»: «x pr ready» lleva «when» o «unless», no los dos/],
+    ['whenvacio', { readyCommands: [{ command: 'x pr ready', when: [] }] }, /«readyCommands»: «x pr ready»: «when» es una lista de opciones/],
+    ['listoquecrea', { readyCommands: [{ command: 'x pr create' }] }, /«readyCommands»: «x pr create» crea un pedido/],
+    ['sinverbo', { readyCommands: [{ command: 'x' }] }, /«readyCommands»: un comando con su programa y su verbo/],
+  ];
+  for (const [n, extra] of MALOS) poner(n, { ...ok, ...extra });
+  poner('otrotipo', { name: 'otrotipo', label: 'Otro', kind: 'notify', draftOptions: [], readyCommands: [] });
+  const r = INT.listManifests({ dir: d });
+  const motivos = (n) => JSON.stringify((r.problems.find((x) => x.name === n) || {}).reasons || null);
+  assert.ok(INT.find('buena', { kind: 'platform', dir: d }), `sin los campos es válido: ${motivos('buena')}`);
+  const completa = INT.find('completa', { kind: 'platform', dir: d });
+  assert.ok(completa, `con los campos bien escritos es válido: ${motivos('completa')}`);
+  assert.deepStrictEqual(completa.readyCommands.map((c) => c.command), ['x pr ready', 'x pr update']);
+  for (const [n, , rx] of MALOS) {
+    assert.ok(!INT.find(n, { kind: 'platform', dir: d }), `${n} no se carga`);
+    assert.match(motivos(n), rx, n);
+  }
+  assert.match(motivos('otrotipo'), /«draftOptions» es sólo de un conector de plataforma/);
+  assert.match(motivos('otrotipo'), /«readyCommands» es sólo de un conector de plataforma/);
+  // el freno lee lo que declaran los conectores: no nombra ninguna herramienta
+  const freno = fs.readFileSync(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'save-brake.js'), 'utf8');
+  assert.deepStrictEqual(freno.split('\n').map((l, i) => [i + 1, l]).filter(([, l]) => /\b(gh|az|glab)\b/i.test(l)).map(([i, l]) => `${i}: ${l.trim()}`), [],
+    'save-brake.js no nombra gh, az ni glab');
 });

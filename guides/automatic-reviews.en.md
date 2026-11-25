@@ -17,8 +17,12 @@ installer, production, a migration, or declares `sensible:`. In doubt, delicate.
 
 - **The away mark** is set. Whoever gets the owner's message saying they are leaving («go on autonomously», «I'm off»,
   «see you tomorrow» or similar) sets it: the coordinator, or the session itself if there is no coordinator, with
-  `marker.js owner-away set --phrase "<what they said>"`. It clears itself when the owner comes back: a message typed
-  by them, a verified office message, a signature of theirs, or after 24 hours. The office shows it while it is set.
+  `marker.js owner-away set --phrase "<what they said>"`. The phrase must be in a message the owner typed in that tab in
+  the last 30 minutes; otherwise it exits 2 and does not set the mark. It clears itself when the owner comes back: a
+  message typed by them, a verified office message, a signature of theirs, or after 24 hours. The office shows it while
+  it is set.
+  With the mark set, `owner-next` does not build a signature's question box: it says to tell the owner through the
+  notification channels and to wait until they write, and the signature stays on the list unchanged.
 - Or a review's question has been waiting `plan_review.owner_away_minutes` minutes without an answer (built-in 20). The
   minutes count from when the question was recorded (`marker.js review-ask`).
 
@@ -26,7 +30,7 @@ installer, production, a migration, or declares `sensible:`. In doubt, delicate.
 
 | Delicate? | Does it run? (built-in) | Who approves on «approved» |
 |---|---|---|
-| Yes | Always, without asking (`plan_review.delicate: always`) | The owner, with the result in the box. If the profile delegates `plan-approval:delicada`, the coordinator, only with the «approved» of the review she launched |
+| Yes | Always, without asking (`plan_review.delicate: always`) | The owner, with a click or an «approved» and the result in the box; the mockup too. Never the coordinator or the harness on their own, even if the profile names `plan-approval:delicada` |
 | No | The owner is asked (`plan_review.routine: ask`). Owner away: it reviews (`plan_review.routine_owner_away: review`) | The review, with or without a coordinator (`plan_review.routine_approval: review`): with a coordinator, she signs on the owner's behalf; without one, it is approved without a click. With `person`, the owner |
 
 It is launched with «Armar el plan» closed and no open question to the person about this review (unless they count
@@ -39,7 +43,7 @@ informs on a delicate story or with `plan_review.routine_approval: person`. Buil
 
 | Result | What happens |
 |---|---|
-| «approved» | Routine: it is approved, with or without a coordinator (with one, she signs; without one, `complete-step approve-plan` closes without a click). Delicate, or with `plan_review.routine_approval: person`: it reaches the owner with «reviewed, no findings» (a delicate one is approved by the harness on its own if the profile lists `plan-approval:delicada` as routine, with the session's own review) |
+| «approved» | Routine: it is approved, with or without a coordinator (with one, she signs; without one, `complete-step approve-plan` closes without a click). Delicate, or with `plan_review.routine_approval: person`: it reaches the owner with «reviewed, no findings» (a delicate one is approved only by the owner, even if the profile names `plan-approval:delicada`) |
 | «approved with notes» | Confirmed findings below the severity cut: it counts as approved, the session fixes them while coding and the box shows them |
 | «rejected» | Only for a confirmed finding at the cut (built-in, a bug). The session fixes the plan and the review runs again. It reaches the owner at the cap of rejections in a row (`review.max_rounds`, built-in 3), or right away with `plan_review.rejected_reaches_owner: true` |
 | «no verdict» | It reaches the owner with «could not review: <reason>». If the plan or the story changed while it ran, it is retried only once, with all the changes together. From the story, what defines the build counts: its later record, «Ajustes después de la firma» and the `status` do not change it; when in doubt, the whole story counts |
@@ -62,9 +66,13 @@ guarantees:
   gate reads it.
 - **The session cannot write itself the verdict**: the state's `plan-review/` folder is protected against what the
   agent writes, moves or deletes, and the result only counts from the path the preparation named (the runner's
-  `--out`). The harness runner passes only with the request the harness prepared (`--args "$(cat '<…>.args.json')"`):
-  with a hand-made request, another `--out`, a destination in a variable or relative after a `cd`, or reviewers of its
-  own (`--agents-dir`, another `--runners` list), the brake stops it. With Claude Code's
+  `--out`). The harness runner passes only as `marker.js plan-review` prints it: with the request the harness
+  prepared, given once and by its exact path (`--args-file '<…>/<destination>.args.json'`, absolute, next to the
+  `--out` and in the state's review folder; the args go in a file because on Windows they do not fit on the command
+  line). With a hand-made request or one read from another path (a `..`, another folder with the same name, `~` or a
+  relative path), words the shell reads differently (a backslash, double quotes, `$`), another `--out`, a destination
+  in a variable or relative after a `cd`, the old `--args "$(cat …)"` form, or reviewers of its own (`--agents-dir`,
+  another `--runners` list), the brake stops it. With Claude Code's
   Workflow tool the result goes through the session, does not reach that path, and the plan waits for a person.
 - **The session cannot remove the click**: the `TYCON_PLAN_ROUTINE_APPROVAL` variable only tightens (`person`); set to
   `review` it does not remove the one the organization asks for. A misspelled approver key, or an organization

@@ -11,7 +11,7 @@
 # QUÉ HACE, en orden:
 #   1. Corre el pre-push que la persona ya tenía (el instalador lo conserva como `pre-push.local`), con los mismos
 #      argumentos y la misma entrada que le da git. Si rechaza, el empuje se rechaza. Si está y no se puede ejecutar,
-#      lo dice (no corrió) y sigue.
+#      lo dice (no corrió) y sigue. Si el empuje lleva sólo marcas y ese pre-push sincroniza engram, no corre, y se dice.
 #   1b. Corre el `.git/hooks/pre-push` propio del repo, igual que el anterior: con git usando la carpeta global, git no
 #      lo llama. Si rechaza, el empuje se rechaza; si acepta, el freno corre igual después.
 #   2. Llama al freno (scripts/hooks/public-push-guard.js) del arnés INSTALADO, no al del árbol que se empuja: una rama
@@ -48,7 +48,16 @@ feed() { if [ -n "$INPUT" ]; then printf '%s\n' "$INPUT"; fi; }
 
 # ── 1. El pre-push que la persona ya tenía ───────────────────────────────────────────────────────────────────────
 LOCAL_HOOK="$(dirname "$0")/pre-push.local"
-if [ -x "$LOCAL_HOOK" ]; then
+# Sólo marcas: cada ref que viaja va a refs/tags/. Una marca no lleva commits nuevos, así que el pre-push propio que
+# sincroniza engram (`engram sync`) no tiene nada que exportar; si corre, frena pidiendo commitear un chunk y deja el
+# manifiesto y los chunks sueltos en el clon. Ese pre-push no corre; cualquier otro, sí.
+solo_marcas() {
+  [ "$INPUT_OK" = "1" ] && [ -n "$INPUT" ] || return 1
+  printf '%s\n' "$INPUT" | awk 'NF && $3 !~ /^refs\/tags\// { otra = 1 } END { exit otra }'
+}
+if [ -x "$LOCAL_HOOK" ] && grep -q 'engram sync' "$LOCAL_HOOK" 2>/dev/null && solo_marcas; then
+  echo "ℹ️  sólo marcas en este empuje: tu pre-push propio (pre-push.local) sincroniza engram y no corre, porque una marca no lleva commits nuevos" >&2
+elif [ -x "$LOCAL_HOOK" ]; then
   if ! feed | "$LOCAL_HOOK" "$@"; then
     echo "⛔ tu pre-push propio (pre-push.local) rechazó el empuje" >&2
     exit 1
@@ -189,9 +198,7 @@ is_harness_push() {
     if git cat-file -e "$sha^{commit}:$TREE_MARK" 2>/dev/null; then return 0; fi
     # «no trae ese archivo» y «git no pudo leer lo que se empuja» salen igual: lo que no se puede leer cuenta como que sí
     git cat-file -e "$sha" 2>/dev/null || return 0
-  done <<EOF
-$INPUT
-EOF
+  done < <(printf '%s\n' "$INPUT")
   return 1
 }
 if ! is_harness_push; then exit 0; fi

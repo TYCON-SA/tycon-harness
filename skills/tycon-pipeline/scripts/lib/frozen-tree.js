@@ -13,6 +13,8 @@
  *
  * En el repo sólo se escriben objetos en la base de git (como un `git add`): ni el árbol de trabajo ni el índice real.
  */
+// lo corre un paso (`frozen-tree.js lista-del-pase`): con un Node viejo dice cuál hace falta, antes de cualquier otro require
+if (require.main === module) { try { require('./node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -30,6 +32,8 @@ function git(args, env) {
 }
 const unaLinea = (t) => String(t || '').split('\n').map((x) => x.trim()).filter(Boolean)[0] || 'sin detalle';
 const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return path.resolve(p); } };
+// Hasta qué tamaño se lee qué cambió adentro de un archivo (lib/change-kind.js no tiene tope de tiempo)
+const TOPE_DEL_LECTOR = 256 * 1024;
 
 /** Un índice aparte, en la carpeta temporal; se borra al terminar. */
 function conIndiceAparte(fn) {
@@ -81,6 +85,65 @@ function puntoComunConMain(repo) {
 }
 
 /**
+ * La base del pase adversarial en `repo` (historia 8.330): el punto en común de `HEAD` con su rama principal, traída antes
+ * del remoto, porque el pase compara contra lo último. La rama es la de `origin/HEAD`, `origin/main` u `origin/master`,
+ * la primera que exista: un repo con `master` también tiene base. `{ base, rama }`, o `{ base: null, sin_base }` con el
+ * motivo en una línea si el remoto no contesta o no hay rama principal: no frena acá, lo decide el paso, que sabe si ese
+ * repo tiene código en el diff. No es `puntoComunConMain`, que es la referencia del sello para el cierre.
+ */
+function baseDelPase(repo) {
+  const e = entornoDeGit();
+  const correr = (args, timeout) => {
+    const r = spawnSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout, env: e.idiomaFijo(e.sinGitDelPadre(process.env), {}) });
+    return { ok: !r.error && r.status === 0, out: String(r.stdout || '').trim(), err: String((r.error && r.error.message) || r.stderr || '').trim() };
+  };
+  const traer = correr(['fetch', '-q', 'origin'], 120000);
+  if (!traer.ok) return { base: null, sin_base: `no se pudo traer origin (${unaLinea(traer.err)})` };
+  const cabeza = correr(['symbolic-ref', '-q', 'refs/remotes/origin/HEAD'], 15000);
+  const candidatas = [cabeza.ok ? cabeza.out : null, 'refs/remotes/origin/main', 'refs/remotes/origin/master'].filter(Boolean);
+  const rama = candidatas.find((ref) => correr(['show-ref', '--verify', '--quiet', ref], 15000).ok);
+  if (!rama) return { base: null, sin_base: 'el remoto no tiene rama principal (origin/HEAD, origin/main ni origin/master)' };
+  const corta = rama.replace(/^refs\/remotes\//, '');
+  const mb = correr(['merge-base', 'HEAD', rama], 30000);
+  if (!mb.ok || !/^[0-9a-f]{40,64}$/.test(mb.out)) return { base: null, sin_base: `sin punto en común con ${corta} (${unaLinea(mb.err || mb.out)})` };
+  return { base: mb.out, rama: corta };
+}
+
+/**
+ * Los archivos de código del cambio congelado de `repo`, relativos a él: lo distinto entre la base y el sello (lo
+ * commiteado, lo que no y lo nuevo, porque el sello lo tiene todo), sin lo borrado, que no está en la copia. Código es
+ * lo que cuenta el portón del pase: lo de lib/code-files.js, con lo que sume la organización, más `.sql`. Sin base no
+ * se sabe qué cambió, y cuenta todo el código del sello: un repo con código y sin base frena de más, nunca de menos.
+ * `{ files }` o `{ error }` en una línea.
+ */
+function archivosDeCodigo(repo, base, sello) {
+  const r = git(['-C', repo, ...(base ? ['diff', '--name-only', '-z', '--diff-filter=d', base, sello] : ['ls-tree', '-r', '--name-only', '-z', sello])]);
+  if (!r.ok) return { error: `${path.basename(repo)}: no pude leer el cambio (${unaLinea(r.err)})` };
+  const { isCode } = require('./code-files.js');
+  const extra = require('./stack-config.js').orgExtra();
+  return { files: r.crudo.split('\0').filter((f) => f && (isCode(f, { extra }) || /\.sql$/i.test(f))) };
+}
+
+/**
+ * La lista del pase adversarial (historia 8.330, D1 y D2.1), desde los repos congelados con su base: los que tienen
+ * archivos de código en su cambio, cada uno con su base y sus archivos relativos a él. Un repo sin código queda afuera.
+ * Uno sin base y con código no se puede revisar: va a `frenan` con el motivo, y el pase no se lanza. `archivosDe` se
+ * pasa en las pruebas.
+ */
+function listaDelPase(repos, { archivosDe = archivosDeCodigo } = {}) {
+  const lista = [];
+  const frenan = [];
+  for (const r of repos || []) {
+    const a = archivosDe(r.repo, r.base || null, r.sello);
+    if (a.error) { frenan.push({ repo: r.repo, motivo: a.error }); continue; }
+    if (!a.files.length) continue;
+    if (!r.base) { frenan.push({ repo: r.repo, motivo: `tiene código en el cambio y no tiene base: ${r.sin_base || 'sin rama principal'}` }); continue; }
+    lista.push({ repo: r.repo, base: r.base, files: a.files });
+  }
+  return { repos: lista, frenan };
+}
+
+/**
  * Deja los archivos de una carpeta de sólo lectura (o, con `escribible`, les devuelve el permiso al dueño). Las carpetas
  * quedan escribibles por su dueño: así cualquiera que limpia su carpeta temporal la puede borrar; un archivo agregado o
  * cambiado lo atrapa `verify`, que vuelve a sellar la copia.
@@ -101,24 +164,38 @@ function permisos(dir, escribible) {
 }
 
 /**
+ * Lo que va delante del git que arma la copia: en Windows, `core.longpaths=true`. Sin él, un archivo con una ruta de
+ * más de 260 caracteres corta la copia con «Filename too long», aunque el repo tenga esa opción apagada.
+ */
+function gitDeLaCopia(platform = process.platform) {
+  return platform === 'win32' ? ['-c', 'core.longpaths=true'] : [];
+}
+
+/**
  * La copia de sólo lectura del árbol `tree` de `repo` en `dir` (que no tiene que existir): `{ copy }` o `{ error }`.
- * Una copia a medias se borra: nunca queda una que no sea la del sello.
+ * Una copia a medias se borra: nunca queda una que no sea la del sello. Si no se puede borrar, el error lo dice.
  */
 function freeze(repo, tree, dir) {
   const g = gitDirDe(repo);
   if (g.error) return { error: `no pude armar la copia de ${repo}: ${g.error}` };
-  if (fs.existsSync(dir)) remover(dir);
+  const vieja = fs.existsSync(dir) ? remover(dir) : null;
+  if (vieja) return { error: `no pude armar la copia de ${repo}: la de antes no se pudo borrar (${vieja}): borrá ${dir}` };
   try { fs.mkdirSync(dir, { recursive: true }); } catch (e) { return { error: `no pude armar la copia de ${repo} en ${dir}: ${unaLinea(e.message)}` }; }
+  const largas = gitDeLaCopia();
   const r = conIndiceAparte((indice) => {
     const env = { GIT_INDEX_FILE: indice };
-    const rt = git([`--git-dir=${g.dir}`, 'read-tree', tree], env);
+    const rt = git([...largas, `--git-dir=${g.dir}`, 'read-tree', tree], env);
     if (!rt.ok) return { error: `no pude armar la copia de ${repo}: git read-tree ${tree} (${unaLinea(rt.err)})` };
-    const co = git([`--git-dir=${g.dir}`, `--work-tree=${dir}`, 'checkout-index', '-a', '-f'], env);
+    const co = git([...largas, `--git-dir=${g.dir}`, `--work-tree=${dir}`, 'checkout-index', '-a', '-f'], env);
     if (!co.ok) return { error: `no pude armar la copia de ${repo} en ${dir}: git checkout-index (${unaLinea(co.err)})` };
     return { copy: dir };
   });
-  if (r.error) { remover(dir); return r; }
-  try { permisos(dir, false); } catch (e) { remover(dir); return { error: `no pude dejar de sólo lectura la copia de ${repo}: ${unaLinea(e.message)}` }; }
+  const sinLaCopia = (error) => {
+    const quedo = remover(dir);
+    return { error: quedo ? `${error}; y la copia a medias no se pudo borrar (${quedo}): borrá ${dir}` : error };
+  };
+  if (r.error) return sinLaCopia(r.error);
+  try { permisos(dir, false); } catch (e) { return sinLaCopia(`no pude dejar de sólo lectura la copia de ${repo}: ${unaLinea(e.message)}`); }
   return r;
 }
 
@@ -132,7 +209,8 @@ function verify(repo, copy, tree) {
   if (!fs.existsSync(copy)) return { ok: false, error: `la copia de la vuelta no está (${copy}): repo ${repo}, sello ${tree}` };
   return conIndiceAparte((indice) => {
     const env = { GIT_INDEX_FILE: indice };
-    const base = [`--git-dir=${g.dir}`, `--work-tree=${copy}`];
+    // la copia vive más adentro que la carpeta viva: en Windows, también acá con rutas largas
+    const base = [...gitDeLaCopia(), `--git-dir=${g.dir}`, `--work-tree=${copy}`];
     const rt = git([...base, 'read-tree', tree], env);
     if (!rt.ok) return { ok: false, error: `no pude comprobar la copia de ${repo}: git read-tree ${tree} (${unaLinea(rt.err)})` };
     const add = git([...base, 'add', '-A'], env);
@@ -143,10 +221,11 @@ function verify(repo, copy, tree) {
   });
 }
 
-/** Borra una carpeta de copias aunque sea de sólo lectura. */
+/** Borra una carpeta de copias aunque sea de sólo lectura. null si quedó borrada; si no, el motivo. */
 function remover(dir) {
   try { permisos(dir, true); } catch (_) { /* lo que no se pudo, lo intenta el borrado */ }
-  fs.rmSync(dir, { recursive: true, force: true });
+  try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { return unaLinea(e.message); }
+  return fs.existsSync(dir) ? 'sigue en el disco' : null;
 }
 
 // un nombre que se vuelve carpeta: sin barras, y nunca «.», «..» ni con punto adelante (saldría de su carpeta)
@@ -167,7 +246,8 @@ function copyDir(stateDir, sid, etiqueta, repo) {
 function remove(stateDir, sid) {
   const d = path.join(raizDeCopias(stateDir), seguro(sid));
   if (!dentroDe(raizDeCopias(stateDir), d)) throw new Error(`remove: ${d} no queda dentro de ${raizDeCopias(stateDir)}`);
-  if (fs.existsSync(d)) remover(d);
+  const quedo = fs.existsSync(d) ? remover(d) : null;
+  if (quedo) throw new Error(`remove: no pude borrar ${d} (${quedo})`);
 }
 
 /**
@@ -183,7 +263,8 @@ function sweep(stateDir) {
     // sólo lo que pudo crear este módulo: un nombre que ya es seguro y queda dentro de la carpeta de las copias
     if (sid !== seguro(sid) || !dentroDe(raiz, path.join(raiz, sid))) continue;
     if (fs.existsSync(path.join(stateDir, 'active', `${sid}.json`))) continue;
-    try { remover(path.join(raiz, sid)); barridas.push(sid); } catch (_) { /* la próxima vuelta lo vuelve a intentar */ }
+    // la que no se pudo borrar, la próxima vuelta lo vuelve a intentar
+    if (!remover(path.join(raiz, sid))) barridas.push(sid);
   }
   return barridas.sort();
 }
@@ -203,6 +284,177 @@ function reposDe(rutas) {
   return { repos };
 }
 
+/**
+ * ¿El bloque `evidence:` del repo dice a propósito que no hay hermanos? Sí con el bloque vacío o con sólo sus llaves
+ * vacías (`companion_repos: []`, o la llave sin valor). Cualquier otra cosa de la que el lector de la configuración
+ * (lib/evidence-config.js) no sacó ningún hermano es un bloque que no se pudo leer. Lee el mismo archivo que ese lector.
+ */
+function evidenciaSinHermanos(repo) {
+  let txt = null;
+  for (const nombre of ['advisors.yaml', 'advisors.yml']) {
+    try { txt = fs.readFileSync(path.join(repo, '.tycon', nombre), 'utf8'); break; } catch (_) { /* el siguiente */ }
+  }
+  if (txt === null) return false;
+  let adentro = false;
+  let sangria = 0;
+  for (const linea of txt.split(/\r?\n/)) {
+    if (/^\s*#/.test(linea) || linea.trim() === '') continue;
+    const s = linea.length - linea.trimStart().length;
+    if (!adentro) {
+      const m = linea.match(/^evidence\s*:(.*)$/);
+      if (!m) continue;
+      // `evidence: {…}` en el mismo renglón: el lector no lo entiende
+      if (m[1].replace(/\s+#.*$/, '').trim()) return false;
+      adentro = true;
+      sangria = s;
+      continue;
+    }
+    if (s <= sangria) break;
+    if (!/^\s*(?:companion_repos|fe_paths)\s*:\s*(?:\[\s*\])?\s*(?:#.*)?$/.test(linea)) return false;
+  }
+  return adentro;
+}
+
+/**
+ * Los repos del pase adversarial: los de la vuelta (la historia y el repo del código) más cada repo hermano declarado
+ * (`.tycon/advisors.yaml → evidence.companion_repos`) en el que la historia declara archivos (`touchedRoots`, como el
+ * portón de pruebas). `{ repos, hermanos }`
+ * o `{ error }`: una configuración que no se deja leer no es «sin hermanos», y un hermano que no se puede sellar tampoco.
+ */
+function reposDelPase({ story, repo }) {
+  const base = reposDe([story, repo]);
+  if (base.error) return base;
+  let hermanos;
+  try {
+    // un hermano declarado que no está en disco, o un bloque `evidence:` del que no sale ninguno, no se puede sellar
+    const { parseEvidenceConfig } = require('./evidence-config.js');
+    for (const r of base.repos) {
+      const cfg = parseEvidenceConfig(r);
+      if (cfg.missing.length) return { error: `${r} declara repos hermanos que no están en disco: ${cfg.missing.join(', ')}` };
+      if (cfg.blockPresent && !cfg.roots.length && !cfg.fePaths.length && !evidenciaSinHermanos(r)) return { error: `${r} tiene el bloque evidence: y no pude leer de él ningún repo hermano` };
+    }
+    // sólo los hermanos que la historia toca (con archivos declarados): uno declarado y sin tocar no se sella ni se copia
+    hermanos = require('./companion-repos.js').touchedRoots(repo, story || null);
+  } catch (e) {
+    return { error: `no pude leer los repos hermanos de ${repo}: ${unaLinea(e.message)}` };
+  }
+  // un hermano que está en disco y no es un repo git no tiene árbol que sellar: su código quedaría sin mirar
+  const so = require('./save-ok.js');
+  for (const h of hermanos) {
+    let raiz;
+    try { raiz = so.raizDe(path.resolve(h)); } catch (e) { return { error: `no pude saber el repo del hermano ${h}: ${unaLinea(e.message)}` }; }
+    if (!raiz) return { error: `el repo hermano ${h} está en disco pero no es un repo git: su código no se puede sellar` };
+  }
+  const todos = reposDe([...base.repos, ...hermanos]);
+  if (todos.error) return todos;
+  return { repos: todos.repos, hermanos: todos.repos.filter((r) => !base.repos.includes(r)) };
+}
+
+/**
+ * La ruta canónica, como la compara `verificarPruebasPropias` (lib/marker-adversarial.js): la real del sistema
+ * (`.native` resuelve enlaces y, donde el disco no distingue mayúsculas, las del archivo en disco); si no existe, la real
+ * del ancestro que sí existe más el resto tal cual. Otro error que «no existe» deja la ruta como vino.
+ */
+function canonica(p) {
+  let actual = path.resolve(p);
+  const resto = [];
+  for (;;) {
+    try { return path.join(fs.realpathSync.native(actual), ...resto); } catch (e) {
+      if (!e || (e.code !== 'ENOENT' && e.code !== 'ENOTDIR')) return path.join(actual, ...resto);
+    }
+    const padre = path.dirname(actual);
+    if (padre === actual) return path.join(actual, ...resto);
+    resto.unshift(path.basename(actual));
+    actual = padre;
+  }
+}
+
+/** La ruta con su carpeta canónica y el último tramo tal cual: un enlace en ese tramo no se sigue. */
+const conCarpetaCanonica = (p) => { const abs = path.resolve(p); return path.join(canonica(path.dirname(abs)), path.basename(abs)); };
+
+/**
+ * ¿Dos rutas (ya con la carpeta canónica) son el mismo archivo? La misma ruta, o el mismo nombre con otras mayúsculas en la
+ * misma carpeta cuando el disco las toma por el mismo archivo (mismo dispositivo e inodo, sin seguir enlaces).
+ */
+function mismoArchivo(a, b) {
+  if (a === b) return true;
+  if (path.dirname(a) !== path.dirname(b) || path.basename(a).toLowerCase() !== path.basename(b).toLowerCase()) return false;
+  try {
+    const x = fs.lstatSync(a, { bigint: true });
+    const y = fs.lstatSync(b, { bigint: true });
+    return x.dev === y.dev && x.ino === y.ino;
+  } catch (_) { return false; }
+}
+
+/**
+ * Lo sin commitear adentro de los submódulos y repos anidados de un repo, que el sello no ve: `add -A` anota de cada uno
+ * sólo su commit, no sus archivos. `{ files }` con cada archivo que su `git status` marca (con la carpeta adelante; un
+ * submódulo de adentro con cambios sale por su carpeta), o `{ error }` si alguno no se pudo mirar. Un submódulo sin bajar
+ * (sin carpeta, o vacía) no tiene archivos que mirar. Lo usan el cierre del pase con los repos hermanos
+ * (`hermanosCambiados`) y la comparación de lo que se guarda con lo revisado (`comprobarLoRevisado`, lib/marker-shared.js).
+ */
+function anidadosConCambios(repo, tree) {
+  const ls = git(['-C', repo, 'ls-tree', '-r', '-z', tree]);
+  if (!ls.ok) return { error: `no pude listar los submódulos de ${repo}: ${unaLinea(ls.err)}` };
+  const files = [];
+  for (const e of ls.crudo.split('\0')) {
+    const tab = e.indexOf('\t');
+    if (tab < 0 || !e.startsWith('160000 ')) continue;
+    const rel = e.slice(tab + 1);
+    const dir = path.join(repo, rel);
+    let entradas = [];
+    try { entradas = fs.readdirSync(dir); } catch (_) { entradas = []; }
+    if (!entradas.length) continue;
+    const top = git(['-C', dir, 'rev-parse', '--show-toplevel']);
+    if (!top.ok || canonica(top.out) !== canonica(dir)) return { error: `${rel} es un submódulo con archivos que no es un repo de git: no pude ver si cambió` };
+    const st = git(['-C', dir, 'status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=none']);
+    if (!st.ok) return { error: `no pude ver el estado del submódulo ${rel}: ${unaLinea(st.err)}` };
+    const partes = st.crudo.split('\0');
+    for (let i = 0; i < partes.length; i++) {
+      if (partes[i].length < 4) continue;
+      files.push(path.posix.join(rel, partes[i].slice(3)));
+      // un renombre trae después el nombre de antes
+      if (partes[i][0] === 'R' || partes[i][0] === 'C') i++;
+    }
+  }
+  return { files };
+}
+
+/**
+ * ¿Cambió el código de algún hermano desde que se lanzó el pase? Se vuelve a sellar cada hermano de la carpeta viva y se
+ * compara con su sello del lanzamiento; lo sin commitear adentro de sus submódulos y repos anidados, que el sello no ve,
+ * cuenta como cambio. `permitidos`: las pruebas propias que el cierre declara (`--own --in`), escritas
+ * a propósito después del pase; no cuentan. Se comparan como `verificarPruebasPropias`: una prueba declarada con otras
+ * mayúsculas libera el mismo archivo donde el disco no las distingue. Una declarada que es un enlace no libera nada: un
+ * enlace de una prueba al código es justo lo que el cierre tiene que ver. Devuelve `[{ repo, files }]` o
+ * `[{ repo, error }]` por cada hermano que no se puede dar por igual; `[]` si todos siguen iguales.
+ */
+function hermanosCambiados({ sellos, hermanos, permitidos = [] }) {
+  const out = [];
+  for (const repo of hermanos || []) {
+    const tree = sellos && sellos[repo];
+    if (!tree) { out.push({ repo, error: `el lanzamiento no trae el sello de ${repo}` }); continue; }
+    const ahora = seal(repo);
+    if (ahora.error) { out.push({ repo, error: ahora.error }); continue; }
+    const anidados = anidadosConCambios(repo, ahora.tree);
+    if (anidados.error) { out.push({ repo, error: anidados.error }); continue; }
+    let cambiados = [];
+    if (ahora.tree !== tree) {
+      const c = changed(repo, tree, ahora.tree, {});
+      if (c.error) { out.push({ repo, error: c.error }); continue; }
+      cambiados = [...c.files, ...(c.papeleo || [])];
+    }
+    if (!cambiados.length && !anidados.files.length) continue;
+    const libres = permitidos.map((p) => path.resolve(repo, p))
+      .filter((p) => { try { return !fs.lstatSync(p).isSymbolicLink(); } catch (_) { return true; } })
+      .map(conCarpetaCanonica);
+    const files = [...new Set([...cambiados, ...anidados.files])]
+      .filter((f) => { const k = conCarpetaCanonica(path.join(repo, f)); return !libres.some((l) => mismoArchivo(l, k)); }).sort();
+    if (files.length) out.push({ repo, files });
+  }
+  return out;
+}
+
 // El registro de las vueltas congeladas de una sesión, junto a sus copias: se borra con ellas.
 const registroDeVueltas = (stateDir, sid) => path.join(raizDeCopias(stateDir), seguro(sid), 'vueltas.jsonl');
 
@@ -219,32 +471,72 @@ function ultimaVuelta(stateDir, sid, tipo) {
 }
 
 /**
- * Sella y congela cada repo de una vuelta y la anota: `{ repos: [{ repo, tree, copy }] }` o `{ error }` con el primer
- * motivo. Una vuelta no se lanza a medias: si un repo falla, se borran las copias que ya se armaron. Antes barre las
- * copias de las corridas que ya no están abiertas; una vuelta de revisores nueva borra las copias de las anteriores
- * (al guardar se compara contra la última).
+ * Una copia de esta sesión, de cualquier vuelta, del mismo repo y el mismo sello, que sigue en disco y pasa `verify`
+ * (nadie la tocó): `{ copy, etiqueta }` con la vuelta que la armó, o null. De la más nueva a la más vieja.
  */
-function sealAndFreeze({ stateDir, sid, etiqueta, repos, tipo = 'revisores', story = null }) {
+function copiaReusable(previas, repo, tree) {
+  for (const v of [...previas].reverse()) {
+    for (const r of v.repos || []) {
+      if (r.repo !== repo || r.tree !== tree || !r.copy) continue;
+      let esta = false;
+      try { esta = fs.existsSync(r.copy); } catch (_) { esta = false; }
+      if (esta && verify(repo, r.copy, tree).ok) return { copy: r.copy, etiqueta: r.reusada_de || v.etiqueta };
+    }
+  }
+  return null;
+}
+
+/**
+ * Sella y congela cada repo de una vuelta y la anota: `{ repos: [{ repo, tree, copy, reusada_de? }] }` o `{ error }`
+ * con el primer motivo. Un repo con una copia de esta sesión del mismo sello que nadie tocó la reusa y anota de qué
+ * vuelta salió (historia 8.330): el pase y la primera vuelta de revisores no copian dos veces lo mismo. Una vuelta no se
+ * lanza a medias: si un repo falla, se borran las copias que ya se armaron (nunca una reusada). Antes barre las copias
+ * de las corridas que ya no están abiertas; una vuelta de revisores nueva borra las copias de las anteriores (al guardar
+ * se compara contra la última), menos las que ella misma usa y las de `noBorrar`: las del pase abierto, que lee el
+ * marcador quien congela la vuelta. `noBorrar: null` es que no se sabe cuáles son: no se borra ninguna que nombre un pase.
+ */
+function sealAndFreeze({ stateDir, sid, etiqueta, repos, tipo = 'revisores', story = null, noBorrar = [] }) {
   sweep(stateDir);
+  const previas = vueltas(stateDir, sid);
   const out = [];
+  const nuevas = [];
+  const deshacer = () => { for (const c of nuevas) remover(c); };
   for (const repo of repos) {
     const s = seal(repo);
-    if (s.error) { for (const r of out) remover(r.copy); return { error: s.error }; }
-    const f = freeze(repo, s.tree, copyDir(stateDir, sid, etiqueta, repo));
-    if (f.error) { for (const r of out) remover(r.copy); return { error: f.error }; }
+    if (s.error) { deshacer(); return { error: s.error }; }
+    const reusable = copiaReusable(previas, repo, s.tree);
+    let copy = reusable && reusable.copy;
+    if (!reusable) {
+      // la carpeta de esta etiqueta puede existir (la vuelta se relanza) y ser la copia que otra vuelta reusó, que el pase
+      // abierto sigue leyendo: no se pisa, la copia nueva va al lado, con el sello en el nombre
+      let destino = copyDir(stateDir, sid, etiqueta, repo);
+      if (fs.existsSync(destino)) destino = copyDir(stateDir, sid, `${etiqueta}-${s.tree.slice(0, 12)}`, repo);
+      const f = freeze(repo, s.tree, destino);
+      if (f.error) { deshacer(); return { error: f.error }; }
+      copy = f.copy;
+      nuevas.push(copy);
+    }
     // sin el punto en común con main el sello vale igual: al guardar, lo que trajo main cuenta como cambio
     const pm = puntoComunConMain(repo);
-    out.push({ repo, tree: s.tree, copy: f.copy, ...(pm.sha ? { mainBase: pm.sha } : {}) });
+    out.push({ repo, tree: s.tree, copy, ...(pm.sha ? { mainBase: pm.sha } : {}), ...(reusable ? { reusada_de: reusable.etiqueta } : {}) });
   }
   if (tipo === 'revisores') {
-    for (const v of vueltas(stateDir, sid).filter((x) => x.tipo === 'revisores' && x.etiqueta !== etiqueta)) {
-      for (const r of v.repos || []) { try { if (r.copy && fs.existsSync(r.copy)) remover(r.copy); } catch (_) { /* la barre la próxima */ } }
+    const quedan = new Set(out.map((r) => r.copy));
+    const protegidas = Array.isArray(noBorrar) ? noBorrar
+      : previas.filter((v) => v.tipo === 'pase').flatMap((v) => (v.repos || []).map((r) => r.copy));
+    for (const c of protegidas) if (c) quedan.add(c);
+    // también las de una vuelta anterior con la misma etiqueta (relanzada): su copia ya no se compara
+    for (const v of previas.filter((x) => x.tipo === 'revisores')) {
+      for (const r of v.repos || []) {
+        if (!r.copy || quedan.has(r.copy)) continue;
+        try { if (fs.existsSync(r.copy)) remover(r.copy); } catch (_) { /* la barre la próxima */ }
+      }
     }
   }
   try {
     fs.appendFileSync(registroDeVueltas(stateDir, sid), `${JSON.stringify({ ts: new Date().toISOString(), tipo, etiqueta, story, repos: out })}\n`, 'utf8');
   } catch (e) {
-    for (const r of out) remover(r.copy);
+    deshacer();
     return { error: `no pude anotar la vuelta congelada: ${unaLinea(e.message)}` };
   }
   return { repos: out };
@@ -289,11 +581,19 @@ function sinPapeleoDeLaHistoria(txt) {
   const conFrontmatter = lineas[0] === '---';
   let enFrontmatter = conFrontmatter;
   let enPipelines = false;
+  let enArchivos = false;      // `files_to_modify` / `files_to_create`: sumar o sacar una prueba no cambia lo revisado
   let campoDeLaTanda = null;   // la sangría del campo que se saca, con sus renglones de continuación
+  const { isTestPath } = require('./atdd-order.js');
   for (const [i, l] of lineas.entries()) {
     if (enFrontmatter) {
       if (i > 0 && l === '---') { enFrontmatter = false; out.push(l); continue; }
-      if (/^\S/.test(l)) { enPipelines = /^pipelines\s*:/.test(l); campoDeLaTanda = null; }
+      if (/^\S/.test(l)) { enPipelines = /^pipelines\s*:/.test(l); enArchivos = /^files_to_(modify|create)\s*:/.test(l); campoDeLaTanda = null; }
+      // un archivo de prueba de la lista de archivos (el mismo criterio de «qué es una prueba» que el orden de ATDD): las
+      // vueltas lo suman al escribir la prueba de un hallazgo. Un archivo de código, o cualquier otro campo, sigue contando
+      if (enArchivos) {
+        const item = l.match(/^\s+-\s+["']?([^"'#\s]+)["']?\s*(#.*)?$/);
+        if (item && isTestPath(item[1])) continue;
+      }
       if (enPipelines) {
         const sangria = l.match(/^(\s*)/)[1].length;
         // su continuación: más sangrada, o una lista escrita a la misma sangría que el campo (también es YAML válido)
@@ -350,15 +650,16 @@ const sinRenglonDeLaHistoria = (txt, clave) => String(txt).split('\n')
  * Con `mainAntes` y `mainAhora` (el punto en común con main del sello y el de ahora), un archivo que en la foto revisada
  * es igual al de `mainAntes` y ahora es igual al de `mainAhora` va a `deMain`: lo cambió main y la corrida no lo tocó
  * (en el estado del sprint, sin el renglón de la historia). Un archivo que la corrida tocó cuenta aunque main también.
- * Con `comentarios` (historia 8.217), un archivo con el mismo modo en los dos árboles que sólo movió comentarios
- * (lib/comment-only.js) va a `comentarios` y no a `files`; cualquier error al mirarlo lo deja en `files`. Sin la opción,
- * la salida no trae ese campo.
+ * Con `comentarios` (historia 8.217), un archivo con el mismo modo en los dos árboles cuyo cambio no pide otra vuelta
+ * (sólo comentarios o espacios, lib/change-kind.js; también textos si el dueño eligió que no la pidan,
+ * lib/review-change-policy.js) va a `comentarios` y no a `files`; cualquier error al mirarlo lo deja en `files`. Sin la
+ * opción, la salida no trae ese campo.
  */
 function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = null, comentarios = false } = {}) {
   if (treeA === treeB) return { files: [], papeleo: [], deMain: [], ...(comentarios ? { comentarios: [] } : {}) };
   const d = git(['-C', repo, 'diff-tree', '-r', '-z', '--no-renames', treeA, treeB]);
   if (!d.ok) return { error: `no pude comparar ${repo} entre ${treeA} y ${treeB}: ${unaLinea(d.err)}` };
-  const { esPapeleoDeLaHuella, esEvidenciaEnVivo, esGuionEnVivo } = require('./save-ok.js');
+  const { esPapeleoDeLaHuella, esEvidenciaEnVivo, esCapturaDelPorton, esGuionEnVivo } = require('./save-ok.js');
   const partes = d.crudo.split('\0');
   const files = [];
   const papeleo = [];
@@ -370,11 +671,23 @@ function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = n
       const a = contenidoDelSello(repo, treeA, rel);
       const b = contenidoDelSello(repo, treeB, rel);
       if (a.error || b.error || a.modo !== b.modo) return false;
-      return require('./comment-only.js').soloSeMovieronComentarios(a.buf, b.buf, { archivo: rel }).ok === true;
+      // el lector no tiene tope de tiempo: un archivo grande cuenta como cambio, como en el gancho de cada edición
+      if (a.buf.length > TOPE_DEL_LECTOR || b.buf.length > TOPE_DEL_LECTOR) return false;
+      const t = require('./change-kind.js').queCambio(a.buf, b.buf, { archivo: rel });
+      return !require('./review-change-policy.js').pideVuelta(t.tipo);
     } catch (_) { return false; }
   };
   const leer = (t, rel) => { const r = git(['-C', repo, 'show', `${t}:${rel}`]); return r.ok ? r.crudo : null; };
   const estadoDelSprint = storyRel ? path.posix.join(path.posix.dirname(storyRel), 'sprint-status.yaml') : null;
+  // la guía de la prueba a mano de ESTA historia, que qa-guide.js arma desde ella (`<su carpeta qa>/<historia>-guia-qa.html`)
+  // y se regenera con cada vuelta. Sólo ésa: otra `-guia-qa.html` del repo puede ser una página que la app sirve
+  let guiaDeLaHistoria = null;
+  if (storyRel) {
+    try {
+      const qa = require('./qa-dir.js').qaDirFor(path.join(repo, storyRel));
+      guiaDeLaHistoria = path.relative(repo, path.join(qa, `${path.posix.basename(storyRel, '.md')}-guia-qa.html`)).split(path.sep).join('/');
+    } catch (_) { guiaDeLaHistoria = null; }
+  }
   // la entrada de una ruta en un árbol: modo, tipo y objeto («» si no existe, null si no se pudo leer). Así cuentan también
   // un cambio de permisos y el puntero de un submódulo, que el contenido solo no muestra
   const entrada = (t, rel) => { const r = git(['-C', repo, 'ls-tree', t, '--', rel]); return r.ok ? r.out.split('\t')[0] : null; };
@@ -412,9 +725,10 @@ function changed(repo, treeA, treeB, { storyRel, mainAntes = null, mainAhora = n
       const b = leer(treeB, rel);
       esPapeleo = !!clave && a !== null && b !== null && sinRenglonDeLaHistoria(a, clave) === sinRenglonDeLaHistoria(b, clave);
     } else {
-      // la salida o la captura de un humo, o el guion de la prueba en vivo, que su registro nombra con la misma huella:
-      // «Probar en vivo» corre después de los revisores y deja esa evidencia; no es código
-      esPapeleo = rel === 'tasks/todo.md' || esPapeleoDeLaHuella(rel, modo) || esEvidenciaEnVivo(repo, rel)
+      // la salida o la captura de un humo, una captura del portón de navegador o el guion de la prueba en vivo, que su
+      // registro o su índice nombran con la misma huella: corren después de los revisores y dejan esa evidencia; no es código
+      esPapeleo = rel === 'tasks/todo.md' || (rel === guiaDeLaHistoria && modo !== '120000') || esPapeleoDeLaHuella(rel, modo)
+        || esEvidenciaEnVivo(repo, rel) || esCapturaDelPorton(repo, rel)
         || (modo !== '120000' && esGuionEnVivo(repo, rel));
     }
     if (esPapeleo) papeleo.push(rel);
@@ -443,20 +757,22 @@ function contenidoDelSello(repo, tree, rel, { timeout } = {}) {
 }
 
 /**
- * ¿El archivo del disco difiere de lo sellado sólo en el lugar de sus comentarios? Un archivo común (no un enlace), con
- * el mismo bit de ejecución que en el sello. Lo que no se puede leer da `false`: cuenta como cambio.
+ * Qué cambió adentro del archivo del disco respecto de lo sellado (lib/change-kind.js): `{ tipo, motivo, visibles? }`,
+ * o null si no se puede comparar (no es un archivo común, pasa de `topeBytes`, no está en el sello, cambió su bit de
+ * ejecución, no se leyó). null cuenta como código.
  */
-function difiereSoloEnComentarios(repo, tree, abs, { timeout } = {}) {
+function tipoContraElSello(repo, tree, abs, { timeout, topeBytes = TOPE_DEL_LECTOR } = {}) {
   try {
     const st = fs.lstatSync(abs);
-    if (!st.isFile()) return false;
+    // el lector no tiene tope de tiempo: corre en el gancho de cada edición, y un archivo grande cuenta como código
+    if (!st.isFile() || st.size > topeBytes) return null;
     const rel = path.relative(real(repo), real(abs));
-    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return false;
+    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return null;
     const sello = contenidoDelSello(repo, tree, rel.split(path.sep).join('/'), { timeout });
-    if (sello.error) return false;
-    if (process.platform !== 'win32' && ((st.mode & 0o111) !== 0) !== (sello.modo === '100755')) return false;
-    return require('./comment-only.js').soloSeMovieronComentarios(sello.buf, fs.readFileSync(abs), { archivo: abs }).ok === true;
-  } catch (_) { return false; }
+    if (sello.error) return null;
+    if (process.platform !== 'win32' && ((st.mode & 0o111) !== 0) !== (sello.modo === '100755')) return null;
+    return require('./change-kind.js').queCambio(sello.buf, fs.readFileSync(abs), { archivo: abs });
+  } catch (_) { return null; }
 }
 
 /**
@@ -474,19 +790,20 @@ function vueltaCerradaDeLosRevisores(marker, cierre, { stateDir } = {}) {
 }
 
 /**
- * Los archivos (rutas absolutas) editados después de la última vuelta de revisores que quedaron iguales a lo revisado,
- * salvo el lugar de sus comentarios: los que no piden otra vuelta. Con más de 20 archivos no mira ninguno, y cuando se
- * acaba el presupuesto deja de mirar: lo que falta cuenta. Cada error queda en hook-errors.log y ese archivo cuenta.
+ * Qué cambió adentro de cada archivo (rutas absolutas) editado después de la última vuelta de revisores cerrada de esta
+ * historia, contra su sello: Map ruta → `{ tipo, motivo, visibles? }` (lib/change-kind.js). Lo que no se pudo mirar no
+ * está en el mapa, y cuenta como código. Con más de 20 archivos no mira ninguno, y cuando se acaba el presupuesto deja
+ * de mirar. Cada error queda en hook-errors.log.
  */
-function comentariosMovidosDesdeLaVuelta({ marker, cierre, archivos, presupuestoMs = 500, stateDir } = {}) {
-  const fuera = new Set();
+function tiposDesdeLaVuelta({ marker, cierre, archivos, presupuestoMs = 500, stateDir } = {}) {
+  const tipos = new Map();
   const lista = Array.isArray(archivos) ? archivos : [];
-  if (!lista.length || lista.length > 20) return fuera;
+  if (!lista.length || lista.length > 20) return tipos;
   const inicio = Date.now();
   const dir = stateDir || require('./state-dir.js').stateDir(os.homedir());
   let v;
-  try { v = vueltaCerradaDeLosRevisores(marker, cierre, { stateDir: dir }); } catch (e) { anotarError(dir, e); return fuera; }
-  if (!v || !Array.isArray(v.repos)) return fuera;
+  try { v = vueltaCerradaDeLosRevisores(marker, cierre, { stateDir: dir }); } catch (e) { anotarError(dir, e); return tipos; }
+  if (!v || !Array.isArray(v.repos)) return tipos;
   const { raizDelRepo } = require('./reloop-code.js');
   for (const abs of lista) {
     const queda = presupuestoMs - (Date.now() - inicio);
@@ -494,16 +811,17 @@ function comentariosMovidosDesdeLaVuelta({ marker, cierre, archivos, presupuesto
     try {
       const raiz = raizDelRepo(abs);
       const r = raiz && v.repos.find((x) => x && x.repo && x.tree && real(x.repo) === real(raiz));
-      if (r && difiereSoloEnComentarios(r.repo, r.tree, abs, { timeout: queda })) fuera.add(abs);
+      const t = r ? tipoContraElSello(r.repo, r.tree, abs, { timeout: queda }) : null;
+      if (t) tipos.set(abs, t);
     } catch (e) { anotarError(dir, e); }
   }
-  return fuera;
+  return tipos;
 }
 
 function anotarError(dir, e) {
   try {
     fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(path.join(dir, 'hook-errors.log'), `[${new Date().toISOString()}] comentarios movidos: no pude mirar lo revisado (${unaLinea((e && e.message) || e)}) — el archivo cuenta como cambio\n`, 'utf8');
+    fs.appendFileSync(path.join(dir, 'hook-errors.log'), `[${new Date().toISOString()}] qué cambió desde la vuelta: no pude mirar lo revisado (${unaLinea((e && e.message) || e)}) — el archivo cuenta como código\n`, 'utf8');
   } catch (_) { /* ayuda, no evidencia */ }
 }
 
@@ -527,11 +845,16 @@ function procedencia(repo, { env = process.env, home = os.homedir(), proceso = '
   }
   // la carpeta de la corrida: la que guarda el marcador, o la que calcula el pipeline para su historia
   if (marcador) {
-    run = marcador.runDir || null;
-    if (!run && marcador.storyId) {
+    // las rutas del marcador, absolutas contra su repo (lib/run-dir.js); nunca contra la carpeta del proceso
+    const r = require('./run-dir.js').rutasDeLaCorrida(marcador);
+    const abs = (p) => (typeof p === 'string' && path.isAbsolute(p) ? p : null);
+    run = abs(r.runDir);
+    if (!run && marcador.runDir) runError = `no pude ubicar la carpeta de la corrida del marcador (${r.motivo || marcador.runDir})`;
+    else if (!run && marcador.storyId && !abs(r.repoPath)) runError = `el marcador no dice su repo (${r.motivo || 'sin repoPath ni historia absoluta'})`;
+    else if (!run && marcador.storyId) {
       try {
-        const repoM = marcador.repoPath || process.cwd();
-        const story = marcador.storyPath ? (path.isAbsolute(marcador.storyPath) ? marcador.storyPath : path.resolve(repoM, marcador.storyPath)) : undefined;
+        const repoM = abs(r.repoPath);
+        const story = abs(r.storyPath) || undefined;
         // de `run-dir.js`, no de `pipeline.js`: el tablero del sitio carga esto y su imagen no lleva el pipeline entero
         run = require('./run-dir.js').resolveRunDir(repoM, String(marcador.storyId), false, story, { marker: marcador }) || null;
         if (!run) runError = 'la historia del marcador todavía no tiene carpeta de corrida';
@@ -552,8 +875,8 @@ function procedencia(repo, { env = process.env, home = os.homedir(), proceso = '
 }
 
 module.exports = {
-  seal, puntoComunConMain, freeze, verify, changed, copyDir, remove, sweep, reposDe, sealAndFreeze, vueltas, ultimaVuelta, seccionDelContexto, sinPapeleoDeLaHistoria, procedencia,
-  contenidoDelSello, difiereSoloEnComentarios, vueltaCerradaDeLosRevisores, comentariosMovidosDesdeLaVuelta,
+  seal, puntoComunConMain, baseDelPase, archivosDeCodigo, listaDelPase, freeze, gitDeLaCopia, verify, changed, anidadosConCambios, copyDir, remove, sweep, reposDe, reposDelPase, hermanosCambiados, sealAndFreeze, vueltas, ultimaVuelta, seccionDelContexto, sinPapeleoDeLaHistoria, procedencia,
+  contenidoDelSello, tipoContraElSello, vueltaCerradaDeLosRevisores, tiposDesdeLaVuelta,
 };
 
 // `node frozen-tree.js procedencia <repo>`: la procedencia como fragmento JSON (`"run":…,"tree":…`), para sumar a un
@@ -561,4 +884,25 @@ module.exports = {
 if (require.main === module && process.argv[2] === 'procedencia') {
   const p = procedencia(process.argv[3] || null, { proceso: process.argv[4] || 'sin-nombre' });
   process.stdout.write(JSON.stringify(p).slice(1, -1));
+}
+
+// `node frozen-tree.js lista-del-pase <archivo>`: con la salida de `marker.js freeze-adversarial` guardada en <archivo>,
+// la lista del pase (`repos: [{ repo, base, files }]`, lo que va a los args del Workflow) y los repos que frenan. Sale 0
+// con la lista, 2 si algún repo con código no tiene base (el pase no se lanza: lo dice cada `frenan`) y 1 si no pudo leer.
+if (require.main === module && process.argv[2] === 'lista-del-pase') {
+  let congelado = null;
+  try { congelado = JSON.parse(fs.readFileSync(process.argv[3] || '', 'utf8')); } catch (e) {
+    process.stderr.write(`frozen-tree.js lista-del-pase: no pude leer la salida de freeze-adversarial (${unaLinea(e.message)})\n`);
+    process.exit(1);
+  }
+  if (!congelado || !Array.isArray(congelado.repos)) {
+    process.stderr.write('frozen-tree.js lista-del-pase: la salida de freeze-adversarial no trae `repos`\n');
+    process.exit(1);
+  }
+  const l = listaDelPase(congelado.repos);
+  process.stdout.write(JSON.stringify(l, null, 2) + '\n');
+  if (l.frenan.length) {
+    for (const f of l.frenan) process.stderr.write(`🔴 el pase no se lanza: ${f.repo} ${f.motivo}\n`);
+    process.exit(2);
+  }
 }

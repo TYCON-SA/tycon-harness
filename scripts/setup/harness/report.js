@@ -199,6 +199,8 @@ function backupLine(dir) {
 }
 
 const isReadPiece = (p) => isObject(p) && p.kind === 'setting' && typeof p.id === 'string' && p.id.startsWith('permissions.allow:Read(');
+// una regla deny del arnés (deny-permissions.js)
+const isDenyPiece = (p) => isObject(p) && p.kind === 'setting' && typeof p.id === 'string' && p.id.startsWith('permissions.deny:');
 
 /**
  * La línea de las carpetas del arnés que Claude Code lee sin preguntar, desde las piezas que dejó el aplicador; `null`
@@ -231,13 +233,15 @@ function leftCounts(pieces, { effects = null, thirdParty = null } = {}) {
       L.push(`hooks: ${hooks.length} (no pude contar cuántos frenan: ${effects && effects.reason ? effects.reason : 'sin la lista de efectos'})`);
     }
   }
-  // las reglas de lectura del arnés van aparte, con sus carpetas: no son «ajustes» que el dev reconozca
+  // las reglas de lectura y las deny del arnés van aparte: no son «ajustes» que el dev reconozca
   for (const [kind, label] of [['block', 'bloques en CLAUDE.md'], ['setting', 'ajustes de settings.json'], ['git-hook', 'hooks de git'], ['command', 'comandos'], ['link', 'enlaces']]) {
-    const c = kind === 'setting' ? list.filter((p) => p.kind === 'setting' && !isReadPiece(p)).length : n(kind);
+    const c = kind === 'setting' ? list.filter((p) => p.kind === 'setting' && !isReadPiece(p) && !isDenyPiece(p)).length : n(kind);
     if (c) L.push(`${label}: ${c}`);
   }
   const reads = readFoldersLine(list);
   if (reads) L.push(reads);
+  const denies = list.filter(isDenyPiece).length;
+  if (denies) L.push(`Claude Code niega borrar la raíz del disco o tu carpeta personal entera, aunque los hooks estén apagados: ${denies} regla${denies === 1 ? '' : 's'} en permissions.deny`);
   const placed = n('third-party');
   // con el paso apagado (`thirdParty: 'off'`) el aplicador no reporta ninguna aunque estén en disco, y no va a bajar
   // nada: ni «0 en su lugar» ni «pendientes» serían verdad

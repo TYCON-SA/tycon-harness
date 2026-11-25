@@ -12,9 +12,12 @@
 //     Code avisa el comando que falló con otro evento (PostToolUseFailure), que se atiende igual y se contesta con su
 //     nombre; Codex manda PostToolUse en los dos casos.
 // Cada aviso sale una vez por sesión, y otra vez después de compactar o limpiar la conversación (el arranque de ese
-// momento borra lo dicho en la sesión). Sin `session_id`, el aviso de después del comando sale y no se recuerda. Un
-// `notices.json` roto, o no poder saber qué está activo, se dice en una línea (después de un comando, una vez por
-// sesión) y no frena. Sale 0 siempre y nunca trae una decisión.
+// momento borra lo dicho en la sesión). Lo dicho se anota agregando un renglón al archivo de la sesión, nunca
+// reescribiéndolo: dos comandos que terminan a la vez no se pisan la marca. Sin `session_id`, el aviso de después del
+// comando sale y no se recuerda. Un evento que no se lee no anota nada: el momento se busca en su texto, y uno de después
+// del comando dice el problema por ese canal, sin los avisos del arranque. Un `notices.json` roto, o no poder saber qué
+// está activo, se dice en una línea (después de un comando, una vez por sesión) y no frena. Sale 0 siempre y nunca trae
+// una decisión.
 // Off: TYCON_EXTENSION_NOTICES=0.
 const fs = require('fs');
 const os = require('os');
@@ -27,14 +30,32 @@ function stateDirOf(home) {
   return fs.existsSync(lib) ? require(lib).stateDir(home) : path.join(home || os.homedir(), '.claude', '.tycon-pipeline');
 }
 
-/** El evento que manda la herramienta. Uno que llega y no se lee se dice: sin él, la carpeta y el momento son supuestos. */
+/**
+ * El evento que manda la herramienta. Uno que llega y no se lee se dice: sin él, la carpeta y el momento son supuestos.
+ * El momento se busca en el texto (`hook_event_name`): uno de después del comando no se contesta como un arranque.
+ */
 function readStdin() {
   let raw = '';
   try { raw = fs.readFileSync(0, 'utf8'); } catch (_) { return { input: {}, problem: null }; }
   if (!raw.trim()) return { input: {}, problem: null };
   try { return { input: JSON.parse(raw), problem: null }; } catch (e) {
-    return { input: {}, problem: `el evento de arranque no se pudo leer (${e.message}); se usó la carpeta actual` };
+    const m = /"hook_event_name"\s*:\s*"([A-Za-z]+)"/.exec(raw);
+    return { input: m ? { hook_event_name: m[1] } : {}, problem: e.message };
   }
+}
+
+/** Lo ya dicho en la sesión: un renglón JSON por anotación (una lista o una clave); uno que no se lee se saltea. */
+function leerDichos(file) {
+  let text;
+  try { text = fs.readFileSync(file, 'utf8'); } catch (_) { return []; }
+  const out = [];
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    let v;
+    try { v = JSON.parse(line); } catch (_) { continue; }
+    for (const k of Array.isArray(v) ? v : [v]) if (typeof k === 'string') out.push(k);
+  }
+  return out;
 }
 
 // si el gancho falla, el aviso de la falla tiene que salir por el canal del momento en que corrió
@@ -64,7 +85,7 @@ function porDecir(notices, shown, errors) {
 
 function main() {
   if (process.env.TYCON_EXTENSION_NOTICES === '0') return;
-  const { input, problem } = readStdin();
+  const { input, problem: ilegible } = readStdin();
   const cwd = input.cwd || process.cwd();
   const conSesion = Boolean(input.session_id);
   // un subagente comparte la sesión con su madre: lo que se le dijo a él no está en el contexto de ella, y anota aparte
@@ -74,27 +95,38 @@ function main() {
   const comando = EVENTOS_DE_COMANDO.includes(input.hook_event_name);
   enComando = comando;
   if (comando) eventoDeComando = input.hook_event_name;
+  const problem = !ilegible ? null : comando
+    ? `el evento de después del comando no se pudo leer (${ilegible}): los avisos de ese comando no se evaluaron`
+    : `el evento de arranque no se pudo leer (${ilegible}); se usó la carpeta actual`;
 
   const stateFile = path.join(stateDirOf(os.homedir()), 'extension-notices', `${sid}.json`);
   let shown = [];
   // después de compactar o de limpiar la conversación (mismo session_id, `source` compact o clear) lo dicho antes ya no
   // está en el contexto: se vuelve a decir, como se recargaba el CLAUDE.md (también lo de después de un comando)
   const contextoNuevo = !comando && (input.source === 'compact' || input.source === 'clear');
-  // sin sesión no hay a quién recordarle nada: después de un comando, sale cada vez
-  if (!contextoNuevo && !(comando && !conSesion)) {
-    try { shown = JSON.parse(fs.readFileSync(stateFile, 'utf8')); if (!Array.isArray(shown)) shown = []; } catch (_) { shown = []; }
-  }
-  const guardar = (lista) => {
-    if (comando && !conSesion) return;
+  // sin sesión no hay a quién recordarle nada: después de un comando, sale cada vez. Un evento que no se lee no es de
+  // ninguna sesión: no lee ni anota lo dicho
+  const recuerda = !ilegible && !(comando && !conSesion);
+  if (!contextoNuevo && recuerda) shown = leerDichos(stateFile);
+  // lo nuevo se agrega en un renglón (un comando que termina a la vez agrega el suyo); tras compactar o limpiar, el
+  // archivo se reemplaza entero con uno temporal y un cambio de nombre
+  const guardar = (nuevos) => {
+    if (!recuerda) return;
     try {
       fs.mkdirSync(path.dirname(stateFile), { recursive: true });
-      fs.writeFileSync(stateFile, JSON.stringify(lista));
+      if (!contextoNuevo) { fs.appendFileSync(stateFile, `\n${JSON.stringify(nuevos)}`); return; }
+      const tmp = `${stateFile}.${process.pid}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(nuevos));
+      fs.renameSync(tmp, stateFile);
     } catch (_) { /* sin estado, el aviso puede repetirse en la sesión: mejor que no decirlo */ }
   };
 
   if (comando) {
     const command = String((input.tool_input || {}).command || '');
-    if (!command.trim()) return;
+    if (!command.trim()) {
+      if (problem) process.stdout.write(despuesDelComando(`⚠️ avisos de extensiones: ${problem}`));
+      return;
+    }
     // lo ya dicho en la sesión no se vuelve a mirar: así no se le pregunta a git por un aviso que no va a salir
     const { notices, errors } = lib.afterCommand({ cwd, command, powershell: input.tool_name === 'PowerShell', yaDichos: shown });
     if (problem) errors.unshift(problem);
@@ -102,7 +134,7 @@ function main() {
     // un problema se dice una vez por sesión: este gancho corre después de cada comando
     for (const e of errors) { const key = `aviso-roto:${e}`; if (!shown.includes(key)) { out.push(`⚠️ avisos de extensiones: ${e}`); nuevos.push(key); } }
     if (out.length) process.stdout.write(despuesDelComando(out.join('\n\n')));
-    if (nuevos.length) guardar(shown.concat(nuevos));
+    if (nuevos.length) guardar(nuevos);
     return;
   }
 
@@ -111,7 +143,7 @@ function main() {
   const { out, nuevos } = porDecir(notices, shown, errors);
   for (const e of errors) out.push(`⚠️ avisos de extensiones: ${e}`);
   if (out.length) process.stdout.write(out.join('\n\n') + '\n');
-  if (nuevos.length || contextoNuevo) guardar(shown.concat(nuevos));
+  if (nuevos.length || contextoNuevo) guardar(nuevos);
 }
 
 try { main(); } catch (e) {

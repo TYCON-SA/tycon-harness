@@ -26,7 +26,7 @@ const GUIA = path.join(RAIZ, 'guides', 'firmas-del-arnes.md');
 // todas las firmas que piden los frenos hoy, escritas a mano para que una que se pierda del catálogo se note: cada escape
 // es su propia entrada
 const DE_LA_STORY = ['plan-approval', 'extra-round', 'refresh-after-main', 'control-change', 'critical-waiver',
-  'runtime-waiver', 'compare-waiver', 'manual-test', 'browser-test', 'lost-run', 'lost-run:particion', 'adversarial-skip', 'pending-approval', 'adhoc-lane', 'adhoc-lane:sobre-cupo', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno',
+  'runtime-waiver', 'compare-waiver', 'manual-test', 'browser-test', 'lost-run', 'lost-run:particion', 'adversarial-skip', 'atdd-skip', 'review-skip', 'pending-approval', 'adhoc-lane', 'adhoc-lane:sobre-cupo', 'adhoc-lane:ci-rojo', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno',
   // volver al modo autónomo una ejecución detenida: sólo el click o la terminal del dueño
   'autonomy-resume',
   'escape:TYCON_SAFETY_OFF', 'escape:TYCON_PROD_LINT', 'escape:TYCON_NEW_NAMES', 'escape:TYCON_TEST_GATE',
@@ -35,7 +35,7 @@ const DE_LA_STORY = ['plan-approval', 'extra-round', 'refresh-after-main', 'cont
   'escape:TYCON_MUTATION_CHECK', 'escape:TYCON_STORY_REVIEW', 'escape:no-mutation',
   'escape:story-skill-bypass', 'escape:red-control-test-edit', 'escape:set-autonomous', 'escape:cerrar-la-ejecucion', 'escape:cerrar-como-deuda',
   'escape:rojo-esperado-de-la-matriz',
-  'escape:force-manual', 'escape:trust-ran', 'escape:ALLOW_DOD_EVIDENCE_WRITE', 'escape:dod_runtime_exempt',
+  'escape:force-manual', 'escape:trust-ran', 'escape:ALLOW_DOD_EVIDENCE_WRITE', 'escape:dod_runtime_exempt', 'escape:advisors_exempt',
   'escape:no-deep-review', 'escape:cambiar-el-estado', 'save', 'designation-confirm',
   // nombrar y retirar a la coordinadora con un click
   'designation-set', 'designation-withdraw',
@@ -75,7 +75,11 @@ test('8.139 T1 SignaturesGuide_UnaFilaPorFirma', () => {
   assert.deepStrictEqual(filas.map((f) => f[0]), ids.map((id) => `\`${id}\``), 'una fila por firma, en el orden del catálogo');
   for (const [i, s] of cat.SIGNATURES.entries()) {
     const otra = cat.ONLY_IN_TERMINAL.includes(s.id) ? 'no, sólo en tu terminal' : OTRA_SESION[s.otherSession];
-    assert.deepStrictEqual(filas[i], [`\`${s.id}\``, s.approves, `\`${s.command}\``, otra, s.terminal === null ? '—' : `\`${s.terminal}\``], s.id);
+    // un escape retirado: ya nada lo pide, y en la terminal queda la emergencia
+    const esperada = s.retired
+      ? [`\`${s.id}\``, s.approves, 'retirada: ya no apaga nada; la salida es la emergencia', otra, `\`${s.retired}\``]
+      : [`\`${s.id}\``, s.approves, `\`${s.command}\``, otra, s.terminal === null ? '—' : `\`${s.terminal}\``];
+    assert.deepStrictEqual(filas[i], esperada, s.id);
   }
   const grupos = tabla(texto, '## Los grupos de la 8.116');
   assert.deepStrictEqual(grupos.map((f) => f[0]), Object.keys(cat.GROUPS).map((g) => `\`${g}\``));
@@ -230,15 +234,15 @@ test('8.141 T17 SignaturesGuide_TraeAdhocLane', () => {
 // id, nivel, perfiles. 7 de rutina, 15 de excepción, 4 irreversibles.
 const TABLA_DE_NIVELES = [
   ['plan-approval', 1, ['dev', 'mant']], ['extra-round', 1, ['dev', 'mant']], ['pending-approval', 1, ['dev', 'mant']],
-  ['save', 1, ['dev', 'mant']], ['browser-test:prepare', 1, ['dev', 'mant']], ['adhoc-lane', 1, ['dev', 'mant']],
+  ['save', 1, ['dev', 'mant']], ['browser-test:prepare', 1, ['dev', 'mant']], ['adhoc-lane', 1, ['dev', 'mant']], ['adhoc-lane:ci-rojo', 1, ['dev', 'mant']],
   ['compare-waiver', 1, ['dev', 'mant']], ['refresh-after-main', 1, ['mant']], ['lost-run:particion', 1, ['dev', 'mant']],
   ['save:sensible', 2, ['dev', 'mant']], ['adhoc-lane:datos', 2, ['dev', 'mant']], ['adhoc-lane:guardado-ajeno', 2, ['dev', 'mant']], ['autonomy-resume', 2, ['dev', 'mant']], ['adhoc-lane:sobre-cupo', 2, ['dev', 'mant']], ['escape:DOD_BYPASS', 2, ['dev', 'mant']],
   ['critical-waiver', 2, ['dev', 'mant']], ['runtime-waiver', 2, ['dev', 'mant']], ['manual-test', 2, ['dev', 'mant']],
-  ['browser-test:no', 2, ['dev', 'mant']], ['adversarial-skip', 2, ['dev', 'mant']], ['lost-run', 2, ['dev', 'mant']],
+  ['browser-test:no', 2, ['dev', 'mant']], ['adversarial-skip', 2, ['dev', 'mant']], ['atdd-skip', 2, ['dev', 'mant']], ['review-skip', 2, ['dev', 'mant']], ['lost-run', 2, ['dev', 'mant']],
   ['escape:force-manual', 2, ['dev', 'mant']], ['escape:trust-ran', 2, ['dev', 'mant']],
   ['escape:TYCON_TEST_GATE', 2, ['dev', 'mant']], ['escape:TYCON_STATUS_GATE', 2, ['dev', 'mant']],
   ['escape:TYCON_MUTATION_CHECK', 2, ['dev', 'mant']], ['escape:TYCON_STORY_REVIEW', 2, ['dev', 'mant']],
-  ['escape:story-skill-bypass', 2, ['dev', 'mant']], ['escape:red-control-test-edit', 2, ['dev', 'mant']], ['escape:set-autonomous', 2, ['dev', 'mant']],
+  ['escape:story-skill-bypass', 2, ['dev', 'mant']], ['escape:advisors_exempt', 2, ['dev', 'mant']], ['escape:red-control-test-edit', 2, ['dev', 'mant']], ['escape:set-autonomous', 2, ['dev', 'mant']],
   ['designation-confirm', 2, ['dev', 'mant']], ['designation-set', 2, ['dev', 'mant']], ['designation-withdraw', 2, ['dev', 'mant']],
   ['control-change', 3, ['mant']], ['escape:TYCON_SAFETY_OFF', 3, ['dev', 'mant']], ['escape:TYCON_PROD_LINT', 3, ['dev', 'mant']],
   ['escape:TYCON_NEW_NAMES', 3, ['mant']], ['emergency', 3, ['dev', 'mant']], ['escape:merge-bypass', 3, ['dev', 'mant']],
@@ -267,7 +271,7 @@ test('niveles T1 Catalogo_TablaDeNiveles', () => {
   const cat = require(CATALOGO);
   assert.deepStrictEqual(cat.LEVELS.map((l) => [l.id, l.level, [...l.profiles]]), TABLA_DE_NIVELES);
   const cuenta = [1, 2, 3].map((n) => cat.LEVELS.filter((l) => l.level === n).length);
-  assert.deepStrictEqual(cuenta, [9, 24, 7], '9 de rutina (con compare-waiver y lost-run:particion), 24 de excepción (con adhoc-lane:guardado-ajeno, autonomy-resume y red-control-test-edit), 7 irreversibles (con external-pr)');
+  assert.deepStrictEqual(cuenta, [10, 27, 7], '10 de rutina (con compare-waiver, lost-run:particion y adhoc-lane:ci-rojo), 27 de excepción (con adhoc-lane:guardado-ajeno, autonomy-resume, red-control-test-edit, atdd-skip, review-skip y escape:advisors_exempt), 7 irreversibles (con external-pr)');
   for (const l of cat.LEVELS) assert.ok(typeof l.approves === 'string' && l.approves.trim(), `${l.id}: falta qué aprueba`);
 });
 
@@ -293,7 +297,7 @@ test('niveles T2 Catalogo_CadaFirmaApuntaASuNivel', () => {
 // cubre una excepción contada como rutina.
 test('niveles T3 Catalogo_NivelPorDelegacion', () => {
   const cat = require(CATALOGO);
-  const esperado = { 'save': 1, 'adhoc-lane': 1, 'plan-approval': 1, 'refresh-after-main': 1, 'pending-approval': 1,
+  const esperado = { 'save': 1, 'adhoc-lane': 1, 'adhoc-lane:ci-rojo': 1, 'plan-approval': 1, 'refresh-after-main': 1, 'pending-approval': 1,
     'extra-round': 1, 'compare-waiver': 1, 'lost-run:particion': 1, 'browser-test': 2, 'runtime-waiver': 2, 'escape:force-manual': 2, 'escape:trust-ran': 2,
     'escape:no-deep-review': 2, 'control-change': 3, 'escape:TYCON_SAFETY_OFF': 3 };
   for (const [id, n] of Object.entries(esperado)) assert.strictEqual(cat.delegatedLevel(id), n, id);
@@ -396,4 +400,16 @@ test('T19 SignaturesGuide_NotifiedSection_NamesMockupAndPending @story-8.255 @ac
   const seccion = fin >= 0 ? resto.slice(0, fin) : resto;
   for (const comando of ['approve-mockup', 'approve-pending']) assert.ok(seccion.includes(comando), `la sección no nombra ${comando}`);
   assert.match(seccion, /control\s+previo/, 'la sección dice la regla');
+});
+
+// 🔴 Falla con: la guía sin decir que el cambio de un control se aprueba con un click, que la CI sigue pidiendo la
+// constancia, o qué muestra el agente antes del cuadro.
+test('8.176-Guia_ControlChange_ConUnClickYLaCi @story-8.176 @ac-8', () => {
+  const guia = fs.readFileSync(GUIA, 'utf8');
+  const i = guia.indexOf('**El cambio de controles se aprueba con un click**');
+  assert.ok(i >= 0, 'la guía tiene el párrafo del click para control-change');
+  const parrafo = guia.slice(i, guia.indexOf('\n\n', i) < 0 ? undefined : guia.indexOf('\n\n', i)).replace(/\s+/g, ' ');
+  for (const re of [/`control-change`/, /constancia/, /sale en rojo/, /run-base-controls\.sh pending/, /diff/, /cuántos archivos/, /terminal/]) {
+    assert.match(parrafo, re, `el párrafo dice ${re}`);
+  }
 });

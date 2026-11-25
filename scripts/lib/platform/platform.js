@@ -92,8 +92,12 @@ function identidades(tr) {
   if (!tr || typeof tr !== 'object') return [];
   const ms = tr.merge_suites && Array.isArray(tr.merge_suites.repos) ? tr.merge_suites.repos.map((e) => e && e.repo) : [];
   return [tr.public, tr.profile, tr.operations, tr.maintainers, ...(Array.isArray(tr.harness_copies) ? tr.harness_copies : []), ...ms]
-    .filter((r) => r && typeof r === 'object' && r.org && r.repo);
+    .filter((r) => r && typeof r === 'object' && (r.org || r.namespace) && r.repo);
 }
+
+/** El nombre con que se dice y se busca un repo: `org/repo`, o `namespace/repo` donde el repo vive en grupos. */
+const nameOf = (r) => `${r.org === undefined ? r.namespace : r.org}/${r.repo}`;
+const sameName = (a, b) => nameOf(a).toLowerCase() === nameOf(b).toLowerCase();
 
 /**
  * Los repos que team-repos.json declara además de los de `identidades`: los de los índices de historias
@@ -108,32 +112,104 @@ function otrosRepos(tr) {
   return [...historias, ...pruebas].filter((r) => r && typeof r === 'object' && r.platform);
 }
 
-/** La identidad de un repo por su nombre (`repo` u `org/repo`), de las que declara team-repos.json; null si no está. */
+/** La identidad de un repo por su nombre (`repo`, `org/repo` o `namespace/repo`), de las que declara team-repos.json; null si no está. */
 function identityByName(name, opts = {}) {
   const tr = teamRepos(opts);
   const wanted = String(name || '').toLowerCase();
-  return identidades(tr.data).find((r) => String(r.repo).toLowerCase() === wanted || `${r.org}/${r.repo}`.toLowerCase() === wanted) || null;
+  return identidades(tr.data).find((r) => String(r.repo).toLowerCase() === wanted || nameOf(r).toLowerCase() === wanted) || null;
 }
 
-/** Una identidad de repo a partir de lo que llega: un objeto, un JSON o `org/repo`. */
+/** Una identidad de repo a partir de lo que llega: un objeto, un JSON, `org/repo` o `grupo/subgrupo/repo`. */
 function repoOf(repo) {
   if (!repo) return null;
   if (typeof repo === 'object') return repo;
   const s = String(repo).trim();
   if (s.startsWith('{')) { try { return JSON.parse(s); } catch (_) { return null; } }
-  const [org, name] = s.split('/');
+  // una barra al final no es un tramo: `grupo/sub/repo/` es el mismo repo, no `grupo/sub`
+  const parts = s.replace(/\/+$/, '').split('/');
+  // con más de dos tramos, los primeros son los grupos de un repo que vive en un namespace
+  if (parts.length > 2 && parts.every(Boolean)) return { namespace: parts.slice(0, -1).join('/'), repo: parts[parts.length - 1] };
+  const [org, name] = parts;
   return org && name ? { org, repo: name } : null;
 }
 
 /**
+ * Las identidades que declara team-repos.json para un repo que llegó sin plataforma (por su nombre): `{ value, all }`,
+ * con `value` la primera (null si no está) y `all` todas las que llevan ese nombre, o `{ problem }` si el archivo no se
+ * puede leer. Un repo que vive en grupos (con `namespace`) se busca también en los índices de historias y en las
+ * herramientas de prueba: es donde puede declararse además de merge_suites. Puede estar declarado en más de un
+ * servidor: quien llama no elige uno por el orden del archivo.
+ */
+function declaredFor(repo, opts) {
+  const leido = teamRepos(opts);
+  if (leido.problem) return { problem: leido.problem };
+  const lista = [...identidades(leido.data), ...otrosRepos(leido.data).filter((r) => r.namespace && r.repo)];
+  const all = lista.filter((r) => sameName(r, repo));
+  return { value: all[0] || null, all };
+}
+
+const hostKey = (r) => (r && r.host !== undefined && r.host !== null ? String(r.host).toLowerCase() : '');
+
+/**
+ * El repo que recibe el conector para uno que llegó sin plataforma y vive en grupos: el declarado, que trae lo que el
+ * nombre no dice (su servidor). Si el pedido trae su servidor, se respeta; si el nombre está declarado en más de un
+ * servidor, va sin servidor y el conector decide (no se elige por el orden del archivo). Null si no hay qué cambiar.
+ */
+function repoParaConector(pedido, declarados) {
+  const conGrupos = declarados.filter((r) => r.namespace);
+  if (!conGrupos.length) return null;
+  const platform = conGrupos[0].platform;
+  if (pedido.host !== undefined && pedido.host !== null) return { platform, ...pedido };
+  if (new Set(conGrupos.map(hostKey)).size > 1) return { platform, ...pedido };
+  return conGrupos[0];
+}
+
+/**
  * La identidad de team-repos.json de un repo, a partir de dónde vive según su remoto (`{host: 'azure', org, project,
- * name}` o `{host: 'github', ghRepo}`, como lo lee merge-pr.js): `{platform, org, project?, repo}`, o null si el remoto
- * no es de una plataforma conocida. No adivina: un remoto de otro lado no tiene plataforma.
+ * name}`, `{host: 'github', ghRepo}` o `{host: 'platform', identity}`, como lo lee merge-pr.js): `{platform, org,
+ * project?, repo}` o la que dedujo un conector, o null si el remoto no es de una plataforma conocida. No adivina: un
+ * remoto de otro lado no tiene plataforma.
  */
 function identityFromRemote(where) {
   if (!where || typeof where !== 'object') return null;
+  if (where.host === 'platform') return where.identity && typeof where.identity === 'object' ? where.identity : null;
   if (where.host === 'azure' && where.org && where.name) return { platform: 'azure', org: where.org, project: where.project, repo: where.name };
   if (where.host === 'github' && where.ghRepo) { const [org, repo] = String(where.ghRepo).split('/'); return org && repo ? { platform: 'github', org, repo } : null; }
+  return null;
+}
+
+/**
+ * La identidad de un repo a partir de la dirección de su remoto, para una plataforma cuyo servidor no se conoce de
+ * antemano (una instalación propia): se le pregunta al conector de cada plataforma declarada en team-repos.json que
+ * exporte `identityFromRemote(url, declarados)`, con los repos de su plataforma que declara el archivo. Null si ninguno
+ * la reconoce o si no hay team-repos.json: un remoto de un servidor que nadie declaró no tiene plataforma. Lanza si el
+ * archivo está y no se puede leer, o si el conector de una plataforma declarada no carga o falla: «no pude mirar» no es
+ * «no es de ninguna». `opts.teamReposData`: el archivo ya leído por quien llama.
+ */
+function identityOfRemoteUrl(url, opts = {}) {
+  const env = opts.env || process.env;
+  let data = opts.teamReposData;
+  if (data === undefined) {
+    const leido = teamRepos(opts);
+    if (leido.problem) throw new Error(leido.problem);
+    data = leido.data;
+  }
+  if (!data || typeof url !== 'string' || !url.trim()) return null;
+  const declarados = [...identidades(data), ...otrosRepos(data).filter((r) => (r.org || r.namespace) && r.repo)];
+  for (const name of [...new Set(declarados.map((r) => TEAM_REPOS.connectorOf(r.platform)).filter(Boolean))].sort()) {
+    const manifest = INT.find(name, { kind: 'platform', env });
+    if (!manifest) continue;
+    let id = null;
+    try {
+      const mod = require(path.join(manifest.dir, manifest.connector));
+      if (typeof mod.identityFromRemote !== 'function') continue;
+      id = mod.identityFromRemote(url, declarados.filter((r) => TEAM_REPOS.connectorOf(r.platform) === name));
+    } catch (e) {
+      throw new Error(`el conector ${name} no pudo decir de qué repo es el remoto (${(e && e.code) || limpiar(String((e && e.message) || e).split('\n')[0])})`);
+    }
+    // lo que devuelve un conector se valida como un repo del archivo, y tiene que ser de su plataforma
+    if (id && TEAM_REPOS.connectorOf(id.platform) === name && TEAM_REPOS.repoProblems(id, 'repo', { platforms: TEAM_REPOS.PLATFORMS }).length === 0) return id;
+  }
   return null;
 }
 
@@ -166,17 +242,19 @@ function choose(operation, opts = {}) {
     let plat = repo.platform;
     if (!plat) {
       // el repo sin plataforma: la que declara team-repos.json para ese mismo repo, si está
-      const leido = teamRepos(opts);
-      if (leido.problem) return no('sin_plataforma', `${leido.problem}: no sé la plataforma del repo ${repo.org}/${repo.repo}`);
-      const igual = identidades(leido.data).find((r) => String(r.org).toLowerCase() === String(repo.org).toLowerCase() && String(r.repo).toLowerCase() === String(repo.repo).toLowerCase());
-      plat = igual && igual.platform;
+      const igual = declaredFor(repo, opts);
+      if (igual.problem) return no('sin_plataforma', `${igual.problem}: no sé la plataforma del repo ${nameOf(repo)}`);
+      // un repo en grupos declarado en dos plataformas no se resuelve por el orden del archivo
+      const plataformas = [...new Set(igual.all.map((r) => r.platform))];
+      if (plataformas.length > 1 && igual.all.some((r) => r.namespace)) return no('sin_plataforma', `team-repos.json declara el repo ${nameOf(repo)} en más de una plataforma (${plataformas.join(', ')}): pedilo con su identidad completa`);
+      plat = igual.value && igual.value.platform;
     }
     if (plat) {
       name = TEAM_REPOS.connectorOf(plat);
-      if (!name) return no('sin_plataforma', `plataforma desconocida: «${plat}» (el repo ${repo.org}/${repo.repo} en team-repos.json)`);
+      if (!name) return no('sin_plataforma', `plataforma desconocida: «${plat}» (el repo ${nameOf(repo)} en team-repos.json)`);
       origin = 'repo';
     } else if (elegida.default) { name = elegida.default; origin = 'perfil:default'; }
-    else return no('sin_plataforma', `el repo ${repo.org}/${repo.repo} no declara su plataforma en team-repos.json y el perfil no tiene un valor por defecto: declarala en el repo, o ${CHOOSE}`);
+    else return no('sin_plataforma', `el repo ${nameOf(repo)} no declara su plataforma en team-repos.json y el perfil no tiene un valor por defecto: declarala en el repo, o ${CHOOSE}`);
   } else {
     const area = areaOf(operation);
     if (elegida[area]) { name = elegida[area]; origin = `perfil:${area}`; }
@@ -325,7 +403,15 @@ async function run(operation, args = {}, opts = {}) {
   const c = choose(operation, opts);
   const env = opts.env || process.env;
   const manifest = c.ok ? INT.find(c.value.connector, { kind: 'platform', env }) : null;
-  const r = c.ok ? await call(manifest, operation, args, opts) : c;
+  // un repo que llegó por su nombre y vive en un namespace: el conector recibe la identidad declarada, que trae lo que
+  // el nombre no dice (su servidor)
+  let para = opts;
+  const pedido = c.ok && REPO_OPERATIONS.includes(operation) ? repoOf(opts.repo) : null;
+  if (pedido && !pedido.platform) {
+    const otro = repoParaConector(pedido, declaredFor(pedido, opts).all || []);
+    if (otro) para = { ...opts, repo: otro };
+  }
+  const r = c.ok ? await call(manifest, operation, args, para) : c;
   if (!operation.startsWith('work-item.')) return r;
   // los avisos del conector pueden traer el texto de un error de la plataforma: pasan por la misma limpieza que un «no»
   let v = r.ok && r.value && Array.isArray(r.value.warnings) ? { ...r, value: { ...r.value, warnings: r.value.warnings.map(limpiar) } } : r;
@@ -360,17 +446,46 @@ async function conformance(name, opts = {}) {
 }
 
 /**
- * Los comandos crudos que declaran los conectores de plataforma en `rawCommands`: `[{ name, words }]`, con las palabras
- * del comando (`['gh', 'pr', 'create']`). Lanza si alguna integración no se puede leer: sin ella no se sabe qué comandos
- * declara.
+ * Los comandos crudos que declaran los conectores de plataforma en `rawCommands`: `[{ name, words, changeRequest, draft? }]`,
+ * con las palabras del comando (`['gh', 'pr', 'create']`), `changeRequest` si el conector lo declara además en
+ * `changeRequestCommands` (crea o junta un pedido) y `draft` si declara en `draftOptions` las opciones que lo hacen
+ * borrador (`{ options, abbreviations, argumentFiles }`). Después, aparte, los de `readyCommands`, que pasan un borrador
+ * a listo: `{ name, words, changeRequest: false, ready: { when, unless, abbreviations, argumentFiles } }`. No son comandos que la capa reemplaza:
+ * los lee el freno de guardar. Lanza si alguna integración no se puede leer: sin ella no se sabe qué comandos declara.
  */
 function rawCommands(opts = {}) {
   const leidas = INT.listManifests({ env: opts.env || process.env });
   if (leidas.problems.length) {
     throw new Error(`no pude leer ${leidas.problems.map((p) => `${p.name} (${p.reasons.join('; ')})`).join(' · ')}`);
   }
+  const palabras = (c) => c.trim().split(/\s+/);
   return leidas.manifests.filter((m) => m.kind === 'platform')
-    .flatMap((m) => (m.rawCommands || []).map((c) => ({ name: m.name, words: c.trim().split(/\s+/) })));
+    .flatMap((m) => {
+      const pedidos = new Set((m.changeRequestCommands || []).map((c) => palabras(c).join(' ')));
+      const archivos = (x) => (typeof x.argumentFiles === 'string' ? x.argumentFiles : null);
+      const borradores = new Map((m.draftOptions || []).map((d) => [palabras(d.command).join(' '), { options: d.options, abbreviations: d.abbreviations === true, argumentFiles: archivos(d) }]));
+      const crudos = (m.rawCommands || []).map((c) => {
+        const k = palabras(c).join(' ');
+        return { name: m.name, words: palabras(c), changeRequest: pedidos.has(k), ...(borradores.has(k) ? { draft: borradores.get(k) } : {}) };
+      });
+      const listos = (m.readyCommands || []).map((r) => ({ name: m.name, words: palabras(r.command), changeRequest: false,
+        ready: { when: r.when || null, unless: r.unless || null, abbreviations: r.abbreviations === true, argumentFiles: archivos(r) } }));
+      return [...crudos, ...listos];
+    });
+}
+
+/**
+ * Las otras formas de crear o juntar un pedido que declaran los conectores de plataforma: la API (`changeRequestApi`:
+ * el subcomando, las rutas y las mutaciones de graphql) y los cambios que prenden el auto-completar
+ * (`changeRequestAutoComplete`). `[{ name, api, autoComplete }]`. Lanza si alguna integración no se puede leer.
+ */
+function changeRequestSpecs(opts = {}) {
+  const leidas = INT.listManifests({ env: opts.env || process.env });
+  if (leidas.problems.length) {
+    throw new Error(`no pude leer ${leidas.problems.map((p) => `${p.name} (${p.reasons.join('; ')})`).join(' · ')}`);
+  }
+  return leidas.manifests.filter((m) => m.kind === 'platform')
+    .map((m) => ({ name: m.name, api: m.changeRequestApi || null, autoComplete: m.changeRequestAutoComplete || [] }));
 }
 
 /**
@@ -382,7 +497,8 @@ function rawCommands(opts = {}) {
  */
 function rawCommandOf(cmd, opts = {}) {
   if (typeof cmd !== 'string' || !cmd.trim()) return null;
-  const dichos = rawCommands(opts);
+  // marcar listo no es un comando crudo que la capa reemplaza: no cuenta acá
+  const dichos = rawCommands(opts).filter((d) => !d.ready);
   const hallados = new Set();
   for (const seg of require('../az-pr.js').segmentos(cmd)) {
     let i = 0;
@@ -463,4 +579,4 @@ function main(argv) {
 
 if (require.main === module) main(process.argv.slice(2)).then((code) => { process.exitCode = code; });
 
-module.exports = { choose, chosen, run, call, conformance, connector, identityFromRemote, identityByName, limpiar, summary, rawCommands, rawCommandOf, main, OPERATIONS, REASONS };
+module.exports = { choose, chosen, run, call, conformance, connector, identityFromRemote, identityOfRemoteUrl, identityByName, repoOf, nameOf, limpiar, summary, rawCommands, changeRequestSpecs, rawCommandOf, main, OPERATIONS, REASONS };

@@ -425,6 +425,23 @@ function minutesBetween(isoA, isoB) {
   return Math.abs(b - a) / 60000;
 }
 
+// El nombre de una herramienta del MCP de Clockify, con el servidor como lo registró esta máquina: el que trae el evento
+// del núcleo, si no el de `integrations.mcp_servers.clockify` de la configuración de la máquina, y si no «clockify» (el del
+// manifiesto).
+const SERVIDOR_VALIDO = /^(?!.*__)[A-Za-z0-9_-]+$/;
+function mcpServer(fromEvent) {
+  if (typeof fromEvent === 'string' && SERVIDOR_VALIDO.test(fromEvent)) return fromEvent;
+  try {
+    const c = require('../../../scripts/lib/tycon-config.js').cargar({ env: process.env, home: process.env.HOME || process.env.USERPROFILE || os.homedir() });
+    const v = ((c.valores.integraciones || {}).mcp_servers || {}).clockify;
+    if (typeof v === 'string' && SERVIDOR_VALIDO.test(v)) return v;
+  } catch (_) { /* sin configuración legible, el del manifiesto */ }
+  return 'clockify';
+}
+function mcpTool(name, fromEvent) {
+  return `mcp__${mcpServer(fromEvent)}__${name}`;
+}
+
 // Emite un bloque de system-reminder por stdout. Claude Code lo inyecta en contexto.
 function emitReminder(text) {
   process.stdout.write(`<system-reminder>\n${text.trim()}\n</system-reminder>\n`);
@@ -452,6 +469,8 @@ module.exports = {
   parseHookInput,
   minutesBetween,
   emitReminder,
+  mcpServer,
+  mcpTool,
   findActiveEntryForCwd,
   getSessionEntry,
   flattenActive,

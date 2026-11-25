@@ -1,6 +1,6 @@
 {
   "archivos": 73,
-  "lineas": 226,
+  "lineas": 257,
   "porArchivo": {
     ".github/control-changes/081bc179e3cc1672ceb50f0d7d0a386002838f3fd8d8c04f6bf2a5bd1e378963.json": 1,
     ".github/control-changes/0a8d93523ebe27ac7ab2292034f2da51edffc6b0af09af1d9d60752d3b950454.json": 1,
@@ -12,7 +12,7 @@
     ".github/control-changes/bc5ab7f28eb612c52b3dc7a3dd05950dc4acf5fd2042ecdd7a3e1125ddaa51b3.json": 1,
     "guides/maintaining/piezas-en-detalle.md": 5,
     "guides/maintaining/publicacion-espejo.md": 3,
-    "guides/produccion-con-permiso.md": 1,
+    "guides/production-with-permission.md": 1,
     "guides/safety-guard.md": 1,
     "pipelines/operations/README.md": 3,
     "pipelines/operations/dependency-audit.yml": 4,
@@ -28,7 +28,6 @@
     "scripts/ci/push-nightly-data.js": 1,
     "scripts/ci/queue-validation.js": 19,
     "scripts/controls-bench/exam-smoke.sh": 1,
-    "scripts/hooks/failed-query-notice.js": 1,
     "scripts/hooks/pr-auto-complete-guard.js": 9,
     "scripts/hooks/pr-one-per-repo-guard.js": 8,
     "scripts/hooks/prod-access-guard.js": 2,

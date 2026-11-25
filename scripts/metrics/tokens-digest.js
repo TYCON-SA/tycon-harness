@@ -183,11 +183,32 @@ function esNombreDeCredencial(nombre) {
  * del `=` y encuentra al siguiente.
  */
 function taparCredencialesConNombre(txt) {
-  const re = /(["']?)([A-Za-z][A-Za-z0-9_\-]*)\1(\s*[=:]\s*)/g;
+  // Se prueba sólo desde la primera letra de cada tirada de nombre (y desde la comilla que la abre): las letras de más
+  // adentro llegan al mismo final de la tirada y fallan igual. Probar desde cada una relee la tirada entera, y con una
+  // tirada larga sin espacios (un hash, un base64) el tiempo crece al cuadrado.
+  const re = /(["']?)([A-Za-z][A-Za-z0-9_\-]*)\1(\s*[=:]\s*)/y;
+  const candidato = /["']?[A-Za-z]/g;
+  const tirada = /[A-Za-z0-9_\-]*/y;
   let out = '';
   let pos = 0;
-  let m;
-  while ((m = re.exec(txt)) !== null) {
+  let desde = 0;
+  for (;;) {
+    candidato.lastIndex = desde;
+    const c = candidato.exec(txt);
+    if (!c) break;
+    re.lastIndex = c.index;
+    let m = re.exec(txt);
+    if (!m && c[0].length === 2) {
+      re.lastIndex = c.index + 1;
+      m = re.exec(txt);
+    }
+    if (!m) {
+      tirada.lastIndex = c.index + c[0].length;
+      tirada.exec(txt);
+      desde = tirada.lastIndex;
+      continue;
+    }
+    desde = m.index + m[0].length;
     if (!esNombreDeCredencial(m[2])) continue;
     const ini = m.index + m[0].length;
     const q = txt[ini];
@@ -208,7 +229,25 @@ function taparCredencialesConNombre(txt) {
     }
     out += txt.slice(pos, m.index) + m[0] + tapado;
     pos = fin;
-    re.lastIndex = fin;
+    desde = fin;
+  }
+  return out + txt.slice(pos);
+}
+
+// Los correos, probando una vez por tirada de letras: si desde su comienzo no hay un correo, desde adentro tampoco (llega
+// al mismo final). Cada tirada empieza donde terminó la anterior, así `a@b.c+d@e.f` tapa los dos.
+function taparCorreos(txt) {
+  const correo = /[\w.+-]+@[\w-]+\.[\w.-]+/y;
+  const tirada = /[\w.+-]+/g;
+  let out = '';
+  let pos = 0;
+  let t;
+  while ((t = tirada.exec(txt)) !== null) {
+    correo.lastIndex = t.index;
+    if (!correo.exec(txt)) continue;
+    out += `${txt.slice(pos, t.index)}<correo>`;
+    pos = correo.lastIndex;
+    tirada.lastIndex = pos;
   }
   return out + txt.slice(pos);
 }
@@ -351,7 +390,7 @@ function sanear(txt, home) {
   const taparFormas = (t) => FORMAS_DE_CREDENCIAL.reduce((a, forma) => a.replace(forma, tapar), t);
   // La llave privada se tapa entera primero: una forma que tapara sólo su encabezado dejaría el cuerpo a la vista.
   const sinControl = sinControlesTapandoClaves(String(txt || '').replace(LLAVE_PRIVADA, '<oculto>'));
-  return taparFormas(sinControl
+  const tapado = taparFormas(sinControl
     // La llave privada otra vez: una partida por un control recién ahora queda entera.
     // el usuario y la clave de una dirección: `postgres://usuario:clave@servidor`
     .replace(/(:\/\/)[^\s/:@]+:[^\s/@]+@/g, '$1<oculto>@')
@@ -385,8 +424,8 @@ function sanear(txt, home) {
     .replace(casaConSuResto, '<ruta>')
     .replace(RUTA_ABSOLUTA, '<ruta>')
     .replace(CASA_BARRA, '<ruta>')
-    .replace(CASA_CONTRABARRA, '<ruta>')
-    .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '<correo>')
+    .replace(CASA_CONTRABARRA, '<ruta>');
+  return taparCorreos(tapado)
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<sesión>');
 }
 
@@ -881,6 +920,20 @@ function leerTranscripcion(ruta) {
   return { lineas, ilegibles };
 }
 
+/**
+ * Si la persona eligió la opción que sugería el agente, en los cuadros que se abrieron en el tramo de la corrida (regla
+ * 12.4, suggestion-choices.js). La respuesta se busca en toda la conversación: puede llegar después del tramo. Sin el
+ * medidor, `no_medido`.
+ */
+function decisionesDe(todas, delTramo) {
+  try {
+    const { cuadros_detalle: _detalle, ...cuenta } = require('./suggestion-choices.js').contar(todas, delTramo);
+    return { estado: 'medido', ...cuenta };
+  } catch (e) {
+    return { estado: 'no_medido', motivo: `no pude contar las decisiones: ${e.code || e.message}` };
+  }
+}
+
 /** Índice de llamadas a herramienta con comando, y sus resultados. */
 function indexarComandos(lineas) {
   const usos = new Map();
@@ -1160,6 +1213,8 @@ function rescatarCorrida(volcado, opciones) {
       } else {
         dump.consumo = codex.bloque;
       }
+      // Codex no tiene cuadros de opciones: no hay de dónde contar si la persona eligió la sugerencia
+      if (dump.consumo && !dump.consumo.decisiones) dump.consumo.decisiones = { estado: 'no_medido', motivo: 'una sesión de Codex no tiene cuadros de opciones' };
       res.consumo = dump.consumo;
       res.no_persistido = escribirVolcado(volcado, dump);
       return res;
@@ -1179,7 +1234,8 @@ function rescatarCorrida(volcado, opciones) {
       return res;
     }
     // Sin la clave `tokens`, a propósito: un cero se lee como «esta corrida no consumió nada».
-    dump.consumo = { estado: ubi.estado, motivo: ubi.motivo, proveedor, medido_en: new Date().toISOString() };
+    dump.consumo = { estado: ubi.estado, motivo: ubi.motivo, proveedor, medido_en: new Date().toISOString(),
+      decisiones: { estado: 'no_medido', motivo: `sin la conversación: ${ubi.motivo}` } };
     res.consumo = dump.consumo;
     res.no_persistido = escribirVolcado(volcado, dump);
     return res;
@@ -1195,7 +1251,8 @@ function rescatarCorrida(volcado, opciones) {
       res.no_persistido = escribirVolcado(volcado, dump);
       return res;
     }
-    dump.consumo = { estado: 'no_medido', motivo: leido.error, proveedor, medido_en: new Date().toISOString() };
+    dump.consumo = { estado: 'no_medido', motivo: leido.error, proveedor, medido_en: new Date().toISOString(),
+      decisiones: { estado: 'no_medido', motivo: leido.error } };
     res.consumo = dump.consumo;
     res.no_persistido = escribirVolcado(volcado, dump);
     return res;
@@ -1224,6 +1281,8 @@ function rescatarCorrida(volcado, opciones) {
     const k = costo(c.paraCosto, precios(), { ahora, proveedor });
     if (k) c.costo = k;
   }
+  // sin nada de esta corrida en la conversación, las decisiones tampoco se miden: un cero diría «no hubo cuadros»
+  c.decisiones = c.estado === 'no_medido' ? { estado: 'no_medido', motivo: c.motivo } : decisionesDe(leido.lineas, delTramo.lineas);
   dump.consumo = c;
   res.consumo = c;
 

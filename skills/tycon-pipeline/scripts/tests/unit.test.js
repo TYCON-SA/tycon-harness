@@ -119,6 +119,8 @@ test('advisorsRunSinceStart: sin log / step5-start solo / completo', () => {
   const volverCasa = ponerCarpetaPersonal(tmpHome);
   const prevSid = process.env.CLAUDE_CODE_SESSION_ID;
   process.env.CLAUDE_CODE_SESSION_ID = sid;
+  // pipeline.js y sus partes de lib/, que son las que resuelven las rutas al cargar
+  for (const k of Object.keys(require.cache)) if (/[\\/]lib[\\/]pipeline-[^\\/]+\.js$/.test(k)) delete require.cache[k];
   delete require.cache[require.resolve(path.join(SCRIPTS, 'pipeline.js'))];
   const pl = require(path.join(SCRIPTS, 'pipeline.js'));
   try {
@@ -141,6 +143,7 @@ test('advisorsRunSinceStart: sin log / step5-start solo / completo', () => {
   } finally {
     volverCasa();
     if (prevSid === undefined) delete process.env.CLAUDE_CODE_SESSION_ID; else process.env.CLAUDE_CODE_SESSION_ID = prevSid;
+    for (const k of Object.keys(require.cache)) if (/[\\/]lib[\\/]pipeline-[^\\/]+\.js$/.test(k)) delete require.cache[k];
     delete require.cache[require.resolve(path.join(SCRIPTS, 'pipeline.js'))];
     fs.rmSync(tmpHome, { recursive: true, force: true });
   }
@@ -1896,8 +1899,6 @@ test('post-revision: END-TO-END — el hook de commit avisa, no frena, y lo mide
     env: { ...process.env, ...fakeHomeEnv(fakeHome) }, encoding: 'utf8', stdio: 'pipe',
   });
   git('add', 'database/054_Cleanup.sql');
-  // el commit de la corrida va con el ok de guardar
-  require('./lib/save-ok-lab.js').firmarGuardado(path.join(fakeHome, '.claude', '.tycon-pipeline', 'active', `${SID}.json`), [repo]);
   const res = spawnSync(process.execPath, [path.join(SCRIPTS, 'on-pre-commit.js')], {
     input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', session_id: SID, cwd: repo,
       tool_input: { command: 'git commit -m "x"' } }),
@@ -2147,10 +2148,10 @@ test('atdd: el gate corre de verdad en `complete-step 4` y el bypass queda logue
   assert.match(bloqueado.out, /a\.ts/);
 
   escribirMarker();
+  // el escape sin la firma del dueño no saltea: frena igual y dice cómo pedirla (el camino con firma, en la T4 de 8.283)
   const conFlag = correr(['--no-atdd']);
-  assert.equal(conFlag.code, 0, 'con --no-atdd pasa');
-  const bypassLog = fs.readFileSync(path.join(stateDir, 'bypass.log'), 'utf8');
-  assert.match(bypassLog, /ATDD_BYPASS/, 'y el bypass queda registrado, no es silencioso');
+  assert.notEqual(conFlag.code, 0, 'con --no-atdd y sin firma sigue frenando');
+  assert.match(conFlag.out, /sign-atdd-skip/, 'y dice cómo pedir la firma');
   const gatesLog = fs.readFileSync(path.join(stateDir, 'gates.log'), 'utf8');
   assert.match(gatesLog, /"name":"atdd"/, 'el veredicto queda medido en gates.log');
 
@@ -3055,12 +3056,13 @@ test('atdd-preedit handler: end-to-end con marker real — bloquea, y con test p
   const r3 = handler.handle(ev(path.join(repo, 'src', 'svc.cs')), { stateDir });
   assert.equal(r3, null, 'con test previo el portón está abierto');
 
-  // 4) flag atddBypass en el marker → pasa aunque no haya test
+  // 4) flag atddBypass en el marker sin la firma del dueño → sigue frenando (con firma, la T4 de 8.283)
   marker.fileEvents = [{ path: storyPath, ts: '2026-07-30T10:00:00.000Z' }];
   marker.atddBypass = true;
   fs.writeFileSync(path.join(stateDir, 'active', 'S1.json'), JSON.stringify(marker));
-  const r4 = handler.handle(ev(path.join(repo, 'src', 'svc.cs')), { stateDir });
-  assert.equal(r4, null, 'bypass declarado → pasa (y quedó en bypass.log del state dir)');
+  const r4 = handler.handle(ev(path.join(repo, 'src', 'svc.cs')), { stateDir, casa: tmp });
+  assert.ok(r4 && r4.block, 'la marca sin firma no saltea');
+  assert.match(r4.block, /sign-atdd-skip/, 'y dice cómo pedir la firma');
 
   // 5) sin marker (sesión sin pipeline) → nunca bloquea
   const r5 = handler.handle({ ...ev(path.join(repo, 'src', 'svc.cs')), session_id: 'OTRA' }, { stateDir });
@@ -3207,15 +3209,20 @@ test('atdd-preedit handler: los bloqueos y bypasses dejan rastro auditable (mata
   const gates = fs.readFileSync(path.join(stateDir, 'gates.log'), 'utf8');
   assert.match(gates, /"name":"atdd-preedit"/, 'el bloqueo queda medido en gates.log');
 
-  // Bypass que EVITA un bloqueo → una entrada en bypass.log…
+  // Bypass firmado que EVITA un bloqueo → una entrada en bypass.log…
+  const casa = tmp;
   mk.atddBypass = true;
+  mk.startedAt = '2026-07-30T09:00:00.000Z';
+  mk.runDir = path.join(repo, '.advisors', 'pipeline-runs', '9.9-demo');
   fs.writeFileSync(path.join(stateDir, 'active', 'S4.json'), JSON.stringify(mk));
-  assert.equal(handler.handle(ev(path.join(repo, 'src', 'a.ts')), { stateDir }), null);
+  const firmada = require('./lib/atdd-skip-lab.js').firmaDeJuguete({ casa, story: '9.9', carpeta: mk.runDir, ejecucion: mk.startedAt });
+  assert.equal(firmada.codigo, 0, firmada.motivo);
+  assert.equal(handler.handle(ev(path.join(repo, 'src', 'a.ts')), { stateDir, casa }), null);
   const bypassLog = fs.readFileSync(path.join(stateDir, 'bypass.log'), 'utf8');
   assert.match(bypassLog, /ATDD_PREEDIT_BYPASS/, 'el bypass usado queda en bypass.log');
 
   // …pero una edición que pasaría IGUAL (un .md) NO agrega ruido al log (F6).
-  assert.equal(handler.handle(ev(path.join(repo, 'docs', 'x.md')), { stateDir }), null);
+  assert.equal(handler.handle(ev(path.join(repo, 'docs', 'x.md')), { stateDir, casa }), null);
   const lineas = fs.readFileSync(path.join(stateDir, 'bypass.log'), 'utf8').trim().split('\n');
   assert.equal(lineas.length, 1, 'sólo el bypass que evitó un bloqueo real se loguea');
   fs.rmSync(tmp, { recursive: true, force: true });
@@ -3472,7 +3479,7 @@ test('marker set: el cambio de story RESETEA atddBypass (F1 — el permiso no se
   fs.rmSync(fakeHome, { recursive: true, force: true });
 });
 
-test('marker complete-step 4: el flag atddBypass satisface el gate (F3 — un solo escape, no dos)', () => {
+test('marker complete-step 4: el flag atddBypass sin firma no satisface el gate', () => {
   const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'mk-cs4-'));
   const activeDir = path.join(fakeHome, '.claude', '.tycon-pipeline', 'active');
   fs.mkdirSync(activeDir, { recursive: true });
@@ -3493,11 +3500,9 @@ test('marker complete-step 4: el flag atddBypass satisface el gate (F3 — un so
   // Sin flag → bloquea (control).
   fs.writeFileSync(path.join(activeDir, `${SID}.json`), JSON.stringify(mk));
   assert.throws(() => run(), /BLOQUEADO/, 'sin bypass el cierre frena');
-  // Con atddBypass=true (el escape que dictó el portón) → pasa, sin exigir --no-atdd aparte.
+  // Con atddBypass=true puesto antes de la firma (una marca vieja) → frena igual y dice cómo pedirla.
   fs.writeFileSync(path.join(activeDir, `${SID}.json`), JSON.stringify({ ...mk, atddBypass: true }));
-  run();
-  const bypassLog = fs.readFileSync(path.join(fakeHome, '.claude', '.tycon-pipeline', 'bypass.log'), 'utf8');
-  assert.match(bypassLog, /ATDD_BYPASS/, 'y queda auditado igual que --no-atdd');
+  assert.throws(() => run(), /sign-atdd-skip/, 'la marca sin firma no saltea');
   fs.rmSync(fakeHome, { recursive: true, force: true });
 });
 
@@ -7820,34 +7825,22 @@ test('T11 EscapeAtdd_PideMotivo @story-1.32 @ac-10', () => {
       assert.match(r.stderr, /--reason/);
       assert.equal(fs.readFileSync(markerPath, 'utf8'), antes, 'el marcador queda igual');
     }
-    // con motivo: se guarda, y las dos constancias lo llevan
-    const ok = correr(['set-flag', 'atddBypass', 'true', '--reason', 'migración de 21 .cs']);
-    assert.equal(ok.status, 0, ok.stderr);
-    const m = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
-    assert.equal(m.atddBypass, true);
-    assert.equal(m.atddBypassReason, 'migración de 21 .cs');
-    const handler = require(path.join(SCRIPTS, 'on-atdd-preedit.js'));
-    const conPrevio = { ...m, fileEvents: [] };
-    fs.writeFileSync(markerPath, JSON.stringify(conPrevio));
-    const ed = handler.handle({ hook_event_name: 'PreToolUse', tool_name: 'Edit', session_id: SID,
-      tool_input: { file_path: path.join(repo, 'src', 'b.cs') } }, { stateDir });
-    assert.equal(ed, null, 'con el escape, la edición pasa');
-    fs.writeFileSync(markerPath, JSON.stringify(m));
-    const cierre = correr(['complete-step', 'implement']);
-    assert.equal(cierre.status, 0, cierre.stderr);
-    const log = fs.readFileSync(path.join(stateDir, 'bypass.log'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-    const pre = log.find((l) => l.kind === 'ATDD_PREEDIT_BYPASS');
-    const imp = log.find((l) => l.kind === 'ATDD_BYPASS');
-    assert.equal(pre && pre.reason, 'migración de 21 .cs');
-    assert.equal(imp && imp.reason, 'migración de 21 .cs');
-    // apagarlo no pide motivo y borra el que había
+    // con motivo y sin la firma del dueño: también se niega, sin tocar el marcador, y dice cómo pedir la firma (el camino
+    // firmado, en la T4 de 8.283)
+    const antes = fs.readFileSync(markerPath, 'utf8');
+    const sinFirma = correr(['set-flag', 'atddBypass', 'true', '--reason', 'migración de 21 .cs']);
+    assert.equal(sinFirma.status, 2, sinFirma.stderr);
+    assert.match(sinFirma.stderr, /sign-atdd-skip/);
+    assert.equal(fs.readFileSync(markerPath, 'utf8'), antes, 'el marcador queda igual');
+    // apagarlo no pide motivo ni firma y borra el que había
+    fs.writeFileSync(markerPath, JSON.stringify({ ...JSON.parse(antes), atddBypass: true, atddBypassReason: 'de antes' }));
     const apaga = correr(['set-flag', 'atddBypass', 'false']);
     assert.equal(apaga.status, 0, apaga.stderr);
     const m2 = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
     assert.equal(m2.atddBypass, false);
     assert.equal(m2.atddBypassReason, undefined);
     // el reinicio de la corrida (otra story) borra los dos
-    correr(['set-flag', 'atddBypass', 'true', '--reason', 'otro']);
+    fs.writeFileSync(markerPath, JSON.stringify({ ...m2, atddBypass: true, atddBypassReason: 'otro' }));
     const set = correr(['set', JSON.stringify({ storyId: '9.10', storyPath, stepsPending: ['implement'] }), '--replace']);
     assert.equal(set.status, 0, set.stderr);
     const m3 = JSON.parse(fs.readFileSync(markerPath, 'utf8'));

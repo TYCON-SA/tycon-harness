@@ -689,7 +689,7 @@
           "type": "must-emit",
           "__doc": "story 8.3 (AC 9, octava integración `nightly`): con la lib de configuración al lado del hook y sin perfil ni llave, «esta máquina no espera los nocturnos del equipo»: el banco nocturno detenido y las suites nocturnas detenidas NO se denuncian (afuera gritarían en cada arranque), pero el banco LOCAL en rojo sí se dice. El examen de revisores sigue hablando siempre (decisión del dev, 2026-09-26).",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/tycon-config.js $(ls $TCG/scripts/lib/profile-only.js 2>/dev/null) tcg/scripts/lib/",
             "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
             "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\"",
             "node -e \"require('fs').writeFileSync('ultimo-banco.json',JSON.stringify({ts:new Date(Date.now()-3*864e5).toISOString(),tool:'both',ran:380,failed:4,skipped:0,nomedido:0,parityBreaks:0,baselineRegressions:1,origen:'azure-pipelines',estado:'completo'}))\"",
@@ -718,7 +718,7 @@
             "TYCON_NIGHTLY": "1"
           },
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/tycon-config.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/controls-bench/.bench && cp $TCG/scripts/hooks/bench-notice.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/tycon-config.js $(ls $TCG/scripts/lib/profile-only.js 2>/dev/null) tcg/scripts/lib/",
             "mkdir -p tcg/scripts/controls-bench && cp $TCG/scripts/controls-bench/*.js tcg/scripts/controls-bench/",
             "node -e \"require('fs').writeFileSync('ultimo-examen.json',JSON.stringify({kind:'examen-periodico',estado:'completo',alcance:'completo',ts:new Date().toISOString(),criterio:0,inestables:0,paridadReal:0,baselineRegressions:0,maquina:'mini'}))\"",
             "node -e \"require('fs').writeFileSync('ultimo-banco.json',JSON.stringify({ts:new Date(Date.now()-3*864e5).toISOString(),tool:'both',ran:380,failed:4,skipped:0,nomedido:0,parityBreaks:0,baselineRegressions:1,origen:'azure-pipelines',estado:'completo'}))\"",

@@ -269,7 +269,7 @@ files in repos, and there are two ways to change it:
 
 | If you are… | You need | You don't need |
 |---|---|---|
-| A solo dev, without the site | the install on your machine | organization repos, or a GitHub or Azure DevOps account |
+| A solo dev, without the site | the install on your machine | organization repos, or a GitHub, Azure DevOps or GitLab account |
 | A solo dev, with the site | the install, a team repo and an operations repo (an organization of one), and the site with its sign-in; the shared run history, if you want to see your runs there | the nightly jobs, unless you want the morning notice and the dashboard |
 | The admin of a team, without the site | the install and the team repo, readable by the team; the operations repo, if you want the nightly jobs | the site |
 | The admin of a team, with the site | all of the above, the operations repo with `site.access` (who signs in to the site), the site and, to see everybody's runs, the shared run history | — |
@@ -321,7 +321,7 @@ node $HOME/.tycon/harness/scripts/setup/harness.js team-init
 ```
 
 It asks for whatever you did not pass as an option: the organization name (`--name`: unaccented letters, digits, dot and
-dash), where the team repo lives (`--platform github|azure` and `--profile-repo`, a GitHub `org/repo` or the repo's
+dash), where the team repo lives, on GitHub or Azure DevOps (not on GitLab yet; `--platform github|azure` and `--profile-repo`, a GitHub `org/repo` or the repo's
 address on Azure DevOps, whose form is in [Azure DevOps](../guides/integrations/ado-projects.md#la-url-de-un-repo)) and the folder for the files (`--dir`; by default `~/<repo>`; a
 folder with something in it is left alone). It downloads the published example (`harness-team-profile-example`) and
 writes only the three required files:
@@ -343,7 +343,7 @@ commit on `main`. The harness reads it from that folder (`harness.js install --t
 on `main`. It takes two steps: the first install, the package line on the front page, does not accept a folder in
 `--team`, only a GitHub or Azure DevOps repo. Install first without `--team`, build the profile, then install with `--team <folder>`.
 Your reviewer packs go there, so they survive updates (`guides/reviewer-packs.en.md`, "If you work alone").
-While it lives only on your machine, `doctor` warns that it has no backup; to get one, push it to GitHub or Azure DevOps
+While it lives only on your machine, `doctor` warns that it has no backup; to get one, push it to GitHub or Azure DevOps (not GitLab yet)
 and install again with `--team <address>`.
 
 ## Minimal or full install
@@ -452,7 +452,7 @@ sudo bash ~/.tycon/harness/scripts/production/install-guard.sh --allow-auto-upda
 ```
 
 What it enables, what it rehearses before replacing and what does not install itself:
-[guides/produccion-con-permiso.md](../guides/produccion-con-permiso.md).
+[guides/production-with-permission.md](../guides/production-with-permission.md).
 
 ## What it writes on your machine and what it does on its own
 

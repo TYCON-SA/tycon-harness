@@ -120,7 +120,7 @@ Agent(
 
 Si la fase de código pasó sin chequeo previo (por ejemplo un spike o un arreglo en ejecución no planeado), «Revisores»
 (`step-07-reviewers.md`) invoca en paralelo `tycon-spec-first-checker` con `phase: post-implementation` sobre
-`modified_files` para detectar deriva residual antes de preparar el commit.
+`modified_files` para detectar deriva residual antes de preparar el pull request.
 
 ### Referencias
 
@@ -140,16 +140,18 @@ Si la fase de código pasó sin chequeo previo (por ejemplo un spike o un arregl
 > de test: la edición no ocurre, sin importar qué skill esté ejecutando. Por qué: con las tareas ya implementadas antes
 > de ningún test, el gate del cierre avisa cuando el trabajo ya está hecho. (El clasificador no cuenta la story `.md`
 > bajo `specs/` como «test»: contarla dejaba el gate del cierre verde en todas las ejecuciones.) Escape consciente para
-> refactors sobre red preexistente: `marker.js set-flag atddBypass true --reason "<por qué>"` (sin motivo se niega; el
-> motivo queda en `bypass.log`). Un guion de medición de `tasks/measurement-<algo>/` que la story no declara no cuenta
+> refactors sobre red preexistente: `marker.js set-flag atddBypass true --reason "<por qué>"` (sin motivo se niega; sin
+> la firma del dueño tampoco: anota el pedido y da el comando de `sign-atdd-skip`; el motivo queda en `bypass.log`). Un guion de medición de `tasks/measurement-<algo>/` que la story no declara no cuenta
 > como código, y uno de `scripts/ci/pruebas/` o `scripts/ci/tests/` cuenta como prueba.
 >
 > **Qué NO bloquea** (calibrado para no dar falsos positivos): una story sin código (docs/specs) pasa; un refactor que
 > toca código y ningún test **avisa pero pasa** (la red son los tests preexistentes); un marcador sin `fileEvents`
 > avisa `unknown` y pasa. Los tres casos quedan medidos en `gates.log`.
 >
-> **Escape consciente**: `marker.js complete-step implement --no-atdd --reason "<por qué>"` — queda en `bypass.log` con
-> el detalle y el motivo.
+> **Escape consciente**: `marker.js complete-step implement --no-atdd --reason "<por qué>"` — lo firma el dueño, no el
+> agente: sin su firma para la ejecución (`marker.js sign-atdd-skip --story <S> --reason <R>`, en la ventana o con
+> `--terminal`) frena igual y deja el pedido anotado. Una firma vale para la ejecución entera (también para la marca
+> `atddBypass` del portón previo) y queda en `bypass.log` con el detalle y el motivo. Sólo se pide cuando el freno frena.
 >
 > **Por qué existe**: el ATDD era la ÚNICA regla del pipeline sin gate mecánico, y por eso era la que se salteaba. Sin
 > gate, escribir código y después test, tarea por tarea, sólo lo detecta una persona leyendo el transcript. Y un test
@@ -247,7 +249,8 @@ portón de arriba. Actualiza `Agent Model Used`, `Debug Log References`, `Comple
 **Con una maqueta aprobada** (story con pantalla, «Aprobar el plan»): la maqueta fija el contenido y los estados, no la
 forma de presentarlos. La forma sale de la story y de la guía del stack del producto. Donde la maqueta marca una capa
 (`presentation: "layer"`, «Se abre encima de … con …»), se construye una capa, que se abre con ese botón o enlace y
-tiene `role="dialog"` o `aria-modal="true"`. Sólo la contradice una story que diga literalmente
+tiene `role="dialog"` o `aria-modal="true"`; un menú o una lista desplegable llevan `role="menu"` o `role="listbox"`, o son
+un popover. Sólo la contradice una story que diga literalmente
 «en la página» o «no modal», y entonces la maqueta se corrige y se aprueba de nuevo antes de construir. Palabras como
 «panel» o «sección» no la contradicen. Donde no marca nada, la story y la guía dicen si va en la página o encima.
 
@@ -265,7 +268,7 @@ cierra como deuda y **sigue hasta el commit**.
 4. Las pruebas: primero, ajustarlas para que verifiquen la deuda mantenida y documentada (verde normal). Sólo si no se
    puede, con el mismo permiso: `marker.js expect-red <control> --tests <T2,T5>`, que registra el rojo como esperado.
 5. Seguir el pipeline: los revisores corren sobre lo que sí cambió (pruebas, historia, documentación), el pase
-   adversarial con su regla de siempre, y «Preparar el commit» pone la línea `Deuda: <DEF-id> — <motivo>`.
+   adversarial con su regla de siempre, y «Preparar el pull request» pone la línea `Deuda: <DEF-id> — <motivo>`.
 
 Apagar el modo autónomo o cerrar la ejecución no es una salida: deja la historia como si hubiera terminado, sin deuda.
 
@@ -311,7 +314,7 @@ no se saltea (detalle en `step-06-run-tests.md` §«Modo autónomo»).
 node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-step implement
 ```
 
-Aplica el freno ATDD (ver 4.0). Para el escape consciente, `--no-atdd`.
+Aplica el freno ATDD (ver 4.0). Para el escape consciente, `--no-atdd`, con la firma del dueño.
 
 ## Output de este paso
 
