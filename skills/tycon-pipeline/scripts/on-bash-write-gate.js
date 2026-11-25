@@ -289,17 +289,36 @@ function stripNonCommandText(s, hondo = 0) {
 const HONDO_DE_CITADOS = 4;
 
 /**
- * Si en `t[i]` empieza una sustitución (`$(…)` o la comilla invertida), dónde termina (contando los paréntesis que se
- * abren adentro): el índice de su último carácter, -1 si no cierra, o `i` si ahí no empieza ninguna.
+ * Si en `t[i]` empieza una sustitución (`$(…)` o la comilla invertida), dónde termina: el índice de su último carácter,
+ * -1 si no cierra, o `i` si ahí no empieza ninguna. Cuenta los paréntesis que se abren adentro y salta lo citado: un `)`
+ * entre comillas (`$(grep -c ')' f)`) no la cierra.
  */
 function cierreDeUnaSustitucion(t, i) {
   if (t[i] === '`') return t.indexOf('`', i + 1);
   if (t[i] !== '$' || t[i + 1] !== '(') return i;
   let hondo = 0;
   for (let j = i + 1; j < t.length; j++) {
-    if (t[j] === '\\') { j++; continue; }
-    if (t[j] === '(') hondo++;
-    else if (t[j] === ')' && --hondo === 0) return j;
+    const c = t[j];
+    if (c === '\\') { j++; continue; }
+    if (c === "'") {
+      // `$'…'`: la barra escapa
+      if (t[j - 1] === '$') { j++; while (j < t.length && t[j] !== "'") j += t[j] === '\\' ? 2 : 1; } else j = t.indexOf("'", j + 1);
+      if (j < 0 || j >= t.length) return -1;
+      continue;
+    }
+    if (c === '"') {
+      for (j++; j < t.length && t[j] !== '"'; j++) {
+        if (t[j] === '\\') { j++; continue; }
+        const f = cierreDeUnaSustitucion(t, j);
+        if (f === -1) return -1;
+        j = f;
+      }
+      if (j >= t.length) return -1;
+      continue;
+    }
+    if (c === '`') { j = t.indexOf('`', j + 1); if (j < 0) return -1; continue; }
+    if (c === '(') hondo++;
+    else if (c === ')' && --hondo === 0) return j;
   }
   return -1;
 }
@@ -322,10 +341,23 @@ function leerCitados(t, hondo) {
   if (hondo >= HONDO_DE_CITADOS) {
     return { texto: t.replace(/(^|[^>\w])(?<!tee[ \t]+)(?<!>[ \t]*)(['"])((?:\\.|(?!\2)[^\\])*)\2/g, (m, pre, q, body) => (/^[^\s'"|;&<>`()]+$/.test(body) ? m : `${pre}${q}${q}`)), comandos: [] };
   }
-  // el texto que se arma, y su punta (mirar la punta del texto armado lo recompone entero cada vez)
+  // el texto que se arma, y de su punta la última palabra (sus últimas letras) y si la siguen blancos: mirar la punta del
+  // texto armado lo recompone entero cada vez
   let out = '';
-  let cola = '';
-  const agregar = (x) => { out += x; cola = (cola + x).slice(-32); };
+  let palabra = '';
+  let blancos = false;
+  const esBlanco = (ch) => ch === ' ' || ch === '\t';
+  const agregar = (x) => {
+    out += x;
+    // de atrás para adelante: sus blancos del final y la palabra de antes
+    let fin = x.length;
+    while (fin > 0 && esBlanco(x[fin - 1])) fin--;
+    let ini = fin;
+    while (ini > 0 && !esBlanco(x[ini - 1])) ini--;
+    if (fin === 0) { blancos = blancos || x.length > 0; return; }
+    palabra = (ini === 0 && !blancos ? palabra + x.slice(0, fin) : x.slice(ini, fin)).slice(-8);
+    blancos = fin < x.length;
+  };
   const comandos = [];
   // lo que corre adentro de una sustitución, leído igual (sin sus heredocs ni sus comentarios): su texto, que también es
   // un comando, y el de las sustituciones de adentro
@@ -364,7 +396,9 @@ function leerCitados(t, hondo) {
     }
     // sin cierre, el resto queda como está
     if (j >= t.length) { agregar(t.slice(i)); break; }
-    const queda = /^[^\s'"|;&<>`()]+$/.test(t.slice(i + 1, j)) || /[>\w]$/.test(cola) || />[ \t]*$/.test(cola) || /\btee[ \t]+$/.test(cola);
+    // queda si parece un nombre de archivo, si va pegado a una palabra o a un `>`, o si lo siguen blancos detrás de un `>`
+    // o de `tee`: es el destino
+    const queda = /^[^\s'"|;&<>`()]+$/.test(t.slice(i + 1, j)) || (!blancos && /[>\w]$/.test(palabra)) || palabra.endsWith('>') || (blancos && palabra.endsWith('tee'));
     agregar(queda ? t.slice(i, j + 1) : `${c}${c}`);
     i = j;
   }

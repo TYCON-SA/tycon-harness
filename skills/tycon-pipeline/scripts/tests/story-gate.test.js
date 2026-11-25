@@ -1242,10 +1242,19 @@ test('CopiaAlEstado_AdentroDeUnaSustitucion_Frena (fila 247, el freno)', () => {
     const pasa = (cmd) => assert.equal(bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }), null, JSON.stringify(cmd));
     for (const cmd of [`echo $(cp ${S} '${res}')`, `echo \`cp ${S} '${res}'\``, `echo \${x:-$(cp ${S} '${res}')}`,
       `echo "\${x:-$(cp ${S} '${res}')}"`, `x="$(mv ${S} '${res}')"`, `echo "$(echo "$(cp ${S} '${res}')")"`]) frena(cmd);
+    // de la primera vuelta: un paréntesis citado adentro de la sustitución no la cierra antes, y el comando de después se
+    // sigue leyendo
+    for (const cmd of [`x=$(grep -c ')' ${S}); cp ${S} '${res}'; echo 'z'`, `x=$(echo "a)"); cp ${S} '${res}'; echo 'z'`,
+      `x=$(grep -c '(' ${S}); cp ${S} '${res}'; echo "z"`]) frena(cmd);
+    // un destino citado con un blanco adentro, muchos blancos después de `>` o de tee
+    const conBlanco = `"${E}/plan-review/s1/a b.json"`;
+    frena(`echo x >${' '.repeat(40)}${conBlanco}`);
+    frena(`echo x | tee${' '.repeat(40)}${conBlanco}`);
     // lo de todos los días sigue pasando
     pasa(`echo $(cp ${S} '${repo}/copia.json')`);
     pasa(`x="$(git log -1 --format='%h > %s')"`);
     pasa(`echo "hoy: $(date +%F)" > '${repo}/notas.txt'`);
+    assert.deepEqual(bash.extractWriteTargets(`n=$(grep -c ')' f); git commit -m "a.ts => b.ts"`), []);
   });
 });
 
