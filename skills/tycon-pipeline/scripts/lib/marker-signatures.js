@@ -97,8 +97,9 @@ function pedidoDeFirma(storyPath, argv, m) {
   // los que cubre el rojo esperado vigente de la deuda ya tienen su salida: no frenan la exención de los imposibles
   const notRun = sinCorrerFueraDeLaDeuda(m, matrix);
   if (notRun.length) {
-    return no(2, `🚫 marker.js runtime-waiver RECHAZADO — hay criterios SIN CORRER que no se pueden eximir: AC ${notRun.map((n) => '#' + n).join(', ')}. Los corre el agente.`,
-      '   O, si de verdad no se pueden probar en vivo, se declaran en el frontmatter `runtime_not_verifiable:` (reason + covered_by).');
+    // la pista de qué declarar la imprime sólo el chequeo previo: la salida de la firma queda como estaba
+    return { ...no(2, `🚫 marker.js runtime-waiver RECHAZADO — hay criterios SIN CORRER que no se pueden eximir: AC ${notRun.map((n) => '#' + n).join(', ')}. Los corre el agente.`),
+      pista: '   O, si de verdad no se pueden probar en vivo, se declaran en el frontmatter `runtime_not_verifiable:` (reason + covered_by).' };
   }
   const pend = new Set(matrix.notVerifiable || []);
   // sin --acs, todos los pendientes: la ventana los muestra en el comando que la persona aprueba
@@ -1084,6 +1085,7 @@ function cmdCheckRuntimeWaiver(storyArg, argv = []) {
   if (pedido.rechazo) {
     console.log(`no pasaría — la firma de ${storyPath} saldría rechazada así:`);
     for (const l of pedido.rechazo.lineas) console.log(l);
+    if (pedido.pista) console.log(pedido.pista);
     process.exit(1);
   }
   console.log(`pasaría: la firma de los criterios imposibles de probar en vivo AC ${pedido.pedidos.join(', ')} de ${pedido.matrix.sid} se aceptaría. No firmé nada.`);
