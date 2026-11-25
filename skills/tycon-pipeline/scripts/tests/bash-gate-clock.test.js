@@ -35,7 +35,7 @@ if (workerData.modo === 'net') {
 const entrada = fs.readFileSync(0, 'utf8');
 require(process.env.CLOCK_LIB).entregarEntrada(parentPort, workerData, entrada);
 if (modo === 'slow' || modo === 'slow-hung') require(process.env.CLOCK_LIB).anotarPaso('leyendo un guion de juguete');
-if (modo === 'slow') spawnSync('sleep', ['2.4']);
+if (modo === 'slow') spawnSync('sleep', ['3.4']);
 if (modo === 'slow-hung') for (;;);
 if (modo === 'loop') for (;;);
 if (modo === 'regex') /(a+)+$/.test('a'.repeat(60) + 'b');
@@ -199,12 +199,12 @@ test('T3b BashGateClock_ClockDoesNotLoad_RunsAsToday @story-8.308 @ac-3 — sin 
 test('T7 BashGateClock_SlowOrCut_LogsWhereItWas — el freno lento o cortado anota cuánto tardó y en qué paso', (t) => {
   const c = corral(t);
   const { contar } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'hooks', 'hook-failures-notice.js'));
-  // un reloj de 4 s y una espera de 2,4 s: margen para una máquina cargada
-  const cuatro = { TOY_SECONDS: '4' };
-  let r = c.correr('slow', 'ls', cuatro);
+  // un reloj de 6 s y una espera de 3,4 s: margen para una máquina cargada
+  const seis = { TOY_SECONDS: '6' };
+  let r = c.correr('slow', 'ls', seis);
   assert.deepStrictEqual([r.status, r.stdout], [0, 'largo 2'], r.stderr);
   const lento = c.registro();
-  assert.match(lento, /^\[[^\]]+\] on-bash-write-gate LENTO: decidió en \d+ ms, con un tope de 4 s; el paso más lento: leyendo un guion de juguete \(\d+ ms\)\n/);
+  assert.match(lento, /^\[[^\]]+\] on-bash-write-gate LENTO: decidió en \d+ ms, con un tope de 6 s; el paso más lento: leyendo un guion de juguete \(\d+ ms\)\n/);
   // tardar no es fallar: el aviso de arranque no lo cuenta
   assert.strictEqual(contar(lento, Date.parse(/^\[([^\]]+)\]/.exec(lento)[1])).size, 0, lento);
   fs.rmSync(c.log, { force: true });
@@ -221,11 +221,11 @@ test('T7 BashGateClock_SlowOrCut_LogsWhereItWas — el freno lento o cortado ano
 test('T7b BashGateClock_RealGate_SlowStepIsNamed — el freno de verdad dice en qué paso se le fue el tiempo', (t) => {
   const c = corral(t);
   const previa = path.join(c.dir, 'lenta.js');
-  // el paso del stash se demora 3,2 s (sin lanzar procesos), con un reloj de 6 s: el arranque del freno de verdad, con la
-  // máquina cargada, se come parte del reloj
-  fs.writeFileSync(previa, "const M = require('module'); const c = M._load; M._load = function (p, ...r) { if (String(p).endsWith('stash-guard.js')) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3200); return c.call(this, p, ...r); };\n");
+  // el paso del stash se demora 6,5 s (sin lanzar procesos), con un reloj de 12 s: el arranque del freno de verdad, con
+  // la máquina cargada (la CI corre cuatro suites a la vez), se come varios segundos del reloj
+  fs.writeFileSync(previa, "const M = require('module'); const c = M._load; M._load = function (p, ...r) { if (String(p).endsWith('stash-guard.js')) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 6500); return c.call(this, p, ...r); };\n");
   const f = freno(t, ['-r', previa]);
-  const r = f.correr('git stash list', { TYCON_BASH_GATE_TIMEOUT_S: '6' });
+  const r = f.correr('git stash list', { TYCON_BASH_GATE_TIMEOUT_S: '12' });
   assert.strictEqual(r.status, 0, r.stderr);
-  assert.match(f.registro(), /on-bash-write-gate LENTO: decidió en \d+ ms, con un tope de 6 s; el paso más lento: mirando un stash \((3[2-9]|[4-9]\d)\d\d ms\)/);
+  assert.match(f.registro(), /on-bash-write-gate LENTO: decidió en \d+ ms, con un tope de 12 s; el paso más lento: mirando un stash \((6[5-9]\d\d|[7-9]\d\d\d|\d{5}) ms\)/);
 });
