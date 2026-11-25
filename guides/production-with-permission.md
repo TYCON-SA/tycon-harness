@@ -259,6 +259,27 @@ está siguiendo (pasó: diecinueve consultas en 26 segundos). El subagente devue
 las corre de a una. Claude Code avisa al freno cuando llama un subagente, pero no si es de fondo: por eso se frenan
 todos.
 
+**La puerta va en primer plano.** Su cuadro vence a los 2 minutos, y una puerta corrida de fondo lo abre sin que nadie
+lo esté mirando: el pedido se cancela solo, sin cambiar nada, y la sesión no sabe qué pasó. Por eso el freno frena la
+puerta pedida de fondo (`run_in_background`) y la pedida por el Monitor, que corre de fondo siempre. Frena todas las
+formas, también una lectura que no abre cuadro: la regla es una sola. Lo que hay que hacer es avisarle antes a la persona
+qué cuadro va a aparecer y qué tiene que hacer en él, y correr la puerta en primer plano con un tope de 5 minutos
+(`timeout: 300000`). El tope hace falta porque la consola de Claude Code corta a los 2 minutos, y la puerta puede
+esperar hasta 90 segundos su turno y otros 2 minutos el cuadro. Cada bloqueo queda anotado con la regla
+`puerta-de-fondo`.
+
+**Cuando no se aprueba, la puerta dice por qué.** Sale con código 2, sin leer la clave ni cambiar nada, con uno de tres
+mensajes. Los tres empiezan igual, «la persona no aprobó esta sentencia» (u «operación»), y siguen con la causa:
+
+- **Vencido** («el cuadro se venció a los 120 s sin respuesta»): nadie contestó a tiempo. Si la puerta corrió de fondo,
+  nadie vio el cuadro: corré la puerta en primer plano, con el tope, y avisá antes qué cuadro va a aparecer.
+- **Rechazado**: la persona apretó «Rechazar», es decir, dijo que no. Preguntale por qué antes de volver a pedirlo.
+- **Sin cuadro** («el cuadro no se pudo abrir»): el programa del cuadro salió con error, no contestó o contestó algo que
+  la puerta no entiende. Entre paréntesis va lo que se sabe, como el código con que salió el programa.
+
+El registro de producción anota los tres como `"accion":"rechazada"`, con su `"motivo"`: `vencido`, `rechazado` o
+`sin-cuadro`. Sólo la respuesta exacta de «Aprobar» aprueba.
+
 **La consulta va siempre en línea.** El cuadro muestra el comando y nada más: lo que trae un archivo no se ve
 antes de aprobar, así que la puerta no acepta archivos. Una consulta puede ocupar varios renglones dentro de
 las comillas simples. Si le pedís a la puerta un archivo, el freno no deja pasar el comando y, cuando el archivo

@@ -824,6 +824,19 @@ function decidir(entrada) {
         'puerta de a una, esperando cada respuesta.',
       ], { cmd }, 'puerta-subagente');
     }
+    // 🔴 La puerta no corre de fondo, con ninguna forma: abre un cuadro que vence a los 120 s, y de fondo nadie lo mira, así
+    // que el pedido se cancela solo y la sesión no sabe por qué. Una lectura no abre cuadro, pero la regla es una sola: una
+    // con excepciones es otra forma de equivocarse. El Monitor corre de fondo sin la marca `run_in_background`.
+    // Un primer plano sin tope no se frena: anda si la persona contesta antes de que la consola corte.
+    const pedido = payload.tool_input || {};
+    if (pedido.run_in_background === true || payload.tool_name === 'Monitor') {
+      frenar('la puerta de producción no corre de fondo.', [
+        'Abre un cuadro de aprobación que vence a los 120 s, y de fondo nadie lo ve: el pedido se cancela solo, sin aprobar.',
+        'Corré la puerta en primer plano, con un tope de 5 minutos (timeout: 300000). Antes, decile a la persona',
+        'qué cuadro va a aparecer y qué tiene que hacer en él.',
+        'La puerta puede esperar hasta 90 s su turno y hasta 120 s el cuadro; sin ese tope, la consola corta a los 120 s.',
+      ], { cmd }, 'puerta-de-fondo');
+    }
     const limpio = cmd.trim();
     // 🔴 UN SOLO segmento: el host de la forma canónica era `\S+` y aceptaba `;`, `&&`, `|`, `$(…)`
     // y `` ` `` — el shell parte ahí y la segunda mitad corría SIN pasar por la puerta (ejecución

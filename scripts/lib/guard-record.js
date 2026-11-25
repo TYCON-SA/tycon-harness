@@ -71,8 +71,10 @@ const FRENOS = {
   // como el shell. No es una falla del freno —ésa es `no-pude-mirar`— y por eso tiene su propia regla.
   // `borrado-de-azure`: un borrado de grupo, candado o recurso de Azure que puede llevarse un servidor de producción.
   // `puerta-subagente`: un subagente llamó a la puerta; el cuadro lo contesta una persona que mira la sesión principal.
+  // `puerta-de-fondo`: la puerta pedida de fondo (con `run_in_background` o por el Monitor); su cuadro vence sin que nadie lo vea.
   'prod-access-guard': {
-    reglas: ['host-no-declarado', 'produccion', 'no-pude-mirar', 'puerta-no-canonica', 'nombre-indecidible', 'borrado-de-azure', 'puerta-subagente'],
+    reglas: ['host-no-declarado', 'produccion', 'no-pude-mirar', 'puerta-no-canonica', 'nombre-indecidible', 'borrado-de-azure', 'puerta-subagente',
+      'puerta-de-fondo'],
     veredictos: ['bloqueo', 'paso'],
   },
   // Los tres hooks del CIERRE (viven en agent-skills y llaman acá vía
