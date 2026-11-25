@@ -1389,21 +1389,24 @@ test('EscrituraAlEstado_ConFormasDelShellQueLaExpresionNoLee_Frena (fila 228, el
       frena(`echo x ${op} '${res}'`);
       frena(`echo x ${op}'${res}'`);
     }
-    // P2: `<>` abre el archivo para leer y escribir, y lo crea
-    for (const op of ['1<>', '<>', '3<>', '1<> ']) frena(`cat ${S} ${op}'${res}'`);
-    frena(`: <>'${res}'`);
-    // P3: un `;` o una tubería entre comillas en la palabra de una redirección no parte el tramo
-    for (const palabra of [`>'a;b'`, `>'a|b'`, `2>"a;b"`, `>"a&b"`]) frena(`cp ${S} '${res}' ${palabra}`);
-    // P4: un destino citado con blancos u operadores adentro, o con un blanco escapado
-    for (const nombre of [`"${E}/a b.json"`, `'${E}/a<c.json'`, `'${E}/a;b.json'`, `${E}/a\\ b.json`, `"${E}/plan-review/s1/a b.json"`]) {
-      frena(`cp ${S} ${nombre}`);
-      frena(`echo x > ${nombre}`);
-    }
-    // P5: una asignación con una sustitución, una lista o una redirección con blancos delante del programa
-    for (const delante of ['TS=$(date +%s)', 'TS=`date +%s`', 'X=${a:-b c}', 'X=(a b)', 'X=1 <<<$(echo a b)']) {
-      frena(`${delante} cp ${S} '${res}'`);
-      frena(`${delante} sed -i.bak s/a/b/ '${res}'`);
-      frena(`${delante} truncate -s0 '${res}'`);
+    // P4: un destino citado con blancos u operadores adentro, o con un blanco escapado, detrás de una redirección
+    const citados = [`"${E}/a b.json"`, `'${E}/a<c.json'`, `'${E}/a;b.json'`, `${E}/a\\ b.json`, `"${E}/plan-review/s1/a b.json"`];
+    for (const nombre of citados) frena(`echo x > ${nombre}`);
+    for (const delante of ['TS=$(date +%s)', 'TS=`date +%s`', 'X=${a:-b c}', 'X=(a b)', 'X=1 <<<$(echo a b)']) frena(`${delante} truncate -s0 '${res}'`);
+    // lo que sigue lo lee el lector compartido; una instalación sin él (un clon de skills suelto) no lo ve
+    if (CON_LECTOR) {
+      // P2: `<>` abre el archivo para leer y escribir, y lo crea
+      for (const op of ['1<>', '<>', '3<>', '1<> ']) frena(`cat ${S} ${op}'${res}'`);
+      frena(`: <>'${res}'`);
+      // P3: un `;` o una tubería entre comillas en la palabra de una redirección no parte el tramo
+      for (const palabra of [`>'a;b'`, `>'a|b'`, `2>"a;b"`, `>"a&b"`]) frena(`cp ${S} '${res}' ${palabra}`);
+      // P4: el mismo destino citado, como argumento de cp
+      for (const nombre of citados) frena(`cp ${S} ${nombre}`);
+      // P5: una asignación con una sustitución, una lista o una redirección con blancos delante del programa
+      for (const delante of ['TS=$(date +%s)', 'TS=`date +%s`', 'X=${a:-b c}', 'X=(a b)', 'X=1 <<<$(echo a b)']) {
+        frena(`${delante} cp ${S} '${res}'`);
+        frena(`${delante} sed -i.bak s/a/b/ '${res}'`);
+      }
     }
     // lo de siempre sigue pasando
     pasa(`TS=$(date +%s) cp ${S} '${repo}/copia.json'`);
@@ -1426,26 +1429,29 @@ test('DestinosAlEstado_DetrasDeEnvoltoriosYSustituciones_SeLeen (fila 228, el fr
   const res = path.join(E, 'plan-review', 's1', 's1.resultado.json');
   const S = path.join(E, '..', 'falso.json');
   const visto = (cmd) => assert.ok(bash.extractWriteTargets(cmd).includes(res), JSON.stringify(cmd));
-  // los comandos de adentro de una sustitución, también entre comillas dobles o pegada a otro programa
-  for (const cmd of [`echo $(cp ${S} '${res}')`, `x=$(cp ${S} "${res}")`, `echo "$(cp ${S} '${res}')"`, `echo \`cp ${S} '${res}'\``,
-    `/bin/sed$(/bin/cp ${S} ${res})`, `diff <(cp ${S} '${res}') a`]) visto(cmd);
-  // una sustitución detrás del destino puede no dar ninguna palabra: el destino puede ser la de antes
-  visto(`cp ${S} '${res}' $(true)`);
-  // el texto de `env -S`, que env parte en palabras y corre
-  for (const cmd of [`env -S 'cp ${S} ${res}'`, `env -S"cp ${S} ${res}"`, `env --split-string='cp ${S} ${res}'`, `env -iS 'cp ${S} ${res}'`]) visto(cmd);
-  // los archivos que escribe rsync por sus opciones
-  for (const op of ['--log-file=', '--log-file ', '--write-batch=', '--only-write-batch ']) visto(`rsync ${op}'${res}' a b`);
+  // de acá hasta los envoltorios lo lee el lector compartido; una instalación sin él (un clon de skills suelto) no lo ve
+  if (CON_LECTOR) {
+    // los comandos de adentro de una sustitución, también entre comillas dobles o pegada a otro programa
+    for (const cmd of [`echo $(cp ${S} '${res}')`, `x=$(cp ${S} "${res}")`, `echo "$(cp ${S} '${res}')"`, `echo \`cp ${S} '${res}'\``,
+      `/bin/sed$(/bin/cp ${S} ${res})`, `diff <(cp ${S} '${res}') a`]) visto(cmd);
+    // una sustitución detrás del destino puede no dar ninguna palabra: el destino puede ser la de antes
+    visto(`cp ${S} '${res}' $(true)`);
+    // el texto de `env -S`, que env parte en palabras y corre
+    for (const cmd of [`env -S 'cp ${S} ${res}'`, `env -S"cp ${S} ${res}"`, `env --split-string='cp ${S} ${res}'`, `env -iS 'cp ${S} ${res}'`]) visto(cmd);
+    // los archivos que escribe rsync por sus opciones
+    for (const op of ['--log-file=', '--log-file ', '--write-batch=', '--only-write-batch ']) visto(`rsync ${op}'${res}' a b`);
+    // una sustitución pegada al nombre de un envoltorio o de tee
+    visto(`nohup$(:/ ) cp ${S} '${res}'`);
+    visto(`tee$(:/ ) '${res}' < ${S}`);
+    // un destino escrito con el citado ANSI-C, con o sin escapes
+    visto(`echo x > $'${res}'`);
+    visto(`cp ${S} $'${res.slice(0, -1)}\\x6e'`);
+  }
   // el programa detrás de `time -p`, de los modificadores de zsh, de `=cp` y de `$'cp'`
   for (const delante of ['time -p', 'noglob', 'nocorrect', 'sudo -iu root', 'sudo -nu root', 'sudo -T 5', 'sudo -R /']) visto(`${delante} cp ${S} '${res}'`);
   for (const nombre of ['=cp', "$'cp'", "$'\\x63p'"]) visto(`${nombre} ${S} '${res}'`);
   // de la segunda vuelta: el valor pegado a una opción del envoltorio (`-uroot`, `-uP`) no hace saltar el programa
   for (const delante of ['sudo -uroot', 'sudo -nuroot', 'sudo -ghost', 'sudo -Dtmp', 'env -uP', 'env -uHTTPS']) visto(`${delante} cp ${S} '${res}'`);
-  // una sustitución pegada al nombre de un envoltorio o de tee
-  visto(`nohup$(:/ ) cp ${S} '${res}'`);
-  visto(`tee$(:/ ) '${res}' < ${S}`);
-  // un destino escrito con el citado ANSI-C, con o sin escapes
-  visto(`echo x > $'${res}'`);
-  visto(`cp ${S} $'${res.slice(0, -1)}\\x6e'`);
   // lo de siempre no suma destinos
   assert.deepEqual(bash.extractWriteTargets(`echo "$(git log -1)"; env -S 'true'`), []);
   assert.deepEqual(bash.extractWriteTargets(`time -p ls; noglob echo a*`), []);
