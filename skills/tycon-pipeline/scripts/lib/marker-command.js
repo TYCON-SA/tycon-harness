@@ -599,11 +599,9 @@ function escapeDe(llamada, sid, comando = null) {
     if (deUnControl) return porSuGuion('cerrar-como-deuda') ? null : 'cerrar como deuda';
     return porSuGuion('rojo-esperado-de-la-matriz') ? null : 'rojo esperado de la matriz';
   }
-  if (sub === 'clear-session') {
-    const v = args[0];
-    if (!v || !lit(v)) return 'cerrar la ejecución';
-    return sid && v.texto.toLowerCase() !== String(sid).toLowerCase() ? null : 'cerrar la ejecución';
-  }
+  // la propia o la de otra sesión: cerrar una ejecución abierta lo decide la persona, desde cualquier sesión. De quién es
+  // la ejecución lo mira el freno (run-close.js): la de la sesión nombrada
+  if (sub === 'clear-session') return 'cerrar la ejecución';
   // `update-story-status <historia> <estado>`: cuenta el estado; la ruta puede venir en una variable
   if (sub === 'update-story-status') {
     const v = args[1];

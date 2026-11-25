@@ -56,7 +56,7 @@ for f in "${RUTAS[@]}"; do
     if (/\$[A-Za-z_][A-Za-z0-9_]*[\x80-\xFF]/) { chomp; print "$.:$_\n"; }
   ')"
   if [ -n "$salida" ]; then
-    while IFS= read -r l; do echo "$f:$l"; HALLAZGOS=$((HALLAZGOS+1)); done <<< "$salida"
+    while IFS= read -r l; do echo "$f:$l"; HALLAZGOS=$((HALLAZGOS+1)); done < <(printf '%s\n' "$salida")
   fi
 done
 
