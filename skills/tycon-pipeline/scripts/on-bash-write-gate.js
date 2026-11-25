@@ -277,16 +277,98 @@ function cpMvDest(seg) {
  *  - los strings entre comillas que NO son el token inmediato tras `>`/`>>`/`tee` (`-m "..."`, `-e "..."`,
  *    `grep "sed -i"`), para que su contenido no se lea como redirecciones ni como archivos.
  */
-function stripNonCommandText(s) {
+function stripNonCommandText(s, hondo = 0) {
   // Heredocs: <<EOF / <<-EOF / <<'EOF' / <<"EOF" … hasta la línea que es sólo el delimitador, con el mismo lector que
   // los tramos (`quitarCuerposDeHeredoc`): un `<<EOF` adentro de un comentario no abre nada, y lo de abajo corre. Después,
   // los comentarios: una comilla adentro de uno no abre un texto entre comillas que se vacía con lo de abajo
-  let t = conComentariosApagados(quitarCuerposDeHeredoc(s));
-  // Strings entre comillas que no siguen a un operador de redirección / tee: se vacían (quedan las comillas), salvo
-  // los que pueden ser un nombre de archivo (sin espacios ni operadores): `cp a "<dir>/b.md"` sigue nombrando su destino.
-  t = t.replace(/(^|[^>\w])(?<!tee[ \t]+)(?<!>[ \t]*)(['"])((?:\\.|(?!\2)[^\\])*)\2/g,
-    (m, pre, q, body) => (/^[^\s'"|;&<>`()]+$/.test(body) ? m : `${pre}${q}${q}`));
-  return t;
+  const t = conComentariosApagados(quitarCuerposDeHeredoc(s));
+  return vaciarCitados(t, hondo);
+}
+
+// cuántas sustituciones adentro de otras se leen como comandos: más hondo, quedan las otras lecturas
+const HONDO_DE_CITADOS = 4;
+
+/**
+ * Si en `t[i]` empieza una sustitución (`$(…)` o la comilla invertida), dónde termina (contando los paréntesis que se
+ * abren adentro): el índice de su último carácter, -1 si no cierra, o `i` si ahí no empieza ninguna.
+ */
+function cierreDeUnaSustitucion(t, i) {
+  if (t[i] === '`') return t.indexOf('`', i + 1);
+  if (t[i] !== '$' || t[i + 1] !== '(') return i;
+  let hondo = 0;
+  for (let j = i + 1; j < t.length; j++) {
+    if (t[j] === '\\') { j++; continue; }
+    if (t[j] === '(') hondo++;
+    else if (t[j] === ')' && --hondo === 0) return j;
+  }
+  return -1;
+}
+
+/**
+ * `t` con sus textos entre comillas vaciados (quedan las comillas), para que su contenido no se lea como redirecciones
+ * ni como archivos. No se vacían los que pueden ser un nombre de archivo (sin blancos ni operadores: `cp a "<dir>/b.md"`
+ * sigue nombrando su destino), los que siguen a un `>` o a `tee`, ni los pegados a una palabra. Entre comillas simples
+ * una barra es una letra (`'x\'` termina ahí); en `$'…'`, escapa. Lo que corre adentro de una sustitución
+ * (`x="$(cat > f <<'EOF' … )"`, `${x:-$(cp a b)}`) es comando: se suma al final, cada uno en su renglón.
+ */
+function vaciarCitados(t, hondo = 0) {
+  const { texto, comandos } = leerCitados(t, hondo);
+  return comandos.length ? `${texto}\n${comandos.join('\n')}` : texto;
+}
+
+/** La lectura de `vaciarCitados`: `{ texto, comandos }`, el texto vaciado y lo que corre en sus sustituciones. */
+function leerCitados(t, hondo) {
+  // más hondo que el tope, como se leía antes: una expresión que vacía todo lo citado
+  if (hondo >= HONDO_DE_CITADOS) {
+    return { texto: t.replace(/(^|[^>\w])(?<!tee[ \t]+)(?<!>[ \t]*)(['"])((?:\\.|(?!\2)[^\\])*)\2/g, (m, pre, q, body) => (/^[^\s'"|;&<>`()]+$/.test(body) ? m : `${pre}${q}${q}`)), comandos: [] };
+  }
+  // el texto que se arma, y su punta (mirar la punta del texto armado lo recompone entero cada vez)
+  let out = '';
+  let cola = '';
+  const agregar = (x) => { out += x; cola = (cola + x).slice(-32); };
+  const comandos = [];
+  // lo que corre adentro de una sustitución, leído igual (sin sus heredocs ni sus comentarios): su texto, que también es
+  // un comando, y el de las sustituciones de adentro
+  const sustitucion = (desde, fin) => {
+    const r = leerCitados(conComentariosApagados(quitarCuerposDeHeredoc(t.slice(desde, fin))), hondo + 1);
+    comandos.push(r.texto, ...r.comandos);
+    return r.texto;
+  };
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (c === '\\') { agregar(t.slice(i, i + 2)); i++; continue; }
+    const fin = cierreDeUnaSustitucion(t, i);
+    if (fin === -1) { agregar(t.slice(i)); break; }
+    if (fin > i) {
+      const abre = c === '`' ? 1 : 2;
+      agregar(t.slice(i, i + abre) + sustitucion(i + abre, fin) + t[fin]);
+      i = fin;
+      continue;
+    }
+    if (c !== '"' && c !== "'") { agregar(c); continue; }
+    let j = i + 1;
+    if (c === "'") {
+      // `$'…'` con un `$` suelto delante (no el segundo de `$$`): ahí la barra escapa
+      let pesos = 0;
+      while (i - 1 - pesos >= 0 && t[i - 1 - pesos] === '$') pesos++;
+      if (pesos % 2 === 1) { while (j < t.length && t[j] !== "'") j += t[j] === '\\' ? 2 : 1; } else { j = t.indexOf("'", i + 1); if (j < 0) j = t.length; }
+    } else {
+      // entre comillas dobles corren las sustituciones, y su comilla de adentro no cierra la de afuera
+      while (j < t.length && t[j] !== '"') {
+        if (t[j] === '\\') { j += 2; continue; }
+        const f = cierreDeUnaSustitucion(t, j);
+        if (f === -1) { j = t.length; break; }
+        if (f > j) { const abre = t[j] === '`' ? 1 : 2; sustitucion(j + abre, f); j = f + 1; continue; }
+        j++;
+      }
+    }
+    // sin cierre, el resto queda como está
+    if (j >= t.length) { agregar(t.slice(i)); break; }
+    const queda = /^[^\s'"|;&<>`()]+$/.test(t.slice(i + 1, j)) || /[>\w]$/.test(cola) || />[ \t]*$/.test(cola) || /\btee[ \t]+$/.test(cola);
+    agregar(queda ? t.slice(i, j + 1) : `${c}${c}`);
+    i = j;
+  }
+  return { texto: out, comandos };
 }
 
 /** `cd <dir> && …` al inicio: el dir contra el que resolver targets relativos (best-effort). */
