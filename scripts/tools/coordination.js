@@ -187,6 +187,8 @@ function codexThreads(codexHome, problems) {
   try {
     const { DatabaseSync } = require('node:sqlite');
     db = new DatabaseSync(path.join(codexHome, newest), { readOnly: true });
+    // Codex toma su base unos instantes mientras escribe: se espera hasta un segundo antes de decir que no se pudo leer
+    db.exec('PRAGMA busy_timeout = 1000');
     const cols = new Set(db.prepare('PRAGMA table_info(threads)').all().map((c) => c.name));
     const where = [
       cols.has('source') ? "COALESCE(source, '') <> 'exec'" : null,
