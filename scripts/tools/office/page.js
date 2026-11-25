@@ -56,6 +56,9 @@ const EN={
   "sin dato":"no data","sin hora":"no time","una conversación sin su forma":"a conversation without its shape","Última acción":"Last action","Escribí un número, como T-41 o 41.":"Type a number, such as T-41 or 41.",
   "Esta máquina no tiene coordinadora designada: no hay con quién cruzar los mensajes.":"This machine has no designated coordinator: there is no one to cross the messages with.",
   "No pude dibujar la última novedad; muestro la anterior.":"I could not draw the latest update; showing the previous one.",
+  "Firma":"Signature","Cuadro":"Question box","Del tablero":"From the board","Pendiente":"Pending",
+  "Sin una opción recomendada anotada.":"No recommended option noted.",
+  "Para contestarla desde acá, abrí la oficina viva con /office.":"To answer it from here, open the live office with /office.",
   "Avance":"Progress","Cerradas":"Closed","Cerrar":"Close","Contexto":"Context","Cuándo":"When","Encargo":"Assignment","Espera":"Waits","Grupo":"Group","Haciendo":"Doing","Historia":"Story","Mandar":"Send",
   "Marca":"Mark","Modelo":"Model","Motivo":"Reason","Nada":"Nothing","Nota":"Note","Novedades":"News","Pedido":"Request","Prometido":"Promised","Propuesta":"Proposal","Quitada":"Removed","Quitar":"Remove",
   "Quién":"Who","Riesgo":"Risk","Termina":"Ends","Trabado":"Stuck"
@@ -71,6 +74,8 @@ const EN={
 // las frases con un dato adentro: el texto entero, con el dato en su lugar. Una función recibe lo encontrado y traduce lo
 // que hace falta de adentro
 const PATRONES_EN=[
+  [/^Dónde se contesta: (.+)$/,"Where to answer it: $1"],[/^Por qué sólo vos: (.+)$/,"Why only you: $1"],[/^Recomendada: (.+)$/,"Recommended: $1"],
+  [/^(Firma|Cuadro|Espera|Del tablero|Pendiente): (.+)$/,"$1: $2"],
   [/^Agrandar la oficina de (.+)$/,"Enlarge the office of $1"],[/^sin novedades desde las (.+)$/,"no news since $1"],[/^sin conexión desde (.+)$/,"no connection since $1"],
   [/^Te toca: (.+)$/,"Your turn: $1"],[/^Trabado: (.+)$/,"Stuck: $1"],[/^Conversación de (.+)$/,"Conversation with $1"],[/^Escribirle a (.+)$/,"Write to $1"],[/^Mensaje para (.+)$/,"Message for $1"],
   [/^La oficina de (.+)$/,"The office of $1"],[/^Las sesiones de (.+)$/,"The sessions of $1"],[/^Al día a las (.+)$/,"Up to date at $1"],[/^pedidos leídos a las (.+)$/,"requests read at $1"],

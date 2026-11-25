@@ -219,17 +219,40 @@ function sinPalabrasDeBloque(seg) {
 }
 
 /**
- * Los destinos de un cp / mv: con `-t` / `--target-directory` (también `-rt`, `-t<carpeta>`), la carpeta y cada archivo
- * que llega a ella; si no, el último token una vez sacadas las redirecciones del final (`cp a b 2>&1`).
+ * Las palabras de un tramo sin su comentario del final ni sus redirecciones: las de salida (`2>&1`, `> f`) y las de
+ * entrada (`< f`, `<<< palabra`, `<<EOF`, `<<-'EOF'`), cuyo archivo o delimitador no es un argumento del comando. Sin la
+ * barra suelta del final (`cp a b \` sin renglón siguiente), que tampoco es el último argumento.
  */
-function cpMvDest(seg) {
+function palabrasDelComando(seg) {
   // un comentario al final no es parte del comando
-  const sinComentario = seg.replace(/(^|\s)#.*$/, '');
-  const sinRedir = sinComentario.replace(/[ \t]*(?:&|\d)?>{1,2}(?:\||&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ');
+  const sinComentario = String(seg).replace(/(^|\s)#.*$/, '');
+  const sinRedir = sinComentario
+    .replace(/[ \t]*(?:&|\d)?>{1,2}(?:\||&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ')
+    .replace(/(?:(?<!\S)\d)?<(?:<<|<-?|&|>)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ');
   const words = (sinRedir.trim().match(new RegExp(Q, 'g')) || []).map((w) => {
     const mm = w.match(new RegExp(`^${Q}$`));
     return mm ? tok(mm, 1) : null;
   }).filter(Boolean);
+  if (words[words.length - 1] === '\\') words.pop();
+  return words;
+}
+
+// Una redirección delante del comando (`> f cp a b`, `2>/dev/null cp a b`, `<<<x cp a b`): el comando es lo que sigue
+const REDIRECCION_DELANTE = /(?:(?:&|\d)?>{1,2}(?:\||&)?|\d?<(?:<<|<-?|&|>)?)[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)[ \t]*/y;
+function sinRedireccionesDelante(seg) {
+  const t = String(seg).trim();
+  let i = 0;
+  REDIRECCION_DELANTE.lastIndex = 0;
+  while (REDIRECCION_DELANTE.test(t)) i = REDIRECCION_DELANTE.lastIndex;
+  return t.slice(i);
+}
+
+/**
+ * Los destinos de un cp / mv: con `-t` / `--target-directory` (también `-rt`, `-t<carpeta>`), la carpeta y cada archivo
+ * que llega a ella; si no, el último argumento (`palabrasDelComando`, sin redirecciones: `cp a b 2>&1`, `cp a b <<<x`).
+ */
+function cpMvDest(seg) {
+  const words = palabrasDelComando(sinRedireccionesDelante(seg));
   // con varios -t vale el último, como en cp
   let dir = null;
   const fuera = new Set([0]);   // el nombre del comando, y lo que nombra la carpeta
@@ -244,13 +267,6 @@ function cpMvDest(seg) {
   if (dir === null) { const t = words.slice(1).filter((w) => !w.startsWith('-')).pop(); return t ? [t] : []; }
   const fuentes = words.filter((w, i) => !fuera.has(i) && !w.startsWith('-'));
   return [dir, ...fuentes.map((f) => `${dir.replace(/[\\/]+$/, '')}/${f.split(/[\\/]/).pop()}`)];
-}
-
-function lastWord(seg) {
-  const words = seg.trim().match(new RegExp(Q, 'g')) || [];
-  if (!words.length) return null;
-  const m = words[words.length - 1].match(new RegExp(`^${Q}$`));
-  return m ? tok(m, 1) : null;
 }
 
 /**
@@ -464,12 +480,24 @@ function subcomandosComoComodin(cmd, seguro) {
   return { cmd: texto, destinos };
 }
 
-/** Devuelve los paths (tal cual aparecen) que el comando escribe. */
+/**
+ * Devuelve los paths (tal cual aparecen) que el comando escribe. Lo mira con los renglones como vienen y, si el comando
+ * tiene continuaciones de renglón, también unidos como los une el shell (`cp a \` y `b` abajo es `cp a b`): cuentan los
+ * destinos de las dos lecturas, así unir los renglones nunca hace ver menos que no unirlos.
+ */
 function extractWriteTargets(cmd, { keep = null } = {}) {
   const out = new Set();
   const raw = String(cmd || '');
   const s = stripNonCommandText(raw);
+  destinosDeEscritura(raw, s, keep, out);
+  // los cuerpos de los heredocs ya no están (`stripNonCommandText`): se puede unir aunque el comando tenga uno
+  const unidos = sinContinuaciones(s, { sinCuerpos: true });
+  if (unidos !== s) destinosDeEscritura(raw, unidos, keep, out);
+  return [...out];
+}
 
+/** Agrega a `out` los destinos de escritura de `s` (el comando ya sin lo que no es comando); `raw`, el comando entero. */
+function destinosDeEscritura(raw, s, keep, out) {
   // 1) redirecciones: `> f`, `>> f`, `2> f`, `&> f`, `>| f`, `>& f` (no `>&2`, no `<`)
   const reRedirect = new RegExp(`(?:^|[^<>&])(?:&|\\d)?>{1,2}(?:\\||&(?![\\d-]))?[ \\t]*${Q}`, 'g');
   let m;
@@ -527,8 +555,9 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
     }
     // 4) cp / mv / ln → destino = último token del segmento (un enlace también deja un archivo en su destino). También
     //    las formas de PowerShell de cp y mv (Copy-Item / Move-Item y sus alias copy / cpi / move / mi; no distingue
-    //    mayúsculas): por la herramienta PowerShell de Windows.
-    if (/^(?:\w+=\S+\s+)*(?:sudo\s+)?(?:cp|mv|ln)\b/.test(seg.trim()) || /^(?:copy-item|move-item|copy|cpi|move|mi)\b/i.test(seg.trim())) {
+    //    mayúsculas): por la herramienta PowerShell de Windows. Una redirección delante (`> f cp a b`) no es el comando.
+    const comando = sinRedireccionesDelante(seg);
+    if (/^(?:\w+=\S+\s+)*(?:sudo\s+)?(?:cp|mv|ln)\b/.test(comando) || /^(?:copy-item|move-item|copy|cpi|move|mi)\b/i.test(comando)) {
       for (const t of cpMvDest(seg)) out.add(t);
     }
   }
@@ -588,8 +617,8 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
   const reDd = /\bdd\b[^\n|;&]*?\bof=(['"]?)([^\s'"]+)\1/g;
   while ((m = reDd.exec(s))) out.add(m[2]);
   for (const seg of splitSegments(s)) {
-    if (/^(?:\w+=\S+\s+)*(?:sudo\s+)?truncate\b/.test(seg.trim())) {
-      const t = lastWord(seg);
+    if (/^(?:\w+=\S+\s+)*(?:sudo\s+)?truncate\b/.test(sinRedireccionesDelante(seg))) {
+      const t = palabrasDelComando(sinRedireccionesDelante(seg)).pop();
       if (t && !t.startsWith('-')) out.add(t);
     }
   }
@@ -627,8 +656,6 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
       if (valor) out.add(valor);
     }
   }
-
-  return [...out];
 }
 
 // ── lo que el registro tampoco ve: un intérprete que escribe en un destino armado, y borrar o deshacer ────────────
@@ -873,9 +900,10 @@ const sinGrupo = (w) => {
  * un heredoc no une nada: en su cuerpo la barra es texto, y unir la línea de cierre correría el cierre a un renglón posterior
  * y borraría lo que hay en el medio.
  */
-function sinContinuaciones(cmd) {
+function sinContinuaciones(cmd, { sinCuerpos = false } = {}) {
   const s = String(cmd);
-  if (s.includes('<<')) return s;
+  // con `sinCuerpos`, quien llama ya sacó los cuerpos de los heredocs: une igual
+  if (!sinCuerpos && s.includes('<<')) return s;
   let out = '';
   let q = null;
   for (let i = 0; i < s.length; i++) {
@@ -2544,34 +2572,72 @@ function salidaAjenaALaRevision(cmd, cwd, stateDir, installedRoots) {
   // esto cierra el camino fácil, no una falsificación armada a propósito
   const nombraLaRevision = /(^|[^\w-])plan-review|\}-review|tycon[\\/]state|\.tycon-pipeline/i.test(String(cmd || ''));
   const cambiaDeCarpeta = /(^|[;&|(\s])(?:cd|pushd)(\s|$)/.test(String(cmd));
-  // los corredores del pase: sólo la lista de la organización, como la escribe el arnés; revisores propios, nunca
-  const opcionesDelArnes = (w) => {
-    if (w.some((x) => x === '--agents-dir' || x.startsWith('--agents-dir='))) return false;
-    const ri = w.findIndex((x) => x === '--runners' || x.startsWith('--runners='));
-    if (ri < 0) return true;
-    const lista = w[ri].startsWith('--runners=') ? w[ri].slice('--runners='.length) : w[ri + 1];
-    return !!lista && lista === corredoresDeLaOrganizacion().lista;
-  };
-  // el pedido que preparó el arnés, una sola vez y de una sola forma: `--args-file '<carpeta de la revisión>/<destino>.args.json'`
-  // (la que imprime marker.js plan-review), o la de antes, `--args "$(cat '<…>.args.json')"`, que sigue en las corridas
-  // que ya la tenían impresa
-  const pedidoDelArnes = (tramo, w) => {
-    const delPedido = (ruta) => {
-      const archivo = resolveTarget(ruta, cwd, process.platform, { homeVariable: true });
-      return /\.args\.json$/.test(archivo) && enLaRevision(archivo);
-    };
-    const todos = String(tramo).match(/(?:^|\s)--args(?:=|\s)/g) || [];
-    const conArchivo = w.filter((x) => x === '--args-file' || x.startsWith('--args-file='));
-    if (conArchivo.length) {
-      if (conArchivo.length !== 1 || todos.length) return false;
-      const i = w.indexOf(conArchivo[0]);
-      const ruta = conArchivo[0].startsWith('--args-file=') ? conArchivo[0].slice('--args-file='.length) : w[i + 1];
-      // una ruta que no se lee hasta correr (una variable, una sustitución) no es la que preparó el arnés
-      return !!ruta && !/[$`]/.test(ruta) && delPedido(ruta);
+  // las palabras del comando como las lee el shell, sólo en la forma que imprime el arnés: un solo comando, con caracteres
+  // simples sin comillas y tramos entre comillas simples, pegados o no, y un comentario al final. Otra cosa (una barra
+  // invertida, comillas dobles, `$`, `~`, comodines, un `#` pegado, otro renglón con algo, también después del
+  // comentario, que el shell termina en el salto de renglón) no es esa forma, y el freno no la lee distinto que el shell: null
+  const palabrasDelCorredor = (comando) => {
+    const t = String(comando);
+    const w = [];
+    let actual = null;
+    // lo que queda desde `i` es un salto de renglón (o nada) y después sólo los blancos del shell: un `\r`, un espacio
+    // duro, `\f` o `\v` el shell los toma como parte de una palabra o como otro comando
+    const terminaAca = (i) => !/[^ \t\n]/.test(t.slice(i));
+    for (let i = 0; i < t.length;) {
+      const c = t[i];
+      if (c === '\n') { if (!terminaAca(i)) return null; break; }
+      if (c === ' ' || c === '\t') { if (actual !== null) { w.push(actual); actual = null; } i++; continue; }
+      if (c === '#' && actual === null) {
+        const fin = t.indexOf('\n', i);
+        if (fin >= 0 && !terminaAca(fin)) return null;
+        break;
+      }
+      if (c === "'") {
+        const j = t.indexOf("'", i + 1);
+        if (j < 0) return null;
+        actual = (actual || '') + t.slice(i + 1, j);
+        i = j + 1;
+        continue;
+      }
+      if (!/[A-Za-z0-9_./,=:+@%-]/.test(c)) return null;
+      actual = (actual || '') + c;
+      i++;
     }
-    const m = String(tramo).match(/(?:^|\s)--args\s+"\$\(cat\s+(?:'([^']+)'|([^\s'"()$`]+))\)"(?=\s|$)/);
-    if (todos.length !== 1 || !m) return false;
-    return delPedido(m[1] || m[2]);
+    if (actual !== null) w.push(actual);
+    return w;
+  };
+  // una ruta absoluta, sin `.` ni `..`: la misma para el freno y para el shell, en cualquier carpeta
+  const exacta = (p) => path.isAbsolute(p) && path.normalize(p) === p && !p.endsWith(path.sep);
+  // el corredor del pase como lo imprime marker.js plan-review (lib/plan-review.js, comandoLite), solo y como el comando
+  // entero: `node` (el del PATH: una ruta, `./node` o `nodejs` puede ser un programa de la sesión), los dos guiones del
+  // arnés, el pedido y el --out una vez cada uno y, si va, la lista de corredores de la organización; revisores propios o
+  // `--args`, nunca. El pedido es la pareja exacta del --out que se mira, `<carpeta de la revisión de este estado>/<sesión>/
+  // <destino>.args.json` y `<…>/<destino>.resultado.json`: por la carpeta real, no por su nombre, y un archivo común, no un
+  // enlace (si todavía no existe, el corredor no lo lee y no escribe nada)
+  const esElCorredor = (comando, abs) => {
+    const w = palabrasDelCorredor(comando);
+    if (!w || w.length < 3 || w[0] !== 'node') return false;
+    if (!exacta(w[1]) || !exacta(w[2]) || !delArnes(w[1], 'workflow-lite.js') || !delArnes(w[2], 'adversarial-verify.workflow.js')) return false;
+    const op = {};
+    for (let i = 3; i < w.length; i++) {
+      const m = /^--(args-file|out|runners)(?:=(.*))?$/.exec(w[i]);
+      if (!m || op[m[1]] !== undefined) return false;
+      const v = m[2] !== undefined ? m[2] : w[++i];
+      if (!v) return false;
+      op[m[1]] = v;
+    }
+    const pedido = op['args-file'];
+    if (!pedido || !op.out || !exacta(pedido) || !exacta(op.out)) return false;
+    if (op.runners !== undefined && op.runners !== corredoresDeLaOrganizacion().lista) return false;
+    const destino = /^(.+)\.resultado\.json$/.exec(path.basename(op.out));
+    if (!destino || pedido !== path.join(path.dirname(op.out), `${destino[1]}.args.json`)) return false;
+    const carpeta = installedTree.realPath(path.dirname(op.out));
+    if (!carpeta || !carpetas.some((c) => installedTree.realPath(c) === path.dirname(carpeta))) return false;
+    // el --out que se mira es éste
+    if (!abs || installedTree.realPath(path.dirname(abs)) !== carpeta || path.basename(abs) !== path.basename(op.out)) return false;
+    let st = null;
+    try { st = fs.lstatSync(pedido); } catch (e) { if (!e || e.code !== 'ENOENT') return false; }
+    return (!st || st.isFile()) && installedTree.realPath(pedido) === path.join(carpeta, path.basename(pedido));
   };
   for (const tramo of tramos(cmd)) {
     const w = palabras(tramo);
@@ -2585,10 +2651,7 @@ function salidaAjenaALaRevision(cmd, cwd, stateDir, installedRoots) {
       const opaco = /[$`]/.test(destino) || (cambiaDeCarpeta && !path.isAbsolute(destino) && !/^~/.test(destino));
       const abs = opaco ? null : resolveTarget(destino, cwd, process.platform, { homeVariable: true });
       if (opaco ? !nombraLaRevision : !enLaRevision(abs)) continue;
-      const corredor = !opaco && destinos.length === 1 && /^(?:.*[\\/])?node(?:js)?(?:\.exe)?$/i.test(w[0] || '') && w[1] && w[2]
-        && delArnes(w[1], 'workflow-lite.js') && delArnes(w[2], 'adversarial-verify.workflow.js') && pedidoDelArnes(tramo, w)
-        && opcionesDelArnes(w);
-      if (!corredor) return abs || destino;
+      if (opaco || destinos.length !== 1 || !esElCorredor(cmd, abs)) return abs || destino;
     }
   }
   return null;

@@ -64,10 +64,13 @@ Sin coordinadora, el «aprobado» de la revisión que lanza la propia sesión ap
   lee el portón de CI.
 - **La sesión no puede escribirse el veredicto**: la carpeta `plan-review/` del estado está protegida contra lo que el
   agente escribe, mueve o borra, y el resultado vale sólo desde la ruta que nombró la preparación (el `--out` del
-  corredor). El corredor del arnés pasa sólo con el pedido que preparó el arnés, una sola vez (`--args-file
-  '<…>.args.json'`; los args van en un archivo porque en Windows no entran en la línea de comando): con un pedido armado
-  a mano, otro `--out`, un destino en una variable o relativo después de un `cd`, o revisores
-  propios (`--agents-dir`, otra lista de `--runners`), el freno lo para. Con la herramienta Workflow
+  corredor). El corredor del arnés pasa sólo como lo imprime `marker.js plan-review`: con el pedido que preparó el
+  arnés, una sola vez y por su ruta exacta (`--args-file '<…>/<destino>.args.json'`, absoluta, al lado del `--out` y
+  en la carpeta de la revisión del estado; los args van en un archivo porque en Windows no entran en la línea de
+  comando). Con un pedido armado a mano o leído de otra ruta (un `..`, otra carpeta con el mismo nombre, `~` o una ruta
+  relativa), palabras que el shell lee distinto (una barra invertida, comillas dobles, `$`), otro `--out`, un destino
+  en una variable o relativo después de un `cd`, la forma vieja `--args "$(cat …)"`, o revisores propios
+  (`--agents-dir`, otra lista de `--runners`), el freno lo para. Con la herramienta Workflow
   de Claude Code el resultado pasa por la sesión, no llega a esa ruta, y el plan espera a una persona.
 - **La sesión no puede sacarse el click**: la variable `TYCON_PLAN_ROUTINE_APPROVAL` sólo aprieta (`person`); en
   `review` no saca el que pide la organización. Una llave de quién aprueba mal escrita, o una configuración de la
