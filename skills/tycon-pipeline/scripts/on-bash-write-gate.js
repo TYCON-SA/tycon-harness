@@ -244,7 +244,7 @@ function sinCerrar(redireccion) {
   return (a >= 0 && !redireccion.includes(')', a)) || (b >= 0 && !redireccion.includes('}', b));
 }
 
-function palabrasDelComando(seg) {
+function palabrasDelComando(seg, { conVacias = false } = {}) {
   // un comentario al final no es parte del comando
   const sinComentario = String(seg).replace(/(^|\s)#.*$/, '');
   // con una sustitución sin cerrar no se sabe dónde termina el comando: `words.sinCerrar` lo dice, y quien busca el
@@ -258,7 +258,7 @@ function palabrasDelComando(seg) {
   const words = (sinRedir.trim().match(new RegExp(Q, 'g')) || []).map((w) => {
     const mm = w.match(new RegExp(`^${Q}$`));
     return mm ? tok(mm, 1) : null;
-  }).filter(Boolean);
+  }).filter((w) => w != null && (conVacias || w !== ''));
   if (words[words.length - 1] === '\\') words.pop();
   words.sinCerrar = abierta;
   return words;
@@ -401,7 +401,19 @@ const COPIA = /^(?:g?(?:cp|mv|ln|install)|rsync)(?![\w.-])/;
  * En rsync `-t` conserva las fechas: ahí no hay carpeta de destino aparte.
  */
 function cpMvDest(seg) {
-  const words = palabrasDelComando(sinRedireccionesDelante(seg));
+  const conVacias = palabrasDelComando(sinRedireccionesDelante(seg), { conVacias: true });
+  let words = conVacias;
+  // rsync e install, sin el valor de sus opciones (`--exclude x`, `-m 644`), que no es un origen ni el destino; y la
+  // carpeta de `install -t`. Con las palabras vacías: un valor citado que se vació (`-f '- x'`) sigue en su lugar
+  const copiador = /^rsync/.test(words[0]) ? 'rsync' : /^g?install/.test(words[0]) ? 'install' : null;
+  if (copiador) {
+    const { sueltos: todos, carpeta } = argumentosDeCopia(copiador, words.slice(1));
+    const sueltos = todos.filter(Boolean);
+    if (carpeta) return [carpeta, ...sueltos.map((f) => `${carpeta.replace(/[\\/]+$/, '')}/${f.split(/[\\/]/).pop()}`)];
+    return words.sinCerrar ? sueltos : sueltos.slice(-1);
+  }
+  words = words.filter(Boolean);
+  words.sinCerrar = conVacias.sinCerrar;
   // con varios -t vale el último, como en cp
   let dir = null;
   const fuera = new Set([0]);   // el nombre del comando, y lo que nombra la carpeta

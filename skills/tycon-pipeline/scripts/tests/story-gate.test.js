@@ -1311,6 +1311,10 @@ test('CopiaPorOtroProgramaOEnvoltorio_AlEstado_Frena (fila 223, el freno)', () =
     // lo de siempre sigue pasando
     pasa(`install -m 644 ${S} '${repo}/copia.json'`);
     pasa(`rsync -a ${S} '${repo}/copia.json'`);
+    // el valor de una opción de rsync no es el destino
+    pasa(`rsync -a ${S} '${repo}/copia/' --exclude specs/story-9.9-algo.md`);
+    pasa(`rsync -a ${S} '${repo}/copia/' -f '- x' --filter specs/story-9.9-algo.md`);
+    pasa(`install -m 644 ${S} '${repo}/copia.json' --mode 600`);
     pasa(`env HOLA=1 cp ${S} '${repo}/copia.json'`);
     pasa('npm install left-pad');
   });
