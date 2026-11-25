@@ -62,8 +62,8 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // línea «cambio aplicado» del registro, que ya no lleva el correo de quien propone; y, en inglés, sin el nombre castellano
 // de los botones entre paréntesis.
 const HUELLA_INSTALACION = {
-  es: 'd672e892954d1aa8616c277372f190801574f62d89cc51425e59ab96d9dc5c48',
-  en: '4df6677edb4dbe3bdf0b2d3717c4bd0befbafa2413a14345e08ba282f8f56cf7',
+  es: '71303a11f01099295474c6a345e66732aadd950499ee739479808b07dbef55ed',
+  en: '4c23a5e414239131d890bff593ca5f79a724acb1bc7ccfe332e74e31ef411026',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {
