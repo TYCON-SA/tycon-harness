@@ -581,6 +581,79 @@ catálogo, la huella de la máquina, la hora y el motivo. Los registros de cada 
 común no se puede escribir, la firma igual vale y el guion lo avisa. Los escapes del freno de seguridad no pasan por
 ahí: su constancia se escribe al pedir la ventana, antes de que la persona conteste.
 
+## El cuadro del dueño en cada constancia
+
+Lo que deja una aprobación vive en la carpeta de estado de la máquina, y nada de eso viaja en git. Por eso una constancia
+que viaja en git y firma una persona lleva en la misma línea el registro del cuadro con que el dueño la aprobó. Lo escribe
+el comando de la firma, dentro de la acción que el dueño aprueba. Ningún comando lo agrega después a una línea ya escrita.
+
+**Qué constancias lo llevan.**
+
+- Los cambios de control, en sus cuatro lugares: `.github/control-changes/*.json` y `.tycon/control-changes/*.json` (el
+  archivo entero), `.github/control-changes.jsonl` y `.tycon/control-changes.jsonl` (cada línea).
+- Las exenciones de una historia, en `.tycon/exemptions.jsonl`.
+- La exención en vivo de un criterio, en `.tycon/runtime-waivers.jsonl`.
+- Las líneas manuales del `approvals.jsonl` de una ejecución (`.advisors/pipeline-runs/<id>/`, también debajo de una
+  subcarpeta). Las automáticas no lo llevan.
+
+Las aprobaciones pendientes (`tasks/pending-approvals*`) no lo llevan: las firma la coordinadora por delegación. La lista
+vive en una sola biblioteca, `scripts/lib/signed-record-approval.js`, que leen los escritores y la CI.
+
+**Qué campos lleva.** `cuadro: { aprobacion, firma, via, aprobada_en, huella }`:
+
+- `aprobacion`: el id del registro de la aprobación. Con la ventana de permiso, el id de su pedido.
+- `firma`: la firma que se aprobó.
+- `via`: `click`, `mensaje` (el «aprobado» tipeado), `terminal` o `ventana`.
+- `aprobada_en`: la hora de la aprobación, o la del pedido de la ventana.
+- `huella`: el sha256 de la línea sin `cuadro`, con las claves ordenadas y sin blancos. En un `.json` de carpeta es la
+  del objeto entero, así que reformatear el archivo no la cambia.
+
+Las líneas de una misma acción comparten la aprobación: la exención en vivo y sus líneas manuales de `approvals.jsonl`.
+
+**Qué comprueba la CI.** La regla `constancia-sin-cuadro` del portón (`scripts/ci/tycon-ci-gate.js`) mira cada constancia
+nueva del pedido. Corresponde a un cuadro si cumple todo esto:
+
+- trae los cinco campos;
+- su firma vale en ese archivo, y su vía es de una persona;
+- su huella es la de esa línea: un cuadro copiado a otra línea, o una línea cambiada después, no calza;
+- su aprobación no aparece en el historial de la base;
+- dentro del pedido, su aprobación se repite sólo con la misma firma y la misma hora.
+
+Una línea que no es JSON no corresponde. Las líneas que ya estaban en la base no se miran. El detalle está en
+`guides/ci-gate.md` §«Las constancias nuevas y el cuadro del dueño».
+
+**Los dos modos.** El modo es la constante `MODO` de la biblioteca:
+
+- en `aviso`, el portón lista cada constancia que no corresponde y deja pasar;
+- en `freno`, lo que no corresponde frena el pedido. Un valor desconocido cuenta como `freno`.
+
+Arranca en `aviso`, mientras haya máquinas que firman sin escribir el cuadro. Pasa a `freno` cuando el dueño lo decide:
+es un commit que cambia el valor de `MODO`, con su constancia de cambio de control. Ninguna variable, opción ni archivo
+lo cambia, y cada cambio de la biblioteca pide la firma del dueño.
+
+**Las constancias por delegación.** La refirma tras traer main (`refresh-after-main`) y la delegación clásica
+(`via: delegacion`) no son una aprobación del dueño. Van sin cuadro, y el comando lo dice al escribirlas. Con la regla en
+`freno`, ese pedido no entra: el dueño vuelve a firmar con su cuadro, por su click, su «aprobado», su terminal o la
+ventana.
+
+### Lo que no protege
+
+- **Un registro inventado**: quien escriba una constancia con un `cuadro` armado a mano, por un camino que el freno no
+  ve, pasa la CI. No hay llave que lo impida. Lo limita el freno de escrituras, que frena los seis caminos conocidos.
+- **Lo que el freno deja pasar a propósito, para no frenar de más**: un destino sin ningún nombre legible (`> $D/$F`),
+  una copia de carpeta con un origen armado hacia la raíz (`cp -R "$SRC/." .`), y desempaquetar o clonar hacia el repo
+  (`unzip`, `git clone`). Con la regla en `freno`, la CI no deja entrar esas líneas sin cuadro.
+- **Un `approvals.jsonl` que llega por git** (otra rama, un `stash`, un `cherry-pick`): el freno no lo mira; la CI sí.
+- **Una línea automática inventada en `approvals.jsonl`**: la CI no la mira, porque las automáticas no llevan cuadro. No
+  reemplaza a una manual, que es la que pide la firma de una persona.
+- **El código del arnés en la máquina**: un proceso que lo edite hace mentir al freno y a los escritores. La CI no:
+  corre con código de afuera del pedido.
+- **La ventana de permiso**: el registro dice que hubo un pedido; que la ventana dijo «Sí» se deduce de que el comando
+  corrió.
+- **Las constancias por delegación y las aprobaciones pendientes.**
+- **Lo que ya estaba en la base**, y todo mientras el modo es `aviso`.
+- **El permiso de administrador de la plataforma**: entra un pedido sin pasar por la CI. Lo registra la plataforma.
+
 ## Lo delegado no está protegido
 
 La sesión de la coordinadora es un agente. Si decide aprobar una firma delegada por su cuenta,

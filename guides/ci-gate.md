@@ -30,7 +30,8 @@ presente», «ejecución registrada» o «no medido». Un ✅ no quiere decir «
   exención que el diff agrega a una historia, en cualquier estado, frena sin su renglón en `.tycon/exemptions.jsonl`
   (`exencion-sin-constancia`). Ese renglón lo anota el arnés cuando el dueño firma la exención sobre la historia; una
   exención escrita a mano, por consola o con un parche no lo trae. El renglón no prueba quién lo escribió: los frenos de
-  escritura de la máquina no dejan escribirlo a mano.
+  escritura de la máquina no dejan escribirlo a mano. Cada renglón nuevo trae además el registro del cuadro del dueño
+  (`constancia-sin-cuadro`, §«Las constancias nuevas y el cuadro del dueño»), que tampoco es una llave.
 - **La evidencia atada al cambio no prueba que la evidencia sea verdadera**: detecta una edición posterior o una
   evidencia anterior al código (§«La evidencia atada al cambio»).
 - **Es opt-in por repo**: un repo sin el pipeline, o sin la política que lo exige, no tiene red del servidor y no da
@@ -91,6 +92,7 @@ sería peor que no tenerlo.
 | **Índice de memoria** (2026-09-17) | Un cambio que deja la memoria de engram a medio declarar: entradas que la rama base declara y este cambio ya no, o archivos de memoria nuevos sin entrada. `engram sync --import` lee el ÍNDICE, no la carpeta, así que un archivo sin entrada **no existe para las demás máquinas y no da error**; y una entrada perdida no vuelve sola. Mismo criterio que el freno del commit (`scripts/lib/manifest-engram.js`) y misma asimetría: lo que este cambio ROMPE frena, lo heredado y lo no comparable avisan. Sólo lee algo si el diff toca `.engram/`. **Acá importa especialmente**: es lo único que ve los commits hechos fuera del asistente — la web de Azure, otra máquina, un hook salteado. |
 | **Registro de autoría** (2026-08-30) | Una story que pasa a `done` sin decir **quién la implementó y quiénes la revisaron** — o diciéndolo mal. Es la respuesta del arnés al *play* del playbook "que un revisor con IA mire cada PR en CI": acá la revisión ya ocurre antes del PR y con más contexto, así que en vez de re-revisar en el servidor se **verifica** que la hizo otro. Frena si: falta el `review-roster.json` del run (a partir del corte), si el que implementó figura como revisor, o si el archivo no se puede leer. **Un advisor con hallazgos que el registro no lista AVISA y no frena desde el 2026-09-22**: en sus dos apariciones falló la regla y no lo que vigila —una vez con las fuentes que escribe el propio pipeline; otra, con la vuelta o el modelo pegados al nombre del revisor, frenando 5 stories sanas de un pull request—, y cero atrapadas reales. Se baja y no se borra porque un control cuyas únicas fallas son propias termina apagado entero con la exención `advisors_exempt`, y ahí se pierden las tres que sí sirven. Vuelve a frenar con `TYCON_ROSTER_NAMES=block`; la causa se ataca eligiendo el firmante de los revisores que corrieron, en vez de tipearlo, y con eso se revisa si vuelve a frenar o si sobra. Escape: el mismo `advisors_exempt: true` + razón. |
 | **Registro de aprobaciones** (2026-10-19) | Una story que pasa a `review`/`done` con una aprobación de un **agente anotada como de una persona**. Cada corrida deja `approvals.jsonl`: qué se aprobó (el plan, la maqueta, cada AC imposible de verificar, la exención de un CRITICAL), cuándo, el commit, el tipo y quién. Dos tipos: **manual** (una persona con nombre, `--approved-by <correo o usuario>`) y **automática** (un agente con cuál y su modelo, o una regla). Lo que aprueba un agente por delegación de una persona es automático y nombra la delegación (`--delegated-by <persona> --agent "<nombre> (<modelo>)"`); sin tipo o sin quién, automática «sin nombrar». Frena siempre si una línea manual nombra a un agente, una regla, una delegación o a nadie, o si el registro no se lee. Frena también si una corrida que llegó a los revisores **y declara anotar aprobaciones** (su `review-roster.json` trae `registro_aprobaciones`, que pone el arnés desde que anota aprobaciones) no trae el registro, o lo trae sin la línea del plan. Sin esa marca —un dev con el arnés de antes, cuyo portón en CI ya es el nuevo— la falta avisa y no frena: la fecha no dice qué arnés corrió en la máquina. Lista cuántas fueron manuales y cuántas automáticas. Ante la duda, automática: quien es persona se nombra con su correo. **Límite**: el registro distingue tipos, no prueba identidad — un agente que escribe el correo de una persona en `--approved-by` queda manual; lo único firmado de verdad es lo que pasa por la terminal (la matriz, `runtime-waiver`). La exención `advisors_exempt` con su razón, que la persona firma sobre la historia, perdona que falte el registro, no una línea mala. |
+| **Constancias con su cuadro** | Una constancia nueva que firma una persona (un cambio de control, una exención, una exención en vivo, una aprobación manual) sin el registro del cuadro con que el dueño la aprobó, o con uno que no es de esa línea (`constancia-sin-cuadro`). En `aviso` la lista y pasa; en `freno` frena (§«Las constancias nuevas y el cuadro del dueño»). |
 
 🔴 **El corte por fecha es mecánico y sin configuración**: el nombre del run dir trae su timestamp
 (`<id>-YYYYMMDD…`). Un run anterior al estreno de la pieza no puede tener registro, así que su
@@ -429,3 +431,63 @@ esa regla y corren igual.
 
 **Entra avisando.** Todo esto avisa hasta el 2026-12-09 y frena desde ese día (`EVIDENCE_BOUND_FROM`). Lo que ya frenaba
 sigue frenando.
+
+## Las constancias nuevas y el cuadro del dueño
+
+Una constancia que viaja en git y firma una persona trae el registro del cuadro con que el dueño la aprobó. Lo escribe el
+comando de la firma, en la misma línea: `cuadro: { aprobacion, firma, via, aprobada_en, huella }`. Qué quiere decir cada
+campo y qué hacer con una firma por delegación está en `guides/firmas-del-arnes.md` §«El cuadro del dueño en cada
+constancia».
+
+La regla `constancia-sin-cuadro` mira las líneas nuevas del pedido en los archivos del catálogo de
+`scripts/lib/signed-record-approval.js`:
+
+- los cambios de control, en sus cuatro lugares (`control-changes/*.json` y `control-changes.jsonl`, en `.github/` y en
+  `.tycon/`);
+- `.tycon/exemptions.jsonl` y `.tycon/runtime-waivers.jsonl`;
+- las líneas manuales de `approvals.jsonl` de cada ejecución. Las automáticas no llevan cuadro.
+
+Las aprobaciones pendientes (`tasks/pending-approvals*`) no están. Es nueva la línea que no está en el ancestro común con
+la base, contando las copias. En un `.json` de carpeta es nuevo el archivo agregado o cambiado, salvo el que sólo se
+movió. Las líneas de la base no se miran ni se reescriben.
+
+Una línea nueva corresponde a un cuadro si:
+
+- trae los cinco campos;
+- su firma vale en ese archivo, y su vía es de una persona: `click`, `mensaje`, `terminal` o `ventana`;
+- su `huella` es la de esa línea: un cuadro copiado a otra línea, o una línea cambiada después, no calza;
+- su aprobación no aparece en el historial de la base, ni en una línea presente ni en una sacada;
+- dentro del pedido, su aprobación se repite sólo con la misma firma y la misma `aprobada_en`.
+
+Una línea que no es JSON no corresponde, y el portón dice cuál es.
+
+**El modo.** Lo fija la constante `MODO` de la biblioteca. En `aviso`, el portón lista cada línea que no corresponde y
+deja pasar. En `freno`, es un hallazgo que frena. Un valor desconocido cuenta como `freno`. Arranca en `aviso`, y pasa a
+`freno` con un commit que cambia el valor y trae su constancia de cambio de control. Ninguna variable ni opción lo cambia.
+
+**Las firmas por delegación.** La refirma tras traer main (`refresh-after-main`) y la delegación clásica
+(`via: delegacion`) van sin cuadro. Con la regla en `freno`, ese pedido no entra hasta que el dueño firma otra vez con su
+cuadro.
+
+**Sin la base.** Si la base no se lee, toda constancia de la punta cuenta como nueva, y el portón dice «no se pudo leer la
+base: las constancias no se miraron». Lo mismo con un clon superficial, si el pedido trae constancias nuevas: sin el
+historial entero no se ve una aprobación repetida. En `freno` frena, y en `aviso` avisa.
+
+**Quién la corre.** Siempre con código de afuera del pedido:
+
+- en el repo público, la revisión corre el pre-commit de la base, que llama al portón con `--staged` cuando el commit trae
+  una constancia. La biblioteca entra en el código de la base por su `require`, y cada cambio suyo pide la firma del dueño
+  (`scripts/ci/controls-from-base.json`);
+- en el repo privado y en los repos de producto, el pipeline corre `tycon-ci-gate.js --base` del arnés instalado.
+
+Antes del commit, el mismo pre-commit lo dice en la máquina.
+
+### Lo que no protege
+
+- Un `cuadro` armado a mano y escrito por un camino que el freno de escrituras no ve: no hay llave que lo impida.
+- Lo que ya estaba en la base, y todo mientras el modo es `aviso`.
+- Las constancias por delegación y las aprobaciones pendientes.
+- Una línea automática inventada en `approvals.jsonl`: no lleva cuadro, y no reemplaza a una manual.
+- Un pedido que entra con el permiso de administrador de la plataforma, sin pasar por la CI.
+
+La lista completa está en `guides/firmas-del-arnes.md`.
