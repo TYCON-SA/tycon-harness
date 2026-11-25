@@ -872,8 +872,10 @@ Lo que no ve: un guion o un programa que guarda sin nombrar git en el comando (`
 un programa que lee el comando de un archivo), los alias propios del programa de la plataforma,
 los comandos de pedido que no lo crean, ni lo mergean ni lo pasan a listo (la API, también la que pasa un borrador a listo; cambiarlo),
 un borrador que pasa a listo por un camino que su conector no declara, los commits que hacen `merge`, `cherry-pick`, `revert`,
-`am` o `commit-tree`, y
-un alias o una función de la sesión que se llama como un programa del PATH (`ls`) y guarda por dentro sin decirlo.
+`am` o `commit-tree`,
+un alias o una función de la sesión que se llama como un programa del PATH (`ls`) y guarda por dentro sin decirlo, y,
+al marcar listo o mergear, un pedido de otra rama que la actual: lo empujado se mide en la rama de seguimiento de la
+rama actual, que tiene que tener lo preparado (si no, frena y pide empujarla).
 Frena de más: un alias o una función que dos copias del shell definen distinto, o cuyo cuerpo no se lee entero (son
 pocos y no de uso diario). El push a la rama actual armada por otro comando (`$(git branch --show-current)`) se lee
 como `HEAD`; una rama que sale de otro comando o de una variable frena con el ok, como destino incierto.

@@ -103,6 +103,9 @@ function optionProblems(opts, who) {
     const name = isObject(o) ? o.name : o;
     if (!isObject(o) || typeof o.name !== 'string' || !OPTION_NAME.test(o.name)) out.push(`${who}: la opción «${String(name)}» se escribe corta (-x) o larga (--draft)`);
     else if (typeof o.separateValue !== 'boolean') out.push(`${who}: «${o.name}»: «separateValue» es true o false`);
+    else if (o.values !== undefined && !(Array.isArray(o.values) && o.values.length && o.values.every((v) => typeof v === 'string' && v.trim()))) {
+      out.push(`${who}: «${o.name}»: «values» es una lista de valores escritos`);
+    }
   }
   return out;
 }

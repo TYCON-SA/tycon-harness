@@ -90,6 +90,9 @@ operación sin pedirle nada: `node scripts/lib/platform/platform.js choose <oper
   - Cada opción es `{ "name", "separateValue" }`: el nombre corto (`-d`) o largo (`--draft`), y si el programa le lee
     el valor separado (`--draft false`, en Azure DevOps) o sólo junto (`--draft=false`, en GitHub, donde
     `gh pr ready --undo 12` es la opción sola y el número del pedido).
+  - Una opción de `when` puede declarar sus valores (`"values"`): entonces cuenta sólo con uno de ellos, o con uno que no
+    se ve. Así se declara un `update` que completa el pedido, que es mergearlo: en Azure DevOps,
+    `{ "name": "--status", "separateValue": true, "values": ["completed"] }`. Abandonarlo o reactivarlo no cuenta.
   - `argumentFiles`, en los dos campos: la letra con que empieza una palabra que el programa cambia por lo que trae un
     archivo antes de leer sus opciones (`"@"` en Azure DevOps: `az … @o.txt`). Esa palabra puede traer cualquier
     opción, también la que publica el pedido.

@@ -808,6 +808,8 @@ test('PlatformContract_DraftFields (T8) @story-8.332 @ac-8', () => {
   assert.ok(update && update.ready.when.some((o) => o.name === '--draft' && o.separateValue === true) && update.ready.abbreviations === true, JSON.stringify(update));
   // az cambia `@archivo` por lo que trae antes de leer sus opciones: el conector lo declara en los dos campos
   assert.strictEqual(update.ready.argumentFiles, '@', JSON.stringify(update));
+  // completar el pedido lo mergea: el conector lo declara como un valor de `--status`
+  assert.ok(update.ready.when.some((o) => o.name === '--status' && Array.isArray(o.values) && o.values.includes('completed')), JSON.stringify(update));
   assert.strictEqual(crudos.find((c) => c.name === 'azure-devops' && c.draft).draft.argumentFiles, '@');
   assert.ok(!crudos.some((c) => c.name === 'gitlab' && (c.draft || c.ready)), 'GitLab, ninguno');
   assert.strictEqual(P().rawCommandOf('gh pr ready 12'), null, 'marcar listo no es un comando que la capa reemplaza');
@@ -828,6 +830,7 @@ test('PlatformContract_DraftFields (T8) @story-8.332 @ac-8', () => {
     ['separadomalo', { draftOptions: [{ command: 'x pr create', options: [{ name: '--draft', separateValue: 'no' }] }] }, /«separateValue» es true o false/],
     ['abreviamalo', { draftOptions: [{ command: 'x pr create', options: [opcion], abbreviations: 'si' }] }, /«abbreviations» es true o false/],
     ['archivomalo', { draftOptions: [{ command: 'x pr create', options: [opcion], argumentFiles: '@@' }] }, /«argumentFiles» es un solo signo/],
+    ['valoresmalos', { readyCommands: [{ command: 'x pr update', when: [{ name: '--status', separateValue: true, values: [] }] }] }, /«values» es una lista de valores escritos/],
     ['archivoletra', { readyCommands: [{ command: 'x pr ready', argumentFiles: 'a' }] }, /«argumentFiles» es un solo signo/],
     ['repetido', { draftOptions: [{ command: 'x pr create', options: [opcion] }, { command: 'x pr create', options: [opcion] }] }, /«draftOptions»: «x pr create» está dos veces/],
     ['listonolista', { readyCommands: 'x pr ready' }, /«readyCommands» es una lista/],

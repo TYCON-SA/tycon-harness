@@ -40,7 +40,9 @@
  * programa de la plataforma, los comandos de pedido que no lo crean, ni lo mergean ni lo pasan a listo (la API,
  * también la que pasa un borrador a listo; cambiarlo), un borrador que pasa a listo por un camino que su conector no
  * declara, y los commits que hacen `merge`, `cherry-pick`, `revert`, `am` o `commit-tree`. Un conector que no declara
- * su borrador no tiene borrador para el freno: su pedido frena antes de «Preparar», como cualquier otro.
+ * su borrador no tiene borrador para el freno: su pedido frena antes de «Preparar», como cualquier otro. Al marcar
+ * listo o mergear, lo empujado se mide en la rama de seguimiento de la rama actual: un pedido de otra rama, o una rama
+ * remota que cambió desde otra máquina sin traerla, no se ve.
  */
 const fs = require('fs');
 const os = require('os');
@@ -816,11 +818,13 @@ function leerOpciones(args, opciones, abreviaturas) {
       || (!larga(x.name) && !larga(w) && w.startsWith(x.name) && w.length > 2)) : undefined;
     if (o) {
       let valor;
-      if (nombre !== w) valor = valorDeOpcion(w.slice(igual + 1));
+      // `crudo`: el valor escrito, para la opción que declara los suyos (`values`); null si va sola
+      let crudo = null;
+      if (nombre !== w) { crudo = w.slice(igual + 1); valor = valorDeOpcion(crudo); }
       else if (w !== o.name && !larga(o.name)) valor = 'duda';
-      else if (o.separateValue && i + 1 < args.length && !pareceOpcion(args[i + 1]) && args[i + 1] !== '--') { valor = valorDeOpcion(args[i + 1]); i += 1; }
+      else if (o.separateValue && i + 1 < args.length && !pareceOpcion(args[i + 1]) && args[i + 1] !== '--') { crudo = String(args[i + 1]); valor = valorDeOpcion(crudo); i += 1; }
       else valor = 'si';
-      apariciones.push({ i, valor, suelta: puedeSerValor });
+      apariciones.push({ i, valor, crudo, opcion: o, suelta: puedeSerValor });
       previaSinValor = false;
       continue;
     }
@@ -856,16 +860,23 @@ function borradorDudoso(args, draft) {
   return u.suelta ? 'posicion' : null;
 }
 
-// ¿El comando pasa el borrador a listo? Cuenta cualquier aparición que pueda serlo, aunque otra la pise. Con `when`, la
-// opción que aparece con algo que no es un «sí» claro; con `unless`, el comando lo marca salvo que la opción que lo
-// descarta aparezca y todas sus apariciones sean un «sí» claro; sin ninguna de las dos, siempre. Lo que no se ve (una
-// variable que el shell puede partir, las palabras de `xargs`) puede ser la opción: cuenta como listo.
+// ¿El comando pasa el borrador a listo, o lo completa? Cuenta cualquier aparición que pueda serlo, aunque otra la pise.
+// Con `when`, la opción que aparece con algo que no es un «sí» claro, o, si declara sus valores (`values`), con uno de
+// ellos (`--status completed`); con `unless`, el comando lo marca salvo que la opción que lo descarta aparezca y todas
+// sus apariciones sean un «sí» claro; sin ninguna de las dos, siempre. Lo que no se ve (una variable que el shell puede
+// partir, las palabras de `xargs`) puede ser la opción: cuenta.
 function marcaListo(args, ready, masPalabras) {
   const lista = ready.when || ready.unless;
   if (!lista) return true;
   if (masPalabras || args.some((w) => palabraOpaca(w, ready.argumentFiles))) return true;
   const { apariciones, inyectables } = leerOpciones(args, lista, ready.abbreviations);
-  if (inyectables.length || apariciones.some((a) => a.valor !== 'si' || a.suelta)) return true;
+  const cuenta = (a) => {
+    if (a.suelta) return true;
+    if (!Array.isArray(a.opcion.values)) return a.valor !== 'si';
+    // sin su valor el programa la rechaza; con uno que no es de la lista, hace otra cosa
+    return a.crudo !== null && a.opcion.values.some((v) => String(v).toLowerCase() === a.crudo.toLowerCase());
+  };
+  if (inyectables.length || apariciones.some(cuenta)) return true;
   return ready.unless ? !apariciones.length : false;
 }
 
@@ -1199,6 +1210,8 @@ const textoSinPreparar = () => `🔒 el pull request sale después de preparar: 
 // cierra la ejecución y se reabre después (decisión 4 de la 8.151: un pedido durante la corrida es de la corrida)
 const textoSalidaDelPedido = (story, sid) => `   Si este pedido no es de la historia ${story}, la coordinadora cierra la ejecución con node ${require('./story-gate.js').MARKER_JS} clear-session ${sid} y se reabre cuando entre.`;
 const textoCambio = (repo) => `🔒 el código cambió después de preparar el pull request (${repo}): volvé a correr los revisores de lo que cambió y ${cerrarPaso11()}.`;
+const textoEmpujado = (repo) => `🔒 lo empujado a la rama no es lo preparado (${repo}): empujá la rama de trabajo (\`git push\`) antes de marcar listo o mergear el pull request.`;
+const textoSinRemota = (repo) => `🔒 no pude leer lo empujado a la rama (${repo}): sin su rama de seguimiento no sé qué sale. Empujala con \`git push -u origin <rama>\` antes de marcar listo o mergear el pull request.`;
 const textoNoComprobado = (motivo) => `🔒 no pude comprobar que el código es el que se preparó (${motivo}): repetí «Preparar el pull request».`;
 const textoFueraDeLaFoto = (repo) => `🔒 ${repo} cambió después de preparar y no está en la foto: repetí «Preparar el pull request».`;
 const TEXTO_MARCADOR = '🔒 no pude leer el marcador de la corrida: no sé si el pull request está preparado.';
@@ -1294,6 +1307,12 @@ function preparado(m, salientes = []) {
       // campo en null (la rama no tenía commits), lo que se empuja se compara por el árbol
       if (!Object.prototype.hasOwnProperty.call(f, 'cabeza')) continue;
       const c = so.arbolDelCommit(f.repo, s.origen);
+      // la rama remota de un pedido que no empuja: sin ella no se sabe qué sale, y con otro árbol sale lo de antes
+      if (s.remoto) {
+        if (c.falta || c.error) return { texto: textoSinRemota(f.repo) };
+        if (!(f.cabeza && c.commit === f.cabeza) && c.arbol !== f.arbol) return { texto: textoEmpujado(f.repo) };
+        continue;
+      }
       // lo que no existe en el repo no sale (git rechaza el empuje); lo que no se pudo medir, no pasa. El texto no
       // repite lo escrito en el comando
       if (c.falta) continue;
@@ -1396,7 +1415,13 @@ function decidir({ command, cwd, sid, home, arnes }) {
   }
   const pasoCerrado = pasoPreparado(m);
   // lo que manda cada comando que sale: el pull request, la rama actual; el empuje, su origen
-  const salientes = cs.filter((c) => c.tipo === 'pr' || (c.tipo === 'push' && c.origen)).map((c) => ({ dir: c.dir, origen: c.tipo === 'pr' ? 'HEAD' : c.origen }));
+  // marcar listo o mergear no empuja nada: lo que sale es lo que ya está en la rama remota (su rama de seguimiento),
+  // y también tiene que ser lo preparado
+  const sinEmpujar = (c) => c.tipo === 'pr' && (c.listo || /(^|\s)merge$/.test(String(c.forma)));
+  const salientes = cs.filter((c) => c.tipo === 'pr' || (c.tipo === 'push' && c.origen)).flatMap((c) => [
+    { dir: c.dir, origen: c.tipo === 'pr' ? 'HEAD' : c.origen },
+    ...(sinEmpujar(c) ? [{ dir: c.dir, origen: '@{u}', remoto: true }] : []),
+  ]);
   let prep = null;
   const prepDe = () => { prep = prep || preparado(m, salientes); return prep; };
   if (dudas.length || cs.some((c) => c.opaco)) {

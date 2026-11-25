@@ -1945,6 +1945,9 @@ const LISTOS = [
   ['az repos pr update --id 12 --draft false --draft true', 'az repos pr update'], ['gh pr ready --undo=false --undo 12', 'gh pr ready'],
   // una palabra que no se ve entera (un archivo de argumentos, una sustitución) puede traer la opción que lo publica
   ['az repos pr update --id 12 @o.txt', 'az repos pr update'], ["gh pr ready --undo -R $(printf 'x --undo=false') 12", 'gh pr ready'],
+  // completar el pedido es mergearlo: el conector declara el valor que lo hace, y un valor que no se ve cuenta
+  ['az repos pr update --id 12 --status completed', 'az repos pr update'], ['az repos pr update --id 12 --status=Completed', 'az repos pr update'],
+  ['az repos pr update --id 12 --stat completed', 'az repos pr update'], ['az repos pr update --id 12 --status "$S"', 'az repos pr update'],
 ];
 
 // 🔴 Falla con: un borrador que frena antes de «Preparar» (el equipo no ve el código y la CI no corre), una pregunta que
@@ -2053,6 +2056,29 @@ test('SaveBrake_ReadyAfterPrepare_PhotoAndAsk (T5) @story-8.332 @ac-5', (t) => {
   for (const cmd of ['gh pr ready 12', 'az repos pr update --id 12 --draft false']) assert.match((decide(h, cmd, a) || {}).texto || '', CAMBIO, cmd);
 });
 
+// 🔴 Falla con: un pedido que se marca listo o se mergea con lo que se empujó antes de «Preparar», no con lo preparado.
+test('SaveBrake_ReadyOrMergeAfterPrepare_PushedIsThePhoto (T5b) @story-8.332 @ac-5', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  // lo preparado está commiteado en la rama, pero lo empujado es lo de antes
+  escribir(a, 'nuevo.txt', 'lo preparado\n');
+  sh(a, 'add', 'nuevo.txt');
+  sh(a, 'commit', '-q', '-m', 'lo preparado');
+  abrir(h, preparada(a));
+  for (const cmd of ['gh pr ready 12', 'az repos pr update --id 12 --status completed', 'gh pr merge 12']) {
+    const d = decide(h, cmd, a);
+    assert.ok(d && d.texto, `«${cmd}» frena: ${JSON.stringify(d)}`);
+    assert.match(d.texto, /lo empujado a la rama no es lo preparado/, cmd);
+  }
+  // crear el pedido no cambia: lo que sale es la rama que el mismo comando empuja
+  assert.ok((decide(h, 'gh pr create --fill', a) || {}).pregunta, 'crear pregunta como antes');
+  sh(a, 'push', '-q');
+  for (const cmd of ['gh pr ready 12', 'gh pr merge 12']) {
+    const d = decide(h, cmd, a);
+    assert.ok(d && d.pregunta && !d.texto, `«${cmd}» empujado: ${JSON.stringify(d)}`);
+  }
+});
+
 // 🔴 Falla con: el freno leyendo como «listo» lo que vuelve a borrador o no toca el borrador (frenaría el trabajo
 // común sobre el pedido).
 test('SaveBrake_ReadyUndoAndPlainUpdate_NotASave (T6) @story-8.332 @ac-6', (t) => {
@@ -2060,7 +2086,9 @@ test('SaveBrake_ReadyUndoAndPlainUpdate_NotASave (T6) @story-8.332 @ac-6', (t) =
   const a = repoConOrigin(t);
   abrir(h, corrida(a));
   for (const cmd of ['gh pr ready --undo', 'gh pr ready --undo 12', 'gh pr ready --undo=true 12', 'az repos pr update --id 12 --draft true',
-    'az repos pr update --id 12 --draft', 'az repos pr update --id 12 --title x']) {
+    'az repos pr update --id 12 --draft', 'az repos pr update --id 12 --title x',
+    // abandonarlo o reactivarlo no lo mergea
+    'az repos pr update --id 12 --status abandoned', 'az repos pr update --id 12 --status active']) {
     assert.deepStrictEqual(brake().comandosQueGuardan(cmd, a, h), [], `«${cmd}» no guarda`);
     assert.strictEqual(decide(h, cmd, a), null, `«${cmd}» pasa`);
   }
