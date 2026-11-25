@@ -1660,7 +1660,7 @@
     },
     {
       "words": ["gcs", "gce"],
-      "reason": "siglas de Google Cloud: gcs es Google Cloud Storage (el conector integrations/gcs/ del buzón de ejecuciones, historia 1.3) y gce es Google Compute Engine (GCE_METADATA_HOST, la variable estándar que leen las librerías de Google para encontrar el servidor de metadatos). Son nombres propios y no se traducen. Decidido por el dueño el 2026-11-25."
+      "reason": "siglas de Google Cloud: gcs es Google Cloud Storage (el conector integrations/gcs/ del buzón de ejecuciones, historia 1.3) y gce es Google Compute Engine (GCE_METADATA_HOST, la variable estándar que leen las librerías de Google para encontrar el servidor de metadatos). Son nombres propios y no se traducen. Aprobado por el dueño en el pedido #1753 (2026-11-25)."
     }
   ],
   "schemaFiles": [

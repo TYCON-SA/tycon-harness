@@ -68,7 +68,7 @@ objeto ya no estaba.
 
 ## Los códigos de respuesta
 
-Medidos en el bucket de laboratorio (`sils-keeper-infra-buzon-lab`) con la API XML y una clave HMAC:
+Medidos en un bucket de laboratorio (`acme-buzon-lab` en los ejemplos) con la API XML y una clave HMAC:
 
 | Situación | Respuesta | Qué hace la subida |
 |---|---|---|

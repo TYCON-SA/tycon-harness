@@ -1,9 +1,10 @@
 {
-  "__doc": "El buzón de ejecuciones sobre Google Cloud Storage (story 1.3). Las máquinas suben con una clave HMAC de una cuenta de servicio que sólo crea objetos (la API XML, firmada con GOOG4-HMAC-SHA256); el sitio lee con la identidad de su entorno (el servidor de metadatos de Cloud Run) y la API JSON. El núcleo lo encuentra por su tipo (`mailbox`) y su proveedor (`gcs`, el valor de site.mailbox.provider y de `provider` en la llave). Guía: guides/integrations/gcs-mailbox.md.",
+  "__doc": "El buzón de ejecuciones sobre Google Cloud Storage (story 1.3). Las máquinas suben con una clave HMAC de una cuenta de servicio que sólo crea objetos (la API XML, firmada con GOOG4-HMAC-SHA256); el sitio lee con la identidad de su entorno (el servidor de metadatos de Cloud Run) y la API JSON. El núcleo lo encuentra por su tipo (`mailbox`) y su proveedor (`gcs`, el valor de site.mailbox.provider y de `provider` en la llave); `mailboxFields` son los campos de site.mailbox además de provider y threads, que el lector del perfil lee sin cargar el conector. Guía: guides/integrations/gcs-mailbox.md.",
   "name": "gcs",
   "label": "Google Cloud Storage",
   "kind": "mailbox",
   "connector": "scripts/mailbox.js",
   "provider": "gcs",
+  "mailboxFields": ["bucket"],
   "hardSignals": ["storage\\.googleapis\\.com", "\\bx-goog-", "metadata\\.google\\.internal", "GOOG4-HMAC"]
 }

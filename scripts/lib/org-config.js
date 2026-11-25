@@ -143,6 +143,8 @@ function loadReader(tree, nombre, lectores) {
   if (!fs.existsSync(f)) return null;
   const r = require(f);
   if (nombre === 'check-product-parity.js') return r && typeof r.leerDeclaradas === 'function' ? r : null;
+  // el perfil del equipo valida el buzón de un conector con los conectores de este árbol (el lector no los carga solo)
+  if (nombre === 'operations-config.js') { try { require(path.join(tree, 'scripts', 'lib', 'integrations.js')).giveMailboxConnectors(r); } catch (_) { /* sin integraciones, el lector solo */ } }
   return r && typeof r.parse === 'function' ? r : null;
 }
 

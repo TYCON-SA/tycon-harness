@@ -54,6 +54,8 @@ function loadReader(tree, target, readers) {
   const f = path.join(tree, 'scripts', 'lib', target.reader);
   if (!fs.existsSync(f)) return null;
   const r = require(f);
+  // el perfil valida el buzón de un conector con los conectores de buzón de este árbol (el lector no los carga solo)
+  if (target.reader === 'operations-config.js') { try { require(path.join(tree, 'scripts', 'lib', 'integrations.js')).giveMailboxConnectors(r); } catch (_) { /* sin integraciones, el lector solo */ } }
   return r && typeof r.parse === 'function' ? r : null;
 }
 

@@ -4,8 +4,8 @@
  *
  * El núcleo (scripts/lib/integrations.js → mailboxConnector) lo carga por su proveedor y le pide:
  *
- *   · del perfil del equipo: `CAMPOS_DEL_BUZON` (los campos de `site.mailbox` además de provider y threads) y
- *     `problemasDelBuzon(mb)` → `[{ path, message }]`;
+ *   · del perfil del equipo: `problemasDelBuzon(mb)` → `[{ path, message }]` (sus campos de `site.mailbox`, además de
+ *     provider y threads, los dice el manifiesto en `mailboxFields`: el lector del perfil los lee sin cargar este guion);
  *   · de la llave de las máquinas (corridas-buzon.json): `validarLlave(cfg, ruta)` → `{ cfg }` o
  *     `{ estado: 'config_ilegible', motivo }`. Ningún motivo repite un valor de la llave: el secreto podría estar en
  *     cualquier campo mal puesto;
@@ -32,7 +32,6 @@ const path = require('path');
 
 const PROVIDER = 'gcs';
 const PROVEEDORES_DE_BUZON = Object.freeze([PROVIDER]);
-const CAMPOS_DEL_BUZON = Object.freeze(['bucket']);
 // el nombre de un bucket: 3 a 63 minúsculas, números, guiones, guiones bajos o puntos; empieza y termina en letra o número
 const FORMA_BUCKET = /^[a-z0-9](?:[a-z0-9._-]{1,61})[a-z0-9]$/;
 const FORMA_ACCESS_ID = /^[A-Za-z0-9]{16,128}$/;
@@ -64,7 +63,8 @@ const CAMPOS_DE_LA_LLAVE = ['provider', 'bucket', 'accessId', 'secret', 'vence',
 /** `{ cfg }` con la llave limpia y `destino` (`gcs/<bucket>`), o `{ estado: 'config_ilegible', motivo }` sin valores. */
 function validarLlave(cfg, ruta) {
   const no = (motivo) => ({ estado: 'config_ilegible', motivo: `${ruta}: ${motivo}` });
-  for (const k of Object.keys(cfg)) if (!k.startsWith('__') && !CAMPOS_DE_LA_LLAVE.includes(k)) return no(`"${k}" no es un campo de una llave gcs (${CAMPOS_DE_LA_LLAVE.join(', ')})`);
+  // el campo de más no se nombra: su nombre también podría ser el secreto mal puesto
+  for (const k of Object.keys(cfg)) if (!k.startsWith('__') && !CAMPOS_DE_LA_LLAVE.includes(k)) return no(`hay un campo que no es de una llave gcs (los campos son ${CAMPOS_DE_LA_LLAVE.join(', ')}; el nombre no se muestra)`);
   for (const k of ['bucket', 'accessId', 'secret', 'vence']) if (!esTexto(cfg[k])) return no(`falta "${k}" (texto)`);
   const bucket = cfg.bucket.trim();
   if (!FORMA_BUCKET.test(bucket)) return no('"bucket" no tiene la forma de un bucket de Cloud Storage');
@@ -273,6 +273,6 @@ async function bajarUnaCorrida({ maquina, base, dir, ...opts } = {}) {
 }
 
 module.exports = {
-  PROVIDER, PROVEEDORES_DE_BUZON, CAMPOS_DEL_BUZON, FORMA_BUCKET,
+  PROVIDER, PROVEEDORES_DE_BUZON, FORMA_BUCKET,
   problemasDelBuzon, validarLlave, almacenDeSubida, firmar, tokenDelEntorno, bajarBuzon, bajarUnaCorrida,
 };

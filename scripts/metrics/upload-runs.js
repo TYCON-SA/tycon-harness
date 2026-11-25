@@ -464,13 +464,13 @@ function leerConfig(requiere = ['cuenta', 'contenedor', 'sas', 'vence'], ruta = 
   let cfg;
   try { cfg = JSON.parse(texto); } catch (_) { return { estado: 'config_ilegible', motivo: `${ruta} no es JSON válido` }; }
   if (!cfg || typeof cfg !== 'object') return { estado: 'config_ilegible', motivo: `${ruta} no es un objeto` };
-  // una llave de otro proveedor la valida su conector (integrations/<n>/, kind mailbox): `requiere` son campos de Azure
+  // una llave de otro proveedor la valida su conector (integrations/<n>/, kind mailbox): `requiere` son campos de Azure.
+  // Ningún motivo repite el valor de `provider`: el secreto podría estar mal puesto ahí
   if (cfg.provider !== undefined && cfg.provider !== 'azure-blob') {
-    const prov = typeof cfg.provider === 'string' ? cfg.provider.slice(0, 40) : JSON.stringify(cfg.provider).slice(0, 40);
     let conector = null;
     try { conector = require(path.join(__dirname, '..', 'lib', 'integrations.js')).mailboxConnector(cfg.provider); }
-    catch (e) { return { estado: 'config_ilegible', motivo: `${ruta}: el conector del proveedor «${prov}» no carga (${e.code || e.name})` }; }
-    if (!conector || typeof conector.validarLlave !== 'function') return { estado: 'config_ilegible', motivo: `${ruta}: ningún conector de buzón atiende el proveedor «${prov}»` };
+    catch (e) { return { estado: 'config_ilegible', motivo: `${ruta}: el conector del proveedor de "provider" no carga (${e.code || e.name})` }; }
+    if (!conector || typeof conector.validarLlave !== 'function') return { estado: 'config_ilegible', motivo: `${ruta}: ningún conector de buzón atiende el proveedor de "provider" (el valor no se muestra)` };
     const v = conector.validarLlave(cfg, ruta);
     return v.cfg ? { cfg: v.cfg, ruta } : v;
   }

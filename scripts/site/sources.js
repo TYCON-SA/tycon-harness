@@ -53,6 +53,8 @@ const os = require('os');
 const path = require('path');
 const childProcess = require('child_process');
 const OPS = require('../lib/operations-config.js');
+// el sitio lee un buzón de un conector: el perfil se valida con los conectores de buzón de integrations/
+try { require('../lib/integrations.js').giveMailboxConnectors(OPS); } catch (_) { /* sin integraciones, el lector solo */ }
 const people = require('../lib/people.js');
 const COPIA = require('./operations-copy.js');
 const { validAgeDays } = require('../nightly/projects/state-age.js');

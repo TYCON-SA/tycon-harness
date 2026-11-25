@@ -294,13 +294,10 @@ test('T23 OperationsConfig_FormaMaquina_IgualQueUploadRuns (2.28, AC 5)', () => 
   };
   assert.strictEqual(forma('scripts/lib/operations-config.js'), forma('scripts/metrics/upload-runs.js'), 'la copia del lector es igual a la de la subida');
   assert.strictEqual(String(OPS.FORMA_MAQUINA), forma('scripts/lib/operations-config.js'), 'y es la que exporta el lector');
-  // el lector viaja solo: no carga nada fuera de fs (tampoco people.js ni upload-runs.js), salvo la lista de conectores
-  // del buzón (integrations.js), siempre dentro de un try: sin ella el lector sigue andando y acepta sólo azure-blob
+  // el lector viaja solo: no carga nada fuera de fs (tampoco people.js ni upload-runs.js)
   const src = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'operations-config.js'), 'utf8');
   const requires = [...src.matchAll(/require\(\s*['"`]([^'"`]+)['"`]\s*\)/g)].map((x) => x[1]);
-  assert.deepStrictEqual([...new Set(requires)], ['fs', './integrations.js']);
-  const sinTry = src.split('\n').filter((l) => l.includes("require('./integrations.js')") && !/try\s*\{[^}]*require\('\.\/integrations\.js'\)[^}]*\}\s*catch/.test(l));
-  assert.deepStrictEqual(sinTry, [], 'cada carga de integrations.js va dentro de un try en el mismo renglón');
+  assert.deepStrictEqual(requires, ['fs']);
   assert.doesNotMatch(src, /require\(\s*[^'"`\s]/, 'ningún require con una ruta armada');
 });
 
