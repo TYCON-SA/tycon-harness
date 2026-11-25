@@ -6,13 +6,13 @@ Las fichas de este grupo de [las piezas del arnés](../harness-pieces.md). Cada 
 
 ## guides/harness-pieces.md
 
-**Qué es:** El índice de las piezas del arnés: dónde vive cada cosa y, por grupo, la lista de las piezas. Las fichas están en `guides/pieces/<grupo>.md`.
+**Qué es:** El índice de las piezas del arnés: dónde vive cada cosa y, por grupo, la lista de las piezas. Las fichas están en `guides/pieces/<grupo>.md`. Las guías se nombran en inglés; su contenido sigue en castellano.
 
 **Por qué existe:** El README se importa entero en cada sesión y en cada revisor; con las fichas adentro era enorme, y casi nadie las usaba. Acá viven completas y el README quedó como índice. Partida por grupos, cada archivo tiene su tope y la ficha nueva siempre entra.
 
 **Quién la usa:** Quien busca el detalle de una pieza; el pre-commit sostiene el par índice y guía con `claude-md-blocks/budget.json`.
 
-**Dónde se prueba:** `scripts/tests/pieces-cards.test.js`
+**Dónde se prueba:** `scripts/tests/pieces-cards.test.js`; que ningún enlace ni mención de una guía lleve a nada, `scripts/tests/guide-links.test.js`
 
 **Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesharness-piecesmd)
 

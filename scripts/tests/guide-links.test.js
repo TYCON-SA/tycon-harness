@@ -335,6 +335,49 @@ test('T1 Enlaces_NingunoRoto @story-8.45 @ac-11 — cada enlace relativo de las 
   assert.deepStrictEqual(enlaces, [], `enlaces rotos:\n${enlaces.join('\n')}`);
 });
 
+/** Las guías del público que todavía tienen nombre en castellano a propósito, con su motivo. Una que ya se movió sale de
+ *  la lista (T20 lo exige): la lista sólo baja. */
+const NOMBRES_PENDIENTES = [
+  { archivo: 'guides/maintaining/publicacion-espejo.md', motivo: 'un pedido abierto edita sus renglones: se mueve cuando entre o se cierre, para no abrirle un choque' },
+];
+/** Lo que el detector marca y no es castellano (decisión 11 de la historia): «coordinator» falta en el diccionario del sistema. */
+const FALSOS_CASTELLANOS = ['working-with-a-coordinator'];
+
+/** Los `.md` de `guides/` de la copia pública del árbol (en el árbol armado, sólo lo que trajo el público), relativos. */
+function guiasDelPublico(root) {
+  const IH = require(path.join(root, 'scripts', 'publishing', 'internal-history.js'));
+  const traido = IH.broughtByOverlay(root);
+  const out = [];
+  const walk = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const abs = path.join(d, e.name);
+      const rel = path.relative(root, abs).split(path.sep).join('/');
+      if (e.isDirectory()) walk(abs);
+      else if (e.name.endsWith('.md') && (!traido || traido.has(rel))) out.push(rel);
+    }
+  };
+  walk(path.join(root, 'guides'));
+  return out.sort();
+}
+
+test('T20 NombresDeGuias_EnIngles @story-8.45 @ac-2 @ac-4 — ninguna guía del público tiene nombre en castellano, salvo las pendientes con su motivo', (t) => {
+  const sn = require(path.join(ROOT, 'scripts', 'publishing', 'spanish-names.js'));
+  const palabras = path.join(ROOT, 'scripts', 'lib', 'spanish-words.json');
+  const d = sn.makeDetector(sn.loadWords(fs.readFileSync(palabras, 'utf8'), 'scripts/lib/spanish-words.json'), {});
+  if (!d.dictionary) { t.skip('NO MEDIDO: sin /usr/share/dict/words'); return; }
+  const guias = guiasDelPublico(ROOT);
+  assert.ok(guias.length > 20, `el árbol trae ${guias.length} guías: se esperaban más de 20`);
+  const castellanas = guias.filter((rel) => {
+    if (sn.kindOf(rel, '# x\n') !== 'guide') return false;
+    if (L.isShim(fs.readFileSync(path.join(ROOT, rel), 'utf8'))) return false;
+    const nombre = sn.pathNames(rel).pop();
+    return !FALSOS_CASTELLANOS.includes(nombre) && d.isSpanish(nombre).spanish;
+  });
+  const pendientes = NOMBRES_PENDIENTES.map((p) => p.archivo);
+  assert.deepStrictEqual(castellanas.filter((rel) => !pendientes.includes(rel)), [], 'guías con nombre en castellano: se mueven con su entrada del mapa, o se declaran pendientes con su motivo');
+  assert.deepStrictEqual(pendientes.filter((rel) => !castellanas.includes(rel)), [], 'pendientes que ya no lo son: se sacan de la lista');
+});
+
 test('T2 Menciones_NoApuntanAUnaViejaFueraDelMapa @story-8.45 @ac-8 @ac-11 — ninguna ruta guides/… nombrada lleva a una guía que no existe', { skip: PRIVATE_ABSENT }, () => {
   const { menciones } = rotos(ROOT);
   assert.deepStrictEqual(menciones, [], `menciones a guías que no existen (una guía movida deja su reemplazo; si es historia, va en MENCIONES_EXCEPTUADAS con su motivo):\n${menciones.join('\n')}`);

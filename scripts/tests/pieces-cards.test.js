@@ -155,6 +155,13 @@ test('T10 Pieces_OpeningNoteSaysHowToRead', () => {
   assert.match(note, /pieces\//, 'la nota de apertura no dice que las fichas están en guides/pieces/');
 });
 
+test('T21 GuiaDePiezas_NombraLaPruebaDeEnlaces @story-8.45 @ac-13 — la ficha de la guía de piezas nombra la prueba de enlaces y dice que las guías se nombran en inglés', () => {
+  const ficha = cards().find((c) => c.title === INDEX);
+  assert.ok(ficha, `no hay ficha de ${INDEX}`);
+  assert.match(ficha.body, /scripts\/tests\/guide-links\.test\.js/, 'la ficha no nombra la prueba de enlaces');
+  assert.match(ficha.body, /guías se nombran en inglés/, 'la ficha no dice que las guías se nombran en inglés');
+});
+
 test('T12 Pieces_IndexListsEveryCardOnce', () => {
   // cada ficha de un grupo está en el índice, con el enlace a su grupo; el índice no lista fichas que no existen.
   // El enlace lleva el ancla de la ficha; sin ancla (cuando el ancla pegada parece un nombre privado y el control de
