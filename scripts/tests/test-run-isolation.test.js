@@ -674,6 +674,49 @@ test('T8 IsolatedRun_CarriesRootsWithGuard @story-8.321 @ac-1 @ac-3', { skip: !P
   assert.ok(red.allow.includes(fuera), `admite la raíz del humo: ${red.allow}`);
 });
 
+// fila 226: lo mismo que el freno (214) en los demás guiones de bash del camino de los controles. Un here document o un
+// here-string pide un temporal que el bash 3.2 de macOS escribe en /var/tmp, /tmp o la carpeta actual, y dentro de la
+// corrida aislada, desde otra carpeta, el encierro se los niega. scripts/ci/public-ci.sh queda afuera: corre sólo en la
+// CI y nunca dentro del encierro.
+const SIN_HERE_DOCUMENTS = [
+  '.githooks/pre-commit-checks',
+  'skills/tycon-pipeline/scripts/smoke-run.sh',
+  'skills/tycon-pipeline/scripts/test-gate.sh',
+  'skills/tycon-pipeline/scripts/e2e-gate.sh',
+  'scripts/hooks/git-post-commit-global.sh',
+  'scripts/hooks/git-pre-push-global.sh',
+  'scripts/hooks/engram-pre-commit.sh',
+  'scripts/lib/legacy-names.sh',
+  'scripts/ci/check-bash32-quoting.sh',
+];
+test('F226 GuionesDeLosControles_SinHereDocuments: los guiones de bash del camino de los controles no usan here documents ni here-strings', () => {
+  const malos = [];
+  for (const rel of SIN_HERE_DOCUMENTS) {
+    fs.readFileSync(path.join(RAIZ, rel), 'utf8').split('\n').forEach((l, i) => {
+      if (!/^\s*#/.test(l) && l.includes('<<')) malos.push(`${rel}:${i + 1}: ${l.trim()}`);
+    });
+  }
+  assert.deepStrictEqual(malos, []);
+});
+
+test('F226 Aislada_LegacyNamesDesdeOtraCarpeta_Encuentra: dentro del encierro, desde una carpeta no admitida, la biblioteca de nombres viejos encuentra su entrada', { skip: ENCIERRO ? false : 'sin el encierro del sistema' }, (t) => {
+  const c = cuenta(t);
+  const afuera = path.join(c.b, 'afuera');
+  fs.mkdirSync(afuera);
+  const r = repo(path.join(c.b, 'repo'), {
+    '.advisors/dod-runtime/g.js': [
+      "const { spawnSync } = require('child_process');",
+      "const lineas = ['env', 'TYCON_OLD_SAMPLE', 'TYCON_NEW_SAMPLE', '0'].join('\\t');",
+      "const h = spawnSync('/bin/bash', ['-c', '. \"$1\"; _LEGACY_NAMES_LINES=\"$2\"; _legacy_names_find env old TYCON_OLD_SAMPLE', 'bash', process.argv[3], lineas], { cwd: process.argv[2], encoding: 'utf8' });",
+      "console.log('LEGADO ' + h.status + ' ' + JSON.stringify(h.stdout) + ' ' + (h.stderr || '').split('\\n').filter((x) => /temp file|here document/.test(x)).join(' | '));",
+    ].join('\n'),
+  });
+  const g = path.join(r, '.advisors', 'dod-runtime', 'g.js');
+  const s = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.33', ['--', process.execPath, g, afuera, path.join(RAIZ, 'scripts', 'lib', 'legacy-names.sh')], { cwd: r, env: ambiente(c) });
+  assert.match(salida(s), /LEGADO 0 "TYCON_OLD_SAMPLE\\tTYCON_NEW_SAMPLE\\t0"/, salida(s));
+  assert.doesNotMatch(salida(s), /cannot create temp file/, salida(s));
+});
+
 test('T99 RedDeLasPruebas_NadaTocoLaCasaReal @story-8.314', () => {
   assert.deepStrictEqual(GUARD.attempts(), [], GUARD.describe());
 });
