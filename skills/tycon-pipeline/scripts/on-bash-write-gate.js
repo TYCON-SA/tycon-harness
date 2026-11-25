@@ -1699,7 +1699,8 @@ function destinosArmados(cmd, guiones = scriptsInline(cmd)) {
   return [...vistos.values()];
 }
 
-const DELIMITADOR_DE_HEREDOC = /-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\1(?=[\s;&|()<>]|$)/y;
+// la palabra de un heredoc: `EOF`, `'EOF'`, `"EOF"` o `\EOF` (la barra la cita, como las comillas), con `-` delante o no
+const DELIMITADOR_DE_HEREDOC = /-?[ \t]*\\?(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\1(?=[\s;&|()<>]|$)/y;
 
 function sinBlancosAlBorde(linea) {
   let ini = 0;

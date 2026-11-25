@@ -1259,8 +1259,9 @@ test('CopiaAlEstado_AdentroDeUnaSustitucion_Frena (fila 247, el freno)', () => {
     assert.ok(bash.extractWriteTargets(roto).includes(res), roto);
     // de la tercera vuelta: adentro de la sustitución, el cuerpo ya sacado cierra su heredoc, y un renglón igual al
     // delimitador más abajo (el de otro heredoc, o uno suelto) no se come la escritura del medio
+    // y un heredoc con la palabra escapada (`<<\END`) es un heredoc: su cuerpo no es sintaxis
     for (const cmd of [`x=$(cat <<'EOF'\nx\nEOF\ncp ${S} ${res}\ngit commit -m "$(cat <<'EOF'\nmsg\nEOF\n)"\n)`,
-      `$(cat <<END\nEND\n>${res}\nEND)`]) {
+      `$(cat <<END\nEND\n>${res}\nEND)`, `x="$(echo a <<\\END\n\`x\n'\nEND\n)" cp ${S} ${res}`]) {
       frena(cmd);
       assert.ok(bash.extractWriteTargets(cmd).includes(res), cmd);
     }

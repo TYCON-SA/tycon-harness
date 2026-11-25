@@ -338,6 +338,7 @@ test('on-bash-write-gate (fila 247): una historia escrita adentro de "$(…)" o 
   // lo de todos los días sigue igual
   assert.deepStrictEqual(bash.extractWriteTargets(`git commit -m "$(cat <<'EOF'\nfix: cp a > specs/x.md\nEOF\n)"`), []);
   assert.deepStrictEqual(bash.extractWriteTargets(commit("fix: don't write > specs/9-9.md")), []);
+  assert.deepStrictEqual(bash.extractWriteTargets(`git commit -m "$(cat <<\\EOF\nfix: it's cp a > specs/9-9.md\nEOF\n)"`), []);
   assert.deepStrictEqual(bash.extractWriteTargets(`gh pr create --body "$(cat <<'EOF'\n- it's a bug: cat > specs/9-9.md\nEOF\n)"`), []);
   assert.deepStrictEqual(bash.extractWriteTargets(`gh pr create --body "$(cat <<'EOF'\n- mv a > b\nEOF\n)"`), []);
   assert.deepStrictEqual(bash.extractWriteTargets(`echo "hola $(date) > x"; echo '$(cp a b)'`), []);
