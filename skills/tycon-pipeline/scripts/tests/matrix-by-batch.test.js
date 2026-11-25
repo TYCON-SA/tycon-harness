@@ -1005,6 +1005,23 @@ const cuadro = (E, args, sid) => {
   return owLib().cuadroPara({ firma: 'runtime-waiver', comando: cmd, palabras: owLib().canonica(cmd), destino: sid, sesion: sid, cwd: E.repo, casa: E.home });
 };
 
+// 🔴 Falla con: el cuadro de la exención mide los humos del gates.log de la casa del PROCESO, no de la casa con que se
+// arma (`cuadroPara({ casa })`): un criterio que ya corrió en vivo en esa casa sale «sin correr», y el guion, que corre
+// con esa casa, ve otra cosa.
+test('RuntimeWaiver_Cuadro_HumosDeLaCasaDelCuadro — la matriz del cuadro lee el gates.log de su casa, como el guion', () => {
+  const E = entorno();
+  sinCorrida(E);
+  E.humo([2, 3]);
+  assert.notStrictEqual(os.homedir(), E.home, 'la prueba corre con otra casa que la del cuadro');
+  const q = cuadro(E, ['--acs', '2'], 's-casa');
+  assert.ok(q.error, JSON.stringify(q));
+  assert.match(q.error, /el AC 2 ya corrió en vivo/, q.error);
+  assert.doesNotMatch(q.error, /SIN CORRER/, q.error);
+  // con la tanda, la misma lectura
+  const t = cuadro(E, ['--batch', A, '--acs', '1'], 's-casa');
+  assert.ok(!t.error, t.error);
+});
+
 test('F154-1 RuntimeWaiver_SinCorrida_FirmaYAnotaLaSesion — sin corrida, la firma por el cuadro sale y su renglón dice la sesión', () => {
   const E = entorno();
   sinCorrida(E);
