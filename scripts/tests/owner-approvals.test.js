@@ -902,7 +902,11 @@ test('Escuchas_BanderasDelProceso_SettingsYPluginDir', (t) => {
   fs.writeFileSync(f, JSON.stringify(AJENO));
   assert.strictEqual(oa.escuchasDelCuadro({ casa, linea: `claude --settings ${f}` }).ajenos.length, 1);
   assert.strictEqual(oa.escuchasDelCuadro({ casa, linea: `claude --settings=${f}` }).ajenos.length, 1);
-  assert.ok(oa.escuchasDelCuadro({ casa, linea: 'claude --settings {"hooks":{}}' }).ilegibles.length, 'lo que no se puede leer no se da por limpio');
+  // el objeto escrito en la línea se lee como una capa más: sin ganchos queda limpio, con uno ajeno lo nombra
+  const enLinea = oa.escuchasDelCuadro({ casa, linea: 'claude --settings {"permissions":{"defaultMode":"default"}}' });
+  assert.deepStrictEqual([enLinea.ilegibles.length, enLinea.ajenos.length], [0, 0]);
+  assert.strictEqual(oa.escuchasDelCuadro({ casa, linea: `claude --settings=${JSON.stringify(AJENO)}` }).ajenos.length, 1);
+  assert.ok(oa.escuchasDelCuadro({ casa, linea: 'claude --settings {"hooks": {}}' }).ilegibles.length, 'lo que no se puede leer no se da por limpio');
   assert.ok(oa.escuchasDelCuadro({ casa, linea: `claude --settings ${path.join(casa, 'no-esta.json')}` }).ilegibles.length);
   const plugin = path.join(casa, 'mi-plugin');
   fs.mkdirSync(path.join(plugin, 'hooks'), { recursive: true });
