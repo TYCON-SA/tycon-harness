@@ -2994,6 +2994,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.334: el registro del cuadro que aprobó el dueño en cada constancia nueva (scripts/lib/signed-record-approval.js): qué archivos lo llevan, cómo lo arman los escritores (la exención, la exención en vivo con sus líneas manuales, las aprobaciones manuales, la firma sobre un archivo, run-base-controls.sh approve), que sin una persona va sin cuadro y lo dice, y que los lectores de siempre no cambian. Carpetas temporales, sin red. ~2 s. Viaja.",
+      "raiz": "arnes",
+      "ruta": "tests/signed-record-approval.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.152: el banco de un pedido corre los casos, la línea de base y el corredor de la BASE contra los ganchos del pedido (scripts/ci/bench-against-base.js), sobre repos de juguete con git de verdad y el corredor real del banco, sin red: aflojar un gancho pide la firma del dueño aunque el pedido cambie también su caso, su línea de base o el corredor; endurecer o sumar casos no; la firma del dueño anclada al blob pasa y la delegación no; lo que no se pudo medir es rojo. ~1 min. Viaja.",
       "raiz": "arnes",
       "ruta": "tests/bench-against-base.test.js",
