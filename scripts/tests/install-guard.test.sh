@@ -1076,8 +1076,8 @@ m = json.load(open(sys.argv[1])); m["tree"] = "f" * 40; m["version"] = "2026.10.
   [ "$s" = "null" ] && ok "T32w · el candado de un proceso vivo (lo toma también cada arranque del arnés) no cuenta: con la carpeta y el estado de acuerdo, terminada" || no "T32w · con el candado salió «${s}»"
   kill "$VIVO32W" 2>/dev/null; wait "$VIVO32W" 2>/dev/null
   rm -rf "$CASA32W/.tycon/state/harness/harness.lock"
-  # el estado sólo donde siempre (sin ~/.tycon/state/harness-state.json): se lee de ahí, como lo hace el instalador
-  rm -f "$CASA32W/.tycon/state/harness-state.json"; mkdir -p "$CASA32W/.claude/.tycon-pipeline"; cp "$ESTADO30" "$CASA32W/.claude/.tycon-pipeline/harness-state.json"
+  # una casa sin ~/.tycon/state (la de antes): el estado se lee de la carpeta de siempre, la que da stateDir()
+  rm -rf "$CASA32W/.tycon/state"; mkdir -p "$CASA32W/.claude/.tycon-pipeline"; cp "$ESTADO30" "$CASA32W/.claude/.tycon-pipeline/harness-state.json"
   s="$(juicio32w "$MEDIAS32W")"
   printf '%s' "$s" | grep "se está actualizando" >/dev/null && ok "T32w · con el estado sólo donde siempre: lo lee de ahí" || no "T32w · con el estado donde siempre salió «${s}»"
   # una versión con caracteres de la terminal no llega cruda al aviso

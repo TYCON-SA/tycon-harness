@@ -281,7 +281,7 @@ esperar_al_arnes(){ # $1 = el estado del arnés (harness-state.json)
     case "$dueno" in "vivo "[0-9]*|"vivo ?") pid="${dueno#vivo }" ;; *) return 0 ;; esac
     [ "$esperado" = 0 ] && ok "el arnés se está actualizando (proceso ${pid}): espero a que termine antes de leer su carpeta"
     # no es una falla del freno: no se anota como intento (el gancho reintenta en el próximo arranque)
-    [ "$esperado" -ge "$tope" ] && { NO_ANOTAR=1; muere "el arnés se está actualizando (proceso ${pid}) hace más de ${tope} s: esperá a que termine (node ~/.tycon/harness/scripts/setup/harness.js update --check) y volvé a correr esto"; }
+    [ "$esperado" -ge "$tope" ] && { NO_ANOTAR=1; muere "el arnés se está actualizando (proceso ${pid}) hace más de ${tope} s: esperá a que termine (node \"\$HOME/.tycon/harness/scripts/setup/harness.js\" update --check) y volvé a correr esto"; }
     /bin/sleep 2; esperado=$((esperado + 2))
   done
 }
@@ -498,7 +498,7 @@ src = next((x for x in (s.get("sources") or []) if isinstance(x, dict) and x.get
 if not src: muere("el estado del arnés (%s) no registra una versión bajada: ¿la mudanza terminó?" % estado)
 # la carpeta cambió de versión y el estado no: una actualización del arnés que quedó a medias (o que corría y se vio
 # antes de grabar el estado). Se dicen las dos versiones y qué hacer
-def estado_distinto(): muere("el árbol de la versión bajada (%s, versión %s) no es el que registra el estado (%s, versión %s): la carpeta cambió de versión y el estado no — la actualización del arnés quedó a medias o todavía corre. Corré node ~/.tycon/harness/scripts/setup/harness.js update --check (o harness.js update) y, cuando diga que está al día, volvé a correr esto" % (arbol[:7], str(m.get("version") or "?")[:40], str(src.get("tree"))[:7], str(src.get("version") or "?")[:40]))
+def estado_distinto(): muere("el árbol de la versión bajada (%s, versión %s) no es el que registra el estado (%s, versión %s): la carpeta cambió de versión y el estado no — la actualización del arnés quedó a medias o todavía corre. Corré node \"$HOME/.tycon/harness/scripts/setup/harness.js\" update --check (o harness.js update) y, cuando diga que está al día, volvé a correr esto" % (arbol[:7], str(m.get("version") or "?")[:40], str(src.get("tree"))[:7], str(src.get("version") or "?")[:40]))
 if estampado is None and src.get("tree") != arbol: estado_distinto()
 commit = str(src.get("commit") or "")
 if not re.match(r"^[0-9a-f]{40}$", commit): muere("el estado no registra el commit de la versión bajada")

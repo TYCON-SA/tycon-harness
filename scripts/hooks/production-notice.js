@@ -211,14 +211,12 @@ const AVISO_VIEJO = 'el freno quedó viejo: reinstalalo';
  * aplicador: mientras el estado registre otro árbol que la carpeta, el instalador del freno frena (install-guard.sh).
  * Su candado no cuenta acá: lo toma también cada arranque del arnés, y con la carpeta y el estado de acuerdo reinstalar
  * es lo correcto (el instalador espera ese candado solo). → el por qué, o null. Un estado que no se lee no dice nada: el
- * aviso sale como siempre. El estado se busca donde lo busca el instalador: ~/.tycon/state si está, si no donde siempre.
+ * aviso sale como siempre. El estado está en la carpeta del estado de la casa (tycon-home.js stateDir()).
  */
 function actualizacionSinTerminar(bajada) {
   const limpio = (v) => String(v || '?').replace(/[^0-9A-Za-z._+-]/g, '').slice(0, 40) || '?';
-  const nuevoLugar = path.join(HOME, '.tycon', 'state', 'harness-state.json');
-  const estado = existe(nuevoLugar) ? nuevoLugar : path.join(HOME, '.claude', '.tycon-pipeline', 'harness-state.json');
   try {
-    const s = JSON.parse(fs.readFileSync(estado, 'utf8'));
+    const s = JSON.parse(fs.readFileSync(path.join(stateDirOf(HOME), 'harness-state.json'), 'utf8'));
     const src = (Array.isArray(s && s.sources) ? s.sources : []).find((x) => x && x.kind === 'release');
     const m = JSON.parse(fs.readFileSync(path.join(bajada, MANIFIESTO_BAJADA), 'utf8'));
     if (src && typeof m.tree === 'string' && src.tree !== m.tree) {
