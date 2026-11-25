@@ -206,6 +206,7 @@ const cmdPlanReview = (...a) => parte(() => require('./lib/marker-signatures.js'
 const cmdReviewAnswer = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdReviewAnswer(...a);
 const cmdReviewAsk = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdReviewAsk(...a);
 const cmdRuntimeWaiver = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdRuntimeWaiver(...a);
+const cmdCheckRuntimeWaiver = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdCheckRuntimeWaiver(...a);
 const cmdSaveCheck = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdSaveCheck(...a);
 const cmdSignAtddSkip = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdSignAtddSkip(...a);
 const cmdSignAdversarialSkip = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdSignAdversarialSkip(...a);
@@ -337,6 +338,11 @@ switch (cmd) {
     // sin la story, la primera palabra ya es una bandera (`runtime-waiver --terminal`): la story sale del marcador
     if (arg1 && arg1.startsWith('--')) cmdRuntimeWaiver(null, process.argv.slice(3));
     else cmdRuntimeWaiver(arg1, process.argv.slice(4));
+    break;
+  case 'check-runtime-waiver':
+    // sólo mira: si la firma de runtime-waiver pasaría, sin firmar (fila 233)
+    if (arg1 && arg1.startsWith('--')) cmdCheckRuntimeWaiver(null, process.argv.slice(3));
+    else cmdCheckRuntimeWaiver(arg1, process.argv.slice(4));
     break;
   case 'waive-critical':
     cmdWaiveCritical(process.argv.slice(3));
