@@ -335,21 +335,26 @@ function finDeSustitucion(w, i) {
 }
 
 /**
- * El nombre de un programa (`/bin/cp` es `cp`, `\cp` también): lo que sigue a su última barra, sin contar las de adentro
- * de una sustitución (`cp$(:>/dev/null)` es `cp…`, no `null)`). Una sustitución que no cierra en la palabra
- * (`$(/bin/cp`, que cierra después de un blanco) no esconde las barras de lo que corre adentro: ahí, la última de todas.
- * `w`, la palabra con sus comillas resueltas.
+ * Los nombres que puede tener el programa de una palabra (`/bin/cp` es `cp`, `\cp` también), el primero el de siempre:
+ * lo que sigue a su última barra, sin contar las de adentro de una sustitución (`cp$(:>/dev/null)` es `cp…`, no
+ * `null)`). Con una sustitución que no cierra en la palabra (cierra después de un blanco), no se sabe si sus barras son
+ * de la ruta (`/bin/cp$(:/ )`) o de lo que corre adentro (`$(/bin/cp`): van los dos nombres. `w`, la palabra con sus
+ * comillas resueltas.
  */
-function nombreDelPrograma(w) {
+function nombresDelPrograma(w) {
+  const nombre = (barra) => w.slice(barra + 1).replace(/^\\/, '').toLowerCase().replace(/\.exe$/, '');
   let barra = -1;
   for (let i = 0; i < w.length; i++) {
     if (w[i] === '/') { barra = i; continue; }
     const fin = finDeSustitucion(w, i);
-    if (fin === -1) { barra = w.lastIndexOf('/'); break; }
+    if (fin === -1) return [...new Set([nombre(barra), nombre(w.lastIndexOf('/'))])];
     i = fin;
   }
-  return w.slice(barra + 1).replace(/^\\/, '').toLowerCase().replace(/\.exe$/, '');
+  return [nombre(barra)];
 }
+
+// los programas que escriben lo que nombran: entre los nombres posibles de una palabra, cuenta el que escribe
+const ESCRIBE_LO_QUE_NOMBRA = /^(?:g?(?:cp|mv|ln|install|sed)|rsync|perl|truncate)(?![\w.-])/;
 
 /**
  * El tramo desde el programa que corre, con el programa por su nombre (`/bin/cp` y `\cp` son `cp`): sin las variables de
@@ -376,7 +381,9 @@ function desdeElPrograma(seg) {
     if (opciones !== null && propia) { opciones = null; propia = false; continue; }
     opciones = null;
     if (/^[A-Za-z_]\w*=/.test(crudo)) continue;
-    const n = nombreDelPrograma(w);
+    // si la palabra puede nombrar dos programas, cuenta el que escribe; si no, un envoltorio; si no, el de siempre
+    const nombres = nombresDelPrograma(w);
+    const n = nombres.find((x) => ESCRIBE_LO_QUE_NOMBRA.test(x)) || nombres.find((x) => x === 'busybox' || ENVOLTORIOS.has(x)) || nombres[0];
     if (n === 'busybox') continue;
     if (ENVOLTORIOS.has(n)) { opciones = opcionesDelEnvoltorio(n) || false; propia = CON_PALABRA_PROPIA.has(n); continue; }
     return n + t.slice(m.index + m[0].length);

@@ -1281,6 +1281,11 @@ test('CopiaPorOtroProgramaOEnvoltorio_AlEstado_Frena (fila 223, el freno)', () =
     }
     frena(`$(/usr/bin/truncate -s0 ${res})`);
     frena(`$(/usr/bin/sed -i.bak s/a/b/ ${res})`);
+    // de la séptima vuelta: el programa por su ruta con una sustitución pegada que cierra después de un blanco
+    for (const pegado of ['$(:/ )', '${x/ }', '`a/b `', '$(/ )']) {
+      frena(`/bin/cp${pegado} ${S} '${res}'`);
+      frena(`/usr/bin/install${pegado} ${S} '${res}'`);
+    }
     frena(`env ${'-S'.repeat(50000)}x; cp ${S} '${res}'`);
     // stable-data: el reloj mide cuánto tarda la lectura, que es lo que se prueba (un valor de `-S` con miles de palabras)
     const desde = Date.now();
