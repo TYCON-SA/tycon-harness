@@ -333,7 +333,7 @@ MOTIVOS_LLANOS='{"opcion-nueva": "no existía en la versión de la que hereda", 
 motivo_llano() {
   local llano
   llano=$(jq -rn --arg m "$1" "${MOTIVOS_LLANOS}"' | .[$m] // empty' 2>/dev/null)
-  if [ -n "$llano" ]; then echo "$1: $llano"; else echo "$1"; fi
+  if [ -n "$llano" ]; then echo "$(una_linea "$1"): $llano"; else una_linea "$1"; echo; fi
 }
 # Una clave de opción es texto de una línea y no vacío. Una clave vacía se descartaría sin decirlo, y una con saltos
 # de línea partiría la lista (y podría colar un comando de Azure en la salida): la lectura falla si aparece una así.
@@ -356,7 +356,7 @@ leer_faltantes() {
   while IFS=$'\t' read -r OP MOT; do
     [ -n "$OP" ] || continue
     FALTAN="${FALTAN:+$FALTAN, }$OP"; FALTAN_LINEAS="${FALTAN_LINEAS}${OP}"$'\n'
-    DETALLE="${DETALLE}   · $OP ($(motivo_llano "${MOT:-sin motivo}"))"$'\n'
+    DETALLE="${DETALLE}   · $(una_linea "$OP") ($(motivo_llano "${MOT:-sin motivo}"))"$'\n'
   done <<< "$lectura"
   printf '%s' "$cuerpo" | jq -e '.alreadyStarted == true' >/dev/null 2>&1 && YA_ARRANCO=si
   return 0
@@ -371,7 +371,7 @@ elif [ "$CAMINO" = subida ] && printf '%s' "$UP_BODY" | jq -e 'type == "object" 
   while IFS= read -r OP; do
     [ -n "$OP" ] || continue
     FALTAN="${FALTAN:+$FALTAN, }$OP"; FALTAN_LINEAS="${FALTAN_LINEAS}${OP}"$'\n'
-    DETALLE="${DETALLE}   · $OP (sin motivo: la subida no lo informa)"$'\n'
+    DETALLE="${DETALLE}   · $(una_linea "$OP") (sin motivo: la subida no lo informa)"$'\n'
   done <<< "$LECTURA"
   echo "   el host todavía no contesta qué opciones le faltarían a esta versión: uso la lista que devolvió la subida"
   constancia_puente si
@@ -381,88 +381,159 @@ else
   aviso "NO PUDO MEDIR la configuración de $NOMBRE_PLUGIN $VERSION_PLUGIN (identificador $PLUGIN_ID, $PUENTE_HOST): este host todavía no contesta qué opciones faltan; si acabás de corregir una configuración, subí el número de versión para volver al camino de la subida nueva, o actualizá el host. Si a esta versión le falta una opción, se va a encender sin ella"
 fi
 
+# 🔴 LOS CONTADORES QUE NO VINIERON NO SON CERO. Los contadores de migraciones de la vista previa son nulables: si el
+# host no pudo abrir el paquete, el análisis no corre y lo dice con `migrationAnalysisFailed`. Leerlos con `// 0`
+# imprimiría «Sin migraciones pendientes» y seguiría derecho a activar. Un contador ausente o nulo es «no sé», y frena.
+CONTADORES=$(printf '%s' "$PREV_BODY" | jq -r 'if type != "object" then "sin-contadores"
+  elif .migrationAnalysisFailed == true then "fallo"
+  elif (.pendingCount | type) != "number" or (.rollbackCount | type) != "number" then "sin-contadores"
+  else "\(.pendingCount) \(.rollbackCount)" end' 2>/dev/null)
+case "$CONTADORES" in
+  fallo) fatal "el host no pudo analizar las migraciones de esta versión ($(printf '%s' "$PREV_BODY" | jq -r '.migrationAnalysisError // "sin detalle"' 2>/dev/null)): sin ese análisis no sé si hay migraciones pendientes ni retrocesos, y «no sé» no es «ninguna» — no toqué nada" ;;
+  ""|sin-contadores) fatal "la vista previa no dijo cuántas migraciones pendientes ni retrocesos hay (pendingCount o rollbackCount ausentes o nulos): «no sé» no es «ninguna» — no toqué nada. Detalle: $(printf '%s' "$PREV_BODY" | head -c 300)" ;;
+esac
+PENDIENTES=${CONTADORES% *}; RETROCESOS=${CONTADORES#* }
+echo "   migraciones pendientes: $PENDIENTES · retrocesos: $RETROCESOS"
+
+# 🔴 SE MIRA CUÁLES RETROCEDE, NO CUÁNTAS.
+#
+# Un retroceso de base de datos frena, y eso no cambia. Pero hay migraciones que el paquete deja
+# afuera A PROPÓSITO: el pipeline las declara en `excludedMigrations`, cada una con su motivo escrito,
+# porque volver a aplicarlas reinstalaría un parche que se quitó a mano. El host, que las tiene
+# aplicadas, las lee como retroceso — así que contar retrocesos frenaría un despliegue por una decisión
+# que el equipo ya tomó y documentó.
+#
+# Ejemplo: una migración excluida con su motivo (una columna de compatibilidad que otro sistema
+# arregló y que, si viaja, se reinstala sola), que el host devuelve como el único retroceso. Por eso
+# se compara POR NOMBRE contra esa misma lista: no hay un segundo lugar donde declarar lo mismo, y no
+# se puede tolerar un retroceso que no se haya excluido deliberadamente. Cualquier retroceso que NO
+# esté en la lista frena.
+#
+# Si el host no dice CUÁLES retrocede, frena: sin los nombres no se puede comparar, y "no sé" no es
+# "está declarado".
+if [ "${RETROCESOS:-0}" -gt 0 ] 2>/dev/null; then
+  NOMBRES=$(echo "$PREV_BODY" | jq -r '[.rollbacksNeeded[]?.migrationName // empty] | join(" ")' 2>/dev/null)
+  NO_DECL=""
+  if [ -z "$NOMBRES" ]; then
+    fatal "el host dice que habría $RETROCESOS retroceso(s) de base de datos pero no dice cuáles — sin los nombres no puedo compararlos con las exclusiones declaradas, y \"no sé\" no es \"está declarado\". Detalle: $(echo "$PREV_BODY" | head -c 300)"
+  fi
+  for MN in $NOMBRES; do
+    NUM=$(printf '%s' "$MN" | sed -n 's/^\([0-9]\{3\}\).*/\1/p')
+    ESTA=no
+    OLD_IFS="$IFS"; IFS=', '
+    for EX in $EXCLUSIONES; do
+      EX=$(printf '%s' "$EX" | sed 's/[^0-9]//g')
+      [ -n "$EX" ] && [ "$EX" = "$NUM" ] && ESTA=si
+    done
+    IFS="$OLD_IFS"
+    [ "$ESTA" = "no" ] && NO_DECL="$NO_DECL $MN"
+  done
+  if [ -n "$NO_DECL" ]; then
+    fatal "esta versión NO trae migraciones que el host recuerda haber aplicado y que NO están declaradas como exclusiones:$NO_DECL — marcarla como actual sería un retroceso de base de datos. NO toqué nada: la versión anterior sigue cargada y marcada. Si la exclusión es deliberada, va en excludedMigrations con su motivo. Detalle: $(echo "$PREV_BODY" | head -c 300)"
+  fi
+  aviso "el host lee como retroceso $RETROCESOS migración(es) que el paquete excluye A PROPÓSITO ($NOMBRES) — declaradas en excludedMigrations; se sigue"
+  # El host exige la aprobación EXPLÍCITA del retroceso al marcar como actual. Se enciende acá y
+  # sólo acá: la aprobación la genera la lista de exclusiones deliberadas, no una bandera suelta.
+  RETRO_APROBADO=si
+fi
+
 # 🔴 LAS OPCIONES NO SECRETAS SE CARGAN SOLAS; LOS SECRETOS, NUNCA.
 #
 # Con --settings-file, las opciones que la vista previa dice que faltan y que el archivo trae para el entorno se
 # escriben en la versión nueva, de a una y sin cifrar, con la escritura de configuración del host. Así el dev carga a
 # mano sólo los secretos. Reglas:
+#   · el archivo entero se mira al empezar, con todos sus bloques y falte algo o no: frena si trae un bloque que no es
+#     staging ni production, una clave o un valor que no se leen, o una clave que el paquete no declara en su
+#     plugin.json (la copia del plugin.json.example del repo). Así staging frena por un error del bloque de producción
+#     antes de que nadie apruebe;
+#   · una clave con nombre de secreto nunca se carga: se nombra en un aviso y se sigue con las demás. Para una opción
+#     nueva el host todavía no tiene la marca de cifrada, así que el nombre es la única defensa; la lista es amplia a
+#     propósito (una opción común con «token» en el nombre se carga a mano, y si falta la frena el control de abajo);
+#   · frena sin escribir nada si el archivo trae una opción que el host tiene marcada como cifrada;
 #   · nunca se pisa: una opción que el host no reporta como faltante (heredada o cargada a mano) no se toca;
-#   · antes de escribir nada se mira el archivo entero, y frena si trae una clave con nombre de secreto, una que el
-#     host tiene marcada como cifrada o una que el paquete no declara en su plugin.json (la copia del
-#     plugin.json.example del repo);
 #   · después se vuelve a leer la vista previa: lo que siga faltando (los secretos) frena como siempre.
-# Sólo con un host que dice en la vista previa qué falta: sin eso no hay contra qué cargar ni cómo verificarlo.
-SECRETO_RE='password|secret|token|api_?key|connectionstring|clave|contrase(ñ|n)a'
+# Escribe sólo con un host que dice en la vista previa qué falta: sin eso no hay contra qué cargar ni cómo verificarlo.
+# Corre después de los controles de migraciones y retrocesos, que frenan sin haber tocado nada.
+SECRETO_RE='pass|pwd|secret|token|key|llave|clave|contrase(ñ|n)a|cred|private|sign|sas|jwt|bearer|hash|hmac|pfx|conn(ection)?_?str'
 if [ -n "$SETTINGS_ARCH" ]; then
   paso "2b/5 · Opciones no secretas del archivo de opciones ($SETTINGS_ARCH)"
   case "$ENTORNO" in produccion) BLOQUE_ENT=production ;; *) BLOQUE_ENT="$ENTORNO" ;; esac
+  # 1) el archivo entero, con todos sus bloques
+  [ -f "$SETTINGS_ARCH" ] && jq -e 'type == "object"' "$SETTINGS_ARCH" >/dev/null 2>&1 \
+    || fatal "el archivo de opciones ($SETTINGS_ARCH) no se puede leer como un objeto JSON — no cargué nada"
+  OTROS=$(jq -r 'keys[] | select(. != "staging" and . != "production") | gsub("[[:cntrl:]]"; " ")' "$SETTINGS_ARCH")
+  [ -z "$OTROS" ] || fatal "el archivo de opciones trae bloques que no son de ningún entorno: $(printf '%s' "$OTROS" | tr '\n' ' ')— los bloques son staging y production; no cargué nada"
+  MALAS=$(jq -r 'to_entries[] | .key as $b
+    | if (.value | type) != "object" then "\($b) (no es un objeto)"
+      else .value | to_entries[]
+        | select((.key | '"$CLAVE_OK"' | not) or (.value | type != "string") or (.value | test("[[:cntrl:]]")))
+        | "\($b): \(.key | tostring | gsub("[[:cntrl:]]"; " "))" end' "$SETTINGS_ARCH" 2>&1) \
+    || fatal "no pude revisar el archivo de opciones ($MALAS) — no cargué nada"
+  [ -z "$MALAS" ] || fatal "el archivo de opciones trae claves que no se leen o valores que no son texto de una línea: $(printf '%s' "$MALAS" | tr '\n' ' ')— no cargué nada"
+  MANIF=""
+  if command -v unzip >/dev/null 2>&1; then MANIF=$(unzip -p "$ZIP" plugin.json 2>/dev/null)
+  elif command -v python3 >/dev/null 2>&1; then MANIF=$(python3 -c 'import sys, zipfile; sys.stdout.write(zipfile.ZipFile(sys.argv[1]).read("plugin.json").decode("utf-8"))' "$ZIP" 2>/dev/null)
+  fi
+  printf '%s' "$MANIF" | jq -e 'type == "object"' >/dev/null 2>&1 \
+    || fatal "no pude leer el plugin.json del paquete ($ZIP) para ver qué opciones declara — sin eso no cargo nada"
+  DECLARADAS=$(printf '%s' "$MANIF" | jq -r '.defaultSettings // {} | if type == "object" then keys[] else empty end' 2>&1) \
+    || fatal "no pude leer las opciones que declara el plugin.json del paquete ($DECLARADAS) — no cargué nada"
+  FUERA=""
+  while IFS=$'\t' read -r b k; do
+    [ -n "$k" ] || continue
+    printf '%s\n' "$DECLARADAS" | grep -qxF -- "$k" || FUERA="${FUERA}${b}: ${k} "
+  done < <(jq -r 'to_entries[] | .key as $b | .value | keys[] | "\($b)\t\(.)"' "$SETTINGS_ARCH")
+  [ -z "$FUERA" ] || fatal "el archivo de opciones trae claves que el paquete no declara en su plugin.json: $(una_linea "$FUERA")— no cargué nada"
+  # 2) las de nombre de secreto, de todos los bloques: se nombran y no se cargan
+  CON_NOMBRE=$(jq -r --arg re "$SECRETO_RE" 'to_entries[] | .key as $b | .value | keys[] | select(test($re; "i")) | "\($b): \(.)"' "$SETTINGS_ARCH" 2>&1) \
+    || fatal "no pude revisar los nombres del archivo de opciones ($CON_NOMBRE) — no cargué nada"
+  [ -z "$CON_NOMBRE" ] || aviso "el archivo de opciones trae claves con nombre de secreto, que nunca se cargan solas: $(printf '%s' "$CON_NOMBRE" | tr '\n' ' ')— si es un secreto, sacalo del archivo (un secreto no va en el repo) y cargalo a mano en el panel; si falta, el control de opciones pendientes lo dice"
+  SECRETAS_ENT=$(jq -r --arg e "$BLOQUE_ENT" --arg re "$SECRETO_RE" '(.[$e] // {}) | keys[] | select(test($re; "i"))' "$SETTINGS_ARCH")
   if [ "$MEDIDO" != si ] || ! printf '%s' "$PREV_BODY" | jq -e 'type == "object" and has("missingSettings")' >/dev/null 2>&1; then
     aviso "no cargo el archivo de opciones: este host no dice en la vista previa qué opciones le faltan a $NOMBRE_PLUGIN $VERSION_PLUGIN, y sin eso no hay contra qué cargar ni cómo verificarlo"
   elif [ -z "$FALTAN" ]; then
     echo "   no falta ninguna opción: el archivo de opciones no hace falta"
+  elif ! jq -e --arg e "$BLOQUE_ENT" 'has($e)' "$SETTINGS_ARCH" >/dev/null 2>&1; then
+    echo "   el archivo de opciones no trae valores para $BLOQUE_ENT: no cargo nada"
   else
-    [ -f "$SETTINGS_ARCH" ] && jq -e 'type == "object"' "$SETTINGS_ARCH" >/dev/null 2>&1 \
-      || fatal "el archivo de opciones ($SETTINGS_ARCH) no se puede leer como un objeto JSON — no cargué nada"
-    if ! jq -e --arg e "$BLOQUE_ENT" 'has($e) and (.[$e] | type == "object")' "$SETTINGS_ARCH" >/dev/null 2>&1; then
-      echo "   el archivo de opciones no trae valores para $BLOQUE_ENT: no cargo nada"
-    else
-      # 1) el archivo entero, antes de escribir nada: claves y valores legibles, y ninguna con nombre de secreto
-      MALAS=$(jq -r --arg e "$BLOQUE_ENT" --arg re "$SECRETO_RE" '.[$e] | to_entries[]
-        | select((.key | '"$CLAVE_OK"' | not) or (.value | type != "string") or (.value | test("[[:cntrl:]]"))
-                 or (.key | test($re; "i")))
-        | .key | tostring | gsub("[[:cntrl:]]"; " ")' "$SETTINGS_ARCH" 2>&1) \
-        || fatal "no pude revisar el archivo de opciones ($MALAS) — no cargué nada"
-      [ -z "$MALAS" ] || fatal "el archivo de opciones trae claves que no se cargan solas: $(printf '%s' "$MALAS" | tr '\n' ' ')— una clave con nombre de secreto, o con un valor que no es texto de una línea. Los secretos se cargan a mano en el panel; no cargué nada"
-      # 2) que el paquete las declare: el plugin.json del ZIP es la copia del plugin.json.example del repo
-      MANIF=""
-      if command -v unzip >/dev/null 2>&1; then MANIF=$(unzip -p "$ZIP" plugin.json 2>/dev/null)
-      elif command -v python3 >/dev/null 2>&1; then MANIF=$(python3 -c 'import sys, zipfile; sys.stdout.write(zipfile.ZipFile(sys.argv[1]).read("plugin.json").decode("utf-8"))' "$ZIP" 2>/dev/null)
+    CLAVES_ARCH=$(jq -r --arg e "$BLOQUE_ENT" '.[$e] | keys[]' "$SETTINGS_ARCH")
+    # 3) que el host no tenga ninguna como cifrada
+    CFG=$(api GET "/api/admin/plugins/${PLUGIN_ID}/config")
+    [ "$(codigo "$CFG")" = "200" ] && cuerpo "$CFG" | jq -e 'type == "array"' >/dev/null 2>&1 \
+      || fatal "no pude leer la configuración de la versión con identificador $PLUGIN_ID (HTTP $(codigo "$CFG")) para ver qué opciones son cifradas — no cargué nada"
+    EN_EL_HOST=$(cuerpo "$CFG" | jq -r '.[] | select(.isEncrypted == true) | .key | tostring' 2>&1) \
+      || fatal "no pude leer qué opciones tiene cifradas el host ($EN_EL_HOST) — no cargué nada"
+    CIFRADAS=""
+    while IFS= read -r k; do
+      [ -n "$k" ] || continue
+      printf '%s\n' "$EN_EL_HOST" | grep -qxF -- "$k" && CIFRADAS="${CIFRADAS}${k} "
+    done < <(printf '%s\n' "$CLAVES_ARCH")
+    [ -z "$CIFRADAS" ] || fatal "el archivo de opciones trae opciones que el host tiene marcadas como cifradas: $(una_linea "$CIFRADAS")— un secreto no se carga desde un archivo; no cargué nada"
+    # 4) se escriben sólo las que faltan y no tienen nombre de secreto; las demás se nombran y no se tocan
+    CARGADAS=0
+    while IFS= read -r k; do
+      [ -n "$k" ] || continue
+      if printf '%s\n' "$SECRETAS_ENT" | grep -qxF -- "$k"; then
+        echo "   $(una_linea "$k") tiene nombre de secreto: no la cargo"
+      elif printf '%s' "$FALTAN_LINEAS" | grep -qxF -- "$k"; then
+        ITEM=$(jq -c --arg e "$BLOQUE_ENT" --arg k "$k" '{configItems: [{key: $k, value: .[$e][$k], isEncrypted: false}]}' "$SETTINGS_ARCH")
+        PUESTA=$(api PUT "/api/admin/plugins/${PLUGIN_ID}/config" -H "Content-Type: application/json" --data "$ITEM")
+        # una versión que ya corre se recarga con cada cambio de configuración, y si la recarga falla el host contesta
+        # error con el valor ya guardado: el error no prueba que no quedó escrita
+        [ "$(codigo "$PUESTA")" = "200" ] || fatal "no pude confirmar la carga de la opción $k en la versión con identificador $PLUGIN_ID (HTTP $(codigo "$PUESTA")): si la versión ya estaba corriendo, el host puede haber guardado el valor igual — mirala en el panel antes de volver a correr. Detalle: $(cuerpo "$PUESTA" | head -c 300)"
+        echo "   cargada desde el archivo: $(una_linea "$k")"
+        CARGADAS=$((CARGADAS + 1))
+      else
+        echo "   $(una_linea "$k") no falta en esta versión: no la toqué (el archivo no pisa un valor ya cargado)"
       fi
-      printf '%s' "$MANIF" | jq -e 'type == "object"' >/dev/null 2>&1 \
-        || fatal "no pude leer el plugin.json del paquete ($ZIP) para ver qué opciones declara — sin eso no cargo nada"
-      DECLARADAS=$(printf '%s' "$MANIF" | jq -r '.defaultSettings // {} | if type == "object" then keys[] else empty end' 2>&1) \
-        || fatal "no pude leer las opciones que declara el plugin.json del paquete ($DECLARADAS) — no cargué nada"
-      CLAVES_ARCH=$(jq -r --arg e "$BLOQUE_ENT" '.[$e] | keys[]' "$SETTINGS_ARCH")
-      FUERA=""
-      while IFS= read -r k; do
-        [ -n "$k" ] || continue
-        printf '%s\n' "$DECLARADAS" | grep -qxF -- "$k" || FUERA="${FUERA}${k} "
-      done < <(printf '%s\n' "$CLAVES_ARCH")
-      [ -z "$FUERA" ] || fatal "el archivo de opciones trae claves que el paquete no declara en su plugin.json: ${FUERA}— no cargué nada"
-      # 3) que el host no tenga ninguna como cifrada
-      CFG=$(api GET "/api/admin/plugins/${PLUGIN_ID}/config")
-      [ "$(codigo "$CFG")" = "200" ] && cuerpo "$CFG" | jq -e 'type == "array"' >/dev/null 2>&1 \
-        || fatal "no pude leer la configuración de la versión con identificador $PLUGIN_ID (HTTP $(codigo "$CFG")) para ver qué opciones son cifradas — no cargué nada"
-      EN_EL_HOST=$(cuerpo "$CFG" | jq -r '.[] | select(.isEncrypted == true) | .key | tostring' 2>&1) \
-        || fatal "no pude leer qué opciones tiene cifradas el host ($EN_EL_HOST) — no cargué nada"
-      CIFRADAS=""
-      while IFS= read -r k; do
-        [ -n "$k" ] || continue
-        printf '%s\n' "$EN_EL_HOST" | grep -qxF -- "$k" && CIFRADAS="${CIFRADAS}${k} "
-      done < <(printf '%s\n' "$CLAVES_ARCH")
-      [ -z "$CIFRADAS" ] || fatal "el archivo de opciones trae opciones que el host tiene marcadas como cifradas: ${CIFRADAS}— un secreto no se carga desde un archivo; no cargué nada"
-      # 4) se escriben sólo las que faltan; las demás se nombran y no se tocan
-      CARGADAS=0
-      while IFS= read -r k; do
-        [ -n "$k" ] || continue
-        if printf '%s' "$FALTAN_LINEAS" | grep -qxF -- "$k"; then
-          ITEM=$(jq -c --arg e "$BLOQUE_ENT" --arg k "$k" '{configItems: [{key: $k, value: .[$e][$k], isEncrypted: false}]}' "$SETTINGS_ARCH")
-          PUESTA=$(api PUT "/api/admin/plugins/${PLUGIN_ID}/config" -H "Content-Type: application/json" --data "$ITEM")
-          [ "$(codigo "$PUESTA")" = "200" ] || fatal "no pude cargar la opción $k en la versión con identificador $PLUGIN_ID (HTTP $(codigo "$PUESTA")): $(cuerpo "$PUESTA" | head -c 300)"
-          echo "   cargada desde el archivo: $k"
-          CARGADAS=$((CARGADAS + 1))
-        else
-          echo "   $k no falta en esta versión: no la toqué (el archivo no pisa un valor ya cargado)"
-        fi
-      done < <(jq -r --arg e "$BLOQUE_ENT" '.[$e] | keys[]' "$SETTINGS_ARCH")
-      # 5) lo que siga faltando, de una vista previa nueva
-      if [ "$CARGADAS" -gt 0 ]; then
-        PREVIA_C=$(api POST "/api/admin/plugins/${PLUGIN_ID}/set-default/preview" -H "Content-Type: application/json" --data '')
-        [ "$(codigo "$PREVIA_C")" = "200" ] && cuerpo "$PREVIA_C" | jq -e 'type == "object" and has("missingSettings")' >/dev/null 2>&1 \
-          || fatal "después de cargar $CARGADAS opción(es) del archivo, la vista previa no dijo qué sigue faltando (HTTP $(codigo "$PREVIA_C")) — «no sé» no es «nada»"
-        leer_faltantes "$(cuerpo "$PREVIA_C")"
-        [ -n "$FALTAN" ] || echo "   configuración: con lo cargado del archivo no falta ninguna opción"
-      fi
+    done < <(printf '%s\n' "$CLAVES_ARCH")
+    # 5) lo que siga faltando, de una vista previa nueva
+    if [ "$CARGADAS" -gt 0 ]; then
+      PREVIA_C=$(api POST "/api/admin/plugins/${PLUGIN_ID}/set-default/preview" -H "Content-Type: application/json" --data '')
+      [ "$(codigo "$PREVIA_C")" = "200" ] && cuerpo "$PREVIA_C" | jq -e 'type == "object" and has("missingSettings")' >/dev/null 2>&1 \
+        || fatal "después de cargar $CARGADAS opción(es) del archivo, la vista previa no dijo qué sigue faltando (HTTP $(codigo "$PREVIA_C")) — «no sé» no es «nada»"
+      leer_faltantes "$(cuerpo "$PREVIA_C")"
+      [ -n "$FALTAN" ] || echo "   configuración: con lo cargado del archivo no falta ninguna opción"
     fi
   fi
 fi
@@ -525,62 +596,6 @@ if [ -n "$FALTAN" ]; then
   aviso "faltan opciones de configuración DECLARADAS como pendientes (revisar $VENCE): $FALTAN"
 elif [ "$MEDIDO" = si ]; then
   echo "   configuración: no falta ninguna opción"
-fi
-
-# 🔴 LOS CONTADORES QUE NO VINIERON NO SON CERO. Los contadores de migraciones de la vista previa son nulables: si el
-# host no pudo abrir el paquete, el análisis no corre y lo dice con `migrationAnalysisFailed`. Leerlos con `// 0`
-# imprimiría «Sin migraciones pendientes» y seguiría derecho a activar. Un contador ausente o nulo es «no sé», y frena.
-CONTADORES=$(printf '%s' "$PREV_BODY" | jq -r 'if type != "object" then "sin-contadores"
-  elif .migrationAnalysisFailed == true then "fallo"
-  elif (.pendingCount | type) != "number" or (.rollbackCount | type) != "number" then "sin-contadores"
-  else "\(.pendingCount) \(.rollbackCount)" end' 2>/dev/null)
-case "$CONTADORES" in
-  fallo) fatal "el host no pudo analizar las migraciones de esta versión ($(printf '%s' "$PREV_BODY" | jq -r '.migrationAnalysisError // "sin detalle"' 2>/dev/null)): sin ese análisis no sé si hay migraciones pendientes ni retrocesos, y «no sé» no es «ninguna» — no toqué nada" ;;
-  ""|sin-contadores) fatal "la vista previa no dijo cuántas migraciones pendientes ni retrocesos hay (pendingCount o rollbackCount ausentes o nulos): «no sé» no es «ninguna» — no toqué nada. Detalle: $(printf '%s' "$PREV_BODY" | head -c 300)" ;;
-esac
-PENDIENTES=${CONTADORES% *}; RETROCESOS=${CONTADORES#* }
-echo "   migraciones pendientes: $PENDIENTES · retrocesos: $RETROCESOS"
-
-# 🔴 SE MIRA CUÁLES RETROCEDE, NO CUÁNTAS.
-#
-# Un retroceso de base de datos frena, y eso no cambia. Pero hay migraciones que el paquete deja
-# afuera A PROPÓSITO: el pipeline las declara en `excludedMigrations`, cada una con su motivo escrito,
-# porque volver a aplicarlas reinstalaría un parche que se quitó a mano. El host, que las tiene
-# aplicadas, las lee como retroceso — así que contar retrocesos frenaría un despliegue por una decisión
-# que el equipo ya tomó y documentó.
-#
-# Ejemplo: una migración excluida con su motivo (una columna de compatibilidad que otro sistema
-# arregló y que, si viaja, se reinstala sola), que el host devuelve como el único retroceso. Por eso
-# se compara POR NOMBRE contra esa misma lista: no hay un segundo lugar donde declarar lo mismo, y no
-# se puede tolerar un retroceso que no se haya excluido deliberadamente. Cualquier retroceso que NO
-# esté en la lista frena.
-#
-# Si el host no dice CUÁLES retrocede, frena: sin los nombres no se puede comparar, y "no sé" no es
-# "está declarado".
-if [ "${RETROCESOS:-0}" -gt 0 ] 2>/dev/null; then
-  NOMBRES=$(echo "$PREV_BODY" | jq -r '[.rollbacksNeeded[]?.migrationName // empty] | join(" ")' 2>/dev/null)
-  NO_DECL=""
-  if [ -z "$NOMBRES" ]; then
-    fatal "el host dice que habría $RETROCESOS retroceso(s) de base de datos pero no dice cuáles — sin los nombres no puedo compararlos con las exclusiones declaradas, y \"no sé\" no es \"está declarado\". Detalle: $(echo "$PREV_BODY" | head -c 300)"
-  fi
-  for MN in $NOMBRES; do
-    NUM=$(printf '%s' "$MN" | sed -n 's/^\([0-9]\{3\}\).*/\1/p')
-    ESTA=no
-    OLD_IFS="$IFS"; IFS=', '
-    for EX in $EXCLUSIONES; do
-      EX=$(printf '%s' "$EX" | sed 's/[^0-9]//g')
-      [ -n "$EX" ] && [ "$EX" = "$NUM" ] && ESTA=si
-    done
-    IFS="$OLD_IFS"
-    [ "$ESTA" = "no" ] && NO_DECL="$NO_DECL $MN"
-  done
-  if [ -n "$NO_DECL" ]; then
-    fatal "esta versión NO trae migraciones que el host recuerda haber aplicado y que NO están declaradas como exclusiones:$NO_DECL — marcarla como actual sería un retroceso de base de datos. NO toqué nada: la versión anterior sigue cargada y marcada. Si la exclusión es deliberada, va en excludedMigrations con su motivo. Detalle: $(echo "$PREV_BODY" | head -c 300)"
-  fi
-  aviso "el host lee como retroceso $RETROCESOS migración(es) que el paquete excluye A PROPÓSITO ($NOMBRES) — declaradas en excludedMigrations; se sigue"
-  # El host exige la aprobación EXPLÍCITA del retroceso al marcar como actual. Se enciende acá y
-  # sólo acá: la aprobación la genera la lista de exclusiones deliberadas, no una bandera suelta.
-  RETRO_APROBADO=si
 fi
 
 # ── 3. migraciones ───────────────────────────────────────────────────────────────────────────
