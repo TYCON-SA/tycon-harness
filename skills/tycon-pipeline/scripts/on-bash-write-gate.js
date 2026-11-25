@@ -3681,6 +3681,28 @@ function yaHayOrigin(carpeta) {
   return String(copias.stdout).trim() !== '';
 }
 
+// las acciones de `git config` que cambian la configuración, en su forma de opción
+const ACCIONES_QUE_ESCRIBEN_CONFIG = /^--(?:add|replace-all|unset|unset-all|remove-section|rename-section|edit)$|^-e$/;
+
+/**
+ * Cómo se usa `git config`, de sus argumentos: `{ sueltos, sub, clave, lee, quita }`. `sueltos` son las palabras sin las
+ * opciones ni sus valores (`--file .git/config`); `sub`, el subcomando si lo hay (`get`, `set`, `remove-section`…);
+ * `lee`, si es `get`/`list` o `--get*`/`--list`; `quita`, si es `unset`.
+ */
+function formaDeGitConfig(args) {
+  const sueltos = [];
+  for (let i = 0; i < args.length; i++) {
+    if (/^(?:-f|--file|--blob|-t|--type|--default|--comment|--value)$/.test(args[i])) { i++; continue; }
+    if (!args[i].startsWith('-')) sueltos.push(args[i]);
+  }
+  // la forma con subcomando (`git config set|unset|remove-section|rename-section <clave>`) y la de opciones
+  const sub = /^(?:get|list|set|unset|remove-section|rename-section)$/.test(sueltos[0] || '') ? sueltos[0] : null;
+  const clave = sub ? sueltos[1] : sueltos[0];
+  const lee = sub ? /^(?:get|list)$/.test(sub) : args.some((w) => /^--(?:get|get-all|get-regexp|list)$|^-l$/.test(w));
+  const quita = sub ? sub === 'unset' : args.some((w) => /^--(?:unset|unset-all)$/.test(w));
+  return { sueltos, sub, clave, lee, quita };
+}
+
 function constanciasDeOtraRama(c, args, base, isControlApproval, extra = {}) {
   const { spawnSync } = require('child_process');
   const git = (argv) => {
@@ -3726,23 +3748,16 @@ function constanciasDeOtraRama(c, args, base, isControlApproval, extra = {}) {
     const antes = commit(nombre) || commit(/^refs\//.test(nombre) ? nombre : `refs/heads/${nombre}`);
     if (antes) comparar(antes, ref, ref); else fusion(ref);
   };
-  // `-c remote.origin.url=…` o `GIT_CONFIG_*` en el tramo: lo que se baja ya no es del remoto
-  if (/\bremote\.origin\.(?:url|fetch|pushurl)\b|\bGIT_CONFIG_(?:PARAMETERS|COUNT|KEY_\d+)=/i.test(tramo) && ['git fetch', 'git pull', 'git remote', 'git config'].includes(c)) {
+  const config = c === 'git config' ? formaDeGitConfig(args) : null;
+  // `-c remote.origin.url=…` o `GIT_CONFIG_*` en el tramo: lo que se baja ya no es del remoto. Un `git config` que sólo
+  // lee (`--get remote.origin.url`) no cambia a dónde apunta, aunque lo nombre
+  const soloLee = config && config.lee && !args.some((w) => ACCIONES_QUE_ESCRIBEN_CONFIG.test(w));
+  if (!soloLee && /\bremote\.origin\.(?:url|fetch|pushurl)\b|\bGIT_CONFIG_(?:PARAMETERS|COUNT|KEY_\d+)=/i.test(tramo) && ['git fetch', 'git pull', 'git remote', 'git config'].includes(c)) {
     out.push('cambiar a dónde apunta origin deja de probar qué está en la rama principal');
     return out;
   }
-  if (c === 'git config') {
-    // sin los valores de las opciones que llevan uno (`--file .git/config`), que no son la clave ni el subcomando
-    const sueltos = [];
-    for (let i = 0; i < args.length; i++) {
-      if (/^(?:-f|--file|--blob|-t|--type|--default|--comment|--value)$/.test(args[i])) { i++; continue; }
-      if (!args[i].startsWith('-')) sueltos.push(args[i]);
-    }
-    // la forma con subcomando (`git config set|unset|remove-section|rename-section <clave>`) y la de opciones
-    const sub = /^(?:get|list|set|unset|remove-section|rename-section)$/.test(sueltos[0] || '') ? sueltos[0] : null;
-    const clave = sub ? sueltos[1] : sueltos[0];
-    const lee = sub ? /^(?:get|list)$/.test(sub) : args.some((w) => /^--(?:get|get-all|get-regexp|list)$|^-l$/.test(w));
-    const quita = sub ? sub === 'unset' : args.some((w) => /^--(?:unset|unset-all)$/.test(w));
+  if (config) {
+    const { sueltos, sub, clave, lee, quita } = config;
     const pone = !lee && !quita && (sub ? sub === 'set' : sueltos.length >= 2) && /^remote\.origin\./i.test(clave || '');
     // borrar la sección de origin, o renombrarla (desde o hacia origin), también cuenta: sin origin, después
     // `git remote add origin` lo pone a apuntar a otro lado

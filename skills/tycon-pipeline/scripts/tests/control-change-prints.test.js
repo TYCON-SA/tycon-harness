@@ -355,6 +355,26 @@ test('T28 RemoteAddOrigin_FrenaSoloSiYaHayOrigin_YSacarOriginFrena', () => {
   }
 });
 
+// 🔴 Falla con: mirar si el tramo nombra `remote.origin.url` (o fetch, o pushurl) antes de mirar si `git config` sólo
+//    lee. `git config --get remote.origin.url` no cambia a dónde apunta origin, y frenaba igual que el que lo cambia.
+test('T28b GitConfigQueSoloLeeOrigin_Pasa_YElQueLoCambiaFrena', () => {
+  const c = corral();
+  const ORIGIN = /apunta origin/;
+  const URL = 'https://host.example/org/repo.git';
+  for (const cmd of ['git config --get remote.origin.url', 'git config get remote.origin.url', 'git config --get-all remote.origin.fetch',
+    'git config --get-regexp remote.origin.pushurl', 'git config --file .git/config --get remote.origin.url',
+    'git config --get remote.origin.url | sed s/x/y/']) {
+    const r = c.correr(cmd);
+    assert.ok(!(r && r.block && ORIGIN.test(r.block)), `sólo lee, pasa: ${cmd}`);
+  }
+  for (const cmd of [`git config remote.origin.url ${URL}`, `git config set remote.origin.url ${URL}`,
+    `git config --replace-all remote.origin.url ${URL}`, 'git config --add remote.origin.fetch +refs/heads/x:refs/remotes/origin/x',
+    `git -c remote.origin.url=${URL} fetch`, `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=remote.origin.url GIT_CONFIG_VALUE_0=${URL} git fetch`]) {
+    const r = c.correr(cmd);
+    assert.ok(r && r.block && ORIGIN.test(r.block), `cambia a dónde apunta, frena: ${cmd}`);
+  }
+});
+
 test('T7 SinConstanciasNuevas_OComandosQueNoSonCommitNiPush_ComoAntes', () => {
   const c = corral();
   assert.strictEqual(c.correr('git commit -m x'), null);
