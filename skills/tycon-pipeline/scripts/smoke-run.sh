@@ -218,6 +218,12 @@ case "$DECIDE_RC" in
     fi
     echo "[smoke-run] ⚠️ no pude decidir si el humo es de laboratorio ($ISOLATED_JS no está o no contestó): corre con la casa de siempre." >&2 ;;
 esac
+# La llave de prueba de Anthropic viaja sólo en la ejecución aislada. Un humo común correría con la casa y la credencial
+# reales de quien lo lanza, y quien puso la llave creería que corre con ella: no se corre.
+if [ -n "${TYCON_TEST_ANTHROPIC_API_KEY:-}" ] && [ "${AISLAR[0]:-}" != node ]; then
+  echo "smoke-run.sh: hay una llave de prueba (TYCON_TEST_ANTHROPIC_API_KEY), pero este humo no corre en la ejecución aislada: correría con la casa y la credencial reales — no se corre. La prueba en vivo va como guion de laboratorio (en .advisors/dod-runtime/), que corre aislada y con la llave." >&2
+  exit 2
+fi
 
 # ── La imagen, validada ANTES de correr ──
 # Un archivo que no sirve de prueba no se descubre después de correr un comando que puede haber escrito: el humo falla acá

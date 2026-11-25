@@ -101,7 +101,10 @@ test('T1 Compare_PrimeraPasada_CorreConCasaAparte @story-8.314 @ac-1', { skip: !
   assert.ok(!a.HOME.startsWith(c.casa + path.sep), `la casa aparte queda fuera de la de la cuenta: ${a.HOME}`);
   assert.strictEqual(a.USERPROFILE, a.HOME);
   for (const k of ['TMPDIR', 'TMP', 'TEMP']) assert.ok(a[k] && a[k].startsWith(path.dirname(a.HOME) + path.sep), `${k}=${a[k]}`);
-  for (const k of ['TYCON_HOME', 'CLAUDE_CONFIG_DIR', 'CODEX_HOME']) assert.strictEqual(a[k], null, k);
+  for (const k of ['TYCON_HOME', 'CODEX_HOME']) assert.strictEqual(a[k], null, k);
+  // la de Claude Code llega dicha y dentro de la casa aparte (fila 88c: así el ítem del llavero no es el de la sesión),
+  // nunca la de afuera
+  assert.strictEqual(a.CLAUDE_CONFIG_DIR, path.join(a.HOME, '.claude'));
   assert.strictEqual(a.TYCON_TEST_RUN, '1');
   assert.ok(!fs.existsSync(path.join(c.casa, 'escrito.txt')), 'nada escrito en la casa de la cuenta');
   assert.ok(!fs.existsSync(path.dirname(a.HOME)), 'la carpeta aparte se borró al terminar');
@@ -624,6 +627,10 @@ function humoQueMiraLaLlave(t) {
       `console.log('llave=' + (e.ANTHROPIC_API_KEY === ${JSON.stringify(LLAVE_DE_PRUEBA)} ? 'la-de-prueba' : e.ANTHROPIC_API_KEY ? 'otra' : 'ninguna'));`,
       "console.log('token=' + (e.ANTHROPIC_AUTH_TOKEN || e.CLAUDE_CODE_OAUTH_TOKEN ? 'llego' : 'no'));",
       "console.log('nombre-de-prueba=' + (e.TYCON_TEST_ANTHROPIC_API_KEY ? 'llego' : 'no'));",
+      // los otros canales con que Claude Code toma una credencial, y la carpeta que nombra el ítem del llavero
+      "const otros = ['ANTHROPIC_BASE_URL', 'ANTHROPIC_CUSTOM_HEADERS', 'ANTHROPIC_PROFILE', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_SECURESTORAGE_CONFIG_DIR'].filter((k) => e[k]);",
+      "console.log('otros=' + (otros.length ? otros.join(',') : 'ninguno'));",
+      "console.log('config-dir=' + (e.CLAUDE_CONFIG_DIR === require('path').join(e.HOME, '.claude') ? 'en-la-casa-aparte' : String(e.CLAUDE_CONFIG_DIR)));",
     ].join('\n'),
   });
   const ev = path.join(r, '.advisors', 'dod-runtime');
@@ -646,6 +653,29 @@ test('F88c Aislada_SinLlaveDePrueba_LaDeAfueraNoLlega: sin la llave de prueba, l
   assert.match(salida(r), /llave=ninguna/);
   assert.match(salida(r), /token=no/);
   assert.ok(!salida(r).includes(LLAVE_DE_AFUERA), salida(r));
+});
+test('F88c Aislada_OtrosCanalesDeCredencial_NoLlegan: la pasarela, las cabeceras, el perfil, el proveedor de nube y el ítem del llavero de afuera no llegan; la carpeta de Claude Code es la de la casa aparte', (t) => {
+  const correr = humoQueMiraLaLlave(t);
+  const r = correr({ TYCON_TEST_ANTHROPIC_API_KEY: LLAVE_DE_PRUEBA, ANTHROPIC_BASE_URL: 'https://pasarela.acme.test', ANTHROPIC_CUSTOM_HEADERS: 'x-api-key: de-afuera',
+    ANTHROPIC_PROFILE: 'de-afuera', CLAUDE_CODE_USE_BEDROCK: '1', CLAUDE_CODE_USE_VERTEX: '1', CLAUDE_SECURESTORAGE_CONFIG_DIR: '/tmp/de-afuera',
+    CLAUDE_CONFIG_DIR: '/tmp/claude-de-afuera' });
+  assert.strictEqual(r.status, 0, salida(r));
+  assert.match(salida(r), /llave=la-de-prueba/);
+  assert.match(salida(r), /otros=ninguno/);
+  assert.match(salida(r), /config-dir=en-la-casa-aparte/);
+});
+test('F88c HumoComun_ConLlaveDePrueba_NoCorre: con la llave de prueba puesta, un humo que no corre aislado no se corre (correría con la casa y la credencial reales)', (t) => {
+  const c = cuenta(t);
+  const r = repo(path.join(c.b, 'repo'), { 'marca.js': "require('fs').writeFileSync(require('path').join(__dirname, 'corrio.txt'), 'si');\n" });
+  const s = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.34', ['--', process.execPath, 'marca.js'], { cwd: r, env: ambiente(c, { TYCON_TEST_ANTHROPIC_API_KEY: LLAVE_DE_PRUEBA }) });
+  assert.strictEqual(s.status, 2, salida(s));
+  assert.match(salida(s), /ejecución aislada/);
+  assert.ok(!fs.existsSync(path.join(r, 'corrio.txt')), 'el comando no corrió');
+  assert.ok(!salida(s).includes(LLAVE_DE_PRUEBA), salida(s));
+  // gemelo: sin la llave, el mismo humo común corre
+  const sin = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.34', ['--', process.execPath, 'marca.js'], { cwd: r, env: ambiente(c) });
+  assert.strictEqual(sin.status, 0, salida(sin));
+  assert.ok(fs.existsSync(path.join(r, 'corrio.txt')), 'sin la llave, el humo común corre');
 });
 
 test('T99 RedDeLasPruebas_NadaTocoLaCasaReal @story-8.314', () => {
