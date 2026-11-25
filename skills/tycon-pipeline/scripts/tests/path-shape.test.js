@@ -127,12 +127,14 @@ test('sin la lib de rutas el portón de la terminal sigue cargando (y resuelve c
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-path-shape-'));
   try {
     fs.cpSync(path.join(__dirname, '..'), path.join(dir, 'scripts'), { recursive: true, filter: (src) => !/[\\/]tests([\\/]|$)/.test(src) && path.basename(src) !== 'path-shape.js' });
-    const r = spawnSync(process.execPath, ['-e', `const g = require(${JSON.stringify(path.join(dir, 'scripts', 'on-bash-write-gate.js'))}); process.stdout.write(g.resolveTarget('src/a.cs', ${JSON.stringify(dir)}));`], { encoding: 'utf8' });
+    // la copia escribe sus fallas en la carpeta de estado de su casa: la de la prueba, nunca la de quien la corre
+    const env = { ...process.env, HOME: dir, USERPROFILE: dir, TYCON_HOME: '' };
+    const r = spawnSync(process.execPath, ['-e', `const g = require(${JSON.stringify(path.join(dir, 'scripts', 'on-bash-write-gate.js'))}); process.stdout.write(g.resolveTarget('src/a.cs', ${JSON.stringify(dir)}));`], { encoding: 'utf8', env });
     assert.strictEqual(r.status, 0, `el portón carga sin la lib: ${r.stderr}`);
     assert.strictEqual(r.stdout, path.resolve(dir, 'src/a.cs'));
     // sin el lector compartido de la entrada, un heredoc sigue contando como programa: frena de más, nunca de menos
     const cmd = "python3 - <<'EOF'\nopen('src/a.cs','w').write('x')\nEOF";
-    const h = spawnSync(process.execPath, ['-e', `const g = require(${JSON.stringify(path.join(dir, 'scripts', 'on-bash-write-gate.js'))}); process.stdout.write(JSON.stringify(g.extractWriteTargets(${JSON.stringify(cmd)})));`], { encoding: 'utf8' });
+    const h = spawnSync(process.execPath, ['-e', `const g = require(${JSON.stringify(path.join(dir, 'scripts', 'on-bash-write-gate.js'))}); process.stdout.write(JSON.stringify(g.extractWriteTargets(${JSON.stringify(cmd)})));`], { encoding: 'utf8', env });
     assert.strictEqual(h.status, 0, h.stderr);
     assert.deepStrictEqual(JSON.parse(h.stdout), ['src/a.cs']);
     // el delimitador es cualquier palabra que el shell acepta: con guion o con punto también es un programa, y el
@@ -141,7 +143,7 @@ test('sin la lib de rutas el portón de la terminal sigue cargando (y resuelve c
     for (const cab of ["<<'END-DOC'", '<<END-DOC', "<<-'END.DOC'"]) {
       const delim = cab.replace(/^<<-?'?|'$/g, '');
       const c = `python3 - ${cab}\np = 'specs/story-x.md'\nopen(p, 'w').write('x')\n${delim}`;
-      const r2 = spawnSync(process.execPath, ['-e', `const g = require(${JSON.stringify(path.join(dir, 'scripts', 'on-bash-write-gate.js'))}); process.stdout.write(JSON.stringify(g.destinosArmados(${JSON.stringify(c)})));`], { encoding: 'utf8' });
+      const r2 = spawnSync(process.execPath, ['-e', `const g = require(${JSON.stringify(path.join(dir, 'scripts', 'on-bash-write-gate.js'))}); process.stdout.write(JSON.stringify(g.destinosArmados(${JSON.stringify(c)})));`], { encoding: 'utf8', env });
       assert.strictEqual(r2.status, 0, r2.stderr);
       assert.deepStrictEqual(JSON.parse(r2.stdout).flatMap((a) => a.literales || []), ['specs/story-x.md'], cab);
     }

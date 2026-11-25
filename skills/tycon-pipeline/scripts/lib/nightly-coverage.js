@@ -121,4 +121,4 @@ function historiaSensible({ declarados, codigo }) {
   }
 }
 
-module.exports = { criteriosConPruebaDeNoche, raizConSuites, historiaSensible };
+module.exports = { criteriosConPruebaDeNoche, raizConSuites, historiaSensible, criteriosDelTexto };
