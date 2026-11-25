@@ -119,6 +119,16 @@
  * reparte todo por peso, como sin la opción, y los tres lo dicen en su línea: los presupuestos medidos no se comparan
  * con cargas que son todas de peso. Sin la opción, la salida de siempre, byte por byte.
  *
+ * LOS TIEMPOS DEL NOCTURNO (`--measured-nightly <carpeta>`, junto con `--measured` y `--weight-set`): la validación
+ * saltea las suites que el cambio no toca, así que muchas no juntan `min` pasadas y caen a su peso escrito a mano (una
+ * suite nueva, al de por defecto). El nocturno las mide todas cada noche. Con la carpeta de sus `suite-times.jsonl`, una
+ * suite que la validación no midió y que el juego pedido no pesa con lo suyo toma la mediana del nocturno, con la regla
+ * de arriba (`suite_cap.measured` del nocturno). La que el juego pesa con lo suyo conserva ese peso: se midió en la
+ * validación, y de noche tarda otra cosa (clean-machine son minutos de noche y ~3 s en la validación). Cuenta como
+ * medida para los presupuestos medidos, y el total dice cuántas salieron del nocturno. Igual que `--measured`: `list`,
+ * `plan`, `merge`, `jobs`, `long` y `heaviest` tienen que recibir la MISMA carpeta. Sin `--measured`, sin juego, con una
+ * carpeta que no existe o sin la regla del nocturno, es un pedido negado. Los topes (`caps`) no la usan.
+ *
  * EL TRABAJO MÁS CARGADO (`heaviest`): el nocturno no tiene variante larga y su tope de 60 min es de Azure; un trabajo
  * desparejo se cortaba ahí sin aviso. Antes de correr, el nocturno pide el trabajo más cargado del MISMO reparto que
  * `plan` (con `--measured`, por lo medido) y lo escribe con su número y sus minutos; si pasa `job_warn_minutes` del
@@ -195,6 +205,7 @@ const USAGE = 'uso: suites-shard.js list --shard <i> --of <n> --skills <dir> --s
   + '               --weight-set <nombre> (un juego de pesos del archivo; la validación de cada rama pide «pr»)\n'
   + '               --exclusive-apart (las exclusive de suites.json van al trabajo del banco: list --shard bench)\n'
   + '               --measured <carpeta> (list, plan, merge, jobs y long: el reparto con los tiempos medidos en Azure)\n'
+  + '               --measured-nightly <carpeta> (con --measured y --weight-set: completa con los tiempos del nocturno)\n'
   + '               --bench-load <segundos> (con --exclusive-apart: el trabajo del banco también lleva suites, y arranca cargado)\n';
 /** El trabajo del banco, como trabajo de suites: su nombre en `--shard` y en la carpeta que publica. */
 const BENCH_SHARD = 'bench';
@@ -287,6 +298,9 @@ function readWeights(file, set = null) {
   return {
     fallback: own.fallback,
     weights: { ...base.weights, ...own.weights },
+    // los que el juego pesa con lo suyo, y la regla de arriba sin leer: los usa sólo --measured-nightly
+    ownNames: new Set(Object.keys(own.weights)),
+    nightlyCap: data.suite_cap,
     budget: chosen.job_budget === undefined ? null : chosen.job_budget,
     deadline: chosen.job_deadline === undefined ? null : chosen.job_deadline,
     budgetMeasured: chosen.job_budget_measured === undefined ? null : chosen.job_budget_measured,
@@ -449,16 +463,32 @@ function load(argv, { measure = false } = {}) {
   let measured = null;
   let byWeight = null;
   let byName = null;
+  const nightly = measure && argv.includes('--measured-nightly');
+  if (nightly && !argv.includes('--measured')) throw new Refused('--measured-nightly va con --measured: el nocturno sólo completa lo que la validación no midió');
+  if (nightly && set === null) throw new Refused('--measured-nightly va con --weight-set: sin un juego que no sea el del nocturno, no hay qué completar');
   if (measure && argv.includes('--measured')) {
     ({ byName } = readMeasured(argv, weights));
+    // de dónde sale el peso de cada suite medida: «azure» (las pasadas de la validación) o «nocturno»
+    const source = new Map();
     const own = {};
     for (const suite of suites) {
       const median = measuredMedian(byName.get(suite.name), weights.cap.measured);
-      if (median && median.ms > 0) own[suite.name] = median.ms / 1000;
+      if (median && median.ms > 0) { own[suite.name] = median.ms / 1000; source.set(suite.name, 'azure'); }
+    }
+    if (nightly) {
+      const rule = readNightlyRule(weights);
+      const night = readTimes(checkedFolder(argv, '--measured-nightly', 'sin ella no hay tiempos del nocturno que leer'), '--measured-nightly').byName;
+      // sólo las que la validación no midió y el juego no pesa con lo suyo: esas ya se midieron en la validación,
+      // y de noche tardan otra cosa (clean-machine, export-real)
+      for (const suite of suites) {
+        if (source.has(suite.name) || weights.ownNames.has(suite.name)) continue;
+        const median = measuredMedian(night.get(suite.name), rule);
+        if (median && median.ms > 0) { own[suite.name] = median.ms / 1000; source.set(suite.name, 'nocturno'); }
+      }
     }
     if (Object.keys(own).length) {
       weights = { ...weights, weights: { ...weights.weights, ...own } };
-      measured = new Set(Object.keys(own));
+      measured = source;
     } else {
       byWeight = ` · con --measured, ninguna suite junta ${weights.cap.measured.min} pasadas medidas en Azure: todo por peso`;
     }
@@ -473,8 +503,10 @@ function load(argv, { measure = false } = {}) {
 
 /** Cuántas de `suites` salieron de lo medido y cuántas de su peso, para el registro. */
 function measuredCounts(suites, measured) {
-  const count = suites.filter((s) => measured.has(s.name)).length;
-  return `${count} medidas en Azure, ${suites.length - count} por peso`;
+  const azure = suites.filter((s) => measured.get(s.name) === 'azure').length;
+  const night = suites.filter((s) => measured.get(s.name) === 'nocturno').length;
+  const byWeight = suites.length - azure - night;
+  return night ? `${azure} medidas en Azure, ${night} del nocturno, ${byWeight} por peso` : `${azure} medidas en Azure, ${byWeight} por peso`;
 }
 
 /** Lo que piden list, plan y merge: cuántos trabajos, la lista y el reparto (con `--measured`, por lo medido). */
@@ -673,17 +705,35 @@ function commandCaps(argv, write, complain) {
  * a un repo de juguete, sin las skills, y lo usan con los demás subcomandos.
  */
 function readMeasured(argv, weights) {
-  const folder = option(argv, '--measured');
-  if (!folder || folder.startsWith('--')) throw new Refused('--measured viene sin carpeta: sin ella no hay tiempos medidos que leer');
+  const folder = checkedFolder(argv, '--measured', 'sin ella no hay tiempos medidos que leer');
+  if (!weights.cap || !weights.cap.measured) throw new Refused('el juego de pesos no trae «suite_cap.measured» (la regla de los tiempos medidos): ni el tope ni el reparto medidos se adivinan');
+  return readTimes(folder, '--measured');
+}
+
+/** La carpeta de tiempos que nombra `flag`: tiene que existir y ser una carpeta. */
+function checkedFolder(argv, flag, why) {
+  const folder = option(argv, flag);
+  if (!folder || folder.startsWith('--')) throw new Refused(`${flag} viene sin carpeta: ${why}`);
   let isDir = false;
   try { isDir = fs.statSync(folder).isDirectory(); } catch (_) { isDir = false; }
-  if (!isDir) throw new Refused(`--measured: la carpeta de tiempos (${folder}) no existe o no es una carpeta`);
-  if (!weights.cap || !weights.cap.measured) throw new Refused('el juego de pesos no trae «suite_cap.measured» (la regla de los tiempos medidos): ni el tope ni el reparto medidos se adivinan');
+  if (!isDir) throw new Refused(`${flag}: la carpeta de tiempos (${folder}) no existe o no es una carpeta`);
+  return folder;
+}
+
+/** La regla medida del nocturno (`suite_cap.measured` de arriba): con ella sale la mediana de sus tiempos. */
+function readNightlyRule(weights) {
+  const cap = weights.nightlyCap === undefined ? null : readCapRule(weights.nightlyCap, 'el juego del nocturno');
+  if (!cap || !cap.measured) throw new Refused('--measured-nightly: el juego del nocturno no trae «suite_cap.measured» (la regla de sus tiempos medidos): su mediana no se adivina');
+  return cap.measured;
+}
+
+/** Las duraciones de cada suite en los registros de origen `ci-azure` de `folder`, de la más vieja a la más nueva. */
+function readTimes(folder, flag) {
   let times;
   try {
     times = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'suite-times.js'));
   } catch (e) {
-    throw new Refused(`--measured: no pude cargar el lector de tiempos (skills/tycon-pipeline/scripts/lib/suite-times.js: ${e.code || e.message})`);
+    throw new Refused(`${flag}: no pude cargar el lector de tiempos (skills/tycon-pipeline/scripts/lib/suite-times.js: ${e.code || e.message})`);
   }
   const read = times.readSources([folder]);
   const azure = times.filterRuns(read.runs, { origen: 'ci-azure' });
