@@ -255,8 +255,9 @@ function mensaje(motivo, detalle = []) {
 const CAMINO_DE_LA_PUERTA = [
   '   Para consultar O CAMBIAR una base de producción hay UNA sola forma, y cada sentencia abre un cuadro de aprobación:',
   "     /opt/tycon/bin/tycon-prod-sql <host> '<sentencia>' [--max-rows N]   (un select, o un cambio como alter database …)",
-  '   Si la conexión la rechaza el firewall (40615, «is not allowed to access the server»), se abre por la puerta, con su',
-  '   cuadro, y la regla se cierra sola al terminar la sesión: /opt/tycon/bin/tycon-prod-sql --open-firewall <host>',
+  '   Si la conexión la rechaza el firewall (40615, «is not allowed to access the server»), lo abre la persona en su',
+  '   terminal, con el cuadro de la puerta (la puerta da el comando para copiar), y la regla se cierra sola cuando',
+  '   termina la sesión que la pidió, o a las 8 h: /opt/tycon/bin/tycon-prod-sql --open-firewall <host> --session <id>',
   '   Un cambio de administración de Azure (alertas, tamaño o plan) va por la puerta, con el mismo cuadro:',
   '     /opt/tycon/bin/tycon-prod-sql --azure <el comando de az, sin «az»>   (las lecturas, list y show, sin cuadro)',
   '   Todas las formas, sin tocar producción: /opt/tycon/bin/tycon-prod-sql --help',
@@ -469,8 +470,8 @@ function rechazoAzure(palabras, op) {
   }
   if (op && /^sql server firewall-rule\b/.test(op)) {
     return { motivo: 'la regla de firewall no va por --azure.', detalle: [
-      'La IP de esta máquina se habilita por la puerta, con su cuadro, y la regla se cierra sola al terminar la sesión:',
-      '  /opt/tycon/bin/tycon-prod-sql --open-firewall <host>',
+      'La IP de esta máquina la habilita la persona en su terminal, por la puerta y con su cuadro; la regla se cierra sola',
+      'cuando termina la sesión que la pidió, o a las 8 h: /opt/tycon/bin/tycon-prod-sql --open-firewall <host> --session <id>',
       'Otra regla (otra IP, un rango) no tiene camino aprobado: dejale el comando a la persona para que lo corra en su terminal.',
     ] };
   }
@@ -515,6 +516,9 @@ function caracterQueEngana(texto) {
 const TOPE_RENGLONES = 20;
 const COLUMNAS_CUADRO = 60;
 const TOPE_CARACTERES = 1200;
+// el tope de la consola que pide la puerta en primer plano, en ms: su turno espera hasta 90 s y el cuadro hasta 120 s,
+// así que 5 minutos los cubren con margen
+const TOPE_PUERTA_MS = 300000;
 // Todo lo que está desde U+1100 (donde empiezan los anchos) cuenta 2, y un emoji también: así no hace falta la tabla
 // entera de anchos de Unicode, y lo que en verdad es angosto se cuenta de más, nunca de menos.
 const ANCHO_DOBLE = /[\u{1100}-\u{10ffff}]|\p{Extended_Pictographic}/u;
@@ -581,7 +585,35 @@ function leerArchivoDeConsulta(ruta) {
   return { texto };
 }
 
+// El tope de horas de una regla de firewall de producción (prod-firewall-close.js, TOPE_HORAS) se aplica en el barrido,
+// que corre al arrancar o terminar una sesión: una sola sesión larga no lo dispara. Este freno corre antes de cada
+// comando: si el estado muestra una regla pasada del tope (o sin fecha que se pueda leer), lanza el barrido aparte, sin
+// esperarlo, a lo sumo una vez cada 10 minutos. No decide nada del comando y nunca frena por esto.
+const TOPE_FIREWALL_MS = 8 * 3600 * 1000;
+function barrerFirewallVencido() {
+  try {
+    const os = require('os'); const fs = require('fs'); const path = require('path');
+    // la carpeta del estado la sabe tycon-home.js (en /opt viaja su copia al lado); sin ella no se barre acá
+    const dir = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')).stateDir(os.homedir());
+    const estado = path.join(dir, 'production-firewall.json');
+    if (!fs.existsSync(estado)) return;
+    const reglas = (JSON.parse(fs.readFileSync(estado, 'utf8')).reglas) || [];
+    const vencida = reglas.some((r) => { const t = Date.parse((r && r.abierta) || ''); return !Number.isFinite(t) || Date.now() - t > TOPE_FIREWALL_MS; });
+    if (!vencida) return;
+    const marca = `${estado}.barrido-por-tope`;
+    try { if (Date.now() - fs.statSync(marca).mtimeMs < 10 * 60 * 1000) return; } catch (_) { /* sin marca: va */ }
+    fs.writeFileSync(marca, '');
+    const cierre = path.join(__dirname, 'prod-firewall-close.js');
+    if (!fs.existsSync(cierre)) return;
+    const { spawn } = require('child_process');
+    const hijo = spawn(process.execPath, [cierre], { detached: true, stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true });
+    hijo.stdin.end(JSON.stringify({ hook_event_name: 'SessionStart', source: 'tope-del-firewall' }));
+    hijo.unref();
+  } catch (_) { /* el tope se vuelve a mirar en el próximo arranque o fin de sesión */ }
+}
+
 function decidir(entrada) {
+  barrerFirewallVencido();
   let payload = {};
   try { payload = JSON.parse(entrada || '{}'); } catch (e) {
     // AC 14: un payload que no se pudo leer no es «no hay base». Si el texto crudo nombra algo de
@@ -827,8 +859,7 @@ function decidir(entrada) {
     // 🔴 La puerta no corre de fondo, con ninguna forma: abre un cuadro que vence a los 120 s, y de fondo nadie lo mira, así
     // que el pedido se cancela solo y la sesión no sabe por qué. Una lectura no abre cuadro, pero la regla es una sola: una
     // con excepciones es otra forma de equivocarse. El Monitor corre de fondo sin la marca `run_in_background`.
-    // Un primer plano con un tope corto no se frena: anda si la persona contesta antes de que venza, y si no, la consola
-    // lo pasa a segundo plano (el mensaje pide el tope de 5 minutos).
+    // Un primer plano con un tope corto termina de fondo, y también se frena: es el último chequeo de la puerta (abajo).
     const pedido = payload.tool_input || {};
     if (pedido.run_in_background === true || payload.tool_name === 'Monitor') {
       frenar('la puerta de producción no corre de fondo.', [
@@ -908,6 +939,43 @@ function decidir(entrada) {
       'Un alias o una función con ese nombre se queda con la sentencia antes de que llegue a la puerta.',
       'Sacalo de tu configuración del shell (o de este comando) y volvé a intentar.',
     ], { cmd });
+    // 🔴 En primer plano, la puerta lleva un tope de 5 minutos. Al vencer el tope de la consola de Claude Code (120 s
+    // si no se pide otro), la consola no corta el comando: lo pasa a segundo plano, y el cuadro queda abierto sin nadie
+    // que lo mire, como si se hubiera pedido de fondo. Por eso va con la misma regla. Es el último chequeo: si el
+    // comando se frena por su forma o por la puerta, el tope no lo arregla, y el mensaje que sirve es el de esa causa.
+    // Codex no llega acá: se frena antes, porque ahí la puerta no puede abrir el cuadro.
+    // El tope llega como número; un texto con el número se acepta, y otra cosa es un tope que no se entiende.
+    // El que aplica la consola sale también de su configuración, que llega en el entorno del freno: sin tope en el
+    // pedido vale BASH_DEFAULT_TIMEOUT_MS, BASH_MAX_TIMEOUT_MS recorta el pedido (salvo que el de fábrica sea mayor), y
+    // CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS pasa el comando a segundo plano a esa altura, pida lo que pida.
+    const comoNumero = (v) => (typeof v === 'number' || typeof v === 'string' ? Number(v) : NaN);
+    const sinTope = pedido.timeout === undefined || pedido.timeout === null;
+    const deFabrica = comoNumero(process.env.BASH_DEFAULT_TIMEOUT_MS);
+    const tope = sinTope && deFabrica >= TOPE_PUERTA_MS ? deFabrica : comoNumero(pedido.timeout);
+    const recortes = [['BASH_MAX_TIMEOUT_MS', !(deFabrica >= TOPE_PUERTA_MS)], ['CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS', true]];
+    for (const [nombre, cuenta] of recortes) {
+      const v = comoNumero(process.env[nombre]);
+      if (!cuenta || process.env[nombre] === undefined || process.env[nombre] === '' || !(v < TOPE_PUERTA_MS)) continue;
+      frenar(`la puerta de producción va en primer plano con un tope de 5 minutos, y la configuración de la consola lo baja (${nombre}=${String(process.env[nombre]).slice(0, 20)}).`, [
+        'Con esa variable, la consola pasa la puerta a segundo plano, o la corta, antes de los 5 minutos que pueden',
+        'tardar su turno y su cuadro, y el cuadro queda sin nadie que lo mire.',
+        `Decíselo a la persona: es su configuración. Con ${nombre} en ${TOPE_PUERTA_MS} o más (o sin ella), en el env de la`,
+        'configuración de la consola y en una sesión nueva, la puerta pasa.',
+      ], { cmd }, 'puerta-de-fondo');
+    }
+    if (!(Number.isFinite(tope) && tope >= TOPE_PUERTA_MS)) {
+      // hacia abajo: un tope de 299,9 s no se lee como el de 300 s que falta
+      const trae = sinTope ? 'no trae ninguno'
+        : Number.isFinite(tope) ? `trae uno de ${Math.floor(tope / 1000)} s`
+          : `trae uno que no se entiende (${String(pedido.timeout).slice(0, 40)})`;
+      frenar(`la puerta de producción va en primer plano con un tope de 5 minutos, y este pedido ${trae}.`, [
+        'La puerta puede esperar hasta 90 s su turno y hasta 120 s el cuadro. Al vencer el tope, la consola no corta',
+        'el comando: lo pasa a segundo plano, y el cuadro queda sin nadie que lo mire. Sin tope, la consola usa el suyo:',
+        '120 s, si su configuración no dice otro.',
+        `Corré el mismo comando en primer plano, con timeout: ${TOPE_PUERTA_MS} (en milisegundos). Antes, decile a la`,
+        'persona qué cuadro va a aparecer y qué tiene que hacer en él.',
+      ], { cmd }, 'puerta-de-fondo');
+    }
     recordDecision({ freno: 'prod-access-guard', regla: 'puerta-no-canonica', veredicto: 'paso', cmd });
     process.exit(0);                                    // forma canónica y limpia: que decida el cuadro
   }
@@ -1027,13 +1095,13 @@ function decidir(entrada) {
   const hostAzure = (h) => (h && h.includes('.') ? h : `${h || '<host>'}.database.windows.net`);
   // `declarado`: la puerta sólo atiende hosts declarados como producción; a uno sin declarar no se le sugieren consultas
   const caminoFirewall = (h, declarado) => (esFirewall
-    ? [`Para habilitar la IP de esta máquina en el firewall, el único camino es la puerta (con su cuadro, y la regla se cierra sola): /opt/tycon/bin/tycon-prod-sql --open-firewall ${hostAzure(h)}`]
+    ? [`Para habilitar la IP de esta máquina en el firewall, el único camino es la puerta, y lo corre la persona en su terminal (con su cuadro; la regla se cierra sola cuando termina la sesión que la pidió, o a las 8 h): /opt/tycon/bin/tycon-prod-sql --open-firewall ${hostAzure(h)} --session <id>`]
     : esLecturaAz && declarado
       ? ['Las lecturas de Azure sobre un servidor de producción también se frenan. En su lugar, la puerta (con su cuadro):',
         `  el tamaño y el tope: /opt/tycon/bin/tycon-prod-sql ${hostAzure(h)} 'select name, size/128 as mb, max_size/128 as max_mb from sys.database_files'`,
         `  la edición y el nivel: /opt/tycon/bin/tycon-prod-sql ${hostAzure(h)} 'select edition, service_objective from sys.database_service_objectives'`,
         '  (miden la base a la que entra la puerta: la «base» del servidor en su catálogo; si el catálogo no la declara, master)',
-        `  si la conexión la rechaza el firewall: /opt/tycon/bin/tycon-prod-sql --open-firewall ${hostAzure(h)}`]
+        `  si la conexión la rechaza el firewall, lo abre la persona en su terminal: /opt/tycon/bin/tycon-prod-sql --open-firewall ${hostAzure(h)} --session <id>`]
       : []);
   for (const n of nombrados) {
     if (n.host === null) {
