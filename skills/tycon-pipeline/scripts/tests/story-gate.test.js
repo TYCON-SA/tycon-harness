@@ -1410,6 +1410,35 @@ test('EscrituraAlEstado_ConFormasDelShellQueLaExpresionNoLee_Frena (fila 228, el
   });
 });
 
+// 🔴 Fila 228, lo bajo. Mutación: no leer los comandos de adentro de una sustitución, ni el texto de `env -S`, ni los
+// archivos que escribe rsync por sus opciones, ni el programa detrás de `time -p`, de `noglob`, de un `sudo` con sus
+// opciones juntas o con una sustitución pegada a su nombre. Con cualquiera, la copia al estado pasaba sin que la leyera
+// el registro de destinos.
+test('DestinosAlEstado_DetrasDeEnvoltoriosYSustituciones_SeLeen (fila 228, el freno)', () => {
+  const E = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'f228-')));
+  const res = path.join(E, 'plan-review', 's1', 's1.resultado.json');
+  const S = path.join(E, '..', 'falso.json');
+  const visto = (cmd) => assert.ok(bash.extractWriteTargets(cmd).includes(res), JSON.stringify(cmd));
+  // los comandos de adentro de una sustitución, también entre comillas dobles o pegada a otro programa
+  for (const cmd of [`echo $(cp ${S} '${res}')`, `x=$(cp ${S} "${res}")`, `echo "$(cp ${S} '${res}')"`, `echo \`cp ${S} '${res}'\``,
+    `/bin/sed$(/bin/cp ${S} ${res})`, `diff <(cp ${S} '${res}') a`]) visto(cmd);
+  // una sustitución detrás del destino puede no dar ninguna palabra: el destino puede ser la de antes
+  visto(`cp ${S} '${res}' $(true)`);
+  // el texto de `env -S`, que env parte en palabras y corre
+  for (const cmd of [`env -S 'cp ${S} ${res}'`, `env -S"cp ${S} ${res}"`, `env --split-string='cp ${S} ${res}'`, `env -iS 'cp ${S} ${res}'`]) visto(cmd);
+  // los archivos que escribe rsync por sus opciones
+  for (const op of ['--log-file=', '--log-file ', '--write-batch=', '--only-write-batch ']) visto(`rsync ${op}'${res}' a b`);
+  // el programa detrás de `time -p`, de los modificadores de zsh, de `=cp` y de `$'cp'`
+  for (const delante of ['time -p', 'noglob', 'nocorrect', 'sudo -iu root', 'sudo -nu root', 'sudo -T 5', 'sudo -R /']) visto(`${delante} cp ${S} '${res}'`);
+  for (const nombre of ['=cp', "$'cp'", "$'\\x63p'"]) visto(`${nombre} ${S} '${res}'`);
+  // una sustitución pegada al nombre de un envoltorio o de tee
+  visto(`nohup$(:/ ) cp ${S} '${res}'`);
+  visto(`tee$(:/ ) '${res}' < ${S}`);
+  // lo de siempre no suma destinos
+  assert.deepEqual(bash.extractWriteTargets(`echo "$(git log -1)"; env -S 'true'`), []);
+  assert.deepEqual(bash.extractWriteTargets(`time -p ls; noglob echo a*`), []);
+});
+
 // 🔴 Mutaciones: mirar sólo el primer `--out`, aceptar un destino que no se puede leer, o aceptar el corredor del arnés
 // con un `--args` que no es el pedido que preparó el arnés: con cualquiera, la sesión escribe un «aprobado» que no es el
 // de su plan (T28, las tres formas de falsificar el resultado).
