@@ -22,8 +22,8 @@
  * 🔴 Mira el código de salida de cada consulta (`az`, la bajada del buzón) antes de leer su salida: una que falla es
  * «no pude medir» de ese repo o del buzón, nunca «sin usos» (regla ADO 5).
  *
- * Con `--home`, en vez del mapa mide los tres lugares viejos de la casa de Claude Code que se retiran:
- * `tycon-claude-guides`, `.tycon-pipeline` y `tycon.json`. Cada máquina se lee de su `place.json` del buzón, la más
+ * Con `--home`, en vez del mapa mide los tres lugares viejos de la casa de Claude Code que se retiran: el nombre viejo
+ * del lugar del arnés, `.tycon-pipeline` y `tycon.json`. Cada máquina se lee de su `place.json` del buzón, la más
  * nueva por huella, sin su correo. Un lugar sale `con-uso` si una máquina registra con él algo que no es un permiso (un
  * permiso lo saca el retiro), y `sin-medir` si una máquina no lo cuenta (una versión que no lo sube). Una máquina sin la
  * versión bajada va en `machines_not_moved`, y una callada en la ventana, en `machines_unreported`. La fecha es la más
@@ -369,10 +369,10 @@ function check(o) {
   };
 }
 
-// los tres lugares viejos que se retiran, y de dónde sale cada uno en el place.json de una máquina
-// (`tycon-claude-guides` lo sube upload-runs.js desde antes, como `legacy`; los otros dos, en `old_places`)
+// los tres lugares viejos que se retiran, y de dónde sale cada uno en el place.json de una máquina (el nombre viejo del
+// lugar lo sube upload-runs.js desde antes, como `legacy`; los otros dos, en `old_places`)
 const OLD_PLACES = [
-  { name: 'tycon-claude-guides', of: (j) => (j.registered_by_legacy ? { registered: j.registered_by_legacy } : null) },
+  { name: require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js')).LEGACY_PLACE_NAME, of: (j) => (j.registered_by_legacy ? { registered: j.registered_by_legacy } : null) },
   { name: '.tycon-pipeline', of: (j) => (j.old_places && j.old_places['.tycon-pipeline']) || null },
   { name: 'tycon.json', of: (j) => (j.old_places && j.old_places['tycon.json']) || null },
 ];

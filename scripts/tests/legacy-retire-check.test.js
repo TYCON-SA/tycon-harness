@@ -339,6 +339,8 @@ function runCasa(dir, extra = []) {
   try { json = JSON.parse(r.stdout); } catch (_) { /* lo dice el assert */ }
   return { code: r.status, json, stderr: r.stderr, stdout: r.stdout };
 }
+// el nombre viejo del lugar del arnés, de su constante (no se escribe a mano)
+const VIEJO = require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'tycon-home.js')).LEGACY_PLACE_NAME;
 const lugares = (j) => Object.fromEntries(j.places.map((p) => [p.name, p.state]));
 
 test('T1 HomeCheck_ListsMachines_ModeAndQuiet — la versión bajada, un clon y una máquina callada, cada una en su lista y sin correos', () => {
@@ -351,7 +353,7 @@ test('T1 HomeCheck_ListsMachines_ModeAndQuiet — la versión bajada, un clon y 
   assert.deepStrictEqual(r.json.machines_unreported, ['c3']);
   assert.ok(!/example\.invalid/.test(r.stdout), 'el --json no lleva el correo de nadie');
   // la callada no cambia el estado de ningún lugar (como en el mapa de renombres); el clon y la callada no dejan salir 0
-  assert.deepStrictEqual(lugares(r.json), { 'tycon-claude-guides': 'limpia', '.tycon-pipeline': 'limpia', 'tycon.json': 'limpia' });
+  assert.deepStrictEqual(lugares(r.json), { [VIEJO]: 'limpia', '.tycon-pipeline': 'limpia', 'tycon.json': 'limpia' });
   assert.strictEqual(r.code, 2);
 });
 
@@ -362,7 +364,7 @@ test('T2 HomeCheck_PermissionIsNotUse_RelocateIs — un permiso no es un uso; un
     'maq-p3': lugarDe('p3', { sinNuevos: true }),
   } }));
   assert.ok(r.json, r.stderr + r.stdout);
-  assert.deepStrictEqual(lugares(r.json), { 'tycon-claude-guides': 'limpia', '.tycon-pipeline': 'con-uso', 'tycon.json': 'sin-medir' });
+  assert.deepStrictEqual(lugares(r.json), { [VIEJO]: 'limpia', '.tycon-pipeline': 'con-uso', 'tycon.json': 'sin-medir' });
   const estado = r.json.places.find((p) => p.name === '.tycon-pipeline');
   assert.deepStrictEqual(estado.uses, [{ machine: 'p2', files: ['settings.json'] }]);
   assert.deepStrictEqual(r.json.places.find((p) => p.name === 'tycon.json').unmeasured, ['p3']);
@@ -370,7 +372,7 @@ test('T2 HomeCheck_PermissionIsNotUse_RelocateIs — un permiso no es un uso; un
   // con todo limpio y la fecha cumplida, sale 0
   const ok = runCasa(labCasa({ machines: { 'maq-p1': lugarDe('p1', { guias: { total: 1, files: { 'settings.json': { count: 1, permissions: 1 } }, unreadable: 0 } }) } }));
   assert.strictEqual(ok.code, 0, ok.stderr + ok.stdout);
-  assert.deepStrictEqual(lugares(ok.json), { 'tycon-claude-guides': 'limpia', '.tycon-pipeline': 'limpia', 'tycon.json': 'limpia' });
+  assert.deepStrictEqual(lugares(ok.json), { [VIEJO]: 'limpia', '.tycon-pipeline': 'limpia', 'tycon.json': 'limpia' });
 });
 
 test('T2b HomeCheck_UnreadableMailbox_Exit2 — sin buzón sale 2 y ningún lugar limpio; antes de la fecha, 1', () => {
