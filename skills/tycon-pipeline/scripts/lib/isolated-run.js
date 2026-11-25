@@ -469,10 +469,6 @@ function exec({ argv, raices = [], env = process.env, userInfo, cwd = process.cw
         } else if (negadas.length) {
           err(`[aislada] ⛔ un proceso sin la red de escritura quiso escribir en la casa de la cuenta (el encierro lo mató): ${negadas.join(' · ')}\n`);
           if (codigo === 0) codigo = 3;
-        } else if (codigo !== 0 && !intentos.length) {
-          // lo que el encierro niega sin matar no queda anotado para node: el comando sólo ve un «Operation not permitted»
-          // suelto (un here document de bash, un temporal de mktemp con otra carpeta). Se dice qué hacer en una línea
-          err(`[aislada] ⚠️ el comando salió ${codigo} dentro del encierro: si dijo «Operation not permitted» o «cannot create temp file», quiso escribir fuera de su casa aparte y de su repo (un here document o un temporal con otra carpeta); el encierro no se abre: corré esa suite como humo común\n`);
         }
       }
       fin(codigo);
