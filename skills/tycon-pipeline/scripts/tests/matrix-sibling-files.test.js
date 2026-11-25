@@ -759,3 +759,58 @@ test('T79u Archivos_ElValidadorDiceLaPruebaYLoQueNoEsCodigo', () => {
   assert.match(w20[0].detail, /no es código declarado en files_to_modify \/ files_to_create: docs\/nota\.md\./);
   assert.match(w20[0].detail, /Nombra pruebas, que no son lo que la prueba ejercita: tests\/lista\.test\.js\./);
 });
+
+// ---------------------------------------------------------------- el nombre del hermano adelante, con el hermano en otra carpeta
+// 🔴 Falla con: la historia nombra los archivos del hermano con su nombre adelante (`Back/src/x`) y el hermano no vive al
+// lado del repo de historias. La ruta no se encontraba ni desde la carpeta de arriba ni adentro del hermano (quedaba
+// `Back/Back/src/x`): ninguna evidencia contaba y la matriz daba 0 de todos los criterios.
+
+/** El laboratorio con el hermano `Back` en `<ws>/otros/Back`, declarado así en el repo de historias. */
+function labEnOtraCarpeta(declarados) {
+  const f = lab({ declarados, hermanos: [] });
+  const back = repoNuevo(path.join(f.ws, 'otros'), 'Back');
+  escribir(back, 'src/Feature.cs', '// v1\n');
+  commit(back, 'base', f.ahora - 1000);
+  escribir(f.esp, '.tycon/advisors.yaml', 'evidence:\n  companion_repos:\n    - ../otros/Back\n');
+  commit(f.esp, 'el hermano', f.ahora - 800);
+  return { ...f, back };
+}
+
+test('T12 HermanoEnOtraCarpeta_RutaConSuNombre_SeLee — `Back/src/x` es src/x adentro del hermano, esté donde esté', () => {
+  const f = labEnOtraCarpeta(['Back/src/Feature.cs']);
+  f.humo();
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'RUNTIME', avisos(r));
+  assert.doesNotMatch(avisos(r), /no pude leer/i);
+  // cambiado después de la evidencia: se juzga esa copia y no cuenta
+  escribir(f.back, 'src/Feature.cs', '// v2\n');
+  commit(f.back, 'cambio', f.ahora + 100);
+  const r2 = f.calcular();
+  assert.equal(r2.perAc[1].verdict, 'NOT-RUN', avisos(r2));
+  assert.match(avisos(r2), /Back\/src\/Feature\.cs/);
+  assert.doesNotMatch(avisos(r2), /no pude leer/i);
+});
+
+test('T13 HermanoEnOtraCarpeta_ConCopiaEnLaRama_RutaConSuNombre_SeLeeDeLaCopia', () => {
+  const f = labEnOtraCarpeta(['Back/src/Feature.cs']);
+  git(f.esp, ['checkout', '-q', '-b', RAMA]);
+  const copia = path.join(f.ws, 'otros', 'Back-wt');
+  git(f.back, ['worktree', 'add', '-q', '-b', RAMA, copia]);
+  f.humo();
+  escribir(copia, 'src/Feature.cs', '// v2 en la rama\n');
+  commit(copia, 'cambio en la rama', f.ahora + 100);
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'NOT-RUN', avisos(r));
+  assert.match(avisos(r), /Back\/src\/Feature\.cs/);
+  assert.doesNotMatch(avisos(r), /no pude leer/i, 'se lee de la copia de la rama, no se da por perdida');
+});
+
+test('T14 HermanoEnOtraCarpeta_RutaQueNoEsta_LoDiceConElHermano — la que no está avisa dónde la buscó adentro del hermano', () => {
+  const f = labEnOtraCarpeta(['Back/src/NoEsta.cs']);
+  f.humo();
+  const r = f.calcular();
+  assert.equal(r.perAc[1].verdict, 'NOT-RUN', avisos(r));
+  const aviso = r.warnings.find((w) => /^No pude leer Back\/src\/NoEsta\.cs/.test(w)) || '';
+  assert.ok(aviso, avisos(r));
+  assert.ok(aviso.includes(path.join(f.back, 'src', 'NoEsta.cs')), `nombra la ruta adentro del hermano: ${aviso}`);
+});

@@ -131,6 +131,7 @@ const CASOS = [
   { id: 'snapshot-iter', marcador: true, argv: ['snapshot-iter', '1'] },
   { id: 'runtime-waiver-sin-args', marcador: true, argv: ['runtime-waiver'] },
   { id: 'runtime-waiver-sin-terminal', marcador: true, argv: ['runtime-waiver', '{STORY}'] },
+  { id: 'check-runtime-waiver', marcador: true, argv: ['check-runtime-waiver', '{STORY}'] },
   { id: 'waive-critical-sin-args', marcador: true, argv: ['waive-critical'] },
   { id: 'waive-critical-sin-terminal', marcador: true, argv: ['waive-critical', '--rule', 'X-C1', '--file', 'src/a.js', '--reason', 'probado'] },
   { id: 'compare-waiver-sin-args', marcador: true, argv: ['compare-waiver'] },
