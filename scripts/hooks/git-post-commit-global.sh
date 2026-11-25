@@ -136,7 +136,7 @@ while IFS= read -r l; do
   ignorado "$ruta" && continue
   if [ "$estado" = "??" ]; then NUEVOS=$((NUEVOS+1)); else MODIFICADOS=$((MODIFICADOS+1)); fi
   NOMBRES+=("$ruta")
-done <<< "$STATUS"
+done < <(printf '%s\n' "$STATUS")
 
 TOTAL=$((MODIFICADOS + NUEVOS))
 [ "$TOTAL" -eq 0 ] && exit 0

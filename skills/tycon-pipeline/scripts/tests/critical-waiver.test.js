@@ -507,6 +507,63 @@ test('RuntimeWaiver_OkDelDev_FirmaSinTerminal @story-8.63 @ac-7', () => {
   assert.deepEqual([ap.tipo, ap.quien], ['manual', 'Dev de Prueba']);
 });
 
+// ── el chequeo previo, sin firma (fila 233) ─────────────────────────────────────────────────────────
+// Un dev perdió 9 clicks del dueño: cada firma salió «hay criterios SIN CORRER que no se pueden eximir» porque los
+// criterios no estaban declarados imposibles de probar en vivo. `check-runtime-waiver` corre las mismas comprobaciones
+// que la firma por la ventana, no firma nada y dice si la firma pasaría. No es `runtime-waiver --check`: cualquier
+// `runtime-waiver` es una firma para el arnés, y le abriría al dueño el cuadro.
+const nadaFirmado = (lab) => {
+  const lib = require(path.join(SCRIPTS, 'lib', 'runtime-waiver.js'));
+  return !fs.existsSync(lib.repoWaiverLogPath(lab.repo)) && !fs.existsSync(lab.env.TYCON_WAIVER_LOG)
+    && !lineas(path.join(lab.runDir, 'approvals.jsonl')).some((l) => /AC 1/.test(l.que));
+};
+
+test('T233a CheckRuntimeWaiver_Declared_WouldPass_SignsNothing — con el criterio declarado, pasaría y no firma', () => {
+  const lab = laboratorioDeCriterio([]);
+  const r = lab.marker(['check-runtime-waiver', lab.story, '--acs', '1'], { ventana: false });
+  assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.match(r.stdout, /pasaría.*AC 1/);
+  assert.ok(nadaFirmado(lab), 'el chequeo no firma');
+  // sin --acs: todos los pendientes, como la firma
+  const todos = lab.marker(['check-runtime-waiver', lab.story], { ventana: false });
+  assert.equal(todos.status, 0, todos.stderr);
+  assert.match(todos.stdout, /pasaría.*AC 1/);
+  // la puerta Bash lo deja correr sin pedir firma, también para la corrida de otra sesión (así lo usa la coordinadora)
+  for (const extra of [[], ['--for-session', 's-otra']]) {
+    const g = spawnSync('node', [inHarnessCopy(path.join(SCRIPTS, 'on-bash-write-gate.js'))], {
+      cwd: lab.repo, encoding: 'utf8', env: lab.env,
+      input: JSON.stringify({ session_id: lab.sid, tool_name: 'Bash', cwd: lab.repo, tool_input: { command: inHarnessCopy(`node ${path.join(SCRIPTS, 'marker.js')} check-runtime-waiver ${lab.story} --acs 1 ${extra.join(' ')}`) } }),
+    });
+    assert.equal(g.status, 0, `${extra.join(' ')}: ${g.stdout}${g.stderr}`);
+    assert.doesNotMatch(g.stdout, /"permissionDecision":"(deny|ask)"/, `${extra.join(' ')}: ${g.stdout}`);
+  }
+});
+
+test('T233b CheckRuntimeWaiver_NotDeclared_WouldBeRejected — sin el bloque runtime_not_verifiable, no pasaría y dice qué falta', () => {
+  const lab = laboratorioDeCriterio([]);
+  // el mismo criterio, sin declararlo imposible: queda «sin correr», como en el informe
+  fs.writeFileSync(lab.story, fs.readFileSync(lab.story, 'utf8').replace(/runtime_not_verifiable:\n  - ac: 1\n    reason: "x"\n    covered_by: T1\n/, ''));
+  const r = lab.marker(['check-runtime-waiver', lab.story, '--acs', '1'], { ventana: false });
+  assert.equal(r.status, 1, `${r.stdout}${r.stderr}`);
+  assert.match(r.stdout, /no pasaría/);
+  assert.match(r.stdout, /SIN CORRER.*AC #1/);
+  assert.match(r.stdout, /runtime_not_verifiable/);
+  assert.ok(nadaFirmado(lab));
+  // la firma de verdad, con el mismo pedido, sale rechazada por lo mismo: el chequeo no promete otra cosa
+  const firma = lab.marker(['runtime-waiver', lab.story, '--acs', '1', '--approved-by', 'Dev de Prueba']);
+  assert.notEqual(firma.status, 0);
+  assert.match(firma.stderr, /SIN CORRER/);
+});
+
+test('T233c CheckRuntimeWaiver_OtherAc_WouldBeRejected — un criterio que no está pendiente de firma: no pasaría', () => {
+  const lab = laboratorioDeCriterio([]);
+  const r = lab.marker(['check-runtime-waiver', lab.story, '--acs', '2'], { ventana: false });
+  assert.equal(r.status, 1, `${r.stdout}${r.stderr}`);
+  assert.match(r.stdout, /no pasaría[^]*AC 2 no está/);
+  const sinStory = lab.marker(['check-runtime-waiver', path.join(lab.repo, 'specs', 'no-esta.md')], { ventana: false });
+  assert.equal(sinStory.status, 2, 'sin la historia no hay chequeo');
+});
+
 test('RuntimeWaiver_SinOk_Frena @story-8.63 @ac-7', () => {
   const lab = laboratorioDeCriterio([delAgente(CITA)]);
   const log = () => fs.existsSync(require(path.join(SCRIPTS, 'lib', 'runtime-waiver.js')).repoWaiverLogPath(lab.repo));

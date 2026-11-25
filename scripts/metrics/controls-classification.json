@@ -138,6 +138,13 @@
       "session-cap-guard.js"
     ]
   },
+  "clear-session": {
+    "tipo": "exigencia",
+    "motivo": "Protege el trabajo de otra sesión: cerrar su ejecución abierta pide la firma del dueño, y cerrar una completa queda anotado.",
+    "review_before": "2027-11-24",
+    "estado": "propuesta",
+    "ganchos": []
+  },
   "on-bash-write-gate.js": {
     "tipo": "exigencia",
     "motivo": "Protege las historias y las constancias: el estado de la ejecución no se escribe por la línea de comandos, y el código no se escribe fuera de una ejecución.",
