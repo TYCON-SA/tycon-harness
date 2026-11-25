@@ -314,6 +314,37 @@ test('on-bash-write-gate (F2): el heredoc de una story EXISTENTE no contagia a o
   assert.equal(hd[0].target, 'a.md');
 });
 
+// 🔴 Fila 243 (P10). Mutación: que el estado del pipeline se mire sólo en lo escrito a la vista, que `eval` no lea las
+// variables de afuera, que `su -c` no se lea como un shell, o que `parallel` no corra su orden. Por cualquiera, una
+// escritura al estado (o a una historia o una constancia) que corre adentro de otro programa pasaba.
+test('on-bash-write-gate (fila 243): lo que otro programa escribe en el estado, una historia o una constancia frena', () => {
+  const repo = mkRepo(); const st = mkState();
+  fs.writeFileSync(path.join(repo, 'S'), 'x\n');
+  fs.writeFileSync(path.join(repo, 'specs', 'story-9-9.md'), S99);
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const formas = (D) => [`echo ${D} | xargs cp S`, `echo ${D} | xargs -I{} cp S {}`, `echo S | xargs -I{} cp {} ${D}`,
+    `find S -exec cp {} ${D} \\;`, `parallel cp S ::: ${D}`, `echo ${D} | parallel cp S`, `parallel --header 1 cp S ::: ${D}`, `sh -c 'cp S ${D}'`,
+    `bash -c "echo x > ${D}"`, `eval 'cp S ${D}'`, `d=${D}; eval "cp S $d"`, `su -c 'cp S ${D}' root`, `su root -c 'cp S ${D}'`];
+  const destinos = [
+    [path.join(st, 'suelto.json'), /ESCRITURA DIRECTA AL ESTADO DEL PIPELINE/],
+    [path.join(st, 'plan-review', 's1', 's1.resultado.json'), /ESTADO DEL PIPELINE|revisión del plan/],
+    ['specs/story-9-9.md', /HISTORIA ESCRITA POR CONSOLA/],
+    ['.github/control-changes/abc.json', /constancia de cambio de control/],
+  ];
+  for (const [destino, frena] of destinos) {
+    for (const cmd of formas(destino)) {
+      const r = bash.handle(ev(cmd), { stateDir: st, installedRoots: [] });
+      assert.match((r && r.block) || 'pasó', frena, cmd);
+    }
+  }
+  // lo de todos los días con esos mismos programas, que lee o escribe afuera, sigue pasando
+  for (const cmd of [`echo ${path.join(st, 'suelto.json')} | xargs cat`, `find . -name S -exec cat {} \\;`, 'parallel echo ::: a b',
+    `sh -c 'cat ${path.join(st, 'gates.log')}'`, `eval 'ls -la'`, 'd=salida.txt; eval "cp S $d"', `su -c 'ls ${st}' root`,
+    'echo a b | xargs -n1 echo', 'ls specs | parallel echo {}', 'git log --oneline | xargs -I{} echo {}']) {
+    assert.equal(bash.handle(ev(cmd), { stateDir: st, installedRoots: [] }), null, cmd);
+  }
+});
+
 test('on-bash-write-gate (F3): mv/cp desde una story existente pasa (unknown-rename); un índice frena por nombre con el mensaje correcto', () => {
   const repo = mkRepo(); const st = mkState();
   fs.writeFileSync(path.join(repo, 'specs', 'story-a.md'), S99);

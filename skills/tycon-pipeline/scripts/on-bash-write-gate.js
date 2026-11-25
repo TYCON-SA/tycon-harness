@@ -4315,7 +4315,19 @@ function comandosAnidados(comando, hondo = 0, valores = null) {
       const sinEllos = pelarEnv(tramo).resto.replace(/(^|[\s;&|(])(?:\S*\/)?(?:busybox|toybox)(?=\s)/, '$1');
       for (const b of cuerpoConValores(sinEllos, asignados)) sumarConCd(b);
     }
-    if (c === 'eval') sumarConCd(w.slice(k0 + 1).join(' '));
+    // el texto de un `eval`, también con lo que vale afuera (`d=x; eval "cp a $d"` copia a `x`)
+    if (c === 'eval') {
+      sumarConCd(w.slice(k0 + 1).join(' '));
+      for (const b of cuerpoConValores(w.slice(k0 + 1).join(' '), asignados)) sumarConCd(b);
+    }
+    // `su -c <comando>` (también `--command[=]`, antes o después del usuario) corre el comando en un shell
+    if (c === 'su') {
+      w.forEach((x, k) => {
+        if (k <= k0) return;
+        if (/^-[A-Za-z]*c$|^--command$/.test(x)) sumarConCd(w[k + 1]);
+        else if (x.startsWith('--command=')) sumarConCd(x.slice('--command='.length));
+      });
+    }
     if (c === 'find') {
       const i = w.findIndex((x) => x === '-exec' || x === '-execdir' || x === '-ok');
       if (i >= 0) {
@@ -4804,6 +4816,38 @@ function ordenesDeXargs(words, previas) {
   return previas.length > 1 ? [...juntas, ...previas.map((a) => [...orden, a].map(citarParaElShell).join(' '))] : juntas;
 }
 
+// las opciones de GNU parallel que llevan su valor en la palabra siguiente
+const PARALLEL_CON_VALOR = new Set(['-j', '--jobs', '-P', '--max-procs', '-S', '-a', '--arg-file', '-n', '--max-args', '-L',
+  '--max-lines', '-N', '-d', '--delimiter', '-C', '-E', '--delay', '--timeout', '--results', '--tmpdir', '--wd', '--tag-string',
+  '--retries', '--load']);
+/**
+ * Lo que corre un `parallel` (GNU): su orden con cada argumento de `:::` (o, sin ellos, con lo que llega por la entrada)
+ * en el lugar del marcador (`{}`, u otro con `-I`), o al final si no lo nombra. Sin orden, cada argumento es un comando.
+ * Una opción larga que no está en la lista puede llevar su valor en la palabra siguiente o no: se leen las dos formas
+ * (hasta dos de ellas), que es el lado que frena.
+ */
+function ordenesDeParallel(words, previas) {
+  const out = new Set();
+  const leer = (desde, marcaDeAntes, dudas) => {
+    let i = desde;
+    let marca = marcaDeAntes;
+    for (; i < words.length && words[i].startsWith('-') && !/^:::/.test(words[i]); i++) {
+      if (words[i] === '-I' || words[i] === '--replace') { marca = words[++i] || marca; continue; }
+      if (words[i] === '--') { i++; break; }
+      if (PARALLEL_CON_VALOR.has(words[i])) { i++; continue; }
+      if (/^--[^=]+$/.test(words[i]) && dudas < 2) leer(i + 2, marca, dudas + 1);
+    }
+    const separador = words.findIndex((w, j) => j >= i && /^::::?\+?$/.test(w));
+    const orden = words.slice(i, separador < 0 ? undefined : separador);
+    const args = separador < 0 ? previas : words.slice(separador).filter((w) => !/^::::?\+?$/.test(w));
+    if (!orden.length) { for (const a of args) out.add(a); return; }
+    const conMarca = orden.some((w) => w.includes(marca));
+    for (const a of args) out.add((conMarca ? orden.map((w) => citarParaElShell(w.split(marca).join(a))) : [...orden, a].map(citarParaElShell)).join(' '));
+  };
+  leer(1, '{}', 0);
+  return [...out];
+}
+
 /**
  * Las palabras que un `<<<` le da a un `xargs`: la palabra leída como el shell (comillas pegadas, `$'…'`, una variable
  * asignada en el comando), partida por el separador del `xargs` (`-0`, `-d`) y también por los espacios.
@@ -4852,7 +4896,7 @@ function sinCierre(t) {
  */
 function comandosPorOtroPrograma(cmd, cwd) {
   const s = String(cmd || '');
-  if (!/\bfind\b|\bxargs\b|<<|\|/.test(s)) return [];
+  if (!/\bfind\b|\bxargs\b|\bparallel\b|<<|\|/.test(s)) return [];
   const resolver = (raw, base) => resolveTarget(expandirRuta(cmd, raw).valor, base, process.platform, { homeVariable: true });
   const bases = [cwd];
   for (const m of s.matchAll(/(?:^|[\s;&|(])cd\s+(['"]?)([^\s'";&|)]+)\1/g)) bases.push(resolver(m[2], cwd));
@@ -4875,15 +4919,18 @@ function comandosPorOtroPrograma(cmd, cwd) {
       // un `<<<` le da su palabra a la entrada, y le gana a la tubería: no es un argumento de la orden
       const cadena = CADENA_A_LA_ENTRADA.exec(antes);
       const crudas = palabras(cadena ? antes.replace(cadena[0], ' ') : antes).filter((w) => w !== '');
-      if (nombreDeComando(crudas[0]) === 'xargs') {
-        if (cadena) { out.push(...ordenesDeXargs(crudas, entradaPorCadena(cadena[1], crudas, asignacionesDe(texto)))); return; }
+      // `parallel` corre su orden con los argumentos de `:::` o, sin ellos, con lo que llega por la entrada, como `xargs`
+      const lanzador = nombreDeComando(crudas[0]);
+      const ordenes = lanzador === 'parallel' ? ordenesDeParallel : ordenesDeXargs;
+      if (lanzador === 'xargs' || lanzador === 'parallel') {
+        if (cadena) { out.push(...ordenes(crudas, entradaPorCadena(cadena[1], crudas, asignacionesDe(texto)))); return; }
         // lo que llega por la entrada: las palabras del tramo de antes, sin el `echo`/`printf` que las escribe (con él,
         // `$0` del cuerpo de un `xargs sh -c` sería `echo`)
         const previas = k ? palabras(lista[k - 1]).filter((w) => w !== '') : [];
         // (de `printf`, lo que escribe: el formato con sus argumentos y sus escapes, `printf 'h.md\n'` escribe `h.md`)
         const escritor = nombreDeComando(previas[0]) || '';
         const entrada = /^(?:echo|printf|print)$/.test(escritor) ? previas.slice(1).filter((w) => !/^-[a-zA-Z]+$/.test(w)) : previas;
-        out.push(...ordenesDeXargs(crudas, escritor === 'printf' ? ansiC(formatoDePrintf(entrada)).split(/[\s\0]+/).filter(Boolean) : entrada));
+        out.push(...ordenes(crudas, escritor === 'printf' ? ansiC(formatoDePrintf(entrada)).split(/[\s\0]+/).filter(Boolean) : entrada));
         return;
       }
       const words = palabras(sinPalabrasDelShell(tramo)).filter((w) => w !== '');
@@ -5021,6 +5068,21 @@ function estadoDeHistoria(abs) {
  * estado lo cambia marker.js. Un borrador pasa sólo si el comando lo reescribe entero con un heredoc legible que lo
  * deja en borrador (ahí lo juzga el freno de la historia sin validar); escribirle encima de otra forma podría cerrarla.
  */
+/**
+ * Lo que escribe en el estado del pipeline una orden que corre adentro de otro programa: el cuerpo de un `sh -c`, de un
+ * `eval` o de un `su -c`, la orden de un `xargs`, de un `find -exec` o de un `parallel`, y un guion de shell escrito por
+ * un heredoc del mismo comando. Cada una se mira como un comando, un nivel, con la misma lectura que las historias. El
+ * primer destino que cae en el estado, o null; lo escrito a la vista lo mira el portón de carril.
+ */
+function estadoPorOtroPrograma(cmd, cwd, sesion, enElEstado) {
+  const porOtro = [...guionesDeShellEscritos(cmd, [...new Set([cwd, sesion])]), ...comandosPorOtroPrograma(cmd, cwd)];
+  const adentro = [cmd, ...porOtro].flatMap((t) => comandosAnidados(sinCuerposDeTexto(t)).slice(1));
+  for (const texto of new Set([...porOtro, ...adentro])) {
+    for (const d of destinosResueltos(texto, cwd, process.platform, { keep: () => true })) if (enElEstado(d.abs)) return d.abs;
+  }
+  return null;
+}
+
 function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin = [], hondo = 0, instalados = []) {
   // con las comillas pegadas en medio de una palabra (`rm sp""ecs/h.md`) se lee también como lo deja el shell
   const pegadas = sinComillasPegadas(cmd);
@@ -6618,6 +6680,11 @@ function handleCarrilEHistoria(event, opts = {}) {
       codex: require('./lib/story-skill-gate-io.js').isCodexEvent(event),
     });
     if (r) return r;
+    // lo que otro programa escribe en el estado: el portón de carril sólo ve lo escrito a la vista
+    const alEstado = estadoPorOtroPrograma(cmd, cwd, baseCwd, (abs) => isInside(stateDir, abs) || isInside(stateReal, installedTree.realPath(abs)));
+    if (alEstado) {
+      return { block: require('./lib/story-gate.js').blockMessage({ kind: 'state-dir' }, { filePath: alEstado, via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)} (lo corre otro programa)` }) + '\n' };
+    }
   }
   // un `$(date …)` en el nombre de un informe se lee como un comodín: el destino entero, ya no «sin
   // resolver». La carpeta que se sabe no puede tocar el estado del pipeline ni el árbol instalado
@@ -6889,7 +6956,7 @@ function handleCarrilEHistoria(event, opts = {}) {
   return null;
 }
 
-module.exports = { handle, sinComentarioAlFinal, sinCierre, blancoPorRedireccion, splitSegments, SHELL_CON_C, BORRA_O_MUEVE, guionesEnArchivo, carpetasQueBorraOMueve, borraEjecucionAbierta, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA, frenaLaRed, quitarCuerposDeHeredoc, vaAUnShell };
+module.exports = { handle, sinComentarioAlFinal, sinCierre, blancoPorRedireccion, splitSegments, SHELL_CON_C, BORRA_O_MUEVE, guionesEnArchivo, carpetasQueBorraOMueve, borraEjecucionAbierta, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA, frenaLaRed, quitarCuerposDeHeredoc, vaAUnShell, comandosAnidados, comandosPorOtroPrograma };
 
 if (require.main === module) {
   const cruda = leerEntrada();
