@@ -63,7 +63,11 @@ function cmdFreezeAdversarial() {
   if (Object.keys(sellos).length) marker.adversarialFrozen = { sellos, copias, at: nowIso() };
   marker.lastTouch = nowIso();
   writeMarker(marker);
-  process.stdout.write(JSON.stringify({ sellos, copias }, null, 2) + '\n');
+  // cada repo con su sello y la base de su rama principal (historia 8.330): con ellos el paso arma la lista del pase. Un
+  // repo sin base sale igual, con el motivo: si tiene código en el diff, el paso no lanza el pase
+  const ft = require('./frozen-tree.js');
+  const repos = Object.keys(sellos).map((repo) => ({ repo, sello: sellos[repo], copia: copias[repo], ...ft.baseDelPase(repo) }));
+  process.stdout.write(JSON.stringify({ sellos, copias, repos }, null, 2) + '\n');
 }
 
 function cmdMarkAdversarialLaunched(runId, stepRaw) {

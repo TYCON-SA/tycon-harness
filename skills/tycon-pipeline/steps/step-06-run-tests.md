@@ -267,15 +267,18 @@ resueltos, lanzar.**
    retorna un no-op instantáneo y el lanzamiento se quema (el guard bloquea relanzar sin `--relaunch`). La lista debe
    ser **EXACTAMENTE la misma que después se pasa a `pipeline.js advisors` en «Revisores»**: si divergen, el pase
    audita otro diff que los revisores, en silencio.
-4. Congelar lo que va a mirar el pase, y pasarle sus sellos:
+4. Congelar lo que va a mirar el pase, armar la lista de sus repos y pasarle sus sellos:
    ```bash
-   node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js freeze-adversarial
+   node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js freeze-adversarial > <RUN_DIR>/congelado.json
+   node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/lib/frozen-tree.js lista-del-pase <RUN_DIR>/congelado.json
    ```
-   Sella cada repo de la corrida y arma su copia de sólo lectura en la carpeta de estado; devuelve `{ sellos, copias }`.
-   Sale 2 si no puede sellar o copiar: el pase no se lanza sobre la carpeta viva. Invocar la tool `Workflow` (args
+   `freeze-adversarial` sella cada repo de la corrida y arma su copia de sólo lectura en la carpeta de estado. Devuelve
+   `{ sellos, copias, repos }`, con la base de cada repo. Sale 2 si no puede sellar o copiar: el pase no se lanza sobre
+   la carpeta viva. `lista-del-pase` da los `repos` del `Workflow`, y sale 2 si un repo con código no tiene base: el
+   pase no se lanza, y se dice qué repo es y por qué (`step-08-adversarial-pass.md` §Acción). Invocar la tool `Workflow` (args
    idénticos a `step-08-adversarial-pass.md` §Acción, incluido `runDir`, el RUN_DIR de esta ejecución, y los `sellos`
-   de arriba: sin `runDir` las pruebas que confirman los hallazgos caen en una carpeta genérica, y sin `sellos` su
-   resultado no se anota) e **INMEDIATAMENTE después (mismo turno)** registrar el estado con el runId que devolvió la
+   y las `copias` de arriba: sin `runDir` las pruebas que confirman los hallazgos caen en una carpeta genérica, sin
+   `sellos` su resultado no se anota, y sin `copias` el pase lee la carpeta viva y no lo congelado) e **INMEDIATAMENTE después (mismo turno)** registrar el estado con el runId que devolvió la
    tool:
    ```bash
    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-launched <runId> 4

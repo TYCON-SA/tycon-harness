@@ -27,7 +27,7 @@ const TEXT_ON = [
   '   · queda atribuido a vos: tu máquina informa tu correo de git;',
   '   · las propuestas las arma el proceso de la noche de la organización, con un modelo que elige la organización,',
   '     a partir de lo que suben las máquinas: ese modelo ve unas pocas líneas de ejemplo de cada patrón repetido.',
-  '   Para bajarte: TYCON_INSTINCTS=0 (o integrations.instincts=false en ~/.claude/tycon.json).',
+  '   Para bajarte: TYCON_INSTINCTS=0 (o integrations.instincts=false en ~/.tycon/config.json).',
 ].join('\n');
 
 const TEXT_NO_MAILBOX = '🔎 instintos — grabás, pero esta máquina no tiene buzón: lo que el agente aprende acá no le llega a nadie; tu organización lo configura en su capa del equipo.';

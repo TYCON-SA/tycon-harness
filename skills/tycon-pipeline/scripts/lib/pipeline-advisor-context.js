@@ -443,8 +443,12 @@ function congelarVuelta({ story, repo, iter }) {
   if (!base.repos.length) return { repos: [] };
   let storyId = null;
   try { storyId = story ? parseFrontmatterPipeline(readText(story)).story || null : null; } catch { storyId = null; }
+  // la vuelta nueva borra las copias de las anteriores, menos las del pase abierto: una vuelta anterior puede haber
+  // reusado una copia que el pase sigue leyendo (historia 8.330)
+  const lm = leerMarcadorDeLaCorrida();
+  const noBorrar = lm.error ? null : copiasDelPaseAbierto(lm.marker);
   const congelar = (repos) => ft.sealAndFreeze({
-    stateDir: stateDirOf(os.homedir()), sid: sessionIdFileKey(), etiqueta: `rev-iter${iter || 1}`, repos, tipo: 'revisores', story: storyId,
+    stateDir: stateDirOf(os.homedir()), sid: sessionIdFileKey(), etiqueta: `rev-iter${iter || 1}`, repos, tipo: 'revisores', story: storyId, noBorrar,
   });
   const pase = ft.reposDelPase({ story, repo });
   const conHermanos = !pase.error && pase.repos.length > base.repos.length ? congelar(pase.repos) : null;
@@ -453,6 +457,22 @@ function congelarVuelta({ story, repo, iter }) {
   const motivo = pase.error || (conHermanos && conHermanos.error);
   if (!motivo || sinHermanos.error) return sinHermanos;
   return { ...sinHermanos, aviso: `los repos hermanos no se sellaron (${motivo}): los revisores los leen vivos, y un arreglo del pase en ellos frena su cierre` };
+}
+
+/**
+ * Las copias del pase abierto: las congeladas antes de lanzarlo (`adversarialFrozen`) y las del pase lanzado
+ * (`adversarial`) mientras no se anotó su resultado: una entrada de `adversarialPasses` del pase de la ejecución (su
+ * `tipo`), desde el lanzamiento.
+ */
+function copiasDelPaseAbierto(m) {
+  if (!m || typeof m !== 'object') return [];
+  const out = [];
+  if (m.adversarialFrozen && m.adversarialFrozen.copias) out.push(...Object.values(m.adversarialFrozen.copias));
+  const a = m.adversarial;
+  const desde = a ? Date.parse(a.launchedAt) : NaN;
+  const anotado = !!a && (m.adversarialPasses || []).some((p) => p && p.tipo === '5b' && !(Date.parse(p.ts) < desde));
+  if (a && a.copias && !anotado) out.push(...Object.values(a.copias));
+  return out.filter((c) => typeof c === 'string' && c);
 }
 
 /** Suma al contexto de los revisores (el compartido y los recortados) la copia y el sello de cada repo. */

@@ -165,10 +165,12 @@ test('T4 LabInsideIsolation_NoEnvCleaning_Unchanged @story-8.321 @ac-3', { skip:
   assert.ok(!fs.existsSync(destino), 'el hijo que hereda el ambiente sigue frenado en la casa de la cuenta');
 });
 
-// El freno de escrituras copiado sin lib/gate-clock.js: corre sin reloj y lo anota como «FAILED OPEN».
+// El freno de escrituras copiado sin lib/gate-clock.js: corre sin reloj y lo anota como «FAILED OPEN». Con las
+// bibliotecas de scripts/lib que pide al decidir: sin una de ellas el freno no tiene todas sus piezas y frena todo.
 function frenoSinReloj(dest) {
   const filtro = (src) => !src.split(path.sep).includes('tests') && path.basename(src) !== 'gate-clock.js';
   fs.cpSync(SK, path.join(dest, 'skills', 'tycon-pipeline', 'scripts'), { recursive: true, filter: filtro });
+  fs.cpSync(path.join(RAIZ, 'scripts', 'lib'), path.join(dest, 'scripts', 'lib'), { recursive: true, filter: (src) => !src.split(path.sep).includes('tests') });
   fs.mkdirSync(path.join(dest, 'scripts', 'setup', 'harness'), { recursive: true });
   fs.copyFileSync(path.join(RAIZ, 'scripts', 'setup', 'harness', 'tycon-home.js'), path.join(dest, 'scripts', 'setup', 'harness', 'tycon-home.js'));
   return path.join(dest, 'skills', 'tycon-pipeline', 'scripts', 'on-bash-write-gate.js');

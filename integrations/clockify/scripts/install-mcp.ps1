@@ -4,10 +4,10 @@
 # a nivel user-scope (todos los proyectos de la máquina lo usan).
 #
 # Uso (desde PowerShell, NO desde cmd):
-#   pwsh ~\.claude\tycon-harness\integrations\clockify\scripts\install-mcp.ps1
+#   pwsh ~\.tycon\harness\integrations\clockify\scripts\install-mcp.ps1
 #
 # Si tu execution policy lo bloquea, correlo así (solo afecta este proceso):
-#   pwsh -ExecutionPolicy Bypass -File ~\.claude\tycon-harness\integrations\clockify\scripts\install-mcp.ps1
+#   pwsh -ExecutionPolicy Bypass -File ~\.tycon\harness\integrations\clockify\scripts\install-mcp.ps1
 #
 # macOS / Linux users: usar install-mcp.sh.
 #
