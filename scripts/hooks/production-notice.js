@@ -208,27 +208,21 @@ const AVISO_VIEJO = 'el freno quedó viejo: reinstalalo';
 
 /**
  * ¿La actualización del arnés todavía no terminó? Cambia la versión bajada primero y graba el estado después del
- * aplicador: mientras su candado sea de un proceso vivo de esta máquina, o el estado registre otra versión que la
- * carpeta, el instalador del freno espera o frena (install-guard.sh). → el por qué, o null. Un estado que no se lee no
- * dice nada: el aviso sale como siempre.
+ * aplicador: mientras el estado registre otro árbol que la carpeta, el instalador del freno frena (install-guard.sh).
+ * Su candado no cuenta acá: lo toma también cada arranque del arnés, y con la carpeta y el estado de acuerdo reinstalar
+ * es lo correcto (el instalador espera ese candado solo). → el por qué, o null. Un estado que no se lee no dice nada: el
+ * aviso sale como siempre. El estado se busca donde lo busca el instalador: ~/.tycon/state si está, si no donde siempre.
  */
 function actualizacionSinTerminar(bajada) {
-  const dir = stateDirOf(HOME);
+  const limpio = (v) => String(v || '?').replace(/[^0-9A-Za-z._+-]/g, '').slice(0, 40) || '?';
+  const nuevoLugar = path.join(HOME, '.tycon', 'state', 'harness-state.json');
+  const estado = existe(nuevoLugar) ? nuevoLugar : path.join(HOME, '.claude', '.tycon-pipeline', 'harness-state.json');
   try {
-    const [pid, host] = fs.readFileSync(path.join(dir, 'harness', 'harness.lock', 'pid'), 'utf8').split('\n');
-    const n = Number(pid);
-    if (Number.isInteger(n) && n > 0 && (!host || host === os.hostname())) {
-      let vivo = true;
-      try { process.kill(n, 0); } catch (e) { vivo = e.code === 'EPERM'; }
-      if (vivo) return `el arnés se está actualizando (proceso ${n})`;
-    }
-  } catch (_) { /* sin candado: no corre ninguna */ }
-  try {
-    const s = JSON.parse(fs.readFileSync(path.join(dir, 'harness-state.json'), 'utf8'));
+    const s = JSON.parse(fs.readFileSync(estado, 'utf8'));
     const src = (Array.isArray(s && s.sources) ? s.sources : []).find((x) => x && x.kind === 'release');
     const m = JSON.parse(fs.readFileSync(path.join(bajada, MANIFIESTO_BAJADA), 'utf8'));
     if (src && typeof m.tree === 'string' && src.tree !== m.tree) {
-      return `el arnés se está actualizando: la carpeta ya trae la versión ${String(m.version || '?').slice(0, 40)} y el estado todavía registra la ${String(src.version || '?').slice(0, 40)}`;
+      return `el arnés se está actualizando: la carpeta ya trae la versión ${limpio(m.version)} y el estado todavía registra la ${limpio(src.version)}`;
     }
   } catch (_) { /* sin estado o manifiesto legible */ }
   return null;
@@ -400,7 +394,7 @@ function juzgar({ soloLeer = false, reporte = REPORTE, reindex = false } = {}) {
         const sinTerminar = BAJADA ? actualizacionSinTerminar(BAJADA) : null;
         if (sinTerminar) {
           avisos.push(`🟠 el freno va a quedar viejo (${viejas.map((v) => v.nombre).join(', ')}): ${sinTerminar}.`);
-          avisos.push(`   Cuando termine (node ${path.join(BAJADA, 'scripts', 'setup', 'harness.js')} update --check dice que está al día), actualizalo: open ${INSTALADOR}`);
+          avisos.push(`   Cuando termine (node ${path.join(BAJADA, 'scripts', 'setup', 'harness.js')} update --check dice que está al día; si dice que esa versión ya falló, harness.js rollback), actualizalo: open ${INSTALADOR}`);
         } else {
           avisos.push(`🔴 ${AVISO_VIEJO} (${viejas.map((v) => v.nombre).join(', ')}): el arnés publicó una versión nueva.`);
           if (!instaladoConCopiaPropia(blobsDe(CONSTANCIA_INSTALADO))) avisos.push(TEXTO_COPIA_PROPIA);

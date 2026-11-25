@@ -220,27 +220,70 @@ es_enlace(){ /usr/bin/python3 -I -c 'import os, sys; sys.exit(0 if os.path.islin
 estado_del_arnes(){ if [ -f "$HOME_LEIDA/.tycon/state/harness-state.json" ]; then printf '%s' "$HOME_LEIDA/.tycon/state/harness-state.json"; else printf '%s' "$CLAUDE_LEIDA/.tycon-pipeline/harness-state.json"; fi; }
 # La actualización del arnés cambia la versión bajada (~/.tycon/harness) y graba el estado recién después del aplicador:
 # leer las dos en ese tramo da una carpeta que no es la que registra el estado. Mientras su candado (el de lock.js, al lado
-# del estado) sea de un proceso vivo de esta máquina, se espera; uno sin dueño vivo es de una actualización que murió (el
-# arnés lo libera solo) y no se espera. Sin pid, un candado de menos de un minuto se acaba de tomar: cuenta como vivo.
+# del estado) sea de un proceso vivo de esta máquina, se espera.
+# 🔴 El candado vive en el HOME, que el asistente escribe, y esto corre como root: se lee con el python del sistema, sin
+# seguir enlaces (ni la carpeta ni el archivo), con un tope de bytes, y del contenido sólo sale el pid validado. Lo que no
+# tiene la forma de lock.js no se espera. Las reglas de huérfano son las de lock.js (orphanReason): un dueño de esta
+# máquina que no vive, tomado antes del último arranque de la máquina o hace más de 2 h; uno de otra máquina, pasados
+# 10 minutos. pid 0 y 1 no son un dueño. Sin pid, un candado de menos de un minuto se acaba de tomar: cuenta como vivo.
 # TYCON_GUARD_UPDATE_WAIT_S cambia la espera, sólo sin sudo (las pruebas); con sudo, la de siempre.
+dueno_del_candado(){ # $1 = la carpeta del candado → «vivo <pid>», «vivo ?» (sin pid todavía) o «libre»
+  /usr/bin/python3 -I - "$1" <<'PY' 2>/dev/null || printf 'libre'
+import errno, os, re, socket, stat, subprocess, sys, time
+d = sys.argv[1]
+def libre(): print("libre"); sys.exit(0)
+try: st = os.lstat(d)
+except OSError: libre()
+if not stat.S_ISDIR(st.st_mode): libre()
+ahora = time.time(); edad = ahora - st.st_mtime
+try:
+    fd = os.open(os.path.join(d, "pid"), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+except OSError as e:
+    if e.errno == errno.ENOENT and 0 <= edad < 60: print("vivo ?"); sys.exit(0)
+    libre()
+try:
+    if not stat.S_ISREG(os.fstat(fd).st_mode): libre()
+    texto = os.read(fd, 512).decode("utf-8", "replace")
+finally: os.close(fd)
+renglones = texto.split("\n")
+pid, host = renglones[0].strip(), (renglones[1].strip() if len(renglones) > 1 else "")
+if not re.fullmatch(r"[0-9]{1,10}", pid) or int(pid) < 2: libre()
+if host and not re.fullmatch(r"[A-Za-z0-9._-]{1,255}", host): libre()
+# una hora del candado en el futuro no la escribe lock.js: no se espera
+if edad < -300: libre()
+# de otra máquina, como en lock.js: ocupado los primeros 10 minutos (no se puede mirar si su dueño vive)
+if host and host != socket.gethostname():
+    if edad < 600: print("vivo %s" % pid); sys.exit(0)
+    libre()
+if edad > 2 * 3600: libre()
+arranque = None
+try:
+    m = re.search(r"sec = ([0-9]+)", subprocess.run(["/usr/sbin/sysctl", "-n", "kern.boottime"], capture_output=True, text=True, timeout=5).stdout)
+    arranque = int(m.group(1)) if m else None
+except Exception: arranque = None
+if arranque is None:
+    try:
+        with open("/proc/stat") as fh: arranque = next((int(l.split()[1]) for l in fh if l.startswith("btime ")), None)
+    except Exception: arranque = None
+if arranque is not None and st.st_mtime < arranque - 300: libre()
+try: os.kill(int(pid), 0)
+except ProcessLookupError: libre()
+except PermissionError: pass
+print("vivo %s" % pid)
+PY
+}
 esperar_al_arnes(){ # $1 = el estado del arnés (harness-state.json)
-  local candado tope=180 esperado=0 pid host
+  local candado tope=180 esperado=0 dueno pid
   candado="$(dirname "$1")/harness/harness.lock"
   [ "$SIN_SUDO" = 1 ] && [[ "${TYCON_GUARD_UPDATE_WAIT_S:-}" =~ ^[0-9]+$ ]] && tope="$TYCON_GUARD_UPDATE_WAIT_S"
-  while [ -d "$candado" ]; do
-    pid="$(/usr/bin/sed -n 1p "$candado/pid" 2>/dev/null || true)"
-    host="$(/usr/bin/sed -n 2p "$candado/pid" 2>/dev/null || true)"
-    if [[ "$pid" =~ ^[0-9]+$ ]]; then
-      kill -0 "$pid" 2>/dev/null || return 0
-      { [ -z "$host" ] || [ "$host" = "$(/bin/hostname)" ]; } || return 0
-    elif [ -n "$(/usr/bin/find "$candado" -maxdepth 0 -mmin +1 -print 2>/dev/null)" ]; then return 0
-    fi
-    [ "$esperado" = 0 ] && ok "el arnés se está actualizando (proceso ${pid:-?}): espero a que termine antes de leer su carpeta"
+  while :; do
+    dueno="$(dueno_del_candado "$candado")"
+    case "$dueno" in "vivo "[0-9]*|"vivo ?") pid="${dueno#vivo }" ;; *) return 0 ;; esac
+    [ "$esperado" = 0 ] && ok "el arnés se está actualizando (proceso ${pid}): espero a que termine antes de leer su carpeta"
     # no es una falla del freno: no se anota como intento (el gancho reintenta en el próximo arranque)
-    [ "$esperado" -ge "$tope" ] && { NO_ANOTAR=1; muere "el arnés se está actualizando (proceso ${pid:-?}) hace más de ${tope} s: esperá a que termine (node ~/.tycon/harness/scripts/setup/harness.js update --check) y volvé a correr esto"; }
+    [ "$esperado" -ge "$tope" ] && { NO_ANOTAR=1; muere "el arnés se está actualizando (proceso ${pid}) hace más de ${tope} s: esperá a que termine (node ~/.tycon/harness/scripts/setup/harness.js update --check) y volvé a correr esto"; }
     /bin/sleep 2; esperado=$((esperado + 2))
   done
-  return 0
 }
 COMO_CAMBIARLO="se cambia en el sitio de la organización, pestaña Configuración → «Cómo se actualiza el freno de producción»"
 

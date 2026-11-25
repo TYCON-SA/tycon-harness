@@ -1073,10 +1073,19 @@ m = json.load(open(sys.argv[1])); m["tree"] = "f" * 40; m["version"] = "2026.10.
   sleep 60 & VIVO32W=$!
   mkdir -p "$CASA32W/.tycon/state/harness/harness.lock"; printf '%s\n%s\ntoken-32w\n' "$VIVO32W" "$(hostname)" > "$CASA32W/.tycon/state/harness/harness.lock/pid"
   s="$(juicio32w "$ARNES30")"
-  printf '%s' "$s" | grep "se está actualizando (proceso $VIVO32W)" >/dev/null && ok "T32w · con el candado de un proceso vivo: «se está actualizando»" || no "T32w · con el candado salió «${s}»"
+  [ "$s" = "null" ] && ok "T32w · el candado de un proceso vivo (lo toma también cada arranque del arnés) no cuenta: con la carpeta y el estado de acuerdo, terminada" || no "T32w · con el candado salió «${s}»"
   kill "$VIVO32W" 2>/dev/null; wait "$VIVO32W" 2>/dev/null
-  s="$(juicio32w "$ARNES30")"
-  [ "$s" = "null" ] && ok "T32w · con el candado de un proceso que ya no existe: terminada" || no "T32w · con un candado huérfano salió «${s}»"
+  rm -rf "$CASA32W/.tycon/state/harness/harness.lock"
+  # el estado sólo donde siempre (sin ~/.tycon/state/harness-state.json): se lee de ahí, como lo hace el instalador
+  rm -f "$CASA32W/.tycon/state/harness-state.json"; mkdir -p "$CASA32W/.claude/.tycon-pipeline"; cp "$ESTADO30" "$CASA32W/.claude/.tycon-pipeline/harness-state.json"
+  s="$(juicio32w "$MEDIAS32W")"
+  printf '%s' "$s" | grep "se está actualizando" >/dev/null && ok "T32w · con el estado sólo donde siempre: lo lee de ahí" || no "T32w · con el estado donde siempre salió «${s}»"
+  # una versión con caracteres de la terminal no llega cruda al aviso
+  python3 -c '
+import json, sys
+m = json.load(open(sys.argv[1])); m["version"] = "2026.10.09.1\u001b[31mROJO"; json.dump(m, open(sys.argv[1], "w"))' "$MEDIAS32W/.tycon-release.json"
+  s="$(juicio32w "$MEDIAS32W")"
+  case "$s" in *"$(printf '\033')"*) no "T32w · la versión llegó con un escape de la terminal: «${s}»" ;; *) ok "T32w · la versión llega sin caracteres de la terminal" ;; esac
   rm -rf "$CASA32W" "$MEDIAS32W"
 
   # con el freno se saltea DICIÉNDOLO y lo mide la validación, que corre sin freno instalado.
@@ -1122,8 +1131,8 @@ p = sys.argv[1]; m = json.load(open(p)); m["tree"] = "f" * 40; json.dump(m, open
     sleep 60 & VIVO32=$!
     mkdir -p "$CANDADO32"; printf '%s\n%s\ntoken-32\n' "$VIVO32" "$(hostname)" > "$CANDADO32/pid"
     out="$(aviso32 "$NUEVA32")"
-    if printf '%s' "$out" | grep "se está actualizando" >/dev/null && ! printf '%s' "$out" | grep "reinstalalo" >/dev/null; then
-      ok "T32v · con la actualización del arnés corriendo (su candado): tampoco «reinstalalo»"
+    if printf '%s' "$out" | grep "el freno quedó viejo: reinstalalo" >/dev/null && ! printf '%s' "$out" | grep "se está actualizando" >/dev/null; then
+      ok "T32v · con el candado del arnés tomado y la carpeta y el estado de acuerdo (un arranque cualquiera): sigue «reinstalalo» (el instalador espera el candado solo)"
     else no "T32v · con el candado tomado — $(printf '%s\n' "$out" | grep -E 'quedó viejo|reinstal|actualizando' | head -6 | cut -c1-300)"; fi
     kill "$VIVO32" 2>/dev/null; wait "$VIVO32" 2>/dev/null; rm -rf "$CANDADO32"
     cp "$INST32" "$TMP/guardada-32.js"; printf '\n// retocada en /opt\n' >> "$INST32"
@@ -1208,22 +1217,54 @@ json.dump(m, open(p, "w"), indent=1)' "$COMPARTIDA32/.tycon-release.json"
   estado30 "$ARBOL30"
   # (c3) 🔴 la actualización del arnés tiene el candado: el instalador la espera, no lee la carpeta a medio cambiar
   CANDADO30="$CASA30/.tycon/state/harness/harness.lock"
-  sleep 60 & VIVO30=$!
+  sleep 300 & VIVO30=$!
   mkdir -p "$CANDADO30"; printf '%s\n%s\ntoken-30\n' "$VIVO30" "$(hostname)" > "$CANDADO30/pid"
   rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"
-  if ! TYCON_GUARD_UPDATE_WAIT_S=2 instala30 && grep -q 'se está actualizando' "$TMP/inst-30"; then ok "T30n · con la actualización del arnés corriendo (su candado, de un proceso vivo): espera, y al vencer la espera frena y lo dice"
-  else no "T30n · con el candado tomado: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-300)"; fi
-  [ -d "$SYS30/opt/tycon" ] && no "T30n · …y además dejó algo en /opt/tycon" || ok "T30n · …sin dejar nada en /opt"
+  if ! TYCON_GUARD_UPDATE_WAIT_S=2 instala30 && grep -q 'se está actualizando' "$TMP/inst-30"; then ok "T30n2 · con la actualización del arnés corriendo (su candado, de un proceso vivo): espera, y al vencer la espera frena y lo dice"
+  else no "T30n2 · con el candado tomado: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-300)"; fi
+  [ -d "$SYS30/opt/tycon" ] && no "T30n2 · …y además dejó algo en /opt/tycon" || ok "T30n2 · …sin dejar nada en /opt"
   # (c4) el candado se suelta durante la espera: sigue e instala
-  ( sleep 1; rm -rf "$CANDADO30" ) &
-  if TYCON_GUARD_UPDATE_WAIT_S=30 instala30; then ok "T30o · la actualización del arnés termina durante la espera: el instalador sigue e instala"
-  else no "T30o · con el candado soltado durante la espera: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-300)"; fi
+  ( sleep 3; rm -rf "$CANDADO30" ) &
+  if TYCON_GUARD_UPDATE_WAIT_S=30 instala30 && grep -q 'espero a que termine' "$TMP/inst-30"; then ok "T30o2 · la actualización del arnés termina durante la espera: el instalador esperó, siguió e instaló"
+  else no "T30o2 · con el candado soltado durante la espera: $(grep -E '⛔|espero' "$TMP/inst-30" | head -2 | cut -c1-300)"; fi
+  # (c4b) 🔴 el candado vive en el HOME y el instalador corre como root: un «pid» que es un enlace no se sigue (ni se
+  # muestra lo que tiene el archivo al que apunta), y una carpeta del candado que es un enlace tampoco
+  rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt" "$CANDADO30"
+  printf 'SECRETO-DE-OTRO-ARCHIVO\n' > "$TMP/secreto-30"; ln -s "$TMP/secreto-30" "$CANDADO30/pid"; touch -t 203001010000 "$CANDADO30"
+  if TYCON_GUARD_UPDATE_WAIT_S=4 instala30 && ! grep -q 'SECRETO-DE-OTRO-ARCHIVO' "$TMP/inst-30" && ! grep -q 'espero a que termine' "$TMP/inst-30"; then
+    ok "T30q2 · un «pid» del candado que es un enlace no se sigue: no espera, no muestra lo que apunta, instala"
+  else no "T30q2 · con el pid como enlace: $(grep -E '⛔|espero|SECRETO' "$TMP/inst-30" | head -2 | cut -c1-300)"; fi
+  rm -rf "$CANDADO30"; mkdir -p "$TMP/otro-candado-30"; printf '%s\n%s\nt\n' "$VIVO30" "$(hostname)" > "$TMP/otro-candado-30/pid"; ln -s "$TMP/otro-candado-30" "$CANDADO30"
+  rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"
+  if TYCON_GUARD_UPDATE_WAIT_S=4 instala30 && ! grep -q 'espero a que termine' "$TMP/inst-30"; then ok "T30q2 · una carpeta del candado que es un enlace no se sigue"
+  else no "T30q2 · con la carpeta del candado como enlace: $(grep -E '⛔|espero' "$TMP/inst-30" | head -2 | cut -c1-300)"; fi
+  rm -f "$CANDADO30"
+  # (c4c) las reglas de huérfano de lock.js: un dueño vivo tomado antes del último arranque de la máquina (su número ya
+  # es de otro proceso) y los pid 0 y 1 no son una actualización corriendo
+  for caso in "vivo-2020" "0" "1"; do
+    rm -rf "$SYS30/opt/tycon" "$CANDADO30"; mkdir -p "$SYS30/opt" "$CANDADO30"
+    if [ "$caso" = vivo-2020 ]; then printf '%s\n%s\nt\n' "$VIVO30" "$(hostname)" > "$CANDADO30/pid"; touch -t 202001010000 "$CANDADO30"
+    else printf '%s\n%s\nt\n' "$caso" "$(hostname)" > "$CANDADO30/pid"; fi
+    if TYCON_GUARD_UPDATE_WAIT_S=4 instala30 && ! grep -q 'espero a que termine' "$TMP/inst-30"; then ok "T30r2 · un candado «${caso}» no es una actualización corriendo: instala sin esperar"
+    else no "T30r2 · con el candado «${caso}»: $(grep -E '⛔|espero' "$TMP/inst-30" | head -2 | cut -c1-300)"; fi
+  done
+  # (c4d) el modo sin contraseña (el que corre solo en cada arranque): con el candado tomado espera, frena sin anotar el
+  # intento como fallido y suelta su propio candado de root. Usa lo que dejó instalado el caso de arriba
+  rm -rf "$CANDADO30"; mkdir -p "$CANDADO30"; printf '%s\n%s\nt\n' "$VIVO30" "$(hostname)" > "$CANDADO30/pid"
+  printf '{}\n' > "$SYS30/opt/tycon/production/auto-update.json"
+  rm -f "$SYS30/opt/tycon/production/update-log.jsonl"
+  TYCON_GUARD_UPDATE_WAIT_S=2 PATH="$TMP/bin:$PATH" TYCON_ADO_ORG="https://dev.azure.com/lab-org" TYCON_PROD_TEST_PATH="$TMP/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" TYCON_PROD_NODE_LOCAL=1 TYCON_PROD_ROOT="$SYS30" TYCON_PROD_HARNESS="$ARNES30" TYCON_PROD_STATE="$ESTADO30" TYCON_RELEASE_API="$API30" HOME="$CASA30" bash "$INSTALADOR" --no-sudo --auto-update >"$TMP/inst-30" 2>&1
+  rc30=$?
+  if [ "$rc30" != 0 ] && grep -q 'se está actualizando' "$TMP/inst-30" && [ ! -e "$SYS30/opt/tycon/production/update-log.jsonl" ] && [ ! -d "$SYS30/opt/tycon/production/update.lock" ]; then
+    ok "T30s2 · sin contraseña, con la actualización del arnés corriendo: espera, frena sin anotarlo como intento fallido y suelta su candado"
+  else no "T30s2 · el modo sin contraseña con el candado tomado (rc=${rc30}, registro: $([ -e "$SYS30/opt/tycon/production/update-log.jsonl" ] && echo escrito || echo no), candado de root: $([ -d "$SYS30/opt/tycon/production/update.lock" ] && echo quedó || echo suelto)): $(grep -E '⛔' "$TMP/inst-30" | head -1 | cut -c1-300)"; fi
+  rm -f "$SYS30/opt/tycon/production/auto-update.json"
   # (c5) un candado de un proceso que ya no existe no frena: es de una actualización que murió (el arnés lo libera solo)
   kill "$VIVO30" 2>/dev/null; wait "$VIVO30" 2>/dev/null
   mkdir -p "$CANDADO30"; printf '%s\n%s\ntoken-30\n' "$VIVO30" "$(hostname)" > "$CANDADO30/pid"
-  if TYCON_GUARD_UPDATE_WAIT_S=30 instala30; then ok "T30p · un candado de un proceso que ya no existe no frena la instalación"
-  else no "T30p · con un candado huérfano: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-300)"; fi
-  # lo que instalaron T30o y T30p se va: los casos de abajo miran que una instalación frenada no deje nada en /opt
+  if TYCON_GUARD_UPDATE_WAIT_S=30 instala30; then ok "T30p2 · un candado de un proceso que ya no existe no frena la instalación"
+  else no "T30p2 · con un candado huérfano: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-300)"; fi
+  # lo que instalaron T30o2 y T30p2 se va: los casos de abajo miran que una instalación frenada no deje nada en /opt
   rm -rf "$CANDADO30" "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"
   # (d) y un archivo que falta
   mv "$ARNES30/scripts/production/guard-libs/lib/guard-record.js" "$TMP/guard-record.30"
