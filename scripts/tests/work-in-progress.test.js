@@ -1428,6 +1428,25 @@ test('T2 Sesion_Codex_NombreDeLaBase @story-2.49.4 @ac-2: un marcador de Codex s
   }
 });
 
+test('T2b Sesion_Codex_BaseTomadaUnRato_EsperaYLaLee @fila-83c: la base de Codex tomada por otro proceso unos instantes no es «no se pudieron leer»', async () => {
+  const { holdCodexBase, exited } = require('./lib/codex-base-lock.js');
+  const { codexNames } = require(WIP);
+  const { DatabaseSync } = require('node:sqlite');
+  const m = toyMachine();
+  const codex = path.join(m.root, 'codex');
+  fs.mkdirSync(codex);
+  const db = new DatabaseSync(path.join(codex, 'state_5.sqlite'));
+  db.exec('CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT NOT NULL, name TEXT)');
+  db.prepare('INSERT INTO threads (id, title, name) VALUES (?, ?, ?)').run('cdx00000-1111', 'el primer pedido', 'Muñe');
+  db.close();
+  const child = await holdCodexBase(path.join(codex, 'state_5.sqlite'), 300);
+  const unreadable = [];
+  const names = codexNames(codex, unreadable);
+  await exited(child);
+  assert.deepStrictEqual(unreadable, []);
+  assert.strictEqual(names.get('cdx00000-1111'), 'Muñe');
+});
+
 test('T3 Ubicar_SinGit_RepoWorktreeYRama @story-2.49.4 @ac-3: la raíz, la rama y la story salen de los archivos de git, sin lanzar git ni gastar el tope', () => {
   const m = toyMachine();
   const main = gitRepo(m.root, 'principal', 'main', GH);
