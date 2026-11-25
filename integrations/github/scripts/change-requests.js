@@ -348,7 +348,7 @@ function analisisDelPedido(ctx, repo, p, rollup, llamar = gh, { conAlertas = tru
   const malo = suyos.find((n) => String(n.conclusion || '').toUpperCase() !== 'SUCCESS');
   if (malo) return { estado: 'rojo', motivo: `el análisis de seguridad terminó en ${String(malo.conclusion || 'sin resultado').toLowerCase()}` };
   if (!conAlertas) return { estado: 'sin-mirar', motivo: 'sus alertas no se leen hasta que pueda entrar' };
-  if (sinTiempo) return { estado: 'no-se-pudo', motivo: 'no hubo tiempo de leer sus alertas en esta lectura' };
+  if (sinTiempo) return { estado: 'no-se-pudo', motivo: 'no hubo tiempo de leer sus alertas en esta lectura', sinTiempo: true };
   // las dos referencias del pedido: un análisis anota en la fusión de prueba (/merge) y otro en la punta (/head); una
   // alerta anotada sólo en la punta entró a main con este control en verde
   const abiertas = new Map();
@@ -367,13 +367,14 @@ function analisisDelPedido(ctx, repo, p, rollup, llamar = gh, { conAlertas = tru
 function conAnalisis(ctx, repo, pedidos, llamar = gh, { hasta = Infinity, ahora = Date.now } = {}) {
   // una lectura por repo, y sólo si hay un pedido que no sea borrador; la regla de la rama vino en la consulta
   const delRepo = !pedidos.some((p) => !p.draft) ? { hay: false }
-    : ahora() > hasta ? { problema: 'no hubo tiempo de saber si el repo tiene análisis de seguridad' } : analisisDelRepo(ctx, repo, llamar);
+    : ahora() > hasta ? { problema: 'no hubo tiempo de saber si el repo tiene análisis de seguridad', sinTiempo: true } : analisisDelRepo(ctx, repo, llamar);
   for (const p of pedidos) {
     const rollup = p._rollup;
     const exige = p._exige;
     delete p._rollup;
     delete p._exige;
-    if (delRepo.problema) p.codeScanning = { estado: 'no-se-pudo', motivo: delRepo.problema };
+    // `sinTiempo`: la lectura se cortó por la hora límite, no falló; quien lee la lista la trata como incompleta
+    if (delRepo.problema) p.codeScanning = { estado: 'no-se-pudo', motivo: delRepo.problema, ...(delRepo.sinTiempo ? { sinTiempo: true } : {}) };
     else if (!delRepo.hay) p.codeScanning = { estado: 'no-aplica', motivo: null };
     else if (p.draft) p.codeScanning = { estado: 'sin-mirar', motivo: 'no se mira hasta que pueda entrar' };
     // las alertas (una lectura por pedido) sólo para el que podría estar listo: limpio y fuera de la cola
@@ -469,9 +470,8 @@ function listaConCola(ctx, repo, deadlineMs, motivos = null) {
     if (!prs || !Array.isArray(prs.nodes)) return no('no_medido', 'GitHub contestó los pedidos abiertos sin forma');
     for (const p of prs.nodes) if (p && Number.isInteger(p.number)) value.push(deGraphql(p));
     if (!prs.pageInfo || !prs.pageInfo.hasNextPage) {
-      // el análisis sigue con su corte de siempre (toma la hora límite como duración, y no corta): cortarlo de verdad deja
-      // pedidos listos sin su análisis, y quien lee la lista lo toma por «no está listo»
-      const leidos = conAnalisis(ctx, repo, value, gh, { hasta: Number(deadlineMs) > 0 ? desde + Number(deadlineMs) * 0.8 : Infinity });
+      // el análisis corta con la hora límite; lo que no llegó a leer queda marcado `sinTiempo`, nunca verde
+      const leidos = conAnalisis(ctx, repo, value, gh, { hasta: topeDe(desde, deadlineMs) });
       return { ok: true, value: motivos ? conMotivoDeCaida(ctx, repo, leidos, motivos.known, topeDe(desde, deadlineMs)) : leidos };
     }
     after = prs.pageInfo.endCursor;
@@ -588,4 +588,4 @@ function asignados(args, ctx) {
 
 module.exports = { 'change-request.open': abrirPedido, 'change-request.list': listarPedidos, 'change-request.read': leerPedido, 'assigned.list': asignados };
 // los ayudantes que reusa la lectura de la CI y de la cola (y la limpieza, para las pruebas), fuera del mapa de operaciones
-for (const [k, v] of Object.entries({ todas, controles, repoDe, MALOS, sinSalteos, deGraphql, conAnalisis, topeDe })) Object.defineProperty(module.exports, k, { value: v, enumerable: false });
+for (const [k, v] of Object.entries({ todas, controles, repoDe, MALOS, sinSalteos, deGraphql, conAnalisis, analisisDelRepo, topeDe })) Object.defineProperty(module.exports, k, { value: v, enumerable: false });

@@ -905,15 +905,17 @@ function criteriosSinMemo(palabras, cwd, { casa, destino, sesion }) {
   let c;
   try {
     // con --batch, la matriz de esa tanda, la misma que mide el guion (waiver-display.js matrixForSignature); con --acs,
-    // sólo los humos de esos criterios, para decidir dentro del reloj del freno: el criterio sale igual que en el guion
-    const medida = tanda ? wd.matrixForSignature(abs, null, { batch: tanda, acs: pedidos }) : null;
+    // sólo los humos de esos criterios, para decidir dentro del reloj del freno: el criterio sale igual que en el guion.
+    // Los humos, del gates.log de la casa del cuadro: la del guion que firma, aunque el proceso tenga otra
+    const gatesLogPath = casa === undefined ? null : path.join(stateDir(casa), 'gates.log');
+    const medida = tanda ? wd.matrixForSignature(abs, null, { batch: tanda, acs: pedidos, gatesLogPath }) : null;
     if (medida && !medida.structuralError && !medida.batch) {
       const porQue = (medida.warnings || []).find((w) => /mido todas las tandas/.test(w));
       return { error: `no pude medir sólo la tanda ${tanda}${porQue ? ` (${una(porQue, 200)})` : ''}` };
     }
     const deOtra = medida && !medida.structuralError ? (pedidos || []).filter((n) => !(medida.acs || []).includes(n)) : [];
     if (deOtra.length) return { error: `el AC ${deOtra.join(', ')} no es de la tanda ${tanda}: se firma con la suya` };
-    c = medida && medida.structuralError ? { error: medida.structuralError } : wd.criteriosDe(abs, pedidos || [], medida);
+    c = medida && medida.structuralError ? { error: medida.structuralError } : wd.criteriosDe(abs, pedidos || [], medida, { gatesLogPath });
     if (!c.error && !pedidos) c = wd.criteriosDe(abs, c.matrix.notVerifiable || [], c.matrix);
   } catch (e) { return { error: `no pude armar los criterios (${una((e && e.message) || String(e), 200)})` }; }
   if (c.error) return { error: `no pude armar los criterios: la matriz no computa (${una(c.error, 200)})` };
@@ -925,6 +927,7 @@ function criteriosSinMemo(palabras, cwd, { casa, destino, sesion }) {
     if (!a) return `el AC ${n} no es un criterio de la historia`;
     if (a.verdict === 'RUNTIME') return `el AC ${n} ya corrió en vivo: no hace falta eximirlo`;
     if (a.verdict === 'WAIVED-USER') return `el AC ${n} ya está eximido`;
+    if (a.verdict === 'COVERED-NIGHTLY') return `el AC ${n} ya lo cubre la noche, que corrió en verde su prueba: no hace falta eximirlo`;
     return `el AC ${n} está ${a.verdict} y no declarado imposible de probar en vivo con su prueba (runtime_not_verifiable): no es un criterio pendiente de firma`;
   };
   if (faltan.length) return { error: `${faltan.map(porQueNo).join('; ')} en ${path.basename(abs)}` };

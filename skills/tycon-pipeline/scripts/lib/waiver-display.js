@@ -92,9 +92,11 @@ function leerMarcador(stateDir, sessionId) {
  * la ventana y tiene que alcanzar a decidir dentro de su reloj. Vale junto con la tanda: la tanda decide qué criterios
  * entran y `acs` qué humos se miden, y el veredicto de un criterio pedido sale igual que en la matriz de la tanda.
  */
-function matrixForSignature(storyPath, marker, { batch = null, acs = null } = {}) {
+function matrixForSignature(storyPath, marker, { batch = null, acs = null, gatesLogPath = null } = {}) {
   const rm = require('../runtime-matrix.js');
-  const solo = Array.isArray(acs) && acs.length ? { soloAcs: acs } : {};
+  // `gatesLogPath`: el gates.log de la casa de quien arma la firma, donde están los espejos de sus humos; sin él, el de
+  // la casa del proceso
+  const solo = { ...(Array.isArray(acs) && acs.length ? { soloAcs: acs } : {}), ...(gatesLogPath ? { gatesLogPath } : {}) };
   if (!marker && batch != null) return rm.compute({ storyPath, batch: String(batch), changed: cambiosDeLaRama(storyPath), ...solo });
   const delMarcador = marker && marker.storyPath
     ? { ...marker, storyPath: path.isAbsolute(marker.storyPath) ? marker.storyPath : path.join(marker.repoPath || process.cwd(), marker.storyPath) }
@@ -141,8 +143,8 @@ function pistaDeSesion({ stateDir, storyPath }) {
  * Sin matriz calculada, la de los criterios pedidos: la ventana de safety-guard la arma dentro del reloj de su freno.
  * Sin criterios pedidos, la entera.
  */
-function criteriosDe(storyPath, acs, calculada = null) {
-  const matrix = calculada || require('../runtime-matrix.js').compute({ storyPath, ...(acs.length ? { soloAcs: acs } : {}) });
+function criteriosDe(storyPath, acs, calculada = null, { gatesLogPath = null } = {}) {
+  const matrix = calculada || require('../runtime-matrix.js').compute({ storyPath, ...(acs.length ? { soloAcs: acs } : {}), ...(gatesLogPath ? { gatesLogPath } : {}) });
   if (matrix.structuralError) return { error: matrix.structuralError };
   const pend = new Set(matrix.notVerifiable || []);
   const lista = [];

@@ -55,6 +55,79 @@
           }
         },
         {
+          "id": "freno-de-guardar-borrador-sin-preparar-pregunta",
+          "__doc": "T10 (Bench_FrenoDeGuardar_Draft) @story-8.332 @ac-1: con «Preparar el pull request» sin cerrar, el borrador que declara el conector pregunta en la ventana con su forma, en vez de frenar.",
+          "tools": ["claude"],
+          "asymmetry": "En Codex la pregunta de un gancho sale como negativa con la pregunta y cómo aprobarlo a mano (medición 562: Codex no soporta «ask» y corre el comando). La dirección codex la cubre freno-de-guardar-pedido-preparado-en-codex-niega.",
+          "type": "must-emit",
+          "_por_que": "un borrador no se puede mergear: abrirlo antes de preparar deja ver el código y correr la CI sin sacar nada sin preparar, así que pregunta y no frena.",
+          "setup": [
+            "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
+          ],
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "gh pr create --draft --fill"
+            }
+          },
+          "expect": {
+            "stdout_re": [
+              "\"permissionDecision\":\"ask\"",
+              "ABRO EL PULL REQUEST",
+              "«gh pr create»"
+            ],
+            "stderr_not_re": [
+              "el pull request sale después de preparar"
+            ]
+          }
+        },
+        {
+          "id": "freno-de-guardar-marcar-listo-sin-preparar-frena",
+          "__doc": "T10 (Bench_FrenoDeGuardar_Draft) @story-8.332 @ac-4: con «Preparar el pull request» sin cerrar, pasar el borrador a listo frena con el mismo texto que crear un pedido.",
+          "type": "must-block",
+          "_por_que": "pasar el borrador a listo es abrir el pedido de verdad: sin «Preparar el pull request» cerrado (y con él, «Probar en vivo»), frena.",
+          "setup": [
+            "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
+          ],
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "gh pr ready 12"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "el pull request sale después de preparar",
+              "complete-step prepare-commit"
+            ]
+          }
+        },
+        {
+          "id": "freno-de-guardar-gemelo-volver-a-borrador-pasa",
+          "__doc": "T10 (Bench_FrenoDeGuardar_Draft) @story-8.332 @ac-6: el gemelo. Volver el pedido a borrador no guarda: no frena en la misma corrida sin preparar.",
+          "type": "must-not-block",
+          "_por_que": "el gemelo: el mismo comando con la opción que lo vuelve a borrador no pasa nada a listo, así que no frena.",
+          "setup": [
+            "git init -q -b main . && echo hola > LEEME.md && git add -A && git -c user.email=bench@example.com -c user.name=bench commit -qm base",
+            "S=\"$HOME/.claude/.tycon-pipeline\"; mkdir -p \"$S/active\"; printf '{\"storyId\":\"9.9\",\"startedAt\":\"2026-10-25T10:00:00.000Z\",\"repoPath\":\"%s\",\"sessionId\":\"bench-freno\",\"stepsCompleted\":[\"start\",\"implement\"],\"stepsPending\":[\"prepare-commit\"]}' \"$(pwd -P)\" > \"$S/active/bench-freno.json\""
+          ],
+          "stdin": {
+            "session_id": "bench-freno",
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "gh pr ready --undo 12"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
           "id": "freno-de-guardar-pedido-preparado-pregunta",
           "tools": ["claude"],
           "asymmetry": "En Codex la pregunta de un gancho sale como negativa con la pregunta y cómo aprobarlo a mano (medición 562: Codex no soporta «ask» y corre el comando). La dirección codex la cubre freno-de-guardar-pedido-preparado-en-codex-niega.",

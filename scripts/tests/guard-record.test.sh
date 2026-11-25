@@ -319,9 +319,11 @@ fi
 # ══ Los tres hooks del CIERRE también dejan constancia ══════════════════════════════
 # El número que decide si el cierre recortado alcanza —cuántas veces `on-frontmatter-write` y
 # `on-pre-commit` rechazan una evidencia— sale de esa constancia: esos hooks (en agent-skills) la anotan.
-# Los hooks se corren REALES desde agent-skills (`TYCON_SKILLS_DIR` apunta a un clon mientras el
-# cambio no está en main). Sin agent-skills en la máquina, la parte no se puede medir y lo dice.
-SKILLS72="${TYCON_SKILLS_DIR:-$HOME/.claude/agent-skills/skills}"
+# Los hooks se corren REALES. La carpeta sale de skills-dir.js, como en el resto del arnés: `TYCON_SKILLS_DIR` (la raíz
+# de un clon o su carpeta de skills), si no el propio árbol que se prueba cuando trae sus skills, y si no lo instalado.
+# Así, una prueba corrida en un clon de trabajo mide los ganchos de ese clon, no los instalados. Sin ganchos en la
+# carpeta que resuelve, la parte no se puede medir y lo dice.
+SKILLS72="$(node "$AQUI/scripts/lib/skills-dir.js" --skills 2>/dev/null)" || SKILLS72="${TYCON_SKILLS_DIR:-$HOME/.claude/agent-skills/skills}"
 FW="$SKILLS72/tycon-pipeline/scripts/on-frontmatter-write.js"
 PC="$SKILLS72/tycon-pipeline/scripts/on-pre-commit.js"
 EG="$SKILLS72/tycon-pipeline/scripts/on-dod-evidence-guard.js"
@@ -352,7 +354,7 @@ lineas_limpias(){ HOME="$CASA" node -e '
 de72(){ grep -o "\"freno\":\"$1\",\"regla\":\"[a-z-]*\",\"veredicto\":\"[a-z]*\"" "$(REG)" 2>/dev/null | sed 's/"freno":"[^"]*",//' | tr '\n' ' '; }
 
 if [ ! -f "$FW" ] || [ ! -f "$PC" ] || [ ! -f "$EG" ]; then
-  no "7.2 NO MEDIDO: no encontré los hooks del cierre en $SKILLS72 (TYCON_SKILLS_DIR) — sin agent-skills no se puede verificar"
+  no "7.2 NO MEDIDO: no encontré los hooks del cierre en $SKILLS72 (TYCON_SKILLS_DIR, las skills del árbol o las instaladas) — sin ellos no se puede verificar"
 else
   # ── T1 — Constancia_HooksDelCierre_AnotanBloqueoYPaso ─────────────────────────────────────
   # 🔴 Rojo si los hooks de agent-skills no anotan: cero líneas.
@@ -598,6 +600,24 @@ for f in "${SES_FRENOS[@]}"; do
     fi
   done
   i=$((i+1))
+done
+
+# ── T18 · las firmas del carril corto quedan con su nombre (fila 176) ────────────────────────────────────────
+# El freno de seguridad anota la firma que aprobó la ventana como el escape del renglón. `adhoc-lane` y sus variantes
+# no estaban en la lista cerrada: el renglón salía sin el nombre y dejaba «constancia-freno NO PUDO ANOTAR». El freno
+# de seguridad anota con la biblioteca del arnés; la copia del freno de producción sólo anota los suyos.
+for libt in "$LIB"; do
+  for esc in adhoc-lane adhoc-lane:sobre-cupo adhoc-lane:ci-rojo adhoc-lane:datos adhoc-lane:guardado-ajeno; do
+    mundo
+    HOME="$CASA" node -e 'require(process.argv[1]).anotar({ freno: "safety-guard", regla: "ESC-C4", veredicto: "escape", via: "click", cmd: "x", sesion: "s18", escape: process.argv[2], home: process.env.HOME })' "$libt" "$esc" 2>/dev/null
+    anotado="$(tail -1 "$(REG)" 2>/dev/null | node -e 'let s="";process.stdin.on("data",(d)=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).escape||"SIN")}catch(_e){process.stdout.write("ILEGIBLE")}})')"
+    fallo="$(grep -l "NO PUDO ANOTAR" "$CASA"/.tycon/state/hook-errors.log "$CASA/$ESTADO"/*.log 2>/dev/null | head -1)"
+    if [ "$anotado" = "$esc" ] && [ -z "$fallo" ]; then
+      ok "T18 ${esc}: el renglón lleva el nombre de la firma y no deja «no pude anotar»"
+    else
+      no "T18 ${libt} ${esc}: escape anotado=«${anotado}»${fallo:+, dejó «NO PUDO ANOTAR» en ${fallo}}"
+    fi
+  done
 done
 
 echo "─────────────────────────────"

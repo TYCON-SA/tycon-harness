@@ -3,7 +3,7 @@
  * tycon-backfill-followups.js — sincroniza back-links `followed_up_by:` en
  * stories Mary+GOLD basándose en los `followup_of:` declarados en las hijas.
  *
- * Convención: ~/.claude/tycon-harness/story-format.md §1.2.
+ * Convención: ~/.tycon/harness/story-format.md §1.2.
  *
  * Uso:
  *   node tycon-backfill-followups.js [--dir <path>] [--apply] [--story <id>] [--render-table] [--detect]
@@ -184,7 +184,8 @@ function parseListField(fm, fieldName) {
 // Por eso delega en `lib/story-discovery.js` del skill `tycon-pipeline` (fuente única), con la misma
 // convención de referencia-por-path que `lint-story-frontmatter.js`: el módulo vive en un solo
 // lado y se resuelve por ruta fija, con override por env y fail-open RUIDOSO si no está.
-const SKILLS_DIR = process.env.TYCON_SKILLS_DIR || path.join(os.homedir(), '.claude', 'agent-skills', 'skills');
+const SKILLS_DIR = process.env.TYCON_SKILLS_DIR
+  || path.join(require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')).installedSkillsDir(os.homedir()), 'skills');
 const DISCOVERY_PATH = path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'lib', 'story-discovery.js');
 let discovery = null;
 try {

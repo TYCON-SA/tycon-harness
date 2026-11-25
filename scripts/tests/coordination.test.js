@@ -614,6 +614,28 @@ test('8.180 T23 Status_Codex_NoSabeNoEsSinTrabajo @story-8.180 @ac-23: de una se
   assert.doesNotMatch(text, /(Activa|Quieta|SinFecha) — sin trabajo/);
 });
 
+test('T23c Status_CodexBaseTomadaUnRato_EsperaYLaLee @fila-83c: la base de Codex tomada por otro proceso unos instantes no es «no pude leer»', async () => {
+  const { holdCodexBase, exited } = require('./lib/codex-base-lock.js');
+  const t = toy();
+  codexBase(t, [['cdx-1', 'Activa', 2]]);
+  const child = await holdCodexBase(path.join(t.home, '.codex', 'state_5.sqlite'), 300);
+  const s = C.status(t.opts);
+  await exited(child);
+  assert.deepStrictEqual(s.problems.filter((p) => /Codex/.test(p)), [], JSON.stringify(s.problems));
+  assert.ok([...s.working, ...s.waiting].some((x) => x.sid === 'cdx-1'), JSON.stringify(s));
+});
+
+test('T23d Status_CodexBaseTomadaMucho_LoDice @fila-83c: tomada más de lo que se espera, el estado sigue diciendo que no la pudo leer', async () => {
+  const { holdCodexBase, exited } = require('./lib/codex-base-lock.js');
+  const t = toy();
+  codexBase(t, [['cdx-1', 'Activa', 2]]);
+  const child = await holdCodexBase(path.join(t.home, '.codex', 'state_5.sqlite'), 4000);
+  try {
+    const s = C.status(t.opts);
+    assert.ok(s.problems.some((p) => /las sesiones de Codex \(state_5\.sqlite\) no se pudieron leer: database is locked/.test(p)), JSON.stringify(s.problems));
+  } finally { child.kill(); await exited(child); }
+});
+
 test('8.180 T23b Status_Codex_FechaFutura_NoDesaparece @story-8.180 @ac-23: un hilo de Codex con la fecha en el futuro (otro reloj) sale con su «no sé»', () => {
   const t = toy();
   codexBase(t, [['cdx-f', 'Futura', -5]]);
