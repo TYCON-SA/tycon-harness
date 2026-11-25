@@ -60,7 +60,7 @@ const FRENOS = {
   // alguien agrega una regla al freno, y una lista que se desactualiza sola publica todo como `otra`.
   'safety-guard': { forma: /^[A-Z]{2,8}-[CW][0-9]{1,2}$/, veredictos: ['bloqueo', 'escape'] },
   'test-scope-guard': { reglas: ['suite-completa'], veredictos: ['bloqueo', 'paso', 'escape'] },
-  'pr-uno-por-repo': { reglas: ['pr-duplicado'], veredictos: ['bloqueo', 'paso', 'escape'] },
+  'pr-uno-por-repo': { reglas: ['pr-duplicado'], veredictos: ['bloqueo', 'paso', 'escape', 'paso-por-perfil'] },
   'pr-sin-auto-complete': { reglas: ['sin-auto-complete'], veredictos: ['bloqueo', 'paso', 'escape'] },
   // Encolar un pedido del arnés que toca el instalador sin las portables en verde (el mismo hook que el de arriba).
   'pr-sin-portables': { reglas: ['sin-portables'], veredictos: ['bloqueo', 'paso', 'escape'] },
@@ -71,8 +71,10 @@ const FRENOS = {
   // como el shell. No es una falla del freno —ésa es `no-pude-mirar`— y por eso tiene su propia regla.
   // `borrado-de-azure`: un borrado de grupo, candado o recurso de Azure que puede llevarse un servidor de producción.
   // `puerta-subagente`: un subagente llamó a la puerta; el cuadro lo contesta una persona que mira la sesión principal.
+  // `puerta-de-fondo`: la puerta pedida de fondo (con `run_in_background` o por el Monitor); su cuadro vence sin que nadie lo vea.
   'prod-access-guard': {
-    reglas: ['host-no-declarado', 'produccion', 'no-pude-mirar', 'puerta-no-canonica', 'nombre-indecidible', 'borrado-de-azure', 'puerta-subagente'],
+    reglas: ['host-no-declarado', 'produccion', 'no-pude-mirar', 'puerta-no-canonica', 'nombre-indecidible', 'borrado-de-azure', 'puerta-subagente',
+      'puerta-de-fondo'],
     veredictos: ['bloqueo', 'paso'],
   },
   // Los tres hooks del CIERRE (viven en agent-skills y llaman acá vía
@@ -153,6 +155,9 @@ const FRENOS = {
   // El tope de sesiones trabajando (scripts/hooks/session-cap-guard.js): anota sólo cuando niega abrir una sesión de
   // fondo. No tiene `escape`: ninguna variable lo apaga, el tope lo cambia una persona.
   'session-cap-guard': { reglas: ['tope'], veredictos: ['bloqueo'] },
+  // Cerrar la ejecución de otra sesión (`marker.js clear-session <sesión>`): anota cada una. `paso` = estaba completa y
+  // salió sin firma; `escape` = estaba abierta y pasó por la firma del dueño, que el freno de seguridad anota aparte.
+  'clear-session': { reglas: ['otra-sesion'], veredictos: ['paso', 'escape'] },
 };
 
 const REGLA_DESCONOCIDA = 'otra';
@@ -226,7 +231,7 @@ const RELEVO = /^[\p{L}\p{N}][\p{L}\p{N} _-]{0,39}$/u;
 // Qué escape con nombre se usó y en qué sesión: `marker.js clear` busca acá quién autorizó cerrar una ejecución abierta,
 // y `close-as-debt` quién autorizó la deuda. Lista cerrada; un valor fuera de la lista no se anota y queda el aviso.
 const ESCAPES_CON_NOMBRE = ['TYCON_SAFETY_OFF', 'TYCON_PROD_LINT', 'TYCON_NEW_NAMES', 'set-autonomous', 'cerrar-la-ejecucion', 'story-skill-bypass', 'cerrar-como-deuda',
-  'TYCON_TEST_GATE', 'DOD_BYPASS', 'force-manual', 'trust-ran', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt',
+  'TYCON_TEST_GATE', 'DOD_BYPASS', 'force-manual', 'trust-ran', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt', 'advisors_exempt',
   'TYCON_NO_DEEP_REVIEW', 'no-deep-review', 'TYCON_STATUS_GATE', 'cambiar-el-estado', 'merge-bypass', 'external-pr', 'red-control-test-edit',
   'rojo-esperado-de-la-matriz', 'TYCON_MUTATION_CHECK', 'TYCON_STORY_REVIEW', 'no-mutation'];
 const SESION = /^[\w-]{1,80}$/;

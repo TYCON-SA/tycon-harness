@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 // matrix-by-batch.test.js — en una historia paraguas, la ejecución de una tanda anota su tanda (`marker.js set-batch`)
-// y «Preparar el commit» le pide la evidencia en vivo de esa tanda, no la de todas. El control del commit mide todas al
+// y «Preparar el pull request» le pide la evidencia en vivo de esa tanda, no la de todas. El control del commit mide todas al
 // pasar la historia a review, y al cerrar una tanda mide la que se cierra (la matriz y la Capa 5). El commit que estrena
 // el bloque de tandas con una ya hecha mide ésa sola, con su evidencia.
 //
@@ -98,7 +98,7 @@ function entorno() {
   return { home, repo, story, git, correr, leer, escribir, activo, arrancar, humo, dir };
 }
 
-// Lleva la ejecución hasta «Preparar el commit», con «Probar en vivo» hecho: el freno que queda es el de la matriz.
+// Lleva la ejecución hasta «Preparar el pull request», con «Probar en vivo» hecho: el freno que queda es el de la matriz.
 const HECHOS = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'findings', 'live-check'];
 function hastaPrepararElCommit(E, sid) {
   const m = E.leer(sid);
@@ -612,7 +612,7 @@ test('T8 Matrix_Batch_CrossRepoPaths_Match @story-8.240 @ac-5 — historia en un
     const r = rm.compute({ storyPath: E.story, batch: A, changed: ['src/b.js'], codeRepo: C });
     assert.deepStrictEqual(r.returnedAcs, [2], `${renglon}: ${JSON.stringify(r.structuralError || r.warnings)}`);
   }
-  // un marcador cuyo repo del código es C: «Preparar el commit» toma la lista de C
+  // un marcador cuyo repo del código es C: «Preparar el pull request» toma la lista de C
   fs.writeFileSync(E.story, historia({ archivos: ['  - src/b.js  # tanda B'] }));
   E.git('commit', '-qam', 'la historia con el archivo de C');
   E.arrancar('s-a8');
@@ -842,7 +842,7 @@ test('T19 RuntimeWaiver_Terminal_ForSession_ReadsBatch @story-8.240 @ac-12 — l
   }
   // el rechazo por las otras tandas nombra --for-session con la sesión de la corrida
   assert.match(String(wd.pistaDeSesion({ stateDir: E.dir(), storyPath: E.story })), /--for-session s-a19/);
-  // «Preparar el commit» con la matriz roja por el criterio de la tanda: el comando de la firma lleva la sesión
+  // «Preparar el pull request» con la matriz roja por el criterio de la tanda: el comando de la firma lleva la sesión
   hastaPrepararElCommit(E, 's-a19');
   const r = E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], 's-a19');
   assert.match(salida(r), MATRIZ_ROJA, salida(r));
@@ -854,7 +854,7 @@ test('T19 RuntimeWaiver_Terminal_ForSession_ReadsBatch @story-8.240 @ac-12 — l
 // Renglón 7 de la fila del 21/11 (casos del 11 y el 12/11): midiendo la primera tanda, un archivo de la segunda, todavía
 // pendiente y sin crear, contaba como «código declarado que no pude leer» y anulaba los humos de la medida. Un archivo
 // atado sólo a tandas que no se miden no se lee como del cambio: se dice aparte y no anula nada.
-test('T1 TandaFutura_ArchivoSinCrear_NoAnulaLosHumos — midiendo A, un archivo sin crear de B pendiente no descarta la evidencia', () => {
+test('T1 TandaFutura_ArchivoSinCrear_NoAnulaLosHumos @story-8.267 @ac-8 @ac-9 — midiendo A, un archivo sin crear de B pendiente no descarta la evidencia', () => {
   const E = entorno();
   fs.writeFileSync(E.story, historia({ archivos: ['  - src/futuro.js  # tanda B'] }));
   E.git('add', '.');
@@ -1004,6 +1004,23 @@ const cuadro = (E, args, sid) => {
   const cmd = `node ${path.join(SCRIPTS, 'marker.js')} runtime-waiver ${E.story}${args.length ? ` ${args.join(' ')}` : ''}`;
   return owLib().cuadroPara({ firma: 'runtime-waiver', comando: cmd, palabras: owLib().canonica(cmd), destino: sid, sesion: sid, cwd: E.repo, casa: E.home });
 };
+
+// 🔴 Falla con: el cuadro de la exención mide los humos del gates.log de la casa del PROCESO, no de la casa con que se
+// arma (`cuadroPara({ casa })`): un criterio que ya corrió en vivo en esa casa sale «sin correr», y el guion, que corre
+// con esa casa, ve otra cosa.
+test('RuntimeWaiver_Cuadro_HumosDeLaCasaDelCuadro — la matriz del cuadro lee el gates.log de su casa, como el guion', () => {
+  const E = entorno();
+  sinCorrida(E);
+  E.humo([2, 3]);
+  assert.notStrictEqual(os.homedir(), E.home, 'la prueba corre con otra casa que la del cuadro');
+  const q = cuadro(E, ['--acs', '2'], 's-casa');
+  assert.ok(q.error, JSON.stringify(q));
+  assert.match(q.error, /el AC 2 ya corrió en vivo/, q.error);
+  assert.doesNotMatch(q.error, /SIN CORRER/, q.error);
+  // con la tanda, la misma lectura
+  const t = cuadro(E, ['--batch', A, '--acs', '1'], 's-casa');
+  assert.ok(!t.error, t.error);
+});
 
 test('F154-1 RuntimeWaiver_SinCorrida_FirmaYAnotaLaSesion — sin corrida, la firma por el cuadro sale y su renglón dice la sesión', () => {
   const E = entorno();

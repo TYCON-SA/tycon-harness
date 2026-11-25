@@ -29,7 +29,7 @@ El workflow se lanza **al cierre de «Implementar»** (ver `step-06-run-tests.md
   lanzamiento tiene menos de 45 min y esa sesión sigue viva (su conversación cambió hace menos de 10
   min), **ESPERAR** su resultado (`esperar-pase-ajeno`: lo anota esa sesión; acá se cierra el turno
   como en el join pasivo); si no, **RELANZAR** (`relanzar-pase-ajeno`). Si ya tiene resultado, está
-  atendido y no se relanza (relanzar un pase cerrado bloquea «Preparar el commit»). Para relanzar, ANUNCIAR en 1
+  atendido y no se relanza (relanzar un pase cerrado bloquea «Preparar el pull request»). Para relanzar, ANUNCIAR en 1
   línea *"el pase adversarial de la sesión <id> quedó sin resultado — lo relanzo (~20-40 min): <why>"*
   y, como en un retome NO están en contexto ni el gate ni las decisiones: **(a)** re-evaluar el gate
   (§Cuándo corre) para obtener el `model` fresco, **(b)** recuperar `decisions` del
@@ -59,7 +59,7 @@ El workflow se lanza **al cierre de «Implementar»** (ver `step-06-run-tests.md
 La bandera que lee `pipeline.js next` no se escribe a mano, y `complete-step prepare-commit` **frena** si el pase
 se lanzó y su resultado no está (freno `adversarial-result-gate`; `DOD_BYPASS` no lo abre). Medido antes
 de cablearlo: 4 de 9 corridas que lanzaron el pase lo cerraron con la bandera y sin
-anotar qué encontró, y 3 de esas 4 pasaron «Preparar el commit» igual. Anotar el resultado sin haber procesado la
+anotar qué encontró, y 3 de esas 4 pasaron «Preparar el pull request» igual. Anotar el resultado sin haber procesado la
 notificación sigue siendo mentira: el número de confirmados es el real.
 
 > **Por qué existe**: un review adversarial multi-agente *después* del pipeline caza bugs reales que los
@@ -125,8 +125,9 @@ con su turno.
 corrida, que firma el dueño con `marker.js sign-adversarial-skip`): `--no-deep-review`, `TYCON_NO_DEEP_REVIEW` y
 `deep_review: off` sólo la piden, y sin ella no apagan nada; (2) `.tycon/advisors.yaml deep_review: always` o
 `deep_review.default: always` de la organización (el `auto` del repo gana sobre la organización); (3) `--deep-review` /
-`--ultracode` fuerzan on; (4) `deep_review_always_paths`; (5) la corrida liviana, sin pase; (6) sin `--files`, «no
-medible» (`run: null`, sale 2); (7) la matriz. Con `run: true` el pase se lanza de fondo sin preguntar: se avisa en una
+`--ultracode` fuerzan on; (4) `deep_review_always_paths`; (5) la corrida liviana, sin pase; (6) el pase que le toca a
+la corrida del repo hermano (abajo, «El código va al repo hermano»); (7) sin `--files`, «no medible» (`run: null`, sale
+2); (8) la matriz. Con `run: true` el pase se lanza de fondo sin preguntar: se avisa en una
 línea qué corre y cuánto tarda.
 
 **La gravedad que frena** (`review.blocking_severity`, de fábrica `bug`): `pipeline.js write-findings` marca cada
@@ -150,6 +151,17 @@ Con la story liviana (sólo documentación), el portón da `run: false` con «co
 `deep_review: off|always`, `--deep-review` y la superficie compartida (que además vuelve completa la corrida). Para
 correrlo igual: `--deep-review`, o `marker.js set-size completa --reason "<por qué>"`.
 
+### El código va al repo hermano
+
+Una corrida cuyo código va a un repo hermano le deja el pase a la corrida de ese hermano: el portón da `run: false` con
+`decision: delegate`, nombra la corrida que lo decide (`delegated_to`) y no se pregunta. Pasa sólo si se cumple todo:
+el repo de la corrida no tiene código cambiado desde la base de su marcador (ni commiteado, ni sin commitear, ni
+nuevo), `--files` no trae archivos de código, la historia declara su código sólo en repos hermanos, y por cada uno de
+esos hermanos hay una ejecución abierta de la misma historia en esta máquina. Si algo falta, el portón decide como
+siempre y dice por qué no le dejó el pase al hermano (`delegation`). El pase se cierra con `marker.js
+mark-adversarial-skipped --files …`, como cualquier salteo del portón. Los pedidos de correr y la superficie compartida
+mandan antes.
+
 ## Acción — invocar el Workflow
 
 Si `run: true`, armar `args.decisions` con las decisiones de diseño ya APROBADas de esta story (del bloque de
@@ -157,8 +169,9 @@ Completion Notes / HITL de «Aprobar el plan» / Change Log — R1/R2/D3/etc.) p
 invocar la tool `Workflow`:
 
 > **Bajo Codex** (la sesión no tiene la tool `Workflow`): correr EL MISMO
-> script vía el runner propio, EN SEGUNDO PLANO:
-> `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/workflow-lite.js <mismo scriptPath> --args '<mismo JSON de args>' --out <RUN_DIR>/step-05b-adversarial.json`
+> script vía el runner propio, EN SEGUNDO PLANO. Los args van en un archivo, no en la línea de comando (en Windows no
+> entran): escribir el mismo JSON de args en `<RUN_DIR>/adversarial-args.json` y correr
+> `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/workflow-lite.js <mismo scriptPath> --args-file <RUN_DIR>/adversarial-args.json --out <RUN_DIR>/step-05b-adversarial.json`
 > Todo lo demás del step es idéntico (marker, join, decisiones post-output). Paridad verificada
 > con bug plantado confirmado por ambas vías. Sin resume cross-sesión:
 > un workflow huérfano bajo codex cae SIEMPRE en la rama "relanzar" de este step.
@@ -172,23 +185,44 @@ cada hallazgo (`detalle`), el estado de cada lente (`lentes`) y si el pase revis
 ⚠️ `scriptPath` es un path LITERAL (la tool Workflow no expande `~`): pasá el ABSOLUTO
 (`$HOME/.claude/agent-skills/skills/tycon-pipeline/scripts/adversarial-verify.workflow.js` con `$HOME` resuelto).
 
+**La lista de repos del pase** (historia 8.330). El pase mira el código de cada repo de la historia (el de la corrida y
+los hermanos tocados), cada uno contra su propia base. Se arma así:
+
+```bash
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js freeze-adversarial > <RUN_DIR>/congelado.json
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/lib/frozen-tree.js lista-del-pase <RUN_DIR>/congelado.json
+```
+
+- `freeze-adversarial` sella y copia cada repo, y devuelve `repos: [{ repo, sello, copia, base }]`. La base de cada repo
+  es el `merge-base` de su `HEAD` con su rama principal: la de `origin/HEAD`, `origin/main` u `origin/master`, la
+  primera que exista. Primero trae el remoto (`git fetch origin`), porque el pase compara contra lo último.
+- `lista-del-pase` devuelve `repos: [{ repo, base, files }]`. Son los repos con código en su cambio, cada uno con sus
+  archivos de código relativos a él. Un repo sin código queda afuera, y los demás siguen.
+- **Sale 2 si un repo con código no tiene base** (sin remoto, sin rama principal o el `fetch` falló): el pase no se
+  lanza, y cada `frenan` dice qué repo es y por qué. Un repo sin rama principal y sin código no frena.
+
+Los `files` del repo de la corrida son los que van a `pipeline.js advisors` en «Revisores»: los dos miran el mismo diff.
+
 ```
 Workflow({
   scriptPath: "<$HOME>/.claude/agent-skills/skills/tycon-pipeline/scripts/adversarial-verify.workflow.js",
   args: {
-    repo:      "<abs repo>",
-    files:     ["<archivos de CÓDIGO del diff — no docs/fixtures>"],
+    repos:     <los `repos` que devolvió `frozen-tree.js lista-del-pase`, tal cual: [{ "repo": "<abs>", "base": "<hash>", "files": ["<código, relativo a ese repo>"] }]>,
     storyPath: "<abs story .md>",
     decisions: "<las decisiones aprobadas, textual — ej: 'D3: escanea solo $attrs bizuit:*; R2: sidecar fail-loud; ...'>",
     model:     "<el `model` que devolvió deep-review-gate: sonnet|opus — o 'fable' SOLO con --deep-review-fable>",
     runDir:    "<abs RUN_DIR — .advisors/pipeline-runs/<clave>-<sello>/ de ESTA corrida>",
-    base:      "<el hash de: git -C <repo> fetch origin main && git -C <repo> merge-base HEAD origin/main — si el fetch falla, no se lanza: se dice>",
     agrupar:   <false SÓLO si TYCON_5B_GROUP vale 0 — leela con la biblioteca del arnés, que acepta también su nombre viejo:
                `. "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/lib/legacy-names.sh"; legacy_env TYCON_5B_GROUP; echo "${TYCON_5B_GROUP:-}"`; si no, omitirlo>,
-    sellos:    <los `sellos` que devolvió `marker.js freeze-adversarial`, tal cual: { "<repo>": "<sello>" }>
+    sellos:    <los `sellos` que devolvió `marker.js freeze-adversarial`, tal cual: { "<repo>": "<sello>" }>,
+    copias:    <las `copias` que devolvió `marker.js freeze-adversarial`, tal cual: { "<repo>": "<carpeta de la copia>" }>
   }
 })
 ```
+
+`copias` le dice al pase dónde está la copia de sólo lectura de cada repo: con ella y su sello, los cazadores y los
+verificadores leen el código de la copia y comparan la base con el sello (`git -C <repo> diff <base> <sello>`), no con la
+carpeta viva, que puede cambiar mientras el pase la mira. Sin `copias`, el pase mira la carpeta viva.
 
 `sellos` ata el resultado a lo que se congeló antes de lanzar (historia 8.161): `freeze-adversarial` sella cada repo de
 la corrida y arma su copia de sólo lectura, el pase devuelve los mismos `sellos` en su resultado, y
@@ -214,9 +248,12 @@ su `COMO-SE-CORRIO.txt`. Por eso el resultado se escribe siempre en la carpeta d
 `<repo>/.advisors/pipeline-runs/adversarial-sin-corrida/step-05b-adversarial.json`): ahí se busca la prueba de cada
 lente al anotarlo.
 
-`base` es contra qué miran los cazadores el cambio: el `merge-base` de `HEAD` con `origin/main` recién traído, nunca el
-`main` local, que puede estar atrasado. Los cazadores ven también lo que no está commiteado (`git diff <base>` y
-`git status --porcelain`).
+La `base` de cada repo es contra qué miran los cazadores el cambio de ese repo: el `merge-base` de `HEAD` con su rama
+principal recién traída, nunca la rama local, que puede estar atrasada. Con la copia, los cazadores comparan la base con
+el sello (`git -C <repo> diff <base> <sello>`), que tiene también lo que no está commiteado. Sin copia, ven lo no
+commiteado con `git diff <base>` y `git status --porcelain`. Cada lente caza en todos los repos de la lista, y cada
+hallazgo dice en qué repo está (`repo`). Un pase lanzado a mano con `repo`, `files` y `base` sueltos es una lista de uno:
+el pase de siempre, con un solo repo.
 
 El workflow corre 6 lentes de correctitud (traversal/completitud · determinismo · falso-negativo · falso-positivo/
 edge · correctitud-algorítmica · integración/contratos); cada hunter lee el código real + corre probes, y cada
@@ -233,10 +270,20 @@ su tope, un pase que no revisó nada salió «6 lentes limpias». Ahora:
 
 - Una lente cuyo cazador no contestó queda **`sin-medir`** (en `lentes` y en `lentes_sin_medir`).
 - Un cazador que contesta tampoco alcanza: la lente queda **`sin-medir`**, con su `motivo`, si comparó contra otra
-  base que la pedida (`args.base`), o si no encontró nada y no guardó la prueba que corrió en
-  `<RUN_DIR>/step-05b-probes/caza-<lente>/`. Sin `args.base`, o con una que no es un hash, el pase no lanza ningún
+  base que la pedida (la `base` de cada repo de `repos`, o `args.base`), o si no encontró nada y no guardó la prueba que corrió en
+  `<RUN_DIR>/step-05b-probes/caza-<lente>/`. Sin la base de algún repo, o con una que no es un hash, el pase no lanza ningún
   cazador y sale no medido. Medido en la 8.213: seis lentes «limpias» en 20 s, sin pruebas, tres contra un `main` local
   atrasado.
+- Un cazador que dice que la base no está en el repo se relanza una vez, solo, con la indicación de correr git con
+  `-C <repo>`: la base salió de ese repo, y lo que se vio es un cazador que miró en su propia carpeta. Así no se repite
+  el pase entero por una lente. Si lo repite, la lente queda sin medir y, al anotar, git busca la base en el repo del
+  pase: el motivo dice si está (el cazador miró en otra carpeta: relanzar) o no (la base está mal: relanzar con la de
+  `git merge-base`). Un rechazo de la herramienta a correr git no se relanza.
+- Al anotar, git busca también la base del pase entero (`base_del_pase` del resultado) en su repo: si no está, el pase
+  sale no medido aunque todas las lentes digan que midieron. La palabra de un cazador no vuelve verde una base que no
+  existe. Con varios repos, `base_del_pase` es una lista y cada base se busca en su repo. El motivo nombra el repo cuya
+  base no está, y la lente sin base se comprueba en el repo que nombra. Si ese repo no es del pase, el cazador miró en
+  otra carpeta.
 - Al anotar (`mark-adversarial-result --result`, también en el carril con `--adhoc` y con `--type revision`), cada
   lente limpia tiene que tener su `COMO-SE-CORRIO.txt` no vacío en la carpeta de su lente, al lado del archivo de
   resultado, y no anterior al lanzamiento del pase (sin lanzamiento conocido, no más de 12 h anterior al resultado). Una
@@ -296,8 +343,9 @@ lee las respuestas, y el archivo de resultado sale del guion, no se escribe a ma
 ```bash
 W=~/.claude/agent-skills/skills/tycon-pipeline/scripts
 node $W/marker.js mark-adversarial-launched claude-<sello> 5b --relaunch   # --relaunch sólo si ya había un lanzamiento
+# los args, con model: "sonnet", van escritos en <RUN_DIR>/adversarial-args.json (en la línea de comando no entran en Windows)
 # vuelta 1: deja seis pedidos (uno por cazador) y sale 3
-node $W/workflow-lite.js $W/adversarial-verify.workflow.js --args '<mismo JSON de args, model: "sonnet">' \
+node $W/workflow-lite.js $W/adversarial-verify.workflow.js --args-file <RUN_DIR>/adversarial-args.json \
   --out <RUN_DIR>/step-05b-adversarial.json --agents-dir <RUN_DIR>/adversarial-agentes
 ```
 
@@ -327,9 +375,9 @@ deep_review_always_paths:
   - custom-forms/.../Services/Plugins/**
 ```
 
-Precedencia completa que aplica el gate, en orden: kill-switch `--no-deep-review` → `deep_review:
-always|off` del repo → `--deep-review` / `--ultracode` → **superficie compartida** → risk-class.
-O sea: no pisa el freno del dev ni el `off` del dueño del repo, pero sí gana sobre el tamaño de diff.
+Precedencia completa que aplica el gate, en orden: la constancia firmada del salteo (`--no-deep-review` y `deep_review:
+off` sólo la piden) → `deep_review: always` del repo → `--deep-review` / `--ultracode` → **superficie compartida** →
+risk-class. O sea: no pisa la firma del dueño, pero sí gana sobre el tamaño de diff.
 
 Dos cosas que el orquestador tiene que saber leer del veredicto:
 
@@ -512,9 +560,9 @@ workflow + el `confirmed` count en `.advisors/pipeline-runs/<clave>-<sello>/step
 ## Costo (honesto)
 
 En NORMAL con `sonnet` (default), son ~6 hunters + M verifiers (M = nº de findings). Menos que una corrida Opus, pero
-es una capa real de tokens. Escala con la cantidad de findings (más hallazgos → más skeptics). `--no-deep-review` es el
-escape por corrida y lo decide la persona («autorizo no-deep-review»): el costo no es motivo para que el agente lo
-ofrezca. `.tycon/advisors.yaml deep_review: off` lo apaga para un repo entero.
+es una capa real de tokens. Escala con la cantidad de findings (más hallazgos → más skeptics). Saltear el pase en una
+corrida lo firma la persona (`marker.js sign-adversarial-skip`; `--no-deep-review` sólo lo pide): el costo no es motivo
+para que el agente lo ofrezca. `.tycon/advisors.yaml deep_review: off` lo apaga para un repo entero.
 
 Escalación de modelo (2026-07-06): story pesada → Opus (~1.7x sonnet) automático — es el run donde el pase adversarial
 más paga. Fable (~2x opus) no se ofrece: corre sólo con `--deep-review-fable` — ese nivel nunca se gasta en silencio.

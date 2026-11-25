@@ -48,7 +48,10 @@ la máquina está cargada, y esperan si la carga pasa el doble de los núcleos; 
 declaran `gate_only_when_touching` se DIFIEREN si la story no toca esas carpetas (hoy export-real: sólo corre si la
 story toca `scripts/publishing/**`). Lo diferido queda en `tests-result.json` → `totals.deferred_suites`, con el motivo.
 Si el repo declara `test_gate` en `.test-gate.yaml`, en su raíz (commiteado), corren sólo las suites que leen lo tocado y la
-completa la corre la CI del pedido; si ninguna lo lee, sale 0 y lo dice. Si lo tocado incluye una pieza central (un
+completa la corre la CI del pedido; si ninguna lo lee, sale 0 y lo dice. Un repo cuya suite no debe correr en la máquina
+(le pega a la base de otra persona, a un servicio compartido) lo declara con `scope: none`, `full_suite_by` (quién la
+corre) y `reason` (por qué): el portón no corre nada ahí y sale 3, «sin medir», con el motivo; los repos hermanos corren
+igual. Es la forma de decirlo, en vez de un alcance falso, y cambiarlo pide la firma del dueño. Si lo tocado incluye una pieza central (un
 archivo de código que nombran 40 suites o más), de las que la nombran corren sólo las que nombran la función o el
 subcomando que cambió, o se llaman como ella; las demás quedan diferidas para la CI del pedido, y la salida dice
 «<pieza>: corrieron k de las N suites que la nombran (para correrlas todas: TYCON_GATE_ALL_SUITES=1)». Si no se sabe qué
@@ -74,8 +77,11 @@ story causó en otro lado. Cuesta ~2 min; aparecer todas juntas recién en el me
 
 - El gate exporta `TYCON_TEST_GATE=1` → `run-check` anota `provenance=test-gate`.
 - Si el repo no tiene suite completa, o hay que cerrar igual: declarar el control a mano lo decide la persona, no el
-  agente («autorizo force-manual» en su mensaje); queda en `gates.log`. `TYCON_TEST_GATE` escrita por el agente la frena
-  el freno de seguridad: la pone sólo el gate.
+  agente; queda en `gates.log`. Se firma como las firmas de guion, también en Windows: la persona aprueba con el click o
+  el «aprobado», y el agente corre `marker.js set-check <control> <estado> --force-manual` solo y en su forma exacta, sin
+  un tubo atrás (`2>&1 | tail`) ni `cd … &&`. Fuera de su forma, el freno lo niega y pide correrlo solo; la terminal
+  queda para quien la prefiera. `TYCON_TEST_GATE` escrita por el agente la frena el freno de seguridad: la pone sólo el
+  gate.
 
 ### Salidas del gate
 
@@ -144,6 +150,14 @@ ahí, es heredada (`measured_on: "base"`); verde ahí, el rojo es del cambio y f
 `origin/main`, la suite no está en la base, pasó el tope, el árbol armado del privado), sigue roja y dice «no medido» y
 por qué. Queda escrito en `base_check`. Topes: `TYCON_INHERITED_BASE_MAX` suites (3; 0 la apaga) y
 `TYCON_INHERITED_BASE_TIMEOUT_S` segundos por suite (600).
+
+Con .NET (y con otra herramienta que deja un trx) y con jest o vitest, `tests-result.json` dice además cuáles
+pruebas fallaron: `failed_tests`, con el nombre de cada una. En jest y vitest va también el archivo; en el trx, el
+resultado (`outcome`), porque la lista suma las que dieron error o se cortaron y el total del trx no. Va hasta 100, y
+`failed_tests_more` dice cuántas más hubo. Un archivo de jest que falló sin ninguna prueba fallida va igual: con
+`did_not_run: true` si no corrió ninguna, y con `file_failed: true` si corrieron todas y pasaron. Sirve
+para comparar con las que ya fallaban antes del cambio. Hoy no perdona nada: en estos repos, una falla de antes
+todavía frena.
 
 Una repetición sola que sale verde también saca su falla de la constancia de la completa (`tests-result.json`, la que
 lee el revisor de pruebas, y su copia que viaja), si es de esa misma completa: cuando no queda ninguna otra causa de
@@ -253,15 +267,18 @@ resueltos, lanzar.**
    retorna un no-op instantáneo y el lanzamiento se quema (el guard bloquea relanzar sin `--relaunch`). La lista debe
    ser **EXACTAMENTE la misma que después se pasa a `pipeline.js advisors` en «Revisores»**: si divergen, el pase
    audita otro diff que los revisores, en silencio.
-4. Congelar lo que va a mirar el pase, y pasarle sus sellos:
+4. Congelar lo que va a mirar el pase, armar la lista de sus repos y pasarle sus sellos:
    ```bash
-   node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js freeze-adversarial
+   node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js freeze-adversarial > <RUN_DIR>/congelado.json
+   node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/lib/frozen-tree.js lista-del-pase <RUN_DIR>/congelado.json
    ```
-   Sella cada repo de la corrida y arma su copia de sólo lectura en la carpeta de estado; devuelve `{ sellos, copias }`.
-   Sale 2 si no puede sellar o copiar: el pase no se lanza sobre la carpeta viva. Invocar la tool `Workflow` (args
+   `freeze-adversarial` sella cada repo de la corrida y arma su copia de sólo lectura en la carpeta de estado. Devuelve
+   `{ sellos, copias, repos }`, con la base de cada repo. Sale 2 si no puede sellar o copiar: el pase no se lanza sobre
+   la carpeta viva. `lista-del-pase` da los `repos` del `Workflow`, y sale 2 si un repo con código no tiene base: el
+   pase no se lanza, y se dice qué repo es y por qué (`step-08-adversarial-pass.md` §Acción). Invocar la tool `Workflow` (args
    idénticos a `step-08-adversarial-pass.md` §Acción, incluido `runDir`, el RUN_DIR de esta ejecución, y los `sellos`
-   de arriba: sin `runDir` las pruebas que confirman los hallazgos caen en una carpeta genérica, y sin `sellos` su
-   resultado no se anota) e **INMEDIATAMENTE después (mismo turno)** registrar el estado con el runId que devolvió la
+   y las `copias` de arriba: sin `runDir` las pruebas que confirman los hallazgos caen en una carpeta genérica, sin
+   `sellos` su resultado no se anota, y sin `copias` el pase lee la carpeta viva y no lo congelado) e **INMEDIATAMENTE después (mismo turno)** registrar el estado con el runId que devolvió la
    tool:
    ```bash
    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-launched <runId> 4

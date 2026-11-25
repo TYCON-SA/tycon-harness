@@ -28,6 +28,9 @@ const { spawnSync } = require('child_process');
 const SCRIPTS = path.join(__dirname, '..');
 const SKILL = path.join(SCRIPTS, '..');
 const MARKER = path.join(SCRIPTS, 'marker.js');
+// la raíz del arnés que se prueba: el control de CI en local busca el arnés por TYCON_GUIDES_DIR, y en el árbol armado
+// (el privado adelgazado con el público encima) no lo encuentra de otro modo en una casa de juguete
+const ARNES = path.resolve(SKILL, '..', '..');
 // «skip» del código lo contesta la persona (firma review-skip): la prueba da su click
 const { conVentana } = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'tests', 'lib', 'window-passed.js'));
 const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
@@ -169,13 +172,16 @@ test('T1 SetFlag_DeepReviewDone_SeNiega @story-1.8 @ac-1', () => {
 test('T2 SetFlag_OtrasBanderas_SiguenAndando @story-1.8 @ac-2', () => {
   const home = casa(); const SID = 't2';
   writeFakeMarker(home, SID);
-  for (const f of ['atddBypass', 'waitingForHuman']) {
-    // el escape del freno de pruebas primero pide su motivo
-    const r = correr(home, SID, ['set-flag', f, 'true', ...(f === 'atddBypass' ? ['--reason', 'refactor sobre red existente'] : [])]);
-    assert.equal(r.status, 0, `${f}: ${r.stderr}`);
-    assert.equal(r.stdout.trim(), `${f}: true`);
-    assert.equal(leerMarker(home, SID)[f], true);
-  }
+  const r = correr(home, SID, ['set-flag', 'waitingForHuman', 'true']);
+  assert.equal(r.status, 0, `waitingForHuman: ${r.stderr}`);
+  assert.equal(r.stdout.trim(), 'waitingForHuman: true');
+  assert.equal(leerMarker(home, SID).waitingForHuman, true);
+  // el escape del freno de pruebas primero pide además la firma del dueño: sin ella sale 2 y no escribe
+  // (con la firma, la T4 de 8.283 en unit.test.js)
+  const escape = correr(home, SID, ['set-flag', 'atddBypass', 'true', '--reason', 'refactor sobre red existente']);
+  assert.equal(escape.status, 2, escape.stderr);
+  assert.match(escape.stderr, /sign-atdd-skip/);
+  assert.equal(leerMarker(home, SID).atddBypass, undefined);
   // las de hechos externos las pone el arnés: set-flag sale 2 y no escribe (Casos: external-flags.test.js)
   for (const f of ['workSignalStarted', 'adoMarkedActive']) {
     const r = correr(home, SID, ['set-flag', f, 'true']);
@@ -544,7 +550,7 @@ test('T28 Paso8_DodBypass_NoAbreEsteFreno @story-1.8 @ac-21', () => {
     repoPath: repo, storyPath: null, stepsCompleted: [0, 1, 2, 3, 4, 5, 6, 7], stepsPending: [8],
     dodRuntimeChecked: false, adversarial: lanzamiento('wf_BYP'),
   });
-  const r = correr(home, SID, ['complete-step', '8'], { env: { DOD_BYPASS: '1' } });
+  const r = correr(home, SID, ['complete-step', '8'], { env: { DOD_BYPASS: '1', TYCON_GUIDES_DIR: ARNES } });
   assert.equal(r.status, 2, r.stderr);
   assert.match(r.stderr, /el pase adversarial se lanzó \(wf_BYP/, 'el exit 2 sale de ESTE freno');
   assert.match(r.stderr, /no se abre con DOD_BYPASS/);
@@ -552,7 +558,7 @@ test('T28 Paso8_DodBypass_NoAbreEsteFreno @story-1.8 @ac-21', () => {
   const m = leerMarker(home, SID);
   m.adversarialPasses = [{ ts: DESPUES, tipo: '5b', confirmados: 0 }];
   fs.writeFileSync(archivoMarker(home, SID), JSON.stringify(m));
-  const r2 = correr(home, SID, ['complete-step', '8'], { env: { DOD_BYPASS: '1' } });
+  const r2 = correr(home, SID, ['complete-step', '8'], { env: { DOD_BYPASS: '1', TYCON_GUIDES_DIR: ARNES } });
   assert.equal(r2.status, 0, r2.stderr);
 });
 

@@ -93,18 +93,118 @@ function companionRoots(repo, storyPath, opts) {
   const out = [];
   const rama = ramaDe(repoDeLaStory || repo);
   const numero = numeroDeLaStory(storyPath);
-  for (const f of fuentes) {
-    const cfg = parseEvidenceConfig(f);
-    if (opts && typeof opts.onMissing === 'function') for (const m of cfg.missing) opts.onMissing(m, f);
-    if (opts && typeof opts.onWarning === 'function') for (const w of cfg.warnings) opts.onWarning(w, f);
-    for (const r of cfg.roots) {
-      const k = enLaMismaRama(real(r), rama, numero);
-      if (vistos.has(k)) continue;
-      vistos.add(k);
-      out.push(k);
+  // con historia, los avisos de cada hermano se guardan hasta saber cuáles toca; sin ella, salen como siempre
+  const propia = storyPath && !CAPTURA ? [] : null;
+  const deQuien = new Map();
+  if (propia) CAPTURA = propia;
+  try {
+    for (const f of fuentes) {
+      const cfg = parseEvidenceConfig(f);
+      if (opts && typeof opts.onMissing === 'function') for (const m of cfg.missing) opts.onMissing(m, f);
+      if (opts && typeof opts.onWarning === 'function') for (const w of cfg.warnings) opts.onWarning(w, f);
+      for (const r of cfg.roots) {
+        HERMANO_ACTUAL = real(r);
+        const k = enLaMismaRama(real(r), rama, numero);
+        deQuien.set(real(r), k);
+        if (vistos.has(k)) continue;
+        vistos.add(k);
+        out.push(k);
+      }
+    }
+  } catch (e) {
+    // si algo tira a mitad de camino, los avisos guardados salen igual: no se sabe cuáles hermanos toca la historia
+    HERMANO_ACTUAL = null;
+    if (propia) { CAPTURA = null; for (const a of propia) avisar(a.texto); }
+    throw e;
+  } finally {
+    HERMANO_ACTUAL = null;
+    if (propia) CAPTURA = null;
+  }
+  if (propia) {
+    const tocados = hermanosDeLaStory(repo, storyPath, out);
+    for (const a of propia) {
+      const k = a.de ? deQuien.get(a.de) : null;
+      if (!tocados || !k || tocados.has(real(k))) avisar(a.texto);
     }
   }
   return out;
+}
+
+// en Windows y en Mac el disco no distingue mayúsculas: `front/x` nombra al hermano `Front`
+const sinMayusculas = (s) => (process.platform === 'win32' || process.platform === 'darwin' ? String(s).toLowerCase() : String(s));
+
+/**
+ * Los hermanos que la historia toca, de `roots`: un `Set` de rutas reales, o null si no hay con qué elegir (la historia
+ * no se puede leer o no declara ningún archivo). Un hermano está tocado si:
+ *   · la historia declara un archivo en él (`files_to_create`, `files_to_modify` o `files_to_delete`): donde el archivo
+ *     existe (como `companionTargets`); si no existe todavía (o ya no), por el nombre del hermano adelante (`<hermano>/x`,
+ *     `../<hermano>/x`) o por `(<repo>) x`, con `<repo>` como lo resuelve `resolveRepoRef`;
+ *   · o tiene cambios propios (`conCambiosPropios`): un hermano que la corrida cambió sin declararlo también se sella y se
+ *     mira, porque su código no puede quedar sin revisar.
+ */
+function hermanosDeLaStory(repo, storyPath, roots) {
+  let contenido;
+  try { contenido = fs.readFileSync(storyPath, 'utf8'); } catch (_) { return null; }
+  const ts = require('./test-scope.js');
+  const declarados = [...ts.parseDeclaredFiles(contenido), ...ts.parseFilesToDelete(contenido)];
+  if (!declarados.length) return null;
+  const out = new Set();
+  const porNombre = new Map(roots.map((c) => [sinMayusculas(label(c)), real(c)]));
+  for (const decl of declarados) {
+    const r = resolveDeclared(decl, repo, roots);
+    if (r.where === 'companion') { out.add(real(r.root)); continue; }
+    const conRepo = parseRepoPrefixed(decl);
+    if (conRepo) {
+      const { root } = resolveRepoRef(conRepo.ref, repo, roots);
+      const raiz = root ? roots.find((c) => real(c) === real(root)) : null;
+      if (raiz) { out.add(real(raiz)); continue; }
+      const nombre = porNombre.get(sinMayusculas(path.basename(conRepo.ref)));
+      if (nombre) out.add(nombre);
+      continue;
+    }
+    const d = String(decl).replace(/\\/g, '/').replace(/^(\.\.?\/)+/, '');
+    const primero = sinMayusculas(d.split('/')[0]);
+    if (porNombre.has(primero)) out.add(porNombre.get(primero));
+    // `../<carpeta>/<hermano declarado como subcarpeta>/x`: adentro de la raíz del hermano o de su carpeta declarada
+    const abs = path.resolve(repo, String(decl).replace(/\\/g, '/'));
+    for (const c of roots) {
+      const decl0 = DECLARADO.get(real(c));
+      if (adentro(abs, c) || (decl0 && adentro(abs, decl0))) out.add(real(c));
+    }
+  }
+  for (const c of roots) if (!out.has(real(c)) && conCambiosPropios(c)) out.add(real(c));
+  return out;
+}
+
+/**
+ * ¿El repo hermano tiene cambios propios? Sin commitear, o commits que su rama principal (la de `origin/HEAD`,
+ * `origin/main`, `origin/master`, `main` o `master`, la primera que exista) no tiene. Sin ninguna rama principal no hay
+ * contra qué medir, y cuenta como cambiado (se sella de más, nunca de menos). Una carpeta que no es un repo git, no.
+ */
+function conCambiosPropios(dir) {
+  const correr = (args) => spawnSync('git', ['-C', dir, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env: entornoDeGit() });
+  const estado = correr(['status', '--porcelain']);
+  if (estado.error || estado.status !== 0) return false;
+  if (String(estado.stdout || '').trim()) return true;
+  const cabeza = correr(['symbolic-ref', '-q', 'refs/remotes/origin/HEAD']);
+  const candidatas = [cabeza.status === 0 ? String(cabeza.stdout || '').trim() : null,
+    'refs/remotes/origin/main', 'refs/remotes/origin/master', 'refs/heads/main', 'refs/heads/master'].filter(Boolean);
+  const principal = candidatas.find((ref) => correr(['show-ref', '--verify', '--quiet', ref]).status === 0);
+  if (!principal) return true;
+  const r = correr(['rev-list', '--count', `${principal}..HEAD`]);
+  return r.error || r.status !== 0 ? true : Number(String(r.stdout || '').trim()) > 0;
+}
+
+/**
+ * Los hermanos que la historia toca (`hermanosDeLaStory`), de los que da `companionRoots`. Es lo que miran los pasos que
+ * sólo trabajan sobre el código de la historia: el congelado del pase y de los revisores, y dep-gate. La evidencia y el
+ * portón de pruebas siguen con `companionRoots` y `companionTargets`. Sin historia, o si no hay con qué elegir, todos.
+ */
+function touchedRoots(repo, storyPath, opts) {
+  const todos = companionRoots(repo, storyPath, opts);
+  if (!storyPath || !todos.length) return todos;
+  const tocados = hermanosDeLaStory(repo, storyPath, todos);
+  return tocados ? todos.filter((r) => tocados.has(real(r))) : todos;
 }
 
 /**
@@ -151,7 +251,12 @@ function limpiarRamas() { RAMAS.clear(); }
 
 // Cada aviso, una vez por proceso: varios lugares de un mismo comando preguntan por los mismos hermanos.
 const AVISADOS = new Set();
+// Mientras `companionRoots` resuelve los hermanos de una historia, el aviso de cada uno espera a saber si la historia lo
+// toca (`hermanosDeLaStory`): el de un hermano declarado que la historia no toca no se dice.
+let CAPTURA = null;
+let HERMANO_ACTUAL = null;
 function avisar(texto) {
+  if (CAPTURA) { CAPTURA.push({ texto, de: HERMANO_ACTUAL }); return; }
   if (AVISADOS.has(texto)) return;
   AVISADOS.add(texto);
   process.stderr.write(`[hermanos] ⚠️  ${texto}\n`);
@@ -250,7 +355,15 @@ function enLaMismaRama(declarado, rama, numero) {
     mismoNombre = null;
   }
   if (mismoNombre) return rama === 'main' ? elegir(mismoNombre.ruta) : alDiaOVieja(mismoNombre, worktrees, nombre, elegir, null);
-  const candidatos = worktrees.filter((w) => ramaNombraLaStory(w.rama, numero));
+  // un número con el prefijo de su producto (`BCRA-1.1`) cuya rama nombra sólo el número (`feature/1-1-…`): si ninguna lo
+  // nombra entero, se busca sin el prefijo, con la misma regla de un único candidato
+  let candidatos = worktrees.filter((w) => ramaNombraLaStory(w.rama, numero));
+  const prefijo = !candidatos.length && /^([a-z]+)[._-](?=\d)/i.exec(String(numero || ''));
+  if (prefijo) {
+    const sinPrefijo = String(numero).slice(prefijo[0].length);
+    candidatos = worktrees.filter((w) => ramaNombraLaStory(w.rama, sinPrefijo));
+    if (candidatos.length) numero = `${sinPrefijo} (sin el prefijo ${prefijo[1]})`;
+  }
   if (!rama) {
     if (candidatos.length) avisar(`${nombre}: la story ${numero} corre en un commit suelto, sin la rama de la corrida: no elijo por su número (${candidatos.map((w) => `${real(w.ruta)} en ${w.rama}`).join(' · ')}), uso el declarado ${declarado}`);
     return declarado;
@@ -470,8 +583,11 @@ function leerStory(storyPath) {
 
 /**
  * Los hermanos que la story toca, con los archivos que declara en cada uno y el alcance de pruebas deducido sobre esos
- * archivos (sólo si el hermano tiene más de un proyecto con pruebas y se puede deducir; si no, vacío y lo decide el
- * propio test-gate del hermano). `opts.onMissing` como en `companionRoots`; `opts.warn(texto)` para los avisos.
+ * archivos (si el hermano tiene más de un proyecto con pruebas y se puede deducir; si no, vacío y lo decide el propio
+ * test-gate del hermano). Con un solo proyecto .NET en una subcarpeta (la solución un nivel abajo), el alcance es esa
+ * carpeta: sin él, el test-gate del hermano corre `dotnet test` en la raíz, donde no hay solución, y frena con 4. Un
+ * proyecto de node en una subcarpeta no lo necesita: el test-gate encuentra su `package.json` solo.
+ * `opts.onMissing` como en `companionRoots`; `opts.warn(texto)` para los avisos.
  */
 function companionTargets(repo, storyPath, opts) {
   const ts = require('./test-scope.js');
@@ -489,8 +605,10 @@ function companionTargets(repo, storyPath, opts) {
   return [...porRaiz.entries()].map(([root, files]) => {
     let scope = '';
     try {
-      const d = ts.deduceScope({ files, candidates: ts.discoverCandidates(root) });
+      const candidatos = ts.discoverCandidates(root);
+      const d = ts.deduceScope({ files, candidates: candidatos });
       if (d.multi && !d.ambiguous && d.scope) scope = d.scope;
+      else if (candidatos.length === 1 && candidatos[0].dir !== '.' && candidatos[0].runner === 'dotnet') scope = candidatos[0].dir;
     } catch (e) {
       // Sin alcance deducido, el test-gate del hermano deduce el suyo (o frena con 4): se avisa, no se calla.
       warn(`no pude deducir el alcance de pruebas en ${label(root)} (${(e && e.message) || e}): lo decide su propio test-gate`);
@@ -646,7 +764,7 @@ function anclasDeLaEvidencia(repo, historia) {
 
 module.exports = {
   anclasDeLaEvidencia, nombreDelRepo,
-  companionRoots, ramaDe, RAMA_DE_LA_CORRIDA, limpiarRamas, enLaMismaRama, mainAlDia, mainCambioDespues, ramaNombraLaStory, numeroDeLaStory, gitRootOf, label, ownerOf, groupByRepo, resolveDeclared, parseRepoPrefixed, resolveRepoRef,
+  companionRoots, touchedRoots, hermanosDeLaStory, ramaDe, RAMA_DE_LA_CORRIDA, limpiarRamas, enLaMismaRama, mainAlDia, mainCambioDespues, ramaNombraLaStory, numeroDeLaStory, gitRootOf, label, ownerOf, groupByRepo, resolveDeclared, parseRepoPrefixed, resolveRepoRef,
   companionTargets, declaredHere, declaredIn, declaredFor, real,
 };
 

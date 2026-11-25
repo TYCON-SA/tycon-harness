@@ -63,7 +63,11 @@ function cmdFreezeAdversarial() {
   if (Object.keys(sellos).length) marker.adversarialFrozen = { sellos, copias, at: nowIso() };
   marker.lastTouch = nowIso();
   writeMarker(marker);
-  process.stdout.write(JSON.stringify({ sellos, copias }, null, 2) + '\n');
+  // cada repo con su sello y la base de su rama principal (historia 8.330): con ellos el paso arma la lista del pase. Un
+  // repo sin base sale igual, con el motivo: si tiene código en el diff, el paso no lanza el pase
+  const ft = require('./frozen-tree.js');
+  const repos = Object.keys(sellos).map((repo) => ({ repo, sello: sellos[repo], copia: copias[repo], ...ft.baseDelPase(repo) }));
+  process.stdout.write(JSON.stringify({ sellos, copias, repos }, null, 2) + '\n');
 }
 
 function cmdMarkAdversarialLaunched(runId, stepRaw) {
@@ -247,7 +251,7 @@ function cmdMarkAdversarialSkipped(argsGate) {
 // variable): `next` no tiene los archivos del cambio y no recalcula el portón, lee esto.
 //
 // 🔴 Va en un campo PROPIO, `adversarialGate`, nunca dentro de `marker.adversarial`: para el salteo, el freno del
-// «Preparar el commit», `next` y el paso de revisores, `adversarial` significa «lanzado» (con él, `mark-adversarial-skipped` se niega).
+// «Preparar el pull request», `next` y el paso de revisores, `adversarial` significa «lanzado» (con él, `mark-adversarial-skipped` se niega).
 //
 // El temprano apagado (`TYCON_5B_EARLY=0`) se lee del entorno de UN comando, y en una sesión de agente el entorno no
 // pasa de un comando al siguiente (un `next` suelto no lleva la variable que tuvo el comando anterior).

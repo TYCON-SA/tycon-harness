@@ -264,7 +264,7 @@ siempre en archivos de repos, y hay dos caminos para cambiarla:
 
 | Si sos… | Necesitás | No necesitás |
 |---|---|---|
-| Un dev solo, sin sitio | la instalación en tu máquina | repos de la organización ni cuenta en GitHub o Azure DevOps |
+| Un dev solo, sin sitio | la instalación en tu máquina | repos de la organización ni cuenta en GitHub, Azure DevOps o GitLab |
 | Un dev solo, con sitio | la instalación, un repo del equipo y uno de operaciones (una organización de uno), y el sitio con su inicio de sesión; el historial compartido de corridas, si querés ver tus corridas ahí | los procesos de la noche, salvo que quieras el aviso de la mañana y el tablero |
 | El admin de un equipo, sin sitio | la instalación y el repo del equipo, con lectura para el equipo; el repo de operaciones, si quieren los procesos de la noche | el sitio |
 | El admin de un equipo, con sitio | lo anterior, el repo de operaciones con `site.access` (quién entra al sitio), el sitio y, para ver las corridas de todos, el historial compartido de corridas | — |
@@ -315,7 +315,7 @@ node $HOME/.tycon/harness/scripts/setup/harness.js team-init
 ```
 
 Te pregunta lo que no le pasaste por opción: el nombre de la organización (`--name`, letras sin tilde, números, punto
-y guion), dónde vive el repo del equipo (`--platform github|azure` y `--profile-repo`, `org/repo` de GitHub o la
+y guion), dónde vive el repo del equipo, en GitHub o en Azure DevOps (en GitLab todavía no va; `--platform github|azure` y `--profile-repo`, `org/repo` de GitHub o la
 dirección del repo en Azure DevOps, con la forma de [Azure DevOps](../guides/integrations/ado-projects.md#la-url-de-un-repo)) y la carpeta donde dejar los archivos (`--dir`; por defecto
 `~/<repo>`; una carpeta con algo adentro no se toca). Baja el ejemplo publicado (`harness-team-profile-example`) y
 escribe sólo los tres archivos obligatorios:
@@ -337,7 +337,7 @@ dirección ni cuenta: la declaración y el perfil (sin `team-repos.json`), en `~
 pasos: la primera instalación, la línea del paquete de la portada, no acepta una carpeta en `--team`, sólo un repo de
 GitHub o de Azure DevOps. Instalá primero sin `--team`, armá el perfil y después instalá con `--team <carpeta>`. Ahí van tus
 paquetes de revisores, que así sobreviven a las actualizaciones (`guides/reviewer-packs.md`, «Si trabajás solo»). Mientras
-viva sólo en tu máquina, `doctor` avisa que no tiene copia de respaldo; para tenerla, subilo a GitHub o a Azure DevOps y
+viva sólo en tu máquina, `doctor` avisa que no tiene copia de respaldo; para tenerla, subilo a GitHub o a Azure DevOps (en GitLab todavía no va) y
 volvé a instalar con `--team <dirección>`.
 
 ## Instalación mínima o completa
@@ -444,7 +444,7 @@ producción instala una vez, con tu contraseña, el permiso:
 sudo bash ~/.tycon/harness/scripts/production/install-guard.sh --allow-auto-update
 ```
 
-Qué habilita, qué ensaya antes de reemplazar y qué no se instala solo: [guides/produccion-con-permiso.md](../guides/produccion-con-permiso.md).
+Qué habilita, qué ensaya antes de reemplazar y qué no se instala solo: [guides/production-with-permission.md](../guides/production-with-permission.md).
 
 ## Qué escribe en tu máquina y qué hace solo
 

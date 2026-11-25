@@ -44,10 +44,20 @@ if (require.main === module) { try { require('./node-floor.js').guard(); } catch
 //   <modelo> = un nivel, «economy» | «balanced» | «strong» | «max» (MODEL_LEVELS), o el nombre del
 //   modelo, «haiku» | «sonnet» | «opus» | «fable» (MODEL_NAMES), en el mismo orden; copias de models.js del skill. Quien la resuelve
 //   es skills/tycon-pipeline/scripts/lib/models.js (`readOrgModels`, el único que la lee).
+//     "control_profiles": {             opcional — el perfil por modelo (lib/control-profile.js)
+//       "relaxed": [ { "control": <clave de scripts/metrics/controls-classification.json>, "profile": «fuertes» | «resto»,
+//                      "review_before": <AAAA-MM-DD>, "approved_by": <quién aprobó>, "approved_on": <AAAA-MM-DD> } ] }
+//                                       un control que el dueño relajó deja de frenar sólo para ese perfil hasta la fecha.
+//                                       Una exigencia nunca se relaja, aunque esté acá (lo decide control-profile.js). Un
+//                                       problema adentro deja la sección sin usar: todo prendido, como sin la sección
 //     "weekly_review": {                opcional — la revisión de la semana (scripts/nightly/weekly-review/)
 //       "enabled"?: <bool>, "budget_usd"?: <número, más de 0 y hasta 100>, "max_chars"?: <entero, 10.000 a 2.000.000> }
 //                                       por defecto prendida, US$5 y 600.000; uno mal escrito cae al de por defecto
-//   <repo> = { "platform": "azure", "org", "project", "repo" } o { "platform": "github", "org", "repo" }.
+//   <repo> = { "platform": "azure", "org", "project", "repo" }, { "platform": "github", "org", "repo" } o
+//            { "platform": "gitlab", "namespace", "repo", "host"? }: `namespace` es el grupo con sus subgrupos
+//            (`grupo/subgrupo`) y `host` el servidor de una instalación propia; sin `host`, el servidor lo pone el
+//            conector de esa plataforma. Un repo de GitLab va sólo en `merge_suites` y en `story_index`: las demás
+//            claves las leen piezas que identifican un repo por `org` y `project`.
 //   Las claves que empiezan con `__` son comentarios. Cualquier otra clave es un problema, en su propia ruta: así un
 //   nombre mal escrito no queda ignorado en silencio.
 //   La lista de responsables NO va acá (este archivo llega a todas las máquinas): va en `operations.json`, en el repo
@@ -73,15 +83,21 @@ if (require.main === module) { try { require('./node-floor.js').guard(); } catch
 const fs = require('fs');
 
 const VERSION = 1;
-const PLATFORMS = ['azure', 'github'];
+const PLATFORMS = ['azure', 'github', 'gitlab'];
+// las que admiten los repos del propio arnés y los de las herramientas de prueba: quien los lee identifica un repo por
+// `org` y `project`, y uno con otra forma se pisaría con otro del mismo nombre o no se encontraría
+const HARNESS_PLATFORMS = ['azure', 'github'];
 // el conector de plataforma de cada valor de `platform` (integrations/<conector>/): la única traducción entre los dos
 // nombres; la usa la capa de plataforma (scripts/lib/platform/platform.js)
-const CONNECTORS = Object.freeze({ azure: 'azure-devops', github: 'github' });
+const CONNECTORS = Object.freeze({ azure: 'azure-devops', github: 'github', gitlab: 'gitlab' });
 /** El conector de un valor de `platform` de un repo, o null si no es uno de los que el archivo admite. */
 function connectorOf(platform) { return Object.prototype.hasOwnProperty.call(CONNECTORS, platform) ? CONNECTORS[platform] : null; }
-const REPO_KEYS = { azure: ['org', 'project', 'repo'], github: ['org', 'repo'] };
+const REPO_KEYS = { azure: ['org', 'project', 'repo'], github: ['org', 'repo'], gitlab: ['namespace', 'repo'] };
+// las claves que un repo puede traer además de las suyas: el servidor de una instalación propia
+const OPTIONAL_REPO_KEYS = { gitlab: ['host'] };
+const optionalKeys = (platform) => OPTIONAL_REPO_KEYS[platform] || [];
 const REQUIRED = ['public', 'profile', 'operations'];
-const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'story_index', 'models', 'wait_notice', 'coverage', 'review', 'stack', 'weekly_review', 'estimates', 'context_notice', 'deep_review', 'plan_review', 'review_runner'];
+const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'story_index', 'models', 'wait_notice', 'coverage', 'review', 'stack', 'weekly_review', 'estimates', 'context_notice', 'deep_review', 'plan_review', 'review_runner', 'control_profiles'];
 // El umbral del aviso de contexto: tokens enteros de 100.000 a 900.000. Lo lee scripts/hooks/context-size-notice.js,
 // después de TYCON_CONTEXT_NOTICE_TOKENS de la máquina y antes de los 300.000 de fábrica.
 const CONTEXT_NOTICE_KEYS = ['tokens'];
@@ -294,7 +310,19 @@ const KEYS = ['version', ...REQUIRED, ...OPTIONAL];
 const NAME = {
   azure: /^[\p{L}\p{N}._-](?:[\p{L}\p{N}._ -]*[\p{L}\p{N}._-])?$/u,
   github: /^[A-Za-z0-9._-](?:[A-Za-z0-9._ -]*[A-Za-z0-9._-])?$/,
+  // un tramo de una ruta de GitLab: sin espacios, y no empieza con guion ni con punto (`..` armaría otra ruta)
+  gitlab: /^[A-Za-z0-9_][A-Za-z0-9._-]*$/,
 };
+// el nombre de un servidor: etiquetas separadas por puntos, sin esquema, sin ruta y sin nada que parezca una opción
+const HOST_NAME = /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*$/;
+
+/** El problema de un `namespace` (grupos separados por `/`), o null: cada tramo es un nombre, sin tramos vacíos. */
+function namespaceProblem(v) {
+  const parts = v.split('/');
+  if (parts.some((t) => t === '')) return `«${v}» tiene que ser el grupo y sus subgrupos separados por «/», sin «/» al principio ni al final y sin «//» (por ejemplo «grupo/subgrupo»)`;
+  const bad = parts.find((t) => !NAME.gitlab.test(t));
+  return bad === undefined ? null : `«${bad}» no va en un namespace de gitlab: cada grupo lleva letras sin tilde, números, punto, guion o guion bajo, y no empieza con punto ni con guion (por ejemplo «grupo/subgrupo»)`;
+}
 
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 // `comment`: la clave de un dato (un revisor) que es un comentario; `fieldComment`: la de un objeto de campos fijos,
@@ -305,23 +333,37 @@ const comment = (k) => k.startsWith('__');
 const COMMENT_SECRET = /token|secret|sas|password|passwd|pwd|key|credential/i;
 const fieldComment = (k, v) => comment(k) || (k.startsWith('_') && !COMMENT_SECRET.test(k) && (typeof v === 'string' || (Array.isArray(v) && v.every((s) => typeof s === 'string'))));
 
-/** Los problemas de un repo en `at`; `[]` si está bien. */
-function repoProblems(value, at) {
+/**
+ * Los problemas de un repo en `at`; `[]` si está bien. `platforms`: las que admite ese lugar del archivo (las del
+ * propio arnés, si no se dice otra cosa).
+ */
+function repoProblems(value, at, { platforms = HARNESS_PLATFORMS } = {}) {
   if (!isObject(value)) return [{ path: at, message: 'tiene que ser un objeto con platform y la dirección del repo' }];
   const { platform } = value;
-  if (!PLATFORMS.includes(platform)) {
-    return [{ path: `${at}.platform`, message: `tiene que ser ${PLATFORMS.map((p) => `«${p}»`).join(' o ')} (es ${JSON.stringify(platform)})` }];
+  if (!platforms.includes(platform)) {
+    // una plataforma que el archivo conoce y este lugar no: se dice dónde sí va, no que el valor está mal escrito
+    const elsewhere = PLATFORMS.includes(platform) ? `; un repo de ${platform} va sólo en merge_suites y en story_index` : '';
+    return [{ path: `${at}.platform`, message: `tiene que ser ${platforms.map((p) => `«${p}»`).join(' o ')} (es ${JSON.stringify(platform)})${elsewhere}` }];
   }
   const out = [];
   const wanted = REPO_KEYS[platform];
+  const optional = optionalKeys(platform);
+  // con claves opcionales, el mensaje dice cuáles lleva: quien copió la forma de otra plataforma ve qué cambiar
+  const unknown = optional.length ? `clave desconocida en un repo de ${platform}: lleva ${wanted.join(' y ')}, y ${optional.join(', ')} si hace falta` : `clave desconocida en un repo de ${platform}`;
   for (const k of Object.keys(value)) {
     if (k === 'platform' || fieldComment(k, value[k])) continue;
-    if (!wanted.includes(k)) out.push({ path: `${at}.${k}`, message: platform === 'github' && k === 'project' ? 'un repo de GitHub no lleva project' : `clave desconocida en un repo de ${platform}` });
+    if (!wanted.includes(k) && !optional.includes(k)) out.push({ path: `${at}.${k}`, message: platform === 'github' && k === 'project' ? 'un repo de GitHub no lleva project' : unknown });
+  }
+  for (const k of optional) {
+    const v = value[k];
+    if (v === undefined) continue;
+    if (typeof v !== 'string' || !HOST_NAME.test(v)) out.push({ path: `${at}.${k}`, message: `tiene que ser el nombre del servidor, sin «https://» ni ruta (por ejemplo «gitlab.example.com») (es ${JSON.stringify(v)})` });
   }
   for (const k of wanted) {
     const v = value[k];
     if (v === undefined) out.push({ path: `${at}.${k}`, message: 'falta' });
     else if (typeof v !== 'string' || !v.trim()) out.push({ path: `${at}.${k}`, message: 'tiene que ser un texto no vacío' });
+    else if (k === 'namespace') { const mal = namespaceProblem(v); if (mal) out.push({ path: `${at}.${k}`, message: mal }); }
     else if (!NAME[platform].test(v)) out.push({ path: `${at}.${k}`, message: `«${v}» tiene caracteres que no van en un nombre de ${platform} (letras${platform === 'github' ? ' sin tilde' : ''}, números, punto, guion, guion bajo; espacios sólo adentro)` });
   }
   return out;
@@ -333,7 +375,8 @@ const ruleProblem = (rule, at) => (MERGE_RULES.includes(rule) ? [] : [{ path: at
 function identityKey(r) {
   if (!isObject(r) || !PLATFORMS.includes(r.platform)) return null;
   const plain = (v) => { const s = String(v == null ? '' : v); try { return decodeURIComponent(s).toLowerCase(); } catch (_) { return s.toLowerCase(); } };
-  return [r.platform, ...REPO_KEYS[r.platform].map((k) => plain(r[k]))].join('/');
+  // una clave opcional que falta cuenta como vacía: sin ella y con ella son dos identidades
+  return [r.platform, ...optionalKeys(r.platform).map((k) => plain(r[k])), ...REPO_KEYS[r.platform].map((k) => plain(r[k]))].join('/');
 }
 
 /** Los problemas de `merge_suites`; `[]` si está bien. */
@@ -353,7 +396,7 @@ function mergeSuitesProblems(value) {
     for (const k of Object.keys(e)) if (!fieldComment(k, e[k]) && !MERGE_ENTRY_KEYS.includes(k)) out.push({ path: `${at}.${k}`, message: 'clave desconocida' });
     if (e.rule === undefined && e.full_tests_pipeline === undefined) out.push({ path: at, message: 'tiene que traer rule o full_tests_pipeline (sin ninguno, la entrada no dice nada)' });
     if (e.rule !== undefined) out.push(...ruleProblem(e.rule, `${at}.rule`));
-    const repoErrs = e.repo === undefined ? [{ path: `${at}.repo`, message: 'falta' }] : repoProblems(e.repo, `${at}.repo`);
+    const repoErrs = e.repo === undefined ? [{ path: `${at}.repo`, message: 'falta' }] : repoProblems(e.repo, `${at}.repo`, { platforms: PLATFORMS });
     out.push(...repoErrs);
     const p = e.full_tests_pipeline;
     if (p !== undefined) {
@@ -409,7 +452,7 @@ function storyIndexProblems(value) {
     if (!isObject(e)) { out.push({ path: at, message: 'tiene que ser un objeto { repo, mode }' }); return; }
     for (const k of Object.keys(e)) if (!fieldComment(k, e[k]) && k !== 'repo' && k !== 'mode') out.push({ path: `${at}.${k}`, message: 'clave desconocida' });
     if (!STORY_INDEX_MODES.includes(e.mode)) out.push({ path: `${at}.mode`, message: `tiene que ser ${STORY_INDEX_MODES.map((m) => `«${m}»`).join(' o ')} (es ${JSON.stringify(e.mode)})` });
-    const repoErrs = e.repo === undefined ? [{ path: `${at}.repo`, message: 'falta' }] : repoProblems(e.repo, `${at}.repo`);
+    const repoErrs = e.repo === undefined ? [{ path: `${at}.repo`, message: 'falta' }] : repoProblems(e.repo, `${at}.repo`, { platforms: PLATFORMS });
     out.push(...repoErrs);
     if (!repoErrs.length) {
       const key = identityKey(e.repo);
@@ -659,6 +702,35 @@ function contextNoticeProblems(value) {
   if (t !== undefined && !(Number.isInteger(t) && t >= desde && t <= hasta)) {
     out.push({ path: 'context_notice.tokens', message: `tiene que ser un número entero de tokens, de 100.000 a 900.000 (es ${JSON.stringify(t)})` });
   }
+  return out;
+}
+
+// los perfiles del perfil por modelo y las claves de cada relajación
+const CONTROL_PROFILES = ['fuertes', 'resto'];
+const RELAXED_KEYS = ['control', 'profile', 'review_before', 'approved_by', 'approved_on'];
+const FECHA = /^\d{4}-\d{2}-\d{2}$/;
+// una fecha AAAA-MM-DD que existe en el calendario (`9999-99-99` o un 30 de febrero, no)
+function fechaQueExiste(t) {
+  if (!FECHA.test(String(t || ''))) return false;
+  const d = new Date(`${t}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === t;
+}
+/** Los problemas de `control_profiles`; `[]` si está bien. */
+function controlProfilesProblems(value) {
+  if (!isObject(value)) return [{ path: 'control_profiles', message: 'tiene que ser un objeto (el perfil por modelo)' }];
+  const out = [];
+  for (const k of Object.keys(value)) if (!fieldComment(k, value[k]) && k !== 'relaxed') out.push({ path: `control_profiles.${k}`, message: 'clave desconocida' });
+  if (value.relaxed === undefined) return out;
+  if (!Array.isArray(value.relaxed)) return [...out, { path: 'control_profiles.relaxed', message: 'tiene que ser una lista de relajaciones' }];
+  value.relaxed.forEach((e, i) => {
+    const at = `control_profiles.relaxed.${i}`;
+    if (!isObject(e)) { out.push({ path: at, message: 'tiene que ser un objeto' }); return; }
+    for (const k of Object.keys(e)) if (!fieldComment(k, e[k]) && !RELAXED_KEYS.includes(k)) out.push({ path: `${at}.${k}`, message: 'clave desconocida' });
+    if (typeof e.control !== 'string' || !e.control.trim()) out.push({ path: `${at}.control`, message: 'falta el control (su clave en la clasificación)' });
+    if (!CONTROL_PROFILES.includes(e.profile)) out.push({ path: `${at}.profile`, message: `tiene que ser ${CONTROL_PROFILES.join(' o ')}` });
+    for (const k of ['review_before', 'approved_on']) if (!fechaQueExiste(e[k])) out.push({ path: `${at}.${k}`, message: 'tiene que ser una fecha AAAA-MM-DD que exista' });
+    if (typeof e.approved_by !== 'string' || !e.approved_by.trim()) out.push({ path: `${at}.approved_by`, message: 'falta quién lo aprobó' });
+  });
   return out;
 }
 
@@ -912,10 +984,13 @@ function parse(text) {
   const sectionRunner = isObject(doc) && doc.review_runner !== undefined ? reviewRunnerProblems(doc.review_runner) : [];
   // y con `story_index`: un modo mal escrito deja los índices a mano, como siempre, y lo dice
   const sectionStoryIndex = isObject(doc) && doc.story_index !== undefined ? storyIndexProblems(doc.story_index) : [];
+  // y con `control_profiles`: una relajación mal escrita deja la sección sin usar (todo prendido), no sin el archivo
+  const sectionControlProfiles = isObject(doc) && doc.control_profiles !== undefined ? controlProfilesProblems(doc.control_profiles) : [];
   let data = problems.length ? null : doc;
-  if (data && (sectionModels.length || sectionWait.length || sectionCoverage.length || sectionReview.length || sectionStack.length || sectionWeekly.length || sectionEstimates.length || sectionContext.length || sectionDeep.length || sectionPlan.length || sectionRunner.length || sectionStoryIndex.length)) {
+  if (data && (sectionControlProfiles.length || sectionModels.length || sectionWait.length || sectionCoverage.length || sectionReview.length || sectionStack.length || sectionWeekly.length || sectionEstimates.length || sectionContext.length || sectionDeep.length || sectionPlan.length || sectionRunner.length || sectionStoryIndex.length)) {
     data = { ...doc };
     if (sectionStoryIndex.length) delete data.story_index;
+    if (sectionControlProfiles.length) delete data.control_profiles;
     if (sectionContext.length) delete data.context_notice;
     // las secciones de las revisiones pierden sólo la clave mala: una política bien escrita no cae por un corte mal escrito
     for (const [k, probs] of [['deep_review', sectionDeep], ['review', sectionReview], ['plan_review', sectionPlan], ['review_runner', sectionRunner]]) {
@@ -946,6 +1021,7 @@ function parse(text) {
     ...(sectionPlan.length ? { plan_review: sectionPlan } : {}),
     ...(sectionRunner.length ? { review_runner: sectionRunner } : {}),
     ...(sectionStoryIndex.length ? { story_index: sectionStoryIndex } : {}),
+    ...(sectionControlProfiles.length ? { control_profiles: sectionControlProfiles } : {}),
   };
   return { ok: problems.length === 0, data, problems, ...(Object.keys(sections).length ? { sectionProblems: sections } : {}) };
 }
@@ -964,12 +1040,18 @@ function url(repo) {
   if (!isObject(repo)) return null;
   if (repo.platform === 'azure') return `https://dev.azure.com/${encodeURIComponent(repo.org)}/${encodeURIComponent(repo.project)}/_git/${encodeURIComponent(repo.repo)}`;
   if (repo.platform === 'github') return `https://github.com/${repo.org}/${repo.repo}`;
+  // con su servidor declarado; sin él, la dirección la sabe el conector de su plataforma
+  if (repo.host && repo.namespace) return `https://${repo.host}/${repo.namespace}/${repo.repo}`;
   return null;
 }
 
-/** El id de un repo para comparar con lo que lista la organización: `<project>/<repo>` en Azure, `<org>/<repo>` en GitHub. */
+/**
+ * El id de un repo para comparar con lo que lista la organización: `<project>/<repo>` en Azure, `<org>/<repo>` en GitHub
+ * y, donde el repo vive en grupos, `<namespace>/<repo>`.
+ */
 function repoId(repo) {
-  return repo.platform === 'azure' ? `${repo.project}/${repo.repo}` : `${repo.org}/${repo.repo}`;
+  if (repo.platform === 'azure') return `${repo.project}/${repo.repo}`;
+  return `${repo.org === undefined ? repo.namespace : repo.org}/${repo.repo}`;
 }
 
 /**
@@ -979,7 +1061,7 @@ function repoId(repo) {
  */
 function harnessCopies(data, platform) {
   if (!isObject(data) || !Array.isArray(data.harness_copies)) return [];
-  const full = (r) => REPO_KEYS[r.platform].map((k) => String(r[k]).toLowerCase()).join('/');
+  const full = (r) => [...optionalKeys(r.platform), ...REPO_KEYS[r.platform]].map((k) => String(r[k] === undefined ? '' : r[k]).toLowerCase()).join('/');
   const m = isObject(data.maintainers) && PLATFORMS.includes(data.maintainers.platform) ? data.maintainers : null;
   return data.harness_copies
     .filter((r) => isObject(r) && r.platform === platform)
@@ -993,15 +1075,15 @@ function privateRepoRef(data) {
   return `${m.project}/_git/${m.repo}`;
 }
 
-module.exports = { VERSION, PLATFORMS, CONNECTORS, connectorOf, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, PROVIDERS, NIGHTLY_PROVIDERS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, STORY_INDEX_MODES, storyIndexProblems, storyIndexFor, modelsProblems, reviewProblems, contextNoticeProblems, deepReviewProblems, DEEP_REVIEW_VALUES, modelsAboveCeiling, modelsOutsideAllowed, nightlyLevel, suitesWithoutPipeline, suitesWithRule, stackProblems, environmentsProblems, weeklyReviewProblems, estimatesProblems, ESTIMATES_UNITS, ESTIMATES_HOURS_PER_DAY, WAIT_NOTICE_PEER_MAX, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
+module.exports = { CONTROL_PROFILES, controlProfilesProblems, VERSION, PLATFORMS, HARNESS_PLATFORMS, CONNECTORS, connectorOf, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, PROVIDERS, NIGHTLY_PROVIDERS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, STORY_INDEX_MODES, storyIndexProblems, storyIndexFor, modelsProblems, reviewProblems, contextNoticeProblems, deepReviewProblems, DEEP_REVIEW_VALUES, modelsAboveCeiling, modelsOutsideAllowed, nightlyLevel, suitesWithoutPipeline, suitesWithRule, stackProblems, environmentsProblems, weeklyReviewProblems, estimatesProblems, ESTIMATES_UNITS, ESTIMATES_HOURS_PER_DAY, WAIT_NOTICE_PEER_MAX, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);
   const at = args.indexOf('--harness-copies');
   const platform = at >= 0 ? args[at + 1] : null;
   const file = args.find((a, i) => !a.startsWith('--') && !(at >= 0 && i === at + 1));
-  if (!file || (at >= 0 && !PLATFORMS.includes(platform))) {
-    process.stderr.write('uso: node scripts/lib/team-repos.js <team-repos.json> [--json | --harness-copies <azure|github>]\n');
+  if (!file || (at >= 0 && !HARNESS_PLATFORMS.includes(platform))) {
+    process.stderr.write(`uso: node scripts/lib/team-repos.js <team-repos.json> [--json | --harness-copies <${HARNESS_PLATFORMS.join('|')}>]\n`);
     process.exit(2);
   }
   const r = load(file);

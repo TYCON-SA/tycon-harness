@@ -74,6 +74,11 @@ const PARA_OTRA_SESION = {
   // un control declarado a mano y un criterio que no se prueba en vivo: los firma la persona, en la ventana o la terminal
   'set-check': { firma: 'escape:force-manual', marcador: true, si: (a) => a.includes('--force-manual') },
   'runtime-waiver': { firma: 'runtime-waiver', marcador: true },
+  // cerrar como deuda, el rojo esperado de la matriz y apagar el modo autónomo: sobre la ejecución abierta del destino
+  'close-as-debt': { firma: 'escape:cerrar-como-deuda', marcador: true },
+  // el rojo esperado de la matriz; el de un control va con la firma de cerrar como deuda (reglaParaOtra)
+  'expect-red': { firma: 'escape:rojo-esperado-de-la-matriz', marcador: true },
+  'set-autonomous': { firma: 'escape:set-autonomous', marcador: true, si: (a) => !['true', '1', 'on'].includes(a[3]) },
   'clear-session': { firma: 'lost-run', nombra: 3, si: (a) => a.includes('--lost') && !a.includes('--partition') },
   // el ok de guardar: sobre la corrida abierta del destino, la que vio el dueño
   'approve-save': { firma: 'save', marcador: true },
@@ -97,10 +102,12 @@ const reglaParaOtra = (argv) => {
   // el freno de los datos, sólo para dejarlo pasar: descartar o pasar a historia tocan el carril de la sesión sin firma
   if (argv[2] === 'adhoc' && argv[3] === 'allow-data-change') return { firma: 'adhoc-lane:datos', si: (a) => a[a.indexOf('--recommends') + 1] === 'pasar' };
   if (argv[2] === 'sign-file') return { firma: `escape:${argv[3]}` };
+  // el rojo esperado de un control: la firma de cerrar como deuda, con el mismo criterio que el freno
+  if (argv[2] === 'expect-red' && ownerWindow().esRojoDeUnControl(argv[3])) return { firma: 'escape:cerrar-como-deuda', marcador: true };
   return PARA_OTRA_SESION[argv[2]];
 };
 
-const ownerWindow = () => require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+function ownerWindow() { return require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'owner-window.js')); }
 
 /** Con `--for-session` a otra sesión: el subcomando tiene que ser una firma que se corre así; si no, sale 2 sin escribir. */
 function paraOtraSesion(argv) {
@@ -986,7 +993,7 @@ function screenRule() {
   try { return require(path.join(__dirname, '..', 'lib', 'stack-config.js')).orgRules().rules.screen_test.value; } catch (_e) { return 'ui'; }
 }
 
-// Las tandas que mide la corrida (la anotada más las que volvieron), con la matriz de «Preparar el commit»; null sin
+// Las tandas que mide la corrida (la anotada más las que volvieron), con la matriz de «Preparar el pull request»; null sin
 // tanda, sin lista o con el marcador de otra historia. Se calcula una vez por comando: la pantalla la pregunta varias.
 const TANDAS_MEDIDAS = new Map();
 function tandasMedidasDe(marker) {
@@ -1061,10 +1068,10 @@ const TESTS_FAILED_PENDING = 76;
 /**
  * `mark-tests-not-measured`: la salida 3 de test-gate.sh es «sin medir» (no reconoce ninguna herramienta de pruebas en el
  * repo y no corrió nada). Pone `sin-medir` sobre cualquier estado anterior: un verde de otra corrida no puede quedar en
- * pie. No es verde ni un rojo para arreglar: complete-step run-tests y «Preparar el commit» lo anuncian (nunca un verde callado). Sólo lo
+ * pie. No es verde ni un rojo para arreglar: complete-step run-tests y «Preparar el pull request» lo anuncian (nunca un verde callado). Sólo lo
  * llama test-gate.sh.
  */
-/** La línea que dicen «Correr las pruebas» y «Preparar el commit» cuando el check `tests` quedó «sin medir». */
+/** La línea que dicen «Correr las pruebas» y «Preparar el pull request» cuando el check `tests` quedó «sin medir». */
 function testsNotMeasuredLine(marker) {
   const r = String((marker && marker.testsNotMeasuredReason) || '');
   // el portón sabe correrlas, pero la herramienta no arrancó: el motivo es ése
@@ -1085,7 +1092,8 @@ const SENALES_RUN_CHECK = { SIGHUP: 1, SIGINT: 2, SIGTERM: 15 };
 // `pipeline.js next` los leen para no re-ejecutar (evita doble timer / doble
 // transición de WI al retomar cross-session).
 // `atddBypass`: escape consciente del portón pre-edit de ATDD (on-atdd-preedit.js) —
-// para el refactor legítimo sobre red preexistente. El uso queda en bypass.log, no es silencioso.
+// para el refactor legítimo sobre red preexistente. Pide la firma del dueño para la ejecución (lib/atdd-skip.js); el
+// uso queda en bypass.log, no es silencioso.
 // `waitingForHuman` — EL TERCER ESTADO del portón de autonomía.
 // El Stop-hook distingue dos cosas: "podés cerrar" (todo verde) y "no cierres, arreglá" (algo en
 // rojo). Este flag cubre la tercera, que es la más común: "le pregunté al dev y estoy esperando". Y como
@@ -1098,7 +1106,7 @@ const SENALES_RUN_CHECK = { SIGHUP: 1, SIGINT: 2, SIGTERM: 15 };
 // `autonomous`, y se apaga solo. Mismo patrón que `ALLOW_DOD_EVIDENCE_WRITE`.
 //
 // 🔴 `deepReviewDone` NO se escribe a mano. Es la bandera que cierra el pase adversarial, y cualquiera que la escriba
-// la cierra sin anotar qué encontró el pase, y «Preparar el commit» la da por buena. La escriben sólo los dos
+// la cierra sin anotar qué encontró el pase, y «Preparar el pull request» la da por buena. La escriben sólo los dos
 // comandos que cierran el pase con constancia: `mark-adversarial-result` (el pase corrió y se anota su
 // resultado) y `mark-adversarial-skipped` (el portón decidió que no corre).
 // Las banderas, en dos listas (lib/external-flags.js): las de hechos externos las pone sólo el arnés cuando hizo el

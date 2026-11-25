@@ -119,8 +119,19 @@ sg_identity() {
   printf '%s' "$s"
 }
 _sg_id="$(sg_identity $$)"
+# Lo que el freno está haciendo, para que el corte lo diga: lo anotan sus partes lentas (la lista de procesos de Windows,
+# el chequeo de un guion, la conversación donde se confirma una aprobación) en este archivo. En Git Bash, node no
+# entiende las rutas /c/…: va con barras hacia adelante (cygpath -m)
+SG_ETAPA="${TMPDIR:-/tmp}/tycon-sg-etapa-$$"
+rm -f "$SG_ETAPA" 2>/dev/null || true
+TYCON_SAFETY_STAGE_FILE="$SG_ETAPA"
+if command -v cygpath >/dev/null 2>&1; then TYCON_SAFETY_STAGE_FILE="$(cygpath -m "$SG_ETAPA" 2>/dev/null || printf '%s' "$SG_ETAPA")"; fi
+export TYCON_SAFETY_STAGE_FILE
 sg_clock_fired() {
-  echo "⛔ TYCON safety-guard: el freno no terminó de mirar el comando en ${SG_CLOCK_S} s y lo frena: pasado el tope de la herramienta, el comando correría sin mirar. Si se repite, decíselo a la persona: algo deja esperando al freno." >&2
+  local etapa=""
+  [[ -s "$SG_ETAPA" ]] && etapa="$(head -c 200 "$SG_ETAPA" 2>/dev/null | tr -d '\n')"
+  rm -f "$SG_ETAPA" 2>/dev/null
+  echo "⛔ TYCON safety-guard: el freno no terminó de mirar el comando en ${SG_CLOCK_S} s y lo frena: pasado el tope de la herramienta, el comando correría sin mirar.${etapa:+ Estaba ${etapa}.} Para seguir: volvé a correr el comando; si se repite, subí TYCON_SAFETY_TIMEOUT_S (hasta 50) en el entorno de la herramienta, o abrí una sesión nueva (una conversación larga hace más lenta la confirmación de una firma). Si nada de eso alcanza, decíselo a la persona." >&2
   exit 2
 }
 trap 'sg_clock_fired' TERM
@@ -317,6 +328,12 @@ ow_gate() {
     tope="$(date +%s 2>/dev/null)" || tope=""
     if [[ "$tope" =~ ^[0-9]+$ ]]; then tope=$(( tope + SG_CLOCK_S - SECONDS - 1 )); else tope=""; fi
     out="$(printf '%s' "$INPUT" | TYCON_SAFETY_DEADLINE_S="$tope" "$HNODE" "$lib" gate ${args[@]+"${args[@]}"} 2>/dev/null)" || out=""
+    # la ventana ya contestó: lo que anotó no es lo que el freno hace después
+    rm -f "$SG_ETAPA" 2>/dev/null || true
+    # Lo que contestan los lectores se lee con `< <(printf …)`, nunca con un here-string: el bash 3.2 de macOS escribe el
+    # temporal de un here-string en /var/tmp, /tmp o la carpeta actual, y dentro de un encierro que no lo deja (la corrida
+    # aislada de los humos, con el freno corrido desde otro repo) no lee lo que le contestan: según el lugar, niega o deja
+    # pasar
     while IFS= read -r k; do
       case "$k" in
         decision=*) OW_DECISION="${k#decision=}" ;;
@@ -328,7 +345,7 @@ ow_gate() {
         json=*) OW_JSON="${k#json=}" ;;
         ofrece=*) OW_OFRECE="${k#ofrece=}" ;;
       esac
-    done <<< "$out"
+    done < <(printf '%s\n' "$out")
   fi
   case "$OW_DECISION" in ask|allow|none) ;; *) OW_DECISION="deny" ;; esac
   if [[ "$OW_DECISION" == "ask" && -z "$OW_JSON" ]]; then OW_DECISION="deny"; fi
@@ -415,7 +432,7 @@ emergencia_vale() {
       pedido=*) [[ "${k#pedido=}" =~ ^[0-9a-f]{8}$ ]] && EMERGENCIA_PEDIDO="${k#pedido=}" ;;
       motivo=*) EMERGENCIA_AVISO="${k#motivo=}" ;;
     esac
-  done <<< "$out"
+  done < <(printf '%s\n' "$out")
   return 1
 }
 
@@ -580,8 +597,9 @@ fi
 # corrió) y `DOD_BYPASS` (cierra un paso sin la evidencia de la prueba en vivo) van al revés: activan el escape con
 # cualquier valor que no sea 0 ni vacío, así que se frena cualquier asignación salvo a 0 o a nada. El nombre se compara
 # exacto (`TYCON_TEST_GATE_PART` no es ella). Su cartel no trae la receta y su constancia anota la sesión y el escape.
-# `TYCON_NO_DEEP_REVIEW` (apaga el pase adversarial) sigue la misma regla de valores. `TYCON_STATUS_GATE` (apaga el
-# freno que no deja pasar una historia a review o done a mano) también.
+# `TYCON_STATUS_GATE` (apaga el freno que no deja pasar una historia a review o done a mano) sigue la misma regla de
+# valores. `TYCON_NO_DEEP_REVIEW` no se mira: es un pedido de saltear el pase, y el portón sólo saltea con la firma
+# `adversarial-skip`.
 ESC_VARIABLE=""; ESC_VALOR=""; ESC_CARTEL=""
 # el comando sin comillas ni barras invertidas, una sola vez (ESC-C1 y ESC-C2 lo usan). Con `tr`: en el bash de la Mac
 # (3.2), `${CMD//[…]/}` crece con el cuadrado del largo y un heredoc de unos KB tardaba segundos en cada comando
@@ -637,21 +655,20 @@ fi
 # mira, porque escrita no hace nada.
 # `TYCON_MUTATION_CHECK` (saltea los mutantes) y `TYCON_STORY_REVIEW` (saltea la revisión de la historia) las apaga un
 # solo valor (`off` sin distinguir mayúsculas, y `0`): frena ése y uno que no se lee; el que no apaga pasa.
-for _esc in TYCON_NEW_NAMES TYCON_TEST_GATE DOD_BYPASS TYCON_NO_DEEP_REVIEW TYCON_STATUS_GATE TYCON_MUTATION_CHECK TYCON_STORY_REVIEW; do
+for _esc in TYCON_NEW_NAMES TYCON_TEST_GATE DOD_BYPASS TYCON_STATUS_GATE TYCON_MUTATION_CHECK TYCON_STORY_REVIEW; do
   # el filtro barato primero: sin el nombre de la variable (sin distinguir mayúsculas, por PowerShell) no hay nada que
   # mirar, y las expresiones de abajo no corren sobre un comando largo que no la nombra
   shopt -s nocasematch
   if [[ "$_esc_cmd" != *"$_esc"* ]]; then shopt -u nocasematch; continue; fi
   shopt -u nocasematch
   _esc_hit=0
-  if [[ "$_esc" == "TYCON_TEST_GATE" || "$_esc" == "DOD_BYPASS" || "$_esc" == "TYCON_NO_DEEP_REVIEW" || "$_esc" == "TYCON_STATUS_GATE" ]]; then
+  if [[ "$_esc" == "TYCON_TEST_GATE" || "$_esc" == "DOD_BYPASS" || "$_esc" == "TYCON_STATUS_GATE" ]]; then
     # éstas activan el escape con cualquier valor que no sea 0 ni vacío: se sacan las asignaciones a 0 o a nada (con
     # espacios alrededor del `=`, por PowerShell) y cualquier otra que quede frena, también un valor que no se ve (`$X`).
     # Todo en minúsculas: PowerShell no distingue mayúsculas en el nombre
     # los nombres son fijos: en minúsculas sin `tr` (una asignación suelta que falla dispararía el `trap 'exit 0' ERR`)
     case "$_esc" in
       TYCON_TEST_GATE) _esc_min="tycon_test_gate" ;;
-      TYCON_NO_DEEP_REVIEW) _esc_min="tycon_no_deep_review" ;;
       TYCON_STATUS_GATE) _esc_min="tycon_status_gate" ;;
       *) _esc_min="dod_bypass" ;;
     esac
@@ -731,7 +748,7 @@ ESC_VARIABLE=""; ESC_VALOR=""
 esc_c1_negar() {
   # las del pipeline, sin la receta: el agente no aprende a ponerse la variable
   case "$1" in
-    TYCON_TEST_GATE|DOD_BYPASS|TYCON_NO_DEEP_REVIEW|TYCON_STATUS_GATE|TYCON_MUTATION_CHECK|TYCON_STORY_REVIEW) ESC_CARTEL="$OW_TEXTO
+    TYCON_TEST_GATE|DOD_BYPASS|TYCON_STATUS_GATE|TYCON_MUTATION_CHECK|TYCON_STORY_REVIEW) ESC_CARTEL="$OW_TEXTO
 Esto lo decide la persona, no el agente: lo aprueba ella en la ventana de permiso de la herramienta, o lo corre ella en su terminal.
 Si la historia no se pudo terminar, la salida normal es dejarla como deuda: marker.js close-as-debt --reason \"<qué quedó pendiente>\" --debt <DEF-id>." ;;
     TYCON_NEW_NAMES) ESC_CARTEL="$OW_TEXTO
@@ -745,9 +762,6 @@ Saltear este freno lo decide la persona, no el agente: se repite el comando con 
     DOD_BYPASS) block "ESC-C1" \
         "DOD_BYPASS cierra un paso sin la evidencia de la prueba en vivo." \
         "Corré la prueba en vivo de verdad (la evidencia la escriben los guiones que corren las pruebas). Si no se puede, decíselo a la persona." ;;
-    TYCON_NO_DEEP_REVIEW) block "ESC-C1" \
-        "TYCON_NO_DEEP_REVIEW apaga el pase adversarial, la revisión que corre el código y más bugs encuentra." \
-        "Si el portón dice que corre, lanzalo de fondo y avisá cuánto tarda; no se pregunta si correrlo. Apagarlo lo decide la persona, en la ventana de permiso." ;;
     TYCON_STATUS_GATE) block "ESC-C1" \
         "TYCON_STATUS_GATE apaga el freno que no deja pasar una historia a review o done escribiendo el archivo a mano." \
         "El estado lo cambia el orquestador, que corre los controles del cierre: node \"\$HOME/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js\" update-story-status <ruta de la historia> <estado>. Apagarlo lo decide la persona, en la ventana de permiso." ;;
@@ -826,9 +840,10 @@ fi
 ESC_CARTEL=""
 # Declarar un control en verde a mano (`marker.js set-check … --force-manual`) o dar por corridos revisores que el arnés
 # no vio (`pipeline.js check-count --trust-ran`) también lo decide la persona, y frena con la ejecución en verde: el
-# escape es el verde, no cerrar en rojo. Apagar el pase adversarial (`--no-deep-review` en `pipeline.js
-# start|deep-review-gate` o `marker.js mark-adversarial-skipped`) frena siempre, también antes de que exista la
-# ejecución: `start` la crea.
+# escape es el verde, no cerrar en rojo. Un `--env-file` delante de `pipeline.js start|deep-review-gate` o de `marker.js
+# mark-adversarial-skipped` frena siempre, también antes de que exista la ejecución (`start` la crea): puede traer una
+# variable que cambia la decisión del pase. `--no-deep-review` solo es un pedido: el portón sólo saltea con la firma
+# `adversarial-skip`, y la bandera no pide otra.
 # El comando lo lee lib/marker-command.js como lo lee el shell (comillas, renglones, `$(…)`, barras de Windows,
 # mayúsculas); acá sólo se mira si nombra `marker` o `pipeline`, sin distinguir mayúsculas, para no correr node en cada
 # comando.
@@ -871,14 +886,14 @@ if [[ "$_esc_cmd" == *[Mm][Aa][Rr][Kk][Ee][Rr]* || "$_esc_cmd" == *[Pp][Ii][Pp][
       frena=*) _c3_frenos+=("${_c3_l#frena=}") ;;
       detalle=*) _c3_detalle="${_c3_l#detalle=}" ;;
     esac
-  done <<< "$_c3_out"
+  done < <(printf '%s\n' "$_c3_out")
   # Cada escape va a la ventana de permiso (más abajo, después de ESC-C7), con lo que hace falta para frenar con su
   # motivo si la ventana lo niega: «<clave>\t<escape>\t<subcomando>\t<argumento>». La salida de una ejecución perdida
   # (con `desde`: lib/open-runs.js) es la firma `lost-run`, que la ventana lee del comando; se anota aparte.
   _c3_negables=(); _c3_perdida=""
   for _c3_f in ${_c3_frenos[@]+"${_c3_frenos[@]}"}; do
     _c3_desde=""
-    IFS=$'\t' read -r _c3_esc _c3_sub _c3_a1 _c3_desde <<< "$_c3_f" || true
+    IFS=$'\t' read -r _c3_esc _c3_sub _c3_a1 _c3_desde < <(printf '%s\n' "$_c3_f") || true
     _c3_regla="ESC-C3"
     case "$_c3_esc" in
       "cerrar la ejecución") _c3_clave="cerrar-la-ejecucion" ;;
@@ -935,7 +950,7 @@ if [[ "$_c5_mira" == "1" ]]; then
       escondido=*) [[ -n "$_c5_escondido" ]] || _c5_escondido="${_c5_l#escondido=}" ;;
       forma=*) [[ -n "$_c5_forma" ]] || _c5_forma="${_c5_l#forma=}" ;;
     esac
-  done <<< "$_c5_out"
+  done < <(printf '%s\n' "$_c5_out")
   if [[ -n "$_c5_escondido" ]]; then
     block "GIT-C5" \
       "Mergear salteando la cola y la CI de main, o aflojar las políticas de la rama, así escrito no se puede firmar: ${_c5_escondido%.}." \
@@ -973,7 +988,7 @@ if [[ "$_c7_mira" == "1" ]]; then
       frena=*) [[ -n "$_c7_frena" ]] || _c7_frena="${_c7_l#frena=}" ;;
       firma=*) [[ -n "$_c7_firma" ]] || _c7_firma="${_c7_l#firma=}" ;;
     esac
-  done <<< "$_c7_out"
+  done < <(printf '%s\n' "$_c7_out")
   if [[ -n "$_c7_frena" ]]; then
     block "GIT-C7" \
       "Encolar o mergear un pedido sin saber de quién es no pasa: ${_c7_frena%.}." \
@@ -996,7 +1011,7 @@ fi
 # terminal. Casos: scripts/tests/owner-window.test.js (la decisión) y scripts/tests/safety-escape.test.js (el freno).
 ow_regla() { # $1 = la firma → la regla con que frena o deja constancia
   case "$1" in
-    escape:TYCON_SAFETY_OFF|escape:TYCON_PROD_LINT|escape:TYCON_NEW_NAMES|escape:TYCON_TEST_GATE|escape:DOD_BYPASS|escape:TYCON_NO_DEEP_REVIEW|escape:TYCON_STATUS_GATE|escape:TYCON_MUTATION_CHECK|escape:TYCON_STORY_REVIEW) echo "ESC-C1" ;;
+    escape:TYCON_SAFETY_OFF|escape:TYCON_PROD_LINT|escape:TYCON_NEW_NAMES|escape:TYCON_TEST_GATE|escape:DOD_BYPASS|escape:TYCON_STATUS_GATE|escape:TYCON_MUTATION_CHECK|escape:TYCON_STORY_REVIEW) echo "ESC-C1" ;;
     escape:cerrar-como-deuda|escape:rojo-esperado-de-la-matriz) echo "ESC-C4" ;;
     plan-approval) echo "ESC-C6" ;;
     control-change|refresh-after-main) echo "ESC-C7" ;;
@@ -1012,8 +1027,9 @@ ow_negar() { # la ventana negó: frena con el motivo de la firma
   alt="$OW_OFRECE"
   regla="$(ow_regla "$OW_FIRMA")" || regla="ESC-C3"
   if [[ "$regla" == "ESC-C1" ]]; then esc_c1_negar "${OW_FIRMA#escape:}"; fi
-  for f in ${_c3_negables[@]+"${_c3_negables[@]}"}; do
-    IFS=$'\t' read -r clave esc sub a1 <<< "$f" || true
+  # todos por un solo descriptor (el 9, para que lo que corre adentro no lea los renglones): en una función, el bash 3.2
+  # no cierra el de cada `< <(…)` hasta que vuelve, y con uno por vuelta dejaba de leer pasados los 253
+  while IFS=$'\t' read -r -u 9 clave esc sub a1; do
     [[ "escape:$clave" == "$OW_FIRMA" ]] || continue
     ESC_CARTEL="$OW_TEXTO${alt:+
 $alt}
@@ -1032,8 +1048,8 @@ Primero lo que no necesita a la persona: lo de «Alternativa». Si no se puede, 
           "Confiar en la lista de revisores que da el agente (pipeline.js check-count --trust-ran) deja la constancia de revisores que el arnés no vio correr; así escrito (escondido, en una variable o en una envoltura) no se firma." \
           "Lanzá los revisores que faltan y volvé a correr check-count. Si no se puede, decíselo a la persona: si lo decide ella, la firma va en su forma exacta, sola: pipeline.js check-count --repo <r> --story <s> --trust-ran [--for-session <D>]." ;;
       no-deep-review) BLOCK_MOTIVO="no-deep-review"; block "ESC-C3" \
-          "--no-deep-review en ${sub} apaga el pase adversarial, la revisión que corre el código y más bugs encuentra." \
-          "Si el portón dice que corre, lanzalo de fondo y avisá cuánto tarda; no se pregunta si correrlo. Apagarlo lo decide la persona, en la ventana de permiso." ;;
+          "Un --env-file delante de ${sub} puede traer una variable que cambia la decisión del pase adversarial (como el umbral de densidad) sin que el comando la muestre." \
+          "Corré el comando sin --env-file. Si el portón dice que corre, lanzalo de fondo y avisá cuánto tarda; saltearlo lo firma la persona (marker.js sign-adversarial-skip)." ;;
       set-autonomous) BLOCK_MOTIVO="set-autonomous"; block "ESC-C3" \
           "Apagar el modo autónomo (marker.js set-autonomous ${a1}) saca el lazo que no deja cerrar el turno con un control en rojo.${_c3_motivo:+ Hoy: ${_c3_motivo}.}" \
           "Arreglá lo que está en rojo y volvé a correr el control. Si no se puede, decíselo a la persona." ;;
@@ -1041,7 +1057,7 @@ Primero lo que no necesita a la persona: lo de «Alternativa». Si no se puede, 
           "Cerrar la ejecución ahora (marker.js ${sub}) la archiva como si hubiera terminado, y no terminó: ${_c3_motivo:-tiene algo pendiente}." \
           "Terminá lo pendiente. Si no se puede, decíselo a la persona." ;;
     esac
-  done
+  done 9< <(printf '%s\n' ${_c3_negables[@]+"${_c3_negables[@]}"})
   ESC_CARTEL="$OW_TEXTO"
   case "$OW_FIRMA" in
     plan-approval) block "ESC-C6" \
@@ -1096,7 +1112,7 @@ if [[ "$_ow_mira" == "1" ]]; then
     none)
       # la salida de una ejecución perdida que la ventana no reconoce como su firma (otro subcomando): no se firma acá
       if [[ -n "$_c3_perdida" ]]; then
-        IFS=$'\t' read -r _c3_sub _c3_a1 <<< "$_c3_perdida" || true
+        IFS=$'\t' read -r _c3_sub _c3_a1 < <(printf '%s\n' "$_c3_perdida") || true
         ESC_CARTEL="Esto lo decide una persona, no el agente: la salida de una ejecución perdida se firma con marker.js clear-session <sesión> --lost, en la ventana de permiso o en su terminal (--terminal)."
         BLOCK_MOTIVO="ejecucion-perdida"
         block "ESC-C3" \
@@ -1107,8 +1123,8 @@ if [[ "$_ow_mira" == "1" ]]; then
 fi
 ESC_CARTEL=""
 
-# ESC-C5: el permiso de escribir a mano la evidencia de la prueba en vivo (`ALLOW_DOD_EVIDENCE_WRITE`) y la exención de
-# esa prueba (`dod_runtime_exempt: true`) escritos por la terminal los decide la persona, que los firma con
+# ESC-C5: el permiso de escribir a mano la evidencia de la prueba en vivo (`ALLOW_DOD_EVIDENCE_WRITE`) y las exenciones de
+# esa prueba y de los revisores (`dod_runtime_exempt: true`, `advisors_exempt: true`) escritos por la terminal los decide la persona, que los firma con
 # `marker.js sign-file` y deja la escritura al Edit o Write. Frena un comando que crea, toca o copia un archivo con ese
 # nombre (`touch`, `cp`, una redirección, `tee`, un intérprete, `New-Item`, `Set-Content`, …) y uno que escribe la
 # exención en un `.md` (`sed -i`, `perl -i`, `>`, `>>`, `tee`); mirarlo, buscarlo, borrarlo o sacar la exención no frena.
@@ -1116,7 +1132,7 @@ ESC_CARTEL=""
 # Por la herramienta de escribir archivos, la exención la mira on-frontmatter-write.js y el permiso, on-dod-evidence-guard.js.
 _c5_esc=""
 shopt -s nocasematch
-if [[ "$_esc_cmd" == *allow_dod_evidence_write* || "$_esc_cmd" == *dod_runtime_exempt* ]]; then _c5_esc="?"; fi
+if [[ "$_esc_cmd" == *allow_dod_evidence_write* || "$_esc_cmd" == *dod_runtime_exempt* || "$_esc_cmd" == *advisors_exempt* ]]; then _c5_esc="?"; fi
 shopt -u nocasematch
 if [[ -n "$_c5_esc" ]]; then
   _c5_esc=""
@@ -1142,9 +1158,11 @@ if [[ -n "$_c5_esc" ]]; then
   fi
   shopt -u nocasematch
   _c5_crea="(^|[^a-z0-9_-])(touch|cp|mv|install|ln|tee|node|python3?|perl|ruby|deno|bun|new-item|ni|set-content|sc|add-content|ac|out-file|copy-item|move-item)([[:space:]][^;&|]*)?allow_dod_evidence_write|>[[:space:]]*[^;&|[:space:]]*allow_dod_evidence_write"
-  # sacar una línea con sed (`/…dod_runtime_exempt…/d`) no la agrega
-  _c5_sin_borrar="$(printf '%s' "$_c5_min" | sed -E 's#/[^/]*dod_runtime_exempt[^/]*/d##g')" || _c5_sin_borrar="$_c5_min"
-  _c5_exenta="dod_runtime_exempt:[[:space:]]*true"
+  # sacar una línea con sed (`/…dod_runtime_exempt…/d`, `/…advisors_exempt…/d`) no la agrega
+  _c5_sin_borrar="$(printf '%s' "$_c5_min" | sed -E 's#/[^/]*(dod_runtime_exempt|advisors_exempt)[^/]*/d##g')" || _c5_sin_borrar="$_c5_min"
+  _c5_exenta="(dod_runtime_exempt|advisors_exempt):[[:space:]]*true"
+  _c5_de_revisores="advisors_exempt:[[:space:]]*true"
+  _c5_de_la_prueba="dod_runtime_exempt:[[:space:]]*true"
   # la redirección es `>` o `>>` sueltos: `=>` o `->` dentro de un código no escriben un archivo
   _c5_md="(^|[^=<>-])>>?[[:space:]]*[^;&|[:space:]>]*\.md|(^|[^a-z0-9_-])tee[[:space:]][^;&|]*\.md"
   # sed o perl que editan en el lugar: la bandera como palabra suelta (`-i`, `-Ei`, `-pi`, `-i.bak`, `--in-place`; no el
@@ -1155,6 +1173,7 @@ if [[ -n "$_c5_esc" ]]; then
     _c5_esc="ALLOW_DOD_EVIDENCE_WRITE"
   elif [[ "$_c5_sin_borrar" =~ $_c5_exenta ]] && { [[ "$_c5_sin_borrar" =~ $_c5_md ]] || { [[ "$_c5_sin_borrar" =~ $_c5_inplace ]] && [[ "$_c5_sin_borrar" =~ $_c5_un_md ]]; }; }; then
     _c5_esc="dod_runtime_exempt"
+    if [[ "$_c5_sin_borrar" =~ $_c5_de_revisores ]] && ! [[ "$_c5_sin_borrar" =~ $_c5_de_la_prueba ]]; then _c5_esc="advisors_exempt"; fi
   fi
   if [[ -n "$_c5_esc" ]]; then
     _c5_sid="$(read_field session_id 2>/dev/null)" || _c5_sid=""
@@ -1177,6 +1196,10 @@ if [[ -n "$_c5_esc" ]]; then
       block "ESC-C5" \
         "El permiso ALLOW_DOD_EVIDENCE_WRITE deja escribir a mano la evidencia de la prueba en vivo, que tiene que salir de una prueba que corrió." \
         "Corré la prueba en vivo con su guion (el gate E2E del proyecto o el macro del humo): la evidencia la escribe él."
+    elif [[ "$_c5_esc" == "advisors_exempt" ]]; then
+      block "ESC-C5" \
+        "Agregar advisors_exempt: true a una historia la exime de los revisores." \
+        "Corré los revisores de la historia en su ejecución del pipeline. Si de verdad no hay nada que revisar, decíselo a la persona. ¿Sólo la nombrabas en un texto (un heredoc)? Este freno mira el comando entero: escribí ese texto en un archivo."
     else
       block "ESC-C5" \
         "Agregar dod_runtime_exempt: true a una historia la exime de la prueba en vivo." \
@@ -1429,7 +1452,7 @@ if [[ "$CMD" == *git* ]] && { [[ "$CMD" == *reset* || "$CMD" == *stash* || "$CMD
       _c6_motivos=""
       while IFS= read -r _c6_l; do
         [[ "$_c6_l" == frena=* ]] && _c6_motivos+="${_c6_motivos:+; }${_c6_l#frena=}"
-      done <<< "$_c6_out"
+      done < <(printf '%s\n' "$_c6_out")
       if [[ -n "$_c6_motivos" ]]; then
         block "GIT-C6" \
           "${_c6_motivos}. Esos cambios pueden ser de otra sesión o de la persona." \
@@ -2332,7 +2355,7 @@ if [[ "$CMD" == *settings*.json* ]]; then
     _c2_motivos=""
     while IFS= read -r _c2_l; do
       [[ "$_c2_l" == frena=* ]] && _c2_motivos+="${_c2_motivos:+; }${_c2_l#frena=}"
-    done <<< "$_c2_out"
+    done < <(printf '%s\n' "$_c2_out")
     if [[ -n "$_c2_motivos" ]]; then
       block "HARNESS-C2" \
         "El comando saca un control del arnés de la configuración de la herramienta: ${_c2_motivos}." \

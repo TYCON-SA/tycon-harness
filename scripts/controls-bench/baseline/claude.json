@@ -1617,6 +1617,9 @@
     "permission-relay.js::la-salida-del-plan-no-se-lleva": true,
     "permission-relay.js::el-cuadro-de-preguntas-no-se-lleva": true,
     "permission-relay.js::en-modo-automatico-no-se-lleva": true,
-    "permission-relay.js::apagado-no-lleva-nada": true
+    "permission-relay.js::apagado-no-lleva-nada": true,
+    "safety-guard-pre.sh::reemplazada-commit-en-main-no-pide-firma": true,
+    "safety-guard-pre.sh::reemplazada-commit-sin-empujar-pide-firma": true,
+    "safety-guard-pre.sh::reemplazada-commit-inventado-pide-firma": true
   }
 }

@@ -31,6 +31,8 @@ const NUNCA_DELEGABLES = new Map([
   ['autonomy-resume', 'volver al modo autónomo lo decide el dueño con su click o su terminal: no se delega'],
   ['review-skip', 'contestar «skip» a la pregunta del pase del código es sólo del dueño, en su pestaña o la de la coordinadora: no se delega'],
   ['escape:dod_runtime_exempt', 'eximir una historia de la prueba en vivo es sólo del dueño, en su pestaña o la de la coordinadora: no se delega'],
+  ['escape:advisors_exempt', 'eximir una historia de los revisores es sólo del dueño, en su pestaña o la de la coordinadora: no se delega'],
+  ['runtime-waiver', 'aceptar un criterio imposible de probar en vivo es sólo del dueño, con su click o su terminal: no se delega ni sale como trámite'],
 ]);
 
 const safeSid = (s) => String(s).replace(/[/\\]/g, '_');

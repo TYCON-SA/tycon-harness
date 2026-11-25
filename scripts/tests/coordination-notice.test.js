@@ -700,6 +700,24 @@ test('BS5 Status_SessionThatEnteredAWorktree_TasksUnderItsRepo: arrancó en el r
   assert.deepStrictEqual(C.status(stallOpts(t, NOW + 20 * 60000, procs())).backgroundStalled.map((b) => b.session), ['Wanda']);
 });
 
+// 🔴 mutación: contar como viva una tarea abierta de una sesión que ya no tiene ninguna consola que la corra (una tarea
+// cortada que quedó sin su renglón de cierre avisaba por horas a una sesión que no tenía nada).
+test('BS6 Status_OpenTaskWithoutAnyConsole_IsNotWaiting: sin ninguna consola de la sesión, una tarea abierta es un registro viejo y no avisa', () => {
+  const t = toy();
+  bg(t, 'bg-v', 'Vera', 2, { status: 'busy' });
+  bgTask(t, 'bg-v', 'b6', { minutesAgo: 7 * 60 });
+  // la sesión sólo tiene su servidor de herramientas: ninguna consola, ninguna tarea de fondo que pueda estar corriendo
+  const sinConsola = () => ({ list: [{ pid: 9100, ppid: process.pid, cpu: 3, shell: false }] });
+  C.status(stallOpts(t, NOW, sinConsola));
+  assert.deepStrictEqual(C.status(stallOpts(t, NOW + 60 * 60000, sinConsola)).backgroundStalled, [], 'sin consolas no hay tarea viva');
+  // gemelo: la misma tarea, con una consola quieta colgando de la sesión, sí avisa
+  const g = toy();
+  bg(g, 'bg-v', 'Vera', 2, { status: 'busy' });
+  bgTask(g, 'bg-v', 'b6', { minutesAgo: 7 * 60 });
+  C.status(stallOpts(g, NOW, procs()));
+  assert.deepStrictEqual(C.status(stallOpts(g, NOW + 60 * 60000, procs())).backgroundStalled.map((b) => b.session), ['Vera']);
+});
+
 // 🔴 mutación: acusar sin poder leer los procesos, pedirle al `ps` la línea de comando o guardar el nombre que trae
 // argumentos (en macOS un programa los pone en su nombre).
 test('BS4 Processes_NeverAskTheCommandLine_UnreadableAccusesNobody: sólo número, padre, CPU y si es una consola', () => {
@@ -1768,7 +1786,7 @@ test('8.289 T2 Aviso_EsperaDeAfuera_DiceLoLiviano @story-8.289 @ac-3: nombra la 
   const n = C.capNotice({ ...t.opts, readMemory: mem(55) });
   const lines = outsideLines(n);
   assert.strictEqual(lines.length, 1, n);
-  assert.match(lines[0], /^Coordinación: Ana espera que entre el pedido 6578 desde las \d\d:\d\d: dale algo liviano de la fila — T-12 «papeleo de la 8\.1», «sin número», T-15 «choque del 6600»\.$/, lines[0]);
+  assert.match(lines[0], /^Coordinación: Ana espera que entre el pedido 6578 desde las \d\d:\d\d: dale algo liviano de la fila — T-12 «papeleo de la 8\.1», «sin número», T-15 «choque del 6600» \(y 1 más en la fila\)\.$/, lines[0]);
   assert.ok(!/T-16|T-17|T-9/.test(lines[0]), lines[0]);
   // lo que viene de la nota y del tablero no cierra el bloque del aviso
   // 🔴 mutación: sacar el saneador de lo que espera, del título o de la historia de una fila
@@ -1806,6 +1824,48 @@ test('8.289 T3 Aviso_SinNadaLiviano_LoDice @story-8.289 @ac-4 @ac-5: sin liviana
     assert.doesNotMatch(n, /nada liviano/);
     assert.match(n, broken ? /No pude leer .*el tablero .*roto/ : /No pude leer .*el tablero .*no está/, n);
   }
+});
+
+// ── La lista de trabajo liviano (coordination.light_list): nadie queda quieto mientras quede algo en ella ──
+const lista = (t, texto) => { const f = path.join(t.root, 'lista.md'); fs.writeFileSync(f, texto); return { ...t.opts, env: { TYCON_COORDINATION_LIGHT_LIST: f } }; };
+const LISTA = '# Lista\n\n## Defectos\n\n- ~~ya cerrado~~ — cerrado\n- El aviso de retro mira sólo el primer push · (326)\n  - un detalle indentado no es otra fila\n- **La nota de repensar** cae en otra carpeta (35)\n- Uno\n- Dos\n';
+
+test('Lista_EsperandoConFilaVacia_DaLoDeLaLista: con la fila del tablero vacía y la lista con algo, nunca «nada liviano»', () => {
+  // 🔴 mutación: leer sólo el tablero → «la fila no tiene nada liviano» con la lista llena
+  const t = toy();
+  outsideNote(t, 's-1', 'Ana', 'que entre el pedido 6578', 30);
+  board(t, [row('T-16', 'de alguien', { quien: 'Beto' })]);
+  const n = C.capNotice(lista(t, LISTA));
+  assert.doesNotMatch(n, /nada liviano/, n);
+  assert.match(n, /Ana espera que entre el pedido 6578 desde las \d\d:\d\d: dale algo liviano de la fila — «El aviso de retro mira sólo el primer push», «La nota de repensar cae en otra carpeta \(35\)», «Uno» \(y 1 más en la fila\)\./, n);
+  assert.doesNotMatch(n, /ya cerrado|detalle indentado/, n);
+  // sin tablero, la lista alcanza: no es «no pude leer»
+  const t2 = toy();
+  outsideNote(t2, 's-1', 'Ana', 'que entre el pedido 6578', 30);
+  const n2 = C.capNotice(lista(t2, LISTA));
+  assert.match(n2, /dale algo liviano de la fila — «El aviso de retro/, n2);
+  assert.doesNotMatch(n2, /No pude leer/, n2);
+});
+
+test('Lista_QuietaDiezMinutos_RecibeTrabajo: una quieta hace 10 min o más recibe lo liviano; antes, el texto de siempre', () => {
+  // 🔴 mutación: dejar a la quieta con «cerrala o dale trabajo» con la lista llena
+  const t = toy();
+  bg(t, 's-u', 'Uma', 20);
+  const n = C.capNotice(lista(t, LISTA));
+  assert.match(n, /Coordinación: Uma está quieta hace 20 min: dale algo liviano — «El aviso de retro mira sólo el primer push»/, n);
+  // sin lista, como hoy
+  const t2 = toy();
+  bg(t2, 's-u', 'Uma', 20);
+  assert.match(C.capNotice(t2.opts), /Coordinación: Uma está quieta hace 20 min: cerrala o dale trabajo\./);
+});
+
+test('Lista_Ilegible_LoDice: una lista declarada que no se lee va a «No pude leer», nunca a «nada liviano»', () => {
+  const t = toy();
+  outsideNote(t, 's-1', 'Ana', 'que entre el pedido 6578', 30);
+  board(t, [row('T-16', 'de alguien', { quien: 'Beto' })]);
+  const n = C.capNotice({ ...t.opts, env: { TYCON_COORDINATION_LIGHT_LIST: path.join(t.root, 'no-esta.md') } });
+  assert.doesNotMatch(n, /nada liviano/, n);
+  assert.match(n, /No pude leer .*la lista de trabajo liviano/, n);
 });
 
 test('8.289 T4 Aviso_HistoriaConLugarYMemoria_ProponeSesionNueva @story-8.289 @ac-6 @ac-8: propone una sesión nueva, nunca la que espera; sin la que espera no mide', () => {

@@ -88,7 +88,7 @@
     "clear": {
       "status": 0,
       "signal": null,
-      "stdout": "",
+      "stdout": "La historia terminó: cerrá esta sesión. La próxima historia va en una sesión nueva (o tras /clear): releer esta conversación en cada turno cuesta más que todo lo demás, y el estado vive en disco, no acá.\n",
       "stderr": "[marker] el volcado de tiempos va suelto a <RAIZ>/repo/.advisors/pipeline-runs: no encontré la carpeta de la corrida de la story 9.1.\n[marker] timing dump archivado: timing-history/9.1-<FECHA>.json\n[marker] repo: no pude ver si tiene commits sin pedido anotado (git no contestó)\n[marker] la oferta de la instalación completa no se evaluó: no pude leer el estado de la instalación (no pude leer <RAIZ>/home/.claude/.tycon-pipeline/harness-state.json (ENOENT))\n",
       "archivos": {
         "HOME/.claude/.tycon-pipeline/gates.log": "{\"ts\":\"<FECHA>\",\"sessionId\":\"ses-contrato-8163\",\"repoPath\":\"<RAIZ>/repo\",\"storyPath\":\"<RAIZ>/repo/specs/story-9.1-juguete.md\",\"name\":\"run-close\",\"sesion\":\"ses-contrato-8163\",\"story\":\"9.1\",\"runDir\":null,\"estado\":\"abortada\",\"motivo\":\"sin correr: reviewers, run-tests, implement, approve-plan, validate-story, plan; sin constancia de quién autorizó cerrar\",\"via\":\"sin-registro\"}\n",
@@ -182,11 +182,9 @@
     "set-autonomous": {
       "status": 0,
       "signal": null,
-      "stdout": "autonomous: false\n",
+      "stdout": "autonomous: false (ya estaba apagado)\n",
       "stderr": "",
-      "archivos": {
-        "HOME/.claude/.tycon-pipeline/active/ses-contrato-8163.json": "{\n  \"storyId\": \"9.1\",\n  \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"repoPath\": \"<RAIZ>/repo\",\n  \"evidenceDir\": null,\n  \"baseSha\": null,\n  \"runDir\": null,\n  \"sprint\": null,\n  \"sessionId\": \"ses-contrato-8163\",\n  \"startedAt\": \"<FECHA>\",\n  \"lastTouch\": \"<FECHA>\",\n  \"stepsCompleted\": [],\n  \"stepsPending\": [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9\n  ],\n  \"filesTouched\": [],\n  \"filesTouchedAt\": {},\n  \"iterations\": {},\n  \"fileEvents\": [],\n  \"stepTimings\": {\n    \"0\": {\n      \"startedAt\": \"<FECHA>\"\n    }\n  },\n  \"sesiones\": [\n    {\n      \"id\": \"ses-contrato-8163\",\n      \"nombre\": null,\n      \"visto\": \"<FECHA>\"\n    }\n  ],\n  \"autonomous\": false\n}\n"
-      }
+      "archivos": {}
     },
     "set-batch": {
       "status": 0,
@@ -264,13 +262,11 @@
       "archivos": {}
     },
     "set-flag-con-motivo": {
-      "status": 0,
+      "status": 2,
       "signal": null,
-      "stdout": "atddBypass: true\n",
-      "stderr": "",
-      "archivos": {
-        "HOME/.claude/.tycon-pipeline/active/ses-contrato-8163.json": "{\n  \"storyId\": \"9.1\",\n  \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"repoPath\": \"<RAIZ>/repo\",\n  \"evidenceDir\": null,\n  \"baseSha\": null,\n  \"runDir\": null,\n  \"sprint\": null,\n  \"sessionId\": \"ses-contrato-8163\",\n  \"startedAt\": \"<FECHA>\",\n  \"lastTouch\": \"<FECHA>\",\n  \"stepsCompleted\": [],\n  \"stepsPending\": [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9\n  ],\n  \"filesTouched\": [],\n  \"filesTouchedAt\": {},\n  \"iterations\": {},\n  \"fileEvents\": [],\n  \"stepTimings\": {\n    \"0\": {\n      \"startedAt\": \"<FECHA>\"\n    }\n  },\n  \"sesiones\": [\n    {\n      \"id\": \"ses-contrato-8163\",\n      \"nombre\": null,\n      \"visto\": \"<FECHA>\"\n    }\n  ],\n  \"atddBypass\": true,\n  \"atddBypassReason\": \"refactor sobre la red de siempre\"\n}\n"
-      }
+      "stdout": "",
+      "stderr": "🔒 set-flag atddBypass es un pedido de saltear «pruebas primero», no un salteo: sin la firma de una persona el freno sigue.\n   Muestra <SELLO> · historia 9.1 · ejecución <FECHA> · null\n   No pude anotar la muestra (la ejecución no tiene carpeta o no dice cuándo arrancó): sin ella no hay firma posible.\n   Con la muestra anotada, una persona firma con: node <GUIONES>/marker.js sign-atdd-skip --story 9.1 --reason \"<motivo>\"  (o en su terminal: node <GUIONES>/marker.js sign-atdd-skip --story 9.1 --reason \"<motivo>\" --terminal)\n\n",
+      "archivos": {}
     },
     "start-warning": {
       "status": 0,
@@ -399,6 +395,13 @@
       "stderr": "uso: marker.js approve-pending --id <código del pendiente> [--repo <carpeta>] [--terminal]\n",
       "archivos": {}
     },
+    "sign-atdd-skip-sin-args": {
+      "status": 2,
+      "signal": null,
+      "stdout": "",
+      "stderr": "🔒 marker.js sign-atdd-skip: no se firmó el salteo — faltan --story <S> y --reason \"<motivo>\"\n",
+      "archivos": {}
+    },
     "approve-save-sin-args": {
       "status": 1,
       "signal": null,
@@ -479,7 +482,7 @@
     "freeze-adversarial": {
       "status": 0,
       "signal": null,
-      "stdout": "{\n  \"sellos\": {\n    \"<RAIZ>/repo\": \"<HEX>\"\n  },\n  \"copias\": {\n    \"<RAIZ>/repo\": \"<RAIZ>/home/.claude/.tycon-pipeline/frozen/ses-contrato-8163/pase-<MS>/repo-<SELLO>\"\n  }\n}\n",
+      "stdout": "{\n  \"sellos\": {\n    \"<RAIZ>/repo\": \"<HEX>\"\n  },\n  \"copias\": {\n    \"<RAIZ>/repo\": \"<RAIZ>/home/.claude/.tycon-pipeline/frozen/ses-contrato-8163/pase-<MS>/repo-<SELLO>\"\n  },\n  \"repos\": [\n    {\n      \"repo\": \"<RAIZ>/repo\",\n      \"sello\": \"<HEX>\",\n      \"copia\": \"<RAIZ>/home/.claude/.tycon-pipeline/frozen/ses-contrato-8163/pase-<MS>/repo-<SELLO>\",\n      \"base\": null,\n      \"sin_base\": \"no se pudo traer origin (fatal: 'origin' does not appear to be a git repository)\"\n    }\n  ]\n}\n",
       "stderr": "",
       "archivos": {
         "HOME/.claude/.tycon-pipeline/frozen/ses-contrato-8163/vueltas.jsonl": "{\"ts\":\"<FECHA>\",\"tipo\":\"pase\",\"etiqueta\":\"pase-<MS>\",\"story\":\"9.1\",\"repos\":[{\"repo\":\"<RAIZ>/repo\",\"tree\":\"<HEX>\",\"copy\":\"<RAIZ>/home/.claude/.tycon-pipeline/frozen/ses-contrato-8163/pase-<MS>/repo-<SELLO>\",\"mainBase\":\"<HEX>\"}]}\n",
@@ -574,7 +577,7 @@
       "status": 2,
       "signal": null,
       "stdout": "",
-      "stderr": "uso: marker.js sign-file <firma> <archivo> [--terminal --for-session <id>]; las firmas: story-skill-bypass, red-control-test-edit, ALLOW_DOD_EVIDENCE_WRITE, dod_runtime_exempt, cambiar-el-estado\n",
+      "stderr": "uso: marker.js sign-file <firma> <archivo> [--terminal --for-session <id>]; las firmas: story-skill-bypass, red-control-test-edit, ALLOW_DOD_EVIDENCE_WRITE, dod_runtime_exempt, advisors_exempt, cambiar-el-estado\n",
       "archivos": {}
     },
     "approve-mockup-sin-args": {
@@ -697,6 +700,22 @@
       "signal": null,
       "stdout": "",
       "stderr": "marker.js: comando desconocido 'undefined'\nUsage: marker.js <set|get|touch|complete-step|append-file|clear|pr|is-active|list-all|find-by-story|clear-session|park|unpark|adopt-session|update-story-status|mark-dod-runtime-checked|set-autonomous|set-check|run-check|set-flag|set-size|snapshot-iter|mark-adversarial-launched|mark-adversarial-result|mark-adversarial-skipped|mark-adversarial-gate|promote-probe|adhoc|story-skill-bypass|approve-mockup|rethink|lift-debt> [arg] [arg2]\n",
+      "archivos": {}
+    },
+    "conditions": {
+      "status": 0,
+      "signal": null,
+      "stdout": "condiciones del pedido anotadas en la ejecución\n",
+      "stderr": "",
+      "archivos": {
+        "HOME/.claude/.tycon-pipeline/active/ses-contrato-8163.json": "{\n  \"storyId\": \"9.1\",\n  \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"repoPath\": \"<RAIZ>/repo\",\n  \"evidenceDir\": null,\n  \"baseSha\": null,\n  \"runDir\": null,\n  \"sprint\": null,\n  \"sessionId\": \"ses-contrato-8163\",\n  \"startedAt\": \"<FECHA>\",\n  \"lastTouch\": \"<FECHA>\",\n  \"stepsCompleted\": [],\n  \"stepsPending\": [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9\n  ],\n  \"filesTouched\": [],\n  \"filesTouchedAt\": {},\n  \"iterations\": {},\n  \"fileEvents\": [],\n  \"stepTimings\": {\n    \"0\": {\n      \"startedAt\": \"<FECHA>\"\n    }\n  },\n  \"sesiones\": [\n    {\n      \"id\": \"ses-contrato-8163\",\n      \"nombre\": null,\n      \"visto\": \"<FECHA>\"\n    }\n  ],\n  \"requestConditions\": {\n    \"texto\": \"ninguna\",\n    \"at\": \"<FECHA>\"\n  }\n}\n"
+      }
+    },
+    "check-runtime-waiver": {
+      "status": 1,
+      "signal": null,
+      "stdout": "no pasaría — la firma de <RAIZ>/repo/specs/story-9.1-juguete.md saldría rechazada así:\n🚫 marker.js runtime-waiver RECHAZADO — hay criterios SIN CORRER que no se pueden eximir: AC #1. Los corre el agente.\n   O, si de verdad no se pueden probar en vivo, se declaran en el frontmatter `runtime_not_verifiable:` (reason + covered_by).\n",
+      "stderr": "",
       "archivos": {}
     }
   },

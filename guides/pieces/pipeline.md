@@ -10,7 +10,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Por qué existe:** La instalación por defecto es la mínima: quien no lee la portada nunca veía un freno. La oferta llega cuando ya vio funcionar el arnés.
 
-**Quién la usa:** `marker.js clear` (la oferta, después de archivar el volcado), el paso «preparar el commit» (la respuesta) y la corrida de primera vez (`isFirstStory`).
+**Quién la usa:** `marker.js clear` (la oferta, después de archivar el volcado), el paso «preparar el pull request» (la respuesta) y la corrida de primera vez (`isFirstStory`).
 
 **Dónde se prueba:** `scripts/tests/first-story.test.js`, T7 de `harness-state.test.js` y el grupo `UPGRADE` de `harness-questions.test.sh`
 

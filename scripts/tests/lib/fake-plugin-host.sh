@@ -11,7 +11,8 @@
 #   resp <ruta> <cuerpo> <código>             respuesta para cualquier método
 #   resp_m <MÉTODO> <ruta> <cuerpo> <código>  respuesta sólo para ese método (gana sobre la de cualquier método)
 #   resp_seq <ruta> <cuerpo> <código>         la próxima respuesta de esa ruta (la 1.ª llamada usa la 1.ª, …)
-#   fph_zip <archivo.zip>                     un ZIP de verdad con plugin.json adentro; sale 1 si no hay con qué
+#   fph_zip <archivo.zip> [defaultSettings]   un ZIP de verdad con plugin.json adentro (con esas opciones, si se dan);
+#                                             sale 1 si no hay con qué
 # Cada llamada queda en `$LLAMADAS`, en orden: «MÉTODO /ruta», y debajo «  cuerpo: …» si mandó datos. El cuerpo del
 # ingreso no se anota: lleva la clave.
 
@@ -63,10 +64,12 @@ resp_seq() {
   printf '%s\n%s\n' "$2" "$3" > "$TMP/respuestas/seq_$k.$i"
 }
 
-fph_zip() { # fph_zip <destino.zip> — plugin.json con name y version sacados del nombre del archivo
-  local dest="$1" d nombre version
+fph_zip() { # fph_zip <destino.zip> [defaultSettings en JSON] — plugin.json con name y version sacados del nombre del archivo
+  local dest="$1" ajustes="${2:-}" d nombre version
   nombre=$(basename "$dest" | sed -E 's/^([^.]*)\..*/\1/'); version=$(basename "$dest" | sed -E 's/^[^.]*\.([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
-  d=$(mktemp -d); printf '{"name":"%s","version":"%s"}\n' "$nombre" "$version" > "$d/plugin.json"
+  d=$(mktemp -d)
+  if [ -n "$ajustes" ]; then printf '{"name":"%s","version":"%s","defaultSettings":%s}\n' "$nombre" "$version" "$ajustes" > "$d/plugin.json"
+  else printf '{"name":"%s","version":"%s"}\n' "$nombre" "$version" > "$d/plugin.json"; fi
   if command -v zip >/dev/null 2>&1; then
     ( cd "$d" && zip -q "$dest" plugin.json )
   elif command -v python3 >/dev/null 2>&1; then

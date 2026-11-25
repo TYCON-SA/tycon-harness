@@ -53,9 +53,7 @@ _legacy_names_find() {
     if { [ "$2" = old ] && [ "$o" = "$3" ]; } || { [ "$2" = new ] && [ "$n" = "$3" ]; }; then
       printf '%s\t%s\t%s' "$o" "$n" "${r:-0}"; return 0
     fi
-  done <<EOF
-${_LEGACY_NAMES_LINES}
-EOF
+  done < <(printf '%s\n' "${_LEGACY_NAMES_LINES}")
   return 1
 }
 
@@ -152,7 +150,9 @@ legacy_args() {
           _legacy_names_log option "$name" "$v" "$w"
           case "${hit##*	}" in 1) ;; *) seen_old="${seen_old}${name}|" ;; esac
           nu="$v"
-        elif _legacy_names_find option new "$name" >/dev/null; then seen_new="${seen_new}${name}|"
+        # en un subshell, como las demás llamadas (con $(…)): adentro de esta función, el bash 3.2 no cierra el descriptor
+        # de cada lectura hasta que vuelve, y con 253 opciones o más abortaba
+        elif ( _legacy_names_find option new "$name" ) >/dev/null; then seen_new="${seen_new}${name}|"
         fi
         if [ "$eq" = 1 ]; then _legacy_names_value "$nu" "$rest" "$w"; a="--${nu}=${_LEGACY_VALUE}"; else a="--${nu}"; prev="$nu"; fi ;;
       *)

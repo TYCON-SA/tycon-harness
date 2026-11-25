@@ -5,7 +5,7 @@
  * autonomous-close.test.js — el cierre del turno de una corrida autónoma con la matriz roja sólo por criterios que esperan
  * la exención de la persona (on-stop-dod-gate.js). La pista le dice al agente que pida la exención corriendo él
  * `marker.js runtime-waiver`, que deja el renglón en la lista del dueño con su cuadro (owner-window.js); y salir del modo
- * autónomo, o esperar a la persona, deja cerrar el turno pero no saltea la matriz en «Preparar el commit».
+ * autónomo, o esperar a la persona, deja cerrar el turno pero no saltea la matriz en «Preparar el pull request».
  */
 const { test } = require('node:test');
 const assert = require('node:assert');
@@ -109,6 +109,33 @@ test('CierreAutonomo_MatrizRoja_PistaPorElCuadro (T12) @story-8.274 @ac-15 @ac-1
   const sig = sl.siguiente({ casa: E.home, env: {}, ahora, arbol: [], sesion: 's-a' });
   assert.strictEqual(sig.tipo, 'firma', JSON.stringify(sig));
   assert.match(JSON.stringify(sig), new RegExp(CRITERIO));
+});
+
+// 🔴 Falla con: con el escape ya pedido y anotado en la lista del dueño para su terminal (en Windows, un escape va sólo
+// ahí), el cierre del turno seguía frenando con las pruebas en rojo y el agente tenía que marcar la espera a mano
+test('F211 CierreAutonomo_FirmaDeTerminalPendiente_DejaEsperarUnaVez: el renglón «solo terminal» de la sesión deja cerrar ese turno', (t) => {
+  const E = entorno(t);
+  E.arrancar('s-w');
+  E.escribir('s-w', { ...E.leer('s-w'), autonomous: true, iter: 0, checks: { tests: 'red:exit=1', build: 'green' } });
+  // sin renglón, frena como siempre
+  assert.match(E.stop('s-w').stdout, /"decision":"block"/);
+  // el freno negó el escape en Windows y lo anotó en la lista del dueño, para la terminal
+  fs.mkdirSync(path.dirname(sl.archivo(E.home)), { recursive: true });
+  fs.writeFileSync(sl.archivo(E.home), JSON.stringify([{ tipo: 'firma', id: 'f-1', key: 'k-1', firma: 'escape:force-manual', sesion: 's-w', destino: 's-w',
+    comando: 'node marker.js set-check tests green --force-manual', cwd: E.repo, title: 'Cerrar las pruebas a mano', at: Date.now(), windows: 'solo-terminal' }]));
+  const r = E.stop('s-w');
+  assert.doesNotMatch(r.stdout, /"decision":"block"/, r.stdout + r.stderr);
+  assert.match(r.stdout, /terminal/, 'le dice a la persona que la firma la espera en su terminal');
+  // una sola vez por renglón: el cierre siguiente, con el mismo renglón, vuelve a frenar
+  assert.match(E.stop('s-w').stdout, /"decision":"block"/);
+  // un renglón de otra sesión no cuenta
+  const otra = entorno(t);
+  otra.arrancar('s-v');
+  otra.escribir('s-v', { ...otra.leer('s-v'), autonomous: true, iter: 0, checks: { tests: 'red:exit=1', build: 'green' } });
+  fs.mkdirSync(path.dirname(sl.archivo(otra.home)), { recursive: true });
+  fs.writeFileSync(sl.archivo(otra.home), JSON.stringify([{ tipo: 'firma', id: 'f-2', key: 'k-2', firma: 'escape:force-manual', sesion: 's-x', destino: 's-x',
+    comando: 'node marker.js set-check tests green --force-manual', cwd: otra.repo, title: 'Cerrar las pruebas a mano', at: Date.now(), windows: 'solo-terminal' }]));
+  assert.match(otra.stop('s-v').stdout, /"decision":"block"/);
 });
 
 // 🔴 mutación: dejar que salir del modo autónomo (o esperar a la persona) saltee la matriz en «Preparar».

@@ -21,14 +21,17 @@
 #
 # Uso: bash scripts/tests/harness-tools.test.sh [--only T21|T22|T23|T26|T26b|T13]
 set -uo pipefail
+# partida en dos (scripts/tests/lib/suite-parts.sh): cada parte es harness-tools.p<k>.test.sh; a mano corre todo
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/suite-parts.sh"
+suite_parts 2
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$ROOT/scripts/tests/lib/harness-lab.sh"
 export TYCON_UPDATE_APPLY=auto
 ONLY=""; [ "${1:-}" = "--only" ] && ONLY="${2:-}"
 runs() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
 FAILURES=0
-ok()  { echo "  ok   — $1"; }
-bad() { echo "  MAL  — $1"; FAILURES=$((FAILURES+1)); }
+ok()  { suite_check; echo "  ok   — $1"; }
+bad() { suite_check; echo "  MAL  — $1"; FAILURES=$((FAILURES+1)); }
 BASE="$(mktemp -d)"
 VIEJO="$(node -p "require('${ROOT}/scripts/setup/harness/place.js').LEGACY_PLACE_NAME")"
 case "$BASE" in *"${VIEJO}"*|*agent-skills*|*/.claude*|*/.codex*|*/.tycon*) echo "❌ harness-tools: el laboratorio cayó en ${BASE}"; exit 1 ;; esac
@@ -81,7 +84,7 @@ run_writers() { # run_writers <home>
 # lo que los escritores dejan, relativo a la carpeta de los registros sueltos y a la del estado
 LOOSE_STORES="safety-guard.log tycon-observations blocking-meter lectura-grande response-style .tycon-retro-staleness-last-notice"
 
-if runs T40; then
+if suite_part 1 && runs T40; then
   echo "8.150 T40 · SafetyGuard_CasaPropia_NoEscribeEnClaude @story-8.150 @ac-2"
   H="$(lab_home t40 own)"
   printf '{"tool_name":"Bash","tool_input":{"command":"git push --force origin main"},"cwd":"%s"}' "$H" \
@@ -91,7 +94,7 @@ if runs T40; then
   [ -z "$(claude_listing "$H")" ] && ok "y nada en ~/.claude" || bad "apareció en ~/.claude: $(claude_listing "$H" | tr '\n' ' ')"
 fi
 
-if runs T41; then
+if suite_part 1 && runs T41; then
   echo "8.150 T41 · HooksShell_CasaPropia_NoEscribenEnClaude @story-8.150 @ac-3"
   H="$(lab_home t41 own)"
   run_writers "$H"
@@ -107,7 +110,7 @@ if runs T41; then
   [ -z "$(claude_listing "$H")" ] && ok "y nada en ~/.claude" || bad "apareció en ~/.claude: $(claude_listing "$H" | tr '\n' ' ')"
 fi
 
-if runs T42; then
+if suite_part 1 && runs T42; then
   echo "8.150 T42 · Lectores_LeenDeLaCasa @story-8.150 @ac-4"
   H="$(lab_home t42 own)"; S="$H/.tycon/state"
   # los tres avisos leen su pendiente en el estado (y lo consumen)
@@ -126,13 +129,18 @@ if runs T42; then
   printf '{"over":false}\n' > "$S/response-style/log.jsonl"; printf '{"over":false}\n' > "$S/blocking-meter/log.jsonl"
   OUT="$(in_home "$H" node -e 'const m = require(process.argv[1]).local(); process.stdout.write(JSON.stringify({ freno: m.freno, estilo: m.estilo, bloqueo: m.bloqueo }))' "$ROOT/scripts/nightly/dashboard/dashboard.js" 2>&1)"
   case "$OUT" in *"el registro del freno de mano"*|*"el medidor de estilo"*|*"el medidor de bloqueo"*) bad "el tablero no encontró los registros en el estado: $OUT" ;; *'"freno"'*) ok "el tablero lee el freno y los medidores del estado" ;; *) bad "el tablero no contestó: $OUT" ;; esac
-  # la auditoría: observaciones frescas en el estado; con la variable, la de la variable
+  # la auditoría: observaciones frescas en el estado; con la variable, la de la variable. La grabación la decide la
+  # integración instincts (TYCON_INSTINCTS la prende para probar), no TYCON_INSTINCT_MINING, que ya no decide nada: la
+  # prueba la vacía, porque la máquina que corre puede traerla prendida
   mkdir -p "$H/.claude" "$S/tycon-observations"; printf '{"hooks":{"PostToolUse":[{"command":"instinct-observe.sh"}]}}' > "$H/.claude/settings.json"
   printf '{}\n' > "$S/tycon-observations/2026-11.jsonl"
-  OUT="$(in_home "$H" TYCON_INSTINCT_MINING=1 node -e 'const c = require(process.argv[1]).checkLearningLoop().checks.find((x) => /observations con actividad/.test(x.name)); process.stdout.write(String(c && c.passed))' "$ROOT/scripts/lib/harness-audit.js" 2>&1)"
+  # 🔴 la integración apagada con la grabadora registrada no es una pieza muerta: ningún chequeo de instintos falla
+  OUT="$(in_home "$H" TYCON_INSTINCT_MINING= TYCON_INSTINCTS=0 node -e 'const m = require(process.argv[1]).checkLearningLoop().checks.filter((x) => /instinct/.test(x.name) && !x.passed); process.stdout.write(JSON.stringify(m.map((x) => x.name)))' "$ROOT/scripts/lib/harness-audit.js" 2>&1)"
+  [ "$OUT" = "[]" ] && ok "con la integración apagada la auditoría no pide la variable vieja" || bad "con la integración apagada la auditoría marcó: $OUT"
+  OUT="$(in_home "$H" TYCON_INSTINCT_MINING= TYCON_INSTINCTS=1 node -e 'const c = require(process.argv[1]).checkLearningLoop().checks.find((x) => /observations con actividad/.test(x.name)); process.stdout.write(String(c && c.passed))' "$ROOT/scripts/lib/harness-audit.js" 2>&1)"
   [ "$OUT" = true ] && ok "la auditoría encuentra las observaciones en el estado" || bad "la auditoría no las encontró: $OUT"
   OTRA="$H/obs-de-la-variable"; mkdir -p "$OTRA"; printf '{}\n' > "$OTRA/2026-11.jsonl"; rm -rf "$S/tycon-observations"
-  OUT="$(in_home "$H" TYCON_INSTINCT_MINING=1 TYCON_INSTINCT_OBS_DIR="$OTRA" node -e 'const c = require(process.argv[1]).checkLearningLoop().checks.find((x) => /observations con actividad/.test(x.name)); process.stdout.write(String(c && c.passed) + " " + (c && c.file))' "$ROOT/scripts/lib/harness-audit.js" 2>&1)"
+  OUT="$(in_home "$H" TYCON_INSTINCT_MINING= TYCON_INSTINCTS=1 TYCON_INSTINCT_OBS_DIR="$OTRA" node -e 'const c = require(process.argv[1]).checkLearningLoop().checks.find((x) => /observations con actividad/.test(x.name)); process.stdout.write(String(c && c.passed) + " " + (c && c.file))' "$ROOT/scripts/lib/harness-audit.js" 2>&1)"
   [ "$OUT" = "true $OTRA" ] && ok "con TYCON_INSTINCT_OBS_DIR la auditoría lee ésa" || bad "con la variable la auditoría dio: $OUT"
   # los que no se pueden correr en una prueba (la subida al buzón, la prueba de fuego con sesiones reales, el registro
   # de fallos del aviso de instintos) se miden por su fuente: piden la carpeta a loose-logs.js y no nombran la ruta vieja
@@ -141,7 +149,7 @@ if runs T42; then
   done
 fi
 
-if runs T43; then
+if suite_part 1 && runs T43; then
   echo "8.150 T43 · SinMudar_MismoLugar @story-8.150 @ac-5"
   H="$(lab_home t43 old)"
   run_writers "$H"
@@ -153,7 +161,7 @@ if runs T43; then
   [ ! -e "$H/.tycon" ] && ok "y nada en ~/.tycon" || bad "apareció ~/.tycon: $(ls -A "$H/.tycon" | tr '\n' ' ')"
 fi
 
-if runs T50; then
+if suite_part 1 && runs T50; then
   echo "8.150 T50 · Uninstall_CasaPropia_EncuentraLosRegistros @story-8.150 @ac-13"
   H="$(lab_home t50 own)"; S="$H/.tycon/state"
   for n in $LOOSE_STORES; do case "$n" in *.log|.tycon-*) printf 'x\n' > "$S/$n" ;; *) mkdir -p "$S/$n" ;; esac; done
@@ -169,7 +177,7 @@ if runs T50; then
 fi
 
 # ───────────── sumar y sacar Claude Code en la casa propia ─────────────
-if runs T44; then
+if suite_part 1 && runs T44; then
   echo "8.150 T44 · SumarClaude_CasaPropia_Instala @story-8.150 @ac-6"
   harness_lab_create "$BASE/lab44"
   harness_lab_release_server
@@ -201,7 +209,7 @@ if runs T44; then
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi
 
-if runs T45; then
+if suite_part 1 && runs T45; then
   echo "8.150 T45 · SacarClaude_DesdeClon_NombraLaMudanza @story-8.150 @ac-7 · T46 SacarClaude_Mudada_Saca @story-8.150 @ac-8"
   harness_lab_create "$BASE/lab45"
   harness_lab_release_server
@@ -241,7 +249,7 @@ real_applier_off() { # real_applier_off <árbol> <home> [VAR=valor…]
 }
 off_home() { local h; h="$(lab_home "$1" own)"; mkdir -p "$h/repos"; : > "$h/gitconfig"; printf '%s' "$h"; }
 
-if runs T47; then
+if suite_part 1 && runs T47; then
   echo "8.150 T47 · CodexSolo_HookGlobalDeGit @story-8.150 @ac-9"
   # (a) el aplicador de verdad, sin Claude Code: copia los tres hooks y no toca core.hooksPath ni ~/.claude
   H="$(off_home t47a)"
@@ -284,7 +292,7 @@ if runs T47; then
   [ "$HD" = "$H/.claude/tycon-harness" ] && ok "(c) con ~/.claude/tycon-harness, lo sigue encontrando ahí" || bad "(c) con el lugar de siempre buscó en «${HD}»"
 fi
 
-if runs T48; then
+if suite_part 1 && runs T48; then
   echo "8.150 T48 · CodexSolo_FondoDelAplicador @story-8.150 @ac-10"
   # un árbol de laboratorio: el de este repo sin las pruebas, con la subida, la bajada y la recolección de mentira (anotan
   # que corrieron, sin red)
@@ -307,7 +315,7 @@ if runs T48; then
   [ -z "$(claude_listing "$H")" ] && ok "nada en ~/.claude" || bad "apareció en ~/.claude: $(claude_listing "$H" | head -12 | tr '\n' ' ')"
 fi
 
-if runs T54; then
+if suite_part 1 && runs T54; then
   echo "T54 · CodexSolo_LoQueSuma — el refresco de Azure, engram y sqlite3, el AGENTS.md puntero y las pruebas rápidas de las skills"
   # un árbol de laboratorio: el de este repo sin las pruebas, con las piezas de mentira (anotan que corrieron, sin red ni
   # servicios), y unido (skills/ con tycon-pipeline y agents/), como una versión bajada
@@ -356,7 +364,7 @@ if runs T54; then
   ! grep -q 'uninstall' "$H3/brew-calls.txt" 2>/dev/null && grep -q 'ya falló una vez' "$H3/out.txt" && ok "la marca vieja de la migración de engram sigue frenando la desinstalación" || bad "la marca vieja no frenó: $(tr '\n' ' ' < "$H3/brew-calls.txt" 2>/dev/null) · $(head -2 "$H3/out.txt" | tr '\n' ' ')"
 fi
 
-if runs T55; then
+if suite_part 1 && runs T55; then
   echo "T55 · CodexSolo_SkillsDeTerceros — la bajada las repone en ~/.tycon/harness y quedan enlazadas en ~/.codex/skills, sin ~/.claude"
   harness_lab_create "$BASE/lab55"
   harness_lab_release_server
@@ -378,7 +386,7 @@ if runs T55; then
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi
 
-if runs T49; then
+if suite_part 1 && runs T49; then
   echo "8.150 T49 · ConClaude_SinCambios @story-8.150 @ac-11"
   harness_lab_create "$BASE/lab49"
   harness_lab_release_server
@@ -393,7 +401,7 @@ if runs T49; then
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi
 
-if runs T53; then
+if suite_part 1 && runs T53; then
   echo "8.150 T53 · HistorialViejo_SeMudaUnaVez @story-8.150 @ac-14"
   # decisión del dueño 8/11: el historial que los hooks dejaron en ~/.claude antes de esta historia se muda una vez al
   # estado; lo que ya tiene destino no se pisa ni se borra
@@ -431,7 +439,7 @@ if runs T53; then
   [ "$RC" = 0 ] && [ -f "$H2/.claude/safety-guard.log" ] && [ ! -e "$H2/.tycon" ] && ok "sin mudar a la casa propia, no toca nada" || bad "sin mudar: rc $RC, $OUT"
 fi
 
-if runs T51; then
+if suite_part 1 && runs T51; then
   echo "8.150 T51 · CodexSolo_SacarClaude_NoSeLlevaLosHooksDeGit @story-8.150 @ac-9"
   # hallazgo del pase adversarial: los hooks de git quedan registrados en una máquina sólo con Codex, y sacar Claude Code
   # (que nunca estuvo) no los cuenta como suyos
@@ -450,7 +458,7 @@ if runs T51; then
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi
 
-if runs T52; then
+if suite_part 1 && runs T52; then
   echo "8.150 T52 · CodexSolo_AplicadorViejo_NoCorre @story-8.150 @ac-11"
   # hallazgo del pase adversarial: una versión cuyo aplicador no conoce el modo sin Claude Code (una vuelta atrás, una
   # versión anterior) no corre en una máquina sin Claude Code: instalaría todo Claude Code
@@ -470,7 +478,7 @@ if runs T52; then
 fi
 
 # ─────────────────────────── T13 · sin agente de código ───────────────────────────
-if runs T13; then
+if suite_part 1 && runs T13; then
   echo "8.46 T13 · sin Claude Code ni Codex: la orden de las dos para cada sistema y cómo iniciar sesión, sin correr nada"
   for P in darwin linux win32; do
     OUT="$(node -e 'process.stdout.write(require(process.argv[1]).noneFound(process.argv[2]))' "$ROOT/scripts/setup/harness/tools.js" "$P" 2>&1)"
@@ -486,7 +494,7 @@ if runs T13; then
 fi
 
 # ───────────────────────────────────────────── T21 ─────────────────────────────────────────────
-if runs T21; then
+if suite_part 2 && runs T21; then
   echo "T21 · install detecta las herramientas, las nombra en el plan, --tool las fija, sin ninguna sale 1 sin escribir"
   harness_lab_create "$BASE/lab21"
   harness_lab_release_server
@@ -634,7 +642,7 @@ for g in h.get(sys.argv[2], []):
 wait_version() { local i; for i in $(seq 1 150); do [ "$(state "d['version']['number']")" = "$1" ] && return 0; sleep 0.2; done; return 1; }
 
 # ───────────────────────────────────────────── T22 ─────────────────────────────────────────────
-if runs T22; then
+if suite_part 2 && runs T22; then
   echo "T22 · sólo Codex: nada nuevo en ~/.claude, AGENTS.md desde los bloques entre marcas, skills, y el arranque actualiza"
   harness_lab_create "$BASE/lab22"
   harness_lab_release_server
@@ -720,7 +728,7 @@ texto propio de la persona, con  dos espacios
 fi
 
 # ───────────────────────────────────────────── T23 ─────────────────────────────────────────────
-if runs T23; then
+if suite_part 2 && runs T23; then
   echo "T23 · el MCP de Codex: sin ~/.claude.json, con uno que suma un servidor, el faltante dicho, writable_roots"
   harness_lab_create "$BASE/lab23"
   harness_lab_release_server
@@ -773,7 +781,7 @@ JSON
 fi
 
 # ───────────────────────────────────────────── T26 ─────────────────────────────────────────────
-if runs T26; then
+if suite_part 2 && runs T26; then
   echo "T26 · una herramienta que llega después: install --tool la enchufa sin tocar la otra ni bajar nada; uninstall --tool saca sólo esa"
   harness_lab_create "$BASE/lab26"
   harness_lab_release_server
@@ -872,7 +880,7 @@ fi
 #     las quita (el plan lo promete; el comando no puede decir «no está enchufada»);
 #   · el aviso «herramienta sin enchufar» se va al enchufar, sin esperar al próximo arranque;
 #   · sin config.toml, `apply` lo repone (doctor lo manda y alguien tiene que hacerlo).
-if runs T26b; then
+if suite_part 2 && runs T26b; then
   echo "T26b · uninstall --tool codex saca lo enchufado después y lo que la llave dejó de mantener; apply repone config.toml; el aviso se va al enchufar"
   harness_lab_create "$BASE/lab26b"
   harness_lab_release_server
@@ -913,4 +921,5 @@ if runs T26b; then
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi
 
+suite_parts_end
 if [ "$FAILURES" = 0 ]; then echo "harness-tools: todo verde"; else echo "❌ harness-tools: $FAILURES fallo(s)"; exit 1; fi

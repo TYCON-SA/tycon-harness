@@ -302,7 +302,7 @@ se consulta producción desde Codex». Caso del banco: `codex-frena-tambien-la-p
 
 **Un freno que falla, en Codex, deja pasar.** Codex llama al freno directo (`node …/prod-access-guard.js`), sin el
 lanzador ni su reloj de 7 s, y no tiene `onFailure`. Si el freno se cae o se cuelga, el comando corre; en Claude Code el
-mismo fallo frena. Dicho en `guides/produccion-con-permiso.md`, «Los límites, dichos antes».
+mismo fallo frena. Dicho en `guides/production-with-permission.md`, «Los límites, dichos antes».
 
 **El firewall de la puerta** (`--open-firewall` / `--close-firewall`): en Codex tampoco se abre una regla.
 Además del cuadro, le falta un evento de fin de sesión (sus hooks son PreToolUse, PostToolUse,
@@ -399,7 +399,7 @@ reporte. Casos: `skills/tycon-pipeline/scripts/tests/codex-reviewers.test.js`.
 evento de cierre (las dos herramientas lo mandan), los `.md` escritos del registro de ediciones y del marcador, y el
 modelo del implementador del marcador (`start --session-model`); la conversación sólo suma. Sin nada de eso: «no
 medido», nunca un veredicto inventado. Al cerrar el turno, si el mensaje afirma un cierre y el marcador tiene pasos
-abiertos, sale una línea que los nombra (aviso; el freno sigue siendo el de «Preparar el commit»). Casos:
+abiertos, sale una línea que los nombra (aviso; el freno sigue siendo el de «Preparar el pull request»). Casos:
 `skills/tycon-pipeline/scripts/tests/closing-evidence-codex.test.js`.
 
 **Lo que no cubre, dicho**: una historia escrita por la terminal no va al registro de ediciones; pasa sólo si el mensaje
