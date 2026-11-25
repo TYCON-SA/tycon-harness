@@ -2,7 +2,7 @@
 
 /**
  * legacy-retire-check.test.js — el chequeo que dice qué nombres viejos se pueden retirar.
- * T4, T5 y T21.
+ * T4, T5 y T21; y, con `--home`, los lugares viejos bajo ~/.claude: T1, T2 y T2b.
  *
  * Lo que no se puede perder:
  *   · «Se puede retirar» (0) sale sólo con evidencia positiva: cada máquina esperada reportó, cada consulta contestó y
@@ -306,4 +306,85 @@ test('T21 RetireE_UsedEntriesGetOwnDate — uso, consulta caída y máquina call
   assert.deepStrictEqual(states(r.json), { 'viejo-a': 'con-uso', 'viejo-b': 'limpia', 'scripts/ci/viejo-c.sh': 'sin-medir' });
   assert.strictEqual(r.json.machines_unreported.length, 1);
   assert.strictEqual(r.json.failed_queries.length, 1);
+});
+
+// ── --home: los lugares viejos bajo ~/.claude ─────────────────────────────────────────────────────────────────────
+// Lo que no se puede perder: cada máquina se lee de su place.json, sin su correo; un permiso con el nombre viejo no es un
+// uso y otra cosa registrada sí; un place.json sin el lugar lo deja sin medir; sin buzón legible, 2 y nunca «limpia».
+
+const LIMPIO = { exists: true, kind: 'link', to_place: true, registered: { total: 0, files: {}, unreadable: 0 } };
+/** El place.json de una máquina, como lo sube upload-runs.js. `sinNuevos`: una versión que todavía no sube los otros dos. */
+function lugarDe(code, { day = HOY, mode = 'managed', guias = { total: 0, files: {}, unreadable: 0 }, estado = LIMPIO, config = LIMPIO, sinNuevos = false } = {}) {
+  const j = {
+    schema: 1, day, owner: { email: 'persona@example.invalid', source: 'git-global' }, platform: 'darwin',
+    folder: { name: `maq-${code}`, code }, machine_id: { fingerprint: `huella-${code}` },
+    place: { name: 'tycon-harness', kind: 'link' }, legacy: { exists: true, kind: 'link', to_place: true },
+    registered_by_legacy: guias, install: { mode, version: '2026.11.25.1' },
+  };
+  if (!sinNuevos) j.old_places = { '.tycon-pipeline': estado, 'tycon.json': config };
+  return j;
+}
+function labCasa({ machines = {}, retireAfter = HOY }) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'retire-home-'));
+  write(path.join(dir, 'homes.json'), JSON.stringify({ entries: [{ path: 'a.js', retire_after: '2026-11-01' }], until_d: [{ path: 'b.sh', retire_after: retireAfter }] }));
+  fs.mkdirSync(path.join(dir, 'mirror'), { recursive: true });
+  for (const [carpeta, j] of Object.entries(machines)) write(path.join(dir, 'mirror', carpeta, 'registros', 'place.json'), JSON.stringify(j));
+  return dir;
+}
+function runCasa(dir, extra = []) {
+  const r = spawnSync(process.execPath, [TOOL, '--home', '--json', '--today', HOY, '--no-download',
+    '--homes', path.join(dir, 'homes.json'), '--mirror', path.join(dir, 'mirror'), ...extra],
+  { encoding: 'utf8', env: { ...process.env, HOME: dir, TF_BUILD: '' } });
+  let json = null;
+  try { json = JSON.parse(r.stdout); } catch (_) { /* lo dice el assert */ }
+  return { code: r.status, json, stderr: r.stderr, stdout: r.stdout };
+}
+// el nombre viejo del lugar del arnés, de su constante (no se escribe a mano)
+const VIEJO = require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'tycon-home.js')).LEGACY_PLACE_NAME;
+const lugares = (j) => Object.fromEntries(j.places.map((p) => [p.name, p.state]));
+
+test('T1 HomeCheck_ListsMachines_ModeAndQuiet — la versión bajada, un clon y una máquina callada, cada una en su lista y sin correos', () => {
+  const r = runCasa(labCasa({ machines: {
+    'maq-a1': lugarDe('a1'), 'maq-b2': lugarDe('b2', { mode: 'developer' }), 'maq-c3': lugarDe('c3', { day: '2026-10-28' }),
+  } }));
+  assert.ok(r.json, r.stderr + r.stdout);
+  assert.deepStrictEqual(r.json.machines.map((m) => m.code).sort(), ['a1', 'b2']);
+  assert.deepStrictEqual(r.json.machines_not_moved, ['b2']);
+  assert.deepStrictEqual(r.json.machines_unreported, ['c3']);
+  assert.ok(!/example\.invalid/.test(r.stdout), 'el --json no lleva el correo de nadie');
+  // la callada no cambia el estado de ningún lugar (como en el mapa de renombres); el clon y la callada no dejan salir 0
+  assert.deepStrictEqual(lugares(r.json), { [VIEJO]: 'limpia', '.tycon-pipeline': 'limpia', 'tycon.json': 'limpia' });
+  assert.strictEqual(r.code, 2);
+});
+
+test('T2 HomeCheck_PermissionIsNotUse_RelocateIs — un permiso no es un uso; un hook registrado sí; un place.json viejo deja sin medir', () => {
+  const r = runCasa(labCasa({ machines: {
+    'maq-p1': lugarDe('p1', { guias: { total: 2, files: { 'settings.json': { count: 2, permissions: 2 } }, unreadable: 0 } }),
+    'maq-p2': lugarDe('p2', { estado: { ...LIMPIO, registered: { total: 1, files: { 'settings.json': { count: 1, permissions: 0 } }, unreadable: 0 } } }),
+    'maq-p3': lugarDe('p3', { sinNuevos: true }),
+  } }));
+  assert.ok(r.json, r.stderr + r.stdout);
+  assert.deepStrictEqual(lugares(r.json), { [VIEJO]: 'limpia', '.tycon-pipeline': 'con-uso', 'tycon.json': 'sin-medir' });
+  const estado = r.json.places.find((p) => p.name === '.tycon-pipeline');
+  assert.deepStrictEqual(estado.uses, [{ machine: 'p2', files: ['settings.json'] }]);
+  assert.deepStrictEqual(r.json.places.find((p) => p.name === 'tycon.json').unmeasured, ['p3']);
+  assert.strictEqual(r.code, 1);
+  // con todo limpio y la fecha cumplida, sale 0
+  const ok = runCasa(labCasa({ machines: { 'maq-p1': lugarDe('p1', { guias: { total: 1, files: { 'settings.json': { count: 1, permissions: 1 } }, unreadable: 0 } }) } }));
+  assert.strictEqual(ok.code, 0, ok.stderr + ok.stdout);
+  assert.deepStrictEqual(lugares(ok.json), { [VIEJO]: 'limpia', '.tycon-pipeline': 'limpia', 'tycon.json': 'limpia' });
+});
+
+test('T2b HomeCheck_UnreadableMailbox_Exit2 — sin buzón sale 2 y ningún lugar limpio; antes de la fecha, 1', () => {
+  const dir = labCasa({ machines: {} });
+  fs.rmSync(path.join(dir, 'mirror'), { recursive: true, force: true });
+  const r = runCasa(dir);
+  assert.strictEqual(r.code, 2, r.stderr + r.stdout);
+  assert.ok(r.json && r.json.places.every((p) => p.state !== 'limpia'), JSON.stringify(r.json && r.json.places));
+  assert.ok(r.json.failed_queries.length >= 1);
+  // la fecha que vale es la más tardía de la lista: con una sola ruta por llegar, todavía no se retira
+  const antes = runCasa(labCasa({ machines: { 'maq-a1': lugarDe('a1') }, retireAfter: '2026-12-07' }));
+  assert.strictEqual(antes.code, 1, antes.stderr + antes.stdout);
+  assert.strictEqual(antes.json.retire_after, '2026-12-07');
+  assert.ok(antes.json.reasons.some((m) => /2026-12-07/.test(m)), JSON.stringify(antes.json.reasons));
 });
