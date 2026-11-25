@@ -49,6 +49,8 @@ operación sin pedirle nada: `node scripts/lib/platform/platform.js choose <oper
   "capabilities": { "completedHours": "comment", "estimate": "comment", "workItemType": "label", "autoComplete": "auto-or-wait" },
   "rawCommands": ["forge pr create", "forge issue close"],
   "changeRequestCommands": ["forge pr create"],
+  "draftOptions": [{ "command": "forge pr create", "options": [{ "name": "--draft", "separateValue": false }, { "name": "-d", "separateValue": false }], "abbreviations": false }],
+  "readyCommands": [{ "command": "forge pr ready", "unless": [{ "name": "--undo", "separateValue": false }], "abbreviations": false }],
   "settings": [{ "key": "acme-forge.token", "type": "secreto", "env": "TYCON_ACME_FORGE_TOKEN" }]
 }
 ```
@@ -73,6 +75,36 @@ operación sin pedirle nada: `node scripts/lib/platform/platform.js choose <oper
 - `changeRequestCommands` son los de `rawCommands` que crean o juntan un pedido de cambio, con sus alias. El freno de
   guardar los pasa por la ventana de la persona dentro de una ejecución, como un `git push` a una rama compartida. Cada
   uno tiene que estar en `rawCommands`: si no, el lector frena el manifiesto.
+- `draftOptions` y `readyCommands` (opcionales) le dicen al freno de guardar cómo es un borrador en la plataforma. Un
+  borrador no se puede mergear: antes de «Preparar el pull request» abrirlo pregunta en la ventana en vez de frenar,
+  y pasarlo a listo es un pedido que pide el paso cerrado (lo cuenta `guides/firmas-del-arnes.md`, en el freno de
+  guardar). Un conector sin estos campos es válido: su borrador no se reconoce y frena antes de «Preparar» como
+  cualquier pedido.
+  - `draftOptions`: por cada comando que crea un pedido (uno de `changeRequestCommands`), las opciones que lo hacen
+    borrador (`options`) y si el programa acepta una opción larga acortada (`abbreviations`: en Azure DevOps, `--dr`
+    es `--draft`).
+  - `readyCommands`: los comandos que pasan un borrador a listo. Cada uno trae la opción que tiene que aparecer en
+    falso para marcarlo (`"when"`: el `pr update` de Azure DevOps con `--draft false`) o la que lo descarta
+    (`"unless"`: `gh pr ready --undo` vuelve a borrador). Sin ninguna de las dos, el comando siempre lo marca. No van
+    en `rawCommands`: no son comandos que la capa reemplace.
+  - Cada opción es `{ "name", "separateValue" }`: el nombre corto (`-d`) o largo (`--draft`), y si el programa le lee
+    el valor separado (`--draft false`, en Azure DevOps) o sólo junto (`--draft=false`, en GitHub, donde
+    `gh pr ready --undo 12` es la opción sola y el número del pedido).
+  - Una opción de `when` puede declarar sus valores (`"values"`): entonces cuenta sólo con uno de ellos, o con uno que no
+    se ve. Así se declara un `update` que completa el pedido, que es mergearlo: en Azure DevOps,
+    `{ "name": "--status", "separateValue": true, "values": ["completed"] }`. Abandonarlo o reactivarlo no cuenta.
+  - `argumentFiles`, en los dos campos: la letra con que empieza una palabra que el programa cambia por lo que trae un
+    archivo antes de leer sus opciones (`"@"` en Azure DevOps: `az … @o.txt`). Esa palabra puede traer cualquier
+    opción, también la que publica el pedido.
+
+  La lectura es estricta. Al crear, es borrador sólo la última aparición escrita sola o con un «sí» (`true`, `yes`,
+  `1`), que no pueda ser el valor de la opción de antes, y en un comando sin palabras que no se ven enteras: una
+  variable, una sustitución o un archivo de argumentos pueden traer `--draft=false`. Al marcar listo, cuenta cualquier
+  aparición que pueda serlo, y cualquier palabra que no se ve entera: un «no», una variable, un valor que no se
+  entiende, un archivo de argumentos. GitLab no declara estos campos: un
+  borrador ahí pasa a listo sacándole «Draft:» al título o con la acción rápida `/ready` en un comentario, y el freno no
+  ve ninguno de los dos. Marcar listo por la API (`gh api … markPullRequestReadyForReview`) tampoco se ve.
+  `scripts/lib/integrations.js` rechaza un campo mal escrito.
 - `settings` declara sus claves de configuración; las de `type: "secreto"` no se escriben nunca en el perfil del equipo:
   cada persona las carga en su máquina.
 
@@ -186,6 +218,7 @@ controles que no terminan a tiempo son `no_medido`, nunca «entró».
 | `queue.read` | opcional `repos` (si no, los del equipo en `team-repos.json`) | la lista de ejecuciones esperando o en curso, con quién disparó cada una y desde cuándo |
 | `deployments.read` | `entrada` (el pipeline o repo, sus etapas, el entorno) y `entorno` | los despliegues de ese entorno |
 | `branch-rules.read` | opcional `branch` (si no, la rama principal del repo) | `branch` y `approval`: la regla de aprobación mínima de esa rama (`enabled`, `blocking`, `minimum`, `creatorVoteCounts`, `resetOnSourcePush`), o `null` si no tiene; con varias, la que menos le falta |
+| `security-alerts.list` | nada | las alertas abiertas del análisis de seguridad en la rama principal del repo: `number`, `rule`, `severity`, `path`, `line`, `createdAt`; un repo sin análisis es `no_soportado`. La lee el aviso de pedidos trabados: el chequeo de antes de encolar mira las referencias del pedido, y una alerta que aparece recién en main no la ve |
 
 Lo que le falta a una regla de aprobación lo decide el contrato (`approvalFaults`): sirve la que está prendida, frena,
 pide al menos una aprobación, cuenta el voto de quien abrió el pedido y borra las aprobaciones con cada empuje nuevo. Lo
