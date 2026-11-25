@@ -316,5 +316,144 @@
         "comillas": false
       }
     ]
+  },
+  {
+    "comando": "python3 -\\\n<<<y",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": true,
+        "despues": [],
+        "cuerpo": "y",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "python3 <<<x\\\n- ",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": false,
+        "despues": [],
+        "cuerpo": "x",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "python3 > <<<x -",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": false,
+        "despues": [],
+        "cuerpo": "x",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "python3 - \\ <<<x",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": true,
+        "despues": [
+          "\\ "
+        ],
+        "cuerpo": "x",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "python3 <<<x>f -",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": true,
+        "despues": [],
+        "cuerpo": "x",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "python3 2<<<x -",
+    "programas": []
+  },
+  {
+    "comando": "cp a b <<<x \\\n cp a b <<<x \\\n python3 -",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": true,
+        "despues": [],
+        "cuerpo": "x",
+        "comillas": false
+      },
+      {
+        "interprete": "python3",
+        "conGuion": true,
+        "despues": [],
+        "cuerpo": "x",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "python3 - <<<x <<<y z",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": true,
+        "despues": [
+          "z"
+        ],
+        "cuerpo": "x",
+        "comillas": false
+      },
+      {
+        "interprete": "python3",
+        "conGuion": true,
+        "despues": [
+          "z"
+        ],
+        "cuerpo": "y",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "node - a <<<x b",
+    "programas": [
+      {
+        "interprete": "node",
+        "conGuion": true,
+        "despues": [
+          "a",
+          "b"
+        ],
+        "cuerpo": "x",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "python3\t<<<x\t-",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": true,
+        "despues": [],
+        "cuerpo": "x",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "python3 <<<x(a) -",
+    "programas": []
   }
 ]

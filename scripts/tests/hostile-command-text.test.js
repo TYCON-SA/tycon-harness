@@ -183,11 +183,12 @@ test('T10j HostileText_HereStringsInOneCommand_AnswerInTime — programasPorEntr
 });
 
 // Lo que el lector devolvía antes de leer cada tubería una sola vez, en los casos de borde de las etapas y los finales de
-// comando (`||`, `|&`, `&` después de `>`, comillas con `|`, `\` antes del salto, heredocs con tubería): leerla de otra
-// manera no puede cambiar qué programa recibe el texto.
+// comando (`||`, `|&`, `&` después de `>`, comillas con `|`, `\` antes del salto, heredocs con tubería) y de la etapa que
+// se lee una vez para todos sus here-strings (una redirección delante, `\` antes del `<<<`, un blanco escapado, la
+// palabra pegada a lo que sigue): leerla de otra manera no puede cambiar qué programa recibe el texto.
 test('T10k HostileText_HereStrings_SameProgramsAsBefore — programasPorEntrada devuelve lo mismo que antes en los casos de borde', () => {
   const { programasPorEntrada } = require(SHELL_PARSE);
   const casos = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'here-string-programs.json'), 'utf8'));
-  assert.ok(casos.length >= 30, `la tabla trae ${casos.length} casos`);
+  assert.ok(casos.length >= 41, `la tabla trae ${casos.length} casos`);
   for (const { comando, programas } of casos) assert.deepStrictEqual(programasPorEntrada(comando), programas, JSON.stringify(comando));
 });
