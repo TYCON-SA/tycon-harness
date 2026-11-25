@@ -33,8 +33,8 @@ const { spawn, spawnSync } = require('child_process');
 
 const REPO = path.resolve(__dirname, '..', '..');
 const HOOK = path.join(REPO, 'scripts', 'hooks', 'temp-sweep.js');
-const { stateDir, claudeDir, agentTempDir } = require(path.join(REPO, 'scripts', 'setup', 'harness', 'tycon-home.js'));
-const { LSOF_ARGS, sweep, looksRandom, defaultRoots, allowedRoots, livePaths, trusted, inspect, remove, startupLine, lifeSigns } = require(HOOK);
+const { stateDir, claudeDir } = require(path.join(REPO, 'scripts', 'setup', 'harness', 'tycon-home.js'));
+const { LSOF_ARGS, sweep, looksRandom, defaultRoots, allowedRoots, livePaths, trusted, inspect, remove, startupLine, lifeSigns, agentTempDir } = require(HOOK);
 
 const WIN = process.platform === 'win32';
 const ROOT_USER = !WIN && process.getuid() === 0;

@@ -38,13 +38,13 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *   · nada, si no puede saber qué usan los procesos vivos: sin esa lista no borra, y prueba de nuevo al otro día.
  *
  * ── LAS CARPETAS DE LAS SESIONES DEL AGENTE ──────────────────────────────────────────────────────────────────────
- * Claude Code guarda lo temporal de cada sesión en `/tmp/claude-<uid>/<proyecto>/<sesión>/` (la ruta la sabe
- * tycon-home.js) y no lo borra al cerrarla. La carpeta de una sesión se borra cuando cumple todo esto:
+ * Claude Code guarda lo temporal de cada sesión en `/tmp/claude-<uid>/<proyecto>/<sesión>/` (`agentTempDir`) y no lo
+ * borra al cerrarla. La carpeta de una sesión se borra cuando cumple todo esto:
  *   · se llama como una sesión (un identificador al azar), y ella, la de su proyecto y la de `claude-<uid>` son
  *     carpetas del usuario donde nadie más escribe, no enlaces;
- *   · la sesión no tiene rastro de vida: ningún archivo suyo en `~/.claude/sessions` con el proceso vivo, y ningún
- *     marcador del arnés abierto o estacionado. Claude Code borra ese archivo al cerrar la sesión, así que «sin
- *     archivo» es lo normal de una que terminó;
+ *   · la sesión no tiene rastro de vida: ningún archivo suyo en la carpeta de sesiones de Claude Code con el proceso
+ *     vivo, y ningún marcador del arnés abierto o estacionado. Claude Code borra ese archivo al cerrar la sesión, así
+ *     que «sin archivo» es lo normal de una que terminó;
  *   · lo más nuevo de adentro es más viejo que `maintenance.temp_days` días (2 si el perfil no dice otra cosa);
  *   · lo mismo que en el primer nivel: sin sockets, ningún proceso vivo la usa, nadie más la alcanza;
  *   · ningún repo de git de adentro (un `.git` hasta 3 niveles abajo) tiene cambios sin commitear, commits sin subir
@@ -316,9 +316,17 @@ function pidAlive(pid) {
 }
 
 /**
- * Los rastros de vida de las sesiones del agente: `{ alive, open, error }`. `alive`: las sesiones con un archivo en
- * `~/.claude/sessions` cuyo proceso vive; `open`: las que tienen un marcador del arnés abierto o estacionado. `error`
- * dice qué no se pudo leer, y con un error no se borra ninguna carpeta de sesión.
+ * La carpeta temporal de las sesiones de Claude Code: `/tmp/claude-<uid>`, con una carpeta por proyecto y, adentro,
+ * una por sesión. null sin número de usuario (Windows), donde no se sabe cuál es.
+ */
+function agentTempDir(uid = typeof process.getuid === 'function' ? process.getuid() : null) {
+  return uid === null || uid === undefined ? null : path.join('/tmp', `claude-${uid}`);
+}
+
+/**
+ * Los rastros de vida de las sesiones del agente: `{ alive, open, error }`. `alive`: las sesiones con un archivo en la
+ * carpeta de sesiones de Claude Code cuyo proceso vive; `open`: las que tienen un marcador del arnés abierto o
+ * estacionado. `error` dice qué no se pudo leer, y con un error no se borra ninguna carpeta de sesión.
  */
 function lifeSigns(home) {
   const { claudeDir, stateDir } = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'));
@@ -611,7 +619,6 @@ function main() {
     if (split.outside.length) notes.push(`TYCON_TEMP_SWEEP_ROOTS: ${names(split.outside)} no está dentro de una carpeta temporal y no se mira`);
   }
 
-  const { agentTempDir } = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'));
   const agentDir = agentTempDir();
   const days = sessionDays();
   const agent = agentDir ? { name: path.basename(agentDir), days, life: lifeSigns(os.homedir()) } : null;
@@ -637,4 +644,4 @@ if (require.main === module) {
   process.exit(0);
 }
 
-module.exports = { LSOF_ARGS, sweep, looksRandom, defaultRoots, allowedRoots, livePaths, trusted, inspect, remove, startupLine, lifeSigns, unsavedWork };
+module.exports = { LSOF_ARGS, sweep, looksRandom, defaultRoots, allowedRoots, livePaths, trusted, inspect, remove, startupLine, lifeSigns, unsavedWork, agentTempDir };
