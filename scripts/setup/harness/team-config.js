@@ -243,7 +243,7 @@ function start(opts = {}) {
     if (req.method === 'GET' && u.pathname === '/api/state') {
       const targets = state();
       const site = siteOf(targets, profileOf());
-      return send(res, 200, { ok: true, targets, site, notice: noticeOf(site, targets), coreProblem: loaded.problem, mailbox: mailboxSummary(tree, opts.mailboxFile) });
+      return send(res, 200, { ok: true, targets, site, notice: noticeOf(site, targets), coreProblem: loaded.problem, mailbox: mailboxSummary(tree, opts.mailboxFile), instincts: instinctsSummary(tree, { env: opts.env, home: opts.home }) });
     }
     if (req.method !== 'POST') return send(res, 405, { ok: false, message: 'método no permitido' });
     if (req.headers.origin && req.headers.origin !== `http://${self}`) return send(res, 403, { ok: false, message: 'pedido desde otra página' });
@@ -314,19 +314,24 @@ const app = document.getElementById('app');
 const el = (tag, attrs = {}, ...kids) => { const e = document.createElement(tag); for (const [k, v] of Object.entries(attrs)) { if (k === 'text') e.textContent = v; else if (k.startsWith('on')) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v); } for (const c of kids) if (c) e.append(c); return e; };
 // una llamada que falla (el servidor ya se cerró, una respuesta que no es JSON) vuelve como { ok: false, message }: quien llama lo dice en la página
 const api = async (p, body) => { try { const r = await fetch('/api/' + p, { method: body ? 'POST' : 'GET', headers: { 'x-harness-key': KEY, ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined }); return await r.json(); } catch (e) { return { ok: false, message: 'no pude hablar con la página local (' + e.message + ')' }; } };
-const S = { targets: [], site: null, notice: '', coreProblem: null, mailbox: null };
+const S = { targets: [], site: null, notice: '', coreProblem: null, mailbox: null, instincts: null };
+// los instintos suben por el mismo buzón: prendidos o apagados, y de dónde sale
+function instinctsLine(i) {
+  const texto = !i ? 'instincts: no se pudo leer' : i.estado ? 'instincts: ' + i.estado + ' (' + (i.origen || 'sin origen') + ')' : 'instincts: no se pudo leer (' + i.problema + ')';
+  return el('p', {}, el('span', { text: texto + '. Para crear un buzón: ' }), el('code', { text: 'guides/pieces/metrics.md' }));
+}
 // el buzón de corridas, sólo lectura — la página nunca recibe la firma
 function mailboxSection(m) {
   const s = el('section', {}, el('h2', { text: 'El buzón de ejecuciones' }), el('p', { class: 'muted', text: 'Sólo lectura: la llave es una credencial y esta página no la muestra ni la guarda. Se cambia en el archivo de la capa del equipo (scripts/metrics/corridas-buzon.json).' }));
-  if (!m || !m.hay) { s.append(el('p', { text: m && m.problema ? 'El buzón no se pudo leer: ' + m.problema : 'sin buzón: esta organización no sube ejecuciones' })); return s; }
+  if (!m || !m.hay) { s.append(el('p', { text: m && m.problema ? 'El buzón no se pudo leer: ' + m.problema : 'sin buzón: esta organización no sube ejecuciones' }), instinctsLine(S.instincts)); return s; }
   s.append(el('ul', {},
     el('li', { text: 'Cuenta: ' + m.cuenta }), el('li', { text: 'Contenedor: ' + m.contenedor }),
     el('li', { text: 'Política: ' + (m.politica || 'sin nombre') }), el('li', { text: 'Vence: ' + m.vence }),
     el('li', { text: 'Permisos propios de la firma: ' + (m.permisos_propios || 'ninguno (los toma de la política)') })));
-  s.append(el('p', { text: '«Sólo crear» no se puede comprobar desde esta página. Lo comprueba una máquina del equipo con:' }), el('pre', { text: 'node scripts/metrics/upload-runs.js --check-create-only' }));
+  s.append(el('p', { text: '«Sólo crear» no se puede comprobar desde esta página. Lo comprueba una máquina del equipo con:' }), el('pre', { text: 'node scripts/metrics/upload-runs.js --check-create-only' }), instinctsLine(S.instincts));
   return s;
 }
-async function load() { const r = await api('state'); if (!r.ok) throw new Error(r.message || 'el servidor no contestó'); S.targets = r.targets; S.site = r.site; S.notice = r.notice; S.coreProblem = r.coreProblem; S.mailbox = r.mailbox || null; render(); }
+async function load() { const r = await api('state'); if (!r.ok) throw new Error(r.message || 'el servidor no contestó'); S.targets = r.targets; S.site = r.site; S.notice = r.notice; S.coreProblem = r.coreProblem; S.mailbox = r.mailbox || null; S.instincts = r.instincts || null; render(); }
 
 function problemList(list) {
   return list.length ? el('ul', {}, ...list.map((x) => el('li', { class: 'err', text: (x.path ? x.path + ': ' : '') + x.message }))) : null;
@@ -398,6 +403,28 @@ function mailboxSummary(tree, file) {
   };
 }
 
+/**
+ * Si los instintos están prendidos y de dónde sale (el perfil del equipo, esta máquina, una variable), con el lector de la
+ * configuración del árbol. `{ estado: 'prendida'|'apagada', origen }`, o `{ estado: null, problema }`: una configuración
+ * rota o un árbol que no lo trae se dicen, nunca se toman por apagada.
+ */
+function instinctsSummary(tree, { env = process.env, home } = {}) {
+  const guion = path.join(tree, 'scripts', 'lib', 'tycon-config.js');
+  let lib;
+  try { lib = require(guion); }
+  catch (e) {
+    if (e && e.code === 'MODULE_NOT_FOUND' && !fs.existsSync(guion)) return { estado: null, problema: 'esta versión del arnés no trae la configuración' };
+    return { estado: null, problema: `no se pudo cargar scripts/lib/tycon-config.js (${(e && (e.code || e.name)) || 'error'})` };
+  }
+  try {
+    const r = lib.integracionParaComando('instincts', { env, home });
+    return { estado: r.prendida ? 'prendida' : 'apagada', origen: r.origen || null };
+  } catch (e) {
+    const primera = String((e && e.message) || 'error').split('\n')[0];
+    return { estado: null, problema: /desconocida/.test(primera) ? 'esta versión del arnés no trae los instintos' : `la configuración no se pudo leer: ${primera}` };
+  }
+}
+
 /** Las carpetas que la máquina ya declaró (`paths.team`, `paths.operations`), o null. Sin configuración legible: null (la página las pide). */
 function declaredClones({ env = process.env } = {}) {
   let p = {};
@@ -409,4 +436,4 @@ function declaredClones({ env = process.env } = {}) {
   return { repos: pick(p.team), operations: pick(p.operations) };
 }
 
-module.exports = { TARGETS, RETIRED, start, siteOf, declaredClones, mailboxSummary, readTarget, sectionsOf, browserCommand, cloneProblem, loadReader, loadCore };
+module.exports = { TARGETS, RETIRED, start, siteOf, declaredClones, mailboxSummary, instinctsSummary, readTarget, sectionsOf, browserCommand, cloneProblem, loadReader, loadCore };

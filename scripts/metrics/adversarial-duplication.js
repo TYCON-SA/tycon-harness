@@ -100,8 +100,9 @@ function caminar(dir, out, diag, raiz = true) {
   catch (err) { if (diag && !(raiz && err && err.code === 'ENOENT')) diag.ilegible(dir, `la carpeta no se pudo listar (${(err && err.code) || 'error'})`); return out; }
   for (const it of e) {
     const p = path.join(dir, it.name);
-    // `<maquina>/registros/` nunca trae volcados, y su place.json trae el correo de git de la persona
-    if (it.isDirectory()) { if (it.name !== 'registros') caminar(p, out, diag, false); }
+    // `<maquina>/registros/` nunca trae volcados, y su place.json trae el correo de git de la persona.
+    // `<maquina>/instincts/` tampoco: son los días de la grabadora, que lee sólo la noche de aprendizajes
+    if (it.isDirectory()) { if (it.name !== 'registros' && it.name !== 'instincts') caminar(p, out, diag, false); }
     else if (it.name.endsWith('.json')) out.push(p);
   }
   return out;
