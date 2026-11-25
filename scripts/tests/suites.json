@@ -3678,6 +3678,18 @@
       "requiere": []
     },
     {
+      "__nota": "la regla constancia-sin-cuadro del portón de CI (scripts/ci/tycon-ci-gate.js con scripts/lib/signed-record-approval.js): cada constancia nueva que firma una persona trae el cuadro del dueño, con su firma, su vía, su huella y una aprobación que no está en el historial de la base; el modo aviso o freno fijo en el código; la base ilegible y el clon superficial; las guías. Repos de juguete, casa temporal, sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/signed-record-approval-ci.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "los seis caminos por los que una constancia se escribe sin pasar por el freno de escrituras, corridos de verdad con bash en un repo de juguete: el portón de CI en freno da constancia-sin-cuadro en todos, y la línea con el cuadro de una aprobación pasa. Casa temporal, sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/signed-record-approval-paths.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la lista de lo que espera a la persona (scripts/lib/signature-list.js): el registro, lo que lo cierra, la pasada de a una y la llave.",
       "raiz": "arnes",
       "ruta": "tests/signature-list.test.js",

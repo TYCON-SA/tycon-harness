@@ -38,6 +38,10 @@
  *
  *   6. **Examen del revisor que cambia** — un cambio a `agents/<revisor>.md` trae el resultado del examen de ese revisor
  *      sobre ese archivo exacto, con puntaje igual o mayor que la línea de base (`controls-bench/reviewer-change-check.js`).
+ *   7. **Constancias con su cuadro** (`constancia-sin-cuadro`) — cada línea nueva de una constancia que firma una persona
+ *      (el catálogo de `lib/signed-record-approval.js`) trae el registro del cuadro con que el dueño la aprobó: su firma
+ *      vale en ese archivo, su huella es la de esa línea y su aprobación no se usó antes en el historial de la base. El
+ *      modo lo fija la biblioteca: en `aviso` la lista y pasa; en `freno` frena.
  *
  * Todos corren sin modelo, sin red y sin estado de sesión, pero no verifican lo mismo. Cada chequeo dice su nivel en la
  * salida y en `--json` (`verificacion`):
@@ -87,6 +91,9 @@ function git(repo, args, opts) {
 const detector = require(path.join(__dirname, '..', 'lib', 'lint-story-frontmatter.js'));
 const { readEnv, envNames } = require(path.join(__dirname, '..', 'lib', 'legacy-names.js'));
 const { aliasLegacyOptions } = require(path.join(__dirname, 'legacy-options.js'));
+// el catálogo de las constancias que llevan el cuadro del dueño, su verificación y el modo de la regla: la misma lista que
+// usan los escritores, y la regla la carga de la base como el resto del código de este portón
+const SRA = require(path.join(__dirname, '..', 'lib', 'signed-record-approval.js'));
 const WHERE = 'scripts/ci/tycon-ci-gate.js';
 
 // Las dos llaves que avisan (TYCON_REVIEW_A_DONE y TYCON_ROSTER_NAMES) vuelven a frenar con el mismo valor: `block`
@@ -1072,6 +1079,177 @@ function huellasDelRegistro(repo, ref, dodEnGit) {
   return { registros: registros.length, v2, salteadas, malas };
 }
 
+// ── (7) las constancias nuevas corresponden a un cuadro que aprobó el dueño ───────────────────────────────────────────
+const REGLA_DEL_CUADRO = 'constancia-sin-cuadro';
+const NO_SE_MIRARON = 'no se pudo leer la base: las constancias no se miraron';
+const QUE_HACER = 'Una constancia nueva lleva el registro del cuadro con que el dueño la aprobó, y lo escribe el comando de la firma: una línea escrita a mano o por otro camino no lo trae. Repetí la firma con el cuadro.';
+// Las rutas del catálogo de `signed-record-approval.js` como las busca git en el historial, sin distinguir mayúsculas
+// como el catálogo. Una prueba compara las dos listas sobre un repo con una ruta de cada entrada.
+const RUTAS_DEL_CATALOGO = Object.freeze([
+  ':(glob,icase).github/control-changes/*.json',
+  ':(glob,icase).tycon/control-changes/*.json',
+  ':(icase).github/control-changes.jsonl',
+  ':(icase).tycon/control-changes.jsonl',
+  ':(icase).tycon/exemptions.jsonl',
+  ':(icase).tycon/runtime-waivers.jsonl',
+  ':(glob,icase)**/.advisors/pipeline-runs/*/approvals.jsonl',
+]);
+// el renglón que nombra una aprobación, como lo busca `git grep` en el árbol de la base
+const RENGLON_CON_APROBACION = '"aprobacion"[[:space:]]*:[[:space:]]*"[0-9a-f]{64}"';
+
+const esCommit = (repo, ref) => { try { git(repo, ['rev-parse', '--verify', '-q', `${ref}^{commit}`]); return true; } catch (_e) { return false; } };
+const mergeBase = (repo, a, b) => { try { return git(repo, ['merge-base', a, b]).trim() || null; } catch (_e) { return null; } };
+const renglones = (t) => String(t).split('\n').map((l) => l.replace(/\r$/, ''));
+const objetoDe = (t) => { try { const o = JSON.parse(String(t)); return o && typeof o === 'object' && !Array.isArray(o) ? o : null; } catch (_e) { return null; } };
+
+/** Los archivos del catálogo que cambian entre `viejo` y la punta (el índice con `staged`): `[{ estado, ruta }]`. */
+function cambiosDelCatalogo(repo, viejo, staged) {
+  const args = staged
+    ? ['diff', '--cached', '--name-status', '--no-renames', '-z', viejo || ARBOL_VACIO]
+    : ['diff', '--name-status', '--no-renames', '-z', viejo, 'HEAD'];
+  const partes = git(repo, args).split('\0');
+  const out = [];
+  for (let i = 0; i + 1 < partes.length; i += 2) if (SRA.entradaDe(partes[i + 1])) out.push({ estado: partes[i].charAt(0), ruta: partes[i + 1] });
+  return out;
+}
+
+/** Las constancias que la regla mira en `ref` (cada línea, o el archivo entero en una carpeta): una ruta por cada una. */
+function constanciasEn(repo, ref) {
+  let rutas;
+  try { rutas = git(repo, ['ls-tree', '-r', '-z', '--name-only', ref]).split('\0').filter((r) => r && SRA.entradaDe(r)); } catch (_e) { return []; }
+  const out = [];
+  for (const ruta of rutas) {
+    const texto = contenidoEn(repo, ref, ruta);
+    if (texto === null) continue;
+    const partes = SRA.entradaDe(ruta).entero ? [texto] : renglones(texto).filter((l) => l.trim());
+    for (const t of partes) if (!SRA.verificar({ ruta, texto: t }).fuera) out.push(ruta);
+  }
+  return out;
+}
+
+/**
+ * Las líneas nuevas del catálogo y si corresponden a un cuadro. En el pedido, lo nuevo es lo que la punta trae y el
+ * ancestro común con la base no; con `--staged`, lo que está por commitearse. En un `.jsonl` es nueva cada línea que no
+ * está antes, por su texto y contando las copias; en un `.json` de carpeta, el archivo agregado o cambiado, salvo el
+ * movido tal cual (el mismo objeto sin `cuadro` que el pedido saca de otra ruta). Las líneas que se sacan no se miran:
+ * borrar una constancia lo frena run-base-controls.sh. Según el modo de la biblioteca, lo que no corresponde va a los
+ * avisos o a los hallazgos.
+ */
+function revisarConstancias({ repo, base, staged }) {
+  const hallazgos = [];
+  const avisos = [];
+  const verificacion = [];
+  const enAviso = SRA.modo() === 'aviso';
+  const decir = (archivo, mensaje, extra) => (enAviso ? avisos : hallazgos).push({ archivo, regla: REGLA_DEL_CUADRO,
+    mensaje: `${mensaje}${enAviso ? ' Hoy avisa; con la regla en freno, frena.' : ''}`, ...(extra || {}) });
+  const nivel = (n, detalle) => verificacion.push({ story: null, chequeo: 'constancias-con-cuadro', nivel: n, detalle });
+  const fin = () => ({ hallazgos, avisos, verificacion });
+  const lista = (rutas) => [...new Set(rutas)].join(', ');
+
+  // lo de antes, lo nuevo y el historial donde se buscan las aprobaciones ya usadas
+  let viejo; let nuevo; let historial;
+  if (staged) {
+    nuevo = '';
+    viejo = esCommit(repo, 'HEAD') ? 'HEAD' : null;
+    // antes del commit, el historial llega hasta donde la rama salió de la principal: una aprobación de un commit
+    // anterior de la misma rama es del mismo pedido, y la mira el portón del pedido
+    historial = viejo && esCommit(repo, 'origin/main') ? (mergeBase(repo, 'origin/main', 'HEAD') || viejo) : viejo;
+  } else {
+    nuevo = 'HEAD';
+    if (!esCommit(repo, base)) {
+      // sin la base no hay diff: toda constancia que trae la punta cuenta como nueva
+      const todas = constanciasEn(repo, 'HEAD');
+      if (todas.length) {
+        decir(lista(todas), `${NO_SE_MIRARON}: \`${textoDeAfuera(base)}\` no es un commit de este repo, y sin la base las ${todas.length} constancia(s) de la punta cuentan como nuevas.`);
+        nivel(NIVELES.NO_MEDIDO, 'sin la base');
+      }
+      return fin();
+    }
+    viejo = mergeBase(repo, base, 'HEAD') || base;
+    historial = base;
+  }
+
+  let cambios;
+  try { cambios = cambiosDelCatalogo(repo, viejo, staged); } catch (_e) {
+    decir('(constancias)', `${NO_SE_MIRARON}: git no listó lo que cambia el pedido.`);
+    nivel(NIVELES.NO_MEDIDO, 'git no contestó');
+    return fin();
+  }
+  if (!cambios.length) return fin();
+
+  // las constancias de carpeta que el pedido saca: un archivo agregado con el mismo objeto es un movimiento
+  const sacadas = new Map();
+  for (const c of cambios) {
+    if (c.estado !== 'D' || !SRA.entradaDe(c.ruta).entero) continue;
+    const o = objetoDe(contenidoEn(repo, viejo, c.ruta));
+    if (o) { const h = SRA.huella(o); sacadas.set(h, (sacadas.get(h) || 0) + 1); }
+  }
+  const nuevas = [];
+  for (const c of cambios) {
+    if (c.estado === 'D') continue;
+    const texto = contenidoEn(repo, nuevo, c.ruta);
+    if (texto === null) continue;
+    if (SRA.entradaDe(c.ruta).entero) {
+      const o = c.estado === 'A' ? objetoDe(texto) : null;
+      const h = o && SRA.huella(o);
+      if (h && sacadas.get(h)) { sacadas.set(h, sacadas.get(h) - 1); continue; }
+      nuevas.push({ ruta: c.ruta, texto, linea: null });
+      continue;
+    }
+    const antes = new Map();
+    const previo = viejo && c.estado !== 'A' ? contenidoEn(repo, viejo, c.ruta) : null;
+    for (const l of renglones(previo || '')) if (l.trim()) antes.set(l, (antes.get(l) || 0) + 1);
+    renglones(texto).forEach((l, i) => {
+      if (!l.trim()) return;
+      const n = antes.get(l) || 0;
+      if (n) antes.set(l, n - 1);
+      else nuevas.push({ ruta: c.ruta, texto: l, linea: i + 1 });
+    });
+  }
+  // las que llevan cuadro: las automáticas de una ejecución no
+  const miradas = nuevas.filter((n) => !SRA.verificar({ ruta: n.ruta, texto: n.texto }).fuera);
+  if (!miradas.length) return fin();
+
+  // por aprobación, las firmas y horas de las líneas nuevas: las de una misma acción comparten el id
+  const delPedido = new Map();
+  for (const n of nuevas) {
+    const c = (objetoDe(n.texto) || {}).cuadro;
+    if (c && typeof c === 'object' && typeof c.aprobacion === 'string') {
+      delPedido.set(c.aprobacion, [...(delPedido.get(c.aprobacion) || []), { firma: c.firma, aprobada_en: c.aprobada_en }]);
+    }
+  }
+  // las aprobaciones ya usadas: las de las líneas que el historial de la base agregó o sacó, y las del árbol de la base
+  // (una línea que sólo trajo la resolución de un merge no está en ningún parche). Una vez para todas las rutas
+  const enLaBase = new Set();
+  let sinHistorial = false;
+  if (historial) {
+    try {
+      const largo = { timeout: 120000, maxBuffer: 256 * 1024 * 1024 };
+      for (const a of SRA.aprobacionesEnTexto(git(repo, ['log', '-p', '--no-renames', '--no-ext-diff', '--no-textconv', '--format=', historial, '--', ...RUTAS_DEL_CATALOGO], largo))) enLaBase.add(a);
+      let presentes = '';
+      try { presentes = git(repo, ['grep', '-h', '-E', '-e', RENGLON_CON_APROBACION, historial, '--', ...RUTAS_DEL_CATALOGO], largo); } catch (e) { if (e.status !== 1) throw e; }
+      for (const a of SRA.aprobacionesEnTexto(presentes)) enLaBase.add(a);
+    } catch (_e) { sinHistorial = true; }
+  }
+  let superficial = false;
+  try { superficial = git(repo, ['rev-parse', '--is-shallow-repository']).trim() === 'true'; } catch (_e) { superficial = false; }
+  if (superficial || sinHistorial) {
+    decir(lista(miradas.map((n) => n.ruta)), `${NO_SE_MIRARON}: ${superficial
+      ? 'el clon es superficial, y sin el historial entero no se ve una aprobación repetida. La CI tiene que traer el historial completo (en GitHub, `fetch-depth: 0`).'
+      : 'git no leyó el historial de la base, y sin él no se ve una aprobación repetida.'}`);
+  }
+  for (const n of miradas) {
+    const v = SRA.verificar({ ruta: n.ruta, texto: n.texto, aprobacionesDeLaBase: enLaBase, delPedido });
+    if (v.ok) continue;
+    const cual = n.linea ? `la línea ${n.linea}` : 'el archivo';
+    const muestra = objetoDe(n.texto) ? '' : ` (${JSON.stringify(textoDeAfuera(n.texto.slice(0, 80)))})`;
+    decir(n.ruta, `${cual}${muestra}: ${v.motivo}. ${QUE_HACER}`, n.linea ? { linea: n.linea } : null);
+  }
+  nivel(superficial || sinHistorial ? NIVELES.NO_MEDIDO : NIVELES.REGISTRO,
+    `${miradas.length} ${miradas.length === 1 ? 'constancia nueva' : 'constancias nuevas'}, en ${enAviso ? 'aviso' : 'freno'}`);
+  return fin();
+}
+
 function revisar({ repo, base, staged, hoy = hoyUtc(), juezGit }) {
   const hallazgos = [];
   const avisos = [];
@@ -1079,8 +1257,13 @@ function revisar({ repo, base, staged, hoy = hoyUtc(), juezGit }) {
   const aprobaciones = [];
   const verificacion = [];
   const exenciones = [];
+  // (7) se mira antes que las historias: con la base ilegible, lo que dice sale igual junto al error
+  const cuadros = revisarConstancias({ repo, base, staged });
   const { files, error } = mdDelDiff(repo, base, staged);
-  if (error) return { error, hallazgos, revisadas, verificacion, exenciones };
+  if (error) {
+    return { error, hallazgos: cuadros.hallazgos, revisadas, verificacion: cuadros.verificacion, exenciones,
+      ...(cuadros.avisos.length ? { avisos: cuadros.avisos } : {}) };
+  }
 
   // Qué es "lo nuevo" y qué es "lo de antes" depende de dónde corre el portón. En el servidor lo
   // nuevo ya es un commit (HEAD) y lo de antes es la rama destino del pull request. En el
@@ -1447,6 +1630,11 @@ function revisar({ repo, base, staged, hoy = hoyUtc(), juezGit }) {
     for (const h of examen.hallazgos) hallazgos.push({ archivo: h.archivo, regla: h.regla, mensaje: `${h.mensaje} Comando: \`${h.comando}\`` });
     for (const a of examen.avisos) avisos.push(a);
   }
+
+  // (7) las constancias nuevas con el cuadro del dueño — a nivel REPO, ya calculado arriba
+  hallazgos.push(...cuadros.hallazgos);
+  avisos.push(...cuadros.avisos);
+  verificacion.push(...cuadros.verificacion);
 
   return { hallazgos, avisos, revisadas, aprobaciones, verificacion, exenciones, archivos: files.length, ...(mem && mem.engram ? { engram: mem.engram } : {}) };
 }
@@ -1913,6 +2101,7 @@ function main() {
   }
   if (r.error) {
     console.error(`⚠ tycon-ci-gate: ${r.error} — no se pudo revisar nada. NO se da por bueno.`);
+    for (const h of [...r.hallazgos, ...(r.avisos || [])]) console.error(`   · [${h.regla}] ${h.archivo}: ${h.mensaje}`);
     return 1;
   }
   // 🔴 `&& !r.hallazgos.length`: un atajo que saliera 0 en cuanto no hay stories EN TRANSICIÓN, sin mirar los
@@ -1954,7 +2143,13 @@ function main() {
     if (!total) continue;
     console.log(`   aprobaciones de ${a.story}: ${a.manual} ${a.manual === 1 ? 'manual' : 'manuales'} · ${a.automatica} ${a.automatica === 1 ? 'automática' : 'automáticas'}${a.sinNombrar ? ` (${a.sinNombrar} sin nombrar)` : ''}`);
   }
-  const avisosDeStory = (r.avisos || []).filter((h) => !/^indice-de-memoria/.test(h.regla) && h.regla !== 'roster-incoherente' && h.regla !== 'storyid-sin-story' && !/^reviewer-/.test(h.regla) && h.regla !== 'sin-registro-de-aprobaciones' && h.regla !== 'exencion-sin-razon' && !h.porFecha && h.regla !== 'carpeta-fecha-contradictoria' && !h.porFechaAtada && h.regla !== 'evidencia-atada-otro-repo');
+  const avisosDeStory = (r.avisos || []).filter((h) => !/^indice-de-memoria/.test(h.regla) && h.regla !== 'roster-incoherente' && h.regla !== 'storyid-sin-story' && !/^reviewer-/.test(h.regla) && h.regla !== 'sin-registro-de-aprobaciones' && h.regla !== 'exencion-sin-razon' && !h.porFecha && h.regla !== 'carpeta-fecha-contradictoria' && !h.porFechaAtada && h.regla !== 'evidencia-atada-otro-repo' && h.regla !== REGLA_DEL_CUADRO);
+  // Las constancias sin su cuadro: su propio bloque, porque no dependen de una historia ni de su estado
+  const avisosDeCuadro = (r.avisos || []).filter((h) => h.regla === REGLA_DEL_CUADRO);
+  if (avisosDeCuadro.length) {
+    console.error('\n⚠️  AVISO — constancias nuevas que no corresponden a un cuadro del dueño (la regla avisa; en freno, frena):');
+    for (const h of avisosDeCuadro) console.error(`   · [${h.regla}] ${h.archivo}: ${h.mensaje}`);
+  }
   // Lo que el portón empieza a frenar con la lectura por git y del veredicto: su propio bloque, por la fecha.
   const avisosPorFecha = (r.avisos || []).filter((h) => h.porFecha);
   if (avisosPorFecha.length) {
@@ -2052,4 +2247,4 @@ if (require.main === module) process.exitCode = main();
 // `mdDelDiff` y `contenidoEn` se exportan para que `cierre-recortado` T12 pueda
 // EJECUTARLAS en vez de comparar sus bytes contra `main`. Comparar texto no distingue una mejora
 // de un deterioro: cualquier cambio sale rojo.
-module.exports = { EXEMPT_REASON_FROM, STRICT_EVIDENCE_FROM, EVIDENCE_BOUND_FROM, evidenciaDeclaraFail, fechaDeCarpeta, NIVELES, nivelDelExamen, nivelDeBusqueda, nivelDelIndice, razonDe, llaveFrena, revisar, revisarAprobaciones, frontmatter, declaraSerStory, escalar, hayEvidencia, prefijoDeEvidencia, runDirsDeStory, validarRoster, advisoresEnFindings, FUENTES_SINTETICAS, esEvidenciaDeCierre, NO_ES_EVIDENCIA_DE_CIERRE, ES_EVIDENCIA_ADEMAS, mdDelDiff, contenidoEn };
+module.exports = { EXEMPT_REASON_FROM, STRICT_EVIDENCE_FROM, EVIDENCE_BOUND_FROM, evidenciaDeclaraFail, fechaDeCarpeta, NIVELES, nivelDelExamen, nivelDeBusqueda, nivelDelIndice, razonDe, llaveFrena, revisar, revisarAprobaciones, frontmatter, declaraSerStory, escalar, hayEvidencia, prefijoDeEvidencia, runDirsDeStory, validarRoster, advisoresEnFindings, FUENTES_SINTETICAS, esEvidenciaDeCierre, NO_ES_EVIDENCIA_DE_CIERRE, ES_EVIDENCIA_ADEMAS, mdDelDiff, contenidoEn, revisarConstancias, RUTAS_DEL_CATALOGO, REGLA_DEL_CUADRO };
