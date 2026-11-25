@@ -180,6 +180,33 @@ test('T2b PasoPase_RepoSinBase_ConCodigoNoLanza_SinCodigoSigue: con código y si
   assert.deepStrictEqual(JSON.parse(corre.stdout).repos, [{ repo: back.repo, base, files: ['src/a.js', 'src/nuevo.js'] }], 'sin código queda afuera y el pase corre con los demás');
 });
 
+// Hallazgo del pase (traversal-completeness, false-negative-classification y false-positive-edge): la lista contaba
+// como código sólo lo de code-files.js, sin `.sql` ni lo que suma la organización, y listaba archivos borrados, que no
+// están en el sello ni en la copia.
+// 🔴 mutación: volver a `isCode` solo, o sacar el filtro de borrados.
+test('T2c ListaDelPase_CodigoComoElPorton_SinBorrados: cuenta `.sql` y las extensiones de la organización, y deja afuera lo borrado', () => {
+  const back = repoDeJuguete('Back', { 'src/viejo.js': 'module.exports = 1;\n', 'src/queda.js': 'module.exports = 2;\n' });
+  const base = conRemoto(back, 'main');
+  fs.mkdirSync(path.join(back.repo, 'db'));
+  fs.writeFileSync(path.join(back.repo, 'db', '001.sql'), 'select 1;\n');
+  fs.mkdirSync(path.join(back.repo, 'lib'));
+  fs.writeFileSync(path.join(back.repo, 'lib', 'm.ex'), 'defmodule M do end\n');
+  fs.unlinkSync(path.join(back.repo, 'src', 'viejo.js'));
+  const sello = ft().seal(back.repo).tree;
+  // el árbol del arnés con una organización que suma `.ex`
+  const arbol = tmp('amr-arbol-');
+  fs.mkdirSync(path.join(arbol, 'scripts'));
+  fs.writeFileSync(path.join(arbol, 'scripts', 'install-tycon-hooks.sh'), '#!/bin/bash\n');
+  fs.writeFileSync(path.join(arbol, 'team-repos.json'), JSON.stringify({ version: 1,
+    public: { platform: 'github', org: 'acme', repo: 'h' }, profile: { platform: 'github', org: 'acme', repo: 'p' },
+    operations: { platform: 'github', org: 'acme', repo: 'o' }, stack: { code_extensions: ['.ex'] } }));
+  const f = path.join(tmp('amr-lista-'), 'congelado.json');
+  fs.writeFileSync(f, JSON.stringify({ sellos: {}, copias: {}, repos: [{ repo: back.repo, sello, base }] }));
+  const r = spawnSync(process.execPath, [FT, 'lista-del-pase', f], { encoding: 'utf8', env: { ...process.env, TYCON_GUIDES_DIR: arbol, HOME: tmp('amr-casa-') } });
+  assert.strictEqual(r.status, 0, salida(r));
+  assert.deepStrictEqual(JSON.parse(r.stdout).repos[0].files, ['db/001.sql', 'lib/m.ex'], 'el `.sql` y la extensión de la organización, sin el borrado');
+});
+
 // Corre el pase con un doble de agente: el doble anota el pedido de cada cazador en `anotar`, contesta con la base de
 // cada repo que nombra el pedido y, en la lente de completitud, devuelve `hallazgo` (si hay). El verificador de cada
 // lente confirma lo que recibe.

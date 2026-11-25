@@ -109,14 +109,17 @@ function baseDelPase(repo) {
 
 /**
  * Los archivos de código del cambio congelado de `repo`, relativos a él: lo distinto entre la base y el sello (lo
- * commiteado, lo que no y lo nuevo, porque el sello lo tiene todo). Sin base no se sabe qué cambió, y cuenta todo el
- * código del sello: un repo con código y sin base frena de más, nunca de menos. `{ files }` o `{ error }` en una línea.
+ * commiteado, lo que no y lo nuevo, porque el sello lo tiene todo), sin lo borrado, que no está en la copia. Código es
+ * lo que cuenta el portón del pase: lo de lib/code-files.js, con lo que sume la organización, más `.sql`. Sin base no
+ * se sabe qué cambió, y cuenta todo el código del sello: un repo con código y sin base frena de más, nunca de menos.
+ * `{ files }` o `{ error }` en una línea.
  */
 function archivosDeCodigo(repo, base, sello) {
-  const r = git(['-C', repo, ...(base ? ['diff', '--name-only', '-z', base, sello] : ['ls-tree', '-r', '--name-only', '-z', sello])]);
+  const r = git(['-C', repo, ...(base ? ['diff', '--name-only', '-z', '--diff-filter=d', base, sello] : ['ls-tree', '-r', '--name-only', '-z', sello])]);
   if (!r.ok) return { error: `${path.basename(repo)}: no pude leer el cambio (${unaLinea(r.err)})` };
   const { isCode } = require('./code-files.js');
-  return { files: r.crudo.split('\0').filter((f) => f && isCode(f)) };
+  const extra = require('./stack-config.js').orgExtra();
+  return { files: r.crudo.split('\0').filter((f) => f && (isCode(f, { extra }) || /\.sql$/i.test(f))) };
 }
 
 /**
@@ -502,7 +505,11 @@ function sealAndFreeze({ stateDir, sid, etiqueta, repos, tipo = 'revisores', sto
     const reusable = copiaReusable(previas, repo, s.tree);
     let copy = reusable && reusable.copy;
     if (!reusable) {
-      const f = freeze(repo, s.tree, copyDir(stateDir, sid, etiqueta, repo));
+      // la carpeta de esta etiqueta puede existir (la vuelta se relanza) y ser la copia que otra vuelta reusó, que el pase
+      // abierto sigue leyendo: no se pisa, la copia nueva va al lado, con el sello en el nombre
+      let destino = copyDir(stateDir, sid, etiqueta, repo);
+      if (fs.existsSync(destino)) destino = copyDir(stateDir, sid, `${etiqueta}-${s.tree.slice(0, 12)}`, repo);
+      const f = freeze(repo, s.tree, destino);
       if (f.error) { deshacer(); return { error: f.error }; }
       copy = f.copy;
       nuevas.push(copy);
@@ -516,7 +523,8 @@ function sealAndFreeze({ stateDir, sid, etiqueta, repos, tipo = 'revisores', sto
     const protegidas = Array.isArray(noBorrar) ? noBorrar
       : previas.filter((v) => v.tipo === 'pase').flatMap((v) => (v.repos || []).map((r) => r.copy));
     for (const c of protegidas) if (c) quedan.add(c);
-    for (const v of previas.filter((x) => x.tipo === 'revisores' && x.etiqueta !== etiqueta)) {
+    // también las de una vuelta anterior con la misma etiqueta (relanzada): su copia ya no se compara
+    for (const v of previas.filter((x) => x.tipo === 'revisores')) {
       for (const r of v.repos || []) {
         if (!r.copy || quedan.has(r.copy)) continue;
         try { if (fs.existsSync(r.copy)) remover(r.copy); } catch (_) { /* la barre la próxima */ }

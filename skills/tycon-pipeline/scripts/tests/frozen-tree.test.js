@@ -1744,6 +1744,26 @@ test('T8 SealAndFreeze_CambioOCopiaTocada_CopiaDeNuevo_Vuelta2NoBorraLaQueNombra
   assert.strictEqual(en(v2, C.codigo.repo).copy, en(v1, C.codigo.repo).copy);
 });
 
+// Hallazgo del pase (integration-contracts): una vuelta que se relanza con la misma etiqueta rearmaba su copia en la
+// misma carpeta, aunque el pase abierto la estuviera leyendo porque la reusó.
+test('T8c SealAndFreeze_MismaEtiqueta_NoPisaLaCopiaQueElPaseReuso @story-8.330 @ac-8 — relanzar la vuelta 1 con un cambio arma su copia aparte; la del pase sigue siendo la de su sello', () => {
+  // 🔴 rojo si: la vuelta relanzada vuelve a armar su copia en la carpeta que el pase reusó y la pisa con otro sello.
+  const C = corrida('s-ft-reusa-misma-etiqueta');
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'a.js'), 'module.exports = 10;\n');
+  assert.strictEqual(C.vuelta().r.status, 0);
+  const pase = congelarElPase(C);
+  const delPase = pase.repos.find((p) => p.repo === C.codigo.repo);
+  assert.strictEqual(delPase.copy, ft().copyDir(C.estado(), C.sid, 'rev-iter1', C.codigo.repo), 'el pase reusó la copia de la vuelta 1');
+  const l = C.correr('marker.js', ['mark-adversarial-launched', 'r1', '4']);
+  assert.strictEqual(l.status, 0, salida(l));
+  fs.writeFileSync(path.join(C.codigo.repo, 'src', 'a.js'), 'module.exports = 11;\n');
+  assert.strictEqual(C.vuelta().r.status, 0, 'la vuelta 1 se relanza con el cambio');
+  assert.deepStrictEqual(ft().verify(C.codigo.repo, delPase.copy, delPase.tree), { ok: true }, 'la copia que lee el pase sigue siendo la de su sello');
+  const v = ft().ultimaVuelta(C.estado(), C.sid, 'revisores').repos.find((x) => x.repo === C.codigo.repo);
+  assert.notStrictEqual(v.copy, delPase.copy, 'la vuelta relanzada armó su copia aparte');
+  assert.deepStrictEqual(ft().verify(C.codigo.repo, v.copy, v.tree), { ok: true });
+});
+
 test('T8b SealAndFreeze_Vuelta2_NoBorraLaCopiaDelPaseAbierto @story-8.330 @ac-8 — la copia del pase que reusó la vuelta 1 sigue en disco mientras el pase no se anota', () => {
   // 🔴 rojo si: la vuelta 2 borra, con las copias de la vuelta 1, la copia que el pase abierto sigue leyendo.
   const C = corrida('s-ft-reusa-abierto');
