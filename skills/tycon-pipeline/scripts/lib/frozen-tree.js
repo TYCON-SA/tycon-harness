@@ -83,6 +83,31 @@ function puntoComunConMain(repo) {
 }
 
 /**
+ * La base del pase adversarial en `repo` (historia 8.330): el punto en común de `HEAD` con su rama principal, traída antes
+ * del remoto, porque el pase compara contra lo último. La rama es la de `origin/HEAD`, `origin/main` u `origin/master`,
+ * la primera que exista: un repo con `master` también tiene base. `{ base, rama }`, o `{ base: null, sin_base }` con el
+ * motivo en una línea si el remoto no contesta o no hay rama principal: no frena acá, lo decide el paso, que sabe si ese
+ * repo tiene código en el diff. No es `puntoComunConMain`, que es la referencia del sello para el cierre.
+ */
+function baseDelPase(repo) {
+  const e = entornoDeGit();
+  const correr = (args, timeout) => {
+    const r = spawnSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout, env: e.idiomaFijo(e.sinGitDelPadre(process.env), {}) });
+    return { ok: !r.error && r.status === 0, out: String(r.stdout || '').trim(), err: String((r.error && r.error.message) || r.stderr || '').trim() };
+  };
+  const traer = correr(['fetch', '-q', 'origin'], 120000);
+  if (!traer.ok) return { base: null, sin_base: `no se pudo traer origin (${unaLinea(traer.err)})` };
+  const cabeza = correr(['symbolic-ref', '-q', 'refs/remotes/origin/HEAD'], 15000);
+  const candidatas = [cabeza.ok ? cabeza.out : null, 'refs/remotes/origin/main', 'refs/remotes/origin/master'].filter(Boolean);
+  const rama = candidatas.find((ref) => correr(['show-ref', '--verify', '--quiet', ref], 15000).ok);
+  if (!rama) return { base: null, sin_base: 'el remoto no tiene rama principal (origin/HEAD, origin/main ni origin/master)' };
+  const corta = rama.replace(/^refs\/remotes\//, '');
+  const mb = correr(['merge-base', 'HEAD', rama], 30000);
+  if (!mb.ok || !/^[0-9a-f]{40,64}$/.test(mb.out)) return { base: null, sin_base: `sin punto en común con ${corta} (${unaLinea(mb.err || mb.out)})` };
+  return { base: mb.out, rama: corta };
+}
+
+/**
  * Deja los archivos de una carpeta de sólo lectura (o, con `escribible`, les devuelve el permiso al dueño). Las carpetas
  * quedan escribibles por su dueño: así cualquiera que limpia su carpeta temporal la puede borrar; un archivo agregado o
  * cambiado lo atrapa `verify`, que vuelve a sellar la copia.
@@ -774,7 +799,7 @@ function procedencia(repo, { env = process.env, home = os.homedir(), proceso = '
 }
 
 module.exports = {
-  seal, puntoComunConMain, freeze, gitDeLaCopia, verify, changed, anidadosConCambios, copyDir, remove, sweep, reposDe, reposDelPase, hermanosCambiados, sealAndFreeze, vueltas, ultimaVuelta, seccionDelContexto, sinPapeleoDeLaHistoria, procedencia,
+  seal, puntoComunConMain, baseDelPase, freeze, gitDeLaCopia, verify, changed, anidadosConCambios, copyDir, remove, sweep, reposDe, reposDelPase, hermanosCambiados, sealAndFreeze, vueltas, ultimaVuelta, seccionDelContexto, sinPapeleoDeLaHistoria, procedencia,
   contenidoDelSello, tipoContraElSello, vueltaCerradaDeLosRevisores, tiposDesdeLaVuelta,
 };
 
