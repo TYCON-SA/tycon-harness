@@ -11,10 +11,13 @@
  *
  *   BLANKS1  el cierre y el comentario a mano dan lo mismo que las expresiones de antes (casos y textos al azar)
  *   BLANKS2  el recorte de las puntas a mano da lo mismo que la expresión de antes
- *   BLANKS6  el gancho entero decide en menos de 5 s con 40 KB de `cp a b <<<x;` repetido, 40 KB de `<` detrás de un cp
- *            y 200 KB de `cp a b \` en renglones continuados
- *   BLANKS3  el gancho entero decide en menos de 3 s con 40 KB en cinco formas (espacios en un heredoc, `;` en un
+ *   BLANKS6  el gancho entero decide en menos de 5 s de CPU con 40 KB de `cp a b <<<x;` repetido, 40 KB de `<` detrás
+ *            de un cp y 200 KB de `cp a b \` en renglones continuados
+ *   BLANKS3  el gancho entero decide en menos de 3 s de CPU con 40 KB en cinco formas (espacios en un heredoc, `;` en un
  *            heredoc, espacios en `bash -c`, espacios por un tubo a `sh`, renglones vacíos en un heredoc)
+ * El gancho entero se mide por el tiempo de CPU de su proceso, no por el reloj de pared: en una máquina cargada (la CI
+ * con varias suites a la vez y la cola llena) el reloj cuenta también lo que el proceso esperó su turno, y una prueba
+ * sana quedaba en rojo. La CPU cuenta el trabajo del gancho, que es lo que crece con una expresión mala.
  *   BLANKS4  los segmentos, las redirecciones, el `sh -c` y la de borrados dan lo mismo que las expresiones de antes
  *   BLANKS5  los destinos se leen en menos de 1,5 s con 150 KB de `$(` o `${` sin cerrar detrás de `>` o `<`
  *   BLANKS7  los destinos de un `cp` se leen en menos de 1,5 s con 100 KB de blancos o tabuladores entre sus palabras
@@ -103,17 +106,24 @@ test('BLANKS4 Segmentos_Redirecciones_ShellConC_IgualQueAntes', () => {
   }
 });
 
-// El gancho entero con un comando, en una casa de juguete: `{ status, stderr, ms }`.
+// La marca con que el proceso del gancho dice, al salir, cuánta CPU gastó (todos sus hilos, en ms).
+const MARCA_CPU = '__blanks_cpu_ms=';
+const CPU_AL_SALIR = `process.on('exit', () => { const u = process.cpuUsage(); process.stderr.write('\\n${MARCA_CPU}' + Math.round((u.user + u.system) / 1000) + '\\n'); });\n`;
+
+// El gancho entero con un comando, en una casa de juguete: `{ status, stderr, ms }`, con `ms` la CPU que gastó su proceso
+// (Infinity si no llegó a decirla: lo cortó el tope de 60 s o murió).
 function correrElGancho(comando) {
   const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'blanks-casa-'));
   fs.mkdirSync(path.join(casa, '.claude'), { recursive: true });
   try {
+    const cpu = path.join(casa, 'cpu-al-salir.js');
+    fs.writeFileSync(cpu, CPU_AL_SALIR);
     const entrada = JSON.stringify({ session_id: 'blanks', cwd: os.tmpdir(), hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: comando } });
-    // stable-data: el reloj mide cuánto tarda el gancho, que es lo que se prueba; ninguna fecha entra en el resultado
-    const desde = Date.now();
-    const r = spawnSync(process.execPath, [HOOK], { input: entrada, encoding: 'utf8', timeout: 60000, maxBuffer: 1 << 26,
+    const r = spawnSync(process.execPath, ['--require', cpu, HOOK], { input: entrada, encoding: 'utf8', timeout: 60000, maxBuffer: 1 << 26,
       env: { ...process.env, HOME: casa, USERPROFILE: casa, TYCON_HOME: path.join(casa, '.tycon') } });
-    return { status: r.status, stderr: `${r.stdout || ''}${r.stderr || ''}`, ms: Date.now() - desde };
+    const salida = `${r.stdout || ''}${r.stderr || ''}`;
+    const m = new RegExp(`${MARCA_CPU}(\\d+)`).exec(salida);
+    return { status: r.status, stderr: salida, ms: m ? Number(m[1]) : Infinity };
   } finally { fs.rmSync(casa, { recursive: true, force: true }); }
 }
 

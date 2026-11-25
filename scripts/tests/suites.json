@@ -1372,6 +1372,11 @@
     },
     {
       "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/inherited-cases.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/ci-red-close.test.js",
       "requiere": []
     },
@@ -1533,6 +1538,12 @@
       "__nota": "qué criterios tienen una prueba que corre de noche, lo que pide la regla de la entrada a firmas y frenos (8.310)",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/nightly-coverage.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "un criterio declarado imposible de probar en vivo queda cubierto sin firma si la última noche, de hace menos de 36 h, corrió en verde su prueba y esa prueba ya estaba en main. Lab con un repo de git de verdad",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/nightly-green.test.js",
       "requiere": []
     },
     {
@@ -5459,6 +5470,12 @@
       "__nota": "scripts/hooks/temp-sweep.js, el barrido diario de las carpetas temporales viejas. Sobre una carpeta de prueba dentro de una carpeta temporal de verdad: borra la carpeta y el archivo viejos con sufijo al azar; deja el nombre que escribe una persona (palabra, fecha, versión) y los de otras aplicaciones; deja lo que cambió dentro del plazo (también por fecha de cambio), lo que tiene un socket, la carpeta de trabajo de un proceso vivo y la que tiene un archivo abierto (con un Node de verdad lanzado ahí), lo de otro usuario, los enlaces, la entrada que otro alcanza con una carpeta donde otro escribe y la que tiene una carpeta ilegible que se deja atravesar; no mira una raíz donde cualquiera escribe sin sticky ni una ruta fuera de las carpetas temporales; sin la lista de procesos vivos no borra; lo que no se deja borrar se nombra; el camino de Windows (cambio de nombre y vuelta) se ejercita en cualquier plataforma; con el tope agotado cuenta pendientes. El gancho como proceso, con un HOME de prueba por caso: dice su línea, sella el día y calla al segundo arranque, --force pasa de nuevo, un sello futuro cuenta como vencido, cortado por el tope vuelve en una hora, los dos interruptores no tocan nada, los valores que no valen se dicen, y suelto (sin la librería del sello) no barre y lo dice. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/temp-sweep.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "scripts/hooks/disk-notice.js, el aviso de disco casi lleno (story 8.164). Con el disco, la lista y la medición de juguete: al 10 % avisa con las cinco cosas que más ocupan y sus comandos, al 40 % calla y no mide; lo que no existe no se nombra; la medición que no vuelve a tiempo sale «no medido» y va siempre; el mismo día repite la medición sin volver a medir y al otro día mide; la lista cambia por sistema (Windows sin Homebrew). El gancho como proceso, con un HOME de prueba, el disco fingido y programas de juguete con el nombre de cada comando de limpieza: muestra los comandos y no corre ninguno; con el disco alto o apagado, calla. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/disk-notice.test.js",
       "requiere": []
     },
     {
