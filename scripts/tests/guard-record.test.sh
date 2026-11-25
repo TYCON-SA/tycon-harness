@@ -602,6 +602,24 @@ for f in "${SES_FRENOS[@]}"; do
   i=$((i+1))
 done
 
+# ── T18 · las firmas del carril corto quedan con su nombre (fila 176) ────────────────────────────────────────
+# El freno de seguridad anota la firma que aprobó la ventana como el escape del renglón. `adhoc-lane` y sus variantes
+# no estaban en la lista cerrada: el renglón salía sin el nombre y dejaba «constancia-freno NO PUDO ANOTAR». El freno
+# de seguridad anota con la biblioteca del arnés; la copia del freno de producción sólo anota los suyos.
+for libt in "$LIB"; do
+  for esc in adhoc-lane adhoc-lane:sobre-cupo adhoc-lane:ci-rojo adhoc-lane:datos adhoc-lane:guardado-ajeno; do
+    mundo
+    HOME="$CASA" node -e 'require(process.argv[1]).anotar({ freno: "safety-guard", regla: "ESC-C4", veredicto: "escape", via: "click", cmd: "x", sesion: "s18", escape: process.argv[2], home: process.env.HOME })' "$libt" "$esc" 2>/dev/null
+    anotado="$(tail -1 "$(REG)" 2>/dev/null | node -e 'let s="";process.stdin.on("data",(d)=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).escape||"SIN")}catch(_e){process.stdout.write("ILEGIBLE")}})')"
+    fallo="$(grep -l "NO PUDO ANOTAR" "$CASA"/.tycon/state/hook-errors.log "$CASA/$ESTADO"/*.log 2>/dev/null | head -1)"
+    if [ "$anotado" = "$esc" ] && [ -z "$fallo" ]; then
+      ok "T18 ${esc}: el renglón lleva el nombre de la firma y no deja «no pude anotar»"
+    else
+      no "T18 ${libt} ${esc}: escape anotado=«${anotado}»${fallo:+, dejó «NO PUDO ANOTAR» en ${fallo}}"
+    fi
+  done
+done
+
 echo "─────────────────────────────"
 echo "constancia-freno: $pasaron ok · $fallos fallos"
 [ "$fallos" = "0" ] || exit 1
