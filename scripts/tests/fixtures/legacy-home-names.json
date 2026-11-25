@@ -9,6 +9,13 @@
       "retired_by": "8.24"
     },
     {
+      "path": "scripts/production/guard-libs/setup/harness/tycon-home.js",
+      "why": "la copia de tycon-home.js que viaja con el freno de producción (/opt/tycon/setup/harness/): es la misma definición de dónde vive el arnés que su fuente, y las otras copias del freno le piden sus rutas",
+      "retire_with": "con su fuente: 8.23 tanda B (las rutas pasan a ~/.tycon) y tanda E (el nombre viejo sale)",
+      "retire_after": "2026-12-07",
+      "retired_by": "8.24"
+    },
+    {
       "path": "scripts/lib/state-dir.sh",
       "why": "la misma definición que tycon-home.js, dicha en shell para los hooks que no pueden pagar el arranque de Node en cada comando (story 8.150): la única copia de la ruta en shell; su paridad con tycon-home.js la mide scripts/tests/state-dir-parity.test.js",
       "retire_with": "8.23 tanda E (el nombre viejo sale)",

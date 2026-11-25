@@ -17,7 +17,7 @@
  *
  * ── EL PROPIO CLON PRIMERO ─────────────────────────────────────────────────────────────
  * Los dos repos internos se unen en uno, con `skills/` y `agents/` en la raíz. Sin variable, si el clon donde vive
- * este archivo es unido, las skills son las suyas: contestar siempre `~/.claude/agent-skills` haría que una prueba
+ * este archivo es unido, las skills son las suyas: contestar siempre las skills instaladas haría que una prueba
  * corrida en un clon de trabajo del repo unido leyera las skills INSTALADAS en la máquina y diera verde sin haber
  * probado el cambio.
  *
@@ -28,13 +28,13 @@
  *     1. la variable `TYCON_SKILLS_DIR` (o `valor`, si se pasa; '' = «sin variable»)      → source: 'variable'
  *     2. el propio clon, si es unido — `isSingleRepo()` de canonical-path.js:
  *        trae skills/tycon-pipeline y agents/ en su raíz                                  → source: 'own-clone'
- *     3. `~/.claude/agent-skills`, exista o no (lo de siempre)                            → source: 'installed'
+ *     3. las skills instaladas (`installedSkillsDir` de tycon-home.js), existan o no      → source: 'installed'
  *     `repo` es la raíz (la que trae `skills/` y `agents/`); `skills`, la carpeta de skills.
  *     Con dos repos físicos (el clon del arnés sin `skills/`) no cambia nada: 1 y 3 son lo que había.
  *
  *   resolveInstalledSkillsDirs([valor]) → { repo, skills, source }      ← para quien ESCRIBE rutas en la máquina
  *     1. la variable                                                                      → 'variable'
- *     2. `~/.claude/agent-skills`, si existe (la carpeta, o el enlace: se devuelve su ruta) → 'installed'
+ *     2. las skills instaladas, si existen (la carpeta, o el enlace: se devuelve su ruta)  → 'installed'
  *     3. lo que diga resolveSkillsDirs() (el propio clon si es unido; si no, lo instalado)
  *     POR QUÉ: los desplegadores del lado Codex escriben esta ruta en
  *     `~/.codex/hooks.json` y enlazan `~/.codex/skills` hacia ella. Con «el propio clon primero», apenas el clon
@@ -59,12 +59,11 @@ const os = require('os');
 const path = require('path');
 
 const OWN_CLONE = path.resolve(__dirname, '..', '..');
-// dónde viven las skills instaladas lo sabe scripts/setup/harness/tycon-home.js. Se carga
-// SI ESTÁ, por su ruta relativa: la copia de este archivo que viaja al freno de producción (/opt/tycon/lib/) lo encuentra
-// en /opt/tycon/setup/harness/ (misma posición relativa; lo copia su instalador) y, si no está, vale la ruta de siempre.
+// dónde viven las skills instaladas lo sabe scripts/setup/harness/tycon-home.js, que está siempre al lado por su ruta
+// relativa: en el repo, y en /opt/tycon/setup/harness/ para la copia de este archivo que viaja al freno de producción
+// (/opt/tycon/lib/; lo copia su instalador). Se carga cuando hace falta.
 const TYCON_HOME_LIB = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
-const tyconHome = fs.existsSync(TYCON_HOME_LIB) ? require(TYCON_HOME_LIB) : null;
-const installedRepo = () => (tyconHome && typeof tyconHome.installedSkillsDir === 'function' ? tyconHome.installedSkillsDir(os.homedir()) : path.join(os.homedir(), '.claude', 'agent-skills'));
+const installedRepo = () => require(TYCON_HOME_LIB).installedSkillsDir(os.homedir());
 
 /** La variable, en sus dos lecturas (raíz o carpeta de skills). */
 function fromVariable(v) {

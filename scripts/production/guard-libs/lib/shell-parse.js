@@ -1120,8 +1120,8 @@ function generar(seq, vencido) {
 
 /**
  * La lectura gruesa (presupuesto agotado o reloj vencido): cada rango vale `*`, y cada lista vale `*` MÁS sus alternativas
- * que cruzan una `/`, leídas gruesas a su vez. 🔴 Un `*` no cruza `/`: con sólo `*`, `~/.claude/{.tycon-pipeline/x.json,
- * {1..5000}}` quedaba en `~/.claude/*` y el nombre entero desaparecía (8.14 #11, AC 15). Con tope: pasado `COARSE_LIMIT`,
+ * que cruzan una `/`, leídas gruesas a su vez. 🔴 Un `*` no cruza `/`: con sólo `*`, `~/casa/{.estado/x.json,
+ * {1..5000}}` quedaba en `~/casa/*` y el nombre entero desaparecía (8.14 #11, AC 15). Con tope: pasado `COARSE_LIMIT`,
  * null, y quien llama suma la palabra cruda como patrón.
  */
 const COARSE_LIMIT = 256;

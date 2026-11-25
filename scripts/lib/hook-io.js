@@ -23,8 +23,8 @@
  *
  * Consumidores (los registros con matcher de edición + quien lo necesite):
  *   - agent-skills/skills/tycon-pipeline/scripts/dispatch.js (pre-edit y post-edit)
- *   - ~/.claude/tycon-harness/scripts/hooks/rebuild-before-verify.js (marca PostToolUse)
- * Todos lo requieren vía TYCON_GUIDES_DIR (default ~/.claude/tycon-harness) CON
+ *   - scripts/hooks/rebuild-before-verify.js del arnés instalado (marca PostToolUse)
+ * Todos lo requieren vía TYCON_GUIDES_DIR (por defecto, el lugar del arnés que da `placePath` de tycon-home.js) CON
  * FALLBACK a la conducta sin la lib si ésta no está: así el cambio se propaga seguro entre repos, en cualquier orden.
  *
  * Uso directo: node hook-io.js --selftest

@@ -29,7 +29,7 @@
  *   prefijosDePaquetes() → { PREFIJO: agente }   (lo usa scripts/instincts/instinct-draft.js; harness-audit.js recorre leerPaquetes())
  *   siblingsFromPacks() → [{ ruta, nombre }]   (los hermanos del corral del banco; lo usa controls-bench/advisor-runner.js)
  *
- * Dónde busca: `TYCON_PACKS_DIR`, o `~/.claude/agent-skills/packs` (misma resolución que
+ * Dónde busca: `TYCON_PACKS_DIR`, o `packs/` de las skills instaladas (`installedSkillsDir` de tycon-home.js; misma resolución que
  * `lib/packs.js` del pipeline, que toma la raíz de agent-skills desde su propia ruta).
  *
  * Las claves del manifiesto están en inglés. agent-skills se actualiza con su propio
@@ -47,7 +47,7 @@ const { readKeysDeep } = require('./legacy-names.js');
 const PACK_KEYS_WHERE = 'packs/pack.json';
 
 function dirPaquetes() {
-  return process.env.TYCON_PACKS_DIR || path.join(os.homedir(), '.claude', 'agent-skills', 'packs');
+  return process.env.TYCON_PACKS_DIR || path.join(require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')).installedSkillsDir(os.homedir()), 'packs');
 }
 
 function leerPaquetes({ packsDir, explicito } = {}) {

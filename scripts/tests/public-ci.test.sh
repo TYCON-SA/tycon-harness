@@ -597,6 +597,7 @@ installer_variant() { # <nombre> <archivo que cambia>
   cp "${ROOT}/scripts/ci/suites-for-change.js" "${R}/scripts/ci/suites-for-change.js"
   mkdir -p "${R}/scripts/lib" "${R}/skills/tycon-pipeline/scripts/lib"
   cp "${ROOT}/scripts/lib/skills-dir.js" "${ROOT}/scripts/lib/canonical-path.js" "${ROOT}/scripts/lib/legacy-names.js" "${R}/scripts/lib/"
+  mkdir -p "${R}/scripts/setup/harness"; cp "${ROOT}/scripts/setup/harness/tycon-home.js" "${R}/scripts/setup/harness/"
   printf '%s\n' 'module.exports = { isValidPattern: () => true, touches: () => false };' > "${R}/skills/tycon-pipeline/scripts/lib/touched-files.js"
   fake_sh "${R}/scripts/tests/inst.test.sh" suite-inst
   printf '%s\n' '{ "groups": { "installer": { "patterns": ["scripts/setup/**"] } }, "suites": { "inst.test.sh": { "group": "installer", "patterns": ["scripts/tests/inst.test.sh"] } } }' > "${R}/scripts/ci/heavy-suites.json"

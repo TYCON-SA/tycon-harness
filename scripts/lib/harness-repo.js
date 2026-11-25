@@ -24,7 +24,7 @@
 //
 // QUÉ ES «EL ARNÉS»:
 //   las identidades de referencia salen del `origin` del PROPIO clon del arnés (este archivo vive en
-//   `<clon>/scripts/lib/`) y del `origin` de agent-skills (`~/.claude/agent-skills`, o `TYCON_SKILLS_DIR`),
+//   `<clon>/scripts/lib/`) y del `origin` de agent-skills (las skills instaladas, o `TYCON_SKILLS_DIR`),
 //   cada uno seguido con la MISMA cadena que el repo juzgado (el propio clon puede ser descartable, con
 //   `origin` local). Así un clon del arnés alojado en otro servidor (un fork en GitHub) se reconoce a sí
 //   mismo. Sin `origin` legible en el propio clon no hay identidad: decide la carpeta, como siempre, y se
@@ -33,14 +33,14 @@
 //
 // LAS TRES FORMAS DE MÁQUINA (el carril de las máquinas las usa; no se cambian sin avisar):
 //   el arnés y agent-skills son UN repo, y mientras dura la mudanza una máquina puede tener
-//     (a) un árbol: el clon del repo unido, con `~/.claude/agent-skills` enlazado a él;
+//     (a) un árbol: el clon del repo unido, con las skills instaladas enlazadas a él;
 //     (b) dos clones, el viejo de agent-skills ya re-apuntado al remoto del arnés (mismo `origin`);
 //     (c) dos clones, el viejo sin re-apuntar (su `origin` es el remoto viejo).
 //   En las tres, los dos clones son «del arnés». (a) y (b) salen solas: es el `origin` del propio clon. La (c) no:
 //   «dónde están las skills» lo contesta `resolveSkillsDirs()`, que dice EL PROPIO CLON cuando trae
 //   `skills/`, y el remoto viejo se quedaría sin nadie que lo nombrara: el clon instalado de las skills pasaría a
-//   tratarse como un repo de producto. Por eso la referencia suma SIEMPRE el `origin` de lo instalado en
-//   `~/.claude/agent-skills`, además del propio clon y de lo que diga la regla.
+//   tratarse como un repo de producto. Por eso la referencia suma SIEMPRE el `origin` de las skills instaladas
+//   (`installedSkillsDir` de tycon-home.js), además del propio clon y de lo que diga la regla.
 //   Con `TYCON_SKILLS_DIR` puesta manda la variable, como en todo el arnés: lo instalado no suma.
 //   El remoto viejo es «del arnés» mientras exista ese clon instalado con ese `origin`: no hay ninguna URL escrita acá,
 //   y una máquina que ya re-apuntó deja de reconocer, sola, un clon suelto que siga en el remoto viejo.
@@ -63,10 +63,11 @@
 //   🔴 Lo que eso cambia: en esa máquina, todo clon de un repo del arnés pasa a serlo por su remoto, esté donde esté, y
 //   ahí dejan de correr los controles que excluyen a los repos del arnés (el portón de carril, el registro de
 //   retrospectivas, el aviso de trabajo sin subir). Sin la declaración, nada cambia.
-//   La ruta la da scripts/setup/harness/tycon-home.js, que se carga SI ESTÁ: una copia suelta de este archivo (el banco,
-//   un laboratorio) no lee la configuración de la máquina. Sólo cuenta si la carpeta declarada es la RAÍZ de su repo: si
-//   dejó de ser un clon, git subiría al repo de arriba y ése pasaría a ser «del arnés». Una declaración que no sirve no
-//   suma nada y la CLI la nombra (`declaracion_de_maquina`). Con identidades inyectadas tampoco se suma.
+//   La ruta la da scripts/setup/harness/tycon-home.js; uno sin esa función no declara nada (toda copia de esta
+//   biblioteca lo lleva al lado: le pide también dónde están las skills instaladas). Sólo cuenta si la carpeta
+//   declarada es la RAÍZ de su repo: si dejó de ser un clon, git subiría al repo de arriba y ése pasaría a ser «del
+//   arnés». Una declaración que no sirve no suma nada y la CLI la nombra (`declaracion_de_maquina`). Con identidades
+//   inyectadas tampoco se suma.
 // git se llama SIN las variables que deja un hook de git (GIT_DIR y compañía): con ellas puestas, `git -C <otro>` lee el
 //   repo del hook, y un repo de producto saldría «del arnés» con el remoto del repo que se está commiteando.
 // Límites declarados: mira `origin` aunque se trabaje contra otro remoto.
@@ -193,7 +194,7 @@ function identidadesDelArnes(opts = {}) {
   const env = opts.env || process.env;
   const crudas = readEnv(ENV_IDENTIDADES, { env, where: 'scripts/lib/harness-repo.js' });
   const inyectadas = crudas ? String(crudas).trim() : '';
-  const installed = path.join(os.homedir(), '.claude', 'agent-skills');
+  const installed = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')).installedSkillsDir(os.homedir());
   // lo que declara la máquina entra en la clave: la respuesta de una configuración no vale para otra
   const maquina = inyectadas ? null : declaracionDeMaquina(env);
   const clave = `${inyectadas}|${env.TYCON_SKILLS_DIR || ''}|${installed}|${maquina ? `${maquina.path || ''}|${maquina.problem || ''}` : ''}`;
