@@ -181,6 +181,41 @@ test('Aislada_HijoSinRed_ElEncierroLoAnota @story-8.314 @ac-2', { skip: ENCIERRO
   assert.ok(fs.existsSync(path.join(r, 'f.txt')), 'escribió en su repo');
 });
 
+test('F161b Aislada_EscrituraNegadaFueraDeLoAdmitido_LoDiceEnUnaLinea: un comando que falla porque el encierro le negó escribir fuera de su casa y de su repo se lleva una línea con qué hacer', { skip: ENCIERRO ? false : 'sin el encierro del sistema' }, (t) => {
+  // un here document de bash o un temporal de mktemp con otra carpeta dan un «Operation not permitted» suelto: el
+  // encierro no se abre, y la línea dice que esa suite va como humo común
+  const c = cuenta(t);
+  const afuera = path.join(c.b, 'afuera');
+  fs.mkdirSync(afuera);
+  const r = repo(path.join(c.b, 'repo'), {
+    '.advisors/dod-runtime/g.js': [
+      "const { spawnSync } = require('child_process');",
+      "const h = spawnSync('/bin/sh', ['-c', 'echo x > \"$1\"', 'sh', process.argv[2]], { stdio: 'inherit' });",
+      'process.exit(h.status === null ? 1 : h.status);',
+    ].join('\n'),
+    '.advisors/dod-runtime/falla.js': "console.error('esperaba 2, vino 3'); process.exit(1);\n",
+  });
+  const ev = path.join(r, '.advisors', 'dod-runtime');
+  const correr = (d) => humo(SMOKE, ev, '9.32', ['--', process.execPath, '.advisors/dod-runtime/g.js', d], { cwd: r, env: ambiente(c) });
+  const negada = correr(path.join(afuera, 'f.txt'));
+  assert.notStrictEqual(negada.status, 0, salida(negada));
+  assert.ok(!fs.existsSync(path.join(afuera, 'f.txt')), 'el encierro lo negó');
+  const lineas = salida(negada).split('\n').filter((l) => l.includes('humo común'));
+  assert.strictEqual(lineas.length, 1, `una línea que dice qué hacer: ${salida(negada)}`);
+  assert.match(lineas[0], /\[smoke-run\]/);
+  assert.match(lineas[0], /no se abre/);
+  // la línea no repite el texto del sistema que se busca en la salida
+  assert.doesNotMatch(lineas[0], /Operation not permitted|cannot create temp file/);
+  // gemelo: el mismo comando que escribe en su repo sale 0 y no se lleva la línea
+  const bien = correr(path.join(r, 'f.txt'));
+  assert.strictEqual(bien.status, 0, salida(bien));
+  assert.ok(!salida(bien).includes('humo común'), salida(bien));
+  // gemelo: un comando que falla por otra cosa (una aserción, sin nada negado) tampoco
+  const otro = humo(SMOKE, ev, '9.32', ['--', process.execPath, '.advisors/dod-runtime/falla.js'], { cwd: r, env: ambiente(c) });
+  assert.notStrictEqual(otro.status, 0, salida(otro));
+  assert.ok(!salida(otro).includes('humo común'), salida(otro));
+});
+
 test('F174 Aislada_HereDocDeBash_Anda: en el encierro, desde una carpeta no admitida, el bash del sistema escribe el temporal de su here document; otra escritura ahí sigue negada', { skip: ENCIERRO ? false : 'sin el encierro del sistema' }, (t) => {
   // fila 174: el bash 3.2 de macOS no mira TMPDIR para un here document; si no puede escribir en /var/tmp ni en /tmp (el
   // encierro se lo niega), lo escribe en la carpeta actual como «sh-thd-<n>». Negado, un freno de bash que lo usa no
@@ -672,6 +707,49 @@ test('T8 IsolatedRun_CarriesRootsWithGuard @story-8.321 @ac-1 @ac-3', { skip: !P
   for (const d of ['.tycon', '.claude', '.codex']) assert.ok(red.roots.includes(path.join(c.casa, d)), `vigila ${d}: ${red.roots}`);
   assert.match(red.log, /intentos\.jsonl$/);
   assert.ok(red.allow.includes(fuera), `admite la raíz del humo: ${red.allow}`);
+});
+
+// fila 226: lo mismo que el freno (214) en los demás guiones de bash del camino de los controles. Un here document o un
+// here-string pide un temporal que el bash 3.2 de macOS escribe en /var/tmp, /tmp o la carpeta actual, y dentro de la
+// corrida aislada, desde otra carpeta, el encierro se los niega. scripts/ci/public-ci.sh queda afuera: corre sólo en la
+// CI y nunca dentro del encierro.
+const SIN_HERE_DOCUMENTS = [
+  '.githooks/pre-commit-checks',
+  'skills/tycon-pipeline/scripts/smoke-run.sh',
+  'skills/tycon-pipeline/scripts/test-gate.sh',
+  'skills/tycon-pipeline/scripts/e2e-gate.sh',
+  'scripts/hooks/git-post-commit-global.sh',
+  'scripts/hooks/git-pre-push-global.sh',
+  'scripts/hooks/engram-pre-commit.sh',
+  'scripts/lib/legacy-names.sh',
+  'scripts/ci/check-bash32-quoting.sh',
+];
+test('F226 GuionesDeLosControles_SinHereDocuments: los guiones de bash del camino de los controles no usan here documents ni here-strings', () => {
+  const malos = [];
+  for (const rel of SIN_HERE_DOCUMENTS) {
+    fs.readFileSync(path.join(RAIZ, rel), 'utf8').split('\n').forEach((l, i) => {
+      if (!/^\s*#/.test(l) && l.includes('<<')) malos.push(`${rel}:${i + 1}: ${l.trim()}`);
+    });
+  }
+  assert.deepStrictEqual(malos, []);
+});
+
+test('F226 Aislada_LegacyNamesDesdeOtraCarpeta_Encuentra: dentro del encierro, desde una carpeta no admitida, la biblioteca de nombres viejos encuentra su entrada', { skip: ENCIERRO ? false : 'sin el encierro del sistema' }, (t) => {
+  const c = cuenta(t);
+  const afuera = path.join(c.b, 'afuera');
+  fs.mkdirSync(afuera);
+  const r = repo(path.join(c.b, 'repo'), {
+    '.advisors/dod-runtime/g.js': [
+      "const { spawnSync } = require('child_process');",
+      "const lineas = ['env', 'TYCON_OLD_SAMPLE', 'TYCON_NEW_SAMPLE', '0'].join('\\t');",
+      "const h = spawnSync('/bin/bash', ['-c', '. \"$1\"; _LEGACY_NAMES_LINES=\"$2\"; _legacy_names_find env old TYCON_OLD_SAMPLE', 'bash', process.argv[3], lineas], { cwd: process.argv[2], encoding: 'utf8' });",
+      "console.log('LEGADO ' + h.status + ' ' + JSON.stringify(h.stdout) + ' ' + (h.stderr || '').split('\\n').filter((x) => /temp file|here document/.test(x)).join(' | '));",
+    ].join('\n'),
+  });
+  const g = path.join(r, '.advisors', 'dod-runtime', 'g.js');
+  const s = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.33', ['--', process.execPath, g, afuera, path.join(RAIZ, 'scripts', 'lib', 'legacy-names.sh')], { cwd: r, env: ambiente(c) });
+  assert.match(salida(s), /LEGADO 0 "TYCON_OLD_SAMPLE\\tTYCON_NEW_SAMPLE\\t0"/, salida(s));
+  assert.doesNotMatch(salida(s), /cannot create temp file/, salida(s));
 });
 
 test('T99 RedDeLasPruebas_NadaTocoLaCasaReal @story-8.314', () => {
