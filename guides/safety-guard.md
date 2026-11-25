@@ -151,7 +151,8 @@ datos, secretos, la rama compartida y lo público, las firmas del dueño, las hi
 ningún modelo) o **preferencia** (un trámite o un estilo que un modelo podría decidir bien solo). Es una propuesta
 hasta que la firma el dueño, control por control, y no cambia lo que el freno decide. Vive, con su motivo y su fecha de
 revisión, en `scripts/metrics/controls-classification.json`; cuánto frenó cada uno, por modelo, lo dice
-`scripts/metrics/controls-table.js`.
+`scripts/metrics/controls-table.js`. Los controles del pipeline que frenan (un comando de `marker.js` o de `pipeline.js`
+que se niega) tienen también su clase, marcados `del_pipeline`.
 
 Lo que el reloj no cubre: si a un freno lo matan desde afuera, o no arranca, el comando pasa. No se les pone
 `onFailure` a estos ganchos a propósito: viven en la carpeta del usuario, y una actualización a medias dejaría a todas
