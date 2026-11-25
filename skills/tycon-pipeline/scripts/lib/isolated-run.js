@@ -50,6 +50,10 @@ const TYCON_HOME_LIB = path.join(RAIZ, 'scripts', 'setup', 'harness', 'tycon-hom
 const ROOTS_VAR = 'TYCON_REAL_HOME_GUARD_ROOTS';
 const LOG_VAR = 'TYCON_REAL_HOME_GUARD_LOG';
 const ALLOW_VAR = 'TYCON_REAL_HOME_GUARD_ALLOW';
+// la llave de prueba de Anthropic que quien lanza el humo pasa sólo para esa corrida, y las credenciales de afuera que
+// nunca llegan a la casa aparte
+const TEST_KEY_VAR = 'TYCON_TEST_ANTHROPIC_API_KEY';
+const CREDENCIALES_DE_AFUERA = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'];
 
 const INTERPRETE = /^(node|bash|sh|zsh|python3?|ruby|perl|deno|bun|npx|tsx)$/;
 const SHELL = /^(bash|sh|zsh)$/;
@@ -406,6 +410,15 @@ function exec({ argv, raices = [], env = process.env, userInfo, cwd = process.cw
     const admitidas = [...new Set(raices.flatMap((r) => [path.resolve(r), real(r)]))];
     const nuevo = { ...env };
     for (const k of ['TYCON_HOME', 'CLAUDE_CONFIG_DIR', 'CODEX_HOME']) delete nuevo[k];
+    // la credencial de Anthropic de quien lanza el humo no llega a la casa aparte. Una prueba en vivo que necesita Claude
+    // Code lleva una llave de prueba propia, que se pasa sólo para esa corrida en TYCON_TEST_ANTHROPIC_API_KEY y adentro
+    // es ANTHROPIC_API_KEY. La llave no se muestra
+    const llaveDePrueba = env.TYCON_TEST_ANTHROPIC_API_KEY;
+    for (const k of [...CREDENCIALES_DE_AFUERA, TEST_KEY_VAR]) delete nuevo[k];
+    if (llaveDePrueba) {
+      nuevo.ANTHROPIC_API_KEY = llaveDePrueba;
+      err(`[aislada] la casa aparte lleva la llave de prueba (${TEST_KEY_VAR}) como ANTHROPIC_API_KEY; la credencial de afuera no llega\n`);
+    }
     Object.assign(nuevo, { HOME: home, USERPROFILE: home, TMPDIR: tmp, TMP: tmp, TEMP: tmp, TYCON_TEST_RUN: '1',
       // la cobertura de quien llama queda fuera del encierro: su aviso, distinto en cada corrida, ensuciaría la salida
       NODE_V8_COVERAGE: '',
