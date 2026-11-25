@@ -155,6 +155,9 @@ const FRENOS = {
   // El tope de sesiones trabajando (scripts/hooks/session-cap-guard.js): anota sólo cuando niega abrir una sesión de
   // fondo. No tiene `escape`: ninguna variable lo apaga, el tope lo cambia una persona.
   'session-cap-guard': { reglas: ['tope'], veredictos: ['bloqueo'] },
+  // Cerrar la ejecución de otra sesión (`marker.js clear-session <sesión>`): anota cada una. `paso` = estaba completa y
+  // salió sin firma; `escape` = estaba abierta y pasó por la firma del dueño, que el freno de seguridad anota aparte.
+  'clear-session': { reglas: ['otra-sesion'], veredictos: ['paso', 'escape'] },
 };
 
 const REGLA_DESCONOCIDA = 'otra';
