@@ -830,7 +830,7 @@ const VIEJOS = /Validar la story(?! en)|Cerrar en ADO/;
 test('T25 ComoTrabaja_NingunNombreViejoDePaso @story-2.61.3 @ac-1 — ningún «Validar la story» ni «Cerrar en ADO» como nombre de paso', () => {
   // «Validar la story en …» es el pedido al validador, no el nombre del paso
   const archivos = ['scripts/site/texts.js', 'skills/tycon-pipeline/scripts/on-prompt.js', 'skills/tycon-pipeline/scripts/lib/story-gate.js',
-    'skills/tycon-pipeline/scripts/pipeline.js', 'skills/tycon-pipeline/scripts/lib/steps.js', 'mods/harness-mods/hooks/steps.mjs',
+    ...require(path.join(path.join(SCRIPTS, 'tests'), 'lib', 'pipeline-source.js')).files().map((f) => path.relative(ROOT, f)), 'skills/tycon-pipeline/scripts/lib/steps.js', 'mods/harness-mods/hooks/steps.mjs',
     'skills/tycon-pipeline/SKILL.md', 'skills/tycon-pipeline/steps/step-01-start.md', 'skills/tycon-pipeline/steps/step-02-validate-story.md',
     'skills/tycon-pipeline/steps/close-work-item.md', 'guides/organization-site.md'];
   for (const a of archivos) {
@@ -1603,7 +1603,7 @@ test('HowItWorks_CloseChecks_ShownAsBlocks @story-8.127 @ac-9 — cada paso mues
   assert.match(TX().t('es', pase.textKey), /preparar el pull request/);
   assert.match(TX().t('es', pase.textKey), /resultado/);
   // el del pase dice en qué paso se revisa
-  assert.ok(itemDe(seccionDe(html, 'adversarial-pass'), TX().t('es', pase.textKey)).includes(TX().t('es', 'paso.prepare-commit')), 'dice que frena al preparar el commit');
+  assert.ok(itemDe(seccionDe(html, 'adversarial-pass'), TX().t('es', pase.textKey)).includes(TX().t('es', 'paso.prepare-commit')), 'dice que frena al preparar el pull request');
   for (const idioma of ['es', 'en']) for (const r of S.STEP_CLOSE_CHECKS) assert.ok(TX().t(idioma, r.textKey), `${r.textKey} en ${idioma}`);
 });
 
@@ -1611,7 +1611,7 @@ test('HowItWorks_CloseChecks_MatchCompleteStep @story-8.127 @ac-10 — la tabla 
   const S = STEPS_LIB();
   const porPaso = S.closeControlsByStep();
   const ids = new Set([...S.STEPS.map((s) => s.id), S.CLOSE_STEP.id]);
-  const marker = fs.readFileSync(path.join(SCRIPTS, 'marker.js'), 'utf8');
+  const marker = require(path.join(SCRIPTS, 'tests', 'lib', 'marker-source.js'))(SCRIPTS);
   assert.match(marker, /const CONTROLES_DEL_PASO = STEPS_LIB\.closeControlsByStep\(\);/, 'marker.js arma su tabla con la de steps.js');
   for (const r of S.STEP_CLOSE_CHECKS) {
     assert.ok(ids.has(r.shownIn) && ids.has(r.checkedIn), `${r.textKey}: pasos que existen`);

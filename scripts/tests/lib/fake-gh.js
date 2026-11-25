@@ -30,7 +30,9 @@
 //   "remotes": { "<o>/<r>": "<ruta del repo bare>" }   POST pulls exige que la rama `head` exista allá (422 si no), como GitHub
 //   "projects": { "<dueño>#<número>": { id, fields: [ { id, name, dataType } ], items: { "<nodo del issue>": { id, values: { <id del campo>: n } } } } }
 //   "graphql_error": { type, message }   toda consulta GraphQL contesta ese error (un token sin permiso de proyectos)
-// GET repos/o/r/code-scanning/…: 404 «no analysis found», como un repo sin análisis de seguridad (para eso, `fail`).
+// GET repos/o/r/code-scanning/…: 404 «no analysis found», como un repo sin análisis de seguridad (para eso, `fail`); con
+//   "code_scanning": { "<o>/<r>": { "alerts": [ { number, state, rule, most_recent_instance, created_at } ] } }, el repo
+//   tiene análisis y GET code-scanning/alerts da sus alertas de la rama principal.
 // POST graphql (Projects v2): la consulta del proyecto de un dueño (organización o usuario) con sus campos, agregar un
 // issue (idempotente, como GitHub) y cargar el número de un campo. Un proyecto que no existe contesta NOT_FOUND.
 // Los issues traen `node_id` (`I_<o>/<r>#<n>`), el nodo con que GraphQL los nombra.
@@ -136,8 +138,20 @@ if (method === 'GET' && (m = base.match(/^repos\/([^/]+\/[^/]+)\/actions\/workfl
   out({ total_count: l.length, workflow_runs: pag(l) });
 }
 if (method === 'GET' && (m = base.match(/^repos\/([^/]+\/[^/]+)\/actions\/runs$/))) {
-  const l = ((st.runs || {})[m[1]] || []).filter((r) => !q.status || r.status === q.status);
+  const l = ((st.runs || {})[m[1]] || []).filter((r) => (!q.status || r.status === q.status) && (!q.event || r.event === q.event));
   out({ total_count: l.length, workflow_runs: pag(l) });
+}
+// Los trabajos de una corrida: "jobs": { "<id de la corrida>": [ { id, name, conclusion } ] }. El registro de un trabajo:
+// "job_logs": { "<id del trabajo>": "<texto>" }, en texto plano como lo da GitHub (no es JSON); sin registro, 404.
+if (method === 'GET' && (m = base.match(/^repos\/([^/]+\/[^/]+)\/actions\/runs\/(\d+)\/jobs$/))) {
+  const l = (st.jobs || {})[m[2]] || [];
+  out({ total_count: l.length, jobs: pag(l) });
+}
+if (method === 'GET' && (m = base.match(/^repos\/([^/]+\/[^/]+)\/actions\/jobs\/(\d+)\/logs$/))) {
+  const t = (st.job_logs || {})[m[2]];
+  if (t === undefined) err(404, 'Not Found');
+  process.stdout.write(String(t));
+  process.exit(0);
 }
 if (method === 'GET' && (m = base.match(/^repos\/([^/]+\/[^/]+)$/))) {
   const db = (st.default_branch || {})[m[1]];
@@ -348,16 +362,19 @@ if (method === 'POST' && base === 'graphql') {
     out({ data: { enqueuePullRequest: { mergeQueueEntry: { state: 'QUEUED' } } } });
   }
   // los abiertos de un repo de una sola vez (`pullRequests(states:OPEN`), con su lugar en la cola y su última caída:
-  // `queue_drop` (`{ kind: 'removed' | 'auto_merge_disabled', reason, at }`) es el último evento de GitHub que lo sacó
-  // de la cola o le apagó el auto-merge. `mergeable` sin decir sale UNKNOWN, como GitHub antes de calcularlo
+  // `queue_drop` (`{ kind: 'removed' | 'auto_merge_disabled', reason, at, before_sha, before_parents }`) es el último
+  // evento de GitHub que lo sacó de la cola o le apagó el auto-merge. Como en GitHub, `before_sha` es el commit que armó
+  // la cola (el merge de la destino con el pedido) y `before_parents` sus padres: la destino y la punta del pedido.
+  // `mergeable` sin decir sale UNKNOWN, como GitHub antes de calcularlo
   if (/pullRequests\(states:OPEN/.test(qy)) {
     if (st.queue_error) gqlErr('FORBIDDEN', 'Resource not accessible by integration');
     const repo = `${vars.owner}/${vars.name}`;
     const nodes = (st.pulls && st.pulls[repo] || []).filter((p) => (p.state || 'open') === 'open').map((p) => {
       const d = p.queue_drop;
+      const antes = d && d.before_sha ? { oid: d.before_sha, parents: { nodes: (d.before_parents || []).map((oid) => ({ oid })) } } : null;
       const evento = !d ? [] : [d.kind === 'auto_merge_disabled'
         ? { __typename: 'AutoMergeDisabledEvent', reason: d.reason, reasonCode: d.reason, createdAt: d.at }
-        : { __typename: 'RemovedFromMergeQueueEvent', reason: d.reason, createdAt: d.at, beforeCommit: d.before_sha ? { oid: d.before_sha } : null }];
+        : { __typename: 'RemovedFromMergeQueueEvent', reason: d.reason, createdAt: d.at, beforeCommit: antes }];
       return {
         number: p.number, isDraft: p.draft === true,
         mergeable: p.mergeable === false ? 'CONFLICTING' : p.mergeable === true ? 'MERGEABLE' : 'UNKNOWN',
@@ -408,6 +425,17 @@ if (method === 'POST' && base === 'graphql') {
   }
   gqlErr('UNKNOWN', 'consulta GraphQL de prueba desconocida');
 }
-// el análisis de seguridad: el repo de prueba no tiene, como contesta GitHub («no analysis found»)
+// el análisis de seguridad, con "code_scanning": { "<o>/<r>": { "alerts": [ … ] } }: el repo lo tiene prendido de fábrica, y
+// GET code-scanning/alerts?state=open da sus alertas abiertas como GitHub sin `ref` (las de la rama principal), en una página
+const cs = /^repos\/([^/]+\/[^/]+)\/code-scanning\/([^?]*)(?:\?(.*))?$/.exec(ruta || '');
+if (method === 'GET' && cs && st.code_scanning && st.code_scanning[cs[1]]) {
+  if (cs[2] === 'default-setup') out({ state: 'configured' });
+  if (cs[2] === 'alerts') {
+    const q = new URLSearchParams(cs[3] || '');
+    const todas = st.code_scanning[cs[1]].alerts || [];
+    out(Number(q.get('page') || 1) > 1 ? [] : todas.filter((a) => !q.get('state') || a.state === q.get('state')));
+  }
+}
+// sin eso, el repo de prueba no tiene análisis, como contesta GitHub («no analysis found»)
 if (method === 'GET' && /^repos\/[^/]+\/[^/]+\/code-scanning\//.test(ruta)) err(404, 'no analysis found');
 err(404, `ruta de prueba desconocida: ${method} ${ruta}`);

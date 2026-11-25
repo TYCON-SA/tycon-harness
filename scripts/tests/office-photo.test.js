@@ -1384,6 +1384,19 @@ test('T301 Agents_UnknownBase: si la base de Codex no se puede leer no se oculta
   assert.strictEqual(said.length, 1);
 });
 
+test('T301b Agents_BaseTakenAWhile_WaitsAndReadsIt @fila-83c: la base de Codex tomada por otro proceso unos instantes no es «no pude leer»', async () => {
+  const { holdCodexBase, exited } = require('./lib/codex-base-lock.js');
+  const { codexAgentThreads } = require(OFFICE);
+  const m = parkMachine();
+  const codexHome = toyCodexBase(m, [{ id: 'agente-1', source: 'exec' }]);
+  const child = await holdCodexBase(path.join(codexHome, 'state_5.sqlite'), 300);
+  const problems = [];
+  const agents = codexAgentThreads(codexHome, problems);
+  await exited(child);
+  assert.deepStrictEqual(problems, []);
+  assert.deepStrictEqual([...agents], ['agente-1']);
+});
+
 test('T302 Agents_CountedForTheirSession: la foto cuenta los agentes bajo el proceso de la sesión; sin procesos no dice cuántos', async () => {
   const m = parkMachine();
   const now = Date.now();
@@ -1607,4 +1620,44 @@ test('T4 Maquina_HiloOcupado_NoPierdeLaMemoria @story-8.301 @ac-1 — un hilo oc
   // un comando que de verdad no contesta se corta en su tope, sin esperar para siempre
   const hung = memoryCommand((cmd, args, opts, done) => ({ kill: () => done(new Error('cortado')) }))();
   await assert.rejects(hung, /tope de 1000 ms/);
+});
+
+// ── El turno de tarea pesada: quién corre una ejecución grande y cuántas suites, para la etiqueta de los racks ─────────
+
+/** Escribe un lugar del turno de tarea pesada (heavy-turn.js) en la carpeta de estado de `home`; un texto va tal cual. */
+const turnSlot = (home, name, turn) => {
+  const dir = path.join(stateDir(home), 'coordination');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, name), typeof turn === 'string' ? turn : JSON.stringify(turn));
+};
+const quietMachine = () => ({ platform: 'darwin', run: () => MEMORY_38_FREE, readCpus: cpuReads(cpu(0, 0), cpu(35, 65)), wait: waits(), previous: null, now: () => NOW });
+
+test('T340 Office_Foto_TraeElTurnoPesado @story-8.234 @ac-16 — la foto dice quién corre una ejecución grande y cuántas suites, sin inventar lo que no se sabe', async () => {
+  const { collect } = require(OFFICE);
+  const { spawnSync } = require('child_process');
+  const iso = new Date(NOW).toISOString();
+  // dos ejecuciones grandes, de la más vieja a la más nueva; la segunda sin nombre ni cuenta de suites
+  const home = emptyHome();
+  turnSlot(home, 'suite-turn-2.json', { pid: process.pid, sid: 'b', what: 'ejecución grande', at: NOW - 30000 });
+  turnSlot(home, 'suite-turn.json', { pid: process.pid, sid: 'a', session: 'Sesión A', what: '120 suites de tycon-harness', at: NOW - 60000 });
+  const data = await collect({ home, now: iso, siteUrl: noSite, machine: quietMachine() });
+  assert.deepStrictEqual(data.meta.turnoPesado, [{ sesion: 'Sesión A', suites: 120 }, {}]);
+  assert.deepStrictEqual(data.meta.maquina, { memoria: 62, procesador: 35 }, 'la carga sigue al lado');
+  // sin turno tomado, el campo no va
+  const none = await collect({ home: emptyHome(), now: iso, siteUrl: noSite, machine: quietMachine() });
+  assert.strictEqual('turnoPesado' in none.meta, false);
+  // el turno de un proceso que ya no vive no cuenta
+  const dead = emptyHome();
+  turnSlot(dead, 'suite-turn.json', { pid: spawnSync(process.execPath, ['-e', '']).pid, sid: 'a', session: 'Sesión A', what: '120 suites de x', at: NOW - 60000 });
+  assert.strictEqual('turnoPesado' in (await collect({ home: dead, now: iso, siteUrl: noSite, machine: quietMachine() })).meta, false);
+  // un lugar que no se puede leer va a los avisos, y el campo no va con datos inventados
+  const broken = emptyHome();
+  turnSlot(broken, 'suite-turn.json', '{roto');
+  const b = await collect({ home: broken, now: iso, siteUrl: noSite, machine: quietMachine() });
+  assert.strictEqual('turnoPesado' in b.meta, false);
+  // una sola vez: /wip ya lo anota al leer los mismos lugares, y la oficina no lo repite
+  assert.strictEqual(b.unreadable.filter((u) => /turno de las ejecuciones grandes .* no se puede leer/.test(u)).length, 1, b.unreadable.join(' | '));
+  // el lector de las firmas del dueño no mide la máquina: tampoco trae el turno
+  const owner = await collect({ home, now: iso, siteUrl: noSite, machine: false });
+  assert.strictEqual('turnoPesado' in owner.meta, false);
 });

@@ -521,7 +521,8 @@ withWaiverLog(() => {
   const texto = lineas.join('\n');
   check('T16 el bloqueo nombra el AC con firma descartada y el comando para volver a firmar',
     /#2/.test(texto) && /descart/i.test(texto) && /marker\.js runtime-waiver/.test(texto) && texto.includes(f.storyPath), texto);
-  const fuente = (n) => fs.readFileSync(path.join(__dirname, '..', n), 'utf8');
+  // marker.js con sus partes de lib/
+  const fuente = (n) => (n === 'marker.js' ? require('./lib/marker-source.js')(path.join(__dirname, '..')) : fs.readFileSync(path.join(__dirname, '..', n), 'utf8'));
   check('T16 marker.js y on-pre-commit.js imprimen ese mismo aviso',
     /avisoFirmasDescartadas\(/.test(fuente('marker.js')) && /avisoFirmasDescartadas\(/.test(fuente('on-pre-commit.js')));
 });
@@ -1124,6 +1125,25 @@ withWaiverLog(() => {
   check('"se envía por mail" SÍ es acción',
     esAccion('el comprobante se envía por mail al beneficiario') === true);
 
+  // --- (g) LOG: «registra un log» escribe una línea de diagnóstico, no cambia datos (fila 231, informe de
+  //     un dev del 24/11). Sólo 'registrar', con el log, la consola o la salida de errores pegado al verbo y
+  //     sin una tabla ni una base en la misma frase.
+  check('"registra un log con el motivo" NO es acción',
+    esAccion('si la llamada falla, el plugin registra un log con el motivo y devuelve 502') === false);
+  check('"se registra en el log un warning" NO es acción',
+    esAccion('cuando el token vence se registra en el log un warning') === false);
+  check('"registra el error en consola" NO es acción',
+    esAccion('el formulario registra el error en consola y muestra el aviso') === false);
+  // gemelos: un log que va a una tabla o una base es un dato; otro verbo de la frase sigue disparando
+  check('"registra un log de auditoría en la tabla AuditLog" SÍ es acción',
+    esAccion('el servicio registra un log de auditoría en la tabla AuditLog') === true);
+  check('"registra un log y guarda el pedido" SÍ es acción (guarda)',
+    esAccion('registra un log y guarda el pedido') === true);
+  check('"registra el pedido y lo informa en el log" SÍ es acción (el log no es lo registrado)',
+    esAccion('registra el pedido del cliente y lo informa en el log') === true);
+  check('"loguea" no está en la lista: "actualiza el estado y lo registra en el log" SÍ es acción (actualiza)',
+    esAccion('actualiza el estado y lo registra en el log') === true);
+
   // --- (c) La neutralización es POR APARICIÓN: si alguna sobrevive, el AC es de acción.
   //     Éste es el guard que evita que un "no" suelto apague un AC que sí muta.
   check('un verbo negado NO tapa a otro verbo sin negar en el mismo AC',
@@ -1725,6 +1745,83 @@ withWaiverLog(() => {
       JSON.stringify({ v: rX.perAc[1].verdict, s: rX.simulados }));
   }
 
+  // T105 — el mismo portón corrió dos specs y sólo uno simula: la fila cuyo spec no simula cuenta en vivo; la otra no.
+  // 🔴 mutación: con la descalificación por portón, otro spec que fabrica un 409 le quita la evidencia a éste
+  {
+    const f = makeWorkspace();
+    const fe = frente(f, { 'tests/story-9-9.spec.ts': SPEC_REAL, 'tests/story-9-9-diseno.spec.ts': SPEC_SIMULADO });
+    writeGate(f.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9', f.gatesLog, true, null, 0, fe);
+    const r = calc(f);
+    check('T105a RuntimeMatrix_OtroSpecDelPortonSimula_EsteCuentaEnVivo',
+      r.perAc[3].verdict === 'RUNTIME' && !simDe(r, 3).length, JSON.stringify({ v3: r.perAc[3].verdict, s: r.simulados }));
+
+    // al revés: el spec de la fila es el que simula, y otro spec del portón es real → no cuenta
+    const g = makeWorkspace();
+    const feG = frente(g, { 'tests/story-9-9.spec.ts': SPEC_SIMULADO, 'tests/story-9-9-otro.spec.ts': SPEC_REAL });
+    writeGate(g.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9', g.gatesLog, true, null, 0, feG);
+    const rG = calc(g);
+    check('T105b RuntimeMatrix_ElSpecDeLaFilaSimula_NoCuentaAunqueOtroSeaReal',
+      rG.perAc[3].verdict === 'NOT-RUN' && simDe(rG, 3).length === 1 && /story-9-9\.spec\.ts$/.test(simDe(rG, 3)[0].archivo),
+      JSON.stringify({ v3: rG.perAc[3].verdict, s: rG.simulados }));
+
+    // la fila que no nombra su spec se juzga por el portón entero, como siempre
+    const h = makeWorkspace();
+    cambiarHistoria(h, '`story-9-9.spec.ts::flujo`', '`story-9-9 flujo`');
+    const feH = frente(h, { 'tests/story-9-9.spec.ts': SPEC_REAL, 'tests/story-9-9-diseno.spec.ts': SPEC_SIMULADO });
+    writeGate(h.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9', h.gatesLog, true, null, 0, feH);
+    const rH = calc(h);
+    check('T105c RuntimeMatrix_FilaSinSuSpec_SeJuzgaPorElPortonEntero',
+      rH.perAc[3].verdict === 'NOT-RUN' && simDe(rH, 3).length === 1, JSON.stringify({ v3: rH.perAc[3].verdict, s: rH.simulados }));
+
+    // 🔴 mutación: en un portón donde un spec simula, el título @ac-3 de ese spec acreditaría la fila del spec limpio
+    const k = makeWorkspace();
+    const feK = frente(k, { 'tests/story-9-9.spec.ts': SPEC_REAL, 'tests/story-9-9-diseno.spec.ts': SPEC_SIMULADO });
+    writeGate(k.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9', k.gatesLog, true, ['flujo @ac-1 @ac-3'], 0, feK);
+    const rK = calc(k);
+    check('T105d RuntimeMatrix_TituloDelSpecSimulado_NoAcreditaLaFilaDelLimpio',
+      rK.perAc[3].verdict !== 'RUNTIME', JSON.stringify({ v3: rK.perAc[3].verdict }));
+    const p = makeWorkspace();
+    const feP = frente(p, { 'tests/story-9-9.spec.ts': SPEC_REAL, 'tests/story-9-9-diseno.spec.ts': SPEC_SIMULADO });
+    writeGate(p.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9', p.gatesLog, true, ['mira @ac-3', 'flujo @ac-1 @ac-3'], 0, feP);
+    const rP = calc(p);
+    check('T105d …y el título del spec limpio sí',
+      rP.perAc[3].verdict === 'RUNTIME', JSON.stringify({ v3: rP.perAc[3].verdict }));
+
+    // 🔴 mutación: el mismo título escrito en el spec limpio y en el que simula no se sabe de cuál es: no acredita
+    const q = makeWorkspace();
+    const feQ = frente(q, { 'tests/story-9-9.spec.ts': SPEC_REAL.replace("'mira @ac-3'", "'flujo @ac-3'"), 'tests/story-9-9-diseno.spec.ts': SPEC_SIMULADO });
+    writeGate(q.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9', q.gatesLog, true, ['flujo @ac-1 @ac-3'], 0, feQ);
+    const rQ = calc(q);
+    check('T105e RuntimeMatrix_TituloEnLosDosSpecs_NoAcredita',
+      rQ.perAc[3].verdict !== 'RUNTIME', JSON.stringify({ v3: rQ.perAc[3].verdict }));
+
+    // 🔴 mutación: un título que no está escrito en ningún spec limpio (uno armado en el que simula) no acredita
+    const u = makeWorkspace();
+    const feU = frente(u, { 'tests/story-9-9.spec.ts': SPEC_REAL, 'tests/story-9-9-diseno.spec.ts': SPEC_SIMULADO });
+    writeGate(u.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9', u.gatesLog, true, ['armado @ac-3'], 0, feU);
+    const rU = calc(u);
+    check('T105f RuntimeMatrix_TituloQueNoEstaEnNingunLimpio_NoAcredita',
+      rU.perAc[3].verdict !== 'RUNTIME', JSON.stringify({ v3: rU.perAc[3].verdict }));
+
+    // 🔴 mutación: una fila que nombra dos specs se juzgaba sólo por el primero; si el segundo simula, no cuenta
+    const v = makeWorkspace();
+    cambiarHistoria(v, '`story-9-9.spec.ts::flujo`', '`story-9-9.spec.ts::flujo` y `story-9-9-diseno.spec.ts`');
+    const feV = frente(v, { 'tests/story-9-9.spec.ts': SPEC_REAL, 'tests/story-9-9-diseno.spec.ts': SPEC_SIMULADO });
+    writeGate(v.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9', v.gatesLog, true, null, 0, feV);
+    const rV = calc(v);
+    check('T105g RuntimeMatrix_FilaConDosSpecs_ElSegundoSimula_NoCuenta',
+      rV.perAc[3].verdict === 'NOT-RUN' && simDe(rV, 3).length === 1, JSON.stringify({ v3: rV.perAc[3].verdict, s: rV.simulados }));
+
+    // 🔴 mutación: una fila que nombra un spec que el portón no leyó se juzga por el portón entero
+    const w = makeWorkspace();
+    cambiarHistoria(w, '`story-9-9.spec.ts::flujo`', '`story-9-9.spec.ts::flujo` (reemplaza a `viejo.spec.ts`)');
+    const feW = frente(w, { 'tests/story-9-9.spec.ts': SPEC_REAL, 'tests/story-9-9-diseno.spec.ts': SPEC_SIMULADO });
+    writeGate(w.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9', w.gatesLog, true, null, 0, feW);
+    const rW = calc(w);
+    check('T105h RuntimeMatrix_FilaQueNombraUnSpecQueNoCorrio_PorElPortonEntero',
+      rW.perAc[3].verdict === 'NOT-RUN', JSON.stringify({ v3: rW.perAc[3].verdict, s: rW.simulados }));
+  }
+
   // T2 — el mismo criterio declarado espera la firma de la persona, y con la firma queda perdonado.
   withWaiverLog(() => {
     const f = makeWorkspace({ ack: ['runtime_not_verifiable:', '  - ac: 1', '    reason: "sólo se probó con el servidor simulado"', '    covered_by: E1'] });
@@ -1961,8 +2058,17 @@ withWaiverLog(() => {
     const feM = frente(m, { 'tests/real.spec.ts': SPEC_REAL, 'tests/sim.spec.ts': SPEC_SIMULADO });
     writeGate(m.dodDir, '9.9', recentCompact(), 'PASS', 'real.spec.ts sim.spec.ts', m.gatesLog, true, null, 0, feM);
     const rM = calc(m);
-    check('T9 un portón con un filtro real y otro simulado es simulado entero @story-8.220 @ac-1',
-      rM.perAc[1].verdict === 'NOT-RUN' && simDe(rM, 1).length > 0, JSON.stringify({ v: rM.perAc[1].verdict, s: rM.simulados }));
+    // un portón con un filtro real y otro simulado: la fila se juzga por su spec, así que un spec vecino que fabrica un
+    // 409 no le quita la evidencia a la que no simula nada
+    check('T9 un portón con un filtro real y otro simulado: la fila del real cuenta en vivo @story-8.220 @ac-1',
+      rM.perAc[1].verdict === 'RUNTIME' && !simDe(rM, 1).length, JSON.stringify({ v: rM.perAc[1].verdict, s: rM.simulados }));
+    const n = makeWorkspace();
+    cambiarHistoria(n, '| E1 | `story-9-9.spec.ts::flujo` | 1,3 | e2e | x | y |', '| E1 | `sim.spec.ts::flujo` | 1 | e2e | x | y |');
+    const feN = frente(n, { 'tests/real.spec.ts': SPEC_REAL, 'tests/sim.spec.ts': SPEC_SIMULADO });
+    writeGate(n.dodDir, '9.9', recentCompact(), 'PASS', 'real.spec.ts sim.spec.ts', n.gatesLog, true, null, 0, feN);
+    const rN = calc(n);
+    check('T9 …y la fila del simulado no @story-8.220 @ac-1',
+      rN.perAc[1].verdict === 'NOT-RUN' && simDe(rN, 1).length > 0, JSON.stringify({ v: rN.perAc[1].verdict, s: rN.simulados }));
   }
 
   // T10 — cada vía de simulación, una por caso.
@@ -2211,6 +2317,24 @@ withWaiverLog(() => {
       JSON.stringify({ c: compartido.structuralError || compartido.returnedAcs, acs: compartido.acs, vacia: vacia.acs }));
   }
   {
+    // 🔴 Falla con: el archivo de pruebas de una pantalla trae la prueba de la tanda medida (T1, del AC 1) y las de otras
+    //    dos tandas, y sólo éstas la declaran en `tests:`. La corrida de la A suma su prueba ahí y la matriz pide como
+    //    bloqueantes los criterios de la B y la C (reportado por un producto; reproducido con esta
+    //    historia de juguete).
+    const TRES = ['  - name: A-la-primera', '    status: pending', '    acs: [1]', '  - name: B-la-segunda', '    status: pending', '    acs: [2]',
+      '    tests: [T6]', '  - name: C-la-tercera', '    status: pending', '    acs: [3]', '    tests_pending: [T7]'];
+    const FILAS = ['| T5 | `src/d.js::edita` | 1 | e2e | x | y |', '| T6 | `src/d.js::lista` | 2 | e2e | x | y |', '| T7 | `src/d.js::exporta` | 3 | e2e | x | y |'];
+    const f = atada(TRES, [], [], FILAS);
+    const r = correr(f, ['src/d.js']);
+    // sin la prueba de la tanda medida en el archivo, sigue siendo de las otras: vuelven
+    const ajeno = atada(TRES, [], [], FILAS.slice(1));
+    const r2 = correr(ajeno, ['src/d.js']);
+    check('Matrix_Batch_SharedTestFileWithMeasuredBatchTest_NoReturn',
+      !r.structuralError && (r.returnedAcs || []).length === 0 && !r.acs.includes(2) && !r.acs.includes(3)
+        && JSON.stringify(r.outOfBatchAcs) === '[2,3]' && !r2.structuralError && JSON.stringify(r2.returnedAcs) === '[2,3]',
+      JSON.stringify({ e: r.structuralError, acs: r.acs, ret: r.returnedAcs, out: r.outOfBatchAcs, ajeno: r2.structuralError || r2.returnedAcs }));
+  }
+  {
     const f = atada(LISTA, B_ARCH);
     const sin = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog, batch: 'A-la-primera' });
     const nula = correr(f, null);
@@ -2418,6 +2542,60 @@ withWaiverLog(() => {
         && noResuelve.warnings.filter((w) => NO_PUDE.test(w)).length === 1
         && veredictos(rSin) === '1:RUNTIME 2:RUNTIME 3:RUNTIME' && !rSin.warnings.some((w) => /no pude leer lo que carga/.test(w)),
       JSON.stringify({ v: veredictos(r), avisos, w: r.warnings.slice(0, 4), sin: rSin.warnings.slice(0, 3) }));
+  }
+  {
+    // las otras formas de cargar: `import … from`, `import()`, `require.resolve` y un `.ts` sin extensión en la carga
+    const vence = (carga, cambiado) => {
+      const l = labCarga(carga);
+      const destino = cambiado ? path.join(l.f.repo, cambiado) : l.cargado;
+      if (cambiado) { fs.writeFileSync(destino, 'export const x = 1;\n'); }
+      l.ahora(destino, 'module.exports = 2;\n');
+      return l.calcular();
+    };
+    const desdeImport = vence("import x from '../lib/x.js'");
+    const dinamico = vence("await import('../lib/x.js')");
+    const resuelto = vence("require.resolve('../lib/x.js')");
+    const ts = vence("import { x } from '../lib/y'", 'lib/y.ts');
+    // un `//` dentro de un texto no esconde la carga que sigue en el renglón; un import() no literal también se dice
+    const conBarras = labCarga("const u = 'a//b'; require(u)").calcular();
+    const importVariable = labCarga("const m = '../lib/x.js'; await import(m)").calcular();
+    // una suma de textos no es un literal; una comilla en una expresión regular no abre un texto
+    const suma = labCarga("const n = 'x'; require('../lib/' + n + '.js')").calcular();
+    const conRegex = labCarga("'a'.replace(/\"/g, 'b'); const u = \"http://x\"; require(u)").calcular();
+    // un comentario adentro de la llamada no la esconde; una llave antes del import tampoco; una carga comentada no carga
+    const comentarioAdentro = vence("require(/* la ayuda */ '../lib/x.js')");
+    const trasLlave = vence("if (1) {} import x from '../lib/x.js'");
+    const comentada = labCarga("// require('../lib/x.js')");
+    comentada.ahora(comentada.cargado, 'module.exports = 2;\n');
+    const rComentada = comentada.calcular();
+    const avisa = (r) => r.warnings.filter((w) => NO_PUDE.test(w)).length === 1;
+    check('Matriz_CargasPorImportYResolve_Vencen_YLasNoLiteralesSeDicen',
+      [desdeImport, dinamico, resuelto, ts, comentarioAdentro, trasLlave].every((r) => veredictos(r) === '1:RUNTIME 2:NOT-RUN 3:RUNTIME')
+        && [conBarras, importVariable, suma, conRegex].every(avisa)
+        && veredictos(rComentada) === '1:RUNTIME 2:RUNTIME 3:RUNTIME',
+      JSON.stringify({ i: veredictos(desdeImport), d: veredictos(dinamico), r: veredictos(resuelto), ts: veredictos(ts),
+        ca: veredictos(comentarioAdentro), ll: veredictos(trasLlave), com: veredictos(rComentada),
+        barras: conBarras.warnings.slice(0, 3), iv: importVariable.warnings.slice(0, 3), suma: suma.warnings.slice(0, 3), rx: conRegex.warnings.slice(0, 3) }));
+  }
+  {
+    // una prueba con la marca de la historia y sin criterios: lo que carga, si cambia, vence la evidencia entera (con la
+    // marca de un criterio vencía sólo ése: Matriz_CodigoQueCargaLaPruebaCambio_Vence). Una prueba que no se puede leer
+    // se juzga por la lista y lo dice; sin permisos que la cierren (Windows, o quien corre es root) no se puede armar
+    const sinCriterios = labCarga("require('../lib/x.js')", '@story-9.9');
+    sinCriterios.ahora(sinCriterios.cargado, 'module.exports = 2;\n');
+    const r = sinCriterios.calcular();
+    const cerrable = process.platform !== 'win32' && !(process.getuid && process.getuid() === 0);
+    let ri = null;
+    if (cerrable) {
+      const ilegible = labCarga();
+      const prueba = path.join(ilegible.f.repo, 'tests', 'feature.test.js');
+      fs.chmodSync(prueba, 0o000);
+      try { ri = ilegible.calcular(); } finally { fs.chmodSync(prueba, 0o644); }
+    }
+    check('Matriz_PruebaSinCriterios_VenceTodo_YLaIlegibleSeDice @story-8.282 @ac-10 @ac-12',
+      veredictos(r) === '1:NOT-RUN 2:NOT-RUN 3:NOT-RUN' && r.warnings.some((w) => /lib\/x\.js/.test(w))
+        && (!cerrable || ri.warnings.filter((w) => NO_PUDE.test(w)).length === 1),
+      JSON.stringify({ v: veredictos(r), w: r.warnings.slice(0, 3), ilegible: ri ? ri.warnings.slice(0, 4) : 'sin armar: no hay permisos que cierren un archivo acá' }));
   }
 }
 

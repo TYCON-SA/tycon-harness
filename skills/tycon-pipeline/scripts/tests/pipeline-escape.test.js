@@ -192,6 +192,131 @@ test('T10 FrontmatterWrite_ExencionQueYaEstaba_Pasa @story-8.96 — la que ya es
   assert.strictEqual(correr(ENCABEZADO, home, { tool_name: 'Write', tool_input: { file_path: borrador, content: juntas } }).status, 2);
 });
 
+// ── La exención de los revisores ──────────────────────────────────────────────────────────────────────────────────────
+
+// FrontmatterWrite_ExencionDeRevisores_PideLaFirma: `advisors_exempt` saltea los revisores al cerrar la historia, como
+// `dod_runtime_exempt` saltea la prueba en vivo. Agregarla, también al crearla, la decide el dueño con su firma sobre esa
+// historia; la que ya estaba y una guía que la nombra pasan
+test('T90 FrontmatterWrite_ExencionDeRevisores_PideLaFirma: agregar advisors_exempt pide la firma del dueño sobre la historia', () => {
+  const home = nuevaHome([deLaPersona('seguí')], 'Edit');
+  const agregar = (f, linea = 'advisors_exempt: true') => ({ tool_name: 'Edit',
+    tool_input: { file_path: f, old_string: 'qa_guide: off\n', new_string: `${linea}\nadvisors_exempt_reason: "modo ágil"\nqa_guide: off\n` } });
+  for (const st of ['draft', 'in-progress', 'review']) {
+    const r = correr(ENCABEZADO, home, agregar(historia(home, st)));
+    assert.strictEqual(r.status, 2, `${st}: ${r.stderr}`);
+    assert.match(r.stderr, /la exime de los revisores/);
+    assert.match(r.stderr, /marker\.js"? sign-file advisors_exempt /);
+  }
+  for (const forma of ['advisors_exempt: "true"', '  advisors_exempt: true', 'advisors_exempt: true # ágil']) {
+    assert.strictEqual(correr(ENCABEZADO, home, agregar(historia(home, 'in-progress'), forma)).status, 2, forma);
+  }
+  // al crearla
+  const nueva = path.join(home, 'repo', 'specs', 'story-9.11-nueva.md');
+  const crear = correr(ENCABEZADO, home, { tool_name: 'Write', tool_input: { file_path: nueva, content: '---\nepic: 9\nstory: "9.11"\ntitle: "Nueva"\nstatus: done\nadvisors_exempt: true\n---\n\n# Story 9.11\n' } });
+  assert.strictEqual(crear.status, 2, crear.stderr);
+  // con la frase de la persona no pasa
+  const conFrase = nuevaHome([deLaPersona('Autorizo advisors_exempt')], 'Edit');
+  assert.strictEqual(correr(ENCABEZADO, conFrase, agregar(historia(conFrase, 'in-progress'))).status, 2);
+  // la que ya estaba pasa; una guía que la nombra, también
+  const ya = historia(home, 'in-progress', 'advisors_exempt: true\n');
+  assert.strictEqual(correr(ENCABEZADO, home, { tool_name: 'Edit', tool_input: { file_path: ya, old_string: 'Texto.', new_string: 'Texto nuevo.' } }).status, 0);
+  const guia = path.join(home, 'repo', 'guia.md');
+  assert.strictEqual(correr(ENCABEZADO, home, { tool_name: 'Write', tool_input: { file_path: guia, content: '# Guía\n\nadvisors_exempt: true\n' } }).status, 0);
+  // la exención de la prueba en vivo sigue pidiendo la suya
+  assert.match(correr(ENCABEZADO, home, agregarExencion(historia(home, 'in-progress'))).stderr, /sign-file dod_runtime_exempt /);
+});
+
+// Firmas_ExencionDeRevisores_SoloDelDueno: la firma está en el catálogo, sobre un archivo, y no se delega aunque el perfil
+// la liste: saltear los revisores es una excepción, y las excepciones pasan por el click del dueño
+test('T91 Firmas_ExencionDeRevisores_SoloDelDueno: escape:advisors_exempt en el catálogo, sobre un archivo y nunca delegada', () => {
+  const sig = require(path.join(RAIZ, 'scripts', 'lib', 'signatures.js'));
+  const e = sig.SIGNATURES.find((x) => x.id === 'escape:advisors_exempt');
+  assert.ok(e, 'está en el catálogo');
+  assert.match(e.command, /marker\.js sign-file advisors_exempt <archivo>/);
+  const del = require(path.join(RAIZ, 'scripts', 'lib', 'delegated-signing.js'));
+  assert.ok(del.NUNCA_DELEGABLES.has('escape:advisors_exempt'), 'nunca delegable');
+  assert.match(del.NUNCA_DELEGABLES.get('escape:advisors_exempt'), /sólo del dueño/);
+});
+
+// FrontmatterWrite_ExencionNueva_LoQueLosLectoresVen (pase adversarial): la exención es nueva si algún lector que la
+// concede pasa de no verla a verla. «Ya estaba» no cuenta en un archivo que no era historia, ni en un renglón que ningún
+// lector concede (sangrado en el cuerpo, entre comillas). El encabezado se lee como el portón de CI (con un espacio
+// después de las rayas o la marca de orden de bytes), un Edit con renglones de Windows se aplica como lo aplica la
+// herramienta, y un parche de Codex que no se puede reconstruir igual cuenta la exención que agrega
+test('T92 FrontmatterWrite_ExencionNueva_LoQueLosLectoresVen: dos pasos, cuerpo, comillas, encabezado ancho, Windows y Codex', () => {
+  for (const campo of ['advisors_exempt', 'dod_runtime_exempt']) {
+    const home = nuevaHome([deLaPersona('seguí')], 'Edit');
+    const dir = path.join(home, 'repo', 'specs');
+    const frena = (evento, que) => { const r = correr(ENCABEZADO, home, evento); assert.strictEqual(r.status, 2, `${campo}, ${que}: ${r.stderr}`); };
+    const pasa = (evento, que) => { const r = correr(ENCABEZADO, home, evento); assert.strictEqual(r.status, 0, `${campo}, ${que}: ${r.stderr}`); };
+    const editar = (file, de, a2) => ({ tool_name: 'Edit', tool_input: { file_path: file, old_string: de, new_string: a2 } });
+    // en dos pasos: primero sin story ni status (no es historia), después se le agregan
+    const dos = path.join(dir, 'story-9.50-dos.md');
+    fs.mkdirSync(dir, { recursive: true });
+    const sinHistoria = `---\nepic: 9\ntitle: "Dos"\n${campo}: true\n---\n\n# Dos\n`;
+    pasa({ tool_name: 'Write', tool_input: { file_path: dos, content: sinHistoria } }, 'un archivo que no es historia');
+    fs.writeFileSync(dos, sinHistoria);
+    frena(editar(dos, 'title: "Dos"\n', 'story: "9.50"\nstatus: in-progress\ntitle: "Dos"\n'), 'en dos pasos');
+    // un ejemplo sangrado en el cuerpo no es la exención: agregarla al encabezado la pide; editar otra parte, no
+    const conEjemplo = historia(home, 'in-progress');
+    fs.writeFileSync(conEjemplo, fs.readFileSync(conEjemplo, 'utf8').replace('Texto.\n', `Texto.\n\n    ${campo}: true\n`));
+    frena(editar(conEjemplo, 'qa_guide: off\n', `${campo}: true\nqa_guide: off\n`), 'con un ejemplo en el cuerpo');
+    pasa(editar(conEjemplo, '## Story', '## La historia'), 'editar otra parte de una historia con el ejemplo');
+    // de entre comillas a sin comillas
+    const comillas = historia(home, 'in-progress', `${campo}: "true"\n`);
+    frena(editar(comillas, `${campo}: "true"`, `${campo}: true`), 'de entre comillas a sin comillas');
+    // el encabezado con un espacio después de las rayas, o con la marca de orden de bytes
+    for (const [que, cambiar] of [['rayas con espacio', (t) => t.replace(/^---\n/, '--- \n')], ['marca de orden de bytes', (t) => '\uFEFF' + t]]) {
+      const h = historia(home, 'in-progress');
+      fs.writeFileSync(h, cambiar(fs.readFileSync(h, 'utf8')));
+      frena(editar(h, 'qa_guide: off\n', `${campo}: true\nqa_guide: off\n`), que);
+    }
+    // una historia con renglones de Windows y un Edit de varios renglones con \n
+    const crlf = historia(home, 'in-progress');
+    fs.writeFileSync(crlf, fs.readFileSync(crlf, 'utf8').replace(/\n/g, '\r\n'));
+    frena(editar(crlf, 'status: in-progress\nqa_guide: off\n', `status: in-progress\n${campo}: true\nqa_guide: off\n`), 'renglones de Windows');
+    // parches de Codex que no se reconstruyen igual: un tramo sólo con lo agregado, y el primero sin @@
+    for (const [que, cuerpo] of [['sólo agregado', `@@\n+${campo}: true`], ['sin @@', ` status: in-progress\n+${campo}: true\n qa_guide: off`]]) {
+      const h = historia(home, 'in-progress');
+      frena({ tool_name: 'Edit', tool_name_raw: 'apply_patch', tool_input: { file_path: h, command: `*** Begin Patch\n*** Update File: ${h}\n${cuerpo}\n*** End Patch\n` } }, `Codex, ${que}`);
+    }
+  }
+});
+
+// FrontmatterWrite_ComillasCurvasYMoveTo (pase adversarial del #1577): la herramienta Edit encuentra el texto aunque la
+// historia traiga comillas curvas y old_string rectas, y un parche de Codex con «Move to» escribe el destino. El freno los
+// juzga igual que la herramienta: la exención y el paso a done siguen pidiendo su firma
+test('T93 FrontmatterWrite_ComillasCurvasYMoveTo: el Edit con comillas rectas y el parche que mueve a la historia se juzgan', () => {
+  const home = nuevaHome([deLaPersona('seguí')], 'Edit');
+  const frena = (evento, que) => { const r = correr(ENCABEZADO, home, evento); assert.strictEqual(r.status, 2, `${que}: ${r.stderr}`); };
+  const pasa = (evento, que) => { const r = correr(ENCABEZADO, home, evento); assert.strictEqual(r.status, 0, `${que}: ${r.stderr}`); };
+  const curvas = () => {
+    const h = historia(home, 'in-progress');
+    fs.writeFileSync(h, fs.readFileSync(h, 'utf8').replace(/^title: .*$/m, 'title: “Algo”').replace('Texto.', 'Texto ‘citado’.'));
+    return h;
+  };
+  const editar = (file, de, a2) => ({ tool_name: 'Edit', tool_input: { file_path: file, old_string: de, new_string: a2 } });
+  for (const campo of ['advisors_exempt', 'dod_runtime_exempt']) {
+    frena(editar(curvas(), 'title: "Algo"', `title: "Algo"\n${campo}: true`), `${campo} con comillas rectas sobre curvas`);
+  }
+  frena(editar(curvas(), 'title: "Algo"\nstatus: in-progress', 'title: "Algo"\nstatus: done'), 'el paso a done con comillas rectas sobre curvas');
+  // un cambio cualquiera con comillas rectas sobre curvas sigue pasando, y uno que no encuentra nada también (el Edit falla)
+  pasa(editar(curvas(), "Texto 'citado'.", "Texto 'citado' de nuevo."), 'un cambio del cuerpo con comillas rectas');
+  pasa(editar(curvas(), 'no está', `advisors_exempt: true`), 'un Edit que no encuentra el texto');
+  // Codex: un borrador que no es .md, movido a la historia con «Move to»
+  const dir = path.join(home, 'repo', 'specs');
+  const borrador = path.join(dir, 'borrador.txt');
+  fs.writeFileSync(borrador, '---\nepic: 9\nstory: "9.9"\ntitle: "Algo"\nstatus: in-progress\nadvisors_exempt: true\n---\n\nTexto.\n');
+  const destino = path.join(dir, 'story-9.9-movida.md');
+  const mover = { tool_name: 'Edit', tool_name_raw: 'apply_patch', cwd: dir, tool_input: { file_path: borrador,
+    command: '*** Begin Patch\n*** Update File: borrador.txt\n*** Move to: story-9.9-movida.md\n@@\n-Texto.\n+Texto ok.\n*** End Patch\n' } };
+  frena(mover, 'Codex: Move to desde un .txt hacia la historia');
+  // el mismo parche sin la exención en el borrador pasa: mover no es eximirse
+  fs.writeFileSync(borrador, fs.readFileSync(borrador, 'utf8').replace('advisors_exempt: true\n', ''));
+  pasa(mover, 'Codex: Move to sin exención');
+  assert.ok(!fs.existsSync(destino), 'el freno no escribe el destino');
+});
+
 // ── Los avisos no recetan los escapes ─────────────────────────────────────────────────────────────────────────────────
 
 // Lo que le da al agente el escape como salida: el comando o el renglón que lo activa.
@@ -201,15 +326,17 @@ const RECETAS = [
   /DOD_BYPASS=1/,
   /touch\b[^\n]*ALLOW_DOD_EVIDENCE_WRITE/,
   /dod_runtime_exempt: true/,
+  /advisors_exempt: true/,
 ];
 // Un renglón que nombra el escape y dice que lo decide la persona, con su frase, no es una receta.
 const DE_LA_PERSONA = /autorizo|la persona|lo decide (?:el dev|la persona)/i;
 // En el código, sólo cuentan los textos que se le muestran al agente; en las instrucciones, todo renglón.
 // (cualquier `.push(` de renglones de un aviso, no sólo `lines`: el validador encontró uno en `pl.push`)
-const EMISOR = /console\.(?:error|log|warn)\(|\.push\(|stderr\.write\(|mensaje:|^\s*(?:[:?+]\s*)?['"`]/;
+const EMISOR = /console\.(?:error|log|warn)\(|\.push\(|stderr\.write\(|estricto\(|mensaje:|^\s*(?:[:?+]\s*)?['"`]/;
 const AVISOS = [
   'skills/tycon-pipeline/scripts/marker.js',
-  'skills/tycon-pipeline/scripts/pipeline.js',
+  // pipeline.js con sus partes de lib/
+  ...require(path.join(__dirname, 'lib', 'pipeline-source.js')).files().map((f) => path.relative(RAIZ, f)),
   'skills/tycon-pipeline/scripts/on-frontmatter-write.js',
   'skills/tycon-pipeline/scripts/on-pre-commit.js',
   'skills/tycon-pipeline/scripts/on-dod-evidence-guard.js',
@@ -293,10 +420,11 @@ function laboratorioOtraSesion(t) {
     assert.strictEqual(set.status, 0, set.stderr);
     for (const n of ['0', '1', '2']) lab.marker(sid, ['complete-step', n], {});
   }
-  /** El pedido de la ventana, como lo arma el freno ante el comando de ses-coord. */
-  lab.pedir = (cmd, { delegacion = () => ({ ok: false, motivo: 'sin delegación en la prueba' }) } = {}) => ow.decidir({
+  /** El pedido de la ventana, como lo arma el freno ante el comando de ses-coord; `tramite`: qué firmas da el arnés solo. */
+  lab.pedir = (cmd, { delegacion = () => ({ ok: false, motivo: 'sin delegación en la prueba' }), tramite = null } = {}) => ow.decidir({
     evento: { session_id: COORD, tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: cmd } },
-    escapes: [], arbol: arbolDelFreno(), pid: 201, casa: home, ahora: AHORA, delegacion, clasificar: () => null });
+    escapes: [], arbol: arbolDelFreno(), pid: 201, casa: home, ahora: AHORA, delegacion, clasificar: () => null,
+    ...(tramite ? { tramite, huellaDeLaMaquina: () => ({ huella: HUELLA }) } : {}) });
   /** El guion que corre ses-coord con la ventana aprobada (el árbol del comando); `sesionEn`: su variable de sesión al salir. */
   lab.correr = (args) => {
     const cmd = `node ${MARKER} ${args.map(comillas).join(' ')}`;
@@ -396,7 +524,7 @@ test('Guion_ForSession_DestinoSinMarcador_Sale2 (T6) @story-8.142 @ac-2', (t) =>
   const gatesAntes = lab.gates().length;
   r = lab.correr(['complete-step', 'approve-plan', '--auto-approved', 'riesgo bajo', '--for-session', DESTINO]);
   assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
-  assert.match(r.stderr, /no es una firma que se pida/);
+  assert.match(r.stderr, /falta la cita de la persona/);
   assert.strictEqual(lab.aprobaciones(DESTINO).length, aprobacionesAntes, 'ninguna aprobación en la corrida de ses-a');
   assert.strictEqual(lab.gates().length, gatesAntes, 'ningún renglón en gates.log');
   assert.deepStrictEqual({ [DESTINO]: lab.leer(DESTINO), [COORD]: lab.leer(COORD) }, antes, 'nada escrito');
@@ -406,6 +534,29 @@ test('Guion_ForSession_DestinoSinMarcador_Sale2 (T6) @story-8.142 @ac-2', (t) =>
   assert.deepStrictEqual(ow.firmasDelComando(lab.comando(viejo)), ['plan-approval']);
   r = lab.correr(viejo);
   assert.doesNotMatch(r.stderr, /no es una firma que se pida/);
+});
+
+test('Guion_ForSession_PlanSinCita_DiceQueFaltaYElComando: el plan de otra sesión sin --approved dice qué falta, no que no es una firma', (t) => {
+  const lab = laboratorioOtraSesion(t);
+  const antes = { [DESTINO]: lab.leer(DESTINO), [COORD]: lab.leer(COORD) };
+  const gatesAntes = lab.gates().length;
+  // el plan con su nombre y con el número viejo: es la firma que se pide para otra sesión, sólo le falta la cita
+  for (const paso of ['approve-plan', '3']) {
+    const r = lab.correr(['complete-step', paso, '--for-session', DESTINO]);
+    assert.strictEqual(r.status, 2, `${r.stdout}${r.stderr}`);
+    assert.doesNotMatch(r.stderr, /no es una firma que se pida/);
+    assert.match(r.stderr, /falta la cita de la persona/);
+    // el comando exacto: con la cita para que el freno arme el cuadro, o con --terminal en la terminal de la persona
+    assert.ok(r.stderr.includes(`node ${MARKER} complete-step ${paso} --approved '<la cita de la persona>' --for-session ${DESTINO}`), r.stderr);
+    assert.ok(r.stderr.includes(`node ${MARKER} complete-step ${paso} --terminal --for-session ${DESTINO}`), r.stderr);
+    assert.match(r.stderr, /No se escribió nada\./);
+  }
+  // sin la cita sigue sin firmarse: nada escrito en ninguna de las dos corridas, ni en gates.log, ni un pedido de ventana
+  assert.deepStrictEqual({ [DESTINO]: lab.leer(DESTINO), [COORD]: lab.leer(COORD) }, antes, 'nada escrito');
+  assert.strictEqual(lab.gates().length, gatesAntes, 'ningún renglón en gates.log');
+  assert.strictEqual(lab.vigentes().length, 0, 'ningún pedido de ventana');
+  // el freno tampoco lo toma por firma: no arma un cuadro sin la cita
+  assert.deepStrictEqual(ow.firmasDelComando(lab.comando(['complete-step', 'approve-plan', '--for-session', DESTINO])), []);
 });
 
 test('Guion_ForSession_EjecucionPerdida_DiceQuienPidio (T5) @story-8.142 @ac-3', (t) => {
@@ -511,6 +662,88 @@ test('ExcepcionesDeTramite_ForSession_ElGuionFirmaPorDelegacion', (t) => {
     designar(otro);
     assert.strictEqual(otro.pedir(otro.comando(armar(otro)), { delegacion: delegacion(PERFIL) }).decision, 'ask', `${firma} sin delegar`);
   }
+});
+
+// 🔴 Falla con: cerrar como deuda, el rojo esperado de la matriz y apagar el modo autónomo, delegados en el perfil, no
+// se pueden correr para otra sesión (los pedía el freno de seguridad en la sesión propia): le llegaban al dueño.
+test('TresFirmasDelFreno_ForSession_LaCoordinadoraLasFirmaPorDelegacion', (t) => {
+  const designar = (lab) => {
+    const d = { name: 'relay-designation', status: 'ok', ts: new Date(AHORA - 3600000).toISOString(), sesion: COORD, rol: 'coordinadora', quien: 'dueño', cita: 'Esta sesión es la coordinadora' };
+    fs.appendFileSync(path.join(lab.estadoDir, 'gates.log'), `${[d, DS.confirmationRecord(d, new Date(AHORA - 3500000).toISOString())].map((l) => JSON.stringify(l)).join('\n')}\n`);
+  };
+  const delegacion = (perfil) => (o) => DS.delegaSinVentana({ ...o, perfil: () => perfil, huella: () => ({ huella: HUELLA }) });
+  const destino = (lab) => JSON.parse(lab.leer(DESTINO));
+  const cambiar = (lab, f) => { const m = destino(lab); f(m); fs.writeFileSync(lab.marcador(DESTINO), JSON.stringify(m)); };
+  // la historia de ses-a con un criterio, su prueba y su deuda anotada
+  const conDeuda = (lab) => fs.appendFileSync(lab.stories[DESTINO], ['## Acceptance Criteria', '', '1. **Given** algo, **Then** resultado uno.', '',
+    '### Tests', '', '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|', '| T1 | `a.uno` | 1 | integration | x | y |', '',
+    '## Dev Agent Record', '', '- Deuda: DEF-9.91-juguete — falta la librería', ''].join('\n'));
+  const d = new Date();
+  const hoy = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const casos = [
+    ['escape:set-autonomous', (lab) => cambiar(lab, (m) => { m.autonomous = true; }), ['set-autonomous', 'false', '--for-session', DESTINO],
+      (m) => assert.strictEqual(m.autonomous, false)],
+    ['escape:cerrar-como-deuda', (lab) => conDeuda(lab), ['close-as-debt', '--reason', 'falta la librería', '--debt', 'DEF-9.91-juguete', '--for-session', DESTINO],
+      (m) => assert.deepStrictEqual([m.cierre.estado, m.cierre.deuda, m.cierre.via, m.cierre.por], ['deuda', 'DEF-9.91-juguete', 'delegacion', COORD])],
+    ['escape:rojo-esperado-de-la-matriz', (lab) => { conDeuda(lab); cambiar(lab, (m) => { m.cierre = { estado: 'deuda', deuda: 'DEF-9.91-juguete', motivo: 'x', via: 'ventana', at: new Date().toISOString() }; m.checks = { acmatrix: 'red:exit=1' }; }); },
+      ['expect-red', 'acmatrix', '--tests', 'T1', '--until', hoy, '--for-session', DESTINO],
+      (m) => assert.deepStrictEqual([m.checks.acmatrix, m.expectedRed.acmatrix.until, m.expectedRed.acmatrix.via], ['rojo-esperado:exit=1', hoy, 'delegacion'])],
+  ];
+  for (const [firma, preparar, args, comprobar] of casos) {
+    const lab = laboratorioOtraSesion(t);
+    designar(lab);
+    preparar(lab);
+    const p = lab.pedir(lab.comando(args), { delegacion: delegacion({ ...PERFIL, delegated_signing: [firma] }) });
+    assert.deepStrictEqual([p.decision, p.via], ['allow', 'delegacion'], `${firma}: ${p.texto}`);
+    const r = lab.correr(args);
+    assert.strictEqual(r.status, 0, `${firma}: ${r.stdout}${r.stderr}`);
+    comprobar(destino(lab));
+    assert.deepStrictEqual(lab.gates().filter((g) => g.name === `${firma}-signed`).map((g) => g.via), ['delegacion'], firma);
+    assert.strictEqual(lab.vigentes().length, 0, `${firma}: el pedido se gasta`);
+    // sin su nombre en el perfil, la misma firma pide la ventana del dueño
+    const otro = laboratorioOtraSesion(t);
+    designar(otro);
+    preparar(otro);
+    assert.strictEqual(otro.pedir(otro.comando(args), { delegacion: delegacion(PERFIL) }).decision, 'ask', `${firma} sin delegar`);
+  }
+});
+
+// 🔴 Falla con: el rojo esperado de un control bajo la firma de la matriz, que el perfil da por trámite: el arnés deja
+// solo las pruebas o la compilación en rojo hasta el commit; o una sesión cualquiera que, por trámite, le apaga el modo
+// autónomo a otra (hallazgos del pase adversarial de la 8.323).
+test('TresFirmasDelFreno_ConElTramiteDelPerfil_NiElRojoDeUnControlNiOtraSesion', (t) => {
+  // el perfil vivo: la firma de la matriz y la de apagar el lazo son de trámite; la de cerrar como deuda, no
+  const tramite = (ids) => (ids.every((id) => ['escape:rojo-esperado-de-la-matriz', 'escape:set-autonomous'].includes(id)) ? { ok: true } : { ok: false, motivo: 'no es de trámite' });
+  const cambiar = (lab, sid, f) => { const m = JSON.parse(lab.leer(sid)); f(m); fs.writeFileSync(lab.marcador(sid), JSON.stringify(m)); };
+  // el rojo esperado de un control, en la propia sesión y en deuda: pide la firma de cerrar como deuda, que no es de trámite
+  const lab = laboratorioOtraSesion(t);
+  cambiar(lab, COORD, (m) => { m.cierre = { estado: 'deuda', deuda: 'DEF-9.92-juguete', motivo: 'x', via: 'ventana', at: new Date().toISOString() }; m.checks = { tests: 'red:exit=1' }; });
+  const control = lab.pedir(lab.comando(['expect-red', 'tests', '--tests', 'T2']), { tramite });
+  assert.deepStrictEqual(control.firmas, ['escape:cerrar-como-deuda'], control.texto);
+  assert.notStrictEqual(control.via, 'automatica', `el rojo de un control no sale por trámite: ${control.texto}`);
+  assert.notStrictEqual(control.decision, 'allow', control.texto);
+  // apagar el modo autónomo de otra sesión, sin coordinadora designada: tampoco sale por trámite
+  const otra = laboratorioOtraSesion(t);
+  for (const sid of [COORD, DESTINO]) cambiar(otra, sid, (m) => { m.autonomous = true; });
+  const apagar = otra.pedir(otra.comando(['set-autonomous', 'false', '--for-session', DESTINO]), { tramite });
+  assert.deepStrictEqual(apagar.firmas, ['escape:set-autonomous'], apagar.texto);
+  assert.notStrictEqual(apagar.via, 'automatica', `apagarle el lazo a otra sesión no sale por trámite: ${apagar.texto}`);
+  assert.notStrictEqual(apagar.decision, 'allow', apagar.texto);
+  // la propia sesión sí: apagar su lazo sigue siendo de trámite si el perfil lo dice
+  const propia = otra.pedir(otra.comando(['set-autonomous', 'false']), { tramite });
+  assert.deepStrictEqual([propia.decision, propia.via], ['allow', 'automatica'], propia.texto);
+  // el rojo esperado de la matriz para otra sesión, con su deuda y su criterio: tampoco sale por trámite
+  const matriz = laboratorioOtraSesion(t);
+  fs.appendFileSync(matriz.stories[DESTINO], ['## Acceptance Criteria', '', '1. **Given** algo, **Then** resultado uno.', '',
+    '### Tests', '', '| ID | Test | AC | Nivel | Escenario | Esperado |', '|---|---|---|---|---|---|', '| T1 | `a.uno` | 1 | integration | x | y |', '',
+    '## Dev Agent Record', '', '- Deuda: DEF-9.91-juguete — falta la librería', ''].join('\n'));
+  cambiar(matriz, DESTINO, (m) => { m.cierre = { estado: 'deuda', deuda: 'DEF-9.91-juguete', motivo: 'x', via: 'ventana', at: new Date().toISOString() }; m.checks = { acmatrix: 'red:exit=1' }; });
+  const d = new Date();
+  const hoy = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const rojo = matriz.pedir(matriz.comando(['expect-red', 'acmatrix', '--tests', 'T1', '--until', hoy, '--for-session', DESTINO]), { tramite });
+  assert.deepStrictEqual(rojo.firmas, ['escape:rojo-esperado-de-la-matriz'], rojo.texto);
+  assert.notStrictEqual(rojo.via, 'automatica', `el rojo de la matriz de otra sesión no sale por trámite: ${rojo.texto}`);
+  assert.notStrictEqual(rojo.decision, 'allow', rojo.texto);
 });
 
 test('Guion_ForSession_Delegada_SeisLlaves (T7) @story-8.142 @ac-4', (t) => {

@@ -11,14 +11,15 @@
  * la de después sale de la CI del pedido y se anota antes de cerrar la historia.
  *
  *   T18 Lentas_TablaCompletaEnElRegistro — las dos mediciones, las bajadas con su meta, las partes de GitHub
- *   T19 Lentas_MismosCasos               — cada suite bajada tiene los mismos casos que en el commit de antes
+ *   T19 Lentas_MismosCasos               — cada suite bajada tiene todos los casos del commit de antes (puede sumar)
  *   T20 Lentas_RomperDaRojo              — cada bajada dice qué se rompió y qué caso suyo dio rojo
  *   T21 Guia_TrabajadoresLentasYBase     — las dos guías: cuántas a la vez y por qué, las lentas, la base del portón
  *   T22 Lentas_NadaSeEscondio            — ni a la noche, ni salteado, ni tope menor, ni fuera de suites.json
  *   T30 Lentas_MedicionConCarga          — el antes y el después también en un día normal, con su carga
  *
  * 🔴 Falla con: un registro sin medir, un después sobre la meta sin lo que falta o sin la excepción del dueño, una meta
- *    de suite mal calculada, una suite con un caso de menos o renombrado, un `skip`
+ *    de suite mal calculada, una suite con un caso de menos o renombrado (salvo el que el registro declara en
+ *    `casos_renombrados`, con su historia y su motivo), un `skip`
  *    nuevo, un peso o un tope menor, o una suite que pasó a correr sólo cuando se la toca.
  * stable-data: no crea commits ni lee el reloj; de git sólo lee el propio clon (`show`, `cat-file -e` y `rev-parse`).
  * 0 deps (node:test). Lee git del propio clon; sin el commit de antes (un clon recortado, o el árbol armado del privado,
@@ -113,7 +114,7 @@ test('T18 Lentas_TablaCompletaEnElRegistro — las dos mediciones, las bajadas c
   }
 });
 
-test('T19 Lentas_MismosCasos — cada suite bajada tiene los mismos casos que en el commit de antes', (t) => {
+test('T19 Lentas_MismosCasos — cada suite bajada tiene todos los casos del commit de antes (puede sumar)', (t) => {
   const r = registro();
   assert.ok(r.antes && r.bajadas.length > 0, 'el registro no está medido');
   if (!commitDisponible(t, r.antes.commit)) return;
@@ -122,7 +123,15 @@ test('T19 Lentas_MismosCasos — cada suite bajada tiene los mismos casos que en
     assert.ok(antes !== null, `${b.archivo} no existía en el commit de antes`);
     const ahora = fs.readFileSync(path.join(ROOT, b.archivo), 'utf8');
     assert.ok(casos(b.archivo, antes).length > 0, `${b.archivo}: no encontré sus casos`);
-    assert.deepEqual(casos(b.archivo, ahora), casos(b.archivo, antes), `${b.archivo}: los casos cambiaron`);
+    // un caso que una historia posterior renombró a propósito cuenta con su nombre nuevo: sólo si el registro lo declara,
+    // con su historia y su motivo
+    const renombrados = new Map((b.casos_renombrados || []).map((r) => {
+      assert.ok(r.antes && r.ahora && r.historia && String(r.motivo || '').trim(), `${b.archivo}: un renombrado sin su historia o su motivo`);
+      return [r.antes, r.ahora];
+    }));
+    // un caso de menos o renombrado sin declararlo frena; uno nuevo no: la suite puede crecer después de bajada
+    const hoy = new Set(casos(b.archivo, ahora));
+    assert.deepEqual(casos(b.archivo, antes).map((c) => renombrados.get(c) || c).filter((c) => !hoy.has(c)), [], `${b.archivo}: le faltan casos que tenía, o cambiaron de nombre`);
   }
 });
 

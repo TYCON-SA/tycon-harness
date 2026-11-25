@@ -35,13 +35,13 @@ const CAMPOS = ['ts', 'signature', 'level', 'covers', 'via', 'delegated', 'signe
 
 test('appendSignature escribe un renglón con todos los campos', (t) => {
   const casa = casaNueva(t);
-  const r = log.appendSignature({ signature: 'save', via: 'window', signer: 'acme', orderedBy: 'ses-c', target: 'ses-a',
+  const r = log.appendSignature({ signature: 'pending-approval', via: 'window', signer: 'acme', orderedBy: 'ses-c', target: 'ses-a',
     reason: 'guardar la tanda', source: 'marker.js', home: casa, now: AHORA, huella: HUELLA });
   assert.deepStrictEqual(r, { ok: true, path: log.logPath(casa) });
   const [l] = renglones(casa);
   assert.deepStrictEqual(Object.keys(l), CAMPOS);
   assert.strictEqual(l.ts, '2026-10-30T09:00:00.000Z');
-  assert.strictEqual(l.signature, 'save');
+  assert.strictEqual(l.signature, 'pending-approval');
   assert.strictEqual(l.via, 'window');
   assert.strictEqual(l.delegated, false);
   assert.strictEqual(l.signer, 'acme');
@@ -94,11 +94,11 @@ test('la vía de un comando (la emergencia) se escribe como cualquier otra', (t)
 
 test('una firma delegada dice que lo fue y lleva el nivel de la delegación', (t) => {
   const casa = casaNueva(t);
-  log.appendSignature({ signature: 'save', via: 'delegation', signer: 'coordinadora (sesión ses-c)', orderedBy: 'ses-c', target: 'ses-a',
+  log.appendSignature({ signature: 'pending-approval', via: 'delegation', signer: 'coordinadora (sesión ses-c)', orderedBy: 'ses-c', target: 'ses-a',
     home: casa, now: AHORA, huella: HUELLA });
   const [l] = renglones(casa);
   assert.strictEqual(l.delegated, true);
-  assert.strictEqual(l.level, cat.delegatedLevel('save'));
+  assert.strictEqual(l.level, cat.delegatedLevel('pending-approval'));
 });
 
 test('un id fuera del catálogo no se escribe y devuelve el error', (t) => {
@@ -111,7 +111,7 @@ test('un id fuera del catálogo no se escribe y devuelve el error', (t) => {
 
 test('una vía fuera de la lista no se escribe y devuelve el error', (t) => {
   const casa = casaNueva(t);
-  const r = log.appendSignature({ signature: 'save', via: 'chat', signer: 'acme', home: casa, now: AHORA, huella: HUELLA });
+  const r = log.appendSignature({ signature: 'pending-approval', via: 'chat', signer: 'acme', home: casa, now: AHORA, huella: HUELLA });
   assert.strictEqual(r.ok, false);
   assert.match(r.error, /chat/);
   assert.deepStrictEqual(renglones(casa), []);
@@ -119,10 +119,10 @@ test('una vía fuera de la lista no se escribe y devuelve el error', (t) => {
 
 test('sin huella de la máquina el renglón se escribe con machine null', (t) => {
   const casa = casaNueva(t);
-  const r = log.appendSignature({ signature: 'save', via: 'window', signer: 'acme', home: casa, now: AHORA, huella: () => ({ error: 'sin id' }) });
+  const r = log.appendSignature({ signature: 'pending-approval', via: 'window', signer: 'acme', home: casa, now: AHORA, huella: () => ({ error: 'sin id' }) });
   assert.strictEqual(r.ok, true);
   assert.strictEqual(renglones(casa)[0].machine, null);
-  const r2 = log.appendSignature({ signature: 'save', via: 'window', signer: 'acme', home: casa, now: AHORA, huella: () => { throw new Error('rota'); } });
+  const r2 = log.appendSignature({ signature: 'pending-approval', via: 'window', signer: 'acme', home: casa, now: AHORA, huella: () => { throw new Error('rota'); } });
   assert.strictEqual(r2.ok, true);
   assert.strictEqual(renglones(casa)[1].machine, null);
 });
@@ -133,14 +133,14 @@ test('si no se puede escribir, no lanza: devuelve el error', (t) => {
   const estado = path.dirname(log.logPath(casa));
   fs.mkdirSync(path.dirname(estado), { recursive: true });
   fs.writeFileSync(estado, 'no es una carpeta');
-  const r = log.appendSignature({ signature: 'save', via: 'window', signer: 'acme', home: casa, now: AHORA, huella: HUELLA });
+  const r = log.appendSignature({ signature: 'pending-approval', via: 'window', signer: 'acme', home: casa, now: AHORA, huella: HUELLA });
   assert.strictEqual(r.ok, false);
   assert.ok(r.error);
 });
 
 test('el motivo se recorta y va en una línea', (t) => {
   const casa = casaNueva(t);
-  log.appendSignature({ signature: 'save', via: 'window', signer: 'acme', reason: `uno\ndos ${'x'.repeat(600)}`, home: casa, now: AHORA, huella: HUELLA });
+  log.appendSignature({ signature: 'pending-approval', via: 'window', signer: 'acme', reason: `uno\ndos ${'x'.repeat(600)}`, home: casa, now: AHORA, huella: HUELLA });
   const [l] = renglones(casa);
   assert.ok(!l.reason.includes('\n'));
   assert.ok(l.reason.length <= 501);
@@ -159,13 +159,13 @@ test('el registro común no se escribe a mano: el freno de la carpeta de estado 
 
 test('firmar por la ventana deja su renglón -signed en gates.log y el renglón común', (t) => {
   const casa = casaNueva(t);
-  ow.firmar({ firma: 'save', via: 'ventana', sesion: 'ses-c', destino: 'ses-a', resumen: 'guardar', casa, ahora: AHORA, huella: HUELLA, persona: 'acme' });
+  ow.firmar({ firma: 'pending-approval', via: 'ventana', sesion: 'ses-c', destino: 'ses-a', resumen: 'guardar', casa, ahora: AHORA, huella: HUELLA, persona: 'acme' });
   const estado = path.dirname(log.logPath(casa));
   const gates = fs.readFileSync(path.join(estado, 'gates.log'), 'utf8').trim().split('\n').map((x) => JSON.parse(x));
   assert.strictEqual(gates.length, 1);
-  assert.strictEqual(gates[0].name, 'save-signed');
+  assert.strictEqual(gates[0].name, 'pending-approval-signed');
   const [l] = renglones(casa);
-  assert.strictEqual(l.signature, 'save');
+  assert.strictEqual(l.signature, 'pending-approval');
   assert.strictEqual(l.via, 'window');
   assert.strictEqual(l.delegated, false);
   assert.strictEqual(l.signer, 'acme');
@@ -178,7 +178,7 @@ test('firmar por la ventana deja su renglón -signed en gates.log y el renglón 
 test('firmar por la terminal y por delegación dicen su vía y quién firmó', (t) => {
   const casa = casaNueva(t);
   ow.firmar({ firma: 'critical-waiver', via: 'terminal', destino: 'ses-a', casa, ahora: AHORA, huella: HUELLA, persona: 'acme' });
-  ow.firmar({ firma: 'save', via: 'delegacion', sesion: 'ses-c', destino: 'ses-a', casa, ahora: AHORA, huella: HUELLA, persona: 'acme' });
+  ow.firmar({ firma: 'pending-approval', via: 'delegacion', sesion: 'ses-c', destino: 'ses-a', casa, ahora: AHORA, huella: HUELLA, persona: 'acme' });
   const [term, del] = renglones(casa);
   assert.strictEqual(term.via, 'terminal');
   assert.strictEqual(term.signer, 'acme');
@@ -192,9 +192,9 @@ test('firmar por la terminal y por delegación dicen su vía y quién firmó', (
 test('con el registro propio del guion (anotar), el renglón común se escribe igual', (t) => {
   const casa = casaNueva(t);
   const propio = [];
-  ow.firmar({ firma: 'save', via: 'ventana', sesion: 'ses-c', destino: 'ses-a', casa, ahora: AHORA, huella: HUELLA, persona: 'acme', anotar: (r) => propio.push(r) });
+  ow.firmar({ firma: 'pending-approval', via: 'ventana', sesion: 'ses-c', destino: 'ses-a', casa, ahora: AHORA, huella: HUELLA, persona: 'acme', anotar: (r) => propio.push(r) });
   assert.strictEqual(propio.length, 1);
-  assert.strictEqual(propio[0].name, 'save-signed');
+  assert.strictEqual(propio[0].name, 'pending-approval-signed');
   assert.strictEqual(renglones(casa).length, 1);
 });
 
@@ -204,7 +204,7 @@ test('el guion que anota en su propio gates.log (sin casa) deja el renglón com�
   t.after(() => { for (const [k, v] of Object.entries(antes)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } });
   process.env.HOME = casa; process.env.USERPROFILE = casa; delete process.env.TYCON_HOME;
   const escritos = [];
-  ow.firmar({ firma: 'save', via: 'ventana', sesion: 'ses-c', destino: 'ses-a', ahora: AHORA, huella: HUELLA, persona: 'acme', anotar: () => {},
+  ow.firmar({ firma: 'pending-approval', via: 'ventana', sesion: 'ses-c', destino: 'ses-a', ahora: AHORA, huella: HUELLA, persona: 'acme', anotar: () => {},
     appendSignature: (o) => { escritos.push(o); return { ok: true }; } });
   assert.strictEqual(escritos.length, 1);
   assert.strictEqual(escritos[0].home, os.homedir());
@@ -215,7 +215,7 @@ test('si el registro común no se puede escribir, la firma sigue y avisa', (t) =
   const casa = casaNueva(t);
   const propio = [];
   const avisos = [];
-  ow.firmar({ firma: 'save', via: 'ventana', sesion: 'ses-c', destino: 'ses-a', casa, ahora: AHORA, huella: HUELLA, persona: 'acme',
+  ow.firmar({ firma: 'pending-approval', via: 'ventana', sesion: 'ses-c', destino: 'ses-a', casa, ahora: AHORA, huella: HUELLA, persona: 'acme',
     anotar: (r) => propio.push(r), appendSignature: () => ({ ok: false, error: 'disco lleno' }), avisar: (m) => avisos.push(m) });
   assert.strictEqual(propio.length, 1);
   assert.strictEqual(avisos.length, 1);
@@ -226,14 +226,14 @@ test('si el registro común no se puede escribir, la firma sigue y avisa', (t) =
 // otras palabras que la lista (la fila nunca se cerraría por clave).
 test('SignatureLog_CarriesRequestKey — el renglón lleva la clave del pedido cuando se la pasan @story-8.267 @ac-4', (t) => {
   const casa = casaNueva(t);
-  log.appendSignature({ signature: 'save', via: 'window', target: 'ses-a', key: 'firma:abc', home: casa, now: AHORA, huella: HUELLA });
-  log.appendSignature({ signature: 'save', via: 'window', target: 'ses-a', home: casa, now: AHORA, huella: HUELLA });
+  log.appendSignature({ signature: 'pending-approval', via: 'window', target: 'ses-a', key: 'firma:abc', home: casa, now: AHORA, huella: HUELLA });
+  log.appendSignature({ signature: 'pending-approval', via: 'window', target: 'ses-a', home: casa, now: AHORA, huella: HUELLA });
   const [con, sin] = renglones(casa);
   assert.strictEqual(con.key, 'firma:abc');
   assert.ok(!('key' in sin), `sin clave, el renglón es el de hoy: ${JSON.stringify(sin)}`);
   assert.deepStrictEqual(Object.keys(sin), CAMPOS);
   // firmar la pasa al registro común
-  ow.firmar({ firma: 'save', via: 'ventana', sesion: 'ses-c', destino: 'ses-a', key: 'firma:def', casa, ahora: AHORA, huella: HUELLA, persona: 'acme' });
+  ow.firmar({ firma: 'pending-approval', via: 'ventana', sesion: 'ses-c', destino: 'ses-a', key: 'firma:def', casa, ahora: AHORA, huella: HUELLA, persona: 'acme' });
   assert.strictEqual(renglones(casa)[2].key, 'firma:def');
   // la clave que calcula exigir es la misma con que la lista anota la fila: las palabras canónicas del comando
   const sl = require('../lib/signature-list.js');

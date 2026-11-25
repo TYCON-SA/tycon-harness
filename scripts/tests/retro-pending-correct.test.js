@@ -244,6 +244,7 @@ test('corregir desde la coordinadora dice que fue ella; desde otra sesión, el u
   lab2.sembrar({ repoPath: otro.dir, sha: corto(otro.viejo) });
   fs.appendFileSync(path.join(lab2.home, '.claude', '.tycon-pipeline', 'gates.log'), `${JSON.stringify({ ts: '2026-10-05T09:00:00.000Z', name: 'relay-designation', status: 'ok', sesion: 'sesion-coord', rol: 'coordinadora', quien: 'el dueño', cita: 'Esta sesión es la coordinadora' })}\n`);
   const r2 = lab2.corregir(['--sha', corto(otro.viejo), '--real', otro.real, '--reason', 'otra punta'], otro.dir, { CLAUDE_CODE_SESSION_ID: 'sesion-persona' });
+  assert.strictEqual(r2.status, 0, r2.stderr);
   const c2 = lab2.renglones().find((x) => x.tipo === 'correccion');
   assert.ok(!('por' in c2), JSON.stringify(c2));
   assert.doesNotMatch(c2.quien, /coordinadora/, c2.quien);

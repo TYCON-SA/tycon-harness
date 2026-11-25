@@ -63,7 +63,7 @@ const SECCIONES = Object.freeze([
   // como estaba (Telegram, de cada máquina, no se edita desde la sección de integraciones).
   // si la organización usa una sesión que reenvía el ok de un dev (approvals.relay_session; vale sólo desde el perfil;
   // cuál sesión es, se designa en cada máquina)
-  Object.freeze({ id: 'aprobaciones', titulo: 'Quién reenvía el ok de un dev', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['approvals'], rutas: Object.freeze(['approvals.relay_session', 'approvals.delegated_signing', 'approvals.owner_only', 'approvals.delegated_machines', 'approvals.levels']), idCorto: 'profile', necesita: ['approvals'] }),
+  Object.freeze({ id: 'aprobaciones', titulo: 'Quién reenvía el ok de un dev', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['approvals'], rutas: Object.freeze(['approvals.relay_session', 'approvals.delegated_signing', 'approvals.owner_only', 'approvals.delegated_machines', 'approvals.levels', 'approvals.local_commit']), idCorto: 'profile', necesita: ['approvals'] }),
   // la dirección del sitio que abre el comando de barra org-site en cada máquina (site.url; vale sólo desde el perfil)
   Object.freeze({ id: 'direccionSitio', titulo: 'La dirección del sitio en cada máquina', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['site'], rutas: Object.freeze(['site.url']), idCorto: 'profile', necesita: ['site'] }),
   Object.freeze({ id: 'pruebaAMano', titulo: 'Prueba a mano de cada criterio', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['qa'], rutas: Object.freeze(['qa.manual_check']), idCorto: 'profile', necesita: ['qa'] }),
@@ -427,11 +427,23 @@ const SHORT_PATH_SINCE = '2026.11.08.99';
  */
 const PULL_REQUESTS_SINCE = '2026.11.20.99';
 /**
+ * 🔴 La primera versión del arnés cuyo lector conoce `maintenance` en el perfil del equipo (las horas de quietud del
+ * barrido de carpetas de trabajo). Provisoria hasta la etiqueta del merge que la trae, como PULL_REQUESTS_SINCE.
+ */
+const MAINTENANCE_SINCE = '2026.11.24.99';
+/**
  * 🔴 La primera versión del arnés cuyo lector conoce `approvals.signature_list` (la lista de lo que espera a la persona):
  * la etiqueta del merge que la trae, como LEVELS_SINCE. Un lector anterior la leería como una clave desconocida, y una
  * clave rota de `approvals` deja sin ninguna firma delegada.
  */
 const SIGNATURE_LIST_SINCE = '2026.11.02.38';
+/**
+ * 🔴 La primera versión del arnés cuyo lector conoce `approvals.local_commit` (quién firma el commit de una corrida).
+ * Provisoria hasta la etiqueta del merge que la trae, como PULL_REQUESTS_SINCE: una versión que todavía no existe, para
+ * que el sitio frene de más. Un lector anterior la leería como una clave desconocida, y una clave rota de `approvals`
+ * deja sin ninguna firma delegada.
+ */
+const LOCAL_COMMIT_SINCE = '2026.11.22.99';
 /**
  * 🔴 La primera versión del arnés cuyo lector conoce `integrations.timeTracking` (la etiqueta del merge que trajo ese
  * lector). El selector de la herramienta de horas saca la llave vieja `integrations.clockify` del perfil: una máquina
@@ -509,7 +521,7 @@ function capaConMinima(layerText, minima) {
 function pedidasDelPerfil({ doc, actual }) {
   const cambia = (k) => !isObject(actual) || canonico(actual[k]) !== canonico(isObject(doc) ? doc[k] : undefined);
   // las claves del perfil que una versión anterior no sabe leer, con la versión que las lee y su mensaje
-  const pedidas = [['response', RESPONSE_SINCE, 'org.capaSinResponse'], ['approvals', APPROVALS_SINCE, 'org.capaSinApprovals'], ['qa', QA_SINCE, 'org.capaSinQa'], ['guard', GUARD_SINCE, 'org.capaSinGuard'], ['coordination', COORDINATION_SINCE, 'org.capaSinCoordination'], ['switches', SWITCHES_SINCE, 'org.capaSinSwitches'], ['site', SITE_SINCE, 'org.capaSinSite'], ['office', OFFICE_SINCE, 'org.capaSinOffice'], ['short_path', SHORT_PATH_SINCE, 'org.capaSinShortPath'], ['pull_requests', PULL_REQUESTS_SINCE, 'org.capaSinPullRequests']]
+  const pedidas = [['response', RESPONSE_SINCE, 'org.capaSinResponse'], ['approvals', APPROVALS_SINCE, 'org.capaSinApprovals'], ['qa', QA_SINCE, 'org.capaSinQa'], ['guard', GUARD_SINCE, 'org.capaSinGuard'], ['coordination', COORDINATION_SINCE, 'org.capaSinCoordination'], ['switches', SWITCHES_SINCE, 'org.capaSinSwitches'], ['site', SITE_SINCE, 'org.capaSinSite'], ['office', OFFICE_SINCE, 'org.capaSinOffice'], ['short_path', SHORT_PATH_SINCE, 'org.capaSinShortPath'], ['pull_requests', PULL_REQUESTS_SINCE, 'org.capaSinPullRequests'], ['maintenance', MAINTENANCE_SINCE, 'org.capaSinMaintenance']]
     .filter(([k]) => isObject(doc) && doc[k] !== undefined && cambia(k));
   // una clave nueva dentro de una sección que ya se leía: la pide sólo si el pedido la trae
   const firma = isObject(doc) && isObject(doc.approvals) ? doc.approvals.delegated_signing : undefined;
@@ -533,6 +545,9 @@ function pedidasDelPerfil({ doc, actual }) {
   const lista = isObject(doc) && isObject(doc.approvals) ? doc.approvals.signature_list : undefined;
   const listaAntes = isObject(actual) && isObject(actual.approvals) ? actual.approvals.signature_list : undefined;
   if (lista !== undefined && (!isObject(actual) || canonico(lista) !== canonico(listaAntes))) pedidas.push(['approvals.signature_list', SIGNATURE_LIST_SINCE, 'org.capaSinListaDeEspera']);
+  const commitLocal = isObject(doc) && isObject(doc.approvals) ? doc.approvals.local_commit : undefined;
+  const commitLocalAntes = isObject(actual) && isObject(actual.approvals) ? actual.approvals.local_commit : undefined;
+  if (commitLocal !== undefined && (!isObject(actual) || canonico(commitLocal) !== canonico(commitLocalAntes))) pedidas.push(['approvals.local_commit', LOCAL_COMMIT_SINCE, 'org.capaSinCommitLocal']);
   const nombres = isObject(doc) && isObject(doc.coordination) ? doc.coordination.session_names : undefined;
   const nombresAntes = isObject(actual) && isObject(actual.coordination) ? actual.coordination.session_names : undefined;
   if (nombres !== undefined && (!isObject(actual) || canonico(nombres) !== canonico(nombresAntes))) pedidas.push(['coordination.session_names', SESSION_NAMES_SINCE, 'org.capaSinNombresDeSesion']);
@@ -1786,7 +1801,7 @@ ${trabajandoJs}
     work_items: T('pantalla.pedidosDeTrabajo'), type: T('pantalla.pedidosTipo'), fixed_fields: T('pantalla.pedidosCamposFijos'), by_severity: T('pantalla.pedidosPorGravedad'),
     notify: T('pantalla.avisoDiario2'), channel: T('pantalla.palabraCanal'), thresholds: T('pantalla.palabraUmbrales'), direction: T('pantalla.mejorSiEs'), ok_min: T('pantalla.verdeDesde'), ok_max: T('pantalla.verdeHasta'), bad_max: T('pantalla.rojoHasta'), bad_min: T('pantalla.rojoDesde'),
     merge_suites: T('pantalla.pruebasAlMergear2'), rule: T('pantalla.regla'), full_tests_pipeline: T('pantalla.pipelineDeLasPruebasCompletas'), models: T('pantalla.palabraModelos'), mandatory_ceiling: T('pantalla.techoObligatorio'), ceiling: T('pantalla.techo'), reviewer: T('pantalla.revisor'), reviewers_reloop: T('pantalla.revisoresDeLaSegundaVuelta'), adversarial: T('pantalla.paseAdversarial'), helpers: T('pantalla.ayudantes'), session: T('pantalla.sesion'), model: T('pantalla.modelo'), heavy: T('pantalla.pesado'), fable_question: T('pantalla.preguntaAntesDeUsarFable'), low: T('pantalla.liviano'), normal: T('pantalla.normal'), codex_reviewers: T('pantalla.losRevisoresEnCodex'),
-    wait_notice: T('pantalla.avisoDeEspera2'), minutes: T('pantalla.minutos'), owner_minutes: T('pantalla.minutosAlDueno'), peer_owner_minutes: T('pantalla.minutosAlDuenoOtraSesion'), coverage: T('pantalla.coberturaDeLasPruebas2'), min_touched_lines_pct: T('pantalla.porcentajeMinimoDeLasLineas'), review: T('pantalla.vueltasDeRevisores2'), max_rounds: T('pantalla.topeDeVueltas'), context_notice: T('pantalla.avisoDeContexto2'), tokens: T('pantalla.tokens'), deep_review: T('pantalla.paseAdversarial'), weekly_review: T('pantalla.revisionSemanal'), budget_usd: T('pantalla.revisionSemanalTope'), 'weekly_review.max_chars': T('pantalla.revisionSemanalMaterial'), estimates: T('pantalla.estimaciones2'), unit: T('pantalla.unidadDeLasEstimaciones2'), hours_per_day: T('pantalla.horasPorDia2'), hours_per_point: T('pantalla.horasPorPunto2'), blocking_prefixes: T('pantalla.prefijosDeSeguridadODatos'), public: T('pantalla.repoPublico'), profile: T('pantalla.repoDelEquipo'), operations: T('pantalla.repoDeOperaciones'), org: T('pantalla.organizacion'), project: T('pantalla.proyecto'), repo: T('pantalla.repo'), repos: T('pantalla.palabraRepos'), platform: T('pantalla.plataforma'),
+    wait_notice: T('pantalla.avisoDeEspera2'), minutes: T('pantalla.minutos'), owner_minutes: T('pantalla.minutosAlDueno'), peer_owner_minutes: T('pantalla.minutosAlDuenoOtraSesion'), coverage: T('pantalla.coberturaDeLasPruebas2'), min_touched_lines_pct: T('pantalla.porcentajeMinimoDeLasLineas'), review: T('pantalla.vueltasDeRevisores2'), max_rounds: T('pantalla.topeDeVueltas'), context_notice: T('pantalla.avisoDeContexto2'), tokens: T('pantalla.tokens'), deep_review: T('pantalla.paseAdversarial'), weekly_review: T('pantalla.revisionSemanal'), budget_usd: T('pantalla.revisionSemanalTope'), 'weekly_review.max_chars': T('pantalla.revisionSemanalMaterial'), 'weekly_review.enabled': T('pantalla.revisionSemanalCampo'), 'wait_notice.enabled': T('pantalla.esperaEncendido'), estimates: T('pantalla.estimaciones2'), unit: T('pantalla.unidadDeLasEstimaciones2'), hours_per_day: T('pantalla.horasPorDia2'), hours_per_point: T('pantalla.horasPorPunto2'), blocking_prefixes: T('pantalla.prefijosDeSeguridadODatos'), public: T('pantalla.repoPublico'), profile: T('pantalla.repoDelEquipo'), operations: T('pantalla.repoDeOperaciones'), org: T('pantalla.organizacion'), project: T('pantalla.proyecto'), repo: T('pantalla.repo'), repos: T('pantalla.palabraRepos'), platform: T('pantalla.plataforma'),
     // las hojas de «Cómo contesta Claude» y «Cómo se actualizan»: con el nombre de su campo, también en un valor que se pisó
     style: T('pantalla.estilo'), language: T('pantalla.idioma'), max_chars: T('pantalla.largoMaximoDeProsaEn').split(' (')[0], apply: T('pantalla.comoSeAplica'),
     stack: T('pantalla.tecTuTecnologia2'), code_extensions: T('pantalla.tecTerminaciones'), test_runners: T('pantalla.tecHerramientasDePrueba'), rules: T('pantalla.tecReglas'), test_names: T('pantalla.tecEstiloDeNombres2'), screen_test: T('pantalla.tecPantallasConPrueba'), ui_language: T('pantalla.tecIdiomaDeLaApp2'), name: T('pantalla.tecNombre2'), detect: T('pantalla.tecArchivoQueLaDetecta2'), command: T('pantalla.tecComando2'), results: T('pantalla.tecReporte'), format: T('pantalla.tecFormato'), path: T('pantalla.tecRuta'),
@@ -1797,7 +1812,9 @@ ${trabajandoJs}
     if (!ruta) return '';
     // una hoja que se llama igual en dos claves se nombra con su ruta de dos partes (weekly_review.max_chars)
     var partes = String(ruta).split('.');
-    return partes.map(function (p, i) { return /^\d+$/.test(p) ? T('pantalla.fila') + (Number(p) + 1) : (i && PALABRAS[partes[i - 1] + '.' + p]) || PALABRAS[p] || '«' + p + '»'; }).join(' › ');
+    // sólo las claves propias de la tabla: una clave que se llama como un método («constructor») no toma el heredado
+    var de = function (k) { return Object.prototype.hasOwnProperty.call(PALABRAS, k) ? PALABRAS[k] : null; };
+    return partes.map(function (p, i) { return /^\d+$/.test(p) ? T('pantalla.fila') + (Number(p) + 1) : (i && de(partes[i - 1] + '.' + p)) || de(p) || '«' + p + '»'; }).join(' › ');
   }
   // [patrón, frase]: los mensajes que nombran claves del archivo, dichos con las palabras de la pantalla
   var FRASES = [
@@ -2678,6 +2695,14 @@ ${trabajandoJs}
       ayuda.textContent = T('pantalla.quienReenviaElOkAyuda', { nombre: nombre });
     }, 'approvals.relay_session.nombre', pr, { placeholder: T('pantalla.quienReenviaElOkEjemplo') }));
     box.appendChild(ayuda);
+    // quién firma el commit de una corrida: el agente (sin valor, de fábrica) o la coordinadora, con su ok de guardar
+    var commitLocal = (d.approvals || {}).local_commit;
+    box.appendChild(selector(T('pantalla.commitLocal'), commitLocal === 'coordinator' ? 'coordinator' : 'agent', [['agent', T('pantalla.commitLocalAgente')], ['coordinator', T('pantalla.commitLocalCoordinadora')]], function (x) {
+      // el agente es lo de fábrica: elegirlo saca la clave, salvo que el perfil ya lo dijera escrito
+      hoja(d, 'approvals', 'local_commit', x === 'coordinator' ? 'coordinator' : (commitLocal === 'agent' ? 'agent' : ''));
+      render();
+    }, 'approvals.local_commit', pr));
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.commitLocalAyuda') }));
     // quién firma cada cosa (story 8.116): una fila por firma del catálogo, que va a la ventana del dueño (de fábrica),
     // se delega a la sesión que reenvía, o es sólo del dueño. Lo sólo del dueño no se ofrece para delegar (pasa primero
     // por la ventana), ni lo que no se firma desde la pestaña de otra sesión
@@ -4012,10 +4037,22 @@ ${trabajandoJs}
   var TEC_ARCHIVOS = { dotnet: '.sln, .csproj', vitest: 'package.json (vitest)', jest: 'package.json (jest)', node: 'package.json (node --test)' };
   // el nombre para personas: el de fábrica, o el «label» que le puso la organización a su receta; si no, el id
   function nombreDe(r) { return TEC_NOMBRES[r.name] || (typeof r.label === 'string' && r.label) || r.name; }
-  // un <repo> de team-repos.json en una línea: «azure · org/proyecto/repo» o «github · org/repo»
+  // un <repo> de team-repos.json en una línea: «azure · org/proyecto/repo», «github · org/repo» o, uno que vive en
+  // grupos, «<plataforma> · grupo/sub/repo (servidor)»
   function repoEnTexto(x) {
     if (!esObjeto(x)) return '?';
-    return (x.platform || '?') + ' · ' + [x.org, x.project, x.repo].filter(function (v) { return v != null && v !== ''; }).join('/');
+    var servidor = x.namespace && x.host ? ' (' + x.host + ')' : '';
+    return (x.platform || '?') + ' · ' + [x.org, x.namespace, x.project, x.repo].filter(function (v) { return v != null && v !== ''; }).join('/') + servidor;
+  }
+  // La clave con que se distinguen los repos: como la identidad del lector, sin mayúsculas y con los %20 de una ruta
+  // copiada de la web leídos como espacio. Un repo que vive en grupos suma su grupo y su servidor: dos con el mismo
+  // nombre en grupos o servidores distintos son dos repos. La de uno sin grupo es la de siempre.
+  function claveDeRepo(x) {
+    if (!x || typeof x !== 'object' || Array.isArray(x)) return '';
+    var sinEscapes = function (v) { try { return decodeURIComponent(String(v || '')); } catch (e) { return String(v || ''); } };
+    var partes = [x.platform, x.org, x.project || '', x.repo];
+    if (x.namespace) partes = partes.concat(['@' + x.namespace, '@' + (x.host || '')]);
+    return partes.map(sinEscapes).join('/').toLowerCase();
   }
   function stackDe(d) { if (!esObjeto(d.stack)) d.stack = {}; return d.stack; }
   function limpiarStack(d) {
@@ -4042,9 +4079,7 @@ ${trabajandoJs}
     // el filtro de cada repo y el de por defecto: se ven y se editan, cada renglón con su «Quitar», y «Agregar un repo»
     // elige de los repos de la organización (los da el servidor); lo demás de la receta viaja intacto en la copia
     var repos = Array.isArray(r.repos) ? r.repos : [];
-    // como la identidad del lector: sin mayúsculas y con los %20 de una ruta copiada de la web leídos como espacio
-    var sinEscapes = function (v) { try { return decodeURIComponent(String(v || '')); } catch (e) { return String(v || ''); } };
-    var clave = function (x) { return esObjeto(x) ? [x.platform, x.org, x.project || '', x.repo].map(sinEscapes).join('/').toLowerCase() : ''; };
+    var clave = claveDeRepo;
     var porRepo = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.tecFiltroPorRepo') }), el('p', { class: 'sub-d', text: T('pantalla.tecFiltroPorRepoAyuda') }),
       campo(T('pantalla.tecFiltroPorDefecto'), r.args_default, function (v) { if (v === '') delete r.args_default; else r.args_default = v; }, 'runner.args_default', []));
     repos.forEach(function (x, i) {
@@ -4726,7 +4761,7 @@ ${trabajandoJs}
 
 module.exports = {
   extrasDeAprobaciones, nombreDeMaquina,
-  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, CONTEXT_NOTICE_SINCE, DEEP_REVIEW_SINCE, REVIEW_RUNNER_SINCE, PLAN_REVIEW_SINCE, DEEP_REVIEW_MATRIX_SINCE, REVIEW_SEVERITY_SINCE, WEEKLY_REVIEW_SINCE, STORY_INDEX_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, COORDINATION_SINCE, SWITCHES_SINCE, SITE_SINCE, SESSION_NAMES_SINCE, OFFICE_SINCE, SHORT_PATH_SINCE, SIGNATURE_LIST_SINCE, WAIT_NOTICE_ENABLED_SINCE, WAIT_NOTICE_OWNER_SINCE, WAIT_NOTICE_PEER_SINCE, DELEGATED_LIST_SINCE, OWNER_ONLY_SINCE, LEVELS_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, PACK_BLOCKS_SINCE, packBlocksLayer, capaQueSube, clavesQuePidenVersion, pedidasDelPerfil, direccionDelSitio, leerPerfil, estadoDelPerfil, origenDe, nombresDeLaLista, diferenciaDeJson, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, CONTEXT_NOTICE_SINCE, DEEP_REVIEW_SINCE, REVIEW_RUNNER_SINCE, PLAN_REVIEW_SINCE, DEEP_REVIEW_MATRIX_SINCE, REVIEW_SEVERITY_SINCE, WEEKLY_REVIEW_SINCE, STORY_INDEX_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, COORDINATION_SINCE, SWITCHES_SINCE, SITE_SINCE, SESSION_NAMES_SINCE, OFFICE_SINCE, SHORT_PATH_SINCE, SIGNATURE_LIST_SINCE, LOCAL_COMMIT_SINCE, WAIT_NOTICE_ENABLED_SINCE, WAIT_NOTICE_OWNER_SINCE, WAIT_NOTICE_PEER_SINCE, DELEGATED_LIST_SINCE, OWNER_ONLY_SINCE, LEVELS_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, PACK_BLOCKS_SINCE, packBlocksLayer, capaQueSube, clavesQuePidenVersion, pedidasDelPerfil, direccionDelSitio, leerPerfil, estadoDelPerfil, origenDe, nombresDeLaLista, diferenciaDeJson, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
   problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, estimacionesDeHoy, modelosEnNiveles, equivalenciasDe, proveedoresDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS, CLAVES_DEL_REPO, lectorDeClave, reemplazarBloque, revisarClaveDelRepo, idDeRepo, urlDeRepo,

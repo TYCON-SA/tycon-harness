@@ -42,6 +42,13 @@ const TOTAL = STEPS.length;
 const OLD_IDS = ['0', '0b', '0c', '1', '2', '3', '4', '5', '5b', '6', '7', '7b', '7c', '8', '9'];
 // Sus sub-pasos se daban por hechos con una bandera, como hoy el pase adversarial y la prueba en vivo.
 const OLD_FLAG = { '0b': ['workSignalStarted', 'clockiStarted'], '0c': ['adoMarkedActive'], '5b': ['deepReviewDone'], '7c': ['dodRuntimeChecked'] };
+// El comando que deja la bandera, con su constancia: el freno de complete-step lo nombra (su paso dice el detalle).
+const CLOSE_COMMAND = {
+  deepReviewDone: 'marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> --tests <k promovidas> [--own <p> --in "<rutas de prueba>"] [--deferred <d> --reason "<por qué>"] (con 0 confirmados, sin --tests; step-08-adversarial-pass.md)',
+  dodRuntimeChecked: 'marker.js mark-dod-runtime-checked \'{"evidencePath": "<ruta absoluta de la evidencia>", "verdict": "PASS"}\' (step-10-live-check.md)',
+};
+const mensajeBandera = (nombre, flag) => `«${nombre}» no se cierra con complete-step: lo da por hecho su bandera (${flag}), que dejan sus propios comandos.${
+  CLOSE_COMMAND[flag] ? ` Se cierra con ${CLOSE_COMMAND[flag]}.` : ''}`;
 
 // El orden que frena `complete-step`: no se cierra un paso con su predecesor pendiente. Sólo los pasos con un control
 // real; exigir «todo lo anterior» volvería rutina el `--out-of-order`.
@@ -203,7 +210,7 @@ function resolveStepArg(marker, raw, opts = {}) {
   const s = byId(v);
   // los pasos que se cierran con su bandera no se cierran con complete-step, en ningún marcador: la bandera la dejan
   // sus propios comandos, con su constancia
-  if (s && s.flag) return { ok: false, message: `«${s.name}» no se cierra con complete-step: lo da por hecho su bandera (${s.flag}), que dejan sus propios comandos.` };
+  if (s && s.flag) return { ok: false, message: mensajeBandera(s.name, s.flag) };
   if (sc === 2) {
     if (s) return { ok: true, scheme: 2, ids: [s.id] };
     if (OLD_IDS.includes(v) || /^\d+$/.test(v)) return { ok: false, message: mensajeNumero(v) };
@@ -212,7 +219,7 @@ function resolveStepArg(marker, raw, opts = {}) {
   // marcador viejo
   if (s) return { ok: true, scheme: 1, ids: OLD_CLOSE[s.id] };
   // sus sub-pasos tampoco: se daban por hechos con su bandera, y la otra vuelta de los revisores no es un paso aparte
-  if (OLD_FLAG[v]) return { ok: false, message: `«${v}» no se cierra con complete-step: lo da por hecho su bandera (${OLD_FLAG[v][0]}), que dejan sus propios comandos.` };
+  if (OLD_FLAG[v]) return { ok: false, message: mensajeBandera(v, OLD_FLAG[v][0]) };
   if (v === '7b') return { ok: false, message: '«7b» no es un paso: es otra vuelta de los revisores, que se cierra con complete-step reviewers.' };
   if (OLD_IDS.includes(v)) {
     if (until && today > until) return { ok: false, message: mensajeNumero(v) };
@@ -296,13 +303,15 @@ function nombresDeArchivos(absolutos, marker) {
  * Lo ya anotado en `otraVuelta` del marcador después del mismo cierre de los revisores se conserva: `fileEvents` se
  * recorta a 500 y un cambio viejo no se pierde por eso.
  *
- * `aunConHallazgos`: decide también con Hallazgos abierto. Lo usa el freno de «Preparar el commit»: un arreglo hecho
+ * `aunConHallazgos`: decide también con Hallazgos abierto. Lo usa el freno de «Preparar el pull request»: un arreglo hecho
  * después de los revisores pide la vuelta aunque Hallazgos no se haya cerrado; `next` espera a que cierre.
  *
- * Un archivo que quedó igual a lo revisado, salvo el lugar de sus comentarios, no cuenta (historia 8.217): lo decide
- * lib/frozen-tree.js contra el sello de la última vuelta cerrada. Si eso falla, no se saca ninguno.
+ * Lo que cambió adentro de cada archivo lo decide lib/frozen-tree.js contra el sello de la última vuelta cerrada, con la
+ * regla de lib/review-change-policy.js: un archivo que sólo cambió comentarios o espacios no cuenta, y si todo lo que
+ * pide la vuelta son textos, la vuelta es chica (`chica: true`). `textosConVueltaChica` cambia la decisión del dueño para
+ * una prueba. Si eso falla, todo cuenta como código.
  */
-function reviewersRound(marker, { aunConHallazgos = false } = {}) {
+function reviewersRound(marker, { aunConHallazgos = false, textosConVueltaChica } = {}) {
   if (!marker || schemeOf(marker) !== 2) return null;
   if (!aunConHallazgos && !isDone(marker, 'findings')) return null;
   if (aunConHallazgos && !isDone(marker, 'reviewers')) return null;
@@ -326,16 +335,22 @@ function reviewersRound(marker, { aunConHallazgos = false } = {}) {
     if (!absolutos.includes(abs)) absolutos.push(abs);
     if (!primero.has(abs) || ts < primero.get(abs)) primero.set(abs, ts);
   }
-  let movidos = new Set();
+  // qué cambió adentro de cada uno, contra el sello de la vuelta (lib/review-change-policy.js): sólo comentarios no
+  // cuenta; sólo textos pide la vuelta chica; lo que no se pudo mirar cuenta como código
+  let tipos = new Map();
   if (absolutos.length) {
-    try { movidos = require('./frozen-tree.js').comentariosMovidosDesdeLaVuelta({ marker, cierre, archivos: absolutos }); } catch (e) { anotarFalla(e); }
+    try { tipos = require('./frozen-tree.js').tiposDesdeLaVuelta({ marker, cierre, archivos: absolutos }); } catch (e) { anotarFalla(e); }
   }
-  const cuentan = absolutos.filter((abs) => !movidos.has(abs));
+  const politica = require('./review-change-policy.js');
+  const tipoDe = (abs) => (tipos.get(abs) || {}).tipo || 'codigo';
+  const cuentan = absolutos.filter((abs) => politica.pideVuelta(tipoDe(abs), textosConVueltaChica === undefined ? {} : { textosConVueltaChica }));
   for (const abs of cuentan) if (desde === null || primero.get(abs) < desde) desde = primero.get(abs);
   const archivos = previo && Array.isArray(previo.archivos) ? previo.archivos.filter((a) => typeof a === 'string') : [];
+  // la vuelta es chica si todo lo que la pide son textos, también lo que ya estaba pedido
+  const chica = cuentan.every((abs) => tipoDe(abs) === 'textos') && (!archivos.length || previo.chica === true);
   for (const nombre of nombresDeArchivos(cuentan, marker)) if (!archivos.includes(nombre)) archivos.push(nombre);
   if (!archivos.length) return null;
-  return { round: (Number(t.rounds) || 1) + 1, archivos, desde: new Date(desde).toISOString() };
+  return { round: (Number(t.rounds) || 1) + 1, archivos, desde: new Date(desde).toISOString(), ...(chica ? { chica: true } : {}) };
 }
 
 /** Una falla al mirar lo revisado: queda en hook-errors.log y la decisión sigue como si no se hubiera mirado. */
@@ -344,7 +359,7 @@ function anotarFalla(e) {
     const fs = require('fs');
     const dir = require('./state-dir.js').stateDir(require('os').homedir());
     fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(path.join(dir, 'hook-errors.log'), `[${new Date().toISOString()}] reviewersRound: no pude ver si sólo se movieron comentarios (${String((e && e.message) || e).split('\n')[0]}) — cuentan todos\n`, 'utf8');
+    fs.appendFileSync(path.join(dir, 'hook-errors.log'), `[${new Date().toISOString()}] reviewersRound: no pude ver qué cambió adentro de los archivos (${String((e && e.message) || e).split('\n')[0]}) — cuentan todos como código\n`, 'utf8');
   } catch (_) { /* ayuda, no evidencia */ }
 }
 
@@ -359,7 +374,7 @@ function otraVueltaDe(marker) {
 }
 
 /**
- * ¿Hay que volver a «Preparar el commit»? Sí, si estaba hecho y los revisores cerraron después: lo que preparó ya no es
+ * ¿Hay que volver a «Preparar el pull request»? Sí, si estaba hecho y los revisores cerraron después: lo que preparó ya no es
  * lo revisado. Compara dos horas del marcador; el cartel tiene una copia de esta regla (mods/harness-mods/hooks/run.mjs)
  * y la prueba de igualdad de harness-mods.test.js frena si se separan.
  */

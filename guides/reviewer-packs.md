@@ -31,6 +31,25 @@ declare `agents` en el `pack.json`. Uno que sólo está en `agents/` de la raíz
 dice en llano: «las instrucciones de X tienen que estar en packs/<paquete>/agents/X.md (hoy están en agents/X.md)».
 Para mudarlo, se mueve el archivo a la carpeta de su paquete; en los dos lugares a la vez también es un problema.
 
+**Los controles de la CI que corren en local.** Un control que la CI del stack corre después de la cola y de la
+compilación, y que en local tarda segundos, se declara en `ciLocalChecks` del `pack.json`. El cierre de «Preparar el
+pull request» lo corre en cada repo antes de la foto, y uno en rojo frena el paso: el rojo se ve antes de pedir la
+aprobación, no media hora después.
+
+```json
+"ciLocalChecks": [
+  { "name": "Manifest check", "run": ["node", "$TYCON_HARNESS_DIR/scripts/ci/check-plugin-manifests.js", "--repo", ".", "--migrations", "auto"],
+    "whenFile": "plugin.json", "timeoutSeconds": 60 }
+]
+```
+
+`run` es el comando, palabra por palabra y sin consola en el medio (`node` corre con el node del arnés; `bash -c` no
+anda en un Windows sin bash). Corre en la raíz del repo; `$TYCON_HARNESS_DIR` y `$TYCON_REPO_DIR` escritos en una
+palabra se reemplazan por la carpeta del arnés y la del repo, y también van en el entorno. `whenFile` (opcional): corre sólo si el repo tiene en su raíz un
+archivo con ese nombre. `timeoutSeconds` (opcional, de 1 a 600; 120 por defecto). Un repo suma los suyos en
+`.tycon/ci-local-checks.json` (`{ "checks": [...] }`), y apaga los del paquete con `"fromPacks": false`; ese archivo se
+lee de lo commiteado. Un control mal escrito, o que no termina, frena con «no medido»: no es verde.
+
 ## Cuándo corre un revisor
 
 Lo decide `when` en `pack.json`. El vocabulario es cerrado (`detection`, `files`, `added`, `all`, `any`, `no`): una clave
@@ -156,6 +175,6 @@ se pone `packs.default` en la configuración de la máquina (`~/.claude/tycon.js
    llano y sin los IDs, qué mira cada regla, cuáles frenan la historia y cuáles sólo avisan, y cuántos casos del examen
    salieron bien.
 8. **La copia de respaldo, una sola vez.** Un perfil local vive sólo en esa máquina: `doctor` lo muestra como aviso. Ofrecé
-   una sola vez subirlo a GitHub o a Azure DevOps: un repo privado vacío, y desde la carpeta del perfil
+   una sola vez subirlo a GitHub o a Azure DevOps (en GitLab el perfil todavía no va): un repo privado vacío, y desde la carpeta del perfil
    `git remote add origin <dirección>` y `git push -u origin main`; después `harness.js install --team <dirección>`,
    para que el arnés lo lea de ahí. Si dice que no, no lo vuelvas a ofrecer: el aviso de `doctor` queda, y no frena nada.

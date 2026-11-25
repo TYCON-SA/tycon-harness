@@ -14,7 +14,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawnSync, execFileSync } = require('child_process');
+const { spawn, spawnSync, execFileSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const LIB = path.join(ROOT, 'scripts', 'lib', 'extension-notices.js');
@@ -333,4 +333,55 @@ test('T12 · ExtensionNotices_RootOnlyWhenNeeded_NoGit @story-8.266 @ac-7', () =
   assert.ok(pack.out.includes('REGLA-DEL-DEPLOY'), pack.out);
   assert.ok(pack.gits >= 1, 'un aviso de paquete pide la raíz para saber si el paquete está activo en el repo');
   assert.strictEqual(after('make deploy').gits, 0, 'el de paquete ya dicho: ningún git');
+});
+
+// ── el aviso «después del comando»: comandos a la vez y eventos que no se leen ─────────────────────────────────────
+
+/** El gancho con un evento de después de un comando, de fondo: así varios corren a la vez. */
+function despuesDelComandoDeFondo(l, { session, command, input }) {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [HOOK], {
+      env: { PATH: process.env.PATH, HOME: l.home, TYCON_HOME: path.join(l.home, '.tycon'), TYCON_PACKS_DIR: l.packs, TYCON_PACKS_DEFAULT: 'all', TYCON_INTEGRATIONS_DIR: path.join(l.base, 'sin-integraciones') },
+    });
+    let out = '';
+    child.stdout.on('data', (d) => { out += d; });
+    child.on('close', (code) => resolve({ code, out }));
+    child.stdin.end(input !== undefined ? input : JSON.stringify({ session_id: session, cwd: l.repo, hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command } }));
+  });
+}
+
+test('Gancho_ComandosALaVez_NoPierdenLoYaDicho @story-8.85', async () => {
+  // varios comandos de la misma sesión que terminan a la vez: cada uno anota lo suyo sin pisar la marca de los otros, y
+  // ningún aviso vuelve a salir
+  const ids = Array.from({ length: 8 }, (_, i) => `n${i + 1}`);
+  const files = { 'pack.json': JSON.stringify({ name: 'producto', description: 'de prueba' }) };
+  for (const id of ids) files[`notices/${id}.md`] = `REGLA-${id.toUpperCase()}\n`;
+  const l = hookLab({ notices: { notices: ids.map((id) => ({ id, text: `notices/${id}.md`, when: 'after-command', commands: [`acme ${id}`] })) } });
+  extension(path.join(l.packs, 'producto'), undefined, files);
+  const primera = await Promise.all(ids.map((id) => despuesDelComandoDeFondo(l, { session: 'carrera', command: `acme ${id}` })));
+  ids.forEach((id, i) => {
+    assert.strictEqual(primera[i].code, 0);
+    assert.ok(primera[i].out.includes(`REGLA-${id.toUpperCase()}`), `la primera vez dice ${id}: ${primera[i].out}`);
+  });
+  for (const id of ids) {
+    const otra = await despuesDelComandoDeFondo(l, { session: 'carrera', command: `acme ${id}` });
+    assert.ok(!otra.out.includes(`REGLA-${id.toUpperCase()}`), `${id} ya se dijo: no se repite (${otra.out})`);
+  }
+});
+
+test('Gancho_EventoDeComandoIlegible_NoDiceLosDeArranque @story-8.85', async () => {
+  // un evento de después del comando que llega cortado no es un arranque: no dice los avisos de arranque como texto
+  // suelto ni los anota como dichos; dice el problema por el canal del comando
+  const l = hookLab();
+  const cortado = JSON.stringify({ session_id: 'cortada', cwd: l.repo, hook_event_name: 'PostToolUse', tool_name: 'Bash', tool_input: { command: 'acme deploy' } }).slice(0, -2);
+  const r = await despuesDelComandoDeFondo(l, { input: cortado });
+  assert.strictEqual(r.code, 0);
+  assert.ok(!r.out.includes('REGLA-DE-LA-URL'), `no dice los avisos de arranque: ${r.out}`);
+  const json = JSON.parse(r.out);
+  assert.strictEqual(json.hookSpecificOutput.hookEventName, 'PostToolUse');
+  assert.match(json.hookSpecificOutput.additionalContext, /el evento de después del comando no se pudo leer/);
+  // el arranque de una sesión sin id, después, los dice: nada quedó anotado
+  const r2 = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ cwd: l.repo, hook_event_name: 'SessionStart' }), encoding: 'utf8',
+    env: { PATH: process.env.PATH, HOME: l.home, TYCON_HOME: path.join(l.home, '.tycon'), TYCON_PACKS_DIR: l.packs, TYCON_PACKS_DEFAULT: 'all', TYCON_INTEGRATIONS_DIR: path.join(l.base, 'sin') } });
+  assert.ok(r2.stdout.includes('REGLA-DE-LA-URL'), r2.stdout);
 });

@@ -486,9 +486,10 @@ function reposEscritos(lista) {
 /**
  * ¿La ruta cae fuera de la lista? null (está, o está exenta) o `{ archivo, motivo }`. `filePath` y `real` (la ruta real,
  * por los enlaces) los da el borde, con la raíz real de su repo (`repoRoot`, null fuera de un repo). Fuera de un repo
- * frena salvo la carpeta temporal; la carpeta personal frena al carril delegado y no al de una persona.
+ * frena salvo la carpeta temporal; la carpeta personal frena al carril delegado y no al de una persona. `estricta` (el
+ * arreglo de un rojo de CI, que cuenta las pruebas en su tope): la prueba de un archivo de la lista no pasa por su nombre.
  */
-function fueraDeLaLista({ lista, filePath, real, repoRoot, home = os.homedir(), delegado = false }) {
+function fueraDeLaLista({ lista, filePath, real, repoRoot, home = os.homedir(), delegado = false, estricta = false }) {
   if (!Array.isArray(lista)) return null;
   const abs = sinEnlaces(real || filePath);
   // la ruta escrita, con sus carpetas reales pero sin seguir el enlace del final: un enlace con otro nombre no es la entrada
@@ -509,7 +510,7 @@ function fueraDeLaLista({ lista, filePath, real, repoRoot, home = os.homedir(), 
   }
   const rel = norm(path.relative(raiz, abs));
   if (esPapeleo(rel)) return null;
-  if (esPruebaDe(lista, abs, raiz)) return null;
+  if (!estricta && esPruebaDe(lista, abs, raiz)) return null;
   if (esPapeleoDeLaLista(lista, abs, raiz, rel)) return null;
   return { archivo: abs, motivo: 'no está en la lista' };
 }
@@ -536,6 +537,8 @@ function ampliacionSinFirma({ actual, nueva, reason, maxFiles, datos, maqueta, s
   if (firmaVigente !== true) return no('la lista abierta no tiene su firma vigente');
   if (!actual || !Array.isArray(actual.allowedFiles) || !actual.allowedFiles.length) return no('no hay una lista firmada que ampliar');
   if (!VIAS_FIRMADAS.has(actual.via)) return no('la lista abierta no la firmó nadie');
+  // el arreglo de un rojo de CI tiene su propia firma y su tope: no se agranda por este camino
+  if (actual.ciRojo) return no('es el arreglo de un rojo de CI, que va con su firma');
   if (!Array.isArray(nueva) || faltanEnLaNueva(actual.allowedFiles, nueva).length) return no('la lista nueva no contiene entera a la firmada');
   const firmada = new Set(actual.allowedFiles.map(unidadEnMayuscula));
   const agregados = nueva.filter((f) => !firmada.has(unidadEnMayuscula(f)));

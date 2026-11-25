@@ -171,7 +171,8 @@ test('T1b RunCloseGate_DeudaYaNoCubrePasarARevision @story-8.139 @ac-29 — con 
   }
 });
 
-// la forma canónica de force-manual y trust-ran la firma su guion en la ventana: acá, la que el freno sigue frenando
+// la forma canónica de force-manual, trust-ran y los escapes del cierre la firma su guion en la ventana: acá, la que el
+// freno sigue frenando
 const FUERA_DE_FORMA = 'cd /tmp &&';
 
 test('T2 RunCloseGate_TrustRanYaNoCubreForceManual @story-8.140 @ac-2 @story-8.139 @ac-29 — con trust-ran ya autorizado, force-manual del control de revisores pide su propia ventana', () => {
@@ -183,7 +184,7 @@ test('T2 RunCloseGate_TrustRanYaNoCubreForceManual @story-8.140 @ac-2 @story-8.1
 });
 
 test('T3 RunCloseGate_AlReves_Frena @story-8.140 @ac-4 — la segunda frase no cubre la primera', () => {
-  const a = lector(corral(ROJO, [escape(5)]), `${MK} close-as-debt --reason "x" --debt DEF-9.9-x`);
+  const a = lector(corral(ROJO, [escape(5)]), `${FUERA_DE_FORMA} ${MK} close-as-debt --reason "x" --debt DEF-9.9-x`);
   assert.deepStrictEqual([a.frena.map((f) => f[0]), a.cubre.length], [['cerrar como deuda'], 0]);
   const b = lector(corral(VERDE, [escape(5, { escape: 'force-manual' })]), `${FUERA_DE_FORMA} ${PL} check-count --story s --trust-ran`);
   assert.deepStrictEqual([b.frena.map((f) => f[0]), b.cubre.length], [['trust-ran'], 0]);
@@ -235,4 +236,62 @@ test('T25 8.215-CerrarLaEjecucion_SinTurno_PideFrase @story-8.215 @ac-11', () =>
   assert.deepStrictEqual(lector(corral(TODO_HECHO, []), `${MK} clear`).frena, [], 'el caso de control: con las pruebas en verde, no frena');
   const v = lector(corral(SIN_TURNO, []), `${MK} clear`);
   assert.deepStrictEqual(v.frena.map((f) => f[0]), ['cerrar la ejecución'], 'cerrar con las pruebas sin medir pide la frase, como con un rojo');
+});
+
+// ───────────── Cerrar la ejecución de otra sesión ─────────────
+// 🔴 Falla con: `clear-session <otra sesión>` no era un escape para el freno. Cerraba la ejecución abierta de otra sesión
+// sin la firma del dueño y sin dejar renglón, desde cualquier sesión; cerrar la propia sí la pedía.
+
+const OTRA = 'sesion-ajena';
+const RAIZ = path.resolve(__dirname, '..', '..', '..', '..');
+/** El marcador de otra sesión en la misma casa. */
+function conOtra(c, marcador) {
+  fs.writeFileSync(path.join(c.estado, 'active', `${OTRA}.json`), JSON.stringify({
+    storyId: '8.8', storyPath: path.join(c.raiz, 'repo', 'otra.md'), repoPath: path.join(c.raiz, 'repo'),
+    sessionId: OTRA, startedAt: hace(60), ...marcador,
+  }));
+  return c;
+}
+
+test('T12 RunCloseGate_OtraSesionAbierta_PideLaFirma — cerrar la ejecución abierta de otra sesión pide la firma, como la propia; una completa no', () => {
+  const cmd = `${MK} clear-session ${OTRA}`;
+  // la otra, abierta: pide, esté como esté la propia
+  for (const propia of [VERDE, ROJO]) {
+    const v = lector(conOtra(corral(propia), ROJO), cmd);
+    assert.deepStrictEqual(v.frena, [['cerrar la ejecución', 'clear-session', OTRA]], JSON.stringify(propia.checks));
+  }
+  // la otra, completa: no pide, aunque la propia esté en rojo
+  assert.deepStrictEqual(lector(conOtra(corral(ROJO), VERDE), cmd).frena, []);
+  // la propia por su nombre, como antes: según la propia
+  assert.deepStrictEqual(lector(conOtra(corral(ROJO), VERDE), `${MK} clear-session ${SID}`).frena.map((f) => f[0]), ['cerrar la ejecución']);
+  assert.deepStrictEqual(lector(conOtra(corral(VERDE), ROJO), `${MK} clear-session ${SID}`).frena, []);
+  // la sesión en una variable: no se sabe de quién es la ejecución, pide
+  assert.deepStrictEqual(lector(conOtra(corral(VERDE), VERDE), `${MK} clear-session "$S"`).frena.map((f) => f[0]), ['cerrar la ejecución']);
+});
+
+test('T13 ClearSession_OtraSesion_DejaSuRenglon — cerrar la de otra sesión anota quién la cerró, con la huella y no el dato', () => {
+  const correr = (c, sesion) => spawnSync(process.execPath, [MARKER, 'clear-session', sesion], {
+    encoding: 'utf8',
+    env: { ...process.env, HOME: path.join(c.raiz, 'home'), USERPROFILE: path.join(c.raiz, 'home'), CLAUDE_CODE_SESSION_ID: SID,
+      TYCON_LANE_LLM: '0', TYCON_GUIDES_DIR: RAIZ, TYCON_CLOSURE_RECORD: '' },
+  });
+  const renglones = (c) => {
+    try { return fs.readFileSync(path.join(c.estado, 'frenos.jsonl'), 'utf8').split('\n').filter(Boolean).map(JSON.parse).filter((l) => l.freno === 'clear-session'); } catch (_) { return []; }
+  };
+  // completa: pasa sin firma, con su renglón
+  const c = conOtra(corral(VERDE), VERDE);
+  const r = correr(c, OTRA);
+  assert.strictEqual(r.status, 0, r.stderr);
+  const [l] = renglones(c);
+  assert.deepStrictEqual(l && [l.regla, l.veredicto, l.sesion], ['otra-sesion', 'paso', SID], JSON.stringify(renglones(c)));
+  assert.ok(/^[0-9a-f]{64}$/.test(String(l.sha256)), 'la huella');
+  assert.doesNotMatch(JSON.stringify(l), /8\.8|sesion-ajena/, 'ni la historia ni la sesión cerrada viajan en la línea');
+  // abierta: el renglón dice que se cerró abierta (la firma la anotó el freno, aparte)
+  const a = conOtra(corral(VERDE), ROJO);
+  assert.strictEqual(correr(a, OTRA).status, 0);
+  assert.deepStrictEqual(renglones(a).map((x) => x.veredicto), ['escape']);
+  // la propia no deja este renglón: es la de siempre
+  const p = conOtra(corral(VERDE), VERDE);
+  assert.strictEqual(correr(p, SID).status, 0);
+  assert.deepStrictEqual(renglones(p), []);
 });

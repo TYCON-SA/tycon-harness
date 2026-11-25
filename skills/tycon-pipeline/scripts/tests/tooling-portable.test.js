@@ -65,7 +65,7 @@ test('Tooling_FindsToolsOnEveryPlatform_RunCheckUsesGitBash', async (t) => {
         for (const call of calls) assert.strictEqual(call[0], c.finder, `${c.platform}: buscó con ${call[0]}, no con ${c.finder}`);
       }
     } finally { fs.rmSync(repo, { recursive: true, force: true }); }
-    assert.ok(!fs.readFileSync(path.join(SCRIPTS, 'pipeline.js'), 'utf8').includes('/usr/bin/which'), 'pipeline.js no nombra /usr/bin/which');
+    assert.ok(!require('./lib/pipeline-source.js')(SCRIPTS).includes('/usr/bin/which'), 'pipeline.js (con sus partes) no nombra /usr/bin/which');
   });
 
   await t.test('findBinary: una ruta absoluta se mira en el disco; la salida vacía es «no está»', () => {
@@ -116,7 +116,7 @@ test('Tooling_FindsToolsOnEveryPlatform_RunCheckUsesGitBash', async (t) => {
     const none = portable.runCheckLaunch(['bash', 'x.sh'], { platform: 'win32', env: winEnv, home, ownClone: home, exists: (p) => p === want });
     assert.strictEqual(none.file, null);
     assert.match(none.error, /no encuentro el arnés/, 'sin clon propio con la búsqueda, el motivo es el de siempre');
-    const marker = fs.readFileSync(path.join(SCRIPTS, 'marker.js'), 'utf8');
+    const marker = require(path.join(SCRIPTS, 'tests', 'lib', 'marker-source.js'))(SCRIPTS);
     assert.match(marker, /runCheckLaunch\(/, 'marker.js run-check lanza por runCheckLaunch()');
   });
 

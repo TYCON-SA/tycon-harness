@@ -190,9 +190,19 @@ T=$(mktemp -d); montar "$T"
 printf '%s' "$STORY_SANA" | sed 's/^status: draft/status: in-progress/' > "$T/repo/specs/story-9.9-sana.md"
 ( cd "$T/repo" && git add specs/story-9.9-sana.md && git -c user.email=b@b -c user.name=b commit -q -m "nace" )
 printf '%s' "$STORY_SANA" | sed 's/^status: draft/status: done\ndod_runtime_exempt: true\nadvisors_exempt: true/' > "$T/repo/specs/story-9.9-sana.md"
+# sin la constancia del dueño en el repo (.tycon/exemptions.jsonl), las exenciones agregadas frenan
 ( cd "$T/repo" && git add specs/story-9.9-sana.md )
 RC=$(correr_hook "$T")
-[ "$RC" = "0" ] && ok "C-07 (T25 R3_CiGate_RequiresLib) con las exenciones declaradas pasa (exit 0)" || { mal "C-07 (T25 R3_CiGate_RequiresLib) frenó una story con exenciones declaradas (exit $RC)"; sed -n '1,8p' "$T/out.txt"; }
+if [ "$RC" != "0" ] && grep -q "exencion-sin-constancia" "$T/out.txt"; then
+  ok "C-07 las exenciones agregadas sin su constancia en el repo frenan (exit $RC)"
+else
+  mal "C-07 las exenciones sin constancia no frenaron (exit $RC)"; sed -n '1,8p' "$T/out.txt"
+fi
+mkdir -p "$T/repo/.tycon"
+printf '%s\n' '{"story":"9.9","campo":"dod_runtime_exempt","archivo":"specs/story-9.9-sana.md","via":"prueba"}' '{"story":"9.9","campo":"advisors_exempt","archivo":"specs/story-9.9-sana.md","via":"prueba"}' > "$T/repo/.tycon/exemptions.jsonl"
+( cd "$T/repo" && git add .tycon/exemptions.jsonl )
+RC=$(correr_hook "$T")
+[ "$RC" = "0" ] && ok "C-07 (T25 R3_CiGate_RequiresLib) con las exenciones declaradas y su constancia pasa (exit 0)" || { mal "C-07 (T25 R3_CiGate_RequiresLib) frenó una story con exenciones declaradas y su constancia (exit $RC)"; sed -n '1,8p' "$T/out.txt"; }
 rm -rf "$T"
 
 # ── C-08 · la story se RENOMBRA (`git mv`) y cierra en el mismo commit → el portón la ve igual ─

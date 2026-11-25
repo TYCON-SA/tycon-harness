@@ -96,15 +96,16 @@ test('SignatureQuestion_EveryFirma_VerbOnce_NoAprobas (T32)', (t) => {
 
 // 🔴 Falla con: la historia nombrada sólo por su número, o una línea de historia sin corrida.
 test('SignatureQuestion_StoryWithTitle_NamesTitle (T33)', (t) => {
-  const save = conFirma('save');
+  const pendiente = conFirma('pending-approval');
+  const cmd = (c) => `node ${MARKER} approve-pending --id DEF-nuevo --repo ${c.repo}`;
   const con = corrida(t);
-  assert.match(save(con, `node ${MARKER} approve-save`).pregunta, new RegExp(`Historia 9\\.99, «${TITULO}», sesión ses-a\\.`));
+  assert.match(pendiente(con, cmd(con)).pregunta, new RegExp(`Historia 9\\.99, «${TITULO}», sesión ses-a\\.`));
   const sin = corrida(t, { titulo: null });
-  assert.match(save(sin, `node ${MARKER} approve-save`).pregunta, /Historia 9\.99 \(sin título en su archivo\), sesión ses-a\./);
+  assert.match(pendiente(sin, cmd(sin)).pregunta, /Historia 9\.99 \(sin título en su archivo\), sesión ses-a\./);
   // sin corrida no hay historia que nombrar, pero sí la sesión sobre la que se firma
   const ninguna = corrida(t);
   fs.rmSync(path.join(ninguna.estado, 'active', 'ses-a.json'));
-  const q = save(ninguna, `node ${MARKER} approve-save`).pregunta;
+  const q = pendiente(ninguna, cmd(ninguna)).pregunta;
   assert.doesNotMatch(q, /Historia/);
   assert.match(q, /\? Sesión ses-a\./);
 });
@@ -596,7 +597,7 @@ test('SignatureQuestion_SourceChangedAfterBox_ClickDoesNotCount (T43)', (t) => {
 test('SignatureQuestion_LongFields_CutWithMark (T44)', () => {
   const larga = 'x'.repeat(300);
   const archivos = Array.from({ length: 14 }, (_, i) => `a${i}.js`);
-  const q = oa.cuadroDe({ firma: 'save', destino: 'ses-a', que: 'guardar la story', queHace: [larga], archivos, siSaleMal: 'se revierte', huella: 'ab12cd34' }).pregunta;
+  const q = oa.cuadroDe({ firma: 'pending-approval', destino: 'ses-a', que: 'abrir un pendiente nuevo', queHace: [larga], archivos, siSaleMal: 'se revierte', huella: 'ab12cd34' }).pregunta;
   // 8.275: el corte dice «(sigue en el detalle)»; los archivos, en cantidad y zonas
   assert.match(q, /Qué hace: x+ \(sigue en el detalle\)\./);
   assert.ok(!q.includes('…'), q);
@@ -916,6 +917,71 @@ test('8.176-Cuadro_RutaQueFalsea_SinCuadro (T10) @story-8.176 @ac-9', (t) => {
   assert.strictEqual(deVerdad.decision, 'deny', deVerdad.texto);
   assert.doesNotMatch(deVerdad.texto, /No abrí la ventana/, deVerdad.texto);
   assert.match(deVerdad.texto, /run-base-controls\.sh pending --root /, deVerdad.texto);
+});
+
+// 🔴 Mutaciones: tomar por cambio de control un pedido de varias firmas que trae una de control, o una firma sola que no
+//    es de control (`esDeControl` con «||»); mandar a pending una negativa sin cuadro que no es de control; armar la
+//    vista con la primera de varias firmas, o no armarla con una sola (`pendientes.length === 1`).
+test('8.176-SinCuadro_VariasFirmasConUnaDeControl_NoMandaAPending (T10b) @story-8.176 @ac-9', (t) => {
+  const roto = { error: 'el --entries no es JSON' };
+  const casos = [
+    ['varias con una de control', ['control-change', 'plan-approval'], roto],
+    ['varias de control', ['control-change', 'refresh-after-main'], roto],
+    ['una que no es de control', ['plan-approval'], roto],
+    ['de control sin cuadro', ['control-change'], null],
+  ];
+  for (const [nombre, ids, cuadro] of casos) {
+    const r = ow.negarSinVentana('sin ventana', ids, 'ses-a', cuadro);
+    assert.strictEqual(r.decision, 'deny', nombre);
+    assert.deepStrictEqual(r.firmas, ids, nombre);
+    assert.ok(!r.cuadro, `${nombre}: dio el cuadro`);
+    assert.doesNotMatch(r.texto, /run-base-controls\.sh pending/, `${nombre}: ${r.texto}`);
+    assert.match(r.texto, /corré cada firma sola, en su forma exacta/, `${nombre}: ${r.texto}`);
+  }
+  // la de control sola y sin cuadro, sí: la salida es pedir las rutas de nuevo
+  assert.match(ow.negarSinVentana('sin ventana', ['control-change'], 'ses-a', roto).texto, /run-base-controls\.sh pending --root /);
+  // y con su cuadro armado, el cuadro: no se manda a pending lo que se puede aprobar
+  const { c: cc, entradas, comando } = repoConArchivos(t, ['scripts/ci/a.sh']);
+  const bueno = conFirma('control-change')(cc, comando(entradas()));
+  assert.ok(bueno.pregunta && !bueno.error, bueno.error);
+  const conCuadro = ow.negarSinVentana('sin ventana', ['control-change'], 'ses-a', bueno);
+  assert.strictEqual(conCuadro.cuadro, bueno);
+  assert.ok(conCuadro.texto.includes(bueno.pregunta), conCuadro.texto);
+  assert.doesNotMatch(conCuadro.texto, /run-base-controls\.sh pending/, conCuadro.texto);
+  // en la ventana de permiso, una firma sola que no es de control y no tiene cuadro se niega con su motivo, sin pending
+  const c = corrida(t);
+  const r = pedirControl(c, `node ${MARKER} runtime-waiver ${c.ruta} --acs 1`, { sesion: 'ses-a' });
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.deepStrictEqual(r.firmas, ['runtime-waiver']);
+  // fila 42: el motivo es el real, el mismo que da el guion de la firma: el criterio no corrió, no «no está pendiente»
+  assert.match(r.texto, /el AC 1 está SIN CORRER: un criterio sin correr no se exime, lo corre el agente/, r.texto);
+  assert.doesNotMatch(r.texto, /no es un criterio pendiente de firma/, r.texto);
+  assert.doesNotMatch(r.texto, /run-base-controls\.sh pending/, r.texto);
+  // con dos firmas, la ventana dice las dos: no la pregunta de la primera
+  const dos = ['escape:TYCON_TEST_GATE', 'escape:TYCON_STATUS_GATE'];
+  const ventana = ow.decidir({
+    evento: { session_id: 'ses-a', tool_use_id: 'toolu_01', hook_event_name: 'PreToolUse', tool_name: 'Bash', permission_mode: 'default', tool_input: { command: 'TYCON_TEST_GATE=1 TYCON_STATUS_GATE=off bash test-gate.sh' }, cwd: c.repo },
+    escapes: dos, arbol: arbolDelFreno(), pid: 201, casa: c.casa, ahora: AHORA, delegacion: delegacionReal, clasificar: () => null, comprobar: () => null,
+    aprobador: () => APPROVERS.maintainers, aprobaciones });
+  assert.strictEqual(ventana.decision, 'ask', ventana.texto);
+  assert.deepStrictEqual(ventana.firmas, dos);
+  const aprueba = (id) => sig.SIGNATURES.find((s) => s.id === id).approves;
+  assert.ok(ventana.texto.includes(`${aprueba(dos[0])}; ${aprueba(dos[1])}.`), ventana.texto);
+});
+
+// 🔴 Mutaciones: el borde del largo de un nombre en el cuadro (`<= 40` cambiado por `< 40`): un nombre de exactamente 40
+//    letras entra entero; uno de 41, no.
+test('8.176-Cuadro_NombreDelLargoJusto_EntraEntero (T2b) @story-8.176 @ac-2', () => {
+  const pregunta = (archivos) => oa.cuadroDe({ firma: 'plan-approval', destino: 'ses-a', que: 'aprobar el plan', queHace: ['uno'], archivos, siSaleMal: 'se revierte', huella: 'ab12cd34' }).pregunta;
+  const justo = 'n'.repeat(40);
+  const q = pregunta([`scripts/${justo}.js`, 'scripts/b.js']);
+  assert.ok(q.includes(`Archivos: 2 archivos: 2 de código (${justo} y b).`), q);
+  const pasado = pregunta([`scripts/${justo}x.js`, 'scripts/b.js']);
+  assert.ok(pasado.includes('Archivos: 2 archivos: 2 de código (scripts).'), pasado);
+  // y la carpeta: de 40 letras se nombra; de 41, se cuenta
+  const muchos = (carpeta) => pregunta(['a', 'b', 'c', 'd'].map((n) => `${carpeta}/${n}.js`));
+  assert.ok(muchos(justo).includes(`4 de código (${justo})`), muchos(justo));
+  assert.ok(muchos(`${justo}x`).includes('4 de código (1 carpeta)'), muchos(`${justo}x`));
 });
 
 // 🔴 Mutaciones: mostrar sólo la nota de repensar (T8), tomar la nota de otra vuelta como la pedida o decir «nada
@@ -1259,16 +1325,21 @@ test('SignatureQuestion_SameSealBeforeAndAfter (T12) @story-8.275 @ac-14 @story-
   // calculados con estos mismos comandos y esta misma corrida
   // `runtime-waiver` no va fijo: su forma canónica lleva la ruta real de la historia, que acá es una carpeta temporal
   // distinta en cada corrida; abajo, el mismo código por ruta relativa y absoluta, y nunca el de antes de la 8.296
-  const ANTES = { 'adhoc-lane': '26eeb534', save: '0925a02b', 'lost-run': 'e089182e', 'designation-set': '03b92ba0' };
+  const ANTES = { 'adhoc-lane': '26eeb534', 'lost-run': 'e089182e', 'designation-set': '03b92ba0' };
   const c = corrida(t, { titulo: 'x', extraHistoria: ['runtime_not_verifiable:', '  - ac: 1', '    reason: "el servicio externo no tiene ambiente de prueba"', '    covered_by: T1'] });
   const de = (firma, cmd, cwd = c.repo) => ow.cuadroPara({ firma, comando: cmd, palabras: ow.canonica(cmd), destino: 'ses-a', sesion: 'ses-a', cwd, casa: c.casa });
+  // el cuadro de nombrar depende del rol del perfil (sin él dice que la sesión sólo ordena): el fijo es el del perfil con
+  // el rol, y el de sin perfil tiene otro sello
+  const cw = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'critical-waivers.js'));
+  const leerRol = cw.sesionQueReenvia;
+  const nombrar = (valor) => { cw.sesionQueReenvia = () => ({ valor }); try { return de('designation-set', `node ${MARKER} designate-relay`, '/r/repo'); } finally { cw.sesionQueReenvia = leerRol; } };
   const ahora = {
     'adhoc-lane': de('adhoc-lane', `node ${MARKER} adhoc set '{"reason":"arreglar el aviso","maxFiles":3}'`),
-    save: de('save', `node ${MARKER} approve-save`),
     'lost-run': de('lost-run', `node ${MARKER} clear-session ses-b --lost`),
     'runtime-waiver': de('runtime-waiver', `node ${MARKER} runtime-waiver specs/story-9.99-prueba.md --acs 1`),
-    'designation-set': de('designation-set', `node ${MARKER} designate-relay`, '/r/repo'),
+    'designation-set': nombrar('coordinadora'),
   };
+  assert.notStrictEqual(nombrar(null).sello, ahora['designation-set'].sello, 'sin el rol en el perfil, otro cuadro');
   const distintos = Object.entries(ahora).filter(([firma]) => ANTES[firma])
     .filter(([firma, q]) => q.sello !== `firma ${firma} · sesión ses-a · código ${ANTES[firma]}`)
     .map(([firma, q]) => `${firma}: ${q.error || q.sello}`);
@@ -1486,7 +1557,13 @@ test('RunDir_RelativeInMarker_ResolvesAgainstItsRepo (T2) @story-8.287 @ac-2 @ac
     assert.strictEqual(r.status, 0, r.err);
     assert.strictEqual(r.out, c.runDir, `${rel}: no es la carpeta del repo del marcador`);
   }
-  for (const m of [{ ...base, runDir: path.join('otra', 'forma', nombre) }, (({ repoPath: _r, ...resto }) => ({ ...resto, runDir: path.join(TRAMO, nombre) }))(base)]) {
+  // un marcador viejo sin el repo pero con la historia absoluta: el repo es el de la historia, nunca la carpeta del proceso
+  {
+    const r = resolver((({ repoPath: _r, ...resto }) => ({ ...resto, runDir: path.join(TRAMO, nombre) }))(base));
+    assert.strictEqual(r.status, 0, r.err);
+    assert.strictEqual(r.out, c.runDir, 'sin repoPath, la carpeta relativa se ubica en el repo de la historia');
+  }
+  for (const m of [{ ...base, runDir: path.join('otra', 'forma', nombre) }]) {
     const r = resolver(m);
     assert.strictEqual(r.status, 0, r.err);
     assert.strictEqual(r.out, nueva, `${JSON.stringify(m)}: tenía que caer en la regla sin marcador`);
@@ -1783,4 +1860,82 @@ test('RunPaths_OldRelativeMarker_ReadAbsolute (T8) @story-8.287 @ac-13', (t) => 
   const clear = enCarpeta(otra, c.casa, `require('child_process').execFileSync(process.execPath, [${JSON.stringify(MARKER)}, 'clear'], { stdio: 'inherit' });`);
   assert.strictEqual(clear.status, 0, clear.err);
   assert.ok(!fs.existsSync(path.join(runDir, 'run-open.json')), 'el cierre no encontró la apertura de esa carpeta');
+});
+
+// ── volver a aprobar la maqueta: su propio cuadro, no el del plan ──────────────────────────────────────────────────
+const MOCKUP_JS = path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'mockup.js');
+// una historia con pantalla: la que tiene maqueta
+const CON_PANTALLA = ['files_to_modify:', '  - src/components/Facturas.tsx'];
+const APRUEBA_MAQUETA = `node ${MARKER} approve-mockup --approved "pido el click del dueño para la maqueta nueva"`;
+// el modelo de la maqueta; `texto` cambia lo que se compara con la pantalla, `estado` sólo el dibujo
+const modeloMaqueta = ({ texto = 'Guardar', estado = 'con facturas' } = {}) => JSON.stringify({ title: 'Facturas', screens: [{ name: 'Lista de facturas', state: estado, elements: [{ kind: 'heading', text: 'Facturas' }, { kind: 'button', text: texto }] }] });
+function armarMaqueta(c, modelo) {
+  const r = spawnSync('node', [MOCKUP_JS, 'render', '--data', '-', '--story', c.ruta], { encoding: 'utf8', input: modelo, env: { ...process.env, HOME: c.casa } });
+  assert.strictEqual(r.status, 0, r.stderr);
+  return JSON.parse(r.stdout);
+}
+// el commit de laboratorio: identidad y fechas fijas, sin el mantenimiento automático de git
+const commitDeLab = (repo) => {
+  const env = { ...process.env, GIT_AUTHOR_NAME: 'lab', GIT_AUTHOR_EMAIL: 'lab@example.invalid', GIT_COMMITTER_NAME: 'lab', GIT_COMMITTER_EMAIL: 'lab@example.invalid', GIT_AUTHOR_DATE: '2026-11-04T12:00:00Z', GIT_COMMITTER_DATE: '2026-11-04T12:00:00Z' };
+  for (const a of [['add', '-A'], ['commit', '-q', '-m', 'maqueta aprobada']]) assert.strictEqual(spawnSync('git', ['-c', 'maintenance.auto=false', '-C', repo, ...a], { env }).status, 0, a.join(' '));
+};
+// la aprobación anterior, en el marcador de la sesión (como la deja marker.js)
+const aprobadaCon = (c, sha256) => {
+  const f = path.join(c.estado, 'active', 'ses-a.json');
+  fs.writeFileSync(f, JSON.stringify({ ...JSON.parse(fs.readFileSync(f, 'utf8')), mockupApproval: { sha256, mode: 'user' } }));
+};
+
+// 🔴 Falla con: el cuadro del plan («¿Aprobar el plan de una story?», su revisión) para volver a aprobar la maqueta.
+test('SignatureQuestion_ApproveMockup_OwnBox_NamesFingerprintsAndTexts', (t) => {
+  const c = corrida(t, { extraHistoria: CON_PANTALLA });
+  const v1 = armarMaqueta(c, modeloMaqueta());
+  aprobadaCon(c, v1.sha256);
+  commitDeLab(c.repo);
+  const v2 = armarMaqueta(c, modeloMaqueta({ texto: 'Guardar cambios' }));
+  const r = cuadro(c, APRUEBA_MAQUETA, { firma: 'plan-approval' });
+  const q = r.pregunta;
+  assert.ok(q.startsWith('¿Volver a aprobar la maqueta de una story?'), q);
+  assert.match(q, /Historia 9\.99/);
+  assert.ok(q.includes(`Huella: ${v1.sha256.slice(0, 12)} → ${v2.sha256.slice(0, 12)}`), q);
+  assert.match(q, /Cambian los textos que se comparan con la pantalla: sale «Guardar»; entra «Guardar cambios»/);
+  assert.match(q, /Si sale mal: se construye contra una maqueta que no querías/);
+  // del plan sólo queda el nombre de la firma, al final: ni su pregunta, ni su revisión, ni su archivo
+  assert.doesNotMatch(q.replace(/\(firma plan-approval[^)]*\)/, ''), /plan|Revisión automática/i);
+  assert.ok(r.detalle.includes(`Completo en: ${v2.out}`), JSON.stringify(r.detalle));
+});
+
+test('SignatureQuestion_ApproveMockup_SameTexts_AndUnknown', (t) => {
+  const c = corrida(t, { extraHistoria: CON_PANTALLA });
+  const v1 = armarMaqueta(c, modeloMaqueta());
+  aprobadaCon(c, v1.sha256);
+  // la versión aprobada no está en ningún commit: no se sabe qué textos tenía
+  armarMaqueta(c, modeloMaqueta({ estado: 'sin facturas' }));
+  assert.match(cuadro(c, APRUEBA_MAQUETA, { firma: 'plan-approval' }).pregunta, /No sé si los textos que se comparan con la pantalla son los mismos/);
+  // con la aprobada en el último commit, un cambio que sólo toca el dibujo dice que los textos son los mismos
+  armarMaqueta(c, modeloMaqueta());
+  commitDeLab(c.repo);
+  armarMaqueta(c, modeloMaqueta({ estado: 'sin facturas' }));
+  assert.match(cuadro(c, APRUEBA_MAQUETA, { firma: 'plan-approval' }).pregunta, /Los textos que se comparan con la pantalla son los mismos: cambió el dibujo/);
+  // y el plan sigue con su cuadro
+  escribirPlan(c);
+  assert.ok(cuadro(c, APRUEBA_PLAN, { firma: 'plan-approval' }).pregunta.startsWith('¿Aprobar el plan de una story?'));
+});
+
+test('SignatureQuestion_ApproveMockup_TextsByContent_FirstApprovalFromTheRun', (t) => {
+  const c = corrida(t, { extraHistoria: CON_PANTALLA });
+  const dos = (orden) => JSON.stringify({ title: 'Facturas', screens: orden.map((n) => ({ name: n, elements: [{ kind: 'heading', text: `Título ${n}` }] })) });
+  const v1 = armarMaqueta(c, dos(['Lista', 'Detalle']));
+  aprobadaCon(c, v1.sha256);
+  commitDeLab(c.repo);
+  // las mismas pantallas en otro orden: los textos que se comparan son los mismos
+  armarMaqueta(c, dos(['Detalle', 'Lista']));
+  assert.match(cuadro(c, APRUEBA_MAQUETA, { firma: 'plan-approval' }).pregunta, /Los textos que se comparan con la pantalla son los mismos/);
+  // sin aprobación en la corrida, el archivo de aprobación del repo no dice cuál es la huella aprobada
+  const f = path.join(c.estado, 'active', 'ses-a.json');
+  const m = JSON.parse(fs.readFileSync(f, 'utf8'));
+  delete m.mockupApproval;
+  fs.writeFileSync(f, JSON.stringify(m));
+  const q = cuadro(c, APRUEBA_MAQUETA, { firma: 'plan-approval' }).pregunta;
+  assert.match(q, /Primera aprobación de la maqueta en esta ejecución/);
+  assert.doesNotMatch(q, /Huella: [0-9a-f]{12} →/);
 });

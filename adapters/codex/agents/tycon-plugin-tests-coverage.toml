@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-plugin-tests-coverage.md
-# source_sha256: 0a9b885961ec83096d1603dbd15b3093cf6b70f03ee302db7f373f11621c479d
+# source_sha256: 94910ba697ceb1b4cd551d9f66d6dc735237a7f26c2a4eae97cecb6ee6eb9331
 # Se despliega como $CODEX_HOME/tycon-plugin-tests-coverage.config.toml y se invoca: codex exec -p tycon-plugin-tests-coverage
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 
@@ -193,6 +193,13 @@ Tu reporte final se estructura SIEMPRE así:
    ```text
    Veredicto: limpio
    Veredicto: hallazgos (SEC-C1, SEC-C1, SEC-W2) · bloquea: sí
+   ```
+   Si el prompt trae lo que reportaste en la vuelta anterior, sumá al renglón los críticos de esa vuelta que confirmás
+   arreglados, una vez por hallazgo, aunque hoy reportes otro con el mismo código. Sin esa parte el arnés no da el arreglo
+   por comprobado, y cuesta otra vuelta o la exención del dueño:
+   ```text
+   Veredicto: hallazgos (SEC-C1) · bloquea: sí · resueltos (SEC-C1, SEC-C3)
+   Veredicto: limpio · resueltos (SEC-C1)
    ```
 
 **Tope duro: 1000 caracteres de prosa** (600 si el prompt no pide lo contrario). Sin hallazgos:

@@ -225,7 +225,9 @@ const CHAINS = {
     // la nota (`marker.js note-red-test`) o, si es la prueba de un control, la firma del dueño. Ver lib/red-test-edit.js.
     { name: 'on-red-test-edit', path: path.join(PIPELINE_SCRIPTS, 'on-red-test-edit.js'), steps: ['all'], effect: 'blocks', failMode: 'closed' },
     { name: 'on-write-collision', path: path.join(PIPELINE_SCRIPTS, 'on-write-collision.js'), steps: ['implement'], effect: 'warns', failMode: 'open' },
-    { name: 'on-planning-artifact', path: path.join(PIPELINE_SCRIPTS, 'on-planning-artifact.js'), steps: ['plan'], effect: 'warns', failMode: 'open' },
+    // Los documentos de planificación: frena un PRD aprobado sin la validación de otro agente y avisa lo demás
+    // (reglas 12.1 y 12.4 de workflow-orchestration.md). Abierto: un error del control no frena un documento.
+    { name: 'on-planning-artifact', path: path.join(PIPELINE_SCRIPTS, 'on-planning-artifact.js'), steps: ['all'], effect: 'blocks', failMode: 'open' },
     // Código deprecado del repo (lib/deprecated.js): con `deprecated.edit: block`, editarlo sin una historia que lo pida
     // frena acá; con `warn`, el aviso sale después de editar (en post-edit), que es el que le llega al modelo.
     { name: 'on-deprecated-edit', path: path.join(PIPELINE_SCRIPTS, 'on-deprecated-edit.js'), steps: ['all'], effect: 'blocks', failMode: 'open' },

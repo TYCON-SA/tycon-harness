@@ -167,6 +167,26 @@ if quiere nuevo; then
     || no "🔴 T8 Message_NoAddress_DoesNotInvent — rc=$rc; el mensaje trae una URL: $(salida | grep -oE 'https?://[^ ]*' | head -1)"
 fi
 
+# ── T7b · la versión sin marcar no es la activa: el rojo lo dice y nombra la activa (fila 238) ─────────────
+# Un dev entró al panel, miró la versión activa (1.0.3) y no encontró las opciones: estaban en la nueva (identificador
+# 366), subida pero sin marcar. El rojo ya daba el identificador; ahora dice que esa versión NO es la activa y cuál lo es.
+t7b() { base; previa_nueva "$FALTA_X"
+  resp_m GET /api/admin/plugins '[{"pluginId":5,"name":"miplugin","version":"1.0.6","isDefault":true},{"pluginId":7,"name":"miplugin","version":"1.0.7","isDefault":false},{"pluginId":9,"name":"otro","version":"2.0.0","isDefault":true}]' 200; }
+# sin poder leer la lista, el rojo igual dice que no es la activa, sin nombrar una
+t7c() { base; previa_nueva "$FALTA_X"; resp_m GET /api/admin/plugins '{"error":"boom"}' 500; }
+if quiere nuevo; then
+  rc=$(corre t7b)
+  [ "$rc" = "1" ] && salida | grep -q "1.0.7 (identificador 7).*NO es la activa" && salida | grep -q "la activa es la 1.0.6 (identificador 5)" \
+    && salida | grep -q "Plugins → historial → el engranaje de la 1.0.7" && salida | grep -q " /admin/settings/plugins/7)" \
+    && ! salida | grep -q "2.0.0" && ! salida | grep -qE 'https?://' \
+    && ok "T7b Message_SaysNotTheActiveVersion — el rojo dice que la versión subida NO es la activa y nombra la activa de ese plugin, sin URL" \
+    || no "🔴 T7b Message_SaysNotTheActiveVersion — rc=$rc: $(salida | grep -iE 'activa|panel' | head -3)"
+  rc=$(corre t7c)
+  [ "$rc" = "1" ] && salida | grep -q "NO es la activa" && ! salida | grep -q "la activa es la" \
+    && ok "T7b Message_ListUnreadable_StillSaysNotActive — sin la lista, dice que no es la activa y no inventa cuál lo es" \
+    || no "🔴 T7b Message_ListUnreadable_StillSaysNotActive — rc=$rc: $(salida | grep -iE 'activa|panel' | head -3)"
+fi
+
 # ── T9 · la versión ya arrancó ────────────────────────────────────────────────────────────────
 t9() { base; previa_nueva "$FALTA_X"; resp /api/admin/plugins/7/set-default/preview "{\"pluginId\":7,\"pluginName\":\"miplugin\",\"targetVersion\":\"1.0.7\",\"missingSettings\":$FALTA_X,\"alreadyStarted\":true,\"manifestDeclaresSettings\":true,\"manifestUnreadable\":false,\"migrationAnalysisFailed\":false,\"pendingCount\":0,\"rollbackCount\":0}" 200; }
 if quiere nuevo; then
@@ -354,6 +374,153 @@ if quiere ambos; then
   else
     no "🔴 T25 HostText_CannotInjectAzureCommands — identificador con «../»: rc=$rc; llamadas: $(grep -v '^  ' "$TMP/llamadas.txt" | tr '\n' '|')"
   fi
+fi
+
+# ── T40-T52 · el archivo de opciones no secretas (--settings-file) ─────────────────────────────
+# Las opciones que el host dice que faltan y que el archivo trae para el entorno se escriben solas en la versión nueva
+# (PUT /config con configItems, de a una y sin cifrar). Nunca se pisa una que no falta, una clave con nombre de secreto
+# nunca se carga, y nada se escribe si el archivo trae una que el host tiene marcada como cifrada o una que el paquete
+# no declara.
+ZIP_AJ="$TMP/miplugin.1.0.7-aj.zip"
+fph_zip "$ZIP_AJ" '{"Bcra:TimeoutSegundos":"","Bcra:Reintentos":"","Bcra:ApiKey":""}' || no "T40 no hay con qué armar el paquete con opciones (no es verde)"
+AJ="$TMP/opciones.json"
+ajustes() { printf '%s\n' "$1" > "$AJ"; }
+FALTA_T='[{"key":"Bcra:TimeoutSegundos","reason":"opcion-nueva"}]'
+# la vista previa dice que falta TimeoutSegundos; después de cargarla, que no falta nada
+carga() {
+  base; recorrida
+  resp_seq /api/admin/plugins/7/set-default/preview "{\"pluginId\":7,\"missingSettings\":$FALTA_T,\"manifestDeclaresSettings\":true,\"manifestUnreadable\":false,\"pendingCount\":0,\"rollbackCount\":0}" 200
+  previa_nueva '[]'
+  resp_m GET /api/admin/plugins/7/config '[{"key":"Bcra:TimeoutSegundos","value":"","isEncrypted":false},{"key":"Bcra:Reintentos","value":"3","isEncrypted":false},{"key":"Bcra:ApiKey","value":"••••••••","isEncrypted":true}]' 200
+  resp_m PUT /api/admin/plugins/7/config '{}' 200
+}
+corre_aj() { local esc="$1"; shift; ZIP="$ZIP_AJ" corre "$esc" "$@"; }
+puso() { grep -A1 -x "PUT /api/admin/plugins/7/config" "$TMP/llamadas.txt" | grep '^  cuerpo:' | tr '\n' ' '; }
+if quiere nuevo; then
+  ajustes '{"staging":{"Bcra:TimeoutSegundos":"30"},"production":{"Bcra:TimeoutSegundos":"20"}}'
+  rc=$(corre_aj carga --environment staging --settings-file "$AJ")
+  p=$(puso)
+  if [ "$rc" = "0" ] && printf '%s' "$p" | grep -q '"key":"Bcra:TimeoutSegundos"' && printf '%s' "$p" | grep -q '"value":"30"' && printf '%s' "$p" | grep -q '"isEncrypted":false'; then
+    ok "T40 SettingsFile_LoadsMissing — la opción que falta y el archivo trae se escribe sola en la versión nueva, sin cifrar, y el despliegue sigue"
+  else no "🔴 T40 SettingsFile_LoadsMissing — rc=$rc; escribió: ${p:-nada}; $(tail -2 "$TMP/salida.txt" | tr '\n' ' ')"; fi
+  rc=$(corre_aj carga --environment production --settings-file "$AJ")
+  p=$(puso)
+  [ "$rc" = "0" ] && printf '%s' "$p" | grep -q '"value":"20"' && ok "T41 SettingsFile_PerEnvironment — en producción toma el bloque de producción" \
+    || no "🔴 T41 SettingsFile_PerEnvironment — rc=$rc; escribió: ${p:-nada}"
+
+  # nunca pisa: Reintentos no falta (el host ya la tiene), aunque el archivo traiga otro valor
+  ajustes '{"staging":{"Bcra:TimeoutSegundos":"30","Bcra:Reintentos":"9"}}'
+  rc=$(corre_aj carga --environment staging --settings-file "$AJ")
+  p=$(puso)
+  if [ "$rc" = "0" ] && ! printf '%s' "$p" | grep -q 'Reintentos' && salida | grep -q "Bcra:Reintentos"; then
+    ok "T42 SettingsFile_NeverOverwrites — una opción que no falta no se toca aunque el archivo traiga otro valor, y lo dice"
+  else no "🔴 T42 SettingsFile_NeverOverwrites — rc=$rc; escribió: ${p:-nada}"; fi
+
+  # frena sin escribir nada: una clave fuera de lo que el paquete declara, o un valor que no es texto de una línea
+  for caso in 'fuera|{"staging":{"Bcra:TimeoutSegundos":"30","Bcra:Otra":"1"}}|Bcra:Otra' \
+              'valor|{"staging":{"Bcra:TimeoutSegundos":"30","Bcra:Reintentos":3}}|Bcra:Reintentos'; do
+    nombre="${caso%%|*}"; resto="${caso#*|}"; json="${resto%|*}"; clave="${resto##*|}"
+    ajustes "$json"
+    rc=$(corre_aj carga --environment staging --settings-file "$AJ")
+    if [ "$rc" = "1" ] && ! llamo "PUT /api/admin/plugins/7/config" && grep '##vso\[task.logissue type=error\]' "$TMP/salida.txt" | grep -qF "$clave"; then
+      ok "T43 SettingsFile_StopsBeforeWriting — ${nombre}: frena nombrando ${clave} y no escribe nada"
+    else no "🔴 T43 SettingsFile_StopsBeforeWriting — ${nombre}: rc=$rc; escribió: $(puso)"; fi
+  done
+  cifrada() { carga; resp_m GET /api/admin/plugins/7/config '[{"key":"Bcra:TimeoutSegundos","value":"••••••••","isEncrypted":true}]' 200; }
+  ajustes '{"staging":{"Bcra:TimeoutSegundos":"30"}}'
+  rc=$(corre_aj cifrada --environment staging --settings-file "$AJ")
+  [ "$rc" = "1" ] && ! llamo "PUT /api/admin/plugins/7/config" && salida | grep -q "cifrada" \
+    && ok "T44 SettingsFile_EncryptedOnHost_Stops — una opción que el host tiene como cifrada frena sin escribir nada" \
+    || no "🔴 T44 SettingsFile_EncryptedOnHost_Stops — rc=$rc; escribió: $(puso)"
+
+  # lo que el archivo no trae sigue frenando como hoy, con lo cargado ya escrito
+  dos() {
+    carga
+    rm -f "$TMP"/respuestas/seq_*
+    resp_seq /api/admin/plugins/7/set-default/preview '{"pluginId":7,"missingSettings":[{"key":"Bcra:TimeoutSegundos","reason":"opcion-nueva"},{"key":"Bcra:ApiKey","reason":"opcion-nueva"}],"manifestDeclaresSettings":true,"manifestUnreadable":false,"pendingCount":0,"rollbackCount":0}' 200
+    previa_nueva '[{"key":"Bcra:ApiKey","reason":"opcion-nueva"}]'
+  }
+  rc=$(corre_aj dos --environment staging --settings-file "$AJ")
+  [ "$rc" = "1" ] && llamo "PUT /api/admin/plugins/7/config" && grep '##vso\[task.logissue type=error\]' "$TMP/salida.txt" | grep -q "Bcra:ApiKey" \
+    && ! grep '##vso\[task.logissue type=error\]' "$TMP/salida.txt" | grep -q "TimeoutSegundos" \
+    && ok "T45 SettingsFile_SecretsStillStop — después de cargar lo que el archivo trae, lo que sigue faltando (el secreto) frena como hoy" \
+    || no "🔴 T45 SettingsFile_SecretsStillStop — rc=$rc; $(grep '##vso\[task.logissue type=error\]' "$TMP/salida.txt" | head -1 | cut -c1-200)"
+
+  # un archivo ilegible frena sin escribir; sin la opción, nada cambia
+  printf '{ roto' > "$AJ"
+  rc=$(corre_aj carga --environment staging --settings-file "$AJ")
+  [ "$rc" = "1" ] && ! llamo "PUT /api/admin/plugins/7/config" && ok "T46 SettingsFile_Unreadable_Stops — un archivo que no se lee frena sin escribir nada" \
+    || no "🔴 T46 SettingsFile_Unreadable_Stops — rc=$rc"
+  rc=$(corre_aj carga --environment staging)
+  [ "$rc" = "1" ] && ! llamo "PUT /api/admin/plugins/7/config" && ! llamo "GET /api/admin/plugins/7/config" \
+    && ok "T47 SettingsFile_Absent_Unchanged — sin --settings-file, el despliegue frena por la opción que falta como siempre, sin leer ni escribir la configuración" \
+    || no "🔴 T47 SettingsFile_Absent_Unchanged — rc=$rc"
+
+  # una clave con nombre de secreto nunca se carga, aunque el host no la tenga marcada como cifrada (una opción nueva):
+  # se nombra en un aviso, se cargan las demás y, si sigue faltando, frena el control de pendientes
+  SEC_N='Sec:EncryptionKey Jwt:PrivateKey Smtp:Pwd Svc:Credentials Ado:LlaveDeLectura Bcra:TokenCacheDurationMinutes'
+  ZIP_SEC="$TMP/miplugin.1.0.7-sec.zip"
+  fph_zip "$ZIP_SEC" "$(printf '%s\n' Bcra:TimeoutSegundos $SEC_N | jq -Rn '[inputs | {(.): ""}] | add')" || no "T48 no hay con qué armar el paquete (no es verde)"
+  FALTA_SEC=$(printf '%s\n' $SEC_N | jq -Rnc '[inputs | {key: ., reason: "opcion-nueva"}]')
+  nombres() {
+    base; recorrida
+    resp_seq /api/admin/plugins/7/set-default/preview "{\"pluginId\":7,\"missingSettings\":$(printf '%s' "$FALTA_SEC" | jq -c '. + [{key: "Bcra:TimeoutSegundos", reason: "opcion-nueva"}]'),\"manifestDeclaresSettings\":true,\"manifestUnreadable\":false,\"pendingCount\":0,\"rollbackCount\":0}" 200
+    previa_nueva "$FALTA_SEC"
+    resp_m GET /api/admin/plugins/7/config '[]' 200
+    resp_m PUT /api/admin/plugins/7/config '{}' 200
+  }
+  printf '%s\n' Bcra:TimeoutSegundos $SEC_N | jq -Rn '{staging: ([inputs | {(.): (if . == "Bcra:TimeoutSegundos" then "30" else "valor-secreto" end)}] | add)}' > "$AJ"
+  rc=$(ZIP="$ZIP_SEC" corre nombres --environment staging --settings-file "$AJ")
+  p=$(puso); faltan_nombres=""
+  for k in $SEC_N; do grep '##vso\[task.logissue type=warning\]' "$TMP/salida.txt" | grep -qF "staging: $k" || faltan_nombres="$faltan_nombres $k"; done
+  if [ "$rc" = "1" ] && printf '%s' "$p" | grep -q '"key":"Bcra:TimeoutSegundos"' && ! printf '%s' "$p" | grep -q 'valor-secreto' \
+     && [ -z "$faltan_nombres" ] && grep '##vso\[task.logissue type=error\]' "$TMP/salida.txt" | grep -qF "Sec:EncryptionKey"; then
+    ok "T48 SettingsFile_SecretNames_NeverLoaded — EncryptionKey, PrivateKey, Pwd, Credentials, Llave… y Token… no se cargan aunque el host no las tenga cifradas: se nombran, se carga el resto y lo que falta frena"
+  else no "🔴 T48 SettingsFile_SecretNames_NeverLoaded — rc=$rc; escribió: ${p:-nada}; sin nombrar:${faltan_nombres:- ninguna}"; fi
+
+  # el archivo entero se revisa al empezar: staging frena por un error del bloque de producción, falte algo o no
+  limpio() { base; recorrida; previa_nueva '[]'; resp_m PUT /api/admin/plugins/7/config '{}' 200; }
+  for caso in 'produccion|{"staging":{"Bcra:TimeoutSegundos":"30"},"production":{"Bcra:Otra":"1"}}|production: Bcra:Otra' \
+              'bloque|{"staging":{"Bcra:TimeoutSegundos":"30"},"prod":{"Bcra:TimeoutSegundos":"20"}}|prod'; do
+    nombre="${caso%%|*}"; resto="${caso#*|}"; json="${resto%|*}"; clave="${resto##*|}"
+    ajustes "$json"
+    rc=$(corre_aj limpio --environment staging --settings-file "$AJ")
+    if [ "$rc" = "1" ] && ! llamo "PUT /api/admin/plugins/7/config" && ! llamo "POST /api/admin/plugins/7/activate" \
+       && grep '##vso\[task.logissue type=error\]' "$TMP/salida.txt" | grep -qF "$clave"; then
+      ok "T49 SettingsFile_WholeFileChecked — ${nombre}: staging sin nada que falte frena nombrando «${clave}», antes de que nadie apruebe producción"
+    else no "🔴 T49 SettingsFile_WholeFileChecked — ${nombre}: rc=$rc; $(grep '##vso\[task.logissue type=error\]' "$TMP/salida.txt" | head -1 | cut -c1-200)"; fi
+  done
+
+  # los frenos de migraciones y retrocesos corren antes de escribir: su «no toqué nada» sigue siendo cierto
+  retro() {
+    carga
+    rm -f "$TMP"/respuestas/seq_*
+    resp_seq /api/admin/plugins/7/set-default/preview "{\"pluginId\":7,\"missingSettings\":$FALTA_T,\"manifestDeclaresSettings\":true,\"manifestUnreadable\":false,\"pendingCount\":0,\"rollbackCount\":1,\"rollbacksNeeded\":[{\"migrationName\":\"005_quitar_columna\"}]}" 200
+  }
+  ajustes '{"staging":{"Bcra:TimeoutSegundos":"30"}}'
+  rc=$(corre_aj retro --environment staging --settings-file "$AJ")
+  [ "$rc" = "1" ] && ! llamo "PUT /api/admin/plugins/7/config" && salida | grep -q "NO toqué nada" \
+    && ok "T50 SettingsFile_AfterRollbackChecks — un retroceso no declarado frena antes de escribir la configuración" \
+    || no "🔴 T50 SettingsFile_AfterRollbackChecks — rc=$rc; escribió: $(puso)"
+
+  # una clave del archivo no cuela un comando de Azure en la salida
+  INY='X:##vso[task.setvariable variable=INYECTADA]si'
+  ZIP_INY="$TMP/miplugin.1.0.7-iny.zip"
+  fph_zip "$ZIP_INY" "$(jq -nc --arg k "$INY" '{"Bcra:TimeoutSegundos": "", ($k): ""}')" || no "T51 no hay con qué armar el paquete (no es verde)"
+  jq -nc --arg k "$INY" '{staging: {"Bcra:TimeoutSegundos": "30", ($k): "1"}}' > "$AJ"
+  rc=$(ZIP="$ZIP_INY" corre carga --environment staging --settings-file "$AJ")
+  [ "$rc" = "0" ] && salida | grep -qF 'X:##vso [task.setvariable' && ! salida | grep -qF '##vso[task.setvariable' \
+    && ok "T51 SettingsFile_KeysCannotInjectAzure — una clave con «##vso[» se imprime desarmada" \
+    || no "🔴 T51 SettingsFile_KeysCannotInjectAzure — rc=$rc; $(grep -F 'INYECTADA' "$TMP/salida.txt" | head -1 | cut -c1-160)"
+
+  # la subida nueva (no la re-corrida) también carga
+  nueva_carga() { carga; resp /api/admin/plugins/upload '{"pluginId":7,"missingSettings":[]}' 200; }
+  ajustes '{"staging":{"Bcra:TimeoutSegundos":"30"}}'
+  rc=$(corre_aj nueva_carga --environment staging --settings-file "$AJ")
+  p=$(puso)
+  [ "$rc" = "0" ] && printf '%s' "$p" | grep -q '"value":"30"' && ! llamo "GET /api/admin/plugins" \
+    && ok "T52 SettingsFile_NewUpload_Loads — en una subida nueva también se carga la opción que falta" \
+    || no "🔴 T52 SettingsFile_NewUpload_Loads — rc=$rc; escribió: ${p:-nada}"
 fi
 
 echo "─────────────"

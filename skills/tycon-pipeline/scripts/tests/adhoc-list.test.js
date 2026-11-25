@@ -229,6 +229,32 @@ test('T32 Lista_FueraFrena_DentroPasa — @story-8.174 @ac-30', () => {
   }
 });
 
+// El arnés se reconoce por su origen (scripts/lib/harness-repo.js): un repo con el origen de este clon es el arnés, y
+// ahí el rechazo fuera de la lista conserva la delegación; en un producto habla de vos (P2v52)
+// El portón busca ese criterio en el arnés que dice TYCON_GUIDES_DIR o el enlace de la casa, y lo guarda la primera vez
+// que lo busca: se evalúa en un proceso aparte con la variable puesta en este clon. Sin ella, con una casa sin el arnés
+// (la CI, una HOME vacía), decide el nombre de la carpeta y la prueba mide la máquina, no el portón.
+test('T32b FueraDeLaLista_EnElArnes_ConservaLaDelegacion — @story-8.174 @ac-52', (t) => {
+  let origen = null;
+  try { origen = git(RAIZ, 'remote', 'get-url', 'origin'); } catch (_) { origen = null; }
+  if (!origen) { t.skip('este clon no tiene origen: no hay con qué reconocer el arnés'); return; }
+  const raiz = tmp('t32b-');
+  const dir = repo(raiz, 'copia-del-arnes');
+  git(dir, 'remote', 'set-url', 'origin', origen);
+  const h = tmp('home-');
+  const state = conCarril(h, 's32b', { allowedFiles: [path.join(dir, 'src/a.js')] });
+  const pedidoEv = { filePath: path.join(dir, 'docs/x.md'), sessionId: 's32b', cwd: dir, via: 'Edit', stateDir: state, installedRoots: [] };
+  const hijo = spawnSync(process.execPath, ['-e', [
+    `const r = require(${JSON.stringify(path.join(SCRIPTS, 'lib', 'story-gate-io.js'))}).evaluate(${JSON.stringify(pedidoEv)});`,
+    'process.stdout.write(JSON.stringify({ verdict: { kind: r.verdict.kind }, message: r.message }));',
+  ].join('\n')], { encoding: 'utf8', env: { ...process.env, TYCON_GUIDES_DIR: path.resolve(RAIZ), HOME: h } });
+  assert.equal(hijo.status, 0, hijo.stderr);
+  const r = JSON.parse(hijo.stdout);
+  assert.strictEqual(r.verdict.kind, 'adhoc-out-of-list');
+  assert.match(r.message, /por delegación, la lista nueva contiene entera la firmada/, r.message);
+  assert.doesNotMatch(r.message, /lo aprueba el dev, como al abrir/);
+});
+
 test('T33 Lista_PorLaRutaReal — @story-8.174 @ac-31', () => {
   const raiz = tmp('t33-');
   const dir = repo(raiz, 'producto');
@@ -341,15 +367,16 @@ test('P10 Delegado_UnoPorRepo_TambienConAvisado — @story-8.174 @ac-35', () => 
 
 // 🔴 Falla con: el mensaje de «fuera de la lista» en un repo de producto, que nombraba la delegación (la prueba en vivo
 // del AC 52, 9/11): el portón le pasaba siempre el perfil del arnés.
-test('P2v52 FueraDeLaLista_EnUnProducto_HablaDeVos — @story-8.174 @ac-52', () => {
+// El texto lo lee el agente: dice que aprueba el dev y qué hace el agente con su sí (no «lo aprobás vos»).
+test('P2v52 FueraDeLaLista_EnUnProducto_ApruebaElDev — @story-8.174 @ac-52', () => {
   const raiz = tmp('p2v52-');
   const dir = repo(raiz, 'producto');
   const h = tmp('home-');
   const state = conCarril(h, 's52', { allowedFiles: [path.join(dir, 'src/a.js')] });
   const r = ev(state, 's52', path.join(dir, 'src/otro.js'), dir);
   assert.strictEqual(r.verdict.kind, 'adhoc-out-of-list');
-  assert.match(r.message, /lo aprobás vos con tu sí/);
-  assert.doesNotMatch(r.message, /delegación|coordinadora|dueño/);
+  assert.match(r.message, /lo aprueba el dev, como al abrir\. Preguntale; con su sí, corré este comando solo/);
+  assert.doesNotMatch(r.message, /delegación|coordinadora|dueño|lo aprobás vos/);
 });
 
 // 🔴 Falla con: una carpeta de carriles que no se lee, que salteaba el «uno por repo» como si no hubiera otros
@@ -558,6 +585,36 @@ test('T52 CarrilViejoSinLista_ComoHoyHastaElSet — @story-8.174 @ac-49', () => 
   conCarril(h, 'per', { allowedFiles: [path.join(dir, 'src/a.js')] });
   assert.equal(ev(state, 'del', path.join(dir, 'docs/x.md'), dir).verdict.kind, 'adhoc-out-of-list');
   assert.notEqual(ev(state, 'per', path.join(dir, 'docs/x.md'), dir).verdict.kind, 'adhoc-out-of-list');
+});
+
+// El mismo borde por la consola (on-bash-write-gate.js), que T52 cubre sólo por la herramienta de edición.
+// 🔴 Falla con: la consola que deja de mandarle al portón lo que no es código de un carril con lista o delegado (con el
+// portón apagado, la lista del delegado deja de frenar por la consola), o que deja de contar el tope del carril viejo.
+// Que un carril sin lista no frene «fuera de la lista» lo decide el portón compartido: lo cubre también T52.
+test('T52b CarrilViejoSinLista_PorLaConsola_ComoHoy — @story-8.174 @ac-49', () => {
+  const raiz = tmp('t52b-');
+  const dir = repo(raiz, 'producto');
+  const h = tmp('home-');
+  const a = escribir(dir, 'src/a.js');
+  const state = conCarril(h, 'viejo', { maxFiles: 1, files: [a] });
+  // sin lista: escribir por la consola no frena por la lista
+  for (const command of ['echo x > docs/x.md', 'echo x | tee src/a.js']) {
+    const r = porConsola(state, 'viejo', dir, command);
+    assert.ok(!r || !/FUERA DE LA LISTA/.test(r.block || ''), `${command}: ${JSON.stringify(r)}`);
+  }
+  // el tope de siempre sigue: con el cupo lleno, un archivo de implementación nuevo frena por el tope
+  const tope = porConsola(state, 'viejo', dir, "cat > src/b.js <<'EOF'\nx\nEOF");
+  assert.ok(tope && /PASÓ EL TOPE DE ARCHIVOS/.test(tope.block || '') && !/FUERA DE LA LISTA/.test(tope.block), JSON.stringify(tope));
+  // con el portón apagado por la configuración del repo: el delegado frena igual por la lista; el de una persona no
+  escribir(dir, '.tycon/advisors.yaml', 'pipeline:\n  story_gate: false\n');
+  git(dir, 'add', '.');
+  commitear(dir, 'portón apagado');
+  conCarril(h, 'del', { via: 'delegacion', allowedFiles: [a] });
+  conCarril(h, 'per', { allowedFiles: [a] });
+  const del = porConsola(state, 'del', dir, 'echo x > docs/x.md');
+  assert.ok(del && /FUERA DE LA LISTA/.test(del.block || ''), `delegado: ${JSON.stringify(del)}`);
+  const per = porConsola(state, 'per', dir, 'echo x > docs/x.md');
+  assert.ok(!per || !/FUERA DE LA LISTA/.test(per.block || ''), `de una persona: ${JSON.stringify(per)}`);
 });
 
 // ── el carril trae la base al abrir ─────────────────────────────────────────────────────────────
@@ -1157,6 +1214,8 @@ test('T60 AmpliarSinFirma_LasTresCondiciones', () => {
   assert.strictEqual(pide({ nueva: [a('src/a.js')] }).ok, false);
   assert.strictEqual(pide({ actual: null }).ok, false);
   assert.strictEqual(pide({ actual: { ...actual, via: 'avisado' } }).ok, false);
+  // el arreglo de un rojo de CI se agranda sólo con su firma
+  assert.match(pide({ actual: { ...actual, ciRojo: { pedido: 12, control: 'pruebas' } } }).motivo, /rojo de CI/);
   // un archivo de otro repo, o fuera de todo repo: sigue la firma
   assert.strictEqual(pide({ nueva: [a('src/a.js'), a('src/x.js', otro)] }).ok, false);
   assert.strictEqual(pide({ nueva: [a('src/a.js'), '/opt/tycon-no-existe/x.js'] }).ok, false);

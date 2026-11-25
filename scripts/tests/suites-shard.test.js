@@ -479,9 +479,10 @@ test('SuitesWeights_PrSetHasTheConfirmedSuiteCap', () => {
   const { per_suite: own, measured, ...rule } = pr.suite_cap;
   assert.deepStrictEqual(rule, { factor: 2, floor: 180 }, 'la regla que confirmó el dueño: el doble del peso, con piso de 3 min');
   // Los topes medidos: la mediana de las 5 primeras pasadas más nuevas de cada suite en Azure, de hasta 10 corridas que
-  // publicaron tiempos entre las 30 últimas; con menos de 3 mediciones, el peso. El techo, 1110 s: lo más que deja
-  // reintentar con el doble dentro de un trabajo de 40 min ((2400 − 180) / 2).
-  assert.deepStrictEqual(measured, { runs: 10, scan: 30, last: 5, min: 3, max: 1110 });
+  // publicaron tiempos entre las 60 últimas (con 30, una validación completa casi nunca juntaba sus 3 pasadas y
+  // repartía por peso: fila 111); con menos de 3 mediciones, el peso. El techo, 1110 s: lo más que deja reintentar con
+  // el doble dentro de un trabajo de 40 min ((2400 − 180) / 2).
+  assert.deepStrictEqual(measured, { runs: 10, scan: 60, last: 5, min: 3, max: 1110 });
   // Los únicos topes propios de la validación: dos suites que corren solas y ahí tardan 1 y 3 s. Con el piso de 180 s
   // cada una, el trabajo del banco no entra en sus 40 min (pr-suites-shards, T48). Un tope propio más es una decisión
   // aparte, no un atajo para que una suite lenta deje de cortarse.
@@ -1234,6 +1235,70 @@ test('Shard_Measured_PlanSaysMeasuredAndByWeight — el total dice cuántas sali
   const r = run(['plan', '--of', '1', ...splitArgs(dir, ['a-slow.test.sh', 'b-fast.test.js', 'c-skill.test.js', 'd-medium.test.sh'], times)]);
   assert.strictEqual(r.code, 0, r.err);
   assert.match(r.out, /total: 4 suite\(s\) · ~100 s \(2 min\) · 3 medidas en Azure, 1 por peso\n$/, '10 + 20 + 30 medidas y d-medium por su peso (40)');
+});
+
+// ── el reparto con los tiempos del nocturno (`--measured-nightly`, fila 111b) ────────────────────────────────────
+// La validación saltea las suites que el cambio no toca, así que muchas no juntan 3 pasadas medidas y caen a su peso
+// escrito a mano (una nueva, al de por defecto). El nocturno las mide todas cada noche. Pero una suite no tarda lo
+// mismo de noche que en la validación (clean-machine, export-real): la que tiene su peso propio en el juego pedido ya
+// fue medida en la validación y lo conserva.
+const NIGHTLY_WEIGHTS = { ...LAB_WEIGHTS, suite_cap: { factor: 2, floor: 90, measured: MEASURED_RULE }, pr: SPLIT_SET };
+const nightlyLab = () => lab({ weights: NIGHTLY_WEIGHTS });
+const nightlyArgs = (dir, names, times, nightly) => [...splitArgs(dir, names, times), '--measured-nightly', nightly];
+
+test('T50 SuitesShard_MeasuredNightly_FillsOnlyTheOnesWithoutPassesOrOwnWeight — el nocturno sólo para las que no tienen pasadas ni peso propio', () => {
+  const dir = nightlyLab();
+  // en la validación: b-fast con 3 pasadas (20 s); las demás, ninguna
+  const times = timesDir(dir, [passes(3, { 'b-fast.test.js': 20 })]);
+  // de noche: todas, con otros tiempos
+  const nightly = timesDir(lab(), [passes(5, { 'a-slow.test.sh': 900, 'b-fast.test.js': 500, 'd-medium.test.sh': 70, 'f-new-without-weight.test.js': 200 })]);
+  const names = ['a-slow.test.sh', 'b-fast.test.js', 'd-medium.test.sh', 'f-new-without-weight.test.js', 'e-fast.test.js'];
+  const r = run(['plan', '--of', '1', ...nightlyArgs(dir, names, times, nightly)]);
+  assert.strictEqual(r.code, 0, r.err);
+  // a-slow: su peso propio de pr (151), no los 900 de la noche · b-fast: lo medido en la validación (20), no los 500 ·
+  // d-medium (40 del nocturno escrito a mano) y f-new (2 por defecto): lo medido de noche (70 y 200) · e-fast: nada medido, 2
+  assert.match(r.lines[0], /trabajo 1 de 1: 5 suite\(s\) · ~443 s/, '151 + 20 + 70 + 200 + 2');
+  assert.match(r.out, /total: 5 suite\(s\) · ~443 s \(\d+ min\) · 1 medidas en Azure, 2 del nocturno, 2 por peso\n$/);
+});
+
+test('T51 SuitesShard_MeasuredNightly_ListAndMergeSplitTheSame — list y merge con las mismas dos carpetas reparten igual que plan', () => {
+  const dir = nightlyLab();
+  const names = ['a-slow.test.sh', 'b-fast.test.js', 'c-skill.test.js', 'd-medium.test.sh', 'e-fast.test.js', 'f-new-without-weight.test.js'];
+  const times = timesDir(dir, [passes(3, { 'b-fast.test.js': 20 })]);
+  const nightly = timesDir(lab(), [passes(3, { 'f-new-without-weight.test.js': 400 })]);
+  const withNightly = nightlyArgs(dir, names, times, nightly);
+  // f-new pesa 400 de noche: va sola a un trabajo; sin el nocturno pesa 2 y la que va sola es a-slow (151)
+  assert.deepStrictEqual(expected(dir, 1, 2, withNightly), ['f-new-without-weight.test.js']);
+  assert.notDeepStrictEqual(expected(dir, 1, 2, splitArgs(dir, names, times)), ['f-new-without-weight.test.js']);
+  for (const i of [1, 2]) artifact(dir, i, 2, { only: withNightly });
+  const m = merge(dir, 2, withNightly);
+  assert.strictEqual(m.code, 0, m.err);
+  assert.deepStrictEqual(m.failures, [], 'merge espera de cada trabajo las suites del reparto con el nocturno');
+});
+
+test('T52 SuitesShard_MeasuredNightly_Refusals — sin --measured, sin juego, sin carpeta o sin la regla del nocturno: sale 2, sin lista', () => {
+  const dir = nightlyLab();
+  const times = timesDir(dir, [passes(3, { 'b-fast.test.js': 20 })]);
+  const nightly = timesDir(lab(), [passes(3, { 'b-fast.test.js': 20 })]);
+  const files = ['--suites', path.join(dir, 'suites.json'), '--weights', path.join(dir, 'weights.json')];
+  const cases = [
+    [['--weight-set', 'pr', '--measured-nightly', nightly, ...files], /--measured-nightly va con --measured/],
+    [['--measured', times, '--measured-nightly', nightly, ...files], /--measured-nightly va con --weight-set/],
+    [['--weight-set', 'pr', '--measured', times, '--measured-nightly', path.join(dir, 'no-esta'), ...files], /--measured-nightly: la carpeta .* no existe/],
+    [['--weight-set', 'pr', '--measured', times, '--measured-nightly', ...files], /--measured-nightly viene sin carpeta/],
+  ];
+  for (const [args, why] of cases) {
+    const r = run(['plan', '--of', '1', ...args]);
+    assert.strictEqual(r.code, 2, `${args.join(' ')}: ${r.out}${r.err}`);
+    assert.strictEqual(r.out, '', 'sin lista');
+    assert.match(r.err, why);
+  }
+  // el juego del nocturno sin su regla medida: la mediana de la noche no se adivina
+  const bare = lab({ weights: { ...LAB_WEIGHTS, pr: SPLIT_SET } });
+  const r = run(['plan', '--of', '1', '--weight-set', 'pr', '--measured', timesDir(bare, [passes(3, { 'b-fast.test.js': 20 })]), '--measured-nightly', nightly,
+    '--suites', path.join(bare, 'suites.json'), '--weights', path.join(bare, 'weights.json')]);
+  assert.strictEqual(r.code, 2, r.out + r.err);
+  assert.match(r.err, /el juego del nocturno no trae «suite_cap\.measured»/);
 });
 
 test('T9 SuitesShard_TrabajoMasCargado_ConNombreYUmbral @story-8.280 @ac-12 @ac-17', () => {

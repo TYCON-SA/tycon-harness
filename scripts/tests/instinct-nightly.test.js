@@ -1005,3 +1005,105 @@ test('T11 4.14-Recommend_TextIsSanitized @story-4.14 @ac-10 — el porqué del m
   assert.strictEqual(entradaDe(b, h).recomendacion.porque, 'Revisar $HOME antes de aprobar');
   assert.ok(!fs.readFileSync(path.join(b.ops, '.dashboard', 'instincts', 'recomendaciones.json'), 'utf8').includes(CASA));
 });
+
+test('T40 4.14-Filter_PathsGluedToShellSigns — una temporal o la ruta de una máquina pegada a un signo del shell también es ruido', () => {
+  const otraMac = ['', 'Users', 'otra', 'x'].join('/');
+  const temporales = ['echo x >/tmp/out', 'tee >/private/tmp/y', 'cat (/tmp/z)', 'a;/var/folders/b/T/x', 'a|/tmp/x', 'echo `ls /tmp`', 'cd /tmp', 'ls /private/tmp',
+    'cat ${TMPDIR}/x', 'rm -rf "${TMPDIR}"', 'cat $TMPDIR/x'];
+  for (const summary of temporales) assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary }), 'carpeta_de_trabajo', summary);
+  for (const summary of [`cat >${otraMac}`, `a;${otraMac}`, 'a|C:\\Proyectos\\x', 'x>(d:/work/y)']) {
+    assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary }), 'ruta_de_una_maquina', summary);
+  }
+  // lo que sólo se parece sigue pasando
+  // la carpeta temporal de una sesión de Claude Code
+  for (const summary of ['ls $HOME/.claude/jobs/ab12cd34/tmp/x', 'cat $CLAUDE_JOB_DIR/tmp/y']) {
+    assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary }), 'carpeta_de_trabajo', summary);
+  }
+  // una expresión regular o una etiqueta no son una ruta
+  for (const summary of ['node -e "s.match(/x/g)"', "awk '(/a/){print}' f", "grep -E 'foo|/v/12' src", 'grep -n "</tmp>" config.xml']) {
+    assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary }), null, summary);
+  }
+  for (const summary of ['node build/tmpfile.js', 'ls acme/tmp/x', 'echo $TMPDIRS', 'cat ./tmp/y', 'npm run tmp']) {
+    assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary }), null, summary);
+  }
+});
+
+test('T41 Nightly_ModelPromptIsSanitized — la clave y los resúmenes que van al modelo pasan por el saneado', async () => {
+  const b = base('prompt-saneado');
+  // un token de GitHub de laboratorio, armado por partes: un día subido antes del arreglo del saneado lo puede traer
+  const gho = ['gho', '_', 'abcdefghijklmnopqrstuvwxyz0123'].join('');
+  const largo = `gh api repos/acme/api/pulls --paginate --jq '.[].number' -H "X: ${gho}"`;
+  const enLaClave = `export X=${gho} && npm run build -- --prod`;
+  const d = diaMenos(1);
+  const lineas = [...veces(6, d, 'acme/api', largo), ...veces(6, d, 'acme/api', enLaClave)];
+  espejo(b.espejo, { 'mac-a': { [d]: lineas }, 'mac-b': { [d]: lineas } });
+  const r = await noche(b);
+  assert.strictEqual(r.codigo, 0);
+  assert.ok(r.m.propuestas.length > 0, 'la noche le pidió propuestas al modelo');
+  const todo = [...r.m.propuestas, ...r.m.revisiones, ...r.m.recomendaciones].join('\n');
+  assert.ok(!todo.includes(gho), 'el token no llega al modelo');
+  assert.match(todo, /\[REDACTED-GHP\]/);
+});
+
+test('T42 4.14-Filter_WindowsTempAndCutKeys — el temporal de Windows por su variable, la carpeta de la sesión cortada y el repo con unidad', () => {
+  for (const summary of [
+    'Remove-Item $env:TEMP\\lab -Recurse -Force',
+    'New-Item -ItemType Directory "$env:TEMP\\probe"',
+    'cd $env:TMP\\x',
+    'Set-Location ${env:TEMP}\\x',
+    'cd %TEMP%\\probe && dir',
+    'copy a.txt %TMP%\\b.txt',
+    // la variable de Windows por partes: el control de nombres la leería como una variable nueva
+    `Get-ChildItem $env:${'LOCAL'}APPDATA\\Temp\\x`,
+    'cat $HOME/.claude/jobs',
+  ]) {
+    assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary }), 'carpeta_de_trabajo', summary);
+  }
+  // un nombre que sólo empieza como TEMP no es el temporal
+  for (const summary of ['echo $env:TEMPLATE', 'type %TEMPLATES%\\x', 'npm run template']) {
+    assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary }), null, summary);
+  }
+  // en Windows, un repo en otra unidad que la casa queda grabado con su unidad: es la ruta de una máquina
+  assert.strictEqual(N.motivoDeRuido({ repo: 'D:/work/api', summary: 'npm test -- --watch=false' }), 'ruta_de_una_maquina');
+  assert.strictEqual(N.motivoDeRuido({ repo: 'acme/api', summary: 'npm test -- --watch=false' }), null);
+});
+
+test('T43 Nightly_SanitizesBeforeCutAndLowercase — la clave del grupo, el patrón y todo lo que va al modelo salen del resumen ya saneado', async () => {
+  const b = base('saneado-antes-del-corte');
+  // un valor de laboratorio y dos formas que el saneado viejo dejaba pasar: un día subido antes del arreglo las trae así
+  const valor = ['Zq9xLm4v', 'Rt7wKp'].join('');
+  const sql = ['sql', 'cmd'].join('');
+  const d = diaMenos(1);
+  const lineas = [...veces(6, d, 'acme/api', `export clientSecret=${valor} && npm run deploy`), ...veces(6, d, 'acme/api', `${sql} -U sa -P ${valor} -Q x`)];
+  espejo(b.espejo, { 'mac-a': { [d]: lineas }, 'mac-b': { [d]: lineas } });
+  const r = await noche(b);
+  assert.strictEqual(r.codigo, 0);
+  const todo = [...r.m.propuestas, ...r.m.revisiones, ...r.m.recomendaciones].join('\n').toLowerCase();
+  assert.ok(r.m.propuestas.length > 0, 'la noche le pidió propuestas al modelo');
+  assert.ok(!todo.includes(valor.toLowerCase()), 'ni en minúscula llega al modelo');
+  for (const p of propuestasDe(b)) assert.ok(!String(p.patron).toLowerCase().includes(valor.toLowerCase()), p.patron);
+});
+
+test('T44 Nightly_RevisionPromptSanitizesDecidedProposals — lo ya decidido que lee el pedido de revisión pasa por el saneado', async () => {
+  const b = base('revision-saneada');
+  const valor = ['Zq9xLm4v', 'Rt7wKp'].join('');
+  const d = diaMenos(1);
+  const lineas = veces(6, d, 'acme/api', 'npm run build -- --prod');
+  espejo(b.espejo, { 'mac-a': { [d]: lineas }, 'mac-b': { [d]: lineas } });
+  // una propuesta aprobada por otra noche, escrita con el saneado de entonces
+  const comun = { herramienta: 'Bash', repo: 'acme/api', veces: 6, maquinas: 2, desde: d, hasta: d, propuesta_el: diaMenos(5), sin_redaccion: null, modelo: null };
+  escribirPropuesta(b, { ...comun, huella: 'aaaaaaaaaa', estado: 'aprobada', patron: 'export clientSecret', redaccion: { trigger: `cuando hagas export clientSecret=${valor}`, action: `corré export clientSecret=${valor}` }, decision: { texto: `corré export clientSecret=${valor}` } });
+  const r = await noche(b);
+  assert.strictEqual(r.codigo, 0);
+  assert.ok(r.m.revisiones.length > 0, 'la noche hizo el pedido de revisión');
+  assert.ok(!r.m.revisiones.join('\n').includes(valor), 'lo decidido llega al modelo saneado');
+});
+
+test('T45 Nightly_PromptCutEqualsFilterCut — la consigna al modelo dice el mismo corte de confianza que aplican la noche y el observador', () => {
+  const O = require(path.join(RAIZ, 'scripts', 'instincts', 'instinct-observer.js'));
+  assert.strictEqual(O.MIN_CONFIDENCE, 0.85, 'el corte es 0,85');
+  assert.strictEqual(N.MIN_CONFIANZA, O.MIN_CONFIDENCE, 'la noche corta con el número del observador');
+  const consigna = O.buildPrompt([{ key: 'p|Bash|x', count: 3, items: [] }], 3);
+  const cortes = [...consigna.matchAll(/Confidence < ([\d.]+)/g)].map((m) => Number(m[1]));
+  assert.deepStrictEqual(cortes, [O.MIN_CONFIDENCE], `la consigna nombra un solo corte, el mismo: ${cortes}`);
+});

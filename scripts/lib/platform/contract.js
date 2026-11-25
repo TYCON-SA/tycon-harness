@@ -3,20 +3,21 @@
 // no, y qué decide la plataforma de cada operación. Lo comparten el lector de integraciones (que valida los manifiestos
 // de los conectores) y la capa (scripts/lib/platform/platform.js), sin requerirse entre ellos.
 
-// Las catorce operaciones: cinco del pedido de trabajo (crear, cambiar, cerrar, buscar por etiqueta y leer su estado),
+// Las quince operaciones: cinco del pedido de trabajo (crear, cambiar, cerrar, buscar por etiqueta y leer su estado),
 // cuatro del pedido de cambio (abrir, votar, listar los abiertos y leer uno por su número), lo asignado, la CI, la cola,
-// los despliegues y la regla de aprobación de una rama. Un conector declara cuáles implementa; las demás contestan no_soportado.
+// los despliegues, la regla de aprobación de una rama y las alertas abiertas del análisis de seguridad en la rama
+// principal. Un conector declara cuáles implementa; las demás contestan no_soportado.
 const OPERATIONS = Object.freeze([
   'work-item.create', 'work-item.update', 'work-item.close', 'work-item.find', 'work-item.read',
   'change-request.open', 'change-request.vote', 'change-request.list', 'change-request.read',
-  'assigned.list', 'ci.read', 'queue.read', 'deployments.read', 'branch-rules.read',
+  'assigned.list', 'ci.read', 'queue.read', 'deployments.read', 'branch-rules.read', 'security-alerts.list',
 ]);
 
 // Los motivos de un «no». Una lectura que falló es no_medido: nunca una lista vacía ni un cero.
 const REASONS = Object.freeze(['sin_plataforma', 'sin_credencial', 'no_soportado', 'no_encontrado', 'rechazado', 'red', 'no_medido']);
 
 // Las operaciones atadas a un repo: van por la plataforma que declara ese repo en team-repos.json.
-const REPO_OPERATIONS = Object.freeze(['change-request.open', 'change-request.vote', 'change-request.list', 'change-request.read', 'ci.read', 'branch-rules.read']);
+const REPO_OPERATIONS = Object.freeze(['change-request.open', 'change-request.vote', 'change-request.list', 'change-request.read', 'ci.read', 'branch-rules.read', 'security-alerts.list']);
 
 // Las demás las elige el perfil del equipo (`integrations.platform`): por su área, o por el valor por defecto.
 const AREAS = Object.freeze(['default', 'workItems', 'queue']);

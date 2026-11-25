@@ -1473,7 +1473,7 @@ const AYUDA = `work-items.js — el pedido de trabajo del líder (un Bug por pro
   --today <fecha>  fija la fecha (pruebas)
   --simulate       no escribe nada aunque «pedidos_activos» esté encendido
   --json           vuelca la sección «pedidos»
-  --team-repos <f> team-repos.json: con operations.platform «github» corre github-issues.js (issues en vez de Bugs).
+  --team-repos <f> team-repos.json: con operations.platform «github» corre el aviso de su conector (issues en vez de Bugs).
                    Por defecto el de la raíz del árbol; sin él, Azure
 
 Habla con Azure sólo por TYCON_ADO_CMD (por defecto az) y necesita AZURE_DEVOPS_EXT_PAT.
@@ -1520,7 +1520,8 @@ async function main() {
   const p = elegirPlataforma(process.argv);
   if (p.error) { console.error(`error: ${p.error}`); return 2; }
   if (p.aviso) console.error(`aviso: ${p.aviso}`);
-  if (p.plataforma === 'github') return require('./github-issues.js').main(p.argv);
+  // lo de una plataforma que no es la de este guion lo trae su conector, en scripts/dependency-notices.js
+  if (p.plataforma === 'github') return require(path.join(RAIZ_REPO, 'integrations', require('../../lib/team-repos.js').connectorOf(p.plataforma), 'scripts', 'dependency-notices.js')).main(p.argv);
   const a = parseArgs(p.argv);
   if (!a.error && (a.cmd === 'run' || a.cmd === 'state')) {
     const mezcla = mezclaEnAzure(a.config);
@@ -1554,7 +1555,7 @@ module.exports = { parseArgs, crearAz, proyectosDeFicha, paresPorPedir, ordenarY
 // informe de 9782 bytes llega cortado en 8192 y el consumidor lo lee como «no pude», nunca como
 // un error. `main` no deja manejadores abiertos, así que con `exitCode` el proceso termina solo, cuando
 // terminó de escribir.
-// Va DESPUÉS de module.exports — github-issues.js (que este main puede cargar) usa lo que exporta este guion.
+// Va DESPUÉS de module.exports — el aviso del conector (que este main puede cargar) usa lo que exporta este guion.
 if (require.main === module) {
   // Los nombres viejos (subcomandos y opciones en castellano) siguen andando hasta el retiro
   require('../../lib/legacy-names.js').aliasArgv('scripts/nightly/dependencies/work-items.js', { exitCode: 2, prefix: 'error: ' });

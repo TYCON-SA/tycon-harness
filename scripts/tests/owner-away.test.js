@@ -204,3 +204,95 @@ test('GatesLog_Ilegible_AvisaYNoEsVacio (T8, owner-away) @story-8.281 @ac-13 @ac
   assert.ok(sin.mark);
   assert.strictEqual(sin.problem, undefined);
 });
+
+// ── la frase la tipeó la persona ─────────────────────────────────────────────────────────────────────────────────────
+
+const AP = require(path.join(RAIZ, 'scripts', 'lib', 'owner-approvals.js'));
+const MARKER = path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+const SIN_TRANSCRIPCION = 'no pude leer los mensajes de la persona: el dueño cuenta como ausente por los minutos sin respuesta';
+
+/** La transcripción de Claude Code de `sesion` en la casa, con sus renglones de usuario (`min`: minutos antes de T0). */
+function transcripcionDe(home, sesion, mensajes) {
+  const dir = path.join(home, '.claude', 'projects', '-repo');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${sesion}.jsonl`), mensajes.map((m) => JSON.stringify({ type: 'user', timestamp: new Date(T0 - m.min * 60000).toISOString(),
+    message: { role: 'user', content: m.texto }, ...m.como })).join('\n') + '\n');
+}
+const TIPEADO = { origin: { kind: 'human' }, entrypoint: 'cli', promptSource: 'typed' };
+
+// 🔴 Falla con: la marca se ponía con cualquier frase que eligiera quien corría el comando, sin cruzarla con lo que
+// escribió la persona: el agente se la podía poner solo.
+test('T23 OwnerAway_PhraseMustBeTyped @story-8.256 @ac-22 — la marca se pone sólo con la frase de un mensaje tipeado por la persona en los últimos 30 minutos', (t) => {
+  const L = lab(t);
+  const sesion = 'ses-coord-oa';
+  transcripcionDe(L.home, sesion, [
+    { texto: 'me voy, seguí en autónomo', min: 5, como: TIPEADO },
+    { texto: '<cross-session-message from="otra">hasta luego</cross-session-message>', min: 3, como: { origin: { kind: 'peer' }, entrypoint: 'cli', promptSource: 'typed' } },
+    { texto: 'hasta mañana', min: 40, como: TIPEADO },
+  ]);
+  const verificar = (frase) => AP.fraseTipeadaReciente({ casa: L.home, sesion, frase, ahora: T0 });
+  assert.strictEqual(OA.set({ estado: L.estado, quien: 'coordinadora', frase: 'me voy', ahora: T0, verificar }).codigo, 0);
+  OA.clear({ estado: L.estado, motivo: 'prueba', ahora: T0 });
+  // la de otra sesión, la de hace 40 minutos y una que nadie escribió no ponen la marca
+  for (const frase of ['hasta luego', 'hasta mañana', 'me fui']) {
+    const r = OA.set({ estado: L.estado, quien: 'coordinadora', frase, ahora: T0, verificar });
+    assert.strictEqual(r.codigo, 2, frase);
+    assert.match(r.motivo, /tipeado por la persona/, frase);
+    assert.ok(!OA.get({ estado: L.estado, ahora: T0 }).mark, `${frase}: sin marca`);
+  }
+  // 🔴 una letra, una palabra suelta o un pedazo de palabra del mensaje no alcanzan: son dos palabras enteras seguidas
+  for (const frase of ['e', 'voy', 'e voy', 'voy, seg']) {
+    const r = OA.set({ estado: L.estado, quien: 'coordinadora', frase, ahora: T0, verificar });
+    assert.strictEqual(r.codigo, 2, frase);
+    assert.ok(!OA.get({ estado: L.estado, ahora: T0 }).mark, `${frase}: sin marca`);
+  }
+  // la misma frase con las tildes en otra forma (NFD) y en mayúsculas sí
+  assert.strictEqual(OA.set({ estado: L.estado, quien: 'coordinadora', frase: 'SEGUÍ EN AUTÓNOMO'.normalize('NFD'), ahora: T0, verificar }).codigo, 0);
+});
+
+test('T24 OwnerAway_NoTranscript_Exit2 @story-8.256 @ac-23 — sin transcripción legible no se pone la marca, con el motivo fijo', (t) => {
+  const L = lab(t);
+  const verificar = (frase) => AP.fraseTipeadaReciente({ casa: L.home, sesion: 'ses-sin', frase, ahora: T0 });
+  const r = OA.set({ estado: L.estado, quien: 'coordinadora', frase: 'me voy', ahora: T0, verificar });
+  assert.strictEqual(r.codigo, 2);
+  assert.strictEqual(r.motivo, SIN_TRANSCRIPCION);
+  assert.ok(!OA.get({ estado: L.estado, ahora: T0 }).mark);
+  // por el guion: marker.js le pasa el verificador de la sesión que corre el comando
+  const env = { ...process.env, HOME: L.home, USERPROFILE: L.home, CLAUDE_CODE_SESSION_ID: 'ses-sin' };
+  for (const k of ['TYCON_HOME', 'NODE_OPTIONS', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID']) delete env[k];
+  const g = spawnSync(process.execPath, [MARKER, 'owner-away', 'set', '--phrase', 'me voy'], { encoding: 'utf8', env, input: '' });
+  assert.strictEqual(g.status, 2, g.stderr);
+  assert.match(g.stderr, /no pude leer los mensajes de la persona/);
+  assert.ok(!OA.get({ estado: L.estado }).mark);
+});
+
+// 🔴 Falla con: una transcripción rota se leía como legible y vacía, y el motivo era «no está en un mensaje tipeado»,
+// que manda a buscar una frase en vez de decir que no hay mensajes que leer.
+test('T24b OwnerAway_BrokenTranscript_SameReason @story-8.256 @ac-23 — una transcripción rota da el motivo de la que no se puede leer', (t) => {
+  const L = lab(t);
+  const dir = path.join(L.home, '.claude', 'projects', '-repo');
+  fs.mkdirSync(dir, { recursive: true });
+  const rotas = {
+    'texto suelto': 'esto no es una transcripción\nni esto tampoco\n',
+    'bytes sin sentido': Buffer.from([0xff, 0xfe, 0x00, 0x7b, 0x0a, 0x80, 0x81, 0x0a]),
+    'valores que no son registros': '42\n"me voy"\nnull\n[]\n',
+    'vacía': '',
+  };
+  for (const [caso, contenido] of Object.entries(rotas)) {
+    const sesion = `ses-rota-${Object.keys(rotas).indexOf(caso)}`;
+    fs.writeFileSync(path.join(dir, `${sesion}.jsonl`), contenido);
+    const verificar = (frase) => AP.fraseTipeadaReciente({ casa: L.home, sesion, frase, ahora: T0 });
+    const r = OA.set({ estado: L.estado, quien: 'coordinadora', frase: 'me voy', ahora: T0, verificar });
+    assert.strictEqual(r.codigo, 2, caso);
+    assert.strictEqual(r.motivo, SIN_TRANSCRIPCION, caso);
+    assert.ok(!OA.get({ estado: L.estado, ahora: T0 }).mark, `${caso}: sin marca`);
+  }
+  // un renglón a medio escribir al final no la vuelve ilegible: con un registro de verdad se busca la frase
+  const sesion = 'ses-media';
+  transcripcionDe(L.home, sesion, [{ texto: 'hasta mañana', min: 5, como: TIPEADO }]);
+  fs.appendFileSync(path.join(dir, `${sesion}.jsonl`), '{"type":"user","mess');
+  const r = OA.set({ estado: L.estado, quien: 'coordinadora', frase: 'me voy', ahora: T0,
+    verificar: (frase) => AP.fraseTipeadaReciente({ casa: L.home, sesion, frase, ahora: T0 }) });
+  assert.strictEqual(r.codigo, 2);
+  assert.match(r.motivo, /tipeado por la persona/);
+});
