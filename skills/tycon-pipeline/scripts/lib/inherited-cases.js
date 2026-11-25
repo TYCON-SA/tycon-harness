@@ -289,8 +289,8 @@ function entornoDeLaBase(casa) {
 const escaparFiltro = (s) => String(s).replace(/[\\()&|=!~,]/g, (c) => `\\${c}`);
 
 /** Una corrida con tope de tiempo: `{ status, salida }`. */
-function correr(cmd, args, { cwd, env, shell = false }) {
-  const r = spawnSync(cmd, args, { cwd, env, encoding: 'utf8', windowsHide: true, shell, timeout: TIEMPO_BASE_S() * 1000, maxBuffer: 64 * 1024 * 1024 });
+function correr(cmd, args, { cwd, env }) {
+  const r = spawnSync(cmd, args, { cwd, env, encoding: 'utf8', windowsHide: true, timeout: TIEMPO_BASE_S() * 1000, maxBuffer: 64 * 1024 * 1024 });
   const salida = `${r.stdout || ''}${r.stderr || ''}`;
   if (r.error && r.error.code === 'ETIMEDOUT') return { status: null, salida: `se cortó a los ${TIEMPO_BASE_S()} s (TYCON_INHERITED_BASE_TIMEOUT_S)` };
   if (r.error) return { status: null, salida: String(r.error.message || r.error) };
@@ -312,10 +312,13 @@ function correrEnLaBase({ dir, runner, fallas, generico, env }) {
       const args = runner === 'jest'
         ? ['jest', '--ci', '--json', '--outputFile', salidaJson, '--runTestsByPath', ...archivos]
         : ['vitest', 'run', '--coverage.enabled=false', '--reporter=json', '--outputFile', salidaJson, ...archivos];
-      // en Windows npx es un .cmd, que sólo arranca por el shell: cada argumento entre comillas
-      const r = process.platform === 'win32'
-        ? correr(`npx ${args.map((x) => `"${String(x).replace(/"/g, '\\"')}"`).join(' ')}`, [], { cwd: dir, env, shell: true })
-        : correr('npx', args, { cwd: dir, env });
+      // en Windows npx es un .cmd, que sólo arranca por la consola: se corre su guion de npm con este mismo node, sin
+      // consola, para que el nombre de un archivo nunca se lea como un comando
+      const npxCli = path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npx-cli.js');
+      let r;
+      if (process.platform !== 'win32') r = correr('npx', args, { cwd: dir, env });
+      else if (fs.existsSync(npxCli)) r = correr(process.execPath, [npxCli, ...args], { cwd: dir, env });
+      else r = { status: null, salida: `no encontré npx junto a node (${npxCli})` };
       if (!fs.existsSync(salidaJson)) {
         return { motivo: `${runner} no dejó su reporte en la base (${r.status === null ? r.salida : `salió ${r.status}`}): las dependencias de ahora no sirven para la base, o falta algo que git no guarda · ${ultimas(r.salida)}` };
       }
