@@ -320,8 +320,12 @@ fi
 # El número que decide si el cierre recortado alcanza —cuántas veces `on-frontmatter-write` y
 # `on-pre-commit` rechazan una evidencia— sale de esa constancia: esos hooks (en agent-skills) la anotan.
 # Los hooks se corren REALES desde agent-skills (`TYCON_SKILLS_DIR` apunta a un clon mientras el
-# cambio no está en main). Sin agent-skills en la máquina, la parte no se puede medir y lo dice.
+# cambio no está en main). Si la casa no los trae (una casa de prueba, la CI), se toman de la carpeta skills/ del árbol
+# que se prueba, que los trae. Sin ninguno de los dos, la parte no se puede medir y lo dice.
 SKILLS72="${TYCON_SKILLS_DIR:-$HOME/.claude/agent-skills/skills}"
+if [ -z "${TYCON_SKILLS_DIR:-}" ] && [ ! -f "$SKILLS72/tycon-pipeline/scripts/on-frontmatter-write.js" ] && [ -f "$AQUI/skills/tycon-pipeline/scripts/on-frontmatter-write.js" ]; then
+  SKILLS72="$AQUI/skills"
+fi
 FW="$SKILLS72/tycon-pipeline/scripts/on-frontmatter-write.js"
 PC="$SKILLS72/tycon-pipeline/scripts/on-pre-commit.js"
 EG="$SKILLS72/tycon-pipeline/scripts/on-dod-evidence-guard.js"
