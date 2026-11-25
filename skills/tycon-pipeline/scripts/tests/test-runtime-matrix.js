@@ -1125,6 +1125,25 @@ withWaiverLog(() => {
   check('"se envía por mail" SÍ es acción',
     esAccion('el comprobante se envía por mail al beneficiario') === true);
 
+  // --- (g) LOG: «registra un log» escribe una línea de diagnóstico, no cambia datos (fila 231, informe de
+  //     un dev del 24/11). Sólo 'registrar', con el log, la consola o la salida de errores pegado al verbo y
+  //     sin una tabla ni una base en la misma frase.
+  check('"registra un log con el motivo" NO es acción',
+    esAccion('si la llamada falla, el plugin registra un log con el motivo y devuelve 502') === false);
+  check('"se registra en el log un warning" NO es acción',
+    esAccion('cuando el token vence se registra en el log un warning') === false);
+  check('"registra el error en consola" NO es acción',
+    esAccion('el formulario registra el error en consola y muestra el aviso') === false);
+  // gemelos: un log que va a una tabla o una base es un dato; otro verbo de la frase sigue disparando
+  check('"registra un log de auditoría en la tabla AuditLog" SÍ es acción',
+    esAccion('el servicio registra un log de auditoría en la tabla AuditLog') === true);
+  check('"registra un log y guarda el pedido" SÍ es acción (guarda)',
+    esAccion('registra un log y guarda el pedido') === true);
+  check('"registra el pedido y lo informa en el log" SÍ es acción (el log no es lo registrado)',
+    esAccion('registra el pedido del cliente y lo informa en el log') === true);
+  check('"loguea" no está en la lista: "actualiza el estado y lo registra en el log" SÍ es acción (actualiza)',
+    esAccion('actualiza el estado y lo registra en el log') === true);
+
   // --- (c) La neutralización es POR APARICIÓN: si alguna sobrevive, el AC es de acción.
   //     Éste es el guard que evita que un "no" suelto apague un AC que sí muta.
   check('un verbo negado NO tapa a otro verbo sin negar en el mismo AC',

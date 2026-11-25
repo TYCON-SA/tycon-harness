@@ -142,6 +142,14 @@ function cmdClearSession(sid, rest = []) {
   }
   avisarOficina(safe);
   cerrarEjecucion(safe, m, { registrar: false, estado: 'abortada', motivo: estado.SID === safe ? 'clear-session de la propia sesión' : `clear-session desde la sesión ${estado.SID}` });
+  // cerrar la de otra sesión deja su renglón en el registro de los frenos: quién la cerró, y `escape` si estaba abierta
+  // (pasó por la firma del dueño, que el freno anota aparte) o `paso` si estaba completa. La huella, nunca la sesión ni
+  // la historia
+  if (estado.SID !== safe) {
+    let abierta = true;
+    try { const rc = require('./run-close.js'); abierta = rc.abierta(rc.estado(m)); } catch (_e) { /* sin poder medirla, abierta */ }
+    require('./closing-record.js').anotarCierre({ freno: 'clear-session', regla: 'otra-sesion', veredicto: abierta ? 'escape' : 'paso', huella: `${safe} ${m.storyId}`, sesion: estado.SID });
+  }
   syncSessionState(safe);
   process.stdout.write(`cleared: ${safe}.json\n`);
 }
