@@ -55,6 +55,18 @@ rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "$GH")
 rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "$GH && $CREAR")
 { [ "$rc" -eq 2 ] && grep -q "2845" "$TMP/err.txt"; } && ok "🔴 con un pedido de GitHub en la misma línea, el de Azure se sigue frenando" || no "🔴 el gh de adelante tapó el pedido de Azure ($rc)"
 
+# ---------------------------------------------------------------- 1b2. el comando crudo de otro conector (fila 189c)
+# El freno miraba sólo los comandos de GitHub y de Azure: un `glab mr create` pasaba sin que nadie mirara. Ahora mira el
+# comando que crea un pedido de cualquier conector (sus `changeRequestCommands`), con la capa de plataforma. Sin sesión
+# de la plataforma no se puede mirar: pasa, lo dice y nombra el repo; y no tapa el de Azure de la misma línea.
+GL='glab mr create -R acme/grupo/widgets --source-branch feat/x --target-branch main --title t'
+rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "$GL")
+{ [ "$rc" -eq 0 ] && grep -q "NO verifiqué" "$TMP/err.txt" && grep -q "acme/grupo/widgets" "$TMP/err.txt"; } && ok "un pedido de GitLab crudo se mira: sin poder consultar, pasa, lo dice y nombra el repo" || no "🔴 el glab mr create pasó sin mirar ($rc): $(head -c 200 "$TMP/err.txt")"
+rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "$GL && $CREAR")
+{ [ "$rc" -eq 2 ] && grep -q "2845" "$TMP/err.txt"; } && ok "🔴 con un pedido de GitLab en la misma línea, el de Azure se sigue frenando" || no "🔴 el glab de adelante tapó el pedido de Azure ($rc)"
+rc=$(corre "glab mr list -R acme/grupo/widgets")
+{ [ "$rc" -eq 0 ] && ! grep -q "NO verifiqué" "$TMP/err.txt"; } && ok "listar pedidos de GitLab no es crear: el freno no lo mira" || no "listar se tomó como crear ($rc): $(head -c 200 "$TMP/err.txt")"
+
 # ---------------------------------------------------------------- 1c. 🔴 un pedido de Azure abierto por la capa de plataforma
 # El paso del merge abre los pedidos de Azure con `platform.js change-request open`, no con `az repos pr create`: el freno
 # los mira con `az`, igual que al crear a mano, y frena con otro construyendo.
