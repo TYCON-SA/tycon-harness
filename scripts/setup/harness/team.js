@@ -760,11 +760,13 @@ function renamesProblems(layerDir, versionDir, idx) {
     if (['option', 'subcommand', 'value', 'key'].includes(e.kind) && typeof e.where === 'string' && inVersion.has(e.where)) {
       const t = textOf(e.where);
       const name = e.kind === 'option' ? e.new.replace(/^-+/, '') : e.new;
+      // el nombre entero: `mark` no está en un texto que sólo dice `marks` o `--mark-all`; los guiones de una opción no cuentan como borde
+      const whole = new RegExp(`(?:^|[^A-Za-z0-9_-])-{0,2}${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_-])`);
       if (typeof t !== 'string') problems.push(at(`${who}: no pude leer ${e.where} de la versión (${t.error}) para buscar ${name}`));
-      else if (!t.includes(name)) {
+      else if (!whole.test(t)) {
         // un guion partido: el nombre puede vivir en una de sus partes de lib/
         const parts = partsOf(e.where);
-        const inPart = parts.some((p) => { const tp = textOf(p); return typeof tp === 'string' && tp.includes(name); });
+        const inPart = parts.some((p) => { const tp = textOf(p); return typeof tp === 'string' && whole.test(tp); });
         if (!inPart) problems.push(at(`${who}: el nombre nuevo ${name} no está en ${e.where} de la versión${parts.length ? ' ni en sus partes de lib/' : ''}`));
       }
     }

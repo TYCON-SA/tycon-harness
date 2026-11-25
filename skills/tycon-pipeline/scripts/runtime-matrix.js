@@ -784,6 +784,16 @@ const REPETICION_EXTRA_RE = new RegExp([
   /\b(\d+|tres|cuatro|cinco|varias|muchas|n) veces\b|\bretr(y|ies|ied|ying)\b|\bre-?procesa/.source,
   /\bmism[oa]s? (id|evento|pedido|mensaje|payload|webhook|request|solicitud|archivo|registro|lote)\b/.source,
 ].join('|'), 'i');
+// (g) LOG: «el plugin REGISTRA un log con el motivo» o «se REGISTRA en consola» escribe una línea de
+//     diagnóstico; ningún dato cambia, y el criterio quedaba como acción sin ejecutar. Sólo 'registrar', y sólo
+//     con el log, el logger, la consola o la salida estándar o de errores a menos de 20 letras del verbo, sin
+//     cortar la frase, y sin una tabla ni una base de datos en lo que queda de ella: «registra un log de
+//     auditoría en la tabla AuditLog» escribe un dato y sigue disparando, y también «registra el pedido … en el
+//     log», donde lo registrado es el pedido.
+const VERBO_DE_LOG_RE = /^(registrar|registra|registre)$/i;
+const DESTINO_DE_LOG_RE = /^[^.;\n]{0,20}?\b(log|logs|logger|consola|console|stdout|stderr)\b/i;
+const DATO_EN_LA_FRASE_RE = /^[^.;\n]*\b(tabla|tablas|base de datos|BD|DB|SQL)\b/i;
+
 function hablaDeRepeticion(text) {
   return REEJECUCION_RE.test(text) || DUPLICADO_RE.test(text) || REPETICION_EXTRA_RE.test(text);
 }
@@ -806,6 +816,8 @@ function acEsDeAccion(text) {
     if (VERBO_DE_LOOKUP_RE.test(m[0]) && COMPLEMENTO_DE_LOOKUP_RE.test(despues)) continue;
     if (CONDICIONAL_RE.test(despues)) continue;
     if (VERBO_DE_RECHAZO_RE.test(m[0]) && CODIGO_DE_RECHAZO_RE.test(text.slice(m.index + m[0].length))) continue;
+    const resto = text.slice(m.index + m[0].length);
+    if (VERBO_DE_LOG_RE.test(m[0]) && DESTINO_DE_LOG_RE.test(resto) && !DATO_EN_LA_FRASE_RE.test(resto)) continue;
     return true;   // una sola aparición no neutralizada alcanza
   }
   return false;
@@ -1703,11 +1715,24 @@ function compute(opts) {
   const deTandaBloqueada = [];
   // midiendo una tanda, lo que todavía no existe y la historia ata sólo a otras tandas sin hacer no es código de lo medido
   const deTandaNoMedida = [];
+  // `<hermano>/ruta`, con el nombre del hermano adelante, es esa ruta adentro del hermano, esté donde esté: desde la
+  // carpeta de arriba sólo se encuentra si el hermano vive ahí. Con su copia en la rama, va a la copia (más abajo). El
+  // nombre escrito con otra mayúscula cuenta sólo donde el disco no las distingue, como la misma ruta desde arriba
+  const porNombre = evCfg.roots.map((r) => ({ nombre: companionLib.label(r), raiz: companionLib.real(r) }));
+  const nombra = (primero, h) => primero === h.nombre
+    || (primero.toLowerCase() === h.nombre.toLowerCase() && fs.existsSync(path.join(path.dirname(h.raiz), primero)));
   for (const rel of declared) {
     const copias = new Map();
-    for (const desde of lugares) {
+    const intentos = lugares.map((desde) => ({ desde, relEn: rel }));
+    const primero = rel.split('/')[0];
+    for (const h of porNombre) {
+      if (rel.includes('/') && nombra(primero, h)) intentos.push({ desde: h.raiz, relEn: rel.slice(primero.length + 1) });
+    }
+    // dónde se buscó, para el aviso: los lugares y la ruta adentro de cada hermano que la nombra
+    const buscada = [...lugares, ...intentos.slice(lugares.length).map((i) => path.join(copiaDe.get(i.desde) || i.desde, i.relEn))];
+    for (const { desde, relEn } of intentos) {
       let lugar = desde;
-      let abs = path.resolve(lugar, rel);
+      let abs = path.resolve(lugar, relEn);
       // la ruta real con la forma del disco (mayúsculas incluidas, y también la de un archivo que no existe), la misma que
       // usan las llaves de las copias: con otra, una ruta escrita con otra mayúscula no se reconocería como del hermano
       let real = companionLib.real(abs);
@@ -1729,7 +1754,7 @@ function compute(opts) {
       const deOtra = !tandas && midiendoTanda ? tandasNoMedidasDe(content, rel, [...pedidas, ...vuelven.keys()]) : null;
       if (tandas) deTandaBloqueada.push({ rel, tandas });
       else if (deOtra) deTandaNoMedida.push({ rel, tandas: deOtra });
-      else noLeidos.push({ rel, lugares });
+      else noLeidos.push({ rel, lugares: buscada });
       continue;
     }
     for (const { abs, lugar, sinCopia: declarado } of copias.values()) {

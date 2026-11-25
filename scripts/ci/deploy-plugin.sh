@@ -416,11 +416,27 @@ if [ -n "$FALTAN" ]; then
     NO_DECLARADAS=" $FALTAN"
   fi
   if [ -n "$NO_DECLARADAS" ]; then
+    # 🔴 LA VERSIÓN SIN MARCAR NO ES LA QUE MUESTRA EL PANEL. El panel abre el plugin en su versión activa, y la nueva quedó
+    # subida sin marcar: un dev buscó las opciones en la activa y no las encontró. El rojo dice que ésta NO es la activa y,
+    # si la lista del host se puede leer, cuál lo es. Lo que viene del host se usa sólo si tiene la forma de una versión y
+    # de un identificador. Sin dirección: el guion conoce la de la API, no la del panel.
+    ACTIVA=""
+    LISTA=$(api GET "/api/admin/plugins")
+    if [ "$(codigo "$LISTA")" = 200 ]; then
+      ACTIVA=$(cuerpo "$LISTA" | jq -r --arg id "$PLUGIN_ID" --arg n "$NOMBRE_PLUGIN" '(if type=="array" then . else (.plugins // .data // .items // .value // []) end) | map(select(((.name // "" | ascii_downcase) == ($n | ascii_downcase)) and .isDefault==true and ((.pluginId|tostring)!=$id))) | .[0] // empty | "\(.version)\t\(.pluginId)"' 2>/dev/null) || ACTIVA=""
+      printf '%s' "$ACTIVA" | grep -qE '^[0-9A-Za-z.+-]{1,40}	[0-9]{1,12}$' || ACTIVA=""
+    fi
+    if [ -n "$ACTIVA" ]; then
+      NO_ACTIVA="la versión $VERSION_PLUGIN (identificador $PLUGIN_ID) quedó subida sin marcar: NO es la activa, y el panel abre el plugin en la activa (la activa es la ${ACTIVA%%	*} (identificador ${ACTIVA##*	}))"
+    else
+      NO_ACTIVA="la versión $VERSION_PLUGIN (identificador $PLUGIN_ID) quedó subida sin marcar: NO es la activa, y el panel abre el plugin en la activa"
+    fi
     echo "   faltan opciones de configuración en $NOMBRE_PLUGIN $VERSION_PLUGIN (identificador $PLUGIN_ID):"
     printf '%s' "$DETALLE"
     echo "   Se cargan en el panel de administración, en la configuración de la versión con identificador $PLUGIN_ID."
+    echo "   Ojo: $NO_ACTIVA. En el panel: Plugins → historial → el engranaje de la $VERSION_PLUGIN (la ruta, después de la dirección del panel: /admin/settings/plugins/$PLUGIN_ID)."
     [ "$YA_ARRANCO" = si ] && echo "   Esta versión ya arrancó; si cargaste un valor después, cargalo en ELLA."
-    fatal "el host dice que faltan opciones de configuración para $NOMBRE_PLUGIN $VERSION_PLUGIN (identificador $PLUGIN_ID) y NO están declaradas:$NO_DECLARADAS — con la versión sin marcar el host no frena solo. Se cargan en el panel, en la configuración de la versión con identificador $PLUGIN_ID. Si son pendientes a sabiendas, declaralas con motivo y fecha en el archivo de opciones pendientes"
+    fatal "el host dice que faltan opciones de configuración para $NOMBRE_PLUGIN $VERSION_PLUGIN (identificador $PLUGIN_ID) y NO están declaradas:$NO_DECLARADAS — con la versión sin marcar el host no frena solo. Se cargan en el panel, en la configuración de la versión con identificador $PLUGIN_ID: $NO_ACTIVA. Si son pendientes a sabiendas, declaralas con motivo y fecha en el archivo de opciones pendientes"
   fi
   aviso "faltan opciones de configuración DECLARADAS como pendientes (revisar $VENCE): $FALTAN"
 elif [ "$MEDIDO" = si ]; then
