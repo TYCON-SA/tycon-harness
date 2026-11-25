@@ -1518,9 +1518,12 @@ corre_fondo(){
     if (process.env.BACKGROUND) e.tool_input.run_in_background = process.env.BACKGROUND === "true";
     if (process.env.TIMEOUT_MS) e.tool_input.timeout = Number(process.env.TIMEOUT_MS);
     process.stdout.write(JSON.stringify(e));' 2>/dev/null)"
-  printf '%s' "$payload" | env HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" TYCON_PROD_SESSION_SINCE=0 node "$HOOK" >"$TMP/out" 2>"$TMP/err"
+  # la configuración de tope de la consola que trae el entorno de la prueba no cuenta; la del caso va en CONSOLE_ENV
+  printf '%s' "$payload" | env -u BASH_DEFAULT_TIMEOUT_MS -u BASH_MAX_TIMEOUT_MS -u CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS \
+    HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" TYCON_PROD_SESSION_SINCE=0 ${CONSOLE_ENV[@]+"${CONSOLE_ENV[@]}"} node "$HOOK" >"$TMP/out" 2>"$TMP/err"
   echo $?
 }
+CONSOLE_ENV=()
 BACKGROUND_FORMS=("$PUERTA $PROD 'select 1'" "$PUERTA --reclassify $PROD" "$PUERTA --azure monitor metrics alert list -g rg-acme")
 dice_que_hacer(){ grep -qF "la puerta de producción no corre de fondo" "$TMP/err" && grep -qF "primer plano" "$TMP/err" \
   && grep -qF "qué cuadro va a aparecer" "$TMP/err" && grep -qF "timeout: 300000" "$TMP/err"; }
@@ -1584,6 +1587,21 @@ rc="$(codex "$CONSULTA")"
 if [ "$rc" = 2 ] && grep -qF "en Codex la puerta no puede abrir el cuadro" "$TMP/err" && ! grep -qF "timeout" "$TMP/err"; then
   ok "ProdGuard_CodexWithoutTimeout_AsToday · en Codex, sin timeout: frena por ser Codex, como siempre, y no pide el tope"
 else no "ProdGuard_CodexWithoutTimeout_AsToday · en Codex, sin timeout: rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+rc="$(corre_fondo Bash '' "$CONSULTA" 299999)"
+if [ "$rc" = 2 ] && grep -qF "trae uno de 299 s" "$TMP/err"; then ok "ProdGuard_ForegroundTimeoutJustShort_SaysIt · con 299999 frena y no dice 300 s"
+else no "ProdGuard_ForegroundTimeoutJustShort_SaysIt · con 299999: rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+# la consola aplica también su configuración: la que baja el tope frena con el nombre de la variable, la que lo da pasa
+for caso in "BASH_MAX_TIMEOUT_MS=200000|300000|2" "CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS=60000|300000|2" \
+  "BASH_MAX_TIMEOUT_MS=600000|300000|0" "BASH_DEFAULT_TIMEOUT_MS=300000||0" "BASH_DEFAULT_TIMEOUT_MS=200000||2"; do
+  IFS='|' read -r variable pedido_ms esperado <<<"$caso"
+  CONSOLE_ENV=("$variable")
+  rc="$(corre_fondo Bash '' "$CONSULTA" "$pedido_ms")"
+  CONSOLE_ENV=()
+  if [ "$rc" = "$esperado" ] && { [ "$esperado" = 0 ] || grep -qF "segundo plano" "$TMP/err"; } \
+     && { [ "$esperado" = 0 ] || [ "${variable#BASH_DEFAULT}" != "$variable" ] || grep -qF "$variable" "$TMP/err"; }; then
+    ok "ProdGuard_ConsoleSettings_Count · $variable con pedido «${pedido_ms:-sin tope}»: sale $esperado"
+  else no "ProdGuard_ConsoleSettings_Count · $variable con pedido «${pedido_ms:-sin tope}»: rc=$rc, esperaba $esperado — err: $(head -c 200 "$TMP/err")"; fi
+done
 
 echo "— prod-guard: $pasaron ok, $fallos fallos —"
 [ "$fallos" -eq 0 ]

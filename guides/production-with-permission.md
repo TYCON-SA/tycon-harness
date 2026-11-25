@@ -271,9 +271,18 @@ primer plano sin ese tope, o con uno menor: el mensaje dice cuál traía y pide 
 la puerta, así que un comando con otro problema se frena primero por ése. Cada bloqueo queda anotado con la regla
 `puerta-de-fondo`.
 
-Lo que el freno todavía no ve: **una sesión abierta de fondo por la coordinadora que corre la puerta en su propio
-primer plano.** El cuadro aparece mientras la persona mira otra pestaña. Su primer renglón dice de qué carpeta y de qué
-sesión viene.
+El tope que aplica la consola también sale de su configuración, y el freno la mira:
+- `BASH_DEFAULT_TIMEOUT_MS` de 5 minutos o más hace de tope para un pedido que no lo trae;
+- `BASH_MAX_TIMEOUT_MS` o `CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS` por debajo de 5 minutos lo recortan, así que el freno
+  frena y nombra la variable. Esa configuración es de la persona: se le avisa, no se cambia.
+
+Lo que el freno todavía no ve:
+- **Una sesión abierta de fondo por la coordinadora que corre la puerta en su propio primer plano.** El cuadro aparece
+  mientras la persona mira otra pestaña. Su primer renglón dice de qué carpeta y de qué sesión viene.
+- **Un comando que la consola corre para otra máquina** (una sesión adjunta). Ahí el tope lo pone la consola, más corto,
+  y no llega al freno.
+- **Borrar un grupo de recursos (`--delete-group`).** La puerta consulta Azure antes de abrir el cuadro, y en el peor
+  caso los 5 minutos no alcanzan.
 
 **Cuando no se aprueba, la puerta dice por qué.** Sale con código 2, sin leer la clave ni cambiar nada, con uno de tres
 mensajes. Los tres empiezan igual, «la persona no aprobó esta sentencia» (u «operación»), y siguen con la causa:
