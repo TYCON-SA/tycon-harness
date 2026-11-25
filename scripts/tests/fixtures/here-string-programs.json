@@ -1,0 +1,320 @@
+[
+  {
+    "comando": "cat <<<x | python3",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": false,
+        "despues": [],
+        "cuerpo": "x",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "python3 <<<'print(1)'",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": false,
+        "despues": [],
+        "cuerpo": "print(1)",
+        "comillas": true
+      }
+    ]
+  },
+  {
+    "comando": "cat <<<x | cat <<<y | python3 -",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": true,
+        "despues": [],
+        "cuerpo": "x",
+        "comillas": false
+      },
+      {
+        "interprete": "python3",
+        "conGuion": true,
+        "despues": [],
+        "cuerpo": "y",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "cp a b <<<x \\\n python3 <<<y",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": false,
+        "despues": [],
+        "cuerpo": "x",
+        "comillas": false
+      },
+      {
+        "interprete": "python3",
+        "conGuion": false,
+        "despues": [],
+        "cuerpo": "y",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "echo a | python3 <<<x",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": false,
+        "despues": [],
+        "cuerpo": "x",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "a || python3 <<<x",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": false,
+        "despues": [],
+        "cuerpo": "x",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "a && cat <<<x | sh",
+    "programas": []
+  },
+  {
+    "comando": "x\\| python3 <<<y",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": false,
+        "despues": [],
+        "cuerpo": "y",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "bash <<<\"$(cat f)\" ; ruby <<<x",
+    "programas": [
+      {
+        "interprete": "ruby",
+        "conGuion": false,
+        "despues": [],
+        "cuerpo": "x",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "cat <<<'a|b' | node",
+    "programas": [
+      {
+        "interprete": "node",
+        "conGuion": false,
+        "despues": [],
+        "cuerpo": "a|b",
+        "comillas": true
+      }
+    ]
+  },
+  {
+    "comando": "cat <<<x |& python3",
+    "programas": []
+  },
+  {
+    "comando": "cat <<<x>out | python3",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": false,
+        "despues": [],
+        "cuerpo": "x",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "cat <<< x 2>&1 | python3",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": false,
+        "despues": [],
+        "cuerpo": "x",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "python3 <<<$'print(1)'",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": false,
+        "despues": [],
+        "cuerpo": "print(1)",
+        "comillas": true
+      }
+    ]
+  },
+  {
+    "comando": "(cat <<<x | python3)",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": false,
+        "despues": [],
+        "cuerpo": "x",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "cat <<<x; python3",
+    "programas": []
+  },
+  {
+    "comando": "cat <<EOF | python3\nprint(1)\nEOF",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": false,
+        "despues": [],
+        "cuerpo": "print(1)",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "cat <<EOF |\nprint(1)\nEOF\npython3",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": false,
+        "despues": [],
+        "cuerpo": "print(1)",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "echo | cat <<EOF\nx\nEOF",
+    "programas": []
+  },
+  {
+    "comando": "a | b | python3 <<<x | perl",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": false,
+        "despues": [],
+        "cuerpo": "x",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "cat <<<x | sudo python3",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": false,
+        "despues": [],
+        "cuerpo": "x",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "cat <<<\"a\\\" | b\" | bash",
+    "programas": []
+  },
+  {
+    "comando": "env X=1 python3 <<<x",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": false,
+        "despues": [],
+        "cuerpo": "x",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "cat <<<x \\\n| python3",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": false,
+        "despues": [],
+        "cuerpo": "x",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "printf x | tee <<<y | sh -s",
+    "programas": []
+  },
+  {
+    "comando": "a ||| python3 <<<x",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": false,
+        "despues": [],
+        "cuerpo": "x",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "cat <<<x | cat | cat | node -",
+    "programas": [
+      {
+        "interprete": "node",
+        "conGuion": true,
+        "despues": [],
+        "cuerpo": "x",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "cat <<<x & python3 <<<y",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": false,
+        "despues": [],
+        "cuerpo": "y",
+        "comillas": false
+      }
+    ]
+  },
+  {
+    "comando": "cat <<<x >&2 | bash",
+    "programas": []
+  },
+  {
+    "comando": "{ python3 <<<x; }",
+    "programas": [
+      {
+        "interprete": "python3",
+        "conGuion": false,
+        "despues": [],
+        "cuerpo": "x",
+        "comillas": false
+      }
+    ]
+  }
+]

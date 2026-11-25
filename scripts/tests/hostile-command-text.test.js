@@ -165,3 +165,29 @@ test('T10e HostileText_ProductionGuard_StillBlocks @story-8.308 @ac-10 — el fr
     assert.ok(r.ms < TOPE_MS, `${forma}: tardó ${r.ms} ms`);
   }
 });
+
+// Un here-string en cada etapa de una tubería larga, o en cada renglón de un comando continuado con `\`: para cada uno,
+// el lector miraba la tubería desde su principio y todo lo que seguía, y el freno no decidía a tiempo.
+test('T10j HostileText_HereStringsInOneCommand_AnswerInTime — programasPorEntrada contesta a tiempo con un here-string en cada etapa o en cada renglón continuado', () => {
+  const formas = {
+    'una tubería con un here-string en cada etapa': llenar('cat <<<x | '),
+    'la misma tubería, que termina en un intérprete': `${llenar('cat <<<x | ')}python3`,
+    'un comando continuado con un here-string por renglón': llenar('cp a b <<<x \\\n'),
+  };
+  for (const [forma, texto] of Object.entries(formas)) {
+    const r = medir(`${LEER} require(${JSON.stringify(SHELL_PARSE)}).programasPorEntrada(t);`, texto);
+    assert.strictEqual(r.signal, null, `no terminó con ${forma}`);
+    assert.strictEqual(r.status, 0, `se cayó con ${forma}: ${r.stderr.slice(0, 300)}`);
+    assert.ok(r.ms < TOPE_MS, `tardó ${r.ms} ms con ${forma}`);
+  }
+});
+
+// Lo que el lector devolvía antes de leer cada tubería una sola vez, en los casos de borde de las etapas y los finales de
+// comando (`||`, `|&`, `&` después de `>`, comillas con `|`, `\` antes del salto, heredocs con tubería): leerla de otra
+// manera no puede cambiar qué programa recibe el texto.
+test('T10k HostileText_HereStrings_SameProgramsAsBefore — programasPorEntrada devuelve lo mismo que antes en los casos de borde', () => {
+  const { programasPorEntrada } = require(SHELL_PARSE);
+  const casos = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'here-string-programs.json'), 'utf8'));
+  assert.ok(casos.length >= 30, `la tabla trae ${casos.length} casos`);
+  for (const { comando, programas } of casos) assert.deepStrictEqual(programasPorEntrada(comando), programas, JSON.stringify(comando));
+});
