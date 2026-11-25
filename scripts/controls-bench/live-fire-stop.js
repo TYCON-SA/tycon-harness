@@ -240,7 +240,7 @@ function proveDetection() {
 function main() {
   if (PROVE) return proveDetection();
   if (fs.existsSync(path.join(STATE_DIR, 'STOP_AUTONOMY'))) {
-    console.error('⛔ existe ~/.claude/.tycon-pipeline/STOP_AUTONOMY (botón de pánico del dev) — el lab daría falso rojo. Sacalo antes de correr.');
+    console.error('⛔ existe ~/.tycon/state/STOP_AUTONOMY (botón de pánico del dev) — el lab daría falso rojo. Sacalo antes de correr.');
     process.exit(2);
   }
   const tools = TOOL === 'both' ? ['claude', 'codex'] : [TOOL];
