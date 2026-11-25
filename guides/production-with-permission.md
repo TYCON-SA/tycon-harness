@@ -266,13 +266,23 @@ formas, también una lectura que no abre cuadro: la regla es una sola. Lo que ha
 qué cuadro va a aparecer y qué tiene que hacer en él, y correr la puerta en primer plano con un tope de 5 minutos
 (`timeout: 300000`). El tope hace falta porque, al vencer el tope de la consola de Claude Code (2 minutos si no se pide
 otro), la consola no corta el comando: lo pasa a segundo plano, y el cuadro queda sin nadie que lo mire. La puerta
-puede esperar hasta 90 segundos su turno y otros 2 minutos el cuadro. Cada bloqueo queda anotado con la regla
+puede esperar hasta 90 segundos su turno y otros 2 minutos el cuadro. Por eso el freno también frena la puerta en
+primer plano sin ese tope, o con uno menor: el mensaje dice cuál traía y pide el de 5 minutos. Es lo último que mira de
+la puerta, así que un comando con otro problema se frena primero por ése. Cada bloqueo queda anotado con la regla
 `puerta-de-fondo`.
 
+El tope que aplica la consola también sale de su configuración, y el freno la mira:
+- `BASH_DEFAULT_TIMEOUT_MS` de 5 minutos o más hace de tope para un pedido que no lo trae;
+- `BASH_MAX_TIMEOUT_MS` o `CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS` por debajo de 5 minutos lo recortan, así que el freno
+  frena y nombra la variable. Esa configuración es de la persona: se le avisa, no se cambia.
+
 Lo que el freno todavía no ve:
-- **Un primer plano con un tope corto.** Lo dice el mensaje, pero no lo frena.
 - **Una sesión abierta de fondo por la coordinadora que corre la puerta en su propio primer plano.** El cuadro aparece
   mientras la persona mira otra pestaña. Su primer renglón dice de qué carpeta y de qué sesión viene.
+- **Un comando que la consola corre para otra máquina** (una sesión adjunta). Ahí el tope lo pone la consola, más corto,
+  y no llega al freno.
+- **Borrar un grupo de recursos (`--delete-group`).** La puerta consulta Azure antes de abrir el cuadro, y en el peor
+  caso los 5 minutos no alcanzan.
 
 **Cuando no se aprueba, la puerta dice por qué.** Sale con código 2, sin leer la clave ni cambiar nada, con uno de tres
 mensajes. Los tres empiezan igual, «la persona no aprobó esta sentencia» (u «operación»), y siguen con la causa:
