@@ -336,14 +336,16 @@ function finDeSustitucion(w, i) {
 
 /**
  * El nombre de un programa (`/bin/cp` es `cp`, `\cp` también): lo que sigue a su última barra, sin contar las de adentro
- * de una sustitución (`cp$(:>/dev/null)` es `cp…`, no `null)`). `w`, la palabra con sus comillas resueltas.
+ * de una sustitución (`cp$(:>/dev/null)` es `cp…`, no `null)`). Una sustitución que no cierra en la palabra
+ * (`$(/bin/cp`, que cierra después de un blanco) no esconde las barras de lo que corre adentro: ahí, la última de todas.
+ * `w`, la palabra con sus comillas resueltas.
  */
 function nombreDelPrograma(w) {
   let barra = -1;
   for (let i = 0; i < w.length; i++) {
     if (w[i] === '/') { barra = i; continue; }
     const fin = finDeSustitucion(w, i);
-    if (fin === -1) break;
+    if (fin === -1) { barra = w.lastIndexOf('/'); break; }
     i = fin;
   }
   return w.slice(barra + 1).replace(/^\\/, '').toLowerCase().replace(/\.exe$/, '');

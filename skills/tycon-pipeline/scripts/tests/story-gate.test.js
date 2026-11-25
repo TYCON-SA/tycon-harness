@@ -1272,6 +1272,15 @@ test('CopiaPorOtroProgramaOEnvoltorio_AlEstado_Frena (fila 223, el freno)', () =
     frena(`ln$(:>/dev/null) -sf ${S} '${res}'`);
     frena(`sed$(:>/dev/null) -i.bak s/a/b/ '${res}'`);
     frena(`truncate$(:>/dev/null) -s0 '${res}'`);
+    // de la sexta vuelta: un programa por su ruta adentro de una sustitución que cierra después de un blanco (la ruta
+    // del destino sin comillas: citada adentro de la sustitución no se lee en ninguna versión, y es de otra fila)
+    for (const [abre, cierra] of [['$(', ')'], ['`', '`']]) {
+      frena(`${abre}/bin/cp ${S} ${res}${cierra}`);
+      frena(`X=1 ${abre}/bin/cp ${S} ${res}${cierra}`);
+      frena(`true && ${abre}/bin/mv ${S} ${res}${cierra}`);
+    }
+    frena(`$(/usr/bin/truncate -s0 ${res})`);
+    frena(`$(/usr/bin/sed -i.bak s/a/b/ ${res})`);
     frena(`env ${'-S'.repeat(50000)}x; cp ${S} '${res}'`);
     // stable-data: el reloj mide cuánto tarda la lectura, que es lo que se prueba (un valor de `-S` con miles de palabras)
     const desde = Date.now();
