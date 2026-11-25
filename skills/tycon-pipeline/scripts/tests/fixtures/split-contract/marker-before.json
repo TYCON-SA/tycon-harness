@@ -710,6 +710,13 @@
       "archivos": {
         "HOME/.claude/.tycon-pipeline/active/ses-contrato-8163.json": "{\n  \"storyId\": \"9.1\",\n  \"storyPath\": \"<RAIZ>/repo/specs/story-9.1-juguete.md\",\n  \"repoPath\": \"<RAIZ>/repo\",\n  \"evidenceDir\": null,\n  \"baseSha\": null,\n  \"runDir\": null,\n  \"sprint\": null,\n  \"sessionId\": \"ses-contrato-8163\",\n  \"startedAt\": \"<FECHA>\",\n  \"lastTouch\": \"<FECHA>\",\n  \"stepsCompleted\": [],\n  \"stepsPending\": [\n    0,\n    1,\n    2,\n    3,\n    4,\n    5,\n    6,\n    7,\n    8,\n    9\n  ],\n  \"filesTouched\": [],\n  \"filesTouchedAt\": {},\n  \"iterations\": {},\n  \"fileEvents\": [],\n  \"stepTimings\": {\n    \"0\": {\n      \"startedAt\": \"<FECHA>\"\n    }\n  },\n  \"sesiones\": [\n    {\n      \"id\": \"ses-contrato-8163\",\n      \"nombre\": null,\n      \"visto\": \"<FECHA>\"\n    }\n  ],\n  \"requestConditions\": {\n    \"texto\": \"ninguna\",\n    \"at\": \"<FECHA>\"\n  }\n}\n"
       }
+    },
+    "check-runtime-waiver": {
+      "status": 1,
+      "signal": null,
+      "stdout": "no pasaría — la firma de <RAIZ>/repo/specs/story-9.1-juguete.md saldría rechazada así:\n🚫 marker.js runtime-waiver RECHAZADO — hay criterios SIN CORRER que no se pueden eximir: AC #1. Los corre el agente.\n   O, si de verdad no se pueden probar en vivo, se declaran en el frontmatter `runtime_not_verifiable:` (reason + covered_by).\n",
+      "stderr": "",
+      "archivos": {}
     }
   },
   "requires": [

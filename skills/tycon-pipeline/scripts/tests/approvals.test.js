@@ -344,6 +344,62 @@ test('T6 Porton_Resumen_ManualYAutomatica @story-2.43 @ac-4', () => {
   assert.ok(!corta.json.hallazgos.some((x) => /aprobaci/.test(x.regla)), JSON.stringify(corta.json.hallazgos));
 });
 
+// ── Un cierre hereda la aprobación del plan (fila 239, decisión del dueño del 24/11) ──────────────────────────────
+// La ejecución de cierre de una historia (review → done) no pasa por «aprobar el plan», y si llega a los revisores el
+// portón le pedía igual su registro: el cierre de una historia que ya tenía el plan aprobado quedaba frenado. Ahora la
+// hereda de una ejecución anterior de la misma historia que la tenga; si no encuentra ninguna, frena igual.
+function repoDeCierre({ original, desde = 'review', hasta = 'done' }) {
+  const repo = repoPropio('apr-cierre-');
+  const git = gitEn(repo);
+  git('init', '-q'); git('config', 'user.email', 't@t'); git('config', 'user.name', 't');
+  fs.mkdirSync(path.join(repo, 'specs'));
+  const story = path.join(repo, 'specs', 'story-9.92-juguete.md');
+  const fm = (st) => ['---', 'story: "9.92"', 'title: "juguete"', `status: ${st}`, 'dod_runtime_exempt: true',
+    'dod_runtime_exempt_reason: "juguete"', '---', '', '# Story 9.92', ''].join('\n');
+  fs.writeFileSync(story, fm(desde));
+  const runs = path.join(repo, '.advisors', 'pipeline-runs');
+  // la ejecución original, con su registro tal cual (null: no hay)
+  if (original !== null) {
+    const o = path.join(runs, '9.92-20991230120000');
+    fs.mkdirSync(o, { recursive: true });
+    fs.writeFileSync(path.join(o, 'review-roster.json'), JSON.stringify({ registro_aprobaciones: 1 }) + '\n');
+    fs.writeFileSync(path.join(o, approvals.FILE), original.map((l) => JSON.stringify(l)).join('\n') + '\n');
+  }
+  git('add', '.'); git('commit', '-qm', 'base');
+  // la ejecución de cierre: llegó a los revisores y no aprobó el plan
+  const c = path.join(runs, '9.92-20991231120000');
+  fs.mkdirSync(c, { recursive: true });
+  fs.writeFileSync(path.join(c, 'review-roster.json'), JSON.stringify({ registro_aprobaciones: 1 }) + '\n');
+  fs.writeFileSync(story, fm(hasta));
+  git('add', '.'); git('commit', '-qm', 'el cierre');
+  return repo;
+}
+const porFalta = (json) => json.hallazgos.filter((x) => ['sin-registro-de-aprobaciones', 'sin-aprobacion-del-plan'].includes(x.regla));
+
+test('T239a Cierre_HeredaElPlanDeLaEjecucionOriginal — el cierre sin registro hereda el plan aprobado y lo dice', () => {
+  const { json, salida } = porton(repoDeCierre({ original: [ap('plan', 'manual', 'ana@example.com')] }));
+  assert.deepEqual(porFalta(json), [], salida);
+  const aviso = json.avisos.find((a) => a.regla === 'plan-heredado');
+  assert.ok(aviso, JSON.stringify(json.avisos));
+  assert.match(aviso.mensaje, /9\.92-20991231120000.*9\.92-20991230120000/);
+});
+
+test('T239b Cierre_SinEjecucionOriginal_FrenaIgual — sin otra ejecución con el plan aprobado, el cierre frena', () => {
+  const sola = porton(repoDeCierre({ original: null }));
+  assert.ok(sola.json.hallazgos.some((x) => x.regla === 'sin-registro-de-aprobaciones'), sola.salida);
+  // una original sin la línea del plan tampoco alcanza
+  const sinPlan = porton(repoDeCierre({ original: [ap('maqueta', 'manual', 'ana@example.com')] }));
+  assert.ok(porFalta(sinPlan.json).some((x) => /9\.92-20991231120000/.test(x.mensaje)), sinPlan.salida);
+  // ni una cuyo plan lo aprobó un agente anotado como persona: ése es un registro malo, no una aprobación
+  const deAgente = porton(repoDeCierre({ original: [ap('plan', 'manual', 'agente coordinadora (claude-opus-5-5)')] }));
+  assert.ok(porFalta(deAgente.json).some((x) => /9\.92-20991231120000/.test(x.mensaje)), deAgente.salida);
+});
+
+test('T239c NoEsCierre_NoHereda — una ejecución que no cierra (in-progress → review) no hereda el plan de otra', () => {
+  const { json, salida } = porton(repoDeCierre({ original: [ap('plan', 'manual', 'ana@example.com')], desde: 'in-progress', hasta: 'review' }));
+  assert.ok(json.hallazgos.some((x) => x.regla === 'sin-registro-de-aprobaciones' && /9\.92-20991231120000/.test(x.mensaje)), salida);
+});
+
 test('T8 Porton_SinLineaDelPlan_Frena @story-2.43 @ac-4', () => {
   const repo = repoParaElPorton({ registro: [ap('maqueta', 'manual', 'ana@example.com')] });
   const { status, salida, json } = porton(repo);
