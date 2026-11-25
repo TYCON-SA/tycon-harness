@@ -192,9 +192,18 @@ let huboEscape = false;   // ¿ya se anotó el escape de este comando?
 let huboJuicio = false;
 const problemas = [];
 const problemasGh = [];
-// El comando y cada orden que corre adentro (una sustitución, un shell por tubería o heredoc, un xargs, un find -exec):
-// el pedido de adentro se juzga igual que uno suelto.
-const tramos = az.ordenesDe(cmd, carpeta).flatMap((t) => az.segmentos(t));
+// El comando y cada orden que corre adentro (una sustitución, un `bash -c` o un `eval`, un shell por tubería o heredoc,
+// un xargs, un find -exec): el pedido de adentro se juzga igual que uno suelto. Las lee la misma lectura que el freno de
+// escrituras, que no se corre al cargarla; sin la palabra de un pedido no se carga, y si no carga queda sólo el comando.
+function ordenesDe(texto, cwd) {
+  if (!/\b(create|update|merge)\b/.test(String(texto || ''))) return [texto];
+  try {
+    const g = require('../../skills/tycon-pipeline/scripts/on-bash-write-gate.js');
+    const textos = [texto, ...g.comandosPorOtroPrograma(texto, cwd || process.cwd())];
+    return [...new Set([texto, ...textos.flatMap((t) => g.comandosAnidados(t))])];
+  } catch { return [texto]; }
+}
+const tramos = ordenesDe(cmd, carpeta).flatMap((t) => az.segmentos(t));
 for (const seg of tramos) {
   if (az.pideAyuda(seg)) continue;
 

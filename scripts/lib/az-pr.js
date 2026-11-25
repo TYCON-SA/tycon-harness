@@ -365,21 +365,6 @@ function pedidoIlegible(seg) {
   return partida ? `un argumento se arma al correr (${partida.texto}): no puedo leer sus banderas` : null;
 }
 
-/**
- * El comando y las órdenes que corre adentro: el cuerpo de una sustitución (`$(…)`, comillas invertidas), de un
- * `bash -c` o un `eval`, la orden de un `xargs` o un `find -exec`, lo que una tubería o un heredoc le dan a un shell. Las
- * lee la misma lectura que el freno de escrituras, que no se corre al cargarla. Sin la palabra de un pedido en ningún
- * lado no la carga; si no carga, sólo el comando.
- */
-function ordenesDe(cmd, cwd) {
-  if (!/\b(create|update|merge)\b/.test(String(cmd || ''))) return [cmd];
-  try {
-    const g = require('../../skills/tycon-pipeline/scripts/on-bash-write-gate.js');
-    const textos = [cmd, ...g.comandosPorOtroPrograma(cmd, cwd || process.cwd())];
-    return [...new Set([cmd, ...textos.flatMap((t) => g.comandosAnidados(t))])];
-  } catch { return [cmd]; }
-}
-
 const pideAyuda = (seg) => seg.some((f) => f.esBandera && (f.texto === '--help' || f.texto === '-h'));
 
 
@@ -599,4 +584,4 @@ function faltasDe(seg, { ramaDeOrigen = null } = {}) {
   return res;
 }
 
-module.exports = { fichas, pareceAzPr, segmentos, flagDe, valorDe, esCierto, esFalso, verboDePr, pasaCodigoAUnInterprete, pedidoIlegible, ordenesDe, pideAyuda, textoDe, tieneEscape, faltasDe, ROMPE_SQUASH, RAMAS_DE_LARGA_VIDA };
+module.exports = { fichas, pareceAzPr, segmentos, flagDe, valorDe, esCierto, esFalso, verboDePr, pasaCodigoAUnInterprete, pedidoIlegible, pideAyuda, textoDe, tieneEscape, faltasDe, ROMPE_SQUASH, RAMAS_DE_LARGA_VIDA };
