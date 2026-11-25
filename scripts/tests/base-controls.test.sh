@@ -26,6 +26,9 @@
 #       abierto: aviso sin constancia, nada con constancia; el veredicto no cambia
 #   T17 BaseControls_RuleAdditionsListedPerFile — las excepciones que suma el pedido, listadas por archivo; la alarma
 #       cuenta la que trajo main
+#   T116 BaseControls_BaseMovedAfterFork_MeasuresTheMerge — main renombra un archivo de la lista después de que salió el
+#       pedido: se mide el pedido mezclado con el main actual (también un merge de GitHub armado sobre un main viejo), y
+#       uno que choca con main da rojo
 #   T19 BaseControls_ApprovalFolder_SignatureInItsOwnFile_Passes — la firma en <carpeta>/<hash>.json vale, y `pending`
 #       apunta la firma a la carpeta
 #   T20 BaseControls_ApprovalFolder_OldJsonlStillCounts — con la carpeta en el inventario, la firma del jsonl viejo vale
@@ -524,12 +527,14 @@ lacks "T16 el cambio firmado no avisa" "${T}/t16b.out" "sin constancia del dueñ
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 # T17 · las excepciones que se suman quedan listadas por archivo
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
-R="${T}/t17"; make_base "${R}"; pr "${R}"
-printf '%s\n' '{ "mode": "block", "allow": ["docs/permitido.txt", "docs/a.txt", "docs/b.txt"] }' > "${R}/scripts/ci/toy-rules.json"
+# la lista va en varias líneas: lo que suma main y lo que suma el pedido caen lejos y se mezclan sin choque
+R="${T}/t17"; make_base "${R}"
+printf '%s\n' '{' '  "mode": "block",' '  "allow": [' '    "docs/permitido.txt",' '    "docs/x1.txt",' '    "docs/x2.txt"' '  ]' '}' > "${R}/scripts/ci/toy-rules.json"; commit "${R}" "la lista en varias líneas"; pr "${R}"
+printf '%s\n' '{' '  "mode": "block",' '  "allow": [' '    "docs/permitido.txt",' '    "docs/x1.txt",' '    "docs/x2.txt",' '    "docs/a.txt",' '    "docs/b.txt"' '  ]' '}' > "${R}/scripts/ci/toy-rules.json"
 printf '%s\n' '{ "names": ["uno", "dos"] }' > "${R}/scripts/ci/toy-names.json"
 printf 'limpio\n' > "${R}/docs/a.txt"; commit "${R}"
 lab_git -C "${R}" checkout -q main
-printf '%s\n' '{ "mode": "block", "allow": ["docs/permitido.txt", "docs/de-main.txt"] }' > "${R}/scripts/ci/toy-rules.json"; commit "${R}" "main suma una"
+printf '%s\n' '{' '  "mode": "block",' '  "allow": [' '    "docs/de-main.txt",' '    "docs/permitido.txt",' '    "docs/x1.txt",' '    "docs/x2.txt"' '  ]' '}' > "${R}/scripts/ci/toy-rules.json"; commit "${R}" "main suma una"
 lab_git -C "${R}" checkout -q pedido
 run "${R}" "${T}/t17.out"
 is "T17 sumar excepciones que el contenido no usa no frena: verde" "0" "${RC}"
@@ -743,7 +748,7 @@ LINE="$(node -e 'const e=JSON.parse(process.argv[1]);const t=e.map(x=>`${x.path}
 mkdir -p "${R}/.tycon"; printf '%s\n' "${LINE}" > "${R}/.tycon/control-changes.jsonl"; commit "${R}" "constancia"
 run "${R}" "${T}/t8d.out"
 is "T8 la constancia de un aflojamiento no tapa lo que main endureció: rojo" "1" "${RC}"
-has "T8 lo dice" "${T}/t8d.out" "la constancia cubre scripts/ci/toy-rules.json, pero la base sigue frenando"
+has "T8 lo dice: el pedido mezclado con main frena, y puede venir de main" "${T}/t8d.out" "se midió mezclado con la base: el rojo puede venir de una regla que main endureció"
 # la constancia del público tiene que poder commitearse: su archivo no está ignorado por el .gitignore del repo
 if [ -d "${ROOT}/.git" ] || [ -f "${ROOT}/.git" ]; then
   APPROVALS="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log([].concat(j.approvals)[0])' "${ROOT}/scripts/ci/controls-from-base.json")"
@@ -782,7 +787,7 @@ sed -i.bak 's/WORD="PROHIBIDO"/WORD="PROHIBIDO"; grep -rq OTRO "$REPO_ROOT\/docs
 commit "${R}" "main endurece"; lab_git -C "${R}" checkout -q pedido
 run "${R}" "${T}/t8i.out"
 is "T8 lo que main endureció alcanza al pedido viejo: rojo" "1" "${RC}"
-has "T8 dice que el pedido tiene que ponerse al día" "${T}/t8i.out" "el pedido tiene que ponerse al día"
+has "T8 dice que el rojo puede venir de lo que main endureció" "${T}/t8i.out" "se midió mezclado con la base: el rojo puede venir de una regla que main endureció"
 bash "${SCRIPT}" run --root "${T}/no-existe" --base main --range main...pedido > /dev/null 2>&1; is "T9 un --root que no existe: no pude correr" "9" "$?"
 bash "${SCRIPT}" pending --root "${T}/t7" --base main --range main...main > "${T}/t8e.out" 2>&1
 has "T8 pending sin cambios: no hay nada que firmar" "${T}/t8e.out" "no hay nada que firmar"
@@ -1128,17 +1133,20 @@ bash "${SCRIPT}" run --root "${R}" --base main --range main...t53-base > "${T}/t
 is "T36 la línea delegada que ya está en la base vale" "0" "${RC}"
 has "T36 …y lo dice nombrando la regla" "${T}/t53-base.out" "cambio de control aprobado: scripts/ci/toy-rules.json"
 lacks "T36 …sin el motivo de la nueva" "${T}/t53-base.out" "${NUEVA}"
-# la que ya está en la base conserva el chequeo de forma de la 8.116
+# la que ya está en la base conserva el chequeo de forma de la 8.116. El pedido se mide mezclado con su base: si la base
+# trajera la línea completa, ésa firmaría (como en la cola); por eso cada caso tiene su base, con la línea incompleta
 for falta in quote maquina signed_by_session; do
+  lab_git -C "${R}" checkout -q -b "t53-main-sin-${falta}" main~1; mkdir -p "${R}/.tycon"
+  firma_delegada "${ENTRIES}" "${falta}" > "${R}/.tycon/control-changes.jsonl"; commit "${R}" "la base con la delegada sin ${falta}"
   lab_git -C "${R}" checkout -q pedido; lab_git -C "${R}" checkout -q -b "t53-sin-${falta}"; mkdir -p "${R}/${CARPETA}"
   firma_delegada "${ENTRIES}" "${falta}" > "${R}/${CARPETA}${H}.json"; commit "${R}" "sin ${falta}"
-  bash "${SCRIPT}" run --root "${R}" --base main --range "main...t53-sin-${falta}" > "${T}/t53-${falta}.out" 2>&1; RC=$?
+  bash "${SCRIPT}" run --root "${R}" --base "t53-main-sin-${falta}" --range "t53-main-sin-${falta}...t53-sin-${falta}" > "${T}/t53-${falta}.out" 2>&1; RC=$?
   is "T53 la línea delegada sin ${falta} no firma (rojo)" "1" "${RC}"
   has "T53 …y dice qué le falta" "${T}/t53-${falta}.out" "es una firma por delegación sin ${falta}"
 done
 lab_git -C "${R}" checkout -q pedido; lab_git -C "${R}" checkout -q -b t53-jsonl; mkdir -p "${R}/.tycon"
 firma_delegada "${ENTRIES}" "quote" > "${R}/.tycon/control-changes.jsonl"; commit "${R}" "jsonl sin quote"
-bash "${SCRIPT}" run --root "${R}" --base main --range main...t53-jsonl > "${T}/t53-jsonl.out" 2>&1; RC=$?
+bash "${SCRIPT}" run --root "${R}" --base t53-main-sin-quote --range t53-main-sin-quote...t53-jsonl > "${T}/t53-jsonl.out" 2>&1; RC=$?
 is "T53 en el jsonl, la línea delegada sin quote tampoco firma" "1" "${RC}"
 has "T53 …y lo dice" "${T}/t53-jsonl.out" "es una firma por delegación sin quote"
 
@@ -1723,6 +1731,68 @@ mkdir -p "${R}/.tycon"; firma "${ENTRIES}" > "${R}/.tycon/control-changes.jsonl"
 bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido > "${T}/t115c.out" 2>&1
 has "T115 pending: con la constancia ya puesta, no hace falta firmar" "${T}/t115c.out" "no hace falta firmar"
 lacks "T115 …y no dice que la va a exigir" "${T}/t115c.out" "la revisión va a exigir la constancia"
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# T116 · main renombra un archivo de la lista (el archivo y su entrada) después de que salió el pedido, y el pedido edita
+# el nombre viejo: se mide el pedido mezclado con el main actual, como en la cola, con las reglas de main. Sin la mezcla,
+# las reglas de main caen sobre el árbol viejo y frenan un nombre que ya no existe. Si la mezcla choca, rojo, nunca verde
+# ═════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+R="${T}/t116"; make_base "${R}"
+printf 'nada\n' > "${R}/docs/permitido.txt"; commit "${R}" "la base con el permitido"
+pr "${R}"; printf 'PROHIBIDO, pero en la lista\n' > "${R}/docs/permitido.txt"; commit "${R}"
+lab_git -C "${R}" checkout -q main
+lab_git -C "${R}" mv docs/permitido.txt docs/permitido-nuevo.txt
+printf '%s\n' '{ "mode": "block", "allow": ["docs/permitido-nuevo.txt"] }' > "${R}/scripts/ci/toy-rules.json"; commit "${R}" "main renombra"
+lab_git -C "${R}" checkout -q pedido
+run "${R}" "${T}/t116.out"
+is "T116 BaseControls_BaseMovedAfterFork_MeasuresTheMerge — el pedido atrasado se mide mezclado con main: verde (exit)" "0" "${RC}"
+lacks "T116 …sin rojo de la palabra en el nombre viejo" "${T}/t116.out" "toy: PROHIBIDO"
+has "T116 …y dice que midió la mezcla" "${T}/t116.out" "mezclado con la base"
+# lo mismo con el merge que arma GitHub sobre un main viejo: se rearma sobre el main actual
+lab_git -C "${R}" checkout -q -b gh-merge main~1
+lab_git -C "${R}" merge -q --no-ff --no-edit pedido > /dev/null 2>&1
+bash "${SCRIPT}" run --root "${R}" --base main --range main...gh-merge > "${T}/t116gh.out" 2>&1; RC=$?
+is "T116 …también con un merge de GitHub armado sobre un main viejo (exit)" "0" "${RC}"
+# lo que choca con main no se mide a medias
+lab_git -C "${R}" checkout -q -b pedido-choca main~1
+printf 'otra cosa del pedido\n' > "${R}/docs/leeme.txt"; commit "${R}"
+lab_git -C "${R}" checkout -q main; printf 'otra cosa de main\n' > "${R}/docs/leeme.txt"; commit "${R}" "main cambia leeme"
+bash "${SCRIPT}" run --root "${R}" --base main --range main...pedido-choca > "${T}/t116c.out" 2>&1; RC=$?
+is "T116 …un pedido que choca con main: rojo (exit)" "1" "${RC}"
+has "T116 …y dice que traiga main" "${T}/t116c.out" "el pedido choca con main"
+# main y el pedido tocan la misma regla y la mezcla es limpia: lo firmado (lo de la rama) no sería lo medido (la mezcla),
+# así que no se ofrece la firma: el pedido trae main antes. También cuando main la renombra
+R="${T}/t116d"; make_base "${R}"
+printf '%s\n' '{' '  "mode": "block",' '  "allow": [' '    "docs/permitido.txt",' '    "docs/x1.txt",' '    "docs/x2.txt"' '  ]' '}' > "${R}/scripts/ci/toy-rules.json"; commit "${R}" "la lista en varias líneas"
+pr "${R}"
+printf '%s\n' '{' '  "mode": "block",' '  "allow": [' '    "docs/permitido.txt",' '    "docs/x1.txt",' '    "docs/x2.txt",' '    "docs/malo.txt"' '  ]' '}' > "${R}/scripts/ci/toy-rules.json"
+printf 'PROHIBIDO\n' > "${R}/docs/malo.txt"; commit "${R}"
+lab_git -C "${R}" checkout -q main
+printf '%s\n' '{' '  "mode": "block",' '  "allow": [' '    "docs/de-main.txt",' '    "docs/permitido.txt",' '    "docs/x1.txt",' '    "docs/x2.txt"' '  ]' '}' > "${R}/scripts/ci/toy-rules.json"; commit "${R}" "main suma una"
+lab_git -C "${R}" checkout -q pedido
+run "${R}" "${T}/t116d.out"
+is "T116 …el pedido afloja una regla que main también cambió: rojo (exit)" "1" "${RC}"
+has "T116 …y pide traer main antes de la firma" "${T}/t116d.out" "el pedido y main cambian la misma regla (scripts/ci/toy-rules.json)"
+bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido > "${T}/t116d-pending.out" 2>&1
+has "T116 …pending tampoco ofrece la firma" "${T}/t116d-pending.out" "el pedido y main cambian la misma regla"
+lacks "T116 …ni da el comando" "${T}/t116d-pending.out" "approve --root"
+# un rango que arranca en otra base (como el del privado): lo que trajo main no cuenta como del pedido
+R="${T}/t116e"; make_base "${R}"; pr "${R}"; printf 'limpio\n' > "${R}/docs/del-pedido.txt"; commit "${R}"
+lab_git -C "${R}" checkout -q main
+printf '%s\n' '{ "mode": "block", "allow": ["docs/permitido.txt", "docs/de-main.txt"] }' > "${R}/scripts/ci/toy-rules.json"; commit "${R}" "main suma una"
+lab_git -C "${R}" checkout -q pedido
+bash "${SCRIPT}" run --root "${R}" --base main --range main~1...pedido > "${T}/t116e.out" 2>&1; RC=$?
+is "T116 …con el rango desde otra base, verde (exit)" "0" "${RC}"
+has "T116 …y lo que cambió main no figura como del pedido" "${T}/t116e.out" "el pedido no cambia ningún archivo de regla"
+# lo que agrega un merge propio también se mide: la mezcla sale de lo revisado, no de su segundo padre
+R="${T}/t116f"; make_base "${R}"; pr "${R}"; printf 'limpio\n' > "${R}/docs/inocente.txt"; commit "${R}"
+lab_git -C "${R}" checkout -q main; printf 'otra cosa\n' > "${R}/docs/de-main.txt"; commit "${R}" "main avanza"
+lab_git -C "${R}" checkout -q -b merge-propio main~1
+lab_git -C "${R}" merge -q --no-ff --no-commit pedido > /dev/null 2>&1
+printf 'PROHIBIDO\n' > "${R}/docs/malo.txt"; lab_git -C "${R}" add -A > /dev/null 2>&1; lab_git -C "${R}" commit -qm "merge con algo de más" > /dev/null 2>&1
+bash "${SCRIPT}" run --root "${R}" --base main --range main...merge-propio > "${T}/t116f.out" 2>&1; RC=$?
+is "T116 …lo que agrega un merge propio se mide: rojo (exit)" "1" "${RC}"
+has "T116 …con el rojo de la palabra" "${T}/t116f.out" "toy: PROHIBIDO en docs/malo.txt"
 
 echo
 if [ "${FAILS}" -eq 0 ]; then echo "✅ base-controls: ${TOTAL} verificaciones verdes"; exit 0; fi
