@@ -45,6 +45,23 @@ test('state-dir: Write bajo ~/.claude/.tycon-pipeline se deniega siempre, aun ap
   assert.equal(r.action, 'block'); assert.equal(r.kind, 'state-dir');
 });
 
+// 🔴 Falla con: la configuración de git de un clon se edita a mano con la herramienta de edición. Ahí está el `origin`,
+// y los controles que comparan contra main del servidor (`clear --replaced-by`, `ls-remote`) le creen; por consola
+// ya no se cambia (on-bash-write-gate.js, el caso `git remote`).
+test('git-config: la configuración de git de un clon no se edita a mano, en ningún repo y aun apagado', () => {
+  const frena = (filePath, extra = {}) => gate.computeStoryGate({ ...BASE, filePath, ...extra });
+  for (const f of [`${REPO}/.git/config`, '/w/Otro/.git/config', `${REPO}/.git/worktrees/wt1/config.worktree`, `${REPO}/.git/modules/sub/config`, 'C:\\w\\MiRepo\\.git\\config']) {
+    const r = frena(f, { gateEnabled: false });
+    assert.equal(r.action, 'block', f); assert.equal(r.kind, 'git-config', f);
+    assert.equal(frena(f, { isHarness: true, repoHasTycon: false, repoRoot: null }).kind, 'git-config', `${f}: también en un repo del arnés o sin arnés`);
+  }
+  // por el enlace: la ruta escrita es otra, la real es la configuración
+  assert.equal(frena('/tmp/x', { realFilePath: `${REPO}/.git/config` }).kind, 'git-config');
+  // lo que sólo se llama parecido pasa por su camino de siempre
+  for (const f of [`${REPO}/config`, `${REPO}/.github/config`, `${REPO}/.git/hooks/pre-commit`, `${REPO}/docs/.git-config.md`]) assert.notEqual(frena(f).kind, 'git-config', f);
+  assert.match(gate.blockMessage({ kind: 'git-config' }, { filePath: `${REPO}/.git/config` }), /git remote set-url/);
+});
+
 test('pass: no-código / harness / gate apagado / sin repo / repo=home / repo sin arnés', () => {
   assert.equal(gate.computeStoryGate({ ...BASE, filePath: `${REPO}/specs/s.md` }).action, 'pass');
   assert.equal(gate.computeStoryGate({ ...BASE, filePath: '/u/.claude/agent-skills/skills/x/a.js' }).action, 'pass');

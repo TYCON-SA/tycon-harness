@@ -545,20 +545,26 @@ function leerRunLog(resultsDir) {
 }
 
 /**
- * Lo que Karma dice en la consola: la última línea «<navegador>: Executed N of M (K FAILED) (skipped S)» de CADA
- * navegador, sumadas. `{ total, executed, failed, skipped }`, o null si no lo dijo. Una corrida cortada (`DISCONNECTED`)
- * no cuenta lo que no corrió como salteado.
+ * Lo que Karma dice en la consola: la última línea «<navegador>: Executed N of M (K FAILED) (skipped S)» de CADA corrida
+ * de cada navegador, sumadas. `ng test` de un espacio de trabajo con varios proyectos corre Karma una vez por proyecto
+ * con el mismo navegador: una corrida nueva empieza cuando cambia el total o la cuenta vuelve atrás. `{ total, executed,
+ * failed, skipped }`, o null si no lo dijo. Una corrida cortada (`DISCONNECTED`) no cuenta lo que no corrió como salteado.
  */
 function karmaPorConsola(log) {
   const ultima = new Map();
+  const terminadas = [];
   // el reportero de progreso reescribe la línea con \r: cada tramo es una línea
   for (const tramo of log.split(/[\r\n]+/)) {
     const m = /(.*?)Executed (\d+) of (\d+)((?: \((?:\d+ FAILED|skipped \d+)\))*)/.exec(tramo);
-    if (m) ultima.set(m[1].replace(/:\s*$/, '').trim(), m);
+    if (!m) continue;
+    const navegador = m[1].replace(/:\s*$/, '').trim();
+    const antes = ultima.get(navegador);
+    if (antes && (+m[3] !== +antes[3] || +m[2] < +antes[2])) terminadas.push(antes);
+    ultima.set(navegador, m);
   }
   if (!ultima.size) return null;
   const t = { total: 0, executed: 0, failed: 0, skipped: 0 };
-  for (const m of ultima.values()) {
+  for (const m of [...terminadas, ...ultima.values()]) {
     const f = /\((\d+) FAILED\)/.exec(m[4]);
     const s = /\(skipped (\d+)\)/.exec(m[4]);
     t.executed += +m[2]; t.total += +m[3]; t.failed += f ? +f[1] : 0; t.skipped += s ? +s[1] : 0;

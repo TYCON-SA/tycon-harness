@@ -197,6 +197,11 @@ function sameFile(a, b) {
 const CONTROL_APPROVAL_DIR = /(^|\/)\.(github|tycon)\/control-changes(\/|$)/i;
 const CONTROL_APPROVAL_FILE = /(^|\/)\.(github|tycon)\/control-changes\.jsonl$/i;
 /** ¿La ruta es una constancia de cambio de control? Casos: scripts/controls-bench/cases/hooks/01-frenos-duros.json */
+// La configuración de git de un clon (la del repo, la de un worktree o la de un submódulo): ahí está el `origin`, y los
+// controles que comparan contra main del servidor (`clear --replaced-by`, `ls-remote`) le creen
+const GIT_CONFIG_FILE = /(^|\/)\.git\/(?:worktrees\/[^/]+\/|modules\/.+\/)?config(?:\.worktree)?$/i;
+/** ¿La ruta es la configuración de git de un clon? */
+function isGitConfig(p) { return GIT_CONFIG_FILE.test(norm(String(p || ''))); }
 function isControlApproval(p) {
   const f = norm(String(p || ''));
   return CONTROL_APPROVAL_DIR.test(f) || CONTROL_APPROVAL_FILE.test(f);
@@ -291,6 +296,11 @@ function computeStoryGate({
   // kill-switch del repo y en cualquier repo, también en los del arnés.
   if (isControlApproval(filePath) || isControlApproval(real)) {
     return { action: 'block', kind: 'control-approvals', reason: 'escritura a mano de una constancia de cambio de control' };
+  }
+  // El `origin` de un clon no se cambia a mano: por consola lo frena on-bash-write-gate.js (el caso `git remote`), y acá
+  // la edición de su configuración. Sin kill-switch del repo y en cualquier repo, también en los del arnés.
+  if (isGitConfig(filePath) || isGitConfig(real)) {
+    return { action: 'block', kind: 'git-config', reason: 'edición a mano de la configuración de git de un clon' };
   }
   if (isAdversarialSkipRecord(filePath) || isAdversarialSkipRecord(real)) {
     return { action: 'block', kind: 'adversarial-skip-record', reason: 'escritura a mano de la constancia del salteo del pase adversarial' };
@@ -653,6 +663,15 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '  un archivo (`cat > /tmp/cuerpo.md <<\'EOF\'`) y pasalo con `--body-file` (o `--description @/tmp/cuerpo.md`).',
     ].filter((l) => l !== '').join('\n');
   }
+  if (r.kind === 'git-config') {
+    return [
+      '⛔ la configuración de git de un clon no se edita a mano',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  Ahí está el `origin`, y los controles que comparan contra main del servidor le creen: cambiarlo a mano los engaña.',
+      '  Si el remoto cambió de verdad, lo cambia una persona en su terminal (`git remote set-url origin <url>`).',
+    ].filter((l) => l !== '').join('\n');
+  }
   if (r.kind === 'adversarial-skip-record') {
     return [
       '⛔ la constancia del salteo del pase adversarial no se escribe a mano',
@@ -916,7 +935,7 @@ function storyByConsoleMessage(rutas, via) {
 module.exports = {
   MODO_FUERA_DEL_GRUPO,
   markerDeleteMessage, storyByConsoleMessage,
-  computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, isTerminalAcknowledgmentsRecord, isLaunchedSessionsRecord, isOfficeMailboxRecord, isReportedCriticalsRecord, isAdvisorRunsRecord, isPlanReviewRecord, isExemptionsRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
+  computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isGitConfig,isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, isTerminalAcknowledgmentsRecord, isLaunchedSessionsRecord, isOfficeMailboxRecord, isReportedCriticalsRecord, isAdvisorRunsRecord, isPlanReviewRecord, isExemptionsRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
   STORY_INTENT_PATTERNS,
   DEFAULT_ADHOC_MAX_FILES, DELEGATED_ADHOC_MAX_FILES, cupoDelegado, cupoAlDeclarar, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS, MARKER_REL,
 };

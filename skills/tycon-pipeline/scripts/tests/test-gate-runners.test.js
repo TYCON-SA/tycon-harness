@@ -435,6 +435,28 @@ fi`);
   assert.match(String(r.art.incomplete), /se cortó/);
 });
 
+// 🔴 Falla con: `ng test` de un espacio de trabajo con varios proyectos corre Karma una vez por proyecto, con el mismo
+// navegador; la lectura guardaba la última línea de cada navegador, y el registro decía sólo el último proyecto (42
+// pruebas y 0 fallas, con la corrida en rojo por los otros dos)
+test('TestGate_Karma_VariosProyectos_SeSumanTodos — una corrida por proyecto con el mismo navegador: cuentan todas', () => {
+  const bin = npxFalso(`if [ "$1" = "ng" ]; then
+  printf 'Chrome Headless 120.0: Executed 1 of 65\\rChrome Headless 120.0: Executed 65 of 65 (9 FAILED)\\nTOTAL: 9 FAILED, 56 SUCCESS\\n'
+  printf 'Chrome Headless 120.0: Executed 1 of 705\\rChrome Headless 120.0: Executed 702 of 705 (1 FAILED) (skipped 3)\\n'
+  printf 'Chrome Headless 120.0: Executed 0 of 42 SUCCESS\\rChrome Headless 120.0: Executed 42 of 42 SUCCESS\\n'; exit 1
+fi`);
+  const d = repo(ANGULAR, ['src/app.ts']);
+  const r = correr(d, { bin });
+  assert.equal(r.status, 1, r.out);
+  assert.deepEqual([r.art.totals.total, r.art.totals.executed, r.art.totals.failed, r.art.totals.skipped], [812, 809, 10, 3], JSON.stringify(r.art.totals));
+  assert.ok(!r.art.incomplete, JSON.stringify(r.art));
+  // dos proyectos con la misma cantidad de pruebas también son dos corridas: la cuenta vuelve a empezar
+  const igual = npxFalso(`if [ "$1" = "ng" ]; then
+  printf 'Chrome: Executed 1 of 10\\rChrome: Executed 10 of 10 (1 FAILED)\\nChrome: Executed 1 of 10\\rChrome: Executed 10 of 10 SUCCESS\\n'; exit 1
+fi`);
+  const r2 = correr(repo(ANGULAR, ['src/app.ts']), { bin: igual });
+  assert.deepEqual([r2.art.totals.total, r2.art.totals.executed, r2.art.totals.failed], [20, 20, 1], JSON.stringify(r2.art.totals));
+});
+
 // ── El mínimo de cobertura del propio repo ────────────────────────────────────────────────────────────────────────
 
 /** Un npx falso de un solo caso: `cuerpo` es bash; `$1` es la herramienta (jest, vitest); `$O`, su `--outputFile`. */
