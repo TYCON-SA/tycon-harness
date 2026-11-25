@@ -270,9 +270,9 @@ del sitio, y sólo un `update --yes` a mano la trajo.
 
 _(scripts/metrics/upload-runs.js + scripts/metrics/download-runs.js)_
 
-**Qué es:** Sube las corridas de cada máquina a un buzón privado: un contenedor de Azure Storage o un bucket de Google Cloud Storage, según el `provider` de la llave (`integrations/gcs/`, `guides/integrations/gcs-mailbox.md`). `download-runs.js` las baja, por ahora sólo de Azure. También sube las métricas de cada merge.
+**Qué es:** Sube las corridas de cada máquina a un buzón privado de Azure Storage o de Google Cloud Storage (`integrations/gcs/`); `download-runs.js` las baja, por ahora sólo de Azure. También sube las métricas de cada merge.
 
-**Por qué existe:** El hilo trae prompts, rutas del disco y código de cliente, así que no puede viajar por git. La llave de subida sólo crea objetos nuevos: no lee, no lista, no pisa ni borra (en Google Cloud Storage, una clave HMAC de una cuenta con sólo `storage.objects.create`).
+**Por qué existe:** El hilo trae prompts, rutas del disco y código de cliente, así que no puede viajar por git. La llave de subida sólo crea objetos nuevos: no lee, no lista, no pisa ni borra.
 
 **Quién la usa:** El instalador lo lanza de fondo en cada arranque, tras el barrido de `tokens-digest.js`. La vista de corridas lee lo bajado.
 
