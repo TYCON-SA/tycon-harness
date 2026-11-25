@@ -39,8 +39,8 @@
  * merge es «no pude correr».
  *
  * Es autocontenido (sólo módulos de Node) a propósito: es regla del control base-controls (sign_on_change), y su ancla es
- * este archivo solo. El hash y la lectura de constancias repiten los de run-base-controls.sh, que corre como heredoc y no
- * se puede cargar.
+ * este archivo solo. El hash y la lectura de constancias repiten los de run-base-controls.sh, un guion de bash que no se
+ * puede cargar.
  *
  * USO:  node scripts/ci/bench-against-base.js --root <pedido> --base <rev> [--tip <rev>] [--out <dir>]
  * SALIDAS: 0 verde · 1 aflojado sin la firma del dueño, o no medido · 2 uso · 9 no pude correr (la última línea dice por
