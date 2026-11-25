@@ -308,25 +308,45 @@ function antesDeUnaRedireccion(crudo) {
     if (c === '\\') { i++; continue; }
     if (c === "'") { const j = crudo.indexOf("'", i + 1); if (j < 0) return crudo.length; i = j; continue; }
     if (c === '"') { let j = i + 1; while (j < crudo.length && crudo[j] !== '"') j += crudo[j] === '\\' ? 2 : 1; i = j; continue; }
-    if (c === '`') { const j = crudo.indexOf('`', i + 1); if (j < 0) return crudo.length; i = j; continue; }
-    if (c === '$' && (crudo[i + 1] === '(' || crudo[i + 1] === '{')) {
-      // hasta el que lo cierra, contando los que se abren adentro; sin cierre, la palabra entera
-      const abre = crudo[i + 1];
-      const cierra = abre === '(' ? ')' : '}';
-      let hondo = 0;
-      let j = i + 1;
-      for (; j < crudo.length; j++) {
-        if (crudo[j] === '\\') { j++; continue; }
-        if (crudo[j] === abre) hondo++;
-        else if (crudo[j] === cierra && --hondo === 0) break;
-      }
-      if (j >= crudo.length) return crudo.length;
-      i = j;
-      continue;
-    }
+    const fin = finDeSustitucion(crudo, i);
+    if (fin === -1) return crudo.length;
+    if (fin > i) { i = fin; continue; }
     if (c === '<' || c === '>') return i;
   }
   return crudo.length;
+}
+
+/**
+ * Si en `i` empieza una sustitución (`$(…)`, `${…}` o `` `…` ``), dónde termina (contando las que se abren adentro); -1
+ * si no cierra; `i` si ahí no empieza ninguna.
+ */
+function finDeSustitucion(w, i) {
+  if (w[i] === '`') return w.indexOf('`', i + 1);
+  if (w[i] !== '$' || (w[i + 1] !== '(' && w[i + 1] !== '{')) return i;
+  const abre = w[i + 1];
+  const cierra = abre === '(' ? ')' : '}';
+  let hondo = 0;
+  for (let j = i + 1; j < w.length; j++) {
+    if (w[j] === '\\') { j++; continue; }
+    if (w[j] === abre) hondo++;
+    else if (w[j] === cierra && --hondo === 0) return j;
+  }
+  return -1;
+}
+
+/**
+ * El nombre de un programa (`/bin/cp` es `cp`, `\cp` también): lo que sigue a su última barra, sin contar las de adentro
+ * de una sustitución (`cp$(:>/dev/null)` es `cp…`, no `null)`). `w`, la palabra con sus comillas resueltas.
+ */
+function nombreDelPrograma(w) {
+  let barra = -1;
+  for (let i = 0; i < w.length; i++) {
+    if (w[i] === '/') { barra = i; continue; }
+    const fin = finDeSustitucion(w, i);
+    if (fin === -1) break;
+    i = fin;
+  }
+  return w.slice(barra + 1).replace(/^\\/, '').toLowerCase().replace(/\.exe$/, '');
 }
 
 /**
@@ -354,7 +374,7 @@ function desdeElPrograma(seg) {
     if (opciones !== null && propia) { opciones = null; propia = false; continue; }
     opciones = null;
     if (/^[A-Za-z_]\w*=/.test(crudo)) continue;
-    const n = nombreDeComando(w);
+    const n = nombreDelPrograma(w);
     if (n === 'busybox') continue;
     if (ENVOLTORIOS.has(n)) { opciones = opcionesDelEnvoltorio(n) || false; propia = CON_PALABRA_PROPIA.has(n); continue; }
     return n + t.slice(m.index + m[0].length);
@@ -615,6 +635,41 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
   return [...out];
 }
 
+/**
+ * Agrega a `out` los archivos que edita en su lugar un `sed -i` / `--in-place` o un `perl -i` / `-pi` / `-ni` que empieza
+ * `head`: todo token con extensión de código, o que quien llama quiere mirar igual (`keep`). `raw`, el comando entero.
+ */
+function destinosDelSedEnSitio(head, raw, keep, out) {
+  const isSedI = /^sed\b/.test(head) && /(^|\s)(-i\b|-[a-zA-Z]*i[a-zA-Z]*\b(?=\s)|--in-place)/.test(head);
+  // (con el separador de registro en el mismo grupo: `-0pi`, `-0777pi`)
+  const isPerlI = /^perl\b/.test(head) && /(^|\s)-[a-zA-Z0-9]*i\S*(\s|$)/.test(head);
+  if (!isSedI && !isPerlI) return;
+  const words = head.match(new RegExp(Q, 'g')) || [];
+  // el nombre del comando y, si no hay -e / -f, la expresión (el primer argumento) no son archivos: `keep` no los mira
+  const conExpresionAparte = /(^|\s)(-[a-zA-Z]*[ef]|--expression|--file)/.test(head) || isPerlI;
+  let args = 0;
+  let esValorDeE = false;   // lo que sigue a -e / --expression es la expresión, no un archivo
+  let anterior = null;
+  // en el comando escrito, ¿hay un `-i ''` de verdad (el sufijo vacío de Mac) o es una expresión que se vació?
+  const sufijoVacio = /(^|\s)-i\s+(''|"")(\s|$)/.test(raw);
+  for (const w of words.slice(1)) {
+    const mm = w.match(new RegExp(`^${Q}$`));
+    const t = mm ? tok(mm, 1) : null;
+    if (t == null) continue;
+    const previo = anterior; anterior = t;
+    if (t.startsWith('-')) { esValorDeE = /^(-[a-zA-Z]*e|--expression)$/.test(t); continue; }
+    if (esValorDeE) { esValorDeE = false; continue; }
+    // `sed -i ''` (Mac): el `''` es el sufijo de -i. Si no, una expresión con espacios llega vaciada y ocupa su lugar
+    if (t === '') { if (!(isSedI && previo === '-i' && sufijoVacio)) args++; continue; }
+    args++;
+    const esExpresion = !conExpresionAparte && args === 1;
+    // una ruta con variable (`$f`, `${D}/x.js`) también es un destino, que se resuelve o se dice que no. Una expresión
+    // de sed que quedó en otro lugar (`-i''` pegado corre la cuenta) no: lleva espacios o arranca con `s/`, `y/`
+    const rutaConVariable = /\$\{?[A-Za-z_]/.test(t) && !/\s/.test(t) && !/^[sy][^\w\s]/.test(t);
+    if (isCodeFile(t) || isManifestFile(t) || (keep && !esExpresion && keep(t)) || (!esExpresion && rutaConVariable)) out.add(t);
+  }
+}
+
 /** Agrega a `out` los destinos de escritura de `s` (el comando ya sin lo que no es comando); `raw`, el comando entero. */
 function destinosDeEscritura(raw, s, keep, out) {
   // 1) redirecciones: `> f`, `>> f`, `2> f`, `&> f`, `>| f`, `>& f` (no `>&2`, no `<`)
@@ -641,45 +696,22 @@ function destinosDeEscritura(raw, s, keep, out) {
   for (const crudo of splitSegments(s)) {
     // la palabra de un bloque o el paréntesis delante no es el comando: `do cp a b`, `then sed -i …`, `if cp a b`, `(cp a b)`
     const seg = sinPalabrasDeBloque(crudo);
-    // Anclados al INICIO del segmento: `grep -i "sed" src/a.ts` no es un sed -i.
-    // Sin variables ni envoltorios delante, y con el programa por su nombre: `env sed -i`, `/usr/bin/sed -i` son un sed -i
-    const head = desdeElPrograma(sinRedireccionesDelante(seg));
-    const isSedI = /^sed\b/.test(head) && /(^|\s)(-i\b|-[a-zA-Z]*i[a-zA-Z]*\b(?=\s)|--in-place)/.test(head);
-    // (con el separador de registro en el mismo grupo: `-0pi`, `-0777pi`)
-    const isPerlI = /^perl\b/.test(head) && /(^|\s)-[a-zA-Z0-9]*i\S*(\s|$)/.test(head);
-    if (isSedI || isPerlI) {
-      const words = head.match(new RegExp(Q, 'g')) || [];
-      // el nombre del comando y, si no hay -e / -f, la expresión (el primer argumento) no son archivos: `keep` no los mira
-      const conExpresionAparte = /(^|\s)(-[a-zA-Z]*[ef]|--expression|--file)/.test(head) || isPerlI;
-      let args = 0;
-      let esValorDeE = false;   // lo que sigue a -e / --expression es la expresión, no un archivo
-      let anterior = null;
-      // en el comando escrito, ¿hay un `-i ''` de verdad (el sufijo vacío de Mac) o es una expresión que se vació?
-      const sufijoVacio = /(^|\s)-i\s+(''|"")(\s|$)/.test(raw);
-      for (const w of words.slice(1)) {
-        const mm = w.match(new RegExp(`^${Q}$`));
-        const t = mm ? tok(mm, 1) : null;
-        if (t == null) continue;
-        const previo = anterior; anterior = t;
-        if (t.startsWith('-')) { esValorDeE = /^(-[a-zA-Z]*e|--expression)$/.test(t); continue; }
-        if (esValorDeE) { esValorDeE = false; continue; }
-        // `sed -i ''` (Mac): el `''` es el sufijo de -i. Si no, una expresión con espacios llega vaciada y ocupa su lugar
-        if (t === '') { if (!(isSedI && previo === '-i' && sufijoVacio)) args++; continue; }
-        args++;
-        const esExpresion = !conExpresionAparte && args === 1;
-        // una ruta con variable (`$f`, `${D}/x.js`) también es un destino, que se resuelve o se dice que no. Una expresión
-        // de sed que quedó en otro lugar (`-i''` pegado corre la cuenta) no: lleva espacios o arranca con `s/`, `y/`
-        const rutaConVariable = /\$\{?[A-Za-z_]/.test(t) && !/\s/.test(t) && !/^[sy][^\w\s]/.test(t);
-        if (isCodeFile(t) || isManifestFile(t) || (keep && !esExpresion && keep(t)) || (!esExpresion && rutaConVariable)) out.add(t);
-      }
-    }
+    // Anclados al INICIO del segmento: `grep -i "sed" src/a.ts` no es un sed -i. Sin variables ni envoltorios delante, y
+    // con el programa por su nombre (`env sed -i`, `/usr/bin/sed -i` son un sed -i); y también con la lectura de siempre,
+    // el nombre al principio detrás de variables y `sudo`: cuenta lo que vea cualquiera de las dos
+    const programa = desdeElPrograma(sinRedireccionesDelante(seg));
+    for (const head of new Set([programa, seg.trim().replace(/^(?:\w+=\S+\s+)*(?:sudo\s+)?/, '')])) destinosDelSedEnSitio(head, raw, keep, out);
     // 4) cp / mv / ln / install / rsync → destino = último token del segmento (un enlace también deja un archivo en su
     //    destino). También las formas de PowerShell de cp y mv (Copy-Item / Move-Item y sus alias copy / cpi / move / mi;
     //    no distingue mayúsculas): por la herramienta PowerShell de Windows. Una redirección delante (`> f cp a b`) no es
     //    el comando, ni un envoltorio (`env cp`, `nohup cp`); el programa también por su ruta o escapado (`/bin/cp`, `\cp`).
-    const programa = desdeElPrograma(sinRedireccionesDelante(seg));
+    //    Y con la lectura de siempre, el nombre al principio: cuenta lo que vea cualquiera de las dos
     if (COPIA.test(programa) || /^(?:copy-item|move-item|copy|cpi|move|mi)\b/i.test(programa)) {
       for (const t of cpMvDest(programa)) out.add(t);
+    }
+    const comando = sinRedireccionesDelante(seg);
+    if (/^(?:\w+=\S+\s+)*(?:sudo\s+)?(?:cp|mv|ln)\b/.test(comando) || /^(?:copy-item|move-item|copy|cpi|move|mi)\b/i.test(comando)) {
+      for (const t of cpMvDest(seg)) out.add(t);
     }
   }
 
@@ -738,9 +770,10 @@ function destinosDeEscritura(raw, s, keep, out) {
   const reDd = /\bdd\b[^\n|;&]*?\bof=(['"]?)([^\s'"]+)\1/g;
   while ((m = reDd.exec(s))) out.add(m[2]);
   for (const seg of splitSegments(s)) {
-    const programa = desdeElPrograma(sinRedireccionesDelante(seg));
-    if (/^truncate\b/.test(programa)) {
-      const words = palabrasDelComando(programa);
+    // el programa por su nombre, y la lectura de siempre (el nombre al principio, detrás de variables y `sudo`)
+    for (const comando of new Set([desdeElPrograma(sinRedireccionesDelante(seg)), sinRedireccionesDelante(seg)])) {
+      if (!/^(?:\w+=\S+\s+)*(?:sudo\s+)?truncate\b/.test(comando)) continue;
+      const words = palabrasDelComando(comando);
       // el último, si no es una opción; con el tramo sin cerrar, todos los que no lo son
       const t = words[words.length - 1];
       if (words.sinCerrar) for (const w of ultimosArgumentos(words)) out.add(w);

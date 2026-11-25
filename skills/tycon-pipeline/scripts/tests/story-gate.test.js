@@ -1264,6 +1264,14 @@ test('CopiaPorOtroProgramaOEnvoltorio_AlEstado_Frena (fila 223, el freno)', () =
       frena(`nohup ${delante}/bin/mv ${S} '${res}'`);
     }
     frena(`$(:>/dev/null)/usr/bin/env cp ${S} '${res}'`);
+    // de la quinta vuelta: una sustitución con una barra adentro, pegada detrás del nombre, no cambia el programa; y lo que
+    // la lectura de siempre (el nombre al principio) veía se sigue viendo
+    for (const pegado of ['cp$(:>/dev/null)', 'cp`:>/dev/null`', 'cp$((1>0)>/dev/null)', 'mv$(:>/dev/null)', 'cp${x//a/b}', 'cp`:/`', 'nohup cp$(:>/dev/null)']) {
+      frena(`${pegado} ${S} '${res}'`);
+    }
+    frena(`ln$(:>/dev/null) -sf ${S} '${res}'`);
+    frena(`sed$(:>/dev/null) -i.bak s/a/b/ '${res}'`);
+    frena(`truncate$(:>/dev/null) -s0 '${res}'`);
     frena(`env ${'-S'.repeat(50000)}x; cp ${S} '${res}'`);
     // stable-data: el reloj mide cuánto tarda la lectura, que es lo que se prueba (un valor de `-S` con miles de palabras)
     const desde = Date.now();
