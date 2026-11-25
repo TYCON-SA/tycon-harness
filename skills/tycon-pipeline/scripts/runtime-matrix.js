@@ -1704,13 +1704,17 @@ function compute(opts) {
   // midiendo una tanda, lo que todavía no existe y la historia ata sólo a otras tandas sin hacer no es código de lo medido
   const deTandaNoMedida = [];
   // `<hermano>/ruta`, con el nombre del hermano adelante, es esa ruta adentro del hermano, esté donde esté: desde la
-  // carpeta de arriba sólo se encuentra si el hermano vive ahí. Con su copia en la rama, va a la copia (más abajo)
-  const porNombre = evCfg.roots.map((r) => ({ nombre: companionLib.label(r).toLowerCase(), raiz: companionLib.real(r) }));
+  // carpeta de arriba sólo se encuentra si el hermano vive ahí. Con su copia en la rama, va a la copia (más abajo). El
+  // nombre escrito con otra mayúscula cuenta sólo donde el disco no las distingue, como la misma ruta desde arriba
+  const porNombre = evCfg.roots.map((r) => ({ nombre: companionLib.label(r), raiz: companionLib.real(r) }));
+  const nombra = (primero, h) => primero === h.nombre
+    || (primero.toLowerCase() === h.nombre.toLowerCase() && fs.existsSync(path.join(path.dirname(h.raiz), primero)));
   for (const rel of declared) {
     const copias = new Map();
     const intentos = lugares.map((desde) => ({ desde, relEn: rel }));
+    const primero = rel.split('/')[0];
     for (const h of porNombre) {
-      if (rel.toLowerCase().startsWith(`${h.nombre}/`)) intentos.push({ desde: h.raiz, relEn: rel.slice(h.nombre.length + 1) });
+      if (rel.includes('/') && nombra(primero, h)) intentos.push({ desde: h.raiz, relEn: rel.slice(primero.length + 1) });
     }
     // dónde se buscó, para el aviso: los lugares y la ruta adentro de cada hermano que la nombra
     const buscada = [...lugares, ...intentos.slice(lugares.length).map((i) => path.join(copiaDe.get(i.desde) || i.desde, i.relEn))];
