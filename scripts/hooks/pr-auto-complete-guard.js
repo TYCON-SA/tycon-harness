@@ -192,7 +192,10 @@ let huboEscape = false;   // ¿ya se anotó el escape de este comando?
 let huboJuicio = false;
 const problemas = [];
 const problemasGh = [];
-for (const seg of az.segmentos(cmd)) {
+// El comando y cada orden que corre adentro (una sustitución, un shell por tubería o heredoc, un xargs, un find -exec):
+// el pedido de adentro se juzga igual que uno suelto.
+const tramos = az.ordenesDe(cmd, carpeta).flatMap((t) => az.segmentos(t));
+for (const seg of tramos) {
   if (az.pideAyuda(seg)) continue;
 
   if (esGh) {
@@ -214,6 +217,14 @@ for (const seg of az.segmentos(cmd)) {
   // Código adentro de una cadena que va a un intérprete: no se puede juzgar lo que se ejecuta.
   if (az.pasaCodigoAUnInterprete(seg)) {
     problemas.push({ seg, verbo: 'interprete', faltas: ['el comando viaja adentro de una cadena que ejecuta otro intérprete, así que no puedo leer sus banderas — y lo que no pude mirar no está aprobado'] });
+    huboJuicio = true;
+    continue;
+  }
+
+  // Un pedido que no se puede leer (el programa en una variable, una sustitución o el `{}` de find adentro): frena
+  const ilegible = az.pedidoIlegible(seg);
+  if (ilegible) {
+    problemas.push({ seg, verbo: 'ilegible', faltas: [`${ilegible} — y lo que no pude mirar no está aprobado`] });
     huboJuicio = true;
     continue;
   }
