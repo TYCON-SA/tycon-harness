@@ -18,6 +18,7 @@
 #   6.6 T1-T8, T13 — el cuadro muestra la consulta: --file se frena (con el comando en línea listo), la consulta en
 #         línea tiene un tope de 20 renglones de pantalla y una lista de caracteres que engañan
 #   T32 — la guía declara que la regla de firewall es de cortesía
+#   la puerta no corre de fondo: pedida con `run_in_background` o por el Monitor se frena, con el tope de primer plano
 #
 # 🔴 HOME falso siempre: el hook lee ~/.claude (snapshots, índice, registros).
 # Correr: bash scripts/tests/prod-access-guard.test.sh
@@ -1497,6 +1498,59 @@ done
 rc="$(corre "$PUERTA $PROD --file $TMP/q83/cr-adentro.sql")"
 if [ "$rc" = 2 ] && grep -qF "control" "$TMP/err" && ! grep -qF "$PUERTA $PROD '" "$TMP/err"; then ok "8.283 T3 ProdGuard_ArchivoConSaltoFinal_SinRenglonVacio · un retorno de carro adentro sigue frenando"
 else no "8.283 T3 ProdGuard_ArchivoConSaltoFinal_SinRenglonVacio · el retorno de carro adentro pasó (rc=$rc) — err: $(head -c 200 "$TMP/err")"; fi
+
+# ── la puerta no corre de fondo ───────────────────────────────────────────────────────────────
+# Sin esto, una sesión corre la puerta de fondo, su cuadro vence a los 120 s sin que nadie lo vea y el pedido se cancela
+# solo. El Monitor corre de fondo sin la marca, así que cuenta igual. En primer plano, y con cualquier otro comando de
+# fondo, no cambia nada.
+mundo
+snapshot "" ""
+# $1 = herramienta (Bash | Monitor) · $2 = run_in_background (true | false | vacío: sin la marca) · $3 = comando
+corre_fondo(){
+  local payload
+  payload="$(TOOL="$1" BACKGROUND="$2" CMD="$3" node -e '
+    const e = { tool_name: process.env.TOOL, hook_event_name: "PreToolUse", cwd: "/tmp", tool_input: { command: process.env.CMD } };
+    if (process.env.BACKGROUND) e.tool_input.run_in_background = process.env.BACKGROUND === "true";
+    process.stdout.write(JSON.stringify(e));' 2>/dev/null)"
+  printf '%s' "$payload" | env HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" TYCON_PROD_SESSION_SINCE=0 node "$HOOK" >"$TMP/out" 2>"$TMP/err"
+  echo $?
+}
+BACKGROUND_FORMS=("$PUERTA $PROD 'select 1'" "$PUERTA --reclassify $PROD" "$PUERTA --azure monitor metrics alert list -g rg-acme")
+dice_que_hacer(){ grep -qF "la puerta de producción no corre de fondo" "$TMP/err" && grep -qF "primer plano" "$TMP/err" \
+  && grep -qF "qué cuadro va a aparecer" "$TMP/err" && grep -qF "timeout: 300000" "$TMP/err"; }
+for forma in "${BACKGROUND_FORMS[@]}"; do
+  rc="$(corre_fondo Bash true "$forma")"
+  if [ "$rc" = 2 ] && dice_que_hacer; then ok "T1 ProdGuard_Background_Blocks @story-8.333 @ac-1 · «${forma#"$PUERTA" }» con run_in_background: frena y dice qué hacer y el tope"
+  else no "T1 ProdGuard_Background_Blocks @story-8.333 @ac-1 · «${forma#"$PUERTA" }» con run_in_background: rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+done
+rc="$(corre_fondo Monitor '' "${BACKGROUND_FORMS[0]}")"
+if [ "$rc" = 2 ] && dice_que_hacer; then ok "T1 ProdGuard_Background_Blocks @story-8.333 @ac-1 · la consulta por el Monitor: frena y dice qué hacer y el tope"
+else no "T1 ProdGuard_Background_Blocks @story-8.333 @ac-1 · la consulta por el Monitor: rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+# cada uno de los cuatro bloqueos queda anotado con su regla, no como «otra»
+n_fondo="$(grep '"freno":"prod-access-guard"' "$CASA/.claude/.tycon-pipeline/frenos.jsonl" 2>/dev/null | grep -c '"regla":"puerta-de-fondo"')"
+if [ "$n_fondo" = 4 ] && ! grep -q '"regla":"otra"' "$CASA/.claude/.tycon-pipeline/frenos.jsonl" 2>/dev/null; then
+  ok "T1 ProdGuard_Background_Blocks @story-8.333 @ac-1 · los cuatro bloqueos quedan anotados con la regla puerta-de-fondo"
+else no "T1 ProdGuard_Background_Blocks @story-8.333 @ac-1 · anotados con puerta-de-fondo: ${n_fondo:-0} de 4 — $(tail -2 "$CASA/.claude/.tycon-pipeline/frenos.jsonl" 2>/dev/null)"; fi
+
+for forma in "${BACKGROUND_FORMS[@]}"; do
+  for marca in '' false; do
+    if [ -n "$marca" ]; then como="con run_in_background: $marca"; else como="sin la marca"; fi
+    rc="$(corre_fondo Bash "$marca" "$forma")"
+    if [ "$rc" = 0 ] && ! grep -qF "de fondo" "$TMP/err"; then ok "T2 ProdGuard_Foreground_AsToday @story-8.333 @ac-2 · «${forma#"$PUERTA" }» $como: pasa al cuadro, como siempre"
+    else no "T2 ProdGuard_Foreground_AsToday @story-8.333 @ac-2 · «${forma#"$PUERTA" }» $como: rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+  done
+done
+# lo que ya se frenaba en primer plano se sigue frenando por su causa, no por la de fondo
+rc="$(corre_fondo Bash false "bash -c '$PUERTA $PROD \"select 1\"'")"
+if [ "$rc" = 2 ] && ! grep -qF "de fondo" "$TMP/err"; then ok "T2 ProdGuard_Foreground_AsToday @story-8.333 @ac-2 · la puerta dentro de bash -c, en primer plano, frena por su forma, como siempre"
+else no "T2 ProdGuard_Foreground_AsToday @story-8.333 @ac-2 · la puerta dentro de bash -c, en primer plano: rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+
+for herramienta in Bash Monitor; do
+  if [ "$herramienta" = Bash ]; then marca=true; else marca=''; fi
+  rc="$(corre_fondo "$herramienta" "$marca" "sleep 5")"
+  if [ "$rc" = 0 ] && ! grep -qF "de fondo" "$TMP/err"; then ok "T3 ProdGuard_BackgroundWithoutGate_Passes @story-8.333 @ac-3 · «sleep 5» de fondo ($herramienta) pasa"
+  else no "T3 ProdGuard_BackgroundWithoutGate_Passes @story-8.333 @ac-3 · «sleep 5» de fondo ($herramienta): rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+done
 
 echo "— prod-guard: $pasaron ok, $fallos fallos —"
 [ "$fallos" -eq 0 ]
