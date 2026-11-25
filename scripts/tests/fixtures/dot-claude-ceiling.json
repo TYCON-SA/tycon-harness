@@ -5,7 +5,7 @@
     "direction": "igual: dos archivos cambian de ruta",
     "reason": "Los dos guiones que sólo sirven en Azure DevOps (validate-pipeline-in-ado.sh y grant-new-product-permissions.js) se mudan de scripts/ci/ a su conector, integrations/azure-devops/scripts/, con el mismo número; nadie sube. Total 795."
   },
-  "total": 791,
+  "total": 789,
   "files": {
     "adapters/codex/agents-native/tycon-ac-coverage-checker.toml": 1,
     "adapters/codex/agents-native/tycon-dod-runtime-checker.toml": 3,
@@ -147,7 +147,6 @@
     "scripts/setup/install-codegraph.ps1": 1,
     "scripts/setup/install-codegraph.sh": 1,
     "scripts/setup/install-effects.json": 37,
-    "scripts/setup/install-instinct-mining.sh": 2,
     "scripts/setup/validate-engram-upgrade.sh": 1,
     "scripts/tools/background-stall.js": 2,
     "scripts/tools/context-budget.js": 9,

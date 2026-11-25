@@ -83,9 +83,9 @@ function llamarAnthropic({ model, llave, prompt, env, timeoutMs, spawn, platform
     // modelo con caracteres de la consola no se lanza
     if (!/^[A-Za-z0-9._:-]+$/.test(String(model || ''))) return { ok: false, fallo: 'cli_fallo' };
     const linea = ['claude', ...args.map((a) => (a === '' ? '""' : a))].join(' ');
-    r = spawn(linea, [], { ...comun, shell: true, env: { ...comun.env, NoDefaultCurrentDirectoryInExePath: '1' } });
+    r = spawn(linea, [], { ...comun, windowsHide: true, shell: true, env: { ...comun.env, NoDefaultCurrentDirectoryInExePath: '1' } });
   } else {
-    r = spawn('claude', args, comun);
+    r = spawn('claude', args, { ...comun, windowsHide: true });
   }
   if (r.error && r.error.code === 'ETIMEDOUT') return { ok: false, fallo: 'tiempo' };
   if (r.error || r.status !== 0) return { ok: false, fallo: 'cli_fallo' };
