@@ -198,9 +198,7 @@ is_harness_push() {
     if git cat-file -e "$sha^{commit}:$TREE_MARK" 2>/dev/null; then return 0; fi
     # «no trae ese archivo» y «git no pudo leer lo que se empuja» salen igual: lo que no se puede leer cuenta como que sí
     git cat-file -e "$sha" 2>/dev/null || return 0
-  done <<EOF
-$INPUT
-EOF
+  done < <(printf '%s\n' "$INPUT")
   return 1
 }
 if ! is_harness_push; then exit 0; fi
