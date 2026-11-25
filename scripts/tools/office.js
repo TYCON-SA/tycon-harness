@@ -2567,7 +2567,8 @@ async function collect(opts = {}) {
   const nowMs = opts.now ? Date.parse(opts.now) : Date.now();
   // la carga de la máquina se mide mientras se arma el resto; `machine: false` no la mide (quien sólo lee las firmas)
   const load = opts.machine === false ? null : machineLoad(opts.machine).catch(() => ({}));
-  const wip = await wipNow(opts);
+  // /wip trae la foto que ya armó (`opts.wip`), para no preguntar dos veces por los mismos pedidos
+  const wip = opts.wip || await wipNow(opts);
   const problems = [];
   let signatures = [];
   try {
@@ -2617,7 +2618,8 @@ async function collect(opts = {}) {
   const quietMin = Number.isInteger(qn) && qn > 0 ? qn : QUIET_DEFAULT_MIN;
   if (q && q.code === 2) problems.push(`el umbral de la sesión callada no se pudo leer: ${String(q.out || '').trim().split('\n')[0] || 'sin motivo'}; uso ${QUIET_DEFAULT_MIN} min`);
   else if (q && q.code === 0 && quietMin !== qn) problems.push(`office.quiet_minutes no es un número de minutos (${String(q.out || '').trim().slice(0, 40)}); uso ${QUIET_DEFAULT_MIN} min`);
-  const board = readBoard(path.join(sdir, 'coordination', 'tablero.json'), { now: nowMs });
+  // `noBoard`: sin el tablero de la coordinadora, como lo pide /wip, que muestra sólo lo que pasa en la máquina
+  const board = opts.noBoard ? { board: null } : readBoard(path.join(sdir, 'coordination', 'tablero.json'), { now: nowMs });
   if (board.problem) problems.push(board.problem);
   if (board.board) problems.push(...board.board.avisos);
   const edited = board.board ? boardEditedNotice(sdir) : null;
