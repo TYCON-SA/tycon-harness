@@ -180,6 +180,232 @@ test('BaseControls_ConstanciaAMano_FormasRaras', () => {
   for (const c of pasan) assert.ok(!(correr(c) || {}).block, `pasa: ${c}`);
 });
 
+// 🔴 Falla con: un `cd` que no se sigue (adentro de un paréntesis, `pushd`, adentro de `bash -c`), un heredoc que corre
+// en el shell por `source /dev/stdin`, comillas en medio de la ruta de una copia, o los comandos que escriben el archivo
+// que nombran como salida (`split`, `csplit`, `script`, `diff -o`). También frenar de más a quien sólo mira (`vim -R`).
+test('BaseControls_ConstanciaAMano_CdYSalidasNombradas', () => {
+  const gate = require(GATE);
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'constancias-cd-'));
+  fs.mkdirSync(path.join(repo, '.git'));
+  fs.mkdirSync(path.join(repo, '.github', 'control-changes'), { recursive: true });
+  fs.mkdirSync(path.join(repo, '.tycon'));
+  fs.mkdirSync(path.join(repo, 'sub'));
+  for (const f of ['x.json', 'a', 'b']) fs.writeFileSync(path.join(repo, f), '{}\n');
+  const correr = (command) => gate.handle({ tool_name: 'Bash', tool_input: { command }, cwd: repo, session_id: 'prueba' }, { stateDir: path.join(repo, 'estado'), installedRoots: [] });
+  const frenan = [
+    '(cd .tycon && echo x >> control-changes.jsonl)',
+    '(cd .tycon && touch control-changes.jsonl)',
+    '(cd .tycon; touch control-changes.jsonl)',
+    '(cd .github && cp ../x.json control-changes/)',
+    'pushd .tycon && touch control-changes.jsonl',
+    "bash -c 'cd .tycon && touch control-changes.jsonl'",
+    'cd sub && cd ../.tycon && touch control-changes.jsonl',
+    'cd "$X" && touch control-changes.jsonl',
+    'vim -R -c wq .tycon/control-changes.jsonl',
+    "bash /dev/stdin <<'EOF'\ntouch .tycon/control-changes.jsonl\nEOF",
+    // un `cd` adentro del paréntesis no hace pasar la escritura de afuera
+    '(cd sub && true); echo x >> .tycon/control-changes.jsonl',
+    "source /dev/stdin <<'EOF'\necho x >> .tycon/control-changes.jsonl\nEOF",
+    '. /dev/stdin <<EOF\necho x >> .tycon/control-changes.jsonl\nEOF',
+    "cp x.json .tycon/'control-changes.jsonl'",
+    'cp x.json .github/"control-changes"/abc.json',
+    'split -l 1 x.json .tycon/control-changes.jsonl',
+    'split -l 1 x.json .github/control-changes/abc',
+    'csplit -f .github/control-changes/abc x.json 1',
+    'csplit --prefix=.github/control-changes/abc x.json 1',
+    'script -q .github/control-changes/abc.json true',
+    'diff -o .github/control-changes/abc.json a b',
+    'diff --output=.github/control-changes/abc.json a b',
+  ];
+  for (const c of frenan) {
+    const r = correr(c);
+    assert.ok(r && r.block, `frena: ${c}`);
+    assert.match(r.block, /constancia de cambio de control no se escribe a mano/, c);
+  }
+  const pasan = [
+    'vim -R .github/control-changes/abc.json',
+    'cat .github/control-changes/abc.json',
+    'cat .tycon/control-changes.jsonl',
+    '(cd sub && make); echo x > out.txt',
+    '(cd .tycon && cat control-changes.jsonl)',
+    'pushd sub && touch out.txt',
+    'split -l 1 .tycon/control-changes.jsonl /tmp/parte',
+    'csplit -f /tmp/parte .tycon/control-changes.jsonl 1',
+    'script -q /tmp/registro.txt cat .tycon/control-changes.jsonl',
+    'diff .github/control-changes/abc.json b',
+    'diff -o /tmp/salida.txt .github/control-changes/abc.json b',
+  ];
+  for (const c of pasan) assert.ok(!(correr(c) || {}).block, `pasa: ${c}`);
+});
+
+// 🔴 Falla con: un `cd` de un paréntesis o de `bash -c` que sólo se sigue para algunos comandos (no para `sed -i`,
+// `perl -pi`, `dd of=` ni `truncate`); `vim -R` que pasa con órdenes por la entrada o en modo ex; `ed -s` y `script -qc`
+// leídos con el archivo como valor de una opción; `builtin cd`, `chdir` y `env -C` sin seguir; comillas en medio del
+// `of=` de `dd`; o `source <(…)`, que corre en el shell lo que sale de adentro.
+test('BaseControls_ConstanciaAMano_CdParaTodosYEntradaDelEditor', () => {
+  const gate = require(GATE);
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'constancias-cd2-'));
+  fs.mkdirSync(path.join(repo, '.git'));
+  fs.mkdirSync(path.join(repo, '.github', 'control-changes'), { recursive: true });
+  fs.mkdirSync(path.join(repo, '.tycon'));
+  fs.mkdirSync(path.join(repo, 'sub'));
+  fs.writeFileSync(path.join(repo, 'x.json'), '{}\n');
+  const correr = (command) => gate.handle({ tool_name: 'Bash', tool_input: { command }, cwd: repo, session_id: 'prueba' }, { stateDir: path.join(repo, 'estado'), installedRoots: [] });
+  const F = '.tycon/control-changes.jsonl';
+  const frenan = [
+    "(cd .tycon && sed -i '' s/a/b/ control-changes.jsonl)",
+    '(cd .tycon && sed -i -e s/a/b/ control-changes.jsonl)',
+    '(cd .tycon && perl -pi -e 1 control-changes.jsonl)',
+    '(cd .tycon && dd of=control-changes.jsonl if=../x.json)',
+    '(cd .tycon && truncate -s0 control-changes.jsonl)',
+    'bash -c "cd .tycon && dd of=control-changes.jsonl"',
+    `printf ':w!\\n' | vim -R ${F}`,
+    `vim -R ${F} <<'EOT'\n:w!\nEOT`,
+    `vim -R ${F} <<< ':w!'`,
+    `vim -R ${F} < /tmp/ordenes`,
+    `ex -R ${F}`,
+    `vim -e -R ${F}`,
+    `vim -E -R ${F}`,
+    `vim -R - ${F}`,
+    `ed -s ${F} <<'EOF'\nw\nEOF`,
+    `ed ${F} <<'EOF'\nw\nEOF`,
+    `script -qc ls ${F}`,
+    'builtin cd .tycon && touch control-changes.jsonl',
+    '(builtin cd .tycon && touch control-changes.jsonl)',
+    'chdir .tycon && touch control-changes.jsonl',
+    'env -C .tycon touch control-changes.jsonl',
+    'env --chdir=.tycon touch control-changes.jsonl',
+    "dd if=x.json of=.tycon/'control-changes.jsonl'",
+    'source <(echo "echo x >> .tycon/control-changes.jsonl")',
+    'source <(echo "touch .tycon/control-changes.jsonl")',
+    '. <(printf "cp x.json .tycon/control-changes.jsonl")',
+    'bash <(echo "touch .tycon/control-changes.jsonl")',
+  ];
+  for (const c of frenan) {
+    const r = correr(c);
+    assert.ok(r && r.block, `frena: ${c}`);
+    assert.match(r.block, /constancia de cambio de control no se escribe a mano/, c);
+  }
+  const pasan = [
+    `vim -R ${F}`,
+    `vim -M ${F}`,
+    "(cd sub && sed -i '' s/a/b/ notas.txt)",
+    '(cd sub && dd of=salida.bin if=../x.json)',
+    'env -C sub touch notas.txt',
+    `dd if=${F} of=/tmp/copia`,
+    `script -qc 'cat ${F}' /tmp/registro.txt`,
+    'source <(echo "echo hola")',
+  ];
+  for (const c of pasan) assert.ok(!(correr(c) || {}).block, `pasa: ${c}`);
+});
+
+// 🔴 Falla con: la carpeta de `env -C` con sus comillas sin resolver; un `env` con una opción que lleva valor (`-u`), una
+// variable antes de `-C` o llamado por su ruta (`/usr/bin/env`) que no se pela y deja de ver el comando; un `xargs` detrás
+// de `env -C`; el comando de `script -c` sin mirar como uno más; o `vim -R -w`, que escribe las teclas en el archivo.
+test('BaseControls_ConstanciaAMano_EnvScriptYVimW', () => {
+  const gate = require(GATE);
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'constancias-env-'));
+  fs.mkdirSync(path.join(repo, '.git'));
+  fs.mkdirSync(path.join(repo, '.github', 'control-changes'), { recursive: true });
+  fs.mkdirSync(path.join(repo, '.tycon'));
+  fs.mkdirSync(path.join(repo, 'sub'));
+  const correr = (command) => gate.handle({ tool_name: 'Bash', tool_input: { command }, cwd: repo, session_id: 'prueba' }, { stateDir: path.join(repo, 'estado'), installedRoots: [] });
+  const F = '.tycon/control-changes.jsonl';
+  const frenan = [
+    'env -C ".tycon" touch control-changes.jsonl',
+    "env -C '.tycon' touch control-changes.jsonl",
+    'env --chdir=".tycon" touch control-changes.jsonl',
+    'env -C ".github/control-changes" sed -i s/a/b/ x.json',
+    `env -u FOO touch ${F}`,
+    'env -u FOO -C .github touch control-changes/y',
+    'env -C .github -u FOO touch control-changes/y',
+    'env A=1 -C .tycon touch control-changes.jsonl',
+    `/usr/bin/env -u FOO touch ${F}`,
+    '/usr/bin/env -C .tycon touch control-changes.jsonl',
+    'env -C .github/control-changes xargs touch < /tmp/l',
+    `script -c "touch ${F}" /dev/null`,
+    `script -qc "touch ${F}" /dev/null`,
+    `script --command "touch ${F}" /dev/null`,
+    `vim -R -w ${F} /tmp/x`,
+    `vim -R -W ${F} /tmp/x`,
+  ];
+  for (const c of frenan) {
+    const r = correr(c);
+    assert.ok(r && r.block, `frena: ${c}`);
+    assert.match(r.block, /constancia de cambio de control no se escribe a mano/, c);
+  }
+  const pasan = [
+    'env -C "sub" touch notas.txt',
+    'env -u FOO touch sub/notas.txt',
+    `env -u FOO cat ${F}`,
+    `script -c "cat ${F}" /dev/null`,
+  ];
+  for (const c of pasan) assert.ok(!(correr(c) || {}).block, `pasa: ${c}`);
+});
+
+// 🔴 Falla con: un envoltorio con valor delante de `env -C` (`timeout 5`, `nice -n 5`, `sudo -u root`, `stdbuf -o0`, una
+// llave) o una opción de `env` con valor (`-P`) que no se pela; el comando de `script` entre comillas pegado a
+// `--command=` o al final (la forma de macOS); `script -F`; `$PWD` y `$(pwd)` resueltos contra la carpeta de partida
+// después de un `cd`; `gdd`; `diff -o` pegado; o `vim -R` con una opción que escribe un archivo (`-i`, `-V`,
+// `-c:w`).
+test('BaseControls_ConstanciaAMano_EnvoltoriosYPwd', () => {
+  const gate = require(GATE);
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'constancias-envoltorios-'));
+  fs.mkdirSync(path.join(repo, '.git'));
+  fs.mkdirSync(path.join(repo, '.github', 'control-changes'), { recursive: true });
+  fs.mkdirSync(path.join(repo, '.tycon'));
+  fs.mkdirSync(path.join(repo, 'sub'));
+  const correr = (command) => gate.handle({ tool_name: 'Bash', tool_input: { command }, cwd: repo, session_id: 'prueba' }, { stateDir: path.join(repo, 'estado'), installedRoots: [] });
+  const F = '.tycon/control-changes.jsonl';
+  const D = '.github/control-changes/x.json';
+  const frenan = [
+    'timeout 5 env -C .tycon touch control-changes.jsonl',
+    'timeout -s KILL 5 env -C .tycon touch control-changes.jsonl',
+    'nice -n 5 env -C .tycon touch control-changes.jsonl',
+    'sudo -u root env -C .tycon touch control-changes.jsonl',
+    'stdbuf -o0 env -C .tycon touch control-changes.jsonl',
+    'stdbuf -o 0 env -C .tycon touch control-changes.jsonl',
+    '{ env -C .tycon touch control-changes.jsonl; }',
+    `env -P /bin touch ${F}`,
+    `script --command='touch ${F}' /dev/null`,
+    `script --command="touch ${F}" /dev/null`,
+    `script --command=touch\\ ${F} /dev/null`,
+    `script -q /dev/null touch ${F}`,
+    `script -q /dev/null cp /tmp/x ${F}`,
+    `script -F ${F}`,
+    'cd .tycon && touch $PWD/control-changes.jsonl',
+    'cd .tycon && touch ${PWD}/control-changes.jsonl',
+    'cd .tycon && touch "$(pwd)/control-changes.jsonl"',
+    `gdd if=/tmp/x of=${F}`,
+    `diff -o${D} /tmp/a /tmp/b`,
+    `sdiff -o${D} /tmp/a /tmp/b`,
+    `vim -R -i ${F} /tmp/x`,
+    `vim -R -i /tmp/viminfo ${F}`,
+    `vim -R -V9${F} /tmp/x`,
+    `vim -R -c:w ${F}`,
+    // el separador de registro de perl (`-0`, `-0777`, `-00`) junto con `-i` en el mismo grupo de banderas
+    `perl -0pi -e 1 ${D}`,
+    `perl -0777pi -e 1 ${D}`,
+    `perl -00pi -e 1 ${D}`,
+    'cd .github/control-changes && perl -0pi -e 1 x.json',
+  ];
+  for (const c of frenan) {
+    const r = correr(c);
+    assert.ok(r && r.block, `frena: ${c}`);
+    assert.match(r.block, /constancia de cambio de control no se escribe a mano/, c);
+  }
+  const pasan = [
+    'timeout 5 env -C sub touch notas.txt',
+    `sudo -u root cat ${F}`,
+    `script -q /dev/null cat ${F}`,
+    'cd sub && touch $PWD/notas.txt',
+    `gdd if=${F} of=/tmp/copia`,
+    `diff -o/tmp/salida.txt ${D} /tmp/b`,
+    `vim -R ${F}`,
+  ];
+  for (const c of pasan) assert.ok(!(correr(c) || {}).block, `pasa: ${c}`);
+});
+
 // Un repo de verdad: `origin/main` adelante de `main`, una rama sin constancias y otra que trae una.
 function repoConRamas() {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'constancias-ramas-'));
@@ -357,4 +583,169 @@ test('Constancias_SustitucionDeProceso_SeSigueMirando', () => {
   const r = correr('git merge --ff-only origin/main >(cp /tmp/x.json .github/control-changes/)');
   assert.ok(r && r.block);
   assert.match(r.block, /constancia de cambio de control no se escribe a mano/);
+});
+
+// 🔴 Falla con (lado del texto): un texto entre comillas leído como comando. El valor de una variable o de una
+// descripción que CITA el guion de la firma o una redirección a la constancia frenaba sin que se escribiera nada.
+test('Constancias_TextoEntreComillas_NoEsUnComando', () => {
+  const correr = correrEn(repoConRamas());
+  const pasan = [
+    "desc='Trae main con git merge origin/main; la constancia la escribe bash scripts/ci/run-base-controls.sh approve > .tycon/control-changes.jsonl'; echo \"$desc\"",
+    'desc="x > .tycon/control-changes.jsonl"',
+    "echo 'cp /tmp/x.json .github/control-changes/ > .tycon/control-changes.jsonl'",
+    "echo $'it\\'s > .tycon/control-changes.jsonl'",
+    "printf '%s\\n' 'git checkout main -- .tycon/control-changes.jsonl' > /tmp/nota.md",
+    // nombrar una variable como argumento adentro de una sustitución no la corre
+    "msg='cp /tmp/x.json .github/control-changes/'; echo \"$(printf '%s' \"$msg\")\" > /tmp/nota.md",
+  ];
+  for (const c of pasan) {
+    const r = correr(c);
+    assert.ok(!(r && r.block && /constancia de cambio de control/.test(r.block)), `frenó un texto: ${c}\n${r && r.block}`);
+  }
+});
+
+// 🔴 Falla con (lado del comando): un texto entre comillas que después SE CORRE —con `bash -c`, `eval`, o guardado en
+// una variable que corre `eval "$c"`, `bash -c "$c"` o `$c`— pasa sin mirar. Lo que se corre es un comando.
+test('Constancias_TextoQueSeCorre_SeSigueMirando', () => {
+  const correr = correrEn(repoConRamas());
+  const frenan = [
+    "bash -c 'cp /tmp/x.json .github/control-changes/'",
+    "eval 'echo hola > .tycon/control-changes.jsonl'",
+    "c='cp /tmp/x.json .github/control-changes/'; eval \"$c\"",
+    "c='echo hola > .tycon/control-changes.jsonl'; bash -c \"$c\"",
+    "export c='cp /tmp/x.json .github/control-changes/'; sh -c \"$c\"",
+    "c='cp /tmp/x.json .github/control-changes/'; $c",
+    'c="git checkout firma -- .tycon/control-changes.jsonl"; eval ${c}',
+    // el texto que entra a un shell o a otro programa por otro camino que `-c` (del pase adversarial)
+    "echo 'echo hola > .tycon/control-changes.jsonl' | bash",
+    "echo 'cp /tmp/x.json .github/control-changes/' | sh -s",
+    "printf '%s' 'cp /tmp/x.json .github/control-changes/' | xargs -0 bash -c",
+    "echo 'echo hola > .tycon/control-changes.jsonl' > /tmp/s.sh && bash /tmp/s.sh",
+    "echo 'cp /tmp/x.json .github/control-changes/' > /tmp/s.sh; chmod +x /tmp/s.sh; /tmp/s.sh",
+    "bash <<< 'cp /tmp/x.json .github/control-changes/'",
+    "read c <<< 'cp /tmp/x.json .github/control-changes/'; eval \"$c\"",
+    "bash -c $'cp /tmp/x.json .github/control-changes/'",
+    "sh -c $'echo hola > .tycon/control-changes.jsonl'",
+    "c=$'cp /tmp/x.json .github/control-changes/'; eval \"$c\"",
+    "c='cp /tmp/x.json .github/control-changes/'; builtin eval \"$c\"",
+    // armado acá: escrito entero, el freno instalado leería este archivo como un guion que escribe la constancia
+    `node -e "require('fs').writeFileSync('${['.tycon', 'control-changes.jsonl'].join('/')}', 'x')"`,
+    'echo "$(echo \'x\') > .tycon/control-changes.jsonl"; bash -c "echo hola > .tycon/control-changes.jsonl"',
+  ];
+  for (const c of frenan) {
+    const r = correr(c);
+    assert.ok(r && r.block, `pasó: ${c}`);
+    assert.match(r.block, /constancia de cambio de control no se escribe a mano/, c);
+  }
+  // la descripción citada en la línea de `gh` frena (gh puede correr un texto), y el cartel dice cómo salir
+  const desc = correr("gh pr create --title t --body 'ejemplo: echo x > .tycon/control-changes.jsonl'");
+  assert.ok(desc && desc.block, 'la descripción citada en la línea de gh pasó');
+  assert.match(desc.block, /--body-file/, desc.block);
+});
+
+// 🔴 Falla con: el lector de los prefijos (`A=…`, `env A=…`) que prueba todas las formas de partir un `$''` repetido y
+// tarda exponencialmente: el freno se pasa de su tiempo y un freno colgado deja pasar.
+test('Constancias_PrefijoConComillasRepetidas_TerminaRapido', () => {
+  const correr = correrEn(repoConRamas());
+  for (const cab of ['A=', 'env A=']) {
+    const largo = `${cab}${"$''".repeat(30)}`;
+    // stable-data: el reloj mide cuánto tarda el freno, no fecha ningún dato
+    const t0 = Date.now();
+    correr(largo);
+    assert.ok(Date.now() - t0 < 2000, `«${cab}» con 30 «$''» tardó ${Date.now() - t0} ms`);
+    // con una escritura de la constancia detrás, el prefijo largo no la esconde
+    const r = correr(`${largo} cp /tmp/x.json .github/control-changes/`);
+    assert.ok(r && r.block, `pasó con el prefijo «${cab}» largo`);
+  }
+});
+
+// Dos repos de verdad: el de partida de la sesión, y otro con un commit en main que el de partida no tiene, y una rama
+// que trae una constancia.
+function dosRepos() {
+  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'constancias-dos-'));
+  const env = sinGitDelPadre({ GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z' });
+  const repo = (nombre) => {
+    const r = path.join(casa, nombre);
+    fs.mkdirSync(r);
+    const git = (...a) => execFileSync('git', ['-c', 'maintenance.auto=false', ...a], { cwd: r, env, stdio: 'ignore' });
+    git('init', '-q', '-b', 'main');
+    git('config', 'user.email', 'prueba@ejemplo.test');
+    git('config', 'user.name', 'prueba');
+    git('commit', '-q', '--allow-empty', '-m', `inicio ${nombre}`);
+    return { r, git };
+  };
+  const partida = repo('partida');
+  const otro = repo('otro');
+  otro.git('checkout', '-q', '-b', 'trabajo');
+  otro.git('checkout', '-q', '-b', 'con-firma');
+  fs.mkdirSync(path.join(otro.r, '.tycon'));
+  fs.writeFileSync(path.join(otro.r, '.tycon', 'control-changes.jsonl'), '{}\n');
+  otro.git('add', '.');
+  otro.git('commit', '-q', '-m', 'trae una constancia');
+  otro.git('checkout', '-q', 'main');
+  fs.writeFileSync(path.join(otro.r, 'a.txt'), 'a');
+  otro.git('add', '.');
+  otro.git('commit', '-q', '-m', 'main avanza sin constancias');
+  const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: otro.r, env, encoding: 'utf8' }).trim();
+  otro.git('checkout', '-q', 'trabajo');
+  return { casa, partida: partida.r, otro: otro.r, sha };
+}
+
+// 🔴 Falla con: `cd <otro repo> && git merge <sha>` frenado con «no pude ver qué constancias trae <sha>» porque el freno
+// buscaba el commit también en la carpeta de partida de la sesión, donde no existe, aunque el merge no puede correr ahí
+// (si el `cd` falla, el `&&` corta). Lo que sí puede correr en la carpeta de partida se sigue mirando ahí.
+test('Constancias_CdAOtroRepo_NoMiraLaCarpetaDePartida', () => {
+  const { casa, partida, otro, sha } = dosRepos();
+  const gate = require(GATE);
+  const correr = (command) => gate.handle({ tool_name: 'Bash', tool_input: { command }, cwd: partida, session_id: 'prueba' }, { stateDir: path.join(casa, 'estado'), installedRoots: [] });
+  const fusionar = `git merge --no-edit`;
+  const pasan = [
+    `cd ${otro} && ${fusionar} ${sha}`,
+    `cd ${otro} && ${fusionar} ${sha} 2>&1 | grep -E "CONFLICT|Merge made" | head -3 | cut -c1-200`,
+    `cd ${otro} && git status --short && ${fusionar} ${sha}`,
+    `builtin cd -P ${otro} && ${fusionar} ${sha}`,
+  ];
+  for (const c of pasan) assert.ok(!(correr(c) || {}).block, `pasa: ${c}\n${(correr(c) || {}).block}`);
+  const frenan = [
+    // lo que trae la rama se sigue mirando en la carpeta del cd
+    `cd ${otro} && ${fusionar} con-firma`,
+    // si el cd falla, lo que sigue corre en la carpeta de partida
+    `cd ${otro}; ${fusionar} ${sha}`,
+    `cd ${otro} || true && ${fusionar} ${sha}`,
+    `cd ${otro}\n${fusionar} ${sha}`,
+    `cd ${otro} & ${fusionar} ${sha}`,
+    // el cd adentro de un paréntesis o de llaves no cambia dónde corre lo de afuera
+    `(cd ${otro} && true) && ${fusionar} ${sha}`,
+    `{ cd ${otro}; } && ${fusionar} ${sha}`,
+    // vuelve a la carpeta de partida, o va a otra
+    `cd ${otro} && cd - && ${fusionar} ${sha}`,
+    `cd ${otro} && popd && ${fusionar} ${sha}`,
+    `cd ${otro} && cd ${partida} && ${fusionar} ${sha}`,
+    `cd ${otro} && bash -c 'cd - && ${fusionar} ${sha}'`,
+    // una ruta relativa puede caer en otro lado (CDPATH): se mira como siempre
+    `cd ../otro && ${fusionar} ${sha}`,
+    // el cd no es lo primero
+    `true && cd ${otro} && ${fusionar} ${sha}`,
+    // git apunta al repo de partida por variable u opción
+    `cd ${otro} && GIT_DIR=${partida}/.git ${fusionar} ${sha}`,
+    `cd ${otro} && export GIT_DIR=${partida}/.git && ${fusionar} ${sha}`,
+    `cd ${otro} && git --git-dir=${partida}/.git merge --no-edit ${sha}`,
+    `cd ${otro} && git --work-tree=${partida} merge --no-edit ${sha}`,
+    `cd ${otro} && git -C ${partida} merge --no-edit ${sha}`,
+    `cd ${otro} && git -c core.worktree=${partida} merge --no-edit ${sha}`,
+    // un programa delante que corre git en la carpeta de partida (el pase del 24/11), también anidado
+    `cd ${otro} && sudo -D ${partida} ${fusionar} ${sha}`,
+    `cd ${otro} && sudo --chdir=${partida} bash -c '${fusionar} ${sha}'`,
+    // lo que corre en el mismo shell puede volver a la carpeta de partida sin que se vea
+    `cd ${otro} && source ./vuelve.sh && ${fusionar} ${sha}`,
+    `cd ${otro} && . ./vuelve.sh && ${fusionar} ${sha}`,
+    `cd ${otro} && eval "$(cat vuelve.txt)" && ${fusionar} ${sha}`,
+    `cd ${otro} && C=cd && $C ${partida} && ${fusionar} ${sha}`,
+    `cd ${otro} && command cd ${partida} && ${fusionar} ${sha}`,
+  ];
+  // un programa aparte no cambia la carpeta del shell: lo que sigue corre en la del cd
+  for (const c of [`cd ${otro} && bash ./otro.sh && ${fusionar} ${sha}`, `cd ${otro} && node -e 1 && ${fusionar} ${sha}`]) {
+    assert.ok(!(correr(c) || {}).block, `pasa: ${c}\n${(correr(c) || {}).block}`);
+  }
+  for (const c of frenan) assert.ok((correr(c) || {}).block, `frena: ${c}`);
 });

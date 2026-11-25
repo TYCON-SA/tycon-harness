@@ -118,7 +118,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   del gate en verde; las guías marcan `✅ verificado-por-mí` vs `🔲 para-que-lo-pruebe-el-user` (ACCOV-C7).
   Para UI, `prepare-commit` exige `checks.dod` verde con provenance `run-check`
   (`run-check dod -- npx playwright test <spec> --workers=1`); `set-check dod --manual` está rechazado;
-  `--force-manual` (en `set-check`) lo decide la persona. No-UI: `mark-dod-runtime-checked` con evidencia.
+  `--force-manual` lo firma la persona. No-UI: `mark-dod-runtime-checked` con evidencia.
 - **F.ii — matriz runtime por AC (DODRT-C6, HARD)**: `marker.js run-check acmatrix -- node
   <skill>/scripts/runtime-matrix.js --story <abs spec>`; `prepare-commit` la exige verde (run-check). Cada
   AC queda RUNTIME / CODE-ONLY / SIN-EVIDENCIA. `NOT-RUN` → lo corre el agente (E2E, o smoke vía
@@ -133,8 +133,8 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   enumerados; la evidencia sale del repo de la story (+ `evidence.companion_repos` declarados en
   `.tycon/advisors.yaml`), nunca de hermanos por vecindad.
 - **F.iv — ADVISORS-GATE**: a `done` no se llega sin constancia de advisors en este repo (run dir con
-  reportes de «Revisores» o `check=advisors green` con el `repoPath`). Escapes del dev:
-  `advisors_exempt: true` + `advisors_exempt_reason:`, o `TYCON_ADVISORS_GATE=off`.
+  reportes de «Revisores» o `check=advisors green` con el `repoPath`). Escapes: `advisors_exempt`
+  firmado por la persona, o `TYCON_ADVISORS_GATE=off` (sólo local).
 - **G.i**: un plan de rutina se aprueba con el aprobado de su revisión, con o sin
   coordinadora; uno delicado, siempre el dev (risk-class); con `plan_review.routine_approval: person`, una persona.
   Push, scope: human-gate.
@@ -153,7 +153,8 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   el primer Edit/Write de código si no se tocó ningún test (story con tabla `### Tests`, marker activo,
   implementación abierta); `implement` bloquea si el primer test es posterior al primer código (evidencia:
   `marker.fileEvents` + `file-events/<sid>.jsonl`). Sin código → pasa; código sin tests → avisa. Escape
-  único: `marker.js set-flag atddBypass true --reason "<por qué>"` (auditado). Fuera del pipeline, `on-pre-commit.js` avisa
+  único: `marker.js set-flag atddBypass true --reason "<por qué>"`, firmado por ejecución
+  (`sign-atdd-skip`). Fuera del pipeline, `on-pre-commit.js` avisa
   (`.tycon/atdd-gate` con `block` para frenar). La guía de QA se pide sólo si hay superficie operable a
   mano (`qa_guide: auto|off|always`).
 - **I.ii — mutantes**: `run-tests` corre `mutation-check.js` (Jest, Vitest, .NET, pytest, `node --test`, `scoped`)
@@ -182,7 +183,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
 - **ATDD fuera del pipeline** (I.i.b · I.i.c + I.i.c.1 · I.i.d + I.i.d.1 · I.i.e): `on-pre-commit.js` avisa inversión test/código por eventos del repo
   (`TYCON_ATDD_COMMIT_GATE=block|off`); las stories se descubren por frontmatter (`lib/story-discovery.js`,
   `TYCON_STORY_SCAN_BUDGET_MS`; diagnóstico `node lib/story-discovery.js --doctor [--budget <ms>]`); aviso de guía de QA faltante o vieja; `lib/story-evidence-gate.js` avisa ACs
-  sin correr. Portón preventivo: `TYCON_ATDD_PREEDIT_GATE=off`. Escape del gate del cierre: `complete-step implement --no-atdd`.
+  sin correr. Portón preventivo: `TYCON_ATDD_PREEDIT_GATE=off`. Al cerrar: `complete-step implement --no-atdd` (misma firma).
 - **marker.js**: `get` · `set` · `start-step <paso>` · `complete-step <paso>` · `start-warning` · `run-check <n> -- <cmd>` ·
   `set-check <n> green --manual` · `set-flag <f> true` · `set-autonomous true` ·
   `snapshot-iter N` · `mark-adversarial-launched <runId> 4` · `mark-adversarial-result` ·
@@ -249,7 +250,7 @@ PAUSA sin mutar ante conflicto cross-sesión, rama protegida o pipeline abandona
 3 Armar el plan (`plan`) · 4 Aprobar el plan (`approve-plan`) · 5 Implementar (`implement`: pruebas primero,
 build-gate) · 6 Correr las pruebas (`run-tests`: `test-gate.sh <repo> <story_path>` —con la RUTA— suite completa una
 vez: 0 verde · ≠0 rojo · 3 sin medir · 4 FRENO sin deducir el proyecto: `test-gate.sh <repo> <story> <subdir>` · 5 falta el
-corredor · 6 salió 0 sin correr pruebas; después `pipeline.js dep-gate`) · 7 Revisores (`reviewers`; vuelta N si hubo
+corredor · 6 salió 0 sin correr pruebas · 8 entorno sin preparar; después `pipeline.js dep-gate`) · 7 Revisores (`reviewers`; vuelta N si hubo
 arreglos) · 8 Pase adversarial (`adversarial-pass`, join) · 9 Hallazgos (`findings`: `write-findings` + `write-followups`;
 frena con CRITICAL) · 10 Probar en vivo (`live-check`) · 11 Preparar el pull request (`prepare-commit`) ·
 post-merge: `close-work-item`.

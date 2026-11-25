@@ -194,6 +194,7 @@ En [pieces/metrics.md](pieces/metrics.md):
 - [scripts/lib/merge-metrics.js](pieces/metrics.md#scriptslibmerge-metricsjs)
 - [scripts/lib/people.js](pieces/metrics.md#scriptslibpeoplejs)
 - [scripts/lib/guard-record.js](pieces/metrics.md#scriptslibguard-recordjs)
+- [scripts/metrics/controls-table.js](pieces/metrics.md#scriptsmetricscontrols-tablejs) _(scripts/metrics/controls-table.js + scripts/metrics/controls-classification.json + scripts/lib/session-model.js)_
 - [scripts/nightly/dashboard/reducer.js](pieces/metrics.md#scriptsnightlydashboardreducerjs)
 - [lib/installed-tree.js](pieces/metrics.md#libinstalled-treejs)
 - [test-gate.sh](pieces/metrics.md#test-gatesh) _(test-gate.sh (AgentSkills) + la ficha «evaluaron el umbral»)_
@@ -216,6 +217,7 @@ En [pieces/machine.md](pieces/machine.md):
 - [scripts/hooks/worktree-sweep.js](pieces/machine.md#scriptshooksworktree-sweepjs)
 - [scripts/hooks/dev-behind-main-notice.js](pieces/machine.md#scriptshooksdev-behind-main-noticejs)
 - [scripts/hooks/stuck-pr-notice.js](pieces/machine.md#scriptshooksstuck-pr-noticejs)
+- [scripts/lib/outside-contributions.js](pieces/machine.md#scriptsliboutside-contributionsjs)
 - [scripts/hooks/extension-notices.js](pieces/machine.md#scriptshooksextension-noticesjs)
 - [scripts/hooks/missing-path-notice.js](pieces/machine.md#scriptshooksmissing-path-noticejs)
 - [scripts/hooks/deprecated-session-notice.js](pieces/machine.md#scriptshooksdeprecated-session-noticejs)
@@ -226,7 +228,7 @@ En [pieces/machine.md](pieces/machine.md):
 - [scripts/hooks/failed-query-notice.js](pieces/machine.md#scriptshooksfailed-query-noticejs)
 - [scripts/hooks/context-size-notice.js](pieces/machine.md#scriptshookscontext-size-noticejs)
 - [scripts/hooks/wait-notice.js](pieces/machine.md#scriptshookswait-noticejs)
-- [scripts/hooks/prod-access-guard.js](pieces/machine.md#scriptshooksprod-access-guardjs) _(scripts/hooks/prod-access-guard.js + scripts/production/ + guides/produccion-con-permiso.md)_
+- [scripts/hooks/prod-access-guard.js](pieces/machine.md#scriptshooksprod-access-guardjs) _(scripts/hooks/prod-access-guard.js + scripts/production/ + guides/production-with-permission.md)_
 - [claude-md-blocks/budget.json](pieces/machine.md#claude-md-blocksbudgetjson) _(claude-md-blocks/budget.json + scripts/ci/check-claude-md-blocks.js)_
 - [scripts/hooks/harness-bootstrap-heal.sh](pieces/machine.md#scriptshooksharness-bootstrap-healsh)
 - [tycon-pipeline/scripts/lib/guides-heal.js](pieces/machine.md#tycon-pipelinescriptslibguides-healjs) _(tycon-pipeline/scripts/lib/guides-heal.js (en agent-skills) + scripts/hooks/branch-guard-notice.js)_

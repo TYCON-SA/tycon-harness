@@ -171,7 +171,7 @@ test('8.187 T28 Preparar_YGuia_DanElComandoDelPermiso @story-8.187 @ac-25: con a
   const out = text(PM.check({ ...t.opts, repos: [] }));
   assert.ok(out.includes(`sudo bash '${path.join(t.arnes, 'scripts', 'production', 'install-guard.sh')}' --allow-auto-update`), out);
   assert.match(out, /contraseña/);
-  const guide = fs.readFileSync(path.join(ROOT, 'guides', 'produccion-con-permiso.md'), 'utf8');
+  const guide = fs.readFileSync(path.join(ROOT, 'guides', 'production-with-permission.md'), 'utf8');
   assert.match(guide, /install-guard\.sh --allow-auto-update/);
   assert.match(guide, /guard\.update: auto/);
 });
@@ -232,6 +232,54 @@ test('8.187 T9c Preparar_ImportsRechazados_NoLosPidePorSiempre @story-8.187 @ac-
   assert.strictEqual(r.code, 0, text(r));
   assert.match(text(r), /lista/);
   assert.match(text(r), /rechazaste/);
+});
+
+test('F159 T1 Preparar_PrincipalAprobada_NoPrometeLasCopias: con la principal aprobada dice «lista», pero no da por aprobadas sus copias ni sus puestos: avisa que no lo sabe y cómo aprobarlos', () => {
+  // fila 159: con Claude Code 2.1.330 cada copia o puesto se aprueba aparte, aunque la principal lo esté
+  const t = toy();
+  const a = repo(t, 'a');
+  fs.writeFileSync(path.join(t.home, '.claude.json'), JSON.stringify(trusted(a)));
+  const r = PM.check({ ...t.opts, repos: [a] });
+  assert.strictEqual(r.code, 0, text(r));
+  const out = text(r);
+  assert.match(out, /\blista\b/);
+  const nota = r.items.find((i) => i.ok === 'nota');
+  assert.ok(nota, out);
+  assert.match(nota.text, /copias/);
+  assert.match(nota.text, /puestos/);
+  assert.match(nota.text, /no sé/);
+  assert.match(nota.text, /claude/);
+  assert.doesNotMatch(out, /arrancan sin pedir|todos aprobados/);
+  // con la principal sin aprobar, lo que falta es la principal: la nota de las copias no hace falta
+  const t2 = toy();
+  const b = repo(t2, 'b');
+  const r2 = PM.check({ ...t2.opts, repos: [b] });
+  assert.strictEqual(r2.items.filter((i) => i.ok === 'nota').length, 0, text(r2));
+});
+
+test('F159 T12 Preparar_ListaLosPuestosDeUnaVez: con la principal aprobada, una sola nota nombra todos los puestos sin aprobación a la vista, cada uno con su cd; el aprobado o donde ya abrió una sesión no sale; sigue «lista»', () => {
+  const WS = require(path.join(ROOT, 'scripts', 'tools', 'work-slots.js'));
+  const t = toy();
+  const a = repo(t, 'a');
+  const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.invalid', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.invalid' };
+  spawnSync('git', ['-C', a, 'commit', '-q', '--allow-empty', '-m', 'uno'], { env });
+  assert.strictEqual(WS.ensure({ home: t.home, arnes: t.arnes, env: {}, repo: a, count: 3 }).ok, true);
+  const slotN = (n) => path.join(path.dirname(a), `a--slot-${n}`);
+  fs.writeFileSync(path.join(t.home, '.claude.json'), JSON.stringify(trusted(a, slotN(1))));
+  WS.noteAccepted({ home: t.home, folder: slotN(3) });
+  const r = PM.check({ ...t.opts, repos: [a] });
+  assert.strictEqual(r.code, 0, text(r));
+  const notas = r.items.filter((i) => i.ok === 'nota' && /puesto/.test(i.text));
+  assert.strictEqual(notas.length, 1, text(r));
+  assert.ok(notas[0].text.includes(`cd '${slotN(2)}' && claude`), notas[0].text);
+  assert.ok(!notas[0].text.includes(`'${slotN(1)}'`) && !notas[0].text.includes(`'${slotN(3)}'`), notas[0].text);
+  assert.match(text(r), /\blista\b/);
+  // la principal y un puesto suyo como dos --repo: cada puesto se nombra una sola vez
+  const doble = PM.check({ ...t.opts, repos: [a, slotN(1)] }).items.find((i) => i.ok === 'nota' && /puesto/.test(i.text));
+  assert.strictEqual(doble.text.split(`cd '${slotN(2)}'`).length, 2, doble.text);
+  // todos aprobados o aceptados: ninguna nota de puestos
+  WS.noteAccepted({ home: t.home, folder: slotN(2) });
+  assert.strictEqual(PM.check({ ...t.opts, repos: [a] }).items.filter((i) => i.ok === 'nota' && /puesto/.test(i.text)).length, 0);
 });
 
 test('8.187 T15b Preparar_LoQueNoPudoMirar_NoEsLoQueFalta @story-8.187 @ac-13: un aviso del freno de «no pude» y un CLAUDE.md ilegible salen como «no pude mirar» (2); los renglones de continuación van con su aviso', { skip: process.platform === 'win32' ? 'permisos POSIX' : false }, () => {

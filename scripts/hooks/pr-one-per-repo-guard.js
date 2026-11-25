@@ -59,7 +59,8 @@ if (varOnePerRepo === undefined || varOnePerRepo === '') {
 }
 if (varOnePerRepo !== '1' && !encendidoPorLaOrganizacion) process.exit(0);
 let cmd = '';
-try { cmd = ((JSON.parse(payload || '{}').tool_input) || {}).command || ''; } catch { process.exit(0); }
+let sesion; // la del evento, para la constancia; guard-record.js descarta una de otra forma
+try { const ev = JSON.parse(payload || '{}'); cmd = (ev.tool_input || {}).command || ''; sesion = ev.session_id; } catch { process.exit(0); }
 
 // Sólo mira la creación de un pull request. Actualizar, listar o abandonar no se tocan.
 // 🔴 Se lee con el lector COMPARTIDO (`lib/az-pr.js`), no con un regex propio. Un lector
@@ -74,7 +75,7 @@ let cwdDelEvento = ''; try { cwdDelEvento = String(JSON.parse(payload || '{}').c
 // de pedidos del repo la pide la capa, que dice de cada uno si la validación de su punta está corriendo; un pedido de
 // Azure abierto por la capa se mira con `az`, como un `az repos pr create`. Los `az repos pr create` de la misma línea
 // se revisan después, igual que sin los otros.
-const pedidosGh = pedidosDeGitHub(cmd, cwdDelEvento);
+const pedidosGh = [...pedidosDeGitHub(cmd, cwdDelEvento), ...pedidosDeOtrosConectores(cmd, cwdDelEvento)];
 if (pedidosGh.length) revisarGitHub(pedidosGh).then(() => revisarAzure(), (e) => {
   console.error(`[pr-uno-por-repo] no pude mirar los pedidos de GitHub (${String((e && e.message) || e).slice(0, 80)}). No bloqueo, pero NO verifiqué.`);
   revisarAzure();
@@ -104,18 +105,92 @@ function pedidosDeGitHub(comando, cwd) {
       const i = t.findIndex((x) => /(^|[\\/])platform\.js$/.test(x));
       if (i < 0 || !(t[i + 1] === 'change-request.open' || (t[i + 1] === 'change-request' && t[i + 2] === 'open'))) continue;
       const valor = (n) => { const k = t.indexOf(n, i); return k >= 0 ? t[k + 1] : undefined; };
-      let repo = null;
+      // el repo se lee como lo lee la capa: `org/repo`, `grupo/sub/repo` (un repo en un namespace) o su identidad en JSON.
+      // Si la capa no carga, el pedido va sin repo: la revisión dice que no verificó, y sigue con los de Azure de la línea
+      let P = null;
+      try { P = require('../lib/platform/platform.js'); } catch { P = null; }
       const crudo = valor('--repo');
-      try { repo = crudo && crudo.trim().startsWith('{') ? JSON.parse(crudo) : (crudo ? { org: crudo.split('/')[0], repo: crudo.split('/')[1] } : null); } catch { repo = null; }
+      const leido = crudo && P ? P.repoOf(crudo) : null;
+      const repo = leido && typeof leido === 'object' && typeof leido.repo === 'string' && (typeof leido.org === 'string' || typeof leido.namespace === 'string') ? leido : null;
       let args = {};
       const a = valor('--args');
       try { args = a ? JSON.parse(a.startsWith('@') ? fs.readFileSync(require('path').resolve(cwd || process.cwd(), a.slice(1)), 'utf8') : a) : {}; } catch {
         // sin los argumentos no se sabe la rama propia: cualquier pedido abierto contaría como otro
         args = null;
       }
-      const donde = repo && repo.org && repo.repo ? `${repo.org}/${repo.repo}` : '(un repo que no pude leer)';
+      const donde = repo ? P.nameOf(repo) : '(un repo que no pude leer)';
       if (!args) out.push({ repo: null, rama: null, donde: `${donde}, cuyos argumentos (${String(a).slice(0, 80)}) no pude leer` });
       else out.push({ repo, rama: args.sourceBranch || null, donde });
+    }
+  }
+  return out;
+}
+
+/**
+ * Los pedidos que el comando crea con el comando crudo de otro conector (los que declara en `changeRequestCommands` y
+ * terminan en crear): `[{ repo, rama, donde }]`. Los de GitHub y los de Azure ya se leen arriba y en `revisarAzure`. El
+ * repo sale de `-R`/`--repo` o, sin él, del remoto de la carpeta; sin ninguno, va sin repo y la revisión dice que no
+ * verificó. Sin la lista de los conectores no se lee ninguno.
+ */
+function pedidosDeOtrosConectores(comando, cwd) {
+  let P;
+  let crean;
+  try {
+    P = require('../lib/platform/platform.js');
+    crean = P.rawCommands().filter((d) => d.changeRequest && !['github', 'azure-devops'].includes(d.name) && /^(create|new)$/.test(d.words[d.words.length - 1]));
+  } catch { return []; }
+  const out = [];
+  for (const seg of az.segmentos(comando)) {
+    const t = seg.map((x) => x.texto);
+    let i = 0;
+    while (i < t.length && (/^[A-Za-z_][A-Za-z0-9_]*=/.test(t[i]) || t[i] === 'env' || t[i] === 'command')) i++;
+    const bin = require('path').basename(String(t[i] || '').replace(/\\/g, '/')).replace(/\.(exe|cmd)$/i, '');
+    for (const d of crean) {
+      if (d.words[0] !== bin) continue;
+      // las palabras del comando son las primeras sin guion, saltando una opción y su valor: `mr list --title create`
+      // no crea, `-R acme/x mr create` sí. Una opción seguida de la palabra que se espera se toma sin valor
+      const esperadas = d.words.slice(1);
+      let n = 0;
+      for (let j = i + 1; j < t.length && n < esperadas.length; j++) {
+        if (t[j].startsWith('-')) {
+          if (!t[j].includes('=') && !/^-[A-Za-z]./.test(t[j]) && t[j + 1] !== esperadas[n]) j++;
+          continue;
+        }
+        if (t[j] !== esperadas[n]) break;
+        n++;
+      }
+      if (n < esperadas.length) continue;
+      const valor = (...nombres) => {
+        for (let k = i + 1; k < t.length; k++) {
+          for (const n of nombres) {
+            if (t[k] === n) return t[k + 1];
+            if (n.startsWith('--') && t[k].startsWith(`${n}=`)) return t[k].slice(n.length + 1);
+            // la opción corta con el valor pegado: `-R=acme/x`, `-Racme/x`
+            if (!n.startsWith('--') && t[k].length > 2 && t[k].startsWith(n)) return t[k].slice(2).replace(/^=/, '');
+          }
+        }
+        return undefined;
+      };
+      const crudo = valor('-R', '--repo');
+      let repo = null;
+      if (crudo && !/[$`]/.test(crudo)) {
+        const leido = P.repoOf(crudo);
+        repo = leido && typeof leido === 'object' && typeof leido.repo === 'string' ? { platform: d.name, ...leido } : null;
+      } else if (!crudo) {
+        try {
+          const url = execFileSync('git', ['-C', cwd || process.cwd(), 'remote', 'get-url', 'origin'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10000 }).trim();
+          repo = P.identityOfRemoteUrl(url) || null;
+          // sin el repo en la lista del equipo, el camino del remoto: `git@servidor:grupo/sub/repo.git`
+          if (!repo) {
+            const camino = url.replace(/^[a-z+]+:\/\/[^/]+\//i, '').replace(/^[^@/]+@[^:]+:/, '').replace(/\.git$/, '').replace(/\/+$/, '');
+            const leido = /^[\w.-]+(\/[\w.-]+)+$/.test(camino) ? P.repoOf(camino) : null;
+            repo = leido && typeof leido === 'object' && typeof leido.repo === 'string' ? { platform: d.name, ...leido } : null;
+          }
+        } catch { repo = null; }
+      }
+      const donde = repo ? P.nameOf(repo) : (crudo || '(el repo de la carpeta)');
+      out.push({ repo, rama: valor('-s', '--source-branch', '-H', '--head') || null, donde: repo ? donde : `${donde}, en un ${d.words.join(' ')}` });
+      break;
     }
   }
   return out;
@@ -177,7 +252,7 @@ async function revisarGitHub(pedidos) {
     if (enCurso.length) bloqueos.push({ donde: p.donde, enCurso });
   }
   if (bloqueos.length) bloquear(bloqueos);
-  if (!noPudeMirar) constancia.anotar({ freno: 'pr-uno-por-repo', regla: 'pr-duplicado', veredicto: 'paso', cmd });
+  if (!noPudeMirar) constancia.anotar({ freno: 'pr-uno-por-repo', regla: 'pr-duplicado', veredicto: 'paso', cmd, sesion });
   return 0;
 }
 
@@ -225,7 +300,7 @@ if (!bloqueos.length) {
   // Creaba un pull request y no había otro abierto: `paso`.
   // 🔴 Pero si NO se pudo preguntar, eso no es «verifiqué y está bien»: es «no miré», y anotarlo
   //    como paso mezcla las dos cosas. Sin decisión, no hay línea.
-  if (!noPudeMirar) constancia.anotar({ freno: 'pr-uno-por-repo', regla: 'pr-duplicado', veredicto: 'paso', cmd });
+  if (!noPudeMirar) constancia.anotar({ freno: 'pr-uno-por-repo', regla: 'pr-duplicado', veredicto: 'paso', cmd, sesion });
   process.exit(0);
 }
 bloquear(bloqueos);
@@ -267,6 +342,17 @@ return enCurso;
 }
 
 function bloquear(bloqueos) {
+// El perfil por modelo (lib/control-profile.js): si el dueño relajó este control para el perfil del modelo de esta
+// sesión, no frena y lo anota como `paso-por-perfil`, para que la tabla de controles lo siga contando. Sin relajación,
+// sin modelo o con cualquier duda, frena como siempre.
+let perfil = { on: true };
+try { perfil = require(require('path').join(__dirname, '..', 'lib', 'control-profile.js')).decide({ control: 'pr-uno-por-repo', sessionId: sesion }); } catch { perfil = { on: true }; }
+if (perfil.aviso) console.error(`[pr-uno-por-repo] ${perfil.aviso}`);
+if (!perfil.on) {
+  console.error(`[pr-uno-por-repo] no freno: ${perfil.motivo}.`);
+  constancia.anotar({ freno: 'pr-uno-por-repo', regla: 'pr-duplicado', veredicto: 'paso-por-perfil', cmd, sesion });
+  process.exit(0);
+}
 const cabeceras = bloqueos.map(({ donde, enCurso }) => `🔴 ${donde} YA TIENE ${enCurso.length} pull request CONSTRUYENDO:\n\n` +
   enCurso.map((p) => `  · PR ${p.pullRequestId} — ${p.title} (rama ${String(p.sourceRefName || '').replace('refs/heads/', '')})`).join('\n')).join('\n\n');
 console.error(`${cabeceras}
@@ -287,6 +373,6 @@ ANTES de abrir la sesión: pegada al comando no sirve, porque el freno lee el en
     : `Este freno está encendido porque esta máquina tiene TYCON_PR_ONE_PER_REPO=1 para una tanda de cambios en
 varios repos. Para apagarlo, sacá esa variable del entorno (o ponela en 0) ANTES de abrir la sesión: pegada al
 comando no sirve, porque el freno lee el entorno de la sesión.`}`);
-constancia.anotar({ freno: 'pr-uno-por-repo', regla: 'pr-duplicado', veredicto: 'bloqueo', cmd });
+constancia.anotar({ freno: 'pr-uno-por-repo', regla: 'pr-duplicado', veredicto: 'bloqueo', cmd, sesion });
 process.exit(2);
 }

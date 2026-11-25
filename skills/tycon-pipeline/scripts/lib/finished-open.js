@@ -69,8 +69,8 @@ function escribir(file, data) {
 }
 
 /**
- * La ejecución de un marcador, si terminó: null si le quedan pasos o no cerró «Preparar el commit». Si no, `{ storyId,
- * desde, revisar, archivos }`: `desde` es el cierre de «Preparar el commit» (sin él, la última vez que se tocó);
+ * La ejecución de un marcador, si terminó: null si le quedan pasos o no cerró «Preparar el pull request». Si no, `{ storyId,
+ * desde, revisar, archivos }`: `desde` es el cierre de «Preparar el pull request» (sin él, la última vez que se tocó);
  * `revisar`, si cambió código después de los revisores o los revisores cerraron después del último paso.
  */
 function runState(marker) {
@@ -330,13 +330,15 @@ function machine({ home = os.homedir(), stateDir, now = Date.now(), env, markerJ
 
 /**
  * Las carpetas de trabajo (los worktrees de los repos del arnés y de la raíz de repos) con cambios sin commitear y sin
- * ninguna sesión viva adentro: el trabajo que quedó tirado al cerrarse su sesión. Una línea por carpeta, con su rama,
- * cuántos archivos y desde cuándo nadie los toca (el cambio más nuevo). Hasta cinco y «y N más»; el mismo tope de 5 s,
- * con varias consultas a git a la vez. `repos`: los repos principales a mirar; sin él, el clon del arnés, agent-skills y
- * los de la raíz de repos (hasta dos niveles). No toca nada: sólo `git worktree list` y `git status`.
+ * ninguna sesión viva adentro, como datos: `{ carpetas, problemas, sinMirar, topeMs, vivasDesconocidas, ilegibles,
+ * sinRaiz, renglones }`. Cada carpeta trae `dir`, `rama`, `archivos` (cuántos) y `sinTocarDesde` (el cambio más nuevo, en ms, o
+ * null) y el `texto` de su renglón; `problemas`, el renglón de una carpeta o un repo que no se pudo leer. `topeMs`: el
+ * tope de tiempo, con varias consultas a git a la vez (de fábrica 5 s); lo que no se llegó a mirar va a `sinMirar`.
+ * `repos`: los repos principales a mirar; sin él, el clon del arnés, agent-skills y los de la raíz de repos (hasta dos
+ * niveles). No toca nada: sólo `git worktree list` y `git status`.
  */
-async function unsavedFolders({ home = os.homedir(), now = Date.now(), env = process.env, repos, isAlive } = {}) {
-  const until = Date.now() + TOPE_MS;
+async function unsavedFolderItems({ home = os.homedir(), now = Date.now(), env = process.env, repos, isAlive, topeMs = TOPE_MS } = {}) {
+  const until = Date.now() + topeMs;
   const { idiomaFijo, sinGitDelPadre } = require(path.join(RAIZ, 'scripts', 'lib', 'clean-git-env.js'));
   const gitEnv = idiomaFijo(sinGitDelPadre(env), { GIT_OPTIONAL_LOCKS: '0' });
   const gitRaw = (dir, args) => new Promise((resolve) => {
@@ -355,7 +357,7 @@ async function unsavedFolders({ home = os.homedir(), now = Date.now(), env = pro
     return res;
   };
   const vivas = require('./session-liveness.js').liveCwds({ home, ...(isAlive ? { isAlive } : {}) });
-  if (vivas.unknown) return [`no sé qué sesiones viven (${causa(vivas.unknown)}): no miro las carpetas sin commitear`];
+  if (vivas.unknown) return { carpetas: [], problemas: [], renglones: [], sinMirar: 0, topeMs, vivasDesconocidas: causa(vivas.unknown), ilegibles: 0, sinRaiz: null };
   // la ruta real del ancestro que existe, más lo que falta: una sesión puede estar en una subcarpeta ya borrada
   const real = (p) => {
     const abs = path.resolve(p);
@@ -380,7 +382,7 @@ async function unsavedFolders({ home = os.homedir(), now = Date.now(), env = pro
   const carpetas = new Map();
   for (const [i, l] of (await enTanda(principales, (r) => gitRaw(r, ['worktree', 'list', '--porcelain']))).entries()) {
     if (l.tarde) { sinMirar += 1; continue; }
-    if (l.error) { items.push({ cuando: -1, texto: `${legible(principales[i])}: no pude listar sus carpetas de trabajo` }); continue; }
+    if (l.error) { items.push({ problema: true, cuando: -1, texto: `${legible(principales[i])}: no pude listar sus carpetas de trabajo` }); continue; }
     for (const b of l.out.split(/\n\n+/).map((x) => x.split('\n')).slice(1)) {   // el primero es el checkout principal
       const dir = (b.find((x) => x.startsWith('worktree ')) || '').slice(9);
       if (!dir || b.some((x) => x.startsWith('prunable')) || !fs.existsSync(dir)) continue;
@@ -395,7 +397,7 @@ async function unsavedFolders({ home = os.homedir(), now = Date.now(), env = pro
   lista.forEach((c, k) => {
     const st = estados[k];
     if (st.tarde) { sinMirar += 1; return; }
-    if (st.error) { items.push({ cuando: -1, texto: `${legible(c.dir)}: no pude ver si tiene cambios sin commitear` }); return; }
+    if (st.error) { items.push({ problema: true, cuando: -1, texto: `${legible(c.dir)}: no pude ver si tiene cambios sin commitear` }); return; }
     const entradas = st.out.split('\0');
     const archivos = [];
     for (let i = 0; i < entradas.length; i += 1) {
@@ -406,14 +408,31 @@ async function unsavedFolders({ home = os.homedir(), now = Date.now(), env = pro
     }
     if (!archivos.length) return;
     const fechas = archivos.map((f) => { try { return fs.lstatSync(path.join(c.dir, f)).mtimeMs; } catch { return NaN; } }).filter(Number.isFinite);
-    items.push({ cuando: fechas.length ? Math.max(...fechas) : -1, texto: `${legible(c.dir)} (${c.rama ? `rama ${legible(c.rama)}` : 'sin rama'}): ${archivos.length} archivo${archivos.length === 1 ? '' : 's'} sin commitear${fechas.length ? `, sin tocar hace ${hace(Math.max(...fechas), now)}` : ''}; ninguna sesión viva trabaja ahí` });
+    const desde = fechas.length ? Math.max(...fechas) : null;
+    items.push({ dir: c.dir, rama: c.rama || null, archivos: archivos.length, sinTocarDesde: desde, cuando: desde === null ? -1 : desde,
+      texto: `${legible(c.dir)} (${c.rama ? `rama ${legible(c.rama)}` : 'sin rama'}): ${archivos.length} archivo${archivos.length === 1 ? '' : 's'} sin commitear${desde !== null ? `, sin tocar hace ${hace(desde, now)}` : ''}; ninguna sesión viva trabaja ahí` });
   });
+  return { carpetas: items.filter((i) => !i.problema), problemas: items.filter((i) => i.problema), renglones: items, sinMirar, topeMs,
+    vivasDesconocidas: null, ilegibles: vivas.ilegibles || 0, sinRaiz };
+}
+
+/**
+ * Las mismas carpetas (`unsavedFolderItems`) como renglones del aviso de arranque: una por carpeta, con su rama, cuántos
+ * archivos y desde cuándo nadie los toca. Hasta cinco y «y N más», lo tocado más recién primero.
+ */
+async function unsavedFolders(opts = {}) {
+  return unsavedFolderLines(await unsavedFolderItems(opts));
+}
+/** Los renglones del aviso armados con lo que devolvió `unsavedFolderItems`: así quien ya tiene los datos no lee dos veces. */
+function unsavedFolderLines(r) {
+  if (r.vivasDesconocidas) return [`no sé qué sesiones viven (${r.vivasDesconocidas}): no miro las carpetas sin commitear`];
+  const items = [...r.renglones];
   // lo tocado más recién primero: lo que se acaba de perder pesa más que lo que lleva semanas así
   const lines = items.sort((a, b) => b.cuando - a.cuando).slice(0, MAX_LINEAS).map((i) => i.texto);
   if (items.length > MAX_LINEAS) lines.push(`y ${items.length - MAX_LINEAS} más`);
-  if (sinMirar) lines.push(`${sinMirar} sin mirar: ${SIN_TIEMPO}`);
-  if (lines.length && vivas.ilegibles) lines.push(`${vivas.ilegibles} registro(s) de sesión que no pude leer: alguna de estas carpetas puede tener una sesión viva`);
-  if (sinRaiz) lines.push(`no pude saber dónde está la raíz de repos (${sinRaiz}): sólo miré los del arnés`);
+  if (r.sinMirar) lines.push(`${r.sinMirar} sin mirar: ${sinTiempo(r.topeMs)}`);
+  if (lines.length && r.ilegibles) lines.push(`${r.ilegibles} registro(s) de sesión que no pude leer: alguna de estas carpetas puede tener una sesión viva`);
+  if (r.sinRaiz) lines.push(`no pude saber dónde está la raíz de repos (${r.sinRaiz}): sólo miré los del arnés`);
   return lines;
 }
 
@@ -429,4 +448,4 @@ function adhocFromPhoto(adhoc, { home = os.homedir(), stateDir, now = Date.now()
   return s ? (s.error ? { error: s.error } : s) : null;
 }
 
-module.exports = { runState, adhocState, stopLines, machine, unsavedFolders, adhocFromPhoto, hace, TOPE_MS, FOTO_MS, PREFIJO };
+module.exports = { runState, adhocState, stopLines, machine, unsavedFolders, unsavedFolderItems, unsavedFolderLines, adhocFromPhoto, hace, TOPE_MS, FOTO_MS, PREFIJO };

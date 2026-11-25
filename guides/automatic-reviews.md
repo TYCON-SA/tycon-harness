@@ -17,8 +17,12 @@ instalador, producción, una migración, o declara `sensible:`. En duda, delicad
 
 - Está puesta **la marca de ausente**. La pone quien recibe el mensaje del dueño cuando dice que se va («seguí en
   autónomo», «me voy», «hasta mañana» o algo parecido): la coordinadora, o la propia sesión si no hay coordinadora, con
-  `marker.js owner-away set --phrase "<lo que dijo>"`. Se borra sola cuando el dueño vuelve: un mensaje tipeado por él,
-  un mensaje de la oficina verificado, una firma suya, o a las 24 horas. La oficina la muestra mientras está puesta.
+  `marker.js owner-away set --phrase "<lo que dijo>"`. La frase tiene que estar en un mensaje que el dueño tipeó en esa
+  pestaña en los últimos 30 minutos; si no, sale 2 y no pone la marca. Se borra sola cuando el dueño vuelve: un
+  mensaje tipeado por él, un mensaje de la oficina verificado, una firma suya, o a las 24 horas. La oficina la muestra
+  mientras está puesta.
+  Con la marca puesta, `owner-next` no arma el cuadro de una firma: dice que se le avise al dueño por los canales de los
+  avisos y que se espere a que escriba, y la firma queda en la lista sin cambios.
 - O la pregunta de una revisión lleva `plan_review.owner_away_minutes` minutos sin respuesta (de fábrica 20). Los
   minutos se cuentan desde que se anotó la pregunta (`marker.js review-ask`).
 
@@ -26,7 +30,7 @@ instalador, producción, una migración, o declara `sensible:`. En duda, delicad
 
 | ¿Delicada? | ¿Se corre? (de fábrica) | Quién aprueba si sale «aprobado» |
 |---|---|---|
-| Sí | Siempre, sin preguntar (`plan_review.delicate: always`) | El dueño, con el resultado en el cuadro. Si el perfil delega `plan-approval:delicada`, la coordinadora, sólo con el «aprobado» de la revisión que lanzó ella |
+| Sí | Siempre, sin preguntar (`plan_review.delicate: always`) | El dueño, con su click o su «aprobado» y el resultado en el cuadro; también la maqueta. Nunca la coordinadora ni el arnés solos, aunque el perfil nombre `plan-approval:delicada` |
 | No | Se le pregunta al dueño (`plan_review.routine: ask`). Dueño ausente: se revisa (`plan_review.routine_owner_away: review`) | La revisión, con o sin coordinadora (`plan_review.routine_approval: review`): con coordinadora, ella firma en nombre del dueño; sin coordinadora, se aprueba sin click. Con `person`, el dueño |
 
 Se lanza con «Armar el plan» cerrado y sin una pregunta abierta a la persona sobre esta revisión (salvo que cuente como
@@ -38,7 +42,7 @@ falsa»: lo que el plan cree del código y no es cierto. Los resultados:
 
 | Resultado | Qué pasa |
 |---|---|
-| «aprobado» | Rutina: se aprueba, con o sin coordinadora (con coordinadora, ella firma; sin ella, `complete-step approve-plan` cierra sin click). Delicada, o con `plan_review.routine_approval: person`: le llega al dueño con «revisado, sin hallazgos» (una delicada la aprueba el arnés solo si el perfil pone `plan-approval:delicada` como trámite, con la revisión de la propia sesión) |
+| «aprobado» | Rutina: se aprueba, con o sin coordinadora (con coordinadora, ella firma; sin ella, `complete-step approve-plan` cierra sin click). Delicada, o con `plan_review.routine_approval: person`: le llega al dueño con «revisado, sin hallazgos» (una delicada la aprueba sólo el dueño, aunque el perfil nombre `plan-approval:delicada`) |
 | «aprobado con notas» | Confirmados por debajo del corte de gravedad: cuenta como aprobado, la sesión los corrige al implementar y el cuadro los muestra |
 | «rechazado» | Sólo por un confirmado en el corte (de fábrica, un defecto). La sesión corrige el plan y la revisión vuelve a correr. Llega al dueño al tope de rechazos seguidos (`review.max_rounds`, de fábrica 3), o enseguida con `plan_review.rejected_reaches_owner: true` |
 | «sin veredicto» | Le llega al dueño con «no se pudo revisar: <motivo>». Si el plan o la historia cambiaron mientras corría, se reintenta una sola vez, con todos los cambios juntos. De la historia cuenta lo que define la construcción: su registro de después, «Ajustes después de la firma» y el `status` no la cambian; ante la duda, cuenta la historia entera |
@@ -60,9 +64,13 @@ Sin coordinadora, el «aprobado» de la revisión que lanza la propia sesión ap
   lee el portón de CI.
 - **La sesión no puede escribirse el veredicto**: la carpeta `plan-review/` del estado está protegida contra lo que el
   agente escribe, mueve o borra, y el resultado vale sólo desde la ruta que nombró la preparación (el `--out` del
-  corredor). El corredor del arnés pasa sólo con el pedido que preparó el arnés (`--args "$(cat '<…>.args.json')"`):
-  con un pedido armado a mano, otro `--out`, un destino en una variable o relativo después de un `cd`, o revisores
-  propios (`--agents-dir`, otra lista de `--runners`), el freno lo para. Con la herramienta Workflow
+  corredor). El corredor del arnés pasa sólo como lo imprime `marker.js plan-review`: con el pedido que preparó el
+  arnés, una sola vez y por su ruta exacta (`--args-file '<…>/<destino>.args.json'`, absoluta, al lado del `--out` y
+  en la carpeta de la revisión del estado; los args van en un archivo porque en Windows no entran en la línea de
+  comando). Con un pedido armado a mano o leído de otra ruta (un `..`, otra carpeta con el mismo nombre, `~` o una ruta
+  relativa), palabras que el shell lee distinto (una barra invertida, comillas dobles, `$`), otro `--out`, un destino
+  en una variable o relativo después de un `cd`, la forma vieja `--args "$(cat …)"`, o revisores propios
+  (`--agents-dir`, otra lista de `--runners`), el freno lo para. Con la herramienta Workflow
   de Claude Code el resultado pasa por la sesión, no llega a esa ruta, y el plan espera a una persona.
 - **La sesión no puede sacarse el click**: la variable `TYCON_PLAN_ROUTINE_APPROVAL` sólo aprieta (`person`); en
   `review` no saca el que pide la organización. Una llave de quién aprueba mal escrita, o una configuración de la
@@ -128,8 +136,9 @@ Un revisor ilegible nunca cuenta como «sin críticos». Si cerró sin el rengl�
 vez, al mismo revisor y sin que cambie su revisión: en Claude Code, el gancho del fin del subagente lo hace seguir con ese
 pedido; en Codex, el lanzador lo corre una vez más sobre el mismo contexto, con su propio reporte. Lo que conteste
 después cuenta en la misma vuelta, y el pedido no suma una vuelta ni una salida. Si tampoco lo da, el cierre lo dice
-(«ya se le pidió el renglón una vez») y queda la exención de una persona: `marker.js waive-critical --rule SIN-REPORTE
---file <revisor> --reason '<por qué>'`. Si nunca se le pidió (por ejemplo, el gancho no corrió), el cierre dice primero
+(«ya se le pidió el renglón una vez») y queda la exención de una persona: el agente corre `marker.js waive-critical
+--rule SIN-REPORTE --file <revisor> --reason '<por qué>'` y ella la aprueba en la ventana o en el cuadro (o lo corre en
+su terminal, con `--terminal`). Si nunca se le pidió (por ejemplo, el gancho no corrió), el cierre dice primero
 cómo pedírselo al mismo agente. Una exención por delegación no alcanza para dar algo por arreglado: eso lo cierra una
 vuelta nueva del revisor o el dueño. Una ejecución sin nada anotado (por ejemplo, de antes de este control) lo dice en
 una línea y sigue.

@@ -1,0 +1,10 @@
+{
+  "name": "intent-spec",
+  "license": "MIT",
+  "source": "https://intentspec.org/schema.json",
+  "copied": "2026-11-16",
+  "audit": {
+    "applies": false,
+    "reason": "es un esquema JSON, sin código que corra: no tiene avisos de seguridad que preguntar"
+  }
+}

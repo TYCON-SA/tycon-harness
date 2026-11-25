@@ -62,7 +62,9 @@ function fichas(cmd, opts = {}) {
   const ps = Boolean(opts && opts.powershell);
   // la barra al final del renglón se QUITA junto con el salto, como hace la terminal: `cre\<salto>ate` es `create` y
   // `g\<salto>h` es `gh` (con un espacio en su lugar eran dos palabras, y el comando partido así no se reconocía)
-  const s = String(cmd || '').replace(ps ? /`\r?\n/g : /\\\r?\n/g, '');
+  // (sólo la barra que no está escapada: `\\` antes del salto es una barra escrita, y el salto queda; si se la comiera,
+  // adentro de `$'…'` quedaría un `\'` que no cierra la cadena)
+  const s = ps ? String(cmd || '').replace(/`\r?\n/g, '') : String(cmd || '').replace(/(?<!\\)((?:\\\\)*)\\\r?\n/g, '$1');
   const out = [];
   let texto = '';
   let abierta = false;      // hay ficha en curso
@@ -115,6 +117,16 @@ function fichas(cmd, opts = {}) {
     if (!q && enHeredoc(i)) { cerrar(); continue; }
     if (!q && candidatos.has(i)) cuerpos.push(candidatos.get(i));
 
+    if (q === "$'") {
+      // El citado ANSI-C (`$'…'`): la barra escapa lo que sigue, y `\'` es una comilla del texto, no el cierre. Leído
+      // como una comilla simple común, el lector se desincroniza: invierte qué está entre comillas y puede abrir un
+      // bloque `<<PALABRA` que está adentro de una cadena. La comilla y la barra escapadas quedan como el carácter; las
+      // demás secuencias (`\n`, `\x62`) quedan escritas: el texto ya cuenta como armado por la terminal (`expande`).
+      if (c === '\\' && n !== undefined) { texto += n === "'" || n === '\\' ? n : c + n; i++; continue; }
+      if (c === "'") { q = null; continue; }
+      texto += c;
+      continue;
+    }
     if (q) {
       // Entre comillas dobles la terminal sólo se come la barra delante de `$`, de una comilla invertida, de `"` y de
       // otra barra; delante de cualquier otra cosa la barra QUEDA (`"C:\Users\x"` se publica con sus barras). Sacarlas
@@ -150,6 +162,10 @@ function fichas(cmd, opts = {}) {
     if (c === '\\' && n !== undefined && !ps) { if (!abierta) { abierta = true; empezoLibre = true; } escapada = true; texto += n; i++; continue; }
 
     if (!abierta) { abierta = true; empezoLibre = true; }
+    // `$'…'` abre el citado ANSI-C, con sus escapes (arriba). En PowerShell `$'` no es eso: sigue siendo `$` y una comilla
+    // `$$` es el número del proceso: el `$` de atrás no abre nada, y una comilla que lo siga es una comilla simple común
+    if (c === '$' && n === '$') { expande = true; partida = true; texto += '$$'; i++; continue; }
+    if (c === '$' && n === "'" && !ps) { expande = true; texto += c; q = "$'"; i++; continue; }
     // fuera de comillas también `$'…'` y `$"…"`: el citado ANSI-C arma el texto (`$'\x62'` es una letra)
     if (abreExpansion(c, n)) { expande = true; partida = true; } else if (c === '$' && (n === "'" || n === '"')) expande = true;
     // `{a,b}` y `{a..c}` sin comillas: la terminal los abre en varias palabras (`-s{x,dev}` es `-sx -sdev`), también
@@ -397,15 +413,22 @@ function faltaDeBorrarRama(borrar, origen) {
 }
 
 /**
- * Lo mismo para un `update`, que no dice la rama de origen (az no acepta `--source-branch` ahí): con `true` el freno no
- * puede ver si borraría `dev`, así que frena. Ver la rama pidiéndosela a Azure es la historia 8.225.
+ * Lo mismo para un `update`, que no dice la rama de origen (az no acepta `--source-branch` ahí). Con la rama que dio la
+ * plataforma (`origen`, lib/pr-source-branch.js) vale la regla de crear: `true` desde una rama efímera, `false` desde una
+ * de larga vida. Sin ella, `true` no se puede juzgar (podría borrar `dev`) y frena, y `false` pasa.
  */
-function faltaDeBorrarRamaUpdate(borrar, publica) {
-  const regla = 'va `--delete-source-branch false`: el `update` no dice la rama de origen, así que `true` no lo puedo juzgar. Si no, el skill de merge, o el escape';
+function faltaDeBorrarRamaUpdate(borrar, publica, origen = null) {
+  const regla = origen
+    ? (esDeLargaVida(origen) ? `el pedido sale de \`${origen}\`, una rama de larga vida: va \`--delete-source-branch false\`` : `el pedido sale de \`${origen}\`: va \`--delete-source-branch true\` (la rama se borra al entrar)`)
+    : 'va `--delete-source-branch false`: no pude leer la rama del pedido, así que `true` no lo puedo juzgar. Si no, el skill de merge, o el escape';
   if (borrar === null) return publica ? `publica un borrador sin \`--delete-source-branch\` explícito: ${regla}` : null;
   if (!borrar.literal) return ilegible('--delete-source-branch', borrar);
-  if (esCierto(borrar.texto)) return `con \`--delete-source-branch true\`: ${regla}`;
-  if (!esFalso(borrar.texto)) return `con \`--delete-source-branch ${borrar.texto}\`: no es un valor que entienda; ${regla}`;
+  if (!esCierto(borrar.texto) && !esFalso(borrar.texto)) return `con \`--delete-source-branch ${borrar.texto}\`: no es un valor que entienda; ${regla}`;
+  const cierto = esCierto(borrar.texto);
+  if (!origen) return cierto ? `con \`--delete-source-branch true\`: ${regla}` : null;
+  const larga = esDeLargaVida(origen);
+  if (cierto && larga) return `con \`--delete-source-branch true\`: la plataforma borraría \`${origen}\` al completar, sin vuelta atrás; ${regla}`;
+  if (!cierto && !larga) return `con \`--delete-source-branch false\`: la rama queda viva después del merge; ${regla}`;
   return null;
 }
 
@@ -453,7 +476,7 @@ function fantasmas(seg) {
  * el pedido de ayuda y el código pasado a un intérprete) y la revisión nocturna de las ejecuciones, que con ella sabe
  * si un pedido armado con el escape lo necesitaba.
  */
-function faltasDe(seg) {
+function faltasDe(seg, { ramaDeOrigen = null } = {}) {
   const verbo = verboDePr(seg);
   const res = { verbo, juzgado: false, borrador: false, faltas: [] };
   if (verbo !== 'create' && verbo !== 'update') return res;
@@ -499,10 +522,10 @@ function faltasDe(seg) {
     if (!esCierto(autoComplete)) res.faltas.push('publica un borrador (`--draft false`) sin `--auto-complete true`: queda un PR normal que nadie completa');
     if (squash === null || !esFalso(squash)) res.faltas.push('publica un borrador sin `--squash false` explícito: la estrategia la decide la política de la rama');
   }
-  // El borrador se creó sin que el freno lo juzgara, y el `update` no dice la rama: publicar pide la bandera, y `true`
-  // frena siempre. Un `update` común sin la bandera no se mira: az conserva la opción que el pedido ya tenía
-  // (`update_pull_request` parte de `existing_pr.completion_options`).
-  const falta = faltaDeBorrarRamaUpdate(v.borrar, publica && esCierto(autoComplete));
+  // El borrador se creó sin que el freno lo juzgara: publicar pide la bandera, juzgada con la rama del pedido si quien
+  // llama la leyó (`ramaDeOrigen`). Un `update` común sin la bandera no se mira: az conserva la opción que el pedido ya
+  // tenía (`update_pull_request` parte de `existing_pr.completion_options`).
+  const falta = faltaDeBorrarRamaUpdate(v.borrar, publica && esCierto(autoComplete), ramaDeOrigen);
   if (falta) res.faltas.push(falta);
   return res;
 }

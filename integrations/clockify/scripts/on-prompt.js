@@ -18,6 +18,7 @@ const {
   minutesBetween,
   nowIso,
   emitReminder,
+  mcpTool,
   parseHookInput,
   findActiveEntryForCwd,
   flattenActive,
@@ -115,7 +116,7 @@ function main() {
 ${lines.join('\n')}
 
 Es el timer de ESTA sesión (session_id "${sessionKey}"). Cerralo:
-mcp__clockify__update-clockify-time-entry con end=lastActivity (trim al último activity),
+${mcpTool('update-clockify-time-entry')} con end=lastActivity (trim al último activity),
 luego borrá la entry del state: ~/.claude/clocki/active/${sessionKey}.json — eliminá la key
 [cwd] (si queda {}, borralo).
 

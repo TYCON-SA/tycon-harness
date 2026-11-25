@@ -14,6 +14,9 @@
  * 🔴 NINGÚN TEXTO LIBRE SALE. La ficha lleva sólo ids, fechas, números y valores de las listas cerradas de rules.js: ni
  *    comandos, ni salidas, ni rutas del disco del dev, ni el motivo escrito en bypass.log, ni el texto de un error de la
  *    bajada. El enlace de cada ejecución no se guarda: se arma al leer (`enlaceDeCaso`), con el sitio o relativo.
+ *    La única excepción es el nombre de la sesión, en el campo `sesiones` del caso: sólo los que tienen forma de nombre
+ *    de sesión (la regla con que la coordinadora abre sesiones, `sessionNames.NAME_RE` de tycon-config.js, sin espacios
+ *    y hasta 40 caracteres), unidos con `+`. Un nombre sin esa forma o cortado al anotarlo cuenta como sin nombre.
  * 🔴 «NO PUDE» NO ES «LIMPIO». Sin conversación, la pasada lo cuenta en `sin_hilo`; con la bajada fallada no se toca
  *    ninguna ficha; y un volcado, una ficha o una línea que no se pudo leer se cuentan en `ilegibles` y dejan la pasada
  *    en `completo: false`.
@@ -99,9 +102,36 @@ function leerFicha(p) {
 const causaDe = (x) => (x.categoria === null || x.categoria === undefined ? String(x.regla) : `${x.regla}:${x.categoria}`);
 /** El enlace de una ejecución de una ficha: con la dirección del sitio, o relativo sin ella. */
 const enlaceDeCaso = (c, urlSitio) => `${urlSitio ? String(urlSitio).replace(/\/+$/, '') : ''}/corridas?abrir=${c.ejecucion}`;
+const { NAME_RE: FORMA_DE_NOMBRE, NAME_MAX: TOPE_NOMBRE } = require('../../lib/tycon-config.js').sessionNames;
+// La unión de los nombres entra en una clave de la ficha común (hasta 120 caracteres)
+const TOPE_SESIONES = 120;
+/**
+ * Los nombres de las sesiones de una ejecución (`marker.sesiones` del volcado, que anota marker.js) como una clave: los
+ * que tienen forma de nombre de sesión y no se cortaron, sin repetir, en orden de `visto`, unidos con `+`. Si la unión
+ * pasa de 120 caracteres, salen los más viejos. Sin ninguno, null; un volcado sin la lista, undefined (el caso va sin la
+ * clave).
+ */
+function sesionesDe(lista) {
+  if (!Array.isArray(lista)) return undefined;
+  const vistas = lista.filter((e) => e && typeof e === 'object')
+    .slice().sort((a, b) => String(a.visto || '').localeCompare(String(b.visto || '')));
+  const nombres = [];
+  for (const e of vistas) {
+    const n = e.nombre;
+    if (e.cortado === true || typeof n !== 'string' || n.length > TOPE_NOMBRE || !FORMA_DE_NOMBRE.test(n)) continue;
+    if (!nombres.includes(n)) nombres.push(n);
+  }
+  while (nombres.length && nombres.join('+').length > TOPE_SESIONES) nombres.shift();
+  return nombres.length ? nombres.join('+') : null;
+}
 /** Una ejecución como caso de la ficha: sólo campos con forma, así su huella es la misma cada noche. */
-const casoDe = ({ id, base, dia, maquina, story }) => ({ ejecucion: comoId(id), base: comoId(base), dia: DIA.test(String(dia || '')) ? dia : null,
-  maquina: comoId(maquina), story: comoId(story) });
+const casoDe = ({ id, base, dia, maquina, story, sesiones }) => {
+  const caso = { ejecucion: comoId(id), base: comoId(base), dia: DIA.test(String(dia || '')) ? dia : null,
+    maquina: comoId(maquina), story: comoId(story) };
+  const s = sesionesDe(sesiones);
+  if (s !== undefined) caso.sesiones = s;
+  return caso;
+};
 /** ¿Ninguna carpeta tiene ya un archivo con ese nombre? Uno que está y no se pudo leer no se pisa con una ficha nueva. */
 const libre = (raiz, nombre) => CARPETAS.every((c) => !fs.existsSync(path.join(raiz, c, nombre)));
 
@@ -530,7 +560,7 @@ async function run(opts) {
       estado.escapes_autorizados = sinFrenos.size ? null : autorizados;
       if (!r.reglas.length) continue;
       estado.con_fallas += 1;
-      const caso = casoDe({ id: sesion.id, base, dia, maquina: sesion.maquina, story: volcado.marker.storyId });
+      const caso = casoDe({ id: sesion.id, base, dia, maquina: sesion.maquina, story: volcado.marker.storyId, sesiones: volcado.marker.sesiones });
       for (const x of reglasParaFicha(r.reglas)) {
         const k = parDe(x);
         if (!causas.has(k)) causas.set(k, { regla: x.regla, categoria: x.categoria, ejecuciones: 0, vista: null, casos: [], errores: [] });

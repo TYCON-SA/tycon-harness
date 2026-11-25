@@ -29,6 +29,7 @@
 # Uso:
 #   smoke-run.sh <evidence-dir> <ruta-de-la-story.md | story-id> --acs 8,9 \
 #     --pass-if '<qué tiene que pasar>' [--fail-if '<qué lo da por malo>'] [--capture <archivo.png|.webm>] \
+#     [--exercises <repo>[,<repo>…]] \
 #     -- <comando...>
 #   (con la ruta, la clave del registro la calcula lib/evidence-key.js)
 # Ejemplo:
@@ -74,6 +75,8 @@ fi
 
 ACS=""
 MUTATES=0
+ENTORNO=""
+EJERCITA=""
 # --compare (historia 8.167): además del humo de siempre, el comando se corre con main y con el cambio, aislados y sin
 # red, y el resultado queda en compare-previous.json de la corrida. --covers <archivo>[:<subcomando>],…: los
 # candidatos que cubre un humo que corre un laboratorio con {raiz}; va sólo con --compare.
@@ -100,6 +103,23 @@ while true; do
       fi
       ACS="$2"; shift 2 ;;
     --mutates) MUTATES=1; shift ;;
+    # Contra qué entorno corrió el humo (`staging`): un criterio con una prueba de Nivel `staging` lo pide para pasar a
+    # done. Va al registro y al espejo, como `--mutates`. Sólo minúsculas, números y guiones.
+    --environment)
+      if [ $# -lt 2 ] || ! [[ "$2" =~ ^[a-z][a-z0-9-]*$ ]]; then
+        echo "smoke-run.sh: --environment necesita el nombre del entorno en minúsculas (ej: --environment staging)" >&2
+        exit 2
+      fi
+      ENTORNO="$2"; shift 2 ;;
+    # Qué repos ejercita el humo, por su nombre (el de la carpeta del repo): `--exercises Back` para un curl a la API.
+    # Un cambio en otro repo de la historia no vence esta evidencia. Sin la opción, la vence un cambio en cualquiera.
+    # Va al registro y al espejo, como `--mutates`.
+    --exercises)
+      if [ $# -lt 2 ] || ! [[ "$2" =~ ^[A-Za-z0-9._-]+(,[A-Za-z0-9._-]+)*$ ]]; then
+        echo "smoke-run.sh: --exercises necesita el nombre de los repos que ejercita, separados por comas (ej: --exercises Back)" >&2
+        exit 2
+      fi
+      EJERCITA="$2"; shift 2 ;;
     --compare) COMPARE=1; shift ;;
     --covers)
       if [ $# -lt 2 ] || [ "$2" = "--" ]; then
@@ -158,7 +178,7 @@ if [ -n "$ACS" ] && [ "$PASA_SI_SET" != 1 ]; then
   exit 2
 fi
 
-# ── La corrida aislada (historia 8.314) ──
+# ── La ejecución aislada (historia 8.314) ──
 # Un humo comparado, y uno cuyo programa es un guion de laboratorio (en .advisors/dod-runtime/, o suelto en una carpeta
 # temporal), corren con una casa aparte y sin poder escribir en la de la cuenta (lib/isolated-run.js). Se decide antes de
 # escribir nada: lo que se niega no deja renglón. Un humo común no pasa por ahí y sigue como siempre, también sin
@@ -180,20 +200,20 @@ case "$DECIDE_RC" in
       AISLAR=(node "$ISOLATED_JS" exec)
       while IFS= read -r RAIZ_AISLADA; do
         [ -n "$RAIZ_AISLADA" ] && AISLAR+=(--root "$RAIZ_AISLADA")
-      done <<< "$(printf '%s\n' "$DECISION" | sed 1d)"
+      done < <(printf '%s\n' "$(printf '%s\n' "$DECISION" | sed 1d)")
       AISLAR+=(--)
     fi ;;
   2) exit 2 ;;
   *)
     if [ "$COMPARE" = 1 ]; then
-      echo "smoke-run.sh: no pude armar la corrida aislada ($ISOLATED_JS no está o no contestó): un humo comparado no corre con la casa real — no se corre." >&2
+      echo "smoke-run.sh: no pude armar la ejecución aislada ($ISOLATED_JS no está o no contestó): un humo comparado no corre con la casa real — no se corre." >&2
       exit 2
     fi
     LAB_NOMBRADO=0
     case " $* " in *.advisors/dod-runtime/*|*" /tmp/"*|*" /private/tmp/"*|*/var/folders/*) LAB_NOMBRADO=1 ;; esac
     if [ -n "${TMPDIR:-}" ]; then case " $* " in *"${TMPDIR%/}"*) LAB_NOMBRADO=1 ;; esac; fi
     if [ "$LAB_NOMBRADO" = 1 ]; then
-      echo "smoke-run.sh: no pude armar la corrida aislada ($ISOLATED_JS no está o no contestó) y el comando nombra una carpeta de laboratorio: no corre con la casa real — no se corre." >&2
+      echo "smoke-run.sh: no pude armar la ejecución aislada ($ISOLATED_JS no está o no contestó) y el comando nombra una carpeta de laboratorio: no corre con la casa real — no se corre." >&2
       exit 2
     fi
     echo "[smoke-run] ⚠️ no pude decidir si el humo es de laboratorio ($ISOLATED_JS no está o no contestó): corre con la casa de siempre." >&2 ;;
@@ -312,6 +332,13 @@ else
   T1="$(reloj)"
 fi
 
+# En la ejecución aislada, lo que el encierro niega sin matar (fuera de las carpetas vigiladas) no queda anotado: el comando
+# sólo dice que no pudo escribir, con el texto del sistema. Si eso está en su salida y falló, se dice qué hacer en una
+# línea, por la salida de error: no entra en la salida guardada ni repite el texto que se busca.
+if [ "$EXIT" != 0 ] && [ "${AISLAR[0]:-}" = node ] && [ -n "$SALIDA_TMP" ] && grep -qE 'Operation not permitted|cannot create temp file' "$SALIDA_TMP" 2>/dev/null; then
+  echo "[smoke-run] ⚠️ dentro de la ejecución aislada, el encierro le negó al comando escribir fuera de su casa aparte y de su repo (un here document o un temporal con otra carpeta): el encierro no se abre; corré esa suite como humo común" >&2
+fi
+
 # ── La duración y las medidas que imprimió el comando (`TYCON_MEASURE <nombre>=<valor><unidad>`) ──
 # Las medidas se leen del temporal, entero, antes de que el trap lo borre; sin temporal, sólo la duración. El mismo
 # fragmento va al registro y al espejo: la matriz confirma la medida contra el espejo, como el código de salida.
@@ -325,6 +352,14 @@ fi
 ACS_JSON="[$(echo "$ACS" | tr ',' '\n' | grep -E '^[0-9]+$' | paste -sd, -)]"
 MUT_FIELD=""
 if [ "$MUTATES" = "1" ]; then MUT_FIELD=',"mutates":true'; fi
+if [ -n "$ENTORNO" ]; then MUT_FIELD="$MUT_FIELD,\"environment\":\"$ENTORNO\""; fi
+if [ -n "$EJERCITA" ]; then
+  # los nombres ya se validaron (letras, números, punto, guion y guion bajo): van entre comillas sin escapar nada
+  EJ_JSON=""
+  IFS=',' read -r -a EJ_LISTA < <(printf '%s\n' "$EJERCITA")
+  for r in "${EJ_LISTA[@]}"; do EJ_JSON="$EJ_JSON${EJ_JSON:+,}\"$r\""; done
+  MUT_FIELD="$MUT_FIELD,\"exercises\":[$EJ_JSON]"
+fi
 
 # ── El `cmd` se TAPA antes de escribirlo ──
 # El ledger vive en `<repo>/.advisors/dod-runtime/`, que el .gitignore canónico deja VIAJAR por
@@ -449,7 +484,7 @@ echo "[smoke-run] story=$STORY_ID acs=$ACS exit=$EXIT mutates=$MUTATES → ledge
 
 # ── El humo comparado (historia 8.167) ──
 # Después del humo de siempre, que es la evidencia: el comando con main y con el cambio, aislados. Su resultado no cambia
-# la salida de este humo; lo juzga «Preparar el commit».
+# la salida de este humo; lo juzga «Preparar el pull request».
 if [ "$COMPARE" = 1 ]; then
   CON_ENTRADA=()
   [ -n "$ENTRADA_TMP" ] && CON_ENTRADA=(--stdin-file "$ENTRADA_TMP")

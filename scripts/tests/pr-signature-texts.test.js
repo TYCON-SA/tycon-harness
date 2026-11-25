@@ -94,3 +94,36 @@ test('8.242-Guias_DicenElPedido (T17) @story-8.242 @ac-12', () => {
   const r = spawnSync(process.execPath, [path.join(RAIZ, 'scripts', 'tools', 'signatures-guide.js'), '--check'], { encoding: 'utf8' });
   assert.strictEqual(r.status, 0, `la guía de firmas no sale del catálogo:\n${r.stdout}${r.stderr}`);
 });
+
+// Los archivos que todavía pueden nombrar el paso 11 como antes, cada uno con su motivo.
+const NOMBRE_VIEJO_PERMITIDO = Object.freeze({
+  // esta prueba busca las dos formas viejas: las nombra
+  'scripts/tests/pr-signature-texts.test.js': 'la prueba que busca el nombre viejo',
+});
+
+// 🔴 Falla con: un texto del árbol público que todavía llama al paso 11 «Preparar el commit»: la persona lee un nombre
+// que ya no es el del paso.
+test('8.242-Barrido_SinPrepararElCommit (T26) @story-8.242 @ac-18', () => {
+  // en el árbol armado de la validación (lo privado con el público encima) quedan afuera las carpetas del privado que no
+  // viajan: sus historias, tareas y registros nombran el paso viejo a propósito
+  const armado = fs.existsSync(path.join(RAIZ, '.tycon', 'internal-forms.json'));
+  const NO_VIAJA = /^(?:(?:specs|tasks|inbox|qa|_bmad|artifacts|new-product-templates|\.advisors|\.dashboard|\.engram)\/|onboarding\/[^/]+\/)/;
+  const l = spawnSync('git', ['-C', RAIZ, 'ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  assert.strictEqual(l.status, 0, `no pude listar los archivos del árbol: ${l.stderr}`);
+  const archivos = l.stdout.split('\0').filter((rel) => rel && !(armado && NO_VIAJA.test(rel)));
+  assert.ok(archivos.length > 100, 'la lista del árbol vino corta');
+  // el nombre del paso, con mayúscula: «preparar el commit local» habla del commit de git, no del paso
+  const VIEJO = /Preparar el commit|Prepare the commit/;
+  const conNombreViejo = [];
+  for (const rel of archivos) {
+    let texto;
+    try { texto = fs.readFileSync(path.join(RAIZ, rel), 'utf8'); } catch (_) { continue; }
+    if (VIEJO.test(texto) && !NOMBRE_VIEJO_PERMITIDO[rel]) conNombreViejo.push(rel);
+  }
+  assert.deepStrictEqual(conNombreViejo, [], 'todavía nombran el paso 11 como «Preparar el commit»');
+  // cada excepción existe y todavía lo necesita: una que ya no lo nombra sale de la lista
+  for (const rel of Object.keys(NOMBRE_VIEJO_PERMITIDO)) {
+    assert.ok(archivos.includes(rel), `la excepción ${rel} no está en el árbol`);
+    assert.ok(VIEJO.test(fs.readFileSync(path.join(RAIZ, rel), 'utf8')), `${rel} ya no nombra el paso viejo: sacalo de la lista`);
+  }
+});

@@ -23,7 +23,9 @@ const TC = require(path.join(__dirname, '..', 'setup', 'harness', 'team-config.j
 const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), `team-config-${p}-`));
 const GLOBAL = path.join(tmp('git'), 'gitconfig');
 fs.writeFileSync(GLOBAL, '');
-const ENV = { ...process.env, GIT_CONFIG_GLOBAL: GLOBAL, GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'lab', GIT_AUTHOR_EMAIL: 'lab@example.com', GIT_COMMITTER_NAME: 'lab', GIT_COMMITTER_EMAIL: 'lab@example.com' };
+// sin las variables que git le pasa a un gancho: con el GIT_DIR de una copia enlazada, el `init --bare` de un repo de
+// juguete dejaba pelado al repo de verdad (hook-env-bare-init.test.js)
+const ENV = require(path.join(__dirname, '..', 'lib', 'clean-git-env.js')).sinGitDelPadre({ GIT_CONFIG_GLOBAL: GLOBAL, GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'lab', GIT_AUTHOR_EMAIL: 'lab@example.com', GIT_COMMITTER_NAME: 'lab', GIT_COMMITTER_EMAIL: 'lab@example.com' });
 const g = (dir, ...a) => execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8', env: ENV }).trim();
 
 /** Un lector de juguete con el contrato de los de verdad: version 1, `public` obligatoria, nada de claves desconocidas. */

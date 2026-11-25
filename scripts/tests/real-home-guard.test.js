@@ -173,3 +173,30 @@ test('G6 Guard_TyconHomeFromEnv_IsAlsoRealHome', () => {
   assert.ok(fs.existsSync(path.join(elsewhere, 'harness')));
   assert.equal(r.rc, 1);
 });
+
+// 🔴 mutación: que la red decida si es la primera por TYCON_REAL_HOME_GUARD_ROOTS. Un hijo que limpia las TYCON_* (o
+// las vacía) y conserva NODE_OPTIONS recalcula las raíces con su HOME de juguete: frena su laboratorio y deja la casa
+// vigilada sin red.
+test('T7 RealHomeGuard_ChildWithoutRootsVar_KeepsCarriedRoots @story-8.321 @ac-1 @ac-2', () => {
+  const home = fakeHome('t7');
+  const otra = path.join(lab('t7-hijo'), 'casa');
+  const log = path.join(lab('t7-reg'), 'intentos.jsonl');
+  const roots = [...new Set(['.tycon', '.claude', '.codex'].flatMap((d) => [path.join(home, d), fs.realpathSync(path.join(home, d))]))];
+  const arranque = path.join(lab('t7-arranque'), 'arranque.js');
+  // la forma en que la ejecución aislada carga la red: lo que vigila va en el proceso, antes de cargarla
+  fs.writeFileSync(arranque, `process[Symbol.for('tycon.real-home-guard')] = ${JSON.stringify({ roots, log, allow: [] })};\nrequire(${JSON.stringify(GUARD)});\n`);
+  const guion = [
+    "const fs = require('fs'); const path = require('path');",
+    `let afuera = 'pasó'; try { fs.writeFileSync(path.join(${JSON.stringify(home)}, '.claude', 'x.txt'), 'x'); } catch (e) { afuera = e.code; }`,
+    "let propia = 'pasó'; try { fs.mkdirSync(path.join(process.env.HOME, '.claude', '.tycon-pipeline'), { recursive: true }); } catch (e) { propia = e.code; }",
+    'console.log(JSON.stringify({ afuera, propia }));',
+  ].join('\n');
+  const base = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('TYCON_') && k !== 'NODE_OPTIONS'));
+  for (const [nombre, extra] of [['sin las variables', {}], ['con las raíces vacías', { TYCON_REAL_HOME_GUARD_ROOTS: '[]' }]]) {
+    fs.rmSync(log, { force: true });
+    const r = spawnSync(process.execPath, ['-e', guion], { encoding: 'utf8', env: { ...base, HOME: otra, USERPROFILE: otra, NODE_OPTIONS: `--require "${arranque}"`, ...extra } });
+    assert.deepEqual(lastJson(r.stdout), { afuera: 'EPERM', propia: 'pasó' }, `${nombre}: ${r.stdout}${r.stderr}`);
+    assert.ok(fs.readFileSync(log, 'utf8').includes(path.join(home, '.claude', 'x.txt')), `${nombre}: anotado en el registro que viaja`);
+    assert.ok(!fs.existsSync(path.join(home, '.claude', 'x.txt')), nombre);
+  }
+});

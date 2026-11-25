@@ -90,7 +90,7 @@ test('T1 ReviewRunner_ElNucleoNoNombraCorredores @story-8.221 @ac-1 — ni el c�
     assert.deepStrictEqual(malas, [], `${path.basename(f)} nombra un corredor`);
   }
   // los manejadores nuevos de marker.js
-  const marker = fs.readFileSync(path.join(SCRIPTS, 'marker.js'), 'utf8');
+  const marker = require(path.join(SCRIPTS, 'tests', 'lib', 'marker-source.js'))(SCRIPTS);
   for (const fn of ['cmdPlanReview', 'cmdReviewAsk', 'cmdReviewAnswer', 'cmdOwnerAway']) {
     const i = marker.indexOf(`function ${fn}(`);
     assert.ok(i >= 0, `marker.js no tiene ${fn}`);
@@ -265,6 +265,23 @@ test('T1 ReviewRunner_UsageByType_PerAgent — cada agente deja su consumo por t
   });
 });
 
+// Pedido del 20/11: una revisión que se corta (la mataron, se colgó, se cayó la máquina) no dejaba su consumo, porque el
+// corredor lo escribía sólo al terminar. Con `usoFile`, cada intento lo deja escrito al momento, marcado sin terminar.
+test('T2 ReviewRunner_UsageWrittenAsItGoes_SurvivesACut — el consumo queda escrito después de cada intento, sin terminar', (t) => {
+  const { anotarUso, escribirUso } = require('../workflow-lite.js');
+  const dir = carpeta(t, 'wflite-uso-');
+  const usoFile = path.join(dir, 'ses-a.resultado.uso.json');
+  const corredor = { usoFile, pedido: 'pedido-1', tokensPorFase: {} };
+  anotarUso(corredor, { clave: 'plan-hunt:ac', fase: 'Hunt', nombre: 'claude', modelo: 'opus', usage: { input_tokens: 5, cache_read_input_tokens: 7, output_tokens: 3 } });
+  const j = JSON.parse(fs.readFileSync(usoFile, 'utf8'));
+  assert.strictEqual(j.pedido, 'pedido-1');
+  assert.strictEqual(j.completo, false, 'sin terminar: si se corta acá, el consumo de lo que ya corrió queda');
+  assert.deepStrictEqual(j.tokens.por_agente['plan-hunt:ac'], { fase: 'Hunt', corredor: 'claude', modelo: 'opus', intentos: 1, input_tokens: 5, cache_read_input_tokens: 7, output_tokens: 3 });
+  assert.strictEqual(j.tokens.total, 15);
+  escribirUso(corredor, true);
+  assert.strictEqual(JSON.parse(fs.readFileSync(usoFile, 'utf8')).completo, true);
+});
+
 test('T60 ReviewRunner_LeeLaRespuestaYElTopeDeCadaCorredor @story-8.221 @ac-2 @ac-4 @ac-5 — salidas reales: respuesta, tokens, error y tope; sin confinamiento no corre en el modo código', () => {
   const integ = RR.loadIntegration({ env: {} });
   const claude = integ.runners.claude;
@@ -305,4 +322,69 @@ test('T60 ReviewRunner_LeeLaRespuestaYElTopeDeCadaCorredor @story-8.221 @ac-2 @a
   assert.ok(elegidos.skipped.some((s) => s.name === 'custom' && /confin/.test(s.reason)));
   const plan = RR.pickRunners({ order: ['custom', 'claude'], mode: 'plan', integration: integ, customCommand: '/opt/acme/review' });
   assert.deepStrictEqual(plan.usable.map((u) => u.name), ['custom', 'claude']);
+});
+
+// T8 · 🔴 Falla con: un revisor que no está en el PATH (la extensión de VS Code no lo pone) y que da `spawn … ENOENT`
+//    aunque esté instalado en uno de los lugares que declara su integración (`bin_paths`).
+test('T8 ReviewRunner_BinFueraDelPath_LoBuscaEnSusLugares — en el PATH tal cual; si no, en los lugares de su integración (gana el más nuevo); si no, dice dónde buscó', (t) => {
+  const casa = carpeta(t, 'rr-casa-');
+  const enPath = path.join(casa, 'bin');
+  fs.mkdirSync(enPath);
+  const instalar = (rel, ms) => {
+    const f = path.join(casa, rel);
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    fs.writeFileSync(f, '');
+    if (ms) fs.utimesSync(f, ms / 1000, ms / 1000);
+    return f;
+  };
+  const runner = { bin: 'revisor', bin_paths: { darwin: ['~/.editor/extensions/acme.revisor-*/resources/revisor'], win32: ['~/.editor/extensions/acme.revisor-*/resources/revisor.exe'] } };
+  // en el PATH: se lanza por su nombre, como siempre
+  instalar('bin/revisor');
+  assert.strictEqual(RR.resolveBin(runner, 'revisor', { env: { PATH: enPath }, platform: 'darwin', home: casa }).bin, 'revisor');
+  // fuera del PATH: el lugar de la integración, y entre dos versiones la más nueva
+  instalar('.editor/extensions/acme.revisor-1.0/resources/revisor', Date.parse('2026-11-01'));
+  const nueva = instalar('.editor/extensions/acme.revisor-1.1/resources/revisor', Date.parse('2026-11-20'));
+  assert.strictEqual(RR.resolveBin(runner, 'revisor', { env: { PATH: '/no/existe' }, platform: 'darwin', home: casa }).bin, nueva);
+  // Windows: el PATH con `;` y las extensiones de PATHEXT
+  instalar('bin/revisor.EXE');
+  assert.strictEqual(RR.resolveBin(runner, 'revisor', { env: { PATH: `/no/existe;${enPath}`, PATHEXT: '.EXE;.CMD' }, platform: 'win32', home: casa }).bin, 'revisor');
+  const exe = instalar('.editor/extensions/acme.revisor-2.0/resources/revisor.exe');
+  assert.strictEqual(RR.resolveBin(runner, 'revisor', { env: { PATH: '/no/existe', PATHEXT: '.EXE' }, platform: 'win32', home: casa }).bin, exe);
+  // con carpeta, tal cual
+  assert.strictEqual(RR.resolveBin(runner, '/opt/x/revisor', { env: { PATH: '' }, platform: 'darwin', home: casa }).bin, '/opt/x/revisor');
+  // en ningún lado: null y dónde buscó
+  const nada = RR.resolveBin(runner, 'revisor', { env: { PATH: '/no/existe' }, platform: 'linux', home: casa });
+  assert.strictEqual(nada.bin, null);
+  assert.deepStrictEqual(nada.buscado, ['el PATH']);
+  // la integración de fábrica declara dónde deja la extensión de VS Code al revisor de fábrica, en cada sistema
+  const fabrica = RR.loadIntegration({ env: {} }).runners;
+  const primero = fabrica[RR.DEFAULT_ORDER[0]];
+  for (const so of ['darwin', 'linux', 'win32']) assert.ok(Array.isArray(primero.bin_paths && primero.bin_paths[so]) && primero.bin_paths[so].length, `bin_paths de ${so}`);
+});
+
+// T9 · 🔴 Falla con: un corredor fuera del PATH que no contesta aunque esté en su lugar, o una causa de «no se pudo
+//    lanzar» que no dice dónde se buscó ni ofrece la salida aprobada (`--agents-dir`).
+test('T9 ReviewRunner_BinFueraDelPath_CorreDesdeSuLugar_YSiNoEstaDiceLaSalida — el corredor fuera del PATH contesta; si no está, la causa nombra dónde buscó y --agents-dir', (t) => {
+  const a = laboratorio(t, { uno: CONTESTA, dos: CONTESTA });
+  const archivo = path.join(a.lab, 'integration.json');
+  const integ = JSON.parse(fs.readFileSync(archivo, 'utf8'));
+  // «uno» queda fuera del PATH, en un lugar que declara su integración, con un nombre que ninguna máquina tiene en el
+  // PATH (el PATH de la prueba es el de quien la corre)
+  const nombre = 'revisor-de-prueba-fuera-del-path';
+  const lugar = path.join(a.lab, 'ext', `${nombre}-3.2`);
+  fs.mkdirSync(lugar, { recursive: true });
+  fs.renameSync(path.join(a.lab, 'bin', 'uno'), path.join(lugar, nombre));
+  integ.runners.uno.bin = nombre;
+  integ.runners.uno.bin_paths = { [process.platform]: [path.join(a.lab, 'ext', `${nombre}-*`, nombre)] };
+  fs.writeFileSync(archivo, JSON.stringify(integ));
+  const r = a.correr(['uno']);
+  assert.strictEqual(r.code, 0, r.stderr);
+  assert.strictEqual(r.res.corredor.usado.a, 'uno', 'contestó «uno» desde su lugar');
+  // sin el lugar: no se pudo lanzar, y la causa dice dónde buscó y la salida aprobada
+  fs.rmSync(lugar, { recursive: true, force: true });
+  const r2 = a.correr(['uno', 'dos']);
+  const causa = r2.res.corredor.caidos.uno.causa;
+  assert.match(causa, /no se pudo lanzar/);
+  assert.match(causa, /el PATH/);
+  assert.match(causa, /--agents-dir/);
 });
