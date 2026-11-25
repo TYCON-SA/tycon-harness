@@ -555,11 +555,12 @@ it('T3e DotClaudeCeiling_PrivateOwnFile_NotCompared @story-8.128 @ac-6 — en el
 // Cada ruta vieja declarada en legacy-home-names.json —las `entries` que definen la ruta de hoy y las `until_d` que
 // quedan como respaldo— lleva `retire_after` (una fecha, la regla de 30 días que declara `__retiro`) y `retired_by` (la
 // story que la retira, escrita aunque no implementada). El techo de «.claude» no baja a cero de una: lo baja esa story,
-// por tandas; acá se exige que la deuda esté declarada, no que esté pagada.
+// por tandas, y cada tanda saca de la lista las rutas que dejó de nombrar. Por eso no se pide un mínimo de rutas: se
+// pide que la deuda que queda esté declarada, y que la definición de la ruta (tycon-home.js) siga en la lista.
 it('T37 Retirement_CeilingZero_DatesSet_StoryWritten', () => {
   const L = legacy();
   const all = [...L.entries, ...(L.until_d || [])];
-  assert.ok(all.length >= 20, `legacy-home-names.json: ${all.length} rutas viejas declaradas (esperaba las 4 + las 16 de la D)`);
+  assert.ok(L.entries.some((e) => e.path === 'scripts/setup/harness/tycon-home.js'), 'legacy-home-names.json: falta tycon-home.js, la definición de las rutas');
   const stories = new Set();
   for (const e of all) {
     assert.match(String(e.retire_after || ''), /^\d{4}-\d{2}-\d{2}$/, `legacy-home-names.json: ${e.path} sin fecha de retiro (retire_after AAAA-MM-DD)`);
