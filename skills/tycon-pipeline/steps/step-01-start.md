@@ -183,6 +183,16 @@ El resultado de los chequeos (`branch`, `branch_guard_passed`, `cross_session_pa
 parte de este paso. Se pasa a «Validar la historia» sólo con `branch_guard_passed: true` (o `had_main_override: true`
 con confirmación explícita) Y `cross_session_passed: true` (o la opción b/c de PIPE-C0).
 
+**Las condiciones del pedido, en disco.** Antes de seguir, anotá lo que puso el dev al pedir la historia y no está en la
+historia (qué no hacer, a quién preguntar, qué correr y qué no). Si no puso ninguna, anotá «ninguna»:
+
+```bash
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js conditions "<las condiciones, o ninguna>"
+```
+
+Así una sesión nueva retoma la ejecución sin releer esta conversación. `next` lo vuelve a pedir en «Aprobar el plan» y
+en «Hallazgos» si falta (`checkpoint_disk`), junto con el informe de cada revisor lanzado.
+
 **En una historia paraguas** (varias tandas en `pipelines`), la ejecución que entrega UNA tanda arranca con ella:
 
 ```bash

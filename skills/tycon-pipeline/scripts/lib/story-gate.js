@@ -197,6 +197,11 @@ function sameFile(a, b) {
 const CONTROL_APPROVAL_DIR = /(^|\/)\.(github|tycon)\/control-changes(\/|$)/i;
 const CONTROL_APPROVAL_FILE = /(^|\/)\.(github|tycon)\/control-changes\.jsonl$/i;
 /** ¿La ruta es una constancia de cambio de control? Casos: scripts/controls-bench/cases/hooks/01-frenos-duros.json */
+// La configuración de git de un clon (la del repo, la de un worktree o la de un submódulo): ahí está el `origin`, y los
+// controles que comparan contra main del servidor (`clear --replaced-by`, `ls-remote`) le creen
+const GIT_CONFIG_FILE = /(^|\/)\.git\/(?:worktrees\/[^/]+\/|modules\/.+\/)?config(?:\.worktree)?$/i;
+/** ¿La ruta es la configuración de git de un clon? */
+function isGitConfig(p) { return GIT_CONFIG_FILE.test(norm(String(p || ''))); }
 function isControlApproval(p) {
   const f = norm(String(p || ''));
   return CONTROL_APPROVAL_DIR.test(f) || CONTROL_APPROVAL_FILE.test(f);
@@ -242,9 +247,14 @@ function isPlanReviewRecord(p) { return PLAN_REVIEW_DIR.test(norm(String(p || ''
 // en el estado de la cuenta, en una de sus dos carpetas (la carpeta misma también)
 const TERMINAL_ACKS_DIR = /(^|\/)(?:\.tycon\/state|\.tycon-pipeline)\/terminal-acknowledgments(\/|$)/i;
 function isTerminalAcknowledgmentsRecord(p) { return TERMINAL_ACKS_DIR.test(norm(String(p || ''))); }
-/** ¿Es una constancia firmada que no se escribe a mano? `control-approvals`, `adversarial-skip-record`, `pending-approvals`, `owner-approvals`, `terminal-acknowledgments`, `launched-sessions`, `office-mailbox`, `reported-criticals`, `plan-review` o null. */
+// Las constancias de las exenciones de las historias (lib/exemptions.js): las anota sólo el gancho del encabezado, con la
+// firma del dueño, y los portones del commit y de CI las piden. Escribir una es eximirse solo. En cualquier repo
+const EXEMPTIONS_FILE = /(^|\/)\.tycon\/exemptions\.jsonl$/i;
+function isExemptionsRecord(p) { return EXEMPTIONS_FILE.test(norm(String(p || ''))); }
+/** ¿Es una constancia firmada que no se escribe a mano? `control-approvals`, `adversarial-skip-record`, `pending-approvals`, `owner-approvals`, `terminal-acknowledgments`, `launched-sessions`, `office-mailbox`, `reported-criticals`, `plan-review`, `exemptions` o null. */
 function signedRecordKind(p) {
   if (isPlanReviewRecord(p)) return 'plan-review';
+  if (isExemptionsRecord(p)) return 'exemptions';
   if (isControlApproval(p)) return 'control-approvals';
   if (isPendingApprovalsRecord(p)) return 'pending-approvals';
   if (isOwnerApprovalsRecord(p)) return 'owner-approvals';
@@ -287,6 +297,11 @@ function computeStoryGate({
   if (isControlApproval(filePath) || isControlApproval(real)) {
     return { action: 'block', kind: 'control-approvals', reason: 'escritura a mano de una constancia de cambio de control' };
   }
+  // El `origin` de un clon no se cambia a mano: por consola lo frena on-bash-write-gate.js (el caso `git remote`), y acá
+  // la edición de su configuración. Sin kill-switch del repo y en cualquier repo, también en los del arnés.
+  if (isGitConfig(filePath) || isGitConfig(real)) {
+    return { action: 'block', kind: 'git-config', reason: 'edición a mano de la configuración de git de un clon' };
+  }
   if (isAdversarialSkipRecord(filePath) || isAdversarialSkipRecord(real)) {
     return { action: 'block', kind: 'adversarial-skip-record', reason: 'escritura a mano de la constancia del salteo del pase adversarial' };
   }
@@ -313,6 +328,9 @@ function computeStoryGate({
   }
   if (isPlanReviewRecord(filePath) || isPlanReviewRecord(real)) {
     return { action: 'block', kind: 'plan-review', reason: 'escritura a mano de la constancia de la revisión del plan' };
+  }
+  if (isExemptionsRecord(filePath) || isExemptionsRecord(real)) {
+    return { action: 'block', kind: 'exemptions', reason: 'escritura a mano de la constancia de una exención' };
   }
   // El arreglo rápido que abrió la coordinadora por delegación no toca lo sensible: eso lo firma el dueño. Antes del
   // portón apagado y del pase de los repos del arnés, que es donde están esos archivos. La lista de lo sensible vive en el
@@ -348,9 +366,10 @@ function computeStoryGate({
   // esté apagado; el de una persona, sólo con el portón prendido. La comparación vive en `lib/adhoc-list.js`.
   if (adhoc && adhoc.reason && Array.isArray(adhoc.allowedFiles) && !(marker && marker.storyId)) {
     const delegado = adhoc.via === 'delegacion' || adhoc.via === 'avisado';
-    if (delegado || listGateEnabled !== false) {
+    // el arreglo de un rojo de CI va sin revisores: su lista frena siempre, y sin dejar pasar pruebas por su nombre
+    if (delegado || listGateEnabled !== false || adhoc.ciRojo) {
       const fuera = require('./adhoc-list.js').fueraDeLaLista({
-        lista: adhoc.allowedFiles, filePath, real, repoRoot: adhocRepoRoot, home: homeDir, delegado,
+        lista: adhoc.allowedFiles, filePath, real, repoRoot: adhocRepoRoot, home: homeDir, delegado, estricta: Boolean(adhoc.ciRojo),
       });
       if (fuera) {
         // el archivo de un repo al lado que no vale como hermano: el texto dice por qué no se puede sumar a la lista
@@ -644,6 +663,15 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '  un archivo (`cat > /tmp/cuerpo.md <<\'EOF\'`) y pasalo con `--body-file` (o `--description @/tmp/cuerpo.md`).',
     ].filter((l) => l !== '').join('\n');
   }
+  if (r.kind === 'git-config') {
+    return [
+      '⛔ la configuración de git de un clon no se edita a mano',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  Ahí está el `origin`, y los controles que comparan contra main del servidor le creen: cambiarlo a mano los engaña.',
+      '  Si el remoto cambió de verdad, lo cambia una persona en su terminal (`git remote set-url origin <url>`).',
+    ].filter((l) => l !== '').join('\n');
+  }
   if (r.kind === 'adversarial-skip-record') {
     return [
       '⛔ la constancia del salteo del pase adversarial no se escribe a mano',
@@ -689,6 +717,15 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '  Lo escriben sólo la oficina (/office), el vigilante de cada sesión y `office-message.js verify`: escribirlo es fingir',
       '  un mensaje de la persona, y borrar lo usado devuelve uno ya gastado. Para hablarle a una sesión, la persona le',
       '  escribe desde la oficina o en su pestaña.',
+    ].filter((l) => l !== '').join('\n');
+  }
+  if (r.kind === 'exemptions') {
+    return [
+      '⛔ la constancia de una exención no se escribe a mano',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  La anota sólo el arnés cuando la persona firma la exención sobre la historia, y los portones del commit y de CI',
+      '  la piden: escribirla es eximirse solo. Si la historia necesita una exención, pedile la firma a la persona.',
     ].filter((l) => l !== '').join('\n');
   }
   if (r.kind === 'advisor-runs') {
@@ -898,7 +935,7 @@ function storyByConsoleMessage(rutas, via) {
 module.exports = {
   MODO_FUERA_DEL_GRUPO,
   markerDeleteMessage, storyByConsoleMessage,
-  computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, isTerminalAcknowledgmentsRecord, isLaunchedSessionsRecord, isOfficeMailboxRecord, isReportedCriticalsRecord, isAdvisorRunsRecord, isPlanReviewRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
+  computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isGitConfig,isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, isTerminalAcknowledgmentsRecord, isLaunchedSessionsRecord, isOfficeMailboxRecord, isReportedCriticalsRecord, isAdvisorRunsRecord, isPlanReviewRecord, isExemptionsRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
   STORY_INTENT_PATTERNS,
   DEFAULT_ADHOC_MAX_FILES, DELEGATED_ADHOC_MAX_FILES, cupoDelegado, cupoAlDeclarar, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS, MARKER_REL,
 };

@@ -55,6 +55,10 @@ const MANT = Object.freeze(['mant']);
 const TOPE = 8;
 const ADHOC = 'adhoc-lane';
 const SOBRE_CUPO = 'adhoc-lane:sobre-cupo';
+// el arreglo de un rojo de CI de un pedido abierto y ya revisado: atado al pedido y al control que falló, sin plan ni
+// revisores, con un tope propio de archivos
+const CI_ROJO = 'adhoc-lane:ci-rojo';
+const TOPE_CI_ROJO = 3;
 // cerrar una ejecución perdida que la partición de su historia dejó sin objeto: la forma de rutina de `lost-run`
 const LOST_RUN_PARTICION = 'lost-run:particion';
 
@@ -70,6 +74,7 @@ const LEVELS_EN = Object.freeze({
   'refresh-after-main': 're-sign the controls after pulling main, with no change of your own',
   'save:sensible': 'save when a commit touches something sensitive',
   'adhoc-lane:sobre-cupo': 'open a quick fix that goes past the file limit of the short path, though a story is recommended (only implementation files count, not tests or guides)',
+  'adhoc-lane:ci-rojo': 'open the fix of a CI red on an open pull request, with no plan or reviewers (up to 3 implementation files; the failed control and the touched tests run before saving)',
   'adhoc-lane:datos': 'let a quick fix that changes where a piece of data comes from, or who can see it, go through without a story (only the owner\'s click)',
   'adhoc-lane:guardado-ajeno': 'let a save that is not part of a quick fix waiting for its reviewers go through once, with what it saves in view (a person\'s click or terminal, or the coordinator if the profile delegates it)',
   'autonomy-resume': 'put a run the closing control stopped back into autonomous mode, with the rounds reset (only the owner\'s click or terminal)',
@@ -90,6 +95,7 @@ const LEVELS_EN = Object.freeze({
   'escape:TYCON_MUTATION_CHECK': 'skip the mutation check of the tests',
   'escape:TYCON_STORY_REVIEW': "skip the story's review before planning",
   'escape:story-skill-bypass': 'write a story without the story skill',
+  'escape:advisors_exempt': 'exempt a story from the reviewers',
   'escape:red-control-test-edit': "edit a control's old test that was failing",
   'escape:set-autonomous': 'change the autonomous mode of a run',
   'designation-confirm': 'confirm which session is the coordinator of this machine',
@@ -112,6 +118,7 @@ const LEVELS = Object.freeze([
   ['save', 1, AMBOS, 'guardar: commit, push y pull requests, si ningún commit toca algo de lo sensible'],
   ['browser-test:prepare', 1, AMBOS, 'preparar la prueba con navegador'],
   ['adhoc-lane', 1, AMBOS, 'abrir un arreglo rápido sin historia, dentro del cupo'],
+  ['adhoc-lane:ci-rojo', 1, AMBOS, 'abrir el arreglo de un rojo de CI de un pull request abierto, sin plan ni revisores (hasta 3 archivos, pruebas incluidas; antes de guardar corren los controles de CI en local y las pruebas tocadas)'],
   ['compare-waiver', 1, AMBOS, 'eximir de la comparación con main a un comando que la historia modifica (delegable sólo si el perfil la suma a approvals.delegated_signing)'],
   ['refresh-after-main', 1, MANT, 'refirmar los controles tras traer main, sin cambio propio'],
   ['lost-run:particion', 1, AMBOS, 'cerrar una ejecución perdida que la partición de su historia en tandas dejó sin objeto (delegable sólo si el perfil la suma a approvals.delegated_signing)'],
@@ -136,6 +143,7 @@ const LEVELS = Object.freeze([
   ['escape:TYCON_MUTATION_CHECK', 2, AMBOS, 'saltear el chequeo de mutantes de las pruebas'],
   ['escape:TYCON_STORY_REVIEW', 2, AMBOS, 'saltear la revisión de la historia antes del plan'],
   ['escape:story-skill-bypass', 2, AMBOS, 'escribir una historia sin la skill de historias'],
+  ['escape:advisors_exempt', 2, AMBOS, 'eximir una historia de los revisores'],
   ['escape:red-control-test-edit', 2, AMBOS, 'editar una prueba vieja de un control que estaba en rojo'],
   ['escape:set-autonomous', 2, AMBOS, 'cambiar el modo autónomo de una ejecución'],
   ['designation-confirm', 2, AMBOS, 'confirmar qué sesión es la coordinadora de esta máquina'],
@@ -177,7 +185,7 @@ const DELEGABLE_EXCEPTIONS = Object.freeze(['runtime-waiver', 'manual-test', 'es
 // las firmas sólo del dueño que la coordinadora pide para otra sesión sin delegarlas: le llegan al dueño en la pestaña de
 // ella (la ventana o el cuadro), así no tiene que entrar a la sesión que espera. Siguen siendo sólo suyas: el freno no
 // las pasa por la delegación (owner-window.js)
-const PARA_OTRA_SESION_SIN_DELEGAR = Object.freeze(['escape:dod_runtime_exempt', 'escape:story-skill-bypass', 'autonomy-resume', 'adhoc-lane:datos']);
+const PARA_OTRA_SESION_SIN_DELEGAR = Object.freeze(['escape:dod_runtime_exempt', 'escape:advisors_exempt', 'escape:story-skill-bypass', 'autonomy-resume', 'adhoc-lane:datos']);
 const otraSinDelegar = (id) => (PARA_OTRA_SESION_SIN_DELEGAR.includes(id) ? 'yes' : 'no');
 // las dos formas de nivel 2 de una firma de rutina, que el perfil nombra con su propio nombre (no son firmas de
 // SIGNATURES: se piden con la firma de la derecha, y su guion mira si el perfil nombra la forma): el guardado que toca
@@ -214,15 +222,16 @@ const POR_VARIABLE = [
 const CON_NOMBRE = [
   ['story-skill-bypass', 'escribir una story sin la skill de stories', 'file'],
   ['red-control-test-edit', 'editar una prueba vieja de un control que estaba en rojo', 'file'],
-  ['set-autonomous', 'cambiar el modo autónomo de una ejecución', 'marker.js set-autonomous'],
+  ['set-autonomous', 'cambiar el modo autónomo de una ejecución', 'marker.js set-autonomous false [--for-session <D>]'],
   ['cerrar-la-ejecucion', 'cerrar una ejecución con un control en rojo', 'marker.js clear'],
-  ['cerrar-como-deuda', 'cerrar una ejecución dejando lo que falta como deuda', 'marker.js close-as-debt'],
-  ['rojo-esperado-de-la-matriz', 'llevar al commit criterios sin evidencia en vivo, hasta una fecha', 'marker.js expect-red acmatrix --tests <T1,T2> --until <AAAA-MM-DD>'],
+  ['cerrar-como-deuda', 'cerrar una ejecución dejando lo que falta como deuda, o dejar en esa deuda un control en rojo esperado', 'marker.js close-as-debt --reason "<texto>" --debt <DEF-id> [--for-session <D>]'],
+  ['rojo-esperado-de-la-matriz', 'llevar al commit criterios sin evidencia en vivo, hasta una fecha', 'marker.js expect-red acmatrix --tests <T1,T2> --until <AAAA-MM-DD> [--for-session <D>]'],
   ['force-manual', 'marcar a mano el estado de un control', 'marker.js set-check <control> <estado> --force-manual [--for-session <D>]'],
   ['trust-ran', 'contar los revisores sin la constancia de que corrieron', 'pipeline.js check-count --repo <r> --story <s> --trust-ran [--for-session <D>]'],
   ['no-mutation', 'cerrar «Correr las pruebas» sin el chequeo de mutantes, con motivo', 'marker.js complete-step run-tests --no-mutation --reason <motivo>'],
   ['ALLOW_DOD_EVIDENCE_WRITE', 'escribir a mano la evidencia de la prueba en vivo', 'file'],
   ['dod_runtime_exempt', 'eximir una story de la prueba en vivo', 'file'],
+  ['advisors_exempt', 'eximir una story de los revisores', 'file'],
   ['no-deep-review', 'correr los guiones del pase adversarial con un --env-file, que puede cambiar su decisión', 'node --env-file=<archivo> pipeline.js start|deep-review-gate (o marker.js mark-adversarial-skipped)'],
   ['cambiar-el-estado', 'cambiar a mano el estado de una story', 'file'],
   ['merge-bypass', 'mergear salteando la cola y la CI de main, o aflojar las políticas de la rama', 'gh pr merge <n> --admin (o un merge, una regla o una política por la API)'],
@@ -248,12 +257,13 @@ const SI_SALE_MAL = Object.freeze({
   'escape:red-control-test-edit': 'la prueba de un control se corrige para que pase, y el control puede quedar apagado sin que nadie lo decida',
   'escape:set-autonomous': 'la ejecución cambia cómo se frena sola ante un control en rojo',
   'escape:cerrar-la-ejecucion': 'la ejecución se cierra con un control en rojo, y lo que frenaba queda sin arreglar',
-  'escape:cerrar-como-deuda': 'la ejecución se cierra y lo que falta queda anotado como deuda, sin hacer',
+  'escape:cerrar-como-deuda': 'la ejecución se cierra y lo que falta queda anotado como deuda, sin hacer, o el control queda en rojo hasta el commit',
   'escape:rojo-esperado-de-la-matriz': 'el commit entra con esos criterios sin evidencia en vivo hasta la fecha, y una falla que la prueba en vivo encontraría llega al pedido',
   'escape:force-manual': 'un control queda en el estado escrito a mano, aunque nadie lo haya medido',
   'escape:trust-ran': 'los revisores cuentan como corridos sin constancia, y uno que no corrió pasa por corrido',
   'escape:ALLOW_DOD_EVIDENCE_WRITE': 'la evidencia de la prueba en vivo queda escrita a mano, y puede decir algo que no pasó',
   'escape:dod_runtime_exempt': 'la historia entera queda sin prueba en vivo, y un error puede llegar a producción',
+  'escape:advisors_exempt': 'la historia se cierra sin que ningún revisor la mire, y un error puede pasar sin que nadie lo vea',
   'escape:merge-bypass': 'el cambio entra a main sin la cola ni la CI, o una política de la rama queda floja, y lo que la CI frenaba llega a main',
   'escape:external-pr': 'el código de alguien de afuera entra a main, y lo que hace corre en cada máquina que se actualiza',
   'plan-approval': 'se implementa un plan que no querías; se frena la ejecución y se rehace, y nada entra a main sin revisión',
@@ -273,6 +283,7 @@ const SI_SALE_MAL = Object.freeze({
   'pending-approval': 'queda un pendiente de más en la lista; se cierra a mano',
   'adhoc-lane': 'la sesión escribe código sin historia; se cierra el arreglo, y nada entra a main sin revisión',
   'adhoc-lane:sobre-cupo': 'un cambio grande entra sin el plan ni las pruebas de una historia; se cierra el arreglo, y nada entra a main sin revisión',
+  'adhoc-lane:ci-rojo': 'un arreglo chico entra al pedido sin otra vuelta de revisores; lo frena el control que había fallado, y se revierte con otro commit',
   'adhoc-lane:datos': 'un cambio de permisos o de la fuente de un dato llega a producción sin que nadie revise quién lo ve, y una persona sin permiso puede quedar trabada',
   'adhoc-lane:guardado-ajeno': 'se guarda una vez algo que no es del camino corto mientras el carril espera sus revisores; si en verdad era del carril, entra sin ellos y se revierte con otro commit',
   'autonomy-resume': 'la sesión vuelve a iterar sola sobre un rojo que quizá necesitaba otra mirada',
@@ -304,6 +315,7 @@ const APPROVES_EN = {
   'pending-approval': 'open a new item in the pending list',
   'adhoc-lane': "open a session's quick fix, with no story",
   'adhoc-lane:sobre-cupo': 'open a quick fix that goes past the file limit of the short path, though a story is recommended',
+  'adhoc-lane:ci-rojo': 'open the fix of a CI red on an open pull request, with no plan or reviewers',
   'adhoc-lane:datos': 'let a quick fix that changes where a piece of data comes from, or who can see it, go through without a story',
   'adhoc-lane:guardado-ajeno': 'let a save that is not part of a quick fix waiting for its reviewers go through once, with what it saves in view',
   'autonomy-resume': 'put a run the closing control stopped back into autonomous mode, with the rounds reset',
@@ -322,12 +334,13 @@ const APPROVES_EN = {
   'escape:red-control-test-edit': "edit a control's old test that was failing",
   'escape:set-autonomous': "change a run's autonomous mode",
   'escape:cerrar-la-ejecucion': 'close a run with a control in red',
-  'escape:cerrar-como-deuda': 'close a run leaving what is missing as debt',
+  'escape:cerrar-como-deuda': 'close a run leaving what is missing as debt, or take a red check of that debt to the commit',
   'escape:rojo-esperado-de-la-matriz': 'take criteria without live evidence to the commit, until a date',
   'escape:force-manual': "set a control's state by hand",
   'escape:trust-ran': 'count the reviewers without the record that they ran',
   'escape:ALLOW_DOD_EVIDENCE_WRITE': 'write the live test evidence by hand',
   'escape:dod_runtime_exempt': 'exempt a story from the live test',
+  'escape:advisors_exempt': 'exempt a story from the reviewers',
   'escape:no-deep-review': "run the adversarial pass scripts with an --env-file, which can change its decision",
   'escape:cambiar-el-estado': "change a story's status by hand",
   'escape:merge-bypass': "merge skipping main's queue and CI, or loosen the branch policies",
@@ -339,10 +352,14 @@ const APPROVES_EN = {
 const FIRMAS_DE_ARCHIVO = Object.freeze(CON_NOMBRE.filter((f) => f[2] === 'file').map((f) => f[0]));
 // los escapes que pide su propio guion, con su forma canónica: la terminal es esa forma con --terminal
 const POR_GUION = Object.freeze(['force-manual', 'trust-ran']);
+// los escapes del cierre que pide el marcador, como los de POR_GUION, pero que siguen en el grupo que se delega junto
+const POR_EL_MARCADOR = Object.freeze(['set-autonomous', 'cerrar-como-deuda', 'rojo-esperado-de-la-matriz']);
+// el rojo esperado de un control va con la firma de cerrar como deuda: la terminal nombra las dos formas exactas
+const OTRA_FORMA_EN_LA_TERMINAL = Object.freeze({ 'cerrar-como-deuda': 'marker.js expect-red <control> --tests <T1,T2> --terminal' });
 // los escapes que pide su paso, en la sesión que lo corre: el guion pide la firma justo antes de saltear, y no se pide
 // para otra sesión ni entra al grupo que se delega junto
 const POR_SU_PASO = Object.freeze(['no-mutation']);
-const kindDe = (id) => (!id.startsWith('escape:') || [...FIRMAS_DE_ARCHIVO, ...POR_GUION, ...POR_SU_PASO].includes(id.slice('escape:'.length)) ? 'guion' : 'freno');
+const kindDe = (id) => (!id.startsWith('escape:') || [...FIRMAS_DE_ARCHIVO, ...POR_GUION, ...POR_EL_MARCADOR, ...POR_SU_PASO].includes(id.slice('escape:'.length)) ? 'guion' : 'freno');
 const sobreArchivo = (nombre) => `marker.js sign-file ${nombre} <archivo>`;
 
 const SIGNATURES = Object.freeze([
@@ -370,6 +387,10 @@ const SIGNATURES = Object.freeze([
     // como el freno de los datos: sólo el click del dueño, en la pestaña que trabaja o en la de la coordinadora vigente, o su
     // terminal; nunca la delegación, un «aprobado» escrito ni la ventana de permiso
     clickDelDueno: true, descripciones: Object.freeze(['La sesión sigue con el arreglo. Pasa el tope de archivos del camino corto: lo elegís vos, en lugar de una historia.', 'No se abre el arreglo, y el trabajo va por una historia.']) },
+  // el arreglo del rojo de CI de un pedido abierto: el dueño en la ventana, su click o su terminal, o la coordinadora si el
+  // perfil lo delega
+  { id: CI_ROJO, approves: 'abrir el arreglo de un rojo de CI de un pull request abierto, sin plan ni revisores', command: 'marker.js adhoc set --ci-red <pedido> --check <control> --reason <motivo> --data sin-cambio --file <ruta>', otherSession: 'yes',
+    terminal: 'marker.js adhoc set --ci-red <pedido> --check <control> --reason "<motivo>" --data sin-cambio --file <ruta> --terminal --for-session <id>' },
   // dejar pasar el freno de los datos: sólo el click del dueño, en la pestaña que trabaja o en la de la coordinadora vigente
   // (que lo pide para esa sesión con --for-session); nunca un «aprobado» escrito, la delegación ni la ventana de permiso
   { id: 'adhoc-lane:datos', approves: 'dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia', command: 'marker.js adhoc allow-data-change --changed <qué cambió> --recommends pasar --why <por qué>', otherSession: otraSinDelegar('adhoc-lane:datos'),
@@ -401,7 +422,10 @@ const SIGNATURES = Object.freeze([
     // la terminal de la persona no tiene la sesión en el ambiente: sin --for-session la constancia no la usaría nadie
     // la coordinadora la pide para otra sesión sólo si es de las que el perfil puede delegar
     if (command === 'file') return { id: `escape:${nombre}`, approves, command: sobreArchivo(nombre), otherSession: DELEGABLE_EXCEPTIONS.includes(`escape:${nombre}`) ? 'yes' : otraSinDelegar(`escape:${nombre}`), terminal: `${sobreArchivo(nombre)} --terminal --for-session <sesión del agente>` };
-    if (POR_GUION.includes(nombre)) return { id: `escape:${nombre}`, approves, command, otherSession: 'yes', terminal: `${command.replace(' [--for-session <D>]', '')} --terminal` };
+    if (POR_GUION.includes(nombre) || POR_EL_MARCADOR.includes(nombre)) {
+      const otra = OTRA_FORMA_EN_LA_TERMINAL[nombre];
+      return { id: `escape:${nombre}`, approves, command, otherSession: 'yes', terminal: `${command.replace(' [--for-session <D>]', '')} --terminal${otra ? `, o ${otra}` : ''}` };
+    }
     if (POR_SU_PASO.includes(nombre)) return { id: `escape:${nombre}`, approves, command, otherSession: 'no', terminal: `${command} --terminal --for-session <sesión>` };
     return { id: `escape:${nombre}`, approves, command, otherSession: 'no', terminal: 'el mismo comando' };
   }),
@@ -454,6 +478,10 @@ const SENSITIVE = Object.freeze([
   'skills/tycon-pipeline/scripts/lib/bash-gate-*.js',
   // el nombre de la sesión lo carga el marcador al escribir: corre dentro de él
   'scripts/lib/session-name.js',
+  // lo que el cierre del marcador carga para decir que la sesión termina: corre dentro de él
+  'skills/tycon-pipeline/scripts/lib/resume-state.js',
+  // el registro de los frenos: el marcador lo carga al cerrar la ejecución de otra sesión, y en él queda el escape
+  'skills/tycon-pipeline/scripts/lib/closing-record.js',
   'skills/tycon-pipeline/scripts/lib/adversarial-verdict.js', 'skills/tycon-pipeline/scripts/lib/critical-waivers.js',
   'skills/tycon-pipeline/scripts/lib/runtime-waiver.js', 'skills/tycon-pipeline/scripts/test-gate.sh',
   'skills/tycon-pipeline/scripts/lib/test-gate-*.js', 'skills/tycon-pipeline/scripts/lib/test-scope.js',
@@ -463,6 +491,9 @@ const SENSITIVE = Object.freeze([
   'skills/tycon-pipeline/scripts/smoke-run.sh', 'skills/tycon-pipeline/scripts/lib/evidence-vs-commit.js',
   'skills/tycon-pipeline/scripts/lib/commit-story.js', 'skills/tycon-pipeline/scripts/lib/story-requests.js',
   'skills/tycon-pipeline/scripts/lib/nightly-coverage.js',
+  // el arreglo de un rojo de CI sin plan ni revisores, el cierre de una ejecución reemplazada sin firma y lo que una vuelta
+  // de arreglo deja a seguimiento: los cargan marker.js y pipeline.js
+  'skills/tycon-pipeline/scripts/lib/ci-red-lane.js', 'skills/tycon-pipeline/scripts/lib/replaced-run.js', 'skills/tycon-pipeline/scripts/lib/fix-scope.js',
   // lo que decide si el dueño se entera
   'scripts/lib/notify.js', 'scripts/lib/notify-mail.js', 'scripts/lib/tycon-*-notify.sh',
   'scripts/lib/integrations.js', 'scripts/lib/tycon-config.js',
@@ -501,6 +532,13 @@ function firmaDelPedidoAdhoc(args = [], tope = TOPE, { cwd = null } = {}) {
   };
   if (String(a[0] || '').startsWith('--')) {
     if (a.some((w) => w.startsWith('--max-files=') || w.startsWith('--file='))) return SOBRE_CUPO;
+    // el arreglo de un rojo de CI: su propia firma, con su tope; un cupo pedido o más archivos que el tope, pruebas
+    // incluidas, no es esta vía
+    if (a.includes('--ci-red') || a.some((w) => w.startsWith('--ci-red='))) {
+      if (a.includes('--max-files') || a.some((w) => w.startsWith('--ci-red='))) return SOBRE_CUPO;
+      const deLaLista = a.flatMap((w, i) => (w === '--file' ? [a[i + 1]] : []));
+      return deLaLista.length <= TOPE_CI_ROJO ? CI_ROJO : SOBRE_CUPO;
+    }
     const lista = a.flatMap((w, i) => (w === '--file' ? [a[i + 1]] : []));
     if (lista.length && !dentro(codigoDe(lista))) return SOBRE_CUPO;
     const i = a.indexOf('--max-files');
@@ -573,4 +611,4 @@ function delegable(id, raised) {
 // Lo que no tiene vuelta atrás: sólo se firma en la terminal de la persona, nunca con un click ni con un «aprobado»
 const ONLY_IN_TERMINAL = Object.freeze(['escape:TYCON_SAFETY_OFF', 'escape:TYCON_PROD_LINT', 'emergency']);
 
-module.exports = { TOPE, SOBRE_CUPO, LOST_RUN_PARTICION, firmaDelPedidoAdhoc, SIGNATURES, LEVELS, GROUPS, FIRMAS_DE_ARCHIVO, SENSITIVE, REQUIERE_SENSIBLE, NOT_DELEGATED, DELEGABLE_EXCEPTIONS, PARA_OTRA_SESION_SIN_DELEGAR, DELEGABLE_FORMS, PLAN_DELICADO, SAVE_SENSIBLE, ONLY_IN_TERMINAL, ids, groupNames, formNames, isId, isForm, expand, effectiveLevel, delegatedLevel, delegable };
+module.exports = { TOPE, SOBRE_CUPO, CI_ROJO, TOPE_CI_ROJO, LOST_RUN_PARTICION, firmaDelPedidoAdhoc, SIGNATURES, LEVELS, GROUPS, FIRMAS_DE_ARCHIVO, SENSITIVE, REQUIERE_SENSIBLE, NOT_DELEGATED, DELEGABLE_EXCEPTIONS, PARA_OTRA_SESION_SIN_DELEGAR, DELEGABLE_FORMS, PLAN_DELICADO, SAVE_SENSIBLE, ONLY_IN_TERMINAL, ids, groupNames, formNames, isId, isForm, expand, effectiveLevel, delegatedLevel, delegable };

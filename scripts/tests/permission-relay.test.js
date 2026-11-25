@@ -723,3 +723,27 @@ test('Permiso_GanchoMuerto_RenglonSeCierra (T28) @story-8.180 @ac-28', (t) => {
   const antes = sl.anotarPermiso({ casa: L.casa, herramienta: 'Bash', pedido: 'ls', carpeta: '/r', sesion: BG, pid: MUERTO, ahora: AHORA });
   assert.ok(sl.abiertos(L.casa, { arnes: L.arnes, env: L.env, ahora: AHORA }).filas.some((f) => f.id === antes.id));
 });
+
+// ── Fila 91c: el click del último momento cuenta ────────────────────────────────────────────────────────────────────
+
+// Fila 91c (pase del #1633): un «Sí» anotado entre la última mirada y el vencimiento se perdía.
+// 🔴 Falla con: vencer sin mirar una vez más.
+test('F91c ClickDelUltimoMomento_Cuenta', (t) => {
+  const L = lab(t, { espera: 1 });
+  const original = oa.buscarPermiso;
+  let reloj = AHORA;
+  let puesto = false;
+  // el click llega justo después de la última mirada antes del vencimiento
+  oa.buscarPermiso = (o) => {
+    const r = original(o);
+    if (!r.ok && !puesto && o.ahora - AHORA >= 60000) {
+      puesto = true;
+      click(L, { pregunta: pregunta(delGancho(L)[0]), ts: o.ahora });
+    }
+    return r;
+  };
+  t.after(() => { oa.buscarPermiso = original; });
+  const r = PR.decidir(evento(), { casa: L.casa, arnes: L.arnes, env: L.env, plataforma: 'darwin', ahora: () => reloj, dormir: (ms) => { reloj += ms; }, pollMs: 2000, ownerWaitVivo: () => true, arbol: ARBOL, validar: SIEMPRE });
+  assert.ok(puesto, 'la prueba puso el click en el último momento');
+  assert.strictEqual(r.decision, 'allow', JSON.stringify(r));
+});

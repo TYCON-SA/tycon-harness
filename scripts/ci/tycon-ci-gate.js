@@ -587,7 +587,7 @@ function revisarAutoria(repo, storyId, storyPath) {
     if (ilegible) {
       // Presente y roto: frena siempre, haya corte o no.
       hallazgos.push({ regla: 'registro-de-autoria-invalido',
-        mensaje: `\`${nombre}/review-roster.json\` no se puede leer (${ilegible}). Un registro ilegible no es un registro: regeneralo corriendo los revisores, o declará \`advisors_exempt: true\` con su razón.` });
+        mensaje: `\`${nombre}/review-roster.json\` no se puede leer (${ilegible}). Un registro ilegible no es un registro: regeneralo corriendo los revisores; la exención de los revisores (\`advisors_exempt: true\` con su razón) la decide la persona, con su firma sobre la historia.` });
       continue;
     }
     if (!roster) continue;
@@ -605,7 +605,7 @@ function revisarAutoria(repo, storyId, storyPath) {
   }
   if (!algunoPostCutoff) return hallazgos; // run viejo: la ausencia no se le puede reclamar
   hallazgos.push({ regla: 'sin-registro-de-autoria',
-    mensaje: `pasa a \`done\` y ningún \`.advisors/pipeline-runs/${prefijoDeEvidencia(storyId, storyPath)}*/\` trae \`review-roster.json\` (quién implementó y quiénes revisaron). Lo escribe solo el hook al cerrar la ronda de revisores; si esta story se cerró sin pipeline, declaralo con \`advisors_exempt: true\` + su razón.` });
+    mensaje: `pasa a \`done\` y ningún \`.advisors/pipeline-runs/${prefijoDeEvidencia(storyId, storyPath)}*/\` trae \`review-roster.json\` (quién implementó y quiénes revisaron). Lo escribe solo el hook al cerrar la ronda de revisores; si esta story se cerró sin pipeline, la exención (\`advisors_exempt: true\` + su razón) la decide la persona, con su firma sobre la historia.` });
   return hallazgos;
 }
 
@@ -625,8 +625,23 @@ try {
   approvalsLib = require(path.join(skills, 'tycon-pipeline', 'scripts', 'lib', 'approvals.js'));
 } catch (e) { approvalsFalta = e.message; }
 
+// La constancia del dueño de una exención, en el repo: un renglón de `.tycon/exemptions.jsonl` con la historia y la
+// exención. La anota el gancho del encabezado con la firma (lib/exemptions.js del skill); acá se lee con lo propio del
+// portón, que corre también donde el skill no está. Un renglón ilegible no cuenta.
+const CONSTANCIAS_DE_EXENCIONES = '.tycon/exemptions.jsonl';
+// la historia y el archivo, las dos cosas: un número de historia se repite entre archivos
+function tieneConstanciaDeExencion(texto, story, campo, archivo) {
+  return String(texto || '').split('\n').some((l) => {
+    try { const r = JSON.parse(l); return !!r && String(r.story) === String(story) && r.campo === campo && r.archivo === archivo; } catch (_e) { return false; }
+  });
+}
+// el `story:` como lo anota el gancho: sin comillas ni comentario
+const idDeLaConstancia = (id) => String(id || '').replace(/\s+#.*$/, '').trim().replace(/^["']|["']$/g, '');
+
 // `ref`: la historia en la que se busca el rastro de una corrida anterior al control (la base del pedido).
-function revisarAprobaciones(repo, storyId, storyPath, ref = 'origin/main') {
+// `cierre`: el pedido lleva la historia de review a done. La corrida de cierre no pasa por aprobar el plan: hereda el
+// de una corrida anterior de la misma historia que lo tenga (lib/approvals.js → planHeredado); sin ninguna, frena igual.
+function revisarAprobaciones(repo, storyId, storyPath, ref = 'origin/main', { cierre = false } = {}) {
   const hallazgos = [];
   const avisos = [];
   const resumen = { manual: 0, automatica: 0, sinNombrar: 0 };
@@ -645,8 +660,14 @@ function revisarAprobaciones(repo, storyId, storyPath, ref = 'origin/main') {
     const llegoARevisores = fs.existsSync(path.join(dir, 'review-roster.json'));
     // La regla es la de lib/approvals.js, la misma con que frena el cierre del pipeline; acá se arma el mensaje.
     const anterior = typeof approvalsLib.anteriorAlControl === 'function' && approvalsLib.anteriorAlControl(dir, nombre, ref);
-    const problemas = approvalsLib.problemasDelRegistro({ registro: reg, roster, anterior });
+    const sinPlan = !reg.existe || !reg.lineas.some((l) => l && l.que === 'plan');
+    const heredado = cierre && sinPlan && typeof approvalsLib.planHeredado === 'function' ? approvalsLib.planHeredado(dirs, nombre) : null;
+    const problemas = approvalsLib.problemasDelRegistro({ registro: reg, roster, anterior, heredado: heredado && heredado.nombre });
     const hay = (regla) => problemas.find((p) => p.regla === regla);
+    if (heredado && llegoARevisores) {
+      avisos.push({ regla: 'plan-heredado',
+        mensaje: `\`${nombre}/\` es la ejecución de cierre y no aprobó el plan: hereda la aprobación de \`${heredado.nombre}/\`, una ejecución anterior de la misma historia. Avisa y no frena.` });
+    }
     const invalido = hay('registro-de-aprobaciones-invalido');
     if (invalido) {
       hallazgos.push({ regla: invalido.regla,
@@ -655,8 +676,8 @@ function revisarAprobaciones(repo, storyId, storyPath, ref = 'origin/main') {
     if (!reg.existe) {
       if (hay('sin-registro-de-aprobaciones')) {
         hallazgos.push({ regla: 'sin-registro-de-aprobaciones',
-          mensaje: `\`${nombre}/\` llegó a los revisores y no trae \`${approvalsLib.FILE}\` (qué se aprobó, cuándo y si fue una persona o un agente). Lo escribe marker.js al aprobar el plan. Si está en disco y no en el commit, el \`.gitignore\` lo traga: falta \`!**/.advisors/pipeline-runs/*/approvals.jsonl\` (el arranque del pipeline la agrega). Si la story se cerró sin pipeline, declaralo con \`advisors_exempt: true\` + su razón.` });
-      } else if (llegoARevisores) {
+          mensaje: `\`${nombre}/\` llegó a los revisores y no trae \`${approvalsLib.FILE}\` (qué se aprobó, cuándo y si fue una persona o un agente). Lo escribe marker.js al aprobar el plan. Si está en disco y no en el commit, el \`.gitignore\` lo traga: falta \`!**/.advisors/pipeline-runs/*/approvals.jsonl\` (el arranque del pipeline la agrega). Si la story se cerró sin pipeline, la exención (\`advisors_exempt: true\` + su razón) la decide la persona, con su firma sobre la historia.` });
+      } else if (llegoARevisores && !heredado) {
         avisos.push({ regla: 'sin-registro-de-aprobaciones',
           mensaje: `\`${nombre}/\` no trae \`${approvalsLib.FILE}\`, y la ejecución no tenía por qué dejarlo acá: su registro de revisores no declara que anote aprobaciones (un arnés anterior al registro de aprobaciones), o arrancó antes de que el registro llegara al repo de la story: no se sabe quién aprobó el plan. Avisa y no frena.` });
       }
@@ -1077,6 +1098,19 @@ function revisar({ repo, base, staged, hoy = hoyUtc(), juezGit }) {
     if (hayCabeza === undefined) { try { git(repo, ['rev-parse', '--verify', '-q', 'HEAD']); hayCabeza = true; } catch (_e) { hayCabeza = false; } }
     return hayCabeza ? refViejo : null;
   };
+  // Los renombres del diff (nuevo → origen), una vez y sólo si una historia los pide
+  let renombres;
+  const origenDelRenombre = (rel) => {
+    if (renombres === undefined) {
+      renombres = new Map();
+      const de = refDeAntes();
+      try {
+        const out = de ? git(repo, ['diff', '-M', '--name-status', '--diff-filter=R', ...(staged ? ['--cached', de] : [de, 'HEAD'])]) : '';
+        for (const l of String(out).split('\n')) { const p = l.split('\t'); if (p.length === 3 && /^R/.test(p[0])) renombres.set(p[2], p[1]); }
+      } catch (_e) { /* sin renombres que leer: lo de antes es lo de la misma ruta */ }
+    }
+    return renombres.get(rel) || null;
+  };
   // Para la evidencia atada, una vez por corrida y sólo si alguna historia lo pide: lo que cambia el pedido y la regla
   // del juez. `juezGit` es el git del juez (lo inyectan las pruebas).
   let delPedido;
@@ -1120,6 +1154,25 @@ function revisar({ repo, base, staged, hoy = hoyUtc(), juezGit }) {
       }
       continue;
     }
+    // Una exención que el diff agrega a una historia, como la lee este portón (`<campo>: true` en el frontmatter), trae la
+    // constancia del dueño en el repo, en cualquier estado: no sólo al pasar a review o done, que puede llegar en otro
+    // pedido con la exención ya en la base. Lo de antes y el archivo de constancias se leen sólo si hay una exención
+    // Lo de antes es el archivo de origen si la historia se renombró, y cuenta sólo si era la misma historia (`story:`)
+    const exentaAhora = EXENCIONES.filter((c) => new RegExp(`^${c}:\\s*true\\b`, 'm').test(fmNuevo));
+    if (exentaAhora.length) {
+      const origen = origenDelRenombre(rel);
+      const antes = contenidoEn(repo, refDeAntes(), rel) ?? (origen ? contenidoEn(repo, refDeAntes(), origen) : null);
+      const fmAntes = (antes !== null && frontmatter(antes)) || '';
+      const eraEsta = !!fmAntes && idDeLaConstancia(escalar(fmAntes, 'story')) === idDeLaConstancia(idBruto);
+      const nuevas = exentaAhora.filter((c) => !(eraEsta && new RegExp(`^${c}:\\s*true\\b`, 'm').test(fmAntes)));
+      const constancias = nuevas.length ? contenidoEn(repo, refNuevo, CONSTANCIAS_DE_EXENCIONES) : null;
+      const faltan = nuevas.filter((c) => !tieneConstanciaDeExencion(constancias, idDeLaConstancia(idBruto), c, rel));
+      if (faltan.length) {
+        hallazgos.push({ archivo: rel, story: idBruto, regla: 'exencion-sin-constancia',
+          mensaje: `agrega ${faltan.map((c) => `\`${c}\``).join(' y ')} y \`${CONSTANCIAS_DE_EXENCIONES}\` no trae su constancia para la historia ${idBruto}. Eximir una historia lo decide la persona: con su firma de la exención sobre la historia, el arnés anota la constancia al escribirla, y se commitea con ella.` });
+      }
+    }
+
     const estadoNuevo = String(escalar(fmNuevo, 'status') || '').toLowerCase();
     if (!LISTOS.has(estadoNuevo)) continue;
 
@@ -1300,7 +1353,8 @@ function revisar({ repo, base, staged, hoy = hoyUtc(), juezGit }) {
     // `advisors_exempt`: la exención perdona que FALTE el registro (una story cerrada sin pipeline), no un registro
     // presente y malo — un agente anotado como persona frena siempre.
     {
-      const apr = revisarAprobaciones(repo, idBruto, path.join(repo, rel), staged ? 'origin/main' : base);
+      const apr = revisarAprobaciones(repo, idBruto, path.join(repo, rel), staged ? 'origin/main' : base,
+        { cierre: estadoViejo === 'review' && estadoNuevo === 'done' });
       const POR_FALTA = (approvalsLib && approvalsLib.POR_FALTA) || new Set(['sin-registro-de-aprobaciones', 'sin-aprobacion-del-plan']);
       for (const h of apr.hallazgos) if (!(exentaAdv && POR_FALTA.has(h.regla))) destino.push({ archivo: rel, story: idBruto, ...h });
       if (!exentaAdv) for (const a of apr.avisos) avisos.push({ archivo: rel, story: idBruto, ...a });
@@ -1326,7 +1380,7 @@ function revisar({ repo, base, staged, hoy = hoyUtc(), juezGit }) {
       destino.push({ archivo: rel, story: idBruto, regla: 'sin-constancia-de-revisores',
         mensaje: !pref
           ? `pasa a \`done\` y no pude calcular la clave de la story ${idBruto} (${rel}) para buscar su carpeta de revisores: sin clave no se da constancia por buena (el motivo está en el aviso del portón). No es «no hay constancia»: es «no la pude buscar».`
-          : `pasa a \`done\` y no hay \`.advisors/pipeline-runs/${pref}*/\` en el repo${pref !== `${idBruto}-` ? ` (el número ${idBruto} se repite en el repo: la carpeta lleva la clave de esta story; las \`${idBruto}-*\` viejas no dicen de cuál son y no cuentan)` : ''}. Escape del dev: \`advisors_exempt: true\` + su razón.` });
+          : `pasa a \`done\` y no hay \`.advisors/pipeline-runs/${pref}*/\` en el repo${pref !== `${idBruto}-` ? ` (el número ${idBruto} se repite en el repo: la carpeta lleva la clave de esta story; las \`${idBruto}-*\` viejas no dicen de cuál son y no cuentan)` : ''}. La exención (\`advisors_exempt: true\` + su razón) la decide la persona, con su firma sobre la historia.` });
     }
 
     // (4) el que escribió el código no puede ser el que lo revisó — y tiene que estar ESCRITO
@@ -1370,7 +1424,7 @@ function revisar({ repo, base, staged, hoy = hoyUtc(), juezGit }) {
             mensaje: `\`${c.rel}/\` trae en el nombre el ${c.fechaNombre}, antes del corte del registro de autoría, y entró en git el ${c.fechaGit}, después. No se le exige el registro (una ejecución vieja que entró por squash o por una migración); si no lo es, revisalo. Avisa y no frena.` });
         }
         if (a.exige.length) {
-          estricto('sin-registro-de-autoria', `pasa a \`done\` y ninguna carpeta de ejecución trae en git un \`review-roster.json\` válido, y lo piden: ${a.exige.map((c) => `\`${c.rel}/\` (${c.motivo})`).join(', ')}. La fecha sale de git, no del nombre: el nombre lo elige quien crea la carpeta. Lo escribe el hook al cerrar la ronda de revisores; si esta story se cerró sin pipeline, declaralo con \`advisors_exempt: true\` + su razón.`);
+          estricto('sin-registro-de-autoria', `pasa a \`done\` y ninguna carpeta de ejecución trae en git un \`review-roster.json\` válido, y lo piden: ${a.exige.map((c) => `\`${c.rel}/\` (${c.motivo})`).join(', ')}. La fecha sale de git, no del nombre: el nombre lo elige quien crea la carpeta. Lo escribe el hook al cerrar la ronda de revisores; si esta story se cerró sin pipeline, la exención (\`advisors_exempt: true\` + su razón) la decide la persona, con su firma sobre la historia.`);
         }
       }
     }
@@ -1445,9 +1499,22 @@ function selftest() {
   fs.mkdirSync(path.join(tmp, '.advisors', 'pipeline-runs', '1.1-20260825'), { recursive: true });
   const completo = revisar({ hoy: HOY_FIJO, repo: tmp, base });
 
+  // las exenciones viajan con la constancia del dueño en el repo (lib/exemptions.js del skill)
+  const constancias = path.join(tmp, '.tycon', 'exemptions.jsonl');
+  const escribirConstancias = () => {
+    fs.mkdirSync(path.dirname(constancias), { recursive: true });
+    fs.writeFileSync(constancias, ['dod_runtime_exempt', 'advisors_exempt'].map((campo) => JSON.stringify({ story: '1.1', campo, archivo: 'specs/stories/1-1.md', via: 'autoprueba' })).join('\n') + '\n');
+  };
+  escribirConstancias();
   conStory(story('done', 'dod_runtime_exempt: true\ndod_runtime_exempt_reason: autoprueba\nadvisors_exempt: true\nadvisors_exempt_reason: autoprueba\n'));
   fs.rmSync(path.join(tmp, '.advisors'), { recursive: true, force: true });
   const exenta = revisar({ hoy: HOY_FIJO, repo: tmp, base });
+  // la misma exención sin su constancia frena
+  fs.rmSync(constancias);
+  sh('add', '-A'); sh('-c', 'user.email=b@b', '-c', 'user.name=b', 'commit', '-q', '-m', 'sin constancia');
+  const exentaSinConstancia = revisar({ hoy: HOY_FIJO, repo: tmp, base });
+  escribirConstancias();
+  sh('add', '-A'); sh('-c', 'user.email=b@b', '-c', 'user.name=b', 'commit', '-q', '-m', 'constancia');
 
   conStory('---\nstory: "1.1"\nstatus: done\n# falta el cierre\n');
   const roto = revisar({ hoy: HOY_FIJO, repo: tmp, base });
@@ -1769,6 +1836,7 @@ function selftest() {
     ['con evidencia de cierre queda sólo el de revisores', JSON.stringify(reglas(soloDod)) === JSON.stringify(['sin-constancia-de-revisores'])],
     ['con las dos cosas, limpio', completo.hallazgos.length === 0],
     ['las exenciones declaradas del dev se respetan', exenta.hallazgos.length === 0],
+    ['una exención agregada sin su constancia en el repo frena', exentaSinConstancia.hallazgos.some((h) => h.regla === 'exencion-sin-constancia')],
     ['un frontmatter que no cierra se caza (las tools lo saltean en silencio)', reglas(roto).includes('frontmatter-roto')],
     ['una story que NO transiciona no se revisa', sinTransicion.revisadas.length === 0 && sinTransicion.hallazgos.length === 0],
     ['un reporte que menciona `story:` en el CUERPO no es una story rota', !medicion.hallazgos.some((h) => h.regla === 'frontmatter-roto')],

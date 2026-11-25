@@ -20,6 +20,8 @@
 #   T31 — los flags que la puerta le pasa al cliente los acepta el cliente REAL (los demás casos usan un sqlcmd de
 #         mentira que sólo anota argumentos, así que sin este la puerta podría estar rota para TODA consulta
 #         y ningún caso lo vería)
+#   sin aprobación, la puerta dice cuál de las tres pasó (el cuadro se venció, lo rechazaron o no se pudo abrir) y lo
+#         anota como motivo; sólo la respuesta exacta de «Aprobar» aprueba
 #
 # Correr: bash scripts/tests/tycon-prod-sql.test.sh
 set -uo pipefail
@@ -295,6 +297,8 @@ case "\$(cat "$TMP/cuadro-modo" 2>/dev/null || echo aprobar)" in
   aprobar) echo "button returned:Aprobar, gave up:false" ;;
   rechazar) echo "button returned:Rechazar, gave up:false" ;;
   vencer) echo "button returned:, gave up:true" ;;
+  mudo) ;;
+  raro) echo "button returned:Aprobar" ;;
   *) echo "execution error: No user interaction allowed. (-1713)" >&2; exit 1 ;;
 esac
 SH
@@ -722,6 +726,60 @@ for m in rechazar vencer error; do
     ok "T-puerta-23 PuertaCuadro_RechazoVencidoOError @story-8.254 @ac-18 · $m: sale 2 sin security ni cliente, y queda «rechazada»"
   else no "T-puerta-23 PuertaCuadro_RechazoVencidoOError @story-8.254 @ac-18 · $m: rc=$rc · orden $(tr '\n' '|' < "$TMP/orden.log" 2>/dev/null) · $(head -c 160 "$TMP/err")"; fi
 done
+
+# ── sin aprobación, la puerta dice cuál de las tres pasó ─────────────────────────────────────────────────────────────
+# Con una frase para las tres, quien pidió no sabe si alguien vio el cuadro: una consulta corrida de fondo se vence sin
+# que nadie la mire y parece rechazada. El registro sigue diciendo «rechazada», con el motivo al lado.
+ultimo_registro(){ tail -1 "$CASA/.claude/.tycon-pipeline/production.log" 2>/dev/null; }
+sin_aprobar_dice(){ # $1 = motivo del registro · $2 = la frase de la causa · $3 = sentencia | operación
+  local r; r="$(ultimo_registro)"
+  [ "$rc" = 2 ] && sin_security && ! grep -q '^sqlcmd' "$TMP/orden.log" 2>/dev/null \
+    && grep -qF "la persona no aprobó esta $3" "$TMP/err" && grep -qF "$2" "$TMP/err" \
+    && [[ "$r" == *'"accion":"rechazada"'* ]] && [[ "$r" == *"\"motivo\":\"$1\""* ]]
+}
+mundo ok; modo_cuadro vencer
+rc="$(puerta "$PROD" 'select 1')"
+if sin_aprobar_dice vencido "el cuadro se venció a los 120 s sin respuesta" sentencia && grep -qF "nadie lo vio" "$TMP/err" \
+   && ! grep -qF "Rechazar" "$TMP/err" && ! grep -qF "no se pudo abrir" "$TMP/err"; then
+  ok "T4 ProdSql_DialogExpired_SaysSo @story-8.333 @ac-4 · vencido: sale 2, dice que se venció y que de fondo nadie lo vio, y el registro trae el motivo"
+else no "T4 ProdSql_DialogExpired_SaysSo @story-8.333 @ac-4 · vencido: rc=$rc · $(head -c 240 "$TMP/err") · registro: $(ultimo_registro)"; fi
+mundo ok; modo_cuadro vencer
+rc="$(puerta --reclassify "$PROD")"
+if sin_aprobar_dice vencido "el cuadro se venció a los 120 s sin respuesta" operación; then
+  ok "T4 ProdSql_DialogExpired_SaysSo @story-8.333 @ac-4 · --reclassify vencido: dice «operación» y el registro trae el motivo"
+else no "T4 ProdSql_DialogExpired_SaysSo @story-8.333 @ac-4 · --reclassify vencido: rc=$rc · $(head -c 240 "$TMP/err") · registro: $(ultimo_registro)"; fi
+
+mundo ok; modo_cuadro rechazar
+rc="$(puerta "$PROD" 'select 1')"
+if sin_aprobar_dice rechazado "apretó «Rechazar» en el cuadro" sentencia && ! grep -qF "se venció" "$TMP/err" && ! grep -qF "no se pudo abrir" "$TMP/err"; then
+  ok "T5 ProdSql_DialogRejected_SaysSo @story-8.333 @ac-5 · rechazado: sale 2, dice que la persona lo rechazó, y el registro trae el motivo"
+else no "T5 ProdSql_DialogRejected_SaysSo @story-8.333 @ac-5 · rechazado: rc=$rc · $(head -c 240 "$TMP/err") · registro: $(ultimo_registro)"; fi
+mundo ok; modo_cuadro rechazar
+rc="$(puerta --open-firewall "$PROD")"
+if sin_aprobar_dice rechazado "apretó «Rechazar» en el cuadro" operación; then
+  ok "T5 ProdSql_DialogRejected_SaysSo @story-8.333 @ac-5 · --open-firewall rechazado: dice «operación» y el registro trae el motivo"
+else no "T5 ProdSql_DialogRejected_SaysSo @story-8.333 @ac-5 · --open-firewall rechazado: rc=$rc · $(head -c 240 "$TMP/err") · registro: $(ultimo_registro)"; fi
+
+# error: el programa sale con error · mudo: sale 0 sin contestar · raro: contesta algo que empieza como «Aprobar» y no es
+for m in error mudo raro; do
+  mundo ok; modo_cuadro "$m"
+  rc="$(puerta "$PROD" 'select 1')"
+  if sin_aprobar_dice sin-cuadro "el cuadro no se pudo abrir" sentencia && ! grep -qF "se venció" "$TMP/err" && ! grep -qF "Rechazar" "$TMP/err"; then
+    ok "T6 ProdSql_NoDialog_SaysSo @story-8.333 @ac-6 · $m: sale 2, dice que el cuadro no se pudo abrir, y el registro trae el motivo"
+  else no "T6 ProdSql_NoDialog_SaysSo @story-8.333 @ac-6 · $m: rc=$rc · $(head -c 240 "$TMP/err") · registro: $(ultimo_registro)"; fi
+done
+mundo ok; modo_cuadro error
+rc="$(puerta "$PROD" 'select 1')"
+if grep -qF "salió con el código 1" "$TMP/err"; then ok "T6 ProdSql_NoDialog_SaysSo @story-8.333 @ac-6 · error: dice con qué código salió el programa del cuadro"
+else no "T6 ProdSql_NoDialog_SaysSo @story-8.333 @ac-6 · error: no dice el código — $(head -c 240 "$TMP/err")"; fi
+# sólo la respuesta exacta de «Aprobar» aprueba
+mundo ok; modo_cuadro aprobar
+rc="$(puerta "$PROD" 'select 1')"
+if grep -q '^sqlcmd' "$TMP/orden.log" 2>/dev/null && ! grep -qF "no aprobó" "$TMP/err" \
+   && grep '"accion":"consulta"' "$CASA/.claude/.tycon-pipeline/production.log" 2>/dev/null | grep -F '"aprobacion":"cuadro-propio"' >/dev/null \
+   && ! grep -qF '"accion":"rechazada"' "$CASA/.claude/.tycon-pipeline/production.log" 2>/dev/null; then
+  ok "T6 ProdSql_NoDialog_SaysSo @story-8.333 @ac-6 · «Aprobar» sigue aprobando: lee la clave, consulta y anota cuadro-propio"
+else no "T6 ProdSql_NoDialog_SaysSo @story-8.333 @ac-6 · «Aprobar» no aprobó: rc=$rc · orden $(tr '\n' '|' < "$TMP/orden.log" 2>/dev/null) · $(head -c 160 "$TMP/err")"; fi
 
 # T-puerta-24 · sin la sesión de la Mac (otra sesión que Aqua, o por SSH) sale 2 antes de abrir el cuadro
 mundo ok; printf 'Background\n' > "$TMP/launchctl-modo"

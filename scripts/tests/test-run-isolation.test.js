@@ -101,7 +101,10 @@ test('T1 Compare_PrimeraPasada_CorreConCasaAparte @story-8.314 @ac-1', { skip: !
   assert.ok(!a.HOME.startsWith(c.casa + path.sep), `la casa aparte queda fuera de la de la cuenta: ${a.HOME}`);
   assert.strictEqual(a.USERPROFILE, a.HOME);
   for (const k of ['TMPDIR', 'TMP', 'TEMP']) assert.ok(a[k] && a[k].startsWith(path.dirname(a.HOME) + path.sep), `${k}=${a[k]}`);
-  for (const k of ['TYCON_HOME', 'CLAUDE_CONFIG_DIR', 'CODEX_HOME']) assert.strictEqual(a[k], null, k);
+  for (const k of ['TYCON_HOME', 'CODEX_HOME']) assert.strictEqual(a[k], null, k);
+  // la de Claude Code llega dicha y dentro de la casa aparte (fila 88c: así el ítem del llavero no es el de la sesión),
+  // nunca la de afuera
+  assert.strictEqual(a.CLAUDE_CONFIG_DIR, path.join(a.HOME, '.claude'));
   assert.strictEqual(a.TYCON_TEST_RUN, '1');
   assert.ok(!fs.existsSync(path.join(c.casa, 'escrito.txt')), 'nada escrito en la casa de la cuenta');
   assert.ok(!fs.existsSync(path.dirname(a.HOME)), 'la carpeta aparte se borró al terminar');
@@ -181,6 +184,41 @@ test('Aislada_HijoSinRed_ElEncierroLoAnota @story-8.314 @ac-2', { skip: ENCIERRO
   assert.ok(fs.existsSync(path.join(r, 'f.txt')), 'escribió en su repo');
 });
 
+test('F161b Aislada_EscrituraNegadaFueraDeLoAdmitido_LoDiceEnUnaLinea: un comando que falla porque el encierro le negó escribir fuera de su casa y de su repo se lleva una línea con qué hacer', { skip: ENCIERRO ? false : 'sin el encierro del sistema' }, (t) => {
+  // un here document de bash o un temporal de mktemp con otra carpeta dan un «Operation not permitted» suelto: el
+  // encierro no se abre, y la línea dice que esa suite va como humo común
+  const c = cuenta(t);
+  const afuera = path.join(c.b, 'afuera');
+  fs.mkdirSync(afuera);
+  const r = repo(path.join(c.b, 'repo'), {
+    '.advisors/dod-runtime/g.js': [
+      "const { spawnSync } = require('child_process');",
+      "const h = spawnSync('/bin/sh', ['-c', 'echo x > \"$1\"', 'sh', process.argv[2]], { stdio: 'inherit' });",
+      'process.exit(h.status === null ? 1 : h.status);',
+    ].join('\n'),
+    '.advisors/dod-runtime/falla.js': "console.error('esperaba 2, vino 3'); process.exit(1);\n",
+  });
+  const ev = path.join(r, '.advisors', 'dod-runtime');
+  const correr = (d) => humo(SMOKE, ev, '9.32', ['--', process.execPath, '.advisors/dod-runtime/g.js', d], { cwd: r, env: ambiente(c) });
+  const negada = correr(path.join(afuera, 'f.txt'));
+  assert.notStrictEqual(negada.status, 0, salida(negada));
+  assert.ok(!fs.existsSync(path.join(afuera, 'f.txt')), 'el encierro lo negó');
+  const lineas = salida(negada).split('\n').filter((l) => l.includes('humo común'));
+  assert.strictEqual(lineas.length, 1, `una línea que dice qué hacer: ${salida(negada)}`);
+  assert.match(lineas[0], /\[smoke-run\]/);
+  assert.match(lineas[0], /no se abre/);
+  // la línea no repite el texto del sistema que se busca en la salida
+  assert.doesNotMatch(lineas[0], /Operation not permitted|cannot create temp file/);
+  // gemelo: el mismo comando que escribe en su repo sale 0 y no se lleva la línea
+  const bien = correr(path.join(r, 'f.txt'));
+  assert.strictEqual(bien.status, 0, salida(bien));
+  assert.ok(!salida(bien).includes('humo común'), salida(bien));
+  // gemelo: un comando que falla por otra cosa (una aserción, sin nada negado) tampoco
+  const otro = humo(SMOKE, ev, '9.32', ['--', process.execPath, '.advisors/dod-runtime/falla.js'], { cwd: r, env: ambiente(c) });
+  assert.notStrictEqual(otro.status, 0, salida(otro));
+  assert.ok(!salida(otro).includes('humo común'), salida(otro));
+});
+
 test('F174 Aislada_HereDocDeBash_Anda: en el encierro, desde una carpeta no admitida, el bash del sistema escribe el temporal de su here document; otra escritura ahí sigue negada', { skip: ENCIERRO ? false : 'sin el encierro del sistema' }, (t) => {
   // fila 174: el bash 3.2 de macOS no mira TMPDIR para un here document; si no puede escribir en /var/tmp ni en /tmp (el
   // encierro se lo niega), lo escribe en la carpeta actual como «sh-thd-<n>». Negado, un freno de bash que lo usa no
@@ -223,6 +261,127 @@ test('F174 Aislada_HereDocDeBash_Anda: en el encierro, desde una carpeta no admi
   assert.match(salida(s2), /ENLACE [1-9]/, salida(s2));
   assert.strictEqual(fs.readFileSync(victima, 'utf8'), 'intacto\n', 'el archivo del enlace no cambió');
   assert.match(salida(s2), /sh-thd/, `dice por qué el here document queda negado: ${salida(s2)}`);
+});
+
+// fila 214: el freno de la consola corre dentro de la corrida aislada desde una carpeta que no es la de lanzamiento (la
+// prueba en vivo lo corre en el árbol público). El bash 3.2 de macOS escribe el temporal de un here-string en /var/tmp,
+// /tmp o la carpeta actual, y el encierro se los niega: el freno no leía lo que le contestaban sus lectores y, según el
+// lugar, negaba o dejaba pasar. El freno no usa here-strings; el encierro no se afloja (admitir /var/tmp dejaba pisar el
+// here document de un bash de afuera, como el freno de otra sesión).
+const GUARD_PRE = path.join(RAIZ, 'scripts', 'hooks', 'safety-guard-pre.sh');
+test('F214 Freno_SinHereStrings: el freno de la consola no usa here-strings ni here documents', () => {
+  const malos = fs.readFileSync(GUARD_PRE, 'utf8').split('\n')
+    .map((l, i) => ({ l, i: i + 1 }))
+    // un `<<<` o un `<<PALABRA` (con comillas, barra o guion) fuera de una cadena: lo que el freno sólo analiza como texto
+    // va entre comillas
+    .filter(({ l }) => !/^\s*#/.test(l) && /(^|[^<'"])<<(<(?!"\s*$)|-?\s*(\\|['"])?[A-Za-z_][A-Za-z0-9_]*)/.test(l))
+    .map(({ l, i }) => `${i}: ${l.trim()}`);
+  assert.deepStrictEqual(malos, []);
+});
+
+test('F214 Aislada_ElFrenoDesdeOtraCarpeta_Decide: dentro del encierro, el freno corrido desde una carpeta no admitida lee a sus lectores', { skip: ENCIERRO ? false : 'sin el encierro del sistema' }, (t) => {
+  const c = cuenta(t);
+  const afuera = path.join(c.b, 'afuera');
+  fs.mkdirSync(afuera);
+  const r = repo(path.join(c.b, 'repo'), {
+    '.advisors/dod-runtime/g.js': [
+      "const { spawnSync } = require('child_process');",
+      // un comando que pasa por los lectores del freno: su respuesta se lee renglón por renglón
+      "const ev = JSON.stringify({ tool_name: 'Bash', session_id: 's214', cwd: process.argv[2], tool_input: { command: 'gh pr merge 12 --merge' } });",
+      "const h = spawnSync('/bin/bash', [process.argv[3]], { cwd: process.argv[2], input: ev, encoding: 'utf8' });",
+      "console.log('FRENO ' + h.status + ' ' + ((h.stderr || '').match(/GIT-C[0-9]+/) || ['sin-regla'])[0] + ' ' + (h.stderr || '').split('\\n').filter((x) => /temp file|here document/.test(x)).join(' | '));",
+    ].join('\n'),
+  });
+  const g = path.join(r, '.advisors', 'dod-runtime', 'g.js');
+  const s = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.33', ['--', process.execPath, g, afuera, GUARD_PRE], { cwd: r, env: ambiente(c) });
+  // sin leer a sus lectores, el freno dejaba pasar este merge (salía 0); leyéndolos, lo frena con su regla
+  assert.match(salida(s), /FRENO 2 GIT-C7/, salida(s));
+  assert.doesNotMatch(salida(s), /cannot create temp file/, salida(s));
+  assert.deepStrictEqual(fs.readdirSync(afuera).filter((f) => /^sh-thd-/i.test(f)), [], 'nada en la carpeta de afuera');
+});
+
+test('F214 T2 Aislada_EnlacePlantadoConOtraCaja_NoSeAdmite: un enlace duro «SH-THD-<n>» en la carpeta de lanzamiento cuenta igual que en minúsculas', { skip: ENCIERRO ? false : 'sin el encierro del sistema' }, (t) => {
+  // el encierro y el disco de la Mac no distinguen mayúsculas (y pliegan «ſ» en «s»): el chequeo tampoco
+  const c = cuenta(t);
+  const sesion = path.join(c.b, 'sesion');
+  fs.mkdirSync(sesion);
+  const afuera = path.join(c.b, 'afuera');
+  fs.mkdirSync(afuera);
+  const victima = path.join(afuera, 'victima.txt');
+  fs.writeFileSync(victima, 'intacto\n');
+  for (const nombre of ['SH-THD-31', 'ſh-thd-32']) {
+    fs.linkSync(victima, path.join(sesion, nombre));
+    const r = repo(path.join(c.b, `repo-${nombre.length}-${nombre.charCodeAt(0)}`), {
+      '.advisors/dod-runtime/g.js': `const r = require('child_process').spawnSync('/bin/bash', ['-c', 'echo PWNED > ${nombre.toLowerCase()}'], { encoding: 'utf8' }); console.log('ENLACE ' + r.status);\n`,
+    });
+    const s = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.33', ['--', process.execPath, path.join(r, '.advisors', 'dod-runtime', 'g.js')], { cwd: sesion, env: ambiente(c) });
+    assert.match(salida(s), /ENLACE [1-9]/, `${nombre}: ${salida(s)}`);
+    assert.strictEqual(fs.readFileSync(victima, 'utf8'), 'intacto\n', `${nombre}: el archivo del enlace no cambió`);
+    assert.match(salida(s), /sh-thd/, `${nombre}: dice por qué: ${salida(s)}`);
+    fs.rmSync(path.join(sesion, nombre), { force: true });
+  }
+});
+
+// fila 218: la ventana de permiso corre run-base-controls.sh con bash para clasificar y prechequear la firma de un cambio
+// de control. Le pasaba su programa a node con un here document, y dentro del encierro, desde una carpeta que no es la
+// de lanzamiento, bash no podía crear su temporal: la firma se negaba con ese error. Se lo pasa sin archivo temporal.
+const BASE_CONTROLS = path.join(RAIZ, 'scripts', 'ci', 'run-base-controls.sh');
+test('F218 BaseControls_SinHereDocument: lo que bash corre de run-base-controls.sh no usa here documents ni here-strings', () => {
+  const lineas = fs.readFileSync(BASE_CONTROLS, 'utf8').split('\n');
+  // bash corre lo de antes de la marca del programa (el exec lo reemplaza antes de llegar): ahí no hay ningún `<<`, ni
+  // siquiera dentro de una cadena, así ninguna forma de here document o here-string se escapa
+  const fin = lineas.indexOf(": <<'JS'");
+  assert.ok(fin > 0, 'encuentro la marca del programa');
+  const malos = lineas.slice(0, fin)
+    .map((l, i) => ({ l, i: i + 1 }))
+    .filter(({ l }) => !/^\s*#/.test(l) && l.includes('<<'))
+    .map(({ l, i }) => `${i}: ${l.trim()}`);
+  assert.deepStrictEqual(malos, []);
+});
+
+test('F218 BaseControls_PorTuberia_NoSaleVerde: lanzado desde una tubería, no termina en 0 sin correr nada', { skip: !POSIX }, (t) => {
+  // sed abre la misma fuente que bash: si es una tubería, se comía lo que a bash le faltaba leer y bash terminaba en 0
+  const c = cuenta(t);
+  // la tubería la arma bash, en un guion propio (la entrada que pone node es un socket en Linux, y /dev/stdin no se abre
+  // sobre un socket); el guion y la carpeta le llegan como argumentos
+  const lanzar = (nombre, renglon) => {
+    const guion = path.join(c.b, nombre);
+    fs.writeFileSync(guion, `${renglon}\n`);
+    return spawnSync('bash', [guion, BASE_CONTROLS, c.b], { cwd: c.b, encoding: 'utf8' });
+  };
+  const porTuberia = lanzar('por-tuberia.sh', 'cat "$1" | bash /dev/stdin check-inventory --root "$2"');
+  assert.strictEqual(porTuberia.status, 9, `cat … | bash /dev/stdin: ${porTuberia.stdout}${porTuberia.stderr}`);
+  const porSustitucion = lanzar('por-sustitucion.sh', 'bash <(cat "$1") check-inventory --root "$2"');
+  assert.strictEqual(porSustitucion.status, 9, `bash <(cat …): ${porSustitucion.stdout}${porSustitucion.stderr}`);
+  assert.match(porSustitucion.stdout, /no pude correr/);
+});
+
+test('F218 BaseControls_SinElPrograma_NoPudeCorrer: si no encuentra su programa sale 9, nunca 0 con un programa vacío', { skip: !POSIX }, (t) => {
+  const c = cuenta(t);
+  const copia = path.join(c.b, 'run-base-controls.sh');
+  fs.writeFileSync(copia, fs.readFileSync(BASE_CONTROLS, 'utf8').replace(/^: <<'JS'\n/m, ''));
+  const r = spawnSync('bash', [copia, 'check-inventory', '--root', c.b], { cwd: c.b, encoding: 'utf8' });
+  assert.strictEqual(r.status, 9, `${r.stdout}${r.stderr}`);
+  assert.match(r.stdout, /no pude correr: no pude leer el programa de node/);
+});
+
+test('F218 Aislada_BaseControlsDesdeOtraCarpeta_LlegaANode: dentro del encierro, run-base-controls.sh corrido desde una carpeta no admitida le pasa su programa a node', { skip: ENCIERRO ? false : 'sin el encierro del sistema' }, (t) => {
+  const c = cuenta(t);
+  const afuera = path.join(c.b, 'afuera');
+  fs.mkdirSync(afuera);
+  const r = repo(path.join(c.b, 'repo'), {
+    '.advisors/dod-runtime/g.js': [
+      "const { spawnSync } = require('child_process');",
+      // un pedido mal escrito: lo contesta el programa de node, así que llegar a esa respuesta prueba que lo recibió
+      "const h = spawnSync('/bin/bash', [process.argv[3], 'classify', '--root', process.argv[2], '--base', 'HEAD', '--entries', 'no-es-json'], { cwd: process.argv[2], encoding: 'utf8' });",
+      "console.log('CONTROLES ' + h.status + ' ' + ((h.stdout || '') + (h.stderr || '')).split('\\n').filter((x) => /no es JSON|temp file|here document/.test(x)).join(' | '));",
+    ].join('\n'),
+  });
+  const g = path.join(r, '.advisors', 'dod-runtime', 'g.js');
+  const s = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.33', ['--', process.execPath, g, afuera, BASE_CONTROLS], { cwd: r, env: ambiente(c) });
+  assert.match(salida(s), /CONTROLES 2 .*--entries no es JSON/, salida(s));
+  assert.doesNotMatch(salida(s), /cannot create temp file/, salida(s));
+  assert.deepStrictEqual(fs.readdirSync(afuera).filter((f) => /^sh-thd-/i.test(f)), [], 'nada en la carpeta de afuera');
 });
 
 test('F174 T2 Aislada_HijoSinLasVariablesDeLaRed_EscribeEnSuLaboratorio: un hijo con HOME de juguete y sin las variables TYCON_ escribe en su casa de juguete; la casa de la cuenta sigue frenada', { skip: !POSIX }, (t) => {
@@ -551,6 +710,112 @@ test('T8 IsolatedRun_CarriesRootsWithGuard @story-8.321 @ac-1 @ac-3', { skip: !P
   for (const d of ['.tycon', '.claude', '.codex']) assert.ok(red.roots.includes(path.join(c.casa, d)), `vigila ${d}: ${red.roots}`);
   assert.match(red.log, /intentos\.jsonl$/);
   assert.ok(red.allow.includes(fuera), `admite la raíz del humo: ${red.allow}`);
+});
+
+// fila 88c: una prueba en vivo que necesita Claude Code corre en la casa aparte con una llave de prueba propia, pasada
+// sólo para esa corrida; la credencial de quien la lanza nunca llega al comando, y la llave no se muestra
+const LLAVE_DE_PRUEBA = 'llave-de-prueba-0000-de-juguete';
+const LLAVE_DE_AFUERA = 'llave-de-afuera-1111-de-juguete';
+function humoQueMiraLaLlave(t) {
+  const c = cuenta(t);
+  const r = repo(path.join(c.b, 'repo'), {
+    '.advisors/dod-runtime/llave.js': [
+      'const e = process.env;',
+      `console.log('llave=' + (e.ANTHROPIC_API_KEY === ${JSON.stringify(LLAVE_DE_PRUEBA)} ? 'la-de-prueba' : e.ANTHROPIC_API_KEY ? 'otra' : 'ninguna'));`,
+      "console.log('token=' + (e.ANTHROPIC_AUTH_TOKEN || e.CLAUDE_CODE_OAUTH_TOKEN ? 'llego' : 'no'));",
+      "console.log('nombre-de-prueba=' + (e.TYCON_TEST_ANTHROPIC_API_KEY ? 'llego' : 'no'));",
+      // los otros canales con que Claude Code toma una credencial, y la carpeta que nombra el ítem del llavero
+      "const otros = ['ANTHROPIC_BASE_URL', 'ANTHROPIC_CUSTOM_HEADERS', 'ANTHROPIC_PROFILE', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_SECURESTORAGE_CONFIG_DIR'].filter((k) => e[k]);",
+      "console.log('otros=' + (otros.length ? otros.join(',') : 'ninguno'));",
+      "console.log('config-dir=' + (e.CLAUDE_CONFIG_DIR === require('path').join(e.HOME, '.claude') ? 'en-la-casa-aparte' : String(e.CLAUDE_CONFIG_DIR)));",
+    ].join('\n'),
+  });
+  const ev = path.join(r, '.advisors', 'dod-runtime');
+  return (extra) => humo(SMOKE, ev, '9.33', ['--', process.execPath, '.advisors/dod-runtime/llave.js'], { cwd: r, env: ambiente(c, extra) });
+}
+test('F88c Aislada_LlaveDePrueba_LlegaComoLaDeAnthropic_YLaDeAfueraNo: con TYCON_TEST_ANTHROPIC_API_KEY, la casa aparte recibe esa llave como ANTHROPIC_API_KEY; la credencial de afuera no llega y la llave no se muestra', (t) => {
+  const correr = humoQueMiraLaLlave(t);
+  const r = correr({ TYCON_TEST_ANTHROPIC_API_KEY: LLAVE_DE_PRUEBA, ANTHROPIC_API_KEY: LLAVE_DE_AFUERA, ANTHROPIC_AUTH_TOKEN: LLAVE_DE_AFUERA, CLAUDE_CODE_OAUTH_TOKEN: LLAVE_DE_AFUERA });
+  assert.strictEqual(r.status, 0, salida(r));
+  assert.match(salida(r), /llave=la-de-prueba/);
+  assert.match(salida(r), /token=no/);
+  assert.match(salida(r), /nombre-de-prueba=no/);
+  assert.ok(!salida(r).includes(LLAVE_DE_PRUEBA), `la llave no se muestra: ${salida(r)}`);
+  assert.ok(!salida(r).includes(LLAVE_DE_AFUERA), `la de afuera tampoco: ${salida(r)}`);
+});
+test('F88c Aislada_SinLlaveDePrueba_LaDeAfueraNoLlega: sin la llave de prueba, la credencial de Anthropic de quien lanza el humo no llega a la casa aparte', (t) => {
+  const correr = humoQueMiraLaLlave(t);
+  const r = correr({ ANTHROPIC_API_KEY: LLAVE_DE_AFUERA, ANTHROPIC_AUTH_TOKEN: LLAVE_DE_AFUERA, CLAUDE_CODE_OAUTH_TOKEN: LLAVE_DE_AFUERA });
+  assert.strictEqual(r.status, 0, salida(r));
+  assert.match(salida(r), /llave=ninguna/);
+  assert.match(salida(r), /token=no/);
+  assert.ok(!salida(r).includes(LLAVE_DE_AFUERA), salida(r));
+});
+test('F88c Aislada_OtrosCanalesDeCredencial_NoLlegan: la pasarela, las cabeceras, el perfil, el proveedor de nube y el ítem del llavero de afuera no llegan; la carpeta de Claude Code es la de la casa aparte', (t) => {
+  const correr = humoQueMiraLaLlave(t);
+  const r = correr({ TYCON_TEST_ANTHROPIC_API_KEY: LLAVE_DE_PRUEBA, ANTHROPIC_BASE_URL: 'https://pasarela.acme.test', ANTHROPIC_CUSTOM_HEADERS: 'x-api-key: de-afuera',
+    ANTHROPIC_PROFILE: 'de-afuera', CLAUDE_CODE_USE_BEDROCK: '1', CLAUDE_CODE_USE_VERTEX: '1', CLAUDE_SECURESTORAGE_CONFIG_DIR: '/tmp/de-afuera',
+    CLAUDE_CONFIG_DIR: '/tmp/claude-de-afuera' });
+  assert.strictEqual(r.status, 0, salida(r));
+  assert.match(salida(r), /llave=la-de-prueba/);
+  assert.match(salida(r), /otros=ninguno/);
+  assert.match(salida(r), /config-dir=en-la-casa-aparte/);
+});
+test('F88c HumoComun_ConLlaveDePrueba_NoCorre: con la llave de prueba puesta, un humo que no corre aislado no se corre (correría con la casa y la credencial reales)', (t) => {
+  const c = cuenta(t);
+  const r = repo(path.join(c.b, 'repo'), { 'marca.js': "require('fs').writeFileSync(require('path').join(__dirname, 'corrio.txt'), 'si');\n" });
+  const s = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.34', ['--', process.execPath, 'marca.js'], { cwd: r, env: ambiente(c, { TYCON_TEST_ANTHROPIC_API_KEY: LLAVE_DE_PRUEBA }) });
+  assert.strictEqual(s.status, 2, salida(s));
+  assert.match(salida(s), /ejecución aislada/);
+  assert.ok(!fs.existsSync(path.join(r, 'corrio.txt')), 'el comando no corrió');
+  assert.ok(!salida(s).includes(LLAVE_DE_PRUEBA), salida(s));
+  // gemelo: sin la llave, el mismo humo común corre
+  const sin = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.34', ['--', process.execPath, 'marca.js'], { cwd: r, env: ambiente(c) });
+  assert.strictEqual(sin.status, 0, salida(sin));
+  assert.ok(fs.existsSync(path.join(r, 'corrio.txt')), 'sin la llave, el humo común corre');
+});
+
+// fila 226: lo mismo que el freno (214) en los demás guiones de bash del camino de los controles. Un here document o un
+// here-string pide un temporal que el bash 3.2 de macOS escribe en /var/tmp, /tmp o la carpeta actual, y dentro de la
+// corrida aislada, desde otra carpeta, el encierro se los niega. scripts/ci/public-ci.sh queda afuera: corre sólo en la
+// CI y nunca dentro del encierro.
+const SIN_HERE_DOCUMENTS = [
+  '.githooks/pre-commit-checks',
+  'skills/tycon-pipeline/scripts/smoke-run.sh',
+  'skills/tycon-pipeline/scripts/test-gate.sh',
+  'skills/tycon-pipeline/scripts/e2e-gate.sh',
+  'scripts/hooks/git-post-commit-global.sh',
+  'scripts/hooks/git-pre-push-global.sh',
+  'scripts/hooks/engram-pre-commit.sh',
+  'scripts/lib/legacy-names.sh',
+  'scripts/ci/check-bash32-quoting.sh',
+];
+test('F226 GuionesDeLosControles_SinHereDocuments: los guiones de bash del camino de los controles no usan here documents ni here-strings', () => {
+  const malos = [];
+  for (const rel of SIN_HERE_DOCUMENTS) {
+    fs.readFileSync(path.join(RAIZ, rel), 'utf8').split('\n').forEach((l, i) => {
+      if (!/^\s*#/.test(l) && l.includes('<<')) malos.push(`${rel}:${i + 1}: ${l.trim()}`);
+    });
+  }
+  assert.deepStrictEqual(malos, []);
+});
+
+test('F226 Aislada_LegacyNamesDesdeOtraCarpeta_Encuentra: dentro del encierro, desde una carpeta no admitida, la biblioteca de nombres viejos encuentra su entrada', { skip: ENCIERRO ? false : 'sin el encierro del sistema' }, (t) => {
+  const c = cuenta(t);
+  const afuera = path.join(c.b, 'afuera');
+  fs.mkdirSync(afuera);
+  const r = repo(path.join(c.b, 'repo'), {
+    '.advisors/dod-runtime/g.js': [
+      "const { spawnSync } = require('child_process');",
+      "const lineas = ['env', 'TYCON_OLD_SAMPLE', 'TYCON_NEW_SAMPLE', '0'].join('\\t');",
+      "const h = spawnSync('/bin/bash', ['-c', '. \"$1\"; _LEGACY_NAMES_LINES=\"$2\"; _legacy_names_find env old TYCON_OLD_SAMPLE', 'bash', process.argv[3], lineas], { cwd: process.argv[2], encoding: 'utf8' });",
+      "console.log('LEGADO ' + h.status + ' ' + JSON.stringify(h.stdout) + ' ' + (h.stderr || '').split('\\n').filter((x) => /temp file|here document/.test(x)).join(' | '));",
+    ].join('\n'),
+  });
+  const g = path.join(r, '.advisors', 'dod-runtime', 'g.js');
+  const s = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.33', ['--', process.execPath, g, afuera, path.join(RAIZ, 'scripts', 'lib', 'legacy-names.sh')], { cwd: r, env: ambiente(c) });
+  assert.match(salida(s), /LEGADO 0 "TYCON_OLD_SAMPLE\\tTYCON_NEW_SAMPLE\\t0"/, salida(s));
+  assert.doesNotMatch(salida(s), /cannot create temp file/, salida(s));
 });
 
 test('T99 RedDeLasPruebas_NadaTocoLaCasaReal @story-8.314', () => {

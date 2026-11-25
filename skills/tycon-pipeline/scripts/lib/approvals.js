@@ -221,11 +221,13 @@ function anteriorAlControl(dir, nombre, ref = 'origin/main') {
  * cuenta sólo si la corrida declara que la hizo un arnés que anota aprobaciones (`roster.registro_aprobaciones`) y no
  * es `anterior` al control (`anteriorAlControl`): antes de `DESDE_EN_LA_STORY` el registro quedaba sólo en el repo del
  * código y el repo de la story no pudo recibirlo. Un registro presente y malo cuenta siempre.
+ * Con `heredado` (el nombre de otra corrida de la misma historia, de `planHeredado`), la ausencia del registro o del
+ * plan no cuenta: es la corrida de cierre de una historia cuyo plan ya aprobó una persona.
  * Devuelve la lista en orden: registro ilegible, registro ausente, plan sin anotar. Vacía = no falta nada.
  */
-function problemasDelRegistro({ registro, roster, anterior = false }) {
+function problemasDelRegistro({ registro, roster, anterior = false, heredado = null }) {
   const p = [];
-  const exigible = !!(roster && roster.registro_aprobaciones) && !anterior;
+  const exigible = !!(roster && roster.registro_aprobaciones) && !anterior && !heredado;
   if (registro.error || registro.ilegibles) {
     p.push({ regla: 'registro-de-aprobaciones-invalido',
       detalle: registro.error ? `no se puede leer (${registro.error})` : `tiene ${registro.ilegibles} línea(s) que no son JSON` });
@@ -238,6 +240,27 @@ function problemasDelRegistro({ registro, roster, anterior = false }) {
     p.push({ regla: 'sin-aprobacion-del-plan', detalle: 'no trae la aprobación del plan' });
   }
   return p;
+}
+
+/**
+ * La aprobación del plan que hereda la corrida de cierre `actual` (review → done): la de una corrida ANTERIOR de la
+ * misma historia (`carpetas`, de `carpetasDeCorrida`), con su registro legible, una línea `plan` y ninguna línea mala
+ * (un agente anotado como persona no es una aprobación). La más nueva que cumpla. `{ nombre }` o null: sin ninguna, el
+ * cierre frena como cualquier corrida. La orden la da el sello completo del nombre (`<clave>-AAAAMMDDhhmmss`).
+ */
+function planHeredado(carpetas, actual) {
+  const sello = (n) => (String(n).match(/-(\d{8,14})(?:-\d+)?$/) || [])[1] || '';
+  const propio = sello(actual);
+  if (!propio) return null;
+  const antes = carpetas.filter((c) => c.nombre !== actual && sello(c.nombre) && sello(c.nombre) < propio)
+    .sort((a, b) => (sello(a.nombre) < sello(b.nombre) ? 1 : -1));
+  for (const c of antes) {
+    const reg = leer(c.dir);
+    if (!reg.existe || reg.error || reg.ilegibles) continue;
+    if (reg.lineas.some((l) => validar(l).length)) continue;
+    if (reg.lineas.some((l) => l && l.que === 'plan')) return { nombre: c.nombre };
+  }
+  return null;
 }
 
 /** Las reglas que perdona `advisors_exempt`: la falta del registro, no un registro presente y malo. */
@@ -324,5 +347,5 @@ function unir(origenDir, destinoDir) {
 
 module.exports = {
   FILE, SIN_NOMBRAR, esAgente, lineasDeFirmaPorTerminal, deLaPersona, quienDesdeOpciones, normalizar, validar, anotar, leer, resumir,
-  problemasDelRegistro, faltaElPlan, faltaLaMaqueta, unir, carpetasDeCorrida, POR_FALTA, DESDE_EN_LA_STORY, selloDeCorrida, anteriorAlControl,
+  problemasDelRegistro, planHeredado, faltaElPlan, faltaLaMaqueta, unir, carpetasDeCorrida, POR_FALTA, DESDE_EN_LA_STORY, selloDeCorrida, anteriorAlControl,
 };

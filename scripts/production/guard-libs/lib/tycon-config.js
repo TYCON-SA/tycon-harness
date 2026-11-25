@@ -164,6 +164,7 @@ const VOCABULARIO = Object.freeze({
     // perfil o un archivo de la máquina que las trae
     timeTracking: 'aceptada',
     platform: 'aceptada',
+    mcp_servers: 'aceptada',
   }),
   // La política de actualización del arnés (story 8.13, AC 12): valores CERRADOS (`opcion:a|b`). Un valor fuera de la
   // lista es un error (8.3 AC 2), nunca «apagado» ni el default. `TYCON_UPDATE=0` (apagar del todo) no es una clave:
@@ -226,6 +227,9 @@ const VOCABULARIO = Object.freeze({
   site: Object.freeze({ url: 'aceptada' }),
   // el umbral de la sesión callada de la oficina de /office: el freno no lo usa, pero lo acepta
   office: Object.freeze({ quiet_minutes: 'aceptada' }),
+  // lo que la máquina limpia sola (las horas de una carpeta de trabajo, los días de un temporal, el aviso de disco): el
+  // freno no lo usa, pero lo acepta
+  maintenance: Object.freeze({ worktree_idle_hours: 'aceptada', temp_days: 'aceptada', disk_warn_percent: 'aceptada' }),
   // los topes de archivos del camino corto (sólo del perfil del equipo): el freno no los usa, pero los acepta
   short_path: Object.freeze({ coordinator_max_files: 'aceptada', max_files: 'aceptada' }),
   // los interruptores que la organización enciende desde el sitio: el freno no los usa, pero los acepta

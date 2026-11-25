@@ -327,6 +327,24 @@ test('Clockify_OldStateStillFound @story-7.40 @ac-5', () => {
   assert.deepStrictEqual(JSON.parse(run('entry', vacio).stdout.trim()), {});
 });
 
+test('Clockify_McpServerFromMachine — las acciones nombran el servidor MCP como lo registró la máquina', () => {
+  const home = casa();
+  const cwd = path.join(home, 'acme-repo');
+  fs.mkdirSync(cwd);
+  const onWork = path.join(INTS, 'clockify', 'scripts', 'on-work.js');
+  const run = (mcpServer, h = home) => JSON.parse(spawnSync(process.execPath, [onWork], { env: env(h), encoding: 'utf8', input: JSON.stringify({ event: 'start', storyId: '7.40', title: 'algo', repo: cwd, sessionId: 'ses-1', mcpServer }) }).stdout.trim());
+  // el que trae el evento
+  assert.match(run('horas-de-acme').action, /mcp__horas-de-acme__create-clockify-time-entry/);
+  // sin evento que lo traiga (un núcleo viejo): el de la máquina, y si no, el del manifiesto
+  assert.match(run(undefined).action, /mcp__clockify__create-clockify-time-entry/);
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.claude', 'tycon.json'), JSON.stringify({ integrations: { mcp_servers: { clockify: 'reloj' } } }));
+  assert.match(run(undefined).action, /mcp__reloj__create-clockify-time-entry/);
+  // un nombre que no es un nombre de servidor no se usa
+  assert.match(run('a b; rm').action, /mcp__reloj__create-clockify-time-entry/);
+  assert.match(run('a__b').action, /mcp__reloj__create-clockify-time-entry/);
+});
+
 // ── Los manifiestos y sus rutas: un manifiesto mal escrito queda roto con aviso, nunca frena la instalación ─────────
 
 /** Una carpeta de integraciones con `acme` (de horas) y los hooks dados. */

@@ -328,7 +328,7 @@ correr_hermanos_al_salir() {
     # El 3 de «la herramienta no arrancó» no es «sin pruebas acá»: este repo tiene pruebas y no se midieron.
     if [[ "$final" == "3" && "$hrc" == "0" && -z "${TG_NOT_MEASURED:-}" ]]; then final=0
     else final="$(combinar_salida "$final" "$hrc")"; fi
-  done <<< "$blancos"
+  done < <(printf '%s\n' "$blancos")
   [[ "$final" == "78" ]] && salir_esperando_a_main "repos hermanos (este repo: $rc)"
   node -e '
     const fs = require("fs"), p = require("path");
@@ -414,11 +414,46 @@ TG_MULTI=0; TG_SCOPE=""; TG_SOURCE=""; TG_STORY_ID=""; TG_AMBIG=0; TG_CANDS=""; 
 # 🔴 El separador es \x1f, NO un tabulador: bash trata el tab como espacio en blanco de IFS y
 # colapsa los separadores consecutivos, así que un campo vacío en el medio corre todos los de
 # atrás (el alcance llegaría valiendo "1", que es el flag de ambigüedad).
-IFS=$'\x1f' read -r TG_MULTI TG_SCOPE TG_SOURCE TG_STORY_ID TG_AMBIG TG_CANDS TG_REASON TG_SCOPES <<< "$DEDUC_TSV"
+IFS=$'\x1f' read -r TG_MULTI TG_SCOPE TG_SOURCE TG_STORY_ID TG_AMBIG TG_CANDS TG_REASON TG_SCOPES < <(printf '%s\n' "$DEDUC_TSV")
 TG_MULTI="${TG_MULTI:-0}"; TG_AMBIG="${TG_AMBIG:-0}"
 # Cuando $2 es la RUTA de la story, el id sale del frontmatter — una sola verdad: lo lee el
 # deductor, que ya abrió el archivo. Si $2 era un id, se respeta tal cual.
 if [[ -n "$TG_STORY_ID" ]]; then STORY_ID="$TG_STORY_ID"; fi
+
+# --- El repo declara que su suite no corre en la máquina ---------------------------------------------------------------
+# `test_gate.scope: none` en el `.test-gate.yaml` commiteado (lib/test-gate-scope.js): la suite le pega a algo que esta
+# máquina no tiene que tocar (la base de otra persona, un servicio compartido). No se corre nada y sale 3, «sin medir»,
+# con el motivo y quién la corre; los hermanos de la story corren igual (correr_hermanos_al_salir).
+_tg_none_rc=0
+_tg_none="$(node "$SCRIPT_DIR/lib/test-gate-scope.js" "$REPO")" || _tg_none_rc=$?
+if [[ "$_tg_none_rc" == "11" ]]; then
+  IFS=$'\x1f' read -r _TG_NONE_BY _TG_NONE_WHY < <(printf '%s\n' "$_tg_none")
+  _RAZON="el repo declara que su suite no corre en esta máquina (.test-gate.yaml: ${_TG_NONE_WHY}); la corre ${_TG_NONE_BY}"
+  # con esta marca, un hermano en verde no convierte el 3 en verde al combinar (correr_hermanos_al_salir)
+  TG_NOT_MEASURED="$_RAZON"
+  echo "[test-gate] ⏭  sin suite local: $_RAZON" >&2
+  node -e '
+    const fs = require("fs"), p = require("path");
+    const [out, storyId, ts, reason, by] = process.argv.slice(1);
+    fs.mkdirSync(p.dirname(out), { recursive: true });
+    fs.writeFileSync(out, JSON.stringify({
+      ts, story_id: storyId, runner: null, repo: null,
+      suite_exit: 3, suite_green: false,
+      no_local_suite: true, no_local_suite_reason: reason, full_suite_by: by,
+      totals: {},
+      coverage: { per_new_file: {}, new_files_pct: null, threshold: null, meets_threshold: null },
+      provenance: "test-gate.sh NO MIDIÓ — el repo declara que su suite no corre en la máquina (.test-gate.yaml); no se corrió ninguna suite",
+    }, null, 2) + "\n");
+  ' "$OUT_FILE" "$STORY_ID" "$TS" "$_RAZON" "$_TG_NONE_BY" || echo "[test-gate] ⚠️  no pude escribir la constancia en $OUT_FILE" >&2
+  # Como cualquier «sin pruebas acá»: una parte o un hermano no tocan el marcador; el repo de la story anota «sin medir».
+  if [[ "${TYCON_TEST_GATE_PART:-}" != "1" && "${TYCON_TEST_GATE_COMPANION:-}" != "1" ]]; then
+    if ! ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" mark-tests-not-measured "$_RAZON" ) >&2; then
+      echo "[test-gate] ⚠️  no pude anotar «sin medir» en el marcador: el check tests queda en rojo" >&2
+      marcar_tests_en_rojo 3 "pruebas no medidas (no pude anotar «sin medir»): $_RAZON"
+    fi
+  fi
+  exit 3
+fi
 
 # --- Varios proyectos tocados: una corrida por proyecto ---------------------------------------------------------
 # Una story que toca dos o más proyectos con pruebas del mismo repo (el back en pytest y el front en Vitest) corre cada
@@ -431,7 +466,7 @@ correr_partes() {
   # el artefacto de una corrida anterior no puede quedar a la vista si éste no se llega a escribir
   rm -f "$OUT_FILE"
   echo "[test-gate] la story toca ${partes//,/, }: corre cada proyecto" >&2
-  IFS=',' read -r -a _lista <<< "$partes"
+  IFS=',' read -r -a _lista < <(printf '%s\n' "$partes")
   # Una parte que ya dio verde en esta story y en la que nada cambió desde entonces conserva ese verde y no corre
   # (lib/part-keep.js dice cuándo: nunca una de navegador, nunca sin story). TYCON_TEST_GATE_ALL_PARTS=1 corre todas.
   local rama huella despues motivo kept

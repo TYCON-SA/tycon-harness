@@ -11,7 +11,8 @@
  * - su salida nueva: la hora de modificación de esos archivos;
  * - su actividad: el tiempo de CPU y los procesos de las consolas que la sesión abrió (sus hijos que son una consola,
  *   o el sandbox que la envuelve, con todo lo que cuelga de ellos). Los demás hijos son sus servidores de herramientas,
- *   que se mueven solos y esconderían a la tarea colgada.
+ *   que se mueven solos y esconderían a la tarea colgada. Una sesión sin ninguna consola no corre ninguna tarea de fondo:
+ *   un archivo abierto suyo es el de una tarea que se cortó sin su renglón de cierre, y no avisa.
  *
  * Lo que no ve, porque sin la línea de comando no se sabe qué proceso es de qué tarea: la actividad se mide por sesión.
  * Si la misma sesión tiene otra tarea de fondo que sí se mueve (un vigilante que consulta algo cada medio minuto), no
@@ -66,8 +67,8 @@ function processes({ run = spawnSync } = {}) {
   return list.length ? { list } : { problem: 'los procesos (ps no devolvió ninguno)' };
 }
 
-/** La firma de la actividad de las consolas de `pid`: CPU sumada y los procesos que cuelgan de ellas. */
-function signature(pid, list) {
+/** Las consolas que la sesión `pid` abrió, con todo lo que cuelga de ellas. */
+function consoles(pid, list) {
   const hijos = new Map();
   for (const p of list) { if (!hijos.has(p.ppid)) hijos.set(p.ppid, []); hijos.get(p.ppid).push(p); }
   const vistos = [];
@@ -77,6 +78,12 @@ function signature(pid, list) {
     vistos.push(p);
     pila.push(...(hijos.get(p.pid) || []));
   }
+  return vistos;
+}
+
+/** La firma de la actividad de las consolas de `pid`: CPU sumada y los procesos que cuelgan de ellas. */
+function signature(pid, list) {
+  const vistos = consoles(pid, list);
   const cpu = vistos.reduce((a, p) => a + (p.cpu || 0), 0);
   return `${cpu}|${vistos.map((p) => p.pid).sort((a, b) => a - b).join(',')}`;
 }
@@ -161,6 +168,9 @@ function stalled({ sessions, stateDir, now = Date.now(), tasksRoot = defaultRoot
   const nuevo = {};
   const out = [];
   for (const s of conTareas) {
+    // cada comando de fondo corre en una consola de la sesión: sin ninguna, no corre ninguno, y lo que sigue abierto es
+    // el archivo de una tarea que se cortó sin su renglón de cierre
+    if (!consoles(s.pid, ps.list).length) continue;
     const sig = signature(s.pid, ps.list);
     const antes = previo[s.sid];
     const desde = antes && antes.sig === sig && Number.isFinite(antes.at) ? antes.at : now;
@@ -173,4 +183,4 @@ function stalled({ sessions, stateDir, now = Date.now(), tasksRoot = defaultRoot
   return out;
 }
 
-module.exports = { stalled, signature, openTasks, processes, centesimas, STALL_MS, SAMPLE_AFTER_MS };
+module.exports = { stalled, signature, consoles, openTasks, processes, centesimas, STALL_MS, SAMPLE_AFTER_MS };

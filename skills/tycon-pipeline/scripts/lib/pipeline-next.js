@@ -467,6 +467,21 @@ function cmdNext(cmd, args) {
       if (a && a.decision) result.plan_review_action = a;
     }
   } catch { /* sin la revisión, next sale igual */ }
+  // en un punto de control, lo que falta en disco para retomar en una sesión nueva sin releer la conversación
+  try {
+    const m = readSessionMarker();
+    const CD = require('./resume-state.js');
+    if (m && CD.PUNTOS_DE_CONTROL.has(result.next_step)) {
+      let lineas = [];
+      if (result.next_step === 'findings') {
+        try { lineas = fs.readFileSync(path.join(stateDirOf(os.homedir()), 'advisor-runs', `${sessionIdFileKey()}.jsonl`), 'utf8').split('\n'); } catch { lineas = []; }
+      }
+      const falta = CD.faltantes({ marker: m, paso: result.next_step, lanzados: CD.lanzadosDe({ lineas, marker: m }) });
+      result.checkpoint_disk = falta;
+      const a = CD.aviso(falta);
+      if (a) result.note = `${result.note ? `${result.note} ` : ''}${a}`;
+    }
+  } catch (e) { result.checkpoint_disk_aviso = `no pude mirar qué falta en disco (${e.message})`; }
   // Consultar `next` es el momento en que el orquestador ARRANCA ese paso — se anota la
   // hora. Lo escribe marker.js (un solo escritor del marker); él decide no mover un arranque ya
   // anotado ni arrancar un paso completo. Las partes del arranque, el pase adversarial y la prueba en vivo también: su trabajo no puede

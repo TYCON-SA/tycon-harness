@@ -30,7 +30,9 @@
 //   "remotes": { "<o>/<r>": "<ruta del repo bare>" }   POST pulls exige que la rama `head` exista allá (422 si no), como GitHub
 //   "projects": { "<dueño>#<número>": { id, fields: [ { id, name, dataType } ], items: { "<nodo del issue>": { id, values: { <id del campo>: n } } } } }
 //   "graphql_error": { type, message }   toda consulta GraphQL contesta ese error (un token sin permiso de proyectos)
-// GET repos/o/r/code-scanning/…: 404 «no analysis found», como un repo sin análisis de seguridad (para eso, `fail`).
+// GET repos/o/r/code-scanning/…: 404 «no analysis found», como un repo sin análisis de seguridad (para eso, `fail`); con
+//   "code_scanning": { "<o>/<r>": { "alerts": [ { number, state, rule, most_recent_instance, created_at } ] } }, el repo
+//   tiene análisis y GET code-scanning/alerts da sus alertas de la rama principal.
 // POST graphql (Projects v2): la consulta del proyecto de un dueño (organización o usuario) con sus campos, agregar un
 // issue (idempotente, como GitHub) y cargar el número de un campo. Un proyecto que no existe contesta NOT_FOUND.
 // Los issues traen `node_id` (`I_<o>/<r>#<n>`), el nodo con que GraphQL los nombra.
@@ -423,6 +425,17 @@ if (method === 'POST' && base === 'graphql') {
   }
   gqlErr('UNKNOWN', 'consulta GraphQL de prueba desconocida');
 }
-// el análisis de seguridad: el repo de prueba no tiene, como contesta GitHub («no analysis found»)
+// el análisis de seguridad, con "code_scanning": { "<o>/<r>": { "alerts": [ … ] } }: el repo lo tiene prendido de fábrica, y
+// GET code-scanning/alerts?state=open da sus alertas abiertas como GitHub sin `ref` (las de la rama principal), en una página
+const cs = /^repos\/([^/]+\/[^/]+)\/code-scanning\/([^?]*)(?:\?(.*))?$/.exec(ruta || '');
+if (method === 'GET' && cs && st.code_scanning && st.code_scanning[cs[1]]) {
+  if (cs[2] === 'default-setup') out({ state: 'configured' });
+  if (cs[2] === 'alerts') {
+    const q = new URLSearchParams(cs[3] || '');
+    const todas = st.code_scanning[cs[1]].alerts || [];
+    out(Number(q.get('page') || 1) > 1 ? [] : todas.filter((a) => !q.get('state') || a.state === q.get('state')));
+  }
+}
+// sin eso, el repo de prueba no tiene análisis, como contesta GitHub («no analysis found»)
 if (method === 'GET' && /^repos\/[^/]+\/[^/]+\/code-scanning\//.test(ruta)) err(404, 'no analysis found');
 err(404, `ruta de prueba desconocida: ${method} ${ruta}`);

@@ -1,6 +1,7 @@
 'use strict';
 // El instalador apila la capa del equipo sólo si cada opción o subcomando renombrado de su mapa de renombres tiene el
-// nombre nuevo en el texto del archivo de su `where` (renamesProblems de scripts/setup/harness/team.js, con `includes`).
+// nombre nuevo entero en el texto del archivo de su `where` o de sus partes de lib/ (renamesProblems de
+// scripts/setup/harness/team.js). Esta prueba lo busca como subcadena y sólo en el `where`: es más floja que el instalador.
 // El `where` es también la llave con que el guion traduce los nombres viejos (aliasArgv), así que no se mueve cuando el
 // guion se parte en lib/: si el nombre nuevo queda sólo en las partes, la versión no se instala en ninguna máquina del
 // equipo. Esta prueba aplica la misma regla a la tabla propia del arnés (OWN_ARGS de lib/legacy-names.js), que nombra los

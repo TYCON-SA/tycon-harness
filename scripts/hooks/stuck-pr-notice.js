@@ -59,6 +59,13 @@
 // arranque muestra esa foto (con su edad, si pasó de 10 minutos) y, si está vieja, lanza otra. Sin foto de menos de
 // 24 h, o con una lectura que no se pudo hacer, «no medido».
 //
+// LAS ALERTAS DE SEGURIDAD ABIERTAS EN MAIN: el chequeo de antes de encolar mira las referencias del pedido, y una alerta
+// que el análisis abre recién en main después de que el pedido entró (una línea que se movió) no la ve. La lectura de fondo
+// pide a la capa las abiertas de la rama principal de cada repo (`security-alerts.list`) y deja la foto en
+// `main-security-alerts.json`; el arranque y cada turno de la coordinadora dicen, por repo, cuántas hay y la más vieja. Un
+// repo sin análisis o una plataforma sin la operación se callan; una lectura que falló es «no medido», y sin foto de las
+// últimas 24 h también.
+//
 // Nunca rompe el arranque: sale 0 siempre.
 // Variables: TYCON_STUCK_PR_HOURS (1), TYCON_GREEN_IDLE_MIN (10). Off: TYCON_STUCK_PR_NOTICE=0.
 const fs = require('fs');
@@ -122,6 +129,10 @@ function escribirJson(archivo, valor) {
 
 // Una lectura que no llegó a hacerse porque se acabó el tope: la sigue la lectura de fondo
 const esTope = (r) => Boolean(r && r.ok === false && r.reason === 'no_medido' && /^tope/.test(String(r.detail || '')));
+// Una lectura incompleta: la lista cortada por el tope, o un pedido cuyo análisis de seguridad no llegó a leerse antes de
+// la hora límite (`codeScanning.sinTiempo`). No es «no está listo»: lo dice la próxima lectura.
+const lecturaIncompleta = (r) => esTope(r)
+  || Boolean(r && r.ok && Array.isArray(r.value) && r.value.some((p) => p && p.codeScanning && p.codeScanning.sinTiempo === true));
 const fotoDe = (dir) => path.join(dir, 'stuck-prs-photo.json');
 const candadoDe = (dir) => path.join(dir, 'stuck-prs-refresh.lock');
 const refrescoMs = () => { const v = Number(readVar('TYCON_STUCK_PR_REFRESH_MS')); return Number.isFinite(v) && v > 0 ? v : 90000; };
@@ -177,7 +188,7 @@ function guardarMotivos(dir, repos, leidas, motivos, ahora) {
  * lee con el tope; una lectura incompleta no se guarda como foto (la guarda la lectura de fondo) y devuelve la foto
  * anterior, si la hay, para lo que no llegó: `{ leidas, incompleta, anterior }`.
  */
-async function lecturas(repos, tree, dir, ahora) {
+async function lecturas(repos, tree, dir, ahora, leerAhora = (rs) => leer(rs, tree, TOPE_MS)) {
   const claves = repos.map(claveDe);
   const foto = leerJson(fotoDe(dir));
   const deEstos = Boolean(foto && foto.lecturas && JSON.stringify(foto.repos) === JSON.stringify(claves));
@@ -185,12 +196,31 @@ async function lecturas(repos, tree, dir, ahora) {
     const edad = ahora - Date.parse(foto.at);
     if (edad >= 0 && edad < FOTO_MS) return { leidas: foto.lecturas, incompleta: false, anterior: null };
   }
-  const leidas = await leer(repos, tree, TOPE_MS);
-  const incompleta = Object.values(leidas).some(esTope);
+  const leidas = await leerAhora(repos);
+  const incompleta = Object.values(leidas).some(lecturaIncompleta);
   if (!incompleta) {
     try { escribirJson(fotoDe(dir), { at: new Date(ahora).toISOString(), repos: claves, lecturas: leidas }); } catch { /* sin foto, la próxima lee otra vez */ }
   }
   return { leidas, incompleta, anterior: deEstos ? foto : null };
+}
+
+/**
+ * Lo que no llegó a leerse entero, de la foto anterior de menos de 24 h que tenga ese repo leído: cambia `leidas` y
+ * devuelve `{ leidas, fotoVieja, lecturaDeHace }` (la hora de esa foto y, por repo, su edad).
+ */
+function conLaFotoAnterior(repos, leidas, anterior, ahora) {
+  let fotoVieja = null;
+  const lecturaDeHace = {};
+  for (const repo of repos) {
+    const k = claveDe(repo);
+    const vieja = anterior && anterior.lecturas[k];
+    if (lecturaIncompleta(leidas[k]) && vieja && vieja.ok && ahora - Date.parse(anterior.at) < 24 * HORA_MS) {
+      leidas[k] = vieja;
+      fotoVieja = anterior.at;
+      lecturaDeHace[k] = ahora - Date.parse(anterior.at);
+    }
+  }
+  return { leidas, fotoVieja, lecturaDeHace };
 }
 
 /** Lanza la lectura de fondo, salvo que ya haya una corriendo. Devuelve si quedó una corriendo. */
@@ -209,6 +239,44 @@ function lanzarRefresco(tree, dir, home) {
 
 const propiosDe = (dir) => path.join(dir, 'own-prs.json');
 const afueraDe = (dir) => path.join(dir, 'outside-contributions.json');
+const alertasDe = (dir) => path.join(dir, 'main-security-alerts.json');
+
+/** Las alertas abiertas en la rama principal de cada repo, por la capa: `{ at, lecturas: { <repo>: respuesta } }`. */
+async function leerAlertas(repos, tree, ahora) {
+  const platform = require(path.join(ROOT, 'scripts', 'lib', 'platform', 'platform.js'));
+  const lecturas = {};
+  for (const repo of repos) lecturas[claveDe(repo)] = await platform.run('security-alerts.list', {}, { env: process.env, repo, tree });
+  return { at: new Date(ahora).toISOString(), lecturas };
+}
+
+/**
+ * Los renglones de las alertas abiertas en main, de la foto: uno por repo con alguna (cuántas y la más vieja) y uno por
+ * repo que no se pudo leer. `vieja` si no hay foto de las últimas 24 h: entonces sólo «no medido».
+ */
+function lineasDeAlertas(repos, dir, ahora) {
+  const foto = leerJson(alertasDe(dir));
+  const edad = foto && foto.lecturas ? ahora - Date.parse(foto.at) : NaN;
+  if (!(edad >= 0 && edad < 24 * HORA_MS)) {
+    return { vieja: true, lineas: ['alertas de seguridad de main: no medido (todavía no hay una lectura de hoy; sale en el próximo arranque)'] };
+  }
+  const lineas = [];
+  for (const repo of repos) {
+    const x = foto.lecturas[claveDe(repo)];
+    // sin análisis, sin la operación o sin plataforma (eso último ya lo dice el aviso de los pedidos): nada que decir
+    if (!x || x.reason === 'no_soportado' || x.reason === 'sin_plataforma') continue;
+    const nombre = limpio(repo.repo, 60);
+    if (!x.ok) { lineas.push(`alertas de seguridad de main: no medido en ${nombre} (${motivoBreve(x)})`); continue; }
+    const abiertas = (Array.isArray(x.value) ? x.value : []).slice().sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)) || a.number - b.number);
+    if (!abiertas.length) continue;
+    const [a] = abiertas;
+    const n = abiertas.length;
+    const desde = Date.parse(a.createdAt);
+    const lugar = `${limpio(a.path, 160)}${Number.isInteger(a.line) ? `:${a.line}` : ''}`;
+    lineas.push(`⚠️ main de ${nombre}: ${n} ${n > 1 ? 'alertas de seguridad abiertas' : 'alerta de seguridad abierta'} — #${Number(a.number)} ${limpio(a.rule, 80)} en ${lugar}`
+      + `${Number.isFinite(desde) ? ` (hace ${haceDe(ahora - desde)})` : ''}${n > 1 ? ` y ${n - 1} más` : ''}. El chequeo de antes de encolar no ${n > 1 ? 'las' : 'la'} ve: se arregla con un pedido`);
+  }
+  return { vieja: false, lineas };
+}
 
 /** La foto de lo de afuera del repo público: `{ at, repo, medicion }`. */
 function leerAfuera(publico, tree, ahora) {
@@ -300,6 +368,7 @@ async function refrescar(tree) {
     try { guardarMotivos(dir, declarados.repos, leidas, motivos, ahora); } catch { /* sin guardar, la próxima lectura los busca otra vez */ }
     escribirJson(propiosDe(dir), leerPropios({ repos: declarados.repos, ahora }));
     if (declarados.publico) escribirJson(afueraDe(dir), leerAfuera(declarados.publico, tree, ahora));
+    escribirJson(alertasDe(dir), await leerAlertas(declarados.repos, tree, ahora));
     reencolarLosListos(dir, declarados.repos, leidas, ahora);
   } finally {
     try { fs.rmSync(candadoDe(dir), { force: true }); } catch { /* vence solo */ }
@@ -665,7 +734,9 @@ function coordinatorLines({ home = os.homedir(), tree = path.resolve(process.env
   // las caídas de la cola y lo que pasó con los que quedaron afuera después de un empuje, también en cada turno
   const { intentos, problema: sinIntentos } = leerIntentos(dir);
   if (sinIntentos) problem = problem ? `${problem} · ${sinIntentos}` : sinIntentos;
-  const todas = [...reglaSinAnalisis(declarados.repos, foto.lecturas),
+  // las alertas abiertas en main, de su foto, primero: ninguna otra cosa las dice
+  const alertas = lineasDeAlertas(declarados.repos, dir, now);
+  const todas = [...(alertas.vieja ? [] : alertas.lineas), ...reglaSinAnalisis(declarados.repos, foto.lecturas),
     ...caidasDeLaCola(declarados.repos, foto.lecturas, now, leerMotivos(dir)),
     ...lineasDeReencolado(declarados.repos, foto.lecturas, intentos, now),
     ...paraReencolar(declarados.repos, foto.lecturas, intentos, now).esperan.map((e) => e.linea),
@@ -692,17 +763,7 @@ async function main() {
   const { leidas, incompleta, anterior } = await lecturas(declarados.repos, tree, dir, ahora);
   // lo que no llegó a leerse sigue de fondo; mientras tanto vale la foto anterior, con su edad, si tiene esa lectura
   const deFondo = incompleta && lanzarRefresco(tree, dir);
-  let fotoVieja = null;
-  const lecturaDeHace = {};
-  for (const repo of declarados.repos) {
-    const k = claveDe(repo);
-    const vieja = anterior && anterior.lecturas[k];
-    if (esTope(leidas[k]) && vieja && vieja.ok && ahora - Date.parse(anterior.at) < 24 * HORA_MS) {
-      leidas[k] = vieja;
-      fotoVieja = anterior.at;
-      lecturaDeHace[k] = ahora - Date.parse(anterior.at);
-    }
-  }
+  const { fotoVieja, lecturaDeHace } = conLaFotoAnterior(declarados.repos, leidas, anterior, ahora);
   const horas = (() => { const v = Number(readVar('TYCON_STUCK_PR_HOURS')); return Number.isFinite(v) && v > 0 ? v : 1; })();
 
   const estadoArchivo = path.join(dir, 'stuck-prs.json');
@@ -772,6 +833,9 @@ async function main() {
   trabados.sort((a, b) => b.ms - a.ms || a.creado - b.creado || a.number - b.number);
   for (const t of trabados.slice(0, MAX_LINEAS)) console.log(t.linea);
   if (trabados.length > MAX_LINEAS) console.log(`   (+${trabados.length - MAX_LINEAS} más)`);
+  const alertas = lineasDeAlertas(declarados.repos, dir, ahora);
+  if (alertas.vieja) lanzarRefresco(tree, dir);
+  for (const l of alertas.lineas) console.log(l);
   if (declarados.publico) {
     const afuera = lineasDeAfuera(declarados.publico, dir, ahora);
     if (afuera.vieja) lanzarRefresco(tree, dir);
@@ -781,7 +845,7 @@ async function main() {
 
 // Si algo falla después de saber que el repo aplica, se dice; antes, se calla. El arranque nunca se rompe.
 let aplica = false;
-module.exports = { verdesSinEntrar, analisisNoVerde, reglaSinAnalisis, coordinatorLines, comandoParaEncolar, leerPropios, llamadaDe, salidaDe, paraReencolar, reencolar, reencolarLosListos };
+module.exports = { lecturaIncompleta, lecturas, conLaFotoAnterior, verdesSinEntrar, analisisNoVerde, reglaSinAnalisis, coordinatorLines, comandoParaEncolar, leerPropios, llamadaDe, salidaDe, paraReencolar, reencolar, reencolarLosListos };
 if (require.main !== module) { /* lo usa la coordinadora: no corre el arranque */ } else if (process.argv[2] === '--refresh') {
   refrescar(path.resolve(process.argv[3] || ROOT)).catch(() => { /* la próxima lo intenta otra vez */ }).finally(() => process.exit(0));
 } else main().catch((e) => {

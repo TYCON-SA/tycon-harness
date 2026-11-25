@@ -10,6 +10,11 @@ Pull requests are welcome. This repository is where the harness is written, not 
 - **From a fork**: fork the repository, make a branch, and open a pull request to `main`. Because you are an outside
   contributor, the CI waits until a maintainer clicks «Approve and run workflows»: this is for safety, so code from
   outside does not run before someone has looked at it. After that, the CI runs as on any other pull request.
+- **Two GitHub limits with forks**: CodeQL does not analyze a pull request from a fork, and `main` needs its results.
+  So a maintainer copies your commits, unchanged, to a branch of this repository and opens a pull request from it:
+  CodeQL runs there, and your commits enter `main` with your name. Your pull request gets a note pointing to the new
+  one. Nothing is merged without the analysis, except in an emergency that the repository owner decides and signs. Also, on a fork owned by an organization GitHub does not offer «Allow edits by maintainers»: if you can, fork to
+  your personal account.
 - **How we review**: first we leave review comments on your pull request, saying what to change and why: you get the
   first chance to fix it. Please turn on «Allow edits by maintainers», so we can add a fix to your same pull request if
   needed. If we finish it ourselves (because it is urgent, or you do not answer), the fix goes on top of your commits,
@@ -45,19 +50,32 @@ arreglo chico puede ir directo como pull request.
 
 Si nunca colaboraste en este repo, el camino es éste:
 
-1. Hacé un fork: tu propia copia del repo en tu cuenta de GitHub.
+1. Hacé un fork: tu propia copia del repo en tu cuenta de GitHub. Si podés, en tu cuenta personal y no en la de una
+   organización (la razón está más abajo, en «Dos límites de GitHub con los forks»).
 2. En tu copia, creá una rama y hacé ahí tu cambio.
 3. Abrí un pull request de esa rama a `main` de este repo.
 4. Esperá a que un mantenedor apruebe la corrida. Como venís de afuera, la CI no arranca sola: un mantenedor aprieta
    «Approve and run workflows». Es por seguridad, para que el código de afuera no corra sin que alguien lo mire antes.
 5. Después la CI corre como en cualquier pull request, y lo que tiene que dar verde es lo mismo (la sección siguiente).
 
+### Dos límites de GitHub con los forks
+
+- **CodeQL no analiza un pull request que viene de un fork**, y `main` exige sus resultados: el pedido queda trabado
+  aunque todo lo demás esté en verde. Lo que hacemos: un mantenedor copia tus commits, sin cambiarlos, a una rama de
+  este repo y abre el pull request desde ahí. CodeQL corre en ese pedido, y tus commits entran a `main` a tu nombre.
+  Tu pedido queda con una nota que apunta al nuevo. Sin el análisis no se mergea, salvo una urgencia que decide el
+  dueño del repo, con su firma.
+- **En un fork de una organización, GitHub no ofrece «Allow edits by maintainers»**: la casilla no aparece, o no
+  sirve. Si podés, hacé el fork en tu cuenta personal. Si tiene que ser el de la organización, el arreglo que
+  sumemos va en ese pedido nuevo, encima de tus commits.
+
 ## Cómo revisamos tu pull request
 
 1. **Primero, comentarios en tu pedido.** Dejamos comentarios de revisión con lo que hay que cambiar y por qué. La
    primera oportunidad de arreglarlo es tuya.
 2. **Activá «Allow edits by maintainers».** Es una casilla del pull request. Con ella, si hace falta, sumamos un
-   arreglo sobre tu mismo pedido, sin abrir otro.
+   arreglo sobre tu mismo pedido, sin abrir otro. En un fork de una organización no está (ver «Dos límites de GitHub
+   con los forks»).
 3. **Si lo completamos nosotros**, por urgencia o porque no respondés, el arreglo va encima de tus commits. Tus commits
    quedan a tu nombre, y el crédito queda en el pedido y en la historia del repo.
 4. **Las contribuciones aceptadas se nombran** en las notas de la versión publicada.
@@ -69,7 +87,8 @@ Para entrar a `main`, un pull request necesita dos cosas en verde:
 - **`public-ci`**, el chequeo de la CI (`.github/workflows/ci.yml`). Corre `scripts/ci/public-ci.sh` partido en
   varios trabajos, más un ensayo en Windows.
 - **CodeQL**, el análisis de código de GitHub. Frena el merge con una alerta de nivel error o una alerta de seguridad
-  alta o crítica. Corre sólo en GitHub: no hay forma de correrlo en tu máquina.
+  alta o crítica. Corre sólo en GitHub: no hay forma de correrlo en tu máquina. En un pull request desde un fork no
+  corre: va por la rama de este repo que describe «Dos límites de GitHub con los forks».
 
 ## Antes de abrir un pull request
 

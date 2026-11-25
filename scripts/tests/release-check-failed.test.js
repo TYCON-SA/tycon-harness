@@ -112,3 +112,19 @@ test('T5 UpdateConOtraPuntaDelEquipo_LaFallaSeBorra_NoSeDice — se decide con l
   assert.strictEqual(u.status, 'up_to_date', u.lines.join(' | '));
   assert.ok(!u.lines.some((l) => /la última actualización falló/.test(l)), u.lines.join(' | '));
 });
+
+// 🔴 Falla con: doctorItems que llama a check() directo: «red: arnés al día» con la falla anotada (fila 213).
+test('T6 DoctorFetch_ConFalla_NoDiceAlDia — la línea de la red dice la falla y queda como aviso', (t) => {
+  const L = laboratorio(t);
+  const items = RL.doctorItems(L.ctx, L.state, { fetch: true, channel: 'stable' });
+  const red = items.find((i) => /^red: /.test(i.text));
+  assert.ok(red, items.map((i) => i.text).join(' | '));
+  assert.doesNotMatch(red.text, /al día/);
+  assert.match(red.text, /la última actualización falló: la versión 2026\.11\.24\.42/);
+  assert.strictEqual(red.level, 'warn');
+  // sin falla anotada, sigue diciendo «al día» como antes
+  const sin = RL.doctorItems(L.ctx, { ...L.state, failed: undefined }, { fetch: true, channel: 'stable' });
+  const redSin = sin.find((i) => /^red: /.test(i.text));
+  assert.match(redSin.text, /al día/);
+  assert.strictEqual(redSin.level, 'ok');
+});
