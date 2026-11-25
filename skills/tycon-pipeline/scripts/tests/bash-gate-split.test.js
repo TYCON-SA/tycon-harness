@@ -8,7 +8,8 @@
  * La foto del banco de antes (`fixtures/split-contract/bash-gate-bench-before.json`) se graba con
  * `BASH_GATE_BENCH_RECORD=1` sobre el freno sin partir: corre los casos del banco que nombran el freno, con las dos
  * herramientas y una casa de prueba, y guarda el veredicto de cada caso por herramienta. Sin la foto, T8 da rojo sin correr
- * nada. La lista de lo que el freno cargaba antes (`bash-gate-requires-before.json`) es la de T16.
+ * nada. T8 corre a pedido (BASH_GATE_BENCH=1). La lista de lo que el freno cargaba antes
+ * (`bash-gate-requires-before.json`) es la de T16.
  *
  * Correr: cd skills/tycon-pipeline/scripts/tests && HOME=$(mktemp -d) node --test bash-gate-split.test.js < /dev/null
  */
@@ -63,7 +64,11 @@ function bancoDelFreno() {
 }
 
 // 🔴 Falla con: un corte que cambia el veredicto de un caso del banco (el freno deja pasar o frena distinto).
-test('T8 BashGate_BenchUnchanged @story-8.163 @ac-8 — los casos del banco del freno dan lo mismo que antes de partir', { timeout: 30 * 60 * 1000 }, () => {
+// Corre a pedido (BASH_GATE_BENCH=1): es el contrato del momento de partir, con una foto de una máquina. De ahí en más
+// los veredictos los cuida el banco nocturno contra su línea de base, y un cambio de veredicto a propósito no deja este
+// caso en rojo para siempre.
+const A_PEDIDO = !GRABAR && process.env.BASH_GATE_BENCH !== '1' && 'el banco del freno contra la foto de antes de partir corre a pedido: BASH_GATE_BENCH=1';
+test('T8 BashGate_BenchUnchanged @story-8.163 @ac-8 — los casos del banco del freno dan lo mismo que antes de partir', { timeout: 30 * 60 * 1000, skip: A_PEDIDO }, () => {
   if (GRABAR) {
     const foto = bancoDelFreno();
     assert.ok(Object.keys(foto).length > 50, `la foto trae los casos del freno (${Object.keys(foto).length})`);
@@ -85,6 +90,71 @@ test('BashGate_UnderLimit @story-8.163 @ac-8 — el despachador y cada módulo q
   for (const f of [GATE, ...modulos().map((m) => path.join(LIB, m))]) {
     const letras = fs.readFileSync(f, 'utf8').length;
     assert.ok(letras < TOPE, `${path.relative(ROOT, f)}: ${letras} letras (tope ${TOPE})`);
+  }
+});
+
+/** Una copia del freno con lo que carga (los guiones del pipeline sin sus pruebas, scripts/lib y scripts/setup). */
+function copiaDelFreno() {
+  const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-gate-copia-'));
+  const sinPruebas = (src) => !src.split(path.sep).includes('tests');
+  fs.cpSync(SCRIPTS, path.join(raiz, 'skills', 'tycon-pipeline', 'scripts'), { recursive: true, filter: sinPruebas });
+  for (const d of ['lib', 'setup']) fs.cpSync(path.join(ROOT, 'scripts', d), path.join(raiz, 'scripts', d), { recursive: true, filter: sinPruebas });
+  return raiz;
+}
+
+function correrCopia(raiz, comando) {
+  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-gate-copia-casa-'));
+  try {
+    return spawnSync(process.execPath, [path.join(raiz, 'skills', 'tycon-pipeline', 'scripts', 'on-bash-write-gate.js')], {
+      input: JSON.stringify({ session_id: 'ses-partes', cwd: raiz, tool_name: 'Bash', tool_input: { command: comando } }),
+      encoding: 'utf8', cwd: raiz, env: { ...process.env, HOME: casa, USERPROFILE: casa }, timeout: 60000,
+    });
+  } finally {
+    fs.rmSync(casa, { recursive: true, force: true });
+  }
+}
+
+// 🔴 Falla con: un freno que, sin una de sus partes, deja pasar el comando por la red de fallas o se cae sin decir cuál.
+test('BashGate_MissingPart_BlocksAndNamesIt @story-8.163 @ac-10 — sin una parte, el freno frena y la nombra', () => {
+  const raiz = copiaDelFreno();
+  try {
+    const entero = correrCopia(raiz, 'ls');
+    assert.strictEqual(entero.status, 0, `con todas sus partes, un comando que no escribe pasa (${entero.stderr})`);
+    for (const parte of ['bash-gate-net.js', 'bash-gate-targets.js', 'bash-gate-records.js']) {
+      const archivo = path.join(raiz, 'skills', 'tycon-pipeline', 'scripts', 'lib', parte);
+      const guardado = fs.readFileSync(archivo);
+      fs.rmSync(archivo);
+      try {
+        const r = correrCopia(raiz, 'ls');
+        assert.strictEqual(r.status, 2, `sin lib/${parte}, frena (salió ${r.status}: ${r.stderr})`);
+        assert.ok(r.stderr.includes(`lib/${parte}`), `sin lib/${parte}, el mensaje la nombra (${r.stderr})`);
+      } finally {
+        fs.writeFileSync(archivo, guardado);
+      }
+    }
+  } finally {
+    fs.rmSync(raiz, { recursive: true, force: true });
+  }
+});
+
+// 🔴 Falla con: un freno cargado como biblioteca (un aviso que usa sus funciones) que, sin una parte, termina el proceso
+// de quien lo carga en vez de tirar un error que ese proceso pueda atrapar.
+test('BashGate_MissingPart_AsLibraryThrows @story-8.163 @ac-10 — cargado como biblioteca, sin una parte tira y la nombra', () => {
+  const raiz = copiaDelFreno();
+  try {
+    fs.rmSync(path.join(raiz, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'bash-gate-targets.js'));
+    const gate = path.join(raiz, 'skills', 'tycon-pipeline', 'scripts', 'on-bash-write-gate.js');
+    const programa = `try { require(${JSON.stringify(gate)}); console.log('cargó'); } catch (e) { console.log('atrapado: ' + e.message); }`;
+    const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'bash-gate-copia-casa-'));
+    try {
+      const r = spawnSync(process.execPath, ['-e', programa], { encoding: 'utf8', cwd: raiz, env: { ...process.env, HOME: casa, USERPROFILE: casa }, timeout: 60000 });
+      assert.strictEqual(r.status, 0, `quien carga el freno sigue vivo (salió ${r.status}: ${r.stderr})`);
+      assert.match(r.stdout, /^atrapado: .*lib\/bash-gate-targets\.js/m, `el error se atrapa y nombra la parte (${r.stdout}${r.stderr})`);
+    } finally {
+      fs.rmSync(casa, { recursive: true, force: true });
+    }
+  } finally {
+    fs.rmSync(raiz, { recursive: true, force: true });
   }
 });
 

@@ -1259,6 +1259,12 @@
       "requiere": []
     },
     {
+      "__nota": "el freno de escrituras partido en un despachador y sus partes lib/bash-gate-*.js: cada archivo bajo el tope, lo nuevo que carga es sensible, y sin una parte frena y la nombra (como gancho) o tira (como biblioteca). El banco contra la foto de antes de partir (T8) corre a pedido, con BASH_GATE_BENCH=1",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-gate-split.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/replace-section.test.js",
       "requiere": []
