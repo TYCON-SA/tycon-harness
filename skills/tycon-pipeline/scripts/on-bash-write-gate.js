@@ -24,8 +24,12 @@
  * Escape: el mismo del portón (env TYCON_STORY_GATE=off · config commiteada del repo).
  *
  * ── CUANDO EL FRENO MISMO FALLA ───────────────────────────────────────────────────────────
- * Una falla sin prever, un módulo del arranque que no carga o una entrada que no se puede leer: frena sólo el comando
- * que escribe y nombra una historia o una constancia, leído como texto (`frenaLaRed`); lo demás sigue. Cada una queda en
+ * Un módulo del arranque que no carga, o un archivo suyo que falta o no compila cuando lo pide al decidir (también si
+ * lo pide un control dentro de su propia red, que seguiría sin él): el freno no decidió con todas sus piezas, así que
+ * frena todo comando y dice cuál. En una versión bajada (trae su lista, `.tycon-release.json`, y no es un clon), lo
+ * mismo con un archivo suyo que no es el que se instaló: compara la huella de cada uno que usó con la de la lista. Una
+ * falla sin prever mientras decide, o una entrada que no se puede leer: frena sólo el comando que escribe y nombra una
+ * historia o una constancia, leído como texto (`frenaLaRed`); lo demás sigue. Cada una queda en
  * hook-errors.log: «FRENÓ POR FALLA» o «FAILED OPEN». Límite conocido: un error de sintaxis en este archivo no llega a
  * correr nada.
  * El análisis corre en un hilo y `lib/gate-clock.js` mira el reloj (20 s, `TYCON_BASH_GATE_TIMEOUT_S`): si no alcanza a
@@ -118,6 +122,9 @@ const carpetaDelEstado = () => {
 // en una entrada rota, los saltos de línea siguen escritos como `\n`. En un comando ya leído es otra cosa: `\rm` es `rm`
 const textoDeUnaEntradaRota = (cruda) => String(cruda || '').replace(/\\[nrt]/g, ' ');
 function salirPorLaRed(e, texto) {
+  // la falla que vino de una pieza rota no es una falla sin prever: frena todo
+  const rota = piezaRota || archivoQueNoEsElInstalado();
+  if (rota) salirSinCargar(rota);
   if (frenaLaRed(String(texto || ''))) {
     logHookError(e, 'FRENÓ POR FALLA');
     try {
@@ -151,10 +158,90 @@ function salirPorLaRedConLaEntrada(e) {
   try { texto = JSON.parse(cruda).tool_input.command; } catch { /* entrada rota o sin comando: se lee el texto entero */ }
   salirPorLaRed(e, texto);
 }
+
+// ── la pieza rota: el freno que no tiene todas sus piezas ─────────────────────────────────────────
+// Sin terminar de cargarse, el freno no decidió nada: frena todo comando y dice qué no cargó. Igual con una pieza rota
+// al decidir. La red de fallas queda para lo que se cae con todas las piezas: ahí sabe lo bastante para frenar lo que
+// importa.
+let cargado = false;
+const RAIZ_DEL_ARNES = path.resolve(__dirname, '..', '..', '..');
+const dentroDelArnes = (abs) => {
+  const rel = path.relative(RAIZ_DEL_ARNES, abs);
+  return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
+};
+// El archivo de un módulo que no compila al pedirlo. Un .js roto deja en la primera línea de la pila «<archivo>:<línea>»;
+// un .json, «SyntaxError: <archivo>: …». Un `JSON.parse` de datos no nombra ningún archivo.
+function archivoQueNoCompila(e) {
+  if (!e || e.name !== 'SyntaxError') return null;
+  const primera = String(e.stack || '').split('\n')[0];
+  const archivo = (/^(.+\.c?js):\d+$/.exec(primera) || /^SyntaxError: (.+?\.json): /.exec(primera) || [])[1];
+  return archivo && path.isAbsolute(archivo) ? archivo : null;
+}
+// ¿El error de un `require` es un archivo del arnés que falta o no compila? Cuenta lo que se pide adentro del arnés, por
+// su ruta; un paquete que falta no.
+function esPiezaDelArnes(e, pedido, padre) {
+  if (!(e && e.code === 'MODULE_NOT_FOUND') && !archivoQueNoCompila(e)) return false;
+  const p = String(pedido || '');
+  const abs = path.isAbsolute(p) ? p : (p.startsWith('.') && padre && padre.filename ? path.resolve(path.dirname(padre.filename), p) : null);
+  return !!abs && dentroDelArnes(abs);
+}
+// La primera pieza rota que se pidió al decidir, también la que pide un control dentro de su propia red (un `try` que
+// traga el error y sigue sin ella): sin esto, ese control se apagaba callado y el resto decidía sin él. La de más
+// adentro queda primero: un archivo que falta hace fallar también a los que lo cargan.
+let piezaRota = null;
+if (require.main === module) {
+  const Module = require('module');
+  const cargar = Module._load;
+  Module._load = function cargarYAnotar(pedido, padre, ...resto) {
+    try { return cargar.call(this, pedido, padre, ...resto); } catch (e) {
+      if (!piezaRota && esPiezaDelArnes(e, pedido, padre)) piezaRota = e;
+      throw e;
+    }
+  };
+}
+// En una versión bajada, un archivo del freno que no es el que se instaló (una instalación cortada: compila, pero quedó
+// a medias) también es una pieza rota: la huella de git de cada archivo del arnés que el freno usó se compara con la de
+// la lista. En un clon no: quien mantiene el arnés los cambia a propósito. Lo que no está en la lista (lo sumó una capa o
+// un tercero) no se compara.
+function archivoQueNoEsElInstalado() {
+  const lista = path.join(RAIZ_DEL_ARNES, '.tycon-release.json');
+  if (!fs.existsSync(lista) || fs.existsSync(path.join(RAIZ_DEL_ARNES, '.git'))) return null;
+  let huellas = null;
+  try { huellas = new Map(JSON.parse(fs.readFileSync(lista, 'utf8')).files.map((f) => [f.path, f.blob])); } catch (e) {
+    return Object.assign(new Error(`${lista} no se puede leer (${e.message}): no sé si los archivos del freno son los instalados`), { instalado: lista });
+  }
+  for (const abs of Object.keys(require.cache)) {
+    if (!dentroDelArnes(abs)) continue;
+    const esperada = huellas.get(path.relative(RAIZ_DEL_ARNES, abs).split(path.sep).join('/'));
+    if (!esperada) continue;
+    let huella = null;
+    try {
+      const d = fs.readFileSync(abs);
+      huella = require('crypto').createHash('sha1').update(`blob ${d.length}\0`).update(d).digest('hex');
+    } catch { /* lo que no se puede leer tampoco es lo instalado */ }
+    if (huella !== esperada) return Object.assign(new Error(`${abs} no es el que se instaló: su huella no es la de la versión`), { instalado: abs });
+  }
+  return null;
+}
+function salirSinCargar(e) {
+  logHookError(e, 'FRENÓ POR FALLA');
+  try {
+    const roto = archivoQueNoCompila(e);
+    const cual = e && e.instalado ? e.message : roto ? `No cargó: ${roto} (no compila: ${e.message})` : `No cargó: ${String((e && e.stack) || e).split('\n')[0]}`;
+    process.stderr.write([
+      '⛔ tycon-pipeline — EL FRENO DE ESCRITURAS NO PUDO CARGARSE ENTERO: ningún comando corre hasta repararlo',
+      `  ${cual}`,
+      `  La falla quedó en ${path.join(carpetaDelEstado(), 'hook-errors.log')}. Reinstalá el arnés desde tu terminal; \`/tycon-harness\` dice si quedó bien instalado.`,
+      '',
+    ].join('\n'));
+  } catch { /* sin dónde decirlo, frena igual */ }
+  process.exit(2);
+}
 if (require.main === module) {
   // lo que `try` no alcanza: un módulo de los de abajo que no carga, o una falla después de decidir, en los avisos
   process.on('uncaughtException', (e) => {
     if (yaDecidio) { logHookError(e); process.exit(0); }
+    if (!cargado) salirSinCargar(e);
     salirPorLaRedConLaEntrada(e);
   });
 }
@@ -6889,6 +6976,8 @@ function handleCarrilEHistoria(event, opts = {}) {
   return null;
 }
 
+// cargado entero: de acá en más, una falla sin prever va por la red de fallas
+cargado = true;
 module.exports = { handle, sinComentarioAlFinal, sinCierre, blancoPorRedireccion, splitSegments, SHELL_CON_C, BORRA_O_MUEVE, guionesEnArchivo, carpetasQueBorraOMueve, borraEjecucionAbierta, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA, frenaLaRed, quitarCuerposDeHeredoc, vaAUnShell };
 
 if (require.main === module) {
@@ -6897,6 +6986,9 @@ if (require.main === module) {
   try { event = JSON.parse(cruda || 'null'); } catch (e) { salirPorLaRed(e, textoDeUnaEntradaRota(cruda)); }
   let r = null;
   try { r = handle(event || {}); } catch (e) { salirPorLaRed(e, event && event.tool_input && event.tool_input.command); }
+  // decidió, pero con una pieza rota que un control pidió dentro de su propia red, o con un archivo que no es el instalado
+  const rota = piezaRota || archivoQueNoEsElInstalado();
+  if (rota) salirSinCargar(rota);
   if (r && r.block) {
     try { process.stderr.write(r.block); } catch { /* sin dónde decirlo, frena igual */ }
     process.exit(2);

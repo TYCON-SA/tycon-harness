@@ -96,8 +96,11 @@ test('T1 BashWriteGateFailures_AreLoggedNotSwallowed', () => {
 
 const GATE = path.join(SCRIPTS, 'on-bash-write-gate.js');
 
-/** El freno de verdad, en su proceso, con la entrada tal cual y un módulo roto (o una preparación propia) antes de cargarlo. */
-function enProceso({ home, repo }, entrada, { romper, preparar } = {}) {
+/**
+ * El freno de verdad, en su proceso, con la entrada tal cual y un módulo roto (o una preparación propia) antes de cargarlo.
+ * `gate`: otro freno que el de este árbol (el de una copia). `env`: variables de más.
+ */
+function enProceso({ home, repo }, entrada, { romper, preparar, gate = GATE, env = {} } = {}) {
   const log = path.join(home, '.claude', '.tycon-pipeline', 'hook-errors.log');
   fs.rmSync(log, { force: true });
   const args = [];
@@ -107,10 +110,37 @@ function enProceso({ home, repo }, entrada, { romper, preparar } = {}) {
   if (romper || preparar) args.push('-r', previa);
   const base = {};
   for (const [k, v] of Object.entries(process.env)) if (!k.startsWith('TYCON_')) base[k] = v;
-  const r = spawnSync(process.execPath, [...args, GATE], { input: entrada, cwd: repo, env: { ...base, HOME: home, USERPROFILE: home, TYCON_NO_RUN_CHANGE: '1', ...(romper ? { BREAK_MODULE: romper } : {}) }, encoding: 'utf8', timeout: 15000 });
+  const r = spawnSync(process.execPath, [...args, gate], { input: entrada, cwd: repo, env: { ...base, HOME: home, USERPROFILE: home, TYCON_NO_RUN_CHANGE: '1', ...(romper ? { BREAK_MODULE: romper } : {}), ...env }, encoding: 'utf8', timeout: 15000 });
   return { salida: r.status, stderr: String(r.stderr), log: fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '' };
 }
 const pedido = (cwd, command) => JSON.stringify({ tool_name: 'Bash', session_id: 's-red', cwd, tool_input: { command } });
+/** La preparación de un archivo del freno que no está: su `require` falla como en una instalación a la que le falta. */
+const sinArchivo = (archivo) => `const M = require('module'); const c = M._load; M._load = function (p, ...r) { if (p.endsWith('/${archivo}')) { const e = new Error("Cannot find module '" + p + "'"); e.code = 'MODULE_NOT_FOUND'; throw e; } return c.call(this, p, ...r); };`;
+/**
+ * Una versión bajada del arnés en `destino`: lo que el freno carga, sin pruebas, y su lista (`.tycon-release.json`) con la
+ * huella de git de cada archivo, como la deja el instalador. No es un clon: no trae `.git`.
+ */
+function versionBajada(destino) {
+  const raiz = path.resolve(SCRIPTS, '..', '..', '..');
+  const sinPruebas = (p) => !p.split(path.sep).includes('tests');
+  for (const d of ['skills/tycon-pipeline/scripts', 'scripts/lib', 'scripts/setup']) {
+    fs.cpSync(path.join(raiz, d), path.join(destino, d), { recursive: true, filter: sinPruebas });
+  }
+  const files = [];
+  const recorrer = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const abs = path.join(dir, e.name);
+      if (e.isDirectory()) recorrer(abs);
+      else if (e.isFile()) {
+        const d = fs.readFileSync(abs);
+        files.push({ path: path.relative(destino, abs).split(path.sep).join('/'), mode: '100644', blob: require('crypto').createHash('sha1').update(`blob ${d.length}\0`).update(d).digest('hex') });
+      }
+    }
+  };
+  recorrer(destino);
+  fs.writeFileSync(path.join(destino, '.tycon-release.json'), JSON.stringify({ schema: 1, files }));
+  return destino;
+}
 const FRENO = /EL FRENO FALLÓ/;
 
 // Lo que frena y lo que pasa cuando el freno no pudo mirar: `specs/story-x.md` es la historia del corral.
@@ -172,19 +202,155 @@ test('T2 Falla_SinPrever_FrenaSoloLoQueEscribeUnaHistoria', () => {
   try { matriz(c, { romper: 'story-gate-io.js' }, 'falla sin prever'); } finally { fs.rmSync(c.home, { recursive: true, force: true }); }
 });
 
-// T3 Falla_ModuloDelArranque_FrenaSoloLoQueEscribeUnaHistoria
+// T3 Falla_ModuloDelArranque_FrenaTodoYDiceCual
 // 🔴 Falla con: un `require` de arriba del archivo sin red: el proceso muere con salida 1, que no frena, y sin dejar rastro;
-//    o el registro que necesita ese módulo para saber dónde escribir.
-test('T3 Falla_ModuloDelArranque_FrenaSoloLoQueEscribeUnaHistoria', () => {
+//    o la red de fallas, que deja pasar lo que no nombra una historia (escribir código sin carril). Sin cargarse, el freno
+//    no decidió nada: frena todo comando, dice qué no cargó y dónde quedó el registro.
+test('T3 Falla_ModuloDelArranque_FrenaTodoYDiceCual', () => {
   const c = corral();
   try {
-    for (const m of ['lib/story-gate.js', 'session-id.js']) matriz(c, { romper: m }, `sin ${m}`);
+    for (const m of ['lib/story-gate.js', 'session-id.js']) {
+      const r = enProceso(c, pedido(c.repo, `ls -la`), { romper: m });
+      assert.strictEqual(r.salida, 2, `sin ${m}, ls -la: ${r.stderr}`);
+      assert.match(r.stderr, /NO PUDO CARGARSE/, `sin ${m}: lo dice`);
+      assert.ok(r.stderr.includes(path.basename(m)), `sin ${m}: nombra el módulo (${r.stderr})`);
+      assert.match(r.log, /FRENÓ POR FALLA/, `sin ${m}: queda en el registro`);
+    }
     // sin el lector de rutas no se sabe dónde vive el estado: frena igual, y dice dónde quedó el registro
-    const sinLector = enProceso(c, pedido(c.repo, `echo x > specs/story-x.md`), { romper: 'tycon-home.js' });
-    assert.strictEqual(sinLector.salida, 2, sinLector.stderr);
-    assert.match(sinLector.stderr, /La falla quedó en .*hook-errors\.log/);
-    const otro = enProceso(c, pedido(c.repo, `ls -la`), { romper: 'tycon-home.js' });
-    assert.strictEqual(otro.salida, 0, otro.stderr);
+    for (const cmd of [`echo x > specs/story-x.md`, `ls -la`]) {
+      const sinLector = enProceso(c, pedido(c.repo, cmd), { romper: 'tycon-home.js' });
+      assert.strictEqual(sinLector.salida, 2, `sin tycon-home.js, ${cmd}: ${sinLector.stderr}`);
+      assert.match(sinLector.stderr, /La falla quedó en .*hook-errors\.log/);
+    }
+  } finally { fs.rmSync(c.home, { recursive: true, force: true }); }
+});
+
+// T3b Falla_ModuloQueNoCarga_FrenaTodo
+// 🔴 Falla con: un módulo del freno que no carga y la red que deja pasar lo que no nombra una historia ni una constancia,
+//    como escribir código sin carril, que el freno entero frena. Sin cargarse, el freno no decidió nada: frena todo y
+//    lo dice. La T3 mira el mensaje; ésta, que no se escapa ningún comando.
+test('T3b Falla_ModuloQueNoCarga_FrenaTodo', () => {
+  const c = corral();
+  try {
+    fs.mkdirSync(path.join(c.repo, 'src'), { recursive: true });
+    const todos = [...LOS_QUE_FRENAN, ...LOS_QUE_PASAN, 'echo x > src/Foo.cs', "cat > src/Foo.cs <<'EOF'\nclass X{}\nEOF"];
+    const problemas = [];
+    for (const m of ['lib/story-gate.js', 'session-id.js', 'tycon-home.js']) {
+      for (const cmd of todos) {
+        const r = enProceso(c, pedido(c.repo, cmd), { romper: m });
+        const que = `sin ${m}, «${cmd.split('\n')[0]}»`;
+        if (r.salida !== 2) problemas.push(`${que}: salió ${r.salida}, no frenó`);
+        else if (!r.stderr.includes(path.basename(m))) problemas.push(`${que}: frenó sin nombrar el módulo que no cargó`);
+        if (/FAILED OPEN/.test(r.log)) problemas.push(`${que}: el registro dice FAILED OPEN`);
+      }
+    }
+    assert.deepStrictEqual(problemas, [], 'sin cargarse, el freno frena todo y nombra el módulo');
+  } finally { fs.rmSync(c.home, { recursive: true, force: true }); }
+});
+
+// T3c Falla_ModuloQueFaltaAlDecidir_FrenaTodo
+// 🔴 Falla con: un módulo que el freno carga recién al decidir y que no está (el que lee lo instalado, por ejemplo):
+//    la falla iba a la red, que deja pasar escribir código sin carril. Que falte un archivo del freno no es una falla
+//    sin prever del análisis (la T2): frena y dice cuál falta.
+test('T3c Falla_ModuloQueFaltaAlDecidir_FrenaTodo', () => {
+  const c = corral();
+  try {
+    fs.mkdirSync(path.join(c.repo, 'src'), { recursive: true });
+    for (const cmd of ['echo x > src/Foo.cs', "cat > src/Foo.cs <<'EOF'\nclass X{}\nEOF"]) {
+      const r = enProceso(c, pedido(c.repo, cmd), { preparar: sinArchivo('installed-tree.js') });
+      const que = `sin installed-tree.js, «${cmd.split('\n')[0]}»`;
+      assert.strictEqual(r.salida, 2, `${que}: ${r.stderr}`);
+      assert.ok(r.stderr.includes('installed-tree.js'), `${que}: nombra el módulo (${r.stderr})`);
+      assert.match(r.log, /FRENÓ POR FALLA/, `${que}: queda en el registro`);
+      assert.doesNotMatch(r.log, /FAILED OPEN/, `${que}: no pasa por la red`);
+    }
+  } finally { fs.rmSync(c.home, { recursive: true, force: true }); }
+});
+
+// T3d Falla_ModuloQueNoCompilaAlDecidir_FrenaTodo
+// 🔴 Falla con: un módulo que el freno carga recién al decidir y que está, pero no compila (una instalación a medias):
+//    como en la T3c, la falla iba a la red y escribir código sin carril pasaba. Un archivo roto es una pieza rota.
+test('T3d Falla_ModuloQueNoCompilaAlDecidir_FrenaTodo', () => {
+  const c = corral();
+  try {
+    fs.mkdirSync(path.join(c.repo, 'src'), { recursive: true });
+    const roto = "const fs = require('fs'); const os = require('os'); const p = require('path'); const rota = p.join(os.homedir(), 'rota-installed-tree.js'); fs.writeFileSync(rota, 'module.exports = {;\\n'); const M = require('module'); const c = M._load; M._load = function (q, ...r) { return c.call(this, q.endsWith('/installed-tree.js') || q === './installed-tree.js' ? rota : q, ...r); };";
+    for (const cmd of ['echo x > src/Foo.cs', "cat > src/Foo.cs <<'EOF'\nclass X{}\nEOF"]) {
+      const r = enProceso(c, pedido(c.repo, cmd), { preparar: roto });
+      const que = `con installed-tree.js roto, «${cmd.split('\n')[0]}»`;
+      assert.strictEqual(r.salida, 2, `${que}: ${r.stderr}`);
+      assert.ok(r.stderr.includes('installed-tree.js'), `${que}: nombra el módulo (${r.stderr})`);
+      assert.match(r.log, /FRENÓ POR FALLA/, `${que}: queda en el registro`);
+      assert.doesNotMatch(r.log, /FAILED OPEN/, `${que}: no pasa por la red`);
+    }
+  } finally { fs.rmSync(c.home, { recursive: true, force: true }); }
+});
+
+// T3e Falla_ControlSinSuArchivo_FrenaTodo
+// 🔴 Falla con: un control del freno que pide su archivo dentro de su propia red (un `try` que traga el error): si el
+//    archivo falta, el control se apaga callado y el resto del freno decide sin él. Con el deprecado en `block`, escribir
+//    lo deprecado pasaba; sin el freno de stash, también descartar el stash de otra sesión. Que falte un archivo del freno
+//    frena todo, aunque lo pida un control que sigue sin él.
+test('T3e Falla_ControlSinSuArchivo_FrenaTodo', () => {
+  const c = corral();
+  try {
+    fs.mkdirSync(path.join(c.repo, '.tycon'), { recursive: true });
+    fs.mkdirSync(path.join(c.repo, 'src', 'legacy'), { recursive: true });
+    fs.writeFileSync(path.join(c.repo, 'src', 'legacy', 'a.cs'), 'x\n');
+    fs.writeFileSync(path.join(c.repo, '.tycon', 'advisors.yaml'), 'deprecated:\n  edit: block\n  paths:\n    - path: "src/legacy/**"\n      level: frozen\n      reason: "reemplazado"\n');
+    // el deprecado lee la configuración commiteada: un repo con un commit, con fechas fijas y sin el mantenimiento de git
+    const gitEnv = { ...process.env, GIT_AUTHOR_DATE: '2026-11-24T12:00:00Z', GIT_COMMITTER_DATE: '2026-11-24T12:00:00Z' };
+    const git = (...a) => spawnSync('git', ['-C', c.repo, '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...a], { stdio: 'ignore', env: gitEnv });
+    git('init', '-q', '-b', 'main', '.');
+    git('add', '-A');
+    git('-c', 'user.email=b@b', '-c', 'user.name=b', 'commit', '-q', '-m', 'base');
+    // y con el arnés: el de este árbol. Sin el carril: escribir código sin carril frenaría igual y taparía al deprecado
+    const env = { TYCON_GUIDES_DIR: path.resolve(SCRIPTS, '..', '..', '..'), TYCON_STORY_GATE: 'off' };
+    // con el archivo, el deprecado frena: es lo que se apagaba
+    const con = enProceso(c, pedido(c.repo, 'echo y > src/legacy/a.cs'), { env });
+    assert.strictEqual(con.salida, 2, con.stderr);
+    assert.match(con.stderr, /deprecado/);
+    for (const [archivo, cmd] of [['deprecated.js', 'echo y > src/legacy/a.cs'], ['stash-guard.js', 'git stash drop']]) {
+      const r = enProceso(c, pedido(c.repo, cmd), { preparar: sinArchivo(archivo), env });
+      const que = `sin ${archivo}, «${cmd}»`;
+      assert.strictEqual(r.salida, 2, `${que}: ${r.stderr}`);
+      assert.match(r.stderr, /NO PUDO CARGARSE/, `${que}: lo dice`);
+      assert.ok(r.stderr.includes(archivo), `${que}: nombra el archivo (${r.stderr})`);
+      assert.match(r.log, /FRENÓ POR FALLA/, `${que}: queda en el registro`);
+    }
+  } finally { fs.rmSync(c.home, { recursive: true, force: true }); }
+});
+
+// T3f Falla_ArchivoQueNoEsElInstalado_FrenaTodo
+// 🔴 Falla con: un archivo del freno que compila pero quedó a medias (una instalación cortada): la decisión cae con un
+//    error común, que va a la red, y escribir código sin carril pasa. En una versión bajada (trae su lista y no es un
+//    clon), el freno compara la huella de cada archivo suyo que usó con la de la lista: si una no coincide, frena todo y
+//    dice cuál. En un clon no la mira: quien mantiene el arnés cambia sus archivos a propósito.
+test('T3f Falla_ArchivoQueNoEsElInstalado_FrenaTodo', () => {
+  const c = corral();
+  const copia = versionBajada(path.join(c.home, 'arnes'));
+  const gate = path.join(copia, 'skills', 'tycon-pipeline', 'scripts', 'on-bash-write-gate.js');
+  try {
+    fs.mkdirSync(path.join(c.repo, 'src'), { recursive: true });
+    // intacta, decide como siempre
+    const sana = enProceso(c, pedido(c.repo, 'echo x > src/Foo.cs'), { gate });
+    assert.strictEqual(sana.salida, 0, sana.stderr);
+    assert.doesNotMatch(sana.log, /FAILED OPEN|FRENÓ POR FALLA/, 'la copia intacta no es una falla');
+    fs.writeFileSync(path.join(copia, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'installed-tree.js'), 'module.exports = {};\n');
+    for (const cmd of ['echo x > src/Foo.cs', "cat > src/Foo.cs <<'EOF'\nclass X{}\nEOF"]) {
+      const r = enProceso(c, pedido(c.repo, cmd), { gate });
+      const que = `con installed-tree.js a medias, «${cmd.split('\n')[0]}»`;
+      assert.strictEqual(r.salida, 2, `${que}: ${r.stderr}`);
+      assert.ok(r.stderr.includes('installed-tree.js'), `${que}: nombra el archivo (${r.stderr})`);
+      assert.match(r.stderr, /no es el que se instaló/, `${que}: dice por qué`);
+      assert.match(r.log, /FRENÓ POR FALLA/, `${que}: queda en el registro`);
+      assert.doesNotMatch(r.log, /FAILED OPEN/, `${que}: no pasa por la red`);
+    }
+    // un clon no se compara con la lista
+    fs.mkdirSync(path.join(copia, '.git'));
+    const clon = enProceso(c, pedido(c.repo, 'ls -la'), { gate });
+    assert.strictEqual(clon.salida, 0, clon.stderr);
+    assert.doesNotMatch(clon.stderr, /no es el que se instaló/);
   } finally { fs.rmSync(c.home, { recursive: true, force: true }); }
 });
 
@@ -248,7 +414,8 @@ test('T6 Falla_EntradaQueNoSeLee_QuedaComoAbierto', (t) => {
 test('T5 Falla_DespuesDeDecidir_NoCambiaLaDecision', () => {
   const c = corral();
   try {
-    const preparar = `const io = require(${JSON.stringify(path.join(SCRIPTS, 'lib', 'story-gate-io.js'))}); const antes = io.DEFAULT_STATE_DIR; Object.defineProperty(io, 'DEFAULT_STATE_DIR', { get() { if (new Error().stack.includes('handle')) return antes; throw new Error('roto después de decidir'); } });`;
+    // la pila entera: «dentro de handle» se lee en ella, y cada `require` del freno le suma un renglón
+    const preparar = `Error.stackTraceLimit = 200; const io = require(${JSON.stringify(path.join(SCRIPTS, 'lib', 'story-gate-io.js'))}); const antes = io.DEFAULT_STATE_DIR; Object.defineProperty(io, 'DEFAULT_STATE_DIR', { get() { if (new Error().stack.includes('handle')) return antes; throw new Error('roto después de decidir'); } });`;
     // escribe afuera y nombra la historia: el freno lo miró y lo deja pasar
     const r = enProceso(c, pedido(c.repo, `echo specs/story-x.md > salida.txt`), { preparar });
     assert.strictEqual(r.salida, 0, r.stderr);
