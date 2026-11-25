@@ -1077,17 +1077,25 @@ rm -rf "${T}"
 # Necesita un navegador de verdad (el DOM mínimo de arriba no calcula anchos). Sin Chrome el caso sale
 # NO MEDIDO con su motivo — nunca «ok».
 CHROME_BIN="${TYCON_CHROME:-}"
+CHROME_MOTIVO="no hay Chrome en esta máquina (TYCON_CHROME lo apunta; TYCON_CHROME=0 lo apaga a propósito)"
 # TYCON_CHROME=0: «esta máquina no tiene navegador» a propósito — la prueba de suites portables corre
 # en una HOME vacía, donde Chrome sin perfil vuelca el DOM y no sale nunca; el caso sale NO MEDIDO, nunca «ok».
 if [ "${CHROME_BIN}" = "0" ]; then
   CHROME_BIN=""
 elif [ -z "${CHROME_BIN}" ]; then
-  for c in "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" google-chrome google-chrome-stable chromium chromium-browser; do
-    if [ -x "${c}" ] || command -v "${c}" >/dev/null 2>&1; then CHROME_BIN="${c}"; break; fi
-  done
+  # En macOS, con una HOME que no es la de la persona (la casa de prueba con que corren las suites), Chrome no encuentra
+  # el llavero y le muestra a la persona «Llavero no encontrado», aunque corra sin ventana. Ahí no se busca: se abre sólo
+  # si TYCON_CHROME lo pide explícito.
+  if [ "$(uname)" = "Darwin" ] && ! node -e 'const os=require("os"),fs=require("fs");const r=(p)=>{try{return fs.realpathSync(p)}catch(_){return p}};process.exit(r(os.userInfo().homedir)===r(process.env.HOME||"")?0:1)'; then
+    CHROME_MOTIVO="la HOME no es la de la persona, y en macOS Chrome le pediría el llavero (TYCON_CHROME lo pide explícito)"
+  else
+    for c in "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" google-chrome google-chrome-stable chromium chromium-browser; do
+      if [ -x "${c}" ] || command -v "${c}" >/dev/null 2>&1; then CHROME_BIN="${c}"; break; fi
+    done
+  fi
 fi
 if [ -z "${CHROME_BIN}" ]; then
-  echo "  NO MEDIDO — ANCHO-T1 no hay Chrome en esta máquina (TYCON_CHROME lo apunta; TYCON_CHROME=0 lo apaga a propósito): el ancho de la tabla no se verificó"
+  echo "  NO MEDIDO — ANCHO-T1 ${CHROME_MOTIVO}: el ancho de la tabla no se verificó"
 else
   T=$(mktemp -d); CB="${T}/buzon"; RB="${T}/local"
   # el peor caso: la máquina de nombre más largo y tres controles con etiqueta larga y contador
@@ -1103,7 +1111,7 @@ MEDIR
   # sin tope. No se le da un perfil temporal (eso es lo que lo cuelga): usa el perfil que haya
   # y, si a los 60 s no salió, se lo mata y el caso sale rojo con «sin-medida», nunca colgado. `perl alarm` porque
   # macOS no trae `timeout`. Sin navegador (HOME vacía) la prueba de suites portables lo apaga con TYCON_CHROME=0.
-  R_ANCHO="$(perl -e 'alarm shift; exec @ARGV' 60 "${CHROME_BIN}" --headless=new --disable-gpu --hide-scrollbars --no-first-run --no-default-browser-check --window-size=1400,1000 --virtual-time-budget=4000 --dump-dom "file://${T}/o.html?abrir=0" 2>/dev/null | python3 -c "
+  R_ANCHO="$(perl -e 'alarm shift; exec @ARGV' 60 "${CHROME_BIN}" --headless=new --use-mock-keychain --disable-gpu --hide-scrollbars --no-first-run --no-default-browser-check --window-size=1400,1000 --virtual-time-budget=4000 --dump-dom "file://${T}/o.html?abrir=0" 2>/dev/null | python3 -c "
 import re,sys; m=re.search(r'data-ancho=\"([^\"]*)\"', sys.stdin.read()); print(m.group(1) if m else 'sin-medida')")"
   case "${R_ANCHO}" in
     entra\|*) ok "ANCHO-T1 a 1400 px las 13 columnas entran en la tabla sin scroll, con una descripción larga y el detalle abierto (${R_ANCHO#entra|})" ;;
@@ -2279,7 +2287,7 @@ rm -rf "${T}"
 # 🔴 Falla con: la tabla sin la señal de «sigue» a 900 px, o sin tarjetas a 640 px o menos (Controles detrás del
 #    desplazamiento lateral). Mismo navegador que ANCHO-T1; sin Chrome, NO MEDIDO — nunca «ok».
 if [ -z "${CHROME_BIN}" ]; then
-  echo "  NO MEDIDO — 2.79-T55 no hay Chrome en esta máquina (TYCON_CHROME lo apunta; TYCON_CHROME=0 lo apaga a propósito): la tabla en sus anchos no se verificó"
+  echo "  NO MEDIDO — 2.79-T55 ${CHROME_MOTIVO}: la tabla en sus anchos no se verificó"
 else
   T=$(mktemp -d)
   volcado "${T}/r" "${S1}" "2026-09-10T10:00:00Z" '{"gates":[{"ts":"2026-09-10T10:20:00.000Z","check":"atdd-preedit","status":"red:exit=1"}]}'
@@ -2291,7 +2299,7 @@ var r={vista:vista,desplaza:t.scrollWidth>caja.clientWidth+1,ctlDentro:ctl.getBo
 document.body.setAttribute('data-medida',JSON.stringify(r));},300);});</script>
 MEDIR
   for ANCHO in 1440 900 600 390; do
-    R="$(perl -e 'alarm shift; exec @ARGV' 60 "${CHROME_BIN}" --headless=new --disable-gpu --hide-scrollbars --no-first-run --no-default-browser-check --window-size=${ANCHO},1000 --virtual-time-budget=4000 --dump-dom "file://${T}/o.html?abrir=0" 2>/dev/null | python3 -c "
+    R="$(perl -e 'alarm shift; exec @ARGV' 60 "${CHROME_BIN}" --headless=new --use-mock-keychain --disable-gpu --hide-scrollbars --no-first-run --no-default-browser-check --window-size=${ANCHO},1000 --virtual-time-budget=4000 --dump-dom "file://${T}/o.html?abrir=0" 2>/dev/null | python3 -c "
 import re,sys,html; m=re.search(r'data-medida=\"([^\"]*)\"', sys.stdin.read()); print(html.unescape(m.group(1)) if m else 'sin-medida')")"
     if [ "${R}" = "sin-medida" ]; then mal "2.79-T55 a ${ANCHO} px Chrome no devolvió la medida: $(head -c 300 "${T}/log")"; continue; fi
     python3 -c "
