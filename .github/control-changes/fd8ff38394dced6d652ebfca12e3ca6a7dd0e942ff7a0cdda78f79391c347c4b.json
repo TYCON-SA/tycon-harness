@@ -1,0 +1,1 @@
+{"hash":"fd8ff38394dced6d652ebfca12e3ca6a7dd0e942ff7a0cdda78f79391c347c4b","rules":[{"path":"scripts/ci/bench-against-base.js","blob":"f136900bb0127f6295ed1ed0653389bd45417b82"},{"path":"scripts/ci/run-base-controls.sh","blob":"eb686725398770177e9dc9681f5205638d13b947"}],"at":"2026-11-25","by":"dueño"}
