@@ -1518,6 +1518,28 @@ function destinosArmados(cmd, guiones = scriptsInline(cmd)) {
 
 const DELIMITADOR_DE_HEREDOC = /-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\1(?=[\s;&|()<>]|$)/y;
 
+/**
+ * Dónde termina la cuenta o la expansión que empieza en `i` (`((…))`, `$[…]` o `${…}`): el índice de su último carácter,
+ * o -1 si no cierra en el renglón. Adentro, un `<<` es un corrimiento o parte de la palabra, nunca un heredoc: bash y
+ * zsh corren lo de abajo aunque un renglón más abajo se llame como lo que sigue al `<<`.
+ */
+function finDeCuenta(linea, i) {
+  const abre = linea[i + 1] === '(' ? '(' : linea[i + 1];
+  const cierra = { '(': ')', '[': ']', '{': '}' }[abre];
+  let profundidad = abre === '(' ? 2 : 1;
+  for (let j = i + 2; j < linea.length; j++) {
+    const c = linea[j];
+    if (c === '\\') j++;
+    else if (c === abre) profundidad++;
+    else if (c === cierra) {
+      profundidad -= 1;
+      if (profundidad === 0) return j;
+    }
+  }
+  return -1;
+}
+const empiezaCuenta = (linea, i) => (linea[i] === '(' && linea[i + 1] === '(') || (linea[i] === '$' && (linea[i + 1] === '[' || linea[i + 1] === '{'));
+
 function sinBlancosAlBorde(linea) {
   let ini = 0;
   let fin = linea.length;
@@ -1529,7 +1551,9 @@ function sinBlancosAlBorde(linea) {
 /**
  * Los heredocs que abre el renglón, en orden: `{ delimitador, inicio, fin }`, con `inicio` y `fin` los del operador con
  * su palabra (`<<-'EOF'`). No abren nada lo de adentro de comillas, lo escapado, lo que sigue a un `$((` ni lo que sigue a
- * un `#` que empieza una palabra: ahí el shell ve un comentario y el renglón siguiente corre.
+ * un `#` que empieza una palabra: ahí el shell ve un comentario y el renglón siguiente corre. Tampoco lo de adentro de
+ * una cuenta o una expansión (`((…))`, `$[…]`, `${…}`), y una que no cierra en el renglón corta lo que sigue: leer de
+ * más como comando es el lado que frena.
  */
 function* aperturasDeHeredoc(linea) {
   const aritmetica = linea.indexOf('$((');
@@ -1549,6 +1573,10 @@ function* aperturasDeHeredoc(linea) {
       while (j < linea.length && linea[j] !== '"') j += linea[j] === '\\' ? 2 : 1;
       if (j >= linea.length) return;
       i = j;
+    } else if (empiezaCuenta(linea, i)) {
+      const fin = finDeCuenta(linea, i);
+      if (fin < 0) return;
+      i = fin;
     } else if (c === '<' && linea[i + 1] === '<' && linea[i - 1] !== '<' && linea[i + 2] !== '<') {
       DELIMITADOR_DE_HEREDOC.lastIndex = i + 2;
       const m = DELIMITADOR_DE_HEREDOC.exec(linea);
@@ -1560,7 +1588,8 @@ function* aperturasDeHeredoc(linea) {
 /**
  * Los heredocs que abre el renglón como los leía la expresión de `heredocs()`, en orden y con la misma forma que
  * `aperturasDeHeredoc`: las comillas sin escapes desde el principio del renglón (simples o dobles, hasta la siguiente
- * igual), sin mirar el `#`, y nada desde el primer `$((`. Así `heredocs()` da lo mismo que antes, renglón por renglón.
+ * igual), sin mirar el `#`, y nada desde el primer `$((`. Así `heredocs()` da lo mismo que antes, renglón por renglón,
+ * salvo en una cuenta o una expansión: adentro no abre nada, como `aperturasDeHeredoc`.
  */
 function* aperturasComoAntes(linea) {
   const aritmetica = linea.indexOf('$((');
@@ -1570,6 +1599,12 @@ function* aperturasComoAntes(linea) {
     const c = linea[i];
     if (comilla) { if (c === comilla) comilla = null; continue; }
     if (c === "'" || c === '"') { comilla = c; continue; }
+    if (empiezaCuenta(linea, i)) {
+      const fin = finDeCuenta(linea, i);
+      if (fin < 0) return;
+      i = fin;
+      continue;
+    }
     if (c === '<' && linea[i + 1] === '<' && linea[i - 1] !== '<' && linea[i + 2] !== '<') {
       DELIMITADOR_DE_HEREDOC.lastIndex = i + 2;
       const m = DELIMITADOR_DE_HEREDOC.exec(linea);

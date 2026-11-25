@@ -330,6 +330,36 @@ test('on-bash-write-gate (fila 225): el heredoc detrás de un `<<` aritmético o
   }
 });
 
+// 🔴 Fila 240. Mutación: que se abra un heredoc con el `<<` de una cuenta o de una expansión (`(( n = 1 << true ))`,
+// `$[ 1 << true ]`, `${n:1<<true}`, `${n:-<<true}`): con un renglón `true` más abajo, «cierra», y lo del medio no se
+// miraba como comando. bash y zsh lo corren: una escritura al estado del pipeline o a una historia lista pasaba. Se prueban
+// los dos lectores: el de los destinos (`quitarCuerposDeHeredoc`) y el de los cuerpos (`heredocs()`).
+test('on-bash-write-gate (fila 240): un `<<` aritmético o de una expansión no abre heredoc ni esconde lo que sigue', () => {
+  const falsos = [['(( n = 1 << true ))', 'true'], ['(( n = 1 << 2 ))', '2'], ['echo $[ 1 << true ] >/dev/null', 'true'],
+    ['echo ${n:1<<true} >/dev/null', 'true'], ['n=1; echo ${n:-<<true} >/dev/null', 'true']];
+  const repo = mkRepo(); const st = mkState();
+  fs.writeFileSync(path.join(repo, 'specs', 'story-9-9.md'), S99);
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const estado = `echo x > ${path.join(st, 'suelto.json')}`;
+  const historia = 'echo x >> specs/story-9-9.md';
+  // sin el renglón de antes, los dos frenan: es lo que se escondía
+  assert.match(bash.handle(ev(estado), { stateDir: st }).block, /ESCRITURA DIRECTA AL ESTADO DEL PIPELINE/);
+  assert.match(bash.handle(ev(historia), { stateDir: st }).block, /HISTORIA ESCRITA POR CONSOLA/);
+  for (const [antes, cierre] of falsos) {
+    assert.ok(bash.quitarCuerposDeHeredoc(`${antes}\n${estado}\n${cierre}`).includes(estado), `${antes}: el destino se ve`);
+    const hd = bash.heredocs(`${antes}\ncat > specs/plan-a.md <<'EOF'\n---\nstory: "9.9"\nEOF\n${cierre}`);
+    assert.deepStrictEqual(hd.map((h) => h.body), ['---\nstory: "9.9"'], `${antes}: el heredoc de verdad se lee`);
+    const e = bash.handle(ev(`${antes}\n${estado}\n${cierre}`), { stateDir: st });
+    assert.match(e && e.block, /ESCRITURA DIRECTA AL ESTADO DEL PIPELINE/, `${antes}: el estado`);
+    const h = bash.handle(ev(`${antes}\n${historia}\n${cierre}`), { stateDir: st });
+    assert.match(h && h.block, /HISTORIA ESCRITA POR CONSOLA/, `${antes}: la historia`);
+  }
+  // lo de todos los días sigue igual: un heredoc detrás de una expansión cerrada, y el de una cuenta que es heredoc de verdad
+  assert.deepStrictEqual(bash.heredocs(`cat > "\${D}/notas.md" <<'X'\nhola\nX`).map((h) => h.body), ['hola']);
+  assert.ok(!bash.quitarCuerposDeHeredoc(`cat > "\${D}/notas.md" <<'X'\nhola\nX`).includes('hola'), 'el cuerpo detrás de `${D}` se quita');
+  assert.deepStrictEqual(bash.heredocs(`(( n = 1 << 2 )); cat > notas.md <<'X'\nhola\nX`).map((h) => h.body), ['hola']);
+});
+
 test('on-bash-write-gate (F3): mv/cp desde una story existente pasa (unknown-rename); un índice frena por nombre con el mensaje correcto', () => {
   const repo = mkRepo(); const st = mkState();
   fs.writeFileSync(path.join(repo, 'specs', 'story-a.md'), S99);
