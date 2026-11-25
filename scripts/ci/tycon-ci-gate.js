@@ -666,7 +666,7 @@ function revisarAprobaciones(repo, storyId, storyPath, ref = 'origin/main', { ci
     const hay = (regla) => problemas.find((p) => p.regla === regla);
     if (heredado && llegoARevisores) {
       avisos.push({ regla: 'plan-heredado',
-        mensaje: `\`${nombre}/\` es la corrida de cierre y no aprobó el plan: hereda la aprobación de \`${heredado.nombre}/\`, una corrida anterior de la misma historia. Avisa y no frena.` });
+        mensaje: `\`${nombre}/\` es la ejecución de cierre y no aprobó el plan: hereda la aprobación de \`${heredado.nombre}/\`, una ejecución anterior de la misma historia. Avisa y no frena.` });
     }
     const invalido = hay('registro-de-aprobaciones-invalido');
     if (invalido) {
