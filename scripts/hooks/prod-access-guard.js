@@ -255,8 +255,9 @@ function mensaje(motivo, detalle = []) {
 const CAMINO_DE_LA_PUERTA = [
   '   Para consultar O CAMBIAR una base de producción hay UNA sola forma, y cada sentencia abre un cuadro de aprobación:',
   "     /opt/tycon/bin/tycon-prod-sql <host> '<sentencia>' [--max-rows N]   (un select, o un cambio como alter database …)",
-  '   Si la conexión la rechaza el firewall (40615, «is not allowed to access the server»), se abre por la puerta, con su',
-  '   cuadro, y la regla se cierra sola al terminar la sesión: /opt/tycon/bin/tycon-prod-sql --open-firewall <host>',
+  '   Si la conexión la rechaza el firewall (40615, «is not allowed to access the server»), lo abre la persona en su',
+  '   terminal, con el cuadro de la puerta (la puerta da el comando para copiar), y la regla se cierra sola cuando',
+  '   termina la sesión que la pidió, o a las 8 h: /opt/tycon/bin/tycon-prod-sql --open-firewall <host> --session <id>',
   '   Un cambio de administración de Azure (alertas, tamaño o plan) va por la puerta, con el mismo cuadro:',
   '     /opt/tycon/bin/tycon-prod-sql --azure <el comando de az, sin «az»>   (las lecturas, list y show, sin cuadro)',
   '   Todas las formas, sin tocar producción: /opt/tycon/bin/tycon-prod-sql --help',
@@ -469,8 +470,8 @@ function rechazoAzure(palabras, op) {
   }
   if (op && /^sql server firewall-rule\b/.test(op)) {
     return { motivo: 'la regla de firewall no va por --azure.', detalle: [
-      'La IP de esta máquina se habilita por la puerta, con su cuadro, y la regla se cierra sola al terminar la sesión:',
-      '  /opt/tycon/bin/tycon-prod-sql --open-firewall <host>',
+      'La IP de esta máquina la habilita la persona en su terminal, por la puerta y con su cuadro; la regla se cierra sola',
+      'cuando termina la sesión que la pidió, o a las 8 h: /opt/tycon/bin/tycon-prod-sql --open-firewall <host> --session <id>',
       'Otra regla (otra IP, un rango) no tiene camino aprobado: dejale el comando a la persona para que lo corra en su terminal.',
     ] };
   }
@@ -581,7 +582,34 @@ function leerArchivoDeConsulta(ruta) {
   return { texto };
 }
 
+// El tope de horas de una regla de firewall de producción (prod-firewall-close.js, TOPE_HORAS) se aplica en el barrido,
+// que corre al arrancar o terminar una sesión: una sola sesión larga no lo dispara. Este freno corre antes de cada
+// comando: si el estado muestra una regla pasada del tope (o sin fecha que se pueda leer), lanza el barrido aparte, sin
+// esperarlo, a lo sumo una vez cada 10 minutos. No decide nada del comando y nunca frena por esto.
+const TOPE_FIREWALL_MS = 8 * 3600 * 1000;
+function barrerFirewallVencido() {
+  try {
+    const os = require('os'); const fs = require('fs'); const path = require('path');
+    const dir =(() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(os.homedir()); } catch (_) { /* la de siempre */ } return path.join(os.homedir(), '.claude', '.tycon-pipeline'); })();
+    const estado = path.join(dir, 'production-firewall.json');
+    if (!fs.existsSync(estado)) return;
+    const reglas = (JSON.parse(fs.readFileSync(estado, 'utf8')).reglas) || [];
+    const vencida = reglas.some((r) => { const t = Date.parse((r && r.abierta) || ''); return !Number.isFinite(t) || Date.now() - t > TOPE_FIREWALL_MS; });
+    if (!vencida) return;
+    const marca = `${estado}.barrido-por-tope`;
+    try { if (Date.now() - fs.statSync(marca).mtimeMs < 10 * 60 * 1000) return; } catch (_) { /* sin marca: va */ }
+    fs.writeFileSync(marca, '');
+    const cierre = path.join(__dirname, 'prod-firewall-close.js');
+    if (!fs.existsSync(cierre)) return;
+    const { spawn } = require('child_process');
+    const hijo = spawn(process.execPath, [cierre], { detached: true, stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true });
+    hijo.stdin.end(JSON.stringify({ hook_event_name: 'SessionStart', source: 'tope-del-firewall' }));
+    hijo.unref();
+  } catch (_) { /* el tope se vuelve a mirar en el próximo arranque o fin de sesión */ }
+}
+
 function decidir(entrada) {
+  barrerFirewallVencido();
   let payload = {};
   try { payload = JSON.parse(entrada || '{}'); } catch (e) {
     // AC 14: un payload que no se pudo leer no es «no hay base». Si el texto crudo nombra algo de
@@ -1012,13 +1040,13 @@ function decidir(entrada) {
   const hostAzure = (h) => (h && h.includes('.') ? h : `${h || '<host>'}.database.windows.net`);
   // `declarado`: la puerta sólo atiende hosts declarados como producción; a uno sin declarar no se le sugieren consultas
   const caminoFirewall = (h, declarado) => (esFirewall
-    ? [`Para habilitar la IP de esta máquina en el firewall, el único camino es la puerta (con su cuadro, y la regla se cierra sola): /opt/tycon/bin/tycon-prod-sql --open-firewall ${hostAzure(h)}`]
+    ? [`Para habilitar la IP de esta máquina en el firewall, el único camino es la puerta, y lo corre la persona en su terminal (con su cuadro; la regla se cierra sola cuando termina la sesión que la pidió, o a las 8 h): /opt/tycon/bin/tycon-prod-sql --open-firewall ${hostAzure(h)} --session <id>`]
     : esLecturaAz && declarado
       ? ['Las lecturas de Azure sobre un servidor de producción también se frenan. En su lugar, la puerta (con su cuadro):',
         `  el tamaño y el tope: /opt/tycon/bin/tycon-prod-sql ${hostAzure(h)} 'select name, size/128 as mb, max_size/128 as max_mb from sys.database_files'`,
         `  la edición y el nivel: /opt/tycon/bin/tycon-prod-sql ${hostAzure(h)} 'select edition, service_objective from sys.database_service_objectives'`,
         '  (miden la base a la que entra la puerta: la «base» del servidor en su catálogo; si el catálogo no la declara, master)',
-        `  si la conexión la rechaza el firewall: /opt/tycon/bin/tycon-prod-sql --open-firewall ${hostAzure(h)}`]
+        `  si la conexión la rechaza el firewall, lo abre la persona en su terminal: /opt/tycon/bin/tycon-prod-sql --open-firewall ${hostAzure(h)} --session <id>`]
       : []);
   for (const n of nombrados) {
     if (n.host === null) {
