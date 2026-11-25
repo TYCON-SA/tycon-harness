@@ -38,6 +38,9 @@ if (require.main === module) { try { require('./lib/node-floor.js').guard(); } c
  *
  *   + `marker.js runtime-waiver <story>` — la firma del dev, por TTY, en `<repo>/.tycon/runtime-waivers.jsonl`
  *     (lib/runtime-waiver.js; veredicto WAIVED-USER). El agente no tiene TTY: no puede firmar.
+ *   + o, sin la firma, la noche: su prueba ya está en main, en una suite de las diarias, y la última noche, de hace
+ *     menos de 36 h, la corrió en verde (lib/nightly-green.js; veredicto COVERED-NIGHTLY). Una noche roja, vieja o sin
+ *     foto la vuelve a pedir.
  *
  * La firma engancha por la declaración (razón + test que lo cubre) y por el hash de la matriz: si cambian, la
  * firma deja de aplicar sola. Un AC sin evidencia y NO declarado (NOT-RUN) no se puede firmar: hay que correrlo.
@@ -1130,7 +1133,7 @@ function celdaDeMedida(a) {
   const m = a.medida;
   if (!m) return [];
   const out = [];
-  const firmado = a.verdict === 'NOT-VERIFIABLE' || a.verdict === 'WAIVED-USER';
+  const firmado = a.verdict === 'NOT-VERIFIABLE' || a.verdict === 'WAIVED-USER' || a.verdict === 'COVERED-NIGHTLY';
   if (firmado) out.push(`📏 declarado imposible de medir; ${m.medidoTexto && m.estado !== 'pendiente' ? `medido ${m.medidoTexto}, la cota es ${m.cota}` : 'sin medición'}`);
   else if (m.estado === 'dentro' || m.estado === 'fuera') out.push(`📏 medido ${m.medidoTexto}; la cota es ${m.cota} (humo ${m.humo})`);
   else out.push(`📏 ${textoDeMedida(a)}`);
@@ -2619,6 +2622,20 @@ function compute(opts) {
       warnings.push(`AC#${n} tiene un waiver pero NO está declarado imposible — un waiver no puede saltear un AC no-corrido. Corrélo (E2E/smoke) o declaralo en runtime_not_verifiable con su test.`);
     }
   }
+  // Un criterio declarado imposible que nadie firmó queda cubierto sin la firma si la última noche corrió en verde su
+  // prueba, y esa prueba ya estaba en main (lib/nightly-green.js). Sin foto, con una vieja o en rojo, sigue esperando la
+  // firma: la matriz se calcula con la foto de cada vez.
+  const sinFirmar = acs.filter((n) => perAc[n].verdict === 'NOT-VERIFIABLE' && criteriosDeNoche().has(n));
+  if (sinFirmar.length) {
+    const NG = require('./lib/nightly-green.js');
+    const foto = NG.readPhoto({ env });
+    const noche = foto.rep
+      ? NG.nightlyCovered({ rep: foto.rep, story: sid, acs: sinFirmar, tests: codeFiles.filter(esPruebaDeclarada).map((f) => f.abs) })
+      : { covered: new Map(), problems: [foto.problem] };
+    for (const [n, c] of noche.covered) { perAc[n].verdict = 'COVERED-NIGHTLY'; perAc[n].nightly = c; }
+    const faltan = sinFirmar.filter((n) => !noche.covered.has(n));
+    if (faltan.length) warnings.push(`AC#${faltan.join(', #')}: la noche no lo cubre (${[...new Set(noche.problems)].join('; ') || 'ninguna prueba suya corrió esa noche'}), así que sigue esperando la firma.`);
+  }
 
   // --- constancia de las exenciones DODRT-C8. Se avisa SIEMPRE que se usen: el valor del
   //     mecanismo es que cada uso quede a la vista, no que sea cómodo.
@@ -2712,6 +2729,7 @@ function compute(opts) {
       accionNoEjercida: accionNoEjercida.length,
       notVerifiable: notVerifiablePend.length,
       waived: acs.filter((n) => perAc[n].verdict === 'WAIVED-USER').length,
+      nightly: acs.filter((n) => perAc[n].verdict === 'COVERED-NIGHTLY').length,
       exentosC8: exenciones.filter((e) => e.valida).length,
       fueraDeCota: fueraDeCota.length,
       sinMedicion: sinMedicion.length,
@@ -2728,7 +2746,7 @@ function renderMd(r) {
   L.push(`# Matriz de verificación runtime — Story ${r.sid}${r.key && r.key !== r.sid ? ` (evidencia: \`${r.key}\`)` : ''} (DODRT-C6)`);
   L.push('');
   L.push(`**Generado**: ${new Date().toISOString()} · **matrix_hash**: \`${r.hash}\` · **veredicto**: ${r.green ? '🟢 VERDE' : '🔴 ROJO'}`);
-  const waivedTxt = r.stats.waived ? ` · ${r.stats.waived} waiveados por el usuario (TTY)` : '';
+  const waivedTxt = (r.stats.waived ? ` · ${r.stats.waived} waiveados por el usuario (TTY)` : '') + (r.stats.nightly ? ` · ${r.stats.nightly} cubiertos por la noche, sin firma` : '');
   const parcialTxt = r.stats.accionNoEjercida ? ` · ${r.stats.accionNoEjercida} con la ACCIÓN sin ejecutar (bloquean)` : '';
   const exentoTxt = r.stats.exentosC8 ? ` · ${r.stats.exentosC8} con el verbo exento por declaración (DODRT-C8)` : '';
   const sinImagen = r.sinImagen || [];
@@ -2750,7 +2768,7 @@ function renderMd(r) {
   L.push('|---|---|---|---|---|');
   for (const n of r.acs) {
     const a = r.perAc[n];
-    const icon = a.verdict === 'RUNTIME' ? '🟢' : a.verdict === 'WAIVED-USER' ? '🟦' :
+    const icon = a.verdict === 'RUNTIME' ? '🟢' : a.verdict === 'WAIVED-USER' ? '🟦' : a.verdict === 'COVERED-NIGHTLY' ? '🌙' :
       a.verdict === 'NOT-VERIFIABLE' ? '🟪' : a.verdict === 'RUNTIME-PARCIAL' ? '🟠' : a.verdict === 'EN-STAGING' ? '🕓' : '🔴'; // NOT-RUN = 🔴
     // La columna de evidencia dice CÓMO se ejerció la acción cuando el AC es de acción — así el
     // lector distingue "la corrida observó" de "la corrida ejecutó" sin abrir el artefacto.
@@ -2762,7 +2780,8 @@ function renderMd(r) {
     const imagen = a.visual && a.visual.length ? `🖼️ ${a.visual.length} imagen(es): ${a.visual.map((v) => `\`${v}\``).join(', ')}`
       : a.motivo ? '🖼️ falta la captura o la grabación del navegador' : null;
     const ev = [a.runtime.join('; ') || '—', ...esperado, imagen, ...(a.vencioPor || []).map((v) => `⌛ ${celda(v)}`), a.mutacion ? `✋ ${a.mutacion}` : null,
-      a.exentoC8 ? `⚖️ verbo exento: ${a.exentoC8}` : null, ...celdaDeMedida(a).map(celda)].filter(Boolean).join(' · ');
+      a.exentoC8 ? `⚖️ verbo exento: ${a.exentoC8}` : null, a.nightly ? `🌙 ${celda(a.nightly.suite)} en verde la noche del ${a.nightly.noche}` : null,
+      ...celdaDeMedida(a).map(celda)].filter(Boolean).join(' · ');
     L.push(`| #${n} | ${icon} ${a.verdict} | ${ev} | ${a.code.join('; ') || '—'} | ${a.declReason || '—'} |`);
   }
   L.push('');
