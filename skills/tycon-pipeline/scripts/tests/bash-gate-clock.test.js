@@ -35,7 +35,7 @@ if (workerData.modo === 'net') {
 const entrada = fs.readFileSync(0, 'utf8');
 require(process.env.CLOCK_LIB).entregarEntrada(parentPort, workerData, entrada);
 if (modo === 'slow' || modo === 'slow-hung') require(process.env.CLOCK_LIB).anotarPaso('leyendo un guion de juguete');
-if (modo === 'slow') spawnSync('sleep', ['1.4']);
+if (modo === 'slow') spawnSync('sleep', ['2.4']);
 if (modo === 'slow-hung') for (;;);
 if (modo === 'loop') for (;;);
 if (modo === 'regex') /(a+)+$/.test('a'.repeat(60) + 'b');
@@ -199,10 +199,12 @@ test('T3b BashGateClock_ClockDoesNotLoad_RunsAsToday @story-8.308 @ac-3 — sin 
 test('T7 BashGateClock_SlowOrCut_LogsWhereItWas — el freno lento o cortado anota cuánto tardó y en qué paso', (t) => {
   const c = corral(t);
   const { contar } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'hooks', 'hook-failures-notice.js'));
-  let r = c.correr('slow');
+  // un reloj de 4 s y una espera de 2,4 s: margen para una máquina cargada
+  const cuatro = { TOY_SECONDS: '4' };
+  let r = c.correr('slow', 'ls', cuatro);
   assert.deepStrictEqual([r.status, r.stdout], [0, 'largo 2'], r.stderr);
   const lento = c.registro();
-  assert.match(lento, /^\[[^\]]+\] on-bash-write-gate LENTO: decidió en \d+ ms, con un tope de 2 s; el paso más lento: leyendo un guion de juguete \(\d+ ms\)\n/);
+  assert.match(lento, /^\[[^\]]+\] on-bash-write-gate LENTO: decidió en \d+ ms, con un tope de 4 s; el paso más lento: leyendo un guion de juguete \(\d+ ms\)\n/);
   // tardar no es fallar: el aviso de arranque no lo cuenta
   assert.strictEqual(contar(lento, Date.parse(/^\[([^\]]+)\]/.exec(lento)[1])).size, 0, lento);
   fs.rmSync(c.log, { force: true });

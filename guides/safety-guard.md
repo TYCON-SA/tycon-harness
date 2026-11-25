@@ -161,10 +161,11 @@ lanzado puede seguir corriendo después de que el freno frenó.
 
 **Lo lento y lo cortado quedan en `hook-errors.log`, solos.** Si `safety-guard-pre.sh` o `on-bash-write-gate.js` tardan
 la mitad de su reloj o más, anotan un renglón «LENTO», con cuánto tardaron, su tope y el paso que se comió el tiempo
-(por ejemplo, «la ventana de permiso (confirmando el click en la conversación de la sesión…)»). Si los corta el reloj,
-el renglón «FRENÓ POR FALLA» dice en qué paso estaban. Así, cuando un freno tarda en otra máquina, el dato está en su
-registro sin tener que reproducirlo. «LENTO» no cuenta como falla en el aviso de arranque. En el freno de comandos, los
-segundos son enteros.
+(por ejemplo, «la ventana de permiso (su última nota: confirmando el click en la conversación de la sesión…)»: la nota
+es la última que dejó el paso, no necesariamente la que tardó). Si los corta el reloj, el renglón «FRENÓ POR FALLA»
+dice en qué paso estaban. Así, cuando un freno tarda en otra máquina, el dato está en su registro sin tener que
+reproducirlo. «LENTO» no cuenta como falla ni en el aviso de arranque ni en la tabla de controles. En el freno de
+comandos, los segundos son enteros, y lo lento empieza en 2 s aunque el reloj sea más corto.
 
 **Cuando `safety-guard-pre.sh` corta por su reloj, se mide qué paso tardó.** Con `TYCON_SAFETY_TRACE=1` (en el `env` de
 `settings.json`, o en la terminal desde donde se abre la herramienta) el freno anota en `safety-guard-times.jsonl`, en

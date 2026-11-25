@@ -116,12 +116,15 @@ if ! [[ "$SG_CLOCK_S" =~ ^[1-9][0-9]?$ ]] || (( SG_CLOCK_S > 50 )); then SG_CLOC
 # Siempre, sin TYCON_SAFETY_TRACE: el freno cuenta sus pasos con SECONDS (no lanza nada). Si tarda la mitad de su reloj
 # o más, deja «safety-guard LENTO» con el total y el paso más lento; si lo corta el reloj, «FRENÓ POR FALLA» con el paso
 # en que estaba. Lo que anotan sus partes lentas en el archivo de la etapa se suma al nombre del paso. Así, cuando un
-# freno tarda en otra máquina, el dato queda en su registro. Los segundos son enteros: un paso de menos de uno cuenta 0.
+# freno tarda en otra máquina, el dato queda en su registro. Los segundos son enteros, contados en los saltos del reloj
+# de la máquina: un paso de menos de uno cuenta 0 o 1, por eso lo lento empieza en 2 s aunque el reloj sea más corto.
+# SECONDS arranca en 0 acá, antes que el reloj: el bash de la Mac lo toma del entorno si viene ahí.
+SECONDS=0
 SG_PASO="leyendo la entrada"; SG_PASO_DESDE=$SECONDS; SG_LENTO_PASO=""; SG_LENTO_S=-1; SG_CORTADO=""
 sg_paso() {
   local dura=$(( SECONDS - SG_PASO_DESDE ))
   if [[ -n "${SG_ETAPA:-}" && -s "$SG_ETAPA" ]]; then
-    SG_PASO="$SG_PASO ($(head -c 200 "$SG_ETAPA" 2>/dev/null | tr -d '\n'))"
+    SG_PASO="$SG_PASO (su última nota: $(head -c 200 "$SG_ETAPA" 2>/dev/null | tr -d '\n'))"
     rm -f "$SG_ETAPA" 2>/dev/null || true
   fi
   if (( dura > SG_LENTO_S )); then SG_LENTO_S=$dura; SG_LENTO_PASO="$SG_PASO"; fi
@@ -131,9 +134,11 @@ sg_paso() {
 # Al salir por cualquier lado: el rastro (si se pidió) y lo lento. No puede fallar ni cambiar la salida.
 sg_fin() {
   trap - ERR
+  # la decisión ya está tomada: si el reloj vence mientras se anota, no la cambia ni se anota dos veces
+  if [[ -z "$SG_CORTADO" ]]; then trap '' TERM; fi
   sg_trace_fin "${1:-0}" || true
   local mitad=$(( SG_CLOCK_S / 2 ))
-  if (( mitad < 1 )); then mitad=1; fi
+  if (( mitad < 2 )); then mitad=2; fi
   if [[ -z "$SG_CORTADO" ]] && (( SECONDS >= mitad )); then
     sg_paso "" || true
     if declare -F sg_registro >/dev/null; then
@@ -2231,8 +2236,8 @@ if [[ "$CMD" =~ $GIT_C4_MASS_ADD ]]; then
   # Con una firma esperando la ventana de permiso no hay nada que avisar: el aviso sale con código 1, que haría correr
   # el comando sin la ventana, y la persona ya mira el comando en ella.
   if [[ -n "$GIT_C4_BLIND" && -z "$OW_ASK_JSON" ]]; then
-    # reemplaza la trampa de la medición (TYCON_SAFETY_TRACE): el total se anota antes del aviso
-    trap '_sg_rc=$?; sg_trace_fin "$_sg_rc"; git_c4_blind_notice "$_sg_rc"' EXIT
+    # reemplaza la trampa de salida: la medición y lo lento se anotan antes del aviso
+    trap '_sg_rc=$?; sg_fin "$_sg_rc"; git_c4_blind_notice "$_sg_rc"' EXIT
   fi
 fi
 CMD="$CMD_SHOWN"   # las reglas de abajo miran el comando tal como llegó
