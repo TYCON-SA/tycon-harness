@@ -15,6 +15,7 @@
  *            heredoc, espacios en `bash -c`, espacios por un tubo a `sh`, renglones vacíos en un heredoc)
  *   BLANKS4  los segmentos, las redirecciones, el `sh -c` y la de borrados dan lo mismo que las expresiones de antes
  *   BLANKS5  los destinos se leen en menos de 1,5 s con 150 KB de `$(` o `${` sin cerrar detrás de `>` o `<`
+ *   BLANKS7  los destinos de un `cp` se leen en menos de 1,5 s con 100 KB de blancos o tabuladores entre sus palabras
  * 🔴 Nada toca el HOME real: el gancho corre en un proceso hijo con una casa de juguete.
  */
 const { test } = require('node:test');
@@ -141,5 +142,20 @@ test('BLANKS5 SustitucionSinCerrar_TrasRedireccion_LeeEnUnaPasada', () => {
     // la sustitución sin cerrar deja una palabra que no se resuelve: el destino es ésa, o el del cp
     assert.ok(destinos.some((d) => d === '/tmp/destino' || d.startsWith('$')), `${abre}: ${JSON.stringify(destinos.slice(0, 4))}`);
     assert.ok(ms < 1500, `${abre}: tardó ${ms} ms`);
+  }
+});
+
+// 🔴 Fila 228. Mutación: blancos opcionales delante del operador de la redirección que se saca de las palabras de un
+// tramo. Con una tirada larga de blancos sin `>` detrás, cada blanco la recorre entera: un `cp` con 100 KB de blancos
+// tardaba más de 20 s, y el freno frenaba por falla un comando sano.
+test('BLANKS7 CopiaConUnaTiradaDeBlancos_LeeSusDestinosEnUnaPasada', () => {
+  for (const blanco of [' ', '\t']) {
+    const comando = `cp a${blanco.repeat(100 * 1024)}/tmp/destino`;
+    // stable-data: el reloj mide cuánto tarda la lectura, que es lo que se prueba
+    const desde = Date.now();
+    const destinos = bash.extractWriteTargets(comando);
+    const ms = Date.now() - desde;
+    assert.ok(destinos.includes('/tmp/destino'), JSON.stringify(destinos));
+    assert.ok(ms < 1500, `${JSON.stringify(blanco)}: tardó ${ms} ms`);
   }
 });

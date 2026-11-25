@@ -232,8 +232,10 @@ function sinPalabrasDeBloque(seg) {
 const PALABRA_DE_REDIRECCION = String.raw`(?:\$'(?:\\.|[^'\\])*'|\$"(?:\\.|[^"\\])*"|'[^']*'|"(?:\\.|[^"\\])*"|\$\([^)]*\)?|\$\{[^}]*\}?|\\.|[^\s'"\\|;&<>$]|\$(?![('{"]))+`;
 // el descriptor de una redirección: una o más cifras, o un nombre (`{fd}`), al principio de una palabra
 const DESCRIPTOR = String.raw`(?:\d+|\{[A-Za-z_]\w*\})`;
-// (la palabra va en su propio grupo opcional: un `?` pegado al `+` de la palabra la volvería perezosa, de una letra)
-const REDIRECCION_DE_SALIDA_CON_PALABRA = new RegExp(String.raw`[ \t]*(?:&|(?<!\S)${DESCRIPTOR})?>{1,2}(?:\||&)?[ \t]*(?:${PALABRA_DE_REDIRECCION})?`, 'g');
+// (la palabra va en su propio grupo opcional: un `?` pegado al `+` de la palabra la volvería perezosa, de una letra. Y
+// sin blancos opcionales delante del operador: con una tirada larga de blancos sin `>` detrás, cada blanco la recorrería
+// entera)
+const REDIRECCION_DE_SALIDA_CON_PALABRA = new RegExp(String.raw`(?:&|(?<!\S)${DESCRIPTOR})?>{1,2}(?:\||&)?[ \t]*(?:${PALABRA_DE_REDIRECCION})?`, 'g');
 const REDIRECCION_DE_ENTRADA_CON_PALABRA = new RegExp(String.raw`(?:(?<!\S)${DESCRIPTOR})?<(?:<<|<-?|&|>)?[ \t]*(?:${PALABRA_DE_REDIRECCION})?`, 'g');
 
 // ¿La redirección deja un `$(` o un `${` sin cerrar? El tramo se parte en el `;` o la tubería de adentro, y el resto de la
@@ -364,18 +366,32 @@ const ESCRIBE_LO_QUE_NOMBRA = /^(?:g?(?:cp|mv|ln|install|sed)|rsync|perl|truncat
 function desdeElPrograma(seg) {
   const t = String(seg).trim();
   const pieza = /(?:'[^']*'|"(?:\\.|[^"\\])*"|\\.|[^\s'"\\])+/g;
+  const fines = [];
+  function* piezas() { for (let m = pieza.exec(t); m; m = pieza.exec(t)) { fines.push(m.index + m[0].length); yield m[0]; } }
+  const p = programaEntre(piezas());
+  return p ? p.n + t.slice(fines[p.k]) : '';
+}
+
+/**
+ * El programa que corre entre las palabras crudas de un tramo, en orden: `{ k, n }`, su lugar entre ellas y su nombre
+ * (`/bin/cp` y `\cp` son `cp`), sin las variables de delante, las redirecciones ni los envoltorios con sus opciones. null
+ * si no queda programa.
+ */
+function programaEntre(piezas) {
   // las opciones del envoltorio que se está leyendo (null fuera de uno), las palabras que siguen y no son el programa (el
   // valor de una opción), y si al terminar sus opciones le sigue una palabra suya
   let opciones = null;
   let saltar = 0;
   let propia = false;
-  for (let m = pieza.exec(t); m; m = pieza.exec(t)) {
+  let k = -1;
+  for (const pieza of piezas) {
+    k++;
     if (saltar) { saltar--; continue; }
     // una redirección no es el programa; si su palabra va aparte (`> f`), tampoco la que sigue
-    const redireccion = EMPIEZA_REDIRECCION.exec(m[0]);
-    if (redireccion) { if (redireccion[0].length === m[0].length) saltar = 1; continue; }
+    const redireccion = EMPIEZA_REDIRECCION.exec(pieza);
+    if (redireccion) { if (redireccion[0].length === pieza.length) saltar = 1; continue; }
     // una redirección pegada detrás (`cp>/dev/null`, `X=1>f`) termina la palabra: cuenta lo de antes
-    const crudo = m[0].slice(0, antesDeUnaRedireccion(m[0]));
+    const crudo = pieza.slice(0, antesDeUnaRedireccion(pieza));
     const w = palabraDelShell(crudo);
     if (opciones !== null && w.startsWith('-')) { if (opciones && opciones.test(w)) saltar = 1; continue; }
     if (opciones !== null && propia) { opciones = null; propia = false; continue; }
@@ -386,9 +402,9 @@ function desdeElPrograma(seg) {
     const n = nombres.find((x) => ESCRIBE_LO_QUE_NOMBRA.test(x)) || nombres.find((x) => x === 'busybox' || ENVOLTORIOS.has(x)) || nombres[0];
     if (n === 'busybox') continue;
     if (ENVOLTORIOS.has(n)) { opciones = opcionesDelEnvoltorio(n) || false; propia = CON_PALABRA_PROPIA.has(n); continue; }
-    return n + t.slice(m.index + m[0].length);
+    return { k, n };
   }
-  return '';
+  return null;
 }
 
 // los programas que copian o mueven a un destino que es su último argumento (o la carpeta de `-t`); el nombre entero
@@ -401,7 +417,11 @@ const COPIA = /^(?:g?(?:cp|mv|ln|install)|rsync)(?![\w.-])/;
  * En rsync `-t` conserva las fechas: ahí no hay carpeta de destino aparte.
  */
 function cpMvDest(seg) {
-  const words = palabrasDelComando(sinRedireccionesDelante(seg));
+  return destinosDeCpMv(palabrasDelComando(sinRedireccionesDelante(seg)));
+}
+
+/** Los destinos de un cp / mv de `cpMvDest`, con las palabras ya leídas: la primera, el nombre del programa. */
+function destinosDeCpMv(words) {
   // con varios -t vale el último, como en cp
   let dir = null;
   const fuera = new Set([0]);   // el nombre del comando, y lo que nombra la carpeta
@@ -643,7 +663,101 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
   const unidos = sinContinuaciones(s, { sinCuerpos: true });
   if (unidos !== s) lecturas.push(unidos);
   for (const l of lecturas) destinosDeEscritura(raw, l, keep, out);
+  destinosPorElPartidor(raw, keep, out);
   return [...out];
+}
+
+/**
+ * Agrega a `out` los destinos de los tramos de `tramosDelShell`, con las palabras y las redirecciones que lee el partidor
+ * común (`scripts/lib/shell-parse.js`) como el shell: con las comillas, las sustituciones y las redirecciones de zsh. Ve
+ * lo que la lectura por expresiones pierde (`>! f`, `1<>f`, un `;` citado en la palabra de una redirección, un destino
+ * citado con blancos, `TS=$(date) cp …`), y se suma a ella: nunca se ve menos. Sin el partidor (una instalación a
+ * medias) no agrega nada y quedan las otras lecturas.
+ */
+function destinosPorElPartidor(raw, keep, out) {
+  const p = partidorComun();
+  if (!p || typeof p.sinHeredocs !== 'function' || typeof p.parseSimpleCommand !== 'function') return;
+  for (const tramo of tramosDelShell(p.sinHeredocs(raw))) {
+    const c = p.parseSimpleCommand(sinPalabrasDeBloque(tramo));
+    for (const r of c.redirections) {
+      if (!r.write || r.target == null) continue;
+      const t = palabraDelShell(r.target);
+      if (t && !/^\/dev\//.test(t)) out.add(t);
+    }
+    const programa = programaEntre(c.words);
+    if (!programa) continue;
+    const resto = c.words.slice(programa.k + 1);
+    const palabras = [programa.n, ...resto.map(palabraDelShell)];
+    if (COPIA.test(programa.n)) for (const t of destinosDeCpMv(palabras)) out.add(t);
+    const ultimo = palabras[palabras.length - 1];
+    if (programa.n === 'truncate' && palabras.length > 1 && !ultimo.startsWith('-')) out.add(ultimo);
+    destinosDelSedEnSitio([programa.n, ...resto].join(' '), raw, keep, out);
+  }
+}
+
+/** Dónde cierra el paréntesis que abre en `s[i]`, contando los que se abren adentro; -1 si no cierra. */
+function cierreDeParentesis(s, i) {
+  let hondo = 0;
+  for (let j = i; j < s.length; j++) {
+    if (s[j] === '\\') { j++; continue; }
+    if (s[j] === '(') hondo++;
+    else if (s[j] === ')' && --hondo === 0) return j;
+  }
+  return -1;
+}
+
+/** ¿El carácter `k` de `t` está escapado (una cantidad impar de barras delante)? */
+function escapado(t, k) {
+  let barras = 0;
+  while (k - 1 - barras >= 0 && t[k - 1 - barras] === '\\') barras++;
+  return barras % 2 === 1;
+}
+
+/**
+ * Los tramos del comando como los parte el shell, sin sus comentarios: corta en `;`, `&&`, `||`, `|`, `|&`, `&` y el salto
+ * de renglón que están fuera de comillas y de sustituciones; no en el `|` de `>|` o `>&|` ni en el `&` de una redirección
+ * (`2>&1`, `&>f`, `<&0`). Una sola pasada: una comilla o una sustitución sin cerrar se lleva el resto en el mismo tramo.
+ */
+function tramosDelShell(texto) {
+  const s = String(texto);
+  const out = [];
+  let cur = '';
+  const cortar = () => { if (cur.trim()) out.push(cur); cur = ''; };
+  const trasRedireccion = () => { const k = cur.length - 1; return cur[k] === '>' && !escapado(cur, k); };
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '\\') { if (s[i + 1] !== '\n') cur += s.slice(i, i + 2); i++; continue; }
+    if (c === "'" || c === '"' || (c === '$' && s[i + 1] === "'")) {
+      let j = c === '$' ? i + 2 : i + 1;
+      const cierra = c === '"' ? '"' : "'";
+      const conEscapes = c !== "'";
+      while (j < s.length && s[j] !== cierra) j += conEscapes && s[j] === '\\' ? 2 : 1;
+      cur += s.slice(i, j + 1);
+      i = j;
+      continue;
+    }
+    // (`<(…)` y `>(…)` también: su tubería de adentro no parte el tramo)
+    const fin = (c === '<' || c === '>') && s[i + 1] === '(' ? cierreDeParentesis(s, i + 1) : finDeSustitucion(s, i);
+    if (fin === -1) { cur += s.slice(i); break; }
+    if (fin > i) { cur += s.slice(i, fin + 1); i = fin; continue; }
+    if (c === '#' && (cur === '' || /\s/.test(cur[cur.length - 1]))) { while (i + 1 < s.length && s[i + 1] !== '\n') i++; continue; }
+    if (c === '\n' || c === ';') { cortar(); continue; }
+    if (c === '|') {
+      if (trasRedireccion() || (cur.endsWith('>&') && !escapado(cur, cur.length - 2))) { cur += c; continue; }
+      if (s[i + 1] === '|' || s[i + 1] === '&') i++;
+      cortar();
+      continue;
+    }
+    if (c === '&') {
+      if (s[i + 1] === '&') { i++; cortar(); continue; }
+      if (s[i + 1] === '>' || trasRedireccion() || cur.endsWith('<')) { cur += c; continue; }
+      cortar();
+      continue;
+    }
+    cur += c;
+  }
+  cortar();
+  return out;
 }
 
 /**
@@ -689,6 +803,13 @@ function destinosDeEscritura(raw, s, keep, out) {
   while ((m = reRedirect.exec(s))) {
     const t = tok(m, 1);
     if (t && !t.startsWith('&') && !/^\/dev\//.test(t)) out.add(t);
+  }
+  // las de zsh que pisan el archivo aunque el shell no deje pisar (`>! f`, `>>! f`, `&>! f`, `>&! f`, `>&| f`); en bash
+  // `>!` es `>` al archivo `!`, que se lee arriba. El partidor común las lee también, salvo `>&|`, que parte en la tubería
+  const reZsh = new RegExp(`(?:^|[^<>&])(?:&|\\d)?>{1,2}&?[|!][ \\t]*${Q}`, 'g');
+  while ((m = reZsh.exec(s))) {
+    const t = tok(m, 1);
+    if (t && !/^\/dev\//.test(t)) out.add(t);
   }
 
   // 2) tee [-a] f1 [f2 …]

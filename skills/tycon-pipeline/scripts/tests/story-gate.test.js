@@ -1364,6 +1364,52 @@ test('CpAlEstado_ConRedireccionRara_Frena (fila 224, el freno)', () => {
   });
 });
 
+// 🔴 Fila 228. Mutación: leer los destinos sólo con la lectura por expresiones, que no conoce las redirecciones de zsh
+// (`>!`, `>&|`), no cuenta `<>` como escritura, parte el tramo en un `;` entre comillas, vacía un destino citado con
+// blancos y corta una asignación con `$(…)` delante del programa. Con cualquiera de esas formas, un `cp` o un `echo` al
+// estado de la corrida pasaba sin que ningún control lo viera.
+test('EscrituraAlEstado_ConFormasDelShellQueLaExpresionNoLee_Frena (fila 228, el freno)', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'plan-review', 's1'), { recursive: true });
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const res = path.join(E, 'plan-review', 's1', 's1.resultado.json');
+  const S = path.join(repo, 'falso.json');
+  fs.writeFileSync(S, '{}');
+  const arnes = path.join(SCRIPTS, '..', '..', '..');
+  conEnv(SIN_REGISTRO, () => {
+    const frena = (cmd) => { const r = bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }); assert.ok(r && r.block, JSON.stringify(cmd)); };
+    const pasa = (cmd) => assert.equal(bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }), null, JSON.stringify(cmd));
+    // P1: las redirecciones de zsh que pisan el archivo aunque el shell no deje pisar
+    for (const op of ['>!', '>>!', '&>!', '&>>!', '>&!', '>&|', '&>|', '2>!']) {
+      frena(`echo x ${op} '${res}'`);
+      frena(`echo x ${op}'${res}'`);
+    }
+    // P2: `<>` abre el archivo para leer y escribir, y lo crea
+    for (const op of ['1<>', '<>', '3<>', '1<> ']) frena(`cat ${S} ${op}'${res}'`);
+    frena(`: <>'${res}'`);
+    // P3: un `;` o una tubería entre comillas en la palabra de una redirección no parte el tramo
+    for (const palabra of [`>'a;b'`, `>'a|b'`, `2>"a;b"`, `>"a&b"`]) frena(`cp ${S} '${res}' ${palabra}`);
+    // P4: un destino citado con blancos u operadores adentro, o con un blanco escapado
+    for (const nombre of [`"${E}/a b.json"`, `'${E}/a<c.json'`, `'${E}/a;b.json'`, `${E}/a\\ b.json`, `"${E}/plan-review/s1/a b.json"`]) {
+      frena(`cp ${S} ${nombre}`);
+      frena(`echo x > ${nombre}`);
+    }
+    // P5: una asignación con una sustitución, una lista o una redirección con blancos delante del programa
+    for (const delante of ['TS=$(date +%s)', 'TS=`date +%s`', 'X=${a:-b c}', 'X=(a b)', 'X=1 <<<$(echo a b)']) {
+      frena(`${delante} cp ${S} '${res}'`);
+      frena(`${delante} sed -i.bak s/a/b/ '${res}'`);
+      frena(`${delante} truncate -s0 '${res}'`);
+    }
+    // lo de siempre sigue pasando
+    pasa(`TS=$(date +%s) cp ${S} '${repo}/copia.json'`);
+    pasa(`cp ${S} "${repo}/a b.json"`);
+    pasa(`echo x >! /dev/null`);
+    pasa(`cat ${S} 1<>'${repo}/copia.json'`);
+    pasa(`git status >'${repo}/a;b.txt'`);
+  });
+});
+
 // 🔴 Mutaciones: mirar sólo el primer `--out`, aceptar un destino que no se puede leer, o aceptar el corredor del arnés
 // con un `--args` que no es el pedido que preparó el arnés: con cualquiera, la sesión escribe un «aprobado» que no es el
 // de su plan (T28, las tres formas de falsificar el resultado).
