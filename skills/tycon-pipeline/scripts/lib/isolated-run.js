@@ -9,7 +9,8 @@ if (require.main === module) { try { require('./node-floor.js').guard(); } catch
  * casa de juguete en `process.env.HOME` escribió así en la máquina real (el tablero, la designación de la coordinadora).
  * Ahora esa pasada, y la de todo humo cuyo programa es un guion de laboratorio, corre acá:
  *   - `HOME` y `USERPROFILE` son una carpeta nueva de `mkdtemp`, con `TMPDIR`, `TMP` y `TEMP` adentro; `TYCON_HOME`
- *     y `CODEX_HOME` no llegan; `CLAUDE_CONFIG_DIR` es `<casa aparte>/.claude`; `TYCON_TEST_RUN=1` sí;
+ *     y `CODEX_HOME` no llegan; `CLAUDE_CONFIG_DIR` es la carpeta de Claude Code de la casa aparte; `TYCON_TEST_RUN=1`
+ *     sí;
  *   - ninguna credencial de Claude Code de quien lo lanza llega (`ANTHROPIC_*`, `CLAUDE_CODE_USE_*`, el token de su
  *     ingreso, el nombre del ítem del llavero); una prueba en vivo lleva su llave de prueba en
  *     `TYCON_TEST_ANTHROPIC_API_KEY`, que adentro es `ANTHROPIC_API_KEY`;
@@ -426,7 +427,7 @@ function exec({ argv, raices = [], env = process.env, userInfo, cwd = process.cw
     for (const k of Object.keys(nuevo)) if (credencialDeAfuera(k) || k === TEST_KEY_VAR) delete nuevo[k];
     // la carpeta de Claude Code es la de la casa aparte, dicha: con CLAUDE_CONFIG_DIR puesta, el ítem del llavero de macOS
     // lleva otro nombre y no es el de la sesión de quien lanza (borrada, `claude` pedía el mismo)
-    nuevo.CLAUDE_CONFIG_DIR = path.join(home, '.claude');
+    nuevo.CLAUDE_CONFIG_DIR = require(TYCON_HOME_LIB).claudeDir(home);
     if (llaveDePrueba) {
       nuevo.ANTHROPIC_API_KEY = llaveDePrueba;
       err(`[aislada] la casa aparte lleva la llave de prueba (${TEST_KEY_VAR}) como ANTHROPIC_API_KEY; la credencial de afuera no llega\n`);
