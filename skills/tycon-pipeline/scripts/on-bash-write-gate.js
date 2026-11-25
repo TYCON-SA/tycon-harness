@@ -7049,8 +7049,10 @@ function constanciasSinHuella(event, opts = {}) {
  * deja pasar algo que la lectura sin apagarlos frena, aunque algo se tome por comentario sin serlo. La segunda lectura
  * sólo decide: no anota escrituras ni borrados, que ya anotó la primera.
  */
-// En qué paso está el análisis, para el reloj (lib/gate-clock.js): si tarda o lo cortan, el registro lo dice
+// En qué paso está el análisis, para el reloj (lib/gate-clock.js): si tarda o lo cortan, el registro lo dice. Sin el
+// reloj no se lo vuelve a pedir: pedido al decidir, contaría como una pieza rota y frenaría todo
 function paso(texto) {
+  if (relojRoto) return;
   try { require('./lib/gate-clock.js').anotarPaso(texto); } catch { /* sin reloj, no hay a quién decírselo */ }
 }
 
