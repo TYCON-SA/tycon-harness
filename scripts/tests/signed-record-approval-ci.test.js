@@ -442,3 +442,13 @@ test('T24 Modo_FijoEnElCodigo: un valor desconocido frena; ninguna variable ni o
   const reglas = inventario.controls.find((c) => c.name === 'base-controls').rules;
   assert.ok(reglas.some((x) => x && x.path === 'scripts/lib/signed-record-approval.js' && x.sign_on_change === true));
 });
+
+test('T25 Guias_DicenLaRegla: las dos guías nombran el cuadro, la regla, los modos, qué se mira y lo que no protege', () => {
+  const pide = ['cuadro', 'constancia-sin-cuadro', '`aviso`', '`freno`', 'MODO', 'Lo que no protege',
+    '.tycon/exemptions.jsonl', '.tycon/runtime-waivers.jsonl', 'approvals.jsonl', 'control-changes', 'tasks/pending-approvals',
+    'delegación', 'refresh-after-main', 'huella', 'aprobada_en'];
+  for (const guia of ['guides/firmas-del-arnes.md', 'guides/ci-gate.md']) {
+    const texto = fs.readFileSync(path.join(RAIZ, guia), 'utf8');
+    for (const s of pide) assert.ok(texto.includes(s), `${guia} no nombra ${s}`);
+  }
+});
