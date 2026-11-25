@@ -121,7 +121,7 @@ function aprobacionesEnTexto(texto) {
 /**
  * ¿La línea nueva `texto` de `ruta` corresponde a un cuadro? `{ ok: true }` o `{ ok: false, motivo }`. Fuera del catálogo
  * o en una línea que no lleva cuadro (las automáticas de una ejecución) es `{ ok: true, fuera: true }`.
- *   · aprobacionesDeLaBase: los ids que ya aparecen en la historia de la base (un cuadro no se usa dos veces);
+ *   · aprobacionesDeLaBase: los ids que ya aparecen en el historial de la base (un cuadro no se usa dos veces);
  *   · delPedido: por id, las {firma, aprobada_en} de las líneas nuevas del pedido (las de una misma acción comparten id).
  */
 function verificar({ ruta, texto, aprobacionesDeLaBase = new Set(), delPedido = new Map() } = {}) {
@@ -139,7 +139,7 @@ function verificar({ ruta, texto, aprobacionesDeLaBase = new Set(), delPedido = 
   if (!e.firmas(l, c.firma).includes(c.firma)) return { ok: false, motivo: `la firma «${String(c.firma).slice(0, 60)}» no es la de este archivo` };
   if (!VIAS.includes(c.via)) return { ok: false, motivo: `«${String(c.via).slice(0, 40)}» no es una vía de una persona (${VIAS.join(', ')})` };
   if (c.huella !== huella(l)) return { ok: false, motivo: 'la huella del cuadro no es la de esta línea: el cuadro es de otra, o la línea cambió después' };
-  if (aprobacionesDeLaBase.has(c.aprobacion)) return { ok: false, motivo: 'esa aprobación ya se usó en la historia de la base' };
+  if (aprobacionesDeLaBase.has(c.aprobacion)) return { ok: false, motivo: 'esa aprobación ya se usó en el historial de la base' };
   const otras = (delPedido.get(c.aprobacion) || []).filter((o) => o.firma !== c.firma || o.aprobada_en !== c.aprobada_en);
   if (otras.length) return { ok: false, motivo: 'la misma aprobación aparece en otra firma del pedido' };
   return { ok: true };
