@@ -188,7 +188,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   `set-check <n> green --manual` · `set-flag <f> true` · `set-autonomous true` ·
   `snapshot-iter N` · `mark-adversarial-launched <runId> 4` · `mark-adversarial-result` ·
   `mark-adversarial-skipped --files …` · `promote-probe` · `mark-dod-runtime-checked '{evidencePath,verdict}'` ·
-  `runtime-waiver <spec>` (TTY) · `check-runtime-waiver <spec> [--acs n,m]` (si la firma pasaría, sin firmar) · `adhoc set|get|clear|clear-orphan` · `adopt-session` · `list-all` · `find-by-story` ·
+  `runtime-waiver <spec>` (TTY) · `adhoc set|get|clear|clear-orphan` · `adopt-session` · `list-all` · `find-by-story` ·
   `clear-session` · `update-story-status` · `update-pipeline-status` · `clear`.
 - **pipeline.js**: `start` · `next` · `next-story` · `risk-class` · `model-hint` · `tooling-expected` ·
   `mech-check` · `advisors` · `validators` (validar la story; omite lo ya validado en verde) · `validation-record` · `smart-reloop` · `check-count` (lee spawns reales, CF-2) · `deep-review-gate` ·

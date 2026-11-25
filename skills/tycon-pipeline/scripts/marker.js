@@ -47,8 +47,12 @@
  *   marker.js clear        → borra el marker de esta sesión
  *   marker.js is-active    → exit 0 si esta sesión tiene marker, 1 si no
  *
+ * Antes de pedir la firma de un criterio imposible de probar en vivo:
+ *   marker.js check-runtime-waiver <spec> [--acs n,m] → si la firma de runtime-waiver pasaría, sin firmar
+ *                                                  (0 pasaría · 1 no, con el porqué · 2 sin la historia)
+ *
  * Cross-session discovery:
- *   marker.js list-all                          → JSON array con TODOS los markers activos
+ *   marker.js list-all                        → JSON array con TODOS los markers activos
  *                                                  (todas las sesiones), stale-filtered
  *   marker.js find-by-story <storyId>           → JSON array con markers que matcheen
  *                                                  ese storyId (cualquier sesión)
