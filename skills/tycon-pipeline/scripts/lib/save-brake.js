@@ -2,17 +2,23 @@
 /**
  * save-brake.js — el freno de guardar: dentro de una corrida o de un camino rápido (el carril firmado de `marker.js
  * adhoc set`), la persona aprueba lo que sale hacia el equipo, no cada commit. El commit y el empuje de la rama de
- * trabajo son del agente: no preguntan. El pedido (crearlo o mergearlo) y el empuje a una rama compartida (`main`,
- * `master`, `dev`, `release/*`) preguntan en la ventana de permiso, y en una corrida, además, frenan si el paso
- * «Preparar el pull request» no cerró o si el código ya no es el de su foto, y la pregunta trae la evidencia. Lo llama
+ * trabajo son del agente: no preguntan. El pedido (crearlo, mergearlo o pasar un borrador a listo) y el empuje a una
+ * rama compartida (`main`, `master`, `dev`, `release/*`) preguntan en la ventana de permiso, y en una corrida, además,
+ * frenan si el paso «Preparar el pull request» no cerró o si el código ya no es el de su foto, y la pregunta trae la
+ * evidencia. El borrador es la excepción: antes de «Preparar» pregunta sin frenar, porque un borrador no se puede
+ * mergear, y pasarlo a listo sí pide el paso. Lo llama
  * `on-pre-commit.js` en cada comando de consola; en una pestaña que no pide permisos (la ventana se aprobaría sola) guarda
  * sin preguntar y lo dice en pantalla, y los frenos frenan igual. No hay firma ni constancia del ok: la constancia es el
  * pedido, y lo delicado (frenos, firmas, controles, producción) lo cubre la firma de control del pedido, que no cambia.
  *
  *   · comandosQueGuardan  los `git commit`, `git push` y los pedidos que se crean o se mergean (los comandos con `pr`
  *                         que declaran los conectores de plataforma en `rawCommands`) de verdad del comando, con su repo;
- *                         los que no se pueden leer (una variable, una carpeta que no se sabe, un programa que corre git
- *                         por su cuenta) salen como `opaco`;
+ *                         el pedido que su conector reconoce como borrador (`draftOptions`) sale con `borrador`, y el
+ *                         comando que pasa un borrador a listo (`readyCommands`) es un pedido más, con `listo`.
+ *                         La lectura del borrador es estricta: al crear, es borrador sólo lo escrito claro (la opción
+ *                         sola o un «sí», sin que pueda ser el valor de otra opción ni que algo después la pise); al
+ *                         marcar listo, cualquier duda cuenta como listo. Los que no se pueden leer (una variable, una
+ *                         carpeta que no se sabe, un programa que corre git por su cuenta) salen como `opaco`;
  *   · leerComando         lo mismo y las dudas: lo que no se lee con certeza, guarde o no (un comando en una variable,
  *                         un shell que lee de la entrada, una función o un alias que no está en la copia del shell de
  *                         la sesión, un subcomando que no es de git, más de cuatro niveles, una ruta que no se
@@ -31,8 +37,10 @@
  *
  * Lo que no ve (lo dice guides/firmas-del-arnes.md): un guion o un programa que guarda sin nombrar git en el comando
  * (un archivo de guion corrido por su nombre, un programa que lee el comando de un archivo), los alias propios del
- * programa de la plataforma, los comandos de pedido que no lo crean ni lo mergean (la API, marcarlo listo, cambiarlo),
- * y los commits que hacen `merge`, `cherry-pick`, `revert`, `am` o `commit-tree`.
+ * programa de la plataforma, los comandos de pedido que no lo crean, ni lo mergean ni lo pasan a listo (la API,
+ * también la que pasa un borrador a listo; cambiarlo), un borrador que pasa a listo por un camino que su conector no
+ * declara, y los commits que hacen `merge`, `cherry-pick`, `revert`, `am` o `commit-tree`. Un conector que no declara
+ * su borrador no tiene borrador para el freno: su pedido frena antes de «Preparar», como cualquier otro.
  */
 const fs = require('fs');
 const os = require('os');
@@ -728,7 +736,7 @@ const PALABRAS_QUE_GUARDAN = new Set(['commit', 'push', 'pr', 'repos']);
 // de los conectores, sólo las fijas.
 function palabrasDePedido() {
   const p = deLaPlataforma();
-  return new Set(p ? p.pedidos.flatMap((w) => w.slice(1, -1)) : []);
+  return new Set(p ? [...p.pedidos, ...p.listos.map((l) => l.words)].flatMap((w) => w.slice(1, -1)) : []);
 }
 // ¿Esta palabra dice guardar, por la lista fija o por un pedido de la plataforma?
 const diceGuardar = (fija) => { const deLosPedidos = palabrasDePedido(); return (w) => fija.has(w) || deLosPedidos.has(w); };
@@ -740,29 +748,116 @@ function nombraUnGuardado(ps) {
   const ws = ps.flatMap((w) => w.split(/[\s'"`();|&=,{}[\]<>]+/)).filter(Boolean).map(normal);
   const plataforma = deLaPlataforma();
   if (!plataforma && ws.includes('pr')) return true;
+  const guardan = plataforma ? [...plataforma.pedidos, ...plataforma.listos.map((l) => l.words)] : [];
   for (let i = 0; i < ws.length; i++) {
     const resto = ws.slice(i + 1);
     if (ws[i] === 'git' && resto.some((w) => w === 'commit' || w === 'push')) return true;
-    if (plataforma && plataforma.pedidos.some((p) => p[0] === ws[i] && p.slice(1).every((w) => resto.includes(w)))) return true;
+    if (guardan.some((p) => p[0] === ws[i] && p.slice(1).every((w) => resto.includes(w)))) return true;
   }
   return false;
 }
 
-// Los comandos de la plataforma, de lo que declaran sus conectores (`rawCommands`): `{ programas, pedidos }`, los
-// programas que nombran y, como listas de palabras, los pedidos que guardan: los que el conector declara que crean o
-// juntan un pedido (`changeRequestCommands`), y además los que dicen `pr` y crean o mergean (también con el alias
-// `new`), para un conector que no los declara. null si alguna integración no se puede leer.
+// Los comandos de la plataforma, de lo que declaran sus conectores (`rawCommands`): `{ programas, pedidos, borradores,
+// listos }`, los programas que nombran y, como listas de palabras, los pedidos que guardan: los que el conector declara
+// que crean o juntan un pedido (`changeRequestCommands`), y además los que dicen `pr` y crean o mergean (también con el
+// alias `new`), para un conector que no los declara. `borradores`: por la forma de un pedido, las opciones que lo hacen
+// borrador (`draftOptions`); `listos`: los comandos que pasan un borrador a listo (`readyCommands`), con lo que tiene
+// que aparecer o lo que lo descarta. null si alguna integración no se puede leer.
 function deLaPlataforma() {
   let dichos;
   try {
     dichos = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'platform', 'platform.js')).rawCommands();
   } catch (_) { return null; }
-  const ws = dichos.map((c) => ({ words: c.words.map(normal), changeRequest: c.changeRequest === true }));
+  const ws = dichos.map((c) => ({ words: c.words.map(normal), changeRequest: c.changeRequest === true, draft: c.draft || null, ready: c.ready || null }));
+  const crudos = ws.filter((c) => !c.ready);
   return {
     programas: new Set(ws.map((c) => c.words[0])),
-    pedidos: ws.filter((c) => c.changeRequest || (c.words.length > 2 && c.words.includes('pr') && /^(create|new|merge)$/.test(c.words[c.words.length - 1])))
+    pedidos: crudos.filter((c) => c.changeRequest || (c.words.length > 2 && c.words.includes('pr') && /^(create|new|merge)$/.test(c.words[c.words.length - 1])))
       .map((c) => c.words),
+    borradores: new Map(crudos.filter((c) => c.draft).map((c) => [c.words.join(' '), c.draft])),
+    listos: ws.filter((c) => c.ready).map((c) => ({ words: c.words, ...c.ready })),
   };
+}
+
+// ── el borrador y el «listo» ────────────────────────────────────────────────────────────────────────────────────────
+
+// Un «sí» o un «no» escrito, sin importar mayúsculas. Lo demás (una variable, un valor que no se entiende) es una duda.
+const SI = new Set(['true', 'yes', '1']);
+const NO = new Set(['false', 'no', '0']);
+const valorDeOpcion = (v) => {
+  if (conVariable(v)) return 'duda';
+  const x = String(v).toLowerCase();
+  return SI.has(x) ? 'si' : NO.has(x) ? 'no' : 'duda';
+};
+const pareceOpcion = (w) => /^-./.test(String(w)) && w !== '--';
+
+/**
+ * Las opciones que declara un conector (`[{ name, separateValue }]`) en las palabras de un comando:
+ * `{ apariciones, inyectables }`. Cada aparición, en orden, es `{ i, valor, suelta }`: la opción sola vale «sí»; su
+ * valor va junto (`--draft=false`) o, si el conector dice que la opción lo toma separado, en la palabra siguiente que no
+ * es una opción; pegada a la corta (`-dX`) es una duda. Con `abreviaturas`, una opción larga acortada (`--dr`) es la
+ * misma. `suelta`: la palabra de antes es otra opción sin su valor, y ésta puede ser ese valor y no una opción.
+ * `inyectables`: las palabras con una variable o una sustitución que no pueden ser el valor de una opción: el shell
+ * las puede partir en opciones que no se ven. Después de `--` ya no hay opciones.
+ */
+function leerOpciones(args, opciones, abreviaturas) {
+  const apariciones = [];
+  const inyectables = [];
+  const larga = (n) => n.startsWith('--');
+  let previaSinValor = false;
+  for (let i = 0; i < args.length; i++) {
+    const w = String(args[i]);
+    if (w === '--') break;
+    const puedeSerValor = previaSinValor;
+    const igual = w.indexOf('=');
+    const nombre = igual > 1 ? w.slice(0, igual) : w;
+    const o = pareceOpcion(w) ? opciones.find((x) => x.name === nombre
+      || (abreviaturas && larga(x.name) && larga(nombre) && nombre.length > 2 && x.name.startsWith(nombre))
+      || (!larga(x.name) && !larga(w) && w.startsWith(x.name) && w.length > 2)) : undefined;
+    if (o) {
+      let valor;
+      if (nombre !== w) valor = valorDeOpcion(w.slice(igual + 1));
+      else if (w !== o.name && !larga(o.name)) valor = 'duda';
+      else if (o.separateValue && i + 1 < args.length && !pareceOpcion(args[i + 1]) && args[i + 1] !== '--') { valor = valorDeOpcion(args[i + 1]); i += 1; }
+      else valor = 'si';
+      apariciones.push({ i, valor, suelta: puedeSerValor });
+      previaSinValor = false;
+      continue;
+    }
+    if (conVariable(w) && (!puedeSerValor || (pareceOpcion(w) && conVariable(nombre)))) inyectables.push(i);
+    previaSinValor = pareceOpcion(w) && igual < 0 && !conVariable(w);
+  }
+  return { apariciones, inyectables };
+}
+
+// ¿El pedido sale como borrador? Sólo si la última aparición es la opción sola o un «sí» claro, no puede ser el valor
+// de otra opción y nada después puede meter otra: en la duda no es borrador. `masPalabras`: el programa recibe además
+// palabras que no se ven (las que agrega `xargs`).
+function esBorrador(args, draft, masPalabras) {
+  if (masPalabras) return false;
+  const { apariciones, inyectables } = leerOpciones(args, draft.options, draft.abbreviations);
+  const u = apariciones[apariciones.length - 1];
+  return !!u && u.valor === 'si' && !u.suelta && !inyectables.some((i) => i > u.i);
+}
+
+// ¿La opción del borrador está escrita con un «sí», pero no se lee con certeza (detrás de otra opción que puede tomarla
+// como su valor)? Sólo para decir cómo escribirla: no lo hace borrador.
+function borradorDudoso(args, draft) {
+  const { apariciones } = leerOpciones(args, draft.options, draft.abbreviations);
+  const u = apariciones[apariciones.length - 1];
+  return !!u && u.valor === 'si' && u.suelta;
+}
+
+// ¿El comando pasa el borrador a listo? Cuenta cualquier aparición que pueda serlo, aunque otra la pise. Con `when`, la
+// opción que aparece con algo que no es un «sí» claro; con `unless`, el comando lo marca salvo que la opción que lo
+// descarta aparezca y todas sus apariciones sean un «sí» claro; sin ninguna de las dos, siempre. Lo que no se ve (una
+// variable que el shell puede partir, las palabras de `xargs`) puede ser la opción: cuenta como listo.
+function marcaListo(args, ready, masPalabras) {
+  const lista = ready.when || ready.unless;
+  if (!lista) return true;
+  const { apariciones, inyectables } = leerOpciones(args, lista, ready.abbreviations);
+  if (masPalabras || inyectables.length || apariciones.some((a) => a.valor !== 'si' || a.suelta)) return true;
+  return ready.unless ? !apariciones.length : false;
 }
 
 // El pedido de la lista que dicen las palabras, con las opciones antes de cada palabra (y su valor, si lo traen:
@@ -896,14 +991,25 @@ function leerComando(command, cwd, depth = 0, dudas = [], home) {
     const conGuion = /^git-(.+)$/.exec(cmd);
     if (conGuion && esDeGit(conGuion[1])) { ps = ['git', conGuion[1], ...ps.slice(1)]; cmd = 'git'; }
     if (cmd === 'git') return leerUnGit(ps, ctx);
-    // los programas de la plataforma: guarda el pedido que se crea o se mergea; sin la lista de los conectores, uno que
-    // dice `pr` no se lee
+    // los programas de la plataforma: guarda el pedido que se crea o se mergea (`borrador` si el conector dice que sale
+    // así) y el comando que pasa un borrador a listo; sin la lista de los conectores, uno que dice `pr` no se lee
     const plataforma = deLaPlataforma();
     if (!plataforma && !INOFENSIVOS.has(cmd) && ps.slice(1).includes('pr')) { ctx.dudar(); return; }
     if (plataforma && plataforma.programas.has(cmd)) {
+      const args = ps.slice(1);
       const p = pedidoDe(ps, cmd, plataforma.pedidos);
-      if (p && p.opaco) opaco(ctx.dirs[0]);
-      else if (p) guardar({ tipo: 'pr', forma: p.forma, dir: ctx.dirs[0], palabras: ps.slice(1) });
+      if (p && p.opaco) { opaco(ctx.dirs[0]); return; }
+      if (p) {
+        const draft = plataforma.borradores.get(p.forma);
+        const claro = !!draft && esBorrador(args, draft, ctx.xargs);
+        guardar({ tipo: 'pr', forma: p.forma, dir: ctx.dirs[0], palabras: args, ...(claro ? { borrador: true } : {}), ...(draft && !claro && borradorDudoso(args, draft) ? { borradorDudoso: true } : {}) });
+        return;
+      }
+      const l = pedidoDe(ps, cmd, plataforma.listos.map((x) => x.words));
+      if (l && l.opaco) opaco(ctx.dirs[0]);
+      else if (l && marcaListo(args, plataforma.listos.find((x) => x.words.join(' ') === l.forma), ctx.xargs)) {
+        guardar({ tipo: 'pr', forma: l.forma, dir: ctx.dirs[0], palabras: args, listo: true });
+      }
       return;
     }
     // un programa que corre git por su cuenta. Si además cambia de carpeta por su cuenta (`process.chdir`, `os.chdir`,
@@ -1133,6 +1239,7 @@ function okDeGuardarQueNoCubre(m, dirs) {
   return null;
 }
 const PISTA_DESTINO = ' Si el empuje va a tu rama de trabajo, escribí el destino: `git push -u origin <rama>`.';
+const PISTA_BORRADOR = '   Si es un borrador, escribí su opción justo después del comando, antes de las otras: detrás de otra opción puede ser su valor y no se lee como borrador.';
 const textoEscribe = (que) => `🔒 este comando cambia el código antes de que salga (${que}): corré el cambio aparte y, si cambió el código, volvé a preparar el pull request.`;
 // el paso cerrado, por su nombre (también en un marcador sin el número de esquema) o, en el esquema viejo, por su
 // número de entonces (el 8)
@@ -1225,8 +1332,8 @@ function findingsDe(m) {
   } catch (_) { return null; }
 }
 
-// una palabra de un pedido que nombra a qué repo o desde qué rama va (gh: -R, --repo, -H, --head; az: --repository,
-// --source-branch, --org, --project), pegada a su valor o no
+// una palabra de un pedido que nombra a qué repo o desde qué rama va, en las formas de los programas de las plataformas
+// (el repo, la rama de origen, la organización o el proyecto), pegada a su valor o no
 const PEDIDO_CON_DESTINO = /^(-R|-H|--repo|--head|--repository|--source-branch|--org|--organization|--project|-p)(=|$)|^-[RH]./;
 const COMO_SALE_EL_PEDIDO ='Antes de que salga, el arnés le pregunta a la persona en la ventana de permiso; con el sí, sale.';
 /** La ventana del pedido: qué sale, de qué historia y con qué evidencia; nunca el comando. Hasta 1000 caracteres. */
@@ -1243,7 +1350,8 @@ function preguntaDelPedido({ forma, m, repos, noLeo = false }) {
  * Null (pasa), `{ aviso }` (pasa y lo dice en pantalla), `{ pregunta }` (el texto de la ventana de permiso) o `{ texto }`
  * (no guarda). Dentro de una corrida (el marcador de la sesión): el commit no pregunta y queda en el registro del freno;
  * el empuje de la rama de trabajo pasa antes de «Preparar el pull request», y después sólo con el código de su foto; el pedido y el empuje
- * a una rama compartida frenan sin «Preparar el pull request» o con el código cambiado, y si no, preguntan con la evidencia. Lo que no
+ * a una rama compartida frenan sin «Preparar el pull request» o con el código cambiado, y si no, preguntan con la evidencia; el
+ * borrador, antes de «Preparar el pull request», pregunta sin frenar (pasarlo a listo es un pedido como los otros). Lo que no
  * se lee con certeza pregunta como siempre antes de «Preparar el pull request», y después se juzga como un pedido. Un marcador que existe
  * y no se lee deja pasar el commit con un aviso y frena lo que sale hacia el equipo. Sin corrida, decide el camino
  * rápido abierto (`decidirCarril`); sin ninguno de los dos, nada pregunta. Lo delicado lo cubre la firma de control.
@@ -1302,6 +1410,9 @@ function decidir({ command, cwd, sid, home, arnes }) {
     return estacionada;
   };
   let haciaElEquipo = null;
+  // el borrador antes de «Preparar el pull request»: no se puede mergear, así que abrirlo no saca nada sin preparar.
+  // Pregunta en vez de frenar; pasarlo a listo es otro pedido, y ése sí pide el paso
+  let borrador = null;
   let pista = false;
   const commits = [];
   // con el paso cerrado, la foto se compara con el árbol de antes del comando: un comando que cambia el código y en la
@@ -1316,7 +1427,12 @@ function decidir({ command, cwd, sid, home, arnes }) {
   for (const c of cs) {
     // un pedido se juzga contra toda la corrida; con la corrida estacionada, sólo el de uno de sus repos (o el de un repo
     // que no se puede ubicar)
-    if (c.tipo === 'pr') { if (deLaCorrida(c) || !esEstacionada()) haciaElEquipo = haciaElEquipo || c; continue; }
+    if (c.tipo === 'pr') {
+      if (!deLaCorrida(c) && esEstacionada()) continue;
+      if (c.borrador && !pasoCerrado) borrador = borrador || c;
+      else haciaElEquipo = haciaElEquipo || c;
+      continue;
+    }
     if (!deLaCorrida(c)) continue;
     if (c.tipo === 'commit') { commits.push(c); continue; }
     if (c.tipo !== 'push') continue;
@@ -1340,8 +1456,16 @@ function decidir({ command, cwd, sid, home, arnes }) {
   if (haciaElEquipo) {
     const p = prepDe();
     const salida = cs.some((c) => c.tipo === 'pr') && !pasoCerrado ? `\n${textoSalidaDelPedido(m.storyId, sid)}` : '';
-    if (p.texto) return { texto: `${p.texto}${pista ? PISTA_DESTINO : ''}${salida}` };
+    // la opción del borrador está, pero no se lee con certeza (puede ser el valor de otra opción): cómo escribirla
+    const dudoso = !pasoCerrado && cs.some((c) => c.tipo === 'pr' && c.borradorDudoso) ? `\n${PISTA_BORRADOR}` : '';
+    if (p.texto) return { texto: `${p.texto}${pista ? PISTA_DESTINO : ''}${dudoso}${salida}` };
     return { pregunta: preguntaDelPedido({ forma: haciaElEquipo.forma, m, repos: p.repos }) };
+  }
+  if (borrador) {
+    // la pregunta de un pedido, con el repo donde se abre; sin ubicarlo, los de la corrida
+    let raiz = null;
+    try { raiz = SO().raizDe(borrador.dir); } catch (_) { raiz = null; }
+    return { pregunta: preguntaDelPedido({ forma: borrador.forma, m, repos: raiz ? [raiz] : (repos || []) }) };
   }
   if (quien) {
     // un perfil que no se lee no dice si la organización quiere la segunda mirada: ni pasa callado ni frena

@@ -781,3 +781,72 @@ test('T124 ChangeRequestCommands_SaveBrakeAsks — cada comando de pedido que de
   const rota = INT.listManifests({ dir });
   assert.ok(rota.problems.some((p) => p.name === origen.name && p.reasons.some((r) => /changeRequestCommands.*otro pedido create.*no está en «rawCommands»/.test(r))), JSON.stringify(rota.problems));
 });
+
+// 🔴 Falla con: un conector cuyo borrador o cuyo «marcar listo» el freno de guardar no puede leer (lo declara mal y el
+// lector lo deja pasar), GitLab con un borrador que el freno no sabe cerrar, o el núcleo del freno nombrando la
+// herramienta de una plataforma.
+test('PlatformContract_DraftFields (T8) @story-8.332 @ac-8', () => {
+  const leidas = INT.listManifests();
+  assert.deepStrictEqual(leidas.problems, []);
+  const de = (n) => leidas.manifests.find((m) => m.name === n);
+  for (const n of ['github', 'azure-devops']) {
+    const m = de(n);
+    assert.ok(m.draftOptions.length, `${n}: declara cómo es un borrador`);
+    assert.ok(m.readyCommands.length, `${n}: declara cómo se marca listo`);
+    for (const d of m.draftOptions) assert.ok(m.changeRequestCommands.includes(d.command), `${n}: «${d.command}» crea un pedido`);
+  }
+  const gitlab = INT.listManifests({ dir: path.join(ROOT, 'integrations') }).manifests.find((m) => m.name === 'gitlab');
+  assert.ok(gitlab, 'el conector de GitLab se lee');
+  assert.deepStrictEqual([gitlab.draftOptions, gitlab.readyCommands], [[], []], 'GitLab no declara borrador ni listo');
+  // rawCommands() los devuelve: el borrador en el comando que crea, el listo aparte, que no es un comando crudo
+  const crudos = P().rawCommands();
+  const crear = crudos.find((c) => c.name === 'github' && c.words.join(' ') === 'gh pr create');
+  assert.ok(crear && crear.draft && crear.draft.options.some((o) => o.name === '--draft'), JSON.stringify(crear));
+  const listo = crudos.find((c) => c.name === 'github' && c.ready);
+  assert.ok(listo && listo.words.join(' ') === 'gh pr ready' && listo.ready.unless.length, JSON.stringify(listo));
+  const update = crudos.find((c) => c.name === 'azure-devops' && c.ready);
+  assert.ok(update && update.ready.when.some((o) => o.name === '--draft' && o.separateValue === true) && update.ready.abbreviations === true, JSON.stringify(update));
+  assert.ok(!crudos.some((c) => c.name === 'gitlab' && (c.draft || c.ready)), 'GitLab, ninguno');
+  assert.strictEqual(P().rawCommandOf('gh pr ready 12'), null, 'marcar listo no es un comando que la capa reemplaza');
+  // un campo mal formado deja el manifiesto roto, con su motivo; sin los campos es válido
+  const ok = { name: 'buena', label: 'Buena', kind: 'platform', connector: 'scripts/connector.js', operations: ['ci.read'],
+    rawCommands: ['x pr create', 'x pr update'], changeRequestCommands: ['x pr create'] };
+  const opcion = { name: '--draft', separateValue: false };
+  const d = tmp('manifiestos-');
+  const poner = (n, m) => { fs.mkdirSync(path.join(d, n), { recursive: true }); fs.writeFileSync(path.join(d, n, 'integration.json'), JSON.stringify({ ...m, name: n })); };
+  poner('buena', ok);
+  poner('completa', { ...ok, draftOptions: [{ command: 'x pr create', options: [opcion, { name: '-d', separateValue: false }], abbreviations: false }],
+    readyCommands: [{ command: 'x pr ready', unless: [{ name: '--undo', separateValue: false }] }, { command: 'x pr update', when: [opcion], abbreviations: true }] });
+  const MALOS = [
+    ['nolista', { draftOptions: { command: 'x pr create' } }, /«draftOptions» es una lista/],
+    ['noescrea', { draftOptions: [{ command: 'x pr update', options: [opcion] }] }, /«draftOptions»: «x pr update» no está en «changeRequestCommands»/],
+    ['sinopciones', { draftOptions: [{ command: 'x pr create', options: [] }] }, /«draftOptions»: «x pr create» lleva una lista de opciones/],
+    ['nombremalo', { draftOptions: [{ command: 'x pr create', options: [{ name: 'draft', separateValue: false }] }] }, /la opción «draft» se escribe/],
+    ['separadomalo', { draftOptions: [{ command: 'x pr create', options: [{ name: '--draft', separateValue: 'no' }] }] }, /«separateValue» es true o false/],
+    ['abreviamalo', { draftOptions: [{ command: 'x pr create', options: [opcion], abbreviations: 'si' }] }, /«abbreviations» es true o false/],
+    ['repetido', { draftOptions: [{ command: 'x pr create', options: [opcion] }, { command: 'x pr create', options: [opcion] }] }, /«draftOptions»: «x pr create» está dos veces/],
+    ['listonolista', { readyCommands: 'x pr ready' }, /«readyCommands» es una lista/],
+    ['losdos', { readyCommands: [{ command: 'x pr ready', when: [opcion], unless: [opcion] }] }, /«readyCommands»: «x pr ready» lleva «when» o «unless», no los dos/],
+    ['whenvacio', { readyCommands: [{ command: 'x pr ready', when: [] }] }, /«readyCommands»: «x pr ready»: «when» es una lista de opciones/],
+    ['listoquecrea', { readyCommands: [{ command: 'x pr create' }] }, /«readyCommands»: «x pr create» crea un pedido/],
+    ['sinverbo', { readyCommands: [{ command: 'x' }] }, /«readyCommands»: un comando con su programa y su verbo/],
+  ];
+  for (const [n, extra] of MALOS) poner(n, { ...ok, ...extra });
+  poner('otrotipo', { name: 'otrotipo', label: 'Otro', kind: 'notify', draftOptions: [], readyCommands: [] });
+  const r = INT.listManifests({ dir: d });
+  const motivos = (n) => JSON.stringify((r.problems.find((x) => x.name === n) || {}).reasons || null);
+  assert.ok(INT.find('buena', { kind: 'platform', dir: d }), `sin los campos es válido: ${motivos('buena')}`);
+  const completa = INT.find('completa', { kind: 'platform', dir: d });
+  assert.ok(completa, `con los campos bien escritos es válido: ${motivos('completa')}`);
+  assert.deepStrictEqual(completa.readyCommands.map((c) => c.command), ['x pr ready', 'x pr update']);
+  for (const [n, , rx] of MALOS) {
+    assert.ok(!INT.find(n, { kind: 'platform', dir: d }), `${n} no se carga`);
+    assert.match(motivos(n), rx, n);
+  }
+  assert.match(motivos('otrotipo'), /«draftOptions» es sólo de un conector de plataforma/);
+  assert.match(motivos('otrotipo'), /«readyCommands» es sólo de un conector de plataforma/);
+  // el freno lee lo que declaran los conectores: no nombra ninguna herramienta
+  const freno = fs.readFileSync(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'save-brake.js'), 'utf8');
+  assert.deepStrictEqual(freno.split('\n').map((l, i) => [i + 1, l]).filter(([, l]) => /\b(gh|az|glab)\b/i.test(l)).map(([i, l]) => `${i}: ${l.trim()}`), [],
+    'save-brake.js no nombra gh, az ni glab');
+});

@@ -786,7 +786,31 @@ ventana de permiso de siempre, con la evidencia de la ejecución; con el sí, sa
 frena si el paso «Preparar el pull request» no cerró o si el código cambió desde su foto. Lo lee también escondido en `bash -c`, con `-C` o desde una variable. Los comandos de pedido son los que
 declaran los conectores de plataforma en `changeRequestCommands` de su `integration.json`, y además los de
 `rawCommands` que dicen `pr` y terminan en `create`, `new` o `merge`; si alguna integración no se puede leer, un
-comando que dice `pr` es una duda. Una frase en el chat o
+comando que dice `pr` es una duda.
+
+El borrador es la excepción, para que el equipo vea el código y la CI corra mientras la ejecución espera «Probar en
+vivo»:
+
+- **Abrirlo antes de «Preparar» pregunta y no frena.** Es la misma pregunta de un pedido, con su forma y su repo. Un
+  borrador no se puede mergear, así que abrirlo no saca nada que no se haya preparado. Después de «Preparar», un
+  borrador se juzga como cualquier pedido: la foto y la pregunta.
+- **La pregunta vale lo que vale la ventana.** En una pestaña que no pide permisos, el borrador sale sin preguntar y
+  el gancho lo dice en pantalla. En Codex, la pregunta sale como negativa.
+- **Por eso el borrador se lee estricto.** Es borrador sólo lo que su conector declara (`draftOptions`), escrito
+  claro: la opción sola o con un «sí» (`true`, `yes`, `1`, sin importar mayúsculas), como última aparición, sin que
+  pueda ser el valor de la opción de antes y sin una variable después que la pueda pisar. Escribí la opción del
+  borrador primero o después de un valor. Lo demás no es borrador y frena como cualquier pedido antes de «Preparar»:
+  sin la opción, con un «no», una variable, un valor que no se entiende o una opción que no es del conector.
+- **Pasarlo a listo es un pedido.** Los comandos que lo hacen los declara el conector (`readyCommands`). Antes de
+  «Preparar» frenan con el mismo texto que crear un pedido; después, se juzgan como crearlo: la foto del árbol local y
+  la pregunta. En el camino rápido, preguntan. La lectura va al revés: cualquier aparición que pueda marcarlo listo
+  cuenta como listo (un «no», una variable, un valor que no se entiende, una opción acortada), aunque otra la pise.
+  Volverlo a borrador, o cambiar el pedido sin tocar el borrador, no guarda.
+- **GitLab queda como antes.** Su conector no declara borrador: ahí un borrador frena antes de «Preparar», como
+  cualquier pedido, porque el freno no ve cómo pasa a listo (sacándole «Draft:» al título o con la acción rápida en
+  un comentario).
+
+Una frase en el chat o
 un mensaje de otra sesión no saltean la ventana. En una pestaña que no pide permisos (la ventana se aprobaría sola), el
 gancho abre el pull request sin preguntar y lo dice en pantalla, con la misma evidencia. Cerrar la ejecución ya no pide nada. Lo delicado (frenos, firmas,
 controles, producción) lo cubre la firma de control del pedido, que es del dueño y no cambia.
@@ -846,7 +870,8 @@ no carga, frena dentro de una ejecución, y fuera deja pasar con un aviso.
 
 Lo que no ve: un guion o un programa que guarda sin nombrar git en el comando (`node guardar.js`, `bash guion.sh`,
 un programa que lee el comando de un archivo), los alias propios del programa de la plataforma,
-los comandos de pedido que no lo crean ni lo mergean (la API, marcarlo listo, cambiarlo), los commits que hacen `merge`, `cherry-pick`, `revert`,
+los comandos de pedido que no lo crean, ni lo mergean ni lo pasan a listo (la API, también la que pasa un borrador a listo; cambiarlo),
+un borrador que pasa a listo por un camino que su conector no declara, los commits que hacen `merge`, `cherry-pick`, `revert`,
 `am` o `commit-tree`, y
 un alias o una función de la sesión que se llama como un programa del PATH (`ls`) y guarda por dentro sin decirlo.
 Frena de más: un alias o una función que dos copias del shell definen distinto, o cuyo cuerpo no se lee entero (son
