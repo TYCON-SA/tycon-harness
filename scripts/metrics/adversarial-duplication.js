@@ -11,7 +11,7 @@
  *
  *   | Fuente | Qué aporta | Dónde vive |
  *   |---|---|---|
- *   | El buzón de corridas | CUÁNTOS hallazgos confirmó cada pase (`adversarialPasses[].confirmados`) | ~/.claude/.tycon-pipeline/corridas-buzon — 4 máquinas, 14 repos |
+ *   | El buzón de corridas | CUÁNTOS hallazgos confirmó cada pase (`adversarialPasses[].confirmados`) | ~/.tycon/state/corridas-buzon — 4 máquinas, 14 repos |
  *   | El volcado crudo del pase | los hallazgos ENTEROS, con lente, archivo y línea | `<corrida>/step-05b-adversarial.json` — NO viaja por git |
  *   | Los hallazgos consolidados | en cuántas CAUSAS los agrupó el orquestador | `<corrida>/findings.json` — SÍ viaja por git |
  *
@@ -410,9 +410,15 @@ function tabla(r) {
 // escrito acá (guides/maintaining/nombres-en-ingles.md, «Entre repos»)—. Sin mapa (la copia pública) sólo vale el actual.
 const CRITERIO = 'group-findings.js';
 const CARPETA_DEL_CRITERIO = ['skills', 'tycon-pipeline', 'scripts', 'lib'];
+/** Las skills instaladas de la máquina las sabe tycon-home.js; sin él (este archivo suelto) no hay dónde buscar. */
+function skillsDeLaMaquina() {
+  const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
+  return require('fs').existsSync(lib) ? path.join(require(lib).installedSkillsDir(os.homedir()), ...CARPETA_DEL_CRITERIO) : null;
+}
 /** La ruta del criterio en `dir` (default: el agent-skills de la máquina), o null si no está. */
 function rutaDelCriterio(dir) {
-  const carpeta = dir || path.join(os.homedir(), '.claude', 'agent-skills', ...CARPETA_DEL_CRITERIO);
+  const carpeta = dir || skillsDeLaMaquina();
+  if (!carpeta) return null;
   const nombres = [CRITERIO];
   try {
     const legacy = require('../lib/legacy-names.js');

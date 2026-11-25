@@ -63,14 +63,14 @@ const APPLY = process.argv.includes('--apply');
 const JSON_OUT = process.argv.includes('--json');
 const DB = path.join(os.homedir(), '.engram', 'engram.db');
 
-// harness-audit resuelve la raíz de repos al cargar y con ~/.claude/tycon.json roto tira ConfigError: como comando se frena
+// harness-audit resuelve la raíz de repos al cargar y con ~/.tycon/config.json roto tira ConfigError: como comando se frena
 // prolijo (archivo · clave · motivo, exit 2), no con una traza. Como módulo, el que carga decide.
 let audit;
 try { audit = require('./harness-audit.js'); }
 catch (e) { if (e && e.name === 'ConfigError' && require.main === module) { console.error(e.message); process.exit(2); } throw e; }
 const REPOS_ROOT = (() => {
   try { return (require('./repos-root.js').resolveReposRoot().roots || [])[0] || null; }
-  catch (e) { if (e && e.name === 'ConfigError') throw e; return null; }   // ~/.claude/tycon.json roto: un comando frena
+  catch (e) { if (e && e.name === 'ConfigError') throw e; return null; }   // ~/.tycon/config.json roto: un comando frena
 })();
 
 const CROSS = audit.CROSS_CUTTING_PROJECTS;
@@ -107,7 +107,7 @@ function conteos(db) {
 function planificar(opciones) {
   const db = (opciones && opciones.db) || DB;
   const root = (opciones && opciones.root) || REPOS_ROOT;
-  if (!root) return { plan: [], motivo: 'sin raíz de repos (definí TYCON_REPOS_ROOT o rutas.repos en ~/.claude/tycon.json): no medido' };
+  if (!root) return { plan: [], motivo: 'sin raíz de repos (definí TYCON_REPOS_ROOT o rutas.repos en ~/.tycon/config.json): no medido' };
   // `sinBase` distingue dos cosas que NO son lo mismo: que no exista base de engram (nada que
   // verificar — una máquina que todavía no la usa) de que exista y no se pueda leer (ahí sí, no
   // se sabe). Mezclarlas haría que el hook gritara "no pude verificar" en cualquier máquina sin

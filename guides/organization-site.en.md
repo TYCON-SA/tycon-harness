@@ -1909,6 +1909,12 @@ starting anything.
 0 3 * * * node /opt/arnes/scripts/site/deploy/local/start.js --secrets-file /etc/sitio/sitio.env --update --image ghcr.io/<organization>/<repo>
 ```
 
+Each night's result and the updater's state go to `/etc/sitio/site-update/` (next to the secrets file; another folder
+with `SITE_UPDATE_DIR`). `compose.yaml` mounts it in the site, read-only: if it was installed by tag, whoever maintains
+it sees the same band as on Azure. **If you installed it before this version**, start it once more with
+`start.js --secrets-file …` so the container mounts the folder; until then the site stays as before and the band does
+not show.
+
 With systemd, a `oneshot` `.service` with the same command and a `.timer` with `OnCalendar=*-*-* 03:00`. **Watchtower**
 stays as an alternative (the community-maintained copy, limited to the site container with `--label-enable`): it does
 not check or go back, and it has the Docker socket, that is, it is administrator of the machine.

@@ -18,9 +18,11 @@
  * Se registra en la configuración administrada (root), no en la del usuario, y no tiene variable de apagado: una
  * configuración que la sesión puede editar es una que puede apagarlo.
  *
- * «Viva» = su transcripción (`~/.claude/projects/<carpeta>/<id>.jsonl`) tuvo actividad en los últimos 3 minutos, la
- * misma señal que el control de sesiones paralelas. Una sesión quieta cuenta como terminada: su regla se cierra y la
- * vuelve a abrir con el cuadro si la necesita (la dirección segura).
+ * «Viva» = su proceso sigue corriendo, por lo que Claude Code anota de cada sesión en `~/.claude/sessions/<pid>.json`
+ * (igual en macOS, Linux y Windows): una sesión que espera a la persona sigue viva. Sin esa anotación, el respaldo: su
+ * transcripción (`~/.claude/projects/<carpeta>/<id>.jsonl`) tuvo actividad en los últimos 3 minutos; una regla que se
+ * cierra por el respaldo lo dice. Y ninguna regla dura más de TOPE_HORAS aunque su sesión siga: el barrido la cierra y
+ * dice cómo volver a abrirla (la dirección segura).
  */
 const fs = require('fs');
 const os = require('os');
@@ -41,6 +43,9 @@ const ESTADO = path.join(ESTADO_DIR, 'production-firewall.json');
 const REGISTRO = path.join(ESTADO_DIR, 'production.log');
 const SESION_VALIDA = /^[A-Za-z0-9-]{8,64}$/;
 const TRES_MIN = 3 * 60 * 1000;
+// el tope de una regla abierta, aunque la sesión que la pidió siga viva: una jornada. Cuenta desde la última vez que se
+// abrió con su cuadro
+const TOPE_HORAS = 8;
 
 function leerEvento() {
   try { return JSON.parse(fs.readFileSync(0, 'utf8') || '{}'); } catch (_) { return {}; }
@@ -77,13 +82,27 @@ function abiertasEnElRegistro() {
 }
 const avisos = [];
 
+/** `{ viva, porProceso }`: si la sesión sigue, y si se supo por su proceso (false = por el respaldo de los 3 minutos). */
 function viva(id) {
+  // la misma sesión puede tener más de una anotación (una vieja de antes de reanudarla): viva si alguno de sus procesos lo está
+  let anotada = false;
+  try {
+    const dir = path.join(HOME, '.claude', 'sessions');
+    for (const f of fs.readdirSync(dir)) {
+      if (!/^[0-9]+\.json$/.test(f)) continue;
+      let j; try { j = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch (_) { continue; }
+      if (!j || j.sessionId !== id || !Number.isInteger(j.pid) || j.pid <= 0) continue;
+      anotada = true;
+      try { process.kill(j.pid, 0); return { viva: true, porProceso: true }; } catch (err) { if (err.code === 'EPERM') return { viva: true, porProceso: true }; }
+    }
+  } catch (_) { /* sin el registro de sesiones: el respaldo */ }
+  if (anotada) return { viva: false, porProceso: true };
   const raiz = path.join(HOME, '.claude', 'projects');
   let carpetas = [];
-  try { carpetas = fs.readdirSync(raiz); } catch (_) { return false; }
-  return carpetas.some((d) => {
+  try { carpetas = fs.readdirSync(raiz); } catch (_) { return { viva: false, porProceso: false }; }
+  return { viva: carpetas.some((d) => {
     try { return Date.now() - fs.statSync(path.join(raiz, d, `${id}.jsonl`)).mtimeMs < TRES_MIN; } catch (_) { return false; }
-  });
+  }), porProceso: false };
 }
 
 // La configuración administrada le da 120 s al hook, pero al terminar la sesión el tope real es ~60 s (medido con
@@ -128,7 +147,12 @@ function barrido() {
   for (const a of abiertasEnElRegistro()) if (!porHost.has(a.host)) porHost.set(a.host, { ...a, sesiones: [] });
   for (const r of porHost.values()) {
     const sesiones = r.sesiones.filter((s) => SESION_VALIDA.test(s));
-    if (sesiones.some(viva)) continue;                          // la usa una sesión viva: no se toca
+    const vistas = sesiones.map((s) => ({ id: s, ...viva(s) }));
+    const vivas = vistas.filter((v) => v.viva);
+    const desdeMs = Date.parse(r.abierta || '');
+    // sin una fecha que se pueda leer no se sabe desde cuándo está: cuenta como vencida (la dirección segura)
+    const vencida = !Number.isFinite(desdeMs) || Date.now() - desdeMs > TOPE_HORAS * 3600 * 1000;
+    if (vivas.length && !vencida) continue;                     // la usa una sesión viva y no llegó al tope: no se toca
     // UNA llamada por regla, sin --session: ninguna sesión que la usaba sigue viva, y cerrar es la dirección segura
     const res = puerta(['--close-firewall', r.host]);
     const desde = r.abierta ? ` (abierta desde ${r.abierta})` : '';
@@ -138,7 +162,13 @@ function barrido() {
       // el servidor se borró y se llevó la regla: la puerta lo probó, no hay nada que cerrar a mano
       lineas.push(`🔒 prod-firewall: el servidor de ${r.host} ya no existe: doy por cerrada su regla ${r.regla || 'tycon-gate'}${desde}.`);
     } else if (/cerrada/.test(res.salida)) {
-      lineas.push(`🔒 prod-firewall: cerré la regla ${r.regla || 'tycon-gate'} de ${r.host}${desde}: la sesión que la abrió ya no está.`);
+      if (vencida && vivas.length) {
+        lineas.push(`🔒 prod-firewall: cerré la regla ${r.regla || 'tycon-gate'} de ${r.host}${desde}: llegó al tope de ${TOPE_HORAS} h, aunque la sesión sigue. Si hace falta, la persona la vuelve a abrir en su terminal: /opt/tycon/bin/tycon-prod-sql --open-firewall ${r.host} --session ${vivas[0].id}`);
+      } else {
+        // la que se dio por terminada sin ver su proceso, por el respaldo, se dice
+        const porRespaldo = vistas.some((v) => !v.porProceso);
+        lineas.push(`🔒 prod-firewall: cerré la regla ${r.regla || 'tycon-gate'} de ${r.host}${desde}: la sesión que la abrió ya no está${porRespaldo ? ` (no vi su proceso en ~/.claude/sessions: la di por terminada por el respaldo, ${TRES_MIN / 60000} minutos sin actividad)` : ''}.`);
+      }
     }
     if (res.rc === 0 && sinConstancia(res.salida)) lineas.push(`🔴 prod-firewall: ${sinConstancia(res.salida).replace(/^🔴\s*/, '')}`);
   }
