@@ -1760,6 +1760,39 @@ lab_git -C "${R}" checkout -q main; printf 'otra cosa de main\n' > "${R}/docs/le
 bash "${SCRIPT}" run --root "${R}" --base main --range main...pedido-choca > "${T}/t116c.out" 2>&1; RC=$?
 is "T116 …un pedido que choca con main: rojo (exit)" "1" "${RC}"
 has "T116 …y dice que traiga main" "${T}/t116c.out" "el pedido choca con main"
+# main y el pedido tocan la misma regla y la mezcla es limpia: lo firmado (lo de la rama) no sería lo medido (la mezcla),
+# así que no se ofrece la firma: el pedido trae main antes. También cuando main la renombra
+R="${T}/t116d"; make_base "${R}"
+printf '%s\n' '{' '  "mode": "block",' '  "allow": [' '    "docs/permitido.txt",' '    "docs/x1.txt",' '    "docs/x2.txt"' '  ]' '}' > "${R}/scripts/ci/toy-rules.json"; commit "${R}" "la lista en varias líneas"
+pr "${R}"
+printf '%s\n' '{' '  "mode": "block",' '  "allow": [' '    "docs/permitido.txt",' '    "docs/x1.txt",' '    "docs/x2.txt",' '    "docs/malo.txt"' '  ]' '}' > "${R}/scripts/ci/toy-rules.json"
+printf 'PROHIBIDO\n' > "${R}/docs/malo.txt"; commit "${R}"
+lab_git -C "${R}" checkout -q main
+printf '%s\n' '{' '  "mode": "block",' '  "allow": [' '    "docs/de-main.txt",' '    "docs/permitido.txt",' '    "docs/x1.txt",' '    "docs/x2.txt"' '  ]' '}' > "${R}/scripts/ci/toy-rules.json"; commit "${R}" "main suma una"
+lab_git -C "${R}" checkout -q pedido
+run "${R}" "${T}/t116d.out"
+is "T116 …el pedido afloja una regla que main también cambió: rojo (exit)" "1" "${RC}"
+has "T116 …y pide traer main antes de la firma" "${T}/t116d.out" "el pedido y main cambian la misma regla (scripts/ci/toy-rules.json)"
+bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido > "${T}/t116d-pending.out" 2>&1
+has "T116 …pending tampoco ofrece la firma" "${T}/t116d-pending.out" "el pedido y main cambian la misma regla"
+lacks "T116 …ni da el comando" "${T}/t116d-pending.out" "approve --root"
+# un rango que arranca en otra base (como el del privado): lo que trajo main no cuenta como del pedido
+R="${T}/t116e"; make_base "${R}"; pr "${R}"; printf 'limpio\n' > "${R}/docs/del-pedido.txt"; commit "${R}"
+lab_git -C "${R}" checkout -q main
+printf '%s\n' '{ "mode": "block", "allow": ["docs/permitido.txt", "docs/de-main.txt"] }' > "${R}/scripts/ci/toy-rules.json"; commit "${R}" "main suma una"
+lab_git -C "${R}" checkout -q pedido
+bash "${SCRIPT}" run --root "${R}" --base main --range main~1...pedido > "${T}/t116e.out" 2>&1; RC=$?
+is "T116 …con el rango desde otra base, verde (exit)" "0" "${RC}"
+has "T116 …y lo que cambió main no figura como del pedido" "${T}/t116e.out" "el pedido no cambia ningún archivo de regla"
+# lo que agrega un merge propio también se mide: la mezcla sale de lo revisado, no de su segundo padre
+R="${T}/t116f"; make_base "${R}"; pr "${R}"; printf 'limpio\n' > "${R}/docs/inocente.txt"; commit "${R}"
+lab_git -C "${R}" checkout -q main; printf 'otra cosa\n' > "${R}/docs/de-main.txt"; commit "${R}" "main avanza"
+lab_git -C "${R}" checkout -q -b merge-propio main~1
+lab_git -C "${R}" merge -q --no-ff --no-commit pedido > /dev/null 2>&1
+printf 'PROHIBIDO\n' > "${R}/docs/malo.txt"; lab_git -C "${R}" add -A > /dev/null 2>&1; lab_git -C "${R}" commit -qm "merge con algo de más" > /dev/null 2>&1
+bash "${SCRIPT}" run --root "${R}" --base main --range main...merge-propio > "${T}/t116f.out" 2>&1; RC=$?
+is "T116 …lo que agrega un merge propio se mide: rojo (exit)" "1" "${RC}"
+has "T116 …con el rojo de la palabra" "${T}/t116f.out" "toy: PROHIBIDO en docs/malo.txt"
 
 echo
 if [ "${FAILS}" -eq 0 ]; then echo "✅ base-controls: ${TOTAL} verificaciones verdes"; exit 0; fi
