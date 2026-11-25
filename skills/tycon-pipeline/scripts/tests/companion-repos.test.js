@@ -1185,6 +1185,28 @@ function elegir(declarado, rama, numero) {
 }
 const NO_LO_ELIJO = /no está al día con origin\/main o tiene cambios: no lo elijo por el nombre de la rama/;
 
+// 🔴 Falla con: la historia lleva el prefijo de su producto (`BCRA-1.1`) y la rama del código del hermano nombra sólo el
+// número (`feature/1-1-consulta`): no se la reconocía, y el hermano se leía del checkout compartido, atrasado.
+test('CompanionRepos_NumeroConPrefijo_EligeElWorktreeQueNombraSoloElNumero', () => {
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-prefijo-')));
+  const pub = fs.realpathSync(repoGit(path.join(raiz, 'pub'), { 'a.js': '1\n' }));
+  const wt = path.join(raiz, 'pub-wt');
+  git(pub, 'worktree', 'add', '-q', '-b', 'feature/1-1-consulta', wt);
+  const r = elegir(pub, 'docs/specs-del-producto', 'BCRA-1.1');
+  assert.equal(r.eleccion, fs.realpathSync(wt), r.avisos);
+  assert.match(r.avisos, /único cuya rama nombra la story 1\.1 \(sin el prefijo BCRA\)/, r.avisos);
+  // una rama que nombra el número con el prefijo gana, como hoy
+  const conPrefijo = path.join(raiz, 'pub-wt-bcra');
+  git(pub, 'worktree', 'add', '-q', '-b', 'feature/bcra-1-1', conPrefijo);
+  assert.equal(elegir(pub, 'docs/specs-del-producto', 'BCRA-1.1').eleccion, fs.realpathSync(conPrefijo));
+  // sin la del prefijo y con dos que nombran sólo el número: no adivina
+  git(pub, 'worktree', 'remove', '--force', conPrefijo);
+  git(pub, 'worktree', 'add', '-q', '-b', 'fix/1-1-otra', path.join(raiz, 'pub-wt2'));
+  const dos = elegir(pub, 'docs/specs-del-producto', 'BCRA-1.1');
+  assert.equal(dos.eleccion, pub, dos.avisos);
+  assert.match(dos.avisos, /2 worktrees nombran la story 1\.1/, dos.avisos);
+});
+
 // Adentro de un gancho de git, o de un guion que corre otro repo, llegan GIT_DIR y GIT_WORK_TREE de ese repo: con ellos
 // `git -C <hermano>` preguntaba por el otro, y la búsqueda caía en el checkout compartido, que puede estar viejo.
 test('CompanionRepos_ConElGitDeOtroRepo_EncuentraElWorktree', () => {

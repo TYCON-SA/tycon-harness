@@ -480,6 +480,8 @@ const SENSITIVE = Object.freeze([
   'scripts/lib/session-name.js',
   // lo que el cierre del marcador carga para decir que la sesión termina: corre dentro de él
   'skills/tycon-pipeline/scripts/lib/resume-state.js',
+  // el registro de los frenos: el marcador lo carga al cerrar la ejecución de otra sesión, y en él queda el escape
+  'skills/tycon-pipeline/scripts/lib/closing-record.js',
   'skills/tycon-pipeline/scripts/lib/adversarial-verdict.js', 'skills/tycon-pipeline/scripts/lib/critical-waivers.js',
   'skills/tycon-pipeline/scripts/lib/runtime-waiver.js', 'skills/tycon-pipeline/scripts/test-gate.sh',
   'skills/tycon-pipeline/scripts/lib/test-gate-*.js', 'skills/tycon-pipeline/scripts/lib/test-scope.js',

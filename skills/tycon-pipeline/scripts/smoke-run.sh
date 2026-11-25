@@ -200,7 +200,7 @@ case "$DECIDE_RC" in
       AISLAR=(node "$ISOLATED_JS" exec)
       while IFS= read -r RAIZ_AISLADA; do
         [ -n "$RAIZ_AISLADA" ] && AISLAR+=(--root "$RAIZ_AISLADA")
-      done <<< "$(printf '%s\n' "$DECISION" | sed 1d)"
+      done < <(printf '%s\n' "$(printf '%s\n' "$DECISION" | sed 1d)")
       AISLAR+=(--)
     fi ;;
   2) exit 2 ;;
@@ -349,7 +349,7 @@ if [ -n "$ENTORNO" ]; then MUT_FIELD="$MUT_FIELD,\"environment\":\"$ENTORNO\""; 
 if [ -n "$EJERCITA" ]; then
   # los nombres ya se validaron (letras, números, punto, guion y guion bajo): van entre comillas sin escapar nada
   EJ_JSON=""
-  IFS=',' read -r -a EJ_LISTA <<< "$EJERCITA"
+  IFS=',' read -r -a EJ_LISTA < <(printf '%s\n' "$EJERCITA")
   for r in "${EJ_LISTA[@]}"; do EJ_JSON="$EJ_JSON${EJ_JSON:+,}\"$r\""; done
   MUT_FIELD="$MUT_FIELD,\"exercises\":[$EJ_JSON]"
 fi
