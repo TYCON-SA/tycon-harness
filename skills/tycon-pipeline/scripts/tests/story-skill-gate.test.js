@@ -392,6 +392,13 @@ test('on-bash-write-gate (fila 243): un heredoc falso en un comentario, en otro 
   // tubería larga de here-strings cada lectura tardaba segundos
   const tuberia = `${'cat <<<x | '.repeat(50)}python3`;
   assert.strictEqual(bash.programasPorEntrada(tuberia), bash.programasPorEntrada(tuberia), 'la segunda vez es la misma lectura');
+  // de la vuelta corta: el mismo cuerpo para la misma historia se juzga una vez (cada juicio lleva su tiempo; 60 tardaban 8 s)
+  const borrador = S99.replace('backlog', 'draft');
+  fs.writeFileSync(path.join(repo, 'specs', 'borrador.md'), borrador);
+  // stable-data: el reloj mide cuánto tarda el freno, que es lo que se prueba
+  const desde = Date.now();
+  assert.equal(bash.handle(ev(`cat > specs/borrador.md <<'A'\n${borrador}A\n`.repeat(60)), { stateDir: st }), null);
+  assert.ok(Date.now() - desde < 3000, `60 cuerpos iguales: ${Date.now() - desde} ms`);
 });
 
 test('on-bash-write-gate (F3): mv/cp desde una story existente pasa (unknown-rename); un índice frena por nombre con el mensaje correcto', () => {

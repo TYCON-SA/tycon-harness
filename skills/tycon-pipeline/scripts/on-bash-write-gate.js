@@ -5513,6 +5513,20 @@ function heredocs(cmd) {
 /** Compat: sólo los cuerpos. */
 function heredocBodies(cmd) { return heredocs(cmd).map((h) => h.body); }
 
+// cuántos cuerpos distintos de un mismo archivo se juzgan: cada juicio lleva su tiempo
+const CUERPOS_A_JUZGAR = 16;
+/**
+ * Los heredocs de un mismo archivo, un cuerpo distinto una sola vez (el mismo cuerpo da el mismo juicio). Con más de
+ * `CUERPOS_A_JUZGAR` distintos, los primeros y los últimos: el último es el que queda escrito, el primero el que juzgaba
+ * la lectura de antes.
+ */
+function cuerposDistintos(hs) {
+  const vistos = new Set();
+  const unicos = hs.filter((h) => !vistos.has(h.body) && vistos.add(h.body));
+  const mitad = CUERPOS_A_JUZGAR / 2;
+  return unicos.length <= CUERPOS_A_JUZGAR ? unicos : [...unicos.slice(0, mitad), ...unicos.slice(-mitad)];
+}
+
 /**
  * Frontmatter inline: `printf '---\nstory: "9.9"\n…' > f.md` / `echo -e`. Se des-escapan los `\n`
  * y se toma desde el primer `---` de línea. Devuelve el texto si declara identidad de story, si no null.
@@ -6975,7 +6989,7 @@ function handleCarrilEHistoria(event, opts = {}) {
       const resolveT = (t) => { const d = resueltos.find((x) => x.raw === t); return d ? d.abs : resolveTarget(t, cwd); };
       for (const abs of mdDraft) {
         // con varios cuerpos para el archivo (dos heredocs en un renglón, dos lecturas), frena si cualquiera frena
-        const propios = hds.filter((h) => h.target && sameFile(resolveT(h.target), abs));
+        const propios = cuerposDistintos(hds.filter((h) => h.target && sameFile(resolveT(h.target), abs)));
         for (const own of propios.length ? propios : [null]) {
           // con `>>` el cuerpo del heredoc no es el archivo entero: no se sabe qué estado queda
           const r = sio.evaluate({ absPath: abs, content: own && !/>>/.test(cmd) ? own.body : null, sessionId, via, event, stateDir });
@@ -6997,7 +7011,7 @@ function handleCarrilEHistoria(event, opts = {}) {
       const renamedStory = renameOrCopyOfExistingStory(cmd, cwd);
       for (const abs of mdNew) {
         // con varios cuerpos para el archivo (dos heredocs en un renglón, dos lecturas), frena si cualquiera frena
-        const propios = hds.filter((h) => h.target && sameFile(resolveT(h.target), abs));
+        const propios = cuerposDistintos(hds.filter((h) => h.target && sameFile(resolveT(h.target), abs)));
         for (const own of propios.length ? propios : [null]) {
           let content = own ? own.body : null;
           if (!content && !own && mdNew.length === 1) content = orphanBody || inline;
