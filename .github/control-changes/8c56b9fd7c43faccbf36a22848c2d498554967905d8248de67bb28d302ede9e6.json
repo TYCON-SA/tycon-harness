@@ -1,0 +1,1 @@
+{"hash":"8c56b9fd7c43faccbf36a22848c2d498554967905d8248de67bb28d302ede9e6","rules":[{"path":"scripts/ci/controls-from-base.json","blob":"4d25dbd6d0dda2814a01430a04da33cc856dafad"},{"path":"scripts/ci/run-base-controls.sh","blob":"fb81f42dbb9b73fd11c0d4d407d7dbbea9e858e5"}],"at":"2026-11-23","by":"dueño"}

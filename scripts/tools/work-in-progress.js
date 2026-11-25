@@ -280,6 +280,8 @@ function codexNames(codexHome, unreadable) {
   try {
     const { DatabaseSync } = require('node:sqlite');
     db = new DatabaseSync(path.join(codexHome, newest), { readOnly: true });
+    // Codex toma su base unos instantes mientras escribe: se espera hasta un segundo antes de decir que no se pudo leer
+    db.exec('PRAGMA busy_timeout = 1000');
     for (const r of db.prepare("SELECT id, name FROM threads WHERE name IS NOT NULL AND name <> ''").all()) out.set(String(r.id), cut(oneLine(String(r.name)), NAME_MAX));
   } catch (e) {
     unreadable.push(`los nombres de las sesiones de Codex (${newest}) no se pudieron leer: ${oneLine((e && e.message) || e).slice(0, 120)}`);
@@ -435,7 +437,7 @@ function enteringEnd(marker, entry, nowMs, info = {}) {
   }
   const t8 = (marker.stepTimings || {})['prepare-commit'] || (marker.stepTimings || {})['8'];
   const done = Date.parse(t8 && t8.completedAt);
-  if (!Number.isFinite(done)) return 'sin estimación (espera la CI o la cola; sin la hora de cierre de «Preparar el commit»)';
+  if (!Number.isFinite(done)) return 'sin estimación (espera la CI o la cola; sin la hora de cierre de «Preparar el pull request»)';
   const fixed = done + entry.ms;
   info.at = fixed;
   info.late = nowMs > fixed;
@@ -1381,7 +1383,10 @@ function buildWip(opts = {}) {
       if (kind === 'pipeline' && !mark) {
         try { stepLine = require(RUN_LINES).stateLine({ marker: m, stateDir: sdir, home }); } catch (e) { unreadable.push(`story ${m.storyId || '?'}: no pude armar el renglón del paso (${e.message})`); }
       }
-      addRow({ work, state: step, end, session: label, folder: folderOf(sid, m.repoPath) }, sid,
+      // la corrida que va por el doble de lo estimado (scripts/lib/run-overrun.js) lo dice al lado del paso
+      let over = null;
+      try { over = require('../lib/run-overrun.js').sessionText(sdir, sid); } catch { over = null; }
+      addRow({ work, state: over && !mark ? `${step} · ${over}` : step, end, session: label, folder: folderOf(sid, m.repoPath) }, sid,
         { kind, storyId: m.storyId ? String(m.storyId) : null, ...(stepLine ? { stepLine } : {}), title, batch: storyBatch(m.storyPath), endAt: info.at == null ? null : info.at, late: Boolean(info.late), promisedAt, ...stages,
           ...(verdict ? { hourInWords: true } : {}), ...(mark ? { mark } : {}), ...(save === 'ok' ? { saveOk: true } : {}), ...(kind === 'finished' && !save ? { nothingToSave: true } : {}),
           ...(open ? { finishedOpen: true, ...(open.revisar ? { finishedReview: true } : {}) } : {}),
@@ -1654,8 +1659,21 @@ function buildWip(opts = {}) {
   const runRepos = [...new Set([...pipeRows.values()].map(({ m }) => m.repoPath).filter((p) => typeof p === 'string' && path.isAbsolute(p)))];
   const retired = retiredNow(home, nowMs, sessions, unreadable);
   const freeSlots = freeSlotsNow(sdir, nowMs, unreadable);
-  const text = render(rows, free, noData, idle, halfway, unreadable, internal, notes, freeNotes, extra.map((x) => x.stepLine || null)) + renderRetired(retired) + renderFreeSlots(freeSlots);
-  return { testSids, rows, details, extra, free, freeSids, freeStatus, idle, halfway, halfwayItems, halfwayReadAt: (gitCtx.memory && gitCtx.memory.halfwayReadAt) || nowMs, unreadable, wanted, runRepos, internal, retired, freeSlots, mainFixers: Object.fromEntries(fixers), text };
+  const review = reviewNow(sdir, nowMs);
+  const text = render(rows, free, noData, idle, halfway, unreadable, internal, notes, freeNotes, extra.map((x) => x.stepLine || null)) + renderRetired(retired) + renderFreeSlots(freeSlots) + renderReview(review);
+  return { review, testSids, rows, details, extra, free, freeSids, freeStatus, idle, halfway, halfwayItems, halfwayReadAt: (gitCtx.memory && gitCtx.memory.halfwayReadAt) || nowMs, unreadable, wanted, runRepos, internal, retired, freeSlots, mainFixers: Object.fromEntries(fixers), text };
+}
+
+// Lo que espera la revisión de la persona, de la foto que deja el arranque (scripts/lib/review-load.js): `{ cuenta, edadMs }`
+// o null. Sólo para mostrar: /wip nunca decide con ella.
+function reviewNow(sdir, nowMs) {
+  try { return require(path.join(ROOT, 'scripts', 'lib', 'review-load.js')).leerFoto(sdir, nowMs); } catch (_) { return null; }
+}
+function renderReview(review) {
+  if (!review) return '';
+  const RL = require(path.join(ROOT, 'scripts', 'lib', 'review-load.js'));
+  const min = Math.round(review.edadMs / 60000);
+  return `\nEspera tu revisión: ${RL.lineaDeRevision(review.cuenta).replace(/\. Se miran con \/wip$/, '')} (foto de hace ${min < 1 ? 'menos de un minuto' : `${min} min`})`;
 }
 
 // El motivo vigente con que la coordinadora dejó lugares libres a propósito, o su cierre sin motivo (scripts/lib/free-slots.js):
@@ -1848,4 +1866,4 @@ if (require.main === module) {
 // el nombre de una sesión como lo deja `sessionsBySid`: quien lo compara con uno guardado lo recorta igual
 const listedName = (s) => cut(s, NAME_MAX);
 
-module.exports = { touchedField, SAVE_WAIT, SAVE_ASK, SAVE_WAITS, SAVE_OK, listedName, buildWip, wipNow, renderRetired, retiredNow, renderFreeSlots, freeSlotsNow, createMemory, reviseHalfway, git, stepMedians, enteredMain, OVERDUE_HOUR, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, readPrs, parseRemote, offQueueOf, identityOf, remoteOfFolder, endOf, hourForStep, hourVerdict, realState, replacedByNewer, storyPausedUntil, unsavedChanges, codexNames, PER_QUERY_MS, ALL_QUERIES_MS, SAFE_SID, LOOSE_STALE_MS };
+module.exports = { touchedField, SAVE_WAIT, SAVE_ASK, SAVE_WAITS, SAVE_OK, listedName, buildWip, wipNow, renderRetired, retiredNow, renderFreeSlots, freeSlotsNow, createMemory, reviseHalfway, git, stepMedians, enteredMain, OVERDUE_HOUR, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, readPrs, parseRemote, offQueueOf, identityOf, remoteOfFolder, endOf, hourForStep, hourVerdict, realState, replacedByNewer, storyPausedUntil, unsavedChanges, codexNames, sessionTitle, NAME_MAX, PER_QUERY_MS, ALL_QUERIES_MS, SAFE_SID, LOOSE_STALE_MS };

@@ -73,7 +73,7 @@ test('T5 Translate_InSpanish_LeavesEverythingAsIs — en castellano no cambia na
 // La página compara el texto de un aviso con el suyo para saber si lo borra: traducido, la comparación tiene que seguir
 // dando igual. Un texto que la página compara así y que tiene traducción se compara traducido de los dos lados.
 test('T7 ComparedNotices_StillMatchInEnglish — un aviso que la página compara con su texto se compara traducido', () => {
-  const { EN } = block();
+  block();
   assert.deepStrictEqual([...CODE.matchAll(/[\w.]+\.textContent===[A-Z_]+/g)].map((m) => m[0]), [], 'una comparación de un texto pintado va traducida de los dos lados');
   assert.match(CODE, /traducir\(avisoEl\.textContent\)===traducir\(AVISO_SIN_NOVEDAD\)/);
   assert.match(CODE, /traducir\(o\.textContent\)===traducir\(FALLA\)/);
@@ -139,11 +139,38 @@ test('T11 Translate_WhatAPhraseCaptures — lo que captura una frase también se
   assert.strictEqual(traducir('Agrandar la oficina de mac-mini'), 'Enlarge the office of mac-mini', 'un dato que no conoce queda igual');
 });
 
+// Fila 175 (24/11): los textos que arma «Lo que te necesita» (cada cosa, dónde se contesta, por qué sólo vos, la opción
+// recomendada) salían en castellano: la T2 mide sólo los textos fijos de la plantilla.
+test('T12 WhatNeedsYou_BuiltTexts_InEnglish — lo que arma «Lo que te necesita» sale en inglés, con el dato como vino', () => {
+  const { traducir } = block({ source: 'local', browser: 'en-US' });
+  const casos = {
+    'Dónde se contesta: en la ventana de permiso': 'Where to answer it: en la ventana de permiso',
+    'Por qué sólo vos: es tu firma': 'Why only you: es tu firma',
+    'Recomendada: aprobar': 'Recommended: aprobar',
+    'Sin una opción recomendada anotada.': 'No recommended option noted.',
+    'Para contestarla desde acá, abrí la oficina viva con /office.': 'To answer it from here, open the live office with /office.',
+    'Firma · Tandas: el plan de la 9.9': 'Signature · Tandas: el plan de la 9.9',
+    'Cuadro: ¿sigo?': 'Question box: ¿sigo?',
+    'Del tablero · T-41: revisar': 'From the board · T-41: revisar',
+    'Pendiente: algo': 'Pending: algo',
+  };
+  for (const [es, en] of Object.entries(casos)) assert.strictEqual(traducir(es), en, es);
+  // cada texto fijo de los renglones de esta sección tiene su inglés: un texto nuevo sin traducir hace fallar esto
+  const seccion = /const NECESITA_CLASE=[\s\S]*?\nfunction pintarNecesita/.exec(CODE)[0];
+  // los textos fijos: cada literal entre comillas, leído de a uno desde el principio (así no se toma código entre dos), con
+  // una palabra, menos las claves y las clases (todo en minúsculas y guiones)
+  const textos = [...seccion.matchAll(/"((?:[^"\\\n]|\\.)*)"/g)].map((m) => m[1])
+    .filter((t) => /[A-Za-záéíóúñ]{3}/.test(t) && !/^[a-z-]+$/.test(t));
+  assert.ok(textos.length >= 9, `encontré los textos de la sección (${textos.length}: ${textos.join(' | ')})`);
+  // el que termina en «: » lleva un dato atrás
+  for (const t of textos) { const con = t.endsWith(': ') ? `${t}dato` : t; assert.notStrictEqual(traducir(con), con, `«${t}» no tiene su inglés`); }
+});
+
 // Segunda parte (T-117): lo que arma la foto también sale en inglés — columnas, tablas, grupos, horas y lo que hace cada sesión.
 const OFFICE_JS = fs.readFileSync(path.join(__dirname, '..', 'tools', 'office.js'), 'utf8');
 const WIP_JS = fs.readFileSync(path.join(__dirname, '..', 'tools', 'work-in-progress.js'), 'utf8');
 
-test('T12 PhotoWords_HaveTheirEnglish — cada columna, tabla, grupo y frase fija de la foto tiene su versión en inglés', () => {
+test('T13 PhotoWords_HaveTheirEnglish — cada columna, tabla, grupo y frase fija de la foto tiene su versión en inglés', () => {
   const { EN } = block();
   const tablas = /const TABLES = \{([\s\S]*?)\n\};/.exec(OFFICE_JS)[1];
   const palabras = new Set([...tablas.matchAll(/'([^']+)'/g)].map((m) => m[1]).filter((w) => /[A-ZÁÉÍÓÚ]/.test(w[0])));
@@ -158,7 +185,7 @@ test('T12 PhotoWords_HaveTheirEnglish — cada columna, tabla, grupo y frase fij
   assert.deepStrictEqual(faltan, []);
 });
 
-test('T13 Translate_PhotoPhrases — las frases con datos que arma la foto salen en inglés', () => {
+test('T14 Translate_PhotoPhrases — las frases con datos que arma la foto salen en inglés', () => {
   const { traducir } = block({ source: 'site', lang: 'en' });
   const casos = {
     'lun 10:40 · +1 h 20 tarde': 'Mon 10:40 · +1 h 20 late',
@@ -174,13 +201,13 @@ test('T13 Translate_PhotoPhrases — las frases con datos que arma la foto salen
   for (const [es, en] of Object.entries(casos)) assert.strictEqual(traducir(es), en, es);
 });
 
-test('T14 BoardNote_NotTranslated — la nota de una tarjeta la escribe una persona: va marcada', () => {
+test('T15 BoardNote_NotTranslated — la nota de una tarjeta la escribe una persona: va marcada', () => {
   assert.ok(CODE.includes('v===i.nota?Object.assign(el("span","n",v),{translate:false})'));
 });
 
 // Pase de la segunda parte (21/11): la nota se traducía en el detalle y en el panel; la cuenta de agentes salía mezclada; y
 // las frases que llevan el título de una historia traducían el título.
-test('T15 PhotoPhrases_AfterThePass — la nota en todas sus vistas, los agentes en sus tres formas y el título adentro de una frase', () => {
+test('T16 PhotoPhrases_AfterThePass — la nota en todas sus vistas, los agentes en sus tres formas y el título adentro de una frase', () => {
   assert.ok(CODE.includes('fila("Nota",i.nota?Object.assign(el("span",null,i.nota),{translate:false}):i.nota)'), 'la nota en el detalle');
   assert.ok(CODE.includes('li.append(Object.assign(mk("span","m",r.nota),{translate:false}))'), 'la nota en el panel');
   const { traducir } = block({ source: 'site', lang: 'en' });

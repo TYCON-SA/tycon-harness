@@ -252,8 +252,15 @@ function rutaReal(p) {
  * Los totales de uno o más TRX de vstest (`dotnet test --logger trx` o `vstest.console /Logger:trx`): la suma de sus
  * `Counters`. `{ total, passed, failed, executed }`. La usan la rama de .NET y la de una herramienta con reporte `trx`.
  */
+// Lo que no corrió: la salteada, y lo que vstest no llegó a correr (no se pudo, quedó pendiente o se cortó).
+const NO_CORRIO = new Set(['NotExecuted', 'NotRunnable', 'Pending', 'Disconnected']);
 function contarTrx(archivos, sinResumen = []) {
   const tot = { total: 0, passed: 0, failed: 0, executed: 0 };
+  // Las salteadas salen de cada resultado, no del resumen: con xUnit, una salteada (`outcome="NotExecuted"`) no suma en
+  // el `notExecuted` ni en el `total` del resumen, y una corrida con 17 salteadas se leía «353 de 353». Cada una con su
+  // motivo (el `Message` de su `ErrorInfo`, o su salida).
+  const salteadas = [];
+  let resultados = 0;
   for (const tf of archivos) {
     const t = leerXml(fs.readFileSync(tf, 'utf8'));
     // `{ns}` de la raíz, como en ElementTree de Python: `.//x:Counters` con el espacio de nombres de la raíz
@@ -262,8 +269,95 @@ function contarTrx(archivos, sinResumen = []) {
     const c = descendientes(t, buscado).find((e) => e !== t);
     if (c) for (const k of Object.keys(tot)) tot[k] += pyInt(atributo(c, k, 0));
     else sinResumen.push(tf);
+    // sólo los resultados de primer nivel (los hijos de `Results`): las filas de datos de MSTest van en `InnerResults`
+    // dentro de su madre, y contarlas sumaría la madre y cada fila
+    const enResults = descendientes(t, `{${ns}}Results`).find((e) => e !== t);
+    const deArriba = enResults ? enResults.children.filter((e) => e.tag === `{${ns}}UnitTestResult`) : [];
+    for (const r of deArriba) {
+      resultados += 1;
+      if (!NO_CORRIO.has(String(atributo(r, 'outcome', '')))) continue;
+      // el motivo de la salteada: el `Message` de su `ErrorInfo` (donde lo deja xUnit), nunca su salida, que puede traer
+      // rutas o cadenas de la máquina y va a la copia del informe que viaja
+      const salida = r.children.find((e) => e.tag === `{${ns}}Output`);
+      const info = salida && salida.children.find((e) => e.tag === `{${ns}}ErrorInfo`);
+      const msj = info && info.children.find((e) => e.tag === `{${ns}}Message`);
+      salteadas.push({ nombre: String(atributo(r, 'testName', '') || '?'), motivo: msj ? pyStrip(msj.text || '') : '' });
+    }
+  }
+  if (resultados) {
+    // el resumen de xUnit deja afuera las salteadas: el total es el de los resultados si es mayor
+    tot.total = Math.max(tot.total, resultados);
+    tot.executed = tot.total - salteadas.length;
+    tot.skipped = salteadas.length;
+    tot.skipped_tests = salteadas;
   }
   return tot;
+}
+
+// Una salteada cuenta como NO medida si no dice por qué, o si su motivo dice que no se pudo medir (le faltó la base de
+// prueba, una variable de entorno, un servicio): eso no es verde. Una salteada a propósito, con su motivo, no frena,
+// pero se dice siempre.
+// Lo que cuenta como «no se pudo medir»: una variable, una base, un servicio o una conexión que faltó. Un motivo que no
+// encaja queda verde y listado aparte: el texto decide el color, nunca si se dice.
+const NO_SE_MIDIO = new RegExp([
+  'no se (pudo )?midi[oó]', 'not (been )?measured',
+  'falta (la variable|la base|el servicio|la conexi[oó]n|[A-Z][A-Z0-9]*_[A-Z0-9_]+)', 'sin (la )?base de prueba',
+  'missing (env|environment|variable|connection)', 'requires? (the |a )?(env|environment) variable',
+  'requires? (a |the )?(sql( server)?|database|db)\\b', '(database|db|sql server) (is )?(not available|unavailable)',
+  'no connection string', '\\bset [A-Z][A-Z0-9]*_[A-Z0-9_]+ to run',
+].join('|'), 'i');
+function clasificarSalteadas(salteadas) {
+  const noMedidas = [];
+  const aProposito = [];
+  for (const s of salteadas || []) {
+    if (!String(s.motivo || '').trim() || NO_SE_MIDIO.test(s.motivo)) noMedidas.push(s);
+    else aProposito.push(s);
+  }
+  return { noMedidas, aProposito };
+}
+
+// Lo que en un trx es una prueba que falló: la que falló, la que dio error, la que se cortó por tiempo o se abortó.
+const FALLO_TRX = new Set(['Failed', 'Error', 'Timeout', 'Aborted']);
+const TOPE_NOMBRES = 100;
+/**
+ * El nombre de cada prueba que falló: `{ failed_tests: [{ file?, name, outcome?, did_not_run?, file_failed? }],
+ * failed_tests_more }`. Del trx, los resultados de primer nivel (como `contarTrx`) con su `testName` y su `outcome`: el
+ * total de fallas del trx (`Counters.failed`) no suma las que dieron error o se cortaron, y la lista sí. Del json de jest
+ * o vitest, el nombre completo de cada aserción fallida (o sus títulos de arriba con el suyo) y el archivo relativo a la
+ * carpeta que se prueba, las dos por su ruta real (jest escribe la real; la carpeta puede venir por un enlace). Un archivo
+ * que falló sin ninguna aserción fallida se nombra igual: `did_not_run` si no trae ninguna (no llegó a correr),
+ * `file_failed` si las trae y pasaron (falló algo del archivo, como un `afterAll`). Hasta `TOPE_NOMBRES`.
+ */
+function nombresDeFallas({ trxFiles = [], jestJson = null, repoRun = '' }) {
+  const out = [];
+  for (const tf of trxFiles) {
+    const t = leerXml(fs.readFileSync(tf, 'utf8'));
+    const ns = t.tag.split('}')[0].replace(/^\{+|\{+$/g, '');
+    const enResults = descendientes(t, `{${ns}}Results`).find((e) => e !== t);
+    for (const r of enResults ? enResults.children.filter((e) => e.tag === `{${ns}}UnitTestResult`) : []) {
+      const outcome = String(atributo(r, 'outcome', ''));
+      if (FALLO_TRX.has(outcome)) out.push({ name: String(atributo(r, 'testName', '') || '?'), outcome });
+    }
+  }
+  const raiz = repoRun ? rutaReal(repoRun) : '';
+  const archivoDe = (n) => {
+    const s = String(n || '?');
+    if (!raiz || !path.isAbsolute(s)) return s.split(path.sep).join('/');
+    const rel = path.relative(raiz, rutaReal(s));
+    // fuera de la carpeta que se prueba (otra unidad, otro repo): la ruta tal como vino
+    return (rel.startsWith('..') || path.isAbsolute(rel) ? s : rel).split(path.sep).join('/');
+  };
+  for (const f of (jestJson && Array.isArray(jestJson.testResults) ? jestJson.testResults : [])) {
+    if (!f || typeof f !== 'object') continue;
+    const todas = Array.isArray(f.assertionResults) ? f.assertionResults : [];
+    const falladas = todas.filter((a) => a && a.status === 'failed');
+    for (const a of falladas) {
+      const nombre = a.fullName || [...(Array.isArray(a.ancestorTitles) ? a.ancestorTitles : []), a.title].filter(Boolean).join(' ');
+      out.push({ file: archivoDe(f.name), name: nombre || '?' });
+    }
+    if (!falladas.length && f.status === 'failed') out.push({ file: archivoDe(f.name), name: null, ...(todas.length ? { file_failed: true } : { did_not_run: true }) });
+  }
+  return { failed_tests: out.slice(0, TOPE_NOMBRES), failed_tests_more: Math.max(0, out.length - TOPE_NOMBRES) };
 }
 
 /** Un TRX con la forma del lector de JUnit (`readJunit`): `{ ok, total, passed, failed, skipped, files }` o `{ ok:false, reason }`. */
@@ -274,7 +368,8 @@ function trxComoReporte(archivos) {
     const t = contarTrx(archivos, sinResumen);
     // un TRX sin su resumen (Counters) no dice cuántas corrieron: eso es «no pude contar», no «cero pruebas»
     if (sinResumen.length) return { ok: false, reason: `${sinResumen.length} reporte(s) TRX sin su resumen de pruebas (Counters): ${sinResumen.map((f) => path.basename(f)).join(', ')}` };
-    return { ok: true, total: t.total, passed: t.passed, failed: t.failed, skipped: Math.max(0, t.total - t.executed), files: archivos.length };
+    return { ok: true, total: t.total, passed: t.passed, failed: t.failed, skipped: Math.max(0, t.total - t.executed), files: archivos.length,
+      ...(t.skipped_tests ? { skipped_tests: t.skipped_tests } : {}) };
   } catch (e) {
     return { ok: false, reason: `no pude leer el reporte TRX (${e && e.message ? e.message : e})` };
   }
@@ -450,20 +545,26 @@ function leerRunLog(resultsDir) {
 }
 
 /**
- * Lo que Karma dice en la consola: la última línea «<navegador>: Executed N of M (K FAILED) (skipped S)» de CADA
- * navegador, sumadas. `{ total, executed, failed, skipped }`, o null si no lo dijo. Una corrida cortada (`DISCONNECTED`)
- * no cuenta lo que no corrió como salteado.
+ * Lo que Karma dice en la consola: la última línea «<navegador>: Executed N of M (K FAILED) (skipped S)» de CADA corrida
+ * de cada navegador, sumadas. `ng test` de un espacio de trabajo con varios proyectos corre Karma una vez por proyecto
+ * con el mismo navegador: una corrida nueva empieza cuando cambia el total o la cuenta vuelve atrás. `{ total, executed,
+ * failed, skipped }`, o null si no lo dijo. Una corrida cortada (`DISCONNECTED`) no cuenta lo que no corrió como salteado.
  */
 function karmaPorConsola(log) {
   const ultima = new Map();
+  const terminadas = [];
   // el reportero de progreso reescribe la línea con \r: cada tramo es una línea
   for (const tramo of log.split(/[\r\n]+/)) {
     const m = /(.*?)Executed (\d+) of (\d+)((?: \((?:\d+ FAILED|skipped \d+)\))*)/.exec(tramo);
-    if (m) ultima.set(m[1].replace(/:\s*$/, '').trim(), m);
+    if (!m) continue;
+    const navegador = m[1].replace(/:\s*$/, '').trim();
+    const antes = ultima.get(navegador);
+    if (antes && (+m[3] !== +antes[3] || +m[2] < +antes[2])) terminadas.push(antes);
+    ultima.set(navegador, m);
   }
   if (!ultima.size) return null;
   const t = { total: 0, executed: 0, failed: 0, skipped: 0 };
-  for (const m of ultima.values()) {
+  for (const m of [...terminadas, ...ultima.values()]) {
     const f = /\((\d+) FAILED\)/.exec(m[4]);
     const s = /\(skipped (\d+)\)/.exec(m[4]);
     t.executed += +m[2]; t.total += +m[3]; t.failed += f ? +f[1] : 0; t.skipped += s ? +s[1] : 0;
@@ -590,7 +691,8 @@ function informe(argv) {
       const sinPruebas = path.join(resultsDir, 'sin-pruebas.txt');
       if (existe(sinPruebas)) result.no_tests_run = `${fs.readFileSync(sinPruebas, 'utf8').trim()}: eso no es verde`;
       if (j.ok) {
-        result.totals = { total: j.total, passed: j.passed, failed: j.failed, skipped: j.skipped, executed: j.total - j.skipped };
+        result.totals = { total: j.total, passed: j.passed, failed: j.failed, skipped: j.skipped, executed: j.total - j.skipped,
+          ...(j.skipped_tests ? { skipped_tests: j.skipped_tests } : {}) };
         result.report_files = j.files;
         // una herramienta que sale 0 con fallas en el reporte (Maven con testFailureIgnore) no es verde
         if (j.failed > 0 && result.suite_green) {
@@ -742,6 +844,22 @@ function informe(argv) {
     result.totals_error = String(e && e.message !== undefined ? e.message : e);
   }
 
+  // ── El nombre de cada prueba que falló ──
+  // Los totales dicen cuántas; esto dice cuáles, para poder compararlas con las que ya fallaban antes del cambio. Sólo
+  // cuando el reporte los trae (el trx de .NET o de otra herramienta, el json de jest o vitest): sin fallas, no hay campo.
+  try {
+    const trxDeLaCorrida = runner === 'dotnet' ? buscarArchivos(resultsDir, (nm) => nm.endsWith('.trx'))
+      : generico && generico.results && generico.results.format === 'trx' ? reportesDe(generico.results, { repoRun, resultsDir }) : [];
+    const vj = ['jest', 'vitest'].includes(runner) ? [path.join(resultsDir, 'vitest.json'), path.join(resultsDir, 'jest.json')].find(existe) : null;
+    const n = nombresDeFallas({ runner, trxFiles: trxDeLaCorrida, jestJson: vj ? leerJson(vj) : null, repoRun });
+    if (n.failed_tests.length) {
+      result.failed_tests = n.failed_tests;
+      if (n.failed_tests_more) result.failed_tests_more = n.failed_tests_more;
+    }
+  } catch (e) {
+    result.failed_tests_error = `no pude leer el nombre de las pruebas que fallaron (${e && e.message ? e.message : e})`;
+  }
+
   // ── El mínimo de cobertura del propio repo (jest `coverageThreshold`, vitest `thresholds`) ──
   // La herramienta sale 1 con todas las pruebas en verde: se dice cuál mínimo y cuánto falta, no un rojo sin motivo.
   // sólo con la suite en rojo: con salida 0 no hay mínimo que falte, y una prueba que imprime esa forma no lo inventa
@@ -770,6 +888,26 @@ function informe(argv) {
         ? `la suite salió 0 pero no corrió ninguna prueba (${runner}): eso no es verde`
         : `la suite salió 0 pero no se pudo contar ninguna prueba corrida (${runner}${result.totals_error ? `: ${result.totals_error}` : ', no dejó su resumen'}): eso no es verde`;
       process.stderr.write(`[test-gate] 🔴 ${result.no_tests_run}\n`);
+    }
+  }
+
+  // ── Las salteadas: nunca calladas ──
+  // Con su lista (hoy, la de un TRX), una salteada sin motivo o que no se pudo medir deja el veredicto en «N sin
+  // correr», no en verde; una a propósito, con su motivo, no frena, pero queda listada en un renglón aparte.
+  const salteadas = esObjeto(result.totals) && Array.isArray(result.totals.skipped_tests) ? result.totals.skipped_tests : [];
+  if (salteadas.length) {
+    const { noMedidas, aProposito } = clasificarSalteadas(salteadas);
+    const lista = (xs) => xs.slice(0, 5).map((s) => `${s.nombre}${s.motivo ? ` («${String(s.motivo).split('\n')[0].slice(0, 120)}»)` : ' (sin motivo)'}`).join('; ')
+      + (xs.length > 5 ? `; y ${xs.length - 5} más` : '');
+    if (noMedidas.length) {
+      result.totals.not_run = noMedidas.length;
+      result.not_run = `${noMedidas.length} prueba(s) sin correr: salteadas sin motivo o porque no se pudieron medir — ${lista(noMedidas)}. Eso no es verde`;
+      result.suite_green = false;
+      process.stderr.write(`[test-gate] 🔴 ${result.not_run}\n`);
+    }
+    if (aProposito.length) {
+      result.totals.skipped_on_purpose = aProposito.length;
+      process.stderr.write(`[test-gate] 🟡 ${aProposito.length} prueba(s) salteada(s) a propósito, con su motivo: ${lista(aProposito)}\n`);
     }
   }
 
@@ -880,6 +1018,9 @@ function informe(argv) {
       }
     } else {
       const covf = path.join(repoRun, 'coverage', 'coverage-final.json');
+      // sin el paquete de la cobertura, test-gate.sh corrió las pruebas sin ella: quien lee el informe ve por qué
+      const faltaCob = process.env.TYCON_TEST_GATE_COVERAGE_MISSING;
+      if (!existe(covf) && faltaCob) result.coverage.not_measured = `cobertura no medida: falta ${faltaCob} (instalalo en el repo: npm i -D ${faltaCob})`;
       if (existe(covf)) {
         const d = leerJson(covf);
         for (const [ruta, entry] of Object.entries(d)) {
@@ -1075,7 +1216,9 @@ function informe(argv) {
       }
     } else {
       const covf = path.join(repoRun, 'coverage', 'coverage-final.json');
-      if (!existe(covf)) throw new Error('la corrida no dejó reporte de cobertura (coverage/coverage-final.json)');
+      // sin el paquete de la cobertura, test-gate.sh corrió las pruebas sin ella: se dice cuál falta
+      const falta = process.env.TYCON_TEST_GATE_COVERAGE_MISSING;
+      if (!existe(covf)) throw new Error(falta ? `cobertura no medida: falta ${falta} (instalalo en el repo: npm i -D ${falta})` : 'la corrida no dejó reporte de cobertura (coverage/coverage-final.json)');
       const d = leerJson(covf);
       for (const [ruta, entry] of Object.entries(d)) {
         const sm = get(entry, 'statementMap') || {};
@@ -1260,7 +1403,7 @@ function calzaPorTerminacion(a, b) {
   return a === b || a.endsWith(`/${b}`) || b.endsWith(`/${a}`);
 }
 
-module.exports = { informe, calzaPorTerminacion, leerXml, descendientes, redondear1, rutaReal, buscarArchivos, contarTrx, OBS_HASTA, isCodeFile, resolverUmbral };
+module.exports = { informe, calzaPorTerminacion, nombresDeFallas, leerXml, descendientes, redondear1, rutaReal, buscarArchivos, contarTrx, clasificarSalteadas, OBS_HASTA, isCodeFile, resolverUmbral };
 
 if (require.main === module) {
   try {

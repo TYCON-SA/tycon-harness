@@ -7,7 +7,7 @@
  *
  * No pisa ni reusa una copia o una rama `wt/<nombre>` que ya existen (pueden tener el trabajo de otra sesión); una rama
  * pedida aparte que ya existe se usa y nunca se borra. Si `worktree add` falla, saca sólo lo que ese intento dejó.
- * Claude Code no pide aprobar una copia hermana de una carpeta ya aprobada (medido con 2.1.312).
+ * Claude Code 2.1.330 pide aprobar cada copia aparte, aunque la principal esté aprobada (con 2.1.312 no la pedía).
  */
 const fs = require('fs');
 const path = require('path');

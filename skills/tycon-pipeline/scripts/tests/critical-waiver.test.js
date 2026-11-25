@@ -322,6 +322,65 @@ test('WaiveCritical_PorDelegacion_DiceQueFirmoLaCoordinadora @story-8.139 @ac-30
   assert.deepEqual([v.via, v.tipo], ['waive-critical (ventana)', 'manual']);
 });
 
+// WaiveCritical_DeTramite_LaVeWriteFindings
+// 🔴 Falla con: la exención que el arnés da de trámite (el perfil delega critical-waiver) sale bien, pero su constancia
+//    no nombra a nadie y write-findings la rechaza con «no nombra a la persona que dio el ok».
+test('WaiveCritical_DeTramite_LaVeWriteFindings: la exención de trámite nombra a la coordinadora y a la persona, y write-findings la acepta', () => {
+  const lab = laboratorio();
+  designarCoordinadora(lab.home);
+  const args = ['waive-critical', '--rule', CRITICO.rule_id, '--file', CRITICO.file, '--reason', 'falso positivo del humo', '--approved-by', 'Dueño de Prueba'];
+  const r = spawnSync(process.execPath, [MARKER, ...args], { cwd: lab.repo, encoding: 'utf8', env: conVentana(lab.env, { delegadaPor: 's-coord', via: 'automatica' }), detached: true });
+  assert.equal(r.status, 0, r.stderr);
+  const [c] = lineas(path.join(lab.runDir, 'critical-waivers.jsonl'));
+  assert.equal(c.tipo, 'automatica');
+  assert.match(c.quien, /coordinadora \(sesión s-coord\)/);
+  assert.match(c.delegacion, /Dueño de Prueba/);
+  assert.match(c.delegacion, /perfil del equipo/);
+  assert.match(c.via, /firma de trámite/);
+  const w = lab.writeFindings([CRITICO]);
+  assert.equal(w.status, 0, `${w.stdout}${w.stderr}`);
+  const { verificarExenciones } = require(path.join(SCRIPTS, 'lib', 'critical-waivers.js'));
+  assert.equal(verificarExenciones(lab.runDir, { home: lab.home, env: lab.env, story: '9.91' }).faltan.length, 0);
+  // a nombre de alguien que no es una persona: no se exime ni se anuncia (pase adversarial)
+  const otro = laboratorio();
+  designarCoordinadora(otro.home);
+  for (const nombre of ['claude', 'sin nombrar']) {
+    const sinPersona = ['waive-critical', '--rule', CRITICO.rule_id, '--file', CRITICO.file, '--reason', 'x', '--approved-by', nombre];
+    const n = spawnSync(process.execPath, [MARKER, ...sinPersona], { cwd: otro.repo, encoding: 'utf8', env: conVentana(otro.env, { delegadaPor: 's-coord', via: 'automatica' }), detached: true });
+    assert.notEqual(n.status, 0, `${nombre}: ${n.stderr}`);
+    assert.doesNotMatch(n.stderr, /eximido/, nombre);
+    assert.match(n.stderr, /no es una persona/, nombre);
+  }
+  assert.equal(lineas(path.join(otro.runDir, 'critical-waivers.jsonl')).length, 0, 'no se anotó nada');
+  const st = require(path.join(SCRIPTS, 'lib', 'state-dir.js')).stateDir(otro.home);
+  assert.doesNotMatch(fs.readFileSync(path.join(st, 'gates.log'), 'utf8'), /"name":"critical-waiver"/, 'ni en el registro');
+});
+
+// La constancia de trámite de antes, sin el nombre de quien delegó, sigue sin valer (y dice cómo se arregla).
+test('Constancia_DeTramiteSinNombre_NoVale: una de trámite sin a nombre de quién no cuenta', () => {
+  const { constanciaInvalida } = require(path.join(SCRIPTS, 'lib', 'critical-waivers.js'));
+  const base = { rule_id: 'X-C1', tipo: 'automatica', quien: 'arnés (firma de trámite)', via: 'waive-critical (firma de trámite · arnés)', ts: 't' };
+  assert.match(constanciaInvalida(base), /no nombra a la persona/);
+  assert.equal(constanciaInvalida({ ...base, delegacion: 'Dueño, por el perfil del equipo' }), null);
+  assert.match(constanciaInvalida({ ...base, delegacion: 'sin nombrar, por el perfil del equipo' }), /no nombra a la persona/);
+});
+
+// WriteFindings_TresDeLaMismaRegla_UnaSolaExencion
+// 🔴 Falla con: tres hallazgos de la misma regla en el mismo archivo salen como tres renglones iguales, y quien los lee
+//    pide tres exenciones cuando una alcanza.
+test('WriteFindings_TresDeLaMismaRegla_UnaSolaExencion: los críticos de la misma regla y archivo se nombran juntos y una exención los cubre', () => {
+  const lab = laboratorio();
+  const tres = [10, 20, 30].map((line) => ({ ...CRITICO, line }));
+  const r = lab.writeFindings(tres);
+  assert.notEqual(r.status, 0);
+  const salida = `${r.stdout}${r.stderr}`;
+  assert.equal(salida.split(`· ${CRITICO.rule_id} en ${CRITICO.file}`).length - 1, 1, salida);
+  assert.match(salida, /3 hallazgos: una exención los cubre/);
+  assert.equal(waive(lab, []).status, 0);
+  const w = lab.writeFindings(tres);
+  assert.equal(w.status, 0, `${w.stdout}${w.stderr}`);
+});
+
 test('WaiveCritical_SinConversacion_OfreceLaTerminal @story-8.63 @ac-2', () => {
   const lab = laboratorio();
   fs.rmSync(path.join(lab.home, '.claude', 'projects'), { recursive: true, force: true });
@@ -446,6 +505,63 @@ test('RuntimeWaiver_OkDelDev_FirmaSinTerminal @story-8.63 @ac-7', () => {
   assert.deepEqual([e.tty, e.ok && e.ok.tipo, e.ok && e.ok.via, e.ok && e.ok.cita], [false, 'manual', 'ventana', undefined]);
   const ap = lineas(path.join(lab.runDir, 'approvals.jsonl')).find((l) => /AC 1/.test(l.que));
   assert.deepEqual([ap.tipo, ap.quien], ['manual', 'Dev de Prueba']);
+});
+
+// ── el chequeo previo, sin firma (fila 233) ─────────────────────────────────────────────────────────
+// Un dev perdió 9 clicks del dueño: cada firma salió «hay criterios SIN CORRER que no se pueden eximir» porque los
+// criterios no estaban declarados imposibles de probar en vivo. `check-runtime-waiver` corre las mismas comprobaciones
+// que la firma por la ventana, no firma nada y dice si la firma pasaría. No es `runtime-waiver --check`: cualquier
+// `runtime-waiver` es una firma para el arnés, y le abriría al dueño el cuadro.
+const nadaFirmado = (lab) => {
+  const lib = require(path.join(SCRIPTS, 'lib', 'runtime-waiver.js'));
+  return !fs.existsSync(lib.repoWaiverLogPath(lab.repo)) && !fs.existsSync(lab.env.TYCON_WAIVER_LOG)
+    && !lineas(path.join(lab.runDir, 'approvals.jsonl')).some((l) => /AC 1/.test(l.que));
+};
+
+test('T233a CheckRuntimeWaiver_Declared_WouldPass_SignsNothing — con el criterio declarado, pasaría y no firma', () => {
+  const lab = laboratorioDeCriterio([]);
+  const r = lab.marker(['check-runtime-waiver', lab.story, '--acs', '1'], { ventana: false });
+  assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.match(r.stdout, /pasaría.*AC 1/);
+  assert.ok(nadaFirmado(lab), 'el chequeo no firma');
+  // sin --acs: todos los pendientes, como la firma
+  const todos = lab.marker(['check-runtime-waiver', lab.story], { ventana: false });
+  assert.equal(todos.status, 0, todos.stderr);
+  assert.match(todos.stdout, /pasaría.*AC 1/);
+  // la puerta Bash lo deja correr sin pedir firma, también para la corrida de otra sesión (así lo usa la coordinadora)
+  for (const extra of [[], ['--for-session', 's-otra']]) {
+    const g = spawnSync('node', [inHarnessCopy(path.join(SCRIPTS, 'on-bash-write-gate.js'))], {
+      cwd: lab.repo, encoding: 'utf8', env: lab.env,
+      input: JSON.stringify({ session_id: lab.sid, tool_name: 'Bash', cwd: lab.repo, tool_input: { command: inHarnessCopy(`node ${path.join(SCRIPTS, 'marker.js')} check-runtime-waiver ${lab.story} --acs 1 ${extra.join(' ')}`) } }),
+    });
+    assert.equal(g.status, 0, `${extra.join(' ')}: ${g.stdout}${g.stderr}`);
+    assert.doesNotMatch(g.stdout, /"permissionDecision":"(deny|ask)"/, `${extra.join(' ')}: ${g.stdout}`);
+  }
+});
+
+test('T233b CheckRuntimeWaiver_NotDeclared_WouldBeRejected — sin el bloque runtime_not_verifiable, no pasaría y dice qué falta', () => {
+  const lab = laboratorioDeCriterio([]);
+  // el mismo criterio, sin declararlo imposible: queda «sin correr», como en el informe
+  fs.writeFileSync(lab.story, fs.readFileSync(lab.story, 'utf8').replace(/runtime_not_verifiable:\n  - ac: 1\n    reason: "x"\n    covered_by: T1\n/, ''));
+  const r = lab.marker(['check-runtime-waiver', lab.story, '--acs', '1'], { ventana: false });
+  assert.equal(r.status, 1, `${r.stdout}${r.stderr}`);
+  assert.match(r.stdout, /no pasaría/);
+  assert.match(r.stdout, /SIN CORRER.*AC #1/);
+  assert.match(r.stdout, /runtime_not_verifiable/);
+  assert.ok(nadaFirmado(lab));
+  // la firma de verdad, con el mismo pedido, sale rechazada por lo mismo: el chequeo no promete otra cosa
+  const firma = lab.marker(['runtime-waiver', lab.story, '--acs', '1', '--approved-by', 'Dev de Prueba']);
+  assert.notEqual(firma.status, 0);
+  assert.match(firma.stderr, /SIN CORRER/);
+});
+
+test('T233c CheckRuntimeWaiver_OtherAc_WouldBeRejected — un criterio que no está pendiente de firma: no pasaría', () => {
+  const lab = laboratorioDeCriterio([]);
+  const r = lab.marker(['check-runtime-waiver', lab.story, '--acs', '2'], { ventana: false });
+  assert.equal(r.status, 1, `${r.stdout}${r.stderr}`);
+  assert.match(r.stdout, /no pasaría[^]*AC 2 no está/);
+  const sinStory = lab.marker(['check-runtime-waiver', path.join(lab.repo, 'specs', 'no-esta.md')], { ventana: false });
+  assert.equal(sinStory.status, 2, 'sin la historia no hay chequeo');
 });
 
 test('RuntimeWaiver_SinOk_Frena @story-8.63 @ac-7', () => {

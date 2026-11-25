@@ -31,6 +31,21 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { parseEvidenceConfig, discoverRepoRoot } = require('./evidence-config.js');
 
+// El entorno de cada git que pregunta por un hermano: sin el GIT_DIR, el GIT_WORK_TREE y compañía que llegan adentro de
+// un gancho de git o de un guion de otro repo (con ellos, `git -C <hermano>` contesta por ese otro repo), y con el idioma
+// fijo, porque los errores se leen por su texto.
+// Con las skills instaladas aparte del arnés no está scripts/lib: se sacan igual las variables que apuntan a otro repo
+// (lo que se le pregunta a git acá, rutas y nombres de rama, no depende del idioma).
+const entornoDeGit = () => {
+  let cge;
+  try { cge = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')); } catch (_) { cge = null; }
+  if (cge) return cge.idiomaFijo(cge.sinGitDelPadre());
+  const env = { ...process.env };
+  for (const k of ['GIT_DIR', 'GIT_INDEX_FILE', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_PREFIX', 'GIT_OBJECT_DIRECTORY',
+    'GIT_ALTERNATE_OBJECT_DIRECTORIES']) delete env[k];
+  return env;
+};
+
 /**
  * La ruta real (enlaces resueltos; en macOS /tmp ↔ /private/tmp). Si no existe (un archivo borrado en el diff, o uno
  * que la story todavía va a crear), la real del ancestro que sí existe más el resto tal cual — la misma regla que
@@ -78,44 +93,170 @@ function companionRoots(repo, storyPath, opts) {
   const out = [];
   const rama = ramaDe(repoDeLaStory || repo);
   const numero = numeroDeLaStory(storyPath);
-  for (const f of fuentes) {
-    const cfg = parseEvidenceConfig(f);
-    if (opts && typeof opts.onMissing === 'function') for (const m of cfg.missing) opts.onMissing(m, f);
-    if (opts && typeof opts.onWarning === 'function') for (const w of cfg.warnings) opts.onWarning(w, f);
-    for (const r of cfg.roots) {
-      const k = enLaMismaRama(real(r), rama, numero);
-      if (vistos.has(k)) continue;
-      vistos.add(k);
-      out.push(k);
+  // con historia, los avisos de cada hermano se guardan hasta saber cuáles toca; sin ella, salen como siempre
+  const propia = storyPath && !CAPTURA ? [] : null;
+  const deQuien = new Map();
+  if (propia) CAPTURA = propia;
+  try {
+    for (const f of fuentes) {
+      const cfg = parseEvidenceConfig(f);
+      if (opts && typeof opts.onMissing === 'function') for (const m of cfg.missing) opts.onMissing(m, f);
+      if (opts && typeof opts.onWarning === 'function') for (const w of cfg.warnings) opts.onWarning(w, f);
+      for (const r of cfg.roots) {
+        HERMANO_ACTUAL = real(r);
+        const k = enLaMismaRama(real(r), rama, numero);
+        deQuien.set(real(r), k);
+        if (vistos.has(k)) continue;
+        vistos.add(k);
+        out.push(k);
+      }
+    }
+  } catch (e) {
+    // si algo tira a mitad de camino, los avisos guardados salen igual: no se sabe cuáles hermanos toca la historia
+    HERMANO_ACTUAL = null;
+    if (propia) { CAPTURA = null; for (const a of propia) avisar(a.texto); }
+    throw e;
+  } finally {
+    HERMANO_ACTUAL = null;
+    if (propia) CAPTURA = null;
+  }
+  if (propia) {
+    const tocados = hermanosDeLaStory(repo, storyPath, out);
+    for (const a of propia) {
+      const k = a.de ? deQuien.get(a.de) : null;
+      if (!tocados || !k || tocados.has(real(k))) avisar(a.texto);
     }
   }
   return out;
 }
 
+// en Windows y en Mac el disco no distingue mayúsculas: `front/x` nombra al hermano `Front`
+const sinMayusculas = (s) => (process.platform === 'win32' || process.platform === 'darwin' ? String(s).toLowerCase() : String(s));
+
 /**
- * La rama en que está un repo, o null (cabeza suelta, o git que no contesta). Se recuerda por carpeta y huella
- * (lib/git-stamp.js): varios lugares de un mismo comando preguntan por los mismos hermanos. Un fallo no se recuerda.
+ * Los hermanos que la historia toca, de `roots`: un `Set` de rutas reales, o null si no hay con qué elegir (la historia
+ * no se puede leer o no declara ningún archivo). Un hermano está tocado si:
+ *   · la historia declara un archivo en él (`files_to_create`, `files_to_modify` o `files_to_delete`): donde el archivo
+ *     existe (como `companionTargets`); si no existe todavía (o ya no), por el nombre del hermano adelante (`<hermano>/x`,
+ *     `../<hermano>/x`) o por `(<repo>) x`, con `<repo>` como lo resuelve `resolveRepoRef`;
+ *   · o tiene cambios propios (`conCambiosPropios`): un hermano que la corrida cambió sin declararlo también se sella y se
+ *     mira, porque su código no puede quedar sin revisar.
  */
+function hermanosDeLaStory(repo, storyPath, roots) {
+  let contenido;
+  try { contenido = fs.readFileSync(storyPath, 'utf8'); } catch (_) { return null; }
+  const ts = require('./test-scope.js');
+  const declarados = [...ts.parseDeclaredFiles(contenido), ...ts.parseFilesToDelete(contenido)];
+  if (!declarados.length) return null;
+  const out = new Set();
+  const porNombre = new Map(roots.map((c) => [sinMayusculas(label(c)), real(c)]));
+  for (const decl of declarados) {
+    const r = resolveDeclared(decl, repo, roots);
+    if (r.where === 'companion') { out.add(real(r.root)); continue; }
+    const conRepo = parseRepoPrefixed(decl);
+    if (conRepo) {
+      const { root } = resolveRepoRef(conRepo.ref, repo, roots);
+      const raiz = root ? roots.find((c) => real(c) === real(root)) : null;
+      if (raiz) { out.add(real(raiz)); continue; }
+      const nombre = porNombre.get(sinMayusculas(path.basename(conRepo.ref)));
+      if (nombre) out.add(nombre);
+      continue;
+    }
+    const d = String(decl).replace(/\\/g, '/').replace(/^(\.\.?\/)+/, '');
+    const primero = sinMayusculas(d.split('/')[0]);
+    if (porNombre.has(primero)) out.add(porNombre.get(primero));
+    // `../<carpeta>/<hermano declarado como subcarpeta>/x`: adentro de la raíz del hermano o de su carpeta declarada
+    const abs = path.resolve(repo, String(decl).replace(/\\/g, '/'));
+    for (const c of roots) {
+      const decl0 = DECLARADO.get(real(c));
+      if (adentro(abs, c) || (decl0 && adentro(abs, decl0))) out.add(real(c));
+    }
+  }
+  for (const c of roots) if (!out.has(real(c)) && conCambiosPropios(c)) out.add(real(c));
+  return out;
+}
+
+/**
+ * ¿El repo hermano tiene cambios propios? Sin commitear, o commits que su rama principal (la de `origin/HEAD`,
+ * `origin/main`, `origin/master`, `main` o `master`, la primera que exista) no tiene. Sin ninguna rama principal no hay
+ * contra qué medir, y cuenta como cambiado (se sella de más, nunca de menos). Una carpeta que no es un repo git, no.
+ */
+function conCambiosPropios(dir) {
+  const correr = (args) => spawnSync('git', ['-C', dir, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env: entornoDeGit() });
+  const estado = correr(['status', '--porcelain']);
+  if (estado.error || estado.status !== 0) return false;
+  if (String(estado.stdout || '').trim()) return true;
+  const cabeza = correr(['symbolic-ref', '-q', 'refs/remotes/origin/HEAD']);
+  const candidatas = [cabeza.status === 0 ? String(cabeza.stdout || '').trim() : null,
+    'refs/remotes/origin/main', 'refs/remotes/origin/master', 'refs/heads/main', 'refs/heads/master'].filter(Boolean);
+  const principal = candidatas.find((ref) => correr(['show-ref', '--verify', '--quiet', ref]).status === 0);
+  if (!principal) return true;
+  const r = correr(['rev-list', '--count', `${principal}..HEAD`]);
+  return r.error || r.status !== 0 ? true : Number(String(r.stdout || '').trim()) > 0;
+}
+
+/**
+ * Los hermanos que la historia toca (`hermanosDeLaStory`), de los que da `companionRoots`. Es lo que miran los pasos que
+ * sólo trabajan sobre el código de la historia: el congelado del pase y de los revisores, y dep-gate. La evidencia y el
+ * portón de pruebas siguen con `companionRoots` y `companionTargets`. Sin historia, o si no hay con qué elegir, todos.
+ */
+function touchedRoots(repo, storyPath, opts) {
+  const todos = companionRoots(repo, storyPath, opts);
+  if (!storyPath || !todos.length) return todos;
+  const tocados = hermanosDeLaStory(repo, storyPath, todos);
+  return tocados ? todos.filter((r) => tocados.has(real(r))) : todos;
+}
+
+/**
+ * La rama en que está un repo, o null (cabeza suelta, o git que no contesta). Con la cabeza suelta, la rama de la
+ * corrida que dejó anotada quien armó el clon (`RAMA_DE_LA_CORRIDA`, la escribe cloneWithDisk de lib/private-tree.js):
+ * sin ella, una copia en un commit suelto no tiene rama. Se recuerda por carpeta y huella (lib/git-stamp.js): varios
+ * lugares de un mismo comando preguntan por los mismos hermanos. Un fallo no se recuerda.
+ */
+const RAMA_DE_LA_CORRIDA = 'tycon.runBranch';
 const RAMAS = new Map();
 function ramaDe(dir) {
   if (!dir) return null;
   return require('./git-stamp.js').memo(RAMAS, dir, 'rama', () => {
-    const r = spawnSync('git', ['-C', dir, 'symbolic-ref', '-q', '--short', 'HEAD'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
+    const r = spawnSync('git', ['-C', dir, 'symbolic-ref', '-q', '--short', 'HEAD'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env: entornoDeGit() });
     // salida 1 con -q = cabeza suelta; cualquier otra cosa es git que no contestó, y se dice
     if (r.error || (r.status !== 0 && r.status !== 1)) {
       avisar(`no pude leer la rama de ${dir} (${(r.error && (r.error.code || r.error.message)) || String(r.stderr || '').trim().split('\n')[0] || `git salió ${r.status}`}): los repos hermanos se leen como están declarados`);
       return { valor: null, recordar: false };
     }
-    const b = r.status === 0 ? String(r.stdout || '').trim() : '';
-    return { valor: b || null, recordar: true };
+    if (r.status === 0) return { valor: String(r.stdout || '').trim() || null, recordar: true };
+    const anotada = spawnSync('git', ['-C', dir, 'config', '--local', '--get', RAMA_DE_LA_CORRIDA], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000, env: entornoDeGit() });
+    return { valor: (!anotada.error && anotada.status === 0 && String(anotada.stdout || '').trim()) || null, recordar: true };
   });
+}
+
+/**
+ * Si otra sesión viva trabaja en `ruta`, en una frase; null si no. El criterio es el de scripts/lib/live-sessions.js (su
+ * transcripción, sus subagentes o su corrida abierta), sin contar la propia. Lo que no se puede mirar también se dice:
+ * sin esa lib (las skills instaladas aparte del arnés) o sin poder leer las transcripciones, no se elige a ciegas.
+ */
+function otraSesionEn(ruta) {
+  let live;
+  try { live = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'live-sessions.js')); } catch (_) {
+    return 'no pude ver si otra sesión trabaja ahí (las skills están instaladas aparte del arnés)';
+  }
+  let r;
+  try { r = live.others({ root: ruta, selfSessionId: live.selfFromEnv() }); } catch (e) { return `no pude ver si otra sesión trabaja ahí (${e.message})`; }
+  if (r.sessions.length) return `ahí trabaja otra sesión (${String(r.sessions[0].id).slice(0, 8)}: ${r.sessions[0].why})`;
+  if (!r.seen.transcripts || !r.seen.markers) return `no pude ver si otra sesión trabaja ahí (${r.problems[0] || 'no pude leer las transcripciones'})`;
+  return null;
 }
 /** Olvida las ramas recordadas (para las pruebas: la huella ya cubre un repo que cambia). */
 function limpiarRamas() { RAMAS.clear(); }
 
 // Cada aviso, una vez por proceso: varios lugares de un mismo comando preguntan por los mismos hermanos.
 const AVISADOS = new Set();
+// Mientras `companionRoots` resuelve los hermanos de una historia, el aviso de cada uno espera a saber si la historia lo
+// toca (`hermanosDeLaStory`): el de un hermano declarado que la historia no toca no se dice.
+let CAPTURA = null;
+let HERMANO_ACTUAL = null;
 function avisar(texto) {
+  if (CAPTURA) { CAPTURA.push({ texto, de: HERMANO_ACTUAL }); return; }
   if (AVISADOS.has(texto)) return;
   AVISADOS.add(texto);
   process.stderr.write(`[hermanos] ⚠️  ${texto}\n`);
@@ -167,27 +308,29 @@ const DECLARADO = new Map();
  * (`numero`): las ramas de las specs y del código suelen llamarse distinto (`docs/…-1-4-impl` y `feat/…-1-4-…`). Con dos
  * o más candidatos no se adivina: el mismo número se repite entre carpetas de specs de un producto. Toda elección que
  * no sea la de mismo nombre se dice en una línea, y también la caída al declarado cuando está en otra rama.
- * Con la cabeza suelta no hay rama de mismo nombre, pero el número de la story sigue eligiendo: un clon de prueba del
- * repo de la story, en un commit suelto, tomaba el checkout compartido aunque la story tuviera su worktree. Sin rama
- * ni número, el declarado tal cual.
+ * El número no elige una copia donde trabaja otra sesión viva (otraSesionEn): es de otra corrida, y el portón pisaba
+ * sus informes. Con la cabeza suelta no se adivina: sin la rama de la corrida (ramaDe) no hay con qué atar la copia a
+ * esta corrida, y se usa el declarado, dicho si había una copia que nombraba la story. El clon del árbol armado sí la
+ * lleva (lib/private-tree.js cloneWithDisk).
  */
 function enLaMismaRama(declarado, rama, numero) {
   if (!rama && !numero) return declarado;
   const deLaStory = rama ? `la rama ${rama}` : `la story ${numero}`;
   // Un declarado que no es un repo git no tiene ramas ni worktrees: se usa tal cual y se dice una vez, con el motivo
   // exacto (suele ser una ruta mal declarada). Cualquier otra falla de git (un .git roto) sigue al aviso de abajo.
-  const repo = spawnSync('git', ['-C', declarado, 'rev-parse', '--git-dir'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env: require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).idiomaFijo() });
+  const env = entornoDeGit();
+  const repo = spawnSync('git', ['-C', declarado, 'rev-parse', '--git-dir'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env });
   if (!repo.error && repo.status !== 0 && /not a git repository/i.test(String(repo.stderr || ''))) {
     avisar(`no pude listar los worktrees de ${declarado}: no es un repo git, uso la carpeta tal cual (¿la ruta de companion_repos está bien declarada?)`);
     return declarado;
   }
-  const r = spawnSync('git', ['-C', declarado, 'worktree', 'list', '--porcelain'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
+  const r = spawnSync('git', ['-C', declarado, 'worktree', 'list', '--porcelain'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env });
   if (r.error || r.status !== 0) {
     avisar(`no pude listar los worktrees de ${declarado} (${(r.error && (r.error.code || r.error.message)) || String(r.stderr || '').trim().split('\n')[0] || `git salió ${r.status}`}): uso el declarado, que puede no ser el código de ${deLaStory}`);
     return declarado;
   }
   // Un hermano declarado como subcarpeta de su repo es esa subcarpeta también en el worktree.
-  const top = spawnSync('git', ['-C', declarado, 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
+  const top = spawnSync('git', ['-C', declarado, 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env });
   if (top.error || top.status !== 0) {
     avisar(`no pude leer la raíz git de ${declarado} (${(top.error && (top.error.code || top.error.message)) || String(top.stderr || '').trim().split('\n')[0] || `git salió ${top.status}`}): uso el declarado, que puede no ser el código de ${deLaStory}`);
     return declarado;
@@ -211,19 +354,28 @@ function enLaMismaRama(declarado, rama, numero) {
     avisar(`${nombre}: el worktree en main ${real(mismoNombre.ruta)} no está al día con origin/main o tiene cambios: no lo elijo por el nombre de la rama`);
     mismoNombre = null;
   }
-  if (mismoNombre) return elegir(mismoNombre.ruta);
-  const candidatos = worktrees.filter((w) => ramaNombraLaStory(w.rama, numero));
-  // por el número no vale una copia vieja: la de una tanda anterior que ya entró entera a main y quedó atrás mide código sin
-  // lo que main arregló después, y da rojos que no son. Una rama con trabajo propio sigue valiendo aunque esté atrás de main,
-  // y la de la misma rama no pasa por acá
-  if (candidatos.length === 1 && yaEntroYQuedoAtras(candidatos[0].ruta)) {
-    avisar(`${nombre}: el worktree ${real(candidatos[0].ruta)} (rama ${candidatos[0].rama}) nombra la story ${numero}, pero ya entró a main y está atrás de origin/main: no lo elijo, uso el declarado ${declarado}. Si es el código de la story, ponelo en la rama ${rama || 'de la story'}`);
+  if (mismoNombre) return rama === 'main' ? elegir(mismoNombre.ruta) : alDiaOVieja(mismoNombre, worktrees, nombre, elegir, null);
+  // un número con el prefijo de su producto (`BCRA-1.1`) cuya rama nombra sólo el número (`feature/1-1-…`): si ninguna lo
+  // nombra entero, se busca sin el prefijo, con la misma regla de un único candidato
+  let candidatos = worktrees.filter((w) => ramaNombraLaStory(w.rama, numero));
+  const prefijo = !candidatos.length && /^([a-z]+)[._-](?=\d)/i.exec(String(numero || ''));
+  if (prefijo) {
+    const sinPrefijo = String(numero).slice(prefijo[0].length);
+    candidatos = worktrees.filter((w) => ramaNombraLaStory(w.rama, sinPrefijo));
+    if (candidatos.length) numero = `${sinPrefijo} (sin el prefijo ${prefijo[1]})`;
+  }
+  if (!rama) {
+    if (candidatos.length) avisar(`${nombre}: la story ${numero} corre en un commit suelto, sin la rama de la corrida: no elijo por su número (${candidatos.map((w) => `${real(w.ruta)} en ${w.rama}`).join(' · ')}), uso el declarado ${declarado}`);
+    return declarado;
+  }
+  const otra = candidatos.length === 1 ? otraSesionEn(candidatos[0].ruta) : null;
+  if (otra) {
+    avisar(`${nombre}: el worktree ${real(candidatos[0].ruta)} (rama ${candidatos[0].rama}) nombra la story ${numero}, pero ${otra}: no lo elijo, uso el declarado ${declarado}`);
     return declarado;
   }
   if (candidatos.length === 1) {
-    const wt = elegir(candidatos[0].ruta);
-    avisar(`${nombre} se lee del worktree ${wt} (rama ${candidatos[0].rama}): es el único cuya rama nombra la story ${numero}`);
-    return wt;
+    return alDiaOVieja(candidatos[0], worktrees, nombre, elegir,
+      (wt) => `${nombre} se lee del worktree ${wt} (rama ${candidatos[0].rama}): es el único cuya rama nombra la story ${numero}`);
   }
   if (candidatos.length > 1) {
     avisar(`${nombre}: ${candidatos.length} worktrees nombran la story ${numero} (${candidatos.map((w) => `${real(w.ruta)} en ${w.rama}`).join(' · ')}): no elijo, uso el declarado ${declarado}`);
@@ -237,21 +389,45 @@ function enLaMismaRama(declarado, rama, numero) {
 }
 
 /**
- * ¿Todo lo de la rama de `dir` ya está en su `origin/main` local, y main siguió después? Sin `fetch`. Sin `origin/main`, o
- * con git que no contesta, «no»: se elige como antes.
+ * El worktree elegido por la rama de la story, salvo que esa rama ya haya entrado entera a `main` y quedado atrás: un
+ * portón que mide contra ella da rojos ya arreglados en `main`. Entonces, si hay un worktree en `main` al día
+ * (`mainAlDia`), se usa ése y se dice. Una rama atrás con commits que `main` no tiene es el código de la story sin
+ * mergear: se usa igual, y se dice cuánto está atrás. `porNumero(wt)` es el aviso de la elección por número, o null.
  */
-function yaEntroYQuedoAtras(dir) {
+function alDiaOVieja(w, worktrees, nombre, elegir, porNumero) {
+  const d = atrasDeMain(w.ruta);
+  if (d && d.atras > 0 && d.propios === 0 && d.limpio) {
+    const alDia = worktrees.find((x) => x.rama === 'main' && mainAlDia(x.ruta));
+    if (alDia) {
+      const wt = elegir(alDia.ruta);
+      avisar(`${nombre}: la rama ${w.rama} ya entró a main y está atrás de origin/main (${d.atras} commits): uso ${wt}, al día con main`);
+      return wt;
+    }
+  }
+  const wt = elegir(w.ruta);
+  if (porNumero) avisar(porNumero(wt));
+  if (!d) avisar(`${nombre}: no pude medir si la rama ${w.rama} está atrás de main: la uso igual`);
+  else if (d.atras > 0) avisar(`${nombre} está ${d.atras} commits atrás de main (rama ${w.rama}, en ${wt}): un rojo puede ser algo ya arreglado`);
+  return wt;
+}
+
+/**
+ * Cuánto está `dir` atrás de su `origin/main` local, cuántos commits tiene que `main` no tiene y si está sin cambios:
+ * `{ atras, propios, limpio }`, con lo que trajo el último `fetch` (no sale a la red). Sin `origin/main` no hay contra
+ * qué medir: `atras` y `propios` en 0. Git que no contesta, null.
+ */
+function atrasDeMain(dir) {
   const env = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).sinGitDelPadre();
   const correr = (args) => spawnSync('git', ['-C', dir, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env });
-  const commits = correr(['rev-parse', 'HEAD', 'refs/remotes/origin/main']);
-  if (commits.error || commits.status !== 0) return false;
-  const [head, origen] = String(commits.stdout || '').trim().split('\n');
-  if (!head || !origen || head === origen) return false;
-  const r = correr(['merge-base', '--is-ancestor', 'HEAD', 'refs/remotes/origin/main']);
-  if (r.error || r.status !== 0) return false;
-  // trabajo sin commitear es trabajo propio: la copia no entró entera a main. Sin poder mirarlo, tampoco se descarta
   const estado = correr(['status', '--porcelain']);
-  return !estado.error && estado.status === 0 && !String(estado.stdout || '').trim();
+  if (estado.error || estado.status !== 0) return null;
+  const limpio = !String(estado.stdout || '').trim();
+  const conOrigen = correr(['show-ref', '--verify', '--quiet', 'refs/remotes/origin/main']);
+  if (!conOrigen.error && conOrigen.status === 1) return { atras: 0, propios: 0, limpio };
+  if (conOrigen.error || conOrigen.status !== 0) return null;
+  const r = correr(['rev-list', '--left-right', '--count', 'refs/remotes/origin/main...HEAD']);
+  const m = !r.error && r.status === 0 ? /^(\d+)\s+(\d+)\s*$/.exec(String(r.stdout || '')) : null;
+  return m ? { atras: Number(m[1]), propios: Number(m[2]), limpio } : null;
 }
 
 /**
@@ -273,6 +449,25 @@ function mainAlDia(dir) {
   if (!head || head !== origen) return false;
   const estado = correr(['status', '--porcelain']);
   return !estado.error && estado.status === 0 && !String(estado.stdout || '').trim();
+}
+
+/**
+ * ¿Su `origin/main` local cambió el archivo `abs` en commits que el checkout donde está no tiene? Sin `fetch`.
+ * `{ commit }` con el más nuevo de esos commits, `{ commit: null }` si no (o sin `origin/main`: nada contra qué comparar),
+ * `{ error }` si git no contestó: no se sabe si la copia es vieja.
+ */
+function mainCambioDespues(abs) {
+  const env = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')).sinGitDelPadre();
+  const dir = path.dirname(abs);
+  const correr = (args) => spawnSync('git', ['-C', dir, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env });
+  const conOrigen = correr(['show-ref', '--verify', '--quiet', 'refs/remotes/origin/main']);
+  if (!conOrigen.error && conOrigen.status === 1) return { commit: null };
+  const motivo = (r) => (r.error && (r.error.code || r.error.message)) || String(r.stderr || '').trim().split('\n')[0] || `git salió ${r.status}`;
+  if (conOrigen.error || conOrigen.status !== 0) return { error: motivo(conOrigen) };
+  // `:(literal)`: un nombre con `[ ] * ?` (una ruta `[id].tsx`) es ese archivo, no un comodín que nombra otros
+  const r = correr(['log', '-1', '--format=%h', 'HEAD..refs/remotes/origin/main', '--', `:(literal)${path.basename(abs)}`]);
+  if (r.error || r.status !== 0) return { error: motivo(r) };
+  return { commit: String(r.stdout || '').trim() || null };
 }
 
 /** La raíz git que contiene un archivo o carpeta (la carpeta con `.git`), o null. */
@@ -388,8 +583,11 @@ function leerStory(storyPath) {
 
 /**
  * Los hermanos que la story toca, con los archivos que declara en cada uno y el alcance de pruebas deducido sobre esos
- * archivos (sólo si el hermano tiene más de un proyecto con pruebas y se puede deducir; si no, vacío y lo decide el
- * propio test-gate del hermano). `opts.onMissing` como en `companionRoots`; `opts.warn(texto)` para los avisos.
+ * archivos (si el hermano tiene más de un proyecto con pruebas y se puede deducir; si no, vacío y lo decide el propio
+ * test-gate del hermano). Con un solo proyecto .NET en una subcarpeta (la solución un nivel abajo), el alcance es esa
+ * carpeta: sin él, el test-gate del hermano corre `dotnet test` en la raíz, donde no hay solución, y frena con 4. Un
+ * proyecto de node en una subcarpeta no lo necesita: el test-gate encuentra su `package.json` solo.
+ * `opts.onMissing` como en `companionRoots`; `opts.warn(texto)` para los avisos.
  */
 function companionTargets(repo, storyPath, opts) {
   const ts = require('./test-scope.js');
@@ -407,8 +605,10 @@ function companionTargets(repo, storyPath, opts) {
   return [...porRaiz.entries()].map(([root, files]) => {
     let scope = '';
     try {
-      const d = ts.deduceScope({ files, candidates: ts.discoverCandidates(root) });
+      const candidatos = ts.discoverCandidates(root);
+      const d = ts.deduceScope({ files, candidates: candidatos });
       if (d.multi && !d.ambiguous && d.scope) scope = d.scope;
+      else if (candidatos.length === 1 && candidatos[0].dir !== '.' && candidatos[0].runner === 'dotnet') scope = candidatos[0].dir;
     } catch (e) {
       // Sin alcance deducido, el test-gate del hermano deduce el suyo (o frena con 4): se avisa, no se calla.
       warn(`no pude deducir el alcance de pruebas en ${label(root)} (${(e && e.message) || e}): lo decide su propio test-gate`);
@@ -456,7 +656,7 @@ function declaredFor(storyRepo, storyPath, targetRepo) {
   const propio = real(storyRepo);
   const objetivo = real(targetRepo);
   const comunDe = (dir) => {
-    const r = spawnSync('git', ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
+    const r = spawnSync('git', ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, env: entornoDeGit() });
     return r.status === 0 ? real(r.stdout.trim()) : null;
   };
   const comunObjetivo = objetivo === propio ? null : comunDe(objetivo);
@@ -512,7 +712,7 @@ const TOPE_DE_HUELLAS = 50;
  * porque el ancla viaja con la evidencia.
  */
 function nombreDelRepo(dir) {
-  const r = spawnSync('git', ['-C', dir, 'rev-parse', '--git-common-dir'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
+  const r = spawnSync('git', ['-C', dir, 'rev-parse', '--git-common-dir'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000, env: entornoDeGit() });
   if (r.error || r.status !== 0) return null;
   const comun = path.resolve(dir, String(r.stdout).trim());
   return path.basename(path.basename(comun) === '.git' ? path.dirname(comun) : comun);
@@ -521,10 +721,10 @@ function nombreDelRepo(dir) {
 // Lo que el hermano tiene sin commitear, con la huella que tendría en git; `null` si el archivo se borró. Las rutas van desde la
 // raíz del repo, como las da git: un hermano declarado como subcarpeta mira sólo lo suyo.
 function huellasSinCommitear(raiz) {
-  const top = spawnSync('git', ['-C', raiz, 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
+  const top = spawnSync('git', ['-C', raiz, 'rev-parse', '--show-toplevel'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000, env: entornoDeGit() });
   if (top.error || top.status !== 0) return { motivo: 'no pude leer su raíz' };
   const repo = String(top.stdout).trim();
-  const git = (...a) => spawnSync('git', ['-C', repo, ...a], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
+  const git = (...a) => spawnSync('git', ['-C', repo, ...a], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000, env: entornoDeGit() });
   const estado = git('status', '--porcelain', '-z', '--no-renames', '--untracked-files=all', '--', path.relative(repo, raiz) || '.');
   if (estado.error || estado.status !== 0) return { motivo: 'no pude leer sus cambios' };
   const lineas = String(estado.stdout).split('\0').filter(Boolean);
@@ -553,7 +753,7 @@ function anclasDeLaEvidencia(repo, historia) {
   return parseEvidenceConfig(repo).roots.map((declarado) => {
     const raiz = enLaMismaRama(real(declarado), rama, /\d/.test(numero || '') ? numero : null);
     const nombre = nombreDelRepo(raiz) || path.basename(raiz);
-    const head = spawnSync('git', ['-C', raiz, 'rev-parse', '--verify', '-q', 'HEAD'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000 });
+    const head = spawnSync('git', ['-C', raiz, 'rev-parse', '--verify', '-q', 'HEAD'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15000, env: entornoDeGit() });
     const commit = head.status === 0 ? String(head.stdout).trim() : '';
     if (!commit) return { repo: nombre, sinAncla: 'no pude leer su commit' };
     const { huellas, motivo } = huellasSinCommitear(raiz);
@@ -564,7 +764,7 @@ function anclasDeLaEvidencia(repo, historia) {
 
 module.exports = {
   anclasDeLaEvidencia, nombreDelRepo,
-  companionRoots, ramaDe, limpiarRamas, enLaMismaRama, mainAlDia, ramaNombraLaStory, numeroDeLaStory, gitRootOf, label, ownerOf, groupByRepo, resolveDeclared, parseRepoPrefixed, resolveRepoRef,
+  companionRoots, touchedRoots, hermanosDeLaStory, ramaDe, RAMA_DE_LA_CORRIDA, limpiarRamas, enLaMismaRama, mainAlDia, mainCambioDespues, ramaNombraLaStory, numeroDeLaStory, gitRootOf, label, ownerOf, groupByRepo, resolveDeclared, parseRepoPrefixed, resolveRepoRef,
   companionTargets, declaredHere, declaredIn, declaredFor, real,
 };
 

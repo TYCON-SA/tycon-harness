@@ -73,7 +73,7 @@ test('T1 2.78-DeCorrida_EligePorSesionYVentana @story-2.78 @ac-1 @ac-2', (t) => 
   const home = casaNueva(t);
   const comun = firma({ ts: '2026-11-08T10:10:00.000Z' });
   escribir(cuenta, [comun]);
-  escribir(home, [comun, firma({ ts: '2026-11-08T10:20:00.000Z', signature: 'save' })]);
+  escribir(home, [comun, firma({ ts: '2026-11-08T10:20:00.000Z', signature: 'pending-approval' })]);
   const dos = RS.deCorrida({ sesiones: [S1], desde: DESDE, hasta: HASTA, casas: [cuenta, home] });
   assert.strictEqual(dos.lineas.length, 2);
   assert.ok(!('otra_casa' in dos.lineas[0]), JSON.stringify(dos.lineas[0]));

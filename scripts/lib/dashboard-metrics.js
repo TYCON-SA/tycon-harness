@@ -332,7 +332,8 @@ function loadAll(dir) {
       errors: v.errors,
       ...resolveDate(doc, f),
       project: doc.project || null,
-      story_id: doc.story_id != null ? String(doc.story_id) : null,
+      // un latido escrito antes de llevar `story_id` trae la historia en `story`
+      story_id: doc.story_id != null ? String(doc.story_id) : doc.story != null ? String(doc.story) : null,
       merge_commit: doc.merge_commit || null,
       values,
     });

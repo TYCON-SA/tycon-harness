@@ -597,7 +597,7 @@ function racksApi({ ledRate = 0, reduce = false } = {}) {
   const rackTag = { style: { display: 'none' }, textContent: '' };
   const stage = { getBoundingClientRect: () => ({ left: 10, top: 20 }) };
   // eslint-disable-next-line no-new-func
-  const api = new Function('racks', 'rackTag', 'stage', 'ledRate', 'reduce', `${src.slice(from, to)};return{pintarRacks,textoRack,ledVisto,verRack}`)(racks, rackTag, stage, ledRate, reduce);
+  const api = new Function('racks', 'rackTag', 'stage', 'ledRate', 'reduce', `${src.slice(from, to)};return{pintarRacks,pintarTurno,textoRack,ledVisto,verRack}`)(racks, rackTag, stage, ledRate, reduce);
   // the color of each row, bottom to top, and whether its three leds are lit
   const rows = (r) => [...Array(9)].map((_, u) => { const l = r.leds.filter((m) => m.userData.fila === u); return { hex: [...new Set(l.map((m) => m.material.color.hex))], on: [...new Set(l.map((m) => m.userData.on))] }; });
   return { ...api, racks, rackTag, rows };
@@ -686,4 +686,32 @@ test('T8 Racks_TitilanConSesiones_ReducirMovimientoFijo @story-8.301 @ac-7 — l
   const src = PAGE_CODE();
   assert.match(src, /leds\.forEach\(\(m,i\)=>m\.visible=ledVisto\(m,i,t\)\);/);
   assert.match(src, /ledRate=ags\.filter\(a=>a\.estado==="trabajando"\|\|a\.estado==="prueba"\)\.length\*1\.6;/, 'el ritmo de hoy');
+});
+
+test('T341 Racks_Etiqueta_TurnoPesado @story-8.234 @ac-18 @ac-20 — la etiqueta de un rack dice, debajo de su medida, quién tiene el turno de tarea pesada', () => {
+  const r = racksApi();
+  r.pintarRacks({ memoria: 62, procesador: 90 });
+  r.pintarTurno([{ sesion: 'Sesión A', suites: 120 }]);
+  r.verRack(r.racks[0], { clientX: 110, clientY: 220 });
+  assert.strictEqual(r.rackTag.textContent, 'Memoria en uso: 62 %\nTurno de tarea pesada: Sesión A, 120 suites');
+  r.verRack(r.racks[1], { clientX: 110, clientY: 220 });
+  assert.strictEqual(r.rackTag.textContent, 'Procesador: 90 %\nTurno de tarea pesada: Sesión A, 120 suites', 'en los dos racks');
+  // dos ejecuciones, una sin nombre ni cuenta; con la etiqueta a la vista, la foto nueva la pone al día
+  r.pintarTurno([{ sesion: 'Sesión A', suites: 1 }, {}]);
+  assert.strictEqual(r.rackTag.textContent, 'Procesador: 90 %\nTurno de tarea pesada: Sesión A, 1 suite\nTurno de tarea pesada: una sesión sin nombre, suites sin contar');
+  // sin turno, la etiqueta de siempre; un valor que no es una lista es lo mismo que no tener turno
+  r.pintarTurno(undefined);
+  assert.strictEqual(r.rackTag.textContent, 'Procesador: 90 %');
+  r.pintarTurno({ sesion: 'x' });
+  assert.strictEqual(r.rackTag.textContent, 'Procesador: 90 %');
+  // AC 20: sin la carga, el rack sigue en gris con «no medida» y el turno se dice igual
+  r.pintarRacks(undefined);
+  r.pintarTurno([{ sesion: 'Sesión A', suites: 120 }]);
+  r.verRack(r.racks[0], { clientX: 110, clientY: 220 });
+  assert.strictEqual(r.rackTag.textContent, 'Memoria: no medida\nTurno de tarea pesada: Sesión A, 120 suites');
+  assert.ok(r.rows(r.racks[0]).every((row) => row.hex[0] === UNMEASURED && row.on[0] === false));
+  // el cableado: cada foto pinta el turno, y la etiqueta respeta los saltos de renglón
+  const src = PAGE_CODE();
+  assert.match(src, /pintarRacks\(meta&&meta\.maquina\);pintarTurno\(meta&&meta\.turnoPesado\);/);
+  assert.match(src, /rackTag\.style\.cssText="[^"]*white-space:pre;/);
 });

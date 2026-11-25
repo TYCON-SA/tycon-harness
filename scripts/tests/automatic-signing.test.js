@@ -113,6 +113,15 @@ test('AutomaticSigning_ControlPrevioNiega_VaALaPersonaConElArbol', (t) => {
   assert.match(n.texto, /consola de fondo/);
 });
 
+test('T108n AutomaticSigning_ChequeoSinRespuesta_NoSaleSola_VaALaVentana', (t) => {
+  // 🔴 rojo si: sin tiempo para el chequeo del guion (el freno de seguridad estaba por cortar), la firma sale sola sin él
+  const casa = casaNueva(t);
+  const r = pedir(casa, PLAN, { tramite: DE_TRAMITE, comprobar: () => ({ sinRespuesta: 'no quedó tiempo para el chequeo del guion antes de que corte el freno' }) });
+  assert.strictEqual(r.decision, 'ask', r.texto);
+  assert.notStrictEqual(r.via, 'automatica');
+  assert.match(r.texto, /No salió como firma de trámite: no quedó tiempo para el chequeo/);
+});
+
 test('AutomaticSigning_NoTramite_NoSaleSola', (t) => {
   assert.strictEqual(pedir(casaNueva(t), PLAN, { tramite: () => ({ ok: false, motivo: 'el perfil no la lista' }) }).decision, 'ask');
   const e = pedir(casaNueva(t), `node ${MARKER} set-check dod green --force-manual`, { escapes: ['escape:force-manual'], tramite: () => ({ ok: false, motivo: null }) });
@@ -185,6 +194,25 @@ test('AutomaticSigning_LasListasDelPerfil_DecidenQueEsTramite', () => {
   assert.match(A.esDeTramite({ firma: 'plan-approval', perfil: () => { throw new Error('roto'); } }).motivo, /no pude leer el perfil/);
   assert.match(A.esDeTramite({ firma: 'plan-approval', perfil: () => ({ delegated_signing: { a: 1 } }) }).motivo, /no es una lista/);
   assert.strictEqual(A.todasDeTramite(['plan-approval', 'extra-round'], { perfil }).ok, false);
+});
+
+// Caso 3 del encargo «de terminal a click» (historia 8.298 de la coordinadora, 20/11): con el perfil que lista la exención
+// de un crítico como trámite, el arnés la firmaba solo y anotaba quién = el arnés; después write-findings la rechazaba
+// («no nombra a la persona») y quedaba la terminal. Un crítico lo decide una persona: nunca sale como trámite, y va por la
+// delegación (que nombra al dueño) o por el click del dueño.
+test('T1 AutomaticSigning_CriticalWaiver_NeverTramite — la exención de un crítico no sale sola aunque el perfil la liste', () => {
+  const perfil = () => ({ delegated_signing: ['plan-approval', 'critical-waiver'], owner_only: [] });
+  const r = A.esDeTramite({ firma: 'critical-waiver', perfil });
+  assert.strictEqual(r.ok, false, JSON.stringify(r));
+  assert.match(r.motivo, /un crítico lo decide una persona/);
+  assert.ok(A.esDeTramite({ firma: 'plan-approval', perfil }).ok, 'lo demás de la lista sigue saliendo solo');
+  // la constancia que dejaría el trámite no la acepta write-findings; la de la delegación, sí
+  const cw = require('../../skills/tycon-pipeline/scripts/lib/critical-waivers.js');
+  const base = { ts: '2026-11-20T10:00:00.000Z', rule_id: 'TEST-C1', file: '.advisors/tests-result.json', reason: 'rojo de main' };
+  const conVia = (firma) => { const q = ow.quienFirmo(firma, 'dueño'); return { ...base, ...q, via: `waive-critical (${q.via})` }; };
+  assert.match(cw.constanciaInvalida(conVia({ automatica: true })) || '', /no nombra a la persona/);
+  assert.strictEqual(cw.constanciaInvalida(conVia({ via: 'delegacion', sesion: 'ses-coord' })), null);
+  assert.strictEqual(cw.constanciaInvalida(conVia({ via: 'click' })), null);
 });
 
 test('AutomaticSigning_PendienteSinCarpeta_NoSaleYNoNombraALaCoordinadora', () => {
@@ -355,4 +383,17 @@ test('DeclarePending_AnotaLaSesionDelProceso_YElFrenoNiegaLaVariable', (t) => {
   const sinJs = `CLAUDE_CODE_SESSION_ID=ses-fondo node ${marker.replace(/\.js$/, '')} declare-pending --id DEF-uno`;
   assert.strictEqual(ow.decidir({ evento: evento(sinJs), casa, sinAviso: ['x'] }).decision, 'deny', 'el guion sin «.js»');
   assert.strictEqual(ow.decidir({ evento: evento(`node ${marker} declare-pending --id DEF-uno`), casa, sinAviso: ['x'] }).decision, 'none');
+});
+
+// @story-8.274 @ac-16
+// 🔴 Falla con: `runtime-waiver` que sale como trámite, o que pasa a la coordinadora por delegación, aunque el perfil la
+//    liste: aceptar un criterio imposible de probar en vivo espera el click o la terminal del dueño, que lo quiere ver.
+test('RuntimeWaiver_NeverRoutineNorDelegated_WaitsForTheOwner @story-8.274 @ac-16', () => {
+  const perfil = () => ({ delegated_signing: ['runtime-waiver', 'plan-approval'] });
+  const r = A.esDeTramite({ firma: 'runtime-waiver', perfil });
+  assert.strictEqual(r.ok, false, 'listada en el perfil, igual no es de trámite');
+  assert.match(r.motivo, /dueño/, r.motivo);
+  assert.strictEqual(A.todasDeTramite(['runtime-waiver'], { perfil }).ok, false);
+  assert.ok(require('../lib/delegated-signing.js').NUNCA_DELEGABLES.has('runtime-waiver'), 'tampoco se delega a la coordinadora');
+  assert.ok(A.esDeTramite({ firma: 'plan-approval', perfil }).ok, 'lo demás del perfil sigue igual');
 });

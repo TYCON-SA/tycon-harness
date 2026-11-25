@@ -1,8 +1,10 @@
 'use strict';
 // coordination-fill-gate.test.js — the brake that keeps the coordinator from closing her turn with a free slot, free
 // memory and a ready story: the Stop hook, `fillCheck`, `keep-free` and the written reason. Nothing here reads the real
-// HOME: every case builds its own HOME, team profile, sessions and project reading. The in-process cases hand the role
-// through `arnes`; the hook as a child process gets the same profile through TYCON_PROFILE, like session-cap-guard.
+// HOME: every case builds its own HOME, team profile, sessions and project reading, and an empty repos root
+// (TYCON_REPOS_ROOT): without it the review count (scripts/lib/review-load.js) walks the real repos next to the harness
+// clone. The in-process cases hand the role through `arnes`; the hook as a child process gets the same profile through
+// TYCON_PROFILE, like session-cap-guard.
 
 const test = require('node:test');
 const assert = require('node:assert');
@@ -52,7 +54,9 @@ function toy({ cap = 6, designated = COORD, remote = REMOTE, nowMs = NOW } = {})
   fs.mkdirSync(cwd);
   git(cwd, 'init', '-q');
   if (remote) git(cwd, 'remote', 'add', 'origin', remote);
-  const t = { root, home, state, arnes, profile, cwd, nowMs };
+  const repos = path.join(root, 'repos');
+  fs.mkdirSync(repos);
+  const t = { root, home, state, arnes, profile, cwd, nowMs, env: { TYCON_REPOS_ROOT: repos } };
   session(t, COORD, 'Coordinadora', { status: 'busy', statusUpdatedAt: nowMs });
   return t;
 }
@@ -95,7 +99,7 @@ function opened(t, name, minutesAgo) {
   fs.writeFileSync(f, JSON.stringify([...list, { name, cwd: t.root, at: t.nowMs - minutesAgo * 60000 }]));
 }
 const mem = (pct) => () => ({ pct, why: pct == null ? 'no se pudo' : null });
-const opts = (t, extra = {}) => ({ home: t.home, arnes: t.arnes, env: {}, now: t.nowMs, sessionId: COORD, cwd: t.cwd, readMemory: mem(48), refreshLauncher: () => {}, ...extra });
+const opts = (t, extra = {}) => ({ home: t.home, arnes: t.arnes, env: t.env, now: t.nowMs, sessionId: COORD, cwd: t.cwd, readMemory: mem(48), refreshLauncher: () => {}, ...extra });
 const keysOf = (r) => (r.work || []).map((w) => w.key).sort();
 const countFile = (t, sid = COORD) => path.join(t.state, 'coordination', `fill-gate-${sid}.count`);
 const freeSlots = (t) => FS.read(t.state);
@@ -105,7 +109,7 @@ function runHook(t, event, { memory = 48, input } = {}) {
   const args = memory == null ? [HOOK] : [HOOK, '--memory-pct', String(memory)];
   const r = spawnSync(process.execPath, args, {
     input: input !== undefined ? input : JSON.stringify(event), encoding: 'utf8',
-    env: { PATH: process.env.PATH, HOME: t.home, USERPROFILE: t.home, TYCON_PROFILE: t.profile },
+    env: { PATH: process.env.PATH, HOME: t.home, USERPROFILE: t.home, TYCON_PROFILE: t.profile, ...t.env },
   });
   let decision = null;
   try { decision = r.stdout.trim() ? JSON.parse(r.stdout) : null; } catch { decision = { unparsed: r.stdout }; }
@@ -113,7 +117,7 @@ function runHook(t, event, { memory = 48, input } = {}) {
 }
 const stopEvent = (t, sid = COORD, extra = {}) => ({ hook_event_name: 'Stop', session_id: sid, cwd: t.cwd, stop_hook_active: false, ...extra });
 /** The hook in process, with the toy's clock and memory. */
-const runIn = (t, extra = {}) => G.run({ event: stopEvent(t), home: t.home, arnes: t.arnes, env: {}, now: t.nowMs, readMemory: mem(48), refreshLauncher: () => {}, ...extra });
+const runIn = (t, extra = {}) => G.run({ event: stopEvent(t), home: t.home, arnes: t.arnes, env: t.env, now: t.nowMs, readMemory: mem(48), refreshLauncher: () => {}, ...extra });
 
 // ── Cuándo frena (AC 1-4) ───────────────────────────────────────────────────────────────────────────────────────────
 
@@ -407,7 +411,7 @@ test('T10 KeepFree_RechazaLoQueNoCorresponde @story-8.307 @ac-12: otra sesión, 
   assert.strictEqual(ok.code, 0, ok.message);
   assert.strictEqual(freeSlots(t).record.reason, 'espero bla firma/b del dueño para la 8.288');
   // the command line: without --reason it exits 2 and touches nothing
-  const cli = spawnSync(process.execPath, [COORDINATION, 'keep-free'], { encoding: 'utf8', env: { PATH: process.env.PATH, HOME: empty.home, USERPROFILE: empty.home, TYCON_PROFILE: empty.profile, CLAUDE_CODE_SESSION_ID: COORD } });
+  const cli = spawnSync(process.execPath, [COORDINATION, 'keep-free'], { encoding: 'utf8', env: { PATH: process.env.PATH, HOME: empty.home, USERPROFILE: empty.home, TYCON_PROFILE: empty.profile, CLAUDE_CODE_SESSION_ID: COORD, ...empty.env } });
   assert.strictEqual(cli.status, 2, cli.stderr);
   assert.match(cli.stderr, /--reason/);
   assert.strictEqual(fs.existsSync(FS.files(empty.state).current), false);
@@ -498,7 +502,7 @@ test('T15 FillGate_MismaFoto_DecideIgualQueStatus @story-8.307 @ac-1 @ac-2 @ac-6
   busy(t, 's-a', 'Uno');
   busy(t, 's-b', 'Dos');
   snapshot(t, [proyecto([story('A'), story('B')])]);
-  const env = { PATH: process.env.PATH, HOME: t.home, USERPROFILE: t.home, TYCON_PROFILE: t.profile, CLAUDE_CODE_SESSION_ID: COORD };
+  const env = { PATH: process.env.PATH, HOME: t.home, USERPROFILE: t.home, TYCON_PROFILE: t.profile, CLAUDE_CODE_SESSION_ID: COORD, ...t.env };
   const cli = spawnSync(process.execPath, [COORDINATION, 'status', '--json'], { encoding: 'utf8', env });
   assert.strictEqual(cli.status, 0, cli.stderr);
   const s = JSON.parse(cli.stdout);
@@ -556,4 +560,217 @@ test('T17 FillGate_Registrado @story-8.307 @ac-17: el gancho está en cada lista
   const measured = JSON.parse(fs.readFileSync(report, 'utf8'));
   assert.strictEqual(measured.ran, 2, benchRun.stdout);
   assert.strictEqual(Object.keys(measured.failed || {}).length, 0, benchRun.stdout);
+});
+
+// ── Nadie quieto: una sesión quieta o esperando no se deja sin trabajo liviano ──
+// La conversación de la coordinadora: un pedido de la persona y, si se pasa, un mensaje a `to` en ese turno.
+function transcript(t, to = null) {
+  const f = path.join(t.root, 'coord.jsonl');
+  const rows = [{ type: 'user', message: { role: 'user', content: 'seguí' } }];
+  if (to) rows.push({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: 'tu1', name: 'SendMessage', input: { to, message: 'tomá esto' } }] } });
+  fs.writeFileSync(f, rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
+  return f;
+}
+const listaLiviana = (t) => { const f = path.join(t.root, 'lista.md'); fs.writeFileSync(f, '# Lista\n\n- ~~hecho~~\n- Un defecto chico\n- Otro defecto\n'); return f; };
+const idleRun = (t, extra = {}) => G.run({ event: stopEvent(t, COORD, { transcript_path: extra.transcript }), home: t.home, arnes: t.arnes, env: { TYCON_COORDINATION_LIGHT_LIST: listaLiviana(t) }, now: t.nowMs, readMemory: mem(10), refreshLauncher: () => {}, ...extra.run });
+
+test('NadieQuieto_QuietaConListaSinMensaje_Frena: una quieta hace 20 min, la lista con algo y ningún mensaje en el turno: frena y dice cómo salir', () => {
+  // 🔴 mutación: no mirar a las quietas al cerrar → la coordinadora cierra con Uma quieta y la lista llena
+  const t = toy({ nowMs: Date.now() });
+  session(t, 's-u', 'Uma');
+  const r = idleRun(t, { transcript: transcript(t) });
+  const d = r.stdout ? JSON.parse(r.stdout) : null;
+  assert.strictEqual(d && d.decision, 'block', r.stderr);
+  assert.match(d.reason, /Uma \(quieta hace 20 min\)/);
+  assert.match(d.reason, /«Un defecto chico», «Otro defecto»/);
+  assert.match(d.reason, /keep-idle --reason/);
+  assert.doesNotMatch(d.reason, /hecho/);
+});
+
+test('NadieQuieto_ConMensajeOMotivo_NoFrena: un mensaje a esa sesión en el turno, o el motivo anotado, la liberan; sin lista, no frena', () => {
+  // 🔴 mutación: no leer los mensajes del turno → frena aunque la coordinadora le dio trabajo
+  const t = toy({ nowMs: Date.now() });
+  session(t, 's-u', 'Uma');
+  assert.strictEqual(idleRun(t, { transcript: transcript(t, 'Uma') }).stdout, '', 'con un mensaje a Uma en el turno');
+  // el motivo: corto no vale; con motivo, no frena
+  const C = require('../tools/coordination.js');
+  const base = { home: t.home, arnes: t.arnes, env: { TYCON_COORDINATION_LIGHT_LIST: listaLiviana(t) }, now: t.nowMs, sessionId: COORD };
+  assert.strictEqual(C.keepIdle({ ...base, reason: 'no' }).code, 2);
+  assert.strictEqual(C.keepIdle({ ...base, reason: 'tope de máquina, espero que libere' }).code, 0);
+  assert.strictEqual(idleRun(t, { transcript: transcript(t) }).stdout, '', 'con el motivo vigente');
+  // sin lista ni filas livianas, no hay trabajo que dar
+  const t2 = toy({ nowMs: Date.now() });
+  session(t2, 's-u', 'Uma');
+  assert.strictEqual(G.run({ event: stopEvent(t2, COORD, { transcript_path: transcript(t2) }), home: t2.home, arnes: t2.arnes, env: {}, now: t2.nowMs, readMemory: mem(10), refreshLauncher: () => {} }).stdout, '');
+});
+
+test('NadieQuieto_TurnoNoSeCortaAMitad: el aviso del freno, una tarea de fondo o un recordatorio no empiezan otro turno; otra persona sí', () => {
+  // 🔴 mutación: cortar el turno en cualquier mensaje que no sea un resultado → pierde el mensaje a Ana mandado antes
+  //    del primer bloqueo y vuelve a frenar por ella; contar un subagente → calla a una sesión que nadie avisó
+  const C = require('../tools/coordination.js');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'turno-'));
+  const send = (to, extra = {}) => ({ type: 'assistant', ...extra, message: { role: 'assistant', content: [{ type: 'tool_use', id: `t-${to}`, name: 'SendMessage', input: { to } }] } });
+  const result = { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'x', content: 'ok' }] } };
+  const write = (rows) => { const f = path.join(root, `${Math.random()}.jsonl`); fs.writeFileSync(f, rows.map((r) => JSON.stringify(r)).join('\n')); return f; };
+  const prompt = { type: 'user', message: { role: 'user', content: 'seguí' } };
+  const mitad = [
+    { type: 'user', isMeta: true, message: { role: 'user', content: 'Stop hook feedback: no dejes quieta a ninguna sesión' } },
+    { type: 'user', message: { role: 'user', content: '<task-notification><task-id>x</task-id></task-notification>' } },
+    { type: 'user', message: { role: 'user', content: [{ type: 'text', text: '<system-reminder>algo</system-reminder>' }] } },
+  ];
+  for (const m of mitad) assert.deepStrictEqual([...C.messagedThisTurn(write([prompt, send('Ana'), result, m, send('Beto'), result])).to].sort(), ['Ana', 'Beto'], JSON.stringify(m));
+  assert.deepStrictEqual([...C.messagedThisTurn(write([prompt, send('Ana'), result, { type: 'user', message: { role: 'user', content: 'otra cosa' } }, send('Beto')])).to], ['Beto'], 'un mensaje nuevo de la persona empieza otro turno');
+  assert.deepStrictEqual([...C.messagedThisTurn(write([prompt, send('Zoe', { isSidechain: true }), send('Ana')])).to], ['Ana'], 'lo que manda un subagente no cuenta');
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('NadieQuieto_NuncaTraba: tres bloqueos seguidos y al cuarto deja cerrar; sin poder leer la conversación, no frena', () => {
+  const t = toy({ nowMs: Date.now() });
+  session(t, 's-u', 'Uma');
+  const tr = transcript(t);
+  for (let i = 1; i <= G.MAX_BLOCKS; i++) assert.match(idleRun(t, { transcript: tr }).stdout, new RegExp(`Bloqueo ${i}/${G.MAX_BLOCKS}`));
+  const cuarto = idleRun(t, { transcript: tr });
+  assert.strictEqual(cuarto.stdout, '', 'al cuarto deja cerrar');
+  assert.match(cuarto.stderr, /dejo cerrar/);
+  const t2 = toy({ nowMs: Date.now() });
+  session(t2, 's-u', 'Uma');
+  const r = idleRun(t2, { transcript: path.join(t2.root, 'no-esta.jsonl') });
+  assert.strictEqual(r.stdout, '');
+  assert.match(r.stderr, /nadie quieto: no freno \(conversacion-ilegible\)/);
+});
+
+test('NadieQuieto_RecordatorioAdelante_EmpiezaTurno: un mensaje de la persona con recordatorios adelante empieza el turno; uno con sólo recordatorios, no', () => {
+  // 🔴 mutación: mirar el texto entero, recordatorios incluidos → el «seguí» con un <system-reminder> adelante no corta el
+  //    turno y los mensajes de turnos anteriores cuentan como de éste: la sesión que nadie avisó sale avisada y no frena
+  const C = require('../tools/coordination.js');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'turno-rec-'));
+  const send = (to) => ({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: `t-${to}`, name: 'SendMessage', input: { to } }] } });
+  const result = { type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'x', content: 'ok' }] } };
+  const user = (content) => ({ type: 'user', message: { role: 'user', content } });
+  const write = (rows) => { const f = path.join(root, `${Math.random()}.jsonl`); fs.writeFileSync(f, rows.map((r) => JSON.stringify(r)).join('\n')); return f; };
+  const prompt = user('antes');
+  const dest = (rows) => [...C.messagedThisTurn(write(rows)).to].sort();
+  // el caso del pase: el recordatorio en un bloque y el texto de la persona en otro
+  assert.deepStrictEqual(dest([send('vieja'), user([{ type: 'text', text: '<system-reminder>ctx</system-reminder>' }, { type: 'text', text: 'seguí' }]), send('nueva')]), ['nueva'], 'bloques separados');
+  // el recordatorio y el texto en un mismo bloque
+  assert.deepStrictEqual(dest([send('vieja'), user([{ type: 'text', text: '<system-reminder>ctx\nmás</system-reminder>\nseguí' }]), send('nueva')]), ['nueva'], 'un solo bloque');
+  assert.deepStrictEqual(dest([send('vieja'), user('<system-reminder>ctx</system-reminder>\nseguí'), send('nueva')]), ['nueva'], 'texto suelto');
+  // sólo recordatorios (o un recordatorio y el aviso de una tarea de fondo): mitad de turno, sigue hacia atrás
+  assert.deepStrictEqual(dest([prompt, send('vieja'), result, user([{ type: 'text', text: '<system-reminder>a</system-reminder>' }, { type: 'text', text: '<system-reminder>b</system-reminder>' }]), send('nueva')]), ['nueva', 'vieja'], 'sólo recordatorios');
+  assert.deepStrictEqual(dest([prompt, send('vieja'), result, user([{ type: 'text', text: '<system-reminder>a</system-reminder>' }, { type: 'text', text: '<task-notification>x</task-notification>' }]), send('nueva')]), ['nueva', 'vieja'], 'recordatorio y tarea de fondo');
+  fs.rmSync(root, { recursive: true, force: true });
+  // de punta a punta: Uma recibió un mensaje en el turno anterior, la persona escribió «seguí» con un recordatorio
+  // adelante y en este turno nadie le escribió: frena por ella
+  const t = toy({ nowMs: Date.now() });
+  session(t, 's-u', 'Uma');
+  const tr = path.join(t.root, 'coord-rec.jsonl');
+  fs.writeFileSync(tr, [prompt, send('Uma'), result, user([{ type: 'text', text: '<system-reminder>ctx</system-reminder>' }, { type: 'text', text: 'seguí' }])].map((r) => JSON.stringify(r)).join('\n') + '\n');
+  const r = idleRun(t, { transcript: tr });
+  const d = r.stdout ? JSON.parse(r.stdout) : null;
+  assert.strictEqual(d && d.decision, 'block', r.stderr);
+  assert.match(d.reason, /Uma \(quieta hace 20 min\)/);
+});
+
+// Los bordes del inicio de turno: una conversación [la persona, mensaje a A, resultado, `content`, mensaje a B]. Si
+// `content` empieza el turno, sólo cuenta B; si no, A y B.
+function destinosConMensaje(content) {
+  const C = require('../tools/coordination.js');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'turno-bordes-'));
+  const send = (to) => ({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: `t-${to}`, name: 'SendMessage', input: { to } }] } });
+  const user = (c) => ({ type: 'user', message: { role: 'user', content: c } });
+  const result = user([{ type: 'tool_result', tool_use_id: 'x', content: 'ok' }]);
+  const f = path.join(root, 't.jsonl');
+  fs.writeFileSync(f, [user('antes'), send('A'), result, user(content), send('B')].map((r) => JSON.stringify(r)).join('\n'));
+  const t0 = process.hrtime.bigint();
+  const to = [...C.messagedThisTurn(f).to].sort();
+  const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+  fs.rmSync(root, { recursive: true, force: true });
+  return { to, ms };
+}
+const IMAGEN = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBORw0KGgo=' } };
+const REC = (t) => `<system-reminder>${t}</system-reminder>`;
+
+test('NadieQuieto_BloqueNoTexto_EmpiezaTurno: una imagen o un documento con recordatorios es de la persona; el texto vacío, como antes', () => {
+  // 🔴 mutación: mirar sólo los bloques de texto → una imagen con un recordatorio adelante no corta el turno y A sale avisada
+  assert.deepStrictEqual(destinosConMensaje([IMAGEN, { type: 'text', text: REC('x') }]).to, ['B'], 'imagen y recordatorio');
+  assert.deepStrictEqual(destinosConMensaje([{ type: 'text', text: REC('x') }, { type: 'document', source: { type: 'text', media_type: 'text/plain', data: 'hola' } }]).to, ['B'], 'recordatorio y documento');
+  assert.deepStrictEqual(destinosConMensaje([{ type: 'text', text: '' }, IMAGEN]).to, ['B'], 'texto vacío e imagen');
+  assert.deepStrictEqual(destinosConMensaje([IMAGEN]).to, ['B'], 'imagen sola');
+  // el texto vacío o en blanco empezaba el turno antes de mirar los recordatorios, y lo sigue empezando
+  assert.deepStrictEqual(destinosConMensaje('').to, ['B'], 'texto suelto vacío');
+  assert.deepStrictEqual(destinosConMensaje([{ type: 'text', text: '' }]).to, ['B'], 'bloque de texto vacío');
+  assert.deepStrictEqual(destinosConMensaje('  \n').to, ['B'], 'texto en blanco');
+  // sólo recordatorios, sin nada más: sigue hacia atrás
+  assert.deepStrictEqual(destinosConMensaje([{ type: 'text', text: REC('x') }]).to, ['A', 'B'], 'sólo un recordatorio');
+});
+
+test('NadieQuieto_RecordatoriosSinCierre_Lineal: 40000 aperturas sin cierre se leen rápido, y una apertura sin cierre se come el resto', () => {
+  // 🔴 mutación: sacar los recordatorios con una expresión que vuelve a buscar el cierre desde cada apertura → segundos
+  const r = destinosConMensaje('<system-reminder>'.repeat(40000));
+  assert.deepStrictEqual(r.to, ['A', 'B'], 'sólo aperturas: no hay texto de la persona');
+  assert.ok(r.ms < 500, `40000 aperturas sin cierre tardaron ${Math.round(r.ms)} ms (tope 500)`);
+  const r2 = destinosConMensaje(`seguí${'<system-reminder>'.repeat(40000)}`);
+  assert.deepStrictEqual(r2.to, ['B'], 'el texto antes de las aperturas es de la persona');
+  assert.ok(r2.ms < 500, `con texto adelante tardaron ${Math.round(r2.ms)} ms (tope 500)`);
+  assert.deepStrictEqual(destinosConMensaje('<system-reminder>ctx sin cerrar\nseguí').to, ['A', 'B'], 'la apertura sin cierre se come el resto del bloque');
+  assert.deepStrictEqual(destinosConMensaje([{ type: 'text', text: '<system-reminder>sin cerrar' }, { type: 'text', text: 'seguí' }]).to, ['B'], 'sólo el resto de su bloque');
+});
+
+test('NadieQuieto_RecordatorioAnidado_SeSacaEntero: un recordatorio adentro de otro no deja restos como texto', () => {
+  // 🔴 mutación: cortar en el primer cierre → «c</system-reminder>» queda como texto de la persona y empieza el turno
+  assert.deepStrictEqual(destinosConMensaje('<system-reminder>a<system-reminder>b</system-reminder>c</system-reminder>').to, ['A', 'B'], 'anidado solo');
+  assert.deepStrictEqual(destinosConMensaje('<system-reminder>a<system-reminder>b</system-reminder>c</system-reminder>\nseguí').to, ['B'], 'anidado y texto');
+  assert.deepStrictEqual(destinosConMensaje(`${REC('a')}${REC('b')}`).to, ['A', 'B'], 'dos seguidos');
+});
+
+test('NadieQuieto_EsperaConLaPalabra_NoLaRepite: una espera anotada «espera que entre…» sale una vez, no «espera espera»', () => {
+  // 🔴 mutación: anteponer «espera» a lo anotado → «Wanda (espera espera que entre el pedido …)», la clase de la 8.294 AC 14
+  const t = toy({ nowMs: Date.now() });
+  session(t, 's-w', 'Wanda');
+  const since = new Date(t.nowMs - 15 * 60000).toISOString();
+  fs.mkdirSync(path.join(t.state, 'doing'), { recursive: true });
+  fs.writeFileSync(path.join(t.state, 'doing', 's-w.json'), JSON.stringify({ text: 'vigilar el pedido', at: since, waitingFor: 'espera que entre el pedido 12', waitingSince: since }));
+  const r = idleRun(t, { transcript: transcript(t) });
+  const d = r.stdout ? JSON.parse(r.stdout) : null;
+  assert.strictEqual(d && d.decision, 'block', r.stderr);
+  assert.match(d.reason, /Wanda \(espera que entre el pedido 12 desde las \d\d:\d\d\)/);
+  assert.doesNotMatch(d.reason, /espera espera/);
+});
+
+// 🔴 Falla con: el freno de la coordinadora empuja a abrir lo que nadie va a revisar, o una foto escrita a mano lo afloja.
+test('T12 FillCheck_RevisionLlena_NoFrena @story-8.326 @ac-12', () => {
+  const RLIB = require(path.join(ROOT, 'scripts', 'lib', 'review-load.js'));
+  const llena = () => ({ total: 8, partes: { firmas: 8, terminados: 0, carpetas: 0, pedidos: 0 }, noMedido: { terminados: 0, carpetas: 0 }, tope: { value: 8, origin: 'sin-valor' }, problems: [] });
+  const vacia = () => ({ ...llena(), total: 0, partes: { firmas: 0, terminados: 0, carpetas: 0, pedidos: 0 } });
+  for (const modo of ['warn', 'block']) {
+    const antes = RLIB.MODO_TOPE_DE_REVISION;
+    RLIB.MODO_TOPE_DE_REVISION = modo;
+    try {
+      const t = toy();
+      snapshot(t, [proyecto([story('8.232')])]);
+      const r = C.fillCheck(opts(t, { readMemory: mem(80), reviewLoad: llena }));
+      assert.deepStrictEqual([r.block, r.why], [false, 'revision-llena'], `${modo}: ${JSON.stringify(r)}`);
+    } finally { RLIB.MODO_TOPE_DE_REVISION = antes; }
+  }
+  // una foto escrita a mano con el tope lleno no afloja: fillCheck cuenta de nuevo
+  const t = toy();
+  snapshot(t, [proyecto([story('8.232')])]);
+  RLIB.escribirFoto(require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js')).stateDir(t.home), llena(), t.nowMs);
+  const f = C.fillCheck(opts(t, { readMemory: mem(80), reviewLoad: vacia }));
+  assert.strictEqual(f.block, true, JSON.stringify(f));
+  // y la cuenta se pide sólo cuando iba a frenar
+  let pidio = 0;
+  C.fillCheck(opts(t, { readMemory: mem(10), reviewLoad: () => { pidio += 1; return llena(); } }));
+  assert.strictEqual(pidio, 0, 'con la memoria baja no se cuenta');
+});
+
+// 🔴 Falla con: `keep-free` anota un motivo de lugares libres con la revisión llena, cuando el freno no frenaría.
+test('T12b KeepFree_RevisionLlena_NadaQueJustificar @story-8.326 @ac-12', () => {
+  const llena = () => ({ total: 8, partes: { firmas: 8, terminados: 0, carpetas: 0, pedidos: 0 }, noMedido: { terminados: 0, carpetas: 0 }, tope: { value: 8, origin: 'sin-valor' }, problems: [] });
+  const t = toy();
+  snapshot(t, [proyecto([story('8.232')])]);
+  const r = C.keepFree(opts(t, { readMemory: mem(80), reviewLoad: llena, reason: 'espero que la persona revise lo pendiente antes de abrir' }));
+  assert.strictEqual(r.code, 1, JSON.stringify(r));
+  assert.match(r.message, /revisión/);
+  assert.strictEqual(FS.current(require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js')).stateDir(t.home), t.nowMs).record, null, 'no anotó nada');
 });

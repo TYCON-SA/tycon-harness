@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 // matrix-out-of-bound-message.test.js — un criterio con cota (`@measure`) que corrió fuera de la cota, o sin su medida,
-// no sale verde, y quien frena lo dice con lo medido y la cota: la matriz (`compute`), «Preparar el commit»
+// no sale verde, y quien frena lo dice con lo medido y la cota: la matriz (`compute`), «Preparar el pull request»
 // (`marker.js complete-step prepare-commit`) y el control del commit (`on-pre-commit.js`). La deuda de una ejecución no
 // lo exime, y el pedido de firma por terminal muestra lo medido.
 //
@@ -95,7 +95,7 @@ function entorno({ decl = [] } = {}) {
   return { home, repo, story, git, correr, leer, escribir, arrancar, humos, pruebasVerdes, gatesLog };
 }
 
-// Lleva la ejecución hasta «Preparar el commit», con «Probar en vivo» hecho: el freno que queda es el de la matriz.
+// Lleva la ejecución hasta «Preparar el pull request», con «Probar en vivo» hecho: el freno que queda es el de la matriz.
 const HECHOS = ['start', 'validate-story', 'plan', 'approve-plan', 'implement', 'run-tests', 'reviewers', 'findings', 'live-check'];
 function hastaPrepararElCommit(E, sid, extra = {}) {
   const m = E.leer(sid);
@@ -123,7 +123,7 @@ test('MatrixRed_NamesOutOfBoundAndUnmeasured @story-8.260 @ac-24', () => {
   assert.deepStrictEqual(r.fueraDeCota, [1], JSON.stringify(r.perAc[1]));
   assert.deepStrictEqual(r.sinMedicion, [2], JSON.stringify(r.perAc[2]));
   assert.ok(r.pendientes.includes(1) && r.pendientes.includes(2) && !r.notRun.includes(1) && !r.notRun.includes(2), JSON.stringify(r.pendientes));
-  // «Preparar el commit» frena y nombra cada criterio con lo medido, la cota y las tres salidas
+  // «Preparar el pull request» frena y nombra cada criterio con lo medido, la cota y las tres salidas
   hastaPrepararElCommit(E, 's-cota');
   const p = E.correr('marker.js', ['complete-step', 'prepare-commit', '--out-of-order'], 's-cota');
   assert.match(p.stderr, MATRIZ_ROJA, p.stderr);

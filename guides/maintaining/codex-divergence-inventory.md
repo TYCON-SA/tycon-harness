@@ -300,6 +300,10 @@ El hook reconoce Codex por el `turn_id` del payload (mismo criterio que `on-skil
 se consulta producción desde Codex». Caso del banco: `codex-frena-tambien-la-puerta`
 (`40-prod-access-guard.json`), y la divergencia está declarada en `adapters/codex/hooks.json`.
 
+**Un freno que falla, en Codex, deja pasar.** Codex llama al freno directo (`node …/prod-access-guard.js`), sin el
+lanzador ni su reloj de 7 s, y no tiene `onFailure`. Si el freno se cae o se cuelga, el comando corre; en Claude Code el
+mismo fallo frena. Dicho en `guides/production-with-permission.md`, «Los límites, dichos antes».
+
 **El firewall de la puerta** (`--open-firewall` / `--close-firewall`): en Codex tampoco se abre una regla.
 Además del cuadro, le falta un evento de fin de sesión (sus hooks son PreToolUse, PostToolUse,
 SessionStart, Stop y UserPromptSubmit, y `Stop` es fin de turno, no de sesión), así que nadie cerraría la
@@ -395,7 +399,7 @@ reporte. Casos: `skills/tycon-pipeline/scripts/tests/codex-reviewers.test.js`.
 evento de cierre (las dos herramientas lo mandan), los `.md` escritos del registro de ediciones y del marcador, y el
 modelo del implementador del marcador (`start --session-model`); la conversación sólo suma. Sin nada de eso: «no
 medido», nunca un veredicto inventado. Al cerrar el turno, si el mensaje afirma un cierre y el marcador tiene pasos
-abiertos, sale una línea que los nombra (aviso; el freno sigue siendo el de «Preparar el commit»). Casos:
+abiertos, sale una línea que los nombra (aviso; el freno sigue siendo el de «Preparar el pull request»). Casos:
 `skills/tycon-pipeline/scripts/tests/closing-evidence-codex.test.js`.
 
 **Lo que no cubre, dicho**: una historia escrita por la terminal no va al registro de ediciones; pasa sólo si el mensaje
@@ -420,7 +424,7 @@ Codex y Ollama.
 **Lo que Codex NO cubre con esos modelos, dicho y no prometido**: los revisores que usan servidores MCP (el índice de
 código, la memoria) trabajan sin ellos. Caso: `scripts/tests/ollama-tools-probe.test.js`.
 
-## La ventana del pull request — ③ asimetría DECLARADA (2026-11-10)
+## La ventana del pull request — ③ asimetría DECLARADA (2026-11-10), medida el 2026-11-21
 
 **Claude Code**: la persona aprueba el pull request, no el commit (`lib/save-brake.js`). El commit y el empuje de la
 rama de trabajo no preguntan. El pull request y el empuje a una rama compartida frenan sin «Preparar el pull request» o
@@ -428,10 +432,30 @@ con el código cambiado desde su foto, y si no, abren la ventana de permiso (`pe
 evidencia.
 
 **Codex**: registra el mismo `on-pre-commit.js` (`adapters/codex/hooks.json`), y los frenos (salida 2) valen igual: un
-pull request sin preparar o con el código cambiado no sale. La pregunta no: Codex no tiene reglas `ask` equivalentes (ver
-«Freno de producción»), y el banco de controles no puede medir qué hace Codex con esa salida, porque sólo mira la del
-gancho. Es el mismo hueco que ya tenía el «¿guardo?» del commit.
+pull request sin preparar o con el código cambiado no sale. La pregunta no tiene ventana: medido el 2026-11-21 con
+codex-cli 0.162.1, Codex no acepta `ask`. En `codex exec` lo marca «PreToolUse Failed», y en la pantalla interactiva
+«PreToolUse hook returned unsupported permissionDecision:ask». En los dos casos corre el comando igual. `deny` sí frena
+y muestra su motivo.
 
-**Lo que Codex NO cubre, dicho y no prometido**: que una persona diga que sí antes de que el pull request preparado
-salga. Casos: T18 de `skills/tycon-pipeline/scripts/tests/save-brake.test.js` (el gancho registrado en Codex frena un
-pull request sin preparar). Qué hace Codex con `ask` queda por medir en una sesión de Codex.
+Por eso toda pregunta de un gancho sale por `scripts/lib/hook-ask.js` (`salidaDePregunta`): en Claude Code es `ask`, y
+en Codex es `deny` con el texto de la pregunta y cómo aprobarlo a mano (que la persona corra el comando en su
+terminal). La usan el freno de guardar y la ventana del dueño (`owner-window.js gate`, que además ya negaba las firmas
+en Codex).
+
+**Lo que Codex NO cubre, dicho y no prometido**: que una persona diga que sí desde la sesión antes de que el pull
+request preparado salga. En Codex no sale: lo saca la persona desde su terminal. Casos: T18 de
+`skills/tycon-pipeline/scripts/tests/save-brake.test.js` y `Pedido_EnCodex_NiegaConLaPreguntaYComoAprobarlo` de
+`skills/tycon-pipeline/scripts/tests/hook-ask-codex.test.js`.
+
+## El tope por defecto de un gancho — tomado de la documentación (2026-11-21)
+
+Cuánto espera cada herramienta a un gancho sin `timeout` en su registro, y qué pasa al vencer. Tomado de la
+documentación de cada una el 2026-11-21, no medido con una corrida: la medición en vivo va en este mismo inventario cuando
+se corra. Lo usa la prueba de que el reloj propio de un freno vence antes (`hook-failure-critical.test.js`).
+
+| Herramienta | Tope por defecto | Al vencer, antes de una herramienta | Fuente |
+|---|---|---|---|
+| Claude Code | tope_s: 600 | la herramienta corre igual, salvo con `onFailure: block` | https://code.claude.com/docs/en/hooks («Defaults: 600 for `command`…») |
+| Codex | tope_s: 600 | NO MEDIDO (no documentado) | https://learn.chatgpt.com/docs/hooks («Codex uses `600` seconds for most hooks») |
+
+Codex acepta un `timeout` por gancho, en segundos.

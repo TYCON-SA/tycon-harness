@@ -119,7 +119,7 @@ test('MainAdvances_BranchNotUpdated_NeitherControlBlocks (T2)', () => {
   assert.deepEqual(u.sobra, [], JSON.stringify(u));
 });
 
-test('MainAdvances_AgainAfterMerge_NeitherControlBlocks (T3)', () => {
+test('MainAdvances_AgainAfterMerge_NeitherControlBlocks (T3) @story-8.267 @ac-14', () => {
   // la rama trajo main, y main volvió a avanzar sobre los mismos archivos sin que la rama lo traiga otra vez
   const L = laboratorio();
   L.avanzarMain(MAIN_92_DONE);
@@ -147,7 +147,7 @@ test('MainAdvances_RunTouchesOtherStory_StillCounts (T4)', () => {
   }
 });
 
-test('MainAdvances_BroughtThenMainRevertsOrDeletes_NotCounted (T6)', () => {
+test('MainAdvances_BroughtThenMainRevertsOrDeletes_NotCounted (T6) @story-8.267 @ac-14', () => {
   // la rama trajo algo de main, y después main lo revierte, lo borra o lo renombra: lo de la rama sigue siendo de main
   const NUEVO = 'specs/nuevo.md';
   const casos = [
@@ -166,7 +166,7 @@ test('MainAdvances_BroughtThenMainRevertsOrDeletes_NotCounted (T6)', () => {
   }
 });
 
-test('MainAdvances_RunRevertsToOldMainVersion_StillCounts (T7)', () => {
+test('MainAdvances_RunRevertsToOldMainVersion_StillCounts (T7) @story-8.267 @ac-14', () => {
   // un commit de la rama anterior al arranque cambió un archivo; la corrida lo devuelve por la terminal a la versión vieja
   // de main, la rama trae main (otro archivo) y main después cambia ese archivo: main nunca lo trajo, cuenta
   const L = laboratorio();
@@ -208,7 +208,7 @@ test('MainAdvances_BranchBackToOlderMain_StillCounts (T9)', () => {
   assert.deepEqual(u.sobra, ['src/b.js'], JSON.stringify(u));
 });
 
-test('MainAdvances_SprintRowBroughtThenMainMoves_NotCounted (T5)', () => {
+test('MainAdvances_SprintRowBroughtThenMainMoves_NotCounted (T5) @story-8.267 @ac-14', () => {
   // el sprint-status que trajo el merge, sin el renglón propio registrado: main vuelve a sumar un renglón
   const L = laboratorio();
   L.avanzarMain(MAIN_92_DONE);

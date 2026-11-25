@@ -243,6 +243,7 @@ function frenosDeArchivo(t) {
   const evidencia = path.join(repo, '.advisors', 'dod-runtime', '9.99-20261027.md');
   return [
     ['dod_runtime_exempt', historia, (casa, s) => paso(fw().handle(ev(s, historia, viejo.replace('status: in-progress', 'status: in-progress\ndod_runtime_exempt: true')), { casa }))],
+    ['advisors_exempt', historia, (casa, s) => paso(fw().handle(ev(s, historia, viejo.replace('status: in-progress', 'status: in-progress\nadvisors_exempt: true')), { casa }))],
     ['cambiar-el-estado', historia, (casa, s) => paso(fw().handle(ev(s, historia, viejo.replace('status: in-progress', 'status: ready-for-dev')), { casa }))],
     ['ALLOW_DOD_EVIDENCE_WRITE', evidencia, (casa, s) => paso(eg().handle(ev(s, evidencia, '# evidencia\n'), { casa }))],
     ['story-skill-bypass', nueva, (casa, s) => {
@@ -306,7 +307,7 @@ test('Notices_GiveBothForms_SaidForWhom (T2) @story-8.165 @ac-2', (t) => {
     assert.match(texto, /tu terminal/i, `${firma}: dice para quién es la de la terminal`);
     vistas.add(firma);
   }
-  assert.deepStrictEqual([...vistas].sort(), ['ALLOW_DOD_EVIDENCE_WRITE', 'cambiar-el-estado', 'dod_runtime_exempt', 'red-control-test-edit', 'story-skill-bypass']);
+  assert.deepStrictEqual([...vistas].sort(), ['ALLOW_DOD_EVIDENCE_WRITE', 'advisors_exempt', 'cambiar-el-estado', 'dod_runtime_exempt', 'red-control-test-edit', 'story-skill-bypass']);
 });
 
 // ── T3 — ningún comando de firma escrito a mano ────────────────────────────────────────────────────────────────────
@@ -411,6 +412,15 @@ test('Bench_ClassifiesBlockingNotices (T8) @story-8.165 @ac-6', () => {
   assert.strictEqual(clasificarCartel('Frenado.\nAlternativa: escribilo con la herramienta de edición.'), 'llano');
   assert.strictEqual(clasificarCartel('No se puede.'), 'callejon');
   assert.strictEqual(clasificarCartel(''), 'callejon');
+  // un guion nombrado en prosa, sin `node` ni ruta, no es un comando que se pueda correr
+  assert.strictEqual(clasificarCartel('Frenado: no salió pipeline.js de su paso.'), 'callejon');
+  assert.strictEqual(clasificarCartel('Frenado: lo dice marker.js cuando falta la firma.'), 'callejon');
+  assert.strictEqual(clasificarCartel('Frenado. Corré bash scripts/fix.sh apply'), 'comando');
+  assert.strictEqual(clasificarCartel('Frenado.\n  scripts/tools/prepare-machine.js check'), 'comando');
+  // pase adversarial: la ruta de Windows entre comillas, con espacios y «\»
+  assert.strictEqual(clasificarCartel('Frenado.\n  node "C:\\Users\\a b\\.tycon\\harness\\scripts\\marker.js" sign-file X'), 'comando');
+  assert.strictEqual(clasificarCartel('Frenado.\n  "C:\\Program Files\\x\\fix.js" apply'), 'comando');
+  assert.strictEqual(clasificarCartel('Frenado: el guion "pipeline.js" no salió.'), 'callejon');
 });
 
 test('Bench_DeadEnd_NamedNotRed (T9) @story-8.165 @ac-6 @ac-7', (t) => {

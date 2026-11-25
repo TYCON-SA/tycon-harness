@@ -2020,3 +2020,32 @@ test('M6 Nombres_CategoriasAparteConNombrePropio', () => {
     assert.strictEqual(NOMBRES.nombreDe('ejecuciones', { regla, categoria }), nombre);
   }
 });
+
+test('T9 2.83-Huella_IgnoraSesionesYCompleta @story-2.83 @ac-10 @ac-12', () => {
+  const crypto = require('crypto');
+  const huella = (c) => crypto.createHash('sha1').update(JSON.stringify(c)).digest('hex').slice(0, 8);
+  const base = { ejecucion: 'run-acme-1', base: 'abc1234', dia: '2026-11-20', maquina: 'mac-a', story: '2.83' };
+  let f = cycle.nuevaFicha({ fuente: 'ejecuciones', causa: 'RR-ESCAPE:TYCON_NO_DEEP_REVIEW', nombre: 'Se saltó el pase', hoy: '2026-11-20' });
+  // la regla de esa noche no aceptó el nombre: el caso queda con `sesiones: null`
+  f = cycle.conCasos(f, [{ ...base, sesiones: null }]);
+  assert.strictEqual(f.casos_total, 1);
+  // la regla cambió y el mismo volcado vuelve con nombres: no cuenta de nuevo, el guardado los recibe
+  f = cycle.conCasos(f, [{ ...base, sesiones: 'Carrizo-4' }]);
+  assert.strictEqual(f.casos_total, 1, 'la misma ejecución no se cuenta dos veces');
+  assert.strictEqual(f.casos_vistos.length, 1, 'no suma una huella');
+  assert.strictEqual(f.casos[0].sesiones, 'Carrizo-4', 'el guardado recibe los nombres');
+  // uno que ya tiene nombres y vuelve con otros: no se pisa ni se cuenta
+  f = cycle.conCasos(f, [{ ...base, sesiones: 'Ponzio-5' }]);
+  assert.strictEqual(f.casos_total, 1);
+  assert.strictEqual(f.casos[0].sesiones, 'Carrizo-4');
+  // un caso sin la clave da la huella de siempre (sha1 del caso)
+  const sinClave = { ...base, ejecucion: 'run-acme-2' };
+  const g = cycle.conCasos(cycle.nuevaFicha({ fuente: 'ejecuciones', causa: 'X', nombre: 'x', hoy: '2026-11-20' }), [sinClave]);
+  assert.deepStrictEqual(g.casos_vistos, [huella(sinClave)]);
+  // un caso guardado sin la clave también recibe los nombres
+  const h = cycle.conCasos(g, [{ ...sinClave, sesiones: 'Carrizo-4+Ponzio-5' }]);
+  assert.strictEqual(h.casos_total, 1);
+  assert.strictEqual(h.casos[0].sesiones, 'Carrizo-4+Ponzio-5');
+  assert.deepStrictEqual(cycle.problemasDeForma(f), []);
+  assert.deepStrictEqual(cycle.problemasDeForma(h), []);
+});

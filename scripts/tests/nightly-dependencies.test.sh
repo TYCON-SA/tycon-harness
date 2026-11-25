@@ -26,7 +26,10 @@ cat > "$TMP/doble.sh" <<'DOBLE'
 # 🔴 El nocturno audita un árbol temporal parado en origin/main, así que la carpeta NO se llama
 # como el repo: el fixture se elige por un archivo versionado, que sí viaja al árbol.
 F="$FIX/$(cat "$PWD/SOY" 2>/dev/null || basename "$PWD").json"
+# las librerías copiadas se auditan en una carpeta temporal (copias-…): su resultado es copias.json
+case "$(basename "$PWD")" in copias-*) F="$FIX/copias.json" ;; esac
 case "${TYCON_DEP_REAL}:$1" in
+  npm:install)    : > package-lock.json; exit 0 ;;
   npm:audit)      [ -f "$F" ] && cat "$F"; exit 0 ;;
   dotnet:restore) exit 0 ;;
   dotnet:list)    [ -f "$F" ] && cat "$F"; exit 0 ;;
@@ -375,6 +378,32 @@ node "$NOC" clone-list --config "$TMP/c27b.json" > "$TMP/cl.txt" 2> "$TMP/cl.err
   && [ "$(grep -c 'forma' "$TMP/cl.err")" -eq 7 ] && ! grep -q '\.\./fuera\|/abs\|ado/Z\|-c/V\|\.git\|%2' "$TMP/cl.err"; } \
   && ok "\`clones\` saltea las entradas con \`ruta\` o \`ado\` fuera de forma (avisa por número) y lista las sanas" \
   || no "27b: clonaría una entrada fuera de forma — rc=$RC · $(tr '\n' ' ' < "$TMP/cl.txt") · $(tr '\n' ' ' < "$TMP/cl.err" | head -c 300)"
+
+# ── 27c. con --with-platform, la lista dice de qué plataforma es cada repo ─────────────────────
+# El pipeline de Azure clona de Azure; un repo de GitHub (el arnés, con su librería copiada) se clona de GitHub. Las dos
+# entradas dan `<dueño>/<repo>` y no se distinguen por la forma: la tercera columna lo dice. Sin la opción, dos columnas,
+# como lee el clonador de GitHub.
+configsub "$TMP/c27c.json" "$RAIZ_A, {\"producto\":\"Arnés\",\"ruta\":\"arnes\",\"github\":\"duenio/arnes\",\"tipo\":\"vendored\"}"
+node "$NOC" clone-list --config "$TMP/c27c.json" > "$TMP/cl.txt" 2>&1
+node "$NOC" clone-list --config "$TMP/c27c.json" --with-platform > "$TMP/clp.txt" 2>&1; RC=$?
+{ [ "$RC" -eq 0 ] && grep -q "^A	ado/A$" "$TMP/cl.txt" && grep -q "^arnes	duenio/arnes$" "$TMP/cl.txt" \
+  && grep -q "^A	ado/A	ado$" "$TMP/clp.txt" && grep -q "^arnes	duenio/arnes	github$" "$TMP/clp.txt" && [ "$(grep -c . "$TMP/clp.txt")" -eq 2 ]; } \
+  && ok "\`clones --with-platform\` suma la plataforma de cada repo (ado o github); sin la opción, las dos columnas de siempre" \
+  || no "27c: la lista no dice la plataforma — rc=$RC · $(tr '\n' ' ' < "$TMP/clp.txt") · sin opción: $(tr '\n' ' ' < "$TMP/cl.txt")"
+
+# ── 27d. un repo con librerías copiadas: la noche dice cuáles midió, con su versión ────────────
+# El arnés trae `ws` copiada (vendor/ws/VERSION.json): la noche la audita por su versión exacta y lo deja escrito, así
+# se ve que la miró aunque no tenga avisos.
+rm -rf "$TMP/out" "$TMP/pend"; mundo V
+( cd "$TMP/mundo/V" && mkdir -p herramienta/vendor/ws && echo '{"name":"ws","version":"8.22.0"}' > herramienta/vendor/ws/VERSION.json \
+  && git add -A && git commit -qm "la copia de ws" && git update-ref refs/remotes/origin/main HEAD ) >/dev/null 2>&1
+echo "$LIMPIO" > "$TMP/fix/copias.json"
+configsub "$TMP/c27d.json" '{"producto":"V","ruta":"V","github":"duenio/V","tipo":"vendored","activo":true}'
+noche "$TMP/c27d.json" 2026-09-01 >/dev/null
+d=$(node -e "const r=require('$TMP/out/dependencias-2026-09-01.json').repos[0];console.log(r.medido+':'+JSON.stringify(r.copias||null))")
+[ "$d" = 'true:["ws@8.22.0"]' ] \
+  && ok "la noche deja escrito qué librerías copiadas midió, con su versión (ws@8.22.0)" \
+  || no "27d: la noche no dice qué copias midió — repo=$d · $(tail -3 "$TMP/o.txt" | tr '\n' ' ')"
 
 # ═══════════════════════════════════════════════════════════════════════════════════════════════
 # Que «resuelto» signifique resuelto

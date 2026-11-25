@@ -35,10 +35,12 @@ El script además:
   `~/.claude/.tycon-pipeline/advisor-context/<sid>-iter<N>.md`. Es el **INPUT PRIMARIO**
   de cada advisor — pasalo en el prompt en vez de hacer que cada subagente re-lea todo.
 - **`frozen`**: lo que se revisa, congelado (historia 8.161). Al lanzar la vuelta, `advisors` y `smart-reloop` sellan el
-  repo de la historia y el del código y arman una copia de sólo lectura de cada uno en la carpeta de estado del
+  repo de la historia, el del código y cada repo hermano declarado en el que la historia declara archivos (uno declarado
+  y sin tocar no se sella ni se copia; si la historia no declara ningún archivo, todos), y arman una copia de sólo
+  lectura de cada uno en la carpeta de estado del
   pipeline: `[{ repo, tree, copy }]`. El `context_file` nombra cada copia y su sello: **los revisores leen la copia, no
   la carpeta viva**. Si no se puede sellar o copiar, la vuelta no se lanza (sale 2 con el motivo). La foto de la vuelta
-  (`snapshot-iter`) guarda ese sello, y «Preparar el commit» compara lo que se guarda contra él.
+  (`snapshot-iter`) guarda ese sello, y «Preparar el pull request» compara lo que se guarda contra él.
   Los que necesitan la story completa (`story_path_para` de la salida: el spec-first del núcleo
   y los revisores de paquetes con `needsStory`) reciben **además** `story_path`.
 - **`context_file_overrides`** (2026-07-28): mapa `{advisor: path}`. **Si un advisor figura
@@ -365,7 +367,18 @@ enumeres lo que revisaste y salió bien. El ÚLTIMO renglón es SIEMPRE el vered
 ni negrita adelante, con la regla de cada hallazgo UNA VEZ POR HALLAZGO (dos del mismo tipo, dos veces):
 Veredicto: limpio
 Veredicto: hallazgos (SEC-C1, SEC-C1, SEC-W2) · bloquea: sí
+Si el prompt trae lo que reportaste en la vuelta anterior, sumá al renglón los críticos de esa vuelta que confirmás
+arreglados, una vez por hallazgo, aunque hoy reportes otro con el mismo código:
+Veredicto: hallazgos (SEC-C1) · bloquea: sí · resueltos (SEC-C1, SEC-C3)
+Veredicto: limpio · resueltos (SEC-C1)
 ```
+
+**En la vuelta 2 en adelante, el prompt de cada revisor que vuelve trae su veredicto de la vuelta anterior y el detalle
+de esos críticos** (archivo y qué era), del archivo donde el orquestador dejó lo que devolvió. Sin eso no puede
+confirmar nada. La parte «resueltos (…)» la lee el arnés como comprobación del arreglo, igual que una cuenta que baja:
+sale del revisor, nunca del agente. Sin ella, un hallazgo nuevo con el mismo código deja el arreglo de la vuelta
+anterior «sin comprobar», y eso cuesta otra vuelta o la exención del dueño. El arnés cuenta, por revisor, hasta lo que
+ese mismo revisor reportó en su reporte anterior: no confirma lo que no reportó, ni más de lo que reportó.
 
 **El renglón de veredicto lo lee el arnés** (`lib/reported-criticals.js`): al terminar cada revisor, el gancho del fin
 del subagente (`on-advisor-done.js`) lee sus palabras de su propia transcripción y anota cada regla crítica con cuántas
@@ -542,7 +555,12 @@ Pasar a «Hallazgos» (`step-09-findings.md`) para consolidar. Si después de «
 
 Es la vuelta N de este mismo paso. `pipeline.js next` la pide («Revisores, vuelta N») sólo cuando hay ediciones de código posteriores al último cierre de los revisores con «Hallazgos» ya cerrado, y nombra esos archivos («Falta revisar lo cambiado después de los revisores: …»). Cada vuelta cierra igual: `marker.js run-check advisors -- pipeline.js check-count …` y `marker.js complete-step reviewers` (el marcador cuenta las vueltas).
 
-Un `.js`, `.cjs` o `.mjs` que quedó igual a lo revisado, salvo el lugar de sus comentarios, no pide otra vuelta (lo decide `lib/comment-only.js` contra el sello de la última vuelta cerrada); un texto de comentario cambiado, una directiva movida o cualquier duda la piden.
+Lo que cambió adentro de un archivo de código (`.js`, `.ts`, `.tsx`, `.cs`) lo decide `lib/change-kind.js` contra el sello de la última vuelta cerrada, con la regla de `lib/review-change-policy.js`:
+- **sólo comentarios o espacios** no pide otra vuelta; una directiva (`eslint-disable`, `@ts-ignore`) que cambia o se mueve, sí;
+- **sólo textos** (una cadena, una plantilla, el texto de JSX) pide la **vuelta chica**: `smart-reloop` devuelve sólo el revisor de seguridad (`mode: "small-round"`), pasa el tope sin vuelta extra ni firma y no pide la nota de repensar. Una cadena puede ser una consulta o una ruta: alguien la mira;
+- **código**, o cualquier duda, pide la vuelta de siempre; pasado el tope, la vuelta extra con su firma.
+
+Que los textos lleven la vuelta chica, o ninguna, lo decide el dueño: es una línea de `lib/review-change-policy.js`.
 
 Una prueba o un texto no piden otra vuelta: lo decide `lib/reloop-code.js`. Una prueba es lo que `isTestPath` (`lib/atdd-order.js`) reconoce en la ruta desde la raíz de su repo (la carpeta con `.git` más cercana): `*.test.ts`, `*.spec.ts`, `test_*.py`, `*Tests.cs`, el código dentro de una carpeta de pruebas. Un texto es lo que no es código (un `.md`, un `.json`). Un archivo sin raíz de repo cuenta como código: ante la duda, se revisa. Con un arreglo de código y uno de prueba, la vuelta mira el de código. El re-loop reducido (`smart-reloop`) usa la misma regla: un delta de sólo pruebas no repite revisores.
 
@@ -550,7 +568,7 @@ La decisión queda escrita en el marcador (`otraVuelta`: la vuelta, los archivos
 
 **Objetivo**: cerrar el loop posterior a «Hallazgos» — si la decisión del usuario (o el auto-flow)
 resultó en **fixes de código aplicados**, el diff que los advisors auditaron ya no es el
-diff actual. NO se avanza a «Probar en vivo» / «Preparar el commit» con auditoría vieja.
+diff actual. NO se avanza a «Probar en vivo» / «Preparar el pull request» con auditoría vieja.
 
 ### Decisión (automática, sin preguntar)
 
@@ -582,10 +600,15 @@ tope, `smart-reloop` no devuelve el set y dice qué quedó abierto:
 - **un crítico de seguridad o de datos** (reglas SEC, TENANT, AUTH, NEXTSEC, SIGNALR-C, MIGRATION, DRIZZLE, y las que
   sume la organización; también si lo confirmó el pase adversarial): lo decide una persona. Mostrale el resumen y
   preguntale: una vuelta más (`smart-reloop … --extra-round --approved-by "<la persona>"`, que la persona aprueba en
-  la ventana de permiso, o con `--terminal`; la cita ya no la autoriza), o eximirlo (`marker.js waive-critical`).
+  la ventana de permiso, o con `--terminal`; la cita ya no la autoriza), o eximirlo (`marker.js waive-critical`). Si
+  el perfil del equipo lista la vuelta extra como trámite (`approvals.delegated_signing`), la da el arnés solo, sin
+  ventana, y el aviso del tope lo dice: no la firma una persona ni hace falta el dueño; la corre la propia sesión. El
+  cierre de «Hallazgos» lo dice igual. Eximir el crítico sigue siendo de una persona.
   Sin eso, `complete-step prepare-commit` no cierra.
 - **lo demás** queda como deuda visible y el recorrido sigue sin otra vuelta: en `findings.json` con
   `"disposition": "deferred"` y `"deuda": "tope"` (`write-findings`), después `write-followups`.
+- **nada**: con `findings.json` leído y nada abierto, no frena. Sale 0, sin revisores (`"mode": "cap-nothing-open"`),
+  y dice que sigas con «Probar en vivo». Sin `findings.json`, o sin poder leerlo, no es «nada»: frena como antes.
 
 **El validador de stories en el re-loop**: `smart-reloop` lo saca
 del set cuando ya devolvió **dos veredictos limpios seguidos** después de implementar; lo dice en
@@ -661,9 +684,9 @@ hazard en varios sitios), aplicá TODOS los fixes de la clase en ESTA iteración
 fixees el primer sitio y re-loopees, porque el advisor re-descubre el próximo sitio en la iteración
 siguiente (whack-a-mole). Ver SKILL.md §D.i.2.
 
-### Relación con la pre-condición de «Preparar el commit» (regla D.i)
+### Relación con la pre-condición de «Preparar el pull request» (regla D.i)
 
 La misma lógica GOTO vive como **pre-condición de último recurso en `step-11-prepare-commit.md`**
 (`diff_at_last_step_06 != diff_now` → STOP + volver a Revisores con iteration N+1). Esta sección es la
-referencia del flujo; la pre-condición de «Preparar el commit» atrapa el caso en que esta vuelta se haya
-salteado por inferencia: sin ella, «Preparar el commit» arranca sin re-auditar los fixes hechos después de los revisores.
+referencia del flujo; la pre-condición de «Preparar el pull request» atrapa el caso en que esta vuelta se haya
+salteado por inferencia: sin ella, «Preparar el pull request» arranca sin re-auditar los fixes hechos después de los revisores.
