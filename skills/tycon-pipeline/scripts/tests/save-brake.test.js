@@ -1920,3 +1920,195 @@ test('SaveBrake_Chdir_Sigue_YFallaDeGitVaAFallas @story-8.282 @ac-15 @ac-16', (t
   assert.ok(quieto.cs.some((c) => c.opaco));
   assert.deepStrictEqual(quieto.dudas, []);
 });
+
+// ── el borrador del pedido antes de «Preparar el pull request» ──────────────────────────────────────────────────────
+// Un borrador no se puede mergear: antes de «Preparar» pregunta en la ventana, con su forma y su repo, en vez de frenar.
+// Pasarlo a listo es un pedido que guarda: antes de «Preparar» frena, y después se juzga con la foto. Lo que distingue
+// un borrador o un «listo» lo declara cada conector (`draftOptions`, `readyCommands`), y la lectura es estricta: al
+// crear, sólo es borrador lo claro; al marcar listo, cualquier duda cuenta como listo.
+
+// los borradores claros de cada conector que los declara
+const BORRADORES = [
+  ['gh pr create --draft --fill', 'gh pr create'], ['gh pr create -d --fill', 'gh pr create'], ['gh pr create --draft=true --fill', 'gh pr create'],
+  ['gh pr new --draft --fill', 'gh pr new'], ['gh pr create --title x --draft', 'gh pr create'],
+  ['az repos pr create --draft --title x', 'az repos pr create'], ['az repos pr create --draft true --title x', 'az repos pr create'],
+  ['az repos pr create --draft=True --title x', 'az repos pr create'], ['az repos pr create --dr --title x', 'az repos pr create'],
+  ['az repos pr create --title x --draft YES', 'az repos pr create'],
+];
+// los comandos que pasan un borrador a listo, o pueden hacerlo
+const LISTOS = [
+  ['gh pr ready 12', 'gh pr ready'], ['gh pr ready', 'gh pr ready'], ['gh pr ready --undo=false 12', 'gh pr ready'],
+  ['az repos pr update --id 12 --draft false', 'az repos pr update'], ['az repos pr update --id 12 --draft=False', 'az repos pr update'],
+  ['az repos pr update --id 12 --draft no', 'az repos pr update'], ['az repos pr update --id 12 --dr 0', 'az repos pr update'],
+  ['az repos pr update --id 12 --draft "$X"', 'az repos pr update'], ['az repos pr update --id 12 --draft quizas', 'az repos pr update'],
+  // al marcar listo cuenta cualquier aparición que pueda serlo, aunque otra la pise
+  ['az repos pr update --id 12 --draft false --draft true', 'az repos pr update'], ['gh pr ready --undo=false --undo 12', 'gh pr ready'],
+  // una palabra que no se ve entera (un archivo de argumentos, una sustitución) puede traer la opción que lo publica
+  ['az repos pr update --id 12 @o.txt', 'az repos pr update'], ["gh pr ready --undo -R $(printf 'x --undo=false') 12", 'gh pr ready'],
+  // completar el pedido es mergearlo: el conector declara el valor que lo hace, y un valor que no se ve cuenta
+  ['az repos pr update --id 12 --status completed', 'az repos pr update'], ['az repos pr update --id 12 --status=Completed', 'az repos pr update'],
+  ['az repos pr update --id 12 --stat completed', 'az repos pr update'], ['az repos pr update --id 12 --status "$S"', 'az repos pr update'],
+];
+
+// 🔴 Falla con: un borrador que frena antes de «Preparar» (el equipo no ve el código y la CI no corre), una pregunta que
+// no nombra la forma o el repo, o un borrador que en una pestaña sin permisos frena.
+test('SaveBrake_DraftBeforePrepare_Asks (T1) @story-8.332 @ac-1', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  abrir(h, corrida(a));
+  for (const [cmd, forma] of BORRADORES) {
+    assert.ok(brake().comandosQueGuardan(cmd, a, h).some((c) => c.tipo === 'pr' && c.borrador === true), `«${cmd}» se lee como borrador`);
+    const d = decide(h, cmd, a);
+    assert.ok(d && d.pregunta && !d.texto, `«${cmd}» pregunta: ${JSON.stringify(d)}`);
+    assert.match(d.pregunta, ABRO, cmd);
+    assert.ok(d.pregunta.includes(`«${forma}»`), `«${cmd}» nombra la forma: ${d.pregunta}`);
+    assert.ok(d.pregunta.includes(`(${path.basename(a)})`), `«${cmd}» nombra el repo: ${d.pregunta}`);
+  }
+  const r = gancho(h, 'gh pr create --draft --fill', { cwd: a, modo: 'default' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stdout, VENTANA, 'el gancho abre la ventana');
+  // en una pestaña que no pide permisos, guarda y lo dice (el límite de la ventana)
+  const b = gancho(h, 'gh pr create --draft --fill', { cwd: a, modo: 'bypassPermissions' });
+  assert.strictEqual(b.status, 0, b.stderr);
+  assert.match(b.stderr, /no pide permisos/);
+});
+
+// 🔴 Falla con: un pedido que no es un borrador claro y sale antes de «Preparar» con sólo la pregunta (en una pestaña
+// sin permisos saldría sin nadie que lo mire).
+test('SaveBrake_NotClearDraftBeforePrepare_Blocks (T2) @story-8.332 @ac-2', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  abrir(h, corrida(a));
+  for (const cmd of ['gh pr create --fill', 'gh pr create --draft=false --fill', 'gh pr create --draft --draft=false --fill', 'gh pr create --draft=$X --fill',
+    'gh pr create --fill --body "--draft"', 'gh pr create -- --draft', 'az repos pr create --draft false --title x', 'az repos pr create --draft no --title x',
+    'az repos pr create --draft 0 --title x', 'az repos pr create --draft --draft false --title x', 'az repos pr create --draft "$X" --title x',
+    'az repos pr create -d borrador --title x', 'glab mr create --draft --fill',
+    // lo que trae una variable, una sustitución o un archivo de argumentos puede ser otra opción que lo publica
+    'gh pr create --draft --fill "$X"', "gh pr create --draft --title $(printf 'x --draft=false')",
+    'az repos pr create --draft --squash "$X" --title x', 'az repos pr create --draft --title x @o.txt']) {
+    const d = decide(h, cmd, a);
+    assert.ok(d && d.texto, `«${cmd}» frena: ${JSON.stringify(d)}`);
+    assert.match(d.texto, SIN_PREPARAR, cmd);
+    assert.match(d.texto, /complete-step prepare-commit/, cmd);
+  }
+  const r = gancho(h, 'gh pr create --draft=false --fill', { cwd: a, modo: 'bypassPermissions' });
+  assert.strictEqual(r.status, 2, 'frena en cualquier pestaña');
+  // la opción detrás de otra puede ser su valor: frena, y dice cómo escribirla para que sea un borrador
+  const dudoso = decide(h, 'gh pr create --fill --draft', a);
+  assert.ok(dudoso && dudoso.texto, JSON.stringify(dudoso));
+  assert.match(dudoso.texto, /Si es un borrador, escribí su opción justo después del comando/);
+  assert.doesNotMatch(decide(h, 'gh pr create --draft=false --fill', a).texto, /Si es un borrador/, 'sin la opción en «sí», no hay pista');
+  assert.match(decide(h, 'gh pr create --draft --title "$T"', a).texto, /Si es un borrador, escribí el comando entero, sin variables/);
+});
+
+// 🔴 Falla con: un borrador que después de «Preparar» sale con el código cambiado desde la foto.
+test('SaveBrake_DraftAfterPrepare_PhotoAndAsk (T3) @story-8.332 @ac-3', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  abrir(h, preparada(a));
+  for (const cmd of ['gh pr create --draft --fill', 'az repos pr create --draft --title x']) {
+    const d = decide(h, cmd, a);
+    assert.ok(d && d.pregunta && !d.texto, `«${cmd}»: ${JSON.stringify(d)}`);
+    assert.match(d.pregunta, ABRO);
+    assert.match(d.pregunta, /Pruebas:/, 'con la evidencia');
+  }
+  escribir(a, 'LEEME.md', 'otra cosa\n');
+  for (const cmd of ['gh pr create --draft --fill', 'az repos pr create --draft --title x']) {
+    assert.match((decide(h, cmd, a) || {}).texto || '', CAMBIO, `«${cmd}» con el código cambiado`);
+  }
+});
+
+// 🔴 Falla con: un borrador que pasa a listo sin «Preparar el pull request» (sin «Probar en vivo»), en cualquier forma
+// que el programa entiende como listo o que no se puede leer.
+test('SaveBrake_ReadyBeforePrepare_Blocks (T4) @story-8.332 @ac-4', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  abrir(h, corrida(a));
+  for (const [cmd, forma] of LISTOS) {
+    assert.deepStrictEqual(brake().comandosQueGuardan(cmd, a, h).filter((c) => c.tipo === 'pr').map((c) => c.forma), [forma], `«${cmd}» es un pedido que guarda`);
+    const d = decide(h, cmd, a);
+    assert.ok(d && d.texto, `«${cmd}» frena: ${JSON.stringify(d)}`);
+    assert.match(d.texto, SIN_PREPARAR, cmd);
+    assert.match(d.texto, /complete-step prepare-commit/, cmd);
+  }
+  // escondido en otro shell, igual
+  assert.match((decide(h, "bash -c 'gh pr ready 12'", a) || {}).texto || '', SIN_PREPARAR);
+  const r = gancho(h, 'gh pr ready 12', { cwd: a, modo: 'bypassPermissions' });
+  assert.strictEqual(r.status, 2, 'frena en cualquier pestaña');
+  assert.match(r.stderr, SIN_PREPARAR);
+});
+
+// 🔴 Falla con: marcar listo después de «Preparar» con el código cambiado desde la foto, o sin la pregunta.
+test('SaveBrake_ReadyAfterPrepare_PhotoAndAsk (T5) @story-8.332 @ac-5', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  abrir(h, preparada(a));
+  for (const [cmd, forma] of [['gh pr ready 12', 'gh pr ready'], ['az repos pr update --id 12 --draft false', 'az repos pr update']]) {
+    const d = decide(h, cmd, a);
+    assert.ok(d && d.pregunta && !d.texto, `«${cmd}»: ${JSON.stringify(d)}`);
+    assert.match(d.pregunta, ABRO);
+    assert.ok(d.pregunta.includes(`«${forma}»`), d.pregunta);
+  }
+  const r = gancho(h, 'gh pr ready 12', { cwd: a, modo: 'default' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stdout, VENTANA);
+  escribir(a, 'LEEME.md', 'otra cosa\n');
+  for (const cmd of ['gh pr ready 12', 'az repos pr update --id 12 --draft false']) assert.match((decide(h, cmd, a) || {}).texto || '', CAMBIO, cmd);
+});
+
+// 🔴 Falla con: un pedido que se marca listo o se mergea con lo que se empujó antes de «Preparar», no con lo preparado.
+test('SaveBrake_ReadyOrMergeAfterPrepare_PushedIsThePhoto (T5b) @story-8.332 @ac-5', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  // lo preparado está commiteado en la rama, pero lo empujado es lo de antes
+  escribir(a, 'nuevo.txt', 'lo preparado\n');
+  sh(a, 'add', 'nuevo.txt');
+  sh(a, 'commit', '-q', '-m', 'lo preparado');
+  abrir(h, preparada(a));
+  for (const cmd of ['gh pr ready 12', 'az repos pr update --id 12 --status completed', 'gh pr merge 12']) {
+    const d = decide(h, cmd, a);
+    assert.ok(d && d.texto, `«${cmd}» frena: ${JSON.stringify(d)}`);
+    assert.match(d.texto, /lo empujado a la rama no es lo preparado/, cmd);
+  }
+  // crear el pedido no cambia: lo que sale es la rama que el mismo comando empuja
+  assert.ok((decide(h, 'gh pr create --fill', a) || {}).pregunta, 'crear pregunta como antes');
+  sh(a, 'push', '-q');
+  for (const cmd of ['gh pr ready 12', 'gh pr merge 12']) {
+    const d = decide(h, cmd, a);
+    assert.ok(d && d.pregunta && !d.texto, `«${cmd}» empujado: ${JSON.stringify(d)}`);
+  }
+});
+
+// 🔴 Falla con: el freno leyendo como «listo» lo que vuelve a borrador o no toca el borrador (frenaría el trabajo
+// común sobre el pedido).
+test('SaveBrake_ReadyUndoAndPlainUpdate_NotASave (T6) @story-8.332 @ac-6', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  abrir(h, corrida(a));
+  for (const cmd of ['gh pr ready --undo', 'gh pr ready --undo 12', 'gh pr ready --undo=true 12', 'az repos pr update --id 12 --draft true',
+    'az repos pr update --id 12 --draft', 'az repos pr update --id 12 --title x',
+    // abandonarlo o reactivarlo no lo mergea
+    'az repos pr update --id 12 --status abandoned', 'az repos pr update --id 12 --status active']) {
+    assert.deepStrictEqual(brake().comandosQueGuardan(cmd, a, h), [], `«${cmd}» no guarda`);
+    assert.strictEqual(decide(h, cmd, a), null, `«${cmd}» pasa`);
+  }
+});
+
+// 🔴 Falla con: un camino rápido en el que marcar listo sale sin la pregunta.
+test('SaveBrake_Lane_ReadyAsks (T7) @story-8.332 @ac-7', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  escribir(a, 'app.js', 'module.exports = 1;\n');
+  carril(h);
+  for (const [cmd, forma] of [['gh pr ready 12', 'gh pr ready'], ['az repos pr update --id 12 --draft false', 'az repos pr update']]) {
+    const d = decide(h, cmd, a);
+    assert.ok(d && d.pregunta, `«${cmd}»: ${JSON.stringify(d)}`);
+    assert.match(d.pregunta, /¿GUARDO\?/);
+    assert.ok(d.pregunta.includes(`«${forma}»`), d.pregunta);
+  }
+  const r = gancho(h, 'gh pr ready 12', { cwd: a, modo: 'default' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stdout, VENTANA);
+  // el borrador en el camino rápido pregunta como hoy cualquier pedido
+  assert.match((decide(h, 'gh pr create --draft --fill', a) || {}).pregunta || '', /¿GUARDO\?/);
+});
