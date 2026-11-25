@@ -89,6 +89,10 @@ for envuelto in "bash -c '$CREAR'" "sudo $CREAR" "xargs $CREAR < /dev/null"; do
   rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "$envuelto")
   { [ "$rc" -eq 2 ] && grep -q "2845" "$TMP/err.txt"; } && ok "«${envuelto%% *} …» de Azure se frena con otro construyendo" || no "🔴 «${envuelto}» de Azure pasó ($rc)"
 done
+for envuelto in "bash -c '$GH'" "xargs $GH < /dev/null"; do
+  rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "$envuelto")
+  { [ "$rc" -eq 0 ] && grep -q "NO verifiqué" "$TMP/err.txt"; } && ok "«${envuelto%% *} …» de GitHub se mira" || no "🔴 «${envuelto}» de GitHub pasó sin mirar ($rc): $(head -c 160 "$TMP/err.txt")"
+done
 rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "bash -c 'glab mr list -R acme/grupo/widgets'")
 { [ "$rc" -eq 0 ] && ! grep -q "NO verifiqué" "$TMP/err.txt"; } && ok "listar dentro de bash -c no es crear" || no "listar dentro de bash -c se tomó como crear ($rc)"
 

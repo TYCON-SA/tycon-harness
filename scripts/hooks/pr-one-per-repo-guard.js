@@ -77,12 +77,30 @@ let cwdDelEvento = ''; try { cwdDelEvento = String(JSON.parse(payload || '{}').c
 // de pedidos del repo la pide la capa, que dice de cada uno si la validación de su punta está corriendo; un pedido de
 // Azure abierto por la capa se mira con `az`, como un `az repos pr create`. Los `az repos pr create` de la misma línea
 // se revisan después, igual que sin los otros.
-const pedidosGh = [...pedidosDeGitHub(cmd, cwdDelEvento), ...pedidosDeOtrosConectores(cmd, cwdDelEvento)];
+const ordenes = ordenesDelComando(cmd, cwdDelEvento);
+// el mismo pedido puede salir del comando y de su orden anidada (un `xargs` delante lo leen los dos lados): se mira una vez
+const pedidosGh = [...new Map(ordenes.flatMap((t) => [...pedidosDeGitHub(t, cwdDelEvento), ...pedidosDeOtrosConectores(t, cwdDelEvento)])
+  .map((p) => [JSON.stringify([p.repo, p.rama, p.donde]), p])).values()];
 if (pedidosGh.length) revisarGitHub(pedidosGh).then(() => revisarAzure(), (e) => {
   console.error(`[pr-uno-por-repo] no pude mirar los pedidos de GitHub (${String((e && e.message) || e).slice(0, 80)}). No bloqueo, pero NO verifiqué.`);
   revisarAzure();
 });
 else revisarAzure();
+
+/**
+ * El comando y las órdenes que corre adentro: el cuerpo de un `bash -c '…'` o un `eval`, la orden de un `xargs` o un
+ * `find -exec`, lo que una tubería le da a un shell. Las lee la misma lectura que el freno de escrituras, que no se
+ * corre al cargarla. Si no carga, sólo el comando: como hasta ahora, el pedido de adentro pasa sin mirar.
+ */
+function ordenesDelComando(comando, cwd) {
+  // sin la palabra de crear en ningún lado no hay pedido adentro: no hace falta cargar la lectura
+  if (!/\b(create|new|open)\b/.test(comando)) return [comando];
+  try {
+    const g = require('../../skills/tycon-pipeline/scripts/on-bash-write-gate.js');
+    const textos = [comando, ...g.comandosPorOtroPrograma(comando, cwd || process.cwd())];
+    return [...new Set([comando, ...textos.flatMap((t) => g.comandosAnidados(t))])];
+  } catch { return [comando]; }
+}
 
 /** Los pedidos que el comando abre en GitHub: `[{ repo, rama, donde }]` (repo null si no se sabe a qué repo va). */
 function pedidosDeGitHub(comando, cwd) {
@@ -268,7 +286,7 @@ if (!az.pareceAzPr(cmd)) process.exit(0);
 // 🔴 TODOS los `pr create` de la cadena, no el primero: con
 // `az … create -r R1 … && az … create -r R2 …` sólo se miraría R1. Es el patrón que ya usa
 // pr-auto-complete-guard.js.
-const creates = az.segmentos(cmd).filter((seg) => az.verboDePr(seg) === 'create');
+const creates = ordenes.flatMap((t) => az.segmentos(t)).filter((seg) => az.verboDePr(seg) === 'create');
 if (!creates.length) process.exit(0);
 let evCwd = ''; try { evCwd = String(JSON.parse(payload || '{}').cwd || ''); } catch { /* sin cwd */ }
 
