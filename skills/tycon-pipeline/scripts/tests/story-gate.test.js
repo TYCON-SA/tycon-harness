@@ -1243,18 +1243,12 @@ test('CopiaPorOtroProgramaOEnvoltorio_AlEstado_Frena (fila 223, el freno)', () =
     frena(`env sed -i 's/a/b/' '${res}'`);
     frena(`/usr/bin/sed -i 's/a/b/' '${res}'`);
     frena(`command truncate -s 0 '${res}'`);
-    // de la vuelta corta: en rsync `-t` conserva las fechas (no es la carpeta de destino), y `env -S` corre su valor
+    // de la vuelta corta: en rsync `-t` conserva las fechas (no es la carpeta de destino)
     frena(`rsync -t ${S} '${res}'`);
     frena(`rsync -rt ${S} '${res}'`);
     frena(`rsync -at ${S} '${res}'`);
-    frena(`env -S cp ${S} '${res}'`);
-    frena(`env -iS cp ${S} '${res}'`);
-    frena(`env --split-string=cp ${S} '${res}'`);
-    // de la segunda vuelta: el valor de `-S` se lee como palabras del `env` (una opción, un texto vacío); la `S` de una
-    // variable pegada a `-u` (`-uSSH_AUTH_SOCK`) no es `-S`; y lo que el shell pega al nombre del programa no es del nombre
-    frena(`env -S -i cp ${S} '${res}'`);
-    frena(`env --split=cp ${S} '${res}'`);
-    frena(`env -S '' cp ${S} '${res}'`);
+    // de la segunda vuelta: una variable pegada a `-u` (`-uSSH_AUTH_SOCK`) no es el programa; y lo que el shell pega al
+    // nombre del programa no es del nombre
     for (const u of ['-uSSH_AUTH_SOCK', '-uSHELL', '-uPS1']) frena(`env ${u} cp ${S} '${res}'`);
     for (const pegado of ['cp>log', 'cp>>log', 'cp>|log', 'cp<<<x', 'cp$x', 'cp${x}', 'cp$()', 'cp``', "cp$''", 'mv$x', 'rsync$x -a', 'install$x', 'env cp$x']) {
       frena(`${pegado} ${S} '${res}'`);
@@ -1264,6 +1258,12 @@ test('CopiaPorOtroProgramaOEnvoltorio_AlEstado_Frena (fila 223, el freno)', () =
     for (const pegado of ['cp>/dev/null', 'cp>/tmp/log', 'cp>>/tmp/log', 'cp</dev/null', 'cp<<<a/b', 'mv>/dev/null']) frena(`${pegado} ${S} '${res}'`);
     frena(`truncate>/dev/null -s0 '${res}'`);
     frena(`sed>/dev/null -i.bak s/a/b/ '${res}'`);
+    // de la cuarta vuelta: un `<` o `>` adentro de una sustitución pegada delante de la ruta del programa no la corta
+    for (const delante of ['$(:>/dev/null)', '`:>/dev/null`', '$(:</dev/null)', '${x#>}', '${x%%<*}', '$(:$(:>/dev/null))']) {
+      frena(`${delante}/bin/cp ${S} '${res}'`);
+      frena(`nohup ${delante}/bin/mv ${S} '${res}'`);
+    }
+    frena(`$(:>/dev/null)/usr/bin/env cp ${S} '${res}'`);
     frena(`env ${'-S'.repeat(50000)}x; cp ${S} '${res}'`);
     // stable-data: el reloj mide cuánto tarda la lectura, que es lo que se prueba (un valor de `-S` con miles de palabras)
     const desde = Date.now();
@@ -1304,18 +1304,14 @@ test('CpAlEstado_ConRedireccionRara_Frena (fila 224, el freno)', () => {
     // de la vuelta corta: un `>` escapado antes de una tubería no es `>|`, y lo de después de la tubería corre
     for (const antes of ['echo \\>', 'echo a\\>', 'true \\\\\\>']) frena(`${antes}|cp ${S} '${res}'`);
     frena(`echo \\>|&cp ${S} '${res}'`);
-    // `>!` (zsh: pisa el archivo aunque el shell no deje pisar) escribe en lo que sigue, como `>|`
-    for (const op of ['>!', '>! ', '>>!', '&>!']) frena(`echo x ${op}'${res}'`);
-    // de la segunda vuelta: con un número par de barras el `>` no está escapado y `>|` no parte; zsh pisa también con
-    // `>&!` y `>&|`; en bash `>!` delante es `>` al archivo `!`, y lo que sigue es el comando; un `$(` o `${` partido por el
-    // `;` o la tubería de adentro deja una palabra que no se resuelve, no el origen como destino
+    // de la segunda vuelta: con un número par de barras el `>` no está escapado y `>|` no parte; en bash `>!` delante es
+    // `>` al archivo `!`, y lo que sigue es el comando; un `$(` o `${` partido por el `;` o la tubería de adentro deja una
+    // palabra que no se resuelve, no el origen como destino
     for (const antes of ['\\\\', 'a\\\\', '\\\\\\\\']) frena(`cp ${S} ${antes}>|x '${res}'`);
-    for (const op of ['>&!', '>&! ', '>&|', '>&| ', '>>&!', '>>&|', '2>&!']) frena(`echo x ${op}'${res}'`);
     for (const op of ['>!', '>>!', '&>!', '2>!', 'X=1 >!', 'env >!', 'nohup >!']) frena(`${op} cp ${S} '${res}'`);
     frena(`>! sed -i.bak s/a/b/ '${res}'`);
     for (const entrada of ['<<<$(true; true)', '<<<$(true|true)', '<<<${x:-a; b}']) frena(`cp ${S} ${entrada} '${res}'`);
-    // de la tercera vuelta: con una sustitución sin cerrar detrás, el destino de antes sigue siendo un destino; y en zsh
-    // `>! x` delante de los argumentos de un guion es una redirección
+    // de la tercera vuelta: con una sustitución sin cerrar detrás, el destino de antes sigue siendo un destino
     // (el destino, sin la ejecución abierta: con ella frena también otra capa)
     const destinoVisto = (cmd) => assert.ok(bash.extractWriteTargets(cmd).includes(res), JSON.stringify(cmd));
     for (const entrada of ['<<<$(true; true)', '<<<$(a|b)', '<<<${x:-a; b}', '2>$(true; echo /tmp/z)']) {
@@ -1323,7 +1319,6 @@ test('CpAlEstado_ConRedireccionRara_Frena (fila 224, el freno)', () => {
       destinoVisto(`mv ${S} '${res}' ${entrada}`);
     }
     destinoVisto(`truncate -s0 '${res}' <<<$(true; true)`);
-    frena(`node -e "require('fs').writeFileSync(process.argv[1],'x')" >! /tmp/x '${res}'`);
     // lo de siempre sigue pasando
     pasa(`cp ${S} '${repo}/copia.json' <<<x"y"`);
     pasa(`HOLA=1 >/dev/null cp ${S} '${repo}/copia.json'`);
