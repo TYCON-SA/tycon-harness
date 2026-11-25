@@ -218,6 +218,7 @@ controles que no terminan a tiempo son `no_medido`, nunca «entró».
 | `queue.read` | opcional `repos` (si no, los del equipo en `team-repos.json`) | la lista de ejecuciones esperando o en curso, con quién disparó cada una y desde cuándo |
 | `deployments.read` | `entrada` (el pipeline o repo, sus etapas, el entorno) y `entorno` | los despliegues de ese entorno |
 | `branch-rules.read` | opcional `branch` (si no, la rama principal del repo) | `branch` y `approval`: la regla de aprobación mínima de esa rama (`enabled`, `blocking`, `minimum`, `creatorVoteCounts`, `resetOnSourcePush`), o `null` si no tiene; con varias, la que menos le falta |
+| `security-alerts.list` | nada | las alertas abiertas del análisis de seguridad en la rama principal del repo: `number`, `rule`, `severity`, `path`, `line`, `createdAt`; un repo sin análisis es `no_soportado`. La lee el aviso de pedidos trabados: el chequeo de antes de encolar mira las referencias del pedido, y una alerta que aparece recién en main no la ve |
 
 Lo que le falta a una regla de aprobación lo decide el contrato (`approvalFaults`): sirve la que está prendida, frena,
 pide al menos una aprobación, cuenta el voto de quien abrió el pedido y borra las aprobaciones con cada empuje nuevo. Lo
