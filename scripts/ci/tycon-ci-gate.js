@@ -639,7 +639,9 @@ function tieneConstanciaDeExencion(texto, story, campo, archivo) {
 const idDeLaConstancia = (id) => String(id || '').replace(/\s+#.*$/, '').trim().replace(/^["']|["']$/g, '');
 
 // `ref`: la historia en la que se busca el rastro de una corrida anterior al control (la base del pedido).
-function revisarAprobaciones(repo, storyId, storyPath, ref = 'origin/main') {
+// `cierre`: el pedido lleva la historia de review a done. La corrida de cierre no pasa por aprobar el plan: hereda el
+// de una corrida anterior de la misma historia que lo tenga (lib/approvals.js → planHeredado); sin ninguna, frena igual.
+function revisarAprobaciones(repo, storyId, storyPath, ref = 'origin/main', { cierre = false } = {}) {
   const hallazgos = [];
   const avisos = [];
   const resumen = { manual: 0, automatica: 0, sinNombrar: 0 };
@@ -658,8 +660,14 @@ function revisarAprobaciones(repo, storyId, storyPath, ref = 'origin/main') {
     const llegoARevisores = fs.existsSync(path.join(dir, 'review-roster.json'));
     // La regla es la de lib/approvals.js, la misma con que frena el cierre del pipeline; acá se arma el mensaje.
     const anterior = typeof approvalsLib.anteriorAlControl === 'function' && approvalsLib.anteriorAlControl(dir, nombre, ref);
-    const problemas = approvalsLib.problemasDelRegistro({ registro: reg, roster, anterior });
+    const sinPlan = !reg.existe || !reg.lineas.some((l) => l && l.que === 'plan');
+    const heredado = cierre && sinPlan && typeof approvalsLib.planHeredado === 'function' ? approvalsLib.planHeredado(dirs, nombre) : null;
+    const problemas = approvalsLib.problemasDelRegistro({ registro: reg, roster, anterior, heredado: heredado && heredado.nombre });
     const hay = (regla) => problemas.find((p) => p.regla === regla);
+    if (heredado && llegoARevisores) {
+      avisos.push({ regla: 'plan-heredado',
+        mensaje: `\`${nombre}/\` es la corrida de cierre y no aprobó el plan: hereda la aprobación de \`${heredado.nombre}/\`, una corrida anterior de la misma historia. Avisa y no frena.` });
+    }
     const invalido = hay('registro-de-aprobaciones-invalido');
     if (invalido) {
       hallazgos.push({ regla: invalido.regla,
@@ -669,7 +677,7 @@ function revisarAprobaciones(repo, storyId, storyPath, ref = 'origin/main') {
       if (hay('sin-registro-de-aprobaciones')) {
         hallazgos.push({ regla: 'sin-registro-de-aprobaciones',
           mensaje: `\`${nombre}/\` llegó a los revisores y no trae \`${approvalsLib.FILE}\` (qué se aprobó, cuándo y si fue una persona o un agente). Lo escribe marker.js al aprobar el plan. Si está en disco y no en el commit, el \`.gitignore\` lo traga: falta \`!**/.advisors/pipeline-runs/*/approvals.jsonl\` (el arranque del pipeline la agrega). Si la story se cerró sin pipeline, la exención (\`advisors_exempt: true\` + su razón) la decide la persona, con su firma sobre la historia.` });
-      } else if (llegoARevisores) {
+      } else if (llegoARevisores && !heredado) {
         avisos.push({ regla: 'sin-registro-de-aprobaciones',
           mensaje: `\`${nombre}/\` no trae \`${approvalsLib.FILE}\`, y la ejecución no tenía por qué dejarlo acá: su registro de revisores no declara que anote aprobaciones (un arnés anterior al registro de aprobaciones), o arrancó antes de que el registro llegara al repo de la story: no se sabe quién aprobó el plan. Avisa y no frena.` });
       }
@@ -1345,7 +1353,8 @@ function revisar({ repo, base, staged, hoy = hoyUtc(), juezGit }) {
     // `advisors_exempt`: la exención perdona que FALTE el registro (una story cerrada sin pipeline), no un registro
     // presente y malo — un agente anotado como persona frena siempre.
     {
-      const apr = revisarAprobaciones(repo, idBruto, path.join(repo, rel), staged ? 'origin/main' : base);
+      const apr = revisarAprobaciones(repo, idBruto, path.join(repo, rel), staged ? 'origin/main' : base,
+        { cierre: estadoViejo === 'review' && estadoNuevo === 'done' });
       const POR_FALTA = (approvalsLib && approvalsLib.POR_FALTA) || new Set(['sin-registro-de-aprobaciones', 'sin-aprobacion-del-plan']);
       for (const h of apr.hallazgos) if (!(exentaAdv && POR_FALTA.has(h.regla))) destino.push({ archivo: rel, story: idBruto, ...h });
       if (!exentaAdv) for (const a of apr.avisos) avisos.push({ archivo: rel, story: idBruto, ...a });
