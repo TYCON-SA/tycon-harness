@@ -1451,19 +1451,57 @@ function* fueraDeComillas(s, desde, hasta) {
   }
 }
 
+/** Dónde corta la tubería el carácter `c` en `k` (lo que sigue empieza otra), o -1 si no corta. */
+function corteEn(s, k, c) {
+  const sig = s[k + 1];
+  if (c === ';' || c === '`' || c === '(' || c === '\n') return k + 1;
+  if (c === '{' && /\s/.test(sig || '')) return k + 1;
+  if ((c === '&' && sig === '&') || (c === '|' && sig === '|')) return k + 2;
+  if (c === '&' && s[k - 1] !== '>' && s[k - 1] !== '<' && sig !== '>') return k + 1;
+  return -1;
+}
+
 /** Dónde empieza el comando (la tubería entera) que contiene la posición `i`: después del `;`, `&&`, `(`… anterior. */
 function inicioDeLaTuberia(s, i) {
   let ini = s.lastIndexOf('\n', i - 1) + 1;
   while (ini >= 2 && s[ini - 2] === '\\') ini = s.lastIndexOf('\n', ini - 3) + 1;   // la línea continuada con `\`
   let corte = ini;
   for (const [k, c] of fueraDeComillas(s, ini, i)) {
-    const sig = s[k + 1];
-    if (c === ';' || c === '`' || c === '(' || c === '\n') corte = k + 1;
-    else if (c === '{' && /\s/.test(sig || '')) corte = k + 1;
-    else if ((c === '&' && sig === '&') || (c === '|' && sig === '|')) corte = k + 2;
-    else if (c === '&' && s[k - 1] !== '>' && s[k - 1] !== '<' && sig !== '>') corte = k + 1;
+    const nuevo = corteEn(s, k, c);
+    if (nuevo >= 0) corte = nuevo;
   }
   return corte;
+}
+
+/**
+ * `inicioDeLaTuberia(s, i)` para posiciones que crecen, sin volver a leer el renglón desde su principio cada vez: sigue
+ * la lectura fuera de comillas desde donde quedó mientras el renglón (con sus continuaciones) sea el mismo. Con miles de
+ * `<<<` en un renglón, leerlo entero por cada uno es cuadrático. Una posición menor que la anterior se lee entera.
+ */
+function lectorDeInicios(s) {
+  let anterior = -1;
+  let visto = 0;                                          // hasta dónde se miraron los saltos de renglón
+  let renglon = -1;
+  let lectura = null;
+  let pendiente = null;                                   // la próxima posición de la lectura, si todavía no se usó
+  let corte = 0;
+  return (i) => {
+    if (i < anterior) return inicioDeLaTuberia(s, i);
+    anterior = i;
+    // un salto de renglón sin `\` delante empieza otro
+    let ini = renglon < 0 ? 0 : renglon;
+    for (; visto < i; visto++) if (s[visto] === '\n' && (visto === 0 || s[visto - 1] !== '\\')) ini = visto + 1;
+    if (ini !== renglon) { renglon = ini; lectura = fueraDeComillas(s, ini, s.length); pendiente = null; corte = ini; }
+    for (;;) {
+      if (!pendiente) { const r = lectura.next(); if (r.done) break; pendiente = r.value; }
+      const [k, c] = pendiente;
+      if (k >= i) break;
+      pendiente = null;
+      const nuevo = corteEn(s, k, c);
+      if (nuevo >= 0) corte = nuevo;
+    }
+    return corte;
+  };
 }
 
 /** El texto desde `i` hasta el final del comando (el `;`, `&&`, `)`… siguiente, o el fin de la línea). */
@@ -1495,10 +1533,18 @@ function programasPorEntrada(cmd) {
   const s = String(cmd);
   if (!s.includes('<<')) return [];
   const out = [];
+  // dónde empieza la tubería de cada posición, leído una vez por renglón: los heredocs van sobre el texto y los
+  // here-strings sobre el texto sin heredocs, cada uno en orden
+  const iniciosEn = new Map();
+  const inicioEn = (texto, indice) => {
+    if (!iniciosEn.has(texto)) iniciosEn.set(texto, lectorDeInicios(texto));
+    return iniciosEn.get(texto)(indice);
+  };
   const juzgar = (texto, indice, resto, siguiente, cuerpo, comillas) => {
-    const antes = etapas(texto.slice(inicioDeLaTuberia(texto, indice), indice));
+    const antes = etapas(texto.slice(inicioEn(texto, indice), indice));
     const despues = etapas(resto.slice(0, finDelComando(resto, 0, resto.length)));
-    if (/\|\s*$/.test(resto) && siguiente != null) despues.push(...etapas(siguiente.slice(0, finDelComando(siguiente, 0, siguiente.length))));
+    // (el `|` del final del renglón sólo importa si hay un renglón siguiente: mirarlo en todo el resto es cuadrático)
+    if (siguiente != null && /\|\s*$/.test(resto)) despues.push(...etapas(siguiente.slice(0, finDelComando(siguiente, 0, siguiente.length))));
     const propia = `${antes[antes.length - 1]} ${despues[0]}`;
     for (const etapa of [propia, ...despues.slice(1)]) {
       const l = lectorDePrograma(tokens(etapa));
@@ -1518,6 +1564,8 @@ function programasPorEntrada(cmd) {
     let f = j;
     while (f < sin.length && !/[\s;&|()<>]/.test(sin[f])) f = /['"]/.test(sin[f]) || (sin[f] === '$' && sin[f + 1] === "'") ? finDeComillas(sin, sin[f] === '$' ? f : f) : f + 1;
     const palabra = sin.slice(j, f);
+    // sin palabra (`<<<` y un `<`, otro operador o el fin) el shell no corre el comando: no hay programa que juzgar
+    if (!palabra) continue;
     juzgar(sin, k, sin.slice(f), null, tokens(palabra).join(' '), /^\$?'/.test(palabra));
   }
   return out;

@@ -11,9 +11,16 @@
  *
  *   BLANKS1  el cierre y el comentario a mano dan lo mismo que las expresiones de antes (casos y textos al azar)
  *   BLANKS2  el recorte de las puntas a mano da lo mismo que la expresión de antes
+ *   BLANKS6  el gancho entero decide en menos de 5 s con 40 KB de `cp a b <<<x;` repetido, 40 KB de `<` detrás de un cp
+ *            y 200 KB de `cp a b \` en renglones continuados
  *   BLANKS3  el gancho entero decide en menos de 3 s con 40 KB en cinco formas (espacios en un heredoc, `;` en un
  *            heredoc, espacios en `bash -c`, espacios por un tubo a `sh`, renglones vacíos en un heredoc)
  *   BLANKS4  los segmentos, las redirecciones, el `sh -c` y la de borrados dan lo mismo que las expresiones de antes
+ *   BLANKS5  los destinos se leen en menos de 1,5 s con 150 KB de `$(` o `${` sin cerrar detrás de `>` o `<`
+ *   BLANKS7  los destinos de un `cp` se leen en menos de 1,5 s con 100 KB de blancos o tabuladores entre sus palabras
+ *   BLANKS8  los destinos se leen en menos de 1,5 s con 200 KB de `>|` o `>&|` seguidos, y con `sed -i` repetidos el
+ *            tiempo crece como el largo, no como su cuadrado
+ *   BLANKS9  los cuerpos de 3.000 heredocs en un renglón se leen en menos de 1,5 s
  * 🔴 Nada toca el HOME real: el gancho corre en un proceso hijo con una casa de juguete.
  */
 const { test } = require('node:test');
@@ -66,8 +73,9 @@ test('BLANKS2 PuntasDeLaLinea_ALaMano_IgualQueAntes', () => {
   }
 });
 
-// lo de antes de la segunda vuelta, tal cual
-const segmentosDeAntes = (c) => String(c).split(/\s*(?:&&|\|\||\|&|;|\||\n|(?<![<>&|\\])&(?![&>]))\s*/).filter(Boolean);
+// lo de antes de la segunda vuelta (los blancos de al lado con `\s*`), con los separadores de hoy: el `|` de `>|` y de
+// `>&|` no parte, salvo con un `\` impar delante del `>`
+const segmentosDeAntes = (c) => String(c).split(/\s*(?:&&|\|\||(?<!(?<!\\)(?:\\\\)*>&?)\|&|;|(?<!(?<!\\)(?:\\\\)*>&?)\||\n|(?<![<>&|\\])&(?![&>]))\s*/).filter(Boolean);
 const redireccionesDeAntes = (t) => t.replace(/[ \t]*(?:&|\d)?>{1,2}(?:\||&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ');
 const SHELL_CON_C_DE_ANTES = /(?:^|[\s;&|(`])(?:\S*\/)?(?:ba|z|k|da|fi|c|tc)?sh\b(?:\s+(?:--?[A-Za-z][\w-]*|[+-][oO]\s+(?:[^\s+-]|\+(?![oO](?:\s|$))|-(?![-A-Za-z])|--(?![A-Za-z]))\S*|\+[oO](?=\s)))*?\s+-[A-Za-z]*c\s+(?=['"])/g;
 const finales = (re, s) => [...s.matchAll(re)].map((m) => m.index + m[0].length);
@@ -109,6 +117,22 @@ function correrElGancho(comando) {
   } finally { fs.rmSync(casa, { recursive: true, force: true }); }
 }
 
+// 🔴 mutación: la expresión de antes para los heredocs (cúbica con `<<<x;` repetido), juzgar cada `<<<` desde el
+// principio de su renglón, juzgar un `<<<` sin palabra, preguntar por la ruta real de un destino una vez por cada origen
+// de la copia, o copiar el resto de las palabras por cada palabra al buscar una edición en el lugar.
+test('BLANKS6 HereStringsYContinuaciones_EnCantidad_DecidenEnSegundos', () => {
+  const formas = {
+    '`cp a b <<<x;` repetido': 'cp a b <<<x; '.repeat(Math.ceil((40 * 1024) / 13)),
+    '`<` repetido': `cp a b ${'<'.repeat(40 * 1024)}`,
+    'renglones continuados': 'cp a b \\\n'.repeat(Math.ceil((200 * 1024) / 9)),
+  };
+  for (const [forma, comando] of Object.entries(formas)) {
+    const r = correrElGancho(comando);
+    assert.doesNotMatch(r.stderr, /no alcanzó a decidir/, forma);
+    assert.ok(r.ms < 5000, `${forma}: tardó ${r.ms} ms`);
+  }
+});
+
 // 🔴 mutación: volver a cualquiera de las seis expresiones: con 40 KB, el freno tarda segundos o no decide en 20 s.
 test('BLANKS3 TiradaLarga_EnCadaForma_DecideEnSegundos', () => {
   const n = 40 * 1024;
@@ -124,4 +148,66 @@ test('BLANKS3 TiradaLarga_EnCadaForma_DecideEnSegundos', () => {
     assert.doesNotMatch(r.stderr, /no alcanzó a decidir/, forma);
     assert.ok(r.ms < 3000, `${forma}: tardó ${r.ms} ms`);
   }
+});
+
+// 🔴 mutación: que la palabra de una redirección exija el cierre de `$(` o `${`: cada una sin cerrar recorre el resto del
+// comando, y con 150 KB tarda segundos.
+test('BLANKS5 SustitucionSinCerrar_TrasRedireccion_LeeEnUnaPasada', () => {
+  const n = 150 * 1024;
+  for (const abre of ['>${', '>$(', '<$(', '<${', '> $( ']) {
+    const comando = `cp a /tmp/destino ${abre.repeat(Math.ceil(n / abre.length))}`;
+    // stable-data: el reloj mide cuánto tarda la lectura, que es lo que se prueba
+    const desde = Date.now();
+    const destinos = bash.extractWriteTargets(comando);
+    const ms = Date.now() - desde;
+    // la sustitución sin cerrar deja una palabra que no se resuelve: el destino es ésa, o el del cp
+    assert.ok(destinos.some((d) => d === '/tmp/destino' || d.startsWith('$')), `${abre}: ${JSON.stringify(destinos.slice(0, 4))}`);
+    assert.ok(ms < 1500, `${abre}: tardó ${ms} ms`);
+  }
+});
+
+// 🔴 Fila 228. Mutación: blancos opcionales delante del operador de la redirección que se saca de las palabras de un
+// tramo. Con una tirada larga de blancos sin `>` detrás, cada blanco la recorre entera: un `cp` con 100 KB de blancos
+// tardaba más de 20 s, y el freno frenaba por falla un comando sano.
+test('BLANKS7 CopiaConUnaTiradaDeBlancos_LeeSusDestinosEnUnaPasada', () => {
+  for (const blanco of [' ', '\t']) {
+    const comando = `cp a${blanco.repeat(100 * 1024)}/tmp/destino`;
+    // stable-data: el reloj mide cuánto tarda la lectura, que es lo que se prueba
+    const desde = Date.now();
+    const destinos = bash.extractWriteTargets(comando);
+    const ms = Date.now() - desde;
+    assert.ok(destinos.includes('/tmp/destino'), JSON.stringify(destinos));
+    assert.ok(ms < 1500, `${JSON.stringify(blanco)}: tardó ${ms} ms`);
+  }
+});
+
+// 🔴 Fila 228. Mutaciones: mirar la punta del tramo que se arma (`cur[cur.length - 1]`) para saber si un `|` es de `>|`, y
+// buscar el `-i ''` de sed en el comando entero por cada `sed -i`. La primera recompone el tramo entero en cada `|`; la
+// segunda recorre el comando una vez por cada sed: con 200 KB, segundos.
+test('BLANKS8 TuberiasTrasRedireccionYSedRepetido_LeenEnUnaPasada', () => {
+  const n = 200 * 1024;
+  // stable-data: el reloj mide cuánto tarda la lectura, que es lo que se prueba
+  const tarda = (comando) => { const desde = Date.now(); bash.extractWriteTargets(comando); return Date.now() - desde; };
+  for (const comando of [`echo x ${'>|'.repeat(n / 2)}`, `echo x ${'>&|'.repeat(Math.ceil(n / 3))}`]) {
+    const ms = tarda(comando);
+    assert.ok(ms < 1500, `${comando.slice(0, 20)}…: tardó ${ms} ms`);
+  }
+  // miles de `sed -i` llevan su tiempo aunque se lean en una pasada: lo que se mira es cómo crece. Con cuatro veces el
+  // largo, una pasada tarda unas cuatro veces más; recorrer el comando por cada sed, unas dieciséis
+  const sed = (kb) => 'sed -i f.ts; '.repeat(Math.ceil((kb * 1024) / 13));
+  const chico = Math.max(1, Math.min(tarda(sed(50)), tarda(sed(50))));
+  const grande = tarda(sed(200));
+  assert.ok(grande / chico < 9 && grande < 6000, `sed -i repetido: 50 KB ${chico} ms, 200 KB ${grande} ms`);
+});
+
+// 🔴 Fila 243. Mutación: leer el destino del renglón que abre un heredoc una vez por cada heredoc. Con las dos lecturas de
+// los cuerpos, un renglón con miles de heredocs se leía miles de veces entero: 3.000 tardaban más de 4 s.
+test('BLANKS9 MilesDeHeredocsEnUnRenglon_LeenSuDestinoUnaVez', () => {
+  const comando = `cat ${"<<'E' ".repeat(3000)}\n${'x\nE\n'.repeat(3000)}`;
+  // stable-data: el reloj mide cuánto tarda la lectura, que es lo que se prueba
+  const desde = Date.now();
+  const cuerpos = bash.heredocs(comando);
+  const ms = Date.now() - desde;
+  assert.equal(cuerpos.length, 3000);
+  assert.ok(ms < 1500, `tardó ${ms} ms`);
 });

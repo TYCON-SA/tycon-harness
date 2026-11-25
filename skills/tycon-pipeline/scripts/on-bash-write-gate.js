@@ -263,7 +263,9 @@ try { ({ nativePath } = require('./lib/path-shape.js')); } catch (e) { logHookEr
 const Q = `(?:'([^']*)'|"([^"]*)"|([^\\s'"|;&<>]+))`; // token: 'x' | "x" | bare
 function tok(m, i) { return m[i] ?? m[i + 1] ?? m[i + 2] ?? null; }
 
-const SEPARADOR_DE_SEGMENTOS = /&&|\|\||\|&|;|\||\n|(?<![<>&|\\])&(?![&>])/;
+// (el `|` de `>|` y de `>&|`, que pisan el archivo aunque el shell no deje pisar, no separa; el de un `\>|` sí: ese `>`
+// es una letra. Con un número par de barras delante, el `>` no está escapado)
+const SEPARADOR_DE_SEGMENTOS = /&&|\|\||(?<!(?<!\\)(?:\\\\)*>&?)\|&|;|(?<!(?<!\\)(?:\\\\)*>&?)\||\n|(?<![<>&|\\])&(?![&>])/;
 function splitSegments(cmd) {
   // Separadores de comandos (no dentro de comillas — aproximación: split simple alcanza para lo
   // que buscamos; las comillas raras caen del lado conservador = no se extrae nada).
@@ -288,7 +290,9 @@ function sinPalabrasDeBloque(seg) {
   let t = String(seg).trim();
   for (let antes = null; antes !== t;) {
     antes = t;
-    t = t.replace(/^(?:(?:do|then|else|elif|if|while|until|time|!)(?=[\s({])|[({])\s*/, '');
+    // (el `{` de un descriptor con nombre, `{fd}>f`, no abre un grupo)
+    // (`time -p` con su opción: el comando es lo que sigue)
+    t = t.replace(/^(?:(?:do|then|else|elif|if|while|until|time(?:[ \t]+-p)?|!)(?=[\s({])|\(|\{(?![A-Za-z_]\w*\}[<>]))\s*/, '');
   }
   // el `)` del paréntesis que se sacó adelante, pegado al último archivo (`(sed -i … docs/a.js)`): sólo los que sobran,
   // para no tocar un `$(…)` del final
@@ -310,22 +314,55 @@ function sinPalabrasDeBloque(seg) {
  * entrada (`< f`, `<<< palabra`, `<<EOF`, `<<-'EOF'`), cuyo archivo o delimitador no es un argumento del comando. Sin la
  * barra suelta del final (`cp a b \` sin renglón siguiente), que tampoco es el último argumento.
  */
-function palabrasDelComando(seg) {
+// La palabra de una redirección, como la lee el shell: con lo citado, `$'…'`, `$(…)`, `${…}` y lo escapado pegado
+// (`<<<x"y"`, `<'a b'c`, `<<<$(echo x y)`, `<<<a\ b`). Cada pieza empieza distinto: no hay dos formas de leer lo mismo.
+// Un `$(` o `${` sin cerrar se lleva el resto del tramo: exigir el cierre recorre el resto una vez por cada uno
+const PALABRA_DE_REDIRECCION = String.raw`(?:\$'(?:\\.|[^'\\])*'|\$"(?:\\.|[^"\\])*"|'[^']*'|"(?:\\.|[^"\\])*"|\$\([^)]*\)?|\$\{[^}]*\}?|\\.|[^\s'"\\|;&<>$]|\$(?![('{"]))+`;
+// el descriptor de una redirección: una o más cifras, o un nombre (`{fd}`), al principio de una palabra
+const DESCRIPTOR = String.raw`(?:\d+|\{[A-Za-z_]\w*\})`;
+// (la palabra va en su propio grupo opcional: un `?` pegado al `+` de la palabra la volvería perezosa, de una letra. Y
+// sin blancos opcionales delante del operador: con una tirada larga de blancos sin `>` detrás, cada blanco la recorrería
+// entera)
+const REDIRECCION_DE_SALIDA_CON_PALABRA = new RegExp(String.raw`(?:&|(?<!\S)${DESCRIPTOR})?>{1,2}(?:\||&)?[ \t]*(?:${PALABRA_DE_REDIRECCION})?`, 'g');
+const REDIRECCION_DE_ENTRADA_CON_PALABRA = new RegExp(String.raw`(?:(?<!\S)${DESCRIPTOR})?<(?:<<|<-?|&|>)?[ \t]*(?:${PALABRA_DE_REDIRECCION})?`, 'g');
+
+// ¿La redirección deja un `$(` o un `${` sin cerrar? El tramo se parte en el `;` o la tubería de adentro, y el resto de la
+// sustitución queda en otro tramo
+function sinCerrar(redireccion) {
+  const a = redireccion.lastIndexOf('$(');
+  const b = redireccion.lastIndexOf('${');
+  return (a >= 0 && !redireccion.includes(')', a)) || (b >= 0 && !redireccion.includes('}', b));
+}
+
+function palabrasDelComando(seg, { conVacias = false } = {}) {
   // un comentario al final no es parte del comando
   const sinComentario = String(seg).replace(/(^|\s)#.*$/, '');
+  // con una sustitución sin cerrar no se sabe dónde termina el comando: `words.sinCerrar` lo dice, y quien busca el
+  // último argumento toma todos. En su lugar queda una palabra que no se resuelve: el destino puede haber quedado en el
+  // tramo siguiente
+  let abierta = false;
+  const blanco = (r) => { if (!sinCerrar(r)) return ' '; abierta = true; return ' $( '; };
   const sinRedir = sinComentario
-    .replace(/[ \t]*(?:&|\d)?>{1,2}(?:\||&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ')
-    .replace(/(?:(?<!\S)\d)?<(?:<<|<-?|&|>)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ');
+    .replace(REDIRECCION_DE_SALIDA_CON_PALABRA, blanco)
+    .replace(REDIRECCION_DE_ENTRADA_CON_PALABRA, blanco);
   const words = (sinRedir.trim().match(new RegExp(Q, 'g')) || []).map((w) => {
     const mm = w.match(new RegExp(`^${Q}$`));
     return mm ? tok(mm, 1) : null;
-  }).filter(Boolean);
+  }).filter((w) => w != null && (conVacias || w !== ''));
   if (words[words.length - 1] === '\\') words.pop();
+  words.sinCerrar = abierta;
   return words;
 }
 
-// Una redirección delante del comando (`> f cp a b`, `2>/dev/null cp a b`, `<<<x cp a b`): el comando es lo que sigue
-const REDIRECCION_DELANTE = /(?:(?:&|\d)?>{1,2}(?:\||&)?|\d?<(?:<<|<-?|&|>)?)[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)[ \t]*/y;
+/** El último argumento que no es una opción; con el tramo sin cerrar (`palabrasDelComando`), todos. */
+function ultimosArgumentos(words) {
+  const sueltos = words.slice(1).filter((w) => !w.startsWith('-'));
+  return words.sinCerrar ? sueltos : sueltos.slice(-1);
+}
+
+// Una redirección delante del comando (`> f cp a b`, `10>f cp a b`, `{fd}>f cp a b`, `<<<x cp a b`): el comando es lo
+// que sigue
+const REDIRECCION_DELANTE = new RegExp(String.raw`(?:(?:&|${DESCRIPTOR})?>{1,2}(?:\||&)?|${DESCRIPTOR}?<(?:<<|<-?|&|>)?)[ \t]*${PALABRA_DE_REDIRECCION}[ \t]*`, 'y');
 function sinRedireccionesDelante(seg) {
   const t = String(seg).trim();
   let i = 0;
@@ -334,16 +371,199 @@ function sinRedireccionesDelante(seg) {
   return t.slice(i);
 }
 
+// Las opciones de un envoltorio que llevan su valor en la palabra siguiente: las de `ENVOLTORIOS_CON_VALOR` (más abajo en
+// el archivo: se juntan la primera vez que se piden) y las de estos
+const MAS_OPCIONES_CON_VALOR = {
+  // (las de sudo de `ENVOLTORIOS_CON_VALOR`, y el tiempo y la raíz: `-T 5`, `-R /`)
+  sudo: /^-[ugCDhprtTUR]$|^--(?:user|group|close-from|chdir|host|prompt|role|type|other-user|command-timeout|chroot)$/,
+  env: /^-[uCSPa]$|^--(?:unset|chdir|split-string|argv0)$/,
+  doas: /^-[uC]$/,
+  ionice: /^-[cnpPu]$|^--(?:class|classdata|pid|pgid|uid)$/,
+  exec: /^-a$/,
+  time: /^-[fo]$|^--(?:format|output)$/,
+};
+let opcionesConValor = null;
+const opcionesDelEnvoltorio = (n) => (opcionesConValor ||= { ...ENVOLTORIOS_CON_VALOR, ...MAS_OPCIONES_CON_VALOR })[n];
+// los envoltorios que, después de sus opciones, llevan una palabra suya antes del comando: la duración, la prioridad, la
+// máscara de procesadores
+const CON_PALABRA_PROPIA = new Set(['timeout', 'chrt', 'taskset']);
+// el principio de una palabra que es una redirección (`>f`, `2>`, `{fd}<x`, `&>f`, `>|f`)
+const EMPIEZA_REDIRECCION = new RegExp(String.raw`^(?:&|${DESCRIPTOR})?(?:>{1,2}(?:\||&)?|<(?:<<|<-?|&|>)?)`);
+
+/**
+ * Dónde termina la palabra antes de un `<` o `>` sin comillas ni barra (el largo de la palabra si no hay). Lo de adentro
+ * de `$(…)`, `` `…` `` y `${…}` no corta: ahí un `>` no es una redirección (`$(:>/dev/null)/bin/cp` es `cp`).
+ */
+function antesDeUnaRedireccion(crudo) {
+  for (let i = 0; i < crudo.length; i++) {
+    const c = crudo[i];
+    if (c === '\\') { i++; continue; }
+    if (c === "'") { const j = crudo.indexOf("'", i + 1); if (j < 0) return crudo.length; i = j; continue; }
+    if (c === '"') { let j = i + 1; while (j < crudo.length && crudo[j] !== '"') j += crudo[j] === '\\' ? 2 : 1; i = j; continue; }
+    const fin = finDeSustitucion(crudo, i);
+    if (fin === -1) return crudo.length;
+    if (fin > i) { i = fin; continue; }
+    if (c === '<' || c === '>') return i;
+  }
+  return crudo.length;
+}
+
+/**
+ * Si en `i` empieza una sustitución (`$(…)`, `${…}` o `` `…` ``), dónde termina (contando las que se abren adentro); -1
+ * si no cierra; `i` si ahí no empieza ninguna.
+ */
+function finDeSustitucion(w, i) {
+  if (w[i] === '`') return w.indexOf('`', i + 1);
+  if (w[i] !== '$' || (w[i + 1] !== '(' && w[i + 1] !== '{')) return i;
+  const abre = w[i + 1];
+  const cierra = abre === '(' ? ')' : '}';
+  let hondo = 0;
+  for (let j = i + 1; j < w.length; j++) {
+    if (w[j] === '\\') { j++; continue; }
+    if (w[j] === abre) hondo++;
+    else if (w[j] === cierra && --hondo === 0) return j;
+  }
+  return -1;
+}
+
+/**
+ * Los nombres que puede tener el programa de una palabra (`/bin/cp` es `cp`, `\cp` también), el primero el de siempre:
+ * lo que sigue a su última barra, sin contar las de adentro de una sustitución (`cp$(:>/dev/null)` es `cp…`, no
+ * `null)`). Con una sustitución que no cierra en la palabra (cierra después de un blanco), no se sabe si sus barras son
+ * de la ruta (`/bin/cp$(:/ )`) o de lo que corre adentro (`$(/bin/cp`): van los dos nombres. `w`, la palabra con sus
+ * comillas resueltas.
+ */
+function nombresDelPrograma(w) {
+  // (`=cp` en zsh es la ruta de `cp`)
+  const nombre = (barra) => w.slice(barra + 1).replace(/^[\\=]/, '').toLowerCase().replace(/\.exe$/, '');
+  let barra = -1;
+  for (let i = 0; i < w.length; i++) {
+    if (w[i] === '/') { barra = i; continue; }
+    const fin = finDeSustitucion(w, i);
+    if (fin === -1) return [...new Set([nombre(barra), nombre(w.lastIndexOf('/'))])];
+    i = fin;
+  }
+  return [nombre(barra)];
+}
+
+// los programas que escriben lo que nombran: entre los nombres posibles de una palabra, cuenta el que escribe
+const ESCRIBE_LO_QUE_NOMBRA = /^(?:g?(?:cp|mv|ln|install|sed)|rsync|perl|truncate|tee)(?![\w.-])/;
+
+/**
+ * El tramo desde el programa que corre, con el programa por su nombre (`/bin/cp` y `\cp` son `cp`): sin las variables de
+ * delante, las redirecciones (`HOLA=1 >f cp`) ni los envoltorios que corren otro comando (`env -i X=1`, `command`,
+ * `nohup`, `sudo -u x`, `timeout 5`, `busybox`), con sus opciones. '' si no queda programa.
+ */
+function desdeElPrograma(seg) {
+  const t = String(seg).trim();
+  const pieza = /(?:'[^']*'|"(?:\\.|[^"\\])*"|\\.|[^\s'"\\])+/g;
+  const fines = [];
+  function* piezas() { for (let m = pieza.exec(t); m; m = pieza.exec(t)) { fines.push(m.index + m[0].length); yield m[0]; } }
+  const p = programaEntre(piezas());
+  return p ? p.n + t.slice(fines[p.k]) : '';
+}
+
+/**
+ * El programa que corre entre las palabras crudas de un tramo, en orden: `{ k, n }`, su lugar entre ellas y su nombre
+ * (`/bin/cp` y `\cp` son `cp`), sin las variables de delante, las redirecciones ni los envoltorios con sus opciones. null
+ * si no queda programa.
+ */
+function programaEntre(piezas, info = null) {
+  // las opciones del envoltorio que se está leyendo (null fuera de uno), las palabras que siguen y no son el programa (el
+  // valor de una opción), y si al terminar sus opciones le sigue una palabra suya
+  let opciones = null;
+  let saltar = 0;
+  let propia = false;
+  let envoltorio = null;
+  let k = -1;
+  for (const pieza of piezas) {
+    k++;
+    if (saltar) { saltar--; continue; }
+    // una redirección no es el programa; si su palabra va aparte (`> f`), tampoco la que sigue
+    const redireccion = EMPIEZA_REDIRECCION.exec(pieza);
+    if (redireccion) { if (redireccion[0].length === pieza.length) saltar = 1; continue; }
+    // una redirección pegada detrás (`cp>/dev/null`, `X=1>f`) termina la palabra: cuenta lo de antes
+    const crudo = pieza.slice(0, antesDeUnaRedireccion(pieza));
+    const w = palabraConAnsi(crudo);
+    if (opciones !== null && w.startsWith('-')) {
+      // el texto de `env -S`, que quien llama lee como otro comando: en qué pieza está y lo que va pegado
+      const s = envoltorio === 'env' && /^(?:-[i0v]*S|--split-string=?)([\s\S]*)$/.exec(w);
+      if (s && info) info.envS = { k, pegado: s[1] };
+      // también con las opciones juntas (`-iu root`), si la primera que lleva valor es la última; antes, el resto de la
+      // palabra es su valor (`-uroot`, `-uP`) y el programa es la palabra que sigue
+      const juntas = /^-[A-Za-z]{2,}$/.test(w) && opciones && [...w.slice(1)].findIndex((l) => opciones.test(`-${l}`)) === w.length - 2;
+      if (opciones && (opciones.test(w) || juntas)) saltar = 1;
+      continue;
+    }
+    if (opciones !== null && propia) { opciones = null; propia = false; continue; }
+    opciones = null;
+    if (/^[A-Za-z_]\w*=/.test(crudo)) continue;
+    // si la palabra puede nombrar dos programas, cuenta el que escribe; si no, un envoltorio; si no, el de siempre. Una
+    // sustitución pegada al nombre (`nohup$(:/ )`) puede no dar nada: el nombre sin ella también vale
+    const nombres = nombresDelPrograma(w);
+    const todos = [...nombres, ...nombres.map(sinSustitucionesCerradas)];
+    const n = todos.find((x) => ESCRIBE_LO_QUE_NOMBRA.test(x)) || todos.find((x) => x === 'busybox' || ENVOLTORIOS.has(x) || MODIFICADORES_DE_ZSH.has(x)) || nombres[0];
+    if (n === 'busybox' || MODIFICADORES_DE_ZSH.has(n)) continue;
+    if (ENVOLTORIOS.has(n)) { opciones = opcionesDelEnvoltorio(n) || false; propia = CON_PALABRA_PROPIA.has(n); envoltorio = n; continue; }
+    return { k, n };
+  }
+  return null;
+}
+
+// lo que zsh pone delante de un comando sin cambiar cuál corre: `noglob cp`, `nocorrect cp`, `- cp`
+const MODIFICADORES_DE_ZSH = new Set(['noglob', 'nocorrect', '-']);
+
+/**
+ * La palabra sin sus sustituciones que cierran (`nohup$(:/ )` es `nohup`); desde una que no cierra, queda como está. Una
+ * pasada: buscar el cierre con una expresión desde cada `$(` sin cerrar crece con el cuadrado del largo.
+ */
+function sinSustitucionesCerradas(w) {
+  let out = '';
+  for (let i = 0; i < w.length; i++) {
+    const fin = finDeSustitucion(w, i);
+    if (fin === -1) return out + w.slice(i);
+    if (fin > i) { i = fin; continue; }
+    out += w[i];
+  }
+  return out;
+}
+
+/** `palabraDelShell`, también con el citado ANSI-C y sus escapes: `$'\x63p'` es `cp`. */
+function palabraConAnsi(w) {
+  return palabraDelShell(String(w).replace(/\$'((?:\\[\s\S]|[^'\\])*)'/g, (m, x) => `'${ansiC(x).replace(/'/g, "'\\''")}'`));
+}
+
+// los programas que copian o mueven a un destino que es su último argumento (o la carpeta de `-t`); el nombre entero
+// (`install.sh` es un guion, no `install`), y lo que el shell pega detrás no es parte del nombre (`cp>log`, `cp$x`)
+const COPIA = /^(?:g?(?:cp|mv|ln|install)|rsync)(?![\w.-])/;
+
 /**
  * Los destinos de un cp / mv: con `-t` / `--target-directory` (también `-rt`, `-t<carpeta>`), la carpeta y cada archivo
  * que llega a ella; si no, el último argumento (`palabrasDelComando`, sin redirecciones: `cp a b 2>&1`, `cp a b <<<x`).
+ * En rsync `-t` conserva las fechas: ahí no hay carpeta de destino aparte.
  */
 function cpMvDest(seg) {
-  const words = palabrasDelComando(sinRedireccionesDelante(seg));
+  return destinosDeCpMv(palabrasDelComando(sinRedireccionesDelante(seg), { conVacias: true }));
+}
+
+/** Los destinos de un cp / mv de `cpMvDest`, con las palabras ya leídas: la primera, el nombre del programa. */
+function destinosDeCpMv(conVacias) {
+  let words = conVacias;
+  // rsync e install, sin el valor de sus opciones (`--exclude x`, `-m 644`), que no es un origen ni el destino; y la
+  // carpeta de `install -t`. Con las palabras vacías: un valor citado que se vació (`-f '- x'`) sigue en su lugar
+  const copiador = /^rsync/.test(words[0]) ? 'rsync' : /^g?install/.test(words[0]) ? 'install' : null;
+  if (copiador) {
+    const { sueltos: todos, carpeta } = argumentosDeCopia(copiador, words.slice(1));
+    const sueltos = todos.filter(Boolean);
+    if (carpeta) return [carpeta, ...sueltos.map((f) => `${carpeta.replace(/[\\/]+$/, '')}/${f.split(/[\\/]/).pop()}`)];
+    return words.sinCerrar ? sueltos : sueltos.slice(-1);
+  }
+  words = words.filter(Boolean);
+  words.sinCerrar = conVacias.sinCerrar;
   // con varios -t vale el último, como en cp
   let dir = null;
   const fuera = new Set([0]);   // el nombre del comando, y lo que nombra la carpeta
-  for (let i = 0; i < words.length; i++) {
+  for (let i = 0; i < words.length && words[0] !== 'rsync'; i++) {
     const largo = /^--target-directory=(.+)$/.exec(words[i]);
     const pegado = /^-t(.+)$/.exec(words[i]);
     if (largo) { dir = largo[1]; fuera.add(i); } else if ((/^-[a-zA-Z]*t$/.test(words[i]) || words[i] === '--target-directory') && words[i + 1]) {
@@ -351,7 +571,7 @@ function cpMvDest(seg) {
     } else if (pegado) { dir = pegado[1]; fuera.add(i); }
   }
   // sin -t: el último argumento que no es una opción (`cp a b -f`, `Copy-Item a b -Force`, `cp a b --`)
-  if (dir === null) { const t = words.slice(1).filter((w) => !w.startsWith('-')).pop(); return t ? [t] : []; }
+  if (dir === null) return ultimosArgumentos(words);
   const fuentes = words.filter((w, i) => !fuera.has(i) && !w.startsWith('-'));
   return [dir, ...fuentes.map((f) => `${dir.replace(/[\\/]+$/, '')}/${f.split(/[\\/]/).pop()}`)];
 }
@@ -450,7 +670,7 @@ function resolverCd(cmd, baseCwd) {
     return d ? { dir: resolveTarget(d, baseCwd), forma: 'hoy', s } : { dir: baseCwd, forma: 'hoy', s };
   };
   try {
-    s = raw.replace(/((?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)((?:[\s\S]*?\n)??)([ \t]*\3[ \t]*(?=\n|$))/g, (m, cab, _q, _d, cuerpo, cierre) => cab + cuerpo.replace(/[^\n]/g, ' ') + cierre);
+    s = raw.replace(/((?<!<)<<(?!<)(?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*<<)(?<!\$\(\([^\n]*<<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)((?:[\s\S]*?\n)??)([ \t]*\3[ \t]*(?=\n|$))/g, (m, cab, _q, _d, cuerpo, cierre) => cab + cuerpo.replace(/[^\n]/g, ' ') + cierre);
     cds = [...s.matchAll(/\bcd\b/g)];
     if (!cds.length) return { dir: baseCwd, forma: 'sin-cd', s };
     const m = /(^|;|\n|&&)[ \t]*cd[ \t]+([^\s;&|()<>'"`\\]+)[ \t]*&&/.exec(s.slice(Math.max(0, cds[0].index - 3)));
@@ -521,7 +741,7 @@ const DESTINO_CON_SUBCOMANDO = new RegExp(String.raw`((?:^|[^<>&])(?:>{1,2}|\bte
 function posicionesDeComando(cmd) {
   const s = String(cmd || '');
   const es = new Array(s.length).fill(true);
-  for (const m of s.matchAll(/<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\1[^\n]*\n((?:[\s\S]*?\n)??)[ \t]*\2[ \t]*(?=\n|$)/g)) {
+  for (const m of s.matchAll(/(?<!<)<<(?!<)-?[ \t]*(['"]?)([A-Za-z_]\w*)\1[^\n]*\n((?:[\s\S]*?\n)??)[ \t]*\2[ \t]*(?=\n|$)/g)) {
     const desde = m.index + m[0].indexOf('\n') + 1;
     for (let i = desde; i < m.index + m[0].length; i++) es[i] = false;
   }
@@ -576,11 +796,199 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
   const out = new Set();
   const raw = String(cmd || '');
   const s = stripNonCommandText(raw);
-  destinosDeEscritura(raw, s, keep, out);
+  const lecturas = [s];
   // los cuerpos de los heredocs ya no están (`stripNonCommandText`): se puede unir aunque el comando tenga uno
   const unidos = sinContinuaciones(s, { sinCuerpos: true });
-  if (unidos !== s) destinosDeEscritura(raw, unidos, keep, out);
+  if (unidos !== s) lecturas.push(unidos);
+  for (const l of lecturas) destinosDeEscritura(raw, l, keep, out);
+  destinosPorElPartidor(raw, keep, out);
   return [...out];
+}
+
+/**
+ * Agrega a `out` los destinos de los tramos de `tramosDelShell`, con las palabras y las redirecciones que lee el partidor
+ * común (`scripts/lib/shell-parse.js`) como el shell: con las comillas, las sustituciones y las redirecciones de zsh. Ve
+ * lo que la lectura por expresiones pierde (`>! f`, `1<>f`, un `;` citado en la palabra de una redirección, un destino
+ * citado con blancos, `TS=$(date) cp …`), y se suma a ella: nunca se ve menos. Sin el partidor (una instalación a
+ * medias) no agrega nada y quedan las otras lecturas.
+ */
+function destinosPorElPartidor(raw, keep, out, hondo = 0) {
+  const p = partidorComun();
+  if (!p || typeof p.sinHeredocs !== 'function' || typeof p.parseSimpleCommand !== 'function') return;
+  // un destino que es la salida de un comando (`"$(mktemp -d)"`, `$(pwd)/a`) no se sabe sin correrlo: esta lectura no lo
+  // suma, como las de antes, que tampoco lo leían; lo que corre adentro se lee como su propio tramo
+  const sumar = (t) => { if (t && !/^\/dev\//.test(t) && !/\$\(|`/.test(t)) out.add(t); };
+  for (const tramo of tramosDelShell(hondo ? raw : p.sinHeredocs(raw))) {
+    const c = p.parseSimpleCommand(sinPalabrasDeBloque(tramo));
+    for (const r of c.redirections) if (r.write && r.target != null) sumar(palabraConAnsi(r.target));
+    const info = {};
+    const programa = programaEntre(c.words, info);
+    // el texto de `env -S` (o `--split-string`), que env parte en palabras y corre con las que siguen
+    if (info.envS && hondo < HONDO_DE_ENV_S) {
+      const { k, pegado } = info.envS;
+      const valor = pegado || (k + 1 < c.words.length ? palabraConAnsi(c.words[k + 1]) : '');
+      destinosPorElPartidor(`${valor} ${c.words.slice(pegado ? k + 1 : k + 2).join(' ')}`, keep, out, hondo + 1);
+    }
+    if (!programa) continue;
+    const resto = c.words.slice(programa.k + 1);
+    const palabras = [programa.n, ...resto.map(palabraConAnsi)];
+    if (COPIA.test(programa.n)) {
+      for (const t of destinosDeCpMv(palabras)) sumar(t);
+      // una sustitución suelta al final puede no dar ninguna palabra (`cp a b $(true)`): el destino es la de antes
+      let fin = palabras.length;
+      while (fin > 2 && /^(?:\$\(|`)/.test(resto[fin - 2])) fin--;
+      if (fin < palabras.length) for (const t of destinosDeCpMv(palabras.slice(0, fin))) sumar(t);
+    }
+    if (/^tee(?![\w.-])/.test(programa.n)) for (const t of palabras.slice(1)) if (!t.startsWith('-')) sumar(t);
+    if (/^rsync(?![\w.-])/.test(programa.n)) for (const t of archivosDeRsync(palabras)) sumar(t);
+    const ultimo = palabras[palabras.length - 1];
+    if (/^truncate(?![\w.-])/.test(programa.n) && palabras.length > 1 && !ultimo.startsWith('-')) sumar(ultimo);
+    destinosDelSedEnSitio([programa.n, ...resto].join(' '), raw, keep, out);
+  }
+}
+
+// cuántos `env -S` adentro de otros se leen: más hondo, quedan las otras lecturas
+const HONDO_DE_ENV_S = 4;
+
+// las opciones de rsync que escriben el archivo que nombran: el registro y el lote
+const RSYNC_ESCRIBE = /^--(?:log-file|write-batch|only-write-batch)(?:=([\s\S]*))?$/;
+
+/** Los archivos que un rsync escribe por sus opciones (`--log-file`, `--write-batch`), pegados con `=` o en la palabra que sigue. */
+function archivosDeRsync(palabras) {
+  const out = [];
+  for (let i = 1; i < palabras.length; i++) {
+    const m = RSYNC_ESCRIBE.exec(palabras[i]);
+    if (!m) continue;
+    const valor = m[1] !== undefined ? m[1] : palabras[i + 1];
+    if (valor) out.push(valor);
+  }
+  return out;
+}
+
+// cuántas sustituciones adentro de otras se parten en tramos
+const HONDO_DE_SUSTITUCIONES = 8;
+
+/** Dónde cierra el paréntesis que abre en `s[i]`, contando los que se abren adentro; -1 si no cierra. */
+function cierreDeParentesis(s, i) {
+  let hondo = 0;
+  for (let j = i; j < s.length; j++) {
+    if (s[j] === '\\') { j++; continue; }
+    if (s[j] === '(') hondo++;
+    else if (s[j] === ')' && --hondo === 0) return j;
+  }
+  return -1;
+}
+
+/**
+ * Los tramos del comando como los parte el shell, sin sus comentarios: corta en `;`, `&&`, `||`, `|`, `|&`, `&` y el salto
+ * de renglón que están fuera de comillas y de sustituciones; no en el `|` de `>|` o `>&|` ni en el `&` de una redirección
+ * (`2>&1`, `&>f`, `<&0`). Una sola pasada: una comilla o una sustitución sin cerrar se lleva el resto en el mismo tramo.
+ */
+function tramosDelShell(texto, hondo = 0) {
+  const s = String(texto);
+  const out = [];
+  // el tramo que se arma, y sus dos últimas letras sueltas (sin escapar ni citadas; vacía detrás de otra cosa): mirar la
+  // punta del tramo armado lo recompone entero cada vez
+  let cur = '';
+  let cola = '';
+  const agregar = (t, suelta = false) => { cur += t; cola = suelta ? (cola + t).slice(-2) : ''; };
+  const cortar = () => { if (cur.trim()) out.push(cur); cur = ''; cola = ''; };
+  // los comandos de adentro de una sustitución (entre `desde` y `fin`) también son tramos; más hondo que el tope, quedan
+  // las otras lecturas
+  const adentro = (desde, fin) => {
+    if (hondo >= HONDO_DE_SUSTITUCIONES) return;
+    for (const t of tramosDelShell(s.slice(desde, fin), hondo + 1)) out.push(t);
+  };
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '\\') { if (s[i + 1] !== '\n') agregar(s.slice(i, i + 2)); i++; continue; }
+    if (c === "'" || (c === '$' && s[i + 1] === "'")) {
+      let j = c === '$' ? i + 2 : i + 1;
+      while (j < s.length && s[j] !== "'") j += c === '$' && s[j] === '\\' ? 2 : 1;
+      agregar(s.slice(i, j + 1));
+      i = j;
+      continue;
+    }
+    // entre comillas dobles, una sustitución corre igual, y su comilla de adentro no cierra la de afuera
+    if (c === '"') {
+      let j = i + 1;
+      while (j < s.length && s[j] !== '"') {
+        if (s[j] === '\\') { j += 2; continue; }
+        const f = finDeSustitucion(s, j);
+        if (f === -1) { j = s.length; break; }
+        if (f > j) { if (s[j] === '`') adentro(j + 1, f); else if (s[j + 1] === '(') adentro(j + 2, f); j = f + 1; continue; }
+        j++;
+      }
+      agregar(s.slice(i, j + 1));
+      i = j;
+      continue;
+    }
+    // (`<(…)` y `>(…)` también: su tubería de adentro no parte el tramo)
+    const proceso = (c === '<' || c === '>') && s[i + 1] === '(';
+    const fin = proceso ? cierreDeParentesis(s, i + 1) : finDeSustitucion(s, i);
+    if (fin === -1) { agregar(s.slice(i)); break; }
+    if (fin > i) {
+      if (c === '`') adentro(i + 1, fin); else if (s[i + 1] === '(') adentro(i + 2, fin);
+      agregar(s.slice(i, fin + 1));
+      i = fin;
+      continue;
+    }
+    if (c === '#' && (cur.length === 0 || /\s/.test(cola.slice(-1)))) { while (i + 1 < s.length && s[i + 1] !== '\n') i++; continue; }
+    if (c === '\n' || c === ';') { cortar(); continue; }
+    if (c === '|') {
+      if (cola.endsWith('>') || cola === '>&') { agregar(c, true); continue; }
+      if (s[i + 1] === '|' || s[i + 1] === '&') i++;
+      cortar();
+      continue;
+    }
+    if (c === '&') {
+      if (s[i + 1] === '&') { i++; cortar(); continue; }
+      if (s[i + 1] === '>' || cola.endsWith('>') || cola.endsWith('<')) { agregar(c, true); continue; }
+      cortar();
+      continue;
+    }
+    agregar(c, true);
+  }
+  cortar();
+  return out;
+}
+
+/**
+ * Agrega a `out` los archivos que edita en su lugar un `sed -i` / `--in-place` o un `perl -i` / `-pi` / `-ni` que empieza
+ * `head`: todo token con extensión de código, o que quien llama quiere mirar igual (`keep`). `raw`, el comando entero.
+ */
+const sufijoVacioDe = { raw: null, hay: false };
+function destinosDelSedEnSitio(head, raw, keep, out) {
+  const isSedI = /^sed\b/.test(head) && /(^|\s)(-i\b|-[a-zA-Z]*i[a-zA-Z]*\b(?=\s)|--in-place)/.test(head);
+  // (con el separador de registro en el mismo grupo: `-0pi`, `-0777pi`)
+  const isPerlI = /^perl\b/.test(head) && /(^|\s)-[a-zA-Z0-9]*i\S*(\s|$)/.test(head);
+  if (!isSedI && !isPerlI) return;
+  const words = head.match(new RegExp(Q, 'g')) || [];
+  // el nombre del comando y, si no hay -e / -f, la expresión (el primer argumento) no son archivos: `keep` no los mira
+  const conExpresionAparte = /(^|\s)(-[a-zA-Z]*[ef]|--expression|--file)/.test(head) || isPerlI;
+  let args = 0;
+  let esValorDeE = false;   // lo que sigue a -e / --expression es la expresión, no un archivo
+  let anterior = null;
+  // en el comando escrito, ¿hay un `-i ''` de verdad (el sufijo vacío de Mac) o es una expresión que se vació? (una vez
+  // por comando: con miles de `sed -i` en uno, buscarlo en cada uno lo recorre entero cada vez)
+  if (sufijoVacioDe.raw !== raw) { sufijoVacioDe.raw = raw; sufijoVacioDe.hay = /(^|\s)-i\s+(''|"")(\s|$)/.test(raw); }
+  const sufijoVacio = sufijoVacioDe.hay;
+  for (const w of words.slice(1)) {
+    const mm = w.match(new RegExp(`^${Q}$`));
+    const t = mm ? tok(mm, 1) : null;
+    if (t == null) continue;
+    const previo = anterior; anterior = t;
+    if (t.startsWith('-')) { esValorDeE = /^(-[a-zA-Z]*e|--expression)$/.test(t); continue; }
+    if (esValorDeE) { esValorDeE = false; continue; }
+    // `sed -i ''` (Mac): el `''` es el sufijo de -i. Si no, una expresión con espacios llega vaciada y ocupa su lugar
+    if (t === '') { if (!(isSedI && previo === '-i' && sufijoVacio)) args++; continue; }
+    args++;
+    const esExpresion = !conExpresionAparte && args === 1;
+    // una ruta con variable (`$f`, `${D}/x.js`) también es un destino, que se resuelve o se dice que no. Una expresión
+    // de sed que quedó en otro lugar (`-i''` pegado corre la cuenta) no: lleva espacios o arranca con `s/`, `y/`
+    const rutaConVariable = /\$\{?[A-Za-z_]/.test(t) && !/\s/.test(t) && !/^[sy][^\w\s]/.test(t);
+    if (isCodeFile(t) || isManifestFile(t) || (keep && !esExpresion && keep(t)) || (!esExpresion && rutaConVariable)) out.add(t);
+  }
 }
 
 /** Agrega a `out` los destinos de escritura de `s` (el comando ya sin lo que no es comando); `raw`, el comando entero. */
@@ -591,6 +999,13 @@ function destinosDeEscritura(raw, s, keep, out) {
   while ((m = reRedirect.exec(s))) {
     const t = tok(m, 1);
     if (t && !t.startsWith('&') && !/^\/dev\//.test(t)) out.add(t);
+  }
+  // las de zsh que pisan el archivo aunque el shell no deje pisar (`>! f`, `>>! f`, `&>! f`, `>&! f`, `>&| f`); en bash
+  // `>!` es `>` al archivo `!`, que se lee arriba. El partidor común las lee también, salvo `>&|`, que parte en la tubería
+  const reZsh = new RegExp(`(?:^|[^<>&])(?:&|\\d)?>{1,2}&?[|!][ \\t]*${Q}`, 'g');
+  while ((m = reZsh.exec(s))) {
+    const t = tok(m, 1);
+    if (t && !/^\/dev\//.test(t)) out.add(t);
   }
 
   // 2) tee [-a] f1 [f2 …]
@@ -609,40 +1024,19 @@ function destinosDeEscritura(raw, s, keep, out) {
   for (const crudo of splitSegments(s)) {
     // la palabra de un bloque o el paréntesis delante no es el comando: `do cp a b`, `then sed -i …`, `if cp a b`, `(cp a b)`
     const seg = sinPalabrasDeBloque(crudo);
-    // Anclados al INICIO del segmento: `grep -i "sed" src/a.ts` no es un sed -i.
-    const head = seg.trim().replace(/^(?:\w+=\S+\s+)*(?:sudo\s+)?/, '');
-    const isSedI = /^sed\b/.test(head) && /(^|\s)(-i\b|-[a-zA-Z]*i[a-zA-Z]*\b(?=\s)|--in-place)/.test(head);
-    // (con el separador de registro en el mismo grupo: `-0pi`, `-0777pi`)
-    const isPerlI = /^perl\b/.test(head) && /(^|\s)-[a-zA-Z0-9]*i\S*(\s|$)/.test(head);
-    if (isSedI || isPerlI) {
-      const words = seg.match(new RegExp(Q, 'g')) || [];
-      // el nombre del comando y, si no hay -e / -f, la expresión (el primer argumento) no son archivos: `keep` no los mira
-      const conExpresionAparte = /(^|\s)(-[a-zA-Z]*[ef]|--expression|--file)/.test(head) || isPerlI;
-      let args = 0;
-      let esValorDeE = false;   // lo que sigue a -e / --expression es la expresión, no un archivo
-      let anterior = null;
-      // en el comando escrito, ¿hay un `-i ''` de verdad (el sufijo vacío de Mac) o es una expresión que se vació?
-      const sufijoVacio = /(^|\s)-i\s+(''|"")(\s|$)/.test(raw);
-      for (const w of words.slice(1)) {
-        const mm = w.match(new RegExp(`^${Q}$`));
-        const t = mm ? tok(mm, 1) : null;
-        if (t == null) continue;
-        const previo = anterior; anterior = t;
-        if (t.startsWith('-')) { esValorDeE = /^(-[a-zA-Z]*e|--expression)$/.test(t); continue; }
-        if (esValorDeE) { esValorDeE = false; continue; }
-        // `sed -i ''` (Mac): el `''` es el sufijo de -i. Si no, una expresión con espacios llega vaciada y ocupa su lugar
-        if (t === '') { if (!(isSedI && previo === '-i' && sufijoVacio)) args++; continue; }
-        args++;
-        const esExpresion = !conExpresionAparte && args === 1;
-        // una ruta con variable (`$f`, `${D}/x.js`) también es un destino, que se resuelve o se dice que no. Una expresión
-        // de sed que quedó en otro lugar (`-i''` pegado corre la cuenta) no: lleva espacios o arranca con `s/`, `y/`
-        const rutaConVariable = /\$\{?[A-Za-z_]/.test(t) && !/\s/.test(t) && !/^[sy][^\w\s]/.test(t);
-        if (isCodeFile(t) || isManifestFile(t) || (keep && !esExpresion && keep(t)) || (!esExpresion && rutaConVariable)) out.add(t);
-      }
+    // Anclados al INICIO del segmento: `grep -i "sed" src/a.ts` no es un sed -i. Sin variables ni envoltorios delante, y
+    // con el programa por su nombre (`env sed -i`, `/usr/bin/sed -i` son un sed -i); y también con la lectura de siempre,
+    // el nombre al principio detrás de variables y `sudo`: cuenta lo que vea cualquiera de las dos
+    const programa = desdeElPrograma(sinRedireccionesDelante(seg));
+    for (const head of new Set([programa, seg.trim().replace(/^(?:\w+=\S+\s+)*(?:sudo\s+)?/, '')])) destinosDelSedEnSitio(head, raw, keep, out);
+    // 4) cp / mv / ln / install / rsync → destino = último token del segmento (un enlace también deja un archivo en su
+    //    destino). También las formas de PowerShell de cp y mv (Copy-Item / Move-Item y sus alias copy / cpi / move / mi;
+    //    no distingue mayúsculas): por la herramienta PowerShell de Windows. Una redirección delante (`> f cp a b`) no es
+    //    el comando, ni un envoltorio (`env cp`, `nohup cp`); el programa también por su ruta o escapado (`/bin/cp`, `\cp`).
+    //    Y con la lectura de siempre, el nombre al principio: cuenta lo que vea cualquiera de las dos
+    if (COPIA.test(programa) || /^(?:copy-item|move-item|copy|cpi|move|mi)\b/i.test(programa)) {
+      for (const t of cpMvDest(programa)) out.add(t);
     }
-    // 4) cp / mv / ln → destino = último token del segmento (un enlace también deja un archivo en su destino). También
-    //    las formas de PowerShell de cp y mv (Copy-Item / Move-Item y sus alias copy / cpi / move / mi; no distingue
-    //    mayúsculas): por la herramienta PowerShell de Windows. Una redirección delante (`> f cp a b`) no es el comando.
     const comando = sinRedireccionesDelante(seg);
     if (/^(?:\w+=\S+\s+)*(?:sudo\s+)?(?:cp|mv|ln)\b/.test(comando) || /^(?:copy-item|move-item|copy|cpi|move|mi)\b/i.test(comando)) {
       for (const t of cpMvDest(seg)) out.add(t);
@@ -704,9 +1098,14 @@ function destinosDeEscritura(raw, s, keep, out) {
   const reDd = /\bdd\b[^\n|;&]*?\bof=(['"]?)([^\s'"]+)\1/g;
   while ((m = reDd.exec(s))) out.add(m[2]);
   for (const seg of splitSegments(s)) {
-    if (/^(?:\w+=\S+\s+)*(?:sudo\s+)?truncate\b/.test(sinRedireccionesDelante(seg))) {
-      const t = palabrasDelComando(sinRedireccionesDelante(seg)).pop();
-      if (t && !t.startsWith('-')) out.add(t);
+    // el programa por su nombre, y la lectura de siempre (el nombre al principio, detrás de variables y `sudo`)
+    for (const comando of new Set([desdeElPrograma(sinRedireccionesDelante(seg)), sinRedireccionesDelante(seg)])) {
+      if (!/^(?:\w+=\S+\s+)*(?:sudo\s+)?truncate\b/.test(comando)) continue;
+      const words = palabrasDelComando(comando);
+      // el último, si no es una opción; con el tramo sin cerrar, todos los que no lo son
+      const t = words[words.length - 1];
+      if (words.sinCerrar) for (const w of ultimosArgumentos(words)) out.add(w);
+      else if (t && !t.startsWith('-')) out.add(t);
     }
   }
 
@@ -780,7 +1179,7 @@ function scriptsInline(cmd) {
   // cada parte con una sola lectura posible: una barra invertida es siempre escape, una opción empieza con letra
   const conFlag = new RegExp(`${inicio}((?:\\s+-{1,2}[A-Za-z][\\w-]*(?:=[^\\s'"]+)?)*?)\\s+(?:-[a-zA-Z]*[epc]|--eval|--print|-Command)\\s+(['"])((?:\\\\[\\s\\S]|(?!\\2)[^\\\\])*)\\2([^\\n;&|]*)`, 'gi');
   // sin los cuerpos de los heredocs: un `node -e` adentro de un `.md` que se escribe es texto, no un comando
-  const sinCuerpos = raw.replace(/((?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)(?:[\s\S]*?\n)??[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
+  const sinCuerpos = raw.replace(/((?<!<)<<(?!<)(?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*<<)(?<!\$\(\([^\n]*<<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\2(?=[\s;&|()<>]|$)[^\n]*\n)(?:[\s\S]*?\n)??[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
   for (const m of sinCuerpos.matchAll(conFlag)) out.push({ script: m[3], argv: argumentosDe(m[4]) });
   // por la entrada: el heredoc o el here-string que llega a un intérprete como su programa, detrás de un envoltorio,
   // en otra etapa de la tubería o con `/dev/stdin`
@@ -797,12 +1196,23 @@ function scriptsInline(cmd) {
 // igual el mismo comando. Sólo se usa esta función; las variables las sigue resolviendo command-vars.js. Sin el lector
 // (una instalación a medias) el portón carga igual, y cada cuerpo de heredoc cuenta como programa: frena de más
 let lectorDeEntrada;
+// lo que leyó para los últimos comandos: el freno lo pide unas cinco veces por comando, y con una tubería larga de
+// here-strings cada lectura tarda segundos
+const ENTRADAS_LEIDAS = new Map();
 function programasPorEntrada(raw) {
+  const ya = ENTRADAS_LEIDAS.get(raw);
+  if (ya) return ya;
+  const leidos = leerProgramasPorEntrada(raw);
+  if (ENTRADAS_LEIDAS.size >= 8) ENTRADAS_LEIDAS.delete(ENTRADAS_LEIDAS.keys().next().value);
+  ENTRADAS_LEIDAS.set(raw, leidos);
+  return leidos;
+}
+function leerProgramasPorEntrada(raw) {
   if (lectorDeEntrada === undefined) {
     try { ({ programasPorEntrada: lectorDeEntrada } = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'shell-parse.js'))); } catch (e) { logHookError(e); lectorDeEntrada = null; }
   }
   if (lectorDeEntrada) return lectorDeEntrada(raw);
-  return [...raw.matchAll(/(?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\1(?=[\s;&|()<>]|$)[^\n]*\n(?:([\s\S]*?)\n)??[ \t]*\2[ \t]*(?=\n|$)/g)]
+  return [...raw.matchAll(/(?<!<)<<(?!<)(?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*<<)(?<!\$\(\([^\n]*<<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\1(?=[\s;&|()<>]|$)[^\n]*\n(?:([\s\S]*?)\n)??[ \t]*\2[ \t]*(?=\n|$)/g)]
     .map((m) => ({ interprete: '', conGuion: false, despues: [], cuerpo: m[3] || '', comillas: Boolean(m[1]) }));
 }
 
@@ -1605,6 +2015,28 @@ function destinosArmados(cmd, guiones = scriptsInline(cmd)) {
 
 const DELIMITADOR_DE_HEREDOC = /-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\1(?=[\s;&|()<>]|$)/y;
 
+/**
+ * Dónde termina la cuenta o la expansión que empieza en `i` (`((…))`, `$[…]` o `${…}`): el índice de su último carácter,
+ * o -1 si no cierra en el renglón. Adentro, un `<<` es un corrimiento o parte de la palabra, nunca un heredoc: bash y
+ * zsh corren lo de abajo aunque un renglón más abajo se llame como lo que sigue al `<<`.
+ */
+function finDeCuenta(linea, i) {
+  const abre = linea[i + 1] === '(' ? '(' : linea[i + 1];
+  const cierra = { '(': ')', '[': ']', '{': '}' }[abre];
+  let profundidad = abre === '(' ? 2 : 1;
+  for (let j = i + 2; j < linea.length; j++) {
+    const c = linea[j];
+    if (c === '\\') j++;
+    else if (c === abre) profundidad++;
+    else if (c === cierra) {
+      profundidad -= 1;
+      if (profundidad === 0) return j;
+    }
+  }
+  return -1;
+}
+const empiezaCuenta = (linea, i) => (linea[i] === '(' && linea[i + 1] === '(') || (linea[i] === '$' && (linea[i + 1] === '[' || linea[i + 1] === '{'));
+
 function sinBlancosAlBorde(linea) {
   let ini = 0;
   let fin = linea.length;
@@ -1614,10 +2046,13 @@ function sinBlancosAlBorde(linea) {
 }
 
 /**
- * Los delimitadores que abre el renglón, en orden. No abren nada lo de adentro de comillas, lo escapado, lo que sigue a
- * un `$((` ni lo que sigue a un `#` que empieza una palabra: ahí el shell ve un comentario y el renglón siguiente corre.
+ * Los heredocs que abre el renglón, en orden: `{ delimitador, inicio, fin }`, con `inicio` y `fin` los del operador con
+ * su palabra (`<<-'EOF'`). No abren nada lo de adentro de comillas, lo escapado, lo que sigue a un `$((` ni lo que sigue a
+ * un `#` que empieza una palabra: ahí el shell ve un comentario y el renglón siguiente corre. Tampoco lo de adentro de
+ * una cuenta o una expansión (`((…))`, `$[…]`, `${…}`), y una que no cierra en el renglón corta lo que sigue: leer de
+ * más como comando es el lado que frena.
  */
-function* delimitadoresQueAbre(linea) {
+function* aperturasDeHeredoc(linea) {
   const aritmetica = linea.indexOf('$((');
   const tope = aritmetica < 0 ? linea.length : Math.min(linea.length, aritmetica + 3);
   for (let i = 0; i < tope; i++) {
@@ -1626,6 +2061,12 @@ function* delimitadoresQueAbre(linea) {
       i++;
     } else if (c === '#' && (i === 0 || /[\s;&|()]/.test(linea[i - 1]))) {
       return;
+    } else if (c === '$' && linea[i + 1] === "'") {
+      // `$'…'`: una comilla escapada no lo cierra (`$'it\'s <<Z'` es un texto)
+      let j = i + 2;
+      while (j < linea.length && linea[j] !== "'") j += linea[j] === '\\' ? 2 : 1;
+      if (j >= linea.length) return;
+      i = j;
     } else if (c === "'") {
       const cierra = linea.indexOf("'", i + 1);
       if (cierra < 0) return;
@@ -1635,27 +2076,65 @@ function* delimitadoresQueAbre(linea) {
       while (j < linea.length && linea[j] !== '"') j += linea[j] === '\\' ? 2 : 1;
       if (j >= linea.length) return;
       i = j;
+    } else if (empiezaCuenta(linea, i)) {
+      const fin = finDeCuenta(linea, i);
+      if (fin < 0) return;
+      i = fin;
     } else if (c === '<' && linea[i + 1] === '<' && linea[i - 1] !== '<' && linea[i + 2] !== '<') {
       DELIMITADOR_DE_HEREDOC.lastIndex = i + 2;
       const m = DELIMITADOR_DE_HEREDOC.exec(linea);
-      if (m) yield m[2];
+      if (m) yield { delimitador: m[2], inicio: i, fin: DELIMITADOR_DE_HEREDOC.lastIndex };
     }
   }
 }
 
 /**
- * Cada heredoc que se cierra: `{ abre, desde, cierre, indice }`. `abre` es el renglón que lo abre, su cuerpo va de `desde`
- * a `cierre` sin incluirlo, e `indice` es su lugar entre los que abre ese renglón: varios en un renglón se leen uno detrás
- * del otro. Va por renglones, con los cierres en un índice: con muchas aperturas sin cierre, una expresión que busca el
- * cierre desde cada una es cuadrática.
+ * Los heredocs que abre el renglón como los leía la expresión de `heredocs()`, en orden y con la misma forma que
+ * `aperturasDeHeredoc`: las comillas sin escapes desde el principio del renglón (simples o dobles, hasta la siguiente
+ * igual), sin mirar el `#`, y nada desde el primer `$((`. Así `heredocs()` da lo mismo que antes, renglón por renglón,
+ * salvo en una cuenta o una expansión: adentro no abre nada, como `aperturasDeHeredoc`.
  */
-function heredocsCerrados(lineas) {
+function* aperturasComoAntes(linea) {
+  const aritmetica = linea.indexOf('$((');
+  const tope = aritmetica < 0 ? linea.length : aritmetica;
+  let comilla = null;
+  for (let i = 0; i < tope; i++) {
+    const c = linea[i];
+    if (comilla) { if (c === comilla) comilla = null; continue; }
+    if (c === "'" || c === '"') { comilla = c; continue; }
+    if (empiezaCuenta(linea, i)) {
+      const fin = finDeCuenta(linea, i);
+      if (fin < 0) return;
+      i = fin;
+      continue;
+    }
+    if (c === '<' && linea[i + 1] === '<' && linea[i - 1] !== '<' && linea[i + 2] !== '<') {
+      DELIMITADOR_DE_HEREDOC.lastIndex = i + 2;
+      const m = DELIMITADOR_DE_HEREDOC.exec(linea);
+      if (m) yield { delimitador: m[2], inicio: i, fin: DELIMITADOR_DE_HEREDOC.lastIndex };
+    }
+  }
+}
+
+/** Los delimitadores que abre el renglón, en orden (`aperturasDeHeredoc`). */
+function* delimitadoresQueAbre(linea) {
+  for (const a of aperturasDeHeredoc(linea)) yield a.delimitador;
+}
+
+/**
+ * Cada heredoc que se cierra: `{ abre, desde, cierre, indice, operador }`. `abre` es el renglón que lo abre, su cuerpo va
+ * de `desde` a `cierre` sin incluirlo, `indice` es su lugar entre los que abre ese renglón (varios en un renglón se leen
+ * uno detrás del otro) y `operador`, `{ inicio, fin }` del `<<` con su palabra en el renglón. Va por renglones, con los
+ * cierres en un índice: con muchas aperturas sin cierre, una expresión que busca el cierre desde cada una es cuadrática.
+ */
+/** `cierreTras(delimitador, n)`: el primer renglón después de `n` que es el delimitador (sin blancos al borde), o -1. */
+function cierresDe(lineas) {
   const renglonesDe = new Map();
   lineas.forEach((linea, n) => {
     const clave = sinBlancosAlBorde(linea);
     if (renglonesDe.has(clave)) renglonesDe.get(clave).push(n); else renglonesDe.set(clave, [n]);
   });
-  const cierreTras = (delimitador, n) => {
+  return (delimitador, n) => {
     const renglones = renglonesDe.get(delimitador) || [];
     let bajo = 0;
     let alto = renglones.length;
@@ -1665,15 +2144,19 @@ function heredocsCerrados(lineas) {
     }
     return bajo < renglones.length ? renglones[bajo] : -1;
   };
+}
+
+function heredocsCerrados(lineas) {
+  const cierreTras = cierresDe(lineas);
   const out = [];
   for (let n = 0; n < lineas.length - 1; n++) {
     let cursor = n;
     let indice = 0;
     // un heredoc sin cierre se come el resto: los que siguen en el renglón ya no tienen cuerpo
-    for (const delimitador of delimitadoresQueAbre(lineas[n])) {
+    for (const { delimitador, inicio, fin } of aperturasDeHeredoc(lineas[n])) {
       const cierre = cierreTras(delimitador, cursor);
       if (cierre < 0) break;
-      out.push({ abre: n, desde: cursor + 1, cierre, indice: indice++ });
+      out.push({ abre: n, desde: cursor + 1, cierre, indice: indice++, operador: { inicio, fin } });
       cursor = cierre;
     }
     n = cursor;
@@ -2802,6 +3285,8 @@ function editaEnSitio(cmd) {
       const words = palabras(sinPalabrasDelShell(tramo)).filter((w) => w !== '');
       for (let k = 0; k < words.length; k++) {
         const c = path.basename(words[k]).toLowerCase().replace(/\.exe$/, '');
+        // el resto de las palabras sólo para los que editan: copiarlo por cada palabra crece con el cuadrado del tramo
+        if (!['sed', 'gsed', 'perl', 'ruby', 'awk', 'gawk', 'ed', 'ex'].includes(c)) continue;
         const resto = words.slice(k + 1);
         if (['sed', 'gsed', 'perl', 'ruby'].includes(c) && resto.some(opcionI)) return true;
         if (['sed', 'gsed'].includes(c) && sedConEfectos(resto)) return true;
@@ -3206,7 +3691,12 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
   };
   const es = (raw) => isControlApproval(String(raw)) || isControlApproval(abs(raw)) || comodinDeExenciones(raw)
     || (cdSinResolver && !path.isAbsolute(String(raw)) && /control-changes|exemptions/i.test(String(raw)));
-  const esRuta = (p) => isControlApproval(p) || isControlApproval(`${p}/`);
+  // una vez por ruta: una copia con miles de orígenes a un mismo destino preguntaba por su ruta real una vez por origen
+  const rutasVistas = new Map();
+  const esRuta = (p) => {
+    if (!rutasVistas.has(p)) rutasVistas.set(p, isControlApproval(p) || isControlApproval(`${p}/`));
+    return rutasVistas.get(p);
+  };
   const out = [];
   // se lee también con la continuación de renglón juntada: `cat <<'EOF' \` y abajo `> constancia` es una redirección del
   // `cat`. La lectura de siempre sigue, y toma lo de abajo como comando. Lo que otro programa corre (el heredoc a un
@@ -4402,7 +4892,19 @@ function comandosAnidados(comando, hondo = 0, valores = null) {
       const sinEllos = pelarEnv(tramo).resto.replace(/(^|[\s;&|(])(?:\S*\/)?(?:busybox|toybox)(?=\s)/, '$1');
       for (const b of cuerpoConValores(sinEllos, asignados)) sumarConCd(b);
     }
-    if (c === 'eval') sumarConCd(w.slice(k0 + 1).join(' '));
+    // el texto de un `eval`, también con lo que vale afuera (`d=x; eval "cp a $d"` copia a `x`)
+    if (c === 'eval') {
+      sumarConCd(w.slice(k0 + 1).join(' '));
+      for (const b of cuerpoConValores(w.slice(k0 + 1).join(' '), asignados)) sumarConCd(b);
+    }
+    // `su -c <comando>` (también `--command[=]`, antes o después del usuario) corre el comando en un shell
+    if (c === 'su') {
+      w.forEach((x, k) => {
+        if (k <= k0) return;
+        if (/^-[A-Za-z]*c$|^--command$/.test(x)) sumarConCd(w[k + 1]);
+        else if (x.startsWith('--command=')) sumarConCd(x.slice('--command='.length));
+      });
+    }
     if (c === 'find') {
       const i = w.findIndex((x) => x === '-exec' || x === '-execdir' || x === '-ok');
       if (i >= 0) {
@@ -4891,6 +5393,38 @@ function ordenesDeXargs(words, previas) {
   return previas.length > 1 ? [...juntas, ...previas.map((a) => [...orden, a].map(citarParaElShell).join(' '))] : juntas;
 }
 
+// las opciones de GNU parallel que llevan su valor en la palabra siguiente
+const PARALLEL_CON_VALOR = new Set(['-j', '--jobs', '-P', '--max-procs', '-S', '-a', '--arg-file', '-n', '--max-args', '-L',
+  '--max-lines', '-N', '-d', '--delimiter', '-C', '-E', '--delay', '--timeout', '--results', '--tmpdir', '--wd', '--tag-string',
+  '--retries', '--load']);
+/**
+ * Lo que corre un `parallel` (GNU): su orden con cada argumento de `:::` (o, sin ellos, con lo que llega por la entrada)
+ * en el lugar del marcador (`{}`, u otro con `-I`), o al final si no lo nombra. Sin orden, cada argumento es un comando.
+ * Una opción larga que no está en la lista puede llevar su valor en la palabra siguiente o no: se leen las dos formas
+ * (hasta dos de ellas), que es el lado que frena.
+ */
+function ordenesDeParallel(words, previas) {
+  const out = new Set();
+  const leer = (desde, marcaDeAntes, dudas) => {
+    let i = desde;
+    let marca = marcaDeAntes;
+    for (; i < words.length && words[i].startsWith('-') && !/^:::/.test(words[i]); i++) {
+      if (words[i] === '-I' || words[i] === '--replace') { marca = words[++i] || marca; continue; }
+      if (words[i] === '--') { i++; break; }
+      if (PARALLEL_CON_VALOR.has(words[i])) { i++; continue; }
+      if (/^--[^=]+$/.test(words[i]) && dudas < 2) leer(i + 2, marca, dudas + 1);
+    }
+    const separador = words.findIndex((w, j) => j >= i && /^::::?\+?$/.test(w));
+    const orden = words.slice(i, separador < 0 ? undefined : separador);
+    const args = separador < 0 ? previas : words.slice(separador).filter((w) => !/^::::?\+?$/.test(w));
+    if (!orden.length) { for (const a of args) out.add(a); return; }
+    const conMarca = orden.some((w) => w.includes(marca));
+    for (const a of args) out.add((conMarca ? orden.map((w) => citarParaElShell(w.split(marca).join(a))) : [...orden, a].map(citarParaElShell)).join(' '));
+  };
+  leer(1, '{}', 0);
+  return [...out];
+}
+
 /**
  * Las palabras que un `<<<` le da a un `xargs`: la palabra leída como el shell (comillas pegadas, `$'…'`, una variable
  * asignada en el comando), partida por el separador del `xargs` (`-0`, `-d`) y también por los espacios.
@@ -4939,7 +5473,7 @@ function sinCierre(t) {
  */
 function comandosPorOtroPrograma(cmd, cwd) {
   const s = String(cmd || '');
-  if (!/\bfind\b|\bxargs\b|<<|\|/.test(s)) return [];
+  if (!/\bfind\b|\bxargs\b|\bparallel\b|<<|\|/.test(s)) return [];
   const resolver = (raw, base) => resolveTarget(expandirRuta(cmd, raw).valor, base, process.platform, { homeVariable: true });
   const bases = [cwd];
   for (const m of s.matchAll(/(?:^|[\s;&|(])cd\s+(['"]?)([^\s'";&|)]+)\1/g)) bases.push(resolver(m[2], cwd));
@@ -4962,15 +5496,18 @@ function comandosPorOtroPrograma(cmd, cwd) {
       // un `<<<` le da su palabra a la entrada, y le gana a la tubería: no es un argumento de la orden
       const cadena = CADENA_A_LA_ENTRADA.exec(antes);
       const crudas = palabras(cadena ? antes.replace(cadena[0], ' ') : antes).filter((w) => w !== '');
-      if (nombreDeComando(crudas[0]) === 'xargs') {
-        if (cadena) { out.push(...ordenesDeXargs(crudas, entradaPorCadena(cadena[1], crudas, asignacionesDe(texto)))); return; }
+      // `parallel` corre su orden con los argumentos de `:::` o, sin ellos, con lo que llega por la entrada, como `xargs`
+      const lanzador = nombreDeComando(crudas[0]);
+      const ordenes = lanzador === 'parallel' ? ordenesDeParallel : ordenesDeXargs;
+      if (lanzador === 'xargs' || lanzador === 'parallel') {
+        if (cadena) { out.push(...ordenes(crudas, entradaPorCadena(cadena[1], crudas, asignacionesDe(texto)))); return; }
         // lo que llega por la entrada: las palabras del tramo de antes, sin el `echo`/`printf` que las escribe (con él,
         // `$0` del cuerpo de un `xargs sh -c` sería `echo`)
         const previas = k ? palabras(lista[k - 1]).filter((w) => w !== '') : [];
         // (de `printf`, lo que escribe: el formato con sus argumentos y sus escapes, `printf 'h.md\n'` escribe `h.md`)
         const escritor = nombreDeComando(previas[0]) || '';
         const entrada = /^(?:echo|printf|print)$/.test(escritor) ? previas.slice(1).filter((w) => !/^-[a-zA-Z]+$/.test(w)) : previas;
-        out.push(...ordenesDeXargs(crudas, escritor === 'printf' ? ansiC(formatoDePrintf(entrada)).split(/[\s\0]+/).filter(Boolean) : entrada));
+        out.push(...ordenes(crudas, escritor === 'printf' ? ansiC(formatoDePrintf(entrada)).split(/[\s\0]+/).filter(Boolean) : entrada));
         return;
       }
       const words = palabras(sinPalabrasDelShell(tramo)).filter((w) => w !== '');
@@ -5108,6 +5645,21 @@ function estadoDeHistoria(abs) {
  * estado lo cambia marker.js. Un borrador pasa sólo si el comando lo reescribe entero con un heredoc legible que lo
  * deja en borrador (ahí lo juzga el freno de la historia sin validar); escribirle encima de otra forma podría cerrarla.
  */
+/**
+ * Lo que escribe en el estado del pipeline una orden que corre adentro de otro programa: el cuerpo de un `sh -c`, de un
+ * `eval` o de un `su -c`, la orden de un `xargs`, de un `find -exec` o de un `parallel`, y un guion de shell escrito por
+ * un heredoc del mismo comando. Cada una se mira como un comando, un nivel, con la misma lectura que las historias. El
+ * primer destino que cae en el estado, o null; lo escrito a la vista lo mira el portón de carril.
+ */
+function estadoPorOtroPrograma(cmd, cwd, sesion, enElEstado) {
+  const porOtro = [...guionesDeShellEscritos(cmd, [...new Set([cwd, sesion])]), ...comandosPorOtroPrograma(cmd, cwd)];
+  const adentro = [cmd, ...porOtro].flatMap((t) => comandosAnidados(sinCuerposDeTexto(t)).slice(1));
+  for (const texto of new Set([...porOtro, ...adentro])) {
+    for (const d of destinosResueltos(texto, cwd, process.platform, { keep: () => true })) if (enElEstado(d.abs)) return d.abs;
+  }
+  return null;
+}
+
 function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin = [], hondo = 0, instalados = []) {
   // con las comillas pegadas en medio de una palabra (`rm sp""ecs/h.md`) se lee también como lo deja el shell
   const pegadas = sinComillasPegadas(cmd);
@@ -5295,11 +5847,13 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
     return r.error || r.status !== 0 || String(r.stdout).trim() !== '';
   };
   for (const abs of repuestos) if (!otros.has(abs) && !conCambios(abs)) vistos.delete(abs);
-  // el cuerpo de un heredoc que reescribe el archivo entero (`>`, no `>>`)
+  // los cuerpos de los heredocs que reescriben el archivo entero (`>`, no `>>`); con varios para el mismo archivo, se
+  // miran todos
   const enteros = new Map();
   for (const h of heredocs(cmd)) {
     if (!h.target || !new RegExp(`(?:^|[^>])>\\s*['"]?${h.target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(cmd)) continue;
-    enteros.set(resolveTarget(expandirRuta(cmd, h.target).valor, cwd, process.platform, { homeVariable: true }), h.body);
+    const abs = resolveTarget(expandirRuta(cmd, h.target).valor, cwd, process.platform, { homeVariable: true });
+    enteros.set(abs, [...(enteros.get(abs) || []), h.body]);
   }
   const sinResolver = cdSinResolver.map((t) => `(la carpeta de \`${t}\`, que no sé resolver: puede tener historias)`);
   return [...sinResolver, ...[...vistos].filter((abs) => {
@@ -5317,10 +5871,13 @@ function historiasPorConsola(cmd, cwd, targets, sesion = cwd, destinosConComodin
         && !require('./lib/story-transition.js').transicionAMano(abs, antes, despues)) return false;
     }
     if (estado !== 'draft') return true;
-    // el estado del encabezado del cuerpo (todos sus `status:` en borrador), no un `status: draft` cualquiera más abajo
-    const fm = /^---\s*\n([\s\S]*?)\n---/.exec(enteros.get(abs) || '');
-    const estados = fm ? [...fm[1].matchAll(/^["']?status["']?\s*:\s*["']?([\w-]+)/gm)].map((m) => m[1].toLowerCase()) : [];
-    return !(estados.length && estados.every((e) => e === 'draft'));
+    // el estado del encabezado de cada cuerpo (todos sus `status:` en borrador), no un `status: draft` cualquiera más
+    // abajo: frena si alguno deja de estar en borrador
+    return (enteros.get(abs) || ['']).some((cuerpo) => {
+      const fm = /^---\s*\n([\s\S]*?)\n---/.exec(cuerpo);
+      const estados = fm ? [...fm[1].matchAll(/^["']?status["']?\s*:\s*["']?([\w-]+)/gm)].map((m) => m[1].toLowerCase()) : [];
+      return !(estados.length && estados.every((e) => e === 'draft'));
+    });
   })];
 }
 
@@ -5462,20 +6019,61 @@ function frenoBorrarYArmados({ cmd, cwd, stateDir, sessionId, io, isInside, via,
  * propósito) y el target de SU línea de apertura (`cat > f <<EOF` / `cat <<EOF > f` / `tee f <<EOF`),
  * o null si la línea no redirige a un archivo. La atribución importa: el cuerpo de un heredoc que
  * reescribe una story EXISTENTE no se le atribuye a cualquier `.md` nuevo del mismo comando.
+ * Dos lecturas, sin repetir una apertura (renglón y lugar): la de siempre (`aperturasComoAntes`, uno por renglón, la
+ * primera que cierra), que da lo mismo que la expresión que la buscaba desde cada separador, y la del lector de los
+ * destinos (`heredocsCerrados`), que no abre en un comentario y lee uno detrás del otro los heredocs de un renglón. Un
+ * `<<Z` en un comentario o en el cuerpo de otro heredoc abre uno falso en la de siempre, que se traga el de verdad: con las
+ * dos, el de verdad se lee igual. Va por renglones, con los cierres en un índice.
  */
 function heredocs(cmd) {
+  const s = String(cmd || '');
+  if (!s.includes('<<')) return [];
+  const lineas = s.split('\n');
+  const cierreTras = cierresDe(lineas);
   const out = [];
-  const re = /(^|[\n;&|][ \t]*)([^\n]*?)(?<=(?:^|\n)(?:[^"'\n]|"[^"\n]*"|'[^'\n]*')*)(?<!\$\(\([^\n]*)(?<!<)<<(?!<)-?[ \t]*(['"]?)([^\s'"<>;&|()$`\\-][^\s'"<>;&|()$`\\]*)\3(?=[\s;&|()<>]|$)([^\n]*)\n(?:([\s\S]*?)\n)??[ \t]*\4[ \t]*(?=\n|$)/g;
-  let m;
-  while ((m = re.exec(String(cmd || '')))) {
-    const line = `${m[2]} ${m[5]}`;
-    const t = extractWriteTargets(line);
-    out.push({ body: m[6] || '', target: t.length === 1 ? t[0] : null });
+  const vistas = new Set();
+  // el destino, una vez por renglón: los otros `<<` del renglón no son destinos, y con miles de heredocs en uno leerlo por
+  // cada heredoc crece con el cuadrado
+  const destinoDe = new Map();
+  const sumar = (n, inicio, fin, desde, cierre) => {
+    if (vistas.has(`${n}:${inicio}`)) return;
+    vistas.add(`${n}:${inicio}`);
+    if (!destinoDe.has(n)) {
+      // el renglón que lo abre, sin el `<<` y su palabra
+      const linea = lineas[n];
+      const t = extractWriteTargets(`${linea.slice(0, inicio)} ${linea.slice(fin)}`);
+      destinoDe.set(n, t.length === 1 ? t[0] : null);
+    }
+    out.push({ body: lineas.slice(desde, cierre).join('\n'), target: destinoDe.get(n) });
+  };
+  for (let n = 0; n < lineas.length - 1; n++) {
+    for (const { inicio, fin, delimitador } of aperturasComoAntes(lineas[n])) {
+      const cierre = cierreTras(delimitador, n);
+      if (cierre < 0) continue;
+      sumar(n, inicio, fin, n + 1, cierre);
+      n = cierre;
+      break;
+    }
   }
+  for (const h of heredocsCerrados(lineas)) sumar(h.abre, h.operador.inicio, h.operador.fin, h.desde, h.cierre);
   return out;
 }
 /** Compat: sólo los cuerpos. */
 function heredocBodies(cmd) { return heredocs(cmd).map((h) => h.body); }
+
+// cuántos cuerpos distintos de un mismo archivo se juzgan: cada juicio lleva su tiempo
+const CUERPOS_A_JUZGAR = 16;
+/**
+ * Los heredocs de un mismo archivo, un cuerpo distinto una sola vez (el mismo cuerpo da el mismo juicio). Con más de
+ * `CUERPOS_A_JUZGAR` distintos, los primeros y los últimos: el último es el que queda escrito, el primero el que juzgaba
+ * la lectura de antes.
+ */
+function cuerposDistintos(hs) {
+  const vistos = new Set();
+  const unicos = hs.filter((h) => !vistos.has(h.body) && vistos.add(h.body));
+  const mitad = CUERPOS_A_JUZGAR / 2;
+  return unicos.length <= CUERPOS_A_JUZGAR ? unicos : [...unicos.slice(0, mitad), ...unicos.slice(-mitad)];
+}
 
 /**
  * Frontmatter inline: `printf '---\nstory: "9.9"\n…' > f.md` / `echo -e`. Se des-escapan los `\n`
@@ -6705,6 +7303,11 @@ function handleCarrilEHistoria(event, opts = {}) {
       codex: require('./lib/story-skill-gate-io.js').isCodexEvent(event),
     });
     if (r) return r;
+    // lo que otro programa escribe en el estado: el portón de carril sólo ve lo escrito a la vista
+    const alEstado = estadoPorOtroPrograma(cmd, cwd, baseCwd, (abs) => isInside(stateDir, abs) || isInside(stateReal, installedTree.realPath(abs)));
+    if (alEstado) {
+      return { block: require('./lib/story-gate.js').blockMessage({ kind: 'state-dir' }, { filePath: alEstado, via: `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)} (lo corre otro programa)` }) + '\n' };
+    }
   }
   // un `$(date …)` en el nombre de un informe se lee como un comodín: el destino entero, ya no «sin
   // resolver». La carpeta que se sabe no puede tocar el estado del pipeline ni el árbol instalado
@@ -6938,10 +7541,13 @@ function handleCarrilEHistoria(event, opts = {}) {
       const sameFile = (a, b) => String(a).replace(/\\/g, '/').toLowerCase() === String(b).replace(/\\/g, '/').toLowerCase();
       const resolveT = (t) => { const d = resueltos.find((x) => x.raw === t); return d ? d.abs : resolveTarget(t, cwd); };
       for (const abs of mdDraft) {
-        const own = hds.find((h) => h.target && sameFile(resolveT(h.target), abs));
-        // con `>>` el cuerpo del heredoc no es el archivo entero: no se sabe qué estado queda
-        const r = sio.evaluate({ absPath: abs, content: own && !/>>/.test(cmd) ? own.body : null, sessionId, via, event, stateDir });
-        if (r.verdict.action === 'block') return { block: r.message + '\n' };
+        // con varios cuerpos para el archivo (dos heredocs en un renglón, dos lecturas), frena si cualquiera frena
+        const propios = cuerposDistintos(hds.filter((h) => h.target && sameFile(resolveT(h.target), abs)));
+        for (const own of propios.length ? propios : [null]) {
+          // con `>>` el cuerpo del heredoc no es el archivo entero: no se sabe qué estado queda
+          const r = sio.evaluate({ absPath: abs, content: own && !/>>/.test(cmd) ? own.body : null, sessionId, via, event, stateDir });
+          if (r.verdict.action === 'block') return { block: r.message + '\n' };
+        }
       }
     }
     if (mdNew.length) {
@@ -6957,19 +7563,22 @@ function handleCarrilEHistoria(event, opts = {}) {
       const inline = hds.length ? null : inlineStoryText(cmd, declares);
       const renamedStory = renameOrCopyOfExistingStory(cmd, cwd);
       for (const abs of mdNew) {
-        const own = hds.find((h) => h.target && sameFile(resolveT(h.target), abs));
-        let content = own ? own.body : null;
-        if (!content && !own && mdNew.length === 1) content = orphanBody || inline;
-        // `mv`/`cp` desde una story EXISTENTE: es renombrar/duplicar, no crear. Pasa y queda medido.
-        if (!content && renamedStory && sameFile(renamedStory.dest, abs)) {
-          sio.logUnknown({ absPath: abs, sessionId, via, stateDir, kind: 'unknown-rename', reason: `renombrado/copia de una story existente (${path.basename(renamedStory.src)})` });
-          continue;
+        // con varios cuerpos para el archivo (dos heredocs en un renglón, dos lecturas), frena si cualquiera frena
+        const propios = cuerposDistintos(hds.filter((h) => h.target && sameFile(resolveT(h.target), abs)));
+        for (const own of propios.length ? propios : [null]) {
+          let content = own ? own.body : null;
+          if (!content && !own && mdNew.length === 1) content = orphanBody || inline;
+          // `mv`/`cp` desde una story EXISTENTE: es renombrar/duplicar, no crear. Pasa y queda medido.
+          if (!content && renamedStory && sameFile(renamedStory.dest, abs)) {
+            sio.logUnknown({ absPath: abs, sessionId, via, stateDir, kind: 'unknown-rename', reason: `renombrado/copia de una story existente (${path.basename(renamedStory.src)})` });
+            continue;
+          }
+          const r = sio.evaluate({
+            absPath: abs, content, nameHint: !content && nameSuggestsStory(abs),
+            sessionId, via, event, stateDir,
+          });
+          if (r.verdict.action === 'block') return { block: r.message + '\n' };
         }
-        const r = sio.evaluate({
-          absPath: abs, content, nameHint: !content && nameSuggestsStory(abs),
-          sessionId, via, event, stateDir,
-        });
-        if (r.verdict.action === 'block') return { block: r.message + '\n' };
       }
     }
   }
@@ -6978,7 +7587,7 @@ function handleCarrilEHistoria(event, opts = {}) {
 
 // cargado entero: de acá en más, una falla sin prever va por la red de fallas
 cargado = true;
-module.exports = { handle, sinComentarioAlFinal, sinCierre, blancoPorRedireccion, splitSegments, SHELL_CON_C, BORRA_O_MUEVE, guionesEnArchivo, carpetasQueBorraOMueve, borraEjecucionAbierta, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA, frenaLaRed, quitarCuerposDeHeredoc, vaAUnShell };
+module.exports = { handle, programasPorEntrada, sinComentarioAlFinal, sinCierre, blancoPorRedireccion, splitSegments, SHELL_CON_C, BORRA_O_MUEVE, guionesEnArchivo, carpetasQueBorraOMueve, borraEjecucionAbierta, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA, frenaLaRed, quitarCuerposDeHeredoc, vaAUnShell, comandosAnidados, comandosPorOtroPrograma };
 
 if (require.main === module) {
   const cruda = leerEntrada();
