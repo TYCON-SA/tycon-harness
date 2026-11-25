@@ -16,6 +16,7 @@
  *   BLANKS3  el gancho entero decide en menos de 3 s con 40 KB en cinco formas (espacios en un heredoc, `;` en un
  *            heredoc, espacios en `bash -c`, espacios por un tubo a `sh`, renglones vacíos en un heredoc)
  *   BLANKS4  los segmentos, las redirecciones, el `sh -c` y la de borrados dan lo mismo que las expresiones de antes
+ *   BLANKS9  los cuerpos de 3.000 heredocs en un renglón se leen en menos de 1,5 s
  * 🔴 Nada toca el HOME real: el gancho corre en un proceso hijo con una casa de juguete.
  */
 const { test } = require('node:test');
@@ -142,4 +143,16 @@ test('BLANKS3 TiradaLarga_EnCadaForma_DecideEnSegundos', () => {
     assert.doesNotMatch(r.stderr, /no alcanzó a decidir/, forma);
     assert.ok(r.ms < 3000, `${forma}: tardó ${r.ms} ms`);
   }
+});
+
+// 🔴 Fila 243. Mutación: leer el destino del renglón que abre un heredoc una vez por cada heredoc. Con las dos lecturas de
+// los cuerpos, un renglón con miles de heredocs se leía miles de veces entero: 3.000 tardaban más de 4 s.
+test('BLANKS9 MilesDeHeredocsEnUnRenglon_LeenSuDestinoUnaVez', () => {
+  const comando = `cat ${"<<'E' ".repeat(3000)}\n${'x\nE\n'.repeat(3000)}`;
+  // stable-data: el reloj mide cuánto tarda la lectura, que es lo que se prueba
+  const desde = Date.now();
+  const cuerpos = bash.heredocs(comando);
+  const ms = Date.now() - desde;
+  assert.equal(cuerpos.length, 3000);
+  assert.ok(ms < 1500, `tardó ${ms} ms`);
 });
