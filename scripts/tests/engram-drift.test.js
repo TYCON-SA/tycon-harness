@@ -376,7 +376,8 @@ test('T28 R3_HarnessAuditAutoheal_HooksRequireLib — los comandos que imprimen 
   // El aviso del autoheal (memoria partida unificable) y el del banco (paridad en rojo) necesitan una base de engram
   // o un resultado del banco para salir; lo que se fija acá es el comando que muestran.
   const drift = fs.readFileSync(path.join(SCRIPTS, 'hooks', 'engram-drift-notice.js'), 'utf8');
-  assert.match(drift, /\$\{homeCommand\('\.claude\/tycon-harness\/scripts\/lib\/engram-autoheal\.js'\)\}\\n/);
+  // el lugar del arnés lo da tycon-home.js (harnessCommand), no una ruta escrita a mano
+  assert.match(drift, /\$\{harnessCommand\('scripts\/lib\/engram-autoheal\.js'\)\}\\n/);
   assert.match(drift, /require\(path\.join\(__dirname, '\.\.', 'lib', 'engram-autoheal\.js'\)\)/);
   assert.match(drift, /require\(path\.join\(__dirname, '\.\.', 'lib', 'harness-audit\.js'\)\)/);
   const bench = fs.readFileSync(path.join(SCRIPTS, 'hooks', 'bench-notice.js'), 'utf8');

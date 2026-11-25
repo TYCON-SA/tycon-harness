@@ -47,8 +47,9 @@ lo aprueba **la persona frente a la Mac**, que tiene que poder autorizar ese cam
 
 1. **Probá la conexión**: `/opt/tycon/bin/tycon-prod-sql <host> 'select 1'`.
 2. **Si la rechaza el firewall** (error 40615, «is not allowed to access the server»), la puerta lo dice y da el
-   comando: `/opt/tycon/bin/tycon-prod-sql --open-firewall <host>`. Abre la regla de esta máquina, con cuadro, y la
-   regla se cierra sola al terminar la sesión.
+   comando para copiar: `/opt/tycon/bin/tycon-prod-sql --open-firewall <host> --session <id>`. **Lo corre la persona en
+   su terminal**, no el asistente: el modo automático de Claude Code frena esa orden. Abre la regla de esta máquina,
+   con cuadro, a nombre de la sesión que la pidió, y la regla se cierra sola cuando esa sesión termina, o a las 8 h.
 3. **Mirá el estado** por la puerta, no por `az`: el tamaño y el tope con
    `'select name, size/128 as mb, max_size/128 as max_mb from sys.database_files'`, y la edición y el nivel con
    `'select edition, service_objective from sys.database_service_objectives'`. Miden la base a la que entra la
@@ -259,6 +260,43 @@ está siguiendo (pasó: diecinueve consultas en 26 segundos). El subagente devue
 las corre de a una. Claude Code avisa al freno cuando llama un subagente, pero no si es de fondo: por eso se frenan
 todos.
 
+**La puerta va en primer plano.** Su cuadro vence a los 2 minutos, y una puerta corrida de fondo lo abre sin que nadie
+lo esté mirando: el pedido se cancela solo, sin cambiar nada, y la sesión no sabe qué pasó. Por eso el freno frena la
+puerta pedida de fondo (`run_in_background`) y la pedida por el Monitor, que corre de fondo siempre. Frena todas las
+formas, también una lectura que no abre cuadro: la regla es una sola. Lo que hay que hacer es avisarle antes a la persona
+qué cuadro va a aparecer y qué tiene que hacer en él, y correr la puerta en primer plano con un tope de 5 minutos
+(`timeout: 300000`). El tope hace falta porque, al vencer el tope de la consola de Claude Code (2 minutos si no se pide
+otro), la consola no corta el comando: lo pasa a segundo plano, y el cuadro queda sin nadie que lo mire. La puerta
+puede esperar hasta 90 segundos su turno y otros 2 minutos el cuadro. Por eso el freno también frena la puerta en
+primer plano sin ese tope, o con uno menor: el mensaje dice cuál traía y pide el de 5 minutos. Es lo último que mira de
+la puerta, así que un comando con otro problema se frena primero por ése. Cada bloqueo queda anotado con la regla
+`puerta-de-fondo`.
+
+El tope que aplica la consola también sale de su configuración, y el freno la mira:
+- `BASH_DEFAULT_TIMEOUT_MS` de 5 minutos o más hace de tope para un pedido que no lo trae;
+- `BASH_MAX_TIMEOUT_MS` o `CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS` por debajo de 5 minutos lo recortan, así que el freno
+  frena y nombra la variable. Esa configuración es de la persona: se le avisa, no se cambia.
+
+Lo que el freno todavía no ve:
+- **Una sesión abierta de fondo por la coordinadora que corre la puerta en su propio primer plano.** El cuadro aparece
+  mientras la persona mira otra pestaña. Su primer renglón dice de qué carpeta y de qué sesión viene.
+- **Un comando que la consola corre para otra máquina** (una sesión adjunta). Ahí el tope lo pone la consola, más corto,
+  y no llega al freno.
+- **Borrar un grupo de recursos (`--delete-group`).** La puerta consulta Azure antes de abrir el cuadro, y en el peor
+  caso los 5 minutos no alcanzan.
+
+**Cuando no se aprueba, la puerta dice por qué.** Sale con código 2, sin leer la clave ni cambiar nada, con uno de tres
+mensajes. Los tres empiezan igual, «la persona no aprobó esta sentencia» (u «operación»), y siguen con la causa:
+
+- **Vencido** («el cuadro se venció a los 120 s sin respuesta»): nadie contestó a tiempo. Si la puerta corrió de fondo,
+  nadie vio el cuadro: corré la puerta en primer plano, con el tope, y avisá antes qué cuadro va a aparecer.
+- **Rechazado**: la persona apretó «Rechazar», es decir, dijo que no. Preguntale por qué antes de volver a pedirlo.
+- **Sin cuadro** («el cuadro no se pudo abrir»): el programa del cuadro salió con error, no contestó o contestó algo que
+  la puerta no entiende. Entre paréntesis va lo que se sabe, como el código con que salió el programa.
+
+El registro de producción anota los tres como `"accion":"rechazada"`, con su `"motivo"`: `vencido`, `rechazado` o
+`sin-cuadro`. Sólo la respuesta exacta de «Aprobar» aprueba.
+
 **La consulta va siempre en línea.** El cuadro muestra el comando y nada más: lo que trae un archivo no se ve
 antes de aprobar, así que la puerta no acepta archivos. Una consulta puede ocupar varios renglones dentro de
 las comillas simples. Si le pedís a la puerta un archivo, el freno no deja pasar el comando y, cuando el archivo
@@ -337,10 +375,19 @@ el comando de Azure que crearía la regla, aunque lo autorices en el chat. El ca
   clave, y lee la IP del rechazo («Client with IP address … is not allowed»). No llama a ningún
   servicio externo ni lee el Llavero. Si la conexión llega a pedir la clave, ya tenés acceso y no abre
   nada.
-- **Se cierra sola**: al terminar la sesión del asistente que la abrió, un hook de la configuración
+- **Se cierra sola**: al terminar la sesión del asistente que la pidió, un hook de la configuración
   administrada (`prod-firewall-close.js`) la cierra, salvo que otra sesión viva la siga usando. Si el
   fin de sesión no corrió (ventana cerrada de golpe, sesión caída), el mismo hook la cierra al arrancar
-  la próxima sesión y lo dice en una línea. Cerrar no pide cuadro.
+  cualquier sesión de la máquina (también una compactación o un `/clear`) y lo dice en una línea.
+  Cerrar no pide cuadro.
+- **Cuánto dura de verdad**: lo que vive la sesión que la pidió, con un tope de **8 h** desde que se abrió
+  con su cuadro. «Viva» se mira por su proceso, que Claude Code anota en `~/.claude/sessions` (igual en
+  macOS, Linux y Windows), así que una sesión que espera a la persona sigue viva. Si ese registro no
+  está, el respaldo es la actividad de su conversación en los últimos 3 minutos, y el hook lo dice al
+  cerrar. El tope se aplica en el primer comando, arranque o fin de sesión de la máquina después de las
+  8 h (el freno de producción lanza el cierre aparte), y el aviso trae el comando para volver a abrirla.
+  Una regla sin una fecha de apertura que se pueda leer cuenta como vencida. Abierta desde la terminal sin `--session`, la regla no
+  es de ninguna sesión y se cierra en el próximo arranque de cualquiera.
 - **Si el servidor se borró** con la regla abierta, la regla se fue con él. Al abrir, la puerta anota la
   suscripción y el grupo del servidor. Al cerrar, pregunta por ese servidor ahí: si Azure contesta que
   no existe, y tampoco está en otra suscripción, lo da por cerrado y lo dice. Si se movió, la cierra

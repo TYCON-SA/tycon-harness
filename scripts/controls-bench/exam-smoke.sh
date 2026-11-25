@@ -42,7 +42,7 @@ armar() {
   W="$(mktemp -d)"; trap 'rm -rf "$W"' EXIT
   export GIT_CONFIG_GLOBAL="$W/gitconfig"; : > "$GIT_CONFIG_GLOBAL"
   export GIT_CONFIG_NOSYSTEM=1
-  mkdir -p "$W/casa/.claude/.tycon-pipeline" "$W/repo/scripts/controls-bench/.bench" "$W/agentes"
+  mkdir -p "$W/casa/.tycon/state" "$W/repo/scripts/controls-bench/.bench" "$W/agentes"
   ( cd "$W/repo"
     git init -q -b main .
     git config user.email b@b; git config user.name banco
@@ -92,7 +92,7 @@ JS
   printf '#!/bin/sh\necho "Invalid API key · Please run /login" >&2\nexit 1\n' > "$W/sonda-vencida.sh"
   chmod +x "$W/sonda-ok.sh" "$W/sonda-vencida.sh"
   export W TCG
-  SELLO="$W/casa/.claude/.tycon-pipeline/periodic-exam-last-run"
+  SELLO="$W/casa/.tycon/state/periodic-exam-last-run"
   # el reporte se guarda en la carpeta de estado de la casa, la misma del sello, y viaja desde ahí a la rama de
   # resultados (scripts/lib/result-travel.js)
   VIAJE="$(dirname "$SELLO")/result-travel"
