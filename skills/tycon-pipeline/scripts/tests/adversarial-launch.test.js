@@ -695,3 +695,38 @@ console.log(JSON.stringify({ lens: 'x', findings: uno, base, probe_dir: uno.leng
   assert.strictEqual(r.status, 0, r.stderr);
   assert.strictEqual(r.salida.verifiers, 'per_lens');
 });
+
+// 🔴 mutación: con la copia congelada en los args, mandar al cazador a leer la carpeta viva (que puede cambiar mientras
+// revisa) o a comparar la base con el árbol de trabajo en vez de con el sello.
+test('AdversarialVerify_ConCopiaCongelada_ElCazadorLeeLaCopia (T9): lee la copia y el diff contra el sello, no la carpeta viva', () => {
+  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'copia-del-pase-')));
+  const anotar = path.join(tmp, 'pedidos.txt');
+  // el doble anota el pedido de cada cazador y contesta limpio
+  const stub = `
+const prompt = process.env.TYCON_WFLITE_PROMPT || '';
+if (/LENTE:/.test(prompt) && !/REFUTAR/i.test(prompt)) require('fs').appendFileSync(${JSON.stringify(anotar)}, prompt + '\\n=====\\n');
+const base = (prompt.match(/Devolvé base = "([^"]+)"/) || [])[1] || '';
+const carpeta = (prompt.match(/Creá la carpeta (\\S+)/) || [])[1] || '';
+console.log(JSON.stringify({ lens: 'x', findings: [], base, probe_dir: carpeta }));
+`;
+  const base = '0123456789abcdef0123456789abcdef01234567';
+  const sello = 'fedcba9876543210fedcba9876543210fedcba98';
+  const repo = path.join(tmp, 'repo');
+  const copia = path.join(tmp, 'estado', 'frozen', 'sid', 'pase-1', 'repo');
+  for (const d of [repo, copia]) fs.mkdirSync(path.join(d, 'src'), { recursive: true });
+  correrGuion(tmp, WORKFLOW, { repo, files: ['src/f1.js'], runDir: path.join(tmp, 'run'), base, sellos: { [repo]: sello }, copias: { [repo]: copia } }, stub);
+  const pedidos = fs.readFileSync(anotar, 'utf8').split('\n=====\n').filter((p) => p.trim());
+  assert.ok(pedidos.length >= 1, 'el doble anotó a los cazadores');
+  for (const p of pedidos) {
+    assert.ok(p.includes(copia), 'el cazador sabe dónde está la copia');
+    assert.ok(p.includes(`git -C ${repo} diff ${base} ${sello}`), 'el cambio es la base contra el sello');
+    assert.strictEqual(p.split(`git -C ${repo} diff ${base}`).length, p.split(`git -C ${repo} diff ${base} ${sello}`).length, 'cada diff contra la base es contra el sello, no contra el árbol de trabajo vivo');
+    assert.ok(!p.includes(`git -C ${repo} status`), 'no mira el estado de la carpeta viva');
+  }
+  // gemelo: lanzado a mano, sin copia, se compara contra la carpeta viva como siempre
+  fs.rmSync(anotar, { force: true });
+  correrGuion(tmp, WORKFLOW, { repo, files: ['src/f1.js'], runDir: path.join(tmp, 'run2'), base }, stub);
+  const sinCopia = fs.readFileSync(anotar, 'utf8');
+  assert.ok(sinCopia.includes(`git -C ${repo} diff ${base}`), 'sin copia, el diff de siempre');
+  assert.ok(!sinCopia.includes(copia), 'sin copia no nombra ninguna');
+});
