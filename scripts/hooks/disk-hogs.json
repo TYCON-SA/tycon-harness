@@ -1,0 +1,64 @@
+{
+  "__doc": "Lo que más suele llenar el disco de una máquina donde corre el arnés, con dónde vive en cada sistema y el comando que lo limpia. Lo lee scripts/hooks/disk-notice.js cuando el disco libre baja del umbral: mide cada cosa (una vez por día, con un tope de 2 segundos) y muestra las cinco que más ocupan con su comando. El arnés nunca corre esos comandos: nada de esta lista es suyo. Una organización puede sumar entradas. `paths`: por sistema (darwin, linux, win32); un sistema sin rutas no mide esa cosa. En una ruta, `~` es la carpeta del usuario, `%LOCALAPPDATA%` la de Windows, `{repos}` la raíz de los repos (scripts/lib/repos-root.js), y un `*` vale dentro de un solo tramo. `clean`: el comando, igual en todos los sistemas o uno por sistema.",
+  "hogs": [
+    {
+      "id": "browsers",
+      "name": "los navegadores de las pruebas de navegador",
+      "paths": {
+        "darwin": ["~/Library/Caches/ms-playwright"],
+        "linux": ["~/.cache/ms-playwright"],
+        "win32": ["%LOCALAPPDATA%/ms-playwright"]
+      },
+      "clean": "npx playwright uninstall --all"
+    },
+    {
+      "id": "docker",
+      "name": "Docker",
+      "paths": {
+        "darwin": ["~/Library/Containers/com.docker.docker/Data/vms"],
+        "linux": ["~/.docker/desktop/vms"],
+        "win32": ["%LOCALAPPDATA%/Docker/wsl"]
+      },
+      "clean": "docker system prune -a"
+    },
+    {
+      "id": "npm",
+      "name": "el caché de npm",
+      "paths": {
+        "darwin": ["~/.npm/_cacache"],
+        "linux": ["~/.npm/_cacache"],
+        "win32": ["%LOCALAPPDATA%/npm-cache/_cacache"]
+      },
+      "clean": "npm cache clean --force"
+    },
+    {
+      "id": "nuget",
+      "name": "los paquetes de NuGet",
+      "paths": {
+        "darwin": ["~/.nuget/packages"],
+        "linux": ["~/.nuget/packages"],
+        "win32": ["~/.nuget/packages"]
+      },
+      "clean": "dotnet nuget locals all --clear"
+    },
+    {
+      "id": "homebrew",
+      "name": "el caché de Homebrew",
+      "paths": {
+        "darwin": ["~/Library/Caches/Homebrew"],
+        "linux": ["~/.cache/Homebrew"]
+      },
+      "clean": "brew cleanup --prune=all"
+    },
+    {
+      "id": "worktree-node-modules",
+      "name": "los node_modules de las carpetas de trabajo",
+      "paths": {
+        "darwin": ["{repos}/*--wt-*/node_modules"],
+        "linux": ["{repos}/*--wt-*/node_modules"],
+        "win32": ["{repos}/*--wt-*/node_modules"]
+      },
+      "clean": "git worktree remove <carpeta> en las que ya no usás"
+    }
+  ]
+}
