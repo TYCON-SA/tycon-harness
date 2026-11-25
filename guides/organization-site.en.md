@@ -937,6 +937,12 @@ be, to copy it and open the request by hand.
   since HH:MM» (1 to 1440; empty means 15). The page measures it with its own clock, without asking the machine
   anything; a session in a long step is still alive and is only marked as quiet. It lives in `team-profile.json` →
   `office.quiet_minutes`.
+- **What each machine cleans up on its own**: three numbers. How many idle hours pass before a work folder that is
+  already merged is deleted (0 to 720; empty means 4). How many untouched days pass before the temporary folder of a
+  session that is no longer alive is deleted (1 to 365; empty means 2). How much free disk, as a percentage, triggers
+  the startup warning (1 to 99; empty means 15). Nothing with unsaved work is ever deleted, and the disk warning only
+  shows the cleanup commands. A machine can override all three in its own configuration. It lives in
+  `team-profile.json` → `maintenance`.
 - **Integrations**: which services each machine uses (the time clock, the memory, the mailbox, the
   night, the CodeGraph code index); a machine can turn one off for itself. With CodeGraph on, the installer sets it up
   for each dev and the harness warns when a machine lacks it. It lives in `team-profile.json`, in the profile repo. A

@@ -5451,6 +5451,12 @@
       "requiere": []
     },
     {
+      "__nota": "scripts/hooks/disk-notice.js, el aviso de disco casi lleno (story 8.164). Con el disco, la lista y la medición de juguete: al 10 % avisa con las cinco cosas que más ocupan y sus comandos, al 40 % calla y no mide; lo que no existe no se nombra; la medición que no vuelve a tiempo sale «no medido» y va siempre; el mismo día repite la medición sin volver a medir y al otro día mide; la lista cambia por sistema (Windows sin Homebrew). El gancho como proceso, con un HOME de prueba, el disco fingido y programas de juguete con el nombre de cada comando de limpieza: muestra los comandos y no corre ninguno; con el disco alto o apagado, calla. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/disk-notice.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.164 (T2, T3): los textos que le muestran al agente cómo abrir un pedido en Azure DevOps (los tres del freno de pedidos y el paso de cierre) traen --delete-source-branch al lado de --auto-complete true --squash false; la guía de commits trae la tarea humana de GitHub («Automatically delete head branches») con su ruta. Sólo lee archivos.",
       "raiz": "arnes",
       "ruta": "tests/machine-cleanup-guides.test.js",
