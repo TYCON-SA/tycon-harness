@@ -376,6 +376,31 @@ la historia; `git stash pop`; un enlace (`ln -sf`) sobre el marcador; y el nombr
 un comodín (`cd ~/.claude/.tyc* && rm -rf act*`). Eso lo ven el control de cambios sin declarar al cerrar y el diff del
 commit; y si lo que se fue es el marcador, lo ve la segunda capa de abajo, al faltar.
 
+### La mirada de después: lo que el comando escribió
+
+El freno de antes decide leyendo el texto del comando, y un intérprete que el shell resuelve al correr
+(`${N:-node} x.js`, `"${CMD[@]}"`) queda fuera de su vista. La segunda capa (`on-bash-write-after.js`) no lee el
+comando: mira lo que quedó escrito.
+
+- **Qué mira.** Antes de cada comando de la terminal (Bash, PowerShell, Monitor) saca una foto de lo protegido: las
+  historias que no están en borrador, el estado de los borradores, las constancias y los marcadores. Después del
+  comando, también si falla, compara por contenido.
+- **Qué deshace.** Lo que cambió y no correspondía vuelve a lo que tenía la foto, o se borra si no existía. Queda un
+  renglón `escritura-vista-despues` en `gates.log` (sesión, ruta, programa; nunca el contenido) y el aviso al agente.
+- **Qué no deshace.** Lo que escribió `marker.js` o un guion del arnés instalado, solos en el comando; lo que trajo un
+  comando que es sólo git y quedó igual a lo commiteado. Un cambio que pudo hacer otra sesión viva en la misma copia,
+  o una edición de la misma sesión sobre ese archivo a la vez, no se deshace: queda `escritura-dudosa`, anotado y
+  avisado.
+- **Cuando no puede mirar.** Si la foto falta, no se puede leer o no coincide con su huella, o si no pudo deshacer, la
+  sesión queda frenada: corre sólo lecturas (`cat`, `grep`, `ls`, `git rev-parse`…) hasta que la libere otra sesión
+  con `marker.js release-write-after --for-session <S> --reason "<qué miró>"`. La firma es de excepción: la da la
+  persona, o la coordinadora designada si el perfil la delega; nunca la sesión frenada ni la firma de trámite. Una
+  carpeta del estado donde no se puede escribir frena igual, y se arregla la carpeta.
+- **Lo que no ve.** Un proceso que el comando deja vivo (`&`, `nohup`, el comando de Monitor, que corre de fondo) y
+  escribe cuando el comando ya terminó; un comando cortado por tiempo que no llega al evento de después; un guion que
+  escribe en otro repo sin nombrarlo con `cd`. Para eso queda la red del commit.
+- **Cómo se apaga.** Con el mismo interruptor del freno de antes: `TYCON_STORY_GATE=off`.
+
 ### La ejecución perdida
 
 La lista de formas de borrar el marcador nunca está completa. Por eso hay una segunda capa que mira el efecto, no el

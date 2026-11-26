@@ -151,7 +151,8 @@
     "review_before": "2027-11-21",
     "estado": "propuesta",
     "ganchos": [
-      "on-bash-write-gate.js"
+      "on-bash-write-gate.js",
+      "on-bash-write-after.js"
     ]
   },
   "on-stop-dod-gate.js": {

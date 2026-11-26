@@ -845,3 +845,13 @@ test('WriteAfter_DescriptorRedirectToAFile_AndFileCompile_NotReads @story-8.320 
   for (const c of ['ls 2>&1', 'echo x >&2', 'echo x >&2; ls', 'ls 2>&1 | grep x']) assert.strictEqual(redirigeAArchivo(c), false, c);
   assert.strictEqual(soloLee('file -C -m x'), false);
 });
+
+// 🔴 Falla con: la guía del freno de mano no dice qué se mira después, qué se deshace, qué no, lo que no ve y cómo se
+//    apaga.
+test('T12 · SafetyGuide_DescribesWriteAfter @story-8.320 @ac-10', () => {
+  const guia = fs.readFileSync(path.resolve(__dirname, '..', '..', '..', '..', 'guides', 'safety-guard.md'), 'utf8');
+  const seccion = guia.slice(guia.indexOf('### La mirada de después'), guia.indexOf('### La ejecución perdida'));
+  assert.ok(seccion.length > 200, 'la sección existe');
+  for (const parte of ['Qué mira', 'Qué deshace', 'Qué no deshace', 'Cuando no puede mirar', 'Lo que no ve', 'TYCON_STORY_GATE=off', 'release-write-after', '`nohup`'])
+    assert.ok(seccion.includes(parte), parte);
+});
