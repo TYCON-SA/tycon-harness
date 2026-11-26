@@ -1361,7 +1361,7 @@ function reportComments(findings, blocks) {
     ? `🛑 historia interna en un comentario nuevo — el commit no se crea (${findings.length} hallazgo(s)):`
     : `⚠️  historia interna en un comentario nuevo — avisa, no frena (${findings.length} hallazgo(s)):`];
   for (const f of findings) l.push(`  ${shown(f.file)}:${f.line}  ${f.form}${f.formMode === 'warn' ? '  (esta forma sólo avisa)' : ''} — ${COMMENT_HINTS[f.form] || 'sacá la referencia'}`);
-  l.push(`Qué hacer: reescribí el comentario diciendo qué hace y por qué, en presente y sin la referencia (guides/maintaining/estilo-de-codigo.md); un dato que tiene que quedar tal cual se declara en ${ALLOWED_PATH}.`);
+  l.push(`Qué hacer: reescribí el comentario diciendo qué hace y por qué, en presente y sin la referencia (guides/maintaining/code-style.md); un dato que tiene que quedar tal cual se declara en ${ALLOWED_PATH}.`);
   return l.join('\n');
 }
 function report(findings, blocks, publicProblem = null) {
@@ -1428,7 +1428,7 @@ const HELP = [
   '  node scripts/publishing/internal-history.js [--repo <dir>] [--config <archivo>]   lo stageado (el pre-commit)',
   '  node scripts/publishing/internal-history.js --range <base>...<punta>              el diff de un pedido de cambio',
   '  node scripts/publishing/internal-history.js --all [--json] [--ref <commit>]       la cuenta de todo lo que se publica',
-  '  --zone comment  los comentarios del código en vez de la prosa (guides/maintaining/estilo-de-codigo.md)',
+  '  --zone comment  los comentarios del código en vez de la prosa (guides/maintaining/code-style.md)',
   `  --public-remote <remoto|dirección>  el repo público (si no, \`origin\` cuando es de GitHub)`,
   `  ${SWITCH}=block|warn|0 pisa el modo escrito en ${CONFIG_PATH}`,
 ].join('\n');

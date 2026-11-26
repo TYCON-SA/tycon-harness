@@ -4634,7 +4634,7 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.41, tanda E (T35): guides/maintaining/estilo-de-codigo.md trae la regla de los comentarios, dos ejemplos buenos y dos malos, y tiene su fila en INDEX.md.",
+      "__nota": "story 8.41, tanda E (T35): guides/maintaining/code-style.md trae la regla de los comentarios, dos ejemplos buenos y dos malos, y tiene su fila en INDEX.md.",
       "raiz": "arnes",
       "ruta": "tests/style-guide.test.js",
       "requiere": []
