@@ -1239,6 +1239,18 @@ function entriesFromRange(cmdName) {
   let a;
   try { a = analyze(); } finally { console.log = log; }
   if (!a.entries.length) { console.error(`run-base-controls ${cmdName}: el pedido no cambia ningún archivo de control: no hay nada que firmar.`); process.exit(1); }
+  // lo mismo que `pending`: con desparejos (el pedido mezclado con la base cambia lo que se firmaría) no hay comando
+  if (a.desparejos.length) { console.error(`run-base-controls ${cmdName}: ${DESPAREJOS(a.desparejos)}: no se firmó nada.`); process.exit(1); }
+  // 🔴 la lista sale de la punta de --range, y el cuadro muestra el cambio de --root contra --base hasta su HEAD: si no
+  // son la misma versión, el dueño vería un cambio y la constancia firmaría otro (con --range apuntado a otra rama). Lo
+  // que se firma tiene que ser la punta de la carpeta, como con --entries
+  const head = git(a.root, ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], { allowFail: true });
+  if (head.status !== 0) { console.error(`run-base-controls ${cmdName}: no pude leer la punta de ${a.root}: no sé si la lista es la del pedido. No se firmó nada.`); process.exit(2); }
+  const distintas = a.entries.filter((e) => (blobOf(a.root, 'HEAD', e.path) || 'borrado') !== e.blob);
+  if (distintas.length) {
+    console.error(`run-base-controls ${cmdName}: la lista del rango no es la punta de ${a.root} (HEAD ${short(trimNl(head.stdout))}): ${distintas.map((e) => safe(e.path)).join(', ')}. No se firmó nada: el rango tiene que terminar en la punta de la carpeta que se firma.`);
+    process.exit(1);
+  }
   if (a.hash !== exp) {
     console.error(`run-base-controls ${cmdName}: la lista del pedido cambió desde que se pidió la firma (huella ${short(a.hash)}, se pidió ${short(exp)}): no se firmó nada. Pedí el comando de nuevo con \`pending\`.`);
     process.exit(1);
@@ -1413,7 +1425,7 @@ function cmdEntries() {
 function cmdClassify() {
   const root = path.resolve(opt('--root') || '.');
   let entries;
-  if (!opt('--entries') && opt('--range')) entries = entriesFromRange('classify');
+  if (!opt('--entries') && !opt('--file') && opt('--range')) entries = entriesFromRange('classify');
   else try { entries = JSON.parse(opt('--entries') || ''); } catch (e) { console.error(`run-base-controls classify: --entries no es JSON: ${e.message}`); process.exit(2); }
   // la salida es sólo el JSON: los avisos de las constancias que no firman nada no se imprimen acá
   const log = console.log; console.log = () => {};

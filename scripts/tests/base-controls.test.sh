@@ -339,6 +339,16 @@ has "T4b …y dice que la lista cambió" "${T}/t4r-otra.out" "la lista del pedid
 [ ! -e "${R}/.tycon/control-changes.jsonl" ] && ok "T4b …sin escribir la constancia" || no "T4b con otra huella escribió la constancia"
 LISTA="$(bash "${SCRIPT}" entries --root "${R}" --base main --range main...pedido --expect "${HUELLA}" 2>/dev/null)"
 if node -e 'const l=JSON.parse(process.argv[1]);process.exit(l.hash===process.argv[2]&&l.entries.length===1&&l.entries[0].path==="scripts/ci/toy-rules.json"?0:1)' "${LISTA}" "${HUELLA}" 2>/dev/null; then ok "T4b entries da la lista del pedido con su huella"; else no "T4b entries no dio la lista: ${LISTA}"; fi
+# 🔴 un rango que termina en otra rama: el cuadro mostraría el cambio de la carpeta (contra --base hasta su HEAD) y la
+# constancia firmaría el de la otra rama. Lo que se firma es la punta de la carpeta: con otro rango, no se firma nada
+lab_git -C "${R}" checkout -q -b otra main
+printf '%s\n' '{ "mode": "warn", "allow": ["docs/permitido.txt", "docs/malo.txt", "docs/otro.txt"] }' > "${R}/scripts/ci/toy-rules.json"; commit "${R}" "otra rama"
+lab_git -C "${R}" checkout -q pedido
+HUELLA_OTRA="$(bash "${SCRIPT}" pending --root "${R}" --base main --range main...otra 2>/dev/null | grep -oE -- '--expect [0-9a-f]{64}' | head -n 1 | cut -d' ' -f2)"
+TEST_WINDOW_SEEN="${T}/ventana-otra.json" bash "${V}/scripts/ci/run-base-controls.sh" approve --root "${R}" --base main --range main...otra --out .tycon/control-changes.jsonl --expect "${HUELLA_OTRA:-x}" > "${T}/t4r-otra-rama.out" 2>&1; RC=$?
+is "T4b un rango que termina en otra rama no firma (exit 1)" "1" "${RC}"
+has "T4b …y dice que la lista no es la punta de la carpeta" "${T}/t4r-otra-rama.out" "la lista del rango no es la punta de"
+[ ! -e "${R}/.tycon/control-changes.jsonl" ] && ok "T4b …sin escribir la constancia" || no "T4b un rango de otra rama escribió la constancia"
 # el cuadro del freno de firmas sale de la misma lista: el detalle trae el archivo, aunque el comando no lo nombre; con otra
 # huella no hay cuadro
 mkdir -p "${T}/t4r-estado"
