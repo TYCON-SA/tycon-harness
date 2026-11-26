@@ -44,9 +44,12 @@ const {
   cleanStaleHeartbeats,
   cleanEmptyActiveFiles,
   mcpTool,
+  sessionFilePath,
+  stateMissing,
 } = require('./lib');
 
 function main() {
+  if (stateMissing()) process.exit(0);
   // La sesión que arranca está viva — registrá su heartbeat.
   const hookInput = parseHookInput();
   const startingSession = hookInput.session_id || null;
@@ -152,7 +155,7 @@ ${blocks.join('\n\n')}
 1. ${mcpTool('update-clockify-time-entry')} con workspaceId, projectId, timeEntryId,
    description, start = startedAt, **end = lastActivity**.
    🔴 end = lastActivity, NUNCA "ahora": un huérfano viejo inventaría días de trabajo.
-2. Borrar la entry del state de SU PROPIA sesión: ~/.claude/clocki/active/<sessionId>.json,
+2. Borrar la entry del state de SU PROPIA sesión: ${sessionFilePath('<sessionId>')},
    key [cwd]. Si el archivo queda {} vacío, borralo. Nunca escribas '{}' a mano.
 
 ## Lo que sigue siendo INTOCABLE

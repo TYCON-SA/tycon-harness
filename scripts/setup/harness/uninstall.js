@@ -31,6 +31,7 @@ const BOOTSTRAP_FILES = ['bootstrap.js', 'bootstrap-fallback.sh', 'bootstrap-fal
 const POINTER_MARK = 'AGENTS.md — puntero (lo depositó el arnés';
 const UNREGISTERED_LINKS = ['agent-skills', 'agents', 'skills'];
 const NOTHING = 'nada que quitar: el arnés no está instalado (no hay estado)';
+const STORE_LINK_LINE = (at) => `el enlace ${at} (el lugar viejo de un registro que se mudó a la carpeta del estado): sólo el enlace, el registro se va con la carpeta del estado`;
 
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 const lexists = (p) => { try { fs.lstatSync(p); return true; } catch (_) { return false; } };
@@ -48,6 +49,17 @@ const HOOK_STORES = [
   { name: 'clocki', dir: true, what: 'el estado del timer de Clockify' },
   { name: 'tycon-observations', dir: true, what: 'lo que grabó la grabadora de instintos' },
 ];
+/**
+ * Los lugares viejos de HOOK_STORES que quedaron como enlace a su registro en la carpeta del estado
+ * (scripts/lib/loose-logs.js, `--move-old`): se quita sólo el enlace, nunca con un borrado que lo siga.
+ */
+function movedStoreLinks(home) {
+  const TH = require('./tycon-home.js');
+  if (!TH.livesInOwnHome(home)) return [];
+  const realOf = (p) => { try { return fs.realpathSync(p); } catch (_) { return null; } };
+  return HOOK_STORES.map((s) => ({ s, at: path.join(TH.claudeDir(home), s.name), to: path.join(TH.ownStateDir(home), s.name) }))
+    .filter(({ at, to }) => isLink(at) && realOf(to) !== null && realOf(at) === realOf(to));
+}
 const readJson = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8').replace(/^﻿/, '')); } catch (_) { return null; } };
 const expandHome = (p, home) => (typeof p === 'string' ? p.replace(/^~(?=$|[\\/])/, home) : null);
 
@@ -158,9 +170,11 @@ function plan(ctx, state) {
   // lo que guardaron los hooks fuera de la carpeta de estado: no son piezas registradas, así que
   // quedan. La lista es `HOOK_STORES`; scripts/tests/install-effects.test.js la cruza con el `stores` de cada hook de
   // la lista de efectos, para que un hook nuevo que guarde algo bajo la carpeta de Claude Code no quede sin nombrar acá
+  const storeLinks = movedStoreLinks(home);
+  const linked = new Set(storeLinks.map((l) => l.at));
   for (const s of HOOK_STORES) {
     const p = path.join(claude, s.name);
-    if (lexists(p)) keep.push(`${s.what} ${p}${s.dir ? `/ — para borrarlo: rm -rf "${p}"` : ''}`);
+    if (lexists(p) && !linked.has(p)) keep.push(`${s.what} ${p}${s.dir ? `/ — para borrarlo: rm -rf "${p}"` : ''}`);
   }
   // en una máquina que vive en la casa propia, los hooks guardan esos registros en la carpeta del estado
   // (scripts/lib/loose-logs.js), y desinstalar la quita entera (harness.js uninstall): se dicen con ella
@@ -205,7 +219,7 @@ function plan(ctx, state) {
   if (rr.root) pointers = findPointers(rr.root);
   else keep.push(`sin raíz de repos conocida (TYCON_REPOS_ROOT, o rutas.repos en ${require('./tycon-home.js').legacyConfigFile(home)}): no busqué AGENTS.md puntero en los repos de producto`);
 
-  return { remove, retry, failing: failing.map((k) => k.why), keep, goesWithState, review, pointers, tree, treeMissing, nothing: false, baseline: base.map, afterSha: base.after, stateFile, home };
+  return { remove, retry, failing: failing.map((k) => k.why), keep, goesWithState, storeLinks: storeLinks.map((l) => l.at), review, pointers, tree, treeMissing, nothing: false, baseline: base.map, afterSha: base.after, stateFile, home };
 }
 
 /** Las piezas por archivo, en una línea cada uno: «settings.json (<ruta>): 38 hooks, la línea de arranque, env.X». */
@@ -255,6 +269,7 @@ function describePlan(p) {
   for (const l of summarize(p.remove, { home: p.home })) L.push(`  - ${l}`);
   L.push(`  - el estado ${p.stateFile}`);
   for (const l of p.goesWithState || []) L.push(`  - ${l}`);
+  for (const at of p.storeLinks || []) L.push(`  - ${STORE_LINK_LINE(at)}`);
   if (p.failing && p.failing.length) {
     L.push('no se pueden quitar ahora (se reintentan; si siguen fallando, quedan en el estado para otra ejecución):');
     for (const w of p.failing) L.push(`  ✗ ${w}`);
@@ -279,6 +294,11 @@ function run(ctx, state, { log = null } = {}) {
   const localBack = new Set(p.remove.filter((x) => x.kind === 'git-hook' && lexists(`${x.where}.local`)).map((x) => x.where));
   const r = removePieces([...p.remove, ...p.retry], { home, env, tree: p.tree, log, restoreIfEqual: p.baseline, afterSha: p.afterSha, platform: (ctx && ctx.platform) || process.platform });
   const errors = r.kept.filter((k) => k.error);
+  // el enlace del lugar viejo de un registro mudado: sólo el enlace (removeLink no sigue una unión de Windows)
+  const unlinked = [];
+  for (const at of p.storeLinks || []) {
+    try { if (require('./tycon-home.js').removeLink(at)) unlinked.push(at); } catch (e) { errors.push({ why: `no pude quitar el enlace ${at} (${e.code || e.message})` }); }
+  }
   // el estado: si todo salió, se va; si algo no se pudo quitar, queda con eso solo, para que otra corrida lo reintente
   try {
     if (!errors.length) fs.rmSync(p.stateFile, { force: true });
@@ -296,6 +316,7 @@ function run(ctx, state, { log = null } = {}) {
   L.push(errors.length ? `desinstalado a medias: ${errors.length} pieza(s) no se pudieron quitar` : `arnés desinstalado: ${r.removed.length} pieza(s) quitadas, sólo lo registrado`);
   for (const l of summarize(r.removed, { home, localBack })) L.push(`  - ${l}`);
   if (!errors.length) L.push(`  - el estado ${p.stateFile}`);
+  for (const at of unlinked) L.push(`  - ${STORE_LINK_LINE(at)}`);
   for (const e of errors) L.push(`  ✗ ${e.why}`);
   L.push('deja:');
   for (const l of p.keep) L.push(`  - ${l}`);

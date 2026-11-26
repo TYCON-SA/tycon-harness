@@ -153,6 +153,9 @@
               "retro"
             ],
             "file_exists": [
+              "${SANDBOX_HOME}/../.tycon-retro-staleness-last-notice"
+            ],
+            "file_absent": [
               "${SANDBOX_HOME}/.claude/.tycon-retro-staleness-last-notice"
             ]
           }
@@ -187,6 +190,9 @@
               "retro"
             ],
             "file_exists": [
+              "${SANDBOX_HOME}/../.tycon-retro-staleness-last-notice"
+            ],
+            "file_absent": [
               "${SANDBOX_HOME}/.claude/.tycon-retro-staleness-last-notice"
             ]
           }
