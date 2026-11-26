@@ -10,7 +10,9 @@
  *
  * ── LO QUE PIDE ─────────────────────────────────────────────────────────────────────────────────
  * · `/healthz`: 200 `{"ok":true}` sin otra clave. 503 = el sitio está frenado por operations.json (falla). Ni en 200
- *   ni en 503 trae una dirección, un host, una ruta ni un nombre de cuenta (falla «/healthz cuenta de más»).
+ *   ni en 503 trae una dirección, un host, una ruta ni un nombre de cuenta (falla «/healthz cuenta de más»). Si a
+ *   `/healthz` la contesta otro (un 404 que no es JSON: Google Cloud Run se reserva esa ruta), se pregunta `/health`,
+ *   que el sitio contesta igual, con los mismos controles.
  * · `/` y `/api/inicio` (este con `Accept: application/json`): nunca 200 con cuerpo. Vale un 401/403, o una
  *   redirección al inicio de sesión: el de la plataforma en el mismo host (`/.auth/login/…`) o el de un emisor con
  *   `response_type=code` (el sitio; con GitHub, que no lo lleva, `client_id`, `redirect_uri` y `code_challenge`). Se siguen hasta 3 redirecciones del mismo origen; una cadena que termina en 200
@@ -185,6 +187,9 @@ async function gemelaHttp(base) {
   return { capa: String(r.status), falla: ACEPTA_HTTP };
 }
 
+/** Si el cuerpo es JSON: lo que contesta el sitio en /healthz siempre lo es. */
+function esJson(cuerpo) { try { JSON.parse(cuerpo); return true; } catch { return false; } }
+
 async function probar(base, { wakeMs }) {
   const capas = {};
   // 1. /healthz, esperando que despierte
@@ -193,6 +198,15 @@ async function probar(base, { wakeMs }) {
     throw new NoPudo(e.message === 'timeout' ? 'no despertó a tiempo' : 'sin conexión con el sitio');
   }
   capas.healthz = String(h.status);
+  // Google Cloud Run se reserva /healthz: la contesta su frente con un 404 en HTML y el pedido no llega al sitio. Sólo en
+  // ese caso (un 404 que no es JSON: el sitio siempre contesta JSON) se pregunta /health, el mismo control con otro nombre,
+  // y lo que conteste pasa por los mismos controles. Un 404 del sitio, o cualquier otra respuesta, sigue como antes
+  if (h.status === 404 && !esJson(h.cuerpo)) {
+    try { h = await pedir(new URL('/health', base), { plazoMs: wakeMs }); } catch (e) {
+      throw new NoPudo(e.message === 'timeout' ? 'no despertó a tiempo' : 'sin conexión con el sitio');
+    }
+    capas.healthz = `404 (no es del sitio) · /health ${h.status}`;
+  }
   let doc = null;
   try { doc = JSON.parse(h.cuerpo); } catch { doc = null; }
   if (NOMBRA.test(h.cuerpo)) return { motivo: HEALTHZ_DE_MAS, capas };
