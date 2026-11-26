@@ -168,6 +168,12 @@ pasa  "6.5 T14 · un grupo con paréntesis, entre comillas simples, pasa al cuad
 frena "6.5 T14 · entre comillas dobles no es la forma canónica" "$PUERTA --delete-group \"acme(prueba)\""
 # 6.3 · T12: la misma sentencia de borrado de base, por la puerta, pasa al cuadro como hoy (la ve una persona)
 pasa  "6.3 T12 · la puerta con la sentencia de borrado de base pasa al cuadro" "$PUERTA $PROD '$BORRA base'"
+# A1 · la firma de un cambio de controles que toca la puerta: con la lista en el comando (--entries) la nombra, y el freno
+# la frena como a cualquier comando que la nombre; la firma por rango no nombra ningún archivo (la lista la arma el
+# guion desde el pedido) y el freno la deja pasar a la ventana. El freno no se afloja: lo que cambia es el comando
+FIRMA_ARNES="bash /Users/dev/.tycon/harness/scripts/ci/run-base-controls.sh approve --root /Users/dev/repo --base origin/main"
+frena "A1 · la firma con --entries que nombra la puerta frena" "$FIRMA_ARNES --out .github/control-changes/ --entries '[{\"path\":\"scripts/production/tycon-prod-sql\",\"blob\":\"aa\"}]'"
+pasa  "A1 · la firma por rango, que no nombra ningún archivo, pasa" "$FIRMA_ARNES --range origin/main...HEAD --out .github/control-changes/ --expect $(printf 'a%.0s' $(seq 1 64))"
 frena "T6c · bash -c" "bash -c '$PUERTA $PROD \"select 1\"'"
 frena "T6d · eval" "eval $PUERTA $PROD 'select 1'"
 frena "T6e · nombre pelado" "tycon-prod-sql $PROD 'select 1'"
@@ -967,7 +973,7 @@ La contraseña vive en el Llavero: security find-generic-password -s tycon-prod-
 EOF"
 t10_falta=""
 grep -q "Lo que el comando \*\*sólo escribe\*\* a un archivo y no corre" "$AQUI/guides/production-with-permission.md" 2>/dev/null || t10_falta="$t10_falta la guía;"
-grep -q "El contenido de un archivo que el comando escribe y no corre no se juzga" "$AQUI/guides/maintaining/piezas-en-detalle.md" 2>/dev/null || t10_falta="$t10_falta el detalle de la pieza;"
+grep -q "El contenido de un archivo que el comando escribe y no corre no se juzga" "$AQUI/guides/maintaining/pieces-in-detail.md" 2>/dev/null || t10_falta="$t10_falta el detalle de la pieza;"
 if [ -z "$t10_falta" ]; then ok "6.1.1 T10 Guide_DeclaresFileContentIsNotJudged"
 else no "6.1.1 T10 Guide_DeclaresFileContentIsNotJudged — no lo dice:$t10_falta"; fi
 # Caminos por los que el contenido escrito se ejecuta en el mismo comando: por la entrada, por un envoltorio, por una

@@ -69,7 +69,7 @@ text() { # <archivo> <título> — contenido con cuerpo: git empareja un movimie
 # ── el repo de juguete del arnés ────────────────────────────────────────────────────────────────────────────────────
 HARNESS="${T}/harness-base"
 text "${HARNESS}/README.md" "el índice"
-text "${HARNESS}/guides/piezas-del-arnes.md" "la guía del detalle"
+text "${HARNESS}/guides/harness-pieces.md" "la guía del detalle"
 text "${HARNESS}/claude-md-blocks/style.md" "un bloque"
 text "${HARNESS}/artifacts/mapa-arnes.html" "el mapa privado"
 text "${HARNESS}/onboarding/mini-class/mapa-del-arnes.html" "el mapa público"
@@ -121,7 +121,7 @@ else no "con --no-renames esperaba las dos rutas y salió «${WITH_OLD}»"; fi
 # H1 · el presupuesto de los bloques del CLAUDE.md
 variant "${HARNESS}" h1-block; move claude-md-blocks/style.md guides/style.md; run_hook "${HARNESS_HOOK}"
 ran "H1 un bloque movido fuera de claude-md-blocks/ corre igual el control de los bloques" blocks
-variant "${HARNESS}" h1-detail; move guides/piezas-del-arnes.md guides/detail.md; run_hook "${HARNESS_HOOK}"
+variant "${HARNESS}" h1-detail; move guides/harness-pieces.md guides/detail.md; run_hook "${HARNESS_HOOK}"
 ran "H1 la guía del detalle movida de nombre corre igual el control de los bloques" blocks
 # H2 · la versión pública del mapa: la privada movida no está en el índice, y el control lo dice y frena
 variant "${HARNESS}" h2-map; move artifacts/mapa-arnes.html artifacts/map-old.html; run_hook "${HARNESS_HOOK}"

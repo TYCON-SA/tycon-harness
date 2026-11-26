@@ -495,7 +495,7 @@ out="$(TYCON_SETTINGS_PATH="$S" TYCON_NO_AUTOINSTALL=1 bash "$HR/scripts/hooks/h
 [ "$rc" -eq 0 ] && grep -q 'install-tycon-hooks' "$S" && ok "T10 bootstrap-heal: la línea vieja sin instalador se sigue reparando" || bad "T10 bootstrap-heal con la vieja (rc=$rc): $out"
 
 # ═══ T57 · los nombres viejos después de la fecha de retiro ═══════════════════════════════
-# Pasada `retire_after` del mapa, si esta máquina anotó usos de nombres viejos en los últimos 14 días (legacy-names.jsonl),
+# Pasada `retire_after` del mapa, si esta máquina anotó usos de nombres viejos en los últimos 7 días (legacy-names.jsonl),
 # UNA línea dice cuáles y dónde cambiarlos. Antes de la fecha (o el mismo día), sin usos recientes, sin registro o sin
 # fecha: nada. Es parte de este aviso y no un hook nuevo: así no hay que registrar otro hook en el instalador, el banco y
 # Codex para una línea que vive hasta el retiro de los nombres viejos. El mapa es de laboratorio (TYCON_LEGACY_NAMES_MAP), con
@@ -505,10 +505,11 @@ printf '{ "__about": "laboratorio", "retire_after": "2026-11-20", "entries": [] 
 usos() { printf '%s\n' "$@" > "$RH/.claude/.tycon-pipeline/legacy-names.jsonl"; }
 retiro() { TYCON_LEGACY_NAMES_MAP="$RMAP" TYCON_TODAY="$1" notice "$RH"; }
 U_ENV='{"day":"2026-11-21","kind":"env","old":"TYCON_NO_LAB_OLD","new":"TYCON_NO_LAB_NEW","script":"scripts/lab/tool.sh"}'
-U_OPT='{"day":"2026-11-08","kind":"option","old":"lab-old","new":"lab-new","script":"scripts/lab/x.js"}'
+U_OPT='{"day":"2026-11-16","kind":"option","old":"lab-old","new":"lab-new","script":"scripts/lab/x.js"}'
+U_OCHO='{"day":"2026-11-13","kind":"option","old":"lab-ocho","new":"lab-ocho-nuevo","script":"scripts/lab/y.js"}'
 U_FILE='{"day":"2026-11-15","kind":"file","old":"scripts/lab/old.js","new":"scripts/lab/new.js","script":"scripts/lab/old.js"}'
 U_FAR='{"day":"2026-11-07","kind":"env","old":"TYCON_LAB_GONE","new":"TYCON_LAB_FAR","script":"scripts/lab/z.sh"}'
-usos "$U_ENV" "$U_OPT" "$U_FILE" "$U_FAR" 'no es json'
+usos "$U_ENV" "$U_OPT" "$U_FILE" "$U_FAR" "$U_OCHO" 'no es json'
 out="$(retiro 2026-11-19)"; rc=$?
 [ "$rc" -eq 0 ] && [ -z "$out" ] && ok "T57 antes de la fecha de retiro: nada, aunque haya usos" || bad "T57 antes de la fecha (rc=$rc): $out"
 out="$(retiro 2026-11-20)"
@@ -517,12 +518,13 @@ out="$(retiro 2026-11-21)"; rc=$?
 if [ "$rc" -eq 0 ] && [ "$(grep -c . <<<"$out")" = 1 ] && grep -q 'TYCON_NO_LAB_OLD' <<<"$out" && grep -q 'TYCON_NO_LAB_NEW' <<<"$out" \
    && grep -q -- '--lab-old' <<<"$out" && grep -q -- '--lab-new' <<<"$out" && grep -q 'scripts/lab/x.js' <<<"$out" \
    && grep -q 'scripts/lab/old.js' <<<"$out" && grep -q 'scripts/lab/new.js' <<<"$out" && grep -q 'entorno' <<<"$out" \
-   && grep -q '2026-11-20' <<<"$out" && grep -q 'english-names.md' <<<"$out" && ! grep -q 'TYCON_LAB_GONE' <<<"$out"; then
-  ok "T57 pasada la fecha: UNA línea con cada nombre viejo de los últimos 14 días, su nuevo y dónde cambiarlo"
+   && grep -q '2026-11-20' <<<"$out" && grep -q 'english-names.md' <<<"$out" && ! grep -q 'TYCON_LAB_GONE' <<<"$out" \
+   && ! grep -q 'lab-ocho' <<<"$out" && grep -q 'últimos 7 días' <<<"$out"; then
+  ok "T57 pasada la fecha: UNA línea con cada nombre viejo de los últimos 7 días (uno de hace ocho, no), su nuevo y dónde cambiarlo"
 else bad "T57 pasada la fecha (rc=$rc): $out"; fi
 usos "$U_FAR"
 out="$(retiro 2026-11-21)"
-[ -z "$out" ] && ok "T57 pasada la fecha, sin usos en los últimos 14 días: nada" || bad "T57 usos viejos solamente: $out"
+[ -z "$out" ] && ok "T57 pasada la fecha, sin usos en los últimos 7 días: nada" || bad "T57 usos viejos solamente: $out"
 rm -f "$RH/.claude/.tycon-pipeline/legacy-names.jsonl"
 out="$(retiro 2026-11-21)"
 [ -z "$out" ] && ok "T57 pasada la fecha, sin registro de usos: nada" || bad "T57 sin registro: $out"
@@ -538,9 +540,9 @@ out="$(retiro 2026-11-21)"
 [ "$(grep -c . <<<"$out")" = 1 ] && grep -q 'y 2 más' <<<"$out" && ok "T57 con muchos nombres sigue siendo una línea («y N más»)" || bad "T57 muchos nombres: $out"
 # el mismo nombre viejo usado contra varios guiones (el mapa tiene opciones del mismo nombre en varios): se nombra cada
 # guion, el más reciente primero — quedarse con la primera línea nombraría sólo el más viejo, quizás ya corregido
-usos '{"day":"2026-11-10","kind":"option","old":"lab-old","new":"lab-new","script":"scripts/lab/x.js"}' \
+usos '{"day":"2026-11-15","kind":"option","old":"lab-old","new":"lab-new","script":"scripts/lab/x.js"}' \
   '{"day":"2026-11-20","kind":"option","old":"lab-old","new":"lab-new","script":"scripts/lab/y.js"}' \
-  '{"day":"2026-11-12","kind":"option","old":"lab-old","new":"lab-new","script":"scripts/lab/x.js"}'
+  '{"day":"2026-11-17","kind":"option","old":"lab-old","new":"lab-new","script":"scripts/lab/x.js"}'
 out="$(retiro 2026-11-21)"
 if [ "$(grep -c . <<<"$out")" = 1 ] && grep -q 'scripts/lab/y.js' <<<"$out" && grep -q 'scripts/lab/x.js' <<<"$out" \
    && [ "$(sed 's/scripts\/lab\/y\.js.*//' <<<"$out" | grep -c 'scripts/lab/x.js')" = 0 ]; then

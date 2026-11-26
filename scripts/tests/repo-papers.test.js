@@ -1781,7 +1781,7 @@ test('T21 Portada_DiagramaSinNumeros_YPorDefectoEnElTexto @story-8.182 @ac-20', 
 
 // 🔴 Falla con: una guía que nombra el 5 o el 8 del camino corto como un número fijo.
 test('T23 Guias_NombranElTope_DicenPorDefecto @story-8.182 @ac-19', () => {
-  const guias = ['guides/coordination.md', 'guides/coordination.en.md', 'guides/firmas-del-arnes.md', 'guides/what-the-harness-does.md', 'skills/tycon-pipeline/SKILL.md'];
+  const guias = ['guides/coordination.md', 'guides/coordination.en.md', 'guides/owner-signatures.md', 'guides/what-the-harness-does.md', 'skills/tycon-pipeline/SKILL.md'];
   for (const g of guias) {
     const renglones = readPaper(g).split('\n');
     const sinPorDefecto = renglones.map((l, i) => [i + 1, l]).filter(([, l]) => MENCION_DEL_TOPE.test(l) && !POR_DEFECTO.test(l));

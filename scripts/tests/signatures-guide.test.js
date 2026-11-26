@@ -3,7 +3,7 @@
  * signatures-guide.test.js — el catálogo de firmas del dueño y su guía dicen lo mismo (@story-8.139).
  *
  * El catálogo (scripts/lib/signatures.js) es la lista de todo lo que un freno le pide firmar al dueño: lo leen el lector
- * de la configuración (qué se puede delegar y qué es sólo del dueño) y los frenos. La guía (guides/firmas-del-arnes.md)
+ * de la configuración (qué se puede delegar y qué es sólo del dueño) y los frenos. La guía (guides/owner-signatures.md)
  * es lo que lee la persona para decidir qué delega. Si una firma está en uno y no en el otro, la persona decide sobre
  * una lista que no es la que el arnés aplica.
  *
@@ -21,7 +21,7 @@ const path = require('path');
 
 const RAIZ = path.resolve(__dirname, '..', '..');
 const CATALOGO = path.join(RAIZ, 'scripts', 'lib', 'signatures.js');
-const GUIA = path.join(RAIZ, 'guides', 'firmas-del-arnes.md');
+const GUIA = path.join(RAIZ, 'guides', 'owner-signatures.md');
 
 // todas las firmas que piden los frenos hoy, escritas a mano para que una que se pierda del catálogo se note: cada escape
 // es su propia entrada
@@ -381,9 +381,9 @@ test('Coordinadora_FirmasPorClick_ReglasEnLaGuia — el dueño firma desde el ce
   assert.match(en, /`node "<harness>\/scripts\/tools\/coordination\.js" owner-wait`/);
   assert.doesNotMatch(es + en, /`node scripts\/tools\/coordination\.js owner-wait`/, 'sin la ruta relativa');
   const guia = fs.readFileSync(GUIA, 'utf8');
-  assert.match(guia, /con una consola de fondo viva[^\n]*\n?[^\n]*salvo[^\n]*\n?[^\n]*owner-wait/, 'firmas-del-arnes.md: la excepción de owner-wait');
+  assert.match(guia, /con una consola de fondo viva[^\n]*\n?[^\n]*salvo[^\n]*\n?[^\n]*owner-wait/, 'owner-signatures.md: la excepción de owner-wait');
   // el plan se aprueba con el cuadro: no se pega en el chat, salvo que el dueño lo pida o falten las dos secciones
-  assert.match(guia, /\*\*El plan se aprueba con el cuadro\.\*\*[\s\S]*?Qué hace[\s\S]*?Archivos[\s\S]*?plan completo[\s\S]*?si lo pedís[\s\S]*?Vale sólo el click/, 'firmas-del-arnes.md');
+  assert.match(guia, /\*\*El plan se aprueba con el cuadro\.\*\*[\s\S]*?Qué hace[\s\S]*?Archivos[\s\S]*?plan completo[\s\S]*?si lo pedís[\s\S]*?Vale sólo el click/, 'owner-signatures.md');
   assert.match(r, /El plan no se pega en el chat antes de su firma[\s\S]*?ruta del plan completo[\s\S]*?sólo si el dueño lo\s+pide/i, 'coordination.md');
   assert.match(ren, /plan is not pasted into the chat before its signature[\s\S]*?path of the full plan[\s\S]*?only if the owner asks/i, 'coordination.en.md');
   const paso = fs.readFileSync(path.join(RAIZ, 'skills', 'tycon-pipeline', 'steps', 'step-04-approve-plan.md'), 'utf8');

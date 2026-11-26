@@ -12,8 +12,8 @@ cuando la tarea lo pide. Vale igual con Claude Code y con Codex. Si algo del arn
 
 ## Qué contiene
 
-Cada pieza (guía, script, hook, control) con su caso y su medición: **[guides/piezas-del-arnes.md](guides/piezas-del-arnes.md)**,
-a demanda; el árbol y sus reglas: [Dónde vive cada cosa](guides/piezas-del-arnes.md#dónde-vive-cada-cosa).
+Cada pieza (guía, script, hook, control) con su caso y su medición: **[guides/harness-pieces.md](guides/harness-pieces.md)**,
+a demanda; el árbol y sus reglas: [Dónde vive cada cosa](guides/harness-pieces.md#dónde-vive-cada-cosa).
 Recorrido completo: **[guides/what-the-harness-does.md](guides/what-the-harness-does.md)**.
 Las guías: `guides/` para usar el arnés, `guides/integrations/` para las integraciones opcionales y
 `guides/maintaining/` para quien lo mantiene.
@@ -26,7 +26,7 @@ la fila aplica.
 | Trabajando en... | Leer (on-demand) |
 |---|---|
 | Entender el arnés entero, explicárselo a alguien, o dar la charla | `guides/what-the-harness-does.md` |
-| Entender en detalle UNA pieza — su porqué, su medición, su red de pruebas | `guides/piezas-del-arnes.md` (este archivo es el índice; el detalle está ahí) |
+| Entender en detalle UNA pieza — su porqué, su medición, su red de pruebas | `guides/harness-pieces.md` (este archivo es el índice; el detalle está ahí) |
 | Ver qué versión del arnés tenés, si está bien instalado y si hay una nueva | el comando `/tycon-harness` (sólo mira, no cambia nada) |
 | Ver qué está en curso en esta máquina: qué hace cada sesión, en qué paso va, a qué hora termina y qué sesiones están libres | el comando `/wip` (sólo mira, no cambia nada) |
 | Ver lo mismo dibujado como una oficina en 3D: una persona por sesión, con su estado, su hora de fin y los pasos de su corrida · escribirle a una sesión desde su ventana · recibir un aviso de gancho que empieza con `[oficina <id>]` | el comando `/office` (no cambia nada; lo que le escribís a una sesión nunca firma) · `commands/office.md` §«Escribirle a una sesión»; `/office-local` abre la página local aunque la máquina esté aprobada en el sitio |
@@ -62,7 +62,7 @@ la fila aplica.
 | Pasar una story de `review` → `done` (sign-off post-implementación) | `guides/definition-of-done.md` |
 | Un formulario queda sin pruebas y el pipeline lo frena · declarar o pagar una deuda de pruebas en `pending-tests.json` | `packs/bizuit/guides/deuda-de-pruebas-formularios.md` (paquete bizuit) |
 | Se versionaron y redesplegaron TODOS los formularios de un repo sin motivo · por qué el detector de cambios no cuenta los merges | cabecera y bucle de `scripts/ci/forms-to-version.sh` |
-| Por qué en `main` se construyen y empaquetan TODOS los formularios aunque sólo algunos suban de versión · antes de proponer «construir sólo lo que sube» | `guides/piezas-del-arnes.md` §`affected-forms.js` («construir en `main` también los que NO suben de versión… pone al día producción») |
+| Por qué en `main` se construyen y empaquetan TODOS los formularios aunque sólo algunos suban de versión · antes de proponer «construir sólo lo que sube» | `guides/harness-pieces.md` §`affected-forms.js` («construir en `main` también los que NO suben de versión… pone al día producción») |
 | Un merge de **sólo documentación** construyó, desplegó a staging, subió la versión y pidió aprobación de PROD · qué rutas pueden ir en el `trigger` de un pipeline y cuáles no (`.tycon/**` no) · un sitio sin filtro de rutas | `scripts/ci/check-trigger-without-docs.js` (cabecera; se corre a mano sin argumentos) |
 | Escribí pruebas de navegador y quiero saber si el pipeline las corre · el control dice que un repo tiene pruebas sin correr | `scripts/ci/check-tests-without-ci.js` (cabecera; se corre a mano sin argumentos, avisa y no frena) |
 | **Correr CUALQUIER test** (vitest/jest/dotnet) — SIEMPRE antes de `npm test`/`dotnet test` | `guides/test-execution-discipline.md` |
@@ -76,7 +76,7 @@ la fila aplica.
 | Crear stories que generen su pedido de trabajo en la plataforma del equipo; configurar `.tycon/work-items.yaml` · sumar un conector de plataforma | `guides/integrations/ado-projects.md` (Azure DevOps), `guides/integrations/github-platform.md` (GitHub), `guides/integrations/platform-connectors.md` (uno nuevo) |
 | Consultar una base de PRODUCCIÓN · te frenó el freno de producción y querés saber por qué · declarar un servidor en `.tycon/production.json` · instalar o actualizar el freno (pide `sudo`) | `guides/production-with-permission.md` |
 | Activar/desactivar el freno de mano del harness (bloqueo de `rm -rf /`, `--no-verify`, `curl\|bash`, `DROP DATABASE`, etc.) | `guides/safety-guard.md` |
-| Qué firmas le pide el arnés al dueño, cuáles se pueden delegar a la coordinadora y cuáles son sólo del dueño (`approvals.delegated_signing`, `approvals.owner_only`) | `guides/firmas-del-arnes.md` |
+| Qué firmas le pide el arnés al dueño, cuáles se pueden delegar a la coordinadora y cuáles son sólo del dueño (`approvals.delegated_signing`, `approvals.owner_only`) | `guides/owner-signatures.md` |
 | Setup del grabador silencioso (instinct mining) + comando `/tycon-instincts` | `guides/integrations/instinct-mining.md` |
 | Bajar costo del pipeline TYCON (Haiku como executor, Opus como advisor on-demand) + flag `--cost-tier lean` + qué effort/modelo de sesión usar para una story (effort hint PIPE-C8) | `guides/harness-cost-tiering.md` |
 | Adoptar la "wiki por temas" en un repo de specs, o entender/arreglar el lint story↔wiki (`scripts/tools/lint-wiki.sh`) | `guides/wiki-topics.md` |

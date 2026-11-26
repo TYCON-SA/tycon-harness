@@ -378,7 +378,7 @@ test('T6 AgentSkillsPreCommit_StopsForeignCopy — frena la skill ajena copiada;
 test('T22 Docs_PointToManifest — cada guía nombra el manifiesto; INSTALL ya no manda a copiar tal cual; BMAD sin versión propia', () => {
   const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
   // el índice de guías es INDEX.md (README.md es la portada)
-  for (const rel of ['guides/maintaining/bmad-contract.md', 'INSTALL.md', 'guides/maintaining/publicacion-espejo.md', 'guides/piezas-del-arnes.md', 'INDEX.md']) {
+  for (const rel of ['guides/maintaining/bmad-contract.md', 'INSTALL.md', 'guides/maintaining/publicacion-espejo.md', 'guides/harness-pieces.md', 'INDEX.md']) {
     assert.match(read(rel), /third-party-skills\.json/, `${rel} no nombra el manifiesto`);
   }
   assert.doesNotMatch(read('INSTALL.md'), /copiarla tal cual/);

@@ -2954,14 +2954,14 @@ test('Docs_IncidentAndHeader — el caso, la cabecera y la ficha dicen lo mismo 
   assert.match(piezas, /runtime-waiver\.js — el registro de firmas/, 'la ficha de la pieza existe');
   // La ficha se publica: dice la regla y su porqué, sin enlazar el caso. El camino de vuelta es
   // la tabla del registro, que anota qué guía y qué sección lo citaba.
-  // la ficha corta y su detalle (guides/maintaining/piezas-en-detalle.md, mismo título) se leen juntos
+  // la ficha corta y su detalle (guides/maintaining/pieces-in-detail.md, mismo título) se leen juntos
   const cortar = (txt) => { const i = txt.indexOf('runtime-waiver.js — el registro de firmas'); return i < 0 ? '' : txt.slice(i).split(/\n## /)[0]; };
-  const detalle = path.join(raiz, 'guides', 'maintaining', 'piezas-en-detalle.md');
+  const detalle = path.join(raiz, 'guides', 'maintaining', 'pieces-in-detail.md');
   const ficha = cortar(piezas) + '\n' + (fs.existsSync(detalle) ? cortar(fs.readFileSync(detalle, 'utf8')) : '');
   assert.match(ficha, /La cadena se lee como \*\*árbol\*\*/, 'la ficha dice la regla: la cadena se lee como árbol');
   assert.match(ficha, /dos ramas que firmaron en paralelo y se unen valen las dos/, 'y qué evita: dos ramas en paralelo valen las dos');
   assert.ok(!/incident-log(?:\.md)?#/.test(ficha), 'sin enlazar el caso');
-  assert.match(log, /\| `case-firmas-ramas-paralelas-2026-10-07` \| `guides\/piezas-del-arnes\.md` \| [^|\n]*runtime-waiver\.js[^|\n]*\|/, 'y el registro anota que esta ficha citaba el caso');
+  assert.match(log, /\| `case-firmas-ramas-paralelas-2026-10-07` \| `guides\/harness-pieces\.md` \| [^|\n]*runtime-waiver\.js[^|\n]*\|/, 'y el registro anota que esta ficha citaba el caso');
 });
 
 // ── atdd-preedit — el portón PREVENTIVO (deniega la edición, no la lamenta) ─────────────────────

@@ -48,6 +48,10 @@
 #   bash scripts/ci/run-base-controls.sh pending --root <pedido> --base <rev> --range <base>...<punta> [--approvals-out <ruta>]
 #   bash scripts/ci/run-base-controls.sh approve --root <dir> [--base <rev>] --entries '<json>' [--out <ruta>] [--terminal]
 #   bash scripts/ci/run-base-controls.sh approve --root <dir> --file <ruta> --rev <commit> [--out <ruta>] [--terminal]
+#   bash scripts/ci/run-base-controls.sh approve --root <dir> --base <rev> --range <base>...<punta> --expect <huella> [--out <ruta>] [--terminal]
+#        (la lista la arma el guion desde el pedido, como `pending`, y la huella es la que `pending` imprime: el comando no
+#        nombra ningún archivo, y así lo firma también el click cuando la lista nombra la puerta de producción)
+#   bash scripts/ci/run-base-controls.sh entries --root <dir> --base <rev> --range <base>...<punta> --expect <huella>   (esa lista, en JSON)
 #   bash scripts/ci/run-base-controls.sh removed-approvals --root <dir> --ref <rev> (--from <commit> | --since <fecha>) [--until <fecha>]
 #        (la cuenta de la noche: las constancias que salieron de <rev>, con y sin la firma del dueño; la llama
 #        scripts/ci/approvals-removed.js)
@@ -64,7 +68,7 @@
 # SALIDAS: 0 verde · 1 rojo (o `approve` sin la firma) · 2 uso (o `approve --terminal` sin terminal) · 9 no pude correr (la última línea dice por qué). «No pude
 # correr» nunca cae a los controles del pedido: eso es el hueco que esto cierra.
 #
-# LOS LÍMITES (guides/piezas-del-arnes.md §scripts/ci/run-base-controls.sh): el propio workflow corre del pedido
+# LOS LÍMITES (guides/harness-pieces.md §scripts/ci/run-base-controls.sh): el propio workflow corre del pedido
 # (GitHub y Azure corren el del pedido), así que un pedido que deja de llamar a este guion no corre nada de la base: lo
 # frena el control de los workflows mientras todavía lo llame, y la alarma lo dice en el pedido siguiente. Las pruebas
 # (suites, banco) son del código del pedido. Y el contenido de un archivo de regla cambiado lo juzga sólo la pasada del
@@ -111,7 +115,7 @@ const [cmd, ...rest] = enLaVentana ? JSON.parse(process.env.BASE_CONTROLS_WINDOW
 delete process.env.BASE_CONTROLS_WINDOW_ARGS;
 
 function usage(code) {
-  console.error('uso: bash scripts/ci/run-base-controls.sh run|pending --root <pedido> --base <rev> --range <base>...<punta> · check-inventory --root <dir> [--ref <rev>] · approve --root <dir> [--base <rev>] --entries <json> | --file <ruta> --rev <commit> · classify --root <dir> --base <rev> --entries <json> · removed-approvals --root <dir> --ref <rev> (--from <commit> | --since <fecha>) [--until <fecha>] · unnamed --hook <copia> --harness <arnés> [--public-hook <archivo>]');
+  console.error('uso: bash scripts/ci/run-base-controls.sh run|pending --root <pedido> --base <rev> --range <base>...<punta> · check-inventory --root <dir> [--ref <rev>] · approve --root <dir> [--base <rev>] --entries <json> | --file <ruta> --rev <commit> | --base <rev> --range <base>...<punta> --expect <huella> · entries --root <dir> --base <rev> --range <base>...<punta> --expect <huella> · classify --root <dir> --base <rev> --entries <json> | --range … --expect <huella> · removed-approvals --root <dir> --ref <rev> (--from <commit> | --since <fecha>) [--until <fecha>] · unnamed --hook <copia> --harness <arnés> [--public-hook <archivo>]');
   process.exit(code);
 }
 function opt(name) {
@@ -743,6 +747,10 @@ function selfPath() {
 function signCommand(root, entries, out, base, { guion = null } = {}) {
   return `bash ${guion ? shq(guion) : SELF} approve --root ${root === '<repo>' ? root : shq(root)}${base ? ` --base ${shq(base)}` : ''} --out ${shq(out)} --entries ${shq(JSON.stringify(entries))}`;
 }
+// la misma firma sin nombrar los archivos: la lista la arma el guion desde el pedido, y la huella ata el click a la lista
+function signCommandByRange(root, out, base, range, hash, { guion = null } = {}) {
+  return `bash ${guion ? shq(guion) : SELF} approve --root ${shq(root)} --base ${shq(base)} --range ${shq(range)} --out ${shq(out)} --expect ${hash}`;
+}
 
 // ── el commit armado ─────────────────────────────────────────────────────────────────────────────────────────────────
 const IDENT = { GIT_AUTHOR_NAME: 'run-base-controls', GIT_AUTHOR_EMAIL: 'run-base-controls@localhost', GIT_COMMITTER_NAME: 'run-base-controls', GIT_COMMITTER_EMAIL: 'run-base-controls@localhost' };
@@ -1175,6 +1183,9 @@ function cmdPending() {
   const firma = signCommand(a.root, a.entries, a.approvalsOut, a.baseArg, { guion: selfPath() });
   console.log(`la firma, desde la sesión (el dueño la aprueba en la ventana de permiso, o, donde la ventana no llega, con su click en el cuadro de opciones o su «aprobado»): ${firma}`);
   console.log(`o, si prefiere, en su terminal: ${firma} --terminal`);
+  // sin nombrar los archivos: la que sirve cuando el comando de arriba lo frena otro freno (el de producción frena todo
+  // comando que nombre la puerta, también dentro de --entries)
+  console.log(`o, sin nombrar los archivos (la lista la arma el guion desde el pedido): ${signCommandByRange(a.root, a.approvalsOut, a.baseArg, opt('--range'), a.hash, { guion: selfPath() })}`);
 }
 
 // la ventana nueva de Windows (skills/tycon-pipeline/scripts/lib/runtime-waiver.js, del mismo árbol que este guion)
@@ -1227,9 +1238,40 @@ function readFromTty(prompt) {
   fs.closeSync(fd);
   return text.split('\n')[0].trim();
 }
+// La lista de la firma armada desde el pedido (`--range`), como la arma `pending`, sin que el comando nombre los archivos:
+// un comando que nombra la puerta de producción lo frena el freno de producción, y esa firma no se podía dar con un
+// click. Lleva `--expect <huella>`, la de la lista que se mostró al pedirla: si el pedido cambió desde entonces, no
+// coincide y no se firma nada. La salida de `analyze` va a la de error, para no ensuciar la que lee quien llama.
+function entriesFromRange(cmdName) {
+  const exp = opt('--expect');
+  if (!exp || !/^[0-9a-f]{64}$/.test(exp)) { console.error(`run-base-controls ${cmdName}: con --range va --expect <huella de la lista>, la que da \`pending\`: no se firmó nada.`); process.exit(2); }
+  const log = console.log; console.log = (...a) => console.error(...a);
+  let a;
+  try { a = analyze(); } finally { console.log = log; }
+  if (!a.entries.length) { console.error(`run-base-controls ${cmdName}: el pedido no cambia ningún archivo de control: no hay nada que firmar.`); process.exit(1); }
+  // lo mismo que `pending`: con desparejos (el pedido mezclado con la base cambia lo que se firmaría) no hay comando
+  if (a.desparejos.length) { console.error(`run-base-controls ${cmdName}: ${DESPAREJOS(a.desparejos)}: no se firmó nada.`); process.exit(1); }
+  // 🔴 la lista sale de la punta de --range, y el cuadro muestra el cambio de --root contra --base hasta su HEAD: si no
+  // son la misma versión, el dueño vería un cambio y la constancia firmaría otro (con --range apuntado a otra rama). Lo
+  // que se firma tiene que ser la punta de la carpeta, como con --entries
+  const head = git(a.root, ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], { allowFail: true });
+  if (head.status !== 0) { console.error(`run-base-controls ${cmdName}: no pude leer la punta de ${a.root}: no sé si la lista es la del pedido. No se firmó nada.`); process.exit(2); }
+  const distintas = a.entries.filter((e) => (blobOf(a.root, 'HEAD', e.path) || 'borrado') !== e.blob);
+  if (distintas.length) {
+    console.error(`run-base-controls ${cmdName}: la lista del rango no es la punta de ${a.root} (HEAD ${short(trimNl(head.stdout))}): ${distintas.map((e) => safe(e.path)).join(', ')}. No se firmó nada: el rango tiene que terminar en la punta de la carpeta que se firma.`);
+    process.exit(1);
+  }
+  if (a.hash !== exp) {
+    console.error(`run-base-controls ${cmdName}: la lista del pedido cambió desde que se pidió la firma (huella ${short(a.hash)}, se pidió ${short(exp)}): no se firmó nada. Pedí el comando de nuevo con \`pending\`.`);
+    process.exit(1);
+  }
+  return a.entries;
+}
+
 function cmdApprove() {
   const root = path.resolve(opt('--root') || '.');
   let entries;
+  if (!opt('--entries') && !opt('--file') && opt('--range')) entries = entriesFromRange('approve');
   if (opt('--entries')) {
     try { entries = JSON.parse(opt('--entries')); } catch (e) { console.error(`run-base-controls approve: --entries no es JSON: ${e.message}`); process.exit(2); }
     if (!Array.isArray(entries) || !entries.length || entries.some((e) => !e || typeof e.path !== 'string' || typeof e.blob !== 'string')) { console.error('run-base-controls approve: --entries es una lista de {path, blob}'); process.exit(2); }
@@ -1384,10 +1426,17 @@ function registroFirmado(root, aprobaciones, p, sacados) {
   return false;
 }
 
+// la lista de la firma de `--range` y su huella, en JSON: la lee el cuadro del freno de firmas (signature-sources.js)
+function cmdEntries() {
+  const entries = entriesFromRange('entries');
+  process.stdout.write(`${JSON.stringify({ entries, hash: hashOf(entries) })}\n`);
+}
+
 function cmdClassify() {
   const root = path.resolve(opt('--root') || '.');
   let entries;
-  try { entries = JSON.parse(opt('--entries') || ''); } catch (e) { console.error(`run-base-controls classify: --entries no es JSON: ${e.message}`); process.exit(2); }
+  if (!opt('--entries') && !opt('--file') && opt('--range')) entries = entriesFromRange('classify');
+  else try { entries = JSON.parse(opt('--entries') || ''); } catch (e) { console.error(`run-base-controls classify: --entries no es JSON: ${e.message}`); process.exit(2); }
   // la salida es sólo el JSON: los avisos de las constancias que no firman nada no se imprimen acá
   const log = console.log; console.log = () => {};
   let c;
@@ -1521,6 +1570,7 @@ try {
   else if (cmd === 'pending') cmdPending();
   else if (cmd === 'approve') cmdApprove();
   else if (cmd === 'classify') cmdClassify();
+  else if (cmd === 'entries') cmdEntries();
   else if (cmd === 'removed-approvals') cmdRemovedApprovals();
   else if (cmd === 'unnamed') cmdUnnamed();
   else if (cmd === '-h' || cmd === '--help') usage(0);
