@@ -581,6 +581,8 @@ function handle(event, { casa } = {}) {
 
   const tool = event.tool_name;
   if (tool !== 'Edit' && tool !== 'Write') return null;
+  // el destino de un `*** Move to:` de Codex ya se juzga desde el evento de su origen (`destinoDelParche`)
+  if (event.tool_input?.move_from) return null;
 
   const origen = event.tool_input?.file_path;
   if (!origen) return null;
