@@ -32,8 +32,9 @@ function correr(t, { fallas, registro }) {
     fs.mkdirSync(path.dirname(f), { recursive: true });
     fs.writeFileSync(f, registro);
   }
-  const guion = `. "${LIB}"\n${fallas ? 'no "T99 algo falló"' : 'ok "T99 todo bien"'}\nscenario_end prueba\n`;
-  const r = spawnSync('bash', ['-c', guion], { encoding: 'utf8', env: { ...process.env, HOME: casa } });
+  // el guion es un texto fijo: la ruta de lib.sh y lo que el escenario hace le llegan por el entorno
+  const guion = '. "${CM_LIB}"\nif [ "${CM_FALLA}" = 1 ]; then no "T99 algo falló"; else ok "T99 todo bien"; fi\nscenario_end prueba\n';
+  const r = spawnSync('bash', ['-c', guion], { encoding: 'utf8', env: { ...process.env, HOME: casa, CM_LIB: LIB, CM_FALLA: fallas ? '1' : '0' } });
   return `${r.stdout || ''}${r.stderr || ''}`;
 }
 
