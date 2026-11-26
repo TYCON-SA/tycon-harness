@@ -465,6 +465,17 @@ Una línea que no es JSON no corresponde, y el portón dice cuál es.
 deja pasar. En `freno`, es un hallazgo que frena. Un valor desconocido cuenta como `freno`. Arranca en `aviso`, y pasa a
 `freno` con un commit que cambia el valor y trae su constancia de cambio de control. Ninguna variable ni opción lo cambia.
 
+Antes de pasar a `freno` hay tres cosas que arreglar, porque en `aviso` no traban nada y en `freno` sí:
+
+- Al cerrar a mano el merge de main que chocó, el pre-commit compara contra `HEAD`: las constancias que trajo main
+  cuentan como nuevas y sin cuadro, y el commit del merge se rechazaría. La CI no lo sufre: compara contra la base.
+- «Repetí la firma con el cuadro» no arregla una constancia sin cuadro que ya ocupa su archivo: `approve` contesta que ya
+  está firmada y no la toca, y en un `.jsonl` suma otra línea y la vieja sigue sin cuadro. Hace falta un camino que la
+  reescriba con su cuadro.
+- Un pedido que trae una constancia escrita a mano y a la vez cambia la biblioteca del cuadro o el pre-commit puede dar
+  rojo en la base y verde en el pedido; la constancia cuadra con su hash, así que la tercera pasada corre la versión
+  del pedido. La regla tiene que correr con el código de la base, como los demás controles.
+
 **Las firmas por delegación.** La refirma tras traer main (`refresh-after-main`) y la delegación clásica
 (`via: delegacion`) van sin cuadro. Con la regla en `freno`, ese pedido no entra hasta que el dueño firma otra vez con su
 cuadro.

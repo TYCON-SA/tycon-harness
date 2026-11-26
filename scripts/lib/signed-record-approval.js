@@ -85,16 +85,21 @@ function entradaDe(ruta) {
  *   · terminal: el del registro si lo hay (Codex) o, en la terminal del dueño, uno nuevo con la hora.
  * La delegación, la revisión, lo hecho y avisado y la firma de trámite no son una persona: null (va sin cuadro).
  */
+// La hora de un registro de la ventana: su `ts`. Su `aprobada_en` es la sesión donde aprobó el dueño (owner-window.js);
+// sólo vale como hora si es una fecha, como en un registro viejo sin `ts`.
+const ES_FECHA = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+const horaDe = (reg) => (ES_FECHA.test(String(reg.ts || '')) ? String(reg.ts) : ES_FECHA.test(String(reg.aprobada_en || '')) ? String(reg.aprobada_en) : '');
+
 function aprobacionDe(r, firma, { ahora = Date.now() } = {}) {
   if (!r || r.codigo !== 0 || typeof firma !== 'string' || !firma) return null;
   const reg = r.registro && typeof r.registro === 'object' ? r.registro : null;
   const via = r.via;
   if ((via === 'click' || via === 'mensaje') && reg && esHex64(reg.aprobacion)) {
-    return { aprobacion: reg.aprobacion, firma, via, aprobada_en: String(reg.aprobada_en || reg.ts || '') };
+    return { aprobacion: reg.aprobacion, firma, via, aprobada_en: horaDe(reg) };
   }
   if (via === 'ventana' && reg) return { aprobacion: sha256(canonico(reg)), firma, via, aprobada_en: String(reg.ts || '') };
   if (via === 'terminal') {
-    if (reg && esHex64(reg.aprobacion)) return { aprobacion: reg.aprobacion, firma, via, aprobada_en: String(reg.aprobada_en || reg.ts || '') };
+    if (reg && esHex64(reg.aprobacion)) return { aprobacion: reg.aprobacion, firma, via, aprobada_en: horaDe(reg) };
     const cuando = new Date(ahora).toISOString();
     return { aprobacion: sha256(`terminal\n${firma}\n${cuando}\n${crypto.randomBytes(16).toString('hex')}`), firma, via, aprobada_en: cuando };
   }

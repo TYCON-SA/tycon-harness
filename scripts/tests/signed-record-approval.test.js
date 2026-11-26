@@ -47,8 +47,9 @@ function carpeta(t, nombre) {
 const hex = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const lineas = (f) => fs.readFileSync(f, 'utf8').split('\n').filter(Boolean);
 // lo que devuelve `exigir` para cada vía de una persona
-const CLICK = { codigo: 0, via: 'click', registro: { aprobacion: hex('click'), aprobada_en: '2026-11-25T12:00:00.000Z', ts: '2026-11-25T12:00:05.000Z' } };
-const MENSAJE = { codigo: 0, via: 'mensaje', registro: { aprobacion: hex('mensaje'), aprobada_en: '2026-11-25T12:01:00.000Z', ts: '2026-11-25T12:01:05.000Z' } };
+// como lo escribe la ventana (owner-window.js): `aprobada_en` es la sesión donde aprobó el dueño y `ts`, la hora
+const CLICK = { codigo: 0, via: 'click', registro: { aprobacion: hex('click'), aprobada_en: 'sesion-del-dueno-1', ts: '2026-11-25T12:00:05.000Z' } };
+const MENSAJE = { codigo: 0, via: 'mensaje', registro: { aprobacion: hex('mensaje'), aprobada_en: 'sesion-del-dueno-2', ts: '2026-11-25T12:01:05.000Z' } };
 const VENTANA = { codigo: 0, via: 'ventana', registro: { firma: 'control-change', sesion: 's1', sha256: hex('cmd'), comando: 'bash x', ts: '2026-11-25T12:02:00.000Z' } };
 const TERMINAL = { codigo: 0, via: 'terminal' };
 
@@ -79,8 +80,8 @@ test('T10 Catalogo_LasRutasYLasFirmas', () => {
 test('T11 Escritores_RegistranElCuadro', (t) => {
   // lo que cada vía deja en el cuadro
   const click = sra.aprobacionDe(CLICK, 'save');
-  assert.deepStrictEqual(click, { aprobacion: hex('click'), firma: 'save', via: 'click', aprobada_en: '2026-11-25T12:00:00.000Z' });
-  assert.deepStrictEqual(sra.aprobacionDe(MENSAJE, 'save'), { aprobacion: hex('mensaje'), firma: 'save', via: 'mensaje', aprobada_en: '2026-11-25T12:01:00.000Z' });
+  assert.deepStrictEqual(click, { aprobacion: hex('click'), firma: 'save', via: 'click', aprobada_en: '2026-11-25T12:00:05.000Z' });
+  assert.deepStrictEqual(sra.aprobacionDe(MENSAJE, 'save'), { aprobacion: hex('mensaje'), firma: 'save', via: 'mensaje', aprobada_en: '2026-11-25T12:01:05.000Z' });
   const ventana = sra.aprobacionDe(VENTANA, 'control-change');
   assert.strictEqual(ventana.via, 'ventana');
   assert.strictEqual(ventana.aprobacion, hex(sra.canonico(VENTANA.registro)), 'la ventana: el id de su pedido');
@@ -238,4 +239,18 @@ test('T14 NadaRegistraDespues', (t) => {
     'skills/tycon-pipeline/scripts/lib/exemptions.js',
     'skills/tycon-pipeline/scripts/lib/runtime-waiver.js',
   ]);
+});
+
+// T15 · 🔴 Falla con: el cuadro guarda en `aprobada_en` el id de la sesión donde aprobó el dueño, que es lo que el
+//    registro de la ventana (owner-window.js) guarda en su campo `aprobada_en`; la hora del registro es `ts`.
+test('T15 Cuadro_AprobadaEnEsLaHora', () => {
+  const sesion = 'sesion-del-dueno-3';
+  const ts = '2026-11-25T12:00:05.000Z';
+  for (const via of ['click', 'mensaje', 'terminal']) {
+    const a = sra.aprobacionDe({ codigo: 0, via, registro: { aprobacion: hex(via), aprobada_en: sesion, ts } }, 'control-change');
+    assert.strictEqual(a.aprobada_en, ts, `${via}: la hora del registro, no la sesión`);
+  }
+  // un registro sin `ts` con la hora en `aprobada_en` (una forma vieja) la sigue tomando; una sesión, nunca
+  assert.strictEqual(sra.aprobacionDe({ codigo: 0, via: 'click', registro: { aprobacion: hex('v'), aprobada_en: ts } }, 'f').aprobada_en, ts);
+  assert.strictEqual(sra.aprobacionDe({ codigo: 0, via: 'click', registro: { aprobacion: hex('s'), aprobada_en: sesion } }, 'f').aprobada_en, '');
 });
