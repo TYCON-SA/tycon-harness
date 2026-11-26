@@ -864,13 +864,13 @@ done
 # viene cada uno.
 REG="$CASA/.claude/.tycon-pipeline/production.log"
 
-# T-puerta-35 · la primera línea del cuadro dice la carpeta y la sesión; desde una terminal, que es una terminal. Desde una
-# sesión, una sentencia ya no abre el cuadro del sistema (T-puerta-43): la línea de la sesión se mira con --reclassify
+# T-puerta-35 · la primera línea del cuadro dice la carpeta y que lo pide una terminal. Desde una sesión el cuadro del
+# sistema ya no se abre para ninguna forma (T-puerta-43 y T-puerta-47): lo aprueba el click en la sesión
 mundo ok
 mkdir -p "$TMP/proyectos/Cliente/Codigo"
-rc="$(cd "$TMP/proyectos/Cliente/Codigo" && PUERTA_SESION=0123abcd-4567-89ef-0123-456789abcdef puerta --reclassify "$PROD")"
-if [ "$(ultimo_arg | head -1)" = "Pide: Cliente/Codigo · sesión 0123abcd (principal)" ] && ultimo_arg | grep -F "Bajar $PROD" >/dev/null; then
-  ok "T-puerta-35 PuertaCuadro_DiceQuienPide · carpeta y sesión en la primera línea, antes de lo que se aprueba"
+rc="$(cd "$TMP/proyectos/Cliente/Codigo" && puerta --reclassify "$PROD")"
+if [ "$(ultimo_arg | head -1)" = "Pide: Cliente/Codigo · una terminal, fuera de Claude Code" ] && ultimo_arg | grep -F "Bajar $PROD" >/dev/null; then
+  ok "T-puerta-35 PuertaCuadro_DiceQuienPide · carpeta y terminal en la primera línea, antes de lo que se aprueba"
 else no "T-puerta-35 PuertaCuadro_DiceQuienPide · cuadro: $(ultimo_arg | head -3 | tr '\n' '|')"; fi
 mundo ok
 rc="$(cd "$TMP/proyectos/Cliente/Codigo" && puerta "$PROD" 'select 1')"
@@ -879,8 +879,8 @@ if [ "$(ultimo_arg | head -1)" = "Pide: Cliente/Codigo · una terminal, fuera de
 else no "T-puerta-35 PuertaCuadro_DiceQuienPide · terminal: $(ultimo_arg | head -1)"; fi
 mundo ok
 raro="$TMP/proyectos/Producción/a$(printf '\xe2\x80\xae')b"; mkdir -p "$raro"
-rc="$(cd "$raro" && PUERTA_SESION=0123abcd-4567-89ef-0123-456789abcdef puerta --reclassify "$PROD")"
-if [ "$(ultimo_arg | head -1)" = "Pide: Producción/a?b · sesión 0123abcd (principal)" ]; then
+rc="$(cd "$raro" && puerta --reclassify "$PROD")"
+if [ "$(ultimo_arg | head -1)" = "Pide: Producción/a?b · una terminal, fuera de Claude Code" ]; then
   ok "T-puerta-35 PuertaCuadro_DiceQuienPide · la tilde se ve, y un carácter de dirección sale como «?»"
 else no "T-puerta-35 PuertaCuadro_DiceQuienPide · carpeta rara: $(ultimo_arg | head -1)"; fi
 
@@ -910,7 +910,7 @@ else no "T-puerta-36 PuertaCuadro_UnoPorVez · máximo abiertos a la vez: $max �
 
 # T-puerta-37 · si el cuadro abierto no se contesta antes del tope, el segundo sale 2 sin cuadro ni clave, y dice de quién es
 mundo ok; cuadro_lento 4
-( cd "$TMP/proyectos/Cliente/Codigo" && PUERTA_SESION=0123abcd-4567-89ef-0123-456789abcdef puerta --reclassify "$PROD" >/dev/null ) &
+( cd "$TMP/proyectos/Cliente/Codigo" && puerta --reclassify "$PROD" >/dev/null ) &
 primero=$!
 sleep 1
 rm -f "$TMP/orden.log"
@@ -918,7 +918,7 @@ rc="$(TYCON_PROD_TEST_DIALOG_WAIT=1 puerta "$PROD" 'select 2')"
 # antes de que termine la primera, que sí está aprobada: después lee la clave y pisa la salida de error
 cp "$TMP/err" "$TMP/err-37"; sin_clave_37=0; grep -q '^security' "$TMP/orden.log" 2>/dev/null || sin_clave_37=1
 wait "$primero"
-if [ "$rc" = 2 ] && grep -q "ya hay un cuadro de producción abierto esperando respuesta" "$TMP/err-37" && grep -q "Cliente/Codigo · sesión 0123abcd" "$TMP/err-37" \
+if [ "$rc" = 2 ] && grep -q "ya hay un cuadro de producción abierto esperando respuesta" "$TMP/err-37" && grep -q "Cliente/Codigo · una terminal" "$TMP/err-37" \
    && [ "$(grep -c '^abre' "$TMP/cuadros.log")" = 1 ] && [ "$sin_clave_37" = 1 ] && grep -q '"accion":"sin-turno"' "$REG"; then
   ok "T-puerta-37 PuertaCuadro_TopeDeEspera · vencida la espera sale 2, nombra quién tiene el cuadro, no abre otro ni lee la clave, y lo anota"
 else no "T-puerta-37 PuertaCuadro_TopeDeEspera · rc=$rc · cuadros: $(grep -c '^abre' "$TMP/cuadros.log") · sin clave: $sin_clave_37 · $(head -c 200 "$TMP/err-37")"; fi
@@ -1020,6 +1020,8 @@ cat > "$TMP/aprobacion-de-la-sesion.js" <<JS
 const fs = require('fs');
 fs.appendFileSync('$TMP/orden.log', 'aprobacion\n');
 fs.writeFileSync('$TMP/aprobacion-argv.json', JSON.stringify(process.argv.slice(2)));
+// lo que el verificador real rechazaría por sus argumentos, el doble también
+if (!require('$AQUI/scripts/production/session-approval.js').leerArgs(process.argv.slice(2))) { process.stdout.write('uso: session-approval.js\n'); process.exit(2); }
 const modo = (() => { try { return fs.readFileSync('$TMP/aprobacion-modo', 'utf8').trim(); } catch (_) { return 'ask'; } })();
 if (modo === 'approved') { process.stdout.write('id-de-prueba\n'); process.exit(0); }
 if (modo === 'ask') { process.stdout.write('Mostrale AskUserQuestion con una sola pregunta, sin cambiarle una letra:\n¿Correr esta sentencia? (firma production-query · sesión s · código c)\n'); process.exit(1); }
@@ -1041,7 +1043,7 @@ else no "T-puerta-43 PuertaSesion_SinClick_PideElCuadroDeLaSesion · rc=$rc · c
 # (el cliente falso sale 1, y la puerta devuelve su salida: lo que se mira es que se conectó, no que salga 0)
 mundo ok; modo_aprobacion approved
 rc="$(PUERTA_SESION=$SES puerta "$PROD" 'EXEC dbo.RPT_Ejemplo @ID = 0' --max-rows 7)"
-argv_ok="$(node -e 'const a=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const e=["--host",process.argv[2],"--session",process.argv[3],"--max-rows","7","--","EXEC dbo.RPT_Ejemplo @ID = 0"];process.stdout.write(JSON.stringify(a)===JSON.stringify(e)?"si":JSON.stringify(a))' "$TMP/aprobacion-argv.json" "$PROD" "$SES" 2>/dev/null)"
+argv_ok="$(node -e 'const a=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const e=["--kind","consulta","--host",process.argv[2],"--session",process.argv[3],"--max-rows","7","--","EXEC dbo.RPT_Ejemplo @ID = 0"];process.stdout.write(JSON.stringify(a)===JSON.stringify(e)?"si":JSON.stringify(a))' "$TMP/aprobacion-argv.json" "$PROD" "$SES" 2>/dev/null)"
 if [ "$rc" = 1 ] && grep -q '^sqlcmd' "$TMP/orden.log" && [ "$(cuadros)" = 0 ] && [ "$argv_ok" = si ] && grep -q '^security' "$TMP/orden.log" && grep -q '"aprobacion":"click-en-la-sesion"' "$REG" \
    && [ "$(grep -n aprobacion "$TMP/orden.log" | head -1 | cut -d: -f1)" -lt "$(grep -n '^security' "$TMP/orden.log" | head -1 | cut -d: -f1)" ]; then
   ok "T-puerta-44 PuertaSesion_ConClick_Corre · corre sin el cuadro del sistema, verifica antes de leer la clave y lo anota"
@@ -1070,6 +1072,27 @@ rc="$(PUERTA_CLAUDECODE=1 puerta "$PROD" 'select 1')"
 if [ "$rc" = 2 ] && [ "$(cuadros)" = 0 ] && sin_security && ! grep -q '^aprobacion$' "$TMP/orden.log" 2>/dev/null && grep -q 'sin identificador de sesión' "$TMP/err"; then
   ok "T-puerta-46 PuertaSesion_SinVerificar_FallaCerrada · una sesión sin id no aprueba ni abre el cuadro del sistema"
 else no "T-puerta-46 PuertaSesion_SinVerificar_FallaCerrada · sin id: rc=$rc · cuadros $(cuadros) · $(head -c 200 "$TMP/err")"; fi
+
+# T-puerta-47 · las otras formas con cuadro también se aprueban con el click en la sesión (fila 286, decisión del dueño):
+# el verificador recibe la forma y lo que se aprueba; sin click salen 2 sin cambiar nada; nunca abren el cuadro del sistema
+# @story-8.337
+forma_de(){ node -e 'const a=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const i=a.indexOf("--kind");process.stdout.write(i<0?"":a[i+1]+" "+a[a.indexOf("--host")+1])' "$TMP/aprobacion-argv.json" 2>/dev/null; }
+mundo ok; modo_aprobacion ask
+rc="$(PUERTA_SESION=$SES puerta --reclassify "$PROD")"
+if [ "$rc" = 2 ] && [ "$(cuadros)" = 0 ] && [ "$(forma_de)" = "reclasificar $PROD" ] && grep -q '"forma":"reclasificar"' "$REG" \
+   && ! grep -q '"accion":"reclasificar"' "$REG"; then
+  ok "T-puerta-47 PuertaSesion_OtrasFormas · --reclassify sin click: sale 2, pide el click de su forma y no baja el servidor"
+else no "T-puerta-47 PuertaSesion_OtrasFormas · --reclassify sin click: rc=$rc · cuadros $(cuadros) · forma «$(forma_de)» · $(head -c 200 "$TMP/err")"; fi
+mundo ok; modo_aprobacion approved
+rc="$(PUERTA_SESION=$SES puerta --reclassify "$PROD")"
+if [ "$rc" = 0 ] && [ "$(cuadros)" = 0 ] && [ "$(forma_de)" = "reclasificar $PROD" ] && grep -q '"aprobacion":"click-en-la-sesion"' "$REG"; then
+  ok "T-puerta-47 PuertaSesion_OtrasFormas · --reclassify con el click: baja el servidor sin el cuadro del sistema"
+else no "T-puerta-47 PuertaSesion_OtrasFormas · --reclassify con el click: rc=$rc · cuadros $(cuadros) · forma «$(forma_de)» · $(head -c 200 "$TMP/err")"; fi
+mundo ok; modo_aprobacion ask
+rc="$(PUERTA_SESION=$SES puerta --open-firewall "$PROD")"
+if [ "$rc" = 2 ] && [ "$(cuadros)" = 0 ] && [ "$(forma_de)" = "open-firewall $PROD" ]; then
+  ok "T-puerta-47 PuertaSesion_OtrasFormas · --open-firewall sin click: sale 2 y pide el click de su forma"
+else no "T-puerta-47 PuertaSesion_OtrasFormas · --open-firewall sin click: rc=$rc · cuadros $(cuadros) · forma «$(forma_de)» · $(head -c 200 "$TMP/err")"; fi
 
 echo "— prod-sql: $pasaron ok, $fallos fallos —"
 [ "$fallos" -eq 0 ]
