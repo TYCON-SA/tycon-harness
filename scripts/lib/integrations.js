@@ -173,6 +173,49 @@ function draftFieldProblems(m) {
   return out;
 }
 
+/**
+ * La forma del repo de un conector de plataforma (`repoShape`): sus claves en orden, la última el nombre del repo; la
+ * expresión (`name`, con sus `flags`) de qué nombre vale; `nameHint`, lo que vale dicho en palabras; y, si hacen falta,
+ * `optional` (claves que el repo puede no traer) y `rules` (la regla propia de una clave). La lee
+ * scripts/lib/team-repos.js para validar los repos de `team-repos.json`. El problema, o null.
+ */
+const CLAVE_DE_REPO = /^[a-z][a-z_]*$/;
+function repoShapeProblem(s) {
+  if (!isObject(s)) return '«repoShape» es un objeto: las claves del repo, la expresión de qué nombre vale y su explicación';
+  if (!Array.isArray(s.keys) || !s.keys.length || !s.keys.every((k) => typeof k === 'string' && CLAVE_DE_REPO.test(k)) || new Set(s.keys).size !== s.keys.length) return '«repoShape.keys» es una lista de claves distintas, en minúsculas';
+  if (s.keys[s.keys.length - 1] !== 'repo') return '«repoShape.keys» termina en «repo», el nombre del repo';
+  if (s.keys.includes('platform')) return '«repoShape.keys» no lleva «platform»: es la clave que elige el conector';
+  if (typeof s.name !== 'string' || !s.name.startsWith('^') || !s.name.endsWith('$')) return '«repoShape.name» es una expresión de un nombre entero, de «^» a «$»';
+  if (s.flags !== undefined && (typeof s.flags !== 'string' || !/^u?$/.test(s.flags))) return '«repoShape.flags» es «u» o vacío';
+  try { new RegExp(s.name, s.flags || ''); } catch (e) { return `«repoShape.name» no compila (${e.message})`; }
+  if (typeof s.nameHint !== 'string' || !s.nameHint.trim()) return '«repoShape.nameHint» dice en palabras qué nombre vale';
+  // `optional`: las claves que un repo puede traer además de las suyas; van delante en la identidad del repo
+  if (s.optional !== undefined) {
+    if (!Array.isArray(s.optional) || !s.optional.every((k) => typeof k === 'string' && CLAVE_DE_REPO.test(k)) || new Set(s.optional).size !== s.optional.length) return '«repoShape.optional» es una lista de claves distintas, en minúsculas';
+    if (s.optional.some((k) => k === 'platform' || s.keys.includes(k))) return '«repoShape.optional» no repite una de «keys» ni lleva «platform»';
+  }
+  // `rules`: la regla propia de una clave, cuando no es la del nombre: otra expresión (`name`) o tramos (`parts`)
+  if (s.rules !== undefined) {
+    if (!isObject(s.rules)) return '«repoShape.rules» es un objeto: por clave, su regla';
+    const todas = [...s.keys, ...(Array.isArray(s.optional) ? s.optional : [])];
+    for (const [k, r] of Object.entries(s.rules)) {
+      const who = `«repoShape.rules.${k}»`;
+      if (!todas.includes(k)) return `${who}: «${k}» no es una clave de «keys» ni de «optional»`;
+      if (!isObject(r) || (r.name === undefined) === (r.parts === undefined)) return `${who} lleva «name» o «parts», uno de los dos`;
+      if (typeof r.nameHint !== 'string' || !r.nameHint.trim()) return `${who}: «nameHint» dice en palabras qué vale`;
+      if (r.name !== undefined) {
+        if (typeof r.name !== 'string' || !r.name.startsWith('^') || !r.name.endsWith('$')) return `${who}: «name» es una expresión de un valor entero, de «^» a «$»`;
+        if (r.flags !== undefined && (typeof r.flags !== 'string' || !/^u?$/.test(r.flags))) return `${who}: «flags» es «u» o vacío`;
+        try { new RegExp(r.name, r.flags || ''); } catch (e) { return `${who}: «name» no compila (${e.message})`; }
+      } else {
+        if (typeof r.parts !== 'string' || !/^[^\sA-Za-z0-9]$/.test(r.parts)) return `${who}: «parts» es el signo que separa los tramos (por ejemplo «/»)`;
+        if (typeof r.partsHint !== 'string' || !r.partsHint.trim()) return `${who}: «partsHint» dice en palabras cómo van los tramos`;
+      }
+    }
+  }
+  return null;
+}
+
 /** Los motivos por los que un manifiesto no vale (vacío si vale). */
 function problemsOf(m, folder) {
   const out = [];
@@ -241,6 +284,9 @@ function problemsOf(m, folder) {
     else for (const o of m.operations) if (!contrato.operations.includes(o)) out.push(`operación desconocida: ${o} (las del contrato: ${contrato.operations.join(', ')})`);
     if (m.capabilities !== undefined && !isObject(m.capabilities)) out.push('«capabilities» es un objeto');
     if (m.rawCommands !== undefined && !(Array.isArray(m.rawCommands) && m.rawCommands.every((c) => typeof c === 'string' && c.trim()))) out.push('«rawCommands» es una lista de textos');
+    // la forma la pide team-repos.js a los conectores de las plataformas que admite; si está, tiene que valer
+    const forma = m.repoShape === undefined ? null : repoShapeProblem(m.repoShape);
+    if (forma) out.push(forma);
     // los comandos crudos que crean o juntan un pedido: los mira el freno de guardar, que los pasa por la ventana de la
     // persona. Cada uno es uno de `rawCommands`: una sola lista de los comandos de la plataforma
     if (m.changeRequestCommands !== undefined) {
@@ -370,7 +416,7 @@ function listManifests({ env = process.env, dir = integrationsDir(env) } = {}) {
       mcp: m.mcp ? { server: m.mcp.server, machine: m.mcp.machine === true } : null,
       ...(m.kind === 'platform' ? { connector: m.connector, operations: m.operations, capabilities: isObject(m.capabilities) ? m.capabilities : {}, rawCommands: Array.isArray(m.rawCommands) ? m.rawCommands : [], changeRequestCommands: Array.isArray(m.changeRequestCommands) ? m.changeRequestCommands : [], hardSignals: Array.isArray(m.hardSignals) ? m.hardSignals : [],
         changeRequestApi: isObject(m.changeRequestApi) ? m.changeRequestApi : null, changeRequestAutoComplete: Array.isArray(m.changeRequestAutoComplete) ? m.changeRequestAutoComplete : [],
-        draftOptions: Array.isArray(m.draftOptions) ? m.draftOptions : [], readyCommands: Array.isArray(m.readyCommands) ? m.readyCommands : [] } : {}),
+        draftOptions: Array.isArray(m.draftOptions) ? m.draftOptions : [], readyCommands: Array.isArray(m.readyCommands) ? m.readyCommands : [], repoShape: m.repoShape } : {}),
       ...(m.kind === 'mailbox' ? { connector: m.connector, provider: m.provider, mailboxFields: Array.isArray(m.mailboxFields) ? m.mailboxFields : [], hardSignals: Array.isArray(m.hardSignals) ? m.hardSignals : [] } : {}),
       offer: m.offer ? { does: m.offer.does, needs: m.offer.needs } : null,
     });
