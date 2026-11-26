@@ -489,5 +489,43 @@ del_freno=$(node -e 'process.stdout.write(require(process.argv[1]).RAMAS_DE_LARG
 [ -n "$del_freno" ] && [ "$(echo "$del_paso" | tr -s ' ')" = "$(echo "$del_freno" | tr -s ' ')" ] \
   && ok "8.164-SinBorrarRama_Frena la lista de larga vida del freno es la de §9b.4 ($del_freno)" || no "8.164-SinBorrarRama_Frena las listas difieren: paso «${del_paso}» · freno «${del_freno}»"
 
+# ---------------------------------------------------------------- 8.225 (b): el pedido por otro camino
+# El pedido dentro de una sustitución de comandos, por una tubería o un heredoc a un shell, con el programa en una
+# variable, como `python -m azure.cli`, o con la rama agregada al correr: se juzga igual que suelto, o frena con «no
+# puedo leer». Nunca pasa sin mirarlo.
+BORRA_DEV="az repos pr create --organization https://dev.azure.com/org-del-equipo --project Ceibo --repository CeiboBackend --source-branch dev --target-branch main --title t --auto-complete true --squash false --delete-source-branch true"
+rc=$(corre "$BORRA_DEV")
+[ "$rc" -eq 2 ] && ok "8.225-Sustitucion_PedidoAdentro_SeJuzga el create que borra dev, suelto, frena (la referencia)" || no "8.225 el create que borra dev suelto no frenó ($rc)"
+for envuelto in "VAR=\"\$($BORRA_DEV)\"" "echo \"\$($BORRA_DEV)\"" "VAR=\`$BORRA_DEV\`"; do
+  rc=$(corre "$envuelto")
+  [ "$rc" -eq 2 ] && ok "8.225-Sustitucion_PedidoAdentro_SeJuzga «${envuelto:0:20}…» frena" || no "8.225-Sustitucion_PedidoAdentro_SeJuzga «${envuelto:0:60}» pasó ($rc)"
+done
+for partido in "${BORRA_DEV/--source-branch dev/--source-branch \$(echo dev)}" "${BORRA_DEV/--source-branch dev/\$(echo --source-branch) dev}" "${BORRA_DEV/--source-branch dev/--source-branch \`echo dev\`}"; do
+  rc=$(corre "$partido")
+  [ "$rc" -eq 2 ] && ok "8.225-Sustitucion_PedidoAdentro_SeJuzga una sustitución sin comillas dentro del pedido frena" || no "8.225-Sustitucion_PedidoAdentro_SeJuzga «${partido:0:80}…» pasó ($rc)"
+done
+rc=$(corre "VAR=\"\$($BIEN)\"")
+[ "$rc" -eq 0 ] && ok "8.225-Sustitucion_PedidoAdentro_SeJuzga un create bien armado dentro de \"\$(…)\" pasa" || no "8.225-Sustitucion_PedidoAdentro_SeJuzga frenó el bien armado dentro de \$(…) ($rc): $(head -c 200 "$TMP/err.txt")"
+for camino in "echo '$BORRA_DEV' | bash" "bash <<'EOF'
+$BORRA_DEV
+EOF" "\$AZ ${BORRA_DEV#az }" "\"\$AZ\" ${BORRA_DEV#az }" "python -m azure.cli ${BORRA_DEV#az }" "echo dev | xargs ${BORRA_DEV/--source-branch dev/--source-branch}" "find . -name x -exec ${BORRA_DEV/--source-branch dev/--source-branch \{\}} \\;"; do
+  rc=$(corre "$camino")
+  [ "$rc" -eq 2 ] && ok "8.225-OtroCamino_NoPasaSinMirar «${camino:0:24}…» frena" || no "8.225-OtroCamino_NoPasaSinMirar «${camino:0:80}» pasó ($rc)"
+done
+
+# de la revisión corta: una sustitución sin comillas como valor de una bandera, el programa o el verbo armados al correr,
+# y el lanzador de python de Windows
+AZSIN="${BIEN#az }"
+for camino in "$BIEN --description \$(echo --squash true)" "$BIEN --title \`echo x --auto-complete false\`" \
+  "\$(which az) $AZSIN" "\"\$(command -v az)\" $AZSIN" "az repos pr \$(echo create) ${BIEN#az repos pr create }" \
+  "az repos \$X create ${BIEN#az repos pr create }" "py -m azure.cli $AZSIN" "py -3 -m azure.cli $AZSIN"; do
+  rc=$(corre "$camino")
+  [ "$rc" -eq 2 ] && ok "8.225-OtroCamino_NoPasaSinMirar «${camino:0:24}…» frena" || no "8.225-OtroCamino_NoPasaSinMirar «${camino:0:90}» pasó ($rc)"
+done
+rc=$(corre "$BIEN --description \"\$(cat /tmp/pr-body.md)\"")
+[ "$rc" -eq 0 ] && ok "8.225-OtroCamino_NoPasaSinMirar la descripción entre comillas sigue pasando" || no "8.225 frenó --description \"\$(…)\" ($rc)"
+rc=$(corre "X=\`$BIEN\`")
+[ "$rc" -eq 0 ] && ok "8.225-OtroCamino_NoPasaSinMirar un pedido bien armado entre comillas invertidas sigue pasando" || no "8.225 frenó un pedido bien armado entre comillas invertidas ($rc)"
+
 echo "─────────────"
 [ "$fallos" -eq 0 ] && { echo "✅ pr-sin-auto-complete: todo verde ($casos casos)"; exit 0; } || { echo "❌ pr-sin-auto-complete: $fallos falla(s) de $casos"; exit 1; }

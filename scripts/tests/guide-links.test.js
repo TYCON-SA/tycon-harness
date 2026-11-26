@@ -170,6 +170,70 @@ test('T17 laboratorio — una guía reescrita entera al moverla falla; una movid
   fs.rmSync(lab.dir, { recursive: true, force: true });
 });
 
+/** Los archivos de texto de una carpeta, en cualquier subcarpeta, como rutas relativas a `root`. */
+function filesUnder(root, rel) {
+  const abs = path.join(root, rel);
+  if (!fs.existsSync(abs)) return [];
+  if (!fs.statSync(abs).isDirectory()) return [rel];
+  return fs.readdirSync(abs, { withFileTypes: true }).flatMap((d) => filesUnder(root, path.posix.join(rel, d.name)));
+}
+
+/**
+ * Las menciones de una ruta vieja de guía movida en `files` (rutas relativas a `root`): la ruta escrita entera
+ * (`guides/vieja.md`) o un enlace relativo de markdown que resuelve a ella. → ['archivo: ruta vieja', …]
+ */
+function oldGuideMentions(root, files, moved) {
+  const out = [];
+  for (const rel of files) {
+    const text = fs.readFileSync(path.join(root, rel), 'utf8');
+    for (const e of moved) {
+      if (text.includes(e.old)) { out.push(`${rel}: ${e.old}`); continue; }
+      const oldAbs = path.join(root, e.old);
+      for (const m of text.matchAll(/\]\(([^)#\s]+)(?:#[^)]*)?\)/g)) {
+        if (/^[a-z]+:/i.test(m[1])) continue;
+        if (path.resolve(path.dirname(path.join(root, rel)), m[1]) === oldAbs) { out.push(`${rel}: ${e.old} (enlace ${m[1]})`); break; }
+      }
+    }
+  }
+  return out;
+}
+
+test('T8 Index_SinNombresViejos @story-8.45 @ac-7 — INDEX y las portadas nombran cada guía movida por su ruta nueva', { skip: NOT_MEASURED }, () => {
+  assert.deepStrictEqual(oldGuideMentions(ROOT, ['INDEX.md', 'README.md', 'README.es.md'].filter((f) => fs.existsSync(path.join(ROOT, f))), movedGuides()), []);
+});
+
+test('T9 Claude_BloquesNombranLaNueva @story-8.45 @ac-9 — los bloques del CLAUDE.md global no nombran una guía por su ruta vieja', { skip: NOT_MEASURED }, () => {
+  const blocks = filesUnder(ROOT, 'claude-md-blocks');
+  assert.ok(blocks.length > 0, 'no encontré los bloques de claude-md-blocks/');
+  assert.deepStrictEqual(oldGuideMentions(ROOT, blocks, movedGuides()), []);
+});
+
+test('T15 Comandos_ImprimenLaRutaNueva @story-8.45 @ac-14 — pipeline.js, harness.js y los ganchos citan cada guía movida por su ruta nueva', { skip: NOT_MEASURED }, () => {
+  const scripts = ['skills/tycon-pipeline/scripts/pipeline.js', 'scripts/setup/harness.js', ...filesUnder(ROOT, 'scripts/hooks').filter((f) => f.endsWith('.js'))];
+  for (const f of scripts.slice(0, 2)) assert.ok(fs.existsSync(path.join(ROOT, f)), `${f}: existe`);
+  assert.deepStrictEqual(oldGuideMentions(ROOT, scripts, movedGuides()), []);
+});
+
+test('T8, T9 y T15 laboratorio — una ruta vieja escrita entera o enlazada se encuentra; la nueva no', () => {
+  const lab = fs.mkdtempSync(path.join(require('os').tmpdir(), 'guide-links-t8-'));
+  const write = (rel, text) => { fs.mkdirSync(path.dirname(path.join(lab, rel)), { recursive: true }); fs.writeFileSync(path.join(lab, rel), text); };
+  write('INDEX.md', '| x | `guides/vieja.md` |\n');
+  // un enlace externo con la ruta vieja también queda roto (la guía ya no está ahí)
+  write('README.md', 'ver [afuera](https://example.invalid/blob/main/guides/vieja.md)\n');
+  write('README.es.md', 'ver [la guía](guides/new.md) y [otra](guides/new.md#parte)\n');
+  write('claude-md-blocks/a/b.md', 'lee [esto](../../guides/vieja.md)\n');
+  // un enlace relativo corto, desde la misma carpeta, no trae la ruta entera: se resuelve
+  write('guides/otra.md', 'ver [la vieja](vieja.md#parte) y [la nueva](new.md)\n');
+  const moved = [{ kind: 'file', old: 'guides/vieja.md', new: 'guides/new.md', batch: '8.45-Z' }];
+  assert.deepStrictEqual(oldGuideMentions(lab, ['INDEX.md', 'README.md', 'README.es.md', ...filesUnder(lab, 'claude-md-blocks'), 'guides/otra.md'], moved), [
+    'INDEX.md: guides/vieja.md',
+    'README.md: guides/vieja.md',
+    'claude-md-blocks/a/b.md: guides/vieja.md',
+    'guides/otra.md: guides/vieja.md (enlace vieja.md)',
+  ]);
+  fs.rmSync(lab, { recursive: true, force: true });
+});
+
 test('T4 laboratorio — sin el privado en el árbol (el arnés instalado trae el mapa pero no los reemplazos) no se mide', () => {
   const lab = fs.mkdtempSync(path.join(require('os').tmpdir(), 'guide-links-t4-'));
   fs.mkdirSync(path.join(lab, 'scripts', 'lib'), { recursive: true });

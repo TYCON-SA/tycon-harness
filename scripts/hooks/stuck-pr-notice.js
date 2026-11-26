@@ -299,7 +299,9 @@ function lineasDeAfuera(publico, dir, ahora) {
   return { vieja: edad >= FOTO_MS, lineas };
 }
 const PROPIOS_TOPE = 1000;
-const QUERY_PROPIOS = 'query { viewer { login } search(query: "is:pr is:open author:@me archived:false", type: ISSUE, first: 100) { nodes { ... on PullRequest { number title isDraft headRefName isInMergeQueue mergeable autoMergeRequest { enabledAt } author { login } repository { nameWithOwner } } } } }';
+// los abiertos y, en la misma consulta, los que entraron desde las 0 de hoy (hora de la máquina), para «Terminados hoy» de /office
+const queryPropios = (desde) => `query { viewer { login } search(query: "is:pr is:open author:@me archived:false", type: ISSUE, first: 100) { nodes { ... on PullRequest { number title isDraft headRefName isInMergeQueue mergeable autoMergeRequest { enabledAt } author { login } repository { nameWithOwner } } } } hoy: search(query: "is:pr is:merged author:@me merged:>=${desde}", type: ISSUE, first: 100) { nodes { ... on PullRequest { number title mergedAt repository { nameWithOwner } } } } }`;
+const desdeHoy = (ahora) => { const d = new Date(ahora); d.setHours(0, 0, 0, 0); return d.toISOString().replace(/\.\d{3}Z$/, 'Z'); };
 
 // En Windows `gh` es gh.exe y se lanza directo: por la consola, gh abre su propia ventana aunque la consola vaya oculta.
 // `az` es az.cmd, que sólo corre por la consola: cada argumento entre comillas, y sólo con caracteres que la consola no
@@ -321,25 +323,44 @@ function salidaDe(cmd, args, { plataforma = process.platform, run = spawnSync } 
 }
 const jsonDe = (texto) => { try { return JSON.parse(texto); } catch { return null; } };
 
-/** Los pedidos de la persona, de todos sus repos: `{ at, lecturas: { <repo>: { ok, value } }, fallos }`. */
+/**
+ * Los pedidos de la persona, de todos sus repos: `{ at, lecturas: { <repo>: { ok, value } }, fallos, entraronHoy }`.
+ * `entraronHoy` son los suyos que entraron desde las 0 de hoy: `{ desde, lecturas: { <repo>: [{ number, title, at }] },
+ * fallos }`. En GitHub van en la misma consulta; en Azure, una consulta más por organización.
+ */
 function leerPropios({ repos = [], ahora = Date.now(), env = process.env, plataforma = process.platform, run = spawnSync } = {}) {
   const lecturas = {};
   const fallos = [];
   const anotar = (repo, p) => { (lecturas[repo] = lecturas[repo] || { ok: true, value: [] }).value.push(p); };
+  const desde = desdeHoy(ahora);
+  const entraronHoy = { desde, lecturas: {}, fallos: [] };
+  const entro = (repo, p) => { (entraronHoy.lecturas[repo] = entraronHoy.lecturas[repo] || []).push(p); };
   if (repos.some((r) => r.platform === 'github')) {
-    const d = jsonDe(salidaDe(env.TYCON_GH_CMD || 'gh', ['api', 'graphql', '-f', `query=${QUERY_PROPIOS}`], { plataforma, run }));
-    if (!d || !d.data || !d.data.viewer) fallos.push('GitHub');
+    const d = jsonDe(salidaDe(env.TYCON_GH_CMD || 'gh', ['api', 'graphql', '-f', `query=${queryPropios(desde)}`], { plataforma, run }));
+    if (!d || !d.data || !d.data.viewer) { fallos.push('GitHub'); entraronHoy.fallos.push('GitHub'); }
     else {
       for (const p of d.data.search.nodes) {
         if (p && p.repository) anotar(p.repository.nameWithOwner, { number: p.number, title: p.title, draft: p.isDraft === true, autoComplete: Boolean(p.autoMergeRequest), inQueue: p.isInMergeQueue === true, mergeState: p.mergeable === 'CONFLICTING' ? 'conflict' : '', sourceBranch: p.headRefName, author: p.author ? p.author.login : '' });
       }
+      if (!d.data.hoy || !Array.isArray(d.data.hoy.nodes)) entraronHoy.fallos.push('GitHub');
+      else for (const p of d.data.hoy.nodes) if (p && p.repository && p.mergedAt) entro(p.repository.nameWithOwner, { number: p.number, title: p.title, at: p.mergedAt });
     }
   }
   const organizaciones = [...new Set(repos.filter((r) => r.platform === 'azure').map((r) => r.org))];
   const az = env.TYCON_ADO_CMD || 'az';
   const yo = organizaciones.length ? salidaDe(az, ['account', 'show', '--query', 'user.name', '-o', 'tsv'], { plataforma, run }).toLowerCase() : '';
+  // los pedidos de una organización con esos criterios: los abiertos, y los que se completaron desde las 0
+  const pedidosDe = (org, criterios) => (yo ? jsonDe(salidaDe(az, ['devops', 'invoke', '--org', `https://dev.azure.com/${org}`, '--area', 'git', '--resource', 'pullRequests', '--query-parameters', ...criterios, `$top=${PROPIOS_TOPE}`, '--api-version', '7.1', '-o', 'json'], { plataforma, run })) : null);
   for (const org of organizaciones) {
-    const d = yo ? jsonDe(salidaDe(az, ['devops', 'invoke', '--org', `https://dev.azure.com/${org}`, '--area', 'git', '--resource', 'pullRequests', '--query-parameters', 'searchCriteria.status=active', `$top=${PROPIOS_TOPE}`, '--api-version', '7.1', '-o', 'json'], { plataforma, run })) : null;
+    const c = pedidosDe(org, ['searchCriteria.status=completed', `searchCriteria.minTime=${desde}`, 'searchCriteria.queryTimeRangeType=closed']);
+    if (!c || !Array.isArray(c.value)) entraronHoy.fallos.push(org);
+    else {
+      for (const p of c.value) {
+        const r = p.repository;
+        if (p.createdBy && String(p.createdBy.uniqueName || '').toLowerCase() === yo && r && r.project && p.closedDate) entro(`${org}/${r.project.name}/${r.name}`, { number: p.pullRequestId, title: p.title, at: p.closedDate });
+      }
+    }
+    const d = pedidosDe(org, ['searchCriteria.status=active']);
     if (!d || !Array.isArray(d.value)) { fallos.push(org); continue; }
     if (d.value.length >= PROPIOS_TOPE) fallos.push(`${org} (puede faltar alguno: hay más de ${PROPIOS_TOPE} abiertos)`);
     for (const p of d.value) {
@@ -348,7 +369,7 @@ function leerPropios({ repos = [], ahora = Date.now(), env = process.env, plataf
       if (autor === yo && r && r.project) anotar(`${org}/${r.project.name}/${r.name}`, { number: p.pullRequestId, title: p.title, draft: p.isDraft === true, autoComplete: Boolean(p.autoCompleteSetBy), mergeState: p.mergeStatus === 'conflicts' ? 'conflict' : '', sourceBranch: String(p.sourceRefName || '').replace(/^refs\/heads\//, ''), author: autor });
     }
   }
-  return { at: new Date(ahora).toISOString(), lecturas, fallos };
+  return { at: new Date(ahora).toISOString(), lecturas, fallos, entraronHoy };
 }
 
 /** La lectura de fondo: sin el apuro del arranque, deja la foto entera para el próximo. */
