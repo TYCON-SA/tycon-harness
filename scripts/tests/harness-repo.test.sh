@@ -182,8 +182,11 @@ cp "$TCG/scripts/lib/skills-dir.js" "$BASE/sin-origen/scripts/lib/"   # la lib c
 cp "$TCG/scripts/lib/legacy-names.js" "$BASE/sin-origen/scripts/lib/"   # y la de los nombres renombrados, que carga al arrancar
 con_tycon_home "$BASE/sin-origen"
 export TYCON_SKILLS_DIR="$BASE/sin-skills"   # tampoco agent-skills aporta identidad: no hay ninguna que leer
-espera "T13 sin identidad propia → la carpeta decide y se dice" "$BASE/otro/tycon-claude-guides" "true carpeta-sin-identidad-propia" "$BASE/sin-origen/scripts/lib/harness-repo.js"
-espera "T13b sin identidad propia, carpeta sin nombre del arnés → no" "$BASE/scratchpad/tcg" "false carpeta-sin-identidad-propia" "$BASE/sin-origen/scripts/lib/harness-repo.js"
+# con tycon-home.js al lado la biblioteca lee lo que declara la máquina: una casa vacía, para que la de quien corre la
+# prueba (con su clon de mantenimiento declarado) no aporte una identidad
+mkdir -p "$BASE/casa-vacia"
+HOME="$BASE/casa-vacia" espera "T13 sin identidad propia → la carpeta decide y se dice" "$BASE/otro/tycon-claude-guides" "true carpeta-sin-identidad-propia" "$BASE/sin-origen/scripts/lib/harness-repo.js"
+HOME="$BASE/casa-vacia" espera "T13b sin identidad propia, carpeta sin nombre del arnés → no" "$BASE/scratchpad/tcg" "false carpeta-sin-identidad-propia" "$BASE/sin-origen/scripts/lib/harness-repo.js"
 unset TYCON_SKILLS_DIR
 
 # T14 — el PROPIO clon con `origin` local (un clon descartable de un checkout): la identidad propia se
@@ -521,11 +524,10 @@ expect78 "T78f …y con esa referencia, el clon del público que la copia declar
 expect78 "T78g …un producto en una carpeta con nombre del arnés deja de colarse por la carpeta" "$T78/home" "$LI78" "$T78/other/agent-skills" "false remoto"
 expect78 "T78h (control) el arnés instalado SIN la declaración de la máquina: decide la carpeta y se dice, como siempre" "$T78/home-plain" "$LI78" "$T78/tmp/tcg-descartable" "false carpeta-sin-identidad-propia"
 
-# una copia de la biblioteca sin tycon-home.js al lado (toda copia del arnés lo lleva: el banco y los laboratorios
-# también): no contesta con una ruta inventada de las skills instaladas, dice qué le falta
+# una copia SUELTA de la biblioteca (el banco, un laboratorio), sin tycon-home.js al lado: no lee la configuración de la
+# máquina, y las skills instaladas van al lado de la carpeta del estado de siempre
 own_clone "$T78/loose" "$T78_PUBLIC" split; rm -rf "$T78/loose/scripts/setup"
-loose78="$(judge78 "$T78/home" "$T78/loose/scripts/lib/harness-repo.js" "$T78/work/internal" 2>&1)"
-printf '%s' "$loose78" | grep -q 'tycon-home.js' && ok "T78i sin tycon-home.js al lado no contesta: dice que le falta" || bad "T78i sin tycon-home.js al lado contestó «${loose78}»"
+expect78 "T78i sin tycon-home.js al lado no hay declaración de máquina" "$T78/home" "$T78/loose/scripts/lib/harness-repo.js" "$T78/work/internal" "false remoto"
 
 # …con un tycon-home.js ANTERIOR a la clave (el de hoy sin `maintainersClone`): no hay declaración, y no es un problema
 own_clone "$T78/old-home" "$T78_PUBLIC" split; mkdir -p "$T78/old-home/scripts/setup/harness"
