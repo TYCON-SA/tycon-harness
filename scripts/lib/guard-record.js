@@ -178,9 +178,11 @@ const MOTIVOS = {
 };
 
 // la carpeta del estado la sabe setup/harness/tycon-home.js, que está siempre al lado: en el repo, y en
-// /opt/tycon/setup/harness/ por el instalador del freno. Si faltara, quien anota lo atrapa y no anota
+// /opt/tycon/setup/harness/ por el instalador del freno. En una copia de scripts/lib sola (los laboratorios de los ganchos)
+// no está: la carpeta del estado de siempre
+const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 function casaDelPipeline(home) {
-  return require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')).stateDir(home || os.homedir());
+  return stateDirOf(home || os.homedir());
 }
 
 /** El motivo es un código de la lista del freno; cualquier otra cosa (prosa, ruta, vacío) → `otra`. */

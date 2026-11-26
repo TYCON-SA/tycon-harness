@@ -46,8 +46,14 @@ const { readKeysDeep } = require('./legacy-names.js');
 /** El `where` de las claves del manifiesto en el mapa de nombres viejos (el mismo que usa `lib/packs.js`). */
 const PACK_KEYS_WHERE = 'packs/pack.json';
 
+// las skills instaladas las sabe scripts/setup/harness/tycon-home.js; en una copia de scripts/lib sola (los laboratorios de
+// los ganchos) no está, y van al lado de la carpeta del estado de siempre
+const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 function dirPaquetes() {
-  return process.env.TYCON_PACKS_DIR || path.join(require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')).installedSkillsDir(os.homedir()), 'packs');
+  if (process.env.TYCON_PACKS_DIR) return process.env.TYCON_PACKS_DIR;
+  const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
+  const skills = fs.existsSync(lib) ? require(lib).installedSkillsDir(os.homedir()) : path.join(path.dirname(stateDirOf(os.homedir())), 'agent-skills');
+  return path.join(skills, 'packs');
 }
 
 function leerPaquetes({ packsDir, explicito } = {}) {

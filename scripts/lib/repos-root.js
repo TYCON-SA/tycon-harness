@@ -51,8 +51,15 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 // las rutas de la máquina las sabe scripts/setup/harness/tycon-home.js, al lado por su ruta relativa: en el repo, y en
-// /opt/tycon/setup/harness/ para la copia que viaja al freno de producción. Se carga cuando hace falta.
-const tyconHome = () => require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'));
+// /opt/tycon/setup/harness/ para la copia que viaja al freno de producción. Se carga cuando hace falta. En una copia de
+// scripts/lib sola (los laboratorios de los ganchos) no está: las rutas de siempre, a partir de la carpeta del estado
+const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
+const tyconHome = () => {
+  const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
+  if (fs.existsSync(lib)) return require(lib);
+  const claudeDir = (h) => path.dirname(stateDirOf(h));
+  return { claudeDir, installedSkillsDir: (h) => path.join(claudeDir(h), 'agent-skills'), configFile: (h) => path.join(claudeDir(h), 'tycon.json') };
+};
 
 const ENV = 'TYCON_REPOS_ROOT';
 
