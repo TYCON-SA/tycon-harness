@@ -7,10 +7,11 @@
  * se leen de `estadoPipeline`, en el módulo compartido, en el momento de usarlos.
  */
 const { estadoPipeline, STEPS_TABLE, anotarEnMarker, esLaStoryDelMarcador, exists, fs, harnessWorkSignal, homeCommand, os, packsLib, parseFrontmatterPipeline, path, readSessionMarker, readText, resolveSessionId, sessionIdFileKey, stateDirOf, storyDelMarcador, storyIsExemptCheck, storyRequiresRuntimeEvidenceCheck } = require('./pipeline-shared.js');
+const { pipelineRel } = require('./home-command.js');
 const { archivosFantasma, detectarWordSplit, senalesDe } = require('./pipeline-deep-review.js');
 const { computeModelHint, conModelosDeLaCorrida, decirModelos } = require('./pipeline-models.js');
 const { computeRiskClass, runSizeDelMarcador } = require('./pipeline-risk.js');
-const STEPS_DIR = path.join(os.homedir(), '.claude', 'agent-skills', 'skills', 'tycon-pipeline', 'steps');
+const STEPS_DIR = path.join(require('./state-dir.js').installedSkillsDir(), 'skills', 'tycon-pipeline', 'steps');
 // El pase adversarial NO se cierra con `set-flag`: `deepReviewDone` la escriben sólo los dos comandos que dejan
 // constancia, y el texto de `next` le dice al orquestador cuáles — sin esto, mandaría a correr un comando que sale 2.
 // ¿La story lleva maqueta? Con la detección de la revisión de la pantalla (mockup.screenStory, perezoso).
@@ -258,10 +259,10 @@ function computeNext() {
   // El arnés viejo (lib/harness-freshness.js): pasos leídos de otra carpeta que la del arnés que corre frenan; el aviso
   // de una versión nueva o de una actualización que falló sale una vez por ejecución, antes de las partes del Arranque.
   let avisoArnes = null;
-  // con ~/.claude/agent-skills presente se mira siempre (un enlace roto o una carpeta sin los pasos son el arnés viejo);
+  // con el enchufe agent-skills presente se mira siempre (un enlace roto o una carpeta sin los pasos son el arnés viejo);
   // sin él (una casa de prueba, una CI) no hay de dónde leer pasos que comparar
   let hayAgentSkills = false;
-  try { fs.lstatSync(path.join(os.homedir(), '.claude', 'agent-skills')); hayAgentSkills = true; } catch (_) { hayAgentSkills = false; }
+  try { fs.lstatSync(require('./state-dir.js').installedSkillsDir()); hayAgentSkills = true; } catch (_) { hayAgentSkills = false; }
   if (hayAgentSkills) {
     const f = require('./harness-freshness.js').revisar({ stepsDir: STEPS_DIR, nextFile: nextStep ? nextStep.file : null, scriptDir: estadoPipeline.SCRIPTS_DIR });
     if (f.error) return { error: f.error, harness_stale: true };
@@ -403,7 +404,7 @@ function computeNextStory(args) {
     warnings.push(
       `0 stories Mary+GOLD bajo ${scanRoot}. Una story es un .md cuyo frontmatter declara \`story:\` y \`status:\`, ` +
       `y cuyo id tiene forma de trabajo (${scanned.id_criterion}). Diagnóstico: ` +
-      `${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/lib/story-discovery.js')} --doctor --repo <dir>`,
+      `${homeCommand(pipelineRel('scripts/lib/story-discovery.js'))} --doctor --repo <dir>`,
     );
   }
 

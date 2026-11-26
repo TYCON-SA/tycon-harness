@@ -207,7 +207,7 @@ test('T6 ExamenPeriodico_CorreLasGuiasDespues @story-1.25 @ac-6', () => {
 });
 
 test('T7 Guia_LeerElResultadoDeLasGuias @story-1.25 @ac-7', () => {
-  const guia = fs.readFileSync(path.join(TCG, 'guides', 'maintaining', 'mantener-el-arnes.md'), 'utf8');
+  const guia = fs.readFileSync(path.join(TCG, 'guides', 'maintaining', 'maintaining-the-harness.md'), 'utf8');
   const fila = guia.split('\n').find((l) => l.includes('ultimo-guias.json'));
   assert.ok(fila, '«Mantener el arnés» nombra el resultado de las guías');
   assert.match(fila, /guide-runner\.js/);

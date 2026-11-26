@@ -143,7 +143,7 @@ function main() {
     '       (preflight mecánico en 1 comando: cross-session + branch guard + gitignore +\n' +
     '       marker + status in-progress. Pausa sin mutar ante conflicto/rama protegida.\n' +
     '       --brief: devuelve sólo lo que el orquestador consume y la RUTA del JSON entero\n' +
-    '       (~4 KB → ~600 B; el detalle queda en ~/.claude/.tycon-pipeline/salidas/). Sin el\n' +
+    `       (~4 KB → ~600 B; el detalle queda en ${(() => { const sd = require('./lib/state-dir.js'); return sd.paraMostrar(sd.stateDir()); })()}/salidas/). Sin el\n` +
     '       flag, salida idéntica a siempre. Story 7.10.)\n' +
     '  node pipeline.js next\n' +
     '       (próximo step + step_file + skips MECÁNICOS evaluados + checks del marker.\n' +

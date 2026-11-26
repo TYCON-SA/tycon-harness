@@ -206,7 +206,7 @@ function archivosDeGit(repoRoot) {
 function cuenta(p) {
   if (!p) return false;
   if (honesty.sinProbes([p]).length === 0) return false;             // probe transitorio de diagnóstico
-  const enHome = path.join(os.homedir(), '.claude');
+  const enHome = require('./state-dir.js').claudeDir();
   if (String(p) === enHome || String(p).startsWith(`${enHome}${path.sep}`)) return false;  // estado del arnés
   return isCodeFile(p);
 }

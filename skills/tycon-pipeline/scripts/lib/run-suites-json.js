@@ -32,7 +32,7 @@
  *
  * LA RAÍZ `agent-skills` LA DICE EL REPO QUE SE MIDE: en el repo unido
  * esas suites viven en `<repo>/skills`. Sin esto, este runner las buscaría en
- * `TYCON_SKILLS_DIR` o en `~/.claude/agent-skills/skills`: en un clon de trabajo del repo unido correría
+ * `TYCON_SKILLS_DIR` o en las skills instaladas (`installedSkillsDir`): en un clon de trabajo del repo unido correría
  * las suites INSTALADAS en la máquina y el gate daría verde sin haber probado el cambio. Sin
  * `--skills`, la raíz la contesta `resolveSkillsDirs()` de `<repo>/scripts/lib/skills-dir.js` —la misma
  * función que usan los demás lectores de suites.json—: la variable › el propio clon si es unido › lo
@@ -62,7 +62,7 @@
  * Uso:  node run-suites-json.js <repo> <resumen.json> [--skills <dir>] [--touched <archivo.json>] [--coverage <dir>] [--suite <ruta>]
  *   · `raiz: "arnes"`        → <repo>/scripts/<ruta>
  *   · `raiz: "agent-skills"` → <skills>/<ruta>   (`--skills`; si no, la función del repo; en un repo sin
- *                              esa función, TYCON_SKILLS_DIR, o ~/.claude/agent-skills/skills)
+ *                              esa función, TYCON_SKILLS_DIR, o las skills instaladas)
  *
  * Contrato de salida (regla de la casa):
  *   0 → TODAS verdes.  1 → alguna roja, AUSENTE o NO MEDIDA.  3 → no pude medir (suites.json ilegible o
@@ -310,7 +310,7 @@ function resolveSkillsRoot(repo, given, env) {
 }
 
 /** Dónde quedan las skills instaladas dentro de una carpeta personal: la real o la vacía de una suite portable. */
-const installedSkillsIn = (home) => path.join(home, '.claude', 'agent-skills');
+const installedSkillsIn = (home) => require('./state-dir.js').installedSkillsDir(home);
 
 const isDir = (p) => { try { return fs.statSync(p).isDirectory(); } catch (_) { return false; } };
 // Borra una carpeta aunque una suite le haya sacado los permisos a algo de adentro (el banco de controles prueba así un
@@ -336,7 +336,7 @@ const realOf = (p) => { try { return fs.realpathSync(p); } catch (_) { return pa
  * Por qué las dos: la raíz
  * de las skills sale ya resuelta a su ruta real (el `__dirname` de skills-dir.js) y el repo llega como lo escribió
  * quien llama (test-gate.sh lo pasa con `pwd`, que conserva los enlaces). Con el repo por un enlace —el canónico
- * `~/.claude/tycon-harness`, o `/tmp` en Mac— la ruta propia daría `../../…`, nunca coincidiría con lo tocado y
+ * `~/.tycon/harness`, o `/tmp` en Mac— la ruta propia daría `../../…`, nunca coincidiría con lo tocado y
  * la suite que la story editó se DIFERIRÍA con el gate en verde. Lo mismo al revés (el repo por su ruta real y la raíz
  * por el enlace instalado). Se resuelve el ARCHIVO entero y no sólo la raíz: la carpeta `~/.claude/skills` de la
  * máquina de un solo árbol es real y lo enlazado es cada skill. La forma «como llegó» se conserva: es la que cubre

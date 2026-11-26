@@ -673,6 +673,32 @@ test('OwnPrs_OneQueryPerPlace — los pedidos de la persona, de todos sus repos;
   assert.match(SPN().leerPropios({ repos: repos.slice(1), env: { ...process.env, TYCON_ADO_CMD: muchos } }).fallos[0], /puede faltar alguno/);
 });
 
+// 🔴 Falla con: la lectura sin los pedidos que entraron hoy, o con los de otra persona.
+test('OwnPrs_EnteredToday — los suyos que entraron desde las 0 de hoy, de GitHub en la misma consulta y de Azure en otra; lo que no se pudo leer se dice', () => {
+  const ahora = Date.now();
+  const llamadas = [];
+  const hoy = new Date(ahora - 60000).toISOString();
+  const run = (file, args) => {
+    llamadas.push(args.join(' '));
+    if (file === 'gh') return { status: 0, stdout: JSON.stringify({ data: { viewer: { login: 'yo' }, search: { nodes: [] }, hoy: { nodes: [{ number: 5, title: 'fix: a', mergedAt: hoy, repository: { nameWithOwner: 'org/uno' } }] } } }) };
+    if (args[0] === 'account') return { status: 0, stdout: mail('yo') };
+    if (args.includes('searchCriteria.status=completed')) return { status: 0, stdout: JSON.stringify({ value: [
+      { pullRequestId: 70, title: 'mío', closedDate: hoy, createdBy: { uniqueName: mail('yo') }, repository: { name: 'Back', project: { name: 'Mora' } } },
+      { pullRequestId: 71, title: 'de otra', closedDate: hoy, createdBy: { uniqueName: mail('ana') }, repository: { name: 'Back', project: { name: 'Mora' } } },
+    ] }) };
+    return { status: 0, stdout: JSON.stringify({ value: [] }) };
+  };
+  const repos = [{ platform: 'github', org: 'org', repo: 'uno' }, { platform: 'azure', org: 'biz', project: 'P', repo: 'r' }];
+  const r = SPN().leerPropios({ repos, ahora, env: { PATH: process.env.PATH }, plataforma: 'darwin', run });
+  const desde = new Date(ahora); desde.setHours(0, 0, 0, 0);
+  assert.strictEqual(r.entraronHoy.desde, desde.toISOString().replace(/\.\d{3}Z$/, 'Z'), 'desde las 0 de hoy, hora de la máquina');
+  assert.deepStrictEqual(r.entraronHoy.lecturas, { 'org/uno': [{ number: 5, title: 'fix: a', at: hoy }], 'biz/Mora/Back': [{ number: 70, title: 'mío', at: hoy }] }, 'sólo los de la persona');
+  assert.ok(llamadas[0].includes(`merged:>=${r.entraronHoy.desde}`), 'GitHub, en la misma consulta');
+  assert.ok(llamadas.some((l) => l.includes(`searchCriteria.minTime=${r.entraronHoy.desde}`) && l.includes('searchCriteria.queryTimeRangeType=closed')), 'Azure, por la hora de cierre');
+  const sinRespuesta = SPN().leerPropios({ repos, ahora, env: { PATH: process.env.PATH }, plataforma: 'darwin', run: (file, args) => (args[0] === 'account' ? { status: 0, stdout: mail('yo') } : { status: 1, stdout: '' }) });
+  assert.deepStrictEqual(sinRespuesta.entraronHoy.fallos, ['GitHub', 'biz']);
+});
+
 // 🔴 Falla con: en Windows gh se lanza por la consola (shell), y gh abre su propia ventana negra al leer los pedidos.
 test('OwnPrs_WindowsGhWithoutShell — en Windows gh va directo y oculto; az, por la consola con cada argumento entre comillas', () => {
   const { llamadaDe } = SPN();
@@ -698,13 +724,14 @@ test('OwnPrs_WindowsGhWithoutShell — en Windows gh va directo y oculto; az, po
   const llamadas = [];
   const responde = (file, args, opts) => {
     llamadas.push({ file, args, opts });
-    if (file === 'gh') return { status: 0, stdout: JSON.stringify({ data: { viewer: { login: 'yo' }, search: { nodes: [] } } }) };
+    if (file === 'gh') return { status: 0, stdout: JSON.stringify({ data: { viewer: { login: 'yo' }, search: { nodes: [] }, hoy: { nodes: [] } } }) };
     return { status: 0, stdout: args.includes('"account"') ? mail('yo') : JSON.stringify({ value: [] }) };
   };
   const repos = [{ platform: 'github', org: 'org', repo: 'uno' }, { platform: 'azure', org: 'biz', project: 'P', repo: 'r' }];
   const leido = SPN().leerPropios({ repos, env: { PATH: process.env.PATH }, plataforma: 'win32', run: responde });
   assert.deepStrictEqual(leido.fallos, [], 'las consultas de verdad pasan el filtro de la consola: nada quedó sin leer');
-  assert.deepStrictEqual(llamadas.map((l) => [l.file, l.opts.shell, l.opts.windowsHide]), [['gh', false, true], ['az', true, true], ['az', true, true]]);
+  assert.deepStrictEqual(llamadas.map((l) => [l.file, l.opts.shell, l.opts.windowsHide]), [['gh', false, true], ['az', true, true], ['az', true, true], ['az', true, true]], 'la cuenta, los que entraron hoy y los abiertos');
+  assert.deepStrictEqual(leido.entraronHoy.fallos, []);
   assert.ok(llamadas.slice(1).every((l) => l.args.every((a) => /^".*"$/.test(a))), 'cada argumento de az, entre comillas');
 });
 

@@ -4,7 +4,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 **por qué existe**, **quién la usa** y **dónde se prueba**. El detalle de cada pieza está en
 [la guía de detalle](../maintaining/piezas-en-detalle.md), bajo el mismo título.
 
-## guides/integrations/ado-cola-y-listados.md
+## guides/integrations/ado-queue-and-listings.md
 
 **Qué es:** La guía con el porqué de las seis reglas del bloque de Azure DevOps de cada sesión.
 
@@ -14,7 +14,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesintegrationsado-cola-y-listadosmd)
+**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesintegrationsado-queue-and-listingsmd)
 
 ## guides/integrations/clockify-mcp.md
 
