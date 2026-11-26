@@ -13,6 +13,9 @@
  *
  *   node scripts/site/deploy/local/start.js --secrets-file <ruta fuera de todo repo>/sitio.env [--dry-run]
  *   SALIDA: 0 arrancó (o, en ensayo, dice la orden) · 1 el archivo no está, está dentro de un repo o lo leen otros · 2 uso.
+ *
+ * La carpeta de la actualización (`SITE_UPDATE_DIR`, por defecto `site-update/` al lado del archivo de secretos) la monta
+ * compose.yaml en el sitio; `--update` deja ahí su resultado y su estado (`--state-dir`). Si falta, la crea y lo dice.
  */
 const fs = require('fs');
 const path = require('path');
@@ -64,22 +67,34 @@ function main(argv) {
     process.stderr.write('🔴 el archivo de secretos lo pueden leer otros usuarios de la máquina: chmod 600 y volvé a lanzarlo\n');
     return 1;
   }
+  // La carpeta de la máquina que compose.yaml monta en el sitio (`/data/site-update`): ahí deja su resultado la
+  // actualización, y el sitio lo lee para avisar si quedó instalado por etiqueta. Va al lado del archivo de secretos,
+  // fuera de todo repo, salvo que SITE_UPDATE_DIR diga otra.
+  const carpetaUpdate = path.resolve(process.env.SITE_UPDATE_DIR || path.join(path.dirname(archivo), 'site-update'));
+  if (!fs.existsSync(carpetaUpdate)) {
+    try { fs.mkdirSync(carpetaUpdate, { recursive: true }); } catch (e) {
+      process.stderr.write(`🔴 no pude crear la carpeta de la actualización del sitio ${carpetaUpdate} (${(e && e.code) || 'error'})\n`);
+      return 1;
+    }
+    process.stdout.write(`creé la carpeta de la actualización del sitio: ${carpetaUpdate}\n`);
+  }
+  const envCompose = { ...process.env, SITE_ENV_FILE: archivo, SITE_UPDATE_DIR: carpetaUpdate };
   if (actualizar) {
     // --update: resuelve `stable`, recrea con SITE_IMAGE=<imagen>@<huella>, prueba /livez y vuelve atrás si falla; para
     // un cron o un temporizador de systemd (la receta, en la guía). 🔴 La imagen la dice quien instala (`--image`): nunca
     // sale del ejemplo de compose.yaml, que es de una organización inventada
     const imagen = imagenDada && require('../../latest-release.js').partirImagen(imagenDada) ? require('../../latest-release.js').nombreSinEtiqueta(imagenDada) : null;
     if (!imagen) { process.stderr.write('🔴 --update necesita --image <registro/repo> (la imagen del sitio de tu organización, sin etiqueta)\n'); return 2; }
-    const up = ['--platform', 'local', '--mode', 'auto', '--compose', COMPOSE, '--site-url', 'http://127.0.0.1:8080', '--image', imagen, ...(ensayo ? ['--dry-run'] : [])];
-    const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'update-site.js'), ...up], { stdio: 'inherit', env: { ...process.env, SITE_ENV_FILE: archivo } });
+    const up = ['--platform', 'local', '--mode', 'auto', '--compose', COMPOSE, '--site-url', 'http://127.0.0.1:8080', '--image', imagen, '--state-dir', carpetaUpdate, ...(ensayo ? ['--dry-run'] : [])];
+    const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'update-site.js'), ...up], { stdio: 'inherit', env: envCompose });
     return r.status === 0 ? 0 : 1;
   }
   const args = ['compose', '-f', COMPOSE, 'up', '-d'];
   if (ensayo) {
-    process.stdout.write(`SITE_ENV_FILE=${archivo} docker ${args.join(' ')}   (ensayo: no se arrancó nada)\n`);
+    process.stdout.write(`SITE_ENV_FILE=${archivo} SITE_UPDATE_DIR=${carpetaUpdate} docker ${args.join(' ')}   (ensayo: no se arrancó nada)\n`);
     return 0;
   }
-  const r = spawnSync('docker', args, { stdio: 'inherit', env: { ...process.env, SITE_ENV_FILE: archivo } });
+  const r = spawnSync('docker', args, { stdio: 'inherit', env: envCompose });
   if (r.error) { process.stderr.write(`🔴 no pude correr docker (${r.error.code || r.error.message})\n`); return 1; }
   return r.status === 0 ? 0 : 1;
 }

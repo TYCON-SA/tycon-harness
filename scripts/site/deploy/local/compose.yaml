@@ -4,7 +4,9 @@
 #
 # · El puerto se publica SÓLO en 127.0.0.1: delante va un proxy con TLS (el sitio exige https). Nunca en todas las
 #   interfaces.
-# · El disco es el volumen `sitio-datos`, montado en /data (SITE_DATA_DIR).
+# · El disco es el volumen `sitio-datos`, montado en /data (SITE_DATA_DIR). Encima, en /data/site-update y de sólo
+#   lectura, la carpeta de la máquina donde deja su resultado la actualización (SITE_UPDATE_DIR, que pone start.js: al
+#   lado del archivo de secretos, salvo que digas otra). Con ella el sitio avisa si quedó instalado por etiqueta.
 # · Los secretos, en un sitio.env FUERA de todo repo, sólo legible por quien corre el contenedor (chmod 600): copiá
 #   sitio.env.example y completalo. Este archivo no nombra ninguno: lo recibe por SITE_ENV_FILE, que pone start.js
 #   después de comprobar que el archivo no está dentro de un repo git y que no lo leen otros. Ningún valor va acá.
@@ -28,5 +30,7 @@ services:
       SITE_DATA_DIR: /data
     volumes:
       - sitio-datos:/data
+      # el resultado de la actualización de esta máquina (start.js --update), de sólo lectura para el sitio
+      - ${SITE_UPDATE_DIR:-./site-update}:/data/site-update:ro
 volumes:
   sitio-datos:

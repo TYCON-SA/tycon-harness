@@ -485,6 +485,58 @@ test('A10 2.33-Rev_StartUpdatePideLaImagen @story-2.33 @ac-14 — start.js --upd
   assert.match(r.stderr, /--update necesita --image/);
 });
 
+// ── La máquina propia: start.js --update deja el resultado en la carpeta que el sitio monta ─────────────────────────
+
+/**
+ * Corre `start.js --update --dry-run` contra el registro de juguete, con un `docker` de mentira que dice la imagen que
+ * corre. Asíncrono: el registro vive en este mismo proceso y un spawnSync lo dejaría sin contestar.
+ */
+async function startUpdate(reg, { corre, env = {} }) {
+  const d = tmp();
+  const secretos = path.join(d, 'sitio.env');
+  fs.writeFileSync(secretos, 'SITE_SESSION_KEY=x\n', { mode: 0o600 });
+  const docker = path.join(d, 'docker-de-juguete');
+  fs.writeFileSync(docker, `#!/bin/sh\ncase "$*" in\n  *" ps -q "*) echo id-del-contenedor ;;\n  inspect*) echo '${corre}' ;;\n  *) exit 1 ;;\nesac\n`, { mode: 0o755 });
+  const hijo = require('child_process').spawn(process.execPath, [path.join(ROOT, 'scripts', 'site', 'deploy', 'local', 'start.js'), '--secrets-file', secretos, '--update', '--image', IMAGEN, '--dry-run'],
+    { env: { PATH: process.env.PATH, HOME: d, TYCON_DOCKER_CMD: docker, TYCON_SITE_REGISTRY_URL: reg.base, ...env } });
+  let salida = '';
+  hijo.stdout.on('data', (b) => { salida += b; });
+  hijo.stderr.on('data', (b) => { salida += b; });
+  const status = await new Promise((r) => hijo.on('close', r));
+  return { status, salida, d };
+}
+
+test('T1 UpdateSite_MaquinaPropia_EscribeEnLaCarpetaMontada @story-8.328 @ac-1 — instalado por etiqueta: el resultado y el estado quedan en la carpeta del sitio; sale 1 como hoy', { skip: process.platform === 'win32' && 'el docker de juguete es un guion de sh' }, async () => {
+  const reg = await registro();
+  const carpeta = tmp();
+  try {
+    const r = await startUpdate(reg, { corre: `${IMAGEN}:latest`, env: { SITE_UPDATE_DIR: carpeta } });
+    assert.strictEqual(r.status, 1, r.salida);
+    assert.match(r.salida, /instalado por etiqueta/);
+    const nombres = fs.readdirSync(carpeta);
+    const resultado = nombres.find((n) => /^site-update-\d{4}-\d{2}-\d{2}\.json$/.test(n));
+    assert.ok(resultado, nombres.join(', '));
+    const escrito = JSON.parse(fs.readFileSync(path.join(carpeta, resultado), 'utf8'));
+    assert.strictEqual(escrito.plataforma, 'local');
+    assert.strictEqual(escrito.resultado, 'no_pudo');
+    assert.match(escrito.motivo, /^instalado por etiqueta/);
+    assert.ok(nombres.includes('site-update-estado.json'), 'el estado del actualizador, ahí también');
+  } finally { await reg.cerrar(); }
+});
+
+test('T2 UpdateSite_MaquinaPropia_SinCarpeta_LaCreaYLoDice @story-8.328 @ac-4 — sin SITE_UPDATE_DIR la carpeta va al lado del archivo de secretos; si falta, la crea y lo dice', { skip: process.platform === 'win32' && 'el docker de juguete es un guion de sh' }, async () => {
+  const reg = await registro();
+  try {
+    const r = await startUpdate(reg, { corre: `${IMAGEN}:latest` });
+    const carpeta = path.join(r.d, 'site-update');
+    assert.strictEqual(r.status, 1, r.salida);
+    assert.ok(fs.existsSync(carpeta), r.salida);
+    assert.ok(fs.readdirSync(carpeta).some((n) => /^site-update-\d{4}-\d{2}-\d{2}\.json$/.test(n)), 'el resultado quedó adentro');
+    assert.match(r.salida, /creé la carpeta/);
+    assert.ok(r.salida.includes(carpeta), 'dice cuál');
+  } finally { await reg.cerrar(); }
+});
+
 test('A11 2.33-Rev_EstadoIlegibleNoSePisa @story-2.33 @ac-12 — el estado corrupto: no_pudo, sin tocar nada y sin pisarlo', async () => {
   // 🔴 rojo: con el estado corrupto se olvidan las huellas que volvieron atrás y se reintenta una mala.
   const reg = await registro();

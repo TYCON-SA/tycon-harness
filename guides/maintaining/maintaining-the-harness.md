@@ -6,15 +6,15 @@ git, pruebas, frenos) siguen en el índice.
 
 | Trabajando en... | Leer (a demanda) |
 |---|---|
-| Escribir o editar guías, skills, steps o material del sitio — cómo nombrar Claude/Codex/el agente | `guides/maintaining/criterio-tres-claude.md` |
+| Escribir o editar guías, skills, steps o material del sitio — cómo nombrar Claude/Codex/el agente | `guides/maintaining/three-claude-criterion.md` |
 | Saber cuánto contexto carga cada sesión y cada revisor, y de qué está hecho | `node scripts/tools/context-budget.js [--measured]` — `--measured` da el piso REAL de los lanzamientos, no el estimado |
 | Upgrade de BMAD, debug de incompatibilidad con advisors | `guides/maintaining/bmad-contract.md` |
 | Cambiar una regla que tiene que estar SIEMPRE cargada en el `CLAUDE.md` de todos (estilo de respuesta, comunicación), o agregar un bloque nuevo | `claude-md-blocks/` — editar el `.md` y commitear; se propaga solo en el próximo `SessionStart` |
-| Entender por qué el bloque de Azure DevOps dice lo que dice —antes de podarlo, relajarlo o discutirlo— · el detalle de los seis casos con sus comandos | `guides/integrations/ado-cola-y-listados.md` |
+| Entender por qué el bloque de Azure DevOps dice lo que dice —antes de podarlo, relajarlo o discutirlo— · el detalle de los seis casos con sus comandos | `guides/integrations/ado-queue-and-listings.md` |
 | Tocar la regla de estilo de respuesta, el medidor `response-style-meter.js`, o el formato de reporte de un agente · entender por qué el bloque dice lo que dice antes de podarlo | `guides/response-style.md` |
 | Te apareció un aviso de versión de engram, o validaste una versión nueva y querés que el equipo la adopte | `engram-version` (el pin, con el procedimiento de bump en su cabecera) |
 | Armar o publicar la copia pública · el exportador o `mirror.js` frenó · un `git push` o un `gh` frenado · `verify` da 1 · qué entra y qué no · los reemplazos · sumar una skill ajena · máquina limpia | `guides/maintaining/publicacion-espejo.md` (§«La publicación»; terceros: `third-party-skills.json`) + cabeceras de `scripts/publishing/{export,mirror}.js` — a mano: `export.js --explain` |
-| Sacar una versión nueva del paquete de npm (`@tyconsa/harness`) · aprobarla · la publicación falló · retirar una versión · rotar el publicador de confianza | `guides/maintaining/paquete-npm.md` |
+| Sacar una versión nueva del paquete de npm (`@tyconsa/harness`) · aprobarla · la publicación falló · retirar una versión · rotar el publicador de confianza | `guides/maintaining/npm-package.md` |
 | Un commit no se crea por un nombre real en un archivo que se publica · cómo salir · el termómetro de nombres en rojo · subir o bajar el techo | `guides/maintaining/publicacion-espejo.md` §«El núcleo sin nombres» + `scripts/publishing/new-names.js` (cabecera) |
 | Antes de crear una skill/agent/guide/hook nuevo (chequear si ya existe equivalente — evita tejido cicatrizal) | `guides/maintaining/skill-scout.md` |
 | Medir cuánto del context window consume el harness en cada sesión + qué recortar | `guides/maintaining/context-budget.md` |
