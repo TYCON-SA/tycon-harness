@@ -11,7 +11,8 @@
 //   · en el privado (sin inventario en el índice) no aplica;
 //   · en el commit avisa y no frena, y sólo corre si el commit toca el inventario o el pre-commit;
 //   · dentro del hook (con GIT_DIR y GIT_INDEX_FILE del público) igual lee el clon privado;
-//   · no deja nada en las ramas ni en el índice de ninguno de los dos repos.
+//   · no deja nada en las ramas ni en el índice de ninguno de los dos repos;
+//   · una comparación cortada (por su tope o por una señal) frena el commit: no se sabe si miró algo (fila 268).
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
@@ -185,4 +186,33 @@ test('PrivateInventory_InsideAHook_ReadsThePrivateClone — con las variables qu
   const r = spawnSync(process.execPath, [FRENO, '--repo', pub], { env, encoding: 'utf8' });
   assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
   assert.match(`${r.stdout}${r.stderr}`, /no cuadra con el pre-commit del privado[\s\S]*scripts\/ci\/toy\.js/);
+});
+
+// Fila 268 (25/11): la comparación se colgó unos 6 minutos en un commit; la cortaron y el commit salió con 0. Un corte, por
+// el tope propio o por una señal desde afuera, no es «no pude mirar» (que avisa): no se sabe si miró, y frena.
+function publicoQueCuelga(cuerpo) {
+  const pub = publico();
+  put(pub, 'scripts/ci/run-base-controls.sh', `#!/usr/bin/env bash\n${cuerpo}\n`);
+  put(pub, '.githooks/pre-commit-checks', `${HOOK_CON}# otra línea\n`);
+  git(pub, 'add', '-A');
+  return pub;
+}
+
+test('T1 @fila-268 PrivateInventory_Timeout_IsCutNeverGreen — al pasarse de su tope, la comparación sale «cortada» y lo dice', () => {
+  const pub = publicoQueCuelga('exec sleep 30');
+  const t = Date.now();
+  const r = PI.comparar({ repo: pub, privado: privado(HOOK_CON), env: { ...ENV, TYCON_PRIVATE_INVENTORY_TIMEOUT_MS: '1000' } });
+  assert.ok(Date.now() - t < 20000, `el tope no cortó: ${Date.now() - t} ms`);
+  assert.strictEqual(r.estado, 'cortado', JSON.stringify(r));
+  assert.match(PI.aviso(r), /cortada[\s\S]*no sé si miró algo/);
+});
+
+test('T2 @fila-268 PrivateInventory_CutFromOutside_BlocksTheCommit — cortada por una señal o por su tope, el commit no pasa', () => {
+  const env = casa(privado(HOOK_CON));
+  for (const [cuerpo, extra] of [['kill -TERM $$', {}], ['exec sleep 30', { TYCON_PRIVATE_INVENTORY_TIMEOUT_MS: '1000' }]]) {
+    const pub = publicoQueCuelga(cuerpo);
+    const r = spawnSync(process.execPath, [FRENO, '--repo', pub], { env: { ...env, ...extra }, encoding: 'utf8' });
+    assert.strictEqual(r.status, 2, `${cuerpo}: ${r.stdout}${r.stderr}`);
+    assert.match(`${r.stdout}${r.stderr}`, /cortada[\s\S]*No medido no es verde/, cuerpo);
+  }
 });
