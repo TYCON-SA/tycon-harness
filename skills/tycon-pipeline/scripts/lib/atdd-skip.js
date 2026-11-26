@@ -233,7 +233,8 @@ function firmar({ story, motivo, argv = [], sesion = null, casa, userInfo, ahora
     fs.mkdirSync(m.carpeta, { recursive: true });
     fs.appendFileSync(path.join(m.carpeta, FILE), `${JSON.stringify(linea)}\n`);
   } catch (e) { return { codigo: 2, motivo: `no pude escribir ${FILE} (${e.code || e.message})` }; }
-  const entrada = { que: `saltear «pruebas primero»: ${linea.motivo}`, tipo: 'manual', quien: 'dueño', via: `sign-atdd-skip (${via})` };
+  const entrada = { que: `saltear «pruebas primero»: ${linea.motivo}`, tipo: 'manual', quien: 'dueño', via: `sign-atdd-skip (${via})`,
+    aprobacion: require('./approvals.js').aprobacionDe(r, FIRMA) };
   try {
     if (aprobar) aprobar(linea, entrada);
     else require('./approvals.js').anotar(m.carpeta, entrada);

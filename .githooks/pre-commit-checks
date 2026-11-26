@@ -141,9 +141,19 @@ fi
 # evidencia de cierre y su registro de revisores en este repo. `--staged` mira sólo lo que el commit agrega.
 # Casos: scripts/tests/pre-commit-stories.test.sh C-06/C-07.
 GATE="${TCG:-$REPO_ROOT}/scripts/ci/tycon-ci-gate.js"
+# Corre también si el commit trae una constancia que firma una persona (el catálogo de scripts/lib/signed-record-approval.js):
+# el portón mira que cada línea nueva traiga el cuadro del dueño. Acá se busca de más y sin distinguir mayúsculas; cuál es
+# una constancia lo decide el portón. La lista se pasa a minúsculas una sola vez.
+SIGNED_RECORDS=0
+_staged_lower="$(printf '%s\n' "$STAGED_ACMR" | tr '[:upper:]' '[:lower:]')"
+while IFS= read -r f; do
+  case "$f" in
+    .github/control-changes*|.tycon/control-changes*|.tycon/exemptions.jsonl|.tycon/runtime-waivers.jsonl|*.advisors/pipeline-runs/*/approvals.jsonl) SIGNED_RECORDS=1 ;;
+  esac
+done < <(printf '%s\n' "$_staged_lower")
 # el portón usa el detector del lint: sin el lint tampoco corre, y eso ya se avisó arriba
 if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/ci/tycon-ci-gate.js; then :
-elif [ "${#CHANGED_MD[@]}" -gt 0 ] && [ -f "$FM_LINT" ]; then
+elif { [ "${#CHANGED_MD[@]}" -gt 0 ] || [ "$SIGNED_RECORDS" = 1 ]; } && [ -f "$FM_LINT" ]; then
   if [ ! -f "$GATE" ]; then
     echo "⚠️  tycon: no encontré $GATE — se saltea el portón del arnés (el del pull request igual lo mira)." >&2
   elif ! node "$GATE" --repo "$REPO_ROOT" --staged; then

@@ -168,6 +168,12 @@ pasa  "6.5 T14 · un grupo con paréntesis, entre comillas simples, pasa al cuad
 frena "6.5 T14 · entre comillas dobles no es la forma canónica" "$PUERTA --delete-group \"acme(prueba)\""
 # 6.3 · T12: la misma sentencia de borrado de base, por la puerta, pasa al cuadro como hoy (la ve una persona)
 pasa  "6.3 T12 · la puerta con la sentencia de borrado de base pasa al cuadro" "$PUERTA $PROD '$BORRA base'"
+# A1 · la firma de un cambio de controles que toca la puerta: con la lista en el comando (--entries) la nombra, y el freno
+# la frena como a cualquier comando que la nombre; la firma por rango no nombra ningún archivo (la lista la arma el
+# guion desde el pedido) y el freno la deja pasar a la ventana. El freno no se afloja: lo que cambia es el comando
+FIRMA_ARNES="bash /Users/dev/.tycon/harness/scripts/ci/run-base-controls.sh approve --root /Users/dev/repo --base origin/main"
+frena "A1 · la firma con --entries que nombra la puerta frena" "$FIRMA_ARNES --out .github/control-changes/ --entries '[{\"path\":\"scripts/production/tycon-prod-sql\",\"blob\":\"aa\"}]'"
+pasa  "A1 · la firma por rango, que no nombra ningún archivo, pasa" "$FIRMA_ARNES --range origin/main...HEAD --out .github/control-changes/ --expect $(printf 'a%.0s' $(seq 1 64))"
 frena "T6c · bash -c" "bash -c '$PUERTA $PROD \"select 1\"'"
 frena "T6d · eval" "eval $PUERTA $PROD 'select 1'"
 frena "T6e · nombre pelado" "tycon-prod-sql $PROD 'select 1'"

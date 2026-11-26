@@ -3053,6 +3053,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.334: el registro del cuadro que aprobó el dueño en cada constancia nueva (scripts/lib/signed-record-approval.js): qué archivos lo llevan, cómo lo arman los escritores (la exención, la exención en vivo con sus líneas manuales, las aprobaciones manuales, la firma sobre un archivo, run-base-controls.sh approve), que sin una persona va sin cuadro y lo dice, y que los lectores de siempre no cambian. Carpetas temporales, sin red. ~2 s. Viaja.",
+      "raiz": "arnes",
+      "ruta": "tests/signed-record-approval.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.152: el banco de un pedido corre los casos, la línea de base y el corredor de la BASE contra los ganchos del pedido (scripts/ci/bench-against-base.js), sobre repos de juguete con git de verdad y el corredor real del banco, sin red: aflojar un gancho pide la firma del dueño aunque el pedido cambie también su caso, su línea de base o el corredor; endurecer o sumar casos no; la firma del dueño anclada al blob pasa y la delegación no; lo que no se pudo medir es rojo. ~1 min. Viaja.",
       "raiz": "arnes",
       "ruta": "tests/bench-against-base.test.js",
@@ -3734,6 +3740,18 @@
       "__nota": "la evidencia atada al cambio en el portón de CI (scripts/ci/tycon-ci-gate.js): la evidencia de cierre anterior al código que cambia el pedido, las huellas del registro de humos y lo que no se pudo comparar, que avisan hasta su fecha y frenan desde ella.",
       "raiz": "arnes",
       "ruta": "tests/ci-gate-evidence-bound.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la regla constancia-sin-cuadro del portón de CI (scripts/ci/tycon-ci-gate.js con scripts/lib/signed-record-approval.js): cada constancia nueva que firma una persona trae el cuadro del dueño, con su firma, su vía, su huella y una aprobación que no está en el historial de la base; el modo aviso o freno fijo en el código; la base ilegible y el clon superficial; las guías. Repos de juguete, casa temporal, sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/signed-record-approval-ci.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "los seis caminos por los que una constancia se escribe sin pasar por el freno de escrituras, corridos de verdad con bash en un repo de juguete: el portón de CI en freno da constancia-sin-cuadro en todos, y la línea con el cuadro de una aprobación pasa. Casa temporal, sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/signed-record-approval-paths.test.js",
       "requiere": []
     },
     {

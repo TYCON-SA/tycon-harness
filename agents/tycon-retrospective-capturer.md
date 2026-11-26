@@ -186,7 +186,7 @@ El capturer usa las tools `mcp__plugin_engram_engram__*`:
 - NO emite warnings al dev. Es silencioso por diseño.
 - NO bloquea nada. Si crashea, no impacta el pipeline.
 - NO toma decisiones automáticas (ej: auto-desactivar un advisor por bajo ratio). Solo reporta. El DRI decide.
-- NO escribe a guías del arnés. Si un learning sugiere update de guía, lo propone en `.advisors/guide-update-proposals.md` para review manual.
+- NO escribe a guías del arnés ni propone cambios de guías. Las propuestas salen sólo de la revisión de la semana, un proceso aparte de la noche que junta las causas que se repiten en varios merges: no hace falta leerlo. Un learning que sugiere un cambio de guía queda en el archivo de métricas y en la memoria, nada más.
 
 ## Shadow mode vs producción
 

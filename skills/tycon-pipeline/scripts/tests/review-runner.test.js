@@ -434,6 +434,62 @@ test('T10 ReviewRunner_EnWindowsElAtajoCmdSeLanzaConNode — el .cmd de npm se l
   assert.deepStrictEqual(RR.launchable('revisor', { platform: 'linux', env }), { bin: 'revisor', pre: [] });
 });
 
+/** Un atajo como lo escribe cmd-shim 8 (npm) para un programa con su primera línea `#!/usr/bin/env <prog> <banderas>`. */
+function atajoDeNpm(prog, banderas, destino) {
+  return ['@ECHO off', 'GOTO start', ':find_dp0', 'SET dp0=%~dp0', 'EXIT /b', ':start', 'SETLOCAL', 'CALL :find_dp0', '',
+    `IF EXIST "%dp0%\\${prog}.exe" (`, `  SET "_prog=%dp0%\\${prog}.exe"`, ') ELSE (', `  SET "_prog=${prog}"`, '  SET PATHEXT=%PATHEXT:;.JS;=;%', ')', '',
+    `endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%" ${banderas} "%dp0%\\${destino}" %*`, ''].join('\r\n');
+}
+
+// T14 · 🔴 Falla con: un atajo de npm cuyo programa no es Node (bun), o que lleva banderas de la primera línea, o
+//    cuyo destino no tiene extensión, no se lanza o se lanza con Node sin sus banderas.
+test('T14 ReviewRunner_EnWindowsElAtajoDiceSuPrograma — el programa y las banderas los da el atajo, no la extensión del destino', (t) => {
+  const dir = carpeta(t, 'rr-win-prog-');
+  const otra = carpeta(t, 'rr-win-prog-path-');
+  const opts = { platform: 'win32', env: { PATH: `${dir}${path.delimiter}${otra}`, PATHEXT: '.COM;.EXE;.BAT;.CMD' }, separator: path.delimiter };
+  const destino = path.join(dir, 'pkg', 'cli');
+  fs.mkdirSync(path.dirname(destino), { recursive: true });
+  fs.writeFileSync(destino, '');
+  const cli = path.join(dir, 'pkg', 'cli.js');
+  fs.writeFileSync(cli, '');
+  // Node con banderas y un destino sin extensión: el mismo Node, con las banderas delante
+  fs.writeFileSync(path.join(dir, 'revisor.cmd'), atajoDeNpm('node', '--no-warnings', 'pkg\\cli'));
+  assert.deepStrictEqual(RR.launchable('revisor', opts), { bin: process.execPath, pre: ['--no-warnings', destino] });
+  // bun: no se corre con Node; se busca en el PATH (sólo lo que Node lanza solo)
+  fs.writeFileSync(path.join(dir, 'revisor.cmd'), atajoDeNpm('bun', '', 'pkg\\cli.js'));
+  const sinBun = RR.launchable('revisor', opts);
+  assert.strictEqual(sinBun.bin, null);
+  assert.match(sinBun.motivo, /bun/);
+  fs.writeFileSync(path.join(otra, 'bun.cmd'), '');
+  assert.strictEqual(RR.launchable('revisor', opts).bin, null, 'un bun.cmd no se lanza sin shell');
+  fs.writeFileSync(path.join(otra, 'bun.exe'), '');
+  assert.deepStrictEqual(RR.launchable('revisor', opts), { bin: path.join(otra, 'bun.exe'), pre: [cli] });
+  // el bun que está al lado del atajo gana, como en el atajo
+  fs.writeFileSync(path.join(dir, 'bun.exe'), '');
+  assert.deepStrictEqual(RR.launchable('revisor', opts), { bin: path.join(dir, 'bun.exe'), pre: [cli] });
+  // una variable en la primera línea: cmd-shim la toma por el programa; no se lanza a ciegas
+  fs.writeFileSync(path.join(dir, 'revisor.cmd'), atajoDeNpm('NODE_OPTIONS=--max-old-space-size=99', 'node', 'pkg\\cli'));
+  const conVariable = RR.launchable('revisor', opts);
+  assert.strictEqual(conVariable.bin, null);
+  assert.match(conVariable.motivo, /NODE_OPTIONS/);
+  // una bandera con comillas: no cae a decidir por la extensión, se rechaza
+  fs.writeFileSync(path.join(dir, 'revisor.cmd'), atajoDeNpm('bun', '--title="x y"', 'pkg\\cli.js'));
+  assert.strictEqual(RR.launchable('revisor', opts).bin, null);
+  // una variable simple de la primera línea (`@SET NOMBRE=1`): no viajaría, se rechaza
+  fs.writeFileSync(path.join(dir, 'revisor.cmd'), atajoDeNpm('node', '', 'pkg\\cli.js').replace('SETLOCAL\r\n', 'SETLOCAL\r\n@SET NODE_NO_WARNINGS=1\r\n'));
+  const conSet = RR.launchable('revisor', opts);
+  assert.strictEqual(conSet.bin, null);
+  assert.match(conSet.motivo, /NODE_NO_WARNINGS/);
+  // el formato sin `_prog` (npm viejo): su programa y sus banderas también cuentan
+  const viejo = (linea) => `@IF EXIST "%~dp0\\node.exe" (\r\n  "%~dp0\\node.exe"  ${linea}\r\n) ELSE (\r\n  @SETLOCAL\r\n  @SET PATHEXT=%PATHEXT:;.JS;=;%\r\n  node  ${linea}\r\n)\r\n`;
+  fs.writeFileSync(path.join(dir, 'revisor.cmd'), viejo('"%~dp0\\pkg\\cli.js" %*'));
+  assert.deepStrictEqual(RR.launchable('revisor', opts), { bin: process.execPath, pre: [cli] });
+  fs.writeFileSync(path.join(dir, 'revisor.cmd'), 'node --no-warnings "%~dp0\\pkg\\cli" %*\r\n');
+  assert.deepStrictEqual(RR.launchable('revisor', opts), { bin: process.execPath, pre: ['--no-warnings', destino] });
+  fs.writeFileSync(path.join(dir, 'revisor.cmd'), 'bun "%~dp0\\pkg\\cli.js" %*\r\n');
+  assert.deepStrictEqual(RR.launchable('revisor', opts), { bin: path.join(dir, 'bun.exe'), pre: [cli] });
+});
+
 // T12 · 🔴 Falla con: workflow-lite.js lanza el nombre del corredor en vez de lo que da `launchable` (programa y sus
 //    argumentos delante), y el arreglo de Windows no llega al pase.
 test('T12 WorkflowLite_LanzaLoQueDaLaunchable — el corredor se lanza con el programa y los argumentos que da launchable', async (t) => {
