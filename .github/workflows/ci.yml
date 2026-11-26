@@ -91,12 +91,10 @@ jobs:
           TYCON_PUBLIC_CI_PART: ${{ matrix.part }}
           BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}
           BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          # en un pedido, el banco de la base corre sólo si el pedido cambia un gancho, su biblioteca o un caso del
+          # banco: lo decide el public-ci.sh de la base, que necesita saber el evento (fila 281)
+          TYCON_PUBLIC_CI_EVENT: ${{ github.event_name }}
         run: |
-          # en un pedido no corre el banco de la base: corre en la cola y en un push a main que no hizo la cola
-          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${TYCON_PUBLIC_CI_PART}" = "controls-bench-base" ]; then
-            echo "en un pedido no corre la parte controls-bench-base: corre en la cola de merge"
-            exit 0
-          fi
           # en un pedido BASE_REF es «main»; en la cola es «refs/heads/main»: se le saca el prefijo
           if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] || [ "${GITHUB_EVENT_NAME}" = "merge_group" ]; then
             # los controles y su regla salen de la base: en la cola, la base del grupo; en un pedido, la punta de la rama

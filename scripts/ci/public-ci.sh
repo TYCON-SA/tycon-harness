@@ -580,6 +580,18 @@ bench_against_base() {
     echo "controls-bench-base: la base ${BASE_ARG} todavía no trae scripts/ci/bench-against-base.js: no aplica (lo mide desde el pedido siguiente)"
     return 0
   fi
+  # En un pedido corre sólo si el pedido cambia un gancho, una biblioteca o un caso del banco (fila 281): así su rojo y el
+  # comando de su firma se ven en el pedido, no recién en la cola. Lo demás lo mide la cola, donde corre siempre; una ruta
+  # que esta lista no nombra se sigue midiendo ahí. El evento lo pasa el ci.yml (TYCON_PUBLIC_CI_EVENT); sin él, corre.
+  if [ "${TYCON_PUBLIC_CI_EVENT:-}" = pull_request ]; then
+    local cambia
+    cambia="$(git -C "${ROOT}" diff --name-only --no-renames "${RANGE}" 2>/dev/null)" \
+      || { echo "no pude correr: no pude leer qué cambia el pedido (${RANGE})"; return "${BLOCKED_EXIT}"; }
+    if ! printf '%s\n' "${cambia}" | grep -v '\.md$' | grep -E '^(scripts/(hooks|lib|production|controls-bench|setup)/|skills/|integrations/|adapters/|\.githooks/)' >/dev/null; then
+      echo "controls-bench-base: el pedido no cambia ningún gancho, biblioteca ni caso del banco: en el pedido no corre, lo mide la cola"
+      return 0
+    fi
+  fi
   bab="${WORK}/bench-against-base.js"
   git -C "${ROOT}" show "${BASE_ARG}:scripts/ci/bench-against-base.js" > "${bab}" \
     || { echo "no pude correr: no pude sacar scripts/ci/bench-against-base.js de la base ${BASE_ARG}"; return "${BLOCKED_EXIT}"; }
