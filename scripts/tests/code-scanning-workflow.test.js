@@ -100,7 +100,8 @@ test('T9 Workflows_PublicOnesSignOnChange @story-8.331 @ac-11', () => {
   const forma = (inv.controls || []).find((c) => c.name === 'workflow-shape');
   assert.ok(forma, 'el inventario de la base tiene el control workflow-shape');
   const firmados = (forma.rules || []).filter((r) => r && r.sign_on_change).map((r) => r.path).sort();
-  const publicos = WF.WORKFLOWS.filter((w) => w !== 'ci.yml').map((w) => `.github/workflows/${w}`).sort();
+  // más los guiones que esos workflows corren desde el pedido (el aviso de calidad nueva de code-scanning.yml)
+  const publicos = [...WF.WORKFLOWS.filter((w) => w !== 'ci.yml').map((w) => `.github/workflows/${w}`), 'scripts/ci/new-quality-findings.js'].sort();
   assert.deepStrictEqual(firmados, publicos, 'cada workflow público que no es ci.yml pide la constancia al cambiar');
 });
 
@@ -127,4 +128,24 @@ test('T7 Workflows_OnlyTheFive @story-8.331 @ac-5', () => {
   assert.deepStrictEqual([...WF.WORKFLOWS].sort(), ['ci.yml', 'code-scanning.yml', 'npm-publish.yml', 'site-image.yml', 'version-tag.yml']);
   const hay = fs.readdirSync(path.join(ROOT, '.github', 'workflows')).filter((f) => /\.ya?ml$/.test(f));
   assert.deepStrictEqual(hay.filter((f) => !WF.WORKFLOWS.includes(f)), [], 'un workflow fuera de la lista');
+});
+
+// 🔴 Falla con: el aviso de calidad nueva que se saca, que puede poner la CI en rojo, o que corre fuera de un pedido.
+test('T10 CodeScanning_QualityWarning_NeverRed — el aviso de calidad nueva está, sólo en un pedido y sin frenar', () => {
+  const t = text();
+  assert.ok(t.includes('node scripts/ci/new-quality-findings.js --sarif'), 'el paso corre el aviso');
+  // el guion que corre pide firma al cambiar, como el flujo
+  const cfb = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'ci', 'controls-from-base.json'), 'utf8'));
+  const forma = cfb.controls.find((c) => c.name === 'workflow-shape');
+  assert.ok(forma.rules.some((r) => r.path === 'scripts/ci/new-quality-findings.js' && r.sign_on_change), 'new-quality-findings.js pide firma al cambiar');
+  for (const [de, a] of [
+    ['        continue-on-error: true\n', ''],
+    ["github.event_name == 'pull_request' && ", ''],
+    ['--format=sarif-latest --output="${RUNNER_TEMP}/calidad.sarif" --threads=0 || true', '--format=sarif-latest --output="${RUNNER_TEMP}/calidad.sarif" --threads=0'],
+    ['timeout 900 "${CODEQL}"', '"${CODEQL}"'],
+  ]) {
+    assert.ok(t.includes(de), `el archivo trae «${de.trim()}»`);
+    const r = WF.check(t.replace(de, a), { scanning: true });
+    assert.ok(r.length > 0, `sin «${de.trim()}» el control lo frena`);
+  }
 });

@@ -5193,6 +5193,11 @@
       "requiere": []
     },
     {
+      "raiz": "arnes",
+      "ruta": "tests/new-quality-findings.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.40, el cierre (T48 y T49): lo que el paquete tiene PUBLICADO en npm. La versión del package.json está publicada con su constancia de procedencia y es la latest; con una sesión de npm, la cuenta pide el segundo factor también para escribir y la latest no es el marcador 0.0.0-stage. Sin red, con la versión sin aprobar o sin sesión: NO MEDIDO, nunca verde. Pide red: corre de noche, no en cada pedido.",
       "raiz": "arnes",
       "ruta": "tests/npm-published.test.js",
