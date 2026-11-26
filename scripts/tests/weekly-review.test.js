@@ -487,3 +487,14 @@ test('T28 WeeklyReview_RetrosAndMerges_PrefersMerges @story-8.132 @ac-21: entre 
   assert.strictEqual(into.get(s2).tipo, 'aprendizajes', 'la retro con aprendizajes sigue ganando');
   assert.strictEqual(into.get(s2).story, '8.7');
 });
+
+// T13 · 🔴 Falla con: el capturador de retrospectivas sigue proponiendo cambios de guías en cada merge. Las propuestas
+//    salen sólo de la revisión de la semana, que junta lo que se repite. Vale para el agente y sus copias de Codex.
+test('T13 Capturador_NoProponeGuiasPorMerge: el agente y sus copias no escriben propuestas; nombran la revisión semanal sin mandar a leerla', () => {
+  const copias = ['agents/tycon-retrospective-capturer.md', 'adapters/codex/agents/tycon-retrospective-capturer.toml', 'adapters/codex/agents-native/tycon-retrospective-capturer.toml'];
+  for (const rel of copias) {
+    const t = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    assert.doesNotMatch(t, /lo propone en [^\n]*guide-update-proposals/, `${rel} todavía propone por merge`);
+    assert.match(t, /las propuestas salen sólo de la revisión de la semana/i, `${rel} nombra la revisión semanal como la que propone`);
+  }
+});
