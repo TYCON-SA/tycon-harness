@@ -15,7 +15,7 @@ const path = require('path');
 const { readVerdict, CASES, FIXED_TEXT, TOY_IDS } = require('../lib/codex-typed-verdict.js');
 
 const DIR = path.join(__dirname, 'fixtures', 'codex-typed');
-const GUIDE = path.join(__dirname, '..', '..', 'guides', 'firmas-del-arnes.md');
+const GUIDE = path.join(__dirname, '..', '..', 'guides', 'owner-signatures.md');
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 
 const fixtureFiles = () => fs.readdirSync(DIR).filter((f) => f.endsWith('.jsonl')).sort();

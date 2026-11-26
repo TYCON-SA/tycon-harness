@@ -738,7 +738,7 @@ test('T33 Registro_SuitesPiezasYReadmes @story-2.30 @ac-24', () => {
   const suites = fs.readFileSync(path.join(ROOT, 'scripts', 'tests', 'suites.json'), 'utf8');
   for (const s of ['site-image-workflow.test.js', 'site-check-deploy.test.js', 'site-deploy.test.js', 'notify.test.js']) assert.ok(suites.includes(`"tests/${s}"`), `suites.json no registra ${s}`);
   const piezas = require('./lib/pieces-guide.js').piecesText(ROOT);
-  for (const p of ['scripts/lib/notify.js', 'scripts/site/check-deploy.js', 'scripts/site/deploy/', '.github/workflows/site-image.yml', 'guides/organization-site.md']) assert.ok(piezas.includes(p), `piezas-del-arnes.md no nombra ${p}`);
+  for (const p of ['scripts/lib/notify.js', 'scripts/site/check-deploy.js', 'scripts/site/deploy/', '.github/workflows/site-image.yml', 'guides/organization-site.md']) assert.ok(piezas.includes(p), `harness-pieces.md no nombra ${p}`);
   const ficha = seccion(piezas, 'scripts/site/ — el sitio de la organización');
   assert.ok(ficha && ficha.split('\n').length <= 25, `la ficha del sitio es corta (${ficha && ficha.split('\n').length} líneas)`);
   for (const r of ['pipelines/operations/README.md', 'pipelines/operations/github/README.md']) {

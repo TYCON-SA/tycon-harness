@@ -1,8 +1,8 @@
 # La máquina: la instalación, los ganchos de git y los avisos de sesión
 
-Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cada una dice **qué es** la pieza,
+Las fichas de este grupo de [las piezas del arnés](../harness-pieces.md). Cada una dice **qué es** la pieza,
 **por qué existe**, **quién la usa** y **dónde se prueba**. El detalle de cada pieza está en
-[la guía de detalle](../maintaining/piezas-en-detalle.md), bajo el mismo título.
+[la guía de detalle](../maintaining/pieces-in-detail.md), bajo el mismo título.
 
 ## scripts/install-tycon-hooks.sh
 
@@ -16,7 +16,7 @@ _(scripts/install-tycon-hooks.sh y scripts/install-tycon-hooks.ps1)_
 
 **Dónde se prueba:** `scripts/tests/applier-batch.test.js`, `scripts/tests/installer-ps1.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptsinstall-tycon-hookssh)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptsinstall-tycon-hookssh)
 
 ## .githooks/pre-commit
 
@@ -30,7 +30,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `scripts/tests/githook-livefire.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#githookspre-commit)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#githookspre-commit)
 
 ## scripts/hooks/git-post-commit-global.sh
 
@@ -42,7 +42,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `scripts/tests/githook-livefire.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptshooksgit-post-commit-globalsh)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptshooksgit-post-commit-globalsh)
 
 ## scripts/hooks/session-collision-guard.js
 
@@ -54,7 +54,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `controls-bench/cases/hooks/38-session-collision-guard.json`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptshookssession-collision-guardjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptshookssession-collision-guardjs)
 
 ## scripts/lib/canonical-path.js
 
@@ -66,7 +66,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `scripts/tests/canonical-path.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptslibcanonical-pathjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptslibcanonical-pathjs)
 
 ## scripts/lib/harness-repo.js
 
@@ -78,7 +78,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `controls-bench/cases/hooks/14-retro-pending.json`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptslibharness-repojs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptslibharness-repojs)
 
 ## scripts/lib/night-data.js
 
@@ -90,7 +90,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `scripts/tests/night-notices.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptslibnight-datajs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptslibnight-datajs)
 
 ## scripts/lib/repos-root.js
 
@@ -102,7 +102,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `scripts/tests/repos-root.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptslibrepos-rootjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptslibrepos-rootjs)
 
 ## scripts/hooks/worktree-sweep.js
 
@@ -114,7 +114,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `scripts/tests/worktree-sweep.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptshooksworktree-sweepjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptshooksworktree-sweepjs)
 
 ## scripts/hooks/dev-behind-main-notice.js
 
@@ -126,7 +126,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `scripts/tests/dev-behind-main-notice.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptshooksdev-behind-main-noticejs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptshooksdev-behind-main-noticejs)
 
 ## scripts/hooks/stuck-pr-notice.js
 
@@ -158,7 +158,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `scripts/tests/extension-notices.test.js` y el caso 63 del banco
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptshooksextension-noticesjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptshooksextension-noticesjs)
 
 ## scripts/hooks/missing-path-notice.js
 
@@ -170,7 +170,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptshooksmissing-path-noticejs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptshooksmissing-path-noticejs)
 
 ## scripts/hooks/deprecated-session-notice.js
 
@@ -182,7 +182,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `scripts/tests/deprecated-notices.test.js` y el caso 64 del banco
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptshooksdeprecated-session-noticejs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptshooksdeprecated-session-noticejs)
 
 ## scripts/hooks/deprecated-read-notice.js
 
@@ -194,7 +194,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `scripts/tests/deprecated-notices.test.js` y el caso 64 del banco
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptshooksdeprecated-read-noticejs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptshooksdeprecated-read-noticejs)
 
 ## skills/tycon-pipeline/scripts/lib/deprecated.js
 
@@ -206,7 +206,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `skills/tycon-pipeline/scripts/tests/deprecated.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibdeprecatedjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#skillstycon-pipelinescriptslibdeprecatedjs)
 
 ## skills/tycon-pipeline/scripts/on-deprecated-edit.js
 
@@ -218,7 +218,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `skills/tycon-pipeline/scripts/tests/deprecated-gates.test.js` y el caso 64 del banco
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptson-deprecated-editjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#skillstycon-pipelinescriptson-deprecated-editjs)
 
 ## scripts/hooks/cover-secrets.js
 
@@ -230,7 +230,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `scripts/tests/cover-secrets.test.js`, `controls-bench/cases/hooks/78-cover-secrets.json`
 
-**Detalle:** [en la guía de detalle](../maintaining/piezas-en-detalle.md#scriptshookscover-secretsjs)
+**Detalle:** [en la guía de detalle](../maintaining/pieces-in-detail.md#scriptshookscover-secretsjs)
 
 ## scripts/hooks/failed-query-notice.js
 
@@ -242,7 +242,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `controls-bench/cases/hooks/39-consulta-fallida-notice.json`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptshooksfailed-query-noticejs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptshooksfailed-query-noticejs)
 
 ## scripts/hooks/context-size-notice.js
 
@@ -264,7 +264,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Dónde se prueba:** `scripts/tests/wait-notice.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptshookswait-noticejs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptshookswait-noticejs)
 
 ## scripts/hooks/prod-access-guard.js
 
@@ -278,7 +278,7 @@ _(scripts/hooks/prod-access-guard.js + scripts/production/ + guides/production-w
 
 **Dónde se prueba:** `scripts/tests/prod-access-guard.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptshooksprod-access-guardjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptshooksprod-access-guardjs)
 
 ## claude-md-blocks/budget.json
 
@@ -292,7 +292,7 @@ _(claude-md-blocks/budget.json + scripts/ci/check-claude-md-blocks.js)_
 
 **Dónde se prueba:** `scripts/tests/claude-md-blocks.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#claude-md-blocksbudgetjson)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#claude-md-blocksbudgetjson)
 
 ## scripts/hooks/harness-bootstrap-heal.sh
 
@@ -304,7 +304,7 @@ _(claude-md-blocks/budget.json + scripts/ci/check-claude-md-blocks.js)_
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptshooksharness-bootstrap-healsh)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptshooksharness-bootstrap-healsh)
 
 ## tycon-pipeline/scripts/lib/guides-heal.js
 
@@ -318,7 +318,7 @@ _(tycon-pipeline/scripts/lib/guides-heal.js (en agent-skills) + scripts/hooks/br
 
 **Dónde se prueba:** `controls-bench/cases/hooks/37-guides-heal.json`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#tycon-pipelinescriptslibguides-healjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#tycon-pipelinescriptslibguides-healjs)
 
 ## mods/harness-mods/
 
@@ -332,7 +332,7 @@ _(mods/harness-mods/ + scripts/setup/harness/plugin-dirs.js)_
 
 **Dónde se prueba:** `scripts/tests/harness-mods.test.js`, `scripts/tests/harness-mods-plugin.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#modsharness-mods)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#modsharness-mods)
 
 ## claude-md-blocks/
 
@@ -346,7 +346,7 @@ _(claude-md-blocks/ + scripts/setup/sync-claude-md-blocks.sh / `scripts/setup/sy
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#claude-md-blocks)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#claude-md-blocks)
 
 ## scripts/setup/harness/tools.js
 
@@ -362,7 +362,7 @@ _(scripts/setup/harness/tools.js + `scripts/setup/harness/tool-change.js` + `scr
 
 **Guía:** [installation-mechanism](../maintaining/installation-mechanism.md)
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptssetupharnesstoolsjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptssetupharnesstoolsjs)
 
 ## scripts/setup/harness/harness-node.js — el Node propio del arnés
 
@@ -376,7 +376,7 @@ _(scripts/setup/harness/harness-node.js + `scripts/lib/harness-node.sh` + `scrip
 
 **Dónde se prueba:** `scripts/tests/harness-node.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptssetupharnessharness-nodejs--el-node-propio-del-arnés)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptssetupharnessharness-nodejs--el-node-propio-del-arnés)
 
 ## scripts/setup/harness/release.js — el cambio de versión con enlaces (Windows)
 
@@ -390,7 +390,7 @@ _(scripts/setup/harness/release.js + `tycon-home.js` + `bootstrap.js` + `bootstr
 
 **Dónde se prueba:** `scripts/tests/harness-release-links.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptssetupharnessreleasejs--el-cambio-de-versión-con-enlaces-windows)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptssetupharnessreleasejs--el-cambio-de-versión-con-enlaces-windows)
 
 ## scripts/lib/canonical-path.js — las carpetas de skills y agentes, siempre reales
 
@@ -404,7 +404,7 @@ _(scripts/lib/canonical-path.js `ensureRepoLinks` + `scripts/hooks/branch-guard-
 
 **Dónde se prueba:** `scripts/tests/repo-links-real-folders.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptslibcanonical-pathjs--las-carpetas-de-skills-y-agentes-siempre-reales)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptslibcanonical-pathjs--las-carpetas-de-skills-y-agentes-siempre-reales)
 
 ## scripts/lib/maintainers-sync.js — el arranque pone al día el clon de mantenimiento
 
@@ -418,7 +418,7 @@ _(scripts/lib/maintainers-sync.js + `scripts/hooks/branch-guard-notice.js`)_
 
 **Dónde se prueba:** `scripts/tests/maintainers-sync.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptslibmaintainers-syncjs--el-arranque-pone-al-día-el-clon-de-mantenimiento)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptslibmaintainers-syncjs--el-arranque-pone-al-día-el-clon-de-mantenimiento)
 
 ## guides/response-style.md
 
@@ -430,7 +430,7 @@ _(scripts/lib/maintainers-sync.js + `scripts/hooks/branch-guard-notice.js`)_
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesresponse-stylemd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesresponse-stylemd)
 
 ## engram-version
 
@@ -444,7 +444,7 @@ _engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-e
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#engram-version)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#engram-version)
 
 ## scripts/setup/check-engram-project.sh
 
@@ -456,7 +456,7 @@ _engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-e
 
 **Dónde se prueba:** `scripts/tests/engram-project-check.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptssetupcheck-engram-projectsh)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptssetupcheck-engram-projectsh)
 
 ## scripts/setup/install-effects.json
 
@@ -470,7 +470,7 @@ _engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-e
 
 **Guía:** [installation-mechanism.md](../maintaining/installation-mechanism.md)
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptssetupinstall-effectsjson)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptssetupinstall-effectsjson)
 
 ## scripts/setup/harness/plan.js y prompt.js
 
@@ -484,7 +484,7 @@ _engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-e
 
 **Guía:** [installation-mechanism.md](../maintaining/installation-mechanism.md)
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptssetupharnessplanjs-y-promptjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptssetupharnessplanjs-y-promptjs)
 
 ## scripts/setup/harness/profile.js
 
@@ -498,7 +498,7 @@ _engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-e
 
 **Guía:** [installation-mechanism.md](../maintaining/installation-mechanism.md)
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptssetupharnessprofilejs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptssetupharnessprofilejs)
 
 ## scripts/setup/harness/read-permissions.js
 
@@ -510,7 +510,7 @@ _engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-e
 
 **Dónde se prueba:** `scripts/tests/read-permissions.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptssetupharnessread-permissionsjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptssetupharnessread-permissionsjs)
 
 ## scripts/setup/harness/questions.js
 
@@ -524,7 +524,7 @@ _engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-e
 
 **Guía:** [installation-mechanism.md](../maintaining/installation-mechanism.md)
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptssetupharnessquestionsjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptssetupharnessquestionsjs)
 
 ## scripts/setup/get-harness.sh y get-harness.ps1
 
@@ -538,4 +538,4 @@ _engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-e
 
 **Guía:** [installation-mechanism.md](../maintaining/installation-mechanism.md)
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptssetupget-harnesssh-y-get-harnessps1)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptssetupget-harnesssh-y-get-harnessps1)

@@ -345,7 +345,7 @@ test('@story-8.59 @ac-9 8.59-Guia_DiceLoQueHayQueSaber', () => {
   }
   for (const f of ['INDEX.md', 'packs/README.md', 'guides/agent-architecture.md'])
     assert.ok(read(f).includes('reviewer-packs.md'), `${f} enlaza la guía`);
-  assert.ok(read('guides/piezas-del-arnes.md').includes('examples/'), 'el árbol de piezas nombra examples/');
+  assert.ok(read('guides/harness-pieces.md').includes('examples/'), 'el árbol de piezas nombra examples/');
 });
 
 test('@story-8.70 @ac-6 @ac-7 ReviewerPacks_SoloSection', () => {

@@ -1,6 +1,6 @@
 'use strict';
 /**
- * La guía de piezas está partida: `guides/piezas-del-arnes.md` es el índice (el árbol «Dónde vive cada cosa» y la
+ * La guía de piezas está partida: `guides/harness-pieces.md` es el índice (el árbol «Dónde vive cada cosa» y la
  * lista de las piezas por grupo) y las fichas viven en `guides/pieces/<grupo>.md`, con su título `## <ruta>`.
  *
  * Las pruebas que buscan una ficha, o lo que dice una ficha, leen todo junto con `piecesText()`: así no dependen del
@@ -9,7 +9,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const INDEX = 'guides/piezas-del-arnes.md';
+const INDEX = 'guides/harness-pieces.md';
 const GROUPS_DIR = 'guides/pieces';
 
 /**

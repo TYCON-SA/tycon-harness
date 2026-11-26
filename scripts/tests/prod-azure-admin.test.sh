@@ -107,10 +107,12 @@ else no "T1 · rc=$rc · dio «${POR_PUERTA}» · $(head -c 500 "$TMP/freno.err"
 # ── T2 · por la puerta: cuadro con el comando entero, az lo recibe tal cual, queda anotado ───────────────────────
 : > "$TMP/cuadro.log"; : > "$TMP/az-admin.log"
 r="$(correr "$POR_PUERTA")"
+# (corre como una sesión: lo aprueba el click en la sesión, que recibe la forma «azure» y un lugar no vacío)
 if [ "$r" = "puerta:0" ] && [ "$(wc -l < "$TMP/cuadro.log" | tr -d ' ')" = 1 ] \
+   && grep -qF '"--kind","azure","--host","azure"' "$TMP/aprobacion-argv.json" \
    && grep -qF "az monitor metrics alert create -n espacio-80 -g rg-acme --scopes $ID --condition 'avg storage_percent > 80'" "$TMP/cuadro-texto.log" \
    && grep -qxF "[avg storage_percent > 80]" "$TMP/az-admin.log" && grep -qxF "[$ID]" "$TMP/az-admin.log" \
-   && registro | grep '"accion":"azure".*"aprobacion":"cuadro-propio".*"exit":0' >/dev/null; then
+   && registro | grep '"accion":"azure".*"aprobacion":"click-en-la-sesion".*"exit":0' >/dev/null; then
   ok "T2 AzureAdmin_PorLaPuerta_CuadroConElComandoEnteroYConstancia"
 else no "T2 · $r · cuadros=$(wc -l < "$TMP/cuadro.log") · $(head -c 300 "$TMP/err") · registro: $(registro | tail -1)"; fi
 

@@ -277,7 +277,7 @@ const shown = (l) => (l.also.length ? `${l.name} (el mismo clon que ${l.also.joi
 // ── los nombres viejos después de la fecha de retiro ──────────────────────────────────────
 // Durante el renombre a inglés un nombre viejo sigue andando en silencio y cada uso se anota en
 // ~/.tycon/state/legacy-names.jsonl. Pasada `retire_after` del mapa (scripts/lib/renames.json), si esta
-// máquina anotó usos en los últimos 14 días, UNA línea dice cuáles y dónde cambiarlos: el retiro saca los nombres
+// máquina anotó usos en los últimos 7 días, UNA línea dice cuáles y dónde cambiarlos: el retiro saca los nombres
 // viejos y lo que todavía los usa dejaría de andar. Antes de la fecha, nada (el silencio de la transición es a propósito).
 // Vive en este aviso y no en un hook propio: es el aviso de arranque sobre el estado del arnés en esta máquina, y un hook
 // nuevo pedía registrarlo en el instalador, el banco y Codex para una línea que vive hasta el retiro. Lee el mapa
@@ -290,7 +290,7 @@ const readVar = (() => {
     return (n) => readEnv(n, { where: 'scripts/hooks/branch-guard-notice.js' });
   } catch { return (n) => process.env[n]; }
 })();
-const LEGACY_WINDOW_DAYS = 14;
+const LEGACY_WINDOW_DAYS = 7;
 const LEGACY_MAX_ITEMS = 4;
 const LEGACY_MAX_SCRIPTS = 3;
 // un nombre del mapa (sin espacios, comillas ni barras invertidas) y un guion relativo a su repo: lo que anota legacy-names.js

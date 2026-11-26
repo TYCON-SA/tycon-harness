@@ -294,11 +294,11 @@ fi
 # ---------------------------------------------------------------- T22. registro
 node -e 'const d=require(process.argv[1]);const t=[...d.diarias,...(d.semanales||[])];process.exit(t.some(x=>x.raiz==="arnes"&&x.ruta==="tests/label-prs.test.sh")?0:1)' "$AQUI/scripts/tests/suites.json" \
   && ok "la suite está registrada en suites.json" || no "la suite no está en suites.json"
-# El índice de piezas vive en guides/piezas-del-arnes.md y el README no las
+# El índice de piezas vive en guides/harness-pieces.md y el README no las
 # lista: la pieza tiene que estar nombrada en alguno de los dos (mismo criterio que readme-index.test.js).
-grep -q "scripts/ci/label-prs.sh" "$AQUI/guides/piezas-del-arnes.md" "$AQUI/README.md" \
+grep -q "scripts/ci/label-prs.sh" "$AQUI/guides/harness-pieces.md" "$AQUI/README.md" \
   && ok "la guía de piezas (o el README) nombra el guion" \
-  || no "ni guides/piezas-del-arnes.md ni README.md nombran scripts/ci/label-prs.sh"
+  || no "ni guides/harness-pieces.md ni README.md nombran scripts/ci/label-prs.sh"
 
 echo "─────────────"
 [ $fallos -eq 0 ] && { echo "✅ label-prs: todo verde"; exit 0; } || { echo "❌ label-prs: $fallos falla(s)"; exit 1; }
