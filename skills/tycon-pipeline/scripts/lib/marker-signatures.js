@@ -664,7 +664,20 @@ function cmdApprovePending(argv) {
   const leido = PA.leerRegistro(registro);
   if (leido.ilegibles.length) { console.error(`marker.js approve-pending: el registro de aprobaciones tiene renglones que no se leen (${leido.ilegibles.join(', ')}): no se firma sobre un registro roto.`); process.exit(1); }
   // en el chequeo antes de la ventana sale 1: sin eso la ventana se abre para una firma que no escribe nada
-  if (leido.lineas.some((x) => !PA.motivoDe(x.valor) && x.valor.id === id)) { console.error(`✅ ${id} ya estaba aprobado: no escribí nada.`); process.exit(PREVIO ? 1 : 0); }
+  // una aprobación que ya está vale para el commit que se arma si el pendiente ya estaba abierto en HEAD, o si HEAD no la
+  // tiene: un pendiente cerrado y commiteado que se reabre pide una aprobación nueva, y la vieja no la reemplaza. Sin
+  // poder leer HEAD, como antes: cualquier aprobación del código
+  let deHead = null;
+  try {
+    const CP = require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'ci', 'check-pending-approvals.js'));
+    const todoHead = CP.deGit(repo, `HEAD:${PA.TODO}`);
+    if (todoHead != null) {
+      deHead = { abierto: PA.pendientesAbiertos(todoHead).some((p) => p.codigo === id),
+        lineas: new Set(PA.leerRegistro(CP.registroDeGit(repo, 'HEAD') || '').lineas.map((x) => x.texto)) };
+    }
+  } catch (_) { deHead = null; }
+  const vale = (x) => !PA.motivoDe(x.valor) && x.valor.id === id && (!deHead || deHead.abierto || !deHead.lineas.has(x.texto));
+  if (leido.lineas.some(vale)) { console.error(`✅ ${id} ya estaba aprobado: no escribí nada.`); process.exit(PREVIO ? 1 : 0); }
   let maquina = null;
   try { maquina = require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'machine-id.js')).huella().huella || null; } catch (_) { /* va sin máquina */ }
   const linea = PA.lineaNueva({ id, maquina });
