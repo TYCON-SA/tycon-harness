@@ -54,6 +54,8 @@ function loadReader(tree, target, readers) {
   const f = path.join(tree, 'scripts', 'lib', target.reader);
   if (!fs.existsSync(f)) return null;
   const r = require(f);
+  // el perfil valida el buzón de un conector con los conectores de buzón de este árbol (el lector no los carga solo)
+  if (target.reader === 'operations-config.js') { try { require(path.join(tree, 'scripts', 'lib', 'integrations.js')).giveMailboxConnectors(r); } catch (_) { /* sin integraciones, el lector solo */ } }
   return r && typeof r.parse === 'function' ? r : null;
 }
 
@@ -324,7 +326,8 @@ function instinctsLine(i) {
 function mailboxSection(m) {
   const s = el('section', {}, el('h2', { text: 'El buzón de ejecuciones' }), el('p', { class: 'muted', text: 'Sólo lectura: la llave es una credencial y esta página no la muestra ni la guarda. Se cambia en el archivo de la capa del equipo (scripts/metrics/corridas-buzon.json).' }));
   if (!m || !m.hay) { s.append(el('p', { text: m && m.problema ? 'El buzón no se pudo leer: ' + m.problema : 'sin buzón: esta organización no sube ejecuciones' }), instinctsLine(S.instincts)); return s; }
-  s.append(el('ul', {},
+  if (m.proveedor) s.append(el('ul', {}, el('li', { text: 'Servicio: ' + m.proveedor }), el('li', { text: 'Dónde: ' + (m.destino || 'sin destino') }), el('li', { text: 'Vence: ' + m.vence })));
+  else s.append(el('ul', {},
     el('li', { text: 'Cuenta: ' + m.cuenta }), el('li', { text: 'Contenedor: ' + m.contenedor }),
     el('li', { text: 'Política: ' + (m.politica || 'sin nombre') }), el('li', { text: 'Vence: ' + m.vence }),
     el('li', { text: 'Permisos propios de la firma: ' + (m.permisos_propios || 'ninguno (los toma de la política)') })));
@@ -391,6 +394,10 @@ function mailboxSummary(tree, file) {
   }
   const lc = lib.leerConfig(['cuenta', 'contenedor', 'sas', 'vence'], file || undefined);
   if (!lc.cfg) return lc.estado === 'sin_config' ? { hay: false } : { hay: false, problema: lc.motivo };
+  // la llave de un conector de buzón: el proveedor, su destino (el bucket) y el vencimiento; nunca el secreto
+  if (lc.cfg.provider !== undefined && lc.cfg.provider !== 'azure-blob') {
+    return { hay: true, proveedor: lc.cfg.provider, destino: typeof lc.cfg.destino === 'string' ? lc.cfg.destino : null, vence: lc.cfg.vence };
+  }
   const firma = new URLSearchParams(lc.cfg.sas);
   return {
     hay: true,

@@ -40,7 +40,7 @@ node "$ARNES/scripts/lib/tycon-config.js" get paths.operations < /dev/null; echo
 Con `operations.platform`:
 
 **azure**: los comandos de Azure DevOps —encontrar el proceso del tablero, ver si ya hay una corrida en marcha, encolar
-si no hay ninguna y seguirla de fondo con un tope de 40 minutos— están en `~/.claude/tycon-harness/guides/integrations/ado-en-el-nucleo.md`,
+si no hay ninguna y seguirla de fondo con un tope de 40 minutos— están en `~/.claude/tycon-harness/guides/integrations/ado-in-the-core.md`,
 §«El tablero». Seguilos tal cual: no se encola otra corrida si ya hay una, y si encolar falla, decí el error tal cual.
 
 **github** (`REPO=<org>/<repo>`):
@@ -98,7 +98,7 @@ Traer la página de `main` del repo de operaciones, **sin tocar el checkout de n
 ```bash
 # con clon (paths.operations): sólo actualiza la referencia remota, no mueve la carpeta de trabajo
 git -C "$OPS" fetch --quiet origin main < /dev/null && git -C "$OPS" show origin/main:artifacts/tablero-del-arnes.html > "$DIR/tablero-del-arnes.html"; echo "rc=$?"
-# sin clon, Azure DevOps: el comando está en ~/.claude/tycon-harness/guides/integrations/ado-en-el-nucleo.md, §«El tablero»
+# sin clon, Azure DevOps: el comando está en ~/.claude/tycon-harness/guides/integrations/ado-in-the-core.md, §«El tablero»
 # sin clon, GitHub:
 gh api "repos/$REPO/contents/artifacts/tablero-del-arnes.html?ref=main" -H "Accept: application/vnd.github.raw" < /dev/null > "$DIR/tablero-del-arnes.html"; echo "rc=$?"
 ```
