@@ -118,7 +118,7 @@ Dos reglas, las mismas que sigue el equipo:
 
 1. **Lo que ejecuta la máquina, en inglés**: nombres de archivos, opciones, variables, claves de configuración,
    funciones. Los mensajes y los comentarios pueden ir en castellano. La guía es
-   [`guides/maintaining/nombres-en-ingles.md`](../guides/maintaining/nombres-en-ingles.md). La CI lo controla en el
+   [`guides/maintaining/english-names.md`](../guides/maintaining/english-names.md). La CI lo controla en el
    paso `spanish-names`; si salta, renombrá a inglés lo que señala.
 2. **Los ejemplos, con nombres inventados** (`acme`, «Cliente A»): ningún cliente, persona, servidor o máquina de
    verdad, ni en el código ni en las pruebas ni en la documentación. Lo frena el control de nombres de TYCON

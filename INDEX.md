@@ -44,9 +44,9 @@ la fila aplica.
 | **Agregar o tocar una integración** (avisos, registro de horas, índice de código, revisores propios, cualquier herramienta de afuera) — la regla innegociable: el núcleo no nombra herramientas | `guides/constitution.md` |
 | Memoria persistente con engram (si la integración está prendida) | `guides/integrations/engram-workflow.md` |
 | Commit, push, merge, cualquier cosa de git | `guides/git-commit-conventions.md` |
-| Nombrar algo que ejecuta la máquina · frenó el freno de castellano · renombrar sin romper a nadie (`renames.json`) | `guides/maintaining/nombres-en-ingles.md` |
-| Qué palabra va en una guía en castellano (historia, revisor, ejecución, arnés, portón, historial) · avisó el control de las palabras de las guías | `guides/maintaining/vocabulario.md` |
-| Escribir o revisar los comentarios del código (qué hace y por qué, en presente; sin historia ni referencias internas) | `guides/maintaining/estilo-de-codigo.md` |
+| Nombrar algo que ejecuta la máquina · frenó el freno de castellano · renombrar sin romper a nadie (`renames.json`) | `guides/maintaining/english-names.md` |
+| Qué palabra va en una guía en castellano (historia, revisor, ejecución, arnés, portón, historial) · avisó el control de las palabras de las guías | `guides/maintaining/vocabulary.md` |
+| Escribir o revisar los comentarios del código (qué hace y por qué, en presente; sin historia ni referencias internas) | `guides/maintaining/code-style.md` |
 | Sumar o actualizar una skill de terceros · de quién es cada cosa y con qué licencia | el manifiesto `scripts/publishing/third-party-skills.json` + `guides/maintaining/publicacion-espejo.md` §«Las skills de terceros» |
 | Correr 2 pipelines/stories en paralelo en el mismo repo · mergear sin congelar el working tree del dev · aislar escrituras de agentes paralelos | `guides/git-worktrees.md` (helper: `scripts/tools/tycon-worktree.sh`) |
 | Planificación de cambios no triviales | `guides/workflow-orchestration.md` |
@@ -96,7 +96,7 @@ la fila aplica.
 | Frontend React/TS de plugins Bizuit (paquete bizuit) | packs/bizuit/guides/bizuit-plugin-react.md |
 | Frontend Next.js (App Router) de plugins Bizuit (paquete bizuit) | packs/bizuit/guides/bizuit-plugin-nextjs.md |
 | La spec de un proceso BPMN de BIZUIT, o por qué uno «pasó todos los controles» sin sus reglas (paquete bizuit) | packs/bizuit/guides/bizuit-bpmn-spec-contract.md |
-| Mantener el arnés: publicar, el banco de controles, el catálogo de reglas, la auditoría, el costo del pipeline, el lado Codex, los procesos de la noche | `guides/maintaining/mantener-el-arnes.md` |
+| Mantener el arnés: publicar, el banco de controles, el catálogo de reglas, la auditoría, el costo del pipeline, el lado Codex, los procesos de la noche | `guides/maintaining/maintaining-the-harness.md` |
 
 
 ---
@@ -132,4 +132,4 @@ aplica. Setup (opcional, por dev): `guides/integrations/codegraph-mcp.md`.
 
 El setup por máquina y el opcional (la herramienta de horas, CodeGraph), el mantenimiento y el troubleshooting
 viven en **[INSTALL.md](INSTALL.md)**: onboarding humano de una sola vez, no contexto de cada sesión. Cómo instala,
-actualiza, vuelve atrás y desinstala el arnés, en una sola guía: `guides/maintaining/mecanismo-de-instalacion.md`.
+actualiza, vuelve atrás y desinstala el arnés, en una sola guía: `guides/maintaining/installation-mechanism.md`.
