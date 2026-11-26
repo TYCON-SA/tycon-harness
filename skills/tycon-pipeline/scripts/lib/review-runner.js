@@ -211,36 +211,75 @@ function readAnswer(runner, { stdout = '', stderr = '', code = 0, fileText = nul
 function launchable(bin, { platform = process.platform, env = process.env, separator = ';' } = {}) {
   const nombre = String(bin || '');
   if (platform !== 'win32' || !nombre) return { bin: nombre || null, pre: [] };
-  if (/[\\/]/.test(nombre)) return programaDelAtajo(nombre);
-  const exts = String(env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').map((e) => e.toLowerCase()).filter((e) => ['.com', '.exe', '.bat', '.cmd'].includes(e));
-  // en cada carpeta, primero lo que Node lanza solo (.com, .exe) y después los atajos; un nombre que ya trae la
-  // extensión se busca tal cual
-  const orden = /\.(com|exe|bat|cmd)$/i.test(nombre) ? [''] : [...exts.filter((e) => e === '.com' || e === '.exe'), ...exts.filter((e) => e === '.bat' || e === '.cmd')];
+  const ctx = { env, separator };
+  if (/[\\/]/.test(nombre)) return programaDelAtajo(nombre, ctx);
   let primerMotivo = null;
-  for (const dir of String(env.PATH || env.Path || '').split(separator).map((d) => d.trim().replace(/^"|"$/g, '')).filter(Boolean)) {
-    for (const f of orden.map((e) => path.join(dir, `${nombre}${e}`)).filter(esArchivo)) {
-      // un atajo que no se entiende no corta la búsqueda: más adelante en el PATH puede estar el programa
-      const l = programaDelAtajo(f);
-      if (l.bin) return l;
-      if (!primerMotivo) primerMotivo = l.motivo;
-    }
+  for (const f of enElPath(nombre, ['.com', '.exe', '.bat', '.cmd'], ctx)) {
+    // un atajo que no se entiende no corta la búsqueda: más adelante en el PATH puede estar el programa
+    const l = programaDelAtajo(f, ctx);
+    if (l.bin) return l;
+    if (!primerMotivo) primerMotivo = l.motivo;
   }
   return primerMotivo ? { bin: null, motivo: primerMotivo } : { bin: nombre, pre: [] };
 }
 
-/** En Windows, el archivo `f` listo para lanzar sin shell: un `.cmd`/`.bat` por su programa (cmd-shim), lo demás tal cual. */
-function programaDelAtajo(f) {
+/**
+ * Los archivos de `nombre` en el PATH de Windows, en orden: en cada carpeta, primero lo que Node lanza solo (.com,
+ * .exe) y después los atajos, entre las extensiones de `permitidas` que están en PATHEXT. Un nombre que ya trae la
+ * extensión se busca tal cual.
+ */
+function enElPath(nombre, permitidas, { env, separator }) {
+  const exts = String(env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').map((e) => e.toLowerCase()).filter((e) => permitidas.includes(e));
+  const orden = /\.(com|exe|bat|cmd)$/i.test(nombre)
+    ? (permitidas.includes(path.extname(nombre).toLowerCase()) ? [''] : [])
+    : [...exts.filter((e) => e === '.com' || e === '.exe'), ...exts.filter((e) => e === '.bat' || e === '.cmd')];
+  const hallados = [];
+  for (const dir of String(env.PATH || env.Path || '').split(separator).map((d) => d.trim().replace(/^"|"$/g, '')).filter(Boolean)) {
+    for (const f of orden.map((e) => path.join(dir, `${nombre}${e}`))) if (esArchivo(f)) hallados.push(f);
+  }
+  return hallados;
+}
+
+/**
+ * En Windows, el archivo `f` listo para lanzar sin shell: un `.cmd`/`.bat` por lo que dice el atajo de npm (cmd-shim),
+ * lo demás tal cual. El atajo nombra su programa (`SET "_prog=<prog>"`, sacado de la primera línea del destino), las
+ * banderas de esa línea y el destino (`"%_prog%" <banderas> "%dp0%\<destino>" %*`): con Node se usa este mismo Node;
+ * otro programa (bun) va el que está al lado del atajo o el primero del PATH que Node lanza solo. El atajo de un `.exe`
+ * no tiene programa: el destino se lanza directo.
+ */
+function programaDelAtajo(f, ctx) {
   if (!/\.(cmd|bat)$/i.test(f)) return { bin: f, pre: [] };
   let texto = '';
   try { texto = fs.readFileSync(f, 'utf8'); } catch (e) { return { bin: null, motivo: `no pude leer ${f} (${e.code || e.message})` }; }
-  // cmd-shim: `"%dp0%\<programa>" %*` (o `%~dp0`), relativo a la carpeta del atajo
-  const m = /"%~?dp0%?\\?([^"%]+)"\s+%\*/i.exec(texto);
-  const destino = m ? path.join(path.dirname(f), ...m[1].split(/[\\/]+/).filter(Boolean)) : null;
+  const carpeta = path.dirname(f);
+  const ruta = (rel) => path.join(carpeta, ...rel.split(/[\\/]+/).filter(Boolean));
+  const noSe = (por) => ({ bin: null, motivo: `${f} es un atajo de Windows que no sé lanzar sin shell (${por})` });
+  const conProg = /"%_prog%"([^"\r\n]*)"%~?dp0%?\\?([^"%]+)"\s+%\*/i.exec(texto);
+  if (conProg) {
+    const prog = (/SET "_prog=([^"%]+)"/i.exec(texto) || [])[1];
+    if (!prog) return noSe('no dice su programa');
+    if (prog.includes('=')) return noSe(`su primera línea pone una variable (${prog}): el atajo la toma por el programa`);
+    const banderas = conProg[1].trim().split(/\s+/).filter(Boolean);
+    if (banderas.some((x) => /[%"^&|<>]/.test(x))) return noSe('sus banderas usan variables o comillas de cmd');
+    const destino = ruta(conProg[2]);
+    if (!esArchivo(destino)) return noSe(`su programa no está: ${destino}`);
+    let bin;
+    if (/^node(\.exe)?$/i.test(prog)) bin = process.execPath;
+    else {
+      const alLado = path.join(carpeta, `${prog}.exe`);
+      bin = esArchivo(alLado) ? alLado : enElPath(prog, ['.com', '.exe'], ctx)[0];
+      if (!bin) return noSe(`corre con ${prog}, y no hay un ${prog}.exe al lado ni en el PATH`);
+    }
+    return { bin, pre: [...banderas, destino] };
+  }
+  // sin programa: el atajo lanza su destino directo (un .exe; un .js, como los atajos viejos)
+  const directo = /"%~?dp0%?\\?([^"%]+)"\s+%\*/i.exec(texto);
+  const destino = directo ? ruta(directo[1]) : null;
   if (destino && esArchivo(destino)) {
     if (/\.(c|m)?js$/i.test(destino)) return { bin: process.execPath, pre: [destino] };
     if (/\.(exe|com)$/i.test(destino)) return { bin: destino, pre: [] };
   }
-  return { bin: null, motivo: `${f} es un atajo de Windows que no sé lanzar sin shell (no es el atajo de npm, o su programa no está)` };
+  return noSe('no es el atajo de npm, o su programa no está');
 }
 
 module.exports = { DEFAULT_ORDER, LIMIT_RE, loadIntegration, runnerOrder, pickRunners, commandFor, resolveBin, launchable, readAnswer, isLimit, tokensOf, usageOf };
