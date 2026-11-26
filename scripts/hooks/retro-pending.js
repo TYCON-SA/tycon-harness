@@ -26,9 +26,10 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
 //           una copia hermana del mismo repo (otro worktree) ni corta ni se avisa, como antes.
 //   notice (SessionStart): lista los merges anotados que NINGUNA retrospectiva cubrió todavía,
 //           con el comando para lanzarla — pero SOLO los del repo/workspace de la sesión (el cwd).
-//           Los pendientes de OTROS proyectos se resumen en una línea informativa SIN instrucción
-//           de lanzamiento: se reclaman al abrir sesión en su propio repo. Un aviso global convertiría
-//           cualquier sesión en la mula de carga de todos los proyectos.
+//           Los de OTROS proyectos no se juzgan al arrancar: se reclaman al abrir sesión en su propio
+//           repo. Un aviso global convertiría cualquier sesión en la mula de carga de todos los proyectos.
+//           Tiene un tope total (TYCON_RETRO_NOTICE_MS, 3 s) y no le pregunta a la plataforma: lo que no
+//           llega a mirar lo reclama el cierre del turno, y lo dice en una línea.
 //           Escape hatch: TYCON_RETRO_PENDING_SCOPE=all restaura el listado global con instrucción.
 //           El backstop de "nadie abre sesión en ese repo" es retro-staleness-notice.js.
 // LÍMITES DECLARADOS de la atribución. No se arreglan a propósito: los tres viven en el regex del `cd` de la lib
@@ -587,13 +588,15 @@ function identidadParaLaCapa(dir) {
 
 /**
  * Pregunta por los pedidos que esperan (los que toca, ver la cabecera del bloque) y anota lo que se supo. Devuelve, por
- * entrada que sigue esperando, lo último que se sabe (`{ estado, motivo }`, del archivo de consultas).
+ * entrada que sigue esperando, lo último que se sabe (`{ estado, motivo }`, del archivo de consultas). `filtro` deja
+ * sólo los pedidos que importan a quien llama (el cierre del turno: los de su sesión y los de cerca); con
+ * `preguntar: false` no consulta a la plataforma y devuelve lo que ya se sabía (el aviso de arranque).
  */
-function resolverPedidos() {
+function resolverPedidos({ filtro = null, preguntar = true } = {}) {
   const saber = new Map();
-  const esperan = entradasCorregidas().filter((e) => e.estado === 'esperando' && e.pr && !e.exento);
+  const esperan = entradasCorregidas().filter((e) => e.estado === 'esperando' && e.pr && !e.exento && (!filtro || filtro(e)));
   if (!esperan.length) return saber;
-  const apagada = process.env.TYCON_RETRO_ASK_PR === '0';
+  const apagada = !preguntar || process.env.TYCON_RETRO_ASK_PR === '0';
   const consultas = leerConsultas();
   let hechas = 0;
   let cambio = false;
@@ -681,15 +684,23 @@ function dashboardsDe(entry) {
 // sufijo, sha que empieza como el del merge) viven en scripts/lib/retro-coverage.js, la misma copia que usa el barrido
 // de cada noche (scripts/metrics/retro-sweep.js). Un archivo que es `null` revienta al llegar a él, como siempre.
 const RETRO_COVERAGE = require(path.join(__dirname, '..', 'lib', 'retro-coverage.js'));
+// Una respuesta por entrada y proceso: el juicio del registro y la cuenta de `--report` preguntan por las mismas.
+const cubiertas = new Map();
 function coveredByMetrics(entry) {
+  const clave = `${entry.repoPath}|${entry.principal || ''}|${entry.sha}`;
+  if (!cubiertas.has(clave)) cubiertas.set(clave, cubiertaPorAlguno(entry));
+  return cubiertas.get(clave);
+}
+function cubiertaPorAlguno(entry) {
   for (const dir of dashboardsDe(entry)) {
     const lista = RETRO_COVERAGE.metricsIn(dir);
     if (!lista) continue;
     for (const m of lista) {
       if (m.roto) throw new TypeError(`metrics null en ${dir}`);
+      // el commit primero: comparar el repo de una copia le pregunta a git, y cada tablero trae cientos de archivos
+      if (!RETRO_COVERAGE.sameSha(m.sha, String(entry.sha))) continue;
       // la carpeta principal es el mismo repo: es donde corre el latido cuando la copia del pedido ya no está
-      const delRepo = RETRO_COVERAGE.sameRepo(m, entry.repoPath) || (entry.principal && RETRO_COVERAGE.sameRepo(m, entry.principal));
-      if (delRepo && RETRO_COVERAGE.sameSha(m.sha, String(entry.sha))) return true;
+      if (RETRO_COVERAGE.sameRepo(m, entry.repoPath) || (entry.principal && RETRO_COVERAGE.sameRepo(m, entry.principal))) return true;
     }
   }
   return false;
@@ -698,8 +709,8 @@ function coveredByMetrics(entry) {
 function cubiertaPorUnAnulado(entry) {
   for (const dir of dashboardsDe(entry)) {
     for (const m of RETRO_COVERAGE.anuladosIn(dir) || []) {
-      const delRepo = RETRO_COVERAGE.sameRepo(m, entry.repoPath) || (entry.principal && RETRO_COVERAGE.sameRepo(m, entry.principal));
-      if (delRepo && RETRO_COVERAGE.sameSha(m.sha, String(entry.sha))) return true;
+      if (!RETRO_COVERAGE.sameSha(m.sha, String(entry.sha))) continue;
+      if (RETRO_COVERAGE.sameRepo(m, entry.repoPath) || (entry.principal && RETRO_COVERAGE.sameRepo(m, entry.principal))) return true;
     }
   }
   return false;
@@ -708,9 +719,13 @@ function cubiertaPorUnAnulado(entry) {
  * El registro, juzgado: `pendientes` (lo que se reclama), `esperando` (pedidos que no entraron todavía: no se reclaman)
  * y `fueraDeMain` (lo que un latido no puede pagar: una entrada de pedido cuyo commit no está en la línea de main, o una
  * que sólo cubría un latido anulado; no frenan y el aviso de arranque las lista con `--correct`).
+ * Juzgar una entrada cuesta git en su carpeta y leer los tableros de su copia (cientos de archivos cada uno): con miles
+ * de entradas en el registro, juzgarlas todas tardaba un minuto. `filtro` deja sólo las que le importan a quien llama, y
+ * `hasta` (una hora en milisegundos) corta: lo que no llegó a juzgar va a `sinMirar`. Se juzga de la más nueva a la
+ * más vieja, para que lo que quede sin mirar sea lo más viejo; cada lista sale en el orden del registro.
  */
-function estadoDelRegistro() {
-  const out = { pendientes: [], esperando: [], fueraDeMain: [] };
+function estadoDelRegistro({ filtro = null, hasta = null } = {}) {
+  const out = { pendientes: [], esperando: [], fueraDeMain: [], sinMirar: [] };
   // Exento (sólo tests/docs): contado, nunca reclamado — ni por el gate ni por el aviso.
   const todas = entradasCorregidas().filter((e) => !e.exento);
   // El repo, no la copia: el mismo commit anotado desde dos copias del mismo repo (dos worktrees) es UNA entrega, y se
@@ -720,27 +735,60 @@ function estadoDelRegistro() {
   const sabe = (e) => Boolean(e.pr || e.estado || e.corregida);
   const elegida = new Map();
   for (const e of todas) { const p = elegida.get(clave(e)); if (!p || (!sabe(p) && sabe(e))) elegida.set(clave(e), e); }
-  for (const e of todas) {
-    if (elegida.get(clave(e)) !== e) continue;
-    if (e.estado === 'abandonado') continue;
-    if (e.estado === 'esperando') { out.esperando.push(e); continue; }
-    if (coveredByMetrics(e)) continue;
-    // Una entrada vieja de un repo de laboratorio que sigue en pie no se reclama (cabecera). Si la carpeta ya no está,
-    // no se puede juzgar: se reclama como siempre.
-    if (fs.existsSync(e.repoPath) && juzgarLaboratorio(e.repoPath).laboratorio) continue;
-    if (!e.corregida) {
-      if (cubiertaPorUnAnulado(e)) { out.fueraDeMain.push({ ...e, porAnulado: true }); continue; }
-      // Un pedido creado no es un merge. Sin su número no se le puede preguntar a la plataforma si entró ni con qué
-      // commit: la entrada quedó por la punta de la rama, que no es la fusión aunque ya esté en la línea de main. No
-      // frena (se ve en el aviso de arranque, con su `--correct`), ni cuando no se puede leer la línea de main.
-      if (!e.pr && e.estado !== 'entro' && esPedido(e)) { out.fueraDeMain.push({ ...e, sinNumero: true }); continue; }
-      if ((e.pr || e.estado === 'entro' || esPedido(e)) && enLineaDeMain(e) === false) { out.fueraDeMain.push(e); continue; }
-    }
-    out.pendientes.push(e);
+  const aJuzgar = todas.filter((e) => elegida.get(clave(e)) === e && (!filtro || filtro(e)));
+  for (const e of aJuzgar.reverse()) {
+    if (hasta !== null && Date.now() >= hasta) { out.sinMirar.push(e); continue; }
+    const juicio = juzgarEntrada(e);
+    if (juicio) out[juicio.lista].push(juicio.entrada);
   }
+  for (const lista of Object.values(out)) lista.reverse();
   return out;
 }
-function pendingEntries() { return estadoDelRegistro().pendientes; }
+/** En qué lista de `estadoDelRegistro` cae una entrada (`{ lista, entrada }`), o null si no se reclama. */
+function juzgarEntrada(e) {
+  if (e.estado === 'abandonado') return null;
+  if (e.estado === 'esperando') return { lista: 'esperando', entrada: e };
+  if (coveredByMetrics(e)) return null;
+  // Una entrada vieja de un repo de laboratorio que sigue en pie no se reclama (cabecera). Si la carpeta ya no está,
+  // no se puede juzgar: se reclama como siempre.
+  if (fs.existsSync(e.repoPath) && juzgarLaboratorio(e.repoPath).laboratorio) return null;
+  if (!e.corregida) {
+    if (cubiertaPorUnAnulado(e)) return { lista: 'fueraDeMain', entrada: { ...e, porAnulado: true } };
+    // Un pedido creado no es un merge. Sin su número no se le puede preguntar a la plataforma si entró ni con qué
+    // commit: la entrada quedó por la punta de la rama, que no es la fusión aunque ya esté en la línea de main. No
+    // frena (se ve en el aviso de arranque, con su `--correct`), ni cuando no se puede leer la línea de main.
+    if (!e.pr && e.estado !== 'entro' && esPedido(e)) return { lista: 'fueraDeMain', entrada: { ...e, sinNumero: true } };
+    if ((e.pr || e.estado === 'entro' || esPedido(e)) && enLineaDeMain(e) === false) return { lista: 'fueraDeMain', entrada: e };
+  }
+  return { lista: 'pendientes', entrada: e };
+}
+// Las carpetas que puede ser la vigente de una entrada, sin preguntarle a git: la anotada si parece la raíz de un repo;
+// si no, también su principal y la del nombre sin el sufijo de copia (las que elige `carpetaVigente`). Una entrada cuya
+// carpeta vigente está dentro de `cwd`, o lo contiene, pasa el filtro: sirve para no juzgar las que no pueden ser de la
+// sesión. Límite declarado: una copia con `.git` que git ya no reconoce (corrupta) cuenta como raíz.
+function carpetasPosibles(e) {
+  const ruta = String(e.repoPath || '');
+  if (pareceRaiz(ruta)) return [real(ruta)];
+  const base = path.basename(ruta);
+  const sinSufijo = SUFIJO_DE_COPIA.test(base) ? path.join(path.dirname(ruta), base.replace(SUFIJO_DE_COPIA, '')) : null;
+  return [ruta, e.principal, sinSufijo].filter(Boolean).map(real);
+}
+// `.git` es una carpeta, o un archivo que apunta a una carpeta de git que existe
+function pareceRaiz(dir) {
+  try {
+    const g = path.join(dir, '.git');
+    if (fs.statSync(g).isDirectory()) return true;
+    const m = /^gitdir:\s*(.+?)\s*$/m.exec(fs.readFileSync(g, 'utf8'));
+    return Boolean(m) && fs.existsSync(path.resolve(dir, m[1]));
+  } catch { return false; }
+}
+// `conRepo`: también el repo de la entrada (su carpeta principal), que es lo que mira `belongsToCwd`
+function cercaPorRuta(e, cwd, { conRepo = false } = {}) {
+  const c = real(cwd);
+  const posibles = carpetasPosibles(e);
+  if (conRepo) posibles.push(identidadDeRepo(e));
+  return posibles.some((r) => underOrEqual(r, c) || underOrEqual(c, r));
+}
 // Lo que el ledger dice de los últimos `dias` días: cuántos pushes tuvieron su retrospectiva, cuántos
 // quedaron exentos y cuántos siguen sin ella. Es el número que hace visible la exención.
 function contarVentana(dias) {
@@ -758,6 +806,22 @@ function contarVentana(dias) {
     else c.pendientes++;
   }
   return c;
+}
+// Sólo las exentas de la ventana, sin juzgar la cobertura de nada: lo que cuenta el aviso de arranque. Cada push se
+// cuenta una vez, como en `contarVentana`.
+function contarExentas(dias) {
+  const desde = Date.now() - dias * 86400000;
+  const vistas = new Set();
+  let exentas = 0;
+  for (const e of entradasCorregidas()) {
+    const t = Date.parse(e.ts);
+    if (!t || t < desde) continue;
+    const key = `${real(e.repoPath)}@${e.sha}`;
+    if (vistas.has(key)) continue;
+    vistas.add(key);
+    if (e.exento) exentas++;
+  }
+  return exentas;
 }
 // El comando que paga la deuda: el latido. Lo usan el gate y el aviso de arranque.
 function launchHint(e) {
@@ -1529,7 +1593,7 @@ function juzgarPush(root, target) {
 }
 
 // ── gate (Stop) ────────────────────────────────────────────────────────────────────────────────
-// Cada merge pendiente se paga con SU archivo de métricas: `pendingEntries()` ya sacó los
+// Cada merge pendiente se paga con SU archivo de métricas: `estadoDelRegistro()` ya sacó los
 // cubiertos por `coveredByMetrics` y los exentos, así que acá sólo se decide A QUIÉN reclamar. Un
 // capturer lanzado no cuenta: sólo el archivo.
 //
@@ -1573,8 +1637,11 @@ function gate(event) {
   // legítimo ya cumplido gastaría presupuesto y del 4º merge en adelante la sesión no frenaría nunca
   // más — justo las sesiones largas, que son las que mergean varias veces.
   const limpio = () => { try { fs.unlinkSync(stateFile); } catch { /* no existía */ } };
-  resolverPedidos();
-  const pend = pendingEntries();
+  // Sólo se juzga (y se le pregunta a la plataforma por) lo que puede cortar o avisarse acá: los merges de esta sesión y
+  // los de cerca de su carpeta. Juzgar el registro entero tardaba medio minuto en cada cierre.
+  const deEsteCierre = (e) => e.sessionId === sid || cercaPorRuta(e, cwd);
+  resolverPedidos({ filtro: deEsteCierre });
+  const pend = estadoDelRegistro({ filtro: deEsteCierre }).pendientes;
   const mine = pend.filter((e) => e.sessionId === sid);
   // Merges de OTRA sesión en el repo de ÉSTA: el aviso de arranque
   // es un recordatorio y se puede ignorar — así una retro quedó 4 días sin correr. Acá se reclama
@@ -1686,8 +1753,11 @@ function belongsToCwd(entry, cwd) {
   return [real(carpetaVigente(entry)), identidadDeRepo(entry)].some((r) => underOrEqual(r, c) || underOrEqual(c, r));
 }
 // Lo que no frena y se dice al arrancar, sólo de este repo/workspace: los pedidos de los que no se sabe si entraron y las
-// entradas que un latido no puede pagar, cada una con el comando de `--correct`.
-function lineasQueNoFrenan(registro, saber, cwd) {
+// entradas que un latido no puede pagar, cada una con el comando de `--correct`. Más de NO_PAGABLES_EN_EL_AVISO van a un
+// archivo y el aviso dice cuántas son y dónde está la lista: 125 renglones en cada arranque no los lee nadie.
+const NO_PAGABLES_EN_EL_AVISO = 3;
+const NO_PAGABLES = path.join(STATE_DIR, 'retro-pending-no-pagables.txt');
+function lineasQueNoFrenan(registro, saber, cwd, hasta) {
   const out = [];
   const scopeAll = process.env.TYCON_RETRO_PENDING_SCOPE === 'all';
   const deAca = (e) => scopeAll || belongsToCwd(e, cwd);
@@ -1696,46 +1766,59 @@ function lineasQueNoFrenan(registro, saber, cwd) {
     if (s && s.estado === 'no-se') out.push(`ℹ️ retro-pending: no sé si el pedido ${e.pr} entró: ${s.motivo} (${e.repoPath}). No frena; se vuelve a preguntar en el próximo cierre.`);
   }
   const fuera = registro.fueraDeMain.filter(deAca);
+  const porQue = 'su commit no está en la línea de main, es de un pedido sin su número, o su latido se anuló';
+  // «ya estaba en main» pide tres llamadas a git por entrada: se mira sólo en el aviso corto y dentro del tope
+  const renglon = (e, conGit) => `${carpetaVigente(e)} @ ${e.sha} (${String(e.ts || '').slice(0, 16)}${e.porAnulado ? ', su latido se anuló' : e.sinNumero ? `, pedido sin su número${conGit && Date.now() < hasta && yaEstabaEnMain(e) ? `; su commit ya estaba en ${ramaCorta(e.branch) || 'main'} antes del pedido` : ''}` : ''}) → ${comandoDeCorregir(e)}`;
+  if (fuera.length > NO_PAGABLES_EN_EL_AVISO) {
+    try {
+      fs.mkdirSync(STATE_DIR, { recursive: true });
+      fs.writeFileSync(NO_PAGABLES, `# retro-pending: entradas de ${cwd} que un latido no puede pagar (${porQue}). No frenan; las corrige una persona con el commit que el pedido dejó en main. Escrito al arrancar, ${new Date().toISOString()}.\n${fuera.map((e) => renglon(e, false)).join('\n')}\n`);
+      out.push(`⚠️ retro-pending: ${fuera.length} entrada(s) de este proyecto que un latido no puede pagar (${porQue}): no frenan. La lista, con el comando que corrige cada una: ${NO_PAGABLES}`);
+      return out;
+    } catch { /* sin la lista escrita, van en el aviso */ }
+  }
   if (fuera.length) {
-    out.push(`⚠️ retro-pending: ${fuera.length} entrada(s) que un latido no puede pagar (su commit no está en la línea de main, es de un pedido sin su número, o su latido se anuló): no frenan. Las corrige una persona con el commit que el pedido dejó en main:`);
-    for (const e of fuera) out.push(`  - ${carpetaVigente(e)} @ ${e.sha} (${String(e.ts || '').slice(0, 16)}${e.porAnulado ? ', su latido se anuló' : e.sinNumero ? `, pedido sin su número${yaEstabaEnMain(e) ? `; su commit ya estaba en ${ramaCorta(e.branch) || 'main'} antes del pedido` : ''}` : ''}) → ${comandoDeCorregir(e)}`);
+    out.push(`⚠️ retro-pending: ${fuera.length} entrada(s) que un latido no puede pagar (${porQue}): no frenan. Las corrige una persona con el commit que el pedido dejó en main:`);
+    for (const e of fuera) out.push(`  - ${renglon(e, true)}`);
   }
   return out;
 }
+// El aviso de arranque tiene un tope total: lo que no llega a mirar lo reclama el cierre del turno, que juzga los merges
+// de su sesión y los de cerca. No le pregunta a la plataforma (eso lo hace el cierre del turno, con su tope por consulta)
+// ni juzga los merges de otros proyectos: los reclama la sesión que se abre en su repo. TYCON_RETRO_NOTICE_MS cambia el
+// tope; 0 no juzga nada.
+const TOPE_DEL_ARRANQUE_MS = 3000;
+function topeDelArranque() {
+  const v = String(process.env.TYCON_RETRO_NOTICE_MS || '').trim();
+  return /^\d+$/.test(v) ? Number(v) : TOPE_DEL_ARRANQUE_MS;
+}
 function notice(event) {
+  const tope = topeDelArranque();
+  const hasta = Date.now() + tope;
   const minAgeMs = Number(process.env.TYCON_RETRO_PENDING_MIN_AGE_MIN || 5) * 60000;
-  const saber = resolverPedidos();
-  const registro = estadoDelRegistro();
-  const noFrenan = lineasQueNoFrenan(registro, saber, event.cwd || process.cwd());
+  const scopeAll = process.env.TYCON_RETRO_PENDING_SCOPE === 'all';
+  const cwd = event.cwd || process.cwd();
+  const saber = resolverPedidos({ preguntar: false });
+  const registro = estadoDelRegistro({ filtro: scopeAll ? null : (e) => cercaPorRuta(e, cwd, { conRepo: true }), hasta });
+  const noFrenan = lineasQueNoFrenan(registro, saber, cwd, hasta);
+  if (registro.sinMirar.length) noFrenan.push(`ℹ️ retro-pending: el arranque mira el registro con un tope de ${tope / 1000} s y no llegó a mirar ${registro.sinMirar.length} entrada(s) de ${scopeAll ? 'todos los proyectos' : 'este proyecto'}, las más viejas: las reclama el cierre del turno de una sesión en su carpeta.`);
   const old = registro.pendientes.filter((e) => Date.now() - (Date.parse(e.ts) || 0) >= minAgeMs);
-  // La cuenta de la exención: se rinde SÓLO cuando hubo exenciones en la ventana — sin
-  // ellas no hay nada que rendir, y una línea más en cada arranque es ruido que se deja de leer.
-  const cuenta = contarVentana(30);
-  const cuentaLine = cuenta.exentos
-    ? `ℹ️ retro-pending (últimos ${cuenta.dias} días): ${cuenta.conRetro} push(es) a main con retrospectiva · ${cuenta.exentos} exento(s) por sólo tests/docs · ${cuenta.pendientes} sin retrospectiva. Detalle: node ${__filename} --report`
+  // La cuenta de la exención: se rinde SÓLO cuando hubo exenciones en la ventana — sin ellas no hay nada que rendir, y
+  // una línea más en cada arranque es ruido que se deja de leer. Al arrancar sólo se cuentan las exentas (no piden
+  // juzgar nada); la cuenta con y sin retrospectiva, que juzga cada push de la ventana, la da `--report`.
+  const exentas = contarExentas(30);
+  const cuentaLine = exentas
+    ? `ℹ️ retro-pending (últimos 30 días): ${exentas} push(es) a main exento(s) por sólo tests/docs. La cuenta con y sin retrospectiva: node ${__filename} --report`
     : null;
   const emitir = (cuerpo) => process.stdout.write(`<system-reminder>\n${cuerpo}\n</system-reminder>\n`);
   const extra = noFrenan.length ? noFrenan.join('\n') : null;
-  if (!old.length) { const cuerpo = [extra, cuentaLine].filter(Boolean).join('\n'); if (cuerpo) emitir(cuerpo); return; }
-  const scopeAll = process.env.TYCON_RETRO_PENDING_SCOPE === 'all';
-  const cwd = event.cwd || process.cwd();
   const local = scopeAll ? old : old.filter((e) => belongsToCwd(e, cwd));
-  const foreign = old.length - local.length;
-  // La línea de "otros proyectos" es informativa a propósito: sin repo, sin sha, sin launchHint —
-  // que el agente no tenga nada que lanzar. Cada pendiente se reclama en la sesión de SU repo.
-  const foreignLine = foreign
-    ? `ℹ️ Además hay ${foreign} merge(s) pendiente(s) de retrospectiva en OTROS proyectos — NO los lances desde esta sesión: se reclaman al abrir sesión en su propio repo (o TYCON_RETRO_PENDING_SCOPE=all para verlos).`
-    : null;
-  if (!local.length) {
-    const cuerpo = [extra, foreignLine, cuentaLine].filter(Boolean).join('\n');
-    if (cuerpo) emitir(cuerpo);
-    return;
-  }
+  if (!local.length) { const cuerpo = [extra, cuentaLine].filter(Boolean).join('\n'); if (cuerpo) emitir(cuerpo); return; }
   // de quién es cada uno, una vez: cada sesión que arranca en el repo ve la misma lista, y así sabe cuál le toca
   const sid = sessionIdOf(event);
-  const lines = local.map((e) => `  - ${carpetaVigente(e)} @ ${e.sha} (${String(e.ts || '').slice(0, 16)}, ${deQuien(e, sid)}${pagable(e) ? '' : ', ningún latido lo paga desde una copia'})${avisoYaEnMain(e)}`);
+  const lines = local.map((e) => `  - ${carpetaVigente(e)} @ ${e.sha} (${String(e.ts || '').slice(0, 16)}, ${deQuien(e, sid)}${pagable(e) ? '' : ', ningún latido lo paga desde una copia'})${Date.now() < hasta ? avisoYaEnMain(e) : ''}`);
   const scopeLabel = scopeAll ? '' : ' de ESTE proyecto';
-  process.stdout.write(`<system-reminder>\n🔴 retro-pending: ${local.length} merge(s) a main${scopeLabel} SIN retrospectiva (ningún metrics-*.json cubre ese repo+commit):\n${lines.join('\n')}\nLanzá el latido por cada uno, un segundo y sin modelo (${launchHint(local[0])}).${extra ? '\n' + extra : ''}${foreignLine ? '\n' + foreignLine : ''}${cuentaLine ? '\n' + cuentaLine : ''} Off: TYCON_RETRO_PENDING=0.\n</system-reminder>\n`);
+  process.stdout.write(`<system-reminder>\n🔴 retro-pending: ${local.length} merge(s) a main${scopeLabel} SIN retrospectiva (ningún metrics-*.json cubre ese repo+commit):\n${lines.join('\n')}\nLanzá el latido por cada uno, un segundo y sin modelo (${launchHint(local[0])}).${extra ? '\n' + extra : ''}${cuentaLine ? '\n' + cuentaLine : ''} Off: TYCON_RETRO_PENDING=0.\n</system-reminder>\n`);
 }
 
 function main() {

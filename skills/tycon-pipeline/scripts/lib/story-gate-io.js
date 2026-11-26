@@ -5,7 +5,7 @@
  *
  *   evaluate({ filePath, sessionId, cwd, via }) → { verdict, message|null, ctx }
  *
- * Fuentes de estado (todas bajo ~/.claude/.tycon-pipeline/):
+ * Fuentes de estado (todas bajo ~/.tycon/state/):
  *   active/<sid>.json   marker del pipeline (lo escribe marker.js)
  *   adhoc/<sid>.json    carril ad-hoc de la sesión: { reason, maxFiles, files[], declaredAt, lastTouch, via, by,
  *                       firmadaEn } (lo escribe `marker.js adhoc set` con la firma del dueño; el portón lo acepta sólo
@@ -267,8 +267,8 @@ function listOtherMarkers(stateDir, sessionId, filePath, problems) {
 }
 
 // ── ¿repo del harness? lo dice el remoto, no la carpeta ─────────────────────────────────────────
-// El criterio es UNO y vive en el arnés (~/.claude/tycon-harness/scripts/lib/harness-repo.js,
-// referencia-por-path como dispatch.js: TYCON_GUIDES_DIR · TCG · el enlace ~/.claude/tycon-harness). Sin ese
+// El criterio es UNO y vive en el arnés (~/.tycon/harness/scripts/lib/harness-repo.js,
+// referencia-por-path como dispatch.js: TYCON_GUIDES_DIR · TCG · la carpeta ~/.tycon/harness). Sin ese
 // lector estaría escrito tres veces —acá, en retro-pending.js y en unpushed-work-notice.js—, las tres por nombre de carpeta.
 // Si la lib no está (arnés atrasado en esta máquina) o no carga, decide la carpeta, que es el comportamiento
 // por defecto: nunca se rompe un Edit por esto. Pero lo dice por la salida de error, una vez por proceso.
@@ -391,6 +391,48 @@ function raizDeGit(dir) {
   } catch { return null; }
 }
 const realOMisma = (p) => { try { return fs.realpathSync.native(p); } catch (_) { return p; } };
+
+/**
+ * Las constancias de un repo, en disco: los archivos de `.tycon/`, `.github/` y `tasks/` (y de sus carpetas de primer
+ * nivel) y los de cada carpeta de ejecución (`.advisors/pipeline-runs/<id>/`, también en una subcarpeta de primer nivel),
+ * que el freno reconoce como constancia.
+ */
+function constanciasDelRepo(raiz) {
+  const lista = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }); } catch (_) { return []; } };
+  const out = [];
+  for (const d of ['.tycon', '.github', 'tasks']) {
+    for (const e of lista(path.join(raiz, d))) {
+      const p = path.join(raiz, d, e.name);
+      if (e.isFile()) out.push(p);
+      else if (e.isDirectory()) for (const f of lista(p)) if (f.isFile()) out.push(path.join(p, f.name));
+    }
+  }
+  const corridas = [path.join(raiz, '.advisors', 'pipeline-runs'), ...lista(raiz)
+    .filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules').map((e) => path.join(raiz, e.name, '.advisors', 'pipeline-runs'))];
+  for (const b of corridas) for (const e of lista(b)) if (e.isDirectory()) for (const f of lista(path.join(b, e.name))) if (f.isFile()) out.push(path.join(b, e.name, f.name));
+  return out.filter((p) => gate.signedRecordKind(p) !== null);
+}
+
+/**
+ * La constancia que es el mismo archivo que `abs` por un enlace duro (mismo `dev` e `ino`), en el repo de `abs` o en los
+ * de `carpetas`; null si no hay. Sólo se busca si `abs` existe y tiene más de un nombre: un sistema de archivos sin enlaces
+ * duros (FAT, exFAT) da `nlink` 1, y la regla no aplica.
+ */
+function constanciaDelMismoArchivo(abs, carpetas = []) {
+  let st;
+  try { st = fs.statSync(abs); } catch (_) { return null; }
+  if (!st.isFile() || st.nlink < 2) return null;
+  const raices = [...new Set([path.dirname(abs), ...carpetas].filter(Boolean).map((d) => raizDeGit(d)).filter(Boolean))];
+  for (const r of raices) {
+    for (const c of constanciasDelRepo(r)) {
+      try {
+        const sc = fs.statSync(c);
+        if (sc.dev === st.dev && sc.ino === st.ino) return c;
+      } catch (_) { /* se borró mientras se miraba */ }
+    }
+  }
+  return null;
+}
 
 /**
  * ¿El archivo (de código, fuera del repo de la corrida) está en el grupo de la historia abierta? `{ estado, repoDelArchivo,
@@ -625,7 +667,8 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
     if (fallos.size) appendLog(stateDir, 'gates.log', sessionId, { name: 'story-gate', status: 'unknown', file: abs, via: via || null, reason: [...fallos].join('; ') });
   };
   const roots = Array.isArray(installedRoots) ? installedRoots : defaultInstalledRoots();
-  const realFilePath = installedTree.realPath(abs);
+  // un enlace duro a una constancia del repo es la constancia: se mira como su ruta real
+  const realFilePath = constanciaDelMismoArchivo(abs, [cwd || process.cwd()]) || installedTree.realPath(abs);
   const realStateDir = installedTree.realPath(stateDir);
   const marker = readMarker(stateDir, sessionId);
   const declarado = readAdhoc(stateDir, sessionId);
@@ -740,5 +783,5 @@ module.exports = {
   DEFAULT_STATE_DIR, STALE_HOURS, WAIT_TURN_MAX_MS,
   waitingTurn, savePruned, readPruned, readMarker, readAdhoc, adhocFirmado, writeAdhoc, recordAdhocFile, anotarRutaDelCarril, archivosQueSuman, adhocPath, listOtherMarkers,
   repoContext, gateEnabledForRepo, appendLog, evaluate, grupoDelArchivo, isHarnessRepo, defaultInstalledRoots, topesDelCaminoCorto,
-  listaDelPlanDelegado,
+  listaDelPlanDelegado, constanciaDelMismoArchivo,
 };

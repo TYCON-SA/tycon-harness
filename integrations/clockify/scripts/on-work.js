@@ -15,7 +15,7 @@
 const lib = require('./lib.js');
 
 function handle(ev) {
-  if (!ev || typeof ev !== 'object') return {};
+  if (!ev || typeof ev !== 'object' || lib.stateMissing()) return {};
   const tool = (name) => lib.mcpTool(name, ev.mcpServer);
   const description = `Story ${ev.storyId || '?'}${ev.title ? ` — ${ev.title}` : ''}`.slice(0, 100);
   let found = null;

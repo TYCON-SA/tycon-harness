@@ -85,9 +85,6 @@
     "if (resto.some((f) => f.esBandera && /^--in-file(=|$)/.test(f.texto))) return escondido('el cuerpo de `az devops invoke` sale de un archivo (--in-file) y no se puede leer', 'az-bypass');",
     "return /^\\$|dev\\.azure\\.com|visualstudio\\.com|_apis/i.test(uri.texto) ? escondido('la dirección de `az rest` que escribe la arma la terminal: escribila tal cual', 'az-bypass') : null;"
   ],
-  "scripts/nightly/dependencies/work-items.js": [
-    "*    explícitos en cada llamada: el default de `az devops configure` apunta a un proyecto que ya no"
-  ],
   "scripts/nightly/deployments/azure.js": [
     "*   1. el id de la definición con `az pipelines list --name` (busca por PREFIJO): se queda con la de nombre igual;",
     "*   2. hasta `ventana` corridas (`az pipelines runs list --top`, sin filtrar por estado: las en curso dicen «pendiente»),"
@@ -99,14 +96,7 @@
     "const bad = list.ok && !Array.isArray(list.json) ? 'az pipelines list no devolvió una lista' : null;",
     "if (!runs.ok || !Array.isArray(runs.json)) { fail(label, `runs list ${p.id}`, runs.error || 'az pipelines runs list no devolvió una lista', extra); continue; }"
   ],
-  "guides/integrations/ado-cola-y-listados.md": [
-    "**Qué pasa:** después de cancelar despliegues encolados, `az pipelines runs list` proyecto por",
-    "**Qué pasa:** tras un push a `main`, `az pipelines runs list` puede seguir sin mostrar el run del",
-    "2. **Probar por id**: `az pipelines runs show --id <N>` con los ids siguientes al último run",
-    "`az pipelines runs list` responde por PROYECTO y con atraso; no es la cola. La cola se le pregunta",
-    "az devops invoke --area build --resource timeline \\"
-  ],
-  "guides/integrations/ado-en-el-nucleo.md": [
+  "guides/integrations/ado-in-the-core.md": [
     "**Best-effort de validación**: si la auto-derivación produce un path, una vez por sesión chequear que el iteration exista (`az boards iteration project list --project <p>`). Si NO existe, fallback a backlog + warning al dev. NO bloquear creación del WI.",
     "**Por qué**: con `ado_iteration_path: \"\"` en la config, un WI cae en el backlog (`IterationPath=<proyecto>`) aunque la story tenga `sprint: <N>` en el frontmatter, y hay que moverlo a mano con `az boards work-item update --iteration \"<proyecto>\\Sprint <N>\"`. Resolver el IterationPath desde el sprint de la story cierra ese gap.",
     "- **Azure DevOps**: la misma secuencia de `az repos pr` de siempre (reusa el pedido abierto de ese par de ramas o lo",
@@ -136,6 +126,13 @@
     "- crea el WI con `az boards work-item create`,",
     "`tycon-story-work-item` detecta el process del project (`az devops project show ... --query"
   ],
+  "guides/integrations/ado-queue-and-listings.md": [
+    "**Qué pasa:** después de cancelar despliegues encolados, `az pipelines runs list` proyecto por",
+    "**Qué pasa:** tras un push a `main`, `az pipelines runs list` puede seguir sin mostrar el run del",
+    "2. **Probar por id**: `az pipelines runs show --id <N>` con los ids siguientes al último run",
+    "`az pipelines runs list` responde por PROYECTO y con atraso; no es la cola. La cola se le pregunta",
+    "az devops invoke --area build --resource timeline \\"
+  ],
   "integrations/azure-devops/rules.md": [
     "az devops invoke --area build --resource timeline \\",
     "encolar nada; (b) `az pipelines runs show --id <N>` con los ids siguientes al último conocido —"
@@ -159,6 +156,9 @@
     "//   az devops invoke --area distributedtask --resource pools --api-version 7.1 --org <org> -o json",
     "//   az pipelines runs list --project <proyecto> [--branch <rama>] --top 100 --org <org> -o json",
     "//   az pipelines runs show --id <n> --project <proyecto> --org <org> -o json   (por cada pedido sin terminar)"
+  ],
+  "integrations/azure-devops/scripts/dependency-notices.js": [
+    "*    explícitos en cada llamada: el default de `az devops configure` apunta a un proyecto que ya no"
   ],
   "integrations/azure-devops/scripts/query-notice.js": [
     "*     `az repos|pipelines|boards|artifacts|devops …` (y SÓLO ahí: `az login -p` es una contraseña, `mkdir -p` no es az)",

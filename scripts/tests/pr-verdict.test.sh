@@ -583,7 +583,8 @@ if [ -f "$YAML" ]; then
   # Saca un paso del yml por su displayName y le sustituye las macros de Azure. Lo que no es de la máquina de prueba sale
   # del entorno: `${{ parameters.runAll }}` → $RUN_ALL_TEST (False si no está) y `$(todoElRepo)` → $TODO_TEST.
   # Para el trabajo de suites: `$(SUITES_SHARD)`/`$(SUITES_OF)` → $SUITES_SHARD_TEST/$SUITES_OF_TEST (1 si no están) y
-  # `$(Pipeline.Workspace)` → <carpeta temporal>/workspace. `$(banco)` (si el banco corre en el pedido) → $BANCO_TEST
+  # `$(Pipeline.Workspace)` → <carpeta temporal>/workspace y `$(Agent.BuildDirectory)` → <carpeta temporal>/build (sin
+  # una copia del arnés adentro: el paso no le pasa a las suites el gancho público). `$(banco)` (si el banco corre en el pedido) → $BANCO_TEST
   # (si, si no está). `$(Build.SourcesDirectory)` es este checkout, o el de $3.
   # El paso se busca en el pipeline y en la plantilla de las suites: en los dos archivos, uno tras otro.
   step_of_yaml() { # $1=displayName $2=carpeta temporal [$3=raíz de las fuentes]
@@ -601,7 +602,7 @@ if [ -f "$YAML" ]; then
     const subs = [["$(Agent.TempDirectory)", tmp], ["$(Build.SourceBranch)", "refs/heads/pr"], ["${{ parameters.runAll }}", "${RUN_ALL_TEST:-False}"],
       ["$(todoElRepo)", "${TODO_TEST}"], ["$(Build.SourcesDirectory)", sources], ["$(Build.ArtifactStagingDirectory)", tmp + "/staging"],
       ["${{ parameters.suiteShards }}", "2"], ["$(SUITES_SHARD)", "${SUITES_SHARD_TEST:-1}"], ["$(SUITES_OF)", "${SUITES_OF_TEST:-1}"],
-      ["$(Pipeline.Workspace)", tmp + "/workspace"], ["$(banco)", "${BANCO_TEST:-si}"]];
+      ["$(Pipeline.Workspace)", tmp + "/workspace"], ["$(banco)", "${BANCO_TEST:-si}"], ["$(Agent.BuildDirectory)", tmp + "/build"]];
     let text = body.map((l) => l.slice(indent)).join("\n");
     for (const [from, to] of subs) text = text.split(from).join(to);
     // una macro dentro de un comentario del paso no corre (el paso explica ahí por qué NO usa `$(System.PullRequest…)`)
@@ -834,6 +835,7 @@ if [ -f "$YAML" ]; then
     mkdir -p "$W/scripts/ci" "$W/scripts/lib" "$W/scripts/tests" "$W/scripts/controls-bench" "$W/as/skills"
     cp "$AQUI/scripts/ci/suites-shard.js" "$AQUI/scripts/ci/suites-exclusive.js" "$AQUI/scripts/ci/run-capped.js" "$AQUI/scripts/ci/suites-block.js" "$W/scripts/ci/" || return 1
     cp "$AQUI/scripts/lib/skills-dir.js" "$W/scripts/lib/" || return 1
+    mkdir -p "$W/scripts/setup/harness" && cp "$AQUI/scripts/setup/harness/tycon-home.js" "$W/scripts/setup/harness/" || return 1
     printf '{"diarias":[{"raiz":"arnes","ruta":"tests/sleeper.test.sh"},{"raiz":"arnes","ruta":"tests/green.test.sh"},{"raiz":"arnes","ruta":"tests/red-old.test.sh"},{"raiz":"arnes","ruta":"tests/red-new.test.sh"}]}\n' > "$W/scripts/tests/suites.json"
     printf '{"default":1,"weights":{},"pr":{"runs":[1],"default":1,"job_budget":100,"suite_cap":{"factor":2,"floor":2},"weights":{}}}\n' > "$W/scripts/ci/suites-weights.json"
     printf 'sleep 30\necho despierta\n' > "$W/scripts/tests/sleeper.test.sh"

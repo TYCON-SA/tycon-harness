@@ -18,6 +18,9 @@
 set -u
 TCG="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 J="$TCG/scripts/lib/harness-repo.js"
+# lo que las bibliotecas copiadas le preguntan a la máquina (dónde están las skills instaladas, la carpeta de Claude
+# Code) lo contesta scripts/setup/harness/tycon-home.js: viaja con ellas, en su lugar
+con_tycon_home() { mkdir -p "$1/scripts/setup/harness" && cp "$TCG/scripts/setup/harness/tycon-home.js" "$1/scripts/setup/harness/"; }
 BASE="$(mktemp -d "${TMPDIR:-/tmp}/repo-del-arnes.XXXXXX")"
 BASE="$(cd "$BASE" && pwd -P)"
 trap 'rm -rf "$BASE"' EXIT
@@ -177,9 +180,13 @@ mkdir -p "$BASE/sin-origen/scripts/lib" "$BASE/sin-skills"
 cp "$J" "$BASE/sin-origen/scripts/lib/harness-repo.js"
 cp "$TCG/scripts/lib/skills-dir.js" "$BASE/sin-origen/scripts/lib/"   # la lib copiada lleva su vecina: sin ella caería al default de agent-skills, que sí tiene origin
 cp "$TCG/scripts/lib/legacy-names.js" "$BASE/sin-origen/scripts/lib/"   # y la de los nombres renombrados, que carga al arrancar
+con_tycon_home "$BASE/sin-origen"
 export TYCON_SKILLS_DIR="$BASE/sin-skills"   # tampoco agent-skills aporta identidad: no hay ninguna que leer
-espera "T13 sin identidad propia → la carpeta decide y se dice" "$BASE/otro/tycon-claude-guides" "true carpeta-sin-identidad-propia" "$BASE/sin-origen/scripts/lib/harness-repo.js"
-espera "T13b sin identidad propia, carpeta sin nombre del arnés → no" "$BASE/scratchpad/tcg" "false carpeta-sin-identidad-propia" "$BASE/sin-origen/scripts/lib/harness-repo.js"
+# con tycon-home.js al lado la biblioteca lee lo que declara la máquina: una casa vacía, para que la de quien corre la
+# prueba (con su clon de mantenimiento declarado) no aporte una identidad
+mkdir -p "$BASE/casa-vacia"
+HOME="$BASE/casa-vacia" espera "T13 sin identidad propia → la carpeta decide y se dice" "$BASE/otro/tycon-claude-guides" "true carpeta-sin-identidad-propia" "$BASE/sin-origen/scripts/lib/harness-repo.js"
+HOME="$BASE/casa-vacia" espera "T13b sin identidad propia, carpeta sin nombre del arnés → no" "$BASE/scratchpad/tcg" "false carpeta-sin-identidad-propia" "$BASE/sin-origen/scripts/lib/harness-repo.js"
 unset TYCON_SKILLS_DIR
 
 # T14 — el PROPIO clon con `origin` local (un clon descartable de un checkout): la identidad propia se
@@ -189,6 +196,7 @@ git clone -q "$BASE/canonico2" "$BASE/clon-propio"
 mkdir -p "$BASE/clon-propio/scripts/lib"
 cp "$J" "$BASE/clon-propio/scripts/lib/harness-repo.js"
 cp "$TCG/scripts/lib/skills-dir.js" "$TCG/scripts/lib/legacy-names.js" "$BASE/clon-propio/scripts/lib/"
+con_tycon_home "$BASE/clon-propio"
 export TYCON_SKILLS_DIR="$BASE/sin-skills"   # que agent-skills no aporte identidad: lo que se mide es el propio clon
 espera "T14 propio clon con origin local → se sigue hasta el remoto y reconoce al arnés" "$BASE/scratchpad/tcg" "true remoto" "$BASE/clon-propio/scripts/lib/harness-repo.js"
 espera "T14b …y sigue sin confundir el producto" "$BASE/tycon-claude-guides/MiProducto" "false remoto" "$BASE/clon-propio/scripts/lib/harness-repo.js"
@@ -213,6 +221,7 @@ LIBS="harness-repo.js skills-dir.js legacy-names.js canonical-path.js"
 own_clone() { # $1=dir $2=origin $3=unified|split → un clon del arnés de juguete, con la biblioteca adentro
   repo "$1" "$2"; mkdir -p "$1/scripts/lib"
   for f in $LIBS; do cp "$TCG/scripts/lib/$f" "$1/scripts/lib/" || bad "T16 no pude copiar scripts/lib/$f"; done
+  con_tycon_home "$1" || bad "T16 no pude copiar tycon-home.js"
   if [ "$3" = unified ]; then mkdir -p "$1/skills/tycon-pipeline" "$1/agents" "$1/packs"; fi
 }
 judge_at() { # $1=HOME $2=lib $3=ruta → "true|false por", sin variables que digan otra cosa
@@ -285,6 +294,7 @@ session_in "-Users-dev-product-a" "$H16/Proyectos/ProductoA"
 session_in "-Users-dev-harness" "$H16/Infra/harness"
 session_in "-Users-dev-skills-old" "$H16/Infra/skills-old"
 cp "$TCG/scripts/lib/repos-root.js" "$TCG/scripts/lib/tycon-config.js" "$TCG/scripts/lib/profile-only.js" "$H16/Infra/harness/scripts/lib/" || bad "T16e no pude copiar repos-root.js"
+con_tycon_home "$H16/Infra/harness" || bad "T16e no pude copiar tycon-home.js"
 got="$(env -u TYCON_REPOS_ROOT -u TYCON_SKILLS_DIR HOME="$H16" node -e '
 const { resolveReposRoot } = require(process.argv[1]);
 const r = resolveReposRoot("", { home: process.argv[2], clon: process.argv[3], tmp: process.argv[4], env: {}, sinConfig: true });
@@ -386,6 +396,7 @@ root_at() { # $1=HOME $2=lib → la salida en ROOT_OUT, el código en ROOT_RC y 
 }
 for c in sane broken-rule broken-neighbor no-rule; do   # la búsqueda de la raíz y el lector de configuración que carga
   cp "$TCG/scripts/lib/repos-root.js" "$TCG/scripts/lib/tycon-config.js" "$TCG/scripts/lib/profile-only.js" "$G16/$c/scripts/lib/" || bad "T16h no pude copiar las bibliotecas a $c"
+  con_tycon_home "$G16/$c" || bad "T16h no pude copiar tycon-home.js a $c"
 done
 root_at "$G16/home" "$G16/sane/scripts/lib/repos-root.js"
 if [ "$ROOT_RC" -eq 0 ] && [ -z "$ROOT_ERR" ]; then ok "T16h (control) clon sano: la raíz de repos contesta con código 0 y sin avisos"
@@ -449,6 +460,7 @@ else bad "T21j la CLI no nombra la declaración ilegible: «${CLI21}»"; fi
 # carpeta y se dice, como siempre (sumar lo declarado taparía ese respaldo)
 mkdir -p "$T21/noorigin/scripts/lib" "$T21/noorigin/scripts/publishing"
 for f in $LIBS; do cp "$TCG/scripts/lib/$f" "$T21/noorigin/scripts/lib/"; done
+con_tycon_home "$T21/noorigin"
 printf '{ "org": "acme", "repo": "acme-harness", "maintainers": "%s" }\n' "$T21_MAINT" > "$T21/noorigin/scripts/publishing/public-repos.json"
 expect_at "T21l sin origin propio, con declaraciones al lado: la carpeta decide y se dice" "$T21/home" "$T21/noorigin/scripts/lib/harness-repo.js" "$BASE/otro/tycon-claude-guides" "true carpeta-sin-identidad-propia"
 expect_at "T21m …y el clon del público no se cuela por la declaración" "$T21/home" "$T21/noorigin/scripts/lib/harness-repo.js" "$T21/public-clone" "false carpeta-sin-identidad-propia"
@@ -512,13 +524,14 @@ expect78 "T78f …y con esa referencia, el clon del público que la copia declar
 expect78 "T78g …un producto en una carpeta con nombre del arnés deja de colarse por la carpeta" "$T78/home" "$LI78" "$T78/other/agent-skills" "false remoto"
 expect78 "T78h (control) el arnés instalado SIN la declaración de la máquina: decide la carpeta y se dice, como siempre" "$T78/home-plain" "$LI78" "$T78/tmp/tcg-descartable" "false carpeta-sin-identidad-propia"
 
-# una copia SUELTA de la biblioteca (el banco, un laboratorio), sin tycon-home.js al lado: no lee la configuración de la máquina
-own_clone "$T78/loose" "$T78_PUBLIC" split
+# una copia SUELTA de la biblioteca (el banco, un laboratorio), sin tycon-home.js al lado: no lee la configuración de la
+# máquina, y las skills instaladas van al lado de la carpeta del estado de siempre
+own_clone "$T78/loose" "$T78_PUBLIC" split; rm -rf "$T78/loose/scripts/setup"
 expect78 "T78i sin tycon-home.js al lado no hay declaración de máquina" "$T78/home" "$T78/loose/scripts/lib/harness-repo.js" "$T78/work/internal" "false remoto"
 
-# …con un tycon-home.js ANTERIOR a la clave (no trae `maintainersClone`): no hay declaración, y no es un problema
+# …con un tycon-home.js ANTERIOR a la clave (el de hoy sin `maintainersClone`): no hay declaración, y no es un problema
 own_clone "$T78/old-home" "$T78_PUBLIC" split; mkdir -p "$T78/old-home/scripts/setup/harness"
-printf "'use strict';\nmodule.exports = { ownPaths: () => ({}) };\n" > "$T78/old-home/scripts/setup/harness/tycon-home.js"
+printf "'use strict';\nmodule.exports = Object.assign({}, require(%s), { maintainersClone: undefined });\n" "$(node -e 'process.stdout.write(JSON.stringify(process.argv[1]))' "$TCG/scripts/setup/harness/tycon-home.js")" > "$T78/old-home/scripts/setup/harness/tycon-home.js"
 expect78 "T78i2 un tycon-home.js anterior a la clave: no hay declaración de máquina" "$T78/home" "$T78/old-home/scripts/lib/harness-repo.js" "$T78/work/internal" "false remoto"
 out78="$(cli78 "$T78/home" "$T78/old-home/scripts/lib/harness-repo.js" "$T78/work/internal")"
 printf '%s' "$out78" | grep -q '"declaracion_de_maquina"' && bad "T78i3 con un tycon-home.js anterior a la clave la orden a mano inventa una declaración: «${out78}»" || ok "T78i3 …y la orden a mano no dice nada de una declaración que no puede leer"

@@ -17,6 +17,8 @@ set -uo pipefail
 AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PED="$AQUI/scripts/nightly/dependencies/work-items.js"
 NOC="$AQUI/scripts/nightly/dependencies/nightly-dependencies.js"
+# lo que habla con Azure DevOps vive en su conector; work-items.js es la entrada
+PED_AZ="$AQUI/integrations/azure-devops/scripts/dependency-notices.js"
 NOTICE="$AQUI/scripts/hooks/dependencies-notice.js"
 # el modelo público del pipeline: lo que copia cada organización a su repo de operaciones
 YAML="$AQUI/pipelines/operations/dependency-audit.yml"
@@ -342,7 +344,7 @@ const correr = async (fichas) => (await ped.hablar({ az, plataforma, cfg, azure:
 (async () => {
   const f = noc.leerTodasLasFichas(dir); const a = await correr(f), b = await correr([...f].reverse());
   console.log(a === b && a.includes("aaa11111") ? "igual" : `distinto: ${a} ≠ ${b}`);
-})();' "$PED" "$NOC" "$TMP" 2>&1)
+})();' "$PED_AZ" "$NOC" "$TMP" 2>&1)
 [ "$orden6g" = "igual" ] && ok "T6g: el fallo de duplicado nombra la misma ficha (la de menor id) sin importar el orden del disco" \
   || no "T6g: $orden6g"
 
@@ -1384,7 +1386,7 @@ const correr = async (fichas) => {
   const a = await correr(fichas), b = await correr([...fichas].reverse());
   console.log(a === b && JSON.parse(a).every((l) => l.length >= 2) ? "igual" : `distinto: ${a} ≠ ${b}`);
 })();
-' "$PED" "$NOC" "$TMP/c.json" "$TMP/out/dependencias-$HOY.json" "$TMP" "$TMP/pend" 2>&1)
+' "$PED_AZ" "$NOC" "$TMP/c.json" "$TMP/out/dependencias-$HOY.json" "$TMP" "$TMP/pend" 2>&1)
 [ "$orden" = "igual" ] && ok "T28: sin_pedido, pagados_avisados y deuda_avisada salen iguales con las fichas en cualquier orden" \
   || no "T28: el orden de las listas depende del orden de las fichas — $orden"
 

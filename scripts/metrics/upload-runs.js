@@ -866,6 +866,37 @@ function carpetaPreparada(destino, folder) {
 }
 
 /**
+ * Los otros dos lugares viejos de la casa de Claude Code que se retiran: la carpeta del mecanismo
+ * (`.tycon-pipeline`) y la configuración vieja (`tycon.json`), con lo mismo que el nombre viejo del arnés: si está, de
+ * qué tipo, si apunta al lugar nuevo y lo registrado con él. Lo lee `legacy-retire-check.js --home`. tycon-home.js se
+ * carga si está, como en stateDirOf: este archivo viaja suelto.
+ */
+function oldPlacesFacts(home, tree, kindOf, notMeasured, code) {
+  const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
+  if (!fs.existsSync(lib)) return notMeasured('tycon-home.js no está en este árbol');
+  let TH;
+  try { TH = require(lib); } catch (e) { return notMeasured(`tycon-home.js no se pudo cargar (${code(e)})`); }
+  const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return null; } };
+  const out = {};
+  for (const [name, old, now] of [
+    ['.tycon-pipeline', TH.legacyStateDir(home), TH.ownStateDir(home)],
+    ['tycon.json', TH.legacyConfigFile(home), path.join(TH.ownRootOf(home), 'config.json')],
+  ]) {
+    const k = kindOf(old);
+    const r = real(old);
+    const place = { exists: Boolean(k), kind: k === 'link' && !r ? 'dangling' : k, to_place: k === 'link' && r !== null && r === real(now) };
+    try {
+      const c = require('../lib/legacy-names.js').countRegistered({ from: old, home, tree });
+      const files = {};
+      for (const f of c.files) files[f.file] = { count: f.count, permissions: f.permissions };
+      place.registered = { total: c.total, files, unreadable: c.notes.length };
+    } catch (e) { place.registered = notMeasured(`no se pudo contar (${code(e)})`); }
+    out[name] = place;
+  }
+  return out;
+}
+
+/**
  * Dónde vive el arnés en esta máquina, como viaja al buzón: números, hashes y nombres de
  * archivo (nunca una ruta con la carpeta de la persona; los motivos, códigos de error), un dato de
  * la persona, `owner` (su correo de git, ver correoDeGitGlobal), y `folder` (la carpeta de la máquina en el buzón). Un
@@ -907,6 +938,7 @@ function placeFactsForMailbox(day, folder = null) {
     for (const f of c.files) files[f.file] = { count: f.count, permissions: f.permissions };
     out.registered_by_legacy = { total: c.total, files, unreadable: c.notes.length };
   } catch (e) { out.registered_by_legacy = notMeasured(`no se pudo contar (${code(e)})`); }
+  out.old_places = oldPlacesFacts(home, where.dir || tree, kindOf, notMeasured, code);
   const sha = (f) => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
   try {
     if (!tree) throw Object.assign(new Error('sin tree'), { code: 'NO_TREE' });

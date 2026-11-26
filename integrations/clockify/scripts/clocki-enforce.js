@@ -25,11 +25,10 @@
 
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 
 const lib = require('./lib');
 
-const ENFORCE_STATE_PATH = path.join(os.homedir(), '.claude', 'clocki', 'enforce-state.json');
+const ENFORCE_STATE_PATH = lib.STATE_DIR ? path.join(lib.STATE_DIR, 'enforce-state.json') : null;
 const RATE_LIMIT_MINUTES = 10;
 
 function readEnforceState() {
@@ -58,6 +57,7 @@ function writeEnforceState(state) {
  * Side-effects: touchHeartbeat + persiste rate-limit state (intencional).
  */
 function handle(hookInput) {
+  if (lib.stateMissing()) return null;
   hookInput = hookInput || {};
   const cwd = lib.normalizeCwd(hookInput.cwd || process.cwd());
   const sessionId = hookInput.session_id || null;
@@ -117,7 +117,7 @@ function handle(hookInput) {
 `clocki-enforce: detecté un ${toolName}${fileBasename ? ` sobre ${fileBasename}` : ''} en \`${cwd}\` SIN timer Clockify activo para esta sesión.
 
 session_id de esta sesión: "${sessionKey}". El timer de esta sesión vive en su
-archivo propio ~/.claude/clocki/active/${sessionKey}.json (forma { "<cwd>": <entry> })
+archivo propio ${lib.sessionFilePath(sessionKey)} (forma { "<cwd>": <entry> })
 — independiente de cualquier otra sesión que esté trackeando el mismo proyecto.
 
 Si efectivamente estás haciendo trabajo trackeable (edits a código/specs/tests, NO solo exploración Read-only):

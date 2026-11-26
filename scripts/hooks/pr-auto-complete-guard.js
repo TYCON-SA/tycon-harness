@@ -192,7 +192,19 @@ let huboEscape = false;   // ¿ya se anotó el escape de este comando?
 let huboJuicio = false;
 const problemas = [];
 const problemasGh = [];
-for (const seg of az.segmentos(cmd)) {
+// El comando y cada orden que corre adentro (una sustitución, un `bash -c` o un `eval`, un shell por tubería o heredoc,
+// un xargs, un find -exec): el pedido de adentro se juzga igual que uno suelto. Las lee la misma lectura que el freno de
+// escrituras, que no se corre al cargarla; sin la palabra de un pedido no se carga, y si no carga queda sólo el comando.
+function ordenesDe(texto, cwd) {
+  if (!/\b(create|update|merge)\b/.test(String(texto || ''))) return [texto];
+  try {
+    const g = require('../../skills/tycon-pipeline/scripts/on-bash-write-gate.js');
+    const textos = [texto, ...g.comandosPorOtroPrograma(texto, cwd || process.cwd())];
+    return [...new Set([texto, ...textos.flatMap((t) => g.comandosAnidados(t))])];
+  } catch { return [texto]; }
+}
+const tramos = ordenesDe(cmd, carpeta).flatMap((t) => az.segmentos(t));
+for (const seg of tramos) {
   if (az.pideAyuda(seg)) continue;
 
   if (esGh) {
@@ -218,24 +230,33 @@ for (const seg of az.segmentos(cmd)) {
     continue;
   }
 
+  // Un pedido que no se puede leer (el programa en una variable, una sustitución o el `{}` de find adentro): frena
+  const ilegible = az.pedidoIlegible(seg);
+  if (ilegible) {
+    problemas.push({ seg, verbo: 'ilegible', faltas: [`${ilegible} — y lo que no pude mirar no está aprobado`] });
+    huboJuicio = true;
+    continue;
+  }
+
   const verbo = az.verboDePr(seg);
   if (verbo !== 'create' && verbo !== 'update') continue;
 
   // La regla vive en `faltasDe` (scripts/lib/az-pr.js): la misma que lee la revisión nocturna de las ejecuciones.
   // Se juzga ANTES de mirar el prefijo: un prefijo puesto sobre un tramo que pasaría igual no es un salteo, y anotarlo
   // llenaba el registro de salteos que no eran.
-  // La rama del pedido, sólo si el `update` trae `--delete-source-branch` escrito: es lo único que la necesita.
+  // La rama del pedido, sólo si juzgar el `update` la pide (`necesitaLaRama`): trae `--delete-source-branch` escrito,
+  // o no la trae y puede completar el pedido.
   let ramaDeOrigen = null;
   if (verbo === 'update') {
     const borrar = az.valorDe(seg, 'delete-source-branch');
     const id = az.valorDe(seg, 'id');
-    if (borrar && borrar.literal && id && id.literal && /^\d+$/.test(id.texto)) {
+    if (az.necesitaLaRama(seg) && id && id.literal && /^\d+$/.test(id.texto)) {
       const fuera = fueraDelRepo(seg);
       const leida = fuera ? { rama: null, motivo: fuera }
         : require(path.join(__dirname, '..', 'lib', 'pr-source-branch.js')).ramaDeOrigen({ number: id.texto, cwd: carpeta, org: orgDelComando(seg), platform: 'azure' });
       ramaDeOrigen = leida.rama;
       // sin la rama, `false` pasa igual que antes: el aviso sólo cuando la falta es por no poder leerla
-      if (!leida.rama && az.esCierto(borrar.texto)) console.error(`${TAG} no pude leer la rama del pedido ${id.texto} (${leida.motivo}): juzgo --delete-source-branch sin ella.`);
+      if (!leida.rama && borrar && az.esCierto(borrar.texto)) console.error(`${TAG} no pude leer la rama del pedido ${id.texto} (${leida.motivo}): juzgo --delete-source-branch sin ella.`);
     }
   }
   const { juzgado, borrador, faltas } = az.faltasDe(seg, { ramaDeOrigen });

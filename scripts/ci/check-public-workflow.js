@@ -65,10 +65,15 @@
  * Es el único que pide la identidad de la corrida (`id-token: write`): su forma exacta (`PUBLISHER_SHAPE`), las reglas de
  * cualquier workflow público y cinco propias (`publisher-trigger`, `publisher-enabled`, `publisher-permissions`,
  * `publisher-npm`, `publisher-stage`). EL CUARTO, `site-image.yml`, publica la imagen del sitio de la
- * organización; su control vive en scripts/tests/site-image-workflow.test.js. `WORKFLOWS` son los únicos cuatro archivos
- * que puede haber en `.github/workflows/`.
+ * organización; su control vive en scripts/tests/site-image-workflow.test.js.
  *
- * USO:  node scripts/ci/check-public-workflow.js [--tagger|--publisher] <archivo>
+ * EL QUINTO (`--code-scanning`): `code-scanning.yml`, el análisis de CodeQL, que corre también en los pedidos desde un
+ * fork. Es el único que sube resultados (`security-events: write`) y corre sobre código de afuera: su forma exacta
+ * (`SCANNING_SHAPE`), las reglas de cualquier workflow público y cuatro propias (`scanning-trigger`,
+ * `scanning-permissions`, `scanning-checkout`, `scanning-languages`). `WORKFLOWS` son los únicos cinco archivos que puede
+ * haber en `.github/workflows/`.
+ *
+ * USO:  node scripts/ci/check-public-workflow.js [--tagger|--publisher|--code-scanning] <archivo>
  *   0 = cumple todo · 1 = alguna regla rota (una línea `❌ check-public-workflow: <regla> — <qué>` por regla) ·
  *   2 = no pude leer el archivo (no es un verde)
  * Lo corre scripts/tests/public-ci.test.sh sobre el `ci.yml` real y sobre copias alteradas: una por regla y una por cada
@@ -155,11 +160,8 @@ const SHAPE = [
   '          TYCON_PUBLIC_CI_PART: ${{ matrix.part }}',
   '          BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref }}',
   '          BASE_SHA: ${{ github.event.merge_group.base_sha }}',
+  '          TYCON_PUBLIC_CI_EVENT: ${{ github.event_name }}',
   '        run: |',
-  '          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "${TYCON_PUBLIC_CI_PART}" = "controls-bench-base" ]; then',
-  '            echo "en un pedido no corre la parte controls-bench-base: corre en la cola de merge"',
-  '            exit 0',
-  '          fi',
   '          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] || [ "${GITHUB_EVENT_NAME}" = "merge_group" ]; then',
   '            BASE="${BASE_SHA:-$(git rev-parse --verify "origin/${BASE_REF#refs/heads/}^{commit}")}" || exit 1',
   '            git cat-file -e "${BASE}^{commit}" || exit 1',
@@ -423,11 +425,55 @@ const PUBLISHER_SHAPE = [
   '          npm stage publish',
 ];
 
-/** Los únicos workflows del repo público: la CI, el que etiqueta y el que publica el instalador de npm. Otro archivo en
- *  `.github/workflows/` es rojo (lo mira scripts/tests/version-by-merge.test.js). */
+/**
+ * LA FORMA de `code-scanning.yml` (`--code-scanning`): el análisis de CodeQL. Corre con `pull_request` (también desde un
+ * fork, una vez aprobada la corrida: sólo lectura y sin secretos), en la cola y en el push a main; en un pedido en
+ * borrador no corre. Sube los resultados (`security-events: write`), así que el checkout no deja la credencial guardada.
+ * Analiza los tres lenguajes de la configuración de fábrica sin compilar, con sus mismas categorías.
+ */
+const SCANNING_SHAPE = [
+  'name: code-scanning',
+  'on:',
+  '  pull_request:',
+  `    types: [${PR_TYPES.join(', ')}]`,
+  '  push:',
+  '    branches: [main]',
+  '  merge_group:',
+  'concurrency:',
+  '  group: code-scanning-${{ github.ref }}',
+  "  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}",
+  'permissions:',
+  '  contents: read',
+  '  actions: read',
+  '  security-events: write',
+  'jobs:',
+  '  analyze:',
+  '    name: Analyze (${{ matrix.language }})',
+  `    if: ${NOT_DRAFT}`,
+  '    runs-on: ubuntu-latest',
+  '    timeout-minutes: 60',
+  '    strategy:',
+  '      fail-fast: false',
+  '      matrix:',
+  '        language: [actions, javascript-typescript, python]',
+  '    steps:',
+  pinned('      - uses: ', 'actions/checkout'),
+  '        with:',
+  '          persist-credentials: false',
+  pinned('      - uses: ', 'github/codeql-action/init'),
+  '        with:',
+  '          languages: ${{ matrix.language }}',
+  '          build-mode: none',
+  pinned('      - uses: ', 'github/codeql-action/analyze'),
+  '        with:',
+  '          category: /language:${{ matrix.language }}',
+];
+
+/** Los únicos workflows del repo público: la CI, el que etiqueta, el que publica el instalador de npm y el análisis de
+ *  CodeQL. Otro archivo en `.github/workflows/` es rojo (lo mira scripts/tests/version-by-merge.test.js). */
 // `site-image.yml` publica la imagen del sitio; su control (sus reglas propias y dos de las de acá) vive en
 // scripts/tests/site-image-workflow.test.js
-const WORKFLOWS = ['ci.yml', 'version-tag.yml', 'npm-publish.yml', 'site-image.yml'];
+const WORKFLOWS = ['ci.yml', 'version-tag.yml', 'npm-publish.yml', 'site-image.yml', 'code-scanning.yml'];
 
 /**
  * Un `\r` que no va seguido de `\n`, un tabulador o un carácter de control: los de C0 menos `\n` y `\r`, DEL, y los tres
@@ -857,14 +903,78 @@ const PUBLISHER_RULES = [
   },
 ];
 
+/**
+ * Las reglas del análisis de CodeQL: las de cualquier workflow público, cuatro que dicen POR QUÉ algo está mal (cuándo
+ * corre, qué permisos pide, cómo hace el checkout, qué analiza) y su forma exacta. Las de `ci.yml` que no le sirven
+ * (`permissions` con sólo `contents: read`, `fetch-depth: 0`) no se le piden.
+ */
+const SCANNING_RULES = [
+  ...RULES.filter((r) => ['pull-request-target', 'secrets', 'uses-by-sha'].includes(r.id)),
+  {
+    id: 'scanning-trigger',
+    check(lines) {
+      const i = topLevel(lines, 'on');
+      const want = ['  pull_request:', `    types: [${PR_TYPES.join(', ')}]`, '  push:', '    branches: [main]', '  merge_group:'];
+      const have = i < 0 ? [] : blockOf(lines, i).map((l) => l.raw);
+      if (have.join('\n') !== want.join('\n')) return `corre en \`pull_request\` (${PR_TYPES.join(', ')}), en \`push\` a main y en la cola (\`merge_group\`), y en nada más`;
+      if (!lines.some((l) => l.code && l.raw === `    if: ${NOT_DRAFT}`)) return `el job lleva \`if: ${NOT_DRAFT}\`: en un pedido en borrador no corre`;
+      return null;
+    },
+  },
+  {
+    id: 'scanning-permissions',
+    check(lines) {
+      const all = lines.filter((l) => l.code && /^(?:-\s+)?["']?permissions["']?\s*:/.test(l.body));
+      // sólo las líneas de código: un comentario dentro del bloque no cambia los permisos
+      const code = lines.filter((l) => l.code).map((l) => l.raw).join('\n');
+      if (all.length !== 1 || !/^permissions:\n {2}contents: read\n {2}actions: read\n {2}security-events: write\njobs:/m.test(code)) {
+        return 'un solo bloque `permissions`, arriba de todo, con `contents: read`, `actions: read` y `security-events: write`, y nada más';
+      }
+      return null;
+    },
+  },
+  {
+    id: 'scanning-checkout',
+    check(lines) {
+      // corre con permiso de subir resultados: el checkout no deja la credencial guardada en la copia
+      const code = lines.filter((l) => l.code);
+      const k = code.findIndex((l) => /^- uses: actions\/checkout@/.test(l.body));
+      const ok = k >= 0 && code[k + 1] && code[k + 1].raw === '        with:' && code[k + 2] && code[k + 2].raw === '          persist-credentials: false';
+      return ok ? null : 'el checkout va con `persist-credentials: false`';
+    },
+  },
+  {
+    id: 'scanning-languages',
+    check(lines) {
+      const has = (raw) => lines.filter((l) => l.code && l.raw === raw).length === 1;
+      const code = lines.filter((l) => l.code).map((l) => l.raw).join('\n');
+      if (!has('        language: [actions, javascript-typescript, python]')) return 'analiza los tres lenguajes de la configuración de fábrica: `actions`, `javascript-typescript` y `python`';
+      if (!has('          build-mode: none') || /\b(autobuild|manual)\b/.test(code)) return 'sin compilar (`build-mode: none`): compilar es correr código de afuera';
+      if (!has('          category: /language:${{ matrix.language }}')) return 'la categoría de cada lenguaje es `/language:<lenguaje>`, la de la configuración de fábrica: con otra, las alertas dejan de ser las mismas';
+      return null;
+    },
+  },
+  {
+    id: 'shape',
+    check(_lines, text) {
+      const problem = shapeProblem(text, SCANNING_SHAPE);
+      return problem ? `${problem}. El archivo no tiene la forma exacta que este control lleva adentro: si el cambio es a propósito, cambiá \`SCANNING_SHAPE\` en scripts/ci/check-public-workflow.js en el mismo commit` : null;
+    },
+  },
+];
+
 /** Lo que hay en `.github/workflows/` y no es uno de los workflows conocidos (`WORKFLOWS`). */
 function strayWorkflows(names) { return (names || []).filter((n) => !WORKFLOWS.includes(n)).sort(); }
 
-/** @returns {{rule: string, detail: string}[]} las reglas rotas, en el orden de RULES (o de TAGGER_RULES / PUBLISHER_RULES) */
-function check(text, { tagger = false, publisher = false } = {}) {
+/** Las reglas de un modo: las de `ci.yml`, las del que etiqueta, las del que publica o las del análisis. */
+const rulesOf = ({ tagger = false, publisher = false, scanning = false } = {}) =>
+  (scanning ? SCANNING_RULES : publisher ? PUBLISHER_RULES : tagger ? TAGGER_RULES : RULES);
+
+/** @returns {{rule: string, detail: string}[]} las reglas rotas, en el orden de RULES (o de TAGGER_RULES / PUBLISHER_RULES / SCANNING_RULES) */
+function check(text, { tagger = false, publisher = false, scanning = false } = {}) {
   const lines = read(text);
   const broken = [];
-  for (const rule of publisher ? PUBLISHER_RULES : tagger ? TAGGER_RULES : RULES) {
+  for (const rule of rulesOf({ tagger, publisher, scanning })) {
     let detail = null;
     try { detail = rule.check(lines, text); } catch (e) { detail = `no pude evaluarla (${e.message})`; }
     if (detail) broken.push({ rule: rule.id, detail });
@@ -875,10 +985,11 @@ function check(text, { tagger = false, publisher = false } = {}) {
 function main(argv) {
   const tagger = argv[0] === '--tagger';
   const publisher = argv[0] === '--publisher';
-  const args = tagger || publisher ? argv.slice(1) : argv;
+  const scanning = argv[0] === '--code-scanning';
+  const args = tagger || publisher || scanning ? argv.slice(1) : argv;
   const file = args[0];
   if (!file || args.length !== 1) {
-    process.stderr.write('uso: node scripts/ci/check-public-workflow.js [--tagger|--publisher] <archivo>\n');
+    process.stderr.write('uso: node scripts/ci/check-public-workflow.js [--tagger|--publisher|--code-scanning] <archivo>\n');
     return 2;
   }
   let text = '';
@@ -890,8 +1001,8 @@ function main(argv) {
     process.stderr.write(`⛔ check-public-workflow: ${file} está vacío\n`);
     return 2;
   }
-  const broken = check(text, { tagger, publisher });
-  const total = (publisher ? PUBLISHER_RULES : tagger ? TAGGER_RULES : RULES).length;
+  const broken = check(text, { tagger, publisher, scanning });
+  const total = rulesOf({ tagger, publisher, scanning }).length;
   for (const b of broken) console.log(`❌ check-public-workflow: ${b.rule} — ${b.detail}`);
   if (broken.length) {
     console.log(`❌ check-public-workflow: ${file}: ${broken.length} de ${total} reglas rotas`);
@@ -903,4 +1014,4 @@ function main(argv) {
 
 if (require.main === module) process.exit(main(process.argv.slice(2)));
 
-module.exports = { check, RULES, SHAPE, TAGGER_RULES, TAGGER_SHAPE, PUBLISHER_RULES, PUBLISHER_SHAPE, NPM_PINNED, WORKFLOWS, strayWorkflows };
+module.exports = { check, RULES, SHAPE, TAGGER_RULES, TAGGER_SHAPE, PUBLISHER_RULES, PUBLISHER_SHAPE, SCANNING_RULES, SCANNING_SHAPE, NPM_PINNED, WORKFLOWS, strayWorkflows };

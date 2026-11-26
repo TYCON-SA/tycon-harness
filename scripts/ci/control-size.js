@@ -205,10 +205,23 @@ function llamadores(root) {
 
 // ── el recorrido del freno ─────────────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * El texto del freno partido: el despachador y sus partes (`lib/bash-gate-*.js`, al lado del despachador), en ese
+ * orden. Un freno sin partes es sólo el despachador. Tira si no puede leer el despachador o una parte.
+ */
+function textoDelFreno(gate) {
+  const lib = path.join(path.dirname(gate), 'lib');
+  let partes = [];
+  try { partes = fs.readdirSync(lib).filter((f) => /^bash-gate-[\w-]+\.js$/.test(f)).sort().map((f) => path.join(lib, f)); } catch (e) {
+    if (e.code !== 'ENOENT') throw e;
+  }
+  return [gate, ...partes].map((f) => fs.readFileSync(f, 'utf8')).join('\n');
+}
+
 function topeDelFreno(gate) {
   let texto;
-  try { texto = fs.readFileSync(gate, 'utf8'); } catch (e) {
-    return { tope: null, motivo: `no medido: no pude leer el freno (${path.basename(gate)}: ${e.code || e.message})` };
+  try { texto = textoDelFreno(gate); } catch (e) {
+    return { tope: null, motivo: `no medido: no pude leer el freno (${path.basename((e && e.path) || gate)}: ${e.code || e.message})` };
   }
   const desde = texto.search(/\bfunction\s+guionesEnArchivo\s*\(/);
   let cuerpo = '';
@@ -411,4 +424,4 @@ if (require.main === module) {
   process.stdout.write(o.json ? `${JSON.stringify(j, null, 2)}\n` : texto(j));
 }
 
-module.exports = { medir, topeDelFreno, subcomandos, recorrido, TOPE_LETRAS, FRACCION_AVISO };
+module.exports = { medir, topeDelFreno, textoDelFreno, subcomandos, recorrido, TOPE_LETRAS, FRACCION_AVISO };

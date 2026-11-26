@@ -12,7 +12,7 @@
  * clon descartable justamente para no tocar el checkout compartido se frena igual, y un destino irresoluble
  * (`git -C "$VAR" commit`) pasa sin mirar.
  *
- * 🔴 Sin el criterio, un `cd ~/.claude/agent-skills && git push origin main` queda registrado contra un repo del
+ * 🔴 Sin el criterio, un `cd <las skills instaladas> && git push origin main` queda registrado contra un repo del
  * equipo, con la sha del `origin/main` STALE de ese otro checkout. Peor: como el repo se calcula mal, la exclusión que
  * el propio hook tiene para los repos del arnés nunca se activa, y queda un pendiente que NINGUNA retrospectiva puede
  * cerrar. Quien necesite resolver "a qué repo apunta este git" lo pide a este archivo; no escribe otro regex.

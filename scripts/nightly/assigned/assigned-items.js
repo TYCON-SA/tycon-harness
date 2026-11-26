@@ -43,7 +43,8 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const { crearAz, cacheDeCategorias } = require('../dependencies/work-items.js');
+// lo asignado se lee en Azure DevOps: con las mismas llamadas y categorías que el aviso de dependencias de su conector
+const { crearAz, cacheDeCategorias } = require(path.join(__dirname, '..', '..', '..', 'integrations', require('../../lib/team-repos.js').connectorOf('azure'), 'scripts', 'dependency-notices.js'));
 
 const LOTE = 200;
 const ABIERTAS = new Set(['Proposed', 'InProgress']);

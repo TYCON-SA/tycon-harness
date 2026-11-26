@@ -36,7 +36,8 @@ function lab(t) {
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const tree = path.join(dir, 'tree');
   fs.cpSync(path.join(ROOT, 'scripts', 'lib'), path.join(tree, 'scripts', 'lib'), { recursive: true });
-  fs.mkdirSync(path.join(tree, 'scripts', 'setup'), { recursive: true });
+  fs.mkdirSync(path.join(tree, 'scripts', 'setup', 'harness'), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js'), path.join(tree, 'scripts', 'setup', 'harness', 'tycon-home.js'));
   for (const f of ['sync-claude-md-blocks.sh', 'sync-claude-md-blocks.ps1', 'agents-md-blocks.js']) fs.copyFileSync(path.join(ROOT, 'scripts', 'setup', f), path.join(tree, 'scripts', 'setup', f));
   W(path.join(tree, 'claude-md-blocks', 'comun.md'), '# regla común\n\ncuerpo común\n');
   W(path.join(tree, 'packs', 'juguete', 'pack.json'), '{ "name": "juguete", "description": "un paquete de prueba" }\n');

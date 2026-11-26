@@ -86,6 +86,59 @@ test('T28 EnvSwitches_InventoryMatchesReaders @story-8.256 @ac-2', () => {
   assert.deepStrictEqual([...ES.lecturas(d).keys()].sort(), ['TYCON_EIGHT', 'TYCON_FIVE', 'TYCON_FOUR', 'TYCON_ONE', 'TYCON_SEVEN', 'TYCON_SIX', 'TYCON_THREE', 'TYCON_TWO']);
 });
 
+/**
+ * ¿El archivo nombra la variable en su código? Por las formas que cuenta `lecturas()` o como texto entre comillas: una
+ * constante con el nombre, o un ayudante que la recibe por nombre (`readEnv('X')`). Los comentarios no cuentan. Un
+ * archivo que no está es «no».
+ */
+function nombraEnCodigo(raiz, rel, nombre) {
+  let texto;
+  try { texto = fs.readFileSync(path.join(raiz, rel), 'utf8'); } catch (_e) { return false; }
+  const codigo = texto.split('\n').filter((l) => !/^\s*(\/\/|\/?\*|#)/.test(l)).join('\n');
+  const formas = rel.endsWith('.json') ? [`optin:${nombre}\\b`, `"${nombre}"`]
+    : rel.endsWith('.sh') ? [`\\$\\{?${nombre}\\b`, `\\benv\\.${nombre}\\b`, `['"]${nombre}['"]`, `\\b${nombre}=`]
+      : [`\\benv\\.${nombre}\\b`, `\\benv\\[\\s*['"]${nombre}['"]`, `['"\`]${nombre}['"\`]`];
+  return formas.some((f) => new RegExp(f).test(codigo));
+}
+
+/** Los lectores declarados que no nombran su variable en el código, y los archivos que la leen sin estar declarados. */
+function lectoresQueNoCoinciden(entradas, raiz, lecturasDelArbol) {
+  const declaradosQueNoLeen = [];
+  const leenSinDeclarar = [];
+  for (const e of entradas) {
+    if (e.lectura === 'comando') continue;   // la lee el comando que la pone delante: la mira sinLector
+    for (const f of e.lectores) if (!nombraEnCodigo(raiz, f, e.nombre)) declaradosQueNoLeen.push(`${e.nombre}: ${f}`);
+    // `lecturas()` cuenta también un comentario (un ejemplo de uso): ése no es un lector
+    for (const f of lecturasDelArbol.get(e.nombre) || []) if (!e.lectores.includes(f) && nombraEnCodigo(raiz, f, e.nombre)) leenSinDeclarar.push(`${e.nombre}: ${f}`);
+  }
+  return { declaradosQueNoLeen: declaradosQueNoLeen.sort(), leenSinDeclarar: leenSinDeclarar.sort() };
+}
+
+// EnvSwitches_DeclaredReadersMatchTheTree
+// 🔴 Falla con: un lector declarado que no nombra su variable (una función que se mudó al partir un guion y la lista
+//    siguió nombrando el archivo viejo), o un archivo que la lee y la lista no nombra entre sus lectores.
+test('EnvSwitches_DeclaredReadersMatchTheTree — cada lector declarado lee su variable, y cada lector del árbol está declarado', () => {
+  const r = lectoresQueNoCoinciden(ES.leer().entradas, ROOT, ES.lecturas(ROOT));
+  assert.deepStrictEqual(r.declaradosQueNoLeen, [], 'lectores declarados que no nombran la variable en su código');
+  assert.deepStrictEqual(r.leenSinDeclarar, [], 'archivos que leen la variable y la lista no los nombra');
+  // en un árbol de juguete: un lector que sólo la nombra en un comentario no cuenta, uno con una constante sí, y un
+  // archivo que la lee sin estar en la lista se nombra
+  const d = tmp('es-lectores-');
+  fs.mkdirSync(path.join(d, 'scripts'));
+  fs.writeFileSync(path.join(d, 'scripts', 'comentario.js'), '// se apaga con TYCON_ONE=0\n');
+  fs.writeFileSync(path.join(d, 'scripts', 'constante.js'), "const OFF = 'TYCON_ONE';\nmodule.exports = (env) => env[OFF] !== '0';\n");
+  fs.writeFileSync(path.join(d, 'scripts', 'suelto.sh'), 'echo "${TYCON_ONE:-}"\n');
+  // un atajo de nombre viejo generado (la marca en la segunda línea) no es un lector: su lectura es la de la plantilla,
+  // que vive en legacy-names.js y está declarada ahí. El privado trae decenas en el árbol armado
+  fs.writeFileSync(path.join(d, 'scripts', 'viejo.js'), "#!/usr/bin/env node\n// tycon-legacy-shim: scripts/constante.js\nconst x = process.env.TYCON_ONE;\n");
+  fs.writeFileSync(path.join(d, 'scripts', 'viejo.sh'), '#!/bin/sh\n# tycon-legacy-shim: scripts/suelto.sh\necho "${TYCON_ONE:-}"\n');
+  const entrada = { nombre: 'TYCON_ONE', lectores: ['scripts/comentario.js', 'scripts/constante.js'], lectura: 'entorno' };
+  assert.deepStrictEqual(lectoresQueNoCoinciden([entrada], d, ES.lecturas(d)), {
+    declaradosQueNoLeen: ['TYCON_ONE: scripts/comentario.js'],
+    leenSinDeclarar: ['TYCON_ONE: scripts/suelto.sh'],
+  });
+});
+
 // T4 CrossCheck_EscC1AndHarnessC1MatchTheList @story-8.256 @ac-5
 // 🔴 Falla con: ESC-C1 o las firmas por variable que no coinciden con la lista, o un apagado de la lista que escrito en
 //    el archivo de arranque del shell no frena.

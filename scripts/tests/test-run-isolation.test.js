@@ -85,7 +85,14 @@ function ambienteDe(texto) {
   return l ? JSON.parse(l.slice('AMBIENTE '.length)) : null;
 }
 const renglones = (f) => { try { return fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (_) { return []; } };
-const espejo = (c) => renglones(path.join(c.casa, '.claude', '.tycon-pipeline', 'gates.log')).filter((g) => g.type === 'smoke-run');
+// el espejo del humo vive en la carpeta del estado de la cuenta, la que da tycon-home.js
+const TH = () => require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'tycon-home.js'));
+const espejo = (c) => renglones(path.join(TH().stateDir(c.casa), 'gates.log')).filter((g) => g.type === 'smoke-run');
+// lo que queda de un archivo del estado sin el renglón que el propio humo anota en su espejo: el de su historia y con su
+// salida. Un renglón verde que escribiera el comando, o cualquier otra línea, queda y se ve
+const sinSuEspejo = (texto, story, salida) => texto.split('\n').filter((l) => {
+  try { const g = JSON.parse(l); return !(g.type === 'smoke-run' && g.story === story && g.exit === salida); } catch { return true; }
+}).join('\n');
 const iso = () => require(ISO);
 
 // ── La pasada de un humo comparado ────────────────────────────────────────────────────────────────────────────────
@@ -144,7 +151,7 @@ test('T3 Aislada_EscribirEnLaCasaReal_NoPasa @story-8.314 @ac-2', { skip: !POSIX
   const s = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.3', ['--', process.execPath, '.advisors/dod-runtime/g.js'], { cwd: r, env: ambiente(c) });
   assert.notStrictEqual(s.status, 0, salida(s));
   assert.ok(salida(s).includes(destino), `la salida nombra la ruta: ${salida(s)}`);
-  assert.strictEqual(fs.readFileSync(destino, 'utf8'), 'antes\n', 'el archivo no cambió');
+  assert.strictEqual(sinSuEspejo(fs.readFileSync(destino, 'utf8'), '9.3', s.status), 'antes\n', 'el archivo no cambió');
 });
 
 // Un hijo que el guion lanza con el ambiente mínimo pierde la red de escritura (vive en

@@ -915,6 +915,11 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   «sin novedades desde las HH:MM» (de 1 a 1440; sin valor, 15). Lo mide la página con su propio reloj, sin preguntarle
   nada a la máquina; una sesión en un paso largo sigue viva y sólo se marca callada. Queda en `team-profile.json` →
   `office.quiet_minutes`.
+- **Lo que la máquina limpia sola**: tres números. Cuántas horas sin uso pasan antes de borrar una carpeta de trabajo
+  ya mergeada (de 0 a 720; sin valor, 4). Cuántos días sin tocar pasan antes de borrar la carpeta temporal de una sesión
+  que ya no vive (de 1 a 365; sin valor, 2). Con cuánto disco libre, en porcentaje, avisa el arranque (de 1 a 99; sin
+  valor, 15). Nunca se borra algo con trabajo sin guardar, y el aviso de disco sólo muestra los comandos de limpieza.
+  Una máquina puede pisar los tres en su configuración. Queda en `team-profile.json` → `maintenance`.
 - **Integraciones**: qué servicios usa cada máquina (el reloj de horas, la memoria, el buzón, la noche, el índice de
   código de CodeGraph); una máquina puede apagar una para ella sola. Con CodeGraph prendido, el instalador se lo instala
   a cada dev y el arnés avisa si una máquina no lo tiene. Queda en `team-profile.json`, en el repo del perfil. Lo

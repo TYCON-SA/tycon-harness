@@ -153,12 +153,70 @@ function resolveCommit(root, rev) {
   return recordado(root, rev, ['rev-parse', '--verify', '-q', `${rev}^{commit}`], (r) => (r.status === 0 ? trimNl(r.stdout) : null));
 }
 // un blob, por la ruta exacta desde la raíz (`rev:./x` resolvería contra la carpeta de quien llama)
+// Con la versión fija, el árbol entero se lee una sola vez (`ls-tree`) y los blobs que hacen falta, de a muchos en un
+// `cat-file --batch`: una pregunta por archivo eran más de mil procesos de git por corrida (fila 269), y con la máquina
+// cargada el control se colgaba minutos. Una ruta que no tiene la forma simple de `ls-tree` (`a//b`, `a/./b`, una
+// barra al final) se sigue preguntando a git, que es quien sabe resolverla. TYCON_GIT_MEMO=0 también apaga esto.
+// Los textos se leen por carpeta, no el árbol entero: el árbol armado del privado pasa de 300 MB (fotos del tablero y del
+// banco, memoria, evidencias), y leído entero por cada versión que se mira la validación se quedaba sin memoria cerca de
+// los 2 GB. El código que recorre un control toca pocas carpetas, y cada una sigue siendo un solo `cat-file`.
+const ARBOLES = new Map();
+const rutaSimple = (p) => !/\/\/|(^|\/)\.\.?(\/|$)|\/$|\\/.test(p);
+const carpetaDe = (p) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
+function arbol(root, rev) {
+  if (!fija(rev)) return null;
+  const k = `${root}\0${rev}`;
+  if (ARBOLES.has(k)) return ARBOLES.get(k);
+  const r = git(root, ['ls-tree', '-r', '-t', '-z', '--full-tree', rev], { allowFail: true });
+  let t = null;
+  if (r.status === 0) {
+    t = { entradas: new Map(), textos: new Map(), porCarpeta: new Map(), leidas: new Set() };
+    for (const linea of r.stdout.split('\0')) {
+      const m = /^(\d+) (\w+) ([0-9a-f]+)\t([\s\S]+)$/.exec(linea);
+      if (!m) continue;
+      t.entradas.set(m[4], { tipo: m[2], sha: m[3] });
+      if (m[2] !== 'blob') continue;
+      const c = carpetaDe(m[4]);
+      if (!t.porCarpeta.has(c)) t.porCarpeta.set(c, []);
+      t.porCarpeta.get(c).push(m[3]);
+    }
+    EXISTEN.add(k);
+  }
+  ARBOLES.set(k, t);
+  return t;
+}
+/** Los textos de los blobs de una carpeta del árbol (sin las de adentro), en un `cat-file --batch`: la primera vez que se pide uno de ellos. */
+function textos(root, t, carpeta) {
+  if (t.leidas.has(carpeta)) return;
+  t.leidas.add(carpeta);
+  const shas = [...new Set(t.porCarpeta.get(carpeta) || [])].filter((s) => !t.textos.has(s));
+  if (!shas.length) return;
+  const r = spawnSync('git', ['-C', root, 'cat-file', '--batch'], { input: `${shas.join('\n')}\n`, env: GIT_ENV, maxBuffer: 1024 * 1024 * 1024 });
+  if (r.error || r.status !== 0) return;
+  const out = r.stdout;
+  let i = 0;
+  while (i < out.length) {
+    const fin = out.indexOf(10, i);
+    if (fin < 0) break;
+    const m = /^([0-9a-f]+) blob (\d+)$/.exec(out.toString('utf8', i, fin));
+    if (!m) return;
+    const n = Number(m[2]);
+    t.textos.set(m[1], out.toString('utf8', fin + 1, fin + 1 + n));
+    i = fin + 1 + n + 1;
+  }
+}
 function blobOf(root, rev, p) {
   if (!p || p.startsWith('.') && (p.startsWith('./') || p.startsWith('../'))) return null;
+  const t = rutaSimple(p) ? arbol(root, rev) : null;
+  if (t) { const e = t.entradas.get(p); return e ? e.sha : null; }
   return recordado(root, rev, ['rev-parse', '--verify', '-q', `${rev}:${p}`], (r) => (r.status === 0 ? trimNl(r.stdout) : null));
 }
 function show(root, rev, p) {
-  if (!blobOf(root, rev, p)) return null;
+  const sha = blobOf(root, rev, p);
+  if (!sha) return null;
+  const t = rutaSimple(p) ? arbol(root, rev) : null;
+  const e = t && t.entradas.get(p);
+  if (e && e.tipo === 'blob') { textos(root, t, carpetaDe(p)); if (t.textos.has(sha)) return t.textos.get(sha); }
   return recordado(root, rev, ['cat-file', 'blob', `${rev}:${p}`], (r) => (r.status === 0 ? r.stdout : null));
 }
 // muchos blobs con un solo git, `{ id → texto }`, o null si git falló; lo que no es un blob no está. Un proceso por constancia tarda más que el
