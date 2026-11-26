@@ -16,7 +16,7 @@
  * o `sin-fuente` (su tipo no lo anota nadie: nunca es limpia). Una máquina callada NO cambia el estado de ninguna
  * entrada: va en `machines_unreported`, así una máquina callada no atrasa el retiro de todos.
  *
- * La ventana: los últimos 14 días; para una entrada con `retire_after` propia, la semana antes de esa fecha, que es
+ * La ventana: los últimos 7 días; para una entrada con `retire_after` propia, la semana antes de esa fecha, que es
  * una semana después del día en que se vio el uso.
  *
  * 🔴 Mira el código de salida de cada consulta (`az`, la bajada del buzón) antes de leer su salida: una que falla es
@@ -47,7 +47,7 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const LN = require(path.join(ROOT, 'scripts', 'lib', 'legacy-names.js'));
 const { aliasDeNombre, leerUnionesDeCarpetas } = require(path.join(ROOT, 'scripts', 'nightly', 'dashboard', 'reducer.js'));
 
-const WINDOW_DAYS = 14;
+const WINDOW_DAYS = 7;
 const OWN_WINDOW_DAYS = 7;
 const RUNS_TOP = 200;
 // el motivo con que la subida (scripts/metrics/upload-runs.js) dice que la máquina no tiene registro de usos

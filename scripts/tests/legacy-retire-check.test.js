@@ -116,10 +116,20 @@ test('T4 RetireA_CheckSaysReadyOnlyWithPositiveEvidence — la fecha todavía no
 
 test('T4 RetireA_CheckSaysReadyOnlyWithPositiveEvidence — un uso viejo fuera de la ventana no cuenta; uno adentro sí', () => {
   const fuera = run(lab({ machines: { 'maq-uno': { lines: [uso('viejo-a', 'option', '2026-10-20')] } } }));
-  assert.strictEqual(fuera.code, 0, 'un uso de hace más de 14 días no frena');
+  assert.strictEqual(fuera.code, 0, 'un uso de hace más de 7 días no frena');
   const adentro = run(lab({ machines: { 'maq-uno': { lines: [uso('viejo-a', 'option')] } } }));
   assert.strictEqual(adentro.code, 1);
   assert.strictEqual(states(adentro.json)['viejo-a'], 'con-uso');
+});
+
+// 🔴 Falla con: la ventana del retiro sigue en 14 días. Son 7: un uso de hace ocho días ya no atrasa el retiro.
+test('T4 RetireA_VentanaDeSieteDias — un uso de hace ocho días no cuenta; uno de hace seis, sí', () => {
+  const ocho = run(lab({ machines: { 'maq-uno': { lines: [uso('viejo-a', 'option', '2026-11-09')] } } }));
+  assert.strictEqual(ocho.code, 0, 'hace ocho días: fuera de la ventana');
+  assert.strictEqual(ocho.json.window_from, '2026-11-10');
+  const seis = run(lab({ machines: { 'maq-uno': { lines: [uso('viejo-a', 'option', '2026-11-11')] } } }));
+  assert.strictEqual(seis.code, 1);
+  assert.strictEqual(states(seis.json)['viejo-a'], 'con-uso');
 });
 
 test('T4 RetireA_CheckSaysReadyOnlyWithPositiveEvidence — una entrada con fecha propia se mide desde la semana antes de su fecha', () => {
