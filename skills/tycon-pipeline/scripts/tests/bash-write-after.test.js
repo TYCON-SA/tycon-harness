@@ -802,3 +802,46 @@ test('WriteAfter_ForgedConversationAndOtherSessionsMarker @story-8.320 @ac-11', 
   correr(l, 'R=rm; $R x', { hacer: () => fs.rmSync(propio) });
   assert.ok(fs.existsSync(propio), 'el propio sí vuelve');
 });
+
+// 🔴 Falla con: el evento de después borra su foto (un repetido la encontraría vacía y frenaría); el evento de antes no
+//    borra la foto vieja de su sesión, o borra la de otra sesión cuyo id empieza igual, o la de un comando recién
+//    terminado (un repetido demorado frenaría).
+test('WriteAfter_PhotosKeptForARepeatedEvent_AndCleanedPerSession @story-8.320 @ac-7', () => {
+  const l = lab();
+  const f = l.f('specs/story-1.1-hecha.md');
+  const fotos = path.join(l.estado, 'write-photos');
+  const ev = (sesion, id, hook_event_name, command) => spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ session_id: sesion, tool_use_id: id, transcript_path: l.transcript, cwd: l.repo, hook_event_name, tool_name: 'Bash', tool_input: { command } }), env: l.env, encoding: 'utf8' });
+  const A = 'abcd1234-aaaa-0000-0000-000000000000';
+  const B = 'abcd1234-bbbb-0000-0000-000000000000';
+  // un comando que escribe, de A: su foto queda después de mirar
+  assert.strictEqual(ev(A, 'w-1', 'PreToolUse', 'N=node; $N x.js').status, 0);
+  fs.writeFileSync(f, historia('1.1', 'done'));
+  assert.strictEqual(ev(A, 'w-1', 'PostToolUse', 'N=node; $N x.js').status, 0);
+  const fotoA = path.join(fotos, `${A}-w-1.json`);
+  assert.ok(fs.existsSync(fotoA), 'la foto queda después de mirar');
+  // otra sesión con el mismo primer tramo arranca un comando: no la toca
+  assert.strictEqual(ev(B, 'w-2', 'PreToolUse', 'ls').status, 0);
+  assert.ok(fs.existsSync(fotoA), 'la foto de otra sesión no se borra');
+  // el comando siguiente de A, enseguida: la foto de un comando recién terminado queda, y un repetido no frena
+  assert.strictEqual(ev(A, 'w-3', 'PreToolUse', 'ls').status, 0);
+  assert.ok(fs.existsSync(fotoA), 'la de hace menos de un minuto queda');
+  assert.strictEqual(ev(A, 'w-1', 'PostToolUse', 'N=node; $N x.js').status, 0);
+  assert.strictEqual(require('../lib/protected-photo.js').readBrake(l.estado, A), null, 'el evento repetido de un comando que escribe no frena');
+  // pasado el minuto, el comando siguiente de A la borra
+  const reg = path.join(fotos, 'in-progress', `${A}-w-1.json`);
+  const r = JSON.parse(fs.readFileSync(reg, 'utf8'));
+  fs.writeFileSync(reg, JSON.stringify({ ...r, fin: r.fin - 2 * 60 * 1000 }));
+  assert.strictEqual(ev(A, 'w-4', 'PreToolUse', 'ls').status, 0);
+  assert.ok(!fs.existsSync(fotoA), 'la foto vieja de la sesión se borra');
+  // un evento de después sin foto de un comando que sólo lee no frena
+  assert.strictEqual(ev(A, 'lee-1', 'PostToolUse', 'cat specs/story-1.1-hecha.md').status, 0);
+  assert.strictEqual(require('../lib/protected-photo.js').readBrake(l.estado, A), null, 'una lectura sin foto no frena');
+});
+
+// 🔴 Falla con: `>&2archivo` (un archivo, no un descriptor) o `file -C` (compila un archivo) pasan por lectura.
+test('WriteAfter_DescriptorRedirectToAFile_AndFileCompile_NotReads @story-8.320 @ac-7', () => {
+  const { soloLee, redirigeAArchivo } = require(HOOK);
+  for (const c of ['echo hi >&2file', 'echo hi 1>&2file', 'echo hi >&-file']) assert.strictEqual(redirigeAArchivo(c), true, c);
+  for (const c of ['ls 2>&1', 'echo x >&2', 'echo x >&2; ls', 'ls 2>&1 | grep x']) assert.strictEqual(redirigeAArchivo(c), false, c);
+  assert.strictEqual(soloLee('file -C -m x'), false);
+});

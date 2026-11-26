@@ -118,7 +118,8 @@ function redirigeAArchivo(comando) {
     let j = i + 1;
     if (s[j] === '>' || s[j] === '|') j++;
     if (s[j] === '&') {
-      if (/[\d-]/.test(s[j + 1] || '')) { i = j + 1; continue; }
+      // `>&2` o `>&-` duplica o cierra un descriptor; `>&2archivo` escribe un archivo
+      if (/[\d-]/.test(s[j + 1] || '') && /^(?:$|[\s;&|)<>])/.test(s.slice(j + 2))) { i = j + 1; continue; }
       return true;
     }
     while (s[j] === ' ' || s[j] === '\t') j++;
@@ -257,18 +258,24 @@ function llamadasDeLaConversacion(transcriptPath, ids, hasta) {
  * deshacer no encuentra nada) en vez de confiar en una marca de «ya mirado», que el comando podría escribir. Un `fin`
  * fabricado sólo adelanta el borrado, y sin foto el evento de después frena.
  */
-function borrarFotosMiradas(stateDir, input) {
+function borrarFotosMiradas(stateDir, input, ahora = Date.now()) { // stable-data: la edad del fin de cada comando
   const propia = path.basename(archivoDeLaFoto(stateDir, input));
-  const prefijo = `${path.basename(propia).split('-')[0]}-`;
+  const sesion = input.session_id || null;
   let nombres = [];
   try { nombres = fs.readdirSync(photo.photosDir(stateDir)); } catch (_) { return; }
   for (const n of nombres) {
-    if (n === propia || !n.startsWith(prefijo) || !n.endsWith('.json')) continue;
+    if (n === propia || !n.endsWith('.json')) continue;
     let r = null;
     try { r = JSON.parse(fs.readFileSync(path.join(dirEnCurso(stateDir), n), 'utf8')); } catch (_) { continue; }
-    if (r && typeof r.fin === 'number') { try { fs.rmSync(path.join(photo.photosDir(stateDir), n), { force: true }); } catch (_) { /* otra la borró */ } }
+    // de esta sesión por el registro, no por el nombre (dos ids pueden empezar igual), y terminado hace más de un minuto:
+    // un evento de después repetido llega enseguida y todavía la encuentra
+    if (r && r.sesion === sesion && typeof r.fin === 'number' && ahora - r.fin > ESPERA_DEL_REPETIDO_MS) {
+      try { fs.rmSync(path.join(photo.photosDir(stateDir), n), { force: true }); } catch (_) { /* otra la borró */ }
+    }
   }
 }
+// cuánto queda la foto de un comando terminado, para un evento de después repetido
+const ESPERA_DEL_REPETIDO_MS = 60 * 1000;
 
 function anotarFin(stateDir, input) {
   const f = archivoEnCurso(stateDir, input);
@@ -437,9 +444,10 @@ function noSePudoMirar(input, stateDir, motivo) {
 
 // lo que se puede correr con la sesión frenada: programas que sólo leen, sin redirecciones a archivos ni sustituciones.
 // Ninguno ejecuta otro programa por una opción ni escribe un archivo que nombra (por eso no están `rg` ni `git grep`,
-// que corren otro con `--pre` y `-O`; ni `less`, que corre el de LESSOPEN; ni `uniq`, que escribe su segundo archivo)
+// que corren otro con `--pre` y `-O`; ni `less`, que corre el de LESSOPEN; ni `uniq`, que escribe su segundo archivo;
+// ni `file`, que con `-C` compila un archivo)
 const LECTORES = new Set(['cat', 'head', 'tail', 'ls', 'grep', 'egrep', 'fgrep', 'wc', 'pwd', 'echo', 'printf', 'true', 'false',
-  'test', '[', 'stat', 'file', 'diff', 'cmp', 'which', 'type', 'date', 'whoami', 'id', 'uname', 'basename', 'dirname', 'realpath',
+  'test', '[', 'stat', 'diff', 'cmp', 'which', 'type', 'date', 'whoami', 'id', 'uname', 'basename', 'dirname', 'realpath',
   'readlink', 'jq', 'cut', 'tr', 'nl', 'od', 'cd']);
 // `sort` sólo como filtro de una tubería: sin archivos y con estas opciones. `--compress-program` corre un programa,
 // `-o` escribe, y en PowerShell un bloque `{ … }` es código
