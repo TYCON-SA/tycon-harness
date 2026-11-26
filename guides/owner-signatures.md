@@ -1,6 +1,6 @@
 # Las firmas del dueño
 
-Algunos pasos del arnés no los puede aprobar el agente que trabaja. Esta guía (en inglés, [firmas-del-arnes.en.md](firmas-del-arnes.en.md)) lista todas esas firmas, con el nombre que
+Algunos pasos del arnés no los puede aprobar el agente que trabaja. Esta guía (en inglés, [owner-signatures.en.md](owner-signatures.en.md)) lista todas esas firmas, con el nombre que
 lleva cada una en el perfil del equipo. Sirve para decidir dos cosas del perfil:
 
 - `approvals.delegated_signing`: las firmas **de trámite**. Las da **el arnés solo**, en cualquier sesión y en cualquier

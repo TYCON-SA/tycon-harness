@@ -1938,3 +1938,26 @@ test('T10 SpanishNames_OwnOptionOrLoose_AsToday @story-8.278 @ac-14 @ac-15 @ac-2
   if (!d.dictionary) { t.skip('NO MEDIDO: sin /usr/share/dict/words'); return; }
   assert.ok(d.isSpanish(W.cargar).spanish, 'la opción propia en castellano frena');
 });
+
+// 🔴 Falla con: --check-map no conoce `accepted_until` (un nombre viejo que se sigue aceptando hasta que lo renombre su
+//    dueño): o la frena como campo desconocido, o deja pasar una vacía que no dice por qué.
+test('T42 CheckMap_AcceptedUntil — --check-map acepta accepted_until con su motivo y frena uno vacío o que no es texto', () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'sn-t42-'));
+  write(repo, { 'pipelines/azure-pipelines-lab.yml': 'trigger: none\n', 'pipelines/azure-pipelines-other-lab.yml': 'trigger: none\n' });
+  const check = (accepted) => {
+    const f = path.join(repo, `map-${Math.random().toString(36).slice(2)}.json`);
+    const entries = HOMONYM_ENTRIES(null).concat([{ kind: 'config-file', old: 'viejo-lab.json', new: 'new-lab.json', batch: 'lab', accepted_until: accepted }]);
+    fs.writeFileSync(f, JSON.stringify({ __about: 'mapa de laboratorio', retire_after: null, entries }));
+    return run(['--check-map', '--map', f, '--repo', repo]);
+  };
+  try {
+    const ok = check('lo renombra cada producto en su tanda');
+    assert.strictEqual(ok.status, 0, `con motivo: pasa (${ok.stderr})`);
+    for (const [what, v] of [['vacío', '  '], ['un número', 3]]) {
+      const r = check(v);
+      assert.strictEqual(r.status, 2, `${what}: sale 2 (salió ${r.status}: ${r.stderr})`);
+      assert.match(r.stderr, /accepted_until/);
+      assert.doesNotMatch(r.stderr, /campo desconocido «accepted_until»/);
+    }
+  } finally { fs.rmSync(repo, { recursive: true, force: true }); }
+});

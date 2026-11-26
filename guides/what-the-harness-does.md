@@ -767,7 +767,7 @@ frase.
 |---|---|
 | el formato de story que hace verificable todo lo demás | [story-format.md](../story-format.md) |
 | cuándo invocar qué agente BMAD, y qué revisor sigue a cada uno | [workflow-orchestration.md](workflow-orchestration.md) §6 |
-| el porqué detrás de cualquier regla | la guía que la enuncia — índice en [piezas-del-arnes.md](piezas-del-arnes.md) |
+| el porqué detrás de cualquier regla | la guía que la enuncia — índice en [harness-pieces.md](harness-pieces.md) |
 | el catálogo de las 344 reglas | [advisor-rules-catalog.md](advisor-rules-catalog.md) |
 | cómo funciona el banco de pruebas | [controls-bench.md](maintaining/controls-bench.md) |
 | por qué el portón de servidor está construido y no adoptado | [ci-gate.md](ci-gate.md) |

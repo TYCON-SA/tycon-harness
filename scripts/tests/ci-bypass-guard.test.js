@@ -444,7 +444,7 @@ test('T14 Guias_FirmaYRegla @story-8.241 @ac-8', () => {
   const fila = guia.split('\n').find((l) => l.startsWith('|') && l.includes('GIT-C5'));
   assert.ok(fila, 'safety-guard.md no tiene la fila GIT-C5');
   assert.match(fila, /merge-bypass/);
-  const firmas = fs.readFileSync(path.join(RAIZ, 'guides', 'firmas-del-arnes.md'), 'utf8');
+  const firmas = fs.readFileSync(path.join(RAIZ, 'guides', 'owner-signatures.md'), 'utf8');
   assert.match(firmas, /merge-bypass/);
 });
 
