@@ -235,7 +235,9 @@ function almacenDelSitio(bucket, token, base, lector = LECTOR_SITIO) {
       if (r.status !== 200) return { estado: 'servicio_fallo', motivo: `el buzón contestó ${r.status} al listar: no se bajó nada` };
       let doc = null;
       try { doc = JSON.parse(r.cuerpo.toString('utf8')); } catch (_) { /* abajo */ }
-      if (!doc || (doc.items !== undefined && !Array.isArray(doc.items))) return { estado: 'servicio_fallo', motivo: 'el buzón contestó 200 al listar con algo que no es un listado: no se bajó nada' };
+      // el listado de Cloud Storage siempre dice qué es (`kind: storage#objects`): otro 200 no es el bucket vacío, y tomarlo
+      // por vacío haría que la poda borre el espejo
+      if (!doc || typeof doc !== 'object' || Array.isArray(doc) || doc.kind !== 'storage#objects' || (doc.items !== undefined && !Array.isArray(doc.items))) return { estado: 'servicio_fallo', motivo: 'el buzón contestó 200 al listar con algo que no es un listado: no se bajó nada' };
       for (const it of doc.items || []) {
         if (!it || typeof it.name !== 'string') continue;
         const fecha = (v) => { const t = v ? Date.parse(v) : NaN; return Number.isFinite(t) ? t : null; };

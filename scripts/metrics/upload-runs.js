@@ -518,9 +518,15 @@ const destinoDe = (cfg) => (esDeAzure(cfg) ? `${cfg.cuenta}/${cfg.contenedor}` :
 function proveedorDeLaLlave(ruta = rutaConfig()) {
   try {
     const p = JSON.parse(fs.readFileSync(ruta, 'utf8')).provider;
-    return p === undefined || p === 'azure-blob' ? null : String(p).slice(0, 40);
+    if (p === undefined || p === 'azure-blob') return null;
+    // se repite en motivos y registros: sólo si tiene la forma de un nombre de proveedor. Un valor cualquiera puede ser el
+    // secreto puesto por error en ese campo, y un secreto HMAC tiene 40 caracteres: no se dice, y ningún conector lo atiende
+    return typeof p === 'string' && FORMA_PROVEEDOR.test(p) ? p : PROVEEDOR_SIN_NOMBRE;
   } catch (_) { return null; }
 }
+// la forma de un nombre de proveedor (`gcs`, `azure-blob`), y lo que se dice en su lugar cuando no la tiene
+const FORMA_PROVEEDOR = /^[a-z][a-z0-9-]{0,19}$/;
+const PROVEEDOR_SIN_NOMBRE = '(un "provider" que no tiene la forma de un nombre)';
 
 /**
  * Dónde sube una llave: `{ poner, clasificar, pisada, probarListado? }`. Con Azure, el PUT de siempre (`ponerBlob`) y

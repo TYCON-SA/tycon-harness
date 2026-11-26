@@ -780,3 +780,58 @@ process.stdout.write(JSON.stringify({ gcs: p({ provider: 'gcs', bucket: 'acme-bu
   assert.deepStrictEqual(o.cargados, [], 'no cargó integrations.js ni ningún conector');
   assert.deepStrictEqual(o.proveedores, ['azure-blob', 'gcs'], 'los proveedores salen de los manifiestos');
 });
+
+// --- pase adversarial de la 8.336 (26/11) ---------------------------------------------------------------------------
+
+// el secreto de una llave HMAC tiene 40 caracteres: una llave que lo trae por error en "provider" no lo repite en ningún
+// motivo ni registro de la bajada (el nombre del proveedor se dice sólo si tiene la forma de un nombre)
+const SECRETO_EN_PROVIDER = Buffer.from('secretoDePruebaNoEsReal000000').toString('base64');
+for (const args of [[], ['--overwrites-report']]) {
+  test(`MailboxKey_SecretInProvider_NeverPrinted ${args.join(' ') || '(común)'} @story-8.336 — el secreto puesto en "provider" no sale en la bajada`, () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'gcs-provider-'));
+    try {
+      const home = path.join(base, 'home');
+      fs.mkdirSync(home, { recursive: true });
+      const ruta = path.join(base, 'corridas-buzon.json');
+      fs.writeFileSync(ruta, JSON.stringify({ provider: SECRETO_EN_PROVIDER, bucket: 'acme-buzon-lab', accessId: 'GOOG1EPRUEBADEJUGUETENOESREAL0000000000', secret: 'x', vence: '2099-12-31', rotar: 'r' }));
+      const env = { ...process.env };
+      for (const k of Object.keys(env)) if (/^TYCON_|^TF_BUILD$|^GCE_METADATA_HOST$|^ADO_ORG$/.test(k)) delete env[k];
+      Object.assign(env, { HOME: home, USERPROFILE: home, TYCON_HOME: path.join(home, '.tycon'), TYCON_PROFILE: '0', TYCON_MAILBOX: '1', TYCON_MAILBOX_JSON: ruta,
+        TYCON_MAILBOX_URL_BASE: 'http://127.0.0.1:1', TYCON_MAILBOX_DIR: path.join(base, 'espejo'), TYCON_AZ_BIN: path.join(base, 'no-hay-az'), TYCON_GCLOUD_BIN: path.join(base, 'no-hay-gcloud') });
+      const r = spawnSync(process.execPath, [BAJAR, '--json', ...args], { env, encoding: 'utf8' });
+      assert.ok(!`${r.stdout}\n${r.stderr}`.includes(SECRETO_EN_PROVIDER), 'el secreto salió en la salida');
+      const conSecreto = [];
+      const andar = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) andar(p); else if (p !== ruta && fs.readFileSync(p, 'utf8').includes(SECRETO_EN_PROVIDER)) conSecreto.push(p); } };
+      andar(base);
+      assert.deepStrictEqual(conSecreto, [], 'el secreto quedó en un archivo');
+      assert.notStrictEqual(r.status, 0, 'una llave con un proveedor que no es un nombre no baja nada');
+    } finally { fs.rmSync(base, { recursive: true, force: true }); }
+  });
+}
+
+// un 200 que no es el listado de Cloud Storage (sin `kind: storage#objects`) no es el bucket vacío: con la poda prendida
+// borraría el espejo del sitio
+for (const cuerpo of ['{}', '[]', '{"error":{"code":200,"message":"mantenimiento"}}', '42']) {
+  test(`SiteMailbox_200ThatIsNotAListing_DoesNotPrune ${cuerpo} @story-8.336 — un 200 que no es un listado no borra el espejo`, async () => {
+    const http = require('http');
+    const srv = http.createServer((req, res) => {
+      res.setHeader('content-type', 'application/json');
+      if (req.url.startsWith('/computeMetadata/')) { res.end(JSON.stringify({ access_token: 'token-de-juguete', expires_in: 3600 })); return; }
+      res.end(cuerpo);
+    });
+    await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcs-espejo-'));
+    const antes = process.env.GCE_METADATA_HOST;
+    try {
+      fs.mkdirSync(path.join(dir, 'maq-a-11111111'), { recursive: true });
+      for (const f of ['s1.json', 's2.json', 's3.json']) fs.writeFileSync(path.join(dir, 'maq-a-11111111', f), JSON.stringify({ archivedAt: '2026-11-20T10:00:00Z', marker: { sessionId: f } }));
+      process.env.GCE_METADATA_HOST = `127.0.0.1:${srv.address().port}`;
+      const r = await conector().bajarBuzon({ buzon: BUZON, credencial: { managed: true }, urlBase: `http://127.0.0.1:${srv.address().port}`, dir, log: () => {}, budgetMs: 30000, podar: true });
+      assert.notStrictEqual(r.codigo, 0, JSON.stringify(r.res));
+      assert.strictEqual(fs.readdirSync(path.join(dir, 'maq-a-11111111')).length, 3, 'el espejo perdió ejecuciones');
+    } finally {
+      if (antes === undefined) delete process.env.GCE_METADATA_HOST; else process.env.GCE_METADATA_HOST = antes;
+      srv.close(); fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
