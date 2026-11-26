@@ -237,7 +237,8 @@
     "review_before": "2027-11-26",
     "estado": "propuesta",
     "ganchos": [],
-    "dentro_de": "skills/tycon-pipeline/scripts/hook-pre-edit.js"
+    "dentro_de": "skills/tycon-pipeline/scripts/hook-pre-edit.js",
+    "anota": "story-skill-gate"
   },
   "on-red-test-edit": {
     "tipo": "exigencia",
@@ -245,7 +246,8 @@
     "review_before": "2027-11-26",
     "estado": "propuesta",
     "ganchos": [],
-    "dentro_de": "skills/tycon-pipeline/scripts/hook-pre-edit.js"
+    "dentro_de": "skills/tycon-pipeline/scripts/hook-pre-edit.js",
+    "anota": "red-test-edit"
   },
   "on-coordination-write": {
     "tipo": "preferencia",
@@ -277,9 +279,10 @@
     "review_before": "2027-01-26",
     "estado": "propuesta",
     "ganchos": [],
-    "dentro_de": "skills/tycon-pipeline/scripts/hook-pre-edit.js"
+    "dentro_de": "skills/tycon-pipeline/scripts/hook-pre-edit.js",
+    "anota": "deprecated-edit"
   },
-  "production-json-lint": {
+  "lint-production-json": {
     "tipo": "exigencia",
     "motivo": "Protege producción: un commit con .tycon/production.json mal formado no entra. Sin variable; la salida es una emergencia firmada por la persona. Es la parte del freno de producción que corre al commitear.",
     "review_before": "2027-11-26",
@@ -322,7 +325,7 @@
   },
   "plan-auto-approve": {
     "tipo": "exigencia",
-    "motivo": "Protege una firma del dueño: la aprobación automática del plan no vale si lo que aprobaba ya no existe.",
+    "motivo": "Protege una firma del dueño: la opción --auto-approved ya no aprueba un plan; usarla frena y dice cómo se aprueba.",
     "review_before": "2027-11-26",
     "estado": "propuesta",
     "ganchos": [],
@@ -330,7 +333,7 @@
   },
   "plan-assumptions": {
     "tipo": "exigencia",
-    "motivo": "Protege una firma del dueño: el plan no se cierra con supuestos que nadie confirmó.",
+    "motivo": "Protege la historia: el plan no se cierra sin su sección de suposiciones, y los archivos que nombra tienen que existir.",
     "review_before": "2027-11-26",
     "estado": "propuesta",
     "ganchos": [],
@@ -524,47 +527,59 @@
   },
   "ledger-visible": {
     "tipo": "preferencia",
-    "motivo": "Un trámite: la constancia de una escritura queda visible en gates.log; si el registro falla, igual frena.",
+    "motivo": "Frena editar código por la línea de comandos, con la constancia en gates.log (si el registro falla, igual frena). Es el piloto de la prueba de resta, que mide si hace falta.",
     "review_before": "2027-01-26",
     "estado": "propuesta",
     "ganchos": [],
     "del_pipeline": true,
-    "dudoso": "A decidir: el nombre y el mensaje dicen un orden o un trámite, pero no se leyó el cuerpo entero del control."
+    "dudoso": "Fable lo lee como exigencia: protege las historias desde la consola. Pasarlo a exigencia lo saca de la prueba de resta, de la que es el piloto. Lo decide el dueño."
   },
   "tests-missing": {
-    "tipo": "preferencia",
-    "motivo": "Un trámite: el paso de probar no se cierra sin que el portón de pruebas haya anotado algo.",
-    "review_before": "2027-01-26",
+    "tipo": "exigencia",
+    "motivo": "Protege la constancia de pruebas: el paso de probar no cierra si el portón de pruebas no anotó nada en esta ejecución.",
+    "review_before": "2027-11-26",
     "estado": "propuesta",
     "ganchos": [],
-    "del_pipeline": true,
-    "dudoso": "A decidir: el nombre y el mensaje dicen un orden o un trámite, pero no se leyó el cuerpo entero del control."
+    "del_pipeline": true
   },
   "tests-no-turn": {
-    "tipo": "preferencia",
-    "motivo": "Cuida la máquina: las pruebas pesadas esperan su turno.",
-    "review_before": "2027-01-26",
+    "tipo": "exigencia",
+    "motivo": "Protege la constancia de pruebas: sin turno para lo pesado, las pruebas no corrieron, y el paso no se da por probado.",
+    "review_before": "2027-11-26",
     "estado": "propuesta",
     "ganchos": [],
-    "del_pipeline": true,
-    "dudoso": "A decidir: el nombre y el mensaje dicen un orden o un trámite, pero no se leyó el cuerpo entero del control."
+    "del_pipeline": true
   },
   "tests-scope": {
-    "tipo": "preferencia",
-    "motivo": "Cuida la máquina: las pruebas de la ejecución corren con su alcance, no la suite entera.",
-    "review_before": "2027-01-26",
+    "tipo": "exigencia",
+    "motivo": "Protege la constancia de pruebas: un verde que no salió de la suite completa no cierra el paso.",
+    "review_before": "2027-11-26",
     "estado": "propuesta",
     "ganchos": [],
-    "del_pipeline": true,
-    "dudoso": "A decidir: el nombre y el mensaje dicen un orden o un trámite, pero no se leyó el cuerpo entero del control."
+    "del_pipeline": true
   },
   "tests-waiting-on-main": {
-    "tipo": "preferencia",
-    "motivo": "Un trámite: la historia espera que main tenga lo que sus pruebas necesitan.",
-    "review_before": "2027-01-26",
+    "tipo": "exigencia",
+    "motivo": "Protege la constancia de pruebas: con main roto, la historia espera; no se cierra sobre un main en rojo.",
+    "review_before": "2027-11-26",
     "estado": "propuesta",
     "ganchos": [],
-    "del_pipeline": true,
-    "dudoso": "A decidir: el nombre y el mensaje dicen un orden o un trámite, pero no se leyó el cuerpo entero del control."
+    "del_pipeline": true
+  },
+  "mutation": {
+    "tipo": "exigencia",
+    "motivo": "Protege la constancia de pruebas: el chequeo de mutantes frena el cierre cuando las pruebas de la historia no cazan los mutantes de su código.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "manual-checks": {
+    "tipo": "exigencia",
+    "motivo": "Protege una firma del dueño y la historia: cada criterio que se prueba a mano lo marca una persona; sin esas marcas, el paso no cierra.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
   }
 }
