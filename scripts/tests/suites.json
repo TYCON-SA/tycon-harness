@@ -532,6 +532,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.334 (tanda A, fila 177): el freno de escrituras tapa los seis caminos por los que se escribía una constancia (un guion de shell, un comodín, la copia de una carpeta, un enlace duro, el `Move to` de Codex, una ruta armada) y protege también `.tycon/runtime-waivers.jsonl` y el `approvals.jsonl` de las ejecuciones, sin frenar de más. Repos de git temporales, HOME temporal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/row-177-write-gate.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.48: la clave `stack` de team-repos.json, leída desde el árbol del arnés.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/stack-config.test.js",

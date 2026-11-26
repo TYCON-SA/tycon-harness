@@ -92,6 +92,8 @@ function borraOMuevePorParche(event, abs) {
 /** Para el despachador: `{ block }` antes de editar, `{ systemMessage, reminder }` después; null si no hay nada. */
 function handle(event, opts = {}) {
   if (!event || !EDITORES.has(event.tool_name)) return null;
+  // el destino de un `*** Move to:` de Codex: mover pasa siempre, como en el evento del origen
+  if (event.tool_input && event.tool_input.move_from) return null;
   const fp = event.tool_input && (event.tool_input.file_path || event.tool_input.notebook_path);
   if (!fp) return null;
   const stateDir = opts.stateDir || io.DEFAULT_STATE_DIR;

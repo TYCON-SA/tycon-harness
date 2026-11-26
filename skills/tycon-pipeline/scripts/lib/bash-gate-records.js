@@ -28,7 +28,7 @@ const { GUION_ESCRIBE, NOMBRA_RUTA_DE_HISTORIA, logHookError } = require('./bash
 const { BORRA_O_MUEVE, PREFIJO, TOPE_ANIDADOS, expandirLlaves, nativePath, palabras, recorrerCarpetaDeCd, sinEscapesDeComillas, tok } = require('./bash-gate-words.js');
 const { ESCRIBE, LECTORES_DE_XARGS, OPCIONES_CON_VALOR, REDIRECCION, SHELLS_QUE_LEEN_COMANDOS, TOPE_DE_CARPETAS_DE_CD, algunOpenEscribe, argumentosDeCopia, citados, constanciasDeOtraRama, contenidoDelArchivo, dentroDeUnRepo, destinoDeLaCopia, ejecutaTexto, ensayarSeds, estadoDeHistoria, estadosDelEncabezado, expandirComodin, mdAdentro, nombreDeComando, nombresDeConstancia, palabraDelShell, palabrasEnteras, parcheNombraConstancia, parchesDePatch, pelarEnv, posicionales, posicionesFueraDeComillas, resolveTarget, sinCierreDeGrupo, sinComillasPegadas, sinPalabrasDelShell, sinRedireccionesDeSalida } = require('./bash-gate-expansions.js');
 const { carpetasDeLosCd, carpetasDeLosCdDeConstancias, destinosArmados, extractWriteTargets, heredocs, quitarCuerposDeHeredoc, scriptsInline, tramos } = require('./bash-gate-targets.js');
-const { FOR_IN, anidadosHasta, carpetasDelComando, cdInicial, comandosAnidados, comandosPorOtroPrograma, cwdDelComando, destinosBorrados, destinosDeCopia, destinosDeGuionDeSed, editaEnSitio, guionesDeShellEscritos, movidosFueraDeMd, palabrasDelEditor, sedsLiterales, sinCuerposDeTexto, todoCorreDespuesDelCd } = require('./bash-gate-commands.js');
+const { FOR_IN, anidadosHasta, carpetasDelComando, cdInicial, comandosAnidados, comandosPorOtroPrograma, cwdDelComando, destinosBorrados, destinosDeCopia, destinosDeGuionDeSed, editaEnSitio, guionesDeShellEscritos, guionesDeShellEnDisco, movidosFueraDeMd, palabrasDelEditor, sedsLiterales, sinCuerposDeTexto, todoCorreDespuesDelCd } = require('./bash-gate-commands.js');
 const { cdSinResolver, conLosCdDeSiempre, destinosDeLaCoordinadora, destinosResueltos, palabrasDelBucleSiFueraSoloSeLee, sinMayoresQueNoRedirigen } = require('./bash-gate-scripts.js');
 
 /**
@@ -52,7 +52,19 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
     const a = path.resolve(String(p));
     return registros.includes(a) || registros.includes(installedTree.realPath(a));
   };
-  const isControlApproval = (p) => signedRecordKind(p) !== null || esRegistro(p);
+  // un archivo con más de un nombre que es el mismo que una constancia del repo (un enlace duro) es la constancia
+  const { constanciaDelMismoArchivo } = require('./story-gate-io.js');
+  const enlazadas = new Map();
+  const enlazada = (p) => {
+    if (!path.isAbsolute(String(p))) return false;
+    if (!enlazadas.has(p)) enlazadas.set(p, constanciaDelMismoArchivo(String(p), [cwd, sesion]) !== null);
+    return enlazadas.get(p);
+  };
+  const isControlApproval = (p) => signedRecordKind(p) !== null || esRegistro(p) || enlazada(p);
+  // los comandos de git no miran el registro de aprobaciones de una ejecución: cada ejecución lo cambia y viaja en el
+  // commit de su pedido, así que cambiar de rama o traer main lo mueve todos los días. Lo que llega así lo mira la CI
+  const { isRunApprovalsRecord } = require('./story-gate.js');
+  const constanciaDeGit = (p) => isControlApproval(p) && !isRunApprovalsRecord(p);
   // una carpeta donde vive una constancia del salteo: la del estado, o la de una ejecución (`pipeline-runs/<carpeta>`)
   const carpetaDeFirma = (d) => {
     const reales = [...new Set([path.resolve(String(d)), installedTree.realPath(path.resolve(String(d)))].filter(Boolean))];
@@ -74,7 +86,65 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
     const patron = path.basename(a).replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
     try { return new RegExp(`^${patron}$`, 'i').test('exemptions.jsonl'); } catch (_) { return true; }
   };
-  const es = (raw) => isControlApproval(String(raw)) || isControlApproval(abs(raw)) || comodinDeExenciones(raw)
+  // una ruta con un tramo que no se lee: un comodín, comillas invertidas, `$(…)` o una variable
+  // sin un valor literal antes. Frena por lo que sí se lee: el último nombre es el de un archivo de constancias, o no se
+  // lee y la carpeta que se lee es una carpeta de constancias. Un comodín en el último nombre frena sólo si puede nombrar
+  // una constancia: si calza con una que existe, con el nombre de un archivo de constancias en una carpeta de constancias
+  // o que no se lee, o si la carpeta es una de las que guardan sólo constancias
+  const sg = require('./story-gate.js');
+  // `)` suelto: la palabra quedó cortada adentro de un `$( … )` (las palabras del comando no lo leen entero)
+  const NO_SE_LEE = /[*?[`)]|\$/;
+  const norm = (p) => String(p || '').replace(/\\/g, '/');
+  const globARegex = (g) => {
+    let out = '';
+    for (let i = 0; i < g.length; i++) {
+      const ch = g[i];
+      if (ch === '*') out += '.*';
+      else if (ch === '?') out += '.';
+      else if (ch === '[') { const j = g.indexOf(']', i + 2); if (j < 0) { out += '\\['; continue; } out += `[${g.slice(i + 1, j).replace(/^!/, '^').replace(/\\/g, '\\\\')}]`; i = j; }
+      else out += ch.replace(/[.+^${}()|\\]/g, '\\$&');
+    }
+    try { return new RegExp(`^${out}$`, 'i'); } catch (_) { return /^/; }
+  };
+  const armada = (raw) => {
+    const r = String(raw);
+    if (!NO_SE_LEE.test(r)) return false;
+    const e = expandirRuta(cmd, conPwd(r));
+    const valor = norm(String(e.sinResolver && e.sinResolver.length ? r : (e.valor || r)));
+    if (!NO_SE_LEE.test(valor)) return false;
+    // los tramos, sin cortar adentro de `$(…)` ni de comillas invertidas
+    const partes = [];
+    let actual = '';
+    let hondo = 0;
+    let tilde = false;
+    for (const ch of valor) {
+      if (ch === '`') tilde = !tilde;
+      if (ch === '(' && actual.endsWith('$')) hondo++;
+      else if (ch === ')' && hondo) hondo--;
+      if (ch === '/' && !hondo && !tilde) { partes.push(actual); actual = ''; continue; }
+      actual += ch;
+    }
+    partes.push(actual);
+    const ultimo = partes[partes.length - 1].replace(/^["']|["']$/g, '');
+    const carpetaPartes = partes.slice(0, -1);
+    const iLegible = carpetaPartes.map((p) => NO_SE_LEE.test(p)).lastIndexOf(true);
+    const carpetaLeida = carpetaPartes.slice(iLegible + 1).join('/');
+    // la carpeta entera se lee: se resuelve contra la del comando (la de un `cd`); si no, su parte de atrás
+    const carpetaAbs = iLegible < 0 ? (carpetaPartes.length ? abs(carpetaPartes.join('/') || '/') : base) : null;
+    const esCarpetaDeConstancias = carpetaAbs ? sg.isRecordsDir(carpetaAbs) : sg.isRecordsDir(carpetaLeida);
+    const soloConstancias = /(^|\/)(?:\.tycon\/control-changes|\.github\/control-changes|tasks\/pending-approvals)\/?$/i.test(carpetaAbs ? norm(carpetaAbs) : carpetaLeida);
+    if (!NO_SE_LEE.test(ultimo)) return sg.isRecordFileName(ultimo);
+    if (/[`$]/.test(ultimo)) return esCarpetaDeConstancias;
+    // un comodín en el último nombre
+    if (soloConstancias) return true;
+    const re = globARegex(ultimo);
+    if (sg.RECORD_FILE_NAMES.some((n) => re.test(n)) && (esCarpetaDeConstancias || iLegible >= 0)) return true;
+    if (carpetaAbs) {
+      try { if (fs.readdirSync(carpetaAbs).some((n) => re.test(n) && isControlApproval(path.join(carpetaAbs, n)))) return true; } catch (_) { /* no existe */ }
+    }
+    return false;
+  };
+  const es = (raw) => isControlApproval(String(raw)) || isControlApproval(abs(raw)) || comodinDeExenciones(raw) || armada(raw)
     || (cdSinResolver && !path.isAbsolute(String(raw)) && /control-changes|exemptions/i.test(String(raw)));
   // una vez por ruta: una copia con miles de orígenes a un mismo destino preguntaba por su ruta real una vez por origen
   const rutasVistas = new Map();
@@ -96,6 +166,27 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
   // entra a un shell por tubería, por `<<<`, por un guion escrito antes o leído con `read`)
   const ejecuta = ejecutaTexto(cmd);
   if (ejecuta) todos.push(...citados(cmd).flatMap((c) => comandosAnidados(c)).flatMap((sub) => tramos(sub)).flatMap((t) => t.split(/(?<![&>|])&(?![&>])/)));
+  // un guion de shell que ya está en el disco y el comando corre (`sh g.sh`, `. g.sh`, `./g.sh`, `bash -s < g.sh`): sus
+  // renglones se miran como comandos de la consola, en la carpeta del comando; también los guiones que él corre. Uno que
+  // no se lee entero cuenta si nombra una constancia
+  {
+    const instalados = require('./story-gate-io.js').defaultInstalledRoots();
+    let pendientes = [cmd];
+    for (let hondo = 0; hondo < 3 && pendientes.length; hondo++) {
+      const siguientes = [];
+      for (const texto of pendientes) {
+        for (const g of guionesDeShellEnDisco(texto, [...new Set([cwd, sesion])], instalados)) {
+          if (g.grande && (!g.texto || /control-changes|exemptions|runtime-waivers|approvals\.jsonl|adversarial-skips|pending-approvals/i.test(g.texto))) {
+            out.push(`${g.archivo} (un guion que no se lee entero y nombra una constancia)`);
+          }
+          if (g.grande) continue;
+          todos.push(...[...comandosAnidados(g.texto), ...comandosPorOtroPrograma(g.texto, cwd)].flatMap((sub) => tramos(sub)).flatMap((t) => t.split(/(?<![&>|])&(?![&>])/)));
+          siguientes.push(g.texto);
+        }
+      }
+      pendientes = siguientes;
+    }
+  }
   const bases = carpetasDeLosCdDeConstancias(todos, cmd, [cwd, sesion]);
   cdSinResolver = bases.sinResolver;
   // `cd /otro && git merge <sha>` con todo encadenado detrás: ese git corre en la carpeta del cd, y en la de partida no se
@@ -129,7 +220,7 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
     // sólo la redirección que está fuera de comillas: `desc='… > .tycon/control-changes.jsonl'` es un texto. Salvo que el
     // comando pueda correr un texto (`ejecuta`): ahí cuenta también la citada, como siempre
     const fuera = ejecuta ? () => true : posicionesFueraDeComillas(limpio);
-    for (const m of limpio.matchAll(/(?<![<\d&])(?:\d?>>?|&>>?|\d?<>)\|?\s*((?:\$\([^()]*\)|'[^']*'|"(?:\\.|[^"\\])*"|\\.|[^\s<>;&|'"\\])+)/g)) {
+    for (const m of limpio.matchAll(/(?<![<\d&])(?:\d?>>?|&>>?|\d?<>)\|?\s*((?:\$\([^()]*\)|`[^`]*`|'[^']*'|"(?:\\.|[^"\\])*"|\\.|[^\s<>;&|'"\\])+)/g)) {
       if (!fuera(m.index)) continue;
       const destino = sinCierreDeGrupo(palabraDelShell(m[1]));
       if (es(destino) || (/\$\(|`/.test(destino) && /control-changes|gates\.log|exemptions\.jsonl/i.test(destino))) out.push(destino);
@@ -296,6 +387,10 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
       args = args.slice(i + 1);
     }
     const sueltos = args.filter((w) => !w.startsWith('-') && !w.startsWith('<'));
+    if (c === 'link') {
+      const o = sueltos.find((x) => es(x));
+      if (o) { out.push(`${o} (enlace duro)`); continue; }
+    }
     if (['cp', 'mv', 'git mv', 'install', 'rsync', 'ditto', 'scp', 'ln'].includes(c)) {
       // el valor de una opción de `rsync`, `scp`, `install` o `ditto` (`--exclude x`) no es el destino
       let deLaCopia = args;
@@ -306,6 +401,10 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
       const copia = destinoDeLaCopia(deLaCopia, ['cp', 'mv', 'install', 'ln'].includes(c));
       if (!copia) continue;
       if (es(copia.destino)) { out.push(copia.destino); continue; }
+      // un enlace duro le da otro nombre a la constancia, y escribir en ese nombre la escribe: `ln` sin `-s` y `cp -l`
+      const simbolico = args.some((w) => /^-[A-Za-z]*s[A-Za-z]*$/.test(w) || w === '--symbolic');
+      const duro = (c === 'ln' && !simbolico) || (c === 'cp' && args.some((w) => /^-[A-Za-z]*l[A-Za-z]*$/.test(w) || w === '--link'));
+      if (duro) { const o = copia.origenes.find((x) => es(x)); if (o) { out.push(`${o} (enlace duro)`); continue; } }
       // cp, install, scp y rsync sólo bajan a una carpeta con su opción
       const recursiva = !['cp', 'install', 'scp', 'rsync'].includes(c) || args.some((w) => /^-[A-Za-z]*[rRa][A-Za-z]*$/.test(w) || w === '--recursive' || w === '--archive');
       const destino = abs(copia.destino);
@@ -320,7 +419,9 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
         let st = null;
         try { st = fs.statSync(abs(o)); } catch (_) { /* remoto, o todavía no existe */ }
         if (!st) {
-          if (dentroDeUnRepo(destino)) { out.push(`${o} (no se puede ver qué trae)`); break; }
+          // un origen que no se lee (no existe, remoto, comodín, variable): frena sólo hacia una carpeta de constancias. Una
+          // plantilla copiada a la raíz con un origen armado pasa: la mira la CI
+          if (sg.isRecordsDir(destino) || sg.isRecordsDir(lugar) || esRuta(path.join(lugar, 'x'))) { out.push(`${o} (no se puede ver qué trae)`); break; }
           continue;
         }
         if (!st.isDirectory()) continue;
@@ -362,14 +463,14 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
             const dudosas = rutas.filter(cubre);
             if (dudosas.length) out.push(`${tramo.trim()} (no pude ver qué constancias trae ${desdeRef})`);
           } else {
-            const traidas = String(r.stdout).split(/\r?\n/).filter(Boolean).filter((p) => isControlApproval(p));
+            const traidas = String(r.stdout).split(/\r?\n/).filter(Boolean).filter((p) => constanciaDeGit(p));
             if (traidas.length) out.push(...traidas.map((p) => `${p} (desde ${desdeRef})`));
           }
         }
       }
     } else if (['git merge', 'git reset', 'git cherry-pick', 'git revert', 'git read-tree', 'git rebase', 'git pull', 'git stash', 'git switch', 'git checkout', 'git branch', 'git update-ref', 'git symbolic-ref', 'git fetch', 'git push', 'git remote', 'git config'].includes(c)) {
       const desde = base;
-      out.push(...constanciasDeOtraRama(c, args, base, isControlApproval, { tramo, anidado: (sub) => constanciasTocadas(sub, desde, stateDir) }).map((p) => `${tramo.trim()} (${p})`));
+      out.push(...constanciasDeOtraRama(c, args, base, constanciaDeGit, { tramo, anidado: (sub) => constanciasTocadas(sub, desde, stateDir) }).map((p) => `${tramo.trim()} (${p})`));
     } else if (c === 'git apply' || c === 'git am' || c === 'patch') {
       const textos = [];
       const heredoc = /<<-?[ \t]*(['"]?)([A-Za-z_]\w*)\1/.exec(tramo);

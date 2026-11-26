@@ -1012,6 +1012,84 @@ function guionesDeShellEscritos(cmd, bases) {
   return out;
 }
 
+// lo que puede ir delante del shell sin cambiar el guion que corre, con las opciones que llevan valor
+const ENVOLTORIOS_DEL_GUION = { env: /^-(?:u|C|S)$|^--(?:unset|chdir|split-string)$/, time: /^-[fo]$/, nice: /^-n$|^--adjustment$/,
+  nohup: null, command: null, exec: /^-a$/, xargs: /^-[IinLPdEsaJRS]$|^--(?:replace|max-args|max-lines|max-procs|delimiter|eof|max-chars|arg-file)$/ };
+const SHEBANG_DE_SHELL = /^#!\s*\S*?(?:\/|\benv\s+(?:-\S+\s+)*)(?:sh|bash|zsh|dash|ksh)\b/;
+
+/**
+ * Los guiones de shell que ya están en el disco y el comando corre: con `sh`, `bash`, `zsh`, `dash`
+ * o `ksh` (también detrás de `env`, `time`, `nice`, `nohup`, `command`, `exec` o `xargs`), con `.` o `source`, como
+ * programa (`./g.sh`, si empieza con `#!` de un shell o termina en `.sh`) o por la entrada (`sh < g.sh`, `bash -s < g.sh`).
+ * Devuelve [{ archivo, texto, grande }]: `grande` si pasa de `tope` (su texto, hasta `topeDuro`, sólo sirve para buscar un
+ * nombre; vacío si pasa de ese tope). Los del árbol instalado del
+ * arnés no cuentan. Los de un `-c` los lee `comandosAnidados`; los escritos en el mismo comando, `guionesDeShellEscritos`.
+ */
+function guionesDeShellEnDisco(cmd, bases, instalados = [], tope = 256 * 1024, topeDuro = 64 * 1024 * 1024) {
+  const out = [];
+  const vistos = new Set();
+  const resolver = (raw, base) => resolveTarget(expandirRuta(cmd, raw).valor, base, process.platform, { homeVariable: true });
+  const leer = (archivo) => {
+    if (vistos.has(archivo)) return;
+    vistos.add(archivo);
+    let st;
+    try { st = fs.statSync(archivo); } catch (_) { return; }
+    if (!st.isFile()) return;
+    let real = archivo;
+    try { real = fs.realpathSync.native(archivo); } catch (_) { /* queda la escrita */ }
+    if ((instalados || []).some((r) => r && (real === r || real.startsWith(`${String(r).replace(/[\\/]+$/, '')}${path.sep}`)))) return;
+    let texto = '';
+    try {
+      const fd = fs.openSync(archivo, 'r');
+      try {
+        // uno grande se lee hasta el tope duro, sólo para buscar si nombra una constancia; más grande, no se lee
+        const hasta = st.size > tope ? (st.size > topeDuro ? 0 : st.size) : st.size;
+        const buf = Buffer.alloc(hasta);
+        fs.readSync(fd, buf, 0, buf.length, 0);
+        texto = buf.toString('utf8');
+      } finally { fs.closeSync(fd); }
+    } catch (_) { texto = ''; }
+    out.push({ archivo, texto, grande: st.size > tope });
+  };
+  for (const tramo of [String(cmd), ...anidadosHasta(cmd).leidos].flatMap((t) => tramos(t))) {
+    // la entrada desde un archivo (`sh < g.sh`), antes de sacar las redirecciones
+    const entrada = /(?<![<\d])<(?![<(&])\s*((?:'[^']*'|"(?:\\.|[^"\\])*"|[^\s;&|<>()])+)/.exec(tramo);
+    let words = palabras(sinPalabrasDelShell(String(tramo).replace(/(?<![^\s;&|(])\d*(?:<<<|<<-?|&>>?|[<>]{1,2}&?)[ \t]*(?:'[^']*'|"(?:[^"\\]|\\.)*"|[^\s;&|()<>]+)?/g, ' '))).filter((w) => w !== '');
+    // las asignaciones y los envoltorios de delante, con sus opciones
+    for (let k = 0; k < 8 && words.length; k++) {
+      if (/^[A-Za-z_]\w*=/.test(words[0])) { words = words.slice(1); continue; }
+      const w = path.basename(words[0]);
+      if (!Object.prototype.hasOwnProperty.call(ENVOLTORIOS_DEL_GUION, w)) break;
+      const valor = ENVOLTORIOS_DEL_GUION[w];
+      let i = 1;
+      while (i < words.length && (words[i].startsWith('-') || (w === 'env' && /^[A-Za-z_]\w*=/.test(words[i])))) i += valor && valor.test(words[i]) ? 2 : 1;
+      words = words.slice(i);
+    }
+    if (!words.length) continue;
+    const c = words[0] === '.' || words[0] === 'source' ? 'source' : nombreDeComando(words[0]);
+    let guion = null;
+    if (['sh', 'bash', 'zsh', 'dash', 'ksh'].includes(c)) {
+      if (words.slice(1).some((w) => /^-[A-Za-z]*c/.test(w))) continue;
+      guion = guionDelShell(words);
+      if ((!guion || words.slice(1).some((w) => /^-[A-Za-z]*s/.test(w))) && entrada) guion = palabraDelShell(entrada[1]);
+    } else if (c === 'source') {
+      guion = words.slice(1).find((w) => w !== '--') || null;
+    } else if (/[\\/]/.test(words[0])) {
+      // un guion corrido como programa: por su ruta, si es de un shell
+      for (const base of bases) {
+        const a = resolver(words[0], base);
+        let cabeza = '';
+        try { const fd = fs.openSync(a, 'r'); try { const b = Buffer.alloc(128); fs.readSync(fd, b, 0, 128, 0); cabeza = b.toString('utf8'); } finally { fs.closeSync(fd); } } catch (_) { continue; }
+        if (/\.sh$/i.test(a) || SHEBANG_DE_SHELL.test(cabeza)) { leer(a); break; }
+      }
+      continue;
+    }
+    if (!guion || /^-/.test(guion)) continue;
+    for (const base of bases) leer(resolver(guion, base));
+  }
+  return out;
+}
+
 /** Las tuberías de un renglón y los tramos de cada una, sin cortar adentro de las comillas. */
 function tuberiasDelRenglon(linea) {
   const tuberias = [[]];
@@ -1175,4 +1253,4 @@ function comandosPorOtroPrograma(cmd, cwd) {
 }
 
 
-module.exports = { cwdDelComando, carpetasDelComando, relativosDe, resolverCd, destinosBorrados, CD_INICIAL, CD_PERL, cdInicial, palabrasDelEditor, anidadosHasta, borradosProfundos, marcadoresTocados, aprobacionesTocadas, marcasDeTerminalTocadas, lanzadasTocadas, buzonTocado, criticosTocados, corridasDeRevisoresTocadas, revisionDelPlanTocada, zonaTocada, editaEnSitio, destinosDeGuionDeSed, palabrasDelSed, sedsLiterales, FOR_IN, movidosFueraDeMd, todoCorreDespuesDelCd, sinTextoDeHeredocs, sinCuerposDeTexto, PALABRA_CON_ANSI, CADENA_A_LA_ENTRADA, palabrasConAnsi, cuerpoDelShell, comandosAnidados, asignacionesDe, destinosDeCopia, guionesDeShellEscritos, tuberiasDelRenglon, heredocVaAUnShell, entradaPorCadena, comandosPorOtroPrograma };
+module.exports = { cwdDelComando, carpetasDelComando, relativosDe, resolverCd, destinosBorrados, CD_INICIAL, CD_PERL, cdInicial, palabrasDelEditor, anidadosHasta, borradosProfundos, marcadoresTocados, aprobacionesTocadas, marcasDeTerminalTocadas, lanzadasTocadas, buzonTocado, criticosTocados, corridasDeRevisoresTocadas, revisionDelPlanTocada, zonaTocada, editaEnSitio, destinosDeGuionDeSed, palabrasDelSed, sedsLiterales, FOR_IN, movidosFueraDeMd, todoCorreDespuesDelCd, sinTextoDeHeredocs, sinCuerposDeTexto, PALABRA_CON_ANSI, CADENA_A_LA_ENTRADA, palabrasConAnsi, cuerpoDelShell, comandosAnidados, asignacionesDe, destinosDeCopia, guionesDeShellEscritos, guionesDeShellEnDisco, tuberiasDelRenglon, heredocVaAUnShell, entradaPorCadena, comandosPorOtroPrograma };
