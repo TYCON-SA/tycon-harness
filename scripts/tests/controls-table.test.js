@@ -282,3 +282,13 @@ test('T9c ControlsTable_SlowGuard_IsNotAFailure — lo lento no va a «Fallas de
   assert.deepStrictEqual([...r.fallas.porFreno.keys()], ['safety-guard']);
   assert.deepStrictEqual([r.fallas.porFreno.get('safety-guard').total, r.fallas.porFreno.get('safety-guard').cerradas], [1, 1]);
 });
+
+// 🔴 Falla con: un control que anota en gates.log con otro nombre que su entrada (`anota`, como los de la cadena de
+//    hook-pre-edit.js, que anotan sin el «on-») sale «sin clasificar», o el alias se cuenta dos veces al vencer.
+test('T12 ControlsTable_EntryAlias — una entrada con `anota` clasifica ese nombre y no se repite', (t) => {
+  const f = escribirClasificacion(t, { 'on-deprecated-edit': { ...entradaDe('2026-11-01'), anota: 'deprecated-edit' } });
+  const c = ct.leerClasificacion(f);
+  assert.ok(c.entradas['deprecated-edit'], 'el nombre que anota tiene su clasificación');
+  assert.strictEqual(c.entradas['deprecated-edit'], c.entradas['on-deprecated-edit']);
+  assert.deepStrictEqual(Object.keys(c.entradas), ['on-deprecated-edit'], 'el alias no se lista aparte');
+});
