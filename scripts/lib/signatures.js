@@ -478,6 +478,8 @@ const SENSITIVE = Object.freeze([
   'skills/tycon-pipeline/scripts/lib/bash-gate-*.js',
   // el nombre de la sesión lo carga el marcador al escribir: corre dentro de él
   'scripts/lib/session-name.js',
+  // el lector del bloque `pipelines:` lo carga el cierre de tanda del marcador: decide si una tanda pasa a done
+  'scripts/lib/pipelines-block.js',
   // lo que el cierre del marcador carga para decir que la sesión termina: corre dentro de él
   'skills/tycon-pipeline/scripts/lib/resume-state.js',
   // el registro de los frenos: el marcador lo carga al cerrar la ejecución de otra sesión, y en él queda el escape
