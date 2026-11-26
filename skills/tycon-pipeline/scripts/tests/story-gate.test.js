@@ -1053,6 +1053,13 @@ test('T32b Freno_DeshacerEnBloque', () => {
   const ev = (command, cwd = repo) => ({ tool_name: 'Bash', session_id: 's1', cwd, tool_input: { command } });
   const frena = (cmd, cwd) => { const b = bash.handle(ev(cmd, cwd), { stateDir, installedRoots: [] }); assert.ok(b && INVISIBLE.test(b.block), `${cmd}: ${JSON.stringify(b)}`); return b.block; };
   const pasa = (cmd, cwd) => assert.equal(bash.handle(ev(cmd, cwd), { stateDir, installedRoots: [] }), null, cmd);
+  // con las skills en un clon aparte (sin scripts/lib/clean-git-env.js) a git no se le pregunta: frena, del lado seguro
+  if (!fs.existsSync(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js'))) {
+    fs.writeFileSync(path.join(repo, 'src', 'a.ts'), 'export const a = 2;\n');
+    conEnv(SIN_REGISTRO, () => { for (const c of ['git reset --hard', 'git stash', 'git clean -fd']) assert.match(frena(c), /no pude preguntarle a git/, c); });
+    fs.rmSync(repo, { recursive: true, force: true });
+    return;
+  }
   conEnv({ ...SIN_REGISTRO, TYCON_NO_RUN_CHANGE: undefined }, () => {
     // sin cambios, o con cambios que no son código, no hay qué deshacer
     pasa('git reset --hard');
