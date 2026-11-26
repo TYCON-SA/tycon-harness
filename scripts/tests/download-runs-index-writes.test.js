@@ -80,3 +80,18 @@ test('T1785c Indice_TemporalConNombreUnico_NoSoloElPid', async (t) => {
   assert.ok(alIndice.length >= 1, 'el índice se escribió');
   for (const tmp of alIndice) assert.match(path.basename(tmp), new RegExp(`^${INDICE.replace('.', '\\.')}\\.tmp-${process.pid}-[0-9a-f]{8}$`), tmp);
 });
+
+test('T1785d Indice_ConIntervaloCero_SeGuardaPorArchivo_YLoYaBajadoSeAnota', async (t) => {
+  // el intervalo se respeta: con 0, cada archivo guarda (la forma de antes, para quien la pida)
+  const raiz = carpeta(t);
+  const dir = path.join(raiz, 'buzon');
+  const alIndice = espiarRenombres(t);
+  await bajar({ almacen: almacen(4), dir, intervaloIndiceMs: 0, concurrencia: 1, log: () => {} });
+  assert.ok(alIndice.length >= 4, `con intervalo 0 se guardó ${alIndice.length} veces`);
+  // lo que ya está en el disco y coincide, sin índice, se anota: la pasada siguiente no lo vuelve a leer
+  fs.rmSync(path.join(raiz, INDICE));
+  const { res } = await bajar({ almacen: almacen(4), dir, log: () => {} });
+  assert.strictEqual(res.bajados, 0, JSON.stringify(res));
+  const indice = JSON.parse(fs.readFileSync(path.join(raiz, INDICE), 'utf8'));
+  assert.strictEqual(Object.keys(indice.blobs).length, 4, 'lo que ya estaba en el disco quedó anotado');
+});

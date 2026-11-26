@@ -1073,7 +1073,13 @@ async function bajar(opts = {}) {
       let igual;
       try { igual = b.md5 ? md5Local(local, st, previo) === b.md5 : Boolean(previo && previo.etag && previo.etag === b.etag); }
       catch (e) { noLeidos.push(`${b.nombre} (${e.code || e.message})`); continue; }
-      if (igual) { res.al_dia += 1; continue; }
+      // lo que ya está en el disco y coincide se anota (con su MD5) si el índice no lo tenía: si no, el disco se vuelve a
+      // leer entero en cada pasada, también con `confiarIndice`
+      if (igual) {
+        res.al_dia += 1;
+        if (b.md5 && !(previo && previo.md5 === b.md5 && previo.size === st.size)) { indice.blobs[b.nombre] = { etag: b.etag, size: st.size, md5: b.md5, mtimeMs: st.mtimeMs }; indiceSucio = true; }
+        continue;
+      }
     }
     pendientes.push({ ...b, ...forma, local, ...(base ? { base } : {}) });
   }
@@ -1104,6 +1110,12 @@ async function bajar(opts = {}) {
     try { guardarIndice(); indiceSinGuardar = false; } catch (_) { /* el índice sólo ahorra: la próxima pasada mira el disco */ }
     indiceGuardadoEn = Date.now();
   };
+  // lo que cambió antes de bajar (blobs que el buzón ya no lista, resúmenes, lo que ya estaba en el disco) se guarda
+  // enseguida: con `confiarIndice`, un índice que todavía anota un blob podado lo daría por bajado si vuelve
+  guardarIndiceSiToca(true);
+  // y el guardado intermedio no espera a que termine un archivo: con uno grande colgado, lo ya bajado queda anotado igual
+  const relojIndice = setInterval(() => guardarIndiceSiToca(false), Math.max(intervaloIndice, 1000));
+  if (relojIndice.unref) relojIndice.unref();
   const malos = [];
   // La cobertura de una máquina se escribe sólo si ninguno de SUS registros falló en esta pasada.
   // 🔴 `.jsonl.gz` también: sin eso, una falla de hallazgos.jsonl.gz no retendría la cobertura.
@@ -1188,9 +1200,10 @@ async function bajar(opts = {}) {
     };
     await Promise.all(Array.from({ length: Math.min(conc, cola.length) }, trabajador));
     // un corte en cualquier fase deja volcados sin bajar; en las de registros, además, registros
-    if (fatal) { guardarIndiceSiToca(true); res.volcados_enteros = false; if (fase < 2) res.registros_enteros = false; return fin(...fatal); }
+    if (fatal) { clearInterval(relojIndice); guardarIndiceSiToca(true); res.volcados_enteros = false; if (fase < 2) res.registros_enteros = false; return fin(...fatal); }
     if (corto) { res.sin_tiempo = pendientes.length - tomados; res.volcados_enteros = false; if (fase < 2) res.registros_enteros = false; break; }
   }
+  clearInterval(relojIndice);
   guardarIndiceSiToca(true);
   // lo que quedó por el tope es trabajo pendiente, como lo que quedó sin tiempo: la pasada no está entera, y la
   // siguiente sigue (sources.js → buzon.seguir)
