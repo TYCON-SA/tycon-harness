@@ -164,6 +164,9 @@ test('T4 Camino3_CopiaDeCarpeta_Frena', (t) => {
   frena(l, `mv ${l.fuera}/src/.tycon .`);
   frena(l, 'cp -R $X .tycon', 'un origen que no se lee hacia una carpeta de constancias');
   frena(l, 'cp -R "$X/." .advisors/pipeline-runs/r1', 'hacia la carpeta de una ejecución');
+  // un origen de otra máquina no se ve: frena hacia cualquier carpeta del repo
+  frena(l, 'scp -r host:carpeta/. .', 'una copia remota a la raíz del repo');
+  frena(l, 'rsync -a host:carpeta/ src/', 'una copia remota a otra carpeta del repo');
 });
 
 test('T5 Camino4_EnlaceDuro_Frena', (t) => {

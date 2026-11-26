@@ -419,9 +419,11 @@ function constanciasTocadas(cmd, cwd, stateDir = null, sesion = cwd) {
         let st = null;
         try { st = fs.statSync(abs(o)); } catch (_) { /* remoto, o todavía no existe */ }
         if (!st) {
-          // un origen que no se lee (no existe, remoto, comodín, variable): frena sólo hacia una carpeta de constancias. Una
-          // plantilla copiada a la raíz con un origen armado pasa: la mira la CI
-          if (sg.isRecordsDir(destino) || sg.isRecordsDir(lugar) || esRuta(path.join(lugar, 'x'))) { out.push(`${o} (no se puede ver qué trae)`); break; }
+          // un origen de otra máquina (`host:ruta`) no se puede ver: frena hacia cualquier carpeta de un repo. Uno que no
+          // existe o que está armado (comodín, variable) frena sólo hacia una carpeta de constancias: una plantilla copiada
+          // a la raíz con un origen armado pasa, y la mira la CI
+          const remoto = /^[^\\/]*[^\\/:]:/.test(String(o)) && !/^[A-Za-z]:[\\/]/.test(String(o));
+          if (remoto ? dentroDeUnRepo(destino) : (sg.isRecordsDir(destino) || sg.isRecordsDir(lugar) || esRuta(path.join(lugar, 'x')))) { out.push(`${o} (no se puede ver qué trae)`); break; }
           continue;
         }
         if (!st.isDirectory()) continue;
