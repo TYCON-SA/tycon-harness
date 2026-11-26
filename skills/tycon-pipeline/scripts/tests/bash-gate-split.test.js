@@ -140,7 +140,7 @@ test('BashGate_MissingPart_BlocksAndNamesIt @story-8.163 @ac-10 — sin una part
         assert.strictEqual(r.status, 2, `sin lib/${parte}, frena (salió ${r.status}: ${r.stderr})`);
         assert.ok(r.stderr.includes(`lib/${parte}`), `sin lib/${parte}, el mensaje la nombra (${r.stderr})`);
         // también la red, que carga antes que la carpeta del estado: el aviso de arranque cuenta las fallas por este renglón
-        assert.match(r.registro, new RegExp(`on-bash-write-gate FRENÓ POR FALLA:[\\s\\S]*${parte.replace(/\./g, '\\.')}`),
+        assert.match(r.registro, new RegExp(`on-bash-write-gate FRENÓ POR FALLA:[\\s\\S]*${parte.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
           `sin lib/${parte}, deja su renglón en hook-errors.log (${r.registro.slice(0, 300) || 'vacío'})`);
       } finally {
         fs.writeFileSync(archivo, guardado);
