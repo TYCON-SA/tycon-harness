@@ -528,11 +528,12 @@ fi
 # de la sesión lo que no se sabe a qué repo fue (un pendiente que ninguna retrospectiva puede cerrar).
 {
   T20="${BASE}/t20"; H20="${T20}/arnes"; P20="${T20}/producto"
-  mkdir -p "${H20}/scripts/hooks" "${H20}/scripts/lib" "${H20}/scripts/metrics" "${H20}/.dashboard" "${P20}/.tycon"
+  mkdir -p "${H20}/scripts/hooks" "${H20}/scripts/lib" "${H20}/integrations/github/scripts" "${H20}/scripts/metrics" "${H20}/.dashboard" "${P20}/.tycon"
   cp "${RAIZ}/scripts/hooks/retro-pending.js" "${H20}/scripts/hooks/"
   cp "${LATIDO}" "${H20}/scripts/metrics/"
-  cp "${LIB}" "${RAIZ}/scripts/lib/az-pr.js" "${RAIZ}/scripts/lib/gh-pr.js" "${RAIZ}/scripts/lib/git-target.js" "${RAIZ}/scripts/lib/shell-parse.js" \
+  cp "${LIB}" "${RAIZ}/scripts/lib/az-pr.js" "${RAIZ}/scripts/lib/command-readers.js" "${RAIZ}/scripts/lib/git-target.js" "${RAIZ}/scripts/lib/shell-parse.js" \
      "${RAIZ}/scripts/lib/harness-repo.js" "${RAIZ}/scripts/lib/legacy-names.js" "${RAIZ}/scripts/lib/retro-coverage.js" "${H20}/scripts/lib/"
+  cp "${RAIZ}/integrations/github/scripts/command-reader.js" "${H20}/integrations/github/scripts/"
   G20() { git -C "${P20}" -c user.email=p@example.invalid -c user.name=p "$@"; }
   git init -q -b main "${P20}"
   echo uno > "${P20}/a.txt"; G20 add -A; G20 commit -q -m base
@@ -700,7 +701,7 @@ fi
   G20 remote set-url origin https://github.com/acme/producto.git
 
   # el hook viaja suelto: sin el lector de gh al lado calla, no se cae — y lo de Azure sigue andando
-  rm -f "${H20}/scripts/lib/gh-pr.js"
+  rm -f "${H20}/integrations/github/scripts/command-reader.js"
   pedir Bash 'gh pr create --base main --title t --body b'
   callado && ok "T20 sin el lector de gh al lado, calla (el hook viaja suelto)" || bad "T20 sin la librería" "rc=$(cat "${T20}/rc") · $(head -c 200 "${T20}/stderr")"
   # Regla «avisar y no anotar»: la carpeta es un repo de GitHub y el pedido

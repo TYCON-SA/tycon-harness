@@ -27,7 +27,7 @@ mal() { echo "  MAL  — $1"; FALLOS=$((FALLOS+1)); }
 
 TERMINO="Zorblax"   # inventado
 QUIEN=(-c user.name="Mantenedor De Prueba" -c user.email="4242+mantenedor@users.noreply.github.com" -c commit.gpgsign=false -c tag.gpgsign=false)
-PIEZAS="scripts/hooks/public-push-guard.js scripts/hooks/pre-push-repo-rules.js scripts/lib/az-pr.js scripts/lib/gh-pr.js scripts/lib/harness-repo.js scripts/lib/legacy-names.js scripts/lib/guard-record.js scripts/publishing/detector.js scripts/setup/harness/tycon-home.js scripts/lib/clean-git-env.js"
+PIEZAS="scripts/hooks/public-push-guard.js scripts/hooks/pre-push-repo-rules.js scripts/lib/az-pr.js scripts/lib/command-readers.js integrations/github/scripts/command-reader.js scripts/lib/harness-repo.js scripts/lib/legacy-names.js scripts/lib/guard-record.js scripts/publishing/detector.js scripts/setup/harness/tycon-home.js scripts/lib/clean-git-env.js"
 
 # El git del laboratorio no hereda el de la máquina (ni su carpeta global de hooks, ni su identidad).
 g() { GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null git "$@"; }
@@ -223,7 +223,7 @@ RC=$(EMPUJE_HOOKS="$T/repo/.githooks" empujar "$T" origin limpia)
 if [ "$RC" = "0" ] && en_remoto "$T/publico/remoto.git" refs/heads/limpia; then ok "P-10 y una rama limpia sale"
 else mal "P-10 con .githooks/pre-push una rama limpia no salió (exit $RC)"; sed -n '1,8p' "$T/out.txt"; fi
 # sin arnés instalado (alguien de afuera con su copia): corre el freno del propio árbol, que es lo único que hay
-mkdir -p "$T/repo/scripts/hooks" "$T/repo/scripts/lib" "$T/repo/scripts/publishing" "$T/repo/scripts/setup/harness"
+mkdir -p "$T/repo/scripts/hooks" "$T/repo/scripts/lib" "$T/repo/scripts/publishing" "$T/repo/scripts/setup/harness" "$T/repo/integrations/github/scripts"
 for p in $PIEZAS; do cp "$RAIZ/$p" "$T/repo/$p"; done
 cp "$GLOBAL" "$T/repo/scripts/hooks/git-pre-push-global.sh"
 ( cd "$T/repo" && g checkout -q main && g add -A && g "${QUIEN[@]}" commit -q -m "el freno en el árbol" && g -c core.hooksPath=/dev/null push -q origin main )
