@@ -251,7 +251,7 @@ const TRANSFORMACIONES = Object.freeze([
   { nombre: 'public-texts', que: 'allowlist.json → publicTexts: en el archivo declarado, el texto EXACTO del repo (puede ocupar varios renglones) pasa a su versión pública, las veces declaradas; si no aparece esas veces, sale 2. Para los textos de código que mandan a una integración del equipo que no viaja: los bloques internos sólo existen en los .md' },
   { nombre: 'sinteticos', que: 'allowlist.json → synthetic: el archivo de la copia es el sintético declarado; con «packages», en las exportaciones que incluyen alguno de ellos; sin él, cuando un «in» del paquete cubre el destino. Nunca pisa algo que ya sale (sale 2)' },
   { nombre: 'gitignore-publico', que: '.gitignore de cada repo: se quitan las líneas «!…» que vuelven a incluir algo de una exclusión fija; con --single-repo, además se ignora cada carpeta de primer nivel del repo fuente en la que la copia no trae ningún archivo (story 8.26); una que sólo difiere en mayúsculas de una que la copia trae, o con un salto de línea en el nombre, frena la copia' },
-  { nombre: 'nombres-viejos', que: 'scripts/lib/renames.json (story 8.9): el reemplazo de cada ruta vieja de archivo o carpeta no sale; y un archivo que sale no puede nombrar una ruta vieja (fuera de guides/maintaining/nombres-en-ingles.md)' },
+  { nombre: 'nombres-viejos', que: 'scripts/lib/renames.json (story 8.9): el reemplazo de cada ruta vieja de archivo o carpeta no sale; y un archivo que sale no puede nombrar una ruta vieja (fuera de guides/maintaining/english-names.md)' },
   { nombre: 'rutas-del-otro-repo', que: 'scripts/lib/renames.json (story 8.9, AC 19): la ruta vieja ya mudada que un repo nombra del OTRO se traduce al nombre nuevo (la copia sale de los dos repos juntos); la que un repo nombra de sí mismo frena la copia. Un reemplazo generado sin entrada en el mapa que algo que sale nombra sale 2 (story 8.7, AC 30)' },
   { nombre: 'traducciones-codex', que: 'adapters/codex/agents*/*.toml: se REGENERAN con build/generate.js desde los .md ya reemplazados (no se reemplazan); la que queda distinta de su blob va al listado' },
   { nombre: 'skill-rename', que: 'allowlist.json → skillRenames: la skill sale con otro nombre — su carpeta, el name: de su SKILL.md y el identificador en cada archivo de texto que sale —, salvo el NOTICE, el NOTICE.md y el LICENSE de su carpeta y, en el manifiesto de terceros, based_on y license_source (su why pasa al texto fijo de la regla)' },
@@ -1756,7 +1756,7 @@ function mencionesViejas(textos, viejos) {
   // copia del núcleo no sale.
   const lectores = require('./spanish-names.js').LEGACY_READERS;
   for (const [clave, texto] of textos) {
-    if (clave === 'arnes/guides/maintaining/nombres-en-ingles.md') continue;
+    if (clave === 'arnes/guides/maintaining/english-names.md') continue;
     if (clave.startsWith('arnes/') && lectores.has(clave.slice('arnes/'.length))) continue;
     // la foto de un pipeline de producto real nombra los guiones viejos a propósito: los productos no se tocan hasta el
     // retiro y T32 corre esas líneas así (`--stale-mentions` la exceptúa igual, en STALE_ZONES). Sin esto, la copia del

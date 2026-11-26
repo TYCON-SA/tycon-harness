@@ -202,7 +202,7 @@ siguientes a la poda, lo primero que se devuelve al bloque son estas frases — 
 pasó a ser el de ADO (entonces `claude-md-blocks/ado-runs-list-lag.md`; hoy ya no está en el `CLAUDE.md`: sus reglas
 viven en `integrations/azure-devops/rules.md` y aparecen la primera vez que se usa esa CLI), con el mismo patrón que motivó ésta:
 reglas que se acumulan por incidente, con su historia adentro. Se le aplicó la misma receta —
-la regla se queda, la historia se va a `guides/integrations/ado-cola-y-listados.md`— y bajó de **9.979 a 4.134
+la regla se queda, la historia se va a `guides/integrations/ado-queue-and-listings.md`— y bajó de **9.979 a 4.134
 bytes** sin perder una regla (verificado frase por frase contra la versión anterior). El `CLAUDE.md`
 completo quedó en **31.035 bytes**. Desde el mismo día cada bloque tiene techo declarado en
 `claude-md-blocks/budget.json` y el pre-commit frena al que se pasa, así que esta clase de
