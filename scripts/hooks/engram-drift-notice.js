@@ -47,6 +47,11 @@ const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'har
 // El comando con la carpeta de la persona lo arma skills/tycon-pipeline/scripts/lib/home-command.js; suelto, este
 // archivo escribe el mismo texto.
 const homeCommand = (() => { const lib = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'home-command.js'); return require('fs').existsSync(lib) ? require(lib).homeCommand : (r) => `node "$HOME/${r}"`; })();
+// El lugar del arnés lo sabe tycon-home.js. Suelto, la carpeta del estado de respaldo (la de arriba) vive en la carpeta
+// de Claude Code, y el lugar está al lado, como siempre.
+const homeLib = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib) : null; })();
+const placeOf = (h) => (homeLib ? homeLib.placePath(h) : path.join(path.dirname(stateDirOf(h)), 'tycon-harness'));
+const harnessCommand = (r) => homeCommand(`${path.relative(os.homedir(), placeOf(os.homedir())).split(path.sep).join('/')}/${r}`);
 if (process.env.TYCON_ENGRAM_DRIFT === '0' || process.env.TYCON_EVAL_SANDBOX === '1') process.exit(0);
 
 // engram: con la integración apagada (sin perfil del equipo ni llave) no hay memoria que revisar —
@@ -193,7 +198,7 @@ try {
         'Memoria partida que se puede unificar sin ambigüedad — hay que correrlo A MANO:\n' +
         conAuto.flatMap((r) => r.auto.map((a) =>
           `       · en ${r.repo}: '${a.nombre}' (${a.obs} obs) → '${r.pin}'`)).join('\n') + '\n' +
-        `     Revisá y aplicá:  ${homeCommand('.claude/tycon-harness/scripts/lib/engram-autoheal.js')}\n` +
+        `     Revisá y aplicá:  ${harnessCommand('scripts/lib/engram-autoheal.js')}\n` +
         '     (sin --apply muestra el plan · con --apply lo ejecuta)\n' +
         '     🔴 El apply automático está APAGADO a propósito: su verificación posterior no\n' +
         '     detectaba un borrado ni un destino equivocado, y el motor tiene una carrera.\n' +
@@ -264,11 +269,11 @@ try {
 
   console.log('🧠 memoria de engram — revisión diaria:');
   problemas.forEach((p, i) => console.log(`  ${i + 1}. ${p}`));
-  console.log(`  Detalle y score: ${homeCommand('.claude/tycon-harness/scripts/lib/harness-audit.js')} --verbose`);
+  console.log(`  Detalle y score: ${harnessCommand('scripts/lib/harness-audit.js')} --verbose`);
   console.log('  Silenciar: TYCON_ENGRAM_DRIFT=0');
 } catch (e) {
   // Fail-open absoluto — ver cabecera. Con UNA excepción que se dice: la configuración del
-  // arnés rota (~/.claude/tycon.json o el perfil) no se lee como «todo bien» ni como «sin repos»: se avisa en
+  // arnés rota (~/.tycon/config.json o el perfil) no se lee como «todo bien» ni como «sin repos»: se avisa en
   // CADA arranque, sin sello, y esta revisión no corre. Nunca sale ≠ 0 por esto.
   if (e && e.name === 'ConfigError') {
     try { console.log(require(path.join(__dirname, '..', 'lib', 'tycon-config.js')).avisoParaHook(e.errores)); }

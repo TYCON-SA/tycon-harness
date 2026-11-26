@@ -83,7 +83,7 @@ function laboratorio(t) {
     failed: { commit: '2026.11.24.42', sources: { harness: FALLIDA }, at: '2026-11-24T13:59:12.345Z', reason: 'team-invalid', team_commit: 'a'.repeat(40) },
     team: { repo: 'o/team' },
   };
-  const H = { releaseApplyHint: 'npx @tyconsa/harness@latest', REEVALUATED_NOTICE: /^$x/, availableText: () => 'hay nueva',
+  const H = { releaseApplyHint: 'npx @tyconsa/harness@latest', REEVALUATED_NOTICE: /(?!)/, availableText: () => 'hay nueva',
     policyOf: () => ({ errors: [], enabled: true, apply: 'auto', channel: 'stable' }), applyPolicy: () => ({}) };
   return { home, ctx: { home, env, opts: {} }, state, H };
 }

@@ -490,7 +490,7 @@ const SENSITIVE = Object.freeze([
   'skills/tycon-pipeline/scripts/lib/frozen-tree.js', 'skills/tycon-pipeline/scripts/lib/comment-only.js', 'skills/tycon-pipeline/scripts/runtime-matrix.js',
   'skills/tycon-pipeline/scripts/smoke-run.sh', 'skills/tycon-pipeline/scripts/lib/evidence-vs-commit.js',
   'skills/tycon-pipeline/scripts/lib/commit-story.js', 'skills/tycon-pipeline/scripts/lib/story-requests.js',
-  'skills/tycon-pipeline/scripts/lib/nightly-coverage.js',
+  'skills/tycon-pipeline/scripts/lib/nightly-coverage.js', 'skills/tycon-pipeline/scripts/lib/nightly-green.js',
   // el arreglo de un rojo de CI sin plan ni revisores, el cierre de una ejecución reemplazada sin firma y lo que una vuelta
   // de arreglo deja a seguimiento: los cargan marker.js y pipeline.js
   'skills/tycon-pipeline/scripts/lib/ci-red-lane.js', 'skills/tycon-pipeline/scripts/lib/replaced-run.js', 'skills/tycon-pipeline/scripts/lib/fix-scope.js',
