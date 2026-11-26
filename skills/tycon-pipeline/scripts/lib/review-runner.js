@@ -200,4 +200,47 @@ function readAnswer(runner, { stdout = '', stderr = '', code = 0, fileText = nul
   return out;
 }
 
-module.exports = { DEFAULT_ORDER, LIMIT_RE, loadIntegration, runnerOrder, pickRunners, commandFor, resolveBin, readAnswer, isLimit, tokensOf, usageOf };
+/**
+ * Cómo se lanza sin shell el programa que dio `resolveBin` → `{ bin, pre }`, o `{ bin: null, motivo }`. Fuera de Windows,
+ * tal cual. En Windows, Node no corre un `.cmd` sin shell (ENOENT por el nombre; EINVAL con la extensión, desde el
+ * arreglo del CVE-2024-27980), y con shell los argumentos —el JSON de settings y del esquema— pasarían por cmd. Como con
+ * `npm.cmd` (`scripts/ci/audit-dependencies.js`): un `.exe`/`.com` va con su ruta; un `.cmd`/`.bat` se lee, y si es el
+ * atajo de npm (cmd-shim) se lanza su `.js` con este mismo Node, o el `.exe` al que apunta. Un atajo que no se entiende
+ * no se lanza a ciegas: la causa lo dice.
+ */
+function launchable(bin, { platform = process.platform, env = process.env, separator = ';' } = {}) {
+  const nombre = String(bin || '');
+  if (platform !== 'win32' || !nombre) return { bin: nombre || null, pre: [] };
+  if (/[\\/]/.test(nombre)) return programaDelAtajo(nombre);
+  const exts = String(env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').map((e) => e.toLowerCase()).filter((e) => ['.com', '.exe', '.bat', '.cmd'].includes(e));
+  // en cada carpeta, primero lo que Node lanza solo (.com, .exe) y después los atajos; un nombre que ya trae la
+  // extensión se busca tal cual
+  const orden = /\.(com|exe|bat|cmd)$/i.test(nombre) ? [''] : [...exts.filter((e) => e === '.com' || e === '.exe'), ...exts.filter((e) => e === '.bat' || e === '.cmd')];
+  let primerMotivo = null;
+  for (const dir of String(env.PATH || env.Path || '').split(separator).map((d) => d.trim().replace(/^"|"$/g, '')).filter(Boolean)) {
+    for (const f of orden.map((e) => path.join(dir, `${nombre}${e}`)).filter(esArchivo)) {
+      // un atajo que no se entiende no corta la búsqueda: más adelante en el PATH puede estar el programa
+      const l = programaDelAtajo(f);
+      if (l.bin) return l;
+      if (!primerMotivo) primerMotivo = l.motivo;
+    }
+  }
+  return primerMotivo ? { bin: null, motivo: primerMotivo } : { bin: nombre, pre: [] };
+}
+
+/** En Windows, el archivo `f` listo para lanzar sin shell: un `.cmd`/`.bat` por su programa (cmd-shim), lo demás tal cual. */
+function programaDelAtajo(f) {
+  if (!/\.(cmd|bat)$/i.test(f)) return { bin: f, pre: [] };
+  let texto = '';
+  try { texto = fs.readFileSync(f, 'utf8'); } catch (e) { return { bin: null, motivo: `no pude leer ${f} (${e.code || e.message})` }; }
+  // cmd-shim: `"%dp0%\<programa>" %*` (o `%~dp0`), relativo a la carpeta del atajo
+  const m = /"%~?dp0%?\\?([^"%]+)"\s+%\*/i.exec(texto);
+  const destino = m ? path.join(path.dirname(f), ...m[1].split(/[\\/]+/).filter(Boolean)) : null;
+  if (destino && esArchivo(destino)) {
+    if (/\.(c|m)?js$/i.test(destino)) return { bin: process.execPath, pre: [destino] };
+    if (/\.(exe|com)$/i.test(destino)) return { bin: destino, pre: [] };
+  }
+  return { bin: null, motivo: `${f} es un atajo de Windows que no sé lanzar sin shell (no es el atajo de npm, o su programa no está)` };
+}
+
+module.exports = { DEFAULT_ORDER, LIMIT_RE, loadIntegration, runnerOrder, pickRunners, commandFor, resolveBin, launchable, readAnswer, isLimit, tokensOf, usageOf };
