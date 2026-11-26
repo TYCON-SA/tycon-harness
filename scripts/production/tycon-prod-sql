@@ -319,7 +319,8 @@ aprobar_en_la_sesion(){
     APROBAR_JS="$arnes/scripts/production/session-approval.js"
   fi
   [ -f "$APROBAR_JS" ] || muere "no encuentro el arnés para verificar el click del dueño ($APROBAR_JS): sin él no se aprueba desde la sesión. Corré la puerta desde tu terminal, fuera de la sesión."
-  texto="$("$NODE" "$APROBAR_JS" --host "$HOST" --session "$sesion" --max-rows "$MAX_FILAS" -- "$SENTENCIA" 2>&1)" || salida=$?
+  # con un entorno limpio, como el cuadro del sistema: una variable de la sesión no le cambia nada al verificador
+  texto="$(env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin LANG=en_US.UTF-8 "$NODE" "$APROBAR_JS" --host "$HOST" --session "$sesion" --max-rows "$MAX_FILAS" -- "$SENTENCIA" 2>&1)" || salida=$?
   if [ "$salida" = 0 ]; then
     APROBACION=",\"aprobacion\":\"click-en-la-sesion\",\"sesion\":\"$sesion\""
     return 0
