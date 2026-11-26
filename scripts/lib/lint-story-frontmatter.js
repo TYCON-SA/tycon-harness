@@ -187,8 +187,8 @@ function versionesAnteriores(abs) {
   // dentro de un commit git deja GIT_DIR y compañía en el entorno, y le ganan a -C: se sacan
   const opts = { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, env: sinGitDelPadre(), windowsHide: true };
   let raiz;
-  try { raiz = fs.realpathSync(execFileSync('git', ['-C', path.dirname(abs), 'rev-parse', '--show-toplevel'], opts).trim()); } catch { return null; }
-  const git = (args) => execFileSync('git', ['-C', raiz, '-c', 'core.quotepath=false', ...args], opts);
+  try { raiz = fs.realpathSync(execFileSync('git', ['-C', path.dirname(abs), 'rev-parse', '--show-toplevel'], { ...opts, windowsHide: true }).trim()); } catch { return null; }
+  const git = (args) => execFileSync('git', ['-C', raiz, '-c', 'core.quotepath=false', ...args], { ...opts, windowsHide: true });
   let rel = path.relative(raiz, fs.realpathSync(abs)).split(path.sep).join('/');
   try {
     // movida en este commit: la versión anterior vive en la ruta de origen (con -z, sin comillas en un nombre con acentos)
