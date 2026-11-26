@@ -53,6 +53,8 @@ const os = require('os');
 const path = require('path');
 const childProcess = require('child_process');
 const OPS = require('../lib/operations-config.js');
+// el sitio lee un buzón de un conector: el perfil se valida con los conectores de buzón de integrations/
+try { require('../lib/integrations.js').giveMailboxConnectors(OPS); } catch (_) { /* sin integraciones, el lector solo */ }
 const people = require('../lib/people.js');
 const COPIA = require('./operations-copy.js');
 const { validAgeDays } = require('../nightly/projects/state-age.js');
@@ -194,8 +196,25 @@ function prepararClonDeEscritura({ dir, url, git = 'git' }) {
   } catch (e) { return { motivo: `no se pudo armar el clon de escritura (${e.code || e.message})` }; }
 }
 
-/** Los módulos de cloud/ (lo de cada nube): el núcleo les pide el buzón o un token sin nombrar a ninguna. */
+/**
+ * Los módulos de cloud/ (lo de cada nube) y los conectores de buzón de integrations/ (kind mailbox): el núcleo les pide
+ * el buzón o un token sin nombrar a ninguno.
+ */
 function nubes(log = () => {}) {
+  const out = nubesDeCloud(log);
+  let conectores = [];
+  try { conectores = require('../lib/integrations.js').mailboxConnectors(); } catch (e) { log(`no se pudieron leer los conectores de buzón (${(e && e.code) || (e && e.name) || 'error'})`); }
+  for (const c of conectores) {
+    try {
+      const m = require(c.file);
+      if (m && typeof m === 'object' && !Object.prototype.hasOwnProperty.call(m, '__archivo')) Object.defineProperty(m, '__archivo', { value: c.file, enumerable: false });
+      out.push(m);
+    } catch (e) { log(`el conector de buzón «${c.provider}» no carga (${(e && e.name) || 'error'}): ese buzón no está disponible`); }
+  }
+  return out;
+}
+
+function nubesDeCloud(log) {
   const dir = path.join(__dirname, 'cloud');
   let archivos = [];
   try { archivos = fs.readdirSync(dir).filter((f) => /^[a-z][a-z0-9-]*\.js$/.test(f)).sort(); } catch (e) { log(`no se pudo leer cloud/ (${e.code || e.message})`); return []; }
@@ -365,20 +384,28 @@ const PATRON_SEGURO = /^(?!(?:[^*]*\*){3})[A-Za-z0-9._*-]{1,80}$/;
  * resultado de CADA plataforma que aparece ahí (el campo `plataforma`, sin nombrar ninguna): una plataforma que no sabe
  * qué imagen corre nunca dice «instalado por etiqueta», y su resultado más nuevo no tapa el de otra. El del demo va en
  * su propia carpeta (`demo/`), que no se lee. Del resultado sólo sale si el motivo es «instalado por etiqueta».
+ * Con `dataDir`, mira además `<dataDir>/site-update/`: ahí deja su resultado la actualización de una máquina propia, que
+ * corre desde el cron de esa máquina y no llega a la copia de operaciones. Los resultados de las dos carpetas se ordenan
+ * juntos por día, y cada archivo se valida contra la raíz de la suya.
  */
-function instalacionDelSitio(dash, clon, log) {
-  const dir = path.join(dash, 'site-update');
-  let nombres = [];
-  try { nombres = fs.readdirSync(dir).filter((n) => /^site-update-\d{4}-\d{2}-\d{2}\.json$/.test(n)).sort().reverse(); } catch (e) {
-    // sin la carpeta, no hay nada que decir; una que no se puede leer se dice (el aviso de la etiqueta faltaría callado)
-    if (!e || e.code !== 'ENOENT') log(`la carpeta de la actualización del sitio no se pudo leer (${(e && e.code) || 'error'})`);
-    return null;
+function instalacionDelSitio(dash, clon, log, dataDir = null) {
+  const carpetas = [{ dir: path.join(dash, 'site-update'), raiz: clon, cual: 'la carpeta de la actualización del sitio' }];
+  if (dataDir) carpetas.push({ dir: path.join(dataDir, 'site-update'), raiz: dataDir, cual: 'la carpeta del sitio con la actualización de esta máquina' });
+  const archivos = [];
+  for (const c of carpetas) {
+    let nombres;
+    try { nombres = fs.readdirSync(c.dir).filter((n) => /^site-update-\d{4}-\d{2}-\d{2}\.json$/.test(n)); } catch (e) {
+      // sin la carpeta, no hay nada que decir; una que no se puede leer se dice (el aviso de la etiqueta faltaría callado)
+      if (!e || e.code !== 'ENOENT') log(`${c.cual} no se pudo leer (${(e && e.code) || 'error'})`);
+      continue;
+    }
+    for (const n of nombres) archivos.push({ n, ruta: path.join(c.dir, n), raiz: c.raiz });
   }
+  archivos.sort((a, b) => (a.n < b.n ? 1 : a.n > b.n ? -1 : 0));
   const vistas = new Set();
   let out = null;
-  for (const n of nombres) {
-    const ruta = path.join(dir, n);
-    if (!dentroDe(clon, ruta)) continue;
+  for (const { n, ruta, raiz } of archivos) {
+    if (!dentroDe(raiz, ruta)) continue;
     const r = leerJsonDe(ruta);
     if (!r.doc) { log(`la actualización del sitio del ${n.slice(12, 22)} no se pudo leer`); continue; }
     if (!isObject(r.doc) || typeof r.doc.plataforma !== 'string' || vistas.has(r.doc.plataforma)) continue;
@@ -391,7 +418,7 @@ function instalacionDelSitio(dash, clon, log) {
 }
 
 // ── El modelo (lista blanca), desde un clon del repo de operaciones ───────────────────────────────────────────────
-function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin_buzon'), carpetas = null, fichas, log: logCrudo = () => {} } = {}) {
+function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin_buzon'), carpetas = null, fichas, dataDir = null, log: logCrudo = () => {} } = {}) {
   const log = (l) => logCrudo(limpiarLinea(l));   // los nombres de archivo del repo pueden traer saltos de línea
   const t = ahora;
   const hoy = diaUtc(t);
@@ -613,7 +640,7 @@ function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin
   m.stateAgeDays = stateAgeDaysProjected(sourcesCfg.params);
   m.corridas = corridas;
   m.carpetas = carpetasProyectadas(carpetas);
-  m.instalacion = instalacionDelSitio(dash, clon, log);
+  m.instalacion = instalacionDelSitio(dash, clon, log, dataDir);
   // las fichas del tablero nocturno, ya calculadas aparte (refrescarUnaVez → calcularFichas). `null` = todavía no
   // se calcularon; sin la clave (las pruebas que no las piden) el modelo no las trae.
   if (fichas !== undefined) m.fichas = fichas;
@@ -924,7 +951,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       // disco del sitio guarda los resúmenes, nunca las conversaciones); y el espejo poda lo que ya no está en el buzón
       // la bajada recorre el espejo en el disco montado: con el módulo de la nube cargado de cloud/, en un hilo aparte
       // (el principal contesta las sondas); una nube dada a mano (las pruebas) corre acá
-      const opts = { cuenta: mb.account, contenedor: mb.container, credencial: cfg.mailboxCredencial, dir: dirBuzon, urlBase: urlBuzon, sinHilos: !conHilos, budgetMs: presupuestoBuzonMs,
+      const opts = { cuenta: mb.account, contenedor: mb.container, buzon: mb, credencial: cfg.mailboxCredencial, dir: dirBuzon, urlBase: urlBuzon, sinHilos: !conHilos, budgetMs: presupuestoBuzonMs,
         resumenes: conHilos, topeBytesHilos: conHilos ? topeConversacionesBytes : null, hiloTopeBytes: conHilos ? topeConversacionBytes : null, podar: true, confiarIndice: !verificar, jornadas: true, log: (l) => log(`buzón: ${l}`) };
       r = nube.__archivo ? await require('./summaries.js').bajarEnWorker({ modulo: nube.__archivo, ...opts }) : await nube.bajarBuzon(opts);
     } catch (e) { r = { codigo: 1, res: { estado: 'sin_red', motivo: `error inesperado al bajar: ${e.message}` } }; }
@@ -1010,7 +1037,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     return r.doc && isObject(r.doc) ? r.doc : null;
   }
 
-  const construir = ({ corridas, carpetas, t }) => construirDesdeClon(clon, { ahora: t, corridas, carpetas, fichas: st.fichas || null, log });
+  const construir = ({ corridas, carpetas, t }) => construirDesdeClon(clon, { ahora: t, corridas, carpetas, fichas: st.fichas || null, dataDir, log });
 
   /**
    * Las fichas del tablero nocturno: el mismo cálculo que arma la página, en un hilo aparte porque recorre el espejo
@@ -1093,9 +1120,45 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     return true;
   }
 
+  // La huella de una oficina recién dada de alta, sin esperar la pasada entera: la pide la revisión de cada minuto del
+  // centro cuando hay una máquina esperando. Baja sólo los archivos de huellas y relee las huellas del espejo; una bajada
+  // que no termina entera no cambia nada (con lo leído a medias se soltaría una clave cuya huella sigue ahí). Como mucho
+  // una por minuto, y nunca a la vez que un refresco: los dos escriben el mismo espejo.
+  const HUELLAS_A_PEDIDO_MS = 60000;
+  let huellasEnCurso = null;
+  let huellasUltima = -Infinity;
+  function leerHuellasAPedido() {
+    if (huellasEnCurso || enCurso || st.buzon.bajando) return Promise.resolve({ leido: false, motivo: 'ocupado' });
+    const t = ahora();
+    if (t - huellasUltima < HUELLAS_A_PEDIDO_MS) return Promise.resolve({ leido: false, motivo: 'tope' });
+    huellasUltima = t;
+    huellasEnCurso = (async () => {
+      const conf = st.ultimoBueno;
+      const mb = conf && isObject(conf.site) && isObject(conf.site.mailbox) ? conf.site.mailbox : null;
+      const nube = mb ? lasNubes().find((n) => Array.isArray(n.PROVEEDORES_DE_BUZON) && n.PROVEEDORES_DE_BUZON.includes(mb.provider)) : null;
+      if (!mb || !nube || !cfg.mailboxCredencial) return { leido: false, motivo: 'sin_buzon' };
+      const opts = { cuenta: mb.account, contenedor: mb.container, buzon: mb, credencial: cfg.mailboxCredencial, dir: dirBuzon, urlBase: urlBuzon, sinHilos: true, soloHuellas: true, budgetMs: presupuestoBuzonMs, log: (l) => log(`huellas a pedido: ${l}`) };
+      let r;
+      try { r = nube.__archivo ? await require('./summaries.js').bajarEnWorker({ modulo: nube.__archivo, ...opts }) : await nube.bajarBuzon(opts); }
+      catch (e) { r = { codigo: 1, res: { estado: 'sin_red', motivo: e.message } }; }
+      const res = (r && r.res) || {};
+      if ((res.bajados || 0) > 0) espejoCambio();
+      if (!(r && r.codigo === 0 && res.completo === true)) {
+        log(`huellas a pedido: la bajada no terminó entera (${res.estado || 'sin estado'}${res.motivo ? `: ${res.motivo}` : ''}); las huellas no cambian`);
+        return { leido: false, motivo: 'bajada_a_medias' };
+      }
+      const h = leerHuellas(dirBuzon, log);
+      if (!h.medido) { log('huellas a pedido: el espejo no se pudo leer; las huellas no cambian'); return { leido: false, motivo: 'sin_leer' }; }
+      st.huellas = h;
+      return { leido: true };
+    })().finally(() => { huellasEnCurso = null; });
+    return huellasEnCurso;
+  }
+
   function refrescar() {
     if (enCurso) return enCurso;
-    enCurso = refrescarUnaVez().catch((e) => {
+    // una lectura de huellas a pedido en curso escribe el mismo espejo: el refresco espera que termine
+    enCurso = Promise.resolve(huellasEnCurso).catch(() => {}).then(() => refrescarUnaVez()).catch((e) => {
       // un refresco que se cae por algo inesperado deja el último modelo bueno, pero con banda (nunca en silencio)
       log(`el refresco falló de forma inesperada: ${e && e.stack ? e.stack : e}`);
       st.fallas.repo = st.fallas.repo || { desde: ahora(), estado: 'falla_interna' };
@@ -1143,6 +1206,8 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     personas: () => st.personas,
     /** Las huellas de oficina que subió cada carpeta del buzón (`leerHuellas`). */
     huellas: () => st.huellas,
+    /** Baja y relee sólo las huellas, sin la pasada entera: `{ leido, motivo? }` (ver `leerHuellasAPedido`). */
+    leerHuellasAPedido,
     /** Los días de horas y tokens del espejo (`tabs/workdays.js leerJornadas`), releídos sólo si el espejo cambió. */
     jornadas: () => {
       if (!jornadasLeidas || jornadasLeidas.generacion !== memoria.generacion) jornadasLeidas = { generacion: memoria.generacion, valor: require('./tabs/workdays.js').leerJornadas(dirBuzon) };
@@ -1174,7 +1239,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       const mb = conf && isObject(conf.site) && isObject(conf.site.mailbox) ? conf.site.mailbox : null;
       const nube = mb ? lasNubes().find((n) => Array.isArray(n.PROVEEDORES_DE_BUZON) && n.PROVEEDORES_DE_BUZON.includes(mb.provider)) : null;
       if (!mb || !nube || typeof nube.bajarUnaCorrida !== 'function' || !cfg.mailboxCredencial) return { codigo: 1, res: { estado: 'sin_configurar', motivo: 'el buzón no está configurado en el sitio' } };
-      return nube.bajarUnaCorrida({ cuenta: mb.account, contenedor: mb.container, credencial: cfg.mailboxCredencial, urlBase: urlBuzon, maquina, base, dir });
+      return nube.bajarUnaCorrida({ cuenta: mb.account, contenedor: mb.container, buzon: mb, credencial: cfg.mailboxCredencial, urlBase: urlBuzon, maquina, base, dir });
     },
     /** ¿la ÚLTIMA bajada del buzón terminó entera?, y cuántas enteras hubo (la pestaña arma con una entera). */
     // `armable`: la pestaña puede armar (entera, o con todos los volcados y registros); `pendientes`: archivos de

@@ -650,7 +650,8 @@ function labTrasMain({ publicoEnRama = false } = {}) {
   escribir(lab.priv, 'lib/priv.js', 'module.exports = 1;\n');
   escribir(lab.priv, 'lib/trae.js', 'module.exports = 1;\n');
   escribir(lab.priv, 'scripts/tests/historia.test.js', suite('historia', 'lib/priv.js'));
-  escribir(lab.priv, 'scripts/tests/falla.test.js', suite('falla', 'lib/priv.js', "if (fs.existsSync(process.env.LAB_STATE + '/roja')) process.exit(1);\n"));
+  // roja sólo con el cambio de la historia: en los dos main (la base del juez de heredados en el árbol armado) sale verde
+  escribir(lab.priv, 'scripts/tests/falla.test.js', suite('falla', 'lib/priv.js', "if (fs.existsSync(process.env.LAB_STATE + '/roja') && require('../../lib/priv.js') === 2) process.exit(1);\n"));
   escribir(lab.priv, 'scripts/tests/trae.test.js', suite('trae', 'lib/trae.js'));
   escribir(lab.pub, 'scripts/tests/otra.test.js', `${suite('otra', 'scripts/lib/otra.js')}if (require('../lib/otra.js') < 1) process.exit(1);\n`);
   escribir(lab.pub, 'scripts/tests/pub-lib.test.js', `${suite('pub-lib', 'scripts/lib/pub-lib.js')}if (require('../lib/pub-lib.js') < 1) process.exit(1);\n`);
@@ -1015,6 +1016,34 @@ test('T7d PrivateGate_UnknownTouched_StaysUnscoped @story-8.279 @ac-11 — las d
   assert.ok(!fs.existsSync(marca), 'sola, tampoco corre ninguna');
 });
 
+// T7a y T7c no distinguen de dónde se lee el alcance: en los dos, lo commiteado del privado y el árbol temporal dicen lo
+// mismo. Acá difieren: el árbol lleva el disco del privado (`cloneWithDisk` lo commitea en su copia), así que leído del
+// árbol manda lo que está sin commitear.
+// 🔴 Falla con: el portón lee `.test-gate.yaml` del árbol temporal (la lectura después de `REPO_RUN="$(_tg_tree_field
+//    tree)"`), o del disco del privado en vez de lo commiteado.
+test('T7f PrivateGate_ScopeFromCommitted_NotFromTree @story-8.279 @ac-11 — el alcance sale de lo commiteado del privado: la clave sin commitear no acota, y una sin commitear no deshace la commiteada', () => {
+  const ninguna = (r) => !nombra(r, 'pub-lib.test.js') && !nombra(r, 'otra.test.js') && !nombra(r, 'demo.test.js');
+  // sin la clave commiteada, y con la clave escrita en el disco: no acota, sólo papeles sigue en 7 como hoy
+  const sinCommitear = labConAlcance({ alcance: null, modificar: ['docs/x.md'] });
+  escribir(sinCommitear.priv, '.test-gate.yaml', ALCANCE);
+  fs.appendFileSync(path.join(sinCommitear.priv, 'docs/x.md'), 'v2\n');
+  const a = portón(sinCommitear);
+  assert.strictEqual(a.code, 7, a.salida);
+  assert.match(a.salida, /sin acotar/, a.salida);
+  assert.doesNotMatch(a.salida, /la validación de prueba del privado/, a.salida);
+  assert.ok(ninguna(a), a.salida);
+  // con la clave commiteada, y `scope: full` sin commitear en el disco: acota igual y cierra en verde diciendo quién
+  // corre la completa
+  const commiteada = labConAlcance({ modificar: ['docs/x.md'] });
+  escribir(commiteada.priv, '.test-gate.yaml', 'test_gate:\n  scope: full\n  full_suite_by: "nadie"\n');
+  fs.appendFileSync(path.join(commiteada.priv, 'docs/x.md'), 'v2\n');
+  const b = portón(commiteada);
+  assert.strictEqual(b.code, 0, b.salida);
+  assert.match(b.salida, /ninguna suite lee lo tocado; la suite completa la corre la validación de prueba del privado/, b.salida);
+  assert.doesNotMatch(b.salida, /sin acotar/, b.salida);
+  assert.ok(ninguna(b), b.salida);
+});
+
 // ── Papeles commiteados en el árbol armado: sólo se suman pruebas ────────────────────────────────────────────────────
 // La rama de cada repo sale de `main`, y lo de la historia se commitea después: sin eso `main..HEAD` da 0 y la prueba no
 // mide el caso. `TYCON_COVERAGE_BASE` hace de marcador en el privado; en el público no existe y su base es la bifurcación.
@@ -1065,10 +1094,33 @@ test('T17c PrivateGate_DocsCommitted_UnnamedCode_StaysUnscoped @story-8.279 @ac-
 });
 
 test('T17d PrivateGate_YamlCommitted_StaysUnscoped @story-8.279 @ac-27 @ac-29 — un .yaml commiteado que ninguna suite nombra: sigue en «sin acotar»', () => {
-  // 🔴 rojo si: la marca depende de que el diff sea sólo `.md` → un .yaml no pasa por la guarda y cierra en verde.
+  // 🔴 rojo si: la marca depende de que el diff sea sólo `.md` → un .yaml no pasa por la guarda y cierra en verde; o si el
+  //    .yaml commiteado vuelve el privado a «no sé»: el 7 sale igual, pero por no saber qué se tocó (AC 27: se sabe).
   const lab = labRamaDeLaHistoria({ modificar: ['specs/estado.yaml'] });
   commitear(lab.priv, 'specs/estado.yaml', 'a: 1\n');
-  sinAcotarSinCorrer(portónDeLaRama(lab));
+  const r = portónDeLaRama(lab);
+  sinAcotarSinCorrer(r);
+  assert.match(r.salida, /sin acotar — ninguna suite lee lo que la story tocó/, r.salida);
+  assert.doesNotMatch(r.salida, /no sé qué archivos tocó la story/, r.salida);
+});
+
+test('T17e PrivateGate_YamlCommitted_PublicCodeRuns @story-8.279 @ac-27 @ac-29 — un .yaml commiteado y código del público que una suite nombra: esa suite corre y el portón sale según ella', () => {
+  // 🔴 rojo si: el .yaml commiteado vuelve el privado a «no sé» y anula al público (sale 7 sin correr nada, como los
+  //    portones de la 8.254 y la 8.260, que commitean specs/sprint-status.yaml); o si una roja de esa suite no frena.
+  const lab = labRamaDeLaHistoria({ modificar: ['specs/estado.yaml', 'Pub/scripts/lib/pub-lib.js'] });
+  commitear(lab.priv, 'specs/estado.yaml', 'a: 1\n');
+  commitear(lab.pub, 'scripts/lib/pub-lib.js', 'module.exports = 1; // tocado\n');
+  const r = portónDeLaRama(lab);
+  assert.strictEqual(r.code, 0, r.salida);
+  assert.ok(nombra(r, 'pub-lib.test.js'), r.salida);
+  assert.ok(!nombra(r, 'otra.test.js'), r.salida);
+  assert.doesNotMatch(r.salida, /sin acotar/, r.salida);
+  // la misma rama con el código roto: corre la misma suite y el portón frena por ella, no sale 7 ni verde
+  commitear(lab.pub, 'scripts/lib/pub-lib.js', 'module.exports = 2; // roto\n');
+  const roja = portónDeLaRama(lab);
+  assert.ok(roja.code !== 0 && roja.code !== 7, `${roja.code}\n${roja.salida}`);
+  assert.match(roja.salida, /^ROJO\(\d+\) .*pub-lib\.test\.js/m, roja.salida);
+  assert.doesNotMatch(roja.salida, /sin acotar/, roja.salida);
 });
 
 function ramaConMarcador(modificar, sid) {
@@ -1116,4 +1168,73 @@ test('T21c SavedGreen_UnknownTouched_MustMeasure @story-8.279 @ac-32 — sin sab
   assert.strictEqual(mustMeasureFrom(con('no-se.json', { known: false })), true);
   assert.strictEqual(mustMeasureFrom(con('marca.json', { known: true, must_measure: true })), true);
   assert.strictEqual(mustMeasureFrom(con('conocido.json', { known: true, files: ['docs/x.md'] })), false);
+});
+
+test('T21d PrivateGate_SavedGreen_UnknownTouched_NotMeasured @story-8.279 @ac-32 — en el portón del árbol armado, sin saber qué se tocó, un verde guardado que no corrió ninguna suite no cierra', () => {
+  // 🔴 rojo si: el portón le pasa a `decide` sólo la marca y no el «no sé» (T21c mira `mustMeasureFrom` suelta, no lo
+  //    que le llega a `decide` desde el portón) → con la carpeta igual, cierra «sin correr» con el verde de los papeles.
+  const { lab, m, env } = ramaConMarcador(['docs/x.md'], 'pt-no-se');
+  fs.appendFileSync(path.join(lab.priv, 'docs/x.md'), 'v2\n');
+  const papeles = portón(lab, env);
+  assert.strictEqual(papeles.code, 0, papeles.salida);
+  assert.strictEqual((m.leer().testsGreenFull || []).length, 1, `guarda el verde de los papeles\n${papeles.salida}`);
+  // la misma carpeta, y el privado sin rama principal: lo tocado ya no se sabe (AC 28)
+  git(lab.priv, 'branch', '-m', 'main', 'tronco');
+  const r = portón(lab, env);
+  sinAcotarSinCorrer(r);
+  assert.match(r.salida, /la completa verde no corrió ninguna suite y lo tocado hay que medirlo/, r.salida);
+  assert.match(r.salida, /no sé qué archivos tocó la story/, r.salida);
+});
+
+// ── Un caso que la foto no conoce, medido en los dos main ───────────────────────────────────────────────────────────
+// El juez de heredados en el árbol armado: sin la foto (o con un caso que la foto no tiene), la base es el árbol armado
+// de los dos origin/main, medido en el momento. La suite del público prueba `pub-lib.js`: en main devuelve `enMain`.
+function labDosMain({ enMain, conOrigenPublico = true }) {
+  const lab = laboratorio({ modificar: ['Pub/scripts/lib/pub-lib.js'] });
+  escribir(lab.pub, 'scripts/tests/pub-lib.test.js',
+    "if (require('../lib/pub-lib.js') !== 1) { console.log('✗ caso rojo'); process.exit(1); } console.log('ok pub-lib');\n");
+  escribir(lab.pub, 'scripts/lib/pub-lib.js', `module.exports = ${enMain};\n`);
+  git(lab.pub, 'add', '-A');
+  git(lab.pub, 'commit', '-q', '-m', 'main de hoy');
+  git(lab.priv, 'update-ref', 'refs/remotes/origin/main', 'main');
+  if (conOrigenPublico) git(lab.pub, 'update-ref', 'refs/remotes/origin/main', 'main');
+  // la rama de la historia rompe la suite en el disco (el portón ya la vio roja)
+  escribir(lab.pub, 'scripts/lib/pub-lib.js', 'module.exports = 7;\n');
+  const resumen = path.join(lab.raiz, 'suites.json');
+  fs.writeFileSync(resumen, JSON.stringify({ suites: [{ ruta: path.join(lab.raiz, 'arbol', 'scripts', 'tests', 'pub-lib.test.js'), exit: 1 }],
+    fallas: [{ ruta: path.join(lab.raiz, 'arbol', 'scripts', 'tests', 'pub-lib.test.js'), entrada: { raiz: 'arnes', ruta: 'tests/pub-lib.test.js' }, casos: ['✗ caso rojo'] }],
+    ausentes: [] }));
+  return { lab, resumen };
+}
+function juez({ lab, resumen }) {
+  const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'inherited-reds.js'), 'apply', lab.priv, resumen,
+    '--assembled', '--private', lab.priv, '--public', lab.pub], { encoding: 'utf8', cwd: lab.priv, env: entorno(lab.home), timeout: 120000 });
+  return { status: r.status, out: `${r.stdout}\n${r.stderr}`, resumen: JSON.parse(fs.readFileSync(resumen, 'utf8')) };
+}
+
+test('T23 PrivateGate_NewCase_MeasuredInBase @story-8.279 @ac-35 — en el árbol armado, un caso que la foto no conoce se mide en los dos main: rojo ahí avisa, verde ahí frena', () => {
+  // 🔴 rojo si: el árbol armado sigue sin medir la base («mezcla dos repos») → una deuda que vence hoy frena un portón
+  //    que no la trajo; o si perdona sin medir → un caso de la historia pasa como heredado.
+  const rojo = juez(labDosMain({ enMain: 2 }));
+  assert.equal(rojo.status, 0, rojo.out);
+  assert.match(rojo.out, /roja también en la base/, rojo.out);
+  assert.equal(rojo.resumen.inherited.suites[0].measured_on, 'base', JSON.stringify(rojo.resumen.inherited));
+  assert.deepEqual(rojo.resumen.fallas, []);
+  const verde = juez(labDosMain({ enMain: 1 }));
+  assert.equal(verde.status, 1, verde.out);
+  assert.match(verde.out, /verde en la base: el rojo es del cambio/, verde.out);
+  assert.equal(verde.resumen.fallas.length, 1, JSON.stringify(verde.resumen));
+});
+
+test('T23 PrivateGate_NewCase_BaseUnreadable_Blocks @story-8.279 @ac-35 — sin origin/main en el público no se perdona nada, y el motivo dice qué repo', () => {
+  // 🔴 rojo si: sin poder armar los dos main se perdona igual, o el motivo no dice por qué.
+  const r = juez(labDosMain({ enMain: 2, conOrigenPublico: false }));
+  assert.equal(r.status, 1, r.out);
+  assert.match(r.out, /no medido: no pude armar los dos main \(el público .* no tiene origin\/main\)/, r.out);
+  // sin las raíces de los dos repos, el «no medido» de antes
+  const s = labDosMain({ enMain: 2 });
+  const viejo = spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'inherited-reds.js'), 'apply', s.lab.priv, s.resumen, '--assembled'],
+    { encoding: 'utf8', cwd: s.lab.priv, env: entorno(s.lab.home), timeout: 60000 });
+  assert.equal(viejo.status, 1, viejo.stderr);
+  assert.match(viejo.stderr, /mezcla dos repos/, viejo.stderr);
 });

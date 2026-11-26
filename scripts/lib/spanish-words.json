@@ -1615,6 +1615,10 @@
       "reason": "nombre propio del producto de horas, como clockify: la integración integrations/solidtime/ y sus variables (TYCON_SOLIDTIME_TOKEN). Aprobada por la coordinadora, por delegación del dueño, el 2026-10-21 (story 7.40, tanda A)."
     },
     {
+      "words": ["gitlab", "glab"],
+      "reason": "nombre propio de la plataforma y de su CLI, mismo grupo que github: el conector integrations/gitlab/, su guía y sus pruebas, y las variables del glab de la máquina y del de mentira (TYCON_GLAB_CMD, FAKE_GLAB_STATE, FAKE_GLAB_LOG). Decidido por quien propone el conector el 2026-11-20; como cambio de control, lo firma el dueño del repo."
+    },
+    {
       "words": ["typecheck"],
       "reason": "nombre del paso en npm, inglés técnico (`npm run typecheck`; el arnés ya la reconoce en runtime-matrix.js): nombra el guion scripts/ci/typecheck-forms.js y su variable de pruebas TYCON_TYPECHECK_NPM. Aprobada por la coordinadora, por delegación del dueño, el 2026-10-21 (story 1.10)."
     },
@@ -1653,6 +1657,10 @@
     {
       "words": ["websocket", "subprotocol", "permessage", "util", "utf"],
       "reason": "nombres propios de la librería ws 8.22.0 copiada sin cambios en scripts/tools/office/vendor/ws/ (story 2.81, tanda B): sus archivos (websocket.js, websocket-server.js, subprotocol.js, permessage-deflate.js, buffer-util.js) y sus variables de entorno (WS_NO_BUFFER_UTIL, WS_NO_UTF_8_VALIDATE). Son términos del protocolo y de la librería en inglés técnico; renombrarlos rompería la copia tal cual y su huella. Decidido por el dueño el 2026-11-01."
+    },
+    {
+      "words": ["gcs", "gce"],
+      "reason": "siglas de Google Cloud: gcs es Google Cloud Storage (el conector integrations/gcs/ del buzón de ejecuciones, historia 1.3) y gce es Google Compute Engine (GCE_METADATA_HOST, la variable estándar que leen las librerías de Google para encontrar el servidor de metadatos). Son nombres propios y no se traducen. Aprobado por el dueño en el pedido #1753 (2026-11-25)."
     }
   ],
   "schemaFiles": [

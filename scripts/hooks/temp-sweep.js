@@ -27,7 +27,7 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *     `rel-v12345` también terminan en seis caracteres, y de los sufijos al azar menos de dos en cien quedan afuera.
  *     El nombre de mktemp tiene que traer las tres clases: `tmp.screenshot` y `tmp.2024backup` tienen su misma forma;
  *   · lo de otras aplicaciones y lo de las sesiones del asistente: `com.*`, `mcp-*`, `vscode*`, `claude*`, `cc-*`,
- *     `engram-*`, y todo nombre que empieza con punto;
+ *     `engram-*`, y todo nombre que empieza con punto. De `claude-<uid>` sólo se miran las carpetas de sesión (abajo);
  *   · un enlace simbólico del primer nivel, y lo que está del otro lado de un enlace de adentro;
  *   · una entrada que otro usuario puede alcanzar (con permisos para el grupo o para otros) si adentro tiene algo
  *     que no es del usuario o una carpeta donde otro puede escribir: ahí otro podría cambiar una carpeta por un
@@ -36,6 +36,22 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *   · una carpeta de adentro que no se deja leer y sí atravesar: no se sabe qué tiene. A una sin permiso de paso
  *     para nadie no se entra por ruta: lo de adentro no cambió desde que quedó así, y se borra sin mirarlo;
  *   · nada, si no puede saber qué usan los procesos vivos: sin esa lista no borra, y prueba de nuevo al otro día.
+ *
+ * ── LAS CARPETAS DE LAS SESIONES DEL AGENTE ──────────────────────────────────────────────────────────────────────
+ * Claude Code guarda lo temporal de cada sesión en `/tmp/claude-<uid>/<proyecto>/<sesión>/` (`agentTempDir`) y no lo
+ * borra al cerrarla. La carpeta de una sesión se borra cuando cumple todo esto:
+ *   · se llama como una sesión (un identificador al azar), y ella, la de su proyecto y la de `claude-<uid>` son
+ *     carpetas del usuario donde nadie más escribe, no enlaces;
+ *   · la sesión no tiene rastro de vida: ningún archivo suyo en la carpeta de sesiones de Claude Code con el proceso
+ *     vivo, y ningún marcador del arnés abierto o estacionado. Claude Code borra ese archivo al cerrar la sesión, así
+ *     que «sin archivo» es lo normal de una que terminó;
+ *   · lo más nuevo de adentro es más viejo que `maintenance.temp_days` días (2 si el perfil no dice otra cosa);
+ *   · lo mismo que en el primer nivel: sin sockets, ningún proceso vivo la usa, nadie más la alcanza;
+ *   · ningún repo de git de adentro (un `.git` hasta 3 niveles abajo) tiene cambios sin commitear, commits sin subir
+ *     o una rama sin remoto. Si lo tiene, queda y la línea del arranque la nombra; si no se pudo mirar, queda.
+ * Si no puede leer las sesiones o los marcadores, no borra ninguna carpeta de sesión y lo dice: «no pude leer» no es
+ * «sin rastro». Sin la carpeta de sesiones (una máquina sólo con Codex) tampoco. En Windows no se sabe dónde guarda
+ * Claude Code lo de cada sesión: ahí esta parte no corre.
  *
  * ── DÓNDE MIRA ───────────────────────────────────────────────────────────────────────────────────────────────────
  *   · macOS: la carpeta temporal del usuario, la que da `getconf`, y `/private/tmp`;
@@ -81,6 +97,9 @@ const BUDGET_MS = 20 * 1000;
 const MAX_BUDGET_MS = 600 * 1000;
 const DEFAULT_HOURS = 24;
 const LSOF_TIMEOUT_MS = 5 * 1000;
+// sin `-n` y `-P`, lsof traduce cada dirección y cada puerto de red a un nombre: en una máquina con muchas conexiones
+// tarda decenas de segundos (medido: 26 s contra medio segundo) y se pasa del tope, y entonces no se barre nada
+const LSOF_ARGS = ['-n', '-P', '-u', String(process.getuid ? process.getuid() : ''), '-Fn'];
 // el borrado de una entrada no se puede cortar: no se empieza si no queda varias veces lo que tardó en mirarse
 const REMOVE_COST = 4;
 const MAX_NAMES = 5;
@@ -90,6 +109,13 @@ const WIN = process.platform === 'win32';
 const MKDTEMP_SUFFIX = /-([A-Za-z0-9]{6})$/;
 const MKTEMP_NAME = /^tmp\.([A-Za-z0-9]{10})$/;
 const FOREIGN = /^(\.|com\.|mcp-|vscode|claude|cc-|engram-)/i;
+// la carpeta de una sesión del agente se llama como la sesión: un identificador al azar
+const SESSION_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const DEFAULT_DAYS = 2;
+const DAY_MS = 24 * HOUR_MS;
+// un `.git` hasta tres niveles abajo de la carpeta de una sesión: `scratchpad/<clon>/.git`
+const GIT_DEPTH = 3;
+const GIT_TIMEOUT_MS = 5 * 1000;
 
 function kinds(text) { return [/[a-z]/, /[A-Z]/, /[0-9]/].filter((re) => re.test(text)).length; }
 
@@ -178,7 +204,7 @@ function fromLsof() {
   // por su ruta del sistema: uno encontrado en el PATH podría ser otro programa
   const bin = ['/usr/sbin/lsof', '/usr/bin/lsof'].find((p) => fs.existsSync(p));
   if (!bin) return null;
-  const r = spawnSync(bin, ['-u', String(process.getuid()), '-Fn'], { windowsHide: true, encoding: 'utf8', timeout: LSOF_TIMEOUT_MS, maxBuffer: 256 * 1024 * 1024 });
+  const r = spawnSync(bin, LSOF_ARGS, { windowsHide: true, encoding: 'utf8', timeout: LSOF_TIMEOUT_MS, maxBuffer: 256 * 1024 * 1024 });
   // lsof sale 1 cuando no pudo leer algún proceso y la lista sirve igual; cortado por una señal, queda por la mitad
   if (r.error || r.signal || (r.status !== 0 && r.status !== 1) || !r.stdout) return null;
   const out = new Set();
@@ -285,6 +311,149 @@ function remove(entry, { win = WIN } = {}) {
   return gone(entry) ? 'removed' : 'failed';
 }
 
+function pidAlive(pid) {
+  try { process.kill(pid, 0); return true; } catch (e) { return Boolean(e && e.code === 'EPERM'); }
+}
+
+/**
+ * La carpeta temporal de las sesiones de Claude Code: `/tmp/claude-<uid>`, con una carpeta por proyecto y, adentro,
+ * una por sesión. null sin número de usuario (Windows), donde no se sabe cuál es.
+ */
+function agentTempDir(uid = typeof process.getuid === 'function' ? process.getuid() : null) {
+  return uid === null || uid === undefined ? null : path.join('/tmp', `claude-${uid}`);
+}
+
+/**
+ * Los rastros de vida de las sesiones del agente: `{ alive, open, error }`. `alive`: las sesiones con un archivo en la
+ * carpeta de sesiones de Claude Code cuyo proceso vive; `open`: las que tienen un marcador del arnés abierto o
+ * estacionado. `error` dice qué no se pudo leer, y con un error no se borra ninguna carpeta de sesión.
+ */
+function lifeSigns(home) {
+  const { claudeDir, stateDir } = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'));
+  const out = { alive: new Set(), open: new Set(), error: null };
+  const sdir = path.join(claudeDir(home), 'sessions');
+  try {
+    for (const f of fs.readdirSync(sdir).filter((n) => n.endsWith('.json'))) {
+      let s;
+      try { s = JSON.parse(fs.readFileSync(path.join(sdir, f), 'utf8')); } catch (e) {
+        // la sesión cerró en el medio y Claude Code borró su archivo: no es uno ilegible
+        if (e && e.code === 'ENOENT') continue;
+        throw new Error(`${f} no se puede leer`);
+      }
+      const pid = Number(s && s.pid);
+      if (!s || typeof s.sessionId !== 'string' || !Number.isInteger(pid) || pid <= 0) throw new Error(`${f} no dice su sesión o su proceso`);
+      if (pidAlive(pid)) out.alive.add(s.sessionId);
+    }
+  } catch (e) {
+    out.error = `no pude leer las sesiones (${(e && (e.code || e.message)) || 'error'})`;
+    return out;
+  }
+  for (const sub of ['active', 'parked']) {
+    try {
+      for (const f of fs.readdirSync(path.join(stateDir(home), sub))) if (f.endsWith('.json')) out.open.add(f.slice(0, -5));
+    } catch (e) {
+      // sin la carpeta no hubo ejecuciones: eso sí se sabe
+      if (e && e.code === 'ENOENT') continue;
+      out.error = `no pude leer los marcadores (${(e && e.code) || 'error'})`;
+      return out;
+    }
+  }
+  return out;
+}
+
+/** Las carpetas con un `.git` hasta GIT_DEPTH niveles abajo de `dir`, sin seguir enlaces; null si alguna no se pudo leer. */
+function gitRepos(dir) {
+  const out = [];
+  const stack = [[dir, 0]];
+  while (stack.length) {
+    const [cur, depth] = stack.pop();
+    let kids;
+    try { kids = fs.readdirSync(cur, { withFileTypes: true }); } catch (_) { return null; }
+    if (kids.some((k) => k.name === '.git')) out.push(cur);
+    if (depth + 1 < GIT_DEPTH) for (const k of kids) if (k.isDirectory() && k.name !== '.git') stack.push([path.join(cur, k.name), depth + 1]);
+  }
+  return out;
+}
+
+/** git en `repo`, sin escribir el índice ni buscar un repo más arriba: `{ ok, out }`, `{ ok: false }` o `{ timeout }`. */
+function gitIn(repo, args, deadline) {
+  const left = deadline - Date.now();
+  if (left <= 0) return { timeout: true };
+  const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', GIT_CEILING_DIRECTORIES: path.dirname(repo) };
+  for (const k of ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE']) delete env[k];
+  const r = spawnSync('git', ['-c', 'core.fsmonitor=false', ...args], { cwd: repo, encoding: 'utf8', timeout: Math.min(left, GIT_TIMEOUT_MS), windowsHide: true, env });
+  if (r.error && r.error.code === 'ETIMEDOUT' && left <= GIT_TIMEOUT_MS) return { timeout: true };
+  return r.status === 0 ? { ok: true, out: r.stdout || '' } : { ok: false };
+}
+
+/**
+ * ¿Hay trabajo de git sin guardar en la carpeta? `{ state: 'clean' }`; `{ state: 'dirty', why }` con cambios sin
+ * commitear, una rama sin remoto o commits sin subir; `'unknown'` si no se pudo mirar; `'timeout'` si se acabó el tiempo.
+ */
+function unsavedWork(dir, deadline) {
+  const repos = gitRepos(dir);
+  if (!repos) return { state: 'unknown' };
+  for (const repo of repos) {
+    const where = path.relative(dir, repo) || '.';
+    const status = gitIn(repo, ['status', '--porcelain'], deadline);
+    const branches = status.ok ? gitIn(repo, ['for-each-ref', '--format=%(upstream)', 'refs/heads'], deadline) : status;
+    // las etiquetas no son trabajo propio: un clon trae las del remoto
+    const ahead = branches.ok ? gitIn(repo, ['rev-list', '--count', '--exclude=refs/tags/*', '--all', '--not', '--remotes'], deadline) : branches;
+    if (ahead.timeout) return { state: 'timeout' };
+    if (!ahead.ok) return { state: 'unknown' };
+    if (status.out.trim()) return { state: 'dirty', why: `cambios sin commitear en ${where}` };
+    // una línea por rama, vacía si la rama no sigue a ninguna remota
+    const upstreams = branches.out ? branches.out.replace(/\n$/, '').split('\n') : [];
+    if (upstreams.some((u) => !u)) return { state: 'dirty', why: `una rama sin remoto en ${where}` };
+    if (Number(ahead.out.trim()) > 0) return { state: 'dirty', why: `commits sin subir en ${where}` };
+  }
+  return { state: 'clean' };
+}
+
+/**
+ * Las carpetas de sesión dentro de `top` (`claude-<uid>`): borra la de una sesión sin rastro de vida, sin tocar en el
+ * plazo y sin trabajo de git sin guardar, con los mismos cuidados que el primer nivel. Cuenta en `s` (res.sessions).
+ */
+function sweepSessions(top, { s, uid, dev, deadline, cutoff, life, busy, dryRun, win }) {
+  if (life.error) { s.blocked = life.error; return; }
+  // ni un enlace ni una carpeta donde otro escribe en el camino: otro podría cambiarla por un enlace mientras se borra
+  const own = (p) => {
+    try { const st = fs.lstatSync(p); return st.isDirectory() && (uid === null || (st.uid === uid && (st.mode & 0o022) === 0)); } catch (_) { return false; }
+  };
+  const list = (p) => { try { return fs.readdirSync(p).sort(); } catch (_) { s.checked++; s.unknown++; return []; } };
+  if (!own(top)) return;
+  for (const project of list(top)) {
+    const pdir = path.join(top, project);
+    if (!own(pdir)) continue;
+    for (const id of list(pdir)) {
+      const entry = path.join(pdir, id);
+      if (!SESSION_NAME.test(id) || !own(entry)) continue;
+      s.checked++;
+      if (life.alive.has(id) || life.open.has(id)) { s.inUse++; continue; }
+      if (Date.now() >= deadline) { s.pending++; continue; }
+      const began = Date.now();
+      const verdict = inspect(entry, { cutoff, deadline, uid, dev });
+      if (verdict === 'timeout') { s.pending++; continue; }
+      if (verdict === 'in-use') { s.inUse++; continue; }
+      if (verdict === 'unsafe') { s.unsafe++; continue; }
+      if (verdict !== 'stale' || !busy) { s.unknown++; continue; }
+      if (busy.some((p) => under(p, entry))) { s.inUse++; continue; }
+      const work = unsavedWork(entry, deadline);
+      if (work.state === 'timeout') { s.pending++; continue; }
+      if (work.state === 'unknown') { s.unknown++; continue; }
+      if (work.state === 'dirty') { s.unsaved.push({ path: entry, why: work.why }); continue; }
+      const took = Date.now() - began;
+      if (dryRun) { s.removed.push(entry); continue; }
+      if (deadline - Date.now() < took * REMOVE_COST) { s.pending++; continue; }
+      const did = remove(entry, { win });
+      if (did === 'removed') s.removed.push(entry);
+      else if (did === 'in-use') s.inUse++;
+      else if (did === 'gone') s.gone++;
+      else s.failed.push(entry);
+    }
+  }
+}
+
 /**
  * Mira el primer nivel de cada raíz y borra lo viejo que nadie usa (o lo cuenta, con `dryRun`).
  * Devuelve { removed: [nombres], failed: [nombres], inUse, unsafe, unknown, pending, gone, checked, skippedRoots: [rutas] }.
@@ -292,11 +461,16 @@ function remove(entry, { win = WIN } = {}) {
  * usan los procesos vivos o no se pudieron leer; `pending`, las que el tope de tiempo no dejó mirar o borrar; `gone`,
  * las que otro borró antes (otra sesión que arrancó a la vez).
  * `live`: las rutas en uso (por defecto, las de los procesos vivos); `null` es «no se sabe».
+ * `agent`: `{ name, days, life }` para mirar las carpetas de sesión dentro de la entrada `name` (`claude-<uid>`), con
+ * el plazo en días y los rastros de vida de `lifeSigns`. Lo que pasó con ellas va en `sessions`, con los mismos
+ * casilleros (las rutas enteras), más `unsaved` (las que tienen trabajo de git sin guardar, con su motivo) y `blocked`
+ * (por qué no se miró ninguna).
  */
 function sweep(opts) {
-  const { roots, hours = DEFAULT_HOURS, now = Date.now(), budgetMs = BUDGET_MS, dryRun = false, win = WIN } = opts;
+  const { roots, hours = DEFAULT_HOURS, now = Date.now(), budgetMs = BUDGET_MS, dryRun = false, win = WIN, agent = null } = opts;
   const uid = 'uid' in opts ? opts.uid : (process.getuid ? process.getuid() : null);
   const res = { removed: [], failed: [], inUse: 0, unsafe: 0, unknown: 0, pending: 0, gone: 0, checked: 0, skippedRoots: [] };
+  res.sessions = { removed: [], failed: [], unsaved: [], inUse: 0, unsafe: 0, unknown: 0, pending: 0, gone: 0, checked: 0, blocked: null };
   const deadline = Date.now() + budgetMs;
   const cutoff = now - hours * HOUR_MS;
   const dirs = [];
@@ -307,6 +481,14 @@ function sweep(opts) {
   }
   const live = 'live' in opts ? opts.live : livePaths({ win });
   const busy = live ? live.filter((p) => dirs.some((d) => under(p, d.path))) : null;
+  // las carpetas de sesión primero: son pocas, y en una carpeta temporal con decenas de miles de entradas el tope de
+  // tiempo se acaba antes de llegar a ellas (medido: 65 000 entradas en la del usuario, y el agente usa /tmp)
+  if (agent) {
+    for (const root of dirs) {
+      const top = path.join(root.path, agent.name);
+      if (fs.existsSync(top)) sweepSessions(top, { s: res.sessions, uid, dev: root.dev, deadline, cutoff: now - agent.days * DAY_MS, life: agent.life, busy, dryRun, win });
+    }
+  }
   for (const root of dirs) {
     let names;
     try { names = fs.readdirSync(root.path).sort(); } catch (_) { res.skippedRoots.push(root.path); continue; }
@@ -347,19 +529,42 @@ function names(list) {
   return list.length > MAX_NAMES ? `${shown} y ${list.length - MAX_NAMES} más` : shown;
 }
 
-/** La línea del arranque; null si no hay nada que decir. `notes`: lo que no se pudo usar tal como se pidió. */
-function startupLine(res, { dryRun = false, hours = DEFAULT_HOURS, notes = [] } = {}) {
+/**
+ * La línea del arranque; null si no hay nada que decir. `notes`: lo que no se pudo usar tal como se pidió.
+ * `sessionDays`: el plazo de las carpetas de sesión.
+ */
+function startupLine(res, { dryRun = false, hours = DEFAULT_HOURS, notes = [], sessionDays = DEFAULT_DAYS } = {}) {
   const parts = [];
+  const s = res.sessions || { removed: [], failed: [], unsaved: [], unknown: 0, pending: 0, blocked: null };
   if (res.removed.length) parts.push(`${dryRun ? 'borraría' : 'borré'} ${res.removed.length} que nadie usa hace ${hours} h`);
   if (res.failed.length) parts.push(`${res.failed.length} no se dejaron borrar (${names(res.failed)})`);
   if (res.unknown) parts.push(`dejé ${res.unknown}: no pude saber si están en uso`);
-  if (res.pending) parts.push(`${res.pending} quedaron sin mirar por el tope de tiempo${dryRun ? '' : ': vuelvo a pasar en la próxima sesión que arranque después de una hora'}`);
+  if (s.removed.length) parts.push(`sesiones del agente que ya no viven: ${dryRun ? 'borraría' : 'borré'} ${s.removed.length} sin tocar hace ${sessionDays} ${sessionDays === 1 ? 'día' : 'días'}`);
+  if (s.unsaved.length) parts.push(`sesiones del agente con trabajo sin guardar, quedan: ${names(s.unsaved.map((u) => `${u.path} (${u.why})`))}`);
+  if (s.failed.length) parts.push(`carpetas de sesión que no se dejaron borrar: ${names(s.failed)}`);
+  if (s.unknown) parts.push(`carpetas de sesión que dejé sin saber si están en uso o tienen trabajo: ${s.unknown}`);
+  if (s.blocked) parts.push(`sesiones del agente: no borré ninguna, ${s.blocked}`);
+  const pending = res.pending + s.pending;
+  if (pending) parts.push(`${pending} quedaron sin mirar por el tope de tiempo${dryRun ? '' : ': vuelvo a pasar en la próxima sesión que arranque después de una hora'}`);
   if (res.skippedRoots.length) parts.push(`no miré ${names(res.skippedRoots)}: no es una carpeta que se pueda barrer`);
   parts.push(...notes);
   return parts.length ? `temporales viejos: ${parts.join(' · ')}. Apagar: TYCON_TEMP_SWEEP=0` : null;
 }
 
 function arg(name) { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : null; }
+
+/** El plazo de las carpetas de sesión: `maintenance.temp_days` del perfil; sin el lector, o si falla, el de fábrica. */
+function sessionDays() {
+  const lib = path.join(__dirname, '..', 'lib', 'tycon-config.js');
+  try {
+    if (fs.existsSync(lib)) {
+      const tc = require(lib);
+      const r = tc.leerParaHook({});
+      if (r.ok) return tc.mantenimiento(r.config).temp_days.value;
+    }
+  } catch (_) { /* fail-open: el de fábrica */ }
+  return DEFAULT_DAYS;
+}
 
 function main() {
   if (process.env.TYCON_TEMP_SWEEP === '0' || process.env.TYCON_EVAL_SANDBOX === '1') return 0;
@@ -414,13 +619,16 @@ function main() {
     if (split.outside.length) notes.push(`TYCON_TEMP_SWEEP_ROOTS: ${names(split.outside)} no está dentro de una carpeta temporal y no se mira`);
   }
 
-  const res = sweep({ roots, hours, now, budgetMs, dryRun });
-  if (stamped && res.pending) {
+  const agentDir = agentTempDir();
+  const days = sessionDays();
+  const agent = agentDir ? { name: path.basename(agentDir), days, life: lifeSigns(os.homedir()) } : null;
+  const res = sweep({ roots, hours, now, budgetMs, dryRun, agent });
+  if (stamped && (res.pending || res.sessions.pending)) {
     // cortado por el tope: el sello se atrasa para que la próxima pasada sea en una hora y no mañana
     try { const at = new Date(Date.now() - (EVERY_MS - RETRY_MS)); fs.utimesSync(stamp, at, at); } catch (_) { notes.push('no pude atrasar el sello: lo que quedó sin mirar espera a mañana'); }
   }
-  const line = startupLine(res, { dryRun, hours, notes });
-  if (json) process.stdout.write(JSON.stringify({ dryRun, hours, roots, notes, ...res }, null, 2) + '\n');
+  const line = startupLine(res, { dryRun, hours, notes, sessionDays: days });
+  if (json) process.stdout.write(JSON.stringify({ dryRun, hours, sessionDays: days, roots, notes, ...res }, null, 2) + '\n');
   else if (line) process.stdout.write(line + '\n');
   return 0;
 }
@@ -436,4 +644,4 @@ if (require.main === module) {
   process.exit(0);
 }
 
-module.exports = { sweep, looksRandom, defaultRoots, allowedRoots, livePaths, trusted, inspect, remove, startupLine };
+module.exports = { LSOF_ARGS, sweep, looksRandom, defaultRoots, allowedRoots, livePaths, trusted, inspect, remove, startupLine, lifeSigns, unsavedWork, agentTempDir };

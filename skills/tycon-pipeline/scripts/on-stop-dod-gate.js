@@ -2,7 +2,7 @@
 /**
  * tycon-pipeline Stop hook — portón de Definition of Done para el MODO AUTÓNOMO (Nivel 1).
  *
- * Diseño: ~/.claude/tycon-harness/tasks/pipeline-autonomy-design.md.
+ * Diseño: ~/.tycon/harness/tasks/pipeline-autonomy-design.md.
  *
  * Cuando Claude intenta terminar su turno: si hay un pipeline en modo `autonomous` y el
  * portón DoD NO está verde, BLOQUEA el stop + devuelve los fallos → Claude está obligado a
@@ -33,13 +33,68 @@ const { resolveSessionId } = require('./lib/session-id.js');
 
 const CAP = 6;               // máx iteraciones del loop antes de escalar
 const MAX_NO_PROGRESS = 1;   // la primera vuelta que no resuelve ningún fallo escala: repetir el mismo intento no aprende nada
+// cierres seguidos con la misma medición (nada se volvió a correr) antes de escalar: no cuentan como vueltas, pero tampoco
+// dejan al agente cerrar en rojo para siempre
+const MAX_SAME_MEASURE = 3;
 const STATE_DIR = path.join(stateDirOf(os.homedir()));
 const ACTIVE_DIR = path.join(STATE_DIR, 'active');
+
+/**
+ * La corrida de un control de esta sesión que todavía está en marcha (`marker.js run-check` toma un candado por control y
+ * repo, con la sesión y el proceso del comando), o null. Mientras corre, el resultado anotado es el de la corrida
+ * anterior: medirlo cuenta dos veces el mismo rojo. Sin el módulo del candado (un árbol sin el arnés) no se sabe: null.
+ */
+// Una corrida en marcha sirve para no medir sólo mientras es creíble: pasada una hora, o con su arranque ilegible, se
+// mide igual (un candado que nadie suelta no deja cerrar en rojo para siempre).
+const RUN_IN_FLIGHT_MAX_MS = 60 * 60 * 1000;
+function runInFlight(sessionId, now = Date.now()) {
+  let lock;
+  try { lock = require(path.join(__dirname, '..', '..', '..', 'scripts', 'setup', 'harness', 'lock.js')); } catch (_) { return null; }
+  const dir = path.join(STATE_DIR, 'run-check-locks');
+  let names = [];
+  try { names = fs.readdirSync(dir); } catch (_) { return null; }
+  for (const n of names) {
+    const owner = lock.readOwner(path.join(dir, n));
+    const e = owner && owner.extra;
+    if (!e || e.session !== sessionId || lock.ownerIsDead(owner)) continue;
+    const since = Date.parse(e.startedAt);
+    if (!Number.isFinite(since) || now - since > RUN_IN_FLIGHT_MAX_MS) continue;
+    return { check: e.check || n, since: e.startedAt, key: `${n}@${e.startedAt}` };
+  }
+  return null;
+}
+
+// Lo que se midió: el estado y la hora de cada control, la cantidad de pruebas en rojo y los fallos. Si es igual al de
+// la vuelta anterior, nada se volvió a correr: no hay vuelta nueva que juzgar.
+const measureOf = (marker, failedNow, failures) => JSON.stringify({ checks: marker.checks || {}, at: marker.checksAt || {}, failed: failedNow, failures });
 
 function markerPath(sessionId) {
   const safe = String(sessionId || '_nosession').replace(/[/\\]/g, '_');
   return path.join(ACTIVE_DIR, `${safe}.json`);
 }
+// El pedido de la exención de la matriz para la historia de la corrida, como lo da «Preparar el pull request»: lo corre el
+// agente, y el arnés le pone el renglón y el cuadro en la lista del dueño.
+function waiverCommand(marker) {
+  const raw = marker && marker.storyPath ? String(marker.storyPath) : '<historia>';
+  const story = path.isAbsolute(raw) || !marker.repoPath ? raw : path.join(marker.repoPath, raw);
+  // marker.js vive al lado de este guion: la ruta sale de acá, sin escribir la carpeta de la herramienta
+  const cmd = `node "${path.join(__dirname, 'marker.js')}"`;
+  return `${cmd} runtime-waiver ${/\s/.test(story) ? `"${story}"` : story}`;
+}
+
+/**
+ * La firma que esta sesión ya pidió y que en Windows va sólo a la terminal de la persona: el renglón «solo terminal» de la
+ * lista del dueño (owner-window.js `anotarEnWindows`), abierto y para esta sesión. null si no hay, o si la lista no se
+ * puede leer: sin saber, el cierre frena como siempre.
+ */
+function firmaDeTerminalPendiente(sessionId) {
+  try {
+    const sl = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'signature-list.js'));
+    const { filas } = sl.abiertos(os.homedir());
+    return filas.find((f) => f && f.tipo === 'firma' && f.windows === 'solo-terminal' && f.destino === sessionId && f.id) || null;
+  } catch (_) { return null; }
+}
+
 function readMarker(sessionId) {
   try { return JSON.parse(fs.readFileSync(markerPath(sessionId), 'utf8')); } catch { return null; }
 }
@@ -150,7 +205,7 @@ const CLOSURE = /(^|[^\p{L}])(listo|listos|termin[eé]|terminad[oa]s?|terminamos
 /**
  * La línea de pasos pendientes del marcador, o null. Sale sólo si el último mensaje afirma un cierre o el evento no trae
  * mensaje: así aparece cuando el modelo narra que terminó, y no en cada pausa normal del pipeline. Un modelo que narra
- * con otras palabras no la dispara; para ése la red es el freno de orden de «Preparar el commit».
+ * con otras palabras no la dispara; para ése la red es el freno de orden de «Preparar el pull request».
  */
 function pendingStepsLine(marker, event) {
   if (!marker || !marker.storyId) return null;
@@ -278,7 +333,7 @@ function main() {
   }
 
   // Pasos del pipeline sin cerrar, cuando el mensaje afirma un cierre (o el evento no trae mensaje): lo dicho no cierra
-  // ningún paso. Es un aviso; el freno es el de «Preparar el commit».
+  // ningún paso. Es un aviso; el freno es el de «Preparar el pull request».
   try {
     const line = pendingStepsLine(marker, event);
     if (line) toPerson = toPerson ? `${toPerson}\n${line}` : line;
@@ -326,8 +381,10 @@ function main() {
   const gate = computeGate(marker);
   if (gate.green) {                     // objetivo cumplido → deja cerrar
     // Un verde cierra el lazo: el próximo rojo es un primer rojo, aunque repita uno de antes.
-    if (last.length || marker.noProgressStreak || 'lastTestsFailed' in marker) {
-      marker.lastFailures = []; marker.noProgressStreak = 0; delete marker.lastTestsFailed; writeMarker(sessionId, marker);
+    if (last.length || marker.noProgressStreak || 'lastTestsFailed' in marker || marker.lastMeasure || marker.sameMeasureStreak || marker.waitedRun) {
+      marker.lastFailures = []; marker.noProgressStreak = 0; delete marker.lastTestsFailed;
+      delete marker.lastMeasure; delete marker.sameMeasureStreak; delete marker.waitedRun;
+      writeMarker(sessionId, marker);
     }
     if ((marker.checks || {}).tests === 'sin-turno') {
       toPerson = [toPerson, 'Las pruebas esperan el turno de la coordinadora: el portón no corrió y falta medirlas.'].filter(Boolean).join('\n');
@@ -342,10 +399,49 @@ function main() {
     return allowStop();
   }
 
+  // Rojo, con una firma que la sesión ya pidió y que en Windows va sólo a la terminal de la persona (su renglón «solo
+  // terminal» en la lista del dueño): el agente ya preguntó y espera, como con `waitingForHuman`, sin marcarlo a mano. Una
+  // vez por renglón: el cierre siguiente con el mismo renglón vuelve a frenar, y la corrida sigue vigilada.
+  const pedida = firmaDeTerminalPendiente(sessionId);
+  if (pedida && marker.waitedSignature !== pedida.id) {
+    marker.waitedSignature = pedida.id;
+    writeMarker(sessionId, marker);
+    toPerson = [toPerson, `La corrida espera tu firma en la terminal: ${pedida.title || pedida.firma}. Está en tu lista de firmas, con su comando.`].filter(Boolean).join('\n');
+    return allowStop();
+  }
+
   // Rojo. Sin vuelta anterior no hay con qué comparar: el primer rojo es el intento, no una vuelta sin progreso.
   // Con vuelta anterior, progresa si al menos un fallo previo desapareció, o si bajó la cantidad de pruebas en rojo
   // (el rótulo de `tests` es sólo el código de salida: arreglar 9 de 10 no lo cambia). Sin cantidad, vale el rótulo.
   const failedNow = testsFailedCount(marker);
+  // Una corrida de esta sesión en marcha: lo anotado es el resultado anterior. No se mide ni se cuenta; el turno cierra y
+  // el aviso de la corrida que termina lo vuelve a abrir.
+  // Una vez por corrida: si el turno se vuelve a cerrar con la misma corrida en marcha, se mide (y una medición igual a la
+  // anterior no cuenta, abajo).
+  const enCurso = runInFlight(sessionId);
+  if (enCurso && marker.waitedRun !== enCurso.key) {
+    marker.waitedRun = enCurso.key;
+    writeMarker(sessionId, marker);
+    toPerson = [toPerson, `El portón no mide: la corrida de «${enCurso.check}» sigue en marcha (desde ${enCurso.since}). Se mide cuando termine.`].filter(Boolean).join('\n');
+    return allowStop();
+  }
+  // La misma medición que la vuelta anterior (nada se volvió a correr): no es una vuelta nueva. No suma al tope ni a las
+  // vueltas sin progreso; tres seguidas escalan, para que el rojo no quede sin mirar.
+  const medida = measureOf(marker, failedNow, gate.failures);
+  if (last.length && marker.lastMeasure === medida) {
+    marker.sameMeasureStreak = (marker.sameMeasureStreak || 0) + 1;
+    if (marker.sameMeasureStreak >= MAX_SAME_MEASURE) {
+      return escalate(sessionId, marker, `${MAX_SAME_MEASURE} cierres seguidos sin volver a correr nada`, gate.failures);
+    }
+    writeMarker(sessionId, marker);
+    return blockStop(
+      `⛔ DoD todavía rojo, y es la misma medición que la vuelta anterior: nada se volvió a correr, así que no cuenta como ` +
+      `vuelta (iter ${marker.iter || 0}/${CAP}). Arreglá y volvé a correr lo que falla:\n` +
+      gate.failures.map((f) => `  - ${f}`).join('\n'),
+    );
+  }
+  marker.lastMeasure = medida;
+  marker.sameMeasureStreak = 0;
   const failedBefore = Number.isInteger(marker.lastTestsFailed) ? marker.lastTestsFailed : null;
   const fewerTests = failedNow !== null && failedBefore !== null && failedNow < failedBefore;
   const progressed = last.some((f) => !gate.failures.includes(f)) || fewerTests;
@@ -362,16 +458,18 @@ function main() {
 
   // Hay margen → forzar otra vuelta del loop.
   writeMarker(sessionId, marker);
-  // El ÚNICO rojo que el agente no puede poner en verde es la matriz
-  // esperando el waiver TTY del dev (marker.js runtime-waiver). Sin esta pista el hook loopearía y
-  // el agente descubriría STOP_AUTONOMY por prueba y error. Se dice, con la salida al lado.
+  // El ÚNICO rojo que el agente no puede poner en verde es la matriz esperando la exención de la persona
+  // (marker.js runtime-waiver). Sin esta pista el hook loopearía y el agente descubriría STOP_AUTONOMY por prueba y error.
+  // El comando lo corre el agente: así deja el renglón en la lista del dueño, que lo firma con su cuadro (owner-window.js);
+  // mandarlo «a su terminal» no deja renglón y la firma se pierde.
   const soloMatriz = gate.failures.length > 0 && gate.failures.every((f) => /^acmatrix\b/.test(f));
   const pista = soloMatriz
-    ? '\n  ℹ Si la matriz está roja SÓLO porque hay criterios declarados no verificables esperando el waiver ' +
-      'del dev (lo aprueba él desde su terminal: marker.js runtime-waiver <story>), vos no podés ponerla ' +
-      'en verde: pedile el waiver y, para poder cerrar el turno y esperar su respuesta, corré ' +
-      '`marker.js set-flag waitingForHuman true` — deja pasar ESE cierre, no apaga la autonomía y se ' +
-      'consume solo. NO uses `touch STOP_AUTONOMY`: ese archivo frena TODAS las corridas de la máquina ' +
+    ? '\n  ℹ Si la matriz está roja SÓLO porque hay criterios declarados no verificables esperando la exención ' +
+      'de la persona, vos no podés ponerla en verde. Pedila corriendo vos ' +
+      `\`${waiverCommand(marker)}\`: deja el renglón en la lista de firmas de la persona, que la aprueba con su cuadro. ` +
+      'Para poder cerrar el turno y esperar, corré `marker.js set-flag waitingForHuman true` — deja pasar ESE ' +
+      'cierre, no apaga la autonomía, se consume solo y no saltea la matriz: «Preparar» la sigue pidiendo. ' +
+      'NO uses `touch STOP_AUTONOMY`: ese archivo frena TODAS las corridas de la máquina ' +
       'y les apaga el portón de DoD hasta que alguien las vuelva a prender a mano.'
     : '';
   blockStop(

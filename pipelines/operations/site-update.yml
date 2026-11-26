@@ -24,6 +24,8 @@
 #   SITE_DEMO_RESOURCE_GROUP, SITE_DEMO_APP, SITE_DEMO_URL — optativas: el sitio demo en Azure, que se pone al día igual
 #                        (sin SITE_DEMO_APP, ese paso no corre)
 #   SITE_RENDER_DEPLOY_HOOK (secreta) — sólo con render
+#   SITE_RENDER_API_KEY (secreta) y SITE_RENDER_SERVICE_ID — optativas, sólo con render: con las dos, la actualización
+#                        pregunta a Render qué imagen corre y avisa si está fijada por etiqueta
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 
 trigger: none   # nunca por push: sólo programado (o a mano)
@@ -91,6 +93,8 @@ jobs:
         condition: and(succeeded(), eq(variables['SITE_PLATFORM'], 'render'), eq('${{ parameters.efectos }}', 'true'))
         env:
           SITE_RENDER_DEPLOY_HOOK: $(SITE_RENDER_DEPLOY_HOOK)
+          SITE_RENDER_API_KEY: $(SITE_RENDER_API_KEY)        # optativa: sin cargar llega como `$(…)` y cuenta como vacía
+          SITE_RENDER_SERVICE_ID: $(SITE_RENDER_SERVICE_ID)
 
       - script: |
           set -eu

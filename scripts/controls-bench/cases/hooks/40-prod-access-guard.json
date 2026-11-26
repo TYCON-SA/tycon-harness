@@ -253,7 +253,8 @@
      "stdin": {
       "tool_name": "Bash",
       "tool_input": {
-       "command": "/opt/tycon/bin/tycon-prod-sql acme-sql.database.windows.net 'select top 5 * from Clientes'"
+       "command": "/opt/tycon/bin/tycon-prod-sql acme-sql.database.windows.net 'select top 5 * from Clientes'",
+       "timeout": 300000
       }
      },
      "expect": {
@@ -264,6 +265,82 @@
       "claude"
      ],
      "asymmetry": "Del lado Codex la forma canónica de la puerta TAMBIÉN se frena (no hay cuadro de aprobación administrado que la respalde): ese comportamiento lo cubre el caso `codex-frena-tambien-la-puerta`.",
+     "sin_freno_instalado": true
+    },
+    {
+     "id": "puerta-de-fondo-se-frena",
+     "type": "must-block",
+     "__doc": "T7 (Bench_ProdGuard_Background) · la misma forma canónica, pedida con `run_in_background: true`. La puerta abre un cuadro que vence a los 120 s, y de fondo nadie lo ve: el pedido se cancela solo y la sesión no sabe por qué. El freno frena con el motivo y el tope de primer plano, y anota la regla `puerta-de-fondo` (no `otra`). El setup copia `guard-record.js` para que la regla anotada se pueda mirar, y siembra la foto limpia del shell: sin la marca, el mismo comando pasa (`puerta-canonica-pasa`). Corre también con el freno instalado: lo de fondo se decide antes que lo que necesita las costuras de prueba. ROJO PREVIO: pasaba al cuadro, y el cuadro vencía sin que nadie lo viera.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/guard-record.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "/opt/tycon/bin/tycon-prod-sql acme-sql.database.windows.net 'select top 5 * from Clientes'",
+       "run_in_background": true
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "no corre de fondo",
+       "primer plano",
+       "timeout: 300000"
+      ],
+      "file_contains": [
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+        "re": "\"regla\":\"puerta-de-fondo\""
+       }
+      ]
+     },
+     "tools": [
+      "claude"
+     ],
+     "asymmetry": "Codex no tiene la marca de fondo, y ahí la puerta se frena con cualquier forma: lo cubre el caso `codex-frena-tambien-la-puerta`."
+    },
+    {
+     "id": "puerta-en-primer-plano-sin-tope-se-frena",
+     "type": "must-block",
+     "__doc": "La misma forma canónica, en primer plano y sin `timeout`. Al vencer el tope de la consola de Claude Code (120 s si no se pide otro), la consola no corta el comando: lo pasa a segundo plano, y el cuadro, que puede tardar hasta 90 s en tener su turno y otros 120 s en vencer, queda sin nadie que lo mire. El freno frena con la misma regla `puerta-de-fondo` y pide el tope de 5 minutos. El chequeo va último entre los de la puerta: con el tope, el mismo comando pasa (`puerta-canonica-pasa`). Por eso no corre con el freno instalado: se decide después de lo que necesita las costuras de prueba, y ahí frenaría antes por otra causa. ROJO PREVIO: pasaba al cuadro sin tope, y el cuadro podía quedar de fondo.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/guard-record.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q .",
+      "mkdir -p \"${SANDBOX_HOME}/.claude/shell-snapshots\" && printf '# Snapshot file\\n\\n# Functions\\n# Shell Options\\n# Aliases\\n# Check for rg availability\\nrg () { : }\\n' > \"${SANDBOX_HOME}/.claude/shell-snapshots/snapshot-zsh-1700000000000-aaaaaa.sh\""
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "/opt/tycon/bin/tycon-prod-sql acme-sql.database.windows.net 'select top 5 * from Clientes'"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "no trae ninguno",
+       "segundo plano",
+       "timeout: 300000"
+      ],
+      "file_contains": [
+       {
+        "path": "${SANDBOX_HOME}/.claude/.tycon-pipeline/frenos.jsonl",
+        "re": "\"regla\":\"puerta-de-fondo\""
+       }
+      ]
+     },
+     "tools": [
+      "claude"
+     ],
+     "asymmetry": "Codex no tiene el tope de la consola de Claude Code, y ahí la puerta se frena con cualquier forma: lo cubre el caso `codex-frena-tambien-la-puerta`.",
      "sin_freno_instalado": true
     },
     {
@@ -661,7 +738,8 @@
      "stdin": {
       "tool_name": "Bash",
       "tool_input": {
-       "command": "/opt/tycon/bin/tycon-prod-sql acme-sql.database.windows.net 'select * from t where a='\\''x$y'\\'''"
+       "command": "/opt/tycon/bin/tycon-prod-sql acme-sql.database.windows.net 'select * from t where a='\\''x$y'\\'''",
+       "timeout": 300000
       }
      },
      "expect": {
@@ -1107,7 +1185,8 @@
      "stdin": {
       "tool_name": "Bash",
       "tool_input": {
-       "command": "/opt/tycon/bin/tycon-prod-sql acme-sql.database.windows.net 'select 1'"
+       "command": "/opt/tycon/bin/tycon-prod-sql acme-sql.database.windows.net 'select 1'",
+       "timeout": 300000
       }
      },
      "expect": {
@@ -4603,7 +4682,8 @@
      "stdin": {
       "tool_name": "Bash",
       "tool_input": {
-       "command": "/opt/tycon/bin/tycon-prod-sql --open-firewall acme-sql.database.windows.net"
+       "command": "/opt/tycon/bin/tycon-prod-sql --open-firewall acme-sql.database.windows.net",
+       "timeout": 300000
       }
      },
      "expect": {
@@ -4631,7 +4711,8 @@
      "stdin": {
       "tool_name": "Bash",
       "tool_input": {
-       "command": "/opt/tycon/bin/tycon-prod-sql --close-firewall acme-sql.database.windows.net"
+       "command": "/opt/tycon/bin/tycon-prod-sql --close-firewall acme-sql.database.windows.net",
+       "timeout": 300000
       }
      },
      "expect": {
@@ -5886,7 +5967,8 @@
      "stdin": {
       "tool_name": "Bash",
       "tool_input": {
-       "command": "/opt/tycon/bin/tycon-prod-sql --locks"
+       "command": "/opt/tycon/bin/tycon-prod-sql --locks",
+       "timeout": 300000
       }
      },
      "expect": {
@@ -5973,7 +6055,8 @@
      "stdin": {
       "tool_name": "Bash",
       "tool_input": {
-       "command": "/opt/tycon/bin/tycon-prod-sql --delete-group acme-prueba-rg"
+       "command": "/opt/tycon/bin/tycon-prod-sql --delete-group acme-prueba-rg",
+       "timeout": 300000
       }
      },
      "expect": {
@@ -6289,6 +6372,30 @@
      "expect": {
       "exit": 0,
       "stdout_empty": true
+     }
+    },
+    {
+     "id": "programa-por-la-entrada-de-xargs-se-frena",
+     "type": "must-block",
+     "__doc": "Lo que xargs le pasa a un intérprete puede ser su programa: `echo '<programa que borra la memoria>' | xargs -I{} python3 -c {}` borra la memoria de producción aunque el comando no la nombre como un nombre suelto. Se busca con la misma regla de mención que un programa escrito. ROJO PREVIO: exit 0.",
+     "files": {
+      "repos/backend-acme/.tycon/production.json": "{\"servers\": [{\"host\": \"acme-sql.database.windows.net\", \"environment\": \"produccion\", \"keychain\": \"tycon-prod-acme\"}, {\"host\": \"acme-sql-staging.database.windows.net\", \"environment\": \"no-produccion\"}, {\"host\": \"acme-test.example.com\", \"environment\": \"no-produccion\"}]}"
+     },
+     "setup": [
+      "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/scripts/production && cp $TCG/scripts/hooks/prod-access-guard.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/ && cp $TCG/scripts/production/production-index.js tcg/scripts/production/",
+      "git -C repos/backend-acme init -q ."
+     ],
+     "stdin": {
+      "tool_name": "Bash",
+      "tool_input": {
+       "command": "echo 'import os; os.remove(\"~/.claude/.tycon-pipeline/production-memory.json\")' | xargs -I{} python3 -c {}"
+      }
+     },
+     "expect": {
+      "exit": 2,
+      "stderr_re": [
+       "ESCRIBE"
+      ]
      }
     }
    ]

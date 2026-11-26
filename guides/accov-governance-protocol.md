@@ -5,7 +5,7 @@
 > meta-audit, convergencia, checklist-manual prohibido), no checks de cobertura
 > AC↔código. Vivían dentro del advisor más pesado del hot path del Step 5
 > (~30KB releídos en CADA iteración) aunque solo aplican 1 vez, al transicionar
-> a `review`/`done`. Ahora el ORQUESTADOR (tycon-pipeline, en «Probar en vivo» y «Preparar el commit») lee
+> a `review`/`done`. Ahora el ORQUESTADOR (tycon-pipeline, en «Probar en vivo» y «Preparar el pull request») lee
 > este doc on-demand en el cierre; el advisor conserva C1/C2/C3/C5/C4/W1/W2.
 >
 > Los rule IDs NO cambian (ACCOV-C7..C10) — el catálogo y los reportes los citan igual.
@@ -485,13 +485,24 @@ La matriz busca cada archivo declarado en el repo de la historia, en la carpeta 
 propio repo, y la primera que no cuenta decide. Si la misma ruta está en más de un lugar, el aviso dice en cuál.
 Un hermano con copia en la rama de la historia (o, sin rama, con su número) se juzga sólo en esa copia: el hermano
 declarado suele ser el clon compartido, en `main` y sin el código de la historia, y cuando avanza vencería la evidencia sin
-que ese código cambie. Sin copia, se juzga el declarado, y el aviso dice contra qué se comparó y qué se buscó.
+que ese código cambie. Sin copia, se juzga el declarado, y el aviso dice contra qué se comparó y qué se buscó. Si su
+`origin/main` local cambió el archivo en commits que el declarado no tiene, esa copia es vieja: cuenta como no leída, y el
+aviso nombra el commit. También si git no contesta, porque no se sabe. Sin `origin/main`, se juzga como está.
 
 Un archivo de código declarado que la matriz no puede leer la deja en rojo: ninguna evidencia cuenta, aunque los criterios
 estén cubiertos por pruebas, porque no se sabe si cambió. El aviso nombra la ruta y los lugares donde la buscó. Con la
 historia abierta, la salida es corregir la ruta si el archivo se movió, crearlo o sacarlo de la lista si era para crear, o
 traer el hermano al día. En `done`, traer el hermano al día o volver a correr la evidencia: la lista no se edita para ponerla
 en verde. Un archivo que no es código no se mira, esté o no.
+
+### Un criterio que se comprueba en staging
+
+Una prueba de la tabla con Nivel `staging` dice que su criterio se comprueba en staging, que tiene el código recién después
+del merge. Antes de `done`, si el criterio no corrió, queda «se comprueba en staging» (🕓): no frena ni pide firma de deuda.
+Para pasar a `done`, el freno de `update-story-status` pide un humo de ese criterio corrido contra staging:
+`smoke-run.sh <carpeta> <historia> --acs N --environment staging -- <comando contra staging>`. Lo pide aunque haya
+constancia de la matriz verde, y aunque el criterio haya corrido en otro lado. El entorno vale sólo si el espejo de esta
+máquina lo trae. Si staging falla, la historia queda en `review` hasta que el humo dé verde.
 
 Una historia cuyo id no entra en el patrón de historias del repo (el de fábrica es de números: `8.12`, `3-4`) no pasa por
 el freno del commit: ni la matriz ni la evidencia se miran. Cuando una así pasa a `review` o `done`, el freno avisa, nombra

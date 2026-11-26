@@ -104,7 +104,7 @@ else no "T7 · rc=$rc · reglas: $(cat "$TMP/az-reglas") · $(cat "$TMP/err")"; 
 mundo
 for args in "--close-firewall $PROD otra-regla" "--open-firewall $PROD 0.0.0.0" "--open-firewall $PROD 10.0.0.0/8" \
             "--open-firewall $PROD --azure-services" "--open-firewall $PROD --subscription sub-9" "--open-firewall" \
-            "--close-firewall $PROD --session" "--close-firewall $PROD --session ../../etc" "--open-firewall $PROD --session $SES_A"; do
+            "--close-firewall $PROD --session" "--close-firewall $PROD --session ../../etc"; do
   # shellcheck disable=SC2086
   rc="$(puerta $args)"
   if [ "$rc" = 2 ] && [ ! -s "$TMP/az.log" ] && grep -qi "uso" "$TMP/err"; then ok "T8/T26 · «${args}» sale 2 con el uso, sin tocar Azure"
@@ -217,6 +217,78 @@ else no "T18 · $(cat "$TMP/hook.out" "$TMP/hook.err") · estado: $(estado)"; fi
 mundo; rc="$(gancho SessionStart "$SES_B")"
 if [ "$rc" = 0 ] && [ ! -s "$TMP/hook.out" ] && [ ! -s "$TMP/az.log" ]; then ok "T16 · sin reglas abiertas, el barrido no dice nada ni llama a Azure"
 else no "T16 · sin reglas: rc=$rc · $(cat "$TMP/hook.out")"; fi
+
+# ── T31-T38 · la regla vive lo que vive la sesión que la pidió, con un tope de horas (fila 248) ──────────────────
+# Abierta desde la terminal de la persona, la regla no quedaba a nombre de ninguna sesión y la cerraba el primer
+# arranque de cualquier otra; y una sesión quieta más de 3 minutos (esperando a la persona) se tomaba por muerta.
+# Ahora la persona la abre a nombre de la sesión que la pidió (`--session <id>`), «viva» se mira por el proceso que
+# Claude Code anota en ~/.claude/sessions (con el respaldo de los 3 minutos, que se dice) y ninguna dura más de 8 h.
+sesion_proceso(){ # $1 = sesión, $2 = pid → la anota como Claude Code en ~/.claude/sessions/<pid>.json
+  mkdir -p "$CASA/.claude/sessions"; printf '{"pid":%s,"sessionId":"%s","kind":"interactive"}\n' "$2" "$1" > "$CASA/.claude/sessions/$2.json"
+}
+PID_MUERTO="$( (sleep 0 & echo $!) )"; wait 2>/dev/null; sleep 0.2
+mundo; SES=""; rc="$(puerta --open-firewall "$PROD" --session "$SES_A")"
+if [ "$rc" = 0 ] && estado | grep "$SES_A" >/dev/null && registro | grep '"accion":"open-firewall"' | grep "\"sesion\":\"$SES_A\"" >/dev/null; then
+  ok "T31 OpenFirewall_FromTerminalWithSession_RuleBelongsToThatSession · desde la terminal, a nombre de la sesión que la pidió"
+else no "T31 · rc=$rc · $(cat "$TMP/err") · estado: $(estado)"; fi
+mundo; SES=""; for args in "--open-firewall $PROD --session ../../etc" "--open-firewall $PROD --session $SES_A otra" "--open-firewall $PROD --session-id $SES_A"; do
+  # shellcheck disable=SC2086
+  rc="$(puerta $args)"
+  if [ "$rc" = 2 ] && [ ! -s "$TMP/az.log" ] && grep -qi "uso" "$TMP/err"; then ok "T32 OpenFirewall_BadSession_Exit2 · «${args}» sale 2 con el uso"
+  else no "T32 · «${args}» rc=$rc · $(cat "$TMP/err")"; fi
+done
+mundo; SES=$SES_A; viva $SES_A; puerta --open-firewall "$PROD" >/dev/null; muerta $SES_A; sesion_proceso "$SES_A" "$$"
+rc="$(gancho SessionStart "$SES_B")"
+if [ "$rc" = 0 ] && grep -q "^$REGLA " "$TMP/az-reglas" && estado | grep "$SES_A" >/dev/null; then
+  ok "T33 Startup_SessionAliveByProcess_KeepsRule · quieta más de 3 minutos pero con su proceso vivo: no se cierra"
+else no "T33 · rc=$rc · $(cat "$TMP/hook.out" "$TMP/hook.err") · reglas: $(cat "$TMP/az-reglas")"; fi
+mundo; SES=$SES_A; viva $SES_A; puerta --open-firewall "$PROD" >/dev/null; viva $SES_A; sesion_proceso "$SES_A" "$PID_MUERTO"
+rc="$(gancho SessionStart "$SES_B")"
+if [ "$rc" = 0 ] && ! grep -q "^$REGLA " "$TMP/az-reglas"; then
+  ok "T34 Startup_SessionProcessGone_ClosesRule · con su proceso terminado se cierra, aunque la conversación se haya escrito recién"
+else no "T34 · rc=$rc · $(cat "$TMP/hook.out" "$TMP/hook.err") · reglas: $(cat "$TMP/az-reglas")"; fi
+mundo; SES=$SES_A; viva $SES_A; puerta --open-firewall "$PROD" >/dev/null; muerta $SES_A; rm -rf "$CASA/.claude/sessions"
+rc="$(gancho SessionStart "$SES_B")"
+if [ "$rc" = 0 ] && ! grep -q "^$REGLA " "$TMP/az-reglas" && grep -q "3 minutos" "$TMP/hook.out"; then
+  ok "T35 Startup_NoProcessRegistry_FallsBackTo3Min_AndSaysIt · sin el registro de procesos, el respaldo, y lo dice"
+else no "T35 · rc=$rc · $(cat "$TMP/hook.out" "$TMP/hook.err") · reglas: $(cat "$TMP/az-reglas")"; fi
+mundo; SES=$SES_A; viva $SES_A; puerta --open-firewall "$PROD" >/dev/null; sesion_proceso "$SES_A" "$$"
+node -e 'const f=process.argv[1]; const e=JSON.parse(require("fs").readFileSync(f,"utf8")); e.reglas[0].abierta=new Date(Date.now()-9*3600e3).toISOString(); require("fs").writeFileSync(f, JSON.stringify(e))' "$CASA/.claude/.tycon-pipeline/production-firewall.json"
+rc="$(gancho SessionStart "$SES_B")"
+if [ "$rc" = 0 ] && ! grep -q "^$REGLA " "$TMP/az-reglas" && grep -q "8 h" "$TMP/hook.out" && grep -q -- "--open-firewall $PROD --session" "$TMP/hook.out"; then
+  ok "T36 Startup_RuleOlderThanCap_ClosesEvenIfAlive · más de 8 h: se cierra aunque la sesión siga viva, y dice cómo reabrirla"
+else no "T36 · rc=$rc · $(cat "$TMP/hook.out" "$TMP/hook.err") · reglas: $(cat "$TMP/az-reglas")"; fi
+mundo; SES=$SES_A; viva $SES_A; puerta --open-firewall "$PROD" >/dev/null
+node -e 'const f=process.argv[1]; const e=JSON.parse(require("fs").readFileSync(f,"utf8")); e.reglas[0].abierta="2020-01-01T00:00:00.000Z"; require("fs").writeFileSync(f, JSON.stringify(e))' "$CASA/.claude/.tycon-pipeline/production-firewall.json"
+puerta --open-firewall "$PROD" >/dev/null
+if ! estado | grep '"abierta": "2020-' >/dev/null; then ok "T37 Reopen_WithItsBox_RestartsTheCap · volver a abrirla con su cuadro cuenta las 8 h de nuevo"
+else no "T37 · estado: $(estado)"; fi
+mundo; SES=$SES_A; viva $SES_A; puerta --open-firewall "$PROD" >/dev/null; viva $SES_B; SES=$SES_B FAKE_SQLCMD=acceso puerta --open-firewall "$PROD" >/dev/null
+muerta $SES_B; sesion_proceso "$SES_B" "$$"
+rc="$(gancho SessionEnd "$SES_A")"
+if grep -q "^$REGLA " "$TMP/az-reglas" && estado | grep "$SES_B" >/dev/null; then
+  ok "T38 SessionEnd_OtherSessionAliveByProcess_KeepsRule · la otra sesión, quieta pero viva por su proceso, la sigue usando"
+else no "T38 · reglas: $(cat "$TMP/az-reglas") · estado: $(estado)"; fi
+# de la revisión corta: una anotación vieja de la misma sesión no la da por muerta; sin fecha legible, vencida; y el tope
+# se aplica aunque ninguna sesión arranque, porque el freno de cada comando lanza el barrido
+mundo; SES=$SES_A; viva $SES_A; puerta --open-firewall "$PROD" >/dev/null; muerta $SES_A
+sesion_proceso "$SES_A" "$PID_MUERTO"; sesion_proceso "$SES_A" "$$"
+rc="$(gancho SessionStart "$SES_B")"
+if grep -q "^$REGLA " "$TMP/az-reglas"; then ok "T39 Startup_StaleEntryOfSameSession_StillAlive · una anotación vieja no tapa la del proceso vivo"
+else no "T39 · reglas: $(cat "$TMP/az-reglas") · $(cat "$TMP/hook.out")"; fi
+mundo; SES=$SES_A; viva $SES_A; puerta --open-firewall "$PROD" >/dev/null; sesion_proceso "$SES_A" "$$"
+node -e 'const f=process.argv[1]; const e=JSON.parse(require("fs").readFileSync(f,"utf8")); delete e.reglas[0].abierta; require("fs").writeFileSync(f, JSON.stringify(e))' "$CASA/.claude/.tycon-pipeline/production-firewall.json"
+rc="$(gancho SessionStart "$SES_B")"
+if ! grep -q "^$REGLA " "$TMP/az-reglas"; then ok "T40 Startup_RuleWithoutReadableDate_CountsAsExpired"
+else no "T40 · reglas: $(cat "$TMP/az-reglas") · $(cat "$TMP/hook.out")"; fi
+mundo; SES=$SES_A; viva $SES_A; puerta --open-firewall "$PROD" >/dev/null; sesion_proceso "$SES_A" "$$"
+node -e 'const f=process.argv[1]; const e=JSON.parse(require("fs").readFileSync(f,"utf8")); e.reglas[0].abierta=new Date(Date.now()-9*3600e3).toISOString(); require("fs").writeFileSync(f, JSON.stringify(e))' "$CASA/.claude/.tycon-pipeline/production-firewall.json"
+printf '{"tool_name":"Bash","hook_event_name":"PreToolUse","cwd":"/tmp","tool_input":{"command":"ls"}}' | \
+  env -u SSH_CONNECTION -u SSH_CLIENT -u SSH_TTY HOME="$CASA" TYCON_PROD_ROOT="$RAIZ" TYCON_REPOS_ROOT="$REPOS" TMPLOG="$TMP" TYCON_PROD_GATE="$PUERTA" \
+    TYCON_PROD_AZ_TIMEOUT="${AZ_TOPE:-20}" node "$AQUI/scripts/hooks/prod-access-guard.js" >/dev/null 2>&1
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do grep -q "^$REGLA " "$TMP/az-reglas" || break; sleep 0.5; done
+if ! grep -q "^$REGLA " "$TMP/az-reglas"; then ok "T41 Guard_AnyCommand_LaunchesSweepForExpiredRule · una sesión larga sola no deja la regla pasar de 8 h"
+else no "T41 · la regla vencida sigue abierta tras un comando · estado: $(estado)"; fi
 
 # ── T19 · el hook está en la configuración administrada, en los dos eventos, sin interruptor ───────────────────
 PLANT="$AQUI/scripts/production/managed-settings.tycon-production.json.template"
@@ -476,7 +548,7 @@ if [[ "$l" == *'"exit":0'* ]] && [[ "$l" != *"lock create"* ]] && ! registro | g
 else no "6.4 T8 · registro: $(registro | tail -2)"; fi
 
 # ── T9 · la guía ────────────────────────────────────────────────────────────────────────────────────────────────
-GUIA="$AQUI/guides/produccion-con-permiso.md"
+GUIA="$AQUI/guides/production-with-permission.md"
 faltan=""
 for f in "CanNotDelete" "--locks" "lo pone una persona" "permiso de locks" "az lock create" "ScopeLocked" "suscripción" \
          "--close-firewall\` también falla con" "queda abierta. Por eso no pongas el candado"; do

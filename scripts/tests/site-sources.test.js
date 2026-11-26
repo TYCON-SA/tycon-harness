@@ -1001,3 +1001,147 @@ test('Regresion_ResultadosIlegibles_SeRegistran @story-8.234 @ac-27 — la carpe
     assert.ok(!sinCarpeta.some((l) => /actualización del sitio/.test(l)), 'sin la carpeta no hay nada que decir');
   } finally { try { fs.chmodSync(dir, 0o755); } catch { /* ya no está */ } fs.rmSync(raiz, { recursive: true, force: true }); }
 });
+
+// ── El sitio de una máquina propia: el resultado de su actualización, en la carpeta del sitio ─────────────────────────
+
+/** La carpeta de datos del sitio (`SITE_DATA_DIR`) con los resultados dados en `site-update/` (`{ ruta: resultado }`). */
+function dataDirConActualizacion(raiz, resultados) {
+  const dataDir = path.join(raiz, 'datos');
+  for (const [rel, c] of Object.entries(resultados)) {
+    const ruta = path.join(dataDir, 'site-update', rel);
+    fs.mkdirSync(path.dirname(ruta), { recursive: true });
+    fs.writeFileSync(ruta, typeof c === 'string' ? c : JSON.stringify(c));
+  }
+  return dataDir;
+}
+
+test('T3 Sources_Instalacion_LeeLaCarpetaDelSitio @story-8.328 @ac-2 — el resultado de la máquina propia, en la carpeta del sitio, da la misma banda que el de Azure', async () => {
+  const { raiz, clon } = clonConActualizacion({});
+  try {
+    const dataDir = dataDirConActualizacion(raiz, { 'site-update-2026-10-15.json': resultado('local', '2026-10-15', 'no_pudo', ETIQUETA) });
+    const m = sources.construirDesdeClon(clon, { ahora: T0, dataDir, log: () => {} });
+    assert.deepStrictEqual(m.instalacion, { porEtiqueta: true, dia: '2026-10-15' });
+    assert.match(await inicioDe(m, 'lead@acme.example'), /instalado por etiqueta/i);
+    assert.strictEqual(sources.construirDesdeClon(clon, { ahora: T0, log: () => {} }).instalacion, null, 'sin la carpeta del sitio, lo de hoy');
+  } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
+});
+
+test('T4 Sources_Instalacion_LasDosCarpetas_ElUltimoPorPlataforma @story-8.328 @ac-3 — entre las dos carpetas gana el resultado más nuevo de cada plataforma; demo/ no cuenta', () => {
+  const casos = [
+    // la misma plataforma en las dos: el más nuevo manda, esté donde esté
+    { ops: { 'site-update-2026-10-14.json': resultado('local', '2026-10-14', 'no_pudo', ETIQUETA) }, sitio: { 'site-update-2026-10-15.json': resultado('local', '2026-10-15', 'al_dia') }, espera: { porEtiqueta: false, dia: '2026-10-15' } },
+    { ops: { 'site-update-2026-10-15.json': resultado('local', '2026-10-15', 'no_pudo', ETIQUETA) }, sitio: { 'site-update-2026-10-14.json': resultado('local', '2026-10-14', 'al_dia') }, espera: { porEtiqueta: true, dia: '2026-10-15' } },
+    // plataformas distintas: el más nuevo de una no tapa el de la otra
+    { ops: { 'site-update-2026-10-15.json': resultado('azure', '2026-10-15', 'al_dia') }, sitio: { 'site-update-2026-10-14.json': resultado('local', '2026-10-14', 'no_pudo', ETIQUETA) }, espera: { porEtiqueta: true, dia: '2026-10-14' } },
+    // el del demo, en la carpeta del sitio, tampoco se lee
+    { ops: {}, sitio: { 'demo/site-update-2026-10-15.json': resultado('local', '2026-10-15', 'no_pudo', ETIQUETA), 'site-update-2026-10-14.json': resultado('local', '2026-10-14', 'al_dia') }, espera: { porEtiqueta: false, dia: '2026-10-14' } },
+  ];
+  for (const c of casos) {
+    const { raiz, clon } = clonConActualizacion(c.ops);
+    try {
+      const dataDir = dataDirConActualizacion(raiz, c.sitio);
+      assert.deepStrictEqual(sources.construirDesdeClon(clon, { ahora: T0, dataDir, log: () => {} }).instalacion, c.espera, JSON.stringify(c));
+    } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
+  }
+});
+
+test('T5 Sources_Instalacion_CarpetaIlegible_SigueConOperaciones @story-8.328 @ac-4 — la carpeta del sitio que no se puede leer se dice y se sigue con la de operaciones; un enlace que sale de ella no se lee', (t) => {
+  if (process.getuid && process.getuid() === 0) { t.diagnostic('NO MEDIDO: corriendo como root, una carpeta sin permisos se lee igual'); return; }
+  if (process.platform === 'win32') { t.diagnostic('NO MEDIDO: en Windows chmod no saca la lectura'); return; }
+  const { raiz, clon } = clonConActualizacion({ 'site-update-2026-10-14.json': resultado('azure', '2026-10-14', 'no_pudo', ETIQUETA) });
+  const dataDir = dataDirConActualizacion(raiz, { 'site-update-2026-10-15.json': resultado('azure', '2026-10-15', 'al_dia') });
+  const dir = path.join(dataDir, 'site-update');
+  try {
+    fs.chmodSync(dir, 0o000);
+    const registro = [];
+    const m = sources.construirDesdeClon(clon, { ahora: T0, dataDir, log: (l) => registro.push(l) });
+    assert.deepStrictEqual(m.instalacion, { porEtiqueta: true, dia: '2026-10-14' }, 'lo de operaciones');
+    assert.ok(registro.some((l) => /carpeta del sitio/.test(l) && /no se pudo leer/.test(l)), registro.join(' | '));
+    fs.chmodSync(dir, 0o755);
+    // un resultado que es un enlace a un archivo de fuera de la carpeta del sitio no cuenta
+    const afuera = path.join(raiz, 'afuera.json');
+    fs.writeFileSync(afuera, JSON.stringify(resultado('azure', '2026-10-16', 'al_dia')));
+    fs.symlinkSync(afuera, path.join(dir, 'site-update-2026-10-16.json'));
+    fs.rmSync(path.join(dir, 'site-update-2026-10-15.json'));
+    assert.deepStrictEqual(sources.construirDesdeClon(clon, { ahora: T0, dataDir, log: () => {} }).instalacion, { porEtiqueta: true, dia: '2026-10-14' });
+  } finally { try { fs.chmodSync(dir, 0o755); } catch { /* ya no está */ } fs.rmSync(raiz, { recursive: true, force: true }); }
+});
+
+// «esperando la huella» dice a qué hora vuelve a mirar el buzón (T52 de site-config.test.js mira el texto); acá, el número
+// con las fuentes de verdad: antes de leer no hay hora, y al arrancar es el reloj del sitio más `site.refresh_minutes`
+test('ProximaLectura_ConLasFuentesReales_EsElRelojMasLosMinutos @story-8.171 @ac-29', { skip: SIN_BACKEND }, async () => {
+  const config = { version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'], refresh_minutes: 20, mailbox: { provider: 'azure-blob', account: 'acmeruns', container: 'runs' } } };
+  const m = await montar({ config });
+  try {
+    assert.strictEqual(m.fuentes.proximaLectura(), null, 'antes de la primera lectura no hay hora');
+    m.fuentes.arrancar();
+    const desde = Date.now();
+    while (m.fuentes.proximaLectura() === null && Date.now() - desde < 20000) await new Promise((r) => setTimeout(r, 50));
+    assert.strictEqual(m.fuentes.estado().cargado, true);
+    assert.strictEqual(m.fuentes.proximaLectura(), T0 + 20 * 60000);
+  } finally { await m.cerrar(); }
+});
+
+// ── La huella de una oficina, a pedido: sólo las huellas, sin esperar la pasada entera del buzón ──────────────────────
+/** Una huella de oficina válida, como la sube una máquina: el nombre, el campo y la clave coinciden. */
+function huellaDeOficina() {
+  const SL = require(path.join(H.SITE, '..', 'tools', 'office', 'site-link.js'));
+  const dir = tmp('clave-');
+  const k = SL.ensureKey(dir);
+  fs.rmSync(dir, { recursive: true, force: true });
+  return { k, nombre: `maquina-a/office-keys/${k.fingerprint}.json`, cuerpo: JSON.stringify({ fingerprint: k.fingerprint, publicKey: k.publicKey }) };
+}
+const listados = (m) => m.buzon.pedidos.filter((p) => /comp=list/.test(p.query)).length;
+
+// 🔴 Falla con: la huella que subió una oficina después del último refresco espera al refresco siguiente (15 minutos),
+//    o la lectura a pedido se repite sin tope.
+test('T9 Sources_HuellaAPedido_ConUnaEsperando_LaLeeEnLaRevision @story-8.328 @ac-8', { skip: SIN_BACKEND }, async () => {
+  const m = await montar();
+  try {
+    await m.fuentes.refrescar();
+    const h = huellaDeOficina();
+    m.buzon.st.blobs[h.nombre] = h.cuerpo;
+    assert.ok(!(m.fuentes.huellas().carpetas['maquina-a']), 'antes de leer no está');
+    const r = await m.fuentes.leerHuellasAPedido();
+    assert.strictEqual(r.leido, true, JSON.stringify(r));
+    assert.deepStrictEqual(m.fuentes.huellas().carpetas['maquina-a'].huellas, [h.k.fingerprint]);
+    const antes = listados(m);
+    const otra = await m.fuentes.leerHuellasAPedido();
+    assert.deepStrictEqual([otra.leido, otra.motivo], [false, 'tope'], 'una por minuto');
+    assert.strictEqual(listados(m), antes, 'la segunda no pregunta al buzón');
+  } finally { await m.cerrar(); }
+});
+
+// 🔴 Falla con: una bajada a pedido que falla deja `huellas` a medias (soltaría una clave cuya huella sigue ahí) o calla.
+test('T11 Sources_HuellaAPedido_BajadaFalla_NoCambiaNada @story-8.328 @ac-10', { skip: SIN_BACKEND }, async () => {
+  const m = await montar();
+  try {
+    await m.fuentes.refrescar();
+    const previas = JSON.stringify(m.fuentes.huellas());
+    const h = huellaDeOficina();
+    m.buzon.st.blobs[h.nombre] = h.cuerpo;
+    m.buzon.st.fallar.add(h.nombre);
+    const r = await m.fuentes.leerHuellasAPedido();
+    assert.strictEqual(r.leido, false);
+    assert.strictEqual(JSON.stringify(m.fuentes.huellas()), previas, 'las huellas no cambian');
+    assert.ok(m.registro.some((l) => /huellas a pedido/.test(l)), m.registro.join(' | '));
+  } finally { await m.cerrar(); }
+});
+
+// 🔴 Falla con: con la lectura a pedido, la huella igual espera el refresco de `site.refresh_minutes`; o el refresco
+//    cambia de período.
+test('T14 Sources_HuellaAPedido_TiempoConRelojSimulado @story-8.328 @ac-11', { skip: SIN_BACKEND }, async () => {
+  const reloj = { t: T0 };
+  const m = await montar({ ahora: () => reloj.t });
+  try {
+    await m.fuentes.refrescar();
+    assert.strictEqual(m.fuentes.proximoRefrescoMs(), 15 * 60000, 'el refresco sigue cada 15 minutos');
+    // la oficina sube su huella justo después del refresco: la próxima revisión (≤ 60 s) la lee
+    const h = huellaDeOficina();
+    m.buzon.st.blobs[h.nombre] = h.cuerpo;
+    reloj.t += 60000;
+    const r = await m.fuentes.leerHuellasAPedido();
+    assert.strictEqual(r.leido, true, JSON.stringify(r));
+    assert.ok(m.fuentes.huellas().carpetas['maquina-a'].huellas.includes(h.k.fingerprint), 'leída en ≤ 60 s, no a los 15 minutos');
+  } finally { await m.cerrar(); }
+});

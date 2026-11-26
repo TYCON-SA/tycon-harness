@@ -358,6 +358,37 @@ test('Freno_RepoAjeno_Pasa_PedidoPregunta (T5) @story-8.151 @ac-5', (t) => {
   assert.match(r.stdout, VENTANA, 'el pedido pregunta: se juzga contra toda la corrida');
 });
 
+// Freno_CorridaEstacionada_PedidoDeRepoAjeno_Pasa (fila 100)
+// Una corrida estacionada (la marca de su historia en parked/, puesta después de que arrancó, o `paused_until:` en la
+// historia) no ata a su sesión: un pedido desde un repo que no es de la corrida no se juzga contra ella. Desde un repo de
+// la corrida, sin marca, con la marca de una corrida anterior o con una marca ilegible, frena como siempre.
+// 🔴 Falla con: el pedido del repo ajeno sumado a lo que sale hacia el equipo aunque la corrida esté estacionada.
+test('Freno_CorridaEstacionada_PedidoDeRepoAjeno_Pasa (fila 100)', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  const ajeno = repoConOrigin(t, 'ajeno');
+  abrir(h, corrida(a));
+  const marca = path.join(estado(h), 'parked', `${SID}.json`);
+  fs.mkdirSync(path.dirname(marca), { recursive: true });
+  const marcar = (at, story = '9.99') => fs.writeFileSync(marca, JSON.stringify({ story, kind: 'queue', at, by: 'prueba' }));
+  const pedido = (cwd) => brake().decidir({ command: 'gh pr create --fill', cwd, sid: SID, home: h });
+  marcar(new Date().toISOString());
+  assert.strictEqual(pedido(ajeno), null, 'estacionada: el pedido de otro repo pasa');
+  assert.ok(pedido(a) && pedido(a).texto, 'estacionada: el pedido de un repo de la corrida sigue frenando');
+  marcar('2020-01-01T00:00:00Z');
+  assert.ok(pedido(ajeno) && pedido(ajeno).texto, 'la marca de una corrida anterior no la estaciona');
+  marcar(new Date().toISOString(), '9.98');
+  assert.ok(pedido(ajeno) && pedido(ajeno).texto, 'la marca de otra historia no la estaciona');
+  fs.writeFileSync(marca, '{ no es json');
+  assert.ok(pedido(ajeno) && pedido(ajeno).texto, 'una marca ilegible no afloja el freno');
+  fs.rmSync(marca);
+  assert.ok(pedido(ajeno) && pedido(ajeno).texto, 'sin la marca frena como siempre');
+  // la pausa escrita en la historia también la estaciona
+  escribir(a, 'specs/story-9.99.md', '---\nstory_id: "9.99"\nstatus: in-progress\npaused_until: 2099-01-01\n---\n');
+  assert.strictEqual(pedido(ajeno), null, 'con paused_until en la historia, el pedido de otro repo pasa');
+  assert.ok(pedido(a) && pedido(a).texto, 'con paused_until, el de un repo de la corrida sigue frenando');
+});
+
 // T6 Freno_SinCorrida_O_Adhoc_IgualQueHoy
 // El adhoc de esta prueba no trae su firma: no es un carril abierto. El carril firmado pregunta (T15).
 // 🔴 Falla con: el freno cambiando lo que pasa fuera de una corrida (un aviso, una salida distinta o una pregunta nueva
@@ -498,7 +529,7 @@ test('Cierre_SinOk_Cierra (T9) @story-8.151 @ac-9', (t) => {
 });
 
 // T12 PrepareCommit_LaVentanaConOrden
-// 🔴 Falla con: el paso de preparar el commit que todavía pide approve-save o el ok dicho en el chat, o sin el orden
+// 🔴 Falla con: el paso de preparar el pull request que todavía pide approve-save o el ok dicho en el chat, o sin el orden
 // del cierre.
 test('PrepareCommit_LaVentanaConOrden (T12) @story-8.151 @ac-12', () => {
   const texto = fs.readFileSync(path.join(SCRIPTS, '..', 'steps', 'step-11-prepare-commit.md'), 'utf8');
@@ -559,8 +590,19 @@ test('Freno_PedidosDeLosConectores (T13)', (t) => {
 test('CambioAUnControl_SiguePidiendoLaFirmaDeControl (T14)', (t) => {
   const RAIZ = path.resolve(SCRIPTS, '..', '..', '..');
   const copia = path.join(tmp(t, 'freno-control-'), 'arnes');
-  const clon = spawnSync('git', ['clone', '-q', '--depth', '1', `file://${RAIZ}`, copia], { encoding: 'utf8' });
-  assert.strictEqual(clon.status, 0, clon.stderr);
+  // la copia sale de un clon; si el arnés corre desde una carpeta sin git (un laboratorio armado con git archive), de
+  // sus archivos en un repo nuevo
+  const tope = spawnSync('git', ['-C', RAIZ, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
+  const esRepo = tope.status === 0 && fs.realpathSync(tope.stdout.trim()) === fs.realpathSync(RAIZ);
+  if (esRepo) {
+    const clon = spawnSync('git', ['clone', '-q', '--depth', '1', `file://${RAIZ}`, copia], { encoding: 'utf8' });
+    assert.strictEqual(clon.status, 0, clon.stderr);
+  } else {
+    fs.cpSync(RAIZ, copia, { recursive: true, filter: (f) => !['.git', 'node_modules'].includes(path.basename(f)) });
+    sh(copia, 'init', '-q');
+    sh(copia, 'add', '-A');
+    sh(copia, 'commit', '-q', '-m', 'el arnés');
+  }
   sh(copia, 'branch', 'base');
   sh(copia, 'checkout', '-q', '-b', 'pedido');
   const freno = 'skills/tycon-pipeline/scripts/lib/save-brake.js';
@@ -1155,7 +1197,7 @@ test('T42 SaveBrake_TextoQueFalta_DiceComoSeCompleta @story-8.181 @ac-16', (t) =
   assert.ok(r && r.texto, JSON.stringify(r));
   assert.match(r.texto, /le faltan? \d+ texto/);
   assert.match(r.texto, /Corregí la pantalla/);
-  assert.match(r.texto, /Volvé a aprobar la maqueta/);
+  assert.match(r.texto, /Si lo que cambió es la maqueta: mostrásela a la persona/);
   assert.match(r.texto, /maqueta-diferencias\.md/);
   assert.match(r.texto, /differs:/);
 });
@@ -1542,6 +1584,112 @@ test('8.242-FrenoQueNoCarga_EnCorridaFrena (T20) @story-8.242 @ac-11', (t) => {
   assert.match(r.stderr, /el freno de guardar no pudo correr/);
 });
 
+// ── El commit por la coordinadora, si el perfil lo pide (approvals.local_commit) ─────────────────────────────────────
+// El perfil del equipo de un árbol de prueba: una carpeta con `team-profile.json` (texto tal cual, o un objeto), o sin él.
+function arbolCon(t, perfil) {
+  const d = tmp(t, 'freno-arbol-');
+  if (perfil !== undefined) fs.writeFileSync(path.join(d, 'team-profile.json'), typeof perfil === 'string' ? perfil : JSON.stringify(perfil));
+  return d;
+}
+const decideCon = (h, command, cwd, arnes) => brake().decidir({ command, cwd, sid: SID, home: h, arnes });
+const POR_LA_COORDINADORA = /tu organización pide que la coordinadora firme cada commit: `marker\.js approve-save`/;
+
+// 🔴 Falla con: un perfil sin la clave, o con `agent`, que vuelve a pedir algo antes del commit.
+test('8.242-Perfil_CommitLocal_PorDefectoElAgente (T21) @story-8.242 @ac-14', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  for (const perfil of [undefined, { approvals: { relay_session: 'coordinadora' } }, { approvals: { local_commit: 'agent' } }]) {
+    const arnes = arbolCon(t, perfil);
+    for (const m of [corrida(a), preparada(a)]) {
+      abrir(h, m);
+      assert.strictEqual(decideCon(h, 'git commit -m x', a, arnes), null, `${JSON.stringify(perfil)}: el commit pasa`);
+    }
+  }
+  assert.ok(gatesDe(h).filter((x) => x.name === 'save-brake').every((x) => /commit local, sin pregunta/.test(x.reason)));
+});
+
+// 🔴 Falla con: `coordinator` que deja commitear sin el ok, con un ok de otra corrida o con el código cambiado desde el
+// ok; o un pull request en el mismo comando que tapa el commit sin el ok.
+test('8.242-Perfil_Coordinadora_PideElOk (T22) @story-8.242 @ac-15', (t) => {
+  const so = require(SO_LIB);
+  const h = home(t);
+  const a = repoConOrigin(t);
+  const arnes = arbolCon(t, { approvals: { relay_session: 'coordinadora', local_commit: 'coordinator' } });
+  abrir(h, corrida(a));
+  let d = decideCon(h, 'git commit -m x', a, arnes);
+  assert.ok(d && d.texto, JSON.stringify(d));
+  assert.match(d.texto, POR_LA_COORDINADORA);
+  assert.match(d.texto, /no tiene un ok de guardar/);
+  // con el pull request en el mismo comando, frena por el commit: la ventana del pull request no lo cubre
+  d = decideCon(h, 'git commit -m x && gh pr create --fill', a, arnes);
+  assert.match((d || {}).texto || '', POR_LA_COORDINADORA, JSON.stringify(d));
+  // con el ok vigente, pasa y queda en el registro
+  abrir(h, corrida(a, { saveOk: { storyId: '9.99', startedAt: ANTES, huellas: so.huellas([a]) } }));
+  assert.strictEqual(decideCon(h, 'git commit -m x', a, arnes), null);
+  assert.ok(gatesDe(h).some((x) => x.name === 'save-brake' && /con el ok de guardar de la coordinadora/.test(x.reason)));
+  // un ok de otra corrida no vale
+  abrir(h, corrida(a, { saveOk: { storyId: '9.99', startedAt: '2026-10-28T10:00:00.000Z', huellas: so.huellas([a]) } }));
+  assert.match((decideCon(h, 'git commit -m x', a, arnes) || {}).texto || '', /otra corrida/);
+  // con el árbol cambiado desde el ok, frena con el mismo texto
+  abrir(h, corrida(a, { saveOk: { storyId: '9.99', startedAt: ANTES, huellas: so.huellas([a]) } }));
+  escribir(a, 'src/nuevo.js', 'module.exports = 2;\n');
+  d = decideCon(h, 'git commit -m x', a, arnes);
+  assert.match((d || {}).texto || '', POR_LA_COORDINADORA, JSON.stringify(d));
+  assert.match(d.texto, /cambió después del ok/);
+  // el ok se mide con el árbol de antes del comando: lo que el mismo comando escribe antes de commitear no lo cubre
+  const b = repoConOrigin(t, 'escribe');
+  escribir(b, 'a.js', 'module.exports = 1;\n');
+  sh(b, 'add', '-A');
+  sh(b, 'commit', '-q', '-m', 'a');
+  abrir(h, corrida(b, { saveOk: { storyId: '9.99', startedAt: ANTES, huellas: so.huellas([b]) } }));
+  assert.strictEqual(decideCon(h, 'git commit -am x', b, arnes), null, 'sin escribir nada, el ok lo cubre');
+  for (const cmd of ['echo 2 > a.js && git commit -am x', "sed -i '' s/1/2/ a.js && git commit -am x", 'echo x > src.js && git add -A && git commit -m y']) {
+    d = decideCon(h, cmd, b, arnes);
+    assert.match((d || {}).texto || '', POR_LA_COORDINADORA, `«${cmd}»: ${JSON.stringify(d)}`);
+    assert.match(d.texto, /cambia el código antes de commitearlo/);
+  }
+  // lo que se escribe fuera de todo repo (el mensaje del commit, un registro) no es código, y el papeleo tampoco lo es
+  // cuando la carpeta llega por un enlace
+  const fuera = tmp(t, 'freno-fuera-');
+  for (const cmd of [`printf msg > ${fuera}/msg.txt && git commit -F ${fuera}/msg.txt`, `npm run build > ${fuera}/b.log; git commit -am x`]) {
+    assert.strictEqual(decideCon(h, cmd, b, arnes), null, `«${cmd}»`);
+  }
+  const enlace = path.join(tmp(t, 'freno-enlace-'), 'repo');
+  fs.symlinkSync(b, enlace);
+  assert.strictEqual(decideCon(h, 'echo y > specs/story-9.99.md && git commit -am x', enlace, arnes), null, 'el papeleo, por el enlace');
+  // el marcador que no se lee: el ok vive ahí, así que el commit no guarda
+  fs.writeFileSync(marcadorPath(h), '{ esto no es json');
+  assert.match((decideCon(h, 'git commit -m x', a, arnes) || {}).texto || '', POR_LA_COORDINADORA);
+});
+
+// 🔴 Falla con: un valor que el lector no entiende, o un perfil que no se lee, leído como «el agente solo» (pasa
+// callado) o como «la coordinadora» (frena sin que nadie lo haya pedido).
+test('8.242-Perfil_ValorQueNoSeEntiende_Pregunta (T23) @story-8.242 @ac-16', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  abrir(h, corrida(a));
+  const casos = [
+    [{ approvals: { local_commit: 'si' } }, /approvals\.local_commit del perfil del equipo no se entiende/],
+    [{ approvals: 'x' }, /approvals del perfil del equipo no se entiende/],
+    ['{ "approvals": ', /el perfil del equipo no se puede leer/],
+  ];
+  for (const [perfil, motivo] of casos) {
+    const d = decideCon(h, 'git commit -m x', a, arbolCon(t, perfil));
+    assert.ok(d && d.pregunta && !d.texto, `${JSON.stringify(perfil)}: ${JSON.stringify(d)}`);
+    // la forma del comando, sin sus argumentos: la ventana no muestra lo que pueda traer una credencial
+    assert.match(d.pregunta, /^¿GUARDO\? «git commit», de la corrida de 9\.99: /);
+    assert.match(d.pregunta, motivo);
+    assert.match(d.pregunta, /no sé si tu organización pide que la coordinadora firme cada commit/);
+  }
+  // con el marcador que tampoco se lee, pregunta igual: no pasa con el aviso de siempre
+  fs.writeFileSync(marcadorPath(h), '{ esto no es json');
+  for (const [perfil, motivo] of casos) {
+    const d = decideCon(h, 'git commit -m x', a, arbolCon(t, perfil));
+    assert.ok(d && d.pregunta && !d.texto && !d.aviso, `${JSON.stringify(perfil)}: ${JSON.stringify(d)}`);
+    assert.match(d.pregunta, motivo);
+  }
+});
+
 // 🔴 Falla con: lo que se trajo de `main` después de preparar que sale en el pedido sin pasar por «Preparar el pull request».
 test('8.242-TraerMain_VenceLaFotoYSeVuelveAPreparar (T28) @story-8.242 @ac-19', (t) => {
   const h = home(t);
@@ -1771,4 +1919,263 @@ test('SaveBrake_Chdir_Sigue_YFallaDeGitVaAFallas @story-8.282 @ac-15 @ac-16', (t
   const quieto = leer(`node -e "require('child_process').execSync('git commit -m x')"`);
   assert.ok(quieto.cs.some((c) => c.opaco));
   assert.deepStrictEqual(quieto.dudas, []);
+});
+
+// ── Un pedido por la API de la plataforma, y el auto-completar que se prende después (fila 189b) ─────────────────
+// El freno leía como pedido sólo los comandos de pedido de cada conector (`gh pr create`, `az repos pr create`…). El
+// mismo pedido creado o juntado por la API (`gh api -X POST …/pulls`, `glab api … /merge_requests/<n>/merge`, una
+// mutación de graphql) o el auto-completar prendido con `az repos pr update` salían sin la ventana dentro de una
+// ejecución. Ahora cada conector declara sus rutas de API de pedido y sus cambios que prenden el auto-completar.
+// 🔴 Falla con: un freno que no lee la API (los de «guardan» no salen como pedido), que lee cualquier llamada a la API
+//    como pedido (los de «no guardan»), o que da por leída una llamada que no se puede leer (los de «opacos»).
+test('F189b SaveBrake_PedidoPorLaApi_YElAutoCompletar_SeLeen', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  const leidos = (cmd) => brake().comandosQueGuardan(cmd, a, h);
+  const guardan = [
+    'gh api -X POST repos/acme/x/pulls -f title=t -f head=b -f base=main',
+    'gh api repos/acme/x/pulls -f title=t -f head=b',
+    'gh api --method PUT repos/acme/x/pulls/5/merge',
+    'gh api -XPUT /repos/acme/x/pulls/5/merge',
+    'gh api --method=POST repos/acme/x/pulls --input cuerpo.json',
+    'gh api https://api.github.com/repos/acme/x/pulls -f title=t',
+    `gh api graphql -f query='mutation { enablePullRequestAutoMerge(input: {pullRequestId: "x"}) { clientMutationId } }'`,
+    `gh api graphql -f query='mutation{mergePullRequest(input:{pullRequestId:"x"}){clientMutationId}}'`,
+    `gh api graphql -f 'query=mutation { enqueuePullRequest(input: {pullRequestId: "x"}) { clientMutationId } }'`,
+    'glab api -X POST projects/acme%2Fx/merge_requests -f title=t',
+    'glab api --method PUT projects/1/merge_requests/3/merge',
+    'az repos pr update --id 5 --auto-complete true',
+    'az repos pr update --id 5 --auto-complete',
+    // del pase adversarial: el valor pegado a la opción corta, las rutas de una instalación propia y juntar con el estado
+    'gh api -X=POST repos/acme/x/pulls',
+    'gh api -ftitle=t repos/acme/x/pulls',
+    'gh api -Ftitle=t -Fhead=b repos/acme/x/pulls',
+    `gh api graphql -fquery='mutation { mergePullRequest(input: {pullRequestId: "x"}) { clientMutationId } }'`,
+    'gh api /api/v3/repos/acme/x/pulls -f title=t',
+    'gh api https://ghe.acme.test/api/v3/repos/acme/x/pulls -f title=t',
+    'gh api REPOS/Acme/X/Pulls -f title=t',
+    'glab api -X PUT /api/v4/projects/1/merge_requests/3/merge',
+    'glab api -ftitle=t projects/1/merge_requests',
+    'az repos pr update --id 5 --status completed',
+    'az repos pr update --id 5 --auto-complete=true',
+  ];
+  for (const cmd of guardan) assert.ok(leidos(cmd).some((c) => c.tipo === 'pr'), `«${cmd}» se lee como pedido: ${JSON.stringify(leidos(cmd))}`);
+  const noGuardan = [
+    'gh api repos/acme/x/pulls',
+    'gh api -X GET repos/acme/x/pulls/5',
+    'gh api -X PATCH repos/acme/x/pulls/5 -f title=otro',
+    'gh api repos/acme/x/issues -f title=t',
+    `gh api graphql -f query='query { viewer { login } }'`,
+    'glab api projects/1/merge_requests',
+    'az repos pr update --id 5 --title otro',
+    'az repos pr update --id 5 --auto-complete false',
+    'az repos pr update --id 5 --auto-complete n',
+    'az repos pr update --id 5 --auto-complete f',
+    'az repos pr update --id 5 --status active',
+    `gh api graphql -f query='query { repository(owner: "a", name: "b") { pullRequest(number: 1) { title } } }'`,
+  ];
+  for (const cmd of noGuardan) assert.ok(!leidos(cmd).some((c) => c.tipo === 'pr' || c.opaco), `«${cmd}» no guarda: ${JSON.stringify(leidos(cmd))}`);
+  const opacos = [
+    'gh api -X $METODO repos/acme/x/pulls',
+    'gh api $RUTA -f title=t',
+    'gh api graphql -F query=@consulta.graphql',
+    'gh api graphql -f query="$CONSULTA"',
+    'az repos pr update --id 5 --auto-complete $AC',
+    'gh api graphql --input consulta.json',
+    'glab api graphql --input consulta.json',
+    'gh api -X POST',
+  ];
+  for (const cmd of opacos) assert.ok(leidos(cmd).some((c) => c.opaco || c.tipo === 'pr'), `«${cmd}» no se puede leer: no pasa como inofensivo: ${JSON.stringify(leidos(cmd))}`);
+});
+
+// ── el borrador del pedido antes de «Preparar el pull request» ──────────────────────────────────────────────────────
+// Un borrador no se puede mergear: antes de «Preparar» pregunta en la ventana, con su forma y su repo, en vez de frenar.
+// Pasarlo a listo es un pedido que guarda: antes de «Preparar» frena, y después se juzga con la foto. Lo que distingue
+// un borrador o un «listo» lo declara cada conector (`draftOptions`, `readyCommands`), y la lectura es estricta: al
+// crear, sólo es borrador lo claro; al marcar listo, cualquier duda cuenta como listo.
+
+// los borradores claros de cada conector que los declara
+const BORRADORES = [
+  ['gh pr create --draft --fill', 'gh pr create'], ['gh pr create -d --fill', 'gh pr create'], ['gh pr create --draft=true --fill', 'gh pr create'],
+  ['gh pr new --draft --fill', 'gh pr new'], ['gh pr create --title x --draft', 'gh pr create'],
+  ['az repos pr create --draft --title x', 'az repos pr create'], ['az repos pr create --draft true --title x', 'az repos pr create'],
+  ['az repos pr create --draft=True --title x', 'az repos pr create'], ['az repos pr create --dr --title x', 'az repos pr create'],
+  ['az repos pr create --title x --draft YES', 'az repos pr create'],
+];
+// los comandos que pasan un borrador a listo, o pueden hacerlo
+const LISTOS = [
+  ['gh pr ready 12', 'gh pr ready'], ['gh pr ready', 'gh pr ready'], ['gh pr ready --undo=false 12', 'gh pr ready'],
+  ['az repos pr update --id 12 --draft false', 'az repos pr update'], ['az repos pr update --id 12 --draft=False', 'az repos pr update'],
+  ['az repos pr update --id 12 --draft no', 'az repos pr update'], ['az repos pr update --id 12 --dr 0', 'az repos pr update'],
+  ['az repos pr update --id 12 --draft "$X"', 'az repos pr update'], ['az repos pr update --id 12 --draft quizas', 'az repos pr update'],
+  // al marcar listo cuenta cualquier aparición que pueda serlo, aunque otra la pise
+  ['az repos pr update --id 12 --draft false --draft true', 'az repos pr update'], ['gh pr ready --undo=false --undo 12', 'gh pr ready'],
+  // una palabra que no se ve entera (un archivo de argumentos, una sustitución) puede traer la opción que lo publica
+  ['az repos pr update --id 12 @o.txt', 'az repos pr update'], ["gh pr ready --undo -R $(printf 'x --undo=false') 12", 'gh pr ready'],
+  // completar el pedido es mergearlo: el conector declara el valor que lo hace, y un valor que no se ve cuenta
+  ['az repos pr update --id 12 --status completed', 'az repos pr update'], ['az repos pr update --id 12 --status=Completed', 'az repos pr update'],
+  ['az repos pr update --id 12 --stat completed', 'az repos pr update'], ['az repos pr update --id 12 --status "$S"', 'az repos pr update'],
+];
+
+// 🔴 Falla con: un borrador que frena antes de «Preparar» (el equipo no ve el código y la CI no corre), una pregunta que
+// no nombra la forma o el repo, o un borrador que en una pestaña sin permisos frena.
+test('SaveBrake_DraftBeforePrepare_Asks (T1) @story-8.332 @ac-1', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  abrir(h, corrida(a));
+  for (const [cmd, forma] of BORRADORES) {
+    assert.ok(brake().comandosQueGuardan(cmd, a, h).some((c) => c.tipo === 'pr' && c.borrador === true), `«${cmd}» se lee como borrador`);
+    const d = decide(h, cmd, a);
+    assert.ok(d && d.pregunta && !d.texto, `«${cmd}» pregunta: ${JSON.stringify(d)}`);
+    assert.match(d.pregunta, ABRO, cmd);
+    assert.ok(d.pregunta.includes(`«${forma}»`), `«${cmd}» nombra la forma: ${d.pregunta}`);
+    assert.ok(d.pregunta.includes(`(${path.basename(a)})`), `«${cmd}» nombra el repo: ${d.pregunta}`);
+  }
+  const r = gancho(h, 'gh pr create --draft --fill', { cwd: a, modo: 'default' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stdout, VENTANA, 'el gancho abre la ventana');
+  // en una pestaña que no pide permisos, guarda y lo dice (el límite de la ventana)
+  const b = gancho(h, 'gh pr create --draft --fill', { cwd: a, modo: 'bypassPermissions' });
+  assert.strictEqual(b.status, 0, b.stderr);
+  assert.match(b.stderr, /no pide permisos/);
+});
+
+// 🔴 Falla con: un pedido que no es un borrador claro y sale antes de «Preparar» con sólo la pregunta (en una pestaña
+// sin permisos saldría sin nadie que lo mire).
+test('SaveBrake_NotClearDraftBeforePrepare_Blocks (T2) @story-8.332 @ac-2', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  abrir(h, corrida(a));
+  for (const cmd of ['gh pr create --fill', 'gh pr create --draft=false --fill', 'gh pr create --draft --draft=false --fill', 'gh pr create --draft=$X --fill',
+    'gh pr create --fill --body "--draft"', 'gh pr create -- --draft', 'az repos pr create --draft false --title x', 'az repos pr create --draft no --title x',
+    'az repos pr create --draft 0 --title x', 'az repos pr create --draft --draft false --title x', 'az repos pr create --draft "$X" --title x',
+    'az repos pr create -d borrador --title x', 'glab mr create --draft --fill',
+    // lo que trae una variable, una sustitución o un archivo de argumentos puede ser otra opción que lo publica
+    'gh pr create --draft --fill "$X"', "gh pr create --draft --title $(printf 'x --draft=false')",
+    'az repos pr create --draft --squash "$X" --title x', 'az repos pr create --draft --title x @o.txt']) {
+    const d = decide(h, cmd, a);
+    assert.ok(d && d.texto, `«${cmd}» frena: ${JSON.stringify(d)}`);
+    assert.match(d.texto, SIN_PREPARAR, cmd);
+    assert.match(d.texto, /complete-step prepare-commit/, cmd);
+  }
+  const r = gancho(h, 'gh pr create --draft=false --fill', { cwd: a, modo: 'bypassPermissions' });
+  assert.strictEqual(r.status, 2, 'frena en cualquier pestaña');
+  // la opción detrás de otra puede ser su valor: frena, y dice cómo escribirla para que sea un borrador
+  const dudoso = decide(h, 'gh pr create --fill --draft', a);
+  assert.ok(dudoso && dudoso.texto, JSON.stringify(dudoso));
+  assert.match(dudoso.texto, /Si es un borrador, escribí su opción justo después del comando/);
+  assert.doesNotMatch(decide(h, 'gh pr create --draft=false --fill', a).texto, /Si es un borrador/, 'sin la opción en «sí», no hay pista');
+  assert.match(decide(h, 'gh pr create --draft --title "$T"', a).texto, /Si es un borrador, escribí el comando entero, sin variables/);
+});
+
+// 🔴 Falla con: un borrador que después de «Preparar» sale con el código cambiado desde la foto.
+test('SaveBrake_DraftAfterPrepare_PhotoAndAsk (T3) @story-8.332 @ac-3', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  abrir(h, preparada(a));
+  for (const cmd of ['gh pr create --draft --fill', 'az repos pr create --draft --title x']) {
+    const d = decide(h, cmd, a);
+    assert.ok(d && d.pregunta && !d.texto, `«${cmd}»: ${JSON.stringify(d)}`);
+    assert.match(d.pregunta, ABRO);
+    assert.match(d.pregunta, /Pruebas:/, 'con la evidencia');
+  }
+  escribir(a, 'LEEME.md', 'otra cosa\n');
+  for (const cmd of ['gh pr create --draft --fill', 'az repos pr create --draft --title x']) {
+    assert.match((decide(h, cmd, a) || {}).texto || '', CAMBIO, `«${cmd}» con el código cambiado`);
+  }
+});
+
+// 🔴 Falla con: un borrador que pasa a listo sin «Preparar el pull request» (sin «Probar en vivo»), en cualquier forma
+// que el programa entiende como listo o que no se puede leer.
+test('SaveBrake_ReadyBeforePrepare_Blocks (T4) @story-8.332 @ac-4', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  abrir(h, corrida(a));
+  for (const [cmd, forma] of LISTOS) {
+    assert.deepStrictEqual(brake().comandosQueGuardan(cmd, a, h).filter((c) => c.tipo === 'pr').map((c) => c.forma), [forma], `«${cmd}» es un pedido que guarda`);
+    const d = decide(h, cmd, a);
+    assert.ok(d && d.texto, `«${cmd}» frena: ${JSON.stringify(d)}`);
+    assert.match(d.texto, SIN_PREPARAR, cmd);
+    assert.match(d.texto, /complete-step prepare-commit/, cmd);
+  }
+  // escondido en otro shell, igual
+  assert.match((decide(h, "bash -c 'gh pr ready 12'", a) || {}).texto || '', SIN_PREPARAR);
+  const r = gancho(h, 'gh pr ready 12', { cwd: a, modo: 'bypassPermissions' });
+  assert.strictEqual(r.status, 2, 'frena en cualquier pestaña');
+  assert.match(r.stderr, SIN_PREPARAR);
+});
+
+// 🔴 Falla con: marcar listo después de «Preparar» con el código cambiado desde la foto, o sin la pregunta.
+test('SaveBrake_ReadyAfterPrepare_PhotoAndAsk (T5) @story-8.332 @ac-5', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  abrir(h, preparada(a));
+  for (const [cmd, forma] of [['gh pr ready 12', 'gh pr ready'], ['az repos pr update --id 12 --draft false', 'az repos pr update']]) {
+    const d = decide(h, cmd, a);
+    assert.ok(d && d.pregunta && !d.texto, `«${cmd}»: ${JSON.stringify(d)}`);
+    assert.match(d.pregunta, ABRO);
+    assert.ok(d.pregunta.includes(`«${forma}»`), d.pregunta);
+  }
+  const r = gancho(h, 'gh pr ready 12', { cwd: a, modo: 'default' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stdout, VENTANA);
+  escribir(a, 'LEEME.md', 'otra cosa\n');
+  for (const cmd of ['gh pr ready 12', 'az repos pr update --id 12 --draft false']) assert.match((decide(h, cmd, a) || {}).texto || '', CAMBIO, cmd);
+});
+
+// 🔴 Falla con: un pedido que se marca listo o se mergea con lo que se empujó antes de «Preparar», no con lo preparado.
+test('SaveBrake_ReadyOrMergeAfterPrepare_PushedIsThePhoto (T5b) @story-8.332 @ac-5', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  // lo preparado está commiteado en la rama, pero lo empujado es lo de antes
+  escribir(a, 'nuevo.txt', 'lo preparado\n');
+  sh(a, 'add', 'nuevo.txt');
+  sh(a, 'commit', '-q', '-m', 'lo preparado');
+  abrir(h, preparada(a));
+  for (const cmd of ['gh pr ready 12', 'az repos pr update --id 12 --status completed', 'gh pr merge 12']) {
+    const d = decide(h, cmd, a);
+    assert.ok(d && d.texto, `«${cmd}» frena: ${JSON.stringify(d)}`);
+    assert.match(d.texto, /lo empujado a la rama no es lo preparado/, cmd);
+  }
+  // crear el pedido no cambia: lo que sale es la rama que el mismo comando empuja
+  assert.ok((decide(h, 'gh pr create --fill', a) || {}).pregunta, 'crear pregunta como antes');
+  sh(a, 'push', '-q');
+  for (const cmd of ['gh pr ready 12', 'gh pr merge 12']) {
+    const d = decide(h, cmd, a);
+    assert.ok(d && d.pregunta && !d.texto, `«${cmd}» empujado: ${JSON.stringify(d)}`);
+  }
+});
+
+// 🔴 Falla con: el freno leyendo como «listo» lo que vuelve a borrador o no toca el borrador (frenaría el trabajo
+// común sobre el pedido).
+test('SaveBrake_ReadyUndoAndPlainUpdate_NotASave (T6) @story-8.332 @ac-6', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  abrir(h, corrida(a));
+  for (const cmd of ['gh pr ready --undo', 'gh pr ready --undo 12', 'gh pr ready --undo=true 12', 'az repos pr update --id 12 --draft true',
+    'az repos pr update --id 12 --draft', 'az repos pr update --id 12 --title x',
+    // abandonarlo o reactivarlo no lo mergea
+    'az repos pr update --id 12 --status abandoned', 'az repos pr update --id 12 --status active']) {
+    assert.deepStrictEqual(brake().comandosQueGuardan(cmd, a, h), [], `«${cmd}» no guarda`);
+    assert.strictEqual(decide(h, cmd, a), null, `«${cmd}» pasa`);
+  }
+});
+
+// 🔴 Falla con: un camino rápido en el que marcar listo sale sin la pregunta.
+test('SaveBrake_Lane_ReadyAsks (T7) @story-8.332 @ac-7', (t) => {
+  const h = home(t);
+  const a = repoConOrigin(t);
+  escribir(a, 'app.js', 'module.exports = 1;\n');
+  carril(h);
+  for (const [cmd, forma] of [['gh pr ready 12', 'gh pr ready'], ['az repos pr update --id 12 --draft false', 'az repos pr update']]) {
+    const d = decide(h, cmd, a);
+    assert.ok(d && d.pregunta, `«${cmd}»: ${JSON.stringify(d)}`);
+    assert.match(d.pregunta, /¿GUARDO\?/);
+    assert.ok(d.pregunta.includes(`«${forma}»`), d.pregunta);
+  }
+  const r = gancho(h, 'gh pr ready 12', { cwd: a, modo: 'default' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stdout, VENTANA);
+  // el borrador en el camino rápido pregunta como hoy cualquier pedido
+  assert.match((decide(h, 'gh pr create --draft --fill', a) || {}).pregunta || '', /¿GUARDO\?/);
 });

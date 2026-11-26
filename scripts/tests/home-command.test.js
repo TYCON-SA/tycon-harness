@@ -30,6 +30,11 @@ const MARKER_REL = '.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js
 const HAS_PWSH = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['pwsh'], { encoding: 'utf8' }).status === 0;
 // la carpeta absoluta de la forma de firma, en el texto leído del código (donde todavía no hay una carpeta)
 const CARPETA = '<carpeta>';
+// el lugar del arnés tal como lo escribe `harnessCommand` de los avisos: relativo a la HOME, de tycon-home.js
+const LUGAR = (() => {
+  const casa = path.join(os.tmpdir(), 'casa');
+  return path.relative(casa, require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js')).placePath(casa)).split(path.sep).join('/');
+})();
 
 /** El texto viejo de una entrada con su forma nueva: sólo cambia cómo se nombra la carpeta; los argumentos, iguales. */
 function nuevo(viejo, forma) {
@@ -41,14 +46,20 @@ function nuevo(viejo, forma) {
 
 /**
  * El código de un archivo tal como lo imprime: en `.js`, cada `${homeCommand('<ruta>')}` leído como `node "$HOME/<ruta>"`
- * (y `signatureCommand`, con la carpeta); en `.sh` y `.json`, sin los escapes de sus comillas y de `$`.
+ * (`harnessCommand`, con el lugar del arnés delante, y `signatureCommand`, con la carpeta); en `.sh` y `.json`, sin los
+ * escapes de sus comillas y de `$`.
  */
 function leido(archivo) {
-  const t = fs.readFileSync(path.join(ROOT, archivo), 'utf8');
+  // marker.js y pipeline.js están partidos: su texto es el del despachador más sus partes
+  const partido = { 'skills/tycon-pipeline/scripts/marker.js': 'marker-source.js', 'skills/tycon-pipeline/scripts/pipeline.js': 'pipeline-source.js' }[archivo];
+  const t = partido
+    ? require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'tests', 'lib', partido))(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts'))
+    : fs.readFileSync(path.join(ROOT, archivo), 'utf8');
   if (archivo.endsWith('.sh')) return t.replace(/\\(["$])/g, '$1');
   if (archivo.endsWith('.json')) return t.replace(/\\"/g, '"');
   return t
     .replace(/\$\{\s*homeCommand\((['"`])(.*?)\1\)\s*\}/g, (_, _q, r) => `node "$HOME/${r}"`)
+    .replace(/\$\{\s*harnessCommand\((['"`])(.*?)\1\)\s*\}/g, (_, _q, r) => `node "$HOME/${LUGAR}/${r}"`)
     .replace(/\$\{\s*signatureCommand\((['"`])(.*?)\1\)\s*\}/g, (_, _q, r) => `node "${CARPETA}/${r}"`);
 }
 

@@ -18,6 +18,9 @@
 #   6.6 T1-T8, T13 — el cuadro muestra la consulta: --file se frena (con el comando en línea listo), la consulta en
 #         línea tiene un tope de 20 renglones de pantalla y una lista de caracteres que engañan
 #   T32 — la guía declara que la regla de firewall es de cortesía
+#   la puerta no corre de fondo: pedida con `run_in_background` o por el Monitor se frena, con el tope de primer plano;
+#         en primer plano sin el tope de 5 minutos (`timeout: 300000`) también, porque al vencer el tope la consola la pasa
+#         a segundo plano
 #
 # 🔴 HOME falso siempre: el hook lee ~/.claude (snapshots, índice, registros).
 # Correr: bash scripts/tests/prod-access-guard.test.sh
@@ -25,7 +28,7 @@ set -uo pipefail
 AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 HOOK="$AQUI/scripts/hooks/prod-access-guard.js"
 INDICE="$AQUI/scripts/production/production-index.js"
-GUIA="$AQUI/guides/produccion-con-permiso.md"
+GUIA="$AQUI/guides/production-with-permission.md"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 fallos=0; pasaron=0
 ok(){ echo "✅ prod-guard: $1"; pasaron=$((pasaron+1)); }
@@ -55,8 +58,10 @@ snapshot(){ # $1 = funciones, $2 = alias, $3 = epoch-ms del nombre (default: aho
   printf '# Snapshot file\n\n# Functions\n%s\n# Shell Options\n# Aliases\n%s\n# Check for rg availability\nrg () { : }\nexport PATH=/usr/bin\n' "$1" "$2" > "$CASA/.claude/shell-snapshots/snapshot-zsh-$ms-aaaaaa.sh"; }
 
 # corre el hook con un comando; imprime el exit code. $2… = variables extra "K=V"
+# El evento lleva el tope de 5 minutos que pide la puerta en primer plano: sin él, la forma canónica se frena por el
+# tope, y cada caso de la puerta dejaría de medir lo suyo. El caso sin tope está abajo, en «la puerta no corre de fondo».
 corre(){ local cmd="$1"; shift
-  local payload; payload="$(CMD="$cmd" node -e 'process.stdout.write(JSON.stringify({tool_name:"Bash",hook_event_name:"PreToolUse",cwd:process.env.WITHOUT_CWD?undefined:(process.env.CWD||"/tmp"),tool_input:{command:process.env.CMD}}))' 2>/dev/null)"
+  local payload; payload="$(CMD="$cmd" node -e 'process.stdout.write(JSON.stringify({tool_name:"Bash",hook_event_name:"PreToolUse",cwd:process.env.WITHOUT_CWD?undefined:(process.env.CWD||"/tmp"),tool_input:{command:process.env.CMD,timeout:300000}}))' 2>/dev/null)"
   # TYCON_PROD_SESSION_SINCE: el arranque de la sesión, en ms. En producción sale de la ascendencia de
   # procesos hasta el `claude` que invocó el hook; acá no hay ninguno, así que se inyecta. La costura
   # sólo puede cerrar el freno (0 = TODOS los snapshots son candidatos, el lado seguro), nunca abrirlo.
@@ -172,6 +177,51 @@ frena "T6h · encadenado con cd" "cd /tmp && $PUERTA $PROD 'select 1'"
 frena "T6i · con redirección" "$PUERTA $PROD 'select 1' > /tmp/x"
 frena "T6j · sentencia por sustitución de comando" "$PUERTA $PROD \"\$(cat /tmp/x.sql)\""
 frena "T6k · ruta partida con comillas" "/opt/tycon/bin/tycon-prod-sq\"\"l $PROD 'select 1'"
+
+# T117 · un `for` que nombra la puerta entre sus palabras y sólo lee no la invoca: pasa si todo el comando, también lo de
+# adentro de cada $( … ), son lectores que no ejecutan lo que reciben. Si el cuerpo usa la variable donde se ejecuta, frena.
+NP="${PUERTA##*/}"
+pasa  "T117a For_QueNombraLaPuertaYSoloLee_Pasa (el de la noche)" "for f in prod-access-guard $NP node-shim; do printf '%-22s banco:%s\n' \"\$f\" \"\$(grep -rl \"\$f\" scripts/controls-bench 2>/dev/null | wc -l | tr -d ' ')\"; done"
+pasa  "T117b For_ConGrep_Pasa" "for f in a $NP b; do grep -rn \"\$f\" scripts; done"
+frena "T117c For_LaVariableComoPrograma_Frena" "for f in $PUERTA; do \"\$f\" $PROD 'select 1'; done"
+frena "T117d For_LaVariableAUnShell_Frena" "for f in $NP; do echo \"\$f $PROD 'select 1'\" | sh; done"
+frena "T117e For_LaVariableAXargs_Frena" "for f in $PUERTA; do echo \"\$f\" | xargs -I{} {} $PROD 'select 1'; done"
+frena "T117f For_UnaSustitucionQueLaCorre_Frena" "for f in $PUERTA; do printf '%s' \"\$( \"\$f\" $PROD 'select 1' )\"; done"
+frena "T117g For_ComillasInvertidas_Frena" "for f in $PUERTA; do printf '%s' \"\`\$f $PROD 'select 1'\`\"; done"
+frena "T117h For_BashC_Frena" "for f in $PUERTA; do bash -c \"\$f $PROD 'select 1'\"; done"
+frena "T117i For_FindExec_Frena" "for f in $NP; do find . -name \"\$f\" -exec {} $PROD 'select 1' \\;; done"
+frena "T117j For_YLaPuertaComoProgramaDespues_Frena" "for f in a; do echo \"\$f\"; done; $PUERTA $PROD 'select 1' | head"
+frena "T117k For_RgPre_Frena" "for f in $PUERTA; do rg --pre \"\$f\" x scripts; done"
+frena "T117l For_SortCompressProgram_Frena" "for f in $PUERTA; do sort --compress-program=\"\$f\" x; done"
+frena "T117m For_UnaRedireccionQueEscribeEnLaVariable_Frena" "for f in $PUERTA; do echo x > \"\$f\"; done"
+frena "T117n For_UnaAsignacionDelanteDelLector_Frena" "for f in $NP; do PATH=/opt/tycon/bin cat \"\$f\"; done"
+frena "T117o For_EnvDelante_Frena" "for f in $PUERTA; do env \"\$f\" $NP; done"
+pasa  "T117p For_RedireccionADevNull_Pasa" "for f in $NP b; do grep -c \"\$f\" scripts/x > /dev/null 2>&1; done"
+# zsh y bash corren código sin `$( … )`: con un calificador de glob, con banderas de expansión o con aritmética sobre
+# un valor que trae código escondido entre comillas simples en las palabras del for
+frena "T117q For_CalificadorDeZsh_Frena" "for f in a $NP; do echo *(e:\"\$f $PROD 'select 1'\":); done"
+frena "T117r For_BanderaEDeZshConCodigoEnElFor_Frena" "for f in a $NP '\$($NP $PROD x)'; do echo \${(e)f}; done"
+frena "T117s For_TildeDeZshConCalificadorEnElFor_Frena" "for f in a $NP '*(e:$NP x:)'; do echo \${~f}; done"
+frena "T117t For_TildeSuelta_Frena" "for f in a $NP; do echo \$~f; done"
+frena "T117u For_UniqPisaSuSegundoArgumento_Frena" "for f in a $PUERTA; do uniq /etc/hosts \"\$f\"; done"
+frena "T117v For_ExpansionDePromptDeBash_Frena" "for f in a $NP '\$($NP y)'; do echo \${f@P}; done"
+frena "T117w For_AritmeticaConCorchetes_Frena" "for f in a $NP 'x[\$($NP y)]'; do echo \$[f]; done"
+frena "T117x For_PrintfNumericoEnZsh_Frena" "for f in a $NP 'x[\$($NP y)]'; do printf %d \"\$f\"; done"
+frena "T117y For_ProgramaConRuta_Frena" "for f in a $NP; do ./cat \"\$f\"; done"
+frena "T117z For_PrintfV_Frena" "for f in a $NP; do printf -v x '%s' \"\$f\"; done"
+frena "T117aa For_UnaAsignacionSuelta_Frena" "x=1; for f in a $NP; do echo \"\$f\"; done"
+frena "T117ab For_ComillasAnsiC_Frena" "for f in a $NP; do echo \$'\\x28' \"\$f\"; done"
+# la variable del for y printf con opciones cambian qué programa corre (PATH, o `path` en zsh)
+frena "T117ac For_LaVariableEsPATH_Frena" "for PATH in a $NP /tmp/x; do cat y; done"
+frena "T117ad For_LaVariableEsPathDeZsh_Frena" "for path in a $NP /tmp/x; do cat y; done"
+# una tubería que le pasa la puerta a un programa que corre lo que recibe se mira también cuando el comando termina en
+# `|` y la última tubería queda abierta
+frena "T118a TuberiaAbiertaAlFinal_XargsLaCorre_Frena" "echo $PUERTA | xargs -I{} {} --version |"
+frena "T118b TuberiaAbiertaAlFinal_NodeLaRecibe_Frena" "echo $NP | node -e 'x' |"
+frena "T118c TuberiaAbiertaAlFinal_ConBarraYAmpersand_Frena" "printf '%s\\n' $NP |& xargs -n1 command -v |&"
+frena "T117ae For_PrintfVPegado_Frena" "for f in a $NP; do printf -vPATH '%s' /tmp/x; cat y; done"
+frena "T117af For_PrintfXvPegado_Frena" "for f in a $NP; do printf -xvPATH '%s' /tmp/x; cat y; done"
+pasa  "T117ag For_UnaVariableDeCuatroLetras_Pasa" "for item in a $NP; do grep -c \"\$item\" scripts/x; done"
 
 # ── T16 · secuestro de la puerta ──────────────────────────────────────────────────────────────
 # Sin esto, no revisar el shell deja que una función `tycon-prod-sql` en el .zshrc se quede con la
@@ -352,6 +402,125 @@ frena "8.14 T21e Xargs_AnyFeedingSegment_Blocks (FX1)" "find $P -name 'productio
 frena "8.14 T21f Xargs_AnyFeedingSegment_Blocks (FX2)" "ls $P/production-* | xargs rm -f"
 frena "8.14 T21g Xargs_AnyFeedingSegment_Blocks (FX8)" "grep -l . $P/*.json | xargs rm -f"
 pasa  "8.14 T21h Xargs_AnyFeedingSegment_Blocks (cp a /tmp)" "ls | xargs -I{} cp {} /tmp/{}.bak"
+
+# T21i · a un intérprete que xargs alimenta con los estados del pipeline el freno no le lee el programa: un python3 -c
+# «que sólo lee» corre lo que haya en un json.py de la carpeta o en PYTHONPATH. Sigue frenando, y el motivo dice cómo
+# leer sin escribir (jq, la herramienta de lectura).
+rc="$(corre "grep -l x $P/*.json | xargs python3 -c 'import json,sys; [print(json.load(open(f))) for f in sys.argv[1:]]'")"
+if [ "$rc" = 2 ] && grep -q "jq" "$TMP/err"; then ok "T21i Xargs_InterpreteConLosEstados_FrenaYSugiereJq"
+else no "T21i Xargs_InterpreteConLosEstados_FrenaYSugiereJq (rc=$rc) — err: $(head -c 160 "$TMP/err")"; fi
+# T84a · ese comando lee: sigue frenando, pero el motivo no dice que escribe: dice que no puede asegurar que sólo lea
+rc="$(corre "grep -l x $P/*.json | xargs python3 -c 'import json,sys; [print(json.load(open(f))) for f in sys.argv[1:]]'")"
+if [ "$rc" = 2 ] && grep -q "no puedo asegurar que ese comando sólo lea" "$TMP/err" && ! grep -q "ESCRIBE sobre" "$TMP/err"; then ok "T84a Xargs_InterpreteQueLee_ElMotivoNoDiceEscribe"
+else no "T84a Xargs_InterpreteQueLee_ElMotivoNoDiceEscribe (rc=$rc) — err: $(head -c 220 "$TMP/err")"; fi
+# T84b · un escritor de verdad por xargs sigue diciendo que escribe
+rc="$(corre "grep -l . $P/*.json | xargs rm -f")"
+if [ "$rc" = 2 ] && grep -q "ESCRIBE sobre" "$TMP/err" && ! grep -q "no puedo asegurar" "$TMP/err"; then ok "T84b Xargs_EscritorDeVerdad_SigueDiciendoEscribe"
+else no "T84b Xargs_EscritorDeVerdad_SigueDiciendoEscribe (rc=$rc) — err: $(head -c 220 "$TMP/err")"; fi
+# T21j a T21q · lo que xargs le pasa a un intérprete puede ser su programa: con la marca en el lugar del programa
+# (`-c {}`), sin programa (`-c` toma el primer argumento que llega), por un heredoc (directo o por la tubería) o por una
+# variable de valor conocido. Si ese texto nombra un estado de producción, es una escritura, como cuando el programa
+# está escrito en el comando. Si no nombra nada protegido, pasa.
+frena "T21j Xargs_ProgramaQueLlegaPorLaEntrada_Frena (-c con la marca)" "echo 'import os; os.remove(\"$P/$NM\")' | xargs -I{} python3 -c {}"
+frena "T21k Xargs_ProgramaQueLlegaPorLaEntrada_Frena (-c sin programa)" "echo 'import os; os.remove(\"$P/$NM\")' | xargs python3 -c"
+frena "T21l Xargs_ProgramaPorUnHeredoc_Frena" "xargs -I{} python3 -c {} <<'EOF'
+import os; os.remove(\"$P/$NM\")
+EOF"
+frena "T21m Xargs_ProgramaPorUnHeredocEnLaTuberia_Frena" "cat <<'EOF' | xargs -I{} python3 -c {}
+import os; os.remove(\"$P/$NM\")
+EOF"
+frena "T21n Xargs_ProgramaPorUnaVariable_Frena" "X='import os; os.remove(\"$P/$NM\")'; echo \"\$X\" | xargs -I{} python3 -c {}"
+frena "T21o Xargs_ProgramaQueLlegaConLaMarcaPegada_Frena" "echo 'open(\"$P/$NM\",\"w\")' | xargs -0I{} python3 -c {}"
+pasa  "T21p Xargs_ProgramaQueLlegaPorLaEntrada_Pasa (no nombra nada protegido)" "echo 'print(1)' | xargs -I{} python3 -c {}"
+pasa  "T21q Xargs_ProgramaPorUnHeredocQueNoNombraNada_Pasa" "xargs -I{} python3 -c {} <<'EOF'
+print(1)
+EOF"
+# T21r a T21u · la marca de xargs se reconoce pegada a otras opciones (`-0I{}`), con `--replace` solo (que es `{}` y no
+# se come la palabra que sigue), con una forma abreviada (`--re=%`) y después de un `-e` suelto (que en GNU no lleva
+# argumento aparte): la marca vale lo que llega, y en una carpeta protegida nombra sus estados.
+frena "T21r Xargs_MarcaPegadaAOtrasOpciones_Frena" "echo x | xargs -0I{} rm $P/{}"
+frena "T21s Xargs_ReplaceSolo_Frena" "echo x | xargs --replace rm $P/{}"
+frena "T21t Xargs_ReplaceAbreviado_Frena" "echo x | xargs --re=% rm $P/%"
+frena "T21u Xargs_MarcaDespuesDeUnDashE_Frena" "echo x | xargs -e -I@ rm $P/@"
+# T21v a T21aa · el heredoc que llega a un xargs con un intérprete por otro camino que su renglón: un grupo con llaves o
+# con paréntesis, un renglón continuado con barra, una función o un `bash -c`. Si el comando tiene un xargs o un
+# parallel con un intérprete, el heredoc que nombra un estado de producción se juzga como su programa.
+frena "T21v Xargs_HeredocDesdeUnGrupoConLlaves_Frena" "{ cat <<'EOF'
+import os; os.remove(\"$P/$NM\")
+EOF
+} | xargs -I{} python3 -c {}"
+frena "T21w Xargs_HeredocDesdeUnSubshell_Frena" "( cat <<'EOF'
+import os; os.remove(\"$P/$NM\")
+EOF
+) | xargs -I{} python3 -c {}"
+frena "T21x Xargs_HeredocConElRenglonContinuado_Frena" "cat <<'EOF' | \\
+xargs -I{} python3 -c {}
+import os; os.remove(\"$P/$NM\")
+EOF"
+frena "T21y Xargs_HeredocAUnaFuncion_Frena" "f() { xargs -I{} python3 -c {}; }; f <<'EOF'
+import os; os.remove(\"$P/$NM\")
+EOF"
+frena "T21z Xargs_HeredocAUnBashC_Frena" "bash -c 'xargs -I{} python3 -c {}' <<'EOF'
+import os; os.remove(\"$P/$NM\")
+EOF"
+# T21ab y T21ac · el xargs con intérprete se busca fuera de los cuerpos: un mensaje de commit o una nota que nombra un
+# estado de producción y habla de xargs y node no corre ningún xargs, y pasa.
+pasa  "T21ab Heredoc_MensajeDeCommitQueHablaDeXargs_Pasa" "git commit -F - <<'EOF'
+fix(freno): xargs con node ya no deja pasar $NM
+EOF"
+pasa  "T21ac Heredoc_NotaQueHablaDeParallel_Pasa" "cat > /tmp/nota.md <<'EOF'
+El freno juzga $NM; las pruebas corren en parallel y usan node
+EOF"
+# T21ae a T21ah · las opciones largas de GNU xargs: las de argumento opcional, como --max-lines, lo llevan sólo pegado
+# (sueltas no se comen la palabra que sigue), una abreviada que lo lleva aparte se reconoce (--max-a 1), y gxargs (GNU
+# de Homebrew) es xargs.
+frena "T21ae Xargs_MaxLinesSuelto_Frena" "echo $P/$NM | xargs --max-lines sed -i s/a/b/"
+frena "T21af Xargs_OpcionLargaAbreviada_Frena" "echo 'open(\"$P/$NM\",\"w\")' | xargs --max-a 1 python3 -c"
+frena "T21ag Gxargs_EsXargs_Frena" "echo $P/$NM | gxargs sed -i s/a/b/"
+frena "T21ah Gxargs_HeredocAUnInterprete_Frena" "cat <<'EOF' | gxargs -I{} python3 -c {}
+import os; os.remove(\"$P/$NM\")
+EOF"
+# T21ai a T21ap · también los intérpretes que el resto del freno no conoce (bun, deno, awk, osascript, pwsh) y los que
+# corren uno (npx, uv run): lo que xargs les pasa puede ser su programa (fila 104).
+frena "T21ai Xargs_ProgramaParaBun_Frena" "echo 'require(\"fs\").unlinkSync(\"$P/$NM\")' | xargs -I{} bun -e {}"
+frena "T21aj Xargs_ProgramaParaDeno_Frena" "echo 'Deno.removeSync(\"$P/$NM\")' | xargs -I{} deno eval {}"
+frena "T21ak Xargs_ProgramaDeAwkPorUnHeredoc_Frena" "cat <<'EOF' | xargs -I{} awk {}
+BEGIN{system(\"rm $P/$NM\")}
+EOF"
+frena "T21al Xargs_ProgramaParaOsascript_Frena" "echo 'do shell script \"rm $P/$NM\"' | xargs -I{} osascript -e {}"
+frena "T21am Xargs_ProgramaParaPwsh_Frena" "echo 'Remove-Item $P/$NM' | xargs -I{} pwsh -c {}"
+frena "T21an Xargs_ProgramaParaNpxTsx_Frena" "echo 'require(\"fs\").unlinkSync(\"$P/$NM\")' | xargs -I{} npx tsx -e {}"
+frena "T21ao Xargs_ProgramaParaUvRun_Frena" "echo 'open(\"$P/$NM\",\"w\")' | xargs -I{} uv run python -c {}"
+# T21aq a T21at · awk es un lector, pero lo que xargs le pasa en el lugar del programa (la marca, o sin programa escrito)
+# es su programa. Con el programa escrito, lo que llega son archivos que lee, y pasa.
+frena "T21aq Xargs_ProgramaDeAwkPorLaTuberia_Frena" "echo 'BEGIN{system(\"rm $P/$NM\")}' | xargs -I{} awk {}"
+frena "T21ar Xargs_ProgramaDeGawkPorUnHereString_Frena" "xargs -I{} gawk {} <<< 'BEGIN{print \"x\" > \"$P/$NM\"}'"
+frena "T21as Xargs_AwkSinProgramaEscrito_Frena" "echo 'BEGIN{system(\"rm $P/$NM\")}' | xargs awk"
+pasa  "T21at Xargs_AwkConElProgramaEscritoLeeLosEstados_Pasa" "ls $P/$NI | xargs awk '{print}'"
+# T21au a T21aw · los lanzadores y los intérpretes comunes en una Mac de desarrollo (pnpm exec, ipython), y gxargs también
+# en el freno de borrado de Azure.
+frena "T21au Xargs_ProgramaParaPnpmExec_Frena" "echo 'require(\"fs\").unlinkSync(\"$P/$NM\")' | xargs -I{} pnpm exec node -e {}"
+frena "T21av Xargs_ProgramaParaIpython_Frena" "echo 'open(\"$P/$NM\",\"w\")' | xargs -I{} ipython -c {}"
+frena "T21aw Gxargs_ArmaUnBorradoDeAzure_Frena" "echo delete | gxargs az group"
+# T21ax a T21az · sólo cuenta lo que llega en el lugar del programa: una nota o un mensaje de commit que nombra un estado,
+# junto a un xargs cuyo programa no lo toma de la entrada (grep, npm test, un guion de Python), pasan.
+pasa  "T21ax Heredoc_ConUnXargsGrepAparte_Pasa" "git commit -F - <<'EOF'
+fix $P/$NI
+EOF
+ls | xargs grep -n node"
+pasa  "T21ay Heredoc_ConUnXargsNpmTestAparte_Pasa" "cat > /tmp/nota.md <<'EOF'
+$P/$NI no se toca
+EOF
+ls | xargs npm test"
+pasa  "T21az Heredoc_ConUnXargsAUnGuionDePython_Pasa" "cat > /tmp/nota.md <<'EOF'
+$P/$NI
+EOF
+ls | xargs -I{} python3 script.py {}"
+pasa  "T21ap Xargs_ProgramaParaBunQueNoNombraNada_Pasa" "echo 'console.log(1)' | xargs -I{} bun -e {}"
+pasa  "T21aa Xargs_HeredocDesdeUnGrupoQueNoNombraNada_Pasa" "{ cat <<'EOF'
+print(1)
+EOF
+} | xargs -I{} python3 -c {}"
 
 # T22 · find recursivo desde una carpeta protegida o un ancestro.
 frena "8.14 T22a Find_Recursive_FromProtectedOrAncestor (G7)" "find $P -name 'prod*' -delete"
@@ -797,7 +966,7 @@ pasa  "6.1.1 T9 HeredocAArchivo_Llavero_Pasa" "cat > notas.md <<'EOF'
 La contraseña vive en el Llavero: security find-generic-password -s tycon-prod-acme -w
 EOF"
 t10_falta=""
-grep -q "Lo que el comando \*\*sólo escribe\*\* a un archivo y no corre" "$AQUI/guides/produccion-con-permiso.md" 2>/dev/null || t10_falta="$t10_falta la guía;"
+grep -q "Lo que el comando \*\*sólo escribe\*\* a un archivo y no corre" "$AQUI/guides/production-with-permission.md" 2>/dev/null || t10_falta="$t10_falta la guía;"
 grep -q "El contenido de un archivo que el comando escribe y no corre no se juzga" "$AQUI/guides/maintaining/piezas-en-detalle.md" 2>/dev/null || t10_falta="$t10_falta el detalle de la pieza;"
 if [ -z "$t10_falta" ]; then ok "6.1.1 T10 Guide_DeclaresFileContentIsNotJudged"
 else no "6.1.1 T10 Guide_DeclaresFileContentIsNotJudged — no lo dice:$t10_falta"; fi
@@ -1199,6 +1368,69 @@ done
 if [ -f "$GUIA" ] && ! grep -qF -- "--file" "$GUIA" && grep -q "20 renglones" "$GUIA"; then ok "6.6 T13 Guide_NoFileForm · la guía no ofrece --file y dice el tope"
 else no "6.6 T13 Guide_NoFileForm · la guía todavía ofrece --file o no dice el tope de 20 renglones"; fi
 
+# ── T124 · un lector que corre otro programa no es un lector ─────────────────────────
+# Nombrar la puerta con un lector pasa (mirar o documentarla es rutina), salvo que el lector la corra: por una opción
+# (`find -exec`, `rg --pre`, `sort --compress-program`, `git -c core.pager`), porque es un intérprete (`awk`, `sed`), con
+# una variable delante (`GIT_PAGER=…`) o con `env -S`, que se come el comando entero.
+NPL="${PUERTA##*/}"
+frena "T124a Lector_FindExec_Frena" "find . -name x -exec $PUERTA acme-sql 'select 1' \\;"
+frena "T124b Lector_FindExecdirYOk_Frena" "find . -name x -execdir $PUERTA acme-sql 'select 1' \\; -ok $PUERTA \\;"
+frena "T124c Lector_RgPre_Frena" "rg --pre=$PUERTA x scripts"
+frena "T124d Lector_RgHostnameBin_Frena" "rg --hostname-bin=$PUERTA x scripts"
+frena "T124e Lector_AgPagerAbreviado_Frena" "ag --page $PUERTA x scripts"
+frena "T124f Lector_SortCompressProgramAbreviado_Frena" "sort --compress=$PUERTA x"
+frena "T124g Lector_AwkSystem_Frena" "awk 'BEGIN{system(\"$PUERTA acme-sql x\")}'"
+frena "T124h Lector_SedE_Frena" "sed -n '1e $PUERTA acme-sql x' f"
+frena "T124i Lector_GitConfigPager_Frena" "git -c core.pager=$PUERTA log"
+frena "T124j Lector_GitAlias_Frena" "git -c alias.x='!$PUERTA acme-sql y' x"
+frena "T124k Lector_GitDifftool_Frena" "git difftool -x $PUERTA HEAD"
+frena "T124l Lector_GitGrepEnElPager_Frena" "git grep -O$PUERTA x"
+frena "T124m Lector_GitRebaseExec_Frena" "git rebase --exec '$PUERTA acme-sql x' HEAD~1"
+frena "T124n Lector_Open_Frena" "open -a $PUERTA"
+frena "T124o Lector_LessConComando_Frena" "less '+!$PUERTA acme-sql x' f"
+frena "T124p Lector_VariableDelante_Frena" "GIT_PAGER=$PUERTA git log"
+frena "T124q Lector_EnvConVariable_Frena" "env GIT_PAGER=$PUERTA git log"
+frena "T124r Lector_ManConPager_Frena" "man -P $PUERTA ls"
+frena "T124s Lector_BatConPager_Frena" "bat --pager=$PUERTA f"
+frena "T124t EnvS_SeComeElComando_Frena" "env -S '$PUERTA acme-sql x'"
+pasa  "T124u GitLogDeSuArchivo_Pasa" "git log -- scripts/production/$NPL"
+pasa  "T124v GitConOpcionesQueLeen_Pasa" "git --no-pager -C /tmp/r log -1 -- scripts/production/$NPL"
+pasa  "T124w GitGrepSinPager_Pasa" "git grep -n $NPL"
+pasa  "T124x FindSinExec_Pasa" "find . -name $NPL"
+pasa  "T124y RgSinPre_Pasa" "rg -n $NPL scripts"
+pasa  "T124z CatYHead_Pasan" "cat $PUERTA; head -20 scripts/production/$NPL"
+# lo que encontró el pase adversarial: git acepta opciones abreviadas, un lector alimenta un shell por un tubo
+frena "T124aa GitGrepOpenAbreviado_Frena" "git grep --open=$PUERTA x"
+frena "T124ab GitGrepNOPegado_Frena" "git grep -nO$PUERTA x"
+frena "T124ac EchoAUnShell_Frena" "echo '$PUERTA acme-sql q' | sh"
+frena "T124ad HeredocAUnShell_Frena" "cat <<'EOF' | bash
+$PUERTA acme-sql q
+EOF"
+frena "T124ae CodeConPrefijoDeElectron_Frena" "code --renderer-cmd-prefix=$PUERTA f"
+frena "T124af GitAttrSourceSaltaSuValor_Frena" "git --attr-source log rebase --exec '$PUERTA acme-sql x' HEAD~1"
+frena "T124ag SudoS_SeComeElComando_Frena" "sudo -s '$PUERTA acme-sql x'"
+pasa  "T124ah CommandV_Pasa" "command -v $NPL"
+pasa  "T124ai GitCheckoutYSwitch_Pasan" "git checkout HEAD -- scripts/production/$NPL; git switch wt/$NPL"
+pasa  "T124aj VariablesQueNoCorrenNada_Pasan" "TZ=UTC git log -- scripts/production/$NPL; LANG=C grep -rn $NPL scripts; GIT_PAGER=cat git log -- scripts/production/$NPL"
+pasa  "T124ak GitCDeColor_Pasa" "git -c color.ui=always log -- scripts/production/$NPL"
+pasa  "T124al LessYCode_Pasan" "less $PUERTA; code scripts/production/$NPL"
+pasa  "T124am LectorAHead_Pasa" "grep -rn $NPL scripts | head -5"
+# segunda vuelta: lo de adentro de un $( ) corre, un tubo a lo que no es un lector, la puerta como valor de una opción
+frena "T124an SustitucionEnUnLector_Frena" "echo \"\$($PUERTA acme-sql q)\""
+frena "T124ao SustitucionEnUnaVariableDelante_Frena" "TERM=\"\$($PUERTA acme-sql q)\" git log"
+frena "T124ap SustitucionConTuboAUnShell_Frena" "TERM=\"\$(echo '$PUERTA acme-sql q' | sh)\" git log"
+frena "T124aq SustitucionDeProceso_Frena" "echo '$PUERTA acme-sql q' | tee >(sh)"
+frena "T124ar SustitucionDeProcesoDeEntrada_Frena" "sh < <(echo '$PUERTA acme-sql q')"
+frena "T124as LaPuertaComoValorDeUnaOpcion_Frena" "time -p $PUERTA"
+frena "T124at TuboAUnShellConEnvDelante_Frena" "echo '$PUERTA acme-sql q' | env -i sh"
+frena "T124au TuboAXargs_Frena" "echo '$PUERTA acme-sql q' | xargs sh -c"
+frena "T124av GitPushReceivePackAbreviado_Frena" "git push --receive=$PUERTA origin x"
+frena "T124aw GitConfigQueEscribeUnAlias_Frena" "git config alias.x '!$PUERTA acme-sql q'"
+frena "T124ax CodeInstallExtension_Frena" "code --install-extension $PUERTA"
+pasa  "T124ay LsDeWhich_Pasa" "ls -l \"\$(which $NPL)\""
+pasa  "T124az GitPushFetchMergeConfig_Pasan" "git push origin wt/$NPL; git fetch origin $NPL; git merge wt/$NPL; git config --get alias.$NPL"
+pasa  "T124ba TuboAUnShellEnOtroTramo_Pasa" "git add scripts/production/$NPL; echo listo | sh"
+
 # ── T32 · la guía declara la cortesía de la regla de firewall ─────────────────────────
 if [ -f "$GUIA" ] && grep -qi "cortes" "$GUIA" && grep -qi "firewall" "$GUIA"; then
   ok "T32 · la guía dice que la regla de firewall es de cortesía"
@@ -1227,7 +1459,7 @@ fi
 if [ -z "$t33_falta" ]; then ok "8.14 T33 Guide_DeclaresShellFormsAndLimits (las formas, la medición y los cinco límites)"
 else no "8.14 T33 Guide_DeclaresShellFormsAndLimits — falta:$t33_falta"; fi
 
-# ── T-puerta-12 Guia_LosLimitesReales — la guía no promete una barrera que no existe ──────────────────────────────
+# ── T-puerta-12 Guia_LosLimitesReales @story-8.254 @ac-8 — la guía no promete una barrera que no existe ──────────────────────────────
 # La guía decía que a un programa propio lo frena que «no tiene la clave»: cualquier programa de la cuenta la lee con
 # /usr/bin/security sin cuadro. Lo que dice ahora son los cinco límites reales.
 t12_falta=""
@@ -1244,8 +1476,132 @@ if [ -f "$GUIA" ]; then
 else
   t12_falta=" la guía no existe ($GUIA);"
 fi
-if [ -z "$t12_falta" ]; then ok "T-puerta-12 Guia_LosLimitesReales (sin «no tiene la clave», con los cinco límites y el cuadro propio)"
-else no "T-puerta-12 Guia_LosLimitesReales — falta:$t12_falta"; fi
+if [ -z "$t12_falta" ]; then ok "T-puerta-12 Guia_LosLimitesReales @story-8.254 @ac-8 (sin «no tiene la clave», con los cinco límites y el cuadro propio)"
+else no "T-puerta-12 Guia_LosLimitesReales @story-8.254 @ac-8 — falta:$t12_falta"; fi
+
+# ── T3 ProdGuard_ArchivoConSaltoFinal_SinRenglonVacio @story-8.283 @ac-5 @ac-6 ─────────────────────────
+# El salto de línea final del archivo no deja un renglón vacío en el comando listo; los de adentro quedan. Un salto
+# final de Windows (\r\n) tampoco lo deja; un retorno de carro adentro sigue frenando.
+mkdir -p "$TMP/q83"
+printf 'select 1,\n  2\nfrom t\n\n' > "$TMP/q83/final.sql"
+printf 'select 1,\n  2\nfrom t\r\n' > "$TMP/q83/crlf.sql"
+printf 'select 1\r\nfrom t\r\n' > "$TMP/q83/cr-adentro.sql"
+listo83(){ node -e '
+  const t = require("fs").readFileSync(process.argv[1], "utf8"); const i = t.indexOf(process.argv[2]);
+  if (i < 0) process.exit(1);
+  const m = /^\S+ \S+ (?:\x27(?:[^\x27]|\x27\\\x27\x27)*\x27)/.exec(t.slice(i)); if (!m) process.exit(1); process.stdout.write(m[0]);' "$TMP/err" "$PUERTA $PROD '"; }
+esperado83="$PUERTA $PROD 'select 1,
+  2
+from t'"
+for f in final.sql crlf.sql; do
+  rc="$(corre "$PUERTA $PROD --file $TMP/q83/$f")"
+  L="$(listo83)" || L=""
+  if [ "$rc" = 2 ] && [ "$L" = "$esperado83" ]; then ok "8.283 T3 ProdGuard_ArchivoConSaltoFinal_SinRenglonVacio · $f"
+  else no "8.283 T3 ProdGuard_ArchivoConSaltoFinal_SinRenglonVacio · $f (rc=$rc) — listo: $(printf '%s' "$L" | tail -c 40 | od -c | head -2)"; fi
+done
+rc="$(corre "$PUERTA $PROD --file $TMP/q83/cr-adentro.sql")"
+if [ "$rc" = 2 ] && grep -qF "control" "$TMP/err" && ! grep -qF "$PUERTA $PROD '" "$TMP/err"; then ok "8.283 T3 ProdGuard_ArchivoConSaltoFinal_SinRenglonVacio · un retorno de carro adentro sigue frenando"
+else no "8.283 T3 ProdGuard_ArchivoConSaltoFinal_SinRenglonVacio · el retorno de carro adentro pasó (rc=$rc) — err: $(head -c 200 "$TMP/err")"; fi
+
+# ── la puerta no corre de fondo ───────────────────────────────────────────────────────────────
+# Sin esto, una sesión corre la puerta de fondo, su cuadro vence a los 120 s sin que nadie lo vea y el pedido se cancela
+# solo. El Monitor corre de fondo sin la marca, así que cuenta igual. En primer plano, y con cualquier otro comando de
+# fondo, no cambia nada.
+mundo
+snapshot "" ""
+# $1 = herramienta (Bash | Monitor) · $2 = run_in_background (true | false | vacío: sin la marca) · $3 = comando
+# $4 = timeout en ms: si no se pasa, el de 5 minutos que pide la puerta, para que cada caso mida lo suyo; vacío: sin tope
+corre_fondo(){
+  local payload
+  payload="$(TOOL="$1" BACKGROUND="$2" CMD="$3" TIMEOUT_MS="${4-300000}" node -e '
+    const e = { tool_name: process.env.TOOL, hook_event_name: "PreToolUse", cwd: "/tmp", tool_input: { command: process.env.CMD } };
+    if (process.env.BACKGROUND) e.tool_input.run_in_background = process.env.BACKGROUND === "true";
+    if (process.env.TIMEOUT_MS) e.tool_input.timeout = Number(process.env.TIMEOUT_MS);
+    process.stdout.write(JSON.stringify(e));' 2>/dev/null)"
+  # la configuración de tope de la consola que trae el entorno de la prueba no cuenta; la del caso va en CONSOLE_ENV
+  printf '%s' "$payload" | env -u BASH_DEFAULT_TIMEOUT_MS -u BASH_MAX_TIMEOUT_MS -u CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS \
+    HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" TYCON_PROD_SESSION_SINCE=0 ${CONSOLE_ENV[@]+"${CONSOLE_ENV[@]}"} node "$HOOK" >"$TMP/out" 2>"$TMP/err"
+  echo $?
+}
+CONSOLE_ENV=()
+BACKGROUND_FORMS=("$PUERTA $PROD 'select 1'" "$PUERTA --reclassify $PROD" "$PUERTA --azure monitor metrics alert list -g rg-acme")
+dice_que_hacer(){ grep -qF "la puerta de producción no corre de fondo" "$TMP/err" && grep -qF "primer plano" "$TMP/err" \
+  && grep -qF "qué cuadro va a aparecer" "$TMP/err" && grep -qF "timeout: 300000" "$TMP/err"; }
+for forma in "${BACKGROUND_FORMS[@]}"; do
+  rc="$(corre_fondo Bash true "$forma")"
+  if [ "$rc" = 2 ] && dice_que_hacer; then ok "T1 ProdGuard_Background_Blocks @story-8.333 @ac-1 · «${forma#"$PUERTA" }» con run_in_background: frena y dice qué hacer y el tope"
+  else no "T1 ProdGuard_Background_Blocks @story-8.333 @ac-1 · «${forma#"$PUERTA" }» con run_in_background: rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+done
+rc="$(corre_fondo Monitor '' "${BACKGROUND_FORMS[0]}")"
+if [ "$rc" = 2 ] && dice_que_hacer; then ok "T1 ProdGuard_Background_Blocks @story-8.333 @ac-1 · la consulta por el Monitor: frena y dice qué hacer y el tope"
+else no "T1 ProdGuard_Background_Blocks @story-8.333 @ac-1 · la consulta por el Monitor: rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+# cada uno de los cuatro bloqueos queda anotado con su regla, no como «otra»
+n_fondo="$(grep '"freno":"prod-access-guard"' "$CASA/.claude/.tycon-pipeline/frenos.jsonl" 2>/dev/null | grep -c '"regla":"puerta-de-fondo"')"
+if [ "$n_fondo" = 4 ] && ! grep -q '"regla":"otra"' "$CASA/.claude/.tycon-pipeline/frenos.jsonl" 2>/dev/null; then
+  ok "T1 ProdGuard_Background_Blocks @story-8.333 @ac-1 · los cuatro bloqueos quedan anotados con la regla puerta-de-fondo"
+else no "T1 ProdGuard_Background_Blocks @story-8.333 @ac-1 · anotados con puerta-de-fondo: ${n_fondo:-0} de 4 — $(tail -2 "$CASA/.claude/.tycon-pipeline/frenos.jsonl" 2>/dev/null)"; fi
+
+for forma in "${BACKGROUND_FORMS[@]}"; do
+  for marca in '' false; do
+    if [ -n "$marca" ]; then como="con run_in_background: $marca"; else como="sin la marca"; fi
+    rc="$(corre_fondo Bash "$marca" "$forma")"
+    if [ "$rc" = 0 ] && ! grep -qF "de fondo" "$TMP/err"; then ok "T2 ProdGuard_Foreground_AsToday @story-8.333 @ac-2 · «${forma#"$PUERTA" }» $como: pasa al cuadro, como siempre"
+    else no "T2 ProdGuard_Foreground_AsToday @story-8.333 @ac-2 · «${forma#"$PUERTA" }» $como: rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+  done
+done
+# lo que ya se frenaba en primer plano se sigue frenando por su causa, no por la de fondo
+rc="$(corre_fondo Bash false "bash -c '$PUERTA $PROD \"select 1\"'")"
+if [ "$rc" = 2 ] && ! grep -qF "de fondo" "$TMP/err"; then ok "T2 ProdGuard_Foreground_AsToday @story-8.333 @ac-2 · la puerta dentro de bash -c, en primer plano, frena por su forma, como siempre"
+else no "T2 ProdGuard_Foreground_AsToday @story-8.333 @ac-2 · la puerta dentro de bash -c, en primer plano: rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+
+for herramienta in Bash Monitor; do
+  if [ "$herramienta" = Bash ]; then marca=true; else marca=''; fi
+  rc="$(corre_fondo "$herramienta" "$marca" "sleep 5")"
+  if [ "$rc" = 0 ] && ! grep -qF "de fondo" "$TMP/err"; then ok "T3 ProdGuard_BackgroundWithoutGate_Passes @story-8.333 @ac-3 · «sleep 5» de fondo ($herramienta) pasa"
+  else no "T3 ProdGuard_BackgroundWithoutGate_Passes @story-8.333 @ac-3 · «sleep 5» de fondo ($herramienta): rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+done
+
+# ── la puerta en primer plano lleva el tope de 5 minutos ──────────────────────────────────────────
+# Sin esto, la puerta corre en primer plano con el tope de la consola (120 s si no se pide otro). Al vencer, la consola no
+# corta el comando: lo pasa a segundo plano, y el cuadro, que puede esperar 90 s su turno y 120 s la respuesta, queda sin
+# nadie que lo mire. Codex no tiene ese tope: ahí la puerta se frena como siempre, por ser Codex.
+mundo
+snapshot "" ""
+dice_el_tope(){ grep -qF "timeout: 300000" "$TMP/err" && grep -qF "segundo plano" "$TMP/err" && grep -qF "primer plano" "$TMP/err" \
+  && grep -qF "qué cuadro va a aparecer" "$TMP/err"; }
+CONSULTA="${BACKGROUND_FORMS[0]}"
+rc="$(corre_fondo Bash '' "$CONSULTA" '')"
+if [ "$rc" = 2 ] && dice_el_tope && grep -qF "no trae ninguno" "$TMP/err"; then ok "ProdGuard_ForegroundWithoutTimeout_Blocks · en primer plano sin timeout: frena y pide el tope"
+else no "ProdGuard_ForegroundWithoutTimeout_Blocks · en primer plano sin timeout: rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+rc="$(corre_fondo Bash false "$CONSULTA" 120000)"
+if [ "$rc" = 2 ] && dice_el_tope && grep -qF "trae uno de 120 s" "$TMP/err"; then ok "ProdGuard_ForegroundShortTimeout_Blocks · con timeout 120000: frena, dice el que trae y pide el de 5 minutos"
+else no "ProdGuard_ForegroundShortTimeout_Blocks · con timeout 120000: rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+n_tope="$(grep '"freno":"prod-access-guard"' "$CASA/.claude/.tycon-pipeline/frenos.jsonl" 2>/dev/null | grep -c '"regla":"puerta-de-fondo"')"
+if [ "$n_tope" = 2 ] && ! grep -q '"regla":"otra"' "$CASA/.claude/.tycon-pipeline/frenos.jsonl" 2>/dev/null; then
+  ok "ProdGuard_ForegroundShortTimeout_Blocks · los dos bloqueos quedan anotados con la regla puerta-de-fondo"
+else no "ProdGuard_ForegroundShortTimeout_Blocks · anotados con puerta-de-fondo: ${n_tope:-0} de 2 — $(tail -2 "$CASA/.claude/.tycon-pipeline/frenos.jsonl" 2>/dev/null)"; fi
+rc="$(corre_fondo Bash '' "$CONSULTA" 300000)"
+if [ "$rc" = 0 ] && ! grep -qF "timeout" "$TMP/err"; then ok "ProdGuard_ForegroundFullTimeout_Passes · con timeout 300000: pasa al cuadro"
+else no "ProdGuard_ForegroundFullTimeout_Passes · con timeout 300000: rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+rc="$(codex "$CONSULTA")"
+if [ "$rc" = 2 ] && grep -qF "en Codex la puerta no puede abrir el cuadro" "$TMP/err" && ! grep -qF "timeout" "$TMP/err"; then
+  ok "ProdGuard_CodexWithoutTimeout_AsToday · en Codex, sin timeout: frena por ser Codex, como siempre, y no pide el tope"
+else no "ProdGuard_CodexWithoutTimeout_AsToday · en Codex, sin timeout: rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+rc="$(corre_fondo Bash '' "$CONSULTA" 299999)"
+if [ "$rc" = 2 ] && grep -qF "trae uno de 299 s" "$TMP/err"; then ok "ProdGuard_ForegroundTimeoutJustShort_SaysIt · con 299999 frena y no dice 300 s"
+else no "ProdGuard_ForegroundTimeoutJustShort_SaysIt · con 299999: rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+# la consola aplica también su configuración: la que baja el tope frena con el nombre de la variable, la que lo da pasa
+for caso in "BASH_MAX_TIMEOUT_MS=200000|300000|2" "CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS=60000|300000|2" \
+  "BASH_MAX_TIMEOUT_MS=600000|300000|0" "BASH_DEFAULT_TIMEOUT_MS=300000||0" "BASH_DEFAULT_TIMEOUT_MS=200000||2"; do
+  IFS='|' read -r variable pedido_ms esperado <<<"$caso"
+  CONSOLE_ENV=("$variable")
+  rc="$(corre_fondo Bash '' "$CONSULTA" "$pedido_ms")"
+  CONSOLE_ENV=()
+  if [ "$rc" = "$esperado" ] && { [ "$esperado" = 0 ] || grep -qF "segundo plano" "$TMP/err"; } \
+     && { [ "$esperado" = 0 ] || [ "${variable#BASH_DEFAULT}" != "$variable" ] || grep -qF "$variable" "$TMP/err"; }; then
+    ok "ProdGuard_ConsoleSettings_Count · $variable con pedido «${pedido_ms:-sin tope}»: sale $esperado"
+  else no "ProdGuard_ConsoleSettings_Count · $variable con pedido «${pedido_ms:-sin tope}»: rc=$rc, esperaba $esperado — err: $(head -c 200 "$TMP/err")"; fi
+done
 
 echo "— prod-guard: $pasaron ok, $fallos fallos —"
 [ "$fallos" -eq 0 ]

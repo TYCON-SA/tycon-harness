@@ -86,8 +86,8 @@ function conRuta(texto, nombre, repoRun) {
   return texto.split('<REPO_RUN>').join(valor);
 }
 
-function armarCaso(nombre) {
-  const dir = path.join(FIXTURES, nombre);
+function armarCaso(nombre, fixtures = FIXTURES) {
+  const dir = path.join(fixtures, nombre);
   const c = JSON.parse(fs.readFileSync(path.join(dir, 'case.json'), 'utf8'));
   const tmp = tmpReal('tgr-caso-');
   const repo = path.join(tmp, 'repo');
@@ -1001,4 +1001,116 @@ test('T79 TestGate_WorkFiles_GoToTmpdir — los archivos de trabajo de la puerta
   const r = spawnSync('bash', [GATE, repo, '9.12'], { encoding: 'utf8', env, timeout: 180000 });
   assert.strictEqual(r.status, 0, r.stderr);
   assert.ok(fs.readdirSync(tmpdir).some((n) => /^test-gate-/.test(n)), `nada de la puerta en TMPDIR: ${fs.readdirSync(tmpdir)}`);
+});
+
+test('T80 TestGate_FailedTestNames_FromTrxAndJestJson — el informe dice el nombre de cada prueba que falló, del trx y del json de jest/vitest', () => {
+  // 🔴 rojo si: el informe sólo cuenta las fallas (totals.failed) y no dice cuáles son: quien lee la constancia no puede
+  //    saber si son las mismas que ya fallaban antes del cambio.
+  const NS = 'http://microsoft.com/schemas/VisualStudio/TeamTest/2010';
+  const trx = (resultados) => `<?xml version="1.0" encoding="utf-8"?>\n<TestRun xmlns="${NS}"><Results>${resultados}</Results>`
+    + '<ResultSummary outcome="Failed"><Counters total="3" executed="3" passed="1" failed="2" /></ResultSummary></TestRun>\n';
+  const fixtures = tmpReal('tgr-nombres-');
+  // .NET: dos ensamblados; uno con una falla y una que pasa, otro con una falla parametrizada y una que se cortó
+  const dn = path.join(fixtures, 'dotnet-nombres');
+  fs.cpSync(path.join(FIXTURES, 'dotnet-two-assemblies'), dn, { recursive: true });
+  fs.writeFileSync(path.join(dn, 'results', 'acme-a', 'test-gate.trx'), trx(
+    `<UnitTestResult testName="Acme.Orders.Tests.ImporterTests.Importa_Pedido" outcome="Failed" />`
+    + `<UnitTestResult testName="Acme.Orders.Tests.ImporterTests.Pasa" outcome="Passed" />`));
+  fs.writeFileSync(path.join(dn, 'results', 'acme-b', 'test-gate.trx'), trx(
+    `<UnitTestResult testName="Acme.Orders.Tests.PriceTests.Suma(a: 1, b: &quot;x&quot;)" outcome="Failed" />`
+    + `<UnitTestResult testName="Acme.Orders.Tests.PriceTests.SeCorta" outcome="Timeout" />`));
+  let caso = armarCaso('dotnet-nombres', fixtures);
+  let { rc, stderr, got } = correrInforme(caso, [process.execPath, REPORT], { TYCON_GUIDES_DIR: tmpReal('tgr-sin-org-') });
+  assert.strictEqual(rc, 0, stderr);
+  assert.deepStrictEqual(got.tests_result.failed_tests, [
+    { name: 'Acme.Orders.Tests.ImporterTests.Importa_Pedido', outcome: 'Failed' },
+    { name: 'Acme.Orders.Tests.PriceTests.Suma(a: 1, b: "x")', outcome: 'Failed' },
+    { name: 'Acme.Orders.Tests.PriceTests.SeCorta', outcome: 'Timeout' },
+  ]);
+  // jest: el nombre completo, o los títulos de arriba con el de la prueba; el archivo relativo al proyecto; un archivo
+  // que no llegó a correr se nombra igual
+  const js = path.join(fixtures, 'jest-nombres');
+  fs.cpSync(path.join(FIXTURES, 'vitest-container'), js, { recursive: true });
+  fs.rmSync(path.join(js, 'results', 'vitest.json'));
+  fs.writeFileSync(path.join(js, 'results', 'jest.json'), JSON.stringify({
+    numTotalTests: 4, numPassedTests: 1, numFailedTests: 2, numPendingTests: 0, success: false,
+    testResults: [
+      { name: '<REPO_RUN>/src/price.test.ts', status: 'failed', assertionResults: [
+        { title: 'suma', fullName: 'precio suma', ancestorTitles: ['precio'], status: 'failed' },
+        { title: 'resta', ancestorTitles: ['precio', 'con descuento'], status: 'failed' },
+        { title: 'pasa', fullName: 'precio pasa', ancestorTitles: ['precio'], status: 'passed' }] },
+      { name: '<REPO_RUN>/src/cart.test.ts', status: 'failed', message: 'Cannot find module', assertionResults: [] },
+      { name: '<REPO_RUN>/src/ok.test.ts', status: 'passed', assertionResults: [{ title: 'ok', status: 'passed' }] },
+    ],
+  }));
+  const cj = JSON.parse(fs.readFileSync(path.join(js, 'case.json'), 'utf8'));
+  fs.writeFileSync(path.join(js, 'case.json'), JSON.stringify({ ...cj, runner: 'jest' }));
+  caso = armarCaso('jest-nombres', fixtures);
+  ({ rc, stderr, got } = correrInforme(caso, [process.execPath, REPORT], { TYCON_GUIDES_DIR: tmpReal('tgr-sin-org-') }));
+  assert.strictEqual(rc, 0, stderr);
+  assert.deepStrictEqual(got.tests_result.failed_tests, [
+    { file: 'src/price.test.ts', name: 'precio suma' },
+    { file: 'src/price.test.ts', name: 'precio con descuento resta' },
+    { file: 'src/cart.test.ts', name: null, did_not_run: true },
+  ]);
+  // sin fallas, el campo no está
+  assert.ok(!('failed_tests' in (JSON.parse(fs.readFileSync(path.join(FIXTURES, 'jest-after-commit', 'expected.json'), 'utf8')).tests_result || {})));
+});
+
+test('T80 …con muchas fallas, la lista se corta y dice cuántas más', () => {
+  const { nombresDeFallas } = require(REPORT);
+  const muchas = Array.from({ length: 130 }, (_, i) => ({ title: `p${i}`, status: 'failed' }));
+  const r = nombresDeFallas({ runner: 'jest', jestJson: { testResults: [{ name: '/r/a.test.js', status: 'failed', assertionResults: muchas }] }, repoRun: '/r' });
+  assert.strictEqual(r.failed_tests.length, 100);
+  assert.strictEqual(r.failed_tests_more, 30);
+});
+
+test('T80 …la carpeta por un enlace, una entrada vacía y un archivo que falló con sus pruebas en verde', () => {
+  // 🔴 rojo si: jest escribe la ruta real y la carpeta llega por un enlace → el archivo sale «../../…» y no calza
+  const { nombresDeFallas } = require(REPORT);
+  const real = tmpReal('tgr-real-');
+  fs.mkdirSync(path.join(real, 'src'));
+  fs.writeFileSync(path.join(real, 'src', 'a.test.js'), '');
+  fs.writeFileSync(path.join(real, 'src', 'b.test.js'), '');
+  const enlace = path.join(tmpReal('tgr-enlace-'), 'repo');
+  fs.symlinkSync(real, enlace, 'dir');
+  const r = nombresDeFallas({ repoRun: enlace, jestJson: { testResults: [
+    null,
+    { name: path.join(real, 'src', 'a.test.js'), status: 'failed', assertionResults: [{ title: 'x', status: 'failed' }] },
+    { name: path.join(real, 'src', 'b.test.js'), status: 'failed', assertionResults: [{ title: 'y', status: 'passed' }] },
+    { name: '/otro/repo/c.test.js', status: 'failed', assertionResults: [] },
+  ] } });
+  assert.deepStrictEqual(r.failed_tests, [
+    { file: 'src/a.test.js', name: 'x' },
+    { file: 'src/b.test.js', name: null, file_failed: true },
+    { file: '/otro/repo/c.test.js', name: null, did_not_run: true },
+  ]);
+});
+
+test('@story-8.329 @ac-6 @ac-8 T13 TestGateReport_GreenByInherited_OnlyWithAllInherited', () => {
+  // 🔴 rojo si: el informe no lee el veredicto del juez de lo heredado, o da verde con algo que frena o sin veredicto
+  const jest = { 'jest.json': JSON.stringify({ numTotalTests: 2, numPassedTests: 1, numFailedTests: 1, numPendingTests: 0, numTodoTests: 0,
+    testResults: [{ name: 'a.test.js', status: 'failed', assertionResults: [{ fullName: 'vieja', status: 'failed' }, { fullName: 'nueva', status: 'passed' }] }] }) };
+  const veredicto = (v) => ({ ...jest, 'inherited-cases.json': JSON.stringify(v) });
+  const base = { ref: 'origin/master', sha: 'abc', fecha: '2026-01-01T00:00:00Z' };
+  // todo heredado y el portón en 0: verde por heredadas
+  let { art } = informeSuelto('jest', veredicto({ exit: 0, base, inherited: [{ key: 'js:a.test.js::vieja', file: 'a.test.js', name: 'vieja' }], blocking: [] }), 0);
+  assert.strictEqual(art.suite_green, true);
+  assert.strictEqual(art.suite_green_by, 'heredadas');
+  assert.deepStrictEqual(art.inherited_cases.inherited.map((c) => c.name), ['vieja']);
+  assert.strictEqual(art.inherited_cases.base.ref, 'origin/master');
+  // queda una del cambio: el portón salió 1, el informe lo dice y no es verde
+  ({ art } = informeSuelto('jest', veredicto({ exit: 1, base, inherited: [], blocking: [{ key: 'js:a.test.js::vieja', name: 'vieja', reason: 'en la base pasa: la rompió el cambio' }] }), 1));
+  assert.strictEqual(art.suite_green, false);
+  assert.notStrictEqual(art.suite_green_by, 'heredadas');
+  assert.strictEqual(art.inherited_cases.blocking.length, 1);
+  // todo heredado pero el mínimo de cobertura del repo no se cumple: no es verde (de la revisión corta)
+  ({ art } = informeSuelto('jest', { ...veredicto({ exit: 0, base, inherited: [{ key: 'js:a.test.js::vieja', file: 'a.test.js', name: 'vieja' }], blocking: [] }),
+    'run.log': 'Jest: "global" coverage threshold for lines (80%) not met: 50%\n' }, 0));
+  assert.strictEqual(art.suite_green, false);
+  assert.notStrictEqual(art.suite_green_by, 'heredadas');
+  // sin veredicto: nada de heredadas
+  ({ art } = informeSuelto('jest', jest, 1));
+  assert.strictEqual(art.suite_green, false);
+  assert.strictEqual(art.inherited_cases, undefined);
 });

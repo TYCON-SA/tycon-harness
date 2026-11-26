@@ -63,7 +63,7 @@ const SECCIONES = Object.freeze([
   // como estaba (Telegram, de cada máquina, no se edita desde la sección de integraciones).
   // si la organización usa una sesión que reenvía el ok de un dev (approvals.relay_session; vale sólo desde el perfil;
   // cuál sesión es, se designa en cada máquina)
-  Object.freeze({ id: 'aprobaciones', titulo: 'Quién reenvía el ok de un dev', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['approvals'], rutas: Object.freeze(['approvals.relay_session', 'approvals.delegated_signing', 'approvals.owner_only', 'approvals.delegated_machines', 'approvals.levels']), idCorto: 'profile', necesita: ['approvals'] }),
+  Object.freeze({ id: 'aprobaciones', titulo: 'Quién reenvía el ok de un dev', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['approvals'], rutas: Object.freeze(['approvals.relay_session', 'approvals.delegated_signing', 'approvals.owner_only', 'approvals.delegated_machines', 'approvals.levels', 'approvals.local_commit']), idCorto: 'profile', necesita: ['approvals'] }),
   // la dirección del sitio que abre el comando de barra org-site en cada máquina (site.url; vale sólo desde el perfil)
   Object.freeze({ id: 'direccionSitio', titulo: 'La dirección del sitio en cada máquina', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['site'], rutas: Object.freeze(['site.url']), idCorto: 'profile', necesita: ['site'] }),
   Object.freeze({ id: 'pruebaAMano', titulo: 'Prueba a mano de cada criterio', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['qa'], rutas: Object.freeze(['qa.manual_check']), idCorto: 'profile', necesita: ['qa'] }),
@@ -77,6 +77,9 @@ const SECCIONES = Object.freeze([
   Object.freeze({ id: 'caminoCorto', titulo: 'Los topes del camino corto', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['short_path'], rutas: Object.freeze(['short_path.coordinator_max_files', 'short_path.max_files']), idCorto: 'profile', necesita: ['short_path'], noSeAplicaSola: true }),
   // cuándo la oficina de /office dice que una sesión que trabaja está callada
   Object.freeze({ id: 'oficina', titulo: 'La oficina de /office', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['office'], rutas: Object.freeze(['office.quiet_minutes']), idCorto: 'profile', necesita: ['office'] }),
+  // lo que la máquina limpia sola y cuándo avisa que el disco se llena (maintenance). Con el orden de siempre: la
+  // variable o la configuración de una máquina pisan al perfil, porque cuánto aguanta depende de la máquina
+  Object.freeze({ id: 'mantenimiento', titulo: 'Lo que la máquina limpia sola', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['maintenance'], rutas: Object.freeze(['maintenance.worktree_idle_hours', 'maintenance.temp_days', 'maintenance.disk_warn_percent']), idCorto: 'profile', necesita: ['maintenance'] }),
   // cómo se pone al día el freno de producción de cada máquina (guard.update): con la contraseña de su persona
   // o solo, con la versión publicada; vale sólo desde el perfil, y cada máquina instala el permiso con su contraseña
   Object.freeze({ id: 'frenoProduccion', titulo: 'Cómo se actualiza el freno de producción', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['guard'], rutas: Object.freeze(['guard.update']), idCorto: 'profile', necesita: ['guard'] }),
@@ -143,6 +146,8 @@ function loadReader(tree, nombre, lectores) {
   if (!fs.existsSync(f)) return null;
   const r = require(f);
   if (nombre === 'check-product-parity.js') return r && typeof r.leerDeclaradas === 'function' ? r : null;
+  // el perfil del equipo valida el buzón de un conector con los conectores de este árbol (el lector no los carga solo)
+  if (nombre === 'operations-config.js') { try { require(path.join(tree, 'scripts', 'lib', 'integrations.js')).giveMailboxConnectors(r); } catch (_) { /* sin integraciones, el lector solo */ } }
   return r && typeof r.parse === 'function' ? r : null;
 }
 
@@ -427,11 +432,23 @@ const SHORT_PATH_SINCE = '2026.11.08.99';
  */
 const PULL_REQUESTS_SINCE = '2026.11.20.99';
 /**
+ * 🔴 La primera versión del arnés cuyo lector conoce `maintenance` en el perfil del equipo (las horas de quietud del
+ * barrido de carpetas de trabajo). Provisoria hasta la etiqueta del merge que la trae, como PULL_REQUESTS_SINCE.
+ */
+const MAINTENANCE_SINCE = '2026.11.24.99';
+/**
  * 🔴 La primera versión del arnés cuyo lector conoce `approvals.signature_list` (la lista de lo que espera a la persona):
  * la etiqueta del merge que la trae, como LEVELS_SINCE. Un lector anterior la leería como una clave desconocida, y una
  * clave rota de `approvals` deja sin ninguna firma delegada.
  */
 const SIGNATURE_LIST_SINCE = '2026.11.02.38';
+/**
+ * 🔴 La primera versión del arnés cuyo lector conoce `approvals.local_commit` (quién firma el commit de una corrida).
+ * Provisoria hasta la etiqueta del merge que la trae, como PULL_REQUESTS_SINCE: una versión que todavía no existe, para
+ * que el sitio frene de más. Un lector anterior la leería como una clave desconocida, y una clave rota de `approvals`
+ * deja sin ninguna firma delegada.
+ */
+const LOCAL_COMMIT_SINCE = '2026.11.22.99';
 /**
  * 🔴 La primera versión del arnés cuyo lector conoce `integrations.timeTracking` (la etiqueta del merge que trajo ese
  * lector). El selector de la herramienta de horas saca la llave vieja `integrations.clockify` del perfil: una máquina
@@ -509,7 +526,7 @@ function capaConMinima(layerText, minima) {
 function pedidasDelPerfil({ doc, actual }) {
   const cambia = (k) => !isObject(actual) || canonico(actual[k]) !== canonico(isObject(doc) ? doc[k] : undefined);
   // las claves del perfil que una versión anterior no sabe leer, con la versión que las lee y su mensaje
-  const pedidas = [['response', RESPONSE_SINCE, 'org.capaSinResponse'], ['approvals', APPROVALS_SINCE, 'org.capaSinApprovals'], ['qa', QA_SINCE, 'org.capaSinQa'], ['guard', GUARD_SINCE, 'org.capaSinGuard'], ['coordination', COORDINATION_SINCE, 'org.capaSinCoordination'], ['switches', SWITCHES_SINCE, 'org.capaSinSwitches'], ['site', SITE_SINCE, 'org.capaSinSite'], ['office', OFFICE_SINCE, 'org.capaSinOffice'], ['short_path', SHORT_PATH_SINCE, 'org.capaSinShortPath'], ['pull_requests', PULL_REQUESTS_SINCE, 'org.capaSinPullRequests']]
+  const pedidas = [['response', RESPONSE_SINCE, 'org.capaSinResponse'], ['approvals', APPROVALS_SINCE, 'org.capaSinApprovals'], ['qa', QA_SINCE, 'org.capaSinQa'], ['guard', GUARD_SINCE, 'org.capaSinGuard'], ['coordination', COORDINATION_SINCE, 'org.capaSinCoordination'], ['switches', SWITCHES_SINCE, 'org.capaSinSwitches'], ['site', SITE_SINCE, 'org.capaSinSite'], ['office', OFFICE_SINCE, 'org.capaSinOffice'], ['short_path', SHORT_PATH_SINCE, 'org.capaSinShortPath'], ['pull_requests', PULL_REQUESTS_SINCE, 'org.capaSinPullRequests'], ['maintenance', MAINTENANCE_SINCE, 'org.capaSinMaintenance']]
     .filter(([k]) => isObject(doc) && doc[k] !== undefined && cambia(k));
   // una clave nueva dentro de una sección que ya se leía: la pide sólo si el pedido la trae
   const firma = isObject(doc) && isObject(doc.approvals) ? doc.approvals.delegated_signing : undefined;
@@ -533,6 +550,9 @@ function pedidasDelPerfil({ doc, actual }) {
   const lista = isObject(doc) && isObject(doc.approvals) ? doc.approvals.signature_list : undefined;
   const listaAntes = isObject(actual) && isObject(actual.approvals) ? actual.approvals.signature_list : undefined;
   if (lista !== undefined && (!isObject(actual) || canonico(lista) !== canonico(listaAntes))) pedidas.push(['approvals.signature_list', SIGNATURE_LIST_SINCE, 'org.capaSinListaDeEspera']);
+  const commitLocal = isObject(doc) && isObject(doc.approvals) ? doc.approvals.local_commit : undefined;
+  const commitLocalAntes = isObject(actual) && isObject(actual.approvals) ? actual.approvals.local_commit : undefined;
+  if (commitLocal !== undefined && (!isObject(actual) || canonico(commitLocal) !== canonico(commitLocalAntes))) pedidas.push(['approvals.local_commit', LOCAL_COMMIT_SINCE, 'org.capaSinCommitLocal']);
   const nombres = isObject(doc) && isObject(doc.coordination) ? doc.coordination.session_names : undefined;
   const nombresAntes = isObject(actual) && isObject(actual.coordination) ? actual.coordination.session_names : undefined;
   if (nombres !== undefined && (!isObject(actual) || canonico(nombres) !== canonico(nombresAntes))) pedidas.push(['coordination.session_names', SESSION_NAMES_SINCE, 'org.capaSinNombresDeSesion']);
@@ -1734,6 +1754,7 @@ ${trabajandoJs}
     interruptores: { t: T('pantalla.interruptoresTitulo'), d: T('pantalla.interruptoresDescripcion'), corto: T('pantalla.interruptoresTitulo') },
     coordinacion: { t: T('pantalla.coordinacionTitulo'), d: T('pantalla.coordinacionDescripcion'), corto: T('pantalla.coordinacionTitulo') },
     oficina: { t: T('pantalla.oficinaTitulo'), d: T('pantalla.oficinaDescripcion'), corto: T('pantalla.oficinaTitulo') },
+    mantenimiento: { t: T('pantalla.mantenimientoTitulo'), d: T('pantalla.mantenimientoDescripcion'), corto: T('pantalla.mantenimientoTitulo') },
     caminoCorto: { t: T('pantalla.caminoCortoTitulo'), d: T('pantalla.caminoCortoDescripcion'), corto: T('pantalla.caminoCortoTitulo') },
     frenoProduccion: { t: T('pantalla.frenoProduccionTitulo'), d: T('pantalla.frenoProduccionDescripcion'), corto: T('pantalla.frenoProduccionTitulo') },
     integraciones: { t: T('pantalla.integraciones'), d: T('pantalla.queServiciosUsaCadaMaquina'), corto: T('pantalla.integraciones') },
@@ -1748,7 +1769,7 @@ ${trabajandoJs}
     aldia: { t: T('pantalla.comoSeActualizaElSitio'), d: T('pantalla.siElSitioSePone'), corto: T('pantalla.actualizacionDelSitio') },
   };
   // las pestañas: [id, nombre, secciones, tablas para mirar]. Se ve una por vez; el resumen de arriba, en todas
-  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'direccionSitio', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas', 'pedidos', 'contexto'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'revisionSemanal', 'revision', 'tecnologia', 'aprobaciones', 'pruebaAMano', 'interruptores', 'coordinacion', 'caminoCorto', 'oficina', 'integraciones', 'hilos', 'estimaciones', 'paseAdversarial', 'revisionDelPlan', 'conQueRevisa'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes', 'frenoProduccion'], ['contenido', 'versiones']]];
+  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'direccionSitio', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas', 'pedidos', 'contexto'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'revisionSemanal', 'revision', 'tecnologia', 'aprobaciones', 'pruebaAMano', 'interruptores', 'coordinacion', 'caminoCorto', 'oficina', 'mantenimiento', 'integraciones', 'hilos', 'estimaciones', 'paseAdversarial', 'revisionDelPlan', 'conQueRevisa'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes', 'frenoProduccion'], ['contenido', 'versiones']]];
   /** La pestaña de un ancla (#pestana-x, #seccion-x o una tabla para mirar); null si no es de ninguna. */
   function pestanaDe(ancla) {
     var id = String(ancla || '').replace(/^#/, '');
@@ -1786,7 +1807,7 @@ ${trabajandoJs}
     work_items: T('pantalla.pedidosDeTrabajo'), type: T('pantalla.pedidosTipo'), fixed_fields: T('pantalla.pedidosCamposFijos'), by_severity: T('pantalla.pedidosPorGravedad'),
     notify: T('pantalla.avisoDiario2'), channel: T('pantalla.palabraCanal'), thresholds: T('pantalla.palabraUmbrales'), direction: T('pantalla.mejorSiEs'), ok_min: T('pantalla.verdeDesde'), ok_max: T('pantalla.verdeHasta'), bad_max: T('pantalla.rojoHasta'), bad_min: T('pantalla.rojoDesde'),
     merge_suites: T('pantalla.pruebasAlMergear2'), rule: T('pantalla.regla'), full_tests_pipeline: T('pantalla.pipelineDeLasPruebasCompletas'), models: T('pantalla.palabraModelos'), mandatory_ceiling: T('pantalla.techoObligatorio'), ceiling: T('pantalla.techo'), reviewer: T('pantalla.revisor'), reviewers_reloop: T('pantalla.revisoresDeLaSegundaVuelta'), adversarial: T('pantalla.paseAdversarial'), helpers: T('pantalla.ayudantes'), session: T('pantalla.sesion'), model: T('pantalla.modelo'), heavy: T('pantalla.pesado'), fable_question: T('pantalla.preguntaAntesDeUsarFable'), low: T('pantalla.liviano'), normal: T('pantalla.normal'), codex_reviewers: T('pantalla.losRevisoresEnCodex'),
-    wait_notice: T('pantalla.avisoDeEspera2'), minutes: T('pantalla.minutos'), owner_minutes: T('pantalla.minutosAlDueno'), peer_owner_minutes: T('pantalla.minutosAlDuenoOtraSesion'), coverage: T('pantalla.coberturaDeLasPruebas2'), min_touched_lines_pct: T('pantalla.porcentajeMinimoDeLasLineas'), review: T('pantalla.vueltasDeRevisores2'), max_rounds: T('pantalla.topeDeVueltas'), context_notice: T('pantalla.avisoDeContexto2'), tokens: T('pantalla.tokens'), deep_review: T('pantalla.paseAdversarial'), weekly_review: T('pantalla.revisionSemanal'), budget_usd: T('pantalla.revisionSemanalTope'), 'weekly_review.max_chars': T('pantalla.revisionSemanalMaterial'), estimates: T('pantalla.estimaciones2'), unit: T('pantalla.unidadDeLasEstimaciones2'), hours_per_day: T('pantalla.horasPorDia2'), hours_per_point: T('pantalla.horasPorPunto2'), blocking_prefixes: T('pantalla.prefijosDeSeguridadODatos'), public: T('pantalla.repoPublico'), profile: T('pantalla.repoDelEquipo'), operations: T('pantalla.repoDeOperaciones'), org: T('pantalla.organizacion'), project: T('pantalla.proyecto'), repo: T('pantalla.repo'), repos: T('pantalla.palabraRepos'), platform: T('pantalla.plataforma'),
+    wait_notice: T('pantalla.avisoDeEspera2'), minutes: T('pantalla.minutos'), owner_minutes: T('pantalla.minutosAlDueno'), peer_owner_minutes: T('pantalla.minutosAlDuenoOtraSesion'), coverage: T('pantalla.coberturaDeLasPruebas2'), min_touched_lines_pct: T('pantalla.porcentajeMinimoDeLasLineas'), review: T('pantalla.vueltasDeRevisores2'), max_rounds: T('pantalla.topeDeVueltas'), context_notice: T('pantalla.avisoDeContexto2'), tokens: T('pantalla.tokens'), deep_review: T('pantalla.paseAdversarial'), weekly_review: T('pantalla.revisionSemanal'), budget_usd: T('pantalla.revisionSemanalTope'), 'weekly_review.max_chars': T('pantalla.revisionSemanalMaterial'), 'weekly_review.enabled': T('pantalla.revisionSemanalCampo'), 'wait_notice.enabled': T('pantalla.esperaEncendido'), estimates: T('pantalla.estimaciones2'), unit: T('pantalla.unidadDeLasEstimaciones2'), hours_per_day: T('pantalla.horasPorDia2'), hours_per_point: T('pantalla.horasPorPunto2'), blocking_prefixes: T('pantalla.prefijosDeSeguridadODatos'), public: T('pantalla.repoPublico'), profile: T('pantalla.repoDelEquipo'), operations: T('pantalla.repoDeOperaciones'), org: T('pantalla.organizacion'), project: T('pantalla.proyecto'), repo: T('pantalla.repo'), repos: T('pantalla.palabraRepos'), platform: T('pantalla.plataforma'),
     // las hojas de «Cómo contesta Claude» y «Cómo se actualizan»: con el nombre de su campo, también en un valor que se pisó
     style: T('pantalla.estilo'), language: T('pantalla.idioma'), max_chars: T('pantalla.largoMaximoDeProsaEn').split(' (')[0], apply: T('pantalla.comoSeAplica'),
     stack: T('pantalla.tecTuTecnologia2'), code_extensions: T('pantalla.tecTerminaciones'), test_runners: T('pantalla.tecHerramientasDePrueba'), rules: T('pantalla.tecReglas'), test_names: T('pantalla.tecEstiloDeNombres2'), screen_test: T('pantalla.tecPantallasConPrueba'), ui_language: T('pantalla.tecIdiomaDeLaApp2'), name: T('pantalla.tecNombre2'), detect: T('pantalla.tecArchivoQueLaDetecta2'), command: T('pantalla.tecComando2'), results: T('pantalla.tecReporte'), format: T('pantalla.tecFormato'), path: T('pantalla.tecRuta'),
@@ -1797,7 +1818,9 @@ ${trabajandoJs}
     if (!ruta) return '';
     // una hoja que se llama igual en dos claves se nombra con su ruta de dos partes (weekly_review.max_chars)
     var partes = String(ruta).split('.');
-    return partes.map(function (p, i) { return /^\d+$/.test(p) ? T('pantalla.fila') + (Number(p) + 1) : (i && PALABRAS[partes[i - 1] + '.' + p]) || PALABRAS[p] || '«' + p + '»'; }).join(' › ');
+    // sólo las claves propias de la tabla: una clave que se llama como un método («constructor») no toma el heredado
+    var de = function (k) { return Object.prototype.hasOwnProperty.call(PALABRAS, k) ? PALABRAS[k] : null; };
+    return partes.map(function (p, i) { return /^\d+$/.test(p) ? T('pantalla.fila') + (Number(p) + 1) : (i && de(partes[i - 1] + '.' + p)) || de(p) || '«' + p + '»'; }).join(' › ');
   }
   // [patrón, frase]: los mensajes que nombran claves del archivo, dichos con las palabras de la pantalla
   var FRASES = [
@@ -2072,12 +2095,30 @@ ${trabajandoJs}
     var buzon = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.dondeDejanSusCorridasLas') }), el('p', { class: 'sub-d', text: T('pantalla.lasContrasenasNoVanAca') }));
     var f = el('div', { class: 'fila' });
     var servicios = (s.extras && s.extras.servicios) || null;
-    var SERVICIO = { 'azure-blob': 'Azure Blob Storage' };
-    [['provider', T('pantalla.servicio2')], ['account', T('pantalla.cuenta2')], ['container', T('pantalla.carpeta2')]].forEach(function (par) {
-      var k = par[0]; var poner = function (v) { site.mailbox = site.mailbox || {}; if (v === '') delete site.mailbox[k]; else site.mailbox[k] = v; };
-      if (k === 'provider' && servicios) f.appendChild(selector(par[1], mb[k], [['', T('pantalla.elegiElServicio')]].concat(servicios.map(function (x) { return [x, SERVICIO[x] || x]; })), poner, 'site.mailbox.' + k, pr));
-      else f.appendChild(campo(par[1], mb[k], function (v) { site.mailbox = site.mailbox || {}; site.mailbox[k] = v; }, 'site.mailbox.' + k, pr));
-    });
+    // el nombre y los campos de cada servicio vienen del lector (los de un conector, de su manifiesto); sin ellos, Azure
+    var SERVICIO = Object.assign({ 'azure-blob': 'Azure Blob Storage' }, (s.extras && s.extras.nombres) || {});
+    var CAMPOS = Object.assign({ 'azure-blob': ['account', 'container'] }, (s.extras && s.extras.campos) || {});
+    var ETIQUETA = { account: T('pantalla.cuenta2'), container: T('pantalla.carpeta2'), bucket: T('pantalla.bucket') };
+    // los campos del servicio guardado; al elegir otro, se dibujan los del nuevo
+    var camposDe = el('div', { class: 'fila' });
+    var dibujarCampos = function (servicio) {
+      while (camposDe.firstChild) camposDe.removeChild(camposDe.firstChild);
+      (CAMPOS[servicio] || CAMPOS['azure-blob']).forEach(function (k) {
+        camposDe.appendChild(campo(ETIQUETA[k] || k, mb[k], function (v) { site.mailbox = site.mailbox || {}; site.mailbox[k] = v; }, 'site.mailbox.' + k, pr));
+      });
+    };
+    var ponerServicio = function (v) {
+      site.mailbox = site.mailbox || {};
+      if (v === '') delete site.mailbox.provider; else site.mailbox.provider = v;
+      // los campos de otro servicio no quedan en el buzón: serían claves que el nuevo no conoce
+      var suyos = CAMPOS[v] || CAMPOS['azure-blob'];
+      Object.keys(CAMPOS).forEach(function (x) { CAMPOS[x].forEach(function (k) { if (suyos.indexOf(k) < 0) delete site.mailbox[k]; }); });
+      dibujarCampos(v);
+    };
+    if (servicios) f.appendChild(selector(T('pantalla.servicio2'), mb.provider, [['', T('pantalla.elegiElServicio')]].concat(servicios.map(function (x) { return [x, SERVICIO[x] || x]; })), ponerServicio, 'site.mailbox.provider', pr));
+    else f.appendChild(campo(T('pantalla.servicio2'), mb.provider, function (v) { site.mailbox = site.mailbox || {}; site.mailbox.provider = v; }, 'site.mailbox.provider', pr));
+    f.appendChild(camposDe);
+    dibujarCampos(mb.provider);
     buzon.appendChild(f);
     avanzado.appendChild(buzon);
     if (s.avisoLista) lista.appendChild(el('div', { class: 'aviso', text: s.avisoLista }));
@@ -2678,6 +2719,14 @@ ${trabajandoJs}
       ayuda.textContent = T('pantalla.quienReenviaElOkAyuda', { nombre: nombre });
     }, 'approvals.relay_session.nombre', pr, { placeholder: T('pantalla.quienReenviaElOkEjemplo') }));
     box.appendChild(ayuda);
+    // quién firma el commit de una corrida: el agente (sin valor, de fábrica) o la coordinadora, con su ok de guardar
+    var commitLocal = (d.approvals || {}).local_commit;
+    box.appendChild(selector(T('pantalla.commitLocal'), commitLocal === 'coordinator' ? 'coordinator' : 'agent', [['agent', T('pantalla.commitLocalAgente')], ['coordinator', T('pantalla.commitLocalCoordinadora')]], function (x) {
+      // el agente es lo de fábrica: elegirlo saca la clave, salvo que el perfil ya lo dijera escrito
+      hoja(d, 'approvals', 'local_commit', x === 'coordinator' ? 'coordinator' : (commitLocal === 'agent' ? 'agent' : ''));
+      render();
+    }, 'approvals.local_commit', pr));
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.commitLocalAyuda') }));
     // quién firma cada cosa (story 8.116): una fila por firma del catálogo, que va a la ventana del dueño (de fábrica),
     // se delega a la sesión que reenvía, o es sólo del dueño. Lo sólo del dueño no se ofrece para delegar (pasa primero
     // por la ventana), ni lo que no se firma desde la pestaña de otra sesión
@@ -3045,6 +3094,17 @@ ${trabajandoJs}
   function editorOficina(s, d, pr) {
     var box = el('div', { class: 'pila' }, campo(T('pantalla.oficinaCallada'), (d.office || {}).quiet_minutes, function (v) { hoja(d, 'office', 'quiet_minutes', v === '' ? '' : numOTexto(v)); }, 'office.quiet_minutes', pr, { inputmode: 'numeric' }));
     box.appendChild(el('p', { class: 'muted', text: T('pantalla.oficinaAyuda') }));
+    return box;
+  }
+  // las tres claves de lo que la máquina limpia sola: un campo por clave; vacío saca la clave y vale el de fábrica. Los
+  // rangos los valida el mismo lector de la máquina al revisar
+  function editorMantenimiento(s, d, pr) {
+    var m = d.maintenance || {};
+    var box = el('div', { class: 'pila' },
+      campo(T('pantalla.mantenimientoHoras'), m.worktree_idle_hours, function (v) { hoja(d, 'maintenance', 'worktree_idle_hours', v === '' ? '' : numOTexto(v)); }, 'maintenance.worktree_idle_hours', pr, { inputmode: 'numeric' }),
+      campo(T('pantalla.mantenimientoDias'), m.temp_days, function (v) { hoja(d, 'maintenance', 'temp_days', v === '' ? '' : numOTexto(v)); }, 'maintenance.temp_days', pr, { inputmode: 'numeric' }),
+      campo(T('pantalla.mantenimientoDisco'), m.disk_warn_percent, function (v) { hoja(d, 'maintenance', 'disk_warn_percent', v === '' ? '' : numOTexto(v)); }, 'maintenance.disk_warn_percent', pr, { inputmode: 'numeric' }));
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.mantenimientoAyuda') }));
     return box;
   }
   function editorAdo(s, d, pr) {
@@ -4012,10 +4072,22 @@ ${trabajandoJs}
   var TEC_ARCHIVOS = { dotnet: '.sln, .csproj', vitest: 'package.json (vitest)', jest: 'package.json (jest)', node: 'package.json (node --test)' };
   // el nombre para personas: el de fábrica, o el «label» que le puso la organización a su receta; si no, el id
   function nombreDe(r) { return TEC_NOMBRES[r.name] || (typeof r.label === 'string' && r.label) || r.name; }
-  // un <repo> de team-repos.json en una línea: «azure · org/proyecto/repo» o «github · org/repo»
+  // un <repo> de team-repos.json en una línea: «azure · org/proyecto/repo», «github · org/repo» o, uno que vive en
+  // grupos, «<plataforma> · grupo/sub/repo (servidor)»
   function repoEnTexto(x) {
     if (!esObjeto(x)) return '?';
-    return (x.platform || '?') + ' · ' + [x.org, x.project, x.repo].filter(function (v) { return v != null && v !== ''; }).join('/');
+    var servidor = x.namespace && x.host ? ' (' + x.host + ')' : '';
+    return (x.platform || '?') + ' · ' + [x.org, x.namespace, x.project, x.repo].filter(function (v) { return v != null && v !== ''; }).join('/') + servidor;
+  }
+  // La clave con que se distinguen los repos: como la identidad del lector, sin mayúsculas y con los %20 de una ruta
+  // copiada de la web leídos como espacio. Un repo que vive en grupos suma su grupo y su servidor: dos con el mismo
+  // nombre en grupos o servidores distintos son dos repos. La de uno sin grupo es la de siempre.
+  function claveDeRepo(x) {
+    if (!x || typeof x !== 'object' || Array.isArray(x)) return '';
+    var sinEscapes = function (v) { try { return decodeURIComponent(String(v || '')); } catch (e) { return String(v || ''); } };
+    var partes = [x.platform, x.org, x.project || '', x.repo];
+    if (x.namespace) partes = partes.concat(['@' + x.namespace, '@' + (x.host || '')]);
+    return partes.map(sinEscapes).join('/').toLowerCase();
   }
   function stackDe(d) { if (!esObjeto(d.stack)) d.stack = {}; return d.stack; }
   function limpiarStack(d) {
@@ -4042,9 +4114,7 @@ ${trabajandoJs}
     // el filtro de cada repo y el de por defecto: se ven y se editan, cada renglón con su «Quitar», y «Agregar un repo»
     // elige de los repos de la organización (los da el servidor); lo demás de la receta viaja intacto en la copia
     var repos = Array.isArray(r.repos) ? r.repos : [];
-    // como la identidad del lector: sin mayúsculas y con los %20 de una ruta copiada de la web leídos como espacio
-    var sinEscapes = function (v) { try { return decodeURIComponent(String(v || '')); } catch (e) { return String(v || ''); } };
-    var clave = function (x) { return esObjeto(x) ? [x.platform, x.org, x.project || '', x.repo].map(sinEscapes).join('/').toLowerCase() : ''; };
+    var clave = claveDeRepo;
     var porRepo = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.tecFiltroPorRepo') }), el('p', { class: 'sub-d', text: T('pantalla.tecFiltroPorRepoAyuda') }),
       campo(T('pantalla.tecFiltroPorDefecto'), r.args_default, function (v) { if (v === '') delete r.args_default; else r.args_default = v; }, 'runner.args_default', []));
     repos.forEach(function (x, i) {
@@ -4171,7 +4241,7 @@ ${trabajandoJs}
       el('p', { class: 'sub-d', text: T('pantalla.tecIdiomaVacio') })));
     return box;
   }
-  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, contexto: editorContexto, revisionSemanal: editorRevisionSemanal, paseAdversarial: editorPaseAdversarial, revisionDelPlan: editorRevisionDelPlan, conQueRevisa: editorConQueRevisa, cobertura: editorCobertura, revision: editorRevision, estimaciones: editorEstimaciones, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, direccionSitio: editorDireccionSitio, pruebaAMano: editorPruebaAMano, interruptores: editorInterruptores, coordinacion: editorCoordinacion, caminoCorto: editorCaminoCorto, oficina: editorOficina, frenoProduccion: editorFrenoProduccion, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: editorCanal, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
+  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, contexto: editorContexto, revisionSemanal: editorRevisionSemanal, paseAdversarial: editorPaseAdversarial, revisionDelPlan: editorRevisionDelPlan, conQueRevisa: editorConQueRevisa, cobertura: editorCobertura, revision: editorRevision, estimaciones: editorEstimaciones, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, direccionSitio: editorDireccionSitio, pruebaAMano: editorPruebaAMano, interruptores: editorInterruptores, coordinacion: editorCoordinacion, caminoCorto: editorCaminoCorto, oficina: editorOficina, mantenimiento: editorMantenimiento, frenoProduccion: editorFrenoProduccion, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: editorCanal, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
 
   // los editores de suites y modelos arman objetos vacíos para tener dónde escribir: no se mandan. Una clave vacía en el
   // archivo pediría al perfil una versión más nueva sin cambiar nada
@@ -4726,7 +4796,7 @@ ${trabajandoJs}
 
 module.exports = {
   extrasDeAprobaciones, nombreDeMaquina,
-  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, CONTEXT_NOTICE_SINCE, DEEP_REVIEW_SINCE, REVIEW_RUNNER_SINCE, PLAN_REVIEW_SINCE, DEEP_REVIEW_MATRIX_SINCE, REVIEW_SEVERITY_SINCE, WEEKLY_REVIEW_SINCE, STORY_INDEX_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, COORDINATION_SINCE, SWITCHES_SINCE, SITE_SINCE, SESSION_NAMES_SINCE, OFFICE_SINCE, SHORT_PATH_SINCE, SIGNATURE_LIST_SINCE, WAIT_NOTICE_ENABLED_SINCE, WAIT_NOTICE_OWNER_SINCE, WAIT_NOTICE_PEER_SINCE, DELEGATED_LIST_SINCE, OWNER_ONLY_SINCE, LEVELS_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, PACK_BLOCKS_SINCE, packBlocksLayer, capaQueSube, clavesQuePidenVersion, pedidasDelPerfil, direccionDelSitio, leerPerfil, estadoDelPerfil, origenDe, nombresDeLaLista, diferenciaDeJson, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  SECCIONES, seccionPorId, loadReader, PLATFORM_SINCE, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, CODEX_REVIEWERS_SINCE, MODEL_PROVIDERS_SINCE, ESTIMATES_SINCE, CONTEXT_NOTICE_SINCE, DEEP_REVIEW_SINCE, REVIEW_RUNNER_SINCE, PLAN_REVIEW_SINCE, DEEP_REVIEW_MATRIX_SINCE, REVIEW_SEVERITY_SINCE, WEEKLY_REVIEW_SINCE, STORY_INDEX_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, GUARD_SINCE, COORDINATION_SINCE, SWITCHES_SINCE, SITE_SINCE, SESSION_NAMES_SINCE, OFFICE_SINCE, SHORT_PATH_SINCE, SIGNATURE_LIST_SINCE, LOCAL_COMMIT_SINCE, WAIT_NOTICE_ENABLED_SINCE, WAIT_NOTICE_OWNER_SINCE, WAIT_NOTICE_PEER_SINCE, DELEGATED_LIST_SINCE, OWNER_ONLY_SINCE, LEVELS_SINCE, TIME_TRACKING_SINCE, NOTIFY_SINCE, timeTrackingLayer, PACK_BLOCKS_SINCE, packBlocksLayer, capaQueSube, clavesQuePidenVersion, pedidasDelPerfil, direccionDelSitio, leerPerfil, estadoDelPerfil, origenDe, nombresDeLaLista, diferenciaDeJson, cambiaHoras, cambiaAvisos, cambiaLaCapa, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
   problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, estimacionesDeHoy, modelosEnNiveles, equivalenciasDe, proveedoresDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS, CLAVES_DEL_REPO, lectorDeClave, reemplazarBloque, revisarClaveDelRepo, idDeRepo, urlDeRepo,

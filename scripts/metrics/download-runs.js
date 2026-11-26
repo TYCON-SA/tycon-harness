@@ -61,6 +61,9 @@ if (require.main === module) { try { require('../lib/node-floor.js').guard(); } 
  *   --workdays: baja también los días de horas y tokens (`<maquina>/jornadas/v<versión>/<día>.json`, la versión más
  *   nueva de cada día) a `<maquina>/jornadas/<día>.json`. Sin la opción se cuentan en `omitidos`, como los instintos. Lo
  *   pide el sitio (`jornadas: true`, por scripts/site/cloud/azure.js) para la pestaña «Horas y tokens».
+ *   --only-office-keys: baja SÓLO las huellas de las oficinas (`<maquina>/office-keys/<huella>.json`); lo demás se cuenta
+ *   en `omitidos`. No poda el espejo ni rehace la unión de carpetas: lo pide el sitio (`soloHuellas: true`) cuando una
+ *   oficina espera su huella, sin esperar la pasada entera.
  *
  *   --merges-to <dir>: baja también los archivos de métricas de cada merge (`<maquina>/merges/<archivo>` y sus
  *   versiones, la más nueva de cada uno) al espejo, y deja en <dir> uno por merge de todas las máquinas: el que trae
@@ -106,7 +109,7 @@ const http = require('http');
 const https = require('https');
 const { spawnSync } = require('child_process');
 const { readEnv, resolveFile, prepareStateWrite } = require('../lib/legacy-names.js');
-const { leerConfig, integracionBuzon, urlBase, huellaDeCorridas, FORMA_MAQUINA, FORMA_CODIGO, FORMA_ARCHIVO, FORMA_REGISTRO, FORMA_INSTINTO, FORMA_JORNADA, FORMA_VERSION, REGISTROS, X_MS_VERSION } = require('./upload-runs.js');
+const { leerConfig, integracionBuzon, proveedorDeLaLlave, urlBase, huellaDeCorridas, FORMA_MAQUINA, FORMA_CODIGO, FORMA_ARCHIVO, FORMA_REGISTRO, FORMA_INSTINTO, FORMA_JORNADA, FORMA_VERSION, REGISTROS, X_MS_VERSION } = require('./upload-runs.js');
 
 // el nombre del archivo de métricas de un merge, el que escribe retro-heartbeat.js
 const FORMA_MERGE = /^metrics-[A-Za-z0-9._-]+\.json$/;
@@ -228,6 +231,12 @@ function pedir(url, cred, timeoutMs) {
   });
 }
 
+/**
+ * Por qué una máquina no baja un buzón de otro proveedor: la bajada desde una máquina (y la noche) es la de Azure, con la
+ * sesión de az; un buzón de un conector lo lee el sitio de la organización.
+ */
+const noSoportado = (proveedor) => `la llave de esta máquina es de un buzón «${proveedor}», que lee el sitio de la organización: la bajada desde una máquina sólo sabe leer Azure Blob Storage (no se pidió nada a la red)`;
+
 /** El token de storage con la sesión de az que ya existe. { token } o { estado, motivo }. Nunca pregunta. */
 function tokenDeAz(tenant) {
   const bin = process.env.TYCON_AZ_BIN || 'az';
@@ -313,6 +322,8 @@ async function informeDeReescrituras(opts = {}) {
     const integ = integracionBuzon(llave);
     if (integ.error) return fin(2, 'config_rota', integ.error);
     if (!integ.prendida) return fin(0, 'apagado', integ.apagada);
+    // la llave de otro proveedor se mira con el buzón prendido y antes que Azure DevOps (que esta máquina no necesita)
+    if (llave === 'mailbox' && proveedorDeLaLlave()) return fin(1, 'no_soportado', noSoportado(proveedorDeLaLlave()));
   }
   const lc = leerConfig(['cuenta', 'contenedor', 'tenant']);
   if (!lc.cfg) return fin(1, lc.estado, lc.motivo);
@@ -684,6 +695,20 @@ async function credencialDelSitio(opts) {
 }
 
 /**
+ * El contenedor de Azure como almacén de la bajada: `{ destino, listar(prefijo), leer(nombre, timeoutMs) }`, con el
+ * listado y el GET de siempre. Un conector de buzón trae el suyo con la misma forma (integrations/<n>/, kind mailbox).
+ * La respuesta de `leer` puede traer `estado` y `motivo` cuando el almacén ya la clasificó (por ejemplo, un token que
+ * venció): la bajada usa ese estado tal cual, antes de mirar el código HTTP.
+ */
+function almacenDeAzure(base, token, cfg) {
+  return {
+    destino: `${cfg.cuenta}/${cfg.contenedor}`,
+    listar: (prefijo = '') => listarTodo(base, token, cfg, prefijo),
+    leer: (nombre, timeoutMs) => pedir(`${base}/${nombre.split('/').map(encodeURIComponent).join('/')}`, token, timeoutMs),
+  };
+}
+
+/**
  * La conversación y el cambio de git de UNA corrida, para el detalle a demanda del sitio: `maquina` y `base` (el nombre
  * del volcado sin `.json`), bajados a `<dir>/<maquina>/`. De cada parte, la versión más nueva que haya en el buzón.
  * `{ codigo, res: { estado, motivo, bajados } }`; sin ninguna de las dos en el buzón, `estado: 'sin_partes'`.
@@ -692,13 +717,16 @@ async function bajarUnaCorrida(opts = {}) {
   const res = { estado: null, motivo: null, bajados: 0 };
   const fin = (codigo, estado, motivo) => { res.estado = estado; res.motivo = motivo || null; return { codigo, res }; };
   if (!opts.dir || !FORMA_MAQUINA.test(String(opts.maquina || '')) || !/^[^/\\]+$/.test(String(opts.base || ''))) return fin(2, 'config_rota', 'falta la carpeta, la máquina o la ejecución');
-  const c = await credencialDelSitio(opts);
-  if (c.falla) return fin(...c.falla);
-  const base = `${String(opts.urlBase || urlBase(c.cfg)).replace(/\/+$/, '')}/${encodeURIComponent(c.cfg.contenedor)}`;
-  const ls = await listarTodo(base, c.tk.token, c.cfg, `${opts.maquina}/`);
+  // `almacen` (un conector de buzón): lista y lee por él, con la credencial que ya tiene; si no, Azure con la del sitio
+  let almacen = opts.almacen || null;
+  if (!almacen) {
+    const c = await credencialDelSitio(opts);
+    if (c.falla) return fin(...c.falla);
+    almacen = almacenDeAzure(`${String(opts.urlBase || urlBase(c.cfg)).replace(/\/+$/, '')}/${encodeURIComponent(c.cfg.contenedor)}`, c.tk.token, c.cfg);
+  }
+  const ls = await almacen.listar(`${opts.maquina}/`);
   if (ls.permiso) return fin(1, 'sin_permiso', ls.motivo);
   if (ls.estado) return fin(1, ls.estado, ls.motivo);
-  const urlDe = (nombre) => `${base}/${nombre.split('/').map(encodeURIComponent).join('/')}`;
   let alguna = false;
   for (const parte of [`${opts.base}.hilo.jsonl.gz`, `${opts.base}.cambio.json.gz`]) {
     const versiones = ls.blobs.map((b) => ({ b, f: formaDelNombre(b.nombre) })).filter(({ f }) => f && f.maquina === opts.maquina && f.archivo === parte);
@@ -707,8 +735,9 @@ async function bajarUnaCorrida(opts = {}) {
     versiones.sort((x, y) => ((x.f.version || '') < (y.f.version || '') ? -1 : 1));
     const { b } = versiones[versiones.length - 1];
     alguna = true;
-    const r = await pedir(urlDe(b.nombre), c.tk.token, Math.max(60000, Math.min(300000, b.largo / 20)));
+    const r = await almacen.leer(b.nombre, Math.max(60000, Math.min(300000, b.largo / 20)));
     if (r.error) return fin(1, 'sin_red', `sin red al bajar ${b.nombre} (${r.error.code || r.error.message})`);
+    if (r.estado) return fin(1, r.estado, r.motivo);
     if (r.status !== 200) return fin(1, 'servicio_fallo', `el buzón contestó ${r.status} al bajar ${b.nombre}`);
     const md5 = crypto.createHash('md5').update(r.cuerpo).digest('base64');
     if (r.cuerpo.length !== b.largo || (b.md5 && b.md5 !== md5)) return fin(1, 'servicio_fallo', `${b.nombre} llegó distinto (${r.cuerpo.length} bytes)`);
@@ -763,7 +792,9 @@ async function bajar(opts = {}) {
   // Con `cuenta` en las opciones, la bajada es la del sitio de la organización — la cuenta, el contenedor, la
   // credencial y la carpeta vienen de quien llama; NO se lee corridas-buzon.json, ni las integraciones de la máquina,
   // ni se usa az (la imagen del sitio no lo trae).
-  const delSitio = typeof opts.cuenta === 'string' && opts.cuenta !== '';
+  // Con `almacen` (un conector de buzón, que ya tiene su credencial) también es la del sitio: lista y lee por él.
+  const almacenDado = opts.almacen && typeof opts.almacen.listar === 'function' && typeof opts.almacen.leer === 'function' ? opts.almacen : null;
+  const delSitio = (typeof opts.cuenta === 'string' && opts.cuenta !== '') || Boolean(almacenDado);
   // `dirBuzon` en las opciones gana sobre la variable: quien llama dice dónde escribir sin tocar el ambiente; sin
   // él, la variable o la carpeta de siempre
   const dirBuzon = path.resolve(delSitio ? opts.dir : (opts.dirBuzon || readEnv('TYCON_MAILBOX_DIR', { where }) || path.join(CASA_PIPELINE, 'corridas-buzon')));
@@ -774,19 +805,24 @@ async function bajar(opts = {}) {
   let tkDelSitio = null;
   if (delSitio) {
     if (!opts.dir) return fin(2, 'config_rota', 'la bajada del sitio necesita cuenta, contenedor y carpeta');
-    // 🔴 la cuenta y el contenedor arman el host adonde va la credencial: sólo la forma de Azure Storage (la misma que
-    //    leerConfig exige en el camino de las máquinas). Antes de pedir nada y antes de crear la carpeta.
-    const c = await credencialDelSitio(opts);
-    if (c.falla) { if (c.aviso) log(c.aviso); return fin(...c.falla); }
-    cfg = c.cfg;
-    tkDelSitio = c.tk;
+    if (almacenDado) cfg = null;
+    else {
+      // 🔴 la cuenta y el contenedor arman el host adonde va la credencial: sólo la forma de Azure Storage (la misma que
+      //    leerConfig exige en el camino de las máquinas). Antes de pedir nada y antes de crear la carpeta.
+      const c = await credencialDelSitio(opts);
+      if (c.falla) { if (c.aviso) log(c.aviso); return fin(...c.falla); }
+      cfg = c.cfg;
+      tkDelSitio = c.tk;
+    }
   } else {
     // 0 · las integraciones: el buzón apagado → exit 0 y una línea; y bajar necesita la sesión de az,
     //     así que Azure DevOps apagada → exit 0 y una línea. Configuración rota → exit 2 con archivo, clave y motivo.
+    //     Una llave de otro proveedor se mira con el buzón prendido y antes que Azure DevOps: no es de esta bajada.
     for (const llave of ['mailbox', 'ado']) {
       const integ = integracionBuzon(llave);
       if (integ.error) { log(integ.error); return fin(2, 'config_rota', integ.error); }
       if (!integ.prendida) { log(integ.apagada); return fin(0, 'apagado', integ.apagada); }
+      if (llave === 'mailbox' && proveedorDeLaLlave()) return fin(1, 'no_soportado', noSoportado(proveedorDeLaLlave()));
     }
     const lc = leerConfig(['cuenta', 'contenedor', 'tenant']);
     if (!lc.cfg) return fin(1, lc.estado, lc.motivo);
@@ -802,25 +838,30 @@ async function bajar(opts = {}) {
 
   // La credencial: la sesión de az (la máquina de quien tiene el rol) o, para el sitio, la que pasa quien llama —una SAS
   // de sólo lectura, o la identidad administrada de la plataforma (scripts/site/cloud/azure.js)—.
-  const tk = delSitio ? tkDelSitio : tokenDeAz(cfg.tenant.trim());
-  if (!tk.token) return sinPermiso(tk.estado, tk.motivo);
-
-  const base = `${String(delSitio && opts.urlBase ? opts.urlBase : urlBase(cfg)).replace(/\/+$/, '')}/${encodeURIComponent(cfg.contenedor)}`;
+  let almacen = almacenDado;
+  if (!almacen) {
+    const tk = delSitio ? tkDelSitio : tokenDeAz(cfg.tenant.trim());
+    if (!tk.token) return sinPermiso(tk.estado, tk.motivo);
+    almacen = almacenDeAzure(`${String(delSitio && opts.urlBase ? opts.urlBase : urlBase(cfg)).replace(/\/+$/, '')}/${encodeURIComponent(cfg.contenedor)}`, tk.token, cfg);
+  }
   const inicio = Date.now();
   const tope = Number.isFinite(opts.budgetMs) ? opts.budgetMs : 120000;
 
   // 1 · el listado entero (paginado)
-  const ls = await listarTodo(base, tk.token, cfg);
+  const ls = await almacen.listar('');
   if (ls.permiso) return sinPermiso('sin_permiso', ls.motivo);
   if (ls.estado) return fin(1, ls.estado, ls.motivo);
   const listado = ls.blobs;
   res.blobs = listado.length;
-  espejoParaUniones = dirBuzon;
+  // `soloHuellas` (el sitio, con una oficina esperando su huella): baja sólo los archivos `office-keys/`. No toca nada
+  // más del espejo: ni lo poda ni rehace la unión de carpetas, que son de la pasada entera
+  const soloHuellas = opts.soloHuellas === true;
+  if (!soloHuellas) espejoParaUniones = dirBuzon;
   // con el listado entero en la mano, el espejo borra las corridas que ya no están en el buzón (antes de bajar: el lugar
   // que libera es el que usa la pasada)
-  if (opts.podar === true) res.podados = podarEspejo(dirBuzon, listado, log);
+  if (opts.podar === true && !soloHuellas) res.podados = podarEspejo(dirBuzon, listado, log);
 
-  let indice = { version: 1, destino: `${cfg.cuenta}/${cfg.contenedor}`, blobs: {} };
+  let indice = { version: 1, destino: almacen.destino, blobs: {} };
   try {
     const i = JSON.parse(fs.readFileSync(resolveFile(rutaIndice, { where }), 'utf8'));
     if (i && i.destino === indice.destino && i.blobs && typeof i.blobs === 'object') indice = i;
@@ -851,6 +892,7 @@ async function bajar(opts = {}) {
   for (const b of listado) {
     const forma = formaDelNombre(b.nombre);
     if (!forma || !Number.isFinite(b.largo)) { res.ignorados += 1; if (res.ignorados_nombres.length < 20) res.ignorados_nombres.push(nombreMostrable(b.nombre)); continue; }
+    if (soloHuellas && tipoDelBlob(forma) !== 'huella') { res.omitidos += 1; continue; }
     // Sin hilos ni se mira el disco — la conversación no se baja.
     // `--no-threads` es «bajá lo que la página necesita»: el hilo y el cambio de git traen código de todos los
     // repos y el nocturno del tablero no los usa. De TODAS sus versiones.
@@ -891,7 +933,6 @@ async function bajar(opts = {}) {
     elegidos.push(lista[lista.length - 1]);
     res.versiones_viejas += lista.length - 1;
   }
-  const urlDe = (nombre) => `${base}/${nombre.split('/').map(encodeURIComponent).join('/')}`;
   // la cobertura que se leyó para decidir si un juego está completo no se vuelve a pedir al bajarlo
   const coberturasLeidas = new Map();
   const juegoCompleto = async (maquina, juego) => {
@@ -904,8 +945,9 @@ async function bajar(opts = {}) {
       if (cob.b.md5 && crypto.createHash('md5').update(cuerpo).digest('base64') === cob.b.md5) texto = cuerpo;
     } catch (_) { /* no está en el espejo: se pide */ }
     if (texto === null) {
-      const r = await pedir(urlDe(cob.b.nombre), tk.token, 60000);
+      const r = await almacen.leer(cob.b.nombre, 60000);
       if (r.error) return { estado: 'sin_red', motivo: `sin red a mitad de la bajada (${r.error.code || r.error.message}) al leer ${cob.b.nombre}` };
+      if (r.estado) return { estado: r.estado, motivo: r.motivo };
       if (r.status === 401 || r.status === 403) return { estado: 'sin_permiso_a_mitad', motivo: `el buzón dejó listar pero no leer ${cob.b.nombre} (${r.status})` };
       // 🔴 Un error del servicio NO es «el juego está incompleto»: tomar en silencio la versión anterior dejaría el espejo
       //    con datos viejos y la pasada diciendo «leída entera».
@@ -959,8 +1001,9 @@ async function bajar(opts = {}) {
   }
   const resumidas = new Map();
   // las huellas de cada resumen (`hilo_md5`, `cambio_md5`) quedan en el índice: con `confiarIndice` no se vuelve a abrir
-  // el resumen para leerlas. Las de corridas que el buzón ya no trae salen
-  for (const k of Object.keys(indice.resumenes)) if (!partesDe.has(k)) { delete indice.resumenes[k]; indiceSucio = true; }
+  // el resumen para leerlas. Las de corridas que el buzón ya no trae salen; la bajada sólo de huellas no mira las corridas
+  // y no las toca
+  if (!soloHuellas) for (const k of Object.keys(indice.resumenes)) if (!partesDe.has(k)) { delete indice.resumenes[k]; indiceSucio = true; }
   const huellasDelResumen = (k) => {
     const anotadas = indice.resumenes[k];
     if (confiar && isObject(anotadas)) return anotadas;
@@ -1057,9 +1100,10 @@ async function bajar(opts = {}) {
       return;
     }
     // El blob se pide por su nombre en el buzón (con su versión, si la tiene); se escribe en la ruta sin versión
-    const r = coberturasLeidas.get(p.nombre) || await pedir(urlDe(p.nombre), tk.token, Math.max(60000, Math.min(300000, p.largo / 20)));
+    const r = coberturasLeidas.get(p.nombre) || await almacen.leer(p.nombre, Math.max(60000, Math.min(300000, p.largo / 20)));
     if (fatal) return;
     if (r.error) { fatal = [1, 'sin_red', `sin red a mitad de la bajada (${r.error.code || r.error.message}) en ${p.nombre}${res.bajados ? ` — ${res.bajados} sí bajaron` : ''}`]; return; }
+    if (r.estado) { fatal = [1, r.estado, `${r.motivo}${res.bajados ? ` — ${res.bajados} sí bajaron` : ''}`]; return; }
     if (r.status === 401 || r.status === 403) { fatal = [1, 'sin_permiso_a_mitad', `el buzón dejó listar pero no leer ${p.nombre} (${r.status})${res.bajados ? ` — ${res.bajados} sí bajaron` : ''}`]; return; }
     if (r.status !== 200) { malos.push(`${p.nombre} (${r.status})`); falloRegistro(p); return; }
     const md5 = crypto.createHash('md5').update(r.cuerpo).digest('base64');
@@ -1159,6 +1203,7 @@ if (require.main === module) {
     hilosDesde: args.includes('--threads-since') ? (valor('--threads-since') || '') : undefined,
     instintos: args.includes('--instincts'),
     jornadas: args.includes('--workdays'),
+    soloHuellas: args.includes('--only-office-keys'),
     // como `--threads-since`: sin valor, o con otra opción detrás, llega vacío y `bajar()` lo rechaza (si no, los
     // merges irían a `ignorados` con la bajada completa, sin que nadie se entere)
     mergesA: args.includes('--merges-to') ? (valor('--merges-to') && !valor('--merges-to').startsWith('--') ? path.resolve(valor('--merges-to')) : '') : undefined,

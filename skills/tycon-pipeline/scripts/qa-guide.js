@@ -355,7 +355,7 @@ function estadoDelArnes(pa) {
     const medido = m.medidoTexto ? `medido ${m.medidoTexto}` : 'sin medición';
     if (v === 'FUERA-DE-COTA') return { tier: 'pend', badge: `El arnés lo midió y quedó fuera de la cota: ${medido}; la cota es ${m.cota}`, como: null };
     if (v === 'SIN-MEDICION') return { tier: 'pend', badge: `El arnés lo corrió pero falta la medida: ${m.motivo || 'sin medición'}`, como: null };
-    if (v === 'NOT-VERIFIABLE' || v === 'WAIVED-USER') {
+    if (v === 'NOT-VERIFIABLE' || v === 'WAIVED-USER' || v === 'COVERED-NIGHTLY') {
       return { tier: 'wv', badge: `Se firmó sin medirlo dentro de la cota (${medido}${m.cota ? `; la cota es ${m.cota}` : ''})`, como: null };
     }
   }
@@ -368,7 +368,7 @@ function estadoDelArnes(pa) {
     const e2e = pa.fuentes && Array.isArray(pa.fuentes.e2e) && pa.fuentes.e2e.length > 0;
     return { tier: 'run', badge: '✓ el arnés ya lo probó', como: `Lo probó corriendo la app${e2e ? ', con una prueba de punta a punta' : ''}. Probarlo a mano es un segundo control.` };
   }
-  if (v === 'NOT-VERIFIABLE' || v === 'WAIVED-USER') return { tier: 'wv', badge: 'La app no lo muestra: lo cubre una prueba del código', como: null };
+  if (v === 'NOT-VERIFIABLE' || v === 'WAIVED-USER' || v === 'COVERED-NIGHTLY') return { tier: 'wv', badge: 'La app no lo muestra: lo cubre una prueba del código', como: null };
   return { tier: 'pend', badge: 'El arnés no lo probó: probalo a mano', como: null };
 }
 
@@ -580,18 +580,36 @@ function isUiStory(content, fm, repoRoot) {
   return require(path.join(__dirname, 'lib', 'ui-signal.js')).touchesUiParts(fm, content, repoRoot);
 }
 
-// Dónde viven la guía del tester, las revisiones de legibilidad y la maqueta de una story, y con qué clave.
-// La maqueta la ubica esta MISMA función, para que su nombre y el que busca la revisión no puedan discrepar.
-// La guía se nombra con la CLAVE de la story: con un número que se repite en el repo, dos stories que
-// comparten la carpeta qa/ escribirían y leerían el mismo `<id>-pasos.md`, y el chequeo de una daría por buena la guía de la
-// otra. Con número único la clave es el número: el nombre de siempre. Si la matriz no computa, tira: no hay clave.
+// Dónde viven la guía del tester, las revisiones de legibilidad y la maqueta de una story, y con qué clave, sin calcular la
+// matriz. La guía y la maqueta se ubican con esta MISMA función, para que su nombre y el que busca la revisión no puedan
+// discrepar. La guía se nombra con la CLAVE de la story: con un número que se repite en el repo, dos stories que comparten
+// la carpeta qa/ escribirían y leerían el mismo `<id>-pasos.md`, y el chequeo de una daría por buena la guía de la otra.
+// Con número único la clave es el número: el nombre de siempre. Una story exenta se nombra con su número, como en la
+// matriz. Si la clave no se puede calcular, tira. La matriz entera no hace falta para esto, y tarda: lee el registro de los
+// portones, recorre las historias del repo y llama a git; en una máquina con mucha historia pasaba de los dos minutos.
+function qaPlace(storyPath) {
+  const abs = path.resolve(storyPath);
+  const ek = require(path.join(__dirname, 'lib', 'evidence-key.js'));
+  let content;
+  try { content = fs.readFileSync(abs, 'utf8'); } catch (e) { throw new Error(`no pude leer la story (${e.code || e.message})`); }
+  const fm = (content.match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || '';
+  const sid = ek.storyIdFrom(fm, abs);
+  let qk = sid;
+  if (!/^dod_runtime_exempt:\s*true\b/m.test(fm)) {
+    try { qk = ek.evidenceKey(abs, { id: sid }).key || sid; } catch (e) {
+      throw new Error(`no pude calcular la clave de la evidencia de la story: ${e.message}`);
+    }
+  }
+  const qaDir = require(path.join(__dirname, 'lib', 'qa-dir.js')).qaDirFor(abs, [qk, sid]);
+  return { qaDir, qk, sid };
+}
+
+// El lugar de `qaPlace` más la matriz de la story, que la guía del tester necesita. Si la matriz no computa, tira.
 function qaLocation(storyPath) {
   const abs = path.resolve(storyPath);
   const matrix = require(path.join(__dirname, 'runtime-matrix.js')).compute({ storyPath: abs });
   if (matrix.structuralError) throw new Error(`la matriz no computa (${matrix.structuralError})`);
-  const sid = matrix.sid;
-  const qk = matrix.key || sid;
-  const qaDir = require(path.join(__dirname, 'lib', 'qa-dir.js')).qaDirFor(abs, [qk, sid]);
+  const { qaDir, qk, sid } = qaPlace(abs);
   return { qaDir, qk, sid, repoRoot: matrix.repoRoot, matrix };
 }
 
@@ -786,7 +804,7 @@ function uiReadabilityCheck({ content, fm, qaDir, qk, repoRoot, storyPath }) {
 // El dueño aprueba una maqueta con el plan (mockup.js) y queda su
 // huella; acá se exige que (9) la maqueta aprobada esté intacta, y (10) lo construido tenga sus textos. Sin aprobación
 // anotada (stories sin aprobación, o el chequeo corrido fuera del pipeline) no se compara y se dice; con
-// `--mockup-sha` (lo pasa «Preparar el commit» desde el marcador) borrar el archivo de aprobación no saltea la comparación.
+// `--mockup-sha` (lo pasa «Preparar el pull request» desde el marcador) borrar el archivo de aprobación no saltea la comparación.
 function mockupLayers({ qaDir, qk, mockupSha, screens }) {
   const mk = require(path.join(__dirname, 'mockup.js'));
   const problems = []; const notes = [];
@@ -858,7 +876,9 @@ function mockupLayers({ qaDir, qk, mockupSha, screens }) {
 }
 
 // ── Capa 12 de la PANTALLA ──────────────────────────────────────────────────────────────────────────────
-// Una pantalla que la maqueta aprobada marca como capa (`presentation: "layer"`) se abre ENCIMA de la suya. Construida en
+// Una pantalla que la maqueta aprobada marca como capa (`presentation: "layer"`) se abre ENCIMA de la suya: una ventana,
+// un menú, una lista desplegable o un popover. Los textos de la ventana van en una misma lectura; cada otro caso de la
+// ventana (una variante: un error, un vacío) sale de a uno, y alcanza con que alguna lectura lo muestre. Construida en
 // la página pasa la capa 10, porque los textos están, y se ve distinta de lo aprobado. La prueba es la línea
 // `layer-check` de lib/layer-probe.js en la salida de un humo de smoke-run.sh, la misma evidencia que cuenta en la matriz:
 // con su espejo, salida sin cambiar y exit 0. Sin maqueta aprobada e intacta no se mira acá: la capa 9 ya lo dice.
@@ -885,12 +905,16 @@ function layerEvidence({ qaDir, qk, evidenceDirs, key }) {
     const mias = lecturas.filter((l) => norm(l.screen) === norm(c.name));
     const encima = mias.filter((l) => l.dialog);
     if (!mias.length) {
-      problems.push(`(12) la maqueta marca «${c.name}» como capa sobre «${c.over}» y ninguna prueba en vivo muestra que se abra encima. Con navegador: un humo que toque «${c.trigger}» con probeLayer(page, { screen: '${c.name}', trigger: '${c.trigger}', texts }) de ${lpRel} y escriba su línea layer-check. Sin navegador (sin Playwright, o si el humo no puede tocar el botón): la prueba de componente (jsdom o testing-library) toca «${c.trigger}» y escribe la misma línea con probeDocument(document, …). Las dos van con smoke-run.sh <evidence-dir> <story> --acs <N> --pass-if 'la capa se abre encima' -- <comando>.`);
+      problems.push(`(12) la maqueta marca «${c.name}» como capa sobre «${c.over}» y ninguna prueba en vivo muestra que se abra encima. Con navegador: un humo que toque «${c.trigger}» con probeLayer(page, { screen: '${c.name}', trigger: '${c.trigger}', texts }) de ${lpRel} y escriba su línea layer-check. Sin navegador (sin Playwright, o si el humo no puede tocar el botón): la prueba de componente (jsdom o testing-library) toca «${c.trigger}» y escribe la misma línea con probeDocument(document, …); un menú o una lista desplegable, con antes: antesDe(document) tomado antes del click. Las dos van con smoke-run.sh <evidence-dir> <story> --acs <N> --pass-if 'la capa se abre encima' -- <comando>.`);
     } else if (!encima.length) {
-      problems.push(`(12) «${c.name}» se abrió en la página, no encima de «${c.over}»: la maqueta aprobada la marca como capa (una ventana con role="dialog" o aria-modal="true"). Construila como capa; sólo una story que diga «en la página» o «no modal» la contradice, y entonces se cambia la maqueta y se aprueba de nuevo.`);
+      problems.push(`(12) «${c.name}» se abrió en la página, no encima de «${c.over}»: la maqueta aprobada la marca como capa (una ventana con role="dialog" o aria-modal="true", un menú, una lista desplegable o un popover). Construila como capa; sólo una story que diga «en la página» o «no modal» la contradice, y entonces se cambia la maqueta y se aprueba de nuevo.`);
     } else {
       const mejor = encima.map((l) => ({ l, faltan: c.texts.filter((t) => !l.texts.some((x) => norm(x) === norm(t))) })).sort((a, b) => a.faltan.length - b.faltan.length)[0];
       if (mejor.faltan.length) problems.push(`(12) la capa «${c.name}» se abrió encima, pero sin ${mejor.faltan.map((t) => `«${t}»`).join(', ')} adentro: lo que la maqueta pone en la ventana va dentro de la ventana.`);
+      for (const v of c.variants || []) {
+        if (encima.some((l) => v.texts.every((t) => l.texts.some((x) => norm(x) === norm(t))))) continue;
+        problems.push(`(12) la capa «${c.name}» se abrió encima, pero ninguna prueba muestra adentro el caso «${v.when}» (${v.texts.map((t) => `«${t}»`).join(', ')}): los casos salen de a uno, y cada caso puede ir en su propia prueba, que lo provoque y escriba su línea layer-check.`);
+      }
     }
   }
   return { problems };
@@ -1129,7 +1153,7 @@ function main() {
     const acTextTech = pasos.desc ? a.text : null;
     const cmds = (smokeByAc[a.n] || []).filter(Boolean);
     let tierNote = null;
-    if (pa.verdict === 'NOT-VERIFIABLE' || pa.verdict === 'WAIVED-USER') {
+    if (pa.verdict === 'NOT-VERIFIABLE' || pa.verdict === 'WAIVED-USER' || pa.verdict === 'COVERED-NIGHTLY') {
       tierNote = `No se puede verificar corriendo la app: ${pa.declReason || '(razón no declarada)'}. ` +
         `Cubierto por el test **${pa.coveredBy || (pa.code || []).join(', ') || 'de código'}** — el tester puede revisar que ese test exista y pase, o inspeccionar la base/el esquema directamente.`;
     }
@@ -1228,7 +1252,7 @@ function main() {
   process.exit(0);
 }
 
-module.exports = { estadoDelArnes, contarCriterios, cuandoEnLlano, parseAcsWithText, parseTestsFull, parsePasos, tienePasos, parseDefaultRole, resolveRoles, parsePasosSequence, detectJargon, JARGON_ALLOW, qaGuideTerms, isUiStory, renderHtml, qaLocation, parseOpenApp, teamLines, mockupLayers };
+module.exports = { estadoDelArnes, contarCriterios, cuandoEnLlano, parseAcsWithText, parseTestsFull, parsePasos, tienePasos, parseDefaultRole, resolveRoles, parsePasosSequence, detectJargon, JARGON_ALLOW, qaGuideTerms, isUiStory, renderHtml, qaLocation, qaPlace, parseOpenApp, teamLines, mockupLayers };
 if (require.main === module) {
   // La opción vieja sigue andando hasta el retiro
   require('./lib/legacy-names.js').aliasArgv('skills/tycon-pipeline/scripts/qa-guide.js');

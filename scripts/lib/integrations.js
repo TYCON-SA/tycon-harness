@@ -29,8 +29,11 @@ const ENV_RE = /^TYCON_[A-Z0-9_]+$/;
 const PROFILE_TYPES = Object.freeze(['texto', 'url', 'canales', 'puerto']);
 const KIND_RE = /^[a-z][A-Za-z0-9]*$/;
 // los tipos que el núcleo busca por nombre; `toggle` es el de prender y apagar: está o no está, según su llave;
-// `platform`, un conector de plataforma (scripts/lib/platform/platform.js)
-const KINDS = Object.freeze(['timeTracking', 'notify', 'toggle', 'platform']);
+// `platform`, un conector de plataforma (scripts/lib/platform/platform.js); `mailbox`, el conector de un servicio de
+// almacenamiento para el buzón de ejecuciones (la subida, scripts/metrics/upload-runs.js, y el sitio, scripts/site/sources.js)
+const KINDS = Object.freeze(['timeTracking', 'notify', 'toggle', 'platform', 'mailbox']);
+// el nombre de un proveedor de buzón, el valor de `site.mailbox.provider` y de `provider` en la llave
+const PROVIDER_RE = /^[a-z][a-z0-9-]*$/;
 // las operaciones del contrato de la capa, para validar un conector; se cargan recién ahí: este lector también guarda
 // y lee los secretos, y un árbol al que le falte scripts/lib/platform/ no puede quedarse sin ellos
 function contractOperations() {
@@ -93,7 +96,83 @@ function installProblems(m, h) {
   return effectProblems({ effects: [entry] }).map((p) => p.replace(/^[^:]+:@int:[^:]+: /, ''));
 }
 
-/** Los motivos por los que un manifiesto no vale (vacío si vale). */
+// Una opción de un comando crudo, como la declara un conector: `{ name, separateValue }`. El nombre es corto (`-d`) o
+// largo (`--draft`); `separateValue` dice si el programa le lee el valor separado (`--draft false`) o sólo junto
+// (`--draft=false`, y entonces `--draft false` es la opción sola y otra palabra).
+const OPTION_NAME = /^(-[A-Za-z0-9]|--[A-Za-z0-9][A-Za-z0-9-]*)$/;
+function optionProblems(opts, who) {
+  const out = [];
+  for (const o of opts) {
+    const name = isObject(o) ? o.name : o;
+    if (!isObject(o) || typeof o.name !== 'string' || !OPTION_NAME.test(o.name)) out.push(`${who}: la opción «${String(name)}» se escribe corta (-x) o larga (--draft)`);
+    else if (typeof o.separateValue !== 'boolean') out.push(`${who}: «${o.name}»: «separateValue» es true o false`);
+    else if (o.values !== undefined && !(Array.isArray(o.values) && o.values.length && o.values.every((v) => typeof v === 'string' && v.trim()))) {
+      out.push(`${who}: «${o.name}»: «values» es una lista de valores escritos`);
+    }
+  }
+  return out;
+}
+
+/**
+ * Los motivos por los que los campos del borrador de un conector no valen. Los lee el freno de guardar:
+ *   · `draftOptions`: por cada comando que crea un pedido (uno de `changeRequestCommands`), las opciones que lo hacen
+ *     borrador, si el programa acepta una opción larga acortada (`abbreviations`) y con qué letra empieza una palabra
+ *     que el programa cambia por lo que trae un archivo antes de leer sus opciones (`argumentFiles`, por ejemplo `@`);
+ *   · `readyCommands`: los comandos que pasan un borrador a listo. Cada uno lleva la opción que tiene que aparecer en
+ *     falso para marcarlo listo (`when`), o la que lo descarta (`unless`); sin ninguna de las dos, siempre lo marca.
+ * Un campo mal escrito deja el manifiesto roto: el freno no puede adivinar qué es un borrador.
+ */
+function draftFieldProblems(m) {
+  const out = [];
+  const palabras = (c) => String(c).trim().split(/\s+/).filter(Boolean).join(' ');
+  const pedidos = Array.isArray(m.changeRequestCommands) ? m.changeRequestCommands.map(palabras) : [];
+  const abrevia = (x, who) => [
+    ...(x.abbreviations !== undefined && typeof x.abbreviations !== 'boolean' ? [`${who}: «abbreviations» es true o false`] : []),
+    ...(x.argumentFiles !== undefined && !(typeof x.argumentFiles === 'string' && /^[^\sA-Za-z0-9-]$/.test(x.argumentFiles)) ? [`${who}: «argumentFiles» es un solo signo (por ejemplo «@»)`] : []),
+  ];
+  if (m.draftOptions !== undefined) {
+    if (!Array.isArray(m.draftOptions)) out.push('«draftOptions» es una lista: por cada comando que crea un pedido, las opciones que lo hacen borrador');
+    else {
+      const vistos = new Set();
+      for (const d of m.draftOptions) {
+        if (!isObject(d) || typeof d.command !== 'string' || !d.command.trim()) { out.push('«draftOptions»: cada entrada lleva su «command»'); continue; }
+        const c = palabras(d.command);
+        const who = `«draftOptions»: «${c}»`;
+        if (vistos.has(c)) out.push(`${who} está dos veces`);
+        vistos.add(c);
+        if (!pedidos.includes(c)) out.push(`${who} no está en «changeRequestCommands»: el borrador es de un comando que crea un pedido`);
+        if (!Array.isArray(d.options) || !d.options.length) out.push(`${who} lleva una lista de opciones («options»)`);
+        else out.push(...optionProblems(d.options, who));
+        out.push(...abrevia(d, who));
+      }
+    }
+  }
+  if (m.readyCommands !== undefined) {
+    if (!Array.isArray(m.readyCommands)) out.push('«readyCommands» es una lista: los comandos que pasan un borrador a listo');
+    else {
+      const vistos = new Set();
+      for (const r of m.readyCommands) {
+        const c = isObject(r) && typeof r.command === 'string' ? palabras(r.command) : '';
+        if (c.split(' ').length < 2) { out.push('«readyCommands»: un comando con su programa y su verbo («command»)'); continue; }
+        const who = `«readyCommands»: «${c}»`;
+        if (vistos.has(c)) out.push(`${who} está dos veces`);
+        vistos.add(c);
+        if (pedidos.includes(c)) out.push(`${who} crea un pedido: va en «changeRequestCommands», no acá`);
+        if (r.when !== undefined && r.unless !== undefined) out.push(`${who} lleva «when» o «unless», no los dos`);
+        else {
+          for (const k of ['when', 'unless']) {
+            if (r[k] === undefined) continue;
+            if (!Array.isArray(r[k]) || !r[k].length) out.push(`${who}: «${k}» es una lista de opciones`);
+            else out.push(...optionProblems(r[k], `${who}: «${k}»`));
+          }
+        }
+        out.push(...abrevia(r, who));
+      }
+    }
+  }
+  return out;
+}
+
 /**
  * La forma del repo de un conector de plataforma (`repoShape`): sus claves en orden, la última el nombre del repo; la
  * expresión (`name`, con sus `flags`) de qué nombre vale; y `nameHint`, lo que vale dicho en palabras. La lee
@@ -112,6 +191,7 @@ function repoShapeProblem(s) {
   return null;
 }
 
+/** Los motivos por los que un manifiesto no vale (vacío si vale). */
 function problemsOf(m, folder) {
   const out = [];
   if (!isObject(m)) return ['no es un objeto JSON'];
@@ -182,11 +262,37 @@ function problemsOf(m, folder) {
     // la forma la pide team-repos.js a los conectores de las plataformas que admite; si está, tiene que valer
     const forma = m.repoShape === undefined ? null : repoShapeProblem(m.repoShape);
     if (forma) out.push(forma);
+    // los comandos crudos que crean o juntan un pedido: los mira el freno de guardar, que los pasa por la ventana de la
+    // persona. Cada uno es uno de `rawCommands`: una sola lista de los comandos de la plataforma
+    if (m.changeRequestCommands !== undefined) {
+      const crudos = Array.isArray(m.rawCommands) ? m.rawCommands.map((c) => String(c).trim()) : [];
+      if (!(Array.isArray(m.changeRequestCommands) && m.changeRequestCommands.every((c) => typeof c === 'string' && c.trim()))) out.push('«changeRequestCommands» es una lista de textos');
+      else for (const c of m.changeRequestCommands) if (!crudos.includes(c.trim())) out.push(`«changeRequestCommands»: «${c}» no está en «rawCommands»`);
+    }
+    out.push(...draftFieldProblems(m));
+    // la API de pedidos de la plataforma (`changeRequestApi`) y los cambios que prenden el auto-completar
+    // (`changeRequestAutoComplete`): también los mira el freno de guardar
+    if (m.changeRequestApi !== undefined) out.push(...problemasDeLaApi(m.changeRequestApi));
+    if (m.changeRequestAutoComplete !== undefined) {
+      const ok = Array.isArray(m.changeRequestAutoComplete) && m.changeRequestAutoComplete.every((c) => isObject(c)
+        && typeof c.command === 'string' && c.command.trim().split(/\s+/).length >= 2 && typeof c.option === 'string' && /^--[a-z][a-z0-9-]*$/.test(c.option));
+      if (!ok) out.push('«changeRequestAutoComplete» es una lista de { command: "<programa> <palabras>", option: "--<opción>" }');
+    }
+  } else {
+    for (const k of ['changeRequestCommands', 'changeRequestApi', 'changeRequestAutoComplete', 'draftOptions', 'readyCommands']) if (m[k] !== undefined) out.push(`«${k}» es sólo de un conector de plataforma (kind platform)`);
   }
+  if (m.kind === 'mailbox') {
+    // un conector de buzón: el guion que lo atiende y el proveedor que lee (`site.mailbox.provider` y la llave)
+    if (m.connector === undefined) out.push('falta «connector»');
+    else if (!(inside(m.connector) && /\.js$/.test(m.connector))) out.push('«connector» es un .js dentro de la carpeta');
+    if (typeof m.provider !== 'string' || !PROVIDER_RE.test(m.provider)) out.push('«provider» es el nombre del proveedor del buzón (minúsculas, números y guiones)');
+    else if (m.provider === 'azure-blob') out.push('«provider»: azure-blob lo atiende el núcleo');
+    if (!(Array.isArray(m.mailboxFields) && m.mailboxFields.length && m.mailboxFields.every((c) => typeof c === 'string' && /^[a-z][a-z0-9_]*$/.test(c) && c !== 'provider' && c !== 'threads'))) out.push('«mailboxFields» es la lista de los campos de site.mailbox del proveedor (sin provider ni threads)');
+  } else if (m.mailboxFields !== undefined) out.push('«mailboxFields» es sólo de un conector de buzón (kind mailbox)');
   // `hardSignals`: los patrones de un comando o una dirección de su plataforma que el núcleo no puede sumar (los cuenta el
   // candado, scripts/ci/check-core-neutrality.js): así el núcleo no escribe ninguno
   if (m.hardSignals !== undefined) {
-    if (m.kind !== 'platform') out.push('«hardSignals» es sólo de un conector de plataforma (kind platform)');
+    if (m.kind !== 'platform' && m.kind !== 'mailbox') out.push('«hardSignals» es sólo de un conector de plataforma o de buzón (kind platform o mailbox)');
     else if (!Array.isArray(m.hardSignals)) out.push('«hardSignals» es una lista de patrones');
     else {
       for (const s of m.hardSignals) {
@@ -238,6 +344,26 @@ const cache = new Map();   // carpeta → { stamp, result }
  * Los manifiestos de la carpeta: `{ manifests: [{ name, label, kind, dir, onWork, hooks, dispatch, settings }], problems:
  * [{ name, reasons }] }`. Uno que no se lee o no vale queda en `problems` y no se usa. Sin carpeta, ninguno.
  */
+/**
+ * Lo que está mal en `changeRequestApi`: `{ command: "<programa> api", routes: [{ method, path }], graphql: [nombres] }`.
+ * Un `path` va sin la barra del principio, con un asterisco por cada tramo que cambia (el dueño, el repo, el número); `graphql`, los nombres de
+ * las mutaciones que crean, juntan o encolan un pedido.
+ */
+function problemasDeLaApi(api) {
+  const out = [];
+  if (!isObject(api) || typeof api.command !== 'string' || api.command.trim().split(/\s+/).length !== 2) {
+    return ['«changeRequestApi» es { command: "<programa> <subcomando>", routes, graphql }'];
+  }
+  const rutas = api.routes === undefined ? [] : api.routes;
+  if (!Array.isArray(rutas) || !rutas.every((r) => isObject(r) && /^(POST|PUT|PATCH|DELETE)$/.test(r.method) && typeof r.path === 'string' && /^[A-Za-z0-9_*.-]+(\/[A-Za-z0-9_*.-]+)*$/.test(r.path))) {
+    out.push('«changeRequestApi.routes» es una lista de { method: POST|PUT|PATCH|DELETE, path: "a/*/b" }');
+  }
+  const muts = api.graphql === undefined ? [] : api.graphql;
+  if (!Array.isArray(muts) || !muts.every((n) => typeof n === 'string' && /^[A-Za-z][A-Za-z0-9]*$/.test(n))) out.push('«changeRequestApi.graphql» es una lista de nombres de mutación');
+  if (!rutas.length && !muts.length) out.push('«changeRequestApi» sin rutas ni mutaciones no mira nada');
+  return out;
+}
+
 function listManifests({ env = process.env, dir = integrationsDir(env) } = {}) {
   let entries;
   try { entries = fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort(); } catch (e) {
@@ -263,7 +389,10 @@ function listManifests({ env = process.env, dir = integrationsDir(env) } = {}) {
       hooks: Array.isArray(m.hooks) ? m.hooks : [], dispatch: Array.isArray(m.dispatch) ? m.dispatch : [],
       skills: Array.isArray(m.skills) ? m.skills : [], settings: Array.isArray(m.settings) ? m.settings : [],
       mcp: m.mcp ? { server: m.mcp.server, machine: m.mcp.machine === true } : null,
-      ...(m.kind === 'platform' ? { connector: m.connector, operations: m.operations, capabilities: isObject(m.capabilities) ? m.capabilities : {}, rawCommands: Array.isArray(m.rawCommands) ? m.rawCommands : [], hardSignals: Array.isArray(m.hardSignals) ? m.hardSignals : [], repoShape: m.repoShape } : {}),
+      ...(m.kind === 'platform' ? { connector: m.connector, operations: m.operations, capabilities: isObject(m.capabilities) ? m.capabilities : {}, rawCommands: Array.isArray(m.rawCommands) ? m.rawCommands : [], changeRequestCommands: Array.isArray(m.changeRequestCommands) ? m.changeRequestCommands : [], hardSignals: Array.isArray(m.hardSignals) ? m.hardSignals : [],
+        changeRequestApi: isObject(m.changeRequestApi) ? m.changeRequestApi : null, changeRequestAutoComplete: Array.isArray(m.changeRequestAutoComplete) ? m.changeRequestAutoComplete : [],
+        draftOptions: Array.isArray(m.draftOptions) ? m.draftOptions : [], readyCommands: Array.isArray(m.readyCommands) ? m.readyCommands : [], repoShape: m.repoShape } : {}),
+      ...(m.kind === 'mailbox' ? { connector: m.connector, provider: m.provider, mailboxFields: Array.isArray(m.mailboxFields) ? m.mailboxFields : [], hardSignals: Array.isArray(m.hardSignals) ? m.hardSignals : [] } : {}),
       offer: m.offer ? { does: m.offer.does, needs: m.offer.needs } : null,
     });
   }
@@ -276,6 +405,31 @@ function listManifests({ env = process.env, dir = integrationsDir(env) } = {}) {
 function find(name, { kind = null, env = process.env, dir } = {}) {
   const n = String(name || '').trim().toLowerCase();
   return listManifests({ env, dir }).manifests.find((m) => m.name === n && (!kind || m.kind === kind)) || null;
+}
+
+/** Los conectores de buzón (kind mailbox): `[{ provider, label, file }]`, con la ruta absoluta de su guion. */
+function mailboxConnectors(opts) {
+  return listManifests(opts).manifests.filter((m) => m.kind === 'mailbox').map((m) => ({ provider: m.provider, label: m.label, file: path.join(m.dir, m.connector) }));
+}
+
+/** El módulo del conector de buzón de un proveedor, cargado, o null si ningún conector lo atiende. Si no carga, tira. */
+function mailboxConnector(provider, opts) {
+  const c = mailboxConnectors(opts).find((x) => x.provider === provider);
+  return c ? require(c.file) : null;
+}
+
+/**
+ * Le da al lector del perfil del equipo (operations-config.js, que viaja solo y no carga integraciones) los conectores de
+ * buzón ya cargados. Uno que no carga se deja afuera: su proveedor queda desconocido. Un lector viejo sin
+ * `useMailboxConnectors` sigue como está.
+ */
+function giveMailboxConnectors(reader, opts) {
+  if (!reader || typeof reader.useMailboxConnectors !== 'function') return;
+  const list = [];
+  for (const c of mailboxConnectors(opts)) {
+    try { list.push({ provider: c.provider, module: require(c.file) }); } catch (_) { /* sin cargar, su proveedor no se conoce */ }
+  }
+  reader.useMailboxConnectors(list);
 }
 
 /** Los ajustes de la organización de una integración: `{ <clave>: tipo }`, o null si la integración no existe. */
@@ -431,6 +585,6 @@ function dispatchEntries(m, mode) {
 
 module.exports = {
   INT_PREFIX, TOOLS, parseIntSpec, intSpecRepoPath, intSpecPath, hookEntries, dispatchEntries, effectEntries,
-  integrationsDir, listManifests, find, profileSettings, secretKeys, isSecretKey,
+  integrationsDir, listManifests, find, mailboxConnectors, mailboxConnector, giveMailboxConnectors, profileSettings, secretKeys, isSecretKey,
   tyconHome, secretsDir, secretsFile, readSecret, secretState, writeSecret, PROFILE_TYPES,
 };

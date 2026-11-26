@@ -20,6 +20,9 @@ Es una página web para toda la organización. Cada persona entra con la cuenta 
 tareas, sus pedidos de cambio, sus ejecuciones. Quienes mantienen el arnés ven todo, y además tienen la pestaña
 **Configuración**, donde se personaliza la organización (quién es responsable de qué, el canal del aviso, los umbrales).
 
+El sitio lee y configura repos de GitHub o de Azure DevOps. Los de GitLab todavía no los usa: una organización que
+trabaja en GitLab tiene el arnés en cada máquina, pero el sitio no muestra esos repos.
+
 **Las palabras que usa el sitio**, para quien no programa:
 
 - **El arnés:** el conjunto de reglas, controles y ayudantes con que el equipo programa con Claude. Este sitio muestra
@@ -38,7 +41,8 @@ tareas, sus pedidos de cambio, sus ejecuciones. Quienes mantienen el arnés ven 
 - **El refresco:** cada cuánto el sitio vuelve a leer todo (15 minutos, salvo que la organización elija otro plazo).
 - **La mediana:** el valor del medio; la mitad de las ejecuciones está por debajo y la otra mitad por encima.
 
-Cada máquina del equipo sube sus ejecuciones a un lugar compartido, el **buzón de ejecuciones**. Por la noche, unos procesos
+Cada máquina del equipo sube sus ejecuciones a un lugar compartido, el **buzón de ejecuciones**: un contenedor de Azure
+Blob Storage o un bucket de Google Cloud Storage, según la nube de la organización. Por la noche, unos procesos
 del arnés revisan las dependencias (los paquetes de otros que usa cada producto), las pruebas y los productos, y dejan
 lo que midieron en el **repo de operaciones** de la organización. El sitio lee esos dos lugares y los muestra.
 
@@ -246,7 +250,11 @@ la fila vuelve a «Te toca decidir» con el porqué. El tipo del pedido de traba
 
 Cada tarjeta dice **qué pasó** en llano, con los datos de la ficha. En una de ejecuciones, por ejemplo: «Entre el 21/10 y
 el 24/10, 4 ejecuciones terminaron sin el pase adversarial, la revisión que intenta romper lo que ya se aprobó.
-Historias: 4.1, 4.3. Máquinas: mac-a, mac-b.» Si hay análisis, dice **por qué** pasa, qué **recomienda** y qué
+Historias: 4.1, 4.3. Máquinas: mac-a, mac-b. Sesiones: Ponzio-5, Carrizo-4.» El nombre de cada sesión es el nombre que
+tenía la sesión en su máquina durante la ejecución, y entra sólo si tiene forma de nombre de sesión (letras sin acento,
+números, guion o guion bajo, sin espacios, hasta 40 caracteres); las ejecuciones con un nombre sin esa forma, o sin
+nombre, se cuentan aparte («2 ejecuciones sin nombre»). Una ejecución cerrada antes de que el arnés anotara los nombres no
+lo trae. Si hay análisis, dice **por qué** pasa, qué **recomienda** y qué
 se haría si se arregla, y aclara si lo escribió el modelo de la noche o una persona. Sin análisis, dice por qué no lo
 tiene. Si la noche dejó una propuesta, dice que la escribió el modelo de IA que revisa cada noche, y su botón queda
 resaltado. Los botones para decidir están siempre a la vista, bajo el título **Decidir**.
@@ -360,6 +368,7 @@ tabla. Son 26, todas de la organización: sólo las ve quien mantiene. Una perso
 - **Cierres que dejaron prueba de que la cosa anda corriendo** (`dod`). De las stories cerradas, cuántas dejaron evidencia de que se probó en vivo.
 - **Lo que vuelve: stories con un seguimiento posterior** (`rework`). Qué parte de lo entregado hubo que volver a tocar.
 - **Por qué volvió: defecto nuestro contra cambio de requisito** (`rework_por_causa`). Separa lo que volvió por un error nuestro de lo que volvió porque cambió lo que se pedía.
+- **Lo rehecho al lado de lo entregado, mes por mes** (`rework_por_mes`). Muestra, para cada uno de los últimos meses, cuántas historias se entregaron y cuántas se rehicieron por cada causa, para ver si lo rehecho crece o baja.
 - **¿Vuelve menos lo que pasó por el pipeline?** (`rework_por_carril`). Compara, por repo, lo que volvió con constancia del pipeline contra lo que no la tiene.
 - **Puntaje de mutación: proporción de mutantes que las pruebas matan** (`mutacion`). Si las pruebas se rompen cuando se rompe el código a propósito.
 - **Ejecuciones de pruebas que evaluaron el umbral del 75 % sobre las líneas tocadas** (`cobertura_tocada_evaluo`). Cuántas veces la cobertura de lo que se tocó se midió de verdad.
@@ -512,7 +521,8 @@ conexión.
 encargo, lo que está haciendo y su última acción; el tablero, las tablas, los tokens, los mensajes entre sesiones (los
 avioncitos), la conversación de cada sesión, que se abre con «Ver conversación», como en la máquina, y los dos números
 de los racks: el porcentaje de memoria y el de procesador en uso, enteros de 0 a 100 (ni el nombre de la máquina, ni sus
-procesos, ni totales en bytes). Cada texto sale sin
+procesos, ni totales en bytes), y, si corre una ejecución grande de pruebas, el nombre de la sesión que tiene el turno de
+tarea pesada y cuántas suites corre (sin su proceso ni su carpeta). Cada texto sale sin
 la carpeta personal ni las claves que se reconocen. La conversación viaja aparte de la foto, sólo a un sitio que la
 entiende, y el sitio la guarda sólo en memoria: nada de la oficina queda en su disco. Así, quien mantiene ve en vivo qué
 hace cada dev; cada dev lo sabe por la línea de la huella.
@@ -623,8 +633,8 @@ Las secciones, en el orden de la pantalla:
   Si alguien sale de la lista, en cuanto se aprueba el pedido y el sitio se actualiza (a lo sumo 15 minutos), su
   próxima página es la de «Tu cuenta no está en la lista», sin datos. Arriba de la lista se ve con qué se entra al
   sitio; eso se cambia en la instalación. Para alguien de afuera del directorio de la organización, **Invitar** (abajo,
-  «Invitar a alguien») lo suma y le manda la invitación de Microsoft. También van acá el buzón de ejecuciones y el
-  refresco. La dirección del sitio no: se escribe en un solo lugar, «La dirección del sitio en cada máquina».
+  «Invitar a alguien») lo suma y le manda la invitación de Microsoft. También van acá el buzón de ejecuciones (con su
+  servicio: Azure Blob Storage o Google Cloud Storage) y el refresco. La dirección del sitio no: se escribe en un solo lugar, «La dirección del sitio en cada máquina».
   Queda en `operations.json`, en el repo de operaciones. Lo revisa otra persona que mantiene, salvo que la organización
   haya prendido «Los cambios de un mantenedor»: entonces el sitio lo aprueba solo. **«Cada cuánto se
   actualiza el sitio»** acepta de 5 a 120 minutos; sin declarar, 15. Más corto, un cambio se ve antes, pero el sitio
@@ -799,6 +809,11 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   (sin click, la frase de antes queda de respaldo). Se retira con `marker.js withdraw-relay`. Se la reconoce por su conversación, no por
   su nombre: sigue valiendo si la sesión se reinicia, y hay que volver a designarla si se abre un chat nuevo o se hace
   `/clear`. Una sesión que se llama igual no puede reenviar.
+  Después viene **quién firma cada commit de una ejecución** (`approvals.local_commit`). «Nadie: el agente commitea solo»
+  es lo de fábrica: la persona aprueba el pull request, y el commit, que es local y se deshace, no pide nada. «La
+  coordinadora, antes de cada commit» suma una segunda mirada: el agente no commitea sin su ok de guardar (`marker.js
+  approve-save`), y un cambio después del ok pide otro. Si el perfil no le delega la firma `save`, la da la persona en la
+  ventana. El sitio no la propone a una capa que pide una versión del arnés que todavía no la lee.
   Debajo está **quién firma cada cosa**: una fila por cada firma del catálogo (`guides/firmas-del-arnes.md`), con tres
   opciones. «A la ventana del dueño» es lo de fábrica: el dueño contesta en la ventana de permiso; donde la ventana no
   llega, aprueba con un click en el cuadro de opciones o un «aprobado» escrito; o firma en su terminal.
@@ -807,8 +822,8 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   frase queda registrada; lo delegado no está protegido contra un agente: si la coordinadora decide aprobarlo por su
   cuenta, el arnés no lo distingue de un ok del dueño, así que se delega sólo lo de bajo riesgo. «Sólo del dueño»
   (`approvals.owner_only`) la traba: el sitio no ofrece delegarla, y lo que no se firma desde la pestaña de otra sesión
-  tampoco se ofrece. El aviso fijo lo dice: «Aflojar un control siempre lo firma una persona, en su terminal; esto no lo
-  cambia.» Sin sesión designada, lo delegado no sirve, y la sección lo avisa. Lo delegado vale sólo en las máquinas de
+  tampoco se ofrece. El aviso fijo lo dice: «Aflojar un control siempre lo aprueba una persona, con un click o en su
+  terminal, y la emergencia sólo en su terminal: no se delega.» Sin sesión designada, lo delegado no sirve, y la sección lo avisa. Lo delegado vale sólo en las máquinas de
   la lista de abajo (`approvals.delegated_machines`), nombradas por su huella: las que el buzón de ejecuciones vio se
   agregan con un botón, y otra escribiendo su huella. De fábrica, en ninguna. Todo vale sólo desde acá, nunca desde
   una máquina.
@@ -900,6 +915,11 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   «sin novedades desde las HH:MM» (de 1 a 1440; sin valor, 15). Lo mide la página con su propio reloj, sin preguntarle
   nada a la máquina; una sesión en un paso largo sigue viva y sólo se marca callada. Queda en `team-profile.json` →
   `office.quiet_minutes`.
+- **Lo que la máquina limpia sola**: tres números. Cuántas horas sin uso pasan antes de borrar una carpeta de trabajo
+  ya mergeada (de 0 a 720; sin valor, 4). Cuántos días sin tocar pasan antes de borrar la carpeta temporal de una sesión
+  que ya no vive (de 1 a 365; sin valor, 2). Con cuánto disco libre, en porcentaje, avisa el arranque (de 1 a 99; sin
+  valor, 15). Nunca se borra algo con trabajo sin guardar, y el aviso de disco sólo muestra los comandos de limpieza.
+  Una máquina puede pisar los tres en su configuración. Queda en `team-profile.json` → `maintenance`.
 - **Integraciones**: qué servicios usa cada máquina (el reloj de horas, la memoria, el buzón, la noche, el índice de
   código de CodeGraph); una máquina puede apagar una para ella sola. Con CodeGraph prendido, el instalador se lo instala
   a cada dev y el arnés avisa si una máquina no lo tiene. Queda en `team-profile.json`, en el repo del perfil. Lo
@@ -916,7 +936,7 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
 - **Estimaciones**: la unidad en que estima la organización (horas, días o puntos), las horas de un día de trabajo (de
   1 a 24; vacío, 8) y las horas que vale un punto (vacío: sin tasa, y con puntos el error no se calcula). Abajo dice la
   unidad que leen hoy las máquinas. Cambiar la unidad no reescribe lo ya estimado. La estimación vigente de cada
-  historia llega también a su pedido de trabajo, en Azure DevOps o GitHub. Queda en `team-repos.json` →
+  historia llega también a su pedido de trabajo, en Azure DevOps, GitHub o GitLab. Queda en `team-repos.json` →
   `estimates`, en el repo del perfil; el perfil tiene que pedir una versión del arnés que lea la clave. Lo revisa quien
   mantiene.
 - **Pase adversarial**: cuándo corre el pase que ejecuta el código de una historia para buscarle defectos. Automático
@@ -1005,6 +1025,51 @@ Lo que la persona ve en la sección y lo que hace el agente cuando le piden una 
 - **Dónde está el clon del perfil**: `harness.js team-config --no-open` dice qué carpeta usa esta máquina (la clave
   `paths.team`). Si no hay ninguna, se clona el repo `profile` de `team-repos.json` en una carpeta propia.
 - **El pedido** va a la rama principal del repo del perfil, **sin auto-completar**: lo lee y lo aprueba un admin.
+
+#### El entorno de pruebas de un repo
+
+Algunas suites necesitan algo preparado antes de correr: una base local en un contenedor, un servidor levantado, las
+variables con las que las pruebas la encuentran, una versión fija de Node para Playwright. Sin eso, las pruebas contra la
+base se saltean y las de navegador salen en rojo, y el portón lo cuenta como código roto. Cada historia lo redescubre.
+
+- **Dónde se declara**: en `stack.test_environments` de `team-repos.json`, como las herramientas de prueba. Nunca en
+  el repo que se prueba: el comando lo decide la organización, aunque llame a un guion del repo. Todavía no se edita
+  desde el sitio: va como pedido al repo del perfil, con la misma validación de arriba.
+- **Una entrada**:
+
+  ```json
+  { "name": "acme-local", "label": "Base local y servidor de Acme",
+    "repos": [ { "platform": "github", "org": "acme", "repo": "acme-historias" },
+               { "platform": "github", "org": "acme", "repo": "acme-backend" },
+               { "platform": "github", "org": "acme", "repo": "acme-web" } ],
+    "prepare": "bash {sibling:acme-backend}/scripts/test-env/server.sh 5021 && source {sibling:acme-backend}/scripts/test-env/variables.sh 5021",
+    "teardown": "bash {sibling:acme-backend}/scripts/test-env/server.sh 5021 stop",
+    "requires": ["ACME_TEST_SQL"], "timeout_s": 600 }
+  ```
+
+  - `repos`: los repos a los que se aplica, con la forma `<repo>` de este archivo. Un repo va en un solo entorno.
+  - `prepare`: corre con bash desde la carpeta que se prueba. Lo que deja exportado (también con `source`) llega a la
+    suite y a `teardown`. `teardown` (opcional) lo desarma al terminar, salga como salga la suite.
+  - `{repo}` es la carpeta que se prueba; `{sibling:<nombre>}`, la de otro repo. Un repo hermano de la historia se
+    ubica como lo ubica el portón para correr su suite (su copia en la rama de la historia), así el servidor que se
+    levanta es el del código que se prueba. Si no es hermano, el repo al lado: con la carpeta que se prueba llamada
+    `<repo>--<sufijo>`, primero `<nombre>--<sufijo>`. Las dos van ya entre comillas.
+  - `requires` (opcional): las variables que la preparación tiene que dejar puestas. `timeout_s` (opcional, de 1 a
+    3600; 600 si no se dice): el tope de cada comando.
+- **Qué hace el portón**: prepara el entorno recién cuando la suite va a correr, y lo desarma al final, después de los
+  repos hermanos. Un repo sin pruebas propias (el de las historias, por ejemplo) no lo prepara: lo prepara cada hermano
+  que corre su suite. Las partes y los hermanos de una ejecución que ya lo preparó lo heredan y no lo preparan otra vez.
+  El informe lo anota en `test_environment`.
+- **Lo que queda andando**: al desarmar se corta también lo que la preparación dejó andando (un servidor), aunque
+  `teardown` no lo haya parado. Lo que tiene que sobrevivir a la ejecución se arranca aparte, como un contenedor. Un corte
+  (Ctrl-C) en medio de la preparación desarma igual, y si una ejecución muere sin desarmar, la siguiente corta lo que dejó.
+  En Windows esto último no se puede: ahí lo para sólo `teardown`.
+- **Una ejecución por entorno**: dos ejecuciones del mismo entorno comparten lo que levanta (un puerto fijo, una base). Si
+  otra ejecución lo está usando, el portón no lo prepara ni lo desarma y sale 75, como cuando otra ejecución de las pruebas
+  está en marcha.
+- **Si no queda listo** (la preparación falla, pasa el tope o no deja una variable de `requires`), el portón no corre
+  la suite y sale **8, «entorno sin preparar»**: ni verde ni rojo. Lo que la preparación dejó a medias se desarma igual.
+- **Para apagarlo** en una máquina o en una CI que prepara el entorno por su cuenta: `TYCON_TEST_ENV=off`.
 
 ### Instalación y actualización
 
@@ -1238,7 +1303,9 @@ réplicas no corre ningún contenedor.
 - **El repo de operaciones** de la organización, y una identidad que lo pueda leer (sólo ese repo). Si todavía no lo
   tenés: cómo se crea y qué archivos lleva, en `pipelines/operations/README.md` §2 del arnés (los ejemplos, en
   `pipelines/operations/examples/`). Para el sitio alcanza con `operations.json`; lo mínimo, en la prueba con Docker.
-- **Opcional: el buzón de ejecuciones**, si la organización junta las ejecuciones de las máquinas.
+- **Opcional: el buzón de ejecuciones**, si la organización junta las ejecuciones de las máquinas. Puede ser un
+  contenedor de Azure Blob Storage o un bucket de Google Cloud Storage; se elige en `site.mailbox.provider` (sin
+  declararlo, Azure). Cómo se arma el de Google Cloud Storage, en `guides/integrations/gcs-mailbox.md`.
 - **Un lugar donde correr un contenedor** con HTTPS delante: una nube, un servicio gratis o una máquina propia.
 
 ## Probarlo en tu máquina con Docker
@@ -1407,7 +1474,7 @@ Cada instalación dice dónde se guarda cada uno y por dónde entra su valor. **
 | `SITE_SESSION_KEY` | firmar la sesión | 32 bytes al azar, sólo del sitio |
 | `SITE_OIDC_CLIENT_SECRET` | el inicio de sesión | un registro sólo para el sitio, sin permisos de API más allá de `openid email profile` (con `github`, que no es OIDC, el sitio pide `read:user user:email read:org`: leer la cuenta, sus correos y si es de la organización); vence en 6 meses como máximo |
 | `SITE_OPERATIONS_TOKEN` (o la identidad de la plataforma, `SITE_OPERATIONS_IDENTITY=managed`, sin secreto) | leer el repo de operaciones | una identidad propia con lectura sólo en ese repo; si es un token, de una organización, sólo lectura de código, 90 días; en GitHub, de grano fino, de un solo repo, `contents: read` |
-| `SITE_MAILBOX_SAS` (o `SITE_MAILBOX_IDENTITY=managed`) | leer las ejecuciones del buzón | una SAS de sólo leer y listar (`rl`) atada a una política guardada del contenedor, 6 meses como máximo; o la identidad de la plataforma con un rol de lectura sobre el contenedor |
+| `SITE_MAILBOX_SAS` (o `SITE_MAILBOX_IDENTITY=managed`) | leer las ejecuciones del buzón | una SAS de sólo leer y listar (`rl`) atada a una política guardada del contenedor, 6 meses como máximo; o la identidad de la plataforma con un rol de lectura sobre el contenedor. Con Google Cloud Storage, sólo `SITE_MAILBOX_IDENTITY=managed`: la cuenta de servicio del sitio con `roles/storage.objectViewer` sobre el bucket, sin secreto |
 | el canal del aviso | mandar el aviso de la mañana | no llega al sitio: lo usa el proceso de la noche. Telegram: el token sirve para todo el bot, usá uno dedicado. Slack o Teams: la dirección del webhook ES la credencial |
 | `SITE_OPERATIONS_WRITE_TOKEN` | proponer cambios de configuración desde el sitio | en GitHub, de grano fino sobre el repo de operaciones con `contents: write` y `pull_requests: write`; en Azure DevOps, una cuenta dedicada con *Contribute*, *Create branch* y *Contribute to pull requests* sólo en ese repo, *Force push* negado y sin permiso de saltar políticas |
 | `SITE_PROFILE_REPO` y `SITE_PROFILE_TOKEN` | leer el perfil del equipo (dónde vive cada repo, los paquetes) | parte de la instalación normal: sin ellos la pestaña Configuración dice «falta el repo del perfil». La dirección del repo del perfil y un token de sólo lectura de código sobre ese repo (puede ser el mismo permiso que el del repo de operaciones, si los dos viven en la misma organización) |
@@ -1771,6 +1838,15 @@ huella de `stable` (`imgURL=<imagen>@sha256:…`). El hook es un secreto (`SITE_
 registro. Render lo hace de fondo; la prueba sin sesión de la noche siguiente lo confirma. Si Render rechaza la imagen (un
 404), tiene que ser del mismo registro y nombre que la del servicio.
 
+**Si quedó instalado por etiqueta** (optativo): con la llave de la API de Render (`SITE_RENDER_API_KEY`, secreta) y el id
+del servicio (`SITE_RENDER_SERVICE_ID`, el `srv-…` de su URL), el nocturno le pregunta a Render qué imagen corre el
+servicio antes de pedir el redespliegue. Si está fijada por etiqueta (`:stable`, `:latest`), el resultado sale `no_pudo`
+con el motivo «instalado por etiqueta» y la banda del sitio aparece igual que en Azure. Si Render no contesta, sale
+`no_pudo` con su código, nunca «al día». Sin las dos variables, todo sigue como antes. En Azure Pipelines se cargan en
+«Variables» del pipeline (la llave, como secreta); en GitHub, la llave como secreto y el id como variable del repo.
+Render no tiene llaves de sólo lectura: una llave abre todos los espacios de trabajo de su usuario. Creala desde un
+usuario que sólo esté en el espacio del sitio, y revocala desde «Account Settings → API Keys» si se filtra.
+
 ### Una máquina propia
 
 Un Docker en un servidor de la oficina, con `scripts/site/deploy/local/compose.yaml` y los secretos en un `sitio.env`
@@ -1803,6 +1879,12 @@ sin arrancar nada.
 # todas las noches a las 03:00: resuelve stable, recrea con SITE_IMAGE=<imagen>@<huella>, prueba /livez y vuelve atrás si falla
 0 3 * * * node /opt/arnes/scripts/site/deploy/local/start.js --secrets-file /etc/sitio/sitio.env --update --image ghcr.io/<organización>/<repo>
 ```
+
+El resultado de cada noche y el estado del actualizador quedan en `/etc/sitio/site-update/` (al lado del archivo de
+secretos; otra carpeta con `SITE_UPDATE_DIR`). `compose.yaml` la monta en el sitio, de sólo lectura: si quedó instalado
+por etiqueta, quien administra ve la misma banda que en Azure. **Si lo instalaste antes de esta versión**, volvé a
+arrancarlo una vez con `start.js --secrets-file …` para que el contenedor monte la carpeta; hasta entonces el sitio sigue
+como antes y la banda no aparece.
 
 Con systemd, un `.service` de tipo `oneshot` con la misma orden y un `.timer` con `OnCalendar=*-*-* 03:00`. **Watchtower**
 queda como alternativa (la copia que mantiene la comunidad, limitada al contenedor del sitio con `--label-enable`): no

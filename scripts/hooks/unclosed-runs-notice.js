@@ -11,7 +11,7 @@
  *
  * Además vive acá `debtNotice`, el aviso de la deuda de evidencia en vivo vencida, con su propio sello por día local
  * (`evidence-debt-notice.json`): una corrida que llegó al commit con criterios sin evidencia en vivo (el renglón
- * `acmatrix-debt` de `gates.log`, que anota `marker.js` al preparar el commit) y cuya fecha pasó. Mira sólo esos
+ * `acmatrix-debt` de `gates.log`, que anota `marker.js` al preparar el pull request) y cuya fecha pasó. Mira sólo esos
  * criterios en la matriz de la historia: si alguno sigue sin evidencia, una línea; si la historia no está o la matriz no
  * se calcula, lo dice («no pude mirar»). La deuda pagada se cierra con `acmatrix-debt-paid`. No corre desde este gancho,
  * que se instala sólo con el buzón: lo llama `finished-open-notice.js`, que se instala siempre.
@@ -44,8 +44,9 @@ function localDate(ms) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-// Lo que paga un criterio de la deuda: evidencia en vivo, o la firma de la persona sobre un criterio imposible.
-const PAGA = new Set(['RUNTIME', 'WAIVED-USER']);
+// Lo que paga un criterio de la deuda: evidencia en vivo, la firma de la persona sobre un criterio imposible, o la
+// noche que corrió en verde su prueba (COVERED-NIGHTLY).
+const PAGA = new Set(['RUNTIME', 'WAIVED-USER', 'COVERED-NIGHTLY']);
 
 /**
  * Las deudas de evidencia en vivo de `gates.log`, una por historia y deuda (en una historia paraguas cada tanda trae la

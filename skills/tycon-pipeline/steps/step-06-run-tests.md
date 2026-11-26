@@ -48,7 +48,10 @@ la máquina está cargada, y esperan si la carga pasa el doble de los núcleos; 
 declaran `gate_only_when_touching` se DIFIEREN si la story no toca esas carpetas (hoy export-real: sólo corre si la
 story toca `scripts/publishing/**`). Lo diferido queda en `tests-result.json` → `totals.deferred_suites`, con el motivo.
 Si el repo declara `test_gate` en `.test-gate.yaml`, en su raíz (commiteado), corren sólo las suites que leen lo tocado y la
-completa la corre la CI del pedido; si ninguna lo lee, sale 0 y lo dice. Si lo tocado incluye una pieza central (un
+completa la corre la CI del pedido; si ninguna lo lee, sale 0 y lo dice. Un repo cuya suite no debe correr en la máquina
+(le pega a la base de otra persona, a un servicio compartido) lo declara con `scope: none`, `full_suite_by` (quién la
+corre) y `reason` (por qué): el portón no corre nada ahí y sale 3, «sin medir», con el motivo; los repos hermanos corren
+igual. Es la forma de decirlo, en vez de un alcance falso, y cambiarlo pide la firma del dueño. Si lo tocado incluye una pieza central (un
 archivo de código que nombran 40 suites o más), de las que la nombran corren sólo las que nombran la función o el
 subcomando que cambió, o se llaman como ella; las demás quedan diferidas para la CI del pedido, y la salida dice
 «<pieza>: corrieron k de las N suites que la nombran (para correrlas todas: TYCON_GATE_ALL_SUITES=1)». Si no se sabe qué
@@ -74,8 +77,11 @@ story causó en otro lado. Cuesta ~2 min; aparecer todas juntas recién en el me
 
 - El gate exporta `TYCON_TEST_GATE=1` → `run-check` anota `provenance=test-gate`.
 - Si el repo no tiene suite completa, o hay que cerrar igual: declarar el control a mano lo decide la persona, no el
-  agente («autorizo force-manual» en su mensaje); queda en `gates.log`. `TYCON_TEST_GATE` escrita por el agente la frena
-  el freno de seguridad: la pone sólo el gate.
+  agente; queda en `gates.log`. Se firma como las firmas de guion, también en Windows: la persona aprueba con el click o
+  el «aprobado», y el agente corre `marker.js set-check <control> <estado> --force-manual` solo y en su forma exacta, sin
+  un tubo atrás (`2>&1 | tail`) ni `cd … &&`. Fuera de su forma, el freno lo niega y pide correrlo solo; la terminal
+  queda para quien la prefiera. `TYCON_TEST_GATE` escrita por el agente la frena el freno de seguridad: la pone sólo el
+  gate.
 
 ### Salidas del gate
 
@@ -88,6 +94,7 @@ story causó en otro lado. Cuesta ~2 min; aparecer todas juntas recién en el me
 | `5` | **no pude correr las pruebas**: falta el corredor (`npx`, `dotnet`, `npm`), o el shell lo ve pero no se puede lanzar. No se corrió nada (`halted: true`, `missing_tool`) | NO tocar las pruebas: instalar la herramienta o abrir la sesión con un PATH que la vea, y re-correr el gate |
 | `6` | la suite salió 0 pero **no corrió ninguna prueba** (o no dejó un resumen que las cuente): no es verde | mirar `no_tests_run` en `tests-result.json`: alcance vacío, todas saltadas o `todo`, o un resumen ilegible; corregir eso y re-correr |
 | `7` | **sin acotar**: la corrida del repo hermano no pudo acotarse a lo tocado (no se supo qué se tocó, o ninguna suite lo lee) y no corrió nada. El portón acotado por el repo (`test_gate`) sale 7 sólo si no se supo qué se tocó (la completa no corre en la máquina); si ninguna suite lee lo tocado sale 0. No es verde ni rojo (`unscoped: true` con el motivo, `merge_requires_ci: true`; el check `tests` queda `sin-acotar`) | seguir anunciándolo: la cubre la CI del pedido, y antes del merge hay que mirar que salga verde. Nada en la máquina lo comprueba: `merge_requires_ci` es un dato del informe, no un freno. No forzar la completa en la máquina (`TYCON_GATE_ALL_SUITES=1`) salvo pedido del dev |
+| `8` | **entorno sin preparar**: la organización declara un entorno de pruebas para el repo (`stack.test_environments`: una base local, un servidor, variables) y no quedó listo: la preparación falló, pasó su tope o no dejó una variable que pide. No se corrió nada (`env_not_ready: true` con el motivo en `tests-result.json`; el check `tests` queda en rojo con la salida 8, para que un verde viejo no valga). No es un rojo de la historia. Un 8 sin `env_not_ready` en el informe es la salida de la propia suite: un rojo como cualquier otro | NO tocar las pruebas ni el código: preparar lo que dice el motivo (levantar el contenedor, liberar el puerto) o arreglar la receta, y re-correr el gate |
 | `75` | **no corrió nada**: otra corrida de las pruebas ya está en marcha en este repo (`run-check tests` lo dice con la hora de inicio, su pid y su sesión), o no hay lugar en el turno de las ejecuciones grandes de la máquina, que se pide desde 100 suites por correr: ya corren dos, o corre una y la memoria no alcanza para la segunda (debajo del piso, 50 % si nadie lo cambia, o sin poder medirla; la negativa dice quién corre, la memoria y el piso; o hay un pase adversarial en vuelo y el portón no puede ir a su lado: corre más de 40 suites, ya hay otro portón al lado del pase, o la memoria libre está debajo del 40 %; el check `tests` queda `sin-turno`, ni verde ni rojo, para que un verde viejo no valga: los cierres de los pasos frenan pidiendo el turno, y el cierre del turno deja parar). No es verde ni rojo: no escribe `tests-result.json` ni corre los repos hermanos | esperar el resultado de esa corrida, no relanzar. Si quedó colgada, la negativa dice cómo destrabarla |
 | `77` | no sale del portón: es lo que sale el corredor de las suites con el turno de las ejecuciones grandes en manos de otra sesión, y el portón lo da como `75` | lo mismo que `75` |
 | `76` | **no corrió nada**: en la última corrida completa fallaron suites que todavía no salieron verdes solas (la lista vive en el marcador, `testsFailed`). No escribe `tests-result.json` ni toca el check `tests` | después de un rojo, repetir primero la suite que falló: `bash …/test-gate.sh <repo> <story> --suite <ruta>` (la negativa da el comando de cada una). En verde sale de la lista; con la lista vacía, se corre otra vez el portón completo. En un repo que acota el portón (`test_gate` en `.test-gate.yaml`) o en el árbol armado del privado (ahí se compara cada repo), ese portón no siempre corre todo: si la carpeta no cambió desde la completa roja ni desde cada repetición, cierra con lo guardado sin correr ninguna suite; si cambió desde la completa (también por traer main), corren sólo las suites que leen lo cambiado, y cada repetida cuya carpeta cambió después de repetirla vuelve a correr; si cambió el recorte o la lista de suites, o lo cambiado toca un control, el instalador o lo compartido, corre la completa como siempre. Una suite sola, por sí misma, no cierra este paso, salvo en una corrida acotada (la cruzada, el árbol armado del privado o el repo que acota) sin lo guardado de la completa roja: cuando la repetición saca la última roja y la constancia queda en verde, el portón deja `tests` en verde, porque la completa la corre la CI del pedido. Si queda otra roja, una ausente, una sin medir o un repo hermano rojo, sigue en rojo |
@@ -143,6 +150,25 @@ ahí, es heredada (`measured_on: "base"`); verde ahí, el rojo es del cambio y f
 `origin/main`, la suite no está en la base, pasó el tope, el árbol armado del privado), sigue roja y dice «no medido» y
 por qué. Queda escrito en `base_check`. Topes: `TYCON_INHERITED_BASE_MAX` suites (3; 0 la apaga) y
 `TYCON_INHERITED_BASE_TIMEOUT_S` segundos por suite (600).
+
+Con .NET (y con otra herramienta que deja un trx) y con jest o vitest, `tests-result.json` dice además cuáles
+pruebas fallaron: `failed_tests`, con el nombre de cada una. En jest y vitest va también el archivo; en el trx, el
+resultado (`outcome`), porque la lista suma las que dieron error o se cortaron y el total del trx no. Va hasta 100, y
+`failed_tests_more` dice cuántas más hubo. Un archivo de jest que falló sin ninguna prueba fallida va igual: con
+`did_not_run: true` si no corrió ninguna, y con `file_failed: true` si corrieron todas y pasaron. Sirve
+para comparar con las que ya fallaban antes del cambio.
+
+En estos repos de producto, lo heredado se mide caso por caso (`lib/inherited-cases.js`). Cuando la corrida sale roja,
+cada prueba que falló vuelve a correr sobre la base: la bifurcación con la rama principal del repo, la que apunta
+`origin/HEAD`, o `origin/main`, o `origin/master`. Corre en una copia aparte, con los `node_modules` del repo
+enlazados y la caché de NuGet de la máquina. Una falla es heredada sólo si en la base también falla con la misma
+prueba; si allá pasa, o no está, es del cambio y frena. Lo que la base no pudo correr (sin rama principal, las
+dependencias de ahora que no sirven para la base, un `dotnet restore` que falla, un proyecto sin su trx, más de 500
+fallas) queda **«no medido»**, con su motivo, y sigue frenando. Con todo heredado, el portón sale 0, vuelve a marcar
+el check `tests` en verde y `tests-result.json` lo dice con `suite_green_by: "heredadas"`. El detalle queda en
+`inherited_cases`: la base, lo heredado y lo que frena. Nada se declara heredado a mano: lo decide la corrida en la base.
+Vale igual en cada repo hermano. Los proyectos de pruebas de .NET corren todos, uno por uno, aunque uno salga rojo.
+`TYCON_INHERITED_BASE_MAX=0` lo apaga, y `TYCON_INHERITED_BASE_TIMEOUT_S` es el tope de cada corrida en la base (900).
 
 Una repetición sola que sale verde también saca su falla de la constancia de la completa (`tests-result.json`, la que
 lee el revisor de pruebas, y su copia que viaja), si es de esa misma completa: cuando no queda ninguna otra causa de
@@ -252,15 +278,18 @@ resueltos, lanzar.**
    retorna un no-op instantáneo y el lanzamiento se quema (el guard bloquea relanzar sin `--relaunch`). La lista debe
    ser **EXACTAMENTE la misma que después se pasa a `pipeline.js advisors` en «Revisores»**: si divergen, el pase
    audita otro diff que los revisores, en silencio.
-4. Congelar lo que va a mirar el pase, y pasarle sus sellos:
+4. Congelar lo que va a mirar el pase, armar la lista de sus repos y pasarle sus sellos:
    ```bash
-   node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js freeze-adversarial
+   node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js freeze-adversarial > <RUN_DIR>/congelado.json
+   node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/lib/frozen-tree.js lista-del-pase <RUN_DIR>/congelado.json
    ```
-   Sella cada repo de la corrida y arma su copia de sólo lectura en la carpeta de estado; devuelve `{ sellos, copias }`.
-   Sale 2 si no puede sellar o copiar: el pase no se lanza sobre la carpeta viva. Invocar la tool `Workflow` (args
+   `freeze-adversarial` sella cada repo de la corrida y arma su copia de sólo lectura en la carpeta de estado. Devuelve
+   `{ sellos, copias, repos }`, con la base de cada repo. Sale 2 si no puede sellar o copiar: el pase no se lanza sobre
+   la carpeta viva. `lista-del-pase` da los `repos` del `Workflow`, y sale 2 si un repo con código no tiene base: el
+   pase no se lanza, y se dice qué repo es y por qué (`step-08-adversarial-pass.md` §Acción). Invocar la tool `Workflow` (args
    idénticos a `step-08-adversarial-pass.md` §Acción, incluido `runDir`, el RUN_DIR de esta ejecución, y los `sellos`
-   de arriba: sin `runDir` las pruebas que confirman los hallazgos caen en una carpeta genérica, y sin `sellos` su
-   resultado no se anota) e **INMEDIATAMENTE después (mismo turno)** registrar el estado con el runId que devolvió la
+   y las `copias` de arriba: sin `runDir` las pruebas que confirman los hallazgos caen en una carpeta genérica, sin
+   `sellos` su resultado no se anota, y sin `copias` el pase lee la carpeta viva y no lo congelado) e **INMEDIATAMENTE después (mismo turno)** registrar el estado con el runId que devolvió la
    tool:
    ```bash
    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-launched <runId> 4

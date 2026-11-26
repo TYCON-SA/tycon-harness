@@ -1930,7 +1930,7 @@ test('8.63 · RelaySession_SoloDesdeElPerfil @story-8.63 @ac-11', () => {
   const r = cli(['set', 'approvals.relay_session', 'yo-mismo'], { home: casa() });
   assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /sólo desde el perfil del equipo/);
-  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files', 'approvals.delegation_wait_minutes', 'pull_requests.team_authors']);
+  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files', 'approvals.delegation_wait_minutes', 'pull_requests.team_authors', 'approvals.local_commit']);
 });
 
 // ── Una persona marca cada criterio como probado a mano (qa.manual_check) ──────────────────────────────
@@ -2047,7 +2047,7 @@ test('8.88 T47 · Config_DelegatedSigning_MachineFileSetAndExplain @story-8.88 @
   assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /sólo desde el perfil del equipo/);
   assert.match(lib().explicar({ env: {}, home, arnes: arnesCon(null) }), /approvals\.delegated_signing = (off|sin valor).*vale sólo desde el perfil del equipo/);
-  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files', 'approvals.delegation_wait_minutes', 'pull_requests.team_authors']);
+  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check', 'approvals.delegated_signing', 'guard.update', 'approvals.delegated_machines', 'approvals.owner_only', 'approvals.levels', 'site.url', 'short_path.coordinator_max_files', 'short_path.max_files', 'approvals.delegation_wait_minutes', 'pull_requests.team_authors', 'approvals.local_commit']);
 });
 
 // ── Qué firmas se delegan y en qué máquinas (approvals.delegated_signing en lista, approvals.delegated_machines) ──────
@@ -2383,6 +2383,45 @@ test('T9 Config_CapMachineWins_FolderMachineOnly @story-8.122 @ac-9: el tope de 
   const err = enPerfil.errores.find((e) => e.clave === 'coordination.owner_folder');
   assert.ok(err, JSON.stringify(enPerfil.errores.map((e) => e.clave)));
   assert.match(err.motivo, /es de la máquina/);
+});
+
+test('Config_McpServers_MachineOnly — integrations.mcp_servers: válido en la máquina, roto en el perfil o con un nombre que no es de servidor', () => {
+  const hm = casa();
+  maquina(hm, { integrations: { mcp_servers: { clockify: 'reloj-de-acme' } } });
+  const m = cargar({ home: hm, arnes: arnesCon({}) });
+  assert.deepEqual(m.errores, []);
+  assert.deepEqual(m.valores.integraciones.mcp_servers, { clockify: 'reloj-de-acme' });
+  const enPerfil = cargar({ home: casa(), arnes: arnesCon({ integrations: { mcp_servers: { clockify: 'reloj' } } }) });
+  const err = enPerfil.errores.find((e) => /mcp_servers/.test(e.clave));
+  assert.ok(err, JSON.stringify(enPerfil.errores.map((e) => e.clave)));
+  assert.match(err.motivo, /es de la máquina/);
+  const hm2 = casa();
+  for (const malo of [{ clockify: 'a b' }, { clockify: 'reloj__x' }, { Clockify: 'a', clockify: 'b' }]) {
+    const hm2 = casa();
+    maquina(hm2, { integrations: { mcp_servers: malo } });
+    assert.ok(cargar({ home: hm2, arnes: arnesCon({}) }).errores.some((e) => /mcp_servers/.test(e.clave)), JSON.stringify(malo));
+  }
+});
+
+test('Config_McpServers_NotWrittenWithAnOldGuard — set no la escribe con un freno instalado que no la conoce; con el de hoy, sí', () => {
+  const home = casa();
+  const dir = tmp('tcfg-mcp-guard-');
+  const nuevo = fs.readFileSync(path.join(SCRIPTS, 'production', 'guard-libs', 'lib', 'tycon-config.js'), 'utf8');
+  const viejo = nuevo.replace("    mcp_servers: 'aceptada',\n", '');
+  assert.notStrictEqual(viejo, nuevo, 'la copia del freno conoce la clave');
+  fs.writeFileSync(path.join(dir, 'viejo.js'), viejo);
+  fs.writeFileSync(path.join(dir, 'nuevo.js'), nuevo);
+  const file = path.join(home, '.claude', 'tycon.json');
+  let out = cli(['set', 'integrations.mcp_servers', '{"clockify":"reloj"}'], { home, env: { TYCON_PROFILE: '0', TYCON_GUARD_LIB_FOR_TEST: path.join(dir, 'viejo.js') } });
+  assert.equal(out.status, 2, out.stdout);
+  assert.match(out.stderr, /no lo escribí.*mcp_servers.*install-guard\.sh/s);
+  assert.ok(!fs.existsSync(file), 'no escribió nada');
+  out = cli(['set', 'integrations.mcp_servers', 'reloj'], { home, env: { TYCON_PROFILE: '0', TYCON_GUARD_LIB_FOR_TEST: path.join(dir, 'nuevo.js') } });
+  assert.equal(out.status, 2, 'un valor que no es JSON no se escribe');
+  out = cli(['set', 'integrations.mcp_servers', '{"clockify":"reloj"}'], { home, env: { TYCON_PROFILE: '0', TYCON_GUARD_LIB_FOR_TEST: path.join(dir, 'nuevo.js') } });
+  assert.equal(out.status, 0, out.stderr);
+  assert.match(out.stdout, /\{"clockify":"reloj"\}/, 'dice el valor escrito, no [object Object]');
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).integrations.mcp_servers, { clockify: 'reloj' });
 });
 
 test('Config_SessionNames_ThemeOrList — coordination.session_names: a factory theme or a list, the machine wins, a bad value is broken', () => {

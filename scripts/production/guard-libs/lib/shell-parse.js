@@ -51,8 +51,12 @@ const os = require('os');
 // `{ salvoShell: true }` (2026-09-17, retro-pending.js): conserva el cuerpo cuando el heredoc alimenta a
 // un SHELL (`bash <<EOF`, `cat <<EOF | sh`) —ahí el cuerpo SON comandos— y lo quita en el resto
 // (`node - <<EOF`, `cat > f <<EOF`, `python3 - <<EOF`), donde es texto. Sin la opción, todo igual que siempre.
-const SHELL_ANTES = /(?:^|[\s;&|(])(?:sudo\s+)?(?:\S*\/)?(?:bash|sh|zsh|dash|ksh)(?:\s+-[A-Za-z]+)*\s*$/;
-const SHELL_DESPUES = /\|\s*(?:sudo\s+)?(?:\S*\/)?(?:bash|sh|zsh|dash|ksh)(?=\s|$)/;
+// Las dos sin recorrer la tira desde cada posición: con un comando largo de `(` o `/`, la forma de antes
+// (`(?:^|[\s;&|(])(?:sudo\s+)?(?:\S*\/)?` delante del nombre) crecía con el cuadrado del largo. En SHELL_ANTES ese prefijo
+// equivale a mirar el carácter de antes del nombre: un `sudo ` termina en un espacio, y un `…/` siempre tiene delante un
+// espacio o el principio del texto. En SHELL_DESPUES el prefijo se mira para atrás, desde un nombre que ya terminó.
+const SHELL_ANTES = /(?:^|[\s;&|(/])(?:bash|sh|zsh|dash|ksh)(?:\s+-[A-Za-z]+)*\s*$/;
+const SHELL_DESPUES = /(?:bash|sh|zsh|dash|ksh)(?=\s|$)(?<=\|\s*(?:sudo\s+)?(?:\S*\/)?(?:bash|sh|zsh|dash|ksh))/;
 
 // El operador de un heredoc con su palabra, como la escribe el shell: `EOF`, `'EOF'`, `"EOF"`, `\EOF`, `E"OF"`, `'E'OF`.
 // Sin `<<<`: eso es una cadena, no un heredoc.
@@ -83,6 +87,18 @@ function delimitadorDelShell(palabra) {
 }
 
 /**
+ * El texto sin los espacios y tabs de sus puntas. A mano: con `[ \t]+$`, una tirada larga de espacios en el medio de la
+ * línea es cuadrática (el motor prueba la tirada desde cada posición) y el freno pasa de su tope de tiempo.
+ */
+function sinBlancosDeLasPuntas(t) {
+  let a = 0;
+  let b = t.length;
+  while (a < b && (t[a] === ' ' || t[a] === '\t')) a++;
+  while (b > a && (t[b - 1] === ' ' || t[b - 1] === '\t')) b--;
+  return t.slice(a, b);
+}
+
+/**
  * Los heredocs del texto, en orden: `{ indice, fin, delim, comillas, resto, cuerpo }`. `indice` es la posición del `<<`
  * y `fin` la del final de la línea que lo cierra. `delim` es el que usa el shell y `comillas` dice si la palabra traía
  * comillas o barras (entonces el shell no expande el cuerpo). `resto` es lo que sigue a la palabra en su línea.
@@ -98,7 +114,7 @@ function heredocs(texto) {
     lineas = new Map();
     for (let ini = 0; ini <= s.length;) {
       let fin = s.indexOf('\n', ini); if (fin < 0) fin = s.length;
-      const t = s.slice(ini, fin).replace(/^[ \t]+|[ \t]+$/g, '');
+      const t = sinBlancosDeLasPuntas(s.slice(ini, fin));
       if (!lineas.has(t)) lineas.set(t, []);
       lineas.get(t).push([ini, fin]);
       ini = fin + 1;
@@ -1435,19 +1451,113 @@ function* fueraDeComillas(s, desde, hasta) {
   }
 }
 
+/** Dónde corta la tubería el carácter `c` en `k` (lo que sigue empieza otra), o -1 si no corta. */
+function corteEn(s, k, c) {
+  const sig = s[k + 1];
+  if (c === ';' || c === '`' || c === '(' || c === '\n') return k + 1;
+  if (c === '{' && /\s/.test(sig || '')) return k + 1;
+  if ((c === '&' && sig === '&') || (c === '|' && sig === '|')) return k + 2;
+  if (c === '&' && s[k - 1] !== '>' && s[k - 1] !== '<' && sig !== '>') return k + 1;
+  return -1;
+}
+
 /** Dónde empieza el comando (la tubería entera) que contiene la posición `i`: después del `;`, `&&`, `(`… anterior. */
 function inicioDeLaTuberia(s, i) {
   let ini = s.lastIndexOf('\n', i - 1) + 1;
   while (ini >= 2 && s[ini - 2] === '\\') ini = s.lastIndexOf('\n', ini - 3) + 1;   // la línea continuada con `\`
   let corte = ini;
   for (const [k, c] of fueraDeComillas(s, ini, i)) {
-    const sig = s[k + 1];
-    if (c === ';' || c === '`' || c === '(' || c === '\n') corte = k + 1;
-    else if (c === '{' && /\s/.test(sig || '')) corte = k + 1;
-    else if ((c === '&' && sig === '&') || (c === '|' && sig === '|')) corte = k + 2;
-    else if (c === '&' && s[k - 1] !== '>' && s[k - 1] !== '<' && sig !== '>') corte = k + 1;
+    const nuevo = corteEn(s, k, c);
+    if (nuevo >= 0) corte = nuevo;
   }
   return corte;
+}
+
+/**
+ * Dónde empieza la última etapa de la tubería que contiene la posición `i`: lo mismo que la última de
+ * `etapas(s.slice(inicioDeLaTuberia(s, i), i))`, para posiciones que crecen y sin volver a leer el renglón ni la tubería
+ * desde su principio cada vez. Sigue la lectura fuera de comillas desde donde quedó mientras el renglón (con sus
+ * continuaciones) sea el mismo, y lleva el último `|` desde el corte. Con miles de `<<<` en un renglón o en una tubería
+ * larga, leerla entera por cada uno es cuadrático. Una posición menor que la anterior se lee entera.
+ */
+function lectorDeEtapas(s) {
+  let anterior = -1;
+  let visto = 0;                                          // hasta dónde se miraron los saltos de renglón
+  let renglon = -1;
+  let lectura = null;
+  let pendiente = null;                                   // la próxima posición de la lectura, si todavía no se usó
+  let corte = 0;
+  let etapa = 0;                                          // después del último `|` que parte etapas desde el corte
+  return (i) => {
+    if (i < anterior) { const e = etapas(s.slice(inicioDeLaTuberia(s, i), i)); return i - e[e.length - 1].length; }
+    anterior = i;
+    // un salto de renglón sin `\` delante empieza otro
+    let ini = renglon < 0 ? 0 : renglon;
+    for (; visto < i; visto++) if (s[visto] === '\n' && (visto === 0 || s[visto - 1] !== '\\')) ini = visto + 1;
+    if (ini !== renglon) { renglon = ini; lectura = fueraDeComillas(s, ini, s.length); pendiente = null; corte = ini; etapa = ini; }
+    for (;;) {
+      if (!pendiente) { const r = lectura.next(); if (r.done) break; pendiente = r.value; }
+      const [k, c] = pendiente;
+      if (k >= i) break;
+      pendiente = null;
+      const nuevo = corteEn(s, k, c);
+      if (nuevo >= 0) { corte = nuevo; etapa = nuevo; }
+      // el `|` como lo cuenta `etapas` sobre el texto que empieza en el corte (ahí no tiene nada antes)
+      else if (c === '|' && s[k + 1] !== '|' && (k === corte || s[k - 1] !== '|')) etapa = k + 1;
+    }
+    return etapa;
+  };
+}
+
+/**
+ * Las etapas y el final del comando que empieza en cada posición de `s`, leídos una sola vez para el texto entero. La
+ * lectura fuera de comillas que arranca en una posición pasa siempre por las mismas posiciones después, así que lo que
+ * viene después de una ya leída se guarda: con un `<<<` en cada etapa de una tubería larga, o en cada renglón de un
+ * comando continuado, leer el resto del comando por cada uno es cuadrático.
+ *   · `corte(p)`: el primer `|` que parte etapas (`{ k, fin: false }`) o el final del comando (`{ k, fin: true }`, como
+ *     `finDelComando`) que sigue a `p`;
+ *   · `primerPrograma(p)`: lo que `lectorDePrograma` lee en la primera etapa con un intérprete desde la que empieza en
+ *     `p` (después de un `|`) hasta el final del comando, o null.
+ */
+function lectorDeComandos(s) {
+  const cortes = new Map();
+  const corte = (p) => {
+    const camino = [];
+    let i = p;
+    let r = null;
+    while (!r) {
+      if (cortes.has(i)) { r = cortes.get(i); break; }
+      if (i >= s.length) { r = { k: s.length, fin: true }; break; }
+      camino.push(i);
+      const c = s[i];
+      if (c === '\\') { i += 2; continue; }
+      if (c === "'" || c === '"' || (c === '$' && s[i + 1] === "'")) { i = finDeComillas(s, i); continue; }
+      const sig = s[i + 1];
+      if (c === ';' || c === '`' || c === ')' || c === '\n' || (c === '&' && sig === '&') || (c === '|' && sig === '|')) r = { k: i, fin: true };
+      else if (c === '&' && s[i - 1] !== '>' && s[i - 1] !== '<' && sig !== '>') r = { k: i, fin: true };
+      else if (c === '|' && s[i - 1] !== '|') r = { k: i, fin: false };
+      else i++;
+    }
+    for (const q of camino) cortes.set(q, r);
+    return r;
+  };
+  const programas = new Map();
+  const primerPrograma = (p) => {
+    const camino = [];
+    let q = p;
+    let r = null;
+    for (;;) {
+      if (programas.has(q)) { r = programas.get(q); break; }
+      camino.push(q);
+      const b = corte(q);
+      r = lectorDePrograma(tokens(s.slice(q, b.k)));
+      if (r || b.fin) break;
+      q = b.k + 1;
+    }
+    for (const x of camino) programas.set(x, r);
+    return r;
+  };
+  return { corte, primerPrograma };
 }
 
 /** El texto desde `i` hasta el final del comando (el `;`, `&&`, `)`… siguiente, o el fin de la línea). */
@@ -1479,22 +1589,50 @@ function programasPorEntrada(cmd) {
   const s = String(cmd);
   if (!s.includes('<<')) return [];
   const out = [];
-  const juzgar = (texto, indice, resto, siguiente, cuerpo, comillas) => {
-    const antes = etapas(texto.slice(inicioDeLaTuberia(texto, indice), indice));
-    const despues = etapas(resto.slice(0, finDelComando(resto, 0, resto.length)));
-    if (/\|\s*$/.test(resto) && siguiente != null) despues.push(...etapas(siguiente.slice(0, finDelComando(siguiente, 0, siguiente.length))));
-    const propia = `${antes[antes.length - 1]} ${despues[0]}`;
-    for (const etapa of [propia, ...despues.slice(1)]) {
-      const l = lectorDePrograma(tokens(etapa));
-      if (l) { out.push({ ...l, cuerpo, comillas }); return; }
-    }
+  // dónde empieza la etapa de cada posición, leído una vez por renglón: los heredocs van sobre el texto y los
+  // here-strings sobre el texto sin heredocs, cada uno en orden
+  const etapasEn = new Map();
+  const etapaEn = (texto, indice) => {
+    if (!etapasEn.has(texto)) etapasEn.set(texto, lectorDeEtapas(texto));
+    return etapasEn.get(texto)(indice);
   };
   for (const h of heredocs(s)) {
-    let sig = null;
-    if (h.fin < s.length) { const f = s.indexOf('\n', h.fin + 1); sig = s.slice(h.fin + 1, f < 0 ? s.length : f); }
-    juzgar(s, h.indice, h.resto, sig, h.cuerpo, h.comillas);
+    const antes = s.slice(etapaEn(s, h.indice), h.indice);
+    const despues = etapas(h.resto.slice(0, finDelComando(h.resto, 0, h.resto.length)));
+    // la línea que sigue al cierre, si la del `<<` termina en `|`
+    if (h.fin < s.length && /\|\s*$/.test(h.resto)) {
+      const f = s.indexOf('\n', h.fin + 1);
+      const sig = s.slice(h.fin + 1, f < 0 ? s.length : f);
+      despues.push(...etapas(sig.slice(0, finDelComando(sig, 0, sig.length))));
+    }
+    for (const etapa of [`${antes} ${despues[0]}`, ...despues.slice(1)]) {
+      const l = lectorDePrograma(tokens(etapa));
+      if (l) { out.push({ ...l, cuerpo: h.cuerpo, comillas: h.comillas }); break; }
+    }
   }
+  // los here-strings: lo que sigue a cada uno hasta el final de su comando se lee una sola vez para el texto entero
   const sin = sinHeredocs(s);
+  const comandos = lectorDeComandos(sin);
+  // Una etapa sin comillas, sin `$` ni comillas invertidas y con cada `\` antes de un salto se parte en palabras sólo por
+  // los blancos. Ahí, un here-string con un blanco a cada lado y sin una redirección delante no cambia qué programa corre
+  // la etapa: sus palabras son redirecciones y el lector de programas las saltea. Entonces la etapa se lee una vez para
+  // todos los suyos; con miles de `<<<` en un comando continuado, leerla entera por cada uno es cuadrático. En cualquier
+  // otro caso se lee la etapa de cada uno, como siempre.
+  const blanco = (c) => c === ' ' || c === '\t' || c === '\n';
+  const programaDeLaEtapa = new Map();
+  const programaSinMirarElHereString = (k, f, ini, fin) => {
+    if (k > ini && !(blanco(sin[k - 1]) && !(sin[k - 1] === '\n' && sin[k - 2] === '\\'))) return undefined;
+    if ((f < fin && !blanco(sin[f])) || sin[f - 1] === '\\') return undefined;
+    let j = k - 1;
+    while (j >= ini && (blanco(sin[j]) || sin[j] === '\\')) j--;
+    if (j >= ini && /[<>&]/.test(sin[j])) return undefined;
+    const clave = `${ini}:${fin}`;
+    if (!programaDeLaEtapa.has(clave)) {
+      const etapa = sin.slice(ini, fin);
+      programaDeLaEtapa.set(clave, /["'`$]|\\(?!\n)/.test(etapa) ? undefined : lectorDePrograma(tokens(etapa)));
+    }
+    return programaDeLaEtapa.get(clave);
+  };
   for (const [k] of fueraDeComillas(sin, 0, sin.length)) {
     if (!sin.startsWith('<<<', k)) continue;
     let j = k + 3;
@@ -1502,12 +1640,180 @@ function programasPorEntrada(cmd) {
     let f = j;
     while (f < sin.length && !/[\s;&|()<>]/.test(sin[f])) f = /['"]/.test(sin[f]) || (sin[f] === '$' && sin[f + 1] === "'") ? finDeComillas(sin, sin[f] === '$' ? f : f) : f + 1;
     const palabra = sin.slice(j, f);
-    juzgar(sin, k, sin.slice(f), null, tokens(palabra).join(' '), /^\$?'/.test(palabra));
+    // sin palabra (`<<<` y un `<`, otro operador o el fin) el shell no corre el comando: no hay programa que juzgar
+    if (!palabra) continue;
+    // la etapa que recibe el texto, y si no corre un intérprete, la primera de las que le siguen que sí
+    const b = comandos.corte(f);
+    const ini = etapaEn(sin, k);
+    let propia = programaSinMirarElHereString(k, f, ini, b.k);
+    if (propia === undefined) propia = lectorDePrograma(tokens(`${sin.slice(ini, k)} ${sin.slice(f, b.k)}`));
+    const l = propia || (b.fin ? null : comandos.primerPrograma(b.k + 1));
+    if (l) out.push({ ...l, cuerpo: tokens(palabra).join(' '), comillas: /^\$?'/.test(palabra) });
   }
   return out;
 }
 
+// Los programas que NO corren un texto que reciben. Es una lista de los que se sabe que no, y no de los que sí: las formas
+// de correr un texto no se terminan de enumerar (un shell con otro nombre o escrito entre comillas, `$0`, `trap`, `su -c`,
+// `ssh`, un intérprete que no estaba en la lista), así que lo que falta acá frena de más, nunca de menos. Sólo programas sin
+// ninguna opción que corra un texto: `git` (`rebase -x`, `submodule foreach`, un alias con `!`), `gh` (`alias set`), `az` y
+// `sort` (`--compress-program`) quedan afuera a propósito.
+const NO_CORREN_TEXTO = new Set(['echo', 'printf', 'cat', 'tee', 'cd', 'pwd', 'ls', 'mkdir', 'touch', 'head', 'tail', 'wc', 'grep',
+  'true', 'false', 'test', '[', 'uniq', 'cut', 'tr', 'date', 'sleep', 'jq', 'diff']);
+// lo que separa un comando del siguiente, y lo que abre uno adentro de otro (`$(…)`, comillas invertidas, `<(…)`, `>(…)`)
+const ENTRE_COMANDOS = /\$\(|<\(|>\(|[;&|\n(){}`]/;
+
+/**
+ * ¿Algo en el comando puede correr un texto? Ante la duda, sí. Sólo dice que no cuando cada programa del comando está
+ * escrito tal cual (sin comillas, barras ni `$`), es de `NO_CORREN_TEXTO`, no lleva variables asignadas delante (las
+ * que cambian lo que corre un programa: `GIT_SSH_COMMAND=…`, `PAGER=…`) y no hay palabras de control (`if`, `then`,
+ * `for`, `!`, `time`…). Los cuerpos de los heredocs no cuentan: el que va a un programa que corre texto ya está en su
+ * renglón (`cat <<EOF | bash`). Una comilla invertida escapada falla cerrado: empareja mal las sustituciones.
+ */
+function ejecutaTexto(cmd, hondo = 0) {
+  const s = sinHeredocs(String(cmd));
+  if (/\\`/.test(s)) return true;
+  // una sustitución corre aunque esté entre comillas dobles (`echo "$(bash -c x)"`): se mira lo de adentro, también
+  // la que está entre comillas simples (ahí no corre: mirarla frena de más, nunca de menos)
+  if (hondo > 4) return true;
+  for (const m of s.matchAll(/\$\(((?:[^()]|\([^()]*\))*)\)|`([^`]*)`/g)) {
+    if (ejecutaTexto(m[1] !== undefined ? m[1] : m[2], hondo + 1)) return true;
+  }
+  const f = posicionesFueraDeComillas(s);
+  // lo citado o escapado queda como `"`: una palabra con eso adentro no es un programa escrito tal cual
+  let afuera = '';
+  for (let i = 0; i < s.length; i++) afuera += f(i) ? s[i] : f.esComentario(i) ? ' ' : '"';
+  for (const tramo of afuera.split(ENTRE_COMANDOS)) {
+    const palabras = tramo.trim().split(/\s+/).filter(Boolean);
+    let k = 0;
+    while (k < palabras.length && /^[A-Za-z_]\w*=/.test(palabras[k])) k++;   // las asignaciones de delante
+    if (k >= palabras.length) continue;                                       // sólo asignaciones, o vacío
+    if (k > 0) return true;                                                   // una variable que el programa lee
+    const programa = /^[^<>]*/.exec(palabras[k])[0];
+    if (!/^[A-Za-z0-9._[-]+$/.test(programa) || !NO_CORREN_TEXTO.has(programa)) return true;
+  }
+  return false;
+}
+
+/** El contenido de cada texto entre comillas del comando (`'…'`, `"…"`, `$'…'` con sus escapes de comilla y barra). */
+function citados(cmd) {
+  // fuera de los cuerpos de los heredocs: el de `git commit -m "$(cat <<'EOF' … EOF)"` es el mensaje que imprime `cat`,
+  // no un comando; el que va a un shell queda entero (`salvoShell`), y los demás caminos de un cuerpo a un programa los
+  // mira cada freno con su propio lector de heredocs
+  return textosEntreComillas(sinHeredocs(String(cmd), { salvoShell: true })).filter((t) => t.trim());
+}
+
+// Lo que el `.` de una expresión regular no cruza: una barra seguida de uno de éstos no escapa nada
+const FIN_DE_LINEA = new Set(['\n', '\r', '\u2028', '\u2029']);
+
+/**
+ * Lee una cita con escapes de barra (`"…"` o `$'…'`) cuyo contenido empieza en `desde`, como
+ * `(?:\\.|[^<cierre>\\])*<cierre>`: `{ contenido, fin }`, o `{ corte }` con el lugar donde la lectura no pudo seguir (el
+ * final del texto, o una barra al final o seguida de un salto de línea).
+ */
+function citaConEscapes(s, desde, cierre) {
+  for (let j = desde; j < s.length;) {
+    if (s[j] === cierre) return { contenido: s.slice(desde, j), fin: j + 1 };
+    if (s[j] !== '\\') { j++; continue; }
+    if (j + 1 < s.length && !FIN_DE_LINEA.has(s[j + 1])) { j += 2; continue; }
+    return { corte: j };
+  }
+  return { corte: s.length };
+}
+
+/**
+ * Los textos entre comillas, en orden: los mismos que da
+ * `/\$'((?:\\.|[^'\\])*)'|'([^']*)'|"((?:\\.|[^"\\])*)"/g`, sin crecer con el cuadrado del largo. Ante una comilla que no
+ * cierra, la expresión recorría desde cada comilla siguiente. Acá, una forma que abrió y no cerró no se vuelve a probar
+ * hasta el lugar donde se cortó su lectura: una comilla de esa forma antes del corte quedó adentro, escapada, y desde
+ * ahí se lee igual hasta el mismo corte. Después del corte (una barra con un salto de línea) se prueba de nuevo.
+ */
+function textosEntreComillas(texto) {
+  const s = String(texto);
+  const out = [];
+  // por forma (`$'`, `'`, `"`): hasta dónde se sabe que no cierra
+  const sinCierreHasta = [-1, -1, -1];
+  let i = 0;
+  while (i < s.length) {
+    let r = null;
+    let f = -1;
+    if (s[i] === '$' && s[i + 1] === "'" && i > sinCierreHasta[0]) { f = 0; r = citaConEscapes(s, i + 2, "'"); }
+    else if (s[i] === "'" && i > sinCierreHasta[1]) {
+      f = 1;
+      const k = s.indexOf("'", i + 1);
+      r = k < 0 ? { corte: s.length } : { contenido: s.slice(i + 1, k), fin: k + 1 };
+    } else if (s[i] === '"' && i > sinCierreHasta[2]) { f = 2; r = citaConEscapes(s, i + 1, '"'); }
+    if (r && r.fin !== undefined) {
+      out.push(f === 0 ? r.contenido.replace(/\\(['\\])/g, '$1') : f === 1 ? r.contenido : r.contenido.replace(/\\(["\\$`])/g, '$1'));
+      i = r.fin;
+      continue;
+    }
+    if (r) sinCierreHasta[f] = r.corte;
+    i++;
+  }
+  return out;
+}
+
+// El especificador de un `%…` de printf: marcas, ancho, precisión y letra. El ancho no empieza con 0: ese 0 es una marca,
+// y con las dos lecturas posibles una tira de ceros crecía con el cuadrado del largo. Dice lo mismo que
+// `/^[-+ #0]*(?:\d+|\*)?(?:\.(?:\d+|\*))?[a-zA-Z]/` sobre el texto desde ese lugar.
+const ESPECIFICADOR_PRINTF = /[-+ #0]*(?:[1-9]\d*|\*)?(?:\.(?:\d+|\*))?[a-zA-Z]/y;
+
+/** Cuántos caracteres ocupa el especificador de printf que empieza en `desde` (lo que sigue al `%`); 0 si no hay. */
+function largoDeEspecificadorPrintf(fmt, desde) {
+  ESPECIFICADOR_PRINTF.lastIndex = desde;
+  const m = ESPECIFICADOR_PRINTF.exec(String(fmt));
+  return m ? m[0].length : 0;
+}
+
+/** El texto sin las barras del final: lo mismo que `.replace(/\/+$/, '')`, sin probar desde cada barra de una tira larga. */
+function sinBarrasFinales(texto) {
+  const s = String(texto);
+  let j = s.length;
+  while (j > 0 && s[j - 1] === '/') j--;
+  return s.slice(0, j);
+}
+
+/**
+ * ¿Cada posición del texto está fuera de comillas? Con las reglas de la terminal: entre comillas simples nada escapa,
+ * entre dobles la barra escapa, fuera la barra escapa el carácter que sigue y `$'…'` deja escapar su comilla.
+ */
+function posicionesFueraDeComillas(texto) {
+  const s = String(texto);
+  const fuera = new Array(s.length + 1).fill(true);
+  const comentario = [];
+  let q = null;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (q) {
+      fuera[i] = false;
+      if (q === "'") { if (c === "'") q = null; continue; }
+      if (c === '\\') { fuera[i + 1] = false; i++; continue; }
+      if (c === (q === "$'" ? "'" : '"')) q = null;
+      continue;
+    }
+    if (c === '\\') { fuera[i + 1] = false; i++; continue; }
+    // un comentario (`#` al empezar una palabra) llega hasta el fin del renglón: una comilla adentro no abre nada
+    if (c === '#' && (i === 0 || /[\s;&|()]/.test(s[i - 1]))) {
+      while (i < s.length && s[i] !== '\n') { fuera[i] = false; comentario[i] = true; i++; }
+      i--;
+      continue;
+    }
+    // `$$` es el número del proceso: la comilla que lo siga es simple común, no `$'…'`
+    if (c === '$' && s[i + 1] === '$') { i++; continue; }
+    if (c === '$' && s[i + 1] === "'") { fuera[i] = false; fuera[i + 1] = false; q = "$'"; i++; continue; }
+    if (c === "'" || c === '"') { fuera[i] = false; q = c; }
+  }
+  const f = (i) => fuera[i] !== false;
+  f.esComentario = (i) => comentario[i] === true;
+  return f;
+}
+
 module.exports = {
+  // si un comando puede correr un texto, y qué hay entre comillas (los frenos de escritura y de sesiones)
+  ejecutaTexto, citados, posicionesFueraDeComillas,
+  // lo que el freno de producción lee sin crecer con el cuadrado del largo del comando
+  SHELL_ANTES, SHELL_DESPUES, textosEntreComillas, largoDeEspecificadorPrintf, sinBarrasFinales, sinBlancosDeLasPuntas,
   // las de siempre
   programasPorEntrada,
   sinHeredocs, segmentos, tokens, PREFIJOS, expandir, variablesDelComando, SIN_RESOLVER,

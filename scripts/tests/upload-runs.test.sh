@@ -910,6 +910,29 @@ node -e 'const fs=require("fs");const [o,x]=process.argv.slice(1);fs.unlinkSync(
 HOME="${T}/casa" USERPROFILE="${T}/casa" subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-05 "maq-a" --dry-run
 [ "$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['legacy']['kind'])" "${T}/estado/registros-buzon/place.json" 2>&1)" = dangling ] \
   && ok "8.19-B T29 el viejo colgado con el lugar sano: dangling" || mal "8.19-B T29 colgado: $(cat "${T}/estado/registros-buzon/place.json" 2>&1 | head -c 300)"
+# ── T1b (8.24) · PlaceJson_ThreeOldPlaces ─────────────────────────────────────────
+# place.json sube también los otros dos lugares viejos que se retiran (`.tycon-pipeline` y `tycon.json`), con lo mismo
+# que el nombre viejo: si está, de qué tipo, si apunta al lugar nuevo y lo registrado con él. Sin rutas de la máquina.
+# 🔴 Atrapa: sin esto, legacy-retire-check.js --home dejaría esos dos lugares sin medir y nunca se podrían retirar.
+T="${BASE}/t1b824"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; casa29 "${T}/casa" "${T}/clon"
+mkdir -p "${T}/casa/.tycon"
+mv "${T}/casa/.claude/.tycon-pipeline" "${T}/casa/.tycon/state"
+node -e 'const fs=require("fs");const [s,o]=process.argv.slice(1);fs.symlinkSync(s,o,process.platform==="win32"?"junction":"dir")' "${T}/casa/.tycon/state" "${T}/casa/.claude/.tycon-pipeline"
+echo '{}' > "${T}/casa/.claude/tycon.json"
+rm -f "${T}/casa/.claude/${LN}"
+printf '{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"cat \\"$HOME/.claude/.tycon-pipeline/gates.log\\""}]}]}}\n' > "${T}/casa/.claude/settings.json"
+HOME="${T}/casa" USERPROFILE="${T}/casa" subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-05 "maq-a" --dry-run
+python3 - "${T}/estado/registros-buzon/place.json" "${T}" <<'PY' && ok "8.24 T1b place.json trae los tres lugares viejos: el enlace al estado con su hook, la configuración real y el nombre viejo que no está" || mal "8.24 T1b los lugares viejos en place.json: $(cat "${T}/estado/registros-buzon/place.json" 2>&1 | head -c 600)"
+import json, sys
+f, base = sys.argv[1:3]
+texto = open(f, encoding="utf-8").read()
+assert base not in texto and "/casa" not in texto, texto
+d = json.loads(texto)
+assert d["legacy"]["exists"] is False, d["legacy"]
+o = d["old_places"]
+assert o[".tycon-pipeline"] == {"exists": True, "kind": "link", "to_place": True, "registered": {"total": 1, "files": {"settings.json": {"count": 1, "permissions": 0}}, "unreadable": 0}}, o[".tycon-pipeline"]
+assert o["tycon.json"] == {"exists": True, "kind": "file", "to_place": False, "registered": {"total": 0, "files": {}, "unreadable": 0}}, o["tycon.json"]
+PY
 # ── T40 · Mailbox_PlaceJson_SaysReleaseVersionAndTeamLayer_NeverTheLayerUrl ────────────────
 # `install` dice lo que `doctor --json` dice de la instalación —el modo, la versión y la capa del equipo— desde el mismo
 # estado, para juntar eso de todas las máquinas sin pedirle nada a nadie. La dirección del repo de la capa no viaja;
@@ -1900,6 +1923,27 @@ echo 'export NADA=que-ver' > "${T}/casa/.bashrc"
 subir_con_casa "${T}" "${T}/h" maq-a "${T}/casa"
 [ "${RC}" -eq 0 ] && [ "$(campo "${T}" valores_sin_comprobar)" != "true" ] && campo "${T}" valores_problemas | grep '.zshrc' >/dev/null && grep -q 'no se pudo leer' "${T}/err.txt" \
   && ok "T18 con un origen roto y otro legible, sube y dice cuál no leyó" || mal "T18c rc=${RC} problemas=$(campo "${T}" valores_problemas) $(head -c 200 "${T}/err.txt")"
+
+# ── Cuenta nueva · la llave pasa a otra cuenta y otro contenedor: cada máquina vuelve a subir todo ──
+# 🔴 Atrapa: un registro de subidas que no mira el destino → la máquina da por subido en el buzón nuevo lo que
+#    sólo llegó al viejo, y el nuevo queda vacío para siempre.
+T="${BASE}/cuenta-nueva"; buzon "${T}/b"; config "${T}/cfg.json"
+corrida "${T}/h" "6.1-2026-10-01T0900" 2000; corrida "${T}/h" "6.2-2026-10-02T0900" 3000
+subir "${T}" "${T}/h" "maq-a"
+[ "${RC}" -eq 0 ] && [ "$(campo "${T}" subidos)" = "4" ] || mal "Cuenta nueva: la primera subida no anduvo (rc=${RC}, subidos $(campo "${T}" subidos))"
+printf '{"cuenta":"cuentanueva","contenedor":"telemetry","tenant":"00000000-0000-0000-0000-000000000000","politica":"upload-prueba","vence":"2099-01-01","sas":"%s"}\n' \
+  "sv=2022-11-02&si=upload-prueba&sr=c&spr=https&sig=${FAKE_SIGNATURE}" > "${T}/cfg.json"
+subir "${T}" "${T}/h" "maq-a"
+LLEGARON=0
+for f in 6.1-2026-10-01T0900.json 6.1-2026-10-01T0900.hilo.jsonl.gz 6.2-2026-10-02T0900.json 6.2-2026-10-02T0900.hilo.jsonl.gz; do
+  cmp -s "${T}/h/${f}" "${T}/b/blobs/telemetry/maq-a/${f}" && LLEGARON=$((LLEGARON+1))
+done
+[ "${RC}" -eq 0 ] && [ "${LLEGARON}" = "4" ] && [ "$(campo "${T}" subidos)" = "4" ] \
+  && python3 -c "import json,sys; assert json.load(open(sys.argv[1]))['destino']=='cuentanueva/telemetry'" "${T}/estado/mailbox-uploads.json" 2>/dev/null \
+  && ok "Cuenta nueva: con la llave de otra cuenta y otro contenedor, los 4 archivos vuelven a subir, idénticos, y el registro anota el destino nuevo" \
+  || mal "Cuenta nueva: rc=${RC} subidos=$(campo "${T}" subidos) llegaron ${LLEGARON} de 4 al contenedor nuevo"
+ANTES=$(puts "${T}/b"); subir "${T}" "${T}/h" "maq-a"
+[ "${RC}" -eq 0 ] && [ "$(puts "${T}/b")" = "${ANTES}" ] && ok "Cuenta nueva: la pasada siguiente no sube nada (recuerda lo del buzón nuevo)" || mal "Cuenta nueva: la pasada siguiente subió $(( $(puts "${T}/b") - ANTES )) archivo(s)"
 
 echo
 [ "${FALLOS}" -eq 0 ] && { echo "subir-corridas: todo verde"; exit 0; } || { echo "${FALLOS} fallo(s)"; exit 1; }

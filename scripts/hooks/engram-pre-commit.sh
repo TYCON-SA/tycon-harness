@@ -340,9 +340,7 @@ else
       [ -n "$d" ] || continue
       printf '%s' "$INPUT" | ENGRAM_HOOK_COMMIT_DIR="$d" bash "${BASH_SOURCE[0]}"; rc=$?
       if [ "$rc" = "2" ]; then WORST=2; elif [ "$rc" != "0" ] && [ "$WORST" = "0" ]; then WORST=1; fi
-    done <<EOF_DIRS
-$COMMIT_DIRS
-EOF_DIRS
+    done < <(printf '%s\n' "$COMMIT_DIRS")
     exit "$WORST"
   fi
 fi
@@ -367,7 +365,7 @@ fi
 log "project=$PROJECT"
 
 # ── La configuración del arnés ─────────────────────────────────────────────
-# Un `~/.claude/tycon.json` (o un perfil) roto NO se lee como «engram apagado» ni frena el commit:
+# Un `~/.tycon/config.json` (o un perfil) roto NO se lee como «engram apagado» ni frena el commit:
 # se dice en CADA corrida —sin sello, sin silencio— y esta invocación no sincroniza. Nunca sale ≠ 0
 # por esto: un PreToolUse que sale con 2 deja la sesión sin Bash. El lector vive al lado de este hook.
 CONFIG_JS="$SCRIPT_DIR/../lib/tycon-config.js"
@@ -512,7 +510,11 @@ json_valido() {
 
 constancia() { # $1 regla · $2 veredicto — es AYUDA, no evidencia: nunca cambia el veredicto.
   [ -f "$LIB_CONSTANCIA" ] && command -v "$HNODE" >/dev/null 2>&1 || return 0
-  printf '%s' "$CMD" | "$HNODE" "$LIB_CONSTANCIA" --guard engram-manifest --rule "$1" --verdict "$2" --cmd-stdin >/dev/null 2>&1 || true
+  # la sesión del evento del gancho; guard-record.js descarta una de otra forma y la línea sale igual, sin ella
+  local ses extra=""
+  ses=$(printf '%s' "$INPUT" | read_json text session_id "" 2>/dev/null) || ses=""
+  [ -n "$ses" ] && extra="--session"
+  printf '%s' "$CMD" | "$HNODE" "$LIB_CONSTANCIA" --guard engram-manifest --rule "$1" --verdict "$2" ${extra:+"$extra" "$ses"} --cmd-stdin >/dev/null 2>&1 || true
 }
 
 # $1 = motivo de por qué no se pudo medir. Nunca dice «sano»: no medir y estar bien son distintos.

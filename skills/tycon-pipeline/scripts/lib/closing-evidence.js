@@ -73,6 +73,8 @@ function evidenciaDeclaraFail(content) {
  *   · e2e    — una fila E2E de la tabla `### Tests` con un gate PASS, con su copia en gates.log y fresco.
  *   · firma  — el AC quedó aprobado por el dev desde su terminal, vigente para su declaración
  *              (veredicto WAIVED-USER: la matriz sólo lo da si la firma engancha con la declaración actual).
+ *   · noche  — declarado imposible, sin firma: la última noche corrió en verde su prueba, que ya estaba en main
+ *              (veredicto COVERED-NIGHTLY, lib/nightly-green.js).
  * La matriz, el self-audit y el plan manual siguen sin contar (arriba): esto no los mira.
  */
 function coberturaDeLaUnion(matriz) {
@@ -86,6 +88,10 @@ function coberturaDeLaUnion(matriz) {
     if (enVivo && v && v.fuentes && v.fuentes.smoke && v.fuentes.smoke.length) f.push('smoke');
     if (enVivo && v && v.fuentes && v.fuentes.e2e && v.fuentes.e2e.length) f.push('e2e');
     if (v && v.verdict === 'WAIVED-USER') f.push('firma');
+    // declarado imposible y cubierto por la noche, sin firma: su prueba en main corrió en verde (lib/nightly-green.js)
+    if (v && v.verdict === 'COVERED-NIGHTLY') f.push('noche');
+    // se comprueba en staging, después del merge: antes de done no falta; para done la matriz lo da STAGING-FALTA
+    if (v && v.verdict === 'EN-STAGING') f.push('staging');
     if (f.length) porAc.set(Number(k), f);
   }
   return { porAc, cubiertos: new Set(porAc.keys()) };

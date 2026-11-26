@@ -270,13 +270,13 @@ del sitio, y sólo un `update --yes` a mano la trajo.
 
 _(scripts/metrics/upload-runs.js + scripts/metrics/download-runs.js)_
 
-**Qué es:** Sube las corridas de cada máquina a un buzón privado de Azure Storage; `download-runs.js` las baja. También sube las métricas de cada merge.
+**Qué es:** Sube las corridas de cada máquina a un buzón privado de Azure Storage o de Google Cloud Storage (`integrations/gcs/`); `download-runs.js` las baja, por ahora sólo de Azure. También sube las métricas de cada merge.
 
-**Por qué existe:** El hilo trae prompts, rutas del disco y código de cliente, así que no puede viajar por git. La llave de subida sólo crea blobs nuevos: no lee, no lista, no pisa ni borra.
+**Por qué existe:** El hilo trae prompts, rutas del disco y código de cliente, así que no puede viajar por git. La llave de subida sólo crea objetos nuevos: no lee, no lista, no pisa ni borra.
 
 **Quién la usa:** El instalador lo lanza de fondo en cada arranque, tras el barrido de `tokens-digest.js`. La vista de corridas lee lo bajado.
 
-**Dónde se prueba:** `scripts/tests/upload-runs.test.sh`, `scripts/tests/download-runs.test.sh`
+**Dónde se prueba:** `scripts/tests/upload-runs.test.sh`, `scripts/tests/download-runs.test.sh`, `scripts/tests/mailbox-gcs.test.js`
 
 **Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptsmetricsupload-runsjs)
 
@@ -313,6 +313,16 @@ _(scripts/metrics/upload-runs.js + scripts/metrics/download-runs.js)_
 **Dónde se prueba:** `scripts/tests/guard-record.test.sh`
 
 **Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptslibguard-recordjs)
+
+## scripts/metrics/controls-table.js
+
+**Qué es:** La tabla de los controles de esta máquina, por freno y por modelo: cuánto frenó, avisó, pasó con firma y dejó pasar, los controles del pipeline que frenaron, las fallas de cada freno y si es exigencia o preferencia.
+
+**Por qué existe:** Para decidir qué freno se relaja y para qué modelo hace falta saber cuánto frena y cuánto se firma igual. Sólo lee.
+
+**Quién la usa:** Quien mantiene el arnés, a mano. La clasificación vive en `controls-classification.json`.
+
+**Dónde se prueba:** `scripts/tests/controls-table.test.js`
 
 ## scripts/nightly/dashboard/reducer.js
 

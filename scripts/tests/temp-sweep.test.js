@@ -33,8 +33,8 @@ const { spawn, spawnSync } = require('child_process');
 
 const REPO = path.resolve(__dirname, '..', '..');
 const HOOK = path.join(REPO, 'scripts', 'hooks', 'temp-sweep.js');
-const { stateDir } = require(path.join(REPO, 'scripts', 'setup', 'harness', 'tycon-home.js'));
-const { sweep, looksRandom, defaultRoots, allowedRoots, livePaths, trusted, inspect, remove, startupLine } = require(HOOK);
+const { stateDir, claudeDir } = require(path.join(REPO, 'scripts', 'setup', 'harness', 'tycon-home.js'));
+const { LSOF_ARGS, sweep, looksRandom, defaultRoots, allowedRoots, livePaths, trusted, inspect, remove, startupLine, lifeSigns, agentTempDir } = require(HOOK);
 
 const WIN = process.platform === 'win32';
 const ROOT_USER = !WIN && process.getuid() === 0;
@@ -527,4 +527,200 @@ test('T27 el guion suelto, sin la librería que sabe dónde va el sello, no barr
   assert.ok(fs.existsSync(dir));
   const j = spawnSync(process.execPath, [suelto, '--json'], { cwd: L.base, encoding: 'utf8', env: { ...process.env, HOME: L.home, USERPROFILE: L.home, TYCON_TEMP_SWEEP: '', TYCON_EVAL_SANDBOX: '' } });
   assert.ok(JSON.parse(j.stdout).error, 'con --json, el fallo también sale en JSON');
+});
+
+test('T28 lsof no traduce las direcciones ni los puertos de red: con muchas conexiones, la lista llega antes del tope', () => {
+  assert.ok(LSOF_ARGS.includes('-n') && LSOF_ARGS.includes('-P'), LSOF_ARGS.join(' '));
+  assert.deepStrictEqual(LSOF_ARGS.slice(-3), ['-u', String(process.getuid ? process.getuid() : ''), '-Fn']);
+});
+
+// ── las carpetas temporales de las sesiones del agente (@story-8.164) ────────────────────────────────────────────────
+
+const AGENTE = WIN ? null : path.basename(agentTempDir());
+const DIA = 24 * HOUR;
+const sid = (n) => `0000000${n}-0000-4000-8000-00000000000${n}`;
+const dormir = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+/** La carpeta temporal de una sesión del agente, como la arma Claude Code: `claude-<uid>/<proyecto>/<sesión>/`. */
+function sesion(root, id, proyecto = '-Users-dev-repo') {
+  const dir = path.join(root, AGENTE, proyecto, id);
+  fs.mkdirSync(path.join(dir, 'tasks'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'tasks', 'b1.output'), 'salida\n');
+  for (const d of [path.join(root, AGENTE), path.join(root, AGENTE, proyecto), dir]) fs.chmodSync(d, 0o700);
+  return dir;
+}
+
+/** Los rastros de vida en un HOME de prueba: los archivos de sesión de Claude Code y los marcadores del arnés. */
+function rastros(home, { sesiones = [], marcadores = [], estacionadas = [] } = {}) {
+  const sdir = path.join(claudeDir(home), 'sessions');
+  fs.mkdirSync(sdir, { recursive: true });
+  sesiones.forEach((s, i) => fs.writeFileSync(path.join(sdir, `${9000 + i}.json`), JSON.stringify({ cwd: '/x', ...s })));
+  for (const [carpeta, lista] of [['active', marcadores], ['parked', estacionadas]]) {
+    fs.mkdirSync(path.join(stateDir(home), carpeta), { recursive: true });
+    for (const id of lista) fs.writeFileSync(path.join(stateDir(home), carpeta, `${id}.json`), '{}');
+  }
+}
+
+const GIT_ENV = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: path.join(tmp, 'sin-gitconfig'), GIT_AUTHOR_NAME: 'lab', GIT_AUTHOR_EMAIL: 'lab@example.invalid', GIT_COMMITTER_NAME: 'lab', GIT_COMMITTER_EMAIL: 'lab@example.invalid' };
+function git(cwd, ...args) {
+  const r = spawnSync('git', args, { cwd, encoding: 'utf8', env: GIT_ENV });
+  assert.strictEqual(r.status, 0, `git ${args.join(' ')}: ${r.stderr}`);
+  return r.stdout;
+}
+
+/** Un remoto de juguete con un commit en main, y un clon suyo en `dest`, limpio y con todo subido. */
+function clon(base, dest) {
+  const remoto = path.join(base, 'remoto.git');
+  if (!fs.existsSync(remoto)) {
+    git(base, 'init', '-q', '--bare', '-b', 'main', remoto);
+    const semilla = path.join(base, 'semilla');
+    git(base, 'clone', '-q', remoto, semilla);
+    fs.writeFileSync(path.join(semilla, 'a.txt'), 'a\n');
+    git(semilla, 'add', 'a.txt');
+    git(semilla, 'commit', '-q', '-m', 'uno');
+    git(semilla, 'push', '-q', 'origin', 'HEAD:main');
+  }
+  git(base, 'clone', '-q', remoto, dest);
+  return dest;
+}
+
+test('T29 8.164-SesionMuertaYVieja_SeBorra @story-8.164 @ac-8 — la carpeta de una sesión sin rastro de vida y sin tocar hace más del plazo se borra; la viva, la reciente y la que tiene trabajo sin guardar quedan, y la sucia se nombra', { skip: WIN }, () => {
+  const L = lugar();
+  const sinArchivo = sesion(L.root, sid(1));
+  const muerta = sesion(L.root, sid(2));
+  const viva = sesion(L.root, sid(4));
+  const conMarcador = sesion(L.root, sid(5));
+  const estacionada = sesion(L.root, sid(9));
+  const sucia = sesion(L.root, sid(6));
+  clon(L.base, path.join(sucia, 'scratchpad', 'c'));
+  fs.writeFileSync(path.join(sucia, 'scratchpad', 'c', 'nuevo.txt'), 'sin commitear\n');
+  const sinSubir = sesion(L.root, sid(7), '-Users-dev-otro');
+  const c2 = clon(L.base, path.join(sinSubir, 'scratchpad', 'c'));
+  fs.writeFileSync(path.join(c2, 'b.txt'), 'b\n');
+  git(c2, 'add', 'b.txt');
+  git(c2, 'commit', '-q', '-m', 'sin subir');
+  const sinRemota = sesion(L.root, sid(3), '-Users-dev-otro');
+  git(clon(L.base, path.join(sinRemota, 'x')), 'checkout', '-q', '-b', 'propia');
+  const limpia = sesion(L.root, sid(8));
+  clon(L.base, path.join(limpia, 'scratchpad', 'c'));
+  const tocada = sesion(L.root, 'aaaaaaaa-0000-4000-8000-000000000001');
+  // lo que se crea después del corte es nuevo: la edad de una carpeta es la de lo más nuevo que tiene adentro
+  dormir(30);
+  const corte = Date.now();
+  dormir(30);
+  const nueva = sesion(L.root, 'aaaaaaaa-0000-4000-8000-000000000002');
+  fs.writeFileSync(path.join(tocada, 'tasks', 'b2.output'), 'recién\n');
+  const muerto = spawnSync(process.execPath, ['-e', '']).pid;
+  rastros(L.home, { sesiones: [{ sessionId: sid(2), pid: muerto }, { sessionId: sid(4), pid: process.pid }], marcadores: [sid(5)], estacionadas: [sid(9)] });
+  const life = lifeSigns(L.home);
+  assert.strictEqual(life.error, null, life.error);
+  const res = sweep({ roots: [L.root], now: corte + 2 * DIA, live: [], agent: { name: AGENTE, days: 2, life } });
+  const s = res.sessions;
+  assert.deepStrictEqual(s.removed.slice().sort(), [sinArchivo, muerta, limpia].sort(), JSON.stringify(s));
+  for (const d of [sinArchivo, muerta, limpia]) assert.ok(!fs.existsSync(d), `${d} se borra`);
+  for (const d of [viva, conMarcador, estacionada, sucia, sinSubir, sinRemota, tocada, nueva]) assert.ok(fs.existsSync(d), `${d} queda`);
+  assert.deepStrictEqual(s.unsaved.map((u) => u.path).sort(), [sucia, sinSubir, sinRemota].sort(), JSON.stringify(s.unsaved));
+  assert.match(s.unsaved.find((u) => u.path === sucia).why, /cambios sin commitear/);
+  assert.match(s.unsaved.find((u) => u.path === sinSubir).why, /commits sin subir/);
+  assert.match(s.unsaved.find((u) => u.path === sinRemota).why, /rama sin remoto/);
+  assert.strictEqual(s.blocked, null);
+  const line = startupLine(res, { sessionDays: 2 });
+  assert.match(line, /sesiones del agente que ya no viven: borré 3 sin tocar hace 2 días/);
+  assert.ok(line.includes(sucia), 'la del clon sucio se nombra');
+  // dos barridos a la vez: el segundo no encuentra nada que borrar y no lo cuenta como error
+  const otra = sweep({ roots: [L.root], now: corte + 2 * DIA, live: [], agent: { name: AGENTE, days: 2, life } });
+  assert.deepStrictEqual(otra.sessions.removed, []);
+  assert.deepStrictEqual(otra.sessions.failed, []);
+  // con el plazo sin cumplir, nada de lo muerto se borra
+  const antes = sesion(L.root, sid(1));
+  assert.deepStrictEqual(sweep({ roots: [L.root], now: corte + DIA, live: [], agent: { name: AGENTE, days: 2, life } }).sessions.removed, []);
+  assert.ok(fs.existsSync(antes));
+});
+
+test('T30 8.164-FormaDesconocida_NoSeToca @story-8.164 @ac-9 — lo que no tiene la forma claude-<uid>/<proyecto>/<sesión> no se toca', { skip: WIN }, () => {
+  const L = lugar();
+  const ag = path.join(L.root, AGENTE);
+  fs.mkdirSync(path.join(ag, '-Users-dev-repo', 'no-es-una-sesion'), { recursive: true });
+  fs.writeFileSync(path.join(ag, '-Users-dev-repo', 'no-es-una-sesion', 'x.txt'), 'x\n');
+  fs.writeFileSync(path.join(ag, '-Users-dev-repo', `${sid(1)}`), 'un archivo con nombre de sesión\n');
+  fs.writeFileSync(path.join(ag, 'suelto.txt'), 'x\n');
+  const ajeno = path.join(L.root, 'claude-99999', '-Users-dev-repo', sid(2));
+  fs.mkdirSync(ajeno, { recursive: true });
+  fs.mkdirSync(path.join(L.base, 'afuera', sid(3)), { recursive: true });
+  fs.symlinkSync(path.join(L.base, 'afuera', sid(3)), path.join(ag, '-Users-dev-repo', sid(3)));
+  const suelta = carpeta(L.root, 'suelta');
+  rastros(L.home);
+  const res = sweep({ roots: [L.root], now: Date.now() + 3 * DIA, live: [], agent: { name: AGENTE, days: 2, life: lifeSigns(L.home) } });
+  assert.deepStrictEqual(res.sessions.removed, []);
+  for (const p of [path.join(ag, '-Users-dev-repo', 'no-es-una-sesion', 'x.txt'), path.join(ag, '-Users-dev-repo', sid(1)), path.join(ag, 'suelto.txt'), ajeno, path.join(L.base, 'afuera', sid(3)), path.join(ag, '-Users-dev-repo', sid(3)), suelta]) {
+    assert.ok(fs.existsSync(p), `${p} queda`);
+  }
+});
+
+test('T31 8.164-NoPudeLeer_NoBorra @story-8.164 @ac-10 — sin poder leer las sesiones o los marcadores no se borra ninguna carpeta de sesión, y se dice; lo demás del barrido sigue', { skip: WIN }, () => {
+  // sin la carpeta de sesiones (una máquina sólo con Codex): no se sabe qué sesión vive
+  const sinSesiones = lugar();
+  assert.match(lifeSigns(sinSesiones.home).error, /no pude leer las sesiones/);
+  // un archivo de sesión ilegible
+  const ilegible = lugar();
+  rastros(ilegible.home);
+  fs.writeFileSync(path.join(claudeDir(ilegible.home), 'sessions', '1.json'), '{ a medias');
+  assert.match(lifeSigns(ilegible.home).error, /no pude leer las sesiones/);
+  if (!ROOT_USER) {
+    // la carpeta de marcadores sin permiso de lectura
+    const sinMarcadores = lugar();
+    rastros(sinMarcadores.home);
+    fs.chmodSync(path.join(stateDir(sinMarcadores.home), 'active'), 0o000);
+    try { assert.match(lifeSigns(sinMarcadores.home).error, /no pude leer los marcadores/); } finally { fs.chmodSync(path.join(stateDir(sinMarcadores.home), 'active'), 0o700); }
+  }
+  // sin la carpeta de marcadores no hay ejecuciones: eso sí se sabe
+  const nunca = lugar();
+  fs.mkdirSync(path.join(claudeDir(nunca.home), 'sessions'), { recursive: true });
+  assert.strictEqual(lifeSigns(nunca.home).error, null);
+
+  const L = lugar();
+  const muerta = sesion(L.root, sid(1));
+  const vieja = carpeta(L.root, 'coord-aB3dEf');
+  const life = lifeSigns(L.home);
+  const res = sweep({ roots: [L.root], now: Date.now() + 3 * DIA, live: [], agent: { name: AGENTE, days: 2, life } });
+  assert.ok(fs.existsSync(muerta), 'la de sesión queda');
+  assert.deepStrictEqual(res.sessions.removed, []);
+  assert.match(res.sessions.blocked, /no pude leer las sesiones/);
+  assert.ok(!fs.existsSync(vieja), 'el temporal común se borra igual');
+  assert.match(startupLine(res, { sessionDays: 2 }), /sesiones del agente: no borré ninguna, no pude leer las sesiones/);
+
+  // el gancho, con el HOME vacío: lo mismo, en su línea
+  const G = lugar();
+  const otra = sesion(G.root, sid(2));
+  const r = gancho(G);
+  assert.strictEqual(r.status, 0);
+  assert.ok(fs.existsSync(otra));
+  assert.match(r.stdout, /sesiones del agente: no borré ninguna, no pude leer las sesiones/);
+});
+
+test('T32 8.164 @story-8.164 @ac-8 — el gancho borra la carpeta de una sesión muerta y vieja con el plazo del perfil, y la nombra si tiene trabajo sin guardar', { skip: WIN }, () => {
+  const L = lugar();
+  const muerta = sesion(L.root, sid(1));
+  const sucia = sesion(L.root, sid(2));
+  clon(L.base, path.join(sucia, 'scratchpad', 'c'));
+  fs.writeFileSync(path.join(sucia, 'scratchpad', 'c', 'nuevo.txt'), 'sin commitear\n');
+  rastros(L.home);
+  const vacio = path.join(L.base, 'team-profile.json');
+  fs.writeFileSync(vacio, '{}');
+  const r = gancho(L, { env: { TYCON_PROFILE: vacio, TYCON_TEMP_SWEEP_NOW: new Date(Date.now() + 3 * DIA).toISOString() } });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.ok(!fs.existsSync(muerta), r.stdout);
+  assert.ok(fs.existsSync(sucia));
+  assert.match(r.stdout, /sesiones del agente que ya no viven: borré 1 sin tocar hace 2 días/);
+  assert.ok(r.stdout.includes(sucia), r.stdout);
+  // el perfil alarga el plazo: con 5 días, la de hace 3 queda
+  const M = lugar();
+  const otra = sesion(M.root, sid(3));
+  rastros(M.home);
+  const perfil = path.join(M.base, 'team-profile.json');
+  fs.writeFileSync(perfil, JSON.stringify({ maintenance: { temp_days: 5 } }));
+  const r2 = gancho(M, { env: { TYCON_PROFILE: perfil, TYCON_TEMP_SWEEP_NOW: new Date(Date.now() + 3 * DIA).toISOString() } });
+  assert.strictEqual(r2.status, 0, r2.stderr);
+  assert.ok(fs.existsSync(otra), r2.stdout);
+  assert.doesNotMatch(r2.stdout, /sesiones del agente que ya no viven/);
 });
