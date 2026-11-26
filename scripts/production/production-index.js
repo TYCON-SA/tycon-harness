@@ -48,8 +48,14 @@ const SUFIJO_AZURE = '.database.windows.net';
 const LOCALES = new Set(['localhost', '127.0.0.1', '::1', '(local)', '.', '(localdb)']);
 
 // las rutas de la máquina (la carpeta del estado, el archivo de la configuración) las sabe setup/harness/tycon-home.js,
-// que está siempre al lado: en el repo, y en /opt/tycon/setup/harness/ por el instalador del freno
-const tyconHome = () => require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'));
+// que está al lado: en el repo, y en /opt/tycon/setup/harness/ por el instalador del freno. En una copia sin él (los
+// laboratorios de las pruebas), las rutas de siempre, a partir de la carpeta del estado de siempre
+const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
+const tyconHome = () => {
+  const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
+  if (require('fs').existsSync(lib)) return require(lib);
+  return { stateDir: stateDirOf, configFile: (h) => path.join(path.dirname(stateDirOf(h)), 'tycon.json') };
+};
 const dirDatos = (home) => tyconHome().stateDir(home || os.homedir());
 const rutaIndice = (home) => path.join(dirDatos(home), 'production-index.json');
 const rutaMemoria = (home) => path.join(dirDatos(home), 'production-memory.json');
