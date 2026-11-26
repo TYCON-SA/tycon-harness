@@ -9,9 +9,9 @@
  * callado — el modo de falla que el arnés existe para cazar. Por eso el orden es uno solo y vive acá:
  *
  *   1. `TYCON_GUIDES_DIR` (o `TCG`, que exporta el runner del banco de controles) — la salida explícita;
- *   2. el lugar `~/.claude/tycon-harness`, que crea y cuida el instalador del arnés
+ *   2. el lugar del arnés (`placePath` de tycon-home.js), que crea y cuida el instalador
  *      (`scripts/lib/canonical-path.js`): un prompt no puede leer una variable, pero sí una ruta estable;
- *   3. el nombre viejo `~/.claude/tycon-claude-guides`, que sigue resolviendo en las máquinas ya instaladas:
+ *   3. el nombre viejo (`legacyPlacePath`), que sigue resolviendo en las máquinas ya instaladas:
  *      con sólo el viejo se usa sin decir nada.
  *   Nunca una carpeta escrita a mano.
  *
@@ -32,7 +32,7 @@
  * automático contra ése desde un caso sería un efecto colateral (conserva `TYCON_GUIDES_HEAL_REPO`).
  *
  * Para shell (los scripts `.sh` y los fragmentos bash de los pasos) el mismo orden se escribe así:
- *   ${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}
+ *   ${TYCON_GUIDES_DIR:-$HOME/<el lugar>}   (el lugar, relativo a la carpeta de la persona)
  *
  * Uso: node lib/harness-path.js [--hook]      → la ruta (comando: exit 2 si no hay; hook: aviso por stderr, exit 0)
  *      node lib/harness-path.js --shell-idiom → el fragmento para shell
@@ -52,7 +52,8 @@ const LEGACY_PLACE_NAME = 'tycon-claude-guides';
 const TYCON_HOME_LIB = path.join(__dirname, '..', '..', '..', '..', 'scripts', 'setup', 'harness', 'tycon-home.js');
 const tyconHome = fs.existsSync(TYCON_HOME_LIB) ? require(TYCON_HOME_LIB) : null;
 const NOMBRE_ENLACE = PLACE_NAME;   // el nombre de la exportación: el lugar
-const IDIOMA_SHELL = '${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}';
+// el mismo lugar que `enlace()`, relativo a la carpeta de la persona: la forma no cambia con quién la corre
+const IDIOMA_SHELL = `${'${'}TYCON_GUIDES_DIR:-$HOME/${enlaceParaMostrar().slice(2)}}`;
 
 class RutaArnesError extends Error {
   constructor(mensaje, buscado) { super(mensaje); this.name = 'RutaArnesError'; this.buscado = buscado; }
@@ -61,6 +62,8 @@ class RutaArnesError extends Error {
 function real(p) { try { return fs.realpathSync(p); } catch (_) { return null; } }
 function enlace(home) { return tyconHome ? tyconHome.placePath(home || os.homedir()) : path.join(home || os.homedir(), '.claude', PLACE_NAME); }
 function legacyLink(home) { return tyconHome ? tyconHome.legacyPlacePath(home || os.homedir()) : path.join(home || os.homedir(), '.claude', LEGACY_PLACE_NAME); }
+/** El lugar como se le muestra a la persona: `~/` y su camino desde la carpeta de la persona. */
+function enlaceParaMostrar(home = os.homedir()) { return `~/${path.relative(home, enlace(home)).split(path.sep).join('/')}`; }
 function present(p) { try { fs.lstatSync(p); return true; } catch (_) { return false; } }
 /**
  * Los dos nombres, primero el lugar y después el viejo. Devuelve el primero que resuelve a un clon, lo que se buscó
@@ -102,7 +105,7 @@ function describirEnlace(e) {
 
 function avisoDe(buscado) {
   return `⚠️ tycon: no encuentro el arnés — busqué ${buscado.join(' · ')}. ` +
-    'Corré scripts/install-tycon-hooks.sh del arnés (crea el lugar ~/.claude/tycon-harness) o definí TYCON_GUIDES_DIR=<ruta del clon>.';
+    `Corré scripts/install-tycon-hooks.sh del arnés (crea el lugar ${enlaceParaMostrar()}) o definí TYCON_GUIDES_DIR=<ruta del clon>.`;
 }
 
 /**
@@ -160,7 +163,7 @@ function lib(relativo, opts) {
   try { return require(path.join(r.dir, relativo)); } catch (_) { return null; }
 }
 
-module.exports = { NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, IDIOMA_SHELL, RutaArnesError, enlace, legacyLink, esClon, resolver, rutaArnes, rutaArnesHook, soloEnlace, lib };
+module.exports = { NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, IDIOMA_SHELL, RutaArnesError, enlace, enlaceParaMostrar, legacyLink, esClon, resolver, rutaArnes, rutaArnesHook, soloEnlace, lib };
 
 if (require.main === module) {
   // la opción vieja sigue andando hasta el retiro

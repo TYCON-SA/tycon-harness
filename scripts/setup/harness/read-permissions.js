@@ -7,7 +7,7 @@
 // lectura de SUS carpetas, y nada más: una regla `Read(<carpeta>/**)` por cada una. Sólo lectura: editar sigue
 // preguntando (por eso no `additionalDirectories`, que en modo «aceptar ediciones» también deja editar).
 //
-// Las carpetas: el árbol instalado (por su ruta real), los dos enlaces de ~/.claude que apuntan a él (el lugar del arnés
+// Las carpetas: el árbol instalado (por su ruta real), los dos enlaces de la carpeta de Claude Code que apuntan a él (el lugar del arnés
 // y las skills instaladas, los dos de tycon-home.js) y cada skill de ~/.claude/skills cuya ruta real cae en el árbol. Una regla vale si cubre la ruta pedida
 // y la real, así que cada enlace lleva la suya (medido con Claude Code 2.1.304: una skill enlazada al árbol preguntaba
 // con el árbol permitido, y dejó de preguntar con su propia regla). Las skills propias del dev quedan afuera.
