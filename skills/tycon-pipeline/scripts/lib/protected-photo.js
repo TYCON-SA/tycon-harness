@@ -151,7 +151,7 @@ const huellaDeLaFoto = (f) => sha(JSON.stringify({ ...f, hash: undefined }));
  * Saca la foto de lo protegido en `roots` y guarda las copias de cada versión.
  * @returns {{v, at, roots, bases, storyDirs, files: Object<string, {kind, sha?, status?, link?, ilegible?}>, hash}}
  */
-function takePhoto({ roots, stateDir, now = Date.now() }) {
+function takePhoto({ roots, stateDir, now = Date.now(), extra = {} }) {
   const storyDirs = carpetasDeHistorias(roots);
   const hoy = relevar({ roots, storyDirs, stateDir });
   const files = {};
@@ -162,7 +162,8 @@ function takePhoto({ roots, stateDir, now = Date.now() }) {
   }
   // el camino real de cada raíz: deshacer no escribe donde un enlace puesto en el medio la lleve afuera
   const bases = [...roots, stateDir].map((b) => [b, realOrNull(b)]).filter(([, r]) => r);
-  const foto = { v: 2, at: now, roots, bases, storyDirs, files };
+  // `extra`: lo que el gancho sabe antes del comando (las otras sesiones vivas), dentro de la huella como lo demás
+  const foto = { ...extra, v: 2, at: now, roots, bases, storyDirs, files };
   foto.hash = huellaDeLaFoto(foto);
   try { limpiarCopias(stateDir, now); } catch (_) { /* la limpieza no frena nada */ }
   return foto;
@@ -261,4 +262,36 @@ function undo(foto, diferencias, { stateDir }) {
   return { hechas, fallas };
 }
 
-module.exports = { takePhoto, photoIntact, differences, undo, gitBrought: traidasPorGit, photosDir: dirFotos, writeWhole: escribirEntero, storyStatusOf: estadoDelTexto };
+// ── el freno que deja una mirada fallida ─────────────────────────────────────────────────────────────────────────────
+// Una mirada que no se pudo hacer frena los comandos siguientes de esa sesión hasta que otra sesión o la persona la
+// libere (marker.js release-write-after). Un archivo por sesión en `write-photos/frenadas/`.
+const archivoDelFreno = (stateDir, sid) => path.join(dirFotos(stateDir), 'frenadas', `${String(sid || '_nosession').replace(/[^\w.-]/g, '_')}.json`);
+
+function setBrake(stateDir, sid, motivo) {
+  // stable-data: la hora en que quedó frenada, para el mensaje
+  escribirEntero(archivoDelFreno(stateDir, sid), JSON.stringify({ sesion: sid || null, motivo, desde: new Date().toISOString() }));
+}
+
+/**
+ * El freno de la sesión: `{ sesion, motivo, desde }`, o null si no está frenada. Cualquier cosa en el lugar del freno
+ * cuenta como freno: un archivo ilegible, una carpeta, un enlace, o una carpeta `frenadas` que no es una carpeta (si no,
+ * poner algo ahí antes evitaría quedar frenada).
+ */
+function readBrake(stateDir, sid) {
+  const ilegible = { sesion: sid, motivo: 'el registro del freno no se puede leer', desde: null };
+  const archivo = archivoDelFreno(stateDir, sid);
+  // con `frenadas` como archivo, mirar adentro da ENOTDIR: cuenta como freno, como todo lo que no es «no existe»
+  let st;
+  try { st = fs.lstatSync(archivo); } catch (e) { return e.code === 'ENOENT' ? null : ilegible; }
+  if (!st.isFile()) return ilegible;
+  const m = mirar(archivo);
+  if (!m || !m.contenido) return ilegible;
+  try {
+    const r = JSON.parse(m.contenido.toString('utf8'));
+    return r && typeof r === 'object' && typeof r.motivo === 'string' ? r : ilegible;
+  } catch (_) { return ilegible; }
+}
+
+const clearBrake = (stateDir, sid) => fs.rmSync(archivoDelFreno(stateDir, sid), { force: true, recursive: true });
+
+module.exports = { setBrake, readBrake, clearBrake, takePhoto, photoIntact, differences, undo, gitBrought: traidasPorGit, photosDir: dirFotos, writeWhole: escribirEntero, storyStatusOf: estadoDelTexto };

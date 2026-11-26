@@ -202,6 +202,7 @@ const cmdUnpark = (...a) => parte(() => require('./lib/marker-sessions.js'), 'ma
 const cmdApprovePending = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdApprovePending(...a);
 const cmdApproveSave = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdApproveSave(...a);
 const cmdCompareWaiver = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdCompareWaiver(...a);
+const cmdReleaseWriteAfter = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdReleaseWriteAfter(...a);
 const cmdDeclarePending = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdDeclarePending(...a);
 const cmdDesignateRelay = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdDesignateRelay(...a);
 const cmdMarkTested = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdMarkTested(...a);
@@ -353,6 +354,9 @@ switch (cmd) {
     break;
   case 'compare-waiver':
     cmdCompareWaiver(process.argv.slice(3));
+    break;
+  case 'release-write-after':
+    cmdReleaseWriteAfter(process.argv.slice(3));
     break;
   case 'sign-adversarial-skip':
     cmdSignAdversarialSkip(process.argv.slice(3));

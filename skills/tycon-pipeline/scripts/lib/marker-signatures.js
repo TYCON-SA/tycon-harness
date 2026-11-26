@@ -564,6 +564,66 @@ function cmdSignAtddSkip(argv) {
   process.exit(0);
 }
 
+// `release-write-after --for-session <S> --reason "<qué miró>" [--terminal]`: libera el freno que dejó en la sesión S una
+// mirada fallida de lo que escribió un comando (on-bash-write-after.js, lib/protected-photo.js). Pide la firma
+// `write-after-release`: la persona en la ventana o en su terminal, o la coordinadora por delegación si el perfil la
+// lista. Nunca la sesión frenada: rompería la mirada a propósito y se liberaría sola.
+function cmdReleaseWriteAfter(argv) {
+  const photo = require('./protected-photo.js');
+  const { val, tiene } = opcionesDe(argv);
+  const destino = (val('--for-session') || '').trim();
+  const motivo = (val('--reason') || '').trim();
+  if (!destino || !motivo) {
+    console.error('marker.js release-write-after: faltan --for-session <la sesión frenada> y --reason "<qué miraste>".');
+    process.exit(2);
+  }
+  const libera = (quien) => {
+    if (quien === destino) {
+      console.error('🔒 marker.js release-write-after: la sesión frenada no se libera sola. La libera otra sesión (la coordinadora) o la persona en su terminal.');
+      process.exit(2);
+    }
+  };
+  libera(PROPIA);
+  const freno = photo.readBrake(STATE_DIR, destino);
+  if (!freno) { console.error(`marker.js release-write-after: la sesión ${destino} no está frenada. No se firmó nada.`); process.exit(1); }
+  const resumen = `liberar la sesión ${destino} del freno de la mirada fallida (${freno.motivo}): ${motivo}`;
+  let entrada;
+  if (tiene('--terminal')) {
+    const waiver = require('./runtime-waiver.js');
+    if (waiver.esWindows() && process.env[waiver.MARCA_VENTANA] !== '1') {
+      console.error('🪟 Abro una ventana nueva para la firma: seguí ahí.');
+      const v = waiver.abrirVentana({ script: MARKER_JS, args: ['release-write-after', ...argv] });
+      if (v.estado === 'vencida' || v.estado === 'no-abrio') { console.error(`🔒 marker.js release-write-after: ${v.estado === 'vencida' ? 'la ventana venció sin firmar' : `no pude abrir la ventana (${v.motivo})`} — no se liberó nada.`); process.exit(1); }
+      process.exit(v.codigo === 0 ? 0 : (v.codigo || 1));
+    }
+    if (waiver.esWindows()) waiver.dentroDeLaVentana();
+    if (!waiver.hasTty()) {
+      console.error('🔒 marker.js release-write-after --terminal BLOQUEADO — necesita una terminal de verdad: lo corre la persona, no el agente.');
+      process.exit(2);
+    }
+    let resp;
+    try {
+      resp = waiver.promptTty(`\n════════ LIBERAR EL FRENO DE LA MIRADA · sesión ${destino} ════════\nNo se pudo mirar: ${freno.motivo}\nLo que miraste: ${motivo}\n\n¿La liberás? La sesión vuelve a correr comandos. (si / no) > `);
+    } catch (e) { console.error(`🔒 ${e.message}`); process.exit(2); }
+    if (!/^s(i|í)?$/i.test(String(resp || '').trim())) { console.error('marker.js release-write-after: no la liberaste — la sesión sigue frenada.'); process.exit(1); }
+    if (waiver.esWindows() && !waiver.confirmarFrase()) { console.error('🔒 marker.js release-write-after: la frase no coincide — no se liberó nada.'); process.exit(1); }
+    firmadoEnLaTerminal('write-after-release', resumen);
+    entrada = { tipo: 'manual', quien: process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'tty-user', via: 'terminal' };
+  } else {
+    // sin persona (la coordinadora, o la firma de trámite), el control previo: la sesión que pide no es la frenada
+    const firma = firmaDelDueno('write-after-release', resumen, { antes: () => (PROPIA === destino ? { codigo: 2, motivo: 'la sesión frenada no se libera sola' } : null) });
+    const q = quienFirmo(firma, process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona');
+    entrada = { ...q, ...porDe(firma) };
+    // la firma fija la sesión sobre la que se trabaja: tiene que ser la frenada, y nunca la que firma
+    if (estado.SID !== destino) { console.error(`🔒 marker.js release-write-after: la firma quedó para la sesión ${estado.SID}, no para ${destino}. No se liberó nada.`); process.exit(2); }
+    libera(PROPIA);
+  }
+  appendLog('gates.log', { name: 'write-after-release', status: 'ok', sesion: destino, motivo: freno.motivo, miro: motivo, ...entrada }, { estricto: true });
+  photo.clearBrake(STATE_DIR, destino);
+  console.error(`✅ la sesión ${destino} quedó liberada del freno de la mirada (${entrada.via || entrada.tipo}).`);
+  process.exit(0);
+}
+
 // `sign-adversarial-skip --story S --reason R [--terminal]`: la firma del dueño que saltea el pase adversarial de la
 // ejecución de S (lib/adversarial-skip.js). La ejecución y el camino salen de la última muestra de S que anotó el
 // pedido; sin muestra sale 1 sin escribir nada. La firma va por la ventana de permiso o por la terminal del dueño; la
@@ -1317,7 +1377,7 @@ function cmdSignFile(firma, archivo) {
 
 module.exports = {
   carpetaParaLaFirma, quienFirmo, firmadoEnLaTerminal, sinCorrerFueraDeLaDeuda, runtimeWaiverConOk, opcionesDe,
-  cmdPlanReview, cmdReviewAsk, cmdReviewAnswer, cmdOwnerAway, cmdWaiveCritical, cmdCompareWaiver,
+  cmdPlanReview, cmdReviewAsk, cmdReviewAnswer, cmdOwnerAway, cmdWaiveCritical, cmdCompareWaiver, cmdReleaseWriteAfter,
   cmdSignAdversarialSkip, cmdSignAtddSkip, cmdDeclarePending, cmdApprovePending, firmasDeLaCorrida, cmdApproveSave, cmdSaveCheck,
   respaldosDeDesignar, firmaDeLaDesignacion, cmdDesignateRelay, negarSiEsPruebaSobreLoReal, designarPorClick,
   vidaDeLaSesion, cmdWithdrawRelay, cmdMarkTested, cmdRuntimeWaiver, cmdCheckRuntimeWaiver, cmdSignFile,

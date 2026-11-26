@@ -81,6 +81,7 @@ en dos. En el perfil, los nombres de esta tabla se escriben sólo en `approvals.
 | `adhoc-lane` | 1 · rutina | dev y mantenimiento | abrir un arreglo rápido sin historia, dentro del cupo | `adhoc-lane` |
 | `adhoc-lane:ci-rojo` | 1 · rutina | dev y mantenimiento | abrir el arreglo de un rojo de CI de un pull request abierto, sin plan ni revisores (hasta 3 archivos, pruebas incluidas; antes de guardar corren los controles de CI en local y las pruebas tocadas) | `adhoc-lane:ci-rojo` |
 | `compare-waiver` | 1 · rutina | dev y mantenimiento | eximir de la comparación con main a un comando que la historia modifica (delegable sólo si el perfil la suma a approvals.delegated_signing) | `compare-waiver` |
+| `write-after-release` | 1 · rutina | dev y mantenimiento | liberar el freno que sigue a una mirada fallida de lo que escribió un comando (nunca la sesión frenada; delegable sólo si el perfil la suma a approvals.delegated_signing) | `write-after-release` |
 | `refresh-after-main` | 1 · rutina | sólo mantenimiento | refirmar los controles tras traer main, sin cambio propio | `refresh-after-main` |
 | `lost-run:particion` | 1 · rutina | dev y mantenimiento | cerrar una ejecución perdida que la partición de su historia en tandas dejó sin objeto (delegable sólo si el perfil la suma a approvals.delegated_signing) | `lost-run:particion` |
 | `save:sensible` | 2 · excepción | dev y mantenimiento | guardar cuando un commit toca algo de lo sensible | `save` |
@@ -478,6 +479,7 @@ vuelve a pedir la firma del dueño.
 | `critical-waiver` | eximir un hallazgo crítico de los revisores | `marker.js waive-critical` | sí | `marker.js waive-critical --terminal` |
 | `runtime-waiver` | aceptar un criterio imposible de probar en vivo | `marker.js runtime-waiver` | sí | `marker.js runtime-waiver <historia> --terminal` |
 | `compare-waiver` | eximir de la comparación con main a un comando que la historia modifica | `marker.js compare-waiver --story <S> --command <candidato> --reason <R>` | sí | `marker.js compare-waiver --story <S> --command <candidato> --reason <R> --terminal` |
+| `write-after-release` | liberar el freno que sigue a una mirada fallida de lo que escribió un comando | `marker.js release-write-after --for-session <S> --reason <R>` | sí | `marker.js release-write-after --for-session <S> --reason <R> --terminal` |
 | `manual-test` | marcar un criterio como probado a mano | `marker.js mark-tested --acs` | sí | `marker.js mark-tested --acs --terminal` |
 | `browser-test` | preparar la prueba con navegador, o decirle que no | `e2e-setup.js prepare (o defer --no)` | sí | `e2e-setup.js prepare --terminal (o defer --no --terminal)` |
 | `lost-run` | dar por perdida una ejecución y cerrarla | `marker.js clear-session --lost (o restore)` | sí | `marker.js clear-session --lost --terminal (o restore --terminal)` |

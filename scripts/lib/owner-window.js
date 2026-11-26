@@ -610,6 +610,7 @@ function firmaDeLlamado(guion, sub, args, llamada = null, topes = null, donde = 
     if (sub === 'mark-tested') return 'manual-test';
     if (sub === 'runtime-waiver') return 'runtime-waiver';
     if (sub === 'compare-waiver') return 'compare-waiver';
+    if (sub === 'release-write-after') return 'write-after-release';
     if (sub === 'sign-adversarial-skip') return 'adversarial-skip';
     // contestar «skip» a la pregunta del pase del código lo contesta la persona; la coordinadora, con el dueño ausente y
     // la celda en skip, lo anota con --by-profile, que el guion comprueba. Una palabra opaca cuenta como el pedido
