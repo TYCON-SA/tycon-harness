@@ -684,14 +684,14 @@ function cmdUpdatePipelineStatus(storyPath, which, newStatus) {
     console.error('marker.js update-pipeline-status: el frontmatter no tiene bloque `pipelines:`');
     process.exit(1);
   }
-  // Las batches: cada `- name:` del bloque, hasta la próxima clave de nivel raíz.
-  const batches = [];
-  for (let i = start + 1; i < lines.length && !/^\S/.test(lines[i]); i++) {
-    const nm = lines[i].match(/^(\s*)-\s+name\s*:\s*["']?([^"'#\s]+)["']?/);
-    if (nm) { batches.push({ name: nm[2], at: i, indent: nm[1].length, statusAt: -1 }); continue; }
-    const cur = batches[batches.length - 1];
-    if (cur && cur.statusAt < 0 && /^\s+status\s*:/.test(lines[i])) cur.statusAt = i;
-  }
+  // Las tandas las lee el lector del bloque (scripts/lib/pipelines-block.js), el mismo del control de historias: el
+  // nombre entero (con espacios o `#` entre comillas), la forma lista o mapa, y la tanda que se cierra es la misma cuyos
+  // pendientes se miran (por posición, no por nombre).
+  const pb = require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'pipelines-block.js'));
+  const batches = pb.leerTandas(lines, start).filter((t) => t.name).map((t) => {
+    const st = t.claves.find((c) => c.clave === 'status');
+    return { name: t.name, tanda: t, statusAt: st ? st.linea : -1 };
+  });
   const chosen = which === '--all' ? batches : batches.filter((t) => t.name === which);
   if (!chosen.length) {
     console.error(`marker.js update-pipeline-status: no hay una tanda '${which}' — las tandas son: ${batches.map((t) => t.name).join(', ') || '(ninguna)'}`);
@@ -703,15 +703,11 @@ function cmdUpdatePipelineStatus(storyPath, which, newStatus) {
     process.exit(1);
   }
   // A done no pasa una tanda con criterios, tareas o pruebas pendientes, ni los pasa a hechos sola: que estén probados
-  // lo dice una persona, que los mueve a `acs` / `tasks` / `tests` (o deja la tanda en blocked o pending). Mismo lector
-  // del bloque que el control de historias (scripts/lib/pipelines-block.js).
+  // lo dice una persona, que los mueve a `acs` / `tasks` / `tests` (o deja la tanda en blocked o pending).
   if (newStatus === 'done') {
-    const pb = require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'pipelines-block.js'));
-    const nombres = new Set(chosen.map((t) => t.name));
     const conPendientes = [];
-    for (const t of pb.leerTandas(lines, start)) {
-      if (!nombres.has(t.name)) continue;
-      const p = pb.pendientesDe(lines, t);
+    for (const t of chosen) {
+      const p = pb.pendientesDe(lines.map((l) => l.replace(/\r$/, '')), t.tanda);
       const partes = ['acs', 'tasks', 'tests'].filter((k) => p[k].length).map((k) => `${k} ${p[k].join(', ')}`);
       if (partes.length) conPendientes.push(`${t.name} (${partes.join('; ')})`);
     }
@@ -721,9 +717,16 @@ function cmdUpdatePipelineStatus(storyPath, which, newStatus) {
       process.exit(1);
     }
   }
-  const statusRegex = /^(\s*status\s*:\s*)["']?[\w-]+["']?([ \t]*(?:#.*)?)$/;
+  // el `\r` de un final CRLF queda afuera del valor y se conserva; un renglón que no se pudo cambiar no se da por cambiado
+  const statusRegex = /^(\s*(?:-\s+)?status\s*:\s*)["']?[\w-]+["']?([ \t]*(?:#[^\r]*)?)(\r?)$/;
+  const sinCambiar = [];
   for (const t of chosen) {
-    lines[t.statusAt] = lines[t.statusAt].replace(statusRegex, (_, head, tail) => `${head}${newStatus}${tail}`);
+    if (!statusRegex.test(lines[t.statusAt])) { sinCambiar.push(t.name); continue; }
+    lines[t.statusAt] = lines[t.statusAt].replace(statusRegex, (_, head, tail, cr) => `${head}${newStatus}${tail}${cr}`);
+  }
+  if (sinCambiar.length) {
+    console.error(`marker.js update-pipeline-status: no sé cambiar el \`status:\` de la tanda ${sinCambiar.join(', ')}: cambialo a mano. La historia no cambió.`);
+    process.exit(1);
   }
   const newFmBody = lines.join('\n');
   const newContent = content.replace(fmRegex, (_, open, _body, close) => `${open}${newFmBody}${close}`);

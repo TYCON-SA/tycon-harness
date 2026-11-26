@@ -85,7 +85,8 @@ function leerTandas(lineas, start) {
       if (esLista) {
         const m = /^(\s*)-\s+(.*)$/.exec(l);
         if (!m) break;
-        t = { name: null, inicio: i, fin, claveSangria: s + 2, claves: [] };
+        // las claves van donde empieza la del guion (`- name`, o `-  name` con más espacios)
+        t = { name: null, inicio: i, fin, claveSangria: l.length - m[2].length, claves: [] };
         tandas.push(t);
         const kv = /^([\w-]+)\s*:\s*(.*)$/.exec(m[2]);
         if (kv) t.claves.push({ clave: kv[1], linea: i, valor: sinComentario(kv[2]), hijos: [] });
@@ -132,6 +133,14 @@ function elementos(lines, c) {
     return { items: r.items, forma: r.cerrada ? 'partida' : 'otra' };
   }
   if (!v) {
+    // la lista entre corchetes en el renglón de abajo
+    const primero = c.hijos.find((i) => !vacia(lines[i]));
+    if (primero !== undefined && lines[primero].trim().startsWith('[')) {
+      let texto = '';
+      let r = { items: [], cerrada: false };
+      for (const i of c.hijos) { if (i < primero) continue; texto += ` ${sinComentario(lines[i].trim())}`; r = listaEnLinea(texto); if (r.cerrada) break; }
+      return { items: r.items, forma: r.cerrada ? 'partida' : 'otra' };
+    }
     const items = c.hijos.map((i) => /^\s*-\s+(.*)$/.exec(lines[i])).filter(Boolean).map((m) => sinComillas(sinComentario(m[1])));
     return { items, forma: items.length ? 'renglones' : 'otra' };
   }

@@ -42,6 +42,9 @@ test('T1 PipelinesBlock_PendingOfDoneBatch — los pendientes de una tanda done,
     // la secuencia compacta: los `- x` a la misma sangría que su clave (YAML válido; lo escribe PyYAML)
     compacta: ['  - name: A', '    status: done', '    acs_pending:', '    - 2', '    - 3'],
     mapaCompacta: ['  A:', '    status: done', '    tests_pending:', '    - T1', '    - T2'],
+    // la lista entre corchetes en el renglón de abajo, y el guion con dos espacios
+    corchetesAbajo: ['  - name: A', '    status: done', '    tests_pending:', '      ["T36", "T39"]'],
+    dosEspacios: ['  -  name: A', '     status: done', '     acs_pending: [2, 3]'],
   };
   for (const [forma, bloque] of Object.entries(formas)) {
     assert.deepEqual(pendientes(historia(bloque)), ['A:2'], forma);
@@ -120,6 +123,17 @@ test('T3 UpdatePipelineStatus_DoneWithPending_Refuses — el cierre a done con p
   const ok = cerrar(t, historia(['  - name: A', '    status: in-progress', '    acs: [1]', '    acs_pending: []']), 'A');
   assert.equal(ok.code, 0, ok.out);
   assert.match(ok.despues, /status: done/);
+  // un nombre con espacios (el lector viejo del cierre lo cortaba y no encontraba los pendientes), y --all
+  for (const tanda of ['Tanda', '--all']) {
+    const antes = historia(['  - name: "Tanda A"', '    status: in-progress', '    acs_pending: [3]']);
+    const r = cerrar(t, antes, tanda);
+    if (tanda === '--all') { assert.equal(r.code, 1, r.out); assert.equal(r.despues, antes); }
+    else assert.notEqual(r.despues.includes('status: done'), true, `${tanda}: no la pasa a done (${r.out})`);
+  }
+  // con finales CRLF y sin pendientes, el cierre escribe done (no dice «done» sin escribirlo)
+  const crlf = cerrar(t, historia(['  - name: A', '    status: in-progress', '    acs: [1]'], { eol: '\r\n' }), 'A');
+  assert.equal(crlf.code, 0, crlf.out);
+  assert.match(crlf.despues, /status: done\r\n/);
   // otra tanda con pendientes no frena el cierre de ésta
   const otra = cerrar(t, historia(['  - name: A', '    status: in-progress', '  - name: B', '    status: blocked', '    acs_pending: [2]']), 'A');
   assert.equal(otra.code, 0, otra.out);
