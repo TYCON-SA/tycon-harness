@@ -458,8 +458,10 @@ test('T16 AdhocBase_UnbackedClose_NoTip @story-8.276 @ac-21', async (t) => {
   });
 });
 
-// 🔴 Falla con: lo que trajo un merge de `main` commiteado después de la punta contado como del carril.
-test('T17 AdhocBase_MainMergedAfterTip_MainAsToday @story-8.276 @ac-15', (t) => {
+// 🔴 Falla con: lo que trajo un merge de `main` commiteado después de la punta contado como del carril, o el pedido entero
+// contado de nuevo. Con main traído después de la punta, se mide contra la punta juntada con main (fila 262, decisión del
+// dueño del 25/11 23:10, cambia el AC 15 de la 8.276): cuenta sólo el arreglo.
+test('T17 AdhocBase_MainMergedAfterTip_MeasuresFromTipJoinedWithMain @story-8.276 @ac-15 @fila-262', (t) => {
   const d = repoConOrigin(t);
   const h = home(t);
   carril(h, d);
@@ -472,6 +474,33 @@ test('T17 AdhocBase_MainMergedAfterTip_MainAsToday @story-8.276 @ac-15', (t) => 
   sh(d, 'push', '-q', 'origin', 'main');
   sh(d, 'checkout', '-q', RAMA);
   sh(d, 'merge', '-q', '--no-edit', 'main');
+  sh(d, 'fetch', '-q', 'origin');
+  carril(h, d);
+  escribir(d, 'src/a1.js', '// el arreglo\n');
+  const e = medida(h, d);
+  assert.strictEqual(e.base.de, 'constancia-con-main', JSON.stringify(e.base));
+  // la base es la punta juntada con main: tiene lo de los dos, y nada más
+  assert.strictEqual(sh(d, 'rev-parse', `${e.base.sha}^{tree}`), sh(d, 'rev-parse', 'HEAD^{tree}'));
+  assert.deepStrictEqual(rutasDe(e), ['src/a1.js']);
+});
+
+// 🔴 Falla con: una punta que no junta limpio con main tomada igual como base (lo que resolvió el choque quedaría afuera).
+test('T17b AdhocBase_TipConflictsWithMain_MainAsToday @story-8.276 @ac-15 @fila-262', (t) => {
+  const d = repoConOrigin(t);
+  const h = home(t);
+  carril(h, d);
+  guardarPorElCarril(h, d, archivos('a', 2));
+  cerrarCarril(h);
+  sh(d, 'checkout', '-q', 'main');
+  escribir(d, 'src/a0.js', '// main lo cambió distinto\n');
+  sh(d, 'add', '-A');
+  sh(d, 'commit', '-q', '-m', 'de otro pedido, choca');
+  sh(d, 'push', '-q', 'origin', 'main');
+  sh(d, 'checkout', '-q', RAMA);
+  spawnSync('git', ['-C', d, 'merge', '-q', '--no-edit', 'main'], { env: { ...process.env, ...GIT_ENV } });
+  escribir(d, 'src/a0.js', '// el choque resuelto\n');
+  sh(d, 'add', '-A');
+  sh(d, 'commit', '-q', '--no-edit');
   sh(d, 'fetch', '-q', 'origin');
   carril(h, d);
   escribir(d, 'src/a1.js', '// el arreglo\n');
