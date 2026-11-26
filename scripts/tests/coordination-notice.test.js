@@ -1598,7 +1598,7 @@ test('T3 Respuestas_NoEntregadas_NombraLaSesion @story-8.284 @ac-6 @ac-9 @ac-18:
   fs.mkdirSync(path.dirname(RESPUESTAS(t)), { recursive: true });
   const renglon = (r) => fs.appendFileSync(RESPUESTAS(t), `${JSON.stringify(r)}\n`);
   const perdido = (sid, min, transcript) => renglon({ sid, at: iso(mins(min)), text: 'secreto del mensaje', sha: huella('secreto del mensaje'), transcript, from: 0 });
-  const PERDIO = (quien, n, min) => new RegExp(`Coordinación: ${quien} escribió ${n} mensaje\\(s\\) en su pestaña que no te llegaron, el último hace ${min} min: preguntale qué te pidió\\.`);
+  const PERDIO = (quien, n, min) => new RegExp(`Coordinación: la persona escribió ${n} mensaje\\(s\\) en la pestaña de ${quien} que no te llegaron, el último hace ${min} min\\. Se los dijo a esa sesión, no a vos: si hacen a tu trabajo, preguntale a esa sesión qué le pidió\\.`);
   for (const [sid, nombre] of [['ses-c', 'Caro'], ['ses-d', 'Dani'], ['ses-e', 'Edu'], ['ses-f', 'Fede'], ['ses-g', 'Gabi']]) session(t, sid, nombre, INTERACTIVA);
   // pasados los 10 minutos, la conversación no lo trae (Bruno, dos mensajes); la ilegible va más abajo
   charla(t, 'ses-b', ['otra cosa']);
