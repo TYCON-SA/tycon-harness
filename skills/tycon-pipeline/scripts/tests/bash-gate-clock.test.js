@@ -225,7 +225,8 @@ test('T7 BashGateClock_SlowOrCut_LogsWhereItWas — el freno lento o cortado ano
 // máquina saturada de un freno lento.
 test('T8 BashGateClock_SlowOrCut_LogsTheMachineLoad — el corte y lo lento anotan la memoria libre y la carga', (t) => {
   const c = corral(t);
-  const MAQUINA = /; la máquina: memoria libre \d+ % \(\d+(?:,\d)? de \d+(?:,\d)? GB\)(?:, carga de 1 min \d+(?:,\d\d)? con \d+ núcleos)?\n/;
+  // la carga va con hasta dos decimales y sin el cero del final (5,5 y no 5,50)
+  const MAQUINA = /; la máquina: memoria libre \d+ % \(\d+(?:,\d)? de \d+(?:,\d)? GB\)(?:, carga de 1 min \d+(?:,\d{1,2})? con \d+ núcleos)?\n/;
   let r = c.correr('slow', 'ls', { TOY_SECONDS: '12' });
   assert.strictEqual(r.status, 0, r.stderr);
   assert.match(c.registro(), /on-bash-write-gate LENTO: .*\(\d+ ms\); la máquina: /);
@@ -241,6 +242,9 @@ test('T8 BashGateClock_SlowOrCut_LogsTheMachineLoad — el corte y lo lento anot
   assert.strictEqual(win, 'la máquina: memoria libre 19 % (3 de 16 GB)');
   const mac = cargaDeLaMaquina({ freemem: () => 1.5 * 2 ** 30, totalmem: () => 16 * 2 ** 30, loadavg: () => [7.456, 5, 4], cpus: () => new Array(8) });
   assert.strictEqual(mac, 'la máquina: memoria libre 9 % (1,5 de 16 GB), carga de 1 min 7,46 con 8 núcleos');
+  const unDecimal = cargaDeLaMaquina({ freemem: () => 14 * 2 ** 30, totalmem: () => 16 * 2 ** 30, loadavg: () => [5.5, 5, 4], cpus: () => new Array(4) });
+  assert.strictEqual(unDecimal, 'la máquina: memoria libre 88 % (14 de 16 GB), carga de 1 min 5,5 con 4 núcleos');
+  assert.match(`; ${unDecimal}\n`, MAQUINA);
   // sin poder medir, no rompe el renglón
   assert.strictEqual(cargaDeLaMaquina({ freemem: () => { throw new Error('x'); } }), 'la máquina: no se pudo medir');
 });
