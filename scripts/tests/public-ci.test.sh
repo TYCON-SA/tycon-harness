@@ -187,7 +187,7 @@ printf '#!/bin/sh\nexit 0\n' > "${T}/fakebin/engram"; chmod +x "${T}/fakebin/eng
 RC=0
 run_ci() { # PATH_PREFIX (opcional): entradas que van ADELANTE en el PATH, con su «:» final
   ( cd "${T}/elsewhere" && PATH="${PATH_PREFIX:-}${T}/fakebin:${PATH}" TYCON_PUBLIC_CI_OUT="${R}.ci" TYCON_SKILLS_DIR="${SKILLS_ENV:-${T}/no-skills}" \
-      bash "${SCRIPT}" --root "${R}" "$@" ) > "${R}.out" 2>&1
+      TYCON_PUBLIC_CI_EVENT="${CI_EVENT:-}" bash "${SCRIPT}" --root "${R}" "$@" ) > "${R}.out" 2>&1
   RC=$?
 }
 # los pasos sin rango, en orden (el nombre de la variable viene de cuando eran siete)
@@ -577,6 +577,31 @@ bab_variant partbab-nobase; export TYCON_PUBLIC_CI_PART=controls-bench-base; run
 is "T10 sin --base la parte sale 0" 0 "${RC}"
 has "T10 …y dice que no aplica" "${R}.out" "controls-bench-base: sin --base no aplica"
 lacks "T10 …sin correr el guion" "${R}/.calls" "bench-against-base"
+# Fila 281 (25/11): en un pedido el banco de la base no corría nunca, y su firma (que ancla todo lo que cambia el pedido)
+# se veía recién en la cola: el #1747 salió dos veces de la cola con la firma de la revisión. Ahora corre en el pedido
+# cuando el pedido cambia un gancho, una biblioteca o un caso del banco; lo demás lo sigue midiendo la cola.
+bab_pr_variant() { # <nombre> <archivo que cambia el pedido>
+  variant "$1"; fake_js "${R}/scripts/ci/bench-against-base.js" bench-against-base; commit_all "el banco de la base"
+  mkdir -p "${R}/$(dirname "$2")"; echo "// el pedido" >> "${R}/$2"; commit_all "el pedido"
+}
+for cambio in scripts/hooks/un-gancho.js scripts/lib/una-biblioteca.js scripts/controls-bench/cases/hooks/un-caso.json integrations/x/scripts/y.js; do
+  bab_pr_variant "partbab-pr-${cambio//\//-}" "${cambio}"
+  export TYCON_PUBLIC_CI_PART=controls-bench-base; CI_EVENT=pull_request run_ci --range 'HEAD~1...HEAD' --base HEAD~1; unset TYCON_PUBLIC_CI_PART
+  has "T10 @fila-281 en un pedido que cambia ${cambio}, corre el banco de la base" "${R}/.calls" "bench-against-base --root"
+done
+for cambio in guides/una-guia.md skills/x/SKILL.md README.md; do
+  bab_pr_variant "partbab-pr-${cambio//\//-}" "${cambio}"
+  export TYCON_PUBLIC_CI_PART=controls-bench-base; CI_EVENT=pull_request run_ci --range 'HEAD~1...HEAD' --base HEAD~1; unset TYCON_PUBLIC_CI_PART
+  is "T10 @fila-281 en un pedido que sólo cambia ${cambio}: verde" 0 "${RC}"
+  lacks "T10 @fila-281 …sin correr el banco de la base (lo mide la cola)" "${R}/.calls" "bench-against-base"
+  has "T10 @fila-281 …y lo dice" "${R}.out" "lo mide la cola"
+done
+bab_pr_variant partbab-queue guides/una-guia.md
+export TYCON_PUBLIC_CI_PART=controls-bench-base; CI_EVENT=merge_group run_ci --range 'HEAD~1...HEAD' --base HEAD~1; unset TYCON_PUBLIC_CI_PART
+has "T10 @fila-281 en la cola corre siempre, aunque el pedido sólo cambie una guía" "${R}/.calls" "bench-against-base --root"
+# el ci.yml de verdad no lo saltea en un pedido: la decisión es del public-ci.sh de la base
+if grep -qF 'en un pedido no corre la parte controls-bench-base' "${ROOT}/.github/workflows/ci.yml"; then no "T10 @fila-281 el ci.yml todavía saltea el banco de la base en todo pedido"
+else ok "T10 @fila-281 el ci.yml no saltea el banco de la base en un pedido"; fi
 bab_variant partbab-checks; export TYCON_PUBLIC_CI_PART=checks; run_ci --range 'HEAD~1...HEAD' --base HEAD~1; unset TYCON_PUBLIC_CI_PART
 lacks "T10 la parte checks, con --base, no corre el banco de la base" "${R}/.calls" "bench-against-base"
 bab_variant partbab-bench; export TYCON_PUBLIC_CI_PART=controls-bench; run_ci --range 'HEAD~1...HEAD' --base HEAD~1; unset TYCON_PUBLIC_CI_PART
@@ -866,8 +891,10 @@ else
   altered "en un pedido corre entero el ensayo de Windows" "windows" 'return t.replace(/^ *if \(\$env:GITHUB_EVENT_NAME -eq \x27pull_request\x27\) \{ Write-Output .*; exit 0 \}\n/gm, "");'
   altered "en un pedido corre un paso del ensayo de Windows" "windows" 'return t.replace(/^ *if \(\$env:GITHUB_EVENT_NAME -eq \x27pull_request\x27\) \{ Write-Output .*; exit 0 \}\n( *node scripts\/ci\/windows-rehearsal)/m, "$1");'
   altered "el ensayo de Windows se saltea también en la cola" "windows" 'return t.replace(/-eq \x27pull_request\x27\) \{ Write-Output/g, "-ne \x27push\x27) { Write-Output");'
-  altered "en un pedido corre el banco de la base" "=shape" 'return t.replace(/^ *if \[ "\$\{GITHUB_EVENT_NAME\}" = "pull_request" \] && \[ "\$\{TYCON_PUBLIC_CI_PART\}" = "controls-bench-base" \]; then\n.*\n *exit 0\n *fi\n/m, "");'
-  altered "el banco de la base se saltea también en la cola" "=shape" 'return t.replace(/\[ "\$\{GITHUB_EVENT_NAME\}" = "pull_request" \] && (\[ "\$\{TYCON_PUBLIC_CI_PART\}" = "controls-bench-base" \])/, "$1");'
+  # fila 281: el banco de la base ya no se saltea en el pedido desde el ci.yml (lo decide el public-ci.sh de la base), y
+  # el guion tiene que saber en qué evento corre
+  altered "en un pedido se saltea entero el banco de la base" "=shape" 'return t.replace(/^( *)# en un pedido BASE_REF/m, (m, s) => `${s}if [ "\${GITHUB_EVENT_NAME}" = "pull_request" ] && [ "\${TYCON_PUBLIC_CI_PART}" = "controls-bench-base" ]; then\n${s}  exit 0\n${s}fi\n${m}`);'
+  altered "sin decirle al guion en qué evento corre" "=shape" 'return t.replace(/^          TYCON_PUBLIC_CI_EVENT: .*\n/m, "");'
   # una base que no conoce la parte del banco lo corre dentro de checks: la salida verde de esa parte vale sólo para ella
   altered "el banco sale verde aunque la base lo conozca" "=shape" 'return t.replace(" && ! grep -q -- \x27|controls-bench)\x27 \"${RUNNER_TEMP}/public-ci-base.sh\"", "");'
   altered "en main un push corta la corrida del anterior" "=shape" 'return t.replace("cancel-in-progress: ${{ github.ref != \x27refs/heads/main\x27 }}", "cancel-in-progress: true");'

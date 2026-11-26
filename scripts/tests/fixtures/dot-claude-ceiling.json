@@ -95,9 +95,9 @@
     "scripts/tools/harness-map/census.js": 2,
     "scripts/tools/rules-distill.js": 7,
     "scripts/tools/tycon-worktree.sh": 1,
+    "skills/tycon-pipeline/scripts/lib/bash-gate-commands.js": 3,
     "skills/tycon-pipeline/scripts/lib/harness-path.js": 2,
     "skills/tycon-pipeline/scripts/lib/state-dir.js": 1,
-    "skills/tycon-pipeline/scripts/on-bash-write-gate.js": 3,
     "skills/tycon-story-followup-link/scripts/on-story-create.js": 2
   }
 }
