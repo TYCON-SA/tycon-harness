@@ -2444,6 +2444,11 @@
       "requiere": []
     },
     {
+      "raiz": "arnes",
+      "ruta": "tests/session-approval.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el freno de producción mira adentro de los guiones que el comando corre aunque ya vivieran en el disco, de npm run y de make, y frena automatizar la pantalla. Sólo sin el freno instalado (con /opt/tycon se saltea); el repo de juguete va fuera de las carpetas temporales, y si no hay dónde dice NO MEDIDO. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/prod-saved-scripts.test.sh",
