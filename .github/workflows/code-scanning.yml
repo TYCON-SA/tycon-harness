@@ -52,7 +52,8 @@ jobs:
           category: /language:${{ matrix.language }}
       # Los hallazgos de calidad que el pedido agrega, como aviso: sólo en un pull request y en JavaScript, sobre la base
       # de datos que ya armó el análisis. Nunca rojo (scripts/ci/new-quality-findings.js sale 0 y dice «NO MEDIDA» si no
-      # pudo medir). Corre el guion del pedido: sólo escribe anotaciones, y no recibe ninguna credencial.
+      # pudo medir). Corre el guion del pedido, así que cambiarlo pide la firma del dueño (scripts/ci/controls-from-base.json,
+      # `workflow-shape`), como cambiar este archivo. El análisis tiene su propio tope: colgado, el aviso dice «NO MEDIDA».
       - name: Calidad nueva del pedido (aviso, no frena)
         if: github.event_name == 'pull_request' && matrix.language == 'javascript-typescript'
         continue-on-error: true
@@ -61,5 +62,5 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha }}
         run: |
           git fetch --no-tags --depth=1 origin "${BASE}" || true
-          "${CODEQL}" database analyze "${RUNNER_TEMP}/codeql_databases/javascript" codeql/javascript-queries:codeql-suites/javascript-code-quality.qls --format=sarif-latest --output="${RUNNER_TEMP}/calidad.sarif" --threads=0 || true
+          timeout 900 "${CODEQL}" database analyze "${RUNNER_TEMP}/codeql_databases/javascript" codeql/javascript-queries:codeql-suites/javascript-code-quality.qls --format=sarif-latest --output="${RUNNER_TEMP}/calidad.sarif" --threads=0 || true
           node scripts/ci/new-quality-findings.js --sarif "${RUNNER_TEMP}/calidad.sarif" --base "${BASE}"

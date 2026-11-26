@@ -497,7 +497,7 @@ const SCANNING_SHAPE = [
   '          BASE: ${{ github.event.pull_request.base.sha }}',
   '        run: |',
   '          git fetch --no-tags --depth=1 origin "${BASE}" || true',
-  '          "${CODEQL}" database analyze "${RUNNER_TEMP}/codeql_databases/javascript" codeql/javascript-queries:codeql-suites/javascript-code-quality.qls --format=sarif-latest --output="${RUNNER_TEMP}/calidad.sarif" --threads=0 || true',
+  '          timeout 900 "${CODEQL}" database analyze "${RUNNER_TEMP}/codeql_databases/javascript" codeql/javascript-queries:codeql-suites/javascript-code-quality.qls --format=sarif-latest --output="${RUNNER_TEMP}/calidad.sarif" --threads=0 || true',
   '          node scripts/ci/new-quality-findings.js --sarif "${RUNNER_TEMP}/calidad.sarif" --base "${BASE}"',
 ];
 

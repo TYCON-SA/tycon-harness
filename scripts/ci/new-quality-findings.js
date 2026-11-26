@@ -35,8 +35,12 @@ function rutaDelDiff(raw) {
 function changedLines(diff) {
   const out = new Map();
   let file = null;
+  let anterior = '';
   for (const l of String(diff).split('\n')) {
-    if (l.startsWith('+++ ')) { file = rutaDelDiff(l.slice(4)); continue; }
+    // la cabecera `+++` va justo después de su `---`: un renglón agregado que empieza con `++` no es una cabecera
+    const esCabecera = l.startsWith('+++ ') && anterior.startsWith('--- ');
+    anterior = l;
+    if (esCabecera) { file = rutaDelDiff(l.slice(4)); continue; }
     const m = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(l);
     if (!m || !file) continue;
     const desde = Number(m[1]);
@@ -51,8 +55,10 @@ function changedLines(diff) {
 /** La ruta de un resultado relativa al repo: sin `./`, y sin el `file://<raíz>/` de una URI absoluta. */
 function rutaDelResultado(uri, root) {
   let u = String(uri || '');
+  // las URIs del SARIF vienen codificadas (`%20`, `%5B`, `%C3%B1`): se decodifican todas, no sólo las `file://`
+  try { u = decodeURIComponent(u); } catch { /* una URI mal codificada queda como vino */ }
   if (u.startsWith('file://')) {
-    u = decodeURIComponent(u.slice('file://'.length));
+    u = u.slice('file://'.length);
     if (root && u.startsWith(`${root.replace(/\/$/, '')}/`)) u = u.slice(root.replace(/\/$/, '').length + 1);
   }
   return u.replace(/^\.\//, '');
@@ -97,6 +103,8 @@ function main(argv) {
   if (!sarifFile || !base) { noMedida('faltan --sarif o --base'); return; }
   let sarif;
   try { sarif = JSON.parse(fs.readFileSync(sarifFile, 'utf8')); } catch (e) { noMedida(`el resultado del análisis (${path.basename(sarifFile)}) no se lee: ${e.code || e.message}`); return; }
+  // un resultado sin ninguna corrida no es «sin hallazgos»: el análisis no dejó nada que leer
+  if (!sarif || !Array.isArray(sarif.runs) || !sarif.runs.length) { noMedida('el resultado del análisis no trae ninguna corrida'); return; }
   let diff;
   try {
     diff = execFileSync('git', ['-C', root, '-c', 'core.quotepath=false', 'diff', '-U0', '--no-color', '--no-ext-diff', base, 'HEAD'], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });

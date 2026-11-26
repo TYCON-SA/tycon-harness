@@ -46,6 +46,10 @@ test('T1 QualityNew_ChangedLines — los renglones agregados o cambiados de cada
   assert.deepEqual([...c.keys()].sort(), ['a.js', 'b c.js']);
   assert.deepEqual([...c.get('a.js')].sort((x, y) => x - y), [4, 5, 12]);
   assert.deepEqual([...c.get('b c.js')], [1]);
+  // un renglón agregado que empieza con `++` no es una cabecera de archivo
+  const mas = Q.changedLines(['--- a/a.js', '+++ b/a.js', '@@ -1,0 +2,1 @@', '+++ b/otro.js', '@@ -5,0 +7 @@', '+x'].join('\n'));
+  assert.deepEqual([...mas.keys()], ['a.js']);
+  assert.deepEqual([...mas.get('a.js')].sort((x, y) => x - y), [2, 7]);
 });
 
 test('T2 QualityNew_OnlyNewFindings — sólo los hallazgos en renglones del pedido', () => {
@@ -57,6 +61,10 @@ test('T2 QualityNew_OnlyNewFindings — sólo los hallazgos en renglones del ped
   const raiz = path.posix.join('/', 'raiz', 'repo');
   const raras = sarif([resultado('./a.js', 4), resultado(`file://${raiz}/a.js`, 12), { ruleId: 'x', message: { text: 'y' } }]);
   assert.equal(Q.newFindings(raras, changed, { root: raiz }).length, 2);
+  // una ruta codificada (espacio, corchetes, eñe) se decodifica
+  const cod = new Map([['dir con espacio/b.js', new Set([1])], ['app/[id]/page.js', new Set([1])], ['año/n.js', new Set([1])]]);
+  const enc = sarif([resultado('dir%20con%20espacio/b.js', 1), resultado('app/%5Bid%5D/page.js', 1), resultado('a%C3%B1o/n.js', 1)]);
+  assert.equal(Q.newFindings(enc, cod).length, 3);
 });
 
 function repo(t) {
@@ -107,6 +115,10 @@ test('T4 QualityNew_NotMeasured_Says — sin análisis o sin base, «no medido»
   const sinBase = correr(d, ['--sarif', f, '--base', '0123456789abcdef0123456789abcdef01234567']);
   assert.equal(sinBase.code, 0, sinBase.out);
   assert.match(sinBase.out, /NO MEDIDA/);
+  for (const vacio of ['null', '{}', '{"runs": []}']) {
+    fs.writeFileSync(f, vacio);
+    assert.match(correr(d, ['--sarif', f, '--base', base]).out, /NO MEDIDA/, `${vacio}: sin corridas no es limpio`);
+  }
   fs.writeFileSync(f, '{ esto no es json');
   assert.match(correr(d, ['--sarif', f, '--base', base]).out, /NO MEDIDA/);
 });
