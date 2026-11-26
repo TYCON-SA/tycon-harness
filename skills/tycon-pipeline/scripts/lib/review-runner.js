@@ -242,10 +242,12 @@ function enElPath(nombre, permitidas, { env, separator }) {
 
 /**
  * En Windows, el archivo `f` listo para lanzar sin shell: un `.cmd`/`.bat` por lo que dice el atajo de npm (cmd-shim),
- * lo demás tal cual. El atajo nombra su programa (`SET "_prog=<prog>"`, sacado de la primera línea del destino), las
- * banderas de esa línea y el destino (`"%_prog%" <banderas> "%dp0%\<destino>" %*`): con Node se usa este mismo Node;
- * otro programa (bun) va el que está al lado del atajo o el primero del PATH que Node lanza solo. El atajo de un `.exe`
- * no tiene programa: el destino se lanza directo.
+ * lo demás tal cual. El renglón que lanza termina en `"%dp0%\<destino>" %*` (o `%~dp0`); lo que va delante es el
+ * programa y las banderas de la primera línea del destino: `"%_prog%" <banderas>` (con el programa en
+ * `SET "_prog=<prog>"`, el formato de hoy) o `<prog> <banderas>` (el de npm viejo). Sin nada delante, el destino se
+ * lanza solo. Con Node va este mismo Node; otro programa (bun), el `.exe` que está al lado del atajo o el primero del
+ * PATH que Node lanza solo. Lo que no viajaría sin shell —una variable del atajo, una bandera con comillas o
+ * variables de cmd— no se lanza a ciegas: la causa lo dice.
  */
 function programaDelAtajo(f, ctx) {
   if (!/\.(cmd|bat)$/i.test(f)) return { bin: f, pre: [] };
@@ -254,32 +256,47 @@ function programaDelAtajo(f, ctx) {
   const carpeta = path.dirname(f);
   const ruta = (rel) => path.join(carpeta, ...rel.split(/[\\/]+/).filter(Boolean));
   const noSe = (por) => ({ bin: null, motivo: `${f} es un atajo de Windows que no sé lanzar sin shell (${por})` });
-  const conProg = /"%_prog%"([^"\r\n]*)"%~?dp0%?\\?([^"%]+)"\s+%\*/i.exec(texto);
-  if (conProg) {
-    const prog = (/SET "_prog=([^"%]+)"/i.exec(texto) || [])[1];
-    if (!prog) return noSe('no dice su programa');
-    if (prog.includes('=')) return noSe(`su primera línea pone una variable (${prog}): el atajo la toma por el programa`);
-    const banderas = conProg[1].trim().split(/\s+/).filter(Boolean);
-    if (banderas.some((x) => /[%"^&|<>]/.test(x))) return noSe('sus banderas usan variables o comillas de cmd');
-    const destino = ruta(conProg[2]);
-    if (!esArchivo(destino)) return noSe(`su programa no está: ${destino}`);
-    let bin;
-    if (/^node(\.exe)?$/i.test(prog)) bin = process.execPath;
-    else {
-      const alLado = path.join(carpeta, `${prog}.exe`);
-      bin = esArchivo(alLado) ? alLado : enElPath(prog, ['.com', '.exe'], ctx)[0];
-      if (!bin) return noSe(`corre con ${prog}, y no hay un ${prog}.exe al lado ni en el PATH`);
-    }
-    return { bin, pre: [...banderas, destino] };
+  const variable = /^\s*@?SET\s+"?([A-Za-z_][\w]*)=/gim;
+  for (let m; (m = variable.exec(texto));) {
+    if (!/^(dp0|_prog|PATHEXT)$/i.test(m[1])) return noSe(`pone la variable ${m[1]}, que sin shell no viajaría`);
   }
-  // sin programa: el atajo lanza su destino directo (un .exe; un .js, como los atajos viejos)
-  const directo = /"%~?dp0%?\\?([^"%]+)"\s+%\*/i.exec(texto);
-  const destino = directo ? ruta(directo[1]) : null;
-  if (destino && esArchivo(destino)) {
+  // el primer renglón que lanza (en el formato viejo, la rama con el node.exe de al lado va primero)
+  const lanza = texto.split(/\r?\n/).map((l) => /^(.*?)"%~?dp0%?\\?([^"%]+)"\s+%\*\s*$/.exec(l.trim())).find(Boolean);
+  if (!lanza) return noSe('no es el atajo de npm');
+  const destino = ruta(lanza[2]);
+  if (!esArchivo(destino)) return noSe(`su programa no está: ${destino}`);
+  let antes = lanza[1].trim().replace(/^@/, '');
+  let prog;
+  if (antes.includes('%_prog%')) {
+    prog = (/SET "_prog=([^"%]+)"/i.exec(texto) || [])[1];
+    if (!prog) return noSe('no dice su programa');
+    antes = antes.slice(antes.lastIndexOf('%_prog%') + '%_prog%'.length).replace(/^"/, '').trim();
+  } else if (/%_prog%/i.test(texto)) {
+    return noSe('nombra su programa, pero no entiendo el renglón que lo lanza');
+  } else if (antes) {
+    const p = /^("[^"]*"|\S+)\s*(.*)$/.exec(antes);
+    prog = p[1].replace(/^"|"$/g, '');
+    antes = p[2];
+    // el node.exe que está al lado del atajo: se usa el Node que corre el arnés
+    if (/^%~?dp0%?\\?node\.exe$/i.test(prog)) prog = 'node';
+  }
+  if (!prog) {
     if (/\.(c|m)?js$/i.test(destino)) return { bin: process.execPath, pre: [destino] };
     if (/\.(exe|com)$/i.test(destino)) return { bin: destino, pre: [] };
+    return noSe(`no dice con qué programa se corre ${destino}`);
   }
-  return noSe('no es el atajo de npm, o su programa no está');
+  if (prog.includes('=')) return noSe(`su primera línea pone una variable (${prog}): el atajo la toma por el programa`);
+  if (/[\\/%"]/.test(prog)) return noSe(`no sé lanzar su programa (${prog})`);
+  const banderas = antes.split(/\s+/).filter(Boolean);
+  if (banderas.some((x) => /[%"^&|<>]/.test(x))) return noSe('sus banderas usan comillas o variables de cmd');
+  let bin;
+  if (/^node(\.exe)?$/i.test(prog)) bin = process.execPath;
+  else {
+    const alLado = path.join(carpeta, `${prog}.exe`);
+    bin = esArchivo(alLado) ? alLado : enElPath(prog, ['.com', '.exe'], ctx)[0];
+    if (!bin) return noSe(`corre con ${prog}, y no hay un ${prog}.exe al lado ni en el PATH`);
+  }
+  return { bin, pre: [...banderas, destino] };
 }
 
 module.exports = { DEFAULT_ORDER, LIMIT_RE, loadIntegration, runnerOrder, pickRunners, commandFor, resolveBin, launchable, readAnswer, isLimit, tokensOf, usageOf };

@@ -472,6 +472,22 @@ test('T14 ReviewRunner_EnWindowsElAtajoDiceSuPrograma — el programa y las band
   const conVariable = RR.launchable('revisor', opts);
   assert.strictEqual(conVariable.bin, null);
   assert.match(conVariable.motivo, /NODE_OPTIONS/);
+  // una bandera con comillas: no cae a decidir por la extensión, se rechaza
+  fs.writeFileSync(path.join(dir, 'revisor.cmd'), atajoDeNpm('bun', '--title="x y"', 'pkg\\cli.js'));
+  assert.strictEqual(RR.launchable('revisor', opts).bin, null);
+  // una variable simple de la primera línea (`@SET NOMBRE=1`): no viajaría, se rechaza
+  fs.writeFileSync(path.join(dir, 'revisor.cmd'), atajoDeNpm('node', '', 'pkg\\cli.js').replace('SETLOCAL\r\n', 'SETLOCAL\r\n@SET NODE_NO_WARNINGS=1\r\n'));
+  const conSet = RR.launchable('revisor', opts);
+  assert.strictEqual(conSet.bin, null);
+  assert.match(conSet.motivo, /NODE_NO_WARNINGS/);
+  // el formato sin `_prog` (npm viejo): su programa y sus banderas también cuentan
+  const viejo = (linea) => `@IF EXIST "%~dp0\\node.exe" (\r\n  "%~dp0\\node.exe"  ${linea}\r\n) ELSE (\r\n  @SETLOCAL\r\n  @SET PATHEXT=%PATHEXT:;.JS;=;%\r\n  node  ${linea}\r\n)\r\n`;
+  fs.writeFileSync(path.join(dir, 'revisor.cmd'), viejo('"%~dp0\\pkg\\cli.js" %*'));
+  assert.deepStrictEqual(RR.launchable('revisor', opts), { bin: process.execPath, pre: [cli] });
+  fs.writeFileSync(path.join(dir, 'revisor.cmd'), 'node --no-warnings "%~dp0\\pkg\\cli" %*\r\n');
+  assert.deepStrictEqual(RR.launchable('revisor', opts), { bin: process.execPath, pre: ['--no-warnings', destino] });
+  fs.writeFileSync(path.join(dir, 'revisor.cmd'), 'bun "%~dp0\\pkg\\cli.js" %*\r\n');
+  assert.deepStrictEqual(RR.launchable('revisor', opts), { bin: path.join(dir, 'bun.exe'), pre: [cli] });
 });
 
 // T12 · 🔴 Falla con: workflow-lite.js lanza el nombre del corredor en vez de lo que da `launchable` (programa y sus
