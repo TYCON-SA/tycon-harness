@@ -862,3 +862,23 @@ test('Kanban_Finished_FromMainAndPrs: «Terminados hoy» suma sin carga manual l
   assert.deepStrictEqual(otroDia.kanban.columnas.find((c) => c.id === 'hechos').tarjetas, []);
   assert.deepStrictEqual(otroDia.kanban.anteriores, []);
 });
+
+test('Kanban_Finished_StoryAndItsPr_OneCard: la historia cerrada hoy y el pedido que la nombra en su título son una sola tarjeta', () => {
+  const board = OFFICE_MOD.buildBoard({ pendientes: [{ titulo: 'Fila de la 9.1', estado: 'hecho', realIso: OF.localIsoAt(AHORA - 9 * 60000), historia: '9.1' }] });
+  const historias = [
+    { id: '9.1', titulo: 'La dice la fila', at: AHORA - 10 * 60000, proyecto: 'Acme' },
+    { id: '9.2', titulo: 'Cerrada hoy', at: AHORA - 5 * 60000, proyecto: 'Acme' },
+    { id: '9.4', titulo: 'Otra', at: AHORA - 8 * 60000, proyecto: 'Acme' },
+  ];
+  const pedidos = [
+    { repo: 'org/pub', repoName: 'pub', number: 80, title: 'feat(algo): lo de la historia (9.2)', at: AHORA - 60000 },
+    { repo: 'org/pub', repoName: 'pub', number: 81, title: 'docs: los papeles de la 9.1', at: AHORA - 2 * 60000 },
+    { repo: 'org/pub', repoName: 'pub', number: 82, title: 'fix: lo de la 9.41 y la 19.4', at: AHORA - 3 * 60000 },
+  ];
+  const { data } = OF.buildOffice({ wip: OF.wip([]), board, prAnswers: new Map(), enteredPrs: pedidos, projectStories: { snap: { at: new Date(AHORA).toISOString(), proyectos: [{ nombre: 'Acme', abiertas: [], cerradasHoy: historias }] }, runs: [] }, nowMs: AHORA });
+  const hechos = data.kanban.columnas.find((c) => c.id === 'hechos').tarjetas;
+  assert.deepStrictEqual(hechos.map((t) => t.titulo), ['9.2 · Cerrada hoy', 'fix: lo de la 9.41 y la 19.4', '9.4 · Otra', 'Fila de la 9.1'], 'el #80 va en la 9.2, el #81 lo cuenta la fila de la 9.1, y el #82 no es de la 9.4');
+  assert.deepStrictEqual([hechos[0].quien, hechos[0].hora, hechos[0].local], ['historia cerrada en main · pedido #80', hm(AHORA - 60000), true], 'la hora es la del último de los dos');
+  assert.deepStrictEqual(hechos[0].pedido, OFFICE_MOD.cardPr('org/pub', 80));
+  assert.strictEqual(hechos[2].quien, 'historia cerrada en main');
+});
