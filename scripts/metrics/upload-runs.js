@@ -478,7 +478,7 @@ function leerConfig(requiere = ['cuenta', 'contenedor', 'sas', 'vence'], ruta = 
   if (faltan.length) return { estado: 'config_ilegible', motivo: `${ruta} tiene que declarar ${faltan.map((k) => `"${k}"`).join(', ')} (texto)` };
   // La forma sola no alcanza: «9999-13-45» la pasa, diasHasta da NaN y el aviso de vencimiento no sale nunca.
   const fechaValida = (f) => /^\d{4}-\d{2}-\d{2}$/.test(f) && !Number.isNaN(Date.parse(`${f}T00:00:00Z`)) && new Date(`${f}T00:00:00Z`).toISOString().slice(0, 10) === f;
-  if (requiere.includes('vence') && !fechaValida(cfg.vence.trim())) return { estado: 'config_ilegible', motivo: `${ruta}: "vence" tiene que ser una fecha AAAA-MM-DD (es ${JSON.stringify(cfg.vence)})` };
+  if (requiere.includes('vence') && !fechaValida(cfg.vence.trim())) return { estado: 'config_ilegible', motivo: `${ruta}: "vence" tiene que ser una fecha AAAA-MM-DD (el valor no se muestra: una SAS puesta ahí por error saldría en el aviso)` };
   if (!/^[a-z0-9]{3,24}$/.test(cfg.cuenta.trim())) return { estado: 'config_ilegible', motivo: `${ruta}: "cuenta" no tiene la forma de una cuenta de almacenamiento` };
   if (!/^[a-z0-9](?:[a-z0-9-]{1,61})[a-z0-9]$/.test(cfg.contenedor.trim())) return { estado: 'config_ilegible', motivo: `${ruta}: "contenedor" no tiene la forma de un contenedor` };
   const limpio = { ...cfg, cuenta: cfg.cuenta.trim(), contenedor: cfg.contenedor.trim() };

@@ -399,14 +399,21 @@ function mailboxSummary(tree, file) {
     return { hay: true, proveedor: lc.cfg.provider, destino: typeof lc.cfg.destino === 'string' ? lc.cfg.destino : null, vence: lc.cfg.vence };
   }
   const firma = new URLSearchParams(lc.cfg.sas);
+  // Ningún valor que pueda ser la SAS sale en el panel: la política se muestra sólo con forma de nombre, y de los parámetros
+  // sólo los nombres cortos de una SAS (sv, sr, si, sp, se, sig…); una «sas» que trae sólo la firma la tendría como nombre.
+  const politica = typeof lc.cfg.politica !== 'string' ? null
+    : /^[A-Za-z0-9._-]{1,64}$/.test(lc.cfg.politica) ? lc.cfg.politica : '(no se muestra: no tiene forma de nombre de política)';
+  const claves = [...new Set(firma.keys())];
+  const parametros = claves.filter((k) => /^[a-z]{1,8}$/.test(k));
+  if (parametros.length < claves.length) parametros.push(`(${claves.length - parametros.length} sin forma de parámetro, no se muestran)`);
   return {
     hay: true,
     cuenta: lc.cfg.cuenta,
     contenedor: lc.cfg.contenedor,
-    politica: typeof lc.cfg.politica === 'string' ? lc.cfg.politica : null,
+    politica,
     vence: lc.cfg.vence,
     permisos_propios: firma.get('sp') || null,
-    parametros: [...new Set(firma.keys())],
+    parametros,
   };
 }
 
