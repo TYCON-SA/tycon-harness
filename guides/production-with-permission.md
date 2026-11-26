@@ -22,7 +22,7 @@ Dos causas, y las dos se arreglan con lo mismo:
 - **Una sola puerta**: `/opt/tycon/bin/tycon-prod-sql <host> '<sentencia>'`. Es lo único que consulta
   o cambia producción —un `select`, o un cambio como `alter database …`—, y **cada sentencia la aprueba una persona
   antes de que se lea la clave**. Desde tu terminal, la propia puerta abre un cuadro del sistema con el servidor y la
-  sentencia. Pedida por una sesión de Claude Code, la puerta no abre ese cuadro: imprime la pregunta, la sesión te la
+  sentencia. Pedida por una sesión de Claude Code (una sentencia o cualquier otra forma con cuadro), la puerta no abre ese cuadro: imprime la pregunta, la sesión te la
   muestra en su cuadro de opciones y tu click la aprueba, también desde el celular o la app. Siempre un solo cuadro por
   sentencia: Claude Code no pregunta además por la puerta.
 - **Un freno** prohíbe todo otro camino a esa base: `sqlcmd` directo, `az sql`, una cadena de
@@ -44,14 +44,16 @@ Dos causas, y las dos se arreglan con lo mismo:
 ## Emergencia: producción caída
 
 Cuando producción está caída (por ejemplo, la base llegó a su tope y dejó de escribir), el camino es la misma puerta.
-No hace falta el portal de Azure ni que alguien te dicte los comandos. Cada paso que toca producción abre el cuadro, y
-lo aprueba **la persona frente a la Mac**, que tiene que poder autorizar ese cambio en esa base.
+No hace falta el portal de Azure ni que alguien te dicte los comandos. Cada paso que toca producción lo aprueba **la
+persona** que tiene que poder autorizar ese cambio en esa base: con su click en la sesión (también desde el celular), o
+en el cuadro del sistema si corre la puerta desde su terminal.
 
 1. **Probá la conexión**: `/opt/tycon/bin/tycon-prod-sql <host> 'select 1'`.
 2. **Si la rechaza el firewall** (error 40615, «is not allowed to access the server»), la puerta lo dice y da el
-   comando para copiar: `/opt/tycon/bin/tycon-prod-sql --open-firewall <host> --session <id>`. **Lo corre la persona en
-   su terminal**, no el asistente: el modo automático de Claude Code frena esa orden. Abre la regla de esta máquina,
-   con cuadro, a nombre de la sesión que la pidió, y la regla se cierra sola cuando esa sesión termina, o a las 8 h.
+   comando: `/opt/tycon/bin/tycon-prod-sql --open-firewall <host>`. **Lo corre la sesión** y la persona lo aprueba con su
+   click en la sesión. Abre la regla de esta máquina a nombre de esa sesión, y la regla se cierra sola cuando
+   la sesión termina, o a las 8 h. Si el modo automático de Claude Code no deja correrlo, la sesión se lo dice a la
+   persona en una línea, con el comando para su terminal: el mismo con `--session <id>`.
 3. **Mirá el estado** por la puerta, no por `az`: el tamaño y el tope con
    `'select name, size/128 as mb, max_size/128 as max_mb from sys.database_files'`, y la edición y el nivel con
    `'select edition, service_objective from sys.database_service_objectives'`. Miden la base a la que entra la
@@ -260,8 +262,11 @@ consulta. Si no contestás en 2 minutos, se da por rechazada. Claude Code ya no 
 control, porque sin el cuadro de la puerta no se consulta nada (lo prueba la suite de la puerta), y duplicaba las
 ventanas. Lo mismo pasa al bajar un servidor a no producción (`--reclassify`), al abrir el firewall (`--open-firewall`)
 y al borrar un grupo de recursos (`--delete-group`); cerrar el firewall, `--verify`, `--locks` y `--load-key` no piden
-cuadro: no consultan ni cambian nada que no se deshaga. Esas otras formas se siguen aprobando sólo en este cuadro, frente
-a la Mac; una sentencia pedida por una sesión, con tu click en la sesión. **El cuadro del sistema necesita la sesión de la Mac**: por
+cuadro: no consultan ni cambian nada que no se deshaga. Pedidas por una sesión, esas formas también se aprueban con tu
+click en la sesión. La pregunta dice qué hace cada una, y empieza
+avisando cuando apaga el freno o cuando no tiene vuelta atrás, con el servidor o el grupo exactos: «APAGAR EL FRENO para
+<servidor>» (`--reclassify`) o «BORRAR SIN VUELTA ATRÁS el grupo de recursos <grupo>» (`--delete-group`). Leé esa primera
+línea antes del click: desde el celular, un click borra un grupo para siempre o deja un servidor sin freno. **El cuadro del sistema necesita la sesión de la Mac**: por
 SSH, o desde una sesión sin pantalla, la puerta no consulta (falla cerrada, a propósito). Y la sentencia tiene que
 entrar entera en el cuadro: hasta 1.200 caracteres en 20 renglones de 60; una más larga se rechaza antes de abrirlo,
 para que nunca apruebes una sentencia cortada.

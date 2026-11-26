@@ -122,6 +122,30 @@ test('T9 · SessionApproval_RealSearch_WrittenApprovalDoesNotCount', () => {
   assert.strictEqual(r.estado, 'pedir');
 });
 
+test('T11 · SessionApproval_OtherForms_SayFirstWhatTheyDo', () => {
+  // fila 286: todas las formas con cuadro pasan por el click en la sesión; las que apagan el freno o no tienen vuelta
+  // atrás lo dicen al principio de la pregunta, con el servidor o el grupo
+  const de = (forma, host) => sa.cuadroDe({ ...BASE, forma, host, sentencia: 'lo que armó la puerta' }).pregunta;
+  assert.ok(de('reclasificar', BASE.host).startsWith(`¿APAGAR EL FRENO para ${BASE.host}`));
+  assert.ok(de('borrar-grupo', 'rg-acme-viejo').startsWith('¿BORRAR SIN VUELTA ATRÁS el grupo de recursos rg-acme-viejo'));
+  assert.ok(de('open-firewall', BASE.host).startsWith(`¿Abrir el firewall de producción ${BASE.host}`));
+  assert.ok(de('azure', BASE.host).includes('Azure'));
+  for (const f of Object.keys(sa.FORMAS)) assert.ok(de(f, BASE.host).includes('lo que armó la puerta'), `${f}: lo que se aprueba, entero`);
+  assert.throws(() => sa.cuadroDe({ ...BASE, forma: 'otra' }));
+});
+
+test('T12 · SessionApproval_Code_DiffersByForm_AndConsultaKeepsItsCode', () => {
+  const codigos = Object.keys(sa.FORMAS).map((forma) => sa.codigoDe({ ...BASE, forma }));
+  assert.strictEqual(new Set(codigos).size, codigos.length, 'un click a una forma no vale para otra');
+  // la consulta conserva su código de antes de la fila 286
+  const antes = require('crypto').createHash('sha256').update([BASE.host, BASE.sentencia, '50', SES].join('\0')).digest('hex').slice(0, 12);
+  assert.strictEqual(sa.codigoDe(BASE), antes);
+  const d = oaCon(() => ({ ok: false, motivo: 'no hay un click' }));
+  sa.decidir({ ...BASE, forma: 'borrar-grupo', host: 'rg-acme-viejo', casa: casa(), pid: 30, ahora: AHORA, arbol: ARBOL, oa: d.oa, ow });
+  assert.ok(d.llamadas[0].cuadro.pregunta.startsWith('¿BORRAR SIN VUELTA ATRÁS'), 'busca el click de la pregunta de su forma');
+  assert.strictEqual(sa.decidir({ ...BASE, forma: 'otra', casa: casa(), pid: 30, ahora: AHORA, arbol: ARBOL, oa: d.oa, ow }).estado, 'error');
+});
+
 test('T10 · SessionApproval_Args_StatementAfterSeparatorOnly', () => {
   assert.deepStrictEqual(sa.leerArgs(['--host', 'h', '--session', SES, '--max-rows', '7', '--', 'select 1']),
     { maxFilas: 7, host: 'h', sesion: SES, sentencia: 'select 1' });

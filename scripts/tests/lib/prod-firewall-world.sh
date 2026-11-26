@@ -186,6 +186,8 @@ SH
   cat > "$TMP/aprobacion-de-la-sesion.js" <<JS
 const fs = require('fs');
 fs.appendFileSync('$TMP/cuadro.log', 'cuadro\n');
+// lo que se aprueba (después de «--»), en el mismo registro donde el doble del cuadro del sistema anota su texto
+fs.appendFileSync('$TMP/cuadro-texto.log', process.argv[process.argv.length - 1] + '\n');
 let rejects = false; try { rejects = fs.readFileSync('$TMP/cuadro-modo', 'utf8').trim() === 'rechaza'; } catch (_) { /* aprueba */ }
 if (!rejects) { process.stdout.write('id-de-prueba\n'); process.exit(0); }
 process.stdout.write('Mostrale AskUserQuestion con una sola pregunta (firma production-query · sesión s · código c)\n'); process.exit(1);
