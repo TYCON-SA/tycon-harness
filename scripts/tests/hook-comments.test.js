@@ -4,7 +4,7 @@
  * hook-comments.test.js — los comentarios de los controles del commit (`.githooks/pre-commit` y
  * `.githooks/pre-commit-checks`) dicen qué hace cada parte y por qué, en presente: sin número de story, código de tanda,
  * fecha, caso del registro de incidentes ni historia («se encontró cuando…»). La regla vive en
- * guides/maintaining/estilo-de-codigo.md, y su guía tiene su propia prueba (style-guide.test.js).
+ * guides/maintaining/code-style.md, y su guía tiene su propia prueba (style-guide.test.js).
  *
  * Uso: node --test scripts/tests/hook-comments.test.js
  */

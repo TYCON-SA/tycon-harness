@@ -29,8 +29,11 @@ const ENV_RE = /^TYCON_[A-Z0-9_]+$/;
 const PROFILE_TYPES = Object.freeze(['texto', 'url', 'canales', 'puerto']);
 const KIND_RE = /^[a-z][A-Za-z0-9]*$/;
 // los tipos que el núcleo busca por nombre; `toggle` es el de prender y apagar: está o no está, según su llave;
-// `platform`, un conector de plataforma (scripts/lib/platform/platform.js)
-const KINDS = Object.freeze(['timeTracking', 'notify', 'toggle', 'platform']);
+// `platform`, un conector de plataforma (scripts/lib/platform/platform.js); `mailbox`, el conector de un servicio de
+// almacenamiento para el buzón de ejecuciones (la subida, scripts/metrics/upload-runs.js, y el sitio, scripts/site/sources.js)
+const KINDS = Object.freeze(['timeTracking', 'notify', 'toggle', 'platform', 'mailbox']);
+// el nombre de un proveedor de buzón, el valor de `site.mailbox.provider` y de `provider` en la llave
+const PROVIDER_RE = /^[a-z][a-z0-9-]*$/;
 // las operaciones del contrato de la capa, para validar un conector; se cargan recién ahí: este lector también guarda
 // y lee los secretos, y un árbol al que le falte scripts/lib/platform/ no puede quedarse sin ellos
 function contractOperations() {
@@ -170,6 +173,49 @@ function draftFieldProblems(m) {
   return out;
 }
 
+/**
+ * La forma del repo de un conector de plataforma (`repoShape`): sus claves en orden, la última el nombre del repo; la
+ * expresión (`name`, con sus `flags`) de qué nombre vale; `nameHint`, lo que vale dicho en palabras; y, si hacen falta,
+ * `optional` (claves que el repo puede no traer) y `rules` (la regla propia de una clave). La lee
+ * scripts/lib/team-repos.js para validar los repos de `team-repos.json`. El problema, o null.
+ */
+const CLAVE_DE_REPO = /^[a-z][a-z_]*$/;
+function repoShapeProblem(s) {
+  if (!isObject(s)) return '«repoShape» es un objeto: las claves del repo, la expresión de qué nombre vale y su explicación';
+  if (!Array.isArray(s.keys) || !s.keys.length || !s.keys.every((k) => typeof k === 'string' && CLAVE_DE_REPO.test(k)) || new Set(s.keys).size !== s.keys.length) return '«repoShape.keys» es una lista de claves distintas, en minúsculas';
+  if (s.keys[s.keys.length - 1] !== 'repo') return '«repoShape.keys» termina en «repo», el nombre del repo';
+  if (s.keys.includes('platform')) return '«repoShape.keys» no lleva «platform»: es la clave que elige el conector';
+  if (typeof s.name !== 'string' || !s.name.startsWith('^') || !s.name.endsWith('$')) return '«repoShape.name» es una expresión de un nombre entero, de «^» a «$»';
+  if (s.flags !== undefined && (typeof s.flags !== 'string' || !/^u?$/.test(s.flags))) return '«repoShape.flags» es «u» o vacío';
+  try { new RegExp(s.name, s.flags || ''); } catch (e) { return `«repoShape.name» no compila (${e.message})`; }
+  if (typeof s.nameHint !== 'string' || !s.nameHint.trim()) return '«repoShape.nameHint» dice en palabras qué nombre vale';
+  // `optional`: las claves que un repo puede traer además de las suyas; van delante en la identidad del repo
+  if (s.optional !== undefined) {
+    if (!Array.isArray(s.optional) || !s.optional.every((k) => typeof k === 'string' && CLAVE_DE_REPO.test(k)) || new Set(s.optional).size !== s.optional.length) return '«repoShape.optional» es una lista de claves distintas, en minúsculas';
+    if (s.optional.some((k) => k === 'platform' || s.keys.includes(k))) return '«repoShape.optional» no repite una de «keys» ni lleva «platform»';
+  }
+  // `rules`: la regla propia de una clave, cuando no es la del nombre: otra expresión (`name`) o tramos (`parts`)
+  if (s.rules !== undefined) {
+    if (!isObject(s.rules)) return '«repoShape.rules» es un objeto: por clave, su regla';
+    const todas = [...s.keys, ...(Array.isArray(s.optional) ? s.optional : [])];
+    for (const [k, r] of Object.entries(s.rules)) {
+      const who = `«repoShape.rules.${k}»`;
+      if (!todas.includes(k)) return `${who}: «${k}» no es una clave de «keys» ni de «optional»`;
+      if (!isObject(r) || (r.name === undefined) === (r.parts === undefined)) return `${who} lleva «name» o «parts», uno de los dos`;
+      if (typeof r.nameHint !== 'string' || !r.nameHint.trim()) return `${who}: «nameHint» dice en palabras qué vale`;
+      if (r.name !== undefined) {
+        if (typeof r.name !== 'string' || !r.name.startsWith('^') || !r.name.endsWith('$')) return `${who}: «name» es una expresión de un valor entero, de «^» a «$»`;
+        if (r.flags !== undefined && (typeof r.flags !== 'string' || !/^u?$/.test(r.flags))) return `${who}: «flags» es «u» o vacío`;
+        try { new RegExp(r.name, r.flags || ''); } catch (e) { return `${who}: «name» no compila (${e.message})`; }
+      } else {
+        if (typeof r.parts !== 'string' || !/^[^\sA-Za-z0-9]$/.test(r.parts)) return `${who}: «parts» es el signo que separa los tramos (por ejemplo «/»)`;
+        if (typeof r.partsHint !== 'string' || !r.partsHint.trim()) return `${who}: «partsHint» dice en palabras cómo van los tramos`;
+      }
+    }
+  }
+  return null;
+}
+
 /** Los motivos por los que un manifiesto no vale (vacío si vale). */
 function problemsOf(m, folder) {
   const out = [];
@@ -238,6 +284,9 @@ function problemsOf(m, folder) {
     else for (const o of m.operations) if (!contrato.operations.includes(o)) out.push(`operación desconocida: ${o} (las del contrato: ${contrato.operations.join(', ')})`);
     if (m.capabilities !== undefined && !isObject(m.capabilities)) out.push('«capabilities» es un objeto');
     if (m.rawCommands !== undefined && !(Array.isArray(m.rawCommands) && m.rawCommands.every((c) => typeof c === 'string' && c.trim()))) out.push('«rawCommands» es una lista de textos');
+    // la forma la pide team-repos.js a los conectores de las plataformas que admite; si está, tiene que valer
+    const forma = m.repoShape === undefined ? null : repoShapeProblem(m.repoShape);
+    if (forma) out.push(forma);
     // los comandos crudos que crean o juntan un pedido: los mira el freno de guardar, que los pasa por la ventana de la
     // persona. Cada uno es uno de `rawCommands`: una sola lista de los comandos de la plataforma
     if (m.changeRequestCommands !== undefined) {
@@ -257,10 +306,18 @@ function problemsOf(m, folder) {
   } else {
     for (const k of ['changeRequestCommands', 'changeRequestApi', 'changeRequestAutoComplete', 'draftOptions', 'readyCommands']) if (m[k] !== undefined) out.push(`«${k}» es sólo de un conector de plataforma (kind platform)`);
   }
+  if (m.kind === 'mailbox') {
+    // un conector de buzón: el guion que lo atiende y el proveedor que lee (`site.mailbox.provider` y la llave)
+    if (m.connector === undefined) out.push('falta «connector»');
+    else if (!(inside(m.connector) && /\.js$/.test(m.connector))) out.push('«connector» es un .js dentro de la carpeta');
+    if (typeof m.provider !== 'string' || !PROVIDER_RE.test(m.provider)) out.push('«provider» es el nombre del proveedor del buzón (minúsculas, números y guiones)');
+    else if (m.provider === 'azure-blob') out.push('«provider»: azure-blob lo atiende el núcleo');
+    if (!(Array.isArray(m.mailboxFields) && m.mailboxFields.length && m.mailboxFields.every((c) => typeof c === 'string' && /^[a-z][a-z0-9_]*$/.test(c) && c !== 'provider' && c !== 'threads'))) out.push('«mailboxFields» es la lista de los campos de site.mailbox del proveedor (sin provider ni threads)');
+  } else if (m.mailboxFields !== undefined) out.push('«mailboxFields» es sólo de un conector de buzón (kind mailbox)');
   // `hardSignals`: los patrones de un comando o una dirección de su plataforma que el núcleo no puede sumar (los cuenta el
   // candado, scripts/ci/check-core-neutrality.js): así el núcleo no escribe ninguno
   if (m.hardSignals !== undefined) {
-    if (m.kind !== 'platform') out.push('«hardSignals» es sólo de un conector de plataforma (kind platform)');
+    if (m.kind !== 'platform' && m.kind !== 'mailbox') out.push('«hardSignals» es sólo de un conector de plataforma o de buzón (kind platform o mailbox)');
     else if (!Array.isArray(m.hardSignals)) out.push('«hardSignals» es una lista de patrones');
     else {
       for (const s of m.hardSignals) {
@@ -359,7 +416,8 @@ function listManifests({ env = process.env, dir = integrationsDir(env) } = {}) {
       mcp: m.mcp ? { server: m.mcp.server, machine: m.mcp.machine === true } : null,
       ...(m.kind === 'platform' ? { connector: m.connector, operations: m.operations, capabilities: isObject(m.capabilities) ? m.capabilities : {}, rawCommands: Array.isArray(m.rawCommands) ? m.rawCommands : [], changeRequestCommands: Array.isArray(m.changeRequestCommands) ? m.changeRequestCommands : [], hardSignals: Array.isArray(m.hardSignals) ? m.hardSignals : [],
         changeRequestApi: isObject(m.changeRequestApi) ? m.changeRequestApi : null, changeRequestAutoComplete: Array.isArray(m.changeRequestAutoComplete) ? m.changeRequestAutoComplete : [],
-        draftOptions: Array.isArray(m.draftOptions) ? m.draftOptions : [], readyCommands: Array.isArray(m.readyCommands) ? m.readyCommands : [] } : {}),
+        draftOptions: Array.isArray(m.draftOptions) ? m.draftOptions : [], readyCommands: Array.isArray(m.readyCommands) ? m.readyCommands : [], repoShape: m.repoShape } : {}),
+      ...(m.kind === 'mailbox' ? { connector: m.connector, provider: m.provider, mailboxFields: Array.isArray(m.mailboxFields) ? m.mailboxFields : [], hardSignals: Array.isArray(m.hardSignals) ? m.hardSignals : [] } : {}),
       offer: m.offer ? { does: m.offer.does, needs: m.offer.needs } : null,
     });
   }
@@ -372,6 +430,31 @@ function listManifests({ env = process.env, dir = integrationsDir(env) } = {}) {
 function find(name, { kind = null, env = process.env, dir } = {}) {
   const n = String(name || '').trim().toLowerCase();
   return listManifests({ env, dir }).manifests.find((m) => m.name === n && (!kind || m.kind === kind)) || null;
+}
+
+/** Los conectores de buzón (kind mailbox): `[{ provider, label, file }]`, con la ruta absoluta de su guion. */
+function mailboxConnectors(opts) {
+  return listManifests(opts).manifests.filter((m) => m.kind === 'mailbox').map((m) => ({ provider: m.provider, label: m.label, file: path.join(m.dir, m.connector) }));
+}
+
+/** El módulo del conector de buzón de un proveedor, cargado, o null si ningún conector lo atiende. Si no carga, tira. */
+function mailboxConnector(provider, opts) {
+  const c = mailboxConnectors(opts).find((x) => x.provider === provider);
+  return c ? require(c.file) : null;
+}
+
+/**
+ * Le da al lector del perfil del equipo (operations-config.js, que viaja solo y no carga integraciones) los conectores de
+ * buzón ya cargados. Uno que no carga se deja afuera: su proveedor queda desconocido. Un lector viejo sin
+ * `useMailboxConnectors` sigue como está.
+ */
+function giveMailboxConnectors(reader, opts) {
+  if (!reader || typeof reader.useMailboxConnectors !== 'function') return;
+  const list = [];
+  for (const c of mailboxConnectors(opts)) {
+    try { list.push({ provider: c.provider, module: require(c.file) }); } catch (_) { /* sin cargar, su proveedor no se conoce */ }
+  }
+  reader.useMailboxConnectors(list);
 }
 
 /** Los ajustes de la organización de una integración: `{ <clave>: tipo }`, o null si la integración no existe. */
@@ -527,6 +610,6 @@ function dispatchEntries(m, mode) {
 
 module.exports = {
   INT_PREFIX, TOOLS, parseIntSpec, intSpecRepoPath, intSpecPath, hookEntries, dispatchEntries, effectEntries,
-  integrationsDir, listManifests, find, profileSettings, secretKeys, isSecretKey,
+  integrationsDir, listManifests, find, mailboxConnectors, mailboxConnector, giveMailboxConnectors, profileSettings, secretKeys, isSecretKey,
   tyconHome, secretsDir, secretsFile, readSecret, secretState, writeSecret, PROFILE_TYPES,
 };

@@ -41,7 +41,7 @@ const path = require('path');
  * (ej. `i18n.audiences`, que es un mapa audiencia→idioma).
  */
 const ESQUEMA = {
-  repo_group: null,       // ~/.claude/tycon-harness/scripts/hooks/unpushed-work-notice.js (grupo de
+  repo_group: null,       // ~/.tycon/harness/scripts/hooks/unpushed-work-notice.js (grupo de
                           // repos del aviso de trabajo sin subir) + el arranque de tycon-merge-to-main +
                           // lib/repo-group.js (los hermanos de la lista del arreglo rápido, leídos de
                           // la rama principal del remoto y en los dos sentidos).
@@ -108,7 +108,7 @@ const ESQUEMA = {
     hijas: ['edit', 'paths'],  // lista de entradas path/level/reason/review_by, que valida el lector, no este lint)
     libres: ['paths'],
   },
-  frontend: {             // ~/.claude/tycon-harness/scripts/hooks/rebuild-before-verify.js
+  frontend: {             // ~/.tycon/harness/scripts/hooks/rebuild-before-verify.js
     hijas: ['dev_build_cmd', 'dir'],
     libres: [],
   },

@@ -1,0 +1,868 @@
+{
+  "casos": {
+    "on-bash-write-gate.js::adhoc-declarado-cubre-aunque-un-lane-viejo-diga-pipeline": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::adhoc-escrito-a-mano-sin-firma-no-abre": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::adversarial-skip-constancia-consola-cp-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::adversarial-skip-constancia-consola-leer-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::adversarial-skip-constancia-consola-redireccion-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::adversarial-skip-constancia-curl-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::adversarial-skip-constancia-opciones-juntas-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::adversarial-skip-constancia-sponge-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::adversarial-skip-constancia-tar-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::adversarial-skip-constancia-unzip-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::adversarial-skip-constancia-xargs-cp-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::adversarial-skip-descargas-y-descomprimir-afuera-pasan": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::adversarial-skip-registro-bash-c-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::adversarial-skip-registro-bin-cp-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::adversarial-skip-registro-command-cp-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::adversarial-skip-registro-consola-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::adversarial-skip-registro-curl-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::adversarial-skip-registro-ditto-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::adversarial-skip-registro-install-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::adversarial-skip-registro-opciones-juntas-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::adversarial-skip-registro-rsync-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::adversarial-skip-registro-sponge-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::adversarial-skip-registro-wget-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::adversarial-skip-registro-xargs-cp-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::anidado-comillas-ansi-c-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::anidado-comillas-invertidas-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::anidado-control-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::anidado-editor-adentro-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::anidado-entre-comillas-simples-no-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::anidado-guion-de-shell-a-ruta-absoluta-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::anidado-heredoc-vacio-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::anidado-lectura-adentro-no-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::anidado-llave-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::anidado-llaves-en-el-nombre-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::anidado-mensaje-de-commit-no-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::anidado-quinto-nivel-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::anidado-sh-c-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::anidado-sustitucion-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::arbol-deniega-consola-cp": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::arbol-deniega-consola-cp-con-redireccion": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::arbol-deniega-consola-redireccion": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::arbol-deniega-consola-sed-en-sitio": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::arbol-pasa-consola-proyecto": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::avance-con-redireccion-pasa": {
+      "claude": "verde",
+      "codex": "salteado"
+    },
+    "on-bash-write-gate.js::bash-write-gate-frena-forma-barras": {
+      "claude": "salteado",
+      "codex": "salteado"
+    },
+    "on-bash-write-gate.js::bash-write-gate-frena-forma-barras-invertidas": {
+      "claude": "salteado",
+      "codex": "salteado"
+    },
+    "on-bash-write-gate.js::bash-write-gate-frena-forma-git-bash": {
+      "claude": "salteado",
+      "codex": "salteado"
+    },
+    "on-bash-write-gate.js::bash-write-gate-frena-forma-nativa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::bash-write-gate-pasa-forma-barras": {
+      "claude": "salteado",
+      "codex": "salteado"
+    },
+    "on-bash-write-gate.js::bash-write-gate-pasa-forma-barras-invertidas": {
+      "claude": "salteado",
+      "codex": "salteado"
+    },
+    "on-bash-write-gate.js::bash-write-gate-pasa-forma-git-bash": {
+      "claude": "salteado",
+      "codex": "salteado"
+    },
+    "on-bash-write-gate.js::bash-write-gate-pasa-forma-nativa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::bloquea-cp-a-nombre-de-story-sin-contenido-legible": {
+      "claude": "verde",
+      "codex": "salteado"
+    },
+    "on-bash-write-gate.js::bloquea-heredoc-a-codigo-sin-carril": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::bloquea-heredoc-de-story-nueva-sin-skill": {
+      "claude": "verde",
+      "codex": "salteado"
+    },
+    "on-bash-write-gate.js::bloquea-sed-sobre-un-borrador-sin-validador": {
+      "claude": "verde",
+      "codex": "salteado"
+    },
+    "on-bash-write-gate.js::borrar-marcador-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::borrar-marcador-gemelo-leer-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::borrar-rama-aceptado-por-duda-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::borrar-rama-con-rm-del-estado-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::camino-corto-lista-consola-afuera-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::cd-antes-del-editor-con-historia-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::cd-antes-del-editor-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::cd-relativo-con-tuberia-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::cd-relativo-sin-historias-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::clase-posix-que-nombra-una-historia-frena-por-la-historia": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-branch-f-a-otra-rama-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-checkout-de-otra-rama-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-checkout-de-otra-rama-sin-constancias-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-checkout-de-rama-sin-la-constancia-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-cherry-pick-con-guiones-antes-del-commit-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-cherry-pick-de-otra-rama-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-cherry-pick-del-primer-padre-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-cherry-pick-del-segundo-padre-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-cherry-pick-por-la-entrada-estandar-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-cp-al-jsonl": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-ditto-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-fetch-de-este-repo-a-la-copia-del-remoto-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-fetch-de-este-repo-a-una-rama-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-fetch-del-remoto-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-leer-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-listar-zip-o-cpio-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-merge-abort-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-merge-con-guiones-antes-de-la-rama-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-merge-con-la-principal-escrita-a-mano-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-merge-de-la-rama-principal-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-merge-de-otra-rama-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-merge-de-otra-rama-sin-constancias-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-otros-extractores-frenan": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-pathspec-desde-archivo-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-pull-de-la-rama-principal-confirmada-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-pull-de-la-rama-propia-sin-constancias-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-pull-de-otra-rama-de-un-remoto-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-pull-de-otra-rama-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-push-a-este-repo-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-read-tree-con-guiones-antes-de-la-rama-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-read-tree-con-prefijo-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-read-tree-de-otra-rama-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-rebase-con-exec-que-trae-una-constancia-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-rebase-con-guiones-antes-de-la-rama-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-rebase-continue-con-la-lista-editada-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-rebase-interactivo-con-editor-de-la-lista-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-rebase-sobre-otra-rama-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-redireccion": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-ref-con-guion-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-remote-set-url-de-origin-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-reset-hard-a-la-rama-principal-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-reset-hard-a-otra-rama-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-reset-soft-a-otra-rama-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-revert-de-un-rango-que-devuelve-una-constancia-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-revert-que-devuelve-una-constancia-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-stash-apply-propio-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-stash-apply-que-trae-una-constancia-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-switch-con-una-constancia-sin-commitear-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-switch-sin-nada-pendiente-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-symbolic-ref-de-la-copia-del-remoto-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-tar-con-constancia-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-tar-listar-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-tar-por-la-entrada-en-un-repo-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-tar-que-renombra-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-tar-sin-constancia-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-update-ref-de-la-copia-del-remoto-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::control-approvals-consola-update-ref-de-una-rama-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::coordinadora-comando-que-no-escribe-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::coordinadora-escribe-el-repo-por-consola-se-niega": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::copia-a-constancia-con-redireccion-frena": {
+      "claude": "verde",
+      "codex": "salteado"
+    },
+    "on-bash-write-gate.js::copia-vieja-sin-apertura-vigente-rm-rf-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::corchete-con-barra-que-no-nombra-una-historia-no-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::corchete-con-barra-que-nombra-una-historia-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::corchete-sin-cerrar-en-un-guion-que-escribe-una-historia-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::corchete-sin-cerrar-en-un-guion-que-no-toca-historias-no-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::deprecado-borrar-un-muerto-pasa-siempre": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::deprecado-sed-i-sobre-un-muerto-con-block-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::destino-con-subcomando-codigo-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::destino-con-subcomando-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::ejecucion-abierta-worktree-remove-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::frena-borrar-codigo-con-la-corrida-abierta": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::frena-deshacer-un-manifiesto-con-la-corrida-abierta": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::frena-escribir-un-manifiesto-con-node-e": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::frena-heredoc-append-a-story-existente": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::frena-un-destino-armado-con-la-corrida-abierta": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::freno-por-el-piso-con-node-viejo-sale-dos": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::gates-log-consola-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::gates-log-y-registro-leer-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::guion-grande-con-una-envoltura-que-el-freno-no-conoce-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::guion-grande-en-repo-con-historias-con-escaneo-incompleto-sigue-frenando": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::guion-grande-en-repo-sin-historias-con-escaneo-incompleto-no-frena-por-la-palabra": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::guion-grande-en-un-repo-con-spec-stories-que-nombra-la-historia-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::guion-grande-que-corre-detras-de-un-programa-que-lee-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::guion-grande-que-dice-historial-en-un-repo-sin-historias-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::guion-grande-que-nombra-la-ruta-de-una-historia-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::guion-grande-que-un-programa-solo-lee-no-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::heredoc-de-story-existente-no-contagia-a-otro-md-nuevo": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::heredoc-literal-que-nombra-el-caso-pasa": {
+      "claude": "verde",
+      "codex": "salteado"
+    },
+    "on-bash-write-gate.js::heredoc-sin-comillas-que-corre-una-copia-frena": {
+      "claude": "verde",
+      "codex": "salteado"
+    },
+    "on-bash-write-gate.js::historia-por-consola-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::historia-por-consola-gemelo-no-historia-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::historia-por-guion-comodin-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::historia-por-guion-destino-literal-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::historia-por-guion-modo-en-variable-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::historia-por-guion-perl-en-el-lugar-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::historia-por-guion-que-lanza-sed-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::historia-por-guion-que-solo-lee-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::historia-por-guion-ruby-file-write-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::historia-por-guion-ruby-que-solo-lee-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::historia-por-guion-sin-historia-de-argumento-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::hook-que-no-frena-por-el-piso-con-node-viejo-sale-cero": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::lista-de-archivos-en-un-pipeline-plantado-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::marcador-perdido-gemelo-cerrado-por-el-camino-legitimo-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::marcador-perdido-sacado-con-zip-la-edicion-siguiente-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::oficina-buzon-cp-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::oficina-usados-rm-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::oficina-verify-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::owner-approvals-consola-borrar-otro-archivo-que-lo-nombra-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::owner-approvals-consola-buscar-el-nombre-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::owner-approvals-consola-carpeta-de-un-producto-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::owner-approvals-consola-cat-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::owner-approvals-consola-con-cd-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::owner-approvals-consola-con-variable-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::owner-approvals-consola-cp-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::owner-approvals-consola-find-delete-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::owner-approvals-consola-leer-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::owner-approvals-consola-mv-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::owner-approvals-consola-mv-hacia-adentro-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::owner-approvals-consola-por-partes-en-un-guion-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::owner-approvals-consola-redireccion-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::owner-approvals-consola-rm-de-usadas-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::owner-approvals-consola-rm-rf-carpeta-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::owner-approvals-consola-rm-rf-del-estado-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::owner-approvals-consola-tee-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::owner-window-registro-consola-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::pasa-borrar-node-modules-y-queda-anotado": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::pasa-codigo-con-adhoc-posterior-al-carril-adhoc": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::pasa-el-gestor-de-paquetes-con-la-corrida-abierta": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::pasa-heredoc-de-story-nueva-en-borrador": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::pasa-md-cualquiera-por-bash": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::pasa-mv-de-story-existente-y-queda-medido": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::pasa-path-solo-mencionado-en-string": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::pasa-redirect-a-devnull": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::pasa-un-destino-literal-fuera-del-repo": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::pending-approvals-carpeta-consola-cp-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::pending-approvals-carpeta-consola-redireccion-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::pending-approvals-consola-cp-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::pending-approvals-consola-redireccion-frena": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::ps-bloquea-copy-item-a-codigo-sin-carril": {
+      "claude": "verde",
+      "codex": "salteado"
+    },
+    "on-bash-write-gate.js::ps-bloquea-set-content-a-codigo-sin-carril": {
+      "claude": "verde",
+      "codex": "salteado"
+    },
+    "on-bash-write-gate.js::ps-pasa-lectura-de-codigo": {
+      "claude": "verde",
+      "codex": "salteado"
+    },
+    "on-bash-write-gate.js::ps2-bloquea-copy-alias-a-codigo-sin-carril": {
+      "claude": "verde",
+      "codex": "salteado"
+    },
+    "on-bash-write-gate.js::ps2-bloquea-writealltext-a-codigo-sin-carril": {
+      "claude": "verde",
+      "codex": "salteado"
+    },
+    "on-bash-write-gate.js::rojo-el-mismo-heredoc-pasa-con-solo-este-freno-apagado": {
+      "claude": "verde",
+      "codex": "salteado"
+    },
+    "on-bash-write-gate.js::rojo-el-mismo-sed-pasa-con-solo-este-freno-apagado": {
+      "claude": "verde",
+      "codex": "salteado"
+    },
+    "on-bash-write-gate.js::sed-solo-el-cuerpo-pasa": {
+      "claude": "verde",
+      "codex": "salteado"
+    },
+    "on-bash-write-gate.js::sed-tanda-de-pipelines-a-done-frena": {
+      "claude": "verde",
+      "codex": "salteado"
+    },
+    "on-bash-write-gate.js::sin-ejecucion-abierta-rm-rf-de-una-carpeta-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::sin-ejecucion-abierta-worktree-remove-pasa": {
+      "claude": "verde",
+      "codex": "verde"
+    },
+    "on-bash-write-gate.js::sin-marker-y-sin-adhoc-bloquea-y-manda-a-preguntar": {
+      "claude": "verde",
+      "codex": "verde"
+    }
+  }
+}

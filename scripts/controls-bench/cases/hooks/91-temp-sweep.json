@@ -66,6 +66,76 @@
               }
             ]
           }
+        },
+        {
+          "id": "borra-la-carpeta-de-una-sesion-muerta-y-deja-la-viva",
+          "type": "must-emit",
+          "so": [
+            "linux",
+            "darwin"
+          ],
+          "__doc": "Claude Code deja lo temporal de cada sesión en /tmp/claude-<uid>/<proyecto>/<sesión>/ y no lo borra al cerrarla. La carpeta de una sesión sin archivo en ~/.claude/sessions, vieja, se borra; la de una sesión cuyo proceso vive (el pid 1) queda. ROJO PREVIO: borrar la carpeta de una sesión viva (se pierde lo que tiene en curso), o no borrar nunca (1,3 GB en un solo proyecto). Sin Windows: ahí no se sabe dónde guarda Claude Code lo de cada sesión.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/setup/harness && cp $TCG/scripts/hooks/temp-sweep.js tcg/scripts/hooks/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
+            "mkdir -p temporales/claude-$(id -u)/-Users-dev-repo/10000000-0000-4000-8000-000000000001/tasks temporales/claude-$(id -u)/-Users-dev-repo/20000000-0000-4000-8000-000000000002/tasks && echo salida > temporales/claude-$(id -u)/-Users-dev-repo/10000000-0000-4000-8000-000000000001/tasks/b1.output && echo salida > temporales/claude-$(id -u)/-Users-dev-repo/20000000-0000-4000-8000-000000000002/tasks/b1.output && chmod 700 temporales temporales/claude-$(id -u) temporales/claude-$(id -u)/-Users-dev-repo temporales/claude-$(id -u)/-Users-dev-repo/10000000-0000-4000-8000-000000000001 temporales/claude-$(id -u)/-Users-dev-repo/20000000-0000-4000-8000-000000000002 && ln -s \"$PWD/temporales/claude-$(id -u)\" vista",
+            "mkdir -p $HOME/.claude/sessions && printf '%s' '{\"sessionId\":\"20000000-0000-4000-8000-000000000002\",\"pid\":1,\"cwd\":\"/x\"}' > $HOME/.claude/sessions/1.json"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_TEMP_SWEEP_ROOTS": "${FIXTURE}/temporales",
+            "TYCON_TEMP_SWEEP_NOW": "2099-01-01T00:00:00Z"
+          },
+          "expect": {
+            "stdout_re": [
+              "sesiones del agente que ya no viven: borré 1 sin tocar hace 2 días"
+            ],
+            "file_absent": [
+              "${FIXTURE}/vista/-Users-dev-repo/10000000-0000-4000-8000-000000000001/tasks/b1.output"
+            ],
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/vista/-Users-dev-repo/20000000-0000-4000-8000-000000000002/tasks/b1.output",
+                "re": "salida"
+              }
+            ]
+          }
+        },
+        {
+          "id": "sin-poder-leer-las-sesiones-no-borra-ninguna-de-sesion",
+          "type": "must-emit",
+          "so": [
+            "linux",
+            "darwin"
+          ],
+          "__doc": "Sin la carpeta de sesiones de Claude Code no se sabe qué sesión vive: no se borra ninguna carpeta de sesión, y se dice. ROJO PREVIO: tomar «no pude leer» por «sin rastro» y borrar la carpeta de una sesión viva.",
+          "setup": [
+            "mkdir -p tcg/scripts/hooks tcg/scripts/setup/harness && cp $TCG/scripts/hooks/temp-sweep.js tcg/scripts/hooks/ && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/",
+            "mkdir -p temporales/claude-$(id -u)/-Users-dev-repo/10000000-0000-4000-8000-000000000001/tasks temporales/claude-$(id -u)/-Users-dev-repo/20000000-0000-4000-8000-000000000002/tasks && echo salida > temporales/claude-$(id -u)/-Users-dev-repo/10000000-0000-4000-8000-000000000001/tasks/b1.output && echo salida > temporales/claude-$(id -u)/-Users-dev-repo/20000000-0000-4000-8000-000000000002/tasks/b1.output && chmod 700 temporales temporales/claude-$(id -u) temporales/claude-$(id -u)/-Users-dev-repo temporales/claude-$(id -u)/-Users-dev-repo/10000000-0000-4000-8000-000000000001 temporales/claude-$(id -u)/-Users-dev-repo/20000000-0000-4000-8000-000000000002 && ln -s \"$PWD/temporales/claude-$(id -u)\" vista"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_TEMP_SWEEP_ROOTS": "${FIXTURE}/temporales",
+            "TYCON_TEMP_SWEEP_NOW": "2099-01-01T00:00:00Z"
+          },
+          "expect": {
+            "stdout_re": [
+              "sesiones del agente: no borré ninguna, no pude leer las sesiones"
+            ],
+            "file_contains": [
+              {
+                "path": "${FIXTURE}/vista/-Users-dev-repo/10000000-0000-4000-8000-000000000001/tasks/b1.output",
+                "re": "salida"
+              },
+              {
+                "path": "${FIXTURE}/vista/-Users-dev-repo/20000000-0000-4000-8000-000000000002/tasks/b1.output",
+                "re": "salida"
+              }
+            ]
+          }
         }
       ]
     }

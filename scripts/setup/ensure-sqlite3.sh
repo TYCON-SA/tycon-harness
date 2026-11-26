@@ -34,11 +34,11 @@ if "$SQLITE_BIN" -version >/dev/null 2>&1; then
   exit 0
 fi
 
-# el sello, en la carpeta del estado (scripts/lib/state-dir.sh): en una máquina sin Claude Code, ~/.tycon/state; sin la
-# biblioteca (una copia suelta de este archivo), la de siempre
+# el sello, en la carpeta del estado (scripts/lib/state-dir.sh, que viaja en el mismo árbol). Sin la biblioteca (un
+# árbol roto) no hay sello: el intento no se espacia, y el aviso lo dice
 _SD_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/state-dir.sh"
 if [[ -f "$_SD_LIB" ]] && . "$_SD_LIB" 2>/dev/null; then STAMP="$(tycon_state_dir)/sqlite3-install-last-try"
-else STAMP="$HOME/.claude/.tycon-pipeline/sqlite3-install-last-try"; fi
+else STAMP=""; fi
 CADA=$((7 * 24 * 60 * 60))
 ahora=$(date +%s)
 if [[ -f "$STAMP" ]]; then
@@ -60,8 +60,8 @@ aviso_manual() {
   # 🔴 Si el sello no se puede escribir, el throttle no existe: el intento y el aviso se repiten en
   # CADA arranque. Eso se dice — un aviso que reaparece sin explicación se lee como ruido y termina
   # apagado.
-  if ! { mkdir -p "$(dirname "$STAMP")" 2>/dev/null && echo "$ahora" > "$STAMP" 2>/dev/null; }; then
-    echo "    (no pude escribir $STAMP, así que este aviso va a repetirse en cada arranque)" >&2
+  if [[ -z "$STAMP" ]] || ! { mkdir -p "$(dirname "$STAMP")" 2>/dev/null && echo "$ahora" > "$STAMP" 2>/dev/null; }; then
+    echo "    (no pude escribir ${STAMP:-el sello: falta scripts/lib/state-dir.sh}, así que este aviso va a repetirse en cada arranque)" >&2
   fi
   exit 0
 }
@@ -92,7 +92,7 @@ echo "▸ tycon: falta \`sqlite3\` (engram trae el suyo compilado adentro, pero 
 echo "  Instalando con: $CMD_TXT"
 if "${CMD[@]}" >/dev/null 2>&1 && "$SQLITE_BIN" -version >/dev/null 2>&1; then
   echo "  ✓ sqlite3 instalado — los chequeos de memoria ya pueden correr."
-  rm -f "$STAMP" 2>/dev/null
+  [[ -n "$STAMP" ]] && rm -f "$STAMP" 2>/dev/null
   exit 0
 fi
 

@@ -9,7 +9,7 @@
 // la política. `source` es un mapa nombre → sha con las claves que traiga (hoy `harness` y `agent_skills`; con los repos
 // internos unificados será una): no se exige ninguna. En `developer` se avisa que la versión es la del clon.
 //
-// El registro: `~/.claude/.tycon-pipeline/harness/startup.log`, una línea con fecha por entrada, rotado a 1 MB (el
+// El registro: `~/.tycon/state/harness/startup.log`, una línea con fecha por entrada, rotado a 1 MB (el
 // anterior queda en `startup.log.1`). El aviso (`notice`) es lo que `startup` deja en el estado y el hook síncrono
 // imprime dirigido a la persona.
 //
@@ -163,7 +163,10 @@ function versionJson(state, opts = {}) {
 // que le agregaron ni los avisos. El cierre cuenta lo que quedó, por tipo, desde el
 // reporte del aplicador; dice cuántos hooks pueden frenar según la lista de efectos; repite cada aviso del aplicador tal
 // cual; y dice dónde quedó la copia de respaldo, cómo volver, dónde está el registro y qué sigue.
-const HARNESS_CMD = `${homeCommand(`.claude/${require('./place.js').PLACE_NAME}/scripts/setup/harness.js`)}`;   // el lugar
+// el lugar del arnés y su nombre viejo, relativos a la carpeta de la persona (tycon-home.js): un texto que se muestra los
+// nombra así, sin armar la ruta a mano
+const relDeCasa = (p) => path.relative(os.homedir(), p).split(path.sep).join('/');
+const HARNESS_CMD = `${homeCommand(`${relDeCasa(require('./place.js').placePath(os.homedir()))}/scripts/setup/harness.js`)}`;   // el lugar
 const WARNING_LINE = /^\s*(⚠|🔴|🛑)/u;
 // el instalador de Windows escribe los mismos avisos con «! » y «!! » (no usa los emojis): sin esto, en Windows el
 // cierre no repetiría ninguno
@@ -425,7 +428,7 @@ function repeatedHooksText(repeated, settingsFile) {
   const example = `${first.event}${first.matcher ? ` (${first.matcher})` : ''} → ${path.basename(first.file)}, ${first.count} veces`;
   return `hooks repetidos: ${repeated.length} hook(s) del arnés están registrados más de una vez en ${settingsFile} (por ejemplo ${example}). `
     + 'Es un dato, no un error: el instalador ya no repite ninguno, y los que estaban no se sacan solos. '
-    + `Para sacarlos a mano: en ese archivo, bajo «hooks», dejá UNA sola entrada por cada evento y archivo — las repetidas nombran el mismo archivo por dos rutas (la carpeta del clon y un nombre del lugar, ~/.claude/${require('./place.js').PLACE_NAME} o ~/.claude/${require('./place.js').LEGACY_PLACE_NAME}, o la misma carpeta escrita con otras mayúsculas); el instalador no la vuelve a agregar`;
+    + `Para sacarlos a mano: en ese archivo, bajo «hooks», dejá UNA sola entrada por cada evento y archivo — las repetidas nombran el mismo archivo por dos rutas (la carpeta del clon y un nombre del lugar, ~/${relDeCasa(require('./place.js').placePath(os.homedir()))} o ~/${relDeCasa(require('./place.js').legacyPlacePath(os.homedir()))}, o la misma carpeta escrita con otras mayúsculas); el instalador no la vuelve a agregar`;
 }
 
 const MARK = { fail: '✗', warn: '!', ok: '✓' };

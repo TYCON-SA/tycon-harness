@@ -7,7 +7,7 @@
 # story) no deja a ninguna capa mecánica saber si de verdad corrió. Este
 # wrapper corre el comando, captura el EXIT CODE REAL y lo appendea a:
 #   1. <evidence-dir>/<story>-smoke-ledger.jsonl        (el repo)
-#   2. ~/.claude/.tycon-pipeline/gates.log              (espejo global, append-only)
+#   2. ~/.tycon/state/gates.log              (espejo global, append-only)
 # runtime-matrix.js solo cuenta entries que existen EN AMBOS (anti escritura a
 # mano del ledger) y con exit 0.
 #
@@ -218,6 +218,12 @@ case "$DECIDE_RC" in
     fi
     echo "[smoke-run] ⚠️ no pude decidir si el humo es de laboratorio ($ISOLATED_JS no está o no contestó): corre con la casa de siempre." >&2 ;;
 esac
+# La llave de prueba de Anthropic viaja sólo en la ejecución aislada. Un humo común correría con la casa y la credencial
+# reales de quien lo lanza, y quien puso la llave creería que corre con ella: no se corre.
+if [ -n "${TYCON_TEST_ANTHROPIC_API_KEY:-}" ] && [ "${AISLAR[0]:-}" != node ]; then
+  echo "smoke-run.sh: hay una llave de prueba (TYCON_TEST_ANTHROPIC_API_KEY), pero este humo no corre en la ejecución aislada: correría con la casa y la credencial reales — no se corre. La prueba en vivo va como guion de laboratorio (en .advisors/dod-runtime/), que corre aislada y con la llave." >&2
+  exit 2
+fi
 
 # ── La imagen, validada ANTES de correr ──
 # Un archivo que no sirve de prueba no se descubre después de correr un comando que puede haber escrito: el humo falla acá
@@ -474,7 +480,7 @@ ENTRY=$(printf '{"ts":"%s","story":"%s","acs":%s,"cmd":%s,"exit":%d,"via":"smoke
 
 printf '%s\n' "$ENTRY" >> "$EVIDENCE_DIR/$STORY_ID-smoke-ledger.jsonl"
 
-MIRROR_DIR="$HOME/.claude/.tycon-pipeline"
+MIRROR_DIR="$(node "$(cd "$(dirname "$0")" && pwd)/lib/state-dir.js")"
 mkdir -p "$MIRROR_DIR"
 # la procedencia también va al espejo (fuera del repo): editarla en el registro del repo se nota al compararlos
 printf '{"type":"smoke-run","ts":"%s","repoPath":%s,"story":"%s","acs":%s,"exit":%d%s,"v":2%s%s%s,"target":%s}\n' \

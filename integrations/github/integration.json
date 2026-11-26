@@ -11,5 +11,6 @@
   "changeRequestApi": { "command": "gh api", "routes": [{ "method": "POST", "path": "repos/*/*/pulls" }, { "method": "PUT", "path": "repos/*/*/pulls/*/merge" }], "graphql": ["createPullRequest", "mergePullRequest", "enablePullRequestAutoMerge", "enqueuePullRequest"] },
   "draftOptions": [{ "command": "gh pr create", "options": [{ "name": "--draft", "separateValue": false }, { "name": "-d", "separateValue": false }], "abbreviations": false }, { "command": "gh pr new", "options": [{ "name": "--draft", "separateValue": false }, { "name": "-d", "separateValue": false }], "abbreviations": false }],
   "readyCommands": [{ "command": "gh pr ready", "unless": [{ "name": "--undo", "separateValue": false }], "abbreviations": false }],
-  "hardSignals": ["\\bgh\\s+(pr|api)\\b", "api\\.github\\.com"]
+  "hardSignals": ["\\bgh\\s+(pr|api)\\b", "api\\.github\\.com"],
+  "repoShape": { "keys": ["org", "repo"], "name": "^[A-Za-z0-9._-](?:[A-Za-z0-9._ -]*[A-Za-z0-9._-])?$", "flags": "", "nameHint": "letras sin tilde, números, punto, guion, guion bajo; espacios sólo adentro" }
 }

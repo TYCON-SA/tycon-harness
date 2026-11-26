@@ -501,7 +501,12 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (s.id === 'sitio') {
       // la lista de quién entra (si el lector la conoce) y con qué se entra, de sólo lectura
       const conAcceso = Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('access');
-      v.extras = { servicios: Array.isArray(lec.MAILBOX_PROVIDERS) ? lec.MAILBOX_PROVIDERS : null, conAcceso, inicioDeSesion: cfg.inicioDeSesion || null };
+      // de cada servicio del buzón, sus campos y su nombre (los de un conector salen de su manifiesto); un lector que no
+      // los sabe da sólo la lista, y la pantalla pide los campos de siempre (cuenta y contenedor)
+      const servicios = Array.isArray(lec.MAILBOX_PROVIDERS) ? lec.MAILBOX_PROVIDERS : null;
+      const campos = servicios && typeof lec.mailboxFields === 'function' ? Object.fromEntries(servicios.map((x) => [x, lec.mailboxFields(x)]).filter(([, c]) => Array.isArray(c))) : null;
+      const nombres = servicios && typeof lec.mailboxLabels === 'function' ? lec.mailboxLabels() : null;
+      v.extras = { servicios, campos, nombres, conAcceso, inicioDeSesion: cfg.inicioDeSesion || null };
       // sin la lista, la sección arranca con la armada con lo de hoy y la propone en lugar de site.maintainers
       const lista = conAcceso && doc && !(isObject(doc.site) && Array.isArray(doc.site.access)) ? people.listaDeAcceso(doc) : null;
       // lo que no se pudo leer queda afuera de la lista: se dice, para que nadie quede sin entrar sin saberlo (también si

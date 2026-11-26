@@ -6,7 +6,7 @@
 // —archivos, opciones, subcomandos, variables, claves de configuración—. Los renombres a inglés se hacen por tandas; sin este
 // freno, lo que una tanda renombra lo vuelve a ensuciar el commit siguiente. La prosa, los mensajes, el contenido de las
 // guías, los comentarios y los ids de los casos siguen en castellano: la convención está en
-// guides/maintaining/nombres-en-ingles.md.
+// guides/maintaining/english-names.md.
 //
 // QUÉ MIRA: lo que sale en alguna copia pública (la clasificación del exportador, reusada de new-names.js) y, de eso, sólo
 // ejecutables, configuración, pruebas y el nombre de archivo de las guías de `guides/` (sin el sufijo de idioma; de un `.md`
@@ -33,7 +33,7 @@
 //   node scripts/publishing/spanish-names.js --count [--json] [--repo <dir>] [--words <lista>]   (el termómetro)
 //   node scripts/publishing/spanish-names.js --check-map [--repo <dir>] [--map <archivo>]       (el mapa de renombres)
 //   node scripts/publishing/spanish-names.js --stale-mentions [--repo <dir>] [--json]           (nombres viejos que quedan)
-// Guía: guides/maintaining/nombres-en-ingles.md
+// Guía: guides/maintaining/english-names.md
 
 const fs = require('fs');
 const path = require('path');
@@ -880,11 +880,11 @@ function report(result) {
   }
   if (names) {
     l.push('', 'Cómo salir, en este orden:',
-      '  (a) El nombre en inglés (la propuesta al lado de cada hallazgo; el glosario está en guides/maintaining/nombres-en-ingles.md).',
+      '  (a) El nombre en inglés (la propuesta al lado de cada hallazgo; el glosario está en guides/maintaining/english-names.md).',
       '  (b) Si la palabra es inglés técnico, un nombre propio o un slug ajeno: un «allowed» con su reason en',
       `      ${WORDS_PATH}, en un commit aparte y decidido por una persona.`);
   }
-  l.push('', 'Guía: guides/maintaining/nombres-en-ingles.md.');
+  l.push('', 'Guía: guides/maintaining/english-names.md.');
   return l.join('\n');
 }
 
@@ -965,7 +965,7 @@ function homonymProblems(e, at) {
 const HOOKS_DIR = 'scripts/hooks/';
 const HOOK_ROLES = ['guard', 'notice', 'meter', 'none'];
 // 🔴 Las únicas entradas que pueden saltear el sufijo con `role_waiver`: las cargadas antes de que existiera la
-// regla, y que la tabla de constancia de guides/maintaining/nombres-en-ingles.md deja con su nombre.
+// regla, y que la tabla de constancia de guides/maintaining/english-names.md deja con su nombre.
 // Una entrada nueva no entra acá: se nombra con su sufijo. Van por su nombre NUEVO: el viejo no se escribe fuera del mapa
 // (--stale-mentions lo marcaría), y el nuevo identifica la entrada igual.
 const ROLE_WAIVER_NEWS = new Set(['scripts/hooks/advisor-liveness-on-change.js']);
@@ -1439,7 +1439,7 @@ const SCRIPT_NAME = /[A-Za-z0-9_.-]+\.(?:sh|js|mjs|cjs|ps1|py)\b/g;
 // tablero es zona mientras el nocturno no la regenere con el nombre nuevo.
 // La historia de agent-skills: el CHANGELOG de cada skill y la HISTORIA.md del pipeline (los párrafos que el
 // SKILL.md dejó al recortarse, con la fecha en que se escribieron).
-const STALE_ZONES = [/^specs\//, /^tasks\//, /^\.advisors\//, /^scripts\/publishing\/denylist\.json$/, /^guides\/maintaining\/incident-log\.md$/, /^guides\/maintaining\/nombres-en-ingles\.md$/, /^scripts\/tests\/legacy-names[^/]*$/,
+const STALE_ZONES = [/^specs\//, /^tasks\//, /^\.advisors\//, /^scripts\/publishing\/denylist\.json$/, /^guides\/maintaining\/incident-log\.md$/, /^guides\/maintaining\/english-names\.md$/, /^scripts\/tests\/legacy-names[^/]*$/,
   /^scripts\/tests\/fixtures\/product-pipeline\//, /^\.dashboard\//, /^guides\/guide-update-proposals\.md$/, /^guides\/(?:decisions\/)?revision-adversarial-[^/]*\.md$/,
   /^scripts\/publishing\/names-ceiling\.json$/,
   // Los archivos de deuda de los productos: el lector de scripts/ci lleva los pares escritos a mano porque
@@ -1661,7 +1661,7 @@ function main() {
       if (!r.problems.length) return 0;
       say(`⛔ el mapa de renombres (${label}) no pasa — ${r.problems.length} problema(s):`);
       for (const p of r.problems) say(`  · ${p}`);
-      say('Formato y reglas: AC 13 de specs/story-8.9-nombres-en-ingles.md · guides/maintaining/nombres-en-ingles.md.');
+      say('Formato y reglas: AC 13 de specs/story-8.9-nombres-en-ingles.md · guides/maintaining/english-names.md.');
       return 2;
     } catch (e) {
       const known = e instanceof CouldNotLook || e instanceof exporter.NoPudo || e instanceof require('../lib/legacy-names.js').LegacyNamesError;

@@ -5,8 +5,8 @@
  * `on-frontmatter-write.js`, `on-pre-commit.js` y `on-dod-evidence-guard.js` son los frenos que
  * impiden cerrar una story sin evidencia. Sin constancia no hay rastro de lo que deciden, ni el número que
  * dice si el cierre recortado alcanza —cuántas veces rechazan una evidencia—. Acá se anota
- * UNA línea por decisión en `~/.claude/.tycon-pipeline/frenos.jsonl`, con la lib del arnés
- * (`~/.claude/tycon-harness/scripts/lib/guard-record.js`: listas cerradas, sólo la huella).
+ * UNA línea por decisión en `~/.tycon/state/frenos.jsonl`, con la lib del arnés
+ * (`~/.tycon/harness/scripts/lib/guard-record.js`: listas cerradas, sólo la huella).
  *
  * 🔴 ES AYUDA, NO EVIDENCIA. Nunca tira, nunca escribe a stdout/stderr y nunca cambia lo que el hook
  *    decide ni con qué código sale. Sin el arnés en la máquina —un dev que
@@ -34,7 +34,7 @@ const { stateDir: stateDirOf } = require('./state-dir.js');   // la carpeta del 
  */
 const NOMBRES_DE_LA_LIB = Object.freeze({ nuevo: 'guard-record.js', viejo: `${['constancia', 'freno'].join('-')}.js` });
 
-/** Dónde está la lib del arnés: `TYCON_GUIDES_DIR`, el lugar ~/.claude/tycon-harness o el nombre viejo, en ese orden
+/** Dónde está la lib del arnés: `TYCON_GUIDES_DIR`, el lugar del arnés o el nombre viejo, en ese orden
  *  (lib/harness-path.js), con su nombre nuevo o, si sólo está ése, el viejo. Sin arnés (o sin
  *  ninguna de las dos) devuelve la ruta del nombre nuevo bajo el lugar igual: no existe, y quien la lee ya dice «sin-lib». */
 function rutaDeLaLib() {

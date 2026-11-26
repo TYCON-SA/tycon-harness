@@ -252,6 +252,29 @@ test('T21b 2.24-TeamConfig_PermisosPropios_LlaveRota_SeDicen', () => {
   assert.match(noCarga.problema, /no se pudo cargar scripts\/metrics\/upload-runs\.js \(SyntaxError\)/);
 });
 
+// La línea de los instintos en el panel del buzón: prendida o apagada, y de dónde sale. Sólo lectura, como el panel.
+test('T29 TeamConfig_ShowsInstinctsLineInMailboxPanel @story-4.7 @ac-40', async () => {
+  const tree = path.join(__dirname, '..', '..');
+  const home = tmp('home-instintos');
+  const sinBuzon = path.join(tmp('sin-buzon-i'), 'corridas-buzon.json');
+  for (const [valor, estado] of [['1', 'prendida'], ['0', 'apagada']]) {
+    await withPage({ tree, home, env: { ...ENV, TYCON_INSTINCTS: valor }, readers: { repos: toyReader, operations: null }, mailboxFile: sinBuzon }, async (p) => {
+      const s = await api(p, 'state');
+      assert.strictEqual(s.json.instincts.estado, estado, `TYCON_INSTINCTS=${valor}`);
+      assert.match(String(s.json.instincts.origen), /TYCON_INSTINCTS|env/, 'dice de dónde sale');
+      const page = await request(p.port, { pathname: `/?k=${p.token}` });
+      assert.match(page.text, /instincts: /, 'la línea está en la página, también sin buzón');
+      assert.match(page.text, /guides\/pieces\/metrics\.md/, 'con la guía para crear un buzón');
+      const save = await api(p, 'save', { target: 'instincts', data: { estado: 'prendida' } });
+      assert.strictEqual(save.json.ok, false, 'no hay acción de guardar para los instintos');
+    });
+  }
+  // un árbol sin el lector de la configuración: se dice, no se toma por apagada
+  const vacio = TC.instinctsSummary(tmp('arbol-sin-config'), { env: ENV, home });
+  assert.strictEqual(vacio.estado, null);
+  assert.match(vacio.problema, /no trae/);
+});
+
 test('T22 2.24-TeamConfig_SinBuzon_DiceQueNoSeSube', async () => {
   const tree = path.join(__dirname, '..', '..');
   await withPage({ tree, readers: { repos: toyReader, operations: null }, mailboxFile: path.join(tmp('sin-buzon'), 'corridas-buzon.json') }, async (p) => {

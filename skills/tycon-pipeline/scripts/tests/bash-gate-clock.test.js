@@ -34,6 +34,9 @@ if (workerData.modo === 'net') {
 }
 const entrada = fs.readFileSync(0, 'utf8');
 require(process.env.CLOCK_LIB).entregarEntrada(parentPort, workerData, entrada);
+if (modo === 'slow' || modo === 'slow-hung') require(process.env.CLOCK_LIB).anotarPaso('leyendo un guion de juguete');
+if (modo === 'slow') spawnSync('sleep', ['6.4']);
+if (modo === 'slow-hung') for (;;);
 if (modo === 'loop') for (;;);
 if (modo === 'regex') /(a+)+$/.test('a'.repeat(60) + 'b');
 if (modo === 'hung') spawnSync('sleep', ['30']);
@@ -175,7 +178,10 @@ test('T2b BashGateClock_RealGate_SameVerdicts @story-8.308 @ac-2 — el freno de
   r = f.correr('rm specs/story-1.1.md');
   assert.strictEqual(r.status, 2);
   assert.match(r.stderr, /HISTORIA ESCRITA POR CONSOLA/);
-  r = f.correr(`rm specs/story-1.1.md # ${'a'.repeat(1024 * 1024)}`);
+  // la entrada de 1 MB tarda varios segundos en analizarse (5,8 s medidos en una máquina cargada): con el reloj de
+  // fábrica, en la cola de merge pasa la mitad y el freno deja su renglón de lento. Con el reloj más largo, el
+  // veredicto sale del análisis y no deja renglón
+  r = f.correr(`rm specs/story-1.1.md # ${'a'.repeat(1024 * 1024)}`, { TYCON_BASH_GATE_TIMEOUT_S: '50' });
   assert.strictEqual(r.status, 2, 'también con una entrada de 1 MB');
   assert.strictEqual(f.registro(), '');
 });
@@ -190,4 +196,69 @@ test('T3b BashGateClock_ClockDoesNotLoad_RunsAsToday @story-8.308 @ac-3 — sin 
     assert.strictEqual(f.correr(command).status, salida, command);
     assert.match(f.registro(), /on-bash-write-gate FAILED OPEN/, command);
   }
+});
+
+// 🔴 Falla con: un freno que tarda más de la mitad de su reloj no deja rastro, o el corte no dice en qué paso estaba.
+test('T7 BashGateClock_SlowOrCut_LogsWhereItWas — el freno lento o cortado anota cuánto tardó y en qué paso', (t) => {
+  const c = corral(t);
+  const { contar } = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'hooks', 'hook-failures-notice.js'));
+  // un reloj de 12 s y una espera de 6,4 s: «lento» desde los 6 s, y 5,6 s de margen para el arranque del hilo en una
+  // máquina cargada (la cola de merge corre cuatro suites a la vez)
+  const doce = { TOY_SECONDS: '12' };
+  let r = c.correr('slow', 'ls', doce);
+  assert.deepStrictEqual([r.status, r.stdout], [0, 'largo 2'], r.stderr);
+  const lento = c.registro();
+  assert.match(lento, /^\[[^\]]+\] on-bash-write-gate LENTO: decidió en \d+ ms, con un tope de 12 s; el paso más lento: leyendo un guion de juguete \(\d+ ms\); la máquina: [^\n]+\n/);
+  // tardar no es fallar: el aviso de arranque no lo cuenta
+  assert.strictEqual(contar(lento, Date.parse(/^\[([^\]]+)\]/.exec(lento)[1])).size, 0, lento);
+  fs.rmSync(c.log, { force: true });
+  r = c.correr('slow-hung');
+  noDecidio(r, 'lento y trabado');
+  assert.match(c.registro(), /on-bash-write-gate FRENÓ POR FALLA: no contestó en 2 s; el último paso: leyendo un guion de juguete/);
+  fs.rmSync(c.log, { force: true });
+  r = c.correr('healthy');
+  assert.strictEqual(r.status, 0);
+  assert.strictEqual(c.registro(), '', 'uno rápido no deja renglón');
+});
+
+// 🔴 Falla con: el corte del reloj o el renglón de lo lento no dicen cómo estaba la máquina, y no se distingue una
+// máquina saturada de un freno lento.
+test('T8 BashGateClock_SlowOrCut_LogsTheMachineLoad — el corte y lo lento anotan la memoria libre y la carga', (t) => {
+  const c = corral(t);
+  // la carga va con hasta dos decimales y sin el cero del final (5,5 y no 5,50)
+  const MAQUINA = /; la máquina: memoria libre \d+ % \(\d+(?:,\d)? de \d+(?:,\d)? GB\)(?:, carga de 1 min \d+(?:,\d{1,2})? con \d+ núcleos)?\n/;
+  let r = c.correr('slow', 'ls', { TOY_SECONDS: '12' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(c.registro(), /on-bash-write-gate LENTO: .*\(\d+ ms\); la máquina: /);
+  assert.match(c.registro(), MAQUINA);
+  fs.rmSync(c.log, { force: true });
+  r = c.correr('slow-hung');
+  noDecidio(r, 'lento y trabado');
+  assert.match(c.registro(), /FRENÓ POR FALLA: no contestó en 2 s; el último paso: leyendo un guion de juguete; la máquina: /);
+  assert.match(c.registro(), MAQUINA);
+  // en Windows la carga no se mide: el renglón dice la memoria y nada más
+  const { cargaDeLaMaquina } = require(path.join(SCRIPTS, 'lib', 'gate-clock.js'));
+  const win = cargaDeLaMaquina({ freemem: () => 3 * 2 ** 30, totalmem: () => 16 * 2 ** 30, loadavg: () => [0, 0, 0], cpus: () => [1, 2] });
+  assert.strictEqual(win, 'la máquina: memoria libre 19 % (3 de 16 GB)');
+  const mac = cargaDeLaMaquina({ freemem: () => 1.5 * 2 ** 30, totalmem: () => 16 * 2 ** 30, loadavg: () => [7.456, 5, 4], cpus: () => new Array(8) });
+  assert.strictEqual(mac, 'la máquina: memoria libre 9 % (1,5 de 16 GB), carga de 1 min 7,46 con 8 núcleos');
+  const unDecimal = cargaDeLaMaquina({ freemem: () => 14 * 2 ** 30, totalmem: () => 16 * 2 ** 30, loadavg: () => [5.5, 5, 4], cpus: () => new Array(4) });
+  assert.strictEqual(unDecimal, 'la máquina: memoria libre 88 % (14 de 16 GB), carga de 1 min 5,5 con 4 núcleos');
+  assert.match(`; ${unDecimal}\n`, MAQUINA);
+  // sin poder medir, no rompe el renglón
+  assert.strictEqual(cargaDeLaMaquina({ freemem: () => { throw new Error('x'); } }), 'la máquina: no se pudo medir');
+});
+
+// 🔴 Falla con: el freno de verdad no anota sus pasos, y el renglón de lo lento no dice dónde se fue el tiempo.
+test('T7b BashGateClock_RealGate_SlowStepIsNamed — el freno de verdad dice en qué paso se le fue el tiempo', (t) => {
+  const c = corral(t);
+  const previa = path.join(c.dir, 'lenta.js');
+  // el paso del stash se demora 12,5 s (sin lanzar procesos), con un reloj de 24 s: el arranque del freno de verdad, con
+  // la máquina cargada (la cola de merge corre cuatro suites a la vez), se come varios segundos del reloj, y le quedan
+  // 11,5 s de margen
+  fs.writeFileSync(previa, "const M = require('module'); const c = M._load; M._load = function (p, ...r) { if (String(p).endsWith('stash-guard.js')) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 12500); return c.call(this, p, ...r); };\n");
+  const f = freno(t, ['-r', previa]);
+  const r = f.correr('git stash list', { TYCON_BASH_GATE_TIMEOUT_S: '24' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(f.registro(), /on-bash-write-gate LENTO: decidió en \d+ ms, con un tope de 24 s; el paso más lento: mirando un stash \((1[2-9]\d\d\d|[2-9]\d{4}) ms\)/);
 });
