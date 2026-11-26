@@ -236,7 +236,7 @@ node -e 'const l=require(process.argv[1]);const a=(l.hooks||l).filter?.((h)=>h.e
   "$TCG/scripts/setup/hooks-list.json" || p="$p hooks-list"
 node -e 'const j=require(process.argv[1]);const s=JSON.stringify(j.hooks.SessionStart||[]);process.exit(s.includes("dev-behind-main-notice.js")?0:1)' "$TCG/adapters/codex/hooks.json" || p="$p codex"
 grep -q '"tests/dev-behind-main-notice.test.sh"' "$TCG/scripts/tests/suites.json" || p="$p suites"
-grep -q "dev-behind-main-notice.js" "$TCG/guides/piezas-del-arnes.md" || p="$p piezas"
+grep -q "dev-behind-main-notice.js" "$TCG/guides/harness-pieces.md" || p="$p piezas"
 grep -q "dev-behind-main-notice" "$TCG/guides/maintaining/codex-divergence-inventory.md" || p="$p inventario-codex"
 grep -q 'dev atrasada en' "$TCG/INDEX.md" || p="$p INDEX"
 G="$TCG/guides/git-commit-conventions.md"

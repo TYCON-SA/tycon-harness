@@ -35,7 +35,7 @@ const EXCEPCIONES = [
     motivo: 'dice qué no se aprueba con un click; que esas variables ya no apagan nada lo dice la sección de la emergencia' },
   { archivo: 'guides/safety-guard.md', fragmento: 'reescribió el comando con `TYCON_SAFETY_OFF=1` por su cuenta y commiteó',
     motivo: 'el caso que explica por qué el freno tiene una sola salida, contado en pasado' },
-  { archivo: 'guides/firmas-del-arnes.md', fragmento: '| `escape-phrases` | `escape:TYCON_SAFETY_OFF`, `escape:TYCON_PROD_LINT`',
+  { archivo: 'guides/owner-signatures.md', fragmento: '| `escape-phrases` | `escape:TYCON_SAFETY_OFF`, `escape:TYCON_PROD_LINT`',
     motivo: 'la tabla generada de los grupos lista ids: el grupo los sigue trayendo para que un perfil viejo se lea igual' },
 ];
 
@@ -158,7 +158,7 @@ test('Install_LaFilaDelFrenoDeSeguridad (T6) @story-8.261 @ac-6', () => {
 });
 
 test('Piezas_LaSeccionDelFreno (T7) @story-8.261 @ac-7', () => {
-  const s = tramo(leer('guides/maintaining/piezas-en-detalle.md'), /^## guides\/safety-guard\.md$/, /^## /);
+  const s = tramo(leer('guides/maintaining/pieces-in-detail.md'), /^## guides\/safety-guard\.md$/, /^## /);
   assert.match(s, /`TYCON_SAFETY_GUARD=0`/);
   assert.ok(s.includes(EMERGENCIA), `la sección no nombra ${EMERGENCIA}`);
   assert.match(s, /firma en su terminal/);
@@ -189,7 +189,7 @@ test('Firmas_LosRetiradosEnLaTabla (T9) @story-8.261 @ac-9 @ac-16', () => {
   assert.strictEqual(cat.SIGNATURES.find((s) => s.id === 'escape:TYCON_SAFETY_OFF').command, 'TYCON_SAFETY_OFF=1 <comando>');
   assert.strictEqual(cat.SIGNATURES.find((s) => s.id === 'escape:TYCON_PROD_LINT').command, 'TYCON_PROD_LINT=0 <comando>');
   assert.deepStrictEqual([...cat.ONLY_IN_TERMINAL], ['escape:TYCON_SAFETY_OFF', 'escape:TYCON_PROD_LINT', 'emergency']);
-  const guia = leer('guides/firmas-del-arnes.md');
+  const guia = leer('guides/owner-signatures.md');
   const filas = guia.split('\n');
   for (const x of r) {
     assert.ok(x.salida.startsWith(EMERGENCIA), `${x.id}: la salida no es la emergencia (${x.salida})`);
@@ -277,7 +277,7 @@ test('Perfil_ConEscapesRetirados_IdsSiguenValidos (T13) @story-8.261 @ac-13', ()
 });
 
 test('RetiredEscapes_ManualLinesSayRetired (T16) @story-8.261 @ac-17', () => {
-  const guia = leer('guides/firmas-del-arnes.md');
+  const guia = leer('guides/owner-signatures.md');
   // la lista escrita a mano de lo que no acepta el click: los dos retirados siguen ahí (ONLY_IN_TERMINAL), marcados
   const lista = tramo(guia, /^Lo que no acepta el click ni el «aprobado»/, /^La contraseña que pide reinstalar/);
   for (const id of ['escape:TYCON_SAFETY_OFF', 'escape:TYCON_PROD_LINT']) {

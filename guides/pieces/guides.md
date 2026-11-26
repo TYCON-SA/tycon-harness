@@ -1,20 +1,20 @@
 # Las guías, los paquetes y la configuración
 
-Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cada una dice **qué es** la pieza,
+Las fichas de este grupo de [las piezas del arnés](../harness-pieces.md). Cada una dice **qué es** la pieza,
 **por qué existe**, **quién la usa** y **dónde se prueba**. El detalle de cada pieza está en
-[la guía de detalle](../maintaining/piezas-en-detalle.md), bajo el mismo título.
+[la guía de detalle](../maintaining/pieces-in-detail.md), bajo el mismo título.
 
-## guides/piezas-del-arnes.md
+## guides/harness-pieces.md
 
-**Qué es:** El índice de las piezas del arnés: dónde vive cada cosa y, por grupo, la lista de las piezas. Las fichas están en `guides/pieces/<grupo>.md`.
+**Qué es:** El índice de las piezas del arnés: dónde vive cada cosa y, por grupo, la lista de las piezas. Las fichas están en `guides/pieces/<grupo>.md`. Las guías se nombran en inglés; su contenido sigue en castellano.
 
 **Por qué existe:** El README se importa entero en cada sesión y en cada revisor; con las fichas adentro era enorme, y casi nadie las usaba. Acá viven completas y el README quedó como índice. Partida por grupos, cada archivo tiene su tope y la ficha nueva siempre entra.
 
 **Quién la usa:** Quien busca el detalle de una pieza; el pre-commit sostiene el par índice y guía con `claude-md-blocks/budget.json`.
 
-**Dónde se prueba:** `scripts/tests/pieces-cards.test.js`
+**Dónde se prueba:** `scripts/tests/pieces-cards.test.js`; que ningún enlace ni mención de una guía lleve a nada, `scripts/tests/guide-links.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidespiezas-del-arnesmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesharness-piecesmd)
 
 ## guides/what-the-harness-does.md
 
@@ -26,7 +26,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guideswhat-the-harness-doesmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guideswhat-the-harness-doesmd)
 
 ## artifacts/mapa-arnes.html
 
@@ -38,7 +38,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#artifactsmapa-arneshtml)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#artifactsmapa-arneshtml)
 
 ## story-format.md
 
@@ -50,7 +50,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#story-formatmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#story-formatmd)
 
 ## guides/integrations/engram-workflow.md
 
@@ -62,7 +62,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesintegrationsengram-workflowmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesintegrationsengram-workflowmd)
 
 ## guides/git-commit-conventions.md
 
@@ -74,7 +74,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesgit-commit-conventionsmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesgit-commit-conventionsmd)
 
 ## guides/workflow-orchestration.md
 
@@ -86,7 +86,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesworkflow-orchestrationmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesworkflow-orchestrationmd)
 
 ## packs/bizuit/guides/bizuit-plugin-dotnet.md
 
@@ -98,7 +98,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md)
 
 ## packs/bizuit/guides/bizuit-plugin-react.md
 
@@ -110,7 +110,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md)
 
 ## packs/bizuit/guides/bizuit-plugin-nextjs.md
 
@@ -122,7 +122,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md)
 
 ## packs/bizuit/guides/bizuit-bpmn-spec-contract.md
 
@@ -134,7 +134,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md)
 
 ## guides/agent-architecture.md
 
@@ -146,7 +146,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesagent-architecturemd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesagent-architecturemd)
 
 ## packs/ (agent-skills) — paquetes de revisores
 
@@ -160,7 +160,7 @@ _`packs/<paquete>/pack.json` (en el perfil del equipo) · `skills/tycon-pipeline
 
 **Dónde se prueba:** `tycon-pipeline/scripts/tests/packs.test.js`, `package-equivalence.test.js`, `scripts/tests/installed-packs.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#packs-agent-skills--paquetes-de-revisores)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#packs-agent-skills--paquetes-de-revisores)
 
 ## scripts/lib/tycon-config.js + team-profile.json — la configuración del arnés
 
@@ -174,7 +174,7 @@ _`scripts/lib/tycon-config.js` · el perfil · `~/.claude/tycon.json` · el enla
 
 **Dónde se prueba:** `scripts/tests/tycon-config.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptslibtycon-configjs--team-profilejson--la-configuración-del-arnés)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptslibtycon-configjs--team-profilejson--la-configuración-del-arnés)
 
 ## guides/reviewer-rules.md
 
@@ -186,7 +186,7 @@ _`scripts/lib/tycon-config.js` · el perfil · `~/.claude/tycon.json` · el enla
 
 **Dónde se prueba:** `tycon-pipeline/scripts/tests/reviewer-rules.test.js`, `scripts/tests/reviewer-rules.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesreviewer-rulesmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesreviewer-rulesmd)
 
 ## guides/maintaining/bmad-contract.md
 
@@ -198,7 +198,7 @@ _`scripts/lib/tycon-config.js` · el perfil · `~/.claude/tycon.json` · el enla
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesmaintainingbmad-contractmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesmaintainingbmad-contractmd)
 
 ## guides/advisor-rules-catalog.md
 
@@ -210,7 +210,7 @@ _`scripts/lib/tycon-config.js` · el perfil · `~/.claude/tycon.json` · el enla
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesadvisor-rules-catalogmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesadvisor-rules-catalogmd)
 
 ## guides/accov-governance-protocol.md
 
@@ -222,7 +222,7 @@ _`scripts/lib/tycon-config.js` · el perfil · `~/.claude/tycon.json` · el enla
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesaccov-governance-protocolmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesaccov-governance-protocolmd)
 
 ## guides/guide-update-proposals.md
 
@@ -234,7 +234,7 @@ _`scripts/lib/tycon-config.js` · el perfil · `~/.claude/tycon.json` · el enla
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesguide-update-proposalsmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesguide-update-proposalsmd)
 
 ## packs/bizuit/guides/dotnet-hooks.md
 
@@ -246,7 +246,7 @@ _`scripts/lib/tycon-config.js` · el perfil · `~/.claude/tycon.json` · el enla
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md)
 
 ## guides/definition-of-done.md
 
@@ -258,7 +258,7 @@ _`scripts/lib/tycon-config.js` · el perfil · `~/.claude/tycon.json` · el enla
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesdefinition-of-donemd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesdefinition-of-donemd)
 
 ## guides/test-execution-discipline.md
 
@@ -270,7 +270,7 @@ _`scripts/lib/tycon-config.js` · el perfil · `~/.claude/tycon.json` · el enla
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidestest-execution-disciplinemd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidestest-execution-disciplinemd)
 
 ## guides/git-worktrees.md
 
@@ -284,4 +284,4 @@ _(guides/git-worktrees.md + scripts/tools/tycon-worktree.sh)_
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesgit-worktreesmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesgit-worktreesmd)

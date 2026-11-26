@@ -1110,7 +1110,7 @@ test('AutoAprobacion_NadieLaOfrece (T23) @story-1.29 @ac-22', (t) => {
   assert.match(falta.stderr, /falta la aprobación del plan/);
   assert.doesNotMatch(falta.stderr, /--auto-approved/);
   for (const f of ['skills/tycon-pipeline/scripts/lib/story-gate.js', 'skills/tycon-pipeline/steps/step-03-plan.md', 'skills/tycon-pipeline/steps/step-04-approve-plan.md',
-    'skills/tycon-pipeline/SKILL.md', ...require(path.join(__dirname, 'lib', 'pipeline-source.js')).files().map((f) => path.relative(RAIZ, f)), 'guides/firmas-del-arnes.md', 'scripts/site/texts.js']) {
+    'skills/tycon-pipeline/SKILL.md', ...require(path.join(__dirname, 'lib', 'pipeline-source.js')).files().map((f) => path.relative(RAIZ, f)), 'guides/owner-signatures.md', 'scripts/site/texts.js']) {
     assert.doesNotMatch(fs.readFileSync(path.join(RAIZ, f), 'utf8'), /--auto-approved/, f);
   }
 });
@@ -1128,7 +1128,7 @@ test('Guia_PasosDicenLaRegla (T14) @story-1.29 @ac-14', () => {
 });
 
 test('Guia_MatrizConLaRevision (T15) @story-1.29 @ac-15', () => {
-  const g = fs.readFileSync(path.join(RAIZ, 'guides', 'firmas-del-arnes.md'), 'utf8');
+  const g = fs.readFileSync(path.join(RAIZ, 'guides', 'owner-signatures.md'), 'utf8');
   const seccion = g.split(/^## /m).find((s) => s.startsWith('Quién firma cada nivel'));
   assert.ok(seccion, 'la sección de la matriz');
   const cabecera = seccion.split('\n').find((l) => l.startsWith('| Nivel'));
@@ -1741,7 +1741,7 @@ test('PlanReview_DelicadaEsperaYLosDocsDicenLaRegla (T24) @story-8.267 @ac-19', 
   assert.strictEqual(r.codigo, 2);
   assert.match(r.motivo, /plan delicado/);
   const leer = (f) => fs.readFileSync(path.join(RAIZ, f), 'utf8');
-  for (const f of ['guides/automatic-reviews.md', 'guides/organization-site.md', 'guides/coordination.md', 'guides/firmas-del-arnes.md',
+  for (const f of ['guides/automatic-reviews.md', 'guides/organization-site.md', 'guides/coordination.md', 'guides/owner-signatures.md',
     'skills/tycon-pipeline/steps/step-04-approve-plan.md']) {
     assert.match(leer(f), /plan_review\.routine_approval|routine_approval/, `${f} no nombra la llave nueva`);
   }

@@ -591,28 +591,38 @@ puerta --delete-group "$GRUPO" >/dev/null
 grep '^account list' "$TMP/az.log" | grep 'Warned' | grep 'PastDue' >/dev/null && ok "6.5 T9 · la búsqueda del grupo mira también las suscripciones Warned y PastDue" || no "6.5 T9 · suscripciones: $(grep '^account list' "$TMP/az.log")"
 
 # ── T1b · el borrado lo aprueba el cuadro de la puerta: sin su «Aprobar» no se pide nada a Azure ─────────────────────
-# La configuración administrada ya no pregunta por la puerta: este cuadro es la única aprobación de un borrado
-mundo_grupo; grupo sub-1 "$GRUPO" "$STAGING" -- Microsoft.Sql/servers
+# La configuración administrada ya no pregunta por la puerta: este cuadro es la única aprobación de un borrado. Es el
+# cuadro del sistema, el de la terminal (SES vacía): pedido por una sesión, lo aprueba el click en la sesión
+mundo_grupo; SES=""; grupo sub-1 "$GRUPO" "$STAGING" -- Microsoft.Sql/servers
 rc="$(puerta --delete-group "$GRUPO")"
 if [ "$rc" = 0 ] && grep -q '^cuadro' "$TMP/cuadro.log" 2>/dev/null; then ok "6.5 T1b BorrarGrupo_PideElCuadro · el borrado aprobado pasó por el cuadro de la puerta"
 else no "6.5 T1b BorrarGrupo_PideElCuadro · rc=$rc · cuadro: $(cat "$TMP/cuadro.log" 2>/dev/null)"; fi
 # el cuadro empieza por lo que no tiene vuelta atrás, y la lista de servidores tiene tope: el cuadro no corta la advertencia
 S7=("$STAGING" "$STAGING" "$STAGING" "$STAGING" "$STAGING" "$STAGING" "$STAGING")
 T7=(Microsoft.Sql/servers Microsoft.Sql/servers Microsoft.Sql/servers Microsoft.Sql/servers Microsoft.Sql/servers Microsoft.Sql/servers Microsoft.Sql/servers)
-mundo_grupo; grupo sub-1 "$GRUPO" "${S7[@]}" -- "${T7[@]}"
+mundo_grupo; SES=""; grupo sub-1 "$GRUPO" "${S7[@]}" -- "${T7[@]}"
 printf '#!/usr/bin/env bash\nprintf "%%s" "${@: -1}" > "%s/cuadro-texto"\necho "button returned:Rechazar, gave up:false"\n' "$TMP" > "$RAIZ/usr/bin/osascript"
 puerta --delete-group "$GRUPO" >/dev/null
 if grep -q "^Pide: .*" "$TMP/cuadro-texto" 2>/dev/null && grep -q "^No tiene vuelta atrás: borrar el grupo de recursos $GRUPO" "$TMP/cuadro-texto" && grep -q "y 2 más" "$TMP/cuadro-texto"; then
   ok "6.5 T1b BorrarGrupo_PideElCuadro · el cuadro dice primero que no tiene vuelta atrás, y lista cinco servidores y cuántos más"
 else no "6.5 T1b BorrarGrupo_PideElCuadro · texto del cuadro: $(head -c 400 "$TMP/cuadro-texto" 2>/dev/null)"; fi
 for respuesta in 'button returned:Rechazar, gave up:false' 'button returned:, gave up:true'; do
-  mundo_grupo; grupo sub-1 "$GRUPO" "$STAGING" -- Microsoft.Sql/servers
+  mundo_grupo; SES=""; grupo sub-1 "$GRUPO" "$STAGING" -- Microsoft.Sql/servers
   printf '#!/usr/bin/env bash\necho "%s"\n' "$respuesta" > "$RAIZ/usr/bin/osascript"
   rc="$(puerta --delete-group "$GRUPO")"
   if [ "$rc" = 2 ] && [ -z "$(borrados)" ] && grep -q "no aprobó esta operación" "$TMP/err"; then
     ok "6.5 T1b BorrarGrupo_PideElCuadro · con «${respuesta%%,*}» sale 2 y no le pide el borrado a Azure"
   else no "6.5 T1b BorrarGrupo_PideElCuadro · «${respuesta}»: rc=$rc · borrados: $(borrados) · $(head -c 160 "$TMP/err")"; fi
 done
+# pedido por una sesión, el borrado lo aprueba el click en la sesión: sin click (el doble rechaza) no se le pide nada a
+# Azure, y la pregunta empieza diciendo que no tiene vuelta atrás, con el grupo
+mundo_grupo; SES=$SES_A; grupo sub-1 "$GRUPO" "$STAGING" -- Microsoft.Sql/servers
+printf 'rechaza' > "$TMP/cuadro-modo"
+rc="$(puerta --delete-group "$GRUPO")"
+if [ "$rc" = 2 ] && [ -z "$(borrados)" ] && grep -qF '"--kind","borrar-grupo","--host","'"$GRUPO"'"' "$TMP/aprobacion-argv.json"; then
+  ok "6.5 T1b BorrarGrupo_PideElCuadro · desde una sesión, sin click sale 2 y no le pide el borrado a Azure"
+else no "6.5 T1b BorrarGrupo_PideElCuadro · desde una sesión, sin click: rc=$rc · borrados: $(borrados) · $(head -c 160 "$TMP/err")"; fi
+rm -f "$TMP/cuadro-modo"
 
 # ── T2 · la línea del registro ──────────────────────────────────────────────────────────────────────────────────
 mundo_grupo; SES=$SES_A; grupo sub-1 "$GRUPO" "$STAGING" -- Microsoft.Sql/servers
