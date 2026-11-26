@@ -275,7 +275,21 @@ const SHAPE = [
  * (scripts/ci/version-tag.js). Es el ÚNICO con permiso de escritura, y sólo en su job: corre en un push a `main` o a
  * mano (nunca con el código de un pedido), una corrida por vez, y no lee ningún secreto (empuja la etiqueta con la credencial que
  * deja el checkout). Cambiarlo es cambiar esto en el mismo commit, como el `ci.yml`.
+ * Después de etiquetar publica la versión de la semana (scripts/ci/weekly-release.js), y ése es el único paso con el token de
+ * la corrida: crear una release es una llamada a la API, no un empuje. Es el mismo token que ya deja el checkout, en un
+ * renglón fijo (`TAGGER_TOKEN_LINE`); la regla `secrets` lo deja pasar ahí y en ningún otro lado.
  */
+const TAGGER_TOKEN_LINE = '          GITHUB_TOKEN: ${{ github.token }}';
+const TAGGER_RELEASE_RUN = '        run: node scripts/ci/weekly-release.js --sha "${GITHUB_SHA}"';
+/** ¿El renglón `i` es el token del paso que publica la versión de la semana? El renglón fijo, y su paso corre ese guion. */
+function isWeeklyReleaseToken(lines, i) {
+  if (lines[i].raw !== TAGGER_TOKEN_LINE) return false;
+  for (let j = i + 1; j < lines.length; j++) {
+    if (/^\s*-\s/.test(lines[j].raw)) return false;
+    if (/^\s*run:/.test(lines[j].raw)) return lines[j].raw === TAGGER_RELEASE_RUN;
+  }
+  return false;
+}
 const TAGGER_SHAPE = [
   'name: version-tag',
   'on:',
@@ -304,6 +318,12 @@ const TAGGER_SHAPE = [
   '          node-version: 24',
   '      - name: La etiqueta con el número de este merge',
   '        run: node scripts/ci/version-tag.js tag --sha "${GITHUB_SHA}"',
+  // después de etiquetar: si falla, la etiqueta ya está. El token de la corrida sólo acá (TAGGER_TOKEN_LINE)
+  '      - name: La versión de la semana, si pasaron 7 días desde la última',
+  '        env:',
+  TAGGER_TOKEN_LINE,
+  '          MAINTAINER_LOGINS: ${{ vars.MAINTAINER_LOGINS }}',
+  TAGGER_RELEASE_RUN,
 ];
 
 /**
@@ -818,10 +838,14 @@ const RULES = [
 
 /**
  * Las reglas del workflow que etiqueta: las que valen para cualquier workflow de un repo público (sin el disparador
- * peligroso, sin secretos, acciones por sha) y su forma exacta.
+ * peligroso, sin secretos, acciones por sha) y su forma exacta. La de secretos, sin contar el renglón del token cuando
+ * está en el paso que publica la versión de la semana (`isWeeklyReleaseToken`): en cualquier otro lado es rojo.
  */
 const TAGGER_RULES = [
-  ...RULES.filter((r) => ['pull-request-target', 'secrets', 'uses-by-sha'].includes(r.id)),
+  ...RULES.filter((r) => ['pull-request-target', 'secrets', 'uses-by-sha'].includes(r.id)).map((r) => (r.id !== 'secrets' ? r : {
+    id: r.id,
+    check: (lines, text) => r.check(lines.filter((_l, i) => !isWeeklyReleaseToken(lines, i)), text),
+  })),
   {
     id: 'shape',
     check(_lines, text) {

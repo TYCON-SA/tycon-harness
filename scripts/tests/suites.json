@@ -5423,6 +5423,12 @@
       "requiere": []
     },
     {
+      "__nota": "la versión de la semana (scripts/ci/weekly-release.js, la publica version-tag.yml después de etiquetar): sale si pasaron 7 días desde la última; se cuenta desde la etiqueta de la última, o desde la de hace una semana si es la primera; «Contribuciones de afuera» nombra a los autores de los commits que no están en MAINTAINER_LOGINS, con el pedido que entró (no el del fork que se cerró); sin la variable avisa y no publica; una etiqueta que no está en el servidor no se publica; la API caída es rojo. La API de GitHub es de mentira y las etiquetas, de un repo de juguete: sin red, menos de un segundo.",
+      "raiz": "arnes",
+      "ruta": "tests/weekly-release.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "una máquina con una actualización que falló no está «al día»: la mirada dice la versión que falló, el motivo y la hora, y no borra el aviso de la falla.",
       "raiz": "arnes",
       "ruta": "tests/release-check-failed.test.js",
