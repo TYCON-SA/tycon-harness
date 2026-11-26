@@ -95,3 +95,12 @@ test('CommandReaders_SinElLectorDeAz_LosFrenosDePedidosFrenan: el freno dice que
   const r = correr('retro-pending.js', pedido);
   assert.notStrictEqual(r.status, 1, `retro-pending se cayó: ${r.stderr}`);
 });
+
+// 🔴 Falla con: un archivo del arnés que todavía pide `scripts/lib/az-pr.js`, que ya no existe. Lo neutro está en
+// scripts/lib/command-tokens.js y lo de az en su conector; un require viejo se cae al correr y el gancho calla.
+test('CommandReaders_NadiePideElLectorViejo: ningún guion del arnés carga scripts/lib/az-pr.js', () => {
+  if (!fs.existsSync(path.join(ROOT, '.git'))) return; // una copia sin git: no hay lista de archivos que mirar
+  const r = require('child_process').spawnSync('git', ['-C', ROOT, 'grep', '-n', '-E', "az-pr\\.js'\\)|lib/az-pr\\.js", '--', '*.js', '*.sh', ':!scripts/tests/command-readers.test.js'], { encoding: 'utf8' });
+  // git grep sale 1 cuando no encuentra nada; 0 es que encontró, y otra cosa es que no pudo mirar
+  assert.strictEqual(r.status, 1, r.stdout || r.stderr);
+});

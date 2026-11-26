@@ -456,7 +456,7 @@ const SUSTITUCION = /\$\(|`|<\(|>\(|\$\{|@\(/;
 /** ¿El comando sólo lee? Cada tramo corre un lector o `git` (con su `-C <carpeta>`) con un subcomando que lee. */
 function soloLee(comando, { powershell = false } = {}) {
   if (redirigeAArchivo(comando) || SUSTITUCION.test(String(comando || ''))) return false;
-  const { segmentos } = require(path.join(RAIZ_DEL_ARNES, 'scripts', 'lib', 'az-pr.js'));
+  const { segmentos } = require(path.join(RAIZ_DEL_ARNES, 'scripts', 'lib', 'command-tokens.js'));
   return segmentos(String(comando || ''), { powershell }).every((seg) => {
     const p = seg[0];
     if (!p) return true;
