@@ -412,7 +412,14 @@ test('T4 DestinoConSubcomando_Variantes_SiguenComoHoy', () => {
     if (process.platform !== 'win32' && !(process.getuid && process.getuid() === 0)) {
       fs.mkdirSync(path.join(repo, 'cerrada'));
       fs.chmodSync(path.join(repo, 'cerrada'), 0o000);
-      try { assert.equal(freno('echo x > cerrada/r-$(date +%s).log'), HISTORIA, 'carpeta sin leer'); } finally { fs.chmodSync(path.join(repo, 'cerrada'), 0o755); }
+      // el freno anota la carpeta que no pudo leer en la carpeta de estado de la persona: la de una casa de prueba
+      const home = process.env.HOME;
+      process.env.HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'bwv-casa-'));
+      try { assert.equal(freno('echo x > cerrada/r-$(date +%s).log'), HISTORIA, 'carpeta sin leer'); } finally {
+        fs.chmodSync(path.join(repo, 'cerrada'), 0o755);
+        fs.rmSync(process.env.HOME, { recursive: true, force: true });
+        process.env.HOME = home;
+      }
     }
   });
 });

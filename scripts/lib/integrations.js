@@ -29,8 +29,11 @@ const ENV_RE = /^TYCON_[A-Z0-9_]+$/;
 const PROFILE_TYPES = Object.freeze(['texto', 'url', 'canales', 'puerto']);
 const KIND_RE = /^[a-z][A-Za-z0-9]*$/;
 // los tipos que el núcleo busca por nombre; `toggle` es el de prender y apagar: está o no está, según su llave;
-// `platform`, un conector de plataforma (scripts/lib/platform/platform.js)
-const KINDS = Object.freeze(['timeTracking', 'notify', 'toggle', 'platform']);
+// `platform`, un conector de plataforma (scripts/lib/platform/platform.js); `mailbox`, el conector de un servicio de
+// almacenamiento para el buzón de ejecuciones (la subida, scripts/metrics/upload-runs.js, y el sitio, scripts/site/sources.js)
+const KINDS = Object.freeze(['timeTracking', 'notify', 'toggle', 'platform', 'mailbox']);
+// el nombre de un proveedor de buzón, el valor de `site.mailbox.provider` y de `provider` en la llave
+const PROVIDER_RE = /^[a-z][a-z0-9-]*$/;
 // las operaciones del contrato de la capa, para validar un conector; se cargan recién ahí: este lector también guarda
 // y lee los secretos, y un árbol al que le falte scripts/lib/platform/ no puede quedarse sin ellos
 function contractOperations() {
@@ -257,10 +260,18 @@ function problemsOf(m, folder) {
   } else {
     for (const k of ['changeRequestCommands', 'changeRequestApi', 'changeRequestAutoComplete', 'draftOptions', 'readyCommands']) if (m[k] !== undefined) out.push(`«${k}» es sólo de un conector de plataforma (kind platform)`);
   }
+  if (m.kind === 'mailbox') {
+    // un conector de buzón: el guion que lo atiende y el proveedor que lee (`site.mailbox.provider` y la llave)
+    if (m.connector === undefined) out.push('falta «connector»');
+    else if (!(inside(m.connector) && /\.js$/.test(m.connector))) out.push('«connector» es un .js dentro de la carpeta');
+    if (typeof m.provider !== 'string' || !PROVIDER_RE.test(m.provider)) out.push('«provider» es el nombre del proveedor del buzón (minúsculas, números y guiones)');
+    else if (m.provider === 'azure-blob') out.push('«provider»: azure-blob lo atiende el núcleo');
+    if (!(Array.isArray(m.mailboxFields) && m.mailboxFields.length && m.mailboxFields.every((c) => typeof c === 'string' && /^[a-z][a-z0-9_]*$/.test(c) && c !== 'provider' && c !== 'threads'))) out.push('«mailboxFields» es la lista de los campos de site.mailbox del proveedor (sin provider ni threads)');
+  } else if (m.mailboxFields !== undefined) out.push('«mailboxFields» es sólo de un conector de buzón (kind mailbox)');
   // `hardSignals`: los patrones de un comando o una dirección de su plataforma que el núcleo no puede sumar (los cuenta el
   // candado, scripts/ci/check-core-neutrality.js): así el núcleo no escribe ninguno
   if (m.hardSignals !== undefined) {
-    if (m.kind !== 'platform') out.push('«hardSignals» es sólo de un conector de plataforma (kind platform)');
+    if (m.kind !== 'platform' && m.kind !== 'mailbox') out.push('«hardSignals» es sólo de un conector de plataforma o de buzón (kind platform o mailbox)');
     else if (!Array.isArray(m.hardSignals)) out.push('«hardSignals» es una lista de patrones');
     else {
       for (const s of m.hardSignals) {
@@ -360,6 +371,7 @@ function listManifests({ env = process.env, dir = integrationsDir(env) } = {}) {
       ...(m.kind === 'platform' ? { connector: m.connector, operations: m.operations, capabilities: isObject(m.capabilities) ? m.capabilities : {}, rawCommands: Array.isArray(m.rawCommands) ? m.rawCommands : [], changeRequestCommands: Array.isArray(m.changeRequestCommands) ? m.changeRequestCommands : [], hardSignals: Array.isArray(m.hardSignals) ? m.hardSignals : [],
         changeRequestApi: isObject(m.changeRequestApi) ? m.changeRequestApi : null, changeRequestAutoComplete: Array.isArray(m.changeRequestAutoComplete) ? m.changeRequestAutoComplete : [],
         draftOptions: Array.isArray(m.draftOptions) ? m.draftOptions : [], readyCommands: Array.isArray(m.readyCommands) ? m.readyCommands : [] } : {}),
+      ...(m.kind === 'mailbox' ? { connector: m.connector, provider: m.provider, mailboxFields: Array.isArray(m.mailboxFields) ? m.mailboxFields : [], hardSignals: Array.isArray(m.hardSignals) ? m.hardSignals : [] } : {}),
       offer: m.offer ? { does: m.offer.does, needs: m.offer.needs } : null,
     });
   }
@@ -372,6 +384,31 @@ function listManifests({ env = process.env, dir = integrationsDir(env) } = {}) {
 function find(name, { kind = null, env = process.env, dir } = {}) {
   const n = String(name || '').trim().toLowerCase();
   return listManifests({ env, dir }).manifests.find((m) => m.name === n && (!kind || m.kind === kind)) || null;
+}
+
+/** Los conectores de buzón (kind mailbox): `[{ provider, label, file }]`, con la ruta absoluta de su guion. */
+function mailboxConnectors(opts) {
+  return listManifests(opts).manifests.filter((m) => m.kind === 'mailbox').map((m) => ({ provider: m.provider, label: m.label, file: path.join(m.dir, m.connector) }));
+}
+
+/** El módulo del conector de buzón de un proveedor, cargado, o null si ningún conector lo atiende. Si no carga, tira. */
+function mailboxConnector(provider, opts) {
+  const c = mailboxConnectors(opts).find((x) => x.provider === provider);
+  return c ? require(c.file) : null;
+}
+
+/**
+ * Le da al lector del perfil del equipo (operations-config.js, que viaja solo y no carga integraciones) los conectores de
+ * buzón ya cargados. Uno que no carga se deja afuera: su proveedor queda desconocido. Un lector viejo sin
+ * `useMailboxConnectors` sigue como está.
+ */
+function giveMailboxConnectors(reader, opts) {
+  if (!reader || typeof reader.useMailboxConnectors !== 'function') return;
+  const list = [];
+  for (const c of mailboxConnectors(opts)) {
+    try { list.push({ provider: c.provider, module: require(c.file) }); } catch (_) { /* sin cargar, su proveedor no se conoce */ }
+  }
+  reader.useMailboxConnectors(list);
 }
 
 /** Los ajustes de la organización de una integración: `{ <clave>: tipo }`, o null si la integración no existe. */
@@ -527,6 +564,6 @@ function dispatchEntries(m, mode) {
 
 module.exports = {
   INT_PREFIX, TOOLS, parseIntSpec, intSpecRepoPath, intSpecPath, hookEntries, dispatchEntries, effectEntries,
-  integrationsDir, listManifests, find, profileSettings, secretKeys, isSecretKey,
+  integrationsDir, listManifests, find, mailboxConnectors, mailboxConnector, giveMailboxConnectors, profileSettings, secretKeys, isSecretKey,
   tyconHome, secretsDir, secretsFile, readSecret, secretState, writeSecret, PROFILE_TYPES,
 };

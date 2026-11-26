@@ -66,6 +66,7 @@ const READERS = {
   'scripts/lib/stable-test-data.js': 'scripts/tests/fixtures/stable-test-data-baseline*.json (sueltos: disparan)',
   'scripts/setup/harness/layer.js': 'archivos sueltos de scripts/tests/fixtures/ (disparan)',
   'scripts/setup/harness/managed.js': 'scripts/tests/fixtures/harness-managed-pieces.json (suelto: dispara)',
+  'scripts/tools/legacy-retire-check.js': 'scripts/tests/fixtures/legacy-home-names.json, con --home (suelto: dispara)',
   'scripts/tools/site-guide-captures.js': 'scripts/tests/lib/ (dispara)',
   'skills/tycon-pipeline/scripts/lib/adhoc-list.js': 'scripts/tests/suites.json (dispara)',
   'skills/tycon-pipeline/scripts/lib/failed-first.js': 'scripts/tests/suites.json (dispara)',

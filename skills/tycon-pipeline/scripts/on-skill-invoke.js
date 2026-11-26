@@ -5,7 +5,7 @@
  * mitad "freno" vive en `on-story-skill-gate.js` (Edit|Write) y en `on-bash-write-gate.js` (Bash).
  *
  * Qué hace: si `tool_input.skill` es uno de CREATOR_SKILLS (tycon-create-story y familia), escribe
- * `~/.claude/.tycon-pipeline/skill-marks/<sid>.json` = { skill, at, sessionId, cwd }. Nada más.
+ * `~/.tycon/state/skill-marks/<sid>.json` = { skill, at, sessionId, cwd }. Nada más.
  * Silencioso siempre; exit 0 siempre (PostToolUse no bloquea nada).
  *
  * Por qué la escribe el HARNESS y no el skill: la constancia
