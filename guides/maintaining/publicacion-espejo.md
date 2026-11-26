@@ -320,7 +320,7 @@ reemplazos del listado:
 | 343 | `arnes/scripts/controls-bench/cases/hooks/40-prod-access-guard.json` | se publica: los casos del freno de producción; los servidores quedan anonimizados |
 | 134 | `arnes/scripts/tests/smoke.test.sh` | se publica: la prueba de humo usa los productos del equipo como datos de prueba |
 | 123 | `agent-skills/skills/tycon-pipeline/scripts/tests/unit.test.js` | se publica: la suite unitaria del pipeline; los clientes eran datos de prueba |
-| 89 | `arnes/guides/piezas-del-arnes.md` | se publica: cada ficha dice su regla y su porqué; el caso vive en el registro de incidentes del equipo |
+| 89 | `arnes/guides/harness-pieces.md` | se publica: cada ficha dice su regla y su porqué; el caso vive en el registro de incidentes del equipo |
 | 70 | `arnes/scripts/controls-bench/cases/hooks/39-consulta-fallida-notice.json` | se publica: consultas fallidas contra Azure DevOps, con la organización y los proyectos anonimizados |
 | 65 | `arnes/scripts/tests/dashboard-runs.test.sh` | se publica: corridas de mentira de varias máquinas |
 | 63 | `arnes/scripts/tests/download-runs.test.sh` | se publica: las máquinas del buzón, anonimizadas |
@@ -784,7 +784,7 @@ bash scripts/ci/public-ci.sh --clean-machine                     # modo público
 - En `suites.json` pide `["docker", "red"]` y corre sola (`exclusive`).
 
 Qué mide caso por caso, las variables y los topes: la cabecera de la prueba. Su ficha, con la duración
-medida: [piezas-del-arnes.md](../piezas-del-arnes.md) §`scripts/tests/clean-machine.test.sh`.
+medida: [harness-pieces.md](../harness-pieces.md) §`scripts/tests/clean-machine.test.sh`.
 
 **Los bloques que requieren una integración.** Un bloque de `claude-md-blocks/` que declara en su primera línea
 `<!-- requires-integration: <integración> -->` se escribe en `~/.claude/CLAUDE.md` (y en su espejo de Codex) sólo con

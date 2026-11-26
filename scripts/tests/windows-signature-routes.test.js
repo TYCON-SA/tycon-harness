@@ -334,7 +334,7 @@ test('T19 Aprobado_Encolado_VaPorLaPersona @story-8.319', () => {
 // ── Las guías (AC 16) y la no-regresión (AC 15) ─────────────────────────────────────────────────────────────────────
 
 test('T16 Guias_DicenLaViaDeWindows @story-8.319 @ac-16', () => {
-  for (const g of ['firmas-del-arnes.md', 'safety-guard.md']) {
+  for (const g of ['owner-signatures.md', 'safety-guard.md']) {
     const t = fs.readFileSync(path.join(RAIZ, 'guides', g), 'utf8');
     assert.match(t, /consola Bash de Git/, g);
     assert.match(t, /consola PowerShell/, g);
@@ -354,7 +354,7 @@ test('T16b Guias_ElEscapeQueComprobaSuGuion_ConElClickEnSuFormaExacta', () => {
   assert.match(paso6, /solo y en su forma exacta/);
   // el SKILL no tiene lugar para la regla entera (está en el paso de las pruebas): dice quién la firma
   assert.match(skill, /`--force-manual` lo firma la persona\./);
-  for (const g of ['firmas-del-arnes.md', 'safety-guard.md']) {
+  for (const g of ['owner-signatures.md', 'safety-guard.md']) {
     const t = leer('guides', g);
     assert.doesNotMatch(t, /En Windows, además, un escape se firma siempre ahí/, g);
     assert.match(t, /escape que ningún guion comprueba/, g);

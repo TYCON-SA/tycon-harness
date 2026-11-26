@@ -309,14 +309,14 @@ fi
 T=$(mktemp -d); montar "$T"
 mkdir -p "$T/repo/claude-md-blocks" "$T/repo/guides"
 cat > "$T/repo/claude-md-blocks/budget.json" <<'JSON'
-{ "default": 6000, "imported": { "README.md": { "ceiling": 55000, "max_input": 400, "detail": "guides/piezas-del-arnes.md" } } }
+{ "default": 6000, "imported": { "README.md": { "ceiling": 55000, "max_input": 400, "detail": "guides/harness-pieces.md" } } }
 JSON
-printf '# piezas\n\n## scripts/uno.js\n\nel detalle.\n' > "$T/repo/guides/piezas-del-arnes.md"
-printf '# r\n\n- **[scripts/uno.js](scripts/uno.js)** — hace uno. [detalle](guides/piezas-del-arnes.md#scriptsunojs)\n' > "$T/repo/README.md"
+printf '# piezas\n\n## scripts/uno.js\n\nel detalle.\n' > "$T/repo/guides/harness-pieces.md"
+printf '# r\n\n- **[scripts/uno.js](scripts/uno.js)** — hace uno. [detalle](guides/harness-pieces.md#scriptsunojs)\n' > "$T/repo/README.md"
 ( cd "$T/repo" && git add -A && git -c core.hooksPath=/dev/null -c user.email=b@b -c user.name=b commit -q -m "presupuesto base" )
 ANTES=$(cuantos "$T")
 # ahora el README se pasa de su techo (70 KB contra 55.000)
-{ printf '# r\n\n'; head -c 70000 /dev/zero | tr '\0' 'q'; printf '\n\n- **[scripts/uno.js](scripts/uno.js)** — hace uno. [detalle](guides/piezas-del-arnes.md#scriptsunojs)\n'; } > "$T/repo/README.md"
+{ printf '# r\n\n'; head -c 70000 /dev/zero | tr '\0' 'q'; printf '\n\n- **[scripts/uno.js](scripts/uno.js)** — hace uno. [detalle](guides/harness-pieces.md#scriptsunojs)\n'; } > "$T/repo/README.md"
 ( cd "$T/repo" && git add README.md )
 RC=$(commitear "$T" "README gordo")
 if [ "$RC" != "0" ] && [ "$(cuantos "$T")" = "$ANTES" ] && grep -qi "README" "$T/out.txt"; then
@@ -325,9 +325,9 @@ else
   mal "C-11 exit $RC · commits ${ANTES}→$(cuantos "$T")"; sed -n '1,10p' "$T/out.txt"
 fi
 # C-11b · el mismo commit, con el README bajo el techo y una pieza NUEVA bien declarada → entra
-printf '# r\n\n- **[scripts/uno.js](scripts/uno.js)** — hace uno. [detalle](guides/piezas-del-arnes.md#scriptsunojs)\n- **[scripts/dos.js](scripts/dos.js)** — hace dos. [detalle](guides/piezas-del-arnes.md#scriptsdosjs)\n' > "$T/repo/README.md"
-printf '# piezas\n\n## scripts/uno.js\n\nel detalle.\n\n## scripts/dos.js\n\nel otro detalle.\n' > "$T/repo/guides/piezas-del-arnes.md"
-( cd "$T/repo" && git add README.md guides/piezas-del-arnes.md )
+printf '# r\n\n- **[scripts/uno.js](scripts/uno.js)** — hace uno. [detalle](guides/harness-pieces.md#scriptsunojs)\n- **[scripts/dos.js](scripts/dos.js)** — hace dos. [detalle](guides/harness-pieces.md#scriptsdosjs)\n' > "$T/repo/README.md"
+printf '# piezas\n\n## scripts/uno.js\n\nel detalle.\n\n## scripts/dos.js\n\nel otro detalle.\n' > "$T/repo/guides/harness-pieces.md"
+( cd "$T/repo" && git add README.md guides/harness-pieces.md )
 RC=$(commitear "$T" "README flaco")
 if [ "$RC" = "0" ] && [ "$(cuantos "$T")" -gt "$ANTES" ]; then
   ok "C-11b con el README dentro del techo el commit se crea (el control no frena de más)"
@@ -336,8 +336,8 @@ else
 fi
 # C-11c · tocar SÓLO la guía del detalle también dispara el chequeo (si no, se puede romper el par
 # índice↔guía borrando una sección desde el lado de la guía sin que nada mire)
-printf '# piezas\n\n## scripts/uno.js\n\nel detalle.\n\n## scripts/dos.js\n\nel otro detalle.\n\n## sobra\n\nnadie la enlaza.\n' > "$T/repo/guides/piezas-del-arnes.md"
-( cd "$T/repo" && git add guides/piezas-del-arnes.md )
+printf '# piezas\n\n## scripts/uno.js\n\nel detalle.\n\n## scripts/dos.js\n\nel otro detalle.\n\n## sobra\n\nnadie la enlaza.\n' > "$T/repo/guides/harness-pieces.md"
+( cd "$T/repo" && git add guides/harness-pieces.md )
 RC=$(commitear "$T" "sección huérfana en la guía")
 if [ "$RC" != "0" ] && grep -qi "sobra" "$T/out.txt"; then
   ok "C-11c una sección de la guía que el índice no enlaza frena el commit (el disparo incluye la guía)"

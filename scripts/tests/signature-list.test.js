@@ -573,7 +573,7 @@ test('Llave_Apagada_YGuias (T16) — @story-8.153 @ac-16', (t) => {
   assert.match(en, /always repeats the command/i);
   assert.match(en, /a permission goes first/i);
   assert.match(en, /the list does not sign/i);
-  const firmas = leer('firmas-del-arnes.md');
+  const firmas = leer('owner-signatures.md');
   assert.match(firmas, /approvals\.signature_list/);
   assert.match(firmas, /la lista no firma/i);
   assert.match(firmas, /no deja renglón|no dejan renglón/i);

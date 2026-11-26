@@ -447,7 +447,7 @@ test('T25 Guias_DicenLaRegla: las dos guías nombran el cuadro, la regla, los mo
   const pide = ['cuadro', 'constancia-sin-cuadro', '`aviso`', '`freno`', 'MODO', 'Lo que no protege',
     '.tycon/exemptions.jsonl', '.tycon/runtime-waivers.jsonl', 'approvals.jsonl', 'control-changes', 'tasks/pending-approvals',
     'delegación', 'refresh-after-main', 'huella', 'aprobada_en'];
-  for (const guia of ['guides/firmas-del-arnes.md', 'guides/ci-gate.md']) {
+  for (const guia of ['guides/owner-signatures.md', 'guides/ci-gate.md']) {
     const texto = fs.readFileSync(path.join(RAIZ, guia), 'utf8');
     for (const s of pide) assert.ok(texto.includes(s), `${guia} no nombra ${s}`);
   }

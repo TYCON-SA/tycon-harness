@@ -253,7 +253,7 @@ test('T2 RetireA_DebtFilesReadBothNames — los mensajes y las guías nombran s�
     'scripts/ci/audit-dependencies.js', 'scripts/ci/affected-forms.js', 'scripts/ci/check-trigger-without-docs.js',
     'scripts/nightly/dependencies/nightly-dependencies.js', 'scripts/nightly/dependencies/work-items.js',
     'integrations/github/scripts/dependency-notices.js', 'scripts/site/texts.js',
-    'INDEX.md', ...require('./lib/pieces-guide.js').piecesFiles(RAIZ), 'guides/maintaining/piezas-en-detalle.md', 'pipelines/operations/github/README.md',
+    'INDEX.md', ...require('./lib/pieces-guide.js').piecesFiles(RAIZ), 'guides/maintaining/pieces-in-detail.md', 'pipelines/operations/github/README.md',
   ];
   for (const rel of archivos) {
     const abs = path.join(RAIZ, rel);

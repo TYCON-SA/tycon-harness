@@ -15,7 +15,7 @@
  * la copia pública no lleva el mapa, y ahí esta prueba no mide (lo dice; no pasa en silencio).
  *
  * T49: `--stale-mentions` en 0 en los dos repos (una sola corrida, compartida con T34), y la
- * sección «Dónde vive cada cosa» de `guides/piezas-del-arnes.md` —el árbol y sus cuatro reglas—, enlazada desde «Qué
+ * sección «Dónde vive cada cosa» de `guides/harness-pieces.md` —el árbol y sus cuatro reglas—, enlazada desde «Qué
  * contiene» del README sin que el README pase su tope. Esas dos partes no necesitan el mapa: miden también en la copia.
  *
  * Correr: TYCON_SKILLS_DIR=<agent-skills>/skills node --test scripts/tests/guides-moved.test.js
@@ -180,7 +180,7 @@ test('T38 R5_Templates_NewProductBornWithNewPath — la plantilla de formularios
 });
 
 // ── T49 · las guías de entrada citan la ruta nueva y explican dónde vive cada cosa ──────
-const PIECES = path.join(ROOT, 'guides', 'piezas-del-arnes.md');
+const PIECES = path.join(ROOT, 'guides', 'harness-pieces.md');
 const README = path.join(ROOT, 'INDEX.md');   // el índice de guías
 const WHERE_TITLE = 'Dónde vive cada cosa';
 // las carpetas que el árbol tiene que nombrar, como mínimo
@@ -277,9 +277,9 @@ test('T49 Close_NoStaleMentions_Docs — --stale-mentions en 0 en los dos repos 
   assert.deepStrictEqual(all, [], `quedan ${all.length} menciones de rutas viejas fuera de lo permitido:\n${all.join('\n')}`);
 });
 
-test('T49 Close_NoStaleMentions_Docs — piezas-del-arnes.md tiene «Dónde vive cada cosa» con el árbol y las cuatro reglas', () => {
+test('T49 Close_NoStaleMentions_Docs — harness-pieces.md tiene «Dónde vive cada cosa» con el árbol y las cuatro reglas', () => {
   const sec = section(fs.readFileSync(PIECES, 'utf8'), WHERE_TITLE);
-  assert.ok(sec, `guides/piezas-del-arnes.md no tiene la sección «## ${WHERE_TITLE}»`);
+  assert.ok(sec, `guides/harness-pieces.md no tiene la sección «## ${WHERE_TITLE}»`);
   const blocks = codeBlocks(sec.text);
   assert.ok(blocks.length > 0, `la sección «${WHERE_TITLE}» no tiene un bloque de código con el árbol`);
   const missing = TREE_DIRS.filter((d) => !blocks.some((b) => treeNames(b, d)));
@@ -291,14 +291,14 @@ test('T49 Close_NoStaleMentions_Docs — piezas-del-arnes.md tiene «Dónde vive
 
 test('T49 Close_NoStaleMentions_Docs — el README enlaza «Dónde vive cada cosa» desde «Qué contiene» y no crece (T5 de readme-index)', () => {
   const sec = section(fs.readFileSync(PIECES, 'utf8'), WHERE_TITLE);
-  assert.ok(sec, `guides/piezas-del-arnes.md no tiene la sección «## ${WHERE_TITLE}»`);
+  assert.ok(sec, `guides/harness-pieces.md no tiene la sección «## ${WHERE_TITLE}»`);
   const readme = fs.readFileSync(README, 'utf8');
   const contains = section(readme, 'Qué contiene');
   assert.ok(contains, 'el README tiene «## Qué contiene»');
-  const links = [...contains.text.matchAll(/\]\((?:\.\/)?guides\/piezas-del-arnes\.md#([^)\s]+)\)/g)].map((m) => m[1]);
+  const links = [...contains.text.matchAll(/\]\((?:\.\/)?guides\/harness-pieces\.md#([^)\s]+)\)/g)].map((m) => m[1]);
   const anchors = anchorsOf(sec.heading);
   assert.ok(links.some((a) => anchors.includes(a)),
-    `«Qué contiene» del README no enlaza guides/piezas-del-arnes.md#${anchors[0]} (anclas encontradas: ${links.join(', ') || 'ninguna'})`);
+    `«Qué contiene» del README no enlaza guides/harness-pieces.md#${anchors[0]} (anclas encontradas: ${links.join(', ') || 'ninguna'})`);
   // el tope es el de T5 de readme-index.test.js: acá sólo el tamaño, sin duplicar el resto de esa prueba
   const bytes = Buffer.byteLength(readme, 'utf8');
   assert.ok(bytes <= 25 * 1024, `el README pesa ${bytes} bytes (tope ${25 * 1024}, T5 de readme-index.test.js)`);

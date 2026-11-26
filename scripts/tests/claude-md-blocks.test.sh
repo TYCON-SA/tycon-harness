@@ -303,7 +303,7 @@ fi
 # (si fueran iguales, el caso de arriba no estaría probando nada sobre este repo)
 #
 # 🔴 El README es un índice de UN renglón por ficha —el cuerpo vive en
-# `guides/piezas-del-arnes.md`— así que no queda ninguna multilínea que medir. El
+# `guides/harness-pieces.md`— así que no queda ninguna multilínea que medir. El
 # caso no se borra: si alguien vuelve a partir una ficha en dos renglones, vuelve a medir sola. Sin
 # multilínea deja CONSTANCIA, que no es lo mismo que un verde: C-27c sigue probando la función con
 # texto propio, y es ahí donde vive la garantía mientras el README sea de una línea.

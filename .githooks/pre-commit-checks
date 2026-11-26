@@ -408,7 +408,7 @@ fi
 # índice↔guía. Sin el guion frena.
 # Casos: scripts/tests/claude-md-blocks.test.sh · C-11, C-11b y C-11c de githook-livefire.test.sh
 if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/ci/check-claude-md-blocks.js; then :
-elif grep -qE '^(claude-md-blocks/|README\.md$|guides/piezas-del-arnes\.md$)' < <(printf '%s\n' "$STAGED_ALL"); then
+elif grep -qE '^(claude-md-blocks/|README\.md$|guides/harness-pieces\.md$)' < <(printf '%s\n' "$STAGED_ALL"); then
   CMB="${TCG:-$REPO_ROOT}/scripts/ci/check-claude-md-blocks.js"
   if [ ! -f "$CMB" ]; then
     echo "⛔ COMMIT RECHAZADO — no encontré $CMB, así que NO pude medir los bloques del CLAUDE.md ni el techo del README. No medido no es verde. Si el checkout está incompleto: git checkout scripts/ci/check-claude-md-blocks.js" >&2
@@ -417,7 +417,7 @@ elif grep -qE '^(claude-md-blocks/|README\.md$|guides/piezas-del-arnes\.md$)' < 
     echo "▸ pre-commit: presupuesto de los bloques del CLAUDE.md y de lo que se importa en cada sesión…"
     node "$CMB" --repo "$REPO_ROOT" --staged; CMB_RC=$?
     if [ "$CMB_RC" = 1 ]; then
-      echo "⛔ COMMIT RECHAZADO — un bloque del CLAUDE.md, o un archivo que se importa entero en cada sesión (el README), se pasa de su techo (arriba dice cuál y por qué). El detalle va a guides/piezas-del-arnes.md; subir el techo se decide en claude-md-blocks/budget.json, con motivo." >&2
+      echo "⛔ COMMIT RECHAZADO — un bloque del CLAUDE.md, o un archivo que se importa entero en cada sesión (el README), se pasa de su techo (arriba dice cuál y por qué). El detalle va a guides/harness-pieces.md; subir el techo se decide en claude-md-blocks/budget.json, con motivo." >&2
       exit 1
     elif [ "$CMB_RC" != 0 ]; then
       echo "⛔ COMMIT RECHAZADO — no pude medir los bloques del CLAUDE.md ni los archivos importados (presupuesto o guía de detalle ilegibles): no medido no es verde." >&2
