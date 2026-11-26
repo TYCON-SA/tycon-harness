@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-retrospective-capturer.md
-# source_sha256: 1b646b67c3aa18a2557d34f9d989c8eb3e911c96c1a5e5c76d87a256e5d1fbfc
+# source_sha256: e147f566e1bcf085dba58696f7fc81d6e719fbb0a1d80616afc166356098f9c4
 # Se despliega como $CODEX_HOME/tycon-retrospective-capturer.config.toml y se invoca: codex exec -p tycon-retrospective-capturer
 # ⚠️ codex exec se cuelga para siempre si le queda stdin abierto: invocarlo SIEMPRE con < /dev/null
 
@@ -197,7 +197,7 @@ El capturer usa las tools `mcp__plugin_engram_engram__*`:
 - NO emite warnings al dev. Es silencioso por diseño.
 - NO bloquea nada. Si crashea, no impacta el pipeline.
 - NO toma decisiones automáticas (ej: auto-desactivar un advisor por bajo ratio). Solo reporta. El DRI decide.
-- NO escribe a guías del arnés. Si un learning sugiere update de guía, lo propone en `.advisors/guide-update-proposals.md` para review manual.
+- NO escribe a guías del arnés ni propone cambios de guías. Las propuestas salen sólo de la revisión de la semana, un proceso aparte de la noche que junta las causas que se repiten en varios merges: no hace falta leerlo. Un learning que sugiere un cambio de guía queda en el archivo de métricas y en la memoria, nada más.
 
 ## Shadow mode vs producción
 
