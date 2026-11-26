@@ -376,13 +376,19 @@ function correr(caso, scripts = SCRIPTS) {
  * La primera diferencia entre dos resultados de un caso, en una línea legible, o null si son iguales: qué campo, qué
  * renglón y qué decía antes y después.
  */
+// Por qué una firma no pasó por la ventana depende del árbol de procesos de donde corre la prueba (un encierro sin
+// permiso para listar procesos, o una consola que no es la de la herramienta), no del subcomando: se compara sin él, de
+// los dos lados (la foto lo trae escrito)
+const sinArbolDeProcesos = (texto) => String(texto).replace(/no pasó por la ventana: (?:el guion no lo lanzó la consola de la herramienta|no pude leer los procesos de la máquina)\./g, 'no pasó por la ventana: <ARBOL DE PROCESOS>.');
+
 function diferencia(antes, despues) {
   if (antes.status !== despues.status) return `código de salida: antes ${antes.status}, después ${despues.status}`;
   if ((antes.signal || null) !== (despues.signal || null)) return `señal: antes ${antes.signal}, después ${despues.signal}`;
   for (const campo of ['stdout', 'stderr']) {
-    if (antes[campo] === despues[campo]) continue;
-    const a = String(antes[campo]).split('\n');
-    const d = String(despues[campo]).split('\n');
+    const [ta, td] = [sinArbolDeProcesos(antes[campo]), sinArbolDeProcesos(despues[campo])];
+    if (ta === td) continue;
+    const a = ta.split('\n');
+    const d = td.split('\n');
     const i = a.findIndex((l, k) => l !== d[k]);
     const n = i === -1 ? a.length : i;
     return `${campo}, renglón ${n + 1}: antes «${a[n] === undefined ? '<nada>' : a[n]}», después «${d[n] === undefined ? '<nada>' : d[n]}»`;
