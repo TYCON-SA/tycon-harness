@@ -151,12 +151,6 @@ function salirPorLaRedConLaEntrada(e) {
 // al decidir. La red de fallas queda para lo que se cae con todas las piezas: ahí sabe lo bastante para frenar lo que
 // importa.
 let cargado = false;
-const { BORRA_O_MUEVE, MENCIONA_HISTORIA, SHELL_CON_C, archivoQueNoCompila, archivoQueNoEsElInstalado, blancoPorRedireccion, corredoresDeLaOrganizacion, esPiezaDelArnes, expandirLlaves, leadingCd, nativePath, programasPorEntrada, repoConHistorias, splitSegments, subcomandosComoComodin, vaAUnShell } = parte(() => require('./lib/bash-gate-words.js'));
-const { ESCRIBE, algunOpenEscribe, estadoDeHistoria, expandirComodin, inlineStoryText, resolveTarget, seguidos, sinCierre, sinComentarioAlFinal } = parte(() => require('./lib/bash-gate-expansions.js'));
-const { anotarBorradosDeLaStory, anotarEscriturasConsola, conComentariosApagados, destinosArmados, escritosDelGuion, extractWriteTargets, heredocs, mensajeCarpetaSinSeguir, mensajeRutaSinResolver, modoDeLectura, nameSuggestsStory, quitarCuerposDeHeredoc, salidaAjenaALaRevision, sinBarras, stripNonCommandText } = parte(() => require('./lib/bash-gate-targets.js'));
-const { aprobacionesTocadas, buzonTocado, carpetasDelComando, comandosAnidados, comandosPorOtroPrograma, corridasDeRevisoresTocadas, criticosTocados, cwdDelComando, destinosBorrados, lanzadasTocadas, marcadoresTocados, marcasDeTerminalTocadas, relativosDe, resolverCd, revisionDelPlanTocada } = parte(() => require('./lib/bash-gate-commands.js'));
-const { borraEjecucionAbierta, carpetasQueBorraOMueve, cuerposDistintos, destinosResueltos, ejecucionPerdida, estadoPorOtroPrograma, frenoBorrarYArmados, guionesEnArchivo, heredocBodies, renameOrCopyOfExistingStory } = parte(() => require('./lib/bash-gate-scripts.js'));
-const { constanciasSinHuella, constanciasTocadas, coordinadoraPorConsola, historiasPorConsola } = parte(() => require('./lib/bash-gate-records.js'));
 // La primera pieza rota que se pidió al decidir, también la que pide un control dentro de su propia red (un `try` que
 // traga el error y sigue sin ella): sin esto, ese control se apagaba callado y el resto decidía sin él. La de más
 // adentro queda primero: un archivo que falta hace fallar también a los que lo cargan.
@@ -166,7 +160,7 @@ if (require.main === module) {
   const cargar = Module._load;
   Module._load = function cargarYAnotar(pedido, padre, ...resto) {
     try { return cargar.call(this, pedido, padre, ...resto); } catch (e) {
-      if (!piezaRota && esPiezaDelArnes(e, pedido, padre)) piezaRota = e;
+      try { if (!piezaRota && esPiezaDelArnes(e, pedido, padre)) piezaRota = e; } catch { /* la parte que la define todavía está cargando */ }
       throw e;
     }
   };
@@ -174,7 +168,9 @@ if (require.main === module) {
 function salirSinCargar(e) {
   logHookError(e, 'FRENÓ POR FALLA');
   try {
-    const roto = archivoQueNoCompila(e);
+    // la parte que lo sabe decir puede ser la que no cargó: sin ella, el mensaje sale sin ese detalle
+    let roto = null;
+    try { roto = archivoQueNoCompila(e); } catch { /* sin la parte de las palabras */ }
     const cual = e && e.instalado ? e.message : roto ? `No cargó: ${roto} (no compila: ${e.message})` : `No cargó: ${String((e && e.stack) || e).split('\n')[0]}`;
     process.stderr.write([
       '⛔ tycon-pipeline — EL FRENO DE ESCRITURAS NO PUDO CARGARSE ENTERO: ningún comando corre hasta repararlo',
@@ -211,6 +207,14 @@ const { resolveSessionId } = require('./lib/session-id.js');
 // (Un lector compartido, `scripts/lib/shell-parse.js`, no sirve acá:
 // da rutas falsas — la cabecera de command-vars.js dice por qué.)
 const { expandirRuta } = require('./lib/command-vars.js');
+// las partes, después del manejador de fallas del arranque y de la carpeta del estado: una que no carga frena con su
+// nombre y deja su renglón, como un `require` de arriba del freno entero
+const { BORRA_O_MUEVE, MENCIONA_HISTORIA, SHELL_CON_C, archivoQueNoCompila, archivoQueNoEsElInstalado, blancoPorRedireccion, corredoresDeLaOrganizacion, esPiezaDelArnes, expandirLlaves, leadingCd, nativePath, programasPorEntrada, repoConHistorias, splitSegments, subcomandosComoComodin, vaAUnShell } = parte(() => require('./lib/bash-gate-words.js'));
+const { ESCRIBE, algunOpenEscribe, estadoDeHistoria, expandirComodin, inlineStoryText, resolveTarget, seguidos, sinCierre, sinComentarioAlFinal } = parte(() => require('./lib/bash-gate-expansions.js'));
+const { anotarBorradosDeLaStory, anotarEscriturasConsola, conComentariosApagados, destinosArmados, escritosDelGuion, extractWriteTargets, heredocs, mensajeCarpetaSinSeguir, mensajeRutaSinResolver, modoDeLectura, nameSuggestsStory, quitarCuerposDeHeredoc, salidaAjenaALaRevision, sinBarras, stripNonCommandText } = parte(() => require('./lib/bash-gate-targets.js'));
+const { aprobacionesTocadas, buzonTocado, carpetasDelComando, comandosAnidados, comandosPorOtroPrograma, corridasDeRevisoresTocadas, criticosTocados, cwdDelComando, destinosBorrados, lanzadasTocadas, marcadoresTocados, marcasDeTerminalTocadas, relativosDe, resolverCd, revisionDelPlanTocada } = parte(() => require('./lib/bash-gate-commands.js'));
+const { borraEjecucionAbierta, carpetasQueBorraOMueve, cuerposDistintos, destinosResueltos, ejecucionPerdida, estadoPorOtroPrograma, frenoBorrarYArmados, guionesEnArchivo, heredocBodies, renameOrCopyOfExistingStory } = parte(() => require('./lib/bash-gate-scripts.js'));
+const { constanciasSinHuella, constanciasTocadas, coordinadoraPorConsola, historiasPorConsola } = parte(() => require('./lib/bash-gate-records.js'));
 
 // ── hook ──────────────────────────────────────────────────────────────────────────────────────────
 
