@@ -113,6 +113,13 @@ operación sin pedirle nada: `node scripts/lib/platform/platform.js choose <oper
   - `flags`: `"u"` si el nombre acepta letras de cualquier idioma.
   - `nameHint`: lo mismo dicho en palabras, para el mensaje de error.
 
+  Y dos más, si hacen falta:
+  - `optional`: las claves que un repo puede no traer, como el servidor de una instalación propia. Van delante en la
+    identidad del repo: el mismo repo con y sin servidor son dos repos.
+  - `rules`: la regla propia de una clave, cuando no es la del nombre. Con `name`, `flags` y `nameHint`, otra
+    expresión. Con `parts` (el signo que separa, por ejemplo `"/"`), `partsHint` y `nameHint`, el valor va en tramos:
+    cada tramo se valida con el nombre de la forma y no puede haber tramos vacíos.
+
   La pide el lector de `team-repos.json` (`scripts/lib/team-repos.js`) a cada plataforma que admite: el núcleo no
   escribe la forma de ninguna, y sin ella los repos de esa plataforma no se pueden validar.
 

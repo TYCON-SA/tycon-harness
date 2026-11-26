@@ -175,7 +175,8 @@ function draftFieldProblems(m) {
 
 /**
  * La forma del repo de un conector de plataforma (`repoShape`): sus claves en orden, la última el nombre del repo; la
- * expresión (`name`, con sus `flags`) de qué nombre vale; y `nameHint`, lo que vale dicho en palabras. La lee
+ * expresión (`name`, con sus `flags`) de qué nombre vale; `nameHint`, lo que vale dicho en palabras; y, si hacen falta,
+ * `optional` (claves que el repo puede no traer) y `rules` (la regla propia de una clave). La lee
  * scripts/lib/team-repos.js para validar los repos de `team-repos.json`. El problema, o null.
  */
 const CLAVE_DE_REPO = /^[a-z][a-z_]*$/;
@@ -188,6 +189,30 @@ function repoShapeProblem(s) {
   if (s.flags !== undefined && (typeof s.flags !== 'string' || !/^u?$/.test(s.flags))) return '«repoShape.flags» es «u» o vacío';
   try { new RegExp(s.name, s.flags || ''); } catch (e) { return `«repoShape.name» no compila (${e.message})`; }
   if (typeof s.nameHint !== 'string' || !s.nameHint.trim()) return '«repoShape.nameHint» dice en palabras qué nombre vale';
+  // `optional`: las claves que un repo puede traer además de las suyas; van delante en la identidad del repo
+  if (s.optional !== undefined) {
+    if (!Array.isArray(s.optional) || !s.optional.every((k) => typeof k === 'string' && CLAVE_DE_REPO.test(k)) || new Set(s.optional).size !== s.optional.length) return '«repoShape.optional» es una lista de claves distintas, en minúsculas';
+    if (s.optional.some((k) => k === 'platform' || s.keys.includes(k))) return '«repoShape.optional» no repite una de «keys» ni lleva «platform»';
+  }
+  // `rules`: la regla propia de una clave, cuando no es la del nombre: otra expresión (`name`) o tramos (`parts`)
+  if (s.rules !== undefined) {
+    if (!isObject(s.rules)) return '«repoShape.rules» es un objeto: por clave, su regla';
+    const todas = [...s.keys, ...(Array.isArray(s.optional) ? s.optional : [])];
+    for (const [k, r] of Object.entries(s.rules)) {
+      const who = `«repoShape.rules.${k}»`;
+      if (!todas.includes(k)) return `${who}: «${k}» no es una clave de «keys» ni de «optional»`;
+      if (!isObject(r) || (r.name === undefined) === (r.parts === undefined)) return `${who} lleva «name» o «parts», uno de los dos`;
+      if (typeof r.nameHint !== 'string' || !r.nameHint.trim()) return `${who}: «nameHint» dice en palabras qué vale`;
+      if (r.name !== undefined) {
+        if (typeof r.name !== 'string' || !r.name.startsWith('^') || !r.name.endsWith('$')) return `${who}: «name» es una expresión de un valor entero, de «^» a «$»`;
+        if (r.flags !== undefined && (typeof r.flags !== 'string' || !/^u?$/.test(r.flags))) return `${who}: «flags» es «u» o vacío`;
+        try { new RegExp(r.name, r.flags || ''); } catch (e) { return `${who}: «name» no compila (${e.message})`; }
+      } else {
+        if (typeof r.parts !== 'string' || !/^[^\sA-Za-z0-9]$/.test(r.parts)) return `${who}: «parts» es el signo que separa los tramos (por ejemplo «/»)`;
+        if (typeof r.partsHint !== 'string' || !r.partsHint.trim()) return `${who}: «partsHint» dice en palabras cómo van los tramos`;
+      }
+    }
+  }
   return null;
 }
 
