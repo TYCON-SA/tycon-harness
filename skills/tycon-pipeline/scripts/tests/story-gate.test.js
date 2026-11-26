@@ -1457,6 +1457,54 @@ test('DestinosAlEstado_DetrasDeEnvoltoriosYSustituciones_SeLeen (fila 228, el fr
   assert.deepEqual(bash.extractWriteTargets(`time -p ls; noglob echo a*`), []);
 });
 
+// 🔴 Fila 247. Mutación: no leer como comandos lo que corre adentro de una sustitución. Una copia adentro de `$(…)`, de la
+// comilla invertida o de la expansión de una variable (`${x:-$(cp a b)}`), también entre comillas dobles, escribía el
+// resultado de la revisión sin que ningún control lo viera.
+test('CopiaAlEstado_AdentroDeUnaSustitucion_Frena (fila 247, el freno)', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'plan-review', 's1'), { recursive: true });
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const res = path.join(E, 'plan-review', 's1', 's1.resultado.json');
+  const S = path.join(repo, 'falso.json');
+  fs.writeFileSync(S, '{}');
+  const arnes = path.join(SCRIPTS, '..', '..', '..');
+  conEnv(SIN_REGISTRO, () => {
+    const frena = (cmd) => { const r = bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }); assert.ok(r && r.block, JSON.stringify(cmd)); };
+    const pasa = (cmd) => assert.equal(bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }), null, JSON.stringify(cmd));
+    for (const cmd of [`echo $(cp ${S} '${res}')`, `echo \`cp ${S} '${res}'\``, `echo \${x:-$(cp ${S} '${res}')}`,
+      `echo "\${x:-$(cp ${S} '${res}')}"`, `x="$(mv ${S} '${res}')"`, `echo "$(echo "$(cp ${S} '${res}')")"`]) frena(cmd);
+    // de la primera vuelta: un paréntesis citado adentro de la sustitución no la cierra antes, y el comando de después se
+    // sigue leyendo
+    for (const cmd of [`x=$(grep -c ')' ${S}); cp ${S} '${res}'; echo 'z'`, `x=$(echo "a)"); cp ${S} '${res}'; echo 'z'`,
+      `x=$(grep -c '(' ${S}); cp ${S} '${res}'; echo "z"`]) frena(cmd);
+    // un destino citado con un blanco adentro, muchos blancos después de `>` o de tee
+    const conBlanco = `"${E}/plan-review/s1/a b.json"`;
+    frena(`echo x >${' '.repeat(40)}${conBlanco}`);
+    frena(`echo x | tee${' '.repeat(40)}${conBlanco}`);
+    // de la segunda vuelta: un heredoc adentro de una sustitución no se come los renglones de abajo hasta el delimitador
+    // de otro, y lo roto adentro de una comilla invertida no tapa la redirección de afuera
+    frena(`x=$(cat <<'EOF'\nfoo\nEOF\n)\ncp ${S} '${res}'\ngit commit -m "$(cat <<'EOF'\nmsg\nEOF\n)"`);
+    frena(`$(cat <<'EOF'\nm\nEOF\n)cp a git commit -m "it's" > '${res}' | #$(cat <<'EOF'\nm\nEOF\n)`);
+    const roto = `\`"it's"$('it'')'>'$(\` >> ${res}`;
+    frena(roto);
+    assert.ok(bash.extractWriteTargets(roto).includes(res), roto);
+    // de la tercera vuelta: adentro de la sustitución, el cuerpo ya sacado cierra su heredoc, y un renglón igual al
+    // delimitador más abajo (el de otro heredoc, o uno suelto) no se come la escritura del medio
+    // y un heredoc con la palabra escapada (`<<\END`) es un heredoc: su cuerpo no es sintaxis
+    for (const cmd of [`x=$(cat <<'EOF'\nx\nEOF\ncp ${S} ${res}\ngit commit -m "$(cat <<'EOF'\nmsg\nEOF\n)"\n)`,
+      `$(cat <<END\nEND\n>${res}\nEND)`, `x="$(echo a <<\\END\n\`x\n'\nEND\n)" cp ${S} ${res}`]) {
+      frena(cmd);
+      assert.ok(bash.extractWriteTargets(cmd).includes(res), cmd);
+    }
+    // lo de todos los días sigue pasando
+    pasa(`echo $(cp ${S} '${repo}/copia.json')`);
+    pasa(`x="$(git log -1 --format='%h > %s')"`);
+    pasa(`echo "hoy: $(date +%F)" > '${repo}/notas.txt'`);
+    assert.deepEqual(bash.extractWriteTargets(`n=$(grep -c ')' f); git commit -m "a.ts => b.ts"`), []);
+  });
+});
+
 // 🔴 Mutaciones: mirar sólo el primer `--out`, aceptar un destino que no se puede leer, o aceptar el corredor del arnés
 // con un `--args` que no es el pedido que preparó el arnés: con cualquiera, la sesión escribe un «aprobado» que no es el
 // de su plan (T28, las tres formas de falsificar el resultado).
