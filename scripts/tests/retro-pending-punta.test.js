@@ -230,7 +230,10 @@ test('un pedido con un comando largo sigue siendo un pedido aunque el registro c
   const { dir, local } = repoConDev({ soloLocal: true });
   git(dir, ['checkout', '--quiet', 'main']);
   const lab = laboratorio();
-  const largo = `cat ${path.join(dir, 'una', 'carpeta', 'con', 'un', 'nombre', 'largo', 'para', 'que', 'el', 'registro', 'corte', 'cuerpo.md')}; ${GH}`;
+  // la ruta de la carpeta temporal cambia de largo según la máquina (en Linux, /tmp/… es corta): la carpeta de nombre
+  // largo deja el pedido después del corte en cualquiera
+  const relleno = 'una-carpeta-con-un-nombre-bien-largo-para-que-el-registro-corte-el-comando-antes-del-pedido-en-cualquier-maquina';
+  const largo = `cat ${path.join(dir, relleno, 'cuerpo.md')}; ${GH}`;
   assert.ok(largo.indexOf('gh pr create') > 120, `el pedido queda después del corte: ${largo.indexOf('gh pr create')}`);
   lab.pedido(largo, dir);
   const [e] = lab.entradas();
