@@ -32,11 +32,15 @@ const FUERA_DEL_ENTORNO = ['TYCON_GUIDES_DIR', 'TCG', 'NODE_TEST_CONTEXT', 'TYCO
   'CODEX_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'TYCON_EVIDENCE_DIR', 'TYCON_EVIDENCE_KEY', 'STOP_AUTONOMY',
   'TYCON_HARNESS_LOCK_HELD', 'TYCON_TEST_GATE', 'TYCON_TEST_SCOPE', 'TF_BUILD', 'CI', 'GITHUB_ACTIONS'];
 
+// los paquetes de revisores: una carpeta propia y vacía, como la del público solo donde se grabó la foto. El árbol armado
+// de la noche trae los del equipo, y sin esto la nota de paquetes cambia aunque el subcomando no
+const PAQUETES_VACIOS = fs.mkdtempSync(path.join(os.tmpdir(), 'split-contract-paquetes-'));
+
 function entorno(home, extra = {}) {
   const env = { ...process.env };
   for (const k of FUERA_DEL_ENTORNO) delete env[k];
   return Object.assign(env, {
-    HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: SID, TYCON_SESSION_ID: SID, TYCON_PACKS_DEFAULT: 'none',
+    HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: SID, TYCON_SESSION_ID: SID, TYCON_PACKS_DEFAULT: 'none', TYCON_PACKS_DIR: PAQUETES_VACIOS,
     // quién pide algo (`set-size` lo anota): fijo, porque en la CI no hay USER y cae en la sesión
     USER: 'acme', USERNAME: 'acme', LOGNAME: 'acme',
     // sin el perfil del equipo: el árbol armado del portón trae la capa del equipo y la foto se grabó sin ella
@@ -308,11 +312,12 @@ function archivos(m) {
  */
 function normalizar(texto, m) {
   let t = String(texto);
-  for (const r of [m.raiz, fs.realpathSync(os.tmpdir()), os.tmpdir()]) t = t.split(r).join('<RAIZ>');
-  t = t.split(SCRIPTS).join('<GUIONES>');
-  // la raíz del arnés (sus scripts/lib, sus guías): la carpeta de la máquina no es comportamiento, ni se publica
-  t = t.split(path.resolve(SCRIPTS, '..', '..', '..')).join('<ARNES>');
-  t = t.split(os.homedir()).join('<CASA>');
+  // de la ruta más larga a la más corta: el árbol armado de la noche vive dentro de la carpeta temporal, y reemplazar
+  // antes la carpeta temporal dejaba la ruta del arnés como <RAIZ>/…
+  const rutas = [[m.raiz, '<RAIZ>'], [fs.realpathSync(os.tmpdir()), '<RAIZ>'], [os.tmpdir(), '<RAIZ>'], [SCRIPTS, '<GUIONES>'],
+    // la raíz del arnés (sus scripts/lib, sus guías): la carpeta de la máquina no es comportamiento, ni se publica
+    [path.resolve(SCRIPTS, '..', '..', '..'), '<ARNES>'], [os.homedir(), '<CASA>'], [PAQUETES_VACIOS, '<ARNES>/packs']];
+  for (const [r, marca] of rutas.sort((a, b) => b[0].length - a[0].length)) t = t.split(r).join(marca);
   // el usuario de la máquina (quién anotó algo): tampoco es comportamiento
   const usuario = (() => { try { return os.userInfo().username; } catch { return ''; } })();
   if (usuario.length >= 3) t = t.replace(new RegExp(`\\b${usuario.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g'), '<USUARIO>');
