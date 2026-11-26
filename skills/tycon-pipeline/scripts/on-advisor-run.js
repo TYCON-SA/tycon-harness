@@ -26,7 +26,7 @@
  * Es advisory a propósito: las reglas de costo mandatorias
  * mal calibradas degradan el sistema. Acá se mide y se avisa; decide el dev.
  *
- * Append-only, per-session: ~/.claude/.tycon-pipeline/advisor-runs/<sessionId>.jsonl
+ * Append-only, per-session: ~/.tycon/state/advisor-runs/<sessionId>.jsonl
  * Cada línea: {"ts": <iso>, "advisor": <subagent_type>, "model": <model|null>,
  *              "repo": <raíz del repo|null>, "story": <id de story|null>}.
  * El repo y la story los resuelve lib/repo-attrib.js (marker de la sesión → raíz de git del cwd).

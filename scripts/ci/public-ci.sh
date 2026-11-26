@@ -36,6 +36,9 @@
 #                          que recorre el freno de guiones. AVISA Y NUNCA FRENA: cada aviso sube como `::warning::` del
 #                          pedido, neutralizado; sin el guion o si falla, lo dice como aviso («no pude medir») y sigue
 #                          verde. Es la excepción declarada a «un paso que no pudo correr es rojo»: es un aviso
+#   7d bench-copied-deps   sólo con --range: node scripts/ci/bench-copied-deps.js --range <rango>: un archivo que los casos
+#                          del banco copian a mano y que el pedido le suma una dependencia que esos casos no copian (el
+#                          banco de la base corre en la cola, no en el pedido). AVISA Y NUNCA FRENA, como control-size
 #   8 spanish-names       sólo con --range: node scripts/publishing/spanish-names.js --range <rango>
 #   9 repo-lint            sólo con --range: los controles del pre-commit (.githooks/pre-commit-checks, con la punta
 #                          como arnés y sin el chequeo de vida de un revisor tocado, que pide una sesión) sobre lo que trae el
@@ -261,6 +264,7 @@ run_step() {
     [ "${name}" != controls-bench-base ] || grep -E '^(controls-bench-base:|✅ con la constancia del dueño)' "${log}" | ci_neutral | sed 's/^/     /'
     # los avisos del tamaño suben como avisos del pedido: el prefijo lo pone este guion, sobre el texto ya neutralizado
     [ "${name}" != control-size ] || grep -E '^⚠️ control-size: ' "${log}" | ci_neutral | sed 's/^/::warning::/'
+    [ "${name}" != bench-copied-deps ] || grep -E '^⚠️ bench-copied-deps: ' "${log}" | ci_neutral | sed 's/^/::warning::/'
   elif [ "${kind}" = "own" ] && [ "${rc}" -eq "${BLOCKED_EXIT}" ]; then
     blocked "${name}" "$(tail -n 1 "${log}" | sed 's/^no pude correr: //')"
   else
@@ -602,6 +606,19 @@ control_size() {
   return 0
 }
 
+# ── las dependencias de lo que el banco copia a mano (sólo con --range) ──────────────────────────────────────────
+# El banco de la base no corre en un pedido (corre en la cola): si el pedido le suma a un archivo que un caso copia a mano
+# una dependencia que el caso no copia, el pedido da verde y se cae en la cola. scripts/ci/bench-copied-deps.js lo avisa
+# acá, sin sumar trabajos. Casos: scripts/tests/bench-copied-deps.test.js. Avisa y nunca frena, como control-size.
+bench_copied_deps() {
+  local rc
+  if [ ! -f "${ROOT}/scripts/ci/bench-copied-deps.js" ]; then echo "⚠️ bench-copied-deps: no pude medir: falta scripts/ci/bench-copied-deps.js"; return 0; fi
+  if ! command -v node >/dev/null 2>&1; then echo "⚠️ bench-copied-deps: no pude medir: no encuentro node en el PATH"; return 0; fi
+  node "${ROOT}/scripts/ci/bench-copied-deps.js" --root "${ROOT}" --range "${RANGE}" < /dev/null; rc=$?
+  [ "${rc}" -eq 0 ] || echo "⚠️ bench-copied-deps: no pude medir: el guion salió ${rc}"
+  return 0
+}
+
 # ── paso 10 · la versión ──────────────────────────────────────────────────────────────────────────
 # Con la marca `numbering: "merge-tag"` en el version.json de la base, el número lo pone la etiqueta del merge y el pedido
 # no lo toca; sin la marca (antes de la transición), el número de la punta tiene que ser mayor. La regla vive en
@@ -674,6 +691,7 @@ wants agent-skills-suites && run_step agent-skills-suites own scripts/tests/suit
 wants controls-bench && run_step controls-bench file scripts/controls-bench/runner.js "node" node scripts/controls-bench/runner.js --tool both --baseline check --json "${OUT}/bench.json"
 [ -z "${BASE_ARG}" ] || ! wants controls-bench-base || run_step controls-bench-base own "" "git node" bench_against_base
 wants control-size && run_step control-size own "" "" control_size
+[ "${WITH_RANGE}" -eq 0 ] || ! wants bench-copied-deps || run_step bench-copied-deps own "" "" bench_copied_deps
 [ "${WITH_RANGE}" -eq 0 ] || ! wants spanish-names || run_step spanish-names own scripts/publishing/spanish-names.js "git node" spanish_names
 if [ -n "${BASE_ARG}" ]; then
   # con --base el pre-commit del árbol puede faltar (el pedido lo borró): lo que tiene que existir es la base

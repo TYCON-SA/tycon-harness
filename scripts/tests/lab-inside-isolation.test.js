@@ -123,6 +123,12 @@ test('T2 LabInsideIsolation_SameResultAsDirect @story-8.321 @ac-1', { skip: !POS
   assert.strictEqual(resultado(dentro), resultado(fuera), `encerrado:\n${salida(dentro)}`);
 });
 
+// lo que queda de un archivo del estado sin el renglón que el propio humo anota en su espejo (el gates.log de la carpeta
+// del estado): el de su historia y con su salida. Un renglón verde que escribiera el comando, o cualquier otra línea, queda
+const sinSuEspejo = (texto, story, salida) => texto.split('\n').filter((l) => {
+  try { const g = JSON.parse(l); return !(g.type === 'smoke-run' && g.story === story && g.exit === salida); } catch { return true; }
+}).join('\n');
+
 test('T3 LabInsideIsolation_CleanEnvChild_RealHomeStillGuarded @story-8.321 @ac-2', { skip: !POSIX }, (t) => {
   const c = cuenta(t);
   const destino = path.join(c.casa, '.tycon', 'state', 'gates.log');
@@ -133,7 +139,7 @@ test('T3 LabInsideIsolation_CleanEnvChild_RealHomeStillGuarded @story-8.321 @ac-
     const s = humo(r, '9.23', '.advisors/dod-runtime/lab.js', [JSON.stringify({ args: [destino], env })], ambiente(c));
     assert.strictEqual(s.status, 3, `${nombre}: ${salida(s)}`);
     assert.ok(salida(s).includes(destino), `${nombre}: la salida nombra la ruta frenada: ${salida(s)}`);
-    assert.strictEqual(fs.readFileSync(destino, 'utf8'), 'antes\n', `${nombre}: el archivo de la casa de la cuenta no cambió`);
+    assert.strictEqual(sinSuEspejo(fs.readFileSync(destino, 'utf8'), '9.23', s.status), 'antes\n', `${nombre}: el archivo de la casa de la cuenta no cambió`);
   }
   // un repo del humo bajo .claude/worktrees/ de la casa de la cuenta: el hijo escribe en él
   const w = repo(path.join(c.casa, '.claude', 'worktrees', 'r'), { '.advisors/dod-runtime/lab.js': LAB, '.advisors/dod-runtime/hijo.js': HIJO });

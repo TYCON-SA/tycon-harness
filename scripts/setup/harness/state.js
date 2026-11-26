@@ -1,5 +1,5 @@
 'use strict';
-// state.js — el estado del mecanismo de instalación: ~/.claude/.tycon-pipeline/harness-state.json.
+// state.js — el estado del mecanismo de instalación: ~/.tycon/state/harness-state.json.
 //
 // Lo que guarda: `schema`, `mode` (managed | developer), `tree` (a qué apunta el enlace), `sources` (una lista: en los
 // repos internos son dos —`harness` y `agent_skills`—, en el repo único es una), `channel`, `version`, `managed`

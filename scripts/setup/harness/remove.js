@@ -16,7 +16,7 @@
 //                   `env` si queda vacío.
 //   · block         `<!-- TYCON_BLOCK:<n> START … END -->` del archivo de su `where` (CLAUDE.md o el espejo AGENTS.md),
 //                   con el renglón en blanco que el sync le puso delante. Sin marcador de cierre no se adivina: queda.
-//   · import        la línea (`@~/.claude/<lugar>/INDEX.md`, en cualquiera de sus formas: import-line.js).
+//   · import        la línea que importa el INDEX.md del lugar (en cualquiera de sus formas: import-line.js).
 //   · startup-line  el hook de SessionStart que `startup-line.isNew` reconoce.
 //   · link          sólo si es un enlace que resuelve al árbol o adentro de él (o colgado, apuntando al árbol que se borró):
 //                   el del arnés y, en el repo único, agent-skills, skills, agents y los enlaces por entrada.
@@ -29,7 +29,7 @@
 //                   byte como los dejó esa instalación (`afterSha`), si no → «revisalo»; lo demás que genera el despliegue
 //                   (perfiles, skills) se borra.
 //   · third-party   no se toca: vive dentro del árbol.
-//   · file          se borra, sólo si cae bajo la carpeta de la copia fija (~/.claude/.tycon-pipeline/harness/).
+//   · file          se borra, sólo si cae bajo la carpeta de la copia fija (~/.tycon/state/harness/).
 //
 // El byte a byte: `restoreIfEqual` = `{ [ruta]: <ruta del archivo en la copia> | null }`. Después de quitar, un
 // archivo tocado que es IGUAL a su copia —como JSON (settings.json, sin contar `hooks`/`env` vacíos) o como texto (salvo
@@ -114,7 +114,7 @@ function forgetHardLinkRecord(home, hl) {
 /** Las carpetas bajo las que viven los hooks del arnés: el árbol, sus dos nombres (el lugar y el viejo) y
  *  agent-skills (y sus rutas reales). */
 function hookRoots(home, tree) {
-  const claude = path.join(home, '.claude');
+  const claude = require('./tycon-home.js').claudeDir(home);
   const PLACE = require('./place.js');
   const out = [tree, PLACE.placePath(home), PLACE.legacyPlacePath(home), path.join(claude, 'agent-skills'), path.join(claude, 'agent-skills', 'skills')];
   for (const r of out.slice()) { const x = r && real(r); if (x) out.push(x); }

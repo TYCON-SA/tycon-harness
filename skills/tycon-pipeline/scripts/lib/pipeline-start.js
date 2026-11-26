@@ -132,7 +132,7 @@ function computeSpecStaleness(fm, hoyMs) {
 }
 
 // El marker.js que corre el arranque: el instalado, no el del repo.
-const markerInstalado = () => path.join(os.homedir(), '.claude', 'agent-skills', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+const markerInstalado = () => path.join(require('./state-dir.js').installedSkillsDir(), 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
 
 /** Anota la tanda en el marcador de esta sesión con `marker.js set-batch`. `{ ok, motivo }`; nunca tira. */
 function anotarTanda(nombre) {
@@ -695,7 +695,7 @@ function computeStart(args) {
   if (args.autonomous) {
     try {
       execFileSync(process.execPath, [markerJs, 'set-autonomous', 'true'], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-      actions.push('PIPE-C6: modo autónomo Nivel 1 ACTIVO (default ON · Stop-gate DoD). Pánico: touch ~/.claude/.tycon-pipeline/STOP_AUTONOMY');
+      actions.push(`PIPE-C6: modo autónomo Nivel 1 ACTIVO (default ON · Stop-gate DoD). Pánico: touch ${require('./state-dir.js').paraMostrar(path.join(require('./state-dir.js').stateDir(), 'STOP_AUTONOMY'))}`);
     } catch { /* ignore */ }
   } else {
     actions.push('PIPE-C6: modo autónomo OFF (--no-autonomous o TYCON_PIPELINE_NO_AUTONOMOUS=1) → HITL puro');
@@ -843,7 +843,7 @@ function expectedThirdPartySkills(opts = {}) {
     fallback: 'el paso del pipeline que la invoca no puede cargarla: se frena ahí o se sigue sin ella, con el dev avisado',
   };
   let m = null;
-  let problem = manifestPath ? null : 'no encontré el arnés (TYCON_GUIDES_DIR o el enlace ~/.claude/tycon-harness)';
+  let problem = manifestPath ? null : `no encontré el arnés (TYCON_GUIDES_DIR o el enlace ${require('./harness-path.js').enlaceParaMostrar()})`;
   if (!problem) {
     try { m = JSON.parse(fs.readFileSync(manifestPath, 'utf8')); } catch (e) { problem = `no pude leer ${manifestPath} (${e.code || 'JSON inválido'})`; }
   }
@@ -1005,7 +1005,7 @@ function computeToolingExpected(repo, opts = {}) {
     codegraph: {
       bin: 'codegraph',
       cli: 'codegraph query "<símbolo>" | codegraph context "<task>" | codegraph status | codegraph affected — vía Bash, mismo índice que el MCP',
-      // el instalador del arnés registra el servidor sin escribir en el repo; `codegraph install` deja .mcp.json, .claude/
+      // el instalador del arnés registra el servidor sin escribir en el repo; `codegraph install` deja .mcp.json, la carpeta de Claude Code
       // y un enganche que corre en cada mensaje: no se recomienda
       raise_install: 'el instalador del arnés: bash scripts/setup/install-codegraph.sh desde la carpeta del arnés (en Windows, install-codegraph.ps1) — registra el servidor sin escribir en el repo; carga recién en la próxima sesión o tras /mcp',
     },
