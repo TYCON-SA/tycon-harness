@@ -1329,7 +1329,7 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
     col('hechos').tarjetas.push(card);
   }
   // la historia que nombra el título de un pedido, entera: «8.45» no es la «8.451» ni la «18.45»
-  const storyOfTitle = (title) => [...storyCards.keys()].find((id) => new RegExp(`(^|[^\\d.])${id.replace(/\./g, '\\.')}(?!\\.?\\d)`).test(String(title || '')));
+  const storyOfTitle = (title) => [...storyCards.keys()].find((id) => new RegExp(`(^|[^\\d.])${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\.?\\d)`).test(String(title || '')));
   for (const p of doneToday.pedidos || []) {
     if (!enteredToday(p.at) || rowPrs.has(shortPr(p.repo, p.number))) continue;
     rowPrs.add(shortPr(p.repo, p.number));
