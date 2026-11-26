@@ -15,7 +15,7 @@ const path = require('path');
 const { CATEGORIAS_HOOK } = require('../../metrics/tokens-digest.js');
 const STEPS = require('../../../skills/tycon-pipeline/scripts/lib/steps.js');
 const INTEGRATIONS = require('../../lib/integrations.js');
-const AZ = require('../../lib/az-pr.js');
+const AZ = require('../../lib/command-readers.js').lectorDe('az');
 
 const CODIGOS = ['RR-HOOK', 'RR-NODE', 'RR-APAGO', 'RR-BANDERA', 'RR-CIERRE', 'RR-ESCAPE'];
 // Dónde vive un guion del arnés, en Mac, Linux y Windows: los dos nombres del lugar salen de su constante.

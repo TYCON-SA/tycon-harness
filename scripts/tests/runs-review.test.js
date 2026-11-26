@@ -968,7 +968,7 @@ test('T63 PrefijoDeMasYHechoUnaVez @story-4.10 @ac-30', () => {
   const p = regla(rv({ hilo: cmd(parecido), bypass: [lineas[1]] }), 'RR-ESCAPE');
   assert.deepStrictEqual(p.map((x) => `${x.categoria}:${x.cuenta}:${x.con_motivo}`), ['PR_A_MANO/sobra:1:false']);
   // la decisión es la del freno de pedidos
-  const AZ = require(path.join(ROOT, 'scripts', 'lib', 'az-pr.js'));
+  const AZ = require(path.join(ROOT, 'integrations', 'azure-devops', 'scripts', 'command-reader.js'));
   assert.deepStrictEqual(comandos.map((c) => AZ.faltasDe(AZ.segmentos(c)[0]).faltas.length), [0, 0, 0, 2]);
 });
 
@@ -1186,7 +1186,7 @@ test('8.164-NocturnaJuzgaComoElFreno @story-8.164 @ac-1', () => {
     'az repos pr update --id 7 --draft false --auto-complete true --squash false --delete-source-branch true',
     'az repos pr update --id 7 --draft false --auto-complete true --squash false --delete-source-branch false',
   ];
-  const AZ = require(path.join(ROOT, 'scripts', 'lib', 'az-pr.js'));
+  const AZ = require(path.join(ROOT, 'integrations', 'azure-devops', 'scripts', 'command-reader.js'));
   for (const c of pedidos) {
     const esperada = !AZ.necesitaLaRama(AZ.segmentos(c)[0]) && pasa(c) ? 'PR_A_MANO/sobra:1' : 'TYCON_PR_BY_HAND:1';
     assert.deepStrictEqual(cats(rv({ hilo: cmd(`TYCON_PR_BY_HAND=1 ${c}`) }), 'RR-ESCAPE'), [esperada], `la noche no juzga como el freno: ${c}`);
@@ -1197,7 +1197,7 @@ test('8.164-NocturnaJuzgaComoElFreno @story-8.164 @ac-1', () => {
 });
 
 test('T4 TextoFielDelPedido @story-4.12 @ac-4', () => {
-  const AZ = require(path.join(ROOT, 'scripts', 'lib', 'az-pr.js'));
+  const AZ = require(path.join(ROOT, 'integrations', 'azure-devops', 'scripts', 'command-reader.js'));
   // Con la rama escrita: con `--delete-source-branch true` y sin `--source-branch`, el pedido no sobra (8.164).
   const P = 'TYCON_PR_BY_HAND=1 az repos pr create --target-branch main --source-branch story/x';
   const casos = [
@@ -1795,7 +1795,7 @@ test('M6 Horas_ListaDeIntegracionesRota_SeDice @mantenimiento', () => {
 // entra en el tope de 60 minutos del pipeline. Rojo si `tieneEscape` vuelve a preguntarle al mapa por pedido.
 test('P1 Escape_LosNombresSePidenUnaVez_NoPorComando', () => {
   const LN = require(path.join(ROOT, 'scripts', 'lib', 'legacy-names.js'));
-  const AZ = require(path.join(ROOT, 'scripts', 'lib', 'az-pr.js'));
+  const AZ = require(path.join(ROOT, 'integrations', 'azure-devops', 'scripts', 'command-reader.js'));
   const original = LN.envNames;
   let llamadas = 0;
   LN.envNames = (...a) => { llamadas += 1; return original(...a); };

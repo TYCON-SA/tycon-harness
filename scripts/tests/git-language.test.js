@@ -430,7 +430,7 @@ test('T10 GanchosDeAviso_SinLaBiblioteca_NoSeCaen', (t) => {
 });
 
 // lo que el freno de empujes necesita para correr, sin clean-git-env.js (como el laboratorio de public-push-guard.test.js)
-const PIEZAS_DEL_FRENO = ['scripts/hooks/public-push-guard.js', 'scripts/lib/az-pr.js', 'scripts/lib/command-readers.js', 'integrations/github/scripts/command-reader.js', 'scripts/lib/harness-repo.js',
+const PIEZAS_DEL_FRENO = ['scripts/hooks/public-push-guard.js', 'scripts/lib/command-tokens.js', 'scripts/lib/command-readers.js', 'integrations/github/scripts/command-reader.js', 'scripts/lib/harness-repo.js',
   'scripts/lib/legacy-names.js', 'scripts/lib/guard-record.js', 'scripts/publishing/detector.js', 'scripts/setup/harness/tycon-home.js',
   'scripts/publishing/internal-history.js'];
 

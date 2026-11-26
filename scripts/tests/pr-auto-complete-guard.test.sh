@@ -448,10 +448,10 @@ for caso in \
   "pasa|$AZM -s story/x --delete-source-branch true --title 'usá -s dev'"; do
   esperado="${caso%%|*}"; cmd="${caso#*|}"
   rc=$(corre "$cmd")
-  falta=$(node -e 'const az=require(process.argv[1]); const s=az.segmentos(process.argv[2])[0]; process.stdout.write(String(az.faltasDe(s).faltas.length > 0))' "$AQUI/scripts/lib/az-pr.js" "$cmd" 2>/dev/null)
+  falta=$(node -e 'const az=require(process.argv[1]); const s=az.segmentos(process.argv[2])[0]; process.stdout.write(String(az.faltasDe(s).faltas.length > 0))' "$AQUI/integrations/azure-devops/scripts/command-reader.js" "$cmd" 2>/dev/null)
   # Un «frena» tiene que frenar por la regla de esta historia (la tercera bandera, lo que no se lee o una expansión
   # partida), no por otra falta cualquiera. `frena-otra` es un caso que frena por las dos banderas de antes.
-  texto=$(node -e 'const az=require(process.argv[1]); process.stdout.write(az.faltasDe(az.segmentos(process.argv[2])[0]).faltas.join(" | "))' "$AQUI/scripts/lib/az-pr.js" "$cmd" 2>/dev/null)
+  texto=$(node -e 'const az=require(process.argv[1]); process.stdout.write(az.faltasDe(az.segmentos(process.argv[2])[0]).faltas.join(" | "))' "$AQUI/integrations/azure-devops/scripts/command-reader.js" "$cmd" 2>/dev/null)
   if [ "$esperado" = frena ]; then
     [ "$rc" -eq 2 ] && [ "$falta" = true ] && echo "$texto" | grep -E -- 'delete-source-branch|no puedo leer|fuera de comillas' >/dev/null \
       && ok "8.164-SinBorrarRama_Frena frena por la regla nueva y faltasDe coincide: $cmd" || no "8.164-SinBorrarRama_Frena dejó pasar o frenó por otra cosa ($rc, faltasDe=$falta, «${texto}»): $cmd"
@@ -469,7 +469,7 @@ grep -q -- "--auto-complete true --squash false --delete-source-branch" "$TMP/er
 # Un `update` no dice la rama: la falta pide `false` (o el skill, o el escape) y no recomienda `true`, que también frena.
 for cmd in "az repos pr update --id 5 --draft false --auto-complete true --squash false" \
            "az repos pr update --id 5 --draft false --auto-complete true --squash false --delete-source-branch true"; do
-  texto=$(node -e 'const az=require(process.argv[1]); process.stdout.write(az.faltasDe(az.segmentos(process.argv[2])[0]).faltas.join(" | "))' "$AQUI/scripts/lib/az-pr.js" "$cmd" 2>/dev/null)
+  texto=$(node -e 'const az=require(process.argv[1]); process.stdout.write(az.faltasDe(az.segmentos(process.argv[2])[0]).faltas.join(" | "))' "$AQUI/integrations/azure-devops/scripts/command-reader.js" "$cmd" 2>/dev/null)
   echo "$texto" | grep -- '--delete-source-branch false' >/dev/null && ! echo "$texto" | grep 'Va en `true`' >/dev/null \
     && ok "8.164-SinBorrarRama_Frena la falta de un update pide false y no recomienda true: ${cmd:26:60}" \
     || no "8.164-SinBorrarRama_Frena la falta de un update no pide false o recomienda true («${texto}»): ${cmd:26:60}"
@@ -485,7 +485,7 @@ rc=$(corre "TYCON_PR_BY_HAND=1 $AZM --source-branch story/x")
 # La lista de larga vida del freno es la del paso de merge, la única declarada (§9b.4).
 PASO="$AQUI/skills/tycon-merge-to-main/steps/step-09b-create-change-request.md"
 del_paso=$(grep -m1 'Declaradas acá' "$PASO" | grep -o '`[a-z]*`' | tr -d '`' | sort | tr '\n' ' ')
-del_freno=$(node -e 'process.stdout.write(require(process.argv[1]).RAMAS_DE_LARGA_VIDA.slice().sort().join(" ") + " ")' "$AQUI/scripts/lib/az-pr.js" 2>/dev/null)
+del_freno=$(node -e 'process.stdout.write(require(process.argv[1]).RAMAS_DE_LARGA_VIDA.slice().sort().join(" ") + " ")' "$AQUI/integrations/azure-devops/scripts/command-reader.js" 2>/dev/null)
 [ -n "$del_freno" ] && [ "$(echo "$del_paso" | tr -s ' ')" = "$(echo "$del_freno" | tr -s ' ')" ] \
   && ok "8.164-SinBorrarRama_Frena la lista de larga vida del freno es la de §9b.4 ($del_freno)" || no "8.164-SinBorrarRama_Frena las listas difieren: paso «${del_paso}» · freno «${del_freno}»"
 

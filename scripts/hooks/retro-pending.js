@@ -141,7 +141,7 @@ const { execFileSync } = require('child_process');
 // Lector COMPARTIDO de `az repos pr`: un regex propio que sólo entienda `--target-branch main` no
 // registraría un merge por PR con la forma corta `-t main`, y no habría retrospectiva — en silencio.
 // Se copia al sandbox del banco junto con el hook (setups).
-const az = require(path.join(__dirname, '..', 'lib', 'az-pr.js'));
+const az = require(path.join(__dirname, '..', 'lib', 'command-readers.js')).lectorDe('az');
 // Resolutor COMPARTIDO de "a qué repo apunta este git".
 // El repo se calcula con el `cd` y el `-C` del propio comando, no con el cwd de la SESIÓN: con el cwd,
 // `cd ~/.claude/agent-skills && git push origin main` se anotaría contra el repo de la sesión con la sha
@@ -954,7 +954,7 @@ function record(event) {
   // La excepción es una consola que corre lo citado (`bash -c "git push origin main"`): ahí el push es de verdad, y
   // git-target.js lee cada uno con su carpeta.
   // `cmdShell`: el comando sin los cuerpos de heredoc que son texto (ver el require de sinHeredocs).
-  // Sólo el camino del push lo usa; el del PR ya corta sus segmentos sin heredocs (az-pr.js).
+  // Sólo el camino del push lo usa; el del PR ya corta sus segmentos sin heredocs (el lector de `az`).
   const cmdShell = sinHeredocs(cmd, { salvoShell: true });
   const cwd = event.cwd || process.cwd();
   // Los pedidos de GitHub (`gh pr create` hacia la rama principal) y los que abre la capa de plataforma: la entrega de

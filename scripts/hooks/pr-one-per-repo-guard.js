@@ -63,11 +63,11 @@ let sesion; // la del evento, para la constancia; guard-record.js descarta una d
 try { const ev = JSON.parse(payload || '{}'); cmd = (ev.tool_input || {}).command || ''; sesion = ev.session_id; } catch { process.exit(0); }
 
 // Sólo mira la creación de un pull request. Actualizar, listar o abandonar no se tocan.
-// 🔴 Se lee con el lector COMPARTIDO (`lib/az-pr.js`), no con un regex propio. Un lector
+// 🔴 Se lee con el lector COMPARTIDO (el lector de `az` de su conector, pedido por `lib/command-readers.js`), no con un regex propio. Un lector
 // casero que no entienda la forma `--org=…`, ni `--project="…"`, ni las formas cortas `-p/-r/-s/-t`
 // cae en «sin datos» y sale 0 EN SILENCIO — verde sin haber mirado. El compartido existe
 // porque un regex de una línea falla con facilidad.
-const az = require('../lib/az-pr.js');
+const az = require('../lib/command-readers.js').lectorDe('az');
 // los prefijos que corren el resto de la orden: el pedido de un conector se lee detrás de ellos
 const PREFIJOS_DE_ORDEN = new Set(['sudo', 'env', 'command', 'exec', 'nohup', 'time', 'nice']);
 // las opciones de un solo guion que llevan valor, por prefijo: se saltean con su valor, porque si no el valor se toma

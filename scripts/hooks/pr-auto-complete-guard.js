@@ -29,7 +29,7 @@
  * desde una de larga vida. Si no la pudo leer, `true` frena y `false` pasa. Un `update` común sin la bandera no se
  * juzga por ella: az conserva la que el pedido ya tenía. Lo que no puede leer (un valor que arma la terminal, un
  * comodín, un `@archivo`) es una falta. Fuera de esa pregunta mira sólo el texto del comando, con el lector de
- * scripts/lib/az-pr.js (`faltasDe`).
+ * el lector de `az` de su conector (`faltasDe`).
  *
  * QUÉ NO HACE. Un borrador recién creado no se toca (no se completa solo por definición) y lo dice.
  * `--help`, listar, mostrar y abandonar tampoco. Salida para el caso puntual —incluido el legítimo
@@ -48,7 +48,8 @@ const path = require('path');
 // laboratorios copian carpetas sueltas de scripts/ sin scripts/setup/; ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
-const az = require('../lib/az-pr.js');
+// el lector de `az` lo trae su conector, pedido por el programa
+const az = require('../lib/command-readers.js').lectorDe('az');
 const constanciaFreno = require('../lib/guard-record.js');
 
 const TAG = '[pr-sin-auto-complete]';
@@ -241,7 +242,7 @@ for (const seg of tramos) {
   const verbo = az.verboDePr(seg);
   if (verbo !== 'create' && verbo !== 'update') continue;
 
-  // La regla vive en `faltasDe` (scripts/lib/az-pr.js): la misma que lee la revisión nocturna de las ejecuciones.
+  // La regla vive en `faltasDe` (el lector de `az` de su conector): la misma que lee la revisión nocturna de las ejecuciones.
   // Se juzga ANTES de mirar el prefijo: un prefijo puesto sobre un tramo que pasaría igual no es un salteo, y anotarlo
   // llenaba el registro de salteos que no eran.
   // La rama del pedido, sólo si juzgar el `update` la pide (`necesitaLaRama`): trae `--delete-source-branch` escrito,
