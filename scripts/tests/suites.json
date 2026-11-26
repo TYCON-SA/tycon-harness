@@ -538,6 +538,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.334 (tanda A, fila 177): el freno de escrituras tapa los seis caminos por los que se escribía una constancia (un guion de shell, un comodín, la copia de una carpeta, un enlace duro, el `Move to` de Codex, una ruta armada) y protege también `.tycon/runtime-waivers.jsonl` y el `approvals.jsonl` de las ejecuciones, sin frenar de más. Repos de git temporales, HOME temporal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/row-177-write-gate.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.48: la clave `stack` de team-repos.json, leída desde el árbol del arnés.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/stack-config.test.js",
@@ -4015,6 +4021,12 @@
       "__nota": "story 8.150: la carpeta del estado y la de los registros sueltos dichas por el ayudante de shell (scripts/lib/state-dir.sh) son las mismas que dice tycon-home.js, en nueve casos (casa propia o no, TYCON_HOME absoluta, relativa, con espacios, vacía). Sin red: HOME de juguete en procesos hijos.",
       "raiz": "arnes",
       "ruta": "tests/state-dir-parity.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.335: el estado del registro de horas vive en la carpeta de los registros sueltos, y --move-old lo muda a la del estado dejando un enlace en el lugar viejo. Nunca pisa ni borra: un destino ocupado, un renombre o un enlace que fallan, o un viejo que reaparece, quedan como estaban. Sin tycon-home.js, los ganchos salen 0 y lo dicen; los avisos dan la ruta real y uninstall saca sólo el enlace. Sin red: HOME de juguete en procesos hijos.",
+      "raiz": "arnes",
+      "ruta": "tests/clocki-state-dir.test.js",
       "requiere": []
     },
     {
