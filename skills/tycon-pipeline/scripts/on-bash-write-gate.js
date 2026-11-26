@@ -33,7 +33,9 @@
  * hook-errors.log: «FRENÓ POR FALLA» o «FAILED OPEN». Límite conocido: un error de sintaxis en este archivo no llega a
  * correr nada.
  * El análisis corre en un hilo y `lib/gate-clock.js` mira el reloj (20 s, `TYCON_BASH_GATE_TIMEOUT_S`): si no alcanza a
- * decidir, el comando no corre. Sin esa biblioteca, el análisis corre acá, sin reloj, y queda «FAILED OPEN».
+ * decidir, el comando no corre. Sin esa biblioteca, el análisis corre acá, sin reloj, y queda «FAILED OPEN». El análisis
+ * le anota al reloj sus pasos (`paso`): si tarda la mitad del reloj o más, queda «LENTO» con el paso más lento, y si lo
+ * corta, el corte dice en cuál estaba.
  *
  * ── SEGUNDA RESPONSABILIDAD: la puerta Bash del freno de STORY A MANO ────────────────
  * El caso que motiva ese freno son los heredocs de Bash —
@@ -7075,10 +7077,18 @@ function constanciasSinHuella(event, opts = {}) {
  * deja pasar algo que la lectura sin apagarlos frena, aunque algo se tome por comentario sin serlo. La segunda lectura
  * sólo decide: no anota escrituras ni borrados, que ya anotó la primera.
  */
+// En qué paso está el análisis, para el reloj (lib/gate-clock.js): si tarda o lo cortan, el registro lo dice. Sin el
+// reloj no se lo vuelve a pedir: pedido al decidir, contaría como una pieza rota y frenaría todo
+function paso(texto) {
+  if (relojRoto) return;
+  try { require('./lib/gate-clock.js').anotarPaso(texto); } catch { /* sin reloj, no hay a quién decírselo */ }
+}
+
 function handle(event, opts = {}) {
   apagoAlgo = false;
   const r = handleUnaLectura(event, opts);
   if ((r && r.block) || !apagoAlgo) return r;
+  paso('la segunda lectura, sin los comentarios');
   leerComentarios = false;
   soloDecidir = true;
   try {
@@ -7094,21 +7104,25 @@ function handle(event, opts = {}) {
 function handleUnaLectura(event, opts = {}) {
   {
     let perdida = null;
+    paso('mirando si se pierde una ejecución');
     try { perdida = ejecucionPerdida(event); } catch (e) { logHookError(e); perdida = { block: `🔴 EJECUCIÓN PERDIDA — no pude revisar las piezas de la ejecución (${e.message}): frena hasta poder mirarlas.\n` }; }
     if (perdida) return perdida;
   }
   {
     let abierta = null;
+    paso('mirando si borra una ejecución abierta');
     try { abierta = borraEjecucionAbierta(event); } catch (e) { logHookError(e); abierta = { block: `🔒 CERRÁ LA EJECUCIÓN ANTES — no pude revisar si el comando borra la carpeta de una ejecución abierta (${e.message}): frena hasta poder mirarlo.\n` }; }
     if (abierta) return abierta;
   }
   {
     let huella = null;
+    paso('mirando las constancias de un commit o un empuje');
     try { huella = constanciasSinHuella(event, opts); } catch (e) { logHookError(e); huella = { block: `🔒 CONSTANCIA SIN MIRAR — no pude revisar las constancias antes del commit o del empuje (${e.message}): frena hasta poder mirarlas.\n` }; }
     if (huella) return huella;
   }
   {
     let coordinadora = null;
+    paso('mirando lo que se escribe en la carpeta de la coordinadora');
     try { coordinadora = coordinadoraPorConsola(event, opts); } catch (e) { logHookError(e); coordinadora = null; }
     if (coordinadora) return coordinadora;
   }
@@ -7119,6 +7133,7 @@ function handleUnaLectura(event, opts = {}) {
     try {
       const cmd = event?.tool_input?.command;
       if (typeof cmd === 'string' && /\bstash\b/.test(cmd)) {
+        paso('mirando un stash');
         stash = require('./lib/stash-guard.js').evaluar({
           cmd, cwd: nativePath(event?.cwd || process.cwd()), sessionId: resolveSessionId(event?.session_id),
           stateDir: opts.stateDir || require('./lib/story-gate-io.js').DEFAULT_STATE_DIR,
@@ -7133,6 +7148,7 @@ function handleUnaLectura(event, opts = {}) {
     const cmd = event?.tool_input?.command;
     if (cmd && (!event?.tool_name || event.tool_name === 'Bash' || event.tool_name === 'PowerShell')) {
       const baseCwd = nativePath(event?.cwd || process.cwd());
+      paso('mirando si escribe código deprecado');
       deprecado = require('./on-deprecated-edit.js').porLaTerminal({
         cmd, cwd: cwdDelComando(cmd, baseCwd),
         // todo destino, sea o no código: lo deprecado puede ser una guía, un esquema o una configuración
@@ -7144,6 +7160,7 @@ function handleUnaLectura(event, opts = {}) {
     }
   } catch (e) { logHookError(e); deprecado = null; }
   if (deprecado && deprecado.block) return deprecado;
+  paso('mirando el carril y las historias');
   return handleCarrilEHistoria(event, opts) || deprecado;
 }
 
@@ -7631,6 +7648,7 @@ if (require.main === module) {
     process.exit(2);
   }
   yaDecidio = true;
+  paso('armando los avisos para la persona');
   // Antes de cerrar «Aprobar el plan», el arnés le muestra a la persona el plan si el agente no lo hizo (lib/plan-display.js) y,
   // si la historia cambia una pantalla en un repo sin prueba con navegador, la oferta de prepararla (lib/browser-test.js).
   // Van en un solo aviso.

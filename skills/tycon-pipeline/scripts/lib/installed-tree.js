@@ -2,7 +2,7 @@
 // installed-tree.js — el árbol instalado del arnés y si una ruta cae adentro, por ruta real.
 //
 // En una máquina con instalación por versión, el arnés vive en la casa propia (`~/.tycon/harness`, con `team`,
-// `third-party` y `previous` al lado) y se entra también por los enlaces de `~/.claude`. Ese árbol lo reemplaza entero
+// `third-party` y `previous` al lado) y se entra también por los enlaces de la carpeta de Claude Code. Ese árbol lo reemplaza entero
 // cada actualización: el agente no lo escribe, y el arnés se cambia con un pedido a su repo. En modo automático Claude
 // Code aprueba solo las escrituras fuera del proyecto, así que el que frena es el portón de escrituras.
 //

@@ -241,22 +241,23 @@ done
 is "T21 (d) la salida de cada paso, la de cada suite y el reporte del banco quedan en TYCON_PUBLIC_CI_OUT" "" "${MISSING}"
 has "T21 (d) el archivo de cada suite trae SU salida" "${R}.ci/agent-skills-suites/arnes__tests__alpha.test.js.log" "alpha: salida de la suite"
 
-# con --range y --clean-machine: los doce pasos; sin TYCON_PUBLIC_CI_OUT, la carpeta temporal se nombra y existe
+# con --range y --clean-machine: los trece pasos; sin TYCON_PUBLIC_CI_OUT, la carpeta temporal se nombra y existe
 variant green9
 ( cd "${T}/elsewhere" && TYCON_SKILLS_DIR="${T}/no-skills" bash "${SCRIPT}" --root "${R}" --range 'HEAD~1...HEAD' --clean-machine ) > "${R}.out" 2>&1; RC=$?
 is "T21 (d) todo verde con --range y --clean-machine sale 0" 0 "${RC}"
-is "T21 (d) los doce pasos, en orden" "${SEVEN} spanish-names repo-lint version clean-machine" "$(steps_of "${R}.out")"
-is "T21 (d) el resumen cuenta los doce" "✅ public-ci: 12 pasos verdes" "$(tail -n 1 "${R}.out")"
+is "T21 (d) los trece pasos, en orden" "${SEVEN} bench-copied-deps spanish-names repo-lint version clean-machine" "$(steps_of "${R}.out")"
+is "T21 (d) el resumen cuenta los trece" "✅ public-ci: 13 pasos verdes" "$(tail -n 1 "${R}.out")"
+has "T21 (d) bench-copied-deps sin su guion lo dice como aviso del pedido y sigue verde" "${R}.out" "::warning::⚠️ bench-copied-deps: no pude medir: falta scripts/ci/bench-copied-deps.js"
 is "T21 (d) el freno de nombres recibe el rango, el pre-commit ve lo que trae el rango sobre la base, y la máquina limpia va al final" \
   "spanish-names --range HEAD~1...HEAD|repo-lint head=base staged=build/check.js version.json |clean-machine |" \
   "$(calls_of "${R}" | tail -n 3 | tr '\n' '|')"
 is "T21 (d) la copia de trabajo del pre-commit no queda" "" "$(git -C "${R}" worktree list | sed -n 2p)"
 lacks "T21 (d) tampoco con todas las opciones corre el detector" "${R}/.calls" "detector"
 OUT_DIR="$(sed -n 's/^public-ci: la salida de cada paso quedó en \(.*\)$/\1/p' "${R}.out")"
-if [ -n "${OUT_DIR}" ] && [ -f "${OUT_DIR}/12-clean-machine.log" ]; then
+if [ -n "${OUT_DIR}" ] && [ -f "${OUT_DIR}/13-clean-machine.log" ]; then
   ok "T21 (d) sin TYCON_PUBLIC_CI_OUT la salida va a una carpeta temporal que el resumen nombra"
   # la máquina limpia corre en su modo PÚBLICO: pedida de forma explícita y sobre el repo de --root
-  has "T21 (d) la máquina limpia recibe TYCON_CLEAN_MACHINE=1 y TYCON_CLEAN_MACHINE_SOURCE=<raíz>" "${OUT_DIR}/12-clean-machine.log" \
+  has "T21 (d) la máquina limpia recibe TYCON_CLEAN_MACHINE=1 y TYCON_CLEAN_MACHINE_SOURCE=<raíz>" "${OUT_DIR}/13-clean-machine.log" \
     "TYCON_CLEAN_MACHINE=1 TYCON_CLEAN_MACHINE_SOURCE=${R}"
   rm -rf "${OUT_DIR}"
 else no "T21 (d) el resumen no nombra una carpeta con la salida de cada paso («${OUT_DIR}»): $(tail -n 3 "${R}.out" | tr '\n' ' ')"; fi
@@ -277,7 +278,7 @@ lacks "T21 (e) …sin un «::» entero (GitHub)" "${R}.out" "::error::"
 lacks "T21 (e) …ni un «##» entero (Azure)" "${R}.out" "##vso"
 # el único «::» permitido es el prefijo que pone el propio guion a los avisos del tamaño, al principio del renglón; el
 # texto que le sigue también va neutralizado
-if sed 's/^::warning::⚠️ control-size: /⚠️ control-size: /' "${R}.out" | grep -E '::|##' >/dev/null; then no "T21 (e) un «:::», «###» o un retorno de carro dejó un par entero"; else ok "T21 (e) …tampoco de a tres ni detrás de un retorno de carro"; fi
+if sed -e 's/^::warning::⚠️ control-size: /⚠️ control-size: /' -e 's/^::warning::⚠️ bench-copied-deps: /⚠️ bench-copied-deps: /' "${R}.out" | grep -E '::|##' >/dev/null; then no "T21 (e) un «:::», «###» o un retorno de carro dejó un par entero"; else ok "T21 (e) …tampoco de a tres ni detrás de un retorno de carro"; fi
 # el nombre del registro de una suite sale de suites.json del pedido: no arma una línea ni un comando de la CI
 variant weirdsuite; SKILLS_ENV=""
 node -e 'const f=process.argv[1];const j=JSON.parse(require("fs").readFileSync(f,"utf8"));j.diarias.push({raiz:"arnes",ruta:"tests/x\n::warning::y.test.sh",requiere:["agent-skills"]});require("fs").writeFileSync(f,JSON.stringify(j,null,2))' "${R}/scripts/tests/suites.json"
@@ -396,7 +397,7 @@ lacks "T21 (c) el freno de nombres no se llama con un rango que no resuelve" "${
 has "T21 (c) el pre-commit del rango tampoco corre: «no pude correr»" "${R}.out" "❌ public-ci: repo-lint — no pude correr: "
 has "T21 (c) ni la versión: «no pude correr»" "${R}.out" "❌ public-ci: version — no pude correr: "
 lacks "T21 (c) el pre-commit no se llama con un rango que no resuelve" "${R}/.calls" "repo-lint"
-is "T21 (c) el resumen nombra los tres pasos del rango" "❌ public-ci: 3 de 11 pasos en rojo: spanish-names, repo-lint, version" "$(tail -n 1 "${R}.out")"
+is "T21 (c) el resumen nombra los tres pasos del rango" "❌ public-ci: 3 de 12 pasos en rojo: spanish-names, repo-lint, version" "$(tail -n 1 "${R}.out")"
 variant badrange; run_ci --range 'HEAD'
 has "T21 (c) un rango que no es <base>...<punta> también es «no pude correr»" "${R}.out" "❌ public-ci: spanish-names — no pude correr: "
 
@@ -514,14 +515,14 @@ has "T2 …y el paso sigue verde" "${R}.out" "✅ public-ci: control-size ("
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # T24 (a) · la corrida partida (TYCON_PUBLIC_CI_PART): checks + el banco + las partes de las suites = la corrida entera
 # ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
-ELEVEN="${SEVEN} spanish-names repo-lint version clean-machine"
+ELEVEN="${SEVEN} bench-copied-deps spanish-names repo-lint version clean-machine"
 variant partchecks; export TYCON_PUBLIC_CI_PART=checks; run_ci --range 'HEAD~1...HEAD' --clean-machine; unset TYCON_PUBLIC_CI_PART
 is "T24 (a) la parte checks, todo verde, sale 0" 0 "${RC}"
-is "T24 (a) la parte checks corre todos los pasos menos las portables y el banco, en orden" "node-check build-check build-generate suites-coverage agent-skills-suites control-size spanish-names repo-lint version clean-machine" "$(steps_of "${R}.out")"
+is "T24 (a) la parte checks corre todos los pasos menos las portables y el banco, en orden" "node-check build-check build-generate suites-coverage agent-skills-suites control-size bench-copied-deps spanish-names repo-lint version clean-machine" "$(steps_of "${R}.out")"
 lacks "T24 (a) …y no llama a las portables" "${R}/.calls" "portable-suites"
 lacks "T24 (a) …ni al banco" "${R}/.calls" "controls-bench"
 has "T24 (a) …y lo dice al arrancar" "${R}.out" "public-ci: parte checks — todos los pasos menos portable-suites y controls-bench"
-is "T24 (a) el resumen dice que es sólo una parte" "✅ public-ci: 10 pasos verdes (sólo la parte checks)" "$(tail -n 1 "${R}.out")"
+is "T24 (a) el resumen dice que es sólo una parte" "✅ public-ci: 11 pasos verdes (sólo la parte checks)" "$(tail -n 1 "${R}.out")"
 STEPS_CHECKS="$(steps_of "${R}.out")"
 variant partbench; export TYCON_PUBLIC_CI_PART=controls-bench; run_ci --range 'HEAD~1...HEAD' --clean-machine; unset TYCON_PUBLIC_CI_PART
 is "T24 (a) la parte del banco, todo verde, sale 0" 0 "${RC}"
@@ -537,7 +538,7 @@ is "T24 (a) …con su parte: TYCON_PORTABLE_SHARD=2/3, y nada más" "portable-su
 no_suite_ran "T24 (a) …sin las suites que piden agent-skills (van en checks)" "${R}/.calls"
 is "T24 (a) el resumen dice que es sólo una parte" "✅ public-ci: 1 pasos verdes (sólo la parte suites-2-of-3)" "$(tail -n 1 "${R}.out")"
 # shellcheck disable=SC2086
-is "T24 (a) checks, el banco y una parte de las suites son los doce pasos de la corrida entera, ninguno dos veces" \
+is "T24 (a) checks, el banco y una parte de las suites son los trece pasos de la corrida entera, ninguno dos veces" \
   "$(printf '%s\n' ${ELEVEN} | LC_ALL=C sort | tr '\n' ' ')" "$(printf '%s\n' ${STEPS_CHECKS} ${STEPS_BENCH} $(steps_of "${R}.out") | LC_ALL=C sort | tr '\n' ' ')"
 variant partred; echo 'exit 4' >> "${R}/scripts/tests/portable-suites.test.sh"; commit_all "portables en rojo"
 export TYCON_PUBLIC_CI_PART=suites-1-of-1; run_ci; unset TYCON_PUBLIC_CI_PART

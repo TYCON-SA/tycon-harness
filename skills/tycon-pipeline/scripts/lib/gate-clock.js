@@ -26,12 +26,22 @@ function carpetaDelEstado() {
   try { return stateDirOf(os.homedir()); } catch { return os.tmpdir(); }
 }
 
-function anotar(motivo) {
+function anotar(motivo, marca = 'FRENÓ POR FALLA') {
   try {
     const dir = carpetaDelEstado();
     fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(path.join(dir, 'hook-errors.log'), `[${new Date().toISOString()}] on-bash-write-gate FRENÓ POR FALLA: ${motivo}\n\n`, 'utf8');
+    fs.appendFileSync(path.join(dir, 'hook-errors.log'), `[${new Date().toISOString()}] on-bash-write-gate ${marca}: ${motivo}\n\n`, 'utf8');
   } catch { /* sin dónde anotarlo, frena igual */ }
+}
+
+/**
+ * Desde el hilo del análisis, en qué paso está: si el freno tarda o lo corta el reloj, el registro lo dice. En el hilo
+ * principal (el análisis sin reloj) no hace nada.
+ */
+function anotarPaso(texto) {
+  const { isMainThread, parentPort } = require('worker_threads');
+  if (isMainThread || !parentPort) return;
+  try { parentPort.postMessage({ paso: String(texto).slice(0, 200) }); } catch { /* sin a quién decírselo, sigue */ }
 }
 
 // Un hilo trabado en una llamada del sistema no deja terminar a `process.exit`, que lo espera. Reemplazar el proceso
@@ -60,13 +70,25 @@ function entregarEntrada(puerto, datos, entrada) {
 function vigilar({ archivo, archivoRed = archivo, segundos = segundosDelReloj(process.env.TYCON_BASH_GATE_TIMEOUT_S) }) {
   let cerrado = false;
   let entrada = null;
+  // los pasos que anota el análisis, con cuánto duró cada uno: lo cortado dice en cuál estaba, y lo lento, en cuál se
+  // le fue el tiempo. Antes del primero, el arranque: cargar el freno en el hilo y leer la entrada
+  const inicio = Date.now();
+  let paso = null;
+  let desde = inicio;
+  let masLento = null;
+  const cerrarPaso = () => {
+    const ahora = Date.now();
+    if (!masLento || ahora - desde > masLento.ms) masLento = { texto: paso || 'el arranque (cargar el freno y leer la entrada)', ms: ahora - desde };
+    desde = ahora;
+  };
+  const enQuePaso = () => `; el último paso: ${paso || 'el arranque (cargar el freno y leer la entrada)'}`;
   const noDecidio = (motivo) => {
     if (cerrado) return;
     cerrado = true;
     try {
       fs.writeSync(2, `⛔ tycon-pipeline — el freno de escrituras no alcanzó a decidir (${motivo}): el comando no corrió. Reintentalo; si se repite, decíselo a la persona.\n`);
     } catch { /* sin dónde decirlo, frena igual */ }
-    anotar(motivo);
+    anotar(`${motivo}${enQuePaso()}`);
     salirConDos();
   };
   const reloj = setTimeout(() => noDecidio(`no contestó en ${segundos} s`), segundos * 1000);
@@ -79,6 +101,7 @@ function vigilar({ archivo, archivoRed = archivo, segundos = segundosDelReloj(pr
       hilo = new Worker(destino, { workerData: { modo, recibido, ...(entrada === null ? {} : { entrada }), ...extra } });
     } catch (e) { caer(e); return; }
     hilo.on('message', (m) => {
+      if (m && typeof m.paso === 'string') { cerrarPaso(); paso = m.paso; return; }
       if (m && typeof m.entrada === 'string') entrada = m.entrada;
       Atomics.store(recibido, 0, 1);
       Atomics.notify(recibido, 0);
@@ -91,6 +114,12 @@ function vigilar({ archivo, archivoRed = archivo, segundos = segundosDelReloj(pr
       if (cerrado) return;
       cerrado = true;
       clearTimeout(reloj);
+      // decidió, pero cerca del tope: con la máquina cargada, la próxima vez puede no llegar
+      const ms = Date.now() - inicio;
+      if (ms >= segundos * 500) {
+        cerrarPaso();
+        anotar(`decidió en ${ms} ms, con un tope de ${segundos} s; el paso más lento: ${masLento.texto} (${masLento.ms} ms)`, 'LENTO');
+      }
       process.exitCode = codigo;
     });
   };
@@ -99,4 +128,4 @@ function vigilar({ archivo, archivoRed = archivo, segundos = segundosDelReloj(pr
   });
 }
 
-module.exports = { vigilar, segundosDelReloj, entregarEntrada };
+module.exports = { vigilar, segundosDelReloj, entregarEntrada, anotarPaso };

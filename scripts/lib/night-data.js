@@ -228,7 +228,8 @@ function mailboxTravels() {
   if (!c.cfg) return { travels: false, why: clean(c.motivo, 200) };
   if (!integ.prendida) return { travels: false, why: 'la integración del buzón está apagada' };
   // la misma vara que la subida: una llave que ella rechaza siempre tampoco hace viajar nada
-  const negativa = typeof U.negativaDeLaLlave === 'function' ? U.negativaDeLaLlave(c.cfg.sas) : null;
+  // con una versión que sabe de otros proveedores, la negativa de la llave según su proveedor (Azure: la de la SAS)
+  const negativa = typeof U.negativaDeLaLlaveDe === 'function' ? U.negativaDeLaLlaveDe(c.cfg) : typeof U.negativaDeLaLlave === 'function' ? U.negativaDeLaLlave(c.cfg.sas) : null;
   if (negativa) return { travels: false, why: `la subida rechaza la llave del buzón: ${clean(negativa.motivo, 160)}` };
   const vence = String(c.cfg.vence || '').trim();
   const fin = Date.parse(`${vence}T23:59:59Z`);

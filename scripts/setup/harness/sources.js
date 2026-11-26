@@ -2,7 +2,7 @@
 // sources.js — las fuentes del arnés: cada clon que `update` trae y avanza.
 //
 // Una fuente es `{ name, url, ref, rewrites, dir, commit, previous }`: en los repos internos son dos —`harness` (el clon
-// al que apunta el enlace) y `agent_skills` (`~/.claude/agent-skills`)—; en el repo único (skills/ y agents/ en
+// al que apunta el enlace) y `agent_skills` (el enchufe `agent-skills`)—; en el repo único (skills/ y agents/ en
 // la raíz del clon) es una. `url` es el origin fijado en `install`: si el origin del clon cambió, nada sale a la red
 // (`install --source <url>` lo cambia a propósito).
 //
@@ -22,7 +22,7 @@
 //     Se mueve sólo desde `tycon/installed` (o la primera vez, con HEAD en
 //     el commit registrado o en un avance simple de la rama por defecto: lo que deja un `git pull` a mano o el respaldo
 //     en shell — `offInstalledBranch`); lo modificado en archivos que el arnés sigue traba el reset —fuera de las carpetas de skills
-//     de terceros que `~/.claude/.tycon-pipeline/third-party-state.json` declara—, y se dice. Los archivos SIN SEGUIR que
+//     de terceros que `~/.tycon/state/third-party-state.json` declara—, y se dice. Los archivos SIN SEGUIR que
 //     la persona creó no lo traban, salvo el que choca con una ruta que la versión nueva trae: ahí no se toca nada y se
 //     nombra la ruta (`reset --hard` lo pisaría sin avisar). «Choca» incluye una carpeta sin seguir que es un repo de git
 //     propio y una ruta que difiere sólo en la caja o en la forma de los acentos (`collidingPaths`).
@@ -283,13 +283,13 @@ function describe(name, dir, { tree, env }) {
 }
 
 /**
- * Las fuentes de esta máquina: `harness` siempre; `agent_skills` si `~/.claude/agent-skills` es OTRO clon (una sola fuente
+ * Las fuentes de esta máquina: `harness` siempre; `agent_skills` si el enchufe `agent-skills` es OTRO clon (una sola fuente
  * cuando el clon trae skills/ y agents/ en la raíz, 8.7 AC 18). Que falte agent-skills del todo lo grita `install`, no esto.
  */
 function detect({ tree, home = os.homedir(), env = process.env }) {
   const t = real(tree) || path.resolve(tree);
   const out = [describe('harness', t, { tree: t, env })];
-  const skills = path.join(home, '.claude', 'agent-skills');
+  const skills = require('./tycon-home.js').installedSkillsDir(home);
   const rs = real(skills);
   if (rs && rs !== t && isRepo(rs, { env })) out.push(describe('agent_skills', rs, { tree: t, env }));
   return out;
@@ -305,7 +305,7 @@ function thirdPartyDirs(home = os.homedir()) {
   } catch (_) { return []; }
 }
 function excludedFor(src, { home = os.homedir() } = {}) {
-  const skills = real(path.join(home, '.claude', 'agent-skills'));
+  const skills = real(require('./tycon-home.js').installedSkillsDir(home));
   const isSkills = src.name === 'agent_skills' || (skills && real(src.dir) === skills);
   return isSkills ? thirdPartyDirs(home) : [];
 }
