@@ -2,10 +2,10 @@
   "__doc": "Story 8.23 (AC 4): el techo de «.claude» en el código. Por archivo, cuántas veces aparece «.claude» fuera de los enchufes de Claude Code (clase B: settings.json, settings.local.json, CLAUDE.md, skills/, agents/, commands/, projects/, plugins/, channels/, ~/.claude.json) y fuera de los archivos de legacy-home-names.json. Barrido: los archivos rastreados de scripts/, skills/, agents/, build/ y adapters/, sin pruebas (tests/, *.test.*, fixtures/, controls-bench/cases/) ni prosa (.md); los comentarios cuentan. La regla: el techo SÓLO BAJA. Un archivo que sube frena nombrando sus líneas (pedile la ruta a scripts/setup/harness/tycon-home.js); uno que baja frena pidiendo bajar el techo. Re-medir: node scripts/tests/tycon-home.test.js --measure > scripts/tests/fixtures/dot-claude-ceiling.json. Lo compara scripts/tests/tycon-home.test.js (T3). El cero se exige en la tanda E.",
   "__last_change": {
     "date": "2026-11-26",
-    "direction": "baja: 549 → 326 (116 → 93 archivos)",
+    "direction": "baja: 548 → 325 (115 → 92 archivos)",
     "reason": "Story 8.24, tanda B2-2 sobre main con la B2-3: las bibliotecas de scripts/lib y la copia del freno le piden sus rutas a tycon-home.js; las que viajan en una copia suelta llevan la línea de respaldo que el techo acepta."
   },
-  "total": 326,
+  "total": 325,
   "files": {
     "adapters/codex/agents-native/tycon-ac-coverage-checker.toml": 1,
     "adapters/codex/agents-native/tycon-dod-runtime-checker.toml": 3,
@@ -90,7 +90,6 @@
     "scripts/setup/hooks-list.json": 2,
     "scripts/setup/install-codegraph.ps1": 1,
     "scripts/setup/install-effects.json": 37,
-    "scripts/setup/install-instinct-mining.sh": 1,
     "scripts/tools/background-stall.js": 2,
     "scripts/tools/context-budget.js": 9,
     "scripts/tools/harness-map/census.js": 2,

@@ -13,6 +13,9 @@
  *     existe» se reintente una vez con otra versión, y que un corte a mitad no deje el día como subido.
  *   · Que «no pude» nunca sea «nada»: sin organización o con el registro ilegible, la cobertura dice `no_medido`.
  *   · Que la bajada traiga los días sólo con `--instincts`, la versión más nueva, y los cuente en `omitidos` sin ella.
+ *   · Que nada cruce de una organización a otra: cada buzón recibe sólo lo suyo, y cada noche lee su buzón, escribe en
+ *     su árbol de operaciones y usa su modelo (T28). Que una línea vieja, sin `repo` ni `origin`, cuente como
+ *     `sin_repo`, y que la vista de ejecuciones no lea `instincts/` (T32; el reductor y el tablero, telemetry-leak.test.sh).
  *
  * Sin red: el buzón es un servidor HTTP local en un proceso aparte (la subida corre en otro proceso y espera), con la
  * llave, el perfil y la HOME de laboratorio. Nunca se lee lo de esta máquina ni el buzón real.
@@ -463,4 +466,156 @@ test('T20 Upload_ResanitizesSummary — una línea grabada antes del arreglo no 
   const [l1] = lineasDe(fs.readFileSync(path.join(out, '2026-10-16.jsonl.gz')));
   assert.ok(!l1.summary.includes(pat), l1.summary);
   assert.match(l1.summary, /\[REDACTED-GHP\]/);
+});
+
+// ── otra organización y la no-regresión ──────────────────────────────────────────────────────────────────────────
+
+/** El modelo de prueba de la noche: anota con qué modelo lo llamaron y contesta una propuesta por candidato. */
+function modeloDePrueba() {
+  const m = { modelos: [] };
+  m.llamar = async ({ prompt, nightly }) => {
+    m.modelos.push(nightly && nightly.model);
+    const n = (re) => (prompt.match(re) || []).length;
+    if (/^You are checking proposed/.test(prompt)) {
+      return { ok: true, texto: Array.from({ length: n(/^### P\d+$/gm) }, (_, i) => `- p: ${i + 1}\n  covered_by: none\n  why: "x"`).join('\n'), tokens: null };
+    }
+    if (/^Sos quien revisa cada noche/.test(prompt)) {
+      return { ok: true, texto: Array.from({ length: n(/^### P\d+$/gm) }, (_, i) => `- p: ${i + 1}\n  recommend: approve\n  why: "le sirve al equipo"`).join('\n'), tokens: null };
+    }
+    const items = Array.from({ length: n(/^### Candidate \d+ /gm) }, (_, i) => `- trigger: "cuando ${i + 1}"\n  action: "hacer ${i + 1}"\n  confidence: 0.9\n  domain: "testing"\n  scope: global\n  candidate_index: ${i + 1}\n  tycon_artifact_suggestion: null\n  reasoning: "porque se repite"`);
+    return { ok: true, texto: items.join('\n'), tokens: null };
+  };
+  return m;
+}
+
+/** El `team-repos.json` de laboratorio de una organización, con su modelo de la noche. */
+function configDeLaOrganizacion(dir, org, modelo) {
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, 'team-repos.json');
+  fs.writeFileSync(file, JSON.stringify({
+    version: 1,
+    public: { platform: 'github', org, repo: 'harness' },
+    profile: { platform: 'github', org, repo: 'harness-profile' },
+    operations: { platform: 'github', org, repo: 'harness-ops' },
+    models: { providers: { ollama: { economy: modelo, balanced: modelo } }, nightly: { provider: 'ollama', level: 'economy' } },
+  }, null, 2));
+  return file;
+}
+
+/** Todo el texto de los archivos de una carpeta (los .gz, descomprimidos), con sus rutas relativas. */
+function textoDeLaCarpeta(dir) {
+  const out = [];
+  const recorrer = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const f = path.join(d, e.name);
+      if (e.isDirectory()) { recorrer(f); continue; }
+      const b = fs.readFileSync(f);
+      out.push(path.relative(dir, f), f.endsWith('.gz') ? zlib.gunzipSync(b).toString('utf8') : b.toString('utf8'));
+    }
+  };
+  if (fs.existsSync(dir)) recorrer(dir);
+  return out.join('\n');
+}
+
+test('T28 TwoTeamLayers_NothingCrossesOrganizations @story-4.7 @ac-39 — cada buzón recibe lo suyo; cada noche lee su buzón, escribe en su árbol y usa su modelo', async () => {
+  const N = require(path.join(RAIZ, 'scripts', 'instincts', 'instinct-nightly.js'));
+  const { bajar } = require(path.join(RAIZ, 'scripts', 'metrics', 'download-runs.js'));
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'instinct-two-orgs-'));
+  const A = { org: 'https://dev.azure.com/Acme/', origin: 'dev.azure.com/acme', repo: 'Producto/repo-a', summary: 'npm test de la unidad', modelo: 'modelo-a:7b-cloud' };
+  const B = { org: 'https://dev.azure.com/Otra/', origin: 'dev.azure.com/otra', repo: 'Otro/repo-b', summary: 'dotnet build de la solucion', modelo: 'modelo-b:9b-cloud' };
+  for (const o of [A, B]) {
+    o.dirBuzon = path.join(base, `buzon-${o === A ? 'a' : 'b'}`);
+    o.url = buzon(o.dirBuzon);
+    o.teamRepos = configDeLaOrganizacion(path.join(base, `capa-${o === A ? 'a' : 'b'}`), o === A ? 'acme' : 'otra', o.modelo);
+  }
+  // tres veces el mismo patrón en dos días cerrados después del aviso
+  const de = (o, dia) => [0, 1, 2].map((i) => linea(`${dia}T1${i}:00:00.000Z`, { repo: o.repo, project: o.repo, origin: o.origin, summary: o.summary }));
+  // la máquina mixta tiene repos de las dos organizaciones y su perfil es el de A; las otras, una de cada una
+  const maquinas = [
+    { nombre: 'mac-mixta', o: A, lineas: [...de(A, '2026-10-16'), ...de(B, '2026-10-16'), ...de(B, '2026-10-17')] },
+    { nombre: 'mac-a-dos', o: A, lineas: de(A, '2026-10-17') },
+    { nombre: 'mac-b-uno', o: B, lineas: [...de(B, '2026-10-16'), ...de(A, '2026-10-17')] },
+    { nombre: 'mac-b-dos', o: B, lineas: de(B, '2026-10-17') },
+  ];
+  for (const mq of maquinas) {
+    const r = subir(lab({ lineas: mq.lineas }), mq.o.url, { org: mq.o.org, extra: { TYCON_MACHINE: mq.nombre } });
+    assert.strictEqual(r.status, 0, `${mq.nombre}: ${r.stderr.slice(0, 300)}`);
+  }
+  const carpetas = (o) => (fs.existsSync(path.join(o.dirBuzon, 'blobs')) ? fs.readdirSync(path.join(o.dirBuzon, 'blobs')).sort() : []);
+  assert.deepStrictEqual(carpetas(A), ['mac-a-dos', 'mac-mixta'], 'al buzón de A llegan sólo sus máquinas');
+  assert.deepStrictEqual(carpetas(B), ['mac-b-dos', 'mac-b-uno'], 'al buzón de B llegan sólo sus máquinas: la mixta no le sube nada');
+  const enBuzonA = textoDeLaCarpeta(path.join(A.dirBuzon, 'blobs'));
+  const enBuzonB = textoDeLaCarpeta(path.join(B.dirBuzon, 'blobs'));
+  assert.ok(enBuzonA.includes(A.repo) && enBuzonB.includes(B.repo), 'control positivo: cada buzón recibió lo suyo');
+  assert.ok(!enBuzonA.includes(B.repo) && !enBuzonA.includes(B.summary), 'nada de B en el buzón de A');
+  assert.ok(!enBuzonB.includes(A.repo) && !enBuzonB.includes(A.summary), 'nada de A en el buzón de B');
+
+  // la noche de cada organización: su buzón, su árbol de operaciones y su modelo
+  for (const o of [A, B]) {
+    const dir = path.join(base, `noche-${o === A ? 'a' : 'b'}`);
+    o.espejo = path.join(dir, 'espejo');
+    o.ops = path.join(dir, 'ops');
+    fs.mkdirSync(o.ops, { recursive: true });
+    const perfil = path.join(dir, 'team-profile.json');
+    fs.writeFileSync(perfil, JSON.stringify({ ado: { org: o.org }, integrations: { instincts: true } }));
+    o.m = modeloDePrueba();
+    const r = await N.correrNoche({
+      profile: perfil, teamRepos: o.teamRepos, mailbox: o.espejo, ops: o.ops, today: '2026-10-20', noPush: true, home: '/home/lab',
+      env: { PATH: process.env.PATH, OLLAMA_API_KEY: ['llave', 'de', 'prueba'].join('-') },
+      deps: {
+        bajar: (x) => bajar({ cuenta: 'cuentadeprueba', contenedor: 'corridas', credencial: { sas: SAS_LECTURA }, urlBase: o.url, dir: x.dirBuzon, budgetMs: 30000, instintos: x.instintos, sinHilos: x.sinHilos }),
+        llamar: o.m.llamar,
+      },
+    });
+    assert.strictEqual(r.informe.estado, 'medido', `${o.repo}: ${JSON.stringify(r.informe).slice(0, 300)}`);
+    assert.strictEqual(r.informe.maquinas, 2, 'cada noche cuenta las dos máquinas de su buzón');
+    assert.ok(o.m.modelos.length > 0 && o.m.modelos.every((x) => x === o.modelo), `la noche usó su modelo: ${o.m.modelos.join(',')}`);
+  }
+  const nochA = textoDeLaCarpeta(A.ops) + textoDeLaCarpeta(A.espejo);
+  const nochB = textoDeLaCarpeta(B.ops) + textoDeLaCarpeta(B.espejo);
+  for (const o of [A, B]) {
+    const props = path.join(o.ops, 'inbox', 'instincts', 'propuestas');
+    const repos = fs.existsSync(props) ? fs.readdirSync(props).filter((f) => f.endsWith('.json')).map((f) => JSON.parse(fs.readFileSync(path.join(props, f), 'utf8')).repo) : [];
+    assert.ok(repos.length > 0 && repos.every((x) => x === o.repo), `control positivo: la noche dejó propuestas sólo de lo suyo (${repos.join(',')})`);
+  }
+  for (const nunca of [B.repo, B.summary, 'mac-b-', B.modelo]) assert.ok(!nochA.includes(nunca), `«${nunca}» llegó a la noche de A`);
+  for (const nunca of [A.repo, A.summary, 'mac-a-dos', 'mac-mixta', A.modelo]) assert.ok(!nochB.includes(nunca), `«${nunca}» llegó a la noche de B`);
+});
+
+test('T32 NoRegression_RunsRecordsAndOldLines @story-4.7 @ac-45 — las líneas viejas cuentan como sin_repo y la vista de ejecuciones no lee instincts/', async () => {
+  // la forma vieja de una línea (antes de que la grabadora anotara el repo): sin `repo` ni `origin`. Con `null` lo cubre T14; acá, sin las claves
+  const vieja = { ts: Math.floor(Date.parse('2026-10-16T09:00:00.000Z') / 1000), session_id: 'abcd1234', tool: 'Bash', project: 'Producto/repo-a', summary: 'linea vieja', status: 'ok' };
+  const up = require(INSTINCT_UPLOAD);
+  const l = lab({ lineas: [vieja, linea('2026-10-16T10:00:00.000Z')] });
+  const out = path.join(l.home, 'armado');
+  const r = up.prepareDays({ obsDir: l.obsDir, outDir: out, seal: { said_on: '2026-10-15' }, org: 'https://dev.azure.com/acme', today: '2026-10-20' });
+  assert.strictEqual(r.coverage.dias['2026-10-16'].filtradas.sin_repo, 1, 'la línea vieja no sale: cuenta como sin_repo');
+  assert.strictEqual(r.coverage.dias['2026-10-16'].lineas, 1);
+
+  // la noche: un día bajado con la línea vieja la cuenta como sin_repo (T20 de instinct-nightly.test.js cubre una línea sin repo)
+  const N = require(path.join(RAIZ, 'scripts', 'instincts', 'instinct-nightly.js'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'instinct-old-lines-'));
+  const espejo = path.join(dir, 'espejo');
+  fs.mkdirSync(path.join(espejo, 'mac-a', 'instincts'), { recursive: true });
+  fs.writeFileSync(path.join(espejo, 'mac-a', 'instincts', '2026-10-16.jsonl.gz'), zlib.gzipSync(`${JSON.stringify(vieja)}\n${JSON.stringify(linea('2026-10-16T10:00:00.000Z'))}\n`));
+  const perfil = path.join(dir, 'team-profile.json');
+  fs.writeFileSync(perfil, JSON.stringify({ integrations: { instincts: true } }));
+  const ops = path.join(dir, 'ops');
+  fs.mkdirSync(ops, { recursive: true });
+  const n = await N.correrNoche({
+    profile: perfil, teamRepos: path.join(dir, 'team-repos.json'), mailbox: espejo, ops, today: '2026-10-20', noPush: true, home: '/home/lab',
+    deps: { bajar: async () => ({ codigo: 0, res: { estado: 'bajado', completo: true } }), resolveNightly: () => ({ ok: false, status: 'not-configured' }), llamar: async () => ({ ok: false, fallo: 'red' }) },
+  });
+  assert.strictEqual(n.informe.estado, 'medido');
+  assert.strictEqual(n.informe.sin_repo, 1, 'la noche lee la línea vieja como sin_repo');
+
+  // la vista de ejecuciones (runs.js) lee sólo los volcados de la carpeta de cada máquina: ni un día ni un archivo de
+  // instincts/ entra como ejecución. El reductor y la poda los cubre telemetry-leak.test.sh, con su espía
+  const runs = require(path.join(RAIZ, 'scripts', 'nightly', 'dashboard', 'runs.js'));
+  const MARCA = 'MARCA-INSTINTOS-4712';
+  fs.writeFileSync(path.join(espejo, 'mac-a', 'una-corrida.json'), JSON.stringify({ marker: { storyId: '9.9' } }));
+  fs.writeFileSync(path.join(espejo, 'mac-a', 'instincts', 'marcador.json'), JSON.stringify({ marker: { storyId: MARCA } }));
+  const reg = runs.leerRegistro(null, runs.nombresDePasos(), { buzon: espejo, soloBuzon: true });
+  assert.strictEqual(reg.archivos, 1, 'sólo el volcado de la carpeta de la máquina');
+  assert.ok(!JSON.stringify(reg).includes(MARCA) && !JSON.stringify(reg).includes(`${path.sep}instincts${path.sep}`), 'nada de instincts/ en la vista de ejecuciones');
 });

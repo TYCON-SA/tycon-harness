@@ -423,3 +423,26 @@ test('T5 Falla_DespuesDeDecidir_NoCambiaLaDecision', () => {
     assert.doesNotMatch(r.log, /FAILED OPEN|FRENÓ POR FALLA/, 'el comando se miró: no se abrió ni frenó por la falla');
   } finally { fs.rmSync(c.home, { recursive: true, force: true }); }
 });
+
+// 🔴 Falla con: una copia del freno que no es la instalada (la de una prueba, la de un laboratorio en la carpeta de
+//    trabajo de otra sesión), corrida con la casa de una máquina que tiene el arnés instalado, escribe sus fallas en el
+//    registro de verdad y ensucia la medición de los frenos.
+test('T8 Falla_DeUnaCopiaQueNoEsLaInstalada_VaAlRegistroAparte', () => {
+  const { home, repo } = corral();
+  try {
+    const H = require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'setup', 'harness', 'tycon-home.js'));
+    // una máquina con el arnés instalado por versión, en su lugar de siempre: esta copia del repo no es esa
+    const instalado = H.placePath(home);
+    fs.mkdirSync(path.join(instalado, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(instalado, 'scripts', 'install-tycon-hooks.sh'), '#!/bin/sh\n');
+    fs.mkdirSync(H.stateDir(home), { recursive: true });
+    fs.writeFileSync(path.join(H.stateDir(home), 'harness-state.json'), JSON.stringify({ sources: [{ kind: 'release' }] }));
+    correr({ home, cwd: repo, command: 'echo hola > specs/nueva.md', romper: ['declaresStoryIdentity'] });
+    const registro = path.join(H.stateDir(home), 'hook-errors.log');
+    const aparte = path.join(H.stateDir(home), 'hook-errors-copies.log');
+    const leer = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '');
+    assert.doesNotMatch(leer(registro), /roto: declaresStoryIdentity/, 'la falla de una copia no va al registro de verdad');
+    assert.match(leer(aparte), /roto: declaresStoryIdentity/, 'queda en el registro aparte, con su falla');
+    assert.match(leer(aparte), /\(copia en [^)]+\)/, 'y dice desde qué copia corrió');
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});

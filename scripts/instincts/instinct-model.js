@@ -20,6 +20,7 @@
  */
 
 const { spawnSync } = require('child_process');
+const { NIGHTLY_SECRETS } = require('../lib/nightly-model.js');
 
 const OLLAMA_URL = 'https://ollama.com/api/chat';
 const TIEMPO_MS = 180000;
@@ -64,16 +65,28 @@ async function llamarOllama({ model, llave, prompt, fetchImpl, timeoutMs }) {
   return { ok: true, texto, tokens };
 }
 
-function llamarAnthropic({ model, llave, prompt, env, timeoutMs }) {
+function llamarAnthropic({ model, llave, prompt, env, timeoutMs, spawn, platform }) {
   // proponer y revisar no usa herramientas ni el contexto del arnés: --safe-mode no carga CLAUDE.md, skills, plugins,
   // ganchos ni MCP, y TYCON_EVAL_SANDBOX calla los avisos de arranque del arnés
-  // al hijo le llega sólo su llave: la del otro proveedor de la noche se queda en este proceso
-  const { OLLAMA_API_KEY: _otra, ...resto } = env;
-  const r = spawnSync('claude', ['--model', model, '--print', '--output-format', 'text', '--safe-mode', '--tools', ''], {
+  // al hijo le llega sólo su llave: las de los otros proveedores de la noche se quedan en este proceso
+  const resto = { ...env };
+  for (const nombre of Object.values(NIGHTLY_SECRETS)) delete resto[nombre];
+  const args = ['--model', model, '--print', '--output-format', 'text', '--safe-mode', '--tools', ''];
+  const comun = {
     windowsHide: true,
     input: prompt, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024, timeout: timeoutMs,
     env: { ...resto, ANTHROPIC_API_KEY: llave, TYCON_EVAL_SANDBOX: '1' },
-  });
+  };
+  let r;
+  if (platform === 'win32') {
+    // npm deja `claude.cmd`, que sólo se encuentra por la consola: el texto lleva el modelo de la tabla, así que un
+    // modelo con caracteres de la consola no se lanza
+    if (!/^[A-Za-z0-9._:-]+$/.test(String(model || ''))) return { ok: false, fallo: 'cli_fallo' };
+    const linea = ['claude', ...args.map((a) => (a === '' ? '""' : a))].join(' ');
+    r = spawn(linea, [], { ...comun, windowsHide: true, shell: true, env: { ...comun.env, NoDefaultCurrentDirectoryInExePath: '1' } });
+  } else {
+    r = spawn('claude', args, { ...comun, windowsHide: true });
+  }
   if (r.error && r.error.code === 'ETIMEDOUT') return { ok: false, fallo: 'tiempo' };
   if (r.error || r.status !== 0) return { ok: false, fallo: 'cli_fallo' };
   return { ok: true, texto: String(r.stdout || '').trim(), tokens: null };
@@ -81,15 +94,16 @@ function llamarAnthropic({ model, llave, prompt, env, timeoutMs }) {
 
 /**
  * Llama al modelo que resolvió la noche. opts: nightly (el resultado de `resolveNightly`, con `ok: true`) · prompt ·
- * env (de donde se lee la llave: la variable que nombra `secret.env`) · fetchImpl · timeoutMs.
+ * env (de donde se lee la llave: la variable que nombra `secret.env`) · fetchImpl · timeoutMs · spawnSync y platform
+ * (para las pruebas: cómo se lanza la CLI y en qué sistema).
  */
-async function llamar({ nightly, prompt, env = process.env, fetchImpl = globalThis.fetch, timeoutMs = TIEMPO_MS } = {}) {
+async function llamar({ nightly, prompt, env = process.env, fetchImpl = globalThis.fetch, timeoutMs = TIEMPO_MS, spawnSync: spawn = spawnSync, platform = process.platform } = {}) {
   try {
     const nombre = nightly && nightly.secret && nightly.secret.env;
     const llave = nombre ? String(env[nombre] || '').trim() : '';
     if (!llave || /^\$\([^)]*\)$/.test(llave)) return { ok: false, fallo: 'sin_llave' };
     if (nightly.provider === 'ollama') return await llamarOllama({ model: nightly.model, llave, prompt, fetchImpl, timeoutMs });
-    if (nightly.provider === 'anthropic') return llamarAnthropic({ model: nightly.model, llave, prompt, env, timeoutMs });
+    if (nightly.provider === 'anthropic') return llamarAnthropic({ model: nightly.model, llave, prompt, env, timeoutMs, spawn, platform });
     return { ok: false, fallo: 'proveedor_desconocido' };
   } catch (_) {
     return { ok: false, fallo: 'red' };

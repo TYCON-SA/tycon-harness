@@ -11,7 +11,9 @@
 //   · en el privado (sin inventario en el índice) no aplica;
 //   · en el commit avisa y no frena, y sólo corre si el commit toca el inventario o el pre-commit;
 //   · dentro del hook (con GIT_DIR y GIT_INDEX_FILE del público) igual lee el clon privado;
-//   · no deja nada en las ramas ni en el índice de ninguno de los dos repos.
+//   · no deja nada en las ramas ni en el índice de ninguno de los dos repos;
+//   · una comparación cortada (por su tope o por una señal) frena el commit: no se sabe si miró algo (fila 268);
+//   · check-inventory lee el árbol de una vez: sus llamadas a git no crecen con los controles (fila 269).
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
@@ -185,4 +187,67 @@ test('PrivateInventory_InsideAHook_ReadsThePrivateClone — con las variables qu
   const r = spawnSync(process.execPath, [FRENO, '--repo', pub], { env, encoding: 'utf8' });
   assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
   assert.match(`${r.stdout}${r.stderr}`, /no cuadra con el pre-commit del privado[\s\S]*scripts\/ci\/toy\.js/);
+});
+
+// Fila 268 (25/11): la comparación se colgó unos 6 minutos en un commit; la cortaron y el commit salió con 0. Un corte, por
+// el tope propio o por una señal desde afuera, no es «no pude mirar» (que avisa): no se sabe si miró, y frena.
+function publicoQueCuelga(cuerpo) {
+  const pub = publico();
+  put(pub, 'scripts/ci/run-base-controls.sh', `#!/usr/bin/env bash\n${cuerpo}\n`);
+  put(pub, '.githooks/pre-commit-checks', `${HOOK_CON}# otra línea\n`);
+  git(pub, 'add', '-A');
+  return pub;
+}
+
+test('T1 @fila-268 PrivateInventory_Timeout_IsCutNeverGreen — al pasarse de su tope, la comparación sale «cortada» y lo dice', () => {
+  const pub = publicoQueCuelga('exec sleep 30');
+  const t = Date.now();
+  const r = PI.comparar({ repo: pub, privado: privado(HOOK_CON), env: { ...ENV, TYCON_PRIVATE_INVENTORY_TIMEOUT_MS: '1000' } });
+  assert.ok(Date.now() - t < 20000, `el tope no cortó: ${Date.now() - t} ms`);
+  assert.strictEqual(r.estado, 'cortado', JSON.stringify(r));
+  assert.match(PI.aviso(r), /cortada[\s\S]*no sé si miró algo/);
+});
+
+test('T2 @fila-268 PrivateInventory_CutFromOutside_BlocksTheCommit — cortada por una señal o por su tope, el commit no pasa', () => {
+  const env = casa(privado(HOOK_CON));
+  for (const [cuerpo, extra] of [['kill -TERM $$', {}], ['exec sleep 30', { TYCON_PRIVATE_INVENTORY_TIMEOUT_MS: '1000' }]]) {
+    const pub = publicoQueCuelga(cuerpo);
+    const r = spawnSync(process.execPath, [FRENO, '--repo', pub], { env: { ...env, ...extra }, encoding: 'utf8' });
+    assert.strictEqual(r.status, 2, `${cuerpo}: ${r.stdout}${r.stderr}`);
+    assert.match(`${r.stdout}${r.stderr}`, /cortada[\s\S]*No medido no es verde/, cuerpo);
+  }
+});
+
+// Fila 269 (25/11): check-inventory preguntaba a git por cada archivo (más de mil procesos por corrida, 20 s en reposo y
+// minutos con la máquina cargada). Con la versión fija lee el árbol de una vez: con 1 control o con 60, las mismas llamadas.
+test('T3 @fila-269 CheckInventory_ReadsTheTreeOnce — las llamadas a git no crecen con la cantidad de controles', () => {
+  const bin = tmpdir('pinv-gitbin-');
+  const log = path.join(bin, 'llamadas.log');
+  const real = spawnSync('bash', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+  put(bin, 'git', `#!/usr/bin/env bash\necho x >> '${log}'\nexec '${real}' "$@"\n`);
+  fs.chmodSync(path.join(bin, 'git'), 0o755);
+  const llamadas = (n) => {
+    const d = tmpdir('pinv-n-');
+    git(d, 'init', '-q', '-b', 'main');
+    put(d, 'scripts/ci/run-base-controls.sh', fs.readFileSync(path.join(RAIZ, 'scripts', 'ci', 'run-base-controls.sh'), 'utf8'));
+    const controles = [];
+    let hook = '#!/usr/bin/env bash\n';
+    for (let i = 0; i < n; i++) {
+      put(d, `scripts/ci/toy${i}.js`, "'use strict';\nprocess.exit(0);\n");
+      controles.push({ name: `toy${i}`, script: `scripts/ci/toy${i}.js`, rules: [] });
+      hook += `node "$REPO_ROOT/scripts/ci/toy${i}.js"\n`;
+    }
+    put(d, '.githooks/pre-commit-checks', hook);
+    put(d, PI.INVENTORY, JSON.stringify({ ...JSON.parse(INVENTARIO), controls: controles }, null, 2));
+    git(d, 'add', '-A');
+    git(d, 'commit', '-q', '-m', 'base');
+    fs.writeFileSync(log, '');
+    const r = spawnSync('bash', [path.join(d, 'scripts/ci/run-base-controls.sh'), 'check-inventory', '--root', d, '--ref', git(d, 'rev-parse', 'HEAD')],
+      { env: { ...ENV, PATH: `${bin}:${ENV.PATH}` }, encoding: 'utf8' });
+    assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+    return fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).length;
+  };
+  const uno = llamadas(1);
+  const sesenta = llamadas(60);
+  assert.ok(sesenta <= uno + 2, `con 60 controles hizo ${sesenta} llamadas a git y con 1, ${uno}: pregunta por cada archivo`);
 });

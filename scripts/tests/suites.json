@@ -88,7 +88,7 @@
       "requiere": []
     },
     {
-      "__nota": "Los días de instintos al buzón y de vuelta (scripts/instincts/instinct-upload.js, su lugar en upload-runs.js, la forma nueva de download-runs.js y el aviso de la máquina sin buzón): un archivo por día cerrado desde el aviso, sólo lo de la organización y con seis campos, la versión nueva para una línea tardía, el corte a mitad sin anotar, el tope, «no medido» y la bajada sólo con --instincts. Sin red: un buzón de mentira local y HOME temporal.",
+      "__nota": "Los días de instintos al buzón y de vuelta (scripts/instincts/instinct-upload.js, su lugar en upload-runs.js, la forma nueva de download-runs.js y el aviso de la máquina sin buzón): un archivo por día cerrado desde el aviso, sólo lo de la organización y con seis campos, la versión nueva para una línea tardía, el corte a mitad sin anotar, el tope, «no medido», la bajada sólo con --instincts, y que nada cruce de una organización a otra con la noche de cada una (story 4.7, tanda E). Sin red: buzones de mentira locales y HOME temporal.",
       "raiz": "arnes",
       "ruta": "tests/instinct-upload.test.js",
       "requiere": []
@@ -268,6 +268,12 @@
       "__nota": "el tamaño de los controles (scripts/ci/control-size.js): el orden por tamaño, la cuenta de subcomandos y de quién llama, el aviso por tamaño y por recorrido del freno (con el tope leído del freno real), el rango y lo que no se puede leer. Árboles de juguete con su propio git; sin red.",
       "raiz": "arnes",
       "ruta": "tests/control-size.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el aviso del pedido cuando un archivo que los casos del banco copian a mano suma una dependencia que no copian (scripts/ci/bench-copied-deps.js): avisa con el caso y la dependencia, no avisa lo copiado, lo viejo ni lo de un try, y nunca frena. Árboles de juguete con su propio git; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/bench-copied-deps.test.js",
       "requiere": []
     },
     {
@@ -2011,6 +2017,11 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/steps-scheme.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/plan-assumptions.test.js",
       "requiere": []
     },
     {
