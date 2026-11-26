@@ -21,7 +21,7 @@
 //   node scripts/publishing/export.js --explain [--json]
 //        [--harness <ref>] [--agent-skills <ref>]  (default origin/main · repos: TYCON_GUIDES_DIR y TYCON_SKILLS_DIR)
 //        [--allowlist <f>] [--replacements <f>] [--denied <f>] [--public-repos <f>]   (default: los de scripts/publishing/)
-// Guía: guides/maintaining/publicacion-espejo.md
+// Guía: guides/maintaining/mirror-publishing.md
 
 const fs = require('fs');
 const os = require('os');

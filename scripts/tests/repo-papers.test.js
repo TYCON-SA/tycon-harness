@@ -726,7 +726,7 @@ test('PublicFrontPage_OneLineInstall_BothLanguages', async (t) => {
 
 // ── T35 ────────────────────────────────────────────────────────────────────────────────────────────────────────────
 // La guía de publicación viaja con el arnés, y su sección «Lo que la publicación recibe» se mide igual que en el privado.
-const HANDOFF_GUIDE = 'guides/maintaining/publicacion-espejo.md';
+const HANDOFF_GUIDE = 'guides/maintaining/mirror-publishing.md';
 const HANDOFF_SECTION = 'Lo que la publicación recibe';
 // Cada punto es lo que la sección tiene que decir: una lista de expresiones; todas
 // tienen que estar en la sección (no en el resto de la guía: quien consume la guía lee ESA sección).

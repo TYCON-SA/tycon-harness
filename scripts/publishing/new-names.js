@@ -65,7 +65,7 @@
 // A mano:
 //   node scripts/publishing/new-names.js [--repo <dir>] [--source arnes|agent-skills]            (lo stageado)
 //   node scripts/publishing/new-names.js --range <base>...<punta> [--config-from tip|disk] [--json]
-// Guía: guides/maintaining/publicacion-espejo.md §«El núcleo sin nombres»
+// Guía: guides/maintaining/mirror-publishing.md §«El núcleo sin nombres»
 
 const fs = require('fs');
 const os = require('os');
@@ -958,7 +958,7 @@ function publishedReport(result) {
     '  (b) Si es un freno falso —el texto no es un nombre real, o tiene que quedar—: una excepción con motivo en «permitidos»',
     '      de la lista privada, en su clon (nunca en este árbol), mergeada en su rama principal: se lee de ahí.',
     '  (c) TYCON_NEW_NAMES=0 apaga el freno para ese commit, y lo dice. El freno al empujar lo mira igual.',
-    '', 'Guía: guides/maintaining/publicacion-espejo.md §«El núcleo sin nombres».');
+    '', 'Guía: guides/maintaining/mirror-publishing.md §«El núcleo sin nombres».');
   return l.join('\n');
 }
 
@@ -1479,7 +1479,7 @@ function report(result, ownSource) {
       `  (c) Sólo si lo decide una persona, en un commit aparte: un «out» con motivo en ${CONFIG.list}`,
       `      (el archivo no debería salir) o una excepción de valor exacto en «permitidos» de ${CONFIG.denied}.`);
   }
-  l.push('', 'Guía: guides/maintaining/publicacion-espejo.md §«El núcleo sin nombres».');
+  l.push('', 'Guía: guides/maintaining/mirror-publishing.md §«El núcleo sin nombres».');
   return l.join('\n');
 }
 

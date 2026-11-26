@@ -96,7 +96,7 @@
       "transform": "not-in-copy"
     },
     {
-      "path": "guides/maintaining/publicacion-espejo.md",
+      "path": "guides/maintaining/mirror-publishing.md",
       "transform": "internal-blocks+not-in-copy+skill-rename"
     },
     {

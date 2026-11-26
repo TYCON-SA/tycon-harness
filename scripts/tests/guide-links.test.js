@@ -337,9 +337,7 @@ test('T1 Enlaces_NingunoRoto @story-8.45 @ac-11 — cada enlace relativo de las 
 
 /** Las guías del público que todavía tienen nombre en castellano a propósito, con su motivo. Una que ya se movió sale de
  *  la lista (T20 lo exige): la lista sólo baja. */
-const NOMBRES_PENDIENTES = [
-  { archivo: 'guides/maintaining/publicacion-espejo.md', motivo: 'un pedido abierto edita sus renglones: se mueve cuando entre o se cierre, para no abrirle un choque' },
-];
+const NOMBRES_PENDIENTES = [];
 /** Lo que el detector marca y no es castellano (decisión 11 de la historia): «coordinator» falta en el diccionario del sistema. */
 const FALSOS_CASTELLANOS = ['working-with-a-coordinator'];
 

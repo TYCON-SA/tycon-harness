@@ -6,7 +6,7 @@
     {"path":"guides/coordination.en.md","ceiling":1,"reason":"texto que explica qué pasa en una plataforma (una guía, un comando, un revisor o una captura del sitio)"},
     {"path":"guides/coordination.md","ceiling":1,"reason":"texto que explica qué pasa en una plataforma (una guía, un comando, un revisor o una captura del sitio)"},
     {"path":"guides/maintaining/pieces-in-detail.md","ceiling":6,"reason":"texto que explica qué pasa en una plataforma (una guía, un comando, un revisor o una captura del sitio)"},
-    {"path":"guides/maintaining/publicacion-espejo.md","ceiling":10,"reason":"texto que explica qué pasa en una plataforma (una guía, un comando, un revisor o una captura del sitio)"},
+    {"path":"guides/maintaining/mirror-publishing.md","ceiling":10,"reason":"texto que explica qué pasa en una plataforma (una guía, un comando, un revisor o una captura del sitio)"},
     {"path":"guides/owner-signatures.md","ceiling":3,"reason":"texto que explica qué pasa en una plataforma (una guía, un comando, un revisor o una captura del sitio)"},
     {"path":"guides/production-with-permission.md","ceiling":1,"reason":"texto que explica qué pasa en una plataforma (una guía, un comando, un revisor o una captura del sitio)"},
     {"path":"guides/safety-guard.md","ceiling":2,"reason":"texto que explica qué pasa en una plataforma (una guía, un comando, un revisor o una captura del sitio)"},
