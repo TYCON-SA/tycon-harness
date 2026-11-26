@@ -1702,8 +1702,8 @@ pasó el escáner y su firma se verificó; `stable` nunca vuelve atrás. Con eso
 - **El mismo paso, al pasar a una versión con las oficinas.** Las máquinas no tienen cómo pasar el candado de la
   plataforma, así que `/live/machine` y `/live/enroll` tienen que quedar fuera. Sin eso, la prueba sin sesión avisa
   «falta el paso de una vez», sin fallar: una organización que no usa oficinas no lo necesita. En Azure, es la misma orden de `--excluded-paths` de la receta, que ya las nombra. En
-  Google Cloud Run, además, el plazo del servicio en 3600 s (`--timeout=3600`, en «Kubernetes y otras nubes»): con el de
-  60 s, la conexión de las oficinas se corta cada minuto. Hacelo antes de poner `site.url` en el perfil.
+  Google Cloud Run, además, el plazo del servicio en 3600 s (`--timeout=3600`, en «Kubernetes y otras nubes»): con uno
+  corto, la conexión de las oficinas se corta cada vez que vence. Hacelo antes de poner `site.url` en el perfil.
 - **Y que el sitio vea la dirección de quien pide.** Detrás de un intermediario, todas las conexiones llegan desde su
   dirección, y los topes por dirección valdrían para toda internet: dos conexiones sin firmar frenarían a cualquier
   máquina. Las instalaciones nuevas ya lo traen. En una ya instalada, poné `SITE_TRUST_PROXY=1` en las variables del sitio
@@ -1770,7 +1770,7 @@ quien corre el alta, como los otros secretos. Sin los dos, la pestaña Configura
 - **Inicio de sesión:** dos candados. Delante, el inicio integrado de la plataforma con el mismo registro de Entra ID.
   Detrás, el del sitio, que decide con su lista. `/healthz`, `/livez`, la página «Saliste» con lo que carga y `/idioma` quedan fuera del candado (sin eso, con el
   candado vencido, «Saliste» pasa antes por su inicio de sesión). Un sitio ya instalado se corrige una vez:
-  `az containerapp auth update -g <grupo> -n <app> --excluded-paths /healthz,/livez,/saliste,/idioma,/static/site.css,/static/site.js,/static/fonts/lato-400.woff2,/static/fonts/lato-700.woff2,/live/machine,/live/enroll`; y para que los topes por dirección valgan, `az containerapp update -g <grupo> -n <app> --set-env-vars SITE_TRUST_PROXY=1`. Con `microsoftAccounts`
+  `az containerapp auth update -g <grupo> -n <app> --excluded-paths /healthz,/health,/livez,/saliste,/idioma,/static/site.css,/static/site.js,/static/fonts/lato-400.woff2,/static/fonts/lato-700.woff2,/live/machine,/live/enroll`; y para que los topes por dirección valgan, `az containerapp update -g <grupo> -n <app> --set-env-vars SITE_TRUST_PROXY=1`. Con `microsoftAccounts`
   en el archivo de configuración se elige el modo:
   - `organization` (por defecto): un solo inquilino. Si el registro tiene «asignación requerida», las personas se
     asignan una por una en el portal (asignar un grupo pide una licencia Entra ID P1/P2).
@@ -1909,8 +1909,8 @@ sin sesión: `node scripts/site/check-deploy.js --url https://<dirección>`.
 **Google Cloud Run tiene dos límites propios.** Se reserva `/healthz`: la contesta su frente con un 404 y el pedido no
 llega al sitio. Por eso el sitio contesta lo mismo en `/health`, y la prueba sin sesión lo pregunta sólo cuando a
 `/healthz` la contesta otro; una sonda propia de Cloud Run va contra `/livez`, nunca contra `/healthz`. Y corta cada
-pedido al vencer el plazo del servicio, 60 s si no se cambia: la conexión de las oficinas se cortaría cada minuto. Al
-crear el servicio, `--timeout=3600` (el máximo). No cambia el costo: con una máquina conectada siempre hay un pedido
+pedido al vencer el plazo del servicio (`--timeout`): con un plazo corto, la conexión de las oficinas se corta cada vez
+que vence (con 60 s, cada minuto). Al crear el servicio, `--timeout=3600` (el máximo). No cambia el costo: con una máquina conectada siempre hay un pedido
 abierto. En uno ya creado: `gcloud run services update <servicio> --region <región> --timeout=3600`.
 
 ### Una red cerrada

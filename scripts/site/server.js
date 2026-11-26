@@ -10,7 +10,8 @@
  * LA TABLA DE RUTAS es el único camino de los datos. Cada ruta declara quién puede verla (`needs`:
  * 'maintainer', 'person') y recibe el modelo YA FILTRADO por access.js para quien pide. Una ruta sin esa declaración
  * hace que el sitio NO ARRANQUE. Una ruta puede tener parámetros (`/api/corridas/:id`): llegan en
- * `ctx.params`, y la ruta sigue declarando quién la ve. Las únicas rutas sin sesión son la vida (`/livez`), la salud (`/healthz`), la carga
+ * `ctx.params`, y la ruta sigue declarando quién la ve. Las únicas rutas sin sesión son la vida (`/livez`), la salud (`/healthz`, y `/health` igual:
+ * Google Cloud Run se reserva `/healthz`), la carga
  * (`/readyz`), el inicio de sesión (`/auth/*`) y los dos archivos estáticos.
  *
  *   /livez    200 {"ok":true} mientras el proceso escucha; nada más (la sonda de vida y el HEALTHCHECK de la imagen).

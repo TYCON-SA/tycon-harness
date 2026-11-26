@@ -288,6 +288,19 @@ test('T1777b Prueba_CloudRunConHealthFrenadoOQueCuentaDeMas_Falla', async () => 
   }
 });
 
+test('T1777d Prueba_CloudRunConHealthSinRefererORedirigido_NoPasa', async () => {
+  // /health también pasa por el control del Referer, y una redirección no es la sonda del sitio
+  const sinReferer = await servidor(frenteDeCloudRun((r) => json(r, 200, { ok: true }, { 'Referrer-Policy': 'no-referrer' })));
+  const redirige = await servidor(frenteDeCloudRun((r) => { r.writeHead(302, { Location: '/otra' }); r.end(); }));
+  try {
+    const r = await correr(['--url', sinReferer.url]);
+    assert.strictEqual(r.status, 1, r.stdout + r.stderr);
+    const r2 = await correr(['--url', redirige.url]);
+    assert.strictEqual(r2.status, 2, r2.stdout + r2.stderr);
+    assert.match(r2.stdout + r2.stderr, /\/healthz no contestó como el sitio/);
+  } finally { await sinReferer.cerrar(); await redirige.cerrar(); }
+});
+
 test('T1777c Prueba_HealthSoloSiHealthzNoEsDelSitio', async () => {
   // un sitio viejo, sin /health, detrás de Cloud Run: sigue sin poder preguntar, como antes
   const viejo = await servidor(frenteDeCloudRun((r) => { r.writeHead(404, { 'Content-Type': 'text/html' }); r.end(PAGINA_DE_GOOGLE); }));

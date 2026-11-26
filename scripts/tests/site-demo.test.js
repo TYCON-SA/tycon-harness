@@ -699,7 +699,7 @@ test('2.76-Demo_RecorridoDeRutas_NiEscribeNiSale', async () => {
   }
   // la tabla entera del servidor (en este proceso, para leerla) y el sitio de verdad (otro proceso, con su freno puesto)
   const tabla = SERVER().crearSitioDemo({ env: { SITE_DEMO: '1' }, dir: tmp('demo-tabla-'), log: () => {} });
-  const propias = [{ path: '/livez' }, { path: '/healthz' }, { path: '/readyz' }, { path: '/idioma' }, { path: '/demo/ver-como' }, { path: '/auth/login' }, { path: '/auth/callback' }, { path: '/auth/logout' }, { path: '/saliste' },
+  const propias = [{ path: '/livez' }, { path: '/healthz' }, { path: '/health' }, { path: '/readyz' }, { path: '/idioma' }, { path: '/demo/ver-como' }, { path: '/auth/login' }, { path: '/auth/callback' }, { path: '/auth/logout' }, { path: '/saliste' },
     { path: '/licencia' }, { path: '/creditos' }, { path: '/marca/logo' }, { path: '/static/site.css' }, { path: '/static/site.js' }, { path: '/static/long-text-editor.js' }, { path: '/no-existe' }, { path: '/api/no-existe' }];
   const recorrido = rutasParaRecorrer(tabla.rutas, propias);
   await conTope(tabla.cerrar(), 'el cierre del sitio demo armado para leer su tabla', null, TOPE_CIERRE_MS);
