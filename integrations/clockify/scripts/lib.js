@@ -5,22 +5,34 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const STATE_DIR = path.join(os.homedir(), '.claude', 'clocki');
-// Per-session active timer files: ~/.claude/clocki/active/<sessionId>.json
+// El estado vive en `clocki/` de la carpeta de los registros sueltos (scripts/lib/loose-logs.js): la del estado del arnés
+// en una máquina que vive en la casa propia, la de Claude Code si no. Sin loose-logs.js o tycon-home.js al lado (un árbol
+// roto) es null: los ganchos no registran nada y lo dicen (`stateMissing`).
+const LOOSE = (() => { try { return require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'loose-logs.js')); } catch (_) { return null; } })();
+const STATE_DIR = LOOSE ? LOOSE.looseLogPath('clocki') : null;
+const inState = (...parts) => (STATE_DIR ? path.join(STATE_DIR, ...parts) : null);
+// Per-session active timer files: <estado>/active/<sessionId>.json
 // Cada sesión escribe SOLO su propio archivo → cero contención read-modify-write
 // sobre un archivo compartido (evita la condición de carrera).
-const ACTIVE_DIR = path.join(STATE_DIR, 'active');
+const ACTIVE_DIR = inState('active');
 // Archivo legacy single-file. readActive() lo sigue mergeando
 // para no perder timers abiertos durante la transición; los writes nuevos NO lo tocan.
-const LEGACY_ACTIVE_PATH = path.join(STATE_DIR, 'active.json');
-// Heartbeat per-session: ~/.claude/clocki/heartbeat/<sessionId> — timestamp
+const LEGACY_ACTIVE_PATH = inState('active.json');
+// Heartbeat per-session: <estado>/heartbeat/<sessionId> — timestamp
 // local-bare del último hook de clocki que corrió en esa sesión. Señal de
 // LIVENESS independiente del timer: el sweep la usa para NO cerrar timers de
 // sesiones vivas cuyo `lastActivity` luzca stale (un timer legacy con lastActivity
 // congelado se cerraría estando la sesión viva).
-const HEARTBEAT_DIR = path.join(STATE_DIR, 'heartbeat');
-const CACHE_PATH = path.join(STATE_DIR, 'project-cache.json');
-const SETTINGS_PATH = path.join(STATE_DIR, 'settings.json');
+const HEARTBEAT_DIR = inState('heartbeat');
+const CACHE_PATH = inState('project-cache.json');
+const SETTINGS_PATH = inState('settings.json');
+
+/** ¿Falta dónde guardar el estado? Lo dice en una línea de stderr: el gancho que lo pregunta sale 0 sin registrar. */
+function stateMissing() {
+  if (STATE_DIR) return false;
+  process.stderr.write('clocki: no sé dónde guardar el estado (falta scripts/lib/loose-logs.js o tycon-home.js en el árbol del arnés): no registro nada\n');
+  return true;
+}
 
 const DEFAULT_SETTINGS = {
   idleTimeoutMinutes: 15,
@@ -454,6 +466,7 @@ module.exports = {
   HEARTBEAT_DIR,
   CACHE_PATH,
   SETTINGS_PATH,
+  stateMissing,
   ensureStateDir,
   ensureActiveDir,
   readJson,
