@@ -835,6 +835,7 @@ if [ -f "$YAML" ]; then
     mkdir -p "$W/scripts/ci" "$W/scripts/lib" "$W/scripts/tests" "$W/scripts/controls-bench" "$W/as/skills"
     cp "$AQUI/scripts/ci/suites-shard.js" "$AQUI/scripts/ci/suites-exclusive.js" "$AQUI/scripts/ci/run-capped.js" "$AQUI/scripts/ci/suites-block.js" "$W/scripts/ci/" || return 1
     cp "$AQUI/scripts/lib/skills-dir.js" "$W/scripts/lib/" || return 1
+    mkdir -p "$W/scripts/setup/harness" && cp "$AQUI/scripts/setup/harness/tycon-home.js" "$W/scripts/setup/harness/" || return 1
     printf '{"diarias":[{"raiz":"arnes","ruta":"tests/sleeper.test.sh"},{"raiz":"arnes","ruta":"tests/green.test.sh"},{"raiz":"arnes","ruta":"tests/red-old.test.sh"},{"raiz":"arnes","ruta":"tests/red-new.test.sh"}]}\n' > "$W/scripts/tests/suites.json"
     printf '{"default":1,"weights":{},"pr":{"runs":[1],"default":1,"job_budget":100,"suite_cap":{"factor":2,"floor":2},"weights":{}}}\n' > "$W/scripts/ci/suites-weights.json"
     printf 'sleep 30\necho despierta\n' > "$W/scripts/tests/sleeper.test.sh"

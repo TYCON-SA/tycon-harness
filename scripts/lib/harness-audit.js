@@ -19,9 +19,9 @@
  * como (passed / total) * 10. Score total = average de las 8 categorías.
  *
  * Uso:
- *   node ~/.claude/tycon-harness/scripts/lib/harness-audit.js          # reporte text
- *   node ~/.claude/tycon-harness/scripts/lib/harness-audit.js --json   # output JSON
- *   node ~/.claude/tycon-harness/scripts/lib/harness-audit.js --verbose # detalle por check
+ *   node scripts/lib/harness-audit.js            # reporte text (desde el arnés instalado o un clon)
+ *   node scripts/lib/harness-audit.js --json     # output JSON
+ *   node scripts/lib/harness-audit.js --verbose  # detalle por check
  */
 
 'use strict';
@@ -50,7 +50,10 @@ const VERBOSE = process.argv.includes('--verbose');
 // `TYCON_AGENTS_DIR`: la misma variable que lee el cargador de paquetes del pipeline;
 // la usan las pruebas para auditar contra una carpeta de agentes de mentira.
 const AGENTS_DIR = process.env.TYCON_AGENTS_DIR || path.join(HOME, '.claude/agents');
-const SKILLS_DIR = path.join(HOME, '.claude/agent-skills/skills');
+// las demás rutas de la máquina las dice scripts/setup/harness/tycon-home.js, pedidas en el momento: una copia suelta de
+// este archivo carga igual
+const tyconHome = () => require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'));
+const skillsDir = () => path.join(tyconHome().installedSkillsDir(HOME), 'skills');
 const SETTINGS = path.join(HOME, '.claude/settings.json');
 const TCG_ROOT = path.resolve(__dirname, '..', '..');   // el clon donde vive este archivo, en scripts/lib/: ninguna carpeta escrita a mano
 const TCG_GUIDES = path.join(TCG_ROOT, 'guides');
@@ -79,7 +82,7 @@ function consultar(db, query, timeout) {
 const REPOS_ROOTS = (() => {
   try { return require('./repos-root.js').resolveReposRoot().roots || []; }
   catch (e) {
-    // ~/.claude/tycon.json roto: un comando frena — como CLI, con el archivo, la clave y el motivo y exit 2, no con
+    // el archivo de la máquina roto: un comando frena — como CLI, con el archivo, la clave y el motivo y exit 2, no con
     // una traza; como módulo, el que lo carga decide. Sin raíz → null y cada chequeo dice «no medido».
     if (e && e.name === 'ConfigError') { if (require.main === module) { console.error(e.message); process.exit(2); } throw e; }
     return [];
@@ -201,9 +204,9 @@ function checkContextEfficiency() {
   // Reusa heurística de context-budget.js (chars/4 over descriptions + 500/tool MCP)
   let skillsTokens = 0;
   let skillsCount = 0;
-  if (exists(SKILLS_DIR)) {
-    for (const d of fs.readdirSync(SKILLS_DIR)) {
-      const p = path.join(SKILLS_DIR, d, 'SKILL.md');
+  if (exists(skillsDir())) {
+    for (const d of fs.readdirSync(skillsDir())) {
+      const p = path.join(skillsDir(), d, 'SKILL.md');
       if (!exists(p)) continue;
       const content = safeRead(p).slice(0, 3000);
       const m = /^description:\s*(.+?)(?:\n[a-z_]+:|\n---)/ms.exec(content);
@@ -247,11 +250,11 @@ function checkContextEfficiency() {
   const connectorTokens = { 'claude_ai_Docu_de_MS': 1500, 'claude_ai_Gamma': 4000, 'claude_ai_Gmail': 6500, 'claude_ai_Google_Calendar': 4000, 'claude_ai_Google_Drive': 4000, 'claude_ai_Wix': 9500 };
   // 🔴 Lo NO autorizado no carga esquemas: cobrarlo
   // entero inflaría la cuenta, puntuaría 0/10 y empujaría a desconectar conectores por un
-  // ahorro que no existe. Claude Code deja la lista en `~/.claude/mcp-needs-auth-cache.json`.
+  // ahorro que no existe. Claude Code deja la lista en `mcp-needs-auth-cache.json` de su carpeta.
   // Misma regla que context-budget.js (dos copias de la cuenta — ver scripts/tests/context-budget.test.sh).
   let sinAutorizar = new Set();
   try {
-    const cache = JSON.parse(safeRead(path.join(HOME, '.claude/mcp-needs-auth-cache.json')));
+    const cache = JSON.parse(safeRead(path.join(tyconHome().claudeDir(HOME), 'mcp-needs-auth-cache.json')));
     sinAutorizar = new Set(Object.keys(cache).filter((k) => k.startsWith('claude.ai ')).map((k) => k.slice('claude.ai '.length)));
   } catch { /* sin cache: se asume todo cargado */ }
   const TOKENS_PER_UNLOADED_TOOL = 12;
@@ -313,7 +316,7 @@ function checkContextEfficiency() {
   checks.push({
     name: `Skills count < 100 (actual: ${skillsCount})`,
     passed: skillsCount < 100,
-    file: SKILLS_DIR,
+    file: skillsDir(),
     severity: 'info',
   });
 
@@ -400,7 +403,7 @@ function scanEngramRepos(rootOverride) {
   // devolver las MISMAS listas vacías que una raíz sana sin repos — y cero repos se lee igual que "está todo bien".
   // El consumidor tiene que poder notar la diferencia; el hook la convierte en un aviso.
   const out = { pinned: [], unpinned: [], nuncaSincronizo: [], error: null, root };
-  if (!root) { out.error = 'sin raíz de repos (TYCON_REPOS_ROOT, o rutas.repos en ~/.claude/tycon.json): no medido'; return out; }
+  if (!root) { out.error = 'sin raíz de repos (TYCON_REPOS_ROOT, o rutas.repos en el archivo de la máquina): no medido'; return out; }
   if (!exists(root)) {
     out.error = `la raíz de repos no existe: ${root}`;
     return out;
@@ -612,7 +615,7 @@ function engramChunksSinIndexar(rootOverride) {
   const varias = enCadaRaiz(rootOverride, engramChunksSinIndexar, (xs) => [].concat(...xs));
   if (varias) return varias;
   const root = rootOverride || REPOS_ROOT;
-  if (!root) return [{ repo: '(sin raíz)', sinIndexar: [], fantasma: [], error: 'sin raíz de repos: no medido (TYCON_REPOS_ROOT, o rutas.repos en ~/.claude/tycon.json)' }];
+  if (!root) return [{ repo: '(sin raíz)', sinIndexar: [], fantasma: [], error: 'sin raíz de repos: no medido (TYCON_REPOS_ROOT, o rutas.repos en el archivo de la máquina)' }];
   const { pinned } = scanEngramRepos(rootOverride);
   const out = [];
   let criterio = null;
@@ -665,7 +668,7 @@ function checkMemoryPersistence() {
     // configuración rota: no llega acá — el módulo ya frenó al cargar (REPOS_ROOT), como todo comando
     const e = cfg.integracionParaHook('engram');
     if (!e.prendida) {
-      return { name: 'Memory Persistence', checks: [{ name: `Memoria persistente (engram): NO MEDIDO — ${e.apagada}`, passed: true, file: '~/.claude/tycon.json', severity: 'info', detail: { checked: false } }] };
+      return { name: 'Memory Persistence', checks: [{ name: `Memoria persistente (engram): NO MEDIDO — ${e.apagada}`, passed: true, file: tyconHome().configFile(HOME), severity: 'info', detail: { checked: false } }] };
     }
   } catch (e) {
     // sin la lib al lado: se sigue sin ella. Otro error del lector es un hallazgo, no silencio.
@@ -903,9 +906,9 @@ function checkSecurityGuardrails() {
 
 function checkPipelineWiring() {
   const checks = [];
-  const pipelineSkillPath = path.join(SKILLS_DIR, 'tycon-pipeline/SKILL.md');
-  const stepFile = path.join(SKILLS_DIR, 'tycon-pipeline/steps/step-07-reviewers.md');
-  const pipelineJs = path.join(SKILLS_DIR, 'tycon-pipeline/scripts/pipeline.js');
+  const pipelineSkillPath = path.join(skillsDir(), 'tycon-pipeline/SKILL.md');
+  const stepFile = path.join(skillsDir(), 'tycon-pipeline/steps/step-07-reviewers.md');
+  const pipelineJs = path.join(skillsDir(), 'tycon-pipeline/scripts/pipeline.js');
 
   checks.push({
     name: 'tycon-pipeline SKILL.md existe',
@@ -931,11 +934,11 @@ function checkPipelineWiring() {
   // del wiring — SKILL.md/step-05 solo narran ejemplos y no tienen por qué
   // nombrar cada advisor. El guard anti-drop es test-pipeline-coverage.js:
   // un advisor cableado debe estar en pipeline.js Y en el expected-set del test.
-  const coverageTest = path.join(SKILLS_DIR, 'tycon-pipeline/scripts/tests/test-pipeline-coverage.js');
+  const coverageTest = path.join(skillsDir(), 'tycon-pipeline/scripts/tests/test-pipeline-coverage.js');
   // (del núcleo: los de un stack viven en su paquete y no se nombran en pipeline.js)
   const probe = ['tycon-e2e-realness-checker', 'tycon-silent-failure-hunter', 'llm-cost-reviewer'];
   // pipeline.js está partido en lib/pipeline-*.js: el texto del guion es el del despachador más sus partes
-  const libDir = path.join(SKILLS_DIR, 'tycon-pipeline/scripts/lib');
+  const libDir = path.join(skillsDir(), 'tycon-pipeline/scripts/lib');
   let partes = [];
   try { partes = fs.readdirSync(libDir).filter((f) => /^pipeline-.+\.js$/.test(f)).map((f) => path.join(libDir, f)); } catch { /* sin lib/: sólo el despachador */ }
   const textoPipeline = exists(pipelineJs) ? [pipelineJs, ...partes].map((f) => safeRead(f) || '').join('\n') : '';
@@ -1006,7 +1009,7 @@ function checkLearningLoop() {
   let capturerEvidence = false;
   try {
     // Trigger wireado en merge-to-main O métricas recientes en algún .dashboard/.
-    capturerEvidence = safeRead(path.join(SKILLS_DIR, 'tycon-merge-to-main/SKILL.md')).includes('retrospective-capturer');
+    capturerEvidence = safeRead(path.join(skillsDir(), 'tycon-merge-to-main/SKILL.md')).includes('retrospective-capturer');
   } catch { /* ignore */ }
   checks.push({
     name: 'retrospective-capturer: doc coherente (si declara ACTIVO, tiene trigger real en merge-to-main)',

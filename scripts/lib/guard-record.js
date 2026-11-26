@@ -8,7 +8,7 @@
  * se vea igual que uno que nunca se disparó: ausente. Y ése es el número que decide si un freno se
  * queda o se saca por molesto.
  *
- * Acá se anota UNA línea por decisión, en `~/.claude/.tycon-pipeline/frenos.jsonl`:
+ * Acá se anota UNA línea por decisión, en `frenos.jsonl` de la carpeta del estado (`stateDir` de tycon-home.js):
  *
  *   {"ts":"…","freno":"test-scope-guard","regla":"suite-completa","veredicto":"bloqueo","sha256":"…"}
  *
@@ -177,14 +177,12 @@ const MOTIVOS = {
   },
 };
 
+// la carpeta del estado la sabe setup/harness/tycon-home.js, que está siempre al lado: en el repo, y en
+// /opt/tycon/setup/harness/ por el instalador del freno. En una copia de scripts/lib sola (los laboratorios de los ganchos)
+// no está: la carpeta del estado de siempre
+const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 function casaDelPipeline(home) {
-  // la carpeta del estado la sabe scripts/setup/harness/tycon-home.js: se carga si está al lado
-  // (en el repo, y en /opt/tycon/setup/harness/ por el instalador del freno); si no, la de siempre
-  try {
-    const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'));
-    if (typeof TH.stateDir === 'function') return TH.stateDir(home || os.homedir());
-  } catch (_) { /* la de siempre */ }
-  return path.join(home || os.homedir(), '.claude', '.tycon-pipeline');
+  return stateDirOf(home || os.homedir());
 }
 
 /** El motivo es un código de la lista del freno; cualquier otra cosa (prosa, ruta, vacío) → `otra`. */
