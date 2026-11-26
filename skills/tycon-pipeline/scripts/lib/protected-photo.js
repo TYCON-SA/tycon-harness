@@ -78,12 +78,10 @@ function copia(stateDir, huella) {
   return m && m.contenido && sha(m.contenido) === huella ? m.contenido : null;
 }
 
-// una foto o un registro de inicio sin su evento de después (un comando que otro freno negó) no se usa más
-const HORAS_DE_LAS_FOTOS = 6;
-
 /**
- * Borra las copias que nadie usó en 7 días, y las fotos y los registros de inicio de más de 6 horas; corre a lo sumo
- * una vez por día.
+ * Borra las copias que nadie usó en 7 días, y las fotos y los registros de inicio de más de 7 días (los de un comando
+ * que otro freno negó, o de una sesión que terminó); corre a lo sumo una vez por día. El plazo de las fotos es el de las
+ * copias: un comando que espera su permiso una noche entera tiene que encontrar su foto al correr.
  */
 function limpiarCopias(stateDir, ahora) {
   const sello = path.join(dirFotos(stateDir), '.limpieza');
@@ -94,8 +92,8 @@ function limpiarCopias(stateDir, ahora) {
     }
   };
   borrarViejos(dirCopias(stateDir), DIAS_DE_LAS_COPIAS * DIA_MS);
-  borrarViejos(dirFotos(stateDir), HORAS_DE_LAS_FOTOS * 60 * 60 * 1000);
-  borrarViejos(path.join(dirFotos(stateDir), 'in-progress'), HORAS_DE_LAS_FOTOS * 60 * 60 * 1000);
+  borrarViejos(dirFotos(stateDir), DIAS_DE_LAS_COPIAS * DIA_MS);
+  borrarViejos(path.join(dirFotos(stateDir), 'in-progress'), DIAS_DE_LAS_COPIAS * DIA_MS);
   escribirEntero(sello, '');
 }
 
@@ -290,12 +288,17 @@ function setBrake(stateDir, sid, motivo) {
 function readBrake(stateDir, sid) {
   const ilegible = { sesion: sid, motivo: 'el registro del freno no se puede leer', desde: null };
   const archivo = archivoDelFreno(stateDir, sid);
-  // una carpeta de las fotos o del freno donde no se puede escribir también frena: sin poder anotar el freno, una mirada
-  // fallida no frenaría nada (un `chmod`, un disco lleno)
-  for (const dir of [dirFotos(stateDir), path.dirname(archivo)]) {
-    try { fs.accessSync(dir, fs.constants.W_OK); } catch (e) {
-      if (e.code !== 'ENOENT') return { sesion: sid, motivo: `no se puede escribir en ${dir} (${e.code || e.message})`, desde: null };
-    }
+  // una carpeta del freno donde no se puede escribir también frena: sin poder anotar el freno, una mirada fallida no
+  // frenaría nada. Se prueba escribiendo, no mirando permisos: así cuentan un `chmod`, un enlace colgado, la marca de
+  // inmutable y un disco lleno. Si la carpeta de las fotos no existe todavía, la crea (la primera vez)
+  const dir = path.dirname(archivo);
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    const prueba = path.join(dir, `.write-probe-${process.pid}`);
+    fs.writeFileSync(prueba, '');
+    fs.rmSync(prueba, { force: true });
+  } catch (e) {
+    return { sesion: sid, motivo: `no se puede escribir en ${dir} (${e.code || e.message})`, desde: null, carpeta: dir };
   }
   // con `stopped` como archivo, mirar adentro da ENOTDIR: cuenta como freno, como todo lo que no es «no existe»
   let st;

@@ -588,6 +588,7 @@ function cmdReleaseWriteAfter(argv) {
   libera(PROPIA);
   const freno = photo.readBrake(STATE_DIR, destino);
   if (!freno) { console.error(`marker.js release-write-after: la sesión ${destino} no está frenada. No se firmó nada.`); process.exit(1); }
+  if (freno.carpeta) { console.error(`marker.js release-write-after: el freno de ${destino} es la carpeta ${freno.carpeta}, donde no se puede escribir: no se saca con una firma. Arreglá sus permisos o su espacio. No se firmó nada.`); process.exit(1); }
   const resumen = `liberar la sesión ${destino} del freno de la mirada fallida (${freno.motivo}): ${motivo}`;
   let entrada;
   if (tiene('--terminal')) {
@@ -632,6 +633,9 @@ function cmdReleaseWriteAfter(argv) {
   }
   appendLog('gates.log', { name: 'write-after-release', status: 'ok', sesion: destino, motivo: freno.motivo, miro: motivo, ...entrada }, { estricto: true });
   photo.clearBrake(STATE_DIR, destino);
+  // un freno que no es el archivo (una carpeta del estado donde no se puede escribir) no se saca con la firma
+  const sigue = photo.readBrake(STATE_DIR, destino);
+  if (sigue) { console.error(`🔒 marker.js release-write-after: la sesión ${destino} sigue frenada (${sigue.motivo}). ${sigue.carpeta ? `Hay que arreglar los permisos o el espacio de ${sigue.carpeta}.` : ''}`); process.exit(1); }
   console.error(`✅ la sesión ${destino} quedó liberada del freno de la mirada (${entrada.via || entrada.tipo}).`);
   process.exit(0);
 }

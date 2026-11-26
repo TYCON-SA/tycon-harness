@@ -1417,8 +1417,9 @@ const PRECHEQUEO = 'TYCON_SIGN_PRECHECK';
 const PRECHEQUEO_OK = 'tycon-sign-precheck: ok';
 // cerrar en deuda, el rojo esperado y apagar el modo autónomo sobre la ejecución de OTRA sesión no salen por trámite: la
 // firma de trámite no mira quién la pide, y cualquier sesión le apagaría el lazo a otra. Los pide la coordinadora por
-// delegación, o los firma el dueño
-const SIN_TRAMITE_PARA_OTRA = new Set(['escape:cerrar-como-deuda', 'escape:rojo-esperado-de-la-matriz', 'escape:set-autonomous']);
+// delegación, o los firma el dueño. Liberar a una sesión frenada (write-after-release) también: el trámite no mira lo
+// que escribió el comando que no se pudo mirar
+const SIN_TRAMITE_PARA_OTRA = new Set(['escape:cerrar-como-deuda', 'escape:rojo-esperado-de-la-matriz', 'escape:set-autonomous', 'write-after-release']);
 // por dónde llegó la aprobación que el freno va a gastar (`click` o `mensaje`), para el chequeo previo; vacía sin aprobación
 const PRECHEQUEO_VIA = 'TYCON_SIGN_PRECHECK_VIA';
 // las firmas de guion con requisitos propios; el carril y las firmas sobre un archivo no comprueban nada antes de firmar

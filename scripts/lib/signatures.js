@@ -121,7 +121,7 @@ const LEVELS = Object.freeze([
   ['adhoc-lane', 1, AMBOS, 'abrir un arreglo rápido sin historia, dentro del cupo'],
   ['adhoc-lane:ci-rojo', 1, AMBOS, 'abrir el arreglo de un rojo de CI de un pull request abierto, sin plan ni revisores (hasta 3 archivos, pruebas incluidas; antes de guardar corren los controles de CI en local y las pruebas tocadas)'],
   ['compare-waiver', 1, AMBOS, 'eximir de la comparación con main a un comando que la historia modifica (delegable sólo si el perfil la suma a approvals.delegated_signing)'],
-    ['refresh-after-main', 1, MANT, 'refirmar los controles tras traer main, sin cambio propio'],
+  ['refresh-after-main', 1, MANT, 'refirmar los controles tras traer main, sin cambio propio'],
   ['lost-run:particion', 1, AMBOS, 'cerrar una ejecución perdida que la partición de su historia en tandas dejó sin objeto (delegable sólo si el perfil la suma a approvals.delegated_signing)'],
   ['save:sensible', 2, AMBOS, 'guardar cuando un commit toca algo de lo sensible'],
   ['write-after-release', 2, AMBOS, 'liberar el freno que sigue a una mirada fallida de lo que escribió un comando (nunca la sesión frenada: sólo la persona, o la coordinadora designada si el perfil la suma a approvals.delegated_signing)'],
