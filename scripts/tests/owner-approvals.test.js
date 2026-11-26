@@ -416,10 +416,17 @@ test('Click_CopiaSinHoraAntesDeLaRespuesta_ValeLaRespuesta', (t) => {
   assert.deepStrictEqual(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), click(), { pregunta: PIDE, opciones: CUADRO.opciones }), { ok: true });
   // sin la respuesta de la persona, la copia sola no firma
   transcripcion(casa, 'ses-a', [cuadro('toolu_1'), copiaDelPedido('toolu_1')]);
-  assert.match(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), click(), { pregunta: PIDE, opciones: CUADRO.opciones }).motivo, /no está en la transcripción/);
-  // una copia con la respuesta afirmativa pero sin hora tampoco: lo que cuenta es el renglón de la persona
+  assert.match(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), click(), { pregunta: PIDE, opciones: CUADRO.opciones }).motivo, /la respuesta del cuadro no está/);
+  // una respuesta afirmativa pero sin hora tampoco: lo que cuenta es el renglón de la persona
   transcripcion(casa, 'ses-a', [cuadro('toolu_1'), { ...respuesta('toolu_1'), timestamp: undefined }]);
-  assert.match(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), click(), { pregunta: PIDE, opciones: CUADRO.opciones }).motivo, /no está en la transcripción/);
+  assert.match(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), click(), { pregunta: PIDE, opciones: CUADRO.opciones }).motivo, /la respuesta del cuadro no está/);
+  // una copia con hora (de otra hora) que no es de la persona, antes de la respuesta real: se saltea, no se toma
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1'), { ...respuesta('toolu_1', { ts: hace(3600) }), type: 'api-request-blob' }, respuesta('toolu_1')]);
+  assert.deepStrictEqual(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), click(), { pregunta: PIDE, opciones: CUADRO.opciones }), { ok: true });
+  // el corte de la lectura (desde el final) no se detiene en la copia: con el cuadro repetido al final, sigue hasta la
+  // respuesta de la persona
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1'), respuesta('toolu_1'), cuadro('toolu_1'), copiaDelPedido('toolu_1')]);
+  assert.deepStrictEqual(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), click(), { pregunta: PIDE, opciones: CUADRO.opciones }), { ok: true });
 });
 
 // La exención de comparación con main (Producto A, 20/11): la sesión mostró el cuadro con la pregunta y las etiquetas del
