@@ -20,6 +20,7 @@ const {
   reposParaComparar, resolveStoryPath, signatureCommand, syncSessionState,
   testsNotMeasuredLine, veredictoPaseAdversarial, writeMarker,
 } = require('./marker-shared.js');
+const { pipelineRel } = require('./home-command.js');
 const frenarEsperaMain = (...a) => require('./marker-lifecycle.js').frenarEsperaMain(...a);
 
 // Las pruebas que fallan según el informe del gate (`.advisors/tests-result.json`), para que el aviso diga qué falta.
@@ -473,7 +474,7 @@ function cmdCompleteStep(nRaw, flags) {
         + (st === 'green' && !fresh ? ' de ESTA vuelta' : '') + '.');
       console.error(`  Estado: checks.advisors=${st || '(ausente)'} provenance=${prov || '(ausente)'}${prevClose ? ` · cierre previo de los revisores: ${prevClose}` : ''}`);
       console.error('  Registralo con el exit code REAL de check-count (lee el log de spawns, no tu --ran):');
-      console.error(`    marker.js run-check advisors -- ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js')} check-count \\`);
+      console.error(`    marker.js run-check advisors -- ${homeCommand(pipelineRel('scripts/pipeline.js'))} check-count \\`);
       console.error('      --repo <repo> --story <story_path> --files <archivos modificados…>');
       console.error('  Set esperado vacío (mech-check sin advisors aplicables): check-count sale 0 con el expected:[] persistido.');
       console.error('  Una lista de revisores dada por vos (provenance trust-ran = self-report) NO alcanza. Declarar el control');
@@ -921,7 +922,7 @@ function cmdCompleteStep(nRaw, flags) {
         console.error(`marker.js complete-step ${n} BLOQUEADO — ${st.exists ? 'el findings.json NO es un array JSON válido' : 'FALTA el findings.json del paso de hallazgos'} en ${st.run_dir}.`);
         console.error('  Sin ese archivo, «no encontré nada» y «no lo escribí» son lo mismo: el criterio de poda del catálogo');
         console.error('  decide retiros de reglas con media muestra. Un run sin hallazgos igual lo escribe, con [].');
-        console.error(`    ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js')} write-findings --story ${storyPathF} --findings -`);
+        console.error(`    ${homeCommand(pipelineRel('scripts/pipeline.js'))} write-findings --story ${storyPathF} --findings -`);
         console.error('    (el array sale del reporte consolidado del paso de hallazgos, con la disposition final de cada hallazgo)');
         anotar('bloqueo', st.exists ? 'findings.json inválido' : 'findings.json ausente');
       }
@@ -1090,7 +1091,7 @@ function cmdCompleteStep(nRaw, flags) {
           if ((matrix.notVerifiable || []).length) {
             console.error(`  🟪 imposibles-declarados (esperan waiver del USUARIO): ${matrix.notVerifiable.map((n) => '#' + n).join(', ')}`);
             // con tanda anotada, la firma nombra la sesión: así la terminal mide la misma tanda que esta matriz
-            console.error(`     ${signatureCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} runtime-waiver ${storyPath}${matrix.batch && estado.SID !== '_nosession' ? ` --for-session ${estado.SID}` : ''}`);
+            console.error(`     ${signatureCommand(pipelineRel('scripts/marker.js'))} runtime-waiver ${storyPath}${matrix.batch && estado.SID !== '_nosession' ? ` --for-session ${estado.SID}` : ''}`);
           }
           // los criterios con cota: lo medido y la cota de cada uno, y las tres salidas
           for (const l of require('../runtime-matrix.js').lineasDeMedida(matrix)) console.error(`  ${l}`);
@@ -1178,7 +1179,7 @@ function cmdCompleteStep(nRaw, flags) {
       console.error('  Saltear este bloqueo lo decide la persona, no el agente: si quiere, lo firma en la ventana de');
       console.error('  permiso o en su terminal; queda had_dod_bypass=true en bypass.log.');
       console.error('');
-      console.error(`Ver: ~/.claude/agent-skills/skills/tycon-pipeline/steps/${STEPS_LIB.byId('live-check').file}`);
+      console.error(`Ver: ~/${pipelineRel('steps')}/${STEPS_LIB.byId('live-check').file}`);
       if (process.env.DOD_BYPASS !== '1') {
         process.exit(2);
       }

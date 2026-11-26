@@ -151,13 +151,22 @@ datos, secretos, la rama compartida y lo público, las firmas del dueño, las hi
 ningún modelo) o **preferencia** (un trámite o un estilo que un modelo podría decidir bien solo). Es una propuesta
 hasta que la firma el dueño, control por control, y no cambia lo que el freno decide. Vive, con su motivo y su fecha de
 revisión, en `scripts/metrics/controls-classification.json`; cuánto frenó cada uno, por modelo, lo dice
-`scripts/metrics/controls-table.js`.
+`scripts/metrics/controls-table.js`. Los controles del pipeline que frenan (un comando de `marker.js` o de `pipeline.js`
+que se niega) tienen también su clase, marcados `del_pipeline`.
 
 Lo que el reloj no cubre: si a un freno lo matan desde afuera, o no arranca, el comando pasa. No se les pone
 `onFailure` a estos ganchos a propósito: viven en la carpeta del usuario, y una actualización a medias dejaría a todas
 las sesiones de la máquina sin consola. En `on-bash-write-gate.js`, en Windows o con un Node sin `process.execve`, un
 análisis trabado en una llamada del sistema tampoco se corta: pasa a los 600 s. Un programa que el análisis haya
 lanzado puede seguir corriendo después de que el freno frenó.
+
+**Lo lento y lo cortado quedan en `hook-errors.log`, solos.** Si `safety-guard-pre.sh` o `on-bash-write-gate.js` tardan
+la mitad de su reloj o más, anotan un renglón «LENTO», con cuánto tardaron, su tope y el paso que se comió el tiempo
+(por ejemplo, «la ventana de permiso (su última nota: confirmando el click en la conversación de la sesión…)»: la nota
+es la última que dejó el paso, no necesariamente la que tardó). Si los corta el reloj, el renglón «FRENÓ POR FALLA»
+dice en qué paso estaban. Así, cuando un freno tarda en otra máquina, el dato está en su registro sin tener que
+reproducirlo. «LENTO» no cuenta como falla ni en el aviso de arranque ni en la tabla de controles. En el freno de
+comandos, los segundos son enteros, y lo lento empieza en 2 s aunque el reloj sea más corto.
 
 **Cuando `safety-guard-pre.sh` corta por su reloj, se mide qué paso tardó.** Con `TYCON_SAFETY_TRACE=1` (en el `env` de
 `settings.json`, o en la terminal desde donde se abre la herramienta) el freno anota en `safety-guard-times.jsonl`, en

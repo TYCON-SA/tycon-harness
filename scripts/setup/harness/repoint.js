@@ -4,7 +4,7 @@
 //
 // Los dos repos internos —el arnés y agent-skills— se unieron en uno, con las dos historias
 // enteras. Cada máquina del equipo sigue con sus DOS clones: el del arnés, que trae `skills/` y `agents/`,
-// y `~/.claude/agent-skills`, del que la máquina lee las skills. Mudar cada máquina a un solo árbol es mover miles de
+// y el enchufe `agent-skills`, del que la máquina lee las skills. Mudar cada máquina a un solo árbol es mover miles de
 // archivos sin versionar (lo propio del dev, las skills de terceros, los stash): queda fuera de esto. Re-apuntar es un cambio de
 // configuración: como la historia está unida, el clon viejo avanza EN LÍNEA RECTA al repo unificado y nada se mueve en
 // el disco. Es el único paso que el equipo nota, y se deshace con uno: la llave de vuelta en `separate`.
@@ -51,7 +51,7 @@
 // del dev: es el mismo `undo` de una ida que falló a mitad de camino y de una mudanza que quedó «en curso».
 //
 // Sobre QUÉ clon: que el estado liste la fuente `agent_skills` no prueba
-// que haya un clon aparte. Si `~/.claude/agent-skills` pasó a ser un enlace al clon del arnés (el dev borró el clon viejo
+// que haya un clon aparte. Si el enchufe `agent-skills` pasó a ser un enlace al clon del arnés (el dev borró el clon viejo
 // y el aplicador lo enlazó), la ida le pondría la vista reducida AL CLON DEL ARNÉS —desaparecería `scripts/`, con este
 // programa adentro— y la vuelta le haría `reset --hard` al commit viejo de agent-skills. Antes de decidir nada se
 // compara ese clon con el del arnés (`sameClone`: la ruta real y el `.git` de cada uno): si es el mismo, no se toca, se
@@ -90,7 +90,10 @@ const TREE_TIMEOUT_MS = 5 * 60 * 1000;
 // el comando con la carpeta de la persona lo arma skills/tycon-pipeline/scripts/lib/home-command.js; desde la copia fija
 // del programa, que no trae las skills, este archivo escribe el mismo texto
 const homeCommand = (() => { const lib = path.join(__dirname, '..', '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'home-command.js'); return fs.existsSync(lib) ? require(lib).homeCommand : (r) => `node "$HOME/${r}"`; })();
-const HARNESS_JS = `${homeCommand(`.claude/${require('./place.js').PLACE_NAME}/scripts/setup/harness.js`)}`;   // el lugar
+// el lugar del arnés, relativo a la carpeta de la persona (placePath de tycon-home.js): un comando que se muestra lo
+// nombra así, sin armar la ruta a mano
+const PLACE_REL = path.relative(require('os').homedir(), require('./place.js').placePath(require('os').homedir())).split(path.sep).join('/');
+const HARNESS_JS = `${homeCommand(`${PLACE_REL}/scripts/setup/harness.js`)}`;   // el lugar
 const UPDATE_CMD = `${HARNESS_JS} update`;
 const INSTALL_CMD = `${HARNESS_JS} install`;
 const OLD_URL = '<URL-del-repo-viejo>';                         // lo que la persona reemplaza en un remedio a mano
@@ -164,7 +167,7 @@ function providesSkills(state, src, opts) {
 
 // Cada pregunta de esta sección contesta en TRES estados, y «no pude mirar» nunca es «no»: con `sameClone` en dos, si
 // git no contesta a tiempo (o un `.git` no se deja leer) la respuesta sería «no es el mismo clon», y con
-// `~/.claude/agent-skills` enlazado al clon del arnés por una ruta que no es letra por letra la misma (otra caja) la
+// el enchufe `agent-skills` enlazado al clon del arnés por una ruta que no es letra por letra la misma (otra caja) la
 // vuelta le haría `reset --hard` al clon del arnés, al commit viejo de agent-skills.
 
 /** La ruta real de una carpeta: `{ status: 'ok', path }` · `absent` (no existe) · `unknown` (no se pudo resolver:
@@ -204,7 +207,7 @@ function repoIdentity(dir, env) {
 }
 /**
  * ¿El «clon de skills» que lista el estado es, en el disco, el clon del arnés (o una carpeta de adentro)? Pasa cuando el
- * dev borra su clon viejo y el aplicador enlaza `~/.claude/agent-skills` al clon del arnés: el estado sigue listando la
+ * dev borra su clon viejo y el aplicador enlaza el enchufe `agent-skills` al clon del arnés: el estado sigue listando la
  * fuente hasta que `install` vuelve a detectarlas. Sobre ese clon no se re-apunta ni se deshace NADA (ver la cabecera).
  * Se compara por la ruta real y por el `.git` de cada uno. Tres respuestas: `same` · `distinct` (una carpeta que no
  * existe, o que no es un clon, no es el otro clon: lo que sigue se niega solo) · `unknown` (no se pudo mirar; `reason`):

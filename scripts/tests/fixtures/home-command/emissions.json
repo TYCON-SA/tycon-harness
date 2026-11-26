@@ -47,61 +47,61 @@
     {
       "archivo": "scripts/setup/harness.js",
       "linea": 1231,
-      "viejo": "node ~/.claude/${PLACE.PLACE_NAME}/scripts/lib/tycon-config.js set",
+      "viejo": "node ~/.claude/tycon-harness/scripts/lib/tycon-config.js set",
       "forma": "home"
     },
     {
       "archivo": "scripts/setup/harness.js",
       "linea": 1383,
-      "viejo": "node ~/.claude/${PLACE.PLACE_NAME}/scripts/lib/tycon-config.js validate",
+      "viejo": "node ~/.claude/tycon-harness/scripts/lib/tycon-config.js validate",
       "forma": "home"
     },
     {
       "archivo": "scripts/setup/harness.js",
       "linea": 1538,
-      "viejo": "node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js update --yes",
+      "viejo": "node ~/.claude/tycon-harness/scripts/setup/harness.js update --yes",
       "forma": "home"
     },
     {
       "archivo": "scripts/setup/harness.js",
       "linea": 1991,
-      "viejo": "node ~/.claude/${PLACE.PLACE_NAME}/scripts/lib/tycon-config.js set",
+      "viejo": "node ~/.claude/tycon-harness/scripts/lib/tycon-config.js set",
       "forma": "home"
     },
     {
       "archivo": "scripts/setup/harness.js",
       "linea": 3255,
-      "viejo": "node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js install otra vez la retoma — harness.js doctor lo detalla",
+      "viejo": "node ~/.claude/tycon-harness/scripts/setup/harness.js install otra vez la retoma — harness.js doctor lo detalla",
       "forma": "home"
     },
     {
       "archivo": "scripts/setup/harness.js",
       "linea": 4070,
-      "viejo": "node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js install otra vez la retoma, o harness.js uninstall la saca",
+      "viejo": "node ~/.claude/tycon-harness/scripts/setup/harness.js install otra vez la retoma, o harness.js uninstall la saca",
       "forma": "home"
     },
     {
       "archivo": "scripts/setup/harness.js",
       "linea": 4088,
-      "viejo": "node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js install --profile minimal|full",
+      "viejo": "node ~/.claude/tycon-harness/scripts/setup/harness.js install --profile minimal|full",
       "forma": "home"
     },
     {
       "archivo": "scripts/setup/harness/questions.js",
       "linea": 201,
-      "viejo": "node ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js install --profile minimal|full --integrations <lista|none> --packs all|none|<a,b> (o tycon-config.js set <clave> <valor>)",
+      "viejo": "node ~/.claude/tycon-harness/scripts/setup/harness.js install --profile minimal|full --integrations <lista|none> --packs all|none|<a,b> (o tycon-config.js set <clave> <valor>)",
       "forma": "home"
     },
     {
       "archivo": "scripts/setup/harness/repoint.js",
       "linea": 88,
-      "viejo": "node ~/.claude/${require('./place.js').PLACE_NAME}/scripts/setup/harness.js",
+      "viejo": "node ~/.claude/tycon-harness/scripts/setup/harness.js",
       "forma": "home"
     },
     {
       "archivo": "scripts/setup/harness/report.js",
       "linea": 163,
-      "viejo": "node ~/.claude/${require('./place.js').PLACE_NAME}/scripts/setup/harness.js",
+      "viejo": "node ~/.claude/tycon-harness/scripts/setup/harness.js",
       "forma": "home"
     },
     {

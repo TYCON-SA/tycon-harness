@@ -50,4 +50,16 @@ function enLaTerminal(comando, sesion) {
   return `${comando} --terminal --for-session ${sesion}`;
 }
 
-module.exports = { homeCommand, homePath, signatureCommand, enLaTerminal, SIN_SESION_TERMINAL, sesionConocida };
+/**
+ * La ruta de un archivo del pipeline instalado, relativa a la carpeta de la persona: bajo el enchufe de las skills que
+ * da tycon-home.js (`installedSkillsDir`, por state-dir.js), así el texto no arma la carpeta a mano.
+ * Uso: homeCommand(pipelineRel('scripts/marker.js')) → node "$HOME/<el enchufe>/skills/tycon-pipeline/scripts/marker.js"
+ */
+function pipelineRel(archivo) {
+  const path = require('path');
+  const casa = os.homedir();
+  const enchufe = require('./state-dir.js').installedSkillsDir(casa);
+  return [path.relative(casa, enchufe).split(path.sep).join('/'), 'skills', 'tycon-pipeline', archivo].join('/');
+}
+
+module.exports = { homeCommand, homePath, signatureCommand, pipelineRel, enLaTerminal, SIN_SESION_TERMINAL, sesionConocida };
