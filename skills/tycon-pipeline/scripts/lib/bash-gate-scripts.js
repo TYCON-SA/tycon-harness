@@ -350,9 +350,10 @@ function estadoPorOtroPrograma(cmd, cwd, sesion, enElEstado) {
  * La configuración del repo no corre programas acá, y la salida se lee en inglés y sin comillas.
  */
 function loQueDeshaceEnBloque(b, dir) {
-  // sin las variables de git del proceso padre (un gancho de git las deja puestas) y en inglés, para leer la salida
-  const env = { ...process.env, LC_ALL: 'C', LANG: 'C' };
-  for (const k of Object.keys(env)) if (/^GIT_(?:DIR|WORK_TREE|INDEX_FILE|COMMON_DIR|OBJECT_DIRECTORY|PREFIX)$/.test(k)) delete env[k];
+  // sin las variables de git del proceso padre (un gancho de git las deja puestas) y en inglés, para leer la salida;
+  // sin la biblioteca (una copia suelta del freno), no se pregunta: del lado seguro
+  const cge = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js'));
+  const env = cge.idiomaFijo(cge.sinGitDelPadre());
   const correr = (prog, args, cwd = dir) => {
     const r = require('child_process').spawnSync(prog, args, { cwd, windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000, env, maxBuffer: 32 * 1024 * 1024 });
     if (r.error || r.status !== 0) throw new Error((r.error && (r.error.code || r.error.message)) || String(r.stderr || '').trim().split('\n')[0] || `${prog} salió ${r.status}`);

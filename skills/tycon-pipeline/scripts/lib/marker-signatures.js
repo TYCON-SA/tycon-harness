@@ -669,11 +669,16 @@ function cmdApprovePending(argv) {
   // poder leer HEAD, como antes: cualquier aprobación del código
   let deHead = null;
   try {
-    const CP = require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'ci', 'check-pending-approvals.js'));
-    const todoHead = CP.deGit(repo, `HEAD:${PA.TODO}`);
+    // sólo se lee el contenido (show, ls-tree): ningún mensaje de git, así que el idioma no importa
+    const git = (...a) => require('child_process').execFileSync('git', ['-C', repo, ...a], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 });
+    const enHead = (rel) => { try { return git('show', `HEAD:${rel}`); } catch (_) { return null; } };
+    const todoHead = enHead(PA.TODO);
     if (todoHead != null) {
+      // el registro de HEAD, unido como el del disco: el archivo de antes y los de la carpeta
+      const nombres = git('ls-tree', '-r', '-z', '--name-only', 'HEAD', '--', `${PA.RECORD_DIR}/`).split('\0').filter(PA.esArchivoDeLaCarpeta).sort();
+      const registroHead = PA.unirRegistro(enHead(PA.RECORD), nombres.map((n) => enHead(n)));
       deHead = { abierto: PA.pendientesAbiertos(todoHead).some((p) => p.codigo === id),
-        lineas: new Set(PA.leerRegistro(CP.registroDeGit(repo, 'HEAD') || '').lineas.map((x) => x.texto)) };
+        lineas: new Set(PA.leerRegistro(registroHead).lineas.map((x) => x.texto)) };
     }
   } catch (_) { deHead = null; }
   const vale = (x) => !PA.motivoDe(x.valor) && x.valor.id === id && (!deHead || deHead.abierto || !deHead.lineas.has(x.texto));
