@@ -224,8 +224,8 @@ function main() {
 
 
 if (require.main === module) {
-  // Las opciones y subcomandos viejos siguen andando hasta el retiro: --breve es --brief, --marcas es --marks,
-  // qa-legibilidad es qa-readability y validadores es validators. Los nombres nuevos se escriben acá aunque los lean las
+  // Las opciones y subcomandos viejos siguen andando hasta el retiro con sus nombres nuevos: --brief, --marks,
+  // qa-readability y validators. Los nombres nuevos se escriben acá aunque los lean las
   // partes de lib/: el instalador busca el nombre nuevo de cada entrada del mapa de renombres en el texto de este
   // archivo, y sin él no instala la capa del equipo.
   require('./lib/legacy-names.js').aliasArgv('skills/tycon-pipeline/scripts/pipeline.js');
