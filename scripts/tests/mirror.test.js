@@ -656,6 +656,9 @@ function labWithFakeExporter(fx, answer, code = 0) {
   fs.copyFileSync(MIRROR, path.join(lab, 'scripts', 'publishing', 'mirror.js'));
   fs.copyFileSync(path.join(PUBLISHING, 'detector.js'), path.join(lab, 'scripts', 'publishing', 'detector.js'));
   fs.copyFileSync(path.join(RAIZ, 'scripts', 'lib', 'skills-dir.js'), path.join(lab, 'scripts', 'lib', 'skills-dir.js'));
+  // skills-dir.js le pregunta a tycon-home.js dónde están las skills instaladas: viaja con ella, en su lugar
+  fs.mkdirSync(path.join(lab, 'scripts', 'setup', 'harness'), { recursive: true });
+  fs.copyFileSync(path.join(RAIZ, 'scripts', 'setup', 'harness', 'tycon-home.js'), path.join(lab, 'scripts', 'setup', 'harness', 'tycon-home.js'));
   fs.writeFileSync(path.join(lab, 'scripts', 'publishing', 'export.js'), [
     "'use strict';",
     '// exportador de mentira: presta las funciones del de verdad y, corrido, contesta siempre lo mismo',

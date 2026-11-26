@@ -4,8 +4,9 @@
  *
  * Las claves que vale sólo el perfil (PROFILE_ONLY, como los topes del camino corto) salen del perfil del ÁRBOL donde
  * vive el lector: ni una variable ni la casa de prueba las cambian. Para probar un guion de consola con un perfil
- * configurado, el guion corre desde una copia del árbol que trae ese perfil. Se copian sólo `scripts/lib` y
- * `skills/tycon-pipeline`, sin sus pruebas: lo que cargan `marker.js` y sus bibliotecas.
+ * configurado, el guion corre desde una copia del árbol que trae ese perfil. Se copian sólo `scripts/lib`,
+ * `scripts/setup/harness/tycon-home.js` y `skills/tycon-pipeline`, sin sus pruebas: lo que cargan `marker.js` y sus
+ * bibliotecas.
  *
  *   copiaConPerfil(t, perfil) → { raiz, marker }   la copia se borra al terminar la prueba `t`
  */
@@ -24,6 +25,8 @@ function copiaConPerfil(t, perfil) {
   const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'arnes-con-perfil-'));
   if (t && typeof t.after === 'function') t.after(() => fs.rmSync(raiz, { recursive: true, force: true }));
   copiar(path.join(RAIZ, 'scripts', 'lib'), path.join(raiz, 'scripts', 'lib'));
+  fs.mkdirSync(path.join(raiz, 'scripts', 'setup', 'harness'), { recursive: true });
+  fs.copyFileSync(path.join(RAIZ, 'scripts', 'setup', 'harness', 'tycon-home.js'), path.join(raiz, 'scripts', 'setup', 'harness', 'tycon-home.js'));
   copiar(path.join(RAIZ, 'skills', 'tycon-pipeline'), path.join(raiz, 'skills', 'tycon-pipeline'));
   if (perfil !== undefined && perfil !== null) {
     fs.writeFileSync(path.join(raiz, 'team-profile.json'), typeof perfil === 'string' ? perfil : JSON.stringify(perfil, null, 2));

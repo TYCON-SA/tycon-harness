@@ -11,7 +11,7 @@
           "id": "registra-push-a-main-en-repo-bajo-arnes",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
           "stdin": {
@@ -38,7 +38,7 @@
           "id": "registra-pr-create-a-main-modo-pr",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git checkout -q -b dev"
           ],
@@ -66,7 +66,7 @@
           "id": "quiet-pr-create-a-otra-rama",
           "type": "must-stay-quiet",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git checkout -q -b feat"
           ],
@@ -87,7 +87,7 @@
           "id": "quiet-push-a-dev",
           "type": "must-stay-quiet",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git checkout -q -b dev"
           ],
@@ -108,7 +108,7 @@
           "id": "quiet-push-de-una-rama-con-main-en-el-nombre",
           "type": "must-stay-quiet",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git checkout -q -b chore/bajar-main-a-dev"
           ],
@@ -130,7 +130,7 @@
           "id": "registra-push-a-main-por-refspec-HEAD-main",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git checkout -q -b feature/x"
           ],
@@ -159,7 +159,7 @@
           "id": "registra-push-a-main-por-refspec-HEAD-refs-heads-main",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git checkout -q -b feature/x"
           ],
@@ -188,7 +188,7 @@
           "id": "quiet-push-main-en-repo-sin-arnes",
           "type": "must-stay-quiet",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
           "stdin": {
@@ -209,7 +209,7 @@
           "type": "must-block",
           "__doc": "Desde el 2026-09-17 éste es el camino de RESPALDO: el repo no tiene `origin`, así que no hay identidad que leer y decide el nombre de la carpeta. Con `origin`, decide el remoto (los casos que siguen). Desde el 2026-11-13 los repos del arnés deben retrospectiva como cualquier producto (trabajan por historia, pipeline y pedido): el caso pasó de silencio a `registra-…` con el mismo repo y la misma forma de URL, y espera su renglón.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p tycon-claude-guides && cd tycon-claude-guides && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
           "stdin": {
@@ -238,7 +238,7 @@
           "type": "must-block",
           "__doc": "GEMELO con el nombre público (story 8.19, tanda E, AC 39): el mismo caso con la carpeta llamada como el lugar del arnés. Desde el 2026-09-17 éste es el camino de RESPALDO: el repo no tiene `origin`, así que no hay identidad que leer y decide el nombre de la carpeta. Con `origin`, decide el remoto (los casos que siguen). Desde el 2026-11-13 los repos del arnés deben retrospectiva como cualquier producto (trabajan por historia, pipeline y pedido): el caso pasó de silencio a `registra-…` con el mismo repo y la misma forma de URL, y espera su renglón.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p ${PLACE_NAME} && cd ${PLACE_NAME} && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
           "stdin": {
@@ -267,7 +267,7 @@
           "type": "must-block",
           "__doc": "EL CASO REAL (2026-09-17, pendiente (a) del caso de la retro por push sin story, 2026-09-16): un clon descartable del arnés en `…/scratchpad/clon-arnes`, con la URL real de `git remote get-url origin` del checkout canónico. ROJO PREVIO: la exclusión miraba los segmentos de la RUTA; ninguno se llama como el arnés, así que el push quedaba anotado como merge pendiente — el mismo push que desde el checkout canónico no se anota. Desde el 2026-11-13 los repos del arnés deben retrospectiva como cualquier producto (trabajan por historia, pipeline y pedido): el caso pasó de silencio a `registra-…` con el mismo repo y la misma forma de URL, y espera su renglón.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p scratchpad/clon-arnes && cd scratchpad/clon-arnes && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://org-del-equipo@dev.azure.com/org-del-equipo/tycon-claude-guides/_git/tycon-claude-guides"
           ],
           "stdin": {
@@ -300,7 +300,7 @@
           "type": "must-block",
           "__doc": "La otra cara, y la cara: un repo de PRODUCTO clonado debajo de una carpeta que se llama como el arnés. Su `origin` dice que no es el arnés. ROJO PREVIO: bastaba un segmento de la ruta con ese nombre para excluirlo — el merge no se anotaba, no había retrospectiva y nada lo decía.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p tycon-claude-guides/MiProducto && cd tycon-claude-guides/MiProducto && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://org-del-equipo@dev.azure.com/org-del-equipo/UnProducto/_git/Backend"
           ],
           "stdin": {
@@ -333,7 +333,7 @@
           "type": "must-block",
           "__doc": "GEMELO con el nombre público (story 8.19, tanda E, AC 39): el mismo caso con la carpeta llamada como el lugar del arnés. La otra cara, y la cara: un repo de PRODUCTO clonado debajo de una carpeta que se llama como el arnés. Su `origin` dice que no es el arnés. ROJO PREVIO: bastaba un segmento de la ruta con ese nombre para excluirlo — el merge no se anotaba, no había retrospectiva y nada lo decía.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p ${PLACE_NAME}/MiProducto && cd ${PLACE_NAME}/MiProducto && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://org-del-equipo@dev.azure.com/org-del-equipo/UnProducto/_git/Backend"
           ],
           "stdin": {
@@ -366,7 +366,7 @@
           "type": "must-block",
           "__doc": "El otro repo del arnés y la otra forma de URL: `org-del-equipo.visualstudio.com/AgentSkills/_git/AgentSkills` (la real del checkout canónico), con OTRO usuario adelante — el usuario de la URL no es parte de la identidad. ROJO PREVIO: carpeta `as`, se anotaba. Desde el 2026-11-13 los repos del arnés deben retrospectiva como cualquier producto (trabajan por historia, pipeline y pedido): el caso pasó de silencio a `registra-…` con el mismo repo y la misma forma de URL, y espera su renglón.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p scratchpad/as && cd scratchpad/as && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://usuarioa@org-del-equipo.visualstudio.com/AgentSkills/_git/AgentSkills"
           ],
           "stdin": {
@@ -399,7 +399,7 @@
           "type": "must-block",
           "__doc": "La forma ssh de Azure (`git@ssh.dev.azure.com:v3/<org>/<proyecto>/<repo>`) es el mismo repo. ROJO PREVIO: carpeta `por-ssh`, se anotaba. Desde el 2026-11-13 los repos del arnés deben retrospectiva como cualquier producto (trabajan por historia, pipeline y pedido): el caso pasó de silencio a `registra-…` con el mismo repo y la misma forma de URL, y espera su renglón.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p scratchpad/por-ssh && cd scratchpad/por-ssh && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin git@ssh.dev.azure.com:v3/org-del-equipo/tycon-claude-guides/tycon-claude-guides"
           ],
           "stdin": {
@@ -432,7 +432,7 @@
           "type": "must-block",
           "__doc": "Un clon hecho DESDE el checkout local (`git clone ~/SourceCode/tycon-claude-guides scratchpad/x`): su `origin` es una ruta, y el repo es lo que sea ese otro — se sigue hasta la URL de Azure. ROJO PREVIO: carpeta `clon-local`, se anotaba. Desde el 2026-11-13 los repos del arnés deben retrospectiva como cualquier producto (trabajan por historia, pipeline y pedido): el caso pasó de silencio a `registra-…` con el mismo repo y la misma forma de URL, y espera su renglón.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p canonico && cd canonico && git init -q -b main . && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://org-del-equipo@dev.azure.com/org-del-equipo/tycon-claude-guides/_git/tycon-claude-guides",
             "git clone -q canonico scratchpad/clon-local && mkdir -p scratchpad/clon-local/.tycon"
           ],
@@ -466,7 +466,7 @@
           "type": "must-block",
           "__doc": "GUARDA de no-regresión (verde antes y después, dicha como tal): la identidad se compara EXACTA —(org, proyecto, repo)—, nunca por substring. Es la que se pone roja el día que alguien simplifique a `url.includes(<el nombre del repo>)`.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p producto-parecido && cd producto-parecido && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://org-del-equipo@dev.azure.com/org-del-equipo/tycon-claude-guides-site/_git/tycon-claude-guides-site"
           ],
           "stdin": {
@@ -495,7 +495,7 @@
           "_por_que": "story 8.26, tanda E: un repo que vive en GitHub entrega con `gh pr create` hacia la rama principal, igual que uno de Azure con `az repos pr create`. Mirando sólo `az`, ahí ningún merge por pedido dejaba entrada.",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/command-readers.js tcg/scripts/lib/ && mkdir -p tcg/integrations/github/scripts && cp $TCG/integrations/github/scripts/command-reader.js tcg/integrations/github/scripts/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/command-readers.js tcg/scripts/lib/ && mkdir -p tcg/integrations/github/scripts && cp $TCG/integrations/github/scripts/command-reader.js tcg/integrations/github/scripts/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git checkout -q -b dev"
           ],
@@ -524,7 +524,7 @@
           "_por_que": "`gh pr new` es un alias de `create`, y sin --base el pedido va a la rama por defecto: se anota (de más, nunca de menos).",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/command-readers.js tcg/scripts/lib/ && mkdir -p tcg/integrations/github/scripts && cp $TCG/integrations/github/scripts/command-reader.js tcg/integrations/github/scripts/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/command-readers.js tcg/scripts/lib/ && mkdir -p tcg/integrations/github/scripts && cp $TCG/integrations/github/scripts/command-reader.js tcg/integrations/github/scripts/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git checkout -q -b dev"
           ],
@@ -553,7 +553,7 @@
           "_por_que": "El hook corre también con la herramienta de PowerShell: el mismo pedido se anota igual.",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/command-readers.js tcg/scripts/lib/ && mkdir -p tcg/integrations/github/scripts && cp $TCG/integrations/github/scripts/command-reader.js tcg/integrations/github/scripts/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/command-readers.js tcg/scripts/lib/ && mkdir -p tcg/integrations/github/scripts && cp $TCG/integrations/github/scripts/command-reader.js tcg/integrations/github/scripts/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git checkout -q -b dev"
           ],
@@ -582,7 +582,7 @@
           "_por_que": "El gemelo verde: un pedido entre dos ramas de trabajo no es una entrega.",
           "type": "must-stay-quiet",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/command-readers.js tcg/scripts/lib/ && mkdir -p tcg/integrations/github/scripts && cp $TCG/integrations/github/scripts/command-reader.js tcg/integrations/github/scripts/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/command-readers.js tcg/scripts/lib/ && mkdir -p tcg/integrations/github/scripts && cp $TCG/integrations/github/scripts/command-reader.js tcg/integrations/github/scripts/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git checkout -q -b dev"
           ],
@@ -604,7 +604,7 @@
           "_por_que": "`--dry-run` no crea nada: no hay entrega que anotar.",
           "type": "must-stay-quiet",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/command-readers.js tcg/scripts/lib/ && mkdir -p tcg/integrations/github/scripts && cp $TCG/integrations/github/scripts/command-reader.js tcg/integrations/github/scripts/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/command-readers.js tcg/scripts/lib/ && mkdir -p tcg/integrations/github/scripts && cp $TCG/integrations/github/scripts/command-reader.js tcg/integrations/github/scripts/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git checkout -q -b dev"
           ],
@@ -626,7 +626,7 @@
           "_por_que": "No se sabe en qué repo corre: anotarlo contra el repo de la sesión deja un pendiente que ninguna retrospectiva puede cerrar. Se dice, como con el push que no se puede ubicar.",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/command-readers.js tcg/scripts/lib/ && mkdir -p tcg/integrations/github/scripts && cp $TCG/integrations/github/scripts/command-reader.js tcg/integrations/github/scripts/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/command-readers.js tcg/scripts/lib/ && mkdir -p tcg/integrations/github/scripts && cp $TCG/integrations/github/scripts/command-reader.js tcg/integrations/github/scripts/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git checkout -q -b dev"
           ],
@@ -652,7 +652,7 @@
           "_por_que": "`--repo` nombra un repo que no es el `origin` de la carpeta: el pedido es de OTRO repo.",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/command-readers.js tcg/scripts/lib/ && mkdir -p tcg/integrations/github/scripts && cp $TCG/integrations/github/scripts/command-reader.js tcg/integrations/github/scripts/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/command-readers.js tcg/scripts/lib/ && mkdir -p tcg/integrations/github/scripts && cp $TCG/integrations/github/scripts/command-reader.js tcg/integrations/github/scripts/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git checkout -q -b dev",
             "git remote add origin https://github.com/acme/uno.git"
@@ -679,7 +679,7 @@
           "_por_que": "Este hook viaja suelto, copiado con sus librerías a mano: sin el lector de gh (scripts/lib/command-readers.js y el de su conector) tiene que callar como antes de que existiera, no caerse (las otras preparaciones de este archivo no lo copian).",
           "type": "must-stay-quiet",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git checkout -q -b dev"
           ],
@@ -701,7 +701,7 @@
           "id": "registra-pr-create-a-main-forma-corta",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git checkout -q -b dev"
           ],
@@ -730,7 +730,7 @@
           "id": "registra-pr-create-encadenado-el-segundo-va-a-main",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git checkout -q -b dev"
           ],
@@ -760,7 +760,7 @@
           "type": "must-block",
           "__doc": "EL CASO REAL (2026-09-15, RETRO-PENDING-CD-MISATTR-1): el comando hace `cd` a OTRO repo y ahí empuja. ROJO PREVIO: el hook resolvía el repo con el cwd de la sesión, así que anotaba `repoPath` del repo de la sesión (fixture) y una sha de ESE repo — un pendiente que ninguna retrospectiva podía cerrar nunca.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "mkdir -p \"$HOME/destino/.tycon\" && git init -q -b main \"$HOME/destino\" && git -C \"$HOME/destino\" -c user.email=b@b -c user.name=b commit -q --allow-empty -m base-destino"
           ],
@@ -796,7 +796,7 @@
           "type": "must-block",
           "__doc": "La otra forma de decir lo mismo: `git -C <otro repo> push`. ROJO PREVIO: idéntico al anterior — se anotaba el repo de la sesión.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "mkdir -p \"$HOME/destino/.tycon\" && git init -q -b main \"$HOME/destino\" && git -C \"$HOME/destino\" -c user.email=b@b -c user.name=b commit -q --allow-empty -m base-destino"
           ],
@@ -831,7 +831,7 @@
           "type": "must-block",
           "__doc": "OBLIGATORIO: el push de todos los días —sin `cd`, sin `-C`— tiene que seguir anotándose contra el repo de la sesión, exactamente como antes del arreglo. Este caso está VERDE antes y después: es el que impide que \"seguir el destino\" se convierta en dejar de registrar lo normal. Un control que molesta se apaga.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "mkdir -p \"$HOME/destino/.tycon\" && git init -q -b main \"$HOME/destino\" && git -C \"$HOME/destino\" -c user.email=b@b -c user.name=b commit -q --allow-empty -m base-destino"
           ],
@@ -870,7 +870,7 @@
           "type": "must-block",
           "__doc": "La variable no la define el comando: no se puede saber a qué repo fue el push. \"No medido\" no se publica como \"limpio\" NI como el repo de la sesión: se dice y no se anota nada. ROJO PREVIO: el hook anotaba el repo de la sesión con su sha, como si fuera cierto.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
           "stdin": {
@@ -895,7 +895,7 @@
           "type": "must-block",
           "__doc": "El contrapeso del recorte de ruido: un push que SÍ existe y no se puede atribuir sigue avisando. Es una de las 2 formas legítimas medidas en 60 días (las otras 26 eran texto): el `for` que empuja varios repos de Totora a la vez. Pinza DOS cosas a la vez — que `mencion` no se le aplique a un statement con forma de git, y que el `do` del `for` se siga reconociendo como envoltorio (`envoltorios: true`). Si cualquiera de las dos se rompe, este push a main queda en silencio TOTAL, que es el peor modo de falla de esta pieza.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
           "stdin": {
@@ -921,7 +921,7 @@
           "type": "must-stay-quiet",
           "__doc": "Contracara del anterior: si el destino no se resuelve PERO el push no nombra main/master, no hay nada que decir. Sin este cerco, cada push a una rama de trabajo con una variable adentro se volvería un aviso — el camino corto a TYCON_RETRO_PENDING=0.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
           "stdin": {
@@ -943,7 +943,7 @@
           "type": "must-block",
           "__doc": "🔴 El peor modo de falla de este hook: registrar de MENOS, en silencio. ROJO PREVIO (pase adversarial 2026-09-15, hallazgo #1): `record()` marcaba el directorio como visto ANTES de que `anotar()` decidiera, así que el primer push —a dev, que no merece entrada— consumía el repo y el segundo, el que SÍ va a main, se salteaba: exit 0, sin entrada y sin aviso. El dedup por directorio sobraba: el ledger ya deduplica por repoPath+sha.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git checkout -q -b dev"
           ],
@@ -972,7 +972,7 @@
           "type": "must-block",
           "__doc": "La misma pérdida, con la forma REAL del ledger de producción (el backend de un producto del equipo): un `cd` a otro repo y dos push encadenados, el primero a dev y el segundo a main. Junta los dos arreglos: seguir el `cd` (2026-09-15) y no descartar la segunda entrega. ROJO PREVIO: exit 0, sin entrada.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "mkdir -p \"$HOME/destino/.tycon\" && git init -q -b main \"$HOME/destino\" && git -C \"$HOME/destino\" -c user.email=b@b -c user.name=b commit -q --allow-empty -m base-destino"
           ],
@@ -1012,7 +1012,7 @@
           "type": "must-stay-quiet",
           "__doc": "🔴 Un control ruidoso se apaga. ROJO PREVIO (pase adversarial 2026-09-15, hallazgo #3): el filtro grueso es por TEXTO, así que un `grep` que BUSCA la frase `git push origin main` terminaba en el aviso de \"no pude resolver\" + exit 2 — le saltó 3 veces al propio atacante en una sola revisión. Se tapa lo que está entre comillas antes de preguntarle al filtro: un push citado es texto, no un push.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
           "stdin": {
@@ -1037,7 +1037,7 @@
           "type": "must-stay-quiet",
           "__doc": "🔴 Un control ruidoso se apaga. ROJO PREVIO (2ª vuelta del pase adversarial 2026-09-15, §3): el aviso \"no pude resolver\" también saltaba cuando NO había ningún push que resolver — un `cat > x.md <<'EOF'` cuyo TEXTO menciona un push a main caía en el punto sintético `resuelto:false` y terminaba en exit 2. Medido sobre 3192 comandos Bash reales de 60 días: 28 avisos, 26 de ellos texto (20 heredocs + 4 `git stash push` + 2 más). La regla: si `destinos()` no encontró NINGÚN git push con FORMA de sentencia, es una mención, no un push. Lo que sí tiene forma de git y no se puede ubicar (`git -C \"$DEST\" push`, `cd \"$D\" && git push`, el `do git -C $r push` de un `for`) sigue avisando — ver el caso `destino-irresoluble-lo-DICE-y-no-anota-nada`.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
           "stdin": {
@@ -1063,7 +1063,7 @@
           "type": "must-stay-quiet",
           "__doc": "EL CASO REAL (2026-09-17): un `node - <<EOF` cuyo cuerpo trae, dentro de un string, `cd ${dir} && … && git push -q origin main`. No hay ningún push: es texto de un script. ROJO PREVIO: el recorrido por sentencias corta por `&&` también ADENTRO del heredoc, así que veía un `cd` a una variable que nadie define seguido de un `git push … main` → «no pude resolver a qué repo fue ese push» + exit 2. El caso vecino (`cat > notas.md`) callaba sólo porque su texto no EMPEZABA una sentencia con `git`.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
           "stdin": {
@@ -1089,7 +1089,7 @@
           "type": "must-block",
           "__doc": "GUARDA de no-regresión (verde antes y después, dicha como tal): cuando el heredoc alimenta a un SHELL (`bash <<EOF`) su cuerpo SON comandos, y el push de adentro se sigue anotando contra el repo del `cd`. Es la que se pone roja si alguien «simplifica» y quita TODOS los cuerpos de heredoc: registrar de menos y en silencio es el peor modo de falla de esta pieza.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "mkdir -p \"$HOME/destino/.tycon\" && git init -q -b main \"$HOME/destino\" && git -C \"$HOME/destino\" -c user.email=b@b -c user.name=b commit -q --allow-empty -m base-destino"
           ],
@@ -1118,7 +1118,7 @@
           "type": "must-stay-quiet",
           "__doc": "Gemelo del anterior con la otra forma medida: `git stash push` no publica nada, pero el filtro grueso ve `git … push` y el mensaje nombra main, así que el aviso saltaba igual (exit 2). Mismo rojo previo, misma regla: sin ningún `git push` con forma de sentencia, no hay nada que resolver. (Con el hook ANTERIOR al 2026-09-15 este comando era peor: anotaba un FANTASMA contra el repo de la sesión.)",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
           "stdin": {
@@ -1144,7 +1144,7 @@
           "type": "must-stay-quiet",
           "__doc": "Un `git log`/`git reflog` de sólo lectura, con la sesión parada en main y con «push» y «main» en el comando (una ruta y una referencia), no publica nada: no deja entrada ni avisa. Caso de una entrada del 19/10 que se atribuyó a un `git log` (2026-11-03); con el código de hoy no se reproduce, y este caso fija que siga así.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
           "stdin": {
@@ -1169,7 +1169,7 @@
           "type": "must-block",
           "__doc": "ROJO PREVIO (pase adversarial 2026-09-15, hallazgo #2): el análisis por sentencia exige que la sentencia EMPIECE con `git`, así que `time git push origin main` —sin `cd` y sin `-C`, o sea sin nada que contradiga al cwd de la sesión— caía en \"no pude resolver\" y NO anotaba. Regresión de ruido Y de datos contra la versión anterior, que lo anotaba bien.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
           "stdin": {
@@ -1204,7 +1204,7 @@
           "type": "must-block",
           "__doc": "Gemelo del anterior con el otro envoltorio que aparece en la vida real: llamar a git por su ruta. Mismo rojo previo: \"no pude resolver\" y sin entrada.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
           "stdin": {
@@ -1235,7 +1235,7 @@
           "type": "must-stay-quiet",
           "__doc": "🔴 EL BUCLE (2026-09-16, cierre de la story 2.6): la retrospectiva escribe sus conclusiones en archivos (.dashboard/metrics-*.json, guides/guide-update-proposals.md) que también hay que subir a main — y ese push volvía a exigir OTRA retrospectiva, que escribía, que había que subir… Hoy se cortó a mano lanzando una segunda retro instruida a no escribir nada. Criterio ANGOSTO a propósito: TODOS los commits que trajo el push (origin/main@{1}..origin/main, el reflog del remote-tracking ref que el propio push acaba de mover) tienen un mensaje que empieza con `chore(retro`. ROJO PREVIO: el hook registraba el push de la retro como un merge más (exit 2 + entrada en el ledger).",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q --bare \"$HOME/remoto.git\" && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin \"$HOME/remoto.git\" && git push -q origin main",
             "echo m > m.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m \"feat(2.6): la story\" && git push -q origin main",
             "echo r > r.json && git add -A && git -c user.email=b@b -c user.name=b commit -q -m \"chore(retro 2.6): métricas del merge + una propuesta al inbox\" && git push -q origin main"
@@ -1263,7 +1263,7 @@
           "type": "must-block",
           "__doc": "El cerco del anterior. Este hook existe porque un agente decidió que un cambio «sólo de docs» no necesitaba retrospectiva (2026-08-24): eximir «todo push sin merge» reabriría ese agujero —en el repo del arnés casi todo va directo a main sin merge—. Basta UN commit que no sea `chore(retro` para que el push se registre como siempre. VERDE antes y después: es el que impide que la exención se ensanche.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q --bare \"$HOME/remoto.git\" && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin \"$HOME/remoto.git\" && git push -q origin main",
             "echo m > m.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m \"feat(2.6): la story\" && git push -q origin main",
             "echo r > r.json && git add -A && git -c user.email=b@b -c user.name=b commit -q -m \"chore(retro 2.6): métricas del merge\" && echo f > f.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m \"fix(hook): un arreglo que viaja junto con la retro\" && git push -q origin main"
@@ -1296,7 +1296,7 @@
           "type": "must-stay-quiet",
           "__doc": "La retro corrida desde un clon descartable distinto del que hizo el merge. `git clone` deja el reflog de origin/main VACÍO, y tras el primer push tiene una sola entrada — pero cada entrada guarda el valor viejo, así que `origin/main@{1}` resuelve igual a donde estaba el remoto (git avisa «only has 1 entries» por stderr y contesta). Medido 2026-09-16: la primera versión de este banco daba este escenario por «no se puede saber» y el hook demostró que sí se sabe. Se deja como caso para que nadie vuelva a «arreglarlo» hacia registrar. ROJO PREVIO: igual que el caso anterior, el hook viejo registraba el push de la retro.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q --bare \"$HOME/remoto.git\" && git init -q -b main \"$HOME/semilla\" && git -C \"$HOME/semilla\" -c user.email=b@b -c user.name=b commit -q --allow-empty -m base && git -C \"$HOME/semilla\" push -q \"$HOME/remoto.git\" main",
             "git clone -q \"$HOME/remoto.git\" \"$HOME/clon\" && mkdir -p \"$HOME/clon/.tycon\" && echo r > \"$HOME/clon/r.json\" && git -C \"$HOME/clon\" add -A && git -C \"$HOME/clon\" -c user.email=b@b -c user.name=b commit -q -m \"chore(retro 2.6): métricas del merge\" && git -C \"$HOME/clon\" push -q origin main"
           ],
@@ -1323,7 +1323,7 @@
           "type": "must-block",
           "__doc": "La duda va hacia MÁS control, nunca hacia menos. Sin reflog del remote-tracking ref (`core.logAllRefUpdates=false`) no hay `origin/main@{1}`: no se puede saber qué commits trajo el push, aunque el único que hay sea `chore(retro …)`. Se registra como siempre. Mismo comportamiento sin remoto `origin` (la sha cae a la rama local, el rango no existe) y con un rango vacío (`[].every` daría true: cero commits NO es «todos son de retro»). VERDE antes y después: fija la dirección de la duda; si alguien la invierte, este caso es el que se pone rojo.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q --bare \"$HOME/remoto.git\" && git init -q -b main \"$HOME/semilla\" && git -C \"$HOME/semilla\" -c user.email=b@b -c user.name=b commit -q --allow-empty -m base && git -C \"$HOME/semilla\" push -q \"$HOME/remoto.git\" main",
             "git clone -q \"$HOME/remoto.git\" \"$HOME/clon\" && git -C \"$HOME/clon\" config core.logAllRefUpdates false && mkdir -p \"$HOME/clon/.tycon\" && echo r > \"$HOME/clon/r.json\" && git -C \"$HOME/clon\" add -A && git -C \"$HOME/clon\" -c user.email=b@b -c user.name=b commit -q -m \"chore(retro 2.6): métricas del merge\" && git -C \"$HOME/clon\" push -q origin main"
           ],
@@ -1357,7 +1357,7 @@
           "type": "must-emit",
           "__doc": "🔴 LA RETRO QUE NO APORTA NADA (2026-09-16): un fix de 18 líneas en un test (main 525a4b0) produjo una retrospectiva completa con 5 de 8 métricas en null «sin story». Medido antes de tocar: 30 días, 20 repos, 1812 commits en la línea de main, 346 tocaron SÓLO tests/docs/.dashboard/.engram sin cerrar story; 119 retros, 82 sin story. Exención MECÁNICA por ARCHIVOS del push: todo bajo tests/ o __tests__/, .md, .dashboard/ o .engram/ → entrada en el ledger con `exento` y los archivos, aviso que dice EXENTO y NO 'lanzá el capturer'. ROJO PREVIO: el hook anterior registraba el push como un merge más y pedía la retrospectiva.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q --bare \"$HOME/remoto.git\" && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin \"$HOME/remoto.git\" && git push -q origin main",
             "mkdir -p scripts/tests docs .engram && echo t > scripts/tests/x.test.sh && echo d > docs/nota.md && echo e > .engram/manifest.json && git add -A && git -c user.email=b@b -c user.name=b commit -q -m \"fix(tests): un test y una nota\" && git push -q origin main"
           ],
@@ -1396,7 +1396,7 @@
           "type": "must-emit",
           "__doc": "El criterio es por ARCHIVOS, nunca por el texto del mensaje (una etiqueta se esquiva en los dos sentidos): un commit titulado como feature que sólo toca tests/ y .md es exento igual.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q --bare \"$HOME/remoto.git\" && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin \"$HOME/remoto.git\" && git push -q origin main",
             "mkdir -p src/__tests__ && echo t > src/__tests__/a.test.tsx && echo r > README.md && git add -A && git -c user.email=b@b -c user.name=b commit -q -m \"feat(1.1): la story entera\" && git push -q origin main"
           ],
@@ -1428,7 +1428,7 @@
           "type": "must-block",
           "__doc": "Basta UN archivo fuera de tests/docs para que el push pida su retrospectiva: la exención no es 'mayormente tests'. No puede ponerse rojo contra el hook anterior (que registraba todo): es la guarda de no-regresión del recorte.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q --bare \"$HOME/remoto.git\" && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin \"$HOME/remoto.git\" && git push -q origin main",
             "mkdir -p scripts/tests lib && echo t > scripts/tests/x.test.sh && echo j > lib/cosa.js && git add -A && git -c user.email=b@b -c user.name=b commit -q -m \"fix(tests): el test y el arreglo\" && git push -q origin main"
           ],
@@ -1460,7 +1460,7 @@
           "type": "must-block",
           "__doc": "Un push que cambia el `status:` de una story es un cierre, aunque todo lo que traiga sea un .md: NUNCA exento. Es la regla dura ('una retro por repo en cada merge de story') vista desde los archivos. Guarda de no-regresión: verde también contra el hook anterior.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q --bare \"$HOME/remoto.git\" && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin \"$HOME/remoto.git\" && git push -q origin main",
             "mkdir -p specs && printf -- '---\\nstory: \"1.1\"\\nstatus: review\\n---\\n# Story\\n' > specs/story-1.1-x.md && git add -A && git -c user.email=b@b -c user.name=b commit -q -m \"docs(1.1): la story en review\" && git push -q origin main",
             "sed -i.bak 's/^status: review/status: done/' specs/story-1.1-x.md && rm -f specs/story-1.1-x.md.bak && git add -A && git -c user.email=b@b -c user.name=b commit -q -m \"docs(1.1): la story a done\" && git push -q origin main"
@@ -1493,7 +1493,7 @@
           "type": "must-block",
           "__doc": "Lo que entra bajo .advisors/ (pipeline-runs, dod-runtime, review-roster) es evidencia de que una story cerró: el push pide su retrospectiva aunque el archivo sea un .md. Guarda de no-regresión: verde también contra el hook anterior.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q --bare \"$HOME/remoto.git\" && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin \"$HOME/remoto.git\" && git push -q origin main",
             "mkdir -p .advisors/pipeline-runs/1.1-x && echo r > .advisors/pipeline-runs/1.1-x/RESUMEN.md && git add -A && git -c user.email=b@b -c user.name=b commit -q -m \"docs(1.1): evidencia de la ejecución\" && git push -q origin main"
           ],
@@ -1525,7 +1525,7 @@
           "type": "must-block",
           "__doc": "El caso que funda la regla (2026-10-14): un repo de juguete en la carpeta de trabajo temporal de una sesión, con .tycon/ y origin a un repo de PRUEBA que no tiene ninguna copia de trabajo fuera de las temporales. No se anota y se dice, con el comando del latido por si era de verdad. ROJO PREVIO: se anotaba, y el cierre del turno quedaba frenado por merges que ninguna retrospectiva tenía sentido escribir.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/",
             "mkdir -p repos temporal/scratchpad/juguete && cd temporal/scratchpad/juguete && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://github.com/acme-pruebas/juguete-web.git"
           ],
           "stdin": {
@@ -1557,7 +1557,7 @@
           "type": "must-block",
           "__doc": "Un repo de juguete sin origin en una carpeta temporal: no hay repo de verdad detrás. No se anota y se dice. ROJO PREVIO: se anotaba.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/",
             "mkdir -p repos temporal/juguete && cd temporal/juguete && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
           "stdin": {
@@ -1588,7 +1588,7 @@
           "type": "must-block",
           "__doc": "GUARDA de no-regresión (verde antes y después, dicha como tal): el clon descartable de un repo de verdad vive en el temporal, pero su remoto tiene una copia de trabajo bajo la raíz de repos. Es un merge de verdad: se anota. Es la que se pone roja el día que alguien simplifique la regla a «en el temporal no se anota».",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/",
             "mkdir -p repos/producto && cd repos/producto && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Producto/_git/Producto",
             "mkdir -p temporal/clon && cd temporal/clon && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Producto/_git/Producto"
           ],
@@ -1622,7 +1622,7 @@
           "type": "must-block",
           "__doc": "GUARDA de no-regresión: un clon hecho DESDE una copia de trabajo de afuera (su origin es una ruta) se sigue hasta ella, aunque esa copia no tenga remoto. Se anota.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/",
             "mkdir -p repos/sin-remoto && cd repos/sin-remoto && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "mkdir -p temporal && git clone -q repos/sin-remoto temporal/clon-local && mkdir -p temporal/clon-local/.tycon"
           ],
@@ -1656,7 +1656,7 @@
           "type": "must-block",
           "__doc": "Sin raíz de repos no se puede saber si el remoto tiene una copia de trabajo afuera: se anota, como siempre. ROJO PREVIO (de una versión que diera «sin copia» por «no pude mirar»): no se anotaba un merge que podía ser de verdad.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/",
             "mkdir -p temporal/juguete && cd temporal/juguete && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://github.com/acme-pruebas/juguete-web.git"
           ],
           "stdin": {
@@ -1689,7 +1689,7 @@
           "type": "must-block",
           "__doc": "Story 7.25, T12 (AC 8). La sesión está en la carpeta que agrupa los repos, que no es un repo, y el repositorio viene en una variable: no se sabe a qué repo fue. Antes salía 0 sin entrada y sin decir nada (caso real 2026-10-14). Ahora lo dice, con el comando del latido.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p ws/Backend && cd ws/Backend && git init -q -b main . && mkdir -p .tycon && echo Backend > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/Backend && git checkout -q -b feat/x",
             "mkdir -p ws/FrontEnd && cd ws/FrontEnd && git init -q -b main . && mkdir -p .tycon && echo FrontEnd > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/FrontEnd && git checkout -q -b feat/x"
           ],
@@ -1716,7 +1716,7 @@
           "type": "must-block",
           "__doc": "Story 7.25, T13 (AC 7). La sesión está en FrontEnd y el pedido nombra Backend: el merge es de Backend. Antes quedaba anotado contra FrontEnd, con la punta de FrontEnd.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p ws/Backend && cd ws/Backend && git init -q -b main . && mkdir -p .tycon && echo Backend > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/Backend && git checkout -q -b feat/x",
             "mkdir -p ws/FrontEnd && cd ws/FrontEnd && git init -q -b main . && mkdir -p .tycon && echo FrontEnd > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/FrontEnd && git checkout -q -b feat/x"
           ],
@@ -1749,7 +1749,7 @@
           "type": "must-block",
           "__doc": "Story 7.25, T14 (AC 7). La sesión está en la carpeta que agrupa los repos y el pedido nombra Backend: se busca el repo con ese origin entre los hijos.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p ws/Backend && cd ws/Backend && git init -q -b main . && mkdir -p .tycon && echo Backend > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/Backend && git checkout -q -b feat/x",
             "mkdir -p ws/FrontEnd && cd ws/FrontEnd && git init -q -b main . && mkdir -p .tycon && echo FrontEnd > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/FrontEnd && git checkout -q -b feat/x"
           ],
@@ -1776,7 +1776,7 @@
           "type": "must-block",
           "__doc": "Story 7.25, T15 (AC 7). El pedido nombra un repositorio que ninguna copia de la carpeta, sus hijos ni sus hermanos tiene como origin: no se anota contra la carpeta (sería una atribución falsa); se dice.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p ws/Backend && cd ws/Backend && git init -q -b main . && mkdir -p .tycon && echo Backend > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/Backend && git checkout -q -b feat/x",
             "mkdir -p ws/FrontEnd && cd ws/FrontEnd && git init -q -b main . && mkdir -p .tycon && echo FrontEnd > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/FrontEnd && git checkout -q -b feat/x"
           ],
@@ -1803,7 +1803,7 @@
           "type": "must-block",
           "__doc": "Story 7.25, T16 (AC 8). El repositorio viene en una variable y la sesión está en un repo: vale el repo de la carpeta (lo que ya andaba, fijado).",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p ws/Backend && cd ws/Backend && git init -q -b main . && mkdir -p .tycon && echo Backend > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/Backend && git checkout -q -b feat/x",
             "mkdir -p ws/FrontEnd && cd ws/FrontEnd && git init -q -b main . && mkdir -p .tycon && echo FrontEnd > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/FrontEnd && git checkout -q -b feat/x"
           ],
@@ -1830,7 +1830,7 @@
           "type": "must-block",
           "__doc": "Story 7.25, T18 (AC 8). La sesión está en la carpeta que agrupa los repos y el comando entra con un cd literal. Antes el cd no se seguía nunca (dirDelPrCreate le pasaba texto a un lector de fichas, tiraba y el catch lo tapaba): la misma forma del caso del 2026-09-24.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p ws/Backend && cd ws/Backend && git init -q -b main . && mkdir -p .tycon && echo Backend > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/Backend && git checkout -q -b feat/x",
             "mkdir -p ws/FrontEnd && cd ws/FrontEnd && git init -q -b main . && mkdir -p .tycon && echo FrontEnd > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/FrontEnd && git checkout -q -b feat/x"
           ],
@@ -1857,7 +1857,7 @@
           "type": "must-block",
           "__doc": "Story 7.25, T20 (AC 8). El cd del comando usa una variable que el comando no define: no se sabe en qué carpeta corrió el pedido. No se anota contra la carpeta de la sesión; se dice, con el motivo.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p ws/Backend && cd ws/Backend && git init -q -b main . && mkdir -p .tycon && echo Backend > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/Backend && git checkout -q -b feat/x",
             "mkdir -p ws/FrontEnd && cd ws/FrontEnd && git init -q -b main . && mkdir -p .tycon && echo FrontEnd > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/FrontEnd && git checkout -q -b feat/x"
           ],
@@ -1885,7 +1885,7 @@
           "type": "must-block",
           "__doc": "Story 7.25, T21 (AC 7). La rama de --source-branch no está en este clon: la entrada se anota con la punta de HEAD y lo dice en `punta` (puede no ser lo que se mergea).",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p ws/Backend && cd ws/Backend && git init -q -b main . && mkdir -p .tycon && echo Backend > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/Backend && git checkout -q -b feat/x",
             "mkdir -p ws/FrontEnd && cd ws/FrontEnd && git init -q -b main . && mkdir -p .tycon && echo FrontEnd > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base && git remote add origin https://dev.azure.com/acme/Prod/_git/FrontEnd && git checkout -q -b feat/x"
           ],
@@ -1916,7 +1916,7 @@
           "type": "must-block",
           "__doc": "Story 8.205: un pedido abierto no es una fusión. Con el número en la salida de az (pullRequestId) la entrada queda esperando que entre y el aviso no pide el latido. ROJO PREVIO: se anotaba la punta de la rama y se pedía su latido.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git checkout -q -b dev"
           ],
@@ -1953,7 +1953,7 @@
           "id": "8288-quiet-head-en-main-push-a-otra-rama",
           "type": "must-stay-quiet",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
           "stdin": {
@@ -1974,7 +1974,7 @@
           "id": "8288-quiet-head-en-main-push-u-a-otra-rama",
           "type": "must-stay-quiet",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
           "stdin": {
@@ -1995,7 +1995,7 @@
           "id": "8288-quiet-main-a-otra",
           "type": "must-stay-quiet",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
           "stdin": {
@@ -2016,7 +2016,7 @@
           "id": "8288-quiet-main-que-sigue-a-otra",
           "type": "must-stay-quiet",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git remote add origin https://example.invalid/x.git && git update-ref refs/remotes/origin/otra HEAD && git branch -q -u origin/otra"
           ],
@@ -2038,7 +2038,7 @@
           "id": "8288-pide-push-solo-siguiendo-main",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git remote add origin https://example.invalid/x.git && git update-ref refs/remotes/origin/main HEAD && git branch -q -u origin/main"
           ],
@@ -2067,7 +2067,7 @@
           "id": "8288-pide-push-origin-siguiendo-main",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git remote add origin https://example.invalid/x.git && git update-ref refs/remotes/origin/main HEAD && git branch -q -u origin/main"
           ],
@@ -2096,7 +2096,7 @@
           "id": "8288-pide-push-origin-head",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
           "stdin": {
@@ -2124,7 +2124,7 @@
           "id": "8288-pide-push-origin-main",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
           "stdin": {
@@ -2152,7 +2152,7 @@
           "id": "8288-pide-desde-otra-rama-head-a-main",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git checkout -q -b feat/x"
           ],
@@ -2181,7 +2181,7 @@
           "id": "8288-pide-main-sin-seguimiento",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
           "stdin": {
@@ -2209,7 +2209,7 @@
           "id": "8288-pide-push-all",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
           "stdin": {
@@ -2237,7 +2237,7 @@
           "id": "8288-pide-push-tags",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
           "stdin": {
@@ -2265,7 +2265,7 @@
           "id": "8288-pide-borrado",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base"
           ],
           "stdin": {
@@ -2306,7 +2306,7 @@
           "id": "bloquea-stop-con-merge-sin-retrospectiva",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'bench-s1',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main'})+'\\n')\""
           ],
@@ -2328,7 +2328,7 @@
           "id": "deja-parar-si-el-merge-ya-tiene-metrics",
           "type": "must-stay-quiet",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'bench-s1',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main'})+'\\n')\"",
             "node -e \"const fs=require('fs');fs.writeFileSync('tcg/.dashboard/metrics-2026-08-24-x.json',JSON.stringify({repo:process.cwd(),merge_commit:'2b74cc324be9e3964f394c96b02ed2aae3d80fc4',project:'x'}))\""
@@ -2348,7 +2348,7 @@
           "type": "must-block",
           "__doc": "Antes era `deja-parar-si-el-merge-es-de-otra-sesion` (must-stay-quiet): el merge que otra sesión dejó colgado sólo lo reclamaba el aviso de arranque, que se puede ignorar — medido, uno estuvo 4 días sin retro. Decisión del dev 2026-08-31: al cerrar el turno se reclama, SÓLO en el repo del cwd.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date(Date.now()-2*3600*1000).toISOString(),sessionId:'otra-sesion',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main'})+'\\n')\""
           ],
@@ -2368,7 +2368,7 @@
           "type": "must-stay-quiet",
           "__doc": "Sesión paralela que acaba de mergear y todavía va a lanzar su retro: por debajo de TYCON_RETRO_GATE_FOREIGN_MIN_AGE_MIN (30 min) no se frena a nadie.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date().toISOString(),sessionId:'otra-sesion',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main'})+'\\n')\""
           ],
@@ -2387,7 +2387,7 @@
           "type": "must-stay-quiet",
           "__doc": "El alcance sigue siendo el repo/workspace del cwd: una sesión no es la mula de carga de los otros proyectos (feedback del dev 2026-08-28).",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'otra-sesion',repoPath:process.env.SANDBOX_HOME+'/repo-ajeno',sha:'2b74cc324be9',branch:'main'})+'\\n')\""
           ],
@@ -2406,7 +2406,7 @@
           "type": "must-block",
           "__doc": "F5: una anotación sin `ts` reventaba al renderizar (tragado por el catch global) → no bloqueaba, no imprimía nada, y ya había gastado 1 de 3. Se apagaba el freno en silencio.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({sessionId:'otra-sesion',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main'})+'\\n')\""
           ],
@@ -2425,7 +2425,7 @@
           "type": "must-stay-quiet",
           "__doc": "F4: el tope de 3 era VITALICIO por sesión — cada nudge legítimo ya cumplido gastaba presupuesto y del 4º merge en adelante la sesión no frenaba nunca más. Ahora cuenta bloqueos CONSECUTIVOS: un Stop limpio borra el contador.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/retro-gate-bench-s1.count','2')\"",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'bench-s1',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main'})+'\\n')\"",
@@ -2449,7 +2449,7 @@
           "type": "must-stay-quiet",
           "__doc": "F6c: `belongsToCwd` subía sin tope — una sesión abierta en ~/SourceCode reclamaba los merges de TODOS los proyectos. El reclamo ajeno llega hasta el workspace que contiene al repo (Ceibo/ → CeiboBackend), no más arriba.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
             "mkdir -p proyecto-x/repo",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date(Date.now()-2*3600*1000).toISOString(),sessionId:'otra-sesion',repoPath:process.cwd()+'/proyecto-x/repo',sha:'2b74cc324be9',branch:'main'})+'\\n')\""
@@ -2469,7 +2469,7 @@
           "type": "must-stay-quiet",
           "__doc": "F6b: pendientes que ninguna retro va a cubrir (un push directo a main que no es merge) cobraban 3 bloqueos por sesión, en cada sesión, para siempre. Pasados los días el respaldo es retro-staleness-notice.js, que avisa sin frenar a nadie.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date(Date.now()-20*86400*1000).toISOString(),sessionId:'otra-sesion',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main'})+'\\n')\""
           ],
@@ -2488,7 +2488,7 @@
           "type": "must-stay-quiet",
           "__doc": "Segunda mitad del bucle del 2026-09-16: `coveredByMetrics` buscaba las métricas SÓLO en el .dashboard/ del checkout donde vive el hook (el arnés canónico). Una retro corrida desde un clon descartable deja su metrics-*.json en el .dashboard/ DEL CLON, así que el control no la veía hasta que el checkout compartido bajara main — y mientras tanto bloqueaba el cierre del turno por un merge que ya tenía su retrospectiva. Ahora mira también el .dashboard/ del repo del push (entry.repoPath). ROJO PREVIO: decision:block con el metrics presente en el repo del push (acá tcg/.dashboard queda vacío a propósito).",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'bench-s1',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main'})+'\\n')\"",
             "node -e \"const fs=require('fs');fs.mkdirSync('.dashboard',{recursive:true});fs.writeFileSync('.dashboard/metrics-2026-09-16-x.json',JSON.stringify({repo:process.cwd(),merge_commit:'2b74cc324be9e3964f394c96b02ed2aae3d80fc4',project:'x'}))\""
@@ -2508,7 +2508,7 @@
           "type": "must-stay-quiet",
           "__doc": "Una entrada exenta (sólo tests/docs) es constancia, no deuda: el gate no la reclama. ROJO PREVIO: el hook anterior no conocía el campo y bloqueaba el cierre del turno por ella.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-09-16T00:00:00.000Z',sessionId:'bench-s1',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main',exento:'solo-tests-docs',archivos:['scripts/tests/x.test.sh']})+'\\n')\""
           ],
@@ -2527,7 +2527,7 @@
           "type": "must-block",
           "__doc": "Story 7.1, AC 8 (T7): un tycon-retrospective-capturer lanzado PARA ESE repo y ESE merge (retro_repo + retro_sha, la prueba más fuerte del emparejamiento viejo) ya no paga la deuda: la paga el archivo. ROJO PREVIO contra el hook de origin/main (84919d1): deja cerrar el turno, porque el spawn emparejaba.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date().toISOString(),sessionId:'bench-s1',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main'})+'\\n')\"",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/advisor-runs';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/bench-s1.jsonl',JSON.stringify({ts:new Date().toISOString(),advisor:'tycon-retrospective-capturer',model:null,repo:process.cwd(),retro_repo:process.cwd(),retro_sha:'2b74cc324be9'})+'\\n')\""
@@ -2548,7 +2548,7 @@
           "type": "must-stay-quiet",
           "__doc": "Story 7.1, AC 9 (T7, segunda mitad): el mismo escenario del anterior, con el metrics-*.json escrito (por el latido o por el agente): cierra.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date().toISOString(),sessionId:'bench-s1',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main'})+'\\n')\"",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/advisor-runs';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/bench-s1.jsonl',JSON.stringify({ts:new Date().toISOString(),advisor:'tycon-retrospective-capturer',model:null,repo:process.cwd(),retro_repo:process.cwd(),retro_sha:'2b74cc324be9'})+'\\n')\"",
@@ -2569,7 +2569,7 @@
           "type": "must-block",
           "__doc": "Story 7.1, AC 8 y 10: para un merge de OTRA sesión, «alguien miró ese repo después» (un spawn posterior del mismo repo) ya no lo da por cubierto. ROJO PREVIO contra origin/main: foreignUnclaimed lo daba por mirado y dejaba cerrar.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date(Date.now()-2*3600*1000).toISOString(),sessionId:'otra-sesion',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main'})+'\\n')\"",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline/advisor-runs';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/bench-s1.jsonl',JSON.stringify({ts:new Date().toISOString(),advisor:'tycon-retrospective-capturer',model:null,repo:process.cwd(),retro_repo:process.cwd(),retro_sha:'2b74cc324be9'})+'\\n')\""
@@ -2591,7 +2591,7 @@
           "type": "must-block",
           "__doc": "Story 7.1, AC 10: dos merges de OTRA sesión en el mismo repo, sin archivo, se reclaman como UN repo (el más viejo arriba) y cada merge trae su comando: con el latido cuesta un segundo cada uno, así que se cierran todos en la misma vuelta en vez de gastar un bloqueo por merge.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date(Date.now()-3*3600*1000).toISOString(),sessionId:'otra-sesion',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main'})+'\\n')\"",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date(Date.now()-2*3600*1000).toISOString(),sessionId:'otra-sesion',repoPath:process.cwd(),sha:'dc37419b0c67',branch:'main'})+'\\n')\""
@@ -2614,7 +2614,7 @@
           "type": "must-stay-quiet",
           "__doc": "Una entrada vieja de un repo de laboratorio que sigue en pie (anotada antes de la regla) no frena el cierre del turno. ROJO PREVIO: el caso del 2026-10-14, tres bloqueos seguidos por un repo de juguete.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/",
             "mkdir -p repos temporal/juguete && cd temporal/juguete && git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-10-14T06:56:00.000Z',sessionId:'bench-s1',repoPath:process.cwd()+'/temporal/juguete',sha:'abc123def456',branch:'main'})+'\\n')\""
           ],
@@ -2637,7 +2637,7 @@
           "type": "must-stay-quiet",
           "__doc": "Un merge propio cuya carpeta ya no existe (y sin carpeta principal) no lo paga ningún latido: el latido pide el repo y el commit. Antes cortaba el turno con un comando que no podía andar; ahora se avisa, sin cortar, con el comando para corregirlo.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/repos-root.js tcg/scripts/lib/",
             "mkdir -p repos temporal",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-10-14T06:56:00.000Z',sessionId:'bench-s1',repoPath:process.cwd()+'/temporal/borrado',sha:'abc123def456',branch:'main'})+'\\n')\""
           ],
@@ -2663,7 +2663,7 @@
           "type": "must-stay-quiet",
           "__doc": "Story 8.205 (AC 2): un pedido abierto no frena el cierre. ROJO PREVIO: el cierre frenaba por la punta de la rama del pedido.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'bench-s1',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main',pr:101,plataforma:'azure',estado:'esperando',cmd:'az repos pr create --source-branch dev --target-branch main'})+'\\n')\""
           ],
@@ -2683,7 +2683,7 @@
           "type": "must-block",
           "__doc": "Story 8.205 (AC 3): cuando el pedido entró, se reclama el commit que dejó en main, no la punta de su rama.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'bench-s1',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main',pr:101,plataforma:'azure',estado:'esperando',cmd:'az repos pr create --source-branch dev --target-branch main'})+'\\n');fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T01:00:00.000Z',tipo:'pedido',entrada:{repo:process.cwd(),sha:'2b74cc324be9'},pr:101,estado:'entro',merge:'dc37419b0c67'})+'\\n')\""
           ],
@@ -2706,7 +2706,7 @@
           "type": "must-stay-quiet",
           "__doc": "Story 8.205 (AC 5): un pedido abandonado cierra su entrada y no se reclama nunca más.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'bench-s1',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main',pr:101,plataforma:'azure',estado:'esperando',cmd:'az repos pr create --source-branch dev --target-branch main'})+'\\n');fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T01:00:00.000Z',tipo:'pedido',entrada:{repo:process.cwd(),sha:'2b74cc324be9'},pr:101,estado:'abandonado',motivo:'el pedido 101 se abandonó: no hay fusión que reclamar'})+'\\n')\""
           ],
@@ -2726,7 +2726,7 @@
           "type": "must-stay-quiet",
           "__doc": "La sesión trabaja en el workspace que contiene el repo, no en el repo: el merge de otra sesión no lo salda ella. Antes cortaba el turno; ahora se avisa, sin cortar, con el comando para quien trabaja en ese repo.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p repo && cd repo && git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date(Date.now()-2*3600*1000).toISOString(),sessionId:'otra-sesion',repoPath:process.cwd()+'/repo',sha:'2b74cc324be9',branch:'main'})+'\\\\n')\""
           ],
@@ -2750,7 +2750,7 @@
           "type": "must-stay-quiet",
           "__doc": "Un merge de otra sesión en el mismo repo cuyo commit esta copia no tiene: el latido no lo puede pagar desde acá. Se avisa sin cortar.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date(Date.now()-2*3600*1000).toISOString(),sessionId:'otra-sesion',repoPath:process.cwd(),sha:'abc123def456',branch:'main'})+'\\\\n')\""
           ],
@@ -2772,7 +2772,7 @@
           "type": "must-block",
           "__doc": "Un merge propio pagable corta como siempre; el ajeno que la sesión no puede saldar va en el mismo mensaje, aparte, y no suma al corte.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
             "mkdir -p otro && cd otro && git init -q -b main . && GIT_AUTHOR_DATE=2026-01-01T00:00:00Z GIT_COMMITTER_DATE=2026-01-01T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m base && GIT_AUTHOR_DATE=2026-01-02T00:00:00Z GIT_COMMITTER_DATE=2026-01-02T00:00:00Z git -c user.name=lab -c user.email=lab@example.invalid commit -q --allow-empty -m segundo",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'bench-s1',repoPath:process.cwd(),sha:'2b74cc324be9',branch:'main'})+'\\\\n')\"",
@@ -2808,7 +2808,7 @@
           "id": "avisa-merge-sin-retrospectiva",
           "type": "must-emit",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'otra-sesion',repoPath:process.cwd(),sha:'abc123def456',branch:'main'})+'\\n')\""
           ],
           "stdin": {
@@ -2826,7 +2826,7 @@
           "id": "avisa-merge-de-subrepo-del-workspace",
           "type": "must-emit",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "mkdir -p sub-repo",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'otra-sesion',repoPath:process.cwd()+'/sub-repo',sha:'abc123def456',branch:'main'})+'\\n')\""
           ],
@@ -2848,7 +2848,7 @@
           "type": "must-stay-quiet",
           "__doc": "El aviso de arranque mira sólo las entradas de su propio proyecto: las de otro no se juzgan ni se nombran (se reclaman al abrir sesión en su repo), y no se dice que existen. Antes decía «hay N en OTROS proyectos — NO los lances»: para contarlas juzgaba el registro entero, y el arranque tardaba hasta 91 s.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "node -e \"const fs=require('fs');const otro=process.env.SANDBOX_HOME+'/otro-proyecto/Repo';fs.mkdirSync(otro,{recursive:true});const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'otra-sesion',repoPath:otro,sha:'abc123def456',branch:'main'})+'\\n')\""
           ],
           "stdin": {
@@ -2868,7 +2868,7 @@
           "id": "quiet-merge-cubierto-por-metrics",
           "type": "must-stay-quiet",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'otra-sesion',repoPath:process.cwd(),sha:'abc123def456',branch:'main'})+'\\n')\"",
             "node -e \"const fs=require('fs');fs.writeFileSync('tcg/.dashboard/metrics-2026-08-24-x.json',JSON.stringify({repo:process.cwd(),merge_commit:'abc123def456aaaa',project:'x'}))\""
           ],
@@ -2881,7 +2881,7 @@
           "id": "quiet-merge-cubierto-por-metrics-con-repo-relativo",
           "type": "must-stay-quiet",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'otra-sesion',repoPath:process.cwd(),sha:'abc123def456',branch:'main'})+'\\n')\"",
             "node -e \"const fs=require('fs');fs.writeFileSync('tcg/.dashboard/metrics-2026-08-24-rel.json',JSON.stringify({repo:process.cwd().split('/').slice(-2).join('/'),merge_commit:'abc123def456aaaa',project:'x'}))\""
           ],
@@ -2896,7 +2896,7 @@
           "type": "must-stay-quiet",
           "__doc": "Gemelo del caso del gate para el aviso de arranque: la misma `coveredByMetrics` decide los dos. ROJO PREVIO: el aviso reclamaba un merge cuya retrospectiva ya estaba escrita en el .dashboard/ del clon.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'otra-sesion',repoPath:process.cwd(),sha:'abc123def456',branch:'main'})+'\\n')\"",
             "node -e \"const fs=require('fs');fs.mkdirSync('.dashboard',{recursive:true});fs.writeFileSync('.dashboard/metrics-2026-09-16-x.json',JSON.stringify({repo:process.cwd(),merge_commit:'abc123def456aaaa',project:'x'}))\""
           ],
@@ -2910,7 +2910,7 @@
           "id": "quiet-sin-pendientes",
           "type": "must-stay-quiet",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/"
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/"
           ],
           "stdin": {
             "source": "startup"
@@ -2922,7 +2922,7 @@
           "type": "must-emit",
           "__doc": "Una exención que no se cuenta es un apagado silencioso: el aviso de arranque dice cuántos pushes quedaron exentos en la ventana y dónde está la cuenta con y sin retrospectiva (`--report`, que juzga el registro entero: el arranque no), y NO lista el push exento como pendiente ni pide lanzar nada. El `ts` se escribe con la hora actual para que el caso no envejezca fuera de la ventana. ROJO PREVIO: el hook anterior lo listaba como merge sin retrospectiva, con la instrucción de lanzar el capturer.",
           "setup": [
-            "mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date().toISOString(),sessionId:'otra-sesion',repoPath:process.cwd(),sha:'abc123def456',branch:'main',exento:'solo-tests-docs',archivos:['scripts/tests/x.test.sh']})+'\\n')\""
           ],
           "stdin": {

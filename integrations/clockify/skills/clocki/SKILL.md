@@ -51,23 +51,26 @@ con ese nombre (`mcp__<servidor>__create-clockify-time-entry`). Usá el que nomb
 
 **Verificación**: si llamás `update-clockify-time-entry` para CERRAR una entry, en el mismo bloque tool-call DEBE haber:
 - Un `create-clockify-time-entry` para la nueva tarea (si trabajo continúa), Y
-- Un `Write` actualizando `~/.claude/clocki/active/<sessionId>.json` con el nuevo entryId.
+- Un `Write` actualizando `<estado>/active/<sessionId>.json` con el nuevo entryId.
 
 Si no hay (a) Y (b) → estás creando billing gap: cerrar la entry de una tarea y empezar la siguiente sin crear la entry nueva deja ese tiempo sin registrar.
 
 ## Estado local
 
-Todo el estado vive en `~/.claude/clocki/` (NO commiteado, es por-dev).
+Todo el estado vive en `<estado>/` (NO commiteado, es por-dev): la carpeta `clocki/` de los registros sueltos del
+arnés. En una máquina con la casa propia del arnés es `~/.tycon/state/clocki/`; si no, `~/.claude/clocki/`. La ruta
+real la dan los avisos de los ganchos (`/clocki` imprime el archivo de tu sesión). Después de la mudanza,
+`~/.claude/clocki/` queda como enlace a la carpeta nueva, así que también anda.
 
 ### `active/<sessionId>.json` — timers activos, un archivo por sesión
 
-Cada sesión tiene **su propio archivo** en `~/.claude/clocki/active/`,
+Cada sesión tiene **su propio archivo** en `<estado>/active/`,
 nombrado por su `sessionId`. El archivo contiene `{ cwd: entry }` — los timers de
 esa sesión, keyados por cwd. Dos sesiones en el mismo proyecto **no se pisan ni el
 state ni los writes**: cada una lee/escribe solo su archivo.
 
 ```
-~/.claude/clocki/active/
+<estado>/active/
 ├── 11111111-aaaa-4aaa-8aaa-111111111111.json   ← sesión A
 └── 22222222-bbbb-4bbb-8bbb-222222222222.json   ← sesión B
 ```
@@ -103,9 +106,9 @@ no hay archivo compartido → cero contención. `sweep`/`on-prompt`/`clocki-enfo
 **🔴 De dónde sale el `sessionId`:** los hooks reciben `session_id` en su input stdin;
 `marker.js`/scripts también lo leen de `process.env.CLAUDE_CODE_SESSION_ID`. Los
 reminders que emiten los hooks **incluyen el path exacto** del archivo a usar
-(`~/.claude/clocki/active/<sessionId>.json`). El skill NUNCA infiere el `sessionId`.
+(`<estado>/active/<sessionId>.json`). El skill NUNCA infiere el `sessionId`.
 
-**Formato legacy:** versiones pre-2026-05-17 usaban un único `~/.claude/clocki/active.json`
+**Formato legacy:** versiones pre-2026-05-17 usaban un único `<estado>/active.json`
 (`{cwd:entry}` o `{cwd:{sid:entry}}`). `readActive()` lo sigue **mergeando** para no
 perder timers abiertos en la transición. El formato `{cwd:{sid:entry}}` conserva el
 `sessionId` real; solo el formato más viejo `{cwd:entry}` (sin sessionId) aparece bajo
@@ -126,7 +129,7 @@ sesión. NUNCA `printf '{}'` global.
 
 ### `heartbeat/<sessionId>` — señal de liveness de sesión
 
-Cada sesión escribe `~/.claude/clocki/heartbeat/<sessionId>` (contenido:
+Cada sesión escribe `<estado>/heartbeat/<sessionId>` (contenido:
 timestamp local-bare) en **cada hook de clocki que corre** — `touch-activity` (cada tool
 use), `on-prompt` (cada prompt), `sweep` (SessionStart), `clocki-enforce` (cada
 Edit/Write). Es una señal de **liveness independiente del timer**: dice "esta sesión
@@ -185,7 +188,7 @@ Evita llamar `list-clockify-projects` cada vez. Invalidable a mano borrando la e
 Cuando se invoca `clocki:start "descripción" [--project NAME]`:
 
 1. **Leer estado**: obtené tu `sessionId` (del reminder del hook o `$CLAUDE_CODE_SESSION_ID`;
-   si no, `_nosession`). `Read ~/.claude/clocki/active/<sessionId>.json` (tu archivo propio,
+   si no, `_nosession`). `Read <estado>/active/<sessionId>.json` (tu archivo propio,
    forma `{ cwd: entry }`). Obtené el `cwd` actual.
 
 2. **Cerrar timer activo previo de ESTA sesión en este cwd** (si existe):
@@ -209,13 +212,13 @@ Cuando se invoca `clocki:start "descripción" [--project NAME]`:
      - `end` = MISMO valor que `start` (NO null, NO futuro). El MCP wrapper requiere `end` como string obligatorio. Esto crea entry con duración ~0 que se extiende en cada touch-activity update.
    - **🔴 NUNCA usar `end` en el futuro** como placeholder de "running entry" — Clockify muestra duración fake y los hours billables quedan inflados.
 
-5. **Persistir estado**: `Read ~/.claude/clocki/active/<sessionId>.json` (o `{}` si no existe), set la key `[cwd]` con la nueva entry (`entryId, workspaceId, projectId, description, startedAt = now, lastActivity = now, source = <contexto>`), y `Write` ese archivo. Es tu archivo exclusivo — no hay otras sesiones que preservar dentro.
+5. **Persistir estado**: `Read <estado>/active/<sessionId>.json` (o `{}` si no existe), set la key `[cwd]` con la nueva entry (`entryId, workspaceId, projectId, description, startedAt = now, lastActivity = now, source = <contexto>`), y `Write` ese archivo. Es tu archivo exclusivo — no hay otras sesiones que preservar dentro.
 
 6. **Confirmar al usuario**: "✓ Timer abierto en Clockify: `<desc>` en project `<name>`. Cerrará automáticamente tras 15min idle o con `/clocki stop`."
 
 ## Flujo de `stop`
 
-1. `Read ~/.claude/clocki/active/<sessionId>.json`. Buscar la key `[cwd]` (con walk-up por parents si el cwd es subdir). Si no hay entry → "No hay timer activo de esta sesión en este cwd." y terminar.
+1. `Read <estado>/active/<sessionId>.json`. Buscar la key `[cwd]` (con walk-up por parents si el cwd es subdir). Si no hay entry → "No hay timer activo de esta sesión en este cwd." y terminar.
 2. Llamar `mcp__clockify__update-clockify-time-entry` con `end = <tu archivo>[cwd].lastActivity` (NO `now` — usar el último activity timestamp así no contamos tiempo idle).
 3. Eliminar esa key (`delete [cwd]`; si el archivo queda `{}`, borralo) y `Write`. Es tu archivo — no afecta a otras sesiones.
 4. Confirmar: "✓ Timer cerrado. Duración: H:MM."
@@ -252,7 +255,7 @@ El MCP de Clockify recibe el timestamp en hora local y **lo convierte a UTC** al
 
 ## Flujo de `status`
 
-1. `Read ~/.claude/clocki/active/<sessionId>.json`.
+1. `Read <estado>/active/<sessionId>.json`.
 2. Si hay entry para la key `[cwd]` (walk-up incluido) → mostrar: descripción, project, start, lastActivity, duración corrida.
 3. Si no hay entry de esta sesión, opcionalmente revisá los otros `active/*.json` — si hay timers de otras sesiones en el mismo cwd → mencionarlo ("Sin timer de esta sesión. Otras sesiones activas en este cwd: <descripciones>").
 4. Si no hay nada → "Sin timer activo en `<cwd>`."
@@ -370,7 +373,7 @@ La acción de `stop` manda a:
    sweep la cierra después.
 2. **Sumar las entradas de la historia** para `CompletedWork`, aunque no hubiera ninguna abierta (las que cerró el sweep
    por inactividad también son trabajo de la story):
-   - workspace y proyecto, de `~/.claude/clocki/project-cache.json` para el cwd (sólo lectura);
+   - workspace y proyecto, de `<estado>/project-cache.json` para el cwd (sólo lectura);
    - ventana: desde el primer commit de la story (`git log --reverse --pretty=format:"%aI" -- <story_path> | head -1`)
      hasta el merge a main más 24 h;
    - `mcp__clockify__list-clockify-time-entries` con `workspaceId`, `userId` (de `mcp__clockify__get-clockify-user`),

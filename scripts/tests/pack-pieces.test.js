@@ -292,6 +292,7 @@ test('RepoLinks_PackEntries_LinkedWhenActive_Codex', () => {
   W(path.join(roto, 'scripts', 'lib', 'pack-pieces.js'), fs.readFileSync(PIECES, 'utf8'));
   W(path.join(roto, 'scripts', 'lib', 'tycon-config.js'), fs.readFileSync(CONFIG, 'utf8'));
   W(path.join(roto, 'scripts', 'lib', 'profile-only.js'), fs.readFileSync(path.join(path.dirname(CONFIG), 'profile-only.js'), 'utf8'));
+  W(path.join(roto, 'scripts', 'setup', 'harness', 'tycon-home.js'), fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js'), 'utf8'));
   W(path.join(roto, 'packs', 'roto', 'pack.json'), '{ roto');
   const errs = []; const orig = console.error; console.error = (m) => errs.push(String(m));
   try { packSkills(roto); } finally { console.error = orig; }
@@ -410,6 +411,7 @@ test('Codex_DuplicateSaid_And_NoPacksBrokenConfigStops', () => {
   W(path.join(clon, 'scripts', 'lib', 'pack-pieces.js'), fs.readFileSync(PIECES, 'utf8'));
   W(path.join(clon, 'scripts', 'lib', 'tycon-config.js'), fs.readFileSync(CONFIG, 'utf8'));
   W(path.join(clon, 'scripts', 'lib', 'profile-only.js'), fs.readFileSync(path.join(path.dirname(CONFIG), 'profile-only.js'), 'utf8'));
+  W(path.join(clon, 'scripts', 'setup', 'harness', 'tycon-home.js'), fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js'), 'utf8'));
   W(path.join(clon, 'packs', 'prueba', 'skills', 'tycon-pipeline', 'SKILL.md'), '# choca\n');
   const errs = []; const orig = console.error; console.error = (m) => errs.push(String(m));
   const antes = { P: process.env.TYCON_PROFILE, D: process.env.TYCON_PACKS_DEFAULT };

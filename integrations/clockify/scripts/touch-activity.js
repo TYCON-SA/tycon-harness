@@ -5,7 +5,7 @@
 // activo de ESTA sesión en el cwd actual. Si no hay timer activo, no hace nada.
 //
 // 🔴 Multi-sesión sin race: cada sesión tiene su propio archivo
-// `~/.claude/clocki/active/<sessionId>.json`. touch-activity escribe SOLO ese
+// `active/<sessionId>.json` en el estado de lib.js. touch-activity escribe SOLO ese
 // archivo — nunca un archivo compartido — así dos sesiones concurrentes no se
 // pisan el write (el read-modify-write del modelo single-file no ocurre).
 //
@@ -24,6 +24,7 @@ const {
   findActiveEntryForCwd,
   touchHeartbeat,
   migrateLegacyEntry,
+  stateMissing,
 } = require('./lib');
 
 // Las carpetas absolutas que nombra la tool: el archivo que edita o lee, la carpeta de
@@ -48,6 +49,7 @@ function toolDirs(input, cwd) {
 }
 
 function main() {
+  if (stateMissing()) process.exit(0);
   const hookInput = parseHookInput();
   const cwd = normalizeCwd(hookInput.cwd || process.cwd());
   const sessionId = hookInput.session_id || '_nosession';
