@@ -86,7 +86,15 @@ const os = require('os');
 const path = require('path');
 // las rutas de la máquina las sabe scripts/setup/harness/tycon-home.js, al lado por su ruta relativa: en el repo, y en
 // /opt/tycon/setup/harness/ para la copia que viaja al freno de producción. Quien copia este archivo copia también ése.
-const tyconHome = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'));
+// las rutas de la máquina las sabe scripts/setup/harness/tycon-home.js; en una copia de scripts/lib sola (los
+// laboratorios de los ganchos) no está, y se arman las de siempre a partir de la carpeta del estado de siempre
+const TYCON_HOME_LIB = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
+const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
+const tyconHome = fs.existsSync(TYCON_HOME_LIB) ? require(TYCON_HOME_LIB) : (() => {
+  const claudeDir = (h) => path.dirname(stateDirOf(h));
+  const legacyConfigFile = (h) => path.join(claudeDir(h), 'tycon.json');
+  return { claudeDir, legacyStateDir: stateDirOf, legacyConfigFile, configFile: legacyConfigFile };
+})();
 // una ruta de tycon-home.js escrita desde la casa (`~/…`), con una casa fija: así se guarda un valor por defecto, que se
 // resuelve contra el HOME de quien lee, y así se nombra el archivo de siempre en el mapa de nombres viejos
 const conTilde = (ruta) => { const h = path.resolve(path.sep, 'casa'); return `~/${path.relative(h, ruta(h)).split(path.sep).join('/')}`; };

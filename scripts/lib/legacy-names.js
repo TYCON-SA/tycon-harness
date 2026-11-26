@@ -41,9 +41,10 @@ const path = require('path');
 // por el instalador del freno. La carpeta del estado tiene el respaldo de los que viajan sueltos: anotar un uso no tira
 // en una copia de esta biblioteca sola
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
-const tyconHome = () => require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'));
-// la carpeta de Claude Code en la casa del usuario
-const claudeDirOf = (home) => tyconHome().claudeDir(home);
+const TYCON_HOME_LIB = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
+const tyconHome = () => (require('fs').existsSync(TYCON_HOME_LIB) ? require(TYCON_HOME_LIB) : null);
+// la carpeta de Claude Code en la casa del usuario; en una copia de esta biblioteca sola, la madre del estado de siempre
+const claudeDirOf = (home) => (tyconHome() ? tyconHome().claudeDir(home) : path.dirname(stateDirOf(home)));
 const crypto = require('crypto');
 
 const HARNESS_ROOT = path.resolve(__dirname, '..', '..');
@@ -201,7 +202,7 @@ const usableEntries = (map) => {
  */
 function skillsRepoRoot(opts = {}) {
   if (opts.skillsRoot) return opts.skillsRoot;
-  if (!fs.existsSync(path.join(__dirname, 'skills-dir.js'))) return tyconHome().installedSkillsDir(os.homedir());
+  if (!fs.existsSync(path.join(__dirname, 'skills-dir.js'))) return path.join(claudeDirOf(os.homedir()), 'agent-skills');
   return require('./skills-dir.js').resolveSkillsDirs(process.env.TYCON_SKILLS_DIR || '').repo;
 }
 function rootOf(entry, opts = {}) {

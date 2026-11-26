@@ -61,9 +61,11 @@ const path = require('path');
 const OWN_CLONE = path.resolve(__dirname, '..', '..');
 // dónde viven las skills instaladas lo sabe scripts/setup/harness/tycon-home.js, que está siempre al lado por su ruta
 // relativa: en el repo, y en /opt/tycon/setup/harness/ para la copia de este archivo que viaja al freno de producción
-// (/opt/tycon/lib/; lo copia su instalador). Se carga cuando hace falta.
+// (/opt/tycon/lib/; lo copia su instalador). Se carga cuando hace falta. En una copia de scripts/lib sola (los
+// laboratorios de los ganchos) no está: las skills van al lado de la carpeta del estado de siempre
 const TYCON_HOME_LIB = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
-const installedRepo = () => require(TYCON_HOME_LIB).installedSkillsDir(os.homedir());
+const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
+const installedRepo = () => (fs.existsSync(TYCON_HOME_LIB) ? require(TYCON_HOME_LIB).installedSkillsDir(os.homedir()) : path.join(path.dirname(stateDirOf(os.homedir())), 'agent-skills'));
 
 /** La variable, en sus dos lecturas (raíz o carpeta de skills). */
 function fromVariable(v) {

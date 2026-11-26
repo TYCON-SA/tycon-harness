@@ -187,6 +187,14 @@ function resolverRemoto(root) {
   return { url: '', id: null, por: 'tope-de-saltos', saltos: MAX_SALTOS, dir };
 }
 
+// las rutas de la máquina las sabe scripts/setup/harness/tycon-home.js; en una copia de scripts/lib sola (los laboratorios
+// de los ganchos), las skills instaladas van al lado de la carpeta del estado de siempre
+const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
+function installedSkillsDirOf(home) {
+  const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
+  return fs.existsSync(lib) ? require(lib).installedSkillsDir(home) : path.join(path.dirname(stateDirOf(home)), 'agent-skills');
+}
+
 const memo = new Map();
 /** Qué es «el arnés» acá: las identidades de referencia (inyectadas, o las del propio clon y de agent-skills). */
 function identidadesDelArnes(opts = {}) {
@@ -194,7 +202,7 @@ function identidadesDelArnes(opts = {}) {
   const env = opts.env || process.env;
   const crudas = readEnv(ENV_IDENTIDADES, { env, where: 'scripts/lib/harness-repo.js' });
   const inyectadas = crudas ? String(crudas).trim() : '';
-  const installed = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')).installedSkillsDir(os.homedir());
+  const installed = installedSkillsDirOf(os.homedir());
   // lo que declara la máquina entra en la clave: la respuesta de una configuración no vale para otra
   const maquina = inyectadas ? null : declaracionDeMaquina(env);
   const clave = `${inyectadas}|${env.TYCON_SKILLS_DIR || ''}|${installed}|${maquina ? `${maquina.path || ''}|${maquina.problem || ''}` : ''}`;
