@@ -253,10 +253,28 @@ function isTerminalAcknowledgmentsRecord(p) { return TERMINAL_ACKS_DIR.test(norm
 // firma del dueño, y los portones del commit y de CI las piden. Escribir una es eximirse solo. En cualquier repo
 const EXEMPTIONS_FILE = /(^|\/)\.tycon\/exemptions\.jsonl$/i;
 function isExemptionsRecord(p) { return EXEMPTIONS_FILE.test(norm(String(p || ''))); }
-/** ¿Es una constancia firmada que no se escribe a mano? `control-approvals`, `adversarial-skip-record`, `pending-approvals`, `owner-approvals`, `terminal-acknowledgments`, `launched-sessions`, `office-mailbox`, `reported-criticals`, `plan-review`, `exemptions` o null. */
+// Las exenciones en vivo de un criterio (lib/runtime-waiver.js): las anota sólo `marker.js runtime-waiver`, con la firma
+// del dueño, y el cierre las acepta en lugar de la evidencia. Escribir una es eximirse solo. En cualquier repo
+const RUNTIME_WAIVERS_FILE = /(^|\/)\.tycon\/runtime-waivers\.jsonl$/i;
+function isRuntimeWaiversRecord(p) { return RUNTIME_WAIVERS_FILE.test(norm(String(p || ''))); }
+// Las aprobaciones de una ejecución (lib/approvals.js): las anotan sólo los comandos de `marker.js`, y las manuales llevan
+// la firma de una persona. En la carpeta de corridas del repo o de una subcarpeta (`carpetasDeCorrida` de approvals.js)
+const RUN_APPROVALS_FILE = /(^|\/)\.advisors\/pipeline-runs\/[^/]+\/approvals\.jsonl$/i;
+function isRunApprovalsRecord(p) { return RUN_APPROVALS_FILE.test(norm(String(p || ''))); }
+// Las carpetas de constancias del repo: donde todo archivo es una constancia, o donde vive el archivo de una. Un comodín o
+// una copia con un origen que no se lee frena si cae en una de éstas, y en ninguna otra
+const RECORDS_DIR = /(^|\/)(?:\.tycon|\.tycon\/control-changes|\.github\/control-changes|tasks\/pending-approvals|\.advisors\/pipeline-runs\/[^/]+)\/?$/i;
+function isRecordsDir(p) { return RECORDS_DIR.test(norm(String(p || ''))); }
+// Los nombres de los archivos de constancias, en la carpeta que sea (el comodín o la ruta armada que los nombra)
+const RECORD_FILE_NAMES = ['exemptions.jsonl', 'control-changes.jsonl', 'adversarial-skips.jsonl', 'pending-approvals.jsonl', 'runtime-waivers.jsonl', 'approvals.jsonl'];
+/** ¿El nombre (sin carpeta) es el de un archivo de constancias? */
+function isRecordFileName(nombre) { return RECORD_FILE_NAMES.includes(String(nombre || '').toLowerCase()); }
+/** ¿Es una constancia firmada que no se escribe a mano? `control-approvals`, `adversarial-skip-record`, `pending-approvals`, `owner-approvals`, `terminal-acknowledgments`, `launched-sessions`, `office-mailbox`, `reported-criticals`, `plan-review`, `exemptions`, `runtime-waivers`, `run-approvals` o null. */
 function signedRecordKind(p) {
   if (isPlanReviewRecord(p)) return 'plan-review';
   if (isExemptionsRecord(p)) return 'exemptions';
+  if (isRuntimeWaiversRecord(p)) return 'runtime-waivers';
+  if (isRunApprovalsRecord(p)) return 'run-approvals';
   if (isControlApproval(p)) return 'control-approvals';
   if (isPendingApprovalsRecord(p)) return 'pending-approvals';
   if (isOwnerApprovalsRecord(p)) return 'owner-approvals';
@@ -333,6 +351,12 @@ function computeStoryGate({
   }
   if (isExemptionsRecord(filePath) || isExemptionsRecord(real)) {
     return { action: 'block', kind: 'exemptions', reason: 'escritura a mano de la constancia de una exención' };
+  }
+  if (isRuntimeWaiversRecord(filePath) || isRuntimeWaiversRecord(real)) {
+    return { action: 'block', kind: 'runtime-waivers', reason: 'escritura a mano de la constancia de una exención en vivo' };
+  }
+  if (isRunApprovalsRecord(filePath) || isRunApprovalsRecord(real)) {
+    return { action: 'block', kind: 'run-approvals', reason: 'escritura a mano del registro de aprobaciones de una ejecución' };
   }
   // El arreglo rápido que abrió la coordinadora por delegación no toca lo sensible: eso lo firma el dueño. Antes del
   // portón apagado y del pase de los repos del arnés, que es donde están esos archivos. La lista de lo sensible vive en el
@@ -730,6 +754,24 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '  la piden: escribirla es eximirse solo. Si la historia necesita una exención, pedile la firma a la persona.',
     ].filter((l) => l !== '').join('\n');
   }
+  if (r.kind === 'runtime-waivers') {
+    return [
+      '⛔ la constancia de una exención en vivo no se escribe a mano',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  La anota sólo `marker.js runtime-waiver`, con la firma de la persona, y el cierre la acepta en lugar de la',
+      '  evidencia: escribirla es eximirse solo. Si un criterio no se puede probar en vivo, pedile la firma a la persona.',
+    ].filter((l) => l !== '').join('\n');
+  }
+  if (r.kind === 'run-approvals') {
+    return [
+      '⛔ el registro de aprobaciones de una ejecución no se escribe a mano',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  Lo anotan sólo los comandos de `marker.js` que registran una aprobación (el plan, la exención en vivo, el salteo',
+      '  del pase), y las manuales llevan la firma de una persona: escribirlo es fingir una. Corré el comando del paso.',
+    ].filter((l) => l !== '').join('\n');
+  }
   if (r.kind === 'advisor-runs') {
     return [
       '⛔ el registro de corridas de los revisores no se toca a mano',
@@ -937,7 +979,7 @@ function storyByConsoleMessage(rutas, via) {
 module.exports = {
   MODO_FUERA_DEL_GRUPO,
   markerDeleteMessage, storyByConsoleMessage,
-  computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isGitConfig,isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, isTerminalAcknowledgmentsRecord, isLaunchedSessionsRecord, isOfficeMailboxRecord, isReportedCriticalsRecord, isAdvisorRunsRecord, isPlanReviewRecord, isExemptionsRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
+  computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isGitConfig,isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, isTerminalAcknowledgmentsRecord, isLaunchedSessionsRecord, isOfficeMailboxRecord, isReportedCriticalsRecord, isAdvisorRunsRecord, isPlanReviewRecord, isExemptionsRecord, isRuntimeWaiversRecord, isRunApprovalsRecord, isRecordsDir, isRecordFileName, RECORD_FILE_NAMES, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
   STORY_INTENT_PATTERNS,
   DEFAULT_ADHOC_MAX_FILES, DELEGATED_ADHOC_MAX_FILES, cupoDelegado, cupoAlDeclarar, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS, MARKER_REL,
 };
