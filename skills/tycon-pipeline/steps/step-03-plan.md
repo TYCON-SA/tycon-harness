@@ -74,6 +74,23 @@ El plan escrito trae dos secciones, que son las que muestra la pregunta de la fi
 Sin alguna de las dos, o con más de 3 líneas en «Qué hace», el comando no se frena, pero la pregunta de la firma dice
 qué falta y cómo agregarlo en lugar del resumen: el dueño ve que el plan no dice qué hace.
 
+El plan de una historia con código (algún archivo de «## Archivos» es código de implementación) trae una tercera:
+
+- `## Suposiciones sobre el código`: lo que el plan da por cierto del código, un renglón por cosa, cada uno con el
+  `archivo:línea` donde lo comprobaste. Por ejemplo:
+
+  ```markdown
+  ## Suposiciones sobre el código
+  - `skills/tycon-pipeline/scripts/lib/steps.js:27` — el paso del plan se llama `plan`
+  - `scripts/lib/signature-sources.js:80-86` — `seccion` devuelve null si el título no está
+  ```
+
+Sin ella, vacía, con un renglón sin su `archivo:línea`, o con un archivo o una línea que no existen en el repo,
+`complete-step plan` no cierra y dice en una línea qué falta y cómo se escribe. Un plan de puro texto (guías,
+historias, configuración) no la lleva. La ruta va relativa a la raíz de su repo: el de la ejecución o un hermano (una
+historia del repo de historias cita el código del repo hermano). Un plan que no da nada por cierto, porque sólo crea
+archivos nuevos, lo dice con un único renglón `- Ninguna: <por qué>`.
+
 ## Pasada de suposiciones, antes de cerrar el plan
 
 La revisión del plan busca «suposición falsa»: lo que el plan cree del código y no es cierto. Esa lente corre recién en
@@ -87,8 +104,8 @@ hace su propia pasada:
 3. **Lo que no se pudo comprobar**, o resultó falso, se arregla en el plan antes de cerrarlo: se cambia la tarea, o va
    en «Riesgos o ambigüedades» con lo que falta saber. Nunca queda como un hecho.
 
-La pasada no se escribe entera en el plan. Alcanza con que el plan no apoye nada en una suposición sin comprobar. La
-revisión del plan sigue corriendo igual: esta pasada la abarata, no la reemplaza.
+En un plan con código, lo comprobado queda escrito en «## Suposiciones sobre el código», con su `archivo:línea`: es
+lo que mira el cierre del paso. La revisión del plan sigue corriendo igual: esta pasada la abarata, no la reemplaza.
 
 ## Guardrail — patrón de referencia verificado (stories de backend)
 

@@ -494,6 +494,8 @@ const SENSITIVE = Object.freeze([
   // el arreglo de un rojo de CI sin plan ni revisores, el cierre de una ejecución reemplazada sin firma y lo que una vuelta
   // de arreglo deja a seguimiento: los cargan marker.js y pipeline.js
   'skills/tycon-pipeline/scripts/lib/ci-red-lane.js', 'skills/tycon-pipeline/scripts/lib/replaced-run.js', 'skills/tycon-pipeline/scripts/lib/fix-scope.js',
+  // lo que el cierre de «Armar el plan» comprueba de las suposiciones del plan: lo carga marker.js
+  'skills/tycon-pipeline/scripts/lib/plan-assumptions.js',
   // lo que decide si el dueño se entera
   'scripts/lib/notify.js', 'scripts/lib/notify-mail.js', 'scripts/lib/tycon-*-notify.sh',
   'scripts/lib/integrations.js', 'scripts/lib/tycon-config.js',
