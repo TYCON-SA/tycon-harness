@@ -321,6 +321,44 @@ has "T4 …y nombra el archivo aprobado" "${T}/t4.out" "cambio de control aproba
 printf '%s\n' '{ "mode": "warn", "allow": ["docs/permitido.txt", "docs/malo.txt"] }' > "${R}/scripts/ci/toy-rules.json"; commit "${R}" "otro cambio"
 run "${R}" "${T}/t6.out"
 is "T6 el control cambia después del click: rojo" "1" "${RC}"
+# T4b · la firma por rango (`approve --range … --expect <huella>`), que no nombra ningún archivo: la lista la arma el guion
+# desde el pedido, como `pending`, y escribe la misma constancia que la de --entries. Es la que se puede pedir con un click
+# cuando la lista nombra la puerta de producción (el freno de producción frena todo comando que la nombre). Con otra
+# huella (el pedido cambió desde que se pidió) no firma nada
+# 🔴 sin el arreglo: approve sin --entries ni --file sale con su uso (2) y no firma
+R="${T}/t4r"; make_base "${R}"; pr "${R}"
+printf '%s\n' '{ "mode": "block", "allow": ["docs/permitido.txt", "docs/malo.txt"] }' > "${R}/scripts/ci/toy-rules.json"
+printf 'PROHIBIDO\n' > "${R}/docs/malo.txt"; commit "${R}"
+bash "${SCRIPT}" pending --root "${R}" --base main --range main...pedido > "${T}/t4r-pending.out" 2>&1
+POR_RANGO="$(sed -n 's/^o, sin nombrar los archivos ([^)]*): //p' "${T}/t4r-pending.out" | head -n 1)"
+HUELLA="$(printf '%s' "${POR_RANGO}" | grep -oE -- '--expect [0-9a-f]{64}' | cut -d' ' -f2)"
+case "${POR_RANGO}" in *--entries*|'') no "T4b pending no da la firma por rango, sin --entries: «${POR_RANGO}»" ;; *) ok "T4b pending da también la firma por rango, sin nombrar los archivos" ;; esac
+bash "${SCRIPT}" approve --root "${R}" --base main --range main...pedido --expect "$(printf '0%.0s' $(seq 1 64))" < /dev/null > "${T}/t4r-otra.out" 2>&1; RC=$?
+is "T4b con otra huella no firma (exit 1)" "1" "${RC}"
+has "T4b …y dice que la lista cambió" "${T}/t4r-otra.out" "la lista del pedido cambió desde que se pidió la firma"
+[ ! -e "${R}/.tycon/control-changes.jsonl" ] && ok "T4b …sin escribir la constancia" || no "T4b con otra huella escribió la constancia"
+LISTA="$(bash "${SCRIPT}" entries --root "${R}" --base main --range main...pedido --expect "${HUELLA}" 2>/dev/null)"
+if node -e 'const l=JSON.parse(process.argv[1]);process.exit(l.hash===process.argv[2]&&l.entries.length===1&&l.entries[0].path==="scripts/ci/toy-rules.json"?0:1)' "${LISTA}" "${HUELLA}" 2>/dev/null; then ok "T4b entries da la lista del pedido con su huella"; else no "T4b entries no dio la lista: ${LISTA}"; fi
+# el cuadro del freno de firmas sale de la misma lista: el detalle trae el archivo, aunque el comando no lo nombre; con otra
+# huella no hay cuadro
+mkdir -p "${T}/t4r-estado"
+CUADRO="$(node -e '
+  const s = require(process.argv[1]); const [raiz, estado, huella] = process.argv.slice(2);
+  const pal = (h) => ["run-base-controls.sh", "approve", "--root", raiz, "--base", "main", "--range", "main...pedido", "--out", ".tycon/control-changes.jsonl", "--expect", h];
+  const bien = s.partesDe({ firma: "control-change", palabras: pal(huella), cwd: raiz, estado });
+  const mal = s.partesDe({ firma: "control-change", palabras: pal("0".repeat(64)), cwd: raiz, estado });
+  process.stdout.write(bien && !bien.error && (bien.archivos || []).includes("scripts/ci/toy-rules.json") && mal && mal.error ? "si" : JSON.stringify({ bien, mal }).slice(0, 300));
+' "${ROOT}/scripts/lib/signature-sources.js" "${R}" "${T}/t4r-estado" "${HUELLA}" 2>&1)"
+is "T4b el cuadro sale de la lista del pedido, y con otra huella no hay cuadro" "si" "${CUADRO}"
+args="${POR_RANGO#* approve }"; eval "set -- ${args}"
+TEST_WINDOW_SEEN="${T}/ventana-vista.json" bash "${V}/scripts/ci/run-base-controls.sh" approve "$@" > "${T}/t4r-click.out" 2>&1; RC=$?
+is "T4b approve por rango con el click: firma (exit 0)" "0" "${RC}"
+if node -e 'const v=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.exit(v.firma==="control-change"&&v.argv.includes("--range")&&!v.argv.includes("--entries")?0:1)' "${T}/ventana-vista.json" 2>/dev/null; then ok "T4b …la ventana vio control-change por rango, sin --entries"; else no "T4b la ventana no vio la firma por rango: $(cat "${T}/ventana-vista.json" 2>/dev/null)"; fi
+commit "${R}" "constancia por rango"
+run "${R}" "${T}/t4r.out"
+is "T4b con la constancia por rango: verde" "0" "${RC}"
+has "T4b …y nombra el archivo aprobado" "${T}/t4r.out" "cambio de control aprobado: scripts/ci/toy-rules.json"
+
 # T10: dos reglas cambiadas y una constancia que sólo nombra una
 R="${T}/t10c"; make_base "${R}"; pr "${R}"
 printf '%s\n' '{ "mode": "block", "allow": ["docs/permitido.txt", "docs/malo.txt"] }' > "${R}/scripts/ci/toy-rules.json"
