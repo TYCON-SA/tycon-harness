@@ -539,6 +539,22 @@ function almacenDeLaLlave(cfg) {
   };
 }
 
+/**
+ * Dónde lee la bajada de una máquina con una llave de otro proveedor: `{ cfg, almacen }`, con el almacén de bajada de su
+ * conector (`almacenDeBajada`, la forma `{ destino, listar, leer }`) y la misma `urlBase` que la subida. Si no:
+ * `{ codigo, estado, motivo? }` — el conector no carga → 2 `config_rota`; ningún conector lo atiende, o el suyo no sabe
+ * bajar → 1 `no_soportado` (el motivo lo pone quien llama); la llave no vale → 1 con el estado de `leerConfig`.
+ */
+function almacenDeBajadaDeLaLlave(ruta = rutaConfig()) {
+  let conector;
+  try { conector = require(path.join(__dirname, '..', 'lib', 'integrations.js')).mailboxConnector(proveedorDeLaLlave(ruta)); }
+  catch (e) { return { codigo: 2, estado: 'config_rota', motivo: `${ruta}: el conector del proveedor de "provider" no carga (${e.code || e.name})` }; }
+  if (!conector || typeof conector.almacenDeBajada !== 'function') return { codigo: 1, estado: 'no_soportado' };
+  const lc = leerConfig([], ruta);
+  if (!lc.cfg) return { codigo: 1, estado: lc.estado, motivo: lc.motivo };
+  return { cfg: lc.cfg, almacen: conector.almacenDeBajada(lc.cfg, { urlBase: variable('TYCON_MAILBOX_URL_BASE') || null }) };
+}
+
 /** El inicio de la pasada, en ms. TYCON_NOW (ISO) sólo para el banco de pruebas. */
 function ahoraMs() {
   const t = Date.parse(variable('TYCON_NOW') || '');
@@ -1656,7 +1672,7 @@ async function chequearSoloCrear(opts = {}) {
   return fin(1, 'no_medido', `no medido: ningún blob confirmado de esta máquina tiene todavía su archivo local con el mismo sha256 (${candidatos.length} anotado(s)): no se manda nada distinto de lo confirmado`);
 }
 
-module.exports = { sinCredencialesEnDirecciones, placeFactsForMailbox, holdForMailbox, FORMA_DESHECHA, FORMA_MOMENTO, subir, prepararSinCerrar, chequearSoloCrear, motivoDeLaboratorio, MARCAS_DE_CI, respuestaDelBuzon, versionDe, msDeVersion, FORMA_VERSION, nombreDeMaquina, nombreBaseDeMaquina, carpetaDeMaquina, leerCodigoDeMaquina, rutaCodigoDeMaquina, correoDeGitGlobal, huellaDeCorridas, FORMA_CODIGO, normalizarNombreDeMaquina, leerConfig, integracionBuzon, negativaDeLaLlave, negativaDeLaLlaveDe, proveedorDeLaLlave, rutaConfig, urlBase, FORMA_MAQUINA, FORMA_ARCHIVO, FORMA_REGISTRO, formaRegistro, FORMA_INSTINTO, FORMA_JORNADA, REGISTROS, prepararRegistros, usosParaElBuzon, X_MS_VERSION };
+module.exports = { sinCredencialesEnDirecciones, placeFactsForMailbox, holdForMailbox, FORMA_DESHECHA, FORMA_MOMENTO, subir, prepararSinCerrar, chequearSoloCrear, motivoDeLaboratorio, MARCAS_DE_CI, respuestaDelBuzon, versionDe, msDeVersion, FORMA_VERSION, nombreDeMaquina, nombreBaseDeMaquina, carpetaDeMaquina, leerCodigoDeMaquina, rutaCodigoDeMaquina, correoDeGitGlobal, huellaDeCorridas, FORMA_CODIGO, normalizarNombreDeMaquina, leerConfig, integracionBuzon, negativaDeLaLlave, negativaDeLaLlaveDe, proveedorDeLaLlave, almacenDeBajadaDeLaLlave, rutaConfig, urlBase, FORMA_MAQUINA, FORMA_ARCHIVO, FORMA_REGISTRO, formaRegistro, FORMA_INSTINTO, FORMA_JORNADA, REGISTROS, prepararRegistros, usosParaElBuzon, X_MS_VERSION };
 
 /**
  * `--log <archivo>`: la salida (la estándar y la de error) se AGREGA a ese archivo, que pasado ~512 KB se mueve a `.1`.

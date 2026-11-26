@@ -1241,6 +1241,43 @@ test('Buzon_DesdeOperations_SinLlave: la ubicación de operations.json y el tena
   }
 });
 
+test('T9 NocheAzure_Gcs_NoSoportado @story-1.5 @ac-6: con site.mailbox de otro proveedor, las noches de Azure avisan que no lo leen y no piden account ni container', () => {
+  const fake = 'require("fs").writeFileSync(process.env.LAB_OUT, process.env.TYCON_MAILBOX_JSON && require("fs").existsSync(process.env.TYCON_MAILBOX_JSON) ? require("fs").readFileSync(process.env.TYCON_MAILBOX_JSON, "utf8") : "SIN"); process.stdout.write(JSON.stringify({ completo: true }));\n';
+  const conGcs = '{"version":1,"owners":{"default":"lider@acme.example"},"site":{"mailbox":{"provider":"gcs","bucket":"acme-buzon"}}}\n';
+  const vars = (j) => ({ 'Agent.TempDirectory': j.tmp, 'Build.SourcesDirectory': j.job, 'System.CollectionUri': 'https://dev.azure.com/acme/', SIN_GUARDAR: '' });
+  const correrPaso = (j, body) => spawnSync('bash', ['-c', body], { cwd: j.job, env: cleanEnv({ LAB_OUT: path.join(j.tmp, 'visto.json'), PATH: `${j.bin}${path.delimiter}${process.env.PATH}` }), encoding: 'utf8' });
+  const lab = () => {
+    const j = jobDir({ 'operations.json': conGcs, 'scripts/metrics/download-runs.js': fake, 'scripts/nightly/runs-review/runs-review.js': fake, 'scripts/instincts/instinct-nightly.js': fake });
+    fs.writeFileSync(path.join(j.bin, 'az'), '#!/usr/bin/env bash\n[ "$1 $2" = "account show" ] && { echo "00000000-1111-2222-3333-444444444444"; exit 0; }\nexit 1\n', { mode: 0o755 });
+    return j;
+  };
+  const sinUbicacion = (j) => {
+    const mbx = path.join(j.tmp, 'mailbox-location.json');
+    assert.ok(!fs.existsSync(mbx) || !/cuenta|contenedor/.test(fs.readFileSync(mbx, 'utf8')), 'no escribe account ni container');
+  };
+  // el tablero y los aprendizajes: el aviso, y siguen sin buzón
+  for (const [model, name] of [['team-dashboard.yml', 'Bajar del buzón los registros y los volcados (sin conversaciones)'], ['instinct-proposals.yml', 'Bajar los días de instintos y proponer']]) {
+    const j = lab();
+    const r = correrPaso(j, azureCliScript(model, name, vars(j)));
+    const all = `${r.stdout}${r.stderr}`;
+    assert.strictEqual(r.status, 0, `${model}: ${all}`);
+    assert.match(all, /##vso\[task\.logissue type=warning\][^\n]*no está soportado en Azure Pipelines/, `${model}: el aviso de no soportado`);
+    sinUbicacion(j);
+    if (model === 'team-dashboard.yml') assert.ok(!fs.existsSync(path.join(j.tmp, 'visto.json')), 'el tablero no baja nada');
+    else assert.strictEqual(fs.readFileSync(path.join(j.tmp, 'visto.json'), 'utf8'), 'SIN', 'la noche de aprendizajes corre sin ubicación del buzón: sale «no medido»');
+  }
+  // la revisión de ejecuciones: los dos pasos que leen site.mailbox salen con error
+  const j = lab();
+  const donde = correrPaso(j, stepScript('runs-review.yml', 'Dónde está el buzón (operations.json → site.mailbox)', vars(j)));
+  assert.strictEqual(donde.status, 1, `${donde.stdout}${donde.stderr}`);
+  assert.match(donde.stdout, /##vso\[task\.logissue type=error\][^\n]*no está soportado en Azure Pipelines/);
+  const revisar = correrPaso(j, azureCliScript('runs-review.yml', 'Revisar las ejecuciones del buzón', vars(j)));
+  assert.notStrictEqual(revisar.status, 0, `${revisar.stdout}${revisar.stderr}`);
+  assert.match(revisar.stdout, /##vso\[task\.logissue type=error\][^\n]*no está soportado en Azure Pipelines/);
+  assert.ok(!fs.existsSync(path.join(j.tmp, 'visto.json')), 'la revisión no corre');
+  sinUbicacion(j);
+});
+
 test('Buzon_ConLaOrganizacionDeLaCorrida: sin perfil en el árbol, la bajada y la revisión reciben la organización de la corrida', () => {
   const fake = 'require("fs").writeFileSync(process.env.LAB_OUT, String(process.env.TYCON_ADO_ORG || "SIN")); process.stdout.write(JSON.stringify({ completo: true }));\n';
   const ops = '{"version":1,"owners":{"default":"lider@acme.example"},"site":{"mailbox":{"provider":"azure-blob","account":"acmeruns","container":"runs"}}}\n';

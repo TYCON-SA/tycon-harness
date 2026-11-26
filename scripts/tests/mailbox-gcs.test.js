@@ -434,33 +434,261 @@ test('bajarUnaCorrida del conector baja la conversación más nueva @story-1.3 @
 
 // ── la bajada desde una máquina ─────────────────────────────────────────────────────────────────────────────
 
-test('T18 DownloadGcs_FromMachine_NotSupported @story-1.3 @ac-13 — con una llave gcs, la bajada y su informe salen no_soportado sin red ni az', async () => {
+test('T18 DownloadGcs_FromMachine_NotSupported @story-1.3 @ac-13 @story-1.5 @ac-1 — con una llave gcs, los informes de re-subidas y del Node siguen en no_soportado sin red ni az', async () => {
   const fake = await FAKE.crear({ bucket: BUCKET, accessId: ACCESS, secreto: SECRETO });
   try {
-    const m = maquina(fake);
-    const azLog = path.join(m.base, 'az.log');
-    const az = path.join(m.base, 'az');
-    fs.writeFileSync(az, `#!/bin/sh\necho "$*" >> "${azLog}"\necho token\n`, { mode: 0o755 });
-    m.env.TYCON_AZ_BIN = az;
-    m.env.TYCON_MAILBOX_DIR = path.join(m.base, 'espejo');
+    const m = bajadaGcs(fake);
     // con Azure DevOps apagado (la casa falsa no tiene organización) y prendido
     for (const ado of [null, 'https://dev.azure.com/acme']) {
       if (ado) m.env.TYCON_ADO_ORG = ado; else delete m.env.TYCON_ADO_ORG;
-      for (const args of [[], ['--overwrites-report']]) {
+      for (const args of [['--overwrites-report'], ['--harness-node-report']]) {
         const r = await correr(BAJAR, m, args);
-        assert.strictEqual(r.codigo, 1, `${args.join(' ') || 'bajada'} (ado ${ado ? 'prendido' : 'apagado'}): ${r.salida}`);
+        assert.strictEqual(r.codigo, 1, `${args.join(' ')} (ado ${ado ? 'prendido' : 'apagado'}): ${r.salida}`);
         assert.strictEqual(r.res.estado, 'no_soportado');
         assert.match(r.res.motivo, /sitio/, 'dice que ese buzón lo lee el sitio');
       }
     }
-    assert.ok(!fs.existsSync(azLog), 'az no se llamó');
+    assert.ok(!fs.existsSync(m.azLog), 'az no se llamó');
+    assert.ok(!fs.existsSync(m.gcloudLog), 'gcloud no se llamó');
     assert.strictEqual(fake.pedidos.length, 0, 'ningún pedido a la red');
-    assert.ok(!fs.existsSync(m.env.TYCON_MAILBOX_DIR), 'el espejo local no se tocó');
+    assert.ok(!fs.existsSync(m.espejo), 'el espejo local no se tocó');
+  } finally { await fake.cerrar(); }
+});
+
+// ── la bajada desde una máquina con la sesión de gcloud ─────────────────────────────────────────────────────
+
+const TOKEN_GCLOUD = 'token-de-prueba';
+const MAQ_A = 'maq-a-11111111';
+const MAQ_B = 'maq-b-22222222';
+const V_NUEVA = 'v20261121T101010000Z';
+
+/**
+ * Una máquina que baja con una llave gcs: su espejo (TYCON_MAILBOX_DIR), un `az` doble que anota si lo llamaron y un
+ * `gcloud` doble (TYCON_GCLOUD_BIN) que anota sus argumentos, `CLOUDSDK_CORE_DISABLE_PROMPTS` y si su entrada estaba
+ * cerrada (`read` que falla de inmediato con /dev/null; con una entrada abierta se quedaría esperando), y escribe `token`
+ * con la salida `sale`. Azure DevOps queda apagada: la casa falsa no tiene organización.
+ */
+function bajadaGcs(fake, { token = TOKEN_GCLOUD, sale = 0, llave } = {}) {
+  const m = maquina(fake, llave);
+  m.espejo = path.join(m.base, 'espejo');
+  m.indice = path.join(m.base, 'mailbox-downloads.json');
+  m.sello = path.join(m.base, 'download-runs-no-permission.seal');
+  m.azLog = path.join(m.base, 'az.log');
+  m.gcloudLog = path.join(m.base, 'gcloud.log');
+  const az = path.join(m.base, 'az');
+  fs.writeFileSync(az, `#!/bin/sh\necho "$*" >> "${m.azLog}"\necho token\n`, { mode: 0o755 });
+  const gcloud = path.join(m.base, 'gcloud');
+  fs.writeFileSync(gcloud, [
+    '#!/bin/sh',
+    `echo "args=$* prompts=\${CLOUDSDK_CORE_DISABLE_PROMPTS:-}" >> "${m.gcloudLog}"`,
+    `if read -r x; then echo "entrada=abierta" >> "${m.gcloudLog}"; else echo "entrada=cerrada" >> "${m.gcloudLog}"; fi`,
+    token ? `echo "${token}"` : 'echo ""',
+    `exit ${sale}`,
+    '',
+  ].join('\n'), { mode: 0o755 });
+  Object.assign(m.env, { TYCON_AZ_BIN: az, TYCON_GCLOUD_BIN: gcloud, TYCON_MAILBOX_DIR: m.espejo });
+  delete m.env.TYCON_DOWNLOADS_LOG;
+  return m;
+}
+const bajarGcs = (m, args = []) => correr(BAJAR, m, args);
+const gets = (fake) => fake.pedidos.filter((p) => /alt=media/.test(p.consulta));
+const enElIndice = (m) => { try { return Object.keys(JSON.parse(fs.readFileSync(m.indice, 'utf8')).blobs); } catch (_) { return []; } };
+
+/** El bucket de T1: dos máquinas, dos versiones de una ejecución y un juego de registros más nuevo al que le falta uno. */
+function bucketDeDosMaquinas(fake) {
+  fake.poner(`${MAQ_A}/s1.json`, volcado('s1', '2026-11-20T10:00:00Z'));
+  fake.poner(`${MAQ_A}/${V_NUEVA}/s1.json`, volcado('s1', '2026-11-21T10:00:00Z'));
+  fake.poner(`${MAQ_B}/s3.json`, volcado('s3', '2026-11-23T10:00:00Z'));
+  // el juego de siempre, completo: gates medido y su archivo está
+  fake.poner(`${MAQ_A}/registros/gates.log.gz`, 'gates-viejo');
+  fake.poner(`${MAQ_A}/registros/cobertura.json`, JSON.stringify({ fuentes: { gates: { estado: 'medido' } } }));
+  // el juego más nuevo dice que midió gates, pero su gates.log.gz no está: incompleto
+  fake.poner(`${MAQ_A}/registros/${V_NUEVA}/cobertura.json`, JSON.stringify({ fuentes: { gates: { estado: 'medido' } } }));
+}
+
+test('T1 Bajada_Gcs_BajaLoNuevo @story-1.5 @ac-1 — con la sesión de gcloud baja la versión más nueva y el juego completo de registros a las rutas de siempre', async () => {
+  const fake = await FAKE.crear({ bucket: BUCKET, accessId: ACCESS, secreto: SECRETO });
+  try {
+    bucketDeDosMaquinas(fake);
+    const m = bajadaGcs(fake);
+    m.env.TYCON_ADO_ORG = 'https://dev.azure.com/acme';
+    const r = await bajarGcs(m);
+    assert.strictEqual(r.codigo, 0, r.salida);
+    assert.strictEqual(r.res.completo, true, r.salida);
+    assert.strictEqual(JSON.parse(fs.readFileSync(path.join(m.espejo, MAQ_A, 's1.json'), 'utf8')).archivedAt, '2026-11-21T10:00:00Z', 'la versión más nueva, en la ruta sin versión');
+    assert.ok(fs.existsSync(path.join(m.espejo, MAQ_B, 's3.json')));
+    assert.strictEqual(fs.readFileSync(path.join(m.espejo, MAQ_A, 'registros', 'gates.log.gz'), 'utf8'), 'gates-viejo', 'el juego completo, no el más nuevo incompleto');
+    assert.ok(r.res.versiones_incompletas >= 1, 'contó el juego incompleto');
+    assert.ok(fake.pedidos.every((p) => !p.ruta.startsWith('/storage/') || p.cabeceras.authorization === `Bearer ${TOKEN_GCLOUD}`), 'cada pedido con el token de gcloud');
+    assert.match(fs.readFileSync(m.gcloudLog, 'utf8'), /args=auth print-access-token/);
+    assert.ok(!fs.existsSync(m.azLog), 'az no se llamó');
+  } finally { await fake.cerrar(); }
+});
+
+test('T2 Bajada_Gcs_SegundaPasadaNoBaja @story-1.5 @ac-2 — con el espejo al día no baja nada', async () => {
+  const fake = await FAKE.crear({ bucket: BUCKET, accessId: ACCESS, secreto: SECRETO });
+  try {
+    bucketDeDosMaquinas(fake);
+    const m = bajadaGcs(fake);
+    const primera = await bajarGcs(m);
+    assert.strictEqual(primera.codigo, 0, primera.salida);
+    const antes = gets(fake).length;
+    const segunda = await bajarGcs(m);
+    assert.strictEqual(segunda.codigo, 0, segunda.salida);
+    assert.strictEqual(segunda.res.bajados, 0);
+    assert.strictEqual(gets(fake).length, antes, 'ningún GET de objeto en la segunda pasada');
+  } finally { await fake.cerrar(); }
+});
+
+test('T3 Bajada_Gcs_SinGcloud @story-1.5 @ac-4 — sin gcloud es «sin permiso»: sale 0, no crea el espejo y lo anota una vez por día', async () => {
+  const fake = await FAKE.crear({ bucket: BUCKET, accessId: ACCESS, secreto: SECRETO });
+  try {
+    bucketDeDosMaquinas(fake);
+    const m = bajadaGcs(fake);
+    m.env.TYCON_GCLOUD_BIN = path.join(m.base, 'no-existe', 'gcloud');
+    const r = await bajarGcs(m);
+    assert.strictEqual(r.codigo, 0, r.salida);
+    assert.strictEqual(r.res.estado, 'sin_permiso');
+    assert.match(r.res.motivo, /gcloud/);
+    assert.strictEqual(r.res.aviso, 'emitido');
+    assert.ok(!fs.existsSync(m.espejo), 'no creó la carpeta del espejo');
+    assert.ok(fs.existsSync(m.sello), 'el sello de «sin permiso» de siempre');
+    assert.strictEqual(fake.pedidos.length, 0, 'ningún pedido a la red');
+    const otra = await bajarGcs(m);
+    assert.strictEqual(otra.codigo, 0);
+    assert.notStrictEqual(otra.res.aviso, 'emitido', 'el mismo día no lo vuelve a decir');
+  } finally { await fake.cerrar(); }
+});
+
+test('T4 Bajada_Gcs_SinSesion @story-1.5 @ac-4 — gcloud sin sesión, o sin token, es «sin permiso»; corre con la entrada cerrada y sin preguntas', async () => {
+  const fake = await FAKE.crear({ bucket: BUCKET, accessId: ACCESS, secreto: SECRETO });
+  try {
+    bucketDeDosMaquinas(fake);
+    for (const doble of [{ token: '', sale: 1 }, { token: '', sale: 0 }]) {
+      const m = bajadaGcs(fake, doble);
+      const r = await bajarGcs(m);
+      assert.strictEqual(r.codigo, 0, `${JSON.stringify(doble)}: ${r.salida}`);
+      assert.strictEqual(r.res.estado, 'sin_permiso');
+      assert.ok(!fs.existsSync(m.espejo), 'no baja ni crea el espejo');
+      const log = fs.readFileSync(m.gcloudLog, 'utf8');
+      assert.match(log, /prompts=1/, 'CLOUDSDK_CORE_DISABLE_PROMPTS=1');
+      assert.match(log, /entrada=cerrada/, 'la entrada cerrada: nunca espera una respuesta');
+    }
+    assert.strictEqual(fake.pedidos.length, 0, 'ningún pedido a la red');
+  } finally { await fake.cerrar(); }
+});
+
+test('T5 Bajada_Gcs_SinRol @story-1.5 @ac-4 — un 403 al listar es «sin permiso»: sale 0 y no crea el espejo', async () => {
+  const fake = await FAKE.crear({ bucket: BUCKET, accessId: ACCESS, secreto: SECRETO });
+  try {
+    bucketDeDosMaquinas(fake);
+    fake.modo.json = '403';
+    const m = bajadaGcs(fake);
+    const r = await bajarGcs(m);
+    assert.strictEqual(r.codigo, 0, r.salida);
+    assert.strictEqual(r.res.estado, 'sin_permiso');
+    assert.ok(r.res.motivo);
+    assert.ok(!fs.existsSync(m.espejo), 'no creó la carpeta del espejo');
+    assert.strictEqual(gets(fake).length, 0, 'no bajó nada');
+  } finally { await fake.cerrar(); }
+});
+
+test('T6 Bajada_Gcs_Token401 @story-1.5 @ac-5 — un 401 al listar o al bajar es credencial_rechazada: sale distinto de 0, no completa y sin el token', async () => {
+  const fake = await FAKE.crear({ bucket: BUCKET, accessId: ACCESS, secreto: SECRETO });
+  try {
+    bucketDeDosMaquinas(fake);
+    // al listar
+    fake.modo.json = '401';
+    const m = bajadaGcs(fake);
+    const r = await bajarGcs(m);
+    assert.notStrictEqual(r.codigo, 0, r.salida);
+    assert.strictEqual(r.res.estado, 'credencial_rechazada');
+    assert.strictEqual(r.res.completo, false);
+    assert.ok(!r.salida.includes(TOKEN_GCLOUD), 'el token no sale');
+    assert.deepStrictEqual(enElIndice(m), [], 'nada marcado como bajado');
+    // al bajar un objeto
+    fake.modo.json = 'ok';
+    fake.modo.media = '401';
+    const m2 = bajadaGcs(fake);
+    const r2 = await bajarGcs(m2);
+    assert.notStrictEqual(r2.codigo, 0, r2.salida);
+    assert.strictEqual(r2.res.estado, 'credencial_rechazada');
+    assert.strictEqual(r2.res.completo, false);
+    assert.ok(!r2.salida.includes(TOKEN_GCLOUD), 'el token no sale');
+    const pedido = gets(fake).map((p) => decodeURIComponent(p.ruta.split('/o/')[1] || ''));
+    assert.ok(pedido.length >= 1, 'pidió al menos un objeto');
+    for (const nombre of pedido) assert.ok(!enElIndice(m2).includes(nombre), `${nombre} no queda en el índice`);
+    // todos los objetos contestan 401: ninguno queda escrito en el espejo
+    const archivos = (d) => (fs.existsSync(d) ? fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? archivos(path.join(d, e.name)) : [path.join(d, e.name)])) : []);
+    assert.deepStrictEqual(archivos(m2.espejo), [], 'el objeto del 401 no quedó en el espejo');
+  } finally { await fake.cerrar(); }
+});
+
+test('T7 Bajada_Gcs_Bucket404 @story-1.5 @ac-5 — un 404 al listar es sin_contenedor con el bucket en el motivo', async () => {
+  const fake = await FAKE.crear({ bucket: BUCKET, accessId: ACCESS, secreto: SECRETO });
+  try {
+    fake.modo.json = '404';
+    const m = bajadaGcs(fake);
+    const r = await bajarGcs(m);
+    assert.notStrictEqual(r.codigo, 0, r.salida);
+    assert.strictEqual(r.res.estado, 'sin_contenedor');
+    assert.ok(r.res.motivo.includes(BUCKET), r.res.motivo);
+  } finally { await fake.cerrar(); }
+});
+
+test('T8 Bajada_Gcs_SinRed @story-1.5 @ac-5 — sin respuesta del servidor es sin_red: sale distinto de 0 y nada marcado', async () => {
+  const m = bajadaGcs(null);
+  const r = await bajarGcs(m);
+  assert.notStrictEqual(r.codigo, 0, r.salida);
+  assert.strictEqual(r.res.estado, 'sin_red', r.salida);
+  assert.strictEqual(r.res.completo, false);
+  assert.deepStrictEqual(enElIndice(m), [], 'nada marcado como bajado');
+});
+
+test('T10 Bajada_Gcs_SinAzureDevOps @story-1.5 @ac-3 — sin Azure DevOps, sin tenant y sin az, baja igual', async () => {
+  const fake = await FAKE.crear({ bucket: BUCKET, accessId: ACCESS, secreto: SECRETO });
+  try {
+    bucketDeDosMaquinas(fake);
+    const m = bajadaGcs(fake);
+    delete m.env.TYCON_ADO_ORG;
+    m.env.TYCON_AZ_BIN = path.join(m.base, 'no-existe', 'az');
+    const r = await bajarGcs(m);
+    assert.strictEqual(r.codigo, 0, r.salida);
+    assert.strictEqual(r.res.completo, true, r.salida);
+    assert.ok(fs.existsSync(path.join(m.espejo, MAQ_B, 's3.json')));
+    assert.ok(!fs.existsSync(m.azLog), 'az no se llamó');
     // con el buzón apagado sigue saliendo apagado
     m.env.TYCON_MAILBOX = '0';
-    const apagado = await correr(BAJAR, m);
+    const apagado = await bajarGcs(m);
     assert.strictEqual(apagado.codigo, 0);
     assert.strictEqual(apagado.res.estado, 'apagado');
+  } finally { await fake.cerrar(); }
+});
+
+test('T12 Bajada_OtroProveedor_SinConector @story-1.5 @ac-1 — sin conector, o con un conector que no sabe bajar, sigue no_soportado sin red', async () => {
+  const fake = await FAKE.crear({ bucket: BUCKET, accessId: ACCESS, secreto: SECRETO });
+  try {
+    // un proveedor que ningún conector atiende
+    const m = bajadaGcs(fake, { llave: llaveGcs({ provider: 's3' }) });
+    const r = await bajarGcs(m);
+    assert.strictEqual(r.codigo, 1, r.salida);
+    assert.strictEqual(r.res.estado, 'no_soportado');
+    // un conector de buzón que sólo sabe subir
+    const ints = tmp('gcs-ints-');
+    fs.cpSync(path.join(ROOT, 'integrations', 'gcs'), path.join(ints, 'gcs'), { recursive: true });
+    fs.writeFileSync(path.join(ints, 'gcs', 'scripts', 'mailbox.js'), `const real = require(${JSON.stringify(CONECTOR)});\nconst { almacenDeBajada, ...resto } = real;\nmodule.exports = resto;\n`);
+    const m2 = bajadaGcs(fake);
+    m2.env.TYCON_INTEGRATIONS_DIR = ints;
+    const r2 = await bajarGcs(m2);
+    assert.strictEqual(r2.codigo, 1, r2.salida);
+    assert.strictEqual(r2.res.estado, 'no_soportado');
+    // un conector que no carga: config_rota con salida 2
+    fs.writeFileSync(path.join(ints, 'gcs', 'scripts', 'mailbox.js'), 'throw new Error("roto a propósito");\n');
+    const r3 = await bajarGcs(m2);
+    assert.strictEqual(r3.codigo, 2, r3.salida);
+    assert.strictEqual(r3.res.estado, 'config_rota');
+    assert.strictEqual(fake.pedidos.length, 0, 'ningún pedido a la red');
+    assert.ok(!fs.existsSync(m.gcloudLog) && !fs.existsSync(m2.gcloudLog), 'gcloud no se llamó');
   } finally { await fake.cerrar(); }
 });
 
