@@ -208,12 +208,11 @@
   },
   "review-cap-shown": {
     "tipo": "preferencia",
-    "motivo": "Un trámite: al tope de vueltas de revisores, decidir qué se hace con lo que quedó abierto. Sin nada abierto no frena.",
+    "motivo": "Un trámite: al tope de vueltas de revisores, decidir qué se hace con lo que quedó abierto. Sin nada abierto no frena. Preferencia: decidido por el dueño 26/11.",
     "review_before": "2027-01-24",
     "estado": "propuesta",
     "ganchos": [],
-    "del_pipeline": true,
-    "dudoso": "No es sólo un trámite: al tope de vueltas, la vuelta extra pide la firma del dueño, y con algo de seguridad o de datos abierto «lo decide una persona». Relajado, el modelo se serviría vueltas sin esa firma. Vale como preferencia sólo junto con review-cap-blocking como exigencia. Lo decide el dueño."
+    "del_pipeline": true
   },
   "on-controls-off": {
     "tipo": "exigencia",
@@ -527,12 +526,11 @@
   },
   "ledger-visible": {
     "tipo": "preferencia",
-    "motivo": "Frena editar código por la línea de comandos, con la constancia en gates.log (si el registro falla, igual frena). Es el piloto de la prueba de resta, que mide si hace falta.",
+    "motivo": "Frena editar código por la línea de comandos, con la constancia en gates.log (si el registro falla, igual frena). Es el piloto de la prueba de resta, que mide si hace falta. Preferencia: decidido por el dueño 26/11.",
     "review_before": "2027-01-26",
     "estado": "propuesta",
     "ganchos": [],
-    "del_pipeline": true,
-    "dudoso": "Fable lo lee como exigencia: protege las historias desde la consola. Pasarlo a exigencia lo saca de la prueba de resta, de la que es el piloto. Lo decide el dueño."
+    "del_pipeline": true
   },
   "tests-missing": {
     "tipo": "exigencia",
