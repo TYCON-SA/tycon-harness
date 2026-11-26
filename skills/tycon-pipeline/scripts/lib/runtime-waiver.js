@@ -430,8 +430,10 @@ function verifyChain(logPath) {
 }
 
 // Escribe un waiver TTY-confirmado con hash-chain. Sólo lo llama el comando marker.js
-// runtime-waiver, DESPUÉS de que promptTty() confirmó al humano.
-function appendWaiver({ story, acs, matrixHash, approvedBy, nowIso, declHashByAc, logPath, migratedFrom, ok }) {
+// runtime-waiver, DESPUÉS de que promptTty() confirmó al humano. `aprobacion` (de `aprobacionDe` de
+// scripts/lib/signed-record-approval.js): el registro del cuadro que aprobó la persona, que se agrega después de la
+// cadena; `canonical()` no lo mira, así que la cadena se calcula y se lee igual con él o sin él.
+function appendWaiver({ story, acs, matrixHash, approvedBy, nowIso, declHashByAc, logPath, migratedFrom, ok, aprobacion }) {
   const destino = logPath || waiverLogPath();
   fs.mkdirSync(path.dirname(destino), { recursive: true });
   // 🔴 La firma nueva va SIN padre (raíz). Si enganchara con la última línea, un revert
@@ -445,6 +447,11 @@ function appendWaiver({ story, acs, matrixHash, approvedBy, nowIso, declHashByAc
   // false y `ok` dice quién y cómo (las viejas, también con qué palabras y a qué hora)
   if (ok !== undefined) { e.tty = false; e.ok = ok; }
   e.chain = sha(prev + canonical(e)).slice(0, 16);
+  if (aprobacion) {
+    let sra = null;
+    try { sra = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'signed-record-approval.js')); } catch (_) { sra = null; }
+    if (sra) Object.assign(e, sra.conCuadro(e, aprobacion));
+  }
   // Si el archivo quedó sin salto final (recortado a mano en un editor, o una resolución de conflicto), la firma nueva
   // se pegaría a la última línea y se perderían las dos, sin aviso.
   let sep = '';

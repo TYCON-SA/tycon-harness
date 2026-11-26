@@ -125,7 +125,20 @@ function normalizar(e) {
     out.cita = cita;
     if (texto(e && e.cita_cuando)) out.cita_cuando = texto(e.cita_cuando);
   }
+  // el registro del cuadro que aprobó la persona (scripts/lib/signed-record-approval.js) se conserva tal cual: la CI lo pide
+  if (e && e.cuadro && typeof e.cuadro === 'object' && !Array.isArray(e.cuadro)) out.cuadro = e.cuadro;
   return out;
+}
+
+// la biblioteca del registro del cuadro, en scripts/lib del mismo árbol; sin ella, la línea va sin cuadro, como antes
+function registroDelCuadro() {
+  try { return require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'signed-record-approval.js')); } catch (_) { return null; }
+}
+
+/** Lo que el cuadro guarda de la aprobación que devolvió `exigir` para `firma`, o null (sin persona, o sin la biblioteca). */
+function aprobacionDe(r, firma) {
+  const sra = registroDelCuadro();
+  return sra ? sra.aprobacionDe(r, firma) : null;
 }
 
 /** Los problemas de una línea leída del registro. Vacío = válida. */
@@ -148,9 +161,15 @@ function validar(e) {
   return p;
 }
 
-/** Agrega una línea al registro de la carpeta de la corrida. Devuelve la línea guardada; lanza si no puede escribir. */
+/**
+ * Agrega una línea al registro de la carpeta de la corrida. Devuelve la línea guardada; lanza si no puede escribir.
+ * `e.aprobacion` (de `aprobacionDe` de signed-record-approval.js): en una línea manual, el registro del cuadro que aprobó
+ * la persona, armado sobre la línea tal como se guarda. Las automáticas no lo llevan.
+ */
 function anotar(runDir, e) {
-  const linea = normalizar(e);
+  let linea = normalizar(e);
+  const sra = linea.tipo === 'manual' && e && e.aprobacion ? registroDelCuadro() : null;
+  if (sra) linea = sra.conCuadro(linea, e.aprobacion);
   fs.mkdirSync(runDir, { recursive: true });
   fs.appendFileSync(path.join(runDir, FILE), JSON.stringify(linea) + '\n');
   return linea;
@@ -346,6 +365,6 @@ function unir(origenDir, destinoDir) {
 }
 
 module.exports = {
-  FILE, SIN_NOMBRAR, esAgente, lineasDeFirmaPorTerminal, deLaPersona, quienDesdeOpciones, normalizar, validar, anotar, leer, resumir,
+  FILE, SIN_NOMBRAR, esAgente, lineasDeFirmaPorTerminal, deLaPersona, quienDesdeOpciones, normalizar, validar, anotar, aprobacionDe, leer, resumir,
   problemasDelRegistro, planHeredado, faltaElPlan, faltaLaMaqueta, unir, carpetasDeCorrida, POR_FALTA, DESDE_EN_LA_STORY, selloDeCorrida, anteriorAlControl,
 };
