@@ -68,9 +68,9 @@ return { medido: a !== null && b !== null, a, b }
 `);
   const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, TYCON_REVIEW_RUNNER_FILE: file };
   delete env.TYCON_WFLITE_AGENT_CMD;
-  const correr = (orden) => {
+  const correr = (orden, args = '{}') => {
     const out = path.join(lab, 'resultado.json');
-    const r = spawnSync(process.execPath, [LITE, wf, '--args', '{}', '--out', out, '--runners', orden.join(',')], { cwd: lab, env, encoding: 'utf8', timeout: 60000 });
+    const r = spawnSync(process.execPath, [LITE, wf, '--args', args, '--out', out, '--runners', orden.join(',')], { cwd: lab, env, encoding: 'utf8', timeout: 60000 });
     let res = null;
     try { res = JSON.parse(fs.readFileSync(out, 'utf8')); } catch (_) { res = null; }
     return { code: r.status, stderr: r.stderr, res };
@@ -387,4 +387,56 @@ test('T9 ReviewRunner_BinFueraDelPath_CorreDesdeSuLugar_YSiNoEstaDiceLaSalida �
   assert.match(causa, /no se pudo lanzar/);
   assert.match(causa, /el PATH/);
   assert.match(causa, /--agents-dir/);
+});
+
+// T10 · 🔴 Falla con: en Windows el corredor encontrado como `.cmd` (el atajo que deja npm) se lanza por su nombre sin
+//    shell y Node no lo corre (ENOENT; con la extensión, EINVAL). Se lanza el `.js` del atajo con el mismo Node, o el
+//    `.exe` al que apunta; un `.exe` del PATH va con su ruta; un atajo que no se entiende dice por qué.
+test('T10 ReviewRunner_EnWindowsElAtajoCmdSeLanzaConNode — el .cmd de npm se lanza por su .js con el mismo Node, sin shell', (t) => {
+  const dir = carpeta(t, 'rr-win-');
+  const cli = path.join(dir, 'node_modules', '@acme', 'revisor', 'cli.js');
+  fs.mkdirSync(path.dirname(cli), { recursive: true });
+  fs.writeFileSync(cli, '');
+  // el atajo como lo escribe npm (cmd-shim): el programa va relativo a la carpeta del atajo
+  fs.writeFileSync(path.join(dir, 'revisor.cmd'), '@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\nSETLOCAL\r\nCALL :find_dp0\r\n\r\nIF EXIST "%dp0%\\node.exe" (\r\n  SET "_prog=%dp0%\\node.exe"\r\n) ELSE (\r\n  SET "_prog=node"\r\n  SET PATHEXT=%PATHEXT:;.JS;=;%\r\n)\r\n\r\nendLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\@acme\\revisor\\cli.js" %*\r\n');
+  fs.writeFileSync(path.join(dir, 'revisor'), '#!/bin/sh\n');
+  const env = { PATH: dir, PATHEXT: '.COM;.EXE;.BAT;.CMD' };
+  const l = RR.launchable('revisor', { platform: 'win32', env, separator: path.delimiter });
+  assert.strictEqual(l.bin, process.execPath);
+  assert.deepStrictEqual(l.pre, [cli]);
+  // un .exe en la misma carpeta gana: se lanza con su ruta
+  fs.writeFileSync(path.join(dir, 'revisor.exe'), '');
+  assert.deepStrictEqual(RR.launchable('revisor', { platform: 'win32', env, separator: path.delimiter }), { bin: path.join(dir, 'revisor.exe'), pre: [] });
+  fs.rmSync(path.join(dir, 'revisor.exe'));
+  // el atajo que apunta a un .exe lo lanza directo
+  const exe = path.join(dir, 'node_modules', '@acme', 'revisor', 'bin', 'revisor.exe');
+  fs.mkdirSync(path.dirname(exe), { recursive: true });
+  fs.writeFileSync(exe, '');
+  fs.writeFileSync(path.join(dir, 'revisor.cmd'), '@ECHO off\r\n"%~dp0\\node_modules\\@acme\\revisor\\bin\\revisor.exe"   %*\r\n');
+  assert.deepStrictEqual(RR.launchable('revisor', { platform: 'win32', env, separator: path.delimiter }), { bin: exe, pre: [] });
+  // un atajo que no se entiende: no se lanza a ciegas, y la causa lo dice
+  fs.writeFileSync(path.join(dir, 'revisor.cmd'), '@ECHO off\r\ncall otra-cosa %*\r\n');
+  const mal = RR.launchable('revisor', { platform: 'win32', env, separator: path.delimiter });
+  assert.strictEqual(mal.bin, null);
+  assert.match(mal.motivo, /revisor\.cmd/);
+  // con la ruta del .cmd (la que da un lugar de la integración), lo mismo
+  fs.writeFileSync(path.join(dir, 'revisor.cmd'), '"%dp0%\\node_modules\\@acme\\revisor\\cli.js" %*\r\n');
+  assert.deepStrictEqual(RR.launchable(path.join(dir, 'revisor.cmd'), { platform: 'win32', env }), { bin: process.execPath, pre: [cli] });
+  // fuera de Windows, tal cual
+  assert.deepStrictEqual(RR.launchable('revisor', { platform: 'linux', env }), { bin: 'revisor', pre: [] });
+});
+
+// T11 · 🔴 Falla con: en la revisión del plan, la causa de «no se pudo lanzar» ofrece `--agents-dir` como salida
+//    aprobada, y el freno la rechaza a propósito (las respuestas las escribiría la sesión revisada).
+test('T11 WorkflowLite_EnModoPlanNoOfreceAgentsDir — sin el corredor, la causa del modo plan dice dónde buscó sin ofrecer --agents-dir', (t) => {
+  const a = laboratorio(t, { uno: CONTESTA, dos: CONTESTA });
+  const archivo = path.join(a.lab, 'integration.json');
+  const integ = JSON.parse(fs.readFileSync(archivo, 'utf8'));
+  integ.runners.uno.bin = 'corredor-que-no-esta-instalado-en-ninguna-maquina';
+  fs.writeFileSync(archivo, JSON.stringify(integ));
+  const r = a.correr(['uno', 'dos'], JSON.stringify({ modo: 'plan' }));
+  const causa = r.res.corredor.caidos.uno.causa;
+  assert.match(causa, /no se pudo lanzar/);
+  assert.match(causa, /el PATH/);
+  assert.doesNotMatch(causa, /--agents-dir/);
 });
