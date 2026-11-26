@@ -319,8 +319,10 @@ fi
 aprobar_en_la_sesion(){ # $1 = la forma (consulta | open-firewall | azure | reclasificar | borrar-grupo), $2 = lo que se aprueba
   local forma="$1" lo="$2" sesion="${CLAUDE_CODE_SESSION_ID:-}" arnes salida=0 texto que=operación
   [ "$forma" = consulta ] && { lo="$SENTENCIA"; que=sentencia; }
-  # borrar un grupo no tiene servidor: lo que la pregunta nombra primero es el grupo
-  local donde="$HOST"; [ "$forma" = borrar-grupo ] && donde="${GRUPO_B:-}"
+  # borrar un grupo no tiene servidor: lo que la pregunta nombra primero es el grupo. Un cambio de Azure tampoco: el
+  # comando entero va en lo que se aprueba, y el verificador pide un lugar no vacío
+  local donde="$HOST"; [ "$forma" = borrar-grupo ] && donde="${GRUPO_B:-}"; [ "$forma" = azure ] && donde=azure
+  [ -n "$donde" ] || muere "no sé sobre qué servidor o grupo es esta $que: no la mando a aprobar."
   [[ "$sesion" =~ $SESION_VALIDA ]] || muere "la pide una sesión de Claude Code sin identificador de sesión: sin él no se puede verificar el click del dueño. Corré la puerta desde tu terminal, fuera de la sesión."
   if [ "$INSTALADO" = 1 ]; then
     arnes="$("$NODE" -e 'process.stdout.write(require(process.argv[1]).harnessDir(process.argv[2]))' /opt/tycon/setup/harness/tycon-home.js "$HOME" 2>/dev/null)" || arnes=""
@@ -334,10 +336,10 @@ aprobar_en_la_sesion(){ # $1 = la forma (consulta | open-firewall | azure | recl
     return 0
   fi
   if [ "$salida" = 1 ]; then
-    anotar "\"host\":\"$HOST\",\"accion\":\"pide-click\",\"forma\":\"$forma\",\"sesion\":\"$sesion\",\"exit\":2"
+    anotar "\"host\":\"$donde\",\"accion\":\"pide-click\",\"forma\":\"$forma\",\"sesion\":\"$sesion\",\"exit\":2"
     muere "$texto"
   fi
-  anotar "\"host\":\"$HOST\",\"accion\":\"rechazada\",\"motivo\":\"sin-verificar\",\"forma\":\"$forma\",\"exit\":2"
+  anotar "\"host\":\"$donde\",\"accion\":\"rechazada\",\"motivo\":\"sin-verificar\",\"forma\":\"$forma\",\"exit\":2"
   muere "no pude verificar el click del dueño: $texto. No se leyó la clave ni se cambió nada en esta $que."
 }
 
@@ -352,9 +354,9 @@ persona en un cuadro de esta Mac; la contraseña no pasa por la conversación. S
   /opt/tycon/bin/tycon-prod-sql <host> '<sentencia>' [--max-rows N]
         una sentencia, con cuadro: un select, o un cambio (alter database …, update …). Una por vez, sin GO.
   /opt/tycon/bin/tycon-prod-sql --open-firewall <host> [--session <id>]
-        habilita la IP de esta máquina en el firewall de un Azure SQL de producción, con cuadro. Lo corre la persona
-        en su terminal, a nombre de la sesión que la pidió: la regla se cierra sola cuando esa sesión termina, o a
-        las 8 h aunque siga.
+        habilita la IP de esta máquina en el firewall de un Azure SQL de producción, con cuadro. Desde una sesión
+        lo corre la sesión y la persona lo aprueba con su click en ella; desde una terminal, con --session <id> va a
+        nombre de esa sesión. La regla se cierra sola cuando la sesión termina, o a las 8 h aunque siga.
   /opt/tycon/bin/tycon-prod-sql --close-firewall <host>     la cierra ya
   /opt/tycon/bin/tycon-prod-sql --verify                    revisa la instalación y la clave, sin leerla
   /opt/tycon/bin/tycon-prod-sql --load-key <host>           deja en el Escritorio el archivo para cargar la clave
@@ -369,8 +371,8 @@ persona en un cuadro de esta Mac; la contraseña no pasa por la conversación. S
 
 Emergencia, con producción caída (por ejemplo, la base llegó a su tope y no escribe):
   1. Probá la conexión: /opt/tycon/bin/tycon-prod-sql <host> 'select 1'
-  2. Si la rechaza el firewall (40615), la persona corre en su terminal el comando que da la puerta:
-     /opt/tycon/bin/tycon-prod-sql --open-firewall <host> --session <id>
+  2. Si la rechaza el firewall (40615), abrilo con el comando que da la puerta (la persona lo aprueba con su click):
+     /opt/tycon/bin/tycon-prod-sql --open-firewall <host>
   3. Mirá el estado: /opt/tycon/bin/tycon-prod-sql <host> 'select name, size/128 as mb, max_size/128 as max_mb from sys.database_files'
      (mide la base a la que entra la puerta: la «base» del servidor en su catálogo; si no la declara, master)
   4. Mitigá con una sentencia, que la persona aprueba en el cuadro, por ejemplo:
@@ -523,6 +525,10 @@ if [ "$MODO" = consulta ] || [ "$MODO" = azure ]; then
 fi
 
 if [ "$MODO" = reclasificar ]; then
+  # la pregunta nombra el servidor que se va a bajar, ya normalizado como lo guarda el índice
+  HOST_N="$("$NODE" -e 'const m = require(process.argv[1]); process.stdout.write(m.normalizar(process.argv[2]) || "")' "$INDICE_JS" "$HOST" 2>/dev/null)"
+  [ -n "$HOST_N" ] || muere "«${HOST}» no es un host válido: no lo mando a aprobar."
+  HOST="$HOST_N"
   aprobar "Bajar $HOST a no producción en esta máquina: el freno deja de frenarlo y la puerta deja de atenderlo." reclasificar
   "$NODE" -e '
     const m = require(process.argv[1]);

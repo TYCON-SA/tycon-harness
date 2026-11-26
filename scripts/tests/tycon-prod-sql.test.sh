@@ -1020,6 +1020,8 @@ cat > "$TMP/aprobacion-de-la-sesion.js" <<JS
 const fs = require('fs');
 fs.appendFileSync('$TMP/orden.log', 'aprobacion\n');
 fs.writeFileSync('$TMP/aprobacion-argv.json', JSON.stringify(process.argv.slice(2)));
+// lo que el verificador real rechazaría por sus argumentos, el doble también
+if (!require('$AQUI/scripts/production/session-approval.js').leerArgs(process.argv.slice(2))) { process.stdout.write('uso: session-approval.js\n'); process.exit(2); }
 const modo = (() => { try { return fs.readFileSync('$TMP/aprobacion-modo', 'utf8').trim(); } catch (_) { return 'ask'; } })();
 if (modo === 'approved') { process.stdout.write('id-de-prueba\n'); process.exit(0); }
 if (modo === 'ask') { process.stdout.write('Mostrale AskUserQuestion con una sola pregunta, sin cambiarle una letra:\n¿Correr esta sentencia? (firma production-query · sesión s · código c)\n'); process.exit(1); }

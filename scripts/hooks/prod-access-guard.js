@@ -255,9 +255,9 @@ function mensaje(motivo, detalle = []) {
 const CAMINO_DE_LA_PUERTA = [
   '   Para consultar O CAMBIAR una base de producción hay UNA sola forma, y cada sentencia abre un cuadro de aprobación:',
   "     /opt/tycon/bin/tycon-prod-sql <host> '<sentencia>' [--max-rows N]   (un select, o un cambio como alter database …)",
-  '   Si la conexión la rechaza el firewall (40615, «is not allowed to access the server»), lo abre la persona en su',
-  '   terminal, con el cuadro de la puerta (la puerta da el comando para copiar), y la regla se cierra sola cuando',
-  '   termina la sesión que la pidió, o a las 8 h: /opt/tycon/bin/tycon-prod-sql --open-firewall <host> --session <id>',
+  '   Si la conexión la rechaza el firewall (40615, «is not allowed to access the server»), se abre por la puerta y la',
+  '   persona lo aprueba con su click en la sesión; la regla se cierra sola cuando termina la sesión que la pidió, o a',
+  '   las 8 h: /opt/tycon/bin/tycon-prod-sql --open-firewall <host>',
   '   Un cambio de administración de Azure (alertas, tamaño o plan) va por la puerta, con el mismo cuadro:',
   '     /opt/tycon/bin/tycon-prod-sql --azure <el comando de az, sin «az»>   (las lecturas, list y show, sin cuadro)',
   '   Todas las formas, sin tocar producción: /opt/tycon/bin/tycon-prod-sql --help',

@@ -152,4 +152,8 @@ test('T10 · SessionApproval_Args_StatementAfterSeparatorOnly', () => {
   assert.strictEqual(sa.leerArgs(['--host', 'h', '--session', SES, 'select 1']), null, 'sin «--» no hay sentencia');
   assert.strictEqual(sa.leerArgs(['--host', 'h', '--session', SES, '--', 'select 1', 'otra']), null, 'una sola sentencia');
   assert.strictEqual(sa.leerArgs(['--host', 'h', '--other', 'x', '--session', SES, '--', 'select 1']), null);
+  // la forma: una de las de la puerta, o nada; un servidor vacío no pasa (un cambio de Azure lo pasaba vacío)
+  assert.strictEqual(sa.leerArgs(['--kind', 'azure', '--host', 'azure', '--session', SES, '--', 'az x']).forma, 'azure');
+  assert.strictEqual(sa.leerArgs(['--kind', 'other', '--host', 'h', '--session', SES, '--', 'x']), null);
+  assert.strictEqual(sa.leerArgs(['--kind', 'azure', '--host', '', '--session', SES, '--', 'az x']), null);
 });

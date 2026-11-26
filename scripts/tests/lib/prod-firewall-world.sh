@@ -183,8 +183,12 @@ SH
   # una sentencia pedida por una sesión no abre el cuadro del sistema: la aprueba el click en la sesión
   # (session-approval.js, con su propia suite). Su doble aprueba y anota el cuadro en el mismo registro: uno por sentencia
   # Con $TMP/cuadro-modo en «rechaza» (como el doble del cuadro de la prueba de emergencia), no hay click: pide y sale 1
+  # Lee los argumentos con el mismo lector del verificador real: lo que el verificador rechazaría, el doble también
   cat > "$TMP/aprobacion-de-la-sesion.js" <<JS
 const fs = require('fs');
+const leidos = require('$(dirname "$PUERTA")/session-approval.js').leerArgs(process.argv.slice(2));
+fs.writeFileSync('$TMP/aprobacion-argv.json', JSON.stringify(process.argv.slice(2)));
+if (!leidos) { process.stdout.write('uso: session-approval.js (el doble no entiende estos argumentos)\n'); process.exit(2); }
 fs.appendFileSync('$TMP/cuadro.log', 'cuadro\n');
 // lo que se aprueba (después de «--»), en el mismo registro donde el doble del cuadro del sistema anota su texto
 fs.appendFileSync('$TMP/cuadro-texto.log', process.argv[process.argv.length - 1] + '\n');
