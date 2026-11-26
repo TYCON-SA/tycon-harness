@@ -271,6 +271,12 @@
       "requiere": []
     },
     {
+      "__nota": "el aviso del pedido cuando un archivo que los casos del banco copian a mano suma una dependencia que no copian (scripts/ci/bench-copied-deps.js): avisa con el caso y la dependencia, no avisa lo copiado, lo viejo ni lo de un try, y nunca frena. Árboles de juguete con su propio git; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/bench-copied-deps.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/label-prs.test.sh",
       "requiere": []
