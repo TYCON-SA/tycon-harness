@@ -79,12 +79,18 @@ test('CommandReaders_SinElLectorDeAz_LosFrenosDePedidosFrenan: el freno dice que
     encoding: 'utf8', env: { PATH: process.env.PATH, HOME: casa, ...env },
   });
   const pedido = 'az repos pr create --target-branch main --title x';
+  // las formas del pase adversarial que pasaban el respaldo: az corrido por python, el nombre partido con comillas
+  const formas = [pedido, 'python3 -m azure.cli repos pr create --target-branch main --title x', 'sudo /usr/bin/python3 -m azure.cli repos pr update --id 5 --status completed',
+    'a""z repos pr create --target-branch main --title x'];
   for (const [hook, env] of [['pr-auto-complete-guard.js', {}], ['pr-one-per-repo-guard.js', { TYCON_PR_ONE_PER_REPO: '1' }]]) {
-    const r = correr(hook, pedido, env);
-    assert.strictEqual(r.status, 2, `${hook}: ${r.status} ${r.stderr}`);
-    assert.match(r.stderr, /no pude leer el comando/, hook);
+    for (const forma of formas) {
+      const r = correr(hook, forma, env);
+      assert.strictEqual(r.status, 2, `${hook} · ${forma}: ${r.status} ${r.stderr}`);
+      assert.match(r.stderr, /no pude leer el comando/, hook);
+    }
     assert.strictEqual(correr(hook, 'ls -la', env).status, 0, `${hook}: lo que no nombra a az ni a gh pasa`);
   }
+  assert.strictEqual(correr('pr-auto-complete-guard.js', '$(which gh) pr merge 5 --squash').status, 2, 'un gh armado al correr');
   // retro-pending anota, no frena: sin el lector sigue andando
   const r = correr('retro-pending.js', pedido);
   assert.notStrictEqual(r.status, 1, `retro-pending se cayó: ${r.stderr}`);

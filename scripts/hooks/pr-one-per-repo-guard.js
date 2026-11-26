@@ -70,9 +70,17 @@ try { const ev = JSON.parse(payload || '{}'); cmd = (ev.tool_input || {}).comman
 let az = null;
 let sinLector = null;
 try { az = require('../lib/command-readers.js').lectorDe('az'); } catch (e) { sinLector = String((e && e.message) || e).slice(0, 200); }
+// Sin el lector, ¿el comando puede crear, actualizar o completar un pedido? De más: el programa `az` o `gh` como palabra,
+// az corrido por python (`-m azure.cli`), o un `repos … pr` o un `pr merge` en cualquier lugar; todo leído sin comillas
+// ni barras (un nombre partido con comillas es el mismo programa para la terminal).
+const puedeSerUnPedido = (texto) => {
+  if (typeof texto !== 'string') return false;
+  const t = texto.replace(/\\\r?\n/g, ' ').replace(/["'`\\]/g, '');
+  return /(^|[^\w-])(az|gh)(\.exe|\.cmd)?([^\w-]|$)/i.test(t) || /azure\.cli/i.test(t) || /\brepos\b[\s\S]*\bpr\b/i.test(t) || /\bpr\s+merge\b/i.test(t);
+};
 // sin el lector no se sabe qué hace el comando: si nombra a `az` o a `gh`, frena con el motivo
 if (sinLector) {
-  if (typeof cmd === 'string' && /(^|[^\w-])(az|gh)(\.exe|\.cmd)?([^\w-]|$)/i.test(cmd)) {
+  if (puedeSerUnPedido(cmd)) {
     process.stderr.write(`[pr-uno-por-repo] 🔒 no pude leer el comando: ${sinLector}. Lo que no pude leer no está aprobado: revisá la instalación del arnés (el conector del lector) y repetí.\n`);
     process.exit(2);
   }
