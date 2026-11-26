@@ -50,12 +50,12 @@ const GUIAS_ES = [
   'skills/tycon-pipeline/SKILL.md',
   'README.es.md',
   'INDEX.md',
-  'guides/firmas-del-arnes.md',
+  'guides/owner-signatures.md',
   'guides/git-commit-conventions.md',
   'guides/what-the-harness-does.md',
   'guides/coordination.md',
   'guides/workflow-orchestration.md',
-  'guides/piezas-del-arnes.md',
+  'guides/harness-pieces.md',
   'guides/organization-site.md',
 ];
 const GUIAS_EN = ['README.md', 'guides/organization-site.en.md'];
@@ -74,7 +74,7 @@ test('8.242-Guias_DicenElPedido (T17) @story-8.242 @ac-12', () => {
   const faltan = [];
   const viejas = [];
   for (const rel of [...GUIAS_ES, ...GUIAS_EN]) {
-    const texto = rel === 'guides/piezas-del-arnes.md' ? require('./lib/pieces-guide.js').piecesText(RAIZ) : leer(rel);
+    const texto = rel === 'guides/harness-pieces.md' ? require('./lib/pieces-guide.js').piecesText(RAIZ) : leer(rel);
     const dice = GUIAS_EN.includes(rel) ? DICE_EN : DICE_ES;
     if (!dice.test(texto)) faltan.push(rel);
     for (const re of YA_NO) if (re.test(texto)) viejas.push(`${rel}: ${re}`);

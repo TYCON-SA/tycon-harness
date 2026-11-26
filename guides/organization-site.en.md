@@ -829,10 +829,10 @@ be, to copy it and open the request by hand.
   signature, the person gives it in the window. The site does not propose it to a layer that requires a harness version
   that cannot read it yet.
   Below it is **who signs each thing**: one row for each signature in the catalog
-  (`guides/firmas-del-arnes.md`), with three choices. "In the owner's window" is the default: the owner answers in the
+  (`guides/owner-signatures.md`), with three choices. "In the owner's window" is the default: the owner answers in the
   permission window; where the window does not reach, approves with a click in the options box or a written "aprobado";
   or signs at their terminal. "Delegated to the coordinator" (`approvals.delegated_signing`) makes it routine: the
-  harness gives it on its own, in any session, with or without a coordinator (`guides/firmas-del-arnes.md`, «Las firmas
+  harness gives it on its own, in any session, with or without a coordinator (`guides/owner-signatures.md`, «Las firmas
   de trámite las da el arnés»), and its sentence is recorded; what is delegated is not protected against an
   agent: if the coordinator decides to approve it on its own, the harness cannot tell it apart from the owner's ok, so
   delegate only low-risk things. "Owner only" (`approvals.owner_only`) locks it: the site does not offer to delegate it,
@@ -844,11 +844,11 @@ be, to copy it and open the request by hand.
   added with a button, and another one by typing its fingerprint. By default, on none. All of it counts only from
   here, never from a machine.
   Further down is **the level of each signature**: one row for each signature in the levels table
-  (`guides/firmas-del-arnes.md`), with its default level: 1 routine, 2 exception, 3 irreversible.
+  (`guides/owner-signatures.md`), with its default level: 1 routine, 2 exception, 3 irreversible.
   The selector starts at that level, so the organization can raise it and never lower it (`approvals.levels`). The
   higher of the table and the profile applies. The screen offers only routine for delegation: a signature at 2 or more
   is not offered (the procedural exceptions are delegated by writing their name in the profile;
-  `guides/firmas-del-arnes.md`, «Qué excepciones se delegan»). If it was delegated, raising it removes it from the delegation in the same change. If
+  `guides/owner-signatures.md`, «Qué excepciones se delegan»). If it was delegated, raising it removes it from the delegation in the same change. If
   the profile delegates it anyway, the harness removes it when reading and reports it as ignored; the rest stays
   delegated. Going back to the default level removes the signature from `approvals.levels`. Proposing levels requires
   the team layer to ask for a harness version that can read them.
@@ -858,7 +858,7 @@ be, to copy it and open the request by hand.
   session), with a click or an "aprobado". With nobody to answer, anything not
   delegated waits: the system does not look at the time, it asks for the signature anyway and, if nobody answers, the
   session stays stopped at that step. With Codex, which has no window, everything is signed at the terminal. The full matrix
-  is in `guides/firmas-del-arnes.md`.
+  is in `guides/owner-signatures.md`.
 
   The agent commits and pushes its working branch without asking: the person approves the pull request, and every push
   to a shared branch, in the permission window.
@@ -881,7 +881,7 @@ be, to copy it and open the request by hand.
   coordinator or, without one, by the session itself, and it approves a routine plan only if it says "approved" (unless
   the organization asks for the click: option O4, `plan_review.routine_approval: person`); the plan of a sensitive story
   is always approved by the dev. Why each routine is routine, and the notes, in
-  `guides/firmas-del-arnes.md`.
+  `guides/owner-signatures.md`.
 
   **Where it is configured**, all in this section:
   - **A · whether there is a coordinator**: "Who passes on the authorization to skip a serious check?", with "What do
@@ -894,7 +894,7 @@ be, to copy it and open the request by hand.
     `marker.js designate-relay`, and the owner clicks its box; that click names it and confirms it to sign what is
     delegated. With the fallback sentence, that session also runs `node scripts/lib/delegated-signing.js confirm-designation`
     and the owner approves it with a click, or at their terminal (see
-    `guides/firmas-del-arnes.md`, «Aprobar en nombre del dueño»). It is recognized by its conversation, keeps counting
+    `guides/owner-signatures.md`, «Aprobar en nombre del dueño»). It is recognized by its conversation, keeps counting
     after a restart, and has to be repeated after a new chat or a `/clear`. If nobody designated it, nobody confirmed
     the designation, or the session is closed, there is no coordinator: everything goes to the developer.
 - **Hand-testing each criterion**: whether, besides what the harness tests, a person
@@ -933,7 +933,7 @@ be, to copy it and open the request by hand.
   the organization has «A maintainer's changes» turned on: it opens the request and a person other than the one who
   proposes it approves it. If the profile repo's main branch does not require such a reviewer, «Propose» stays off and
   says why. Neither the machine nor a variable changes the limits. It lives in `team-profile.json` →
-  `short_path.coordinator_max_files` and `short_path.max_files`; who signs what is in `guides/firmas-del-arnes.md`.
+  `short_path.coordinator_max_files` and `short_path.max_files`; who signs what is in `guides/owner-signatures.md`.
 - **The /office office**: how many minutes without news a working session has to go before the office says «no news
   since HH:MM» (1 to 1440; empty means 15). The page measures it with its own clock, without asking the machine
   anything; a session in a long step is still alive and is only marked as quiet. It lives in `team-profile.json` →

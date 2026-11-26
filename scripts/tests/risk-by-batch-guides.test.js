@@ -38,7 +38,7 @@ test('T27 Formato_DescribeYLintAcepta — @story-8.168 @ac-16', () => {
 });
 
 test('T28 Guias_DicenLaParteYLoQueAfloja — @story-8.168 @ac-17', () => {
-  const firmas = leer('guides/firmas-del-arnes.md');
+  const firmas = leer('guides/owner-signatures.md');
   const i = firmas.indexOf('**El plan de una parte.**');
   assert.ok(i >= 0, 'falta la sección del plan de una parte');
   const s = firmas.slice(i, i + 1600);

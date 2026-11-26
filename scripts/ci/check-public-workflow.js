@@ -703,7 +703,7 @@ const RULES = [
   {
     // En un pedido y en la cola los controles salen de la base: corre el public-ci.sh de la base (sacado con `git show`),
     // con `--base`, y en la cola la base es la del grupo. El hueco que queda (un pedido que borra esto corre su propio
-    // ci.yml) lo dice guides/piezas-del-arnes.md §scripts/ci/run-base-controls.sh.
+    // ci.yml) lo dice guides/harness-pieces.md §scripts/ci/run-base-controls.sh.
     id: 'base-controls',
     check(lines) {
       const code = lines.filter((l) => l.code).map((l) => l.body);

@@ -128,7 +128,7 @@ test('AdversarialSkip_Catalogo_ElComandoEsFirmaGuion (T56)', (t) => {
   assert.strictEqual(s.kind, 'guion');
   assert.strictEqual(s.otherSession, 'no');
   assert.match(s.terminal, /marker\.js sign-adversarial-skip .*--terminal/);
-  const guia = fs.readFileSync(path.join(RAIZ, 'guides', 'firmas-del-arnes.md'), 'utf8');
+  const guia = fs.readFileSync(path.join(RAIZ, 'guides', 'owner-signatures.md'), 'utf8');
   assert.doesNotMatch(guia, /sign-adversarial-skip \(todavía no existe\)/, 'la guía trae el comando real');
   // la forma canónica pide la ventana
   const casa = casaNueva(t);

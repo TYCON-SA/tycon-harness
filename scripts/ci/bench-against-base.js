@@ -47,7 +47,7 @@
  * qué; nunca cae a verde).
  *
  * EL LÍMITE: Codex lo sigue midiendo el banco del pedido (la línea de base es de Claude), y el workflow corre del pedido,
- * como en run-base-controls.sh (guides/piezas-del-arnes.md).
+ * como en run-base-controls.sh (guides/harness-pieces.md).
  */
 'use strict';
 const fs = require('fs');

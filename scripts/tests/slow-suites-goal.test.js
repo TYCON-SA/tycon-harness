@@ -146,8 +146,8 @@ test('T20 Lentas_RomperDaRojo — cada bajada dice qué se rompió y qué caso s
 });
 
 test('T21 Guia_TrabajadoresLentasYBase — las dos guías dicen cuántas a la vez y por qué, cómo ver las lentas y la base del portón', () => {
-  for (const g of ['guides/test-execution-discipline.md', 'guides/piezas-del-arnes.md']) {
-    const texto = g === 'guides/piezas-del-arnes.md' ? require('./lib/pieces-guide.js').piecesText(ROOT) : fs.readFileSync(path.join(ROOT, g), 'utf8');
+  for (const g of ['guides/test-execution-discipline.md', 'guides/harness-pieces.md']) {
+    const texto = g === 'guides/harness-pieces.md' ? require('./lib/pieces-guide.js').piecesText(ROOT) : fs.readFileSync(path.join(ROOT, g), 'utf8');
     assert.match(texto, /núcleos menos dos/, `${g}: cuántas suites corren a la vez`);
     assert.match(texto, /dos núcleos (?:quedan )?para la persona/i, `${g}: por qué no más`);
     assert.match(texto, /suite-times\.js slow/, `${g}: cómo se listan las lentas`);

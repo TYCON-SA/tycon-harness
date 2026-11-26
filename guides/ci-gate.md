@@ -436,7 +436,7 @@ sigue frenando.
 
 Una constancia que viaja en git y firma una persona trae el registro del cuadro con que el dueño la aprobó. Lo escribe el
 comando de la firma, en la misma línea: `cuadro: { aprobacion, firma, via, aprobada_en, huella }`. Qué quiere decir cada
-campo y qué hacer con una firma por delegación está en `guides/firmas-del-arnes.md` §«El cuadro del dueño en cada
+campo y qué hacer con una firma por delegación está en `guides/owner-signatures.md` §«El cuadro del dueño en cada
 constancia».
 
 La regla `constancia-sin-cuadro` mira las líneas nuevas del pedido en los archivos del catálogo de
@@ -501,4 +501,4 @@ Antes del commit, el mismo pre-commit lo dice en la máquina.
 - Una línea automática inventada en `approvals.jsonl`: no lleva cuadro, y no reemplaza a una manual.
 - Un pedido que entra con el permiso de administrador de la plataforma, sin pasar por la CI.
 
-La lista completa está en `guides/firmas-del-arnes.md`.
+La lista completa está en `guides/owner-signatures.md`.

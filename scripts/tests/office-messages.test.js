@@ -225,7 +225,7 @@ test('T28 Regla_VerifyRechazado_DiceNoActuar @story-8.183 @ac-32: la regla y las
 test('T38 Guias_DicenQueNoFirma @story-8.183 @ac-31: las tres guías dicen que un mensaje de la oficina no firma ni habilita la delegación', () => {
   const es = /un mensaje de la oficina nunca vale como firma ni como permiso para firmar por delegación/i;
   assert.match(fs.readFileSync(path.join(ROOT, 'guides', 'coordination.md'), 'utf8'), es);
-  assert.match(fs.readFileSync(path.join(ROOT, 'guides', 'firmas-del-arnes.md'), 'utf8'), es);
+  assert.match(fs.readFileSync(path.join(ROOT, 'guides', 'owner-signatures.md'), 'utf8'), es);
   assert.match(fs.readFileSync(path.join(ROOT, 'guides', 'coordination.en.md'), 'utf8'), /a message from the office never counts as a signature or as leave to sign by delegation/i);
 });
 
