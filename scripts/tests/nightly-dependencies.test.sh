@@ -525,6 +525,22 @@ noche "$TMP/c-t4.json" 2026-09-04 >/dev/null        # B vuelve a estar activo, y
   && ok "…y cuando el repo apagado vuelve limpio, la ficha se resuelve y el marcador desaparece" \
   || no "T4b: no se destrabó — $(grep -E '^(bloqueada_por|resuelto)' "$F4" | tr '\n' ' ')"
 
+# ── T4c. Un repo apagado se saltea DICIENDO POR QUÉ ────────────────────────────────────────────
+# Un repo deshabilitado (deprecado) se apaga en repos.json con su `motivo`: la noche no lo mira, no lo
+# cuenta como NO MEDIDO, y la salida y la foto dicen por qué. Sin motivo escrito, lo dice también.
+rm -rf "$TMP/out" "$TMP/pend"; mundo A B; echo "$LIMPIO" > "$TMP/fix/A.json"; echo "$LIMPIO" > "$TMP/fix/B.json"
+cat > "$TMP/c-t4c.json" <<CFG
+{ "presupuesto_de_ruido": { "tope_pr_por_noche": 2 }, "raiz_por_defecto": "$TMP/mundo", "repos": [
+  {"producto":"A","ruta":"A","tipo":"npm","ado":"ProyA/A","activo":true},
+  {"producto":"B","ruta":"B","tipo":"npm","ado":"ProyB/B","activo":false,"motivo":"repo deprecado de prueba"} ] }
+CFG
+noche "$TMP/c-t4c.json" 2026-09-01 >/dev/null
+t4c=$(snap 2026-09-01 "console.log(JSON.stringify(s.repos_apagados_motivos)+'|'+s.no_medidos.length)")
+{ grep -q "B apagado: repo deprecado de prueba" "$TMP/o.txt" && ! grep -q "NO MEDIDO" "$TMP/o.txt" \
+  && [ "$t4c" = '[{"ruta":"B","motivo":"repo deprecado de prueba"}]|0' ]; } \
+  && ok "un repo apagado se saltea diciendo por qué, en la salida y en la foto, sin NO MEDIDO" \
+  || no "T4c: el apagado no dijo su motivo — snap=$t4c · $(grep -i apagad "$TMP/o.txt" | head -2)"
+
 # ── T5. 🔴 DECLARAR NO ES PAGAR ───────────────────────────────────────────────────────────────
 # Lo declarado se descuenta ANTES de comparar, así que el id desaparecería de
 # `hallazgos` y se leería como "ya no está" → la ficha saldría a promoted/ con motivo "(se pagó)".

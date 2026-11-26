@@ -635,6 +635,9 @@ function correr(a) {
 
   const activos = (cfg.repos || []).filter((r) => r.activo !== false);
   const apagados = (cfg.repos || []).filter((r) => r.activo === false).map(rutaCompleta);
+  // por qué se apagó cada uno (`motivo` en repos.json): un repo deprecado se saltea diciéndolo, no sale NO MEDIDO
+  const apagadosMotivos = (cfg.repos || []).filter((r) => r.activo === false)
+    .map((r) => ({ ruta: rutaCompleta(r), motivo: String(r.motivo || '').trim() || 'apagado a propósito, sin motivo escrito en repos.json' }));
   // Las MISMAS etiquetas que usa una ficha para nombrar sus repos: `repos_apagados` guarda la
   // ruta (su forma no cambia), pero la ficha dice `producto/repo`, y hay que comparar eso.
   const apagadosEtiq = new Set((cfg.repos || []).filter((r) => r.activo === false).map(etiqueta));
@@ -776,6 +779,7 @@ function correr(a) {
     comparado_contra: previo ? previo.fecha : null,
     repos_activos: activos.length,
     repos_apagados: apagados,
+    repos_apagados_motivos: apagadosMotivos,
     repos,
     no_medidos: noMedidos.map((r) => ({ ruta: rutaCompleta(r), motivo: r.motivo_no_medido })),
     // Por repo con la raíz npm, cuántas carpetas con lockfile miró de cuántas, las excluidas con su
@@ -1595,6 +1599,7 @@ function imprimirCorrida(s, aAnunciar, postergados) {
   console.log(`Revisión nocturna de dependencias — ${s.fecha}`);
   // Con los formularios descubiertos hay más carpetas medidas que entradas: se cuenta sobre lo auditado.
   console.log(`Repos mirados: ${s.repos.filter((r) => r.medido).length}/${s.repos.length}${s.repos_apagados.length ? ` (${s.repos_apagados.length} apagado[s] a propósito)` : ''}`);
+  for (const x of s.repos_apagados_motivos || []) console.log(`   ${x.ruta} apagado: ${x.motivo}`);
   if ((s.carpetas || []).length) {
     console.log(`Carpetas con lockfile: ${s.carpetas.map((c) => (c.total === null ? `${c.repo} sin contar` : `${c.repo} ${c.miradas} de ${c.total}`)).join(' · ')}`);
     for (const c of s.carpetas) for (const x of c.excluidas) console.log(`   ${c.repo}/${x.path} excluida: ${x.reason}`);
