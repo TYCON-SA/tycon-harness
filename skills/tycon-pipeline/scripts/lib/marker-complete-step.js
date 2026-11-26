@@ -168,6 +168,34 @@ function cmdCompleteStep(nRaw, flags) {
     }
   }
 
+  // ── «Armar el plan» de una historia con código no cierra sin lo que da por cierto del código ──
+  // La sección «## Suposiciones sobre el código», cada renglón con su archivo:línea comprobado en el repo
+  // (plan-assumptions.js). Sin plan escrito no se mira acá: eso lo dice «Aprobar el plan».
+  if (nuevo && ids.includes('plan')) {
+    const plan = planDeLaCorrida(marker);
+    let texto = null;
+    try { texto = plan.file ? fs.readFileSync(plan.file, 'utf8') : null; } catch (_) { texto = null; }
+    if (texto && texto.trim()) {
+      const repo = marker.repoPath || process.cwd();
+      // los hermanos de la ejecución: la historia del repo de historias cita el código del repo hermano
+      let raices = [];
+      try {
+        const cr = require('./companion-repos.js');
+        const story = resolveStoryPath(marker.storyPath, marker) || undefined;
+        raices = [...(story ? [cr.gitRootOf(story)] : []), ...cr.companionRoots(repo, story)].filter(Boolean);
+      } catch (_) { raices = []; }
+      const r = require('./plan-assumptions.js').revisar(texto, { repo, raices });
+      if (r.problemas.length) {
+        appendLog('gates.log', { name: 'plan-assumptions', status: 'blocked', story: marker.storyId, problemas: r.problemas.length });
+        console.error(`marker.js complete-step ${n} BLOQUEADO — ${r.problemas[0]}`);
+        for (const p of r.problemas.slice(1, 6)) console.error(`  · ${p}`);
+        if (r.problemas.length > 6) console.error(`  · y ${r.problemas.length - 6} más`);
+        console.error(`  El plan: ${plan.file}`);
+        process.exit(2);
+      }
+    }
+  }
+
   // ── «Preparar el pull request» no cierra con código sin revisar ──
   // Un cambio de código posterior al último cierre de los revisores (la regla de `next`, lib/steps.js) pide otra vuelta
   // antes: lo que se commitea es lo revisado. Una prueba o un texto no la piden. `--out-of-order` no lo saltea: no es

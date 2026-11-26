@@ -872,6 +872,9 @@ function comandosAnidados(comando, hondo = 0, valores = null) {
     // la carpeta de un `env -C` vale para lo que corre ese tramo, y sólo para él
     const cdsDelEnv = pelarEnv(tramo).carpetas.map((d) => `cd ${/\s/.test(d) ? `"${d}"` : d}`);
     const sumarConCd = (b) => { const todos = [...cds, ...cdsDelEnv]; sumar(todos.length && b ? `${todos.join(' && ')} && ${b}` : b); };
+    // la orden que `env -S` lleva en su valor corre como cualquier otra
+    const partida = pelarEnv(tramo).partida;
+    if (partida) sumarConCd(partida);
     // sin el `env` de delante (`env -C d sh -c '…'`): lo que corre `env` es el comando
     const w = palabras(sinPalabrasDelShell(pelarEnv(tramo).resto)).filter((x) => x !== '');
     // las asignaciones de delante (`A=1 B=2 programa`) no son el programa, ni `builtin`/`command` (`builtin eval "$c"`)

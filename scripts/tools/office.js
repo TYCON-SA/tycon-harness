@@ -1317,18 +1317,36 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
   const rowPrs = new Set(doneRows.flatMap((b) => [b.f.pedido, b.f.recordado]).filter(Boolean).map((p) => shortPr(p.repo, p.numero)));
   // sólo lo de hoy: una lectura de ayer no suma a la tabla «Hechos», que ya dice lo anterior por sus filas
   const enteredToday = (ms) => Number.isFinite(ms) && new Date(ms).toDateString() === new Date(nowMs).toDateString();
+  // la tarjeta de cada historia cerrada hoy, o null si la dice una fila del tablero: el pedido que la nombra va con ella
+  const storyCards = new Map([...rowStories].map((id) => [id, null]));
   for (const h of doneToday.historias || []) {
     if (!enteredToday(h.at) || rowStories.has(String(h.id))) continue;
     rowStories.add(String(h.id));
     // como las demás tarjetas de historia de tus proyectos, es de esta máquina: no viaja al sitio ni va a las tablas
     const card = withWork({ titulo: `${h.id} · ${h.titulo}`, quien: 'historia cerrada en main', hora: hhmm(h.at), ...(h.proyecto ? { grupo: h.proyecto } : {}), local: true }, { historia: h.id, proyecto: h.remoto ? projectOfRepo(h.remoto) : 'nose' });
     card.terminadoMs = h.at;
+    storyCards.set(String(h.id), card);
     col('hechos').tarjetas.push(card);
   }
+  // la historia que nombra el título de un pedido, entera: «8.45» no es la «8.451» ni la «18.45»
+  const storyOfTitle = (title) => [...storyCards.keys()].find((id) => new RegExp(`(^|[^\\d.])${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\.?\\d)`).test(String(title || '')));
   for (const p of doneToday.pedidos || []) {
     if (!enteredToday(p.at) || rowPrs.has(shortPr(p.repo, p.number))) continue;
     rowPrs.add(shortPr(p.repo, p.number));
     const github = /^[^/]+\/[^/]+$/.test(p.repo);
+    const historia = storyOfTitle(p.title);
+    if (historia !== undefined) {
+      // el pedido que llevó una historia cerrada hoy no es otra tarjeta: la suya dice el pedido y la hora del último
+      // (una fila del tablero que dice la historia ya lo cuenta; un segundo pedido de la misma historia sale aparte)
+      const card = storyCards.get(historia);
+      if (card === null) continue;
+      if (!card.pedido) {
+        card.quien = `historia cerrada en main · pedido ${github ? '#' : '!'}${p.number}`;
+        card.pedido = cardPr(p.repo, p.number);
+        if (Number.isFinite(p.at) && p.at > card.terminadoMs) { card.terminadoMs = p.at; card.hora = hhmm(p.at); }
+        continue;
+      }
+    }
     const card = withWork({ titulo: p.title, quien: `pedido ${github ? '#' : '!'}${p.number}`, hora: hhmm(p.at), pedido: cardPr(p.repo, p.number) }, { pedido: { repo: p.repoName, numero: p.number }, proyecto: projectOfRepo(p.repoName) });
     card.terminadoMs = p.at;
     col('hechos').tarjetas.push(card);
@@ -2614,7 +2632,8 @@ async function collect(opts = {}) {
   const nowMs = opts.now ? Date.parse(opts.now) : Date.now();
   // la carga de la máquina se mide mientras se arma el resto; `machine: false` no la mide (quien sólo lee las firmas)
   const load = opts.machine === false ? null : machineLoad(opts.machine).catch(() => ({}));
-  const wip = await wipNow(opts);
+  // /wip trae la foto que ya armó (`opts.wip`), para no preguntar dos veces por los mismos pedidos
+  const wip = opts.wip || await wipNow(opts);
   const problems = [];
   let signatures = [];
   try {
@@ -2664,7 +2683,8 @@ async function collect(opts = {}) {
   const quietMin = Number.isInteger(qn) && qn > 0 ? qn : QUIET_DEFAULT_MIN;
   if (q && q.code === 2) problems.push(`el umbral de la sesión callada no se pudo leer: ${String(q.out || '').trim().split('\n')[0] || 'sin motivo'}; uso ${QUIET_DEFAULT_MIN} min`);
   else if (q && q.code === 0 && quietMin !== qn) problems.push(`office.quiet_minutes no es un número de minutos (${String(q.out || '').trim().slice(0, 40)}); uso ${QUIET_DEFAULT_MIN} min`);
-  const board = readBoard(path.join(sdir, 'coordination', 'tablero.json'), { now: nowMs });
+  // `noBoard`: sin el tablero de la coordinadora, como lo pide /wip, que muestra sólo lo que pasa en la máquina
+  const board = opts.noBoard ? { board: null } : readBoard(path.join(sdir, 'coordination', 'tablero.json'), { now: nowMs });
   if (board.problem) problems.push(board.problem);
   if (board.board) problems.push(...board.board.avisos);
   const edited = board.board ? boardEditedNotice(sdir) : null;

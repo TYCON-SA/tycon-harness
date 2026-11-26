@@ -88,7 +88,8 @@ done
 # las opciones de un prefijo que llevan valor se saltean con su valor: si no, el valor se toma por el programa y el
 # pedido pasa sin mirar. Las que no llevan valor (`sudo -S`, `sudo -E`) siguen sin comerse la palabra siguiente
 for envuelto in "sudo -D /tmp $GL" "sudo -u root -D /tmp $GL" "sudo -T 30 $GL" "sudo -r rol -t tipo $GL" "sudo -R / $GL" \
-  "sudo -S -E $GL" "nice -n 5 $GL" "time -o /tmp/t $GL" "exec -a nombre $GL" "env -u A $GL"; do
+  "sudo -S -E $GL" "nice -n 5 $GL" "time -o /tmp/t $GL" "exec -a nombre $GL" "env -u A $GL" "env -S \"$GL\"" \
+  "env --split-string=\"$GL\""; do
   rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "$envuelto")
   { [ "$rc" -eq 0 ] && grep -q "NO verifiqué" "$TMP/err.txt" && grep -q "acme/grupo/widgets" "$TMP/err.txt"; } && ok "«${envuelto% glab*} …» saltea la opción con su valor y mira el pedido" || no "🔴 «${envuelto% glab*} …» pasó sin mirar ($rc): $(head -c 160 "$TMP/err.txt")"
 done

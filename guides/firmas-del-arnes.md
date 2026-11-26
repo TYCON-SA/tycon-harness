@@ -694,8 +694,11 @@ No entra en ninguno de los grupos de la 8.116: para delegarla, el perfil la nomb
 **La lista de archivos.** Todo camino rápido nuevo se abre con su lista cerrada de archivos (`"allowedFiles"` en el
 JSON; en la terminal, `--file <ruta>` por cada uno): rutas relativas, una por una, sin comodines, sin carpetas y sin
 `..`. Sin lista, o con una inválida, `adhoc set` se niega antes de pedir la firma, la pida quien la pida. La ventana
-muestra la lista en el comando y el resumen dice cuántos archivos son. Editar fuera de la lista frena, y ampliarla es
-otra firma del mismo tipo; por delegación, la lista nueva contiene entera la firmada. Pasan sin nombrarlas la prueba de
+muestra la lista en el comando y el resumen dice cuántos archivos son. Editar fuera de la lista frena. Ampliarla va sin
+otra firma cuando la lista nueva contiene entera la firmada, tiene 5 archivos o menos, todos en los repos que ya
+nombraba, sin nada sensible ni de riesgo alto, y el resto del arreglo no cambia (motivo, cupo, datos, maqueta); al dueño
+le llega un aviso por los canales, y sin aviso entregado sigue la firma. Si falta una condición, ampliarla es otra firma
+del mismo tipo; por delegación, la lista nueva contiene entera la firmada. Pasan sin nombrarlas la prueba de
 un archivo de la lista, la evidencia de `.advisors/` y la memoria de `.engram/`.
 
 Lo que no se delega (ni lo abre «hecho y avisado» una pestaña sin permisos), y entonces lo abre una persona:

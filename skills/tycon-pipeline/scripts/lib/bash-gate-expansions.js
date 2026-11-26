@@ -224,7 +224,8 @@ const ENVOLTORIOS_CON_VALOR = {
 /**
  * El tramo sin su `env` (también por su ruta, `/usr/bin/env`) y sin sus opciones, sus variables y su carpeta:
  * `{ carpetas, resto }`, con `resto` desde el comando que corre y `carpetas` las de `-C`/`--chdir`, con sus comillas
- * resueltas. `-u`/`--unset` llevan valor. Con `-S` (el comando en un texto) o sin `env`, el tramo queda como está.
+ * resueltas. `-u`/`--unset` llevan valor. Con `-S` (el comando en un texto) o sin `env`, el tramo queda como está; con
+ * `-S`, además, `partida` es la orden que corre.
  */
 function pelarEnv(tramo) {
   const t = String(tramo);
@@ -248,7 +249,15 @@ function pelarEnv(tramo) {
     let m;
     if (/^[A-Za-z_]\w*=/.test(w)) { j++; continue; }
     if (w === '--') { j++; break; }
-    if (/^-[iv0]*S|^--split-string/.test(w)) return { carpetas, resto: t };
+    // `-S` lleva la orden en su valor, pegado (`-S"…"`, `--split-string=…`) o en la palabra siguiente: el tramo queda
+    // como está y la orden de adentro va en `partida`, para mirarla como un comando anidado
+    if ((m = /^-[iv0]*S(.*)$|^--split-string(?:=(.*))?$/s.exec(w))) {
+      const pegada = m[1] !== undefined ? m[1] : m[2];
+      const valor = pegada !== undefined && pegada !== '' ? pegada : (j + 1 < piezas.length ? palabra(j + 1) : '');
+      const siguiente = pegada !== undefined && pegada !== '' ? j + 1 : j + 2;
+      const cola = siguiente < piezas.length ? ` ${t.slice(piezas[siguiente].index)}` : '';
+      return { carpetas, resto: t, partida: `${valor}${cola}`.trim() || null };
+    }
     if (/^-[iv0]*C$|^--chdir$/.test(w)) { if (j + 1 < piezas.length) carpetas.push(palabra(j + 1)); j += 2; continue; }
     if ((m = /^-[iv0]*C(.+)$|^--chdir=(.*)$/.exec(w))) { carpetas.push(m[1] ?? m[2]); j++; continue; }
     if (/^-[iv0]*[uPa]$|^--(?:unset|argv0)$/.test(w)) { j += 2; continue; }
