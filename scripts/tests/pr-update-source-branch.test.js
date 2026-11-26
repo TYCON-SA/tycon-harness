@@ -127,6 +127,38 @@ test('PrUpdate_PublishDraft_UsesTheBranch — publicar un borrador de una rama e
   assert.strictEqual(frenar(m, upd(8, 'true', '--draft false ')).code, 2, 'de dev, true frena');
 });
 
+// 🔴 Falla con: un update que puede completar el pedido sin `--delete-source-branch` no pregunta la rama. Si el pedido de
+// dev ya traía «borrar la rama al completar» (creado por otro camino), al completarse la plataforma borra dev.
+test('8.225-UpdateQueCompleta_SinLaBandera_PreguntaLaRama @story-8.225 @ac-1 — un update que puede completar el pedido sin la bandera: de dev frena y pide false; de una rama efímera pasa; sin la rama, pasa como antes', () => {
+  const m = mundo();
+  const formas = [
+    ['--auto-complete true', (n) => `az repos pr update --id ${n} --auto-complete true --squash false`],
+    ['--status completed', (n) => `az repos pr update --id ${n} --status completed`],
+    ['--bypass-policy true', (n) => `az repos pr update --id ${n} --status completed --bypass-policy true --bypass-policy-reason urgente`],
+  ];
+  for (const [nombre, c] of formas) {
+    const dev = frenar(m, c(8));
+    assert.strictEqual(dev.code, 2, `${nombre}: de dev frena`);
+    assert.match(dev.err, /--delete-source-branch false/, `${nombre}: pide false`);
+    assert.match(dev.err, /`dev`/, `${nombre}: nombra la rama`);
+    assert.strictEqual(frenar(m, c(7)).code, 0, `${nombre}: de una rama efímera pasa`);
+    assert.strictEqual(frenar(m, c(99)).code, 0, `${nombre}: sin poder leer la rama pasa, como antes`);
+  }
+  assert.strictEqual(frenar(m, 'az repos pr update --id 8 --title nuevo').code, 0, 'un update que no completa el pedido no pregunta');
+  assert.strictEqual(frenar(m, 'az repos pr update --id 8 --status completed --delete-source-branch false').code, 0, 'con false escrito, de dev pasa');
+});
+
+// 🔴 Falla con: las descripciones del freno dicen «Sin red» y no nombran la pregunta a la plataforma.
+test('8.225-Descripciones_NombranLaConsulta @story-8.225 @ac-5 — lo que la instalación dice del freno nombra la pregunta de la rama', () => {
+  const lista = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'hooks-list.json'), 'utf8')).hooks;
+  const label = lista.find((h) => h.spec === '@tcg:pr-auto-complete-guard.js').label;
+  assert.doesNotMatch(label, /Sin red\./);
+  assert.match(label, /le pregunta la rama a la plataforma/);
+  const efectos = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'install-effects.json'), 'utf8'));
+  const efecto = efectos.effects.find((x) => x.id === 'PreToolUse:@tcg:pr-auto-complete-guard.js');
+  assert.match(String(efecto.network), /Azure DevOps: la rama de un pedido/);
+});
+
 test('PrUpdate_OrgName_Forms — la organización escrita como nombre o como dirección que termina en él', () => {
   const { mismaOrg } = require('../lib/pr-source-branch.js');
   assert.strictEqual(mismaOrg('https://dev.azure.com/Acme/', 'acme'), true);

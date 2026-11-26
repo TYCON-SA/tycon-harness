@@ -48,9 +48,13 @@ function skillTexts() {
   // el cierre (`tycon-merge-to-main`) corre el mismo portón E2E con el mismo archivo: la misma regla
   const merge = path.join(SKILL, '..', 'tycon-merge-to-main', 'SKILL.md');
   if (fs.existsSync(merge)) out.push(merge);
-  // un guion arma el comando con el ayudante (`${homeCommand('<ruta>')}`): se lee como el texto que imprime
+  // un guion arma el comando con el ayudante (`${homeCommand('<ruta>')}`), y la ruta del pipeline instalado con
+  // `pipelineRel('<archivo>')`: se lee como el texto que imprime
+  const { pipelineRel } = require(path.join(SKILL, 'scripts', 'lib', 'home-command.js'));
   return out.map((f) => ({ file: path.relative(SKILL, f),
-    text: fs.readFileSync(f, 'utf8').replace(/\$\{homeCommand\((['"`])(.*?)\1\)\}/g, (_, _q, r) => `node "$HOME/${r}"`) }));
+    text: fs.readFileSync(f, 'utf8')
+      .replace(/pipelineRel\((['"`])(.*?)\1\)/g, (_, _q, r) => `'${pipelineRel(r)}'`)
+      .replace(/\$\{homeCommand\((['"`])(.*?)\1\)\}/g, (_, _q, r) => `node "$HOME/${r}"`) }));
 }
 
 test('TmpPath_OneWriterOneReader_NoFixedTmpInSteps_NoOpen', async (t) => {

@@ -47,7 +47,9 @@ function mundo(t, estado, perfil = { pull_requests: { team_authors: ['cuenta-del
   if (perfil) fs.writeFileSync(path.join(arbol, 'team-profile.json'), JSON.stringify(perfil));
   const home = path.join(d, 'casa');
   fs.mkdirSync(home);
-  const env = { PATH: process.env.PATH, HOME: home, USERPROFILE: home, TYCON_GH_CMD: path.join(d, 'gh'), FAKE_GH_OUTSIDE_STATE: path.join(d, 'estado.json') };
+  // TYCON_PROFILE=0: el perfil del árbol que corre la prueba (en el árbol armado de la noche, el del equipo, con Azure
+  // prendido) no prende la consulta de PR abiertos; el perfil de juguete se pasa con --profile
+  const env = { PATH: process.env.PATH, HOME: home, USERPROFILE: home, TYCON_GH_CMD: path.join(d, 'gh'), FAKE_GH_OUTSIDE_STATE: path.join(d, 'estado.json'), TYCON_PROFILE: '0' };
   return { d, arbol, home, env };
 }
 

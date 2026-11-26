@@ -24,12 +24,18 @@
  * Escape: el mismo del portón (env TYCON_STORY_GATE=off · config commiteada del repo).
  *
  * ── CUANDO EL FRENO MISMO FALLA ───────────────────────────────────────────────────────────
- * Una falla sin prever, un módulo del arranque que no carga o una entrada que no se puede leer: frena sólo el comando
- * que escribe y nombra una historia o una constancia, leído como texto (`frenaLaRed`); lo demás sigue. Cada una queda en
+ * Un módulo del arranque que no carga, o un archivo suyo que falta o no compila cuando lo pide al decidir (también si
+ * lo pide un control dentro de su propia red, que seguiría sin él): el freno no decidió con todas sus piezas, así que
+ * frena todo comando y dice cuál. En una versión bajada (trae su lista, `.tycon-release.json`, y no es un clon), lo
+ * mismo con un archivo suyo que no es el que se instaló: compara la huella de cada uno que usó con la de la lista. Una
+ * falla sin prever mientras decide, o una entrada que no se puede leer: frena sólo el comando que escribe y nombra una
+ * historia o una constancia, leído como texto (`frenaLaRed`); lo demás sigue. Cada una queda en
  * hook-errors.log: «FRENÓ POR FALLA» o «FAILED OPEN». Límite conocido: un error de sintaxis en este archivo no llega a
  * correr nada.
  * El análisis corre en un hilo y `lib/gate-clock.js` mira el reloj (20 s, `TYCON_BASH_GATE_TIMEOUT_S`): si no alcanza a
- * decidir, el comando no corre. Sin esa biblioteca, el análisis corre acá, sin reloj, y queda «FAILED OPEN».
+ * decidir, el comando no corre. Sin esa biblioteca, el análisis corre acá, sin reloj, y queda «FAILED OPEN». El análisis
+ * le anota al reloj sus pasos (`paso`): si tarda la mitad del reloj o más, queda «LENTO» con el paso más lento, y si lo
+ * corta, el corte dice en cuál estaba.
  *
  * ── SEGUNDA RESPONSABILIDAD: la puerta Bash del freno de STORY A MANO ────────────────
  * El caso que motiva ese freno son los heredocs de Bash —
@@ -118,12 +124,15 @@ const carpetaDelEstado = () => {
 // en una entrada rota, los saltos de línea siguen escritos como `\n`. En un comando ya leído es otra cosa: `\rm` es `rm`
 const textoDeUnaEntradaRota = (cruda) => String(cruda || '').replace(/\\[nrt]/g, ' ');
 function salirPorLaRed(e, texto) {
+  // la falla que vino de una pieza rota no es una falla sin prever: frena todo
+  const rota = piezaRota || archivoQueNoEsElInstalado();
+  if (rota) salirSinCargar(rota);
   if (frenaLaRed(String(texto || ''))) {
     logHookError(e, 'FRENÓ POR FALLA');
     try {
       process.stderr.write([
         '⛔ tycon-pipeline — EL FRENO FALLÓ Y ESTE COMANDO ESCRIBE UNA HISTORIA O UNA CONSTANCIA',
-        `  No pude mirar qué escribe. La falla quedó en ${path.join(carpetaDelEstado(), 'hook-errors.log')}.`,
+        `  No pude mirar qué escribe. La falla quedó en ${registroDeFallas()}.`,
         '  Una historia se edita con la herramienta de edición (Edit/Write); una constancia la firma una persona.',
         '',
       ].join('\n'));
@@ -151,10 +160,90 @@ function salirPorLaRedConLaEntrada(e) {
   try { texto = JSON.parse(cruda).tool_input.command; } catch { /* entrada rota o sin comando: se lee el texto entero */ }
   salirPorLaRed(e, texto);
 }
+
+// ── la pieza rota: el freno que no tiene todas sus piezas ─────────────────────────────────────────
+// Sin terminar de cargarse, el freno no decidió nada: frena todo comando y dice qué no cargó. Igual con una pieza rota
+// al decidir. La red de fallas queda para lo que se cae con todas las piezas: ahí sabe lo bastante para frenar lo que
+// importa.
+let cargado = false;
+const RAIZ_DEL_ARNES = path.resolve(__dirname, '..', '..', '..');
+const dentroDelArnes = (abs) => {
+  const rel = path.relative(RAIZ_DEL_ARNES, abs);
+  return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
+};
+// El archivo de un módulo que no compila al pedirlo. Un .js roto deja en la primera línea de la pila «<archivo>:<línea>»;
+// un .json, «SyntaxError: <archivo>: …». Un `JSON.parse` de datos no nombra ningún archivo.
+function archivoQueNoCompila(e) {
+  if (!e || e.name !== 'SyntaxError') return null;
+  const primera = String(e.stack || '').split('\n')[0];
+  const archivo = (/^(.+\.c?js):\d+$/.exec(primera) || /^SyntaxError: (.+?\.json): /.exec(primera) || [])[1];
+  return archivo && path.isAbsolute(archivo) ? archivo : null;
+}
+// ¿El error de un `require` es un archivo del arnés que falta o no compila? Cuenta lo que se pide adentro del arnés, por
+// su ruta; un paquete que falta no.
+function esPiezaDelArnes(e, pedido, padre) {
+  if (!(e && e.code === 'MODULE_NOT_FOUND') && !archivoQueNoCompila(e)) return false;
+  const p = String(pedido || '');
+  const abs = path.isAbsolute(p) ? p : (p.startsWith('.') && padre && padre.filename ? path.resolve(path.dirname(padre.filename), p) : null);
+  return !!abs && dentroDelArnes(abs);
+}
+// La primera pieza rota que se pidió al decidir, también la que pide un control dentro de su propia red (un `try` que
+// traga el error y sigue sin ella): sin esto, ese control se apagaba callado y el resto decidía sin él. La de más
+// adentro queda primero: un archivo que falta hace fallar también a los que lo cargan.
+let piezaRota = null;
+if (require.main === module) {
+  const Module = require('module');
+  const cargar = Module._load;
+  Module._load = function cargarYAnotar(pedido, padre, ...resto) {
+    try { return cargar.call(this, pedido, padre, ...resto); } catch (e) {
+      if (!piezaRota && esPiezaDelArnes(e, pedido, padre)) piezaRota = e;
+      throw e;
+    }
+  };
+}
+// En una versión bajada, un archivo del freno que no es el que se instaló (una instalación cortada: compila, pero quedó
+// a medias) también es una pieza rota: la huella de git de cada archivo del arnés que el freno usó se compara con la de
+// la lista. En un clon no: quien mantiene el arnés los cambia a propósito. Lo que no está en la lista (lo sumó una capa o
+// un tercero) no se compara.
+function archivoQueNoEsElInstalado() {
+  const lista = path.join(RAIZ_DEL_ARNES, '.tycon-release.json');
+  if (!fs.existsSync(lista) || fs.existsSync(path.join(RAIZ_DEL_ARNES, '.git'))) return null;
+  let huellas = null;
+  try { huellas = new Map(JSON.parse(fs.readFileSync(lista, 'utf8')).files.map((f) => [f.path, f.blob])); } catch (e) {
+    return Object.assign(new Error(`${lista} no se puede leer (${e.message}): no sé si los archivos del freno son los instalados`), { instalado: lista });
+  }
+  for (const abs of Object.keys(require.cache)) {
+    if (!dentroDelArnes(abs)) continue;
+    const esperada = huellas.get(path.relative(RAIZ_DEL_ARNES, abs).split(path.sep).join('/'));
+    if (!esperada) continue;
+    let huella = null;
+    try {
+      const d = fs.readFileSync(abs);
+      huella = require('crypto').createHash('sha1').update(`blob ${d.length}\0`).update(d).digest('hex');
+    } catch { /* lo que no se puede leer tampoco es lo instalado */ }
+    if (huella !== esperada) return Object.assign(new Error(`${abs} no es el que se instaló: su huella no es la de la versión`), { instalado: abs });
+  }
+  return null;
+}
+function salirSinCargar(e) {
+  logHookError(e, 'FRENÓ POR FALLA');
+  try {
+    const roto = archivoQueNoCompila(e);
+    const cual = e && e.instalado ? e.message : roto ? `No cargó: ${roto} (no compila: ${e.message})` : `No cargó: ${String((e && e.stack) || e).split('\n')[0]}`;
+    process.stderr.write([
+      '⛔ tycon-pipeline — EL FRENO DE ESCRITURAS NO PUDO CARGARSE ENTERO: ningún comando corre hasta repararlo',
+      `  ${cual}`,
+      `  La falla quedó en ${registroDeFallas()}. Reinstalá el arnés desde tu terminal; \`/tycon-harness\` dice si quedó bien instalado.`,
+      '',
+    ].join('\n'));
+  } catch { /* sin dónde decirlo, frena igual */ }
+  process.exit(2);
+}
 if (require.main === module) {
   // lo que `try` no alcanza: un módulo de los de abajo que no carga, o una falla después de decidir, en los avisos
   process.on('uncaughtException', (e) => {
     if (yaDecidio) { logHookError(e); process.exit(0); }
+    if (!cargado) salirSinCargar(e);
     salirPorLaRedConLaEntrada(e);
   });
 }
@@ -176,7 +265,9 @@ try { ({ nativePath } = require('./lib/path-shape.js')); } catch (e) { logHookEr
 const Q = `(?:'([^']*)'|"([^"]*)"|([^\\s'"|;&<>]+))`; // token: 'x' | "x" | bare
 function tok(m, i) { return m[i] ?? m[i + 1] ?? m[i + 2] ?? null; }
 
-const SEPARADOR_DE_SEGMENTOS = /&&|\|\||\|&|;|\||\n|(?<![<>&|\\])&(?![&>])/;
+// (el `|` de `>|` y de `>&|`, que pisan el archivo aunque el shell no deje pisar, no separa; el de un `\>|` sí: ese `>`
+// es una letra. Con un número par de barras delante, el `>` no está escapado)
+const SEPARADOR_DE_SEGMENTOS = /&&|\|\||(?<!(?<!\\)(?:\\\\)*>&?)\|&|;|(?<!(?<!\\)(?:\\\\)*>&?)\||\n|(?<![<>&|\\])&(?![&>])/;
 function splitSegments(cmd) {
   // Separadores de comandos (no dentro de comillas — aproximación: split simple alcanza para lo
   // que buscamos; las comillas raras caen del lado conservador = no se extrae nada).
@@ -201,7 +292,9 @@ function sinPalabrasDeBloque(seg) {
   let t = String(seg).trim();
   for (let antes = null; antes !== t;) {
     antes = t;
-    t = t.replace(/^(?:(?:do|then|else|elif|if|while|until|time|!)(?=[\s({])|[({])\s*/, '');
+    // (el `{` de un descriptor con nombre, `{fd}>f`, no abre un grupo)
+    // (`time -p` con su opción: el comando es lo que sigue)
+    t = t.replace(/^(?:(?:do|then|else|elif|if|while|until|time(?:[ \t]+-p)?|!)(?=[\s({])|\(|\{(?![A-Za-z_]\w*\}[<>]))\s*/, '');
   }
   // el `)` del paréntesis que se sacó adelante, pegado al último archivo (`(sed -i … docs/a.js)`): sólo los que sobran,
   // para no tocar un `$(…)` del final
@@ -223,22 +316,55 @@ function sinPalabrasDeBloque(seg) {
  * entrada (`< f`, `<<< palabra`, `<<EOF`, `<<-'EOF'`), cuyo archivo o delimitador no es un argumento del comando. Sin la
  * barra suelta del final (`cp a b \` sin renglón siguiente), que tampoco es el último argumento.
  */
-function palabrasDelComando(seg) {
+// La palabra de una redirección, como la lee el shell: con lo citado, `$'…'`, `$(…)`, `${…}` y lo escapado pegado
+// (`<<<x"y"`, `<'a b'c`, `<<<$(echo x y)`, `<<<a\ b`). Cada pieza empieza distinto: no hay dos formas de leer lo mismo.
+// Un `$(` o `${` sin cerrar se lleva el resto del tramo: exigir el cierre recorre el resto una vez por cada uno
+const PALABRA_DE_REDIRECCION = String.raw`(?:\$'(?:\\.|[^'\\])*'|\$"(?:\\.|[^"\\])*"|'[^']*'|"(?:\\.|[^"\\])*"|\$\([^)]*\)?|\$\{[^}]*\}?|\\.|[^\s'"\\|;&<>$]|\$(?![('{"]))+`;
+// el descriptor de una redirección: una o más cifras, o un nombre (`{fd}`), al principio de una palabra
+const DESCRIPTOR = String.raw`(?:\d+|\{[A-Za-z_]\w*\})`;
+// (la palabra va en su propio grupo opcional: un `?` pegado al `+` de la palabra la volvería perezosa, de una letra. Y
+// sin blancos opcionales delante del operador: con una tirada larga de blancos sin `>` detrás, cada blanco la recorrería
+// entera)
+const REDIRECCION_DE_SALIDA_CON_PALABRA = new RegExp(String.raw`(?:&|(?<!\S)${DESCRIPTOR})?>{1,2}(?:\||&)?[ \t]*(?:${PALABRA_DE_REDIRECCION})?`, 'g');
+const REDIRECCION_DE_ENTRADA_CON_PALABRA = new RegExp(String.raw`(?:(?<!\S)${DESCRIPTOR})?<(?:<<|<-?|&|>)?[ \t]*(?:${PALABRA_DE_REDIRECCION})?`, 'g');
+
+// ¿La redirección deja un `$(` o un `${` sin cerrar? El tramo se parte en el `;` o la tubería de adentro, y el resto de la
+// sustitución queda en otro tramo
+function sinCerrar(redireccion) {
+  const a = redireccion.lastIndexOf('$(');
+  const b = redireccion.lastIndexOf('${');
+  return (a >= 0 && !redireccion.includes(')', a)) || (b >= 0 && !redireccion.includes('}', b));
+}
+
+function palabrasDelComando(seg, { conVacias = false } = {}) {
   // un comentario al final no es parte del comando
   const sinComentario = String(seg).replace(/(^|\s)#.*$/, '');
+  // con una sustitución sin cerrar no se sabe dónde termina el comando: `words.sinCerrar` lo dice, y quien busca el
+  // último argumento toma todos. En su lugar queda una palabra que no se resuelve: el destino puede haber quedado en el
+  // tramo siguiente
+  let abierta = false;
+  const blanco = (r) => { if (!sinCerrar(r)) return ' '; abierta = true; return ' $( '; };
   const sinRedir = sinComentario
-    .replace(/[ \t]*(?:&|\d)?>{1,2}(?:\||&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ')
-    .replace(/(?:(?<!\S)\d)?<(?:<<|<-?|&|>)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ');
+    .replace(REDIRECCION_DE_SALIDA_CON_PALABRA, blanco)
+    .replace(REDIRECCION_DE_ENTRADA_CON_PALABRA, blanco);
   const words = (sinRedir.trim().match(new RegExp(Q, 'g')) || []).map((w) => {
     const mm = w.match(new RegExp(`^${Q}$`));
     return mm ? tok(mm, 1) : null;
-  }).filter(Boolean);
+  }).filter((w) => w != null && (conVacias || w !== ''));
   if (words[words.length - 1] === '\\') words.pop();
+  words.sinCerrar = abierta;
   return words;
 }
 
-// Una redirección delante del comando (`> f cp a b`, `2>/dev/null cp a b`, `<<<x cp a b`): el comando es lo que sigue
-const REDIRECCION_DELANTE = /(?:(?:&|\d)?>{1,2}(?:\||&)?|\d?<(?:<<|<-?|&|>)?)[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)[ \t]*/y;
+/** El último argumento que no es una opción; con el tramo sin cerrar (`palabrasDelComando`), todos. */
+function ultimosArgumentos(words) {
+  const sueltos = words.slice(1).filter((w) => !w.startsWith('-'));
+  return words.sinCerrar ? sueltos : sueltos.slice(-1);
+}
+
+// Una redirección delante del comando (`> f cp a b`, `10>f cp a b`, `{fd}>f cp a b`, `<<<x cp a b`): el comando es lo
+// que sigue
+const REDIRECCION_DELANTE = new RegExp(String.raw`(?:(?:&|${DESCRIPTOR})?>{1,2}(?:\||&)?|${DESCRIPTOR}?<(?:<<|<-?|&|>)?)[ \t]*${PALABRA_DE_REDIRECCION}[ \t]*`, 'y');
 function sinRedireccionesDelante(seg) {
   const t = String(seg).trim();
   let i = 0;
@@ -247,16 +373,199 @@ function sinRedireccionesDelante(seg) {
   return t.slice(i);
 }
 
+// Las opciones de un envoltorio que llevan su valor en la palabra siguiente: las de `ENVOLTORIOS_CON_VALOR` (más abajo en
+// el archivo: se juntan la primera vez que se piden) y las de estos
+const MAS_OPCIONES_CON_VALOR = {
+  // (las de sudo de `ENVOLTORIOS_CON_VALOR`, y el tiempo y la raíz: `-T 5`, `-R /`)
+  sudo: /^-[ugCDhprtTUR]$|^--(?:user|group|close-from|chdir|host|prompt|role|type|other-user|command-timeout|chroot)$/,
+  env: /^-[uCSPa]$|^--(?:unset|chdir|split-string|argv0)$/,
+  doas: /^-[uC]$/,
+  ionice: /^-[cnpPu]$|^--(?:class|classdata|pid|pgid|uid)$/,
+  exec: /^-a$/,
+  time: /^-[fo]$|^--(?:format|output)$/,
+};
+let opcionesConValor = null;
+const opcionesDelEnvoltorio = (n) => (opcionesConValor ||= { ...ENVOLTORIOS_CON_VALOR, ...MAS_OPCIONES_CON_VALOR })[n];
+// los envoltorios que, después de sus opciones, llevan una palabra suya antes del comando: la duración, la prioridad, la
+// máscara de procesadores
+const CON_PALABRA_PROPIA = new Set(['timeout', 'chrt', 'taskset']);
+// el principio de una palabra que es una redirección (`>f`, `2>`, `{fd}<x`, `&>f`, `>|f`)
+const EMPIEZA_REDIRECCION = new RegExp(String.raw`^(?:&|${DESCRIPTOR})?(?:>{1,2}(?:\||&)?|<(?:<<|<-?|&|>)?)`);
+
+/**
+ * Dónde termina la palabra antes de un `<` o `>` sin comillas ni barra (el largo de la palabra si no hay). Lo de adentro
+ * de `$(…)`, `` `…` `` y `${…}` no corta: ahí un `>` no es una redirección (`$(:>/dev/null)/bin/cp` es `cp`).
+ */
+function antesDeUnaRedireccion(crudo) {
+  for (let i = 0; i < crudo.length; i++) {
+    const c = crudo[i];
+    if (c === '\\') { i++; continue; }
+    if (c === "'") { const j = crudo.indexOf("'", i + 1); if (j < 0) return crudo.length; i = j; continue; }
+    if (c === '"') { let j = i + 1; while (j < crudo.length && crudo[j] !== '"') j += crudo[j] === '\\' ? 2 : 1; i = j; continue; }
+    const fin = finDeSustitucion(crudo, i);
+    if (fin === -1) return crudo.length;
+    if (fin > i) { i = fin; continue; }
+    if (c === '<' || c === '>') return i;
+  }
+  return crudo.length;
+}
+
+/**
+ * Si en `i` empieza una sustitución (`$(…)`, `${…}` o `` `…` ``), dónde termina (contando las que se abren adentro); -1
+ * si no cierra; `i` si ahí no empieza ninguna.
+ */
+function finDeSustitucion(w, i) {
+  if (w[i] === '`') return w.indexOf('`', i + 1);
+  if (w[i] !== '$' || (w[i + 1] !== '(' && w[i + 1] !== '{')) return i;
+  const abre = w[i + 1];
+  const cierra = abre === '(' ? ')' : '}';
+  let hondo = 0;
+  for (let j = i + 1; j < w.length; j++) {
+    if (w[j] === '\\') { j++; continue; }
+    if (w[j] === abre) hondo++;
+    else if (w[j] === cierra && --hondo === 0) return j;
+  }
+  return -1;
+}
+
+/**
+ * Los nombres que puede tener el programa de una palabra (`/bin/cp` es `cp`, `\cp` también), el primero el de siempre:
+ * lo que sigue a su última barra, sin contar las de adentro de una sustitución (`cp$(:>/dev/null)` es `cp…`, no
+ * `null)`). Con una sustitución que no cierra en la palabra (cierra después de un blanco), no se sabe si sus barras son
+ * de la ruta (`/bin/cp$(:/ )`) o de lo que corre adentro (`$(/bin/cp`): van los dos nombres. `w`, la palabra con sus
+ * comillas resueltas.
+ */
+function nombresDelPrograma(w) {
+  // (`=cp` en zsh es la ruta de `cp`)
+  const nombre = (barra) => w.slice(barra + 1).replace(/^[\\=]/, '').toLowerCase().replace(/\.exe$/, '');
+  let barra = -1;
+  for (let i = 0; i < w.length; i++) {
+    if (w[i] === '/') { barra = i; continue; }
+    const fin = finDeSustitucion(w, i);
+    if (fin === -1) return [...new Set([nombre(barra), nombre(w.lastIndexOf('/'))])];
+    i = fin;
+  }
+  return [nombre(barra)];
+}
+
+// los programas que escriben lo que nombran: entre los nombres posibles de una palabra, cuenta el que escribe
+const ESCRIBE_LO_QUE_NOMBRA = /^(?:g?(?:cp|mv|ln|install|sed)|rsync|perl|truncate|tee)(?![\w.-])/;
+
+/**
+ * El tramo desde el programa que corre, con el programa por su nombre (`/bin/cp` y `\cp` son `cp`): sin las variables de
+ * delante, las redirecciones (`HOLA=1 >f cp`) ni los envoltorios que corren otro comando (`env -i X=1`, `command`,
+ * `nohup`, `sudo -u x`, `timeout 5`, `busybox`), con sus opciones. '' si no queda programa.
+ */
+function desdeElPrograma(seg) {
+  const t = String(seg).trim();
+  const pieza = /(?:'[^']*'|"(?:\\.|[^"\\])*"|\\.|[^\s'"\\])+/g;
+  const fines = [];
+  function* piezas() { for (let m = pieza.exec(t); m; m = pieza.exec(t)) { fines.push(m.index + m[0].length); yield m[0]; } }
+  const p = programaEntre(piezas());
+  return p ? p.n + t.slice(fines[p.k]) : '';
+}
+
+/**
+ * El programa que corre entre las palabras crudas de un tramo, en orden: `{ k, n }`, su lugar entre ellas y su nombre
+ * (`/bin/cp` y `\cp` son `cp`), sin las variables de delante, las redirecciones ni los envoltorios con sus opciones. null
+ * si no queda programa.
+ */
+function programaEntre(piezas, info = null) {
+  // las opciones del envoltorio que se está leyendo (null fuera de uno), las palabras que siguen y no son el programa (el
+  // valor de una opción), y si al terminar sus opciones le sigue una palabra suya
+  let opciones = null;
+  let saltar = 0;
+  let propia = false;
+  let envoltorio = null;
+  let k = -1;
+  for (const pieza of piezas) {
+    k++;
+    if (saltar) { saltar--; continue; }
+    // una redirección no es el programa; si su palabra va aparte (`> f`), tampoco la que sigue
+    const redireccion = EMPIEZA_REDIRECCION.exec(pieza);
+    if (redireccion) { if (redireccion[0].length === pieza.length) saltar = 1; continue; }
+    // una redirección pegada detrás (`cp>/dev/null`, `X=1>f`) termina la palabra: cuenta lo de antes
+    const crudo = pieza.slice(0, antesDeUnaRedireccion(pieza));
+    const w = palabraConAnsi(crudo);
+    if (opciones !== null && w.startsWith('-')) {
+      // el texto de `env -S`, que quien llama lee como otro comando: en qué pieza está y lo que va pegado
+      const s = envoltorio === 'env' && /^(?:-[i0v]*S|--split-string=?)([\s\S]*)$/.exec(w);
+      if (s && info) info.envS = { k, pegado: s[1] };
+      // también con las opciones juntas (`-iu root`), si la primera que lleva valor es la última; antes, el resto de la
+      // palabra es su valor (`-uroot`, `-uP`) y el programa es la palabra que sigue
+      const juntas = /^-[A-Za-z]{2,}$/.test(w) && opciones && [...w.slice(1)].findIndex((l) => opciones.test(`-${l}`)) === w.length - 2;
+      if (opciones && (opciones.test(w) || juntas)) saltar = 1;
+      continue;
+    }
+    if (opciones !== null && propia) { opciones = null; propia = false; continue; }
+    opciones = null;
+    if (/^[A-Za-z_]\w*=/.test(crudo)) continue;
+    // si la palabra puede nombrar dos programas, cuenta el que escribe; si no, un envoltorio; si no, el de siempre. Una
+    // sustitución pegada al nombre (`nohup$(:/ )`) puede no dar nada: el nombre sin ella también vale
+    const nombres = nombresDelPrograma(w);
+    const todos = [...nombres, ...nombres.map(sinSustitucionesCerradas)];
+    const n = todos.find((x) => ESCRIBE_LO_QUE_NOMBRA.test(x)) || todos.find((x) => x === 'busybox' || ENVOLTORIOS.has(x) || MODIFICADORES_DE_ZSH.has(x)) || nombres[0];
+    if (n === 'busybox' || MODIFICADORES_DE_ZSH.has(n)) continue;
+    if (ENVOLTORIOS.has(n)) { opciones = opcionesDelEnvoltorio(n) || false; propia = CON_PALABRA_PROPIA.has(n); envoltorio = n; continue; }
+    return { k, n };
+  }
+  return null;
+}
+
+// lo que zsh pone delante de un comando sin cambiar cuál corre: `noglob cp`, `nocorrect cp`, `- cp`
+const MODIFICADORES_DE_ZSH = new Set(['noglob', 'nocorrect', '-']);
+
+/**
+ * La palabra sin sus sustituciones que cierran (`nohup$(:/ )` es `nohup`); desde una que no cierra, queda como está. Una
+ * pasada: buscar el cierre con una expresión desde cada `$(` sin cerrar crece con el cuadrado del largo.
+ */
+function sinSustitucionesCerradas(w) {
+  let out = '';
+  for (let i = 0; i < w.length; i++) {
+    const fin = finDeSustitucion(w, i);
+    if (fin === -1) return out + w.slice(i);
+    if (fin > i) { i = fin; continue; }
+    out += w[i];
+  }
+  return out;
+}
+
+/** `palabraDelShell`, también con el citado ANSI-C y sus escapes: `$'\x63p'` es `cp`. */
+function palabraConAnsi(w) {
+  return palabraDelShell(String(w).replace(/\$'((?:\\[\s\S]|[^'\\])*)'/g, (m, x) => `'${ansiC(x).replace(/'/g, "'\\''")}'`));
+}
+
+// los programas que copian o mueven a un destino que es su último argumento (o la carpeta de `-t`); el nombre entero
+// (`install.sh` es un guion, no `install`), y lo que el shell pega detrás no es parte del nombre (`cp>log`, `cp$x`)
+const COPIA = /^(?:g?(?:cp|mv|ln|install)|rsync)(?![\w.-])/;
+
 /**
  * Los destinos de un cp / mv: con `-t` / `--target-directory` (también `-rt`, `-t<carpeta>`), la carpeta y cada archivo
  * que llega a ella; si no, el último argumento (`palabrasDelComando`, sin redirecciones: `cp a b 2>&1`, `cp a b <<<x`).
+ * En rsync `-t` conserva las fechas: ahí no hay carpeta de destino aparte.
  */
 function cpMvDest(seg) {
-  const words = palabrasDelComando(sinRedireccionesDelante(seg));
+  return destinosDeCpMv(palabrasDelComando(sinRedireccionesDelante(seg), { conVacias: true }));
+}
+
+/** Los destinos de un cp / mv de `cpMvDest`, con las palabras ya leídas: la primera, el nombre del programa. */
+function destinosDeCpMv(conVacias) {
+  let words = conVacias;
+  // rsync e install, sin el valor de sus opciones (`--exclude x`, `-m 644`), que no es un origen ni el destino; y la
+  // carpeta de `install -t`. Con las palabras vacías: un valor citado que se vació (`-f '- x'`) sigue en su lugar
+  const copiador = /^rsync/.test(words[0]) ? 'rsync' : /^g?install/.test(words[0]) ? 'install' : null;
+  if (copiador) {
+    const { sueltos: todos, carpeta } = argumentosDeCopia(copiador, words.slice(1));
+    const sueltos = todos.filter(Boolean);
+    if (carpeta) return [carpeta, ...sueltos.map((f) => `${carpeta.replace(/[\\/]+$/, '')}/${f.split(/[\\/]/).pop()}`)];
+    return words.sinCerrar ? sueltos : sueltos.slice(-1);
+  }
+  words = words.filter(Boolean);
+  words.sinCerrar = conVacias.sinCerrar;
   // con varios -t vale el último, como en cp
   let dir = null;
   const fuera = new Set([0]);   // el nombre del comando, y lo que nombra la carpeta
-  for (let i = 0; i < words.length; i++) {
+  for (let i = 0; i < words.length && words[0] !== 'rsync'; i++) {
     const largo = /^--target-directory=(.+)$/.exec(words[i]);
     const pegado = /^-t(.+)$/.exec(words[i]);
     if (largo) { dir = largo[1]; fuera.add(i); } else if ((/^-[a-zA-Z]*t$/.test(words[i]) || words[i] === '--target-directory') && words[i + 1]) {
@@ -264,7 +573,7 @@ function cpMvDest(seg) {
     } else if (pegado) { dir = pegado[1]; fuera.add(i); }
   }
   // sin -t: el último argumento que no es una opción (`cp a b -f`, `Copy-Item a b -Force`, `cp a b --`)
-  if (dir === null) { const t = words.slice(1).filter((w) => !w.startsWith('-')).pop(); return t ? [t] : []; }
+  if (dir === null) return ultimosArgumentos(words);
   const fuentes = words.filter((w, i) => !fuera.has(i) && !w.startsWith('-'));
   return [dir, ...fuentes.map((f) => `${dir.replace(/[\\/]+$/, '')}/${f.split(/[\\/]/).pop()}`)];
 }
@@ -489,11 +798,199 @@ function extractWriteTargets(cmd, { keep = null } = {}) {
   const out = new Set();
   const raw = String(cmd || '');
   const s = stripNonCommandText(raw);
-  destinosDeEscritura(raw, s, keep, out);
+  const lecturas = [s];
   // los cuerpos de los heredocs ya no están (`stripNonCommandText`): se puede unir aunque el comando tenga uno
   const unidos = sinContinuaciones(s, { sinCuerpos: true });
-  if (unidos !== s) destinosDeEscritura(raw, unidos, keep, out);
+  if (unidos !== s) lecturas.push(unidos);
+  for (const l of lecturas) destinosDeEscritura(raw, l, keep, out);
+  destinosPorElPartidor(raw, keep, out);
   return [...out];
+}
+
+/**
+ * Agrega a `out` los destinos de los tramos de `tramosDelShell`, con las palabras y las redirecciones que lee el partidor
+ * común (`scripts/lib/shell-parse.js`) como el shell: con las comillas, las sustituciones y las redirecciones de zsh. Ve
+ * lo que la lectura por expresiones pierde (`>! f`, `1<>f`, un `;` citado en la palabra de una redirección, un destino
+ * citado con blancos, `TS=$(date) cp …`), y se suma a ella: nunca se ve menos. Sin el partidor (una instalación a
+ * medias) no agrega nada y quedan las otras lecturas.
+ */
+function destinosPorElPartidor(raw, keep, out, hondo = 0) {
+  const p = partidorComun();
+  if (!p || typeof p.sinHeredocs !== 'function' || typeof p.parseSimpleCommand !== 'function') return;
+  // un destino que es la salida de un comando (`"$(mktemp -d)"`, `$(pwd)/a`) no se sabe sin correrlo: esta lectura no lo
+  // suma, como las de antes, que tampoco lo leían; lo que corre adentro se lee como su propio tramo
+  const sumar = (t) => { if (t && !/^\/dev\//.test(t) && !/\$\(|`/.test(t)) out.add(t); };
+  for (const tramo of tramosDelShell(hondo ? raw : p.sinHeredocs(raw))) {
+    const c = p.parseSimpleCommand(sinPalabrasDeBloque(tramo));
+    for (const r of c.redirections) if (r.write && r.target != null) sumar(palabraConAnsi(r.target));
+    const info = {};
+    const programa = programaEntre(c.words, info);
+    // el texto de `env -S` (o `--split-string`), que env parte en palabras y corre con las que siguen
+    if (info.envS && hondo < HONDO_DE_ENV_S) {
+      const { k, pegado } = info.envS;
+      const valor = pegado || (k + 1 < c.words.length ? palabraConAnsi(c.words[k + 1]) : '');
+      destinosPorElPartidor(`${valor} ${c.words.slice(pegado ? k + 1 : k + 2).join(' ')}`, keep, out, hondo + 1);
+    }
+    if (!programa) continue;
+    const resto = c.words.slice(programa.k + 1);
+    const palabras = [programa.n, ...resto.map(palabraConAnsi)];
+    if (COPIA.test(programa.n)) {
+      for (const t of destinosDeCpMv(palabras)) sumar(t);
+      // una sustitución suelta al final puede no dar ninguna palabra (`cp a b $(true)`): el destino es la de antes
+      let fin = palabras.length;
+      while (fin > 2 && /^(?:\$\(|`)/.test(resto[fin - 2])) fin--;
+      if (fin < palabras.length) for (const t of destinosDeCpMv(palabras.slice(0, fin))) sumar(t);
+    }
+    if (/^tee(?![\w.-])/.test(programa.n)) for (const t of palabras.slice(1)) if (!t.startsWith('-')) sumar(t);
+    if (/^rsync(?![\w.-])/.test(programa.n)) for (const t of archivosDeRsync(palabras)) sumar(t);
+    const ultimo = palabras[palabras.length - 1];
+    if (/^truncate(?![\w.-])/.test(programa.n) && palabras.length > 1 && !ultimo.startsWith('-')) sumar(ultimo);
+    destinosDelSedEnSitio([programa.n, ...resto].join(' '), raw, keep, out);
+  }
+}
+
+// cuántos `env -S` adentro de otros se leen: más hondo, quedan las otras lecturas
+const HONDO_DE_ENV_S = 4;
+
+// las opciones de rsync que escriben el archivo que nombran: el registro y el lote
+const RSYNC_ESCRIBE = /^--(?:log-file|write-batch|only-write-batch)(?:=([\s\S]*))?$/;
+
+/** Los archivos que un rsync escribe por sus opciones (`--log-file`, `--write-batch`), pegados con `=` o en la palabra que sigue. */
+function archivosDeRsync(palabras) {
+  const out = [];
+  for (let i = 1; i < palabras.length; i++) {
+    const m = RSYNC_ESCRIBE.exec(palabras[i]);
+    if (!m) continue;
+    const valor = m[1] !== undefined ? m[1] : palabras[i + 1];
+    if (valor) out.push(valor);
+  }
+  return out;
+}
+
+// cuántas sustituciones adentro de otras se parten en tramos
+const HONDO_DE_SUSTITUCIONES = 8;
+
+/** Dónde cierra el paréntesis que abre en `s[i]`, contando los que se abren adentro; -1 si no cierra. */
+function cierreDeParentesis(s, i) {
+  let hondo = 0;
+  for (let j = i; j < s.length; j++) {
+    if (s[j] === '\\') { j++; continue; }
+    if (s[j] === '(') hondo++;
+    else if (s[j] === ')' && --hondo === 0) return j;
+  }
+  return -1;
+}
+
+/**
+ * Los tramos del comando como los parte el shell, sin sus comentarios: corta en `;`, `&&`, `||`, `|`, `|&`, `&` y el salto
+ * de renglón que están fuera de comillas y de sustituciones; no en el `|` de `>|` o `>&|` ni en el `&` de una redirección
+ * (`2>&1`, `&>f`, `<&0`). Una sola pasada: una comilla o una sustitución sin cerrar se lleva el resto en el mismo tramo.
+ */
+function tramosDelShell(texto, hondo = 0) {
+  const s = String(texto);
+  const out = [];
+  // el tramo que se arma, y sus dos últimas letras sueltas (sin escapar ni citadas; vacía detrás de otra cosa): mirar la
+  // punta del tramo armado lo recompone entero cada vez
+  let cur = '';
+  let cola = '';
+  const agregar = (t, suelta = false) => { cur += t; cola = suelta ? (cola + t).slice(-2) : ''; };
+  const cortar = () => { if (cur.trim()) out.push(cur); cur = ''; cola = ''; };
+  // los comandos de adentro de una sustitución (entre `desde` y `fin`) también son tramos; más hondo que el tope, quedan
+  // las otras lecturas
+  const adentro = (desde, fin) => {
+    if (hondo >= HONDO_DE_SUSTITUCIONES) return;
+    for (const t of tramosDelShell(s.slice(desde, fin), hondo + 1)) out.push(t);
+  };
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === '\\') { if (s[i + 1] !== '\n') agregar(s.slice(i, i + 2)); i++; continue; }
+    if (c === "'" || (c === '$' && s[i + 1] === "'")) {
+      let j = c === '$' ? i + 2 : i + 1;
+      while (j < s.length && s[j] !== "'") j += c === '$' && s[j] === '\\' ? 2 : 1;
+      agregar(s.slice(i, j + 1));
+      i = j;
+      continue;
+    }
+    // entre comillas dobles, una sustitución corre igual, y su comilla de adentro no cierra la de afuera
+    if (c === '"') {
+      let j = i + 1;
+      while (j < s.length && s[j] !== '"') {
+        if (s[j] === '\\') { j += 2; continue; }
+        const f = finDeSustitucion(s, j);
+        if (f === -1) { j = s.length; break; }
+        if (f > j) { if (s[j] === '`') adentro(j + 1, f); else if (s[j + 1] === '(') adentro(j + 2, f); j = f + 1; continue; }
+        j++;
+      }
+      agregar(s.slice(i, j + 1));
+      i = j;
+      continue;
+    }
+    // (`<(…)` y `>(…)` también: su tubería de adentro no parte el tramo)
+    const proceso = (c === '<' || c === '>') && s[i + 1] === '(';
+    const fin = proceso ? cierreDeParentesis(s, i + 1) : finDeSustitucion(s, i);
+    if (fin === -1) { agregar(s.slice(i)); break; }
+    if (fin > i) {
+      if (c === '`') adentro(i + 1, fin); else if (s[i + 1] === '(') adentro(i + 2, fin);
+      agregar(s.slice(i, fin + 1));
+      i = fin;
+      continue;
+    }
+    if (c === '#' && (cur.length === 0 || /\s/.test(cola.slice(-1)))) { while (i + 1 < s.length && s[i + 1] !== '\n') i++; continue; }
+    if (c === '\n' || c === ';') { cortar(); continue; }
+    if (c === '|') {
+      if (cola.endsWith('>') || cola === '>&') { agregar(c, true); continue; }
+      if (s[i + 1] === '|' || s[i + 1] === '&') i++;
+      cortar();
+      continue;
+    }
+    if (c === '&') {
+      if (s[i + 1] === '&') { i++; cortar(); continue; }
+      if (s[i + 1] === '>' || cola.endsWith('>') || cola.endsWith('<')) { agregar(c, true); continue; }
+      cortar();
+      continue;
+    }
+    agregar(c, true);
+  }
+  cortar();
+  return out;
+}
+
+/**
+ * Agrega a `out` los archivos que edita en su lugar un `sed -i` / `--in-place` o un `perl -i` / `-pi` / `-ni` que empieza
+ * `head`: todo token con extensión de código, o que quien llama quiere mirar igual (`keep`). `raw`, el comando entero.
+ */
+const sufijoVacioDe = { raw: null, hay: false };
+function destinosDelSedEnSitio(head, raw, keep, out) {
+  const isSedI = /^sed\b/.test(head) && /(^|\s)(-i\b|-[a-zA-Z]*i[a-zA-Z]*\b(?=\s)|--in-place)/.test(head);
+  // (con el separador de registro en el mismo grupo: `-0pi`, `-0777pi`)
+  const isPerlI = /^perl\b/.test(head) && /(^|\s)-[a-zA-Z0-9]*i\S*(\s|$)/.test(head);
+  if (!isSedI && !isPerlI) return;
+  const words = head.match(new RegExp(Q, 'g')) || [];
+  // el nombre del comando y, si no hay -e / -f, la expresión (el primer argumento) no son archivos: `keep` no los mira
+  const conExpresionAparte = /(^|\s)(-[a-zA-Z]*[ef]|--expression|--file)/.test(head) || isPerlI;
+  let args = 0;
+  let esValorDeE = false;   // lo que sigue a -e / --expression es la expresión, no un archivo
+  let anterior = null;
+  // en el comando escrito, ¿hay un `-i ''` de verdad (el sufijo vacío de Mac) o es una expresión que se vació? (una vez
+  // por comando: con miles de `sed -i` en uno, buscarlo en cada uno lo recorre entero cada vez)
+  if (sufijoVacioDe.raw !== raw) { sufijoVacioDe.raw = raw; sufijoVacioDe.hay = /(^|\s)-i\s+(''|"")(\s|$)/.test(raw); }
+  const sufijoVacio = sufijoVacioDe.hay;
+  for (const w of words.slice(1)) {
+    const mm = w.match(new RegExp(`^${Q}$`));
+    const t = mm ? tok(mm, 1) : null;
+    if (t == null) continue;
+    const previo = anterior; anterior = t;
+    if (t.startsWith('-')) { esValorDeE = /^(-[a-zA-Z]*e|--expression)$/.test(t); continue; }
+    if (esValorDeE) { esValorDeE = false; continue; }
+    // `sed -i ''` (Mac): el `''` es el sufijo de -i. Si no, una expresión con espacios llega vaciada y ocupa su lugar
+    if (t === '') { if (!(isSedI && previo === '-i' && sufijoVacio)) args++; continue; }
+    args++;
+    const esExpresion = !conExpresionAparte && args === 1;
+    // una ruta con variable (`$f`, `${D}/x.js`) también es un destino, que se resuelve o se dice que no. Una expresión
+    // de sed que quedó en otro lugar (`-i''` pegado corre la cuenta) no: lleva espacios o arranca con `s/`, `y/`
+    const rutaConVariable = /\$\{?[A-Za-z_]/.test(t) && !/\s/.test(t) && !/^[sy][^\w\s]/.test(t);
+    if (isCodeFile(t) || isManifestFile(t) || (keep && !esExpresion && keep(t)) || (!esExpresion && rutaConVariable)) out.add(t);
+  }
 }
 
 /** Agrega a `out` los destinos de escritura de `s` (el comando ya sin lo que no es comando); `raw`, el comando entero. */
@@ -504,6 +1001,13 @@ function destinosDeEscritura(raw, s, keep, out) {
   while ((m = reRedirect.exec(s))) {
     const t = tok(m, 1);
     if (t && !t.startsWith('&') && !/^\/dev\//.test(t)) out.add(t);
+  }
+  // las de zsh que pisan el archivo aunque el shell no deje pisar (`>! f`, `>>! f`, `&>! f`, `>&! f`, `>&| f`); en bash
+  // `>!` es `>` al archivo `!`, que se lee arriba. El partidor común las lee también, salvo `>&|`, que parte en la tubería
+  const reZsh = new RegExp(`(?:^|[^<>&])(?:&|\\d)?>{1,2}&?[|!][ \\t]*${Q}`, 'g');
+  while ((m = reZsh.exec(s))) {
+    const t = tok(m, 1);
+    if (t && !/^\/dev\//.test(t)) out.add(t);
   }
 
   // 2) tee [-a] f1 [f2 …]
@@ -522,40 +1026,19 @@ function destinosDeEscritura(raw, s, keep, out) {
   for (const crudo of splitSegments(s)) {
     // la palabra de un bloque o el paréntesis delante no es el comando: `do cp a b`, `then sed -i …`, `if cp a b`, `(cp a b)`
     const seg = sinPalabrasDeBloque(crudo);
-    // Anclados al INICIO del segmento: `grep -i "sed" src/a.ts` no es un sed -i.
-    const head = seg.trim().replace(/^(?:\w+=\S+\s+)*(?:sudo\s+)?/, '');
-    const isSedI = /^sed\b/.test(head) && /(^|\s)(-i\b|-[a-zA-Z]*i[a-zA-Z]*\b(?=\s)|--in-place)/.test(head);
-    // (con el separador de registro en el mismo grupo: `-0pi`, `-0777pi`)
-    const isPerlI = /^perl\b/.test(head) && /(^|\s)-[a-zA-Z0-9]*i\S*(\s|$)/.test(head);
-    if (isSedI || isPerlI) {
-      const words = seg.match(new RegExp(Q, 'g')) || [];
-      // el nombre del comando y, si no hay -e / -f, la expresión (el primer argumento) no son archivos: `keep` no los mira
-      const conExpresionAparte = /(^|\s)(-[a-zA-Z]*[ef]|--expression|--file)/.test(head) || isPerlI;
-      let args = 0;
-      let esValorDeE = false;   // lo que sigue a -e / --expression es la expresión, no un archivo
-      let anterior = null;
-      // en el comando escrito, ¿hay un `-i ''` de verdad (el sufijo vacío de Mac) o es una expresión que se vació?
-      const sufijoVacio = /(^|\s)-i\s+(''|"")(\s|$)/.test(raw);
-      for (const w of words.slice(1)) {
-        const mm = w.match(new RegExp(`^${Q}$`));
-        const t = mm ? tok(mm, 1) : null;
-        if (t == null) continue;
-        const previo = anterior; anterior = t;
-        if (t.startsWith('-')) { esValorDeE = /^(-[a-zA-Z]*e|--expression)$/.test(t); continue; }
-        if (esValorDeE) { esValorDeE = false; continue; }
-        // `sed -i ''` (Mac): el `''` es el sufijo de -i. Si no, una expresión con espacios llega vaciada y ocupa su lugar
-        if (t === '') { if (!(isSedI && previo === '-i' && sufijoVacio)) args++; continue; }
-        args++;
-        const esExpresion = !conExpresionAparte && args === 1;
-        // una ruta con variable (`$f`, `${D}/x.js`) también es un destino, que se resuelve o se dice que no. Una expresión
-        // de sed que quedó en otro lugar (`-i''` pegado corre la cuenta) no: lleva espacios o arranca con `s/`, `y/`
-        const rutaConVariable = /\$\{?[A-Za-z_]/.test(t) && !/\s/.test(t) && !/^[sy][^\w\s]/.test(t);
-        if (isCodeFile(t) || isManifestFile(t) || (keep && !esExpresion && keep(t)) || (!esExpresion && rutaConVariable)) out.add(t);
-      }
+    // Anclados al INICIO del segmento: `grep -i "sed" src/a.ts` no es un sed -i. Sin variables ni envoltorios delante, y
+    // con el programa por su nombre (`env sed -i`, `/usr/bin/sed -i` son un sed -i); y también con la lectura de siempre,
+    // el nombre al principio detrás de variables y `sudo`: cuenta lo que vea cualquiera de las dos
+    const programa = desdeElPrograma(sinRedireccionesDelante(seg));
+    for (const head of new Set([programa, seg.trim().replace(/^(?:\w+=\S+\s+)*(?:sudo\s+)?/, '')])) destinosDelSedEnSitio(head, raw, keep, out);
+    // 4) cp / mv / ln / install / rsync → destino = último token del segmento (un enlace también deja un archivo en su
+    //    destino). También las formas de PowerShell de cp y mv (Copy-Item / Move-Item y sus alias copy / cpi / move / mi;
+    //    no distingue mayúsculas): por la herramienta PowerShell de Windows. Una redirección delante (`> f cp a b`) no es
+    //    el comando, ni un envoltorio (`env cp`, `nohup cp`); el programa también por su ruta o escapado (`/bin/cp`, `\cp`).
+    //    Y con la lectura de siempre, el nombre al principio: cuenta lo que vea cualquiera de las dos
+    if (COPIA.test(programa) || /^(?:copy-item|move-item|copy|cpi|move|mi)\b/i.test(programa)) {
+      for (const t of cpMvDest(programa)) out.add(t);
     }
-    // 4) cp / mv / ln → destino = último token del segmento (un enlace también deja un archivo en su destino). También
-    //    las formas de PowerShell de cp y mv (Copy-Item / Move-Item y sus alias copy / cpi / move / mi; no distingue
-    //    mayúsculas): por la herramienta PowerShell de Windows. Una redirección delante (`> f cp a b`) no es el comando.
     const comando = sinRedireccionesDelante(seg);
     if (/^(?:\w+=\S+\s+)*(?:sudo\s+)?(?:cp|mv|ln)\b/.test(comando) || /^(?:copy-item|move-item|copy|cpi|move|mi)\b/i.test(comando)) {
       for (const t of cpMvDest(seg)) out.add(t);
@@ -617,9 +1100,14 @@ function destinosDeEscritura(raw, s, keep, out) {
   const reDd = /\bdd\b[^\n|;&]*?\bof=(['"]?)([^\s'"]+)\1/g;
   while ((m = reDd.exec(s))) out.add(m[2]);
   for (const seg of splitSegments(s)) {
-    if (/^(?:\w+=\S+\s+)*(?:sudo\s+)?truncate\b/.test(sinRedireccionesDelante(seg))) {
-      const t = palabrasDelComando(sinRedireccionesDelante(seg)).pop();
-      if (t && !t.startsWith('-')) out.add(t);
+    // el programa por su nombre, y la lectura de siempre (el nombre al principio, detrás de variables y `sudo`)
+    for (const comando of new Set([desdeElPrograma(sinRedireccionesDelante(seg)), sinRedireccionesDelante(seg)])) {
+      if (!/^(?:\w+=\S+\s+)*(?:sudo\s+)?truncate\b/.test(comando)) continue;
+      const words = palabrasDelComando(comando);
+      // el último, si no es una opción; con el tramo sin cerrar, todos los que no lo son
+      const t = words[words.length - 1];
+      if (words.sinCerrar) for (const w of ultimosArgumentos(words)) out.add(w);
+      else if (t && !t.startsWith('-')) out.add(t);
     }
   }
 
@@ -3543,7 +4031,8 @@ const ENVOLTORIOS_CON_VALOR = {
 /**
  * El tramo sin su `env` (también por su ruta, `/usr/bin/env`) y sin sus opciones, sus variables y su carpeta:
  * `{ carpetas, resto }`, con `resto` desde el comando que corre y `carpetas` las de `-C`/`--chdir`, con sus comillas
- * resueltas. `-u`/`--unset` llevan valor. Con `-S` (el comando en un texto) o sin `env`, el tramo queda como está.
+ * resueltas. `-u`/`--unset` llevan valor. Con `-S` (el comando en un texto) o sin `env`, el tramo queda como está; con
+ * `-S`, además, `partida` es la orden que corre.
  */
 function pelarEnv(tramo) {
   const t = String(tramo);
@@ -3567,7 +4056,15 @@ function pelarEnv(tramo) {
     let m;
     if (/^[A-Za-z_]\w*=/.test(w)) { j++; continue; }
     if (w === '--') { j++; break; }
-    if (/^-[iv0]*S|^--split-string/.test(w)) return { carpetas, resto: t };
+    // `-S` lleva la orden en su valor, pegado (`-S"…"`, `--split-string=…`) o en la palabra siguiente: el tramo queda
+    // como está y la orden de adentro va en `partida`, para mirarla como un comando anidado
+    if ((m = /^-[iv0]*S(.*)$|^--split-string(?:=(.*))?$/s.exec(w))) {
+      const pegada = m[1] !== undefined ? m[1] : m[2];
+      const valor = pegada !== undefined && pegada !== '' ? pegada : (j + 1 < piezas.length ? palabra(j + 1) : '');
+      const siguiente = pegada !== undefined && pegada !== '' ? j + 1 : j + 2;
+      const cola = siguiente < piezas.length ? ` ${t.slice(piezas[siguiente].index)}` : '';
+      return { carpetas, resto: t, partida: `${valor}${cola}`.trim() || null };
+    }
     if (/^-[iv0]*C$|^--chdir$/.test(w)) { if (j + 1 < piezas.length) carpetas.push(palabra(j + 1)); j += 2; continue; }
     if ((m = /^-[iv0]*C(.+)$|^--chdir=(.*)$/.exec(w))) { carpetas.push(m[1] ?? m[2]); j++; continue; }
     if (/^-[iv0]*[uPa]$|^--(?:unset|argv0)$/.test(w)) { j += 2; continue; }
@@ -4353,6 +4850,9 @@ function comandosAnidados(comando, hondo = 0, valores = null) {
     // la carpeta de un `env -C` vale para lo que corre ese tramo, y sólo para él
     const cdsDelEnv = pelarEnv(tramo).carpetas.map((d) => `cd ${/\s/.test(d) ? `"${d}"` : d}`);
     const sumarConCd = (b) => { const todos = [...cds, ...cdsDelEnv]; sumar(todos.length && b ? `${todos.join(' && ')} && ${b}` : b); };
+    // la orden que `env -S` lleva en su valor corre como cualquier otra
+    const partida = pelarEnv(tramo).partida;
+    if (partida) sumarConCd(partida);
     // sin el `env` de delante (`env -C d sh -c '…'`): lo que corre `env` es el comando
     const w = palabras(sinPalabrasDelShell(pelarEnv(tramo).resto)).filter((x) => x !== '');
     // las asignaciones de delante (`A=1 B=2 programa`) no son el programa, ni `builtin`/`command` (`builtin eval "$c"`)
@@ -5706,9 +6206,25 @@ function logHookError(e, rotulo = 'falla atrapada') {
   try {
     const dir = carpetaDelEstado();
     fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(path.join(dir, 'hook-errors.log'),
-      `[${new Date().toISOString()}] on-bash-write-gate ${rotulo}: ${(e && e.stack) || e}\n\n`, 'utf8');
+    const desde = esCopiaQueNoEsLaInstalada() ? ` (copia en ${RAIZ_DEL_ARNES})` : '';
+    fs.appendFileSync(registroDeFallas(),
+      `[${new Date().toISOString()}] on-bash-write-gate${desde} ${rotulo}: ${(e && e.stack) || e}\n\n`, 'utf8');
   } catch { /* noop */ }
+}
+
+// En una máquina con el arnés instalado, el registro de fallas (`hook-errors.log`) mide los frenos que corren de verdad:
+// una copia que no es la instalada (la de una prueba, la de un laboratorio en la carpeta de trabajo de una sesión) anota
+// en un registro aparte, para no ensuciar esa medición. Sin instalación (un clon, o la casa de una prueba), o si no se
+// puede saber, el registro de siempre.
+function esCopiaQueNoEsLaInstalada() {
+  try {
+    const arbol = require('./lib/installed-tree.js');
+    const raices = arbol.roots({ home: os.homedir() });
+    return raices.length > 0 && !arbol.inside(raices, RAIZ_DEL_ARNES);
+  } catch { return false; }
+}
+function registroDeFallas() {
+  return path.join(carpetaDelEstado(), esCopiaQueNoEsLaInstalada() ? 'hook-errors-copies.log' : 'hook-errors.log');
 }
 
 /**
@@ -6561,10 +7077,18 @@ function constanciasSinHuella(event, opts = {}) {
  * deja pasar algo que la lectura sin apagarlos frena, aunque algo se tome por comentario sin serlo. La segunda lectura
  * sólo decide: no anota escrituras ni borrados, que ya anotó la primera.
  */
+// En qué paso está el análisis, para el reloj (lib/gate-clock.js): si tarda o lo cortan, el registro lo dice. Sin el
+// reloj no se lo vuelve a pedir: pedido al decidir, contaría como una pieza rota y frenaría todo
+function paso(texto) {
+  if (relojRoto) return;
+  try { require('./lib/gate-clock.js').anotarPaso(texto); } catch { /* sin reloj, no hay a quién decírselo */ }
+}
+
 function handle(event, opts = {}) {
   apagoAlgo = false;
   const r = handleUnaLectura(event, opts);
   if ((r && r.block) || !apagoAlgo) return r;
+  paso('la segunda lectura, sin los comentarios');
   leerComentarios = false;
   soloDecidir = true;
   try {
@@ -6580,21 +7104,25 @@ function handle(event, opts = {}) {
 function handleUnaLectura(event, opts = {}) {
   {
     let perdida = null;
+    paso('mirando si se pierde una ejecución');
     try { perdida = ejecucionPerdida(event); } catch (e) { logHookError(e); perdida = { block: `🔴 EJECUCIÓN PERDIDA — no pude revisar las piezas de la ejecución (${e.message}): frena hasta poder mirarlas.\n` }; }
     if (perdida) return perdida;
   }
   {
     let abierta = null;
+    paso('mirando si borra una ejecución abierta');
     try { abierta = borraEjecucionAbierta(event); } catch (e) { logHookError(e); abierta = { block: `🔒 CERRÁ LA EJECUCIÓN ANTES — no pude revisar si el comando borra la carpeta de una ejecución abierta (${e.message}): frena hasta poder mirarlo.\n` }; }
     if (abierta) return abierta;
   }
   {
     let huella = null;
+    paso('mirando las constancias de un commit o un empuje');
     try { huella = constanciasSinHuella(event, opts); } catch (e) { logHookError(e); huella = { block: `🔒 CONSTANCIA SIN MIRAR — no pude revisar las constancias antes del commit o del empuje (${e.message}): frena hasta poder mirarlas.\n` }; }
     if (huella) return huella;
   }
   {
     let coordinadora = null;
+    paso('mirando lo que se escribe en la carpeta de la coordinadora');
     try { coordinadora = coordinadoraPorConsola(event, opts); } catch (e) { logHookError(e); coordinadora = null; }
     if (coordinadora) return coordinadora;
   }
@@ -6605,6 +7133,7 @@ function handleUnaLectura(event, opts = {}) {
     try {
       const cmd = event?.tool_input?.command;
       if (typeof cmd === 'string' && /\bstash\b/.test(cmd)) {
+        paso('mirando un stash');
         stash = require('./lib/stash-guard.js').evaluar({
           cmd, cwd: nativePath(event?.cwd || process.cwd()), sessionId: resolveSessionId(event?.session_id),
           stateDir: opts.stateDir || require('./lib/story-gate-io.js').DEFAULT_STATE_DIR,
@@ -6619,6 +7148,7 @@ function handleUnaLectura(event, opts = {}) {
     const cmd = event?.tool_input?.command;
     if (cmd && (!event?.tool_name || event.tool_name === 'Bash' || event.tool_name === 'PowerShell')) {
       const baseCwd = nativePath(event?.cwd || process.cwd());
+      paso('mirando si escribe código deprecado');
       deprecado = require('./on-deprecated-edit.js').porLaTerminal({
         cmd, cwd: cwdDelComando(cmd, baseCwd),
         // todo destino, sea o no código: lo deprecado puede ser una guía, un esquema o una configuración
@@ -6630,6 +7160,7 @@ function handleUnaLectura(event, opts = {}) {
     }
   } catch (e) { logHookError(e); deprecado = null; }
   if (deprecado && deprecado.block) return deprecado;
+  paso('mirando el carril y las historias');
   return handleCarrilEHistoria(event, opts) || deprecado;
 }
 
@@ -7099,6 +7630,8 @@ function handleCarrilEHistoria(event, opts = {}) {
   return null;
 }
 
+// cargado entero: de acá en más, una falla sin prever va por la red de fallas
+cargado = true;
 module.exports = { handle, programasPorEntrada, sinComentarioAlFinal, sinCierre, blancoPorRedireccion, splitSegments, SHELL_CON_C, BORRA_O_MUEVE, guionesEnArchivo, carpetasQueBorraOMueve, borraEjecucionAbierta, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA, frenaLaRed, quitarCuerposDeHeredoc, vaAUnShell, comandosAnidados, comandosPorOtroPrograma };
 
 if (require.main === module) {
@@ -7107,11 +7640,15 @@ if (require.main === module) {
   try { event = JSON.parse(cruda || 'null'); } catch (e) { salirPorLaRed(e, textoDeUnaEntradaRota(cruda)); }
   let r = null;
   try { r = handle(event || {}); } catch (e) { salirPorLaRed(e, event && event.tool_input && event.tool_input.command); }
+  // decidió, pero con una pieza rota que un control pidió dentro de su propia red, o con un archivo que no es el instalado
+  const rota = piezaRota || archivoQueNoEsElInstalado();
+  if (rota) salirSinCargar(rota);
   if (r && r.block) {
     try { process.stderr.write(r.block); } catch { /* sin dónde decirlo, frena igual */ }
     process.exit(2);
   }
   yaDecidio = true;
+  paso('armando los avisos para la persona');
   // Antes de cerrar «Aprobar el plan», el arnés le muestra a la persona el plan si el agente no lo hizo (lib/plan-display.js) y,
   // si la historia cambia una pantalla en un repo sin prueba con navegador, la oferta de prepararla (lib/browser-test.js).
   // Van en un solo aviso.

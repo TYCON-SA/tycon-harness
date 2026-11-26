@@ -6,7 +6,7 @@
  * El núcleo del arnés dice qué se hace; cómo se hace en cada plataforma lo dice su conector (guides/constitution.md). Este
  * control cuenta, por archivo, las líneas de lo que va al commit (el índice de git) que casan con alguna señal dura de
  * plataforma: un comando o una dirección real. Las señales no están escritas acá: las declara cada conector en su
- * manifiesto (`hardSignals` de `integrations/<n>/integration.json`, `kind: "platform"`).
+ * manifiesto (`hardSignals` de `integrations/<n>/integration.json`, `kind: "platform"` o `kind: "mailbox"`).
  *
  * Qué no es núcleo, y no se cuenta: `integrations/` y `guides/integrations/`; las pruebas (una carpeta `tests/` o `test/`,
  * un `*.test.*`) y sus fotos (`fixtures/`); los casos y los exámenes del banco de controles (son datos de prueba; el resto
@@ -75,13 +75,13 @@ function manifestsOf(repo) {
   return ls.stdout.split('\0').filter((rel) => rel && rel.split('/').length === 3);
 }
 
-/** Los patrones que declaran los conectores de plataforma del índice; cada uno con el conector que lo trae. */
+/** Los patrones que declaran los conectores de plataforma y de buzón del índice; cada uno con el conector que lo trae. */
 function signalsOf(repo) {
   const out = [];
   for (const rel of manifestsOf(repo)) {
     let m;
     try { m = JSON.parse(indexed(repo, rel) || ''); } catch (e) { throw new LookError(`${rel} no se puede leer (${e.message}): no sé qué señales buscar`); }
-    if (!m || m.kind !== 'platform' || m.hardSignals === undefined) continue;
+    if (!m || (m.kind !== 'platform' && m.kind !== 'mailbox') || m.hardSignals === undefined) continue;
     if (!Array.isArray(m.hardSignals)) throw new LookError(`${rel}: «hardSignals» no es una lista`);
     for (const s of m.hardSignals) {
       // un patrón vacío contaría cualquier línea; uno que no compila, ninguna

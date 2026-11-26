@@ -31,7 +31,8 @@
  *                 SITE_OIDC_CLIENT_SECRET · y lo que pida cada proveedor (la cabecera de su archivo: el emisor, los
  *                 dominios, la organización) · SITE_OPERATIONS_REPO (https) y su credencial: SITE_OPERATIONS_TOKEN o
  *                 SITE_OPERATIONS_IDENTITY=managed (la identidad administrada de la plataforma: lo de cada nube vive en cloud/)
- *   opcionales    SITE_OIDC_EMAIL_CLAIM · PORT (8080) · SITE_MAILBOX_SAS o SITE_MAILBOX_IDENTITY=managed ·
+ *   opcionales    SITE_OIDC_EMAIL_CLAIM · PORT (8080) · SITE_MAILBOX_SAS o SITE_MAILBOX_IDENTITY=managed (la identidad del
+ *                 entorno donde corre el sitio: cada lector del buzón —cloud/ o su conector de integrations/— pide su token) ·
  *                 SITE_FIRST_MAINTAINER (un correo) · SITE_AUTH_ALLOWED_DOMAINS (donde el proveedor no la exige) ·
  *                 SITE_DATA_DIR (un disco persistente; sin ella, una carpeta temporal, y se dice) · SITE_TRUST_PROXY=1 (detrás
  *                 de un intermediario que escribe X-Forwarded-For: los topes de las oficinas cuentan la última dirección)
@@ -188,7 +189,7 @@ function validarConfiguracion(env) {
     cfg.operationsCredencial = env.SITE_OPERATIONS_TOKEN ? { token: env.SITE_OPERATIONS_TOKEN } : (env.SITE_OPERATIONS_IDENTITY === 'managed' ? { managed: true } : null);
   }
 
-  if (env.SITE_MAILBOX_SAS && env.SITE_MAILBOX_IDENTITY) falta('SITE_MAILBOX_IDENTITY', 'va una sola credencial del buzón: la SAS de lectura o la identidad administrada');
+  if (env.SITE_MAILBOX_SAS && env.SITE_MAILBOX_IDENTITY) falta('SITE_MAILBOX_IDENTITY', 'va una sola credencial del buzón: la SAS de lectura o la identidad del entorno');
   else if (env.SITE_MAILBOX_IDENTITY && env.SITE_MAILBOX_IDENTITY !== 'managed') falta('SITE_MAILBOX_IDENTITY', 'el único valor es managed');
   cfg.mailboxCredencial = env.SITE_MAILBOX_SAS ? { sas: env.SITE_MAILBOX_SAS } : (env.SITE_MAILBOX_IDENTITY === 'managed' ? { managed: true } : null);
 

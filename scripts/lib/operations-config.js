@@ -134,7 +134,49 @@ const BRAND_NAME_MAX = 80;
 const NOTIFY_KEYS = ['channel', 'mail_from', 'mail_to'];
 const NOTIFY_CHANNELS = ['telegram', 'slack', 'teams', 'mail'];
 const MAILBOX_KEYS = ['provider', 'account', 'container', 'threads'];
-const MAILBOX_PROVIDERS = ['azure-blob'];
+// los proveedores del buzón: azure-blob, que atiende el núcleo, y los de los conectores de buzón de integrations/
+// (kind mailbox). Este lector viaja solo y no carga su código: de cada uno lee su manifiesto como JSON (el proveedor, su
+// nombre y sus campos de site.mailbox, `mailboxFields`). Sin la carpeta integrations/ al lado, sólo azure-blob. La forma
+// de cada campo la valida el conector (`problemasDelBuzon`) cuando quien tiene el arnés completo se lo da ya cargado
+// (`useMailboxConnectors`, desde integrations.js → giveMailboxConnectors); si no, la valida al usarlo
+const PROVIDER_NAME = /^[a-z][a-z0-9-]*$/;
+const FIELD_NAME = /^[a-z][a-z0-9_]*$/;
+function mailboxManifests() {
+  const dir = String(process.env.TYCON_INTEGRATIONS_DIR || '').trim() || `${__dirname}/../../integrations`;
+  const out = new Map();
+  let nombres = [];
+  try { nombres = fs.readdirSync(dir); } catch (_) { return out; }
+  for (const n of nombres) {
+    let m;
+    try { m = JSON.parse(fs.readFileSync(`${dir}/${n}/integration.json`, 'utf8')); } catch (_) { continue; }
+    if (!m || m.kind !== 'mailbox' || typeof m.provider !== 'string' || !PROVIDER_NAME.test(m.provider) || m.provider === 'azure-blob') continue;
+    const campos = Array.isArray(m.mailboxFields) && m.mailboxFields.every((c) => typeof c === 'string' && FIELD_NAME.test(c) && c !== 'provider' && c !== 'threads') ? [...m.mailboxFields] : null;
+    out.set(m.provider, { label: typeof m.label === 'string' ? m.label : m.provider, campos });
+  }
+  return out;
+}
+const MAILBOX_MANIFESTS = mailboxManifests();
+const MAILBOX_PROVIDERS = ['azure-blob', ...MAILBOX_MANIFESTS.keys()];
+let mailboxGiven = null;
+/** Los conectores de buzón ya cargados (`[{ provider, module }]`): con ellos, el lector valida la forma de sus campos. */
+function useMailboxConnectors(list) {
+  mailboxGiven = new Map();
+  for (const c of Array.isArray(list) ? list : []) if (c && typeof c.provider === 'string' && c.module) mailboxGiven.set(c.provider, c.module);
+}
+/** El conector de buzón de un proveedor, ya dado, o null. */
+const mailboxConnector = (provider) => (mailboxGiven && mailboxGiven.get(provider)) || null;
+/** Los campos de `site.mailbox` de un proveedor, además de provider y threads; null si no se conocen. */
+function mailboxFields(provider) {
+  if (provider === 'azure-blob') return ['account', 'container'];
+  const m = MAILBOX_MANIFESTS.get(provider);
+  return m && m.campos ? [...m.campos] : null;
+}
+/** El nombre para mostrar de cada proveedor del buzón: `{ <proveedor>: <nombre> }`. */
+function mailboxLabels() {
+  const out = { 'azure-blob': 'Azure Blob Storage' };
+  for (const [provider, m] of MAILBOX_MANIFESTS) out[provider] = m.label;
+  return out;
+}
 const REFRESH_MIN = 5;
 const REFRESH_MAX = 120;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -250,13 +292,30 @@ function siteProblems(site) {
   const mb = site.mailbox;
   if (mb !== undefined) {
     if (!isObject(mb)) problems.push({ path: 'site.mailbox', message: 'tiene que ser un objeto { provider, account, container }' });
-    else {
-      problems.push(...siteKeyProblems(mb, MAILBOX_KEYS, 'site.mailbox'));
+    else if (MAILBOX_MANIFESTS.has(mb.provider)) {
+      // un proveedor de un conector: sus campos; la forma de cada uno, su conector si está dado. Un conector cuya
+      // validación tira es un problema del proveedor: nunca tira la lectura del perfil entero
+      const campos = mailboxFields(mb.provider);
+      if (!campos) problems.push({ path: 'site.mailbox.provider', message: `el conector de «${mb.provider}» no declara sus campos (mailboxFields en su manifiesto): no se puede validar el buzón` });
+      else problems.push(...siteKeyProblems(mb, ['provider', ...campos, 'threads'], 'site.mailbox'));
+      const c = mailboxConnector(mb.provider);
+      let delConector = [];
+      try { delConector = c && typeof c.problemasDelBuzon === 'function' ? c.problemasDelBuzon(mb) : []; } catch (e) { delConector = [{ path: 'site.mailbox.provider', message: `el conector de «${mb.provider}» falló al validar el buzón (${e.message})` }]; }
+      for (const p of (Array.isArray(delConector) ? delConector : [])) problems.push({ path: p.path, message: p.message });
+      if (mb.threads !== undefined && typeof mb.threads !== 'boolean') problems.push({ path: 'site.mailbox.threads', message: 'tiene que ser true o false' });
+    } else {
+      // con un proveedor desconocido, el problema es el proveedor: los campos de cualquier proveedor no se cuentan aparte
+      const conocido = mb.provider === 'azure-blob' || mb.provider === undefined;
+      const todos = conocido ? MAILBOX_KEYS : [...MAILBOX_KEYS, ...MAILBOX_PROVIDERS.flatMap((p) => mailboxFields(p) || [])];
+      problems.push(...siteKeyProblems(mb, todos, 'site.mailbox'));
       if (!MAILBOX_PROVIDERS.includes(mb.provider)) problems.push({ path: 'site.mailbox.provider', message: `tiene que ser uno de: ${MAILBOX_PROVIDERS.join(', ')}` });
       // 🔴 la cuenta y el contenedor arman el host y la ruta adonde va la credencial del buzón: sólo la forma de Azure
       //    Storage (la misma que exige upload-runs.js). Un «host.malo/x?» mandaría la SAS o el token a otro servidor.
-      if (typeof mb.account !== 'string' || !ACCOUNT.test(mb.account)) problems.push({ path: 'site.mailbox.account', message: 'tiene que tener la forma de una cuenta de almacenamiento (3 a 24 minúsculas o números)' });
-      if (typeof mb.container !== 'string' || !CONTAINER.test(mb.container)) problems.push({ path: 'site.mailbox.container', message: 'tiene que tener la forma de un contenedor (3 a 63 minúsculas, números o guiones)' });
+      //    Con un proveedor desconocido no se piden: el problema es el proveedor
+      if (conocido) {
+        if (typeof mb.account !== 'string' || !ACCOUNT.test(mb.account)) problems.push({ path: 'site.mailbox.account', message: 'tiene que tener la forma de una cuenta de almacenamiento (3 a 24 minúsculas o números)' });
+        if (typeof mb.container !== 'string' || !CONTAINER.test(mb.container)) problems.push({ path: 'site.mailbox.container', message: 'tiene que tener la forma de un contenedor (3 a 63 minúsculas, números o guiones)' });
+      }
       if (mb.threads !== undefined && typeof mb.threads !== 'boolean') problems.push({ path: 'site.mailbox.threads', message: 'tiene que ser true o false' });
     }
   }
@@ -617,7 +676,7 @@ function ownerFor(data, project) {
   return Object.prototype.hasOwnProperty.call(bp, project) ? bp[project] : data.owners.default;
 }
 
-module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, OFFICES_KEYS, OFFICES_VISIBILITY, INVITATION_KEYS, CARD_IDS,ACCESS_KEYS, ACCESS_ROLES, BRAND_KEYS, BRAND_LOGO, NOTIFY_CHANNELS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, HIDDEN_KEYS, HIDDEN_REASONS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, SEVERITIES, WORK_ITEM_KEYS, FINDINGS_KEYS, RESOLVE_AFTER_MIN, RESOLVE_AFTER_MAX, WORK_ITEM_RESERVED, parse, load, ownerFor, workItemFieldOk };
+module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, OFFICES_KEYS, OFFICES_VISIBILITY, INVITATION_KEYS, CARD_IDS,ACCESS_KEYS, ACCESS_ROLES, BRAND_KEYS, BRAND_LOGO, NOTIFY_CHANNELS, MAILBOX_PROVIDERS, useMailboxConnectors, mailboxFields, mailboxLabels, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, HIDDEN_KEYS, HIDDEN_REASONS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, SEVERITIES, WORK_ITEM_KEYS, FINDINGS_KEYS, RESOLVE_AFTER_MIN, RESOLVE_AFTER_MAX, WORK_ITEM_RESERVED, parse, load, ownerFor, workItemFieldOk };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

@@ -85,7 +85,14 @@ function ambienteDe(texto) {
   return l ? JSON.parse(l.slice('AMBIENTE '.length)) : null;
 }
 const renglones = (f) => { try { return fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch (_) { return []; } };
-const espejo = (c) => renglones(path.join(c.casa, '.claude', '.tycon-pipeline', 'gates.log')).filter((g) => g.type === 'smoke-run');
+// el espejo del humo vive en la carpeta del estado de la cuenta, la que da tycon-home.js
+const TH = () => require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'tycon-home.js'));
+const espejo = (c) => renglones(path.join(TH().stateDir(c.casa), 'gates.log')).filter((g) => g.type === 'smoke-run');
+// lo que queda de un archivo del estado sin el renglón que el propio humo anota en su espejo: el de su historia y con su
+// salida. Un renglón verde que escribiera el comando, o cualquier otra línea, queda y se ve
+const sinSuEspejo = (texto, story, salida) => texto.split('\n').filter((l) => {
+  try { const g = JSON.parse(l); return !(g.type === 'smoke-run' && g.story === story && g.exit === salida); } catch { return true; }
+}).join('\n');
 const iso = () => require(ISO);
 
 // ── La pasada de un humo comparado ────────────────────────────────────────────────────────────────────────────────
@@ -101,7 +108,10 @@ test('T1 Compare_PrimeraPasada_CorreConCasaAparte @story-8.314 @ac-1', { skip: !
   assert.ok(!a.HOME.startsWith(c.casa + path.sep), `la casa aparte queda fuera de la de la cuenta: ${a.HOME}`);
   assert.strictEqual(a.USERPROFILE, a.HOME);
   for (const k of ['TMPDIR', 'TMP', 'TEMP']) assert.ok(a[k] && a[k].startsWith(path.dirname(a.HOME) + path.sep), `${k}=${a[k]}`);
-  for (const k of ['TYCON_HOME', 'CLAUDE_CONFIG_DIR', 'CODEX_HOME']) assert.strictEqual(a[k], null, k);
+  for (const k of ['TYCON_HOME', 'CODEX_HOME']) assert.strictEqual(a[k], null, k);
+  // la de Claude Code llega dicha y dentro de la casa aparte (fila 88c: así el ítem del llavero no es el de la sesión),
+  // nunca la de afuera
+  assert.strictEqual(a.CLAUDE_CONFIG_DIR, path.join(a.HOME, '.claude'));
   assert.strictEqual(a.TYCON_TEST_RUN, '1');
   assert.ok(!fs.existsSync(path.join(c.casa, 'escrito.txt')), 'nada escrito en la casa de la cuenta');
   assert.ok(!fs.existsSync(path.dirname(a.HOME)), 'la carpeta aparte se borró al terminar');
@@ -141,7 +151,7 @@ test('T3 Aislada_EscribirEnLaCasaReal_NoPasa @story-8.314 @ac-2', { skip: !POSIX
   const s = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.3', ['--', process.execPath, '.advisors/dod-runtime/g.js'], { cwd: r, env: ambiente(c) });
   assert.notStrictEqual(s.status, 0, salida(s));
   assert.ok(salida(s).includes(destino), `la salida nombra la ruta: ${salida(s)}`);
-  assert.strictEqual(fs.readFileSync(destino, 'utf8'), 'antes\n', 'el archivo no cambió');
+  assert.strictEqual(sinSuEspejo(fs.readFileSync(destino, 'utf8'), '9.3', s.status), 'antes\n', 'el archivo no cambió');
 });
 
 // Un hijo que el guion lanza con el ambiente mínimo pierde la red de escritura (vive en
@@ -707,6 +717,69 @@ test('T8 IsolatedRun_CarriesRootsWithGuard @story-8.321 @ac-1 @ac-3', { skip: !P
   for (const d of ['.tycon', '.claude', '.codex']) assert.ok(red.roots.includes(path.join(c.casa, d)), `vigila ${d}: ${red.roots}`);
   assert.match(red.log, /intentos\.jsonl$/);
   assert.ok(red.allow.includes(fuera), `admite la raíz del humo: ${red.allow}`);
+});
+
+// fila 88c: una prueba en vivo que necesita Claude Code corre en la casa aparte con una llave de prueba propia, pasada
+// sólo para esa corrida; la credencial de quien la lanza nunca llega al comando, y la llave no se muestra
+const LLAVE_DE_PRUEBA = 'llave-de-prueba-0000-de-juguete';
+const LLAVE_DE_AFUERA = 'llave-de-afuera-1111-de-juguete';
+function humoQueMiraLaLlave(t) {
+  const c = cuenta(t);
+  const r = repo(path.join(c.b, 'repo'), {
+    '.advisors/dod-runtime/llave.js': [
+      'const e = process.env;',
+      `console.log('llave=' + (e.ANTHROPIC_API_KEY === ${JSON.stringify(LLAVE_DE_PRUEBA)} ? 'la-de-prueba' : e.ANTHROPIC_API_KEY ? 'otra' : 'ninguna'));`,
+      "console.log('token=' + (e.ANTHROPIC_AUTH_TOKEN || e.CLAUDE_CODE_OAUTH_TOKEN ? 'llego' : 'no'));",
+      "console.log('nombre-de-prueba=' + (e.TYCON_TEST_ANTHROPIC_API_KEY ? 'llego' : 'no'));",
+      // los otros canales con que Claude Code toma una credencial, y la carpeta que nombra el ítem del llavero
+      "const otros = ['ANTHROPIC_BASE_URL', 'ANTHROPIC_CUSTOM_HEADERS', 'ANTHROPIC_PROFILE', 'CLAUDE_CODE_USE_BEDROCK', 'CLAUDE_CODE_USE_VERTEX', 'CLAUDE_SECURESTORAGE_CONFIG_DIR'].filter((k) => e[k]);",
+      "console.log('otros=' + (otros.length ? otros.join(',') : 'ninguno'));",
+      "console.log('config-dir=' + (e.CLAUDE_CONFIG_DIR === require('path').join(e.HOME, '.claude') ? 'en-la-casa-aparte' : String(e.CLAUDE_CONFIG_DIR)));",
+    ].join('\n'),
+  });
+  const ev = path.join(r, '.advisors', 'dod-runtime');
+  return (extra) => humo(SMOKE, ev, '9.33', ['--', process.execPath, '.advisors/dod-runtime/llave.js'], { cwd: r, env: ambiente(c, extra) });
+}
+test('F88c Aislada_LlaveDePrueba_LlegaComoLaDeAnthropic_YLaDeAfueraNo: con TYCON_TEST_ANTHROPIC_API_KEY, la casa aparte recibe esa llave como ANTHROPIC_API_KEY; la credencial de afuera no llega y la llave no se muestra', (t) => {
+  const correr = humoQueMiraLaLlave(t);
+  const r = correr({ TYCON_TEST_ANTHROPIC_API_KEY: LLAVE_DE_PRUEBA, ANTHROPIC_API_KEY: LLAVE_DE_AFUERA, ANTHROPIC_AUTH_TOKEN: LLAVE_DE_AFUERA, CLAUDE_CODE_OAUTH_TOKEN: LLAVE_DE_AFUERA });
+  assert.strictEqual(r.status, 0, salida(r));
+  assert.match(salida(r), /llave=la-de-prueba/);
+  assert.match(salida(r), /token=no/);
+  assert.match(salida(r), /nombre-de-prueba=no/);
+  assert.ok(!salida(r).includes(LLAVE_DE_PRUEBA), `la llave no se muestra: ${salida(r)}`);
+  assert.ok(!salida(r).includes(LLAVE_DE_AFUERA), `la de afuera tampoco: ${salida(r)}`);
+});
+test('F88c Aislada_SinLlaveDePrueba_LaDeAfueraNoLlega: sin la llave de prueba, la credencial de Anthropic de quien lanza el humo no llega a la casa aparte', (t) => {
+  const correr = humoQueMiraLaLlave(t);
+  const r = correr({ ANTHROPIC_API_KEY: LLAVE_DE_AFUERA, ANTHROPIC_AUTH_TOKEN: LLAVE_DE_AFUERA, CLAUDE_CODE_OAUTH_TOKEN: LLAVE_DE_AFUERA });
+  assert.strictEqual(r.status, 0, salida(r));
+  assert.match(salida(r), /llave=ninguna/);
+  assert.match(salida(r), /token=no/);
+  assert.ok(!salida(r).includes(LLAVE_DE_AFUERA), salida(r));
+});
+test('F88c Aislada_OtrosCanalesDeCredencial_NoLlegan: la pasarela, las cabeceras, el perfil, el proveedor de nube y el ítem del llavero de afuera no llegan; la carpeta de Claude Code es la de la casa aparte', (t) => {
+  const correr = humoQueMiraLaLlave(t);
+  const r = correr({ TYCON_TEST_ANTHROPIC_API_KEY: LLAVE_DE_PRUEBA, ANTHROPIC_BASE_URL: 'https://pasarela.acme.test', ANTHROPIC_CUSTOM_HEADERS: 'x-api-key: de-afuera',
+    ANTHROPIC_PROFILE: 'de-afuera', CLAUDE_CODE_USE_BEDROCK: '1', CLAUDE_CODE_USE_VERTEX: '1', CLAUDE_SECURESTORAGE_CONFIG_DIR: '/tmp/de-afuera',
+    CLAUDE_CONFIG_DIR: '/tmp/claude-de-afuera' });
+  assert.strictEqual(r.status, 0, salida(r));
+  assert.match(salida(r), /llave=la-de-prueba/);
+  assert.match(salida(r), /otros=ninguno/);
+  assert.match(salida(r), /config-dir=en-la-casa-aparte/);
+});
+test('F88c HumoComun_ConLlaveDePrueba_NoCorre: con la llave de prueba puesta, un humo que no corre aislado no se corre (correría con la casa y la credencial reales)', (t) => {
+  const c = cuenta(t);
+  const r = repo(path.join(c.b, 'repo'), { 'marca.js': "require('fs').writeFileSync(require('path').join(__dirname, 'corrio.txt'), 'si');\n" });
+  const s = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.34', ['--', process.execPath, 'marca.js'], { cwd: r, env: ambiente(c, { TYCON_TEST_ANTHROPIC_API_KEY: LLAVE_DE_PRUEBA }) });
+  assert.strictEqual(s.status, 2, salida(s));
+  assert.match(salida(s), /ejecución aislada/);
+  assert.ok(!fs.existsSync(path.join(r, 'corrio.txt')), 'el comando no corrió');
+  assert.ok(!salida(s).includes(LLAVE_DE_PRUEBA), salida(s));
+  // gemelo: sin la llave, el mismo humo común corre
+  const sin = humo(SMOKE, path.join(r, '.advisors', 'dod-runtime'), '9.34', ['--', process.execPath, 'marca.js'], { cwd: r, env: ambiente(c) });
+  assert.strictEqual(sin.status, 0, salida(sin));
+  assert.ok(fs.existsSync(path.join(r, 'corrio.txt')), 'sin la llave, el humo común corre');
 });
 
 // fila 226: lo mismo que el freno (214) en los demás guiones de bash del camino de los controles. Un here document o un

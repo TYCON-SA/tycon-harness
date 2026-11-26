@@ -934,8 +934,10 @@ aparte para `save --from` va fuera de la carpeta de estado. Si algo lo cambió s
   sacala también de tu archivo aparte, o el próximo `save --from` la devuelve con su fecha. Las firmas y las preguntas no
   vencen. La fecha va en `meta.teTocaDesde`, que escribe sólo `board.js`.
 
-«Terminados» es lo hecho hoy, con su hora; lo anterior, o sin `realIso`, va a la tabla «Hechos». «En curso» va por hora de
-fin: lo que sale primero arriba, lo que no tiene hora después y la coordinadora al final.
+«Terminados» es lo hecho hoy, con su hora; lo anterior, o sin `realIso`, va a la tabla «Hechos». Suma solo, sin una fila,
+las historias de tus proyectos que pasaron a cerradas en main desde las 0 y tus pedidos que entraron desde las 0; lo que
+ya dice una fila hecha, por su historia o su pedido, no se repite. Esas historias son de tu máquina: no viajan al sitio.
+«En curso» va por hora de fin: lo que sale primero arriba, lo que no tiene hora después y la coordinadora al final.
 
 Una fila que no debía estar (la escribió una prueba, por ejemplo) **no se cierra**: `close` la cuenta como trabajo hecho.
 Se saca con `board.js drop T-41 --reason "<por qué sale>"`, que la quita del tablero sin pasar por «Terminados» ni por

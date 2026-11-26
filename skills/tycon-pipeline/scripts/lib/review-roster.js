@@ -23,7 +23,7 @@
  *
  * ── Qué NO garantiza (dicho acá para que nadie lo lea de más) ────────────────────────────────
  * Es una constancia auto-declarada por la máquina del dev, endurecida por el hook — no una firma.
- * CI no ve `~/.claude/`, así que server-side sólo se verifica coherencia interna. El cruce contra
+ * CI no ve la carpeta de Claude Code, así que server-side sólo se verifica coherencia interna. El cruce contra
  * el ledger vivo (infalsificable sin desinstalar el hook) lo hace el pre-commit, en la máquina.
  */
 

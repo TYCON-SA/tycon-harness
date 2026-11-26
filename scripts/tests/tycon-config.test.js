@@ -2395,7 +2395,6 @@ test('Config_McpServers_MachineOnly — integrations.mcp_servers: válido en la 
   const err = enPerfil.errores.find((e) => /mcp_servers/.test(e.clave));
   assert.ok(err, JSON.stringify(enPerfil.errores.map((e) => e.clave)));
   assert.match(err.motivo, /es de la máquina/);
-  const hm2 = casa();
   for (const malo of [{ clockify: 'a b' }, { clockify: 'reloj__x' }, { Clockify: 'a', clockify: 'b' }]) {
     const hm2 = casa();
     maquina(hm2, { integrations: { mcp_servers: malo } });

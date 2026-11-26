@@ -185,8 +185,17 @@ function fichas(cmd, opts = {}) {
 function segmentos(cmd, opts = {}) {
   const out = [];
   let cur = [];
+  let entreComillasInvertidas = false;
   for (const f of fichas(cmd, opts)) {
-    if (f.op !== undefined) { if (cur.length) out.push(cur); cur = []; continue; }
+    if (f.op !== undefined) {
+      // `sigueSustitucion`: el segmento termina donde abre una sustitución sin comillas, y lo que ella devuelva se suma a
+      // sus argumentos
+      const abre = f.op === '$(' || (f.op === '`' && !entreComillasInvertidas);
+      if (f.op === '`') entreComillasInvertidas = !entreComillasInvertidas;
+      if (cur.length) { if (abre) cur.sigueSustitucion = true; out.push(cur); }
+      cur = [];
+      continue;
+    }
     cur.push(f);
   }
   if (cur.length) out.push(cur);
@@ -311,6 +320,51 @@ function pasaCodigoAUnInterprete(seg) {
   return false;
 }
 
+/**
+ * ¿El segmento es un pedido (`repos pr create|update`) que no se puede leer? El motivo, o null. Con el programa en una
+ * variable (`$AZ`, `"$AZ"`) o como `python -m azure.cli`, no se sabe qué corre; con una sustitución sin comillas
+ * (`$(…)`, comillas invertidas) o el `{}` de `find -exec` adentro, sus argumentos se arman al correr: la ficha está partida.
+ */
+function pedidoIlegible(seg) {
+  const libres = seg.filter(esPalabra).map((f) => f.texto);
+  // una palabra que se arma al correr: una variable o una sustitución de comandos
+  const alCorrer = (t) => /^\$[{(A-Za-z_]|`/.test(String(t || ''));
+  const pedido = (desde) => libres[desde] === 'repos' && libres[desde + 1] === 'pr' && /^(create|update)$/.test(libres[desde + 2] || '');
+  for (let i = 0; i < libres.length; i++) {
+    if (alCorrer(libres[i]) && pedido(i + 1)) return `el programa se arma al correr (${libres[i]}): no sé qué corre`;
+    // `python -m azure.cli` y el lanzador de Windows (`py -3 -m azure.cli`), también con la ruta entera
+    if (/(^|[\\/])(python[0-9.]*|py)(\.exe)?$/i.test(libres[i])) {
+      let j = i + 1;
+      while (/^-[0-9][0-9.]*$/.test(libres[j] || '')) j++;
+      if (libres[j] === '-m' && /^azure\.cli$/i.test(libres[j + 1] || '') && pedido(j + 2)) return 'az corre por python -m azure.cli: no lo leo';
+    }
+    // el grupo o el verbo del pedido se arma al correr: una variable o una sustitución en su lugar
+    if (/(^|[\\/])az(\.cmd|\.exe)?$/i.test(libres[i]) && libres[i + 1] === 'repos'
+      && (alCorrer(libres[i + 2]) || (libres[i + 2] === 'pr' && alCorrer(libres[i + 3])))) {
+      return `el pedido se arma al correr (${alCorrer(libres[i + 2]) ? libres[i + 2] : libres[i + 3]}): no sé qué hace`;
+    }
+  }
+  // el pedido sin su programa delante: el programa lo dio una sustitución o una palabra entre comillas que no leo
+  for (let i = 0; i < libres.length; i++) {
+    if (pedido(i) && (i === 0 || /^[A-Za-z_][A-Za-z0-9_]*=/.test(libres[i - 1]))) return 'el programa se arma al correr: no sé qué corre';
+  }
+  const az = libres.findIndex((t) => /(^|\/|\\)az(\.cmd|\.exe)?$/i.test(t));
+  // una sustitución sin comillas pegada al pedido: lo que devuelve se suma a sus argumentos (`--title $(…)`, o el
+  // verbo armado con `$(echo create)`)
+  if (seg.sigueSustitucion && az >= 0) {
+    const tras = libres.slice(az + 1).filter((t) => !/^-/.test(t));
+    if (tras[0] === 'repos' && (tras.length === 1 || (tras[1] === 'pr' && (tras.length === 2 || /^(create|update)$/.test(tras[2]))))) {
+      return 'lo que devuelve una sustitución sin comillas se suma al pedido al correr: no puedo leer sus banderas';
+    }
+  }
+  const verbo = verboDePr(seg);
+  if (verbo !== 'create' && verbo !== 'update') return null;
+  // detrás de xargs, lo que llega por la entrada se agrega a los argumentos al correr
+  if (libres.slice(0, az).some((t) => /(^|\/)xargs$/.test(t))) return 'xargs le agrega argumentos al correr: no puedo leer sus banderas';
+  const partida = seg.find((f) => f.esBandera && (/\$\(|`/.test(f.texto) || f.texto === '{}'));
+  return partida ? `un argumento se arma al correr (${partida.texto}): no puedo leer sus banderas` : null;
+}
+
 const pideAyuda = (seg) => seg.some((f) => f.esBandera && (f.texto === '--help' || f.texto === '-h'));
 
 
@@ -369,7 +423,7 @@ function tieneEscape(seg, nombre = 'TYCON_PR_BY_HAND') {
  * con `az -o json repos pr create`, que az acepta. Es un superconjunto barato — quien decide de
  * verdad es `verboDePr` sobre las fichas. Mira sin comillas ni barras: `az re"pos" 'pr' cr\eate` es el mismo comando.
  */
-const pareceAzPr = (cmd) => /\brepos\s+pr\s+(?:create|update)\b/i
+const pareceAzPr = (cmd) => /\brepos\s+(?:pr|\$\S+|`[^`]*`)\s+(?:create\b|update\b|\$|`)/i
   .test(String(cmd || '').replace(/\\\r?\n/g, ' ').replace(/["'\\]/g, ''));
 
 const ROMPE_SQUASH = 'los commits desaparecen de main y las notas de versión colapsan a una línea';
@@ -430,6 +484,26 @@ function faltaDeBorrarRamaUpdate(borrar, publica, origen = null) {
   if (cierto && larga) return `con \`--delete-source-branch true\`: la plataforma borraría \`${origen}\` al completar, sin vuelta atrás; ${regla}`;
   if (!cierto && !larga) return `con \`--delete-source-branch false\`: la rama queda viva después del merge; ${regla}`;
   return null;
+}
+
+/**
+ * ¿El `update` puede completar el pedido? Con el auto-completar prendido, `--status completed` o saltando las políticas.
+ * Al completarse, la plataforma aplica la opción de borrar la rama que el pedido ya tenía, aunque el comando no la nombre.
+ */
+function puedeCompletar(seg) {
+  const literal = (nombre) => { const x = valorDe(seg, nombre); return x && x.literal ? x.texto : null; };
+  return esCierto(literal('auto-complete')) || String(literal('status') || '').toLowerCase() === 'completed' || esCierto(literal('bypass-policy'));
+}
+
+/**
+ * ¿Juzgar este pedido pide la rama de origen? Un `update` con `--delete-source-branch` escrito, o uno sin ella que puede
+ * completar el pedido. Lo usan el freno (para preguntarla) y la revisión nocturna, que no la tiene y entonces no puede
+ * decir que el escape sobraba.
+ */
+function necesitaLaRama(seg) {
+  if (verboDePr(seg) !== 'update') return false;
+  const borrar = valorDe(seg, 'delete-source-branch');
+  return borrar ? borrar.literal : puedeCompletar(seg);
 }
 
 /**
@@ -527,7 +601,13 @@ function faltasDe(seg, { ramaDeOrigen = null } = {}) {
   // tenía (`update_pull_request` parte de `existing_pr.completion_options`).
   const falta = faltaDeBorrarRamaUpdate(v.borrar, publica && esCierto(autoComplete), ramaDeOrigen);
   if (falta) res.faltas.push(falta);
+  // Sin la bandera, un update que puede completar el pedido aplica la opción que el pedido ya tenía. Si sale de una rama
+  // de larga vida, `false` tiene que ir escrito: un pedido creado por otro camino puede traer «borrar la rama». Sin la
+  // rama leída no se juzga, como antes.
+  else if (v.borrar === null && ramaDeOrigen && esDeLargaVida(ramaDeOrigen) && puedeCompletar(seg)) {
+    res.faltas.push(`puede completar un pedido que sale de \`${ramaDeOrigen}\`, una rama de larga vida, sin \`--delete-source-branch\` escrito: si el pedido ya traía «borrar la rama al completar», la plataforma borraría \`${ramaDeOrigen}\`. Va \`--delete-source-branch false\``);
+  }
   return res;
 }
 
-module.exports = { fichas, pareceAzPr, segmentos, flagDe, valorDe, esCierto, esFalso, verboDePr, pasaCodigoAUnInterprete, pideAyuda, textoDe, tieneEscape, faltasDe, ROMPE_SQUASH, RAMAS_DE_LARGA_VIDA };
+module.exports = { fichas, pareceAzPr, segmentos, flagDe, valorDe, esCierto, esFalso, verboDePr, pasaCodigoAUnInterprete, pedidoIlegible, pideAyuda, textoDe, tieneEscape, faltasDe, puedeCompletar, necesitaLaRama, ROMPE_SQUASH, RAMAS_DE_LARGA_VIDA };

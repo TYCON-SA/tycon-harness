@@ -52,7 +52,7 @@
 
 const path = require('path');
 const { isTestPath, isImplPath, esMedicionNoDeclarada } = require('./atdd-order.js');
-const { homeCommand } = require('./home-command.js');
+const { homeCommand, pipelineRel } = require('./home-command.js');
 
 /**
  * ¿`file` está dentro de `root`? Comparación por segmento — `/repo-viejo` no cuenta como `/repo`.
@@ -150,7 +150,7 @@ function preEditBlockMessage({ filePath, storyId, storyPath }) {
     '   (b) Si el orden invertido es legítimo y lo podés justificar (refactor sobre una red de tests',
     '       que ya existe, spike acordado), pedí el escape; lo firma una persona, no el agente:',
     '',
-    `         ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} set-flag atddBypass true --reason "<por qué>"`,
+    `         ${homeCommand(pipelineRel('scripts/marker.js'))} set-flag atddBypass true --reason "<por qué>"`,
     '',
     '       Sin su firma no se escribe: anota el pedido y te da el comando de la firma',
     '       (`sign-atdd-skip`), que vale para toda la ejecución. Queda en bypass.log con el detalle.',

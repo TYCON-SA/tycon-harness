@@ -910,6 +910,29 @@ node -e 'const fs=require("fs");const [o,x]=process.argv.slice(1);fs.unlinkSync(
 HOME="${T}/casa" USERPROFILE="${T}/casa" subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-05 "maq-a" --dry-run
 [ "$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['legacy']['kind'])" "${T}/estado/registros-buzon/place.json" 2>&1)" = dangling ] \
   && ok "8.19-B T29 el viejo colgado con el lugar sano: dangling" || mal "8.19-B T29 colgado: $(cat "${T}/estado/registros-buzon/place.json" 2>&1 | head -c 300)"
+# ── T1b (8.24) · PlaceJson_ThreeOldPlaces ─────────────────────────────────────────
+# place.json sube también los otros dos lugares viejos que se retiran (`.tycon-pipeline` y `tycon.json`), con lo mismo
+# que el nombre viejo: si está, de qué tipo, si apunta al lugar nuevo y lo registrado con él. Sin rutas de la máquina.
+# 🔴 Atrapa: sin esto, legacy-retire-check.js --home dejaría esos dos lugares sin medir y nunca se podrían retirar.
+T="${BASE}/t1b824"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; casa29 "${T}/casa" "${T}/clon"
+mkdir -p "${T}/casa/.tycon"
+mv "${T}/casa/.claude/.tycon-pipeline" "${T}/casa/.tycon/state"
+node -e 'const fs=require("fs");const [s,o]=process.argv.slice(1);fs.symlinkSync(s,o,process.platform==="win32"?"junction":"dir")' "${T}/casa/.tycon/state" "${T}/casa/.claude/.tycon-pipeline"
+echo '{}' > "${T}/casa/.claude/tycon.json"
+rm -f "${T}/casa/.claude/${LN}"
+printf '{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"cat \\"$HOME/.claude/.tycon-pipeline/gates.log\\""}]}]}}\n' > "${T}/casa/.claude/settings.json"
+HOME="${T}/casa" USERPROFILE="${T}/casa" subir_reg "${T}" "${T}/h" "${T}/reg" 2026-10-05 "maq-a" --dry-run
+python3 - "${T}/estado/registros-buzon/place.json" "${T}" <<'PY' && ok "8.24 T1b place.json trae los tres lugares viejos: el enlace al estado con su hook, la configuración real y el nombre viejo que no está" || mal "8.24 T1b los lugares viejos en place.json: $(cat "${T}/estado/registros-buzon/place.json" 2>&1 | head -c 600)"
+import json, sys
+f, base = sys.argv[1:3]
+texto = open(f, encoding="utf-8").read()
+assert base not in texto and "/casa" not in texto, texto
+d = json.loads(texto)
+assert d["legacy"]["exists"] is False, d["legacy"]
+o = d["old_places"]
+assert o[".tycon-pipeline"] == {"exists": True, "kind": "link", "to_place": True, "registered": {"total": 1, "files": {"settings.json": {"count": 1, "permissions": 0}}, "unreadable": 0}}, o[".tycon-pipeline"]
+assert o["tycon.json"] == {"exists": True, "kind": "file", "to_place": False, "registered": {"total": 0, "files": {}, "unreadable": 0}}, o["tycon.json"]
+PY
 # ── T40 · Mailbox_PlaceJson_SaysReleaseVersionAndTeamLayer_NeverTheLayerUrl ────────────────
 # `install` dice lo que `doctor --json` dice de la instalación —el modo, la versión y la capa del equipo— desde el mismo
 # estado, para juntar eso de todas las máquinas sin pedirle nada a nadie. La dirección del repo de la capa no viaja;

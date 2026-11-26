@@ -157,7 +157,7 @@ function diagnosticar({ repoPath, registro, gitCambiados }) {
 /**
  * ¿Este repo está FUERA del alcance del registro de ediciones, por diseño?
  *
- * `on-edit.js` descarta explícitamente todo path bajo `~/.claude` (para no registrar como "trabajo
+ * `on-edit.js` descarta explícitamente todo path bajo la carpeta de Claude Code (para no registrar como "trabajo
  * del repo" las ediciones al propio arnés). Consecuencia: en un repo que VIVE ahí —`agent-skills`
  * es el caso— el registro está vacío SIEMPRE, y sin este chequeo el diagnóstico lo declararía ciego
  * en cada iteración de cada corrida → force-full permanente sobre el repo que más se toca.
@@ -168,7 +168,7 @@ function registroNoAplica(repoPath) {
   if (!repoPath) return false;
   try {
     const home = require('os').homedir();
-    return esDelRepo(repoPath, path.join(home, '.claude'));
+    return esDelRepo(repoPath, require('./state-dir.js').claudeDir(home));
   } catch { return false; }
 }
 

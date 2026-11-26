@@ -41,7 +41,7 @@
     "guides/integrations/codegraph-mcp.md": 1,
     "guides/integrations/cursor.md": 6,
     "guides/integrations/engram-workflow.md": 10,
-    "guides/integrations/instinct-mining.md": 3,
+    "guides/integrations/instinct-mining.md": 0,
     "guides/integrations/ollama.md": 3,
     "guides/maintaining/bmad-contract.md": 24,
     "guides/maintaining/codex-divergence-inventory.md": 20,

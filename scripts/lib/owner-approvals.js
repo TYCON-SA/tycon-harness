@@ -946,11 +946,13 @@ function escuchasDelCuadro({ casa = os.homedir(), cwd, plataforma, administrada,
     try { j = JSON.parse(fs.readFileSync(a, 'utf8')); } catch (e) { if (e.code !== 'ENOENT') ilegibles.push(a); continue; }
     delObjeto((j && (plugin && !j.hooks ? j : j.hooks)) || {}, a);
   }
-  // pedida en la línea del proceso: si no se puede leer, no se sabe qué trae
+  // pedida en la línea del proceso: si no se puede leer, no se sabe qué trae. `--settings` acepta también el objeto
+  // escrito ahí mismo; uno que el corte por blancos dejó a medias no se lee y frena igual
   for (const a of settings) {
+    const enLinea = /^\s*\{/.test(a);
     let j;
-    try { j = JSON.parse(fs.readFileSync(a, 'utf8')); } catch (_) { ilegibles.push(a || '--settings'); continue; }
-    delObjeto((j && j.hooks) || {}, a);
+    try { j = JSON.parse(enLinea ? a : fs.readFileSync(a, 'utf8')); } catch (_) { ilegibles.push(enLinea ? '--settings con su JSON en la línea' : (a || '--settings')); continue; }
+    delObjeto((j && j.hooks) || {}, enLinea ? '--settings (en la línea)' : a);
   }
   for (const a of encabezadosPosibles({ casa, cwd, pluginDirs })) {
     if (typeof a === 'object') { ilegibles.push(a.ilegible); continue; }

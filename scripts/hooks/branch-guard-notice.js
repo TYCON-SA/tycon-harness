@@ -52,6 +52,12 @@ const homeCommand = (() => { const lib = path.join(__dirname, '..', '..', 'skill
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 const os = require('os');
+// El lugar del arnés y las skills instaladas también los sabe tycon-home.js. Suelto, la carpeta del estado de respaldo
+// (la de arriba) vive en la carpeta de Claude Code, y el lugar y las skills están al lado, como siempre.
+const homeLib = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib) : null; })();
+const placeOf = (h) => (homeLib ? homeLib.placePath(h) : path.join(path.dirname(stateDirOf(h)), 'tycon-harness'));
+const skillsOf = (h) => (homeLib ? homeLib.installedSkillsDir(h) : path.join(path.dirname(stateDirOf(h)), 'agent-skills'));
+const harnessCommand = (r) => homeCommand(`${path.relative(os.homedir(), placeOf(os.homedir())).split(path.sep).join('/')}/${r}`);
 const { execFileSync } = require('child_process');
 
 // git en inglés (scripts/lib/clean-git-env.js). La biblioteca se carga SI ESTÁ: el banco copia este hook suelto. Sin
@@ -270,7 +276,7 @@ const shown = (l) => (l.also.length ? `${l.name} (el mismo clon que ${l.also.joi
 
 // ── los nombres viejos después de la fecha de retiro ──────────────────────────────────────
 // Durante el renombre a inglés un nombre viejo sigue andando en silencio y cada uso se anota en
-// ~/.claude/.tycon-pipeline/legacy-names.jsonl. Pasada `retire_after` del mapa (scripts/lib/renames.json), si esta
+// ~/.tycon/state/legacy-names.jsonl. Pasada `retire_after` del mapa (scripts/lib/renames.json), si esta
 // máquina anotó usos en los últimos 14 días, UNA línea dice cuáles y dónde cambiarlos: el retiro saca los nombres
 // viejos y lo que todavía los usa dejaría de andar. Antes de la fecha, nada (el silencio de la transición es a propósito).
 // Vive en este aviso y no en un hook propio: es el aviso de arranque sobre el estado del arnés en esta máquina, y un hook
@@ -326,7 +332,7 @@ function legacyRetireLine() {
     if (!isDate(retire) || today <= retire) return null;
     let raw;
     try { raw = fs.readFileSync(path.join(stateDirOf(os.homedir()), 'legacy-names.jsonl'), 'utf8'); } catch (e) {
-      return e && e.code === 'ENOENT' ? null : legacyUnread('el registro de usos (~/.claude/.tycon-pipeline/legacy-names.jsonl)', e);
+      return e && e.code === 'ENOENT' ? null : legacyUnread('el registro de usos (~/.tycon/state/legacy-names.jsonl)', e);
     }
     const since = minusDays(today, LEGACY_WINDOW_DAYS - 1);
     // por (tipo, nombre viejo), con CADA guion que lo recibió y el día más reciente de cada uno: el mismo nombre viejo vive
@@ -351,7 +357,7 @@ function legacyRetireLine() {
     const byRecent = (a, b) => (a[1] < b[1] ? 1 : a[1] > b[1] ? -1 : 0);
     const items = [...used.values()].sort((a, b) => (a.last < b.last ? 1 : a.last > b.last ? -1 : 0)).slice(0, LEGACY_MAX_ITEMS)
       .map((g) => `${show(g.u)} (${whereToChange(g.u, [...g.scripts].sort(byRecent).map(([s]) => s))})`);
-    const more = used.size > LEGACY_MAX_ITEMS ? `; y ${used.size - LEGACY_MAX_ITEMS} más en ~/.claude/.tycon-pipeline/legacy-names.jsonl` : '';
+    const more = used.size > LEGACY_MAX_ITEMS ? `; y ${used.size - LEGACY_MAX_ITEMS} más en ~/.tycon/state/legacy-names.jsonl` : '';
     return `🔔 TYCON — nombres viejos después de su fecha de retiro (${retire}): esta máquina usó ${used.size} en los últimos ${LEGACY_WINDOW_DAYS} días — ${items.join('; ')}${more}. Cambialos por el nuevo antes de la story de retiro, que los saca (guides/maintaining/english-names.md). Decile a la persona en una línea.`;
   } catch (e) {
     return legacyUnread('el aviso completo: falló al armarlo', e);
@@ -460,8 +466,8 @@ try {
   if (failureLine) harnessLines.push(failureLine);
   if (hs.status === 'broken') {
     harnessLines.push(
-      `🔔 TYCON — el estado del mecanismo de instalación (~/.claude/.tycon-pipeline/harness-state.json) ${hs.why || 'no se puede leer'}.`,
-      `   Decile a la persona; \`${homeCommand('.claude/tycon-harness/scripts/setup/harness.js')} doctor\` lo detalla. No lo arregles sin que te lo pida.`,
+      `🔔 TYCON — el estado del mecanismo de instalación (~/.tycon/state/harness-state.json) ${hs.why || 'no se puede leer'}.`,
+      `   Decile a la persona; \`${harnessCommand('scripts/setup/harness.js')} doctor\` lo detalla. No lo arregles sin que te lo pida.`,
     );
   } else if (hs.status === 'ok' && hs.state.notice) {
     harnessLines.push(
@@ -479,17 +485,17 @@ try {
     const since = typeof hold.at === 'string' && hold.at ? ` desde el ${hold.at.slice(0, 16).replace('T', ' ')} (UTC)` : '';
     harnessLines.push(
       `🔔 TYCON — retención del arnés — decile a la persona: se deshizo la versión ${hold.commit || '(sin número)'}${since}; el arnés no se actualiza solo mientras siga la retención.`,
-      `   Para volver a actualizar: ${homeCommand('.claude/tycon-harness/scripts/setup/harness.js')} rollback --release (o npx @tyconsa/harness@latest). No lo hagas sin que te lo pida.`,
+      `   Para volver a actualizar: ${harnessCommand('scripts/setup/harness.js')} rollback --release (o npx @tyconsa/harness@latest). No lo hagas sin que te lo pida.`,
     );
   }
   // ¿el atraso se grita? Sólo sin estado (lo de hoy), con estado roto, o en managed con apply: auto y sin retención
   const policy = hs.status === 'ok' ? updatePolicy(hs.state) : null;
   const shoutStale = hs.status !== 'ok' || (!hold && hs.state.mode === 'managed' && policy.enabled && policy.apply === 'auto');
 
-  // El script vive en ~/.claude/tycon-harness/scripts/hooks/ → la raíz del repo es ../../
+  // El script vive en ~/.tycon/harness/scripts/hooks/ → la raíz del repo es ../../
   const repos = [
     { name: 'el arnés', dir: path.resolve(__dirname, '..', '..') },   // el nombre que lee la persona
-    { name: 'agent-skills', dir: path.join(os.homedir(), '.claude', 'agent-skills') },
+    { name: 'agent-skills', dir: skillsOf(os.homedir()) },
   ];
 
   const offenders = [];
@@ -501,7 +507,7 @@ try {
     // repo no clonado / git ausente → no es problema de este hook. Una carpeta que SÍ es un clon y cuya rama git no pudo
     // decir (el HEAD o su rama rotos, el tope de tiempo) no es «no clonado»: sigue, y abajo se dice
     if (!head.ok && (head.noGit || !isClone(dir))) continue;
-    // el mismo clon por dos caminos (el repo único: `~/.claude/agent-skills` es un enlace a este clon) se juzga una vez
+    // el mismo clon por dos caminos (el repo único: las skills instaladas son un enlace a este clon) se juzga una vez
     const id = folderId(dir).id;
     if (id && judged.has(id)) { judged.get(id).also.push(name); continue; }
     const label = { name, also: [] };
@@ -585,7 +591,7 @@ try {
       // actualización), un `checkout` de esa rama fallaría: la crea `update`
       ...offInstalled.map((o) => (o.installed
         ? `Volver: git -C ${sh(o.dir)} checkout ${o.home}`
-        : `Volver: ${homeCommand('.claude/tycon-harness/scripts/setup/harness.js')} update   # "${o.home}" todavía no existe: la crea la primera actualización, o dice por qué no`)),
+        : `Volver: ${harnessCommand('scripts/setup/harness.js')} update   # "${o.home}" todavía no existe: la crea la primera actualización, o dice por qué no`)),
     );
   }
   if (stale.length > 0) {
@@ -611,7 +617,7 @@ try {
     // una fuente que se reescribe no se arregla con un merge (su rama no desciende de la anterior): la mueve `update`
     for (const s of stale) {
       out.push(...(s.rewritten
-        ? [`${homeCommand('.claude/tycon-harness/scripts/setup/harness.js')} update   # dice por qué no avanza, o avanza`]
+        ? [`${harnessCommand('scripts/setup/harness.js')} update   # dice por qué no avanza, o avanza`]
         : manualAdvice(s.dir, s.stuck, s.unmerged, s.collide)).map((l) => `  ${l}`));
     }
     out.push('Avisale al dev en una línea.');

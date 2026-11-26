@@ -334,3 +334,21 @@ test('T13 SoloLee_ConLaPalabraMerge_NoFrena — y lo que encola o mergea sigue f
     assert.ok(l.length && l.every((x) => x.ilegible), `${cmd}: ${JSON.stringify(l)}`);
   }
 });
+
+test('T14 Vigilante_ConsultasDeSoloLecturaEnUnBucle_NoFrenan — y encolar o mergear en el bucle sigue frenando', () => {
+  const leer = require(LECTOR).leer;
+  // el vigilante de fondo de la coordinadora: lee el estado y la cola en un bucle; la palabra de la cola es un campo
+  for (const cmd of [
+    'for n in 1738 1745; do gh pr checks $n -R acme/arnes --watch > /dev/null 2>&1; echo "$n: $(gh pr checks $n -R acme/arnes | awk \'{print $2}\')"; done',
+    'for i in $(seq 1 90); do s=$(gh pr view 1759 -R acme/arnes --json state --jq .state); case "$s" in MERGED) exit 0;; esac; q=$(gh api graphql -f query=\'query{repository(owner:"acme",name:"arnes"){pullRequest(number:1759){isInMergeQueue}}}\' --jq .data.repository.pullRequest.isInMergeQueue); [ "$q" = "false" ] && exit 2; sleep 120; done',
+    'while true; do gh pr view 1759 -R acme/arnes --json state,mergeCommit --jq .state; sleep 60; done',
+    'if gh pr view 5 -R acme/arnes --json mergedAt; then gh pr checks 5 -R acme/arnes; else ! gh pr view 5 -R acme/arnes --json mergeStateStatus; fi',
+  ]) assert.deepStrictEqual(leer(cmd), [], cmd);
+  // en el mismo bucle, el merge, el encolado y la mutación siguen frenando
+  for (const cmd of [
+    'for n in 1 2; do gh pr merge $n -R acme/arnes --merge; done',
+    'for n in 1 2; do gh pr view $n -R acme/arnes --json state; gh pr merge 5 -R acme/arnes --merge; done',
+    'while true; do gh api graphql -f query=\'mutation{enqueuePullRequest(input:{pullRequestId:"PR_x"}){clientMutationId}}\'; done',
+    'for n in 1; do gh pr view $n --json mergedAt | bash; done',
+  ]) assert.ok(leer(cmd).length > 0, `${cmd}: tendría que frenar o nombrar el pedido`);
+});

@@ -1995,6 +1995,21 @@ test('Nombres_PaquetesModelosBuzonParidad_SinClavesDelArchivo — casillas, fila
   assert.doesNotMatch(p.textoDe('paridad'), /"rasgos"/, 'sin el JSON de la definición');
 });
 
+test('T5 SiteMailbox_GcsOfrecido_ConSuCampoBucket @story-1.3 @ac-2 — la pantalla ofrece gcs y, elegido, pide el bucket en vez de cuenta y carpeta', async () => {
+  const extras = { servicios: ['azure-blob', 'gcs'], campos: { 'azure-blob': ['account', 'container'], gcs: ['bucket'] }, nombres: { 'azure-blob': 'Azure Blob Storage', gcs: 'Google Cloud Storage' } };
+  const seccion = (mailbox) => ({ id: 'sitio', titulo: 'sitio', repo: 'operaciones', estado: 'cargado', soloLectura: false, problems: [], avisos: [], borrador: { site: { mailbox } }, extras });
+  const gcs = await pantallaFalsa([seccion({ provider: 'gcs', bucket: 'acme-buzon-lab' })]);
+  assert.strictEqual(gcs.error, null);
+  const serv = gcs.todo(gcs.sec('sitio')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'site.mailbox.provider');
+  assert.ok(serv && serv.hijos.some((o) => o.textContent === 'Google Cloud Storage'), 'gcs, con su nombre, en la lista de servicios');
+  const rutas = gcs.todo(gcs.sec('sitio')).map((n) => n.attrs['data-path']).filter((r) => /^site\.mailbox\./.test(r || ''));
+  assert.ok(rutas.includes('site.mailbox.bucket'), 'el campo bucket');
+  assert.ok(!rutas.includes('site.mailbox.account') && !rutas.includes('site.mailbox.container'), 'sin cuenta ni carpeta de Azure');
+  const azure = await pantallaFalsa([seccion({ provider: 'azure-blob', account: 'acmeruns', container: 'corridas' })]);
+  const rutasAzure = azure.todo(azure.sec('sitio')).map((n) => n.attrs['data-path']).filter((r) => /^site\.mailbox\./.test(r || ''));
+  assert.ok(rutasAzure.includes('site.mailbox.account') && rutasAzure.includes('site.mailbox.container') && !rutasAzure.includes('site.mailbox.bucket'), 'Azure, como hoy');
+});
+
 test('Nombres_Guia_DiceElPermisoDeLosPipelines — la instalación normal cuenta qué permiso pide SITE_PIPELINES_TOKEN y qué se ve sin él', () => {
   for (const [f, sin] of [['organization-site.md', /Sin él, la pestaña pide el número del pipeline a mano/], ['organization-site.en.md', /Without it, the tab asks for the pipeline number by hand/]]) {
     const fila = texto(`guides/${f}`).split('\n').find((l) => l.startsWith('| `SITE_PIPELINES_TOKEN` |'));

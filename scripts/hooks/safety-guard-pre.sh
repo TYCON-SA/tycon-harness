@@ -107,11 +107,46 @@ sg_trace_fin() {
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$TYCON_SAFETY_TRACE_RUN" "$$" "$(( fin - _sg_t0 ))" "${1:-0}" >> "$SG_TRACE" 2>/dev/null || true
   return 0
 }
-if [[ -n "$SG_TRACE" ]]; then trap 'sg_trace_fin "$?"' EXIT; fi
+trap 'sg_fin "$?"' EXIT
 
 SG_CLOCK_S="${TYCON_SAFETY_TIMEOUT_S:-20}"
 # sin ceros adelante: «09» o «060» no son un número de segundos para la cuenta de bash
 if ! [[ "$SG_CLOCK_S" =~ ^[1-9][0-9]?$ ]] || (( SG_CLOCK_S > 50 )); then SG_CLOCK_S=20; fi
+# ── Lo lento y lo cortado, en hook-errors.log ────────────────────────────────────────────────────────────────────────
+# Siempre, sin TYCON_SAFETY_TRACE: el freno cuenta sus pasos con SECONDS (no lanza nada). Si tarda la mitad de su reloj
+# o más, deja «safety-guard LENTO» con el total y el paso más lento; si lo corta el reloj, «FRENÓ POR FALLA» con el paso
+# en que estaba. Lo que anotan sus partes lentas en el archivo de la etapa se suma al nombre del paso. Así, cuando un
+# freno tarda en otra máquina, el dato queda en su registro. Los segundos son enteros, contados en los saltos del reloj
+# de la máquina: un paso de menos de uno cuenta 0 o 1, por eso lo lento empieza en 2 s aunque el reloj sea más corto.
+# SECONDS arranca en 0 acá, antes que el reloj: el bash de la Mac lo toma del entorno si viene ahí.
+SECONDS=0
+SG_PASO="leyendo la entrada"; SG_PASO_DESDE=$SECONDS; SG_LENTO_PASO=""; SG_LENTO_S=-1; SG_CORTADO=""
+sg_paso() {
+  local dura=$(( SECONDS - SG_PASO_DESDE ))
+  if [[ -n "${SG_ETAPA:-}" && -s "$SG_ETAPA" ]]; then
+    SG_PASO="$SG_PASO (su última nota: $(head -c 200 "$SG_ETAPA" 2>/dev/null | tr -d '\n'))"
+    rm -f "$SG_ETAPA" 2>/dev/null || true
+  fi
+  if (( dura > SG_LENTO_S )); then SG_LENTO_S=$dura; SG_LENTO_PASO="$SG_PASO"; fi
+  SG_PASO="${1:-}"; SG_PASO_DESDE=$SECONDS
+  return 0
+}
+# Al salir por cualquier lado: el rastro (si se pidió) y lo lento. No puede fallar ni cambiar la salida.
+sg_fin() {
+  trap - ERR
+  # la decisión ya está tomada: si el reloj vence mientras se anota, no la cambia ni se anota dos veces
+  if [[ -z "$SG_CORTADO" ]]; then trap '' TERM; fi
+  sg_trace_fin "${1:-0}" || true
+  local mitad=$(( SG_CLOCK_S / 2 ))
+  if (( mitad < 2 )); then mitad=2; fi
+  if [[ -z "$SG_CORTADO" ]] && (( SECONDS >= mitad )); then
+    sg_paso "" || true
+    if declare -F sg_registro >/dev/null; then
+      sg_registro LENTO "tardó $SECONDS s, con un tope de $SG_CLOCK_S s; el paso más lento: $SG_LENTO_PASO ($SG_LENTO_S s)" || true
+    fi
+  fi
+  return 0
+}
 sg_identity() {
   local s
   s="$(ps -p "$1" -o lstart=,command= 2>/dev/null)"
@@ -131,6 +166,8 @@ sg_clock_fired() {
   local etapa=""
   [[ -s "$SG_ETAPA" ]] && etapa="$(head -c 200 "$SG_ETAPA" 2>/dev/null | tr -d '\n')"
   rm -f "$SG_ETAPA" 2>/dev/null
+  SG_CORTADO=1
+  if declare -F sg_registro >/dev/null; then sg_registro 'FRENÓ POR FALLA' "no terminó en ${SG_CLOCK_S} s; estaba ${etapa:-$SG_PASO}" || true; fi
   echo "⛔ TYCON safety-guard: el freno no terminó de mirar el comando en ${SG_CLOCK_S} s y lo frena: pasado el tope de la herramienta, el comando correría sin mirar.${etapa:+ Estaba ${etapa}.} Para seguir: volvé a correr el comando; si se repite, subí TYCON_SAFETY_TIMEOUT_S (hasta 50) en el entorno de la herramienta, o abrí una sesión nueva (una conversación larga hace más lenta la confirmación de una firma). Si nada de eso alcanza, decíselo a la persona." >&2
   exit 2
 }
@@ -178,6 +215,17 @@ salida_err() {
   salida_ok
 }
 trap 'salida_err "$LINENO" "$BASH_COMMAND"' ERR
+# Un renglón propio del freno en hook-errors.log («safety-guard <marca>: <texto>»), con la misma carpeta y la misma
+# regla que la salida por error: sin el ayudante no escribe, y si no puede, sigue.
+sg_registro() {
+  local dir=""
+  if [ -f "$_SG_STATE_SH" ] && . "$_SG_STATE_SH" 2>/dev/null; then dir="$(tycon_state_dir 2>/dev/null)" || dir=""; fi
+  if [ -n "$dir" ]; then
+    { mkdir -p "$dir" && printf '[%s] safety-guard %s: %s\n\n' \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "${2:0:300}" >> "$dir/hook-errors.log"; } 2>/dev/null || true
+  fi
+  return 0
+}
 
 # `TYCON_SAFETY_OFF=1` en el ambiente ya no apaga el freno: quedó una sola salida, la emergencia. Se anota para que el
 # cartel lo diga.
@@ -327,8 +375,10 @@ ow_gate() {
     local tope=""
     tope="$(date +%s 2>/dev/null)" || tope=""
     if [[ "$tope" =~ ^[0-9]+$ ]]; then tope=$(( tope + SG_CLOCK_S - SECONDS - 1 )); else tope=""; fi
+    sg_paso "la ventana de permiso"
     out="$(printf '%s' "$INPUT" | TYCON_SAFETY_DEADLINE_S="$tope" "$HNODE" "$lib" gate ${args[@]+"${args[@]}"} 2>/dev/null)" || out=""
-    # la ventana ya contestó: lo que anotó no es lo que el freno hace después
+    # la ventana ya contestó: lo que anotó es de su paso, no de lo que el freno hace después
+    sg_paso "mirando las reglas, después de la ventana"
     rm -f "$SG_ETAPA" 2>/dev/null || true
     # Lo que contestan los lectores se lee con `< <(printf …)`, nunca con un here-string: el bash 3.2 de macOS escribe el
     # temporal de un here-string en /var/tmp, /tmp o la carpeta actual, y dentro de un encierro que no lo deja (la corrida
@@ -550,6 +600,7 @@ block() {
 # ============================================================
 # Reglas (orden = prioridad de match)
 # ============================================================
+sg_paso "mirando las reglas"
 
 # --- CMD-C1 (copia igual en los tres frenos de shell) --------------------------
 # Con el `jq -b` de la lectura, un `\r` en el comando estuvo de verdad en el comando: bash lo toma como una letra más
@@ -2185,8 +2236,8 @@ if [[ "$CMD" =~ $GIT_C4_MASS_ADD ]]; then
   # Con una firma esperando la ventana de permiso no hay nada que avisar: el aviso sale con código 1, que haría correr
   # el comando sin la ventana, y la persona ya mira el comando en ella.
   if [[ -n "$GIT_C4_BLIND" && -z "$OW_ASK_JSON" ]]; then
-    # reemplaza la trampa de la medición (TYCON_SAFETY_TRACE): el total se anota antes del aviso
-    trap '_sg_rc=$?; sg_trace_fin "$_sg_rc"; git_c4_blind_notice "$_sg_rc"' EXIT
+    # reemplaza la trampa de salida: la medición y lo lento se anotan antes del aviso
+    trap '_sg_rc=$?; sg_fin "$_sg_rc"; git_c4_blind_notice "$_sg_rc"' EXIT
   fi
 fi
 CMD="$CMD_SHOWN"   # las reglas de abajo miran el comando tal como llegó
