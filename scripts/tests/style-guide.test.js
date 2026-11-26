@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * style-guide.test.js — la regla de los comentarios del código (guides/maintaining/estilo-de-codigo.md) existe, trae dos ejemplos
+ * style-guide.test.js — la regla de los comentarios del código (guides/maintaining/code-style.md) existe, trae dos ejemplos
  * buenos y dos malos, y el índice de guías (INDEX.md) tiene su fila.
  *
  * Uso: node --test scripts/tests/style-guide.test.js
@@ -12,7 +12,7 @@ const fs = require('fs');
 const path = require('path');
 
 const RAIZ = path.resolve(__dirname, '..', '..');
-const GUIDE = 'guides/maintaining/estilo-de-codigo.md';
+const GUIDE = 'guides/maintaining/code-style.md';
 
 test('T35 StyleGuide_RuleWithExamples_InIndex', () => {
   const file = path.join(RAIZ, GUIDE);

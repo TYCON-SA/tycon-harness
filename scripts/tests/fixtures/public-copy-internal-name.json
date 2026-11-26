@@ -19,7 +19,7 @@
    "why": "el checkout, el repositorio, el grupo de lectores y la llamada a la API del proyecto en Azure DevOps"
   },
   {
-   "path": "guides/integrations/ado-en-el-nucleo.md",
+   "path": "guides/integrations/ado-in-the-core.md",
    "kind": "azure",
    "why": "el checkout, el repositorio, el grupo de lectores y la llamada a la API del proyecto en Azure DevOps, mudados de guides/ci-gate.md con lo sólo de Azure DevOps"
   },
