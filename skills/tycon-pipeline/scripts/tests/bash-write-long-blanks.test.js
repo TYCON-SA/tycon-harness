@@ -17,7 +17,11 @@
  *            heredoc, espacios en `bash -c`, espacios por un tubo a `sh`, renglones vacíos en un heredoc)
  * El gancho entero se mide por el tiempo de CPU de su proceso, no por el reloj de pared: en una máquina cargada (la CI
  * con varias suites a la vez y la cola llena) el reloj cuenta también lo que el proceso esperó su turno, y una prueba
- * sana quedaba en rojo. La CPU cuenta el trabajo del gancho, que es lo que crece con una expresión mala.
+ * sana quedaba en rojo. La CPU cuenta el trabajo del gancho, que es lo que crece con una expresión mala. Pero la CPU
+ * tampoco es la misma en toda máquina: un núcleo lento o la memoria apretada la inflan (la CI llegó a 8,5 s con el
+ * freno sano). Por eso, si pasa el tope, se mide además la misma forma con un octavo del largo: lo que delata una
+ * expresión mala es cómo crece (sana, unas 5 veces; cuadrática, más de 10), y una máquina lenta infla las dos medidas
+ * por igual.
  *   BLANKS4  los segmentos, las redirecciones, el `sh -c` y la de borrados dan lo mismo que las expresiones de antes
  *   BLANKS5  los destinos se leen en menos de 1,5 s con 150 KB de `$(` o `${` sin cerrar detrás de `>` o `<`
  *   BLANKS7  los destinos de un `cp` se leen en menos de 1,5 s con 100 KB de blancos o tabuladores entre sus palabras
@@ -127,37 +131,44 @@ function correrElGancho(comando) {
   } finally { fs.rmSync(casa, { recursive: true, force: true }); }
 }
 
+// Con un octavo del largo, el gancho sano gasta como mucho esta fracción de lo que gasta con el largo entero (medido: 4 a
+// 5 veces menos; la expresión cuadrática de la fila 257, más de 10).
+const CRECE_COMO_MUCHO = 7;
+
+// El gancho decide la forma armada con `largo` en menos de `topeMs` de CPU, o, en una máquina lenta que pasa el tope,
+// su CPU crece con el largo como la de un gancho sano.
+function decideEnSegundos(forma, armar, largo, topeMs) {
+  const r = correrElGancho(armar(largo));
+  assert.doesNotMatch(r.stderr, /no alcanzó a decidir/, forma);
+  if (r.ms < topeMs) return;
+  const chico = correrElGancho(armar(Math.ceil(largo / 8)));
+  const crece = r.ms / Math.max(chico.ms, 1);
+  assert.ok(crece < CRECE_COMO_MUCHO,
+    `${forma}: tardó ${r.ms} ms (tope ${topeMs}), y ${chico.ms} ms con un octavo del largo: crece ${crece.toFixed(1)} veces`);
+}
+
 // 🔴 mutación: la expresión de antes para los heredocs (cúbica con `<<<x;` repetido), juzgar cada `<<<` desde el
 // principio de su renglón, juzgar un `<<<` sin palabra, preguntar por la ruta real de un destino una vez por cada origen
 // de la copia, o copiar el resto de las palabras por cada palabra al buscar una edición en el lugar.
 test('BLANKS6 HereStringsYContinuaciones_EnCantidad_DecidenEnSegundos', () => {
   const formas = {
-    '`cp a b <<<x;` repetido': 'cp a b <<<x; '.repeat(Math.ceil((40 * 1024) / 13)),
-    '`<` repetido': `cp a b ${'<'.repeat(40 * 1024)}`,
-    'renglones continuados': 'cp a b \\\n'.repeat(Math.ceil((200 * 1024) / 9)),
+    '`cp a b <<<x;` repetido': [(n) => 'cp a b <<<x; '.repeat(Math.ceil(n / 13)), 40 * 1024],
+    '`<` repetido': [(n) => `cp a b ${'<'.repeat(n)}`, 40 * 1024],
+    'renglones continuados': [(n) => 'cp a b \\\n'.repeat(Math.ceil(n / 9)), 200 * 1024],
   };
-  for (const [forma, comando] of Object.entries(formas)) {
-    const r = correrElGancho(comando);
-    assert.doesNotMatch(r.stderr, /no alcanzó a decidir/, forma);
-    assert.ok(r.ms < 5000, `${forma}: tardó ${r.ms} ms`);
-  }
+  for (const [forma, [armar, largo]] of Object.entries(formas)) decideEnSegundos(forma, armar, largo, 5000);
 });
 
 // 🔴 mutación: volver a cualquiera de las seis expresiones: con 40 KB, el freno tarda segundos o no decide en 20 s.
 test('BLANKS3 TiradaLarga_EnCadaForma_DecideEnSegundos', () => {
-  const n = 40 * 1024;
   const formas = {
-    'espacios en un heredoc': `cd /tmp && python3 - <<'EOF'\nx = "${' '.repeat(n)}"\nEOF`,
-    'puntos y comas en un heredoc': `cd /tmp && python3 - <<'EOF'\nx = "${';'.repeat(n)}"\nEOF`,
-    'espacios en bash -c': `bash -c 'x ${' '.repeat(n)}'`,
-    'espacios por un tubo a sh': `echo "${' '.repeat(n)}" | sh`,
-    'renglones vacíos en un heredoc': `cd /tmp && python3 - <<'EOF'\nx = """${'\n'.repeat(n)}"""\nEOF`,
+    'espacios en un heredoc': (n) => `cd /tmp && python3 - <<'EOF'\nx = "${' '.repeat(n)}"\nEOF`,
+    'puntos y comas en un heredoc': (n) => `cd /tmp && python3 - <<'EOF'\nx = "${';'.repeat(n)}"\nEOF`,
+    'espacios en bash -c': (n) => `bash -c 'x ${' '.repeat(n)}'`,
+    'espacios por un tubo a sh': (n) => `echo "${' '.repeat(n)}" | sh`,
+    'renglones vacíos en un heredoc': (n) => `cd /tmp && python3 - <<'EOF'\nx = """${'\n'.repeat(n)}"""\nEOF`,
   };
-  for (const [forma, comando] of Object.entries(formas)) {
-    const r = correrElGancho(comando);
-    assert.doesNotMatch(r.stderr, /no alcanzó a decidir/, forma);
-    assert.ok(r.ms < 3000, `${forma}: tardó ${r.ms} ms`);
-  }
+  for (const [forma, armar] of Object.entries(formas)) decideEnSegundos(forma, armar, 40 * 1024, 3000);
 });
 
 // 🔴 mutación: que la palabra de una redirección exija el cierre de `$(` o `${`: cada una sin cerrar recorre el resto del

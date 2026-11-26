@@ -36,7 +36,8 @@
       "scripts/ci/neutrality-allowlist.json",
       "integrations/azure-devops/integration.json",
       "integrations/github/integration.json",
-      "integrations/gitlab/integration.json"
+      "integrations/gitlab/integration.json",
+      "integrations/gcs/integration.json"
     ] },
     { "name": "vocabulary", "script": "scripts/ci/vocabulary.js", "rules": [
       "scripts/ci/vocabulary.json"

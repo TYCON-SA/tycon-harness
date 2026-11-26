@@ -1,0 +1,52 @@
+{
+  "__doc": "Disco casi lleno: al arrancar sesión, disk-notice.js mira el disco libre de la carpeta del usuario. Por debajo de maintenance.disk_warn_percent (15 % sin perfil) dice cuánto queda y las cosas de la lista conocida (scripts/hooks/disk-hogs.json) que más ocupan, con el comando que limpia cada una; por encima, calla. El disco se finge con TYCON_DISK_NOTICE_TEST_DISK (libre/total en bytes), y las cosas de la lista se crean en el HOME del caso.",
+  "hooks": [
+    {
+      "hook": "disk-notice.js (el aviso de disco casi lleno)",
+      "script": "${TCG}/scripts/hooks/disk-notice.js",
+      "event": "SessionStart",
+      "matcher": "*",
+      "cases": [
+        {
+          "id": "disco-bajo-avisa-con-lo-que-mas-ocupa-y-su-comando",
+          "type": "must-emit",
+          "so": ["linux", "darwin"],
+          "__doc": "Con el 5 % libre y el caché de npm en el HOME, el aviso dice cuánto queda y nombra el caché con su comando de limpieza. ROJO PREVIO: el disco se llena sin aviso y las pruebas y los commits fallan sin decir por qué. Sin Windows: ahí el caché de npm vive en otra carpeta.",
+          "setup": [
+            "mkdir -p $HOME/.npm/_cacache && head -c 65536 /dev/zero > $HOME/.npm/_cacache/dato"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_DISK_NOTICE_TEST_DISK": "50000000000/1000000000000"
+          },
+          "expect": {
+            "stdout_re": [
+              "disco: quedan .* libres .*\\(5 %\\), menos del 15 %",
+              "el caché de npm .* \\(npm cache clean --force\\)",
+              "El arnés no corre ninguno"
+            ]
+          }
+        },
+        {
+          "id": "disco-alto-calla",
+          "type": "must-stay-quiet",
+          "__doc": "Con el 60 % libre, el arranque no dice nada del disco. ROJO PREVIO: un aviso en cada arranque de una máquina sana, que enseña a no leerlo.",
+          "setup": [
+            "mkdir -p $HOME/.npm/_cacache && head -c 65536 /dev/zero > $HOME/.npm/_cacache/dato"
+          ],
+          "stdin": {
+            "source": "startup"
+          },
+          "env": {
+            "TYCON_DISK_NOTICE_TEST_DISK": "600000000000/1000000000000"
+          },
+          "expect": {
+            "exit": 0
+          }
+        }
+      ]
+    }
+  ]
+}
