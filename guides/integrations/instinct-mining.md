@@ -1,112 +1,87 @@
-# instinct-mining — grabador silencioso del harness
+# instinct-mining — lo que el equipo repite, convertido en reglas
 
-**Goal**: el harness aprende solo, sin depender de que el agente se acuerde de `mem_save`.
+**Para qué**: el arnés aprende del trabajo de todo el equipo, sin depender de que el agente se acuerde de guardar algo
+en la memoria. Lo que varias máquinas repiten se propone como regla, una persona la aprueba en el sitio de la
+organización y todas las máquinas la reciben.
 
-Cuando el dev corrige al agente ("no, así no, hacelo distinto") o cuando un workflow se repite varias veces, un grabador silencioso lo detecta, lo propone como **instinct** (regla atómica trigger/action), y vos aprobás o rechazás. Lo aprobado va a engram (memoria personal) y, si aplica, genera un draft para el catálogo team-wide.
-
-Inspirado en [ECC continuous-learning-v2](https://github.com/affaan-m/ECC/blob/main/skills/continuous-learning-v2/SKILL.md), adaptado al stack TYCON.
+Inspirado en [ECC continuous-learning-v2](https://github.com/affaan-m/ECC/blob/main/skills/continuous-learning-v2/SKILL.md),
+adaptado al arnés.
 
 ---
 
-## Mecánica completa
+## El recorrido, en cinco pasos
 
 ```
-┌────────────────────────────────────────────────────────────────┐
-│ Durante CADA sesión Claude Code (transparente, sin interv.):  │
-│                                                                │
-│   Tool call → PostToolUse hook → instinct-observe.js (fondo)   │
-│                                          │                     │
-│                                          ▼                     │
-│              ~/.claude/tycon-observations/<YYYY-MM>.jsonl      │
-│              (LOCAL por máquina, NO en git)                    │
-│   { ts, session_id, tool, project, summary, status, repo, origin }
-└────────────────────────────────────────────────────────────────┘
-                       │
-                       ▼  (SessionStart hook, throttle 12h)
-┌────────────────────────────────────────────────────────────────┐
-│ Observer (Node + claude CLI con Haiku):                        │
-│                                                                │
-│   1. Lee JSONL local del mes actual + anterior                 │
-│   2. Agrupa por (proyecto, tool, summary-prefix)               │
-│   3. Filtra buckets con >=3 ocurrencias                        │
-│   4. Envía a Haiku con prompt "encontrá rules no-triviales"    │
-│      + los nombres de lo que ya existe                         │
-│   5. Recibe YAML estructurado, filtra confidence >= 0.85       │
-│   6. Dedup por hash                                            │
-│   7. 2ª llamada: revisa lo que queda contra lo ya decidido y   │
-│      el catálogo detallado; lo que cita algo mostrado va a     │
-│      inbox/instincts/descartados/ (local) y no a la bandeja    │
-│   8. Escribe a inbox/instincts/pending/ + Telegram si hay      │
-│      nuevos                                                    │
-└────────────────────────────────────────────────────────────────┘
-                       │
-                       ▼  (review HITL, vos)
-┌────────────────────────────────────────────────────────────────┐
-│ /tycon-instincts list → ver pending                            │
-│ /tycon-instincts show <hash> → leer YAML completo              │
-│ /tycon-instincts approve <hash>                                │
-│   → mueve a promoted/                                          │
-│   → emite mem_save() para engram                               │
-│   → si hay artifact_suggestion: auto-genera draft a drafts/    │
-│ /tycon-instincts reject <hash> --reason "X" → archived/        │
-└────────────────────────────────────────────────────────────────┘
-                       │
-                       ▼  (vos, opcional, fuera del flow auto)
-┌────────────────────────────────────────────────────────────────┐
-│ Si hay draft en inbox/instincts/drafts/:                       │
-│   → Revisar, editar a mano                                     │
-│   → Copiar al destino real (catálogo, skill, hook, guide)     │
-│   → Commitear cuando estés convencido                          │
-│                                                                │
-│ El observer NUNCA toca catálogo/skills/hooks/guides            │
-│ directamente — solo genera drafts. Vos sos el aprobador final  │
-│ para cualquier cambio team-wide.                               │
-└────────────────────────────────────────────────────────────────┘
+1. GRABA       cada máquina, en cada herramienta, una línea saneada         integrations/instincts/scripts/instinct-observe.js
+                     │  (local: tycon-observations/<AAAA-MM>.jsonl)
+                     ▼
+2. SUBE        un día cerrado por vez, sólo lo de la organización            scripts/instincts/instinct-upload.js
+                     │  (al buzón de la organización, con la subida del arranque)
+                     ▼
+3. PROPONE     la noche de la organización cuenta lo que se repite           scripts/instincts/instinct-nightly.js
+                     │  y el modelo de la noche redacta cada propuesta       scripts/instincts/instinct-model.js
+                     │  (inbox/instincts/propuestas/ del repo de operaciones)  pipelines/operations/instinct-proposals.yml
+                     ▼
+4. DECIDE      quien mantiene aprueba o rechaza en la pestaña Aprendizajes   scripts/site/tabs/learnings.js
+                     │
+                     ▼
+5. RECIBE      la regla aprobada llega a cada máquina con la actualización   packs/<paquete>/claude-md-blocks/team-learnings.md
 ```
 
----
-
-## Decisiones de diseño
-
-Resueltas durante la implementación 2026-05-23 (cierre de la especificación original, que vive en el repo de mantenimiento).
-
-| Decisión | Resuelto |
-|---|---|
-| **Trigger** | SessionStart hook con throttle 12h. No cron (no hay razón para "de noche"). El hook spawna detached → no bloquea el inicio de sesión. |
-| **Observer** | `scripts/instincts/instinct-observer.js` (Node) es **agnóstico de herramienta** (2026-08-24): usa el modelo de la que la máquina tenga — `claude`→Haiku, `codex`→gpt-5.4-mini, o `ollama`→modelo local. **No requiere API key separada** — usa la suscripción del dev. Costo marginal ~$0 con suscripción en cualquiera de las dos. Cada instinct guarda `proposed_by: <ejecutor>/<modelo>` para medir aceptación por ejecutor. |
-| **Logging** | JSONL local por máquina en `~/.claude/tycon-observations/<YYYY-MM>.jsonl`. NO va al repo. Sanitization estricta igualmente (defense in depth): `$HOME` redact, regex de secrets, truncate 500 chars, exclusion de `specs/clients/*`. |
-| **Storage** | `pending/promoted/archived/drafts/` viven en el **buzón**: `inbox/instincts/` _(del repo del equipo; no está en esta copia)_ del árbol del arnés **si ese árbol lo trae** (el clon de quien mantiene el arnés: ahí cruzan máquinas vía git pull/push normal); si no lo trae (un arnés instalado desde una versión bajada), en el buzón del clon del repo privado de mantenimiento que declare la máquina (`paths.maintainers`), si lo trae; y si no, en la carpeta de usuario de la persona. Ver «Dónde viven las propuestas», abajo. `descartados/` es constancia local de lo que la revisión descartó en esa máquina. |
-| **Threshold** | ≥3 ocurrencias en el JSONL + confidence ≥0.85 del LLM. |
-| **Dedup** | Hash determinístico de `trigger + action`. Si ya existe en pending/promoted/archived, skip. |
-| **Lo que ya existe** (2026-09-10 y 2026-09-14) | El hash sólo frena el texto idéntico: medido en una semana, 11 de 14 propuestas repetían algo ya decidido o un control que ya corre. Todo se lee del disco en cada corrida. El prompt que propone lleva sólo los **nombres** de revisores, hooks y skills (así desde el 2026-09-10): con los instintos decididos adentro, medido, el modelo los copiaba como ejemplos. Lo que pasa la confianza y el hash va a una **segunda llamada** que sólo clasifica, contra los instintos decididos (con su proyecto, la acción de los aprobados y el motivo de los rechazados) y el catálogo detallado (qué audita cada revisor, el pre-commit y `scripts/ci/`). Se descarta lo que la revisión cita empezando por un hash o una pieza que **su prompt mostró**; una categoría, una frase negativa, una salvedad justo después («[hash] — not the same») o algo que no mostró no descarta nada. Una variante del mismo hábito en **otro** proyecto no cuenta como repetición —se le pide al modelo y el guion lo verifica con el proyecto de cada decidido—: decidís vos si generalizarla. Lo descartado queda en `inbox/instincts/descartados/` (local, fuera de git), un archivo por propuesta con lo que lo cubre y cuántas veces se descartó, y `/tycon-instincts review` lo resume: sin eso, un descarte de más se vería igual que una semana sin nada nuevo. Si esa carpeta no se puede escribir, el observador lo dice y sigue. Si la revisión falla o no se entiende, lo propuesto llega igual, y el log lo dice. |
-| **Aprobación** | Vos siempre. El comando approve mueve a promoted + emite `mem_save()` para engram. Si el YAML sugiere artifact (skill/advisor/hook/guide), también genera draft. Vos editás el draft y commiteás cuando te convenza. |
-| **Notify** | Telegram push (`TYCON_INSTINCT_NOTIFY=1` + `TYCON_INSTINCT_TELEGRAM_BOT_TOKEN`). Solo si hay nuevos pending (post-dedup). |
-| **Multi-máquina** | Cada máquina con la integración `instincts` prendida graba su JSONL y lo sube al buzón de la organización; las propuestas las arma una sola vez el proceso de la noche de la organización. `TYCON_INSTINCT_MINING` y `TYCON_INSTINCT_OBSERVER` ya no prenden nada. |
+Ninguna máquina llama a un modelo para proponer: las propuestas las arma una sola vez la noche de la organización, con
+lo que suben todas.
 
 ---
 
-## Setup
+## 1. Graba: la prende el perfil del equipo
 
-### La grabadora: la prende el perfil del equipo
+La grabadora es `integrations/instincts/scripts/instinct-observe.js`, una integración de prender y apagar. La registra
+el instalador del arnés en Mac, Linux y Windows, en Claude Code y en Codex; no hace falta Python. Graba sólo con la
+integración `instincts` prendida:
 
-La grabadora es `integrations/instincts/scripts/instinct-observe.js` (una integración de prender y apagar) y la
-registra el instalador del arnés, en Mac y en Windows (no hace falta Python). Graba sólo con la integración `instincts` prendida: para el equipo, la prende el perfil
-(`integrations.instincts: true`); `TYCON_INSTINCTS=0` o `~/.claude/tycon.json` la apagan en una máquina (o la prenden
-para probar). `TYCON_INSTINCT_MINING` ya no decide nada. Corre de fondo: no demora la herramienta.
+- **Para el equipo, la prende el perfil** (`integrations.instincts: true` en `team-profile.json`) y llega a cada
+  máquina con la actualización.
+- **En una máquina**, `TYCON_INSTINCTS=0` (o `~/.claude/tycon.json`) la apaga, y `TYCON_INSTINCTS=1` la prende para
+  probar.
+- **Las variables viejas no deciden nada.** `TYCON_INSTINCT_MINING` y `TYCON_INSTINCT_OBSERVER` ya no prenden ni lanzan
+  nada.
 
-Además del proyecto, cada línea lleva `repo` (la carpeta del repo relativa a la raíz de repos, o al home si está
-afuera) y `origin` (el host y la organización del remoto `origin`, sin el nombre del repo ni credenciales: las cuatro
-formas de Azure dan `dev.azure.com/<org>`, GitHub da `github.com/<dueño>`). Fuera de un repo, los dos van `null`.
+Corre de fondo: no demora la herramienta. Graba una línea por herramienta en `tycon-observations/<AAAA-MM>.jsonl`, en
+la carpeta de los registros sueltos de la máquina (`TYCON_INSTINCT_OBS_DIR` la cambia). Cada línea lleva `ts`,
+`session_id` (8 caracteres), `tool`, `project`, `summary` (lo que recibió la herramienta, saneado) y `status`. Además
+lleva `repo` (la carpeta del repo relativa a la raíz de repos, o al home si está afuera) y `origin` (el host y la
+organización del remoto `origin`, sin el nombre del repo ni credenciales). Las cuatro formas de Azure dan
+`dev.azure.com/<org>`, y GitHub da `github.com/<dueño>`. Fuera de un repo, los dos van `null`.
 
-Con la integración prendida, la primera sesión de cada máquina avisa una vez qué se graba, adónde sube y cómo bajarse,
-y deja un sello (`instincts-notice.json` en la carpeta de estado del arnés). Si una máquina todavía tiene
+Con la integración prendida, la primera sesión de cada máquina avisa una vez qué se graba, adónde sube y cómo bajarse.
+Deja un sello (`instincts-notice.json`, en la carpeta de estado del arnés). Si una máquina todavía tiene
 `TYCON_INSTINCT_MINING=1` o `TYCON_INSTINCT_OBSERVER=1` con la integración apagada, el aviso dice una vez que esas
 variables ya no prenden nada.
 
-Si la grabadora falla (evento ilegible, carpeta sin permiso, disco lleno), sale 0 sin escribir en pantalla y anota el
-motivo en `~/.claude/tycon-observations/instinct-observe.errors.log` (tope 100 KB).
+Si la grabadora falla (evento ilegible, carpeta sin permiso, disco lleno), sale 0 sin escribir en pantalla. Anota el
+motivo en `instinct-observe.errors.log`, al lado de lo grabado (tope 100 KB).
 
-### La subida al buzón
+### El saneado
+
+Lo grabado no sale de la máquina sin pasar por acá, y el saneado corre igual aunque no suba nunca:
+
+| Patrón | Qué queda |
+|---|---|
+| `/Users/<user>/...` (la carpeta de la persona, absoluta) | `$HOME/...` |
+| `api_key=XXXX`, `token=XXXX`, `password=XXXX`, `bearer=XXXX` y sus variantes | `<clave>=[REDACTED]` |
+| `sk-XXXXXXXXXX` (16 caracteres o más) | `[REDACTED-SK]` |
+| `ghp_XXXXXXXXXX` (16 caracteres o más) | `[REDACTED-GHP]` |
+| Más de 500 caracteres | cortado con `...` |
+| `sig=XXXX` (la firma de un enlace de Azure) | tapada |
+| Credenciales en una URL (`https://usuario:clave@`), `-u usuario:clave`, `Authorization: …` | tapadas |
+| Lo que recibe la herramienta nombra `/clients/` | la línea no se graba |
+| Herramienta fuera de la lista (las MCP incluidas) | `summary` es `null`: viaja sólo su nombre |
+
+En Windows, el comando de la herramienta `PowerShell` se graba y se sanea igual que el de `Bash`. Para mirar lo grabado
+antes de prender la integración para todo el equipo, prendela en una máquina (`TYCON_INSTINCTS=1`), trabajá un rato y
+leé el archivo del mes: no tiene que haber secretos ni rutas absolutas.
+
+## 2. Sube al buzón de la organización
 
 Con el buzón de la organización configurado, la subida de cada arranque (`scripts/metrics/upload-runs.js`) manda también
 un archivo comprimido por día cerrado (en hora universal), desde el día del aviso. Lo arma `scripts/instincts/instinct-upload.js`:
@@ -127,30 +102,29 @@ nada. Lo dice una vez al arrancar, y otra vez sólo si eso cambia.
 La bajada (`scripts/metrics/download-runs.js`) trae los días sólo con `--instincts`, la versión más nueva de cada uno. El
 nocturno del tablero y el sitio no los bajan: los cuentan en `omitidos`.
 
-### Las propuestas: las arma la noche de la organización
+## 3. Propone: la noche de la organización
 
-Ninguna máquina corre el observador: el disparador del arranque (`instinct-trigger.sh`) ya no lo lanza, con
-`TYCON_INSTINCT_OBSERVER` o sin ella (sólo conserva la reparación de la línea de arranque). Las propuestas del equipo las
-arma cada noche, a las 02:00 UTC, el pipeline de la organización `pipelines/operations/instinct-proposals.yml`
-(`scripts/instincts/instinct-nightly.js`):
+Las propuestas del equipo las arma cada noche, a las 02:00 UTC, el pipeline de la organización
+`pipelines/operations/instinct-proposals.yml`, que corre `scripts/instincts/instinct-nightly.js`. Cómo se instala ese
+pipeline, con su conexión al buzón y la llave del modelo, está en `pipelines/operations/README.md`.
 
 - **Baja los días de instintos del buzón** (`download-runs.js` con `--instincts`) y decide por su estado: sin poder leer
   el buzón, o sin ningún día, el informe sale «no medido» y no se propone nada.
 - **Cuenta sin modelo lo que se repite en el equipo** en los últimos 60 días: el mismo repo, la misma herramienta y los
-  mismos 60 caracteres del resumen, ≥3 veces en ≥2 máquinas o ≥10 en una. Las máquinas se cuentan (una carpeta vieja
-  unida cuenta como su nueva), nunca se nombran.
+  mismos 60 caracteres del resumen, 3 veces o más en 2 máquinas o más, o 10 veces o más en una. Las máquinas se cuentan
+  (una carpeta vieja unida cuenta como su nueva), nunca se nombran.
 - **Deja afuera el ruido**, antes de elegir qué redactar, con cuatro reglas: un conteo sin lección (una herramienta que
   no graba contenido), una carpeta de trabajo, temporal o del estado del arnés, una ruta de una sola máquina, y una regla
   de un solo proyecto que ese proyecto no pidió. Lo filtrado se cuenta en el informe y no ocupa lugar en el tope.
 - **El modelo de la noche escribe cada propuesta**: el que la organización elige en el sitio (`models.nightly`), con la
-  llave como variable secreta del pipeline. Como mucho 20 por noche, primero las pendientes sin redacción y después las
-  nuevas. Lo que el modelo escribe pasa por una revisión contra lo ya decidido y el catálogo del arnés, y por el saneado
-  de la grabadora.
+  llave como variable secreta del pipeline. La llamada vive en `scripts/instincts/instinct-model.js`: Ollama por su API
+  o Anthropic por la CLI `claude`, y la llave no sale nunca en lo que se escribe. Como mucho 20 por noche, primero las
+  pendientes sin redacción y después las nuevas. Lo que el modelo escribe pasa por una revisión contra lo ya decidido y
+  el catálogo del arnés, y por el saneado de la grabadora.
 - **Una propuesta nueva nace redactada** o descartada con su motivo, en `inbox/instincts/propuestas/<huella>.json` del
   repo de operaciones. Lo que no llegó (por el tope, sin modelo, sin llave o con el modelo caído) espera sin archivo a otra
   noche, y el informe lo cuenta por causa. Lo decidido no se vuelve a proponer ni se toca. Lo que ya estaba pendiente
-  tampoco se descarta solo: lo decide una persona. Las propuestas se deciden en la pestaña Aprendizajes del sitio (ver
-  abajo).
+  tampoco se descarta solo: lo decide una persona.
 - **Recomienda aprobar o rechazar cada pendiente**, con su porqué, en `.dashboard/instincts/recomendaciones.json`. Lo que
   cae en una regla se recomienda rechazar sin llamar al modelo; el resto lo recomienda el modelo, hasta 30 por noche, en
   una llamada aparte de la que redacta. Recomendar no cambia ningún archivo de propuesta, así no choca con un pull request
@@ -158,221 +132,95 @@ arma cada noche, a las 02:00 UTC, el pipeline de la organización `pipelines/ope
 - **Un proyecto pide sus propias reglas** con su nombre en `proyectos-con-reglas.json`, en la carpeta `inbox/instincts/`
   del repo de operaciones (`{ "proyectos": ["<nombre de la carpeta del repo>"] }`), por pull request. Lo que la noche le había
   descartado por esa regla vuelve a quedar pendiente.
+- **El informe de la noche** queda en `.dashboard/instincts/` del repo de operaciones, con los tokens que informó el
+  proveedor del modelo.
 - **El resumen de la mañana** suma la línea «aprendizajes: …» con las propuestas nuevas y las que esperan decisión, y
   avisa si algo quedó sin redactar por falta de modelo, de llave o por una falla.
 
-`/tycon-instincts` sigue sólo para las propuestas de antes (las de `pending/` y `promoted/`): ya no tiene `run`.
-
-### Dónde se decide y adónde va lo aprobado
+## 4. Decide: la pestaña Aprendizajes del sitio
 
 Las propuestas del equipo se deciden en la pestaña **Aprendizajes** del sitio de la organización, sólo para quien
-mantiene (`guides/organization-site.md`, «Aprendizajes»). Aprobar confirma el texto de la regla, en una línea, y un
-pedido al repo del perfil la agrega al bloque `packs/<paquete>/claude-md-blocks/team-learnings.md` de un paquete que la
-organización ya tiene: cada máquina del equipo la recibe en su `CLAUDE.md` (y en el `AGENTS.md` de Codex) con la
-próxima actualización. Rechazar pide un motivo. Las dos decisiones quedan en el archivo de la propuesta, por pedido al
-repo de operaciones, y la noche no las vuelve a proponer.
+mantiene (`guides/organization-site.md`, «Aprendizajes»: qué muestra y las dos identidades de escritura que necesita).
+Aprobar confirma el texto de la regla, en una línea. Rechazar pide un motivo. Las dos decisiones quedan en el archivo de
+la propuesta, por pedido al repo de operaciones, y la noche no las vuelve a proponer.
 
 **El repo de operaciones tiene que ser de lectura sólo para quienes mantienen.** Ahí viven las propuestas: lo que se
 repite en el trabajo de cada máquina, saneado pero no pensado para todo el equipo. En Azure DevOps, el grupo de los
 devs (`Readers`) con la lectura negada en ese repo; en GitHub, un repo privado con acceso sólo para quienes mantienen.
 
-### Verificar instalación
+## 5. Recibe: la regla llega a cada máquina
 
-```bash
-~/.claude/tycon-harness/scripts/setup/install-instinct-mining.sh --check
-```
-
-### Desinstalar
-
-```bash
-~/.claude/tycon-harness/scripts/setup/install-instinct-mining.sh --uninstall
-# Y remover las env vars de ~/.zshrc
-```
+Al aprobar, un pedido al repo del perfil agrega la regla al bloque `packs/<paquete>/claude-md-blocks/team-learnings.md`
+de un paquete que la organización ya tiene. Cada máquina del equipo la recibe en su `CLAUDE.md` (y en el `AGENTS.md` de
+Codex) con la próxima actualización, sin pasos a mano.
 
 ---
 
-## Sanitization
+## Qué hace falta para prenderlo
 
-Aunque las observations son locales, el hook sanitiza igual (defense in depth, por si alguna vez se transfieren a debugging):
+| Pieza | Quién | Dónde se explica |
+|---|---|---|
+| `integrations.instincts: true` en el perfil del equipo | quien mantiene, por pedido al repo del perfil | este archivo, paso 1 |
+| El buzón de la organización, con su llave | quien mantiene | `guides/organization-site.md`, el buzón de ejecuciones |
+| El pipeline de la noche, con su conexión al buzón y la llave del modelo como variable secreta | quien mantiene | `pipelines/operations/README.md` |
+| El modelo de la noche elegido (`models.nightly`) | quien mantiene, en el sitio | `guides/organization-site.md` |
+| El sitio con las dos identidades de escritura (perfil y operaciones) | quien mantiene | `guides/organization-site.md`, «Aprendizajes» |
 
-| Patrón | Redact |
-|---|---|
-| `/Users/<user>/...` (HOME absoluto) | `$HOME/...` |
-| `api_key=XXXX`, `token=XXXX`, `password=XXXX`, `bearer=XXXX` | `<key>=[REDACTED]` |
-| `sk-XXXXXXXXXX` (16+ chars) | `[REDACTED-SK]` |
-| `ghp_XXXXXXXXXX` (16+ chars) | `[REDACTED-GHP]` |
-| Body >500 chars | truncate `...` |
-| `sig=XXXX` (la firma de un enlace de Azure) | tapada |
-| Credenciales en una URL (`https://usuario:clave@`), `-u usuario:clave`, `Authorization: …` | tapadas |
-| Tool input contiene `/clients/` | observación se descarta entera |
-| Herramienta fuera de la lista (las MCP incluidas) | `summary` es `null`: viaja sólo su nombre |
-
-En Windows, el comando de la herramienta `PowerShell` se graba y se sanea igual que el de `Bash`.
-
-Para validar la sanitización antes de habilitar:
-
-```bash
-export TYCON_INSTINCTS=1
-# Trabajar normal por 30 minutos
-cat ~/.claude/tycon-observations/$(date -u +%Y-%m).jsonl | head -50
-# Verificar que no haya secrets ni paths absolutos
-```
-
----
+Para ver si una máquina tiene la integración prendida y de dónde sale el valor:
+`node scripts/lib/tycon-config.js explain`.
 
 ## Costo
 
-Con la suscripción del dev (Claude.ai vía `claude`, o ChatGPT vía `codex`):
-
-| Componente | Costo marginal |
+| Pieza | Costo |
 |---|---|
-| Hook PostToolUse | $0 (no usa LLM, escritura local) |
-| Observer corriendo | $0 (incluido en tu plan; cada 12h — Haiku, gpt-5.4-mini o modelo local, dentro del fair-use): ~5K tokens el prompt que propone, más ~9K la revisión cuando algo pasa el umbral (2026-09-14) |
-| Telegram notify | $0 (curl directo al bot) |
+| La grabadora | nada: no usa modelo y escribe en el disco local |
+| La subida | un archivo comprimido por día cerrado, con la subida del arranque que ya existe |
+| La noche | las llamadas al modelo de la noche de la organización: hasta 20 redacciones y 30 recomendaciones por noche; el informe anota los tokens |
 
-**Ejecutor** (2026-08-24): el observer elige solo qué modelo usar según qué CLI tenga la máquina
-(`auto`: claude→Haiku, luego codex→gpt-5.4-mini, luego ollama→local). Forzar con
-`TYCON_OBSERVER_EXECUTOR=claude|codex|ollama`. El costo es ~$0 con suscripción en Claude o Codex;
-con Ollama es local (0 red, ~6 GB de RAM mientras infiere). El local NO se justifica por plata
-(Haiku/gpt-5.4-mini salen lo mismo) — solo por privacidad (las observaciones no salen de la máquina).
+## Variables de entorno
 
----
-
-## Variables de entorno (ref)
-
-| Var | Default | Descripción |
+| Variable | Valor por defecto | Qué hace |
 |---|---|---|
-| `TYCON_INSTINCTS` | lo que diga el perfil | `=0` apaga la grabadora en esta máquina; `=1` la prende para probar. Para el equipo la prende el perfil (`integrations.instincts`) |
-| `TYCON_INSTINCT_MINING` | — | Ya no decide: con la integración apagada no graba, y el aviso de arranque lo dice una vez |
-| `TYCON_INSTINCT_OBSERVER` | — | Ya no lanza nada: el observador no corre por máquina (las propuestas las arma la noche de la organización) |
-| `TYCON_INSTINCT_OBS_DIR` | `~/.claude/tycon-observations` | Path local del JSONL |
-| `TYCON_INSTINCT_NOTIFY` | unset | `=1` activa Telegram notify post-corrida |
-| `TYCON_INSTINCT_TELEGRAM_BOT_TOKEN` | unset | Bot token (sino skip notify). Como vive en una variable, cualquier proceso de la máquina lo ve: `env` lo imprimiría. `cover-secrets.js` lo tapa en lo que ve el asistente, pero sigue ahí (`guides/safety-guard.md`) |
-| `TYCON_INSTINCT_TELEGRAM_CHAT_ID` | unset | chat_id destino; sin él usa `TYCON_TELEGRAM_CHAT_ID`, `~/.claude/tycon.json` → `telegram.chat_id` o el plugin, y sin ninguno no avisa |
-| `TYCON_OBSERVER_EXECUTOR` | `auto` | `auto`\|`claude`\|`codex`\|`ollama` — qué herramienta usa el observer |
-| `TYCON_OBSERVER_MODEL` | `claude-haiku-4-5` | Model override del ejecutor `claude` |
-| `TYCON_OBSERVER_CODEX_MODEL` | `gpt-5.4-mini` | Model override del ejecutor `codex` |
-| `TYCON_OBSERVER_OLLAMA_MODEL` | `llama3.2:3b` | Model override del ejecutor `ollama` |
-| `TYCON_OLLAMA_URL` | `http://localhost:11434` | Endpoint de Ollama |
-
-## Bajo Codex (2026-08-24)
-
-La grabadora **corre en Codex igual que en Claude**: los hooks (`node instinct-observe.js` grabador,
-`instinct-trigger.sh`, que ya sólo repara la línea de arranque) están registrados en `adapters/codex/hooks.json`, y la
-grabadora la prende el mismo perfil que en Claude. El observador, como biblioteca o a mano, usa `codex exec -m
-gpt-5.4-mini` cuando no hay `claude`. Codex aprueba los ganchos por su hash: el cambio del comando de la grabadora pide
-la aprobación otra vez, una vez por máquina.
-- **Codex desde terminal**: hereda `~/.zshrc`, andan solas.
-- **Codex en el panel de VSCode (macOS)**: el panel gráfico no pasa por el rc, así que
-  `harness-env-publish.sh` (LaunchAgent, lo instala `install-tycon-hooks.sh`) publica esas flags con
-  `launchctl setenv` en cada SessionStart. Sin eso el observador queda mudo en el panel aunque el rc
-  las tenga.
-| `TYCON_GUIDES_DIR` | `~/.claude/tycon-harness` | Override path del repo |
+| `TYCON_INSTINCTS` | lo que diga el perfil | `=0` apaga la grabadora en esta máquina; `=1` la prende para probar |
+| `TYCON_INSTINCT_OBS_DIR` | `tycon-observations/` en la carpeta de los registros sueltos | dónde graba la grabadora |
+| `TYCON_INSTINCT_MINING`, `TYCON_INSTINCT_OBSERVER` | — | ya no hacen nada: el aviso de arranque lo dice una vez |
 
 ---
 
-## Formato del instinct YAML
+## Las propuestas de antes y `/tycon-instincts`
 
-```yaml
-hash: a1b2c3d4e5                           # determinístico de trigger+action
-trigger: "user dice 'X' o situación X ocurre"
-action: "hacer Y"
-confidence: 0.92                           # 0.0 - 1.0 (LLM)
-domain: "testing"                          # auth|testing|ui|build|story-format|...
-scope: project                             # project | global
-project: "Ceibo"                          # solo si scope=project
-evidence_count: 5                          # ocurrencias en el JSONL
-tycon_artifact_suggestion: "advisor:DOTNET-C7"   # null|skill:X|advisor:Y|hook:Z|guide:T
-reasoning: "Por qué este pattern importa"
-proposed_at: 2026-05-23T15:30:00Z
-engram_promoted: false                     # true post-approve
-approved_at: <ISO>                         # post-approve
-rejected_at: <ISO>                         # post-reject
-rejection_reason: "..."                    # post-reject
-```
+Hasta la noche de la organización, cada máquina corría un observador propio que dejaba propuestas en un buzón local.
+`/tycon-instincts` sigue para esas propuestas de antes (las de `pending/` y `promoted/`): `review`, `show`, `approve`,
+`reject` y `status`. Ya no tiene `run`, y el disparador del arranque (`scripts/hooks/instinct-trigger.sh`) ya no lanza el
+observador: sólo conserva la reparación de la línea de arranque. `scripts/instincts/instinct-observer.js` queda como
+biblioteca de la noche.
 
----
-
-## Anti-patterns y mitigaciones
-
-| Riesgo | Mitigación |
-|---|---|
-| Observer dispara con basura (instincts triviales) | Threshold ≥3 ocurrencias + ≥0.85 confidence. Prompt al LLM explícito: "ignorá lo obvio". Vos rechazás los ruidosos → archive con reason. |
-| Leak de secrets en JSONL local | Sanitization estricta + path-based exclusion + JSONL local (no git push automático). |
-| Devs ignoran pending → feature dead | Telegram push diario. Métrica `instincts_promoted_per_month` en `harness-audit.js`. Si <2/mes durante 3 meses → desactivar. |
-| Duplicados multi-máquina | Hash determinístico de `trigger+action`. La segunda máquina al chequear ve el hash existente, skip. |
-| JSONL crece sin límite | Rotación mensual built-in (`<YYYY-MM>.jsonl`). Después de N meses, archivá los viejos a `~/.claude/tycon-observations.archive/` si querés. |
-| Spam Telegram cross-machine | Notif solo cuando se escribe pending nuevo (post-dedup). |
-| Observer rompe la sesión Claude Code | Fail-open en todos los scripts. Spawn detached (`nohup &`). El observer nunca corre en foreground del Claude Code. |
-
----
-
-## Métricas (futuras — para harness-audit.js)
-
-- `instincts_pending_count` — cuántos pending hay ahora mismo
-- `instincts_promoted_per_month` — actividad real del loop (si <2/mes → feature dead)
-- `instincts_rejected_per_month` — calidad del observer (si >>promoted → prompt necesita tuning)
-- `instincts_draft_completion_rate` — drafts generados / drafts completados → si baja, el suggester está sugiriendo cosas que no valen
-
-Agregar como nueva categoría en `scripts/lib/harness-audit.js` ("Learning Loop").
-
----
-
-## Dónde viven las propuestas (2026-10-09)
-
-Por qué: si el observador, el disparador del arranque y `/tycon-instincts` crean el buzón dentro del
-árbol del arnés antes de mirar nada (también por ensayar con `--dry-run` o por listar), en un árbol que no trae esa
-carpeta —una versión bajada, que se reemplaza entera en cada actualización— lo escrito se pierde.
-
-La regla, que vive en una sola pieza (`scripts/instincts/instinct-dirs.js`):
+Dónde viven esas propuestas lo decide una sola pieza, `scripts/instincts/instinct-dirs.js`:
 
 | | Dónde se escribe | Cómo se reconoce |
 |---|---|---|
-| **Clon de quien mantiene el arnés** | `inbox/instincts/` _(del repo del equipo; no está en esta copia)_ del árbol, como siempre | El árbol **trae su buzón**: existe `inbox/instincts/README.md` _(del repo del equipo; no está en esta copia)_ (lo versiona el repo; ningún guion lo crea) |
-| **Arnés instalado en la máquina de quien mantiene** (el árbol no trae buzón y la configuración declara el clon del repo privado de mantenimiento, `paths.maintainers`) | El buzón de ese clon: `<clon privado>/inbox/instincts/`, versionado, así llega a las otras máquinas de quien mantiene | Ese clon trae su buzón (el mismo `README.md`) |
-| **Arnés instalado** (o cualquier árbol que no trae buzón, sin clon privado con buzón) | La casa de la persona: `<estado>/inbox/instincts/` | No existe ese archivo. `<estado>` es la carpeta de estado del arnés en esa máquina (`~/.tycon/state`, o la de siempre dentro de la carpeta de Claude Code si la máquina todavía no se mudó) |
+| **Clon de quien mantiene el arnés** | `inbox/instincts/` _(del repo del equipo; no está en esta copia)_ del árbol | El árbol **trae su buzón**: existe `inbox/instincts/README.md` _(del repo del equipo; no está en esta copia)_ (lo versiona el repo; ningún guion lo crea) |
+| **Arnés instalado en la máquina de quien mantiene** (el árbol no trae buzón y la configuración declara el clon del repo privado de mantenimiento, `paths.maintainers`) | El buzón de ese clon: `<clon privado>/inbox/instincts/` | Ese clon trae su buzón (el mismo `README.md`) |
+| **Arnés instalado** (sin clon privado con buzón) | La casa de la persona: `<estado>/inbox/instincts/` | No existe ese archivo. `<estado>` es la carpeta de estado del arnés en esa máquina |
 
-- **Se lee en todos los lugares**: donde se escribe, el buzón del clon privado (después del árbol, antes de la casa), lo
-  que haya quedado en el árbol, la casa, y el buzón del clon que la máquina declara que mantiene (`paths.maintained`).
-  Lo ya decidido en cualquiera de ellos no se vuelve a proponer.
-- **Nadie crea una carpeta por leer**: nacen al escribir el primer archivo.
-- **Aprobar y rechazar** mueven el archivo dentro del lugar donde estaba; el observador escribe sólo donde se escribe.
-- **Para ver dónde está cada cosa**: `/tycon-instincts status` (una línea por lugar con sus cuentas; el de escritura,
-  marcado), o `node scripts/instincts/instinct-dirs.js`.
-- **Lo que no se pudo leer, se dice.** Una carpeta que existe y no se deja leer nunca se muestra como vacía: `list` lo
-  avisa, `status` pone «?» en vez de un número, y el observador lo anota en su registro. Y si un lugar entero quedó sin
-  mirar (el clon declarado —el mantenido o el privado— no existe o no trae su buzón, la configuración de la máquina está
-  rota), `status` lo dice en un renglón que empieza con «!». Si el buzón del clon privado existe y no se deja mirar, no
-  se escribe en la casa en su lugar: el observador no escribe nada y lo anota en su registro; `status` y `list` siguen
-  mostrando lo de la casa, sin marcar un lugar de escritura, y dicen por qué.
-- **El registro del observador** (`observer.log`) vive en el lugar donde se escribe. Si el disparador del arranque no
-  puede usarlo —falta la pieza, no se sabe dónde es la casa, el archivo no abre—, el observador corre igual y su registro
-  va a uno de reserva al lado del sello del disparador (`instinct-observer.fallback.log`, en la carpeta de usuario), con
-  el motivo en el primer renglón. Si el grabador «no propone nada», es el primer lugar donde mirar.
+- **Se lee en todos los lugares**, y lo ya decidido en cualquiera de ellos no se vuelve a proponer. Nadie crea una
+  carpeta por leer.
+- **Lo descartado** por la revisión quedó en `inbox/instincts/descartados/` (local, fuera de git).
+- **Para ver dónde está cada cosa**: `/tycon-instincts status`, o `node scripts/instincts/instinct-dirs.js`. Una carpeta
+  que existe y no se deja leer nunca se muestra vacía: `status` pone «?», y un lugar entero sin mirar sale en un renglón
+  que empieza con «!».
 
-Lo que hay que saber de la casa de la persona:
+## El instalador viejo
 
-1. **No viaja por git.** En un arnés instalado no tenía por dónde viajar; por eso, si la máquina declara un clon del
-   repo privado de mantenimiento con buzón, se escribe ahí y no en la casa.
-2. **Desinstalar el arnés se la lleva** en una máquina que vive en `~/.tycon`: se borra la carpeta de estado, y con ella
-   las pendientes y las rechazadas. Lo aprobado ya quedó en la memoria (es lo que hace `approve`) y las observaciones
-   crudas viven aparte, así que el observador vuelve a proponer.
-3. **Lo que una versión anterior escribió dentro de un árbol instalado se pierde** en la primera actualización (el árbol
-   se reemplaza). Se vuelve a proponer solo.
+`scripts/setup/install-instinct-mining.sh` ya no hace falta: la grabadora la registra el instalador del arnés. Sin
+opciones sale 0 diciéndolo y no registra nada. `--uninstall` sigue sacando los ganchos que registraba antes, en Mac y
+Linux (en Windows nunca corrió).
 
 ## Referencias
 
-- ECC continuous-learning-v2: [github.com/affaan-m/ECC/blob/main/skills/continuous-learning-v2/SKILL.md](https://github.com/affaan-m/ECC/blob/main/skills/continuous-learning-v2/SKILL.md)
-- Scripts: `scripts/instincts/instinct-{observer,promote,draft}.js`, `scripts/instincts/instinct-dirs.js` (dónde se escribe y dónde se lee) + hooks `scripts/hooks/instinct-{observe,trigger}.sh`
-- Slash command: versionado en `commands/tycon-instincts.md`, enlazado a `~/.claude/commands/tycon-instincts.md` por el instalador. Verbos: `review` (alias de `list`, el que linkea el Telegram notify) · `show <hash>` · `approve <hash>` · `reject <hash> --reason "..."` · `status` · `run`.
-- Instalador: `scripts/setup/install-instinct-mining.sh` (registra hooks + enlaza el slash command, idempotente)
-
-> **Asimetría RESUELTA (2026-08-24)** — antes decía "bajo Codex no graba ni propone", y era un
-> **defecto**, no una decisión: el grabador (PostToolUse) sí estaba registrado del lado Codex, pero
-> el observer llamaba fijo al CLI `claude`, así que un dev que trabaja **solo en Codex** no recibía
-> ninguna propuesta. El razonamiento viejo ("una máquina alcanza") confundía *dos máquinas* con *dos
-> herramientas en la misma máquina*: el mismo dev en Claude y en Codex, con una de las dos ciega.
-> Arreglado haciendo el observer **agnóstico de ejecutor** (`resolveExecutor()` → claude/codex/ollama;
-> `codex exec -m gpt-5.4-mini --skip-git-repo-check -s read-only -o <file>`, verificado con llamada
-> real 2026-08-24: 12 s, YAML válido). Red: `scripts/tests/instinct-executor.test.sh` (5 casos con
-> stubs, incl. "solo-codex → propone"). Override manual: `TYCON_OBSERVER_EXECUTOR=claude|codex|ollama`.
+- La grabadora y su aviso: `integrations/instincts/scripts/instinct-observe.js` y `instincts-notice.js`; el manifiesto,
+  `integrations/instincts/integration.json`.
+- La subida: `scripts/instincts/instinct-upload.js`. La noche: `scripts/instincts/instinct-nightly.js` y
+  `instinct-model.js`, con su pipeline `pipelines/operations/instinct-proposals.yml`.
+- La pestaña: `scripts/site/tabs/learnings.js` (`guides/organization-site.md`, «Aprendizajes»).
+- Lo de antes: `scripts/instincts/instinct-{observer,promote,draft,dirs}.js` y `commands/tycon-instincts.md`.

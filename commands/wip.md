@@ -24,8 +24,16 @@ trae el comando todavía y que se actualiza con `/tycon-harness`. No corras nada
 ## Qué le mostrás
 
 La salida **tal cual**: la tabla (trabajo, estado, fin estimado, sesión, carpeta), la línea de las sesiones libres, y si
-aparecen, «Quedaron a medio camino» y «No se pudo leer». No agregues listas de terminados, ni resúmenes de lo que hace
-cada sesión, ni horas que la tabla no trae: «sin datos» se deja como está.
+aparecen, «Quedaron a medio camino», «No se pudo leer» y las esperas. No agregues listas de terminados, ni resúmenes de
+lo que hace cada sesión, ni horas que la tabla no trae: «sin datos» se deja como está.
+
+Las esperas van al final, en los mismos tres grupos que muestra la oficina, un renglón cada una; un grupo sin esperas no
+sale. «Esperan al dueño» es lo que sólo la persona contesta (una firma de la lista, una pregunta o un plan en pantalla),
+con el riesgo y la acción que propone su ficha. «Esperan a main» es un pedido que choca con main, o una sesión que anotó
+que espera que main avance. «Esperan a otra sesión» es lo que una sesión anotó que espera de otra. Una firma ya aprobada
+que espera que su sesión la repita, o una que firma la coordinadora, no espera al dueño y no sale. Las filas del tablero
+de la coordinadora tampoco: /wip muestra lo que pasa en la máquina. Si la oficina no contestó a tiempo, el bloque lo
+dice en un renglón: eso no quiere decir que no haya esperas.
 
 «Entrando a los repos» es una story que cerró el pipeline y espera que entren sus pedidos (la CI, la cola, un
 pedido en borrador): su sesión sigue ocupada. Se ve también después del cierre, cuando el pipeline ya borró su
