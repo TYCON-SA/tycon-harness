@@ -37,7 +37,8 @@ const PARTES = [
 const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 
 // La huella de la parte de instalación (desde «Qué hace falta antes» hasta el final). Si la instalación cambia a
-// propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma, en la máquina propia, la carpeta de la
+// propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma, en Google Cloud Run, sus dos límites (se
+// reserva /healthz, y el sitio contesta /health; y --timeout=3600 para las oficinas); antes sumó, en la máquina propia, la carpeta de la
 // actualización que el sitio monta (SITE_UPDATE_DIR) y qué hace quien ya la tenía instalada; antes sumó, en Render, la llave optativa de su API
 // para avisar si quedó instalado por etiqueta (SITE_RENDER_API_KEY y SITE_RENDER_SERVICE_ID, y el alcance de la llave);
 // antes sumó que SITE_TRUST_PROXY toma la lista de direcciones del intermediario (y que con `1` el sitio avisa); antes dejó fuera del candado las rutas de la máquina, dice
@@ -63,8 +64,8 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // línea «cambio aplicado» del registro, que ya no lleva el correo de quien propone; y, en inglés, sin el nombre castellano
 // de los botones entre paréntesis.
 const HUELLA_INSTALACION = {
-  es: 'a77dda86e2e96d7a0f1d300d6bc0be9803637d2c64bb436ee03605ac5a430b3c',
-  en: '54d77a5b9e958572d8cbaa81cbd73af8cf3886c0b1b23ec9a86c9d2b901205b4',
+  es: '6c3a160d456ce23a74b8b159b298f4941bfa829e9b146b9f9ae957a4836d0338',
+  en: '18ea8af7f0ca0da8d5b60b97d1986a2ddca039d35cfc2f483b1025da92853947',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {

@@ -1764,8 +1764,9 @@ to the link. What to fix is the lock's setting, not the image.
 It also asks for the machine routes (`/live/machine` and `/live/enroll`) without a session. Machines cannot get past the
 platform's lock, so if it answers them the check warns "falta el paso de una vez" (the one-time step is missing), without
 failing: an organization that does not use offices does not need it. In Azure, it is
-the same `--excluded-paths` command from the recipe, which already names them. Do it before setting `site.url` in the
-profile.
+the same `--excluded-paths` command from the recipe, which already names them. In Google Cloud Run, also set the service
+timeout to 3600 s (`--timeout=3600`, in "Kubernetes and other clouds"): with 60 s, the offices' connection is cut every
+minute. Do it before setting `site.url` in the profile.
 
 The site also has to see who is asking. Behind an intermediary, every connection arrives from its address, and the limits
 per address would apply to the whole internet: two unsigned connections would hold back any machine. New installs already
@@ -1942,6 +1943,14 @@ az storage container generate-sas --account-name <account> -n <container> --poli
 Updater or Flux (with the strategy that resolves `stable` to its digest), or each cloud's own command to change a
 service image (Cloud Run: `gcloud run deploy --image <image>@<digest>`). After the change, the check without a session:
 `node scripts/site/check-deploy.js --url https://<address>`.
+
+**Google Cloud Run has two limits of its own.** It reserves `/healthz`: its front end answers it with a 404 and the
+request never reaches the site. That is why the site answers the same on `/health`, and the check without a session asks
+it only when `/healthz` is answered by someone else; a Cloud Run probe of your own goes against `/livez`, never
+`/healthz`. And it cuts every request when the service timeout runs out, 60 s unless changed: the offices' connection
+would be cut every minute. When creating the service, `--timeout=3600` (the maximum). It does not change the cost: with
+a machine connected there is always an open request. On an existing one:
+`gcloud run services update <service> --region <region> --timeout=3600`.
 
 ### A closed network
 

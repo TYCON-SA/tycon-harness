@@ -1701,8 +1701,9 @@ pasó el escáner y su firma se verificó; `stable` nunca vuelve atrás. Con eso
   «Inicio de sesión»). Las instalaciones nuevas ya lo traen.
 - **El mismo paso, al pasar a una versión con las oficinas.** Las máquinas no tienen cómo pasar el candado de la
   plataforma, así que `/live/machine` y `/live/enroll` tienen que quedar fuera. Sin eso, la prueba sin sesión avisa
-  «falta el paso de una vez», sin fallar: una organización que no usa oficinas no lo necesita. En Azure, es la misma orden de `--excluded-paths` de la receta, que ya las nombra. Hacelo
-  antes de poner `site.url` en el perfil.
+  «falta el paso de una vez», sin fallar: una organización que no usa oficinas no lo necesita. En Azure, es la misma orden de `--excluded-paths` de la receta, que ya las nombra. En
+  Google Cloud Run, además, el plazo del servicio en 3600 s (`--timeout=3600`, en «Kubernetes y otras nubes»): con el de
+  60 s, la conexión de las oficinas se corta cada minuto. Hacelo antes de poner `site.url` en el perfil.
 - **Y que el sitio vea la dirección de quien pide.** Detrás de un intermediario, todas las conexiones llegan desde su
   dirección, y los topes por dirección valdrían para toda internet: dos conexiones sin firmar frenarían a cualquier
   máquina. Las instalaciones nuevas ya lo traen. En una ya instalada, poné `SITE_TRUST_PROXY=1` en las variables del sitio
@@ -1904,6 +1905,13 @@ az storage container generate-sas --account-name <cuenta> -n <contenedor> --poli
 Argo CD Image Updater o Flux (con la estrategia que resuelve `stable` a su huella), o la misma orden de cada nube para
 cambiar la imagen de un servicio (Cloud Run: `gcloud run deploy --image <imagen>@<huella>`). Después del cambio, la prueba
 sin sesión: `node scripts/site/check-deploy.js --url https://<dirección>`.
+
+**Google Cloud Run tiene dos límites propios.** Se reserva `/healthz`: la contesta su frente con un 404 y el pedido no
+llega al sitio. Por eso el sitio contesta lo mismo en `/health`, y la prueba sin sesión lo pregunta sólo cuando a
+`/healthz` la contesta otro; una sonda propia de Cloud Run va contra `/livez`, nunca contra `/healthz`. Y corta cada
+pedido al vencer el plazo del servicio, 60 s si no se cambia: la conexión de las oficinas se cortaría cada minuto. Al
+crear el servicio, `--timeout=3600` (el máximo). No cambia el costo: con una máquina conectada siempre hay un pedido
+abierto. En uno ya creado: `gcloud run services update <servicio> --region <región> --timeout=3600`.
 
 ### Una red cerrada
 

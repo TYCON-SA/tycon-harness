@@ -253,3 +253,58 @@ test('Prueba_HttpDeLaMismaDireccion @story-2.30 @ac-6', async () => {
   assert.strictEqual(r.status, 0, `no contesta por http: pasa · ${r.stdout}${r.stderr}`);
   await Promise.all([s.cerrar(), abierta.cerrar(), redirige.cerrar()]);
 });
+
+// Google Cloud Run se reserva /healthz: la contesta su frente con un 404 en HTML y el pedido nunca llega al sitio. La
+// prueba sigue con /health, el mismo control con otro nombre, sólo cuando la respuesta de /healthz no es del sitio
+const PAGINA_DE_GOOGLE = '<!DOCTYPE html><html lang=en><title>Error 404 (Not Found)!!1</title><p><b>404.</b> <ins>That’s an error.</ins>';
+const frenteDeCloudRun = (health) => (req, res) => {
+  const ruta = req.url.split('?')[0];
+  if (ruta === '/healthz') { res.writeHead(404, { 'Content-Type': 'text/html; charset=UTF-8' }); return res.end(PAGINA_DE_GOOGLE); }
+  if (ruta === '/health') return health ? health(res) : json(res, 200, { ok: true });
+  return sitioCerrado(req, res);
+};
+
+test('T1777a Prueba_CloudRunReservaHealthz_SigueConHealth', async () => {
+  const s = await servidor(frenteDeCloudRun());
+  try {
+    const out = path.join(tmp, 't1777a.json');
+    const r = await correr(['--url', s.url, '--out', out]);
+    const doc = JSON.parse(fs.readFileSync(out, 'utf8'));
+    assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+    assert.strictEqual(doc.resultado, 'paso', JSON.stringify(doc));
+    assert.match(doc.capas.healthz, /404 \(no es del sitio\) · \/health 200/);
+  } finally { await s.cerrar(); }
+});
+
+test('T1777b Prueba_CloudRunConHealthFrenadoOQueCuentaDeMas_Falla', async () => {
+  // /health lleva los mismos controles que /healthz: frenado es falla, y una clave de más también
+  for (const [health, motivo] of [[(r) => json(r, 503, { ok: false, motivo: 'frenado' }), 'el sitio está frenado'], [(r) => json(r, 200, { ok: true, host: 'x' }), '/healthz cuenta de más']]) {
+    const s = await servidor(frenteDeCloudRun(health));
+    try {
+      const r = await correr(['--url', s.url]);
+      assert.strictEqual(r.status, 1, r.stdout + r.stderr);
+      assert.match(r.stdout + r.stderr, new RegExp(motivo));
+    } finally { await s.cerrar(); }
+  }
+});
+
+test('T1777c Prueba_HealthSoloSiHealthzNoEsDelSitio', async () => {
+  // un sitio viejo, sin /health, detrás de Cloud Run: sigue sin poder preguntar, como antes
+  const viejo = await servidor(frenteDeCloudRun((r) => { r.writeHead(404, { 'Content-Type': 'text/html' }); r.end(PAGINA_DE_GOOGLE); }));
+  // un 404 que contesta el sitio (con JSON) no es Cloud Run: no se prueba /health y no pasa
+  const pidioHealth = [];
+  const propio = await servidor((req, res) => {
+    const ruta = req.url.split('?')[0];
+    if (ruta === '/health') pidioHealth.push(ruta);
+    if (ruta === '/healthz') return json(res, 404, { ok: false });
+    return frenteDeCloudRun()(req, res);
+  });
+  try {
+    const r = await correr(['--url', viejo.url]);
+    assert.strictEqual(r.status, 2, r.stdout + r.stderr);
+    assert.match(r.stdout + r.stderr, /\/healthz no contestó como el sitio/);
+    const r2 = await correr(['--url', propio.url]);
+    assert.strictEqual(r2.status, 2, r2.stdout + r2.stderr);
+    assert.deepStrictEqual(pidioHealth, [], 'con un 404 del sitio no se pregunta /health');
+  } finally { await viejo.cerrar(); await propio.cerrar(); }
+});
