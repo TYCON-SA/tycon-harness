@@ -201,6 +201,8 @@ test('T4c AdversarialPass_ParseDots_GitattributesRefused_RequiresExtraKey_CarryV
   const harness = path.join(lab, 'harness'); const incoming = path.join(lab, 'incoming');
   fs.mkdirSync(path.join(incoming, 'scripts'), { recursive: true });
   fs.cpSync(path.join(ROOT, 'scripts', 'lib'), path.join(incoming, 'scripts', 'lib'), { recursive: true });
+  fs.mkdirSync(path.join(incoming, 'scripts', 'setup', 'harness'), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js'), path.join(incoming, 'scripts', 'setup', 'harness', 'tycon-home.js'));
   // el lector de la versión nueva ya no conoce la sección `packs`: un perfil que vale con el lector actual queda «roto» ahí
   const reader = path.join(incoming, 'scripts', 'lib', 'tycon-config.js');
   fs.writeFileSync(reader, fs.readFileSync(reader, 'utf8').replace(/\n\s*packs:\s*Object\.freeze\([^\n]*\n/, '\n'));
@@ -224,6 +226,8 @@ test('T4c AdversarialPass_ParseDots_GitattributesRefused_RequiresExtraKey_CarryV
   fs.writeFileSync(path.join(cacheDir, TEAM.MANIFEST_NAME), JSON.stringify({ schema: 1, repo: 'otro/repo', ref: 'main', commit: SHA(9), tree: SHA(10), etag: '"viejo"', name: 'otro', requires: '2026.01.01.1', files: [], fetched_at: '2026-01-01T00:00:00.000Z' }));
   const inc2 = path.join(lab, 'incoming2'); fs.mkdirSync(path.join(inc2, 'scripts'), { recursive: true });
   fs.cpSync(path.join(ROOT, 'scripts', 'lib'), path.join(inc2, 'scripts', 'lib'), { recursive: true });
+  fs.mkdirSync(path.join(inc2, 'scripts', 'setup', 'harness'), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js'), path.join(inc2, 'scripts', 'setup', 'harness', 'tycon-home.js'));
   const resolved = { repo: 'acme/equipo', ref: 'main', commit: SHA(9), tree: SHA(10), etag: '"nuevo"', files: [{ path: 'perfil-equipo.json', mode: '100644', sha: GH.blobSha(Buffer.from(text)) }], declaration: { name: 'equipo', requires: '2026.10.01.1' } };
   const st = TEAM.stackTeam({ resolved, cacheDir, files: [{ path: 'perfil-equipo.json', mode: '100644', blob: GH.blobSha(Buffer.from(text)) }] }, inc2, { home: lab, env: {} });
   assert.equal(st.ok, true, JSON.stringify(st));
@@ -356,6 +360,8 @@ test('T10u RefreshInPlace_Transaction_EditedKept_RemovedOnlyClosedAndIntact_Publ
   const harness = path.join(lab, 'harness');
   fs.mkdirSync(path.join(harness, 'scripts', 'metrics'), { recursive: true });
   fs.cpSync(path.join(ROOT, 'scripts', 'lib'), path.join(harness, 'scripts', 'lib'), { recursive: true });
+  fs.mkdirSync(path.join(harness, 'scripts', 'setup', 'harness'), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js'), path.join(harness, 'scripts', 'setup', 'harness', 'tycon-home.js'));
   const P0 = '{ "integrations": { "engram": true } }\n', P1 = '{ "integrations": { "engram": true, "nightly": true } }\n';
   const K0 = '{ "cuenta": "x" }\n', K1 = '{ "cuenta": "y" }\n';
   // el manifiesto público de la versión instalada trae version.json: el refresco no lo toca aunque el manifiesto de la capa lo nombre
@@ -1792,6 +1798,8 @@ test('TPN Team_ProfileName_NewOldBoth_LayerAcceptsBoth_OldSaysHowToRename_BothNe
   // (5) validar: el motivo nombra el archivo que trae la capa
   const readerTree = path.join(lab, 'reader'); fs.mkdirSync(path.join(readerTree, 'scripts'), { recursive: true });
   fs.cpSync(path.join(ROOT, 'scripts', 'lib'), path.join(readerTree, 'scripts', 'lib'), { recursive: true });
+  fs.mkdirSync(path.join(readerTree, 'scripts', 'setup', 'harness'), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js'), path.join(readerTree, 'scripts', 'setup', 'harness', 'tycon-home.js'));
   const bad = TEAM.validateProfile('{ roto', { readerTree, home: lab, name: 'team-profile.json' });
   assert.equal(bad.ok, false); assert.match(bad.reason, /^team-profile\.json es ilegible/);
   const badKey = TEAM.validateProfile('{ "inventada": { "x": 1 } }\n', { readerTree, home: lab, name: 'team-profile.json' });
@@ -1800,6 +1808,8 @@ test('TPN Team_ProfileName_NewOldBoth_LayerAcceptsBoth_OldSaysHowToRename_BothNe
   // …y con un lector de una versión anterior, que sólo conoce el nombre de antes, el perfil nuevo también se valida
   const oldReader = path.join(lab, 'old-reader'); fs.mkdirSync(path.join(oldReader, 'scripts'), { recursive: true });
   fs.cpSync(path.join(ROOT, 'scripts', 'lib'), path.join(oldReader, 'scripts', 'lib'), { recursive: true });
+  fs.mkdirSync(path.join(oldReader, 'scripts', 'setup', 'harness'), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js'), path.join(oldReader, 'scripts', 'setup', 'harness', 'tycon-home.js'));
   const oldTc = path.join(oldReader, 'scripts', 'lib', 'tycon-config.js');
   const src = fs.readFileSync(oldTc, 'utf8').replace("const NOMBRE_PERFIL = 'team-profile.json';", "const NOMBRE_PERFIL = 'perfil-equipo.json';");
   assert.ok(src.includes("const NOMBRE_PERFIL = 'perfil-equipo.json';"), 'el lector de juguete busca sólo el nombre de antes');
@@ -1811,6 +1821,8 @@ test('TPN Team_ProfileName_NewOldBoth_LayerAcceptsBoth_OldSaysHowToRename_BothNe
   fs.writeFileSync(path.join(cacheDir, 'team-profile.json'), P);
   const inc = path.join(lab, 'incoming'); fs.mkdirSync(path.join(inc, 'scripts'), { recursive: true });
   fs.cpSync(path.join(ROOT, 'scripts', 'lib'), path.join(inc, 'scripts', 'lib'), { recursive: true });
+  fs.mkdirSync(path.join(inc, 'scripts', 'setup', 'harness'), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js'), path.join(inc, 'scripts', 'setup', 'harness', 'tycon-home.js'));
   const files = [{ path: 'team-profile.json', mode: '100644', blob: b(P) }];
   const resolved = { repo: 'acme/equipo', ref: 'main', commit: SHA(9), tree: SHA(10), etag: null, files: files.map((f) => ({ path: f.path, mode: f.mode, sha: f.blob })), declaration: { name: 'e', requires: '2026.10.01.1' } };
   const st = TEAM.stackTeam({ resolved, cacheDir, files }, inc, { home: lab, env: {} });
@@ -1822,6 +1834,8 @@ test('TPN Team_ProfileName_NewOldBoth_LayerAcceptsBoth_OldSaysHowToRename_BothNe
   assert.equal(read.valores.integraciones.engram, true); assert.equal(read.origenes['integraciones.engram'], 'perfil');
   const inc2 = path.join(lab, 'incoming2'); fs.mkdirSync(path.join(inc2, 'scripts'), { recursive: true });
   fs.cpSync(path.join(ROOT, 'scripts', 'lib'), path.join(inc2, 'scripts', 'lib'), { recursive: true });
+  fs.mkdirSync(path.join(inc2, 'scripts', 'setup', 'harness'), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js'), path.join(inc2, 'scripts', 'setup', 'harness', 'tycon-home.js'));
   const cacheBad = path.join(lab, 'cache-bad'); fs.mkdirSync(cacheBad);
   const PB = '{ "install": { "home": true } }\n';
   fs.writeFileSync(path.join(cacheBad, 'team-profile.json'), PB);
@@ -1832,6 +1846,8 @@ test('TPN Team_ProfileName_NewOldBoth_LayerAcceptsBoth_OldSaysHowToRename_BothNe
   // (7) el refresco en el lugar cuando el repo del equipo renombra: queda el nuevo y el de antes (con su blob) se borra
   const harness = path.join(lab, 'harness'); fs.mkdirSync(path.join(harness, 'scripts'), { recursive: true });
   fs.cpSync(path.join(ROOT, 'scripts', 'lib'), path.join(harness, 'scripts', 'lib'), { recursive: true });
+  fs.mkdirSync(path.join(harness, 'scripts', 'setup', 'harness'), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js'), path.join(harness, 'scripts', 'setup', 'harness', 'tycon-home.js'));
   fs.writeFileSync(path.join(harness, 'perfil-equipo.json'), P);
   fs.writeFileSync(path.join(harness, TEAM.MANIFEST_NAME), JSON.stringify({ schema: 1, repo: 'acme/equipo', ref: 'main', commit: SHA(1), tree: SHA(2), name: 'e', requires: '2026.10.01.1', files: [{ path: 'perfil-equipo.json', mode: '100644', blob: b(P) }] }));
   const rf = TEAM.refreshInPlace({ cacheDir, files, resolved: Object.assign({}, resolved, { commit: SHA(3), tree: SHA(4) }) }, harness, { home: lab, env: {} });

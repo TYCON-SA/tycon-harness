@@ -9,6 +9,13 @@
       "retired_by": "8.24"
     },
     {
+      "path": "scripts/production/guard-libs/setup/harness/tycon-home.js",
+      "why": "la copia de tycon-home.js que viaja con el freno de producción (/opt/tycon/setup/harness/): es la misma definición de dónde vive el arnés que su fuente, y las otras copias del freno le piden sus rutas",
+      "retire_with": "con su fuente: 8.23 tanda B (las rutas pasan a ~/.tycon) y tanda E (el nombre viejo sale)",
+      "retire_after": "2026-12-07",
+      "retired_by": "8.24"
+    },
+    {
       "path": "scripts/lib/state-dir.sh",
       "why": "la misma definición que tycon-home.js, dicha en shell para los hooks que no pueden pagar el arranque de Node en cada comando (story 8.150): la única copia de la ruta en shell; su paridad con tycon-home.js la mide scripts/tests/state-dir-parity.test.js",
       "retire_with": "8.23 tanda E (el nombre viejo sale)",
@@ -55,36 +62,6 @@
   "until_d": [
     {
       "path": "scripts/hooks/prod-access-guard.js",
-      "why": "viaja al freno de producción en /opt: desde la tanda D (2026-10-08) le pide la carpeta del estado a tycon-home.js si está al lado (en /opt viaja su copia) y sólo sin ella arma la de siempre: la mención queda como respaldo",
-      "retire_after": "2026-12-07",
-      "retired_by": "8.24"
-    },
-    {
-      "path": "scripts/lib/guard-record.js",
-      "why": "viaja al freno de producción en /opt: desde la tanda D (2026-10-08) le pide la carpeta del estado a tycon-home.js si está al lado (en /opt viaja su copia) y sólo sin ella arma la de siempre: la mención queda como respaldo",
-      "retire_after": "2026-12-07",
-      "retired_by": "8.24"
-    },
-    {
-      "path": "scripts/production/guard-libs/lib/guard-record.js",
-      "why": "la copia propia del freno de producción (2026-10-14) de scripts/lib/guard-record.js: es la que viaja a /opt, byte a byte la compartida, con el mismo respaldo; se retira cuando la compartida lo saque y quien mantiene refresque la copia (guard-libs-check.js refresh)",
-      "retire_after": "2026-12-07",
-      "retired_by": "8.24"
-    },
-    {
-      "path": "scripts/lib/legacy-names.js",
-      "why": "viaja al freno de producción en /opt: desde la tanda D (2026-10-08) le pide la carpeta del estado a tycon-home.js si está al lado (en /opt viaja su copia) y sólo sin ella arma la de siempre: la mención queda como respaldo",
-      "retire_after": "2026-12-07",
-      "retired_by": "8.24"
-    },
-    {
-      "path": "scripts/lib/tycon-config.js",
-      "why": "viaja al freno de producción en /opt: desde la tanda D (2026-10-08) le pide la carpeta del estado a tycon-home.js si está al lado (en /opt viaja su copia) y sólo sin ella arma la de siempre: la mención queda como respaldo",
-      "retire_after": "2026-12-07",
-      "retired_by": "8.24"
-    },
-    {
-      "path": "scripts/production/production-index.js",
       "why": "viaja al freno de producción en /opt: desde la tanda D (2026-10-08) le pide la carpeta del estado a tycon-home.js si está al lado (en /opt viaja su copia) y sólo sin ella arma la de siempre: la mención queda como respaldo",
       "retire_after": "2026-12-07",
       "retired_by": "8.24"

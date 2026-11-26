@@ -61,14 +61,15 @@
  * ----------------------------------------
  * Este archivo vive SOLO acá. Los repos lo referencian por path; no se duplica.
  * Se puede porque el onboarding del equipo clona el arnés en una ruta
- * fija (`~/.claude/tycon-harness`) y el hook `SessionStart` le hace
+ * fija (el lugar del arnés, `placePath` de scripts/setup/harness/tycon-home.js) y el hook `SessionStart` le hace
  * `git pull` en cada arranque → está en la máquina de todos los devs. Y porque un
  * `pre-commit` corre SIEMPRE en local, nunca en CI: no hay otro entorno donde el
  * path pueda faltar.
  *
- * Pegar en el `.githooks/pre-commit` del repo:
+ * Pegar en el `.githooks/pre-commit` del repo (cómo se arma `TYCON_GUIDES_DIR` sin la variable lo dice la plantilla
+ * scripts/setup/harness/team-stories/githooks-pre-commit, que es la que deja el alta):
  *
- *     TYCON_GUIDES_DIR="${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}"
+ *     # TYCON_GUIDES_DIR: el lugar del arnés, como en la plantilla
  *     FM_LINT="$TYCON_GUIDES_DIR/scripts/lib/lint-story-frontmatter.js"
  *     # Se le pasan TODOS los .md del commit: el filtro "esto es una story" lo hace el lint. Con un grep
  *     # `^specs/stories/.*\.md$`, en un repo con otro layout el hook no le pasaría NADA y el lint diría OK sin haber

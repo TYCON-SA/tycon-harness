@@ -20,7 +20,7 @@
  *   · no borra nunca una entrada (fantasmas y duplicados se listan: borrar es otra decisión).
  *   · no inventa una entrada desde nada: si el chunk no se puede leer y la historia no la tiene,
  *     queda en `noReparadas` con su motivo.
- *   · no sabe de `~/.claude/`, ni de `harness-audit.js`, ni de `repos-root.js` — recibe un
+ *   · no sabe de las carpetas de la máquina, ni de `harness-audit.js`, ni de `repos-root.js` — recibe un
  *     directorio y nada más, para que el portón lo pueda cargar en un agente de CI.
  *
  * Uso:

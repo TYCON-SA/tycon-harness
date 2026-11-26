@@ -23,7 +23,7 @@ const path = require('path');
 // da rutas falsas — la cabecera de command-vars.js dice por qué.)
 const { expandirRuta } = require('./command-vars.js');
 const { logHookError } = require('./bash-gate-net.js');
-const { ABRE_O_CIERRA, CON_PALABRA_PROPIA, COPIA, DELIMITADOR_DE_HEREDOC, DESTINO_LITERAL, EMPIEZA_REDIRECCION, ESCRIBE_LO_QUE_NOMBRA, HONDO_DE_ENV_S, INTERPRETES, MODIFICADORES_DE_ZSH, PREFIJO, Q, SIGUE_UN_COMANDO, antesDeUnaRedireccion, archivoQueAbre, archivosDeRsync, argumentosDe, carpetaDeCd, cierreDeParentesis, cierresDe, corredoresDeLaOrganizacion, destinosDelSedEnSitio, empiezaCuenta, finDeCuenta, finDeSustitucion, guionDeSedSinEfectos, guionesInternos, leerArmado, nombresDelPrograma, palabras, palabrasDelComando, piezasDeTramo, primerArgumento, programasPorEntrada, sinEscapesDeComillas, sinPalabrasDeBloque, sinRedireccionesDelante, sinSustitucionesCerradas, splitSegments, textosCitados, tok, ultimosArgumentos } = require('./bash-gate-words.js');
+const { ABRE_O_CIERRA, CON_PALABRA_PROPIA, COPIA, DELIMITADOR_DE_HEREDOC, MARCA_DE_CUERPO, DESTINO_LITERAL, EMPIEZA_REDIRECCION, ESCRIBE_LO_QUE_NOMBRA, HONDO_DE_ENV_S, INTERPRETES, MODIFICADORES_DE_ZSH, PREFIJO, Q, SIGUE_UN_COMANDO, antesDeUnaRedireccion, archivoQueAbre, archivosDeRsync, argumentosDe, carpetaDeCd, cierreDeParentesis, cierresDe, corredoresDeLaOrganizacion, destinosDelSedEnSitio, empiezaCuenta, finDeCuenta, finDeSustitucion, guionDeSedSinEfectos, guionesInternos, leerArmado, nombresDelPrograma, palabras, palabrasDelComando, piezasDeTramo, primerArgumento, programasPorEntrada, sinEscapesDeComillas, sinBlancosAlBorde, sinPalabrasDeBloque, sinRedireccionesDelante, sinSustitucionesCerradas, splitSegments, textosCitados, tok, ultimosArgumentos } = require('./bash-gate-words.js');
 const { TOPE_DE_CARPETAS_DE_CD, abreParaEscribir, citados, cpMvDest, destinosDeCpMv, nombreDeComando, opcionesDelEnvoltorio, palabraConAnsi, palabraDelShell, palabrasEnteras, partidorComun, pelarEnv, resolveTarget, sinPalabrasDelShell } = require('./bash-gate-expansions.js');
 
 /**
@@ -95,16 +95,198 @@ function programaEntre(piezas, info = null) {
  *  - los strings entre comillas que NO son el token inmediato tras `>`/`>>`/`tee` (`-m "..."`, `-e "..."`,
  *    `grep "sed -i"`), para que su contenido no se lea como redirecciones ni como archivos.
  */
-function stripNonCommandText(s) {
+function stripNonCommandText(s, hondo = 0) {
   // Heredocs: <<EOF / <<-EOF / <<'EOF' / <<"EOF" … hasta la línea que es sólo el delimitador, con el mismo lector que
   // los tramos (`quitarCuerposDeHeredoc`): un `<<EOF` adentro de un comentario no abre nada, y lo de abajo corre. Después,
-  // los comentarios: una comilla adentro de uno no abre un texto entre comillas que se vacía con lo de abajo
-  let t = conComentariosApagados(quitarCuerposDeHeredoc(s));
-  // Strings entre comillas que no siguen a un operador de redirección / tee: se vacían (quedan las comillas), salvo
-  // los que pueden ser un nombre de archivo (sin espacios ni operadores): `cp a "<dir>/b.md"` sigue nombrando su destino.
-  t = t.replace(/(^|[^>\w])(?<!tee[ \t]+)(?<!>[ \t]*)(['"])((?:\\.|(?!\2)[^\\])*)\2/g,
-    (m, pre, q, body) => (/^[^\s'"|;&<>`()]+$/.test(body) ? m : `${pre}${q}${q}`));
-  return t;
+  // los comentarios: una comilla adentro de uno no abre un texto entre comillas que se vacía con lo de abajo. Un carácter
+  // nulo no llega al shell, y sale antes de marcar los cuerpos sacados (las marcas se borran al final)
+  const sinNulos = String(s || '').split(MARCA_DE_CUERPO).join('');
+  const t = conComentariosApagados(quitarCuerposDeHeredoc(sinNulos, true));
+  return vaciarCitados(t, hondo).replace(RENGLON_DE_MARCA, '');
+}
+
+// cómo se borra el renglón que deja un cuerpo de heredoc sacado (`MARCA_DE_CUERPO`, de bash-gate-words.js)
+const RENGLON_DE_MARCA = /\u0000[^\n]*/g;
+
+// cuántas sustituciones adentro de otras se leen como comandos: más hondo, quedan las otras lecturas
+const HONDO_DE_CITADOS = 4;
+// cuántas sustituciones una adentro de otra sigue el cierre antes de darla por abierta (la pila tiene un fondo)
+const HONDO_DE_CIERRE = 200;
+
+/**
+ * Si en `t[i]` empieza una sustitución (`$(…)` o la comilla invertida), dónde termina: el índice de su último carácter,
+ * -1 si no cierra, o `i` si ahí no empieza ninguna. Cuenta los paréntesis que se abren adentro y salta lo citado: un `)`
+ * entre comillas (`$(grep -c ')' f)`) no la cierra. Salta también el cuerpo de sus heredocs: un apóstrofo en el mensaje
+ * de `git commit -m "$(cat <<'EOF' … EOF)"` no es una comilla. Más de `HONDO_DE_CIERRE` sustituciones una adentro de otra
+ * se toman como sin cierre: el resto se lee como está.
+ */
+function cierreDeUnaSustitucion(t, i, prof = 0) {
+  if (t[i] === '`') return t.indexOf('`', i + 1);
+  if (t[i] !== '$' || t[i + 1] !== '(') return i;
+  if (prof >= HONDO_DE_CIERRE) return -1;
+  // en una cuenta (`$((1 << 2))`) un `<<` no abre un heredoc
+  const cuenta = t[i + 2] === '(';
+  let hondo = 0;
+  // los heredocs abiertos en el renglón: su cuerpo empieza en el renglón siguiente
+  const pendientes = [];
+  for (let j = i + 1; j < t.length; j++) {
+    const c = t[j];
+    if (c === '\\') { j++; continue; }
+    if (c === '\n' && pendientes.length) {
+      const fin = finDeCuerpos(t, j + 1, pendientes.splice(0));
+      if (fin < 0) return -1;
+      j = fin - 1;
+      continue;
+    }
+    if (c === '<' && t[j + 1] === '<' && !cuenta) {
+      if (t[j + 2] === '<') { j += 2; continue; }
+      const h = delimitadorDeHeredoc(t, j + 2);
+      if (h) { pendientes.push(h); j = h.fin - 1; continue; }
+    }
+    if (c === '$' && t[j + 1] === '(') {
+      const f = cierreDeUnaSustitucion(t, j, prof + 1);
+      if (f === -1) return -1;
+      j = f;
+      continue;
+    }
+    if (c === "'") {
+      // `$'…'`: la barra escapa
+      if (t[j - 1] === '$') { j++; while (j < t.length && t[j] !== "'") j += t[j] === '\\' ? 2 : 1; } else j = t.indexOf("'", j + 1);
+      if (j < 0 || j >= t.length) return -1;
+      continue;
+    }
+    if (c === '"') {
+      for (j++; j < t.length && t[j] !== '"'; j++) {
+        if (t[j] === '\\') { j++; continue; }
+        const f = cierreDeUnaSustitucion(t, j, prof + 1);
+        if (f === -1) return -1;
+        j = f;
+      }
+      if (j >= t.length) return -1;
+      continue;
+    }
+    if (c === '`') { j = t.indexOf('`', j + 1); if (j < 0) return -1; continue; }
+    if (c === '(') hondo++;
+    else if (c === ')' && --hondo === 0) return j;
+  }
+  return -1;
+}
+
+/**
+ * El delimitador del heredoc cuya palabra empieza en `t[k]` (justo después de `<<`): `{ delim, dash, fin }`, con `fin`
+ * donde termina la palabra, o null si no hay una. La palabra se lee con la misma expresión que `delimitadoresQueAbre`:
+ * los heredocs que salta el cierre son los mismos cuyos cuerpos saca `quitarCuerposDeHeredoc`.
+ */
+function delimitadorDeHeredoc(t, k) {
+  DELIMITADOR_DE_HEREDOC.lastIndex = k;
+  const m = DELIMITADOR_DE_HEREDOC.exec(t);
+  return m ? { delim: m[2], dash: m[0].startsWith('-'), fin: DELIMITADOR_DE_HEREDOC.lastIndex } : null;
+}
+
+/** Dónde sigue `t` después de los cuerpos de los heredocs `abiertos`, uno detrás del otro desde `pos`; -1 si alguno no cierra. */
+function finDeCuerpos(t, pos, abiertos) {
+  for (const h of abiertos) {
+    for (;;) {
+      const e = t.indexOf('\n', pos);
+      const linea = t.slice(pos, e < 0 ? t.length : e);
+      pos = e < 0 ? t.length : e + 1;
+      // el cuerpo ya sacado deja su marca; si no, el cuerpo sigue ahí, hasta su delimitador
+      if (linea === MARCA_DE_CUERPO + h.delim || (h.dash ? linea.replace(/^\t+/, '') : linea) === h.delim) break;
+      if (e < 0) return -1;
+    }
+  }
+  return pos;
+}
+
+/**
+ * `t` con sus textos entre comillas vaciados (quedan las comillas), para que su contenido no se lea como redirecciones
+ * ni como archivos. No se vacían los que pueden ser un nombre de archivo (sin blancos ni operadores: `cp a "<dir>/b.md"`
+ * sigue nombrando su destino), los que siguen a un `>` o a `tee`, ni los pegados a una palabra. Entre comillas simples
+ * una barra es una letra (`'x\'` termina ahí); en `$'…'`, escapa. Lo que corre adentro de una sustitución
+ * (`x="$(cat > f <<'EOF' … )"`, `${x:-$(cp a b)}`) es comando: se suma al final, cada uno en su renglón.
+ */
+function vaciarCitados(t, hondo = 0) {
+  const { texto, comandos } = leerCitados(t, hondo);
+  return comandos.length ? `${texto}\n${comandos.join('\n')}` : texto;
+}
+
+/**
+ * Los textos entre comillas vaciados con una expresión, como se leía antes de `leerCitados`: no sabe de sustituciones ni
+ * de `$'…'`, y toma la barra como escape también entre comillas simples. Quedan los que pueden ser un nombre de archivo y
+ * los que siguen a un `>` o a `tee`.
+ */
+function vaciarConExpresion(t) {
+  return t.replace(/(^|[^>\w])(?<!tee[ \t]+)(?<!>[ \t]*)(['"])((?:\\.|(?!\2)[^\\])*)\2/g, (m, pre, q, body) => (/^[^\s'"|;&<>`()]+$/.test(body) ? m : `${pre}${q}${q}`));
+}
+
+/** La lectura de `vaciarCitados`: `{ texto, comandos }`, el texto vaciado y lo que corre en sus sustituciones. */
+function leerCitados(t, hondo) {
+  // más hondo que el tope, como se leía antes
+  if (hondo >= HONDO_DE_CITADOS) return { texto: vaciarConExpresion(t), comandos: [] };
+  // el texto que se arma, y de su punta la última palabra (sus últimas letras) y si la siguen blancos: mirar la punta del
+  // texto armado lo recompone entero cada vez
+  let out = '';
+  let palabra = '';
+  let blancos = false;
+  const esBlanco = (ch) => ch === ' ' || ch === '\t';
+  const agregar = (x) => {
+    out += x;
+    // de atrás para adelante: sus blancos del final y la palabra de antes
+    let fin = x.length;
+    while (fin > 0 && esBlanco(x[fin - 1])) fin--;
+    let ini = fin;
+    while (ini > 0 && !esBlanco(x[ini - 1])) ini--;
+    if (fin === 0) { blancos = blancos || x.length > 0; return; }
+    palabra = (ini === 0 && !blancos ? palabra + x.slice(0, fin) : x.slice(ini, fin)).slice(-8);
+    blancos = fin < x.length;
+  };
+  const comandos = [];
+  // lo que corre adentro de una sustitución, leído igual (sin sus heredocs ni sus comentarios): su texto, que también es
+  // un comando, y el de las sustituciones de adentro
+  const sustitucion = (desde, fin) => {
+    const r = leerCitados(conComentariosApagados(quitarCuerposDeHeredoc(t.slice(desde, fin), true)), hondo + 1);
+    comandos.push(r.texto, ...r.comandos);
+    return r.texto;
+  };
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (c === '\\') { agregar(t.slice(i, i + 2)); i++; continue; }
+    const fin = cierreDeUnaSustitucion(t, i);
+    if (fin === -1) { agregar(t.slice(i)); break; }
+    if (fin > i) {
+      // en el texto de afuera, lo de adentro vaciado como antes: un pedazo roto adentro (una comilla o un `$(` sin
+      // cierre) no se pega con lo de afuera; sus comandos se leen igual, aparte
+      const abre = c === '`' ? 1 : 2;
+      agregar(t.slice(i, i + abre) + vaciarConExpresion(sustitucion(i + abre, fin)) + t[fin]);
+      i = fin;
+      continue;
+    }
+    if (c !== '"' && c !== "'") { agregar(c); continue; }
+    let j = i + 1;
+    if (c === "'") {
+      // `$'…'` con un `$` suelto delante (no el segundo de `$$`): ahí la barra escapa
+      let pesos = 0;
+      while (i - 1 - pesos >= 0 && t[i - 1 - pesos] === '$') pesos++;
+      if (pesos % 2 === 1) { while (j < t.length && t[j] !== "'") j += t[j] === '\\' ? 2 : 1; } else { j = t.indexOf("'", i + 1); if (j < 0) j = t.length; }
+    } else {
+      // entre comillas dobles corren las sustituciones, y su comilla de adentro no cierra la de afuera
+      while (j < t.length && t[j] !== '"') {
+        if (t[j] === '\\') { j += 2; continue; }
+        const f = cierreDeUnaSustitucion(t, j);
+        if (f === -1) { j = t.length; break; }
+        if (f > j) { const abre = t[j] === '`' ? 1 : 2; sustitucion(j + abre, f); j = f + 1; continue; }
+        j++;
+      }
+    }
+    // sin cierre, el resto queda como está
+    if (j >= t.length) { agregar(t.slice(i)); break; }
+    // queda si parece un nombre de archivo, si va pegado a una palabra o a un `>`, o si lo siguen blancos detrás de un `>`
+    // o de `tee`: es el destino
+    const queda = /^[^\s'"|;&<>`()]+$/.test(t.slice(i + 1, j)) || (!blancos && /[>\w]$/.test(palabra)) || palabra.endsWith('>') || (blancos && palabra.endsWith('tee'));
+    agregar(queda ? t.slice(i, j + 1) : `${c}${c}`);
+    i = j;
+  }
+  return { texto: out, comandos };
 }
 
 // lo que vuelve compleja la parte de un comando antes de su `cd`: comillas, sustituciones, paréntesis o llaves, tuberías,
@@ -669,8 +851,12 @@ function heredocsCerrados(lineas) {
   return out;
 }
 
-/** El comando sin los cuerpos de sus heredocs ni sus renglones de cierre. Un heredoc sin cierre queda como está. */
-function quitarCuerposDeHeredoc(cmd) {
+/**
+ * El comando sin los cuerpos de sus heredocs ni sus renglones de cierre. Un heredoc sin cierre queda como está. Con
+ * `marcar`, cada cuerpo sacado deja un renglón con `MARCA_DE_CUERPO` y su delimitador: el cierre de una sustitución lo toma
+ * por el cuerpo, en vez de buscar el delimitador más abajo.
+ */
+function quitarCuerposDeHeredoc(cmd, marcar = false) {
   const s = String(cmd || '');
   if (!s.includes('<<')) return s;
   const lineas = s.split('\n');
@@ -678,7 +864,9 @@ function quitarCuerposDeHeredoc(cmd) {
   let n = 0;
   for (const { abre, cierre } of heredocsCerrados(lineas)) {
     while (n <= abre) out.push(lineas[n++]);
-    out.push('');
+    // un cuerpo que ya estaba sacado conserva su marca
+    const marca = lineas[cierre][0] === MARCA_DE_CUERPO ? lineas[cierre] : MARCA_DE_CUERPO + sinBlancosAlBorde(lineas[cierre]);
+    out.push(marcar ? marca : '');
     n = cierre + 1;
   }
   while (n < lineas.length) out.push(lineas[n++]);

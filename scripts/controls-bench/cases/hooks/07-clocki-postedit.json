@@ -39,6 +39,30 @@
           }
         },
         {
+          "id": "casa-propia-estado-en-la-carpeta-del-estado",
+          "__doc": "En una máquina que vive en la casa propia (existe ~/.tycon/state), el estado del registro de horas va a la carpeta del estado, no a la de Claude Code.",
+          "type": "must-stay-quiet",
+          "setup": [
+            "node -e \"require('fs').mkdirSync(process.env.SANDBOX_HOME+'/.tycon/state',{recursive:true})\""
+          ],
+          "stdin": {
+            "session_id": "bench-s1",
+            "cwd": "${FIXTURE}",
+            "prompt": "qué te parece este diseño?"
+          },
+          "expect": {
+            "stdout_not_re": [
+              "system-reminder"
+            ],
+            "file_exists": [
+              "${SANDBOX_HOME}/.tycon/state/clocki/heartbeat/bench-s1"
+            ],
+            "file_absent": [
+              "${SANDBOX_HOME}/.claude/clocki/heartbeat/bench-s1"
+            ]
+          }
+        },
+        {
           "id": "stop-detect-con-timer-activo",
           "type": "must-emit",
           "setup": [

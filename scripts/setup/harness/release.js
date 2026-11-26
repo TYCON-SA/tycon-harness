@@ -77,6 +77,8 @@ const MAIN_REF = 'main';
 const SYNC_REF = 'mirror/sync';
 const MANIFEST_NAME = '.tycon-release.json';
 const TARBALL_BUDGET_S_DEFAULT = 120;
+/** El tope de la bajada de una versión entera, en segundos: `TYCON_RELEASE_DOWNLOAD_BUDGET_S` o el de siempre. */
+const downloadBudgetS = (env) => (Number(env && env.TYCON_RELEASE_DOWNLOAD_BUDGET_S) > 0 ? Number(env.TYCON_RELEASE_DOWNLOAD_BUDGET_S) : TARBALL_BUDGET_S_DEFAULT);
 const MAX_TARBALL_BYTES = 256 * 1024 * 1024;
 const LOCATE_PAGE = 100;
 
@@ -638,7 +640,7 @@ function download(ctx, c, repoName, { commit, version, ref, tagged = false, log 
   const meta = c.get(`/repos/${repoName}/git/commits/${commit}`);
   if (!meta.ok || meta.status !== 200 || !meta.json || !meta.json.tree || typeof meta.json.tree.sha !== 'string') return Object.assign({ ok: false }, explainFailure(c, meta, { what: `el commit ${sha7(commit)}` }));
   const expectedTree = meta.json.tree.sha;
-  const tarBudget = Number(ctx.env.TYCON_RELEASE_DOWNLOAD_BUDGET_S) > 0 ? Number(ctx.env.TYCON_RELEASE_DOWNLOAD_BUDGET_S) : TARBALL_BUDGET_S_DEFAULT;
+  const tarBudget = downloadBudgetS(ctx.env);
   // sin permiso, de codeload: el mismo archivo al que redirige la API, sin gastar una consulta
   const tar = c.public
     ? c.getPublic(PG.tarUrl(c.public, repoName, commit), { maxBytes: MAX_TARBALL_BYTES, timeoutMs: tarBudget * 1000 })
@@ -1468,7 +1470,7 @@ function cmdInstall(ctx, H) {
     target = t;
   } else {
     // ubicar un número lee hasta 100 version.json: va con el tope de la bajada, no con el de mirar (15 s)
-    const cLoc = client(ctx, { deadlineAt: Date.now() + Math.max(budgetS(ctx.env), Number(ctx.env.TYCON_RELEASE_DOWNLOAD_BUDGET_S) > 0 ? Number(ctx.env.TYCON_RELEASE_DOWNLOAD_BUDGET_S) : TARBALL_BUDGET_S_DEFAULT) * 1000 });
+    const cLoc = client(ctx, { deadlineAt: Date.now() + Math.max(budgetS(ctx.env), downloadBudgetS(ctx.env)) * 1000 });
     let ref = channel === 'latest' ? SYNC_REF : MAIN_REF;
     let loc = locateVersion(cLoc, repoInfo.repo, ref, wanted);
     if (!loc.ok && ref === SYNC_REF && loc.status !== 'unknown') { ref = MAIN_REF; loc = locateVersion(cLoc, repoInfo.repo, MAIN_REF, wanted); }
@@ -1483,7 +1485,7 @@ function cmdInstall(ctx, H) {
   let teamOpen = null;
   if (teamRepo.repo) {
     // la fuente según su forma (GitHub o Azure DevOps): sin la credencial de Azure, 1 con la acción y sin escribir (nunca se calla)
-    teamOpen = TEAM.openSource(teamRepo.repo, { ctx, deadlineAt: Date.now() + Math.max(budgetS(ctx.env), Number(ctx.env.TYCON_RELEASE_DOWNLOAD_BUDGET_S) > 0 ? Number(ctx.env.TYCON_RELEASE_DOWNLOAD_BUDGET_S) : TARBALL_BUDGET_S_DEFAULT) * 1000, publicRepo: repoInfo.repo });
+    teamOpen = TEAM.openSource(teamRepo.repo, { ctx, deadlineAt: Date.now() + Math.max(budgetS(ctx.env), downloadBudgetS(ctx.env)) * 1000, publicRepo: repoInfo.repo });
     if (!teamOpen.ok) return { code: teamOpen.code, lines: [`harness.js install: ${teamOpen.reason}`] };
     teamPlan = teamOpen.resolve({ version: target.version, readerTree: ctx.tree, home: ctx.home, env: ctx.env });
     if (!teamPlan.ok) return { code: teamPlan.status === 'unknown' ? 2 : 1, lines: [`harness.js install: ${teamPlan.reason}`] };
@@ -1521,7 +1523,7 @@ function cmdInstall(ctx, H) {
     try { TH.adoptOwnHome(ctx.home); } catch (e) { return { code: 1, lines: [`harness.js install: no pude crear ${TH.ownStateDir(ctx.home)} (${e.code || e.message}): sin esa carpeta el estado caería en la de Claude Code. No instalé nada`] }; }
   }
   // 3. bajar y verificar en incoming/<v>, con el tope de la bajada (más largo que el de mirar)
-  const cDown = client(ctx, { deadlineAt: Date.now() + Math.max(budgetS(ctx.env), Number(ctx.env.TYCON_RELEASE_DOWNLOAD_BUDGET_S) > 0 ? Number(ctx.env.TYCON_RELEASE_DOWNLOAD_BUDGET_S) : TARBALL_BUDGET_S_DEFAULT) * 1000 });
+  const cDown = client(ctx, { deadlineAt: Date.now() + Math.max(budgetS(ctx.env), downloadBudgetS(ctx.env)) * 1000 });
   const d = download(ctx, cDown, repoInfo.repo, { commit: target.commit, version: target.version, ref: target.ref, tagged: Boolean(target.tagged), log });
   if (!d.ok) { undoOwnHome(); return { code: d.status === 'unknown' ? 2 : 1, lines: [`harness.js install: ${d.reason}`] }; }
   const tp = restoreThirdParty(ctx, cDown, d.dir, { log });
@@ -2643,7 +2645,7 @@ function versionJson(state, { channel = null } = {}) {
 module.exports = {
   startup, cmdUpdate, cmdTeamRefresh, doctorItems, markHealth, healthDueAtStartup, startupHealth, versionLine, versionJson, FETCH_WINDOW_MS,
   MANIFEST_NAME, MAIN_REF, SYNC_REF, API_DEFAULT,
-  githubRepoOf, repoOf, apiBase, client, explainFailure, tokenExpired, EXPIRED_TOKEN_TEXT, refCommit, versionAt, resolveChannel, check, locateVersion,
+  githubRepoOf, repoOf, apiBase, client, downloadBudgetS, explainFailure, tokenExpired, EXPIRED_TOKEN_TEXT, refCommit, versionAt, resolveChannel, check, locateVersion,
   resolvePublic, numberAt, tagNumberOf, tagsByApi, tagsFor, tagCommit, pendingTag, PENDING_TAG_SAY_MS, trustedCache, fromCache, adoptTag, treeNumberOk, stampVersion,
   download, readManifest, restoreThirdParty, swap, swapBack, repair, cleanupDeferred, isNamed, makeSource, shortPlanOf,
   convertLayout, swapLinks, swapBackLinks, repairLinks,

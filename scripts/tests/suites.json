@@ -2444,6 +2444,11 @@
       "requiere": []
     },
     {
+      "raiz": "arnes",
+      "ruta": "tests/session-approval.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el freno de producción mira adentro de los guiones que el comando corre aunque ya vivieran en el disco, de npm run y de make, y frena automatizar la pantalla. Sólo sin el freno instalado (con /opt/tycon se saltea); el repo de juguete va fuera de las carpetas temporales, y si no hay dónde dice NO MEDIDO. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/prod-saved-scripts.test.sh",
@@ -4016,6 +4021,12 @@
       "__nota": "story 8.150: la carpeta del estado y la de los registros sueltos dichas por el ayudante de shell (scripts/lib/state-dir.sh) son las mismas que dice tycon-home.js, en nueve casos (casa propia o no, TYCON_HOME absoluta, relativa, con espacios, vacía). Sin red: HOME de juguete en procesos hijos.",
       "raiz": "arnes",
       "ruta": "tests/state-dir-parity.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.335: el estado del registro de horas vive en la carpeta de los registros sueltos, y --move-old lo muda a la del estado dejando un enlace en el lugar viejo. Nunca pisa ni borra: un destino ocupado, un renombre o un enlace que fallan, o un viejo que reaparece, quedan como estaban. Sin tycon-home.js, los ganchos salen 0 y lo dicen; los avisos dan la ruta real y uninstall saca sólo el enlace. Sin red: HOME de juguete en procesos hijos.",
+      "raiz": "arnes",
+      "ruta": "tests/clocki-state-dir.test.js",
       "requiere": []
     },
     {

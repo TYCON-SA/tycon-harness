@@ -19,8 +19,8 @@
 //   aliasOptions(argv, where)            el argv con opciones, subcomandos y valores viejos pasados a los nuevos
 //   aliasArgv(where, { exitCode })       lo mismo sobre process.argv, en el lugar: la línea al entrar de un script
 //   resolveFile(nuevo) · readKeys(obj, where) · readKeysDeep(obj, where) · prepareStateWrite(nuevo)   configuración y estado
-// Anotar un uso nunca tira ni demora: una línea por (nombre viejo, script, día) en
-// ~/.claude/.tycon-pipeline/legacy-names.jsonl, sin valores ni rutas de la máquina; en Azure DevOps (TF_BUILD), además un
+// Anotar un uso nunca tira ni demora: una línea por (nombre viejo, script, día) en legacy-names.jsonl de la carpeta del
+// estado (`stateDir` de tycon-home.js), sin valores ni rutas de la máquina; en Azure DevOps (TF_BUILD), además un
 // warning en la corrida, que es donde se ve el uso desde los pipelines de los productos.
 //
 // A mano:
@@ -37,17 +37,12 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-// la carpeta del estado la sabe scripts/setup/harness/tycon-home.js: se carga si está al lado (en el
-// repo, y en /opt/tycon/setup/harness/ por el instalador del freno); si no, la de siempre
-function stateDirOf(home) {
-  try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(home); } catch (_) { /* la de siempre */ }
-  return path.join(claudeDirOf(home), '.tycon-pipeline');
-}
-// la carpeta de Claude Code en la casa del usuario: también la sabe tycon-home.js; sin él al lado, la de siempre
-function claudeDirOf(home) {
-  try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.claudeDir === 'function') return TH.claudeDir(home); } catch (_) { /* la de siempre */ }
-  return path.join(home, '.claude');
-}
+// las rutas de la máquina las sabe la copia de tycon-home.js que viaja con el freno, siempre al lado: en el repo
+// (guard-libs/setup/harness/) y en /opt/tycon/setup/harness/ por el instalador del freno
+const tyconHome = () => require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'));
+const stateDirOf = (home) => tyconHome().stateDir(home);
+// la carpeta de Claude Code en la casa del usuario
+const claudeDirOf = (home) => tyconHome().claudeDir(home);
 const crypto = require('crypto');
 
 const HARNESS_ROOT = path.resolve(__dirname, '..', '..');
@@ -59,7 +54,7 @@ const CALLERS = ['machine', 'other-repo', 'products', 'docs', 'same-repo', 'ado'
 const NO_SHIM_CALLERS = ['same-repo', 'ado'];
 const SHIM_EXTS = ['.js', '.cjs', '.mjs', '.sh', '.command', '.bash', '', '.ps1', '.md'];
 const SHIM_MARK = 'tycon-legacy-shim:';
-// Los dos nombres del lugar del arnés: ~/.claude/tycon-harness y el viejo, que sigue resolviendo. ESCRITOS
+// Los dos nombres del lugar del arnés: el de hoy y el viejo, que sigue resolviendo. ESCRITOS
 // acá, no importados de scripts/setup/harness/place.js: este archivo viaja solo a la copia del freno de producción en
 // /opt. Copia declarada en scripts/tests/fixtures/harness-place-names.json; una prueba frena si se desfasa.
 const PLACE_NAME = 'tycon-harness';
@@ -179,7 +174,7 @@ const usableEntries = (map) => {
 /**
  * La raíz de agent-skills: la que diga scripts/lib/skills-dir.js (la variable › el propio clon si es unido › lo instalado).
  *
- * 🔴 El valor de siempre (`~/.claude/agent-skills`) es SÓLO para la copia que viaja sin skills-dir.js al lado (un
+ * 🔴 Las skills instaladas (`installedSkillsDir` de tycon-home.js) son SÓLO para la copia que viaja sin skills-dir.js al lado (un
  *    laboratorio con esta biblioteca sola). Un `catch` que tragara cualquier error taparía que skills-dir.js TIRA cuando
  *    su vecina canonical-path.js está y no carga —justamente para que nadie pase a leer las skills instaladas sin
  *    decirlo—: en un clon unido con un `require` roto, `--migrate-machine --check` saldría 0 sin una línea, mirando lo
@@ -189,7 +184,7 @@ const usableEntries = (map) => {
  */
 function skillsRepoRoot(opts = {}) {
   if (opts.skillsRoot) return opts.skillsRoot;
-  if (!fs.existsSync(path.join(__dirname, 'skills-dir.js'))) return path.join(os.homedir(), '.claude', 'agent-skills');
+  if (!fs.existsSync(path.join(__dirname, 'skills-dir.js'))) return tyconHome().installedSkillsDir(os.homedir());
   return require('./skills-dir.js').resolveSkillsDirs(process.env.TYCON_SKILLS_DIR || '').repo;
 }
 function rootOf(entry, opts = {}) {
@@ -702,11 +697,11 @@ function rootForms(dir, home, extra = []) {
   return [...forms].filter(Boolean).sort((a, b) => b.length - a.length);
 }
 /** Todas las formas de escribir la raíz de un repo en la máquina, incluidos los enlaces que deja el instalador (los dos
- *  nombres del lugar del arnés, ~/.claude/agent-skills) si apuntan a esa raíz, y `$TCG` en los guiones del
+ *  nombres del lugar del arnés, las skills instaladas) si apuntan a esa raíz, y `$TCG` en los guiones del
  *  arnés. */
 function repoForms(root, repo, home) {
   const extra = repo === 'agent-skills' ? [] : ['$TCG', '${TCG}'];
-  const links = (repo === 'agent-skills' ? ['agent-skills'] : [PLACE_NAME, LEGACY_PLACE_NAME]).map((n) => path.join(home, '.claude', n));
+  const links = (repo === 'agent-skills' ? ['agent-skills'] : [PLACE_NAME, LEGACY_PLACE_NAME]).map((n) => path.join(claudeDirOf(home), n));
   let real = null;
   try { real = fs.realpathSync(root); } catch { /* no existe */ }
   for (const link of links) {

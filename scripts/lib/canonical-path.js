@@ -13,7 +13,7 @@
  *
  * ── EL ENLACE ─────────────────────────────────────────────────────────────────────────────────
  * Un prompt no puede leer una variable, pero sí una ruta estable. La forma de nombrar al
- * arnés en prosa es un enlace en `~/.claude/` (el lugar `~/.claude/tycon-harness`; el mismo recurso que `~/.claude/agents`,
+ * arnés en prosa es un enlace en la carpeta de Claude Code (el lugar, `placePath` de tycon-home.js; el mismo recurso que sus `agents`,
  * que es un enlace a agent-skills), y el clon puede vivir en cualquier carpeta. Este archivo lo cuida:
  *   · `asegurarEnlace()` lo crea si falta y lo repara si está colgado (o si apunta a algo que no es un
  *     clon del arnés). Si apunta a OTRO clon válido —existe y tiene `scripts/install-tycon-hooks.sh`—
@@ -33,10 +33,10 @@
  * una máquina Windows es una deuda declarada.
  *
  * ── EL LUGAR Y EL NOMBRE VIEJO ──────────────────────────────────────────────────────────────────────────────
- * El LUGAR del arnés es `~/.claude/tycon-harness` (el nombre del repo público; la constante vive en
+ * El LUGAR del arnés es `placePath` de tycon-home.js (con el nombre del repo público; la constante vive en
  * scripts/setup/harness/place.js) y el nombre viejo (el del repo interno, `LEGACY_PLACE_NAME`)
  * sigue resolviendo en las máquinas ya instaladas. `--ensure-link` aplica la REGLA DE NACIMIENTO (`ensurePlace`), bajo
- * un candado propio (`~/.claude/.tycon-pipeline/place.lock`) y siempre en el mismo orden, primero el lugar y después el
+ * un candado propio (`place.lock` de la carpeta del estado) y siempre en el mismo orden, primero el lugar y después el
  * viejo:
  *   · una carpeta real que es un clon, en cualquiera de los dos nombres, nunca se re-apunta ni se borra;
  *   · el destino de nacimiento es, en orden: a donde resuelve el nombre viejo (si es un clon); el `tree` del estado del
@@ -71,6 +71,8 @@ const { readEnv, aliasArgv } = require('./legacy-names.js');
 // skills-dir.js, la vecina): esa pregunta no necesita el nombre y no tiene por qué romperse sin scripts/setup/.
 let placeModule = null;
 const PLACE = () => placeModule || (placeModule = require('../setup/harness/place.js'));
+// las rutas de la máquina las sabe scripts/setup/harness/tycon-home.js, que también se pide cuando hace falta
+const tyconHome = () => require('../setup/harness/tycon-home.js');
 
 const RAIZ = path.resolve(__dirname, '..', '..');
 
@@ -116,7 +118,7 @@ function asegurarEnlace(opts = {}) {
   if (!opts.enlace && !opts.destino) return ensurePlace(opts);
   try { return asegurarEnlaceInterno(opts); }
   catch (e) {
-    // Un enlace que no se pudo crear/borrar (permisos, un `.claude` que es archivo, disco de sólo lectura) se DICE y
+    // Un enlace que no se pudo crear/borrar (permisos, una carpeta de Claude Code que es archivo, disco de sólo lectura) se DICE y
     // el instalador sigue registrando hooks: un aviso que rompe el arranque se apaga.
     const ruta = (opts.enlace || rutaEnlace(opts.home));
     return { accion: 'error', mensaje: `⚠️ tycon: no pude crear/reparar el enlace ${ruta} (${e && e.message}). Los revisores nombran al arnés por ese enlace: arreglalo a mano o volvé a correr el instalador`, ruta, destino: null, escribio: false };
@@ -418,7 +420,7 @@ function ensurePlace({ clon, home, check = false, forzar = null, prefer = null, 
 
 /**
  * El nombre viejo que nació en ESTA máquina por la regla de máquina nueva (V→L*): queda anotado en
- * ~/.claude/.tycon-pipeline/legacy-place-born.json para que el retiro lo quite ahí, y sólo ahí; con
+ * legacy-place-born.json de la carpeta del estado para que el retiro lo quite ahí, y sólo ahí; con
  * LEGACY_FOR_NEW_MACHINES en false ya no nace. El viejo de una máquina
  * que ya lo tenía no se anota: sigue siendo de lo que la persona tiene escrito. Anotar nunca frena.
  */
@@ -447,9 +449,9 @@ function appendPlan(file, entries) {
 
 // ── LOS ENLACES DEL REPO ÚNICO ─────────────────────────────────────────────────────────────────────
 // En el repo público el clon trae el arnés Y agent-skills juntos (skills/ y agents/ en su raíz). Todo lo que busca a
-// agent-skills —los lectores de TYCON_SKILLS_DIR, rutas fijas del código y los prompts, que nombran ~/.claude/agent-skills—
+// agent-skills —los lectores de TYCON_SKILLS_DIR, rutas fijas del código y los prompts, que nombran las skills instaladas—
 // tiene que encontrarlo sin ninguna variable puesta: tres enlaces más, con las reglas de `asegurarEnlace()`.
-//   · ~/.claude/agent-skills → el clon · ~/.claude/agents → <clon>/agents · ~/.claude/skills → <clon>/skills.
+//   · las skills instaladas → el clon · agents de Claude Code → <clon>/agents · skills de Claude Code → <clon>/skills.
 //   · «Válido» es por enlace: si ya apunta a otro lado que sirve, NO se mueve y se dice —así un clon de
 //     repo único corrido en una máquina del equipo no le roba sus enlaces—.
 //   · Si ~/.claude/skills o ~/.claude/agents ya son carpetas reales (quien usa Claude Code con algo propio) —o un enlace
@@ -482,13 +484,13 @@ function isSingleRepo(dir) {
 // ── LA MÁQUINA DEL EQUIPO EN LA TRANSICIÓN ─────────────────────────────────────────────────────────────────────────
 // Cuando los dos repos internos se unen en uno, el clon del arnés de CADA máquina del equipo trae
 // skills/ y agents/ en su raíz —o sea, `isSingleRepo()` da sí—, pero la máquina sigue como estaba: su clon viejo de
-// agent-skills es una carpeta real en ~/.claude/agent-skills, y ~/.claude/skills y ~/.claude/agents son enlaces a su
+// agent-skills es una carpeta real en las skills instaladas, y las skills y los agents de Claude Code son enlaces a su
 // interior. Con las reglas de arriba el instalador diría tres líneas en CADA arranque
 // de CADA máquina, también con --check —«hay una carpeta real, no un enlace: no la piso» y dos «apunta a otro lado que
 // sirve… no lo muevo»—. No hay nada que arreglar ahí: es el estado esperado hasta que la llave `update.skills_source`
 // re-apunte ese clon. Un aviso que suena siempre y no pide nada es ruido, y el ruido tapa al aviso que sí importa.
 //
-// `separateSkillsClone()` reconoce ESE estado, y nada más: este clon es unido, y ~/.claude/agent-skills es OTRO clon de
+// `separateSkillsClone()` reconoce ESE estado, y nada más: este clon es unido, y las skills instaladas son OTRO clon de
 // git que sirve como agent-skills (trae skills/tycon-pipeline y agents/). Vale la carpeta real (la máquina del equipo) y
 // el enlace a un clon viejo que vive en otra carpeta; NO vale un enlace a otro árbol entero del arnés (un clon
 // descartable corrido en esta máquina: eso se sigue diciendo), ni una carpeta que no es un clon de git, ni una que no
@@ -505,7 +507,7 @@ function separateSkillsClone({ clone, home } = {}) {
   const given = path.resolve(clone || RAIZ);
   const c = real(given) || given;
   if (!isSingleRepo(c)) return null;
-  const e = estadoEnlace({ enlace: path.join(home || os.homedir(), '.claude', 'agent-skills') });
+  const e = estadoEnlace({ enlace: tyconHome().installedSkillsDir(home || os.homedir()) });
   let dir = null;
   if (e.estado === 'carpeta') dir = real(e.ruta);
   else if (e.estado === 'enlace' && !esClonDelArnes(e.destinoReal)) dir = e.destinoReal;
@@ -588,8 +590,8 @@ const sameFile = (a, b) => {
 
 // ── LOS ENLACES DUROS QUE CREÓ EL ARNÉS ─────────────────────────────────────────────────────────────────────────────
 // Un enlace duro es un archivo común: cuando el revisor se borra del clon no queda «colgado», así que sin un registro ni la
-// limpieza de linkEntries ni el desinstalador lo reconocerían como del arnés, y la copia quedaría en ~/.claude/agents para
-// siempre, sin aviso. Por eso se anota cada duro que se crea en ~/.claude/.tycon-pipeline/hard-links.json: la ruta, el archivo del
+// limpieza de linkEntries ni el desinstalador lo reconocerían como del arnés, y la copia quedaría en los agents de Claude Code para
+// siempre, sin aviso. Por eso se anota cada duro que se crea en hard-links.json de la carpeta del estado: la ruta, el archivo del
 // clon al que se enlazó y su identidad (dispositivo, inodo, fecha de modificación y tamaño, en bigint). Una entrada
 // anotada es del arnés MIENTRAS el archivo siga siendo ése: si la persona lo reemplazó por uno suyo con el mismo nombre,
 // la identidad no coincide y no se toca. La fecha de modificación cuida el inodo reusado (el sistema puede darle el mismo
@@ -1020,7 +1022,7 @@ function ensureRepoLinks({ clone, home, check = false, only = null, links = null
   for (const L of REPO_LINKS) {
     if (only === 'agent-skills' && L.id !== 'agent-skills') continue;
     if (only === 'entries' && !L.entries) continue;
-    const where = path.join(home || os.homedir(), '.claude', L.id);
+    const where = path.join(tyconHome().claudeDir(home || os.homedir()), L.id);
     const dest = path.join(c, L.sub);
     try {
       // skills y agents son SIEMPRE carpetas reales: ausente → se crea real; un enlace a la carpeta entera
@@ -1084,7 +1086,7 @@ function ensureRepoLinks({ clone, home, check = false, only = null, links = null
       say(`⚠️ tycon: no pude crear/reparar el enlace ${where} (${e && e.message}): arreglalo a mano o volvé a correr el instalador`);
     }
   }
-  if (clashes.length) say(`⚠️ tycon: ya existen en ~/.claude y no son de este clon, no las piso: ${clashes.join(', ')} (las del clon con ese nombre no se ven)`);
+  if (clashes.length) say(`⚠️ tycon: ya existen en ${tyconHome().claudeDir(home || os.homedir())} y no son de este clon, no las piso: ${clashes.join(', ')} (las del clon con ese nombre no se ven)`);
   if (retired.length) {
     const PP = require('./pack-pieces.js');
     const from = [...new Set(retired.map((r) => packs.owner[r]).filter(Boolean))];
@@ -1221,7 +1223,7 @@ function selftest() {
   const t = fs.mkdtempSync(path.join(os.tmpdir(), 'ruta-canonica-'));
   const mk = (...p) => { const d = path.join(t, ...p); fs.mkdirSync(d, { recursive: true }); return d; };
   const clonValido = (...p) => { const d = mk(...p); fs.mkdirSync(path.join(d, 'scripts'), { recursive: true }); fs.writeFileSync(path.join(d, 'scripts', 'install-tycon-hooks.sh'), '#!/usr/bin/env bash\n'); return real(d); };
-  const casa = (nombre) => { const h = mk('casas', nombre); fs.mkdirSync(path.join(h, '.claude'), { recursive: true }); return h; };
+  const casa = (nombre) => { const h = mk('casas', nombre); fs.mkdirSync(tyconHome().claudeDir(h), { recursive: true }); return h; };
   const a = clonValido('Proyectos', 'tycon-claude-guides');
   const b = clonValido('otra-carpeta', 'tycon-claude-guides');
   const noClon = real(mk('no-clon'));
@@ -1274,9 +1276,9 @@ function selftest() {
   const h10 = casa('h10'); fs.symlinkSync(noClon, rutaEnlace(h10));
   r = asegurarEnlace({ clon: a, home: h10 });
   casos.push(['T4 apunta a algo que existe pero no es un clon: se repara como colgado', r.accion === 'repaired' && real(rutaEnlace(h10)) === a]);
-  const h11 = mk('casas', 'h11'); fs.writeFileSync(path.join(h11, '.claude'), 'un archivo donde iría la carpeta');
+  const h11 = mk('casas', 'h11'); fs.writeFileSync(tyconHome().claudeDir(h11), 'un archivo donde iría la carpeta');
   r = asegurarEnlace({ clon: a, home: h11 });
-  casos.push(['T4 el enlace no se puede escribir (`.claude` es un archivo): dice «no pude», no tira y no escribió (pase adversarial, vuelta 1)',
+  casos.push(['T4 el enlace no se puede escribir (la carpeta de Claude Code es un archivo): dice «no pude», no tira y no escribió (pase adversarial, vuelta 1)',
     r.accion === 'error' && !r.escribio && /no pude/.test(r.mensaje)]);
 
   // ── Prueba unitaria: los enlaces del repo único ────────────────────────────────────────
@@ -1291,7 +1293,7 @@ function selftest() {
     return d;
   };
   const u = singleRepoClone('publico', 'harness');
-  const at = (h, ...p) => path.join(h, '.claude', ...p);
+  const at = (h, ...p) => path.join(tyconHome().claudeDir(h), ...p);
   const ids = (res) => res.pieces.map((x) => x.id).sort().join(',');
   casos.push(['AC18 isSingleRepo: con skills/tycon-pipeline y agents/ en la raíz sí; el clon del equipo (sin skills/) no',
     isSingleRepo(u) === true && isSingleRepo(a) === false]);
@@ -1321,7 +1323,7 @@ function selftest() {
   const k3 = casa('k3');
   q = ensureRepoLinks({ clone: a, home: k3 });
   casos.push(['AC18 el equipo (clon sin skills/ en la raíz): no aplica, no dice nada y no toca nada',
-    q.applies === false && q.lines.length === 0 && q.pieces.length === 0 && fs.readdirSync(path.join(k3, '.claude')).length === 0]);
+    q.applies === false && q.lines.length === 0 && q.pieces.length === 0 && fs.readdirSync(at(k3)).length === 0]);
 
   // «válido» por enlace — agent-skills si tiene skills/tycon-pipeline; skills y agents si son esa carpeta de OTRO
   // árbol del arnés (al lado hay skills/tycon-pipeline como carpeta real)
@@ -1358,7 +1360,7 @@ function selftest() {
     && q.lines.length === 3 && q.lines.every((l) => /colgado/.test(l))]);
   const k7 = casa('k7'); W(path.join(at(k7, 'agent-skills'), 'mio.txt'), 'x');
   q = ensureRepoLinks({ clone: u, home: k7, only: 'agent-skills' });
-  casos.push(['AC18 una carpeta real en ~/.claude/agent-skills: no se pisa y se dice',
+  casos.push(['AC18 una carpeta real en las skills instaladas: no se pisa y se dice',
     isRealDir(at(k7, 'agent-skills')) && lexists(path.join(at(k7, 'agent-skills'), 'mio.txt')) && q.lines.length === 1 && /carpeta real/.test(q.lines[0]) && q.pieces.length === 0]);
 
   // modo por entrada: ~/.claude/skills y ~/.claude/agents ya son carpetas reales de la persona
@@ -1421,14 +1423,14 @@ function selftest() {
   const k10 = casa('k10');
   q = ensureRepoLinks({ clone: u, home: k10, check: true });
   casos.push(['AC18 --check en una HOME limpia: tres líneas con lo que haría, nada escrito, ninguna pieza',
-    q.lines.length === 3 && q.lines.every((l) => /^\(--check\) /.test(l)) && fs.readdirSync(path.join(k10, '.claude')).length === 0 && q.pieces.length === 0]);
+    q.lines.length === 3 && q.lines.every((l) => /^\(--check\) /.test(l)) && fs.readdirSync(at(k10)).length === 0 && q.pieces.length === 0]);
   const k11 = casa('k11'); W(at(k11, 'skills', 'mine', 'SKILL.md'), '# mía\n');
   q = ensureRepoLinks({ clone: u, home: k11, only: 'entries', check: true });
   casos.push(['AC18 --check por entrada: dice cuántos agregaría y no escribe ninguno',
     fs.readdirSync(at(k11, 'skills')).join(',') === 'mine' && !lexists(at(k11, 'agents')) && q.lines.some((l) => /^\(--check\) /.test(l) && /skills/.test(l) && /agregar/.test(l))]);
 
-  // nunca tira: `.claude` es un archivo
-  const k12 = mk('casas', 'k12'); fs.writeFileSync(path.join(k12, '.claude'), 'un archivo donde iría la carpeta');
+  // nunca tira: la carpeta de Claude Code es un archivo
+  const k12 = mk('casas', 'k12'); fs.writeFileSync(at(k12), 'un archivo donde iría la carpeta');
   let threw = false; try { q = ensureRepoLinks({ clone: u, home: k12 }); } catch (_) { threw = true; }
   casos.push(['AC18 un enlace que no se puede escribir: dice «no pude», no tira y no es pieza', !threw &&q.lines.length > 0 && q.lines.every((l) => /no pude/.test(l)) && q.pieces.length === 0]);
 
@@ -1438,7 +1440,7 @@ function selftest() {
   const k13 = casa('k13'); const rep = path.join(t, 'pieces-k13.tsv');
   let c1 = cli(['--ensure-repo-links', '--clone', u, '--home', k13, '--check'], { TYCON_REPORT_PIECES: rep });
   casos.push(['AC18 CLI --check: sale 0, dice qué haría, no escribe enlaces ni el reporte de piezas',
-    c1.status === 0 && /\(--check\)/.test(c1.stdout) && fs.readdirSync(path.join(k13, '.claude')).length === 0 && !fs.existsSync(rep)]);
+    c1.status === 0 && /\(--check\)/.test(c1.stdout) && fs.readdirSync(at(k13)).length === 0 && !fs.existsSync(rep)]);
   c1 = cli(['--ensure-repo-links', '--clone', u, '--home', k13], { TYCON_REPORT_PIECES: rep });
   const recorded = fs.existsSync(rep) ? fs.readFileSync(rep, 'utf8') : '';
   casos.push(['AC18 CLI con TYCON_REPORT_PIECES: anota «link<TAB>ruta<TAB>id» por cada enlace en su lugar',
@@ -1453,22 +1455,22 @@ function selftest() {
   casos.push(['AC18 CLI en el clon del equipo: sale 0, no imprime nada y no anota nada',
     c1.status === 0 && c1.stdout === '' && !fs.existsSync(path.join(t, 'pieces-k14.tsv'))]);
   c1 = cli(['--ensure-repo-links', '--clone', u, '--home', casa('k15'), '--only', 'otra-cosa']);
-  casos.push(['AC18 CLI --only con un valor que no existe: sale 2 (uso) y no escribe', c1.status === 2 && fs.readdirSync(path.join(t, 'casas', 'k15', '.claude')).length === 0]);
+  casos.push(['AC18 CLI --only con un valor que no existe: sale 2 (uso) y no escribe', c1.status === 2 && fs.readdirSync(at(path.join(t, 'casas', 'k15'))).length === 0]);
   const k16 = casa('k16');
   c1 = cli(['--ensure-link', '--clone', u, '--home', k16]);
   casos.push(['AC18 --ensure-link: en el repo único crea SÓLO el nombre del arnés (el lugar; desde la tanda C de la 8.19, una máquina nueva no recibe el viejo)',
-    c1.status === 0 && real(rutaEnlace(k16)) === u && fs.readdirSync(path.join(k16, '.claude')).filter((n) => !n.startsWith('.')).sort().join(',') === (LEGACY_FOR_NEW_MACHINES ? [PLACE().LEGACY_PLACE_NAME, PLACE().PLACE_NAME] : [PLACE().PLACE_NAME]).sort().join(',')]);
+    c1.status === 0 && real(rutaEnlace(k16)) === u && fs.readdirSync(at(k16)).filter((n) => !n.startsWith('.')).sort().join(',') === (LEGACY_FOR_NEW_MACHINES ? [PLACE().LEGACY_PLACE_NAME, PLACE().PLACE_NAME] : [PLACE().PLACE_NAME]).sort().join(',')]);
 
   // ── Prueba unitaria: la máquina del equipo en la TRANSICIÓN ───────────────────────────────────
   // El clon del arnés ya trae skills/ y agents/ (`u`), y la máquina sigue con su clon viejo de agent-skills: una carpeta
-  // REAL en ~/.claude/agent-skills, con skills y agents enlazados a su interior. Cero líneas, ninguna pieza, nada movido.
+  // REAL en las skills instaladas, con skills y agents enlazados a su interior. Cero líneas, ninguna pieza, nada movido.
   // 🔴 Sin esta regla el instalador diría tres líneas por corrida —«hay una carpeta real… no la piso» y dos
   //    «apunta a otro lado que sirve… no lo muevo»—, también con --check.
   const separate = typeof separateSkillsClone === 'function' ? separateSkillsClone : () => undefined;
   const teamHome = (name, { git = true, links = true } = {}) => {
     const h = casa(name); const d = at(h, 'agent-skills');
-    mk('casas', name, '.claude', 'agent-skills', 'skills', 'tycon-pipeline'); mk('casas', name, '.claude', 'agent-skills', 'agents');
-    if (git) mk('casas', name, '.claude', 'agent-skills', '.git');   // alcanza con la carpeta: «es un clon» se decide por ella
+    for (const s of [['skills', 'tycon-pipeline'], ['agents']]) fs.mkdirSync(path.join(d, ...s), { recursive: true });
+    if (git) fs.mkdirSync(path.join(d, '.git'), { recursive: true });   // alcanza con la carpeta: «es un clon» se decide por ella
     W(path.join(d, 'untracked.txt'), 'lo del dev\n');
     if (links) { fs.symlinkSync(path.join(d, 'skills'), at(h, 'skills')); fs.symlinkSync(path.join(d, 'agents'), at(h, 'agents')); }
     return h;
@@ -1495,12 +1497,12 @@ function selftest() {
   const c2 = cli(['--separate-skills-clone', '--clone', a, '--home', m1]);
   casos.push(['T29 CLI --separate-skills-clone: en la transición imprime el clon viejo; si el clon no trae skills/, nada; sale 0 en los dos',
     c1.status === 0 && c1.stdout === `${real(at(m1, 'agent-skills'))}\n` && c2.status === 0 && c2.stdout === '']);
-  // el clon viejo en otra carpeta, con ~/.claude/agent-skills como ENLACE a él: son dos clones igual
+  // el clon viejo en otra carpeta, con las skills instaladas como ENLACE a él: son dos clones igual
   const m2 = casa('m2'); const elsewhere = real(mk('equipo-git', 'agent-skills'));
   mk('equipo-git', 'agent-skills', 'skills', 'tycon-pipeline'); mk('equipo-git', 'agent-skills', 'agents'); mk('equipo-git', 'agent-skills', '.git');
   fs.symlinkSync(elsewhere, at(m2, 'agent-skills')); fs.symlinkSync(path.join(elsewhere, 'skills'), at(m2, 'skills')); fs.symlinkSync(path.join(elsewhere, 'agents'), at(m2, 'agents'));
   q = ensureRepoLinks({ clone: u, home: m2 });
-  casos.push(['T29 ~/.claude/agent-skills ENLAZADO a un clon viejo que vive en otra carpeta: también es la transición, calla y no mueve',
+  casos.push(['T29 las skills instaladas ENLAZADAS a un clon viejo que vive en otra carpeta: también es la transición, calla y no mueve',
     separate({ clone: u, home: m2 }) === elsewhere && q.lines.length === 0 && real(at(m2, 'agent-skills')) === elsewhere && real(at(m2, 'skills')) === path.join(elsewhere, 'skills')]);
   // en la transición NUNCA se apunta nada a este clon: una entrada que falta no se crea (quedaría colgada si `main`
   // volviera a antes de la unión) y tampoco suma un aviso nuevo en cada arranque; lo dice `doctor`
@@ -1514,7 +1516,7 @@ function selftest() {
   casos.push(['T29 (error) una carpeta real con skills/ pero que NO es un clon (sin .git): avisa como siempre («carpeta real», y los dos «no lo muevo»)',
     separate({ clone: u, home: m4 }) === null && q.lines.filter((l) => /carpeta real/.test(l)).length === 1 && q.lines.filter((l) => /no lo muevo/.test(l)).length === 2
     && isRealDir(at(m4, 'agent-skills'))]);
-  const m5 = casa('m5'); W(path.join(at(m5, 'agent-skills'), 'mio.txt'), 'x'); mk('casas', 'm5', '.claude', 'agent-skills', '.git');
+  const m5 = casa('m5'); W(path.join(at(m5, 'agent-skills'), 'mio.txt'), 'x'); fs.mkdirSync(path.join(at(m5, 'agent-skills'), '.git'), { recursive: true });
   q = ensureRepoLinks({ clone: u, home: m5, only: 'agent-skills' });
   casos.push(['T29 (error) un clon de OTRA cosa (con .git, sin skills/tycon-pipeline ni agents/): avisa «carpeta real» y no lo pisa',
     separate({ clone: u, home: m5 }) === null && q.lines.length === 1 && /carpeta real/.test(q.lines[0]) && lexists(path.join(at(m5, 'agent-skills'), 'mio.txt'))]);
@@ -1525,7 +1527,7 @@ function selftest() {
   casos.push(['T29 (error) los enlaces apuntan a OTRO clon del arnés entero (un clon descartable corrido acá): se sigue diciendo «no lo muevo», tres veces',
     separate({ clone: u, home: m6 }) === null && q.lines.length === 3 && q.lines.every((l) => /no lo muevo/.test(l)) && real(at(m6, 'agent-skills')) === u3]);
   const m7 = casa('m7'); fs.symlinkSync(u, at(m7, 'agent-skills'));
-  casos.push(['T29 (espejo) el árbol único —~/.claude/agent-skills ya es este clon— no es la transición: los enlaces se crean como siempre',
+  casos.push(['T29 (espejo) el árbol único —las skills instaladas ya son este clon— no es la transición: los enlaces se crean como siempre',
     separate({ clone: u, home: m7 }) === null && ensureRepoLinks({ clone: u, home: m7 }).lines.filter((l) => /cread[oa]/.test(l)).length === 2]);
   casos.push(['T29 (contrato C4) isSingleRepo no cambió: el clon unido sí, el del equipo sin skills/ no, y el clon viejo de skills también da sí',
     isSingleRepo(u) === true && isSingleRepo(a) === false && isSingleRepo(real(at(m1, 'agent-skills'))) === true && isSingleRepo.length === 1]);

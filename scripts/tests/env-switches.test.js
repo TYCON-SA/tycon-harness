@@ -128,6 +128,10 @@ test('EnvSwitches_DeclaredReadersMatchTheTree — cada lector declarado lee su v
   fs.writeFileSync(path.join(d, 'scripts', 'comentario.js'), '// se apaga con TYCON_ONE=0\n');
   fs.writeFileSync(path.join(d, 'scripts', 'constante.js'), "const OFF = 'TYCON_ONE';\nmodule.exports = (env) => env[OFF] !== '0';\n");
   fs.writeFileSync(path.join(d, 'scripts', 'suelto.sh'), 'echo "${TYCON_ONE:-}"\n');
+  // un atajo de nombre viejo generado (la marca en la segunda línea) no es un lector: su lectura es la de la plantilla,
+  // que vive en legacy-names.js y está declarada ahí. El privado trae decenas en el árbol armado
+  fs.writeFileSync(path.join(d, 'scripts', 'viejo.js'), "#!/usr/bin/env node\n// tycon-legacy-shim: scripts/constante.js\nconst x = process.env.TYCON_ONE;\n");
+  fs.writeFileSync(path.join(d, 'scripts', 'viejo.sh'), '#!/bin/sh\n# tycon-legacy-shim: scripts/suelto.sh\necho "${TYCON_ONE:-}"\n');
   const entrada = { nombre: 'TYCON_ONE', lectores: ['scripts/comentario.js', 'scripts/constante.js'], lectura: 'entorno' };
   assert.deepStrictEqual(lectoresQueNoCoinciden([entrada], d, ES.lecturas(d)), {
     declaradosQueNoLeen: ['TYCON_ONE: scripts/comentario.js'],

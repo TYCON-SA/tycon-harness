@@ -266,8 +266,10 @@ fi
 # 🔴 Rojo si el freno sólo conoce el nombre anterior: «sólo el nombre nuevo» frena sin dejar línea, y «sin ninguna» no lo dice.
 OLD_RECORD_REL="$(sed -n 's/^NOMBRE_VIEJO_CONSTANCIA=//p' "$AQUI/scripts/production/install-guard.sh" | head -1)"
 guard_lab(){ # $1 carpeta  $2 new|old|none → un arnés mínimo: el freno y la biblioteca bajo ese nombre
-  local d="$1"; rm -rf "$d"; mkdir -p "$d/scripts/hooks" "$d/scripts/lib"
+  local d="$1"; rm -rf "$d"; mkdir -p "$d/scripts/hooks" "$d/scripts/lib" "$d/scripts/setup/harness"
   cp "$AQUI/scripts/hooks/prod-access-guard.js" "$d/scripts/hooks/"
+  # dónde está la carpeta del estado lo dice tycon-home.js, que viaja con la biblioteca (en /opt, también)
+  cp "$AQUI/scripts/setup/harness/tycon-home.js" "$d/scripts/setup/harness/"
   case "$2" in
     new) cp "$LIB" "$d/scripts/lib/guard-record.js" ;;
     old) cp "$LIB" "$d/scripts/${OLD_RECORD_REL}" ;;
@@ -303,7 +305,8 @@ else
   fi
   # el camino de todos los días (la función de frenar, no la de la falla propia), con el arnés entero menos el nombre
   # anterior: es lo que tiene la copia pública
-  mundo; rm -rf "$TMP/g-full"; mkdir -p "$TMP/g-full/scripts/hooks" "$TMP/g-full/scripts/production"
+  mundo; rm -rf "$TMP/g-full"; mkdir -p "$TMP/g-full/scripts/hooks" "$TMP/g-full/scripts/production" "$TMP/g-full/scripts/setup/harness"
+  cp "$AQUI/scripts/setup/harness/tycon-home.js" "$TMP/g-full/scripts/setup/harness/"
   cp -R "$AQUI/scripts/lib" "$TMP/g-full/scripts/lib"; rm -f "$TMP/g-full/scripts/${OLD_RECORD_REL}"
   cp "$AQUI/scripts/hooks/prod-access-guard.js" "$TMP/g-full/scripts/hooks/"
   cp "$AQUI/scripts/production/production-index.js" "$TMP/g-full/scripts/production/"

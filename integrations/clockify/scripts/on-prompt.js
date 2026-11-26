@@ -23,6 +23,9 @@ const {
   findActiveEntryForCwd,
   flattenActive,
   touchHeartbeat,
+  sessionFilePath,
+  stateMissing,
+  CACHE_PATH,
 } = require('./lib');
 
 // Keywords de intent/stop: FUENTE ÚNICA en lib.js (DEFAULT_SETTINGS, narrow/precision-first).
@@ -53,6 +56,7 @@ function detectIntent(prompt, keywords) {
 if (process.env.TYCON_EVAL_SANDBOX === '1') process.exit(0);
 
 function main() {
+  if (stateMissing()) process.exit(0);
   const hookInput = parseHookInput();
   const cwd = normalizeCwd(hookInput.cwd || process.cwd());
   const sessionId = hookInput.session_id || null;
@@ -89,7 +93,7 @@ function main() {
 
   // Multi-sesión sin race: cada sesión tiene su archivo propio.
   // El timer de esta sesión vive en este archivo, con forma { "<cwd>": <entry> }:
-  const sessionFile = `~/.claude/clocki/active/${sessionKey}.json`;
+  const sessionFile = sessionFilePath(sessionKey);
 
   // 1. Sweep — SOLO el timer idle de ESTA sesión.
   //    🔴 POLÍTICA: el sweep NUNCA toca timers de OTRAS sesiones (ni
@@ -117,7 +121,7 @@ ${lines.join('\n')}
 
 Es el timer de ESTA sesión (session_id "${sessionKey}"). Cerralo:
 ${mcpTool('update-clockify-time-entry')} con end=lastActivity (trim al último activity),
-luego borrá la entry del state: ~/.claude/clocki/active/${sessionKey}.json — eliminá la key
+luego borrá la entry del state: ${sessionFile} — eliminá la key
 [cwd] (si queda {}, borralo).
 
 🔴 NUNCA cierres timers de OTRAS sesiones, aunque luzcan idle/muertos. El usuario los
@@ -182,7 +186,7 @@ Los pasos, en la skill clocki («Regla atómica close+open»).`);
   }
 
   emitReminder(`clocki: el prompt parece trabajo ("${matchedKeyword}") y esta sesión no tiene timer en ${cwd}. Si de verdad arranca trabajo:
-- Preguntá antes de abrir: «Detecté trabajo: <descripción corta>. ¿Abro timer en el proyecto <proyecto>?» (el proyecto, de ~/.claude/clocki/project-cache.json o de la lista de Clockify). Sin un sí, no se abre.
+- Preguntá antes de abrir: «Detecté trabajo: <descripción corta>. ¿Abro timer en el proyecto <proyecto>?» (el proyecto, de ${CACHE_PATH} o de la lista de Clockify). Sin un sí, no se abre.
 - Con el sí: create-clockify-time-entry con start en hora local, sin Z ni offset (\`date "+%Y-%m-%dT%H:%M:%S"\`, nunca UTC), y end igual al inicio.
 - Guardá la entry en ${sessionFile}, bajo la key ["${cwd}"] (entryId, workspaceId, projectId, description, startedAt, lastActivity, source="hook-intent"); es el archivo de esta sesión, no toques los de otras.
 Si era una pregunta o una charla, ignoralo. Los pasos, en la skill clocki («Flujo de start»).`);
