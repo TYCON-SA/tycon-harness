@@ -7,7 +7,7 @@
  * orquestador (Claude) cuando detectan patrones de bypass.
  *
  * 🔴 Multi-sesión sin carreras: cada sesión de Claude Code tiene su
- * propio archivo `~/.claude/.tycon-pipeline/active/<sessionId>.json` que contiene
+ * propio archivo `~/.tycon/state/active/<sessionId>.json` que contiene
  * el marker de esa sesión. Cada sesión lee/escribe SOLO su archivo:
  *   - No colisionan KEYS (cada pipeline su marker).
  *   - No colisionan ESCRITURAS (`on-edit.js` de dos sesiones concurrentes escribe
@@ -90,7 +90,7 @@
  *   marker.js run-check <name> -- <cmd> [args...] → EJECUTA el comando (proceso hijo, sin
  *                                                  shell/pipes), captura el exit code REAL y
  *                                                  setea marker.checks[name] = green|red:<exit>.
- *                                                  Loguea a ~/.claude/.tycon-pipeline/gates.log
+ *                                                  Loguea a ~/.tycon/state/gates.log
  *                                                  (append-only: ts, cmd, exit, duración).
  *                                                  Exit code = el del comando (gateable).
  *                                                  Con el mismo check ya corriendo en el repo:

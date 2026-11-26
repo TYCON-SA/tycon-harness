@@ -395,7 +395,7 @@ function stuckGroups(agents, coordinatorName) {
  * Devuelve `{ data, promises }`, con las promesas ya al día para guardarlas.
  */
 function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorName = null, promises = {}, nowMs = Date.now(),
-  sessionFiles = [], codexNames: cxNames = new Map(), runningAgents = new Map(), quietMin = QUIET_DEFAULT_MIN, isAlive, board = null, prAnswers = new Map(), transcripts = null, backgroundTasks = new Map(), lastWrites = new Map(), processes = null, openPrs = [], openPrsNote = null, waitingPrs = null, testSessions = new Set(), personSessions = new Set(), otherProjects = new Set(), projectOf = () => 'nuestro', projectOfRepo = () => 'nuestro', projectStories = null, ownerCard = null } = {}) {
+  sessionFiles = [], codexNames: cxNames = new Map(), runningAgents = new Map(), quietMin = QUIET_DEFAULT_MIN, isAlive, board = null, prAnswers = new Map(), transcripts = null, backgroundTasks = new Map(), lastWrites = new Map(), processes = null, openPrs = [], openPrsNote = null, enteredPrs = [], waitingPrs = null, testSessions = new Set(), personSessions = new Set(), otherProjects = new Set(), projectOf = () => 'nuestro', projectOfRepo = () => 'nuestro', projectStories = null, ownerCard = null } = {}) {
   const kept = {};
   for (const [k, p] of Object.entries(promises || {})) {
     if (p && Number.isFinite(p.at) && Number.isFinite(p.seen) && nowMs - p.seen < PROMISE_KEEP_MS) kept[k] = p;
@@ -851,7 +851,10 @@ function buildOffice({ wip, signatures = [], coordinatorSid = null, coordinatorN
   // «te toca» es sólo lo que pide una firma o una decisión del dueño: las firmas, lo que le preguntan y la lista del tablero,
   // que mantiene la coordinadora. Las notas no se leen: una frase no dice si es para ahora
   const teToca = [...signatureCards.filter((s) => !s.yaAvisada).map((s) => s.linea), ...toldOwner, ...((board && board.teToca) || [])];
-  const kanban = buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, signatures: signatureCards.filter((s) => !s.conTarjeta), repeatCards, board, prAnswers, openPrs, openPrsNote, nowMs, projectOf, projectOfRepo, sidOf });
+  // lo que entró hoy sin que nadie lo anote: las historias que pasaron a cerradas en main (de la lectura de fondo) y los
+  // pedidos de la persona que entraron
+  const closedStories = projectStories && projectStories.snap ? (projectStories.snap.proyectos || []).flatMap((p) => (p.cerradasHoy || []).map((h) => ({ ...h, proyecto: p.nombre, remoto: p.remoto }))) : [];
+  const kanban = buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, signatures: signatureCards.filter((s) => !s.conTarjeta), repeatCards, board, prAnswers, openPrs, openPrsNote, doneToday: { historias: closedStories, pedidos: enteredPrs }, nowMs, projectOf, projectOfRepo, sidOf });
   if (halfwayUnknown) kanban.medioCaminoNoSe = halfwayUnknown === 1 ? 'De un trabajo de una sesión cerrada no se pudo saber si dejó algo sin terminar.' : `De ${halfwayUnknown} trabajos de sesiones cerradas no se pudo saber si dejaron algo sin terminar.`;
   if (kanban.medioCamino.length || kanban.medioCaminoNoSe) kanban.medioCaminoLeido = `Leído a las ${hhmm(wip.halfwayReadAt || nowMs)}`;
   // las historias de los proyectos de la persona, de la lectura de fondo (`{ snap, nota, runs }`): van al final de «Sin
@@ -1131,7 +1134,7 @@ function ownerWaitsOf(data) {
  * sesión viva: la fila que dice «curso» sin una sesión que la haga va a «Sin sesión», y la ejecución marcada de una sesión
  * cerrada es esa misma fila, si la hay, o una tarjeta en esa columna.
  */
-function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, signatures, repeatCards = [], board, prAnswers, openPrs = [], openPrsNote = null, nowMs = Date.now(), projectOf = () => 'nuestro', projectOfRepo = () => 'nuestro', sidOf = new Map() }) {
+function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, signatures, repeatCards = [], board, prAnswers, openPrs = [], openPrsNote = null, doneToday = {}, nowMs = Date.now(), projectOf = () => 'nuestro', projectOfRepo = () => 'nuestro', sidOf = new Map() }) {
   const cols = KANBAN_COLUMNS.map(([id, nombre]) => ({ id, nombre, tarjetas: [] }));
   const col = (id) => cols.find((c) => c.id === id);
   // cómo se ordena «En curso»: lo que termina antes, arriba; después lo que espera o no tiene hora, y al final la coordinadora
@@ -1306,6 +1309,30 @@ function buildKanban({ agents, storyOfAgent, closedRuns, halfwayCards, items, si
   if (openPrsNote) col('entrando').nota = openPrsNote;
   const rank = (c) => inProgress.get(c) || { tier: 1 };
   col('curso').tarjetas.sort((p, q) => rank(p).tier - rank(q).tier || (rank(p).tier === 0 ? rank(p).at - rank(q).at : 0));
+  // lo que entró hoy sin fila del tablero: las historias que pasaron a cerradas en main y los pedidos de la persona que
+  // entraron. Una fila de «Terminados» que ya lo dice, por su historia o por su pedido, no se repite
+  const doneRows = boardCards.filter((b) => b.id === 'hechos');
+  const shortPr = (repo, numero) => `${String(repo || '').split('/').pop()}#${numero}`.toLowerCase();
+  const rowStories = new Set(doneRows.map((b) => b.f.historia).filter(Boolean).map(String));
+  const rowPrs = new Set(doneRows.flatMap((b) => [b.f.pedido, b.f.recordado]).filter(Boolean).map((p) => shortPr(p.repo, p.numero)));
+  // sólo lo de hoy: una lectura de ayer no suma a la tabla «Hechos», que ya dice lo anterior por sus filas
+  const enteredToday = (ms) => Number.isFinite(ms) && new Date(ms).toDateString() === new Date(nowMs).toDateString();
+  for (const h of doneToday.historias || []) {
+    if (!enteredToday(h.at) || rowStories.has(String(h.id))) continue;
+    rowStories.add(String(h.id));
+    // como las demás tarjetas de historia de tus proyectos, es de esta máquina: no viaja al sitio ni va a las tablas
+    const card = withWork({ titulo: `${h.id} · ${h.titulo}`, quien: 'historia cerrada en main', hora: hhmm(h.at), ...(h.proyecto ? { grupo: h.proyecto } : {}), local: true }, { historia: h.id, proyecto: h.remoto ? projectOfRepo(h.remoto) : 'nose' });
+    card.terminadoMs = h.at;
+    col('hechos').tarjetas.push(card);
+  }
+  for (const p of doneToday.pedidos || []) {
+    if (!enteredToday(p.at) || rowPrs.has(shortPr(p.repo, p.number))) continue;
+    rowPrs.add(shortPr(p.repo, p.number));
+    const github = /^[^/]+\/[^/]+$/.test(p.repo);
+    const card = withWork({ titulo: p.title, quien: `pedido ${github ? '#' : '!'}${p.number}`, hora: hhmm(p.at), pedido: cardPr(p.repo, p.number) }, { pedido: { repo: p.repoName, numero: p.number }, proyecto: projectOfRepo(p.repoName) });
+    card.terminadoMs = p.at;
+    col('hechos').tarjetas.push(card);
+  }
   // «Terminados» es lo de hoy, lo último primero; lo anterior, o lo que no dice cuándo, va a la tabla «Hechos» para que la
   // columna no crezca sin fin
   const today = new Date(nowMs).toDateString();
@@ -1927,6 +1954,26 @@ function readOpenPrs(sdir, nowMs) {
   const whoNote = !own ? ' No muestro pedidos: no pude saber quién sos en esta máquina.' : failed.length ? ` No pude leer tus pedidos de ${failed.join(', ')}.` : '';
   const note = `Tus pedidos en la cola o con auto-completar, leídos a las ${hhmm(at)}.${unread.length ? ` No se pudo leer ${unread.join(', ')}.` : ''}${whoNote}`;
   return { prs: [...prs.values()], measured: true, note, repos };
+}
+
+/**
+ * Los pedidos de la persona que entraron hoy, de la misma lectura (`own-prs.json`, `entraronHoy`): `[{ repo, repoName,
+ * number, title, at }]`. Una lectura vieja sigue valiendo para lo que ya entró, si es de hoy; lo de otro día no sale.
+ */
+function readEnteredToday(sdir, nowMs) {
+  let own;
+  try { own = JSON.parse(fs.readFileSync(path.join(sdir, 'own-prs.json'), 'utf8')); } catch { return []; }
+  const today = new Date(nowMs).toDateString();
+  const isToday = (ms) => Number.isFinite(ms) && new Date(ms).toDateString() === today;
+  if (!own || !own.entraronHoy || !isToday(Date.parse(own.at))) return [];
+  const out = [];
+  for (const [repo, list] of Object.entries(own.entraronHoy.lecturas || {})) {
+    for (const p of Array.isArray(list) ? list : []) {
+      const at = p ? Date.parse(p.at) : NaN;
+      if (Number.isInteger(p.number) && isToday(at)) out.push({ repo, repoName: repo.split('/').pop(), number: p.number, title: plain(String(p.title || '').replace(PR_KIND_PREFIX, '')) || 'Un pedido sin título', at });
+    }
+  }
+  return out;
 }
 
 // Un trabajo que quedó y nombra sus pedidos («#878», «!6008»): si todos entraron, entró, aunque su carpeta siga con otra cosa.
@@ -2662,7 +2709,7 @@ async function collect(opts = {}) {
   // la ficha de cada espera, con un solo tiempo para todas; quien llama con su propio límite lo pasa en `riskUntil`
   const budget = waitCard.newBudget({ until: opts.riskUntil });
   const ownerCard = ({ row, sid }) => waitCard.card({ row, marker: waitCard.markerOf(sdir, sid), budget });
-  const { data, promises, facts, factsComplete } = buildOffice({ ownerCard, wip, signatures, coordinatorSid, coordinatorName, promises: saved.promises, nowMs, sessionFiles: states, codexNames: cxNames, runningAgents, quietMin, board: board.board, prAnswers, transcripts, backgroundTasks, lastWrites, processes, openPrs: open.prs, openPrsNote: open.note, waitingPrs, testSessions, personSessions, otherProjects: otherProjectsOf(wip, open, remoteOf), projectOf, projectOfRepo, projectStories });
+  const { data, promises, facts, factsComplete } = buildOffice({ ownerCard, wip, signatures, coordinatorSid, coordinatorName, promises: saved.promises, nowMs, sessionFiles: states, codexNames: cxNames, runningAgents, quietMin, board: board.board, prAnswers, transcripts, backgroundTasks, lastWrites, processes, openPrs: open.prs, openPrsNote: open.note, enteredPrs: readEnteredToday(sdir, nowMs), waitingPrs, testSessions, personSessions, otherProjects: otherProjectsOf(wip, open, remoteOf), projectOf, projectOfRepo, projectStories });
   // el tablero se mueve solo con los hechos de esta foto: lo hace sólo quien tiene el candado de la oficina, con board.js
   if (opts.syncBoard && board.board && !opts.readOnly) syncBoardFromPhoto(sdir, facts, factsComplete && open.measured !== false, problems, { now: nowMs, home, sync: opts.boardSync });
   // por qué no sale una tarjeta, al registro del proceso de la oficina (su salida de errores va a server.log): sólo él

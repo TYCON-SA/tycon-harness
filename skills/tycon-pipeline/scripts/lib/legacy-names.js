@@ -38,7 +38,7 @@
  * vieja y su nueva con valores distintos en el mismo objeto TIRA: quien carga el paquete lo trata como paquete roto.
  *
  * ── EL ESTADO DE LA MÁQUINA ─────────────────────────────────────────────────────────────────────
- * `prepareStateWrite(ruta)`: antes de escribir un estado de `~/.claude/.tycon-pipeline/` con su nombre nuevo, se lleva
+ * `prepareStateWrite(ruta)`: antes de escribir un estado de `~/.tycon/state/` con su nombre nuevo, se lleva
  * el viejo (la carpeta de las escrituras por consola, entera). Los mismos tres caminos (abajo, junto a la función).
  *
  * Las tablas se retiran con el resto de los nombres viejos.
@@ -261,7 +261,7 @@ function readPackKeys(json) {
 }
 
 // ── el estado de la máquina ──────────────────────────────────────────────────────────
-// Lo que agent-skills escribe en ~/.claude/.tycon-pipeline/ con nombre nuevo: nombre nuevo → viejo. La misma entrada
+// Lo que agent-skills escribe en ~/.tycon/state/ con nombre nuevo: nombre nuevo → viejo. La misma entrada
 // `state-file` vive en el mapa del arnés (lo prueba tests/console-writes.test.js).
 const OWN_STATES = Object.freeze({ 'console-writes': 'escrituras-consola' });
 const STATE_DIR = () => path.join(stateDirOf(require('os').homedir()));
