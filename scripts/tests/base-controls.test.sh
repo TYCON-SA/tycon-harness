@@ -1695,6 +1695,17 @@ done
 IN_CONTENT="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(j.content.includes("scripts/lib/env-switches.json")?"si":"no")' "${ROOT}/scripts/ci/controls-from-base.json")"
 is "T115 env-switches.json es regla, no contenido" "no" "${IN_CONTENT}"
 
+# T115b · todo lo que el instalador del freno copia a /opt (la puerta de producción entre ellos), y el verificador del
+# click con que la puerta aprueba una sentencia pedida por una sesión, piden la constancia en cada cambio. La lista sale
+# del instalador, no se escribe acá: un archivo nuevo que se instale sin la marca da rojo.
+# 🔴 mutación: sin la marca, un pedido que cambia cómo se aprueba producción da «no hay nada que firmar» (fila 283)
+INSTALADOS="$(sed -n 's/^instalar \([^ ]*\) .*/\1/p' "${ROOT}/scripts/production/install-guard.sh" | sort -u) scripts/production/session-approval.js"
+[ "$(printf '%s\n' ${INSTALADOS} | grep -c 'tycon-prod-sql$')" = 1 ] && ok "T115b la lista del instalador trae la puerta" || no "T115b no pude leer la lista del instalador: no trae la puerta"
+for p in ${INSTALADOS}; do
+  MARKED="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const c=j.controls.find(x=>x.name==="base-controls");console.log((c.rules||[]).some(r=>r&&r.path===process.argv[2]&&r.sign_on_change===true)?"si":"no")' "${ROOT}/scripts/ci/controls-from-base.json" "${p}")"
+  is "T115b el inventario real marca ${p} (lo instala el freno o aprueba producción) con «sign_on_change»" "si" "${MARKED}"
+done
+
 # T116 · las claves que vale sólo el perfil del equipo viven en un archivo chico que firma siempre, y la configuración
 # las lee de ahí: una copia propia en tycon-config.js (que se toca en casi cada pedido) se podría achicar sin constancia
 MARKED="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const c=j.controls.find(x=>x.name==="base-controls");console.log((c.rules||[]).some(r=>r&&r.path==="scripts/lib/profile-only.js"&&r.sign_on_change===true)?"si":"no")' "${ROOT}/scripts/ci/controls-from-base.json")"
