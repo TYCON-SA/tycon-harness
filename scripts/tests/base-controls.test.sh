@@ -1696,11 +1696,20 @@ IN_CONTENT="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.arg
 is "T115 env-switches.json es regla, no contenido" "no" "${IN_CONTENT}"
 
 # T115b · todo lo que el instalador del freno copia a /opt (la puerta de producción entre ellos), y el verificador del
-# click con que la puerta aprueba una sentencia pedida por una sesión, piden la constancia en cada cambio. La lista sale
-# del instalador, no se escribe acá: un archivo nuevo que se instale sin la marca da rojo.
+# click con que la puerta aprueba una sentencia pedida por una sesión (y la biblioteca con que elige de qué casa lee la
+# conversación), piden la constancia en cada cambio. La lista sale de los arreglos del instalador (ARCHIVOS, lo que va a
+# /opt; SETUP_ARCHIVOS, la puesta al día), no se escribe acá: un archivo nuevo que se instale sin la marca da rojo.
 # 🔴 mutación: sin la marca, un pedido que cambia cómo se aprueba producción da «no hay nada que firmar» (fila 283)
-INSTALADOS="$(sed -n 's/^instalar \([^ ]*\) .*/\1/p' "${ROOT}/scripts/production/install-guard.sh" | sort -u) scripts/production/session-approval.js"
-[ "$(printf '%s\n' ${INSTALADOS} | grep -c 'tycon-prod-sql$')" = 1 ] && ok "T115b la lista del instalador trae la puerta" || no "T115b no pude leer la lista del instalador: no trae la puerta"
+INSTALADOS="$(awk '/^ARCHIVOS=\(/{dentro=1; next} dentro && /^\)/{dentro=0} dentro{print $1}' "${ROOT}/scripts/production/install-guard.sh")
+$(sed -n 's/^SETUP_ARCHIVOS=(\(.*\))$/\1/p' "${ROOT}/scripts/production/install-guard.sh" | tr ' ' '\n')
+scripts/production/session-approval.js
+scripts/lib/real-home.js"
+# la lista no puede salir vacía ni a medias sin que se note: trae la puerta, el freno y el instalador, y no menos que hoy
+CUANTOS="$(printf '%s\n' ${INSTALADOS} | grep -c .)"
+if printf '%s\n' ${INSTALADOS} | grep -x 'scripts/production/tycon-prod-sql' >/dev/null && printf '%s\n' ${INSTALADOS} | grep -x 'scripts/hooks/prod-access-guard.js' >/dev/null \
+   && printf '%s\n' ${INSTALADOS} | grep -x 'scripts/production/install-guard.sh' >/dev/null && [ "${CUANTOS}" -ge 21 ]; then
+  ok "T115b la lista del instalador trae la puerta, el freno y la puesta al día (${CUANTOS} archivos)"
+else no "T115b no pude leer entera la lista del instalador (${CUANTOS} archivos): ¿cambió la forma de ARCHIVOS o SETUP_ARCHIVOS?"; fi
 for p in ${INSTALADOS}; do
   MARKED="$(node -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const c=j.controls.find(x=>x.name==="base-controls");console.log((c.rules||[]).some(r=>r&&r.path===process.argv[2]&&r.sign_on_change===true)?"si":"no")' "${ROOT}/scripts/ci/controls-from-base.json" "${p}")"
   is "T115b el inventario real marca ${p} (lo instala el freno o aprueba producción) con «sign_on_change»" "si" "${MARKED}"
