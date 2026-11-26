@@ -261,7 +261,9 @@ $1"; then TENGO_TURNO=1; return 0; fi
   done
 }
 
-aprobar(){ # $1 = lo que muestra el cuadro, $2 = la forma (consulta | reclasificar | open-firewall | borrar-grupo)
+aprobar(){ # $1 = lo que muestra el cuadro, $2 = la forma (consulta | reclasificar | open-firewall | azure | borrar-grupo)
+  # pedida por una sesión de Claude Code, el click en la sesión y nunca el cuadro del sistema: un solo cuadro por operación
+  if en_una_sesion; then aprobar_en_la_sesion "$2" "$1"; return 0; fi
   # SSH: el cuadro se abriría en la pantalla de la Mac, donde quizá no hay nadie, o no se abriría
   if [ -n "${SSH_CONNECTION:-}${SSH_CLIENT:-}${SSH_TTY:-}" ] || [ "$("$LAUNCHCTL" managername 2>/dev/null)" != Aqua ]; then
     muere "el cuadro de producción necesita la sesión de la Mac: abrí la terminal en la Mac, no por SSH"
@@ -311,8 +313,16 @@ APROBAR_JS=""
 if [ "$INSTALADO" = 0 ]; then
   APROBAR_JS="${TYCON_PROD_TEST_APPROVAL_JS:-$AQUI/session-approval.js}"
 fi
-aprobar_en_la_sesion(){
-  local sesion="${CLAUDE_CODE_SESSION_ID:-}" arnes salida=0 texto
+# Vale para todas las formas que piden cuadro (fila 286, decisión del dueño): la consulta, abrir el firewall, un cambio de
+# Azure, bajar un servidor a no producción y borrar un grupo. La pregunta de las dos últimas empieza diciendo que apaga
+# el freno o que no tiene vuelta atrás, con el servidor o el recurso exactos (session-approval.js).
+aprobar_en_la_sesion(){ # $1 = la forma (consulta | open-firewall | azure | reclasificar | borrar-grupo), $2 = lo que se aprueba
+  local forma="$1" lo="$2" sesion="${CLAUDE_CODE_SESSION_ID:-}" arnes salida=0 texto que=operación
+  [ "$forma" = consulta ] && { lo="$SENTENCIA"; que=sentencia; }
+  # borrar un grupo no tiene servidor: lo que la pregunta nombra primero es el grupo. Un cambio de Azure tampoco: el
+  # comando entero va en lo que se aprueba, y el verificador pide un lugar no vacío
+  local donde="$HOST"; [ "$forma" = borrar-grupo ] && donde="${GRUPO_B:-}"; [ "$forma" = azure ] && donde=azure
+  [ -n "$donde" ] || muere "no sé sobre qué servidor o grupo es esta $que: no la mando a aprobar."
   [[ "$sesion" =~ $SESION_VALIDA ]] || muere "la pide una sesión de Claude Code sin identificador de sesión: sin él no se puede verificar el click del dueño. Corré la puerta desde tu terminal, fuera de la sesión."
   if [ "$INSTALADO" = 1 ]; then
     arnes="$("$NODE" -e 'process.stdout.write(require(process.argv[1]).harnessDir(process.argv[2]))' /opt/tycon/setup/harness/tycon-home.js "$HOME" 2>/dev/null)" || arnes=""
@@ -320,17 +330,17 @@ aprobar_en_la_sesion(){
   fi
   [ -f "$APROBAR_JS" ] || muere "no encuentro el arnés para verificar el click del dueño ($APROBAR_JS): sin él no se aprueba desde la sesión. Corré la puerta desde tu terminal, fuera de la sesión."
   # con un entorno limpio, como el cuadro del sistema: una variable de la sesión no le cambia nada al verificador
-  texto="$(env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin LANG=en_US.UTF-8 "$NODE" "$APROBAR_JS" --host "$HOST" --session "$sesion" --max-rows "$MAX_FILAS" -- "$SENTENCIA" 2>&1)" || salida=$?
+  texto="$(env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin LANG=en_US.UTF-8 "$NODE" "$APROBAR_JS" --kind "$forma" --host "$donde" --session "$sesion" --max-rows "$MAX_FILAS" -- "$lo" 2>&1)" || salida=$?
   if [ "$salida" = 0 ]; then
     APROBACION=",\"aprobacion\":\"click-en-la-sesion\",\"sesion\":\"$sesion\""
     return 0
   fi
   if [ "$salida" = 1 ]; then
-    anotar "\"host\":\"$HOST\",\"accion\":\"pide-click\",\"sesion\":\"$sesion\",\"exit\":2"
+    anotar "\"host\":\"$donde\",\"accion\":\"pide-click\",\"forma\":\"$forma\",\"sesion\":\"$sesion\",\"exit\":2"
     muere "$texto"
   fi
-  anotar "\"host\":\"$HOST\",\"accion\":\"rechazada\",\"motivo\":\"sin-verificar\",\"forma\":\"consulta\",\"exit\":2"
-  muere "no pude verificar el click del dueño: $texto. No se leyó la clave ni se cambió nada."
+  anotar "\"host\":\"$donde\",\"accion\":\"rechazada\",\"motivo\":\"sin-verificar\",\"forma\":\"$forma\",\"exit\":2"
+  muere "no pude verificar el click del dueño: $texto. No se leyó la clave ni se cambió nada en esta $que."
 }
 
 # ── la ayuda ───────────────────────────────────────────────────────────────────────────────────
@@ -344,9 +354,9 @@ persona en un cuadro de esta Mac; la contraseña no pasa por la conversación. S
   /opt/tycon/bin/tycon-prod-sql <host> '<sentencia>' [--max-rows N]
         una sentencia, con cuadro: un select, o un cambio (alter database …, update …). Una por vez, sin GO.
   /opt/tycon/bin/tycon-prod-sql --open-firewall <host> [--session <id>]
-        habilita la IP de esta máquina en el firewall de un Azure SQL de producción, con cuadro. Lo corre la persona
-        en su terminal, a nombre de la sesión que la pidió: la regla se cierra sola cuando esa sesión termina, o a
-        las 8 h aunque siga.
+        habilita la IP de esta máquina en el firewall de un Azure SQL de producción, con cuadro. Desde una sesión
+        lo corre la sesión y la persona lo aprueba con su click en ella; desde una terminal, con --session <id> va a
+        nombre de esa sesión. La regla se cierra sola cuando la sesión termina, o a las 8 h aunque siga.
   /opt/tycon/bin/tycon-prod-sql --close-firewall <host>     la cierra ya
   /opt/tycon/bin/tycon-prod-sql --verify                    revisa la instalación y la clave, sin leerla
   /opt/tycon/bin/tycon-prod-sql --load-key <host>           deja en el Escritorio el archivo para cargar la clave
@@ -361,8 +371,8 @@ persona en un cuadro de esta Mac; la contraseña no pasa por la conversación. S
 
 Emergencia, con producción caída (por ejemplo, la base llegó a su tope y no escribe):
   1. Probá la conexión: /opt/tycon/bin/tycon-prod-sql <host> 'select 1'
-  2. Si la rechaza el firewall (40615), la persona corre en su terminal el comando que da la puerta:
-     /opt/tycon/bin/tycon-prod-sql --open-firewall <host> --session <id>
+  2. Si la rechaza el firewall (40615), abrilo con el comando que da la puerta (la persona lo aprueba con su click):
+     /opt/tycon/bin/tycon-prod-sql --open-firewall <host>
   3. Mirá el estado: /opt/tycon/bin/tycon-prod-sql <host> 'select name, size/128 as mb, max_size/128 as max_mb from sys.database_files'
      (mide la base a la que entra la puerta: la «base» del servidor en su catálogo; si no la declara, master)
   4. Mitigá con una sentencia, que la persona aprueba en el cuadro, por ejemplo:
@@ -469,7 +479,7 @@ validar_azure(){
     "monitor metrics alert show"|"monitor metrics alert list"|"monitor metrics list"|"monitor metrics list-definitions"|"sql db show"|"sql db list"|"sql db list-usages"|"sql db list-editions"|"sql server show"|"sql server list"|"sql elastic-pool show"|"sql elastic-pool list")
       AZ_LECTURA=1 ;;
     "sql server firewall-rule"*)
-      muere "la regla de firewall no va por --azure: la IP de esta máquina la habilita la persona en su terminal con /opt/tycon/bin/tycon-prod-sql --open-firewall <host> --session <id> (con cuadro, y se cierra sola cuando termina esa sesión, o a las 8 h). Otra regla no tiene camino aprobado: dejale el comando a la persona para que lo corra en su terminal." ;;
+      muere "la regla de firewall no va por --azure: la IP de esta máquina la habilita la puerta con /opt/tycon/bin/tycon-prod-sql --open-firewall <host>: desde una sesión la aprueba el dueño con su click en la sesión, y desde una terminal el cuadro del sistema (se cierra sola cuando termina esa sesión, o a las 8 h). Otra regla no tiene camino aprobado: dejale el comando a la persona para que lo corra en su terminal." ;;
     *)
       muere "«${op:-esa operación}» no tiene camino aprobado por la puerta: dejale el comando a la persona para que lo corra en su terminal, y decile qué hace." ;;
   esac
@@ -515,6 +525,10 @@ if [ "$MODO" = consulta ] || [ "$MODO" = azure ]; then
 fi
 
 if [ "$MODO" = reclasificar ]; then
+  # la pregunta nombra el servidor que se va a bajar, ya normalizado como lo guarda el índice
+  HOST_N="$("$NODE" -e 'const m = require(process.argv[1]); process.stdout.write(m.normalizar(process.argv[2]) || "")' "$INDICE_JS" "$HOST" 2>/dev/null)"
+  [ -n "$HOST_N" ] || muere "«${HOST}» no es un host válido: no lo mando a aprobar."
+  HOST="$HOST_N"
   aprobar "Bajar $HOST a no producción en esta máquina: el freno deja de frenarlo y la puerta deja de atenderlo." reclasificar
   "$NODE" -e '
     const m = require(process.argv[1]);
@@ -1154,11 +1168,12 @@ fi
 [ -f "$LLAVERO_PROPIO" ] || [ -n "$RAIZ" ] || dejar_command
 
 # 🔴 La persona aprueba ANTES de cualquier llamada a `security`: rechazado, la clave no se lee ni se mira su entrada.
-# Pedida por una sesión, con el click en la sesión y sin el cuadro del sistema; desde una terminal, con el cuadro del sistema.
-if en_una_sesion; then aprobar_en_la_sesion; else aprobar "Servidor: $HOST
+# Pedida por una sesión, con el click en la sesión y sin el cuadro del sistema (`aprobar` decide); desde una terminal, con
+# el cuadro del sistema.
+aprobar "Servidor: $HOST
 
 Sentencia:
-$SENTENCIA" consulta; fi
+$SENTENCIA" consulta
 
 # (AC 21) la entrada tiene que confiar SÓLO en la herramienta del sistema. Si no se puede mirar, NO se
 # lee: «no pude verificar» no es «está bien» (revisores del Step 5, 2026-09-15).
@@ -1254,14 +1269,24 @@ printf 'rc=%s\n' "$RC"
 # firewall. Y sólo en un Azure SQL, que es lo único que `--open-firewall` atiende.
 if [ "$RC" != 0 ] && [[ "$HOST" == *.database.windows.net ]] \
    && printf '%s' "$SALIDA" | grep -iE "Client with IP address '[^']*' is not allowed to access the server" >/dev/null; then
-  # Abrirlo lo corre la persona en su terminal: el modo automático del asistente lo frena (fila 248). Va a nombre de
-  # esta sesión, para que la regla viva lo que vive ella; sin una sesión que se pueda leer, sin `--session`
+  # Desde una sesión lo corre la sesión y el dueño lo aprueba con su click en la sesión, como la consulta (fila 286); si
+  # el modo automático del asistente no la deja correrlo (fila 248), se lo dice a la persona con el comando para su
+  # terminal, a nombre de esta sesión, para que la regla viva lo que vive ella. Desde una terminal, lo corre quien la usa.
   SES_FW="${CLAUDE_CODE_SESSION_ID:-}"; if [[ "$SES_FW" =~ $SESION_VALIDA ]]; then SES_FW=" --session $SES_FW"; else SES_FW=""; fi
   printf '\n🔥 La conexión la rechazó el firewall de Azure: la IP de esta máquina no está habilitada en «%s».\n' "$HOST"
-  printf '   Paso siguiente: abrirlo lo corre la persona en su terminal, no el asistente. Pedile que copie y corra:\n'
-  printf '     /opt/tycon/bin/tycon-prod-sql --open-firewall %s%s\n' "$HOST" "$SES_FW"
-  printf '   (aprueba el cuadro; la regla se cierra sola cuando termina esta sesión, o a las 8 h aunque siga)\n'
-  printf '   y después volvé a correr esta misma sentencia. No hace falta el portal.\n'
+  if [ -n "$SES_FW" ]; then
+    printf '   Paso siguiente: corré vos, solo y en primer plano:\n'
+    printf '     /opt/tycon/bin/tycon-prod-sql --open-firewall %s\n' "$HOST"
+    printf '   Sale con la pregunta para el cuadro de opciones: el dueño la aprueba con su click en esta sesión, y repetís\n'
+    printf '   el mismo comando. La regla se cierra sola cuando termina esta sesión, o a las 8 h aunque siga.\n'
+    printf '   Si el modo automático no te deja correrlo, decíselo a la persona en una línea, con este comando para su terminal:\n'
+    printf '     /opt/tycon/bin/tycon-prod-sql --open-firewall %s%s\n' "$HOST" "$SES_FW"
+  else
+    printf '   Paso siguiente: abrilo, con el cuadro del sistema:\n'
+    printf '     /opt/tycon/bin/tycon-prod-sql --open-firewall %s\n' "$HOST"
+    printf '   (la regla se cierra sola a las 8 h)\n'
+  fi
+  printf '   Después volvé a correr esta misma sentencia. No hace falta el portal.\n'
 fi
 anotar "\"host\":\"$HOST\",\"accion\":\"consulta\",\"sha256\":\"$(printf '%s' "$SENTENCIA" | shasum -a 256 | cut -d' ' -f1)\"$APROBACION,\"exit\":$RC,\"filas\":$FILAS"
 exit "$RC"
