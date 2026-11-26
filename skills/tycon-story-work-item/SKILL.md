@@ -50,7 +50,7 @@ preguntar al dev cuál es la story / directorio.
 ## Pre-condiciones
 
 - La plataforma del equipo con su credencial en la máquina. Con Azure DevOps, el CLI y su permiso de pedidos de trabajo
-  están en `~/.claude/tycon-harness/guides/integrations/ado-en-el-nucleo.md`, §«La skill de creación: lo que pide»; con GitHub, `gh` con sesión.
+  están en `~/.claude/tycon-harness/guides/integrations/ado-in-the-core.md`, §«La skill de creación: lo que pide»; con GitHub, `gh` con sesión.
 
 Si falta el CLI o el token → **no crear el WI**. Avisar al dev una línea y terminar
 (no bloquear ningún flujo: la creación del WI es importante pero no crítica).
@@ -62,7 +62,7 @@ Si falta el CLI o el token → **no crear el WI**. Avisar al dev una línea y te
 Dónde se crea el pedido, de qué tipo y con qué campos depende de la plataforma que eligió el perfil del equipo
 (`integrations.platform`); la configuración del repo es `.tycon/work-items.yaml` (o su nombre viejo de Azure DevOps).
 Con Azure DevOps, los tres pasos (la configuración y su orden de resolución, el tipo por la plantilla de proceso, los
-campos y la iteración) están en `~/.claude/tycon-harness/guides/integrations/ado-en-el-nucleo.md`, §«La skill de creación»: seguilos tal cual.
+campos y la iteración) están en `~/.claude/tycon-harness/guides/integrations/ado-in-the-core.md`, §«La skill de creación»: seguilos tal cual.
 Con GitHub, el tipo va como la etiqueta `tipo:<Tipo>` y el resto lo resuelve el conector
 (`~/.claude/tycon-harness/guides/integrations/github-platform.md`). Si la configuración no resuelve por ninguna vía,
 una línea («repo sin destino para el pedido de trabajo; story <N.M> sin pedido») y terminar, sin bloquear nada.
@@ -181,7 +181,7 @@ Si hubo skip:
   re-chequear en el skill por si se invoca a mano.
 - ❌ NO inventar el WI id del Epic para el parent link. Si no está en `epic_links` → suelto + warn.
 - ❌ NO duplicar: antes de crear, buscar un pedido con el story id en el título (con Azure DevOps, la consulta de
-  `~/.claude/tycon-harness/guides/integrations/ado-en-el-nucleo.md` §«El Arranque») — si ya existe un pedido para esa story, proponer linkear ese en vez de crear uno nuevo.
+  `~/.claude/tycon-harness/guides/integrations/ado-in-the-core.md` §«El Arranque») — si ya existe un pedido para esa story, proponer linkear ese en vez de crear uno nuevo.
 
 ## Referencia cruzada
 
