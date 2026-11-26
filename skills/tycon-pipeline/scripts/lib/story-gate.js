@@ -16,7 +16,7 @@
  * (`on-bash-write-gate.js`) para las escrituras por `sed -i` / heredoc / `tee`. Decide sobre UNA
  * edición:
  *
- *   BLOQUEA siempre · (state-dir) un Write/Edit bajo `~/.claude/.tycon-pipeline/` — el único escritor
+ *   BLOQUEA siempre · (state-dir) un Write/Edit bajo `~/.tycon/state/` — el único escritor
  *                     legítimo del estado del pipeline es `marker.js`; fabricar un marker/ad-hoc con
  *                     la tool Write es el bypass más barato.
  *
@@ -71,7 +71,9 @@
 const path = require('path');
 const { isTestPath, isImplPath } = require('./atdd-order.js');
 const { isInside } = require('./atdd-preedit.js');
-const { homePath, signatureCommand } = require('./home-command.js');
+const { homePath, signatureCommand, pipelineRel } = require('./home-command.js');
+const claudeDirName = () => require('./state-dir.js').claudeDirName();
+const estadoParaMostrar = () => { const sd = require('./state-dir.js'); return sd.paraMostrar(sd.stateDir()); };
 
 // Código = lo que `atdd-order` ya considera código, más lo que en los stacks del equipo se edita
 // como implementación y no es "markup de specs": SQL (migraciones), estilos, templates .NET/HTML.
@@ -81,8 +83,8 @@ const EXTRA_CODE_EXTS = new Set([
 
 // Segmentos de path que NUNCA son "código de la story": salidas de build, dependencias, y las
 // carpetas del propio arnés dentro del repo (evidencia, config, memoria, waivers).
-// `.claude` se excluye SALVO que el segmento siguiente sea `worktrees`: un worktree de la
-// tool Agent puede colgar de `<repo>/.claude/worktrees/<name>` y ahí SÍ hay código.
+// La carpeta de Claude Code (`claudeDirName`) se excluye SALVO que el segmento siguiente sea `worktrees`: un
+// worktree de la tool Agent puede colgar de `<repo>/<esa carpeta>/worktrees/<name>` y ahí SÍ hay código.
 const NEVER_CODE_SEGMENTS = new Set([
   'node_modules', 'bin', 'obj', 'dist', 'build', 'out', 'coverage', 'target', 'vendor',
   '.git', '.advisors', '.tycon', '.engram', '.dashboard', '.specs',
@@ -95,7 +97,7 @@ const NEVER_CODE_SEGMENTS = new Set([
 // canónico no existe, y —peor— un repo de PRODUCTO clonado debajo de una carpeta con el nombre
 // del arnés pasaría el portón sin story ni pipeline ni revisores, en silencio. El remoto
 // lo lee el BORDE (story-gate-io.js → isHarnessRepo, con el criterio único del arnés:
-// ~/.claude/tycon-harness/scripts/lib/harness-repo.js) y llega acá como `isHarness`. Esta lista queda
+// ~/.tycon/harness/scripts/lib/harness-repo.js) y llega acá como `isHarness`. Esta lista queda
 // como RESPALDO: decide sólo cuando nadie resolvió el dato (llamador viejo, lib del arnés ausente).
 // Los dos nombres del arnés: el repo interno y el público, que se clona con el nombre del lugar.
 // Escritos acá: las skills pueden vivir en un clon aparte sin scripts/ al lado (copia declarada en
@@ -126,7 +128,7 @@ function cupoAlDeclarar({ pedido, existing, via, topes, sobreCupo = false }) {
 const cupoDelCarril = (adhoc, defecto = DEFAULT_ADHOC_MAX_FILES) => (Number.isFinite(Number(adhoc && adhoc.maxFiles)) && Number(adhoc.maxFiles) > 0 ? Number(adhoc.maxFiles) : defecto);
 // la ruta de marker.js bajo la carpeta de la persona: `node ${MARKER_JS} …` imprime `node "$HOME/…"`, que anda también en
 // PowerShell; una firma se imprime con la ruta absoluta (signatureCommand), porque la forma de la firma exige un literal
-const MARKER_REL = '.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js';
+const MARKER_REL = pipelineRel('scripts/marker.js');
 const MARKER_JS = homePath(MARKER_REL);
 // el tablero de la oficina, en la carpeta de estado: lo escribe sólo su comando
 const BOARD_FILE = /(^|[\\/])coordination[\\/]tablero\.json$/;
@@ -144,7 +146,7 @@ function isCodeFile(filePath, { extra } = {}) {
   for (let i = 0; i < segs.length - 1; i++) {
     const seg = segs[i];
     if (NEVER_CODE_SEGMENTS.has(seg)) return false;
-    if (seg === '.claude' && segs[i + 1] !== 'worktrees') return false;
+    if (seg === claudeDirName() && segs[i + 1] !== 'worktrees') return false;
   }
   if (isImplPath(s, { extra }) || isTestPath(s, { extra })) return true;
   return EXTRA_CODE_EXTS.has(path.extname(s).toLowerCase());
@@ -177,7 +179,7 @@ function sameFile(a, b) {
 /**
  * @param {object} p
  * @param {string}  p.filePath        archivo que se va a editar (absoluto)
- * @param {string|null} p.stateDir    `~/.claude/.tycon-pipeline` (Writes ahí se deniegan siempre)
+ * @param {string|null} p.stateDir    `~/.tycon/state` (Writes ahí se deniegan siempre)
  * @param {string|null} [p.realFilePath]  la ruta real del archivo (por los enlaces); sin ella, `filePath`
  * @param {string[]} [p.installedRoots]   rutas reales del árbol instalado del arnés (Writes ahí se deniegan siempre)
  * @param {string|null} [p.realStateDir]  la ruta real de `stateDir` (si es un enlace); sin ella, `stateDir`
@@ -197,6 +199,11 @@ function sameFile(a, b) {
 const CONTROL_APPROVAL_DIR = /(^|\/)\.(github|tycon)\/control-changes(\/|$)/i;
 const CONTROL_APPROVAL_FILE = /(^|\/)\.(github|tycon)\/control-changes\.jsonl$/i;
 /** ¿La ruta es una constancia de cambio de control? Casos: scripts/controls-bench/cases/hooks/01-frenos-duros.json */
+// La configuración de git de un clon (la del repo, la de un worktree o la de un submódulo): ahí está el `origin`, y los
+// controles que comparan contra main del servidor (`clear --replaced-by`, `ls-remote`) le creen
+const GIT_CONFIG_FILE = /(^|\/)\.git\/(?:worktrees\/[^/]+\/|modules\/.+\/)?config(?:\.worktree)?$/i;
+/** ¿La ruta es la configuración de git de un clon? */
+function isGitConfig(p) { return GIT_CONFIG_FILE.test(norm(String(p || ''))); }
 function isControlApproval(p) {
   const f = norm(String(p || ''));
   return CONTROL_APPROVAL_DIR.test(f) || CONTROL_APPROVAL_FILE.test(f);
@@ -277,7 +284,7 @@ function computeStoryGate({
 
   // El estado del pipeline lo escribe marker.js, nunca la tool Write/Edit. Sin kill-switch.
   if (stateDir && (isInside(stateDir, filePath) || isInside(realStateDir || stateDir, real))) {
-    return { action: 'block', kind: 'state-dir', reason: 'escritura directa al estado del pipeline (~/.claude/.tycon-pipeline/)' };
+    return { action: 'block', kind: 'state-dir', reason: `escritura directa al estado del pipeline (${estadoParaMostrar()}/)` };
   }
   // El árbol instalado del arnés lo reemplaza cada actualización: se cambia con un pedido a su repo.
   // Sin kill-switch del repo y antes del pase de los repos del arnés: vale en cualquier modo de permisos.
@@ -291,6 +298,11 @@ function computeStoryGate({
   // kill-switch del repo y en cualquier repo, también en los del arnés.
   if (isControlApproval(filePath) || isControlApproval(real)) {
     return { action: 'block', kind: 'control-approvals', reason: 'escritura a mano de una constancia de cambio de control' };
+  }
+  // El `origin` de un clon no se cambia a mano: por consola lo frena on-bash-write-gate.js (el caso `git remote`), y acá
+  // la edición de su configuración. Sin kill-switch del repo y en cualquier repo, también en los del arnés.
+  if (isGitConfig(filePath) || isGitConfig(real)) {
+    return { action: 'block', kind: 'git-config', reason: 'edición a mano de la configuración de git de un clon' };
   }
   if (isAdversarialSkipRecord(filePath) || isAdversarialSkipRecord(real)) {
     return { action: 'block', kind: 'adversarial-skip-record', reason: 'escritura a mano de la constancia del salteo del pase adversarial' };
@@ -619,7 +631,7 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '⛔ tycon-pipeline — ESCRITURA DIRECTA AL ESTADO DEL PIPELINE',
       '',
       `  ${f}`,
-      '  El marker, el ad-hoc, los logs de gates y la cache de stories bajo ~/.claude/.tycon-pipeline/ los',
+      `  El marker, el ad-hoc, los logs de gates y la cache de stories bajo ${estadoParaMostrar()}/ los`,
       '  escribe SOLO marker.js (set / complete-step / run-check / adhoc / set-flag …). Escribirlos a mano',
       '  con Write/Edit (o por Bash en sus formas obvias) es fabricar evidencia — el harness lo deniega.',
       `  Usá el comando correspondiente: node ${MARKER_JS} <set|complete-step|run-check|adhoc|…>.`,
@@ -651,6 +663,15 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via, h
       '  Si sólo la NOMBRA un texto entre comillas (la descripción de un pedido, un mensaje): en un comando con un',
       '  programa que puede correr un texto (gh, az, git, un shell…) ese texto cuenta como comando. Escribilo antes a',
       '  un archivo (`cat > /tmp/cuerpo.md <<\'EOF\'`) y pasalo con `--body-file` (o `--description @/tmp/cuerpo.md`).',
+    ].filter((l) => l !== '').join('\n');
+  }
+  if (r.kind === 'git-config') {
+    return [
+      '⛔ la configuración de git de un clon no se edita a mano',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  Ahí está el `origin`, y los controles que comparan contra main del servidor le creen: cambiarlo a mano los engaña.',
+      '  Si el remoto cambió de verdad, lo cambia una persona en su terminal (`git remote set-url origin <url>`).',
     ].filter((l) => l !== '').join('\n');
   }
   if (r.kind === 'adversarial-skip-record') {
@@ -916,7 +937,7 @@ function storyByConsoleMessage(rutas, via) {
 module.exports = {
   MODO_FUERA_DEL_GRUPO,
   markerDeleteMessage, storyByConsoleMessage,
-  computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, isTerminalAcknowledgmentsRecord, isLaunchedSessionsRecord, isOfficeMailboxRecord, isReportedCriticalsRecord, isAdvisorRunsRecord, isPlanReviewRecord, isExemptionsRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
+  computeStoryGate, blockMessage, textoDelTope, TOPE_DE_NOMBRES, cupoDelCarril, isControlApproval, isGitConfig,isAdversarialSkipRecord, isPendingApprovalsRecord, isOwnerApprovalsRecord, isTerminalAcknowledgmentsRecord, isLaunchedSessionsRecord, isOfficeMailboxRecord, isReportedCriticalsRecord, isAdvisorRunsRecord, isPlanReviewRecord, isExemptionsRecord, signedRecordKind, isCodeFile, isManifestFile, MANIFEST_FILES, isHarnessPath, sameFile,
   STORY_INTENT_PATTERNS,
   DEFAULT_ADHOC_MAX_FILES, DELEGATED_ADHOC_MAX_FILES, cupoDelegado, cupoAlDeclarar, EXTRA_CODE_EXTS, NEVER_CODE_SEGMENTS, HARNESS_REPO_SEGMENTS, MARKER_JS, MARKER_REL,
 };

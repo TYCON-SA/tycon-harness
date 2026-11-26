@@ -700,6 +700,24 @@ test('BS5 Status_SessionThatEnteredAWorktree_TasksUnderItsRepo: arrancó en el r
   assert.deepStrictEqual(C.status(stallOpts(t, NOW + 20 * 60000, procs())).backgroundStalled.map((b) => b.session), ['Wanda']);
 });
 
+// 🔴 mutación: contar como viva una tarea abierta de una sesión que ya no tiene ninguna consola que la corra (una tarea
+// cortada que quedó sin su renglón de cierre avisaba por horas a una sesión que no tenía nada).
+test('BS6 Status_OpenTaskWithoutAnyConsole_IsNotWaiting: sin ninguna consola de la sesión, una tarea abierta es un registro viejo y no avisa', () => {
+  const t = toy();
+  bg(t, 'bg-v', 'Vera', 2, { status: 'busy' });
+  bgTask(t, 'bg-v', 'b6', { minutesAgo: 7 * 60 });
+  // la sesión sólo tiene su servidor de herramientas: ninguna consola, ninguna tarea de fondo que pueda estar corriendo
+  const sinConsola = () => ({ list: [{ pid: 9100, ppid: process.pid, cpu: 3, shell: false }] });
+  C.status(stallOpts(t, NOW, sinConsola));
+  assert.deepStrictEqual(C.status(stallOpts(t, NOW + 60 * 60000, sinConsola)).backgroundStalled, [], 'sin consolas no hay tarea viva');
+  // gemelo: la misma tarea, con una consola quieta colgando de la sesión, sí avisa
+  const g = toy();
+  bg(g, 'bg-v', 'Vera', 2, { status: 'busy' });
+  bgTask(g, 'bg-v', 'b6', { minutesAgo: 7 * 60 });
+  C.status(stallOpts(g, NOW, procs()));
+  assert.deepStrictEqual(C.status(stallOpts(g, NOW + 60 * 60000, procs())).backgroundStalled.map((b) => b.session), ['Vera']);
+});
+
 // 🔴 mutación: acusar sin poder leer los procesos, pedirle al `ps` la línea de comando o guardar el nombre que trae
 // argumentos (en macOS un programa los pone en su nombre).
 test('BS4 Processes_NeverAskTheCommandLine_UnreadableAccusesNobody: sólo número, padre, CPU y si es una consola', () => {
@@ -1580,7 +1598,7 @@ test('T3 Respuestas_NoEntregadas_NombraLaSesion @story-8.284 @ac-6 @ac-9 @ac-18:
   fs.mkdirSync(path.dirname(RESPUESTAS(t)), { recursive: true });
   const renglon = (r) => fs.appendFileSync(RESPUESTAS(t), `${JSON.stringify(r)}\n`);
   const perdido = (sid, min, transcript) => renglon({ sid, at: iso(mins(min)), text: 'secreto del mensaje', sha: huella('secreto del mensaje'), transcript, from: 0 });
-  const PERDIO = (quien, n, min) => new RegExp(`Coordinación: ${quien} escribió ${n} mensaje\\(s\\) en su pestaña que no te llegaron, el último hace ${min} min: preguntale qué te pidió\\.`);
+  const PERDIO = (quien, n, min) => new RegExp(`Coordinación: la persona escribió ${n} mensaje\\(s\\) en la pestaña de ${quien} que no te llegaron, el último hace ${min} min\\. Se los dijo a esa sesión, no a vos: si hacen a tu trabajo, preguntale a esa sesión qué le pidió\\.`);
   for (const [sid, nombre] of [['ses-c', 'Caro'], ['ses-d', 'Dani'], ['ses-e', 'Edu'], ['ses-f', 'Fede'], ['ses-g', 'Gabi']]) session(t, sid, nombre, INTERACTIVA);
   // pasados los 10 minutos, la conversación no lo trae (Bruno, dos mensajes); la ilegible va más abajo
   charla(t, 'ses-b', ['otra cosa']);

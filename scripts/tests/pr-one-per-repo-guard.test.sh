@@ -55,6 +55,55 @@ rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "$GH")
 rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "$GH && $CREAR")
 { [ "$rc" -eq 2 ] && grep -q "2845" "$TMP/err.txt"; } && ok "🔴 con un pedido de GitHub en la misma línea, el de Azure se sigue frenando" || no "🔴 el gh de adelante tapó el pedido de Azure ($rc)"
 
+# ---------------------------------------------------------------- 1b2. el comando crudo de otro conector (fila 189c)
+# El freno miraba sólo los comandos de GitHub y de Azure: un `glab mr create` pasaba sin que nadie mirara. Ahora mira el
+# comando que crea un pedido de cualquier conector (sus `changeRequestCommands`), con la capa de plataforma. Sin sesión
+# de la plataforma no se puede mirar: pasa, lo dice y nombra el repo; y no tapa el de Azure de la misma línea.
+GL='glab mr create -R acme/grupo/widgets --source-branch feat/x --target-branch main --title t'
+rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "$GL")
+{ [ "$rc" -eq 0 ] && grep -q "NO verifiqué" "$TMP/err.txt" && grep -q "acme/grupo/widgets" "$TMP/err.txt"; } && ok "un pedido de GitLab crudo se mira: sin poder consultar, pasa, lo dice y nombra el repo" || no "🔴 el glab mr create pasó sin mirar ($rc): $(head -c 200 "$TMP/err.txt")"
+rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "$GL && $CREAR")
+{ [ "$rc" -eq 2 ] && grep -q "2845" "$TMP/err.txt"; } && ok "🔴 con un pedido de GitLab en la misma línea, el de Azure se sigue frenando" || no "🔴 el glab de adelante tapó el pedido de Azure ($rc)"
+# del pase adversarial: `-R=` y `-Rvalor` se leen; listar, ver o comentar con la palabra «create» en un valor no es crear
+rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "glab mr create -R=acme/grupo/widgets --source-branch feat/x --title t")
+{ [ "$rc" -eq 0 ] && grep -q "acme/grupo/widgets" "$TMP/err.txt" && ! grep -q "no sé a qué repo" "$TMP/err.txt"; } && ok "glab mr create -R=… lee el repo" || no "-R= no se leyó ($rc): $(head -c 200 "$TMP/err.txt")"
+for no_crea in "glab mr list --title create" "glab mr view create" "glab mr note create -m x" "glab mr update 5 --title create"; do
+  rc=$(corre "$no_crea")
+  { [ "$rc" -eq 0 ] && ! grep -q "NO verifiqué" "$TMP/err.txt"; } && ok "«${no_crea}» no es crear" || no "«${no_crea}» se tomó como crear ($rc): $(head -c 160 "$TMP/err.txt")"
+done
+# sin -R y con un remoto que la lista del equipo no conoce, el repo sale del camino del remoto
+git init -q "$TMP/clon-gl" && git -C "$TMP/clon-gl" remote add origin git@gitlab.acme.test:acme/grupo/widgets.git
+printf '{"cwd":"%s","tool_input":{"command":"glab mr create --source-branch feat/x --title t"}}' "$TMP/clon-gl" \
+  | PATH="$TMP/bin:$PATH" node "$HOOK" >"$TMP/out.txt" 2>"$TMP/err.txt"; rc=$?
+{ [ "$rc" -eq 0 ] && grep -q "acme/grupo/widgets" "$TMP/err.txt" && ! grep -q "no sé a qué repo" "$TMP/err.txt"; } && ok "sin -R, el repo sale del camino del remoto" || no "el remoto no dio el repo ($rc): $(head -c 200 "$TMP/err.txt")"
+rc=$(corre "glab mr list -R acme/grupo/widgets")
+{ [ "$rc" -eq 0 ] && ! grep -q "NO verifiqué" "$TMP/err.txt"; } && ok "listar pedidos de GitLab no es crear: el freno no lo mira" || no "listar se tomó como crear ($rc): $(head -c 200 "$TMP/err.txt")"
+
+# ---------------------------------------------------------------- 1b3. 🔴 el pedido dentro de otra orden (fila 244)
+# `bash -c '…'`, `sudo …` y `xargs …` corren el comando de adentro: el pedido se mira igual que suelto.
+for envuelto in "bash -c '$GL'" "sh -c \"$GL\"" "sudo $GL" "sudo -E $GL" "xargs $GL < /dev/null" "env A=b $GL"; do
+  rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "$envuelto")
+  { [ "$rc" -eq 0 ] && grep -q "NO verifiqué" "$TMP/err.txt" && grep -q "acme/grupo/widgets" "$TMP/err.txt"; } && ok "«${envuelto%% *} …» de GitLab se mira" || no "🔴 «${envuelto}» pasó sin mirar ($rc): $(head -c 160 "$TMP/err.txt")"
+done
+# las opciones de un prefijo que llevan valor se saltean con su valor: si no, el valor se toma por el programa y el
+# pedido pasa sin mirar. Las que no llevan valor (`sudo -S`, `sudo -E`) siguen sin comerse la palabra siguiente
+for envuelto in "sudo -D /tmp $GL" "sudo -u root -D /tmp $GL" "sudo -T 30 $GL" "sudo -r rol -t tipo $GL" "sudo -R / $GL" \
+  "sudo -S -E $GL" "nice -n 5 $GL" "time -o /tmp/t $GL" "exec -a nombre $GL" "env -u A $GL" "env -S \"$GL\"" \
+  "env --split-string=\"$GL\""; do
+  rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "$envuelto")
+  { [ "$rc" -eq 0 ] && grep -q "NO verifiqué" "$TMP/err.txt" && grep -q "acme/grupo/widgets" "$TMP/err.txt"; } && ok "«${envuelto% glab*} …» saltea la opción con su valor y mira el pedido" || no "🔴 «${envuelto% glab*} …» pasó sin mirar ($rc): $(head -c 160 "$TMP/err.txt")"
+done
+for envuelto in "bash -c '$CREAR'" "sudo $CREAR" "xargs $CREAR < /dev/null"; do
+  rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "$envuelto")
+  { [ "$rc" -eq 2 ] && grep -q "2845" "$TMP/err.txt"; } && ok "«${envuelto%% *} …» de Azure se frena con otro construyendo" || no "🔴 «${envuelto}» de Azure pasó ($rc)"
+done
+for envuelto in "bash -c '$GH'" "xargs $GH < /dev/null"; do
+  rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "$envuelto")
+  { [ "$rc" -eq 0 ] && grep -q "NO verifiqué" "$TMP/err.txt"; } && ok "«${envuelto%% *} …» de GitHub se mira" || no "🔴 «${envuelto}» de GitHub pasó sin mirar ($rc): $(head -c 160 "$TMP/err.txt")"
+done
+rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "bash -c 'glab mr list -R acme/grupo/widgets'")
+{ [ "$rc" -eq 0 ] && ! grep -q "NO verifiqué" "$TMP/err.txt"; } && ok "listar dentro de bash -c no es crear" || no "listar dentro de bash -c se tomó como crear ($rc)"
+
 # ---------------------------------------------------------------- 1c. 🔴 un pedido de Azure abierto por la capa de plataforma
 # El paso del merge abre los pedidos de Azure con `platform.js change-request open`, no con `az repos pr create`: el freno
 # los mira con `az`, igual que al crear a mano, y frena con otro construyendo.

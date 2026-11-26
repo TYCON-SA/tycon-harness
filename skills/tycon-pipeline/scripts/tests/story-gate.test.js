@@ -45,6 +45,23 @@ test('state-dir: Write bajo ~/.claude/.tycon-pipeline se deniega siempre, aun ap
   assert.equal(r.action, 'block'); assert.equal(r.kind, 'state-dir');
 });
 
+// 🔴 Falla con: la configuración de git de un clon se edita a mano con la herramienta de edición. Ahí está el `origin`,
+// y los controles que comparan contra main del servidor (`clear --replaced-by`, `ls-remote`) le creen; por consola
+// ya no se cambia (on-bash-write-gate.js, el caso `git remote`).
+test('git-config: la configuración de git de un clon no se edita a mano, en ningún repo y aun apagado', () => {
+  const frena = (filePath, extra = {}) => gate.computeStoryGate({ ...BASE, filePath, ...extra });
+  for (const f of [`${REPO}/.git/config`, '/w/Otro/.git/config', `${REPO}/.git/worktrees/wt1/config.worktree`, `${REPO}/.git/modules/sub/config`, 'C:\\w\\MiRepo\\.git\\config']) {
+    const r = frena(f, { gateEnabled: false });
+    assert.equal(r.action, 'block', f); assert.equal(r.kind, 'git-config', f);
+    assert.equal(frena(f, { isHarness: true, repoHasTycon: false, repoRoot: null }).kind, 'git-config', `${f}: también en un repo del arnés o sin arnés`);
+  }
+  // por el enlace: la ruta escrita es otra, la real es la configuración
+  assert.equal(frena('/tmp/x', { realFilePath: `${REPO}/.git/config` }).kind, 'git-config');
+  // lo que sólo se llama parecido pasa por su camino de siempre
+  for (const f of [`${REPO}/config`, `${REPO}/.github/config`, `${REPO}/.git/hooks/pre-commit`, `${REPO}/docs/.git-config.md`]) assert.notEqual(frena(f).kind, 'git-config', f);
+  assert.match(gate.blockMessage({ kind: 'git-config' }, { filePath: `${REPO}/.git/config` }), /git remote set-url/);
+});
+
 test('pass: no-código / harness / gate apagado / sin repo / repo=home / repo sin arnés', () => {
   assert.equal(gate.computeStoryGate({ ...BASE, filePath: `${REPO}/specs/s.md` }).action, 'pass');
   assert.equal(gate.computeStoryGate({ ...BASE, filePath: '/u/.claude/agent-skills/skills/x/a.js' }).action, 'pass');
@@ -1158,7 +1175,7 @@ test('PlanReview_FolderProtected_AndResultOnlyFromRunner (T28, el freno) @story-
       assert.ok(r && r.block, cmd);
     }
     // los dos del arnés pasan: el corredor del pase con su --out y marker.js plan-review
-    assert.equal(bash.handle(ev(`node '${lite}' '${wf}' --args "$(cat ${E}/plan-review/s1/s1.args.json)" --out '${res}'`), { stateDir, installedRoots: [arnes] }), null);
+    assert.equal(bash.handle(ev(`node '${lite}' '${wf}' --args-file '${E}/plan-review/s1/s1.args.json' --out '${res}'`), { stateDir, installedRoots: [arnes] }), null);
     assert.equal(bash.handle(ev(`node ${path.join(SCRIPTS, 'marker.js')} plan-review --result ${res} --model opus`), { stateDir, installedRoots: [arnes] }), null);
   });
 });
@@ -1206,6 +1223,238 @@ test('CpAlEstado_ConBarraAlFinalOEntradaRedirigida_Frena (fila 222, el freno)', 
     pasa(`cp ${S} '${repo}/copia.json' \\\n  `);
     pasa(`cp ${S} '${repo}/copia.json' <<<E`);
   });
+});
+
+// 🔴 Fila 223. Mutación: reconocer una copia sólo si el tramo empieza con `cp`, `mv` o `ln` (o `sudo`). `install` y `rsync`
+// copian igual, y un envoltorio (`env`, `command`, `nohup`, `timeout 5`) o el programa por su ruta o escapado (`/bin/cp`,
+// `\cp`) corren el mismo `cp`: el resultado de la revisión se escribía sin que ningún control lo viera.
+test('CopiaPorOtroProgramaOEnvoltorio_AlEstado_Frena (fila 223, el freno)', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'plan-review', 's1'), { recursive: true });
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const res = path.join(E, 'plan-review', 's1', 's1.resultado.json');
+  const S = path.join(repo, 'falso.json');
+  fs.writeFileSync(S, '{}');
+  const arnes = path.join(SCRIPTS, '..', '..', '..');
+  conEnv(SIN_REGISTRO, () => {
+    const frena = (cmd) => { const r = bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }); assert.ok(r && r.block, JSON.stringify(cmd)); };
+    const pasa = (cmd) => assert.equal(bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }), null, JSON.stringify(cmd));
+    // otros programas que copian
+    frena(`install ${S} '${res}'`);
+    frena(`install -m 644 ${S} '${res}'`);
+    frena(`install -t '${E}/plan-review/s1' ${S}`);
+    frena(`rsync ${S} '${res}'`);
+    frena(`rsync -a ${S} '${res}'`);
+    // el mismo cp por su ruta, escapado o detrás de un envoltorio
+    frena(`/bin/cp ${S} '${res}'`);
+    frena(`\\cp ${S} '${res}'`);
+    frena(`command cp ${S} '${res}'`);
+    frena(`env cp ${S} '${res}'`);
+    frena(`env -i HOLA=1 cp ${S} '${res}'`);
+    frena(`env -u HOME cp ${S} '${res}'`);
+    frena(`nohup cp ${S} '${res}'`);
+    frena(`timeout -s KILL 5 cp ${S} '${res}'`);
+    frena(`nice -n 5 mv ${S} '${res}'`);
+    // lo mismo con los otros que escriben el archivo que nombran
+    frena(`env sed -i 's/a/b/' '${res}'`);
+    frena(`/usr/bin/sed -i 's/a/b/' '${res}'`);
+    frena(`command truncate -s 0 '${res}'`);
+    // de la vuelta corta: en rsync `-t` conserva las fechas (no es la carpeta de destino)
+    frena(`rsync -t ${S} '${res}'`);
+    frena(`rsync -rt ${S} '${res}'`);
+    frena(`rsync -at ${S} '${res}'`);
+    // de la segunda vuelta: una variable pegada a `-u` (`-uSSH_AUTH_SOCK`) no es el programa; y lo que el shell pega al
+    // nombre del programa no es del nombre
+    for (const u of ['-uSSH_AUTH_SOCK', '-uSHELL', '-uPS1']) frena(`env ${u} cp ${S} '${res}'`);
+    for (const pegado of ['cp>log', 'cp>>log', 'cp>|log', 'cp<<<x', 'cp$x', 'cp${x}', 'cp$()', 'cp``', "cp$''", 'mv$x', 'rsync$x -a', 'install$x', 'env cp$x']) {
+      frena(`${pegado} ${S} '${res}'`);
+    }
+    // de la tercera vuelta: una redirección pegada con una barra en su palabra (`cp>/dev/null`) no cambia el programa; y
+    // miles de `-S` encadenados se leen sin agotar la memoria: el `cp` de al lado se sigue viendo
+    for (const pegado of ['cp>/dev/null', 'cp>/tmp/log', 'cp>>/tmp/log', 'cp</dev/null', 'cp<<<a/b', 'mv>/dev/null']) frena(`${pegado} ${S} '${res}'`);
+    frena(`truncate>/dev/null -s0 '${res}'`);
+    frena(`sed>/dev/null -i.bak s/a/b/ '${res}'`);
+    // de la cuarta vuelta: un `<` o `>` adentro de una sustitución pegada delante de la ruta del programa no la corta
+    for (const delante of ['$(:>/dev/null)', '`:>/dev/null`', '$(:</dev/null)', '${x#>}', '${x%%<*}', '$(:$(:>/dev/null))']) {
+      frena(`${delante}/bin/cp ${S} '${res}'`);
+      frena(`nohup ${delante}/bin/mv ${S} '${res}'`);
+    }
+    frena(`$(:>/dev/null)/usr/bin/env cp ${S} '${res}'`);
+    // de la quinta vuelta: una sustitución con una barra adentro, pegada detrás del nombre, no cambia el programa; y lo que
+    // la lectura de siempre (el nombre al principio) veía se sigue viendo
+    for (const pegado of ['cp$(:>/dev/null)', 'cp`:>/dev/null`', 'cp$((1>0)>/dev/null)', 'mv$(:>/dev/null)', 'cp${x//a/b}', 'cp`:/`', 'nohup cp$(:>/dev/null)']) {
+      frena(`${pegado} ${S} '${res}'`);
+    }
+    frena(`ln$(:>/dev/null) -sf ${S} '${res}'`);
+    frena(`sed$(:>/dev/null) -i.bak s/a/b/ '${res}'`);
+    frena(`truncate$(:>/dev/null) -s0 '${res}'`);
+    // de la sexta vuelta: un programa por su ruta adentro de una sustitución que cierra después de un blanco (la ruta
+    // del destino sin comillas: citada adentro de la sustitución no se lee en ninguna versión, y es de otra fila)
+    for (const [abre, cierra] of [['$(', ')'], ['`', '`']]) {
+      frena(`${abre}/bin/cp ${S} ${res}${cierra}`);
+      frena(`X=1 ${abre}/bin/cp ${S} ${res}${cierra}`);
+      frena(`true && ${abre}/bin/mv ${S} ${res}${cierra}`);
+    }
+    frena(`$(/usr/bin/truncate -s0 ${res})`);
+    frena(`$(/usr/bin/sed -i.bak s/a/b/ ${res})`);
+    // de la séptima vuelta: el programa por su ruta con una sustitución pegada que cierra después de un blanco
+    for (const pegado of ['$(:/ )', '${x/ }', '`a/b `', '$(/ )']) {
+      frena(`/bin/cp${pegado} ${S} '${res}'`);
+      frena(`/usr/bin/install${pegado} ${S} '${res}'`);
+    }
+    frena(`env ${'-S'.repeat(50000)}x; cp ${S} '${res}'`);
+    // stable-data: el reloj mide cuánto tarda la lectura, que es lo que se prueba (un valor de `-S` con miles de palabras)
+    const desde = Date.now();
+    bash.extractWriteTargets(`env -S'${'-S '.repeat(20000)}cp' ${S} '${res}'`);
+    assert.ok(Date.now() - desde < 1500, `env -S con miles de palabras: ${Date.now() - desde} ms`);
+    // lo de siempre sigue pasando
+    pasa(`install -m 644 ${S} '${repo}/copia.json'`);
+    pasa(`rsync -a ${S} '${repo}/copia.json'`);
+    // el valor de una opción de rsync no es el destino
+    pasa(`rsync -a ${S} '${repo}/copia/' --exclude specs/story-9.9-algo.md`);
+    pasa(`rsync -a ${S} '${repo}/copia/' -f '- x' --filter specs/story-9.9-algo.md`);
+    pasa(`install -m 644 ${S} '${repo}/copia.json' --mode 600`);
+    pasa(`env HOLA=1 cp ${S} '${repo}/copia.json'`);
+    pasa('npm install left-pad');
+  });
+});
+
+// 🔴 Fila 224. Mutación: leer la palabra de una redirección hasta la primera comilla, y reconocer sólo un descriptor de
+// una cifra. Lo que seguía de la palabra (`<<<x"y"`, `<'a b'c`), un `10<x`, un `{fd}<x`, o una redirección delante del
+// comando con un descriptor largo, con `{fd}`, con `>|` o detrás de una variable quedaban como el último argumento o
+// como el comando, y el `cp` al resultado de la revisión pasaba sin que ningún control lo viera.
+test('CpAlEstado_ConRedireccionRara_Frena (fila 224, el freno)', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'plan-review', 's1'), { recursive: true });
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const res = path.join(E, 'plan-review', 's1', 's1.resultado.json');
+  const S = path.join(repo, 'falso.json');
+  fs.writeFileSync(S, '{}');
+  const arnes = path.join(SCRIPTS, '..', '..', '..');
+  conEnv(SIN_REGISTRO, () => {
+    const frena = (cmd) => { const r = bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }); assert.ok(r && r.block, JSON.stringify(cmd)); };
+    const pasa = (cmd) => assert.equal(bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }), null, JSON.stringify(cmd));
+    // la palabra de la redirección, con comillas o escapes pegados
+    for (const entrada of [`<<<$'x'`, '<<<x"y"', `<<<"a b"c`, `<<<'it''s'`, '<<<$(echo x y)', '<<<${HOLA:-a b}', '<<<a\\ b', '< f"g"', `<'a b'c`]) {
+      frena(`cp ${S} '${res}' ${entrada}`);
+    }
+    // un descriptor de dos cifras o con nombre
+    for (const entrada of ['10<x', '12<x', '{fd}<x', '{fd}<<<x']) frena(`cp ${S} '${res}' ${entrada}`);
+    // una redirección delante del comando: descriptor largo, con nombre, `>|`, o detrás de una variable
+    for (const delante of ['10>f', '{fd}>f', 'HOLA=1 >f', 'HOLA=1 > f', '>|f']) frena(`${delante} cp ${S} '${res}'`);
+    // de la vuelta corta: un `>` escapado antes de una tubería no es `>|`, y lo de después de la tubería corre
+    for (const antes of ['echo \\>', 'echo a\\>', 'true \\\\\\>']) frena(`${antes}|cp ${S} '${res}'`);
+    frena(`echo \\>|&cp ${S} '${res}'`);
+    // de la segunda vuelta: con un número par de barras el `>` no está escapado y `>|` no parte; en bash `>!` delante es
+    // `>` al archivo `!`, y lo que sigue es el comando; un `$(` o `${` partido por el `;` o la tubería de adentro deja una
+    // palabra que no se resuelve, no el origen como destino
+    for (const antes of ['\\\\', 'a\\\\', '\\\\\\\\']) frena(`cp ${S} ${antes}>|x '${res}'`);
+    for (const op of ['>!', '>>!', '&>!', '2>!', 'X=1 >!', 'env >!', 'nohup >!']) frena(`${op} cp ${S} '${res}'`);
+    frena(`>! sed -i.bak s/a/b/ '${res}'`);
+    for (const entrada of ['<<<$(true; true)', '<<<$(true|true)', '<<<${x:-a; b}']) frena(`cp ${S} ${entrada} '${res}'`);
+    // de la tercera vuelta: con una sustitución sin cerrar detrás, el destino de antes sigue siendo un destino
+    // (el destino, sin la ejecución abierta: con ella frena también otra capa)
+    const destinoVisto = (cmd) => assert.ok(bash.extractWriteTargets(cmd).includes(res), JSON.stringify(cmd));
+    for (const entrada of ['<<<$(true; true)', '<<<$(a|b)', '<<<${x:-a; b}', '2>$(true; echo /tmp/z)']) {
+      destinoVisto(`cp ${S} '${res}' ${entrada}`);
+      destinoVisto(`mv ${S} '${res}' ${entrada}`);
+    }
+    destinoVisto(`truncate -s0 '${res}' <<<$(true; true)`);
+    // lo de siempre sigue pasando
+    pasa(`cp ${S} '${repo}/copia.json' <<<x"y"`);
+    pasa(`HOLA=1 >/dev/null cp ${S} '${repo}/copia.json'`);
+  });
+});
+
+// 🔴 Fila 228. Mutación: leer los destinos sólo con la lectura por expresiones, que no conoce las redirecciones de zsh
+// (`>!`, `>&|`), no cuenta `<>` como escritura, parte el tramo en un `;` entre comillas, vacía un destino citado con
+// blancos y corta una asignación con `$(…)` delante del programa. Con cualquiera de esas formas, un `cp` o un `echo` al
+// estado de la corrida pasaba sin que ningún control lo viera.
+test('EscrituraAlEstado_ConFormasDelShellQueLaExpresionNoLee_Frena (fila 228, el freno)', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  fs.mkdirSync(path.join(E, 'plan-review', 's1'), { recursive: true });
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const res = path.join(E, 'plan-review', 's1', 's1.resultado.json');
+  const S = path.join(repo, 'falso.json');
+  fs.writeFileSync(S, '{}');
+  const arnes = path.join(SCRIPTS, '..', '..', '..');
+  conEnv(SIN_REGISTRO, () => {
+    const frena = (cmd) => { const r = bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }); assert.ok(r && r.block, JSON.stringify(cmd)); };
+    const pasa = (cmd) => assert.equal(bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }), null, JSON.stringify(cmd));
+    // P1: las redirecciones de zsh que pisan el archivo aunque el shell no deje pisar
+    for (const op of ['>!', '>>!', '&>!', '&>>!', '>&!', '>&|', '&>|', '2>!']) {
+      frena(`echo x ${op} '${res}'`);
+      frena(`echo x ${op}'${res}'`);
+    }
+    // P4: un destino citado con blancos u operadores adentro, o con un blanco escapado, detrás de una redirección
+    const citados = [`"${E}/a b.json"`, `'${E}/a<c.json'`, `'${E}/a;b.json'`, `${E}/a\\ b.json`, `"${E}/plan-review/s1/a b.json"`];
+    for (const nombre of citados) frena(`echo x > ${nombre}`);
+    for (const delante of ['TS=$(date +%s)', 'TS=`date +%s`', 'X=${a:-b c}', 'X=(a b)', 'X=1 <<<$(echo a b)']) frena(`${delante} truncate -s0 '${res}'`);
+    // lo que sigue lo lee el lector compartido; una instalación sin él (un clon de skills suelto) no lo ve
+    if (CON_LECTOR) {
+      // P2: `<>` abre el archivo para leer y escribir, y lo crea
+      for (const op of ['1<>', '<>', '3<>', '1<> ']) frena(`cat ${S} ${op}'${res}'`);
+      frena(`: <>'${res}'`);
+      // P3: un `;` o una tubería entre comillas en la palabra de una redirección no parte el tramo
+      for (const palabra of [`>'a;b'`, `>'a|b'`, `2>"a;b"`, `>"a&b"`]) frena(`cp ${S} '${res}' ${palabra}`);
+      // P4: el mismo destino citado, como argumento de cp
+      for (const nombre of citados) frena(`cp ${S} ${nombre}`);
+      // P5: una asignación con una sustitución, una lista o una redirección con blancos delante del programa
+      for (const delante of ['TS=$(date +%s)', 'TS=`date +%s`', 'X=${a:-b c}', 'X=(a b)', 'X=1 <<<$(echo a b)']) {
+        frena(`${delante} cp ${S} '${res}'`);
+        frena(`${delante} sed -i.bak s/a/b/ '${res}'`);
+      }
+    }
+    // lo de siempre sigue pasando
+    pasa(`TS=$(date +%s) cp ${S} '${repo}/copia.json'`);
+    pasa(`cp ${S} "${repo}/a b.json"`);
+    pasa(`echo x >! /dev/null`);
+    pasa(`cat ${S} 1<>'${repo}/copia.json'`);
+    pasa(`git status >'${repo}/a;b.txt'`);
+    // de la segunda vuelta: un origen o un destino que es la salida de un comando no se toma como destino
+    for (const cmd of ['cp $(pwd)/a /tmp/x', 'ln -sf $(which node) /tmp/node', 'rsync -a $(pwd)/ /tmp/x/',
+      'cp a "$(git rev-parse --show-toplevel)/x"']) pasa(cmd);
+  });
+});
+
+// 🔴 Fila 228, lo bajo. Mutación: no leer los comandos de adentro de una sustitución, ni el texto de `env -S`, ni los
+// archivos que escribe rsync por sus opciones, ni el programa detrás de `time -p`, de `noglob`, de un `sudo` con sus
+// opciones juntas o con una sustitución pegada a su nombre. Con cualquiera, la copia al estado pasaba sin que la leyera
+// el registro de destinos.
+test('DestinosAlEstado_DetrasDeEnvoltoriosYSustituciones_SeLeen (fila 228, el freno)', () => {
+  const E = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'f228-')));
+  const res = path.join(E, 'plan-review', 's1', 's1.resultado.json');
+  const S = path.join(E, '..', 'falso.json');
+  const visto = (cmd) => assert.ok(bash.extractWriteTargets(cmd).includes(res), JSON.stringify(cmd));
+  // de acá hasta los envoltorios lo lee el lector compartido; una instalación sin él (un clon de skills suelto) no lo ve
+  if (CON_LECTOR) {
+    // los comandos de adentro de una sustitución, también entre comillas dobles o pegada a otro programa
+    for (const cmd of [`echo $(cp ${S} '${res}')`, `x=$(cp ${S} "${res}")`, `echo "$(cp ${S} '${res}')"`, `echo \`cp ${S} '${res}'\``,
+      `/bin/sed$(/bin/cp ${S} ${res})`, `diff <(cp ${S} '${res}') a`]) visto(cmd);
+    // una sustitución detrás del destino puede no dar ninguna palabra: el destino puede ser la de antes
+    visto(`cp ${S} '${res}' $(true)`);
+    // el texto de `env -S`, que env parte en palabras y corre
+    for (const cmd of [`env -S 'cp ${S} ${res}'`, `env -S"cp ${S} ${res}"`, `env --split-string='cp ${S} ${res}'`, `env -iS 'cp ${S} ${res}'`]) visto(cmd);
+    // los archivos que escribe rsync por sus opciones
+    for (const op of ['--log-file=', '--log-file ', '--write-batch=', '--only-write-batch ']) visto(`rsync ${op}'${res}' a b`);
+    // una sustitución pegada al nombre de un envoltorio o de tee
+    visto(`nohup$(:/ ) cp ${S} '${res}'`);
+    visto(`tee$(:/ ) '${res}' < ${S}`);
+    // un destino escrito con el citado ANSI-C, con o sin escapes
+    visto(`echo x > $'${res}'`);
+    visto(`cp ${S} $'${res.slice(0, -1)}\\x6e'`);
+  }
+  // el programa detrás de `time -p`, de los modificadores de zsh, de `=cp` y de `$'cp'`
+  for (const delante of ['time -p', 'noglob', 'nocorrect', 'sudo -iu root', 'sudo -nu root', 'sudo -T 5', 'sudo -R /']) visto(`${delante} cp ${S} '${res}'`);
+  for (const nombre of ['=cp', "$'cp'", "$'\\x63p'"]) visto(`${nombre} ${S} '${res}'`);
+  // de la segunda vuelta: el valor pegado a una opción del envoltorio (`-uroot`, `-uP`) no hace saltar el programa
+  for (const delante of ['sudo -uroot', 'sudo -nuroot', 'sudo -ghost', 'sudo -Dtmp', 'env -uP', 'env -uHTTPS']) visto(`${delante} cp ${S} '${res}'`);
+  // lo de siempre no suma destinos
+  assert.deepEqual(bash.extractWriteTargets(`echo "$(git log -1)"; env -S 'true'`), []);
+  assert.deepEqual(bash.extractWriteTargets(`time -p ls; noglob echo a*`), []);
 });
 
 // 🔴 Mutaciones: mirar sólo el primer `--out`, aceptar un destino que no se puede leer, o aceptar el corredor del arnés
@@ -1291,15 +1540,17 @@ test('PlanReview_ForgedResult_ThreeWays_Blocked (T28, el freno) @story-8.267 @ac
     frena(`cd ${E}/plan-review/s1 && node /tmp/mio.js --out s1.resultado.json`);
     frena(`pushd ${E}/plan-review/s1; node /tmp/mio.js --out=s1.resultado.json`);
     // 3b. el corredor con el pedido auténtico y revisores propios
-    frena(`node '${lite}' '${wf}' --args "$(cat '${args}')" --out '${res}' --agents-dir /tmp/mis-agentes`);
-    frena(`node '${lite}' '${wf}' --args "$(cat '${args}')" --out '${res}' --runners mio`);
+    frena(`node '${lite}' '${wf}' --args-file '${args}' --out '${res}' --agents-dir /tmp/mis-agentes`);
+    frena(`node '${lite}' '${wf}' --args-file '${args}' --out '${res}' --runners mio`);
+    // la forma vieja, con el pedido de verdad: el arnés ya no la imprime, y tiene los huecos de la fila 212
+    frena(`node '${lite}' '${wf}' --args "$(cat '${args}')" --out '${res}'`);
     // el comando que arma el arnés, con su pedido entre comillas simples, pasa; una variable en un --out que no nombra
     // la revisión, también
-    assert.equal(bash.handle(ev(`node '${lite}' '${wf}' --args "$(cat '${args}')" --out '${res}'`), { stateDir, installedRoots: [arnes] }), null);
+    assert.equal(bash.handle(ev(`node '${lite}' '${wf}' --args-file '${args}' --out '${res}'`), { stateDir, installedRoots: [arnes] }), null);
     // con la lista de corredores de la organización, como la escribe el arnés, también pasa
     const orden = require(path.join(SCRIPTS, 'lib', 'review-runner.js')).runnerOrder(require(path.join(SCRIPTS, 'lib', 'plan-review.js')).configDeLaOrganizacion().raw).order;
     if (Array.isArray(orden) && orden.length) {
-      assert.equal(bash.handle(ev(`node '${lite}' '${wf}' --args "$(cat '${args}')" --out '${res}' --runners ${orden.join(',')}`), { stateDir, installedRoots: [arnes] }), null);
+      assert.equal(bash.handle(ev(`node '${lite}' '${wf}' --args-file '${args}' --out '${res}' --runners ${orden.join(',')}`), { stateDir, installedRoots: [arnes] }), null);
     }
     assert.equal(bash.handle(ev(`cd /tmp && node /tmp/build.js --out dist.json`), { stateDir, installedRoots: [arnes] }), null);
     // «review» suelto no es la revisión del plan: un --out opaco con esa palabra en otro lado pasa (el pase adversarial
@@ -1342,6 +1593,83 @@ test('PlanReview_ArgsFile_ElComandoDelArnesPasa_LasFalsificacionesNo (T28, el fr
     frena(`A=${args}; node '${lite}' '${wf}' --args-file "$A" --out '${res}'`);
     frena(`node '${lite}' '${wf}' --args-file '${args}' --out '${res}' --agents-dir /tmp/mis-agentes`);
   });
+});
+
+// 🔴 Fila 212. Mutaciones: aceptar el pedido por estar «adentro» de la carpeta (un `..` adentro sale), por el nombre de la
+// carpeta (`.tycon-pipeline/plan-review` en cualquier lado), con palabras que el freno lee distinto que el shell (una barra
+// invertida, comillas pegadas, un señuelo en un comentario), con `~` (el freno la expande donde el shell no) o con una ruta
+// relativa (el freno la resuelve contra la carpeta de la sesión y el shell, después de `pushd`, contra otra); el pedido de
+// otra sesión, o la forma vieja `--args "$(cat …)"`, que tiene los mismos huecos. Con cualquiera, el pase corre con un
+// plan inventado y su resultado sale con el número del pedido. Pasa sólo la ruta exacta que preparó el arnés.
+test('PlanReview_ArgsFile_SoloLaRutaExactaDelArnes (fila 212, el freno)', () => {
+  const { stateDir, repo } = corridaAbierta();
+  const E = stateDir;
+  for (const s of ['s1', 's2']) fs.mkdirSync(path.join(E, 'plan-review', s), { recursive: true });
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const res = path.join(E, 'plan-review', 's1', 's1.resultado.json');
+  const args = path.join(E, 'plan-review', 's1', 's1.args.json');
+  fs.writeFileSync(args, '{"planTexto":"PLAN REAL"}\n');
+  fs.writeFileSync(path.join(E, 'plan-review', 's2', 's2.args.json'), '{"planTexto":"OTRA SESION"}\n');
+  // lo que arma la sesión: un pedido falso afuera, y una carpeta con el nombre de la revisión fuera del estado
+  const afuera = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fila212-')));
+  const falso = path.join(afuera, 'mio.args.json');
+  fs.writeFileSync(falso, '{"planTexto":"PLAN FALSO"}\n');
+  const conNombre = path.join(afuera, '.tycon-pipeline', 'plan-review', 's1', 's1.args.json');
+  fs.mkdirSync(path.dirname(conNombre), { recursive: true });
+  fs.writeFileSync(conNombre, '{"planTexto":"PLAN FALSO"}\n');
+  const arnes = path.join(SCRIPTS, '..', '..', '..');
+  const lite = path.join(SCRIPTS, 'workflow-lite.js');
+  const wf = path.join(SCRIPTS, 'adversarial-verify.workflow.js');
+  const PR = require(path.join(SCRIPTS, 'lib', 'plan-review.js'));
+  try {
+    conEnv(SIN_REGISTRO, () => {
+      const pasa = (cmd) => assert.equal(bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }), null, cmd);
+      const frena = (cmd) => { const r = bash.handle(ev(cmd), { stateDir, installedRoots: [arnes] }); assert.ok(r && r.block, cmd); };
+      const corre = (pedido) => `node '${lite}' '${wf}' --args-file ${pedido} --out '${res}'`;
+      // el comando del arnés, tal cual o con la ruta pegada a la opción, pasa
+      pasa(PR.comandoLite(args, res, { order: [], integration: { runners: {} } }));
+      pasa(PR.comandoLite(args, res));
+      pasa(`node '${lite}' '${wf}' --args-file=${args} --out '${res}'`);
+      pasa(`node '${lite}' '${wf}' --args-file='${args}' --out '${res}'`);
+      // a. un `..` adentro de la carpeta de la revisión
+      frena(corre(`'${path.join(E, 'plan-review')}/${path.relative(path.join(E, 'plan-review'), falso)}'`));
+      // b. una carpeta con el nombre de la revisión, fuera del estado
+      frena(corre(`'${conNombre}'`));
+      // c. palabras que el freno lee distinto que el shell, con el pedido de verdad de señuelo en un comentario
+      // la opción partida para el freno y entera para el shell, armada por partes
+      const partida = (resto) => ['--args', resto].join('-');
+      frena(`node '${lite}' '${wf}' ${partida('fil\\e')} '${falso}' --out '${res}' # --args-file '${args}'`);
+      frena(`node '${lite}' '${wf}' ${partida("fil''e")} '${falso}' --out '${res}' # --args-file '${args}'`);
+      frena(`node '${lite}' '${wf}' x'--args-file' '${falso}' --args-file '${args}' --out '${res}'`);
+      frena(`node '${lite}' '${wf}' "--args-file" '${falso}' --out '${res}'`);
+      // d. `~`, que el freno expande y el shell no (entre comillas, o pegada a la opción)
+      frena(corre(`'~/${path.relative(os.homedir(), args)}'`));
+      frena(`node '${lite}' '${wf}' --args-file=~/${path.relative(os.homedir(), args)} --out '${res}'`);
+      // e. una ruta relativa, después de cambiar de carpeta
+      frena(`pushd '${afuera}' >/dev/null; ${corre(path.relative(repo, args))}`);
+      frena(`( cd '${afuera}' && ${corre(path.relative(repo, args))} )`);
+      // el pedido de otra sesión, o uno que no es la pareja del --out
+      frena(corre(`'${path.join(E, 'plan-review', 's2', 's2.args.json')}'`));
+      // la forma vieja, con su pedido de verdad: tiene los mismos huecos, y el arnés ya no la imprime
+      frena(`node '${lite}' '${wf}' --args "$(cat '${args}')" --out '${res}'`);
+      // de la vuelta corta: un programa propio llamado node, o el corredor con otro comando delante o escondido en el
+      // renglón siguiente a un comentario con una comilla (el shell termina el comentario en el salto de renglón)
+      const exacto = `'${lite}' '${wf}' --args-file '${args}' --out '${res}'`;
+      for (const n of ['./node', `${afuera}/node`, `${afuera}/nodejs`]) frena(`${n} ${exacto}`);
+      frena(`export PATH='${afuera}':$PATH; node ${exacto}`);
+      frena(`true; node ${exacto}`);
+      frena(`node ${exacto} # '\ncp '${falso}' '${res}'\n# '`);
+      frena(`node ${exacto}\ncp '${falso}' '${res}'`);
+      // de la segunda vuelta: un `\r` (el shell lo deja en la última palabra), o un blanco que el shell no toma como blanco
+      // (un espacio duro, `\f`, `\v`) antes de otro renglón, donde el shell corre un comando con ese nombre
+      frena(`node ${exacto}\r`);
+      frena(`node ${exacto}\r\n`);
+      for (const b of [' ', '\f', '\v']) frena(`node ${exacto}\n${b}`);
+      // con su comentario de siempre, y un salto de renglón al final, pasa
+      pasa(`node ${exacto}  # revisor: Claude\n`);
+      pasa(`node ${exacto}\n\n  \t`);
+    });
+  } finally { fs.rmSync(afuera, { recursive: true, force: true }); }
 });
 
 // ── 8.317: con una historia abierta, el código fuera del grupo de la historia ─────────────────────────────────────────

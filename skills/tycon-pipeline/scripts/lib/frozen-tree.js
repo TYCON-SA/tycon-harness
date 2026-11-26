@@ -13,6 +13,8 @@
  *
  * En el repo sólo se escriben objetos en la base de git (como un `git add`): ni el árbol de trabajo ni el índice real.
  */
+// lo corre un paso (`frozen-tree.js lista-del-pase`): con un Node viejo dice cuál hace falta, antes de cualquier otro require
+if (require.main === module) { try { require('./node-floor.js').guard(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; } }
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -80,6 +82,65 @@ function puntoComunConMain(repo) {
   const mb = git(['-C', repo, 'merge-base', 'HEAD', ref]);
   if (!mb.ok || !/^[0-9a-f]{40}$/.test(mb.out)) return { error: `${path.basename(repo)}: no encontré el punto en común con ${ref} (${unaLinea(mb.err || mb.out)})` };
   return { sha: mb.out };
+}
+
+/**
+ * La base del pase adversarial en `repo` (historia 8.330): el punto en común de `HEAD` con su rama principal, traída antes
+ * del remoto, porque el pase compara contra lo último. La rama es la de `origin/HEAD`, `origin/main` u `origin/master`,
+ * la primera que exista: un repo con `master` también tiene base. `{ base, rama }`, o `{ base: null, sin_base }` con el
+ * motivo en una línea si el remoto no contesta o no hay rama principal: no frena acá, lo decide el paso, que sabe si ese
+ * repo tiene código en el diff. No es `puntoComunConMain`, que es la referencia del sello para el cierre.
+ */
+function baseDelPase(repo) {
+  const e = entornoDeGit();
+  const correr = (args, timeout) => {
+    const r = spawnSync('git', ['-C', repo, ...args], { windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout, env: e.idiomaFijo(e.sinGitDelPadre(process.env), {}) });
+    return { ok: !r.error && r.status === 0, out: String(r.stdout || '').trim(), err: String((r.error && r.error.message) || r.stderr || '').trim() };
+  };
+  const traer = correr(['fetch', '-q', 'origin'], 120000);
+  if (!traer.ok) return { base: null, sin_base: `no se pudo traer origin (${unaLinea(traer.err)})` };
+  const cabeza = correr(['symbolic-ref', '-q', 'refs/remotes/origin/HEAD'], 15000);
+  const candidatas = [cabeza.ok ? cabeza.out : null, 'refs/remotes/origin/main', 'refs/remotes/origin/master'].filter(Boolean);
+  const rama = candidatas.find((ref) => correr(['show-ref', '--verify', '--quiet', ref], 15000).ok);
+  if (!rama) return { base: null, sin_base: 'el remoto no tiene rama principal (origin/HEAD, origin/main ni origin/master)' };
+  const corta = rama.replace(/^refs\/remotes\//, '');
+  const mb = correr(['merge-base', 'HEAD', rama], 30000);
+  if (!mb.ok || !/^[0-9a-f]{40,64}$/.test(mb.out)) return { base: null, sin_base: `sin punto en común con ${corta} (${unaLinea(mb.err || mb.out)})` };
+  return { base: mb.out, rama: corta };
+}
+
+/**
+ * Los archivos de código del cambio congelado de `repo`, relativos a él: lo distinto entre la base y el sello (lo
+ * commiteado, lo que no y lo nuevo, porque el sello lo tiene todo), sin lo borrado, que no está en la copia. Código es
+ * lo que cuenta el portón del pase: lo de lib/code-files.js, con lo que sume la organización, más `.sql`. Sin base no
+ * se sabe qué cambió, y cuenta todo el código del sello: un repo con código y sin base frena de más, nunca de menos.
+ * `{ files }` o `{ error }` en una línea.
+ */
+function archivosDeCodigo(repo, base, sello) {
+  const r = git(['-C', repo, ...(base ? ['diff', '--name-only', '-z', '--diff-filter=d', base, sello] : ['ls-tree', '-r', '--name-only', '-z', sello])]);
+  if (!r.ok) return { error: `${path.basename(repo)}: no pude leer el cambio (${unaLinea(r.err)})` };
+  const { isCode } = require('./code-files.js');
+  const extra = require('./stack-config.js').orgExtra();
+  return { files: r.crudo.split('\0').filter((f) => f && (isCode(f, { extra }) || /\.sql$/i.test(f))) };
+}
+
+/**
+ * La lista del pase adversarial (historia 8.330, D1 y D2.1), desde los repos congelados con su base: los que tienen
+ * archivos de código en su cambio, cada uno con su base y sus archivos relativos a él. Un repo sin código queda afuera.
+ * Uno sin base y con código no se puede revisar: va a `frenan` con el motivo, y el pase no se lanza. `archivosDe` se
+ * pasa en las pruebas.
+ */
+function listaDelPase(repos, { archivosDe = archivosDeCodigo } = {}) {
+  const lista = [];
+  const frenan = [];
+  for (const r of repos || []) {
+    const a = archivosDe(r.repo, r.base || null, r.sello);
+    if (a.error) { frenan.push({ repo: r.repo, motivo: a.error }); continue; }
+    if (!a.files.length) continue;
+    if (!r.base) { frenan.push({ repo: r.repo, motivo: `tiene código en el cambio y no tiene base: ${r.sin_base || 'sin rama principal'}` }); continue; }
+    lista.push({ repo: r.repo, base: r.base, files: a.files });
+  }
+  return { repos: lista, frenan };
 }
 
 /**
@@ -410,32 +471,72 @@ function ultimaVuelta(stateDir, sid, tipo) {
 }
 
 /**
- * Sella y congela cada repo de una vuelta y la anota: `{ repos: [{ repo, tree, copy }] }` o `{ error }` con el primer
- * motivo. Una vuelta no se lanza a medias: si un repo falla, se borran las copias que ya se armaron. Antes barre las
- * copias de las corridas que ya no están abiertas; una vuelta de revisores nueva borra las copias de las anteriores
- * (al guardar se compara contra la última).
+ * Una copia de esta sesión, de cualquier vuelta, del mismo repo y el mismo sello, que sigue en disco y pasa `verify`
+ * (nadie la tocó): `{ copy, etiqueta }` con la vuelta que la armó, o null. De la más nueva a la más vieja.
  */
-function sealAndFreeze({ stateDir, sid, etiqueta, repos, tipo = 'revisores', story = null }) {
+function copiaReusable(previas, repo, tree) {
+  for (const v of [...previas].reverse()) {
+    for (const r of v.repos || []) {
+      if (r.repo !== repo || r.tree !== tree || !r.copy) continue;
+      let esta = false;
+      try { esta = fs.existsSync(r.copy); } catch (_) { esta = false; }
+      if (esta && verify(repo, r.copy, tree).ok) return { copy: r.copy, etiqueta: r.reusada_de || v.etiqueta };
+    }
+  }
+  return null;
+}
+
+/**
+ * Sella y congela cada repo de una vuelta y la anota: `{ repos: [{ repo, tree, copy, reusada_de? }] }` o `{ error }`
+ * con el primer motivo. Un repo con una copia de esta sesión del mismo sello que nadie tocó la reusa y anota de qué
+ * vuelta salió (historia 8.330): el pase y la primera vuelta de revisores no copian dos veces lo mismo. Una vuelta no se
+ * lanza a medias: si un repo falla, se borran las copias que ya se armaron (nunca una reusada). Antes barre las copias
+ * de las corridas que ya no están abiertas; una vuelta de revisores nueva borra las copias de las anteriores (al guardar
+ * se compara contra la última), menos las que ella misma usa y las de `noBorrar`: las del pase abierto, que lee el
+ * marcador quien congela la vuelta. `noBorrar: null` es que no se sabe cuáles son: no se borra ninguna que nombre un pase.
+ */
+function sealAndFreeze({ stateDir, sid, etiqueta, repos, tipo = 'revisores', story = null, noBorrar = [] }) {
   sweep(stateDir);
+  const previas = vueltas(stateDir, sid);
   const out = [];
+  const nuevas = [];
+  const deshacer = () => { for (const c of nuevas) remover(c); };
   for (const repo of repos) {
     const s = seal(repo);
-    if (s.error) { for (const r of out) remover(r.copy); return { error: s.error }; }
-    const f = freeze(repo, s.tree, copyDir(stateDir, sid, etiqueta, repo));
-    if (f.error) { for (const r of out) remover(r.copy); return { error: f.error }; }
+    if (s.error) { deshacer(); return { error: s.error }; }
+    const reusable = copiaReusable(previas, repo, s.tree);
+    let copy = reusable && reusable.copy;
+    if (!reusable) {
+      // la carpeta de esta etiqueta puede existir (la vuelta se relanza) y ser la copia que otra vuelta reusó, que el pase
+      // abierto sigue leyendo: no se pisa, la copia nueva va al lado, con el sello en el nombre
+      let destino = copyDir(stateDir, sid, etiqueta, repo);
+      if (fs.existsSync(destino)) destino = copyDir(stateDir, sid, `${etiqueta}-${s.tree.slice(0, 12)}`, repo);
+      const f = freeze(repo, s.tree, destino);
+      if (f.error) { deshacer(); return { error: f.error }; }
+      copy = f.copy;
+      nuevas.push(copy);
+    }
     // sin el punto en común con main el sello vale igual: al guardar, lo que trajo main cuenta como cambio
     const pm = puntoComunConMain(repo);
-    out.push({ repo, tree: s.tree, copy: f.copy, ...(pm.sha ? { mainBase: pm.sha } : {}) });
+    out.push({ repo, tree: s.tree, copy, ...(pm.sha ? { mainBase: pm.sha } : {}), ...(reusable ? { reusada_de: reusable.etiqueta } : {}) });
   }
   if (tipo === 'revisores') {
-    for (const v of vueltas(stateDir, sid).filter((x) => x.tipo === 'revisores' && x.etiqueta !== etiqueta)) {
-      for (const r of v.repos || []) { try { if (r.copy && fs.existsSync(r.copy)) remover(r.copy); } catch (_) { /* la barre la próxima */ } }
+    const quedan = new Set(out.map((r) => r.copy));
+    const protegidas = Array.isArray(noBorrar) ? noBorrar
+      : previas.filter((v) => v.tipo === 'pase').flatMap((v) => (v.repos || []).map((r) => r.copy));
+    for (const c of protegidas) if (c) quedan.add(c);
+    // también las de una vuelta anterior con la misma etiqueta (relanzada): su copia ya no se compara
+    for (const v of previas.filter((x) => x.tipo === 'revisores')) {
+      for (const r of v.repos || []) {
+        if (!r.copy || quedan.has(r.copy)) continue;
+        try { if (fs.existsSync(r.copy)) remover(r.copy); } catch (_) { /* la barre la próxima */ }
+      }
     }
   }
   try {
     fs.appendFileSync(registroDeVueltas(stateDir, sid), `${JSON.stringify({ ts: new Date().toISOString(), tipo, etiqueta, story, repos: out })}\n`, 'utf8');
   } catch (e) {
-    for (const r of out) remover(r.copy);
+    deshacer();
     return { error: `no pude anotar la vuelta congelada: ${unaLinea(e.message)}` };
   }
   return { repos: out };
@@ -774,7 +875,7 @@ function procedencia(repo, { env = process.env, home = os.homedir(), proceso = '
 }
 
 module.exports = {
-  seal, puntoComunConMain, freeze, gitDeLaCopia, verify, changed, anidadosConCambios, copyDir, remove, sweep, reposDe, reposDelPase, hermanosCambiados, sealAndFreeze, vueltas, ultimaVuelta, seccionDelContexto, sinPapeleoDeLaHistoria, procedencia,
+  seal, puntoComunConMain, baseDelPase, archivosDeCodigo, listaDelPase, freeze, gitDeLaCopia, verify, changed, anidadosConCambios, copyDir, remove, sweep, reposDe, reposDelPase, hermanosCambiados, sealAndFreeze, vueltas, ultimaVuelta, seccionDelContexto, sinPapeleoDeLaHistoria, procedencia,
   contenidoDelSello, tipoContraElSello, vueltaCerradaDeLosRevisores, tiposDesdeLaVuelta,
 };
 
@@ -783,4 +884,25 @@ module.exports = {
 if (require.main === module && process.argv[2] === 'procedencia') {
   const p = procedencia(process.argv[3] || null, { proceso: process.argv[4] || 'sin-nombre' });
   process.stdout.write(JSON.stringify(p).slice(1, -1));
+}
+
+// `node frozen-tree.js lista-del-pase <archivo>`: con la salida de `marker.js freeze-adversarial` guardada en <archivo>,
+// la lista del pase (`repos: [{ repo, base, files }]`, lo que va a los args del Workflow) y los repos que frenan. Sale 0
+// con la lista, 2 si algún repo con código no tiene base (el pase no se lanza: lo dice cada `frenan`) y 1 si no pudo leer.
+if (require.main === module && process.argv[2] === 'lista-del-pase') {
+  let congelado = null;
+  try { congelado = JSON.parse(fs.readFileSync(process.argv[3] || '', 'utf8')); } catch (e) {
+    process.stderr.write(`frozen-tree.js lista-del-pase: no pude leer la salida de freeze-adversarial (${unaLinea(e.message)})\n`);
+    process.exit(1);
+  }
+  if (!congelado || !Array.isArray(congelado.repos)) {
+    process.stderr.write('frozen-tree.js lista-del-pase: la salida de freeze-adversarial no trae `repos`\n');
+    process.exit(1);
+  }
+  const l = listaDelPase(congelado.repos);
+  process.stdout.write(JSON.stringify(l, null, 2) + '\n');
+  if (l.frenan.length) {
+    for (const f of l.frenan) process.stderr.write(`🔴 el pase no se lanza: ${f.repo} ${f.motivo}\n`);
+    process.exit(2);
+  }
 }

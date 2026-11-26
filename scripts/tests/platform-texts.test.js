@@ -30,7 +30,7 @@ const TEXTOS = [
   'skills/tycon-merge-to-main/steps/step-09b-create-change-request.md', 'guides/ci-gate.md', 'guides/git-commit-conventions.md',
   'guides/advisor-rules-catalog.md', 'guides/workflow-orchestration.md', 'guides/safety-guard.md', 'guides/production-with-permission.md',
   ...require('./lib/pieces-guide.js').piecesFiles(ROOT), 'guides/organization-site.md', 'guides/organization-site.en.md',
-  'guides/maintaining/mecanismo-de-instalacion.md', 'guides/maintaining/piezas-en-detalle.md', 'guides/maintaining/publicacion-espejo.md',
+  'guides/maintaining/installation-mechanism.md', 'guides/maintaining/piezas-en-detalle.md', 'guides/maintaining/publicacion-espejo.md',
 ];
 // Los renglones que se quedan, cada uno con su motivo: no son la plataforma del equipo (Azure en la nube), son lo que un
 // freno o el detector de publicación reconocen para frenar, o describen una pieza sólo de Azure DevOps que la mudanza
@@ -89,4 +89,12 @@ test('Guide_ListsEveryOperation @story-8.85 @ac-23', () => {
   assert.match(guia, /integration\.json/);
   assert.match(guia, /capabilities/);
   assert.match(guia, /rawCommands/);
+});
+
+test('PlatformTexts_DraftFieldsInGuide (T9) @story-8.332 @ac-9', () => {
+  const guia = read('guides/integrations/platform-connectors.md');
+  // los dos campos del borrador y del «listo», y lo que trae cada opción
+  for (const campo of ['draftOptions', 'readyCommands', 'separateValue', 'abbreviations', '"when"', '"unless"']) assert.ok(guia.includes(campo), `la guía nombra ${campo}`);
+  assert.match(guia, /borrador/);
+  assert.match(guia, /«Preparar el pull request»/);
 });

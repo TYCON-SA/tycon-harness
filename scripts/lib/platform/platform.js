@@ -446,21 +446,46 @@ async function conformance(name, opts = {}) {
 }
 
 /**
- * Los comandos crudos que declaran los conectores de plataforma en `rawCommands`: `[{ name, words, changeRequest }]`, con
- * las palabras del comando (`['gh', 'pr', 'create']`) y `changeRequest` si el conector lo declara además en
- * `changeRequestCommands` (crea o junta un pedido). Lanza si alguna integración no se puede leer: sin ella no se sabe qué
- * comandos declara.
+ * Los comandos crudos que declaran los conectores de plataforma en `rawCommands`: `[{ name, words, changeRequest, draft? }]`,
+ * con las palabras del comando (`['gh', 'pr', 'create']`), `changeRequest` si el conector lo declara además en
+ * `changeRequestCommands` (crea o junta un pedido) y `draft` si declara en `draftOptions` las opciones que lo hacen
+ * borrador (`{ options, abbreviations, argumentFiles }`). Después, aparte, los de `readyCommands`, que pasan un borrador
+ * a listo: `{ name, words, changeRequest: false, ready: { when, unless, abbreviations, argumentFiles } }`. No son comandos que la capa reemplaza:
+ * los lee el freno de guardar. Lanza si alguna integración no se puede leer: sin ella no se sabe qué comandos declara.
  */
 function rawCommands(opts = {}) {
   const leidas = INT.listManifests({ env: opts.env || process.env });
   if (leidas.problems.length) {
     throw new Error(`no pude leer ${leidas.problems.map((p) => `${p.name} (${p.reasons.join('; ')})`).join(' · ')}`);
   }
+  const palabras = (c) => c.trim().split(/\s+/);
   return leidas.manifests.filter((m) => m.kind === 'platform')
     .flatMap((m) => {
-      const pedidos = new Set((m.changeRequestCommands || []).map((c) => c.trim()));
-      return (m.rawCommands || []).map((c) => ({ name: m.name, words: c.trim().split(/\s+/), changeRequest: pedidos.has(c.trim()) }));
+      const pedidos = new Set((m.changeRequestCommands || []).map((c) => palabras(c).join(' ')));
+      const archivos = (x) => (typeof x.argumentFiles === 'string' ? x.argumentFiles : null);
+      const borradores = new Map((m.draftOptions || []).map((d) => [palabras(d.command).join(' '), { options: d.options, abbreviations: d.abbreviations === true, argumentFiles: archivos(d) }]));
+      const crudos = (m.rawCommands || []).map((c) => {
+        const k = palabras(c).join(' ');
+        return { name: m.name, words: palabras(c), changeRequest: pedidos.has(k), ...(borradores.has(k) ? { draft: borradores.get(k) } : {}) };
+      });
+      const listos = (m.readyCommands || []).map((r) => ({ name: m.name, words: palabras(r.command), changeRequest: false,
+        ready: { when: r.when || null, unless: r.unless || null, abbreviations: r.abbreviations === true, argumentFiles: archivos(r) } }));
+      return [...crudos, ...listos];
     });
+}
+
+/**
+ * Las otras formas de crear o juntar un pedido que declaran los conectores de plataforma: la API (`changeRequestApi`:
+ * el subcomando, las rutas y las mutaciones de graphql) y los cambios que prenden el auto-completar
+ * (`changeRequestAutoComplete`). `[{ name, api, autoComplete }]`. Lanza si alguna integración no se puede leer.
+ */
+function changeRequestSpecs(opts = {}) {
+  const leidas = INT.listManifests({ env: opts.env || process.env });
+  if (leidas.problems.length) {
+    throw new Error(`no pude leer ${leidas.problems.map((p) => `${p.name} (${p.reasons.join('; ')})`).join(' · ')}`);
+  }
+  return leidas.manifests.filter((m) => m.kind === 'platform')
+    .map((m) => ({ name: m.name, api: m.changeRequestApi || null, autoComplete: m.changeRequestAutoComplete || [] }));
 }
 
 /**
@@ -472,7 +497,8 @@ function rawCommands(opts = {}) {
  */
 function rawCommandOf(cmd, opts = {}) {
   if (typeof cmd !== 'string' || !cmd.trim()) return null;
-  const dichos = rawCommands(opts);
+  // marcar listo no es un comando crudo que la capa reemplaza: no cuenta acá
+  const dichos = rawCommands(opts).filter((d) => !d.ready);
   const hallados = new Set();
   for (const seg of require('../az-pr.js').segmentos(cmd)) {
     let i = 0;
@@ -553,4 +579,4 @@ function main(argv) {
 
 if (require.main === module) main(process.argv.slice(2)).then((code) => { process.exitCode = code; });
 
-module.exports = { choose, chosen, run, call, conformance, connector, identityFromRemote, identityOfRemoteUrl, identityByName, repoOf, nameOf, limpiar, summary, rawCommands, rawCommandOf, main, OPERATIONS, REASONS };
+module.exports = { choose, chosen, run, call, conformance, connector, identityFromRemote, identityOfRemoteUrl, identityByName, repoOf, nameOf, limpiar, summary, rawCommands, changeRequestSpecs, rawCommandOf, main, OPERATIONS, REASONS };

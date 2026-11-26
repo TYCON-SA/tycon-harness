@@ -211,8 +211,8 @@ for f in skills/tycon-pipeline/steps/step-01-start.md skills/tycon-pipeline/step
   if [ ! -f "$p" ]; then suite_check; echo "  ℹ NO MEDIDO — $f no está en $SK_REPO"; continue; fi
   if grep -qiE 'default por proyecto conocido|defaults conocidos' "$p"; then no "T10 $f: sigue teniendo el «default por proyecto conocido»"; else ok "T10 $f: sin «default por proyecto conocido»"; fi
   # lo sólo de Azure DevOps puede vivir en su guía de integración: vale si el paso la nombra y la guía lo dice
-  g="$SK_REPO/guides/integrations/ado-en-el-nucleo.md"; q="$p"
-  if grep -q 'guides/integrations/ado-en-el-nucleo.md' "$p" && [ -f "$g" ]; then q="$g"; fi
+  g="$SK_REPO/guides/integrations/ado-in-the-core.md"; q="$p"
+  if grep -q 'guides/integrations/ado-in-the-core.md' "$p" && [ -f "$g" ]; then q="$g"; fi
   if { grep -qiE 'Azure DevOps (está )?apagad' "$p" || grep -qiE 'Azure DevOps (está )?apagad' "$q"; } && { grep -q 'ado.org' "$p" || grep -q 'ado.org' "$q"; }; then ok "T10 $f: la organización sale de ado.org y, apagada, el paso lo dice y se saltea"
   else no "T10 $f: no resuelve la organización por ado.org ni dice qué hace con Azure DevOps apagado"; fi
 done

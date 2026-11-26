@@ -7,7 +7,7 @@
 # story) no deja a ninguna capa mecánica saber si de verdad corrió. Este
 # wrapper corre el comando, captura el EXIT CODE REAL y lo appendea a:
 #   1. <evidence-dir>/<story>-smoke-ledger.jsonl        (el repo)
-#   2. ~/.claude/.tycon-pipeline/gates.log              (espejo global, append-only)
+#   2. ~/.tycon/state/gates.log              (espejo global, append-only)
 # runtime-matrix.js solo cuenta entries que existen EN AMBOS (anti escritura a
 # mano del ledger) y con exit 0.
 #
@@ -200,7 +200,7 @@ case "$DECIDE_RC" in
       AISLAR=(node "$ISOLATED_JS" exec)
       while IFS= read -r RAIZ_AISLADA; do
         [ -n "$RAIZ_AISLADA" ] && AISLAR+=(--root "$RAIZ_AISLADA")
-      done <<< "$(printf '%s\n' "$DECISION" | sed 1d)"
+      done < <(printf '%s\n' "$(printf '%s\n' "$DECISION" | sed 1d)")
       AISLAR+=(--)
     fi ;;
   2) exit 2 ;;
@@ -218,6 +218,12 @@ case "$DECIDE_RC" in
     fi
     echo "[smoke-run] ⚠️ no pude decidir si el humo es de laboratorio ($ISOLATED_JS no está o no contestó): corre con la casa de siempre." >&2 ;;
 esac
+# La llave de prueba de Anthropic viaja sólo en la ejecución aislada. Un humo común correría con la casa y la credencial
+# reales de quien lo lanza, y quien puso la llave creería que corre con ella: no se corre.
+if [ -n "${TYCON_TEST_ANTHROPIC_API_KEY:-}" ] && [ "${AISLAR[0]:-}" != node ]; then
+  echo "smoke-run.sh: hay una llave de prueba (TYCON_TEST_ANTHROPIC_API_KEY), pero este humo no corre en la ejecución aislada: correría con la casa y la credencial reales — no se corre. La prueba en vivo va como guion de laboratorio (en .advisors/dod-runtime/), que corre aislada y con la llave." >&2
+  exit 2
+fi
 
 # ── La imagen, validada ANTES de correr ──
 # Un archivo que no sirve de prueba no se descubre después de correr un comando que puede haber escrito: el humo falla acá
@@ -332,6 +338,13 @@ else
   T1="$(reloj)"
 fi
 
+# En la ejecución aislada, lo que el encierro niega sin matar (fuera de las carpetas vigiladas) no queda anotado: el comando
+# sólo dice que no pudo escribir, con el texto del sistema. Si eso está en su salida y falló, se dice qué hacer en una
+# línea, por la salida de error: no entra en la salida guardada ni repite el texto que se busca.
+if [ "$EXIT" != 0 ] && [ "${AISLAR[0]:-}" = node ] && [ -n "$SALIDA_TMP" ] && grep -qE 'Operation not permitted|cannot create temp file' "$SALIDA_TMP" 2>/dev/null; then
+  echo "[smoke-run] ⚠️ dentro de la ejecución aislada, el encierro le negó al comando escribir fuera de su casa aparte y de su repo (un here document o un temporal con otra carpeta): el encierro no se abre; corré esa suite como humo común" >&2
+fi
+
 # ── La duración y las medidas que imprimió el comando (`TYCON_MEASURE <nombre>=<valor><unidad>`) ──
 # Las medidas se leen del temporal, entero, antes de que el trap lo borre; sin temporal, sólo la duración. El mismo
 # fragmento va al registro y al espejo: la matriz confirma la medida contra el espejo, como el código de salida.
@@ -349,7 +362,7 @@ if [ -n "$ENTORNO" ]; then MUT_FIELD="$MUT_FIELD,\"environment\":\"$ENTORNO\""; 
 if [ -n "$EJERCITA" ]; then
   # los nombres ya se validaron (letras, números, punto, guion y guion bajo): van entre comillas sin escapar nada
   EJ_JSON=""
-  IFS=',' read -r -a EJ_LISTA <<< "$EJERCITA"
+  IFS=',' read -r -a EJ_LISTA < <(printf '%s\n' "$EJERCITA")
   for r in "${EJ_LISTA[@]}"; do EJ_JSON="$EJ_JSON${EJ_JSON:+,}\"$r\""; done
   MUT_FIELD="$MUT_FIELD,\"exercises\":[$EJ_JSON]"
 fi
@@ -467,7 +480,7 @@ ENTRY=$(printf '{"ts":"%s","story":"%s","acs":%s,"cmd":%s,"exit":%d,"via":"smoke
 
 printf '%s\n' "$ENTRY" >> "$EVIDENCE_DIR/$STORY_ID-smoke-ledger.jsonl"
 
-MIRROR_DIR="$HOME/.claude/.tycon-pipeline"
+MIRROR_DIR="$(node "$(cd "$(dirname "$0")" && pwd)/lib/state-dir.js")"
 mkdir -p "$MIRROR_DIR"
 # la procedencia también va al espejo (fuera del repo): editarla en el registro del repo se nota al compararlos
 printf '{"type":"smoke-run","ts":"%s","repoPath":%s,"story":"%s","acs":%s,"exit":%d%s,"v":2%s%s%s,"target":%s}\n' \

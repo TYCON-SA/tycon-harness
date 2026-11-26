@@ -480,6 +480,8 @@ const SENSITIVE = Object.freeze([
   'scripts/lib/session-name.js',
   // lo que el cierre del marcador carga para decir que la sesión termina: corre dentro de él
   'skills/tycon-pipeline/scripts/lib/resume-state.js',
+  // el registro de los frenos: el marcador lo carga al cerrar la ejecución de otra sesión, y en él queda el escape
+  'skills/tycon-pipeline/scripts/lib/closing-record.js',
   'skills/tycon-pipeline/scripts/lib/adversarial-verdict.js', 'skills/tycon-pipeline/scripts/lib/critical-waivers.js',
   'skills/tycon-pipeline/scripts/lib/runtime-waiver.js', 'skills/tycon-pipeline/scripts/test-gate.sh',
   'skills/tycon-pipeline/scripts/lib/test-gate-*.js', 'skills/tycon-pipeline/scripts/lib/test-scope.js',
@@ -488,10 +490,12 @@ const SENSITIVE = Object.freeze([
   'skills/tycon-pipeline/scripts/lib/frozen-tree.js', 'skills/tycon-pipeline/scripts/lib/comment-only.js', 'skills/tycon-pipeline/scripts/runtime-matrix.js',
   'skills/tycon-pipeline/scripts/smoke-run.sh', 'skills/tycon-pipeline/scripts/lib/evidence-vs-commit.js',
   'skills/tycon-pipeline/scripts/lib/commit-story.js', 'skills/tycon-pipeline/scripts/lib/story-requests.js',
-  'skills/tycon-pipeline/scripts/lib/nightly-coverage.js',
+  'skills/tycon-pipeline/scripts/lib/nightly-coverage.js', 'skills/tycon-pipeline/scripts/lib/nightly-green.js',
   // el arreglo de un rojo de CI sin plan ni revisores, el cierre de una ejecución reemplazada sin firma y lo que una vuelta
   // de arreglo deja a seguimiento: los cargan marker.js y pipeline.js
   'skills/tycon-pipeline/scripts/lib/ci-red-lane.js', 'skills/tycon-pipeline/scripts/lib/replaced-run.js', 'skills/tycon-pipeline/scripts/lib/fix-scope.js',
+  // lo que el cierre de «Armar el plan» comprueba de las suposiciones del plan: lo carga marker.js
+  'skills/tycon-pipeline/scripts/lib/plan-assumptions.js',
   // lo que decide si el dueño se entera
   'scripts/lib/notify.js', 'scripts/lib/notify-mail.js', 'scripts/lib/tycon-*-notify.sh',
   'scripts/lib/integrations.js', 'scripts/lib/tycon-config.js',

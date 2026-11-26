@@ -91,7 +91,9 @@ TCG="$REPO_ROOT"
 [ -n "$_checks_only" ] && [ -n "${TYCON_CHECKS_CODE_ROOT:-}" ] && TCG="$TYCON_CHECKS_CODE_ROOT"
 
 # Lo que trae el commit, leído una vez y mirando el código de salida de git: `git diff | grep -q` con pipefail sale 141
-# cuando grep se va antes de que git termine, y el control se saltea sin decirlo. Se busca sobre la variable (`<<<`).
+# cuando grep se va antes de que git termine, y el control se saltea sin decirlo. Se busca sobre la variable, con
+# `< <(printf …)` y no con un here-string: el bash 3.2 de macOS escribe su temporal en /var/tmp, /tmp o la carpeta
+# actual, y dentro de la corrida aislada, desde otra carpeta, el encierro se lo niega.
 # Dos listas: `ACMR` es lo que hay que LEER (la ruta vieja de un movido no está en el árbol); `--no-renames` es lo que TOCA una
 # ruta vigilada, también al irse (un movido son dos líneas, la vieja y la nueva). `core.quotePath=false`: una ruta con
 # acentos o `ñ` sale tal cual y coincide con los patrones.
@@ -116,7 +118,7 @@ FM_LINT="${TCG:-$REPO_ROOT}/scripts/lib/lint-story-frontmatter.js"
 CHANGED_MD=()
 while IFS= read -r f; do
   case "$f" in *.md) CHANGED_MD+=("$f") ;; esac
-done <<<"$STAGED_ACMR"
+done < <(printf '%s\n' "$STAGED_ACMR")
 if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/lib/lint-story-frontmatter.js; then :
 elif [ "${#CHANGED_MD[@]}" -gt 0 ]; then
   if [ ! -f "$FM_LINT" ]; then
@@ -198,7 +200,7 @@ fi
 # ── El freno de nombres nuevos en castellano en lo que ejecuta la máquina ──
 # Archivos, opciones, subcomandos, variables y claves de lo que se publica van en inglés: un nombre castellano que no
 # existía no entra; uno que ya existe pasa mientras no se renombre. Apagado, con aviso en cada commit:
-# TYCON_SPANISH_NAMES=0. Guía: guides/maintaining/nombres-en-ingles.md.
+# TYCON_SPANISH_NAMES=0. Guía: guides/maintaining/english-names.md.
 # Casos: scripts/tests/spanish-names.test.js y C-16..C-24 de githook-livefire.test.sh
 SPANISH_NAMES="${TCG:-$REPO_ROOT}/scripts/publishing/spanish-names.js"
 if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/publishing/spanish-names.js; then :
@@ -237,7 +239,7 @@ elif [ -f "$CORE_NEUTRALITY" ] && ! node "$CORE_NEUTRALITY" --repo "$REPO_ROOT";
 fi
 
 # ── Las palabras de las guías en castellano ──
-# Las guías dicen cada cosa con una sola palabra (guides/maintaining/vocabulario.md): el control señala las palabras que
+# Las guías dicen cada cosa con una sola palabra (guides/maintaining/vocabulary.md): el control señala las palabras que
 # no se escriben en la prosa de una guía y pasan el techo de su archivo. Informa y no frena el commit. Las reglas:
 # scripts/ci/vocabulary.json.
 # Casos: scripts/tests/vocabulary.test.js
@@ -270,7 +272,7 @@ elif [ -f "$REPO_ROOT/team-profile.json" ] || [ -f "$REPO_ROOT/perfil-equipo.jso
 fi
 
 # ── La historia interna en los comentarios del código ──
-# Un comentario dice qué hace el código y por qué, en presente (guides/maintaining/estilo-de-codigo.md). Mira lo que el
+# Un comentario dice qué hace el código y por qué, en presente (guides/maintaining/code-style.md). Mira lo que el
 # commit AGREGA a los comentarios, neto por archivo: una línea vieja con historia que el commit no suma no frena. Sólo en el
 # árbol que se publica: en el repo del equipo dice que no aplica, y en un repo sin el guion no corre. El modo de cada forma
 # está en scripts/publishing/internal-history.json → zones.comment; la misma variable TYCON_INTERNAL_HISTORY lo baja.
@@ -311,7 +313,7 @@ fi
 # no se puede leer del índice frena.
 # Casos: scripts/tests/bash32-quoting.test.sh
 if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/ci/check-bash32-quoting.sh; then :
-elif grep -qE '\.sh$' <<<"$STAGED_ACMR"; then
+elif grep -qE '\.sh$' < <(printf '%s\n' "$STAGED_ACMR"); then
   B32="${TCG:-$REPO_ROOT}/scripts/ci/check-bash32-quoting.sh"
   if [ ! -f "$B32" ]; then
     echo "⛔ COMMIT RECHAZADO — no encontré $B32, así que NO pude mirar el quoting de bash 3.2 en los .sh stageados. No medido no es verde."
@@ -355,7 +357,7 @@ fi
 # y un archivo por aprobación en tasks/pending-approvals/ (scripts/lib/pending-approvals.js). Corre si el commit toca la
 # lista o el registro: en el arnés no hay lista, y el repo privado corre el mismo bloque. Casos: scripts/tests/pending-approvals.test.js
 if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/ci/check-pending-approvals.js; then :
-elif grep -qE '^tasks/(todo\.md|pending-approvals\.jsonl|pending-approvals/)' <<<"$STAGED_ALL"; then
+elif grep -qE '^tasks/(todo\.md|pending-approvals\.jsonl|pending-approvals/)' < <(printf '%s\n' "$STAGED_ALL"); then
   echo "▸ pre-commit: pendientes nuevos de la lista…"
   if ! node "${TCG:-$REPO_ROOT}/scripts/ci/check-pending-approvals.js" --staged --repo "$REPO_ROOT"; then
     echo "⛔ COMMIT RECHAZADO — la lista de pendientes trae un pendiente sin la aprobación de la coordinadora (motivo arriba)." >&2
@@ -396,7 +398,7 @@ fi
 # índice↔guía. Sin el guion frena.
 # Casos: scripts/tests/claude-md-blocks.test.sh · C-11, C-11b y C-11c de githook-livefire.test.sh
 if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/ci/check-claude-md-blocks.js; then :
-elif grep -qE '^(claude-md-blocks/|README\.md$|guides/piezas-del-arnes\.md$)' <<<"$STAGED_ALL"; then
+elif grep -qE '^(claude-md-blocks/|README\.md$|guides/piezas-del-arnes\.md$)' < <(printf '%s\n' "$STAGED_ALL"); then
   CMB="${TCG:-$REPO_ROOT}/scripts/ci/check-claude-md-blocks.js"
   if [ ! -f "$CMB" ]; then
     echo "⛔ COMMIT RECHAZADO — no encontré $CMB, así que NO pude medir los bloques del CLAUDE.md ni el techo del README. No medido no es verde. Si el checkout está incompleto: git checkout scripts/ci/check-claude-md-blocks.js" >&2
@@ -422,7 +424,7 @@ fi
 # dice; si HEAD lo trae y el índice no (movido o borrado), corre y frena como siempre.
 # Casos: scripts/tests/harness-map-public.test.sh · harness-map-census.test.sh (C-08 a C-12) ·
 # githook-livefire.test.sh (C-26/C-27)
-MAPA_TOCADO="$(grep -E '^(artifacts/mapa-arnes\.html$|scripts/tools/harness-map/|onboarding/mini-class/mapa-del-arnes\.html$)' <<<"$STAGED_ALL" || true)"
+MAPA_TOCADO="$(grep -E '^(artifacts/mapa-arnes\.html$|scripts/tools/harness-map/|onboarding/mini-class/mapa-del-arnes\.html$)' < <(printf '%s\n' "$STAGED_ALL") || true)"
 if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/tools/harness-map/public-version.js scripts/tools/harness-map/census.js; then
   MAPA_TOCADO=""
 elif [ -n "$MAPA_TOCADO" ] && ! git cat-file -e :artifacts/mapa-arnes.html 2>/dev/null \
@@ -486,7 +488,7 @@ fi
 RELEVANTES='^(adapters/|build/|scripts/controls-bench/|scripts/hooks/|scripts/install-tycon-hooks\.sh|\.githooks/|agents/)'
 if [ -n "${_checks_only:-}" ] && ! _checks_wanted build/check.js; then
   exit 0
-elif ! grep -qE "$RELEVANTES" <<<"$STAGED_ALL"; then
+elif ! grep -qE "$RELEVANTES" < <(printf '%s\n' "$STAGED_ALL"); then
   exit 0
 fi
 
@@ -600,7 +602,7 @@ cambiados="$(git diff --cached --name-only -- 'agents/*.md' 'packs/*/agents/*.md
 # modelo: compara el resultado guardado con la línea de base. Casos: scripts/tests/reviewer-change-check.test.js.
 EXAMEN="$(pwd)/scripts/controls-bench/reviewer-change-check.js"
 if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/controls-bench/reviewer-change-check.js; then :
-elif [ -f "$EXAMEN" ] && grep -q '^agents/' <<<"$cambiados"; then
+elif [ -f "$EXAMEN" ] && grep -q '^agents/' < <(printf '%s\n' "$cambiados"); then
   if ! command -v node >/dev/null 2>&1; then
     echo "⛔ COMMIT RECHAZADO — el examen del revisor tocado: sin node no pude mirarlo, y no poder mirar no es verde." >&2
     exit 1

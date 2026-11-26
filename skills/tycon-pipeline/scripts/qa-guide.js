@@ -355,7 +355,7 @@ function estadoDelArnes(pa) {
     const medido = m.medidoTexto ? `medido ${m.medidoTexto}` : 'sin medición';
     if (v === 'FUERA-DE-COTA') return { tier: 'pend', badge: `El arnés lo midió y quedó fuera de la cota: ${medido}; la cota es ${m.cota}`, como: null };
     if (v === 'SIN-MEDICION') return { tier: 'pend', badge: `El arnés lo corrió pero falta la medida: ${m.motivo || 'sin medición'}`, como: null };
-    if (v === 'NOT-VERIFIABLE' || v === 'WAIVED-USER') {
+    if (v === 'NOT-VERIFIABLE' || v === 'WAIVED-USER' || v === 'COVERED-NIGHTLY') {
       return { tier: 'wv', badge: `Se firmó sin medirlo dentro de la cota (${medido}${m.cota ? `; la cota es ${m.cota}` : ''})`, como: null };
     }
   }
@@ -368,7 +368,7 @@ function estadoDelArnes(pa) {
     const e2e = pa.fuentes && Array.isArray(pa.fuentes.e2e) && pa.fuentes.e2e.length > 0;
     return { tier: 'run', badge: '✓ el arnés ya lo probó', como: `Lo probó corriendo la app${e2e ? ', con una prueba de punta a punta' : ''}. Probarlo a mano es un segundo control.` };
   }
-  if (v === 'NOT-VERIFIABLE' || v === 'WAIVED-USER') return { tier: 'wv', badge: 'La app no lo muestra: lo cubre una prueba del código', como: null };
+  if (v === 'NOT-VERIFIABLE' || v === 'WAIVED-USER' || v === 'COVERED-NIGHTLY') return { tier: 'wv', badge: 'La app no lo muestra: lo cubre una prueba del código', como: null };
   return { tier: 'pend', badge: 'El arnés no lo probó: probalo a mano', como: null };
 }
 
@@ -580,18 +580,36 @@ function isUiStory(content, fm, repoRoot) {
   return require(path.join(__dirname, 'lib', 'ui-signal.js')).touchesUiParts(fm, content, repoRoot);
 }
 
-// Dónde viven la guía del tester, las revisiones de legibilidad y la maqueta de una story, y con qué clave.
-// La maqueta la ubica esta MISMA función, para que su nombre y el que busca la revisión no puedan discrepar.
-// La guía se nombra con la CLAVE de la story: con un número que se repite en el repo, dos stories que
-// comparten la carpeta qa/ escribirían y leerían el mismo `<id>-pasos.md`, y el chequeo de una daría por buena la guía de la
-// otra. Con número único la clave es el número: el nombre de siempre. Si la matriz no computa, tira: no hay clave.
+// Dónde viven la guía del tester, las revisiones de legibilidad y la maqueta de una story, y con qué clave, sin calcular la
+// matriz. La guía y la maqueta se ubican con esta MISMA función, para que su nombre y el que busca la revisión no puedan
+// discrepar. La guía se nombra con la CLAVE de la story: con un número que se repite en el repo, dos stories que comparten
+// la carpeta qa/ escribirían y leerían el mismo `<id>-pasos.md`, y el chequeo de una daría por buena la guía de la otra.
+// Con número único la clave es el número: el nombre de siempre. Una story exenta se nombra con su número, como en la
+// matriz. Si la clave no se puede calcular, tira. La matriz entera no hace falta para esto, y tarda: lee el registro de los
+// portones, recorre las historias del repo y llama a git; en una máquina con mucha historia pasaba de los dos minutos.
+function qaPlace(storyPath) {
+  const abs = path.resolve(storyPath);
+  const ek = require(path.join(__dirname, 'lib', 'evidence-key.js'));
+  let content;
+  try { content = fs.readFileSync(abs, 'utf8'); } catch (e) { throw new Error(`no pude leer la story (${e.code || e.message})`); }
+  const fm = (content.match(/^---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || '';
+  const sid = ek.storyIdFrom(fm, abs);
+  let qk = sid;
+  if (!/^dod_runtime_exempt:\s*true\b/m.test(fm)) {
+    try { qk = ek.evidenceKey(abs, { id: sid }).key || sid; } catch (e) {
+      throw new Error(`no pude calcular la clave de la evidencia de la story: ${e.message}`);
+    }
+  }
+  const qaDir = require(path.join(__dirname, 'lib', 'qa-dir.js')).qaDirFor(abs, [qk, sid]);
+  return { qaDir, qk, sid };
+}
+
+// El lugar de `qaPlace` más la matriz de la story, que la guía del tester necesita. Si la matriz no computa, tira.
 function qaLocation(storyPath) {
   const abs = path.resolve(storyPath);
   const matrix = require(path.join(__dirname, 'runtime-matrix.js')).compute({ storyPath: abs });
   if (matrix.structuralError) throw new Error(`la matriz no computa (${matrix.structuralError})`);
-  const sid = matrix.sid;
-  const qk = matrix.key || sid;
-  const qaDir = require(path.join(__dirname, 'lib', 'qa-dir.js')).qaDirFor(abs, [qk, sid]);
+  const { qaDir, qk, sid } = qaPlace(abs);
   return { qaDir, qk, sid, repoRoot: matrix.repoRoot, matrix };
 }
 
@@ -1135,7 +1153,7 @@ function main() {
     const acTextTech = pasos.desc ? a.text : null;
     const cmds = (smokeByAc[a.n] || []).filter(Boolean);
     let tierNote = null;
-    if (pa.verdict === 'NOT-VERIFIABLE' || pa.verdict === 'WAIVED-USER') {
+    if (pa.verdict === 'NOT-VERIFIABLE' || pa.verdict === 'WAIVED-USER' || pa.verdict === 'COVERED-NIGHTLY') {
       tierNote = `No se puede verificar corriendo la app: ${pa.declReason || '(razón no declarada)'}. ` +
         `Cubierto por el test **${pa.coveredBy || (pa.code || []).join(', ') || 'de código'}** — el tester puede revisar que ese test exista y pase, o inspeccionar la base/el esquema directamente.`;
     }
@@ -1234,7 +1252,7 @@ function main() {
   process.exit(0);
 }
 
-module.exports = { estadoDelArnes, contarCriterios, cuandoEnLlano, parseAcsWithText, parseTestsFull, parsePasos, tienePasos, parseDefaultRole, resolveRoles, parsePasosSequence, detectJargon, JARGON_ALLOW, qaGuideTerms, isUiStory, renderHtml, qaLocation, parseOpenApp, teamLines, mockupLayers };
+module.exports = { estadoDelArnes, contarCriterios, cuandoEnLlano, parseAcsWithText, parseTestsFull, parsePasos, tienePasos, parseDefaultRole, resolveRoles, parsePasosSequence, detectJargon, JARGON_ALLOW, qaGuideTerms, isUiStory, renderHtml, qaLocation, qaPlace, parseOpenApp, teamLines, mockupLayers };
 if (require.main === module) {
   // La opción vieja sigue andando hasta el retiro
   require('./lib/legacy-names.js').aliasArgv('skills/tycon-pipeline/scripts/qa-guide.js');

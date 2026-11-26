@@ -460,6 +460,41 @@ test('T19d3 Bench_Portable_KnownGaps — en Windows un rojo declarado en known-g
   assert.match('stdout no matchea /huérfanos cerrados \\(pids: [0-9]+/', realGap('mata-de-verdad'));
 });
 
+// 🔴 Falla con: un caso que busca un texto y no lo encuentra dice sólo «stdout no matchea /…/», sin lo que salió; un
+// gancho que no arrancó («Cannot find module…») se lee igual que uno que dijo otra cosa.
+test('Bench_TextoQueNoAparece_MuestraLaSalida — el registro dice qué salió, y el motivo del fallo queda igual', () => {
+  const cases = tempDir('tycon-bench-sample-cases-');
+  const hooks = hookFiles();
+  const broken = path.join(hooks.dir, 'broken.js');
+  fs.writeFileSync(broken, "require('fs').readFileSync(0); console.log('no pude chequear el freno:\\n  Cannot find module x'); console.error('se cayó al cargar');\n");
+  fs.writeFileSync(path.join(cases, '01-toy.json'), JSON.stringify({ hooks: [
+    { hook: 'broken', script: broken, event: 'PreToolUse', cases: [
+      { id: 'expects-text', type: 'must-emit', stdin: {}, expect: { stdout_re: ['FRENO-OK'], stderr_re: ['AVISO'] } },
+      { id: 'expects-exit', type: 'must-not-block', stdin: {}, expect: { exit: 3 } }] },
+  ] }));
+  const out = tempDir('tycon-bench-sample-out-');
+  const gaps = path.join(out, 'known-gaps.json');
+  const report = path.join(out, 'report.json');
+  const run = (...args) => spawnSync(process.execPath, [RUNNER, '--tool', 'claude', '--json', report, ...args],
+    { encoding: 'utf8', env: { ...process.env, TYCON_BENCH_CASES_DIR: cases, TYCON_BENCH_KNOWN_GAPS: gaps, TYCON_BENCH_BASELINE: path.join(out, 'baseline.json') } });
+  fs.writeFileSync(gaps, JSON.stringify({ baseline: null, gaps: [] }));
+  let r = run();
+  const linea = (id) => r.stdout.split('\n').find((l) => l.includes(`broken.js::${id}`)) || '';
+  // lo que salió, en un renglón y por cada salida que no tenía el texto
+  assert.match(linea('expects-text'), /stdout no matchea \/FRENO-OK\//, r.stdout);
+  assert.match(linea('expects-text'), /stdout «no pude chequear el freno: Cannot find module x»/, r.stdout);
+  assert.match(linea('expects-text'), /stderr «se cayó al cargar»/, r.stdout);
+  // un fallo que no es de texto no suma la salida
+  assert.doesNotMatch(linea('expects-exit'), /«/, r.stdout);
+  // el motivo del fallo es el de siempre, y lo que salió va aparte en el reporte: un rojo conocido que ancla su motivo
+  // al final (known-gaps.json, `…/$`) lo sigue reconociendo
+  const caso = JSON.parse(fs.readFileSync(report, 'utf8')).results['broken.js::expects-text'].tools.claude;
+  assert.deepStrictEqual([...caso.failures].sort(), ['stderr no matchea /AVISO/', 'stdout no matchea /FRENO-OK/']);
+  assert.deepStrictEqual(caso.muestra, { stdout: 'no pude chequear el freno: Cannot find module x', stderr: 'se cayó al cargar' });
+  const anclado = /^(stdout no matchea \/FRENO-OK\/|stderr no matchea \/AVISO\/)$/;
+  assert.ok(caso.failures.every((f) => anclado.test(f)), caso.failures.join(' | '));
+});
+
 test('T19d4 Bench_Portable_KnownGapOnlyForItsReason — un rojo conocido lo es sólo si falla por el motivo declarado', () => {
   // 🔴 La lista no se busca sólo por NOMBRE de caso: si no, un caso
   // declarado queda «conocido» fallara por lo que fallara — con su guion borrado, con su preparación rota o con el

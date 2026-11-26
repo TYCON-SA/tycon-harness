@@ -8,5 +8,11 @@
   "capabilities": { "completedHours": "field", "estimate": "field", "workItemType": "label", "autoComplete": "auto-or-wait" },
   "rawCommands": ["glab mr create", "glab mr new", "glab mr merge", "glab mr accept", "glab issue create", "glab issue new", "glab issue update", "glab issue close"],
   "changeRequestCommands": ["glab mr create", "glab mr new", "glab mr merge", "glab mr accept"],
-  "hardSignals": ["\\bglab\\s+(mr|issue|api)\\b", "/api/v4/", "https?://gitlab\\.com"]
+  "changeRequestApi": { "command": "glab api", "routes": [{ "method": "POST", "path": "projects/*/merge_requests" }, { "method": "PUT", "path": "projects/*/merge_requests/*/merge" }], "graphql": ["mergeRequestCreate", "mergeRequestAccept"] },
+  "hardSignals": ["\\bglab\\s+(mr|issue|api)\\b", "/api/v4/", "https?://gitlab\\.com"],
+  "repoShape": { "keys": ["namespace", "repo"], "optional": ["host"], "name": "^[A-Za-z0-9_][A-Za-z0-9._-]*$", "flags": "", "nameHint": "letras, números, punto, guion, guion bajo; espacios sólo adentro",
+    "rules": {
+      "host": { "name": "^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*$", "flags": "", "nameHint": "el nombre del servidor, sin «https://» ni ruta (por ejemplo «gitlab.example.com»)" },
+      "namespace": { "parts": "/", "partsHint": "el grupo y sus subgrupos separados por «/», sin «/» al principio ni al final y sin «//» (por ejemplo «grupo/subgrupo»)", "nameHint": "cada grupo lleva letras sin tilde, números, punto, guion o guion bajo, y no empieza con punto ni con guion (por ejemplo «grupo/subgrupo»)" }
+    } }
 }

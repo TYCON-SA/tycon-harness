@@ -7,6 +7,7 @@
  * se leen de `estadoPipeline`, en el módulo compartido, en el momento de usarlos.
  */
 const { estadoPipeline, STEPS_TABLE, anotarEnMarker, companionLib, deriveStoryId, evidenceDirForStory, evidenceKeyOr, fs, harnessWorkSignal, homeCommand, isNil, logGate, nn, os, parseFrontmatterPipeline, path, readSessionMarker, readText, resolveRunDir, resolveSessionId, storyIsExemptCheck, storyRequiresRuntimeEvidenceCheck } = require('./pipeline-shared.js');
+const { pipelineRel } = require('./home-command.js');
 
 /**
  * Pone una bandera de hecho externo en el marcador de esta sesión (y saca el aviso de su parte, si lo había), con una
@@ -160,7 +161,7 @@ function computePreflightFrontmatter({ storyPath, targetStatus, targetPipelineDo
     blocking_hook: 'on-frontmatter-write.js + on-pre-commit.js + hook-pre-edit.js',
     how_to_satisfy: evidenceExists
       ? null
-      : `Correr: ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/step-7c-macro.js')} --story ${storyPath} --scenario <scenario.json> --evidence-dir ${evidDir}  (o escribir el archivo manualmente con formato hook-compliant — ver PRE-2)`,
+      : `Correr: ${homeCommand(pipelineRel('scripts/step-7c-macro.js'))} --story ${storyPath} --scenario <scenario.json> --evidence-dir ${evidDir}  (o escribir el archivo manualmente con formato hook-compliant — ver PRE-2)`,
   });
 
   // Pre-condition 2: si la story declara E2E reales, el evidence debe tener

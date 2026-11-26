@@ -495,6 +495,27 @@ function canonica(comando) {
 }
 
 /**
+ * Un guion de consola llamado directo (sin `bash` ni `node` delante) que no tiene permiso de ejecución: el comando sale
+ * 126 sin correr. Devuelve por qué se niega, con la forma que sí corre, o null. En Windows el permiso no cuenta.
+ */
+function sinPermisoDeEjecucion(comando, { plataforma = process.platform, cwd } = {}) {
+  if (plataforma === 'win32') return null;
+  let t;
+  try { t = markerCommand().tramos(String(comando), 'bash'); } catch (_) { return null; }
+  const w = t.tramos && t.tramos.length === 1 ? t.tramos[0].palabras : null;
+  if (!w || !w.length || NODES.has(base(w[0].texto)) || SHS.has(base(w[0].texto))) return null;
+  // un nombre sin barra la consola lo busca en el PATH, no en la carpeta: ahí decide ella
+  if (!w[0].texto.includes('/')) return null;
+  // la consola expande la tilde antes de correrlo; sólo un archivo que está y no se puede ejecutar o leer (bash lo lee
+  // para correrlo) sale 126
+  const ruta = /^~(?=\/|$)/.test(w[0].texto) ? os.homedir() + w[0].texto.slice(1) : w[0].texto;
+  try { fs.accessSync(path.resolve(cwd || process.cwd(), ruta), fs.constants.X_OK | fs.constants.R_OK); return null; } catch (e) {
+    if (!e || (e.code !== 'EACCES' && e.code !== 'EPERM')) return null;
+  }
+  return `el comando no va a correr: ${una(w[0].texto, 300)} no tiene permiso de ejecución (saldría 126, con la firma gastada). La aprobación sigue sin usar: el mismo comando con bash delante: bash ${una(String(comando).trim(), 600)}`;
+}
+
+/**
  * La firma `guion` que piden las palabras de un llamado (el guion, el subcomando y sus argumentos), o null. Las palabras
  * llegan como texto, o como las lee marker-command.js (`{ texto, literal }`); un texto con `$` o una comilla invertida
  * cuenta como armado. Con `llamada` (la de marker-command.js), una bandera de pipeline.js se busca con su lector: un
@@ -905,15 +926,17 @@ function criteriosSinMemo(palabras, cwd, { casa, destino, sesion }) {
   let c;
   try {
     // con --batch, la matriz de esa tanda, la misma que mide el guion (waiver-display.js matrixForSignature); con --acs,
-    // sólo los humos de esos criterios, para decidir dentro del reloj del freno: el criterio sale igual que en el guion
-    const medida = tanda ? wd.matrixForSignature(abs, null, { batch: tanda, acs: pedidos }) : null;
+    // sólo los humos de esos criterios, para decidir dentro del reloj del freno: el criterio sale igual que en el guion.
+    // Los humos, del gates.log de la casa del cuadro: la del guion que firma, aunque el proceso tenga otra
+    const gatesLogPath = casa === undefined ? null : path.join(stateDir(casa), 'gates.log');
+    const medida = tanda ? wd.matrixForSignature(abs, null, { batch: tanda, acs: pedidos, gatesLogPath }) : null;
     if (medida && !medida.structuralError && !medida.batch) {
       const porQue = (medida.warnings || []).find((w) => /mido todas las tandas/.test(w));
       return { error: `no pude medir sólo la tanda ${tanda}${porQue ? ` (${una(porQue, 200)})` : ''}` };
     }
     const deOtra = medida && !medida.structuralError ? (pedidos || []).filter((n) => !(medida.acs || []).includes(n)) : [];
     if (deOtra.length) return { error: `el AC ${deOtra.join(', ')} no es de la tanda ${tanda}: se firma con la suya` };
-    c = medida && medida.structuralError ? { error: medida.structuralError } : wd.criteriosDe(abs, pedidos || [], medida);
+    c = medida && medida.structuralError ? { error: medida.structuralError } : wd.criteriosDe(abs, pedidos || [], medida, { gatesLogPath });
     if (!c.error && !pedidos) c = wd.criteriosDe(abs, c.matrix.notVerifiable || [], c.matrix);
   } catch (e) { return { error: `no pude armar los criterios (${una((e && e.message) || String(e), 200)})` }; }
   if (c.error) return { error: `no pude armar los criterios: la matriz no computa (${una(c.error, 200)})` };
@@ -925,6 +948,7 @@ function criteriosSinMemo(palabras, cwd, { casa, destino, sesion }) {
     if (!a) return `el AC ${n} no es un criterio de la historia`;
     if (a.verdict === 'RUNTIME') return `el AC ${n} ya corrió en vivo: no hace falta eximirlo`;
     if (a.verdict === 'WAIVED-USER') return `el AC ${n} ya está eximido`;
+    if (a.verdict === 'COVERED-NIGHTLY') return `el AC ${n} ya lo cubre la noche, que corrió en verde su prueba: no hace falta eximirlo`;
     return `el AC ${n} está ${a.verdict} y no declarado imposible de probar en vivo con su prueba (runtime_not_verifiable): no es un criterio pendiente de firma`;
   };
   if (faltan.length) return { error: `${faltan.map(porQueNo).join('; ')} en ${path.basename(abs)}` };
@@ -1271,7 +1295,7 @@ function porQueSinLista({ casa, arnes, env, pendientes = null, destino = null, s
   if (destino && sesion && destino !== sesion) return 'la lista está prendida, pero el pedido es para otra sesión';
   if (!cuadro || cuadro.error) return 'la lista está prendida, pero el cuadro de esta firma no se pudo armar';
   let viva = null;
-  try { viva = L.coordinadoraViva(casa); } catch (_) { viva = null; }
+  try { viva = L.coordinadoraViva(casa, undefined, { env, arnes }); } catch (_) { viva = null; }
   if (!viva) return 'la lista está prendida, pero no da a la coordinadora por confirmada y viva';
   return 'la lista está prendida, pero este pedido no quedó anotado en ella';
 }
@@ -1684,6 +1708,9 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
     return negar(`la firma va en su forma exacta, sola, sin \`cd …&&\`, variables ni envolturas (${s.command} …)`, pedidas);
   }
   if (guion && escapes.length) return negar('una firma y un escape en el mismo comando: van por separado', pedidas);
+  // un guion sin permiso de ejecución no corre: se niega antes de la ventana y de gastar la aprobación
+  const sinPermiso = guion ? sinPermisoDeEjecucion(comando, { plataforma, cwd: evento.cwd }) : null;
+  if (sinPermiso) return negar(sinPermiso, pedidas);
   for (const id of escapes) {
     const nombre = id.slice('escape:'.length);
     const s = firmaDe(id);

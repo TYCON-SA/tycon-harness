@@ -1264,7 +1264,7 @@ test('T279 OtherProject_NotCounted: una sesión de un repo que el arnés no sigu
   assert.strictEqual(card.otro, true);
   assert.ok(!col(data, 'curso').tarjetas.find((c) => c.quien === 'Nuestra').otro);
   // desde la 8.313 el encabezado tampoco cuenta las historias plegadas (`local`)
-  assert.match(page(data), /list\.filter\(i=>!i\.otro&&i\.local!==true\)\.length/, 'la columna no lo cuenta');
+  assert.match(page(data), /list\.filter\(i=>!i\.otro&&\(c\.id!=="sinEmpezar"\|\|i\.local!==true\)\)\.length/, 'la columna no lo cuenta');
   fs.unlinkSync(path.join(m.state, 'stuck-prs-photo.json'));
   assert.notStrictEqual(byName(await collectAt(m, now), 'Mesa').comoTrabaja, 'Otro proyecto', 'sin la lista de repos no se sabe');
 });
@@ -1382,6 +1382,19 @@ test('T301 Agents_UnknownBase: si la base de Codex no se puede leer no se oculta
   assert.ok(data.agents.some((a) => a.nombre === 'exec-2'));
   const said = data.unreadable.filter((p) => p === 'No pude leer la lista de sesiones de Codex: alguna de estas personas puede ser un agente.');
   assert.strictEqual(said.length, 1);
+});
+
+test('T301b Agents_BaseTakenAWhile_WaitsAndReadsIt @fila-83c: la base de Codex tomada por otro proceso unos instantes no es «no pude leer»', async () => {
+  const { holdCodexBase, exited } = require('./lib/codex-base-lock.js');
+  const { codexAgentThreads } = require(OFFICE);
+  const m = parkMachine();
+  const codexHome = toyCodexBase(m, [{ id: 'agente-1', source: 'exec' }]);
+  const child = await holdCodexBase(path.join(codexHome, 'state_5.sqlite'), 300);
+  const problems = [];
+  const agents = codexAgentThreads(codexHome, problems);
+  await exited(child);
+  assert.deepStrictEqual(problems, []);
+  assert.deepStrictEqual([...agents], ['agente-1']);
 });
 
 test('T302 Agents_CountedForTheirSession: la foto cuenta los agentes bajo el proceso de la sesión; sin procesos no dice cuántos', async () => {

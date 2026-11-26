@@ -17,9 +17,27 @@ function claudeDir(home) {
   return tyconHome ? tyconHome.claudeDir(home || os.homedir()) : path.join(home || os.homedir(), '.claude');
 }
 
-/** La carpeta del estado (hoy, ~/.claude/.tycon-pipeline). */
+/** La carpeta del estado (hoy, ~/.tycon/state). */
 function stateDir(home) {
   return tyconHome ? tyconHome.stateDir(home || os.homedir()) : path.join(claudeDir(home), '.tycon-pipeline');
 }
 
-module.exports = { stateDir, claudeDir };
+/** Las skills instaladas: el enchufe de Claude Code que lleva al arnés (`agent-skills`, en su carpeta). */
+function installedSkillsDir(home) {
+  return tyconHome ? tyconHome.installedSkillsDir(home || os.homedir()) : path.join(claudeDir(home), 'agent-skills');
+}
+
+/** El nombre de la carpeta de Claude Code, la misma que tiene también cada repo (`<repo>/<nombre>/worktrees`). */
+function claudeDirName() {
+  return path.basename(claudeDir(os.homedir()));
+}
+
+/** Una ruta como se le muestra a la persona: `~/` y su camino desde la carpeta de la persona. */
+function paraMostrar(p, home = os.homedir()) {
+  return `~/${path.relative(home, p).split(path.sep).join('/')}`;
+}
+
+module.exports = { stateDir, claudeDir, installedSkillsDir, claudeDirName, paraMostrar };
+
+// suelto, desde un guion de shell: imprime la carpeta del estado
+if (require.main === module) process.stdout.write(`${stateDir()}\n`);

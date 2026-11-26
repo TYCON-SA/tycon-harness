@@ -61,6 +61,8 @@ function mundo(prs, teamRepos) {
   fs.mkdirSync(stateDir(home), { recursive: true });
   fs.writeFileSync(path.join(stateDir(home), 'outside-contributions.json'), JSON.stringify({ at: new Date().toISOString(), repo: 'acme/harness',
     medicion: { ok: true, prs: [], issues: [], capped: false } }));
+  // ni alertas de seguridad abiertas en main, leído recién (se prueban al final de este archivo)
+  fs.writeFileSync(path.join(stateDir(home), 'main-security-alerts.json'), JSON.stringify({ at: new Date().toISOString(), lecturas: {} }));
   const w = { tree, home, fix, az, ghState, cwd: repoGit(HARNESS_URL) };
   ponerPedidos(w, prs);
   return w;
@@ -73,12 +75,14 @@ function escribirEstado(w, estado) { fs.mkdirSync(stateDir(w.home), { recursive:
 const clave = (n, repo = 'harness-maintainers') => `acme/Harness/${repo}#${n}`;
 const llamadas = (w) => { try { return fs.readFileSync(path.join(w.fix, 'llamadas.log'), 'utf8').split('\n').filter((l) => /pullRequests/.test(l)).length; } catch { return 0; } };
 
+const entorno = (w, extra = {}) => ({
+  PATH: process.env.PATH, HOME: w.home, TYCON_TREE: w.tree, TYCON_ADO_CMD: w.az, FIXAZ: w.fix, TYCON_PROFILE: '0',
+  TYCON_GH_CMD: FAKE_GH, FAKE_GH_STATE: w.ghState,
+  TYCON_HARNESS_IDENTITIES: HARNESS_URL, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', ...extra,
+});
+
 function correr(w, extra = {}, cwd = w.cwd) {
-  const env = {
-    PATH: process.env.PATH, HOME: w.home, TYCON_TREE: w.tree, TYCON_ADO_CMD: w.az, FIXAZ: w.fix, TYCON_PROFILE: '0',
-    TYCON_GH_CMD: FAKE_GH, FAKE_GH_STATE: w.ghState,
-    TYCON_HARNESS_IDENTITIES: HARNESS_URL, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', ...extra,
-  };
+  const env = entorno(w, extra);
   const t0 = Date.now();
   const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ source: 'startup', cwd, session_id: 't' }), env, encoding: 'utf8', timeout: 30000 });
   return { rc: r.status, out: String(r.stdout || '').trim(), err: String(r.stderr || ''), ms: Date.now() - t0 };
@@ -669,6 +673,32 @@ test('OwnPrs_OneQueryPerPlace — los pedidos de la persona, de todos sus repos;
   assert.match(SPN().leerPropios({ repos: repos.slice(1), env: { ...process.env, TYCON_ADO_CMD: muchos } }).fallos[0], /puede faltar alguno/);
 });
 
+// 🔴 Falla con: la lectura sin los pedidos que entraron hoy, o con los de otra persona.
+test('OwnPrs_EnteredToday — los suyos que entraron desde las 0 de hoy, de GitHub en la misma consulta y de Azure en otra; lo que no se pudo leer se dice', () => {
+  const ahora = Date.now();
+  const llamadas = [];
+  const hoy = new Date(ahora - 60000).toISOString();
+  const run = (file, args) => {
+    llamadas.push(args.join(' '));
+    if (file === 'gh') return { status: 0, stdout: JSON.stringify({ data: { viewer: { login: 'yo' }, search: { nodes: [] }, hoy: { nodes: [{ number: 5, title: 'fix: a', mergedAt: hoy, repository: { nameWithOwner: 'org/uno' } }] } } }) };
+    if (args[0] === 'account') return { status: 0, stdout: mail('yo') };
+    if (args.includes('searchCriteria.status=completed')) return { status: 0, stdout: JSON.stringify({ value: [
+      { pullRequestId: 70, title: 'mío', closedDate: hoy, createdBy: { uniqueName: mail('yo') }, repository: { name: 'Back', project: { name: 'Mora' } } },
+      { pullRequestId: 71, title: 'de otra', closedDate: hoy, createdBy: { uniqueName: mail('ana') }, repository: { name: 'Back', project: { name: 'Mora' } } },
+    ] }) };
+    return { status: 0, stdout: JSON.stringify({ value: [] }) };
+  };
+  const repos = [{ platform: 'github', org: 'org', repo: 'uno' }, { platform: 'azure', org: 'biz', project: 'P', repo: 'r' }];
+  const r = SPN().leerPropios({ repos, ahora, env: { PATH: process.env.PATH }, plataforma: 'darwin', run });
+  const desde = new Date(ahora); desde.setHours(0, 0, 0, 0);
+  assert.strictEqual(r.entraronHoy.desde, desde.toISOString().replace(/\.\d{3}Z$/, 'Z'), 'desde las 0 de hoy, hora de la máquina');
+  assert.deepStrictEqual(r.entraronHoy.lecturas, { 'org/uno': [{ number: 5, title: 'fix: a', at: hoy }], 'biz/Mora/Back': [{ number: 70, title: 'mío', at: hoy }] }, 'sólo los de la persona');
+  assert.ok(llamadas[0].includes(`merged:>=${r.entraronHoy.desde}`), 'GitHub, en la misma consulta');
+  assert.ok(llamadas.some((l) => l.includes(`searchCriteria.minTime=${r.entraronHoy.desde}`) && l.includes('searchCriteria.queryTimeRangeType=closed')), 'Azure, por la hora de cierre');
+  const sinRespuesta = SPN().leerPropios({ repos, ahora, env: { PATH: process.env.PATH }, plataforma: 'darwin', run: (file, args) => (args[0] === 'account' ? { status: 0, stdout: mail('yo') } : { status: 1, stdout: '' }) });
+  assert.deepStrictEqual(sinRespuesta.entraronHoy.fallos, ['GitHub', 'biz']);
+});
+
 // 🔴 Falla con: en Windows gh se lanza por la consola (shell), y gh abre su propia ventana negra al leer los pedidos.
 test('OwnPrs_WindowsGhWithoutShell — en Windows gh va directo y oculto; az, por la consola con cada argumento entre comillas', () => {
   const { llamadaDe } = SPN();
@@ -694,13 +724,14 @@ test('OwnPrs_WindowsGhWithoutShell — en Windows gh va directo y oculto; az, po
   const llamadas = [];
   const responde = (file, args, opts) => {
     llamadas.push({ file, args, opts });
-    if (file === 'gh') return { status: 0, stdout: JSON.stringify({ data: { viewer: { login: 'yo' }, search: { nodes: [] } } }) };
+    if (file === 'gh') return { status: 0, stdout: JSON.stringify({ data: { viewer: { login: 'yo' }, search: { nodes: [] }, hoy: { nodes: [] } } }) };
     return { status: 0, stdout: args.includes('"account"') ? mail('yo') : JSON.stringify({ value: [] }) };
   };
   const repos = [{ platform: 'github', org: 'org', repo: 'uno' }, { platform: 'azure', org: 'biz', project: 'P', repo: 'r' }];
   const leido = SPN().leerPropios({ repos, env: { PATH: process.env.PATH }, plataforma: 'win32', run: responde });
   assert.deepStrictEqual(leido.fallos, [], 'las consultas de verdad pasan el filtro de la consola: nada quedó sin leer');
-  assert.deepStrictEqual(llamadas.map((l) => [l.file, l.opts.shell, l.opts.windowsHide]), [['gh', false, true], ['az', true, true], ['az', true, true]]);
+  assert.deepStrictEqual(llamadas.map((l) => [l.file, l.opts.shell, l.opts.windowsHide]), [['gh', false, true], ['az', true, true], ['az', true, true], ['az', true, true]], 'la cuenta, los que entraron hoy y los abiertos');
+  assert.deepStrictEqual(leido.entraronHoy.fallos, []);
   assert.ok(llamadas.slice(1).every((l) => l.args.every((a) => /^".*"$/.test(a))), 'cada argumento de az, entre comillas');
 });
 
@@ -1255,4 +1286,99 @@ test('Connector_GithubDeadline_IsAnHourNotADuration — el tope de la lectura es
   assert.strictEqual(topeDe(1000, 11000), 9000, 'el 80 % de lo que falta hasta la hora límite');
   assert.strictEqual(topeDe(1000, undefined), Infinity, 'sin hora límite, sin tope');
   assert.ok(topeDe(Date.now(), Date.now() + 90000) < Date.now() + 90000, 'un tope de 90 s no cae en otro siglo');
+});
+
+// ── Las alertas de seguridad abiertas en main ────────────────────────────────────────────────────────────────────────
+// 🔴 Falla con: el chequeo de antes de encolar mira las referencias del pedido (/merge y /head); una alerta que el
+// análisis abre recién en main después de que el pedido entró —una línea que se movió y que ya no reconoce como la que
+// estaba cerrada— no la veía nadie hasta que alguien miraba la pestaña de seguridad.
+
+const alertasArchivo = (w) => path.join(stateDir(w.home), 'main-security-alerts.json');
+function alerta(n, o = {}) {
+  return {
+    number: n, state: 'open', created_at: HACE(125),
+    rule: { id: 'js/shell-command-injection-from-environment', severity: 'warning', security_severity_level: 'medium' },
+    most_recent_instance: { location: { path: 'skills/x/test-environment.js', start_line: 176 } }, ...o,
+  };
+}
+function ponerAlertas(w, alertas, fail) {
+  const st = JSON.parse(fs.readFileSync(w.ghState, 'utf8'));
+  st.code_scanning = { 'acme/harness': { alerts: alertas } };
+  if (fail) st.fail = fail;
+  fs.writeFileSync(w.ghState, JSON.stringify(st));
+}
+function refrescar(w) {
+  const r = spawnSync(process.execPath, [HOOK, '--refresh', w.tree], { env: entorno(w), encoding: 'utf8', timeout: 30000 });
+  assert.strictEqual(r.status, 0, r.stderr);
+}
+
+test('MainAlerts_OpenOnMain_StartAndCoordinatorSayIt — una alerta abierta en main sale al arrancar y en cada turno de la coordinadora', () => {
+  const w = mundo([]);
+  ponerAlertas(w, [alerta(190), alerta(191, { state: 'dismissed' })]);
+  refrescar(w);
+  const foto = JSON.parse(fs.readFileSync(alertasArchivo(w), 'utf8'));
+  assert.deepStrictEqual(foto.lecturas['acme/harness'].value.map((a) => a.number), [190], 'sólo las abiertas');
+  const r = correr(w);
+  assert.strictEqual(r.rc, 0, r.err);
+  assert.match(r.out, /⚠️ main de harness: 1 alerta de seguridad abierta — #190 js\/shell-command-injection-from-environment en skills\/x\/test-environment\.js:176 \(hace 2 h\)/, r.out);
+  assert.match(r.out, /El chequeo de antes de encolar no la ve: se arregla con un pedido/, r.out);
+  // los privados no tienen la operación: no son una lectura fallida
+  assert.doesNotMatch(r.out, /alertas de seguridad de main: no medido/, r.out);
+  const c = SPN().coordinatorLines({ home: w.home, tree: w.tree });
+  assert.ok(c.lines.some((l) => /main de harness: 1 alerta de seguridad abierta — #190/.test(l)), c.lines.join('\n'));
+  // dos o más: la primera y cuántas más
+  ponerAlertas(w, [alerta(190), alerta(192, { created_at: HACE(30), most_recent_instance: { location: { path: 'a.js', start_line: 1 } } })]);
+  refrescar(w);
+  assert.match(correr(w).out, /main de harness: 2 alertas de seguridad abiertas — #190 .* y 1 más/);
+});
+
+test('MainAlerts_NoneOrNoAnalysis_Silent; una lectura que falla es «no medido»', () => {
+  // sin análisis en el repo (lo de fábrica del gh de mentira) y con análisis sin alertas: nada
+  const w = mundo([]);
+  refrescar(w);
+  assert.doesNotMatch(correr(w).out, /alerta/, 'sin análisis');
+  ponerAlertas(w, []);
+  refrescar(w);
+  assert.doesNotMatch(correr(w).out, /alerta/, 'con análisis y nada abierto');
+  // la lectura de las alertas falla: se dice, no se calla
+  ponerAlertas(w, [alerta(190)], { 'GET repos/acme/harness/code-scanning/alerts': { status: 500, message: 'se cayó' } });
+  refrescar(w);
+  const r = correr(w);
+  assert.match(r.out, /alertas de seguridad de main: no medido en harness/, r.out);
+  assert.doesNotMatch(r.out, /#190/, r.out);
+});
+
+test('MainAlerts_WithoutPhoto_SaysNotMeasured — sin una lectura de las últimas 24 h, «no medido», nunca callado', () => {
+  const w = mundo([]);
+  fs.writeFileSync(alertasArchivo(w), JSON.stringify({ at: HACE(25 * 60), lecturas: { 'acme/harness': { ok: true, value: [alerta(190)] } } }));
+  const r = correr(w, { TYCON_STUCK_PR_REFRESH_MS: '2000' });
+  assert.match(r.out, /alertas de seguridad de main: no medido \(todavía no hay una lectura de hoy/, r.out);
+  assert.doesNotMatch(r.out, /#190/, 'una foto vieja no dice si sigue abierta');
+});
+
+// Fila 172b (24/11): con el análisis cortado de verdad a la hora límite, un pedido listo que no llegó a leer su análisis
+// sale «sin tiempo». Para el aviso eso es una lectura incompleta, como el tope de la lista: no se guarda como foto (si no,
+// por 10 minutos diría «no está listo» y no lo re-encolaría), y mientras tanto vale la foto anterior de ese repo.
+test('F172b SinTiempoDelAnalisis_EsLecturaIncompleta — no se guarda como foto y vale la anterior de ese repo', async () => {
+  const N = require(HOOK);
+  const sinTiempo = { ok: true, value: [{ number: 5, draft: false, mergeState: 'clean', codeScanning: { estado: 'no-se-pudo', motivo: 'no hubo tiempo de leer sus alertas en esta lectura', sinTiempo: true } }] };
+  const fallida = { ok: true, value: [{ number: 6, draft: false, mergeState: 'clean', codeScanning: { estado: 'no-se-pudo', motivo: 'no pude leer las alertas abiertas del pedido' } }] };
+  const tope = { ok: false, reason: 'no_medido', detail: 'tope de 5 s' };
+  assert.strictEqual(N.lecturaIncompleta(sinTiempo), true, 'un análisis sin tiempo deja la lectura incompleta');
+  assert.strictEqual(N.lecturaIncompleta(tope), true, 'el tope de la lista, como siempre');
+  assert.strictEqual(N.lecturaIncompleta(fallida), false, 'una lectura del análisis que falló no es falta de tiempo');
+  assert.strictEqual(N.lecturaIncompleta({ ok: true, value: [] }), false);
+  // la lectura del arranque: incompleta, sin foto nueva, y la foto anterior para ese repo
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'spn-172b-'));
+  const repo = { platform: 'github', org: 'acme', repo: 'harness' };
+  const ahora = Date.now();
+  const vieja = { ok: true, value: [{ number: 5, draft: false, mergeState: 'clean', codeScanning: { estado: 'verde', motivo: null } }] };
+  fs.writeFileSync(path.join(dir, 'stuck-prs-photo.json'), JSON.stringify({ at: new Date(ahora - 20 * 60000).toISOString(), repos: ['acme/harness'], lecturas: { 'acme/harness': vieja } }));
+  const antes = fs.readFileSync(path.join(dir, 'stuck-prs-photo.json'), 'utf8');
+  const r = await N.lecturas([repo], '/nada', dir, ahora, async () => ({ 'acme/harness': sinTiempo }));
+  assert.strictEqual(r.incompleta, true);
+  assert.strictEqual(fs.readFileSync(path.join(dir, 'stuck-prs-photo.json'), 'utf8'), antes, 'no pisó la foto');
+  const completas = N.conLaFotoAnterior([repo], r.leidas, r.anterior, ahora);
+  assert.deepStrictEqual(completas.leidas['acme/harness'], vieja, 'vale la foto anterior de ese repo');
+  assert.ok(completas.lecturaDeHace['acme/harness'] >= 20 * 60000);
 });

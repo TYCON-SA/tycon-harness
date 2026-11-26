@@ -340,9 +340,7 @@ else
       [ -n "$d" ] || continue
       printf '%s' "$INPUT" | ENGRAM_HOOK_COMMIT_DIR="$d" bash "${BASH_SOURCE[0]}"; rc=$?
       if [ "$rc" = "2" ]; then WORST=2; elif [ "$rc" != "0" ] && [ "$WORST" = "0" ]; then WORST=1; fi
-    done <<EOF_DIRS
-$COMMIT_DIRS
-EOF_DIRS
+    done < <(printf '%s\n' "$COMMIT_DIRS")
     exit "$WORST"
   fi
 fi
@@ -367,7 +365,7 @@ fi
 log "project=$PROJECT"
 
 # ── La configuración del arnés ─────────────────────────────────────────────
-# Un `~/.claude/tycon.json` (o un perfil) roto NO se lee como «engram apagado» ni frena el commit:
+# Un `~/.tycon/config.json` (o un perfil) roto NO se lee como «engram apagado» ni frena el commit:
 # se dice en CADA corrida —sin sello, sin silencio— y esta invocación no sincroniza. Nunca sale ≠ 0
 # por esto: un PreToolUse que sale con 2 deja la sesión sin Bash. El lector vive al lado de este hook.
 CONFIG_JS="$SCRIPT_DIR/../lib/tycon-config.js"

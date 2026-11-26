@@ -187,6 +187,8 @@ function codexThreads(codexHome, problems) {
   try {
     const { DatabaseSync } = require('node:sqlite');
     db = new DatabaseSync(path.join(codexHome, newest), { readOnly: true });
+    // Codex toma su base unos instantes mientras escribe: se espera hasta un segundo antes de decir que no se pudo leer
+    db.exec('PRAGMA busy_timeout = 1000');
     const cols = new Set(db.prepare('PRAGMA table_info(threads)').all().map((c) => c.name));
     const where = [
       cols.has('source') ? "COALESCE(source, '') <> 'exec'" : null,
@@ -1957,7 +1959,8 @@ function orphanReplies(file, what, takenName, rename, problems) {
 }
 
 // Una línea por sesión con mensajes perdidos, la más reciente primero: cuántos y hace cuánto el último, nunca el texto.
-// A lo sumo 5 sesiones, con «(+N más)».
+// A lo sumo 5 sesiones, con «(+N más)». Los escribió la persona en la pestaña de esa sesión, no la sesión, y se los dijo
+// a ella: la línea lo dice así, para que la coordinadora no los tome por un pedido a ella.
 function lostReplyLines(home, lost, now) {
   if (!lost.size) return [];
   const sessions = signatureList.sesiones(home).mapa;
@@ -1967,7 +1970,7 @@ function lostReplyLines(home, lost, now) {
     return name ? `${label(name)} (${id})` : id;
   };
   const all = [...lost].sort((a, b) => b[1].last - a[1].last);
-  const lines = all.slice(0, REPLY_LINES).map(([x, { n, last }]) => `Coordinación: ${who(x)} escribió ${n} mensaje(s) en su pestaña que no te llegaron, el último hace ${Math.max(0, Math.floor((now - last) / 60000))} min: preguntale qué te pidió.`);
+  const lines = all.slice(0, REPLY_LINES).map(([x, { n, last }]) => `Coordinación: la persona escribió ${n} mensaje(s) en la pestaña de ${who(x)} que no te llegaron, el último hace ${Math.max(0, Math.floor((now - last) / 60000))} min. Se los dijo a esa sesión, no a vos: si hacen a tu trabajo, preguntale a esa sesión qué le pidió.`);
   if (all.length > REPLY_LINES) lines.push(`Coordinación: (+${all.length - REPLY_LINES} más) con mensajes de la persona que no te llegaron.`);
   return lines;
 }

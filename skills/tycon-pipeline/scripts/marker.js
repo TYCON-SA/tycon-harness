@@ -7,7 +7,7 @@
  * orquestador (Claude) cuando detectan patrones de bypass.
  *
  * 🔴 Multi-sesión sin carreras: cada sesión de Claude Code tiene su
- * propio archivo `~/.claude/.tycon-pipeline/active/<sessionId>.json` que contiene
+ * propio archivo `~/.tycon/state/active/<sessionId>.json` que contiene
  * el marker de esa sesión. Cada sesión lee/escribe SOLO su archivo:
  *   - No colisionan KEYS (cada pipeline su marker).
  *   - No colisionan ESCRITURAS (`on-edit.js` de dos sesiones concurrentes escribe
@@ -47,8 +47,12 @@
  *   marker.js clear        → borra el marker de esta sesión
  *   marker.js is-active    → exit 0 si esta sesión tiene marker, 1 si no
  *
+ * Antes de pedir la firma de un criterio imposible de probar en vivo:
+ *   marker.js check-runtime-waiver <spec> [--acs n,m] → si la firma de runtime-waiver pasaría, sin firmar
+ *                                                  (0 pasaría · 1 no, con el porqué · 2 sin la historia)
+ *
  * Cross-session discovery:
- *   marker.js list-all                          → JSON array con TODOS los markers activos
+ *   marker.js list-all                        → JSON array con TODOS los markers activos
  *                                                  (todas las sesiones), stale-filtered
  *   marker.js find-by-story <storyId>           → JSON array con markers que matcheen
  *                                                  ese storyId (cualquier sesión)
@@ -86,7 +90,7 @@
  *   marker.js run-check <name> -- <cmd> [args...] → EJECUTA el comando (proceso hijo, sin
  *                                                  shell/pipes), captura el exit code REAL y
  *                                                  setea marker.checks[name] = green|red:<exit>.
- *                                                  Loguea a ~/.claude/.tycon-pipeline/gates.log
+ *                                                  Loguea a ~/.tycon/state/gates.log
  *                                                  (append-only: ts, cmd, exit, duración).
  *                                                  Exit code = el del comando (gateable).
  *                                                  Con el mismo check ya corriendo en el repo:
@@ -206,6 +210,7 @@ const cmdPlanReview = (...a) => parte(() => require('./lib/marker-signatures.js'
 const cmdReviewAnswer = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdReviewAnswer(...a);
 const cmdReviewAsk = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdReviewAsk(...a);
 const cmdRuntimeWaiver = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdRuntimeWaiver(...a);
+const cmdCheckRuntimeWaiver = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdCheckRuntimeWaiver(...a);
 const cmdSaveCheck = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdSaveCheck(...a);
 const cmdSignAtddSkip = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdSignAtddSkip(...a);
 const cmdSignAdversarialSkip = (...a) => parte(() => require('./lib/marker-signatures.js'), 'marker-signatures.js').cmdSignAdversarialSkip(...a);
@@ -337,6 +342,11 @@ switch (cmd) {
     // sin la story, la primera palabra ya es una bandera (`runtime-waiver --terminal`): la story sale del marcador
     if (arg1 && arg1.startsWith('--')) cmdRuntimeWaiver(null, process.argv.slice(3));
     else cmdRuntimeWaiver(arg1, process.argv.slice(4));
+    break;
+  case 'check-runtime-waiver':
+    // sólo mira: si la firma de runtime-waiver pasaría, sin firmar (fila 233)
+    if (arg1 && arg1.startsWith('--')) cmdCheckRuntimeWaiver(null, process.argv.slice(3));
+    else cmdCheckRuntimeWaiver(arg1, process.argv.slice(4));
     break;
   case 'waive-critical':
     cmdWaiveCritical(process.argv.slice(3));

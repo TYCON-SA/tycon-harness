@@ -32,11 +32,15 @@ const FUERA_DEL_ENTORNO = ['TYCON_GUIDES_DIR', 'TCG', 'NODE_TEST_CONTEXT', 'TYCO
   'CODEX_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'TYCON_EVIDENCE_DIR', 'TYCON_EVIDENCE_KEY', 'STOP_AUTONOMY',
   'TYCON_HARNESS_LOCK_HELD', 'TYCON_TEST_GATE', 'TYCON_TEST_SCOPE', 'TF_BUILD', 'CI', 'GITHUB_ACTIONS'];
 
+// los paquetes de revisores: una carpeta propia y vacía, como la del público solo donde se grabó la foto. El árbol armado
+// de la noche trae los del equipo, y sin esto la nota de paquetes cambia aunque el subcomando no
+const PAQUETES_VACIOS = fs.mkdtempSync(path.join(os.tmpdir(), 'split-contract-paquetes-'));
+
 function entorno(home, extra = {}) {
   const env = { ...process.env };
   for (const k of FUERA_DEL_ENTORNO) delete env[k];
   return Object.assign(env, {
-    HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: SID, TYCON_SESSION_ID: SID, TYCON_PACKS_DEFAULT: 'none',
+    HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: SID, TYCON_SESSION_ID: SID, TYCON_PACKS_DEFAULT: 'none', TYCON_PACKS_DIR: PAQUETES_VACIOS,
     // quién pide algo (`set-size` lo anota): fijo, porque en la CI no hay USER y cae en la sesión
     USER: 'acme', USERNAME: 'acme', LOGNAME: 'acme',
     // sin el perfil del equipo: el árbol armado del portón trae la capa del equipo y la foto se grabó sin ella
@@ -131,6 +135,7 @@ const CASOS = [
   { id: 'snapshot-iter', marcador: true, argv: ['snapshot-iter', '1'] },
   { id: 'runtime-waiver-sin-args', marcador: true, argv: ['runtime-waiver'] },
   { id: 'runtime-waiver-sin-terminal', marcador: true, argv: ['runtime-waiver', '{STORY}'] },
+  { id: 'check-runtime-waiver', marcador: true, argv: ['check-runtime-waiver', '{STORY}'] },
   { id: 'waive-critical-sin-args', marcador: true, argv: ['waive-critical'] },
   { id: 'waive-critical-sin-terminal', marcador: true, argv: ['waive-critical', '--rule', 'X-C1', '--file', 'src/a.js', '--reason', 'probado'] },
   { id: 'compare-waiver-sin-args', marcador: true, argv: ['compare-waiver'] },
@@ -307,11 +312,12 @@ function archivos(m) {
  */
 function normalizar(texto, m) {
   let t = String(texto);
-  for (const r of [m.raiz, fs.realpathSync(os.tmpdir()), os.tmpdir()]) t = t.split(r).join('<RAIZ>');
-  t = t.split(SCRIPTS).join('<GUIONES>');
-  // la raíz del arnés (sus scripts/lib, sus guías): la carpeta de la máquina no es comportamiento, ni se publica
-  t = t.split(path.resolve(SCRIPTS, '..', '..', '..')).join('<ARNES>');
-  t = t.split(os.homedir()).join('<CASA>');
+  // de la ruta más larga a la más corta: el árbol armado de la noche vive dentro de la carpeta temporal, y reemplazar
+  // antes la carpeta temporal dejaba la ruta del arnés como <RAIZ>/…
+  const rutas = [[m.raiz, '<RAIZ>'], [fs.realpathSync(os.tmpdir()), '<RAIZ>'], [os.tmpdir(), '<RAIZ>'], [SCRIPTS, '<GUIONES>'],
+    // la raíz del arnés (sus scripts/lib, sus guías): la carpeta de la máquina no es comportamiento, ni se publica
+    [path.resolve(SCRIPTS, '..', '..', '..'), '<ARNES>'], [os.homedir(), '<CASA>'], [PAQUETES_VACIOS, '<ARNES>/packs']];
+  for (const [r, marca] of rutas.sort((a, b) => b[0].length - a[0].length)) t = t.split(r).join(marca);
   // el usuario de la máquina (quién anotó algo): tampoco es comportamiento
   const usuario = (() => { try { return os.userInfo().username; } catch { return ''; } })();
   if (usuario.length >= 3) t = t.replace(new RegExp(`\\b${usuario.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g'), '<USUARIO>');
@@ -399,6 +405,8 @@ function diferencia(antes, despues) {
 
 const RAIZ_ARNES = path.resolve(SCRIPTS, '..', '..', '..');
 const LIB = path.join(SCRIPTS, 'lib');
+// el texto del freno de escrituras: el despachador y sus partes (lib/bash-gate-*.js)
+const textoDelFreno = () => require(path.join(RAIZ_ARNES, 'scripts', 'ci', 'control-size.js')).textoDelFreno(path.join(SCRIPTS, 'on-bash-write-gate.js'));
 /** Los módulos de la partición que hay hoy: `lib/marker-*.js` (sin marker-command.js, que ya existía y es otra cosa). */
 const modulosDeLaParticion = (lib = LIB) => {
   try { return fs.readdirSync(lib).filter((f) => /^marker-.+\.js$/.test(f) && f !== 'marker-command.js').sort(); } catch { return []; }
@@ -584,7 +592,7 @@ test('T4 Marker_UnderLimit_OneJobPerModule @story-8.163 @ac-4', () => {
     for (const r of requiresLocales(archivo)) assert.ok(fs.existsSync(path.join(RAIZ_ARNES, r)), `${m}: carga ${r}, que no existe`);
   }
   // cada parte la lee entera el freno de guiones (por debajo de su tope por archivo)
-  const freno = fs.readFileSync(path.join(SCRIPTS, 'on-bash-write-gate.js'), 'utf8');
+  const freno = textoDelFreno();
   const tope = Number((/const GUION_TOPE = (\d+) \* 1024;/.exec(freno) || [])[1]) * 1024;
   assert.ok(tope > 0, 'el tope por archivo del freno se lee de su texto');
   for (const m of ['../marker.js', ...Object.keys(MODULOS)]) {
@@ -708,9 +716,8 @@ test('T5 BashGate_ReadsMarkerWhole @story-8.163 @ac-5', () => {
   const nombrado = bloque.startsWith(FRENO_ENTERO) ? bloque.split('\n')[2].trim() : null;
   assert.notStrictEqual(nombrado, path.join(copia, 'marker.js'), 'marker.js se lee entero');
   assert.ok(!nombrado || !/[\\/]lib[\\/]marker-[^\\/]+\.js$/.test(nombrado), `un módulo de la partición se lee entero (${nombrado})`);
-  // lo que marker.js ya cargaba y pasa el tope sigue sin leerse entero hasta que se parta el freno: se nombra, no se
-  // esconde (pipeline.js ya está partido)
-  assert.strictEqual(nombrado, path.join(copia, 'on-bash-write-gate.js'), `lo que falta hasta partir el freno (${nombrado})`);
+  // con el freno y pipeline.js partidos, todo lo que marker.js carga se lee entero
+  assert.strictEqual(nombrado, null, `nada queda sin leer entero (${nombrado})`);
 });
 
 /** Una cadena de módulos de juguete: `principal.js` → m1 → … → m<largo>; el último hace `ultimo`. */
@@ -728,7 +735,7 @@ const NO_ESCRIBE = "module.exports = 1 + 1;\n";
 // 🔴 Falla con: el recorrido que corta callado a los 2 niveles o a los 20 archivos (el freno de antes), o que juzga el
 // primer módulo pasado el tope pero no lo que ese módulo carga.
 test('T14 BashGate_DeepModule_BlocksNotCuts @story-8.163 @ac-14', () => {
-  const freno = fs.readFileSync(path.join(SCRIPTS, 'on-bash-write-gate.js'), 'utf8');
+  const freno = textoDelFreno();
   // sin nombre todavía, el de antes: 2 niveles y 20 archivos (el comportamiento da el rojo, no la falta del nombre)
   const niveles = Number((/const RECORRIDO_NIVELES = (\d+);/.exec(freno) || [])[1]) || 2;
   const tope = Number((/const RECORRIDO_ARCHIVOS = (\d+);/.exec(freno) || [])[1]) || 20;
@@ -908,7 +915,7 @@ test('T7 Pipeline_UnderLimit_OneJobPerModule @story-8.163 @ac-7', () => {
   const despachador = path.join(SCRIPTS, 'pipeline.js');
   assert.ok(letras(despachador) < TOPE_LETRAS, `pipeline.js tiene ${letras(despachador)} letras: el tope es ${TOPE_LETRAS}`);
   assert.deepStrictEqual(partesDePipeline(), Object.keys(PARTES_PIPELINE).sort(), 'las partes de pipeline.js son las del plan');
-  const freno = fs.readFileSync(path.join(SCRIPTS, 'on-bash-write-gate.js'), 'utf8');
+  const freno = textoDelFreno();
   const tope = Number((/const GUION_TOPE = (\d+) \* 1024;/.exec(freno) || [])[1]) * 1024;
   assert.ok(tope > 0, 'el tope por archivo del freno se lee de su texto');
   assert.ok(fs.statSync(despachador).size < tope, `pipeline.js pesa ${fs.statSync(despachador).size} bytes y el freno lee enteros hasta ${tope}`);

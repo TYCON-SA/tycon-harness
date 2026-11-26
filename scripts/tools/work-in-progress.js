@@ -280,6 +280,8 @@ function codexNames(codexHome, unreadable) {
   try {
     const { DatabaseSync } = require('node:sqlite');
     db = new DatabaseSync(path.join(codexHome, newest), { readOnly: true });
+    // Codex toma su base unos instantes mientras escribe: se espera hasta un segundo antes de decir que no se pudo leer
+    db.exec('PRAGMA busy_timeout = 1000');
     for (const r of db.prepare("SELECT id, name FROM threads WHERE name IS NOT NULL AND name <> ''").all()) out.set(String(r.id), cut(oneLine(String(r.name)), NAME_MAX));
   } catch (e) {
     unreadable.push(`los nombres de las sesiones de Codex (${newest}) no se pudieron leer: ${oneLine((e && e.message) || e).slice(0, 120)}`);
@@ -1785,6 +1787,39 @@ function render(rows, free, noData, idle, halfway, unreadable, internal = 0, not
   return lines.join('\n');
 }
 
+// El bloque «Esperan» de debajo de la tabla: los tres grupos que arma la oficina (`meta.esperan`), con sus mismos títulos,
+// un renglón por espera. Un grupo vacío no sale, y sin esperas no hay bloque.
+const WAIT_GROUPS = [['dueno', 'Esperan al dueño'], ['main', 'Esperan a main'], ['sesion', 'Esperan a otra sesión']];
+const WAITS_MS = 20000;
+
+function renderWaits(esperan) {
+  const lines = [];
+  for (const [k, title] of WAIT_GROUPS) {
+    const list = (esperan && esperan[k]) || [];
+    if (list.length) lines.push(`${title}:`, ...list.map((w) => `- ${oneLine(w)}`));
+  }
+  return lines.length ? `\n\n${lines.join('\n')}` : '';
+}
+
+// Las esperas, de la oficina: le pasa la foto que /wip ya armó (no pregunta dos veces por los pedidos) y le pide que no
+// lea el tablero de la coordinadora ni escriba nada. Si no contesta a tiempo o falla, el bloque lo dice: no se puede
+// decir que no hay esperas sin haberlas mirado. Lo que la oficina no pudo leer, y /wip no dijo ya, va en un renglón.
+async function waitsOf(r, opts = {}, { collect, ms = WAITS_MS } = {}) {
+  let timer;
+  const late = new Promise((resolve) => { timer = setTimeout(() => resolve(null), ms); });
+  try {
+    const read = (collect || require('./office.js').collect)({ ...opts, wip: r, noBoard: true, readOnly: true, syncBoard: false, machine: false, riskUntil: Date.now() + ms, siteUrl: async () => ({ code: 0, out: '' }) });
+    const data = await Promise.race([read, late]);
+    if (!data) return `\n\nEsperan: no pude mirarlo (la oficina tardó más de ${ms / 1000} s)`;
+    const said = new Set(r.unreadable || []);
+    const missing = (data.unreadable || []).filter((u) => !said.has(u));
+    const block = renderWaits(data.meta && data.meta.esperan);
+    return missing.length ? `${block || '\n'}\nLa oficina no pudo leer todo para las esperas: ${oneLine(missing.join('; '))}` : block;
+  } catch (e) {
+    return `\n\nEsperan: no pude mirarlo (${oneLine((e && e.message) || String(e))})`;
+  } finally { clearTimeout(timer); }
+}
+
 // Los pedidos abiertos de UNA story, para el cartel de la corrida: se ve qué preguntar, se pregunta todo junto y se
 // vuelve a armar con las respuestas, como la tabla. `failed` dice que alguna consulta no contestó.
 async function storyEntering(m, { query = queryAll, budgetMs = GIT_BUDGET_MS } = {}) {
@@ -1844,7 +1879,7 @@ async function main(argv) {
     if (e.code === 'NO_STATE' || e.code === 'BAD_ARG') { process.stderr.write(`work-in-progress.js: ${e.message}\n`); return 2; }
     throw e;
   }
-  process.stdout.write(opts.json ? `${JSON.stringify(jsonOf(r), null, 2)}\n` : `${r.text}\n`);
+  process.stdout.write(opts.json ? `${JSON.stringify(jsonOf(r), null, 2)}\n` : `${r.text}${await waitsOf(r, opts)}\n`);
   return 0;
 }
 
@@ -1864,4 +1899,4 @@ if (require.main === module) {
 // el nombre de una sesión como lo deja `sessionsBySid`: quien lo compara con uno guardado lo recorta igual
 const listedName = (s) => cut(s, NAME_MAX);
 
-module.exports = { touchedField, SAVE_WAIT, SAVE_ASK, SAVE_WAITS, SAVE_OK, listedName, buildWip, wipNow, renderRetired, retiredNow, renderFreeSlots, freeSlotsNow, createMemory, reviseHalfway, git, stepMedians, enteredMain, OVERDUE_HOUR, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, readPrs, parseRemote, offQueueOf, identityOf, remoteOfFolder, endOf, hourForStep, hourVerdict, realState, replacedByNewer, storyPausedUntil, unsavedChanges, codexNames, sessionTitle, NAME_MAX, PER_QUERY_MS, ALL_QUERIES_MS, SAFE_SID, LOOSE_STALE_MS };
+module.exports = { renderWaits, waitsOf, touchedField, SAVE_WAIT, SAVE_ASK, SAVE_WAITS, SAVE_OK, listedName, buildWip, wipNow, renderRetired, retiredNow, renderFreeSlots, freeSlotsNow, createMemory, reviseHalfway, git, stepMedians, enteredMain, OVERDUE_HOUR, stagesOf, jsonOf, sessionsBySid, storyEntering, median, queryAll, readPrs, parseRemote, offQueueOf, identityOf, remoteOfFolder, endOf, hourForStep, hourVerdict, realState, replacedByNewer, storyPausedUntil, unsavedChanges, codexNames, sessionTitle, NAME_MAX, PER_QUERY_MS, ALL_QUERIES_MS, SAFE_SID, LOOSE_STALE_MS };

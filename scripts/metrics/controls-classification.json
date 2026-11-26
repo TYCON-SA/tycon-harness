@@ -1,5 +1,5 @@
 {
-  "__doc": "La clasificación de cada control del arnés: exigencia (protege algo que no se deshace o que no es del agente: producción y datos, secretos, la rama compartida y lo público, las firmas del dueño, las historias y las constancias, la constitución del arnés; no se apaga para ningún modelo) o preferencia (un trámite o un estilo que un modelo podría decidir bien solo). La clave es el nombre del freno en FRENOS de scripts/lib/guard-record.js; un gancho que frena (effect: blocks en scripts/setup/hooks-list.json) y no anota ahí lleva su propia entrada, con el nombre de su archivo. `ganchos`: los ganchos de hooks-list.json que lo corren; cada gancho que frena aparece en los `ganchos` de una sola entrada, y si corre más de un freno, los otros lo nombran en `tambien_en`. `review_before` (AAAA-MM-DD): vencida, la tabla de controles lo dice; no prende ni apaga nada. `estado`: `propuesta` hasta que el dueño firma; firmada lleva `firmada_el` y `firmada_por`. Nada de este archivo cambia lo que un freno decide. Lo controla scripts/tests/controls-classification.test.js.",
+  "__doc": "La clasificación de cada control del arnés: exigencia (protege algo que no se deshace o que no es del agente: producción y datos, secretos, la rama compartida y lo público, las firmas del dueño, las historias y las constancias, la constitución del arnés; no se apaga para ningún modelo) o preferencia (un trámite o un estilo que un modelo podría decidir bien solo). La clave es el nombre del freno en FRENOS de scripts/lib/guard-record.js; un gancho que frena (effect: blocks en scripts/setup/hooks-list.json) y no anota ahí lleva su propia entrada, con el nombre de su archivo. Un control del pipeline (un comando de marker.js o de pipeline.js que anota en gates.log su `blocked`) lleva `del_pipeline: true`, con su nombre en gates.log y sin ganchos. `ganchos`: los ganchos de hooks-list.json que lo corren; cada gancho que frena aparece en los `ganchos` de una sola entrada, y si corre más de un freno, los otros lo nombran en `tambien_en`. `review_before` (AAAA-MM-DD): vencida, la tabla de controles lo dice; no prende ni apaga nada. `estado`: `propuesta` hasta que el dueño firma; firmada lleva `firmada_el` y `firmada_por`. Nada de este archivo cambia lo que un freno decide. Lo controla scripts/tests/controls-classification.test.js.",
   "safety-guard": {
     "tipo": "exigencia",
     "motivo": "Protege producción y datos, los secretos y la rama compartida: borrados de raíz, empujes forzados a main, lectura de llaves.",
@@ -123,9 +123,9 @@
     ]
   },
   "internal-history": {
-    "tipo": "preferencia",
-    "motivo": "Un estilo de la prosa que se publica: sin historia interna del equipo.",
-    "review_before": "2027-01-20",
+    "tipo": "exigencia",
+    "motivo": "Protege la prosa del repo público, que no se borra: sin historia interna del equipo. Medido con y sin el control (Opus y Sonnet): no se afloja para ningún modelo, y la CI de cada pedido lo vuelve a correr sin sesión.",
+    "review_before": "2027-11-25",
     "estado": "propuesta",
     "ganchos": []
   },
@@ -137,6 +137,13 @@
     "ganchos": [
       "session-cap-guard.js"
     ]
+  },
+  "clear-session": {
+    "tipo": "exigencia",
+    "motivo": "Protege el trabajo de otra sesión: cerrar su ejecución abierta pide la firma del dueño, y cerrar una completa queda anotado.",
+    "review_before": "2027-11-24",
+    "estado": "propuesta",
+    "ganchos": []
   },
   "on-bash-write-gate.js": {
     "tipo": "exigencia",
@@ -200,5 +207,21 @@
     "ganchos": [
       "session-collision-guard.js"
     ]
+  },
+  "step-arg": {
+    "tipo": "exigencia",
+    "motivo": "Protege las constancias de la historia: «Probar en vivo» y el pase adversarial no se dan por hechos con complete-step, sino con el comando que deja su constancia (el mensaje lo nombra).",
+    "review_before": "2027-11-25",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "review-cap-shown": {
+    "tipo": "preferencia",
+    "motivo": "Un trámite: al tope de vueltas de revisores, decidir qué se hace con lo que quedó abierto. Sin nada abierto no frena.",
+    "review_before": "2027-01-24",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
   }
 }

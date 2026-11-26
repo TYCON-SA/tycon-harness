@@ -482,6 +482,29 @@ test('8.10.3 Detector_MixedCaseTermGluedAfterAnotherWord_IsSeen — la grafía p
   }
 });
 
+// Rojo de la noche del 25/11 (site-guide T9): las capturas de la guía del sitio traen un `aria-label="…"` que empieza
+// con una palabra común igual a la sigla de un cliente, y la pasada sin comillas leía `aria-label=<palabra>`, la sigla
+// en otra caja pegada a un separador. Sin las comillas sólo cuenta un
+// nombre que ellas partían; una palabra que ya estaba entera en el renglón la juzga la pasada de siempre.
+test('60 Detector_QuoteBeforeAWord_IsNotASplitName @fila-272 — una comilla al lado de una palabra entera no la vuelve identificador', () => {
+  // eslint-disable-next-line global-require
+  const det = require(DETECTOR);
+  const cfg = det.cargarConfig('lista.json', JSON.stringify({
+    terminos: [
+      { patron: 'ZOR', categoria: 'cliente', palabra: true, mayusculas: true },
+      { patron: 'Acmecorp', categoria: 'cliente' },
+    ],
+  }));
+  const hits = (line) => det.reviewText(cfg, line, 'a.html').hallazgos.map((h) => h.regla);
+  for (const line of ['<select aria-label="zor por perdida una ejecución">', "<b title='zor y recibir'>x</b>"]) {
+    assert.deepStrictEqual(hits(line), [], `tomó por el nombre una palabra entera al lado de una comilla: ${line}`);
+  }
+  // lo que la pasada sin comillas tiene que seguir viendo: el nombre que las comillas parten, y la sigla en un identificador
+  assert.strictEqual(hits('const x = "acme"corp;').length, 1, 'el nombre partido con comillas');
+  assert.strictEqual(hits("const x = 'acme' + 'corp';").length, 1, 'el nombre partido y concatenado');
+  assert.strictEqual(hits('name: acme-zor').length, 1, 'la sigla en otra caja en un identificador');
+});
+
 // Un freno lento es un agujero: si se cuelga o se corta, deja pasar. Una línea larga de tiradas como `a-a-a-…` o
 // `a.a.a.…` (un separador dibujado, un renglón minificado) hacía que las reglas del correo y de la clave entre comillas
 // volvieran a recorrer la tirada desde cada borde de palabra: el tiempo crecía al cuadrado (32.000 caracteres, más de
