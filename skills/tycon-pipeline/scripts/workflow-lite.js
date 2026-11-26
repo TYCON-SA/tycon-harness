@@ -598,7 +598,7 @@ async function main() {
   return 0;
 }
 
-module.exports = { slugFor, modelFor, anotarUso, escribirUso, usoDe };
+module.exports = { slugFor, modelFor, anotarUso, escribirUso, usoDe, runWorkflow };
 
 if (require.main === module) {
   main().then((c) => process.exit(c)).catch((e) => { console.error(`workflow-lite: ${e.message}`); process.exit(1); });

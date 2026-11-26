@@ -422,8 +422,40 @@ test('T10 ReviewRunner_EnWindowsElAtajoCmdSeLanzaConNode — el .cmd de npm se l
   // con la ruta del .cmd (la que da un lugar de la integración), lo mismo
   fs.writeFileSync(path.join(dir, 'revisor.cmd'), '"%dp0%\\node_modules\\@acme\\revisor\\cli.js" %*\r\n');
   assert.deepStrictEqual(RR.launchable(path.join(dir, 'revisor.cmd'), { platform: 'win32', env }), { bin: process.execPath, pre: [cli] });
+  // un atajo ajeno delante no corta la búsqueda: el .exe de otra carpeta del PATH se lanza
+  const otra = carpeta(t, 'rr-win-otra-');
+  fs.writeFileSync(path.join(dir, 'revisor.cmd'), '@ECHO off\r\ncall otra-cosa %*\r\n');
+  fs.writeFileSync(path.join(otra, 'revisor.exe'), '');
+  const env2 = { PATH: `${dir}${path.delimiter}${otra}`, PATHEXT: '.COM;.EXE;.BAT;.CMD' };
+  assert.deepStrictEqual(RR.launchable('revisor', { platform: 'win32', env: env2, separator: path.delimiter }), { bin: path.join(otra, 'revisor.exe'), pre: [] });
+  // un nombre que ya trae la extensión se busca tal cual
+  assert.deepStrictEqual(RR.launchable('revisor.exe', { platform: 'win32', env: env2, separator: path.delimiter }), { bin: path.join(otra, 'revisor.exe'), pre: [] });
   // fuera de Windows, tal cual
   assert.deepStrictEqual(RR.launchable('revisor', { platform: 'linux', env }), { bin: 'revisor', pre: [] });
+});
+
+// T12 · 🔴 Falla con: workflow-lite.js lanza el nombre del corredor en vez de lo que da `launchable` (programa y sus
+//    argumentos delante), y el arreglo de Windows no llega al pase.
+test('T12 WorkflowLite_LanzaLoQueDaLaunchable — el corredor se lanza con el programa y los argumentos que da launchable', async (t) => {
+  const a = laboratorio(t, { uno: CONTESTA, dos: CONTESTA });
+  const archivo = path.join(a.lab, 'integration.json');
+  const integ = JSON.parse(fs.readFileSync(archivo, 'utf8'));
+  const nombre = 'revisor-que-solo-lanza-launchable';
+  integ.runners.uno.bin = nombre;
+  fs.writeFileSync(archivo, JSON.stringify(integ));
+  const original = RR.launchable;
+  const antes = { PATH: process.env.PATH, file: process.env.TYCON_REVIEW_RUNNER_FILE, stub: process.env.TYCON_WFLITE_AGENT_CMD };
+  RR.launchable = (b, o) => (b === nombre ? { bin: process.execPath, pre: [path.join(a.lab, 'uno.js')] } : original(b, o));
+  process.env.TYCON_REVIEW_RUNNER_FILE = archivo;
+  delete process.env.TYCON_WFLITE_AGENT_CMD;
+  t.after(() => {
+    RR.launchable = original;
+    for (const [k, v] of [['TYCON_REVIEW_RUNNER_FILE', antes.file], ['TYCON_WFLITE_AGENT_CMD', antes.stub]]) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  });
+  const { runWorkflow } = require('../workflow-lite.js');
+  const res = await runWorkflow(path.join(a.lab, 'toy.workflow.js'), {}, { cwd: a.lab, timeoutMs: 60000, runners: ['uno'] });
+  assert.strictEqual(a.llamadas('uno'), 2, JSON.stringify(res && res.corredor));
+  assert.strictEqual(res.corredor.usado.a, 'uno');
 });
 
 // T11 · 🔴 Falla con: en la revisión del plan, la causa de «no se pudo lanzar» ofrece `--agents-dir` como salida
@@ -439,4 +471,18 @@ test('T11 WorkflowLite_EnModoPlanNoOfreceAgentsDir — sin el corredor, la causa
   assert.match(causa, /no se pudo lanzar/);
   assert.match(causa, /el PATH/);
   assert.doesNotMatch(causa, /--agents-dir/);
+});
+
+// T13 · 🔴 Falla con: en la revisión del plan, el aviso de pase NO MEDIDO del guion del pase ofrece `--agents-dir`.
+test('T13 AdversarialVerify_ModoPlanNoMedido_NoOfreceAgentsDir — el cazador no contesta: el aviso no ofrece la salida por carpeta', (t) => {
+  const lab = carpeta(t, 'rr-plan-');
+  const muerto = path.join(lab, 'muerto.js');
+  fs.writeFileSync(muerto, "process.exit(1);");
+  const home = path.join(lab, 'home');
+  fs.mkdirSync(home);
+  const out = path.join(lab, 'resultado.json');
+  const r = spawnSync(process.execPath, [LITE, path.join(SCRIPTS, 'adversarial-verify.workflow.js'), '--args', JSON.stringify({ repo: lab, modo: 'plan', pedido: '0123456789abcdef', storyTexto: 'una historia', planTexto: 'un plan corto' }), '--out', out],
+    { cwd: lab, encoding: 'utf8', timeout: 60000, env: { ...process.env, HOME: home, USERPROFILE: home, TYCON_GUIDES_DIR: path.join(SCRIPTS, '..', '..', '..'), TYCON_WFLITE_AGENT_CMD: `${process.execPath} ${muerto}` } });
+  assert.match(r.stderr, /pase NO MEDIDO/, r.stderr);
+  assert.doesNotMatch(r.stderr, /--agents-dir/);
 });
