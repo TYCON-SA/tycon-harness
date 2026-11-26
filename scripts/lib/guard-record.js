@@ -8,7 +8,7 @@
  * se vea igual que uno que nunca se disparó: ausente. Y ése es el número que decide si un freno se
  * queda o se saca por molesto.
  *
- * Acá se anota UNA línea por decisión, en `~/.claude/.tycon-pipeline/frenos.jsonl`:
+ * Acá se anota UNA línea por decisión, en `frenos.jsonl` de la carpeta del estado (`stateDir` de tycon-home.js):
  *
  *   {"ts":"…","freno":"test-scope-guard","regla":"suite-completa","veredicto":"bloqueo","sha256":"…"}
  *
@@ -71,8 +71,10 @@ const FRENOS = {
   // como el shell. No es una falla del freno —ésa es `no-pude-mirar`— y por eso tiene su propia regla.
   // `borrado-de-azure`: un borrado de grupo, candado o recurso de Azure que puede llevarse un servidor de producción.
   // `puerta-subagente`: un subagente llamó a la puerta; el cuadro lo contesta una persona que mira la sesión principal.
+  // `puerta-de-fondo`: la puerta pedida de fondo (con `run_in_background` o por el Monitor); su cuadro vence sin que nadie lo vea.
   'prod-access-guard': {
-    reglas: ['host-no-declarado', 'produccion', 'no-pude-mirar', 'puerta-no-canonica', 'nombre-indecidible', 'borrado-de-azure', 'puerta-subagente'],
+    reglas: ['host-no-declarado', 'produccion', 'no-pude-mirar', 'puerta-no-canonica', 'nombre-indecidible', 'borrado-de-azure', 'puerta-subagente',
+      'puerta-de-fondo'],
     veredictos: ['bloqueo', 'paso'],
   },
   // Los tres hooks del CIERRE (viven en agent-skills y llaman acá vía
@@ -175,14 +177,12 @@ const MOTIVOS = {
   },
 };
 
+// la carpeta del estado la sabe setup/harness/tycon-home.js, que está siempre al lado: en el repo, y en
+// /opt/tycon/setup/harness/ por el instalador del freno. En una copia de scripts/lib sola (los laboratorios de los ganchos)
+// no está: la carpeta del estado de siempre
+const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 function casaDelPipeline(home) {
-  // la carpeta del estado la sabe scripts/setup/harness/tycon-home.js: se carga si está al lado
-  // (en el repo, y en /opt/tycon/setup/harness/ por el instalador del freno); si no, la de siempre
-  try {
-    const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'));
-    if (typeof TH.stateDir === 'function') return TH.stateDir(home || os.homedir());
-  } catch (_) { /* la de siempre */ }
-  return path.join(home || os.homedir(), '.claude', '.tycon-pipeline');
+  return stateDirOf(home || os.homedir());
 }
 
 /** El motivo es un código de la lista del freno; cualquier otra cosa (prosa, ruta, vacío) → `otra`. */
@@ -231,7 +231,9 @@ const RELEVO = /^[\p{L}\p{N}][\p{L}\p{N} _-]{0,39}$/u;
 const ESCAPES_CON_NOMBRE = ['TYCON_SAFETY_OFF', 'TYCON_PROD_LINT', 'TYCON_NEW_NAMES', 'set-autonomous', 'cerrar-la-ejecucion', 'story-skill-bypass', 'cerrar-como-deuda',
   'TYCON_TEST_GATE', 'DOD_BYPASS', 'force-manual', 'trust-ran', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt', 'advisors_exempt',
   'TYCON_NO_DEEP_REVIEW', 'no-deep-review', 'TYCON_STATUS_GATE', 'cambiar-el-estado', 'merge-bypass', 'external-pr', 'red-control-test-edit',
-  'rojo-esperado-de-la-matriz', 'TYCON_MUTATION_CHECK', 'TYCON_STORY_REVIEW', 'no-mutation'];
+  'rojo-esperado-de-la-matriz', 'TYCON_MUTATION_CHECK', 'TYCON_STORY_REVIEW', 'no-mutation',
+  // las firmas del carril corto, que el freno de seguridad anota con su nombre cuando las aprueba la ventana
+  'adhoc-lane', 'adhoc-lane:sobre-cupo', 'adhoc-lane:ci-rojo', 'adhoc-lane:datos', 'adhoc-lane:guardado-ajeno'];
 const SESION = /^[\w-]{1,80}$/;
 
 function anotar({ freno, regla, veredicto, cmd, home, via, relevo, sesion, escape, motivo, detalle } = {}) {

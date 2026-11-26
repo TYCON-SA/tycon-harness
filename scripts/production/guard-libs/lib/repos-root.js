@@ -18,7 +18,7 @@
  *
  * ── CÓMO SE RESUELVE (en orden) ──────────────────────────────────────────────────────────────
  *   1. `TYCON_REPOS_ROOT` — explícita. Gana siempre.
- *   2. **El archivo de la máquina** (`~/.claude/tycon.json` → `rutas.repos`, story 8.3): lo que toda
+ *   2. **El archivo de la máquina** (`configFile` de scripts/setup/harness/tycon-home.js → `rutas.repos`, story 8.3): lo que toda
  *      sesión ve, incluidas las de la extensión de VS Code, que no cargan el rc del shell. Un archivo
  *      ROTO no se lee como «sin raíz»: tira `ConfigError` (un comando frena; un hook la atrapa, avisa
  *      y sigue sin raíz — nunca deniega nada por un archivo de configuración).
@@ -26,7 +26,7 @@
  *      `~/.claude/projects/<cwd codificado>/` y la cabeza de cada transcripción dice el `cwd`. O sea
  *      que el disco ya sabe en qué repos trabaja esta persona: se toman los repos de esos cwd —el repo que contiene al
  *      cwd, o los repos que el cwd tiene adentro si es la carpeta que los junta—, sin sandboxes del banco ni
- *      temporales, sin `~/.claude`, sin el arnés ni agent-skills (infraestructura), y la raíz es el ancestro MÁS
+ *      temporales, sin la carpeta de Claude Code, sin el arnés ni agent-skills (infraestructura), y la raíz es el ancestro MÁS
  *      ALTO por debajo del home (y de sus carpetas personales: Escritorio, Documentos, OneDrive) que contiene a la
  *      mayoría (≥ 50 %) de esos repos. En Windows las rutas se comparan sin distinguir mayúsculas (la letra de
  *      unidad). Se deduce de lo que la persona hace, no de dónde se clonó nada.
@@ -53,6 +53,9 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+// las rutas de la máquina las sabe scripts/setup/harness/tycon-home.js, al lado por su ruta relativa: en el repo, y en
+// /opt/tycon/setup/harness/ para la copia que viaja al freno de producción. Se carga cuando hace falta.
+const tyconHome = () => require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'));
 
 const ENV = 'TYCON_REPOS_ROOT';
 
@@ -102,6 +105,7 @@ function reposAlLado(dir, { R, fsx, excluir = [] }) {
  */
 function reposDeSesiones({ projectsDir, home, tmp, excluir, R, fsx }) {
   const out = new Map();   // llave → ruta
+  const claude = R.canon(tyconHome().claudeDir(home));   // con las rutas de la plataforma (Windows se prueba en cualquier máquina)
   const diag = { carpetas: 0, cwds: 0, sinRepo: 0 };
   let carpetas;
   try { carpetas = fs.readdirSync(projectsDir); } catch (_) { return { repos: [], diag }; }
@@ -140,7 +144,7 @@ function reposDeSesiones({ projectsDir, home, tmp, excluir, R, fsx }) {
       }
       if (!candidatos.length && !R.igual(r, home) && !R.dentroDe(home, r)) candidatos = reposAlLado(r, { R, fsx });
     }
-    const validos = candidatos.filter((c) => !R.dentroDe(c, tmp) && !R.dentroDe(c, R.P.join(home, '.claude')) && !excluir.some((e) => R.dentroDe(c, e)));
+    const validos = candidatos.filter((c) => !R.dentroDe(c, tmp) && !R.dentroDe(c, claude) && !excluir.some((e) => R.dentroDe(c, e)));
     if (!candidatos.length) diag.sinRepo++;
     for (const c of validos) if (!out.has(R.llave(c))) out.set(R.llave(c), c);
   }
@@ -243,7 +247,7 @@ function clonDeLaMudanza(home) {
  * @param {string} [envValue] override explícito (para tests) — `undefined` lee process.env
  * @param {object} [opts]     home · projectsDir · clon (el arnés) · tmp · env · sinConfig · platform · fsx — inyección para las pruebas
  * @returns {{root: string|null, fuente: 'env'|'maquina'|'sesiones'|'vecino'|'mudanza'|'sin-raiz', evidencia?: number, motivo?: string}}
- * @throws {ConfigError} si `~/.claude/tycon.json` está roto (nivel 2): un comando frena, un hook lo atrapa y avisa
+ * @throws {ConfigError} si el archivo de la máquina está roto (nivel 2): un comando frena, un hook lo atrapa y avisa
  */
 function resolveReposRoot(envValue, opts = {}) {
   const env = opts.env || process.env;
@@ -281,10 +285,10 @@ function resolveReposRoot(envValue, opts = {}) {
   }
 
   // La infraestructura son los DOS clones, en las tres formas de máquina (story 8.18): el del arnés, «donde están las
-  // skills» según la regla, y lo INSTALADO en `~/.claude/agent-skills`. Lo instalado va siempre y por su ruta real:
+  // skills» según la regla, y lo INSTALADO (`installedSkillsDir` de tycon-home.js). Lo instalado va siempre y por su ruta real:
   // desde la 8.18 la regla contesta el propio clon cuando trae `skills/`, y un clon de skills instalado que vive fuera
-  // de `~/.claude` (un enlace) dejaba de estar excluido — con un solo producto, su carpeta salía como «la raíz».
-  const installed = P.join(home, '.claude', 'agent-skills');
+  // de la carpeta de Claude Code (un enlace) dejaba de estar excluido — con un solo producto, su carpeta salía como «la raíz».
+  const installed = R.canon(tyconHome().installedSkillsDir(home));
   let skills = installed;
   // 🔴 El valor de siempre (lo instalado) es SÓLO para la copia que viaja sin skills-dir.js al lado. Antes un `catch`
   //    tragaba CUALQUIER error de la regla (segunda vuelta de los revisores del tramo 1 de la story 8.18, 2026-10-04):
@@ -331,7 +335,7 @@ function resolveReposRoot(envValue, opts = {}) {
     : `sin sesiones con repos en ${projectsDir}`;
   return {
     root: null, roots: [], fuente: 'sin-raiz',
-    motivo: `sin TYCON_REPOS_ROOT, sin rutas.repos en ${path.join(home, '.claude', 'tycon.json')}, ${sesTxt} y sin otro repo al lado del arnés (${vecino})${padreMudanza ? ` ni del clon desde el que se mudó la máquina (${padreMudanza})` : ''}`,
+    motivo: `sin TYCON_REPOS_ROOT, sin rutas.repos en ${tyconHome().configFile(home)}, ${sesTxt} y sin otro repo al lado del arnés (${vecino})${padreMudanza ? ` ni del clon desde el que se mudó la máquina (${padreMudanza})` : ''}`,
   };
 }
 
@@ -339,7 +343,7 @@ function resolveReposRoot(envValue, opts = {}) {
 function describir(r) {
   return {
     env: `la variable ${ENV}`,
-    maquina: 'el archivo de la máquina (~/.claude/tycon.json → rutas.repos)',
+    maquina: `el archivo de la máquina (${tyconHome().configFile(os.homedir())} → rutas.repos)`,
     sesiones: `tus sesiones (${r.evidencia} repos)`,
     vecino: `la carpeta del arnés (${r.evidencia} repos al lado)`,
     mudanza: `la carpeta del clon desde el que se mudó la máquina (${r.evidencia} repos al lado)`,
@@ -350,14 +354,16 @@ function describir(r) {
 // ---------------------------------------------------------------- selftest
 function selftest() {
   const t = fs.mkdtempSync(path.join(os.tmpdir(), 'repos-root-'));
-  const mk = (...p) => { const d = path.join(t, ...p); fs.mkdirSync(d, { recursive: true }); return d; };
+  const TH = tyconHome();
+  // una ruta absoluta (la que da tycon-home.js) se usa tal cual; si no, va dentro de la carpeta de la prueba
+  const mk = (...p) => { const d = path.isAbsolute(p[0]) ? path.join(...p) : path.join(t, ...p); fs.mkdirSync(d, { recursive: true }); return d; };
   const repo = (...p) => { const d = mk(...p); fs.mkdirSync(path.join(d, '.git'), { recursive: true }); return d; };
   const casa = real(mk('casa'));
-  mk('casa', '.claude');
+  mk(TH.claudeDir(casa));
   const tmpFalso = real(mk('tmp-falso'));
   const clon = real(repo('casa', 'Repos', 'tycon-claude-guides')); mk('casa', 'Repos', 'tycon-claude-guides', 'scripts');
-  const skills = repo('casa', '.claude', 'agent-skills');
-  // Un ~/.claude/projects fabricado. 🔴 Los nombres de carpeta imitan una casa REAL (/Users/<dev>/…): el
+  const skills = repo(TH.installedSkillsDir(casa));
+  // Una carpeta de sesiones de Claude Code fabricada. 🔴 Los nombres de carpeta imitan una casa REAL (/Users/<dev>/…): el
   // fixture entero vive bajo el temporal del sistema, y si los nombres se codificaran del cwd real
   // empezarían por "-var-folders-…" y el filtro barato por nombre los descartaría a todos — el
   // selftest mediría el filtro, no la deducción (pasó en la primera versión: 5/8 en rojo).
@@ -399,44 +405,44 @@ function selftest() {
   const r3 = resolveReposRoot('', Object.assign({}, o, { projectsDir: proj2 }));
   casos.push(['todos los repos dentro de un contenedor de producto: la raíz es la carpeta de arriba, no el contenedor',
     r3.fuente === 'sesiones' && r3.root === SC]);
-  // ── story 8.18: el clon instalado de las skills vive FUERA de ~/.claude (un enlace) — sigue siendo infraestructura ──
-  // Otra casa: un producto, y el clon de skills en `Infra/`, enlazado desde ~/.claude/agent-skills. Sin la exclusión
+  // ── story 8.18: el clon instalado de las skills vive FUERA de la carpeta de Claude Code (un enlace) — sigue siendo infraestructura ──
+  // Otra casa: un producto, y el clon de skills en `Infra/`, enlazado desde las skills instaladas. Sin la exclusión
   // explícita de lo instalado la raíz salía `Infra` (un repo contra uno, desempata el nombre).
-  const casa2 = real(mk('casa2')); mk('casa2', '.claude');
+  const casa2 = real(mk('casa2')); mk(TH.claudeDir(casa2));
   const prod2 = repo('casa2', 'Proyectos', 'A');
   const skills2 = repo('casa2', 'Infra', 'skills-clone');
-  fs.symlinkSync(skills2, path.join(casa2, '.claude', 'agent-skills'), 'dir');
+  fs.symlinkSync(skills2, TH.installedSkillsDir(casa2), 'dir');
   const proj3 = mk('casa2', '.claude', 'projects');
   [prod2, skills2].forEach((c) => sesionEn(proj3, c));
   const r3b = resolveReposRoot('', { home: casa2, clon, tmp: tmpFalso, projectsDir: proj3, env: {}, sinConfig: true });
-  casos.push(['🔴 el clon instalado de las skills, enlazado desde ~/.claude/agent-skills, no cuenta como repo de trabajo aunque viva fuera de ~/.claude',
+  casos.push(['🔴 el clon instalado de las skills, enlazado desde las skills instaladas, no cuenta como repo de trabajo aunque viva fuera de la carpeta de Claude Code',
     r3b.fuente === 'sesiones' && r3b.root === path.join(casa2, 'Proyectos') && r3b.evidencia === 1]);
   // ── pase adversarial del tramo 1 de la 8.18 (hallazgo 1): el paso «vecino» tampoco cuenta a la infraestructura ──
   // Cada forma en su propia casa, sin sesiones de producto, sin variable y sin archivo. Lo esperado en las cuatro es
   // «sin raíz»: al lado del arnés sólo está el clon de las skills, y una raíz con cero repos que auditar se lee «todo bien».
-  const house = (name) => { const h = real(mk(name)); mk(name, '.claude'); return { h, projectsDir: mk(name, '.claude', 'projects'), name }; };
+  const house = (name) => { const h = real(mk(name)); mk(TH.claudeDir(h)); return { h, projectsDir: mk(name, '.claude', 'projects'), name }; };
   const harnessAt = (...p) => { const c = real(repo(...p)); mk(...p, 'scripts'); return c; };
   const ask = (hs, c) => resolveReposRoot('', { home: hs.h, clon: c, tmp: tmpFalso, projectsDir: hs.projectsDir, env: {}, sinConfig: true });
   const noRoot = (r) => r.fuente === 'sin-raiz' && r.root === null;
-  // A: el arnés y el clon de las skills, vecinos en Infra/; el de las skills, enlazado desde ~/.claude/agent-skills
+  // A: el arnés y el clon de las skills, vecinos en Infra/; el de las skills, enlazado desde las skills instaladas
   const hA = house('casaA'); const clonA = harnessAt('casaA', 'Infra', 'tycon-claude-guides');
-  fs.symlinkSync(repo('casaA', 'Infra', 'agent-skills'), path.join(hA.h, '.claude', 'agent-skills'), 'junction');
-  casos.push(['🔴 vecino: el clon de las skills (enlazado desde ~/.claude/agent-skills) como ÚNICO repo al lado del arnés no hace de su carpeta «la raíz»: sin raíz',
+  fs.symlinkSync(repo('casaA', 'Infra', 'agent-skills'), TH.installedSkillsDir(hA.h), 'junction');
+  casos.push(['🔴 vecino: el clon de las skills (enlazado desde las skills instaladas) como ÚNICO repo al lado del arnés no hace de su carpeta «la raíz»: sin raíz',
     noRoot(ask(hA, clonA))]);
-  // B: los dos clones, carpetas reales dentro de ~/.claude
-  const hB = house('casaB'); const clonB = harnessAt('casaB', '.claude', 'tycon-harness');
-  repo('casaB', '.claude', 'agent-skills');
-  casos.push(['🔴 vecino: el arnés y agent-skills como carpetas reales dentro de ~/.claude: ~/.claude no es «la raíz»', noRoot(ask(hB, clonB))]);
+  // B: los dos clones, carpetas reales dentro de la carpeta de Claude Code
+  const hB = house('casaB'); const clonB = harnessAt(TH.placePath(hB.h));
+  repo(TH.installedSkillsDir(hB.h));
+  casos.push(['🔴 vecino: el arnés y agent-skills como carpetas reales dentro de la carpeta de Claude Code: esa carpeta no es «la raíz»', noRoot(ask(hB, clonB))]);
   // C: como A, con sesiones SÓLO en los dos clones — el paso 3 las descarta, y el paso 4 no las vuelve a meter
   const hC = house('casaC'); const clonC = harnessAt('casaC', 'Infra', 'tycon-claude-guides');
   const skillsC = real(repo('casaC', 'Infra', 'agent-skills'));
-  fs.symlinkSync(skillsC, path.join(hC.h, '.claude', 'agent-skills'), 'junction');
+  fs.symlinkSync(skillsC, TH.installedSkillsDir(hC.h), 'junction');
   [clonC, skillsC].forEach((c) => sesionEn(hC.projectsDir, c));
   casos.push(['🔴 vecino: con sesiones sólo en los dos clones, lo que el paso de las sesiones dejó afuera no vuelve a entrar como vecino', noRoot(ask(hC, clonC))]);
   // D: el clon unido (trae skills/ y agents/) con el clon viejo de las skills al lado, todavía instalado por enlace
   const hD = house('casaD'); const clonD = harnessAt('casaD', 'Infra', 'tycon-claude-guides');
   ['skills', 'agents', 'packs'].forEach((s) => mk('casaD', 'Infra', 'tycon-claude-guides', s));
-  fs.symlinkSync(repo('casaD', 'Infra', 'skills-old'), path.join(hD.h, '.claude', 'agent-skills'), 'junction');
+  fs.symlinkSync(repo('casaD', 'Infra', 'skills-old'), TH.installedSkillsDir(hD.h), 'junction');
   casos.push(['🔴 vecino: el clon unido con el clon viejo de las skills al lado (instalado por enlace): sin raíz', noRoot(ask(hD, clonD))]);
   // el espejo sano: un PRODUCTO al lado sí hace de la carpeta la raíz, y la evidencia cuenta sólo al producto
   repo('casaA', 'Infra', 'ProductoA');
@@ -452,7 +458,7 @@ function selftest() {
     const RW = rutasDe('win32');
     const W = 'C:\\Users\\dev';
     const PR = `${W}\\Desktop\\proyectos`;
-    const carpetasW = [W, `${W}\\.claude`, `${W}\\AppData\\Local\\Temp`, `${W}\\.tycon\\harness`, `${W}\\Desktop`, PR,
+    const carpetasW = [W, RW.canon(TH.claudeDir(W)), `${W}\\AppData\\Local\\Temp`, `${W}\\.tycon\\harness`, `${W}\\Desktop`, PR,
       `${PR}\\Totora`, `${PR}\\Totora\\Backend`, `${PR}\\Ceibo`, `${PR}\\Ceibo\\Backend`, `${PR}\\Ceibo\\Backend\\src`, `${PR}\\Fresno`, `${PR}\\Fresno\\Api`];
     const reposW = new Set([`${PR}\\Totora\\Backend`, `${PR}\\Ceibo\\Backend`, `${PR}\\Fresno\\Api`].map((x) => x.toLowerCase()));
     const porLlave = new Map(carpetasW.map((x) => [x.toLowerCase(), x]));
@@ -503,10 +509,10 @@ function selftest() {
   casos.push(['sin sesiones pero con OTRO repo al lado del arnés: vecino, con la cantidad de vecinos como evidencia',
     r5.fuente === 'vecino' && r5.root === SC && r5.evidencia === 1]);
   // ── el archivo de la máquina (nivel 2) ──
-  const cfgPath = path.join(casa, '.claude', 'tycon.json');
+  const cfgPath = TH.configFile(casa);
   fs.writeFileSync(cfgPath, JSON.stringify({ rutas: { repos: '~/Proyectos' } }));
   const r6 = resolveReposRoot('', o);
-  casos.push(['rutas.repos en ~/.claude/tycon.json gana sobre las sesiones y el vecino (la `~` se expande al home)', r6.fuente === 'maquina' && r6.root === P]);
+  casos.push(['rutas.repos en el archivo de la máquina gana sobre las sesiones y el vecino (la `~` se expande al home)', r6.fuente === 'maquina' && r6.root === P]);
   const r6b = resolveReposRoot('/z', o);
   casos.push(['…pero la variable le gana al archivo', r6b.fuente === 'env']);
   fs.writeFileSync(cfgPath, '{ roto');
@@ -539,7 +545,7 @@ if (require.main === module) {
 /**
  * Los repos en los que trabaja esta persona, sacados de sus sesiones (el paso 3 de resolveReposRoot, sin votar una raíz):
  * lo usan quienes necesitan los repos y no una carpeta, como las corridas sin cerrar. Sin la infraestructura (el clon del
- * arnés y el de las skills), sin temporales ni `~/.claude`. Devuelve rutas reales.
+ * arnés y el de las skills), sin temporales ni la carpeta de Claude Code. Devuelve rutas reales.
  */
 function sessionRepos(opts = {}) {
   const env = opts.env || process.env;
@@ -553,7 +559,7 @@ function sessionRepos(opts = {}) {
   const home0 = opts.home || os.homedir();
   const home = fsx.real(home0) || R.canon(home0);
   const clon = opts.clon || path.resolve(__dirname, '..', '..');
-  const installed = P.join(home, '.claude', 'agent-skills');
+  const installed = R.canon(tyconHome().installedSkillsDir(home));
   let skills = installed;
   if (fs.existsSync(path.join(__dirname, 'skills-dir.js'))) skills = require('./skills-dir.js').resolveSkillsDirs(env.TYCON_SKILLS_DIR).repo;
   const infra = [...new Set([fsx.real(clon), fsx.real(skills), fsx.real(installed)].filter(Boolean))];

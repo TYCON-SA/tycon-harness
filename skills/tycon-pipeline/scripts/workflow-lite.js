@@ -364,7 +364,11 @@ function makeAgent(opts, corredor) {
         } else {
           const c = RR.commandFor(name, runner, { model: modelo, schema: strict, schemaFile, outFile, cwd: opts.cwd, customCommand: lista.customCommand, prompt });
           donde = RR.resolveBin(runner, c.bin);
-          res = await spawnAgent([donde.bin || c.bin, ...c.args], prompt, opts.cwd, opts.timeoutMs, { stdin: c.input === 'stdin', env: c.env });          let fileText = null;
+          // en Windows, el atajo .cmd de npm no se lanza sin shell: se lanza su programa (review-runner.js, launchable)
+          const lanzable = RR.launchable(donde.bin || c.bin);
+          res = lanzable.bin
+            ? await spawnAgent([lanzable.bin, ...lanzable.pre, ...c.args], prompt, opts.cwd, opts.timeoutMs, { stdin: c.input === 'stdin', env: c.env })
+            : { code: -1, out: '', err: lanzable.motivo };          let fileText = null;
           if (c.answer === 'file' || c.answer === 'file-env') { try { fileText = fs.readFileSync(outFile, 'utf8'); } catch (_) { fileText = null; } }
           leido = RR.readAnswer(runner, { stdout: res.out, stderr: res.err, code: res.code, fileText });
           if (leido.failed && !leido.limit) leido.limit = esTope(res);
@@ -387,9 +391,10 @@ function makeAgent(opts, corredor) {
           const noLanzo = res.code === -1;
           if (noLanzo || corredor.fallosSeguidos[name] >= FALLOS_PARA_CAIDO) {
             // sin el programa: dónde se buscó y la salida aprobada, que no lanza nada desde acá
-            const dondeBusco = noLanzo && donde && donde.bin === null
-              ? `: no está en ${donde.buscado.join(' ni en ')}; la salida aprobada es --agents-dir <carpeta> (los agentes los lanza la sesión)`
-              : '';
+            // en la revisión del plan, --agents-dir no es salida: las respuestas las escribiría la sesión revisada, y el
+            // freno la rechaza a propósito
+            const salida = opts.mode === 'plan' ? '' : '; la salida aprobada es --agents-dir <carpeta> (los agentes los lanza la sesión)';
+            const dondeBusco = noLanzo && donde && donde.bin === null ? `: no está en ${donde.buscado.join(' ni en ')}${salida}` : '';
             const por = noLanzo ? `no se pudo lanzar (${causa})${dondeBusco}` : `falló ${corredor.fallosSeguidos[name]} veces seguidas (${causa})`;
             corredor.caidos[name] = { causa: por, hora: horaCorta(), label };
             process.stderr.write(`wflite ✖ ${label}: ${runner.label} ${por} — no lo vuelvo a probar en esta corrida\n`);
@@ -593,7 +598,7 @@ async function main() {
   return 0;
 }
 
-module.exports = { slugFor, modelFor, anotarUso, escribirUso, usoDe };
+module.exports = { slugFor, modelFor, anotarUso, escribirUso, usoDe, runWorkflow };
 
 if (require.main === module) {
   main().then((c) => process.exit(c)).catch((e) => { console.error(`workflow-lite: ${e.message}`); process.exit(1); });

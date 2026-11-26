@@ -22,7 +22,8 @@
  *                             constancia la cambia.
  *   anotarGuardadoDelCarril(…) la constancia de un guardado del carril que el freno dejó pasar.
  *   puntaConConstancia(repo, M) el commit más nuevo de la rama con constancia (un guardado de otro carril o la foto de
- *                             una corrida cerrada completa): lo propio se mide desde ahí, no desde M.
+ *                             una corrida cerrada completa): lo propio se mide desde ahí, no desde M. Con main traído
+ *                             después de esa punta, desde la punta juntada con main (`puntaJuntadaConMain`).
  *
  * Lo que no se puede leer (git que no contesta) no da verde: queda en `fallas`, y quien mide no guarda.
  */
@@ -304,8 +305,9 @@ const corto = (sha) => String(sha).slice(0, 12);
 
 /**
  * Desde dónde se mide lo propio de un repo, en un solo lugar: `{ sha, de, aviso? }` (de: 'integracion' | 'constancia' |
- * 'anotada' | 'sin-base'), o `{ falla }` con la salida escrita. Con la rama de integración, si la rama ya tiene una punta
- * con constancia después de la bifurcación (`puntaConConstancia`), desde esa punta. Se compara el `origin` de hoy con el anotado antes de mirar ninguna
+ * 'constancia-con-main' | 'anotada' | 'sin-base'), o `{ falla }` con la salida escrita. Con la rama de integración, si la
+ * rama ya tiene una punta con constancia después de la bifurcación (`puntaConConstancia`), desde esa punta; si main se
+ * trajo después de esa punta, desde la punta juntada con main, cuando junta limpio (`puntaJuntadaConMain`). Se compara el `origin` de hoy con el anotado antes de mirar ninguna
  * rama remota:
  *  - el mismo `origin` (o sin base anotada): la bifurcación con la rama de integración más cercana (`main` o `dev`). Una
  *    sola: «igual a la otra rama» no quiere decir «entró de ahí», y un revert masivo no sumaría. En `dev` con `main` traído
@@ -347,7 +349,11 @@ function laBase(repo, adhoc, nacido) {
       // lo que la rama ya guardó con su constancia no se vuelve a medir: se mide desde esa punta
       const p = puntaConConstancia(repo, M, { adhoc });
       if (p.sha) return { sha: p.sha, de: 'constancia', ...(p.aviso ? { aviso: p.aviso } : {}) };
-      return { sha: M, de: 'integracion', ...(p.aviso ? { aviso: p.aviso } : {}) };
+      // con main traído después de la punta, la punta juntada con main (fila 262)
+      const j = p.aviso ? { sha: null } : puntaJuntadaConMain(repo, M, { adhoc });
+      if (j.sha) return { sha: j.sha, de: 'constancia-con-main', ...(j.aviso ? { aviso: j.aviso } : {}) };
+      const aviso = p.aviso || j.aviso;
+      return { sha: M, de: 'integracion', ...(aviso ? { aviso } : {}) };
     }
   }
   if (!shaAnotado) return sinBase((anotada && anotada.motivo) || `sin origin/${RAMA}`);
@@ -512,12 +518,12 @@ function arbolesRevisados(dir, real) {
  * base en M u otra punta válida—. Un merge de `main` después de P lo deja fuera: P ya no desciende del M de hoy. `adhoc`:
  * el carril que mide, cuyos guardados no cuentan. `{ sha }` (null: no hay) y `aviso` si una constancia no se pudo leer.
  */
-function puntaConConstancia(repo, M, { adhoc = null, dir = estadoDelArnes() } = {}) {
+function puntaConConstancia(repo, M, { adhoc = null, dir = estadoDelArnes(), hasta = 'HEAD' } = {}) {
   try {
     const real = rutaReal(repo);
     const rama = ramaDe(repo);
     if (!rama) return { sha: null };
-    const commits = git(repo, ['rev-list', '--ancestry-path', `--max-count=${COMMITS_MAX}`, `${M}..HEAD`]).split('\n').filter(Boolean);
+    const commits = git(repo, ['rev-list', '--ancestry-path', `--max-count=${COMMITS_MAX}`, `${M}..${hasta}`]).split('\n').filter(Boolean);
     if (!commits.length) return { sha: null };
     const propio = idDelCarril(adhoc);
     const g = guardadosDe(dir, real, rama);
@@ -540,7 +546,7 @@ function puntaConConstancia(repo, M, { adhoc = null, dir = estadoDelArnes() } = 
     const deLaFoto = new Set();
     for (const foto of f.fotos) {
       if (!foto.cabeza || !(foto.cabeza === M || enLaRama.has(foto.cabeza))) continue;
-      const despues = git(repo, ['rev-list', '--ancestry-path', '--reverse', `${foto.cabeza}..HEAD`]).split('\n').filter(Boolean).slice(0, DESDE_LA_FOTO_MAX);
+      const despues = git(repo, ['rev-list', '--ancestry-path', '--reverse', `${foto.cabeza}..${hasta}`]).split('\n').filter(Boolean).slice(0, DESDE_LA_FOTO_MAX);
       for (const sha of [foto.cabeza, ...despues]) {
         if (sha === M || deLaFoto.has(sha)) continue;
         const a = require('./save-ok.js').arbolDelCommit(repo, sha);
@@ -579,6 +585,46 @@ function puntaConConstancia(repo, M, { adhoc = null, dir = estadoDelArnes() } = 
     };
     const P = commits.find((sha) => valida(sha, 0)) || null;
     return { sha: P, ...(aviso ? { aviso } : {}) };
+  } catch (e) {
+    return { sha: null, aviso: noPudeLeer(repo, e) };
+  }
+}
+
+/**
+ * La punta con constancia de antes de traer main, juntada con main (fila 262; decisión del dueño del 25/11 23:10, que
+ * cambia el AC 15 de la 8.276). Con main traído después de la punta P, P ya no desciende del M de hoy y se medía el pedido
+ * entero contra main. Acá se busca P en lo que la rama tenía antes de cada merge de main (por la primera línea de padres,
+ * los últimos ENCADENADAS_MAX), y la base es el árbol de juntar P con M (`git merge-tree --write-tree`), en un commit
+ * suelto con M y P de padres: lo de main y lo de P quedan fuera, y cuenta sólo lo que cambió la sesión. Si no junta limpio,
+ * no hay punta (se mide desde M, como antes): lo que resolvió el choque es trabajo de la rama. `{ sha }` (null: no hay) y
+ * `aviso` si una constancia no se pudo leer.
+ */
+function puntaJuntadaConMain(repo, M, { adhoc = null, dir = estadoDelArnes() } = {}) {
+  try {
+    const linea = git(repo, ['rev-list', '--first-parent', '--merges', `--max-count=${COMMITS_MAX}`, `${M}..HEAD`]).split('\n').filter(Boolean);
+    let probados = 0;
+    for (const X of linea) {
+      if (probados >= ENCADENADAS_MAX) break;
+      const padres = git(repo, ['rev-list', '--parents', '-n', '1', X]).split(' ').slice(1);
+      if (padres.length !== 2) continue;
+      // sólo un merge que trajo lo que ya está en main
+      try { git(repo, ['merge-base', '--is-ancestor', padres[1], M]); } catch (e) { if (e.status === 1) continue; throw e; }
+      probados += 1;
+      const antes = padres[0];
+      const M0 = git(repo, ['merge-base', antes, M]);
+      const p = puntaConConstancia(repo, M0, { adhoc, dir, hasta: antes });
+      if (p.aviso) return { sha: null, aviso: p.aviso };
+      if (!p.sha) continue;
+      let arbol;
+      try { arbol = git(repo, ['merge-tree', '--write-tree', M, p.sha], 20000).split('\n')[0]; } catch (e) {
+        if (e.status === 1) return { sha: null };   // no junta limpio: como antes
+        throw e;
+      }
+      if (!ES_SHA.test(arbol)) return { sha: null };
+      const sha = git(repo, ['-c', 'user.name=camino corto', '-c', 'user.email=camino-corto@ejemplo.invalid', 'commit-tree', arbol, '-p', M, '-p', p.sha, '-m', 'la punta con constancia juntada con main'], 20000);
+      return { sha };
+    }
+    return { sha: null };
   } catch (e) {
     return { sha: null, aviso: noPudeLeer(repo, e) };
   }

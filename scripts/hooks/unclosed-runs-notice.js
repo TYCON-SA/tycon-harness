@@ -44,8 +44,9 @@ function localDate(ms) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-// Lo que paga un criterio de la deuda: evidencia en vivo, o la firma de la persona sobre un criterio imposible.
-const PAGA = new Set(['RUNTIME', 'WAIVED-USER']);
+// Lo que paga un criterio de la deuda: evidencia en vivo, la firma de la persona sobre un criterio imposible, o la
+// noche que corrió en verde su prueba (COVERED-NIGHTLY).
+const PAGA = new Set(['RUNTIME', 'WAIVED-USER', 'COVERED-NIGHTLY']);
 
 /**
  * Las deudas de evidencia en vivo de `gates.log`, una por historia y deuda (en una historia paraguas cada tanda trae la

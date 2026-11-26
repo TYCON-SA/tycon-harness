@@ -592,6 +592,10 @@ function reviewText(cfg, text, rel, opciones = {}) {
         const desde = new Set(antes.map((ap) => ap.index));
         for (const ap of aps) {
           if (desde.has(mapa[ap.index])) continue;
+          // partido es lo que las comillas cortaban: una aparición que ya estaba entera en el renglón (una palabra al
+          // lado de una comilla, `aria-label="…`) la juzgó la pasada de siempre, y sin la comilla sólo parece pegada
+          const fin = ap.index + ap.texto.length - 1;
+          if (ap.texto.length > 0 && mapa[fin] - mapa[ap.index] === ap.texto.length - 1) continue;
           desde.add(mapa[ap.index]);
           anotar(r, ap, i + 1, '(partido con comillas)');
         }

@@ -114,7 +114,7 @@ test('T9 Direccion_LosNocturnosLeenElPerfil @story-8.203 @ac-9 — el resumen di
   assert.strictEqual(cli.status, 0, cli.stderr);
   // quienes preguntan pasan el perfil que ya trae el pipeline (TEAM_PROFILE)
   assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'ci', 'open-pr-per-finding.sh'), 'utf8'), /site-decides --operations operations\.json \$\{PERFIL_SITIO\[@\]\+/);
-  assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'nightly', 'dependencies', 'work-items.js'), 'utf8'), /sitioDecide\(rutaOperations, \{ perfil: process\.env\.TEAM_PROFILE/);
+  assert.match(fs.readFileSync(path.join(ROOT, 'integrations', 'azure-devops', 'scripts', 'dependency-notices.js'), 'utf8'), /sitioDecide\(rutaOperations, \{ perfil: process\.env\.TEAM_PROFILE/);
   // team-config: la dirección de la página
   const TCF = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'team-config.js'));
   const targets = (url) => [{ id: 'operations', state: 'loaded', data: { site: url ? { url } : {} } }];

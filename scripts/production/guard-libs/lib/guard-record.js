@@ -8,13 +8,15 @@
  * se vea igual que uno que nunca se disparó: ausente. Y ése es el número que decide si un freno se
  * queda o se saca por molesto.
  *
- * Acá se anota UNA línea por decisión, en `~/.claude/.tycon-pipeline/frenos.jsonl`:
+ * Acá se anota UNA línea por decisión, en `frenos.jsonl` de la carpeta del estado (`stateDir` de tycon-home.js):
  *
  *   {"ts":"…","freno":"test-scope-guard","regla":"suite-completa","veredicto":"bloqueo","sha256":"…"}
  *
- * Un `escape` puede llevar además por qué camino se autorizó (`via`: persona, reenvio o ambiente) y, si vino por
+ * Un `escape` puede llevar además por qué camino se autorizó (`via`, de la lista `VIAS`) y, si vino por
  * relevo, la sesión que lo reenvió (`relevo`). Los dos son de una forma cerrada, no texto libre. Un `bloqueo` de una
- * regla que frena por causas distintas lleva además su `motivo`, un código de la lista `MOTIVOS`.
+ * regla que frena por causas distintas lleva además su `motivo`, un código de la lista `MOTIVOS`. Un `escape` puede
+ * llevar también `detalle`: la huella (sha256) de lo que se firmó, como la lista y la fecha de un rojo esperado de la
+ * matriz, para que quien la usa compruebe que es la de su pedido.
  *
  * 🔴 LA LÍNEA NO LLEVA EL CONTENIDO. El registro sube al buzón y lo que el reductor publica lo ve
  *    todo el equipo. Del comando va su HUELLA, nunca su texto — el patrón es el de `registrar()` del
@@ -58,8 +60,10 @@ const FRENOS = {
   // alguien agrega una regla al freno, y una lista que se desactualiza sola publica todo como `otra`.
   'safety-guard': { forma: /^[A-Z]{2,8}-[CW][0-9]{1,2}$/, veredictos: ['bloqueo', 'escape'] },
   'test-scope-guard': { reglas: ['suite-completa'], veredictos: ['bloqueo', 'paso', 'escape'] },
-  'pr-uno-por-repo': { reglas: ['pr-duplicado'], veredictos: ['bloqueo', 'paso', 'escape'] },
+  'pr-uno-por-repo': { reglas: ['pr-duplicado'], veredictos: ['bloqueo', 'paso', 'escape', 'paso-por-perfil'] },
   'pr-sin-auto-complete': { reglas: ['sin-auto-complete'], veredictos: ['bloqueo', 'paso', 'escape'] },
+  // Encolar un pedido del arnés que toca el instalador sin las portables en verde (el mismo hook que el de arriba).
+  'pr-sin-portables': { reglas: ['sin-portables'], veredictos: ['bloqueo', 'paso', 'escape'] },
   // Nunca bloquea: todas sus salidas son 0. Que la ficha lo diga es parte de la medición — «avisó N
   // veces y nadie hizo nada» es lo que decide si algún día tiene que pasar a frenar.
   'push-referencia-fantasma': { reglas: ['referencia-fantasma'], veredictos: ['aviso', 'paso'] },
@@ -67,8 +71,10 @@ const FRENOS = {
   // como el shell. No es una falla del freno —ésa es `no-pude-mirar`— y por eso tiene su propia regla.
   // `borrado-de-azure`: un borrado de grupo, candado o recurso de Azure que puede llevarse un servidor de producción.
   // `puerta-subagente`: un subagente llamó a la puerta; el cuadro lo contesta una persona que mira la sesión principal.
+  // `puerta-de-fondo`: la puerta pedida de fondo (con `run_in_background` o por el Monitor); su cuadro vence sin que nadie lo vea.
   'prod-access-guard': {
-    reglas: ['host-no-declarado', 'produccion', 'no-pude-mirar', 'puerta-no-canonica', 'nombre-indecidible', 'borrado-de-azure', 'puerta-subagente'],
+    reglas: ['host-no-declarado', 'produccion', 'no-pude-mirar', 'puerta-no-canonica', 'nombre-indecidible', 'borrado-de-azure', 'puerta-subagente',
+      'puerta-de-fondo'],
     veredictos: ['bloqueo', 'paso'],
   },
   // Los tres hooks del CIERRE (viven en agent-skills y llaman acá vía
@@ -129,9 +135,10 @@ const FRENOS = {
   // El freno antes de publicar (scripts/hooks/public-push-guard.js). Anota cada empuje a un remoto
   // público desde un árbol del arnés y cada `gh` que publica ahí, también los `paso`: el denominador es «veces que algo
   // iba a salir al público». No tiene `escape`: ninguna variable lo apaga. `generic-only` = pasó sin lista (una máquina
-  // que no es del equipo). Sin huella del comando: el cuerpo de un pedido viaja en él.
+  // que no es del equipo). `main-branch` = el empuje iba a la rama principal del arnés público (entra por la cola). Sin
+  // huella del comando: el cuerpo de un pedido viaja en él.
   'public-push-guard': {
-    reglas: ['finding', 'could-not-look', 'unreadable-text', 'clean', 'generic-only'],
+    reglas: ['finding', 'could-not-look', 'unreadable-text', 'clean', 'generic-only', 'main-branch'],
     veredictos: ['bloqueo', 'paso'],
   },
   // El control de historia interna en la prosa que se publica (scripts/publishing/internal-history.js), desde que frena.
@@ -145,6 +152,9 @@ const FRENOS = {
     reglas: ['finding', 'could-not-look', 'disabled', 'clean'],
     veredictos: ['bloqueo', 'aviso', 'paso', 'escape'],
   },
+  // El tope de sesiones trabajando (scripts/hooks/session-cap-guard.js): anota sólo cuando niega abrir una sesión de
+  // fondo. No tiene `escape`: ninguna variable lo apaga, el tope lo cambia una persona.
+  'session-cap-guard': { reglas: ['tope'], veredictos: ['bloqueo'] },
 };
 
 const REGLA_DESCONOCIDA = 'otra';
@@ -159,16 +169,15 @@ const MOTIVOS = {
   'prod-access-guard': {
     produccion: ['escritura-protegida', 'nombre-armado', 'servidor-no-literal', 'base-de-produccion', 'llavero'],
   },
+  'session-cap-guard': {
+    tope: ['en-el-tope', 'no-pude-contar', 'no-pude-decidir', 'revision-llena'],
+  },
 };
 
+// la carpeta del estado la sabe setup/harness/tycon-home.js, que está siempre al lado: en el repo, y en
+// /opt/tycon/setup/harness/ por el instalador del freno. Si faltara, quien anota lo atrapa y no anota
 function casaDelPipeline(home) {
-  // la carpeta del estado la sabe scripts/setup/harness/tycon-home.js: se carga si está al lado
-  // (en el repo, y en /opt/tycon/setup/harness/ por el instalador del freno); si no, la de siempre
-  try {
-    const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'));
-    if (typeof TH.stateDir === 'function') return TH.stateDir(home || os.homedir());
-  } catch (_) { /* la de siempre */ }
-  return path.join(home || os.homedir(), '.claude', '.tycon-pipeline');
+  return require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')).stateDir(home || os.homedir());
 }
 
 /** El motivo es un código de la lista del freno; cualquier otra cosa (prosa, ruta, vacío) → `otra`. */
@@ -207,17 +216,20 @@ function anotarFallo(home, motivo) {
 // lo aprobó: el rol que declara el perfil del equipo, un nombre corto. Un valor fuera de la forma no se anota (la línea
 // se escribe igual). `delegacion`: la sesión designada lo aprobó en nombre del dueño (lib/owner-window.js). `persona`,
 // `reenvio` y `sin-conversacion` son de antes de la ventana de permiso, cuando la autorización salía de la
-// conversación: ya no se escriben, y siguen en la lista para leer los renglones viejos.
-const VIAS = ['persona', 'reenvio', 'delegacion', 'ambiente', 'sin-conversacion', 'ventana'];
+// conversación: ya no se escriben, y siguen en la lista para leer los renglones viejos. `click` y `mensaje`: la persona lo
+// aprobó en el cuadro de opciones o con un «aprobado» escrito (lib/owner-approvals.js). `aviso`: pasó sin firma, avisado,
+// antes de la fecha de corte de su escape (`enforce_from` en lib/env-switches.json).
+const VIAS = ['persona', 'reenvio', 'delegacion', 'ambiente', 'sin-conversacion', 'ventana', 'click', 'mensaje', 'automatica', 'aviso'];
 const RELEVO = /^[\p{L}\p{N}][\p{L}\p{N} _-]{0,39}$/u;
 // Qué escape con nombre se usó y en qué sesión: `marker.js clear` busca acá quién autorizó cerrar una ejecución abierta,
 // y `close-as-debt` quién autorizó la deuda. Lista cerrada; un valor fuera de la lista no se anota y queda el aviso.
 const ESCAPES_CON_NOMBRE = ['TYCON_SAFETY_OFF', 'TYCON_PROD_LINT', 'TYCON_NEW_NAMES', 'set-autonomous', 'cerrar-la-ejecucion', 'story-skill-bypass', 'cerrar-como-deuda',
-  'TYCON_TEST_GATE', 'DOD_BYPASS', 'force-manual', 'trust-ran', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt',
-  'TYCON_NO_DEEP_REVIEW', 'no-deep-review', 'TYCON_STATUS_GATE', 'cambiar-el-estado'];
+  'TYCON_TEST_GATE', 'DOD_BYPASS', 'force-manual', 'trust-ran', 'ALLOW_DOD_EVIDENCE_WRITE', 'dod_runtime_exempt', 'advisors_exempt',
+  'TYCON_NO_DEEP_REVIEW', 'no-deep-review', 'TYCON_STATUS_GATE', 'cambiar-el-estado', 'merge-bypass', 'external-pr', 'red-control-test-edit',
+  'rojo-esperado-de-la-matriz', 'TYCON_MUTATION_CHECK', 'TYCON_STORY_REVIEW', 'no-mutation'];
 const SESION = /^[\w-]{1,80}$/;
 
-function anotar({ freno, regla, veredicto, cmd, home, via, relevo, sesion, escape, motivo } = {}) {
+function anotar({ freno, regla, veredicto, cmd, home, via, relevo, sesion, escape, motivo, detalle } = {}) {
   try {
     if (!FRENOS[freno]) {
       anotarFallo(home, `freno desconocido: ${String(freno).slice(0, 40)}`);
@@ -251,6 +263,11 @@ function anotar({ freno, regla, veredicto, cmd, home, via, relevo, sesion, escap
       if (ESCAPES_CON_NOMBRE.includes(escape)) linea.escape = escape;
       else anotarFallo(home, `escape fuera de la lista en ${freno}: ${String(escape).slice(0, 40)}`);
     }
+    // la huella de lo que se firmó: sólo en un escape y sólo con la forma de un sha256; otra cosa no se anota
+    if (detalle !== undefined && veredicto === 'escape') {
+      if (/^[0-9a-f]{64}$/.test(String(detalle))) linea.detalle = detalle;
+      else anotarFallo(home, `huella fuera de forma en un escape de ${freno}: no se anotó`);
+    }
     const dir = casaDelPipeline(home);
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(path.join(dir, 'frenos.jsonl'), JSON.stringify(linea) + '\n', 'utf8');
@@ -275,7 +292,7 @@ function main(argv) {
     return i >= 0 && i + 1 < argv.length ? argv[i + 1] : undefined;
   };
   const cmd = argv.includes('--cmd-stdin') ? leerStdin() : undefined;
-  anotar({ freno: val('--guard'), regla: val('--rule'), veredicto: val('--verdict'), cmd, via: val('--via'), relevo: val('--relay'), sesion: val('--session'), escape: val('--escape'), motivo: val('--reason') });
+  anotar({ freno: val('--guard'), regla: val('--rule'), veredicto: val('--verdict'), cmd, via: val('--via'), relevo: val('--relay'), sesion: val('--session'), escape: val('--escape'), motivo: val('--reason'), detalle: val('--detail') });
   return 0; // SIEMPRE 0: el freno que nos llamó decide su propio código de salida
 }
 

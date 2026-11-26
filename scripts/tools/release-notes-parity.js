@@ -133,7 +133,7 @@ function main() {
   if (explicita) roots = [argv[argv.indexOf('--root') + 1]];
   else {
     // La raíz la resuelve el arnés: nunca una carpeta escrita a mano; puede ser más de una, y se recorren todas. Sin
-    // raíz no hay copias que comparar, y se DICE: «no medido» no es «todo alineado». Un ~/.claude/tycon.json roto
+    // raíz no hay copias que comparar, y se DICE: «no medido» no es «todo alineado». Un ~/.tycon/config.json roto
     // tira: un comando frena.
     const r = require('../lib/repos-root.js').resolveReposRoot();
     if (!r.root) { console.log(`release-notes-parity: no medido — sin raíz de repos en esta máquina (${r.motivo}); no hay copias que comparar.`); return 0; }

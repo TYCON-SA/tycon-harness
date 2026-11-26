@@ -12,6 +12,12 @@
 #   · las corridas no se pisan: corre una por vez y GitHub deja UNA sola esperando (la nueva reemplaza a la que esperaba;
 #     como cada corrida numera la punta de main, no se pierde nada). Dos merges nunca toman el mismo número;
 #   · el checkout trae la historia y las etiquetas; cada acción va fijada por el sha completo de su commit.
+#
+# Después de etiquetar, publica la versión de la semana (scripts/ci/weekly-release.js) si pasaron 7 días desde la
+# última: una release de GitHub sobre la etiqueta recién puesta, con «Contribuciones de afuera» arriba de las notas. Es
+# el único paso con el token de la corrida (el mismo que ya deja el checkout para empujar la etiqueta): crear una
+# release es una llamada a la API. Las cuentas del equipo vienen de la variable de Actions MAINTAINER_LOGINS; sin ella,
+# avisa y no publica. Si este paso falla, la etiqueta ya está puesta.
 name: version-tag
 
 on:
@@ -41,3 +47,8 @@ jobs:
           node-version: 24
       - name: La etiqueta con el número de este merge
         run: node scripts/ci/version-tag.js tag --sha "${GITHUB_SHA}"
+      - name: La versión de la semana, si pasaron 7 días desde la última
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          MAINTAINER_LOGINS: ${{ vars.MAINTAINER_LOGINS }}
+        run: node scripts/ci/weekly-release.js --sha "${GITHUB_SHA}"

@@ -210,7 +210,7 @@ fi
 # ── El freno de nombres nuevos en castellano en lo que ejecuta la máquina ──
 # Archivos, opciones, subcomandos, variables y claves de lo que se publica van en inglés: un nombre castellano que no
 # existía no entra; uno que ya existe pasa mientras no se renombre. Apagado, con aviso en cada commit:
-# TYCON_SPANISH_NAMES=0. Guía: guides/maintaining/nombres-en-ingles.md.
+# TYCON_SPANISH_NAMES=0. Guía: guides/maintaining/english-names.md.
 # Casos: scripts/tests/spanish-names.test.js y C-16..C-24 de githook-livefire.test.sh
 SPANISH_NAMES="${TCG:-$REPO_ROOT}/scripts/publishing/spanish-names.js"
 if [ -n "${_checks_only:-}" ] && ! _checks_wanted scripts/publishing/spanish-names.js; then :
@@ -249,7 +249,7 @@ elif [ -f "$CORE_NEUTRALITY" ] && ! node "$CORE_NEUTRALITY" --repo "$REPO_ROOT";
 fi
 
 # ── Las palabras de las guías en castellano ──
-# Las guías dicen cada cosa con una sola palabra (guides/maintaining/vocabulario.md): el control señala las palabras que
+# Las guías dicen cada cosa con una sola palabra (guides/maintaining/vocabulary.md): el control señala las palabras que
 # no se escriben en la prosa de una guía y pasan el techo de su archivo. Informa y no frena el commit. Las reglas:
 # scripts/ci/vocabulary.json.
 # Casos: scripts/tests/vocabulary.test.js
@@ -282,7 +282,7 @@ elif [ -f "$REPO_ROOT/team-profile.json" ] || [ -f "$REPO_ROOT/perfil-equipo.jso
 fi
 
 # ── La historia interna en los comentarios del código ──
-# Un comentario dice qué hace el código y por qué, en presente (guides/maintaining/estilo-de-codigo.md). Mira lo que el
+# Un comentario dice qué hace el código y por qué, en presente (guides/maintaining/code-style.md). Mira lo que el
 # commit AGREGA a los comentarios, neto por archivo: una línea vieja con historia que el commit no suma no frena. Sólo en el
 # árbol que se publica: en el repo del equipo dice que no aplica, y en un repo sin el guion no corre. El modo de cada forma
 # está en scripts/publishing/internal-history.json → zones.comment; la misma variable TYCON_INTERNAL_HISTORY lo baja.

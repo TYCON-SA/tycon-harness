@@ -10,16 +10,18 @@ Pull requests are welcome. This repository is where the harness is written, not 
 - **From a fork**: fork the repository, make a branch, and open a pull request to `main`. Because you are an outside
   contributor, the CI waits until a maintainer clicks «Approve and run workflows»: this is for safety, so code from
   outside does not run before someone has looked at it. After that, the CI runs as on any other pull request.
-- **Two GitHub limits with forks**: CodeQL does not analyze a pull request from a fork, and `main` needs its results.
-  So a maintainer copies your commits, unchanged, to a branch of this repository and opens a pull request from it:
-  CodeQL runs there, and your commits enter `main` with your name. Your pull request gets a note pointing to the new
-  one. Nothing is merged without the analysis, except in an emergency that the repository owner decides and signs. Also, on a fork owned by an organization GitHub does not offer «Allow edits by maintainers»: if you can, fork to
-  your personal account.
+- **CodeQL on a fork**: CodeQL analyzes your pull request too (`.github/workflows/code-scanning.yml`), once a maintainer
+  approves the run. Changing a workflow of this repository waits for the owner's approval, also from a fork. If the
+  analysis does not run, a maintainer copies your commits, unchanged, to a branch of this repository and opens a pull
+  request from it: CodeQL runs there, and your commits enter `main` with your name. Nothing is merged without the
+  analysis, except in an emergency that the repository owner decides and signs. Also, on a fork owned by an
+  organization GitHub does not offer «Allow edits by maintainers»: if you can, fork to your personal account.
 - **How we review**: first we leave review comments on your pull request, saying what to change and why: you get the
   first chance to fix it. Please turn on «Allow edits by maintainers», so we can add a fix to your same pull request if
   needed. If we finish it ourselves (because it is urgent, or you do not answer), the fix goes on top of your commits,
   which keep your name, with credit in the pull request and in the history. Accepted contributions are named in the
-  release notes.
+  release notes: once a week, under Releases, «Contribuciones de afuera» lists who contributed and through which pull
+  request.
 - **Big change? Open an issue first**: say what you want to do, so we can agree on it before you work. A small fix can
   go straight to a pull request.
 - **Green CI**: the `public-ci` check and CodeQL code scanning must both pass. Run the CI locally with
@@ -60,11 +62,13 @@ Si nunca colaboraste en este repo, el camino es éste:
 
 ### Dos límites de GitHub con los forks
 
-- **CodeQL no analiza un pull request que viene de un fork**, y `main` exige sus resultados: el pedido queda trabado
-  aunque todo lo demás esté en verde. Lo que hacemos: un mantenedor copia tus commits, sin cambiarlos, a una rama de
-  este repo y abre el pull request desde ahí. CodeQL corre en ese pedido, y tus commits entran a `main` a tu nombre.
-  Tu pedido queda con una nota que apunta al nuevo. Sin el análisis no se mergea, salvo una urgencia que decide el
-  dueño del repo, con su firma.
+- **CodeQL analiza también un pull request que viene de un fork**, con un workflow propio
+  (`.github/workflows/code-scanning.yml`), una vez que un mantenedor aprueba la corrida. La configuración de fábrica de
+  CodeQL no lo hacía, y `main` exige sus resultados. Cambiar un workflow de este repo espera la aprobación del dueño,
+  también desde un fork. Si el análisis no corre, un mantenedor copia tus commits, sin cambiarlos, a una rama de este
+  repo y abre el pull request desde ahí: CodeQL corre en ese pedido, y tus commits entran a `main` a tu nombre. Tu
+  pedido queda con una nota que apunta al nuevo. Sin el análisis no se mergea, salvo una urgencia que decide el dueño
+  del repo, con su firma.
 - **En un fork de una organización, GitHub no ofrece «Allow edits by maintainers»**: la casilla no aparece, o no
   sirve. Si podés, hacé el fork en tu cuenta personal. Si tiene que ser el de la organización, el arreglo que
   sumemos va en ese pedido nuevo, encima de tus commits.
@@ -78,7 +82,8 @@ Si nunca colaboraste en este repo, el camino es éste:
    con los forks»).
 3. **Si lo completamos nosotros**, por urgencia o porque no respondés, el arreglo va encima de tus commits. Tus commits
    quedan a tu nombre, y el crédito queda en el pedido y en la historia del repo.
-4. **Las contribuciones aceptadas se nombran** en las notas de la versión publicada.
+4. **Las contribuciones aceptadas se nombran** en las notas de la versión publicada: una vez por semana, en Releases,
+   «Contribuciones de afuera» dice quién contribuyó y por qué pedido entró.
 
 ## Lo que tiene que dar verde
 
@@ -87,8 +92,9 @@ Para entrar a `main`, un pull request necesita dos cosas en verde:
 - **`public-ci`**, el chequeo de la CI (`.github/workflows/ci.yml`). Corre `scripts/ci/public-ci.sh` partido en
   varios trabajos, más un ensayo en Windows.
 - **CodeQL**, el análisis de código de GitHub. Frena el merge con una alerta de nivel error o una alerta de seguridad
-  alta o crítica. Corre sólo en GitHub: no hay forma de correrlo en tu máquina. En un pull request desde un fork no
-  corre: va por la rama de este repo que describe «Dos límites de GitHub con los forks».
+  alta o crítica. Corre sólo en GitHub: no hay forma de correrlo en tu máquina. En un pull request desde un fork corre
+  una vez aprobada la corrida; si no corre, va por la rama de este repo que describe «Dos límites de GitHub con los
+  forks».
 
 ## Antes de abrir un pull request
 
@@ -118,7 +124,7 @@ Dos reglas, las mismas que sigue el equipo:
 
 1. **Lo que ejecuta la máquina, en inglés**: nombres de archivos, opciones, variables, claves de configuración,
    funciones. Los mensajes y los comentarios pueden ir en castellano. La guía es
-   [`guides/maintaining/nombres-en-ingles.md`](../guides/maintaining/nombres-en-ingles.md). La CI lo controla en el
+   [`guides/maintaining/english-names.md`](../guides/maintaining/english-names.md). La CI lo controla en el
    paso `spanish-names`; si salta, renombrá a inglés lo que señala.
 2. **Los ejemplos, con nombres inventados** (`acme`, «Cliente A»): ningún cliente, persona, servidor o máquina de
    verdad, ni en el código ni en las pruebas ni en la documentación. Lo frena el control de nombres de TYCON

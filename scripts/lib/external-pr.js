@@ -30,7 +30,7 @@
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const gh = require('./gh-pr.js');
+const gh = require('./command-readers.js').lectorDe('gh');
 
 const FIRMA = 'escape:external-pr';
 const MUTACION = /\b(enqueuePullRequest|enablePullRequestAutoMerge|mergePullRequest)\b/;
@@ -49,6 +49,7 @@ const CAMBIA_CUENTA = /\bauth\s+(switch|login|logout|refresh|setup-git|token)\b|
 // los programas que sólo NOMBRAN el comando que los sigue (lo imprimen o lo buscan): no lo corren (como ci-bypass.js)
 const SOLO_NOMBRA = new Set(['echo', 'printf', 'print', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'git', 'man', 'which', 'type', 'cat',
   'less', 'head', 'tail', 'sed', 'awk', 'jq', 'wc', 'sort', 'cut', 'tr', 'ls', 'test', 'write-host', 'write-output', 'select-string']);
+const PALABRAS_DE_LA_TERMINAL = new Set(['do', 'then', 'else', 'elif', 'if', 'while', 'until', '{', '!']);
 const nombreDe = (t) => String(t || '').toLowerCase().replace(/^.*[\\/]/, '').replace(/\.(exe|cmd)$/, '');
 
 /**
@@ -170,10 +171,13 @@ function leer(comando) {
     // la API acepta opciones pegadas (`-iX PUT`) que no se leen con certeza, y sigue en la red. Nunca cuenta lo lanzado
     // por otro programa (`xargs -I{}`, `timeout`), una palabra con un `{}` que se llena al correr, ni un comando cuya
     // salida corre otra terminal (`| bash`).
-    const correLaSalida = /\|\s*(?:sudo\s+)?(?:(?:ba|z|da|k)?sh|source|eval|\.)(?:\s|$|\))/.test(cmd);
+    // Una palabra de la terminal delante (el `do` de un bucle, el `then` de un `if`, un `!`) no es otro programa: el `gh`
+    // corre con sus argumentos a la vista, como solo.
+    const correLaSalida = /\|\s*(?:sudo\s+)?(?:(?:ba|z|da|k)?sh|source|eval|\.)(?:\s|$|[);&|])/.test(cmd);
+    const loLanzaUnPrograma = (c) => (c.porOtroPrograma || c.loLanzaOtro) && !PALABRAS_DE_LA_TERMINAL.has(nombreDe(c.lanzadoPor));
     const yaLeido = (c) => {
       const ps = c.palabras || [];
-      if (correLaSalida || c.grupo !== 'pr' || c.porOtroPrograma || c.loLanzaOtro || ps.some((p) => /\{\}/.test(p.texto))) return false;
+      if (correLaSalida || c.grupo !== 'pr' || loLanzaUnPrograma(c) || ps.some((p) => /\{\}/.test(p.texto))) return false;
       return !!(ps[1] && ps[1].literal) && VERBOS_QUE_LEEN.has(c.verbo || c.verboTrasOpciones);
     };
     const nombra = gh.comandosGh(cmd, 0, {}).some((c) => !yaLeido(c) && (c.grupo === null || c.enSustitucion || (c.porOtroPrograma && !SOLO_NOMBRA.has(nombreDe(c.lanzadoPor)))));

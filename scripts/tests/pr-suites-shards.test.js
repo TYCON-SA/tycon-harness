@@ -139,6 +139,8 @@ function expand(body, values) {
   const macros = {
     'Build.SourcesDirectory': values.sources, 'Build.ArtifactStagingDirectory': values.staging,
     'Agent.TempDirectory': values.temp, 'Pipeline.Workspace': values.workspace, 'Build.BuildId': '4242', 'Build.SourceBranch': values.branch,
+    // la carpeta del trabajo: sin una copia del arnés adentro, el paso no le pasa a las suites el gancho público
+    'Agent.BuildDirectory': values.build !== undefined ? values.build : (values.temp !== undefined ? `${values.temp}/build` : undefined),
     SUITES_SHARD: values.shard, SUITES_OF: values.of, todoElRepo: values.everything, baseDelCambio: values.base,
     // lo que decidió «¿El banco corre en este pedido?» de Validar: «no» o «si»
     banco: values.banco,
@@ -1712,7 +1714,7 @@ test('T11 Validation_GithubSelf_PrivateOnceOutsideTheCheckout_RedWithoutTheVaria
 const GUARD_STEP = 'El freno de publicación sobre el pedido';
 const GUARD_TERM = 'Zorblax';   // inventado
 const GUARD_LIST = `${JSON.stringify({ terminos: [{ patron: GUARD_TERM, categoria: 'cliente' }], permitidos: [] }, null, 2)}\n`;
-const GUARD_PIECES = ['scripts/hooks/public-push-guard.js', 'scripts/lib/az-pr.js', 'scripts/lib/gh-pr.js', 'scripts/lib/harness-repo.js', 'scripts/lib/legacy-names.js',
+const GUARD_PIECES = ['scripts/hooks/public-push-guard.js', 'scripts/lib/az-pr.js', 'scripts/lib/command-readers.js', 'integrations/github/scripts/command-reader.js', 'scripts/lib/harness-repo.js', 'scripts/lib/legacy-names.js',
   'scripts/lib/guard-record.js', 'scripts/publishing/detector.js', 'scripts/publishing/internal-history.js', 'scripts/setup/harness/tycon-home.js', 'scripts/lib/clean-git-env.js'];
 const GUARD_WHO = { name: 'Mantenedor De Prueba', email: '4242+mantenedor@users.noreply.github.com' };
 const TEXTS_STANDIN = [

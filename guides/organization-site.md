@@ -41,7 +41,8 @@ trabaja en GitLab tiene el arnés en cada máquina, pero el sitio no muestra eso
 - **El refresco:** cada cuánto el sitio vuelve a leer todo (15 minutos, salvo que la organización elija otro plazo).
 - **La mediana:** el valor del medio; la mitad de las ejecuciones está por debajo y la otra mitad por encima.
 
-Cada máquina del equipo sube sus ejecuciones a un lugar compartido, el **buzón de ejecuciones**. Por la noche, unos procesos
+Cada máquina del equipo sube sus ejecuciones a un lugar compartido, el **buzón de ejecuciones**: un contenedor de Azure
+Blob Storage o un bucket de Google Cloud Storage, según la nube de la organización. Por la noche, unos procesos
 del arnés revisan las dependencias (los paquetes de otros que usa cada producto), las pruebas y los productos, y dejan
 lo que midieron en el **repo de operaciones** de la organización. El sitio lee esos dos lugares y los muestra.
 
@@ -632,8 +633,8 @@ Las secciones, en el orden de la pantalla:
   Si alguien sale de la lista, en cuanto se aprueba el pedido y el sitio se actualiza (a lo sumo 15 minutos), su
   próxima página es la de «Tu cuenta no está en la lista», sin datos. Arriba de la lista se ve con qué se entra al
   sitio; eso se cambia en la instalación. Para alguien de afuera del directorio de la organización, **Invitar** (abajo,
-  «Invitar a alguien») lo suma y le manda la invitación de Microsoft. También van acá el buzón de ejecuciones y el
-  refresco. La dirección del sitio no: se escribe en un solo lugar, «La dirección del sitio en cada máquina».
+  «Invitar a alguien») lo suma y le manda la invitación de Microsoft. También van acá el buzón de ejecuciones (con su
+  servicio: Azure Blob Storage o Google Cloud Storage) y el refresco. La dirección del sitio no: se escribe en un solo lugar, «La dirección del sitio en cada máquina».
   Queda en `operations.json`, en el repo de operaciones. Lo revisa otra persona que mantiene, salvo que la organización
   haya prendido «Los cambios de un mantenedor»: entonces el sitio lo aprueba solo. **«Cada cuánto se
   actualiza el sitio»** acepta de 5 a 120 minutos; sin declarar, 15. Más corto, un cambio se ve antes, pero el sitio
@@ -914,6 +915,11 @@ lo declarado y el archivo como quedaría, para copiarlo y abrir el pedido a mano
   «sin novedades desde las HH:MM» (de 1 a 1440; sin valor, 15). Lo mide la página con su propio reloj, sin preguntarle
   nada a la máquina; una sesión en un paso largo sigue viva y sólo se marca callada. Queda en `team-profile.json` →
   `office.quiet_minutes`.
+- **Lo que la máquina limpia sola**: tres números. Cuántas horas sin uso pasan antes de borrar una carpeta de trabajo
+  ya mergeada (de 0 a 720; sin valor, 4). Cuántos días sin tocar pasan antes de borrar la carpeta temporal de una sesión
+  que ya no vive (de 1 a 365; sin valor, 2). Con cuánto disco libre, en porcentaje, avisa el arranque (de 1 a 99; sin
+  valor, 15). Nunca se borra algo con trabajo sin guardar, y el aviso de disco sólo muestra los comandos de limpieza.
+  Una máquina puede pisar los tres en su configuración. Queda en `team-profile.json` → `maintenance`.
 - **Integraciones**: qué servicios usa cada máquina (el reloj de horas, la memoria, el buzón, la noche, el índice de
   código de CodeGraph); una máquina puede apagar una para ella sola. Con CodeGraph prendido, el instalador se lo instala
   a cada dev y el arnés avisa si una máquina no lo tiene. Queda en `team-profile.json`, en el repo del perfil. Lo
@@ -1297,7 +1303,9 @@ réplicas no corre ningún contenedor.
 - **El repo de operaciones** de la organización, y una identidad que lo pueda leer (sólo ese repo). Si todavía no lo
   tenés: cómo se crea y qué archivos lleva, en `pipelines/operations/README.md` §2 del arnés (los ejemplos, en
   `pipelines/operations/examples/`). Para el sitio alcanza con `operations.json`; lo mínimo, en la prueba con Docker.
-- **Opcional: el buzón de ejecuciones**, si la organización junta las ejecuciones de las máquinas.
+- **Opcional: el buzón de ejecuciones**, si la organización junta las ejecuciones de las máquinas. Puede ser un
+  contenedor de Azure Blob Storage o un bucket de Google Cloud Storage; se elige en `site.mailbox.provider` (sin
+  declararlo, Azure). Cómo se arma el de Google Cloud Storage, en `guides/integrations/gcs-mailbox.md`.
 - **Un lugar donde correr un contenedor** con HTTPS delante: una nube, un servicio gratis o una máquina propia.
 
 ## Probarlo en tu máquina con Docker
@@ -1466,7 +1474,7 @@ Cada instalación dice dónde se guarda cada uno y por dónde entra su valor. **
 | `SITE_SESSION_KEY` | firmar la sesión | 32 bytes al azar, sólo del sitio |
 | `SITE_OIDC_CLIENT_SECRET` | el inicio de sesión | un registro sólo para el sitio, sin permisos de API más allá de `openid email profile` (con `github`, que no es OIDC, el sitio pide `read:user user:email read:org`: leer la cuenta, sus correos y si es de la organización); vence en 6 meses como máximo |
 | `SITE_OPERATIONS_TOKEN` (o la identidad de la plataforma, `SITE_OPERATIONS_IDENTITY=managed`, sin secreto) | leer el repo de operaciones | una identidad propia con lectura sólo en ese repo; si es un token, de una organización, sólo lectura de código, 90 días; en GitHub, de grano fino, de un solo repo, `contents: read` |
-| `SITE_MAILBOX_SAS` (o `SITE_MAILBOX_IDENTITY=managed`) | leer las ejecuciones del buzón | una SAS de sólo leer y listar (`rl`) atada a una política guardada del contenedor, 6 meses como máximo; o la identidad de la plataforma con un rol de lectura sobre el contenedor |
+| `SITE_MAILBOX_SAS` (o `SITE_MAILBOX_IDENTITY=managed`) | leer las ejecuciones del buzón | una SAS de sólo leer y listar (`rl`) atada a una política guardada del contenedor, 6 meses como máximo; o la identidad de la plataforma con un rol de lectura sobre el contenedor. Con Google Cloud Storage, sólo `SITE_MAILBOX_IDENTITY=managed`: la cuenta de servicio del sitio con `roles/storage.objectViewer` sobre el bucket, sin secreto |
 | el canal del aviso | mandar el aviso de la mañana | no llega al sitio: lo usa el proceso de la noche. Telegram: el token sirve para todo el bot, usá uno dedicado. Slack o Teams: la dirección del webhook ES la credencial |
 | `SITE_OPERATIONS_WRITE_TOKEN` | proponer cambios de configuración desde el sitio | en GitHub, de grano fino sobre el repo de operaciones con `contents: write` y `pull_requests: write`; en Azure DevOps, una cuenta dedicada con *Contribute*, *Create branch* y *Contribute to pull requests* sólo en ese repo, *Force push* negado y sin permiso de saltar políticas |
 | `SITE_PROFILE_REPO` y `SITE_PROFILE_TOKEN` | leer el perfil del equipo (dónde vive cada repo, los paquetes) | parte de la instalación normal: sin ellos la pestaña Configuración dice «falta el repo del perfil». La dirección del repo del perfil y un token de sólo lectura de código sobre ese repo (puede ser el mismo permiso que el del repo de operaciones, si los dos viven en la misma organización) |
@@ -1693,8 +1701,9 @@ pasó el escáner y su firma se verificó; `stable` nunca vuelve atrás. Con eso
   «Inicio de sesión»). Las instalaciones nuevas ya lo traen.
 - **El mismo paso, al pasar a una versión con las oficinas.** Las máquinas no tienen cómo pasar el candado de la
   plataforma, así que `/live/machine` y `/live/enroll` tienen que quedar fuera. Sin eso, la prueba sin sesión avisa
-  «falta el paso de una vez», sin fallar: una organización que no usa oficinas no lo necesita. En Azure, es la misma orden de `--excluded-paths` de la receta, que ya las nombra. Hacelo
-  antes de poner `site.url` en el perfil.
+  «falta el paso de una vez», sin fallar: una organización que no usa oficinas no lo necesita. En Azure, es la misma orden de `--excluded-paths` de la receta, que ya las nombra. En
+  Google Cloud Run, además, el plazo del servicio en 3600 s (`--timeout=3600`, en «Kubernetes y otras nubes»): con uno
+  corto, la conexión de las oficinas se corta cada vez que vence. Hacelo antes de poner `site.url` en el perfil.
 - **Y que el sitio vea la dirección de quien pide.** Detrás de un intermediario, todas las conexiones llegan desde su
   dirección, y los topes por dirección valdrían para toda internet: dos conexiones sin firmar frenarían a cualquier
   máquina. Las instalaciones nuevas ya lo traen. En una ya instalada, poné `SITE_TRUST_PROXY=1` en las variables del sitio
@@ -1761,7 +1770,7 @@ quien corre el alta, como los otros secretos. Sin los dos, la pestaña Configura
 - **Inicio de sesión:** dos candados. Delante, el inicio integrado de la plataforma con el mismo registro de Entra ID.
   Detrás, el del sitio, que decide con su lista. `/healthz`, `/livez`, la página «Saliste» con lo que carga y `/idioma` quedan fuera del candado (sin eso, con el
   candado vencido, «Saliste» pasa antes por su inicio de sesión). Un sitio ya instalado se corrige una vez:
-  `az containerapp auth update -g <grupo> -n <app> --excluded-paths /healthz,/livez,/saliste,/idioma,/static/site.css,/static/site.js,/static/fonts/lato-400.woff2,/static/fonts/lato-700.woff2,/live/machine,/live/enroll`; y para que los topes por dirección valgan, `az containerapp update -g <grupo> -n <app> --set-env-vars SITE_TRUST_PROXY=1`. Con `microsoftAccounts`
+  `az containerapp auth update -g <grupo> -n <app> --excluded-paths /healthz,/health,/livez,/saliste,/idioma,/static/site.css,/static/site.js,/static/fonts/lato-400.woff2,/static/fonts/lato-700.woff2,/live/machine,/live/enroll`; y para que los topes por dirección valgan, `az containerapp update -g <grupo> -n <app> --set-env-vars SITE_TRUST_PROXY=1`. Con `microsoftAccounts`
   en el archivo de configuración se elige el modo:
   - `organization` (por defecto): un solo inquilino. Si el registro tiene «asignación requerida», las personas se
     asignan una por una en el portal (asignar un grupo pide una licencia Entra ID P1/P2).
@@ -1872,6 +1881,12 @@ sin arrancar nada.
 0 3 * * * node /opt/arnes/scripts/site/deploy/local/start.js --secrets-file /etc/sitio/sitio.env --update --image ghcr.io/<organización>/<repo>
 ```
 
+El resultado de cada noche y el estado del actualizador quedan en `/etc/sitio/site-update/` (al lado del archivo de
+secretos; otra carpeta con `SITE_UPDATE_DIR`). `compose.yaml` la monta en el sitio, de sólo lectura: si quedó instalado
+por etiqueta, quien administra ve la misma banda que en Azure. **Si lo instalaste antes de esta versión**, volvé a
+arrancarlo una vez con `start.js --secrets-file …` para que el contenedor monte la carpeta; hasta entonces el sitio sigue
+como antes y la banda no aparece.
+
 Con systemd, un `.service` de tipo `oneshot` con la misma orden y un `.timer` con `OnCalendar=*-*-* 03:00`. **Watchtower**
 queda como alternativa (la copia que mantiene la comunidad, limitada al contenedor del sitio con `--label-enable`): no
 prueba ni vuelve atrás, y tiene el socket de Docker, o sea, es administrador de la máquina.
@@ -1890,6 +1905,13 @@ az storage container generate-sas --account-name <cuenta> -n <contenedor> --poli
 Argo CD Image Updater o Flux (con la estrategia que resuelve `stable` a su huella), o la misma orden de cada nube para
 cambiar la imagen de un servicio (Cloud Run: `gcloud run deploy --image <imagen>@<huella>`). Después del cambio, la prueba
 sin sesión: `node scripts/site/check-deploy.js --url https://<dirección>`.
+
+**Google Cloud Run tiene dos límites propios.** Se reserva `/healthz`: la contesta su frente con un 404 y el pedido no
+llega al sitio. Por eso el sitio contesta lo mismo en `/health`, y la prueba sin sesión lo pregunta sólo cuando a
+`/healthz` la contesta otro; una sonda propia de Cloud Run va contra `/livez`, nunca contra `/healthz`. Y corta cada
+pedido al vencer el plazo del servicio (`--timeout`): con un plazo corto, la conexión de las oficinas se corta cada vez
+que vence (con 60 s, cada minuto). Al crear el servicio, `--timeout=3600` (el máximo). No cambia el costo: con una máquina conectada siempre hay un pedido
+abierto. En uno ya creado: `gcloud run services update <servicio> --region <región> --timeout=3600`.
 
 ### Una red cerrada
 

@@ -212,7 +212,7 @@ _pipelines/azure-pipelines-public-leak-check.yml + scripts/tests/mirror-pipeline
 
 ## scripts/hooks/public-push-guard.js
 
-_scripts/hooks/public-push-guard.js + scripts/hooks/git-pre-push-global.sh + .githooks/pre-push + scripts/lib/gh-pr.js + scripts/ci/pr-texts.js + guides/maintaining/publicacion-espejo.md_
+_scripts/hooks/public-push-guard.js + scripts/hooks/git-pre-push-global.sh + .githooks/pre-push + integrations/github/scripts/command-reader.js + scripts/ci/pr-texts.js + guides/maintaining/publicacion-espejo.md_
 
 **Qué es:** El freno antes de publicar: un `pre-push` de git y un freno de `gh` que revisan lo que va a un remoto público.
 
@@ -264,7 +264,7 @@ _scripts/setup/npm/index.js + home-paths.json + package.json + README.md_
 
 **Dónde se prueba:** `scripts/tests/npx-installer.test.sh` y `scripts/tests/npm-package.test.js`
 
-**Guía:** [paquete-npm.md](../maintaining/paquete-npm.md)
+**Guía:** [npm-package.md](../maintaining/npm-package.md)
 
 **Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptssetupnpmindexjs)
 
@@ -280,7 +280,7 @@ _.github/workflows/npm-publish.yml + scripts/ci/check-public-workflow.js `--publ
 
 **Dónde se prueba:** `scripts/tests/npm-publish-workflow.test.js`
 
-**Guía:** [guides/maintaining/paquete-npm.md](../maintaining/paquete-npm.md)
+**Guía:** [guides/maintaining/npm-package.md](../maintaining/npm-package.md)
 
 **Detalle:** [ver](../maintaining/piezas-en-detalle.md#githubworkflowsnpm-publishyml)
 
@@ -340,7 +340,7 @@ _scripts/publishing/ + guides/maintaining/publicacion-espejo.md_
 
 ## scripts/lib/legacy-names.js
 
-_scripts/lib/legacy-names.js/.sh/.ps1 + scripts/lib/renames.json + guides/maintaining/nombres-en-ingles.md_
+_scripts/lib/legacy-names.js/.sh/.ps1 + scripts/lib/renames.json + guides/maintaining/english-names.md_
 
 **Qué es:** Biblioteca que hace que un nombre viejo siga andando mientras dura el renombre a inglés, según el mapa `renames.json`.
 
@@ -354,7 +354,7 @@ _scripts/lib/legacy-names.js/.sh/.ps1 + scripts/lib/renames.json + guides/mainta
 
 ## scripts/ci/legacy-options.sh y legacy-options.js
 
-_scripts/ci/legacy-options.sh/.js + guides/maintaining/nombres-en-ingles.md_
+_scripts/ci/legacy-options.sh/.js + guides/maintaining/english-names.md_
 
 **Qué es:** Traductor que pasa las opciones viejas de los pipelines de producto a las nuevas en los guiones de `scripts/ci`.
 
@@ -368,7 +368,7 @@ _scripts/ci/legacy-options.sh/.js + guides/maintaining/nombres-en-ingles.md_
 
 ## scripts/publishing/spanish-names.js
 
-_scripts/publishing/ + scripts/lib/spanish-words.json + guides/maintaining/nombres-en-ingles.md_
+_scripts/publishing/ + scripts/lib/spanish-words.json + guides/maintaining/english-names.md_
 
 **Qué es:** El freno de nombres nuevos en castellano en lo que ejecuta la máquina: rutas, opciones, subcomandos, variables y claves.
 

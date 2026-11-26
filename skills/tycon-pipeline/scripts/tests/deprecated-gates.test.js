@@ -332,7 +332,8 @@ test("Adversarial_Codex_BorrarOMoverConApplyPatchPasa", () => {
   const parche = (cuerpo) => ({ tool_name: "apply_patch", cwd: d, hook_event_name: "PreToolUse", session_id: "ses-1", tool_input: { command: `*** Begin Patch\n${cuerpo}\n*** End Patch` } });
   const juzgar = (ev) => editEventsFrom(ev).map((e) => gate.handle(e, { stateDir: estadoConMarcador(null) }));
   assert.deepEqual(juzgar(parche("*** Delete File: src/legacy/a.js")), [null], "borrar pasa");
-  assert.deepEqual(juzgar(parche("*** Update File: src/legacy/b.js\n*** Move to: src/nuevo/b.js")), [null], "mover pasa");
+  // el origen y el destino del `Move to`: mover pasa en los dos
+  assert.deepEqual(juzgar(parche("*** Update File: src/legacy/b.js\n*** Move to: src/nuevo/b.js")), [null, null], "mover pasa");
   const editar = juzgar(parche("*** Update File: src/legacy/c.js\n@@\n-x\n+y"));
   assert.ok(editar[0] && editar[0].block, "editarlo sigue frenando");
 });

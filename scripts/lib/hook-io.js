@@ -23,8 +23,8 @@
  *
  * Consumidores (los registros con matcher de edición + quien lo necesite):
  *   - agent-skills/skills/tycon-pipeline/scripts/dispatch.js (pre-edit y post-edit)
- *   - ~/.claude/tycon-harness/scripts/hooks/rebuild-before-verify.js (marca PostToolUse)
- * Todos lo requieren vía TYCON_GUIDES_DIR (default ~/.claude/tycon-harness) CON
+ *   - scripts/hooks/rebuild-before-verify.js del arnés instalado (marca PostToolUse)
+ * Todos lo requieren vía TYCON_GUIDES_DIR (por defecto, el lugar del arnés que da `placePath` de tycon-home.js) CON
  * FALLBACK a la conducta sin la lib si ésta no está: así el cambio se propaga seguro entre repos, en cualquier orden.
  *
  * Uso directo: node hook-io.js --selftest
@@ -104,18 +104,44 @@ function editEventsFrom(event) {
   const patchText = ti.command || ti.patch || ti.input || '';
   const files = patchFiles(patchText);
   if (!files.length) return [event]; // patch ilegible → identidad (fail-open; el matcher ya disparó)
-  return files.map((f) => {
+  const destinos = moveTargets(patchText);
+  return files.flatMap((f) => {
     const ti2 = Object.assign({}, ti, { file_path: resolvePatchPath(f.path, event.cwd) });
     if (f.op === 'Add' && ti2.content === undefined) {
       const body = addFileContent(patchText, f.path);
       if (body !== null) ti2.content = body;
     }
-    return Object.assign({}, event, {
+    const out = [Object.assign({}, event, {
       tool_name: f.op === 'Add' ? 'Write' : 'Edit',
       tool_name_raw: 'apply_patch',
       tool_input: ti2,
-    });
+    })];
+    // un Update con `*** Move to:` también escribe el destino: los ganchos lo ven como una escritura más, con
+    // `move_from` (el origen) para los que ya juzgan el destino desde el evento del origen
+    const destino = f.op === 'Update' ? destinos.get(f.path) : null;
+    if (destino) {
+      out.push(Object.assign({}, event, {
+        tool_name: 'Edit',
+        tool_name_raw: 'apply_patch',
+        tool_input: Object.assign({}, ti, { file_path: resolvePatchPath(destino, event.cwd), move_from: ti2.file_path }),
+      }));
+    }
+    return out;
   });
+}
+
+/** texto de patch → Map(ruta del Update → ruta de su `*** Move to:`), con las rutas como las escribe el parche */
+function moveTargets(text) {
+  const out = new Map();
+  let actual = null;
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const m = PATCH_FILE_LINE_RE.exec(line);
+    if (m) { actual = m[1] === 'Update' ? m[2].trim() : null; continue; }
+    const mv = /^\*\*\* Move to: (.+)$/.exec(line);
+    if (mv && actual !== null && !out.has(actual)) out.set(actual, mv[1].trim());
+    else if (/^\*\*\* End Patch/.test(line)) actual = null;
+  }
+  return out;
 }
 
 function selftest() {

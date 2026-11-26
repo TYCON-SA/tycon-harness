@@ -109,7 +109,7 @@ const http = require('http');
 const https = require('https');
 const { spawnSync } = require('child_process');
 const { readEnv, resolveFile, prepareStateWrite } = require('../lib/legacy-names.js');
-const { leerConfig, integracionBuzon, urlBase, huellaDeCorridas, FORMA_MAQUINA, FORMA_CODIGO, FORMA_ARCHIVO, FORMA_REGISTRO, FORMA_INSTINTO, FORMA_JORNADA, FORMA_VERSION, REGISTROS, X_MS_VERSION } = require('./upload-runs.js');
+const { leerConfig, integracionBuzon, proveedorDeLaLlave, almacenDeBajadaDeLaLlave, urlBase, huellaDeCorridas, FORMA_MAQUINA, FORMA_CODIGO, FORMA_ARCHIVO, FORMA_REGISTRO, FORMA_INSTINTO, FORMA_JORNADA, FORMA_VERSION, REGISTROS, X_MS_VERSION } = require('./upload-runs.js');
 
 // el nombre del archivo de métricas de un merge, el que escribe retro-heartbeat.js
 const FORMA_MERGE = /^metrics-[A-Za-z0-9._-]+\.json$/;
@@ -124,7 +124,8 @@ function hoy() { return new Date().toISOString().slice(0, 10); }
 
 function escribirAtomico(archivo, contenido) {
   fs.mkdirSync(path.dirname(archivo), { recursive: true });
-  const tmp = `${archivo}.tmp-${process.pid}`;
+  // el pid solo no alcanza: dos instancias del sitio en contenedores distintos tienen el mismo (1) y comparten el disco
+  const tmp = `${archivo}.tmp-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
   fs.writeFileSync(tmp, contenido);
   fs.renameSync(tmp, archivo);
 }
@@ -231,6 +232,12 @@ function pedir(url, cred, timeoutMs) {
   });
 }
 
+/**
+ * Por qué una máquina no lee un buzón de otro proveedor: su conector no sabe bajarlo (o ninguno lo atiende), o es uno de
+ * los informes de mantenimiento, que leen sólo Azure con la sesión de az. Ese buzón lo lee el sitio de la organización.
+ */
+const noSoportado = (proveedor) => `la llave de esta máquina es de un buzón «${proveedor}», que lee el sitio de la organización: desde una máquina, esto sólo sabe leer Azure Blob Storage o un buzón cuyo conector sabe bajar (no se pidió nada a la red)`;
+
 /** El token de storage con la sesión de az que ya existe. { token } o { estado, motivo }. Nunca pregunta. */
 function tokenDeAz(tenant) {
   const bin = process.env.TYCON_AZ_BIN || 'az';
@@ -316,6 +323,8 @@ async function informeDeReescrituras(opts = {}) {
     const integ = integracionBuzon(llave);
     if (integ.error) return fin(2, 'config_rota', integ.error);
     if (!integ.prendida) return fin(0, 'apagado', integ.apagada);
+    // la llave de otro proveedor se mira con el buzón prendido y antes que Azure DevOps (que esta máquina no necesita)
+    if (llave === 'mailbox' && proveedorDeLaLlave()) return fin(1, 'no_soportado', noSoportado(proveedorDeLaLlave()));
   }
   const lc = leerConfig(['cuenta', 'contenedor', 'tenant']);
   if (!lc.cfg) return fin(1, lc.estado, lc.motivo);
@@ -687,6 +696,20 @@ async function credencialDelSitio(opts) {
 }
 
 /**
+ * El contenedor de Azure como almacén de la bajada: `{ destino, listar(prefijo), leer(nombre, timeoutMs) }`, con el
+ * listado y el GET de siempre. Un conector de buzón trae el suyo con la misma forma (integrations/<n>/, kind mailbox).
+ * La respuesta de `leer` puede traer `estado` y `motivo` cuando el almacén ya la clasificó (por ejemplo, un token que
+ * venció): la bajada usa ese estado tal cual, antes de mirar el código HTTP.
+ */
+function almacenDeAzure(base, token, cfg) {
+  return {
+    destino: `${cfg.cuenta}/${cfg.contenedor}`,
+    listar: (prefijo = '') => listarTodo(base, token, cfg, prefijo),
+    leer: (nombre, timeoutMs) => pedir(`${base}/${nombre.split('/').map(encodeURIComponent).join('/')}`, token, timeoutMs),
+  };
+}
+
+/**
  * La conversación y el cambio de git de UNA corrida, para el detalle a demanda del sitio: `maquina` y `base` (el nombre
  * del volcado sin `.json`), bajados a `<dir>/<maquina>/`. De cada parte, la versión más nueva que haya en el buzón.
  * `{ codigo, res: { estado, motivo, bajados } }`; sin ninguna de las dos en el buzón, `estado: 'sin_partes'`.
@@ -695,13 +718,16 @@ async function bajarUnaCorrida(opts = {}) {
   const res = { estado: null, motivo: null, bajados: 0 };
   const fin = (codigo, estado, motivo) => { res.estado = estado; res.motivo = motivo || null; return { codigo, res }; };
   if (!opts.dir || !FORMA_MAQUINA.test(String(opts.maquina || '')) || !/^[^/\\]+$/.test(String(opts.base || ''))) return fin(2, 'config_rota', 'falta la carpeta, la máquina o la ejecución');
-  const c = await credencialDelSitio(opts);
-  if (c.falla) return fin(...c.falla);
-  const base = `${String(opts.urlBase || urlBase(c.cfg)).replace(/\/+$/, '')}/${encodeURIComponent(c.cfg.contenedor)}`;
-  const ls = await listarTodo(base, c.tk.token, c.cfg, `${opts.maquina}/`);
+  // `almacen` (un conector de buzón): lista y lee por él, con la credencial que ya tiene; si no, Azure con la del sitio
+  let almacen = opts.almacen || null;
+  if (!almacen) {
+    const c = await credencialDelSitio(opts);
+    if (c.falla) return fin(...c.falla);
+    almacen = almacenDeAzure(`${String(opts.urlBase || urlBase(c.cfg)).replace(/\/+$/, '')}/${encodeURIComponent(c.cfg.contenedor)}`, c.tk.token, c.cfg);
+  }
+  const ls = await almacen.listar(`${opts.maquina}/`);
   if (ls.permiso) return fin(1, 'sin_permiso', ls.motivo);
   if (ls.estado) return fin(1, ls.estado, ls.motivo);
-  const urlDe = (nombre) => `${base}/${nombre.split('/').map(encodeURIComponent).join('/')}`;
   let alguna = false;
   for (const parte of [`${opts.base}.hilo.jsonl.gz`, `${opts.base}.cambio.json.gz`]) {
     const versiones = ls.blobs.map((b) => ({ b, f: formaDelNombre(b.nombre) })).filter(({ f }) => f && f.maquina === opts.maquina && f.archivo === parte);
@@ -710,8 +736,9 @@ async function bajarUnaCorrida(opts = {}) {
     versiones.sort((x, y) => ((x.f.version || '') < (y.f.version || '') ? -1 : 1));
     const { b } = versiones[versiones.length - 1];
     alguna = true;
-    const r = await pedir(urlDe(b.nombre), c.tk.token, Math.max(60000, Math.min(300000, b.largo / 20)));
+    const r = await almacen.leer(b.nombre, Math.max(60000, Math.min(300000, b.largo / 20)));
     if (r.error) return fin(1, 'sin_red', `sin red al bajar ${b.nombre} (${r.error.code || r.error.message})`);
+    if (r.estado) return fin(1, r.estado, r.motivo);
     if (r.status !== 200) return fin(1, 'servicio_fallo', `el buzón contestó ${r.status} al bajar ${b.nombre}`);
     const md5 = crypto.createHash('md5').update(r.cuerpo).digest('base64');
     if (r.cuerpo.length !== b.largo || (b.md5 && b.md5 !== md5)) return fin(1, 'servicio_fallo', `${b.nombre} llegó distinto (${r.cuerpo.length} bytes)`);
@@ -766,7 +793,9 @@ async function bajar(opts = {}) {
   // Con `cuenta` en las opciones, la bajada es la del sitio de la organización — la cuenta, el contenedor, la
   // credencial y la carpeta vienen de quien llama; NO se lee corridas-buzon.json, ni las integraciones de la máquina,
   // ni se usa az (la imagen del sitio no lo trae).
-  const delSitio = typeof opts.cuenta === 'string' && opts.cuenta !== '';
+  // Con `almacen` (un conector de buzón, que ya tiene su credencial) también es la del sitio: lista y lee por él.
+  const almacenDado = opts.almacen && typeof opts.almacen.listar === 'function' && typeof opts.almacen.leer === 'function' ? opts.almacen : null;
+  const delSitio = (typeof opts.cuenta === 'string' && opts.cuenta !== '') || Boolean(almacenDado);
   // `dirBuzon` en las opciones gana sobre la variable: quien llama dice dónde escribir sin tocar el ambiente; sin
   // él, la variable o la carpeta de siempre
   const dirBuzon = path.resolve(delSitio ? opts.dir : (opts.dirBuzon || readEnv('TYCON_MAILBOX_DIR', { where }) || path.join(CASA_PIPELINE, 'corridas-buzon')));
@@ -775,25 +804,40 @@ async function bajar(opts = {}) {
 
   let cfg;
   let tkDelSitio = null;
+  // la llave de otro proveedor: el almacén de bajada de su conector, que ya sabe su credencial (la sesión de la persona)
+  let almacenDeLaMaquina = null;
   if (delSitio) {
     if (!opts.dir) return fin(2, 'config_rota', 'la bajada del sitio necesita cuenta, contenedor y carpeta');
-    // 🔴 la cuenta y el contenedor arman el host adonde va la credencial: sólo la forma de Azure Storage (la misma que
-    //    leerConfig exige en el camino de las máquinas). Antes de pedir nada y antes de crear la carpeta.
-    const c = await credencialDelSitio(opts);
-    if (c.falla) { if (c.aviso) log(c.aviso); return fin(...c.falla); }
-    cfg = c.cfg;
-    tkDelSitio = c.tk;
+    if (almacenDado) cfg = null;
+    else {
+      // 🔴 la cuenta y el contenedor arman el host adonde va la credencial: sólo la forma de Azure Storage (la misma que
+      //    leerConfig exige en el camino de las máquinas). Antes de pedir nada y antes de crear la carpeta.
+      const c = await credencialDelSitio(opts);
+      if (c.falla) { if (c.aviso) log(c.aviso); return fin(...c.falla); }
+      cfg = c.cfg;
+      tkDelSitio = c.tk;
+    }
   } else {
-    // 0 · las integraciones: el buzón apagado → exit 0 y una línea; y bajar necesita la sesión de az,
+    // 0 · las integraciones: el buzón apagado → exit 0 y una línea; y bajar de Azure necesita la sesión de az,
     //     así que Azure DevOps apagada → exit 0 y una línea. Configuración rota → exit 2 con archivo, clave y motivo.
+    //     Una llave de otro proveedor se mira con el buzón prendido y antes que Azure DevOps, que no le hace falta: la
+    //     lee el almacén de bajada de su conector, con la sesión de la persona; sin uno, no es de esta bajada.
     for (const llave of ['mailbox', 'ado']) {
       const integ = integracionBuzon(llave);
       if (integ.error) { log(integ.error); return fin(2, 'config_rota', integ.error); }
       if (!integ.prendida) { log(integ.apagada); return fin(0, 'apagado', integ.apagada); }
+      if (llave === 'mailbox' && proveedorDeLaLlave()) {
+        const a = almacenDeBajadaDeLaLlave();
+        if (!a.almacen) return fin(a.codigo, a.estado, a.estado === 'no_soportado' ? noSoportado(proveedorDeLaLlave()) : a.motivo);
+        almacenDeLaMaquina = a.almacen;
+        break;
+      }
     }
-    const lc = leerConfig(['cuenta', 'contenedor', 'tenant']);
-    if (!lc.cfg) return fin(1, lc.estado, lc.motivo);
-    cfg = lc.cfg;
+    if (!almacenDeLaMaquina) {
+      const lc = leerConfig(['cuenta', 'contenedor', 'tenant']);
+      if (!lc.cfg) return fin(1, lc.estado, lc.motivo);
+      cfg = lc.cfg;
+    }
   }
 
   // Sin permiso para leer: exit 0, sin carpeta, una vez por día.
@@ -805,15 +849,17 @@ async function bajar(opts = {}) {
 
   // La credencial: la sesión de az (la máquina de quien tiene el rol) o, para el sitio, la que pasa quien llama —una SAS
   // de sólo lectura, o la identidad administrada de la plataforma (scripts/site/cloud/azure.js)—.
-  const tk = delSitio ? tkDelSitio : tokenDeAz(cfg.tenant.trim());
-  if (!tk.token) return sinPermiso(tk.estado, tk.motivo);
-
-  const base = `${String(delSitio && opts.urlBase ? opts.urlBase : urlBase(cfg)).replace(/\/+$/, '')}/${encodeURIComponent(cfg.contenedor)}`;
+  let almacen = almacenDado || almacenDeLaMaquina;
+  if (!almacen) {
+    const tk = delSitio ? tkDelSitio : tokenDeAz(cfg.tenant.trim());
+    if (!tk.token) return sinPermiso(tk.estado, tk.motivo);
+    almacen = almacenDeAzure(`${String(delSitio && opts.urlBase ? opts.urlBase : urlBase(cfg)).replace(/\/+$/, '')}/${encodeURIComponent(cfg.contenedor)}`, tk.token, cfg);
+  }
   const inicio = Date.now();
   const tope = Number.isFinite(opts.budgetMs) ? opts.budgetMs : 120000;
 
   // 1 · el listado entero (paginado)
-  const ls = await listarTodo(base, tk.token, cfg);
+  const ls = await almacen.listar('');
   if (ls.permiso) return sinPermiso('sin_permiso', ls.motivo);
   if (ls.estado) return fin(1, ls.estado, ls.motivo);
   const listado = ls.blobs;
@@ -826,7 +872,7 @@ async function bajar(opts = {}) {
   // que libera es el que usa la pasada)
   if (opts.podar === true && !soloHuellas) res.podados = podarEspejo(dirBuzon, listado, log);
 
-  let indice = { version: 1, destino: `${cfg.cuenta}/${cfg.contenedor}`, blobs: {} };
+  let indice = { version: 1, destino: almacen.destino, blobs: {} };
   try {
     const i = JSON.parse(fs.readFileSync(resolveFile(rutaIndice, { where }), 'utf8'));
     if (i && i.destino === indice.destino && i.blobs && typeof i.blobs === 'object') indice = i;
@@ -898,7 +944,6 @@ async function bajar(opts = {}) {
     elegidos.push(lista[lista.length - 1]);
     res.versiones_viejas += lista.length - 1;
   }
-  const urlDe = (nombre) => `${base}/${nombre.split('/').map(encodeURIComponent).join('/')}`;
   // la cobertura que se leyó para decidir si un juego está completo no se vuelve a pedir al bajarlo
   const coberturasLeidas = new Map();
   const juegoCompleto = async (maquina, juego) => {
@@ -911,8 +956,9 @@ async function bajar(opts = {}) {
       if (cob.b.md5 && crypto.createHash('md5').update(cuerpo).digest('base64') === cob.b.md5) texto = cuerpo;
     } catch (_) { /* no está en el espejo: se pide */ }
     if (texto === null) {
-      const r = await pedir(urlDe(cob.b.nombre), tk.token, 60000);
+      const r = await almacen.leer(cob.b.nombre, 60000);
       if (r.error) return { estado: 'sin_red', motivo: `sin red a mitad de la bajada (${r.error.code || r.error.message}) al leer ${cob.b.nombre}` };
+      if (r.estado) return { estado: r.estado, motivo: r.motivo };
       if (r.status === 401 || r.status === 403) return { estado: 'sin_permiso_a_mitad', motivo: `el buzón dejó listar pero no leer ${cob.b.nombre} (${r.status})` };
       // 🔴 Un error del servicio NO es «el juego está incompleto»: tomar en silencio la versión anterior dejaría el espejo
       //    con datos viejos y la pasada diciendo «leída entera».
@@ -1003,7 +1049,7 @@ async function bajar(opts = {}) {
         try {
           const destino = require('../nightly/dashboard/changes.js').rutaDeResumen(path.join(dirBuzon, ...k.split('/')) + '.json');
           fs.mkdirSync(path.dirname(destino), { recursive: true });
-          const tmp = `${destino}.tmp-${process.pid}`;
+          const tmp = `${destino}.tmp-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
           fs.writeFileSync(tmp, require('zlib').gzipSync(JSON.stringify(doc)));
           fs.renameSync(tmp, destino);
           res.hilos_grandes += 1;
@@ -1027,7 +1073,13 @@ async function bajar(opts = {}) {
       let igual;
       try { igual = b.md5 ? md5Local(local, st, previo) === b.md5 : Boolean(previo && previo.etag && previo.etag === b.etag); }
       catch (e) { noLeidos.push(`${b.nombre} (${e.code || e.message})`); continue; }
-      if (igual) { res.al_dia += 1; continue; }
+      // lo que ya está en el disco y coincide se anota (con su MD5) si el índice no lo tenía: si no, el disco se vuelve a
+      // leer entero en cada pasada, también con `confiarIndice`
+      if (igual) {
+        res.al_dia += 1;
+        if (b.md5 && !(previo && previo.md5 === b.md5 && previo.size === st.size)) { indice.blobs[b.nombre] = { etag: b.etag, size: st.size, md5: b.md5, mtimeMs: st.mtimeMs }; indiceSucio = true; }
+        continue;
+      }
     }
     pendientes.push({ ...b, ...forma, local, ...(base ? { base } : {}) });
   }
@@ -1044,8 +1096,26 @@ async function bajar(opts = {}) {
 
   // 3 · bajar, archivo por archivo, dentro del presupuesto
   // el viejo (de antes del renombre) pasa al nuevo antes de la primera escritura: el que se escribe ya lo trae en `indice`
+  // El índice se guarda una vez al final de la pasada (también si corta), y en una pasada larga como mucho cada
+  // `intervaloIndiceMs` (10 s si no se dice), nunca después de cada archivo: con el disco del sitio sobre un
+  // almacenamiento de objetos (Cloud Run con un volumen de Cloud Storage), cada reescritura es una mutación del mismo
+  // objeto, que admite una por segundo, y con varios trabajadores en paralelo daba 429. Si el proceso muere antes de
+  // guardar, la pasada siguiente compara contra el disco: vuelve a mirar, no pierde nada.
   const guardarIndice = () => { prepareStateWrite(rutaIndice, { where }); escribirAtomico(rutaIndice, JSON.stringify(indice, null, 1) + '\n'); };
-  if (indiceSucio) { try { guardarIndice(); } catch (_) { /* el índice sólo ahorra: la próxima pasada mira el disco */ } }
+  const intervaloIndice = Number.isFinite(opts.intervaloIndiceMs) && opts.intervaloIndiceMs >= 0 ? opts.intervaloIndiceMs : 10000;
+  let indiceSinGuardar = indiceSucio;
+  let indiceGuardadoEn = Date.now();
+  const guardarIndiceSiToca = (alFinal) => {
+    if (!indiceSinGuardar || (!alFinal && Date.now() - indiceGuardadoEn < intervaloIndice)) return;
+    try { guardarIndice(); indiceSinGuardar = false; } catch (_) { /* el índice sólo ahorra: la próxima pasada mira el disco */ }
+    indiceGuardadoEn = Date.now();
+  };
+  // lo que cambió antes de bajar (blobs que el buzón ya no lista, resúmenes, lo que ya estaba en el disco) se guarda
+  // enseguida: con `confiarIndice`, un índice que todavía anota un blob podado lo daría por bajado si vuelve
+  guardarIndiceSiToca(true);
+  // y el guardado intermedio no espera a que termine un archivo: con uno grande colgado, lo ya bajado queda anotado igual
+  const relojIndice = setInterval(() => guardarIndiceSiToca(false), Math.max(intervaloIndice, 1000));
+  if (relojIndice.unref) relojIndice.unref();
   const malos = [];
   // La cobertura de una máquina se escribe sólo si ninguno de SUS registros falló en esta pasada.
   // 🔴 `.jsonl.gz` también: sin eso, una falla de hallazgos.jsonl.gz no retendría la cobertura.
@@ -1065,9 +1135,10 @@ async function bajar(opts = {}) {
       return;
     }
     // El blob se pide por su nombre en el buzón (con su versión, si la tiene); se escribe en la ruta sin versión
-    const r = coberturasLeidas.get(p.nombre) || await pedir(urlDe(p.nombre), tk.token, Math.max(60000, Math.min(300000, p.largo / 20)));
+    const r = coberturasLeidas.get(p.nombre) || await almacen.leer(p.nombre, Math.max(60000, Math.min(300000, p.largo / 20)));
     if (fatal) return;
     if (r.error) { fatal = [1, 'sin_red', `sin red a mitad de la bajada (${r.error.code || r.error.message}) en ${p.nombre}${res.bajados ? ` — ${res.bajados} sí bajaron` : ''}`]; return; }
+    if (r.estado) { fatal = [1, r.estado, `${r.motivo}${res.bajados ? ` — ${res.bajados} sí bajaron` : ''}`]; return; }
     if (r.status === 401 || r.status === 403) { fatal = [1, 'sin_permiso_a_mitad', `el buzón dejó listar pero no leer ${p.nombre} (${r.status})${res.bajados ? ` — ${res.bajados} sí bajaron` : ''}`]; return; }
     if (r.status !== 200) { malos.push(`${p.nombre} (${r.status})`); falloRegistro(p); return; }
     const md5 = crypto.createHash('md5').update(r.cuerpo).digest('base64');
@@ -1087,7 +1158,8 @@ async function bajar(opts = {}) {
       return;
     }
     indice.blobs[p.nombre] = { etag: p.etag, size: st.size, md5, mtimeMs: st.mtimeMs };
-    try { guardarIndice(); } catch (_) { /* el índice sólo ahorra; lo bajado ya está */ }
+    indiceSinGuardar = true;
+    guardarIndiceSiToca(false);
     res.bajados += 1;
     res.bytes += r.cuerpo.length;
     res.bajado = true;
@@ -1128,9 +1200,11 @@ async function bajar(opts = {}) {
     };
     await Promise.all(Array.from({ length: Math.min(conc, cola.length) }, trabajador));
     // un corte en cualquier fase deja volcados sin bajar; en las de registros, además, registros
-    if (fatal) { res.volcados_enteros = false; if (fase < 2) res.registros_enteros = false; return fin(...fatal); }
+    if (fatal) { clearInterval(relojIndice); guardarIndiceSiToca(true); res.volcados_enteros = false; if (fase < 2) res.registros_enteros = false; return fin(...fatal); }
     if (corto) { res.sin_tiempo = pendientes.length - tomados; res.volcados_enteros = false; if (fase < 2) res.registros_enteros = false; break; }
   }
+  clearInterval(relojIndice);
+  guardarIndiceSiToca(true);
   // lo que quedó por el tope es trabajo pendiente, como lo que quedó sin tiempo: la pasada no está entera, y la
   // siguiente sigue (sources.js → buzon.seguir)
   res.sin_tiempo += res.por_tope;

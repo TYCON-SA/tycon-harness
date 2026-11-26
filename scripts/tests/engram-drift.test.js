@@ -348,12 +348,14 @@ const SCRIPTS = path.join(__dirname, '..');
 
 test('T28 R3_HarnessAuditAutoheal_HooksRequireLib — el aviso diario corre con harness-audit sólo en scripts/lib/ y su comando dice esa ruta', () => {
   // Arnés de laboratorio SIN los reemplazos de las rutas viejas: con ellos al lado, un `require` viejo seguiría
-  // andando y esta prueba no lo vería. Sólo el hook y scripts/lib/ (lo que harness-audit carga al empezar).
+  // andando y esta prueba no lo vería. Sólo el hook, scripts/lib/ y tycon-home.js (lo que harness-audit carga al empezar).
   const raiz = tmp();
   const tcg = path.join(raiz, 'tcg');
   fs.mkdirSync(path.join(tcg, 'scripts', 'hooks'), { recursive: true });
   fs.copyFileSync(path.join(SCRIPTS, 'hooks', 'engram-drift-notice.js'), path.join(tcg, 'scripts', 'hooks', 'engram-drift-notice.js'));
   fs.cpSync(path.join(SCRIPTS, 'lib'), path.join(tcg, 'scripts', 'lib'), { recursive: true });
+  fs.mkdirSync(path.join(tcg, 'scripts', 'setup', 'harness'), { recursive: true });
+  fs.copyFileSync(path.join(SCRIPTS, 'setup', 'harness', 'tycon-home.js'), path.join(tcg, 'scripts', 'setup', 'harness', 'tycon-home.js'));
   const home = path.join(raiz, 'home');
   fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
   fs.writeFileSync(path.join(home, '.claude', 'tycon.json'), JSON.stringify({ paths: { repos: '~/SourceCode' } }));
@@ -374,7 +376,8 @@ test('T28 R3_HarnessAuditAutoheal_HooksRequireLib — los comandos que imprimen 
   // El aviso del autoheal (memoria partida unificable) y el del banco (paridad en rojo) necesitan una base de engram
   // o un resultado del banco para salir; lo que se fija acá es el comando que muestran.
   const drift = fs.readFileSync(path.join(SCRIPTS, 'hooks', 'engram-drift-notice.js'), 'utf8');
-  assert.match(drift, /\$\{homeCommand\('\.claude\/tycon-harness\/scripts\/lib\/engram-autoheal\.js'\)\}\\n/);
+  // el lugar del arnés lo da tycon-home.js (harnessCommand), no una ruta escrita a mano
+  assert.match(drift, /\$\{harnessCommand\('scripts\/lib\/engram-autoheal\.js'\)\}\\n/);
   assert.match(drift, /require\(path\.join\(__dirname, '\.\.', 'lib', 'engram-autoheal\.js'\)\)/);
   assert.match(drift, /require\(path\.join\(__dirname, '\.\.', 'lib', 'harness-audit\.js'\)\)/);
   const bench = fs.readFileSync(path.join(SCRIPTS, 'hooks', 'bench-notice.js'), 'utf8');
@@ -391,6 +394,8 @@ test('sin raíz de repos: el aviso dice que no sabe dónde están los repos, y n
   fs.mkdirSync(path.join(tcg, 'scripts', 'hooks'), { recursive: true });
   fs.copyFileSync(path.join(SCRIPTS, 'hooks', 'engram-drift-notice.js'), path.join(tcg, 'scripts', 'hooks', 'engram-drift-notice.js'));
   fs.cpSync(path.join(SCRIPTS, 'lib'), path.join(tcg, 'scripts', 'lib'), { recursive: true });
+  fs.mkdirSync(path.join(tcg, 'scripts', 'setup', 'harness'), { recursive: true });
+  fs.copyFileSync(path.join(SCRIPTS, 'setup', 'harness', 'tycon-home.js'), path.join(tcg, 'scripts', 'setup', 'harness', 'tycon-home.js'));
   // una casa sin archivo de configuración, sin sesiones y sin repos al lado del arnés: sin raíz
   const home = path.join(raiz, 'home');
   fs.mkdirSync(path.join(home, '.claude'), { recursive: true });

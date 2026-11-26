@@ -242,6 +242,13 @@ else ok "la preparación de la subida sólo lee los cuatro registros (ni lane/, 
 M_OWNER="ZQX-FUGA-CORREO@ejemplo.test"
 printf '{"schema":1,"day":"2026-10-15","owner":{"email":"%s","source":"git-global"},"folder":{"name":"%s","source":"TYCON_MACHINE"}}\n' "${M_OWNER}" "${NOMBRE_A}" > "${BASE}/buzon/${NOMBRE_A}/registros/place.json"
 printf '{"schema":1,"carpetas":{},"regeneradas":{}}\n' > "${BASE}/buzon/.carpetas-de-maquina.json"
+# los días de instintos de la máquina A viajan en <carpeta>/instincts/ del mismo espejo. Sólo los lee
+# la noche de aprendizajes: ni el reductor ni la poda los abren, y un marcador en un día no llega a la página
+M_INSTINTO="MARCA-INSTINTO-4745"
+mkdir -p "${BASE}/buzon/${NOMBRE_A}/instincts"
+printf '{"ts":1760605200,"session_id":"%s","tool":"Bash","repo":"%s","summary":"%s","status":"ok"}\n' "${M_SESION}" "${M_CLIENTE}/repo" "${M_INSTINTO}" \
+  | gzip -c > "${BASE}/buzon/${NOMBRE_A}/instincts/2026-10-16.jsonl.gz"
+printf '{"marker":{"storyId":"%s"}}\n' "${M_INSTINTO}" > "${BASE}/buzon/${NOMBRE_A}/instincts/marcador.json"
 
 # ── máquina B: el reductor cuenta sus registros locales y los bajados ──────────────────────────────
 HOME="${HOME_B}" TYCON_MACHINE="maquina-b-9931" TYCON_MAILBOX_DIR="${BASE}/buzon" SPY_LOG="${BASE}/b.espia" NODE_OPTIONS="--require ${BASE}/espia.js" \
@@ -260,7 +267,7 @@ FUGA=0
 for M in "${M_CORREO}" "${M_RUTA}" "/Users/fulano" "${M_CLIENTE}" "${M_CMD}" "FUGA-CMD-5521" "PROMPT-FUGA-7731" "${M_SESION}" \
          "${M_PERSONA}" "devbs-macbook-pro" "maquina-b-9931" "${M_LANE}" "${M_HILO}" "${M_TIMING}" "${M_SAFETY}" "${M_ESTILO}" "${HOME_A}" "${HOME_B}" \
          "${M_PERSONA_NOMBRE}" "DECISION-DEV-FUGA-2291" "arreglarlo ahora" "${M_FILE}" "SecretoSA" "${M_REGLA_CLIENTE}" \
-         "RESUMEN-FUGA-6610" "${M_PESAN}" "${M_VERIF}" "${REPOS}" "${M_MUT}" "${M_QA}" "${M_COLA}" "${M_GIT}" "${M_CLAVE_GIT}"; do
+         "RESUMEN-FUGA-6610" "${M_PESAN}" "${M_VERIF}" "${REPOS}" "${M_MUT}" "${M_QA}" "${M_COLA}" "${M_GIT}" "${M_CLAVE_GIT}" "${M_INSTINTO}"; do
   for f in ${SALIDAS}; do
     if grep -qiF -- "${M}" "${f}" 2>/dev/null; then mal "T4 fuga: «${M}» aparece en ${f#${BASE}/}"; FUGA=1; fi
   done
@@ -301,6 +308,12 @@ for f in "${BASE}/b.espia"; do
   fi
 done
 [ "${PROHIBIDO}" -eq 0 ] && ok "T5 el reductor no abre lane/, timing-history/, safety-guard.log, response-style/ ni advisor-runs/"
+# ni el reductor ni el tablero (que corre la poda) abren ni listan los días de instintos
+for f in "${BASE}/b.espia" "${BASE}/t.espia"; do
+  if [ ! -s "${f}" ]; then mal "4.7 el espía no anotó nada (${f#${BASE}/}): no se puede afirmar qué abrió"; continue; fi
+  if grep -E '/instincts(/|$)' "${f}" >/dev/null; then mal "4.7 ${f#${BASE}/} abrió o listó los días de instintos: $(grep -E '/instincts(/|$)' "${f}" | head -2 | tr '\n' ' ')"
+  else ok "4.7 ${f#${BASE}/}: no abre ni lista <carpeta>/instincts/"; fi
+done
 
 # ── control positivo: los hallazgos LLEGARON al cruce, con su número ───────────────────
 python3 - "${BASE}/tablero.out" <<'PY'

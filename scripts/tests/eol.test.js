@@ -363,6 +363,9 @@ test('T15g Eol_CannotLookIsNotGreen — con un clon que git no puede leer la pru
     // lo que la copia importa: sin `skills-dir.js`, T15c de la copia sería roja por no poder preguntar dónde están las
     // skills (ese error no se traga), y acá se mide otra cosa
     for (const f of ['clean-git-env.js', 'skills-dir.js']) fs.copyFileSync(path.join(REPO, 'scripts', 'lib', f), path.join(dir, 'scripts', 'lib', f));
+    // …y lo que skills-dir.js le pregunta a la máquina (dónde están las skills instaladas): tycon-home.js, en su lugar
+    fs.mkdirSync(path.join(dir, 'scripts', 'setup', 'harness'), { recursive: true });
+    fs.copyFileSync(path.join(REPO, 'scripts', 'setup', 'harness', 'tycon-home.js'), path.join(dir, 'scripts', 'setup', 'harness', 'tycon-home.js'));
     fs.writeFileSync(path.join(dir, ATTRIBUTES), realAttributes());
     fs.writeFileSync(path.join(dir, 'roto.sh'), SCRIPT.replace(/\n/g, '\r\n'));
     if (withGit) fs.writeFileSync(path.join(dir, '.git'), 'gitdir: /no/existe/en/ninguna/parte\n');

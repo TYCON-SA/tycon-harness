@@ -239,7 +239,7 @@ política de rama, si no el cambio entra por push directo y no pasa por nada.
 ## 🔴 Los DOS permisos que hay que dar en Azure DevOps — y el segundo NO da error claro
 
 Los dos permisos (y el del bump, que es otro y va antes de la política), con las llamadas a la API, están en
-`guides/integrations/ado-en-el-nucleo.md`, §«El portón de la CI: los dos permisos».
+`guides/integrations/ado-in-the-core.md`, §«El portón de la CI: los dos permisos».
 
 ## El snippet (Azure DevOps)
 
@@ -317,7 +317,7 @@ Ceibo, Lapacho): el stage de `Build` colgaba de `SecurityScan`, y al volver ése
 ## Permisos cross-project — con el scope de jobs CERRADO (medido en un producto del equipo, 2026-08-31)
 
 Con Azure DevOps, los tres permisos y su verificación (con las llamadas a la API) están en
-`guides/integrations/ado-en-el-nucleo.md`, §«El portón de la CI: permisos entre proyectos».
+`guides/integrations/ado-in-the-core.md`, §«El portón de la CI: permisos entre proyectos».
 
 ## El mismo control, ANTES del commit (`--staged`, 2026-09-04)
 
@@ -375,7 +375,7 @@ comparar** (no poder mirar nunca se reporta como limpio).
 ### Validar una rama del arnés en Azure (2026-10-05)
 
 Con Azure DevOps, cómo se encola la validación de una rama sin dejar validaciones viejas de la misma rama en la cola:
-`guides/integrations/ado-en-el-nucleo.md`, §«El portón de la CI: validar una rama del arnés».
+`guides/integrations/ado-in-the-core.md`, §«El portón de la CI: validar una rama del arnés».
 
 ## Límite conocido: de lo que dice la evidencia, el portón sólo lee si declara FAIL
 

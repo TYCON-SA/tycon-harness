@@ -37,7 +37,9 @@ const PARTES = [
 const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 
 // La huella de la parte de instalación (desde «Qué hace falta antes» hasta el final). Si la instalación cambia a
-// propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma, en Render, la llave optativa de su API
+// propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma, en Google Cloud Run, sus dos límites (se
+// reserva /healthz, y el sitio contesta /health; y --timeout=3600 para las oficinas, y /health en la orden de rutas libres de Azure); antes sumó, en la máquina propia, la carpeta de la
+// actualización que el sitio monta (SITE_UPDATE_DIR) y qué hace quien ya la tenía instalada; antes sumó, en Render, la llave optativa de su API
 // para avisar si quedó instalado por etiqueta (SITE_RENDER_API_KEY y SITE_RENDER_SERVICE_ID, y el alcance de la llave);
 // antes sumó que SITE_TRUST_PROXY toma la lista de direcciones del intermediario (y que con `1` el sitio avisa); antes dejó fuera del candado las rutas de la máquina, dice
 // el paso de una vez para las oficinas y que el sitio tiene que ver la dirección de quien pide; antes dijo cuándo sale la invitación de Microsoft (en el
@@ -62,8 +64,8 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // línea «cambio aplicado» del registro, que ya no lleva el correo de quien propone; y, en inglés, sin el nombre castellano
 // de los botones entre paréntesis.
 const HUELLA_INSTALACION = {
-  es: 'd672e892954d1aa8616c277372f190801574f62d89cc51425e59ab96d9dc5c48',
-  en: '4df6677edb4dbe3bdf0b2d3717c4bd0befbafa2413a14345e08ba282f8f56cf7',
+  es: '07e398b6fb50c7b1c1d4378cc6d8614c33e37152bee87c7704b0f8036efdca98',
+  en: '83181743ce9082255d1105f5d4344edf0edc4b345bd02fc3a2d72ef21d5a0842',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {

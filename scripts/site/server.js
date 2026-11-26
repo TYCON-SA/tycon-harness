@@ -10,7 +10,8 @@
  * LA TABLA DE RUTAS es el único camino de los datos. Cada ruta declara quién puede verla (`needs`:
  * 'maintainer', 'person') y recibe el modelo YA FILTRADO por access.js para quien pide. Una ruta sin esa declaración
  * hace que el sitio NO ARRANQUE. Una ruta puede tener parámetros (`/api/corridas/:id`): llegan en
- * `ctx.params`, y la ruta sigue declarando quién la ve. Las únicas rutas sin sesión son la vida (`/livez`), la salud (`/healthz`), la carga
+ * `ctx.params`, y la ruta sigue declarando quién la ve. Las únicas rutas sin sesión son la vida (`/livez`), la salud (`/healthz`, y `/health` igual:
+ * Google Cloud Run se reserva `/healthz`), la carga
  * (`/readyz`), el inicio de sesión (`/auth/*`) y los dos archivos estáticos.
  *
  *   /livez    200 {"ok":true} mientras el proceso escucha; nada más (la sonda de vida y el HEALTHCHECK de la imagen).
@@ -31,7 +32,8 @@
  *                 SITE_OIDC_CLIENT_SECRET · y lo que pida cada proveedor (la cabecera de su archivo: el emisor, los
  *                 dominios, la organización) · SITE_OPERATIONS_REPO (https) y su credencial: SITE_OPERATIONS_TOKEN o
  *                 SITE_OPERATIONS_IDENTITY=managed (la identidad administrada de la plataforma: lo de cada nube vive en cloud/)
- *   opcionales    SITE_OIDC_EMAIL_CLAIM · PORT (8080) · SITE_MAILBOX_SAS o SITE_MAILBOX_IDENTITY=managed ·
+ *   opcionales    SITE_OIDC_EMAIL_CLAIM · PORT (8080) · SITE_MAILBOX_SAS o SITE_MAILBOX_IDENTITY=managed (la identidad del
+ *                 entorno donde corre el sitio: cada lector del buzón —cloud/ o su conector de integrations/— pide su token) ·
  *                 SITE_FIRST_MAINTAINER (un correo) · SITE_AUTH_ALLOWED_DOMAINS (donde el proveedor no la exige) ·
  *                 SITE_DATA_DIR (un disco persistente; sin ella, una carpeta temporal, y se dice) · SITE_TRUST_PROXY=1 (detrás
  *                 de un intermediario que escribe X-Forwarded-For: los topes de las oficinas cuentan la última dirección)
@@ -188,7 +190,7 @@ function validarConfiguracion(env) {
     cfg.operationsCredencial = env.SITE_OPERATIONS_TOKEN ? { token: env.SITE_OPERATIONS_TOKEN } : (env.SITE_OPERATIONS_IDENTITY === 'managed' ? { managed: true } : null);
   }
 
-  if (env.SITE_MAILBOX_SAS && env.SITE_MAILBOX_IDENTITY) falta('SITE_MAILBOX_IDENTITY', 'va una sola credencial del buzón: la SAS de lectura o la identidad administrada');
+  if (env.SITE_MAILBOX_SAS && env.SITE_MAILBOX_IDENTITY) falta('SITE_MAILBOX_IDENTITY', 'va una sola credencial del buzón: la SAS de lectura o la identidad del entorno');
   else if (env.SITE_MAILBOX_IDENTITY && env.SITE_MAILBOX_IDENTITY !== 'managed') falta('SITE_MAILBOX_IDENTITY', 'el único valor es managed');
   cfg.mailboxCredencial = env.SITE_MAILBOX_SAS ? { sas: env.SITE_MAILBOX_SAS } : (env.SITE_MAILBOX_IDENTITY === 'managed' ? { managed: true } : null);
 
@@ -294,8 +296,8 @@ function etiquetaDe(cuerpo) {
  * página de salida con lo que carga (hoja de estilo, código y letra), el selector de idioma y las dos rutas de la máquina,
  * que no tiene sesión de navegador: la protege su firma (live-hub.js). Rutas exactas, sin comodines.
  */
-const SONDAS = new Set(['/livez', '/healthz', '/readyz']);
-const RUTAS_SIN_SESION = ['/healthz', '/livez', '/saliste', '/idioma', '/static/site.css', '/static/site.js', '/static/fonts/lato-400.woff2', '/static/fonts/lato-700.woff2', '/live/machine', '/live/enroll'];
+const SONDAS = new Set(['/livez', '/healthz', '/health', '/readyz']);
+const RUTAS_SIN_SESION = ['/healthz', '/health', '/livez', '/saliste', '/idioma', '/static/site.css', '/static/site.js', '/static/fonts/lato-400.woff2', '/static/fonts/lato-700.woff2', '/live/machine', '/live/enroll'];
 
 function leerEstatico() {
   const { CSS_BASE, CSS_CHIPS } = require('../nightly/dashboard/common.js');
@@ -620,7 +622,8 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
       if (!tope.ok) return enviar(res, { status: 429, tipo: 'text/plain; charset=utf-8', cuerpo: '', extra: { 'Retry-After': String(tope.reintentarEn) } });
     }
     if (ruta === '/livez') return json(res, 200, { ok: true, demo: Boolean(demo) });
-    if (ruta === '/healthz') return st.frenado ? json(res, 503, { ok: false, motivo: `la configuración de la organización no valida desde ${views.hora(Number.isFinite(st.frenado.fallaDesde) ? st.frenado.fallaDesde : st.frenado.desde)}` }) : json(res, 200, { ok: true });
+    // /health contesta lo mismo que /healthz: Google Cloud Run se reserva /healthz y la contesta su frente, sin llegar acá
+    if (ruta === '/healthz' || ruta === '/health') return st.frenado ? json(res, 503, { ok: false, motivo: `la configuración de la organización no valida desde ${views.hora(Number.isFinite(st.frenado.fallaDesde) ? st.frenado.fallaDesde : st.frenado.desde)}` }) : json(res, 200, { ok: true });
     if (ruta === '/readyz') return st.cargado ? json(res, 200, { ok: true }) : json(res, 503, { ok: false, motivo: 'cargando' }, { 'Retry-After': '5' });
     if (estatico[ruta] && req.method === 'GET') return enviar(res, { status: 200, ...estatico[ruta] });
     if (centro && (ruta === '/live/machine' || ruta === '/live/enroll')) return rutaDeLaMaquina(req, res, ruta, st);

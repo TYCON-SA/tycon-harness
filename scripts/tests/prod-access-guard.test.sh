@@ -18,6 +18,9 @@
 #   6.6 T1-T8, T13 — el cuadro muestra la consulta: --file se frena (con el comando en línea listo), la consulta en
 #         línea tiene un tope de 20 renglones de pantalla y una lista de caracteres que engañan
 #   T32 — la guía declara que la regla de firewall es de cortesía
+#   la puerta no corre de fondo: pedida con `run_in_background` o por el Monitor se frena, con el tope de primer plano;
+#         en primer plano sin el tope de 5 minutos (`timeout: 300000`) también, porque al vencer el tope la consola la pasa
+#         a segundo plano
 #
 # 🔴 HOME falso siempre: el hook lee ~/.claude (snapshots, índice, registros).
 # Correr: bash scripts/tests/prod-access-guard.test.sh
@@ -55,8 +58,10 @@ snapshot(){ # $1 = funciones, $2 = alias, $3 = epoch-ms del nombre (default: aho
   printf '# Snapshot file\n\n# Functions\n%s\n# Shell Options\n# Aliases\n%s\n# Check for rg availability\nrg () { : }\nexport PATH=/usr/bin\n' "$1" "$2" > "$CASA/.claude/shell-snapshots/snapshot-zsh-$ms-aaaaaa.sh"; }
 
 # corre el hook con un comando; imprime el exit code. $2… = variables extra "K=V"
+# El evento lleva el tope de 5 minutos que pide la puerta en primer plano: sin él, la forma canónica se frena por el
+# tope, y cada caso de la puerta dejaría de medir lo suyo. El caso sin tope está abajo, en «la puerta no corre de fondo».
 corre(){ local cmd="$1"; shift
-  local payload; payload="$(CMD="$cmd" node -e 'process.stdout.write(JSON.stringify({tool_name:"Bash",hook_event_name:"PreToolUse",cwd:process.env.WITHOUT_CWD?undefined:(process.env.CWD||"/tmp"),tool_input:{command:process.env.CMD}}))' 2>/dev/null)"
+  local payload; payload="$(CMD="$cmd" node -e 'process.stdout.write(JSON.stringify({tool_name:"Bash",hook_event_name:"PreToolUse",cwd:process.env.WITHOUT_CWD?undefined:(process.env.CWD||"/tmp"),tool_input:{command:process.env.CMD,timeout:300000}}))' 2>/dev/null)"
   # TYCON_PROD_SESSION_SINCE: el arranque de la sesión, en ms. En producción sale de la ascendencia de
   # procesos hasta el `claude` que invocó el hook; acá no hay ninguno, así que se inyecta. La costura
   # sólo puede cerrar el freno (0 = TODOS los snapshots son candidatos, el lado seguro), nunca abrirlo.
@@ -1465,8 +1470,11 @@ if [ -f "$GUIA" ]; then
     grep -qF -- "$limite" "$GUIA" || t12_falta="${t12_falta} el límite «${limite}»;"
   done
   grep -qF "la propia puerta abre un cuadro del sistema" "$GUIA" || t12_falta="$t12_falta el cuadro propio en «Cómo funciona»;"
-  # una sola ventana por sentencia: la del cuadro de la puerta (Claude Code ya no pregunta además)
-  grep -qF "Una sola ventana por sentencia: la de la puerta" "$GUIA" || t12_falta="$t12_falta el cuadro propio en «El día a día»;"
+  # un solo cuadro por sentencia: desde la terminal el de la puerta, desde una sesión el click en la sesión (Claude Code
+  # no pregunta además), y el límite de ese click dicho entre los límites
+  grep -qF "Desde tu terminal, sin sesión: una sola ventana, la de la puerta" "$GUIA" || t12_falta="$t12_falta el cuadro propio en «El día a día»;"
+  grep -qF "Un solo cuadro por sentencia" "$GUIA" || t12_falta="$t12_falta un solo cuadro por sentencia desde la sesión;"
+  grep -qF "El click en la sesión lo verifica código del arnés, no de root" "$GUIA" || t12_falta="$t12_falta el límite del click en la sesión;"
   ! grep -qF "Dos cuadros por sentencia" "$GUIA" || t12_falta="$t12_falta la guía dice todavía «Dos cuadros por sentencia»;"
 else
   t12_falta=" la guía no existe ($GUIA);"
@@ -1497,6 +1505,106 @@ done
 rc="$(corre "$PUERTA $PROD --file $TMP/q83/cr-adentro.sql")"
 if [ "$rc" = 2 ] && grep -qF "control" "$TMP/err" && ! grep -qF "$PUERTA $PROD '" "$TMP/err"; then ok "8.283 T3 ProdGuard_ArchivoConSaltoFinal_SinRenglonVacio · un retorno de carro adentro sigue frenando"
 else no "8.283 T3 ProdGuard_ArchivoConSaltoFinal_SinRenglonVacio · el retorno de carro adentro pasó (rc=$rc) — err: $(head -c 200 "$TMP/err")"; fi
+
+# ── la puerta no corre de fondo ───────────────────────────────────────────────────────────────
+# Sin esto, una sesión corre la puerta de fondo, su cuadro vence a los 120 s sin que nadie lo vea y el pedido se cancela
+# solo. El Monitor corre de fondo sin la marca, así que cuenta igual. En primer plano, y con cualquier otro comando de
+# fondo, no cambia nada.
+mundo
+snapshot "" ""
+# $1 = herramienta (Bash | Monitor) · $2 = run_in_background (true | false | vacío: sin la marca) · $3 = comando
+# $4 = timeout en ms: si no se pasa, el de 5 minutos que pide la puerta, para que cada caso mida lo suyo; vacío: sin tope
+corre_fondo(){
+  local payload
+  payload="$(TOOL="$1" BACKGROUND="$2" CMD="$3" TIMEOUT_MS="${4-300000}" node -e '
+    const e = { tool_name: process.env.TOOL, hook_event_name: "PreToolUse", cwd: "/tmp", tool_input: { command: process.env.CMD } };
+    if (process.env.BACKGROUND) e.tool_input.run_in_background = process.env.BACKGROUND === "true";
+    if (process.env.TIMEOUT_MS) e.tool_input.timeout = Number(process.env.TIMEOUT_MS);
+    process.stdout.write(JSON.stringify(e));' 2>/dev/null)"
+  # la configuración de tope de la consola que trae el entorno de la prueba no cuenta; la del caso va en CONSOLE_ENV
+  printf '%s' "$payload" | env -u BASH_DEFAULT_TIMEOUT_MS -u BASH_MAX_TIMEOUT_MS -u CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS \
+    HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" TYCON_PROD_SESSION_SINCE=0 ${CONSOLE_ENV[@]+"${CONSOLE_ENV[@]}"} node "$HOOK" >"$TMP/out" 2>"$TMP/err"
+  echo $?
+}
+CONSOLE_ENV=()
+BACKGROUND_FORMS=("$PUERTA $PROD 'select 1'" "$PUERTA --reclassify $PROD" "$PUERTA --azure monitor metrics alert list -g rg-acme")
+dice_que_hacer(){ grep -qF "la puerta de producción no corre de fondo" "$TMP/err" && grep -qF "primer plano" "$TMP/err" \
+  && grep -qF "qué cuadro va a aparecer" "$TMP/err" && grep -qF "timeout: 300000" "$TMP/err"; }
+for forma in "${BACKGROUND_FORMS[@]}"; do
+  rc="$(corre_fondo Bash true "$forma")"
+  if [ "$rc" = 2 ] && dice_que_hacer; then ok "T1 ProdGuard_Background_Blocks @story-8.333 @ac-1 · «${forma#"$PUERTA" }» con run_in_background: frena y dice qué hacer y el tope"
+  else no "T1 ProdGuard_Background_Blocks @story-8.333 @ac-1 · «${forma#"$PUERTA" }» con run_in_background: rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+done
+rc="$(corre_fondo Monitor '' "${BACKGROUND_FORMS[0]}")"
+if [ "$rc" = 2 ] && dice_que_hacer; then ok "T1 ProdGuard_Background_Blocks @story-8.333 @ac-1 · la consulta por el Monitor: frena y dice qué hacer y el tope"
+else no "T1 ProdGuard_Background_Blocks @story-8.333 @ac-1 · la consulta por el Monitor: rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+# cada uno de los cuatro bloqueos queda anotado con su regla, no como «otra»
+n_fondo="$(grep '"freno":"prod-access-guard"' "$CASA/.claude/.tycon-pipeline/frenos.jsonl" 2>/dev/null | grep -c '"regla":"puerta-de-fondo"')"
+if [ "$n_fondo" = 4 ] && ! grep -q '"regla":"otra"' "$CASA/.claude/.tycon-pipeline/frenos.jsonl" 2>/dev/null; then
+  ok "T1 ProdGuard_Background_Blocks @story-8.333 @ac-1 · los cuatro bloqueos quedan anotados con la regla puerta-de-fondo"
+else no "T1 ProdGuard_Background_Blocks @story-8.333 @ac-1 · anotados con puerta-de-fondo: ${n_fondo:-0} de 4 — $(tail -2 "$CASA/.claude/.tycon-pipeline/frenos.jsonl" 2>/dev/null)"; fi
+
+for forma in "${BACKGROUND_FORMS[@]}"; do
+  for marca in '' false; do
+    if [ -n "$marca" ]; then como="con run_in_background: $marca"; else como="sin la marca"; fi
+    rc="$(corre_fondo Bash "$marca" "$forma")"
+    if [ "$rc" = 0 ] && ! grep -qF "de fondo" "$TMP/err"; then ok "T2 ProdGuard_Foreground_AsToday @story-8.333 @ac-2 · «${forma#"$PUERTA" }» $como: pasa al cuadro, como siempre"
+    else no "T2 ProdGuard_Foreground_AsToday @story-8.333 @ac-2 · «${forma#"$PUERTA" }» $como: rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+  done
+done
+# lo que ya se frenaba en primer plano se sigue frenando por su causa, no por la de fondo
+rc="$(corre_fondo Bash false "bash -c '$PUERTA $PROD \"select 1\"'")"
+if [ "$rc" = 2 ] && ! grep -qF "de fondo" "$TMP/err"; then ok "T2 ProdGuard_Foreground_AsToday @story-8.333 @ac-2 · la puerta dentro de bash -c, en primer plano, frena por su forma, como siempre"
+else no "T2 ProdGuard_Foreground_AsToday @story-8.333 @ac-2 · la puerta dentro de bash -c, en primer plano: rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+
+for herramienta in Bash Monitor; do
+  if [ "$herramienta" = Bash ]; then marca=true; else marca=''; fi
+  rc="$(corre_fondo "$herramienta" "$marca" "sleep 5")"
+  if [ "$rc" = 0 ] && ! grep -qF "de fondo" "$TMP/err"; then ok "T3 ProdGuard_BackgroundWithoutGate_Passes @story-8.333 @ac-3 · «sleep 5» de fondo ($herramienta) pasa"
+  else no "T3 ProdGuard_BackgroundWithoutGate_Passes @story-8.333 @ac-3 · «sleep 5» de fondo ($herramienta): rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+done
+
+# ── la puerta en primer plano lleva el tope de 5 minutos ──────────────────────────────────────────
+# Sin esto, la puerta corre en primer plano con el tope de la consola (120 s si no se pide otro). Al vencer, la consola no
+# corta el comando: lo pasa a segundo plano, y el cuadro, que puede esperar 90 s su turno y 120 s la respuesta, queda sin
+# nadie que lo mire. Codex no tiene ese tope: ahí la puerta se frena como siempre, por ser Codex.
+mundo
+snapshot "" ""
+dice_el_tope(){ grep -qF "timeout: 300000" "$TMP/err" && grep -qF "segundo plano" "$TMP/err" && grep -qF "primer plano" "$TMP/err" \
+  && grep -qF "qué cuadro va a aparecer" "$TMP/err"; }
+CONSULTA="${BACKGROUND_FORMS[0]}"
+rc="$(corre_fondo Bash '' "$CONSULTA" '')"
+if [ "$rc" = 2 ] && dice_el_tope && grep -qF "no trae ninguno" "$TMP/err"; then ok "ProdGuard_ForegroundWithoutTimeout_Blocks · en primer plano sin timeout: frena y pide el tope"
+else no "ProdGuard_ForegroundWithoutTimeout_Blocks · en primer plano sin timeout: rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+rc="$(corre_fondo Bash false "$CONSULTA" 120000)"
+if [ "$rc" = 2 ] && dice_el_tope && grep -qF "trae uno de 120 s" "$TMP/err"; then ok "ProdGuard_ForegroundShortTimeout_Blocks · con timeout 120000: frena, dice el que trae y pide el de 5 minutos"
+else no "ProdGuard_ForegroundShortTimeout_Blocks · con timeout 120000: rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+n_tope="$(grep '"freno":"prod-access-guard"' "$CASA/.claude/.tycon-pipeline/frenos.jsonl" 2>/dev/null | grep -c '"regla":"puerta-de-fondo"')"
+if [ "$n_tope" = 2 ] && ! grep -q '"regla":"otra"' "$CASA/.claude/.tycon-pipeline/frenos.jsonl" 2>/dev/null; then
+  ok "ProdGuard_ForegroundShortTimeout_Blocks · los dos bloqueos quedan anotados con la regla puerta-de-fondo"
+else no "ProdGuard_ForegroundShortTimeout_Blocks · anotados con puerta-de-fondo: ${n_tope:-0} de 2 — $(tail -2 "$CASA/.claude/.tycon-pipeline/frenos.jsonl" 2>/dev/null)"; fi
+rc="$(corre_fondo Bash '' "$CONSULTA" 300000)"
+if [ "$rc" = 0 ] && ! grep -qF "timeout" "$TMP/err"; then ok "ProdGuard_ForegroundFullTimeout_Passes · con timeout 300000: pasa al cuadro"
+else no "ProdGuard_ForegroundFullTimeout_Passes · con timeout 300000: rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+rc="$(codex "$CONSULTA")"
+if [ "$rc" = 2 ] && grep -qF "en Codex la puerta no puede abrir el cuadro" "$TMP/err" && ! grep -qF "timeout" "$TMP/err"; then
+  ok "ProdGuard_CodexWithoutTimeout_AsToday · en Codex, sin timeout: frena por ser Codex, como siempre, y no pide el tope"
+else no "ProdGuard_CodexWithoutTimeout_AsToday · en Codex, sin timeout: rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+rc="$(corre_fondo Bash '' "$CONSULTA" 299999)"
+if [ "$rc" = 2 ] && grep -qF "trae uno de 299 s" "$TMP/err"; then ok "ProdGuard_ForegroundTimeoutJustShort_SaysIt · con 299999 frena y no dice 300 s"
+else no "ProdGuard_ForegroundTimeoutJustShort_SaysIt · con 299999: rc=$rc — err: $(head -c 200 "$TMP/err")"; fi
+# la consola aplica también su configuración: la que baja el tope frena con el nombre de la variable, la que lo da pasa
+for caso in "BASH_MAX_TIMEOUT_MS=200000|300000|2" "CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS=60000|300000|2" \
+  "BASH_MAX_TIMEOUT_MS=600000|300000|0" "BASH_DEFAULT_TIMEOUT_MS=300000||0" "BASH_DEFAULT_TIMEOUT_MS=200000||2"; do
+  IFS='|' read -r variable pedido_ms esperado <<<"$caso"
+  CONSOLE_ENV=("$variable")
+  rc="$(corre_fondo Bash '' "$CONSULTA" "$pedido_ms")"
+  CONSOLE_ENV=()
+  if [ "$rc" = "$esperado" ] && { [ "$esperado" = 0 ] || grep -qF "segundo plano" "$TMP/err"; } \
+     && { [ "$esperado" = 0 ] || [ "${variable#BASH_DEFAULT}" != "$variable" ] || grep -qF "$variable" "$TMP/err"; }; then
+    ok "ProdGuard_ConsoleSettings_Count · $variable con pedido «${pedido_ms:-sin tope}»: sale $esperado"
+  else no "ProdGuard_ConsoleSettings_Count · $variable con pedido «${pedido_ms:-sin tope}»: rc=$rc, esperaba $esperado — err: $(head -c 200 "$TMP/err")"; fi
+done
 
 echo "— prod-guard: $pasaron ok, $fallos fallos —"
 [ "$fallos" -eq 0 ]

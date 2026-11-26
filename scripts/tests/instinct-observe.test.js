@@ -522,3 +522,34 @@ test('T46 Observe_ThirdRoundRegressions — SSHPASS y DBPASS se tapan; date -u, 
   s(`${'('.repeat(200000)}${'`'.repeat(200000)}`);
   assert.ok(Date.now() - desde < 2000, `tardó ${Date.now() - desde} ms`);
 });
+
+// El instalador viejo de instintos: la grabadora la registra el instalador del arnés cuando el perfil la prende. Sin
+// opciones sale 0 diciendo que ya no hace falta y no registra nada; `--uninstall` sigue sacando los dos ganchos viejos,
+// aunque los haya registrado otro clon (Mac y Linux: en Windows el instalador viejo nunca corrió).
+test('T36 InstallInstinctMining_SaysNotNeeded_UninstallStillWorks @story-4.7 @ac-42', { skip: process.platform === 'win32' && 'el instalador viejo sólo corrió en Mac y Linux' }, () => {
+  const lab = fs.mkdtempSync(path.join(os.tmpdir(), 'install-instintos-'));
+  try {
+    const settings = path.join(lab, 'settings.json');
+    const viejo = '/otra/carpeta/del/arnes/scripts/hooks';
+    const propio = { type: 'command', command: '/usr/local/bin/otro-gancho.sh' };
+    const doc = { hooks: {
+      PostToolUse: [{ hooks: [{ type: 'command', command: `${viejo}/instinct-observe.sh` }] }, { hooks: [propio] }],
+      SessionStart: [{ hooks: [{ type: 'command', command: `${viejo}/instinct-trigger.sh` }] }],
+    } };
+    fs.writeFileSync(settings, JSON.stringify(doc, null, 2));
+    const antes = fs.readFileSync(settings, 'utf8');
+    const guion = path.join(RAIZ, 'scripts', 'setup', 'install-instinct-mining.sh');
+    const env = { ...process.env, HOME: lab, TYCON_SETTINGS_PATH: settings };
+    const r = spawnSync('bash', [guion], { encoding: 'utf8', env });
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.match(r.stdout, /ya no hace falta/);
+    assert.strictEqual(fs.readFileSync(settings, 'utf8'), antes, 'sin opciones no registra nada');
+    assert.ok(!fs.existsSync(path.join(lab, '.claude', 'commands', 'tycon-instincts.md')), 'ni enlaza el comando');
+    const u = spawnSync('bash', [guion, '--uninstall'], { encoding: 'utf8', env });
+    assert.strictEqual(u.status, 0, u.stderr);
+    const despues = JSON.parse(fs.readFileSync(settings, 'utf8'));
+    assert.ok(!JSON.stringify(despues).includes('instinct-observe.sh'), 'saca la grabadora vieja');
+    assert.ok(!JSON.stringify(despues).includes('instinct-trigger.sh'), 'saca el disparador viejo');
+    assert.deepStrictEqual(despues.hooks.PostToolUse, [{ hooks: [propio] }], 'lo ajeno queda');
+  } finally { fs.rmSync(lab, { recursive: true, force: true }); }
+});

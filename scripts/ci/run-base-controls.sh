@@ -5,7 +5,12 @@
 # POR QUÉ EXISTE: la revisión de un pedido corría los controles tal como venían en el propio pedido. Un pedido que vaciaba
 # el pre-commit, borraba el guion de un control, sumaba su excepción a una lista o bajaba un modo de `block` a `warn` se
 # salteaba el control que lo tenía que frenar. Acá el control y su regla salen de la base (la punta de la rama destino; en
-# la cola de merge, la base del grupo) y el contenido, del pedido.
+# la cola de merge, la base del grupo) y el contenido, del pedido mezclado con la base, como lo mide la cola: si lo
+# revisado no trae la base (un merge que GitHub armó con un main viejo, o una rama atrasada), la mezcla se arma acá, y si
+# choca es rojo. Así un renombre de main no frena a un pedido atrasado, y lo que main endureció lo alcanza igual. Si el
+# pedido y main cambian la misma regla, no se ofrece la firma: lo firmado sería lo de la rama, y lo medido, la mezcla.
+# Límite: la mezcla usa los atributos de fusión del checkout, así que un `merge=union` que declara el pedido puede volver
+# limpia una mezcla que en GitHub choca.
 #
 # CÓMO: un COMMIT ARMADO. El árbol de la punta del pedido con cada archivo de regla del inventario
 # (scripts/ci/controls-from-base.json) en su versión de la base, en el disco y en el índice (hay controles que leen su
@@ -148,12 +153,70 @@ function resolveCommit(root, rev) {
   return recordado(root, rev, ['rev-parse', '--verify', '-q', `${rev}^{commit}`], (r) => (r.status === 0 ? trimNl(r.stdout) : null));
 }
 // un blob, por la ruta exacta desde la raíz (`rev:./x` resolvería contra la carpeta de quien llama)
+// Con la versión fija, el árbol entero se lee una sola vez (`ls-tree`) y los blobs que hacen falta, de a muchos en un
+// `cat-file --batch`: una pregunta por archivo eran más de mil procesos de git por corrida (fila 269), y con la máquina
+// cargada el control se colgaba minutos. Una ruta que no tiene la forma simple de `ls-tree` (`a//b`, `a/./b`, una
+// barra al final) se sigue preguntando a git, que es quien sabe resolverla. TYCON_GIT_MEMO=0 también apaga esto.
+// Los textos se leen por carpeta, no el árbol entero: el árbol armado del privado pasa de 300 MB (fotos del tablero y del
+// banco, memoria, evidencias), y leído entero por cada versión que se mira la validación se quedaba sin memoria cerca de
+// los 2 GB. El código que recorre un control toca pocas carpetas, y cada una sigue siendo un solo `cat-file`.
+const ARBOLES = new Map();
+const rutaSimple = (p) => !/\/\/|(^|\/)\.\.?(\/|$)|\/$|\\/.test(p);
+const carpetaDe = (p) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
+function arbol(root, rev) {
+  if (!fija(rev)) return null;
+  const k = `${root}\0${rev}`;
+  if (ARBOLES.has(k)) return ARBOLES.get(k);
+  const r = git(root, ['ls-tree', '-r', '-t', '-z', '--full-tree', rev], { allowFail: true });
+  let t = null;
+  if (r.status === 0) {
+    t = { entradas: new Map(), textos: new Map(), porCarpeta: new Map(), leidas: new Set() };
+    for (const linea of r.stdout.split('\0')) {
+      const m = /^(\d+) (\w+) ([0-9a-f]+)\t([\s\S]+)$/.exec(linea);
+      if (!m) continue;
+      t.entradas.set(m[4], { tipo: m[2], sha: m[3] });
+      if (m[2] !== 'blob') continue;
+      const c = carpetaDe(m[4]);
+      if (!t.porCarpeta.has(c)) t.porCarpeta.set(c, []);
+      t.porCarpeta.get(c).push(m[3]);
+    }
+    EXISTEN.add(k);
+  }
+  ARBOLES.set(k, t);
+  return t;
+}
+/** Los textos de los blobs de una carpeta del árbol (sin las de adentro), en un `cat-file --batch`: la primera vez que se pide uno de ellos. */
+function textos(root, t, carpeta) {
+  if (t.leidas.has(carpeta)) return;
+  t.leidas.add(carpeta);
+  const shas = [...new Set(t.porCarpeta.get(carpeta) || [])].filter((s) => !t.textos.has(s));
+  if (!shas.length) return;
+  const r = spawnSync('git', ['-C', root, 'cat-file', '--batch'], { input: `${shas.join('\n')}\n`, env: GIT_ENV, maxBuffer: 1024 * 1024 * 1024 });
+  if (r.error || r.status !== 0) return;
+  const out = r.stdout;
+  let i = 0;
+  while (i < out.length) {
+    const fin = out.indexOf(10, i);
+    if (fin < 0) break;
+    const m = /^([0-9a-f]+) blob (\d+)$/.exec(out.toString('utf8', i, fin));
+    if (!m) return;
+    const n = Number(m[2]);
+    t.textos.set(m[1], out.toString('utf8', fin + 1, fin + 1 + n));
+    i = fin + 1 + n + 1;
+  }
+}
 function blobOf(root, rev, p) {
   if (!p || p.startsWith('.') && (p.startsWith('./') || p.startsWith('../'))) return null;
+  const t = rutaSimple(p) ? arbol(root, rev) : null;
+  if (t) { const e = t.entradas.get(p); return e ? e.sha : null; }
   return recordado(root, rev, ['rev-parse', '--verify', '-q', `${rev}:${p}`], (r) => (r.status === 0 ? trimNl(r.stdout) : null));
 }
 function show(root, rev, p) {
-  if (!blobOf(root, rev, p)) return null;
+  const sha = blobOf(root, rev, p);
+  if (!sha) return null;
+  const t = rutaSimple(p) ? arbol(root, rev) : null;
+  const e = t && t.entradas.get(p);
+  if (e && e.tipo === 'blob') { textos(root, t, carpetaDe(p)); if (t.textos.has(sha)) return t.textos.get(sha); }
   return recordado(root, rev, ['cat-file', 'blob', `${rev}:${p}`], (r) => (r.status === 0 ? r.stdout : null));
 }
 // muchos blobs con un solo git, `{ id → texto }`, o null si git falló; lo que no es un blob no está. Un proceso por constancia tarda más que el
@@ -759,20 +822,46 @@ function analyze() {
   if (!m) notRun(`--range pide <base>...<punta> y recibió «${range}»`);
   const base = resolveCommit(root, baseArg);
   if (!base) notRun(`la base ${baseArg} no resuelve a un commit en ${root}: sin la base no hay de dónde correr los controles (y los del pedido no son la revisión)`);
-  const rangeBase = resolveCommit(root, m[1]); const tip = resolveCommit(root, m[2]);
-  if (!rangeBase || !tip) notRun(`la historia no alcanza para --range ${range} en ${root}`);
-  const mbR = git(root, ['merge-base', rangeBase, tip], { allowFail: true });
-  if (mbR.status !== 0) notRun(`no hay ancestro común entre ${m[1]} y ${m[2]}`);
-  const mb = trimNl(mbR.stdout);
+  const rangeBase = resolveCommit(root, m[1]); const revisado = resolveCommit(root, m[2]);
+  if (!rangeBase || !revisado) notRun(`la historia no alcanza para --range ${range} en ${root}`);
   // el commit revisado en GitHub es un merge cuyo PRIMER padre es la base (o una versión anterior de ella: main pudo
   // avanzar entre que GitHub armó el merge y la revisión, o el trabajo se volvió a correr): el pedido propiamente dicho es
   // su segundo padre. Una rama que termina en «merge de main» también es un merge, pero su primer padre es la rama, que
   // no está en la base, y el segundo es main: ahí el pedido es la punta misma (si no, las entradas a firmar saldrían con
   // los contenidos de main)
-  const parents = trimNl(git(root, ['rev-list', '--parents', '-n', '1', tip]).stdout).split(' ').slice(1);
+  const parents = trimNl(git(root, ['rev-list', '--parents', '-n', '1', revisado]).stdout).split(' ').slice(1);
   const primeroEnLaBase = parents.length === 2
     && git(root, ['merge-base', '--is-ancestor', parents[0], rangeBase], { allowFail: true }).status === 0;
-  const prHead = primeroEnLaBase ? parents[1] : null;
+  let prHead = primeroEnLaBase ? parents[1] : null;
+  // Lo que se mide es el pedido mezclado con la base, como lo mide la cola de merge. Si la base no está en lo revisado (un
+  // merge que GitHub armó con un main viejo, o una rama atrasada), se arma esa mezcla acá: así lo que main renombró o
+  // endureció después de que salió el pedido se mide con las reglas de main sobre un árbol que lo trae. Si la mezcla
+  // choca, no hay qué medir: rojo, y el pedido trae main
+  let tip = revisado;
+  let mezclado = false;
+  if (git(root, ['merge-base', '--is-ancestor', base, revisado], { allowFail: true }).status !== 0) {
+    // se mezcla lo revisado entero (lo que agrega un merge también se mide); la punta del pedido sólo ancla la firma
+    const pedido = prHead || revisado;
+    const mt = git(root, ['merge-tree', '--write-tree', '--name-only', base, revisado], { allowFail: true });
+    const salida = String(mt.stdout || '').split('\n');
+    if (mt.status === 1) {
+      const choques = salida.slice(1, salida.indexOf('')).filter(Boolean);
+      console.log(`❌ base-controls: rojo — el pedido choca con main${choques.length ? ` (${choques.map(safe).join(', ')})` : ''}: traé main y resolvé el choque. La revisión mide el pedido mezclado con la base, y con un choque no hay mezcla que medir`);
+      process.exit(1);
+    }
+    if (mt.status !== 0 || !/^[0-9a-f]{40,64}$/.test(salida[0].trim())) notRun(`no pude mezclar el pedido con la base (git merge-tree salió con ${mt.status}): sin la mezcla no sé qué mide la cola`);
+    tip = trimNl(git(root, ['commit-tree', salida[0].trim(), '-p', base, '-p', revisado, '-m', `el pedido ${short(pedido)} mezclado con la base ${short(base)}`], { env: IDENT }).stdout);
+    prHead = pedido;
+    mezclado = true;
+  }
+  // la mezcla es la base más el pedido: su ancestro es la base misma (con un rango que arranca en otra base, como el del
+  // privado, lo que trajo main contaría como del pedido)
+  let mb = base;
+  if (!mezclado) {
+    const mbR = git(root, ['merge-base', rangeBase, tip], { allowFail: true });
+    if (mbR.status !== 0) notRun(`no hay ancestro común entre ${m[1]} y ${m[2]}`);
+    mb = trimNl(mbR.stdout);
+  }
   const read = readInventory(root, base);
   if (read.missing) notRun(`la base ${short(base)} no trae ${INVENTORY}: no sé qué controles correr desde ella`);
   if (read.error) notRun(`el inventario de la base (${INVENTORY}) no se lee: ${read.error}`);
@@ -805,9 +894,12 @@ function analyze() {
   // la constancia ancla lo que el dueño ve en su rama: el pedido, no el merge que arma GitHub
   const signedRev = prHead || tip;
   const entries = changed.map((p) => ({ path: p, blob: blobOf(root, signedRev, p) || 'borrado' }));
+  // con la mezcla, la firma ancla lo del pedido y se mide lo mezclado: si en una regla difieren (main la cambió o la
+  // renombró también), lo firmado no sería lo medido, y la constancia serviría después para otra cosa. Ahí no se firma
+  const desparejos = mezclado ? changed.filter((p) => blobOf(root, signedRev, p) !== blobOf(root, tip, p)) : [];
   const files = approvalFiles(inv);
   const target = approvalsTarget(changed, files, opt('--approvals-out'), files[0] || '.tycon/control-changes.jsonl');
-  return { root, base, baseArg, rangeBase, tip, mb, prHead, inv, rules, owner, workflows, signOnChange, controlFiles, changed, entries, hash: hashOf(entries), approvalsOut: target.out, noFolder: target.noFolder, hayCarpeta: target.hayCarpeta };
+  return { root, base, baseArg, rangeBase, tip, mb, prHead, mezclado, desparejos, inv, rules, owner, workflows, signOnChange, controlFiles, changed, entries, hash: hashOf(entries), approvalsOut: target.out, noFolder: target.noFolder, hayCarpeta: target.hayCarpeta };
 }
 function printChanges(a) {
   if (!a.changed.length) { console.log('base-controls: el pedido no cambia ningún archivo de regla ni workflow del inventario'); return; }
@@ -918,7 +1010,7 @@ function cmdRun() {
   const work = outArg ? (fs.mkdirSync(outArg, { recursive: true }), fs.mkdtempSync(path.join(path.resolve(outArg), 'base-controls-'))) : fs.mkdtempSync(path.join(os.tmpdir(), 'base-controls-'));
   const reasons = [];
   try {
-    console.log(`base-controls: base ${short(a.base)} · ancestro ${short(a.mb)} · punta ${short(a.tip)}${a.prHead ? ` (merge; el pedido es ${short(a.prHead)})` : ''} · los controles y su regla salen de la base`);
+    console.log(`base-controls: base ${short(a.base)} · ancestro ${short(a.mb)} · punta ${short(a.tip)}${a.mezclado ? ` (el pedido ${short(a.prHead)} mezclado con la base)` : a.prHead ? ` (merge; el pedido es ${short(a.prHead)})` : ''} · los controles y su regla salen de la base`);
     // el inventario: el de la base contra la base (sus guiones están), y el del pedido contra el pedido (sus controles nuevos tienen entrada)
     const baseProblems = inventoryProblems(a.root, a.base, a.inv);
     const tipRead = readInventory(a.root, a.tip);
@@ -973,7 +1065,8 @@ function cmdRun() {
     if (!baseRes.length) reasons.push('no corrió ninguna pasada del inventario desde la base: no medido no es verde');
     const baseRed = baseRes.some((r) => !r.ok) || baseProblemsOfPr.length > 0;
     const prRed = prRes.some((r) => !r.ok);
-    if (prRed) reasons.push(`la pasada del pedido frena: ${prRes.filter((r) => !r.ok).map((r) => r.name).join(', ')}`);
+    // mezclado con la base, el pedido trae también lo que main endureció: el rojo puede venir de ahí, no del pedido
+    if (prRed) reasons.push(`la pasada del pedido frena: ${prRes.filter((r) => !r.ok).map((r) => r.name).join(', ')}${a.mezclado ? ' (se midió mezclado con la base: el rojo puede venir de una regla que main endureció; traé main para verlo en tu rama)' : ''}`);
     // una aprobación por delegación nueva (su hash no está en la base) ya no vale, salvo la refirma tras traer main que el
     // clasificador de la base comprueba sobre el pedido, para estas mismas entradas y a partir de esa constancia del dueño
     const approvals = readApprovals(a.root, a.tip, approvalFiles(a.inv));
@@ -992,7 +1085,9 @@ function cmdRun() {
     let approved = false;
     let refreshedOf = null;
     const mustSign = a.changed.filter((p) => a.signOnChange.has(p));
-    if ((baseRed || mustSign.length) && !prRed) {
+    if ((baseRed || mustSign.length) && !prRed && a.desparejos.length) {
+      reasons.push(DESPAREJOS(a.desparejos));
+    } else if ((baseRed || mustSign.length) && !prRed) {
       if (a.changed.length) {
         // la línea tiene que cuadrar entera: el hash del cambio, y sus reglas son las que dan ese hash
         const signed = approvals.some((x) => x && x.hash === a.hash && Array.isArray(x.rules) && hashOf(x.rules) === a.hash && !unproven.includes(x));
@@ -1039,10 +1134,12 @@ function cmdRun() {
   }
 }
 
+const DESPAREJOS = (ps) => `el pedido y main cambian la misma regla (${ps.map(safe).join(', ')}): la firma ancla lo que tiene tu rama, y ahí no está lo de main. Traé main y pedí la firma después`;
 function cmdPending() {
   const a = analyze();
   printChanges(a);
   if (!a.changed.length) { console.log('base-controls: no hay nada que firmar'); return; }
+  if (a.desparejos.length) { console.log(`base-controls: ${DESPAREJOS(a.desparejos)}`); return; }
   console.log(`hash: ${a.hash}`);
   if (a.noFolder.length) { console.log(`base-controls: ${NO_FOLDER(a.noFolder, a.hayCarpeta)}`); return; }
   // las constancias del dueño (sin `via`) de lo commiteado, con el archivo de donde salió cada una

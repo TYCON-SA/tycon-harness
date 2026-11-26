@@ -11,8 +11,8 @@
  *
  * Cuatro copias de un criterio son el drift de mañana. Por eso hay
  * UNA definición: la importan los dos hooks del skill, y el portón de CI —que corre en un agente
- * sin `~/.claude/`, así que no puede importarla— lleva una COPIA deliberada que
- * `~/.claude/tycon-harness/scripts/tests/closing-evidence-parity.test.js` compara contra ésta en
+ * sin la carpeta de Claude Code, así que no puede importarla— lleva una COPIA deliberada que
+ * `~/.tycon/harness/scripts/tests/closing-evidence-parity.test.js` compara contra ésta en
  * cada corrida, con el mismo mecanismo que ya cuida la paridad del roster.
  *
  * ── Qué NO es evidencia de cierre, y por qué ─────────────────────────────────────────────────
@@ -73,6 +73,8 @@ function evidenciaDeclaraFail(content) {
  *   · e2e    — una fila E2E de la tabla `### Tests` con un gate PASS, con su copia en gates.log y fresco.
  *   · firma  — el AC quedó aprobado por el dev desde su terminal, vigente para su declaración
  *              (veredicto WAIVED-USER: la matriz sólo lo da si la firma engancha con la declaración actual).
+ *   · noche  — declarado imposible, sin firma: la última noche corrió en verde su prueba, que ya estaba en main
+ *              (veredicto COVERED-NIGHTLY, lib/nightly-green.js).
  * La matriz, el self-audit y el plan manual siguen sin contar (arriba): esto no los mira.
  */
 function coberturaDeLaUnion(matriz) {
@@ -86,6 +88,8 @@ function coberturaDeLaUnion(matriz) {
     if (enVivo && v && v.fuentes && v.fuentes.smoke && v.fuentes.smoke.length) f.push('smoke');
     if (enVivo && v && v.fuentes && v.fuentes.e2e && v.fuentes.e2e.length) f.push('e2e');
     if (v && v.verdict === 'WAIVED-USER') f.push('firma');
+    // declarado imposible y cubierto por la noche, sin firma: su prueba en main corrió en verde (lib/nightly-green.js)
+    if (v && v.verdict === 'COVERED-NIGHTLY') f.push('noche');
     // se comprueba en staging, después del merge: antes de done no falta; para done la matriz lo da STAGING-FALTA
     if (v && v.verdict === 'EN-STAGING') f.push('staging');
     if (f.length) porAc.set(Number(k), f);

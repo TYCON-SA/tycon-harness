@@ -481,7 +481,7 @@ riesgo37='arg("--type") === "Riesgo" && a.includes("Custom.Cat=Seguridad-de-prue
 t30=$(node -e 'const fs = require("fs"); const sin = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"\x27`])\/\/.*$/gm, "$1");
 const malos = [];
 for (const f of process.argv.slice(1)) { const c = sin(fs.readFileSync(f, "utf8")); for (const w of ["Riesgo", "Seguridad", "Custom.", "Probabilidad", "Impacto"]) if (c.includes(w)) malos.push(`${f.split("/").pop()}: ${w}`); }
-console.log(malos.join(", "));' "$PED" "$AQUI/scripts/lib/operations-config.js")
+console.log(malos.join(", "));' "$PED" "$AQUI/integrations/azure-devops/scripts/dependency-notices.js" "$AQUI/scripts/lib/operations-config.js")
 [ -z "$t30" ] && ok "T30 Constitucion_NucleoSinValoresDeUnaOrganizacion: ni tipo, ni categoría, ni campos de una organización en el código" || no "T30: $t30"
 
 echo

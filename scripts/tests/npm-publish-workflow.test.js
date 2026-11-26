@@ -55,8 +55,8 @@ test('T13 NpmPublishWorkflow_TriggerAndPaths', () => {
   assert.ok(broken('  push:\n', '  pull_request_target:\n  push:\n').includes('pull-request-target'));
   assert.ok(broken("      - 'scripts/setup/npm/**'\n", "      - '**'\n").includes('publisher-trigger'), 'cualquier cambio: rojo');
   assert.ok(broken("    if: github.ref == 'refs/heads/main'\n", '').includes('publisher-trigger'), 'sin el if de main: rojo');
-  // los únicos workflows del repo público son tres
-  assert.deepStrictEqual([...WF.WORKFLOWS].sort(), ['ci.yml', 'npm-publish.yml', 'site-image.yml', 'version-tag.yml']);
+  // los únicos workflows del repo público son cinco
+  assert.deepStrictEqual([...WF.WORKFLOWS].sort(), ['ci.yml', 'code-scanning.yml', 'npm-publish.yml', 'site-image.yml', 'version-tag.yml']);
 });
 
 test('T14 NpmPublishWorkflow_PermissionsAndPins', () => {

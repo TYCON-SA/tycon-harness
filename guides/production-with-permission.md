@@ -20,9 +20,11 @@ Dos causas, y las dos se arreglan con lo mismo:
 ## Cómo funciona, en una línea cada cosa
 
 - **Una sola puerta**: `/opt/tycon/bin/tycon-prod-sql <host> '<sentencia>'`. Es lo único que consulta
-  o cambia producción —un `select`, o un cambio como `alter database …`—, y **la propia puerta abre un cuadro del sistema** con el servidor y la sentencia: vos la
-  leés y la aprobás antes de que se lea la clave. Ese cuadro sale aunque a la puerta la llame un guion,
-  porque lo pide ella y no el asistente. Es la única ventana: Claude Code no pregunta además por la puerta.
+  o cambia producción —un `select`, o un cambio como `alter database …`—, y **cada sentencia la aprueba una persona
+  antes de que se lea la clave**. Desde tu terminal, la propia puerta abre un cuadro del sistema con el servidor y la
+  sentencia. Pedida por una sesión de Claude Code, la puerta no abre ese cuadro: imprime la pregunta, la sesión te la
+  muestra en su cuadro de opciones y tu click la aprueba, también desde el celular o la app. Siempre un solo cuadro por
+  sentencia: Claude Code no pregunta además por la puerta.
 - **Un freno** prohíbe todo otro camino a esa base: `sqlcmd` directo, `az sql`, una cadena de
   conexión, leer la clave del Llavero, escribir el catálogo, o invocar la puerta de cualquier forma
   que no sea la canónica. También mira adentro de los guiones que el comando corre, aunque ya
@@ -47,8 +49,9 @@ lo aprueba **la persona frente a la Mac**, que tiene que poder autorizar ese cam
 
 1. **Probá la conexión**: `/opt/tycon/bin/tycon-prod-sql <host> 'select 1'`.
 2. **Si la rechaza el firewall** (error 40615, «is not allowed to access the server»), la puerta lo dice y da el
-   comando: `/opt/tycon/bin/tycon-prod-sql --open-firewall <host>`. Abre la regla de esta máquina, con cuadro, y la
-   regla se cierra sola al terminar la sesión.
+   comando para copiar: `/opt/tycon/bin/tycon-prod-sql --open-firewall <host> --session <id>`. **Lo corre la persona en
+   su terminal**, no el asistente: el modo automático de Claude Code frena esa orden. Abre la regla de esta máquina,
+   con cuadro, a nombre de la sesión que la pidió, y la regla se cierra sola cuando esa sesión termina, o a las 8 h.
 3. **Mirá el estado** por la puerta, no por `az`: el tamaño y el tope con
    `'select name, size/128 as mb, max_size/128 as max_mb from sys.database_files'`, y la edición y el nivel con
    `'select edition, service_objective from sys.database_service_objectives'`. Miden la base a la que entra la
@@ -234,14 +237,31 @@ Ahí cargás usuario y contraseña, y el archivo se borra solo. La entrada queda
 🔴 **El punto entero de esto es que cada sentencia se mire.** Y si te aparece un cuadro del Llavero **sin que vos
 hayas aprobado una sentencia antes**, denegá: algo está leyendo la clave por otro camino.
 
-**Una sola ventana por sentencia: la de la puerta.** Es un cuadro del sistema titulado «Producción: ¿lo aprobás?», con
+**Desde una sesión de Claude Code, la aprobás con un click en la sesión.** El cuadro del sistema se ve sólo en la
+pantalla de la Mac: si seguís la sesión desde el celular, desde claude.ai o desde Claude Desktop, no te llega y la
+consulta se vence. Por eso, cuando a la puerta la llama una sesión, no abre el cuadro del sistema: sale sin consultar e
+imprime la pregunta, con el servidor, la sentencia entera, la sesión y un código propio de esa sentencia. La sesión te la
+muestra con su cuadro de opciones, sin cambiarle una letra, con «Sí, aprobar» y «No». Con tu click, la sesión repite el
+mismo comando, y recién ahí la puerta lee la clave y consulta. **Un solo cuadro por sentencia**: en este camino el del
+sistema no se abre, ni antes ni después (lo prueba la suite de la puerta, contando los cuadros de cada camino).
+
+La puerta verifica el click igual que las firmas de los cambios de control: lee en la conversación de la sesión tu
+respuesta a esa pregunta exacta, con ese código, contestada por vos y no por un gancho. **Es la misma seguridad que esas
+firmas, por eso se eligió**: el mismo click que ya aprueba un cambio en los controles del arnés aprueba una sentencia.
+Un click sirve para una sola sentencia y vence a los 10 minutos. Otra sentencia, otro servidor, otro tope de filas u
+otra sesión piden otro click. No valen un «aprobado» escrito, un mensaje de otra sesión, uno de la oficina ni lo que
+diga el asistente. Vale tu click en la pestaña de la sesión o en la de la coordinadora confirmada, como cualquier click
+tuyo. El resto no cambia: la clave se lee recién después de la aprobación, cada sentencia queda en `production.log`
+(con `"aprobacion":"click-en-la-sesion"`), y el tope de 1.200 caracteres es el mismo.
+
+**Desde tu terminal, sin sesión: una sola ventana, la de la puerta.** Es un cuadro del sistema titulado «Producción: ¿lo aprobás?», con
 quién pide, el servidor y la sentencia, y «Rechazar» marcado por defecto. Recién con «Aprobar» la puerta lee la clave y
 consulta. Si no contestás en 2 minutos, se da por rechazada. Claude Code ya no abre además su permiso: no agregaba
 control, porque sin el cuadro de la puerta no se consulta nada (lo prueba la suite de la puerta), y duplicaba las
 ventanas. Lo mismo pasa al bajar un servidor a no producción (`--reclassify`), al abrir el firewall (`--open-firewall`)
 y al borrar un grupo de recursos (`--delete-group`); cerrar el firewall, `--verify`, `--locks` y `--load-key` no piden
-cuadro: no consultan ni cambian nada que no se deshaga. **Producción se aprueba sólo frente a la Mac**: ninguna
-aprobación a distancia, ni un click ni un «aprobado» escrito, reemplaza a este cuadro. **El cuadro necesita la sesión de la Mac**: por
+cuadro: no consultan ni cambian nada que no se deshaga. Esas otras formas se siguen aprobando sólo en este cuadro, frente
+a la Mac; una sentencia pedida por una sesión, con tu click en la sesión. **El cuadro del sistema necesita la sesión de la Mac**: por
 SSH, o desde una sesión sin pantalla, la puerta no consulta (falla cerrada, a propósito). Y la sentencia tiene que
 entrar entera en el cuadro: hasta 1.200 caracteres en 20 renglones de 60; una más larga se rechaza antes de abrirlo,
 para que nunca apruebes una sentencia cortada.
@@ -258,6 +278,43 @@ persona que mira la sesión principal, y un subagente, sobre todo uno en segundo
 está siguiendo (pasó: diecinueve consultas en 26 segundos). El subagente devuelve las sentencias y la sesión principal
 las corre de a una. Claude Code avisa al freno cuando llama un subagente, pero no si es de fondo: por eso se frenan
 todos.
+
+**La puerta va en primer plano.** Su cuadro vence a los 2 minutos, y una puerta corrida de fondo lo abre sin que nadie
+lo esté mirando: el pedido se cancela solo, sin cambiar nada, y la sesión no sabe qué pasó. Por eso el freno frena la
+puerta pedida de fondo (`run_in_background`) y la pedida por el Monitor, que corre de fondo siempre. Frena todas las
+formas, también una lectura que no abre cuadro: la regla es una sola. Lo que hay que hacer es avisarle antes a la persona
+qué cuadro va a aparecer y qué tiene que hacer en él, y correr la puerta en primer plano con un tope de 5 minutos
+(`timeout: 300000`). El tope hace falta porque, al vencer el tope de la consola de Claude Code (2 minutos si no se pide
+otro), la consola no corta el comando: lo pasa a segundo plano, y el cuadro queda sin nadie que lo mire. La puerta
+puede esperar hasta 90 segundos su turno y otros 2 minutos el cuadro. Por eso el freno también frena la puerta en
+primer plano sin ese tope, o con uno menor: el mensaje dice cuál traía y pide el de 5 minutos. Es lo último que mira de
+la puerta, así que un comando con otro problema se frena primero por ése. Cada bloqueo queda anotado con la regla
+`puerta-de-fondo`.
+
+El tope que aplica la consola también sale de su configuración, y el freno la mira:
+- `BASH_DEFAULT_TIMEOUT_MS` de 5 minutos o más hace de tope para un pedido que no lo trae;
+- `BASH_MAX_TIMEOUT_MS` o `CLAUDE_CODE_AUTO_BACKGROUND_TIMEOUT_MS` por debajo de 5 minutos lo recortan, así que el freno
+  frena y nombra la variable. Esa configuración es de la persona: se le avisa, no se cambia.
+
+Lo que el freno todavía no ve:
+- **Una sesión abierta de fondo por la coordinadora que corre la puerta en su propio primer plano.** El cuadro aparece
+  mientras la persona mira otra pestaña. Su primer renglón dice de qué carpeta y de qué sesión viene.
+- **Un comando que la consola corre para otra máquina** (una sesión adjunta). Ahí el tope lo pone la consola, más corto,
+  y no llega al freno.
+- **Borrar un grupo de recursos (`--delete-group`).** La puerta consulta Azure antes de abrir el cuadro, y en el peor
+  caso los 5 minutos no alcanzan.
+
+**Cuando no se aprueba, la puerta dice por qué.** Sale con código 2, sin leer la clave ni cambiar nada, con uno de tres
+mensajes. Los tres empiezan igual, «la persona no aprobó esta sentencia» (u «operación»), y siguen con la causa:
+
+- **Vencido** («el cuadro se venció a los 120 s sin respuesta»): nadie contestó a tiempo. Si la puerta corrió de fondo,
+  nadie vio el cuadro: corré la puerta en primer plano, con el tope, y avisá antes qué cuadro va a aparecer.
+- **Rechazado**: la persona apretó «Rechazar», es decir, dijo que no. Preguntale por qué antes de volver a pedirlo.
+- **Sin cuadro** («el cuadro no se pudo abrir»): el programa del cuadro salió con error, no contestó o contestó algo que
+  la puerta no entiende. Entre paréntesis va lo que se sabe, como el código con que salió el programa.
+
+El registro de producción anota los tres como `"accion":"rechazada"`, con su `"motivo"`: `vencido`, `rechazado` o
+`sin-cuadro`. Sólo la respuesta exacta de «Aprobar» aprueba.
 
 **La consulta va siempre en línea.** El cuadro muestra el comando y nada más: lo que trae un archivo no se ve
 antes de aprobar, así que la puerta no acepta archivos. Una consulta puede ocupar varios renglones dentro de
@@ -337,10 +394,19 @@ el comando de Azure que crearía la regla, aunque lo autorices en el chat. El ca
   clave, y lee la IP del rechazo («Client with IP address … is not allowed»). No llama a ningún
   servicio externo ni lee el Llavero. Si la conexión llega a pedir la clave, ya tenés acceso y no abre
   nada.
-- **Se cierra sola**: al terminar la sesión del asistente que la abrió, un hook de la configuración
+- **Se cierra sola**: al terminar la sesión del asistente que la pidió, un hook de la configuración
   administrada (`prod-firewall-close.js`) la cierra, salvo que otra sesión viva la siga usando. Si el
   fin de sesión no corrió (ventana cerrada de golpe, sesión caída), el mismo hook la cierra al arrancar
-  la próxima sesión y lo dice en una línea. Cerrar no pide cuadro.
+  cualquier sesión de la máquina (también una compactación o un `/clear`) y lo dice en una línea.
+  Cerrar no pide cuadro.
+- **Cuánto dura de verdad**: lo que vive la sesión que la pidió, con un tope de **8 h** desde que se abrió
+  con su cuadro. «Viva» se mira por su proceso, que Claude Code anota en `~/.claude/sessions` (igual en
+  macOS, Linux y Windows), así que una sesión que espera a la persona sigue viva. Si ese registro no
+  está, el respaldo es la actividad de su conversación en los últimos 3 minutos, y el hook lo dice al
+  cerrar. El tope se aplica en el primer comando, arranque o fin de sesión de la máquina después de las
+  8 h (el freno de producción lanza el cierre aparte), y el aviso trae el comando para volver a abrirla.
+  Una regla sin una fecha de apertura que se pueda leer cuenta como vencida. Abierta desde la terminal sin `--session`, la regla no
+  es de ninguna sesión y se cierra en el próximo arranque de cualquiera.
 - **Si el servidor se borró** con la regla abierta, la regla se fue con él. Al abrir, la puerta anota la
   suscripción y el grupo del servidor. Al cerrar, pregunta por ese servidor ahí: si Azure contesta que
   no existe, y tampoco está en otra suscripción, lo da por cerrado y lo dice. Si se movió, la cierra
@@ -442,6 +508,15 @@ la puerta queda abierta. Por eso no pongas el candado sobre un servidor real al 
 cierre seguro deja de funcionar. Cómo combinar los dos lo decide el dueño.
 
 ## Los límites, dichos antes
+
+- 🔴 **El click en la sesión lo verifica código del arnés, no de root.** El cuadro del sistema lo abre la puerta, que es
+  de root y tiene huella. El click lo confirma el arnés instalado en tu cuenta (`scripts/production/session-approval.js`
+  y la verificación de las firmas), leyendo la conversación de la sesión. Es el mismo límite que tienen las firmas de
+  los controles: un programa que reescriba a propósito la conversación y el registro de clicks podría fingirlo. Se
+  aceptó a cambio de poder aprobar desde el celular. Si no te alcanza, corré la puerta desde tu terminal: ahí sigue el
+  cuadro del sistema.
+- **El cambio llega a cada máquina al reinstalar el freno.** La puerta vive en `/opt/tycon` y se instala con tu
+  contraseña: hasta reinstalarlo, una sesión sigue abriendo el cuadro del sistema.
 
 - 🔴 **La regla que pregunta por `az sql server firewall-rule` es de CORTESÍA**, no un freno: se
   esquiva partiendo una palabra en dos (`az sql ser''ver …`). Para producción y para lo desconocido

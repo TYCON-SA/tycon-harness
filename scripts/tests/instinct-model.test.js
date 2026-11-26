@@ -92,3 +92,58 @@ let input = ''; process.stdin.on('data', (c) => { input += c; }); process.stdin.
   const sinCli = await M.llamar({ nightly, prompt: 'p', env: { PATH: dir.replace(/$/, '-no'), ANTHROPIC_API_KEY: LLAVE } });
   assert.strictEqual(sinCli.fallo, 'cli_fallo');
 });
+
+test('T46b Model_Anthropic_OtherProviderKeysNeverReachTheCli @story-4.7', async () => {
+  // las llaves de los otros proveedores salen por la lista de nightly-model.js, no por un nombre escrito acá
+  const { NIGHTLY_SECRETS } = require(path.join(RAIZ, 'scripts', 'lib', 'nightly-model.js'));
+  let visto = null;
+  const spawn = (cmd, args, op) => { visto = { cmd, args, op }; return { status: 0, stdout: 'ok\n' }; };
+  const nightly = { ok: true, provider: 'anthropic', model: 'haiku', secret: { env: NIGHTLY_SECRETS.anthropic, present: true } };
+  const env = { PATH: '/bin' };
+  for (const nombre of Object.values(NIGHTLY_SECRETS)) env[nombre] = nombre === NIGHTLY_SECRETS.anthropic ? LLAVE : OTRA;
+  const r = await M.llamar({ nightly, prompt: 'p', env, spawnSync: spawn, platform: 'linux' });
+  assert.strictEqual(r.ok, true);
+  for (const nombre of Object.values(NIGHTLY_SECRETS)) {
+    if (nombre === NIGHTLY_SECRETS.anthropic) assert.strictEqual(visto.op.env[nombre], LLAVE);
+    else assert.strictEqual(visto.op.env[nombre], undefined, `${nombre} no llega al hijo`);
+  }
+});
+
+test('T46c Model_Anthropic_WindowsLauncher_RunsTheCmdWithoutTheKey @story-4.7', async () => {
+  // en Windows npm deja `claude.cmd`: sin consola no se encuentra, así que va por la consola con un texto que no lleva la llave
+  let visto = null;
+  const spawn = (cmd, args, op) => { visto = { cmd, args, op }; return { status: 0, stdout: 'respuesta\r\n' }; };
+  const nightly = { ok: true, provider: 'anthropic', model: 'haiku', secret: { env: 'ANTHROPIC_API_KEY', present: true } };
+  const r = await M.llamar({ nightly, prompt: 'proponé', env: { ANTHROPIC_API_KEY: LLAVE }, spawnSync: spawn, platform: 'win32' });
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.texto, 'respuesta');
+  assert.strictEqual(visto.op.shell, true);
+  assert.deepStrictEqual(visto.args, []);
+  assert.strictEqual(visto.cmd, 'claude --model haiku --print --output-format text --safe-mode --tools ""');
+  assert.ok(!visto.cmd.includes(LLAVE));
+  assert.strictEqual(visto.op.env.NoDefaultCurrentDirectoryInExePath, '1', 'no corre un claude.cmd de la carpeta actual');
+  assert.strictEqual(visto.op.input, 'proponé');
+  // un modelo con caracteres de la consola no se lanza: la tabla de la organización no puede meter un comando
+  visto = null;
+  const raro = await M.llamar({ nightly: { ...nightly, model: 'haiku & calc' }, prompt: 'p', env: { ANTHROPIC_API_KEY: LLAVE }, spawnSync: spawn, platform: 'win32' });
+  assert.strictEqual(raro.fallo, 'cli_fallo');
+  assert.strictEqual(visto, null);
+});
+
+test('T46d Model_Anthropic_RealCmdLauncherOnWindows @story-4.7', { skip: process.platform !== 'win32' && 'sólo en Windows: el lanzador .cmd' }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'model-claude-cmd-'));
+  const anota = path.join(dir, 'anota.json');
+  const js = path.join(dir, 'fake-claude.js');
+  fs.writeFileSync(js, `const fs = require('fs'); let input = ''; process.stdin.on('data', (c) => { input += c; }); process.stdin.on('end', () => {
+  fs.writeFileSync(${JSON.stringify(anota)}, JSON.stringify({ args: process.argv.slice(2), llave: process.env.ANTHROPIC_API_KEY, input }));
+  process.stdout.write('respuesta del cmd\\n'); });
+`);
+  fs.writeFileSync(path.join(dir, 'claude.cmd'), `@"${process.execPath}" "${js}" %*\r\n`);
+  const nightly = { ok: true, provider: 'anthropic', model: 'haiku', secret: { env: 'ANTHROPIC_API_KEY', present: true } };
+  const r = await M.llamar({ nightly, prompt: 'proponé', env: { ...process.env, PATH: `${dir};${process.env.PATH}`, ANTHROPIC_API_KEY: LLAVE } });
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.texto, 'respuesta del cmd');
+  const a = JSON.parse(fs.readFileSync(anota, 'utf8'));
+  assert.deepStrictEqual(a.args.slice(0, 2), ['--model', 'haiku']);
+  assert.strictEqual(a.llave, LLAVE);
+});

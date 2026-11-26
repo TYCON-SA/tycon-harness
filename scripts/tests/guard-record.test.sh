@@ -266,8 +266,10 @@ fi
 # 🔴 Rojo si el freno sólo conoce el nombre anterior: «sólo el nombre nuevo» frena sin dejar línea, y «sin ninguna» no lo dice.
 OLD_RECORD_REL="$(sed -n 's/^NOMBRE_VIEJO_CONSTANCIA=//p' "$AQUI/scripts/production/install-guard.sh" | head -1)"
 guard_lab(){ # $1 carpeta  $2 new|old|none → un arnés mínimo: el freno y la biblioteca bajo ese nombre
-  local d="$1"; rm -rf "$d"; mkdir -p "$d/scripts/hooks" "$d/scripts/lib"
+  local d="$1"; rm -rf "$d"; mkdir -p "$d/scripts/hooks" "$d/scripts/lib" "$d/scripts/setup/harness"
   cp "$AQUI/scripts/hooks/prod-access-guard.js" "$d/scripts/hooks/"
+  # dónde está la carpeta del estado lo dice tycon-home.js, que viaja con la biblioteca (en /opt, también)
+  cp "$AQUI/scripts/setup/harness/tycon-home.js" "$d/scripts/setup/harness/"
   case "$2" in
     new) cp "$LIB" "$d/scripts/lib/guard-record.js" ;;
     old) cp "$LIB" "$d/scripts/${OLD_RECORD_REL}" ;;
@@ -303,7 +305,8 @@ else
   fi
   # el camino de todos los días (la función de frenar, no la de la falla propia), con el arnés entero menos el nombre
   # anterior: es lo que tiene la copia pública
-  mundo; rm -rf "$TMP/g-full"; mkdir -p "$TMP/g-full/scripts/hooks" "$TMP/g-full/scripts/production"
+  mundo; rm -rf "$TMP/g-full"; mkdir -p "$TMP/g-full/scripts/hooks" "$TMP/g-full/scripts/production" "$TMP/g-full/scripts/setup/harness"
+  cp "$AQUI/scripts/setup/harness/tycon-home.js" "$TMP/g-full/scripts/setup/harness/"
   cp -R "$AQUI/scripts/lib" "$TMP/g-full/scripts/lib"; rm -f "$TMP/g-full/scripts/${OLD_RECORD_REL}"
   cp "$AQUI/scripts/hooks/prod-access-guard.js" "$TMP/g-full/scripts/hooks/"
   cp "$AQUI/scripts/production/production-index.js" "$TMP/g-full/scripts/production/"
@@ -600,6 +603,24 @@ for f in "${SES_FRENOS[@]}"; do
     fi
   done
   i=$((i+1))
+done
+
+# ── T18 · las firmas del carril corto quedan con su nombre (fila 176) ────────────────────────────────────────
+# El freno de seguridad anota la firma que aprobó la ventana como el escape del renglón. `adhoc-lane` y sus variantes
+# no estaban en la lista cerrada: el renglón salía sin el nombre y dejaba «constancia-freno NO PUDO ANOTAR». El freno
+# de seguridad anota con la biblioteca del arnés; la copia del freno de producción sólo anota los suyos.
+for libt in "$LIB"; do
+  for esc in adhoc-lane adhoc-lane:sobre-cupo adhoc-lane:ci-rojo adhoc-lane:datos adhoc-lane:guardado-ajeno; do
+    mundo
+    HOME="$CASA" node -e 'require(process.argv[1]).anotar({ freno: "safety-guard", regla: "ESC-C4", veredicto: "escape", via: "click", cmd: "x", sesion: "s18", escape: process.argv[2], home: process.env.HOME })' "$libt" "$esc" 2>/dev/null
+    anotado="$(tail -1 "$(REG)" 2>/dev/null | node -e 'let s="";process.stdin.on("data",(d)=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).escape||"SIN")}catch(_e){process.stdout.write("ILEGIBLE")}})')"
+    fallo="$(grep -l "NO PUDO ANOTAR" "$CASA"/.tycon/state/hook-errors.log "$CASA/$ESTADO"/*.log 2>/dev/null | head -1)"
+    if [ "$anotado" = "$esc" ] && [ -z "$fallo" ]; then
+      ok "T18 ${esc}: el renglón lleva el nombre de la firma y no deja «no pude anotar»"
+    else
+      no "T18 ${libt} ${esc}: escape anotado=«${anotado}»${fallo:+, dejó «NO PUDO ANOTAR» en ${fallo}}"
+    fi
+  done
 done
 
 echo "─────────────────────────────"

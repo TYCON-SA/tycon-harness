@@ -103,7 +103,7 @@
     },
     {
       "file": "scripts/publishing/spanish-names.js",
-      "text": "son$/, /^guides\\/maintaining\\/incident-log\\.md$/, /^guides\\/maintaining\\/nombres",
+      "text": "son$/, /^guides\\/maintaining\\/incident-log\\.md$/, /^guides\\/maintaining\\/english",
       "reason": "el exportador y los controles de nombres excluyen el registro del repo del equipo por su ruta: la exclusión tiene que nombrarla mientras el registro exista allá"
     },
     {

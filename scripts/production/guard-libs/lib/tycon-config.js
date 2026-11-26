@@ -14,7 +14,7 @@
  *                                      `TYCON_TELEGRAM_CHAT_ID`, `TYCON_CODEX`, y una `TYCON_<INTEGRACION>`
  *                                      por llave nueva: `TYCON_CLOCKIFY`, `TYCON_ENGRAM`, `TYCON_CODEGRAPH`,
  *                                      `TYCON_MAILBOX`, `TYCON_NIGHTLY`; `0`/`1`, y `detect` para Codex)
- *   2. el archivo de la máquina        (`~/.claude/tycon.json` — nunca versionado; es lo que toda sesión
+ *   2. el archivo de la máquina        (`configFile` de tycon-home.js — nunca versionado; es lo que toda sesión
  *                                      ve, incluidas las de la extensión de VS Code, que no cargan el rc)
  *   3. el perfil del equipo            (`team-profile.json` en la raíz del arnés, o `perfil-equipo.json`, el nombre
  *                                      de antes, que sigue valiendo — versionado, sólo valores
@@ -46,7 +46,7 @@
  * ── LO PERSONAL NO VA EN EL PERFIL (AC 3) ───────────────────────────────────────────────────────
  * El perfil trae sólo valores del equipo: la organización de Azure DevOps y qué integraciones están
  * prendidas. Un chat_id, un email, un token, una llave —por nombre de clave o por forma del valor— o una
- * ruta de la máquina lo hacen inválido, con el motivo. Eso va en `~/.claude/tycon.json` o en su variable.
+ * ruta de la máquina lo hacen inválido, con el motivo. Eso va en el archivo de la máquina o en su variable.
  *
  * El perfil se puede fijar o anular por variable: `TYCON_PROFILE=<ruta>` lo reemplaza y `TYCON_PROFILE=0`
  * corre SIN perfil (desde el clon interno el perfil se encuentra por la ubicación del script, y una
@@ -74,13 +74,19 @@
  *      node scripts/lib/tycon-config.js validate [--hook]      → 0 válida · 2 rota (con --hook: 0 siempre, aviso por stderr)
  *      node scripts/lib/tycon-config.js key <integracion> [--hook [--switch VAR]]   → prendida/apagada/detect (ver arriba)
  *      node scripts/lib/tycon-config.js integrations [--shell|--json] → las ocho de una vez (para el instalador)
- *      node scripts/lib/tycon-config.js set <clave> <valor>    → la escribe en ~/.claude/tycon.json con `setKey` (story 8.16,
+ *      node scripts/lib/tycon-config.js set <clave> <valor>    → la escribe en el archivo de la máquina con `setKey` (story 8.16,
  *                                      tanda D): 0 con «antes → después» · 2 clave desconocida, valor inválido o archivo roto
  */
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+// las rutas de la máquina las sabe scripts/setup/harness/tycon-home.js, al lado por su ruta relativa: en el repo, y en
+// /opt/tycon/setup/harness/ para la copia que viaja al freno de producción. Quien copia este archivo copia también ése.
+const tyconHome = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'));
+// una ruta de tycon-home.js escrita desde la casa (`~/…`), con una casa fija: así se guarda un valor por defecto, que se
+// resuelve contra el HOME de quien lee, y así se nombra el archivo de siempre en el mapa de nombres viejos
+const conTilde = (ruta) => { const h = path.resolve(path.sep, 'casa'); return `~/${path.relative(h, ruta(h)).split(path.sep).join('/')}`; };
 
 const RAIZ_ARNES = path.resolve(__dirname, '..', '..');
 // Las variables renombradas a inglés (story 8.9, tanda B1): el nombre viejo sigue valiendo hasta el retiro. La biblioteca
@@ -117,7 +123,7 @@ function avisoNombrePerfil(rp) {
   if (rp.viejo) return `el perfil usa el nombre de antes (${NOMBRE_PERFIL_VIEJO}): sigue andando; para pasarlo al nuevo, git mv ${NOMBRE_PERFIL_VIEJO} ${NOMBRE_PERFIL}`;
   return null;
 }
-// Los dos nombres del lugar del arnés (story 8.19): ~/.claude/tycon-harness, y el viejo, que sigue resolviendo en las
+// Los dos nombres del lugar del arnés (story 8.19): el de hoy, y el viejo, que sigue resolviendo en las
 // máquinas ya instaladas. ESCRITOS acá, no importados de scripts/setup/harness/place.js: este archivo viaja solo a la
 // copia del freno de producción en /opt. Copia declarada en scripts/tests/fixtures/harness-place-names.json.
 const PLACE_NAME = 'tycon-harness';
@@ -173,7 +179,7 @@ const VOCABULARIO = Object.freeze({
   // skills una máquina del equipo que todavía tiene dos clones. `separate` = de su clon viejo de agent-skills, como
   // siempre; `unified` = ese clon re-apuntado al repo unido (lo hace `scripts/setup/harness/repoint.js`, y se deshace
   // volviendo a `separate`). La prende el perfil del equipo el día del corte; una máquina se queda afuera con
-  // `separate` en su `~/.claude/tycon.json`, que le gana al perfil. También cerrada: un valor inventado es un error.
+  // `separate` en el archivo de la máquina, que le gana al perfil. También cerrada: un valor inventado es un error.
   // `source` (story 8.13.1, AC 2): de dónde instala la máquina — `internal` (el repo interno, lo de hoy) o `public` (la
   // copia pública más la capa privada). Sin que nadie diga nada, `public`: una máquina de afuera; el perfil del equipo
   // trae `internal` mientras el equipo no migra. También cerrada.
@@ -248,7 +254,7 @@ const TOPE_POR_ESTILO = Object.freeze({ executive: 1300, detailed: 3000, neutral
 // ruta se escribe con `~` y se resuelve contra el HOME de quien lee.
 const DEFAULTS = Object.freeze({
   'update.channel': 'stable', 'update.apply': 'ask', 'update.skills_source': 'separate', 'packs.default': 'none',
-  'update.source': 'public', 'rutas.tree': '~/.claude/.tycon-pipeline/harness/tree',
+  'update.source': 'public', 'rutas.tree': conTilde((h) => path.join(tyconHome.legacyStateDir(h), 'harness', 'tree')),
   'adversarial.model_question': 'ask',
   'response.language': 'auto', 'response.style': 'neutral',
 });
@@ -308,7 +314,7 @@ const enArchivo = (seccion) => SECCION_EN_ARCHIVO[seccion] || seccion;
 // Cuáles son los de antes lo dice el mapa de renombres (scripts/lib/renames.json), que también viaja a la copia de /opt
 // del freno de producción: sin mapa —la copia pública— no hay ninguno, y sólo valen los nuevos.
 const DETECT = 'detect';
-const DONDE_CLAVES = '~/.claude/tycon.json';            // el `where` de las claves de este archivo en el mapa
+const DONDE_CLAVES = conTilde(tyconHome.legacyConfigFile);   // el `where` de las claves de este archivo en el mapa
 const DONDE_VALORES = 'scripts/lib/tycon-config.js';    // …y el de sus valores
 const tiene = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 let viejosDe = null;   // { mapa, nombres }: se recalcula sólo si el mapa cambió (la biblioteca lo relee por fecha)
@@ -351,15 +357,15 @@ const INTEGRACIONES = Object.freeze(Object.keys(VOCABULARIO.integraciones).filte
 const LAS_OCHO = Object.freeze(['ado', ...INTEGRACIONES, 'telegram']);
 // Cómo se prende cada una — la línea que un comando imprime cuando la necesitaba y está apagada (AC 10). Sin «0», sin «nada».
 const COMO_SE_PRENDE = Object.freeze({
-  ado: 'Azure DevOps apagado en esta máquina: no hay organización configurada — prender: ado.org en ~/.claude/tycon.json (o TYCON_ADO_ORG)',
-  clockify: 'Clockify apagado en esta máquina — prender: integrations.clockify=true en ~/.claude/tycon.json (o TYCON_CLOCKIFY=1)',
-  engram: 'engram apagado en esta máquina — prender: integrations.engram=true en ~/.claude/tycon.json (o TYCON_ENGRAM=1)',
-  codegraph: 'CodeGraph apagado en esta máquina — prender: integrations.codegraph=true en ~/.claude/tycon.json (o TYCON_CODEGRAPH=1)',
-  mailbox: 'buzón de corridas apagado en esta máquina: sin la llave — prender: la llave scripts/metrics/corridas-buzon.json del arnés interno (TYCON_MAILBOX_JSON=<ruta>), o integrations.mailbox=true en ~/.claude/tycon.json (TYCON_MAILBOX=1)',
-  codex: 'Codex apagado en esta máquina — prender: integrations.codex=true o "detect" en ~/.claude/tycon.json (o TYCON_CODEX=1)',
-  nightly: 'nocturnos del equipo apagados en esta máquina — prender: integrations.nightly=true en ~/.claude/tycon.json (o TYCON_NIGHTLY=1)',
-  instincts: 'grabadora de instintos apagada en esta máquina — la prende el perfil del equipo (integrations.instincts=true); para probarla en una máquina: integrations.instincts=true en ~/.claude/tycon.json (o TYCON_INSTINCTS=1)',
-  telegram: 'Telegram apagado en esta máquina: sin chat configurado — prender: telegram.chat_id en ~/.claude/tycon.json, TYCON_TELEGRAM_CHAT_ID, o el plugin de Telegram',
+  ado: 'Azure DevOps apagado en esta máquina: no hay organización configurada — prender: ado.org en el archivo de la máquina (o TYCON_ADO_ORG)',
+  clockify: 'Clockify apagado en esta máquina — prender: integrations.clockify=true en el archivo de la máquina (o TYCON_CLOCKIFY=1)',
+  engram: 'engram apagado en esta máquina — prender: integrations.engram=true en el archivo de la máquina (o TYCON_ENGRAM=1)',
+  codegraph: 'CodeGraph apagado en esta máquina — prender: integrations.codegraph=true en el archivo de la máquina (o TYCON_CODEGRAPH=1)',
+  mailbox: 'buzón de corridas apagado en esta máquina: sin la llave — prender: la llave scripts/metrics/corridas-buzon.json del arnés interno (TYCON_MAILBOX_JSON=<ruta>), o integrations.mailbox=true en el archivo de la máquina (TYCON_MAILBOX=1)',
+  codex: 'Codex apagado en esta máquina — prender: integrations.codex=true o "detect" en el archivo de la máquina (o TYCON_CODEX=1)',
+  nightly: 'nocturnos del equipo apagados en esta máquina — prender: integrations.nightly=true en el archivo de la máquina (o TYCON_NIGHTLY=1)',
+  instincts: 'grabadora de instintos apagada en esta máquina — la prende el perfil del equipo (integrations.instincts=true); para probarla en una máquina: integrations.instincts=true en el archivo de la máquina (o TYCON_INSTINCTS=1)',
+  telegram: 'Telegram apagado en esta máquina: sin chat configurado — prender: telegram.chat_id en el archivo de la máquina, TYCON_TELEGRAM_CHAT_ID, o el plugin de Telegram',
 });
 
 // Variables de entorno por clave, en orden de precedencia entre ellas (la primera que esté, gana).
@@ -517,11 +523,8 @@ function real(p) { try { return fs.realpathSync(p); } catch (_) { return null; }
 
 // story 8.23 (tanda C): una máquina sin Claude Code vive entera en `~/.tycon` y su configuración es `~/.tycon/config.json`
 // (la misma donde `harness.js config set` guarda el permiso). Dónde vive lo sabe scripts/setup/harness/tycon-home.js; se
-// carga SI ESTÁ, por su ruta: la copia de este archivo que viaja al freno de producción (/opt) no lo tiene al lado, y ahí
-// vale la ruta de siempre (la tanda D lo lleva). Si está y no carga, tira.
-const TYCON_HOME_LIB = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
-const tyconHome = fs.existsSync(TYCON_HOME_LIB) ? require(TYCON_HOME_LIB) : null;
-function rutaMaquina(home) { return tyconHome && typeof tyconHome.configFile === 'function' ? tyconHome.configFile(home) : path.join(home, '.claude', 'tycon.json'); }
+// carga arriba de todo.
+function rutaMaquina(home) { return tyconHome.configFile(home); }
 /** El archivo de la máquina como se le dice a la persona: el de siempre, o `~/.tycon/config.json` donde la máquina vive ahí. */
 function nombreArchivoMaquina(home) {
   const f = rutaMaquina(home || os.homedir());
@@ -529,7 +532,7 @@ function nombreArchivoMaquina(home) {
   return f.startsWith(h + path.sep) ? `~/${f.slice(h.length + 1).split(path.sep).join('/')}` : f;
 }
 /** La línea «cómo se prende» con el archivo que esta máquina lee de verdad. */
-function comoSePrende(llave, home) { return String(COMO_SE_PRENDE[llave] || '').split('~/.claude/tycon.json').join(nombreArchivoMaquina(home)); }
+function comoSePrende(llave, home) { return String(COMO_SE_PRENDE[llave] || '').split('el archivo de la máquina').join(nombreArchivoMaquina(home)); }
 
 /** El perfil: `TYCON_PROFILE=0` = sin perfil (`anulado`); `TYCON_PROFILE=<ruta>` = ése; si no, el del arnés. */
 function rutaPerfil(env, arnes, home) {
@@ -672,7 +675,7 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
       }
       const valor = cuerpo[claveEscrita];
       if (esPerfil && seccion === 'telegram') {
-        errores.push({ archivo, clave: rutaEnArchivo,motivo: 'valor personal: un chat de Telegram es de una persona, no del equipo — va en ~/.claude/tycon.json o en TYCON_TELEGRAM_CHAT_ID' });
+        errores.push({ archivo, clave: rutaEnArchivo,motivo: 'valor personal: un chat de Telegram es de una persona, no del equipo — va en el archivo de la máquina o en TYCON_TELEGRAM_CHAT_ID' });
         continue;
       }
       if (esPerfil && seccion === 'github') {
@@ -684,13 +687,13 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
         continue;
       }
       if (esPerfil && seccion === 'rutas') {
-        errores.push({ archivo, clave: rutaEnArchivo,motivo: 'una ruta es de la máquina, no del equipo — va en ~/.claude/tycon.json o en su variable (TYCON_GUIDES_DIR / TYCON_REPOS_ROOT / TYCON_TREE)' });
+        errores.push({ archivo, clave: rutaEnArchivo,motivo: 'una ruta es de la máquina, no del equipo — va en el archivo de la máquina o en su variable (TYCON_GUIDES_DIR / TYCON_REPOS_ROOT / TYCON_TREE)' });
         continue;
       }
       const tipo = VOCABULARIO[seccion][clave];
       if (!tipo) {
         const motivo = NOMBRES_PERSONALES.includes(String(clave).toLowerCase())
-          ? `valor personal (la clave «${clave}» nombra un dato de una persona: va en ~/.claude/tycon.json o en su variable), y además no está en el vocabulario`
+          ? `valor personal (la clave «${clave}» nombra un dato de una persona: va en el archivo de la máquina o en su variable), y además no está en el vocabulario`
           : `clave desconocida (válidas en «${comoVino(seccion)}»: ${Object.keys(VOCABULARIO[seccion]).join(', ')})`;
         errores.push({ archivo, clave: rutaEnArchivo,motivo });
         continue;
@@ -699,7 +702,7 @@ function validarArchivo(datos0, { archivo, esPerfil, home }) {
       if (err) { errores.push({ archivo, clave: rutaEnArchivo,motivo: err }); continue; }
       if (esPerfil) {
         const forma = formaPersonal(valor);
-        if (forma) { errores.push({ archivo, clave: rutaEnArchivo,motivo: `valor personal (${forma}): va en ~/.claude/tycon.json o en su variable, nunca en un archivo versionado` }); continue; }
+        if (forma) { errores.push({ archivo, clave: rutaEnArchivo,motivo: `valor personal (${forma}): va en el archivo de la máquina o en su variable, nunca en un archivo versionado` }); continue; }
       }
       if (tipo === 'llave-o-detectar' && valor !== DETECT && esDetect(valor)) anotarViejo('value', valor, DETECT, home);
       plano[ruta] = normalizarValor(tipo, valor, home, ruta);
@@ -800,7 +803,7 @@ function rutaLlaveBuzon(env, arnes) {
   return v ? path.resolve(v) : path.join(arnes, ...LLAVE_BUZON);
 }
 
-/** El lugar del arnés: ~/.claude/tycon-harness y, si falta o está colgado, el nombre viejo (8.3 AC 4, 8.19 AC 9). Sólo
+/** El lugar del arnés (`placePath` de tycon-home.js) y, si falta o está colgado, el nombre viejo (8.3 AC 4, 8.19 AC 9). Sólo
  *  se mira; lo crea el instalador. Con sólo el viejo devuelve el del viejo, sin decir nada más. */
 function estadoEnlace({ home, arnes }) {
   const place = oneNameState({ home, arnes, nombre: PLACE_NAME });
@@ -809,7 +812,7 @@ function estadoEnlace({ home, arnes }) {
   return legacy.estado === 'ok' || legacy.estado === 'otro-clon' ? legacy : place;
 }
 function oneNameState({ home, arnes, nombre }) {
-  const ruta = path.join(home, '.claude', nombre);
+  const ruta = path.join(tyconHome.claudeDir(home), nombre);
   let st;
   try { st = fs.lstatSync(ruta); } catch (_) { return { ruta, estado: 'falta', destino: null }; }
   if (!st.isSymbolicLink()) return { ruta, estado: st.isDirectory() ? 'carpeta' : 'otro', destino: null };
@@ -1144,7 +1147,7 @@ function explicar(opts = {}) {
 }
 
 // ── escribir una clave (story 8.16, tanda C · AC 21) ─────────────────────────────────────────────────────────────
-// UN escritor de `~/.claude/tycon.json`: `install --profile` escribe el perfil con esto, y desde la tanda D también
+// UN escritor del archivo de la máquina: `install --profile` escribe el perfil con esto, y desde la tanda D también
 // `tycon-config.js set` y `channel.js`. Valida la clave y el tipo contra el vocabulario, no escribe sobre un archivo roto
 // (ilegible o que no pasa su validación: se arregla primero), escribe atómico conservando el resto del archivo —también
 // el nombre con que ya está escrita cada sección y cada clave— y dice dos cosas que la persona tiene que saber:
@@ -1211,7 +1214,7 @@ function restringirSiTraeSecreto(file, datos) {
   } catch (e) { return `no pude dejar ${file} sólo para tu usuario (${e.code || e.message}): ${que}`; }
 }
 /**
- * Escribe `clave` (`seccion.clave`, con el nombre de archivo de la sección o el de adentro) en `~/.claude/tycon.json`.
+ * Escribe `clave` (`seccion.clave`, con el nombre de archivo de la sección o el de adentro) en el archivo de la máquina.
  * @returns {{ ok: boolean, file: string, before?: *, after?: *, warning?: string|null, reason?: string }}
  */
 function setKey(home = os.homedir(), clave, valorNuevo, { env = process.env, guardLib = null, arnes = null } = {}) {
@@ -1255,7 +1258,7 @@ function setKey(home = os.homedir(), clave, valorNuevo, { env = process.env, gua
     }
     datos[nombreSeccion] = cuerpo;
   }
-  // un ~/.claude/tycon.json que es un enlace (la configuración en un repo de dotfiles) se escribe en su destino: un rename
+  // un archivo de la máquina que es un enlace (la configuración en un repo de dotfiles) se escribe en su destino: un rename
   // sobre el enlace lo reemplazaba por un archivo suelto y el destino no se enteraba (pase adversarial, clase 10)
   let destino = file;
   try { if (fs.lstatSync(file).isSymbolicLink()) destino = fs.realpathSync(file); } catch (_) { /* no está, o el enlace cuelga: se escribe en su lugar */ }
@@ -1282,8 +1285,8 @@ function setKey(home = os.homedir(), clave, valorNuevo, { env = process.env, gua
   }
   const conoce = guardKnows(guardLib, seccion, k);
   const queNoConoce = conoce === false && guardKnows(guardLib, seccion) === true ? `la clave «${enArchivo(seccion)}.${k}»` : `la sección «${enArchivo(seccion)}»`;
-  if (conoce === false) avisos.push(`ojo: el freno de producción instalado (${guardLib}) es anterior a ${queNoConoce} y va a decir «configuración ROTA» hasta reinstalarlo: sudo bash ~/.claude/tycon-claude-guides/scripts/production/install-guard.sh`);
-  else if (conoce !== true) avisos.push(`ojo: el freno de producción instalado (${guardLib}): ${conoce} — si es anterior a la sección «${enArchivo(seccion)}», va a decir «configuración ROTA» hasta reinstalarlo: sudo bash ~/.claude/tycon-claude-guides/scripts/production/install-guard.sh`);
+  if (conoce === false) avisos.push(`ojo: el freno de producción instalado (${guardLib}) es anterior a ${queNoConoce} y va a decir «configuración ROTA» hasta reinstalarlo: sudo bash ~/.tycon/harness/scripts/production/install-guard.sh`);
+  else if (conoce !== true) avisos.push(`ojo: el freno de producción instalado (${guardLib}): ${conoce} — si es anterior a la sección «${enArchivo(seccion)}», va a decir «configuración ROTA» hasta reinstalarlo: sudo bash ~/.tycon/harness/scripts/production/install-guard.sh`);
   return { ok: true, file, before, after: valorEscrito, warning: avisos.length ? avisos.join(' · ') : null };
 }
 
@@ -1320,7 +1323,7 @@ module.exports = {
 function cli(argv) {
   const cmd = argv[0];
   const usage = 'uso: tycon-config.js explain [--json] | get <clave> | validate [--hook] | key <integracion> [--hook [--switch VAR]] | integrations [--shell|--json] | response [--json] | set <clave> <valor>';
-  // `set <clave> <valor>` (story 8.16, tanda D · AC 34): lo que antes se editaba a mano en ~/.claude/tycon.json, con el
+  // `set <clave> <valor>` (story 8.16, tanda D · AC 34): lo que antes se editaba a mano en el archivo de la máquina, con el
   // escritor único (`setKey`). Una llave acepta true, false, 1 o 0 (y `integrations.codex`, además, detect); una opción,
   // sus valores; un texto o una ruta, un texto no vacío. Nunca escribe sobre un archivo roto.
   if (cmd === 'set') {

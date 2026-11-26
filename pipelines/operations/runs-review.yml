@@ -79,10 +79,14 @@ jobs:
       # parcial deja la ejecución naranja), y ahí un rojo saldría naranja.
       - script: |
           set -u
-          node -e 'const c = require("./scripts/lib/operations-config.js").load("operations.json"); if (!c.ok) process.exit(3); const m = c.data.site && c.data.site.mailbox; if (!m) process.exit(4);'
+          # Un buzón de otro proveedor (site.mailbox.provider) lo lee su conector, no esta noche: sin buzón que leer, rojo.
+          node -e 'const c = require("./scripts/lib/operations-config.js").load("operations.json"); if (!c.ok) process.exit(3); const m = c.data.site && c.data.site.mailbox; if (!m) process.exit(4); if (m.provider !== undefined && m.provider !== "azure-blob") process.exit(5);'
           LUGAR=$?
           if [ "$LUGAR" = 4 ]; then
             echo "##vso[task.logissue type=error]el buzón no está declarado (operations.json → site.mailbox): la revisión no corrió"
+            exit 1
+          elif [ "$LUGAR" = 5 ]; then
+            echo "##vso[task.logissue type=error]el buzón de operations.json (site.mailbox.provider) no es de Azure Blob Storage: no está soportado en Azure Pipelines, y la revisión no corrió"
             exit 1
           elif [ "$LUGAR" = 3 ]; then
             echo "##vso[task.logissue type=error]operations.json no se pudo leer: no sé dónde está el buzón, y la revisión no corrió"
@@ -111,10 +115,13 @@ jobs:
                 # es la de esta conexión. La bajada también pide el tenant, y sale de la conexión (no es una credencial).
                 MBX="$(Agent.TempDirectory)/mailbox-location.json"
                 TENANT="$(az account show --query tenantId -o tsv 2>/dev/null || true)"
-                node -e 'const c = require("./scripts/lib/operations-config.js").load("operations.json"); if (!c.ok) process.exit(3); const m = c.data.site && c.data.site.mailbox; if (!m) process.exit(4); require("fs").writeFileSync(process.argv[1], JSON.stringify({ cuenta: m.account, contenedor: m.container, tenant: process.argv[2] }) + "\n");' "$MBX" "$TENANT"
+                node -e 'const c = require("./scripts/lib/operations-config.js").load("operations.json"); if (!c.ok) process.exit(3); const m = c.data.site && c.data.site.mailbox; if (!m) process.exit(4); if (m.provider !== undefined && m.provider !== "azure-blob") process.exit(5); require("fs").writeFileSync(process.argv[1], JSON.stringify({ cuenta: m.account, contenedor: m.container, tenant: process.argv[2] }) + "\n");' "$MBX" "$TENANT"
                 LUGAR=$?
                 if [ "$LUGAR" = 4 ]; then
                   echo "##vso[task.logissue type=error]el buzón no está declarado (operations.json → site.mailbox): la revisión no corrió"
+                  exit 1
+                elif [ "$LUGAR" = 5 ]; then
+                  echo "##vso[task.logissue type=error]el buzón de operations.json (site.mailbox.provider) no es de Azure Blob Storage: no está soportado en Azure Pipelines, y la revisión no corrió"
                   exit 1
                 elif [ "$LUGAR" = 3 ]; then
                   echo "##vso[task.logissue type=error]operations.json no se pudo leer: no sé dónde está el buzón, y la revisión no corrió"

@@ -905,7 +905,9 @@ test('T13 8.215-ModoPlan_SinCambios @story-8.215 @ac-7', async () => {
   for (const p of pedidos) {
     assert.doesNotMatch(p, /caza-|status --porcelain|CONTRA QUÉ SE COMPARA/, 'el plan no pide base ni prueba guardada');
   }
-  assert.equal(r.aviso, `adversarial-verify: 🔴 pase NO MEDIDO — 1 lente(s) SIN MEDIR (${muerta}): su cazador no contestó. No es verde ni «sin hallazgos»: relanzá el pase, o ${SALIDA_APROBADA}.`);
+  // en el modo plan no se ofrece la salida por carpeta (las respuestas las escribiría la sesión revisada)
+  assert.equal(r.aviso, `adversarial-verify: 🔴 pase NO MEDIDO — 1 lente(s) SIN MEDIR (${muerta}): su cazador no contestó. No es verde ni «sin hallazgos»: relanzá el pase (en la revisión del plan, con el corredor: no hay salida por carpeta).`);
+  assert.ok(!r.aviso.includes(SALIDA_APROBADA));
 });
 
 test('T14 8.215-Aviso_NombraMotivos @story-8.215 @ac-5', () => {

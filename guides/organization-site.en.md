@@ -44,7 +44,8 @@ works on GitLab has the harness on each machine, but the site does not show thos
   interval).
 - **The median:** the middle value; half of the runs are below it and half above.
 
-Each team machine uploads its runs to a shared place, the **runs mailbox**. At night, some harness processes check the
+Each team machine uploads its runs to a shared place, the **runs mailbox**: an Azure Blob Storage container or a Google
+Cloud Storage bucket, depending on the organization's cloud. At night, some harness processes check the
 dependencies (the third-party packages each product uses), the tests and the products, and leave what they measured in
 the organization's **operations repo**. The site reads those two places and shows them.
 
@@ -937,6 +938,12 @@ be, to copy it and open the request by hand.
   since HH:MM» (1 to 1440; empty means 15). The page measures it with its own clock, without asking the machine
   anything; a session in a long step is still alive and is only marked as quiet. It lives in `team-profile.json` →
   `office.quiet_minutes`.
+- **What each machine cleans up on its own**: three numbers. How many idle hours pass before a work folder that is
+  already merged is deleted (0 to 720; empty means 4). How many untouched days pass before the temporary folder of a
+  session that is no longer alive is deleted (1 to 365; empty means 2). How much free disk, as a percentage, triggers
+  the startup warning (1 to 99; empty means 15). Nothing with unsaved work is ever deleted, and the disk warning only
+  shows the cleanup commands. A machine can override all three in its own configuration. It lives in
+  `team-profile.json` → `maintenance`.
 - **Integrations**: which services each machine uses (the time clock, the memory, the mailbox, the
   night, the CodeGraph code index); a machine can turn one off for itself. With CodeGraph on, the installer sets it up
   for each dev and the harness warns when a machine lacks it. It lives in `team-profile.json`, in the profile repo. A
@@ -1328,7 +1335,9 @@ it is already off: with zero replicas no container runs.
 - **The organization's operations repo**, and an identity that can read it (that repo only). If you do not have it
   yet: how to create it and which files it holds, in the harness's `pipelines/operations/README.md` §2 (the examples, in
   `pipelines/operations/examples/`). The site only needs `operations.json`; the minimum, in the Docker trial.
-- **Optional: the runs mailbox**, if the organization collects the runs of its machines.
+- **Optional: the runs mailbox**, if the organization collects the runs of its machines. It can be an Azure Blob Storage
+  container or a Google Cloud Storage bucket; it is chosen in `site.mailbox.provider` (Azure when not declared). How to
+  set up the Google Cloud Storage one: `guides/integrations/gcs-mailbox.md`.
 - **A place to run a container** with HTTPS in front: a cloud, a free service or your own machine.
 
 ## Try it on your machine with Docker
@@ -1495,7 +1504,7 @@ Each installation says where each one is stored and how its value gets in. **No 
 | `SITE_SESSION_KEY` | signing the session | 32 random bytes, only for the site |
 | `SITE_OIDC_CLIENT_SECRET` | the sign-in | a registration only for the site, with no API permissions beyond `openid email profile` (with `github`, which is not OIDC, the site asks for `read:user user:email read:org`: read the account, its emails and whether it belongs to the organization); expires in 6 months at most |
 | `SITE_OPERATIONS_TOKEN` (or the platform identity, `SITE_OPERATIONS_IDENTITY=managed`, no secret) | reading the operations repo | an identity of its own with read access to that repo only; if it is a token, for one organization, code read only, 90 days; on GitHub, fine-grained, one repo, `contents: read` |
-| `SITE_MAILBOX_SAS` (or `SITE_MAILBOX_IDENTITY=managed`) | reading the runs in the mailbox | a read-and-list SAS (`rl`) tied to a stored access policy of the container, 6 months at most; or the platform identity with a read role on the container |
+| `SITE_MAILBOX_SAS` (or `SITE_MAILBOX_IDENTITY=managed`) | reading the runs in the mailbox | a read-and-list SAS (`rl`) tied to a stored access policy of the container, 6 months at most; or the platform identity with a read role on the container. With Google Cloud Storage, only `SITE_MAILBOX_IDENTITY=managed`: the site's service account with `roles/storage.objectViewer` on the bucket, no secret |
 | the notice channel | sending the morning notice | it does not reach the site: the night process uses it. Telegram: the token is for the whole bot, use a dedicated one. Slack or Teams: the webhook address IS the credential |
 | `SITE_OPERATIONS_WRITE_TOKEN` | proposing configuration changes from the site | on GitHub, fine-grained on the operations repo with `contents: write` and `pull_requests: write`; on Azure DevOps, a dedicated account with *Contribute*, *Create branch* and *Contribute to pull requests* on that repo only, *Force push* denied and no permission to bypass policies |
 | `SITE_PROFILE_REPO` and `SITE_PROFILE_TOKEN` | reading the team profile (where each repo lives, the packs) | part of the normal installation: without them the Configuration tab says "falta el repo del perfil" (the profile repo is missing). The address of the profile repo and a read-only code token on that repo (it can be the same permission as the operations repo's, if both live in the same organization) |
@@ -1755,8 +1764,9 @@ to the link. What to fix is the lock's setting, not the image.
 It also asks for the machine routes (`/live/machine` and `/live/enroll`) without a session. Machines cannot get past the
 platform's lock, so if it answers them the check warns "falta el paso de una vez" (the one-time step is missing), without
 failing: an organization that does not use offices does not need it. In Azure, it is
-the same `--excluded-paths` command from the recipe, which already names them. Do it before setting `site.url` in the
-profile.
+the same `--excluded-paths` command from the recipe, which already names them. In Google Cloud Run, also set the service
+timeout to 3600 s (`--timeout=3600`, in "Kubernetes and other clouds"): with a short one, the offices' connection is cut
+each time it runs out. Do it before setting `site.url` in the profile.
 
 The site also has to see who is asking. Behind an intermediary, every connection arrives from its address, and the limits
 per address would apply to the whole internet: two unsigned connections would hold back any machine. New installs already
@@ -1798,7 +1808,7 @@ Configuration tab says "falta el repo del perfil" (the profile repo is missing).
 - **Sign-in:** two locks. In front, the platform's built-in sign-in with the same Entra ID registration. Behind it, the
   site's own, which decides with its list. `/healthz`, `/livez`, the "You signed out" page with what it loads, and `/idioma` stay outside the lock (without that, with the
   lock's session expired, the "You signed out" page goes through its sign-in first). A site already installed is fixed once:
-  `az containerapp auth update -g <group> -n <app> --excluded-paths /healthz,/livez,/saliste,/idioma,/static/site.css,/static/site.js,/static/fonts/lato-400.woff2,/static/fonts/lato-700.woff2,/live/machine,/live/enroll`; and for the limits per address to hold, `az containerapp update -g <group> -n <app> --set-env-vars SITE_TRUST_PROXY=1`. `microsoftAccounts` in the
+  `az containerapp auth update -g <group> -n <app> --excluded-paths /healthz,/health,/livez,/saliste,/idioma,/static/site.css,/static/site.js,/static/fonts/lato-400.woff2,/static/fonts/lato-700.woff2,/live/machine,/live/enroll`; and for the limits per address to hold, `az containerapp update -g <group> -n <app> --set-env-vars SITE_TRUST_PROXY=1`. `microsoftAccounts` in the
   configuration file picks the mode:
   - `organization` (the default): a single tenant. If the registration has "assignment required", people are assigned
     one by one in the portal (assigning a group needs an Entra ID P1/P2 license).
@@ -1909,6 +1919,12 @@ starting anything.
 0 3 * * * node /opt/arnes/scripts/site/deploy/local/start.js --secrets-file /etc/sitio/sitio.env --update --image ghcr.io/<organization>/<repo>
 ```
 
+Each night's result and the updater's state go to `/etc/sitio/site-update/` (next to the secrets file; another folder
+with `SITE_UPDATE_DIR`). `compose.yaml` mounts it in the site, read-only: if it was installed by tag, whoever maintains
+it sees the same band as on Azure. **If you installed it before this version**, start it once more with
+`start.js --secrets-file …` so the container mounts the folder; until then the site stays as before and the band does
+not show.
+
 With systemd, a `oneshot` `.service` with the same command and a `.timer` with `OnCalendar=*-*-* 03:00`. **Watchtower**
 stays as an alternative (the community-maintained copy, limited to the site container with `--label-enable`): it does
 not check or go back, and it has the Docker socket, that is, it is administrator of the machine.
@@ -1927,6 +1943,14 @@ az storage container generate-sas --account-name <account> -n <container> --poli
 Updater or Flux (with the strategy that resolves `stable` to its digest), or each cloud's own command to change a
 service image (Cloud Run: `gcloud run deploy --image <image>@<digest>`). After the change, the check without a session:
 `node scripts/site/check-deploy.js --url https://<address>`.
+
+**Google Cloud Run has two limits of its own.** It reserves `/healthz`: its front end answers it with a 404 and the
+request never reaches the site. That is why the site answers the same on `/health`, and the check without a session asks
+it only when `/healthz` is answered by someone else; a Cloud Run probe of your own goes against `/livez`, never
+`/healthz`. And it cuts every request when the service timeout (`--timeout`) runs out: with a short timeout, the offices'
+connection is cut each time it runs out (with 60 s, every minute). When creating the service, `--timeout=3600` (the maximum). It does not change the cost: with
+a machine connected there is always an open request. On an existing one:
+`gcloud run services update <service> --region <region> --timeout=3600`.
 
 ### A closed network
 

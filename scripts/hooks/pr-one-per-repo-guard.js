@@ -68,6 +68,17 @@ try { const ev = JSON.parse(payload || '{}'); cmd = (ev.tool_input || {}).comman
 // cae en «sin datos» y sale 0 EN SILENCIO — verde sin haber mirado. El compartido existe
 // porque un regex de una línea falla con facilidad.
 const az = require('../lib/az-pr.js');
+// los prefijos que corren el resto de la orden: el pedido de un conector se lee detrás de ellos
+const PREFIJOS_DE_ORDEN = new Set(['sudo', 'env', 'command', 'exec', 'nohup', 'time', 'nice']);
+// las opciones de un solo guion que llevan valor, por prefijo: se saltean con su valor, porque si no el valor se toma
+// por el programa y el pedido pasa sin mirar. Cada prefijo tiene las suyas (`sudo -S` no lleva valor y `env -S` sí)
+const OPCIONES_CON_VALOR = {
+  sudo: /^-[ugpChDRrtTU]$/,
+  env: /^-[uC]$/,
+  nice: /^-n$/,
+  time: /^-[of]$/,
+  exec: /^-a$/,
+};
 const constancia = require('../lib/guard-record.js');
 let cwdDelEvento = ''; try { cwdDelEvento = String(JSON.parse(payload || '{}').cwd || ''); } catch { /* sin cwd */ }
 
@@ -75,19 +86,37 @@ let cwdDelEvento = ''; try { cwdDelEvento = String(JSON.parse(payload || '{}').c
 // de pedidos del repo la pide la capa, que dice de cada uno si la validación de su punta está corriendo; un pedido de
 // Azure abierto por la capa se mira con `az`, como un `az repos pr create`. Los `az repos pr create` de la misma línea
 // se revisan después, igual que sin los otros.
-const pedidosGh = [...pedidosDeGitHub(cmd, cwdDelEvento), ...pedidosDeOtrosConectores(cmd, cwdDelEvento)];
+const ordenes = ordenesDelComando(cmd, cwdDelEvento);
+// el mismo pedido puede salir del comando y de su orden anidada (un `xargs` delante lo leen los dos lados): se mira una vez
+const pedidosGh = [...new Map(ordenes.flatMap((t) => [...pedidosDeGitHub(t, cwdDelEvento), ...pedidosDeOtrosConectores(t, cwdDelEvento)])
+  .map((p) => [JSON.stringify([p.repo, p.rama, p.donde]), p])).values()];
 if (pedidosGh.length) revisarGitHub(pedidosGh).then(() => revisarAzure(), (e) => {
   console.error(`[pr-uno-por-repo] no pude mirar los pedidos de GitHub (${String((e && e.message) || e).slice(0, 80)}). No bloqueo, pero NO verifiqué.`);
   revisarAzure();
 });
 else revisarAzure();
 
+/**
+ * El comando y las órdenes que corre adentro: el cuerpo de un `bash -c '…'` o un `eval`, la orden de un `xargs` o un
+ * `find -exec`, lo que una tubería le da a un shell. Las lee la misma lectura que el freno de escrituras, que no se
+ * corre al cargarla. Si no carga, sólo el comando: como hasta ahora, el pedido de adentro pasa sin mirar.
+ */
+function ordenesDelComando(comando, cwd) {
+  // sin la palabra de crear en ningún lado no hay pedido adentro: no hace falta cargar la lectura
+  if (!/\b(create|new|open)\b/.test(comando)) return [comando];
+  try {
+    const g = require('../../skills/tycon-pipeline/scripts/on-bash-write-gate.js');
+    const textos = [comando, ...g.comandosPorOtroPrograma(comando, cwd || process.cwd())];
+    return [...new Set([comando, ...textos.flatMap((t) => g.comandosAnidados(t))])];
+  } catch { return [comando]; }
+}
+
 /** Los pedidos que el comando abre en GitHub: `[{ repo, rama, donde }]` (repo null si no se sabe a qué repo va). */
 function pedidosDeGitHub(comando, cwd) {
   const out = [];
   if (/\bgh\b/.test(comando)) {
     let lista = [];
-    try { lista = require('../lib/gh-pr.js').comandosGh(comando, 0, {}); } catch (e) {
+    try { lista = require('../lib/command-readers.js').lectorDe('gh').comandosGh(comando, 0, {}); } catch (e) {
       // no se pudo leer el `gh`: el pedido va sin repo, y la revisión dice que no verificó
       if (/\bpr\s+create\b/.test(comando)) out.push({ repo: null, rama: null, donde: `un gh pr create que no pude leer (${String((e && e.message) || e).slice(0, 60)})` });
     }
@@ -143,7 +172,13 @@ function pedidosDeOtrosConectores(comando, cwd) {
   for (const seg of az.segmentos(comando)) {
     const t = seg.map((x) => x.texto);
     let i = 0;
-    while (i < t.length && (/^[A-Za-z_][A-Za-z0-9_]*=/.test(t[i]) || t[i] === 'env' || t[i] === 'command')) i++;
+    // lo que va delante del programa: variables y los prefijos que corren el resto (`sudo -E`, `env -i A=b`, `nice -n 5`)
+    while (i < t.length) {
+      if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(t[i])) { i++; continue; }
+      if (!PREFIJOS_DE_ORDEN.has(t[i])) break;
+      const conValor = OPCIONES_CON_VALOR[t[i]];
+      for (i++; i < t.length && /^-/.test(t[i]); ) i += conValor && conValor.test(t[i]) ? 2 : 1;
+    }
     const bin = require('path').basename(String(t[i] || '').replace(/\\/g, '/')).replace(/\.(exe|cmd)$/i, '');
     for (const d of crean) {
       if (d.words[0] !== bin) continue;
@@ -261,7 +296,7 @@ if (!az.pareceAzPr(cmd)) process.exit(0);
 // 🔴 TODOS los `pr create` de la cadena, no el primero: con
 // `az … create -r R1 … && az … create -r R2 …` sólo se miraría R1. Es el patrón que ya usa
 // pr-auto-complete-guard.js.
-const creates = az.segmentos(cmd).filter((seg) => az.verboDePr(seg) === 'create');
+const creates = ordenes.flatMap((t) => az.segmentos(t)).filter((seg) => az.verboDePr(seg) === 'create');
 if (!creates.length) process.exit(0);
 let evCwd = ''; try { evCwd = String(JSON.parse(payload || '{}').cwd || ''); } catch { /* sin cwd */ }
 
@@ -345,7 +380,7 @@ function bloquear(bloqueos) {
 // El perfil por modelo (lib/control-profile.js): si el dueño relajó este control para el perfil del modelo de esta
 // sesión, no frena y lo anota como `paso-por-perfil`, para que la tabla de controles lo siga contando. Sin relajación,
 // sin modelo o con cualquier duda, frena como siempre.
-let perfil = { on: true };
+let perfil;
 try { perfil = require(require('path').join(__dirname, '..', 'lib', 'control-profile.js')).decide({ control: 'pr-uno-por-repo', sessionId: sesion }); } catch { perfil = { on: true }; }
 if (perfil.aviso) console.error(`[pr-uno-por-repo] ${perfil.aviso}`);
 if (!perfil.on) {

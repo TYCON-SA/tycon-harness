@@ -156,8 +156,19 @@ pruebas fallaron: `failed_tests`, con el nombre de cada una. En jest y vitest va
 resultado (`outcome`), porque la lista suma las que dieron error o se cortaron y el total del trx no. Va hasta 100, y
 `failed_tests_more` dice cuántas más hubo. Un archivo de jest que falló sin ninguna prueba fallida va igual: con
 `did_not_run: true` si no corrió ninguna, y con `file_failed: true` si corrieron todas y pasaron. Sirve
-para comparar con las que ya fallaban antes del cambio. Hoy no perdona nada: en estos repos, una falla de antes
-todavía frena.
+para comparar con las que ya fallaban antes del cambio.
+
+En estos repos de producto, lo heredado se mide caso por caso (`lib/inherited-cases.js`). Cuando la corrida sale roja,
+cada prueba que falló vuelve a correr sobre la base: la bifurcación con la rama principal del repo, la que apunta
+`origin/HEAD`, o `origin/main`, o `origin/master`. Corre en una copia aparte, con los `node_modules` del repo
+enlazados y la caché de NuGet de la máquina. Una falla es heredada sólo si en la base también falla con la misma
+prueba; si allá pasa, o no está, es del cambio y frena. Lo que la base no pudo correr (sin rama principal, las
+dependencias de ahora que no sirven para la base, un `dotnet restore` que falla, un proyecto sin su trx, más de 500
+fallas) queda **«no medido»**, con su motivo, y sigue frenando. Con todo heredado, el portón sale 0, vuelve a marcar
+el check `tests` en verde y `tests-result.json` lo dice con `suite_green_by: "heredadas"`. El detalle queda en
+`inherited_cases`: la base, lo heredado y lo que frena. Nada se declara heredado a mano: lo decide la corrida en la base.
+Vale igual en cada repo hermano. Los proyectos de pruebas de .NET corren todos, uno por uno, aunque uno salga rojo.
+`TYCON_INHERITED_BASE_MAX=0` lo apaga, y `TYCON_INHERITED_BASE_TIMEOUT_S` es el tope de cada corrida en la base (900).
 
 Una repetición sola que sale verde también saca su falla de la constancia de la completa (`tests-result.json`, la que
 lee el revisor de pruebas, y su copia que viaja), si es de esa misma completa: cuando no queda ninguna otra causa de
@@ -267,15 +278,18 @@ resueltos, lanzar.**
    retorna un no-op instantáneo y el lanzamiento se quema (el guard bloquea relanzar sin `--relaunch`). La lista debe
    ser **EXACTAMENTE la misma que después se pasa a `pipeline.js advisors` en «Revisores»**: si divergen, el pase
    audita otro diff que los revisores, en silencio.
-4. Congelar lo que va a mirar el pase, y pasarle sus sellos:
+4. Congelar lo que va a mirar el pase, armar la lista de sus repos y pasarle sus sellos:
    ```bash
-   node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js freeze-adversarial
+   node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js freeze-adversarial > <RUN_DIR>/congelado.json
+   node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/lib/frozen-tree.js lista-del-pase <RUN_DIR>/congelado.json
    ```
-   Sella cada repo de la corrida y arma su copia de sólo lectura en la carpeta de estado; devuelve `{ sellos, copias }`.
-   Sale 2 si no puede sellar o copiar: el pase no se lanza sobre la carpeta viva. Invocar la tool `Workflow` (args
+   `freeze-adversarial` sella cada repo de la corrida y arma su copia de sólo lectura en la carpeta de estado. Devuelve
+   `{ sellos, copias, repos }`, con la base de cada repo. Sale 2 si no puede sellar o copiar: el pase no se lanza sobre
+   la carpeta viva. `lista-del-pase` da los `repos` del `Workflow`, y sale 2 si un repo con código no tiene base: el
+   pase no se lanza, y se dice qué repo es y por qué (`step-08-adversarial-pass.md` §Acción). Invocar la tool `Workflow` (args
    idénticos a `step-08-adversarial-pass.md` §Acción, incluido `runDir`, el RUN_DIR de esta ejecución, y los `sellos`
-   de arriba: sin `runDir` las pruebas que confirman los hallazgos caen en una carpeta genérica, y sin `sellos` su
-   resultado no se anota) e **INMEDIATAMENTE después (mismo turno)** registrar el estado con el runId que devolvió la
+   y las `copias` de arriba: sin `runDir` las pruebas que confirman los hallazgos caen en una carpeta genérica, sin
+   `sellos` su resultado no se anota, y sin `copias` el pase lee la carpeta viva y no lo congelado) e **INMEDIATAMENTE después (mismo turno)** registrar el estado con el runId que devolvió la
    tool:
    ```bash
    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-launched <runId> 4

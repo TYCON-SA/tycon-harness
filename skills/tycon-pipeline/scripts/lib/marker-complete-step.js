@@ -20,6 +20,7 @@ const {
   reposParaComparar, resolveStoryPath, signatureCommand, syncSessionState,
   testsNotMeasuredLine, veredictoPaseAdversarial, writeMarker,
 } = require('./marker-shared.js');
+const { pipelineRel } = require('./home-command.js');
 const frenarEsperaMain = (...a) => require('./marker-lifecycle.js').frenarEsperaMain(...a);
 
 // Las pruebas que fallan según el informe del gate (`.advisors/tests-result.json`), para que el aviso diga qué falta.
@@ -164,6 +165,34 @@ function cmdCompleteStep(nRaw, flags) {
       console.error('  El pipeline se recorre EN ORDEN: `pipeline.js next` te dice cuál va. Cerrá ese primero (con su evidencia).');
       console.error('  Escape consciente (raro — p.ej. retomando una corrida que ya los hizo): --out-of-order (queda en bypass.log).');
       process.exit(1);
+    }
+  }
+
+  // ── «Armar el plan» de una historia con código no cierra sin lo que da por cierto del código ──
+  // La sección «## Suposiciones sobre el código», cada renglón con su archivo:línea comprobado en el repo
+  // (plan-assumptions.js). Sin plan escrito no se mira acá: eso lo dice «Aprobar el plan».
+  if (nuevo && ids.includes('plan')) {
+    const plan = planDeLaCorrida(marker);
+    let texto = null;
+    try { texto = plan.file ? fs.readFileSync(plan.file, 'utf8') : null; } catch (_) { texto = null; }
+    if (texto && texto.trim()) {
+      const repo = marker.repoPath || process.cwd();
+      // los hermanos de la ejecución: la historia del repo de historias cita el código del repo hermano
+      let raices = [];
+      try {
+        const cr = require('./companion-repos.js');
+        const story = resolveStoryPath(marker.storyPath, marker) || undefined;
+        raices = [...(story ? [cr.gitRootOf(story)] : []), ...cr.companionRoots(repo, story)].filter(Boolean);
+      } catch (_) { raices = []; }
+      const r = require('./plan-assumptions.js').revisar(texto, { repo, raices });
+      if (r.problemas.length) {
+        appendLog('gates.log', { name: 'plan-assumptions', status: 'blocked', story: marker.storyId, problemas: r.problemas.length });
+        console.error(`marker.js complete-step ${n} BLOQUEADO — ${r.problemas[0]}`);
+        for (const p of r.problemas.slice(1, 6)) console.error(`  · ${p}`);
+        if (r.problemas.length > 6) console.error(`  · y ${r.problemas.length - 6} más`);
+        console.error(`  El plan: ${plan.file}`);
+        process.exit(2);
+      }
     }
   }
 
@@ -476,7 +505,7 @@ function cmdCompleteStep(nRaw, flags) {
         + (st === 'green' && !fresh ? ' de ESTA vuelta' : '') + '.');
       console.error(`  Estado: checks.advisors=${st || '(ausente)'} provenance=${prov || '(ausente)'}${prevClose ? ` · cierre previo de los revisores: ${prevClose}` : ''}`);
       console.error('  Registralo con el exit code REAL de check-count (lee el log de spawns, no tu --ran):');
-      console.error(`    marker.js run-check advisors -- ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js')} check-count \\`);
+      console.error(`    marker.js run-check advisors -- ${homeCommand(pipelineRel('scripts/pipeline.js'))} check-count \\`);
       console.error('      --repo <repo> --story <story_path> --files <archivos modificados…>');
       console.error('  Set esperado vacío (mech-check sin advisors aplicables): check-count sale 0 con el expected:[] persistido.');
       console.error('  Una lista de revisores dada por vos (provenance trust-ran = self-report) NO alcanza. Declarar el control');
@@ -924,7 +953,7 @@ function cmdCompleteStep(nRaw, flags) {
         console.error(`marker.js complete-step ${n} BLOQUEADO — ${st.exists ? 'el findings.json NO es un array JSON válido' : 'FALTA el findings.json del paso de hallazgos'} en ${st.run_dir}.`);
         console.error('  Sin ese archivo, «no encontré nada» y «no lo escribí» son lo mismo: el criterio de poda del catálogo');
         console.error('  decide retiros de reglas con media muestra. Un run sin hallazgos igual lo escribe, con [].');
-        console.error(`    ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js')} write-findings --story ${storyPathF} --findings -`);
+        console.error(`    ${homeCommand(pipelineRel('scripts/pipeline.js'))} write-findings --story ${storyPathF} --findings -`);
         console.error('    (el array sale del reporte consolidado del paso de hallazgos, con la disposition final de cada hallazgo)');
         anotar('bloqueo', st.exists ? 'findings.json inválido' : 'findings.json ausente');
       }
@@ -1093,7 +1122,7 @@ function cmdCompleteStep(nRaw, flags) {
           if ((matrix.notVerifiable || []).length) {
             console.error(`  🟪 imposibles-declarados (esperan waiver del USUARIO): ${matrix.notVerifiable.map((n) => '#' + n).join(', ')}`);
             // con tanda anotada, la firma nombra la sesión: así la terminal mide la misma tanda que esta matriz
-            console.error(`     ${signatureCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js')} runtime-waiver ${storyPath}${matrix.batch && estado.SID !== '_nosession' ? ` --for-session ${estado.SID}` : ''}`);
+            console.error(`     ${signatureCommand(pipelineRel('scripts/marker.js'))} runtime-waiver ${storyPath}${matrix.batch && estado.SID !== '_nosession' ? ` --for-session ${estado.SID}` : ''}`);
           }
           // los criterios con cota: lo medido y la cota de cada uno, y las tres salidas
           for (const l of require('../runtime-matrix.js').lineasDeMedida(matrix)) console.error(`  ${l}`);
@@ -1181,7 +1210,7 @@ function cmdCompleteStep(nRaw, flags) {
       console.error('  Saltear este bloqueo lo decide la persona, no el agente: si quiere, lo firma en la ventana de');
       console.error('  permiso o en su terminal; queda had_dod_bypass=true en bypass.log.');
       console.error('');
-      console.error(`Ver: ~/.claude/agent-skills/skills/tycon-pipeline/steps/${STEPS_LIB.byId('live-check').file}`);
+      console.error(`Ver: ~/${pipelineRel('steps')}/${STEPS_LIB.byId('live-check').file}`);
       if (process.env.DOD_BYPASS !== '1') {
         process.exit(2);
       }

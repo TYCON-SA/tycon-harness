@@ -407,6 +407,28 @@ test('Click_OpcionesQueNoSonLasDelGuion_NoVale', (t) => {
   assert.deepStrictEqual(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), click(), { pregunta: PIDE, opciones: CUADRO.opciones }), { ok: true });
 });
 
+// Claude Code 2.1.312 escribe, antes de la respuesta del cuadro, un renglón del pedido al modelo (sin hora) que repite el
+// tool_result: la respuesta es la del renglón de la persona, con su hora, no esa copia
+const copiaDelPedido = (id) => ({ type: 'api-request-blob', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }] } });
+test('Click_CopiaSinHoraAntesDeLaRespuesta_ValeLaRespuesta', (t) => {
+  const casa = casaNueva(t);
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1'), copiaDelPedido('toolu_1'), respuesta('toolu_1')]);
+  assert.deepStrictEqual(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), click(), { pregunta: PIDE, opciones: CUADRO.opciones }), { ok: true });
+  // sin la respuesta de la persona, la copia sola no firma
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1'), copiaDelPedido('toolu_1')]);
+  assert.match(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), click(), { pregunta: PIDE, opciones: CUADRO.opciones }).motivo, /la respuesta del cuadro no está/);
+  // una respuesta afirmativa pero sin hora tampoco: lo que cuenta es el renglón de la persona
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1'), { ...respuesta('toolu_1'), timestamp: undefined }]);
+  assert.match(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), click(), { pregunta: PIDE, opciones: CUADRO.opciones }).motivo, /la respuesta del cuadro no está/);
+  // una copia con hora (de otra hora) que no es de la persona, antes de la respuesta real: se saltea, no se toma
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1'), { ...respuesta('toolu_1', { ts: hace(3600) }), type: 'api-request-blob' }, respuesta('toolu_1')]);
+  assert.deepStrictEqual(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), click(), { pregunta: PIDE, opciones: CUADRO.opciones }), { ok: true });
+  // el corte de la lectura (desde el final) no se detiene en la copia: con el cuadro repetido al final, sigue hasta la
+  // respuesta de la persona
+  transcripcion(casa, 'ses-a', [cuadro('toolu_1'), respuesta('toolu_1'), cuadro('toolu_1'), copiaDelPedido('toolu_1')]);
+  assert.deepStrictEqual(oa.clickEnLaTranscripcion(oa.transcripcionDe(casa, 'ses-a'), click(), { pregunta: PIDE, opciones: CUADRO.opciones }), { ok: true });
+});
+
 // La exención de comparación con main (Producto A, 20/11): la sesión mostró el cuadro con la pregunta y las etiquetas del
 // guion, pero con descripciones propias en cada opción. Sólo un cuadro de sólo click fija sus descripciones; éste no.
 test('T2 CompareWaiver_OwnDescriptions_ClickStillCounts — ni las descripciones propias ni dos preguntas en un cuadro invalidan el click', (t) => {
@@ -902,7 +924,11 @@ test('Escuchas_BanderasDelProceso_SettingsYPluginDir', (t) => {
   fs.writeFileSync(f, JSON.stringify(AJENO));
   assert.strictEqual(oa.escuchasDelCuadro({ casa, linea: `claude --settings ${f}` }).ajenos.length, 1);
   assert.strictEqual(oa.escuchasDelCuadro({ casa, linea: `claude --settings=${f}` }).ajenos.length, 1);
-  assert.ok(oa.escuchasDelCuadro({ casa, linea: 'claude --settings {"hooks":{}}' }).ilegibles.length, 'lo que no se puede leer no se da por limpio');
+  // el objeto escrito en la línea se lee como una capa más: sin ganchos queda limpio, con uno ajeno lo nombra
+  const enLinea = oa.escuchasDelCuadro({ casa, linea: 'claude --settings {"permissions":{"defaultMode":"default"}}' });
+  assert.deepStrictEqual([enLinea.ilegibles.length, enLinea.ajenos.length], [0, 0]);
+  assert.strictEqual(oa.escuchasDelCuadro({ casa, linea: `claude --settings=${JSON.stringify(AJENO)}` }).ajenos.length, 1);
+  assert.ok(oa.escuchasDelCuadro({ casa, linea: 'claude --settings {"hooks": {}}' }).ilegibles.length, 'lo que no se puede leer no se da por limpio');
   assert.ok(oa.escuchasDelCuadro({ casa, linea: `claude --settings ${path.join(casa, 'no-esta.json')}` }).ilegibles.length);
   const plugin = path.join(casa, 'mi-plugin');
   fs.mkdirSync(path.join(plugin, 'hooks'), { recursive: true });
