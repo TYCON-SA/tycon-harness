@@ -392,14 +392,14 @@ G2="$(j "$TMP/t1-out/A__S.json" 'j.generated_at' 2>/dev/null)"
 
 # ── T14 · Registro_SuitesMapaYPiezas ──
 # 🔴 Mutación que lo pone en rojo: olvidar registrar la pieza en alguno de los tres.
-for f in scripts/tests/suites.json artifacts/mapa-arnes.html guides/piezas-del-arnes.md; do
+for f in scripts/tests/suites.json artifacts/mapa-arnes.html guides/harness-pieces.md; do
   case "$f" in
     *suites.json) PAT='tests/projects-snapshot.test.sh' ;;
     *) PAT='scripts/nightly/projects/snapshot.js' ;;
   esac
   if [ "$INTERNO" = 0 ] && [ ! -f "$RAIZ/$f" ]; then echo "  ⏭️   — T14 NO MEDIDO: la copia pública no trae $f. No es un verde."; continue; fi
   # la guía de piezas es su índice y sus grupos (guides/pieces/)
-  DONDE=("$RAIZ/$f"); [ "$f" = guides/piezas-del-arnes.md ] && DONDE+=("$RAIZ/guides/pieces")
+  DONDE=("$RAIZ/$f"); [ "$f" = guides/harness-pieces.md ] && DONDE+=("$RAIZ/guides/pieces")
   grep -rq "$PAT" "${DONDE[@]}" && ok "T14 $f nombra la pieza" || mal "T14 $f no nombra $PAT"
 done
 

@@ -1,6 +1,6 @@
 # Las piezas del arnés, en detalle
 
-El detalle de cada pieza de [la guía de piezas](../piezas-del-arnes.md), bajo el mismo título `## <ruta>`: cómo se
+El detalle de cada pieza de [la guía de piezas](../harness-pieces.md), bajo el mismo título `## <ruta>`: cómo se
 calibra, qué mide y con qué pruebas se sostiene. Es lectura para quien mantiene el arnés.
 
 Este archivo es el **detalle** de cada pieza del arnés: qué hace, por qué existe, cómo se
@@ -30,7 +30,7 @@ con el que arrancaba un revisor **antes de leer un archivo**, y ningún revisor 
 los 16 `agents/tycon-*.md` lo cita; 2 de 154 transcripciones lo abrieron). Las 105 fichas se mudaron
 acá **textuales**, sin perder una palabra.
 
-## guides/piezas-del-arnes.md
+## guides/harness-pieces.md
 
 Este archivo. Nace: el README se importa ENTERO en cada sesión y en cada subagente —la línea `@…/README.md` vive en el `~/.claude/CLAUDE.md` personal de cada dev, así que viaja a todos los repos— y había crecido a 235.771 bytes, de los que **211.378 (el 90 %)** eran las fichas de las piezas. Medido: **~76 mil tokens, el 61 % del piso de ~125 mil** con el que arrancaba un revisor antes de leer un archivo, y **ningún revisor lo usaba** (ninguno de los 16 `agents/tycon-*.md` lo cita; 2 de 154 transcripciones lo abrieron). Las 105 fichas se mudaron acá **textuales** y el README quedó como índice: 235.771 → 57.195 bytes, y el A/B con `claude -p` midió **18.948 tokens** contra ~76.000. El par índice↔guía lo sostiene el pre-commit: techo en bytes y tope por entrada en `claude-md-blocks/budget.json` → `imported`, y las anclas exigidas en las dos direcciones.
 

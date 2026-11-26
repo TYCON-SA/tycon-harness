@@ -1,8 +1,8 @@
 # Las bibliotecas del pipeline
 
-Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cada una dice **qué es** la pieza,
+Las fichas de este grupo de [las piezas del arnés](../harness-pieces.md). Cada una dice **qué es** la pieza,
 **por qué existe**, **quién la usa** y **dónde se prueba**. El detalle de cada pieza está en
-[la guía de detalle](../maintaining/piezas-en-detalle.md), bajo el mismo título.
+[la guía de detalle](../maintaining/pieces-in-detail.md), bajo el mismo título.
 
 ## skills/tycon-pipeline/scripts/lib/first-story.js — la primera historia de la máquina
 
@@ -14,7 +14,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** `scripts/tests/first-story.test.js`, T7 de `harness-state.test.js` y el grupo `UPGRADE` de `harness-questions.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibfirst-storyjs--la-primera-historia-de-la-máquina)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#skillstycon-pipelinescriptslibfirst-storyjs--la-primera-historia-de-la-máquina)
 
 ## skills/tycon-pipeline/scripts/lib/models.js — el modelo de cada trabajo del pipeline
 
@@ -28,7 +28,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Guía:** [harness-cost-tiering](../harness-cost-tiering.md)
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibmodelsjs--el-modelo-de-cada-trabajo-del-pipeline)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#skillstycon-pipelinescriptslibmodelsjs--el-modelo-de-cada-trabajo-del-pipeline)
 
 ## scripts/lib/models-env.js — las variables de Claude Code sobre otro proveedor
 
@@ -100,4 +100,4 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** `unit.test.js`, `test-runtime-matrix.js`, `dod-hook-smoke-test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibruntime-waiverjs--el-registro-de-firmas-de-la-matriz)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#skillstycon-pipelinescriptslibruntime-waiverjs--el-registro-de-firmas-de-la-matriz)

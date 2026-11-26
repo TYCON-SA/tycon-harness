@@ -582,9 +582,9 @@ test('Sign_SinClaveYGuiasAlDia @story-8.248 @ac-17 @ac-18 @ac-20', () => {
     assert.doesNotMatch(leer('scripts', 'site', f), CLAVE, f);
   }
   // las guías dicen s o n para la emergencia y las tres palabras en Windows
-  const firmas = leer('guides', 'firmas-del-arnes.md');
+  const firmas = leer('guides', 'owner-signatures.md');
   const freno = leer('guides', 'safety-guard.md');
-  for (const [nombre, texto] of [['firmas-del-arnes.md', firmas], ['safety-guard.md', freno]]) {
+  for (const [nombre, texto] of [['owner-signatures.md', firmas], ['safety-guard.md', freno]]) {
     assert.ok(texto.includes(PREGUNTA), `${nombre} no dice la pregunta «${PREGUNTA}»`);
     assert.match(texto, /tres palabras/, `${nombre} no dice las tres palabras de Windows`);
     assert.doesNotMatch(texto, /«firmo»/, `${nombre} todavía nombra «firmo»`);

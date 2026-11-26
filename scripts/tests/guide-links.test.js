@@ -7,7 +7,10 @@
  * mueve. Lo que se puede romper sin que nadie lo vea:
  *   - T4: un reemplazo que apunta a una guía que no existe, o que no es el que genera `--write-shims` (quien abre la
  *     ruta vieja lee «movida a…» y no encuentra nada);
- *   - T17: una guía que se reescribió en el mismo commit que la movió (git deja de seguir su historial).
+ *   - T17: una guía que se reescribió en el mismo commit que la movió (git deja de seguir su historial);
+ *   - T1: un enlace relativo de una guía, del índice o de una portada que no lleva a ningún archivo;
+ *   - T2: una ruta `guides/…` nombrada que lleva a una guía que no existe (mide sólo con el privado en el árbol: las
+ *     guías públicas nombran guías que viven ahí).
  *
  * Las rutas salen del mapa (`scripts/lib/renames.json`, las entradas de guías de esta mudanza), nunca escritas acá. La
  * copia pública no lleva el mapa: ahí la prueba dice NO MEDIDO, como `guides-moved.test.js`. Los reemplazos viven en el
@@ -243,4 +246,165 @@ test('T4 laboratorio — sin el privado en el árbol (el arnés instalado trae e
   fs.writeFileSync(path.join(lab, '.tycon', 'internal-forms.json'), '{}');
   assert.strictEqual(shimsElsewhere(lab), false, 'con el privado: mide');
   fs.rmSync(lab, { recursive: true, force: true });
+});
+
+// ── T1 y T2: ningún enlace ni mención de una guía apunta a nada ───────────────────────────────────────────────────────
+// Se miran las guías (`guides/`, `getting-started/`), el índice y las portadas. Un bloque de código no cuenta: ahí van
+// ejemplos de comandos.
+const PORTADAS = ['INDEX.md', 'README.md', 'README.es.md', 'INSTALL.md'];
+/** Lo que no se mide, con su motivo: los registros históricos nombran las guías como se llamaban en su fecha, y unos
+ *  ejemplos nombran una guía inventada. */
+const MENCIONES_EXCEPTUADAS = [
+  { archivo: 'guides/maintaining/incident-log.md', motivo: 'registro histórico: cada caso nombra las guías como se llamaban ese día' },
+  { archivo: 'guides/guide-update-proposals.md', motivo: 'registro histórico: cada propuesta nombra las guías como se llamaban ese día' },
+  { archivo: 'INSTALL.md', mencion: 'guides/nueva-guia.md', motivo: 'ejemplo de cómo se agrega una guía nueva' },
+  { archivo: 'INSTALL.md', mencion: 'guides/X.md', motivo: 'ejemplo de un puntero a una guía' },
+];
+const PRIVATE_ABSENT = !fs.existsSync(path.join(ROOT, '.tycon', 'internal-forms.json'))
+  && 'NO MEDIDO — las guías públicas nombran guías que viven en el privado: corre sobre el árbol armado';
+
+/** Los `.md` que se miran, relativos a `root`. */
+function archivosConEnlaces(root) {
+  const out = [];
+  const walk = (d) => {
+    if (!fs.existsSync(d)) return;
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const abs = path.join(d, e.name);
+      if (e.isDirectory()) walk(abs);
+      else if (e.name.endsWith('.md')) out.push(path.relative(root, abs).split(path.sep).join('/'));
+    }
+  };
+  walk(path.join(root, 'guides'));
+  walk(path.join(root, 'getting-started'));
+  for (const f of PORTADAS) if (fs.existsSync(path.join(root, f))) out.push(f);
+  return out.sort();
+}
+
+/** ¿Existe la ruta con estas mismas mayúsculas? En macOS y Windows el disco no las distingue, pero en Linux (la CI) un
+ *  enlace con otra mayúscula no abre: se compara cada tramo contra el nombre real de la carpeta. */
+function existeTal(root, abs) {
+  if (!fs.existsSync(abs)) return false;
+  const tramos = path.relative(root, abs).split(path.sep).filter(Boolean);
+  let dir = root;
+  for (const t of tramos) {
+    if (t === '..') { dir = path.dirname(dir); continue; }
+    let nombres;
+    try { nombres = fs.readdirSync(dir); } catch (_) { return true; }   // una carpeta que no se lista: vale lo que dijo el disco
+    if (!nombres.includes(t)) return false;
+    dir = path.join(dir, t);
+  }
+  return true;
+}
+
+/** Los enlaces relativos que no resuelven y las menciones `guides/….md` que no existen: `{ enlaces, menciones }`, cada
+ *  uno `archivo:renglón → destino`. Las menciones exceptuadas no cuentan. Lo que no se mira (anotado por el pase
+ *  adversarial): `<a href>` en HTML, un destino con espacios o paréntesis, y una mención en texto con `./` o `../`. */
+function rotos(root) {
+  const enlaces = [];
+  const menciones = [];
+  for (const rel of archivosConEnlaces(root)) {
+    // un bloque de código (``` o ~~~) no cuenta: se vacía sin mover los renglones
+    const texto = fs.readFileSync(path.join(root, rel), 'utf8')
+      .replace(/^(```|~~~)[^\n]*\n[\s\S]*?^\1[^\n]*$/gm, (m) => m.replace(/[^\n]/g, ' '));
+    texto.split('\n').forEach((linea, i) => {
+      const destinos = [...linea.matchAll(/\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g)].map((m) => m[1]);
+      // el enlace de referencia: `[nombre]: destino` al principio del renglón
+      const ref = /^ {0,3}\[[^\]]+\]:\s+(\S+)/.exec(linea);
+      if (ref) destinos.push(ref[1].replace(/^<|>$/g, ''));
+      for (const destino of destinos) {
+        if (/^[a-z][a-z0-9+.-]*:/i.test(destino) || destino.startsWith('#') || destino.startsWith('<')) continue;
+        const sinAncla = destino.split('#')[0].split('?')[0];
+        let ruta;
+        try { ruta = decodeURIComponent(sinAncla); } catch (_) { ruta = sinAncla; }
+        if (!ruta) continue;
+        const abs = ruta.startsWith('/') ? path.join(root, ruta) : path.resolve(path.dirname(path.join(root, rel)), ruta);
+        if (!existeTal(root, abs)) enlaces.push(`${rel}:${i + 1} → ${destino}`);
+      }
+      for (const m of linea.matchAll(/(?<![\w./-])guides\/[\w./-]+?\.md\b/g)) {
+        if (fs.existsSync(path.join(root, m[0]))) continue;
+        if (MENCIONES_EXCEPTUADAS.some((x) => x.archivo === rel && (!x.mencion || x.mencion === m[0]))) continue;
+        menciones.push(`${rel}:${i + 1} → ${m[0]}`);
+      }
+    });
+  }
+  return { enlaces, menciones };
+}
+
+test('T1 Enlaces_NingunoRoto @story-8.45 @ac-11 — cada enlace relativo de las guías, el índice y las portadas lleva a un archivo que existe', () => {
+  const { enlaces } = rotos(ROOT);
+  assert.deepStrictEqual(enlaces, [], `enlaces rotos:\n${enlaces.join('\n')}`);
+});
+
+/** Las guías del público que todavía tienen nombre en castellano a propósito, con su motivo. Una que ya se movió sale de
+ *  la lista (T20 lo exige): la lista sólo baja. */
+const NOMBRES_PENDIENTES = [
+  { archivo: 'guides/maintaining/publicacion-espejo.md', motivo: 'un pedido abierto edita sus renglones: se mueve cuando entre o se cierre, para no abrirle un choque' },
+];
+/** Lo que el detector marca y no es castellano (decisión 11 de la historia): «coordinator» falta en el diccionario del sistema. */
+const FALSOS_CASTELLANOS = ['working-with-a-coordinator'];
+
+/** Los `.md` de `guides/` de la copia pública del árbol (en el árbol armado, sólo lo que trajo el público), relativos. */
+function guiasDelPublico(root) {
+  const IH = require(path.join(root, 'scripts', 'publishing', 'internal-history.js'));
+  const traido = IH.broughtByOverlay(root);
+  const out = [];
+  const walk = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const abs = path.join(d, e.name);
+      const rel = path.relative(root, abs).split(path.sep).join('/');
+      if (e.isDirectory()) walk(abs);
+      else if (e.name.endsWith('.md') && (!traido || traido.has(rel))) out.push(rel);
+    }
+  };
+  walk(path.join(root, 'guides'));
+  return out.sort();
+}
+
+test('T20 NombresDeGuias_EnIngles @story-8.45 @ac-2 @ac-4 — ninguna guía del público tiene nombre en castellano, salvo las pendientes con su motivo', (t) => {
+  const sn = require(path.join(ROOT, 'scripts', 'publishing', 'spanish-names.js'));
+  const palabras = path.join(ROOT, 'scripts', 'lib', 'spanish-words.json');
+  const d = sn.makeDetector(sn.loadWords(fs.readFileSync(palabras, 'utf8'), 'scripts/lib/spanish-words.json'), {});
+  if (!d.dictionary) { t.skip('NO MEDIDO: sin /usr/share/dict/words'); return; }
+  const guias = guiasDelPublico(ROOT);
+  assert.ok(guias.length > 20, `el árbol trae ${guias.length} guías: se esperaban más de 20`);
+  const castellanas = guias.filter((rel) => {
+    if (sn.kindOf(rel, '# x\n') !== 'guide') return false;
+    if (L.isShim(fs.readFileSync(path.join(ROOT, rel), 'utf8'))) return false;
+    const nombre = sn.pathNames(rel).pop();
+    return !FALSOS_CASTELLANOS.includes(nombre) && d.isSpanish(nombre).spanish;
+  });
+  const pendientes = NOMBRES_PENDIENTES.map((p) => p.archivo);
+  assert.deepStrictEqual(castellanas.filter((rel) => !pendientes.includes(rel)), [], 'guías con nombre en castellano: se mueven con su entrada del mapa, o se declaran pendientes con su motivo');
+  assert.deepStrictEqual(pendientes.filter((rel) => !castellanas.includes(rel)), [], 'pendientes que ya no lo son: se sacan de la lista');
+});
+
+test('T2 Menciones_NoApuntanAUnaViejaFueraDelMapa @story-8.45 @ac-8 @ac-11 — ninguna ruta guides/… nombrada lleva a una guía que no existe', { skip: PRIVATE_ABSENT }, () => {
+  const { menciones } = rotos(ROOT);
+  assert.deepStrictEqual(menciones, [], `menciones a guías que no existen (una guía movida deja su reemplazo; si es historia, va en MENCIONES_EXCEPTUADAS con su motivo):\n${menciones.join('\n')}`);
+});
+
+test('T1 laboratorio — un enlace y una mención a una guía que no existe fallan nombrándolos; lo exceptuado y un bloque de código no', () => {
+  const lab = fs.mkdtempSync(path.join(require('os').tmpdir(), 'guide-links-t1-'));
+  try {
+    fs.mkdirSync(path.join(lab, 'guides', 'maintaining'), { recursive: true });
+    fs.writeFileSync(path.join(lab, 'guides', 'existe.md'), '# existe\n');
+    fs.writeFileSync(path.join(lab, 'guides', 'a.md'), [
+      '[bien](existe.md) [ancla](#x) [afuera](https://example.com/x.md)',
+      '[roto](no-existe.md#algo)',
+      'Ver `guides/existe.md` y `guides/borrada.md`.',
+      '```', '[en un bloque](tampoco.md) guides/en-un-bloque.md', '```',
+      '~~~', '[en otro bloque](tampoco.md)', '~~~',
+      '[con consulta](existe.md?x=1) [otra mayúscula](Existe.md)',
+      '[ref]: referencia-rota.md',
+    ].join('\n'));
+    fs.writeFileSync(path.join(lab, 'guides', 'maintaining', 'incident-log.md'), 'El caso nombraba guides/vieja.md.\n');
+    fs.writeFileSync(path.join(lab, 'INDEX.md'), '| algo | [guía](guides/existe.md) | [rota](guides/falta.md) |\n');
+    fs.writeFileSync(path.join(lab, 'INSTALL.md'), 'Agregá `guides/nueva-guia.md` y mirá `guides/otra-inventada.md`.\n');
+    assert.deepStrictEqual(rotos(lab), {
+      // la mayúscula distinta cuenta como rota: en un disco que las distingue (Linux) no abre
+      enlaces: ['INDEX.md:1 → guides/falta.md', 'guides/a.md:2 → no-existe.md#algo', 'guides/a.md:10 → Existe.md', 'guides/a.md:11 → referencia-rota.md'],
+      // el ejemplo exceptuado de INSTALL.md no cuenta; otra mención del mismo archivo sí, y la del índice también
+      menciones: ['INDEX.md:1 → guides/falta.md', 'INSTALL.md:1 → guides/otra-inventada.md', 'guides/a.md:3 → guides/borrada.md'],
+    });
+  } finally { fs.rmSync(lab, { recursive: true, force: true }); }
 });
