@@ -588,7 +588,7 @@ test('WorkItem_Readers_RunForReal @story-8.85 @ac-8', () => {
   assert.strictEqual(r.json.value.connector, 'github');
   const t = fs.readFileSync(path.join(STEPS, 'step-01-start.md'), 'utf8');
   // la búsqueda por título de Azure DevOps vive en su guía; el paso la nombra después de preguntar la plataforma
-  const guia = 'guides/integrations/ado-en-el-nucleo.md';
+  const guia = 'guides/integrations/ado-in-the-core.md';
   assert.ok(t.indexOf('platform.js choose work-item update') > 0 && t.indexOf('platform.js choose work-item update') < t.indexOf(guia), 'la búsqueda por título va después de preguntar la plataforma');
   assert.match(fs.readFileSync(path.join(ROOT, guia), 'utf8'), /az boards query/, 'la guía de Azure DevOps trae la búsqueda por título');
 });
