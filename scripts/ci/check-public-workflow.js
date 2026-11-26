@@ -481,12 +481,24 @@ const SCANNING_SHAPE = [
   '        with:',
   '          persist-credentials: false',
   pinned('      - uses: ', 'github/codeql-action/init'),
+  '        id: init',
   '        with:',
   '          languages: ${{ matrix.language }}',
   '          build-mode: none',
   pinned('      - uses: ', 'github/codeql-action/analyze'),
   '        with:',
   '          category: /language:${{ matrix.language }}',
+  // el aviso de los hallazgos de calidad que el pedido agrega (scripts/ci/new-quality-findings.js): nunca rojo
+  '      - name: Calidad nueva del pedido (aviso, no frena)',
+  "        if: github.event_name == 'pull_request' && matrix.language == 'javascript-typescript'",
+  '        continue-on-error: true',
+  '        env:',
+  '          CODEQL: ${{ steps.init.outputs.codeql-path }}',
+  '          BASE: ${{ github.event.pull_request.base.sha }}',
+  '        run: |',
+  '          git fetch --no-tags --depth=1 origin "${BASE}" || true',
+  '          "${CODEQL}" database analyze "${RUNNER_TEMP}/codeql_databases/javascript" codeql/javascript-queries:codeql-suites/javascript-code-quality.qls --format=sarif-latest --output="${RUNNER_TEMP}/calidad.sarif" --threads=0 || true',
+  '          node scripts/ci/new-quality-findings.js --sarif "${RUNNER_TEMP}/calidad.sarif" --base "${BASE}"',
 ];
 
 /** Los únicos workflows del repo público: la CI, el que etiqueta, el que publica el instalador de npm y el análisis de

@@ -128,3 +128,18 @@ test('T7 Workflows_OnlyTheFive @story-8.331 @ac-5', () => {
   const hay = fs.readdirSync(path.join(ROOT, '.github', 'workflows')).filter((f) => /\.ya?ml$/.test(f));
   assert.deepStrictEqual(hay.filter((f) => !WF.WORKFLOWS.includes(f)), [], 'un workflow fuera de la lista');
 });
+
+// 🔴 Falla con: el aviso de calidad nueva que se saca, que puede poner la CI en rojo, o que corre fuera de un pedido.
+test('T10 CodeScanning_QualityWarning_NeverRed — el aviso de calidad nueva está, sólo en un pedido y sin frenar', () => {
+  const t = text();
+  assert.ok(t.includes('node scripts/ci/new-quality-findings.js --sarif'), 'el paso corre el aviso');
+  for (const [de, a] of [
+    ['        continue-on-error: true\n', ''],
+    ["github.event_name == 'pull_request' && ", ''],
+    ['--format=sarif-latest --output="${RUNNER_TEMP}/calidad.sarif" --threads=0 || true', '--format=sarif-latest --output="${RUNNER_TEMP}/calidad.sarif" --threads=0'],
+  ]) {
+    assert.ok(t.includes(de), `el archivo trae «${de.trim()}»`);
+    const r = WF.check(t.replace(de, a), { scanning: true });
+    assert.ok(r.length > 0, `sin «${de.trim()}» el control lo frena`);
+  }
+});
