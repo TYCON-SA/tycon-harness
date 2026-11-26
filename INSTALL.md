@@ -83,7 +83,7 @@ pregunta: no la aplica sin que lo pidas (`npx @tyconsa/harness@latest`, que preg
 `TYCON_UPDATE=0` la apaga; `harness.js doctor` dice cómo quedó todo y `harness.js uninstall` quita sólo lo que registró.
 Cómo funciona por dentro (el estado, los canales y las versiones, las copias y la vuelta atrás, la desinstalación, lo
 que queda fuera en Windows y cuándo se reabre la decisión sobre la integridad) vive en una sola guía,
-[`guides/maintaining/mecanismo-de-instalacion.md`](guides/maintaining/mecanismo-de-instalacion.md); acá queda el paso a paso.
+[`guides/maintaining/installation-mechanism.md`](guides/maintaining/installation-mechanism.md); acá queda el paso a paso.
 
 **En Windows, `~/.tycon/versions`.** Cada versión vive en su carpeta, `~/.tycon/versions/<versión>/`, y `~/.tycon/harness`
 y `~/.tycon/previous` son uniones (enlaces de carpeta) a la activa y a la anterior. Así la actualización anda con otras
@@ -112,7 +112,7 @@ como a un dev del equipo:
 
 **1. Los paquetes vienen con el perfil de tu equipo.** El núcleo no trae paquetes: los revisores, skills, guías y
 plantillas de un stack (por ejemplo, el de .NET + React/Next.js sobre BIZUIT) viven en el repo del perfil de cada
-equipo y llegan con su capa (`guides/maintaining/mecanismo-de-instalacion.md`, «La capa del equipo sobre la versión bajada»). Los
+equipo y llegan con su capa (`guides/maintaining/installation-mechanism.md`, «La capa del equipo sobre la versión bajada»). Los
 activa la organización con `packs.default` en ese perfil (o en la pestaña Configuración del sitio, sección Paquetes);
 sin perfil, tu máquina puede fijarlo en `~/.claude/tycon.json` (`"packs": { "default": "all" }`) o con
 `TYCON_PACKS_DEFAULT=all` (si el perfil los declara, el perfil del equipo gana sobre ese archivo). Un repo sólo puede
@@ -177,7 +177,7 @@ perfil). Qué puede pisar cada máquina sobre lo del equipo, en
 | Registro de horas | `integrations.timeTracking` (`none` o el nombre de una integración de horas; sin ella, la llave vieja de cada herramienta, en `guides/integrations/`) | no se registra ningún hook de horas; el despachador de ediciones sigue, sin el control de la integración. Cada integración trae los suyos en `integrations/<nombre>/` |
 | engram | `integrations.engram` | no se registran el sync de commit ni el aviso diario; los chequeos de versión/proyecto no corren; cada comando de engram lo dice y sale 0 |
 | CodeGraph | `integrations.codegraph` (informativa) | la instala cada dev con `install-codegraph.sh`; el arnés no registra nada de CodeGraph por sí mismo |
-| Buzón de corridas | `integrations.mailbox`; la llave es `scripts/metrics/corridas-buzon.json`, que llega con el perfil de tu equipo (o la ruta de `TYCON_MAILBOX_JSON`) | no se sube ni se baja nada; la vista de corridas es sólo de esta máquina |
+| Buzón de corridas | `integrations.mailbox`; la llave es `scripts/metrics/corridas-buzon.json`, que llega con el perfil de tu equipo (o la ruta de `TYCON_MAILBOX_JSON`). El buzón puede ser Azure Blob Storage (la llave de siempre) o Google Cloud Storage (`"provider": "gcs"`, con una clave HMAC que sólo crea: `guides/integrations/gcs-mailbox.md`) | no se sube ni se baja nada; la vista de corridas es sólo de esta máquina |
 | Instintos | `integrations.instincts` del perfil del equipo (para apagarla en una máquina: `TYCON_INSTINCTS=0`) | no se registra la grabadora (`instinct-observe.js`) ni se graba nada; el aviso de arranque sólo dice, una vez, si las variables viejas siguen puestas |
 | Codex | `integrations.codex`: `true` · `false` · `"detect"` (`TYCON_CODEX` manda) | no se despliega el lado Codex |
 | Nocturnos del equipo | `integrations.nightly` | no se registran los avisos de tablero, dependencias y retro; `bench-notice` calla lo nocturno y sigue con el banco local |
@@ -289,6 +289,7 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 | `office-link-start.js` | UserPromptSubmit | Mientras se trabaja, a lo sumo cada 30 min, pone al día la capa del equipo sin cambiar la versión y, si trae la dirección del sitio, enlaza la oficina sin abrir sesión | No | full | `TYCON_TEAM_REFRESH=0` |
 | `worktree-sweep.js` | SessionStart | Una vez por día borra las carpetas de trabajo (worktrees) limpias y ya mergeadas, con su rama; las que tienen trabajo sólo las nombra | No | full | `TYCON_WORKTREE_SWEEP=0` |
 | `temp-sweep.js` | SessionStart | Una vez por día borra de las carpetas temporales lo que dejaron las pruebas y las sesiones y nadie usa hace 24 horas; lo que está en uso o es de otra aplicación no lo toca | No | full | `TYCON_TEMP_SWEEP=0` |
+| `disk-notice.js` | SessionStart | Con el disco libre por debajo del umbral (15 %), dice cuánto queda y las cinco cosas conocidas que más ocupan, con el comando que limpia cada una; nunca corre esos comandos | No | full | `TYCON_DISK_NOTICE=0` |
 | `missing-path-notice.js` | PostToolUse (Bash) | Avisa cuando un comando de lectura nombró una ruta que no existe | No | full | `TYCON_MISSING_PATH_NOTICE=0` |
 | `deprecated-read-notice.js` | PostToolUse (Read, Bash) | Al leer un archivo deprecado, le recuerda al modelo el motivo y que no lo copie | No | full | — (sin la clave, calla) |
 | `cover-secrets.js` | PostToolUse (Bash, Read, Grep) | Tapa los valores reales de los secretos de la máquina en lo que devuelven las herramientas | No | minimal y full | `TYCON_COVER_SECRETS=0` |
@@ -573,7 +574,7 @@ git push
 - **Los tres "Claude"** (multi-modelo): la herramienta canónica se nombra (Claude Code), el
   actor de runtime y el modelo son genéricos ("el agente"/"el modelo" — también en cópulas:
   "Claude es un…"), las primitivas son de quien son. Criterio completo y disparador:
-  [guides/maintaining/criterio-tres-claude.md](guides/maintaining/criterio-tres-claude.md).
+  [guides/maintaining/three-claude-criterion.md](guides/maintaining/three-claude-criterion.md).
 - **Español** (idioma default del equipo).
 - **Copy-pasteable**: comandos y snippets ejecutables, no pseudocódigo.
 - **Sin detalles proyecto-específicos**: los nombres de proyectos concretos solo aparecen en tablas ilustrativas. Las reglas deben ser universales para todos los proyectos TYCON.

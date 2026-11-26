@@ -5,7 +5,7 @@
  * a un log firmado DENTRO de cada repo, re-ancladas a la DECLARACIÓN de cada AC.
  *
  * El problema que resuelve: los waivers viven en
- * `~/.claude/.tycon-pipeline/runtime-waivers.jsonl`, anclados al `matrixHash`. Ese hash pinnea la
+ * `~/.tycon/state/runtime-waivers.jsonl`, anclados al `matrixHash`. Ese hash pinnea la
  * evidencia de `.advisors/`, que está gitignoreada — o sea que en otra máquina, o en CI, no existe,
  * el hash da distinto y la aprobación NO engancha. La consecuencia práctica: lo ÚNICO de toda la
  * cadena que una máquina no puede recomputar —el criterio del humano— es lo único que no viaja,

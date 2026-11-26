@@ -25,6 +25,51 @@ const { isCodeFile, isManifestFile, NEVER_CODE_SEGMENTS } = require('./story-gat
 const { expandirRuta } = require('./command-vars.js');
 const { logHookError } = require('./bash-gate-net.js');
 
+const RAIZ_DEL_ARNES = path.resolve(__dirname, '..', '..', '..', '..');
+const dentroDelArnes = (abs) => {
+  const rel = path.relative(RAIZ_DEL_ARNES, abs);
+  return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
+};
+// El archivo de un módulo que no compila al pedirlo. Un .js roto deja en la primera línea de la pila «<archivo>:<línea>»;
+// un .json, «SyntaxError: <archivo>: …». Un `JSON.parse` de datos no nombra ningún archivo.
+function archivoQueNoCompila(e) {
+  if (!e || e.name !== 'SyntaxError') return null;
+  const primera = String(e.stack || '').split('\n')[0];
+  const archivo = (/^(.+\.c?js):\d+$/.exec(primera) || /^SyntaxError: (.+?\.json): /.exec(primera) || [])[1];
+  return archivo && path.isAbsolute(archivo) ? archivo : null;
+}
+// ¿El error de un `require` es un archivo del arnés que falta o no compila? Cuenta lo que se pide adentro del arnés, por
+// su ruta; un paquete que falta no.
+function esPiezaDelArnes(e, pedido, padre) {
+  if (!(e && e.code === 'MODULE_NOT_FOUND') && !archivoQueNoCompila(e)) return false;
+  const p = String(pedido || '');
+  const abs = path.isAbsolute(p) ? p : (p.startsWith('.') && padre && padre.filename ? path.resolve(path.dirname(padre.filename), p) : null);
+  return !!abs && dentroDelArnes(abs);
+}
+// En una versión bajada, un archivo del freno que no es el que se instaló (una instalación cortada: compila, pero quedó
+// a medias) también es una pieza rota: la huella de git de cada archivo del arnés que el freno usó se compara con la de
+// la lista. En un clon no: quien mantiene el arnés los cambia a propósito. Lo que no está en la lista (lo sumó una capa o
+// un tercero) no se compara.
+function archivoQueNoEsElInstalado() {
+  const lista = path.join(RAIZ_DEL_ARNES, '.tycon-release.json');
+  if (!fs.existsSync(lista) || fs.existsSync(path.join(RAIZ_DEL_ARNES, '.git'))) return null;
+  let huellas = null;
+  try { huellas = new Map(JSON.parse(fs.readFileSync(lista, 'utf8')).files.map((f) => [f.path, f.blob])); } catch (e) {
+    return Object.assign(new Error(`${lista} no se puede leer (${e.message}): no sé si los archivos del freno son los instalados`), { instalado: lista });
+  }
+  for (const abs of Object.keys(require.cache)) {
+    if (!dentroDelArnes(abs)) continue;
+    const esperada = huellas.get(path.relative(RAIZ_DEL_ARNES, abs).split(path.sep).join('/'));
+    if (!esperada) continue;
+    let huella = null;
+    try {
+      const d = fs.readFileSync(abs);
+      huella = require('crypto').createHash('sha1').update(`blob ${d.length}\0`).update(d).digest('hex');
+    } catch { /* lo que no se puede leer tampoco es lo instalado */ }
+    if (huella !== esperada) return Object.assign(new Error(`${abs} no es el que se instaló: su huella no es la de la versión`), { instalado: abs });
+  }
+  return null;
+}
 // Con respaldo, como en dispatch.js y on-write-collision.js: sin la lib (un skill instalado a medias) el portón no puede
 // morir al cargar —saldría 1, que no frena, y sin dejar constancia—: resuelve las rutas como antes.
 let nativePath = (p) => p;
@@ -1196,30 +1241,6 @@ function corredoresDeLaOrganizacion({ leer } = {}) {
   }
 }
 
-/**
- * ¿Un `sed` sin `-i` escribe o corre algo con su guion? Las palabras que siguen a `sed`: un guion de `-e` o
- * `--expression`, o el primer argumento si no hay ninguno, que no sea sólo cambiar el texto que lee
- * (`guionDeSedSinEfectos`): `w`, `W`, `s///w` escriben el archivo que nombran y `e` corre un comando. Un guion de
- * archivo (`-f`) no se ve: cuenta como que sí.
- */
-function sedConEfectos(args) {
-  const guiones = [];
-  let posicional = null;
-  for (let j = 0; j < args.length; j++) {
-    const w = args[j];
-    if (w === '--') { if (posicional == null) posicional = args[j + 1] ?? null; break; }
-    if (w === '-e' || w === '--expression') { if (j + 1 < args.length) guiones.push(args[++j]); continue; }
-    // `--expression='w h.md'`: el valor citado puede llegar pegado o como la palabra que sigue
-    if (/^--expression=/.test(w)) { const v = sinComillasDeLosBordes(w.slice('--expression='.length)); guiones.push(v !== '' ? v : (args[++j] ?? '')); continue; }
-    if (/^-[A-Za-z]*f/.test(w) || /^--file\b/.test(w)) return true;
-    if (/^-[A-Za-z]*e./.test(w)) { guiones.push(w.replace(/^-[A-Za-z]*?e/, '')); continue; }
-    if (w.startsWith('-') && w !== '-') continue;
-    if (posicional == null) posicional = w;
-  }
-  if (!guiones.length && posicional != null) guiones.push(posicional);
-  return guiones.some((g) => !guionDeSedSinEfectos(g));
-}
-
 /** La palabra sin las comillas que la rodean, si las tiene (`'w h.md'` → `w h.md`). */
 function sinComillasDeLosBordes(w) {
   const m = /^(['"])([\s\S]*)\1$/.exec(String(w));
@@ -1333,4 +1354,4 @@ function guionDeSedSinEfectos(guion) {
 }
 
 
-module.exports = { nativePath, Q, tok, SEPARADOR_DE_SEGMENTOS, splitSegments, sinPalabrasDeBloque, PALABRA_DE_REDIRECCION, DESCRIPTOR, REDIRECCION_DE_SALIDA_CON_PALABRA, REDIRECCION_DE_ENTRADA_CON_PALABRA, sinCerrar, palabrasDelComando, ultimosArgumentos, REDIRECCION_DELANTE, sinRedireccionesDelante, CON_PALABRA_PROPIA, EMPIEZA_REDIRECCION, antesDeUnaRedireccion, finDeSustitucion, nombresDelPrograma, ESCRIBE_LO_QUE_NOMBRA, MODIFICADORES_DE_ZSH, sinSustitucionesCerradas, COPIA, leadingCd, SUBCOMANDO_EN_DESTINO, DESTINO_CON_SUBCOMANDO, posicionesDeComando, subcomandosComoComodin, HONDO_DE_ENV_S, RSYNC_ESCRIBE, archivosDeRsync, cierreDeParentesis, sufijoVacioDe, destinosDelSedEnSitio, INTERPRETES, DESTINO_LITERAL, palabras, argumentosDe, ENTRADAS_LEIDAS, programasPorEntrada, leerProgramasPorEntrada, CORRE_ARCHIVO, GUION_TOPE, GUION_TOPE_DURO, RECORRIDO_NIVELES, RECORRIDO_ARCHIVOS, RECORRIDO_BYTES, ESCANEO_REINTENTO_MS, CORCHETE_TOPE, CLASES_POSIX, MENCIONA_HISTORIA, repoConHistorias, EXTENSION_DE, familiaDe, INTERPRETE_DE, palabraExpandida, SOLO_VARIABLE, ANTES_DEL_PROGRAMA, noSeLeeElPrograma, sinGrupo, rutaRealDelGuion, importsLocales, versionadoEnElArbolPropio, versionadoSinMemo, isInsideReal, primerArgumento, MODO_SOLO_LEE, ARGUMENTO_CON_NOMBRE, ARGUMENTOS_DE_LECTURA, argumentosDeLlamada, archivoQueAbre, OPEN_LLAMADA, sinEscapesDeComillas, literalesDe, vecesAsignado, leerArmado, DELIMITADOR_DE_HEREDOC, finDeCuenta, empiezaCuenta, sinBlancosAlBorde, cierresDe, ABRE_O_CIERRA, SIGUE_UN_COMANDO, VALOR_DE_ASIGNACION, PREFIJO, PS_CON_VALOR, REDIRECCION_DE_SALIDA, blancoPorRedireccion, LECTORES_DE_FIND, BORRA_O_MUEVE, expandirLlaves, OPCIONES_DE_TEXTO, CON_MENSAJE, OPCIONES_QUE_EJECUTAN, BUSCADOR_EJECUTA, BUSCADORES, A_UN_SHELL, TOPE_DE_TUBERIAS, vaAUnShell, textosCitados, programaDePerlSoloSustituye, piezasDeTramo, cierreDoble, carpetaDeCd, recorrerCarpetaDeCd, SHELL_CON_C, guionesInternos, TOPE_ANIDADOS, corredoresDeLaOrganizacion, sedConEfectos, sinComillasDeLosBordes, SED_W_EN_GUION, SED_W_EN_COMANDO, MODULOS_QUE_NO_CORREN, REQUIRE_QUE_NO_CORRE, PROGRAMA_LLEGA_A_PROCESOS, COMANDOS_QUE_NO_CORREN, programasSinProcesos, guionDeSedSinEfectos };
+module.exports = { RAIZ_DEL_ARNES, dentroDelArnes, archivoQueNoCompila, esPiezaDelArnes, archivoQueNoEsElInstalado, nativePath, Q, tok, SEPARADOR_DE_SEGMENTOS, splitSegments, sinPalabrasDeBloque, PALABRA_DE_REDIRECCION, DESCRIPTOR, REDIRECCION_DE_SALIDA_CON_PALABRA, REDIRECCION_DE_ENTRADA_CON_PALABRA, sinCerrar, palabrasDelComando, ultimosArgumentos, REDIRECCION_DELANTE, sinRedireccionesDelante, CON_PALABRA_PROPIA, EMPIEZA_REDIRECCION, antesDeUnaRedireccion, finDeSustitucion, nombresDelPrograma, ESCRIBE_LO_QUE_NOMBRA, MODIFICADORES_DE_ZSH, sinSustitucionesCerradas, COPIA, leadingCd, SUBCOMANDO_EN_DESTINO, DESTINO_CON_SUBCOMANDO, posicionesDeComando, subcomandosComoComodin, HONDO_DE_ENV_S, RSYNC_ESCRIBE, archivosDeRsync, cierreDeParentesis, sufijoVacioDe, destinosDelSedEnSitio, INTERPRETES, DESTINO_LITERAL, palabras, argumentosDe, ENTRADAS_LEIDAS, programasPorEntrada, leerProgramasPorEntrada, CORRE_ARCHIVO, GUION_TOPE, GUION_TOPE_DURO, RECORRIDO_NIVELES, RECORRIDO_ARCHIVOS, RECORRIDO_BYTES, ESCANEO_REINTENTO_MS, CORCHETE_TOPE, CLASES_POSIX, MENCIONA_HISTORIA, repoConHistorias, EXTENSION_DE, familiaDe, INTERPRETE_DE, palabraExpandida, SOLO_VARIABLE, ANTES_DEL_PROGRAMA, noSeLeeElPrograma, sinGrupo, rutaRealDelGuion, importsLocales, versionadoEnElArbolPropio, versionadoSinMemo, isInsideReal, primerArgumento, MODO_SOLO_LEE, ARGUMENTO_CON_NOMBRE, ARGUMENTOS_DE_LECTURA, argumentosDeLlamada, archivoQueAbre, OPEN_LLAMADA, sinEscapesDeComillas, literalesDe, vecesAsignado, leerArmado, DELIMITADOR_DE_HEREDOC, finDeCuenta, empiezaCuenta, sinBlancosAlBorde, cierresDe, ABRE_O_CIERRA, SIGUE_UN_COMANDO, VALOR_DE_ASIGNACION, PREFIJO, PS_CON_VALOR, REDIRECCION_DE_SALIDA, blancoPorRedireccion, LECTORES_DE_FIND, BORRA_O_MUEVE, expandirLlaves, OPCIONES_DE_TEXTO, CON_MENSAJE, OPCIONES_QUE_EJECUTAN, BUSCADOR_EJECUTA, BUSCADORES, A_UN_SHELL, TOPE_DE_TUBERIAS, vaAUnShell, textosCitados, programaDePerlSoloSustituye, piezasDeTramo, cierreDoble, carpetaDeCd, recorrerCarpetaDeCd, SHELL_CON_C, guionesInternos, TOPE_ANIDADOS, corredoresDeLaOrganizacion, sinComillasDeLosBordes, SED_W_EN_GUION, SED_W_EN_COMANDO, MODULOS_QUE_NO_CORREN, REQUIRE_QUE_NO_CORRE, PROGRAMA_LLEGA_A_PROCESOS, COMANDOS_QUE_NO_CORREN, programasSinProcesos, guionDeSedSinEfectos };

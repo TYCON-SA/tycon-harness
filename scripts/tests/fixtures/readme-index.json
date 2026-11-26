@@ -14,7 +14,7 @@
   "database/",
   "engram-version",
   "guides/accov-governance-protocol.md",
-  "guides/integrations/ado-cola-y-listados.md",
+  "guides/integrations/ado-queue-and-listings.md",
   "guides/integrations/ado-projects.md",
   "guides/advisor-rules-catalog.md",
   "guides/agent-architecture.md",

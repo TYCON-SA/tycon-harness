@@ -24,12 +24,18 @@
  * Escape: el mismo del portón (env TYCON_STORY_GATE=off · config commiteada del repo).
  *
  * ── CUANDO EL FRENO MISMO FALLA ───────────────────────────────────────────────────────────
- * Una falla sin prever, un módulo del arranque que no carga o una entrada que no se puede leer: frena sólo el comando
- * que escribe y nombra una historia o una constancia, leído como texto (`frenaLaRed`); lo demás sigue. Cada una queda en
+ * Un módulo del arranque que no carga, o un archivo suyo que falta o no compila cuando lo pide al decidir (también si
+ * lo pide un control dentro de su propia red, que seguiría sin él): el freno no decidió con todas sus piezas, así que
+ * frena todo comando y dice cuál. En una versión bajada (trae su lista, `.tycon-release.json`, y no es un clon), lo
+ * mismo con un archivo suyo que no es el que se instaló: compara la huella de cada uno que usó con la de la lista. Una
+ * falla sin prever mientras decide, o una entrada que no se puede leer: frena sólo el comando que escribe y nombra una
+ * historia o una constancia, leído como texto (`frenaLaRed`); lo demás sigue. Cada una queda en
  * hook-errors.log: «FRENÓ POR FALLA» o «FAILED OPEN». Límite conocido: un error de sintaxis en este archivo no llega a
  * correr nada.
  * El análisis corre en un hilo y `lib/gate-clock.js` mira el reloj (20 s, `TYCON_BASH_GATE_TIMEOUT_S`): si no alcanza a
- * decidir, el comando no corre. Sin esa biblioteca, el análisis corre acá, sin reloj, y queda «FAILED OPEN».
+ * decidir, el comando no corre. Sin esa biblioteca, el análisis corre acá, sin reloj, y queda «FAILED OPEN». El análisis
+ * le anota al reloj sus pasos (`paso`): si tarda la mitad del reloj o más, queda «LENTO» con el paso más lento, y si lo
+ * corta, el corte dice en cuál estaba.
  *
  * ── SEGUNDA RESPONSABILIDAD: la puerta Bash del freno de STORY A MANO ────────────────
  * El caso que motiva ese freno son los heredocs de Bash —
@@ -103,6 +109,9 @@ const carpetaDelEstado = () => {
   try { return stateDirOf(os.homedir()); } catch { return os.tmpdir(); }
 };
 function salirPorLaRed(e, texto) {
+  // la falla que vino de una pieza rota no es una falla sin prever: frena todo
+  const rota = piezaRota || archivoQueNoEsElInstalado();
+  if (rota) salirSinCargar(rota);
   if (frenaLaRed(String(texto || ''))) {
     logHookError(e, 'FRENÓ POR FALLA');
     try {
@@ -136,10 +145,51 @@ function salirPorLaRedConLaEntrada(e) {
   try { texto = JSON.parse(cruda).tool_input.command; } catch { /* entrada rota o sin comando: se lee el texto entero */ }
   salirPorLaRed(e, texto);
 }
+
+// ── la pieza rota: el freno que no tiene todas sus piezas ─────────────────────────────────────────
+// Sin terminar de cargarse, el freno no decidió nada: frena todo comando y dice qué no cargó. Igual con una pieza rota
+// al decidir. La red de fallas queda para lo que se cae con todas las piezas: ahí sabe lo bastante para frenar lo que
+// importa.
+let cargado = false;
+const { BORRA_O_MUEVE, MENCIONA_HISTORIA, SHELL_CON_C, archivoQueNoCompila, archivoQueNoEsElInstalado, blancoPorRedireccion, corredoresDeLaOrganizacion, esPiezaDelArnes, expandirLlaves, leadingCd, nativePath, programasPorEntrada, repoConHistorias, splitSegments, subcomandosComoComodin, vaAUnShell } = parte(() => require('./lib/bash-gate-words.js'));
+const { ESCRIBE, algunOpenEscribe, estadoDeHistoria, expandirComodin, inlineStoryText, resolveTarget, seguidos, sinCierre, sinComentarioAlFinal } = parte(() => require('./lib/bash-gate-expansions.js'));
+const { anotarBorradosDeLaStory, anotarEscriturasConsola, conComentariosApagados, destinosArmados, escritosDelGuion, extractWriteTargets, heredocs, mensajeCarpetaSinSeguir, mensajeRutaSinResolver, modoDeLectura, nameSuggestsStory, quitarCuerposDeHeredoc, salidaAjenaALaRevision, sinBarras, stripNonCommandText } = parte(() => require('./lib/bash-gate-targets.js'));
+const { aprobacionesTocadas, buzonTocado, carpetasDelComando, comandosAnidados, comandosPorOtroPrograma, corridasDeRevisoresTocadas, criticosTocados, cwdDelComando, destinosBorrados, lanzadasTocadas, marcadoresTocados, marcasDeTerminalTocadas, relativosDe, resolverCd, revisionDelPlanTocada } = parte(() => require('./lib/bash-gate-commands.js'));
+const { borraEjecucionAbierta, carpetasQueBorraOMueve, cuerposDistintos, destinosResueltos, ejecucionPerdida, estadoPorOtroPrograma, frenoBorrarYArmados, guionesEnArchivo, heredocBodies, renameOrCopyOfExistingStory } = parte(() => require('./lib/bash-gate-scripts.js'));
+const { constanciasSinHuella, constanciasTocadas, coordinadoraPorConsola, historiasPorConsola } = parte(() => require('./lib/bash-gate-records.js'));
+// La primera pieza rota que se pidió al decidir, también la que pide un control dentro de su propia red (un `try` que
+// traga el error y sigue sin ella): sin esto, ese control se apagaba callado y el resto decidía sin él. La de más
+// adentro queda primero: un archivo que falta hace fallar también a los que lo cargan.
+let piezaRota = null;
+if (require.main === module) {
+  const Module = require('module');
+  const cargar = Module._load;
+  Module._load = function cargarYAnotar(pedido, padre, ...resto) {
+    try { return cargar.call(this, pedido, padre, ...resto); } catch (e) {
+      if (!piezaRota && esPiezaDelArnes(e, pedido, padre)) piezaRota = e;
+      throw e;
+    }
+  };
+}
+function salirSinCargar(e) {
+  logHookError(e, 'FRENÓ POR FALLA');
+  try {
+    const roto = archivoQueNoCompila(e);
+    const cual = e && e.instalado ? e.message : roto ? `No cargó: ${roto} (no compila: ${e.message})` : `No cargó: ${String((e && e.stack) || e).split('\n')[0]}`;
+    process.stderr.write([
+      '⛔ tycon-pipeline — EL FRENO DE ESCRITURAS NO PUDO CARGARSE ENTERO: ningún comando corre hasta repararlo',
+      `  ${cual}`,
+      `  La falla quedó en ${path.join(carpetaDelEstado(), 'hook-errors.log')}. Reinstalá el arnés desde tu terminal; \`/tycon-harness\` dice si quedó bien instalado.`,
+      '',
+    ].join('\n'));
+  } catch { /* sin dónde decirlo, frena igual */ }
+  process.exit(2);
+}
 if (require.main === module) {
   // lo que `try` no alcanza: un módulo de los de abajo que no carga, o una falla después de decidir, en los avisos
   process.on('uncaughtException', (e) => {
     if (yaDecidio) { logHookError(e); process.exit(0); }
+    if (!cargado) salirSinCargar(e);
     salirPorLaRedConLaEntrada(e);
   });
 }
@@ -151,12 +201,6 @@ if (relojRoto) logHookError(relojRoto, 'FAILED OPEN');
 if (require.main === module && !isMainThread && workerData && workerData.modo === 'net') salirPorLaRedConLaEntrada(workerData.falla);
 const { isCodeFile, isManifestFile, NEVER_CODE_SEGMENTS } = require('./lib/story-gate.js');
 const { resolveSessionId } = require('./lib/session-id.js');
-const { BORRA_O_MUEVE, MENCIONA_HISTORIA, SHELL_CON_C, blancoPorRedireccion, corredoresDeLaOrganizacion, expandirLlaves, leadingCd, nativePath, programasPorEntrada, repoConHistorias, splitSegments, subcomandosComoComodin, vaAUnShell } = parte(() => require('./lib/bash-gate-words.js'));
-const { ESCRIBE, algunOpenEscribe, estadoDeHistoria, expandirComodin, inlineStoryText, resolveTarget, seguidos, sinCierre, sinComentarioAlFinal } = parte(() => require('./lib/bash-gate-expansions.js'));
-const { anotarBorradosDeLaStory, anotarEscriturasConsola, conComentariosApagados, destinosArmados, escritosDelGuion, extractWriteTargets, heredocs, mensajeCarpetaSinSeguir, mensajeRutaSinResolver, modoDeLectura, nameSuggestsStory, quitarCuerposDeHeredoc, salidaAjenaALaRevision, sinBarras, stripNonCommandText } = parte(() => require('./lib/bash-gate-targets.js'));
-const { aprobacionesTocadas, buzonTocado, carpetasDelComando, comandosAnidados, comandosPorOtroPrograma, corridasDeRevisoresTocadas, criticosTocados, cwdDelComando, destinosBorrados, lanzadasTocadas, marcadoresTocados, marcasDeTerminalTocadas, relativosDe, resolverCd, revisionDelPlanTocada } = parte(() => require('./lib/bash-gate-commands.js'));
-const { borraEjecucionAbierta, carpetasQueBorraOMueve, cuerposDistintos, destinosResueltos, ejecucionPerdida, estadoPorOtroPrograma, frenoBorrarYArmados, guionesEnArchivo, heredocBodies, renameOrCopyOfExistingStory } = parte(() => require('./lib/bash-gate-scripts.js'));
-const { constanciasSinHuella, constanciasTocadas, coordinadoraPorConsola, historiasPorConsola } = parte(() => require('./lib/bash-gate-records.js'));
 // ── variables del comando ─────────────────────────────────────
 // `SP=<scratchpad>; python3 -c "open('$SP/x.cs','w')"` sale frenado como «EDICIÓN INVISIBLE»: el destino se resuelve
 // tal cual, `<repo>/$SP/x.cs`, y queda adentro del repo de la corrida.
@@ -188,10 +232,18 @@ const { PIPELINE_LEE, PIPELINE_LISTA } = require('./lib/marker-command.js');
  * deja pasar algo que la lectura sin apagarlos frena, aunque algo se tome por comentario sin serlo. La segunda lectura
  * sólo decide: no anota escrituras ni borrados, que ya anotó la primera.
  */
+// En qué paso está el análisis, para el reloj (lib/gate-clock.js): si tarda o lo cortan, el registro lo dice. Sin el
+// reloj no se lo vuelve a pedir: pedido al decidir, contaría como una pieza rota y frenaría todo
+function paso(texto) {
+  if (relojRoto) return;
+  try { require('./lib/gate-clock.js').anotarPaso(texto); } catch { /* sin reloj, no hay a quién decírselo */ }
+}
+
 function handle(event, opts = {}) {
   modoDeLectura({ apagoAlgo: false });
   const r = handleUnaLectura(event, opts);
   if ((r && r.block) || !modoDeLectura().apagoAlgo) return r;
+  paso('la segunda lectura, sin los comentarios');
   modoDeLectura({ leerComentarios: false });
   modoDeLectura({ soloDecidir: true });
   try {
@@ -207,21 +259,25 @@ function handle(event, opts = {}) {
 function handleUnaLectura(event, opts = {}) {
   {
     let perdida = null;
+    paso('mirando si se pierde una ejecución');
     try { perdida = ejecucionPerdida(event); } catch (e) { logHookError(e); perdida = { block: `🔴 EJECUCIÓN PERDIDA — no pude revisar las piezas de la ejecución (${e.message}): frena hasta poder mirarlas.\n` }; }
     if (perdida) return perdida;
   }
   {
     let abierta = null;
+    paso('mirando si borra una ejecución abierta');
     try { abierta = borraEjecucionAbierta(event); } catch (e) { logHookError(e); abierta = { block: `🔒 CERRÁ LA EJECUCIÓN ANTES — no pude revisar si el comando borra la carpeta de una ejecución abierta (${e.message}): frena hasta poder mirarlo.\n` }; }
     if (abierta) return abierta;
   }
   {
     let huella = null;
+    paso('mirando las constancias de un commit o un empuje');
     try { huella = constanciasSinHuella(event, opts); } catch (e) { logHookError(e); huella = { block: `🔒 CONSTANCIA SIN MIRAR — no pude revisar las constancias antes del commit o del empuje (${e.message}): frena hasta poder mirarlas.\n` }; }
     if (huella) return huella;
   }
   {
     let coordinadora = null;
+    paso('mirando lo que se escribe en la carpeta de la coordinadora');
     try { coordinadora = coordinadoraPorConsola(event, opts); } catch (e) { logHookError(e); coordinadora = null; }
     if (coordinadora) return coordinadora;
   }
@@ -232,6 +288,7 @@ function handleUnaLectura(event, opts = {}) {
     try {
       const cmd = event?.tool_input?.command;
       if (typeof cmd === 'string' && /\bstash\b/.test(cmd)) {
+        paso('mirando un stash');
         stash = require('./lib/stash-guard.js').evaluar({
           cmd, cwd: nativePath(event?.cwd || process.cwd()), sessionId: resolveSessionId(event?.session_id),
           stateDir: opts.stateDir || require('./lib/story-gate-io.js').DEFAULT_STATE_DIR,
@@ -246,6 +303,7 @@ function handleUnaLectura(event, opts = {}) {
     const cmd = event?.tool_input?.command;
     if (cmd && (!event?.tool_name || event.tool_name === 'Bash' || event.tool_name === 'PowerShell')) {
       const baseCwd = nativePath(event?.cwd || process.cwd());
+      paso('mirando si escribe código deprecado');
       deprecado = require('./on-deprecated-edit.js').porLaTerminal({
         cmd, cwd: cwdDelComando(cmd, baseCwd),
         // todo destino, sea o no código: lo deprecado puede ser una guía, un esquema o una configuración
@@ -257,6 +315,7 @@ function handleUnaLectura(event, opts = {}) {
     }
   } catch (e) { logHookError(e); deprecado = null; }
   if (deprecado && deprecado.block) return deprecado;
+  paso('mirando el carril y las historias');
   return handleCarrilEHistoria(event, opts) || deprecado;
 }
 
@@ -726,6 +785,8 @@ function handleCarrilEHistoria(event, opts = {}) {
   return null;
 }
 
+// cargado entero: de acá en más, una falla sin prever va por la red de fallas
+cargado = true;
 module.exports = { handle, programasPorEntrada, sinComentarioAlFinal, sinCierre, blancoPorRedireccion, splitSegments, SHELL_CON_C, BORRA_O_MUEVE, guionesEnArchivo, carpetasQueBorraOMueve, borraEjecucionAbierta, corredoresDeLaOrganizacion, anotarBorradosDeLaStory, resolveTarget, cwdDelComando, destinosResueltos, extractWriteTargets, destinosArmados, destinosBorrados, stripNonCommandText, leadingCd, heredocs, heredocBodies, inlineStoryText, nameSuggestsStory, renameOrCopyOfExistingStory, PIPELINE_LISTA, frenaLaRed, quitarCuerposDeHeredoc, vaAUnShell, comandosAnidados, comandosPorOtroPrograma };
 
 if (require.main === module) {
@@ -734,11 +795,15 @@ if (require.main === module) {
   try { event = JSON.parse(cruda || 'null'); } catch (e) { salirPorLaRed(e, textoDeUnaEntradaRota(cruda)); }
   let r = null;
   try { r = handle(event || {}); } catch (e) { salirPorLaRed(e, event && event.tool_input && event.tool_input.command); }
+  // decidió, pero con una pieza rota que un control pidió dentro de su propia red, o con un archivo que no es el instalado
+  const rota = piezaRota || archivoQueNoEsElInstalado();
+  if (rota) salirSinCargar(rota);
   if (r && r.block) {
     try { process.stderr.write(r.block); } catch { /* sin dónde decirlo, frena igual */ }
     process.exit(2);
   }
   yaDecidio = true;
+  paso('armando los avisos para la persona');
   // Antes de cerrar «Aprobar el plan», el arnés le muestra a la persona el plan si el agente no lo hizo (lib/plan-display.js) y,
   // si la historia cambia una pantalla en un repo sin prueba con navegador, la oferta de prepararla (lib/browser-test.js).
   // Van en un solo aviso.

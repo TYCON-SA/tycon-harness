@@ -1,6 +1,6 @@
 {
   "__doc": "La lista del candado de las plataformas (scripts/ci/check-core-neutrality.js): los archivos del núcleo que todavía nombran un comando o una dirección de una plataforma, cada uno con su techo (cuántas líneas con señales puede tener) y su motivo. La lista sólo baja: un archivo nuevo con señales, o uno que pasa su techo, frena el commit; uno que bajó se avisa para bajar su techo. signals_at_least es cuántos patrones tienen que declarar los conectores en hardSignals. Subir un techo, sumar un archivo o bajar el piso es aflojar el control. Medido el 2026-11-12 (story 8.85, tanda G).",
-  "signals_at_least": 10,
+  "signals_at_least": 18,
   "entries": [
     {"path":"commands/tycon-dashboard.md","ceiling":1,"reason":"texto que explica qué pasa en una plataforma (una guía, un comando, un revisor o una captura del sitio)"},
     {"path":"guides/coordination.en.md","ceiling":1,"reason":"texto que explica qué pasa en una plataforma (una guía, un comando, un revisor o una captura del sitio)"},

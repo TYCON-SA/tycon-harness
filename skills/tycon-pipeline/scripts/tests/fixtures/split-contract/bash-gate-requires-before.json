@@ -1,6 +1,6 @@
 {
   "archivo": "skills/tycon-pipeline/scripts/on-bash-write-gate.js",
-  "letras": 453896,
+  "letras": 460433,
   "requires": [
     "../../../scripts/lib/clean-git-env.js",
     "../../../scripts/lib/coordination-writes.js",

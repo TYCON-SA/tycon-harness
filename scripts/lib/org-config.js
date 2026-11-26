@@ -77,6 +77,9 @@ const SECCIONES = Object.freeze([
   Object.freeze({ id: 'caminoCorto', titulo: 'Los topes del camino corto', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['short_path'], rutas: Object.freeze(['short_path.coordinator_max_files', 'short_path.max_files']), idCorto: 'profile', necesita: ['short_path'], noSeAplicaSola: true }),
   // cuándo la oficina de /office dice que una sesión que trabaja está callada
   Object.freeze({ id: 'oficina', titulo: 'La oficina de /office', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['office'], rutas: Object.freeze(['office.quiet_minutes']), idCorto: 'profile', necesita: ['office'] }),
+  // lo que la máquina limpia sola y cuándo avisa que el disco se llena (maintenance). Con el orden de siempre: la
+  // variable o la configuración de una máquina pisan al perfil, porque cuánto aguanta depende de la máquina
+  Object.freeze({ id: 'mantenimiento', titulo: 'Lo que la máquina limpia sola', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['maintenance'], rutas: Object.freeze(['maintenance.worktree_idle_hours', 'maintenance.temp_days', 'maintenance.disk_warn_percent']), idCorto: 'profile', necesita: ['maintenance'] }),
   // cómo se pone al día el freno de producción de cada máquina (guard.update): con la contraseña de su persona
   // o solo, con la versión publicada; vale sólo desde el perfil, y cada máquina instala el permiso con su contraseña
   Object.freeze({ id: 'frenoProduccion', titulo: 'Cómo se actualiza el freno de producción', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['guard'], rutas: Object.freeze(['guard.update']), idCorto: 'profile', necesita: ['guard'] }),
@@ -143,6 +146,8 @@ function loadReader(tree, nombre, lectores) {
   if (!fs.existsSync(f)) return null;
   const r = require(f);
   if (nombre === 'check-product-parity.js') return r && typeof r.leerDeclaradas === 'function' ? r : null;
+  // el perfil del equipo valida el buzón de un conector con los conectores de este árbol (el lector no los carga solo)
+  if (nombre === 'operations-config.js') { try { require(path.join(tree, 'scripts', 'lib', 'integrations.js')).giveMailboxConnectors(r); } catch (_) { /* sin integraciones, el lector solo */ } }
   return r && typeof r.parse === 'function' ? r : null;
 }
 
@@ -1749,6 +1754,7 @@ ${trabajandoJs}
     interruptores: { t: T('pantalla.interruptoresTitulo'), d: T('pantalla.interruptoresDescripcion'), corto: T('pantalla.interruptoresTitulo') },
     coordinacion: { t: T('pantalla.coordinacionTitulo'), d: T('pantalla.coordinacionDescripcion'), corto: T('pantalla.coordinacionTitulo') },
     oficina: { t: T('pantalla.oficinaTitulo'), d: T('pantalla.oficinaDescripcion'), corto: T('pantalla.oficinaTitulo') },
+    mantenimiento: { t: T('pantalla.mantenimientoTitulo'), d: T('pantalla.mantenimientoDescripcion'), corto: T('pantalla.mantenimientoTitulo') },
     caminoCorto: { t: T('pantalla.caminoCortoTitulo'), d: T('pantalla.caminoCortoDescripcion'), corto: T('pantalla.caminoCortoTitulo') },
     frenoProduccion: { t: T('pantalla.frenoProduccionTitulo'), d: T('pantalla.frenoProduccionDescripcion'), corto: T('pantalla.frenoProduccionTitulo') },
     integraciones: { t: T('pantalla.integraciones'), d: T('pantalla.queServiciosUsaCadaMaquina'), corto: T('pantalla.integraciones') },
@@ -1763,7 +1769,7 @@ ${trabajandoJs}
     aldia: { t: T('pantalla.comoSeActualizaElSitio'), d: T('pantalla.siElSitioSePone'), corto: T('pantalla.actualizacionDelSitio') },
   };
   // las pestañas: [id, nombre, secciones, tablas para mirar]. Se ve una por vez; el resumen de arriba, en todas
-  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'direccionSitio', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas', 'pedidos', 'contexto'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'revisionSemanal', 'revision', 'tecnologia', 'aprobaciones', 'pruebaAMano', 'interruptores', 'coordinacion', 'caminoCorto', 'oficina', 'integraciones', 'hilos', 'estimaciones', 'paseAdversarial', 'revisionDelPlan', 'conQueRevisa'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes', 'frenoProduccion'], ['contenido', 'versiones']]];
+  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'direccionSitio', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas', 'pedidos', 'contexto'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'revisionSemanal', 'revision', 'tecnologia', 'aprobaciones', 'pruebaAMano', 'interruptores', 'coordinacion', 'caminoCorto', 'oficina', 'mantenimiento', 'integraciones', 'hilos', 'estimaciones', 'paseAdversarial', 'revisionDelPlan', 'conQueRevisa'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes', 'frenoProduccion'], ['contenido', 'versiones']]];
   /** La pestaña de un ancla (#pestana-x, #seccion-x o una tabla para mirar); null si no es de ninguna. */
   function pestanaDe(ancla) {
     var id = String(ancla || '').replace(/^#/, '');
@@ -2089,12 +2095,30 @@ ${trabajandoJs}
     var buzon = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.dondeDejanSusCorridasLas') }), el('p', { class: 'sub-d', text: T('pantalla.lasContrasenasNoVanAca') }));
     var f = el('div', { class: 'fila' });
     var servicios = (s.extras && s.extras.servicios) || null;
-    var SERVICIO = { 'azure-blob': 'Azure Blob Storage' };
-    [['provider', T('pantalla.servicio2')], ['account', T('pantalla.cuenta2')], ['container', T('pantalla.carpeta2')]].forEach(function (par) {
-      var k = par[0]; var poner = function (v) { site.mailbox = site.mailbox || {}; if (v === '') delete site.mailbox[k]; else site.mailbox[k] = v; };
-      if (k === 'provider' && servicios) f.appendChild(selector(par[1], mb[k], [['', T('pantalla.elegiElServicio')]].concat(servicios.map(function (x) { return [x, SERVICIO[x] || x]; })), poner, 'site.mailbox.' + k, pr));
-      else f.appendChild(campo(par[1], mb[k], function (v) { site.mailbox = site.mailbox || {}; site.mailbox[k] = v; }, 'site.mailbox.' + k, pr));
-    });
+    // el nombre y los campos de cada servicio vienen del lector (los de un conector, de su manifiesto); sin ellos, Azure
+    var SERVICIO = Object.assign({ 'azure-blob': 'Azure Blob Storage' }, (s.extras && s.extras.nombres) || {});
+    var CAMPOS = Object.assign({ 'azure-blob': ['account', 'container'] }, (s.extras && s.extras.campos) || {});
+    var ETIQUETA = { account: T('pantalla.cuenta2'), container: T('pantalla.carpeta2'), bucket: T('pantalla.bucket') };
+    // los campos del servicio guardado; al elegir otro, se dibujan los del nuevo
+    var camposDe = el('div', { class: 'fila' });
+    var dibujarCampos = function (servicio) {
+      while (camposDe.firstChild) camposDe.removeChild(camposDe.firstChild);
+      (CAMPOS[servicio] || CAMPOS['azure-blob']).forEach(function (k) {
+        camposDe.appendChild(campo(ETIQUETA[k] || k, mb[k], function (v) { site.mailbox = site.mailbox || {}; site.mailbox[k] = v; }, 'site.mailbox.' + k, pr));
+      });
+    };
+    var ponerServicio = function (v) {
+      site.mailbox = site.mailbox || {};
+      if (v === '') delete site.mailbox.provider; else site.mailbox.provider = v;
+      // los campos de otro servicio no quedan en el buzón: serían claves que el nuevo no conoce
+      var suyos = CAMPOS[v] || CAMPOS['azure-blob'];
+      Object.keys(CAMPOS).forEach(function (x) { CAMPOS[x].forEach(function (k) { if (suyos.indexOf(k) < 0) delete site.mailbox[k]; }); });
+      dibujarCampos(v);
+    };
+    if (servicios) f.appendChild(selector(T('pantalla.servicio2'), mb.provider, [['', T('pantalla.elegiElServicio')]].concat(servicios.map(function (x) { return [x, SERVICIO[x] || x]; })), ponerServicio, 'site.mailbox.provider', pr));
+    else f.appendChild(campo(T('pantalla.servicio2'), mb.provider, function (v) { site.mailbox = site.mailbox || {}; site.mailbox.provider = v; }, 'site.mailbox.provider', pr));
+    f.appendChild(camposDe);
+    dibujarCampos(mb.provider);
     buzon.appendChild(f);
     avanzado.appendChild(buzon);
     if (s.avisoLista) lista.appendChild(el('div', { class: 'aviso', text: s.avisoLista }));
@@ -3070,6 +3094,17 @@ ${trabajandoJs}
   function editorOficina(s, d, pr) {
     var box = el('div', { class: 'pila' }, campo(T('pantalla.oficinaCallada'), (d.office || {}).quiet_minutes, function (v) { hoja(d, 'office', 'quiet_minutes', v === '' ? '' : numOTexto(v)); }, 'office.quiet_minutes', pr, { inputmode: 'numeric' }));
     box.appendChild(el('p', { class: 'muted', text: T('pantalla.oficinaAyuda') }));
+    return box;
+  }
+  // las tres claves de lo que la máquina limpia sola: un campo por clave; vacío saca la clave y vale el de fábrica. Los
+  // rangos los valida el mismo lector de la máquina al revisar
+  function editorMantenimiento(s, d, pr) {
+    var m = d.maintenance || {};
+    var box = el('div', { class: 'pila' },
+      campo(T('pantalla.mantenimientoHoras'), m.worktree_idle_hours, function (v) { hoja(d, 'maintenance', 'worktree_idle_hours', v === '' ? '' : numOTexto(v)); }, 'maintenance.worktree_idle_hours', pr, { inputmode: 'numeric' }),
+      campo(T('pantalla.mantenimientoDias'), m.temp_days, function (v) { hoja(d, 'maintenance', 'temp_days', v === '' ? '' : numOTexto(v)); }, 'maintenance.temp_days', pr, { inputmode: 'numeric' }),
+      campo(T('pantalla.mantenimientoDisco'), m.disk_warn_percent, function (v) { hoja(d, 'maintenance', 'disk_warn_percent', v === '' ? '' : numOTexto(v)); }, 'maintenance.disk_warn_percent', pr, { inputmode: 'numeric' }));
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.mantenimientoAyuda') }));
     return box;
   }
   function editorAdo(s, d, pr) {
@@ -4206,7 +4241,7 @@ ${trabajandoJs}
       el('p', { class: 'sub-d', text: T('pantalla.tecIdiomaVacio') })));
     return box;
   }
-  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, contexto: editorContexto, revisionSemanal: editorRevisionSemanal, paseAdversarial: editorPaseAdversarial, revisionDelPlan: editorRevisionDelPlan, conQueRevisa: editorConQueRevisa, cobertura: editorCobertura, revision: editorRevision, estimaciones: editorEstimaciones, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, direccionSitio: editorDireccionSitio, pruebaAMano: editorPruebaAMano, interruptores: editorInterruptores, coordinacion: editorCoordinacion, caminoCorto: editorCaminoCorto, oficina: editorOficina, frenoProduccion: editorFrenoProduccion, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: editorCanal, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
+  var EDITORES = { pedidos: editorPedidos, tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, contexto: editorContexto, revisionSemanal: editorRevisionSemanal, paseAdversarial: editorPaseAdversarial, revisionDelPlan: editorRevisionDelPlan, conQueRevisa: editorConQueRevisa, cobertura: editorCobertura, revision: editorRevision, estimaciones: editorEstimaciones, respuesta: editorRespuesta, integraciones: editorIntegraciones, aprobaciones: editorAprobaciones, direccionSitio: editorDireccionSitio, pruebaAMano: editorPruebaAMano, interruptores: editorInterruptores, coordinacion: editorCoordinacion, caminoCorto: editorCaminoCorto, oficina: editorOficina, mantenimiento: editorMantenimiento, frenoProduccion: editorFrenoProduccion, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: editorCanal, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
 
   // los editores de suites y modelos arman objetos vacíos para tener dónde escribir: no se mandan. Una clave vacía en el
   // archivo pediría al perfil una versión más nueva sin cambiar nada

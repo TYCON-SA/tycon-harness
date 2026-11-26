@@ -464,6 +464,16 @@ function leerConfig(requiere = ['cuenta', 'contenedor', 'sas', 'vence'], ruta = 
   let cfg;
   try { cfg = JSON.parse(texto); } catch (_) { return { estado: 'config_ilegible', motivo: `${ruta} no es JSON válido` }; }
   if (!cfg || typeof cfg !== 'object') return { estado: 'config_ilegible', motivo: `${ruta} no es un objeto` };
+  // una llave de otro proveedor la valida su conector (integrations/<n>/, kind mailbox): `requiere` son campos de Azure.
+  // Ningún motivo repite el valor de `provider`: el secreto podría estar mal puesto ahí
+  if (cfg.provider !== undefined && cfg.provider !== 'azure-blob') {
+    let conector = null;
+    try { conector = require(path.join(__dirname, '..', 'lib', 'integrations.js')).mailboxConnector(cfg.provider); }
+    catch (e) { return { estado: 'config_ilegible', motivo: `${ruta}: el conector del proveedor de "provider" no carga (${e.code || e.name})` }; }
+    if (!conector || typeof conector.validarLlave !== 'function') return { estado: 'config_ilegible', motivo: `${ruta}: ningún conector de buzón atiende el proveedor de "provider" (el valor no se muestra)` };
+    const v = conector.validarLlave(cfg, ruta);
+    return v.cfg ? { cfg: v.cfg, ruta } : v;
+  }
   const faltan = requiere.filter((k) => typeof cfg[k] !== 'string' || !cfg[k].trim());
   if (faltan.length) return { estado: 'config_ilegible', motivo: `${ruta} tiene que declarar ${faltan.map((k) => `"${k}"`).join(', ')} (texto)` };
   // La forma sola no alcanza: «9999-13-45» la pasa, diasHasta da NaN y el aviso de vencimiento no sale nunca.
@@ -491,6 +501,42 @@ function negativaDeLaLlave(sas) {
   if (sp && /[wa]/.test(sp)) return no(`la SAS del buzón trae permisos propios «${sp}» que dejan pisar blobs que ya están: sólo se acepta «c» (sólo crear) o ninguno`, 'llave_con_escritura');
   if (!p.get('si')) return no('la SAS del buzón no está atada a una política guardada (si): no se puede revocar sin rotar la cuenta');
   return null;
+}
+
+/** La negativa de una llave ya leída: la de la SAS con Azure; otro proveedor no tiene (su negativa es el listado de prueba). */
+function negativaDeLaLlaveDe(cfg) {
+  return esDeAzure(cfg) ? negativaDeLaLlave(cfg.sas) : null;
+}
+const esDeAzure = (cfg) => cfg.provider === undefined || cfg.provider === 'azure-blob';
+/** El buzón de una llave, como lo anotan los registros locales: `<cuenta>/<contenedor>`, o el `destino` de su conector. */
+const destinoDe = (cfg) => (esDeAzure(cfg) ? `${cfg.cuenta}/${cfg.contenedor}` : cfg.destino);
+
+/**
+ * El proveedor de la llave (`provider` de corridas-buzon.json), sin validarla: null si es de Azure, si falta o no se lee.
+ * Lo mira la bajada desde una máquina antes de pedir nada.
+ */
+function proveedorDeLaLlave(ruta = rutaConfig()) {
+  try {
+    const p = JSON.parse(fs.readFileSync(ruta, 'utf8')).provider;
+    return p === undefined || p === 'azure-blob' ? null : String(p).slice(0, 40);
+  } catch (_) { return null; }
+}
+
+/**
+ * Dónde sube una llave: `{ poner, clasificar, pisada, probarListado? }`. Con Azure, el PUT de siempre (`ponerBlob`) y
+ * `respuestaDelBuzon`; con otro proveedor, el almacén de su conector, que trae además el listado de prueba.
+ */
+function almacenDeLaLlave(cfg) {
+  if (!esDeAzure(cfg)) {
+    const c = require(path.join(__dirname, '..', 'lib', 'integrations.js')).mailboxConnector(cfg.provider);
+    return c.almacenDeSubida(cfg, { urlBase: variable('TYCON_MAILBOX_URL_BASE') || null });
+  }
+  const urlDe = (blob) => `${urlBase(cfg)}/${encodeURIComponent(cfg.contenedor)}/${blob.split('/').map(encodeURIComponent).join('/')}?${cfg.sas}`;
+  return {
+    poner: (blob, cuerpo, md5, timeoutMs, opciones) => ponerBlob(urlDe(blob), cuerpo, md5, timeoutMs, opciones),
+    clasificar: (r) => ({ tipo: respuestaDelBuzon(r) }),
+    pisada: (r) => (r.status === 403 && r.codigo === 'UnauthorizedBlobOverwrite' ? 'no_pisa' : r.status === 201 ? 'piso' : null),
+  };
 }
 
 /** El inicio de la pasada, en ms. TYCON_NOW (ISO) sólo para el banco de pruebas. */
@@ -804,6 +850,37 @@ function carpetaPreparada(destino, folder) {
 }
 
 /**
+ * Los otros dos lugares viejos de la casa de Claude Code que se retiran: la carpeta del mecanismo
+ * (`.tycon-pipeline`) y la configuración vieja (`tycon.json`), con lo mismo que el nombre viejo del arnés: si está, de
+ * qué tipo, si apunta al lugar nuevo y lo registrado con él. Lo lee `legacy-retire-check.js --home`. tycon-home.js se
+ * carga si está, como en stateDirOf: este archivo viaja suelto.
+ */
+function oldPlacesFacts(home, tree, kindOf, notMeasured, code) {
+  const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
+  if (!fs.existsSync(lib)) return notMeasured('tycon-home.js no está en este árbol');
+  let TH;
+  try { TH = require(lib); } catch (e) { return notMeasured(`tycon-home.js no se pudo cargar (${code(e)})`); }
+  const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return null; } };
+  const out = {};
+  for (const [name, old, now] of [
+    ['.tycon-pipeline', TH.legacyStateDir(home), TH.ownStateDir(home)],
+    ['tycon.json', TH.legacyConfigFile(home), path.join(TH.ownRootOf(home), 'config.json')],
+  ]) {
+    const k = kindOf(old);
+    const r = real(old);
+    const place = { exists: Boolean(k), kind: k === 'link' && !r ? 'dangling' : k, to_place: k === 'link' && r !== null && r === real(now) };
+    try {
+      const c = require('../lib/legacy-names.js').countRegistered({ from: old, home, tree });
+      const files = {};
+      for (const f of c.files) files[f.file] = { count: f.count, permissions: f.permissions };
+      place.registered = { total: c.total, files, unreadable: c.notes.length };
+    } catch (e) { place.registered = notMeasured(`no se pudo contar (${code(e)})`); }
+    out[name] = place;
+  }
+  return out;
+}
+
+/**
  * Dónde vive el arnés en esta máquina, como viaja al buzón: números, hashes y nombres de
  * archivo (nunca una ruta con la carpeta de la persona; los motivos, códigos de error), un dato de
  * la persona, `owner` (su correo de git, ver correoDeGitGlobal), y `folder` (la carpeta de la máquina en el buzón). Un
@@ -845,6 +922,7 @@ function placeFactsForMailbox(day, folder = null) {
     for (const f of c.files) files[f.file] = { count: f.count, permissions: f.permissions };
     out.registered_by_legacy = { total: c.total, files, unreadable: c.notes.length };
   } catch (e) { out.registered_by_legacy = notMeasured(`no se pudo contar (${code(e)})`); }
+  out.old_places = oldPlacesFacts(home, where.dir || tree, kindOf, notMeasured, code);
   const sha = (f) => crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
   try {
     if (!tree) throw Object.assign(new Error('sin tree'), { code: 'NO_TREE' });
@@ -1215,7 +1293,7 @@ async function subir(opts = {}) {
   const lc = leerConfig();
   if (!lc.cfg) return fin(1, lc.estado, lc.motivo);
   const { cfg } = lc;
-  const negativa = negativaDeLaLlave(cfg.sas);
+  const negativa = negativaDeLaLlaveDe(cfg);
   if (negativa) return fin(2, negativa.estado, negativa.motivo);
 
   const dias = diasHasta(cfg.vence.trim());
@@ -1248,7 +1326,7 @@ async function subir(opts = {}) {
   const entradas = [];
   const noLeidos = [];
   let prep = { estado: 'sin_carpeta' };
-  try { prep = prepararRegistros({ folder: carpeta.folder, maquina, registro: rutaRegistro, destinoBuzon: `${cfg.cuenta}/${cfg.contenedor}` }); }
+  try { prep = prepararRegistros({ folder: carpeta.folder, maquina, registro: rutaRegistro, destinoBuzon: destinoDe(cfg) }); }
   catch (e) { noLeidos.push(`registros de frenos y escapes (${e.code || 'error'})`); }
   res.registros = prep.estado;
   // lo que va en place.json, también en la salida (--json)
@@ -1317,7 +1395,7 @@ async function subir(opts = {}) {
     if (!entradas.length && !noLeidos.length && !oficina) { log(`esta máquina todavía no tiene ejecuciones del pipeline (${origen}): nada que subir`); return fin(0, 'sin_corridas'); }
   }
 
-  const destino = `${cfg.cuenta}/${cfg.contenedor}`;
+  const destino = destinoDe(cfg);
   let registro = { version: 1, destino, archivos: {} };
   try {
     // si sólo está el registro con el nombre viejo, se lee ése
@@ -1380,10 +1458,15 @@ async function subir(opts = {}) {
     log(`--dry-run: subiría ${res.a_subir} archivo(s) a ${maquina}/ en ${destino} — no se mandó nada`);
     return fin(0, 'dry_run');
   }
+  // 🔴 una llave de un conector se prueba antes de cada tanda, antes de subir nada: sólo sigue si NO puede listar
+  const almacen = almacenDeLaLlave(cfg);
+  if (typeof almacen.probarListado === 'function' && res.a_subir) {
+    const prueba = await almacen.probarListado();
+    if (!prueba.ok) return fin(prueba.codigo, prueba.estado, prueba.motivo);
+  }
   if (cambioRegistro) { try { guardar(); } catch (_) { /* sólo ahorra hashes */ } }
 
   // 3 · subir, blob por blob, dentro del presupuesto
-  const base = urlBase(cfg);
   const inicio = Date.now();
   const tope = Number.isFinite(opts.budgetMs) ? opts.budgetMs : 90000;
   const noSubidos = [];
@@ -1403,7 +1486,6 @@ async function subir(opts = {}) {
     if (saco) { try { guardar(); } catch (_) { /* la pasada siguiente usa otra versión: estas claves no se vuelven a mirar */ } }
   };
   for (const v of juegosRotos) fallarJuego(v, 'un registro cambió después de confirmado');
-  const urlDe = (blob) => `${base}/${encodeURIComponent(cfg.contenedor)}/${blob.split('/').map(encodeURIComponent).join('/')}?${cfg.sas}`;
   const confirmadosAntes = () => (res.subidos ? ` — los ${res.subidos} archivo(s) que el servicio confirmó antes sí quedaron anotados` : '');
   // 🔴 La cobertura de registros sube sólo si en ESTA pasada no falló ningún registro: si no, quedaría en el buzón
   //    una cobertura nueva declarando «medido» un registro que sigue siendo el viejo.
@@ -1423,8 +1505,8 @@ async function subir(opts = {}) {
   }
   if (huellaPendiente) {
     const md5 = crypto.createHash('md5').update(oficina.cuerpo).digest('base64');
-    const r = await ponerBlob(urlDe(blobOficina), oficina.cuerpo, md5, 30000);
-    const tipo = r.error ? null : respuestaDelBuzon(r);
+    const r = await almacen.poner(blobOficina, oficina.cuerpo, md5, 30000);
+    const tipo = r.error ? null : almacen.clasificar(r).tipo;
     if (r.error) return fin(1, 'sin_red', `sin red o sin respuesta del buzón (${r.error.code || r.error.message}) al subir la huella de la oficina: sube en el próximo arranque`);
     // la llave no lee: un «ya existe» dice que esa huella ya está, y no hay nada más que hacer con ella
     if (tipo === 'creado' || tipo === 'ya_existe') {
@@ -1463,23 +1545,26 @@ async function subir(opts = {}) {
     const tiempo = Math.max(30000, Math.min(120000, cuerpo.length / 50));
     let blob = p.blob;
     let version = p.version;
-    let r = await ponerBlob(urlDe(blob), cuerpo, md5, tiempo);
+    let r = await almacen.poner(blob, cuerpo, md5, tiempo);
     let reintentado = false;
     // «ya existe» en un archivo de corrida → UNA vez más, con una versión nueva (la llave no lee: no
     // puede saber si lo que está es igual a lo de la máquina, y un duplicado cuesta menos que un dato viejo).
-    if (!r.error && respuestaDelBuzon(r) === 'ya_existe' && !p.juego) {
+    if (!r.error && almacen.clasificar(r).tipo === 'ya_existe' && !p.juego) {
       reintentado = true;
       const vistas = [msDeVersion(version), msDeVersion(p.previa)].filter((x) => x !== null);
       version = versionMonotona(Math.max(ahoraMs(), pasada), vistas.length ? Math.max(...vistas) : null);
       blob = p.conVersion ? p.conVersion(version) : p.aVersion ? p.aVersion(version) : `${maquina}/${version}/${p.f}`;
-      r = await ponerBlob(urlDe(blob), cuerpo, md5, tiempo);
+      r = await almacen.poner(blob, cuerpo, md5, tiempo);
     }
     if (r.error) {
       const c = r.error.code || r.error.message;
       return fin(1, 'sin_red', `sin red o sin respuesta del buzón (${c}) al subir ${p.f}: no se marcó nada más; sube en el próximo arranque${res.subidos ? ` — los ${res.subidos} archivo(s) confirmados antes del corte sí quedaron anotados` : ''}`);
     }
     const codigo = `${r.status}${r.codigo ? ` ${r.codigo}` : ''}`;
-    const tipo = respuestaDelBuzon(r);
+    // el conector puede traer su propio motivo (el bucket que no existe, el contenido que no llegó entero)
+    const { tipo, motivo: suMotivo } = almacen.clasificar(r);
+    if (tipo === 'llave' && suMotivo) return fin(1, 'llave_invalida', `${suMotivo}. No se marcó nada más${confirmadosAntes()}`);
+    if (tipo === 'otro' && suMotivo) { noSubidos.push(`${p.f} (${suMotivo})`); if (esRegistro(p)) registroFallido = true; continue; }
     if (tipo === 'sin_permiso') {
       return fin(1, 'llave_sin_permiso', `la política del buzón no deja crear (política ${cfg.politica || '?'}): revisarla (${codigo} al subir ${p.f}). No se marcó nada más${confirmadosAntes()}`);
     }
@@ -1538,10 +1623,11 @@ async function chequearSoloCrear(opts = {}) {
   const lc = leerConfig();
   if (!lc.cfg) return fin(1, lc.estado, lc.motivo);
   const { cfg } = lc;
-  const negativa = negativaDeLaLlave(cfg.sas);
+  const negativa = negativaDeLaLlaveDe(cfg);
   if (negativa) return fin(2, negativa.estado, negativa.motivo);
   const laboratorio = variable('TYCON_MAILBOX_URL_BASE') ? null : motivoDeLaboratorio();
   if (laboratorio) return fin(0, 'laboratorio', laboratorio);
+  const almacen = almacenDeLaLlave(cfg);
   const maquina = nombreDeMaquina();
   res.maquina = maquina || null;
   if (!maquina || !FORMA_MAQUINA.test(maquina)) return fin(1, 'sin_maquina', 'no se pudo saber el nombre de esta máquina (hostname vacío o sin forma de nombre)');
@@ -1551,7 +1637,7 @@ async function chequearSoloCrear(opts = {}) {
   let registro = null;
   try {
     const r = JSON.parse(fs.readFileSync(resolveFile(rutaRegistro, { where: DONDE }), 'utf8'));
-    if (r && r.destino === `${cfg.cuenta}/${cfg.contenedor}` && r.archivos && typeof r.archivos === 'object') registro = r;
+    if (r && r.destino === destinoDe(cfg) && r.archivos && typeof r.archivos === 'object') registro = r;
   } catch (_) { /* sin registro: no medido */ }
   if (!registro) return fin(1, 'no_medido', `no medido: esta máquina no tiene un registro de subidas a este buzón (${rutaRegistro}): no hay un blob confirmado que volver a subir`);
   // el archivo local de cada clave: `<maq>/registros/[v…/]<f>` → la preparación; `<maq>/<f>` → el registro de corridas
@@ -1580,22 +1666,29 @@ async function chequearSoloCrear(opts = {}) {
     const cuerpo = local;
     const blob = typeof c.e.blob === 'string' && c.e.blob.startsWith(`${maquina}/`) ? c.e.blob : c.clave;
     const md5 = crypto.createHash('md5').update(cuerpo).digest('base64');
-    const url = `${urlBase(cfg)}/${encodeURIComponent(cfg.contenedor)}/${blob.split('/').map(encodeURIComponent).join('/')}?${cfg.sas}`;
-    const r = await ponerBlob(url, cuerpo, md5, 30000, { pisar: true });
+    // una llave de un conector pasa antes por el listado de prueba: si puede listar, no se manda nada
+    if (typeof almacen.probarListado === 'function') {
+      const prueba = await almacen.probarListado();
+      if (!prueba.ok) return fin(prueba.codigo, prueba.estado, prueba.motivo);
+    }
+    const r = await almacen.poner(blob, cuerpo, md5, 30000, { pisar: true });
     res.archivo = c.f;
     res.bytes = cuerpo.length;
     if (r.error) return fin(1, 'sin_red', `sin red o sin respuesta del buzón (${r.error.code || r.error.message}): no se pudo comprobar`);
     const codigo = `${r.status}${r.codigo ? ` ${r.codigo}` : ''}`;
     res.respuesta = codigo;
-    if (r.status === 403 && r.codigo === 'UnauthorizedBlobOverwrite') return fin(0, 'solo_crear', `la política no deja pisar (${codigo}, política ${cfg.politica || '?'}): el buzón sólo crea`);
-    if (r.status === 201) return fin(1, 'dejo_escribir', `la política dejó escribir, o el blob ya no estaba (201, política ${cfg.politica || '?'}): lo verifica con az storage blob show alguien con el rol de lectura. Se mandaron los mismos bytes confirmados: el blob quedó igual`);
+    const pisada = almacen.pisada(r);
+    if (pisada === 'no_pisa') return fin(0, 'solo_crear', `la política no deja pisar (${codigo}, política ${cfg.politica || '?'}): el buzón sólo crea`);
+    if (pisada === 'piso') return fin(1, 'dejo_escribir', esDeAzure(cfg)
+      ? `la política dejó escribir, o el blob ya no estaba (201, política ${cfg.politica || '?'}): lo verifica con az storage blob show alguien con el rol de lectura. Se mandaron los mismos bytes confirmados: el blob quedó igual`
+      : `la cuenta de la llave pudo escribir, o el objeto ya no estaba (${codigo}): revisar que su rol tenga sólo el permiso de crear. Se mandaron los mismos bytes confirmados: el objeto quedó igual`);
     return fin(1, 'otro', `el buzón contestó ${codigo} al volver a subir los mismos bytes (política ${cfg.politica || '?'}): no prueba ni «sólo crear» ni lo contrario`);
   }
   if (sinUsar) return fin(1, 'no_medido', `no medido: ${sinUsar} archivo(s) con el sha256 confirmado llevan una credencial o un valor real, o no se pudieron abrir para limpiar sus direcciones, y ningún otro sirve (${candidatos.length} anotado(s)): no se manda nada`);
   return fin(1, 'no_medido', `no medido: ningún blob confirmado de esta máquina tiene todavía su archivo local con el mismo sha256 (${candidatos.length} anotado(s)): no se manda nada distinto de lo confirmado`);
 }
 
-module.exports = { sinCredencialesEnDirecciones, placeFactsForMailbox, holdForMailbox, FORMA_DESHECHA, FORMA_MOMENTO, subir, prepararSinCerrar, chequearSoloCrear, motivoDeLaboratorio, MARCAS_DE_CI, respuestaDelBuzon, versionDe, msDeVersion, FORMA_VERSION, nombreDeMaquina, nombreBaseDeMaquina, carpetaDeMaquina, leerCodigoDeMaquina, rutaCodigoDeMaquina, correoDeGitGlobal, huellaDeCorridas, FORMA_CODIGO, normalizarNombreDeMaquina, leerConfig, integracionBuzon, negativaDeLaLlave, rutaConfig, urlBase, FORMA_MAQUINA, FORMA_ARCHIVO, FORMA_REGISTRO, formaRegistro, FORMA_INSTINTO, FORMA_JORNADA, REGISTROS, prepararRegistros, usosParaElBuzon, X_MS_VERSION };
+module.exports = { sinCredencialesEnDirecciones, placeFactsForMailbox, holdForMailbox, FORMA_DESHECHA, FORMA_MOMENTO, subir, prepararSinCerrar, chequearSoloCrear, motivoDeLaboratorio, MARCAS_DE_CI, respuestaDelBuzon, versionDe, msDeVersion, FORMA_VERSION, nombreDeMaquina, nombreBaseDeMaquina, carpetaDeMaquina, leerCodigoDeMaquina, rutaCodigoDeMaquina, correoDeGitGlobal, huellaDeCorridas, FORMA_CODIGO, normalizarNombreDeMaquina, leerConfig, integracionBuzon, negativaDeLaLlave, negativaDeLaLlaveDe, proveedorDeLaLlave, rutaConfig, urlBase, FORMA_MAQUINA, FORMA_ARCHIVO, FORMA_REGISTRO, formaRegistro, FORMA_INSTINTO, FORMA_JORNADA, REGISTROS, prepararRegistros, usosParaElBuzon, X_MS_VERSION };
 
 /**
  * `--log <archivo>`: la salida (la estándar y la de error) se AGREGA a ese archivo, que pasado ~512 KB se mueve a `.1`.
