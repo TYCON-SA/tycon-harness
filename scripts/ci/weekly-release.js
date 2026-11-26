@@ -178,7 +178,7 @@ async function run({ sha, now, env, api, readTags: tagsOf, repoUrl, log = consol
   let tags;
   try { tags = tagsOf(); } catch (e) { return fail(log, e.message); }
   const best = VO.bestTag(tags.filter((t) => t.sha === sha).map((t) => t.name));
-  if (!best) { log(`weekly-release: ${String(sha).slice(0, 7)} no tiene número (ya no era la punta de main): la corrida siguiente lo ve`); return 0; }
+  if (!best) { log(`weekly-release: ${String(sha).slice(0, 7)} no tiene número (ya no era la punta de main): la ejecución siguiente lo ve`); return 0; }
   const current = VO.tagName(best);
   const maintainers = parseMaintainers(env.MAINTAINER_LOGINS);
   if (!maintainers.length) {
