@@ -156,13 +156,25 @@ else no "T4 · rc=$rc · $(head -c 600 "$TMP/freno.err")"; fi
 # ── T5 · la consulta que dio el freno: el firewall la rechaza, y la puerta dice qué hacer ────────────────────────
 : > "$TMP/cuadro.log"
 r="$(correr "$LEER")"
-# Abrir el firewall lo corre la persona en su terminal (el modo automático del asistente lo frena, fila 248): el mensaje
-# lo dice de entrada y trae el comando para copiar, a nombre de la sesión que lo pidió.
+# Desde una sesión, abrir el firewall lo corre la sesión y el dueño lo aprueba con su click en la sesión (fila 286). Si
+# el modo automático del asistente no la deja (fila 248), el mensaje trae además el comando para la terminal de la
+# persona, a nombre de la sesión que lo pidió.
 ABRIR="$(comando_en "$TMP/out" "--open-firewall [^ ]+ --session [^ ]+")"
-if [ "$r" = "puerta:1" ] && [ "$ABRIR" = "$RUTA --open-firewall $PROD --session $SES_A" ] && grep -q "No hace falta el portal" "$TMP/out" \
-   && grep -qi "en su terminal" "$TMP/out"; then
-  ok "T5 Emergencia_RechazoDelFirewall_LaPuertaDaElComandoParaLaTerminalDeLaPersona"
-else no "T5 · $r · abrir=«${ABRIR}» · $(tail -c 500 "$TMP/out")"; fi
+SESION_ABRE="$(grep -xE "     $RUTA --open-firewall [^ ]+" "$TMP/out" | head -1 | sed 's/^ *//')"
+if [ "$r" = "puerta:1" ] && [ "$SESION_ABRE" = "$RUTA --open-firewall $PROD" ] && [ "$ABRIR" = "$RUTA --open-firewall $PROD --session $SES_A" ] \
+   && grep -q "No hace falta el portal" "$TMP/out" && grep -q "el dueño la aprueba con su click" "$TMP/out" && grep -q "modo automático" "$TMP/out"; then
+  ok "T5 Emergencia_RechazoDelFirewall_LaSesionLoAbreConElClick_YSiNoLaDejan_ElComandoParaLaTerminal"
+else no "T5 · $r · sesión=«${SESION_ABRE}» · abrir=«${ABRIR}» · $(tail -c 600 "$TMP/out")"; fi
+
+# ── T5b · la sesión corre ese comando: lo aprueba el click en la sesión, sin el cuadro del sistema, a nombre de la sesión
+: > "$TMP/cuadro.log"; : > "$TMP/cuadro-texto.log"
+eval "puerta ${SESION_ABRE#"$RUTA" }" >/dev/null; r="puerta:$(cat "$TMP/rc" 2>/dev/null)"
+if [ "$r" = "puerta:0" ] && grep -q " $IP_PUB$" "$TMP/az-reglas" && [ "$(wc -l < "$TMP/cuadro.log" | tr -d ' ')" = 1 ] \
+   && grep -q "Abrir el firewall de $PROD" "$TMP/cuadro-texto.log" && grep -q "$SES_A" "$CASA/.claude/.tycon-pipeline/production-firewall.json"; then
+  ok "T5b Emergencia_AbrirFirewallDesdeLaSesion_ConElClick_DeLaSesion"
+else no "T5b · $r · reglas=$(cat "$TMP/az-reglas") · cuadros=$(wc -l < "$TMP/cuadro.log") · $(head -c 300 "$TMP/err")"; fi
+# la regla se cierra para que T6 la abra de nuevo desde la terminal, como antes
+eval "puerta --close-firewall $PROD" >/dev/null
 
 # ── T6 · la persona corre ese comando en su terminal: abre la regla con cuadro, a nombre de la sesión ────────────
 : > "$TMP/cuadro.log"

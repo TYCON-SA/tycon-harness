@@ -175,8 +175,8 @@ DESPUES=$(cd "$D" && find . -type f -exec shasum {} \; | sort)
 [ "$ANTES" = "$DESPUES" ] && ok "T26 el snapshot y las fotos quedan iguales" || mal "T26 cambió algo en .dashboard"
 REG=0
 grep -q '"tests/state-age.test.js"' "$RAIZ/scripts/tests/suites.json" && grep -q '"tests/author-concentration.test.sh"' "$RAIZ/scripts/tests/suites.json" || REG=1
-grep -q 'state-age.js' "$RAIZ/guides/piezas-del-arnes.md" && grep -q 'author-concentration.js' "$RAIZ/guides/piezas-del-arnes.md" || REG=1
-[ "$REG" = 0 ] && ok "T26 suites.json y piezas-del-arnes.md nombran las dos piezas" || mal "T26 falta el registro de las piezas"
+grep -q 'state-age.js' "$RAIZ/guides/harness-pieces.md" && grep -q 'author-concentration.js' "$RAIZ/guides/harness-pieces.md" || REG=1
+[ "$REG" = 0 ] && ok "T26 suites.json y harness-pieces.md nombran las dos piezas" || mal "T26 falta el registro de las piezas"
 if [ -f "$RAIZ/artifacts/mapa-arnes.html" ]; then
   grep -q 'state-age.js' "$RAIZ/artifacts/mapa-arnes.html" && grep -q 'author-concentration.js' "$RAIZ/artifacts/mapa-arnes.html" && ok "T26 el mapa nombra las dos piezas" || mal "T26 el mapa no nombra las dos piezas"
 else echo "  (T26 el mapa vive en el privado: NO MEDIDO acá, sin el privado encima)"; fi

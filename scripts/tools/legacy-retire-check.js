@@ -16,7 +16,7 @@
  * o `sin-fuente` (su tipo no lo anota nadie: nunca es limpia). Una máquina callada NO cambia el estado de ninguna
  * entrada: va en `machines_unreported`, así una máquina callada no atrasa el retiro de todos.
  *
- * La ventana: los últimos 14 días; para una entrada con `retire_after` propia, la semana antes de esa fecha, que es
+ * La ventana: los últimos 7 días; para una entrada con `retire_after` propia, la semana antes de esa fecha, que es
  * una semana después del día en que se vio el uso.
  *
  * 🔴 Mira el código de salida de cada consulta (`az`, la bajada del buzón) antes de leer su salida: una que falla es
@@ -47,7 +47,7 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const LN = require(path.join(ROOT, 'scripts', 'lib', 'legacy-names.js'));
 const { aliasDeNombre, leerUnionesDeCarpetas } = require(path.join(ROOT, 'scripts', 'nightly', 'dashboard', 'reducer.js'));
 
-const WINDOW_DAYS = 14;
+const WINDOW_DAYS = 7;
 const OWN_WINDOW_DAYS = 7;
 const RUNS_TOP = 200;
 // el motivo con que la subida (scripts/metrics/upload-runs.js) dice que la máquina no tiene registro de usos
@@ -344,7 +344,11 @@ function check(o) {
     if (!SOURCE_KINDS.has(e.kind)) state = 'sin-fuente';
     else if (seen.length) state = 'con-uso';
     else if (unmeasuredAll || unmeasured.has(`${e.kind}\0${e.old}`)) state = 'sin-medir';
-    return { kind: e.kind, old: e.old, new: e.new, where: e.where || null, state, due: Boolean(date) && today >= date, retire_after: date, sources: [...new Set(seen.map((u) => u.source))].sort() };
+    // un nombre que el arnés sigue aceptando (`accepted_until`: hasta cuándo y por qué) no atrasa el retiro de los demás
+    // ni se retira: queda dicho aparte, con sus usos
+    const accepted = typeof e.accepted_until === 'string' && e.accepted_until.trim() ? e.accepted_until.trim() : null;
+    if (accepted) state = 'aceptada';
+    return { kind: e.kind, old: e.old, new: e.new, where: e.where || null, state, due: Boolean(date) && today >= date, retire_after: date, sources: [...new Set(seen.map((u) => u.source))].sort(), ...(accepted ? { accepted_until: accepted } : {}) };
   });
 
   if (!global) reasons.push('el mapa no tiene fecha de retiro (retire_after)');
@@ -353,7 +357,8 @@ function check(o) {
   if (by('con-uso')) reasons.push(`${by('con-uso')} entrada(s) con uso en la ventana`);
   if (by('sin-medir')) reasons.push(`${by('sin-medir')} entrada(s) sin medir (una consulta falló)`);
   if (by('sin-fuente')) reasons.push(`${by('sin-fuente')} entrada(s) de un tipo que nadie anota`);
-  if (out.some((e) => !e.due) && global && today >= global) reasons.push(`${out.filter((e) => !e.due).length} entrada(s) con fecha propia todavía por llegar`);
+  const porLlegar = out.filter((e) => !e.due && e.state !== 'aceptada');
+  if (porLlegar.length && global && today >= global) reasons.push(`${porLlegar.length} entrada(s) con fecha propia todavía por llegar`);
   if (unreported.length) reasons.push(`${unreported.length} máquina(s) esperada(s) sin reportar en la ventana`);
   for (const u of undeclared) reasons.push(`pipeline no declarado que llama al arnés: ${u.pipeline} (${u.project}/${u.repo}) — falta en la lista de productos`);
   for (const f of failed) reasons.push(`no pude medir ${f.repo || f.source}: ${f.error}`);

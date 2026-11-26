@@ -2,7 +2,7 @@
 
 Some harness steps cannot be approved by the agent doing the work. This page says who gives each one. The full list,
 with every signature by name, the levels and how to approve without a terminal, is in Spanish:
-[firmas-del-arnes.md](firmas-del-arnes.md).
+[owner-signatures.md](owner-signatures.md).
 
 The team profile decides with two lists:
 

@@ -6,13 +6,13 @@
  * Lo que este archivo dice del «README» vale para el índice, INDEX.md; la base de T6 es el README previo al recorte.
  *
  * El README se importa ENTERO en cada sesión y en cada subagente de cada dev. Por eso no lleva el índice de piezas
- * (una línea por pieza, 110 líneas): las piezas se buscan en `guides/piezas-del-arnes.md`, que se lee a demanda, y el
+ * (una línea por pieza, 110 líneas): las piezas se buscan en `guides/harness-pieces.md`, que se lee a demanda, y el
  * README queda con lo que se usa en cada sesión: la tabla «Cuándo leer cada guía», las reglas siempre activas y los comandos del día a día.
  *
  * Sacar 110 líneas de un índice es la forma más barata de perder una pieza sin que nadie lo note, así
  * que el recorte vive detrás de esta guarda:
  *   T6 — cada archivo o carpeta que el «Qué contiene» del README de la base nombraba sigue nombrado en
- *        `guides/piezas-del-arnes.md` o en el README nuevo.
+ *        `guides/harness-pieces.md` o en el README nuevo.
  *   T5 — el README pesa ≤ 25 KB y conserva sus tres secciones de uso diario.
  *
  * La lista de la base vive en `fixtures/readme-index.json` y no en `git show`: el nocturno clona sin
@@ -77,7 +77,7 @@ test('Readme_IndiceCompleto (T6): cada ruta del «Qué contiene» de la base sig
   assert.ok(Array.isArray(rutas) && rutas.length >= 100, `la lista de la base tiene ${rutas && rutas.length} rutas; se esperaban las ~110 del índice`);
   // el índice se partió en dos: lo de uso diario queda en el README (se carga en cada sesión) y lo de quien mantiene el
   // arnés pasó a guides/maintaining/maintaining-the-harness.md (a demanda), que el README nombra en su última fila
-  const donde = require('./lib/pieces-guide.js').piecesText(REPO) + '\n' + leer('guides/maintaining/piezas-en-detalle.md') + '\n' + leer('INDEX.md') + '\n' + leer('guides/maintaining/maintaining-the-harness.md');
+  const donde = require('./lib/pieces-guide.js').piecesText(REPO) + '\n' + leer('guides/maintaining/pieces-in-detail.md') + '\n' + leer('INDEX.md') + '\n' + leer('guides/maintaining/maintaining-the-harness.md');
   const faltan = rutas.filter((r) => !nombrada(r, donde));
   assert.deepEqual(faltan, [], `rutas del índice de la base que ya no nombra ni la guía de piezas, ni el README, ni la guía de mantener: ${faltan.join(', ')}`);
   assert.ok(nombrada('guides/maintaining/maintaining-the-harness.md', leer('INDEX.md')), 'el índice (INDEX.md) nombra la guía de mantener el arnés');

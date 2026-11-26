@@ -220,7 +220,7 @@ test('T24 Click_SelloDeAntes_NoSeToma_YLaGuiaLoDice @story-8.296 @ac-21', (t) =>
   anotarClick(casa, nuevo.pregunta.replace(/código [0-9a-f]{8}/, `código ${deAntes}`));
   const r = pedirSinVentana(casa, cmd);
   assert.strictEqual(r.decision, 'deny', r.texto);
-  const guia = fs.readFileSync(path.join(RAIZ, 'guides', 'firmas-del-arnes.md'), 'utf8');
+  const guia = fs.readFileSync(path.join(RAIZ, 'guides', 'owner-signatures.md'), 'utf8');
   assert.match(guia, /forma canónica/);
   assert.match(guia, /al actualizar[^.]*(una vez más|otra vez)/);
 });

@@ -62,7 +62,7 @@ test('T18 Formato_DescribeCambiosYExencion @story-8.167 @ac-16', () => {
   assert.match(formato, /no va en el frontmatter/);
   assert.match(formato, /compare_exempt:` no exime/);
   assert.match(formato, /marker\.js compare-waiver --story/);
-  const firmas = leer('guides/firmas-del-arnes.md');
+  const firmas = leer('guides/owner-signatures.md');
   assert.match(firmas, /\| `compare-waiver` \| 1 · rutina \|/, 'en la tabla de niveles, nivel 1');
   assert.match(firmas, /\*\*Eximir un comando de la comparación con main\*\* \(`compare-waiver`\)/, 'quién la firma');
   assert.match(firmas, /delegable sólo cuando el perfil del equipo la suma a `approvals\.delegated_signing`, con un pedido al perfil que firma el dueño/);

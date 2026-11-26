@@ -255,9 +255,9 @@ function mensaje(motivo, detalle = []) {
 const CAMINO_DE_LA_PUERTA = [
   '   Para consultar O CAMBIAR una base de producción hay UNA sola forma, y cada sentencia abre un cuadro de aprobación:',
   "     /opt/tycon/bin/tycon-prod-sql <host> '<sentencia>' [--max-rows N]   (un select, o un cambio como alter database …)",
-  '   Si la conexión la rechaza el firewall (40615, «is not allowed to access the server»), lo abre la persona en su',
-  '   terminal, con el cuadro de la puerta (la puerta da el comando para copiar), y la regla se cierra sola cuando',
-  '   termina la sesión que la pidió, o a las 8 h: /opt/tycon/bin/tycon-prod-sql --open-firewall <host> --session <id>',
+  '   Si la conexión la rechaza el firewall (40615, «is not allowed to access the server»), se abre por la puerta y la',
+  '   persona lo aprueba con su click en la sesión; la regla se cierra sola cuando termina la sesión que la pidió, o a',
+  '   las 8 h: /opt/tycon/bin/tycon-prod-sql --open-firewall <host>',
   '   Un cambio de administración de Azure (alertas, tamaño o plan) va por la puerta, con el mismo cuadro:',
   '     /opt/tycon/bin/tycon-prod-sql --azure <el comando de az, sin «az»>   (las lecturas, list y show, sin cuadro)',
   '   Todas las formas, sin tocar producción: /opt/tycon/bin/tycon-prod-sql --help',
@@ -470,8 +470,8 @@ function rechazoAzure(palabras, op) {
   }
   if (op && /^sql server firewall-rule\b/.test(op)) {
     return { motivo: 'la regla de firewall no va por --azure.', detalle: [
-      'La IP de esta máquina la habilita la persona en su terminal, por la puerta y con su cuadro; la regla se cierra sola',
-      'cuando termina la sesión que la pidió, o a las 8 h: /opt/tycon/bin/tycon-prod-sql --open-firewall <host> --session <id>',
+      'La IP de esta máquina la habilita la puerta: la corrés vos y el dueño la aprueba con su click en esta sesión; la regla',
+      'se cierra sola cuando termina la sesión que la pidió, o a las 8 h: /opt/tycon/bin/tycon-prod-sql --open-firewall <host>',
       'Otra regla (otra IP, un rango) no tiene camino aprobado: dejale el comando a la persona para que lo corra en su terminal.',
     ] };
   }
@@ -1095,13 +1095,14 @@ function decidir(entrada) {
   const hostAzure = (h) => (h && h.includes('.') ? h : `${h || '<host>'}.database.windows.net`);
   // `declarado`: la puerta sólo atiende hosts declarados como producción; a uno sin declarar no se le sugieren consultas
   const caminoFirewall = (h, declarado) => (esFirewall
-    ? [`Para habilitar la IP de esta máquina en el firewall, el único camino es la puerta, y lo corre la persona en su terminal (con su cuadro; la regla se cierra sola cuando termina la sesión que la pidió, o a las 8 h): /opt/tycon/bin/tycon-prod-sql --open-firewall ${hostAzure(h)} --session <id>`]
+    ? [`Para habilitar la IP de esta máquina en el firewall, el único camino es la puerta: corrélo vos, solo y en primer plano, y el dueño lo aprueba con su click en esta sesión (la regla se cierra sola cuando termina la sesión que la pidió, o a las 8 h): /opt/tycon/bin/tycon-prod-sql --open-firewall ${hostAzure(h)}`,
+      `Si el modo automático no te deja correrlo, decíselo a la persona en una línea, con el comando para su terminal: /opt/tycon/bin/tycon-prod-sql --open-firewall ${hostAzure(h)} --session <id>`]
     : esLecturaAz && declarado
       ? ['Las lecturas de Azure sobre un servidor de producción también se frenan. En su lugar, la puerta (con su cuadro):',
         `  el tamaño y el tope: /opt/tycon/bin/tycon-prod-sql ${hostAzure(h)} 'select name, size/128 as mb, max_size/128 as max_mb from sys.database_files'`,
         `  la edición y el nivel: /opt/tycon/bin/tycon-prod-sql ${hostAzure(h)} 'select edition, service_objective from sys.database_service_objectives'`,
         '  (miden la base a la que entra la puerta: la «base» del servidor en su catálogo; si el catálogo no la declara, master)',
-        `  si la conexión la rechaza el firewall, lo abre la persona en su terminal: /opt/tycon/bin/tycon-prod-sql --open-firewall ${hostAzure(h)} --session <id>`]
+        `  si la conexión la rechaza el firewall, lo abrís con la puerta y el dueño lo aprueba con su click: /opt/tycon/bin/tycon-prod-sql --open-firewall ${hostAzure(h)}`]
       : []);
   for (const n of nombrados) {
     if (n.host === null) {

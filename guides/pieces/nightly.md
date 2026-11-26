@@ -1,8 +1,8 @@
 # Los procesos de la noche y el sitio
 
-Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cada una dice **qué es** la pieza,
+Las fichas de este grupo de [las piezas del arnés](../harness-pieces.md). Cada una dice **qué es** la pieza,
 **por qué existe**, **quién la usa** y **dónde se prueba**. El detalle de cada pieza está en
-[la guía de detalle](../maintaining/piezas-en-detalle.md), bajo el mismo título.
+[la guía de detalle](../maintaining/pieces-in-detail.md), bajo el mismo título.
 
 ## scripts/ci/check-stage-dependencies.js
 
@@ -14,7 +14,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** `scripts/tests/stage-dependencies.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscicheck-stage-dependenciesjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscicheck-stage-dependenciesjs)
 
 ## scripts/nightly/dependencies/
 
@@ -28,7 +28,7 @@ _(scripts/nightly/dependencies/ + scripts/ci/audit-dependencies.js)_
 
 **Dónde se prueba:** `scripts/tests/audit-dependencies.test.sh`, `scripts/tests/nightly-dependencies.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptsnightlydependencies)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptsnightlydependencies)
 
 ## scripts/nightly/dependencies/work-items.js
 
@@ -40,7 +40,7 @@ _(scripts/nightly/dependencies/ + scripts/ci/audit-dependencies.js)_
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptsnightlydependencieswork-itemsjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptsnightlydependencieswork-itemsjs)
 
 ## work-items.js state
 
@@ -54,7 +54,7 @@ _(work-items.js state + el cruce de scripts/nightly/dependencies/nightly-depende
 
 **Dónde se prueba:** `scripts/tests/nightly-dependencies.test.sh`, `scripts/tests/daily-summary.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#work-itemsjs-state)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#work-itemsjs-state)
 
 ## scripts/nightly/dependencies/daily-summary.js
 
@@ -66,7 +66,7 @@ _(work-items.js state + el cruce de scripts/nightly/dependencies/nightly-depende
 
 **Dónde se prueba:** `scripts/tests/daily-summary.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptsnightlydependenciesdaily-summaryjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptsnightlydependenciesdaily-summaryjs)
 
 ## scripts/nightly/open-prs/open-prs.js
 
@@ -80,7 +80,7 @@ Con `--outside-from` deja además el renglón «De afuera: …» (`scripts/lib/o
 
 **Dónde se prueba:** `scripts/tests/open-prs.test.sh`, `scripts/tests/daily-summary.test.sh`, `scripts/tests/outside-contributions.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptsnightlyopen-prsopen-prsjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptsnightlyopen-prsopen-prsjs)
 
 ## scripts/nightly/assigned/assigned-items.js
 
@@ -92,7 +92,7 @@ Con `--outside-from` deja además el renglón «De afuera: …» (`scripts/lib/o
 
 **Dónde se prueba:** `scripts/tests/assigned-items.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptsnightlyassignedassigned-itemsjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptsnightlyassignedassigned-itemsjs)
 
 ## scripts/nightly/deployments/deployments.js
 
@@ -104,7 +104,7 @@ Con `--outside-from` deja además el renglón «De afuera: …» (`scripts/lib/o
 
 **Dónde se prueba:** `scripts/tests/nightly-deployments.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptsnightlydeploymentsdeploymentsjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptsnightlydeploymentsdeploymentsjs)
 
 ## scripts/site/ — el sitio de la organización
 

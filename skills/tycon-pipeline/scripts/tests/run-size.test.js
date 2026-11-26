@@ -142,10 +142,10 @@ test('7.32-Suites_SoloLasQueLeen: una liviana corre las suites que leen la guía
 // La lista de una story que reescribe las fichas de una guía, con los comentarios del frontmatter incluidos.
 const LISTA_844 = [
   'tasks/measurement-8.44-piezas/                     # privado: la medición de la tanda A',
-  'guides/maintaining/piezas-en-detalle.md            # público: el detalle de cada ficha',
+  'guides/maintaining/pieces-in-detail.md            # público: el detalle de cada ficha',
   'scripts/tests/pieces-cards.test.js                 # público: T1-T5, T10, T11',
   'scripts/tests/pieces-destinations.test.js          # privado: T12',
-  'guides/piezas-del-arnes.md                         # público: cada ficha reescrita',
+  'guides/harness-pieces.md                         # público: cada ficha reescrita',
   'guides/guide-update-proposals.md                 # privado (el real)',
   'scripts/tests/readme-index.test.js',
   'scripts/tests/guides-moved.test.js',

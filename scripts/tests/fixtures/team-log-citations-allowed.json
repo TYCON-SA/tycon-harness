@@ -350,6 +350,16 @@
       "file": "skills/tycon-pipeline/scripts/tests/unit.test.js",
       "text": "assert.ok(!/incident-log(?:\\.md)?#/.test(ficha), 'sin enlazar",
       "reason": "una prueba que lee el registro real con el perfil del equipo y en el público se saltea: cuida que la entrada de su caso siga en el registro"
+    },
+    {
+      "file": "scripts/tests/guide-links.test.js",
+      "text": "{ archivo: 'guides/maintaining/incident-log.md', motivo: 'registro histórico: cada caso nombra las guías como se llamaban",
+      "reason": "la prueba de enlaces exceptúa el registro de su medición: un registro histórico nombra las guías como se llamaban en su fecha, y no se reescribe (8.45 E)"
+    },
+    {
+      "file": "scripts/tests/guide-links.test.js",
+      "text": "fs.writeFileSync(path.join(lab, 'guides', 'maintaining', 'incident-log.md'), 'El caso nombraba guides/vieja.md.\\n');",
+      "reason": "el laboratorio de la prueba de enlaces arma un registro de juguete para probar esa excepción (8.45 E)"
     }
   ]
 }

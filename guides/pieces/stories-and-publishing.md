@@ -1,8 +1,8 @@
 # Las historias, el portón y la publicación
 
-Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cada una dice **qué es** la pieza,
+Las fichas de este grupo de [las piezas del arnés](../harness-pieces.md). Cada una dice **qué es** la pieza,
 **por qué existe**, **quién la usa** y **dónde se prueba**. El detalle de cada pieza está en
-[la guía de detalle](../maintaining/piezas-en-detalle.md), bajo el mismo título.
+[la guía de detalle](../maintaining/pieces-in-detail.md), bajo el mismo título.
 
 ## scripts/tools/tycon-backfill-followups.js
 
@@ -16,7 +16,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Guía:** [story-format.md](../../story-format.md)
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptstoolstycon-backfill-followupsjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptstoolstycon-backfill-followupsjs)
 
 ## scripts/lib/lint-story-frontmatter.js
 
@@ -30,7 +30,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Guía:** [story-format.md](../../story-format.md)
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptsliblint-story-frontmatterjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptsliblint-story-frontmatterjs)
 
 ## guides/wiki-topics.md
 
@@ -44,7 +44,7 @@ _guides/wiki-topics.md + scripts/tools/lint-wiki.sh_
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guideswiki-topicsmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guideswiki-topicsmd)
 
 ## scripts/hooks/engram-pre-commit.sh
 
@@ -58,7 +58,7 @@ _guides/wiki-topics.md + scripts/tools/lint-wiki.sh_
 
 **Guía:** [engram-workflow.md](../integrations/engram-workflow.md)
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptshooksengram-pre-commitsh)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptshooksengram-pre-commitsh)
 
 ## scripts/lib/manifest-engram.js
 
@@ -70,7 +70,7 @@ _guides/wiki-topics.md + scripts/tools/lint-wiki.sh_
 
 **Dónde se prueba:** su propia suite y el caso `04-rebuild-engram.json` del banco
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptslibmanifest-engramjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptslibmanifest-engramjs)
 
 ## guides/ci-gate.md
 
@@ -84,7 +84,7 @@ _guides/ci-gate.md + scripts/ci/tycon-ci-gate.js_
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesci-gatemd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesci-gatemd)
 
 ## scripts/hooks/lane-llm-notice.js
 
@@ -96,7 +96,7 @@ _guides/ci-gate.md + scripts/ci/tycon-ci-gate.js_
 
 **Dónde se prueba:** `scripts/tests/lane-llm-notice.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptshookslane-llm-noticejs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptshookslane-llm-noticejs)
 
 ## guides/maintaining/controls-bench.md
 
@@ -110,7 +110,7 @@ _guides/maintaining/controls-bench.md + scripts/controls-bench/_
 
 **Dónde se prueba:** `scripts/controls-bench/`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesmaintainingcontrols-benchmd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesmaintainingcontrols-benchmd)
 
 ## build/
 
@@ -124,7 +124,7 @@ _build/ + adapters/_
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#build)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#build)
 
 ## guides/maintaining/codex-divergence-inventory.md
 
@@ -138,7 +138,7 @@ _build/ + adapters/_
 
 **Guía:** [codex-divergence-inventory.md](../maintaining/codex-divergence-inventory.md)
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesmaintainingcodex-divergence-inventorymd)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#guidesmaintainingcodex-divergence-inventorymd)
 
 ## scripts/publishing/detector.js
 
@@ -152,7 +152,7 @@ _scripts/publishing/_
 
 **Dónde se prueba:** `scripts/tests/publishing-detector.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptspublishingdetectorjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptspublishingdetectorjs)
 
 ## scripts/publishing/third-party-skills.json
 
@@ -166,7 +166,7 @@ _scripts/publishing/ + guides/maintaining/publicacion-espejo.md_
 
 **Dónde se prueba:** `third-party-skills.test.js`, `install-third-party.test.sh`, `third-party-real.test.sh` y `third-party-origin.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptspublishingthird-party-skillsjson)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptspublishingthird-party-skillsjson)
 
 ## scripts/publishing/export.js
 
@@ -180,7 +180,7 @@ _scripts/publishing/ + guides/maintaining/publicacion-espejo.md_
 
 **Dónde se prueba:** `scripts/tests/export.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptspublishingexportjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptspublishingexportjs)
 
 ## scripts/publishing/mirror.js
 
@@ -194,7 +194,7 @@ _scripts/publishing/ + guides/maintaining/publicacion-espejo.md_
 
 **Dónde se prueba:** `scripts/tests/mirror.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptspublishingmirrorjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptspublishingmirrorjs)
 
 ## pipelines/azure-pipelines-public-leak-check.yml
 
@@ -208,7 +208,7 @@ _pipelines/azure-pipelines-public-leak-check.yml + scripts/tests/mirror-pipeline
 
 **Dónde se prueba:** `scripts/tests/mirror-pipeline.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#pipelinesazure-pipelines-public-leak-checkyml)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#pipelinesazure-pipelines-public-leak-checkyml)
 
 ## scripts/hooks/public-push-guard.js
 
@@ -222,7 +222,7 @@ _scripts/hooks/public-push-guard.js + scripts/hooks/git-pre-push-global.sh + .gi
 
 **Dónde se prueba:** `scripts/tests/public-push-guard.test.js`, `scripts/tests/githook-pre-push.test.sh` y `scripts/tests/gh-pr.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptshookspublic-push-guardjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptshookspublic-push-guardjs)
 
 ## scripts/tools/merge-pr.js
 
@@ -236,7 +236,7 @@ _scripts/tools/merge-pr.js + scripts/tests/merge-pr.test.js + skills/tycon-merge
 
 **Dónde se prueba:** `scripts/tests/merge-pr.test.js` y `scripts/tests/team-repos.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptstoolsmerge-prjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptstoolsmerge-prjs)
 
 ## scripts/ci/version-tag.js
 
@@ -250,7 +250,7 @@ _scripts/ci/version-tag.js + .github/workflows/version-tag.yml + scripts/setup/h
 
 **Dónde se prueba:** `scripts/tests/version-by-merge.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptsciversion-tagjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptsciversion-tagjs)
 
 ## scripts/setup/npm/index.js
 
@@ -266,7 +266,7 @@ _scripts/setup/npm/index.js + home-paths.json + package.json + README.md_
 
 **Guía:** [npm-package.md](../maintaining/npm-package.md)
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptssetupnpmindexjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptssetupnpmindexjs)
 
 ## .github/workflows/npm-publish.yml
 
@@ -282,7 +282,7 @@ _.github/workflows/npm-publish.yml + scripts/ci/check-public-workflow.js `--publ
 
 **Guía:** [guides/maintaining/npm-package.md](../maintaining/npm-package.md)
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#githubworkflowsnpm-publishyml)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#githubworkflowsnpm-publishyml)
 
 ## scripts/ci/npm-package-version.js
 
@@ -296,7 +296,7 @@ _scripts/ci/npm-package-version.js + el paso `version` de scripts/ci/public-ci.s
 
 **Dónde se prueba:** `scripts/tests/npm-package.test.js` y `scripts/tests/public-ci.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscinpm-package-versionjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscinpm-package-versionjs)
 
 ## scripts/setup/harness/team-init.js
 
@@ -310,7 +310,7 @@ _scripts/setup/harness/team-init.js + el comando `harness.js team-init` + gettin
 
 **Dónde se prueba:** `scripts/tests/harness-team-init.test.sh` y `scripts/tests/team-stories-templates.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptssetupharnessteam-initjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptssetupharnessteam-initjs)
 
 ## scripts/setup/harness/team-local.js
 
@@ -336,7 +336,7 @@ _scripts/publishing/ + guides/maintaining/publicacion-espejo.md_
 
 **Dónde se prueba:** `scripts/tests/new-names.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptspublishingnew-namesjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptspublishingnew-namesjs)
 
 ## scripts/lib/legacy-names.js
 
@@ -350,7 +350,7 @@ _scripts/lib/legacy-names.js/.sh/.ps1 + scripts/lib/renames.json + guides/mainta
 
 **Dónde se prueba:** `scripts/tests/legacy-names.test.js` y `scripts/tests/legacy-names-install.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptsliblegacy-namesjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptsliblegacy-namesjs)
 
 ## scripts/ci/legacy-options.sh y legacy-options.js
 
@@ -364,7 +364,7 @@ _scripts/ci/legacy-options.sh/.js + guides/maintaining/english-names.md_
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscilegacy-optionssh-y-legacy-optionsjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscilegacy-optionssh-y-legacy-optionsjs)
 
 ## scripts/publishing/spanish-names.js
 
@@ -378,7 +378,7 @@ _scripts/publishing/ + scripts/lib/spanish-words.json + guides/maintaining/engli
 
 **Dónde se prueba:** `scripts/tests/spanish-names.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptspublishingspanish-namesjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptspublishingspanish-namesjs)
 
 ## scripts/publishing/internal-history.js
 
@@ -392,7 +392,7 @@ _scripts/publishing/internal-history.js + internal-history.json + guides/maintai
 
 **Dónde se prueba:** `scripts/tests/internal-history-guard.test.js` y `scripts/tests/code-comments.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptspublishinginternal-historyjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptspublishinginternal-historyjs)
 
 ## scripts/lib/estimates.js
 
@@ -404,7 +404,7 @@ _scripts/publishing/internal-history.js + internal-history.json + guides/maintai
 
 **Dónde se prueba:** `scripts/tests/estimates.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptslibestimatesjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptslibestimatesjs)
 
 ## scripts/lib/similar-stories.js
 
@@ -416,7 +416,7 @@ _scripts/publishing/internal-history.js + internal-history.json + guides/maintai
 
 **Dónde se prueba:** `scripts/tests/similar-stories.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptslibsimilar-storiesjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptslibsimilar-storiesjs)
 
 ## skills/tycon-pipeline/scripts/lib/real-hours.js
 
@@ -428,4 +428,4 @@ _scripts/publishing/internal-history.js + internal-history.json + guides/maintai
 
 **Dónde se prueba:** `skills/tycon-pipeline/scripts/tests/estimate-real.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibreal-hoursjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#skillstycon-pipelinescriptslibreal-hoursjs)

@@ -207,7 +207,7 @@ test('T64 ToolNames_RealTree_UnderCeiling @story-7.40 @ac-28 @ac-30', (t) => {
   // lo liviano (E1) ya no nombra la herramienta: las guías del núcleo y los textos que ve el agente (las capturas del
   // sitio sacan los nombres de lo que lee el núcleo, y se limpian con él en la E2)
   const light = ['INDEX.md', 'guides/constitution.md', 'guides/workflow-orchestration.md', 'guides/git-worktrees.md',
-    'guides/harness-cost-tiering.md', ...require('./lib/pieces-guide.js').piecesFiles(ROOT), 'guides/maintaining/piezas-en-detalle.md',
+    'guides/harness-cost-tiering.md', ...require('./lib/pieces-guide.js').piecesFiles(ROOT), 'guides/maintaining/pieces-in-detail.md',
     'skills/tycon-pipeline/scripts/on-prompt.js', 'skills/tycon-pipeline/steps/step-00-preflight.md'];
   for (const f of light) assert.ok(!r.perFile[f], `${f} todavía nombra la herramienta (${r.perFile[f]})`);
   assert.ok(fs.existsSync(path.join(ROOT, 'integrations', 'clockify', 'scripts', 'install-mcp.sh')), 'el instalador del MCP vive en su integración');

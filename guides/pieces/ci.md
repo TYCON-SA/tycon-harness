@@ -1,8 +1,8 @@
 # Los controles de CI, las versiones y los despliegues
 
-Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cada una dice **qué es** la pieza,
+Las fichas de este grupo de [las piezas del arnés](../harness-pieces.md). Cada una dice **qué es** la pieza,
 **por qué existe**, **quién la usa** y **dónde se prueba**. El detalle de cada pieza está en
-[la guía de detalle](../maintaining/piezas-en-detalle.md), bajo el mismo título.
+[la guía de detalle](../maintaining/pieces-in-detail.md), bajo el mismo título.
 
 ## scripts/lib/tycon-telegram-notify.sh
 
@@ -14,7 +14,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** `scripts/tests/telegram-notify.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptslibtycon-telegram-notifysh)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptslibtycon-telegram-notifysh)
 
 ## scripts/ci/release-notes.sh
 
@@ -26,7 +26,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** `scripts/tests/release-notes.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscirelease-notessh)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscirelease-notessh)
 
 ## scripts/ci/recompute-zip-notes.sh
 
@@ -38,7 +38,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** `scripts/tests/recompute-zip-notes.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscirecompute-zip-notessh)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscirecompute-zip-notessh)
 
 ## scripts/tools/release-notes-parity.js
 
@@ -50,7 +50,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** `scripts/tests/release-notes-parity.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptstoolsrelease-notes-parityjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptstoolsrelease-notes-parityjs)
 
 ## scripts/ci/publish-bump.sh
 
@@ -62,7 +62,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** `scripts/tests/publish-bump.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscipublish-bumpsh)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscipublish-bumpsh)
 
 ## scripts/lib/meter-backup.sh
 
@@ -74,7 +74,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** `scripts/tests/meter-backup.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptslibmeter-backupsh)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptslibmeter-backupsh)
 
 ## packs/bizuit/guides/deuda-de-pruebas-formularios.md
 
@@ -86,7 +86,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md)
 
 ## scripts/ci/affected-forms.js
 
@@ -98,7 +98,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** `scripts/tests/affected-forms.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptsciaffected-formsjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptsciaffected-formsjs)
 
 ## scripts/ci/typecheck-forms.js
 
@@ -110,7 +110,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** `scripts/tests/typecheck-forms.test.js`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscitypecheck-formsjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscitypecheck-formsjs)
 
 ## scripts/ci/forms-to-version.sh
 
@@ -122,7 +122,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** su propia suite de pruebas, bajo `scripts/tests/`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptsciforms-to-versionsh)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptsciforms-to-versionsh)
 
 ## scripts/ci/backend-to-version.sh
 
@@ -134,7 +134,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** `scripts/tests/backend-to-version.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscibackend-to-versionsh)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscibackend-to-versionsh)
 
 ## scripts/ci/label-prs.sh
 
@@ -148,7 +148,7 @@ _scripts/ci/label-prs.sh + scripts/ci/run-base.sh_
 
 **Dónde se prueba:** `scripts/tests/label-prs.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscilabel-prssh)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscilabel-prssh)
 
 ## scripts/ci/nightly-dod-notice.sh
 
@@ -160,7 +160,7 @@ _scripts/ci/label-prs.sh + scripts/ci/run-base.sh_
 
 **Dónde se prueba:** `scripts/tests/nightly-dod-notice.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscinightly-dod-noticesh)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscinightly-dod-noticesh)
 
 ## scripts/ci/sql-compile.js
 
@@ -172,7 +172,7 @@ _scripts/ci/label-prs.sh + scripts/ci/run-base.sh_
 
 **Dónde se prueba:** `scripts/tests/sql-compile.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscisql-compilejs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscisql-compilejs)
 
 ## scripts/ci/check-bash32-quoting.sh
 
@@ -184,7 +184,7 @@ _scripts/ci/label-prs.sh + scripts/ci/run-base.sh_
 
 **Dónde se prueba:** `scripts/tests/bash32-quoting.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscicheck-bash32-quotingsh)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscicheck-bash32-quotingsh)
 
 ## scripts/ci/public-ci.sh
 
@@ -200,7 +200,7 @@ _scripts/ci/public-ci.sh + scripts/ci/check-public-workflow.js + el `ci.yml` de 
 
 **Guía:** [publicacion-espejo.md](../maintaining/publicacion-espejo.md)
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscipublic-cish)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscipublic-cish)
 
 ## scripts/ci/run-base-controls.sh
 
@@ -214,7 +214,7 @@ _(scripts/ci/run-base-controls.sh + scripts/ci/controls-from-base.json + scripts
 
 **Dónde se prueba:** `scripts/tests/base-controls.test.sh`, `scripts/tests/public-ci.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscirun-base-controlssh)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscirun-base-controlssh)
 
 ## scripts/tests/clean-machine.test.sh
 
@@ -230,7 +230,7 @@ _(scripts/tests/clean-machine.test.sh + scripts/tests/clean-machine/ + scripts/t
 
 **Guía:** [publicacion-espejo.md](../maintaining/publicacion-espejo.md)
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptstestsclean-machinetestsh)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptstestsclean-machinetestsh)
 
 ## scripts/ci/check-artifact-paths.js
 
@@ -242,7 +242,7 @@ _(scripts/tests/clean-machine.test.sh + scripts/tests/clean-machine/ + scripts/t
 
 **Dónde se prueba:** `scripts/tests/artifact-paths.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscicheck-artifact-pathsjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscicheck-artifact-pathsjs)
 
 ## scripts/ci/rollback-guard.sh
 
@@ -254,7 +254,7 @@ _(scripts/tests/clean-machine.test.sh + scripts/tests/clean-machine/ + scripts/t
 
 **Dónde se prueba:** `scripts/tests/rollback-guard.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscirollback-guardsh)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscirollback-guardsh)
 
 ## scripts/ci/smoke-plugin.sh
 
@@ -268,7 +268,7 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Dónde se prueba:** `scripts/tests/smoke.test.sh`, `scripts/tests/smoke-forms-reason.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscismoke-pluginsh)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscismoke-pluginsh)
 
 ## scripts/ci/deploy-plugin.sh
 
@@ -280,7 +280,7 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Dónde se prueba:** `scripts/tests/deploy-plugin.test.sh`, `scripts/tests/deploy-plugin-config.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscideploy-pluginsh)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscideploy-pluginsh)
 
 ## scripts/ci/deploy-record.sh
 
@@ -292,7 +292,7 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Dónde se prueba:** `scripts/tests/deploy-record.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscideploy-recordsh)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscideploy-recordsh)
 
 ## scripts/ci/check-product-parity.js
 
@@ -304,7 +304,7 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Dónde se prueba:** `scripts/tests/product-parity.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscicheck-product-parityjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscicheck-product-parityjs)
 
 ## scripts/ci/check-trigger-without-docs.js
 
@@ -316,7 +316,7 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Dónde se prueba:** `scripts/tests/trigger-without-docs.test.sh`
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#scriptscicheck-trigger-without-docsjs)
+**Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscicheck-trigger-without-docsjs)
 
 ## scripts/ci/check-tests-without-ci.js
 
