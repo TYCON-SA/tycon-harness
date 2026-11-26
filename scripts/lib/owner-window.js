@@ -1295,7 +1295,7 @@ function porQueSinLista({ casa, arnes, env, pendientes = null, destino = null, s
   if (destino && sesion && destino !== sesion) return 'la lista está prendida, pero el pedido es para otra sesión';
   if (!cuadro || cuadro.error) return 'la lista está prendida, pero el cuadro de esta firma no se pudo armar';
   let viva = null;
-  try { viva = L.coordinadoraViva(casa); } catch (_) { viva = null; }
+  try { viva = L.coordinadoraViva(casa, undefined, { env, arnes }); } catch (_) { viva = null; }
   if (!viva) return 'la lista está prendida, pero no da a la coordinadora por confirmada y viva';
   return 'la lista está prendida, pero este pedido no quedó anotado en ella';
 }

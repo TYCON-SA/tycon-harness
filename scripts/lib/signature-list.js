@@ -146,10 +146,11 @@ function vive(s, sid) {
 
 /**
  * La coordinadora confirmada por el dueño y con su sesión viva, o null. Es el único criterio, y lo usan el freno, el aviso
- * y `owner-next`: sin dato de si vive, cuenta como cerrada.
+ * y `owner-next`: sin dato de si vive, cuenta como cerrada. `donde` ({ env, arnes }) es el perfil que se lee: el de la
+ * llave de la lista, para que las dos digan lo mismo; sin él, el de la máquina.
  */
-function coordinadoraViva(casa, s = sesiones(casa)) {
-  const c = oa().coordinadoraConfirmada(casa);
+function coordinadoraViva(casa, s = sesiones(casa), donde = {}) {
+  const c = oa().coordinadoraConfirmada(casa, donde);
   return c && vive(s, c) === true ? c : null;
 }
 

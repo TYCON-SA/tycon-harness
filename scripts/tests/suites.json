@@ -538,6 +538,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.334 (tanda A, fila 177): el freno de escrituras tapa los seis caminos por los que se escribía una constancia (un guion de shell, un comodín, la copia de una carpeta, un enlace duro, el `Move to` de Codex, una ruta armada) y protege también `.tycon/runtime-waivers.jsonl` y el `approvals.jsonl` de las ejecuciones, sin frenar de más. Repos de git temporales, HOME temporal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/row-177-write-gate.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.48: la clave `stack` de team-repos.json, leída desde el árbol del arnés.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/stack-config.test.js",
@@ -1273,6 +1279,12 @@
       "__nota": "marker.js partido por responsabilidad (8.163 B): cada subcomando contra la foto de antes de partir, el despachador bajo el tope y cada parte con su responsabilidad y su prueba, la parte que falta, las exportaciones, lo nuevo sensible, lo publicado y el recorrido del freno de guiones (que lee entero lo partido y no corta callado). Carpetas fijas en el temporal; sin red.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/split-contract.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el freno de escrituras partido en un despachador y sus partes lib/bash-gate-*.js: cada archivo bajo el tope, lo nuevo que carga es sensible, y sin una parte frena y la nombra (como gancho) o tira (como biblioteca). El banco contra la foto de antes de partir (T8) corre a pedido, con BASH_GATE_BENCH=1",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-gate-split.test.js",
       "requiere": []
     },
     {
@@ -5132,6 +5144,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.331 (T1 a T8): .github/workflows/code-scanning.yml, el análisis de CodeQL que corre también en los pedidos desde un fork, leído por texto con check-public-workflow.js --code-scanning: disparadores (pedido, cola, push a main; no en borrador), sin pull_request_target ni secretos, permisos exactos (contents y actions de lectura, security-events de escritura), acciones por sha, checkout sin la credencial guardada, los tres lenguajes sin compilar con su categoría, la forma exacta y los cinco workflows. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/code-scanning-workflow.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.40, el cierre (T48 y T49): lo que el paquete tiene PUBLICADO en npm. La versión del package.json está publicada con su constancia de procedencia y es la latest; con una sesión de npm, la cuenta pide el segundo factor también para escribir y la latest no es el marcador 0.0.0-stage. Sin red, con la versión sin aprobar o sin sesión: NO MEDIDO, nunca verde. Pide red: corre de noche, no en cada pedido.",
       "raiz": "arnes",
       "ruta": "tests/npm-published.test.js",
@@ -5559,6 +5577,12 @@
       "__nota": "las entradas del reclamo de la retrospectiva que anotaron el commit equivocado (scripts/hooks/retro-pending.js): la punta que contesta el remoto al abrir el pedido, la rama de origen, la corrección con quién y por qué (--correct), el aviso de «ya estaba en main» y la carpeta principal por nombre. Repos de juguete con git de verdad y un remoto en una carpeta. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/retro-pending-correct.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el aviso de arranque y el cierre del turno del reclamo de la retrospectiva (scripts/hooks/retro-pending.js) no juzgan el registro entero: el arranque no le pregunta a la plataforma y corta en su tope (TYCON_RETRO_NOTICE_MS), el cierre mira sólo los merges de su sesión y los de cerca, y más de tres entradas que ningún latido paga van en una línea con la ruta de su lista. Repos de juguete con git de verdad, y az, gh y git envueltos para anotar cada llamada. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/retro-pending-budget.test.js",
       "requiere": []
     },
     {

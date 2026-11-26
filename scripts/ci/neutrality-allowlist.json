@@ -99,6 +99,6 @@
     {"path":"skills/tycon-pipeline/scripts/lib/adhoc-base.js","ceiling":4,"reason":"freno o aviso que reconoce el comando crudo de cada plataforma para decidir si frena (el CLI es su entrada, no una llamada)"},
     {"path":"skills/tycon-pipeline/scripts/lib/adhoc-foreign-save.js","ceiling":6,"reason":"freno o aviso que reconoce el comando crudo de cada plataforma para decidir si frena (el CLI es su entrada, no una llamada)"},
     {"path":"skills/tycon-pipeline/scripts/lib/how-it-works.js","ceiling":1,"reason":"texto o registro que nombra el archivo viejo de configuración o la dirección de la plataforma de un pedido para mostrarlo"},
-    {"path":"skills/tycon-pipeline/scripts/on-bash-write-gate.js","ceiling":1,"reason":"freno o aviso que reconoce el comando crudo de cada plataforma para decidir si frena (el CLI es su entrada, no una llamada)"}
+    {"path":"skills/tycon-pipeline/scripts/lib/bash-gate-commands.js","ceiling":1,"reason":"freno o aviso que reconoce el comando crudo de cada plataforma para decidir si frena (el CLI es su entrada, no una llamada)"}
   ]
 }

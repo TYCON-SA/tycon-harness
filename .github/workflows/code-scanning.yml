@@ -1,0 +1,51 @@
+# code-scanning — el análisis de código de CodeQL, también en los pull requests que vienen de un fork.
+#
+# La configuración de fábrica de CodeQL no corre en un pedido desde un fork, y la regla de main exige sus resultados
+# (herramienta «CodeQL»): ese pedido quedaba trabado con todo lo demás en verde. Este workflow corre con `pull_request`,
+# que en un fork corre con un permiso de sólo lectura y sin secretos, una vez que un mantenedor aprueba la corrida. Nunca
+# el disparador que corre con los permisos del repo de destino: correría el código de afuera con esos permisos.
+#
+# Sube los resultados con `security-events: write` (en un fork GitHub lo baja a lectura, y el análisis igual se acepta).
+# Mientras la configuración de fábrica esté prendida, GitHub rechaza estos resultados: se apaga una vez, al ponerlo en
+# marcha. La categoría de cada lenguaje es la misma que usaba la de fábrica (`/language:<lenguaje>`), así las alertas
+# siguen siendo las mismas.
+#
+# Su forma exacta la lleva scripts/ci/check-public-workflow.js (`--code-scanning`): cambiar este archivo es cambiar
+# `SCANNING_SHAPE` en el mismo commit. Las pruebas: scripts/tests/code-scanning-workflow.test.js.
+name: code-scanning
+on:
+  # un pedido en borrador no corre el análisis (ver la condición del job); sacarlo del borrador lo lanza
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+  merge_group:
+concurrency:
+  group: code-scanning-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+permissions:
+  contents: read
+  actions: read
+  security-events: write
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    if: github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        # los mismos lenguajes que analizaba la configuración de fábrica; los tres se analizan sin compilar
+        language: [actions, javascript-typescript, python]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+      - uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          category: /language:${{ matrix.language }}
