@@ -472,7 +472,7 @@ function estadoDelBancoNocturno() {
 
 // ── ¿El sello diario lo escribió el JOB, o una mano? ─────────────────────────
 // Los frenos diarios se gatean por un archivo-sello con la fecha (`*-last-run`): si dice hoy, la
-// suite no corre. Con `echo $(date +%F) > ~/.claude/.tycon-pipeline/bash-tests-last-run`
+// suite no corre. Con `echo $(date +%F) > ~/.tycon/state/bash-tests-last-run`
 // se saltea la tanda del día sin error y sin rastro, sobre el estado local.
 // La detección usa lo que el flujo legítimo YA produce: el job escribe SIEMPRE su reporte en
 // .bench/ ANTES del sello, así que un sello de hoy con reporte viejo (o sin reporte) no salió del

@@ -896,8 +896,9 @@ if [[ -n "$GENERICO" ]]; then
 elif [[ "$RUNNER" == "dotnet" ]]; then
   # Race bi-assembly: `dotnet test` a nivel solución corre los assemblies de test EN PARALELO y, si
   # comparten la BD de test (DatabaseFixture droppea/recrea el schema), se pisan entre sí → exit=1 con
-  # 0 failed reales. Si hay >1 proyecto de test, se corren SECUENCIALES (un solo run-check envuelve la
-  # cadena && — exit code real).
+  # 0 failed reales. Si hay >1 proyecto de test, se corren SECUENCIALES, de a uno y TODOS: uno que sale rojo no deja
+  # sin correr a los siguientes (una falla que ya estaba en el primero no esconde las del resto), y la salida es roja si
+  # alguno salió rojo. Un solo run-check envuelve la corrida, con la salida real.
   while IFS= read -r tp; do TEST_PROJECTS+=("$tp"); done < <(find "$REPO_RUN" -maxdepth 3 -path '*/tests/*' -name '*.csproj' -not -path '*/node_modules/*' -not -path '*/bin/*' -not -path '*/obj/*' 2>/dev/null | sort)
   # Cross-check contra el .sln: el find por
   # layout '*/tests/*' puede DROPEAR un test project que viva fuera de tests/ o a
@@ -914,11 +915,11 @@ elif [[ "$RUNNER" == "dotnet" ]]; then
   fi
   if [[ ${#TEST_PROJECTS[@]} -gt 1 ]]; then
     echo "[test-gate] dotnet test SECUENCIAL — ${#TEST_PROJECTS[@]} proyectos de test (anti race bi-assembly), results → $RESULTS_DIR"
-    SEQ_CMD=""
+    SEQ_CMD="rc=0; "
     for tp in "${TEST_PROJECTS[@]}"; do
-      SEQ_CMD+="dotnet test $(printf %q "$tp") --collect:'XPlat Code Coverage' --results-directory $(printf %q "$RESULTS_DIR") --logger trx --nologo && "
+      SEQ_CMD+="dotnet test $(printf %q "$tp") --collect:'XPlat Code Coverage' --results-directory $(printf %q "$RESULTS_DIR") --logger trx --nologo || rc=1; "
     done
-    SEQ_CMD="${SEQ_CMD% && }"
+    SEQ_CMD+='exit $rc'
     ( cd "$REPO_RUN" && node "$MARKER_JS" run-check tests -- bash -c "$SEQ_CMD" ) || SUITE_EXIT=$?
   else
     echo "[test-gate] dotnet test + coverage (1 sola corrida, results → $RESULTS_DIR)"
@@ -1526,6 +1527,22 @@ if [[ "$RUNNER" == "suites-json" && "$SUITE_EXIT" == "1" && -f "$RESULTS_DIR/sui
     rm -f "$OUT_FILE"
     echo "🟡 [test-gate] todo lo rojo está roto también en la punta de main, con los mismos casos: la corrida espera a main (arriba, el registro). No es un rojo de la historia: no toques esas pruebas ni el código por eso; no quedó tests-result.json." >&2
     exit 78
+  fi
+fi
+# En un repo de producto (.NET, jest, vitest, las herramientas de lib/test-runners.js), lo que ya fallaba antes del
+# cambio se mide caso por caso sobre la base, la bifurcación con la rama principal del repo (lib/inherited-cases.js):
+# cada prueba que falló se vuelve a correr ahí, y es heredada sólo si también falla con la misma clave. Con todo
+# heredado avisa, vuelve a marcar el check tests en verde y deja la salida en 0; el informe lo dice con
+# `suite_green_by: "heredadas"`. Lo que la base no pudo correr sigue rojo con su motivo. Vale igual para cada hermano,
+# que corre este mismo portón.
+if [[ "$RUNNER" != "suites-json" && "$SUITE_EXIT" == "1" ]]; then
+  _tg_cas=0
+  node "$SCRIPT_DIR/lib/inherited-cases.js" apply "$REPO_RUN" "$RESULTS_DIR" --runner "$RUNNER" --projects "${#TEST_PROJECTS[@]}" || _tg_cas=$?
+  if [[ "$_tg_cas" == "0" ]]; then
+    echo "🟡 [test-gate] todo lo que falló ya fallaba en la base, con la misma prueba (arriba, cuáles): avisa y no frena" >&2
+    ( cd "$REPO" && TYCON_TEST_GATE_MARK=1 node "$MARKER_JS" run-check tests -- node -e 'console.error("test-gate: lo que falló ya fallaba en la base: avisa, no frena")' ) >&2 \
+      || echo "[test-gate] ⚠️  no pude dejar en verde el check tests: queda como lo dejó la corrida" >&2
+    SUITE_EXIT=0
   fi
 fi
 # Lo que corrió en esta corrida (la de arriba, una parte o un hermano) sale de la espera a main, suite por suite. Roja, con

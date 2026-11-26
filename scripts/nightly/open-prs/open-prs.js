@@ -218,7 +218,7 @@ function parseArgs(argv) {
 }
 
 /**
- * La organización sin `--org`: `ado.org` de la configuración del arnés (TYCON_ADO_ORG, ~/.claude/tycon.json
+ * La organización sin `--org`: `ado.org` de la configuración del arnés (TYCON_ADO_ORG, ~/.tycon/config.json
  * o el perfil del equipo).
  * Sin organización, Azure DevOps está APAGADA en esta máquina: la sección lo dice y el guion sale 0 — nunca «ninguno»
  * sin haber mirado. Una configuración rota frena con archivo, clave y motivo (exit 2): un comando no adivina.
