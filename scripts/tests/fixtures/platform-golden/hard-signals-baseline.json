@@ -53,7 +53,6 @@
     "scripts/nightly/assigned/assigned-items.js": 11,
     "scripts/nightly/dashboard/sources.json": 1,
     "scripts/nightly/dependencies/nightly-dependencies.js": 1,
-    "scripts/nightly/dependencies/work-items.js": 32,
     "scripts/nightly/deployments/azure.js": 2,
     "scripts/nightly/gate-adoption/gate-adoption.js": 3,
     "scripts/nightly/runs-review/rules.js": 1,

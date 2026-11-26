@@ -67,7 +67,6 @@
     {"path":"scripts/nightly/assigned/assigned-items.js","ceiling":12,"reason":"nocturno de lo asignado: lee Azure DevOps directo con sus campos (la lectura por la capa es la de GitHub, tanda C)"},
     {"path":"scripts/nightly/dashboard/sources.json","ceiling":1,"reason":"el autor de los commits de los pipelines de Azure, para no contarlos como de una persona"},
     {"path":"scripts/nightly/dependencies/nightly-dependencies.js","ceiling":1,"reason":"reconoce un remoto de Azure DevOps para sacarle las credenciales antes de anotarlo"},
-    {"path":"scripts/nightly/dependencies/work-items.js","ceiling":46,"reason":"archivo mixto: lógica neutra y lógica de una plataforma juntas; se parte en DEF-8.85-G-archivos-mixtos y este techo baja"},
     {"path":"scripts/nightly/deployments/azure.js","ceiling":2,"reason":"el lector de despliegues de Azure DevOps (tanda A): lo envuelve su conector, con su par de GitHub al lado"},
     {"path":"scripts/nightly/deployments/github.js","ceiling":1,"reason":"el lector de despliegues de GitHub (tanda A): lo envuelve su conector, con su par de Azure al lado"},
     {"path":"scripts/nightly/findings/propose.js","ceiling":1,"reason":"consulta la base pública de vulnerabilidades de GitHub (no la plataforma de la organización)"},

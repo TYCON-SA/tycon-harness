@@ -19,6 +19,8 @@
 set -uo pipefail
 AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PED="$AQUI/scripts/nightly/dependencies/work-items.js"
+# lo que habla con Azure DevOps vive en su conector; work-items.js es la entrada
+PED_AZ="$AQUI/integrations/azure-devops/scripts/dependency-notices.js"
 NOTICE="$AQUI/scripts/hooks/dependencies-notice.js"
 # el modelo público del pipeline: lo que copia cada organización a su repo de operaciones
 YAML="$AQUI/pipelines/operations/dependency-audit.yml"
@@ -348,7 +350,7 @@ rc=$(correr)
 # arreglo llegó a main) y `reabrirPedido` (volvió a un Bug que cerró él; work-items.test.sh T18/T18k).
 # Lo que sigue prohibido: mandar un motivo, y que el CRUCE toque un estado. Por eso `--state` aparece DOS veces
 # en el guion y ninguna llamada de este caso lo lleva.
-st=$(grep -c -- "'--state'" "$PED"); re=$(grep -c -- '--reason' "$PED")
+st=$(grep -c -- "'--state'" "$PED_AZ"); re=$(grep -c -- '--reason' "$PED_AZ")
 logst=$(grep -cE -- '"--(state|reason)"' "$TMP/fixaz/llamadas.log" 2>/dev/null); logst=${logst:-0}
 { [ "$rc" -eq 0 ] && [ "$(cuenta comentario)" -eq 0 ] && cmp -s "$TMP/antes.yaml" "$TMP/pend/pending/abc12345.yaml" \
   && grep -q 'No lo reabro' "$TMP/o.txt" && [ "$st" -eq 2 ] && [ "$re" -eq 0 ] && [ "$logst" -eq 0 ]; } \
