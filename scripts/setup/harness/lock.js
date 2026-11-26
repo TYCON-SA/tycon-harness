@@ -1,5 +1,5 @@
 'use strict';
-// lock.js — el candado propio del mecanismo: ~/.claude/.tycon-pipeline/harness/harness.lock.
+// lock.js — el candado propio del mecanismo: ~/.tycon/state/harness/harness.lock.
 //
 // Calco del método probado del aplicador (`install-tycon-hooks.sh`, bloque «Lock anti-concurrencia»): `mkdir` atómico,
 // el pid adentro para diagnóstico, y un candado HUÉRFANO se pisa con un mutex de takeover —mkdir, sección crítica de

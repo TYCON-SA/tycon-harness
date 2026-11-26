@@ -5,7 +5,7 @@
  * Qué trae cada perfil lo dice `scripts/setup/install-effects.json` (`profiles`), y lo obedecen el aplicador y el sync
  * de bloques. Acá vive lo que `harness.js` necesita para elegirlo y cambiarlo:
  *   · `resolve()` — el perfil vigente según la configuración del arnés (`install.profile`: TYCON_INSTALL_PROFILE ›
- *     ~/.claude/tycon.json › perfil del equipo). Sin valor es `full` («sin elegir»: lo de siempre). Una configuración
+ *     ~/.tycon/config.json › perfil del equipo). Sin valor es `full` («sin elegir»: lo de siempre). Una configuración
  *     ROTA no es `full`: devuelve `ok: false` con el motivo, y quien llama lo dice y no decide nada por el perfil.
  *   · `checkOption()` — `--profile` de `install`: un valor fuera de la lista, o una variable que dice otra cosa, sale 2
  *     (una opción que no hace efecto no pasa en silencio).

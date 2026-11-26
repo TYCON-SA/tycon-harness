@@ -89,7 +89,7 @@ function harnessFindGitBash(ctx) {
     const own = ctx.ownClone === undefined ? OWN_CLONE : ctx.ownClone;
     if (!dir && own && fs.existsSync(path.join(own, 'scripts', 'lib', 'git-bash.js'))) dir = own;
   }
-  if (!dir) return () => ({ path: null, reason: why || 'no encontré el arnés (TYCON_GUIDES_DIR o el enlace ~/.claude/tycon-harness)' });
+  if (!dir) return () => ({ path: null, reason: why || `no encontré el arnés (TYCON_GUIDES_DIR o el enlace ${require('./harness-path.js').enlaceParaMostrar()})` });
   const lib = path.join(dir, 'scripts', 'lib', 'git-bash.js');
   if (!fs.existsSync(lib)) return () => ({ path: null, reason: `el arnés de ${dir} no trae scripts/lib/git-bash.js (está atrasado): actualizalo` });
   const { findGitBash } = require(lib);
