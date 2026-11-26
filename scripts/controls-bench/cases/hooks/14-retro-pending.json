@@ -2845,7 +2845,8 @@
         },
         {
           "id": "quiet-lanzamiento-merge-de-otro-proyecto",
-          "type": "must-emit",
+          "type": "must-stay-quiet",
+          "__doc": "El aviso de arranque mira sólo las entradas de su propio proyecto: las de otro no se juzgan ni se nombran (se reclaman al abrir sesión en su repo), y no se dice que existen. Antes decía «hay N en OTROS proyectos — NO los lances»: para contarlas juzgaba el registro entero, y el arranque tardaba hasta 91 s.",
           "setup": [
             "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "node -e \"const fs=require('fs');const otro=process.env.SANDBOX_HOME+'/otro-proyecto/Repo';fs.mkdirSync(otro,{recursive:true});const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:'2026-08-24T00:00:00.000Z',sessionId:'otra-sesion',repoPath:otro,sha:'abc123def456',branch:'main'})+'\\n')\""
@@ -2855,11 +2856,8 @@
             "cwd": "${FIXTURE}"
           },
           "expect": {
-            "stdout_re": [
-              "OTROS proyectos",
-              "NO los lances"
-            ],
             "stdout_not_re": [
+              "OTROS proyectos",
               "Lanzá el tycon-retrospective-capturer",
               "otro-proyecto",
               "abc123def456"
@@ -2922,7 +2920,7 @@
         {
           "id": "cuenta-los-exentos-en-el-aviso-sin-reclamarlos",
           "type": "must-emit",
-          "__doc": "Una exención que no se cuenta es un apagado silencioso: el aviso de arranque rinde 'N con retrospectiva · M exentos · P sin retrospectiva' cuando hubo exenciones en la ventana, y NO lista el push exento como pendiente ni pide lanzar nada. El `ts` se escribe con la hora actual para que el caso no envejezca fuera de la ventana. ROJO PREVIO: el hook anterior lo listaba como merge sin retrospectiva, con la instrucción de lanzar el capturer.",
+          "__doc": "Una exención que no se cuenta es un apagado silencioso: el aviso de arranque dice cuántos pushes quedaron exentos en la ventana y dónde está la cuenta con y sin retrospectiva (`--report`, que juzga el registro entero: el arranque no), y NO lista el push exento como pendiente ni pide lanzar nada. El `ts` se escribe con la hora actual para que el caso no envejezca fuera de la ventana. ROJO PREVIO: el hook anterior lo listaba como merge sin retrospectiva, con la instrucción de lanzar el capturer.",
           "setup": [
             "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",
             "node -e \"const fs=require('fs');const d=process.env.SANDBOX_HOME+'/.claude/.tycon-pipeline';fs.mkdirSync(d,{recursive:true});fs.appendFileSync(d+'/retro-pending.jsonl',JSON.stringify({ts:new Date().toISOString(),sessionId:'otra-sesion',repoPath:process.cwd(),sha:'abc123def456',branch:'main',exento:'solo-tests-docs',archivos:['scripts/tests/x.test.sh']})+'\\n')\""
@@ -2933,8 +2931,8 @@
           },
           "expect": {
             "stdout_re": [
-              "1 exento",
-              "0 sin retrospectiva"
+              "1 push\\(es\\) a main exento\\(s\\)",
+              "--report"
             ],
             "stdout_not_re": [
               "Lanzá",

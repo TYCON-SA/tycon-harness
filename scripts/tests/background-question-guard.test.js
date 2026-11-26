@@ -679,7 +679,9 @@ test('T31 FirmaEnLanzada_NoRepetirAntesDelAviso @fila-149', () => {
 // 🔴 Falla con: el freno no sabe decir por qué el pedido no llega a la lista de la coordinadora (la lista apagada en la
 //    máquina, o prendida sin una coordinadora confirmada y viva).
 test('T32 PorQueSinLista_ApagadaOSinCoordinadora @fila-149', (t) => {
-  const toy = maquina(t);
+  // una máquina sin coordinadora designada: la llave de la lista y la coordinadora se leen del mismo perfil de juguete
+  // (con relay_session), y lo único que falta es la coordinadora
+  const toy = casaNueva(t);
   // el ambiente vacío: el de quien corre la prueba (TYCON_PROFILE=0 en las portables) taparía el perfil de juguete
   assert.match(ow.porQueSinLista({ casa: toy.casa, arnes: toy.arnes, env: {} }), /apagada.*approvals\.signature_list/);
   fs.writeFileSync(path.join(toy.arnes, 'team-profile.json'), JSON.stringify({ approvals: { ...PERFIL.approvals, signature_list: 'on' } }));
