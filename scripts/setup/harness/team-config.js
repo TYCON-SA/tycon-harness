@@ -383,6 +383,10 @@ load().catch((e) => app.replaceChildren(el('p', { class: 'err', text: 'No pude c
  * política, vencimiento, los permisos propios de la firma si los trae, y los NOMBRES de sus parámetros. La firma no
  * sale de acá: la llave es una credencial y la página no guarda credenciales. Sin el archivo: `{ hay: false }`.
  */
+/** Los nombres de parámetro de una SAS de Azure: lo único de la firma que el panel muestra. */
+const NOMBRES_SAS = new Set(['sv', 'ss', 'srt', 'sr', 'sp', 'st', 'se', 'si', 'sip', 'spr', 'sig', 'sdd', 'ses', 'rscc', 'rscd', 'rsce', 'rscl', 'rsct',
+  'skoid', 'sktid', 'skt', 'ske', 'sks', 'skv', 'saoid', 'suoid', 'scid']);
+
 function mailboxSummary(tree, file) {
   let lib;
   const guion = path.join(tree, 'scripts', 'metrics', 'upload-runs.js');
@@ -399,12 +403,13 @@ function mailboxSummary(tree, file) {
     return { hay: true, proveedor: lc.cfg.provider, destino: typeof lc.cfg.destino === 'string' ? lc.cfg.destino : null, vence: lc.cfg.vence };
   }
   const firma = new URLSearchParams(lc.cfg.sas);
-  // Ningún valor que pueda ser la SAS sale en el panel: la política se muestra sólo con forma de nombre, y de los parámetros
-  // sólo los nombres cortos de una SAS (sv, sr, si, sp, se, sig…); una «sas» que trae sólo la firma la tendría como nombre.
-  const politica = typeof lc.cfg.politica !== 'string' ? null
-    : /^[A-Za-z0-9._-]{1,64}$/.test(lc.cfg.politica) ? lc.cfg.politica : '(no se muestra: no tiene forma de nombre de política)';
+  // Ningún valor que pueda ser la SAS sale en el panel: de los parámetros, sólo los nombres de una SAS de Azure (una «sas»
+  // que trae sólo la firma la tendría como nombre), y los permisos sólo con forma de permisos.
+  // (leerConfig ya rechaza una «politica» sin forma de nombre)
+  const politica = typeof lc.cfg.politica === 'string' ? lc.cfg.politica : null;
   const claves = [...new Set(firma.keys())];
-  const parametros = claves.filter((k) => /^[a-z]{1,8}$/.test(k));
+  const parametros = claves.filter((k) => NOMBRES_SAS.has(k));
+  const sp = firma.get('sp');
   if (parametros.length < claves.length) parametros.push(`(${claves.length - parametros.length} sin forma de parámetro, no se muestran)`);
   return {
     hay: true,
@@ -412,7 +417,7 @@ function mailboxSummary(tree, file) {
     contenedor: lc.cfg.contenedor,
     politica,
     vence: lc.cfg.vence,
-    permisos_propios: firma.get('sp') || null,
+    permisos_propios: !sp ? null : /^[racwdxltmeopi]{1,16}$/.test(sp) ? sp : '(no se muestra: no tiene forma de permisos)',
     parametros,
   };
 }
