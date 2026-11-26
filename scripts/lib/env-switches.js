@@ -109,6 +109,8 @@ const CARPETAS_DEL_NUCLEO = ['scripts', 'skills', 'build'];
  * Las variables que lee el código del núcleo bajo `raiz` (sus carpetas de código, fuera de pruebas y del banco):
  * nombre → archivos (relativos).
  */
+const esAtajo = (texto) => require('./legacy-names.js').isShim(texto);
+
 function lecturas(raiz) {
   const out = new Map();
   const visitar = (dir) => {
@@ -122,6 +124,8 @@ function lecturas(raiz) {
       if (!ganchos && (!/\.(c|m)?js$|\.sh$/.test(h.name) || esPrueba(h.name))) continue;
       let texto;
       try { texto = fs.readFileSync(p, 'utf8'); } catch (_e) { continue; }
+      // un atajo de nombre viejo generado no es un lector: lee lo que su plantilla, declarada en legacy-names.js
+      if (!ganchos && esAtajo(texto)) continue;
       const re = new RegExp(ganchos ? EN_GANCHOS : h.name.endsWith('.sh') ? EN_SH : EN_JS);
       let m;
       while ((m = re.exec(texto))) {
