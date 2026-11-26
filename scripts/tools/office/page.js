@@ -69,13 +69,37 @@ const EN={
   "Este navegador no pudo cargar la oficina en 3D; las tarjetas y la tabla tienen lo mismo.":"This browser could not load the office in 3D; the cards and the table have the same.",
   "Este navegador no puede mostrar la oficina en 3D; las tarjetas y la tabla tienen lo mismo.":"This browser cannot show the office in 3D; the cards and the table have the same.",
   "Tus últimos 20 mensajes con sus respuestas, y los últimos 10 con la coordinadora.":"Your last 20 messages with their answers, and the last 10 with the coordinator.",
-  "Tus últimos 20 mensajes con sus respuestas, y los últimos 10 con cada sesión, en orden; primero la que habló último.":"Your last 20 messages with their answers, and the last 10 with each session, in order; the one that spoke last first."
+  "Tus últimos 20 mensajes con sus respuestas, y los últimos 10 con cada sesión, en orden; primero la que habló último.":"Your last 20 messages with their answers, and the last 10 with each session, in order; the one that spoke last first.",
+  // lo que arma la foto (office.js y sus piezas): columnas, tablas, grupos, horas y lo que hace cada sesión
+  "Hoy":"Today","Esta semana":"This week","La semana que viene":"Next week","Más adelante":"Later","Tema":"Topic","Qué tendremos":"What we will have","Cómo va":"How it goes","Qué queda":"What is left",
+  "En curso":"In progress","Esperan entrar":"Waiting to merge","Terminado":"Done","Terminados hoy":"Done today","Sin sesión":"No session","Lo terminado antes de hoy":"Done before today","No hay pendientes":"Nothing pending",
+  "Otra cosa":"Something else","Otro proyecto":"Other project","Qué":"What","Sesión de prueba":"Test session","Pase adversarial":"Adversarial pass",
+  "se pasó de la hora":"past its time","en hora":"on time","sin hora estimada":"no estimated time","sin número":"no number","sin respuesta":"no answer","se cerró sin entrar":"closed without merging",
+  "parada, no anotó qué espera":"stopped, did not note what it waits for","espera a su persona":"waits for its person","espera una tarea de fondo":"waits for a background task","esperando entrar":"waiting to merge",
+  "que apruebes el plan":"for you to approve the plan","la firma la coordinadora":"the coordinator signs it","el dueño":"the owner","no se ve qué hace":"what it does is not visible",
+  "en la cola":"in the queue","fuera de la cola":"out of the queue","con auto-completar":"with auto-complete","choca con main":"conflicts with main","en borrador":"draft","en revisión":"in review","en curso":"in progress","lista":"ready",
+  "Coordina las sesiones de esta máquina":"Coordinates the sessions of this machine","Coordina las sesiones de esta máquina.":"Coordinates the sessions of this machine.","Sin trabajo":"No work",
+  "Una prueba: su cuadro es parte de la prueba.":"A test: its question box is part of the test.","Implementa su historia.":"Implements its story.","Trabaja sin pipeline.":"Works without the pipeline.",
+  "Hace un trabajo suelto, sin pasos fijos.":"Does a loose job, without fixed steps.","Trabaja en algo de fondo.":"Works on something in the background.","Espera tu respuesta o un permiso.":"Waits for your answer or a permission.",
+  "Te hizo una pregunta en su pantalla.":"Asked you a question on its screen.","Sigue con algo: tocó archivos hace poco.":"Still on something: it touched files recently.","Sin novedades.":"No news.",
+  "Terminó: sus cambios están entrando a los repos.":"Done: its changes are merging into the repos.","Terminó, pero sus pedidos no están en la cola.":"Done, but its requests are not in the queue.",
+  "Terminó, pero sus pedidos no están en la cola y su pedido choca con main.":"Done, but its requests are not in the queue and its request conflicts with main.",
+  "Ahora no hay pruebas corriendo.":"No tests are running now.","No se sabe si hay pruebas corriendo.":"It is not known whether tests are running.","Abrir el pull request":"Open the pull request","Aprobar el plan":"Approve the plan",
+  "Un pedido sin título":"An untitled request","Un trabajo sin nombre":"An unnamed job","Abiertas: sin dato":"Open: no data","No pude leer los pendientes de tus proyectos":"I could not read the pending work of your projects",
+  "Los pedidos no se midieron: no hay una lectura de los últimos 15 minutos.":"The requests were not measured: there is no reading from the last 15 minutes.",
+  "De un trabajo de una sesión cerrada no se pudo saber si dejó algo sin terminar.":"For one job of a closed session it could not be known whether it left something unfinished.",
+  "No pude leer la lista de sesiones de Codex: alguna de estas personas puede ser un agente.":"I could not read the list of Codex sessions: some of these people may be an agent.",
+  "Esto no aprueba nada: para aprobar, contestá el cuadro.":"This approves nothing: to approve, answer the question box.","Esa sesión no está en la oficina.":"That session is not in the office.",
+  "El mensaje es demasiado largo.":"The message is too long.","Se le entregó y no aparece en su conversación.":"It was delivered and does not appear in its conversation.","No se pudo seguir el mensaje.":"The message could not be followed.",
+  "Esta sesión es de Codex: desde acá no se le puede escribir.":"This session is a Codex one: it cannot be written to from here.",
+  "Esta sesión no puede recibir mensajes de la oficina. Escribile una vez en su pestaña y vuelve a poder.":"This session cannot receive messages from the office. Write to it once in its tab and it can again.",
+  "1 espera entrar":"1 waiting to merge","1 espera tu firma":"1 waiting for your signature","1 pasó su hora":"1 past its time","1 terminado hoy":"1 done today","1 no se pudo leer":"1 could not be read","revisando":"reviewing"
 };
 // las frases con un dato adentro: el texto entero, con el dato en su lugar. Una función recibe lo encontrado y traduce lo
 // que hace falta de adentro
 const PATRONES_EN=[
   [/^Dónde se contesta: (.+)$/,"Where to answer it: $1"],[/^Por qué sólo vos: (.+)$/,"Why only you: $1"],[/^Recomendada: (.+)$/,"Recommended: $1"],
-  [/^(Firma|Cuadro|Espera|Del tablero|Pendiente): (.+)$/,"$1: $2"],
+  [/^(Firma|Cuadro|Espera|Del tablero|Pendiente): (.+)$/,(m,etiqueta,dato)=>`${traducirTexto(etiqueta)}: ${dato}`],
   [/^Agrandar la oficina de (.+)$/,"Enlarge the office of $1"],[/^sin novedades desde las (.+)$/,"no news since $1"],[/^sin conexión desde (.+)$/,"no connection since $1"],
   [/^Te toca: (.+)$/,"Your turn: $1"],[/^Trabado: (.+)$/,"Stuck: $1"],[/^Conversación de (.+)$/,"Conversation with $1"],[/^Escribirle a (.+)$/,"Write to $1"],[/^Mensaje para (.+)$/,"Message for $1"],
   [/^La oficina de (.+)$/,"The office of $1"],[/^Las sesiones de (.+)$/,"The sessions of $1"],[/^Al día a las (.+)$/,"Up to date at $1"],[/^pedidos leídos a las (.+)$/,"requests read at $1"],
@@ -86,6 +110,16 @@ const PATRONES_EN=[
   [/^El mensaje pasa de (\d+) caracteres\.$/,"The message is over $1 characters."],[/^y (\d+) mensajes? más$/,"and $1 more message(s)"],[/^Historias de tus proyectos$/,"Stories of your projects"],
   [/^La (T-\d+|\d+) no está en el tablero\.$/,"$1 is not on the board."],[/^(⌘|Ctrl) \+ rueda para acercar$/,"$1 + wheel to zoom"],
   [/^Y (\d+) sesión\(es\) más: están en las tarjetas de abajo\.$/,"And $1 more session(s): they are in the cards below."],[/^(\d+) s\.$/,"$1 s."],
+  // las de la foto
+  [/^\+(.+) tarde$/,"+$1 late"],[/^(\d.*) antes$/,"$1 early"],[/^estaba para (.+)$/,"was due $1"],[/^desde las (.+)$/,"since $1"],[/^parada desde las (.+)$/,"stopped since $1"],
+  [/^Sin novedades desde las (.+)$/,"No news since $1"],[/^la anotó a las (.+)$/,"noted at $1"],[/^recalculada al pasar a (.+)$/,"recalculated on moving to $1"],[/^Va por el paso «(.+)»\.$/,"On the step «$1»."],
+  [/^espera (\d+) tareas de fondo$/,"waits for $1 background tasks"],[/^(\d+) esperan entrar$/,"$1 waiting to merge"],[/^(\d+) esperan tu firma$/,"$1 waiting for your signature"],[/^(\d+) pasaron su hora$/,"$1 past their time"],
+  [/^(\d+) terminados hoy$/,"$1 done today"],[/^(\d+) a medio camino$/,"$1 halfway"],[/^(\d+) sin hora$/,"$1 without a time"],[/^(\d+) con hora$/,"$1 with a time"],[/^(\d+) no se pudieron leer$/,"$1 could not be read"],
+  [/^(\d+) en curso$/,"$1 in progress"],[/^(\d+) en espera$/,"$1 waiting"],[/^(\d+) sin comenzar$/,"$1 not started"],[/^(\d+) abiertas$/,"$1 open"],[/^(.+): (\d+) abiertas$/,"$1: $2 open"],
+  [/^Historia (\d[\w.-]*)$/,"Story $1"],[/^Armada a las (.+)$/,"Built at $1"],[/^Leído a las (.+)$/,"Read at $1"],[/^Tablero escrito a las (\S+)( \(vieja\))?$/,(m,h,v)=>"Board written at "+h+(v?" (old)":"")],
+  [/^Terminó la story (.+): falta cerrarla\.$/,"Finished story $1: it still has to be closed."],[/^Aprobar el plan: (.+)$/,(m,...g)=>"Approve the plan: $1".replace(/\$(\d)/g,(x,k)=>g[k-1])],[/^Abrir el pull request: (.+)$/,(m,...g)=>"Open the pull request: $1".replace(/\$(\d)/g,(x,k)=>g[k-1])],
+  [/^Contestar: (.+)$/,(m,...g)=>"Answer: $1".replace(/\$(\d)/g,(x,k)=>g[k-1])],[/^Firma: (.+)$/,(m,...g)=>"Signature: $1".replace(/\$(\d)/g,(x,k)=>g[k-1])],[/^Firmar: (.+)$/,(m,...g)=>"Sign: $1".replace(/\$(\d)/g,(x,k)=>g[k-1])],[/^Firmas \((\d+)\): (.+)$/,"Signatures ($1): $2"],[/^(.+) · Otro proyecto$/,"$1 · Other project"],
+  [/^El dueño está ausente desde las (\S+) \(la puso (.+)\)$/,"The owner is away since $1 (set by $2)"],[/^vale hasta las (.+)$/,"valid until $1"],[/^y (\d+) más$/,"and $1 more"],[/^(\d+) agentes (.+)$/,"$1 agents $2"],[/^1 agente (.+)$/,"1 agent $1"],[/^Unos (\d+) agentes (.+)$/,"About $1 agents $2"],
   [/^(dom|lun|mar|mié|jue|vie|sáb)( \d\d:\d\d)$/,(m,d,h)=>({dom:"Sun",lun:"Mon",mar:"Tue","mié":"Wed",jue:"Thu",vie:"Fri","sáb":"Sat"})[d]+h]
 ];
 // Un texto entero; si no, una frase con datos; si no, por partes: sin el símbolo de adelante, cada parte entre « · », y
@@ -164,7 +198,7 @@ function renderBoard(){const body=document.getElementById("boardBody"),k=DATA.ka
     // en «Sin sesión», las tarjetas de historia de tus proyectos van juntas en una línea que se abre, después de las demás
     const plegadas=c.id==="sinEmpezar"?list.filter(i=>i.local===true):[];
     const tarjeta=(i,dest)=>{const card=el("div","item abre"),tit=el("b","una-linea",i.titulo||"");tit.setAttribute("translate","no");tit.title=i.titulo||"";if(typeof i.numero==="string"){card.setAttribute("data-numero",i.numero);card.appendChild(el("span","num",i.numero));if(typeof numeroMarcado==="string"&&i.numero===numeroMarcado)card.classList.add("marcada")}card.tabIndex=0;card.setAttribute("role","button");card.onclick=()=>{if(!String(window.getSelection?getSelection():""))abrirTarjeta(i,card);};card.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();abrirTarjeta(i,card);}};card.appendChild(tit);const line=[i.quien,i.hora,i.grupo].filter(Boolean).join(" · "),quienEs=(DATA.agents||[]).find(a=>a.nombre===String(i.quien||"").split(" · ")[0]),mod=quienEs&&(quienEs.modelo||quienEs.esfuerzo)?(quienEs.modelo||"sin dato")+" · "+(quienEs.esfuerzo||"sin dato"):"";if(mod)card.appendChild(el("span","m mod",mod));if(line)card.appendChild(el("span","m",line));const eh=c.id==="curso"&&estadoDeHora(i);if(eh){card.style.setProperty("--k",eh[1]);card.appendChild(el("span","estado-hora",eh[0]))}
-      [i.espera?"Espera "+i.espera+".":"",i.marca,i.motivo,i.nota,i.ficha&&i.ficha.linea].forEach(v=>{if(v)card.appendChild(el("span","n",v))});if(i.mano)card.appendChild(el("span","mano "+i.mano,"✋ "+(i.mano==="coordinadora"?"Espera a la Coordinadora":"Espera tu firma")));dest.appendChild(card)};
+      [i.espera?"Espera "+i.espera+".":"",i.marca,i.motivo,i.nota,i.ficha&&i.ficha.linea].forEach(v=>{if(v)card.appendChild(v===i.nota?Object.assign(el("span","n",v),{translate:false}):el("span","n",v))});if(i.mano)card.appendChild(el("span","mano "+i.mano,"✋ "+(i.mano==="coordinadora"?"Espera a la Coordinadora":"Espera tu firma")));dest.appendChild(card)};
     list.filter(i=>!plegadas.includes(i)).forEach(i=>tarjeta(i,col));
     if(plegadas.length){const linea=el("button","plegadas","Historias de tus proyectos · "+plegadas.length),caja=el("div","plegadas-lista");linea.type="button";plegadas.forEach(i=>tarjeta(i,caja));
       const pintar=()=>{const abierta=historiasAbiertas.has(c.id);caja.hidden=!abierta;linea.setAttribute("aria-expanded",String(abierta))};
@@ -380,7 +414,7 @@ function sesionDeTarjeta(i){const q=String(i.quien||"").trim(),primera=q.split(/
 function abrirTarjeta(i,card){const v=ventana(),box=v.firstElementChild,a=sesionDeTarjeta(i),nro=numeroDe(i);charlaDe=null;ultimoPedido+=1;charlaVuelve=card;v.hidden=false;box.classList.add("detalle");box.setAttribute("aria-label","Detalle de la tarjeta");document.documentElement.classList.add("con-ventana");
   const cerrar=botonCerrar(cerrarCharla);box.replaceChildren(...(nro?[el("p","num",nro)]:[]),Object.assign(el("h3",null,i.titulo||"Sin título"),{translate:!i.titulo}));
   const dl=el("dl"),fila=(k,x)=>{if(x==null||x==="")return;const dd=el("dd");dd.append(x);dl.append(el("dt",null,k),dd);};
-  fila("Quién",i.quien);if(!a||String(i.hora||"")!==String((finTxt(a)||{}).hora||""))fila("Cuándo",i.hora);if(!a||i.espera!==a.espera)fila("Espera",i.espera);fila("Marca",i.marca);fila("Motivo",i.motivo);fila("Nota",i.nota);fila("Grupo",i.grupo);
+  fila("Quién",i.quien);if(!a||String(i.hora||"")!==String((finTxt(a)||{}).hora||""))fila("Cuándo",i.hora);if(!a||i.espera!==a.espera)fila("Espera",i.espera);fila("Marca",i.marca);fila("Motivo",i.motivo);fila("Nota",i.nota?Object.assign(el("span",null,i.nota),{translate:false}):i.nota);fila("Grupo",i.grupo);
   // el enlace sólo lleva a estos dos sitios: de los datos sale la ruta, nunca la dirección entera
   if(i.pedido){const texto="Pedido "+i.pedido.numero,base=i.pedido.sitio==="github"?"https://github.com/":i.pedido.sitio==="azure"?"https://dev.azure.com/":null;if(base&&i.pedido.ruta){const l=el("a",null,texto);l.href=base+i.pedido.ruta;l.target="_blank";l.rel="noopener";fila("Pedido",l);}else fila("Pedido",texto);}
   if(dl.children.length)box.append(dl);
@@ -933,7 +967,7 @@ function abrirTablero(){sel=null;desks.forEach(pintarTag);const K=T.kanban()||{}
   const toca=(meta&&meta.teToca)||[];if(toca.length){panel.append(mk("h4","toca","Te toca"));const ul=mk("ul","toca");toca.forEach(t=>ul.append(mk("li",null,t)));panel.append(ul);}
   // lo que no se está trabajando no estira el detalle: con muchas, se abre a pedido, y sigue abierto cuando llega otra foto
   orden.forEach(c=>{const rows=c.tarjetas;if(!rows.length)return;const h=mk("h4",null,c.nombre+" · "+rows.length);h.style.color=c.color;panel.append(h);
-    const lista=()=>{const ul=mk("ul","list");rows.forEach(r=>{const li=mk("li");li.append(Object.assign(mk("b",null,r.titulo||""),{translate:false}));if(c.id==="medio")li.append(mk("span","m",r.accion||""));else{li.append(mk("span","m",[r.quien,r.hora,r.espera?"espera "+r.espera:"",r.marca,r.motivo].filter(Boolean).join(" · ")));if(r.nota)li.append(mk("span","m",r.nota));}ul.append(li);});return ul;};
+    const lista=()=>{const ul=mk("ul","list");rows.forEach(r=>{const li=mk("li");li.append(Object.assign(mk("b",null,r.titulo||""),{translate:false}));if(c.id==="medio")li.append(mk("span","m",r.accion||""));else{li.append(mk("span","m",[r.quien,r.hora,r.espera?"espera "+r.espera:"",r.marca,r.motivo].filter(Boolean).join(" · ")));if(r.nota)li.append(Object.assign(mk("span","m",r.nota),{translate:false}));}ul.append(li);});return ul;};
     if((c.id==="sinEmpezar"||c.id==="hechos")&&rows.length>5&&!panel.abiertos.has(c.id)){const b=mk("button","verTodos","Ver los "+rows.length);b.type="button";b.onclick=()=>{panel.abiertos.add(c.id);b.replaceWith(lista());};panel.append(b);}
     else panel.append(lista());});
   if(K.medioCaminoLeido)panel.append(mk("p","m",K.medioCaminoLeido));
