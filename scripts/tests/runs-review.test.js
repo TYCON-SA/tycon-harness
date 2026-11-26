@@ -926,7 +926,8 @@ test('T63 PrefijoDeMasYHechoUnaVez @story-4.10 @ac-30', () => {
   const comandos = [
     `${P} create --source-branch x --target-branch main --draft true --title t`,
     `${P} create --source-branch x --target-branch main --auto-complete true --squash false --delete-source-branch true --title t`,
-    `${P} update --id 5 --draft false --auto-complete true --squash false --delete-source-branch false`,
+    // un update que no necesita la rama del pedido: el que la necesita nunca «sobraba» (8.225, más abajo)
+    `${P} update --id 5 --squash false --title t2`,
     `${P} create --source-branch x --target-branch main --title t`,
   ];
   const lineas = comandos.map((command) => ({ ts: ts(), type: 'PR_A_MANO', command }));
@@ -969,6 +970,25 @@ test('T63 PrefijoDeMasYHechoUnaVez @story-4.10 @ac-30', () => {
   // la decisión es la del freno de pedidos
   const AZ = require(path.join(ROOT, 'scripts', 'lib', 'az-pr.js'));
   assert.deepStrictEqual(comandos.map((c) => AZ.faltasDe(AZ.segmentos(c)[0]).faltas.length), [0, 0, 0, 2]);
+});
+
+// 🔴 Falla con: la revisión dice «sobraba» en el escape de un update que el freno juzga con la rama del pedido. Sin la
+//    rama no sabe qué habría decidido: con `false`, el freno frena si el pedido sale de una rama efímera.
+test('8.225-Nocturna_PedidoQueConsulta_NoSobra @story-8.225 @ac-4 — el escape de un update que necesita la rama nunca «sobraba»', () => {
+  const P = 'TYCON_PR_BY_HAND=1 az repos pr update --id 7';
+  const consultan = [
+    `${P} --draft false --auto-complete true --squash false --delete-source-branch true`,
+    `${P} --draft false --auto-complete true --squash false --delete-source-branch false`,
+    `${P} --auto-complete true --squash false`,
+    `${P} --status completed`,
+  ];
+  for (const c of consultan) {
+    const r = rv({ hilo: cmd(c), bypass: [{ ts: ts(), type: 'PR_A_MANO', command: c }] });
+    assert.deepStrictEqual(cats(r, 'RR-ESCAPE'), ['PR_A_MANO:1'], c);
+  }
+  // uno que no la necesita sigue sobrando
+  const otro = `${P} --squash false --title nuevo`;
+  assert.deepStrictEqual(cats(rv({ hilo: cmd(otro), bypass: [{ ts: ts(), type: 'PR_A_MANO', command: otro }] }), 'RR-ESCAPE'), ['PR_A_MANO/sobra:1']);
 });
 
 // T64 CierreSinConstancia @story-4.10 @ac-31
@@ -1145,7 +1165,8 @@ test('T3 ValorYFormaDeLaVariable @story-4.12 @ac-3', () => {
 //    (sin la conversación, el pedido malo salía «sobra» y el bueno, falla).
 test('8.164-NocturnaJuzgaComoElFreno @story-8.164 @ac-1', () => {
   // Para cada pedido con el escape, la noche dice «sobraba» exactamente cuando el freno lo dejaría pasar sin él: los
-  // dos leen la regla de `faltasDe`, y esto lo mide corriendo el freno de verdad.
+  // dos leen la regla de `faltasDe`, y esto lo mide corriendo el freno de verdad. Un pedido que el freno juzga con la
+  // rama de origen (`necesitaLaRama`) es la excepción: la noche no tiene la rama y nunca dice «sobraba» (8.225, AC 4).
   const { spawnSync } = require('child_process');
   const FRENO = path.join(ROOT, 'scripts', 'hooks', 'pr-auto-complete-guard.js');
   // 0 es «pasa» y 2 es «frena»; cualquier otra salida es un freno roto, no un freno que frenó.
@@ -1165,8 +1186,9 @@ test('8.164-NocturnaJuzgaComoElFreno @story-8.164 @ac-1', () => {
     'az repos pr update --id 7 --draft false --auto-complete true --squash false --delete-source-branch true',
     'az repos pr update --id 7 --draft false --auto-complete true --squash false --delete-source-branch false',
   ];
+  const AZ = require(path.join(ROOT, 'scripts', 'lib', 'az-pr.js'));
   for (const c of pedidos) {
-    const esperada = pasa(c) ? 'PR_A_MANO/sobra:1' : 'TYCON_PR_BY_HAND:1';
+    const esperada = !AZ.necesitaLaRama(AZ.segmentos(c)[0]) && pasa(c) ? 'PR_A_MANO/sobra:1' : 'TYCON_PR_BY_HAND:1';
     assert.deepStrictEqual(cats(rv({ hilo: cmd(`TYCON_PR_BY_HAND=1 ${c}`) }), 'RR-ESCAPE'), [esperada], `la noche no juzga como el freno: ${c}`);
   }
   // y los dos casos de la historia, por si el freno cambiara a la vez que la noche

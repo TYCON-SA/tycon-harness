@@ -487,6 +487,26 @@ function faltaDeBorrarRamaUpdate(borrar, publica, origen = null) {
 }
 
 /**
+ * ¿El `update` puede completar el pedido? Con el auto-completar prendido, `--status completed` o saltando las políticas.
+ * Al completarse, la plataforma aplica la opción de borrar la rama que el pedido ya tenía, aunque el comando no la nombre.
+ */
+function puedeCompletar(seg) {
+  const literal = (nombre) => { const x = valorDe(seg, nombre); return x && x.literal ? x.texto : null; };
+  return esCierto(literal('auto-complete')) || String(literal('status') || '').toLowerCase() === 'completed' || esCierto(literal('bypass-policy'));
+}
+
+/**
+ * ¿Juzgar este pedido pide la rama de origen? Un `update` con `--delete-source-branch` escrito, o uno sin ella que puede
+ * completar el pedido. Lo usan el freno (para preguntarla) y la revisión nocturna, que no la tiene y entonces no puede
+ * decir que el escape sobraba.
+ */
+function necesitaLaRama(seg) {
+  if (verboDePr(seg) !== 'update') return false;
+  const borrar = valorDe(seg, 'delete-source-branch');
+  return borrar ? borrar.literal : puedeCompletar(seg);
+}
+
+/**
  * Una ficha del pedido con una expansión fuera de comillas: la terminal la parte en palabras y puede meter una bandera.
  * Lo de antes del `az` no cuenta: el lado derecho de `VAR=$X az …` no se parte.
  */
@@ -581,7 +601,13 @@ function faltasDe(seg, { ramaDeOrigen = null } = {}) {
   // tenía (`update_pull_request` parte de `existing_pr.completion_options`).
   const falta = faltaDeBorrarRamaUpdate(v.borrar, publica && esCierto(autoComplete), ramaDeOrigen);
   if (falta) res.faltas.push(falta);
+  // Sin la bandera, un update que puede completar el pedido aplica la opción que el pedido ya tenía. Si sale de una rama
+  // de larga vida, `false` tiene que ir escrito: un pedido creado por otro camino puede traer «borrar la rama». Sin la
+  // rama leída no se juzga, como antes.
+  else if (v.borrar === null && ramaDeOrigen && esDeLargaVida(ramaDeOrigen) && puedeCompletar(seg)) {
+    res.faltas.push(`puede completar un pedido que sale de \`${ramaDeOrigen}\`, una rama de larga vida, sin \`--delete-source-branch\` escrito: si el pedido ya traía «borrar la rama al completar», la plataforma borraría \`${ramaDeOrigen}\`. Va \`--delete-source-branch false\``);
+  }
   return res;
 }
 
-module.exports = { fichas, pareceAzPr, segmentos, flagDe, valorDe, esCierto, esFalso, verboDePr, pasaCodigoAUnInterprete, pedidoIlegible, pideAyuda, textoDe, tieneEscape, faltasDe, ROMPE_SQUASH, RAMAS_DE_LARGA_VIDA };
+module.exports = { fichas, pareceAzPr, segmentos, flagDe, valorDe, esCierto, esFalso, verboDePr, pasaCodigoAUnInterprete, pedidoIlegible, pideAyuda, textoDe, tieneEscape, faltasDe, puedeCompletar, necesitaLaRama, ROMPE_SQUASH, RAMAS_DE_LARGA_VIDA };
