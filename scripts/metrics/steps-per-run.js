@@ -87,8 +87,9 @@ function caminar(dir, out, malas, vistas = new Set()) {
       try { const st = fs.statSync(p); esCarpeta = st.isDirectory(); esArchivo = st.isFile(); }
       catch (err) { malas.push({ dir: p, codigo: String((err && err.code) || 'ilegible') }); continue; }
     }
-    // `<maquina>/registros/` nunca trae volcados, y su place.json trae el correo de git de la persona: no se abre
-    if (esCarpeta) { if (it.name !== 'registros') caminar(p, out, malas, vistas); }
+    // `<maquina>/registros/` nunca trae volcados, y su place.json trae el correo de git de la persona: no se abre.
+    // `<maquina>/instincts/` tampoco: son los días de la grabadora, que lee sólo la noche de aprendizajes
+    if (esCarpeta) { if (it.name !== 'registros' && it.name !== 'instincts') caminar(p, out, malas, vistas); }
     else if (esArchivo && it.name.endsWith('.json')) out.push(p);
   }
   return out;

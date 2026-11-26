@@ -19,7 +19,7 @@ scripts/hooks/              lo que registra el instalador + los dos hooks global
 scripts/ci/                 controles de commit y de pull request (los productos la copian entera)
 scripts/nightly/            lo que corre en Azure sin nadie:
   scripts/nightly/dashboard/ · scripts/nightly/dependencies/ · scripts/nightly/open-prs/ · scripts/nightly/watcher/
-scripts/instincts/          el minado de instintos: lo dispara un hook de arranque, no la noche
+scripts/instincts/          los instintos: la subida al buzón y la noche que propone (la corre un pipeline de operaciones)
 scripts/tools/              a mano: auditorías y utilidades
   scripts/tools/harness-map/     el mapa del arnés
 scripts/lib/                bibliotecas + lo que llaman dos etapas o más

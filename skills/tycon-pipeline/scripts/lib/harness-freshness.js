@@ -2,7 +2,7 @@
 /**
  * harness-freshness — ¿el Arranque corre con el arnés instalado y al día?
  *
- * `pipeline.js` lee los pasos de una ruta fija (`~/.claude/agent-skills/skills/tycon-pipeline/steps`). Si esa carpeta no
+ * `pipeline.js` lee los pasos de una ruta fija (`~/.tycon/harness/skills/tycon-pipeline/steps`). Si esa carpeta no
  * es la del arnés que corre (una copia vieja, una carpeta real que la actualización no reemplaza), `next` manda a pasos
  * que ya no existen y el modelo los sigue: la sesión de un dev leyó un paso de horas borrado dos versiones antes. Eso
  * frena el Arranque. Que haya una versión nueva, o que la última actualización haya fallado, no frena: lo dice el aviso
@@ -36,7 +36,7 @@ function revisar({ stepsDir, nextFile, scriptDir, home = os.homedir(), leerEstad
   const st = leerEstado(scriptDir, home);
   const administrada = st && st.status === 'ok' && st.state && st.state.mode === 'managed' && typeof st.state.tree === 'string';
   const delArbol = administrada ? path.join(st.state.tree, 'skills', 'tycon-pipeline', 'steps') : null;
-  const arreglo = `El enlace ~/.claude/agent-skills tiene que llevar al arnés instalado: pedile a la persona que saque la copia vieja y corra «${homeCommand('.tycon/harness/scripts/setup/harness.js')} install»; después, volvé a correr next.`;
+  const arreglo = `El enlace ${require('./state-dir.js').paraMostrar(require('./state-dir.js').installedSkillsDir())} tiene que llevar al arnés instalado: pedile a la persona que saque la copia vieja y corra «${homeCommand('.tycon/harness/scripts/setup/harness.js')} install»; después, volvé a correr next.`;
   if (!mismo(stepsDir, propios) || (delArbol && !mismo(stepsDir, delArbol))) {
     const esperada = real(delArbol || propios) || delArbol || propios;
     out.error = `arnés viejo: los pasos salen de ${real(stepsDir) || stepsDir}, y el arnés que corre los tiene en ${esperada}. ${arreglo}`;

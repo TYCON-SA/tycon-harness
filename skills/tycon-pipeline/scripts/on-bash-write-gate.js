@@ -33,7 +33,9 @@
  * hook-errors.log: «FRENÓ POR FALLA» o «FAILED OPEN». Límite conocido: un error de sintaxis en este archivo no llega a
  * correr nada.
  * El análisis corre en un hilo y `lib/gate-clock.js` mira el reloj (20 s, `TYCON_BASH_GATE_TIMEOUT_S`): si no alcanza a
- * decidir, el comando no corre. Sin esa biblioteca, el análisis corre acá, sin reloj, y queda «FAILED OPEN».
+ * decidir, el comando no corre. Sin esa biblioteca, el análisis corre acá, sin reloj, y queda «FAILED OPEN». El análisis
+ * le anota al reloj sus pasos (`paso`): si tarda la mitad del reloj o más, queda «LENTO» con el paso más lento, y si lo
+ * corta, el corte dice en cuál estaba.
  *
  * ── SEGUNDA RESPONSABILIDAD: la puerta Bash del freno de STORY A MANO ────────────────
  * El caso que motiva ese freno son los heredocs de Bash —
@@ -130,7 +132,7 @@ function salirPorLaRed(e, texto) {
     try {
       process.stderr.write([
         '⛔ tycon-pipeline — EL FRENO FALLÓ Y ESTE COMANDO ESCRIBE UNA HISTORIA O UNA CONSTANCIA',
-        `  No pude mirar qué escribe. La falla quedó en ${path.join(carpetaDelEstado(), 'hook-errors.log')}.`,
+        `  No pude mirar qué escribe. La falla quedó en ${registroDeFallas()}.`,
         '  Una historia se edita con la herramienta de edición (Edit/Write); una constancia la firma una persona.',
         '',
       ].join('\n'));
@@ -231,7 +233,7 @@ function salirSinCargar(e) {
     process.stderr.write([
       '⛔ tycon-pipeline — EL FRENO DE ESCRITURAS NO PUDO CARGARSE ENTERO: ningún comando corre hasta repararlo',
       `  ${cual}`,
-      `  La falla quedó en ${path.join(carpetaDelEstado(), 'hook-errors.log')}. Reinstalá el arnés desde tu terminal; \`/tycon-harness\` dice si quedó bien instalado.`,
+      `  La falla quedó en ${registroDeFallas()}. Reinstalá el arnés desde tu terminal; \`/tycon-harness\` dice si quedó bien instalado.`,
       '',
     ].join('\n'));
   } catch { /* sin dónde decirlo, frena igual */ }
@@ -4029,7 +4031,8 @@ const ENVOLTORIOS_CON_VALOR = {
 /**
  * El tramo sin su `env` (también por su ruta, `/usr/bin/env`) y sin sus opciones, sus variables y su carpeta:
  * `{ carpetas, resto }`, con `resto` desde el comando que corre y `carpetas` las de `-C`/`--chdir`, con sus comillas
- * resueltas. `-u`/`--unset` llevan valor. Con `-S` (el comando en un texto) o sin `env`, el tramo queda como está.
+ * resueltas. `-u`/`--unset` llevan valor. Con `-S` (el comando en un texto) o sin `env`, el tramo queda como está; con
+ * `-S`, además, `partida` es la orden que corre.
  */
 function pelarEnv(tramo) {
   const t = String(tramo);
@@ -4053,7 +4056,15 @@ function pelarEnv(tramo) {
     let m;
     if (/^[A-Za-z_]\w*=/.test(w)) { j++; continue; }
     if (w === '--') { j++; break; }
-    if (/^-[iv0]*S|^--split-string/.test(w)) return { carpetas, resto: t };
+    // `-S` lleva la orden en su valor, pegado (`-S"…"`, `--split-string=…`) o en la palabra siguiente: el tramo queda
+    // como está y la orden de adentro va en `partida`, para mirarla como un comando anidado
+    if ((m = /^-[iv0]*S(.*)$|^--split-string(?:=(.*))?$/s.exec(w))) {
+      const pegada = m[1] !== undefined ? m[1] : m[2];
+      const valor = pegada !== undefined && pegada !== '' ? pegada : (j + 1 < piezas.length ? palabra(j + 1) : '');
+      const siguiente = pegada !== undefined && pegada !== '' ? j + 1 : j + 2;
+      const cola = siguiente < piezas.length ? ` ${t.slice(piezas[siguiente].index)}` : '';
+      return { carpetas, resto: t, partida: `${valor}${cola}`.trim() || null };
+    }
     if (/^-[iv0]*C$|^--chdir$/.test(w)) { if (j + 1 < piezas.length) carpetas.push(palabra(j + 1)); j += 2; continue; }
     if ((m = /^-[iv0]*C(.+)$|^--chdir=(.*)$/.exec(w))) { carpetas.push(m[1] ?? m[2]); j++; continue; }
     if (/^-[iv0]*[uPa]$|^--(?:unset|argv0)$/.test(w)) { j += 2; continue; }
@@ -4839,6 +4850,9 @@ function comandosAnidados(comando, hondo = 0, valores = null) {
     // la carpeta de un `env -C` vale para lo que corre ese tramo, y sólo para él
     const cdsDelEnv = pelarEnv(tramo).carpetas.map((d) => `cd ${/\s/.test(d) ? `"${d}"` : d}`);
     const sumarConCd = (b) => { const todos = [...cds, ...cdsDelEnv]; sumar(todos.length && b ? `${todos.join(' && ')} && ${b}` : b); };
+    // la orden que `env -S` lleva en su valor corre como cualquier otra
+    const partida = pelarEnv(tramo).partida;
+    if (partida) sumarConCd(partida);
     // sin el `env` de delante (`env -C d sh -c '…'`): lo que corre `env` es el comando
     const w = palabras(sinPalabrasDelShell(pelarEnv(tramo).resto)).filter((x) => x !== '');
     // las asignaciones de delante (`A=1 B=2 programa`) no son el programa, ni `builtin`/`command` (`builtin eval "$c"`)
@@ -6192,9 +6206,25 @@ function logHookError(e, rotulo = 'falla atrapada') {
   try {
     const dir = carpetaDelEstado();
     fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(path.join(dir, 'hook-errors.log'),
-      `[${new Date().toISOString()}] on-bash-write-gate ${rotulo}: ${(e && e.stack) || e}\n\n`, 'utf8');
+    const desde = esCopiaQueNoEsLaInstalada() ? ` (copia en ${RAIZ_DEL_ARNES})` : '';
+    fs.appendFileSync(registroDeFallas(),
+      `[${new Date().toISOString()}] on-bash-write-gate${desde} ${rotulo}: ${(e && e.stack) || e}\n\n`, 'utf8');
   } catch { /* noop */ }
+}
+
+// En una máquina con el arnés instalado, el registro de fallas (`hook-errors.log`) mide los frenos que corren de verdad:
+// una copia que no es la instalada (la de una prueba, la de un laboratorio en la carpeta de trabajo de una sesión) anota
+// en un registro aparte, para no ensuciar esa medición. Sin instalación (un clon, o la casa de una prueba), o si no se
+// puede saber, el registro de siempre.
+function esCopiaQueNoEsLaInstalada() {
+  try {
+    const arbol = require('./lib/installed-tree.js');
+    const raices = arbol.roots({ home: os.homedir() });
+    return raices.length > 0 && !arbol.inside(raices, RAIZ_DEL_ARNES);
+  } catch { return false; }
+}
+function registroDeFallas() {
+  return path.join(carpetaDelEstado(), esCopiaQueNoEsLaInstalada() ? 'hook-errors-copies.log' : 'hook-errors.log');
 }
 
 /**
@@ -7047,10 +7077,18 @@ function constanciasSinHuella(event, opts = {}) {
  * deja pasar algo que la lectura sin apagarlos frena, aunque algo se tome por comentario sin serlo. La segunda lectura
  * sólo decide: no anota escrituras ni borrados, que ya anotó la primera.
  */
+// En qué paso está el análisis, para el reloj (lib/gate-clock.js): si tarda o lo cortan, el registro lo dice. Sin el
+// reloj no se lo vuelve a pedir: pedido al decidir, contaría como una pieza rota y frenaría todo
+function paso(texto) {
+  if (relojRoto) return;
+  try { require('./lib/gate-clock.js').anotarPaso(texto); } catch { /* sin reloj, no hay a quién decírselo */ }
+}
+
 function handle(event, opts = {}) {
   apagoAlgo = false;
   const r = handleUnaLectura(event, opts);
   if ((r && r.block) || !apagoAlgo) return r;
+  paso('la segunda lectura, sin los comentarios');
   leerComentarios = false;
   soloDecidir = true;
   try {
@@ -7066,21 +7104,25 @@ function handle(event, opts = {}) {
 function handleUnaLectura(event, opts = {}) {
   {
     let perdida = null;
+    paso('mirando si se pierde una ejecución');
     try { perdida = ejecucionPerdida(event); } catch (e) { logHookError(e); perdida = { block: `🔴 EJECUCIÓN PERDIDA — no pude revisar las piezas de la ejecución (${e.message}): frena hasta poder mirarlas.\n` }; }
     if (perdida) return perdida;
   }
   {
     let abierta = null;
+    paso('mirando si borra una ejecución abierta');
     try { abierta = borraEjecucionAbierta(event); } catch (e) { logHookError(e); abierta = { block: `🔒 CERRÁ LA EJECUCIÓN ANTES — no pude revisar si el comando borra la carpeta de una ejecución abierta (${e.message}): frena hasta poder mirarlo.\n` }; }
     if (abierta) return abierta;
   }
   {
     let huella = null;
+    paso('mirando las constancias de un commit o un empuje');
     try { huella = constanciasSinHuella(event, opts); } catch (e) { logHookError(e); huella = { block: `🔒 CONSTANCIA SIN MIRAR — no pude revisar las constancias antes del commit o del empuje (${e.message}): frena hasta poder mirarlas.\n` }; }
     if (huella) return huella;
   }
   {
     let coordinadora = null;
+    paso('mirando lo que se escribe en la carpeta de la coordinadora');
     try { coordinadora = coordinadoraPorConsola(event, opts); } catch (e) { logHookError(e); coordinadora = null; }
     if (coordinadora) return coordinadora;
   }
@@ -7091,6 +7133,7 @@ function handleUnaLectura(event, opts = {}) {
     try {
       const cmd = event?.tool_input?.command;
       if (typeof cmd === 'string' && /\bstash\b/.test(cmd)) {
+        paso('mirando un stash');
         stash = require('./lib/stash-guard.js').evaluar({
           cmd, cwd: nativePath(event?.cwd || process.cwd()), sessionId: resolveSessionId(event?.session_id),
           stateDir: opts.stateDir || require('./lib/story-gate-io.js').DEFAULT_STATE_DIR,
@@ -7105,6 +7148,7 @@ function handleUnaLectura(event, opts = {}) {
     const cmd = event?.tool_input?.command;
     if (cmd && (!event?.tool_name || event.tool_name === 'Bash' || event.tool_name === 'PowerShell')) {
       const baseCwd = nativePath(event?.cwd || process.cwd());
+      paso('mirando si escribe código deprecado');
       deprecado = require('./on-deprecated-edit.js').porLaTerminal({
         cmd, cwd: cwdDelComando(cmd, baseCwd),
         // todo destino, sea o no código: lo deprecado puede ser una guía, un esquema o una configuración
@@ -7116,6 +7160,7 @@ function handleUnaLectura(event, opts = {}) {
     }
   } catch (e) { logHookError(e); deprecado = null; }
   if (deprecado && deprecado.block) return deprecado;
+  paso('mirando el carril y las historias');
   return handleCarrilEHistoria(event, opts) || deprecado;
 }
 
@@ -7603,6 +7648,7 @@ if (require.main === module) {
     process.exit(2);
   }
   yaDecidio = true;
+  paso('armando los avisos para la persona');
   // Antes de cerrar «Aprobar el plan», el arnés le muestra a la persona el plan si el agente no lo hizo (lib/plan-display.js) y,
   // si la historia cambia una pantalla en un repo sin prueba con navegador, la oferta de prepararla (lib/browser-test.js).
   // Van en un solo aviso.

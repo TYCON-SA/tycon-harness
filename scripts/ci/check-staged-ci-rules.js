@@ -15,7 +15,8 @@
 //   4. Ésta la veía sólo la revisión de la noche: el inventario de los controles contra el pre-commit del repo privado,
 //      cuando el commit toca el inventario o el pre-commit, en la máquina que declara el clon privado
 //      (scripts/lib/private-inventory.js; la prueba: private-inventory.test.js). Avisa y no frena: el privado sólo puede
-//      sumar un control nuevo después de que éste entra.
+//      sumar un control nuevo después de que éste entra. Una comparación cortada (por su tope o por una señal) sí frena:
+//      no se sabe si miró algo.
 // La lógica de cada regla vive en su módulo y la usan la prueba y este freno: no hay una segunda copia que se separe.
 //
 // Rápido a propósito, porque corre en cada commit: una sola lectura del índice (`git cat-file --batch`) para todos los
@@ -183,8 +184,11 @@ function main() {
     // 4. el inventario contra el pre-commit del privado: un aviso, nunca un hallazgo que frene
     if (inventoryTouched) {
       console.error('▸ reglas de la CI: el inventario de los controles contra el pre-commit del privado…');
-      const msg = privateInventory.aviso(privateInventory.comparar({ repo: root }));
+      const inv = privateInventory.comparar({ repo: root });
+      const msg = privateInventory.aviso(inv);
       if (msg) console.error(msg);
+      // un corte no es un aviso: no se sabe si la comparación miró algo (fila 268)
+      if (inv.estado === 'cortado') { console.error('⛔ reglas de la CI antes del commit: la comparación con el privado quedó cortada. No medido no es verde.'); return 2; }
     }
   } catch (e) {
     console.error(`⛔ reglas de la CI antes del commit: no pude mirar (${e.message}). No medido no es verde.`);

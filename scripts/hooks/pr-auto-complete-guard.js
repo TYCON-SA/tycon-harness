@@ -244,18 +244,19 @@ for (const seg of tramos) {
   // La regla vive en `faltasDe` (scripts/lib/az-pr.js): la misma que lee la revisión nocturna de las ejecuciones.
   // Se juzga ANTES de mirar el prefijo: un prefijo puesto sobre un tramo que pasaría igual no es un salteo, y anotarlo
   // llenaba el registro de salteos que no eran.
-  // La rama del pedido, sólo si el `update` trae `--delete-source-branch` escrito: es lo único que la necesita.
+  // La rama del pedido, sólo si juzgar el `update` la pide (`necesitaLaRama`): trae `--delete-source-branch` escrito,
+  // o no la trae y puede completar el pedido.
   let ramaDeOrigen = null;
   if (verbo === 'update') {
     const borrar = az.valorDe(seg, 'delete-source-branch');
     const id = az.valorDe(seg, 'id');
-    if (borrar && borrar.literal && id && id.literal && /^\d+$/.test(id.texto)) {
+    if (az.necesitaLaRama(seg) && id && id.literal && /^\d+$/.test(id.texto)) {
       const fuera = fueraDelRepo(seg);
       const leida = fuera ? { rama: null, motivo: fuera }
         : require(path.join(__dirname, '..', 'lib', 'pr-source-branch.js')).ramaDeOrigen({ number: id.texto, cwd: carpeta, org: orgDelComando(seg), platform: 'azure' });
       ramaDeOrigen = leida.rama;
       // sin la rama, `false` pasa igual que antes: el aviso sólo cuando la falta es por no poder leerla
-      if (!leida.rama && az.esCierto(borrar.texto)) console.error(`${TAG} no pude leer la rama del pedido ${id.texto} (${leida.motivo}): juzgo --delete-source-branch sin ella.`);
+      if (!leida.rama && borrar && az.esCierto(borrar.texto)) console.error(`${TAG} no pude leer la rama del pedido ${id.texto} (${leida.motivo}): juzgo --delete-source-branch sin ella.`);
     }
   }
   const { juzgado, borrador, faltas } = az.faltasDe(seg, { ramaDeOrigen });
