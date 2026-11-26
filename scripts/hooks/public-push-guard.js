@@ -1469,11 +1469,11 @@ function status({ cwd = process.cwd(), env = process.env, fetch = false } = {}) 
 
 // ── el freno de `gh`: lo que se publica sin empujar (un freno previo a la herramienta, de Claude Code y de Codex) ────
 // Un pedido, un comentario o una versión creados con `gh` publican texto sin pasar por `git push`. Acá se mira el TEXTO
-// DEL COMANDO (scripts/lib/gh-pr.js): todo `gh` que no es de lectura y que apunta al repo público del arnés —porque lo
+// DEL COMANDO (el lector de `gh` de su conector, por scripts/lib/command-readers.js): todo `gh` que no es de lectura y que apunta al repo público del arnés —porque lo
 // nombra (`--repo`, `GH_REPO`, la ruta de `gh api`) o porque se corre en un clon del arnés con un remoto público—.
 // Límite declarado: es un freno de la sesión del agente. Un `gh` tecleado en una terminal, la web de GitHub u otra
 // herramienta no pasan por acá; eso lo mira la verificación de lo publicado, de noche.
-const ghReader = () => require(path.join(ROOT, 'scripts', 'lib', 'gh-pr.js'));
+const ghReader = () => require(path.join(ROOT, 'scripts', 'lib', 'command-readers.js')).lectorDe('gh');
 const READABLE_FORM = 'La forma que este freno sí lee: el texto en un archivo escrito ANTES (en otra llamada) y pasado con `--body-file <archivo>` '
   + '(`--notes-file` en una versión), o el bloque "$(cat <<\'EOF\' … EOF)" con el delimitador entre comillas.';
 

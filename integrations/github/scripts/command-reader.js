@@ -1,6 +1,9 @@
 'use strict';
 /**
- * scripts/lib/gh-pr.js — cómo leer un comando `gh` para saber qué PUBLICA.
+ * command-reader.js — cómo leer un comando `gh` para saber qué PUBLICA.
+ *
+ * Es el lector de comandos del conector de GitHub. El núcleo lo pide por el programa que lee
+ * (scripts/lib/command-readers.js: `lectorDe('gh')`), sin nombrar la plataforma.
  *
  * POR QUÉ EXISTE. Con el arnés mantenido directo en su repo público, un `gh pr create`, un comentario o una versión
  * publican texto sin pasar por `git push`: el `pre-push` no los ve. El freno antes de publicar
@@ -50,7 +53,9 @@
  */
 
 const crypto = require('crypto');
-const az = require('./az-pr.js');
+const path = require('path');
+// el lector de terminal con conciencia de comillas es del núcleo del mismo árbol
+const az = require(path.join(__dirname, '..', '..', '..', 'scripts', 'lib', 'az-pr.js'));
 
 const BINARIO = /(^|[\\/])gh(\.exe|\.cmd)?$/i;
 // LAS TERMINALES, y los programas que corren como comando el TEXTO que reciben: un `gh` que publica pasado como texto a
@@ -1055,4 +1060,5 @@ function pareceGh(cmd) {
   return PARECE.test(plano) || PARECE_OCULTO.test(plano) || PARECE.test(conRutas);
 }
 
-module.exports = { comandosGh, pareceGh, repoDe, repoDeRuta, GRUPOS_DE_LECTURA, VERBOS_DE_LECTURA, ARMADO };
+// `programas`: los que este lector lee; por ellos lo encuentra el núcleo
+module.exports = { programas: ['gh'], comandosGh, pareceGh, repoDe, repoDeRuta, GRUPOS_DE_LECTURA, VERBOS_DE_LECTURA, ARMADO };

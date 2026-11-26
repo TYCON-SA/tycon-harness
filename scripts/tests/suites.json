@@ -5405,9 +5405,15 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.26, tanda F1 (T57): el lector de un comando `gh` (scripts/lib/gh-pr.js, armado sobre el de az-pr.js): qué es de lectura (lista cerrada), a qué repo apunta, qué textos y archivos publica, y qué no se puede leer desde el comando. Sin git, sin red.",
+      "__nota": "story 8.26, tanda F1 (T57): el lector de un comando `gh` (integrations/github/scripts/command-reader.js, armado sobre el de az-pr.js): qué es de lectura (lista cerrada), a qué repo apunta, qué textos y archivos publica, y qué no se puede leer desde el comando. Sin git, sin red.",
       "raiz": "arnes",
       "ruta": "tests/gh-pr.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "DEF-8.85-G: el lector de los comandos de una plataforma vive en su conector y el núcleo lo pide por el programa (scripts/lib/command-readers.js)",
+      "raiz": "arnes",
+      "ruta": "tests/command-readers.test.js",
       "requiere": []
     },
     {

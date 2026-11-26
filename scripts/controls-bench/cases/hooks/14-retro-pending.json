@@ -495,7 +495,7 @@
           "_por_que": "story 8.26, tanda E: un repo que vive en GitHub entrega con `gh pr create` hacia la rama principal, igual que uno de Azure con `az repos pr create`. Mirando sólo `az`, ahí ningún merge por pedido dejaba entrada.",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/gh-pr.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/command-readers.js tcg/scripts/lib/ && mkdir -p tcg/integrations/github/scripts && cp $TCG/integrations/github/scripts/command-reader.js tcg/integrations/github/scripts/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git checkout -q -b dev"
           ],
@@ -524,7 +524,7 @@
           "_por_que": "`gh pr new` es un alias de `create`, y sin --base el pedido va a la rama por defecto: se anota (de más, nunca de menos).",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/gh-pr.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/command-readers.js tcg/scripts/lib/ && mkdir -p tcg/integrations/github/scripts && cp $TCG/integrations/github/scripts/command-reader.js tcg/integrations/github/scripts/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git checkout -q -b dev"
           ],
@@ -553,7 +553,7 @@
           "_por_que": "El hook corre también con la herramienta de PowerShell: el mismo pedido se anota igual.",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/gh-pr.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/command-readers.js tcg/scripts/lib/ && mkdir -p tcg/integrations/github/scripts && cp $TCG/integrations/github/scripts/command-reader.js tcg/integrations/github/scripts/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git checkout -q -b dev"
           ],
@@ -582,7 +582,7 @@
           "_por_que": "El gemelo verde: un pedido entre dos ramas de trabajo no es una entrega.",
           "type": "must-stay-quiet",
           "setup": [
-            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/gh-pr.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/command-readers.js tcg/scripts/lib/ && mkdir -p tcg/integrations/github/scripts && cp $TCG/integrations/github/scripts/command-reader.js tcg/integrations/github/scripts/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git checkout -q -b dev"
           ],
@@ -604,7 +604,7 @@
           "_por_que": "`--dry-run` no crea nada: no hay entrega que anotar.",
           "type": "must-stay-quiet",
           "setup": [
-            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/gh-pr.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/command-readers.js tcg/scripts/lib/ && mkdir -p tcg/integrations/github/scripts && cp $TCG/integrations/github/scripts/command-reader.js tcg/integrations/github/scripts/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git checkout -q -b dev"
           ],
@@ -626,7 +626,7 @@
           "_por_que": "No se sabe en qué repo corre: anotarlo contra el repo de la sesión deja un pendiente que ninguna retrospectiva puede cerrar. Se dice, como con el push que no se puede ubicar.",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/gh-pr.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/command-readers.js tcg/scripts/lib/ && mkdir -p tcg/integrations/github/scripts && cp $TCG/integrations/github/scripts/command-reader.js tcg/integrations/github/scripts/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git checkout -q -b dev"
           ],
@@ -652,7 +652,7 @@
           "_por_que": "`--repo` nombra un repo que no es el `origin` de la carpeta: el pedido es de OTRO repo.",
           "type": "must-block",
           "setup": [
-            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/gh-pr.js tcg/scripts/lib/",
+            "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js $TCG/scripts/lib/command-readers.js tcg/scripts/lib/ && mkdir -p tcg/integrations/github/scripts && cp $TCG/integrations/github/scripts/command-reader.js tcg/integrations/github/scripts/",
             "git init -q -b main . && mkdir -p .tycon && echo x > a.txt && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base",
             "git checkout -q -b dev",
             "git remote add origin https://github.com/acme/uno.git"
@@ -676,7 +676,7 @@
         },
         {
           "id": "quiet-gh-pr-create-sin-el-lector-al-lado",
-          "_por_que": "Este hook viaja suelto, copiado con sus librerías a mano: sin scripts/lib/gh-pr.js al lado tiene que callar como antes de que existiera, no caerse (las otras preparaciones de este archivo no lo copian).",
+          "_por_que": "Este hook viaja suelto, copiado con sus librerías a mano: sin el lector de gh (scripts/lib/command-readers.js y el de su conector) tiene que callar como antes de que existiera, no caerse (las otras preparaciones de este archivo no lo copian).",
           "type": "must-stay-quiet",
           "setup": [
             "mkdir -p tcg/scripts/setup/harness && cp $TCG/scripts/setup/harness/tycon-home.js tcg/scripts/setup/harness/ && mkdir -p tcg/scripts/hooks tcg/scripts/lib tcg/.dashboard && cp $TCG/scripts/hooks/retro-pending.js tcg/scripts/hooks/ && cp $TCG/scripts/lib/az-pr.js $TCG/scripts/lib/git-target.js $TCG/scripts/lib/shell-parse.js $TCG/scripts/lib/harness-repo.js $TCG/scripts/lib/legacy-names.js $TCG/scripts/lib/retro-coverage.js tcg/scripts/lib/",

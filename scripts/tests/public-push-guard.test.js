@@ -43,7 +43,7 @@ const MACHINE_PATH = ['', 'Users', 'alguien', 'proyecto', ''].join('/');
 const REAL_LOOKING_EMAIL = ['otra.persona', 'empresa-de-verdad.com'].join('@');
 
 // lo que el freno necesita para correr, copiado a un arnés de laboratorio
-const PIECES = ['scripts/hooks/public-push-guard.js', 'scripts/lib/az-pr.js', 'scripts/lib/gh-pr.js', 'scripts/lib/harness-repo.js',
+const PIECES = ['scripts/hooks/public-push-guard.js', 'scripts/lib/az-pr.js', 'scripts/lib/command-readers.js', 'integrations/github/scripts/command-reader.js', 'scripts/lib/harness-repo.js',
   'scripts/lib/legacy-names.js', 'scripts/lib/guard-record.js', 'scripts/publishing/detector.js', 'scripts/setup/harness/tycon-home.js',
   'scripts/lib/clean-git-env.js'];
 // El control de historia interna, el de verdad: de él sale la forma del número de pedido. No hay doble: un doble más
