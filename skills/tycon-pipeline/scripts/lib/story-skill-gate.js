@@ -80,7 +80,7 @@ const CREATOR_SKILLS = Object.freeze([
 
 const DEFAULT_TTL_MIN = 120;
 // `node ${MARKER_JS} …` imprime `node "$HOME/…"`, que anda también en PowerShell
-const MARKER_JS = require('./home-command.js').homePath('.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js');
+const MARKER_JS = require('./home-command.js').homePath(require('./home-command.js').pipelineRel('scripts/marker.js'));
 
 /**
  * ¿Este skill HABILITA crear stories?

@@ -1173,7 +1173,7 @@ function cmdClear(rest = []) {
       } catch { /* sin gates.log */ }
       // Costo del run: el conteo de spawns es el proxy de costo, porque cada
       // agente cuesta ~60.000-100.000 tokens ANTES de leer nada (baseline medido en
-      // ~/.claude/.tycon-pipeline/baseline/). Se calcula ACÁ, en el mismo cierre mecánico que
+      // ~/.tycon/state/baseline/). Se calcula ACÁ, en el mismo cierre mecánico que
       // el timing dump, para que no dependa de que alguien se acuerde de correr
       // `pipeline.js cost-report`. Vara del historial (58 runs): ~14 spawns por run, 22% de
       // exploración libre, 2,6 de ésos antes de los advisors.

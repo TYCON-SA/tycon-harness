@@ -2,7 +2,7 @@
 // snapshot.js — la copia de seguridad que el mecanismo de instalación toma ANTES de cada cambio en la máquina.
 //
 // Qué guarda: antes de `install`, `update`, `apply`, `rollback`, `uninstall`, la migración de la línea de arranque y el
-// aplicador de cada `startup`, una carpeta `~/.claude/.tycon-pipeline/harness/backups/<YYYYMMDD-HHMMSS>/` (hora UTC; si
+// aplicador de cada `startup`, una carpeta `~/.tycon/state/harness/backups/<YYYYMMDD-HHMMSS>/` (hora UTC; si
 // ya existe, sufijo `-2`, `-3`…) con los archivos tal cual (en `files/`) y un `manifest.json`: `schema`, `seq` (la
 // secuencia que ordena las copias: la mayor + 1, nunca el reloj), `from` y `to` (las versiones), `reason`, `at`, `hash`
 // del conjunto, `sources` (los commits completos de cada fuente, a dónde `rollback` lleva los árboles; null en
@@ -91,7 +91,7 @@ function mdNames(dir) {
  *     de ANTES del pull, y un comando nuevo de la actualización puede llamarse igual que uno propio del dev.
  */
 function files({ home = os.homedir(), env = process.env, tree } = {}) {
-  const claude = path.join(home, '.claude');
+  const claude = require('./tycon-home.js').claudeDir(home);
   const codex = envPath(env, 'CODEX_HOME') || path.join(home, '.codex');
   const mirror = envPath(env, 'CODEX_AGENTS_MD_PATH') || path.join(home, '.codex', 'AGENTS.md');
   const gitHooks = envPath(env, 'TYCON_GIT_HOOKS_DIR') || path.join(home, '.git-hooks');

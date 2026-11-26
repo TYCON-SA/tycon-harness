@@ -97,7 +97,7 @@ El CI run relevante es el **post-merge a main** (ya con todo el código integrad
 Estrategia según provider:
 
 ```bash
-# Azure DevOps Pipelines: el comando, en ~/.claude/tycon-harness/guides/integrations/ado-en-el-nucleo.md §«Cerrar la historia»
+# Azure DevOps Pipelines: el comando, en ~/.claude/tycon-harness/guides/integrations/ado-in-the-core.md §«Cerrar la historia»
 
 # GitHub Actions (si aplica):
 gh run list --branch main --limit 5 --json databaseId,headSha,status,conclusion,url \

@@ -3,7 +3,7 @@
  * questions.js — lo que `install` pregunta en una primera instalación.
  *
  * Quien instala elige: el perfil no tiene valor por defecto, y las integraciones y el paquete del
- * stack se contestan con una pregunta, sin editar `~/.claude/tycon.json` a mano. Acá vive lo que no
+ * stack se contestan con una pregunta, sin editar `~/.tycon/config.json` a mano. Acá vive lo que no
  * depende de la máquina —el texto de cada pregunta, cómo se lee una respuesta, cómo se validan las opciones que las
  * contestan (`--integrations`, `--packs`) y cómo se dicen los valores con su origen—; quién pregunta y cuándo lo decide
  * `harness.js` (`installQuestions`):
@@ -25,6 +25,9 @@
 // el lugar del arnés: su nombre sale de place.js
 const path = require('path');
 const PLACE = require('./place.js');
+// el lugar del arnés, relativo a la carpeta de la persona (placePath de tycon-home.js): un comando que se muestra lo
+// nombra así, sin armar la ruta a mano
+const PLACE_REL = path.relative(require('os').homedir(), PLACE.placePath(require('os').homedir())).split(path.sep).join('/');
 // el comando con la carpeta de la persona lo arma skills/tycon-pipeline/scripts/lib/home-command.js; desde la copia fija
 // del programa, que no trae las skills, este archivo escribe el mismo texto
 const homeCommand = (() => { const lib = path.join(__dirname, '..', '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'home-command.js'); return require('fs').existsSync(lib) ? require(lib).homeCommand : (r) => `node "$HOME/${r}"`; })();
@@ -201,7 +204,7 @@ const samePacks = (a, b) => (Array.isArray(a) && Array.isArray(b)
 
 /** La línea que `install` deja cuando no preguntó las integraciones: cómo cambiar el perfil
  *  y las integraciones después. Una sola línea. */
-const CHANGE_HINT = `para cambiar el perfil o las integraciones: ${homeCommand(`.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js`)} install --profile minimal|full --integrations <lista|none> --packs all|none|<a,b> (o tycon-config.js set <clave> <valor>)`;
+const CHANGE_HINT = `para cambiar el perfil o las integraciones: ${homeCommand(`${PLACE_REL}/scripts/setup/harness.js`)} install --profile minimal|full --integrations <lista|none> --packs all|none|<a,b> (o tycon-config.js set <clave> <valor>)`;
 
 /** Cómo se dice el origen de un valor de la configuración, para una persona. */
 /**

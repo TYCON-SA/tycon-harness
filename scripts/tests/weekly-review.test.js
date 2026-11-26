@@ -14,7 +14,7 @@ const REVIEW = path.join(ROOT, 'scripts', 'nightly', 'weekly-review', 'weekly-re
 // el `generated_by` del latido, el mismo que escribe retro-heartbeat.js
 const { HEARTBEAT } = require(path.join(ROOT, 'scripts', 'lib', 'retro-coverage.js'));
 const SUMMARY = path.join(ROOT, 'scripts', 'nightly', 'dependencies', 'daily-summary.js');
-const GUIDE = path.join(ROOT, 'guides', 'maintaining', 'mantener-el-arnes.md');
+const GUIDE = path.join(ROOT, 'guides', 'maintaining', 'maintaining-the-harness.md');
 
 const dirs = [];
 test.after(() => { for (const d of dirs) fs.rmSync(d, { recursive: true, force: true }); });

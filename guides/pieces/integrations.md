@@ -4,7 +4,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 **por qué existe**, **quién la usa** y **dónde se prueba**. El detalle de cada pieza está en
 [la guía de detalle](../maintaining/piezas-en-detalle.md), bajo el mismo título.
 
-## guides/integrations/ado-cola-y-listados.md
+## guides/integrations/ado-queue-and-listings.md
 
 **Qué es:** La guía con el porqué de las seis reglas del bloque de Azure DevOps de cada sesión.
 
@@ -14,7 +14,7 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 **Dónde se prueba:** sin suite propia
 
-**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesintegrationsado-cola-y-listadosmd)
+**Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesintegrationsado-queue-and-listingsmd)
 
 ## guides/integrations/clockify-mcp.md
 
@@ -138,13 +138,13 @@ Las fichas de este grupo de [las piezas del arnés](../piezas-del-arnes.md). Cad
 
 ## guides/integrations/instinct-mining.md
 
-**Qué es:** La guía del grabador silencioso que propone reglas atómicas (instintos).
+**Qué es:** La guía de los instintos: lo que el equipo repite, convertido en reglas que se aprueban en el sitio.
 
-**Por qué existe:** La integración `integrations/instincts/` (la prende el perfil del equipo) graba de fondo llamadas de herramientas saneadas y avisa una vez qué se graba; la noche propone, filtra el ruido y recomienda en `recomendaciones.json`. El dev aprueba con `/tycon-instincts`. `scripts/instincts/instinct-dirs.js` dice dónde viven las propuestas.
+**Por qué existe:** La grabadora (la prende el perfil del equipo) graba de fondo herramientas saneadas. Cada máquina sube al buzón lo de su organización; la noche cuenta lo que se repite, redacta y recomienda en `recomendaciones.json`. Se decide en la pestaña Aprendizajes; `/tycon-instincts` queda para lo de antes.
 
-**Quién la usa:** Los hooks de grabación y arranque, y el dev que revisa.
+**Quién la usa:** Quien mantiene, para prenderla y armar la noche; el dev, para saber qué se graba.
 
-**Dónde se prueba:** `instinct-observe.test.js`, `instinct-dirs.test.js`, `instinct-outside-tree.test.sh`
+**Dónde se prueba:** `instinct-observe.test.js`, `instinct-upload.test.js`, `instinct-nightly.test.js`, `instinct-model.test.js`, `instinct-dirs.test.js`
 
 **Detalle:** [ver](../maintaining/piezas-en-detalle.md#guidesintegrationsinstinct-miningmd)
 

@@ -100,8 +100,9 @@ function caminar(dir, out, diag, raiz = true) {
   catch (err) { if (diag && !(raiz && err && err.code === 'ENOENT')) diag.ilegible(dir, `la carpeta no se pudo listar (${(err && err.code) || 'error'})`); return out; }
   for (const it of e) {
     const p = path.join(dir, it.name);
-    // `<maquina>/registros/` nunca trae volcados, y su place.json trae el correo de git de la persona
-    if (it.isDirectory()) { if (it.name !== 'registros') caminar(p, out, diag, false); }
+    // `<maquina>/registros/` nunca trae volcados, y su place.json trae el correo de git de la persona.
+    // `<maquina>/instincts/` tampoco: son los días de la grabadora, que lee sólo la noche de aprendizajes
+    if (it.isDirectory()) { if (it.name !== 'registros' && it.name !== 'instincts') caminar(p, out, diag, false); }
     else if (it.name.endsWith('.json')) out.push(p);
   }
   return out;
@@ -406,7 +407,7 @@ function tabla(r) {
 
 // El criterio de agrupación vive en agent-skills, que se actualiza con otro pull: su archivo se busca por el nombre actual y,
 // si esa copia es anterior al renombre, por el nombre anterior —que sale del mapa de renombres, nunca
-// escrito acá (guides/maintaining/nombres-en-ingles.md, «Entre repos»)—. Sin mapa (la copia pública) sólo vale el actual.
+// escrito acá (guides/maintaining/english-names.md, «Entre repos»)—. Sin mapa (la copia pública) sólo vale el actual.
 const CRITERIO = 'group-findings.js';
 const CARPETA_DEL_CRITERIO = ['skills', 'tycon-pipeline', 'scripts', 'lib'];
 /** Las skills instaladas de la máquina las sabe tycon-home.js; sin él (este archivo suelto) no hay dónde buscar. */

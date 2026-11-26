@@ -81,6 +81,7 @@ if (require.main === module) { try { require('./node-floor.js').guard(); } catch
 //               `<org>/<repo>` en GitHub); los problemas, por la salida de errores. Mismos códigos de salida.
 
 const fs = require('fs');
+const path = require('path');
 
 const VERSION = 1;
 const PLATFORMS = ['azure', 'github', 'gitlab'];
@@ -92,10 +93,35 @@ const HARNESS_PLATFORMS = ['azure', 'github'];
 const CONNECTORS = Object.freeze({ azure: 'azure-devops', github: 'github', gitlab: 'gitlab' });
 /** El conector de un valor de `platform` de un repo, o null si no es uno de los que el archivo admite. */
 function connectorOf(platform) { return Object.prototype.hasOwnProperty.call(CONNECTORS, platform) ? CONNECTORS[platform] : null; }
-const REPO_KEYS = { azure: ['org', 'project', 'repo'], github: ['org', 'repo'], gitlab: ['namespace', 'repo'] };
-// las claves que un repo puede traer además de las suyas: el servidor de una instalación propia
-const OPTIONAL_REPO_KEYS = { gitlab: ['host'] };
-const optionalKeys = (platform) => OPTIONAL_REPO_KEYS[platform] || [];
+// La forma del repo de cada plataforma —sus claves, las opcionales, qué nombre vale y la regla propia de una clave— la
+// declara su conector, en `repoShape` de su integration.json (scripts/lib/integrations.js la valida): el núcleo no la
+// escribe. Se lee una vez por proceso, de los conectores de este mismo árbol. Sin el manifiesto, null: el repo no se
+// puede validar y se dice.
+const FORMAS = new Map();
+/** La regla de una clave ya compilada: `{ name: RegExp, nameHint }` o `{ parts, partsHint, nameHint }`. */
+function reglaDe(r) {
+  return r.name !== undefined ? { name: new RegExp(r.name, r.flags || ''), nameHint: r.nameHint } : { parts: r.parts, partsHint: r.partsHint, nameHint: r.nameHint };
+}
+/**
+ * `{ label, keys, optional, name: RegExp, nameHint, rules }` del repo de `platform`, o null si su conector no la declara
+ * o no se lee.
+ */
+function repoShape(platform) {
+  if (!FORMAS.has(platform)) {
+    let forma = null;
+    try {
+      const m = require('./integrations.js').find(connectorOf(platform), { kind: 'platform', dir: path.join(__dirname, '..', '..', 'integrations') });
+      const s = m && m.repoShape;
+      if (s) {
+        const rules = {};
+        for (const [k, r] of Object.entries(s.rules || {})) rules[k] = reglaDe(r);
+        forma = { label: m.label, keys: s.keys, optional: s.optional || [], name: new RegExp(s.name, s.flags || ''), nameHint: s.nameHint, rules };
+      }
+    } catch (_) { forma = null; }
+    FORMAS.set(platform, forma);
+  }
+  return FORMAS.get(platform);
+}
 const REQUIRED = ['public', 'profile', 'operations'];
 const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'story_index', 'models', 'wait_notice', 'coverage', 'review', 'stack', 'weekly_review', 'estimates', 'context_notice', 'deep_review', 'plan_review', 'review_runner', 'control_profiles'];
 // El umbral del aviso de contexto: tokens enteros de 100.000 a 900.000. Lo lee scripts/hooks/context-size-notice.js,
@@ -305,25 +331,6 @@ const REVIEWER_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const MERGE_RULES = ['automatico', 'siempre-en-la-maquina', 'confiar-en-el-servidor'];
 const MERGE_ENTRY_KEYS = ['repo', 'rule', 'full_tests_pipeline'];
 const KEYS = ['version', ...REQUIRED, ...OPTIONAL];
-// Los nombres: letras, números, punto, guion, guion bajo, y espacios adentro. Azure acepta letras de cualquier idioma
-// (un proyecto «Arnés del equipo» es válido); GitHub, sólo ASCII.
-const NAME = {
-  azure: /^[\p{L}\p{N}._-](?:[\p{L}\p{N}._ -]*[\p{L}\p{N}._-])?$/u,
-  github: /^[A-Za-z0-9._-](?:[A-Za-z0-9._ -]*[A-Za-z0-9._-])?$/,
-  // un tramo de una ruta de GitLab: sin espacios, y no empieza con guion ni con punto (`..` armaría otra ruta)
-  gitlab: /^[A-Za-z0-9_][A-Za-z0-9._-]*$/,
-};
-// el nombre de un servidor: etiquetas separadas por puntos, sin esquema, sin ruta y sin nada que parezca una opción
-const HOST_NAME = /^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*$/;
-
-/** El problema de un `namespace` (grupos separados por `/`), o null: cada tramo es un nombre, sin tramos vacíos. */
-function namespaceProblem(v) {
-  const parts = v.split('/');
-  if (parts.some((t) => t === '')) return `«${v}» tiene que ser el grupo y sus subgrupos separados por «/», sin «/» al principio ni al final y sin «//» (por ejemplo «grupo/subgrupo»)`;
-  const bad = parts.find((t) => !NAME.gitlab.test(t));
-  return bad === undefined ? null : `«${bad}» no va en un namespace de gitlab: cada grupo lleva letras sin tilde, números, punto, guion o guion bajo, y no empieza con punto ni con guion (por ejemplo «grupo/subgrupo»)`;
-}
-
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 // `comment`: la clave de un dato (un revisor) que es un comentario; `fieldComment`: la de un objeto de campos fijos,
 // donde un nombre con «_» no puede ser un campo (`_comment`, `_lea_esto_primero`). Un comentario es texto: un «_» con
@@ -345,28 +352,73 @@ function repoProblems(value, at, { platforms = HARNESS_PLATFORMS } = {}) {
     const elsewhere = PLATFORMS.includes(platform) ? `; un repo de ${platform} va sólo en merge_suites y en story_index` : '';
     return [{ path: `${at}.platform`, message: `tiene que ser ${platforms.map((p) => `«${p}»`).join(' o ')} (es ${JSON.stringify(platform)})${elsewhere}` }];
   }
+  const forma = repoShape(platform);
+  if (!forma) {
+    sinConectores();
+    return clavesDe(value).filter((k) => typeof value[k] !== 'string' || !value[k].trim())
+      .map((k) => ({ path: `${at}.${k}`, message: value[k] === undefined ? 'falta' : 'tiene que ser un texto no vacío' }));
+  }
   const out = [];
-  const wanted = REPO_KEYS[platform];
-  const optional = optionalKeys(platform);
+  const { keys: wanted, optional } = forma;
   // con claves opcionales, el mensaje dice cuáles lleva: quien copió la forma de otra plataforma ve qué cambiar
   const unknown = optional.length ? `clave desconocida en un repo de ${platform}: lleva ${wanted.join(' y ')}, y ${optional.join(', ')} si hace falta` : `clave desconocida en un repo de ${platform}`;
   for (const k of Object.keys(value)) {
     if (k === 'platform' || fieldComment(k, value[k])) continue;
-    if (!wanted.includes(k) && !optional.includes(k)) out.push({ path: `${at}.${k}`, message: platform === 'github' && k === 'project' ? 'un repo de GitHub no lleva project' : unknown });
+    // una clave de la otra plataforma del arnés se nombra: es el error de copiar el repo de una en la otra
+    const deOtra = HARNESS_PLATFORMS.includes(platform) && HARNESS_PLATFORMS.some((p) => p !== platform && repoShape(p) && repoShape(p).keys.includes(k));
+    if (!wanted.includes(k) && !optional.includes(k)) out.push({ path: `${at}.${k}`, message: deOtra ? `un repo de ${forma.label} no lleva ${k}` : unknown });
   }
   for (const k of optional) {
     const v = value[k];
     if (v === undefined) continue;
-    if (typeof v !== 'string' || !HOST_NAME.test(v)) out.push({ path: `${at}.${k}`, message: `tiene que ser el nombre del servidor, sin «https://» ni ruta (por ejemplo «gitlab.example.com») (es ${JSON.stringify(v)})` });
+    const mal = valueProblem(k, v, forma, platform);
+    if (mal) out.push({ path: `${at}.${k}`, message: mal });
   }
   for (const k of wanted) {
     const v = value[k];
-    if (v === undefined) out.push({ path: `${at}.${k}`, message: 'falta' });
-    else if (typeof v !== 'string' || !v.trim()) out.push({ path: `${at}.${k}`, message: 'tiene que ser un texto no vacío' });
-    else if (k === 'namespace') { const mal = namespaceProblem(v); if (mal) out.push({ path: `${at}.${k}`, message: mal }); }
-    else if (!NAME[platform].test(v)) out.push({ path: `${at}.${k}`, message: `«${v}» tiene caracteres que no van en un nombre de ${platform} (letras${platform === 'github' ? ' sin tilde' : ''}, números, punto, guion, guion bajo; espacios sólo adentro)` });
+    if (v === undefined) { out.push({ path: `${at}.${k}`, message: 'falta' }); continue; }
+    const mal = valueProblem(k, v, forma, platform);
+    if (mal) out.push({ path: `${at}.${k}`, message: mal });
   }
   return out;
+}
+
+/**
+ * El problema del valor `v` de la clave `k` de un repo, o null. Una clave con regla propia de nombre dice qué tiene que
+ * ser; una con tramos (`parts`) valida cada tramo con el nombre de la forma y no acepta tramos vacíos; el resto, el
+ * nombre de la forma.
+ */
+function valueProblem(k, v, forma, platform) {
+  const regla = forma.rules[k];
+  if (regla && regla.name) return typeof v === 'string' && regla.name.test(v) ? null : `tiene que ser ${regla.nameHint} (es ${JSON.stringify(v)})`;
+  if (typeof v !== 'string' || !v.trim()) return 'tiene que ser un texto no vacío';
+  if (regla && regla.parts) {
+    const parts = v.split(regla.parts);
+    if (parts.some((t) => t === '')) return `«${v}» tiene que ser ${regla.partsHint}`;
+    const bad = parts.find((t) => !forma.name.test(t));
+    return bad === undefined ? null : `«${bad}» no va en un ${k} de ${platform}: ${regla.nameHint}`;
+  }
+  return forma.name.test(v) ? null : `«${v}» tiene caracteres que no van en un nombre de ${platform} (${forma.nameHint})`;
+}
+
+// Una copia del arnés sin la carpeta de los conectores (la copia fija del arranque, una copia de prueba) no sabe la forma
+// del repo: entonces no rechaza el archivo. Valida lo que vale para toda plataforma —las claves son textos no vacíos y
+// la última es `repo`— y no los caracteres del nombre, y lo dice una sola vez por proceso.
+let avisoSinConectores = false;
+function sinConectores() {
+  if (avisoSinConectores) return;
+  avisoSinConectores = true;
+  process.stderr.write('⚠ sin conectores: no se validan los nombres de los repos\n');
+}
+/**
+ * Las claves del repo `r` en el orden de su identidad: las opcionales delante (una que falta cuenta como vacía) y después
+ * las suyas; sin la forma de su conector, las propias del repo con `repo` al final.
+ */
+function clavesDe(r) {
+  const forma = repoShape(r.platform);
+  if (forma) return [...forma.optional, ...forma.keys];
+  const propias = Object.keys(r).filter((k) => k !== 'platform' && k !== 'repo' && !fieldComment(k, r[k]));
+  return [...propias, 'repo'];
 }
 
 const ruleProblem = (rule, at) => (MERGE_RULES.includes(rule) ? [] : [{ path: at, message: `tiene que ser ${MERGE_RULES.map((r) => `«${r}»`).join(', ')} (es ${JSON.stringify(rule)})` }]);
@@ -376,7 +428,7 @@ function identityKey(r) {
   if (!isObject(r) || !PLATFORMS.includes(r.platform)) return null;
   const plain = (v) => { const s = String(v == null ? '' : v); try { return decodeURIComponent(s).toLowerCase(); } catch (_) { return s.toLowerCase(); } };
   // una clave opcional que falta cuenta como vacía: sin ella y con ella son dos identidades
-  return [r.platform, ...optionalKeys(r.platform).map((k) => plain(r[k])), ...REPO_KEYS[r.platform].map((k) => plain(r[k]))].join('/');
+  return [r.platform, ...clavesDe(r).map((k) => plain(r[k]))].join('/');
 }
 
 /** Los problemas de `merge_suites`; `[]` si está bien. */
@@ -1061,7 +1113,7 @@ function repoId(repo) {
  */
 function harnessCopies(data, platform) {
   if (!isObject(data) || !Array.isArray(data.harness_copies)) return [];
-  const full = (r) => [...optionalKeys(r.platform), ...REPO_KEYS[r.platform]].map((k) => String(r[k] === undefined ? '' : r[k]).toLowerCase()).join('/');
+  const full = (r) => clavesDe(r).map((k) => String(r[k] === undefined ? '' : r[k]).toLowerCase()).join('/');
   const m = isObject(data.maintainers) && PLATFORMS.includes(data.maintainers.platform) ? data.maintainers : null;
   return data.harness_copies
     .filter((r) => isObject(r) && r.platform === platform)
@@ -1075,7 +1127,7 @@ function privateRepoRef(data) {
   return `${m.project}/_git/${m.repo}`;
 }
 
-module.exports = { CONTROL_PROFILES, controlProfilesProblems, VERSION, PLATFORMS, HARNESS_PLATFORMS, CONNECTORS, connectorOf, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, PROVIDERS, NIGHTLY_PROVIDERS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, STORY_INDEX_MODES, storyIndexProblems, storyIndexFor, modelsProblems, reviewProblems, contextNoticeProblems, deepReviewProblems, DEEP_REVIEW_VALUES, modelsAboveCeiling, modelsOutsideAllowed, nightlyLevel, suitesWithoutPipeline, suitesWithRule, stackProblems, environmentsProblems, weeklyReviewProblems, estimatesProblems, ESTIMATES_UNITS, ESTIMATES_HOURS_PER_DAY, WAIT_NOTICE_PEER_MAX, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
+module.exports = { CONTROL_PROFILES, controlProfilesProblems, VERSION, PLATFORMS, HARNESS_PLATFORMS, CONNECTORS, connectorOf, repoShape, KEYS, MERGE_RULES, MODEL_NAMES, MODEL_LEVELS, PROVIDERS, NIGHTLY_PROVIDERS, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, STORY_INDEX_MODES, storyIndexProblems, storyIndexFor, modelsProblems, reviewProblems, contextNoticeProblems, deepReviewProblems, DEEP_REVIEW_VALUES, modelsAboveCeiling, modelsOutsideAllowed, nightlyLevel, suitesWithoutPipeline, suitesWithRule, stackProblems, environmentsProblems, weeklyReviewProblems, estimatesProblems, ESTIMATES_UNITS, ESTIMATES_HOURS_PER_DAY, WAIT_NOTICE_PEER_MAX, parse, load, url, privateRepoRef, repoProblems, identityKey, harnessCopies, mergeSuitesFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);
