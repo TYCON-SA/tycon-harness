@@ -15,7 +15,7 @@
 //   2. (harness.js) toma la copia del mecanismo, `reason: relocate`;
 //   3. corre `--reroot <viejo> <lugar>` de `scripts/lib/legacy-names.js` (del árbol): reescribe hooks y demás, AGREGA la
 //      forma nueva al lado de cada permiso, y saca un hook que ya estaba por la ruta real del clon;
-//   4. cambia la línea `@~/.claude/<viejo>/README.md` de CLAUDE.md por la de hoy, `@~/.claude/<lugar>/INDEX.md` (si
+//   4. cambia la línea que importa el README.md del nombre viejo en CLAUDE.md por la de hoy, la del INDEX.md del lugar (si
 //      están las dos, queda una) y el id de su pieza registrada;
 //   5. dice una línea por archivo cambiado y el total.
 // No guarda estado: es textual e idempotente. Una corrida cortada se termina corriéndolo otra vez (nunca restaurando
@@ -157,7 +157,7 @@ function describe(res, { snapshot = null } = {}) {
   for (const n of [...(res.reroot.notes || []), ...(res.notes || [])]) L.push(`  ⚠ ${n}`);
   if (!res.check && (res.reroot.files || []).some((f) => f.label === 'codex/hooks.json')) L.push('  en Codex, los hooks cambiados piden otra aprobación: corré /hooks');
   L.push(`total: ${res.total} cambio(s) en ${files} archivo(s)`);
-  if (snapshot) L.push(`la copia de antes: ${snapshot}; además, cada archivo cambiado tiene su .bak-reroot-<fecha> (los .plist, en ~/.claude/.tycon-pipeline/reroot-bak/)`);
+  if (snapshot) L.push(`la copia de antes: ${snapshot}; además, cada archivo cambiado tiene su .bak-reroot-<fecha> (los .plist, en ~/${path.relative(require('os').homedir(), require('./tycon-home.js').legacyStateDir(require('os').homedir())).split(path.sep).join('/')}/reroot-bak/)`);
   if (res.check) L.push('para hacerlo: harness.js relocate');
   return L;
 }

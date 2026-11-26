@@ -8,6 +8,7 @@
                  "assigned.list", "ci.read", "queue.read", "deployments.read", "branch-rules.read", "security-alerts.list"],
   "capabilities": { "completedHours": "field", "workItemType": "native", "autoComplete": "auto" },
   "rawCommands": ["fake pr create"],
+  "repoShape": { "keys": ["org", "repo"], "name": "^[A-Za-z0-9._-]+$", "flags": "", "nameHint": "letras sin tilde, números, punto, guion y guion bajo" },
   "settings": [
     { "key": "fake-platform.token", "type": "secreto", "env": "TYCON_FAKE_PLATFORM_TOKEN" }
   ]

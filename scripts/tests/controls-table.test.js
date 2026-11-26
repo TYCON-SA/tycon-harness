@@ -269,3 +269,16 @@ test('T9b ControlsTable_HookFailures_OldHoleLooksClosed — la última falla y l
   assert.match(filaDe(r.md, 'viejo', '2026-10-25'), /\| 2026-11-01 \| 0 \|$/);
   assert.match(filaDe(r.md, 'vivo', '2026-11-10'), /\| 2026-11-20 \| 1 \|$/);
 });
+
+// 🔴 Falla con: el renglón de un freno que tardó pero decidió cuenta como una falla del freno.
+test('T9c ControlsTable_SlowGuard_IsNotAFailure — lo lento no va a «Fallas de los frenos mismos»', (t) => {
+  const { casa, estado } = casaNueva(t);
+  fs.writeFileSync(path.join(estado, 'hook-errors.log'), [
+    '[2026-11-20T10:00:00.000Z] safety-guard LENTO: tardó 12 s, con un tope de 20 s; el paso más lento: la ventana de permiso (12 s)',
+    '[2026-11-20T10:01:00.000Z] on-bash-write-gate LENTO: decidió en 11000 ms, con un tope de 20 s; el paso más lento: mirando un stash (10500 ms)',
+    '[2026-11-20T11:00:00.000Z] safety-guard FRENÓ POR FALLA: no terminó en 20 s; estaba la ventana de permiso',
+  ].join('\n') + '\n');
+  const r = ct.tabla({ home: casa, modelOf, ahora: '2026-11-21T00:00:00.000Z' });
+  assert.deepStrictEqual([...r.fallas.porFreno.keys()], ['safety-guard']);
+  assert.deepStrictEqual([r.fallas.porFreno.get('safety-guard').total, r.fallas.porFreno.get('safety-guard').cerradas], [1, 1]);
+});

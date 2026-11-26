@@ -5,7 +5,7 @@
  * cálculo para todas las puertas. La constancia que abre el freno es la del validador, leída de la conversación
  * (`validator-record.js`); la marca de la skill ya no lo abre, y la sigue usando el cierre del turno.
  *
- * Estado (bajo ~/.claude/.tycon-pipeline/):
+ * Estado (bajo ~/.tycon/state/):
  *   skill-marks/<sid>.json   { skill, at, sessionId, cwd, reason? } — la escribe on-skill-invoke.js
  *                            (PostToolUse Skill).
  *   gates.log                cada bloqueo (status: blocked), cada borrador que pasó con la constancia
@@ -141,7 +141,7 @@ function evaluate({ absPath, content, edit, nameHint = false, sessionId, via, ev
   }
   if (!isStoryCandidate) return quiet;
 
-  const isHarness = io.isHarnessRepo(abs) || abs.replace(/\\/g, '/').startsWith(os.homedir().replace(/\\/g, '/') + '/.claude/');
+  const isHarness = io.isHarnessRepo(abs) || abs.replace(/\\/g, '/').startsWith(require('./state-dir.js').claudeDir().replace(/\\/g, '/') + '/');
   let repo = { repoRoot: null, repoHasTycon: false, repoHasStories: false };
   let repoUnderHarness = null;
   let idIsWork = null;

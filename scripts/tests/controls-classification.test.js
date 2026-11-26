@@ -6,9 +6,12 @@
  *   T1 ControlsClassification_EveryBlockingHookAndGuard_HasEntry — la clasificación real cubre FRENOS y los ganchos `blocks`
  *   T2 ControlsClassification_MissingEntryOrDate_Red              — un gancho sin entrada o una entrada sin fecha: rojo
  *   T3 ControlsClassification_ExigenciaWithoutReason_Red          — una exigencia cuyo motivo no nombra qué protege: rojo
+ *   T4 ControlsClassification_PipelineControl_OnlyIfAScriptBlocksWithIt — un control del pipeline (`del_pipeline`) vale
+ *      sólo si un guion del pipeline lo anota en gates.log como blocked, y sin ganchos
  *
  * 🔴 Falla con: un freno de guard-record.js o un gancho que frena sin entrada, un gancho en dos entradas, una entrada sin
- *    `review_before` o con una fecha que no existe, una exigencia sin decir qué protege, o una firmada sin quién y cuándo.
+ *    `review_before` o con una fecha que no existe, una exigencia sin decir qué protege, una firmada sin quién y cuándo,
+ *    o un control del pipeline que ningún guion anota.
  * stable-data: lee archivos del repo; no lee el reloj.
  * 0 deps (node:test).
  */
@@ -37,8 +40,27 @@ function fechaValida(s) {
   return d.getUTCFullYear() === +m[1] && d.getUTCMonth() === +m[2] - 1 && d.getUTCDate() === +m[3];
 }
 
-/** Los problemas de una clasificación contra los frenos y los ganchos que frenan: lista vacía si está bien. */
-function problemas(c, frenos, ganchos) {
+/** Los controles del pipeline que frenan: los nombres que sus guiones anotan en gates.log con `status: 'blocked'`. */
+function controlesDelPipeline() {
+  const fs = require('fs');
+  const dir = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts');
+  const out = new Set();
+  const leer = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      if (e.isDirectory()) { if (e.name !== 'tests') leer(path.join(d, e.name)); continue; }
+      if (!e.name.endsWith('.js')) continue;
+      for (const m of fs.readFileSync(path.join(d, e.name), 'utf8').matchAll(/name: '([a-z0-9-]+)', status: 'blocked'/g)) out.add(m[1]);
+    }
+  };
+  leer(dir);
+  return [...out];
+}
+
+/**
+ * Los problemas de una clasificación contra los frenos, los ganchos que frenan y los controles del pipeline: lista vacía
+ * si está bien.
+ */
+function problemas(c, frenos, ganchos, delPipeline = []) {
   const out = [];
   const entradas = Object.entries(c).filter(([k]) => !k.startsWith('__'));
   const claves = new Set(entradas.map(([k]) => k));
@@ -53,7 +75,10 @@ function problemas(c, frenos, ganchos) {
     if (v.tipo === 'exigencia' && !PROTEGE.test(v.motivo || '')) out.push(`${k}: exigencia cuyo motivo no nombra qué protege`);
     if (!Array.isArray(v.ganchos)) out.push(`${k}: sin lista de ganchos`);
     for (const g of v.ganchos || []) donde.set(g, [...(donde.get(g) || []), k]);
-    if (!frenos.includes(k) && !ganchos.includes(k)) out.push(`${k}: no es un freno de guard-record.js ni un gancho que frena`);
+    if (v.del_pipeline === true) {
+      if (!delPipeline.includes(k)) out.push(`${k}: no es un control del pipeline que frena (ningún guion anota «${k}» como blocked)`);
+      if ((v.ganchos || []).length) out.push(`${k}: un control del pipeline no lleva ganchos`);
+    } else if (!frenos.includes(k) && !ganchos.includes(k)) out.push(`${k}: no es un freno de guard-record.js ni un gancho que frena`);
   }
   for (const g of ganchos) {
     const en = donde.get(g) || [];
@@ -67,7 +92,7 @@ const entrada = (extra = {}) => ({ tipo: 'preferencia', motivo: 'un trámite', r
 
 test('T1 ControlsClassification_EveryBlockingHookAndGuard_HasEntry — cada freno y gancho que frena, con su entrada', () => {
   const c = clasificacion();
-  assert.deepEqual(problemas(c, Object.keys(FRENOS), ganchosQueFrenan()), []);
+  assert.deepEqual(problemas(c, Object.keys(FRENOS), ganchosQueFrenan(), controlesDelPipeline()), []);
   // la propuesta todavía no la firmó el dueño
   for (const [k, v] of Object.entries(c)) if (!k.startsWith('__')) assert.equal(v.estado, 'propuesta', k);
 });
@@ -92,4 +117,22 @@ test('T3 ControlsClassification_ExigenciaWithoutReason_Red — una exigencia que
   // firmada sin quién: rojo
   assert.deepEqual(problemas({ 'un-freno': entrada({ estado: 'firmada', firmada_el: '2026-12-01' }) }, ['un-freno'], []),
     ['un-freno: firmada sin firmada_el o firmada_por']);
+});
+
+test('T4 ControlsClassification_PipelineControl_OnlyIfAScriptBlocksWithIt — un control del pipeline, sólo si un guion lo anota como blocked', () => {
+  // los dos de la medición con modelo están, con su tipo
+  const c = clasificacion();
+  assert.equal(c['step-arg'].tipo, 'exigencia');
+  assert.equal(c['internal-history'].tipo, 'exigencia');
+  assert.equal(c['review-cap-shown'].tipo, 'preferencia');
+  const reales = controlesDelPipeline();
+  for (const k of ['step-arg', 'review-cap-shown']) assert.ok(reales.includes(k), `${k} no aparece como blocked en el pipeline: ${reales.join(', ')}`);
+  // un nombre que ningún guion anota, y uno con ganchos: rojo
+  const p = problemas({ 'inventado': entrada({ del_pipeline: true }), 'con-ganchos': entrada({ del_pipeline: true, ganchos: ['a.js'] }) },
+    [], ['a.js'], ['con-ganchos']);
+  assert.ok(p.includes('inventado: no es un control del pipeline que frena (ningún guion anota «inventado» como blocked)'), p.join('\n'));
+  assert.ok(p.includes('con-ganchos: un control del pipeline no lleva ganchos'), p.join('\n'));
+  // sin la marca, el mismo nombre no pasa como freno
+  assert.ok(problemas({ 'step-arg': entrada() }, [], [], ['step-arg']).includes('step-arg: no es un freno de guard-record.js ni un gancho que frena'));
+  assert.deepEqual(problemas({ 'step-arg': entrada({ del_pipeline: true }) }, [], [], ['step-arg']), []);
 });

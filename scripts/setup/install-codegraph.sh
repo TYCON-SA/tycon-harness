@@ -194,7 +194,7 @@ if [ "$AUTO_HOOK" -eq 1 ]; then
   if [ ! -f "$HOOK_SCRIPT" ]; then
     echo "⚠ No encuentro scripts/hooks/codegraph-session-hook.sh; omito el hook." >&2
   else
-    mkdir -p "$HOME/.claude"
+    mkdir -p "$(dirname "$SETTINGS")"
     [ -f "$SETTINGS" ] && cp "$SETTINGS" "${SETTINGS}.bak-codegraph"
     HOOK_RESULT="$(
       python3 - "$SETTINGS" "bash \"$HOOK_SCRIPT\"" <<'PY' 2>/dev/null || echo "ERROR"

@@ -139,6 +139,8 @@ function expand(body, values) {
   const macros = {
     'Build.SourcesDirectory': values.sources, 'Build.ArtifactStagingDirectory': values.staging,
     'Agent.TempDirectory': values.temp, 'Pipeline.Workspace': values.workspace, 'Build.BuildId': '4242', 'Build.SourceBranch': values.branch,
+    // la carpeta del trabajo: sin una copia del arnés adentro, el paso no le pasa a las suites el gancho público
+    'Agent.BuildDirectory': values.build !== undefined ? values.build : (values.temp !== undefined ? `${values.temp}/build` : undefined),
     SUITES_SHARD: values.shard, SUITES_OF: values.of, todoElRepo: values.everything, baseDelCambio: values.base,
     // lo que decidió «¿El banco corre en este pedido?» de Validar: «no» o «si»
     banco: values.banco,
