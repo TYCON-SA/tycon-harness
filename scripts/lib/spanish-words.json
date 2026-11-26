@@ -1032,6 +1032,10 @@
       "reason": "nombre del programa perl: no se puede renombrar; decidido por la coordinadora el 2026-10-31"
     },
     {
+      "words": ["gcloud"],
+      "reason": "nombre del programa gcloud de Google Cloud (TYCON_GCLOUD_BIN del conector de GCS, historia 1.5): no se puede renombrar; decidido por el dueño el 2026-11-26"
+    },
+    {
       "words": [
         "abbrev",
         "ac",

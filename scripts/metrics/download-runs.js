@@ -109,7 +109,7 @@ const http = require('http');
 const https = require('https');
 const { spawnSync } = require('child_process');
 const { readEnv, resolveFile, prepareStateWrite } = require('../lib/legacy-names.js');
-const { leerConfig, integracionBuzon, proveedorDeLaLlave, urlBase, huellaDeCorridas, FORMA_MAQUINA, FORMA_CODIGO, FORMA_ARCHIVO, FORMA_REGISTRO, FORMA_INSTINTO, FORMA_JORNADA, FORMA_VERSION, REGISTROS, X_MS_VERSION } = require('./upload-runs.js');
+const { leerConfig, integracionBuzon, proveedorDeLaLlave, almacenDeBajadaDeLaLlave, urlBase, huellaDeCorridas, FORMA_MAQUINA, FORMA_CODIGO, FORMA_ARCHIVO, FORMA_REGISTRO, FORMA_INSTINTO, FORMA_JORNADA, FORMA_VERSION, REGISTROS, X_MS_VERSION } = require('./upload-runs.js');
 
 // el nombre del archivo de métricas de un merge, el que escribe retro-heartbeat.js
 const FORMA_MERGE = /^metrics-[A-Za-z0-9._-]+\.json$/;
@@ -232,10 +232,10 @@ function pedir(url, cred, timeoutMs) {
 }
 
 /**
- * Por qué una máquina no baja un buzón de otro proveedor: la bajada desde una máquina (y la noche) es la de Azure, con la
- * sesión de az; un buzón de un conector lo lee el sitio de la organización.
+ * Por qué una máquina no lee un buzón de otro proveedor: su conector no sabe bajarlo (o ninguno lo atiende), o es uno de
+ * los informes de mantenimiento, que leen sólo Azure con la sesión de az. Ese buzón lo lee el sitio de la organización.
  */
-const noSoportado = (proveedor) => `la llave de esta máquina es de un buzón «${proveedor}», que lee el sitio de la organización: la bajada desde una máquina sólo sabe leer Azure Blob Storage (no se pidió nada a la red)`;
+const noSoportado = (proveedor) => `la llave de esta máquina es de un buzón «${proveedor}», que lee el sitio de la organización: desde una máquina, esto sólo sabe leer Azure Blob Storage o un buzón cuyo conector sabe bajar (no se pidió nada a la red)`;
 
 /** El token de storage con la sesión de az que ya existe. { token } o { estado, motivo }. Nunca pregunta. */
 function tokenDeAz(tenant) {
@@ -803,6 +803,8 @@ async function bajar(opts = {}) {
 
   let cfg;
   let tkDelSitio = null;
+  // la llave de otro proveedor: el almacén de bajada de su conector, que ya sabe su credencial (la sesión de la persona)
+  let almacenDeLaMaquina = null;
   if (delSitio) {
     if (!opts.dir) return fin(2, 'config_rota', 'la bajada del sitio necesita cuenta, contenedor y carpeta');
     if (almacenDado) cfg = null;
@@ -815,18 +817,26 @@ async function bajar(opts = {}) {
       tkDelSitio = c.tk;
     }
   } else {
-    // 0 · las integraciones: el buzón apagado → exit 0 y una línea; y bajar necesita la sesión de az,
+    // 0 · las integraciones: el buzón apagado → exit 0 y una línea; y bajar de Azure necesita la sesión de az,
     //     así que Azure DevOps apagada → exit 0 y una línea. Configuración rota → exit 2 con archivo, clave y motivo.
-    //     Una llave de otro proveedor se mira con el buzón prendido y antes que Azure DevOps: no es de esta bajada.
+    //     Una llave de otro proveedor se mira con el buzón prendido y antes que Azure DevOps, que no le hace falta: la
+    //     lee el almacén de bajada de su conector, con la sesión de la persona; sin uno, no es de esta bajada.
     for (const llave of ['mailbox', 'ado']) {
       const integ = integracionBuzon(llave);
       if (integ.error) { log(integ.error); return fin(2, 'config_rota', integ.error); }
       if (!integ.prendida) { log(integ.apagada); return fin(0, 'apagado', integ.apagada); }
-      if (llave === 'mailbox' && proveedorDeLaLlave()) return fin(1, 'no_soportado', noSoportado(proveedorDeLaLlave()));
+      if (llave === 'mailbox' && proveedorDeLaLlave()) {
+        const a = almacenDeBajadaDeLaLlave();
+        if (!a.almacen) return fin(a.codigo, a.estado, a.estado === 'no_soportado' ? noSoportado(proveedorDeLaLlave()) : a.motivo);
+        almacenDeLaMaquina = a.almacen;
+        break;
+      }
     }
-    const lc = leerConfig(['cuenta', 'contenedor', 'tenant']);
-    if (!lc.cfg) return fin(1, lc.estado, lc.motivo);
-    cfg = lc.cfg;
+    if (!almacenDeLaMaquina) {
+      const lc = leerConfig(['cuenta', 'contenedor', 'tenant']);
+      if (!lc.cfg) return fin(1, lc.estado, lc.motivo);
+      cfg = lc.cfg;
+    }
   }
 
   // Sin permiso para leer: exit 0, sin carpeta, una vez por día.
@@ -838,7 +848,7 @@ async function bajar(opts = {}) {
 
   // La credencial: la sesión de az (la máquina de quien tiene el rol) o, para el sitio, la que pasa quien llama —una SAS
   // de sólo lectura, o la identidad administrada de la plataforma (scripts/site/cloud/azure.js)—.
-  let almacen = almacenDado;
+  let almacen = almacenDado || almacenDeLaMaquina;
   if (!almacen) {
     const tk = delSitio ? tkDelSitio : tokenDeAz(cfg.tenant.trim());
     if (!tk.token) return sinPermiso(tk.estado, tk.motivo);

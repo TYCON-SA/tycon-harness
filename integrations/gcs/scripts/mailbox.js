@@ -20,7 +20,11 @@
  *     `sin_configurar`), y la lista y la bajada van por la API JSON con el rol de lector del bucket. La bajada en sí es
  *     la de siempre (`bajar()` de scripts/metrics/download-runs.js), con el almacén de este conector: el espejo queda en
  *     las mismas rutas que con Azure. `GCE_METADATA_HOST` cambia el host del servidor de metadatos (la variable de las
- *     librerías de Google; las pruebas apuntan a su doble).
+ *     librerías de Google; las pruebas apuntan a su doble);
+ *   · de la bajada de una máquina (scripts/metrics/download-runs.js, por `almacenDeBajadaDeLaLlave` de upload-runs.js):
+ *     `almacenDeBajada(cfg, { urlBase })` → `{ destino, listar, leer }`, con el token de la sesión de gcloud de la persona
+ *     (`gcloud auth print-access-token`, sin preguntar; `TYCON_GCLOUD_BIN` reemplaza el binario) y el mismo listado y la
+ *     misma lectura que el sitio. Sin gcloud, sin sesión o sin el rol (403), el listado contesta `permiso: true`.
  *
  * Los códigos de respuesta son los medidos en el bucket de laboratorio (ver la guía). Casos:
  * scripts/tests/mailbox-gcs.test.js.
@@ -29,6 +33,7 @@ const http = require('http');
 const https = require('https');
 const crypto = require('crypto');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const PROVIDER = 'gcs';
 const PROVEEDORES_DE_BUZON = Object.freeze([PROVIDER]);
@@ -205,8 +210,16 @@ async function tokenDelEntorno(env = process.env) {
   return { token: json.access_token };
 }
 
-/** El almacén del sitio: `{ destino, listar(prefijo), leer(nombre, timeoutMs) }` sobre la API JSON. */
-function almacenDelSitio(bucket, token, base) {
+/**
+ * Quién lee el buzón por la API JSON, y cómo se dice. El sitio, con la identidad de su entorno: un 403 es un estado de la
+ * bajada (`sin_permiso`). Una máquina, con la sesión de gcloud de la persona: un 403 es la falta del rol, que la bajada
+ * de la máquina toma como `permiso: true` (sale 0, sin carpeta, una vez por día), igual que con Azure.
+ */
+const LECTOR_SITIO = Object.freeze({ quien: 'la identidad del sitio', sinRol: (bucket) => ({ estado: 'sin_permiso', motivo: `la identidad del sitio no tiene el rol de lector del bucket ${bucket} (403)` }) });
+const LECTOR_MAQUINA = Object.freeze({ quien: 'tu sesión de gcloud', sinRol: (bucket) => ({ permiso: true, motivo: `tu cuenta de gcloud no tiene el rol de lector del bucket ${bucket} (403): sólo lo lee quien fue autorizado` }) });
+
+/** El almacén de la API JSON: `{ destino, listar(prefijo), leer(nombre, timeoutMs) }`, para el sitio o una máquina. */
+function almacenDelSitio(bucket, token, base, lector = LECTOR_SITIO) {
   const cab = { authorization: `Bearer ${token}`, accept: 'application/json' };
   const raiz = `${base}/storage/v1/b/${codificar(bucket)}/o`;
   async function listar(prefijo = '') {
@@ -216,8 +229,8 @@ function almacenDelSitio(bucket, token, base) {
       const q = [['maxResults', '1000'], ...(prefijo ? [['prefix', prefijo]] : []), ...(pagina ? [['pageToken', pagina]] : [])];
       const r = await pedir(`${raiz}?${q.map(([k, v]) => `${k}=${codificar(v)}`).join('&')}`, { cabeceras: cab, timeoutMs: 60000 });
       if (r.error) return { estado: 'sin_red', motivo: `sin red o sin respuesta del buzón al listar (${r.error.code || r.error.message}): no se bajó nada` };
-      if (r.status === 401) return { estado: 'credencial_rechazada', motivo: 'el buzón rechazó el token de la identidad del sitio al listar (401): venció o no vale' };
-      if (r.status === 403) return { estado: 'sin_permiso', motivo: `la identidad del sitio no tiene el rol de lector del bucket ${bucket} (403)` };
+      if (r.status === 401) return { estado: 'credencial_rechazada', motivo: `el buzón rechazó el token de ${lector.quien} al listar (401): venció o no vale` };
+      if (r.status === 403) return lector.sinRol(bucket);
       if (r.status === 404) return { estado: 'sin_contenedor', motivo: `el bucket ${bucket} no existe (404)` };
       if (r.status !== 200) return { estado: 'servicio_fallo', motivo: `el buzón contestó ${r.status} al listar: no se bajó nada` };
       let doc = null;
@@ -237,10 +250,55 @@ function almacenDelSitio(bucket, token, base) {
   // el permiso que falta, y lo clasifica la bajada como siempre)
   async function leer(nombre, timeoutMs) {
     const r = await pedir(`${raiz}/${codificar(nombre)}?alt=media`, { cabeceras: { authorization: cab.authorization }, timeoutMs });
-    if (r.status === 401) return { ...r, estado: 'credencial_rechazada', motivo: `el buzón rechazó el token de la identidad del sitio al bajar ${nombre} (401): venció o no vale` };
+    if (r.status === 401) return { ...r, estado: 'credencial_rechazada', motivo: `el buzón rechazó el token de ${lector.quien} al bajar ${nombre} (401): venció o no vale` };
     return r;
   }
   return { destino: `${PROVIDER}/${bucket}`, listar, leer };
+}
+
+// ── la bajada de una máquina ──────────────────────────────────────────────────────────────────────────────────────
+
+// el tope del token de az en la bajada de Azure (scripts/metrics/download-runs.js → tokenDeAz)
+const TOPE_GCLOUD_MS = 45000;
+
+/**
+ * El token de la sesión de gcloud que ya existe: `{ token }` o `{ motivo }`. Nunca pregunta: la entrada va cerrada,
+ * `CLOUDSDK_CORE_DISABLE_PROMPTS=1` y 45 s de tope. `TYCON_GCLOUD_BIN` reemplaza el binario (las pruebas). En Windows se
+ * llama `gcloud` sin buscar `gcloud.cmd`, como `az`. Ningún motivo repite la salida: podría traer el token.
+ */
+function tokenDeGcloud(env = process.env) {
+  const bin = String(env.TYCON_GCLOUD_BIN || '').trim() || 'gcloud';
+  const r = spawnSync(bin, ['auth', 'print-access-token'], { windowsHide: true, encoding: 'utf8', timeout: TOPE_GCLOUD_MS, stdio: ['ignore', 'pipe', 'pipe'], env: { ...env, CLOUDSDK_CORE_DISABLE_PROMPTS: '1' } });
+  // en Windows gcloud se instala como gcloud.cmd, que spawnSync no encuentra por su nombre: el motivo lo dice y no confunde
+  if (r.error && r.error.code === 'ENOENT' && process.platform === 'win32' && !env.TYCON_GCLOUD_BIN) return { motivo: 'en Windows la bajada todavía no busca gcloud.cmd: el buzón sólo lo leen, por ahora, las máquinas Mac y Linux con su sesión de gcloud' };
+  if (r.error && r.error.code === 'ENOENT') return { motivo: `no hay gcloud en esta máquina (${bin}): el buzón sólo lo leen quienes tienen el rol de lectura, con su sesión de gcloud` };
+  if (r.error) return { motivo: `gcloud no respondió (${r.error.code || r.error.message}): no se pide un login desde acá` };
+  const token = String(r.stdout || '').trim();
+  if (r.status !== 0 || !token || /\s/.test(token)) return { motivo: `gcloud no tiene una sesión que sirva para el buzón (salió ${r.status}${token ? '' : ', sin token'}): no se pide un login desde acá` };
+  return { token };
+}
+
+/**
+ * El almacén de la bajada de una máquina para una llave gcs ya validada: `{ destino, listar, leer }`, con la forma del de
+ * Azure. Lista y lee con la sesión de gcloud de la persona, por la API JSON (`urlBase` reemplaza el host: las pruebas).
+ * El token se pide la primera vez que lista: sin gcloud o sin sesión, el listado contesta `{ permiso: true, motivo }` y
+ * la bajada no crea nada.
+ */
+function almacenDeBajada(cfg, { urlBase = null } = {}) {
+  const base = String(urlBase || HOST_DE_STORAGE).replace(/\/+$/, '');
+  let interno = null;
+  const preparar = () => {
+    if (!interno) {
+      const tk = tokenDeGcloud();
+      interno = tk.token ? almacenDelSitio(cfg.bucket, tk.token, base, LECTOR_MAQUINA) : { falla: tk.motivo };
+    }
+    return interno;
+  };
+  return {
+    destino: `${PROVIDER}/${cfg.bucket}`,
+    listar: async (prefijo = '') => { const a = preparar(); return a.falla ? { permiso: true, motivo: a.falla } : a.listar(prefijo); },
+    leer: async (nombre, timeoutMs) => { const a = preparar(); return a.falla ? { estado: 'sin_permiso', motivo: a.falla } : a.leer(nombre, timeoutMs); },
+  };
 }
 
 /** Lo que devuelve la bajada cuando no llegó a pedir nada: la forma de `bajar()`, no completa. */
@@ -274,5 +332,5 @@ async function bajarUnaCorrida({ maquina, base, dir, ...opts } = {}) {
 
 module.exports = {
   PROVIDER, PROVEEDORES_DE_BUZON, FORMA_BUCKET,
-  problemasDelBuzon, validarLlave, almacenDeSubida, firmar, tokenDelEntorno, bajarBuzon, bajarUnaCorrida,
+  problemasDelBuzon, validarLlave, almacenDeSubida, almacenDeBajada, firmar, tokenDelEntorno, bajarBuzon, bajarUnaCorrida,
 };

@@ -19,6 +19,10 @@ núcleo del arnés no lo nombra. Azure Blob Storage sigue igual.
 5. **El rol de lector del bucket para la identidad del sitio**: la cuenta de servicio con la que corre el servicio de
    Cloud Run recibe `roles/storage.objectViewer` sobre el bucket. El sitio no usa ninguna clave: pide el token de su
    identidad al servidor de metadatos de su entorno.
+6. **El rol de lector del bucket para cada persona que baja el buzón a su máquina**: su cuenta de Google recibe
+   `roles/storage.objectViewer` sobre el bucket (no sobre el proyecto):
+   `gcloud storage buckets add-iam-policy-binding gs://<bucket> --member user:<correo> --role roles/storage.objectViewer`.
+   Ver «La bajada desde una máquina», abajo.
 
 ## La llave de las máquinas
 
@@ -89,8 +93,33 @@ Del lado del sitio (API JSON, con el token de su identidad): 401 es `credencial_
 403 es `sin_permiso` (la identidad no tiene el rol de lector) y 404 es `sin_contenedor`. En los tres la pasada no es
 completa y el sitio sigue mostrando lo último que leyó entero.
 
+## La bajada desde una máquina
+
+`download-runs.js` lee el bucket con **la sesión de gcloud de la persona** (`gcloud auth login`), por la API JSON y con
+el rol de lector del paso 6. Usa la misma llave que la subida para saber qué bucket es; no usa la clave HMAC ni pide
+Azure DevOps. El espejo, el índice y las reglas son los de Azure: la versión más nueva de cada ejecución y el juego de
+registros más nuevo que esté completo.
+
+gcloud corre con la entrada cerrada, `CLOUDSDK_CORE_DISABLE_PROMPTS=1` y 45 s de tope: nunca abre un login ni espera
+una respuesta. En Windows queda como con `az`: se llama `gcloud`, sin buscar `gcloud.cmd`.
+
+| Situación | Qué hace la bajada |
+|---|---|
+| Sin gcloud, sin sesión (o sin token, o sin respuesta en 45 s), o la cuenta sin el rol (403) | `sin_permiso`: sale 0, no crea la carpeta y lo dice una vez por día |
+| El token rechazado (401, al listar o al bajar) | `credencial_rechazada`: sale distinto de 0 |
+| El bucket no existe (404) | `sin_contenedor`, con el bucket en el motivo: sale distinto de 0 |
+| Sin respuesta | `sin_red`: sale distinto de 0 |
+
+**La diferencia con Azure es a propósito**: allá un 401 al listar sale 0, como una falta de permiso. Acá el token sale de
+una sesión que ya respondió, así que un 401 es un token que venció o no vale, y sale distinto de 0. Un 401 a mitad de la
+pasada la corta: lo ya bajado queda y el objeto que dio el 401, no.
+
+Los informes `--overwrites-report` y `--harness-node-report` siguen leyendo sólo Azure: con una llave gcs salen 1 con
+`no_soportado`.
+
 ## Lo que todavía no hace
 
-- La bajada desde una máquina (`download-runs.js`) y los procesos de la noche leen sólo Azure: con una llave gcs salen 1
-  con `no_soportado` y no piden nada. Van en otra historia.
+- Los procesos de la noche de Azure Pipelines leen sólo Azure: con `site.mailbox` de otro proveedor avisan que no está
+  soportado (el tablero y los aprendizajes siguen sin buzón; la revisión de ejecuciones sale en rojo). La noche de GitHub
+  no lee el buzón.
 - No borra ni poda objetos del bucket: la subida sólo crea.

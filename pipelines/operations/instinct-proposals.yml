@@ -139,8 +139,12 @@ jobs:
                 set -u
                 MBX="$(Agent.TempDirectory)/mailbox-location.json"
                 TENANT="$(az account show --query tenantId -o tsv 2>/dev/null || true)"
-                node -e 'const c = require("./scripts/lib/operations-config.js").load("operations.json"); if (!c.ok) process.exit(3); const m = c.data.site && c.data.site.mailbox; if (!m) process.exit(4); require("fs").writeFileSync(process.argv[1], JSON.stringify({ cuenta: m.account, contenedor: m.container, tenant: process.argv[2] }) + "\n");' "$MBX" "$TENANT" \
-                  || echo "##vso[task.logissue type=warning]No sé dónde está el buzón (operations.json → site.mailbox): la noche sale «no medido»"
+                # Un buzón de otro proveedor (site.mailbox.provider) lo lee su conector, no esta noche: sale 5 y la noche
+                # sale «no medido», sin pedir una cuenta ni un contenedor que ese buzón no tiene.
+                node -e 'const c = require("./scripts/lib/operations-config.js").load("operations.json"); if (!c.ok) process.exit(3); const m = c.data.site && c.data.site.mailbox; if (!m) process.exit(4); if (m.provider !== undefined && m.provider !== "azure-blob") process.exit(5); require("fs").writeFileSync(process.argv[1], JSON.stringify({ cuenta: m.account, contenedor: m.container, tenant: process.argv[2] }) + "\n");' "$MBX" "$TENANT"
+                LUGAR=$?
+                if [ "$LUGAR" = 5 ]; then echo "##vso[task.logissue type=warning]el buzón de operations.json (site.mailbox.provider) no es de Azure Blob Storage: no está soportado en Azure Pipelines, y la noche sale «no medido»"
+                elif [ "$LUGAR" != 0 ]; then echo "##vso[task.logissue type=warning]No sé dónde está el buzón (operations.json → site.mailbox): la noche sale «no medido»"; fi
                 export TYCON_MAILBOX_JSON="$MBX"
                 # la bajada pide la organización de Azure DevOps (ado.org): en el agente sale del perfil que bajó el paso
                 # del perfil; el árbol de la noche no trae uno
