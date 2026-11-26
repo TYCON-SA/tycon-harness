@@ -577,8 +577,10 @@ function cmdReleaseWriteAfter(argv) {
     console.error('marker.js release-write-after: faltan --for-session <la sesión frenada> y --reason "<qué miraste>".');
     process.exit(2);
   }
+  // la misma sesión con otras mayúsculas es la misma sesión (el freno se guarda con el id en minúsculas)
+  const misma = (a, b) => photo.brakeSession(a) === photo.brakeSession(b);
   const libera = (quien) => {
-    if (quien === destino) {
+    if (misma(quien, destino)) {
       console.error('🔒 marker.js release-write-after: la sesión frenada no se libera sola. La libera otra sesión (la coordinadora) o la persona en su terminal.');
       process.exit(2);
     }
@@ -610,12 +612,22 @@ function cmdReleaseWriteAfter(argv) {
     firmadoEnLaTerminal('write-after-release', resumen);
     entrada = { tipo: 'manual', quien: process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'tty-user', via: 'terminal' };
   } else {
-    // sin persona (la coordinadora, o la firma de trámite), el control previo: la sesión que pide no es la frenada
-    const firma = firmaDelDueno('write-after-release', resumen, { antes: () => (PROPIA === destino ? { codigo: 2, motivo: 'la sesión frenada no se libera sola' } : null) });
+    // el control previo: la sesión que pide no es la frenada, y sin persona la da sólo la coordinadora designada por la
+    // delegación del perfil. La firma de trámite y «hecho y avisado» no la dan: nadie habría mirado lo que escribió el
+    // comando que no se pudo mirar
+    const previo = (via, registro) => {
+      if (misma(PROPIA, destino)) return { codigo: 2, motivo: 'la sesión frenada no se libera sola' };
+      const sinMirar = ['automatica', 'avisado'];
+      if (sinMirar.includes(via) || (registro && sinMirar.includes(registro.via))) {
+        return { codigo: 1, motivo: 'esta firma la da la persona, o la coordinadora designada por la delegación del perfil: la firma de trámite y «hecho y avisado» no la dan' };
+      }
+      return null;
+    };
+    const firma = firmaDelDueno('write-after-release', resumen, { antes: previo });
     const q = quienFirmo(firma, process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'persona');
     entrada = { ...q, ...porDe(firma) };
     // la firma fija la sesión sobre la que se trabaja: tiene que ser la frenada, y nunca la que firma
-    if (estado.SID !== destino) { console.error(`🔒 marker.js release-write-after: la firma quedó para la sesión ${estado.SID}, no para ${destino}. No se liberó nada.`); process.exit(2); }
+    if (!misma(estado.SID, destino)) { console.error(`🔒 marker.js release-write-after: la firma quedó para la sesión ${estado.SID}, no para ${destino}. No se liberó nada.`); process.exit(2); }
     libera(PROPIA);
   }
   appendLog('gates.log', { name: 'write-after-release', status: 'ok', sesion: destino, motivo: freno.motivo, miro: motivo, ...entrada }, { estricto: true });

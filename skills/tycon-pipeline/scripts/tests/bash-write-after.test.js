@@ -390,7 +390,7 @@ test('WriteAfter_ExceptionsTheCommandCanForge_DoNotCount @story-8.320 @ac-11', (
   correr(l, 'N=sed; $N -i x', { hacer: () => fs.writeFileSync(f, historia('1.1', 'done')) });
   vuelve('Edit negado antes');
   // un registro que escribió el comando mismo: no está en la conversación
-  const enCurso = path.join(l.estado, 'write-photos', 'en-curso');
+  const enCurso = path.join(l.estado, 'write-photos', 'in-progress');
   correr(l, 'cosa', { hacer: () => {
     fs.writeFileSync(path.join(enCurso, 's1-falso.json'), JSON.stringify({ sesion: 's1', id: 'falso', tool: 'Write', inicio: Date.now(), fin: null, archivos: [f] }));
     fs.writeFileSync(path.join(enCurso, 's1-raro.json'), JSON.stringify({ sesion: 's1', id: 'raro', tool: 'Write', inicio: Date.now(), fin: null, archivos: [7] }));
@@ -494,7 +494,7 @@ test('T7 · WriteAfter_PhotoUnusable_LogsAndNextCommandStops @story-8.320 @ac-7'
     assert.strictEqual(frenado.status, 2, `${caso}: el siguiente comando frena`);
     assert.match(frenado.err, /ESTA SESIÓN ESTÁ FRENADA/);
     assert.match(frenado.err, /release-write-after --for-session s1/);
-    for (const lee of ['git status', 'cat specs/story-1.1-hecha.md | grep status', 'git log -1 --oneline', 'cd specs && ls']) assert.strictEqual(antes(l, lee).status, 0, `${caso}: leer sigue: ${lee}`);
+    for (const lee of ['git rev-parse HEAD', 'cat specs/story-1.1-hecha.md | grep status', 'git ls-files', 'cd specs && ls']) assert.strictEqual(antes(l, lee).status, 0, `${caso}: leer sigue: ${lee}`);
     for (const escribe of ['echo x > specs/a.md', 'git commit -m x', 'git push', 'cat a | tee b', `node "${MARKER}" help`]) assert.strictEqual(antes(l, escribe).status, 2, `${caso}: ${escribe}`);
     assert.strictEqual(antes(l, `\${N:-node} x.js`, 'otra').status, 0, `${caso}: otra sesión no queda frenada`);
   }
@@ -541,28 +541,155 @@ test('WriteAfter_Release_NeverByTheStoppedSession @story-8.320 @ac-7', () => {
 });
 
 // 🔴 Falla con: con la sesión frenada pasa como «de lectura» un comando que corre otra cosa o escribe — una
-//    sustitución entre comillas, un lector que ejecuta un programa por una opción, o una opción de git que escribe.
+//    sustitución entre comillas, un lector que ejecuta un programa por una opción, una opción de git que escribe (o su
+//    prefijo), un `sort` o un `uniq` que corre un programa o escribe un archivo, o un git que corre un programa de la
+//    configuración del repo (`core.fsmonitor`, `diff.external`, `gpg.program`).
 test('WriteAfter_StoppedSession_OnlyTrueReadsRun @story-8.320 @ac-7', () => {
   const { soloLee } = require(HOOK);
+  // las opciones abreviadas (git y sort aceptan un prefijo) se arman recortando la entera
   for (const c of ['echo "$(rm -f x)"', 'cat "`sh y.sh`"', 'echo ${X:=y}', 'cat <(sh y.sh)', 'git grep -Osh -e . -- y.sh', 'rg --pre sh . y.sh',
-    'git diff --output=specs/a.md', 'git log --output specs/a.md', 'git -c core.pager=sh log', 'git -C . -c x=y status', 'sort -o a b', 'git push', 'git branch -D x'])
+    'git diff --output=specs/a.md', 'git log --output specs/a.md', 'git -c core.pager=sh log', 'git -C . -c x=y status', 'sort -o a b', 'git push', 'git branch -D x',
+    'sort -S 1b --compress-program=sh c.txt', `sort ${'--compress-program'.slice(0, 7)}=sh c.txt`, 'sort -uo salida x', `sort ${'--output'.slice(0, 6)}=salida x`, 'uniq entrada salida',
+    'printf x | uniq - .git/config', 'git status', 'git diff', 'git -C /r status', 'git log -p --ext', `git log ${'--textconv'.slice(0, 7)}`, 'git show HEAD',
+    'git --no-pager log -1', 'less a', 'ls | sort | uniq'])
     assert.strictEqual(soloLee(c), false, c);
-  for (const c of ['git -C /r status', 'git --no-pager log -1', 'ls | sort | uniq', 'grep -n x a | sort', 'printf "%s\\n" a', 'git diff HEAD~1'])
+  assert.strictEqual(soloLee('ls | sort { Remove-Item x }', { powershell: true }), false, 'un bloque de PowerShell en sort');
+  for (const c of ['git -C /r rev-parse HEAD', 'git --no-pager ls-files', 'ls | sort', 'ls | sort -rn', 'ls | sort -t , -k 2', 'grep -n x a | sort', 'printf "%s\\n" a'])
     assert.strictEqual(soloLee(c), true, c);
 });
 
-// 🔴 Falla con: algo puesto antes en el lugar del freno (una carpeta, o `frenadas` como archivo) evita quedar frenada.
+// 🔴 Falla con: un comando que llega con otro nombre de herramienta (Monitor) corre con la sesión frenada.
+test('WriteAfter_StoppedSession_MonitorAlsoStopped @story-8.320 @ac-7', () => {
+  const l = lab();
+  require('../lib/protected-photo.js').setBrake(l.estado, 's1', 'prueba');
+  const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ session_id: 's1', tool_use_id: 'mon-1', cwd: l.repo, hook_event_name: 'PreToolUse', tool_name: 'Monitor', tool_input: { command: 'node x.js' } }), env: l.env, encoding: 'utf8' });
+  assert.strictEqual(r.status, 2, r.stderr);
+  assert.match(r.stderr, /ESTA SESIÓN ESTÁ FRENADA/);
+  // con mayúsculas en el id, es la misma sesión
+  assert.ok(require('../lib/protected-photo.js').readBrake(l.estado, 'S1'), 'el id con mayúsculas ve el mismo freno');
+});
+
+// 🔴 Falla con: un comando que borra la foto y su registro de inicio deja lo escrito sin deshacer y sin freno; o el
+//    segundo evento de después de un comando ya mirado frena la sesión.
+test('WriteAfter_PhotoAndRecordDeleted_Stops_DuplicateEventDoesNot @story-8.320 @ac-7', () => {
+  const l = lab();
+  const f = l.f('specs/story-1.1-hecha.md');
+  const fotos = path.join(l.estado, 'write-photos');
+  const r = correr(l, 'cosa', { hacer: () => {
+    fs.writeFileSync(f, historia('1.1', 'done'));
+    for (const n2 of fs.readdirSync(fotos).filter((x) => x.endsWith('.json'))) fs.rmSync(path.join(fotos, n2));
+    fs.rmSync(path.join(fotos, 'in-progress'), { recursive: true, force: true });
+  } });
+  assert.match(r.ctx, /no pude mirar .*\n.*queda frenada/);
+  assert.strictEqual(antes(l, 'cosa').status, 2, 'el siguiente comando frena');
+  // el gancho registrado dos veces: dos eventos de antes y dos de después del mismo comando no frenan
+  const l2 = lab();
+  const ev = (hook_event_name) => JSON.stringify({ session_id: 's1', tool_use_id: 'dup-1', transcript_path: l2.transcript, cwd: l2.repo, hook_event_name, tool_name: 'Bash', tool_input: { command: 'ls' } });
+  for (const e of ['PreToolUse', 'PreToolUse', 'PostToolUse', 'PostToolUse']) assert.strictEqual(spawnSync(process.execPath, [HOOK], { input: ev(e), env: l2.env, encoding: 'utf8' }).status, 0, e);
+  assert.strictEqual(require('../lib/protected-photo.js').readBrake(l2.estado, 's1'), null, 'el evento repetido no frena');
+});
+
+// 🔴 Falla con: con la carpeta de las fotos sin permiso de escritura, el comando corre sin foto y lo escrito queda.
+test('WriteAfter_PhotosFolderNotWritable_CommandDoesNotRun @story-8.320 @ac-7', () => {
+  const l = lab();
+  const fotos = path.join(l.estado, 'write-photos');
+  fs.mkdirSync(path.join(fotos, 'in-progress'), { recursive: true });
+  fs.chmodSync(fotos, 0o555);
+  try {
+    const r = antes(l, 'cosa');
+    assert.strictEqual(r.status, 2, r.err);
+    assert.match(r.err, /no puedo guardar la foto|ESTA SESIÓN ESTÁ FRENADA/);
+    assert.ok(require('../lib/protected-photo.js').readBrake(l.estado, 's1'), 'una carpeta donde no se puede escribir cuenta como freno');
+  } finally { fs.chmodSync(fotos, 0o755); }
+  // sólo la del freno sin escritura: también frena
+  fs.mkdirSync(path.join(fotos, 'stopped'), { recursive: true });
+  fs.chmodSync(path.join(fotos, 'stopped'), 0o555);
+  try { assert.ok(require('../lib/protected-photo.js').readBrake(l.estado, 's1')); } finally { fs.chmodSync(path.join(fotos, 'stopped'), 0o755); }
+});
+
+// 🔴 Falla con: un registro escrito por el comando con el id de una llamada vieja y ya terminada fabrica la excepción
+//    (lo escrito queda), o el registro decide por su cuenta que el comando era del orquestador.
+test('WriteAfter_OldFinishedCallsDoNotCount @story-8.320 @ac-11', () => {
+  const l = lab();
+  const f = l.f('specs/story-1.1-hecha.md');
+  const original = fs.readFileSync(f, 'utf8');
+  const enCurso = path.join(l.estado, 'write-photos', 'in-progress');
+  const resultado = (id) => fs.appendFileSync(l.transcript, `${JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }] } })}\n`);
+  // un Edit viejo sobre la historia, ya terminado
+  enLaConversacion(l, 'edit-viejo', 'Edit', { file_path: f });
+  resultado('edit-viejo');
+  const r1 = correr(l, 'cosa', { hacer: () => {
+    fs.mkdirSync(enCurso, { recursive: true });
+    fs.writeFileSync(path.join(enCurso, 's1-edit-viejo.json'), JSON.stringify({ sesion: 's1', id: 'edit-viejo', tool: 'Edit', inicio: Date.now(), fin: null, archivos: [f] }));
+    fs.writeFileSync(f, historia('1.1', 'done'));
+  } });
+  assert.strictEqual(fs.readFileSync(f, 'utf8'), original, 'el Edit viejo no cuenta');
+  assert.match(r1.gates, /"name":"escritura-vista-despues"/);
+  // un Bash viejo (`ls`) con un registro que dice ser del orquestador y nombrar la historia
+  enLaConversacion(l, 'ls-viejo', 'Bash', { command: 'ls' });
+  const r2 = correr(l, 'cosa', { hacer: () => {
+    fs.writeFileSync(path.join(enCurso, 's1-ls-viejo.json'), JSON.stringify({ sesion: 's1', id: 'ls-viejo', tool: 'Bash', inicio: Date.now(), fin: null, comando: 'ls', reconocido: true, nombra: [f] }));
+    fs.writeFileSync(f, historia('1.1', 'done'));
+  } });
+  assert.strictEqual(fs.readFileSync(f, 'utf8'), original, 'el registro no decide que el comando era del orquestador');
+  assert.doesNotMatch(r2.ctx, /NO LO DESHICE/);
+});
+
+// 🔴 Falla con: borrar el marcador de una sesión que ya no vive queda sin deshacer.
+test('WriteAfter_DeadSessionsMarker_Restored @story-8.320 @ac-11', () => {
+  const l = lab();
+  const muerta = path.join(l.estado, 'active', 'muerta.json');
+  fs.mkdirSync(path.dirname(muerta), { recursive: true });
+  fs.writeFileSync(muerta, JSON.stringify({ storyId: '7.7', lastTouch: '2020-01-01T00:00:00.000Z' }));
+  correr(l, 'R=rm; $R x', { hacer: () => fs.rmSync(muerta) });
+  assert.ok(fs.existsSync(muerta), 'el marcador de una sesión muerta vuelve');
+});
+
+// 🔴 Falla con: la liberación con la firma de una persona no saca el freno o no deja su renglón; o la firma de trámite y
+//    «hecho y avisado» la dan: la liberan sólo la persona o la coordinadora designada.
+test('WriteAfter_Release_ByAPerson_ClearsTheBrake_NotByTramite @story-8.320 @ac-7', () => {
+  const crypto = require('crypto');
+  const ow = require(path.resolve(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'owner-window.js'));
+  const { conVentana, arbolDelGuion } = require(path.resolve(__dirname, '..', '..', '..', '..', 'scripts', 'tests', 'lib', 'window-passed.js'));
+  const foto = require('../lib/protected-photo.js');
+  const ARGS = ['release-write-after', '--for-session', 's1', '--reason', 'miré la historia'];
+  const cmd = `node ${MARKER} ${ARGS.map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(' ')}`;
+  const ahora = Date.now(); // stable-data: el registro de la ventana y el árbol de la prueba son del momento
+  const liberar = (l, via) => {
+    fs.mkdirSync(ow.carpeta(l.home), { recursive: true });
+    const reg = { firma: 'write-after-release', sesion: 'otra', destino: 's1', tool_use_id: 'toolu_01', sha256: crypto.createHash('sha256').update(cmd).digest('hex'), comando: cmd,
+      herramienta: { pid: 100, inicio: 'Tue Oct 27 10:00:00 2026' }, ts: new Date(ahora).toISOString(), ...(via ? { via } : {}) };
+    fs.writeFileSync(path.join(ow.carpeta(l.home), `write-after-release--${crypto.randomBytes(4).toString('hex')}.json`), JSON.stringify(reg));
+    const env = { ...l.env, TYCON_PROFILE: '0', TYCON_LANE_LLM: '0', CLAUDE_CODE_SESSION_ID: 'otra' };
+    return spawnSync(process.execPath, [MARKER, ...ARGS], { cwd: l.repo, encoding: 'utf8', env: conVentana(env, { arbol: { arbol: arbolDelGuion(l.home, cmd), pid: 301, ahora: ahora + 60000 } }) });
+  };
+  for (const via of ['automatica', 'avisado']) {
+    const l = lab();
+    foto.setBrake(l.estado, 's1', 'prueba');
+    const r = liberar(l, via);
+    assert.notStrictEqual(r.status, 0, `${via}: ${r.stderr}`);
+    assert.ok(foto.readBrake(l.estado, 's1'), `${via}: sigue frenada`);
+  }
+  const l = lab();
+  foto.setBrake(l.estado, 's1', 'prueba');
+  const r = liberar(l, undefined);
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.strictEqual(foto.readBrake(l.estado, 's1'), null, 'liberada');
+  assert.match(fs.readFileSync(path.join(l.estado, 'gates.log'), 'utf8'), /"name":"write-after-release","status":"ok","sesion":"s1"/);
+});
+
+// 🔴 Falla con: algo puesto antes en el lugar del freno (una carpeta, o `stopped` como archivo) evita quedar frenada.
 test('WriteAfter_BrakeSlotOccupied_StillStops @story-8.320 @ac-7', () => {
   const foto = require('../lib/protected-photo.js');
   const l = lab();
-  const frenadas = path.join(l.estado, 'write-photos', 'frenadas');
+  const frenadas = path.join(l.estado, 'write-photos', 'stopped');
   fs.mkdirSync(path.join(frenadas, 's1.json'), { recursive: true });
   assert.ok(foto.readBrake(l.estado, 's1'), 'una carpeta en el lugar del freno frena');
   foto.clearBrake(l.estado, 's1');
   assert.strictEqual(foto.readBrake(l.estado, 's1'), null, 'liberada, ya no');
   fs.rmSync(frenadas, { recursive: true });
   fs.writeFileSync(frenadas, 'no es una carpeta');
-  assert.ok(foto.readBrake(l.estado, 's1'), '`frenadas` como archivo frena');
+  assert.ok(foto.readBrake(l.estado, 's1'), '`stopped` como archivo frena');
   fs.rmSync(frenadas);
   fs.mkdirSync(frenadas, { recursive: true });
   for (const raro of ['null', '0', '""', '{}']) { fs.writeFileSync(path.join(frenadas, 's1.json'), raro); assert.ok(foto.readBrake(l.estado, 's1'), raro); }
@@ -577,7 +704,7 @@ test('WriteAfter_ForgedConversationAndOtherSessionsMarker @story-8.320 @ac-11', 
   enLaConversacion(l, 'toolu_previa', 'Bash', { command: 'ls' });
   correr(l, 'cosa', { hacer: () => {
     enLaConversacion(l, 'toolu_FAKE', 'Write', { file_path: f });
-    fs.writeFileSync(path.join(l.estado, 'write-photos', 'en-curso', 's1-toolu_FAKE.json'), JSON.stringify({ sesion: 's1', id: 'toolu_FAKE', tool: 'Write', inicio: Date.now() + 2, fin: null, archivos: [f] }));
+    fs.writeFileSync(path.join(l.estado, 'write-photos', 'in-progress', 's1-toolu_FAKE.json'), JSON.stringify({ sesion: 's1', id: 'toolu_FAKE', tool: 'Write', inicio: Date.now() + 2, fin: null, archivos: [f] }));
     fs.writeFileSync(f, historia('1.1', 'done'));
   } });
   assert.strictEqual(fs.readFileSync(f, 'utf8'), original, 'una llamada agregada durante el comando no cuenta');

@@ -78,16 +78,24 @@ function copia(stateDir, huella) {
   return m && m.contenido && sha(m.contenido) === huella ? m.contenido : null;
 }
 
-/** Borra las copias que nadie usó en 7 días; corre a lo sumo una vez por día. */
+// una foto o un registro de inicio sin su evento de después (un comando que otro freno negó) no se usa más
+const HORAS_DE_LAS_FOTOS = 6;
+
+/**
+ * Borra las copias que nadie usó en 7 días, y las fotos y los registros de inicio de más de 6 horas; corre a lo sumo
+ * una vez por día.
+ */
 function limpiarCopias(stateDir, ahora) {
   const sello = path.join(dirFotos(stateDir), '.limpieza');
   try { if (ahora - fs.statSync(sello).mtimeMs < DIA_MS) return; } catch (_) { /* nunca se limpió */ }
-  let nombres = [];
-  try { nombres = fs.readdirSync(dirCopias(stateDir)); } catch (_) { return; }
-  for (const n of nombres) {
-    const f = path.join(dirCopias(stateDir), n);
-    try { if (ahora - fs.statSync(f).mtimeMs > DIAS_DE_LAS_COPIAS * DIA_MS) fs.unlinkSync(f); } catch (_) { /* otra la borró */ }
-  }
+  const borrarViejos = (dir, tope) => {
+    for (const f of entradas(dir)) {
+      try { if (ahora - fs.lstatSync(f).mtimeMs > tope) fs.unlinkSync(f); } catch (_) { /* otra la borró */ }
+    }
+  };
+  borrarViejos(dirCopias(stateDir), DIAS_DE_LAS_COPIAS * DIA_MS);
+  borrarViejos(dirFotos(stateDir), HORAS_DE_LAS_FOTOS * 60 * 60 * 1000);
+  borrarViejos(path.join(dirFotos(stateDir), 'in-progress'), HORAS_DE_LAS_FOTOS * 60 * 60 * 1000);
   escribirEntero(sello, '');
 }
 
@@ -264,8 +272,10 @@ function undo(foto, diferencias, { stateDir }) {
 
 // ── el freno que deja una mirada fallida ─────────────────────────────────────────────────────────────────────────────
 // Una mirada que no se pudo hacer frena los comandos siguientes de esa sesión hasta que otra sesión o la persona la
-// libere (marker.js release-write-after). Un archivo por sesión en `write-photos/frenadas/`.
-const archivoDelFreno = (stateDir, sid) => path.join(dirFotos(stateDir), 'frenadas', `${String(sid || '_nosession').replace(/[^\w.-]/g, '_')}.json`);
+// libere (marker.js release-write-after). Un archivo por sesión en `write-photos/stopped/`.
+// el id en minúsculas: en un disco que no distingue mayúsculas, `S1` y `s1` son el mismo archivo y la misma sesión
+const sesionDelFreno = (sid) => String(sid || '_nosession').replace(/[^\w.-]/g, '_').toLowerCase();
+const archivoDelFreno = (stateDir, sid) => path.join(dirFotos(stateDir), 'stopped', `${sesionDelFreno(sid)}.json`);
 
 function setBrake(stateDir, sid, motivo) {
   // stable-data: la hora en que quedó frenada, para el mensaje
@@ -274,13 +284,20 @@ function setBrake(stateDir, sid, motivo) {
 
 /**
  * El freno de la sesión: `{ sesion, motivo, desde }`, o null si no está frenada. Cualquier cosa en el lugar del freno
- * cuenta como freno: un archivo ilegible, una carpeta, un enlace, o una carpeta `frenadas` que no es una carpeta (si no,
+ * cuenta como freno: un archivo ilegible, una carpeta, un enlace, o una carpeta `stopped` que no es una carpeta (si no,
  * poner algo ahí antes evitaría quedar frenada).
  */
 function readBrake(stateDir, sid) {
   const ilegible = { sesion: sid, motivo: 'el registro del freno no se puede leer', desde: null };
   const archivo = archivoDelFreno(stateDir, sid);
-  // con `frenadas` como archivo, mirar adentro da ENOTDIR: cuenta como freno, como todo lo que no es «no existe»
+  // una carpeta de las fotos o del freno donde no se puede escribir también frena: sin poder anotar el freno, una mirada
+  // fallida no frenaría nada (un `chmod`, un disco lleno)
+  for (const dir of [dirFotos(stateDir), path.dirname(archivo)]) {
+    try { fs.accessSync(dir, fs.constants.W_OK); } catch (e) {
+      if (e.code !== 'ENOENT') return { sesion: sid, motivo: `no se puede escribir en ${dir} (${e.code || e.message})`, desde: null };
+    }
+  }
+  // con `stopped` como archivo, mirar adentro da ENOTDIR: cuenta como freno, como todo lo que no es «no existe»
   let st;
   try { st = fs.lstatSync(archivo); } catch (e) { return e.code === 'ENOENT' ? null : ilegible; }
   if (!st.isFile()) return ilegible;
@@ -294,4 +311,4 @@ function readBrake(stateDir, sid) {
 
 const clearBrake = (stateDir, sid) => fs.rmSync(archivoDelFreno(stateDir, sid), { force: true, recursive: true });
 
-module.exports = { setBrake, readBrake, clearBrake, takePhoto, photoIntact, differences, undo, gitBrought: traidasPorGit, photosDir: dirFotos, writeWhole: escribirEntero, storyStatusOf: estadoDelTexto };
+module.exports = { setBrake, readBrake, clearBrake, brakeSession: sesionDelFreno, copyOf: copia, takePhoto, photoIntact, differences, undo, gitBrought: traidasPorGit, photosDir: dirFotos, writeWhole: escribirEntero, storyStatusOf: estadoDelTexto };

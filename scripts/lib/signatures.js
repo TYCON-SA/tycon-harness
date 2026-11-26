@@ -71,7 +71,7 @@ const LEVELS_EN = Object.freeze({
   'browser-test:prepare': 'prepare the browser test',
   'adhoc-lane': 'open a quick fix without a story, within the quota',
   'compare-waiver': 'exempt a command the story modifies from the comparison with main',
-  'write-after-release': 'release the brake that follows a failed look at what a command wrote (never the stopped session; delegable only if the profile adds it to approvals.delegated_signing)',
+  'write-after-release': 'release the brake that follows a failed look at what a command wrote (never the stopped session: only the person, or the designated coordinator if the profile adds it to approvals.delegated_signing)',
   'refresh-after-main': 're-sign the controls after pulling main, with no change of your own',
   'save:sensible': 'save when a commit touches something sensitive',
   'adhoc-lane:sobre-cupo': 'open a quick fix that goes past the file limit of the short path, though a story is recommended (only implementation files count, not tests or guides)',
@@ -121,10 +121,10 @@ const LEVELS = Object.freeze([
   ['adhoc-lane', 1, AMBOS, 'abrir un arreglo rápido sin historia, dentro del cupo'],
   ['adhoc-lane:ci-rojo', 1, AMBOS, 'abrir el arreglo de un rojo de CI de un pull request abierto, sin plan ni revisores (hasta 3 archivos, pruebas incluidas; antes de guardar corren los controles de CI en local y las pruebas tocadas)'],
   ['compare-waiver', 1, AMBOS, 'eximir de la comparación con main a un comando que la historia modifica (delegable sólo si el perfil la suma a approvals.delegated_signing)'],
-  ['write-after-release', 1, AMBOS, 'liberar el freno que sigue a una mirada fallida de lo que escribió un comando (nunca la sesión frenada; delegable sólo si el perfil la suma a approvals.delegated_signing)'],
-  ['refresh-after-main', 1, MANT, 'refirmar los controles tras traer main, sin cambio propio'],
+    ['refresh-after-main', 1, MANT, 'refirmar los controles tras traer main, sin cambio propio'],
   ['lost-run:particion', 1, AMBOS, 'cerrar una ejecución perdida que la partición de su historia en tandas dejó sin objeto (delegable sólo si el perfil la suma a approvals.delegated_signing)'],
   ['save:sensible', 2, AMBOS, 'guardar cuando un commit toca algo de lo sensible'],
+  ['write-after-release', 2, AMBOS, 'liberar el freno que sigue a una mirada fallida de lo que escribió un comando (nunca la sesión frenada: sólo la persona, o la coordinadora designada si el perfil la suma a approvals.delegated_signing)'],
   ['adhoc-lane:datos', 2, AMBOS, 'dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia (sólo el click del dueño)'],
   ['adhoc-lane:guardado-ajeno', 2, AMBOS, 'dejar pasar una vez un guardado ajeno a un camino corto que espera sus revisores, con lo que guarda a la vista (el click o la terminal de una persona, o la coordinadora si el perfil se lo delega)'],
   ['autonomy-resume', 2, AMBOS, 'volver al modo autónomo una ejecución que el control de cierre detuvo, con las vueltas en cero (sólo el click o la terminal del dueño)'],
@@ -183,7 +183,7 @@ const NOT_DELEGATED = Object.freeze(['save:sensible']);
 const DELEGABLE_EXCEPTIONS = Object.freeze(['runtime-waiver', 'manual-test', 'escape:ALLOW_DOD_EVIDENCE_WRITE', 'escape:trust-ran',
   'lost-run', 'escape:cerrar-la-ejecucion', 'escape:cerrar-como-deuda', 'escape:rojo-esperado-de-la-matriz',
   'escape:TYCON_STATUS_GATE', 'escape:cambiar-el-estado', 'escape:set-autonomous',
-  'adhoc-lane:guardado-ajeno', 'critical-waiver', 'escape:force-manual', 'escape:red-control-test-edit']);
+  'adhoc-lane:guardado-ajeno', 'critical-waiver', 'escape:force-manual', 'escape:red-control-test-edit', 'write-after-release']);
 // las firmas sólo del dueño que la coordinadora pide para otra sesión sin delegarlas: le llegan al dueño en la pestaña de
 // ella (la ventana o el cuadro), así no tiene que entrar a la sesión que espera. Siguen siendo sólo suyas: el freno no
 // las pasa por la delegación (owner-window.js)
@@ -476,6 +476,8 @@ const SENSITIVE = Object.freeze([
   'scripts/hooks/safety-guard*', 'skills/tycon-pipeline/scripts/lib/marker-command.js', 'scripts/production/**',
   // el portón de carril: lo que deja editar sin historia
   'skills/tycon-pipeline/scripts/lib/story-gate.js', 'skills/tycon-pipeline/scripts/lib/story-gate-io.js',
+  // la mirada de después: la foto de lo protegido, y el freno que deja cuando no pudo mirar
+  'skills/tycon-pipeline/scripts/lib/protected-photo.js', 'skills/tycon-pipeline/scripts/on-bash-write-after.js',
   // lo que decide si la story está limpia: el pase, los hallazgos, las exenciones y el portón de pruebas
   'skills/tycon-pipeline/scripts/marker.js', 'skills/tycon-pipeline/scripts/pipeline.js',
   // lo que sale de esos dos y del freno de guiones al partirlos sigue siendo sensible: lo que carga un sensible, lo es

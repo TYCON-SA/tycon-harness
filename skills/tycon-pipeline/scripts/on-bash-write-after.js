@@ -5,7 +5,8 @@
  * El freno de antes (on-bash-write-gate.js) decide leyendo el texto del comando. Un intérprete que el shell resuelve al
  * correr (`${N:-node} x.js`, `"${CMD[@]}"`, `$1`, `N="sudo node"`, `git bisect run $N x.js`) queda fuera de su vista.
  * Esta pieza no lee el comando para saber qué escribe: saca una foto de lo protegido antes de correr (evento de antes,
- * Bash|PowerShell) y la compara por contenido después (evento de después y de fallo). Lo que cambió y no correspondía
+ * de cualquier herramienta que traiga un comando de consola: Bash, PowerShell, Monitor) y la compara por contenido
+ * después (evento de después y de fallo). Lo que cambió y no correspondía
  * vuelve a lo que tenía la foto, o se borra si no existía; queda un renglón `escritura-vista-despues` en gates.log
  * (sesión, ruta, programa; nunca el contenido) y el aviso le llega al agente.
  *
@@ -19,20 +20,32 @@
  *
  * Lo que no se deshace: lo que trajo un comando que es sólo git y quedó igual a lo commiteado; lo que escribió un Edit o
  * un Write de la misma sesión sobre ese archivo mientras corría el comando (el gancho anota cuándo empieza y termina
- * cada uno, en `write-photos/en-curso/`, y lo cree sólo si la conversación de la sesión trae esa llamada). Lo dudoso no
+ * cada uno, en `write-photos/in-progress/`, y lo cree sólo si la conversación de la sesión trae esa llamada). Lo dudoso no
  * se deshace: se anota `escritura-dudosa` en gates.log y se avisa. Es dudoso un cambio con otra sesión viva en el mismo
  * repo desde antes del comando (las que ve live-sessions.js, en la foto y otra vez después), o con otro comando de la
  * misma sesión que corría marker.js sobre ese archivo. La hora de un archivo no decide nada: un guion la pone donde
- * quiere. De la conversación cuenta sólo lo que estaba escrito antes del comando. Un comando anterior que prepara la
+ * quiere. De la conversación cuenta sólo lo que estaba escrito antes del comando, y sólo una llamada sin su resultado
+ * (la que terminó antes no corrió a la vez); si un comando era del orquestador sale de la conversación, no del registro,
+ * que el comando puede escribir. El marcador borrado de otra sesión es dudoso sólo si esa sesión sigue viva (su
+ * `lastTouch`, con el corte de 24 h de marker.js); el de una muerta vuelve. Un comando anterior que prepara la
  * trampa (agrega una llamada falsa a la conversación, o hace que otra sesión se vea viva) no se ve: lo que cambie el
  * comando siguiente queda sin deshacer, o como dudoso, anotado y avisado. Para eso queda la red del commit.
  *
  * Límites conocidos: un proceso que el comando deja vivo (`&`, `nohup`) y escribe cuando el comando ya terminó, un
  * comando cortado por tiempo que no llega al evento de después, un guion que escribe en otro repo sin nombrarlo con
  * `cd`, una historia nueva en una carpeta donde no había ninguna, y un guion hecho para falsificar la foto y su huella
- * (la carpeta de las fotos la protege el freno de antes, leyendo el comando). Para esos queda la red del commit.
+ * (la carpeta de las fotos la protege el freno de antes, leyendo el comando). Monitor corre su comando de fondo: su
+ * evento de después llega cuando arranca, así que lo que escriba más tarde es el mismo límite que `&`. Para esos queda
+ * la red del commit.
  *
- * Exit 0 siempre. Apagado: TYCON_STORY_GATE=off (el mismo interruptor del freno de antes). Las fallas van a
+ * Lo que la pieza no puede hacer no lo deja pasar callado: sin poder anotar el inicio o guardar la foto, el comando no
+ * corre (sale 2); sin foto después, frena la sesión, aunque falte también su registro de inicio; una carpeta de las
+ * fotos o del freno donde no se puede escribir cuenta como freno. Una sesión frenada corre sólo lo que lee (soloLee):
+ * git, sólo `rev-parse` y `ls-files`, porque `status`, `diff`, `show` y `log` pueden correr un programa de la
+ * configuración del repo, que se escribe con la herramienta de edición. La libera otra sesión, nunca ella: la persona, o
+ * la coordinadora designada por la delegación del perfil; la firma de trámite no (marker.js release-write-after).
+ *
+ * Exit 0, salvo el 2 de una sesión frenada o sin dónde guardar la foto. Apagado: TYCON_STORY_GATE=off (el mismo interruptor del freno de antes). Las fallas van a
  * hook-errors.log.
  */
 'use strict';
@@ -180,7 +193,7 @@ function archivoDeLaFoto(stateDir, input) {
 // ── lo que corre a la vez en la misma sesión ─────────────────────────────────────────────────────────────────────────
 const HERRAMIENTAS_QUE_EDITAN = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
 const VIDA_DEL_REGISTRO_MS = 10 * 60 * 1000;
-const dirEnCurso = (stateDir) => path.join(photo.photosDir(stateDir), 'en-curso');
+const dirEnCurso = (stateDir) => path.join(photo.photosDir(stateDir), 'in-progress');
 const archivoEnCurso = (stateDir, input) => path.join(dirEnCurso(stateDir), path.basename(archivoDeLaFoto(stateDir, input)));
 /** La ruta con su carpeta real: el mismo archivo escrito como /var/… o /private/var/… da lo mismo. */
 const rutaReal = (p) => path.join(realOrNull(path.dirname(p)) || path.dirname(p), path.basename(p));
@@ -213,14 +226,34 @@ function llamadasDeLaConversacion(transcriptPath, ids, hasta) {
       texto = buf.toString('utf8');
     } finally { fs.closeSync(fd); }
   } catch (_) { return out; }
+  // una llamada que ya tiene su resultado antes del comando terminó antes: no corrió a la vez, aunque un registro con su
+  // id diga que sí (el comando lo pudo escribir con el id de una llamada vieja)
+  const terminadas = new Set();
   for (const linea of texto.split('\n')) {
     if (!ids.some((id) => linea.includes(id))) continue;
     let o;
     try { o = JSON.parse(linea); } catch (_) { continue; }
     const contenido = o && o.message && Array.isArray(o.message.content) ? o.message.content : [];
-    for (const c of contenido) if (c && c.type === 'tool_use' && ids.includes(c.id)) out.set(c.id, { name: c.name, input: c.input || {} });
+    for (const c of contenido) {
+      if (c && c.type === 'tool_use' && ids.includes(c.id)) out.set(c.id, { name: c.name, input: c.input || {} });
+      if (c && c.type === 'tool_result' && ids.includes(c.tool_use_id)) terminadas.add(c.tool_use_id);
+    }
   }
+  for (const id of terminadas) out.delete(id);
   return out;
+}
+
+/** Anota en el registro de inicio que el comando ya se miró: un segundo evento de después no lo toma por foto borrada. */
+function marcarMirado(stateDir, input) {
+  const f = archivoEnCurso(stateDir, input);
+  let r = null;
+  try { r = JSON.parse(fs.readFileSync(f, 'utf8')); } catch (_) { r = null; }
+  const base = r && typeof r === 'object' ? r : { sesion: input.session_id || null, id: input.tool_use_id || null, tool: input.tool_name, inicio: null, fin: null };
+  try { photo.writeWhole(f, JSON.stringify({ ...base, mirado: true })); } catch (_) { /* sin la marca, el segundo evento frena: lo seguro */ }
+}
+
+function yaMirado(stateDir, input) {
+  try { return JSON.parse(fs.readFileSync(archivoEnCurso(stateDir, input), 'utf8')).mirado === true; } catch (_) { return false; }
 }
 
 function anotarFin(stateDir, input) {
@@ -260,6 +293,7 @@ function aLaVez(stateDir, input, desde, largoDeLaConversacion) {
     if (empezoAdentro || terminoAdentro) candidatos.push(r);
   }
   const llamadas = llamadasDeLaConversacion(input.transcript_path, candidatos.map((r) => r.id), largoDeLaConversacion);
+  const cwd = input.cwd || process.cwd();
   return candidatos.filter((r) => {
     const l = llamadas.get(r.id);
     if (!l || l.name !== r.tool) return false;
@@ -268,7 +302,33 @@ function aLaVez(stateDir, input, desde, largoDeLaConversacion) {
       return strings(r.archivos).every((a) => pedido.includes(rutaReal(a)));
     }
     return String(l.input.command || '') === String(r.comando || '');
-  });
+  // si es del orquestador y qué nombra salen del comando de la conversación, no del registro: el registro lo puede
+  // escribir el comando
+  }).map((r) => (HERRAMIENTAS_QUE_EDITAN.includes(r.tool) ? r
+    : { ...r, ...lecturaDelComando(String(llamadas.get(r.id).input.command || ''), cwd, r.tool === 'PowerShell') }));
+}
+
+/** De un comando: si es sólo marker.js, y los archivos que nombra (lo dudoso por él es sólo eso). */
+function lecturaDelComando(comando, cwd, powershell) {
+  const reconocido = programas(comando, cwd, { powershell }).todosReconocidos;
+  const nombra = reconocido ? String(comando).split(/\s+/).map((w) => w.replace(/^["']|["']$/g, '')).filter((w) => /[\\/.]/.test(w))
+    .map((w) => path.resolve(cwd, expandirCasa(w))).filter((p) => fs.existsSync(p)) : [];
+  return { reconocido, nombra };
+}
+
+// el corte de un marcador viejo, el mismo de marker.js y live-sessions.js
+const MARCADOR_VIEJO_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * ¿El marcador borrado era de una sesión viva? Por su `lastTouch` en la copia de la foto, con el corte de marker.js. Sin
+ * copia o sin fecha legible, ante la duda, vivo: queda como dudoso y no se deshace.
+ */
+function marcadorVivo(stateDir, d) {
+  try {
+    const m = JSON.parse(photo.copyOf(stateDir, d.sha).toString('utf8'));
+    const t = Date.parse(m && m.lastTouch);
+    return !Number.isFinite(t) || Date.now() - t <= MARCADOR_VIEJO_MS; // stable-data: la edad del marcador borrado
+  } catch (_) { return true; }
 }
 
 /** Las otras sesiones vivas en cada repo (las de live-sessions.js): `{ raíz: [ids] }`; una raíz que no se pudo mirar no está. */
@@ -302,7 +362,7 @@ function separar(foto, diferencias, input, stateDir) {
   const dudosas = [];
   for (const d of diferencias) {
     if (editados.has(rutaReal(d.abs))) continue;
-    if (d.kind === 'marker' && !marcadorPropio(d.abs)) { dudosas.push({ ...d, porque: 'es el marcador de otra sesión, que puede haber cerrado su ejecución' }); continue; }
+    if (d.kind === 'marker' && !marcadorPropio(d.abs) && marcadorVivo(stateDir, d)) { dudosas.push({ ...d, porque: 'es el marcador de otra sesión, que puede haber cerrado su ejecución' }); continue; }
     if (nombradosPorMarker.has(rutaReal(d.abs)) || (d.kind === 'marker' && juntas.some((r) => r.reconocido))) { dudosas.push({ ...d, porque: 'mientras corría, otro comando de esta sesión corría el del orquestador (marker.js) sobre ese archivo' }); continue; }
     const raiz = foto.roots.find((r) => d.abs.startsWith(r + path.sep));
     const otras = raiz ? strings(antes[raiz]).filter((id) => strings(ahora[raiz]).includes(id)) : [];
@@ -334,25 +394,46 @@ const COMO_SE_LIBERA = (sid) => [
 ].join('\n');
 
 /**
+ * Pone el freno de la sesión y devuelve la frase que lo dice. Si no lo pudo anotar, lo dice así: afirmar que quedó
+ * frenada sin estarlo dejaría pasar lo que siga. Una carpeta donde no se puede escribir frena igual (readBrake).
+ */
+function frenar(stateDir, input, motivo) {
+  try { photo.setBrake(stateDir, input.session_id, motivo); } catch (e) {
+    logHookError(stateDir, e);
+    if (!photo.readBrake(stateDir, input.session_id)) {
+      return `No pude anotar el freno de esta sesión (${e.code || e.message}): decíselo a la persona, que lo mire antes de seguir.`;
+    }
+  }
+  return 'Esta sesión queda frenada: los comandos que pueden escribir no corren hasta que alguien lo mire.';
+}
+
+/**
  * Una mirada que no se pudo hacer queda en hook-errors.log, se le dice al agente y frena los comandos siguientes de la
  * sesión que pueden escribir: callarla dejaría pasar lo escrito, y romper la mirada a propósito no puede ser un escape.
  */
 function noSePudoMirar(input, stateDir, motivo) {
   logHookError(stateDir, new Error(`no se pudo mirar: ${motivo}`));
-  try { photo.setBrake(stateDir, input.session_id, motivo); } catch (e) { logHookError(stateDir, e); }
+  const frenada = frenar(stateDir, input, motivo);
   const texto = [`⛔ tycon-pipeline — no pude mirar qué escribió el comando en las historias y las constancias (${motivo}).`,
-    'Esta sesión queda frenada: los comandos que pueden escribir no corren hasta que alguien lo mire.', COMO_SE_LIBERA(input.session_id)].join('\n');
+    frenada, COMO_SE_LIBERA(input.session_id)].join('\n');
   process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: input.hook_event_name, additionalContext: texto } }) + '\n');
 }
 
 // lo que se puede correr con la sesión frenada: programas que sólo leen, sin redirecciones a archivos ni sustituciones.
-// Ninguno ejecuta otro programa por una opción (por eso no están `rg` ni `git grep`, que lo hacen con `--pre` y `-O`)
-const LECTORES = new Set(['cat', 'head', 'tail', 'less', 'ls', 'grep', 'egrep', 'fgrep', 'wc', 'pwd', 'echo', 'printf', 'true', 'false',
+// Ninguno ejecuta otro programa por una opción ni escribe un archivo que nombra (por eso no están `rg` ni `git grep`,
+// que corren otro con `--pre` y `-O`; ni `less`, que corre el de LESSOPEN; ni `uniq`, que escribe su segundo archivo)
+const LECTORES = new Set(['cat', 'head', 'tail', 'ls', 'grep', 'egrep', 'fgrep', 'wc', 'pwd', 'echo', 'printf', 'true', 'false',
   'test', '[', 'stat', 'file', 'diff', 'cmp', 'which', 'type', 'date', 'whoami', 'id', 'uname', 'basename', 'dirname', 'realpath',
-  'readlink', 'jq', 'cut', 'tr', 'nl', 'od', 'cd', 'uniq']);
-const GIT_LEE = new Set(['status', 'log', 'diff', 'show', 'rev-parse', 'ls-files', 'blame', 'describe']);
-// las opciones de git que escriben un archivo o corren otro programa, en cualquier subcomando
-const GIT_OPCION_QUE_HACE = /^(?:-c|--config-env|--exec-path|--output|--ext-diff|-O|--open-files-in-pager|--textconv)(?:=|$)|^-[cO]./;
+  'readlink', 'jq', 'cut', 'tr', 'nl', 'od', 'cd']);
+// `sort` sólo como filtro de una tubería: sin archivos y con estas opciones. `--compress-program` corre un programa,
+// `-o` escribe, y en PowerShell un bloque `{ … }` es código
+const SORT_OPCIONES = /^-[rnucfdi]+$|^-[kt]$|^-[kt].+$/;
+// git sólo con lo que no lee la configuración del repo para correr un programa: `status` corre `core.fsmonitor`,
+// `diff` y `show` el de `diff.external` o un `textconv`, `log` el de `gpg.program` con `log.showSignature`. La
+// configuración se escribe con la herramienta de edición, que el freno de la sesión no alcanza
+const GIT_LEE = new Set(['rev-parse', 'ls-files']);
+// las opciones de git que escriben un archivo o corren otro programa, en cualquier subcomando (git acepta un prefijo)
+const GIT_OPCION_QUE_HACE = /^(?:-c|--config-env|--exec-path|--output|--ext-diff|-O|--open-files-in-pager|--textconv)(?:=|$)|^-[cO].|^--(?:ext|textc|out|open|exec|config)/;
 // lo que el shell corre adentro de una palabra: aun entre comillas dobles, `$(…)` y los acentos graves corren
 const SUSTITUCION = /\$\(|`|<\(|>\(|\$\{|@\(/;
 
@@ -365,7 +446,14 @@ function soloLee(comando, { powershell = false } = {}) {
     if (!p) return true;
     if (!p.esBandera) return false;
     if (LECTORES.has(p.texto)) return true;
-    if (p.texto === 'sort') return !seg.slice(1).some((x) => /^(?:-o|--output)/.test(x.texto));
+    if (p.texto === 'sort') {
+      const resto = seg.slice(1).map((x) => x.texto);
+      for (let i = 0; i < resto.length; i += 1) {
+        if (!SORT_OPCIONES.test(resto[i])) return false;
+        if (/^-[kt]$/.test(resto[i])) i += 1; // el argumento de -k o -t
+      }
+      return true;
+    }
     if (p.texto !== 'git') return false;
     const palabras = seg.slice(1).map((x) => x.texto);
     if (palabras.some((x) => GIT_OPCION_QUE_HACE.test(x))) return false;
@@ -379,11 +467,18 @@ function despues(input, stateDir) {
   const archivo = archivoDeLaFoto(stateDir, input);
   let foto = null;
   try { foto = JSON.parse(fs.readFileSync(archivo, 'utf8')); } catch (e) {
-    // sin foto pero con el gancho de antes anotado: la foto se borró en el medio
-    if (e.code === 'ENOENT') { if (fs.existsSync(archivoEnCurso(stateDir, input))) noSePudoMirar(input, stateDir, 'la foto de antes del comando no está'); return; }
+    if (e.code === 'ENOENT') {
+      // el segundo evento de después de un comando que ya se miró (el gancho registrado dos veces): no hay nada más que mirar
+      if (yaMirado(stateDir, input)) return;
+      // sin foto frena siempre, también sin el registro de inicio: un comando que borra la foto y su registro dejaría
+      // pasar lo escrito. El costo es el primer comando después de prender la pieza a mitad de un comando
+      noSePudoMirar(input, stateDir, 'la foto de antes del comando no está');
+      return;
+    }
     noSePudoMirar(input, stateDir, `la foto de antes no se puede leer (${e.code || e.message})`);
     return;
   }
+  marcarMirado(stateDir, input);
   try { fs.rmSync(archivo, { force: true }); } catch (_) { /* nada */ }
   if (foto && foto.fallo) { noSePudoMirar(input, stateDir, `no pude sacar la foto antes del comando (${foto.fallo})`); return; }
   if (!photo.photoIntact(foto)) { noSePudoMirar(input, stateDir, `la foto ${archivo} no coincide con su huella`); return; }
@@ -412,10 +507,10 @@ function despues(input, stateDir) {
   } catch (e) { logHookError(stateDir, e); }
   for (const f of fallas) logHookError(stateDir, new Error(`no se pudo deshacer ${f.abs}: ${f.motivo}`));
   // lo que no se pudo deshacer quedó escrito: la sesión se frena hasta que alguien lo mire
-  if (fallas.length) { try { photo.setBrake(stateDir, input.session_id, `no se pudo deshacer ${fallas.map((f) => f.abs).join(', ')}`); } catch (e) { logHookError(stateDir, e); } }
+  const frenada = fallas.length ? frenar(stateDir, input, `no se pudo deshacer ${fallas.map((f) => f.abs).join(', ')}`) : '';
   const partes = [];
   if (hechas.length || fallas.length) partes.push(mensaje(hechas, fallas, prog.algunoReconocido));
-  if (fallas.length) partes.push(`Esta sesión queda frenada: los comandos que pueden escribir no corren hasta que alguien lo mire.\n${COMO_SE_LIBERA(input.session_id)}`);
+  if (fallas.length) partes.push(`${frenada}\n${COMO_SE_LIBERA(input.session_id)}`);
   if (dudosas.length) partes.push(mensajeDudosas(dudosas));
   process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: input.hook_event_name, additionalContext: partes.join('\n\n') } }) + '\n');
 }
@@ -441,8 +536,10 @@ function main() {
       else if (EVENTOS_DE_DESPUES.includes(input.hook_event_name)) anotarFin(stateDir, input);
       return;
     }
-    if (!['Bash', 'PowerShell'].includes(input.tool_name)) return;
-    const comando = String(ti.command || '');
+    // un comando de consola llega con el nombre de la herramienta que lo corre (Bash, PowerShell, Monitor…): se mira por
+    // lo que trae, no por el nombre. Filtrar por el nombre deja afuera a la que no está en la lista
+    if (typeof ti.command !== 'string') return;
+    const comando = ti.command;
     const cwd = input.cwd || process.cwd();
     if (input.hook_event_name === 'PreToolUse') {
       const powershell = input.tool_name === 'PowerShell';
@@ -450,15 +547,11 @@ function main() {
       const freno = photo.readBrake(stateDir, input.session_id);
       if (freno && !soloLee(comando, { powershell })) {
         process.stderr.write([`⛔ tycon-pipeline — ESTA SESIÓN ESTÁ FRENADA: no se pudo mirar lo que escribió un comando anterior (${freno.motivo}).`,
-          'Mientras tanto corren sólo los comandos que leen (cat, grep, git status, git diff, git log…).', COMO_SE_LIBERA(input.session_id)].join('\n') + '\n');
+          'Mientras tanto corren sólo los comandos que leen (cat, grep, head, ls, diff, git rev-parse, git ls-files…); git status, diff y log no:',
+          'pueden correr un programa de la configuración del repo.', COMO_SE_LIBERA(input.session_id)].join('\n') + '\n');
         process.exitCode = 2;
         return;
       }
-      const reconocido = programas(comando, cwd, { powershell }).todosReconocidos;
-      // de un comando que es sólo marker.js, los archivos que nombra: lo dudoso por él es sólo eso
-      const nombra = reconocido ? String(comando).split(/\s+/).map((w) => w.replace(/^["']|["']$/g, '')).filter((w) => /[\\/.]/.test(w))
-        .map((w) => path.resolve(cwd, expandirCasa(w))).filter((p) => fs.existsSync(p)) : [];
-      anotarInicio(stateDir, input, { reconocido, comando, nombra });
       let foto;
       try {
         const roots = reposDelComando(cwd, comando);
@@ -471,7 +564,17 @@ function main() {
         logHookError(stateDir, e);
         foto = { fallo: (e && e.message) || String(e) };
       }
-      photo.writeWhole(archivoDeLaFoto(stateDir, input), JSON.stringify(foto));
+      // sin poder anotar el inicio o guardar la foto, el comando no corre: el evento de después no tendría contra qué
+      // comparar ni dónde dejar el freno (un `chmod` sobre la carpeta, un disco lleno)
+      try {
+        anotarInicio(stateDir, input, { comando });
+        photo.writeWhole(archivoDeLaFoto(stateDir, input), JSON.stringify(foto));
+      } catch (e) {
+        logHookError(stateDir, e);
+        process.stderr.write(`⛔ tycon-pipeline — no puedo guardar la foto de antes del comando (${e.code || e.message}): sin ella no se mira lo que escriba, y no lo dejo correr.\n` +
+          `La carpeta es ${photo.photosDir(stateDir)}: decíselo a la persona.\n`);
+        process.exitCode = 2;
+      }
       return;
     }
     if (EVENTOS_DE_DESPUES.includes(input.hook_event_name)) {
