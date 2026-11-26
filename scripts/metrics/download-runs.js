@@ -124,7 +124,8 @@ function hoy() { return new Date().toISOString().slice(0, 10); }
 
 function escribirAtomico(archivo, contenido) {
   fs.mkdirSync(path.dirname(archivo), { recursive: true });
-  const tmp = `${archivo}.tmp-${process.pid}`;
+  // el pid solo no alcanza: dos instancias del sitio en contenedores distintos tienen el mismo (1) y comparten el disco
+  const tmp = `${archivo}.tmp-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
   fs.writeFileSync(tmp, contenido);
   fs.renameSync(tmp, archivo);
 }
@@ -1048,7 +1049,7 @@ async function bajar(opts = {}) {
         try {
           const destino = require('../nightly/dashboard/changes.js').rutaDeResumen(path.join(dirBuzon, ...k.split('/')) + '.json');
           fs.mkdirSync(path.dirname(destino), { recursive: true });
-          const tmp = `${destino}.tmp-${process.pid}`;
+          const tmp = `${destino}.tmp-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
           fs.writeFileSync(tmp, require('zlib').gzipSync(JSON.stringify(doc)));
           fs.renameSync(tmp, destino);
           res.hilos_grandes += 1;
@@ -1072,7 +1073,13 @@ async function bajar(opts = {}) {
       let igual;
       try { igual = b.md5 ? md5Local(local, st, previo) === b.md5 : Boolean(previo && previo.etag && previo.etag === b.etag); }
       catch (e) { noLeidos.push(`${b.nombre} (${e.code || e.message})`); continue; }
-      if (igual) { res.al_dia += 1; continue; }
+      // lo que ya está en el disco y coincide se anota (con su MD5) si el índice no lo tenía: si no, el disco se vuelve a
+      // leer entero en cada pasada, también con `confiarIndice`
+      if (igual) {
+        res.al_dia += 1;
+        if (b.md5 && !(previo && previo.md5 === b.md5 && previo.size === st.size)) { indice.blobs[b.nombre] = { etag: b.etag, size: st.size, md5: b.md5, mtimeMs: st.mtimeMs }; indiceSucio = true; }
+        continue;
+      }
     }
     pendientes.push({ ...b, ...forma, local, ...(base ? { base } : {}) });
   }
@@ -1089,8 +1096,26 @@ async function bajar(opts = {}) {
 
   // 3 · bajar, archivo por archivo, dentro del presupuesto
   // el viejo (de antes del renombre) pasa al nuevo antes de la primera escritura: el que se escribe ya lo trae en `indice`
+  // El índice se guarda una vez al final de la pasada (también si corta), y en una pasada larga como mucho cada
+  // `intervaloIndiceMs` (10 s si no se dice), nunca después de cada archivo: con el disco del sitio sobre un
+  // almacenamiento de objetos (Cloud Run con un volumen de Cloud Storage), cada reescritura es una mutación del mismo
+  // objeto, que admite una por segundo, y con varios trabajadores en paralelo daba 429. Si el proceso muere antes de
+  // guardar, la pasada siguiente compara contra el disco: vuelve a mirar, no pierde nada.
   const guardarIndice = () => { prepareStateWrite(rutaIndice, { where }); escribirAtomico(rutaIndice, JSON.stringify(indice, null, 1) + '\n'); };
-  if (indiceSucio) { try { guardarIndice(); } catch (_) { /* el índice sólo ahorra: la próxima pasada mira el disco */ } }
+  const intervaloIndice = Number.isFinite(opts.intervaloIndiceMs) && opts.intervaloIndiceMs >= 0 ? opts.intervaloIndiceMs : 10000;
+  let indiceSinGuardar = indiceSucio;
+  let indiceGuardadoEn = Date.now();
+  const guardarIndiceSiToca = (alFinal) => {
+    if (!indiceSinGuardar || (!alFinal && Date.now() - indiceGuardadoEn < intervaloIndice)) return;
+    try { guardarIndice(); indiceSinGuardar = false; } catch (_) { /* el índice sólo ahorra: la próxima pasada mira el disco */ }
+    indiceGuardadoEn = Date.now();
+  };
+  // lo que cambió antes de bajar (blobs que el buzón ya no lista, resúmenes, lo que ya estaba en el disco) se guarda
+  // enseguida: con `confiarIndice`, un índice que todavía anota un blob podado lo daría por bajado si vuelve
+  guardarIndiceSiToca(true);
+  // y el guardado intermedio no espera a que termine un archivo: con uno grande colgado, lo ya bajado queda anotado igual
+  const relojIndice = setInterval(() => guardarIndiceSiToca(false), Math.max(intervaloIndice, 1000));
+  if (relojIndice.unref) relojIndice.unref();
   const malos = [];
   // La cobertura de una máquina se escribe sólo si ninguno de SUS registros falló en esta pasada.
   // 🔴 `.jsonl.gz` también: sin eso, una falla de hallazgos.jsonl.gz no retendría la cobertura.
@@ -1133,7 +1158,8 @@ async function bajar(opts = {}) {
       return;
     }
     indice.blobs[p.nombre] = { etag: p.etag, size: st.size, md5, mtimeMs: st.mtimeMs };
-    try { guardarIndice(); } catch (_) { /* el índice sólo ahorra; lo bajado ya está */ }
+    indiceSinGuardar = true;
+    guardarIndiceSiToca(false);
     res.bajados += 1;
     res.bytes += r.cuerpo.length;
     res.bajado = true;
@@ -1174,9 +1200,11 @@ async function bajar(opts = {}) {
     };
     await Promise.all(Array.from({ length: Math.min(conc, cola.length) }, trabajador));
     // un corte en cualquier fase deja volcados sin bajar; en las de registros, además, registros
-    if (fatal) { res.volcados_enteros = false; if (fase < 2) res.registros_enteros = false; return fin(...fatal); }
+    if (fatal) { clearInterval(relojIndice); guardarIndiceSiToca(true); res.volcados_enteros = false; if (fase < 2) res.registros_enteros = false; return fin(...fatal); }
     if (corto) { res.sin_tiempo = pendientes.length - tomados; res.volcados_enteros = false; if (fase < 2) res.registros_enteros = false; break; }
   }
+  clearInterval(relojIndice);
+  guardarIndiceSiToca(true);
   // lo que quedó por el tope es trabajo pendiente, como lo que quedó sin tiempo: la pasada no está entera, y la
   // siguiente sigue (sources.js → buzon.seguir)
   res.sin_tiempo += res.por_tope;
