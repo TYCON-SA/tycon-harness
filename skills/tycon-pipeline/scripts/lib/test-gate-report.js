@@ -860,10 +860,36 @@ function informe(argv) {
     result.failed_tests_error = `no pude leer el nombre de las pruebas que fallaron (${e && e.message ? e.message : e})`;
   }
 
+  // ── Lo que ya fallaba en la base (lib/inherited-cases.js) ──
+  // El juez de los repos de producto deja su veredicto en la carpeta de resultados. Con todo heredado (salió 0) y el
+  // portón en 0, es verde por eso y sólo por eso: `suite_green_by: "heredadas"`. Si queda algo del cambio o sin medir,
+  // el veredicto se informa igual (qué era heredado y qué frena), y el color no cambia.
+  try {
+    const hc = path.join(resultsDir, 'inherited-cases.json');
+    if (existe(hc)) {
+      const v = leerJson(hc);
+      result.inherited_cases = { exit: v.exit, ...(v.base ? { base: v.base } : {}), inherited: v.inherited || [], blocking: v.blocking || [],
+        ...(v.partial_run ? { partial_run: true } : {}), ...(v.reason ? { reason: v.reason } : {}) };
+      if (v.exit === 0 && suiteExit === 0 && !v.partial_run && !(v.blocking || []).length) {
+        result.suite_green = true;
+        result.suite_green_by = 'heredadas';
+        delete result.failed_in_report;
+      }
+    }
+  } catch (e) {
+    result.inherited_cases_error = `no pude leer el veredicto de lo heredado (${e && e.message ? e.message : e})`;
+  }
+
   // ── El mínimo de cobertura del propio repo (jest `coverageThreshold`, vitest `thresholds`) ──
   // La herramienta sale 1 con todas las pruebas en verde: se dice cuál mínimo y cuánto falta, no un rojo sin motivo.
-  // sólo con la suite en rojo: con salida 0 no hay mínimo que falte, y una prueba que imprime esa forma no lo inventa
-  const umbralRepo = suiteExit !== 0 ? umbralesDelRepo(resultsDir) : [];
+  // sólo con la suite en rojo: con salida 0 no hay mínimo que falte, y una prueba que imprime esa forma no lo inventa.
+  // La salida 0 por heredadas la puso el portón sobre una corrida roja: ahí el mínimo se mira igual, y si falta, no es verde
+  const porHeredadas = result.suite_green_by === 'heredadas';
+  const umbralRepo = suiteExit !== 0 || porHeredadas ? umbralesDelRepo(resultsDir) : [];
+  if (umbralRepo.length && porHeredadas) {
+    result.suite_green = false;
+    delete result.suite_green_by;
+  }
   if (umbralRepo.length) {
     result.coverage_threshold_failed = umbralRepo;
     const t = result.totals || {};

@@ -57,7 +57,7 @@
  *   (--project, --verify, --write-access y --harness tienen un nombre viejo en castellano que sigue
  *   andando hasta el retiro)
  *   --repo <nombre>    repo del arnés (default: igual que el proyecto)
- *   --org <url>        default: `ado.org` de la configuración del arnés (TYCON_ADO_ORG, ~/.claude/tycon.json o
+ *   --org <url>        default: `ado.org` de la configuración del arnés (TYCON_ADO_ORG, ~/.tycon/config.json o
  *                      el perfil del equipo): sin ninguna, Azure DevOps está apagado en esta máquina y sale 2
  *
  * Necesita un PAT en AZURE_DEVOPS_EXT_PAT (o AZURE_DEVOPS_PAT) con permiso para administrar

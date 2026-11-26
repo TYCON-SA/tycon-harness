@@ -11,7 +11,7 @@
 # Contestar esa pregunta rompiendo algo de verdad y mirando una corrida
 # real es caro. Se contesta local con `Runner.Client` (runner.server, de la comunidad): evalúa las
 # condiciones de Azure DevOps y decide qué corre y qué se saltea. Ver
-# `guides/maintaining/probar-pipelines-sin-correrlos.md`.
+# `guides/maintaining/testing-pipelines-without-running.md`.
 #
 # 🔴 LAS CONDICIONES NO SE INVENTAN: se leen del pipeline REAL de cada producto. Si mañana alguien
 # le saca el `succeeded()` a un paso que escribe en el repositorio, este caso se pone rojo — que es

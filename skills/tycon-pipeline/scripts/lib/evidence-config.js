@@ -73,7 +73,7 @@ function parseEvidenceText(txt, repoRoot, opts) {
     if (!entry) return;
     if (list === 'fe_paths') { out.fePaths.push(entry); return; }
     // `~/` se expande: el arnés declara a agent-skills como compañero, que vive en
-    // `~/.claude/agent-skills` en TODAS las máquinas del equipo — una ruta absoluta con el usuario
+    // el enchufe de las skills (`agent-skills`) en TODAS las máquinas del equipo — una ruta absoluta con el usuario
     // adentro sólo serviría en una. Sin `~`, las tres formas de siempre: absoluta · relativa al
     // repo (empieza con `.`) · hermana bajo la carpeta padre del repo.
     const conHome = /^~(?=\/|$)/.test(entry) ? path.join(os.homedir(), entry.slice(1)) : entry;

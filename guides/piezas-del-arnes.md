@@ -152,7 +152,7 @@ En [pieces/nightly.md](pieces/nightly.md):
 
 En [pieces/integrations.md](pieces/integrations.md):
 
-- [guides/integrations/ado-cola-y-listados.md](pieces/integrations.md#guidesintegrationsado-cola-y-listadosmd)
+- [guides/integrations/ado-queue-and-listings.md](pieces/integrations.md#guidesintegrationsado-queue-and-listingsmd)
 - [guides/integrations/clockify-mcp.md](pieces/integrations.md#guidesintegrationsclockify-mcpmd)
 - [guides/integrations/clocki-tracking.md](pieces/integrations.md#guidesintegrationsclocki-trackingmd)
 - [guides/integrations/codegraph-mcp.md](pieces/integrations.md#guidesintegrationscodegraph-mcpmd)
