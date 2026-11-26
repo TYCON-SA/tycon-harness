@@ -132,7 +132,7 @@ function salirPorLaRed(e, texto) {
     try {
       process.stderr.write([
         '⛔ tycon-pipeline — EL FRENO FALLÓ Y ESTE COMANDO ESCRIBE UNA HISTORIA O UNA CONSTANCIA',
-        `  No pude mirar qué escribe. La falla quedó en ${path.join(carpetaDelEstado(), 'hook-errors.log')}.`,
+        `  No pude mirar qué escribe. La falla quedó en ${registroDeFallas()}.`,
         '  Una historia se edita con la herramienta de edición (Edit/Write); una constancia la firma una persona.',
         '',
       ].join('\n'));
@@ -233,7 +233,7 @@ function salirSinCargar(e) {
     process.stderr.write([
       '⛔ tycon-pipeline — EL FRENO DE ESCRITURAS NO PUDO CARGARSE ENTERO: ningún comando corre hasta repararlo',
       `  ${cual}`,
-      `  La falla quedó en ${path.join(carpetaDelEstado(), 'hook-errors.log')}. Reinstalá el arnés desde tu terminal; \`/tycon-harness\` dice si quedó bien instalado.`,
+      `  La falla quedó en ${registroDeFallas()}. Reinstalá el arnés desde tu terminal; \`/tycon-harness\` dice si quedó bien instalado.`,
       '',
     ].join('\n'));
   } catch { /* sin dónde decirlo, frena igual */ }
@@ -4031,7 +4031,8 @@ const ENVOLTORIOS_CON_VALOR = {
 /**
  * El tramo sin su `env` (también por su ruta, `/usr/bin/env`) y sin sus opciones, sus variables y su carpeta:
  * `{ carpetas, resto }`, con `resto` desde el comando que corre y `carpetas` las de `-C`/`--chdir`, con sus comillas
- * resueltas. `-u`/`--unset` llevan valor. Con `-S` (el comando en un texto) o sin `env`, el tramo queda como está.
+ * resueltas. `-u`/`--unset` llevan valor. Con `-S` (el comando en un texto) o sin `env`, el tramo queda como está; con
+ * `-S`, además, `partida` es la orden que corre.
  */
 function pelarEnv(tramo) {
   const t = String(tramo);
@@ -4055,7 +4056,15 @@ function pelarEnv(tramo) {
     let m;
     if (/^[A-Za-z_]\w*=/.test(w)) { j++; continue; }
     if (w === '--') { j++; break; }
-    if (/^-[iv0]*S|^--split-string/.test(w)) return { carpetas, resto: t };
+    // `-S` lleva la orden en su valor, pegado (`-S"…"`, `--split-string=…`) o en la palabra siguiente: el tramo queda
+    // como está y la orden de adentro va en `partida`, para mirarla como un comando anidado
+    if ((m = /^-[iv0]*S(.*)$|^--split-string(?:=(.*))?$/s.exec(w))) {
+      const pegada = m[1] !== undefined ? m[1] : m[2];
+      const valor = pegada !== undefined && pegada !== '' ? pegada : (j + 1 < piezas.length ? palabra(j + 1) : '');
+      const siguiente = pegada !== undefined && pegada !== '' ? j + 1 : j + 2;
+      const cola = siguiente < piezas.length ? ` ${t.slice(piezas[siguiente].index)}` : '';
+      return { carpetas, resto: t, partida: `${valor}${cola}`.trim() || null };
+    }
     if (/^-[iv0]*C$|^--chdir$/.test(w)) { if (j + 1 < piezas.length) carpetas.push(palabra(j + 1)); j += 2; continue; }
     if ((m = /^-[iv0]*C(.+)$|^--chdir=(.*)$/.exec(w))) { carpetas.push(m[1] ?? m[2]); j++; continue; }
     if (/^-[iv0]*[uPa]$|^--(?:unset|argv0)$/.test(w)) { j += 2; continue; }
@@ -4841,6 +4850,9 @@ function comandosAnidados(comando, hondo = 0, valores = null) {
     // la carpeta de un `env -C` vale para lo que corre ese tramo, y sólo para él
     const cdsDelEnv = pelarEnv(tramo).carpetas.map((d) => `cd ${/\s/.test(d) ? `"${d}"` : d}`);
     const sumarConCd = (b) => { const todos = [...cds, ...cdsDelEnv]; sumar(todos.length && b ? `${todos.join(' && ')} && ${b}` : b); };
+    // la orden que `env -S` lleva en su valor corre como cualquier otra
+    const partida = pelarEnv(tramo).partida;
+    if (partida) sumarConCd(partida);
     // sin el `env` de delante (`env -C d sh -c '…'`): lo que corre `env` es el comando
     const w = palabras(sinPalabrasDelShell(pelarEnv(tramo).resto)).filter((x) => x !== '');
     // las asignaciones de delante (`A=1 B=2 programa`) no son el programa, ni `builtin`/`command` (`builtin eval "$c"`)
@@ -6194,9 +6206,25 @@ function logHookError(e, rotulo = 'falla atrapada') {
   try {
     const dir = carpetaDelEstado();
     fs.mkdirSync(dir, { recursive: true });
-    fs.appendFileSync(path.join(dir, 'hook-errors.log'),
-      `[${new Date().toISOString()}] on-bash-write-gate ${rotulo}: ${(e && e.stack) || e}\n\n`, 'utf8');
+    const desde = esCopiaQueNoEsLaInstalada() ? ` (copia en ${RAIZ_DEL_ARNES})` : '';
+    fs.appendFileSync(registroDeFallas(),
+      `[${new Date().toISOString()}] on-bash-write-gate${desde} ${rotulo}: ${(e && e.stack) || e}\n\n`, 'utf8');
   } catch { /* noop */ }
+}
+
+// En una máquina con el arnés instalado, el registro de fallas (`hook-errors.log`) mide los frenos que corren de verdad:
+// una copia que no es la instalada (la de una prueba, la de un laboratorio en la carpeta de trabajo de una sesión) anota
+// en un registro aparte, para no ensuciar esa medición. Sin instalación (un clon, o la casa de una prueba), o si no se
+// puede saber, el registro de siempre.
+function esCopiaQueNoEsLaInstalada() {
+  try {
+    const arbol = require('./lib/installed-tree.js');
+    const raices = arbol.roots({ home: os.homedir() });
+    return raices.length > 0 && !arbol.inside(raices, RAIZ_DEL_ARNES);
+  } catch { return false; }
+}
+function registroDeFallas() {
+  return path.join(carpetaDelEstado(), esCopiaQueNoEsLaInstalada() ? 'hook-errors-copies.log' : 'hook-errors.log');
 }
 
 /**

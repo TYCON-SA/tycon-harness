@@ -389,3 +389,87 @@ test('OWR9 WaitText_NoRepiteEspera', () => {
   const coord = fs.readFileSync(path.join(ROOT, 'scripts', 'tools', 'coordination.js'), 'utf8');
   assert.doesNotMatch(coord, /espera \$\{(?:x|w)\.waitingFor\}/, 'la coordinación arma la espera con waitPhrase');
 });
+
+// OW6: /wip muestra debajo de su tabla los mismos tres grupos que la oficina, armados con la foto que /wip ya tiene y sin
+// el tablero de la coordinadora
+test('OW6 Wip_EsperanBlock @story-8.293 @ac-14', async (t) => {
+  const WIP = require(path.join(ROOT, 'scripts', 'tools', 'work-in-progress.js'));
+  const office = require(path.join(ROOT, 'scripts', 'tools', 'office.js'));
+  // la foto de OW5, con la firma de la lista para una sesión y otra firma suelta
+  const wip = toyWip([
+    waiting('Main', 'que main arranque', { waitingKind: 'main' }),
+    waiting('Sesion', 'a Pedro', { waitingKind: 'session' }),
+    waiting('Doble', 'a Pedro', { waitingKind: 'main' }),
+  ]);
+  const signatures = [{ id: 'f1', firma: 'x', destino: 'sid-Doble', title: 'Aprobar', at: NOW }, { id: 'f2', firma: 'y', title: 'Suelta', at: NOW }];
+  const { meta } = buildOffice({ wip, openPrs: [openPr('pub', 7)], signatures, nowMs: NOW, ownerCard: stubCard }).data;
+  const block = WIP.renderWaits(meta.esperan);
+  const lines = block.split('\n');
+  assert.ok(block.startsWith('\n\n'), 'un renglón en blanco lo separa de lo de arriba');
+  const at = (title) => lines.indexOf(title);
+  assert.ok(at('Esperan al dueño:') > 0 && at('Esperan al dueño:') < at('Esperan a main:') && at('Esperan a main:') < at('Esperan a otra sesión:'), block);
+  const under = (title) => {
+    const out = [];
+    for (let j = at(title) + 1; j < lines.length && lines[j].startsWith('- '); j += 1) out.push(lines[j].slice(2));
+    return out;
+  };
+  assert.deepStrictEqual(under('Esperan al dueño:'), meta.esperan.dueno, 'un renglón por espera, tal cual los arma la oficina');
+  assert.strictEqual(under('Esperan al dueño:').length, 2, 'la sesión que espera la firma y la firma suelta de la lista');
+  assert.ok(under('Esperan al dueño:').every((l) => / · acción de lista$/.test(l)), 'las del dueño, con la línea corta de su ficha y la acción');
+  assert.deepStrictEqual(under('Esperan a main:'), meta.esperan.main);
+  assert.deepStrictEqual(under('Esperan a otra sesión:'), meta.esperan.sesion);
+  // un grupo vacío no sale, y sin esperas no hay bloque
+  assert.doesNotMatch(WIP.renderWaits({ dueno: [], main: ['x: choca con main'], sesion: [] }), /Esperan al dueño|otra sesión/);
+  assert.strictEqual(WIP.renderWaits(null), '');
+  assert.strictEqual(WIP.renderWaits({ dueno: [], main: [], sesion: [] }), '');
+
+  // /wip le pasa a la oficina la foto que ya armó, sin el tablero y sin escribir nada
+  let asked;
+  const r = { text: 'TABLA', unreadable: [] };
+  const answered = await WIP.waitsOf(r, { stateDir: '/x' }, { collect: async (o) => { asked = o; return { meta: { esperan: meta.esperan }, unreadable: [] }; } });
+  assert.strictEqual(answered, block);
+  assert.strictEqual(asked.wip, r);
+  assert.strictEqual(asked.noBoard, true);
+  assert.strictEqual(asked.readOnly, true);
+  assert.strictEqual(asked.stateDir, '/x');
+  // si la oficina no contesta, se dice: nunca pasa por «no hay esperas»
+  assert.match(await WIP.waitsOf(r, {}, { collect: () => new Promise(() => {}), ms: 50 }), /^\n\nEsperan: no pude mirarlo \(la oficina tardó más de /);
+  assert.match(await WIP.waitsOf(r, {}, { collect: async () => { throw new Error('se rompió'); } }), /^\n\nEsperan: no pude mirarlo \(se rompió\)$/);
+  // lo que la oficina no pudo leer y /wip no dijo ya va en un renglón
+  const partial = await WIP.waitsOf({ text: '', unreadable: ['ya dicho'] }, {}, { collect: async () => ({ meta: {}, unreadable: ['ya dicho', 'las firmas pendientes no se pudieron leer: x'] }) });
+  assert.strictEqual(partial, '\n\nLa oficina no pudo leer todo para las esperas: las firmas pendientes no se pudieron leer: x');
+  assert.doesNotMatch(partial, /ya dicho/);
+
+  // la fila del tablero que espera al dueño sale en la oficina y no en /wip
+  const home = tmp(t, 'owner-wip-');
+  const sdir = stateDir(home);
+  fs.mkdirSync(path.join(sdir, 'coordination'), { recursive: true });
+  fs.writeFileSync(path.join(sdir, 'coordination', 'tablero.json'), JSON.stringify({ pendientes: [{ id: 'T-1', titulo: 'Decidir algo', estado: 'firma' }] }));
+  const sessions = path.join(home, 'sessions');
+  const projects = path.join(home, 'projects');
+  fs.mkdirSync(sessions, { recursive: true });
+  fs.mkdirSync(projects, { recursive: true });
+  const base = { home, stateDir: sdir, sessionsDir: sessions, projectsDir: projects, wip: toyWip([]), readOnly: true, syncBoard: false, machine: false, quietMinutes: async () => ({ code: 0, out: '5' }), siteUrl: async () => ({ code: 0, out: '' }) };
+  const withBoard = await office.collect(base);
+  assert.strictEqual(withBoard.meta.esperan && withBoard.meta.esperan.dueno.length, 1, JSON.stringify(withBoard.meta.esperan));
+  assert.ok(!(await office.collect({ ...base, noBoard: true })).meta.esperan, 'sin el tablero no queda espera');
+
+  // de punta a punta: la tabla de siempre y, debajo, el bloque; `--json` no cambia
+  const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: 'ses-wip' };
+  assert.strictEqual(spawnSync(process.execPath, [MARKER, 'doing', 'una nota de prueba', '--waiting-for', 'que main arranque', '--kind', 'main'], { env, encoding: 'utf8' }).status, 0);
+  fs.writeFileSync(path.join(sessions, 'ses-wip.json'), JSON.stringify({ pid: process.pid, sessionId: 'ses-wip', name: 'Nota', status: 'idle', statusUpdatedAt: Date.now() }));
+  const WIP_JS = path.join(ROOT, 'scripts', 'tools', 'work-in-progress.js');
+  const cli = (...more) => spawnSync(process.execPath, [WIP_JS, '--sessions-dir', sessions, '--projects-dir', projects, ...more], { env, encoding: 'utf8', input: '' });
+  const text = cli();
+  assert.strictEqual(text.status, 0, text.stderr);
+  assert.match(text.stdout, /^\| Trabajo \| Estado \| Fin estimado \| Sesión \| Carpeta \|\n/);
+  assert.match(text.stdout, /\n\nEsperan a main:\n- Nota: espera que main arranque\n$/);
+  assert.doesNotMatch(text.stdout, /Decidir algo|Esperan al dueño/, 'las filas del tablero no salen en /wip');
+  const json = cli('--json');
+  assert.strictEqual(json.status, 0, json.stderr);
+  assert.deepStrictEqual(Object.keys(JSON.parse(json.stdout)).sort(), ['free', 'halfway', 'idle', 'rows', 'unreadable']);
+
+  // el comando dice qué es cada grupo
+  const doc = fs.readFileSync(path.join(ROOT, 'commands', 'wip.md'), 'utf8');
+  for (const title of ['Esperan al dueño', 'Esperan a main', 'Esperan a otra sesión']) assert.match(doc, new RegExp(`«${title}»`));
+});

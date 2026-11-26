@@ -26,6 +26,22 @@ function carpetaDelEstado() {
   try { return stateDirOf(os.homedir()); } catch { return os.tmpdir(); }
 }
 
+/**
+ * Cómo está la máquina: la memoria libre y la carga de un minuto con los núcleos. Distingue una máquina saturada de un
+ * freno lento. En Windows la carga no se mide (da ceros) y no se dice.
+ */
+function cargaDeLaMaquina(medir = os) {
+  try {
+    const gb = (b) => (b / 2 ** 30).toFixed(b < 10 * 2 ** 30 ? 1 : 0).replace(/\.0$/, '').replace('.', ',');
+    const libre = medir.freemem();
+    const total = medir.totalmem();
+    let texto = `la máquina: memoria libre ${Math.round((libre / total) * 100)} % (${gb(libre)} de ${gb(total)} GB)`;
+    const [uno] = medir.loadavg();
+    if (uno > 0) texto += `, carga de 1 min ${uno.toFixed(2).replace(/\.?0+$/, '').replace('.', ',')} con ${medir.cpus().length} núcleos`;
+    return texto;
+  } catch { return 'la máquina: no se pudo medir'; }
+}
+
 function anotar(motivo, marca = 'FRENÓ POR FALLA') {
   try {
     const dir = carpetaDelEstado();
@@ -88,7 +104,7 @@ function vigilar({ archivo, archivoRed = archivo, segundos = segundosDelReloj(pr
     try {
       fs.writeSync(2, `⛔ tycon-pipeline — el freno de escrituras no alcanzó a decidir (${motivo}): el comando no corrió. Reintentalo; si se repite, decíselo a la persona.\n`);
     } catch { /* sin dónde decirlo, frena igual */ }
-    anotar(`${motivo}${enQuePaso()}`);
+    anotar(`${motivo}${enQuePaso()}; ${cargaDeLaMaquina()}`);
     salirConDos();
   };
   const reloj = setTimeout(() => noDecidio(`no contestó en ${segundos} s`), segundos * 1000);
@@ -118,7 +134,7 @@ function vigilar({ archivo, archivoRed = archivo, segundos = segundosDelReloj(pr
       const ms = Date.now() - inicio;
       if (ms >= segundos * 500) {
         cerrarPaso();
-        anotar(`decidió en ${ms} ms, con un tope de ${segundos} s; el paso más lento: ${masLento.texto} (${masLento.ms} ms)`, 'LENTO');
+        anotar(`decidió en ${ms} ms, con un tope de ${segundos} s; el paso más lento: ${masLento.texto} (${masLento.ms} ms); ${cargaDeLaMaquina()}`, 'LENTO');
       }
       process.exitCode = codigo;
     });
@@ -128,4 +144,4 @@ function vigilar({ archivo, archivoRed = archivo, segundos = segundosDelReloj(pr
   });
 }
 
-module.exports = { vigilar, segundosDelReloj, entregarEntrada, anotarPaso };
+module.exports = { vigilar, segundosDelReloj, entregarEntrada, anotarPaso, cargaDeLaMaquina };

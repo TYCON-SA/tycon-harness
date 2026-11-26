@@ -434,7 +434,8 @@ const normalizado = (t) => String(t || '').replace(/\\\r?\n/g, ' ').replace(/["'
 /**
  * Los pedidos del comando que llevan el escape, cada uno con su texto (el que guarda el freno: `textoDe`) y si el
  * escape sobraba en ESE pedido: un pedido que se puede juzgar —el comando no le pasa código a un intérprete y su destino
- * no es una expansión de la terminal— y que el freno no frenaría (`faltasDe`).
+ * no es una expansión de la terminal— y que el freno no frenaría (`faltasDe`). Un pedido que el freno juzga con la rama de
+ * origen (`necesitaLaRama`) nunca sobraba: la revisión no tiene esa rama, y sin ella no sabe qué habría decidido.
  */
 function pedidosConEscape(command) {
   const segs = command ? AZ.segmentos(command) : [];
@@ -443,7 +444,7 @@ function pedidosConEscape(command) {
     const verbo = AZ.verboDePr(seg);
     const destino = AZ.flagDe(seg, 'target-branch', 't');
     const sobra = !interprete && (verbo === 'create' || verbo === 'update') && !(destino !== null && /[$`]/.test(destino))
-      && AZ.faltasDe(seg).faltas.length === 0;
+      && !AZ.necesitaLaRama(seg) && AZ.faltasDe(seg).faltas.length === 0;
     return { texto: normalizado(AZ.textoDe(seg)), sobra };
   });
 }

@@ -596,6 +596,15 @@ test('T32 ShellAnidado_PwdDespuesDeUnCd_EsLaCarpetaDelCd', () => {
   frena(c, `sh -c 'echo x >> $PWD/${H}; cd ${afuera}'`);
 });
 
+// 🔴 Falla con: `env -S "<orden>"` (o `--split-string`) corre la orden que lleva en su valor, y el freno no la miraba.
+test('T33 EnvSplitString_LaOrdenDelValor_SeMiraComoAnidada', () => {
+  const c = corral();
+  for (const cmd of [`env -S "rm ${H}"`, `env -S'rm ${H}'`, `env -iS "rm ${H}"`, `env --split-string="rm ${H}"`,
+    `env --split-string "rm ${H}"`, `env -S "sh -c 'echo x >> ${H}'"`, `sudo -u root env -S "rm ${H}"`]) frena(c, cmd);
+  pasa(c, `env -S "cat ${H}"`);
+  pasa(c, 'env -S "echo hola" > /dev/null');
+});
+
 // T15 Bench_FrenoComandosAnidados
 // 🔴 Falla con: un caso del banco que no corre o que da otra salida que la esperada.
 test('T15 Bench_FrenoComandosAnidados', () => {
