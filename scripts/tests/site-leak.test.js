@@ -138,7 +138,7 @@ test('T32 Fuga_PersonaA_NoVeNadaDeB', async () => {
 
     // sin sesión: ninguna ruta de la tabla contesta 200; lo que contesta 200 son las sondas y los estáticos, sin datos
     for (const r of rutas) assert.notStrictEqual((await h.pedir(r.path, { method: r.method })).status, 200, `${r.path} sin sesión`);
-    for (const ruta of ['/healthz', '/livez', '/readyz', '/static/site.css', '/static/site.js']) {
+    for (const ruta of ['/healthz', '/health', '/livez', '/readyz', '/static/site.css', '/static/site.js']) {
       const t = (await h.pedir(ruta)).texto;
       assert.deepStrictEqual([...DE_A, ...DE_B, ...SIN_CONFIRMAR, ...LIBRE].filter((m) => t.includes(m)), [], `${ruta} sin marcadores`);
     }

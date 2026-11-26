@@ -280,6 +280,9 @@ test('T42 Vida_NoDependeDelFreno', async () => {
       const hz = await h.pedir('/healthz');
       assert.strictEqual(hz.status, esperado.healthz, `${caso}: /healthz`);
       if (caso === 'frenado') assert.match(hz.json.motivo, /^la configuración de la organización no valida desde /);
+      // /health, el mismo control con otro nombre (Google Cloud Run se reserva /healthz): contesta exactamente lo mismo
+      const he = await h.pedir('/health');
+      assert.deepStrictEqual([he.status, he.json], [hz.status, hz.json], `${caso}: /health igual que /healthz`);
       assert.strictEqual((await h.pedir('/readyz')).status, esperado.readyz, `${caso}: /readyz`);
     } finally { await h.cerrar(); }
   }

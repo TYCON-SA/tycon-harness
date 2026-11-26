@@ -991,7 +991,7 @@ test('T33 Replicas_UnaEnCadaReceta — @story-8.171 @ac-15b', () => {
 });
 
 test('T35 RutasSinSesion_ListaFijada_RecetaConTrustProxy — @story-8.171 @ac-15c', () => {
-  assert.deepStrictEqual([...RUTAS_SIN_SESION].sort(), ['/healthz', '/livez', '/saliste', '/idioma', '/static/site.css', '/static/site.js', '/static/fonts/lato-400.woff2', '/static/fonts/lato-700.woff2', '/live/machine', '/live/enroll'].sort());
+  assert.deepStrictEqual([...RUTAS_SIN_SESION].sort(), ['/healthz', '/health', '/livez', '/saliste', '/idioma', '/static/site.css', '/static/site.js', '/static/fonts/lato-400.woff2', '/static/fonts/lato-700.woff2', '/live/machine', '/live/enroll'].sort());
   assert.ok(VARIABLES.includes('SITE_TRUST_PROXY'));
   const azure = fs.readFileSync(path.join(H.SITE, 'deploy', 'azure-container-apps.js'), 'utf8');
   assert.match(azure, /'--excluded-paths', RUTAS_SIN_SESION\.join\(','\)/, 'la receta excluye la lista entera');
