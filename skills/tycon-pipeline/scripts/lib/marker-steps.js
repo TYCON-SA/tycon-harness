@@ -411,7 +411,8 @@ function cmdApproveMockup(flags) {
   {
     const optVal = (name) => { const k = opts.indexOf(name); return k >= 0 ? nn(opts[k + 1], '') : null; };
     // la persona a su nombre; sin persona, quien firmó de verdad (como la maqueta aprobada con el plan)
-    anotarAprobacion(marker, { que: 'maqueta', cuando: at, via: `approve-mockup${reemplaza ? ' --replace-delegated' : ''}`, ...quienDeLaMaqueta(firma, optVal), ...porDe(firma) });
+    anotarAprobacion(marker, { que: 'maqueta', cuando: at, via: `approve-mockup${reemplaza ? ' --replace-delegated' : ''}`, ...quienDeLaMaqueta(firma, optVal), ...porDe(firma),
+      aprobacion: require('./approvals.js').aprobacionDe(firma, 'plan-approval') });
   }
   writeMarker(marker);
   console.log(JSON.stringify({ ok: true, file: p.mockup, approval: p.approval, sha256: sha, reapproval: !!prev }, null, 2));

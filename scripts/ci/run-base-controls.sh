@@ -48,6 +48,10 @@
 #   bash scripts/ci/run-base-controls.sh pending --root <pedido> --base <rev> --range <base>...<punta> [--approvals-out <ruta>]
 #   bash scripts/ci/run-base-controls.sh approve --root <dir> [--base <rev>] --entries '<json>' [--out <ruta>] [--terminal]
 #   bash scripts/ci/run-base-controls.sh approve --root <dir> --file <ruta> --rev <commit> [--out <ruta>] [--terminal]
+#   bash scripts/ci/run-base-controls.sh approve --root <dir> --base <rev> --range <base>...<punta> --expect <huella> [--out <ruta>] [--terminal]
+#        (la lista la arma el guion desde el pedido, como `pending`, y la huella es la que `pending` imprime: el comando no
+#        nombra ningún archivo, y así lo firma también el click cuando la lista nombra la puerta de producción)
+#   bash scripts/ci/run-base-controls.sh entries --root <dir> --base <rev> --range <base>...<punta> --expect <huella>   (esa lista, en JSON)
 #   bash scripts/ci/run-base-controls.sh removed-approvals --root <dir> --ref <rev> (--from <commit> | --since <fecha>) [--until <fecha>]
 #        (la cuenta de la noche: las constancias que salieron de <rev>, con y sin la firma del dueño; la llama
 #        scripts/ci/approvals-removed.js)
@@ -111,7 +115,7 @@ const [cmd, ...rest] = enLaVentana ? JSON.parse(process.env.BASE_CONTROLS_WINDOW
 delete process.env.BASE_CONTROLS_WINDOW_ARGS;
 
 function usage(code) {
-  console.error('uso: bash scripts/ci/run-base-controls.sh run|pending --root <pedido> --base <rev> --range <base>...<punta> · check-inventory --root <dir> [--ref <rev>] · approve --root <dir> [--base <rev>] --entries <json> | --file <ruta> --rev <commit> · classify --root <dir> --base <rev> --entries <json> · removed-approvals --root <dir> --ref <rev> (--from <commit> | --since <fecha>) [--until <fecha>] · unnamed --hook <copia> --harness <arnés> [--public-hook <archivo>]');
+  console.error('uso: bash scripts/ci/run-base-controls.sh run|pending --root <pedido> --base <rev> --range <base>...<punta> · check-inventory --root <dir> [--ref <rev>] · approve --root <dir> [--base <rev>] --entries <json> | --file <ruta> --rev <commit> | --base <rev> --range <base>...<punta> --expect <huella> · entries --root <dir> --base <rev> --range <base>...<punta> --expect <huella> · classify --root <dir> --base <rev> --entries <json> | --range … --expect <huella> · removed-approvals --root <dir> --ref <rev> (--from <commit> | --since <fecha>) [--until <fecha>] · unnamed --hook <copia> --harness <arnés> [--public-hook <archivo>]');
   process.exit(code);
 }
 function opt(name) {
@@ -614,6 +618,16 @@ function readApprovalDir(root, rev, dir) {
 const approvedEntry = (approvals, p, blob) => approvals.some((a) => a && Array.isArray(a.rules) && a.rules.some((r) => r && r.path === p && r.blob === blob));
 // `by`: quién firmó — el dueño en su terminal o su ventana, la coordinadora en la ventana de la sesión designada
 const approvalLine = (entries, by = 'dueño') => JSON.stringify({ hash: hashOf(entries), rules: entries, at: new Date().toISOString().slice(0, 10), by });
+// La línea con el registro del cuadro que aprobó el dueño (scripts/lib/signed-record-approval.js): `r` es lo que devolvió
+// la firma. Sin la biblioteca al lado, la línea como estaba; sin una persona que aprobara (la delegación), también, y lo dice
+function withApprovalRecord(line, r, firma) {
+  let sra = null;
+  try { sra = require(path.join(process.env.BASE_CONTROLS_SELF_DIR || '', '..', 'lib', 'signed-record-approval.js')); } catch (_) { sra = null; }
+  if (!sra) return line;
+  const aprobacion = sra.aprobacionDe(r, firma);
+  if (!aprobacion) { console.error(`⚠️ run-base-controls approve: la constancia ${sra.SIN_CUADRO}.`); return line; }
+  return JSON.stringify(sra.conCuadro(JSON.parse(line), aprobacion));
+}
 // la refirma tras traer main, firmada por la sesión designada: la anterior del dueño, la máquina y la sesión del registro
 const refreshLine = (entries, refirmaDe, maquina, sesion) => JSON.stringify({ hash: hashOf(entries), rules: entries, at: new Date().toISOString().slice(0, 10), by: 'refirma', via: 'delegacion', clase: REFRESH, refirma_de: refirmaDe, maquina, signed_by_session: sesion });
 // los hashes de las constancias de la base, en cualquiera de las rutas de su inventario y sin mirar la forma: una
@@ -732,6 +746,10 @@ function selfPath() {
 // con `guion` el comando nombra ese guion entre comillas; sin él, la ruta del repo (el rojo de la CI, que lee otra máquina)
 function signCommand(root, entries, out, base, { guion = null } = {}) {
   return `bash ${guion ? shq(guion) : SELF} approve --root ${root === '<repo>' ? root : shq(root)}${base ? ` --base ${shq(base)}` : ''} --out ${shq(out)} --entries ${shq(JSON.stringify(entries))}`;
+}
+// la misma firma sin nombrar los archivos: la lista la arma el guion desde el pedido, y la huella ata el click a la lista
+function signCommandByRange(root, out, base, range, hash, { guion = null } = {}) {
+  return `bash ${guion ? shq(guion) : SELF} approve --root ${shq(root)} --base ${shq(base)} --range ${shq(range)} --out ${shq(out)} --expect ${hash}`;
 }
 
 // ── el commit armado ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -1165,6 +1183,9 @@ function cmdPending() {
   const firma = signCommand(a.root, a.entries, a.approvalsOut, a.baseArg, { guion: selfPath() });
   console.log(`la firma, desde la sesión (el dueño la aprueba en la ventana de permiso, o, donde la ventana no llega, con su click en el cuadro de opciones o su «aprobado»): ${firma}`);
   console.log(`o, si prefiere, en su terminal: ${firma} --terminal`);
+  // sin nombrar los archivos: la que sirve cuando el comando de arriba lo frena otro freno (el de producción frena todo
+  // comando que nombre la puerta, también dentro de --entries)
+  console.log(`o, sin nombrar los archivos (la lista la arma el guion desde el pedido): ${signCommandByRange(a.root, a.approvalsOut, a.baseArg, opt('--range'), a.hash, { guion: selfPath() })}`);
 }
 
 // la ventana nueva de Windows (skills/tycon-pipeline/scripts/lib/runtime-waiver.js, del mismo árbol que este guion)
@@ -1199,7 +1220,7 @@ function approveInNewWindow(rw, root, out, entries) {
   for (const e of entries) console.error(`   ${safe(e.path)} (blob ${short(e.blob)})`);
   console.error(`La firma va a: ${safe(out)}${isApprovalDir(out) ? `${hashOf(entries)}.json` : ''}`);
   if (!rw.confirmarFrase({})) { console.error('run-base-controls approve: no se firmó nada.'); process.exit(1); }
-  writeApproval(root, out, entries, approvalLine(entries));
+  writeApproval(root, out, entries, withApprovalRecord(approvalLine(entries), { codigo: 0, via: 'terminal' }, 'control-change'));
 }
 
 function readFromTty(prompt) {
@@ -1217,9 +1238,40 @@ function readFromTty(prompt) {
   fs.closeSync(fd);
   return text.split('\n')[0].trim();
 }
+// La lista de la firma armada desde el pedido (`--range`), como la arma `pending`, sin que el comando nombre los archivos:
+// un comando que nombra la puerta de producción lo frena el freno de producción, y esa firma no se podía dar con un
+// click. Lleva `--expect <huella>`, la de la lista que se mostró al pedirla: si el pedido cambió desde entonces, no
+// coincide y no se firma nada. La salida de `analyze` va a la de error, para no ensuciar la que lee quien llama.
+function entriesFromRange(cmdName) {
+  const exp = opt('--expect');
+  if (!exp || !/^[0-9a-f]{64}$/.test(exp)) { console.error(`run-base-controls ${cmdName}: con --range va --expect <huella de la lista>, la que da \`pending\`: no se firmó nada.`); process.exit(2); }
+  const log = console.log; console.log = (...a) => console.error(...a);
+  let a;
+  try { a = analyze(); } finally { console.log = log; }
+  if (!a.entries.length) { console.error(`run-base-controls ${cmdName}: el pedido no cambia ningún archivo de control: no hay nada que firmar.`); process.exit(1); }
+  // lo mismo que `pending`: con desparejos (el pedido mezclado con la base cambia lo que se firmaría) no hay comando
+  if (a.desparejos.length) { console.error(`run-base-controls ${cmdName}: ${DESPAREJOS(a.desparejos)}: no se firmó nada.`); process.exit(1); }
+  // 🔴 la lista sale de la punta de --range, y el cuadro muestra el cambio de --root contra --base hasta su HEAD: si no
+  // son la misma versión, el dueño vería un cambio y la constancia firmaría otro (con --range apuntado a otra rama). Lo
+  // que se firma tiene que ser la punta de la carpeta, como con --entries
+  const head = git(a.root, ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], { allowFail: true });
+  if (head.status !== 0) { console.error(`run-base-controls ${cmdName}: no pude leer la punta de ${a.root}: no sé si la lista es la del pedido. No se firmó nada.`); process.exit(2); }
+  const distintas = a.entries.filter((e) => (blobOf(a.root, 'HEAD', e.path) || 'borrado') !== e.blob);
+  if (distintas.length) {
+    console.error(`run-base-controls ${cmdName}: la lista del rango no es la punta de ${a.root} (HEAD ${short(trimNl(head.stdout))}): ${distintas.map((e) => safe(e.path)).join(', ')}. No se firmó nada: el rango tiene que terminar en la punta de la carpeta que se firma.`);
+    process.exit(1);
+  }
+  if (a.hash !== exp) {
+    console.error(`run-base-controls ${cmdName}: la lista del pedido cambió desde que se pidió la firma (huella ${short(a.hash)}, se pidió ${short(exp)}): no se firmó nada. Pedí el comando de nuevo con \`pending\`.`);
+    process.exit(1);
+  }
+  return a.entries;
+}
+
 function cmdApprove() {
   const root = path.resolve(opt('--root') || '.');
   let entries;
+  if (!opt('--entries') && !opt('--file') && opt('--range')) entries = entriesFromRange('approve');
   if (opt('--entries')) {
     try { entries = JSON.parse(opt('--entries')); } catch (e) { console.error(`run-base-controls approve: --entries no es JSON: ${e.message}`); process.exit(2); }
     if (!Array.isArray(entries) || !entries.length || entries.some((e) => !e || typeof e.path !== 'string' || typeof e.blob !== 'string')) { console.error('run-base-controls approve: --entries es una lista de {path, blob}'); process.exit(2); }
@@ -1271,7 +1323,7 @@ function cmdApprove() {
   const answer = readFromTty('Escribí «apruebo» para firmarlo: ');
   if (answer === null) { console.error('🔒 run-base-controls approve: no pude abrir /dev/tty: pide una terminal interactiva de verdad.'); process.exit(2); }
   if (answer !== 'apruebo') { console.error('run-base-controls approve: no se firmó nada.'); process.exit(1); }
-  writeApproval(root, out, entries, approvalLine(entries));
+  writeApproval(root, out, entries, withApprovalRecord(approvalLine(entries), { codigo: 0, via: 'terminal' }, 'control-change'));
 }
 
 // ¿la firma de `approve` es la refirma tras traer main (`refresh-after-main`) o un cambio de control? Sin `--base`, o ante
@@ -1374,10 +1426,17 @@ function registroFirmado(root, aprobaciones, p, sacados) {
   return false;
 }
 
+// la lista de la firma de `--range` y su huella, en JSON: la lee el cuadro del freno de firmas (signature-sources.js)
+function cmdEntries() {
+  const entries = entriesFromRange('entries');
+  process.stdout.write(`${JSON.stringify({ entries, hash: hashOf(entries) })}\n`);
+}
+
 function cmdClassify() {
   const root = path.resolve(opt('--root') || '.');
   let entries;
-  try { entries = JSON.parse(opt('--entries') || ''); } catch (e) { console.error(`run-base-controls classify: --entries no es JSON: ${e.message}`); process.exit(2); }
+  if (!opt('--entries') && !opt('--file') && opt('--range')) entries = entriesFromRange('classify');
+  else try { entries = JSON.parse(opt('--entries') || ''); } catch (e) { console.error(`run-base-controls classify: --entries no es JSON: ${e.message}`); process.exit(2); }
   // la salida es sólo el JSON: los avisos de las constancias que no firman nada no se imprimen acá
   const log = console.log; console.log = () => {};
   let c;
@@ -1406,7 +1465,7 @@ function approveByWindow(root, out, entries, c) {
   if (r.via !== 'delegacion') {
     let by = 'dueño';
     try { by = require(path.join(process.env.BASE_CONTROLS_SELF_DIR, '..', 'lib', 'delegated-signing.js')).signerOf(r); } catch (_) { /* sin la biblioteca, el de siempre */ }
-    writeApproval(root, out, entries, approvalLine(entries, by));
+    writeApproval(root, out, entries, withApprovalRecord(approvalLine(entries, by), r, firma));
     return;
   }
   const reg = r.registro || {};
@@ -1414,7 +1473,7 @@ function approveByWindow(root, out, entries, c) {
     console.error(`run-base-controls approve: la refirma no da lo mismo que el registro de la ventana (${safe(c ? c.motivo : 'sin clase')}): no se firmó nada. Va a la ventana del dueño, o a su terminal: ${terminal}`);
     process.exit(1);
   }
-  writeApproval(root, out, entries, refreshLine(entries, c.refirma_de, reg.maquina, reg.sesion));
+  writeApproval(root, out, entries, withApprovalRecord(refreshLine(entries, c.refirma_de, reg.maquina, reg.sesion), r, firma));
 }
 
 // la biblioteca de las huellas de las constancias y la carpeta de estado de esta cuenta, o null si no están al lado
@@ -1511,6 +1570,7 @@ try {
   else if (cmd === 'pending') cmdPending();
   else if (cmd === 'approve') cmdApprove();
   else if (cmd === 'classify') cmdClassify();
+  else if (cmd === 'entries') cmdEntries();
   else if (cmd === 'removed-approvals') cmdRemovedApprovals();
   else if (cmd === 'unnamed') cmdUnnamed();
   else if (cmd === '-h' || cmd === '--help') usage(0);
