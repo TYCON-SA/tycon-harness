@@ -10,7 +10,7 @@ const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const SWEEP = path.join(ROOT, 'scripts', 'metrics', 'retro-sweep.js');
-const GUIDE = path.join(ROOT, 'guides', 'maintaining', 'mantener-el-arnes.md');
+const GUIDE = path.join(ROOT, 'guides', 'maintaining', 'maintaining-the-harness.md');
 
 const dirs = [];
 test.after(() => { for (const d of dirs) fs.rmSync(d, { recursive: true, force: true }); });

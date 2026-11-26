@@ -495,6 +495,27 @@ function canonica(comando) {
 }
 
 /**
+ * Un guion de consola llamado directo (sin `bash` ni `node` delante) que no tiene permiso de ejecución: el comando sale
+ * 126 sin correr. Devuelve por qué se niega, con la forma que sí corre, o null. En Windows el permiso no cuenta.
+ */
+function sinPermisoDeEjecucion(comando, { plataforma = process.platform, cwd } = {}) {
+  if (plataforma === 'win32') return null;
+  let t;
+  try { t = markerCommand().tramos(String(comando), 'bash'); } catch (_) { return null; }
+  const w = t.tramos && t.tramos.length === 1 ? t.tramos[0].palabras : null;
+  if (!w || !w.length || NODES.has(base(w[0].texto)) || SHS.has(base(w[0].texto))) return null;
+  // un nombre sin barra la consola lo busca en el PATH, no en la carpeta: ahí decide ella
+  if (!w[0].texto.includes('/')) return null;
+  // la consola expande la tilde antes de correrlo; sólo un archivo que está y no se puede ejecutar o leer (bash lo lee
+  // para correrlo) sale 126
+  const ruta = /^~(?=\/|$)/.test(w[0].texto) ? os.homedir() + w[0].texto.slice(1) : w[0].texto;
+  try { fs.accessSync(path.resolve(cwd || process.cwd(), ruta), fs.constants.X_OK | fs.constants.R_OK); return null; } catch (e) {
+    if (!e || (e.code !== 'EACCES' && e.code !== 'EPERM')) return null;
+  }
+  return `el comando no va a correr: ${una(w[0].texto, 300)} no tiene permiso de ejecución (saldría 126, con la firma gastada). La aprobación sigue sin usar: el mismo comando con bash delante: bash ${una(String(comando).trim(), 600)}`;
+}
+
+/**
  * La firma `guion` que piden las palabras de un llamado (el guion, el subcomando y sus argumentos), o null. Las palabras
  * llegan como texto, o como las lee marker-command.js (`{ texto, literal }`); un texto con `$` o una comilla invertida
  * cuenta como armado. Con `llamada` (la de marker-command.js), una bandera de pipeline.js se busca con su lector: un
@@ -1274,7 +1295,7 @@ function porQueSinLista({ casa, arnes, env, pendientes = null, destino = null, s
   if (destino && sesion && destino !== sesion) return 'la lista está prendida, pero el pedido es para otra sesión';
   if (!cuadro || cuadro.error) return 'la lista está prendida, pero el cuadro de esta firma no se pudo armar';
   let viva = null;
-  try { viva = L.coordinadoraViva(casa); } catch (_) { viva = null; }
+  try { viva = L.coordinadoraViva(casa, undefined, { env, arnes }); } catch (_) { viva = null; }
   if (!viva) return 'la lista está prendida, pero no da a la coordinadora por confirmada y viva';
   return 'la lista está prendida, pero este pedido no quedó anotado en ella';
 }
@@ -1687,6 +1708,9 @@ function decidir({ lanzarAviso, evento = {}, escapes = [], arbol, pid = process.
     return negar(`la firma va en su forma exacta, sola, sin \`cd …&&\`, variables ni envolturas (${s.command} …)`, pedidas);
   }
   if (guion && escapes.length) return negar('una firma y un escape en el mismo comando: van por separado', pedidas);
+  // un guion sin permiso de ejecución no corre: se niega antes de la ventana y de gastar la aprobación
+  const sinPermiso = guion ? sinPermisoDeEjecucion(comando, { plataforma, cwd: evento.cwd }) : null;
+  if (sinPermiso) return negar(sinPermiso, pedidas);
   for (const id of escapes) {
     const nombre = id.slice('escape:'.length);
     const s = firmaDe(id);

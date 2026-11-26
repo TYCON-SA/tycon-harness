@@ -4868,3 +4868,64 @@ test('Exencion_RutaRelativaSinCarpeta_ElSelloNoDependeDeQuienLoDibuja', (t) => {
   // y no es el sello del mismo pedido con carpeta
   assert.notStrictEqual(enTmp, ow.cuadroPara({ firma: 'escape:dod_runtime_exempt', palabras, destino: 'ses-a', cwd: os.tmpdir(), casa, sesion: 'ses-coord' }).sello);
 });
+
+// Un guion de consola llamado directo, sin permiso de ejecución, sale 126 sin correr: si el freno gastaba el click
+// antes, la persona tenía que darlo otra vez. Se niega antes de la ventana y del gasto, con la forma que sí corre.
+// 🔴 rojo con el código de antes: el click se gastaba y el comando no corría.
+test('T1 Decidir_ScriptWithoutExecBit_DeniesWithoutSpendingTheClick @fila-263', { skip: process.platform === 'win32' }, (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sin-permiso-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const guion = path.join(dir, 'run-base-controls.sh');
+  fs.writeFileSync(guion, '#!/usr/bin/env bash\nexit 0\n');
+  fs.chmodSync(guion, 0o644);
+  const usos = [];
+  const r = pedir(casaNueva(t), `${guion} approve --for-session ses-a`, { aprobaciones: conClick(usos) });
+  assert.strictEqual(r.decision, 'deny', r.texto);
+  assert.match(r.texto, /permiso de ejecución/);
+  assert.match(r.texto, new RegExp(`bash ${guion.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} approve`));
+  assert.deepStrictEqual(usos, [], 'el click sigue sin usar');
+  // relativo a la carpeta del evento, y con la tilde que expande la consola, se mira el mismo archivo
+  const rel = pedir(casaNueva(t), './run-base-controls.sh approve --for-session ses-a', { evento: { cwd: dir }, aprobaciones: conClick(usos) });
+  assert.match(rel.texto || '', /permiso de ejecución/, 'relativo al cwd del evento');
+  const home = process.env.HOME;
+  process.env.HOME = dir;
+  try {
+    const conTilde = pedir(casaNueva(t), '~/run-base-controls.sh approve --for-session ses-a', { aprobaciones: conClick(usos) });
+    assert.match(conTilde.texto || '', /permiso de ejecución/, 'con la tilde');
+    // 🔴 rojo sin expandir la tilde: `~/…` no se encontraba y se negaba un guion que sí corre
+    fs.chmodSync(guion, 0o755);
+    const corre = pedir(casaNueva(t), '~/run-base-controls.sh approve --for-session ses-a', { aprobaciones: conClick([]) });
+    assert.doesNotMatch(corre.texto || '', /permiso de ejecución/, 'con la tilde y el permiso puesto');
+    fs.chmodSync(guion, 0o644);
+  } finally { process.env.HOME = home; }
+  assert.deepStrictEqual(usos, [], 'el click sigue sin usar');
+  // 🔴 rojo con la vuelta anterior: con permiso de ejecución pero sin lectura, bash no lo puede leer y sale 126 igual
+  // (root lee igual un archivo sin lectura: ahí el caso no se puede armar)
+  if (!(typeof process.getuid === 'function' && process.getuid() === 0)) {
+    fs.chmodSync(guion, 0o111);
+    try {
+      const sinLeer = pedir(casaNueva(t), `${guion} approve --for-session ses-a`, { aprobaciones: conClick(usos) });
+      assert.match(sinLeer.texto || '', /permiso de ejecución/, 'ejecutable pero sin lectura');
+    } finally { fs.chmodSync(guion, 0o644); }
+  }
+  // 🔴 rojo con la vuelta anterior: un nombre sin barra la consola lo busca en el PATH; esta negativa no lo mira
+  const suelto = pedir(casaNueva(t), 'run-base-controls.sh approve --for-session ses-a', { evento: { cwd: dir }, aprobaciones: conClick([]) });
+  assert.doesNotMatch(suelto.texto || '', /permiso de ejecución/, 'un nombre sin barra');
+  assert.deepStrictEqual(usos, [], 'el click sigue sin usar');
+  // un archivo que no está no sale 126: esta negativa no lo dice (el comando falla solo, con su motivo)
+  const falta = pedir(casaNueva(t), `${path.join(dir, 'no-esta', 'run-base-controls.sh')} approve --for-session ses-a`, { aprobaciones: conClick([]) });
+  assert.doesNotMatch(falta.texto || '', /permiso de ejecución/, 'un archivo que no está');
+  // con bash delante, o con el permiso puesto, esta negativa no aparece
+  for (const cmd of [`bash ${guion} approve --for-session ses-a`, `${guion} approve --for-session ses-a`]) {
+    if (cmd.startsWith(guion)) fs.chmodSync(guion, 0o755);
+    const s = pedir(casaNueva(t), cmd, { aprobaciones: conClick([]) });
+    assert.doesNotMatch(s.texto || '', /permiso de ejecución/, cmd);
+  }
+});
+
+// El guion de los controles de la base va ejecutable en el repo: el instalador copia el permiso, y la forma directa corre
+test('T2 RunBaseControls_IsExecutableInTheTree @fila-263', { skip: process.platform === 'win32' }, () => {
+  const r = spawnSync('git', ['-C', RAIZ, 'ls-files', '-s', 'scripts/ci/run-base-controls.sh'], { encoding: 'utf8' });
+  if (r.status !== 0 || !r.stdout.trim()) { fs.accessSync(CONTROLES, fs.constants.X_OK); return; }
+  assert.match(r.stdout, /^100755 /, 'el modo en git es ejecutable');
+});

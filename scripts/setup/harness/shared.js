@@ -178,7 +178,7 @@ function applySettings(file, { withBackup, home = os.homedir(), platform = proce
       writeAtomic(file, `${bom}${JSON.stringify(s, null, 2)}\n`, mode);
     } catch (e) {
       // la escritura no ocurrió: la copia que se tomó para ella sobra (si no, cada arranque ocupado dejaría un .bak)
-      // y lo que no se pudo borrar queda en ~/.claude: se nombra, para que no se junte sin que nadie lo sepa
+      // y lo que no se pudo borrar queda en la carpeta de Claude Code: se nombra, para que no se junte sin que nadie lo sepa
       const left = e && e.leftover ? [e.leftover] : [];
       if (bak) { try { fs.rmSync(bak, { force: true }); } catch (_) { left.push(bak); } }
       const kept = left.length ? `; no pude borrar ${left.join(' ni ')}: borralo a mano` : '';
@@ -292,7 +292,7 @@ function applyShared({ home = os.homedir(), env = process.env, tree = null, back
 
 /**
  * Sólo las reglas de lectura de las carpetas del arnés, con la misma forma de resultado que `applyShared`.
- * `harness.js` la llama después del aplicador, que crea los enlaces de ~/.claude que las reglas cubren. Nunca tira.
+ * `harness.js` la llama después del aplicador, que crea los enlaces de la carpeta de Claude Code que las reglas cubren. Nunca tira.
  */
 function applyReadRules({ home = os.homedir(), env = process.env, tree = null, backup, log = null, platform = process.platform, previous = [] } = {}) {
   const out = { ok: true, origin: ORIGIN, pieces: [], changed: [], notes: [], reason: null };

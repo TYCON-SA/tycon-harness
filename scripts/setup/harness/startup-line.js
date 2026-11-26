@@ -3,9 +3,9 @@
 //
 // Cada dev puede tener escrita a mano una variante de la línea que hace `git pull` en los dos repos y llama al instalador
 // (variantes conocidas: con o sin `engram sync --import`, con o sin la llamada al instalador, con o sin `--ff-only
-// --autostash`, flags en cualquier orden, clon en `~/.claude` o en otra carpeta, `async` o no, y la forma que deja el
+// --autostash`, flags en cualquier orden, clon en la carpeta de Claude Code o en otra, `async` o no, y la forma que deja el
 // `harness-bootstrap-heal.sh` viejo cuando le pega la llamada al instalador a una línea nueva). La nueva llama a la copia
-// fija de arranque (`~/.claude/.tycon-pipeline/harness/bootstrap.js`) y, si no sale 0, al respaldo en shell.
+// fija de arranque (`~/.tycon/state/harness/bootstrap.js`) y, si no sale 0, al respaldo en shell.
 //
 // Reconoce por ESTRUCTURA, no por igualdad de texto: la línea se parte en pasos (`;`, `&&`, `||`, salto de línea) y cada
 // paso tiene que ser uno de los conocidos —`engram sync --import`, `cd <repo>`, `git pull <flags>`, `git -C <repo> pull`,
@@ -32,8 +32,16 @@ const { spawnSync } = require('child_process');
 const NODE_FLOOR = 20;
 const BOOTSTRAP_MARK = '.tycon-pipeline/harness/bootstrap.js';
 
+// la carpeta del estado de siempre (legacyStateDir de tycon-home.js) y la de Claude Code, relativas a la carpeta de la
+// persona: la línea las nombra así en todas las máquinas, sin armarlas a mano
+const TH = require('./tycon-home.js');
+const deCasa = (p) => path.relative(os.homedir(), p).split(path.sep).join('/');
+const ESTADO = deCasa(TH.legacyStateDir(os.homedir()));
+const CLAUDE = deCasa(TH.claudeDir(os.homedir()));
+const literal = (s) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+
 const NEW_LINE = {
-  posix: 'node "$HOME/.claude/.tycon-pipeline/harness/bootstrap.js" || bash "$HOME/.claude/.tycon-pipeline/harness/bootstrap-fallback.sh"',
+  posix: `node "$HOME/${ESTADO}/harness/bootstrap.js" || bash "$HOME/${ESTADO}/harness/bootstrap-fallback.sh"`,
   // Barras normales y comillas como el resto del .ps1 (install-tycon-hooks.ps1:421); adentro de la -Command (comillas
   // dobles) van comillas simples. Y SIN NINGÚN `$`: en Windows, Claude Code le pasa el comando de un hook a
   // Git Bash («Git Bash on Windows, or PowerShell when Git Bash isn't installed», documentación de hooks), y bash expande
@@ -41,11 +49,11 @@ const NEW_LINE = {
   // come la variable, PowerShell falla con «The term '-ne' is not recognized», la línea sale 1 en cada sesión y el
   // respaldo no se dispara nunca.
   // `a || b` es de PowerShell 7 (un requisito del arnés en Windows): corre el respaldo si node no sale 0, o si no está.
-  windows: 'pwsh -NoProfile -ExecutionPolicy Bypass -Command "node \'<HOME>/.claude/.tycon-pipeline/harness/bootstrap.js\' || & \'<HOME>/.claude/.tycon-pipeline/harness/bootstrap-fallback.ps1\'"',
+  windows: `pwsh -NoProfile -ExecutionPolicy Bypass -Command "node '<HOME>/${ESTADO}/harness/bootstrap.js' || & '<HOME>/${ESTADO}/harness/bootstrap-fallback.ps1'"`,
 };
 /** La forma ANTERIOR de la línea nueva de Windows: llama a la copia fija
  *  pero no corre bien por Git Bash. Se reconoce entera, con cualquier carpeta de usuario y la misma en los dos lados. */
-const SUPERSEDED_WINDOWS_RX = /^pwsh -NoProfile -ExecutionPolicy Bypass -Command "node '(.+)\/\.claude\/\.tycon-pipeline\/harness\/bootstrap\.js'; if \(\$LASTEXITCODE -ne 0\) \{ & '\1\/\.claude\/\.tycon-pipeline\/harness\/bootstrap-fallback\.ps1' \}"$/;
+const SUPERSEDED_WINDOWS_RX = new RegExp(`^pwsh -NoProfile -ExecutionPolicy Bypass -Command "node '(.+)\\/${literal(ESTADO)}\\/harness\\/bootstrap\\.js'; if \\(\\$LASTEXITCODE -ne 0\\) \\{ & '\\1\\/${literal(ESTADO)}\\/harness\\/bootstrap-fallback\\.ps1' \\}"$`);
 function isSuperseded(command) { return typeof command === 'string' && SUPERSEDED_WINDOWS_RX.test(command); }
 
 /** Los ids de las formas conocidas (los mismos de la fixture). */
@@ -79,7 +87,7 @@ function repoOf(p) {
   const m = REPO_RX.exec(unquote(p));
   return m ? (m[1] === 'tycon-claude-guides' ? 'harness' : 'agent_skills') : null;
 }
-function isLinkPath(p) { return /(?:^|[\\/])\.claude[\\/]tycon-claude-guides\/?$/.test(unquote(p)); }
+function isLinkPath(p) { return new RegExp(`(?:^|[\\\\/])${literal(CLAUDE)}[\\\\/]${literal(TH.LEGACY_PLACE_NAME)}\\/?$`).test(unquote(p)); }
 function flagsOf(s) { const m = PULL_FLAGS_RX.exec(s || ''); return m ? m[1].trim().split(/\s+/).filter(Boolean) : null; }
 
 /**

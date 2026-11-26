@@ -21,7 +21,10 @@ const TOPE_MS = 4000;
 
 /** La expresión literal que empieza en `ancla` dentro del archivo, con sus banderas, como texto. */
 function literal(rel, ancla) {
-  const texto = fs.readFileSync(path.join(RAIZ, rel), 'utf8');
+  // el freno de escrituras está partido: su texto es el despachador y sus partes (lib/bash-gate-*.js)
+  const texto = path.basename(rel) === 'on-bash-write-gate.js'
+    ? require(path.join(RAIZ, 'scripts', 'ci', 'control-size.js')).textoDelFreno(path.join(RAIZ, rel))
+    : fs.readFileSync(path.join(RAIZ, rel), 'utf8');
   const i = texto.indexOf(ancla);
   assert.ok(i >= 0, `${rel}: no encontré «${ancla}»`);
   const desde = texto.indexOf('/', i + ancla.length - 1);

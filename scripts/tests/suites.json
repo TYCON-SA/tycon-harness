@@ -17,6 +17,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 1.3: el buzón de ejecuciones sobre Google Cloud Storage (integrations/gcs/), con un doble de Cloud Storage y de su servidor de metadatos en 127.0.0.1",
+      "raiz": "arnes",
+      "ruta": "tests/mailbox-gcs.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la pieza que sirve un repo git por HTTP en las pruebas: un git sin http-backend no cuenta como «hay backend», y si el del PATH no lo trae se usa otro de la máquina (en Windows, Git para Windows completo).",
       "raiz": "arnes",
       "ruta": "tests/git-http-server.test.js",
@@ -82,7 +88,7 @@
       "requiere": []
     },
     {
-      "__nota": "Los días de instintos al buzón y de vuelta (scripts/instincts/instinct-upload.js, su lugar en upload-runs.js, la forma nueva de download-runs.js y el aviso de la máquina sin buzón): un archivo por día cerrado desde el aviso, sólo lo de la organización y con seis campos, la versión nueva para una línea tardía, el corte a mitad sin anotar, el tope, «no medido» y la bajada sólo con --instincts. Sin red: un buzón de mentira local y HOME temporal.",
+      "__nota": "Los días de instintos al buzón y de vuelta (scripts/instincts/instinct-upload.js, su lugar en upload-runs.js, la forma nueva de download-runs.js y el aviso de la máquina sin buzón): un archivo por día cerrado desde el aviso, sólo lo de la organización y con seis campos, la versión nueva para una línea tardía, el corte a mitad sin anotar, el tope, «no medido», la bajada sólo con --instincts, y que nada cruce de una organización a otra con la noche de cada una (story 4.7, tanda E). Sin red: buzones de mentira locales y HOME temporal.",
       "raiz": "arnes",
       "ruta": "tests/instinct-upload.test.js",
       "requiere": []
@@ -262,6 +268,12 @@
       "__nota": "el tamaño de los controles (scripts/ci/control-size.js): el orden por tamaño, la cuenta de subcomandos y de quién llama, el aviso por tamaño y por recorrido del freno (con el tope leído del freno real), el rango y lo que no se puede leer. Árboles de juguete con su propio git; sin red.",
       "raiz": "arnes",
       "ruta": "tests/control-size.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el aviso del pedido cuando un archivo que los casos del banco copian a mano suma una dependencia que no copian (scripts/ci/bench-copied-deps.js): avisa con el caso y la dependencia, no avisa lo copiado, lo viejo ni lo de un try, y nunca frena. Árboles de juguete con su propio git; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/bench-copied-deps.test.js",
       "requiere": []
     },
     {
@@ -1264,6 +1276,12 @@
       "requiere": []
     },
     {
+      "__nota": "el freno de escrituras partido en un despachador y sus partes lib/bash-gate-*.js: cada archivo bajo el tope, lo nuevo que carga es sensible, y sin una parte frena y la nombra (como gancho) o tira (como biblioteca). El banco contra la foto de antes de partir (T8) corre a pedido, con BASH_GATE_BENCH=1",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-gate-split.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/replace-section.test.js",
       "requiere": []
@@ -2005,6 +2023,11 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/steps-scheme.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/plan-assumptions.test.js",
       "requiere": []
     },
     {
@@ -4628,7 +4651,7 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.41, tanda E (T35): guides/maintaining/estilo-de-codigo.md trae la regla de los comentarios, dos ejemplos buenos y dos malos, y tiene su fila en INDEX.md.",
+      "__nota": "story 8.41, tanda E (T35): guides/maintaining/code-style.md trae la regla de los comentarios, dos ejemplos buenos y dos malos, y tiene su fila en INDEX.md.",
       "raiz": "arnes",
       "ruta": "tests/style-guide.test.js",
       "requiere": []
@@ -5542,6 +5565,12 @@
       "__nota": "las entradas del reclamo de la retrospectiva que anotaron el commit equivocado (scripts/hooks/retro-pending.js): la punta que contesta el remoto al abrir el pedido, la rama de origen, la corrección con quién y por qué (--correct), el aviso de «ya estaba en main» y la carpeta principal por nombre. Repos de juguete con git de verdad y un remoto en una carpeta. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/retro-pending-correct.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el aviso de arranque y el cierre del turno del reclamo de la retrospectiva (scripts/hooks/retro-pending.js) no juzgan el registro entero: el arranque no le pregunta a la plataforma y corta en su tope (TYCON_RETRO_NOTICE_MS), el cierre mira sólo los merges de su sesión y los de cerca, y más de tres entradas que ningún latido paga van en una línea con la ruta de su lista. Repos de juguete con git de verdad, y az, gh y git envueltos para anotar cada llamada. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/retro-pending-budget.test.js",
       "requiere": []
     },
     {

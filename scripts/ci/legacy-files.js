@@ -16,7 +16,7 @@
 // Qué hace: lee el nombre nuevo si está, si no el viejo; con los dos de contenido distinto lanza LegacyFilesError, que
 // nombra los dos (el lector lo trata como su «no puedo»). Cada nombre viejo leído se anota con la biblioteca general si
 // está (registro de usos y, en Azure DevOps, el aviso de la corrida); en el artefacto, sin ella, deja igual el aviso.
-// Guía: guides/maintaining/nombres-en-ingles.md.
+// Guía: guides/maintaining/english-names.md.
 
 const fs = require('fs');
 const path = require('path');
@@ -59,7 +59,7 @@ function note(old, nu, where) {
   }
   if (!merged && /^true$/i.test(String(process.env.TF_BUILD || ''))) {
     try {
-      process.stderr.write(`##vso[task.logissue type=warning]nombre viejo «${old}» (config-file) en ${where}: sigue andando y no es la causa de ningún error de este paso — cuando puedas, cambialo por «${nu}» (el viejo se retira: guides/maintaining/nombres-en-ingles.md)\n`);
+      process.stderr.write(`##vso[task.logissue type=warning]nombre viejo «${old}» (config-file) en ${where}: sigue andando y no es la causa de ningún error de este paso — cuando puedas, cambialo por «${nu}» (el viejo se retira: guides/maintaining/english-names.md)\n`);
     } catch { /* anotar nunca rompe */ }
   }
 }

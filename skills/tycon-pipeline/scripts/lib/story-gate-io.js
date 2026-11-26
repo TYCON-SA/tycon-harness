@@ -5,7 +5,7 @@
  *
  *   evaluate({ filePath, sessionId, cwd, via }) → { verdict, message|null, ctx }
  *
- * Fuentes de estado (todas bajo ~/.claude/.tycon-pipeline/):
+ * Fuentes de estado (todas bajo ~/.tycon/state/):
  *   active/<sid>.json   marker del pipeline (lo escribe marker.js)
  *   adhoc/<sid>.json    carril ad-hoc de la sesión: { reason, maxFiles, files[], declaredAt, lastTouch, via, by,
  *                       firmadaEn } (lo escribe `marker.js adhoc set` con la firma del dueño; el portón lo acepta sólo
@@ -267,8 +267,8 @@ function listOtherMarkers(stateDir, sessionId, filePath, problems) {
 }
 
 // ── ¿repo del harness? lo dice el remoto, no la carpeta ─────────────────────────────────────────
-// El criterio es UNO y vive en el arnés (~/.claude/tycon-harness/scripts/lib/harness-repo.js,
-// referencia-por-path como dispatch.js: TYCON_GUIDES_DIR · TCG · el enlace ~/.claude/tycon-harness). Sin ese
+// El criterio es UNO y vive en el arnés (~/.tycon/harness/scripts/lib/harness-repo.js,
+// referencia-por-path como dispatch.js: TYCON_GUIDES_DIR · TCG · la carpeta ~/.tycon/harness). Sin ese
 // lector estaría escrito tres veces —acá, en retro-pending.js y en unpushed-work-notice.js—, las tres por nombre de carpeta.
 // Si la lib no está (arnés atrasado en esta máquina) o no carga, decide la carpeta, que es el comportamiento
 // por defecto: nunca se rompe un Edit por esto. Pero lo dice por la salida de error, una vez por proceso.

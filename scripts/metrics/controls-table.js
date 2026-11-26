@@ -198,6 +198,8 @@ function contarFallas(file, desde, ahora = new Date().toISOString()) {
   for (const r of texto.split(/\r?\n/)) {
     const m = SELLO.exec(r);
     if (!m || (desde && m[1] < desde)) continue;
+    // un freno que tardó pero decidió no falló: su renglón es para buscar lo lento
+    if (/^\S+ LENTO:/.test(m[2])) continue;
     renglones++;
     const falla = clasificar(m[2]);
     const freno = falla ? falla.control : (m[2].split(/\s/)[0] || 'sin nombre').replace(/:$/, '').replace(/\.js$/, '');

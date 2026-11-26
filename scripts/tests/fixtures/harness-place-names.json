@@ -99,6 +99,7 @@
     { "path": "skills/tycon-pipeline/scripts/lib/marker-signatures.js", "member": "el bloqueo de runtime-waiver", "why": "nombra el comando /tycon-harness (el que muestra la versión y actualiza el arnés) para que la persona actualice: es el nombre del comando, no el lugar" },
     { "path": "skills/tycon-pipeline/scripts/lib/marker-signatures.js", "member": "el bloqueo de runtime-waiver", "why": "nombra el comando /tycon-harness (el que muestra la versión y actualiza el arnés) para que la persona actualice: es el nombre del comando, no el lugar" },
     { "path": "skills/tycon-pipeline/scripts/dispatch.js", "member": "REPARAR y el aviso de la entrada ilegible", "why": "nombra el comando /tycon-harness (el que dice si el arnés quedó bien instalado) en el freno de un control que no corre: es el nombre del comando, no el lugar" },
+    { "path": "skills/tycon-pipeline/scripts/on-bash-write-gate.js", "member": "el aviso de la parte que falta (parte)", "why": "nombra el comando /tycon-harness (el que dice si el arnés quedó bien instalado) para que la persona reinstale: es el nombre del comando, no el lugar" },
     { "path": "skills/tycon-pipeline/scripts/on-bash-write-gate.js", "member": "el aviso del freno que no pudo cargarse entero (salirSinCargar)", "why": "nombra el comando /tycon-harness (el que dice si el arnés quedó bien instalado) para que la persona reinstale: es el nombre del comando, no el lugar" },
     { "path": "scripts/hooks/hook-failures-notice.js", "member": "el cierre del aviso de las fallas de los controles", "why": "nombra el comando /tycon-harness (el que dice si el arnés quedó bien instalado) para reparar un control que falló: es el nombre del comando, no el lugar" },
     { "path": "skills/tycon-pipeline/scripts/hook-pre-edit.js", "member": "el freno del despachador que no carga o tira", "why": "nombra el comando /tycon-harness (el que dice si el arnés quedó bien instalado) para que la persona repare la instalación: es el nombre del comando, no el lugar" },
@@ -112,11 +113,7 @@
   ],
   "place_text": [
     { "path": "scripts/tools/context-budget.js", "why": "el comando para volver a correrlo, en el reporte que lee la persona" },
-    { "path": "scripts/tools/rules-distill.js", "why": "el comando para volver a correrlo, en el reporte que lee la persona" },
-    { "path": "skills/tycon-pipeline/scripts/on-frontmatter-write.js", "why": "la guía que el freno le manda leer al modelo: skills, que puede vivir en un clon aparte sin scripts/ al lado" },
-    { "path": "skills/tycon-pipeline/scripts/on-pre-commit.js", "why": "ídem: la guía que el freno del commit le manda leer al modelo" },
-    { "path": "skills/tycon-pipeline/scripts/lib/portable-tools.js", "why": "ídem: el motivo cuando no encuentra el arnés (story 8.17 W6, sumado en la tanda E de la 8.19)" },
-    { "path": "skills/tycon-pipeline/scripts/lib/pipeline-start.js", "why": "el mensaje cuando no encuentra el arnés: nombra por dónde lo buscó" }
+    { "path": "scripts/tools/rules-distill.js", "why": "el comando para volver a correrlo, en el reporte que lee la persona" }
   ],
   "generated": [
     { "mark": "tycon-legacy-shim:", "why": "los envoltorios de los nombres viejos: los escribe legacy-names.js --write-shims desde sus tres plantillas, que nombran sólo el lugar (AC 10)" }

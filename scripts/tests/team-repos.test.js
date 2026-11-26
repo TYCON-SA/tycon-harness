@@ -999,3 +999,120 @@ test('TeamRepos_ReviewRunnerSeValida (T8) @story-8.221 @ac-8 @ac-26 @ac-45 @ac-4
   assert.equal(v({ review: { blocking_severity: 'bug' } }), ORG.REVIEW_SEVERITY_SINCE);
   assert.notEqual(v({ deep_review: { default: 'always' } }), ORG.DEEP_REVIEW_MATRIX_SINCE, 'sólo la política vieja pide la de antes');
 });
+
+// 🔴 Falla con: el núcleo (team-repos.js) declara la forma del repo de cada plataforma —sus claves y qué nombre
+// vale—, y sumar una plataforma obliga a tocarlo; la forma es del conector, en su integration.json
+test('TeamRepos_LaFormaDelRepoLaDeclaraCadaConector: claves y nombre salen del integration.json de su conector', () => {
+  const INT = require(path.join(ROOT, 'scripts', 'lib', 'integrations.js'));
+  const dir = path.join(ROOT, 'integrations');
+  for (const platform of TEAM.PLATFORMS) {
+    const m = INT.find(TEAM.connectorOf(platform), { kind: 'platform', dir });
+    assert.ok(m && m.repoShape, `el conector de ${platform} declara repoShape`);
+    assert.deepStrictEqual(TEAM.repoShape(platform).keys, m.repoShape.keys, `${platform}: las claves son las del conector`);
+    assert.strictEqual(m.repoShape.keys[m.repoShape.keys.length - 1], 'repo', 'la última clave es el nombre del repo');
+  }
+  // el núcleo no las escribe: ni la lista de claves de una plataforma ni su expresión de nombres
+  const fuente = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'team-repos.js'), 'utf8');
+  assert.doesNotMatch(fuente, /\['org', 'project', 'repo'\]|azure: \/\^/, 'team-repos.js no declara la forma de una plataforma');
+  // un conector de plataforma con una forma rota no pasa la validación de su manifiesto (sin forma, sí: no la usa nadie)
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'forma-repo-'));
+  for (const [nombre, forma] of [['rota', { keys: ['org'], name: '(' }], ['sin-repo', { keys: ['org', 'nombre'], name: '^a$', nameHint: 'a' }]]) {
+    const d = path.join(tmp, nombre, 'acme');
+    fs.mkdirSync(path.join(d, 'scripts'), { recursive: true });
+    fs.writeFileSync(path.join(d, 'scripts', 'connector.js'), '');
+    fs.writeFileSync(path.join(d, 'integration.json'), JSON.stringify({ name: 'acme', label: 'Acme', kind: 'platform', connector: 'scripts/connector.js', operations: ['ci.read'], ...(forma ? { repoShape: forma } : {}) }));
+    const r = INT.listManifests({ dir: path.join(tmp, nombre) });
+    assert.ok(r.problems.some((p) => p.reasons.some((x) => /repoShape/.test(x))), `${nombre}: ${JSON.stringify(r.problems)}`);
+  }
+  // y la validación de un repo sigue igual: Azure con project y tildes, GitHub sin project ni tildes
+  assert.deepStrictEqual(TEAM.repoProblems(azure('arnés'), 'x'), []);
+  assert.ok(TEAM.repoProblems(github('arnés'), 'x').length);
+  assert.ok(TEAM.repoProblems({ ...github('h'), project: 'p' }, 'x').some((p) => /no lleva project/.test(p.message)));
+});
+
+// 🔴 Falla con: la forma de GitLab —el namespace con subgrupos, el servidor opcional— vuelve a escribirse a mano en el
+// núcleo, o la del manifiesto no valida lo mismo: cada tramo del namespace, sin tramos vacíos, y el servidor sin esquema
+test('TeamRepos_LaFormaDeGitLabLaDeclaraSuConector: namespace por tramos y host opcional, desde su integration.json', () => {
+  const fuente = fs.readFileSync(path.join(ROOT, 'scripts', 'lib', 'team-repos.js'), 'utf8');
+  assert.doesNotMatch(fuente, /\['namespace', 'repo'\]|OPTIONAL_REPO_KEYS|HOST_NAME|namespaceProblem/, 'team-repos.js no declara la forma de GitLab');
+  const forma = TEAM.repoShape('gitlab');
+  assert.deepStrictEqual([forma.keys, forma.optional], [['namespace', 'repo'], ['host']]);
+  const todas = { platforms: TEAM.PLATFORMS };
+  const gl = (extra) => ({ platform: 'gitlab', namespace: 'grupo/sub-grupo/equipo', repo: 'arnes', ...extra });
+  const problemas = (r) => TEAM.repoProblems(r, 'x', todas);
+  assert.deepStrictEqual(problemas(gl()), [], 'un namespace con subgrupos vale, y sin host no es problema');
+  assert.deepStrictEqual(problemas(gl({ host: 'gitlab.example.com' })), [], 'un host válido');
+  for (const ns of ['grupo//sub', '/grupo', 'grupo/']) {
+    const p = problemas(gl({ namespace: ns }));
+    assert.strictEqual(p.length, 1, ns);
+    assert.match(p[0].message, /separados por «\/», sin «\/» al principio ni al final y sin «\/\/»/, `${ns}: un tramo vacío`);
+  }
+  const malTramo = problemas(gl({ namespace: 'grupo/.oculto' }));
+  assert.deepStrictEqual(malTramo.map((p) => p.message), ['«.oculto» no va en un namespace de gitlab: cada grupo lleva letras sin tilde, números, punto, guion o guion bajo, y no empieza con punto ni con guion (por ejemplo «grupo/subgrupo»)']);
+  for (const host of ['https://gitlab.example.com', 'gitlab.example.com/ruta', '-x', 5]) {
+    const p = problemas(gl({ host }));
+    assert.deepStrictEqual(p.map((x) => x.path), ['x.host'], `host ${JSON.stringify(host)}`);
+    assert.match(p[0].message, /^tiene que ser el nombre del servidor, sin «https:\/\/» ni ruta/);
+  }
+  assert.match(problemas(gl({ org: 'acme' }))[0].message, /lleva namespace y repo, y host si hace falta/);
+  // el host opcional va delante en la identidad: sin él y con él son dos repos distintos
+  assert.strictEqual(TEAM.identityKey(gl()), 'gitlab//grupo/sub-grupo/equipo/arnes');
+  assert.notStrictEqual(TEAM.identityKey(gl()), TEAM.identityKey(gl({ host: 'gitlab.example.com' })));
+});
+
+// 🔴 Falla con: un conector declara `optional` o `rules` mal escritos y su manifiesto pasa igual: la forma no se podría
+// aplicar y el error aparecería recién al leer team-repos.json
+test('TeamRepos_RepoShapeConOptionalORulesMalEscritos_ElManifiestoNoVale', () => {
+  const INT = require(path.join(ROOT, 'scripts', 'lib', 'integrations.js'));
+  const base = { keys: ['grupo', 'repo'], name: '^[a-z]+$', nameHint: 'minúsculas' };
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'forma-repo-reglas-'));
+  try {
+    const malas = {
+      'optional-no-lista': { optional: 'host' },
+      'optional-repite': { optional: ['repo'] },
+      'optional-plataforma': { optional: ['platform'] },
+      'rules-no-objeto': { rules: ['host'] },
+      'rules-clave-ajena': { rules: { host: { name: '^a$', nameHint: 'a' } } },
+      'rules-los-dos': { optional: ['host'], rules: { host: { name: '^a$', parts: '/', nameHint: 'a' } } },
+      'rules-ninguno': { rules: { grupo: { nameHint: 'a' } } },
+      'rules-sin-hint': { rules: { grupo: { parts: '/', partsHint: 'tramos' } } },
+      'rules-no-compila': { optional: ['host'], rules: { host: { name: '^($', nameHint: 'a' } } },
+      'rules-sin-anclas': { optional: ['host'], rules: { host: { name: 'a', nameHint: 'a' } } },
+      'rules-parts-letra': { rules: { grupo: { parts: 'x', partsHint: 'tramos', nameHint: 'a' } } },
+      'rules-parts-sin-hint': { rules: { grupo: { parts: '/', nameHint: 'a' } } },
+    };
+    for (const [nombre, extra] of Object.entries({ ...malas, buena: { optional: ['host'], rules: { host: { name: '^[a-z.]+$', nameHint: 'un servidor' }, grupo: { parts: '/', partsHint: 'tramos con «/»', nameHint: 'minúsculas' } } } })) {
+      const d = path.join(tmp, nombre, 'acme');
+      fs.mkdirSync(path.join(d, 'scripts'), { recursive: true });
+      fs.writeFileSync(path.join(d, 'scripts', 'connector.js'), '');
+      fs.writeFileSync(path.join(d, 'integration.json'), JSON.stringify({ name: 'acme', label: 'Acme', kind: 'platform', connector: 'scripts/connector.js', operations: ['ci.read'], repoShape: { ...base, ...extra } }));
+      const r = INT.listManifests({ dir: path.join(tmp, nombre) });
+      const deForma = r.problems.flatMap((p) => p.reasons).filter((x) => /repoShape/.test(x));
+      if (nombre === 'buena') assert.deepStrictEqual(deForma, [], 'una forma con optional y rules bien escritos vale');
+      else assert.strictEqual(deForma.length, 1, `${nombre}: ${JSON.stringify(r.problems)}`);
+    }
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+// 🔴 Falla con: una copia del arnés sin la carpeta de los conectores (la copia fija del arranque, una copia de prueba)
+// rechaza el team-repos.json entero porque no sabe la forma del repo; sin ella valida lo que vale para toda plataforma,
+// no rechaza el archivo y lo dice una sola vez
+test('TeamRepos_SinConectores_NoRechazaYAvisaUnaVez: sin integrations/ valida las claves, no los nombres, y lo dice', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sin-conectores-'));
+  fs.cpSync(path.join(ROOT, 'scripts', 'lib'), path.join(tmp, 'scripts', 'lib'), { recursive: true });
+  const prog = `const T = require(${JSON.stringify(path.join(tmp, 'scripts', 'lib', 'team-repos.js'))});
+    const doc = { version: 1, public: { platform: 'github', org: 'acme', repo: 'arnés con tilde' }, profile: { platform: 'azure', org: 'acme', project: 'P', repo: 'perfil' }, operations: { platform: 'github', org: 'acme', repo: 'ops' } };
+    const r = T.parse(JSON.stringify(doc));
+    const malo = T.repoProblems({ platform: 'github', org: '', repo: 'x' }, 'x');
+    const iguales = T.identityKey({ platform: 'github', org: 'ACME', repo: 'Ops' }) === T.identityKey({ platform: 'github', org: 'acme', repo: 'ops' });
+    process.stdout.write(JSON.stringify({ ok: r.ok, malo: malo.map((p) => p.path), iguales }));`;
+  const r = spawnSync(process.execPath, ['-e', prog], { encoding: 'utf8' });
+  try {
+    assert.strictEqual(r.status, 0, r.stderr);
+    const out = JSON.parse(r.stdout);
+    assert.strictEqual(out.ok, true, 'el archivo no se rechaza: el nombre con tilde no se puede validar sin el conector');
+    assert.deepStrictEqual(out.malo, ['x.org'], 'una clave vacía sigue siendo un problema');
+    assert.strictEqual(out.iguales, true, 'la identidad de un repo sale de sus propias claves');
+    assert.strictEqual(r.stderr.split('\n').filter((l) => /sin conectores: no se validan los nombres de los repos/.test(l)).length, 1, `el aviso, una vez: ${r.stderr}`);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});
