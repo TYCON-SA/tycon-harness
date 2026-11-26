@@ -87,6 +87,8 @@ const PARA_OTRA_SESION = {
   'adhoc': { firma: 'adhoc-lane', si: (a) => a[3] === 'set' },
   // el pendiente que abrió otra sesión: la firma se escribe en su repo, que el freno comprueba que es de esa sesión
   'approve-pending': { firma: 'pending-approval' },
+  // el freno que dejó una mirada fallida: se libera desde otra sesión, nunca desde la frenada
+  'release-write-after': { firma: 'write-after-release' },
   // seguir en autónomo: la coordinadora lo pide para la sesión detenida y lo decide el click del dueño en su cuadro
   'resume-autonomy': { firma: 'autonomy-resume', marcador: true },
 };
