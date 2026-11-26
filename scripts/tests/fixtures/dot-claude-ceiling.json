@@ -5,7 +5,7 @@
     "direction": "baja: 745 → 549 (180 → 116 archivos)",
     "reason": "Story 8.24, B2-3: en scripts/setup y skills/tycon-pipeline (menos el freno de escrituras, que va partido), las rutas a la carpeta de Claude Code, el estado, la configuración, el lugar del arnés y las skills instaladas salen de tycon-home.js (por state-dir.js en las skills), con la función que da la ruta de hoy: ningún texto ni conducta cambia, también la línea de arranque. Los comentarios nombran ~/.tycon. Quedan, a propósito: los respaldos de state-dir.js y harness-path.js (las skills sin scripts/ al lado) y la marca de check-engram-version.sh que dejó una versión anterior."
   },
-  "total": 549,
+  "total": 548,
   "files": {
     "adapters/codex/agents-native/tycon-ac-coverage-checker.toml": 1,
     "adapters/codex/agents-native/tycon-dod-runtime-checker.toml": 3,
@@ -113,7 +113,6 @@
     "scripts/setup/hooks-list.json": 2,
     "scripts/setup/install-codegraph.ps1": 1,
     "scripts/setup/install-effects.json": 37,
-    "scripts/setup/install-instinct-mining.sh": 1,
     "scripts/tools/background-stall.js": 2,
     "scripts/tools/context-budget.js": 9,
     "scripts/tools/harness-map/census.js": 2,

@@ -441,18 +441,22 @@ function leerCorridas(archivos, opts = {}) {
   };
 }
 
-/** Los `.json` bajo una carpeta de máquina del buzón, siguiendo enlaces sin volver sobre sí mismos. */
-function jsonsDe(dir, malas, vistas = new Set()) {
+/**
+ * Los `.json` bajo una carpeta de máquina del buzón, siguiendo enlaces sin volver sobre sí mismos. Su `instincts/` no se
+ * mira: son los días de la grabadora, que lee sólo la noche de aprendizajes, no ejecuciones.
+ */
+function jsonsDe(dir, malas, vistas = new Set(), raiz = true) {
   let real; try { real = fs.realpathSync(dir); } catch (e) { malas.push(e.code || 'ilegible'); return []; }
   if (vistas.has(real)) return [];
   vistas.add(real);
   let ents; try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { malas.push(e.code || 'ilegible'); return []; }
   const out = [];
   for (const it of ents) {
+    if (raiz && it.name === 'instincts') continue;
     const p = path.join(dir, it.name);
     let carpeta = it.isDirectory(), archivo = it.isFile();
     if (it.isSymbolicLink()) { try { const st = fs.statSync(p); carpeta = st.isDirectory(); archivo = st.isFile(); } catch (e) { malas.push(e.code || 'ilegible'); continue; } }
-    if (carpeta) out.push(...jsonsDe(p, malas, vistas));
+    if (carpeta) out.push(...jsonsDe(p, malas, vistas, false));
     else if (archivo && it.name.endsWith('.json')) out.push(p);
   }
   return out;
