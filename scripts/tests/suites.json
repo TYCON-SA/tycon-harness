@@ -5562,6 +5562,12 @@
       "requiere": []
     },
     {
+      "__nota": "el aviso de arranque y el cierre del turno del reclamo de la retrospectiva (scripts/hooks/retro-pending.js) no juzgan el registro entero: el arranque no le pregunta a la plataforma y corta en su tope (TYCON_RETRO_NOTICE_MS), el cierre mira sólo los merges de su sesión y los de cerca, y más de tres entradas que ningún latido paga van en una línea con la ruta de su lista. Repos de juguete con git de verdad, y az, gh y git envueltos para anotar cada llamada. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/retro-pending-budget.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "un repo de una plataforma declarada por la capa (no Azure DevOps ni GitHub) hace el ciclo del merge: el skill de merge la nombra por la capa (host: platform), el reclamo de la retrospectiva (scripts/hooks/retro-pending.js) anota su pedido con la identidad que da la capa y, cuando entra, reclama el commit que dejó en main; un origin de un servidor que nadie declara sigue sin plataforma. Repos de juguete con git de verdad, una copia del gancho y el glab de mentira. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/retro-pending-platform.test.js",
