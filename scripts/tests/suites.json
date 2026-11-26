@@ -3484,6 +3484,11 @@
       "requiere": []
     },
     {
+      "raiz": "arnes",
+      "ruta": "tests/site-temp-names.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.33: la última imagen publicada en stable, leída sin credenciales (el token anónimo, el manifiesto y la configuración, sin capas), una vez por hora y guardada en el disco, y lo que el sitio dice con ella: el cartel sólo para quienes mantienen y la línea de Arnés. Registro local con la forma de la API v2.",
       "raiz": "arnes",
       "ruta": "tests/site-latest-release.test.js",
