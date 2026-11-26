@@ -1,15 +1,17 @@
 {
-  "archivos": 73,
-  "lineas": 257,
+  "archivos": 75,
+  "lineas": 258,
   "porArchivo": {
     ".github/control-changes/081bc179e3cc1672ceb50f0d7d0a386002838f3fd8d8c04f6bf2a5bd1e378963.json": 1,
     ".github/control-changes/0a8d93523ebe27ac7ab2292034f2da51edffc6b0af09af1d9d60752d3b950454.json": 1,
+    ".github/control-changes/42df82f18a719c5f5a5105c1b2e5be1f0cb20013ee537beb4d6265f04ae25ee8.json": 1,
     ".github/control-changes/4497aadf8fc8a9440e88214bac9366228b129267baab3ae9d5958b31016c3b89.json": 1,
     ".github/control-changes/785188987218ec1becd2c31f77a2269f0b8e61674762b3a6a799a103a230eb22.json": 1,
     ".github/control-changes/9bc17baf60008a1ce378e1ee2bc836827826765b4625914e35bf43358b26a2b0.json": 1,
     ".github/control-changes/9bd64ef68af42983d7075f34be73772cd51a3952d499f37ee9d8d3cc144bb11e.json": 1,
     ".github/control-changes/b8bbec964bbb9c769ca23aaa9aa8f89993485057199386740ea7f28b5e40c213.json": 1,
     ".github/control-changes/bc5ab7f28eb612c52b3dc7a3dd05950dc4acf5fd2042ecdd7a3e1125ddaa51b3.json": 1,
+    ".github/control-changes/d7d8e54ff9038b2955f8ae351ad5714b423d0109d9ee9c062490d4f10554f913.json": 1,
     "guides/maintaining/pieces-in-detail.md": 5,
     "guides/maintaining/publicacion-espejo.md": 3,
     "guides/production-with-permission.md": 1,
@@ -39,7 +41,6 @@
     "scripts/lib/az-pr.js": 9,
     "scripts/lib/ci-bypass.js": 7,
     "scripts/lib/extension-notices.js": 2,
-    "scripts/lib/gh-pr.js": 2,
     "scripts/lib/harness-repo.js": 4,
     "scripts/lib/operations-config.js": 3,
     "scripts/lib/org-config.js": 4,
@@ -53,7 +54,6 @@
     "scripts/nightly/assigned/assigned-items.js": 11,
     "scripts/nightly/dashboard/sources.json": 1,
     "scripts/nightly/dependencies/nightly-dependencies.js": 1,
-    "scripts/nightly/dependencies/work-items.js": 32,
     "scripts/nightly/deployments/azure.js": 2,
     "scripts/nightly/gate-adoption/gate-adoption.js": 3,
     "scripts/nightly/runs-review/rules.js": 1,
@@ -74,6 +74,7 @@
     "scripts/tools/work-in-progress.js": 5,
     "skills/tycon-pipeline/scripts/lib/adhoc-base.js": 4,
     "skills/tycon-pipeline/scripts/lib/adhoc-foreign-save.js": 7,
-    "skills/tycon-pipeline/scripts/lib/how-it-works.js": 1
+    "skills/tycon-pipeline/scripts/lib/how-it-works.js": 1,
+    "skills/tycon-pipeline/scripts/on-bash-write-after.js": 1
   }
 }

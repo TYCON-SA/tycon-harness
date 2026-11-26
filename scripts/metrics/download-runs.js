@@ -109,7 +109,7 @@ const http = require('http');
 const https = require('https');
 const { spawnSync } = require('child_process');
 const { readEnv, resolveFile, prepareStateWrite } = require('../lib/legacy-names.js');
-const { leerConfig, integracionBuzon, proveedorDeLaLlave, urlBase, huellaDeCorridas, FORMA_MAQUINA, FORMA_CODIGO, FORMA_ARCHIVO, FORMA_REGISTRO, FORMA_INSTINTO, FORMA_JORNADA, FORMA_VERSION, REGISTROS, X_MS_VERSION } = require('./upload-runs.js');
+const { leerConfig, integracionBuzon, proveedorDeLaLlave, almacenDeBajadaDeLaLlave, urlBase, huellaDeCorridas, FORMA_MAQUINA, FORMA_CODIGO, FORMA_ARCHIVO, FORMA_REGISTRO, FORMA_INSTINTO, FORMA_JORNADA, FORMA_VERSION, REGISTROS, X_MS_VERSION } = require('./upload-runs.js');
 
 // el nombre del archivo de métricas de un merge, el que escribe retro-heartbeat.js
 const FORMA_MERGE = /^metrics-[A-Za-z0-9._-]+\.json$/;
@@ -124,7 +124,8 @@ function hoy() { return new Date().toISOString().slice(0, 10); }
 
 function escribirAtomico(archivo, contenido) {
   fs.mkdirSync(path.dirname(archivo), { recursive: true });
-  const tmp = `${archivo}.tmp-${process.pid}`;
+  // el pid solo no alcanza: dos instancias del sitio en contenedores distintos tienen el mismo (1) y comparten el disco
+  const tmp = `${archivo}.tmp-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
   fs.writeFileSync(tmp, contenido);
   fs.renameSync(tmp, archivo);
 }
@@ -232,10 +233,10 @@ function pedir(url, cred, timeoutMs) {
 }
 
 /**
- * Por qué una máquina no baja un buzón de otro proveedor: la bajada desde una máquina (y la noche) es la de Azure, con la
- * sesión de az; un buzón de un conector lo lee el sitio de la organización.
+ * Por qué una máquina no lee un buzón de otro proveedor: su conector no sabe bajarlo (o ninguno lo atiende), o es uno de
+ * los informes de mantenimiento, que leen sólo Azure con la sesión de az. Ese buzón lo lee el sitio de la organización.
  */
-const noSoportado = (proveedor) => `la llave de esta máquina es de un buzón «${proveedor}», que lee el sitio de la organización: la bajada desde una máquina sólo sabe leer Azure Blob Storage (no se pidió nada a la red)`;
+const noSoportado = (proveedor) => `la llave de esta máquina es de un buzón «${proveedor}», que lee el sitio de la organización: desde una máquina, esto sólo sabe leer Azure Blob Storage o un buzón cuyo conector sabe bajar (no se pidió nada a la red)`;
 
 /** El token de storage con la sesión de az que ya existe. { token } o { estado, motivo }. Nunca pregunta. */
 function tokenDeAz(tenant) {
@@ -803,6 +804,8 @@ async function bajar(opts = {}) {
 
   let cfg;
   let tkDelSitio = null;
+  // la llave de otro proveedor: el almacén de bajada de su conector, que ya sabe su credencial (la sesión de la persona)
+  let almacenDeLaMaquina = null;
   if (delSitio) {
     if (!opts.dir) return fin(2, 'config_rota', 'la bajada del sitio necesita cuenta, contenedor y carpeta');
     if (almacenDado) cfg = null;
@@ -815,18 +818,26 @@ async function bajar(opts = {}) {
       tkDelSitio = c.tk;
     }
   } else {
-    // 0 · las integraciones: el buzón apagado → exit 0 y una línea; y bajar necesita la sesión de az,
+    // 0 · las integraciones: el buzón apagado → exit 0 y una línea; y bajar de Azure necesita la sesión de az,
     //     así que Azure DevOps apagada → exit 0 y una línea. Configuración rota → exit 2 con archivo, clave y motivo.
-    //     Una llave de otro proveedor se mira con el buzón prendido y antes que Azure DevOps: no es de esta bajada.
+    //     Una llave de otro proveedor se mira con el buzón prendido y antes que Azure DevOps, que no le hace falta: la
+    //     lee el almacén de bajada de su conector, con la sesión de la persona; sin uno, no es de esta bajada.
     for (const llave of ['mailbox', 'ado']) {
       const integ = integracionBuzon(llave);
       if (integ.error) { log(integ.error); return fin(2, 'config_rota', integ.error); }
       if (!integ.prendida) { log(integ.apagada); return fin(0, 'apagado', integ.apagada); }
-      if (llave === 'mailbox' && proveedorDeLaLlave()) return fin(1, 'no_soportado', noSoportado(proveedorDeLaLlave()));
+      if (llave === 'mailbox' && proveedorDeLaLlave()) {
+        const a = almacenDeBajadaDeLaLlave();
+        if (!a.almacen) return fin(a.codigo, a.estado, a.estado === 'no_soportado' ? noSoportado(proveedorDeLaLlave()) : a.motivo);
+        almacenDeLaMaquina = a.almacen;
+        break;
+      }
     }
-    const lc = leerConfig(['cuenta', 'contenedor', 'tenant']);
-    if (!lc.cfg) return fin(1, lc.estado, lc.motivo);
-    cfg = lc.cfg;
+    if (!almacenDeLaMaquina) {
+      const lc = leerConfig(['cuenta', 'contenedor', 'tenant']);
+      if (!lc.cfg) return fin(1, lc.estado, lc.motivo);
+      cfg = lc.cfg;
+    }
   }
 
   // Sin permiso para leer: exit 0, sin carpeta, una vez por día.
@@ -838,7 +849,7 @@ async function bajar(opts = {}) {
 
   // La credencial: la sesión de az (la máquina de quien tiene el rol) o, para el sitio, la que pasa quien llama —una SAS
   // de sólo lectura, o la identidad administrada de la plataforma (scripts/site/cloud/azure.js)—.
-  let almacen = almacenDado;
+  let almacen = almacenDado || almacenDeLaMaquina;
   if (!almacen) {
     const tk = delSitio ? tkDelSitio : tokenDeAz(cfg.tenant.trim());
     if (!tk.token) return sinPermiso(tk.estado, tk.motivo);
@@ -1038,7 +1049,7 @@ async function bajar(opts = {}) {
         try {
           const destino = require('../nightly/dashboard/changes.js').rutaDeResumen(path.join(dirBuzon, ...k.split('/')) + '.json');
           fs.mkdirSync(path.dirname(destino), { recursive: true });
-          const tmp = `${destino}.tmp-${process.pid}`;
+          const tmp = `${destino}.tmp-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
           fs.writeFileSync(tmp, require('zlib').gzipSync(JSON.stringify(doc)));
           fs.renameSync(tmp, destino);
           res.hilos_grandes += 1;
@@ -1062,7 +1073,13 @@ async function bajar(opts = {}) {
       let igual;
       try { igual = b.md5 ? md5Local(local, st, previo) === b.md5 : Boolean(previo && previo.etag && previo.etag === b.etag); }
       catch (e) { noLeidos.push(`${b.nombre} (${e.code || e.message})`); continue; }
-      if (igual) { res.al_dia += 1; continue; }
+      // lo que ya está en el disco y coincide se anota (con su MD5) si el índice no lo tenía: si no, el disco se vuelve a
+      // leer entero en cada pasada, también con `confiarIndice`
+      if (igual) {
+        res.al_dia += 1;
+        if (b.md5 && !(previo && previo.md5 === b.md5 && previo.size === st.size)) { indice.blobs[b.nombre] = { etag: b.etag, size: st.size, md5: b.md5, mtimeMs: st.mtimeMs }; indiceSucio = true; }
+        continue;
+      }
     }
     pendientes.push({ ...b, ...forma, local, ...(base ? { base } : {}) });
   }
@@ -1079,8 +1096,26 @@ async function bajar(opts = {}) {
 
   // 3 · bajar, archivo por archivo, dentro del presupuesto
   // el viejo (de antes del renombre) pasa al nuevo antes de la primera escritura: el que se escribe ya lo trae en `indice`
+  // El índice se guarda una vez al final de la pasada (también si corta), y en una pasada larga como mucho cada
+  // `intervaloIndiceMs` (10 s si no se dice), nunca después de cada archivo: con el disco del sitio sobre un
+  // almacenamiento de objetos (Cloud Run con un volumen de Cloud Storage), cada reescritura es una mutación del mismo
+  // objeto, que admite una por segundo, y con varios trabajadores en paralelo daba 429. Si el proceso muere antes de
+  // guardar, la pasada siguiente compara contra el disco: vuelve a mirar, no pierde nada.
   const guardarIndice = () => { prepareStateWrite(rutaIndice, { where }); escribirAtomico(rutaIndice, JSON.stringify(indice, null, 1) + '\n'); };
-  if (indiceSucio) { try { guardarIndice(); } catch (_) { /* el índice sólo ahorra: la próxima pasada mira el disco */ } }
+  const intervaloIndice = Number.isFinite(opts.intervaloIndiceMs) && opts.intervaloIndiceMs >= 0 ? opts.intervaloIndiceMs : 10000;
+  let indiceSinGuardar = indiceSucio;
+  let indiceGuardadoEn = Date.now();
+  const guardarIndiceSiToca = (alFinal) => {
+    if (!indiceSinGuardar || (!alFinal && Date.now() - indiceGuardadoEn < intervaloIndice)) return;
+    try { guardarIndice(); indiceSinGuardar = false; } catch (_) { /* el índice sólo ahorra: la próxima pasada mira el disco */ }
+    indiceGuardadoEn = Date.now();
+  };
+  // lo que cambió antes de bajar (blobs que el buzón ya no lista, resúmenes, lo que ya estaba en el disco) se guarda
+  // enseguida: con `confiarIndice`, un índice que todavía anota un blob podado lo daría por bajado si vuelve
+  guardarIndiceSiToca(true);
+  // y el guardado intermedio no espera a que termine un archivo: con uno grande colgado, lo ya bajado queda anotado igual
+  const relojIndice = setInterval(() => guardarIndiceSiToca(false), Math.max(intervaloIndice, 1000));
+  if (relojIndice.unref) relojIndice.unref();
   const malos = [];
   // La cobertura de una máquina se escribe sólo si ninguno de SUS registros falló en esta pasada.
   // 🔴 `.jsonl.gz` también: sin eso, una falla de hallazgos.jsonl.gz no retendría la cobertura.
@@ -1123,7 +1158,8 @@ async function bajar(opts = {}) {
       return;
     }
     indice.blobs[p.nombre] = { etag: p.etag, size: st.size, md5, mtimeMs: st.mtimeMs };
-    try { guardarIndice(); } catch (_) { /* el índice sólo ahorra; lo bajado ya está */ }
+    indiceSinGuardar = true;
+    guardarIndiceSiToca(false);
     res.bajados += 1;
     res.bytes += r.cuerpo.length;
     res.bajado = true;
@@ -1164,9 +1200,11 @@ async function bajar(opts = {}) {
     };
     await Promise.all(Array.from({ length: Math.min(conc, cola.length) }, trabajador));
     // un corte en cualquier fase deja volcados sin bajar; en las de registros, además, registros
-    if (fatal) { res.volcados_enteros = false; if (fase < 2) res.registros_enteros = false; return fin(...fatal); }
+    if (fatal) { clearInterval(relojIndice); guardarIndiceSiToca(true); res.volcados_enteros = false; if (fase < 2) res.registros_enteros = false; return fin(...fatal); }
     if (corto) { res.sin_tiempo = pendientes.length - tomados; res.volcados_enteros = false; if (fase < 2) res.registros_enteros = false; break; }
   }
+  clearInterval(relojIndice);
+  guardarIndiceSiToca(true);
   // lo que quedó por el tope es trabajo pendiente, como lo que quedó sin tiempo: la pasada no está entera, y la
   // siguiente sigue (sources.js → buzon.seguir)
   res.sin_tiempo += res.por_tope;

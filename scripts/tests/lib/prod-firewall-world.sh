@@ -180,6 +180,16 @@ SH
   printf '#!/usr/bin/env bash\nprintf "cuadro\\n" >> "%s/cuadro.log"\necho "button returned:Aprobar, gave up:false"\n' "$TMP" > "$RAIZ/usr/bin/osascript"
   printf '#!/usr/bin/env bash\necho Aqua\n' > "$RAIZ/bin/launchctl"
   chmod +x "$RAIZ/usr/bin/osascript" "$RAIZ/bin/launchctl"
+  # una sentencia pedida por una sesión no abre el cuadro del sistema: la aprueba el click en la sesión
+  # (session-approval.js, con su propia suite). Su doble aprueba y anota el cuadro en el mismo registro: uno por sentencia
+  # Con $TMP/cuadro-modo en «rechaza» (como el doble del cuadro de la prueba de emergencia), no hay click: pide y sale 1
+  cat > "$TMP/aprobacion-de-la-sesion.js" <<JS
+const fs = require('fs');
+fs.appendFileSync('$TMP/cuadro.log', 'cuadro\n');
+let rejects = false; try { rejects = fs.readFileSync('$TMP/cuadro-modo', 'utf8').trim() === 'rechaza'; } catch (_) { /* aprueba */ }
+if (!rejects) { process.stdout.write('id-de-prueba\n'); process.exit(0); }
+process.stdout.write('Mostrale AskUserQuestion con una sola pregunta (firma production-query · sesión s · código c)\n'); process.exit(1);
+JS
   # un az impostor primero en el PATH: la puerta no lo usa (T30)
   mkdir -p "$TMP/impostor"; printf '#!/usr/bin/env bash\necho IMPOSTOR >> "%s/impostor.log"\n' "$TMP" > "$TMP/impostor/az"; chmod +x "$TMP/impostor/az"
   unset FAKE_SQLCMD FAKE_AZ FAKE_IP FAKE_UUID FAKE_NOMBRE
@@ -192,8 +202,10 @@ modos(){ # deja escritos los modos de los dobles, que la puerta no les pasa por 
 puerta(){ # corre la puerta en el mundo falso; imprime el exit code. SES = la sesión que la llama (vacía = ninguna)
   modos
   # sin las variables de SSH: corrida por SSH, la puerta pediría la sesión de la Mac y la suite fallaría cerrada
-  env -u SSH_CONNECTION -u SSH_CLIENT -u SSH_TTY HOME="$CASA" TYCON_PROD_ROOT="$RAIZ" TYCON_REPOS_ROOT="$REPOS" TMPLOG="$TMP" \
-      PATH="$TMP/impostor:$PATH" CLAUDE_CODE_SESSION_ID="${SES:-}" TYCON_PROD_AZ_TIMEOUT="${AZ_TOPE:-20}" \
+  # sin la sesión de quien corre la suite: la de la prueba es SES (vacía = una terminal)
+  local sesion=(); [ -n "${SES:-}" ] && sesion=(CLAUDE_CODE_SESSION_ID="$SES")
+  env -u SSH_CONNECTION -u SSH_CLIENT -u SSH_TTY -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID HOME="$CASA" TYCON_PROD_ROOT="$RAIZ" TYCON_REPOS_ROOT="$REPOS" TMPLOG="$TMP" \
+      PATH="$TMP/impostor:$PATH" ${sesion[@]+"${sesion[@]}"} TYCON_PROD_TEST_APPROVAL_JS="$TMP/aprobacion-de-la-sesion.js" TYCON_PROD_AZ_TIMEOUT="${AZ_TOPE:-20}" \
       FAKE_SQLCMD="${FAKE_SQLCMD:-}" FAKE_AZ="${FAKE_AZ:-}" FAKE_IP="${FAKE_IP:-}" FAKE_UUID="${FAKE_UUID:-}" \
       bash "$PUERTA" "$@" >"$TMP/out" 2>"$TMP/err"
   echo $?

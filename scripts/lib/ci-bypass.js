@@ -47,7 +47,7 @@
  *     comando lo escribió la herramienta de PowerShell (la barra invertida es parte de las rutas).
  */
 
-const gh = require('./gh-pr.js');
+const gh = require('./command-readers.js').lectorDe('gh');
 const az = require('./az-pr.js');
 
 const FIRMA = 'escape:merge-bypass';
@@ -451,7 +451,7 @@ function deAz(cmd, opts) {
       continue;
     }
     // una terminal, `eval`, `su` o un intérprete con el comando en un texto; o `xargs`, que le agrega argumentos. La red
-    // gruesa mira acá también `gh`: el lector de gh-pr.js sólo marca lo escondido que publica, y una escritura de
+    // gruesa mira acá también `gh`: el lector de `gh` sólo marca lo escondido que publica, y una escritura de
     // `gh api` con una consulta en un archivo no la ve como tal
     if (INTERPRETE.test(nombre) || LANZA_OTRO.has(nombre)) {
       const deGhAdentro = /\bgh\b/i.test(texto) && ghEnTexto(texto);

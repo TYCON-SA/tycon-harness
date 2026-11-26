@@ -538,6 +538,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.334 (tanda A, fila 177): el freno de escrituras tapa los seis caminos por los que se escribía una constancia (un guion de shell, un comodín, la copia de una carpeta, un enlace duro, el `Move to` de Codex, una ruta armada) y protege también `.tycon/runtime-waivers.jsonl` y el `approvals.jsonl` de las ejecuciones, sin frenar de más. Repos de git temporales, HOME temporal.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/row-177-write-gate.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.48: la clave `stack` de team-repos.json, leída desde el árbol del arnés.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/stack-config.test.js",
@@ -1276,6 +1282,12 @@
       "requiere": []
     },
     {
+      "__nota": "el freno de escrituras partido en un despachador y sus partes lib/bash-gate-*.js: cada archivo bajo el tope, lo nuevo que carga es sensible, y sin una parte frena y la nombra (como gancho) o tira (como biblioteca). El banco contra la foto de antes de partir (T8) corre a pedido, con BASH_GATE_BENCH=1",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/bash-gate-split.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/replace-section.test.js",
       "requiere": []
@@ -1827,6 +1839,15 @@
       "gate_only_when_touching": [
         "scripts/metrics/**",
         "scripts/nightly/**",
+        "scripts/lib/**"
+      ]
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/download-runs-index-writes.test.js",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/metrics/**",
         "scripts/lib/**"
       ]
     },
@@ -2429,6 +2450,11 @@
     {
       "raiz": "arnes",
       "ruta": "tests/tycon-prod-sql.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/session-approval.test.js",
       "requiere": []
     },
     {
@@ -4007,6 +4033,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.335: el estado del registro de horas vive en la carpeta de los registros sueltos, y --move-old lo muda a la del estado dejando un enlace en el lugar viejo. Nunca pisa ni borra: un destino ocupado, un renombre o un enlace que fallan, o un viejo que reaparece, quedan como estaban. Sin tycon-home.js, los ganchos salen 0 y lo dicen; los avisos dan la ruta real y uninstall saca sólo el enlace. Sin red: HOME de juguete en procesos hijos.",
+      "raiz": "arnes",
+      "ruta": "tests/clocki-state-dir.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "un marcador viejo, sin la ruta del repo o con rutas relativas: la pregunta de firma y los lectores directos (la tanda, la procedencia) no dependen de la carpeta del proceso.",
       "raiz": "arnes",
       "ruta": "tests/old-marker-paths.test.js",
@@ -5132,6 +5164,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.331 (T1 a T8): .github/workflows/code-scanning.yml, el análisis de CodeQL que corre también en los pedidos desde un fork, leído por texto con check-public-workflow.js --code-scanning: disparadores (pedido, cola, push a main; no en borrador), sin pull_request_target ni secretos, permisos exactos (contents y actions de lectura, security-events de escritura), acciones por sha, checkout sin la credencial guardada, los tres lenguajes sin compilar con su categoría, la forma exacta y los cinco workflows. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/code-scanning-workflow.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.40, el cierre (T48 y T49): lo que el paquete tiene PUBLICADO en npm. La versión del package.json está publicada con su constancia de procedencia y es la latest; con una sesión de npm, la cuenta pide el segundo factor también para escribir y la latest no es el marcador 0.0.0-stage. Sin red, con la versión sin aprobar o sin sesión: NO MEDIDO, nunca verde. Pide red: corre de noche, no en cada pedido.",
       "raiz": "arnes",
       "ruta": "tests/npm-published.test.js",
@@ -5376,9 +5414,15 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.26, tanda F1 (T57): el lector de un comando `gh` (scripts/lib/gh-pr.js, armado sobre el de az-pr.js): qué es de lectura (lista cerrada), a qué repo apunta, qué textos y archivos publica, y qué no se puede leer desde el comando. Sin git, sin red.",
+      "__nota": "story 8.26, tanda F1 (T57): el lector de un comando `gh` (integrations/github/scripts/command-reader.js, armado sobre el de az-pr.js): qué es de lectura (lista cerrada), a qué repo apunta, qué textos y archivos publica, y qué no se puede leer desde el comando. Sin git, sin red.",
       "raiz": "arnes",
       "ruta": "tests/gh-pr.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "DEF-8.85-G: el lector de los comandos de una plataforma vive en su conector y el núcleo lo pide por el programa (scripts/lib/command-readers.js)",
+      "raiz": "arnes",
+      "ruta": "tests/command-readers.test.js",
       "requiere": []
     },
     {
@@ -5391,6 +5435,12 @@
       "__nota": "el número de versión lo pone el merge: la etiqueta v<número> sobre cada merge a main (scripts/ci/version-tag.js y .github/workflows/version-tag.yml). Dos merges no toman el mismo número y el número no baja; las máquinas con y sin clon leen la etiqueta, una punta sin etiqueta espera en silencio (y lo dice pasadas unas horas) y no queda recordada con el piso; el paso version de la CI pública; y los únicos dos workflows del repo público, con su forma exacta. Repos de juguete con git de verdad y clientes de mentira: sin red, unos segundos.",
       "raiz": "arnes",
       "ruta": "tests/version-by-merge.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la versión de la semana (scripts/ci/weekly-release.js, la publica version-tag.yml después de etiquetar): sale si pasaron 7 días desde la última; se cuenta desde la etiqueta de la última, o desde la de hace una semana si es la primera; «Contribuciones de afuera» nombra a los autores de los commits que no están en MAINTAINER_LOGINS, con el pedido que entró (no el del fork que se cerró); sin la variable avisa y no publica; una etiqueta que no está en el servidor no se publica; la API caída es rojo. La API de GitHub es de mentira y las etiquetas, de un repo de juguete: sin red, menos de un segundo.",
+      "raiz": "arnes",
+      "ruta": "tests/weekly-release.test.js",
       "requiere": []
     },
     {
@@ -5553,6 +5603,12 @@
       "__nota": "las entradas del reclamo de la retrospectiva que anotaron el commit equivocado (scripts/hooks/retro-pending.js): la punta que contesta el remoto al abrir el pedido, la rama de origen, la corrección con quién y por qué (--correct), el aviso de «ya estaba en main» y la carpeta principal por nombre. Repos de juguete con git de verdad y un remoto en una carpeta. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/retro-pending-correct.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el aviso de arranque y el cierre del turno del reclamo de la retrospectiva (scripts/hooks/retro-pending.js) no juzgan el registro entero: el arranque no le pregunta a la plataforma y corta en su tope (TYCON_RETRO_NOTICE_MS), el cierre mira sólo los merges de su sesión y los de cerca, y más de tres entradas que ningún latido paga van en una línea con la ruta de su lista. Repos de juguete con git de verdad, y az, gh y git envueltos para anotar cada llamada. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/retro-pending-budget.test.js",
       "requiere": []
     },
     {

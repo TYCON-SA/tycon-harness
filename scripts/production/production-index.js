@@ -47,12 +47,16 @@ const SALTEAR = new Set(['node_modules', 'bin', 'obj', 'dist', 'build', '.git', 
 const SUFIJO_AZURE = '.database.windows.net';
 const LOCALES = new Set(['localhost', '127.0.0.1', '::1', '(local)', '.', '(localdb)']);
 
-// la carpeta del estado la sabe scripts/setup/harness/tycon-home.js (story 8.23, tanda D): se carga si está al lado (en el
-// repo, y en /opt/tycon/setup/harness/ por el instalador del freno); si no, la de siempre
-const dirDatos = (home) => {
-  try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); if (typeof TH.stateDir === 'function') return TH.stateDir(home || os.homedir()); } catch (_) { /* la de siempre */ }
-  return path.join(home || os.homedir(), '.claude', '.tycon-pipeline');
+// las rutas de la máquina (la carpeta del estado, el archivo de la configuración) las sabe setup/harness/tycon-home.js,
+// que está al lado: en el repo, y en /opt/tycon/setup/harness/ por el instalador del freno. En una copia sin él (los
+// laboratorios de las pruebas), las rutas de siempre, a partir de la carpeta del estado de siempre
+const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
+const tyconHome = () => {
+  const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
+  if (require('fs').existsSync(lib)) return require(lib);
+  return { stateDir: stateDirOf, configFile: (h) => path.join(path.dirname(stateDirOf(h)), 'tycon.json') };
 };
+const dirDatos = (home) => tyconHome().stateDir(home || os.homedir());
 const rutaIndice = (home) => path.join(dirDatos(home), 'production-index.json');
 const rutaMemoria = (home) => path.join(dirDatos(home), 'production-memory.json');
 // los nombres de antes del renombre: sólo se leen para pasarlos una vez a los nuevos (ver la cabecera)
@@ -165,11 +169,11 @@ function construir(opts = {}) {
   const catalogos = [];
   const errores = [];
   if (configRota) {
-    errores.push({ repo: '—', archivo: ((configRota.errores || [])[0] || {}).archivo || path.join(home, '.claude', 'tycon.json'),
-      motivo: `configuración del arnés ROTA — el índice se armó sin ~/.claude/tycon.json; arreglalo (node scripts/lib/tycon-config.js validate): ${(configRota.errores || []).map((x) => `${x.archivo}${x.clave ? ` · ${x.clave}` : ''} · ${x.motivo}`).join(' | ')}` });
+    errores.push({ repo: '—', archivo: ((configRota.errores || [])[0] || {}).archivo || tyconHome().configFile(home),
+      motivo: `configuración del arnés ROTA — el índice se armó sin ${tyconHome().configFile(home)}; arreglalo (node scripts/lib/tycon-config.js validate): ${(configRota.errores || []).map((x) => `${x.archivo}${x.clave ? ` · ${x.clave}` : ''} · ${x.motivo}`).join(' | ')}` });
   }
   // Sin raíz no se mira ningún repo, y el índice lo dice como error (story 8.3, AC 6): nunca una carpeta inventada.
-  if (!raiz) errores.push({ repo: '—', archivo: '—', motivo: 'sin raíz de repos: no se miró ningún repo (definí TYCON_REPOS_ROOT o paths.repos en ~/.claude/tycon.json)' });
+  if (!raiz) errores.push({ repo: '—', archivo: '—', motivo: `sin raíz de repos: no se miró ningún repo (definí TYCON_REPOS_ROOT o paths.repos en ${tyconHome().configFile(home)})` });
   for (const repo of raiz ? reposBajo(raiz) : []) {
     const cat = leerCatalogo(repo);
     if (!cat) continue;                                                        // el repo no declara nada

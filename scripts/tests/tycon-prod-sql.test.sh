@@ -218,7 +218,7 @@ if [ -d /opt/tycon ]; then
 fi
 if [ ! -f "$PUERTA" ]; then
   no "la puerta no existe todavía ($PUERTA)"
-  echo "— prod-sql: $pasaron ok, $fallos fallos —"; exit 1
+echo "— prod-sql: $pasaron ok, $fallos fallos —"; exit 1
 fi
 
 # ── el mundo: raíz de sistema falsa con la puerta, el cliente de root y los dobles ─────────────
@@ -323,8 +323,13 @@ SH
 
 puerta(){ # corre la puerta con el mundo falso; imprime el exit code. Sin las variables de SSH: corrida por SSH, la
   # suite no tiene que fallar cerrada (T-puerta-24 las pone a propósito, con `puerta_con`)
-  env -u SSH_CONNECTION -u SSH_CLIENT -u SSH_TTY HOME="$CASA" TYCON_PROD_ROOT="$RAIZ" TYCON_REPOS_ROOT="$REPOS" \
-      PATH="$TMP/impostor:$PATH" SECURITY_MODE="$SECURITY_MODE" \
+  # sin la sesión de Claude Code de quien corre la suite: el caso que la quiere la pone con PUERTA_SESION (el id) o
+  # PUERTA_CLAUDECODE=1 (una sesión sin id)
+  local sesion=()
+  [ -n "${PUERTA_CLAUDECODE:-}${PUERTA_SESION:-}" ] && sesion+=(CLAUDECODE=1)
+  [ -n "${PUERTA_SESION:-}" ] && sesion+=(CLAUDE_CODE_SESSION_ID="$PUERTA_SESION")
+  env -u SSH_CONNECTION -u SSH_CLIENT -u SSH_TTY -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID HOME="$CASA" TYCON_PROD_ROOT="$RAIZ" TYCON_REPOS_ROOT="$REPOS" \
+      PATH="$TMP/impostor:$PATH" SECURITY_MODE="$SECURITY_MODE" TYCON_PROD_TEST_APPROVAL_JS="$TMP/aprobacion-de-la-sesion.js" ${sesion[@]+"${sesion[@]}"} \
       bash "$PUERTA" "$@" >"$TMP/out" 2>"$TMP/err"
   echo $?
 }
@@ -788,7 +793,7 @@ if [ "$rc" = 2 ] && grep -q "el cuadro de producción necesita la sesión de la 
   ok "T-puerta-24 Puerta_SinSesionGrafica_Frena @story-8.254 @ac-19 · launchctl dice Background: sale 2 sin cuadro ni clave"
 else no "T-puerta-24 Puerta_SinSesionGrafica_Frena @story-8.254 @ac-19 · Background: rc=$rc · $(head -c 160 "$TMP/err")"; fi
 mundo ok
-env HOME="$CASA" TYCON_PROD_ROOT="$RAIZ" TYCON_REPOS_ROOT="$REPOS" SSH_CONNECTION="10.0.0.1 50000 10.0.0.2 22" bash "$PUERTA" "$PROD" 'select 1' >"$TMP/out" 2>"$TMP/err"; rc=$?
+env -u CLAUDECODE -u CLAUDE_CODE_SESSION_ID HOME="$CASA" TYCON_PROD_ROOT="$RAIZ" TYCON_REPOS_ROOT="$REPOS" SSH_CONNECTION="10.0.0.1 50000 10.0.0.2 22" bash "$PUERTA" "$PROD" 'select 1' >"$TMP/out" 2>"$TMP/err"; rc=$?
 if [ "$rc" = 2 ] && grep -q "no por SSH" "$TMP/err" && [ ! -s "$TMP/orden.log" ]; then
   ok "T-puerta-24 Puerta_SinSesionGrafica_Frena @story-8.254 @ac-19 · por SSH: sale 2 sin cuadro ni clave"
 else no "T-puerta-24 Puerta_SinSesionGrafica_Frena @story-8.254 @ac-19 · SSH: rc=$rc · $(head -c 160 "$TMP/err")"; fi
@@ -859,21 +864,22 @@ done
 # viene cada uno.
 REG="$CASA/.claude/.tycon-pipeline/production.log"
 
-# T-puerta-35 · la primera línea del cuadro dice la carpeta y la sesión; desde una terminal, que es una terminal
+# T-puerta-35 · la primera línea del cuadro dice la carpeta y la sesión; desde una terminal, que es una terminal. Desde una
+# sesión, una sentencia ya no abre el cuadro del sistema (T-puerta-43): la línea de la sesión se mira con --reclassify
 mundo ok
 mkdir -p "$TMP/proyectos/Cliente/Codigo"
-rc="$(cd "$TMP/proyectos/Cliente/Codigo" && CLAUDECODE=1 CLAUDE_CODE_SESSION_ID=0123abcd-4567-89ef-0123-456789abcdef puerta "$PROD" 'select 1')"
-if [ "$(ultimo_arg | head -1)" = "Pide: Cliente/Codigo · sesión 0123abcd (principal)" ] && ultimo_arg | grep -F "Servidor: $PROD" >/dev/null; then
-  ok "T-puerta-35 PuertaCuadro_DiceQuienPide · carpeta y sesión en la primera línea, antes del servidor"
+rc="$(cd "$TMP/proyectos/Cliente/Codigo" && PUERTA_SESION=0123abcd-4567-89ef-0123-456789abcdef puerta --reclassify "$PROD")"
+if [ "$(ultimo_arg | head -1)" = "Pide: Cliente/Codigo · sesión 0123abcd (principal)" ] && ultimo_arg | grep -F "Bajar $PROD" >/dev/null; then
+  ok "T-puerta-35 PuertaCuadro_DiceQuienPide · carpeta y sesión en la primera línea, antes de lo que se aprueba"
 else no "T-puerta-35 PuertaCuadro_DiceQuienPide · cuadro: $(ultimo_arg | head -3 | tr '\n' '|')"; fi
 mundo ok
-rc="$(unset CLAUDECODE CLAUDE_CODE_SESSION_ID; cd "$TMP/proyectos/Cliente/Codigo" && puerta "$PROD" 'select 1')"
+rc="$(cd "$TMP/proyectos/Cliente/Codigo" && puerta "$PROD" 'select 1')"
 if [ "$(ultimo_arg | head -1)" = "Pide: Cliente/Codigo · una terminal, fuera de Claude Code" ]; then
   ok "T-puerta-35 PuertaCuadro_DiceQuienPide · sin Claude Code, dice que es una terminal"
 else no "T-puerta-35 PuertaCuadro_DiceQuienPide · terminal: $(ultimo_arg | head -1)"; fi
 mundo ok
 raro="$TMP/proyectos/Producción/a$(printf '\xe2\x80\xae')b"; mkdir -p "$raro"
-rc="$(cd "$raro" && CLAUDE_CODE_SESSION_ID=0123abcd-4567-89ef-0123-456789abcdef puerta "$PROD" 'select 1')"
+rc="$(cd "$raro" && PUERTA_SESION=0123abcd-4567-89ef-0123-456789abcdef puerta --reclassify "$PROD")"
 if [ "$(ultimo_arg | head -1)" = "Pide: Producción/a?b · sesión 0123abcd (principal)" ]; then
   ok "T-puerta-35 PuertaCuadro_DiceQuienPide · la tilde se ve, y un carácter de dirección sale como «?»"
 else no "T-puerta-35 PuertaCuadro_DiceQuienPide · carpeta rara: $(ultimo_arg | head -1)"; fi
@@ -904,7 +910,7 @@ else no "T-puerta-36 PuertaCuadro_UnoPorVez · máximo abiertos a la vez: $max �
 
 # T-puerta-37 · si el cuadro abierto no se contesta antes del tope, el segundo sale 2 sin cuadro ni clave, y dice de quién es
 mundo ok; cuadro_lento 4
-( cd "$TMP/proyectos/Cliente/Codigo" && CLAUDE_CODE_SESSION_ID=0123abcd-4567-89ef-0123-456789abcdef puerta "$PROD" 'select 1' >/dev/null ) &
+( cd "$TMP/proyectos/Cliente/Codigo" && PUERTA_SESION=0123abcd-4567-89ef-0123-456789abcdef puerta --reclassify "$PROD" >/dev/null ) &
 primero=$!
 sleep 1
 rm -f "$TMP/orden.log"
@@ -1004,6 +1010,66 @@ done
 if ! grep -qF 'Bash(/opt/tycon/bin/tycon-prod-sql' "$AQUI/scripts/production/managed-settings.tycon-production.json.template"; then
   ok "T-puerta-42 Puerta_SinSuCuadro_NoHaceNada · la plantilla administrada no tiene regla de preguntar por la puerta"
 else no "T-puerta-42 Puerta_SinSuCuadro_NoHaceNada · la plantilla administrada todavía pregunta por la puerta: dos ventanas por consulta"; fi
+
+# ── la sentencia pedida por una sesión: el click del dueño en la sesión, y un solo cuadro ─────────────────────────
+# El cuadro del sistema no le llega al dueño que sigue la sesión desde el celular o la app. Desde una sesión, la sentencia
+# la aprueba su click en el cuadro de opciones de la sesión (session-approval.js, que tiene su propia suite); acá se
+# reemplaza por un doble que contesta lo que diga $TMP/aprobacion-modo y anota lo que recibió.
+# @story-8.337
+cat > "$TMP/aprobacion-de-la-sesion.js" <<JS
+const fs = require('fs');
+fs.appendFileSync('$TMP/orden.log', 'aprobacion\n');
+fs.writeFileSync('$TMP/aprobacion-argv.json', JSON.stringify(process.argv.slice(2)));
+const modo = (() => { try { return fs.readFileSync('$TMP/aprobacion-modo', 'utf8').trim(); } catch (_) { return 'ask'; } })();
+if (modo === 'approved') { process.stdout.write('id-de-prueba\n'); process.exit(0); }
+if (modo === 'ask') { process.stdout.write('Mostrale AskUserQuestion con una sola pregunta, sin cambiarle una letra:\n¿Correr esta sentencia? (firma production-query · sesión s · código c)\n'); process.exit(1); }
+process.stdout.write('no pude leer los procesos de la máquina\n'); process.exit(2);
+JS
+SES=0123abcd-4567-89ef-0123-456789abcdef
+cuadros(){ cat "$TMP/orden.log" 2>/dev/null | grep -c '^cuadro$'; }
+modo_aprobacion(){ printf '%s' "$1" > "$TMP/aprobacion-modo"; }
+
+# T-puerta-43 · desde una sesión sin click: imprime la pregunta, sale 2, no abre el cuadro del sistema ni lee la clave
+mundo ok; modo_aprobacion ask
+rc="$(PUERTA_SESION=$SES puerta "$PROD" 'EXEC dbo.RPT_Ejemplo @ID = 0')"
+if [ "$rc" = 2 ] && [ "$(cuadros)" = 0 ] && sin_security && grep -q 'AskUserQuestion' "$TMP/err" && grep -q '(firma production-query' "$TMP/err" \
+   && grep -q '"accion":"pide-click"' "$REG" && [ ! -s "$TMP/sqlcmd-argv.log" ]; then
+  ok "T-puerta-43 PuertaSesion_SinClick_PideElCuadroDeLaSesion · sale 2 con la pregunta, sin cuadro del sistema, sin clave y anotado"
+else no "T-puerta-43 PuertaSesion_SinClick_PideElCuadroDeLaSesion · rc=$rc · cuadros $(cuadros) · orden $(tr '\n' '|' < "$TMP/orden.log" 2>/dev/null) · $(head -c 200 "$TMP/err")"; fi
+
+# T-puerta-44 · desde una sesión con el click: corre, con la sentencia entera en el verificador y sin el cuadro del sistema
+# (el cliente falso sale 1, y la puerta devuelve su salida: lo que se mira es que se conectó, no que salga 0)
+mundo ok; modo_aprobacion approved
+rc="$(PUERTA_SESION=$SES puerta "$PROD" 'EXEC dbo.RPT_Ejemplo @ID = 0' --max-rows 7)"
+argv_ok="$(node -e 'const a=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const e=["--host",process.argv[2],"--session",process.argv[3],"--max-rows","7","--","EXEC dbo.RPT_Ejemplo @ID = 0"];process.stdout.write(JSON.stringify(a)===JSON.stringify(e)?"si":JSON.stringify(a))' "$TMP/aprobacion-argv.json" "$PROD" "$SES" 2>/dev/null)"
+if [ "$rc" = 1 ] && grep -q '^sqlcmd' "$TMP/orden.log" && [ "$(cuadros)" = 0 ] && [ "$argv_ok" = si ] && grep -q '^security' "$TMP/orden.log" && grep -q '"aprobacion":"click-en-la-sesion"' "$REG" \
+   && [ "$(grep -n aprobacion "$TMP/orden.log" | head -1 | cut -d: -f1)" -lt "$(grep -n '^security' "$TMP/orden.log" | head -1 | cut -d: -f1)" ]; then
+  ok "T-puerta-44 PuertaSesion_ConClick_Corre · corre sin el cuadro del sistema, verifica antes de leer la clave y lo anota"
+else no "T-puerta-44 PuertaSesion_ConClick_Corre · rc=$rc · cuadros $(cuadros) · argv $argv_ok · orden $(tr '\n' '|' < "$TMP/orden.log" 2>/dev/null) · $(head -c 200 "$TMP/err")"; fi
+
+# T-puerta-45 · un solo cuadro por sentencia en cada camino: desde la sesión, ninguno del sistema (pida o apruebe);
+# desde una terminal, uno del sistema y ninguna verificación de la sesión
+uno=1
+for m in ask approved; do
+  mundo ok; modo_aprobacion "$m"; PUERTA_SESION=$SES puerta "$PROD" 'select 1' >/dev/null
+  [ "$(cuadros)" = 0 ] && [ "$(grep -c '^aprobacion$' "$TMP/orden.log")" = 1 ] || uno="sesión-$m: $(tr '\n' '|' < "$TMP/orden.log")"
+done
+mundo ok; modo_aprobacion approved; puerta "$PROD" 'select 1' >/dev/null
+[ "$(cuadros)" = 1 ] && ! grep -q '^aprobacion$' "$TMP/orden.log" || uno="terminal: $(tr '\n' '|' < "$TMP/orden.log")"
+if [ "$uno" = 1 ]; then ok "T-puerta-45 PuertaSesion_UnSoloCuadro · por sentencia: 0 cuadros del sistema desde la sesión, 1 desde la terminal"
+else no "T-puerta-45 PuertaSesion_UnSoloCuadro · $uno"; fi
+
+# T-puerta-46 · si el click no se puede verificar, o la sesión no tiene id, falla cerrada: sin cuadro del sistema ni clave
+mundo ok; modo_aprobacion broken
+rc="$(PUERTA_SESION=$SES puerta "$PROD" 'select 1')"
+if [ "$rc" = 2 ] && [ "$(cuadros)" = 0 ] && sin_security && grep -q 'no pude verificar el click del dueño' "$TMP/err" && grep -q '"motivo":"sin-verificar"' "$REG"; then
+  ok "T-puerta-46 PuertaSesion_SinVerificar_FallaCerrada · sale 2 sin cuadro del sistema ni clave, y dice por qué"
+else no "T-puerta-46 PuertaSesion_SinVerificar_FallaCerrada · rc=$rc · cuadros $(cuadros) · $(head -c 200 "$TMP/err")"; fi
+mundo ok; modo_aprobacion approved
+rc="$(PUERTA_CLAUDECODE=1 puerta "$PROD" 'select 1')"
+if [ "$rc" = 2 ] && [ "$(cuadros)" = 0 ] && sin_security && ! grep -q '^aprobacion$' "$TMP/orden.log" 2>/dev/null && grep -q 'sin identificador de sesión' "$TMP/err"; then
+  ok "T-puerta-46 PuertaSesion_SinVerificar_FallaCerrada · una sesión sin id no aprueba ni abre el cuadro del sistema"
+else no "T-puerta-46 PuertaSesion_SinVerificar_FallaCerrada · sin id: rc=$rc · cuadros $(cuadros) · $(head -c 200 "$TMP/err")"; fi
 
 echo "— prod-sql: $pasaron ok, $fallos fallos —"
 [ "$fallos" -eq 0 ]

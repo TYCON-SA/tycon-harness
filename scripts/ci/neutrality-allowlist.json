@@ -52,7 +52,6 @@
     {"path":"scripts/lib/external-pr.js","ceiling":13,"reason":"freno que reconoce el comando crudo de GitHub que encola o mergea un pedido, y le pregunta a su CLI de quién es (el CLI es su entrada, como en ci-bypass.js)"},
     {"path":"scripts/lib/ci-bypass.js","ceiling":29,"reason":"freno o aviso que reconoce el comando crudo de cada plataforma para decidir si frena (el CLI es su entrada, no una llamada)"},
     {"path":"scripts/lib/extension-notices.js","ceiling":1,"reason":"el aviso de las reglas de cada plataforma reconoce el CLI que lo dispara (lo declaran los conectores): un comentario da el ejemplo"},
-    {"path":"scripts/lib/gh-pr.js","ceiling":35,"reason":"archivo mixto: lógica neutra y lógica de una plataforma juntas; se parte en DEF-8.85-G-archivos-mixtos y este techo baja"},
     {"path":"scripts/lib/harness-repo.js","ceiling":4,"reason":"la configuración y su vocabulario nombran la plataforma de cada repo, su dirección o el nombre viejo de un archivo (el viejo archivo de configuración de Azure DevOps) para leerlo"},
     {"path":"scripts/lib/operations-config.js","ceiling":3,"reason":"la configuración y su vocabulario nombran la plataforma de cada repo, su dirección o el nombre viejo de un archivo (el viejo archivo de configuración de Azure DevOps) para leerlo"},
     {"path":"scripts/lib/org-config.js","ceiling":4,"reason":"la configuración y su vocabulario nombran la plataforma de cada repo, su dirección o el nombre viejo de un archivo (el viejo archivo de configuración de Azure DevOps) para leerlo"},
@@ -67,7 +66,6 @@
     {"path":"scripts/nightly/assigned/assigned-items.js","ceiling":12,"reason":"nocturno de lo asignado: lee Azure DevOps directo con sus campos (la lectura por la capa es la de GitHub, tanda C)"},
     {"path":"scripts/nightly/dashboard/sources.json","ceiling":1,"reason":"el autor de los commits de los pipelines de Azure, para no contarlos como de una persona"},
     {"path":"scripts/nightly/dependencies/nightly-dependencies.js","ceiling":1,"reason":"reconoce un remoto de Azure DevOps para sacarle las credenciales antes de anotarlo"},
-    {"path":"scripts/nightly/dependencies/work-items.js","ceiling":46,"reason":"archivo mixto: lógica neutra y lógica de una plataforma juntas; se parte en DEF-8.85-G-archivos-mixtos y este techo baja"},
     {"path":"scripts/nightly/deployments/azure.js","ceiling":2,"reason":"el lector de despliegues de Azure DevOps (tanda A): lo envuelve su conector, con su par de GitHub al lado"},
     {"path":"scripts/nightly/deployments/github.js","ceiling":1,"reason":"el lector de despliegues de GitHub (tanda A): lo envuelve su conector, con su par de Azure al lado"},
     {"path":"scripts/nightly/findings/propose.js","ceiling":1,"reason":"consulta la base pública de vulnerabilidades de GitHub (no la plataforma de la organización)"},
@@ -100,6 +98,6 @@
     {"path":"skills/tycon-pipeline/scripts/lib/adhoc-base.js","ceiling":4,"reason":"freno o aviso que reconoce el comando crudo de cada plataforma para decidir si frena (el CLI es su entrada, no una llamada)"},
     {"path":"skills/tycon-pipeline/scripts/lib/adhoc-foreign-save.js","ceiling":6,"reason":"freno o aviso que reconoce el comando crudo de cada plataforma para decidir si frena (el CLI es su entrada, no una llamada)"},
     {"path":"skills/tycon-pipeline/scripts/lib/how-it-works.js","ceiling":1,"reason":"texto o registro que nombra el archivo viejo de configuración o la dirección de la plataforma de un pedido para mostrarlo"},
-    {"path":"skills/tycon-pipeline/scripts/on-bash-write-gate.js","ceiling":1,"reason":"freno o aviso que reconoce el comando crudo de cada plataforma para decidir si frena (el CLI es su entrada, no una llamada)"}
+    {"path":"skills/tycon-pipeline/scripts/lib/bash-gate-commands.js","ceiling":1,"reason":"freno o aviso que reconoce el comando crudo de cada plataforma para decidir si frena (el CLI es su entrada, no una llamada)"}
   ]
 }

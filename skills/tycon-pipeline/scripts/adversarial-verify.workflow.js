@@ -130,13 +130,14 @@ function blocks(severity, cut) {
 const SALIDA_APROBADA = 'la salida aprobada: un pase propio con agentes de Claude — cazadores con Sonnet, un verificador aparte por hallazgo que corre el código, juicio con Opus, nunca Fable (workflow-lite.js --agents-dir, step-08-adversarial-pass.md §«Sin Codex ni Workflow»)'
 
 // El aviso de un pase que no revisó todo. Nunca «limpio»: no medido, con qué faltó y cómo seguir. Con `motivos` (lente →
-// motivo, el modo código) nombra el de cada lente; sin ellos (el modo plan), el cazador que no contestó.
-function avisoNoMedido(sinMedir, sinVeredicto, motivos) {
+// motivo, el modo código) nombra el de cada lente; sin ellos (el modo plan), el cazador que no contestó. En el modo plan
+// no ofrece la salida por carpeta: ahí las respuestas las escribiría la sesión revisada, y el freno la rechaza.
+function avisoNoMedido(sinMedir, sinVeredicto, motivos, { plan = false } = {}) {
   const partes = []
   if (sinMedir.length && motivos) partes.push(`${sinMedir.length} lente(s) SIN MEDIR (${sinMedir.map((l) => `${l}: ${motivos[l] || 'su cazador no contestó'}`).join('; ')})`)
   else if (sinMedir.length) partes.push(`${sinMedir.length} lente(s) SIN MEDIR (${sinMedir.join(', ')}): su cazador no contestó`)
   if (sinVeredicto) partes.push(`${sinVeredicto} hallazgo(s) SIN VEREDICTO: su verificador no contestó (el texto está en detalle)`)
-  return `adversarial-verify: 🔴 pase NO MEDIDO — ${partes.join('; ')}. No es verde ni «sin hallazgos»: relanzá el pase, o ${SALIDA_APROBADA}.`
+  return `adversarial-verify: 🔴 pase NO MEDIDO — ${partes.join('; ')}. No es verde ni «sin hallazgos»: relanzá el pase${plan ? ' (en la revisión del plan, con el corredor: no hay salida por carpeta)' : `, o ${SALIDA_APROBADA}`}.`
 }
 
 // Con varios repos, cada uno con su base, su copia (si hay) y sus archivos debajo.
@@ -845,7 +846,7 @@ confidence}. Reportá sólo lo que tiene evidencia; si la lente está limpia, fi
   const frenan = confirmadosP.filter((c) => blocks(c.adjusted_severity || c.severity, CORTE))
   const notas = confirmadosP.filter((c) => !blocks(c.adjusted_severity || c.severity, CORTE))
   const veredicto = !medidoP ? 'sin-veredicto' : frenan.length ? 'rechazado' : notas.length ? 'aprobado-con-notas' : 'aprobado'
-  const avisoP = medidoP ? null : avisoNoMedido(sinMedirP, sinVeredictoP)
+  const avisoP = medidoP ? null : avisoNoMedido(sinMedirP, sinVeredictoP, null, { plan: true })
   if (avisoP) log(avisoP)
   if (descartadasP.length) log(`adversarial-verify (modo plan): ${descartadasP.length} respuesta(s) descartada(s): ${descartadasP.map((d) => `${d.id} (${d.motivo})`).join(', ')}.`)
   log(`adversarial-verify (modo plan): ${veredicto} — ${confirmadosP.length} confirmado(s) de ${hallazgosP.length} hallazgo(s), ${frenan.length} en el corte (${CORTE}), ${lentesPedidas.length} lente(s) (model=${MODEL}).`)

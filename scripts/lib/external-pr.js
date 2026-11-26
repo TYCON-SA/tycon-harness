@@ -30,7 +30,7 @@
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const gh = require('./gh-pr.js');
+const gh = require('./command-readers.js').lectorDe('gh');
 
 const FIRMA = 'escape:external-pr';
 const MUTACION = /\b(enqueuePullRequest|enablePullRequestAutoMerge|mergePullRequest)\b/;

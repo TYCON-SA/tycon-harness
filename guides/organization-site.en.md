@@ -1764,8 +1764,9 @@ to the link. What to fix is the lock's setting, not the image.
 It also asks for the machine routes (`/live/machine` and `/live/enroll`) without a session. Machines cannot get past the
 platform's lock, so if it answers them the check warns "falta el paso de una vez" (the one-time step is missing), without
 failing: an organization that does not use offices does not need it. In Azure, it is
-the same `--excluded-paths` command from the recipe, which already names them. Do it before setting `site.url` in the
-profile.
+the same `--excluded-paths` command from the recipe, which already names them. In Google Cloud Run, also set the service
+timeout to 3600 s (`--timeout=3600`, in "Kubernetes and other clouds"): with a short one, the offices' connection is cut
+each time it runs out. Do it before setting `site.url` in the profile.
 
 The site also has to see who is asking. Behind an intermediary, every connection arrives from its address, and the limits
 per address would apply to the whole internet: two unsigned connections would hold back any machine. New installs already
@@ -1807,7 +1808,7 @@ Configuration tab says "falta el repo del perfil" (the profile repo is missing).
 - **Sign-in:** two locks. In front, the platform's built-in sign-in with the same Entra ID registration. Behind it, the
   site's own, which decides with its list. `/healthz`, `/livez`, the "You signed out" page with what it loads, and `/idioma` stay outside the lock (without that, with the
   lock's session expired, the "You signed out" page goes through its sign-in first). A site already installed is fixed once:
-  `az containerapp auth update -g <group> -n <app> --excluded-paths /healthz,/livez,/saliste,/idioma,/static/site.css,/static/site.js,/static/fonts/lato-400.woff2,/static/fonts/lato-700.woff2,/live/machine,/live/enroll`; and for the limits per address to hold, `az containerapp update -g <group> -n <app> --set-env-vars SITE_TRUST_PROXY=1`. `microsoftAccounts` in the
+  `az containerapp auth update -g <group> -n <app> --excluded-paths /healthz,/health,/livez,/saliste,/idioma,/static/site.css,/static/site.js,/static/fonts/lato-400.woff2,/static/fonts/lato-700.woff2,/live/machine,/live/enroll`; and for the limits per address to hold, `az containerapp update -g <group> -n <app> --set-env-vars SITE_TRUST_PROXY=1`. `microsoftAccounts` in the
   configuration file picks the mode:
   - `organization` (the default): a single tenant. If the registration has "assignment required", people are assigned
     one by one in the portal (assigning a group needs an Entra ID P1/P2 license).
@@ -1942,6 +1943,14 @@ az storage container generate-sas --account-name <account> -n <container> --poli
 Updater or Flux (with the strategy that resolves `stable` to its digest), or each cloud's own command to change a
 service image (Cloud Run: `gcloud run deploy --image <image>@<digest>`). After the change, the check without a session:
 `node scripts/site/check-deploy.js --url https://<address>`.
+
+**Google Cloud Run has two limits of its own.** It reserves `/healthz`: its front end answers it with a 404 and the
+request never reaches the site. That is why the site answers the same on `/health`, and the check without a session asks
+it only when `/healthz` is answered by someone else; a Cloud Run probe of your own goes against `/livez`, never
+`/healthz`. And it cuts every request when the service timeout (`--timeout`) runs out: with a short timeout, the offices'
+connection is cut each time it runs out (with 60 s, every minute). When creating the service, `--timeout=3600` (the maximum). It does not change the cost: with
+a machine connected there is always an open request. On an existing one:
+`gcloud run services update <service> --region <region> --timeout=3600`.
 
 ### A closed network
 

@@ -147,8 +147,8 @@ test('T2 ControlSize_OverLimit_WarnsNotBlocks — @story-8.163 @ac-2: avisa por 
 test('T2 ControlSize_OverLimit_WarnsNotBlocks — @story-8.163 @ac-2: el tope sale del freno real del árbol', () => {
   const root = arbol({ 'scripts/ci/uno.js': '// nada\n' });
   const j = datos(root, '--gate', REAL_GATE);
-  // el número es el que tiene el freno en su texto, por su nombre: nunca una copia en la prueba
-  const texto = fs.readFileSync(REAL_GATE, 'utf8');
+  // el número es el que tiene el freno en su texto (el despachador y sus partes), por su nombre: nunca una copia en la prueba
+  const texto = require(TOOL).textoDelFreno(REAL_GATE);
   const niveles = Number(/\bconst RECORRIDO_NIVELES = (\d+);/.exec(texto)[1]);
   const modulos = Number(/\bconst RECORRIDO_ARCHIVOS = (\d+);/.exec(texto)[1]);
   assert.ok(niveles > 2 && modulos > 20, 'el tope del recorrido subió a lo medido');
@@ -163,6 +163,18 @@ test('T2 ControlSize_OverLimit_WarnsNotBlocks — @story-8.163 @ac-2: el tope co
   const comentado = '// const RECORRIDO_NIVELES = 3;\n// const RECORRIDO_ARCHIVOS = 5;\n' + conNombre;
   const otro = arbol({ [`${PIPE}/on-bash-write-gate.js`]: comentado });
   assert.deepStrictEqual(datos(otro).recorrido.tope, { niveles: 7, modulos: 31 });
+});
+
+// 🔴 Falla con: un lector que mira sólo el despachador del freno partido: no encuentra el tope, que vive en una parte.
+test('T2 ControlSize_OverLimit_WarnsNotBlocks — @story-8.163 @ac-2: el freno partido trae el tope en sus partes', () => {
+  const root = arbol({
+    [`${PIPE}/on-bash-write-gate.js`]: "const { guionesEnArchivo } = require('./lib/bash-gate-scripts.js');\n",
+    [`${PIPE}/lib/bash-gate-words.js`]: 'const RECORRIDO_NIVELES = 6;\nconst RECORRIDO_ARCHIVOS = 40;\n',
+    [`${PIPE}/lib/bash-gate-scripts.js`]: 'function guionesEnArchivo() { return 1; }\n',
+    // una parte de otro despachador no cuenta
+    [`${PIPE}/lib/marker-shared.js`]: 'const RECORRIDO_NIVELES = 9;\nconst RECORRIDO_ARCHIVOS = 99;\n',
+  });
+  assert.deepStrictEqual(datos(root).recorrido.tope, { niveles: 6, modulos: 40 });
 });
 
 test('T2 ControlSize_OverLimit_WarnsNotBlocks — @story-8.163 @ac-2: un freno sin los dos números es «no medido», nunca silencio', () => {

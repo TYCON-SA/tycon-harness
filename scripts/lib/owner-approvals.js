@@ -678,13 +678,15 @@ function clickEnLaTranscripcion(ruta, a, { pregunta, opciones, descripciones, se
   // sólo los renglones que nombran ese cuadro, desde el final: se corta en el cuadro, que va antes que su respuesta, una
   // vez juntada la respuesta (un cuadro repetido después no corta antes); el resto no se convierte en objetos
   const esElCuadro = (r) => r && r.type === 'assistant' && bloques(r).some((b) => b && b.type === 'tool_use' && b.id === a.tool_use_id && b.name === CUADRO);
-  const esLaRespuesta = (r) => bloques(r).some((b) => b && b.type === 'tool_result' && b.tool_use_id === a.tool_use_id);
+  // la respuesta es el renglón de la persona, con su hora: algunas versiones de Claude Code escriben antes una copia sin
+  // hora del pedido al modelo que repite el tool_result, y ésa no dice cuándo se contestó
+  const esLaRespuesta = (r) => r && r.type === 'user' && r.timestamp && bloques(r).some((b) => b && b.type === 'tool_result' && b.tool_use_id === a.tool_use_id);
   try { rs = desdeElFinal(ruta, { filtro: a.tool_use_id, hasta: (juntados) => esElCuadro(juntados[juntados.length - 1]) && juntados.some(esLaRespuesta) }); } catch (e) {
     return { ok: false, motivo: `no pude leer la transcripción (${e.code || e.message})`, noLeida: true };
   }
   const llamado = rs.some(esElCuadro);
   if (!llamado) return { ok: false, motivo: 'el cuadro no está en la transcripción de la sesión' };
-  const r = rs.find((x) => bloques(x).some((b) => b && b.type === 'tool_result' && b.tool_use_id === a.tool_use_id));
+  const r = rs.find(esLaRespuesta);
   if (!r) return { ok: false, motivo: 'la respuesta del cuadro no está en la transcripción' };
   if (!cerca(r, a.ts)) return { ok: false, motivo: 'la respuesta del cuadro no es de la hora del registro' };
   const d = r.permissionDecision || (r.toolUseResult && r.toolUseResult.permissionDecision);

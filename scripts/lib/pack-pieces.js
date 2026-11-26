@@ -152,7 +152,7 @@ function orgActive({ tree, env = process.env, home } = {}) {
 function missingPackHint(origin) {
   if (origin === 'perfil') return 'lo pide el perfil del equipo: si el paquete está en el perfil, falta traerlo (harness.js update); si no está, falta agregarlo en packs/<nombre>/ del repo del perfil, o sacarlo de packs.default en team-profile.json';
   if (origin === 'env' || origin === 'TYCON_PACKS_DEFAULT') return 'lo pide la variable TYCON_PACKS_DEFAULT de esta terminal: sacala o corregila';
-  return 'lo pide la configuración de esta máquina (~/.claude/tycon.json): un paquete propio va en packs/<nombre>/ del repo del perfil, que sobrevive a las actualizaciones (si no tenés uno, armalo con harness.js team-init --local, aunque seas una sola persona); o sacalo de packs.default';
+  return 'lo pide la configuración de esta máquina (harness.js config): un paquete propio va en packs/<nombre>/ del repo del perfil, que sobrevive a las actualizaciones (si no tenés uno, armalo con harness.js team-init --local, aunque seas una sola persona); o sacalo de packs.default';
 }
 
 /**

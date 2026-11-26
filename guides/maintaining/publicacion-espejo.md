@@ -1743,7 +1743,7 @@ mismo en un clon con carpeta de hooks propia; sin arnés instalado le presta al 
 **El freno de `gh`.** Un pedido, un comentario o una versión creados con `gh` publican texto sin pasar por `git push`.
 Todo `gh` que no esté en la lista cerrada de **lectura** (`view`, `list`, `status`, `checks`, `diff`, `checkout`,
 `download`, `clone`, `gh api` con `GET`, una consulta de GraphQL, y los grupos que no publican texto; la lista vive en
-`scripts/lib/gh-pr.js`) y que apunte al repo público del arnés —porque se corre en un clon con un
+`integrations/github/scripts/command-reader.js`) y que apunte al repo público del arnés —porque se corre en un clon con un
 remoto público, o porque lo nombra con `--repo`, `GH_REPO` o la ruta de `gh api`— se revisa: cada valor de opción
 (salvo lo que elige algo que ya existe: el repo, la rama base, un commit),
 cada archivo que lee (`--body-file`, `--notes-file`, `--input`, `campo=@archivo`) y cada archivo que sube, con su

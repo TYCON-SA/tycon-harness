@@ -1470,8 +1470,11 @@ if [ -f "$GUIA" ]; then
     grep -qF -- "$limite" "$GUIA" || t12_falta="${t12_falta} el límite «${limite}»;"
   done
   grep -qF "la propia puerta abre un cuadro del sistema" "$GUIA" || t12_falta="$t12_falta el cuadro propio en «Cómo funciona»;"
-  # una sola ventana por sentencia: la del cuadro de la puerta (Claude Code ya no pregunta además)
-  grep -qF "Una sola ventana por sentencia: la de la puerta" "$GUIA" || t12_falta="$t12_falta el cuadro propio en «El día a día»;"
+  # un solo cuadro por sentencia: desde la terminal el de la puerta, desde una sesión el click en la sesión (Claude Code
+  # no pregunta además), y el límite de ese click dicho entre los límites
+  grep -qF "Desde tu terminal, sin sesión: una sola ventana, la de la puerta" "$GUIA" || t12_falta="$t12_falta el cuadro propio en «El día a día»;"
+  grep -qF "Un solo cuadro por sentencia" "$GUIA" || t12_falta="$t12_falta un solo cuadro por sentencia desde la sesión;"
+  grep -qF "El click en la sesión lo verifica código del arnés, no de root" "$GUIA" || t12_falta="$t12_falta el límite del click en la sesión;"
   ! grep -qF "Dos cuadros por sentencia" "$GUIA" || t12_falta="$t12_falta la guía dice todavía «Dos cuadros por sentencia»;"
 else
   t12_falta=" la guía no existe ($GUIA);"

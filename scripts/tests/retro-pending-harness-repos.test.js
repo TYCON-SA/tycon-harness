@@ -79,6 +79,7 @@ function laboratorio() {
   fs.mkdirSync(path.join(arnes, '.dashboard'));
   fs.copyFileSync(path.join(ROOT, 'scripts', 'hooks', 'retro-pending.js'), path.join(arnes, 'scripts', 'hooks', 'retro-pending.js'));
   fs.cpSync(path.join(ROOT, 'scripts', 'lib'), path.join(arnes, 'scripts', 'lib'), { recursive: true });
+  fs.cpSync(path.join(ROOT, 'integrations'), path.join(arnes, 'integrations'), { recursive: true });   // el lector de gh vive en su conector
   const gancho = path.join(arnes, 'scripts', 'hooks', 'retro-pending.js');
   const ledger = path.join(home, '.claude', '.tycon-pipeline', 'retro-pending.jsonl');
   return {

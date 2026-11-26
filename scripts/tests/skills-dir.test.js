@@ -50,6 +50,9 @@ function lab({ unified = false, skillsOnly = false, installed = false } = {}) {
   const home = path.join(dir, 'home');
   fs.mkdirSync(path.join(clone, 'scripts', 'lib'), { recursive: true });
   for (const f of LIB_FILES) fs.copyFileSync(path.join(LIB, f), path.join(clone, 'scripts', 'lib', f));
+  // y lo que skills-dir.js le pregunta a la máquina (dónde están las skills instaladas): tycon-home.js, en su lugar
+  fs.mkdirSync(path.join(clone, 'scripts', 'setup', 'harness'), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js'), path.join(clone, 'scripts', 'setup', 'harness', 'tycon-home.js'));
   if (unified || skillsOnly) fs.mkdirSync(path.join(clone, 'skills', 'tycon-pipeline'), { recursive: true });
   if (unified) fs.mkdirSync(path.join(clone, 'agents'), { recursive: true });
   fs.mkdirSync(home, { recursive: true });

@@ -32,7 +32,7 @@ _(scripts/nightly/dependencies/ + scripts/ci/audit-dependencies.js)_
 
 ## scripts/nightly/dependencies/work-items.js
 
-**Qué es:** El paso que crea un Bug en el proyecto de Azure DevOps del equipo dueño por cada vulnerabilidad viva, asignado y con el dev mencionado.
+**Qué es:** El paso que crea un Bug en el proyecto de Azure DevOps del equipo dueño por cada vulnerabilidad viva, asignado y con el dev mencionado. Es la entrada: lo que habla con la plataforma está en `integrations/<conector>/scripts/dependency-notices.js`.
 
 **Por qué existe:** El único aviso era el pull request del arnés, que ve sólo quien mantiene. Se enciende con `azure.pedidos_activos: true` en `repos.json`; nunca crea dos veces el mismo pedido y, si no pudo consultar, no crea nada.
 

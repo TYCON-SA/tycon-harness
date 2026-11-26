@@ -27,6 +27,8 @@ copia() {
   cp "$DEPLOY" "$1/build/deploy-codex-hooks.js"
   cp "$RAIZ/adapters/codex/hooks.json" "$1/adapters/codex/hooks.json"
   cp "$RAIZ/scripts/lib/skills-dir.js" "$1/scripts/lib/skills-dir.js"
+  # skills-dir.js le pregunta a tycon-home.js dónde están las skills instaladas: viaja con ella, en su lugar
+  mkdir -p "$1/scripts/setup/harness" && cp "$RAIZ/scripts/setup/harness/tycon-home.js" "$1/scripts/setup/harness/"
 }
 desplegar() { CODEX_HOME="$2" node "$1/build/deploy-codex-hooks.js" > "$T/out" 2>&1; }
 comandos() { grep -c '"command"' "$1" 2>/dev/null || echo 0; }

@@ -387,17 +387,20 @@ test('GuidedUpdate_LabRun_Auto_ReachesTheNewVersionByItself', { skip: SKIP }, ()
   assert.ok(!s.findings.some((f) => /^update:auto:before:/.test(f.id) && f.severity === 'breaks'), s.findings.filter((f) => /before:/.test(f.id)).map((f) => f.id).join(', '));
   // dos versiones de juguete, las dos mayores que la que se ensaya; la máquina se instaló en la primera
   const [before, published] = [TL.nextVersion(TOY.version, 1), TL.nextVersion(TOY.version, 2)];
-  assert.deepStrictEqual([v.version_before, v.version_published], [before, published]);
-  assert.deepStrictEqual(v.install.commands.filter((c) => c.step === 'install').map((c) => c.exit), [0]);
+  // cada comparación dice cuál es y con qué valores: el registro de la noche guarda sólo el primer renglón del error
+  assert.deepStrictEqual([v.version_before, v.version_published], [before, published], `versiones de antes y publicada: ${JSON.stringify([v.version_before, v.version_published])}, se esperaba ${JSON.stringify([before, published])}`);
+  const instalacion = v.install.commands.filter((c) => c.step === 'install');
+  assert.deepStrictEqual(instalacion.map((c) => c.exit), [0], `salida de la instalación: ${JSON.stringify(instalacion.map((c) => [c.exit, String(c.err || c.stderr || c.out || '').slice(-300)]))}`);
   // con la capa del equipo (que manda aplicar sola), fuera de su ventana, abriendo sesiones: llega sola
   assert.strictEqual(v.team.state.host, 'azure');
   assert.strictEqual(v.out_of_window.done, true);
   assert.strictEqual(v.updated_by_itself, true, `quedó en ${v.version_after}; sesiones: ${JSON.stringify(v.sessions.map((x) => [x.label, x.version, x.wait]))}`);
   // «se actualizó» es el número de version.json del árbol instalado, nunca git
   const tree = path.join(update.lab, 'users', 'update-auto', '.tycon', 'harness');
-  assert.deepStrictEqual([v.version_after, TL.installedVersion(tree), fs.existsSync(path.join(tree, '.git'))], [published, published, false]);
+  const despues = [v.version_after, TL.installedVersion(tree), fs.existsSync(path.join(tree, '.git'))];
+  assert.deepStrictEqual(despues, [published, published, false], `versión final, la de version.json y si quedó .git: ${JSON.stringify(despues)}, se esperaba ${JSON.stringify([published, published, false])}`);
   assert.strictEqual(v.by_hand, undefined, 'nadie la actualizó a mano');
-  assert.deepStrictEqual(v.sessions.map((x) => x.form), ['bash-c', 'default-shell', 'default-shell', 'default-shell']);
+  assert.deepStrictEqual(v.sessions.map((x) => x.form), ['bash-c', 'default-shell', 'default-shell', 'default-shell'], `formas de las sesiones: ${JSON.stringify(v.sessions.map((x) => x.form))}`);
   for (const x of v.sessions) assert.notStrictEqual(x.wait.ended_by, 'not-finished', `${x.label}: el trabajo desprendido terminó`);
   assert.strictEqual(v.sessions[v.sessions.length - 1].version, published);
   // la foto y el humo, antes y después; ningún hallazgo de git; y la versión cambió

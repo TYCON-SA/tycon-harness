@@ -735,6 +735,18 @@ test('T30 Contrato_EstimateEnCreateYUpdate @story-2.75 @ac-27', async () => {
   assert.doesNotMatch(texto, /Microsoft\.VSTS|OriginalEstimate|StoryPoints|ProjectV2/);
 });
 
+test('DependencyNotices_LoDeAzureViveEnSuConector: work-items.js queda neutro y lo de Azure DevOps va a su conector', () => {
+  const AZ = path.join(ROOT, 'integrations', 'azure-devops', 'scripts', 'dependency-notices.js');
+  assert.ok(fs.existsSync(AZ), 'está en integrations/azure-devops/scripts/');
+  const m = require(AZ);
+  for (const f of ['main', 'hablar', 'volcar', 'crearAz', 'cacheDeCategorias']) assert.strictEqual(typeof m[f], 'function', f);
+  const wi = fs.readFileSync(path.join(ROOT, 'scripts', 'nightly', 'dependencies', 'work-items.js'), 'utf8');
+  // la entrada no elige por el nombre de una plataforma ni habla con ninguna
+  assert.doesNotMatch(wi, /=== '(github|azure)'|'azure-devops'|Microsoft\.VSTS|TYCON_ADO_CMD|Project Administrators/);
+  const lista = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'ci', 'neutrality-allowlist.json'), 'utf8'));
+  assert.ok(!JSON.stringify(lista).includes('scripts/nightly/dependencies/work-items.js'), 'work-items.js sale de la lista de neutralidad');
+});
+
 // 🔴 Falla con: un conector que no devuelve la rama de origen del pedido (el freno de pedidos la necesita para juzgar
 // `--delete-source-branch` en un `update`).
 test('T123 PrRead_GivesTheSourceBranch — leer un pedido devuelve su rama de origen, en las dos plataformas', async () => {
