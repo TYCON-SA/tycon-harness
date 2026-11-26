@@ -285,7 +285,9 @@ test('T13 ClearSession_OtraSesion_DejaSuRenglon — cerrar la de otra sesión an
   const [l] = renglones(c);
   assert.deepStrictEqual(l && [l.regla, l.veredicto, l.sesion], ['otra-sesion', 'paso', SID], JSON.stringify(renglones(c)));
   assert.ok(/^[0-9a-f]{64}$/.test(String(l.sha256)), 'la huella');
-  assert.doesNotMatch(JSON.stringify(l), /8\.8|sesion-ajena/, 'ni la historia ni la sesión cerrada viajan en la línea');
+  // la hora del renglón no cuenta: con los milisegundos puede traer «8.8» por azar (…:58.812Z)
+  const sinHoras = Object.fromEntries(Object.entries(l).filter(([, v]) => !(typeof v === 'string' && /^\d{4}-\d\d-\d\dT[\d:.]+(Z|[+-]\d\d:?\d\d)?$/.test(v))));
+  assert.doesNotMatch(JSON.stringify(sinHoras), /8\.8|sesion-ajena/, 'ni la historia ni la sesión cerrada viajan en la línea');
   // abierta: el renglón dice que se cerró abierta (la firma la anotó el freno, aparte)
   const a = conOtra(corral(VERDE), ROJO);
   assert.strictEqual(correr(a, OTRA).status, 0);

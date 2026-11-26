@@ -39,7 +39,7 @@
 const fs = require('fs');
 const path = require('path');
 const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // La carpeta del estado, de una sola pieza
-const { homeCommand } = require('./lib/home-command.js');
+const { homeCommand, pipelineRel } = require('./lib/home-command.js');
 const os = require('os');
 // execFileSync (arg array, sin shell) en vez de execSync con strings
 // interpolados — evita rotura/inyección con paths que tengan metacaracteres de shell.
@@ -1752,7 +1752,7 @@ function main() {
       // ROSTER-GATE ("revisor ≠ autor"): que haya constancia de revisión no dice QUIÉN
       // revisó. Acá —en la máquina, donde vive el registro de spawns reales— se cruza el
       // `review-roster.json` committeado contra ese registro. Es el único lugar del arnés donde el
-      // cruce es posible: el portón de CI no ve `~/.claude/`, así que allá sólo se verifica
+      // cruce es posible: el portón de CI no ve la carpeta de Claude Code, así que allá sólo se verifica
       // coherencia interna. Un roster que lista revisores que el hook nunca vio spawnear está
       // escrito a mano. Escape del dev, ESCRITO Y COMMITEADO (nunca una variable que no deja
       // rastro): `"sin_testigo": "<motivo>"` dentro del propio roster — viaja en el diff del PR,
@@ -2030,7 +2030,7 @@ function main() {
       for (const viejo of (v.legacy || [])) lines.push(`       no cuenta (carpeta vieja bajo un número que comparten varias stories — no dice de cuál es; no se tocó): ${viejo}`);
       lines.push('     Salidas:');
       lines.push('       (a) Correr el pipeline sobre la story (con sus revisores):');
-      lines.push(`           ${homeCommand('.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js')} start --story <spec> --repo <repo>`);
+      lines.push(`           ${homeCommand(pipelineRel('scripts/pipeline.js'))} start --story <spec> --repo <repo>`);
       lines.push('       (b) Story SIN nada que auditar (docs/config puros) — lo decide la persona, con su firma sobre la historia:');
       lines.push('           advisors_exempt: true');
       lines.push('           advisors_exempt_reason: "<razón concreta>"');
@@ -2153,7 +2153,7 @@ function main() {
   lines.push('        git commit --no-verify');
   lines.push('');
   lines.push('Documentación de la regla:');
-  lines.push('  ~/.claude/tycon-harness/guides/definition-of-done.md');
+  lines.push(`  ${require('./lib/harness-path.js').enlaceParaMostrar()}/guides/definition-of-done.md`);
   lines.push('  Advisor: tycon-dod-runtime-checker');
 
   process.stderr.write(lines.join('\n') + '\n');

@@ -48,7 +48,7 @@ let AVISO_SIN_ARNES = null;
 const NORMALIZADORES_CAIDOS = [];
 try {
   // Dónde está el arnés lo dice UN lector (lib/harness-path.js): TYCON_GUIDES_DIR (o TCG, que
-  // exporta el runner del banco, cuyo HOME va sandboxeado) › el lugar `~/.claude/tycon-harness`.
+  // exporta el runner del banco, cuyo HOME va sandboxeado) › el lugar del arnés (`placePath` de tycon-home.js).
   // Nunca una carpeta escrita a mano. Un hook no frena por esto: lo dice y sigue (fail-open).
   const r = require('./lib/harness-path.js').rutaArnesHook();
   if (r.dir) {

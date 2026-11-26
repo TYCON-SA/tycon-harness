@@ -38,7 +38,7 @@
 // `restore` cambia `state.managed` y `state.sources[].commit/previous`; el resto del estado (`version`, `hold`, `notice`) y
 // la copia `before-rollback` los escribe harness.js.
 //
-// Núcleo público: corre desde la copia fija (`~/.claude/.tycon-pipeline/harness/program/harness/`), así que no hace
+// Núcleo público: corre desde la copia fija (`~/.tycon/state/harness/program/harness/`), así que no hace
 // `require` fuera de scripts/setup/harness/. Funciones puras respecto del HOME: reciben `home`/`env`.
 
 const crypto = require('crypto');
@@ -140,7 +140,7 @@ function writeBytesAtomic(file, buf, mode) {
 }
 
 /** Las piezas propias de harness.js (no las saca ni las repone el aplicador): el `@import`, la línea de arranque y los
- *  archivos de la copia fija (todo lo que vive en ~/.claude/.tycon-pipeline/harness/). Mismo criterio que harness.js. */
+ *  archivos de la copia fija (todo lo que vive en ~/.tycon/state/harness/). Mismo criterio que harness.js. */
 function defaultIsOwnPiece(home) {
   const dir = path.resolve(paths(home).harnessDir);
   return (p) => p.kind === 'import' || p.kind === 'startup-line' || (p.kind === 'file' && path.resolve(String(p.where)).startsWith(dir + path.sep));

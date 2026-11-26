@@ -5,7 +5,7 @@
  *
  * El privado adelgazado (`.tycon/internal-forms.json` con `layout: thin`, y su `scripts/ci/overlay-harness.js`) no trae
  * lo que es del público. Medido solo, sus suites cargaban código que no está, salían ausentes las del público y las de
- * `agent-skills` corrían sobre el arnés INSTALADO (`~/.claude/agent-skills`): el verde no decía nada de la rama
+ * `agent-skills` corrían sobre el arnés INSTALADO (el enchufe `agent-skills`): el verde no decía nada de la rama
  * (medido sobre el privado real: 21 rojas, 241 ausentes). El portón mide en cambio el árbol que miden la validación de cada
  * pedido y los nocturnos: lo privado con el público de la rama debajo.
  *

@@ -921,8 +921,11 @@ says so once under «No se pudo leer». A badly written row is not saved: `board
   remove it from your separate file too, or the next `save --from` brings it back with its date. Signatures and questions
   do not expire. The date lives in `meta.teTocaDesde`, which only `board.js` writes.
 
-«Terminados» is what was done today, with its time; anything older, or with no `realIso`, goes to the «Hechos» table. «En
-curso» goes by end time: what ends first on top, what has no time after, and the coordinator last.
+«Terminados» is what was done today, with its time; anything older, or with no `realIso`, goes to the «Hechos» table. It
+also adds, with no row, the stories of your projects that turned closed on main since midnight and your pull requests
+that went in since midnight; what a done row already says, by its story or its pull request, is not repeated. Those
+stories belong to your machine: they do not travel to the site. «En curso» goes by end time: what ends first on top,
+what has no time after, and the coordinator last.
 
 A row that should not be there (a test wrote it, for example) **is not closed**: `close` counts it as work done. Remove it
 with `board.js drop T-41 --reason "<why it goes>"`, which takes it off the board without going through «Terminados» or

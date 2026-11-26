@@ -184,7 +184,7 @@ function check(ctx = {}, opts = {}) {
   const env = ctx.env || process.env;
   const platform = ctx.platform || process.platform;
   const tree = opts.tree || ctx.tree;
-  const skillsDir = opts.skillsDir || path.join(home, '.claude', 'agent-skills', 'skills');
+  const skillsDir = opts.skillsDir || path.join(require('./tycon-home.js').installedSkillsDir(home), 'skills');
   const harnessJs = opts.harnessJs || (tree ? path.join(tree, 'scripts', 'setup', 'harness.js') : null);
   const hookTimeout = Number(opts.hookTimeoutMs) > 0 ? Number(opts.hookTimeoutMs) : HOOK_TIMEOUT_MS;
   const log = (l) => { try { if (typeof opts.log === 'function') opts.log(`salud: ${l}`); } catch (_) { /* el registro no frena la salud */ } };
