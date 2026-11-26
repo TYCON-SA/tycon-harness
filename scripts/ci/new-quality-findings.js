@@ -103,8 +103,8 @@ function main(argv) {
   if (!sarifFile || !base) { noMedida('faltan --sarif o --base'); return; }
   let sarif;
   try { sarif = JSON.parse(fs.readFileSync(sarifFile, 'utf8')); } catch (e) { noMedida(`el resultado del análisis (${path.basename(sarifFile)}) no se lee: ${e.code || e.message}`); return; }
-  // un resultado sin ninguna corrida no es «sin hallazgos»: el análisis no dejó nada que leer
-  if (!sarif || !Array.isArray(sarif.runs) || !sarif.runs.length) { noMedida('el resultado del análisis no trae ninguna corrida'); return; }
+  // un resultado vacío (sin `runs`) no es «sin hallazgos»: el análisis no dejó nada que leer
+  if (!sarif || !Array.isArray(sarif.runs) || !sarif.runs.length) { noMedida('el resultado del análisis viene vacío'); return; }
   let diff;
   try {
     diff = execFileSync('git', ['-C', root, '-c', 'core.quotepath=false', 'diff', '-U0', '--no-color', '--no-ext-diff', base, 'HEAD'], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
