@@ -274,6 +274,10 @@ test('T21c TeamConfig_LlaveMalPuesta_NoMuestraElSecreto', () => {
   assert.doesNotMatch(JSON.stringify(spSucio), /FIRMASECRETA/, 'los permisos propios no traen la firma');
   const UR = require(path.join(__dirname, '..', 'metrics', 'upload-runs.js'));
   assert.doesNotMatch(JSON.stringify(UR.negativaDeLaLlave('sv=2022-11-02&sr=c&sp=c%26sig%3DFIRMASECRETA123&sig=x')), /FIRMASECRETA/, 'la negativa no repite «sp»');
+  // la bajada tampoco repite un «sp» sucio
+  const DR = require(path.join(__dirname, '..', 'metrics', 'download-runs.js'));
+  assert.doesNotMatch(String(DR.negativaDeLectura('sv=2022-11-02&sr=c&si=p&sp=c%26sig%3DFIRMASECRETA123&sig=x')), /FIRMASECRETA/, 'la negativa de la bajada no repite «sp»');
+  assert.match(String(DR.negativaDeLectura('sv=2022-11-02&sr=c&si=p&sp=rwl&sig=x')), /«rwl»/, 'unos permisos de verdad sí se nombran');
   // una «sas» corta sin «=» tampoco sale como nombre de parámetro
   assert.doesNotMatch(JSON.stringify(TC.mailboxSummary(tree, escribir('corta', { sas: 'abcdefgh' }))), /abcdefgh/);
   // un nombre de política de verdad sí se muestra

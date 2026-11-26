@@ -557,7 +557,9 @@ function negativaDeLectura(sas, ahora = Date.now()) {
   if (p.has('ss') || p.has('srt')) return 'la SAS del buzón es de CUENTA (ss/srt): sólo se acepta una SAS de contenedor';
   if (p.get('sr') !== 'c') return 'la SAS del buzón no es de contenedor (sr=c)';
   const sp = p.get('sp') || '';
-  if (!sp || /[^rl]/.test(sp) || !sp.includes('l')) return `la SAS del buzón permite más que leer y listar, o no lista («${sp}»): no se usa`;
+  if (!sp || /[^rl]/.test(sp) || !sp.includes('l')) return /^[racwdxltmeopi]{1,16}$/.test(sp)
+    ? `la SAS del buzón permite más que leer y listar, o no lista («${sp}»): no se usa`
+    : 'la SAS del buzón trae en «sp» algo que no son permisos (el valor no se muestra): no se usa';
   if (!p.get('si')) return 'la SAS del buzón no está atada a una política guardada (si): no se puede revocar sin rotar la cuenta';
   const se = Date.parse(p.get('se') || '');
   if (!Number.isFinite(se) || se <= ahora) return 'la SAS del buzón venció (se)';
