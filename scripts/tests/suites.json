@@ -1844,6 +1844,15 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/download-runs-index-writes.test.js",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/metrics/**",
+        "scripts/lib/**"
+      ]
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/run-change.test.sh",
       "requiere": []
     },
