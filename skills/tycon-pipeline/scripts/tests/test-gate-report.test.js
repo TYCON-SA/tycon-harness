@@ -1086,3 +1086,31 @@ test('T80 …la carpeta por un enlace, una entrada vacía y un archivo que fall�
     { file: '/otro/repo/c.test.js', name: null, did_not_run: true },
   ]);
 });
+
+test('@story-8.329 @ac-6 @ac-8 T13 TestGateReport_GreenByInherited_OnlyWithAllInherited', () => {
+  // 🔴 rojo si: el informe no lee el veredicto del juez de lo heredado, o da verde con algo que frena o sin veredicto
+  const jest = { 'jest.json': JSON.stringify({ numTotalTests: 2, numPassedTests: 1, numFailedTests: 1, numPendingTests: 0, numTodoTests: 0,
+    testResults: [{ name: 'a.test.js', status: 'failed', assertionResults: [{ fullName: 'vieja', status: 'failed' }, { fullName: 'nueva', status: 'passed' }] }] }) };
+  const veredicto = (v) => ({ ...jest, 'inherited-cases.json': JSON.stringify(v) });
+  const base = { ref: 'origin/master', sha: 'abc', fecha: '2026-01-01T00:00:00Z' };
+  // todo heredado y el portón en 0: verde por heredadas
+  let { art } = informeSuelto('jest', veredicto({ exit: 0, base, inherited: [{ key: 'js:a.test.js::vieja', file: 'a.test.js', name: 'vieja' }], blocking: [] }), 0);
+  assert.strictEqual(art.suite_green, true);
+  assert.strictEqual(art.suite_green_by, 'heredadas');
+  assert.deepStrictEqual(art.inherited_cases.inherited.map((c) => c.name), ['vieja']);
+  assert.strictEqual(art.inherited_cases.base.ref, 'origin/master');
+  // queda una del cambio: el portón salió 1, el informe lo dice y no es verde
+  ({ art } = informeSuelto('jest', veredicto({ exit: 1, base, inherited: [], blocking: [{ key: 'js:a.test.js::vieja', name: 'vieja', reason: 'en la base pasa: la rompió el cambio' }] }), 1));
+  assert.strictEqual(art.suite_green, false);
+  assert.notStrictEqual(art.suite_green_by, 'heredadas');
+  assert.strictEqual(art.inherited_cases.blocking.length, 1);
+  // todo heredado pero el mínimo de cobertura del repo no se cumple: no es verde (de la revisión corta)
+  ({ art } = informeSuelto('jest', { ...veredicto({ exit: 0, base, inherited: [{ key: 'js:a.test.js::vieja', file: 'a.test.js', name: 'vieja' }], blocking: [] }),
+    'run.log': 'Jest: "global" coverage threshold for lines (80%) not met: 50%\n' }, 0));
+  assert.strictEqual(art.suite_green, false);
+  assert.notStrictEqual(art.suite_green_by, 'heredadas');
+  // sin veredicto: nada de heredadas
+  ({ art } = informeSuelto('jest', jest, 1));
+  assert.strictEqual(art.suite_green, false);
+  assert.strictEqual(art.inherited_cases, undefined);
+});
