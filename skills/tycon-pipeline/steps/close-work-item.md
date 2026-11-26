@@ -22,6 +22,9 @@ Antes de postear nada en ADO, validar que se cumple TODO esto:
      `smoke-run.sh` con exit code capturado), o declarado imposible en el frontmatter
      `runtime_not_verifiable:` (con `reason:` + `covered_by:`) **y firmado por el dev desde su
      terminal** con `marker.js runtime-waiver <abs spec.md>`.
+   - Un imposible-declarado no pide esa firma si la noche lo cubre (`COVERED-NIGHTLY`): su prueba, con `@story-N` y
+     `@ac-N`, ya está en main, en una suite de las diarias, y la última noche, de hace menos de 36 h, la corrió en verde.
+     Si esa noche sale roja, vieja o sin foto, la matriz vuelve a pedir la firma.
    - 🔴 Un AC `SIN CORRER` **no se waivea**: lo corre el agente. Sólo los `imposibles-declarados`
      son elegibles para la firma del dev.
    - 🔴 **El registro de esa firma NO va al frontmatter.** El `ack` escribible por el agente fue el
@@ -94,7 +97,7 @@ El CI run relevante es el **post-merge a main** (ya con todo el código integrad
 Estrategia según provider:
 
 ```bash
-# Azure DevOps Pipelines: el comando, en ~/.claude/tycon-harness/guides/integrations/ado-en-el-nucleo.md §«Cerrar la historia»
+# Azure DevOps Pipelines: el comando, en ~/.claude/tycon-harness/guides/integrations/ado-in-the-core.md §«Cerrar la historia»
 
 # GitHub Actions (si aplica):
 gh run list --branch main --limit 5 --json databaseId,headSha,status,conclusion,url \

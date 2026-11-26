@@ -355,7 +355,7 @@ function estadoDelArnes(pa) {
     const medido = m.medidoTexto ? `medido ${m.medidoTexto}` : 'sin medición';
     if (v === 'FUERA-DE-COTA') return { tier: 'pend', badge: `El arnés lo midió y quedó fuera de la cota: ${medido}; la cota es ${m.cota}`, como: null };
     if (v === 'SIN-MEDICION') return { tier: 'pend', badge: `El arnés lo corrió pero falta la medida: ${m.motivo || 'sin medición'}`, como: null };
-    if (v === 'NOT-VERIFIABLE' || v === 'WAIVED-USER') {
+    if (v === 'NOT-VERIFIABLE' || v === 'WAIVED-USER' || v === 'COVERED-NIGHTLY') {
       return { tier: 'wv', badge: `Se firmó sin medirlo dentro de la cota (${medido}${m.cota ? `; la cota es ${m.cota}` : ''})`, como: null };
     }
   }
@@ -368,7 +368,7 @@ function estadoDelArnes(pa) {
     const e2e = pa.fuentes && Array.isArray(pa.fuentes.e2e) && pa.fuentes.e2e.length > 0;
     return { tier: 'run', badge: '✓ el arnés ya lo probó', como: `Lo probó corriendo la app${e2e ? ', con una prueba de punta a punta' : ''}. Probarlo a mano es un segundo control.` };
   }
-  if (v === 'NOT-VERIFIABLE' || v === 'WAIVED-USER') return { tier: 'wv', badge: 'La app no lo muestra: lo cubre una prueba del código', como: null };
+  if (v === 'NOT-VERIFIABLE' || v === 'WAIVED-USER' || v === 'COVERED-NIGHTLY') return { tier: 'wv', badge: 'La app no lo muestra: lo cubre una prueba del código', como: null };
   return { tier: 'pend', badge: 'El arnés no lo probó: probalo a mano', como: null };
 }
 
@@ -1153,7 +1153,7 @@ function main() {
     const acTextTech = pasos.desc ? a.text : null;
     const cmds = (smokeByAc[a.n] || []).filter(Boolean);
     let tierNote = null;
-    if (pa.verdict === 'NOT-VERIFIABLE' || pa.verdict === 'WAIVED-USER') {
+    if (pa.verdict === 'NOT-VERIFIABLE' || pa.verdict === 'WAIVED-USER' || pa.verdict === 'COVERED-NIGHTLY') {
       tierNote = `No se puede verificar corriendo la app: ${pa.declReason || '(razón no declarada)'}. ` +
         `Cubierto por el test **${pa.coveredBy || (pa.code || []).join(', ') || 'de código'}** — el tester puede revisar que ese test exista y pase, o inspeccionar la base/el esquema directamente.`;
     }

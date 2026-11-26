@@ -258,7 +258,7 @@ Se corren todos y recién después se decide; cualquier hallazgo es un 1 y la co
   con opciones en el medio, `node --test <ruta>.js` o `bash -x <ruta>.sh`— tiene que resolver a un archivo de la copia. Los marcadores con un solo sentido se resuelven (`<skill>` es la skill del `.md`,
   `<arnés>` el arnés, `<repo>` en un comando del arnés es el arnés); una variable u otro marcador no se juzgan.
 - **Nombres viejos**: ningún archivo que sale puede nombrar la ruta vieja **completa** de un archivo o una
-  carpeta del mapa de renombres (salvo `guides/maintaining/nombres-en-ingles.md`, que explica la convención): afuera ese archivo no
+  carpeta del mapa de renombres (salvo `guides/maintaining/english-names.md`, que explica la convención): afuera ese archivo no
   existe. Se resuelve nombrando el nuevo.
 - **El detector**, una vez por repo con `--base` en su raíz (los `permitidos` valen igual que sobre el interno):
   todos en cero, ningún archivo excluido y la cuenta exacta; después, sobre las **rutas** de la copia (un nombre en una

@@ -70,6 +70,15 @@ try { const ev = JSON.parse(payload || '{}'); cmd = (ev.tool_input || {}).comman
 const az = require('../lib/az-pr.js');
 // los prefijos que corren el resto de la orden: el pedido de un conector se lee detrás de ellos
 const PREFIJOS_DE_ORDEN = new Set(['sudo', 'env', 'command', 'exec', 'nohup', 'time', 'nice']);
+// las opciones de un solo guion que llevan valor, por prefijo: se saltean con su valor, porque si no el valor se toma
+// por el programa y el pedido pasa sin mirar. Cada prefijo tiene las suyas (`sudo -S` no lleva valor y `env -S` sí)
+const OPCIONES_CON_VALOR = {
+  sudo: /^-[ugpChDRrtTU]$/,
+  env: /^-[uC]$/,
+  nice: /^-n$/,
+  time: /^-[of]$/,
+  exec: /^-a$/,
+};
 const constancia = require('../lib/guard-record.js');
 let cwdDelEvento = ''; try { cwdDelEvento = String(JSON.parse(payload || '{}').cwd || ''); } catch { /* sin cwd */ }
 
@@ -167,7 +176,8 @@ function pedidosDeOtrosConectores(comando, cwd) {
     while (i < t.length) {
       if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(t[i])) { i++; continue; }
       if (!PREFIJOS_DE_ORDEN.has(t[i])) break;
-      for (i++; i < t.length && /^-/.test(t[i]); ) i += /^-[nuCgpgh]$/.test(t[i]) ? 2 : 1;
+      const conValor = OPCIONES_CON_VALOR[t[i]];
+      for (i++; i < t.length && /^-/.test(t[i]); ) i += conValor && conValor.test(t[i]) ? 2 : 1;
     }
     const bin = require('path').basename(String(t[i] || '').replace(/\\/g, '/')).replace(/\.(exe|cmd)$/i, '');
     for (const d of crean) {
@@ -370,7 +380,7 @@ function bloquear(bloqueos) {
 // El perfil por modelo (lib/control-profile.js): si el dueño relajó este control para el perfil del modelo de esta
 // sesión, no frena y lo anota como `paso-por-perfil`, para que la tabla de controles lo siga contando. Sin relajación,
 // sin modelo o con cualquier duda, frena como siempre.
-let perfil = { on: true };
+let perfil;
 try { perfil = require(require('path').join(__dirname, '..', 'lib', 'control-profile.js')).decide({ control: 'pr-uno-por-repo', sessionId: sesion }); } catch { perfil = { on: true }; }
 if (perfil.aviso) console.error(`[pr-uno-por-repo] ${perfil.aviso}`);
 if (!perfil.on) {
