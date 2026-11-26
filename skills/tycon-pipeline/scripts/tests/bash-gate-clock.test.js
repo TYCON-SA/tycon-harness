@@ -208,7 +208,7 @@ test('T7 BashGateClock_SlowOrCut_LogsWhereItWas — el freno lento o cortado ano
   let r = c.correr('slow', 'ls', doce);
   assert.deepStrictEqual([r.status, r.stdout], [0, 'largo 2'], r.stderr);
   const lento = c.registro();
-  assert.match(lento, /^\[[^\]]+\] on-bash-write-gate LENTO: decidió en \d+ ms, con un tope de 12 s; el paso más lento: leyendo un guion de juguete \(\d+ ms\)\n/);
+  assert.match(lento, /^\[[^\]]+\] on-bash-write-gate LENTO: decidió en \d+ ms, con un tope de 12 s; el paso más lento: leyendo un guion de juguete \(\d+ ms\); la máquina: [^\n]+\n/);
   // tardar no es fallar: el aviso de arranque no lo cuenta
   assert.strictEqual(contar(lento, Date.parse(/^\[([^\]]+)\]/.exec(lento)[1])).size, 0, lento);
   fs.rmSync(c.log, { force: true });
@@ -219,6 +219,30 @@ test('T7 BashGateClock_SlowOrCut_LogsWhereItWas — el freno lento o cortado ano
   r = c.correr('healthy');
   assert.strictEqual(r.status, 0);
   assert.strictEqual(c.registro(), '', 'uno rápido no deja renglón');
+});
+
+// 🔴 Falla con: el corte del reloj o el renglón de lo lento no dicen cómo estaba la máquina, y no se distingue una
+// máquina saturada de un freno lento.
+test('T8 BashGateClock_SlowOrCut_LogsTheMachineLoad — el corte y lo lento anotan la memoria libre y la carga', (t) => {
+  const c = corral(t);
+  const MAQUINA = /; la máquina: memoria libre \d+ % \(\d+(?:,\d)? de \d+(?:,\d)? GB\)(?:, carga de 1 min \d+(?:,\d\d)? con \d+ núcleos)?\n/;
+  let r = c.correr('slow', 'ls', { TOY_SECONDS: '12' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(c.registro(), /on-bash-write-gate LENTO: .*\(\d+ ms\); la máquina: /);
+  assert.match(c.registro(), MAQUINA);
+  fs.rmSync(c.log, { force: true });
+  r = c.correr('slow-hung');
+  noDecidio(r, 'lento y trabado');
+  assert.match(c.registro(), /FRENÓ POR FALLA: no contestó en 2 s; el último paso: leyendo un guion de juguete; la máquina: /);
+  assert.match(c.registro(), MAQUINA);
+  // en Windows la carga no se mide: el renglón dice la memoria y nada más
+  const { cargaDeLaMaquina } = require(path.join(SCRIPTS, 'lib', 'gate-clock.js'));
+  const win = cargaDeLaMaquina({ freemem: () => 3 * 2 ** 30, totalmem: () => 16 * 2 ** 30, loadavg: () => [0, 0, 0], cpus: () => [1, 2] });
+  assert.strictEqual(win, 'la máquina: memoria libre 19 % (3 de 16 GB)');
+  const mac = cargaDeLaMaquina({ freemem: () => 1.5 * 2 ** 30, totalmem: () => 16 * 2 ** 30, loadavg: () => [7.456, 5, 4], cpus: () => new Array(8) });
+  assert.strictEqual(mac, 'la máquina: memoria libre 9 % (1,5 de 16 GB), carga de 1 min 7,46 con 8 núcleos');
+  // sin poder medir, no rompe el renglón
+  assert.strictEqual(cargaDeLaMaquina({ freemem: () => { throw new Error('x'); } }), 'la máquina: no se pudo medir');
 });
 
 // 🔴 Falla con: el freno de verdad no anota sus pasos, y el renglón de lo lento no dice dónde se fue el tiempo.
