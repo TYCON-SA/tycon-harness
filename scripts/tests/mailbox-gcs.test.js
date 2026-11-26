@@ -799,12 +799,15 @@ for (const args of [[], ['--overwrites-report']]) {
       Object.assign(env, { HOME: home, USERPROFILE: home, TYCON_HOME: path.join(home, '.tycon'), TYCON_PROFILE: '0', TYCON_MAILBOX: '1', TYCON_MAILBOX_JSON: ruta,
         TYCON_MAILBOX_URL_BASE: 'http://127.0.0.1:1', TYCON_MAILBOX_DIR: path.join(base, 'espejo'), TYCON_AZ_BIN: path.join(base, 'no-hay-az'), TYCON_GCLOUD_BIN: path.join(base, 'no-hay-gcloud') });
       const r = spawnSync(process.execPath, [BAJAR, '--json', ...args], { env, encoding: 'utf8' });
-      assert.ok(!`${r.stdout}\n${r.stderr}`.includes(SECRETO_EN_PROVIDER), 'el secreto salió en la salida');
+      const salida = `${r.stdout}\n${r.stderr}`;
+      // ni entero ni un tramo: un corte a 20 caracteres también lo dejaría a la vista
+      for (let i = 0; i + 12 <= SECRETO_EN_PROVIDER.length; i += 4) assert.ok(!salida.includes(SECRETO_EN_PROVIDER.slice(i, i + 12)), `un tramo del secreto salió en la salida (desde ${i})`);
       const conSecreto = [];
       const andar = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) andar(p); else if (p !== ruta && fs.readFileSync(p, 'utf8').includes(SECRETO_EN_PROVIDER)) conSecreto.push(p); } };
       andar(base);
       assert.deepStrictEqual(conSecreto, [], 'el secreto quedó en un archivo');
-      assert.notStrictEqual(r.status, 0, 'una llave con un proveedor que no es un nombre no baja nada');
+      assert.strictEqual(r.status, 1, 'una llave con un proveedor que no es un nombre no baja nada');
+      if (!args.length) assert.strictEqual(JSON.parse(r.stdout).estado, 'no_soportado', r.stdout);
     } finally { fs.rmSync(base, { recursive: true, force: true }); }
   });
 }
@@ -835,3 +838,24 @@ for (const cuerpo of ['{}', '[]', '{"error":{"code":200,"message":"mantenimiento
     }
   });
 }
+
+test('SiteMailbox_RealEmptyBucket_IsEmpty @story-8.336 — el listado de un bucket vacío (kind sin items) es el buzón vacío', async () => {
+  const http = require('http');
+  const srv = http.createServer((req, res) => {
+    res.setHeader('content-type', 'application/json');
+    if (req.url.startsWith('/computeMetadata/')) { res.end(JSON.stringify({ access_token: 'token-de-juguete', expires_in: 3600 })); return; }
+    res.end(JSON.stringify({ kind: 'storage#objects' }));
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gcs-vacio-'));
+  const antes = process.env.GCE_METADATA_HOST;
+  try {
+    process.env.GCE_METADATA_HOST = `127.0.0.1:${srv.address().port}`;
+    const r = await conector().bajarBuzon({ buzon: BUZON, credencial: { managed: true }, urlBase: `http://127.0.0.1:${srv.address().port}`, dir, log: () => {}, budgetMs: 30000 });
+    assert.strictEqual(r.codigo, 0, JSON.stringify(r.res));
+    assert.strictEqual(r.res.blobs, 0);
+  } finally {
+    if (antes === undefined) delete process.env.GCE_METADATA_HOST; else process.env.GCE_METADATA_HOST = antes;
+    srv.close(); fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

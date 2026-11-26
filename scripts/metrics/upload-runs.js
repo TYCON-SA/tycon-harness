@@ -521,7 +521,11 @@ function proveedorDeLaLlave(ruta = rutaConfig()) {
     if (p === undefined || p === 'azure-blob') return null;
     // se repite en motivos y registros: sólo si tiene la forma de un nombre de proveedor. Un valor cualquiera puede ser el
     // secreto puesto por error en ese campo, y un secreto HMAC tiene 40 caracteres: no se dice, y ningún conector lo atiende
-    return typeof p === 'string' && FORMA_PROVEEDOR.test(p) ? p : PROVEEDOR_SIN_NOMBRE;
+    if (typeof p !== 'string') return PROVEEDOR_SIN_NOMBRE;
+    // el de un conector de buzón instalado se dice siempre, sea cual sea su largo (el manifiesto no le pone tope)
+    let instalado = false;
+    try { instalado = require(path.join(__dirname, '..', 'lib', 'integrations.js')).mailboxConnectors().some((c) => c.provider === p); } catch (_) { /* sin conectores: sólo la forma */ }
+    return instalado || FORMA_PROVEEDOR.test(p) ? p : PROVEEDOR_SIN_NOMBRE;
   } catch (_) { return null; }
 }
 // la forma de un nombre de proveedor (`gcs`, `azure-blob`), y lo que se dice en su lugar cuando no la tiene
