@@ -56,7 +56,7 @@
  * Por qué NO usa TYCON_GUIDES_DIR: el banco de pruebas la apunta al repo REAL para que otros hooks
  * lean sus scripts; un merge automático contra el repo real desde un caso del banco sería un efecto
  * colateral. El override del banco es TYCON_GUIDES_HEAL_REPO, explícito. Sin override, el clon es
- * el que apunta el lugar ~/.claude/tycon-harness (o el nombre viejo) bajo el HOME de la sesión (lib/harness-path.js,
+ * el que apunta el lugar del arnés (o el nombre viejo) bajo el HOME de la sesión (lib/harness-path.js,
  * modo «sólo enlace») — en el sandbox no existe, y no hacer nada es lo correcto.
  *
  * Fail-open total. Off: TYCON_GUIDES_HEAL=0. */
@@ -280,14 +280,14 @@ function advance(git, dir) {
 
 /**
  * La guarda. El clon del arnés trae `skills/`, y
- * en una máquina de un solo árbol es EL LUGAR del que salen las skills (`~/.claude/agent-skills` y `~/.claude/skills`
+ * en una máquina de un solo árbol es EL LUGAR del que salen las skills (el enchufe `agent-skills` y `~/.claude/skills`
  * apuntan a él). Si `main` vuelve a un árbol de antes de la unión —el plan de retorno—, avanzar ese clon deja a la
  * máquina sin skills: sin pipeline, sin revisores, y sin esta misma sanadora. Esta pieza es el tercer actualizador (los
  * otros dos, `harness.js update` y el respaldo en shell del arranque, tienen la misma guarda): no avanza, y lo dice.
  * En la máquina de dos clones las skills salen del OTRO clon, y éste sigue a `main` como siempre.
  *
  * Tres respuestas, como `bringsSkills`: `comes: true` · `false` · `null` = no se pudo mirar (`error` dice qué y por qué).
- * Si `~/.claude/agent-skills` no se deja resolver (un enlace a una carpeta sin permisos, un disco que
+ * Si el enchufe `agent-skills` no se deja resolver (un enlace a una carpeta sin permisos, un disco que
  * no responde) no puede leerse como «son dos clones», porque la sanadora avanzaría a una punta sin skills.
  * Un ENOENT sí es una respuesta: ese enlace no está.
  * @returns {{comes: boolean|null, error: string|null}}
@@ -313,7 +313,7 @@ function skillsOrigin(dir, home) {
   };
   // un «sí» por cualquiera de los dos caminos alcanza; un «no pude mirar» sólo pesa si ninguno dijo que sí
   let blind = null;
-  const agentSkills = real(path.join(home, '.claude', 'agent-skills'));
+  const agentSkills = real(require('./state-dir.js').installedSkillsDir(home));
   if (agentSkills.error) blind = agentSkills.error;
   else if (agentSkills.at) {
     const c = isClone(agentSkills.at);

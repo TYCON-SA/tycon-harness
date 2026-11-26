@@ -15,6 +15,10 @@
  *
  * Avisa, no frena: el privado sólo puede sumar la llamada a un control nuevo cuando el arnés instalado ya lo trae (su
  * arranque frena si falta un guion). Frenar el commit del público dejaría a los dos esperándose.
+ *
+ * Salvo un corte: la comparación tiene su tope (`TYCON_PRIVATE_INVENTORY_TIMEOUT_MS`, 240 s; en reposo tarda de 20 a 40 s,
+ * casi todo en `check-inventory`), y si se pasa o la corta una señal desde afuera sale «cortado». Ahí no se sabe si miró
+ * algo, y quien la usa frena: un corte que avisa y deja pasar es un control que no corrió.
  */
 const fs = require('fs');
 const os = require('os');
@@ -24,6 +28,18 @@ const { spawnSync } = require('child_process');
 const INVENTORY = 'scripts/ci/controls-from-base.json';
 const FORMS = '.tycon/internal-forms.json';
 const DEFAULT_REF = 'origin/main';
+const DEFAULT_TIMEOUT_MS = 240000;
+
+/** El tope de la comparación entera, en ms: el de la variable si es un entero positivo; si no, el de siempre. */
+function tope(env) {
+  const v = Number((env || {}).TYCON_PRIVATE_INVENTORY_TIMEOUT_MS);
+  return Number.isInteger(v) && v > 0 ? v : DEFAULT_TIMEOUT_MS;
+}
+/** ¿El proceso terminó por un corte (su tope o una señal), y no por su cuenta? */
+function cortado(r) { return !!(r.signal || (r.error && r.error.code === 'ETIMEDOUT')); }
+function errorDeCorte(que, r) {
+  return Object.assign(new Error(`${que} cortado (${r.signal || (r.error && r.error.code)})`), { corte: true });
+}
 
 /** ¿El commit toca algo que cambia la comparación? El inventario o el pre-commit del público. */
 function toca(rutas, hook = '.githooks/pre-commit-checks') {
@@ -39,8 +55,9 @@ function sinRepo() {
   return e;
 }
 
-function git(root, args, { input, env, ajeno = false } = {}) {
-  const r = spawnSync('git', ['-C', root, '-c', 'core.quotePath=false', ...args], { input, encoding: 'utf8', env: { ...(ajeno ? sinRepo() : process.env), ...(env || {}) }, maxBuffer: 256 * 1024 * 1024, windowsHide: true });
+function git(root, args, { input, env, ajeno = false, timeout } = {}) {
+  const r = spawnSync('git', ['-C', root, '-c', 'core.quotePath=false', ...args], { input, encoding: 'utf8', env: { ...(ajeno ? sinRepo() : process.env), ...(env || {}) }, maxBuffer: 256 * 1024 * 1024, windowsHide: true, timeout });
+  if (cortado(r)) throw errorDeCorte(`git ${args[0]}`, r);
   if (r.error) throw new Error(`git ${args[0]}: ${r.error.message}`);
   return r;
 }
@@ -106,14 +123,20 @@ function comparar({ repo, privado = null, ref = DEFAULT_REF, env = process.env }
   if (c.problem) return { ...base, estado: 'no-pude', motivo: c.problem };
   const guion = path.join(repo, 'scripts', 'ci', 'run-base-controls.sh');
   if (!fs.existsSync(guion)) return { ...base, estado: 'no-pude', motivo: 'este árbol no trae scripts/ci/run-base-controls.sh' };
+  // un solo tope para todo: lo que queda de él se le da a cada proceso
+  const hasta = Date.now() + tope(env);
+  const resto = () => Math.max(1, hasta - Date.now());
+  const corte = (motivo) => ({ ...base, estado: 'cortado', motivo });
   let commit; let fecha;
   try {
     if (git(c.path, ['rev-parse', '--verify', '-q', `${ref}^{commit}`], { ajeno: true }).status !== 0) return { ...base, estado: 'no-pude', motivo: `${ref} no está en el clon privado ${c.path}` };
     fecha = gitOk(c.path, ['log', '-1', '--format=%cs', ref], { ajeno: true });
     // con su declaración: la copia propia del pre-commit que delega en el gancho público vale sólo si está declarada
     commit = arbolArmado(repo, c.path, ref, [...propias(c.path, ref), FORMS]);
-  } catch (e) { return { ...base, estado: 'no-pude', motivo: e.message }; }
-  const r = spawnSync('bash', [guion, 'check-inventory', '--root', repo, '--ref', commit], { encoding: 'utf8', env: sinRepo(), windowsHide: true });
+  } catch (e) { return e && e.corte ? corte(e.message) : { ...base, estado: 'no-pude', motivo: e.message }; }
+  if (Date.now() >= hasta) return corte(`se pasó de su tope (${tope(env)} ms) antes de comparar`);
+  const r = spawnSync('bash', [guion, 'check-inventory', '--root', repo, '--ref', commit], { encoding: 'utf8', env: sinRepo(), windowsHide: true, timeout: resto() });
+  if (cortado(r)) return { ...corte(r.signal && !r.error ? `check-inventory cortado por una señal (${r.signal})` : `check-inventory se pasó de su tope (${tope(env)} ms)`), fecha };
   const salida = `${r.stdout || ''}${r.stderr || ''}`.trim();
   if (r.status === 0) return { ...base, fecha, estado: 'cuadra' };
   if (r.status !== 1) return { ...base, fecha, estado: 'no-pude', motivo: salida.split('\n').pop() || `check-inventory salió ${r.status}` };
@@ -132,8 +155,9 @@ function aviso(r) {
       '   .githooks/pre-commit-checks: entra cuando éste esté en el arnés instalado (antes, su arranque lo frena).',
     ].join('\n');
   }
+  if (r.estado === 'cortado') return `⛔ el inventario contra el pre-commit del privado: la comparación quedó cortada (${r.motivo}), así que no sé si miró algo. Volvé a commitear; si se vuelve a cortar con la máquina cargada, subí el tope con TYCON_PRIVATE_INVENTORY_TIMEOUT_MS (en ms).`;
   if (r.estado === 'no-pude') return `⚠️  el inventario contra el pre-commit del privado: no pude mirar (${r.motivo}). Lo mira la revisión de la noche.`;
   return null;
 }
 
-module.exports = { INVENTORY, DEFAULT_REF, toca, comparar, aviso };
+module.exports = { INVENTORY, DEFAULT_REF, DEFAULT_TIMEOUT_MS, toca, comparar, aviso };

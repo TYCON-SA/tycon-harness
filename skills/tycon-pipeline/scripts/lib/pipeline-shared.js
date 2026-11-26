@@ -132,7 +132,7 @@ function anotarEnMarker(campos, cambio) {
 
 const { matchGlob } = require('./match-glob.js');   // la comparación de rutas contra globs (también la usa la lista de deprecados)
 
-// Lee el marker de ESTA sesión desde ~/.claude/.tycon-pipeline/active/<sid>.json
+// Lee el marker de ESTA sesión desde ~/.tycon/state/active/<sid>.json
 // (read-only — pipeline.js no muta marker; eso lo hace marker.js).
 function readSessionMarker() {
   const sid = sessionIdFileKey();

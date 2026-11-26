@@ -75,7 +75,7 @@ function guidesByName(treeDir, problems = []) {
 
 /**
  * Las guías que cita el texto de un paso, en el orden en que aparecen: `guides/….md` (también bajo
- * `~/.claude/tycon-harness/`), `story-format.md` y una guía nombrada sola (`test-execution-discipline.md`), que se
+ * `~/.tycon/harness/`), `story-format.md` y una guía nombrada sola (`test-execution-discipline.md`), que se
  * reconoce si existe con ese nombre bajo `guides/` del árbol.
  */
 function citedGuides(text, treeDir = null, porNombreDado = null) {
