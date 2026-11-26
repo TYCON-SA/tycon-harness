@@ -169,6 +169,8 @@ function handle(event) {
   // 🔴 `Edit` TAMBIÉN: con `tool_name !== 'Write'` el hook sólo vería la CREACIÓN del artefacto y nunca su
   // edición — que es la forma normal de cambiar un mapa de navegación ya existente.
   if (!event || (event.tool_name !== 'Write' && event.tool_name !== 'Edit')) return null;
+  // el destino de un `*** Move to:` de Codex: su sección del parche es la del origen, que ya se mira
+  if (event.tool_input?.move_from) return null;
   const filePath = String(event.tool_input?.file_path || '').replace(/\\/g, '/');
   if (!/\/specs\/planning-artifacts\/[^/]+\.md$/.test(filePath)) return null;
   const nombre = filePath.split('/').pop();
