@@ -71,6 +71,7 @@ const LEVELS_EN = Object.freeze({
   'browser-test:prepare': 'prepare the browser test',
   'adhoc-lane': 'open a quick fix without a story, within the quota',
   'compare-waiver': 'exempt a command the story modifies from the comparison with main',
+  'write-after-release': 'release the brake that follows a failed look at what a command wrote (never the stopped session: only the person, or the designated coordinator if the profile adds it to approvals.delegated_signing)',
   'refresh-after-main': 're-sign the controls after pulling main, with no change of your own',
   'save:sensible': 'save when a commit touches something sensitive',
   'adhoc-lane:sobre-cupo': 'open a quick fix that goes past the file limit of the short path, though a story is recommended (only implementation files count, not tests or guides)',
@@ -123,6 +124,7 @@ const LEVELS = Object.freeze([
   ['refresh-after-main', 1, MANT, 'refirmar los controles tras traer main, sin cambio propio'],
   ['lost-run:particion', 1, AMBOS, 'cerrar una ejecución perdida que la partición de su historia en tandas dejó sin objeto (delegable sólo si el perfil la suma a approvals.delegated_signing)'],
   ['save:sensible', 2, AMBOS, 'guardar cuando un commit toca algo de lo sensible'],
+  ['write-after-release', 2, AMBOS, 'liberar el freno que sigue a una mirada fallida de lo que escribió un comando (nunca la sesión frenada: sólo la persona, o la coordinadora designada si el perfil la suma a approvals.delegated_signing)'],
   ['adhoc-lane:datos', 2, AMBOS, 'dejar pasar un arreglo rápido que cambia de dónde sale un dato o quién lo ve, sin historia (sólo el click del dueño)'],
   ['adhoc-lane:guardado-ajeno', 2, AMBOS, 'dejar pasar una vez un guardado ajeno a un camino corto que espera sus revisores, con lo que guarda a la vista (el click o la terminal de una persona, o la coordinadora si el perfil se lo delega)'],
   ['autonomy-resume', 2, AMBOS, 'volver al modo autónomo una ejecución que el control de cierre detuvo, con las vueltas en cero (sólo el click o la terminal del dueño)'],
@@ -181,7 +183,7 @@ const NOT_DELEGATED = Object.freeze(['save:sensible']);
 const DELEGABLE_EXCEPTIONS = Object.freeze(['runtime-waiver', 'manual-test', 'escape:ALLOW_DOD_EVIDENCE_WRITE', 'escape:trust-ran',
   'lost-run', 'escape:cerrar-la-ejecucion', 'escape:cerrar-como-deuda', 'escape:rojo-esperado-de-la-matriz',
   'escape:TYCON_STATUS_GATE', 'escape:cambiar-el-estado', 'escape:set-autonomous',
-  'adhoc-lane:guardado-ajeno', 'critical-waiver', 'escape:force-manual', 'escape:red-control-test-edit']);
+  'adhoc-lane:guardado-ajeno', 'critical-waiver', 'escape:force-manual', 'escape:red-control-test-edit', 'write-after-release']);
 // las firmas sólo del dueño que la coordinadora pide para otra sesión sin delegarlas: le llegan al dueño en la pestaña de
 // ella (la ventana o el cuadro), así no tiene que entrar a la sesión que espera. Siguen siendo sólo suyas: el freno no
 // las pasa por la delegación (owner-window.js)
@@ -273,6 +275,7 @@ const SI_SALE_MAL = Object.freeze({
   'critical-waiver': 'un hallazgo crítico entra sin arreglar',
   'compare-waiver': 'el cambio de ese comando entra sin compararse con la versión de main, y una diferencia que nadie declaró puede llegar a main',
   'runtime-waiver': 'un criterio queda sin probar en vivo, y un error puede llegar a producción',
+  'write-after-release': 'la sesión vuelve a correr comandos sin que nadie haya visto lo que escribió el comando que no se pudo mirar',
   'manual-test': 'un criterio queda como probado sin una prueba automática que lo repita',
   'browser-test': 'se prepara la prueba con navegador, o queda sin ella y un error de pantalla puede pasar',
   'lost-run': 'la ejecución se cierra y lo que le faltaba queda sin hacer',
@@ -304,6 +307,7 @@ const APPROVES_EN = {
   'control-change': "approve a change to the repo's controls",
   'critical-waiver': "waive a reviewers' critical finding",
   'compare-waiver': 'exempt a command the story modifies from the comparison with main',
+  'write-after-release': 'release the brake that follows a failed look at what a command wrote',
   'runtime-waiver': 'accept a criterion that cannot be tested live',
   'manual-test': 'mark a criterion as tested by hand',
   'browser-test': 'set up the browser test, or say no to it',
@@ -370,6 +374,7 @@ const SIGNATURES = Object.freeze([
   { id: 'critical-waiver', approves: 'eximir un hallazgo crítico de los revisores', command: 'marker.js waive-critical', otherSession: 'yes', terminal: 'marker.js waive-critical --terminal' },
   { id: 'runtime-waiver', approves: 'aceptar un criterio imposible de probar en vivo', command: 'marker.js runtime-waiver', otherSession: 'yes', terminal: 'marker.js runtime-waiver <historia> --terminal' },
   { id: 'compare-waiver', approves: 'eximir de la comparación con main a un comando que la historia modifica', command: 'marker.js compare-waiver --story <S> --command <candidato> --reason <R>', otherSession: 'yes', terminal: 'marker.js compare-waiver --story <S> --command <candidato> --reason <R> --terminal' },
+  { id: 'write-after-release', approves: 'liberar el freno que sigue a una mirada fallida de lo que escribió un comando', command: 'marker.js release-write-after --for-session <S> --reason <R>', otherSession: 'yes', terminal: 'marker.js release-write-after --for-session <S> --reason <R> --terminal' },
   { id: 'manual-test', approves: 'marcar un criterio como probado a mano', command: 'marker.js mark-tested --acs', otherSession: 'yes', terminal: 'marker.js mark-tested --acs --terminal' },
   { id: 'browser-test', approves: 'preparar la prueba con navegador, o decirle que no', command: 'e2e-setup.js prepare (o defer --no)', otherSession: 'yes', terminal: 'e2e-setup.js prepare --terminal (o defer --no --terminal)' },
   { id: 'lost-run', approves: 'dar por perdida una ejecución y cerrarla', command: 'marker.js clear-session --lost (o restore)', otherSession: 'yes', terminal: 'marker.js clear-session --lost --terminal (o restore --terminal)' },
@@ -471,6 +476,8 @@ const SENSITIVE = Object.freeze([
   'scripts/hooks/safety-guard*', 'skills/tycon-pipeline/scripts/lib/marker-command.js', 'scripts/production/**',
   // el portón de carril: lo que deja editar sin historia
   'skills/tycon-pipeline/scripts/lib/story-gate.js', 'skills/tycon-pipeline/scripts/lib/story-gate-io.js',
+  // la mirada de después: la foto de lo protegido, y el freno que deja cuando no pudo mirar
+  'skills/tycon-pipeline/scripts/lib/protected-photo.js', 'skills/tycon-pipeline/scripts/on-bash-write-after.js',
   // lo que decide si la story está limpia: el pase, los hallazgos, las exenciones y el portón de pruebas
   'skills/tycon-pipeline/scripts/marker.js', 'skills/tycon-pipeline/scripts/pipeline.js',
   // lo que sale de esos dos y del freno de guiones al partirlos sigue siendo sensible: lo que carga un sensible, lo es

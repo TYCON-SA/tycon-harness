@@ -408,6 +408,18 @@ function corridasDeRevisoresTocadas(cmd, cwd, stateDir) {
 }
 
 /**
+ * Lo que el comando borra o mueve de las fotos de lo protegido (`write-photos/`, de cualquier estado): sin la foto, lo
+ * que escribió el comando no se compara con nada. Lo que se escribe ahí lo frena el freno del estado. Sin interruptor.
+ */
+function fotosTocadas(cmd, cwd, stateDir) {
+  const { isWritePhotosRecord } = require('./story-gate.js');
+  const conCd = /(^|[;&|(\s])(?:cd|pushd)\s/.test(String(cmd || ''));
+  const noSeResuelve = (t) => /[\s$`(),'"]/.test(t) || (conCd && !/^(?:\/|~)/.test(t));
+  return zonaTocada(cmd, cwd, stateDir, { carpeta: 'write-photos', nombres: ['write-photos'], pieza: isWritePhotosRecord,
+    enTexto: (t) => noSeResuelve(t) && /(^|[^\w.-])write-photos(?![\w.-])/i.test(t) });
+}
+
+/**
  * Lo que el comando borra o mueve de la revisión automática del plan (`plan-review/`, de cualquier estado): el pedido, el
  * resultado del corredor y la constancia con el veredicto. Moverlo o borrarlo deja otra constancia en su lugar. Lo que
  * se escribe ahí lo frena el freno del estado; pasan sólo `marker.js plan-review` y el corredor del pase del arnés
@@ -1256,4 +1268,4 @@ function comandosPorOtroPrograma(cmd, cwd) {
 }
 
 
-module.exports = { cwdDelComando, carpetasDelComando, relativosDe, resolverCd, destinosBorrados, CD_INICIAL, CD_PERL, cdInicial, palabrasDelEditor, anidadosHasta, borradosProfundos, marcadoresTocados, aprobacionesTocadas, marcasDeTerminalTocadas, lanzadasTocadas, buzonTocado, criticosTocados, corridasDeRevisoresTocadas, revisionDelPlanTocada, zonaTocada, editaEnSitio, destinosDeGuionDeSed, palabrasDelSed, sedsLiterales, FOR_IN, movidosFueraDeMd, todoCorreDespuesDelCd, sinTextoDeHeredocs, sinCuerposDeTexto, PALABRA_CON_ANSI, CADENA_A_LA_ENTRADA, palabrasConAnsi, cuerpoDelShell, comandosAnidados, asignacionesDe, destinosDeCopia, guionesDeShellEscritos, guionesDeShellEnDisco, tuberiasDelRenglon, heredocVaAUnShell, entradaPorCadena, comandosPorOtroPrograma };
+module.exports = { cwdDelComando, carpetasDelComando, relativosDe, resolverCd, destinosBorrados, CD_INICIAL, CD_PERL, cdInicial, palabrasDelEditor, anidadosHasta, borradosProfundos, marcadoresTocados, aprobacionesTocadas, marcasDeTerminalTocadas, lanzadasTocadas, buzonTocado, criticosTocados, corridasDeRevisoresTocadas, fotosTocadas, revisionDelPlanTocada, zonaTocada, editaEnSitio, destinosDeGuionDeSed, palabrasDelSed, sedsLiterales, FOR_IN, movidosFueraDeMd, todoCorreDespuesDelCd, sinTextoDeHeredocs, sinCuerposDeTexto, PALABRA_CON_ANSI, CADENA_A_LA_ENTRADA, palabrasConAnsi, cuerpoDelShell, comandosAnidados, asignacionesDe, destinosDeCopia, guionesDeShellEscritos, guionesDeShellEnDisco, tuberiasDelRenglon, heredocVaAUnShell, entradaPorCadena, comandosPorOtroPrograma };

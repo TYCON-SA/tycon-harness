@@ -80,6 +80,15 @@ test('AutomaticSigning_Tramite_SinVentanaNiCuadro', (t) => {
   assert.match(sinHuella.texto, /no pude leer la huella de esta máquina/);
 });
 
+// 🔴 Falla con: liberar a otra sesión frenada (write-after-release) sale por trámite, sin que nadie mire lo que escribió
+//    el comando: se le adelanta a la coordinadora designada, y el guion después la rechaza.
+test('AutomaticSigning_ReleaseWriteAfterForOtherSession_NotByTramite @story-8.320 @ac-7', (t) => {
+  const casa = casaNueva(t);
+  const r = pedir(casa, `node ${MARKER} release-write-after --for-session ses-b --reason "miré la historia"`, { tramite: DE_TRAMITE });
+  assert.notStrictEqual(r.via, 'automatica', r.texto);
+  assert.ok(!vigentes(casa).some((f) => JSON.parse(fs.readFileSync(path.join(ow.carpeta(casa), f), 'utf8')).via === 'automatica'), 'sin registro de trámite');
+});
+
 test('AutomaticSigning_RefirmaTrasTraerMain_LlevaLaMaquinaYDeQueEsRefirma', (t) => {
   const casa = casaNueva(t);
   const CONTROLES = path.join(RAIZ, 'scripts', 'ci', 'run-base-controls.sh');
