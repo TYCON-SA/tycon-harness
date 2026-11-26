@@ -139,7 +139,7 @@ Una rama que no se borra cuando su pedido entra queda viva para siempre: el 2026
 entradas a `main` entre los dos repos del arnés.
 
 - **Azure DevOps**: un pedido a `main` armado a mano con auto-completar dice explícito si borra la rama; las banderas
-  y el caso del borrador están en `guides/integrations/ado-en-el-nucleo.md`, §«Las convenciones de git». El freno de
+  y el caso del borrador están en `guides/integrations/ado-in-the-core.md`, §«Las convenciones de git». El freno de
   pedidos lo exige; el skill de merge ya lo hace solo.
 - **GitHub** (tarea humana, una vez por repo, la hace quien administra el repo): prender
   **«Automatically delete head branches»** en **Settings → General → Pull Requests**. Ahí no hay bandera que el arnés
