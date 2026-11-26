@@ -405,6 +405,8 @@ function diferencia(antes, despues) {
 
 const RAIZ_ARNES = path.resolve(SCRIPTS, '..', '..', '..');
 const LIB = path.join(SCRIPTS, 'lib');
+// el texto del freno de escrituras: el despachador y sus partes (lib/bash-gate-*.js)
+const textoDelFreno = () => require(path.join(RAIZ_ARNES, 'scripts', 'ci', 'control-size.js')).textoDelFreno(path.join(SCRIPTS, 'on-bash-write-gate.js'));
 /** Los módulos de la partición que hay hoy: `lib/marker-*.js` (sin marker-command.js, que ya existía y es otra cosa). */
 const modulosDeLaParticion = (lib = LIB) => {
   try { return fs.readdirSync(lib).filter((f) => /^marker-.+\.js$/.test(f) && f !== 'marker-command.js').sort(); } catch { return []; }
@@ -590,7 +592,7 @@ test('T4 Marker_UnderLimit_OneJobPerModule @story-8.163 @ac-4', () => {
     for (const r of requiresLocales(archivo)) assert.ok(fs.existsSync(path.join(RAIZ_ARNES, r)), `${m}: carga ${r}, que no existe`);
   }
   // cada parte la lee entera el freno de guiones (por debajo de su tope por archivo)
-  const freno = fs.readFileSync(path.join(SCRIPTS, 'on-bash-write-gate.js'), 'utf8');
+  const freno = textoDelFreno();
   const tope = Number((/const GUION_TOPE = (\d+) \* 1024;/.exec(freno) || [])[1]) * 1024;
   assert.ok(tope > 0, 'el tope por archivo del freno se lee de su texto');
   for (const m of ['../marker.js', ...Object.keys(MODULOS)]) {
@@ -714,9 +716,8 @@ test('T5 BashGate_ReadsMarkerWhole @story-8.163 @ac-5', () => {
   const nombrado = bloque.startsWith(FRENO_ENTERO) ? bloque.split('\n')[2].trim() : null;
   assert.notStrictEqual(nombrado, path.join(copia, 'marker.js'), 'marker.js se lee entero');
   assert.ok(!nombrado || !/[\\/]lib[\\/]marker-[^\\/]+\.js$/.test(nombrado), `un módulo de la partición se lee entero (${nombrado})`);
-  // lo que marker.js ya cargaba y pasa el tope sigue sin leerse entero hasta que se parta el freno: se nombra, no se
-  // esconde (pipeline.js ya está partido)
-  assert.strictEqual(nombrado, path.join(copia, 'on-bash-write-gate.js'), `lo que falta hasta partir el freno (${nombrado})`);
+  // con el freno y pipeline.js partidos, todo lo que marker.js carga se lee entero
+  assert.strictEqual(nombrado, null, `nada queda sin leer entero (${nombrado})`);
 });
 
 /** Una cadena de módulos de juguete: `principal.js` → m1 → … → m<largo>; el último hace `ultimo`. */
@@ -734,7 +735,7 @@ const NO_ESCRIBE = "module.exports = 1 + 1;\n";
 // 🔴 Falla con: el recorrido que corta callado a los 2 niveles o a los 20 archivos (el freno de antes), o que juzga el
 // primer módulo pasado el tope pero no lo que ese módulo carga.
 test('T14 BashGate_DeepModule_BlocksNotCuts @story-8.163 @ac-14', () => {
-  const freno = fs.readFileSync(path.join(SCRIPTS, 'on-bash-write-gate.js'), 'utf8');
+  const freno = textoDelFreno();
   // sin nombre todavía, el de antes: 2 niveles y 20 archivos (el comportamiento da el rojo, no la falta del nombre)
   const niveles = Number((/const RECORRIDO_NIVELES = (\d+);/.exec(freno) || [])[1]) || 2;
   const tope = Number((/const RECORRIDO_ARCHIVOS = (\d+);/.exec(freno) || [])[1]) || 20;
@@ -914,7 +915,7 @@ test('T7 Pipeline_UnderLimit_OneJobPerModule @story-8.163 @ac-7', () => {
   const despachador = path.join(SCRIPTS, 'pipeline.js');
   assert.ok(letras(despachador) < TOPE_LETRAS, `pipeline.js tiene ${letras(despachador)} letras: el tope es ${TOPE_LETRAS}`);
   assert.deepStrictEqual(partesDePipeline(), Object.keys(PARTES_PIPELINE).sort(), 'las partes de pipeline.js son las del plan');
-  const freno = fs.readFileSync(path.join(SCRIPTS, 'on-bash-write-gate.js'), 'utf8');
+  const freno = textoDelFreno();
   const tope = Number((/const GUION_TOPE = (\d+) \* 1024;/.exec(freno) || [])[1]) * 1024;
   assert.ok(tope > 0, 'el tope por archivo del freno se lee de su texto');
   assert.ok(fs.statSync(despachador).size < tope, `pipeline.js pesa ${fs.statSync(despachador).size} bytes y el freno lee enteros hasta ${tope}`);
