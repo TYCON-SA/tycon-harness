@@ -67,7 +67,17 @@ try { const ev = JSON.parse(payload || '{}'); cmd = (ev.tool_input || {}).comman
 // casero que no entienda la forma `--org=…`, ni `--project="…"`, ni las formas cortas `-p/-r/-s/-t`
 // cae en «sin datos» y sale 0 EN SILENCIO — verde sin haber mirado. El compartido existe
 // porque un regex de una línea falla con facilidad.
-const az = require('../lib/command-readers.js').lectorDe('az');
+let az = null;
+let sinLector = null;
+try { az = require('../lib/command-readers.js').lectorDe('az'); } catch (e) { sinLector = String((e && e.message) || e).slice(0, 200); }
+// sin el lector no se sabe qué hace el comando: si nombra a `az` o a `gh`, frena con el motivo
+if (sinLector) {
+  if (typeof cmd === 'string' && /(^|[^\w-])(az|gh)(\.exe|\.cmd)?([^\w-]|$)/i.test(cmd)) {
+    process.stderr.write(`[pr-uno-por-repo] 🔒 no pude leer el comando: ${sinLector}. Lo que no pude leer no está aprobado: revisá la instalación del arnés (el conector del lector) y repetí.\n`);
+    process.exit(2);
+  }
+  process.exit(0);
+}
 // los prefijos que corren el resto de la orden: el pedido de un conector se lee detrás de ellos
 const PREFIJOS_DE_ORDEN = new Set(['sudo', 'env', 'command', 'exec', 'nohup', 'time', 'nice']);
 // las opciones de un solo guion que llevan valor, por prefijo: se saltean con su valor, porque si no el valor se toma

@@ -141,7 +141,12 @@ const { execFileSync } = require('child_process');
 // Lector COMPARTIDO de `az repos pr`: un regex propio que sólo entienda `--target-branch main` no
 // registraría un merge por PR con la forma corta `-t main`, y no habría retrospectiva — en silencio.
 // Se copia al sandbox del banco junto con el hook (setups).
-const az = require(path.join(__dirname, '..', 'lib', 'command-readers.js')).lectorDe('az');
+// sin el lector de az (falta su conector o no carga) sigue con lo neutro: no ve los pedidos de az, y el resto anda
+const az = (() => {
+  try { return require(path.join(__dirname, '..', 'lib', 'command-readers.js')).lectorDe('az'); } catch (_) {
+    return { ...require(path.join(__dirname, '..', 'lib', 'command-tokens.js')), pareceAzPr: () => false, verboDePr: () => null };
+  }
+})();
 // Resolutor COMPARTIDO de "a qué repo apunta este git".
 // El repo se calcula con el `cd` y el `-C` del propio comando, no con el cwd de la SESIÓN: con el cwd,
 // `cd ~/.claude/agent-skills && git push origin main` se anotaría contra el repo de la sesión con la sha

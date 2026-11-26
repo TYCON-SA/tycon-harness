@@ -62,3 +62,30 @@ test('CommandReaders_DosLectoresParaElMismoPrograma: ninguno tapa al otro — el
   assert.strictEqual(C.buscarLector('gh', { raiz: d }), null);
   assert.throws(() => C.lectorDe('gh', { raiz: d }), /más de un lector de comandos para gh[\s\S]*aaa[\s\S]*github/);
 });
+
+// 🔴 Falla con: un árbol sin el conector del lector de `az` (o con un lector roto) hace que los frenos de pedidos se
+// caigan con salida 1, que deja pasar el comando, en vez de frenarlo con su motivo.
+test('CommandReaders_SinElLectorDeAz_LosFrenosDePedidosFrenan: el freno dice que no pudo leer y frena; lo que no nombra a az ni a gh pasa', () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'command-readers-sin-az-'));
+  dirs.push(d);
+  // el arnés sin el conector de Azure DevOps: el núcleo y el lector de gh
+  for (const rel of ['scripts/lib', 'scripts/setup', 'integrations/github']) fs.cpSync(path.join(ROOT, rel), path.join(d, rel), { recursive: true });
+  fs.mkdirSync(path.join(d, 'scripts', 'hooks'), { recursive: true });
+  for (const h of ['pr-auto-complete-guard.js', 'pr-one-per-repo-guard.js', 'retro-pending.js']) fs.copyFileSync(path.join(ROOT, 'scripts', 'hooks', h), path.join(d, 'scripts', 'hooks', h));
+  const casa = fs.mkdtempSync(path.join(os.tmpdir(), 'command-readers-casa-'));
+  dirs.push(casa);
+  const correr = (hook, command, env = {}) => require('child_process').spawnSync(process.execPath, [path.join(d, 'scripts', 'hooks', hook)], {
+    input: JSON.stringify({ session_id: 's1', cwd: casa, hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command } }),
+    encoding: 'utf8', env: { PATH: process.env.PATH, HOME: casa, ...env },
+  });
+  const pedido = 'az repos pr create --target-branch main --title x';
+  for (const [hook, env] of [['pr-auto-complete-guard.js', {}], ['pr-one-per-repo-guard.js', { TYCON_PR_ONE_PER_REPO: '1' }]]) {
+    const r = correr(hook, pedido, env);
+    assert.strictEqual(r.status, 2, `${hook}: ${r.status} ${r.stderr}`);
+    assert.match(r.stderr, /no pude leer el comando/, hook);
+    assert.strictEqual(correr(hook, 'ls -la', env).status, 0, `${hook}: lo que no nombra a az ni a gh pasa`);
+  }
+  // retro-pending anota, no frena: sin el lector sigue andando
+  const r = correr('retro-pending.js', pedido);
+  assert.notStrictEqual(r.status, 1, `retro-pending se cayó: ${r.stderr}`);
+});

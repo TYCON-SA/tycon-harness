@@ -48,8 +48,11 @@ const path = require('path');
 // laboratorios copian carpetas sueltas de scripts/ sin scripts/setup/; ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
-// el lector de `az` lo trae su conector, pedido por el programa
-const az = require('../lib/command-readers.js').lectorDe('az');
+// el lector de `az` lo trae su conector, pedido por el programa; si falta o no carga, se dice después de leer la
+// entrada y frena (abajo)
+let az = null;
+let sinLector = null;
+try { az = require('../lib/command-readers.js').lectorDe('az'); } catch (e) { sinLector = String((e && e.message) || e).slice(0, 200); }
 const constanciaFreno = require('../lib/guard-record.js');
 
 const TAG = '[pr-sin-auto-complete]';
@@ -71,6 +74,15 @@ try {
 } catch {
   // No pudo leer: no frena —un freno que rompe la sesión por un bug propio se apaga— pero lo dice.
   console.error(`${TAG} no pude leer la entrada del hook: no freno, pero tampoco miré.`);
+  process.exit(0);
+}
+// Sin el lector no se sabe qué hace el comando: si nombra a `az` o a `gh`, frena con el motivo; si no, no es asunto de
+// este freno
+if (sinLector) {
+  if (typeof cmd === 'string' && /(^|[^\w-])(az|gh)(\.exe|\.cmd)?([^\w-]|$)/i.test(cmd)) {
+    console.error(`${TAG} 🔒 no pude leer el comando: ${sinLector}. Lo que no pude leer no está aprobado: revisá la instalación del arnés (el conector del lector) y repetí.`);
+    process.exit(2);
+  }
   process.exit(0);
 }
 // Azure DevOps: crear o actualizar un pedido. GitHub: un `gh pr merge` que aplasta, reordena o saca la entrada
