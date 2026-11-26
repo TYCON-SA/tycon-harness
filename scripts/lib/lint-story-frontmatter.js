@@ -43,6 +43,11 @@
  *   6. El nombre del campo del pedido de trabajo: una story que NACE con `ado_work_item:` (el nombre viejo) y sin
  *      `work_item:` recibe un aviso; no frena, y a las que ya existían no se les dice nada (el viejo se sigue leyendo,
  *      scripts/lib/platform/work-item-field.js).
+ *  10. Una tanda `done` con criterios, tareas o pruebas en `acs_pending` / `tasks_pending` / `tests_pending`
+ *      (story-format.md §1.1: esas listas valen en `blocked` o `pending`). La historia dice que terminó y que le falta
+ *      trabajo. Frena si el commit la introduce (historia nueva, o tanda que no estaba así en el último commit ni, en un
+ *      merge, en la otra rama; una historia movida se compara con su ruta de origen); si ya estaba así, o no se puede
+ *      saber, avisa. Las tandas las lee scripts/lib/pipelines-block.js, el mismo lector del cierre de tanda.
  *   9. Las INTENCIONES (`*.intent.md`, y el `intent.md` de una carpeta de corrida si se lo pasan: git ignora esas
  *      carpetas): las lee `lib/intent.js` del pipeline. Cada problema frena, nueva o vieja, con la fila y la columna, y
  *      una intención en `approved` con algo que bloquea también. Sin el lector la regla no corre y se avisa; con el
@@ -166,6 +171,46 @@ try { siblingsOf = require(path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'l
 // los valores de `riesgo_alto_por:` viven con la regla de riesgo (lib/risk-paths.js); sin ella, la regla no corre y se dice
 let riskPaths;
 try { riskPaths = require(path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'lib', 'risk-paths.js')); } catch { riskPaths = null; }
+const { tandasDoneConPendientes } = require('./pipelines-block.js');
+/** Cuántas tandas `done` con pendientes hay de cada nombre. */
+function porNombre(tandas) {
+  const m = new Map();
+  for (const t of tandas) m.set(t.name, (m.get(t.name) || 0) + 1);
+  return m;
+}
+/**
+ * Las versiones anteriores de la historia contra las que se mide «lo nuevo»: la del último commit (por su ruta, o por la
+ * ruta de la que viene si este commit la movió) y, en un merge, también la de la otra rama. `[]` si no estaba en ninguna.
+ * `null` si no se puede saber: entonces nada cuenta como nuevo (un freno que no puede decidir no frena).
+ */
+function versionesAnteriores(abs) {
+  // dentro de un commit git deja GIT_DIR y compañía en el entorno, y le ganan a -C: se sacan
+  const opts = { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000, env: sinGitDelPadre(), windowsHide: true };
+  let raiz;
+  try { raiz = fs.realpathSync(execFileSync('git', ['-C', path.dirname(abs), 'rev-parse', '--show-toplevel'], opts).trim()); } catch { return null; }
+  const git = (args) => execFileSync('git', ['-C', raiz, '-c', 'core.quotepath=false', ...args], opts);
+  let rel = path.relative(raiz, fs.realpathSync(abs)).split(path.sep).join('/');
+  try {
+    // movida en este commit: la versión anterior vive en la ruta de origen (con -z, sin comillas en un nombre con acentos)
+    const campos = git(['diff', '--cached', '-z', '-M', '--name-status', 'HEAD']).split('\0');
+    for (let i = 0; i < campos.length;) {
+      const estado = campos[i++];
+      if (/^R/.test(estado)) { if (campos[i + 1] === rel) rel = campos[i]; i += 2; } else i++;
+    }
+  } catch { /* sin HEAD (repo recién creado): la busca por su ruta y no la encuentra */ }
+  const out = [];
+  for (const rev of ['HEAD', 'MERGE_HEAD']) {
+    let existe = true;
+    try { git(['rev-parse', '-q', '--verify', `${rev}^{commit}`]); } catch { existe = false; }
+    if (!existe) continue;
+    // ls-tree vacío: la ruta no está en esa revisión (una respuesta); una falla de git es «no sé»
+    try {
+      if (git(['ls-tree', rev, '--', rel]).trim() === '') continue;
+      out.push(git(['show', `${rev}:${rel}`]));
+    } catch { return null; }
+  }
+  return out;
+}
 // las intenciones las lee lib/intent.js y nadie más. Sin el archivo (un arnés viejo), la regla no corre y se dice a los
 // gritos; con el archivo y sin poder cargarlo, frena: un lector roto no se toma por «sin lector».
 const INTENT_PATH = path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'lib', 'intent.js');
@@ -767,6 +812,7 @@ function main() {
   }
   let sinCausaExistentes = 0;
   const rutasViejas = [];
+  const tandasViejasConPendientes = [];
   const rutasSinJuzgar = [];
   // las historias que NACEN con el nombre viejo del pedido de trabajo: se avisa, no se frena (el viejo se sigue leyendo)
   const campoViejo = [];
@@ -857,6 +903,35 @@ function main() {
       continue;
     }
 
+    // 10. Una tanda `done` con pendientes (story-format.md §1.1: `acs_pending` vale en `blocked` o `pending`). Lo nuevo
+    //     frena y lo viejo se avisa, como el resto de este control.
+    const contradichas = tandasDoneConPendientes(content);
+    if (contradichas.length) {
+      // de cada nombre, sólo es nueva la que excede lo que ya había en la versión anterior (o en la otra rama, en un merge)
+      const antes = versionesAnteriores(abs);
+      const yaHabia = new Map();
+      for (const v of antes || []) for (const [n, c] of porNombre(tandasDoneConPendientes(v))) yaHabia.set(n, Math.max(yaHabia.get(n) || 0, c));
+      const usadas = new Map();
+      const nuevas = [];
+      const viejas = [];
+      for (const t of contradichas) {
+        const k = (usadas.get(t.name) || 0) + 1;
+        usadas.set(t.name, k);
+        if (antes !== null && k > (yaHabia.get(t.name) || 0)) nuevas.push(t); else viejas.push(t);
+      }
+      const texto = (ts) => ts.map((t) => `${t.name} (${t.cuantos})`).join(', ');
+      if (nuevas.length) {
+        errors.push({
+          rel,
+          problema: `este commit cierra en \`done\` ${nuevas.length === 1 ? 'una tanda' : 'tandas'} con criterios, tareas o pruebas todavía pendientes: ${texto(nuevas)}`,
+          efecto: 'la historia dice que la tanda terminó y que le falta trabajo',
+          arreglo: 'si se probó, pasar esos números a `acs` / `tasks` / `tests` y vaciar `acs_pending` / `tasks_pending` / `tests_pending` a mano; si no, la tanda va en `blocked` o `pending` (story-format.md §1.1)',
+        });
+        continue;
+      }
+      if (viejas.length) tandasViejasConPendientes.push(`${rel}: ${texto(viejas)}`);
+    }
+
     // 4. La causa del reproceso. El por qué de cada rama, en la cabecera del archivo.
     if (!vocab.motivo) {
       const lista = vocab.causas.join(' · ');
@@ -942,6 +1017,11 @@ function main() {
       `${(vocab.causas || []).join(' · ')} (scripts/metrics/rework-causes.json).`);
   }
 
+  if (tandasViejasConPendientes.length) {
+    console.log(`⚠️  ${tandasViejasConPendientes.length} story(s) que ya lo traían tienen una tanda \`done\` con pendientes ` +
+      '(no frenan; si se probó, pasá los números a `acs` / `tasks` / `tests`, y si no, la tanda va en `blocked` o `pending`):');
+    for (const r of tandasViejasConPendientes) console.log(`   ${r}`);
+  }
   if (rutasViejas.length) {
     console.log(`⚠️  ${rutasViejas.length} story(s) que ya existían nombran en \`files_to_modify:\` archivos que no están ` +
       '(no frenan: pudieron moverse después):');

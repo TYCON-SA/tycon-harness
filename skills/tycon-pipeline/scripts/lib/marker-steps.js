@@ -701,6 +701,25 @@ function cmdUpdatePipelineStatus(storyPath, which, newStatus) {
     console.error(`marker.js update-pipeline-status: la tanda ${missingStatus.map((t) => t.name).join(', ')} no tiene línea \`status:\``);
     process.exit(1);
   }
+  // A done no pasa una tanda con criterios, tareas o pruebas pendientes, ni los pasa a hechos sola: que estén probados
+  // lo dice una persona, que los mueve a `acs` / `tasks` / `tests` (o deja la tanda en blocked o pending). Mismo lector
+  // del bloque que el control de historias (scripts/lib/pipelines-block.js).
+  if (newStatus === 'done') {
+    const pb = require(path.join(SCRIPTS_DIR, '..', '..', '..', 'scripts', 'lib', 'pipelines-block.js'));
+    const nombres = new Set(chosen.map((t) => t.name));
+    const conPendientes = [];
+    for (const t of pb.leerTandas(lines, start)) {
+      if (!nombres.has(t.name)) continue;
+      const p = pb.pendientesDe(lines, t);
+      const partes = ['acs', 'tasks', 'tests'].filter((k) => p[k].length).map((k) => `${k} ${p[k].join(', ')}`);
+      if (partes.length) conPendientes.push(`${t.name} (${partes.join('; ')})`);
+    }
+    if (conPendientes.length) {
+      console.error(`marker.js update-pipeline-status: no paso a done una tanda con pendientes: ${conPendientes.join(' · ')}.`);
+      console.error('  Si se probaron, pasalos a mano a `acs` / `tasks` / `tests` y vaciá su `*_pending`; si no, la tanda va en `blocked` o `pending` (story-format.md §1.1). La historia no cambió.');
+      process.exit(1);
+    }
+  }
   const statusRegex = /^(\s*status\s*:\s*)["']?[\w-]+["']?([ \t]*(?:#.*)?)$/;
   for (const t of chosen) {
     lines[t.statusAt] = lines[t.statusAt].replace(statusRegex, (_, head, tail) => `${head}${newStatus}${tail}`);

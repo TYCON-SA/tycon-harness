@@ -939,6 +939,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/pipelines-pending.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/production-notice-root.test.js",
       "requiere": []
     },
