@@ -3,7 +3,7 @@
 /**
  * vocabulary.js — el control de las palabras de las guías en castellano.
  *
- * Las guías dicen cada cosa con una sola palabra (guides/maintaining/vocabulario.md): historia y no story, revisor y no
+ * Las guías dicen cada cosa con una sola palabra (guides/maintaining/vocabulary.md): historia y no story, revisor y no
  * advisor. Este control cuenta, en lo que va al commit (el índice de git), las palabras que no se escriben:
  *   · sólo en la prosa en castellano de `guides/`, `getting-started/`, `README.es.md`, `INDEX.md` e `INSTALL.md`. No mide
  *     un `.en.md`, una `SKILL.md`, ni un `X.md` que tiene al lado un `X.es.md` (es el inglés del par);
@@ -257,7 +257,7 @@ function check({ repo, skipThin = false }) {
     const top = topOf(rel);
     if (n <= top) continue;
     const where = mentions.filter((m) => m.file === rel).map((m) => `${rel}:${m.line}: «${m.word}» → ${m.use}`).join('; ');
-    problems.push(`${rel}: ${n} palabra(s) que no se escriben y el techo es ${top} (el glosario: guides/maintaining/vocabulario.md). Dónde: ${where}`);
+    problems.push(`${rel}: ${n} palabra(s) que no se escriben y el techo es ${top} (el glosario: guides/maintaining/vocabulary.md). Dónde: ${where}`);
   }
   for (const [rel, top] of Object.entries(rules.ceiling)) {
     const n = perFile[rel] || 0;

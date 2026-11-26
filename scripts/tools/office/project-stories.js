@@ -10,8 +10,9 @@ if (require.main === module) { try { require('../../lib/node-floor.js').guard();
  *   node project-stories.js --refresh-if-moved    relee sólo si la rama principal de algún proyecto se movió
  *
  * Cada proyecto trae también `abiertas` (las historias de los grupos «backlog», «en curso» y «bloqueado», con su archivo y
- * su estado, de donde la oficina saca el número de abiertas), `remoto`, `lugar` y `commit` (el commit leído de la rama
- * principal, null si se leyó de la copia).
+ * su estado, de donde la oficina saca el número de abiertas), `cerradasHoy` (las que pasaron a cerradas en la rama principal
+ * desde las 0 de hoy, para «Terminados hoy»), `remoto`, `lugar` y `commit` (el commit leído de la rama principal, null si
+ * se leyó de la copia).
  *
  * Qué proyectos: un repo donde abriste una sesión de Claude o de Codex, o donde hiciste un commit propio, en los
  * últimos 7 días (WORK_DAYS). Tener el clon no cuenta, ni una ejecución automática.
@@ -325,11 +326,68 @@ function workingMarkdown(dir, depth = 0, out = []) {
   return out;
 }
 
+// lo que cuenta como cerrada: el grupo «cerrado» del vocabulario
+const CLOSED = new Set(STATES.groups.cerrado);
+const frontOf = (text) => {
+  const t = String(text || '').replace(/^\uFEFF/, '');
+  const end = t.startsWith('---') ? t.indexOf('\n---', 3) : -1;
+  return end < 0 ? null : t.slice(3, end);
+};
+
 /**
- * Las historias de un lugar: `{ historias, abiertas, sinLeer, traidoAt, deTuCopia, commit, ref, problem }`, sin tocar la
- * copia. `commit` y `ref` son los de la rama principal leída; leído de la copia, los dos son null.
+ * Las historias del lugar que pasaron a cerradas en la rama principal desde las 0 de hoy (hora de la máquina):
+ * `[{ id, titulo, at }]`, con `at` la hora del último commit de hoy que tocó su archivo. Compara cada archivo tocado hoy
+ * con el que había en el último commit de antes de las 0, por la primera línea de la rama: una que ya estaba cerrada, o
+ * que no se pudo leer, no sale. Si git falla, lista vacía: la oficina sigue sin este dato.
  */
-function readPlace(place, run) {
+function closedToday(repo, ref, rel, run, now) {
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  const base = run(repo, ['log', '-1', '--first-parent', '--format=%H', `--before=${start.toISOString()}`, ref]);
+  const b = base.ok ? base.out.trim() : '';
+  if (!b) return [];
+  const log = run(repo, ['log', '--first-parent', '-m', '--format=%x00%ct', '--name-only', `${b}..${ref}`, '--', rel ? `${rel}/` : '.']);
+  if (!log.ok) return [];
+  // el más nuevo primero: la primera vez que aparece un archivo es su último commit de hoy
+  const lastAt = new Map();
+  for (const chunk of log.out.split('\0').slice(1)) {
+    const [ct, ...files] = chunk.split('\n').map((l) => l.trim()).filter(Boolean);
+    for (const f of files) if (f.endsWith('.md') && !lastAt.has(f)) lastAt.set(f, Number(ct) * 1000);
+  }
+  if (!lastAt.size) return [];
+  const files = [...lastAt.keys()];
+  const cat = run(repo, ['cat-file', '--batch'], { input: `${files.flatMap((f) => [`${ref}:${f}`, `${b}:${f}`]).join('\n')}\n`, buffer: true });
+  if (!cat.ok) return [];
+  const buf = cat.out;
+  const texts = [];
+  let i = 0;
+  while (texts.length < files.length * 2) {
+    const nl = buf.indexOf(10, i);
+    if (nl < 0) break;
+    const head = buf.slice(i, nl).toString('utf8').split(' ');
+    if (head[1] !== 'blob') { texts.push(null); i = nl + 1; continue; }
+    const size = Number(head[2]);
+    texts.push(buf.slice(nl + 1, nl + 1 + size).toString('utf8'));
+    i = nl + 1 + size + 1;
+  }
+  const out = [];
+  files.forEach((f, k) => {
+    const fm = frontOf(texts[2 * k]);
+    const id = fm && scalar(fm, 'story');
+    if (!id || !CLOSED.has(canonical(scalar(fm, 'status')))) return;
+    const before = frontOf(texts[2 * k + 1]);
+    if (before && CLOSED.has(canonical(scalar(before, 'status')))) return;
+    out.push({ id: id.replace(/\s+#.*$/, ''), titulo: scalar(fm, 'title') || path.posix.basename(f), at: lastAt.get(f) });
+  });
+  return out;
+}
+
+/**
+ * Las historias de un lugar: `{ historias, abiertas, cerradasHoy, sinLeer, traidoAt, deTuCopia, commit, ref, problem }`,
+ * sin tocar la copia. `commit` y `ref` son los de la rama principal leída; leído de la copia, los dos son null y
+ * `cerradasHoy` va vacía: la copia no dice qué entró a main.
+ */
+function readPlace(place, run, now = Date.now()) {
   const r = repoOfFolder(place.repo, run);
   if (!r) return { problem: 'no es un repo de git' };
   const rel = path.relative(place.repo, place.dir).split(path.sep).join('/');
@@ -381,7 +439,8 @@ function readPlace(place, run) {
     const pendientes = ref ? deps.filter((d) => !RESOLVED.has(estados.get(String(d)))) : deps.slice();
     if (pendientes.length) story.pendientes = pendientes;
   }
-  return { historias, abiertas, sinLeer, traidoAt: fetchedAt(r.common), deTuCopia: !ref, commit: main ? main.commit : null, ref, problem: null, common: r.common, root: r.root };
+  const cerradasHoy = ref ? closedToday(place.repo, ref, rel, run, now) : [];
+  return { historias, abiertas, cerradasHoy, sinLeer, traidoAt: fetchedAt(r.common), deTuCopia: !ref, commit: main ? main.commit : null, ref, problem: null, common: r.common, root: r.root };
 }
 
 /** La lista de productos de la organización (la que elige configPorDefecto), plana: `[{ producto, ado?, github? }]`. */
@@ -422,7 +481,7 @@ function collect({ home = os.homedir(), now = Date.now(), env = process.env, ema
     if (found.problem || !found.places.length) { sinHistorias.push(path.basename(repo.root)); continue; }
     let any = false;
     for (const place of found.places) {
-      const read = readPlace(place, run);
+      const read = readPlace(place, run, now);
       if (read.problem) continue;
       any = true;
       const rel = path.relative(place.repo, place.dir).split(path.sep).join('/');
@@ -452,6 +511,8 @@ function collect({ home = os.homedir(), now = Date.now(), env = process.env, ema
     commit: r.read.commit,
     historias: r.read.historias,
     abiertas: r.read.abiertas,
+    // las que pasaron a cerradas en main hoy: la oficina las cuenta en «Terminados hoy»
+    cerradasHoy: r.read.cerradasHoy,
   }));
   return { at: new Date(now).toISOString(), proyectos, sinHistorias: [...new Set(sinHistorias)], commitsPropios: p.ownCommits };
 }

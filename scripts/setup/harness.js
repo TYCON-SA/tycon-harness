@@ -28,7 +28,7 @@
 // fuente, la compatibilidad por la lista de transformados de version.json y por lo que el interno publica, el clon de
 // lectura, el árbol gestionado y la capa al mínimo). Las líneas van aparte de las del lugar. Sin fuentes `layer`, doctor es el de siempre.
 // En `source: public` con fuentes `layer`, `update` trae también `main` del interno a su clon de lectura (--bare,
-// ~/.claude/.tycon-pipeline/harness/sources/internal, con --reference al clon de la persona), elige el commit de la capa
+// ~/.tycon/state/harness/sources/internal, con --reference al clon de la persona), elige el commit de la capa
 // por compatibilidad (`pickLayerCommit`) y mueve las dos fuentes o ninguna; con el público al día mueve «sólo la capa».
 // Los topes de red valen para las dos juntas. `install --harness-clone <clon>` sobre una copia pública arma esa fuente y
 // apila la capa antes del aplicador. Sin fuentes `layer`, update e install no cambian.
@@ -37,9 +37,9 @@
 // 3 no instalado, otra sesión, o «hay versión nueva» (update --check). `startup` sale 0 siempre: una sesión nunca se
 // frena por el arnés.
 //
-// Estado: ~/.claude/.tycon-pipeline/harness-state.json · candado y registro: ~/.claude/.tycon-pipeline/harness/ ·
-// la copia fija de arranque: ~/.claude/.tycon-pipeline/harness/bootstrap.js (+ los dos respaldos en shell) ·
-// las copias de seguridad: ~/.claude/.tycon-pipeline/harness/backups/<fecha>/, una ANTES de cada cambio.
+// Estado: ~/.tycon/state/harness-state.json · candado y registro: ~/.tycon/state/harness/ ·
+// la copia fija de arranque: ~/.tycon/state/harness/bootstrap.js (+ los dos respaldos en shell) ·
+// las copias de seguridad: ~/.tycon/state/harness/backups/<fecha>/, una ANTES de cada cambio.
 // Los módulos: scripts/setup/harness/{state,lock,sources,channel,report,startup-line,managed,snapshot,shared}.js.
 //
 // El aplicador corre con `--report-json` y `TYCON_HARNESS_SNAPSHOT_DIR` (sin sus `.bak` propios: la
@@ -125,7 +125,7 @@ const COMMANDS = {
   uninstall: { opts: { '--dry-run': 'flag', '--yes': 'flag', '--tool': 'list' }, help: 'quita sólo lo registrado (tanda C); --tool claude|codex desenchufa sólo esa herramienta y deja el arnés (story 8.23, tanda C)' },
   link:      { opts: { '--local': 'value', '--allow-temporary': 'flag', '--managed': 'flag' }, help: 'modo desarrollador: el enlace apunta a un clon propio (--local) o vuelve a managed (--managed)' },
   migrate:   { opts: { '--to-home': 'flag', '--dry-run': 'flag', '--repo': 'value', '--team': 'value' }, help: `muda esta máquina del clon a ~/.tycon: la versión bajada en ~/.tycon/harness, el estado y la configuración en ~/.tycon, los enchufes al árbol nuevo, el clon intacto (story 8.23, tanda D); --dry-run dice el plan sin escribir; --team <org>/<repo> (story 8.25) apila la capa del equipo sobre la versión bajada (sin la opción, la clave team de public-repos.json del clon; con capa, el perfil del clon no se funde en la configuración)` },
-  relocate:  { opts: { '--check': 'flag' }, help: `muda a mano lo registrado por el nombre viejo ~/.claude/${PLACE.LEGACY_PLACE_NAME} al lugar ~/.claude/${PLACE.PLACE_NAME} (--check dice qué cambiaría, sin escribir)` },
+  relocate:  { opts: { '--check': 'flag' }, help: `muda a mano lo registrado por el nombre viejo ~/${path.relative(os.homedir(), PLACE.legacyPlacePath(os.homedir())).split(path.sep).join('/')} al lugar ~/${path.relative(os.homedir(), PLACE.placePath(os.homedir())).split(path.sep).join('/')} (--check dice qué cambiaría, sin escribir)` },
   'team-config': { opts: { '--no-open': 'flag', '--team-clone': 'value', '--operations-clone': 'value' }, help: 'abre en el navegador la página local que muestra, de sólo lectura, la configuración de la organización: dónde vive cada repo (team-repos.json, en el clon del perfil del equipo), a quién se asignan los avisos (operations.json, en el clon de operaciones) y el resto de sus secciones, con los problemas que ven los lectores. Se edita en el sitio de la organización, o con un pedido al repo de operaciones si no hay sitio. Las carpetas de los clones se guardan como paths.team y paths.operations; --team-clone y --operations-clone las usan sólo esta vez, sin guardarlas. --no-open imprime la dirección sin abrir el navegador' },
   'team-init': { opts: { '--dir': 'value', '--name': 'value', '--platform': 'value', '--profile-repo': 'value', '--dry-run': 'flag', '--stories': 'value', '--no-stories': 'flag', '--stories-only': 'flag', '--local': 'flag' }, help: 'da de alta tu organización (story 8.40): pregunta el nombre, la plataforma (github|azure|local), la dirección del repo del perfil y la carpeta (lo que no vino por opción), baja el ejemplo publicado y deja en la carpeta los tres archivos obligatorios del perfil del equipo, validados con los lectores de la versión instalada; después dice cómo crear el repo vacío, ofrece subirlo con git y ofrece instalar esta máquina con --team. Al final ofrece el repo de historias del equipo con su portón (las plantillas de scripts/setup/harness/team-stories/, al lado de la carpeta del perfil): --stories <nombre> lo arma sin preguntar, --no-stories lo saltea y --stories-only arma sólo ese repo (en --dir). No crea repos ni pide credenciales. --dry-run muestra los archivos sin escribir. --local (o «local» como plataforma) arma el perfil de una persona sola en esta máquina, sin dirección ni cuenta: la declaración y el perfil con git y un commit en main; el arnés lo lee de esa carpeta (install --team <carpeta>) y se puede subir después. Sin arnés instalado sale 2' },
   // lo que corre el paquete de npm después de bajar este árbol (scripts/setup/harness/npx.js): las opciones de `install` y
@@ -190,6 +190,9 @@ function parse(argv) {
 
 // ── módulos (carga perezosa: `--help` y un error de uso no cargan nada) ─────────────────────────────────────────────
 const mod = (name) => require(`./harness/${name}.js`);
+// el lugar del arnés, relativo a la carpeta de la persona (placePath de tycon-home.js): un comando que se muestra lo
+// nombra así, sin armar la ruta a mano
+const placeRel = (home = os.homedir()) => path.relative(home, mod('tycon-home').placePath(home)).split(path.sep).join('/');
 /** El archivo de configuración de la máquina como se le nombra a la persona: `~/.tycon/config.json` donde la máquina vive ahí. */
 function machineConfigName(home) {
   const f = mod('tycon-home').configFile(home);
@@ -219,7 +222,7 @@ const UPDATE_WRAPUP_MS = 500;
 /** Desde cuándo corre el tope de `update`: el arranque del proceso; si el proceso es más viejo que el tope entero (quien
  *  carga harness.js como módulo y lo llama varias veces, como las pruebas), desde ahora. */
 const commandClockStart = (env) => (Date.now() - PROCESS_STARTED_AT < mod('sources').budgetOf(null, env) * 1000 ? PROCESS_STARTED_AT : Date.now());
-const linkPath = (home) => path.join(home, '.claude', LINK_NAME);
+const linkPath = (home) => path.join(mod('tycon-home').claudeDir(home), LINK_NAME);
 const settingsPath = (ctx) => ctx.env.TYCON_SETTINGS_PATH || path.join(ctx.home, '.claude', 'settings.json');
 const claudeMdPath = (ctx) => ctx.env.CLAUDE_MD_PATH || path.join(ctx.home, '.claude', 'CLAUDE.md');
 const isHarnessClone = (dir) => Boolean(dir) && fs.existsSync(path.join(dir, 'scripts', 'install-tycon-hooks.sh'));
@@ -286,9 +289,9 @@ function installNodeProblem(ctx) {
   return `Node ${String(v).replace(/^v/, '')}: para instalar el arnés hace falta Node ${INSTALL_NODE_FLOOR} o más nuevo. Instalá Node ${INSTALL_NODE_FLOOR} (https://nodejs.org) y volvé a correr la instalación. No escribí nada`;
 }
 
-/** agent-skills: ~/.claude/agent-skills/skills/tycon-pipeline, o skills/ y agents/ en la raíz del clon. */
+/** agent-skills: las skills instaladas (installedSkillsDir)/skills/tycon-pipeline, o skills/ y agents/ en la raíz del clon. */
 function skillsPresent(ctx, tree) {
-  if (fs.existsSync(path.join(ctx.home, '.claude', 'agent-skills', 'skills', 'tycon-pipeline'))) return true;
+  if (fs.existsSync(path.join(mod('tycon-home').installedSkillsDir(ctx.home), 'skills', 'tycon-pipeline'))) return true;
   return fs.existsSync(path.join(tree, 'skills')) && fs.existsSync(path.join(tree, 'agents'));
 }
 
@@ -363,7 +366,7 @@ function managedBefore(ctx, log) {
 }
 
 /**
- * Las reglas de lectura de las carpetas del arnés, DESPUÉS del aplicador: los enlaces de ~/.claude que
+ * Las reglas de lectura de las carpetas del arnés, DESPUÉS del aplicador: los enlaces de la carpeta de Claude Code que
  * cubren (agent-skills, cada skill) los crea él, y antes no existen. Devuelve `{ pieces, notes }`: sus piezas y lo que
  * sumó o sacó, en llano (vacío si no cambió nada), para el cierre de `update`. Nunca tira.
  */
@@ -886,18 +889,18 @@ function ownPlan(ctx, tree, existing, { pinned = null, notes = [] } = {}) {
   }
   const policy = ctx.opts.channel ? policyOf(ctx, tree) : null;
   if (policy && policy.channel !== ctx.opts.channel) {
-    own.push({ kind: 'channel', where: path.join(ctx.home, '.claude', 'tycon.json'), id: 'channel', action: 'update' });
+    own.push({ kind: 'channel', where: mod('tycon-home').legacyConfigFile(ctx.home), id: 'channel', action: 'update' });
     if (existing) stateAction = 'update';
   }
   // el canal del estado distinto del de la política: install lo reescribe (lo mismo que hace adentro del candado)
   if (policy && existing && existing.channel !== policy.channel) stateAction = 'update';
-  // `--profile`: se escribe en ~/.claude/tycon.json si el archivo no dice ya ese valor
+  // `--profile`: se escribe en ~/.tycon/config.json si el archivo no dice ya ese valor
   if (ctx.opts.profile) {
     const had = machineProfile(ctx);
-    if (had !== ctx.opts.profile) own.push({ kind: 'profile', where: path.join(ctx.home, '.claude', 'tycon.json'), id: 'install.profile', action: had ? 'update' : 'add' });
+    if (had !== ctx.opts.profile) own.push({ kind: 'profile', where: mod('tycon-home').legacyConfigFile(ctx.home), id: 'install.profile', action: had ? 'update' : 'add' });
   }
-  // lo contestado en las preguntas (integraciones, paquete del stack): también va a ~/.claude/tycon.json
-  for (const w of ctx.configWrites || []) own.push({ kind: 'config', where: path.join(ctx.home, '.claude', 'tycon.json'), id: w.key, action: w.had ? 'update' : 'add' });
+  // lo contestado en las preguntas (integraciones, paquete del stack): también va a ~/.tycon/config.json
+  for (const w of ctx.configWrites || []) own.push({ kind: 'config', where: mod('tycon-home').legacyConfigFile(ctx.home), id: w.key, action: w.had ? 'update' : 'add' });
   // la copia fija registrada en el estado distinta de la del árbol: install reescribe el estado (copyBootstrap)
   if (existing && JSON.stringify((existing.bootstrap && existing.bootstrap.sha256) || null) !== JSON.stringify(bootstrapSha(tree))) stateAction = 'update';
   own.push({ kind: 'state', where: S.paths(ctx.home).file, id: path.basename(S.paths(ctx.home).file), action: stateAction });
@@ -1252,7 +1255,7 @@ function installQuestions(ctx, tree, existing) {
 }
 
 /**
- * Escribe lo contestado (o pedido por opción) en ~/.claude/tycon.json, con el escritor único de la configuración:
+ * Escribe lo contestado (o pedido por opción) en ~/.tycon/config.json, con el escritor único de la configuración:
  * ya con la conformidad, adentro del candado y antes del aplicador. `{ ok, warnings }` o
  * `{ ok: false, reason }`.
  */
@@ -1274,7 +1277,7 @@ function writeAnswers(ctx, tree, writes) {
 function askLaterNote(asked) {
   if (!asked || !asked.guided || !asked.config) return [];
   const v = asked.config.valores || {};
-  const cmd = `${homeCommand(`.claude/${PLACE.PLACE_NAME}/scripts/lib/tycon-config.js`)} set`;
+  const cmd = `${homeCommand(`${placeRel()}/scripts/lib/tycon-config.js`)} set`;
   const off = [];
   if (!(v.ado && v.ado.org)) off.push(`Azure DevOps: ${cmd} ado.org <url>`);
   if (!(v.telegram && v.telegram.chat_id)) off.push(`Telegram: ${cmd} telegram.chat_id <chat>`);
@@ -1282,7 +1285,7 @@ function askLaterNote(asked) {
   return ['no se preguntaron porque piden un dato, y se prenden así:', ...off.map((l) => `  ${l}`)];
 }
 
-/** Lo que `~/.claude/tycon.json` dice de `install.profile`, tal cual (o null si no está, o el archivo no se lee). */
+/** Lo que `~/.tycon/config.json` dice de `install.profile`, tal cual (o null si no está, o el archivo no se lee). */
 function machineProfile(ctx) {
   try {
     const d = JSON.parse(fs.readFileSync(mod('tycon-home').configFile(ctx.home), 'utf8').replace(/^﻿/, ''));
@@ -1450,7 +1453,7 @@ function dropForProfile(ctx, state, tree, applied, log, profileValue) {
  */
 function profileSwitch(ctx, state, tree, log) {
   const profile = profileOf(ctx, tree);
-  if (!profile.ok) return { profile, switching: false, snap: null, notice: `el perfil de instalación no se pudo leer (${profile.reason}): lo del perfil queda como está — ${homeCommand(`.claude/${PLACE.PLACE_NAME}/scripts/lib/tycon-config.js`)} validate` };
+  if (!profile.ok) return { profile, switching: false, snap: null, notice: `el perfil de instalación no se pudo leer (${profile.reason}): lo del perfil queda como está — ${homeCommand(`${placeRel()}/scripts/lib/tycon-config.js`)} validate` };
   const was = mod('profile').installedValue(state);
   if (was === profile.value) return { profile, switching: false, snap: null, notice: null };
   const snap = takeSnapshot(ctx, tree, { reason: 'profile', from: state.version && state.version.number, log, force: true, state });
@@ -1465,7 +1468,7 @@ function profileSwitchNotes(r) {
 
 /**
  * La copia fija de arranque, archivo por archivo: `[{ id, src }]` — `id` es la ruta dentro de
- * ~/.claude/.tycon-pipeline/harness/. Los tres de arranque y el PROGRAMA:
+ * ~/.tycon/state/harness/. Los tres de arranque y el PROGRAMA:
  * `program/harness.js` y `program/harness/*.js`, con la misma forma que en el árbol (así `require('./harness/…')`
  * resuelve igual). Es lo que corre `bootstrap.js rollback|uninstall` cuando el árbol no arranca o no está.
  */
@@ -1605,7 +1608,7 @@ function rebuildLocalEngramIndex(cwd) {
   }
 }
 
-const applyHint = `${homeCommand(`.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js`)} update --yes`;
+const applyHint = `${homeCommand(`${placeRel()}/scripts/setup/harness.js`)} update --yes`;
 // una versión bajada se actualiza con la línea de npx; un clon, no (npx sólo le dice que use harness.js)
 const releaseApplyHint = `npx @tyconsa/harness@latest`;
 const applyHintFor = (state) => (mod('state').isRelease(state) ? releaseApplyHint : applyHint);
@@ -1839,7 +1842,7 @@ function confirmLatestAuto(ctx, { value, policy, publicCopy, cmd, probe = false 
 /**
  * Volver a instalar sobre el MISMO árbol vuelve a detectar las fuentes
  * El caso: una máquina de dos clones pasa a un solo árbol —el dev borra su clon viejo y el aplicador enlaza
- * `~/.claude/agent-skills` al clon del arnés—. Sin esto, el estado sigue listando la fuente `agent_skills` con la URL vieja:
+ * el enchufe `agent-skills` al clon del arnés—. Sin esto, el estado sigue listando la fuente `agent_skills` con la URL vieja:
  * `update` sale 2 («el origin de agent_skills cambió… install --source <url>») y ese remedio contesta «sin cambios»,
  * porque las fuentes sólo se detectarían la primera vez o al instalar desde OTRO clon. Además,
  * con la llave en `unified`, esa fuente vieja dispararía la mudanza sobre el clon del arnés.
@@ -1993,7 +1996,7 @@ function cmdInstall(ctx) {
   const missing = missingRequirement(ctx);
   if (missing) return { code: 1, lines: [`harness.js install: ${missing}`] };
   if (!skillsPresent(ctx, tree)) {
-    return { code: 1, lines: [`✗ tycon: agent-skills no encontrado en ${path.join(ctx.home, '.claude', 'agent-skills', 'skills')} (ni skills/ y agents/ en la raíz del clon) — ver el README.md del arnés, 'Instalación'`] };
+    return { code: 1, lines: [`✗ tycon: agent-skills no encontrado en ${path.join(mod('tycon-home').installedSkillsDir(ctx.home), 'skills')} (ni skills/ y agents/ en la raíz del clon) — ver el README.md del arnés, 'Instalación'`] };
   }
   const read = loadState(ctx);
   if (read.status !== 'ok' && read.status !== 'missing') return { code: S.fail(read, { home: ctx.home }).code, lines: [S.fail(read, { home: ctx.home }).line] };
@@ -2050,7 +2053,7 @@ function cmdInstall(ctx) {
   // que ya existe y no hay nadie para contestar.
   // `--profile`: un valor fuera de la lista, o una variable que dice otro, sale 2 sin
   // escribir. El plan se arma con el perfil pedido (por su variable, sólo para el plan: no se escribe nada antes de la
-  // conformidad); la clave se escribe en ~/.claude/tycon.json adentro del candado, antes del aplicador.
+  // conformidad); la clave se escribe en ~/.tycon/config.json adentro del candado, antes del aplicador.
   const PR = mod('profile');
   // `--from-existing` lo lanza el aplicador sobre lo que ya está y no corre el aplicador: `--profile` ahí no haría nada, y
   // una opción que no hace efecto no pasa en silencio
@@ -2060,7 +2063,7 @@ function cmdInstall(ctx) {
   // las preguntas, y las opciones que las contestan, ANTES del plan: lo contestado
   // viaja como si hubiera venido por opción (el plan lo muestra) y se escribe recién después de la conformidad
   let asked = { writes: [], over: {}, head: [], guided: false, eof: false };
-  if (fromExisting && (ctx.opts.integrations !== undefined || ctx.opts.packs !== undefined)) return { code: 2, lines: [`harness.js install: --integrations y --packs no van con --from-existing (esa ejecución no aplica nada): se contestan con install, o con ${homeCommand(`.claude/${PLACE.PLACE_NAME}/scripts/lib/tycon-config.js`)} set`] };
+  if (fromExisting && (ctx.opts.integrations !== undefined || ctx.opts.packs !== undefined)) return { code: 2, lines: [`harness.js install: --integrations y --packs no van con --from-existing (esa ejecución no aplica nada): se contestan con install, o con ${homeCommand(`${placeRel()}/scripts/lib/tycon-config.js`)} set`] };
   if (!fromExisting) {
     asked = installQuestions(ctx, tree, read.status === 'ok' ? read.state : null);
     if (asked.code !== undefined) return { code: asked.code, lines: asked.lines };
@@ -2270,7 +2273,7 @@ function cmdInstall(ctx) {
     }
 
     // (e2) el perfil pedido con `--profile`: ya con la conformidad, antes del aplicador, en
-    // ~/.claude/tycon.json con el escritor único de la configuración. Si no se puede escribir, no se sigue: el aplicador
+    // ~/.tycon/config.json con el escritor único de la configuración. Si no se puede escribir, no se sigue: el aplicador
     // instalaría otro perfil que el que se mostró
     if (viaOption && machineProfile(ctx) !== ctx.opts.profile) {
       let sk;
@@ -2447,10 +2450,10 @@ function runHealth(ctx, state, { report, applierOut, log, health = null }) {
   const H = health || (() => { try { return mod('health'); } catch (_) { return null; } })();
   if (!H || typeof H.check !== 'function') return { ok: true, failures: [], warnings: ['sin health.js: la salud es «el aplicador salió 0»'] };
   try {
-    // los hooks de agent-skills viven donde los apunta settings.json: el clon de la fuente, o ~/.claude/agent-skills aunque
+    // los hooks de agent-skills viven donde los apunta settings.json: el clon de la fuente, o el enchufe agent-skills aunque
     // no sea un clon de git (una sola fuente); `skills/` en la raíz del árbol sólo en el repo único
     const skills = (state.sources || []).find((s) => s && s.name === 'agent_skills');
-    const homeSkills = path.join(ctx.home, '.claude', 'agent-skills', 'skills');
+    const homeSkills = path.join(mod('tycon-home').installedSkillsDir(ctx.home), 'skills');
     const skillsDir = skills && skills.dir ? path.join(skills.dir, 'skills') : (fs.existsSync(homeSkills) ? homeSkills : path.join(state.tree, 'skills'));
     // con Codex enchufado la salud mira también SUS hooks: en una máquina sin Claude Code son los únicos
     const T = mod('tools');
@@ -3372,7 +3375,7 @@ function cmdStartup(ctx) {
     if (!notice && state.hold) notice = holdText(state);
     // una falla de `install` no es una actualización que volvió atrás: no se movió nada, y lo que la
     // retoma es `install` otra vez
-    if (!notice && state.failed && state.failed.stage === 'install') notice = `la instalación quedó a medias (${state.failed.reason === 'applier' ? 'el aplicador falló' : 'la comprobación de salud no pasó'}, ${state.failed.at || '—'}): ${homeCommand(`.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js`)} install otra vez la retoma — harness.js doctor lo detalla`;
+    if (!notice && state.failed && state.failed.stage === 'install') notice = `la instalación quedó a medias (${state.failed.reason === 'applier' ? 'el aplicador falló' : 'la comprobación de salud no pasó'}, ${state.failed.at || '—'}): ${homeCommand(`${placeRel()}/scripts/setup/harness.js`)} install otra vez la retoma — harness.js doctor lo detalla`;
     if (!notice && state.failed) notice = `la versión ${state.failed.commit} no quedó sana (${state.failed.reason || 'salud'}, ${state.failed.at || '—'}) y ${state.failed.fixed_copy ? rollbackOutcome({ ok: true }, state.version && state.version.number, state.failed.fixed_copy) : `volvió sola a ${state.version && state.version.number}`}; ${state.failed.reason === 'interrupted' ? 'se reintenta en el próximo arranque' : `no se reintenta sola hasta que cambie la punta (o ${applyHint})`} — harness.js doctor lo detalla`;
     if (!notice && keepFromLastLook && !fetched && policy.enabled && state.mode !== 'developer') notice = state.notice;
     // una herramienta instalada y sin enchufar: se dice en cada arranque, sin pisar otro
@@ -4099,7 +4102,7 @@ function cmdDoctor(ctx) {
   const managed = Array.isArray(state.managed) ? state.managed : [];
   const pieceOpts = { home: ctx.home, env, isStartupLine: SL.isNew };
   const gone = M.missing(managed, pieceOpts);
-  const skillsDir = path.join(ctx.home, '.claude', 'agent-skills', 'skills');
+  const skillsDir = path.join(mod('tycon-home').installedSkillsDir(ctx.home), 'skills');
   const roots = [...new Set([tree, real(tree), linkPath(ctx.home), PLACE.legacyPlacePath(ctx.home), skillsDir, real(skillsDir)].filter(Boolean))];
   const loose = M.unregistered(managed, Object.assign({ roots, tree }, pieceOpts));
   for (const p of gone) add('warn', `pieza registrada que falta: ${M.describe(p)} — harness.js ${isOwnPiece(ctx, p) ? 'install' : 'apply'} la repone`);
@@ -4203,7 +4206,7 @@ function cmdDoctor(ctx) {
     // bajo la comprobación de salud (TYCON_HARNESS_HEALTH=1) un intento registrado es historia, no la salud de este árbol
     const level = env.TYCON_HARNESS_HEALTH === '1' ? 'warn' : 'fail';
     if (f.pending === 'health') add(level, `la comprobación de salud de ${f.commit || '—'} quedó pendiente (la sesión se cortó en el medio, ${f.at || '—'}): el próximo arranque la corre; ya: harness.js startup --force`);
-    else if (f.stage === 'install') add(level, `la instalación quedó a medias: ${f.reason === 'applier' ? 'el aplicador falló' : 'la comprobación de salud no pasó'} (${f.at || '—'}; detalle en ${f.log || S.paths(ctx.home).log}) — ${homeCommand(`.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js`)} install otra vez la retoma, o harness.js uninstall la saca`);
+    else if (f.stage === 'install') add(level, `la instalación quedó a medias: ${f.reason === 'applier' ? 'el aplicador falló' : 'la comprobación de salud no pasó'} (${f.at || '—'}; detalle en ${f.log || S.paths(ctx.home).log}) — ${homeCommand(`${placeRel()}/scripts/setup/harness.js`)} install otra vez la retoma, o harness.js uninstall la saca`);
     else add(level, `última actualización fallida: ${f.commit || '—'} (${f.reason || 'salud'}, ${f.at || '—'}; detalle en ${f.log || S.paths(ctx.home).log}) — ${f.reason === 'interrupted' ? 'se reintenta sola en el próximo arranque' : 'no se reintenta sola hasta que cambie la punta'}; reintentar ya: ${applyHint}`);
   }
   const vsn = R.derive(state, { env });
@@ -4221,7 +4224,7 @@ function cmdDoctor(ctx) {
 function doctorConfigItems(ctx, tree, state, prof, add, extra) {
   if (prof.ok) {
     extra.profile = { value: prof.value, origin: prof.origin, chosen: Boolean(prof.chosen) };
-    if (!prof.chosen) add('warn', `perfil sin elegir: esta instalación se comporta como full — elegí con ${homeCommand(`.claude/${PLACE.PLACE_NAME}/scripts/setup/harness.js`)} install --profile minimal|full`);
+    if (!prof.chosen) add('warn', `perfil sin elegir: esta instalación se comporta como full — elegí con ${homeCommand(`${placeRel()}/scripts/setup/harness.js`)} install --profile minimal|full`);
   }
   try {
     const C = require(path.join(tree, 'scripts', 'lib', 'tycon-config.js'));
@@ -4239,7 +4242,7 @@ function doctorConfigItems(ctx, tree, state, prof, add, extra) {
       // CodeGraph prendido (por la organización o la máquina) y sin el binario: aviso con cómo instalarlo; no frena
       if (config.valores.integraciones && config.valores.integraciones.codegraph === true && !findInPath('codegraph', ctx.env)) {
         const quien = config.origenes['integraciones.codegraph'] === 'perfil' ? 'tu organización usa' : 'esta máquina tiene prendido';
-        add('warn', `CodeGraph: ${quien} CodeGraph y esta máquina no lo tiene — instalalo con bash ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/install-codegraph.sh --tool-only (en Windows: pwsh -File ~\\.claude\\${PLACE.PLACE_NAME}\\scripts\\setup\\install-codegraph.ps1 -ToolOnly)`);
+        add('warn', `CodeGraph: ${quien} CodeGraph y esta máquina no lo tiene — instalalo con bash ~/${placeRel()}/scripts/setup/install-codegraph.sh --tool-only (en Windows: pwsh -File ~\\${placeRel().split('/').join('\\')}\\scripts\\setup\\install-codegraph.ps1 -ToolOnly)`);
       }
     }
   } catch (e) { add('warn', `integraciones y paquete: no pude leer la configuración (${(e && e.message) || e})`); }
@@ -4262,7 +4265,7 @@ function doctorConfigItems(ctx, tree, state, prof, add, extra) {
           // la misma lista que enlaza el aplicador (sin los nombres repetidos, que se dicen aparte); un enlace duro cuenta
           const pz = PP.piecesOf({ packsDir: PP.packsDirOf(tree), agentsDir: path.join(tree, 'agents'), coreSkillsDir: path.join(tree, 'skills'), names: org.names });
           for (const e of pz.errores) if (!errores.some((x) => x.archivo === e.archivo && x.motivo === e.motivo)) add('warn', `paquetes: ${e.motivo}`);
-          const linked = (side, list) => list.filter((x) => PP.linkedTo(path.join(ctx.home, '.claude', side, x.name), x.src)).length;
+          const linked = (side, list) => list.filter((x) => PP.linkedTo(path.join(mod('tycon-home').claudeDir(ctx.home), side, x.name), x.src)).length;
           const s = linked('skills', pz.skills); const a = linked('agents', pz.agents);
           const faltan = (pz.skills.length - s) + (pz.agents.length - a);
           extra.pack_pieces = { active: org.names, skills: pz.skills.length, agents: pz.agents.length, missing: faltan };

@@ -809,3 +809,56 @@ test('T19 Lectura_SoloComandosDeLectura @story-8.313 @ac-20 — collect y --refr
   assert.deepStrictEqual(otros, [], `sólo lecturas: ${pedidos.join(' | ')}`);
   assert.ok(!pedidos.some((x) => /^fetch\b/.test(x)), 'ningún fetch');
 });
+
+// 🔴 Falla con: `cerradasHoy` sin comparar con el commit de antes de las 0 (sale la que ya estaba cerrada) o leyendo la
+// copia en vez de la rama principal.
+test('CerradasHoy_SoloLasQuePasaronHoyEnMain — la que pasó a cerrada hoy sale con su hora; la que ya estaba cerrada, la abierta y la de la copia no', () => {
+  const raiz = tmp('raiz');
+  const ayer = new Date(Date.now() - 2 * DIA).toISOString();
+  const r = repo(raiz, 'r', { remoto: 'https://github.com/acme/r.git', fecha: ayer, archivos: { 'specs/a.md': historia('20.1', 'review'), 'specs/b.md': historia('20.2', 'done'), 'specs/c.md': historia('20.3', 'in-progress') } });
+  fs.writeFileSync(path.join(r, 'specs', 'a.md'), historia('20.1', 'done'));
+  fs.writeFileSync(path.join(r, 'specs', 'b.md'), `${historia('20.2', 'done')}\notra línea\n`);
+  fs.writeFileSync(path.join(r, 'specs', 'c.md'), historia('20.3', 'review'));
+  git(r, 'commit', '-qam', 'hoy');
+  git(r, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  // en la copia, sin llegar a main, otra pasa a cerrada: no cuenta
+  fs.writeFileSync(path.join(r, 'specs', 'c.md'), historia('20.3', 'done'));
+  git(r, 'commit', '-qam', 'local');
+  const antes = Date.now();
+  const p = PS.collect(base({ home: casa([{ cwd: r }]) })).proyectos[0];
+  assert.deepStrictEqual(p.cerradasHoy.map((h) => [h.id, h.titulo]), [['20.1', 'La historia 20.1']]);
+  assert.ok(Math.abs(p.cerradasHoy[0].at - antes) < 120e3, 'la hora es la del commit de hoy');
+  // sin rama principal traída no se afirma nada
+  const c = repo(raiz, 'c', { remoto: 'https://github.com/acme/c.git', traida: false, archivos: { 'specs/a.md': historia('20.4', 'done') } });
+  assert.deepStrictEqual(PS.collect(base({ home: casa([{ cwd: c }]) })).proyectos[0].cerradasHoy, []);
+});
+
+// 🔴 Falla con: «Terminados hoy» sólo con las filas del tablero (las historias cerradas hoy en main y los pedidos que
+// entraron no salen), o repitiendo lo que una fila hecha ya dice por su historia o su pedido.
+test('Kanban_Finished_FromMainAndPrs: «Terminados hoy» suma sin carga manual las historias cerradas hoy en main y los pedidos que entraron; lo que ya dice una fila hecha no se repite', () => {
+  const board = OFFICE_MOD.buildBoard({ pendientes: [
+    { titulo: 'Fila de la 9.1', estado: 'hecho', realIso: OF.localIsoAt(AHORA - 3 * 60000), historia: '9.1' },
+    { titulo: 'Fila del pedido', estado: 'hecho', realIso: OF.localIsoAt(AHORA - 4 * 60000), pedido: { repo: 'pub', numero: 70 } },
+  ] });
+  const historias = [
+    { id: '9.1', titulo: 'Ya la dice la fila', at: AHORA - 5 * 60000, proyecto: 'Acme' },
+    { id: '9.2', titulo: 'Cerrada hoy', at: AHORA - 2 * 60000, proyecto: 'Acme' },
+  ];
+  const pedidos = [
+    { repo: 'org/pub', repoName: 'pub', number: 70, title: 'el que ya dice la fila', at: AHORA - 6 * 60000 },
+    { repo: 'org/pub', repoName: 'pub', number: 71, title: 'entró hoy', at: AHORA - 60000 },
+    { repo: 'biz/proj/priv', repoName: 'priv', number: 6101, title: 'el privado', at: AHORA - 7 * 60000 },
+  ];
+  const { data } = OF.buildOffice({ wip: OF.wip([]), board, prAnswers: new Map(), enteredPrs: pedidos, projectStories: { snap: { at: new Date(AHORA).toISOString(), proyectos: [{ nombre: 'Acme', abiertas: [], cerradasHoy: historias }] }, runs: [] }, nowMs: AHORA });
+  const hechos = data.kanban.columnas.find((c) => c.id === 'hechos').tarjetas;
+  assert.deepStrictEqual(hechos.map((t) => t.titulo), ['entró hoy', '9.2 · Cerrada hoy', 'Fila de la 9.1', 'Fila del pedido', 'el privado'], 'lo último primero, sin repetir la 9.1 ni el #70');
+  assert.deepStrictEqual([hechos[0].quien, hechos[0].hora], ['pedido #71', hm(AHORA - 60000)]);
+  assert.deepStrictEqual([hechos[1].quien, hechos[1].hora, hechos[1].grupo], ['historia cerrada en main', hm(AHORA - 2 * 60000), 'Acme']);
+  assert.strictEqual(hechos[4].quien, 'pedido !6101', 'el de Azure, con su marca');
+  assert.deepStrictEqual(hechos[0].pedido, OFFICE_MOD.cardPr('org/pub', 71), 'el pedido lleva su enlace');
+  assert.strictEqual(hechos[1].local, true, 'la historia es de esta máquina: no viaja al sitio');
+  // lo de otro día no entra, ni pasa a la tabla «Hechos»: una lectura vieja no suma
+  const otroDia = OF.buildOffice({ wip: OF.wip([]), enteredPrs: [{ repo: 'org/pub', repoName: 'pub', number: 72, title: 'ayer', at: AHORA - 86400000 }], projectStories: { snap: { at: new Date(AHORA).toISOString(), proyectos: [{ nombre: 'Acme', abiertas: [], cerradasHoy: [{ id: '9.3', titulo: 'De ayer', at: AHORA - 86400000 }] }] }, runs: [] }, nowMs: AHORA }).data;
+  assert.deepStrictEqual(otroDia.kanban.columnas.find((c) => c.id === 'hechos').tarjetas, []);
+  assert.deepStrictEqual(otroDia.kanban.anteriores, []);
+});

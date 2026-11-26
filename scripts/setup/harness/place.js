@@ -2,9 +2,9 @@
 // place.js — dónde vive el arnés en la máquina: el nombre del lugar, el nombre viejo y cómo se los lee.
 //
 // ── EL PORQUÉ ─────────────────────────────────────────────────────────────────────────────────────────────────────
-// Quien clona el repo público lee después `~/.claude/tycon-claude-guides`: el nombre del repo interno, que afuera nadie
+// Quien clona el repo público lee después el nombre viejo del lugar (`LEGACY_PLACE_NAME`): el nombre del repo interno, que afuera nadie
 // conoce. Por eso el lugar se llama como el repo público,
-// `~/.claude/tycon-harness`, y el nombre viejo sigue resolviendo en las máquinas ya instaladas. Esta es la
+// `tycon-harness`, en la carpeta de Claude Code, y el nombre viejo sigue resolviendo en las máquinas ya instaladas. Esta es la
 // definición única del nombre: nadie más lo escribe a mano.
 //
 // ── QUÉ HAY ACÁ ───────────────────────────────────────────────────────────────────────────────────────────────────

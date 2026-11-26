@@ -30,7 +30,7 @@ const TEXTOS = [
   'skills/tycon-merge-to-main/steps/step-09b-create-change-request.md', 'guides/ci-gate.md', 'guides/git-commit-conventions.md',
   'guides/advisor-rules-catalog.md', 'guides/workflow-orchestration.md', 'guides/safety-guard.md', 'guides/production-with-permission.md',
   ...require('./lib/pieces-guide.js').piecesFiles(ROOT), 'guides/organization-site.md', 'guides/organization-site.en.md',
-  'guides/maintaining/mecanismo-de-instalacion.md', 'guides/maintaining/piezas-en-detalle.md', 'guides/maintaining/publicacion-espejo.md',
+  'guides/maintaining/installation-mechanism.md', 'guides/maintaining/piezas-en-detalle.md', 'guides/maintaining/publicacion-espejo.md',
 ];
 // Los renglones que se quedan, cada uno con su motivo: no son la plataforma del equipo (Azure en la nube), son lo que un
 // freno o el detector de publicación reconocen para frenar, o describen una pieza sólo de Azure DevOps que la mudanza
