@@ -316,10 +316,12 @@ test('T19 CI_AprobacionRepetida: una aprobación del historial de la base, o con
     '.advisors/pipeline-runs/r1/sub/approvals.jsonl', '.tycon/exemptions.jsonl.bak', '.advisors/dod-runtime/approvals.jsonl',
   ];
   // en el índice y no en el disco, sin plegar mayúsculas: así da igual el sistema de archivos
-  const indice = (...a) => execFileSync('git', ['-c', 'core.ignorecase=false', ...a], { cwd: r6.dir, encoding: 'utf8', input: '{}\n', env: ENV() });
-  const blob = indice('hash-object', '-w', '--stdin').trim();
-  for (const p of rutas) indice('update-index', '--add', '--cacheinfo', `100644,${blob},${p}`);
-  const halladas = indice('ls-files', '--', ...gate.RUTAS_DEL_CATALOGO).split('\n').filter(Boolean).sort();
+  // la entrada va sólo al que la lee (`hash-object --stdin`): a un git que no lee su entrada y termina antes, escribirle
+  // da EPIPE de a ratos (la CI lo vio en pedidos distintos el 26/11)
+  const indice = (a, input) => execFileSync('git', ['-c', 'core.ignorecase=false', ...a], { cwd: r6.dir, encoding: 'utf8', env: ENV(), ...(input === undefined ? { stdio: ['ignore', 'pipe', 'pipe'] } : { input }) });
+  const blob = indice(['hash-object', '-w', '--stdin'], '{}\n').trim();
+  for (const p of rutas) indice(['update-index', '--add', '--cacheinfo', `100644,${blob},${p}`]);
+  const halladas = indice(['ls-files', '--', ...gate.RUTAS_DEL_CATALOGO]).split('\n').filter(Boolean).sort();
   assert.deepStrictEqual(halladas, rutas.filter((p) => SRA.entradaDe(p)).sort());
 });
 
