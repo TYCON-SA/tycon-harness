@@ -139,6 +139,7 @@ const CASOS = [
   { id: 'waive-critical-sin-args', marcador: true, argv: ['waive-critical'] },
   { id: 'waive-critical-sin-terminal', marcador: true, argv: ['waive-critical', '--rule', 'X-C1', '--file', 'src/a.js', '--reason', 'probado'] },
   { id: 'compare-waiver-sin-args', marcador: true, argv: ['compare-waiver'] },
+  { id: 'release-write-after-sin-args', marcador: true, argv: ['release-write-after'] },
   { id: 'sign-adversarial-skip-sin-args', marcador: true, argv: ['sign-adversarial-skip'] },
   { id: 'sign-atdd-skip-sin-args', marcador: true, argv: ['sign-atdd-skip'] },
   { id: 'approve-save-sin-args', marcador: true, argv: ['approve-save'] },

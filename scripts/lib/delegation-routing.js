@@ -36,6 +36,7 @@ const RUTAS = Object.freeze({
   'refresh-after-main': Object.freeze({ rutas: ['--root'], conPunto: ['--root'] }),
   'extra-round': Object.freeze({ rutas: ['--repo', '--story'], conPunto: ['--repo'], contra: Object.freeze({ '--story': '--repo' }) }),
   'compare-waiver': Object.freeze({ rutas: [], conPunto: [] }),
+  'write-after-release': Object.freeze({ rutas: [], conPunto: [] }),
   save: Object.freeze({ rutas: [], conPunto: [] }),
   'plan-approval': Object.freeze({ rutas: [], conPunto: [] }),
   'lost-run:particion': Object.freeze({ rutas: [], conPunto: [] }),
