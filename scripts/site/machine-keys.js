@@ -77,7 +77,7 @@ function crearLlaves({ dataDir, ahora = Date.now, log = () => {}, topes = {} }) 
   function guardar() {
     try {
       fs.mkdirSync(path.dirname(archivo), { recursive: true, mode: 0o700 });
-      const tmp = `${archivo}.${process.pid}.tmp`;
+      const tmp = `${archivo}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
       fs.writeFileSync(tmp, JSON.stringify(doc), { mode: 0o600 });
       fs.renameSync(tmp, archivo);
       noGuarda = false;
