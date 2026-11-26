@@ -344,7 +344,11 @@ function check(o) {
     if (!SOURCE_KINDS.has(e.kind)) state = 'sin-fuente';
     else if (seen.length) state = 'con-uso';
     else if (unmeasuredAll || unmeasured.has(`${e.kind}\0${e.old}`)) state = 'sin-medir';
-    return { kind: e.kind, old: e.old, new: e.new, where: e.where || null, state, due: Boolean(date) && today >= date, retire_after: date, sources: [...new Set(seen.map((u) => u.source))].sort() };
+    // un nombre que el arnés sigue aceptando (`accepted_until`: hasta cuándo y por qué) no atrasa el retiro de los demás
+    // ni se retira: queda dicho aparte, con sus usos
+    const accepted = typeof e.accepted_until === 'string' && e.accepted_until.trim() ? e.accepted_until.trim() : null;
+    if (accepted) state = 'aceptada';
+    return { kind: e.kind, old: e.old, new: e.new, where: e.where || null, state, due: Boolean(date) && today >= date, retire_after: date, sources: [...new Set(seen.map((u) => u.source))].sort(), ...(accepted ? { accepted_until: accepted } : {}) };
   });
 
   if (!global) reasons.push('el mapa no tiene fecha de retiro (retire_after)');
@@ -353,7 +357,8 @@ function check(o) {
   if (by('con-uso')) reasons.push(`${by('con-uso')} entrada(s) con uso en la ventana`);
   if (by('sin-medir')) reasons.push(`${by('sin-medir')} entrada(s) sin medir (una consulta falló)`);
   if (by('sin-fuente')) reasons.push(`${by('sin-fuente')} entrada(s) de un tipo que nadie anota`);
-  if (out.some((e) => !e.due) && global && today >= global) reasons.push(`${out.filter((e) => !e.due).length} entrada(s) con fecha propia todavía por llegar`);
+  const porLlegar = out.filter((e) => !e.due && e.state !== 'aceptada');
+  if (porLlegar.length && global && today >= global) reasons.push(`${porLlegar.length} entrada(s) con fecha propia todavía por llegar`);
   if (unreported.length) reasons.push(`${unreported.length} máquina(s) esperada(s) sin reportar en la ventana`);
   for (const u of undeclared) reasons.push(`pipeline no declarado que llama al arnés: ${u.pipeline} (${u.project}/${u.repo}) — falta en la lista de productos`);
   for (const f of failed) reasons.push(`no pude medir ${f.repo || f.source}: ${f.error}`);

@@ -132,6 +132,21 @@ test('T4 RetireA_VentanaDeSieteDias — un uso de hace ocho días no cuenta; uno
   assert.strictEqual(states(seis.json)['viejo-a'], 'con-uso');
 });
 
+// 🔴 Falla con: un nombre que el arnés sigue aceptando (`accepted_until`, hasta que lo renombre su dueño) cuenta como
+//    uso y atrasa el retiro de todos los demás.
+test('T4 RetireA_NombreAceptado — una entrada aceptada con uso no frena el retiro; queda dicha aparte, no se retira', () => {
+  const entries = [...ENTRADAS, { kind: 'config-file', old: 'viejo-d.json', new: 'new-d.json', batch: 'L', accepted_until: 'lo renombra cada producto en su tanda' }];
+  const r = run(lab({ machines: { 'maq-uno': { lines: [uso('viejo-d.json', 'config-file', '2026-11-16')] } }, entries }));
+  assert.strictEqual(r.code, 0, JSON.stringify(r.json.reasons));
+  assert.strictEqual(states(r.json)['viejo-d.json'], 'aceptada');
+  const d = r.json.entries.find((e) => e.old === 'viejo-d.json');
+  assert.strictEqual(d.accepted_until, 'lo renombra cada producto en su tanda');
+  assert.ok(d.sources.length === 1 && /^maquina:/.test(d.sources[0]), `el uso se sigue diciendo: ${JSON.stringify(d.sources)}`);
+  // las demás se retiran igual: con un uso de las otras, sigue frenando
+  const otra = run(lab({ machines: { 'maq-uno': { lines: [uso('viejo-a', 'option', '2026-11-16')] } }, entries }));
+  assert.strictEqual(otra.code, 1);
+});
+
 test('T4 RetireA_CheckSaysReadyOnlyWithPositiveEvidence — una entrada con fecha propia se mide desde la semana antes de su fecha', () => {
   const entries = [{ ...ENTRADAS[0], retire_after: '2026-11-24' }, ENTRADAS[1], ENTRADAS[2]];
   const ese = run(lab({ machines: { 'maq-uno': { lines: [uso('viejo-a', 'option', '2026-11-16')] } }, entries }), ['--today', '2026-11-24']);
