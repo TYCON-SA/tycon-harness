@@ -458,6 +458,9 @@ test('T18 DownloadGcs_FromMachine_NotSupported @story-1.3 @ac-13 @story-1.5 @ac-
 // ── la bajada desde una máquina con la sesión de gcloud ─────────────────────────────────────────────────────
 
 const TOKEN_GCLOUD = 'token-de-prueba';
+// En Windows la bajada todavía no busca `gcloud.cmd` (integrations/gcs/scripts/mailbox.js) y el doble de gcloud es un
+// guion de sh, que Node no lanza ahí: los casos que lo lanzan se saltean, y se miden en Mac y Linux
+const CON_GCLOUD = { skip: process.platform === 'win32' && 'en Windows la bajada todavía no busca gcloud.cmd, y el doble de gcloud es un guion de sh: se mide en Mac y Linux' };
 const MAQ_A = 'maq-a-11111111';
 const MAQ_B = 'maq-b-22222222';
 const V_NUEVA = 'v20261121T101010000Z';
@@ -506,7 +509,7 @@ function bucketDeDosMaquinas(fake) {
   fake.poner(`${MAQ_A}/registros/${V_NUEVA}/cobertura.json`, JSON.stringify({ fuentes: { gates: { estado: 'medido' } } }));
 }
 
-test('T1 Bajada_Gcs_BajaLoNuevo @story-1.5 @ac-1 — con la sesión de gcloud baja la versión más nueva y el juego completo de registros a las rutas de siempre', async () => {
+test('T1 Bajada_Gcs_BajaLoNuevo @story-1.5 @ac-1 — con la sesión de gcloud baja la versión más nueva y el juego completo de registros a las rutas de siempre', CON_GCLOUD, async () => {
   const fake = await FAKE.crear({ bucket: BUCKET, accessId: ACCESS, secreto: SECRETO });
   try {
     bucketDeDosMaquinas(fake);
@@ -525,7 +528,7 @@ test('T1 Bajada_Gcs_BajaLoNuevo @story-1.5 @ac-1 — con la sesión de gcloud ba
   } finally { await fake.cerrar(); }
 });
 
-test('T2 Bajada_Gcs_SegundaPasadaNoBaja @story-1.5 @ac-2 — con el espejo al día no baja nada', async () => {
+test('T2 Bajada_Gcs_SegundaPasadaNoBaja @story-1.5 @ac-2 — con el espejo al día no baja nada', CON_GCLOUD, async () => {
   const fake = await FAKE.crear({ bucket: BUCKET, accessId: ACCESS, secreto: SECRETO });
   try {
     bucketDeDosMaquinas(fake);
@@ -560,7 +563,7 @@ test('T3 Bajada_Gcs_SinGcloud @story-1.5 @ac-4 — sin gcloud es «sin permiso»
   } finally { await fake.cerrar(); }
 });
 
-test('T4 Bajada_Gcs_SinSesion @story-1.5 @ac-4 — gcloud sin sesión, o sin token, es «sin permiso»; corre con la entrada cerrada y sin preguntas', async () => {
+test('T4 Bajada_Gcs_SinSesion @story-1.5 @ac-4 — gcloud sin sesión, o sin token, es «sin permiso»; corre con la entrada cerrada y sin preguntas', CON_GCLOUD, async () => {
   const fake = await FAKE.crear({ bucket: BUCKET, accessId: ACCESS, secreto: SECRETO });
   try {
     bucketDeDosMaquinas(fake);
@@ -578,7 +581,7 @@ test('T4 Bajada_Gcs_SinSesion @story-1.5 @ac-4 — gcloud sin sesión, o sin tok
   } finally { await fake.cerrar(); }
 });
 
-test('T5 Bajada_Gcs_SinRol @story-1.5 @ac-4 — un 403 al listar es «sin permiso»: sale 0 y no crea el espejo', async () => {
+test('T5 Bajada_Gcs_SinRol @story-1.5 @ac-4 — un 403 al listar es «sin permiso»: sale 0 y no crea el espejo', CON_GCLOUD, async () => {
   const fake = await FAKE.crear({ bucket: BUCKET, accessId: ACCESS, secreto: SECRETO });
   try {
     bucketDeDosMaquinas(fake);
@@ -593,7 +596,7 @@ test('T5 Bajada_Gcs_SinRol @story-1.5 @ac-4 — un 403 al listar es «sin permis
   } finally { await fake.cerrar(); }
 });
 
-test('T6 Bajada_Gcs_Token401 @story-1.5 @ac-5 — un 401 al listar o al bajar es credencial_rechazada: sale distinto de 0, no completa y sin el token', async () => {
+test('T6 Bajada_Gcs_Token401 @story-1.5 @ac-5 — un 401 al listar o al bajar es credencial_rechazada: sale distinto de 0, no completa y sin el token', CON_GCLOUD, async () => {
   const fake = await FAKE.crear({ bucket: BUCKET, accessId: ACCESS, secreto: SECRETO });
   try {
     bucketDeDosMaquinas(fake);
@@ -624,7 +627,7 @@ test('T6 Bajada_Gcs_Token401 @story-1.5 @ac-5 — un 401 al listar o al bajar es
   } finally { await fake.cerrar(); }
 });
 
-test('T7 Bajada_Gcs_Bucket404 @story-1.5 @ac-5 — un 404 al listar es sin_contenedor con el bucket en el motivo', async () => {
+test('T7 Bajada_Gcs_Bucket404 @story-1.5 @ac-5 — un 404 al listar es sin_contenedor con el bucket en el motivo', CON_GCLOUD, async () => {
   const fake = await FAKE.crear({ bucket: BUCKET, accessId: ACCESS, secreto: SECRETO });
   try {
     fake.modo.json = '404';
@@ -636,7 +639,7 @@ test('T7 Bajada_Gcs_Bucket404 @story-1.5 @ac-5 — un 404 al listar es sin_conte
   } finally { await fake.cerrar(); }
 });
 
-test('T8 Bajada_Gcs_SinRed @story-1.5 @ac-5 — sin respuesta del servidor es sin_red: sale distinto de 0 y nada marcado', async () => {
+test('T8 Bajada_Gcs_SinRed @story-1.5 @ac-5 — sin respuesta del servidor es sin_red: sale distinto de 0 y nada marcado', CON_GCLOUD, async () => {
   const m = bajadaGcs(null);
   const r = await bajarGcs(m);
   assert.notStrictEqual(r.codigo, 0, r.salida);
@@ -645,7 +648,7 @@ test('T8 Bajada_Gcs_SinRed @story-1.5 @ac-5 — sin respuesta del servidor es si
   assert.deepStrictEqual(enElIndice(m), [], 'nada marcado como bajado');
 });
 
-test('T10 Bajada_Gcs_SinAzureDevOps @story-1.5 @ac-3 — sin Azure DevOps, sin tenant y sin az, baja igual', async () => {
+test('T10 Bajada_Gcs_SinAzureDevOps @story-1.5 @ac-3 — sin Azure DevOps, sin tenant y sin az, baja igual', CON_GCLOUD, async () => {
   const fake = await FAKE.crear({ bucket: BUCKET, accessId: ACCESS, secreto: SECRETO });
   try {
     bucketDeDosMaquinas(fake);

@@ -269,6 +269,8 @@ const TOPE_GCLOUD_MS = 45000;
 function tokenDeGcloud(env = process.env) {
   const bin = String(env.TYCON_GCLOUD_BIN || '').trim() || 'gcloud';
   const r = spawnSync(bin, ['auth', 'print-access-token'], { windowsHide: true, encoding: 'utf8', timeout: TOPE_GCLOUD_MS, stdio: ['ignore', 'pipe', 'pipe'], env: { ...env, CLOUDSDK_CORE_DISABLE_PROMPTS: '1' } });
+  // en Windows gcloud se instala como gcloud.cmd, que spawnSync no encuentra por su nombre: el motivo lo dice y no confunde
+  if (r.error && r.error.code === 'ENOENT' && process.platform === 'win32' && !env.TYCON_GCLOUD_BIN) return { motivo: 'en Windows la bajada todavía no busca gcloud.cmd: el buzón sólo lo leen, por ahora, las máquinas Mac y Linux con su sesión de gcloud' };
   if (r.error && r.error.code === 'ENOENT') return { motivo: `no hay gcloud en esta máquina (${bin}): el buzón sólo lo leen quienes tienen el rol de lectura, con su sesión de gcloud` };
   if (r.error) return { motivo: `gcloud no respondió (${r.error.code || r.error.message}): no se pide un login desde acá` };
   const token = String(r.stdout || '').trim();
