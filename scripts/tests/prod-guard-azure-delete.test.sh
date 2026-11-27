@@ -27,7 +27,7 @@
 set -uo pipefail
 AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 if [ -d /opt/tycon ]; then
-  echo "⏭ azure-delete: esta máquina tiene el freno instalado (/opt/tycon): sin costuras de prueba, esta suite corre en el nocturno."
+  echo "⏭ azure-delete: NO MEDIDO — esta máquina tiene el freno instalado (/opt/tycon): sin costuras de prueba, esta suite corre en el nocturno."
   exit 0
 fi
 node - "$AQUI" <<'JS'

@@ -261,7 +261,7 @@ const CAMINO_DE_LA_PUERTA = [
   '   Un cambio de administración de Azure (alertas, tamaño o plan) va por la puerta, con el mismo cuadro:',
   '     /opt/tycon/bin/tycon-prod-sql --azure <el comando de az, sin «az»>   (las lecturas, list y show, sin cuadro)',
   '   Todas las formas, sin tocar producción: /opt/tycon/bin/tycon-prod-sql --help',
-  '   Producción caída: guides/produccion-con-permiso.md § «Emergencia: producción caída» (firewall, diagnóstico, cambio).',
+  '   Producción caída: guides/production-with-permission.md § «Emergencia: producción caída» (firewall, diagnóstico, cambio).',
 ];
 
 // El mensaje de un borrado en Azure: la puerta no borra nada, así que no se la nombra ni se sugiere un rodeo.
@@ -1012,7 +1012,7 @@ function decidir(entrada) {
         'Un grupo de recursos que no es de producción se pide por la puerta, que pide la aprobación del dueño en el cuadro',
         'y comprueba en Azure qué contiene antes de borrar: /opt/tycon/bin/tycon-prod-sql --delete-group <grupo>',
         'Lo demás (un grupo con algo de producción, un candado, otro recurso) lo corre una persona en su propia terminal,',
-        'fuera del asistente, después de mirar qué contiene. Detalle: guides/produccion-con-permiso.md',
+        'fuera del asistente, después de mirar qué contiene. Detalle: guides/production-with-permission.md',
       ], { cmd }, 'borrado-de-azure', { sinPuerta: true });
     }
   }
