@@ -68,8 +68,9 @@ function firmaEsperada(req, u, secreto) {
  *   media        la respuesta a la bajada de un objeto (?alt=media): 'ok', '401', '403', '500' o 'inflado' (sirve 32 MB
  *                para un objeto listado con pocos bytes, como la transcodificación de un objeto con Content-Encoding gzip;
  *                `servidos` cuenta lo que llegó a escribir)
- *   leerXml      lo que contesta un GET firmado de un objeto por la API XML: 'AccessDenied' (la cuenta sólo crea) u 'ok'
- *                (la cuenta lee por nombre: el objeto, o 404 NoSuchKey si no está)
+ *   leerXml      lo que contesta un GET firmado de un objeto por la API XML: 'AccessDenied' (la cuenta sólo crea), 'ok'
+ *                (la cuenta lee por nombre: el objeto, o 404 NoSuchKey si no está), 'propios' (permisos por objeto: lee
+ *                los que existen y a lo que no está le contesta 403) o 'prefijo:<p>' (lee sólo bajo `<p>`, con su 404)
  *   pagina       cuántos objetos trae cada página del listado JSON
  *   metadatos    'ok' o '404'
  */
@@ -158,7 +159,10 @@ function crear({ bucket, accessId, secreto, token = 'token-de-prueba' }) {
         if (modo.listado === 'ok') { res.writeHead(200, { 'content-type': 'application/xml' }); return res.end(`<?xml version='1.0' encoding='UTF-8'?><ListBucketResult><Name>${bucket}</Name></ListBucketResult>`); }
         return xmlError(res, modo.listado);
       }
-      if (req.method === 'GET' && partes.length >= 2 && modo.leerXml === 'ok') {
+      const leePorNombre = (n) => modo.leerXml === 'ok'
+        || (modo.leerXml === 'propios' && objetos.has(n))
+        || (String(modo.leerXml).startsWith('prefijo:') && n.startsWith(String(modo.leerXml).slice('prefijo:'.length)));
+      if (req.method === 'GET' && partes.length >= 2 && leePorNombre(partes.slice(1).join('/'))) {
         const o = objetos.get(partes.slice(1).join('/'));
         if (!o) return xmlError(res, 'NoSuchKey');
         res.writeHead(200, { 'content-type': 'application/octet-stream' });
