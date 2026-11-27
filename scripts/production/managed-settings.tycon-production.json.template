@@ -4,14 +4,14 @@
     "ask": [
       "Bash(az sql server firewall-rule *)",
       "Edit(//**/.tycon/production.json)",
-      "Edit(//**/.claude/.tycon-pipeline/production-index.json)",
-      "Edit(//**/.claude/.tycon-pipeline/production-memory.json)",
+      "Edit(//**/.tycon-pipeline/production-index.json)",
+      "Edit(//**/.tycon-pipeline/production-memory.json)",
       "Edit(//**/.tycon/state/production-index.json)",
       "Edit(//**/.tycon/state/production-memory.json)",
       "Edit(//**/.tycon/produccion.json)",
-      "Edit(//**/.claude/.tycon-pipeline/production-firewall.json)",
+      "Edit(//**/.tycon-pipeline/production-firewall.json)",
       "Edit(//**/.tycon/state/production-firewall.json)",
-      "Write(//**/.claude/.tycon-pipeline/production-firewall.json)",
+      "Write(//**/.tycon-pipeline/production-firewall.json)",
       "Write(//**/.tycon/state/production-firewall.json)"
     ]
   },

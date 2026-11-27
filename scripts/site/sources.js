@@ -693,7 +693,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
   const rutaEstado = path.join(dataDir, ARCHIVO_ESTADO);
   // `personas`: lo que la regla de quién es quién necesita y el modelo NO lleva — lo informado por cada máquina
   // (de la última bajada entera del buzón) y la lista de repos.json
-  const st = { perfil: cfg.profileRepo ? { estado: 'pendiente', motivo: 'el perfil del equipo todavía se está bajando' } : { estado: 'sin_configurar', motivo: 'no configurado: faltan SITE_PROFILE_REPO y SITE_PROFILE_TOKEN' }, cargado: false, ultimoBueno: null, fallaDesde: null, fallaMotivo: null, fallaRutas: null, frenado: null, bandaConfig: null, modelo: null, personas: { informados: null, repos: null }, huellas: { medido: false, carpetas: {} }, fallas: { repo: null, buzon: null }, hilos: false, buzon: { completo: false, armable: false, generacion: 0, seguir: false, pendientes: 0 }, copia: null, copiaHora: null };
+  const st = { perfil: cfg.profileRepo ? { estado: 'pendiente', motivo: 'el perfil del equipo todavía se está bajando' } : { estado: 'sin_configurar', motivo: 'no configurado: faltan SITE_PROFILE_REPO y SITE_PROFILE_TOKEN' }, cargado: false, ultimoBueno: null, fallaDesde: null, fallaMotivo: null, fallaRutas: null, frenado: null, bandaConfig: null, modelo: null, personas: { informados: null, repos: null }, huellas: { medido: false, carpetas: {} }, fallas: { repo: null, buzon: null }, hilos: false, buzon: { completo: false, armable: false, generacion: 0, seguir: false, pendientes: 0, grandes: 0 }, copia: null, copiaHora: null };
   // quien quiere saber que el refresco terminó (la pestaña Corridas rearma su vista si el espejo cambió)
   const oyentes = [];
   let temporizador = null;
@@ -995,6 +995,10 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     // esperar el refresco de los minutos de siempre. Sin avance, no: sería un lazo.
     st.buzon.seguir = r.codigo === 0 && !st.buzon.completo && r.res.sin_tiempo > 0 && r.res.bajados > 0;
     if (st.buzon.seguir) log(`buzón: la pasada cortó ${r.res.por_tope ? 'por el tope de conversaciones' : 'por tiempo'} con ${r.res.sin_tiempo} ${r.res.sin_tiempo === 1 ? 'archivo pendiente' : 'archivos pendientes'}; la siguiente sigue enseguida`);
+    // lo que pasa su tope de bajada no va a bajar nunca: la pasada sale entera igual, y la pestaña se lo dice a quien
+    // mantiene (A45). Un error que cortó la pasada deja el número de la anterior
+    if (r.codigo === 0) st.buzon.grandes = Number.isInteger(r.res.grandes) && r.res.grandes > 0 ? r.res.grandes : 0;
+    if (r.res.grandes) log(`buzón: ${r.res.grandes === 1 ? '1 archivo pasa' : `${r.res.grandes} archivos pasan`} su tope de bajada y no se baja${r.res.grandes === 1 ? '' : 'n'}: ${(r.res.grandes_nombres || []).slice(0, 5).join(', ')}`);
     if (r.res.hilos_grandes) log(`buzón: ${r.res.hilos_grandes === 1 ? '1 conversación pasa' : `${r.res.hilos_grandes} conversaciones pasan`} el tope de ${Math.round(topeConversacionBytes / (1024 * 1024))} MB: no se bajan, y sus ejecuciones lo dicen en la tabla`);
     // 🔴 A48: mientras la bajada se pone al día (una pasada cada pocos segundos que avanza), releer el espejo entero en
     //    cada una son decenas de miles de aperturas del disco montado, que un recurso de archivos de una nube puede
@@ -1260,7 +1264,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     // `armable`: la pestaña puede armar (entera, o con todos los volcados y registros); `pendientes`: archivos de
     // conversaciones que esa pasada dejó para la siguiente
     // `siguiendo`: la última pasada cortó por tiempo y la siguiente ya está en camino (la pestaña dice «cargando»)
-    buzonEstado: () => ({ completo: st.buzon.completo, armable: st.buzon.armable, generacion: st.buzon.generacion, siguiendo: st.buzon.seguir, pendientes: st.buzon.pendientes || 0, bajando: st.buzon.bajando === true }),
+    buzonEstado: () => ({ completo: st.buzon.completo, armable: st.buzon.armable, generacion: st.buzon.generacion, siguiendo: st.buzon.seguir, pendientes: st.buzon.pendientes || 0, grandes: st.buzon.grandes || 0, bajando: st.buzon.bajando === true }),
     /** La pestaña de Ejecuciones dice si está armando: mientras arma, la bajada espera (2.79). */
     alArmar(fn) { if (typeof fn === 'function') armando.push(fn); },
     /** La generación del espejo (ver «La memoria del espejo»): igual número, mismo contenido. La pestaña Corridas no lo recorre para saberlo. */
