@@ -127,9 +127,18 @@ function refreshed(command, home, platform) {
 const BOOTSTRAP_RX = new RegExp(`[\\\\/]${literal(TH.OWN_DIR_NAME)}[\\\\/]state[\\\\/]harness[\\\\/]bootstrap\\.js`);
 function isNew(command, home) {
   if (typeof command !== 'string') return false;
-  if (command.includes(BOOTSTRAP_MARK) || BOOTSTRAP_RX.test(command)) return true;
+  const c = conBarras(command);
+  if (c.includes(BOOTSTRAP_MARK) || BOOTSTRAP_RX.test(command)) return true;
   if (!home) return false;
-  try { return conBarras(command).includes(`${conBarras(TH.ownPathsOf({ home }).state)}/harness/bootstrap.js`); } catch (_) { return false; }
+  // la carpeta del estado en uso de esta casa, como la escribe lineFor: por la ruta entera o, dentro de la carpeta de la
+  // persona, por su tramo (`$HOME/<tramo>` o `<carpeta>/<tramo>`). Con `TYCON_HOME` en otra carpeta, es ésa
+  try {
+    const sd = TH.stateDir(home);
+    const rel = path.relative(path.resolve(home), sd).split(path.sep).join('/');
+    const formas = [`${conBarras(sd)}/harness/bootstrap.js`];
+    if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) formas.push(`/${rel}/harness/bootstrap.js`);
+    return formas.some((f) => c.includes(f));
+  } catch (_) { return false; }
 }
 
 // ── el análisis por estructura ───────────────────────────────────────────────────────────────────────────────────────

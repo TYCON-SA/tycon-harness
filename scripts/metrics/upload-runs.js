@@ -911,7 +911,7 @@ function startupLineFact(home, platform) {
       .flatMap((e) => (e && Array.isArray(e.hooks) ? e.hooks : [])).map((h) => (h && typeof h.command === 'string' ? h.command : '')).filter(Boolean);
   } catch (_) { return 'sin-medir'; }
   if (cmds.some((c) => SL.isStale(c, home, platform) || SL.classify(c))) return 'vieja';
-  return cmds.some((c) => SL.isNew(c)) ? 'nueva' : 'sin-medir';
+  return cmds.some((c) => SL.isNew(c, home)) ? 'nueva' : 'sin-medir';
 }
 
 function oldPlacesFacts(home, tree, kindOf, notMeasured, code) {

@@ -604,6 +604,39 @@ test('T6 · StartupLine_NamesStateInUse: en una máquina mudada la línea pasa a
   assert.strictEqual(dice(doctor(casa('b3-doc-sin-mudar', vieja, { mudada: false }).home)), 0);
 });
 
+// T6c StartupLine_TyconHomeElsewhere_IsOwn @story-8.24 @ac-6
+// 🔴 Falla con: con `TYCON_HOME` en una carpeta que no se llama `.tycon`, no reconocer la línea propia: cada `install`
+//    suma otra igual, place.json la sube «sin medir» y la heal le pega el instalador.
+test('T6c · StartupLine_TyconHomeElsewhere_IsOwn: con TYCON_HOME en otra carpeta, la línea nueva es la del arnés', () => {
+  const { spawnSync } = require('child_process');
+  for (const [name, adentro] of [['b3-th-fuera', false], ['b3-th-dentro', true]]) {
+    const home = path.join(BASE, name);
+    const th = adentro ? path.join(home, 'cosas', 'arnes') : path.join(BASE, `${name}-datos`, 'arnes');
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    fs.mkdirSync(path.join(th, 'state'), { recursive: true });
+    const file = path.join(home, '.claude', 'settings.json');
+    fs.writeFileSync(file, JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: FIXTURE.new.posix, async: true }] }] } }));
+    const env = { PATH: process.env.PATH, HOME: home, USERPROFILE: home, TYCON_HOME: th };
+    const js = `const SL=require(${JSON.stringify(MODULE)});const os=require('os');const f=${JSON.stringify(file)};
+      const a=SL.migrate(f,{home:os.homedir(),platform:'darwin',nodeOk:true,addIfMissing:true});
+      const b=SL.migrate(f,{home:os.homedir(),platform:'darwin',nodeOk:true,addIfMissing:true});
+      const s=JSON.parse(require('fs').readFileSync(f,'utf8')).hooks.SessionStart.flatMap((e)=>e.hooks).map((h)=>h.command);
+      console.log(JSON.stringify({a:a.changed,b:b.changed,s,nuevo:SL.isNew(s[0],os.homedir()),fact:require(${JSON.stringify(path.join(RAIZ, 'scripts', 'metrics', 'upload-runs.js'))}).startupLineFact(os.homedir(),'darwin')}));`;
+    const r = spawnSync(process.execPath, ['-e', js], { encoding: 'utf8', env, timeout: 30000 });
+    const o = JSON.parse(r.stdout.trim().split('\n').pop());
+    assert.strictEqual(o.s.length, 1, `${name}: ${JSON.stringify(o.s)}`);
+    assert.ok(o.s[0].includes('/arnes/state/harness/bootstrap.js'), `${name}: ${o.s[0]}`);
+    assert.ok(o.a && !o.b && o.nuevo, `${name}: ${JSON.stringify(o)}`);
+    assert.strictEqual(o.fact, 'nueva', name);
+    // la heal tampoco le pega el instalador
+    const antes = fs.readFileSync(file, 'utf8');
+    spawnSync('bash', [path.join(RAIZ, 'scripts', 'hooks', 'harness-bootstrap-heal.sh')], { encoding: 'utf8', env, input: '{}', timeout: 30000 });
+    assert.strictEqual(fs.readFileSync(file, 'utf8'), antes, `${name}: la heal tocó el settings.json`);
+  }
+  // una línea de Windows con barras invertidas también es la del arnés
+  assert.ok(mod().isNew('pwsh -C "node \'C:\\Users\\X\\.claude\\.tycon-pipeline\\harness\\bootstrap.js\'"'));
+});
+
 // T8 PlaceJson_StartupLine @story-8.24 @ac-8
 // 🔴 Falla con: un place.json que no dice qué línea tiene la máquina: el retiro no puede saber si la deja sin actualizarse.
 test('T8 · PlaceJson_StartupLine: lo que sube place.json de la línea de arranque', () => {
