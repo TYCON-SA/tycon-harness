@@ -372,7 +372,7 @@ function ensurePlace({ clon, home, check = false, forzar = null, prefer = null, 
   const pref = check ? '(--check) ' : '';
   const placeRuta = PLACE().placePath(home);
   const legacyRuta = PLACE().legacyPlacePath(home);
-  // no se retira el nombre por el que corre quien llama (el instalador lanzado por ~/.claude/<viejo>/scripts/… perdería su
+  // no se retira el nombre por el que corre quien llama (el instalador lanzado por la ruta del nombre viejo perdería su
   // propia carpeta a mitad de camino): se retira en la corrida siguiente. Tampoco con `keepLegacy` (la mudanza, que lo
   // deja para el arranque siguiente y así su deshacer no tiene que reponerlo), ni mientras haya una mudanza a medias (su
   // diario existe: el aplicador que corre la mudanza, o un programa anterior que no pasa `keepLegacy`)
