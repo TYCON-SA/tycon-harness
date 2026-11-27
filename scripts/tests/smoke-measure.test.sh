@@ -208,6 +208,14 @@ if [ "$rc26" = 77 ] && [ "$(ultima "$QR" 'e.exit')" = 77 ] && [ "$(ultima "$GATE
 else
   no "T26 no medido: sale $rc26, matriz $v26, $(tail -1 "$QR" 2>/dev/null) · aviso: $aviso26"
 fi
+# con un proceso de fondo que deja la salida abierta, el guion agrega su aviso al final: la marca sigue contando
+bash "$SMOKE" "$QEV" "$Q/specs/story-9.26-no-medido.md" --acs 1 --pass-if 'la suite sale verde' -- \
+  sh -c 'echo "⏭ prod-guard: NO MEDIDO — con un proceso de fondo"; sleep 7 &' >/dev/null 2>&1; rc26f=$?
+if [ "$rc26f" = 77 ] && [ "$(ultima "$QR" 'e.not_measured')" = 'con un proceso de fondo' ]; then
+  ok "T26 con un proceso de fondo que tapa la salida, la marca sigue dando exit 77"
+else
+  no "T26 proceso de fondo: sale $rc26f, $(tail -1 "$QR" 2>/dev/null)"
+fi
 bash "$SMOKE" "$QEV" "$Q/specs/story-9.26-no-medido.md" --acs 1 --pass-if 'la suite sale verde' -- \
   printf '⏭ una-parte: NO MEDIDO — sin pwsh\n✅ prod-guard: 12 ok\n' >/dev/null 2>&1; rc26b=$?
 v26b="$(matriz26)"

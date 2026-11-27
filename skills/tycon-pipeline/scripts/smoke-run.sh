@@ -347,7 +347,8 @@ fi
 # sigue con su código. Sin la salida guardada no se puede leer la marca; ese humo ya queda con output: null.
 NOMED_FIELD=""
 if [ "$EXIT" = 0 ] && [ -n "$SALIDA_TMP" ] && [ -s "$SALIDA_TMP" ]; then
-  ULTIMA="$(tr -d '\r' < "$SALIDA_TMP" | awk 'NF { l = $0 } END { print l }')"
+  # el aviso que este guion agrega cuando un proceso de fondo deja la salida abierta no es del comando: se saltea
+  ULTIMA="$(tr -d '\r' < "$SALIDA_TMP" | awk 'NF && $0 !~ /^\[… la salida siguió después de guardarla/ { l = $0 } END { print l }')"
   case "$ULTIMA" in
     "⏭ "*": NO MEDIDO"*)
       POR_QUE="${ULTIMA#*NO MEDIDO}"; POR_QUE="${POR_QUE# — }"; [ -n "$POR_QUE" ] || POR_QUE="sin motivo"
