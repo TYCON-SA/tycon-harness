@@ -460,8 +460,9 @@ escribió no se edita a mano: se edita el canónico, que lo re-pisa. Todo se man
 | Los hooks del arnés | scripts reales en los repos del equipo (el arnés y `agent-skills`), registrados en `~/.claude/settings.json` | los MISMOS scripts, registrados en `~/.codex/hooks.json` (merge quirúrgico — lo tuyo queda intacto) | `build/deploy-codex-hooks.js` |
 | Servidores MCP | el registro de TU máquina (`~/.claude.json`; los que vienen por plugin, de la tabla de equivalencias) | `[mcp_servers]` de `~/.codex/config.toml` + los `writable_roots` del sandbox (secretos jamás al archivo) | `build/deploy-codex-mcp.js` |
 | ~160 skills (BMAD incluido) | `~/.claude/agent-skills/skills/` | `~/.codex/skills/*` → symlinks — BMAD se instala UNA vez, del lado Claude, SIEMPRE | `build/deploy-shared-skills.js` |
+| Prohibir borrar la raíz o la carpeta personal entera | `permissions.deny` de `~/.claude/settings.json` | `~/.codex/rules/tycon-harness.rules` (archivo propio: `default.rules` es tuyo) | `build/deploy-codex-rules.js` |
 
-Las cuatro filas `build/` las orquesta `build/deploy-codex-all.js` (lo invoca el instalador
+Las cinco filas `build/` las orquesta `build/deploy-codex-all.js` (lo invoca el instalador
 en cada arranque, con huella digital: solo re-despliega si algo cambió); las reglas de
 `AGENTS.md` las escribe `scripts/setup/agents-md-blocks.js` desde los bloques del arnés, entre sus
 marcas (lo que vos escribís fuera de las marcas no se toca). Y el mantenimiento corre desde el

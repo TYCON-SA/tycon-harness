@@ -119,11 +119,15 @@ cualquier gancho y que ningún gancho puede dejar pasar. La lista es `RULES` en 
 Una regla deny no tiene la salida de emergencia de abajo: frena siempre. Por eso quedan sólo en este freno, con su
 emergencia, `curl | bash` (Claude Code parte el comando en el `|`, y la regla tendría que frenar `bash` solo) y el
 borrado de una base entera (SQL-C1: se autoriza para recrear una base de desarrollo, y va adentro de un cliente de SQL
-sin forma fija). Este freno sigue frenando las dos de la tabla, con el mismo id: es la segunda red, y la única en Codex y
-Cursor, que no leen `permissions.deny`.
+sin forma fija). Este freno sigue frenando las dos de la tabla, con el mismo id: es la segunda red, y la única en
+Cursor, que no tiene nada parecido.
+
+Codex no lee `permissions.deny`, pero tiene sus propias reglas. Con el lado Codex prendido, el arnés le escribe las mismas,
+de la misma lista, en un archivo suyo: `~/.codex/rules/tycon-harness.rules` (`build/deploy-codex-rules.js`). No toca
+`default.rules`, donde Codex anota lo que la persona aprueba, y no pisa un archivo con ese nombre que no sea del arnés.
 
 El instalador las suma en el perfil completo, sin tocar las reglas que ya tenía cada persona; desinstalar saca sólo las
-suyas. `TYCON_NO_DENY_RULES=1` no las suma.
+suyas (en Codex, su archivo). `TYCON_NO_DENY_RULES=1` no las suma, y en Codex saca el archivo del arnés.
 
 ## Cuando un freno no alcanza a decidir
 
