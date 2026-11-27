@@ -320,7 +320,7 @@ function removePieces(pieces, { home = os.homedir(), env = process.env, tree = n
         }
         case 'startup-line': {
           const d = json(piece); if (!d) break;
-          const n = dropHooks(d.data, (ev, h) => ev === 'SessionStart' && SL.isNew(h.command));
+          const n = dropHooks(d.data, (ev, h) => ev === 'SessionStart' && SL.isNew(h.command, home));
           if (n) { d.dirty = true; out.removed.push(piece); } else out.absent.push(piece);
           break;
         }

@@ -411,7 +411,7 @@ function restore(ctx, state, copy, { why = 'rollback', runApplier = null, log = 
 
   // (4) lo registrado que ese reporte ya no trae, salvo lo propio de harness.js
   const own = typeof isOwnPiece === 'function' ? isOwnPiece : defaultIsOwnPiece(home);
-  const opts = { home, env, isStartupLine: startupLine.isNew };
+  const opts = { home, env, isStartupLine: (c) => startupLine.isNew(c, home) };
   const reported = new Set(result.report.map(pieceKey));
   const prev = (Array.isArray(state.managed) ? state.managed : []).filter((p) => isObject(p) && p.kind && p.where && p.id);
   // lo que el paso (1) volvió ENTERO a como estaba antes del cambio —y sigue así después del aplicador— no se toca: esos
@@ -474,7 +474,7 @@ function dropUnreported(state, applied, { home = os.homedir(), env = process.env
   const rep = applied && Array.isArray(applied.report) ? shared.union(applied.report, applied.shared) : null;
   if (!rep) { result.ok = false; say('el aplicador no devolvió el reporte de piezas: no quito nada y el registro queda como estaba'); return result; }
   const own = typeof isOwnPiece === 'function' ? isOwnPiece : defaultIsOwnPiece(home);
-  const opts = { home, env, isStartupLine: startupLine.isNew };
+  const opts = { home, env, isStartupLine: (c) => startupLine.isNew(c, home) };
   const reported = new Set(rep.map(pieceKey));
   const prev = (Array.isArray(state.managed) ? state.managed : []).filter((p) => isObject(p) && p.kind && p.where && p.id);
   const lista = (k) => String((declared && declared[k]) || '').split(',').map((s) => s.trim()).filter(Boolean);

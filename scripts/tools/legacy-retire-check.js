@@ -458,8 +458,12 @@ function checkHome(o) {
     const mode = (j.install && j.install.mode) || null;
     if (mode !== 'managed') notMoved.push(code);
     const places = Object.fromEntries(OLD_PLACES.map((p) => [p.name, placeInMachine(p.of(j))]));
-    machines.push({ code, day: j.day, mode, version: (j.install && j.install.version) || null, places });
+    // la línea de arranque: la vieja llama a la copia fija por la carpeta que se retira; sin el campo, sin medir
+    const startupLine = ['nueva', 'vieja'].includes(j.startup_line) ? j.startup_line : 'sin-medir';
+    machines.push({ code, day: j.day, mode, version: (j.install && j.install.version) || null, places, startup_line: startupLine });
   }
+  const oldLine = machines.filter((m) => m.startup_line === 'vieja').map((m) => m.code).sort();
+  const lineUnmeasured = machines.filter((m) => m.startup_line === 'sin-medir').map((m) => m.code).sort();
   // sin buzón, o sin ninguna máquina en la ventana, no hay evidencia de nada: ningún lugar sale limpio
   const noEvidence = !read || !machines.length;
   const places = OLD_PLACES.map((p) => {
@@ -476,6 +480,8 @@ function checkHome(o) {
   for (const p of places.filter((x) => x.state === 'con-uso')) reasons.push(`${p.name}: con uso en ${p.uses.map((u) => `${u.machine} (${u.files.join(', ')})`).join(', ')}`);
   for (const p of places.filter((x) => x.state === 'sin-medir')) reasons.push(`${p.name}: sin medir${p.unmeasured.length ? ` en ${p.unmeasured.join(', ')}` : ''}`);
   if (notMoved.length) reasons.push(`${notMoved.length} máquina(s) sin la versión bajada: ${notMoved.join(', ')}`);
+  if (oldLine.length) reasons.push(`${oldLine.length} máquina(s) con la línea de arranque vieja (por la carpeta que se retira): ${oldLine.join(', ')}`);
+  if (lineUnmeasured.length) reasons.push(`línea de arranque sin medir en ${lineUnmeasured.join(', ')}`);
   if (unreported.length) reasons.push(`${unreported.length} máquina(s) sin reportar en la ventana: ${unreported.join(', ')}`);
   for (const f of failed) reasons.push(`no pude medir ${f.source}: ${f.error}`);
 
@@ -484,7 +490,8 @@ function checkHome(o) {
     code,
     report: {
       today, retire_after: date, window_from: windowFrom, places, machines,
-      machines_not_moved: notMoved, machines_unreported: unreported, failed_queries: failed, reasons,
+      machines_not_moved: notMoved, machines_unreported: unreported, machines_old_startup_line: oldLine,
+      machines_startup_line_unmeasured: lineUnmeasured, failed_queries: failed, reasons,
     },
   };
 }

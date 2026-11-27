@@ -534,6 +534,136 @@ test('W-S5 · Doctor_OldStartupLine_IsSaid: con la línea de arranque en una for
   assert.ok(!said(d.fail) && !said(d.warn), JSON.stringify(d));
 });
 
+// ─── la línea por la carpeta del estado en uso, antes del retiro de la de siempre ────────────────────────────────────────
+
+/** Una casa de juguete con su settings.json; `mudada` crea la carpeta del estado de la casa propia (`.tycon/state`). */
+function casa(name, command, { mudada = true } = {}) {
+  const home = path.join(BASE, name);
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  if (mudada) fs.mkdirSync(path.join(home, '.tycon', 'state'), { recursive: true });
+  const file = path.join(home, '.claude', 'settings.json');
+  fs.writeFileSync(file, JSON.stringify({ hooks: { SessionStart: [{ hooks: [ALIEN_BEFORE] }, { hooks: [{ type: 'command', command, async: true }] }] } }, null, 2) + '\n');
+  return { home, file };
+}
+
+// T6 StartupLine_NamesStateInUse @story-8.24 @ac-6
+// 🔴 Falla con: la línea que llama a la copia fija por `.claude/.tycon-pipeline/harness/` en una máquina mudada: si ese
+//    enlace se retira, la copia fija y el respaldo quedan sin archivo y la máquina no se actualiza más, sin aviso.
+test('T6 · StartupLine_NamesStateInUse: en una máquina mudada la línea pasa a la carpeta del estado en uso, una vez y con copia', () => {
+  const vieja = FIXTURE.new.posix;
+  const m = casa('b3-mudada', vieja);
+  const nueva = 'node "$HOME/.tycon/state/harness/bootstrap.js" || bash "$HOME/.tycon/state/harness/bootstrap-fallback.sh"';
+  assert.strictEqual(mod().newLine(m.home, 'darwin').command, nueva);
+  let r = mod().migrate(m.file, { home: m.home, platform: 'darwin', nodeOk: true, backup: true });
+  assert.ok(r.changed, r.reason);
+  assert.strictEqual(r.before, vieja);
+  assert.deepStrictEqual(sessionStart(m.file).map((h) => h.command), [ALIEN_BEFORE.command, nueva]);
+  assert.strictEqual(backups(m.file).length, 1, 'con su copia');
+  // una segunda corrida no cambia nada
+  r = mod().migrate(m.file, { home: m.home, platform: 'darwin', nodeOk: true, backup: true });
+  assert.ok(!r.changed, r.reason);
+  // una máquina que no se mudó sigue con la de siempre
+  const s = casa('b3-sin-mudar', vieja, { mudada: false });
+  r = mod().migrate(s.file, { home: s.home, platform: 'darwin', nodeOk: true });
+  assert.ok(!r.changed, r.reason);
+  assert.strictEqual(mod().newLine(s.home, 'darwin').command, vieja);
+  // Windows, mudada: la carpeta nueva y sin `$`
+  const w = mod().newLine(m.home, 'win32').command;
+  assert.ok(w.includes('/.tycon/state/harness/bootstrap.js') && !w.includes('$'), w);
+  // las dos son la línea del arnés (no una forma desconocida)
+  assert.ok(mod().isNew(vieja) && mod().isNew(nueva) && mod().isNew(w));
+  // una variante de la vieja (`${HOME}`, la ruta entera, algo al final) también pasa: sólo cambia el tramo de la carpeta
+  for (const [name, antes, despues] of [
+    ['b3-llaves', vieja.split('$HOME').join('${HOME}'), nueva.split('$HOME').join('${HOME}')],
+    ['b3-cola', `${vieja}; true`, `${nueva}; true`],
+  ]) {
+    const v = casa(name, antes);
+    r = mod().migrate(v.file, { home: v.home, platform: 'darwin', nodeOk: true });
+    assert.ok(r.changed, `${name}: ${r.reason}`);
+    assert.strictEqual(sessionStart(v.file)[1].command, despues, name);
+  }
+  const abs = casa('b3-absoluta', 'x');
+  const conRuta = vieja.split('$HOME').join(abs.home);
+  fs.writeFileSync(abs.file, JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: conRuta }] }] } }));
+  r = mod().migrate(abs.file, { home: abs.home, platform: 'darwin', nodeOk: true });
+  assert.strictEqual(sessionStart(abs.file)[0].command, nueva.split('$HOME').join(abs.home), r.reason);
+  // una línea propia de la persona con una carpeta `state` no es la del arnés: las dos quedan
+  const propia = 'node "$HOME/miapp/state/harness/bootstrap.js"';
+  assert.ok(!mod().isNew(propia));
+  const p = casa('b3-propia', nueva);
+  fs.writeFileSync(p.file, JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: propia }] }, { hooks: [{ type: 'command', command: nueva, async: true }] }] } }));
+  r = mod().migrate(p.file, { home: p.home, platform: 'darwin', nodeOk: true });
+  assert.deepStrictEqual(sessionStart(p.file).map((h) => h.command), [propia, nueva], r.reason);
+  // doctor lo dice una vez, como aviso, en una máquina mudada con la línea vieja; con la nueva o sin mudar, nada
+  const { spawnSync } = require('child_process');
+  const HARNESS = path.join(__dirname, '..', 'setup', 'harness.js');
+  const doctor = (home) => JSON.parse(spawnSync(process.execPath, [HARNESS, 'doctor', '--json'], { encoding: 'utf8', env: { PATH: process.env.PATH, HOME: home, USERPROFILE: home }, timeout: 60000 }).stdout);
+  const dice = (d) => [...d.fail, ...d.warn].filter((x) => /llama a la copia fija por la carpeta del estado de siempre, que se retira/.test(x)).length;
+  assert.strictEqual(dice(doctor(casa('b3-doc-vieja', vieja).home)), 1);
+  assert.strictEqual(dice(doctor(casa('b3-doc-nueva', nueva).home)), 0);
+  assert.strictEqual(dice(doctor(casa('b3-doc-sin-mudar', vieja, { mudada: false }).home)), 0);
+});
+
+// T6c StartupLine_TyconHomeElsewhere_IsOwn @story-8.24 @ac-6
+// 🔴 Falla con: con `TYCON_HOME` en una carpeta que no se llama `.tycon`, no reconocer la línea propia: cada `install`
+//    suma otra igual, place.json la sube «sin medir» y la heal le pega el instalador.
+test('T6c · StartupLine_TyconHomeElsewhere_IsOwn: con TYCON_HOME en otra carpeta, la línea nueva es la del arnés', () => {
+  const { spawnSync } = require('child_process');
+  for (const [name, adentro] of [['b3-th-fuera', false], ['b3-th-dentro', true]]) {
+    const home = path.join(BASE, name);
+    const th = adentro ? path.join(home, 'cosas', 'arnes') : path.join(BASE, `${name}-datos`, 'arnes');
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+    fs.mkdirSync(path.join(th, 'state'), { recursive: true });
+    const file = path.join(home, '.claude', 'settings.json');
+    fs.writeFileSync(file, JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: FIXTURE.new.posix, async: true }] }] } }));
+    const env = { PATH: process.env.PATH, HOME: home, USERPROFILE: home, TYCON_HOME: th };
+    const js = `const SL=require(${JSON.stringify(MODULE)});const os=require('os');const f=${JSON.stringify(file)};
+      const a=SL.migrate(f,{home:os.homedir(),platform:'darwin',nodeOk:true,addIfMissing:true});
+      const b=SL.migrate(f,{home:os.homedir(),platform:'darwin',nodeOk:true,addIfMissing:true});
+      const s=JSON.parse(require('fs').readFileSync(f,'utf8')).hooks.SessionStart.flatMap((e)=>e.hooks).map((h)=>h.command);
+      console.log(JSON.stringify({a:a.changed,b:b.changed,s,nuevo:SL.isNew(s[0],os.homedir()),fact:require(${JSON.stringify(path.join(RAIZ, 'scripts', 'metrics', 'upload-runs.js'))}).startupLineFact(os.homedir(),'darwin')}));`;
+    const r = spawnSync(process.execPath, ['-e', js], { encoding: 'utf8', env, timeout: 30000 });
+    const o = JSON.parse(r.stdout.trim().split('\n').pop());
+    assert.strictEqual(o.s.length, 1, `${name}: ${JSON.stringify(o.s)}`);
+    assert.ok(o.s[0].includes('/arnes/state/harness/bootstrap.js'), `${name}: ${o.s[0]}`);
+    assert.ok(o.a && !o.b && o.nuevo, `${name}: ${JSON.stringify(o)}`);
+    assert.strictEqual(o.fact, 'nueva', name);
+    // la heal tampoco le pega el instalador
+    const antes = fs.readFileSync(file, 'utf8');
+    spawnSync('bash', [path.join(RAIZ, 'scripts', 'hooks', 'harness-bootstrap-heal.sh')], { encoding: 'utf8', env, input: '{}', timeout: 30000 });
+    assert.strictEqual(fs.readFileSync(file, 'utf8'), antes, `${name}: la heal tocó el settings.json`);
+  }
+  // una línea de Windows con barras invertidas también es la del arnés
+  assert.ok(mod().isNew('pwsh -C "node \'C:\\Users\\X\\.claude\\.tycon-pipeline\\harness\\bootstrap.js\'"'));
+});
+
+// T8 PlaceJson_StartupLine @story-8.24 @ac-8
+// 🔴 Falla con: un place.json que no dice qué línea tiene la máquina: el retiro no puede saber si la deja sin actualizarse.
+test('T8 · PlaceJson_StartupLine: lo que sube place.json de la línea de arranque', () => {
+  const { startupLineFact } = require(path.join(RAIZ, 'scripts', 'metrics', 'upload-runs.js'));
+  const nueva = 'node "$HOME/.tycon/state/harness/bootstrap.js" || bash "$HOME/.tycon/state/harness/bootstrap-fallback.sh"';
+  assert.strictEqual(startupLineFact(casa('pj-vieja', FIXTURE.new.posix).home, 'darwin'), 'vieja');
+  assert.strictEqual(startupLineFact(casa('pj-nueva', nueva).home, 'darwin'), 'nueva');
+  assert.strictEqual(startupLineFact(casa('pj-sin-mudar', FIXTURE.new.posix, { mudada: false }).home, 'darwin'), 'nueva', 'sin mudar, la de siempre es la que corresponde');
+  assert.strictEqual(startupLineFact(casa('pj-forma-vieja', KNOWN[0].command).home, 'darwin'), 'vieja');
+  assert.strictEqual(startupLineFact(casa('pj-ajena', ALIEN_BEFORE.command).home, 'darwin'), 'sin-medir');
+  assert.strictEqual(startupLineFact(path.join(BASE, 'pj-no-existe'), 'darwin'), 'sin-medir');
+});
+
+// T6b Heal_BothMarks_NoInstallerAppended @story-8.24 @ac-6
+// 🔴 Falla con: la heal que sólo reconoce la marca de `.tycon-pipeline`: a la línea nueva le pegaría la llamada al instalador.
+test('T6b · Heal_BothMarks_NoInstallerAppended: la heal no le pega el instalador a ninguna de las dos líneas', () => {
+  const { spawnSync } = require('child_process');
+  const HEAL = path.join(RAIZ, 'scripts', 'hooks', 'harness-bootstrap-heal.sh');
+  for (const [name, command] of [['heal-vieja', FIXTURE.new.posix], ['heal-nueva', 'node "$HOME/.tycon/state/harness/bootstrap.js" || bash "$HOME/.tycon/state/harness/bootstrap-fallback.sh"']]) {
+    const m = casa(name, command);
+    const antes = fs.readFileSync(m.file, 'utf8');
+    spawnSync('bash', [HEAL], { encoding: 'utf8', env: { PATH: process.env.PATH, HOME: m.home, USERPROFILE: m.home }, input: '{}', timeout: 30000 });
+    assert.ok(!/install-tycon-hooks/.test(fs.readFileSync(m.file, 'utf8')), `${name}: le pegó el instalador`);
+    assert.strictEqual(fs.readFileSync(m.file, 'utf8'), antes, `${name}: tocó el settings.json`);
+  }
+});
+
 // ─── las copias .bak cuando el mecanismo no pudo tomar la suya ────────────────────────────────────────────────────────
 
 /** Ocupa el nombre `.bak.<sello>` de este segundo y de los dos siguientes, con un contenido que no se puede pisar. */

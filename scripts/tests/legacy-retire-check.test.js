@@ -339,13 +339,14 @@ test('T21 RetireE_UsedEntriesGetOwnDate — uso, consulta caída y máquina call
 
 const LIMPIO = { exists: true, kind: 'link', to_place: true, registered: { total: 0, files: {}, unreadable: 0 } };
 /** El place.json de una máquina, como lo sube upload-runs.js. `sinNuevos`: una versión que todavía no sube los otros dos. */
-function lugarDe(code, { day = HOY, mode = 'managed', guias = { total: 0, files: {}, unreadable: 0 }, estado = LIMPIO, config = LIMPIO, sinNuevos = false } = {}) {
+function lugarDe(code, { day = HOY, mode = 'managed', guias = { total: 0, files: {}, unreadable: 0 }, estado = LIMPIO, config = LIMPIO, sinNuevos = false, linea = 'nueva' } = {}) {
   const j = {
     schema: 1, day, owner: { email: 'persona@example.invalid', source: 'git-global' }, platform: 'darwin',
     folder: { name: `maq-${code}`, code }, machine_id: { fingerprint: `huella-${code}` },
     place: { name: 'tycon-harness', kind: 'link' }, legacy: { exists: true, kind: 'link', to_place: true },
     registered_by_legacy: guias, install: { mode, version: '2026.11.25.1' },
   };
+  if (linea) j.startup_line = linea;
   if (!sinNuevos) j.old_places = { '.tycon-pipeline': estado, 'tycon.json': config };
   return j;
 }
@@ -380,6 +381,21 @@ test('T1 HomeCheck_ListsMachines_ModeAndQuiet — la versión bajada, un clon y 
   // la callada no cambia el estado de ningún lugar (como en el mapa de renombres); el clon y la callada no dejan salir 0
   assert.deepStrictEqual(lugares(r.json), { [VIEJO]: 'limpia', '.tycon-pipeline': 'limpia', 'tycon.json': 'limpia' });
   assert.strictEqual(r.code, 2);
+});
+
+// T8 HomeCheck_OldStartupLine_Counted @story-8.24 @ac-8
+// 🔴 Falla con: no contar qué máquinas tienen todavía la línea de arranque por la carpeta que se retira: el retiro la
+//    dejaría sin actualizarse. Una que no lo dice no es «nueva».
+test('T8 HomeCheck_OldStartupLine_Counted — la línea vieja se cuenta; sin el campo, sin medir, nunca nueva', () => {
+  const r = runCasa(labCasa({ machines: {
+    'maq-n1': lugarDe('n1'), 'maq-v2': lugarDe('v2', { linea: 'vieja' }), 'maq-s3': lugarDe('s3', { linea: null }),
+  } }));
+  assert.ok(r.json, r.stderr + r.stdout);
+  assert.deepStrictEqual(r.json.machines_old_startup_line, ['v2']);
+  assert.deepStrictEqual(r.json.machines_startup_line_unmeasured, ['s3']);
+  assert.deepStrictEqual(Object.fromEntries(r.json.machines.map((m) => [m.code, m.startup_line])), { n1: 'nueva', v2: 'vieja', s3: 'sin-medir' });
+  assert.ok(r.json.reasons.some((x) => /línea de arranque vieja[^\n]*v2/.test(x)), r.json.reasons.join('\n'));
+  assert.notStrictEqual(r.code, 0);
 });
 
 test('T2 HomeCheck_PermissionIsNotUse_RelocateIs — un permiso no es un uso; un hook registrado sí; un place.json viejo deja sin medir', () => {

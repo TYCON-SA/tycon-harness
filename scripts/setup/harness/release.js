@@ -2198,6 +2198,12 @@ function startup(ctx, state, H, { log, snapshot = null, cutNotice = null }) {
     R.setNotice(state, cutNotice ? `${text} · ${cutNotice}` : text); S.write(ctx.home, state);
     return { code: 0, lines: [text] };
   }
+  // la línea de arranque que quedó vieja (en una máquina mudada, la que llama a la copia fija por la carpeta del estado de
+  // siempre, que se retira): pasa a la de ahora, como en el arranque de un clon
+  try {
+    const m = require('./startup-line.js').migrate(H.settingsPath(ctx), { home: ctx.home, platform: ctx.platform, nodeOk: true, nodeVersion: process.versions.node, backup: !snapshot });
+    if (m.changed) log(`startup: ${m.reason}`);
+  } catch (e) { log(`startup: la migración de la línea de arranque falló: ${e.message}`); }
   // la conversión a la forma con enlaces: se intenta en silencio en cada
   // arranque, sin frenar nada. Trabada, el aviso sale UNA vez a los 3 días o 10 arranques; si no, registro y doctor
   if (linksOn(ctx) && state.mode !== 'developer') {

@@ -1005,9 +1005,9 @@ function startupLineAction(ctx) {
     for (const h of (entry && Array.isArray(entry.hooks)) ? entry.hooks : []) if (h && typeof h.command === 'string' && h.command) cmds.push(h.command);
   }
   const known = cmds.filter((c) => SL.classify(c));
-  const news = cmds.filter((c) => !SL.classify(c) && SL.isNew(c));
-  const unknown = cmds.filter((c) => !SL.classify(c) && !SL.isNew(c) && SL.mentionsHarness(c));
-  if (known.length || news.length > 1 || (isWin(ctx) && news.some((c) => SL.isSuperseded(c)))) return { action: 'update' };
+  const news = cmds.filter((c) => !SL.classify(c) && SL.isNew(c, ctx.home));
+  const unknown = cmds.filter((c) => !SL.classify(c) && !SL.isNew(c, ctx.home) && SL.mentionsHarness(c));
+  if (known.length || news.length > 1 || news.some((c) => SL.isStale(c, ctx.home, ctx.platform))) return { action: 'update' };
   if (news.length === 1) return { action: 'keep' };
   if (unknown.length) return { action: null, note: `la línea de arranque del arnés en ${file} tiene una forma que no reconozco: no la toco` };
   return { action: 'add' };
@@ -1395,7 +1395,7 @@ function isOwnPiece(ctx, p) {
 }
 function ownPieces(ctx, state) {
   const M = mod('managed'), SL = mod('startup-line');
-  return ownCandidates(ctx, state).filter((p) => M.present(p, { home: ctx.home, env: ctx.env, isStartupLine: SL.isNew }) === true);
+  return ownCandidates(ctx, state).filter((p) => M.present(p, { home: ctx.home, env: ctx.env, isStartupLine: (c) => SL.isNew(c, ctx.home) }) === true);
 }
 
 /**
@@ -1406,7 +1406,7 @@ function ownPieces(ctx, state) {
  */
 function recordPieces(ctx, state, report, shared = []) {
   const M = mod('managed'), SL = mod('startup-line');
-  const opts = { home: ctx.home, env: ctx.env, isStartupLine: SL.isNew };
+  const opts = { home: ctx.home, env: ctx.env, isStartupLine: (c) => SL.isNew(c, ctx.home) };
   const version = state.version && state.version.number;
   const reported = shared && shared.length ? mod('shared').union(report, shared) : (report || []);
   const pieces = [...reported, ...ownPieces(ctx, state)];
@@ -3977,8 +3977,11 @@ function cmdDoctor(ctx) {
       const SLd = mod('startup-line');
       const conf = JSON.parse(fs.readFileSync(settingsPath(ctx), 'utf8'));
       const starts = ((conf.hooks && conf.hooks.SessionStart) || []).flatMap((e) => (e && Array.isArray(e.hooks) ? e.hooks : [])).map((h) => (h && typeof h.command === 'string' ? h.command : '')).filter(Boolean);
-      const old = starts.filter((c) => SLd.classify(c) || SLd.isSuperseded(c) || (!SLd.isNew(c) && SLd.mentionsHarness(c)));
+      const old = starts.filter((c) => SLd.classify(c) || SLd.isSuperseded(c) || (!SLd.isNew(c, ctx.home) && SLd.mentionsHarness(c)));
       if (old.length) add(requirementLevel, `la línea de arranque de ${settingsPath(ctx)} está en una forma vieja (${old.length}): esta máquina no se actualiza sola${isWin(ctx) ? ' (en Windows esa línea no llega a correr)' : ''} — harness.js startup la pasa a la nueva`);
+      // en una máquina mudada, la línea que llama a la copia fija por la carpeta del estado de siempre: hoy anda (es un
+      // enlace), pero esa carpeta se retira, y sin ella la máquina deja de actualizarse sola
+      else if (starts.some((c) => SLd.isStale(c, ctx.home, ctx.platform))) add('warn', `la línea de arranque de ${settingsPath(ctx)} llama a la copia fija por la carpeta del estado de siempre, que se retira — harness.js startup la pasa a la carpeta del estado en uso`);
     } catch (_) { /* sin settings.json legible: lo dicen las piezas, más abajo */ }
   };
   if (read.status === 'missing') {
@@ -4146,7 +4149,7 @@ function cmdDoctor(ctx) {
   // las piezas: lo registrado contra la máquina — sólo lectura
   const M = mod('managed'), SL = mod('startup-line');
   const managed = Array.isArray(state.managed) ? state.managed : [];
-  const pieceOpts = { home: ctx.home, env, isStartupLine: SL.isNew };
+  const pieceOpts = { home: ctx.home, env, isStartupLine: (c) => SL.isNew(c, ctx.home) };
   const gone = M.missing(managed, pieceOpts);
   const skillsDir = path.join(mod('tycon-home').installedSkillsDir(ctx.home), 'skills');
   const roots = [...new Set([tree, real(tree), linkPath(ctx.home), PLACE.legacyPlacePath(ctx.home), skillsDir, real(skillsDir)].filter(Boolean))];
@@ -4326,7 +4329,7 @@ function doctorConfigItems(ctx, tree, state, prof, add, extra) {
     if (!eff.ok) { add('warn', `controles que frenan: no pude leer la lista de efectos (${eff.reason})`); return; }
     for (const p of eff.problems) add('warn', `controles que frenan: ${p}: sus hooks no se cuentan`);
     const { effectFor } = mod('plan');
-    const opts = { home: ctx.home, env: ctx.env, isStartupLine: SL.isNew };
+    const opts = { home: ctx.home, env: ctx.env, isStartupLine: (c) => SL.isNew(c, ctx.home) };
     const registered = (Array.isArray(state.managed) ? state.managed : [])
       .filter((p) => p && p.kind === 'hook' && M.present(p, opts) === true)
       .map((p) => ({ p, e: effectFor(p, eff.effects) }))
