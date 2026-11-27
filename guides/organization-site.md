@@ -1913,13 +1913,16 @@ pedido al vencer el plazo del servicio (`--timeout`): con un plazo corto, la con
 que vence (con 60 s, cada minuto). Al crear el servicio, `--timeout=3600` (el máximo). No cambia el costo: con una máquina conectada siempre hay un pedido
 abierto. En uno ya creado: `gcloud run services update <servicio> --region <región> --timeout=3600`.
 
-**Al día en Cloud Run**: con `site.update: "auto"`, el nocturno de GitHub (`site-update.yml`, con `SITE_PLATFORM=cloudrun`)
-lee la imagen que corre el servicio, resuelve `stable` en el registro público y cambia sólo la imagen, por huella
-(`gcloud run services update --image`): conserva el plazo, las variables y los secretos. Si el servicio corre desde un
-espejo de Artifact Registry, aplica con ese mismo espejo. Espera a que la revisión nueva esté lista con todo el tráfico,
-corre la prueba sin sesión y, si falla, vuelve a la huella anterior. Un servicio con el tráfico fijado a una revisión no se
-toca: lo dice (`gcloud run services update-traffic --to-latest` lo devuelve a la última). Entra con Workload Identity
-Federation, sin llave guardada; los permisos y las variables, en el README de los nocturnos de GitHub.
+Al desplegar una revisión nueva, Cloud Run deja las conexiones ya abiertas en la instancia vieja hasta ese plazo, y las
+fotos viven en la memoria de cada instancia: sin más, la pestaña Oficinas de la revisión nueva quedaría vacía hasta una
+hora. Por eso el sitio corta cada conexión de máquina a los 10 minutos y la máquina vuelve sola en unos segundos, ya a la
+revisión nueva; la oficina no parpadea. Vale desde el segundo despliegue con esta versión, porque el primero lo atiende
+todavía la instancia vieja. Quien despliega seguido lo baja con `SITE_OFFICE_RECONNECT_MINUTES` (de 1 a 60; `0` no corta).
+Para no esperar, reiniciá en cada máquina el servidor de la oficina: lo relanza la próxima sesión.
+
+**Al día en Cloud Run**: con `site.update: "auto"`, lo pone al día el nocturno de GitHub con la plataforma `cloudrun`, que
+trae el conector `gcs`: cambia sólo la imagen, por huella, espera la revisión nueva con todo el tráfico, la prueba y, si
+falla, vuelve a la anterior. Cómo darlo de alta: `guides/integrations/gcs-mailbox.md` («El sitio en Cloud Run, al día»).
 
 ### Una red cerrada
 

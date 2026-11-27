@@ -32,6 +32,8 @@ const KIND_RE = /^[a-z][A-Za-z0-9]*$/;
 // `platform`, un conector de plataforma (scripts/lib/platform/platform.js); `mailbox`, el conector de un servicio de
 // almacenamiento para el buzón de ejecuciones (la subida, scripts/metrics/upload-runs.js, y el sitio, scripts/site/sources.js)
 const KINDS = Object.freeze(['timeTracking', 'notify', 'toggle', 'platform', 'mailbox']);
+// las plataformas del sitio que atiende el núcleo (update-site.js); otra la trae un conector con `sitePlatform`
+const SITE_PLATFORMS_CORE = Object.freeze(['azure', 'render', 'local']);
 // el nombre de un proveedor de buzón, el valor de `site.mailbox.provider` y de `provider` en la llave
 const PROVIDER_RE = /^[a-z][a-z0-9-]*$/;
 // las operaciones del contrato de la capa, para validar un conector; se cargan recién ahí: este lector también guarda
@@ -314,6 +316,17 @@ function problemsOf(m, folder) {
     else if (m.provider === 'azure-blob') out.push('«provider»: azure-blob lo atiende el núcleo');
     if (!(Array.isArray(m.mailboxFields) && m.mailboxFields.length && m.mailboxFields.every((c) => typeof c === 'string' && /^[a-z][a-z0-9_]*$/.test(c) && c !== 'provider' && c !== 'threads'))) out.push('«mailboxFields» es la lista de los campos de site.mailbox del proveedor (sin provider ni threads)');
   } else if (m.mailboxFields !== undefined) out.push('«mailboxFields» es sólo de un conector de buzón (kind mailbox)');
+  // `sitePlatform`: una plataforma más donde el actualizador del sitio (scripts/site/deploy/update-site.js) sabe poner la
+  // imagen al día: su nombre (el de `--platform`), el guion que la atiende y las opciones que pide (`--<opción> <valor>`)
+  if (m.sitePlatform !== undefined) {
+    const sp = m.sitePlatform;
+    if (!isObject(sp)) out.push('«sitePlatform» es { name, module, options }');
+    else {
+      if (typeof sp.name !== 'string' || !PROVIDER_RE.test(sp.name) || SITE_PLATFORMS_CORE.includes(sp.name)) out.push(`«sitePlatform.name» es el nombre de la plataforma (minúsculas, números y guiones; no ${SITE_PLATFORMS_CORE.join(', ')}, que atiende el núcleo)`);
+      if (!(inside(sp.module) && /\.js$/.test(sp.module))) out.push('«sitePlatform.module» es un .js dentro de la carpeta');
+      if (!(Array.isArray(sp.options) && sp.options.every((x) => typeof x === 'string' && /^[a-z][a-z0-9-]*$/.test(x)))) out.push('«sitePlatform.options» es la lista de las opciones que pide (minúsculas y guiones)');
+    }
+  }
   // `hardSignals`: los patrones de un comando o una dirección de su plataforma que el núcleo no puede sumar (los cuenta el
   // candado, scripts/ci/check-core-neutrality.js): así el núcleo no escribe ninguno
   if (m.hardSignals !== undefined) {
@@ -419,6 +432,7 @@ function listManifests({ env = process.env, dir = integrationsDir(env) } = {}) {
         draftOptions: Array.isArray(m.draftOptions) ? m.draftOptions : [], readyCommands: Array.isArray(m.readyCommands) ? m.readyCommands : [], repoShape: m.repoShape } : {}),
       ...(m.kind === 'mailbox' ? { connector: m.connector, provider: m.provider, mailboxFields: Array.isArray(m.mailboxFields) ? m.mailboxFields : [], hardSignals: Array.isArray(m.hardSignals) ? m.hardSignals : [] } : {}),
       offer: m.offer ? { does: m.offer.does, needs: m.offer.needs } : null,
+      ...(m.sitePlatform ? { sitePlatform: { name: m.sitePlatform.name, file: path.join(dir, name, m.sitePlatform.module), options: m.sitePlatform.options } } : {}),
     });
   }
   const result = { manifests, problems };
@@ -435,6 +449,11 @@ function find(name, { kind = null, env = process.env, dir } = {}) {
 /** Los conectores de buzón (kind mailbox): `[{ provider, label, file }]`, con la ruta absoluta de su guion. */
 function mailboxConnectors(opts) {
   return listManifests(opts).manifests.filter((m) => m.kind === 'mailbox').map((m) => ({ provider: m.provider, label: m.label, file: path.join(m.dir, m.connector) }));
+}
+
+/** Las plataformas del sitio que traen los conectores: `[{ name, file, options }]`. */
+function sitePlatforms(opts) {
+  return listManifests(opts).manifests.filter((m) => m.sitePlatform).map((m) => m.sitePlatform);
 }
 
 /** El módulo del conector de buzón de un proveedor, cargado, o null si ningún conector lo atiende. Si no carga, tira. */
@@ -610,6 +629,6 @@ function dispatchEntries(m, mode) {
 
 module.exports = {
   INT_PREFIX, TOOLS, parseIntSpec, intSpecRepoPath, intSpecPath, hookEntries, dispatchEntries, effectEntries,
-  integrationsDir, listManifests, find, mailboxConnectors, mailboxConnector, giveMailboxConnectors, profileSettings, secretKeys, isSecretKey,
+  integrationsDir, listManifests, find, mailboxConnectors, mailboxConnector, giveMailboxConnectors, sitePlatforms, SITE_PLATFORMS_CORE, profileSettings, secretKeys, isSecretKey,
   tyconHome, secretsDir, secretsFile, readSecret, secretState, writeSecret, PROFILE_TYPES,
 };

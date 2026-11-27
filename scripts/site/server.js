@@ -36,7 +36,8 @@
  *                 entorno donde corre el sitio: cada lector del buzón —cloud/ o su conector de integrations/— pide su token) ·
  *                 SITE_FIRST_MAINTAINER (un correo) · SITE_AUTH_ALLOWED_DOMAINS (donde el proveedor no la exige) ·
  *                 SITE_DATA_DIR (un disco persistente; sin ella, una carpeta temporal, y se dice) · SITE_TRUST_PROXY=1 (detrás
- *                 de un intermediario que escribe X-Forwarded-For: los topes de las oficinas cuentan la última dirección)
+ *                 de un intermediario que escribe X-Forwarded-For: los topes de las oficinas cuentan la última dirección) ·
+ *                 SITE_OFFICE_RECONNECT_MINUTES (cada cuántos minutos renueva la conexión de cada máquina: 10; 0 no la corta)
  *   de la pestaña Configuración (todas apagadas por defecto: sin una, su sección queda en sólo
  *   lectura o «no configurado», y el sitio arranca igual)
  *                 SITE_OPERATIONS_WRITE_TOKEN (proponer cambios al repo de operaciones: rama y pedido, nunca main) ·
@@ -89,6 +90,8 @@ const VARIABLES = ['SITE_PUBLIC_URL', 'SITE_SESSION_KEY', 'SITE_AUTH_PROVIDER', 
   'SITE_OPERATIONS_SOURCE', 'SITE_OPERATIONS_COPY', 'SITE_OPERATIONS_COPY_SAS',
   // invitar desde Personas (invitations.js): el tope por día
   'SITE_INVITATIONS_PER_DAY',
+  // cada cuántos minutos el sitio renueva la conexión de cada máquina de las oficinas (live-hub.js)
+  'SITE_OFFICE_RECONNECT_MINUTES',
   // las propias de cada proveedor, que las declara su archivo (`variables`)
   ...new Set(Object.values(PROVEEDORES).flatMap((p) => (Array.isArray(p.variables) ? p.variables : [])))];
 const CORREO = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
@@ -221,6 +224,7 @@ function validarConfiguracion(env) {
   cfg.dataDir = env.SITE_DATA_DIR || null;
   // la lista de direcciones del intermediario (o `1`, que cree a cualquiera): ver confianzaDe en live-hub.js
   try { cfg.trustProxy = require('./live-hub.js').confianzaDe(env.SITE_TRUST_PROXY); } catch (e) { falta('SITE_TRUST_PROXY', e.message); }
+  try { cfg.vidaMaquinaMs = require('./live-hub.js').vidaMaquinaDe(env.SITE_OFFICE_RECONNECT_MINUTES); } catch (e) { falta('SITE_OFFICE_RECONNECT_MINUTES', e.message); }
   cfg.redirectUri = cfg.publicUrl ? `${cfg.publicUrl}/auth/callback` : null;
   return { ok: problemas.length === 0, problemas, cfg };
 }

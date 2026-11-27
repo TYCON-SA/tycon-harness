@@ -357,13 +357,8 @@ mantiene al día»).
    un rol propio sobre la aplicación del sitio y nada más (la guía trae el rol). Variables: `SITE_UPDATE_CLIENT_ID`,
    `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `SITE_IMAGE_NAME`, `SITE_RESOURCE_GROUP`, `SITE_APP` y `SITE_URL`.
 2. **Render**: `SITE_PLATFORM=render`, `SITE_IMAGE_NAME` y el secreto `SITE_RENDER_DEPLOY_HOOK`, el único secreto.
-3. **Google Cloud Run**: `SITE_PLATFORM=cloudrun`. Un pool de Workload Identity Federation que confía en este repo y el
-   entorno `site-update`, y una cuenta de servicio propia con un rol propio sobre el servicio del sitio
-   (`run.services.get` y `run.services.update`) más `iam.serviceAccounts.actAs` sobre la cuenta con la que corre el
-   sitio, y nada más: sin llave guardada. Variables: `SITE_GCP_WIF_PROVIDER`, `SITE_GCP_SERVICE_ACCOUNT`,
-   `SITE_GCP_PROJECT`, `SITE_GCP_REGION`, `SITE_SERVICE`, `SITE_IMAGE_NAME` (la imagen pública, donde se lee `stable`)
-   y `SITE_URL`. Si el servicio corre desde un espejo (un repositorio remoto de Artifact Registry), se actualiza con ese
-   mismo espejo.
+3. **Google Cloud Run**: `SITE_PLATFORM=cloudrun`, con Workload Identity Federation y sin llave guardada. Qué crear, los
+   permisos y las variables: `guides/integrations/gcs-mailbox.md` («El sitio en Cloud Run, al día»).
 4. **El workflow**: copiá `site-update.yml` a `.github/workflows/` y creá el entorno `site-update`.
 
 ## Diferencias con los pipelines de Azure DevOps

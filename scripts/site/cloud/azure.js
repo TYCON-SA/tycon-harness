@@ -59,8 +59,8 @@ function bajarBuzon({ cuenta, contenedor, credencial, dir, urlBase, log, sinHilo
 }
 
 /** La conversación y el cambio de UNA corrida, para el detalle a demanda (download-runs.js → bajarUnaCorrida). */
-function bajarUnaCorrida({ cuenta, contenedor, credencial, urlBase, maquina, base, dir }) {
-  return require('../../metrics/download-runs.js').bajarUnaCorrida({ cuenta, contenedor, credencial, urlBase, maquina, base, dir });
+function bajarUnaCorrida({ cuenta, contenedor, credencial, urlBase, maquina, base, dir, hiloTopeBytes = null }) {
+  return require('../../metrics/download-runs.js').bajarUnaCorrida({ cuenta, contenedor, credencial, urlBase, maquina, base, dir, hiloTopeBytes });
 }
 
 /** El token de la identidad administrada para leer el repo de operaciones en Azure DevOps. */

@@ -11,9 +11,8 @@
 # - Render: el hook de redespliegue es el secreto obligatorio (SITE_RENDER_DEPLOY_HOOK); el optativo SITE_RENDER_API_KEY,
 #   con la variable SITE_RENDER_SERVICE_ID, deja preguntar a Render qué imagen corre. Sin cargar llegan vacíos y todo
 #   sigue igual. Ninguno sale en el registro.
-# - Google Cloud Run: entra con Workload Identity Federation (`google-github-actions/auth`, `id-token: write`), sin llave
-#   de cuenta de servicio. La cuenta tiene un rol propio sobre EL SERVICIO del sitio (run.services.get y
-#   run.services.update) y iam.serviceAccounts.actAs sobre la cuenta con la que corre el sitio, y nada más.
+# - Google Cloud Run: entra con la acción del conector (integrations/gcs/actions/site-update-login, Workload Identity
+#   Federation con `id-token: write`), sin llave guardada; los permisos, en guides/integrations/gcs-mailbox.md.
 #
 # Variables del repo (no son secretos): SITE_PLATFORM (azure, render o cloudrun), SITE_IMAGE_NAME, SITE_URL; para Azure
 # SITE_RESOURCE_GROUP, SITE_APP, SITE_UPDATE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID; para Cloud Run
@@ -98,16 +97,12 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Entrar a Google Cloud con Workload Identity Federation
+      - name: Entrar a la nube del conector de la plataforma (Cloud Run)
         if: vars.SITE_PLATFORM == 'cloudrun'
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        uses: ./harness/integrations/gcs/actions/site-update-login
         with:
           workload_identity_provider: ${{ vars.SITE_GCP_WIF_PROVIDER }}
           service_account: ${{ vars.SITE_GCP_SERVICE_ACCOUNT }}
-
-      - name: gcloud
-        if: vars.SITE_PLATFORM == 'cloudrun'
-        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
       - name: Comparar con stable y, si corresponde, actualizar el sitio
         working-directory: harness
