@@ -236,7 +236,7 @@ test('NewNames_MessageSaysWhereWhatAndHowOut', () => {
 test('T33 NewNames_Message_SendsToNeutralNames — la salida (a) manda a un nombre neutro, no al inventado de la tabla', () => {
   // la otra mitad del criterio: la sección de la guía dice lo mismo
   {
-    const guide = fs.readFileSync(path.join(__dirname, '..', '..', 'guides', 'maintaining', 'publicacion-espejo.md'), 'utf8');
+    const guide = fs.readFileSync(path.join(__dirname, '..', '..', 'guides', 'maintaining', 'mirror-publishing.md'), 'utf8');
     const from = guide.indexOf('El núcleo sin nombres');
     assert.ok(from >= 0, 'la guía trae la sección «El núcleo sin nombres»');
     const section = guide.slice(from);

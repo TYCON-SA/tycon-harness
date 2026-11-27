@@ -29,7 +29,7 @@
  * desde una de larga vida. Si no la pudo leer, `true` frena y `false` pasa. Un `update` común sin la bandera no se
  * juzga por ella: az conserva la que el pedido ya tenía. Lo que no puede leer (un valor que arma la terminal, un
  * comodín, un `@archivo`) es una falta. Fuera de esa pregunta mira sólo el texto del comando, con el lector de
- * scripts/lib/az-pr.js (`faltasDe`).
+ * el lector de `az` de su conector (`faltasDe`).
  *
  * QUÉ NO HACE. Un borrador recién creado no se toca (no se completa solo por definición) y lo dice.
  * `--help`, listar, mostrar y abandonar tampoco. Salida para el caso puntual —incluido el legítimo
@@ -48,7 +48,19 @@ const path = require('path');
 // laboratorios copian carpetas sueltas de scripts/ sin scripts/setup/; ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
-const az = require('../lib/az-pr.js');
+// el lector de `az` lo trae su conector, pedido por el programa; si falta o no carga, se dice después de leer la
+// entrada y frena (abajo)
+let az = null;
+let sinLector = null;
+try { az = require('../lib/command-readers.js').lectorDe('az'); } catch (e) { sinLector = String((e && e.message) || e).slice(0, 200); }
+// Sin el lector, ¿el comando puede crear, actualizar o completar un pedido? De más: el programa `az` o `gh` como palabra,
+// az corrido por python (`-m azure.cli`), o un `repos … pr` o un `pr merge` en cualquier lugar; todo leído sin comillas
+// ni barras (un nombre partido con comillas es el mismo programa para la terminal).
+const puedeSerUnPedido = (texto) => {
+  if (typeof texto !== 'string') return false;
+  const t = texto.replace(/\\\r?\n/g, ' ').replace(/["'`\\]/g, '');
+  return /(^|[^\w-])(az|gh)(\.exe|\.cmd)?([^\w-]|$)/i.test(t) || /azure\.cli/i.test(t) || /\brepos\b[\s\S]*\bpr\b/i.test(t) || /\bpr\s+merge\b/i.test(t);
+};
 const constanciaFreno = require('../lib/guard-record.js');
 
 const TAG = '[pr-sin-auto-complete]';
@@ -70,6 +82,15 @@ try {
 } catch {
   // No pudo leer: no frena —un freno que rompe la sesión por un bug propio se apaga— pero lo dice.
   console.error(`${TAG} no pude leer la entrada del hook: no freno, pero tampoco miré.`);
+  process.exit(0);
+}
+// Sin el lector no se sabe qué hace el comando: si nombra a `az` o a `gh`, frena con el motivo; si no, no es asunto de
+// este freno
+if (sinLector) {
+  if (puedeSerUnPedido(cmd)) {
+    console.error(`${TAG} 🔒 no pude leer el comando: ${sinLector}. Lo que no pude leer no está aprobado: revisá la instalación del arnés (el conector del lector) y repetí.`);
+    process.exit(2);
+  }
   process.exit(0);
 }
 // Azure DevOps: crear o actualizar un pedido. GitHub: un `gh pr merge` que aplasta, reordena o saca la entrada
@@ -241,7 +262,7 @@ for (const seg of tramos) {
   const verbo = az.verboDePr(seg);
   if (verbo !== 'create' && verbo !== 'update') continue;
 
-  // La regla vive en `faltasDe` (scripts/lib/az-pr.js): la misma que lee la revisión nocturna de las ejecuciones.
+  // La regla vive en `faltasDe` (el lector de `az` de su conector): la misma que lee la revisión nocturna de las ejecuciones.
   // Se juzga ANTES de mirar el prefijo: un prefijo puesto sobre un tramo que pasaría igual no es un salteo, y anotarlo
   // llenaba el registro de salteos que no eran.
   // La rama del pedido, sólo si juzgar el `update` la pide (`necesitaLaRama`): trae `--delete-source-branch` escrito,

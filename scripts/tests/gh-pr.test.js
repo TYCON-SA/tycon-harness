@@ -19,7 +19,7 @@ const assert = require('node:assert');
 const path = require('path');
 
 const gh = require(path.resolve(__dirname, '..', '..', 'integrations', 'github', 'scripts', 'command-reader.js'));
-const az = require(path.resolve(__dirname, '..', 'lib', 'az-pr.js'));
+const az = require(path.resolve(__dirname, '..', '..', 'integrations', 'azure-devops', 'scripts', 'command-reader.js'));
 
 // armada acá: escrita de corrido, este archivo —que viaja en la copia— dispararía el detector de rutas de máquina
 const LOCAL_FILE = ['', 'Users', 'alguien', 'notas', 'cuerpo.md'].join('/');
@@ -466,7 +466,7 @@ test('GhReader_AGhGivenAsTextToAShell_IsHidden_TextGivenToAnythingElse_IsData', 
   // …y el valor de una opción sigue siendo un valor, parezca lo que parezca
   assert.deepStrictEqual(texts(gh.comandosGh('gh issue create --title "-X" --body "--title"')[0]).sort(), ['--title', '-X']);
   // 🔴 un `<<PALABRA` adentro de una cadena no abre un bloque: el lector se tragaría como «cuerpo» los renglones de
-  // abajo, y el `gh` que venga ahí saldría sin mirar (lo resuelve az-pr.js, que es de donde salen las fichas)
+  // abajo, y el `gh` que venga ahí saldría sin mirar (lo resuelve command-tokens.js, que es de donde salen las fichas)
   const below = gh.comandosGh('echo "ejemplo: cat <<EOF"\ngh pr create --title a --body b');
   assert.strictEqual(below.length, 1, JSON.stringify(below));
   assert.strictEqual(below[0].resumen, 'gh pr create');
@@ -807,8 +807,8 @@ test('HeredocCierre_DelimitadorConPuntoYGuion_CierraSoloLaLineaIgual', () => {
 
 test('HeredocCierre_SinExpresionArmadaConTextoDeAfuera', () => {
   // el delimitador sale del comando: armar una expresión con él es inyectarle texto de afuera (alerta js/regex-injection)
-  const fuente = require('fs').readFileSync(path.resolve(__dirname, '..', 'lib', 'az-pr.js'), 'utf8');
-  assert.strictEqual(/new RegExp\s*\(/.test(fuente), false, 'az-pr.js arma una RegExp con texto');
+  const fuente = require('fs').readFileSync(path.resolve(__dirname, '..', 'lib', 'command-tokens.js'), 'utf8');
+  assert.strictEqual(/new RegExp\s*\(/.test(fuente), false, 'command-tokens.js arma una RegExp con texto');
 });
 
 // ── el citado ANSI-C (`$'…'`): adentro, `\'` es una comilla del texto, no el cierre ──────────────────────────────────

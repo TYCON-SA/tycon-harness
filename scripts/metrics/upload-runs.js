@@ -478,10 +478,16 @@ function leerConfig(requiere = ['cuenta', 'contenedor', 'sas', 'vence'], ruta = 
   if (faltan.length) return { estado: 'config_ilegible', motivo: `${ruta} tiene que declarar ${faltan.map((k) => `"${k}"`).join(', ')} (texto)` };
   // La forma sola no alcanza: «9999-13-45» la pasa, diasHasta da NaN y el aviso de vencimiento no sale nunca.
   const fechaValida = (f) => /^\d{4}-\d{2}-\d{2}$/.test(f) && !Number.isNaN(Date.parse(`${f}T00:00:00Z`)) && new Date(`${f}T00:00:00Z`).toISOString().slice(0, 10) === f;
-  if (requiere.includes('vence') && !fechaValida(cfg.vence.trim())) return { estado: 'config_ilegible', motivo: `${ruta}: "vence" tiene que ser una fecha AAAA-MM-DD (es ${JSON.stringify(cfg.vence)})` };
+  if (requiere.includes('vence') && !fechaValida(cfg.vence.trim())) return { estado: 'config_ilegible', motivo: `${ruta}: "vence" tiene que ser una fecha AAAA-MM-DD (el valor no se muestra: una SAS puesta ahí por error saldría en el aviso)` };
   if (!/^[a-z0-9]{3,24}$/.test(cfg.cuenta.trim())) return { estado: 'config_ilegible', motivo: `${ruta}: "cuenta" no tiene la forma de una cuenta de almacenamiento` };
   if (!/^[a-z0-9](?:[a-z0-9-]{1,61})[a-z0-9]$/.test(cfg.contenedor.trim())) return { estado: 'config_ilegible', motivo: `${ruta}: "contenedor" no tiene la forma de un contenedor` };
+  // «politica» se repite en los avisos de vencimiento y de rechazo: sólo con forma de nombre de política (una SAS puesta
+  // ahí por error no tiene esa forma); si no, la llave no se usa y el valor no se muestra
+  if (cfg.politica !== undefined && (typeof cfg.politica !== 'string' || !/^[A-Za-z0-9._-]{1,64}$/.test(cfg.politica.trim()))) {
+    return { estado: 'config_ilegible', motivo: `${ruta}: "politica" no tiene forma de nombre de política (letras, números, «.», «_» o «-»; el valor no se muestra)` };
+  }
   const limpio = { ...cfg, cuenta: cfg.cuenta.trim(), contenedor: cfg.contenedor.trim() };
+  if (typeof cfg.politica === 'string') limpio.politica = cfg.politica.trim();
   if (typeof cfg.sas === 'string') limpio.sas = cfg.sas.trim().replace(/^\?/, '');
   return { cfg: limpio, ruta };
 }
@@ -491,12 +497,16 @@ function leerConfig(requiere = ['cuenta', 'contenedor', 'sas', 'vence'], ruta = 
  * (`sp`) la SAS toma los de su política guardada; con `sp`, sólo se acepta `c` (una llave que puede pisar
  * no es la del buzón).
  */
+/** Las letras de permisos de una SAS de Azure: lo que «sp» trae, si es una SAS bien armada. */
+const PERMISOS_SAS = /^[racwdxltmeopi]{1,16}$/;
+
 function negativaDeLaLlave(sas) {
   const p = new URLSearchParams(sas);
   const no = (motivo, estado = 'llave_con_lectura') => ({ estado, motivo });
   if (!p.get('sig')) return no('la SAS del buzón no trae firma (sig): no es una llave');
   if (p.has('ss') || p.has('srt')) return no('la SAS del buzón es de CUENTA (ss/srt): sólo se acepta una SAS de contenedor atada a una política de escritura');
   const sp = p.get('sp');
+  if (sp && !PERMISOS_SAS.test(sp)) return no('la SAS del buzón trae en «sp» algo que no son permisos (el valor no se muestra): esta llave no se acepta');
   if (sp && /[^cwa]/.test(sp)) return no(`la SAS del buzón trae permisos propios «${sp}» que permiten más que escribir (leer, listar o borrar): esta llave no se acepta`);
   if (sp && /[wa]/.test(sp)) return no(`la SAS del buzón trae permisos propios «${sp}» que dejan pisar blobs que ya están: sólo se acepta «c» (sólo crear) o ninguno`, 'llave_con_escritura');
   if (!p.get('si')) return no('la SAS del buzón no está atada a una política guardada (si): no se puede revocar sin rotar la cuenta');

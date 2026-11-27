@@ -198,7 +198,7 @@ _scripts/ci/public-ci.sh + scripts/ci/check-public-workflow.js + el `ci.yml` de 
 
 **Dónde se prueba:** `scripts/tests/public-ci.test.sh`
 
-**Guía:** [publicacion-espejo.md](../maintaining/publicacion-espejo.md)
+**Guía:** [mirror-publishing.md](../maintaining/mirror-publishing.md)
 
 **Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptscipublic-cish)
 
@@ -228,7 +228,7 @@ _(scripts/tests/clean-machine.test.sh + scripts/tests/clean-machine/ + scripts/t
 
 **Dónde se prueba:** `scripts/tests/clean-machine.test.sh`
 
-**Guía:** [publicacion-espejo.md](../maintaining/publicacion-espejo.md)
+**Guía:** [mirror-publishing.md](../maintaining/mirror-publishing.md)
 
 **Detalle:** [ver](../maintaining/pieces-in-detail.md#scriptstestsclean-machinetestsh)
 

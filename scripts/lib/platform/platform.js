@@ -500,7 +500,7 @@ function rawCommandOf(cmd, opts = {}) {
   // marcar listo no es un comando crudo que la capa reemplaza: no cuenta acá
   const dichos = rawCommands(opts).filter((d) => !d.ready);
   const hallados = new Set();
-  for (const seg of require('../az-pr.js').segmentos(cmd)) {
+  for (const seg of require('../command-tokens.js').segmentos(cmd)) {
     let i = 0;
     while (i < seg.length && seg[i].esBandera && (/^[A-Za-z_][A-Za-z0-9_]*=/.test(seg[i].texto) || seg[i].texto === 'env' || seg[i].texto === 'command')) i++;
     if (i >= seg.length || !seg[i].esBandera) continue;

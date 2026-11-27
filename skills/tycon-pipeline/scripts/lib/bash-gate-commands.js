@@ -207,6 +207,92 @@ function destinosBorrados(cmd) {
   return out;
 }
 
+/**
+ * Lo que el comando deshace o borra en bloque, sin nombrar cada archivo: `git reset --hard|--merge|--keep [<ref>]`, el
+ * stash de git que guarda (`git stash`, `push`, `save`), `git clean` con `-f` y `find … -delete`. Qué archivos toca cada
+ * uno lo sabe git (o el disco) al correrlo, no el texto: quien lo usa le pregunta. `[{ op, base?, ref?, untracked?, args?,
+ * raw? }]`: `op` es `reset`, `stash`, `clean` o `find`; `base`, la carpeta de un `git -C`; `args`, las opciones y rutas de
+ * `git clean`; `raw`, cada carpeta donde arranca un `find`. Se lee también lo que corre adentro, como `destinosBorrados`.
+ */
+function deshacenEnBloque(cmd) {
+  const out = [];
+  // git acepta una opción larga abreviada mientras no sea ambigua (`--har` es `--hard`)
+  const larga = (w, nombre, minimo) => w.length >= minimo && w.startsWith('--') && nombre.startsWith(w.split('=')[0]);
+  // una opción corta dentro de un grupo (`-qf`); el valor de `-m`, `-b`, `-C` no cuenta: va en la palabra siguiente
+  const corta = (lista, letra) => lista.some((w) => /^-[a-zA-Z]+$/.test(w) && w.slice(1).includes(letra));
+  for (const tramo of [String(cmd || ''), ...anidadosHasta(cmd).leidos].flatMap((t) => tramos(t))) {
+    const sinComentario = blancoPorRedireccion(tramo.replace(/(^|\s)#.*$/, ''));
+    const words = palabras(sinPalabrasDelShell(sinComentario)).filter((w) => w !== '').map((w) => w.replace(/\)+$/, '')).filter(Boolean);
+    if (!words.length) continue;
+    const c = path.basename(words[0].replace(/^\\/, '')).toLowerCase().replace(/\.exe$/, '');
+    if (c === 'find') {
+      if (!words.includes('-delete')) continue;
+      // las opciones de antes de las carpetas (`-L`, `-H`, `-P`, `-E`, `-X`, `-s`, `-x`, `-O3`, `-D <qué>`), las carpetas
+      // donde arranca y la expresión; sin carpeta, arranca en `.`
+      let k = 1;
+      while (k < words.length && /^-(?:[HLPEXsx]+|O\d*|D)$/.test(words[k])) k += words[k] === '-D' ? 2 : 1;
+      const opciones = words.slice(1, k);
+      const desde = [];
+      for (; k < words.length; k++) { const w = words[k]; if (w.startsWith('-') || w === '!' || w === '(') break; desde.push(w); }
+      out.push({ op: 'find', desde: desde.length ? desde : ['.'], opciones, expresion: words.slice(k) });
+      continue;
+    }
+    if (c !== 'git') continue;
+    let i = 1;
+    let base = null;
+    let gitDir = null;
+    while (i < words.length && words[i].startsWith('-')) {
+      if (words[i] === '-C') { base = base ? `${base}/${words[i + 1]}` : words[i + 1]; i += 2; continue; }
+      // `--work-tree` relativo se cuenta desde la carpeta de un `-C` anterior
+      const arbol = (wt) => (base && !path.isAbsolute(wt) ? `${base}/${wt}` : wt);
+      if (words[i] === '--work-tree' || words[i] === '--git-dir') { if (words[i] === '--work-tree') base = arbol(words[i + 1]); else gitDir = words[i + 1]; i += 2; continue; }
+      const igual = /^--(work-tree|git-dir)=(.+)$/.exec(words[i]);
+      if (igual) { if (igual[1] === 'work-tree') base = arbol(igual[2]); else gitDir = igual[2]; i++; continue; }
+      if (words[i] === '-c' || words[i] === '--namespace') { i += 2; continue; }
+      i++;
+    }
+    const sub = words[i];
+    const resto = words.slice(i + 1);
+    const con = (o) => out.push({ ...o, ...(base ? { base } : {}), ...(gitDir ? { gitDir } : {}) });
+    const corte = resto.indexOf('--');
+    const antesDelCorte = corte >= 0 ? resto.slice(0, corte) : resto;
+    const rutas = corte >= 0 ? resto.slice(corte + 1) : [];
+    if (sub === 'reset') {
+      if (!resto.some((w) => larga(w, '--hard', 3) || larga(w, '--merge', 3) || larga(w, '--keep', 3))) continue;
+      const ref = antesDelCorte.find((w) => !w.startsWith('-'));
+      con({ op: 'reset', ref: ref || 'HEAD' });
+    } else if (!rutas.length && ((sub === 'checkout' && (corta(antesDelCorte, 'f') || antesDelCorte.some((w) => larga(w, '--force', 3))))
+      || (sub === 'switch' && (corta(antesDelCorte, 'f') || antesDelCorte.some((w) => larga(w, '--force', 3) || larga(w, '--discard-changes', 3)))))) {
+      // forzar el cambio de rama descarta lo que difiere, como un reset al destino (con `--` y rutas, deshace esas
+      // rutas: lo lee `destinosBorrados`)
+      const conValor = /^-(?:b|B|c|C)$/;
+      const sueltos = antesDelCorte.filter((w, k) => !w.startsWith('-') && !(k > 0 && conValor.test(antesDelCorte[k - 1])));
+      con({ op: 'reset', ref: sueltos[0] || 'HEAD' });
+    } else if (sub === 'stash') {
+      const verbo = resto[0];
+      if (verbo && !verbo.startsWith('-') && verbo !== 'push' && verbo !== 'save') continue;
+      const cortas = antesDelCorte.filter((w) => /^-[a-zA-Z]+$/.test(w)).join('');
+      // en `push`, las palabras sueltas después del verbo también son rutas (salvo el mensaje de `-m`)
+      // el mensaje va después de `-m`, de un grupo que termina en `m` (`-um`) o de `--message` abreviada
+      const pideValor = (w) => /^-[a-zA-Z]*m$/.test(w) || (larga(w, '--message', 5) && !w.includes('=')) || (larga(w, '--pathspec-from-file', 4) && !w.includes('='));
+      const sueltas = verbo === 'push' ? antesDelCorte.slice(1).filter((w, k, l) => !w.startsWith('-') && !(k > 0 && pideValor(l[k - 1]))) : [];
+      // las rutas en un archivo no se ven: se mira todo
+      const deArchivo = antesDelCorte.some((w) => larga(w, '--pathspec-from-file', 4));
+      // una ruta que el shell expande (`$F`, `{a,b}`, `~`) no se le pasa a git tal cual: se mira todo
+      const todas = [...rutas, ...sueltas];
+      con({ op: 'stash', rutas: deArchivo || todas.some((w) => /[$`{~*?[]/.test(w)) ? [] : todas, staged: /S/.test(cortas) || antesDelCorte.some((w) => larga(w, '--staged', 5)),
+        untracked: /[ua]/.test(cortas) || antesDelCorte.some((w) => larga(w, '--include-untracked', 4) || larga(w, '--all', 4)) });
+    } else if (sub === 'clean') {
+      // en `-fe<patrón>` lo de después de la `e` es el patrón, no más opciones
+      const cortas = antesDelCorte.filter((w) => /^-[a-zA-Z]/.test(w) && !w.startsWith('--')).map((w) => w.slice(1).split('e')[0]).join('');
+      const fuerza = /f/.test(cortas) || antesDelCorte.some((w) => larga(w, '--force', 4));
+      const ensayo = /n/.test(cortas) || antesDelCorte.some((w) => larga(w, '--dry-run', 4));
+      if (fuerza && !ensayo) con({ op: 'clean', args: resto });
+    }
+  }
+  return out;
+}
+
 // `cd <carpeta> && ` al principio exacto del comando, con la carpeta hecha sólo de letras, cifras y `_ . / + , -` (puede
 // empezar con `~/`; nada que bash o zsh expandan, como `~+`, `~-` o `~usuario`), seguido de UN `sed` que nombra sus archivos: ni tubería,
 // ni `$(…)`, ni comillas invertidas, ni otro comando, ni redirección, ni salto de línea, ni llaves, `@` o `~` (nombres
@@ -1268,4 +1354,4 @@ function comandosPorOtroPrograma(cmd, cwd) {
 }
 
 
-module.exports = { cwdDelComando, carpetasDelComando, relativosDe, resolverCd, destinosBorrados, CD_INICIAL, CD_PERL, cdInicial, palabrasDelEditor, anidadosHasta, borradosProfundos, marcadoresTocados, aprobacionesTocadas, marcasDeTerminalTocadas, lanzadasTocadas, buzonTocado, criticosTocados, corridasDeRevisoresTocadas, fotosTocadas, revisionDelPlanTocada, zonaTocada, editaEnSitio, destinosDeGuionDeSed, palabrasDelSed, sedsLiterales, FOR_IN, movidosFueraDeMd, todoCorreDespuesDelCd, sinTextoDeHeredocs, sinCuerposDeTexto, PALABRA_CON_ANSI, CADENA_A_LA_ENTRADA, palabrasConAnsi, cuerpoDelShell, comandosAnidados, asignacionesDe, destinosDeCopia, guionesDeShellEscritos, guionesDeShellEnDisco, tuberiasDelRenglon, heredocVaAUnShell, entradaPorCadena, comandosPorOtroPrograma };
+module.exports = { cwdDelComando, carpetasDelComando, relativosDe, resolverCd, destinosBorrados, deshacenEnBloque, CD_INICIAL, CD_PERL, cdInicial, palabrasDelEditor, anidadosHasta, borradosProfundos, marcadoresTocados, aprobacionesTocadas, marcasDeTerminalTocadas, lanzadasTocadas, buzonTocado, criticosTocados, corridasDeRevisoresTocadas, fotosTocadas, revisionDelPlanTocada, zonaTocada, editaEnSitio, destinosDeGuionDeSed, palabrasDelSed, sedsLiterales, FOR_IN, movidosFueraDeMd, todoCorreDespuesDelCd, sinTextoDeHeredocs, sinCuerposDeTexto, PALABRA_CON_ANSI, CADENA_A_LA_ENTRADA, palabrasConAnsi, cuerpoDelShell, comandosAnidados, asignacionesDe, destinosDeCopia, guionesDeShellEscritos, guionesDeShellEnDisco, tuberiasDelRenglon, heredocVaAUnShell, entradaPorCadena, comandosPorOtroPrograma };

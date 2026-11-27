@@ -2,7 +2,7 @@
 
 /**
  * publishing-guide-tables.test.js — las dos tablas de
- * `guides/maintaining/publicacion-espejo.md` dicen lo mismo que `export.js --explain --json`.
+ * `guides/maintaining/mirror-publishing.md` dicen lo mismo que `export.js --explain --json`.
  *
  * La guía es lo que lee una persona antes de decidir si algo sale en la copia pública; `--explain` es lo que el
  * exportador hace de verdad. Una tabla vieja (una carpeta que ya no existe, una exclusión que se mudó, una fecha que
@@ -43,7 +43,7 @@ const { spawnSync } = require('child_process');
 
 const RAIZ = path.resolve(__dirname, '..', '..');
 const EXPORT = path.join(RAIZ, 'scripts', 'publishing', 'export.js');
-const GUIDE = path.join(RAIZ, 'guides', 'maintaining', 'publicacion-espejo.md');
+const GUIDE = path.join(RAIZ, 'guides', 'maintaining', 'mirror-publishing.md');
 const THIS_TEST = 'scripts/tests/publishing-guide-tables.test.js';
 const REPOS = ['arnes', 'agent-skills'];
 const OLD_NAME_SUFFIX = ', con su nombre de antes de la story 8.9';
@@ -295,7 +295,7 @@ test('T50 Close_PublishingGuideTablesMatchExplain — las dos tablas de la guía
   const explain = JSON.parse(r.stdout);
   assert.ok(explain.primerNivel.length > 0 && explain.exclusionesFijas.length > 0, '--explain trae primer nivel y exclusiones fijas');
   const problems = guideProblems(fs.readFileSync(GUIDE, 'utf8'), explain);
-  assert.deepStrictEqual(problems, [], `guides/maintaining/publicacion-espejo.md no coincide con --explain:\n  ${problems.join('\n  ')}`);
+  assert.deepStrictEqual(problems, [], `guides/maintaining/mirror-publishing.md no coincide con --explain:\n  ${problems.join('\n  ')}`);
 });
 
 // ── Laboratorio: el comparador sabe fallar ──────────────────────────────────────────────────────────────────────

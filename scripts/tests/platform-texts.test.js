@@ -30,7 +30,7 @@ const TEXTOS = [
   'skills/tycon-merge-to-main/steps/step-09b-create-change-request.md', 'guides/ci-gate.md', 'guides/git-commit-conventions.md',
   'guides/advisor-rules-catalog.md', 'guides/workflow-orchestration.md', 'guides/safety-guard.md', 'guides/production-with-permission.md',
   ...require('./lib/pieces-guide.js').piecesFiles(ROOT), 'guides/organization-site.md', 'guides/organization-site.en.md',
-  'guides/maintaining/installation-mechanism.md', 'guides/maintaining/pieces-in-detail.md', 'guides/maintaining/publicacion-espejo.md',
+  'guides/maintaining/installation-mechanism.md', 'guides/maintaining/pieces-in-detail.md', 'guides/maintaining/mirror-publishing.md',
 ];
 // Los renglones que se quedan, cada uno con su motivo: no son la plataforma del equipo (Azure en la nube), son lo que un
 // freno o el detector de publicación reconocen para frenar, o describen una pieza sólo de Azure DevOps que la mudanza
@@ -39,13 +39,12 @@ const SE_QUEDAN = [
   { file: 'guides/production-with-permission.md', has: '`az rest` con el método delete', why: 'Azure en la nube (el freno de producción), no la plataforma del equipo' },
   { file: 'guides/maintaining/pieces-in-detail.md', has: '**Producción con permiso**', why: 'Azure en la nube (el freno de producción), no la plataforma del equipo' },
   { file: 'guides/safety-guard.md', has: '| **GIT-C5** |', why: 'el freno reconoce las formas de cada plataforma: es lo que frena' },
-  { file: 'guides/maintaining/publicacion-espejo.md', has: '| La organización de Azure DevOps |', why: 'el detector de publicación reconoce las direcciones de Azure DevOps: es lo que frena' },
-  { file: 'guides/maintaining/publicacion-espejo.md', has: '`azure-pipelines@dev.azure.com`', why: 'el detector de publicación reconoce esa identidad: es lo que frena' },
-  { file: 'guides/maintaining/publicacion-espejo.md', has: 'az pipelines run --id <id> --branch main', why: 'el proceso del espejo corre en Azure Pipelines: se muda con lo sólo de Azure DevOps' },
+  { file: 'guides/maintaining/mirror-publishing.md', has: '| La organización de Azure DevOps |', why: 'el detector de publicación reconoce las direcciones de Azure DevOps: es lo que frena' },
+  { file: 'guides/maintaining/mirror-publishing.md', has: '`azure-pipelines@dev.azure.com`', why: 'el detector de publicación reconoce esa identidad: es lo que frena' },
+  { file: 'guides/maintaining/mirror-publishing.md', has: 'az pipelines run --id <id> --branch main', why: 'el proceso del espejo corre en Azure Pipelines: se muda con lo sólo de Azure DevOps' },
   { file: 'guides/maintaining/pieces-in-detail.md', has: '**El pedido de trabajo del líder**', why: 'describe work-items.js, sólo de Azure DevOps: se muda con su pieza' },
   { file: 'guides/maintaining/pieces-in-detail.md', has: '**El cruce «pedido cerrado, vulnerabilidad viva»**', why: 'describe work-items.js, sólo de Azure DevOps: se muda con su pieza' },
   { file: 'guides/maintaining/pieces-in-detail.md', has: '«No lo veo» no es «no hay»', why: 'el aviso de consultas fallidas reconoce los comandos de Azure DevOps: es lo que avisa' },
-  { file: 'guides/maintaining/pieces-in-detail.md', has: 'armado sobre el lector de `az-pr.js`', why: 'describe az-pr.js, sólo de Azure DevOps: se muda con su pieza' },
 ];
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 

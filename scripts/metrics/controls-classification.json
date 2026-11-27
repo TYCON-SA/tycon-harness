@@ -2,7 +2,7 @@
   "__doc": "La clasificación de cada control del arnés: exigencia (protege algo que no se deshace o que no es del agente: producción y datos, secretos, la rama compartida y lo público, las firmas del dueño, las historias y las constancias, la constitución del arnés; no se apaga para ningún modelo) o preferencia (un trámite o un estilo que un modelo podría decidir bien solo). La clave es el nombre del freno en FRENOS de scripts/lib/guard-record.js; un gancho que frena (effect: blocks en scripts/setup/hooks-list.json) y no anota ahí lleva su propia entrada, con el nombre de su archivo. Un control del pipeline (un comando de marker.js o de pipeline.js que anota en gates.log su `blocked`) lleva `del_pipeline: true`, con su nombre en gates.log y sin ganchos. `ganchos`: los ganchos de hooks-list.json que lo corren; cada gancho que frena aparece en los `ganchos` de una sola entrada, y si corre más de un freno, los otros lo nombran en `tambien_en`. `review_before` (AAAA-MM-DD): vencida, la tabla de controles lo dice; no prende ni apaga nada. `estado`: `propuesta` hasta que el dueño firma; firmada lleva `firmada_el` y `firmada_por`. Nada de este archivo cambia lo que un freno decide. Lo controla scripts/tests/controls-classification.test.js.",
   "safety-guard": {
     "tipo": "exigencia",
-    "motivo": "Protege producción y datos, los secretos y la rama compartida: borrados de raíz, empujes forzados a main, lectura de llaves.",
+    "motivo": "Protege producción y datos, los secretos y la rama compartida: borrados de raíz, empujes forzados a main, lectura de llaves. Además pide las firmas del dueño (las reglas ESC-C y su escape) y frena que el agente saque controles del arnés (HARNESS-C): la constitución del arnés.",
     "review_before": "2027-11-21",
     "estado": "propuesta",
     "ganchos": [
@@ -29,20 +29,10 @@
   },
   "pr-sin-auto-complete": {
     "tipo": "exigencia",
-    "motivo": "Protege cómo entra un pedido a la rama compartida: con auto-completar y commit de merge, sin squash.",
+    "motivo": "Protege cómo entra un pedido a la rama compartida, lo que no se deshace: sin squash (los commits desaparecerían de main), sin borrar al mezclar una rama de larga vida, y sin una mezcla a mano que aplasta o reordena. El auto-completar solo sería un trámite.",
     "review_before": "2027-11-21",
     "estado": "propuesta",
     "ganchos": [
-      "pr-auto-complete-guard.js"
-    ]
-  },
-  "pr-sin-portables": {
-    "tipo": "exigencia",
-    "motivo": "Protege la rama compartida: un pedido que toca el instalador no entra sin las pruebas portables en verde.",
-    "review_before": "2027-11-21",
-    "estado": "propuesta",
-    "ganchos": [],
-    "tambien_en": [
       "pr-auto-complete-guard.js"
     ]
   },
@@ -124,15 +114,15 @@
   },
   "internal-history": {
     "tipo": "exigencia",
-    "motivo": "Protege la prosa del repo público, que no se borra: sin historia interna del equipo. Medido con y sin el control (Opus y Sonnet): no se afloja para ningún modelo, y la CI de cada pedido lo vuelve a correr sin sesión.",
+    "motivo": "Protege la prosa del repo público, que no se borra: sin historia interna del equipo. La CI de cada pedido lo vuelve a correr sin sesión.",
     "review_before": "2027-11-25",
     "estado": "propuesta",
     "ganchos": []
   },
   "session-cap-guard": {
-    "tipo": "preferencia",
-    "motivo": "Cuida la capacidad de la máquina y lo que el dueño puede revisar: un tope de sesiones trabajando.",
-    "review_before": "2027-01-20",
+    "tipo": "exigencia",
+    "motivo": "El tope de sesiones es una decisión del dueño, no es del agente: cuida su máquina, su gasto y lo que puede revisar. No tiene interruptor; subirlo lo decide una persona en la configuración, y como preferencia firmada se abriría otra vía para pasarlo.",
+    "review_before": "2027-11-26",
     "estado": "propuesta",
     "ganchos": [
       "session-cap-guard.js"
@@ -147,7 +137,7 @@
   },
   "on-bash-write-gate.js": {
     "tipo": "exigencia",
-    "motivo": "Protege las historias y las constancias: el estado de la ejecución no se escribe por la línea de comandos, y el código no se escribe fuera de una ejecución.",
+    "motivo": "Protege las historias y las constancias, desde la línea de comandos: el código no se escribe fuera de una ejecución ni antes del plan aprobado, una historia no se escribe por consola, y los marcadores de una ejecución no se borran ni se mueven a mano.",
     "review_before": "2027-11-21",
     "estado": "propuesta",
     "ganchos": [
@@ -166,7 +156,7 @@
   },
   "background-question-guard.js": {
     "tipo": "preferencia",
-    "motivo": "Una sesión de fondo le pregunta a la coordinadora y no a la persona: un trámite de a quién se pregunta.",
+    "motivo": "Que una sesión de fondo no quede colgada esperando algo que nadie va a ver: le pregunta a la coordinadora y no a la persona, no pide permiso para un borrado ni para una edición que una regla haría preguntar, no le escribe a otra sesión de fondo, y no muestra el cuadro de aprobar sin el código del guion. Nada de eso es irreversible.",
     "review_before": "2027-01-20",
     "estado": "propuesta",
     "ganchos": [
@@ -211,7 +201,7 @@
   },
   "step-arg": {
     "tipo": "exigencia",
-    "motivo": "Protege las constancias de la historia: «Probar en vivo» y el pase adversarial no se dan por hechos con complete-step, sino con el comando que deja su constancia (el mensaje lo nombra).",
+    "motivo": "Protege las constancias de la historia: «Probar en vivo» y el pase adversarial no se dan por hechos con complete-step, sino con el comando que deja su constancia (el mensaje lo nombra). El mismo control frena un número de paso ambiguo o un nombre que no es un paso, que es validar el argumento.",
     "review_before": "2027-11-25",
     "estado": "propuesta",
     "ganchos": [],
@@ -219,8 +209,374 @@
   },
   "review-cap-shown": {
     "tipo": "preferencia",
-    "motivo": "Un trámite: al tope de vueltas de revisores, decidir qué se hace con lo que quedó abierto. Sin nada abierto no frena.",
+    "motivo": "Un trámite: al tope de vueltas de revisores, decidir qué se hace con lo que quedó abierto. Sin nada abierto no frena. Preferencia: decidido por el dueño 26/11.",
     "review_before": "2027-01-24",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "on-controls-off": {
+    "tipo": "exigencia",
+    "motivo": "Protege la constitución del arnés: frena editar la configuración de la herramienta para sacar un control (HARNESS-C2).",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "dentro_de": "skills/tycon-pipeline/scripts/hook-pre-edit.js"
+  },
+  "on-story-gate": {
+    "tipo": "exigencia",
+    "motivo": "Protege las historias y las constancias desde la edición: código sin ejecución, código antes del plan aprobado y escrituras al estado de la ejecución.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "dentro_de": "skills/tycon-pipeline/scripts/hook-pre-edit.js"
+  },
+  "on-story-skill-gate": {
+    "tipo": "exigencia",
+    "motivo": "Protege las historias: una historia no se crea a mano, sin la skill que la arma y la valida.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "dentro_de": "skills/tycon-pipeline/scripts/hook-pre-edit.js",
+    "anota": "story-skill-gate"
+  },
+  "on-red-test-edit": {
+    "tipo": "exigencia",
+    "motivo": "Protege las constancias: una prueba vieja en rojo no se edita en silencio; si es la prueba de un control, pide la firma del dueño.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "dentro_de": "skills/tycon-pipeline/scripts/hook-pre-edit.js",
+    "anota": "red-test-edit"
+  },
+  "on-coordination-write": {
+    "tipo": "preferencia",
+    "motivo": "Un reparto de roles: la coordinadora no cambia archivos de los repos, se lo encarga a una sesión. Tiene variable de apagado.",
+    "review_before": "2027-01-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "dentro_de": "skills/tycon-pipeline/scripts/hook-pre-edit.js"
+  },
+  "on-atdd-preedit": {
+    "tipo": "preferencia",
+    "motivo": "Un orden de trabajo: el primer archivo de código después de tocar una prueba.",
+    "review_before": "2027-01-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "dentro_de": "skills/tycon-pipeline/scripts/hook-pre-edit.js"
+  },
+  "on-planning-artifact": {
+    "tipo": "preferencia",
+    "motivo": "Un trámite de planificación: un PRD aprobado pasa antes por la validación de otro agente.",
+    "review_before": "2027-01-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "dentro_de": "skills/tycon-pipeline/scripts/hook-pre-edit.js"
+  },
+  "on-deprecated-edit": {
+    "tipo": "preferencia",
+    "motivo": "Un estilo del repo: no editar código deprecado, sólo si el repo lo configuró para frenar.",
+    "review_before": "2027-01-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "dentro_de": "skills/tycon-pipeline/scripts/hook-pre-edit.js",
+    "anota": "deprecated-edit"
+  },
+  "lint-production-json": {
+    "tipo": "exigencia",
+    "motivo": "Protege producción: un commit con .tycon/production.json mal formado no entra. Sin variable; la salida es una emergencia firmada por la persona. Es la parte del freno de producción que corre al commitear.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "dentro_de": "scripts/hooks/git-pre-commit-global.sh"
+  },
+  "engram-chunk-secrets": {
+    "tipo": "exigencia",
+    "motivo": "Protege los secretos: un commit cuya memoria trae una clave no entra.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "dentro_de": "scripts/hooks/git-pre-commit-global.sh"
+  },
+  "pre-push-repo-rules": {
+    "tipo": "preferencia",
+    "motivo": "Evita un rojo de la CI: un empuje del arnés con una de sus reglas de repo en rojo no sale. Sin variable.",
+    "review_before": "2027-01-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "dentro_de": "scripts/hooks/git-pre-push-global.sh"
+  },
+  "permission-relay": {
+    "tipo": "exigencia",
+    "motivo": "Maneja una firma del dueño: decide el permiso de una sesión de fondo con el click de la persona y lo niega sin él. Figura como «anota» en la lista de ganchos, pero decide.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "dentro_de": "scripts/hooks/permission-relay.js"
+  },
+  "__pipeline": "Desde acá, los controles del pipeline que frenan (`del_pipeline: true`), aparte de los frenos y los ganchos. Su clase sale de su nombre, su archivo y su mensaje. Los que llevan `dudoso` pueden ser preferencia o exigencia: los decide el dueño al firmar.",
+  "plan-approval": {
+    "tipo": "exigencia",
+    "motivo": "Protege una firma del dueño: el plan no se da por aprobado sin la aprobación de una persona o de su revisión, ni con un ok sin plan a la vista.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "plan-auto-approve": {
+    "tipo": "exigencia",
+    "motivo": "Protege una firma del dueño: la opción --auto-approved ya no aprueba un plan; usarla frena y dice cómo se aprueba.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "plan-assumptions": {
+    "tipo": "exigencia",
+    "motivo": "Protege la historia: el plan no se cierra sin su sección de suposiciones, y los archivos que nombra tienen que existir.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "mockup-approval": {
+    "tipo": "exigencia",
+    "motivo": "Protege una firma del dueño: una historia con pantalla no pasa sin la maqueta aprobada; no poder leer la historia frena, nunca es «sin pantalla».",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "mockup-compare": {
+    "tipo": "exigencia",
+    "motivo": "Protege una firma del dueño: con la maqueta aprobada, la comparación con lo construido corre; si no puede correr, frena y lo dice.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "mockup-new-screen": {
+    "tipo": "exigencia",
+    "motivo": "Protege una firma del dueño: una pantalla nueva que la maqueta aprobada no tenía no entra sin su aprobación.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "approval-replaced": {
+    "tipo": "exigencia",
+    "motivo": "Protege una firma del dueño: una aprobación de persona no se escribe ni se reemplaza sin ella.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "approvals-story-repo": {
+    "tipo": "exigencia",
+    "motivo": "Protege las firmas del dueño: las aprobaciones de la ejecución llegan al repo de la historia.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "critical-waivers": {
+    "tipo": "exigencia",
+    "motivo": "Protege una firma del dueño: un hallazgo crítico no se deja pasar sin su exención firmada, y un findings.json que no se lee frena.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "expected-red": {
+    "tipo": "exigencia",
+    "motivo": "Protege una firma del dueño y las constancias: una prueba que se espera en rojo lo declara una persona.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "save-brake": {
+    "tipo": "exigencia",
+    "motivo": "Protege una firma del dueño: guardar (commit, empuje, pedido) en el carril pide el ok de guardar; sin poder ubicar el carril, frena.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "story-gate": {
+    "tipo": "exigencia",
+    "motivo": "Protege las historias y las constancias desde la consola: código sin ejecución, antes del plan, o un destino que el freno no puede ubicar.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "story-done": {
+    "tipo": "exigencia",
+    "motivo": "Protege las historias: una historia no pasa a done sin su evidencia, ni con un criterio de staging sin su humo de staging.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "advisors-complete": {
+    "tipo": "exigencia",
+    "motivo": "Protege las constancias: el paso de revisores no cierra con revisores sin correr.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "adversarial-skip-recheck": {
+    "tipo": "exigencia",
+    "motivo": "Protege las constancias: saltear el pase adversarial se vuelve a verificar al cerrar; si no vale, frena.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "reported-criticals": {
+    "tipo": "exigencia",
+    "motivo": "Protege las constancias: un crítico reportado en esta ejecución no se cierra sin resolverse o declararse.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "review-cap-blocking": {
+    "tipo": "exigencia",
+    "motivo": "Protege las historias: al tope de vueltas no se cierra con un crítico de seguridad o de datos abierto; no poder mirarlo frena.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "unreviewed-code": {
+    "tipo": "exigencia",
+    "motivo": "Protege las constancias: código cambiado después de la revisión no entra sin revisar.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "reviewed-tree-mismatch": {
+    "tipo": "exigencia",
+    "motivo": "Protege las constancias: lo que se revisó tiene que ser el árbol que se cierra.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "close-whole-diff": {
+    "tipo": "exigencia",
+    "motivo": "Protege las historias: el cierre de una tanda cubre el diff entero de la historia, no una parte.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "frozen-copy": {
+    "tipo": "exigencia",
+    "motivo": "Protege las constancias: el pase adversarial corre sobre una copia congelada del cambio; si no se puede congelar, frena.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "frozen-sibling": {
+    "tipo": "exigencia",
+    "motivo": "Protege las constancias: la copia congelada del repo hermano es la de la historia.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "prepare-commit-controls": {
+    "tipo": "exigencia",
+    "motivo": "Protege las constancias: preparar el pedido corre los controles del commit; si su foto falla, el paso no cierra.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "red-check": {
+    "tipo": "exigencia",
+    "motivo": "Protege las constancias: un control en rojo no llega al commit sin arreglarse o cerrarse como deuda con su frase.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "step-order": {
+    "tipo": "preferencia",
+    "motivo": "Un orden de pasos: un paso no se cierra antes que el anterior.",
+    "review_before": "2027-01-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true,
+    "dudoso": "A decidir: el nombre y el mensaje dicen un orden o un trámite, pero no se leyó el cuerpo entero del control."
+  },
+  "atdd-preedit": {
+    "tipo": "preferencia",
+    "motivo": "Un orden de trabajo, en el pipeline: el código antes de tocar una prueba (lo mismo que on-atdd-preedit).",
+    "review_before": "2027-01-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true,
+    "dudoso": "A decidir: el nombre y el mensaje dicen un orden o un trámite, pero no se leyó el cuerpo entero del control."
+  },
+  "ledger-visible": {
+    "tipo": "preferencia",
+    "motivo": "Frena editar código por la línea de comandos, con la constancia en gates.log (si el registro falla, igual frena). Es el piloto de la prueba de resta, que mide si hace falta. Preferencia: decidido por el dueño 26/11.",
+    "review_before": "2027-01-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "tests-missing": {
+    "tipo": "exigencia",
+    "motivo": "Protege la constancia de pruebas: el paso de probar no cierra si el portón de pruebas no anotó nada en esta ejecución.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "tests-no-turn": {
+    "tipo": "exigencia",
+    "motivo": "Protege la constancia de pruebas: sin turno para lo pesado, las pruebas no corrieron, y el paso no se da por probado.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "tests-scope": {
+    "tipo": "exigencia",
+    "motivo": "Protege la constancia de pruebas: un verde que no salió de la suite completa no cierra el paso.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "tests-waiting-on-main": {
+    "tipo": "exigencia",
+    "motivo": "Protege la constancia de pruebas: con main roto, la historia espera; no se cierra sobre un main en rojo.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "mutation": {
+    "tipo": "exigencia",
+    "motivo": "Protege la constancia de pruebas: el chequeo de mutantes frena el cierre cuando las pruebas de la historia no cazan los mutantes de su código.",
+    "review_before": "2027-11-26",
+    "estado": "propuesta",
+    "ganchos": [],
+    "del_pipeline": true
+  },
+  "manual-checks": {
+    "tipo": "exigencia",
+    "motivo": "Protege una firma del dueño y la historia: cada criterio que se prueba a mano lo marca una persona; sin esas marcas, el paso no cierra.",
+    "review_before": "2027-11-26",
     "estado": "propuesta",
     "ganchos": [],
     "del_pipeline": true

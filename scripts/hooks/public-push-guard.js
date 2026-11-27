@@ -90,7 +90,7 @@
 // base que git no conoce, el tope de tiempo sin hallazgos).
 // Como freno previo a la herramienta: 2 = el comando no corre · 0 = pasa.
 // TYCON_PUBLIC_PUSH_TREAT_AS_PUBLIC (carpetas, separadas como el PATH) AGREGA remotos locales a mirar: es de las pruebas.
-// TYCON_PUBLIC_PUSH_LIMIT_MS cambia el tope de tiempo (120 s). Guía: guides/maintaining/publicacion-espejo.md §«El freno antes de publicar».
+// TYCON_PUBLIC_PUSH_LIMIT_MS cambia el tope de tiempo (120 s). Guía: guides/maintaining/mirror-publishing.md §«El freno antes de publicar».
 
 const fs = require('fs');
 const os = require('os');
@@ -1516,7 +1516,7 @@ const GUARD_VARIABLES = new RegExp(`^${GUARD_NAMES}=|^\\$env:${GUARD_NAMES}(=|$)
  * (cualquier `push` de la línea cuenta, no sólo el de git): de menos, el empuje saldría con un freno ajeno.
  */
 function lineFacts(command) {
-  const az = require(path.join(ROOT, 'scripts', 'lib', 'az-pr.js'));
+  const az = require(path.join(ROOT, 'scripts', 'lib', 'command-tokens.js'));
   let sets = false;
   let pushes = false;
   for (const seg of az.segmentos(command)) {
@@ -1535,7 +1535,7 @@ function lineFacts(command) {
 const GOES_ELSEWHERE = /^(cd|pushd|popd|chdir|set-location|sl|push-location|pop-location|-C|--git-dir(=.*)?|--work-tree(=.*)?|GIT_(DIR|WORK_TREE)=.*)$/i;
 function pushMayBeHarness(command, cwd, env) {
   try {
-    const az = require(path.join(ROOT, 'scripts', 'lib', 'az-pr.js'));
+    const az = require(path.join(ROOT, 'scripts', 'lib', 'command-tokens.js'));
     if (az.segmentos(command).some((seg) => seg.some((f) => GOES_ELSEWHERE.test(f.texto)))) return true;
     const { top, known } = repoAt(cwd);
     if (!known) return true;

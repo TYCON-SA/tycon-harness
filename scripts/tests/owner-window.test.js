@@ -2716,6 +2716,18 @@ test('Precheck_LosGuionesDeVerdad_NieganLoQueAntesNegabanDespuesDeLaFirma', (t) 
   fs.mkdirSync(path.join(rd, PA.RECORD_DIR), { recursive: true });
   fs.writeFileSync(path.join(rd, PA.archivoDe(enCarpeta)), `${JSON.stringify(enCarpeta)}\n`);
   niega(`node ${MARKER} approve-pending --id DEF-viejo --repo ${rd}`, /ya estaba aprobado/);
+  // 🔴 Falla con: un pendiente cerrado y commiteado con su aprobación, que se reabre, contesta «ya estaba aprobado» y no
+  // escribe nada, y el commit lo rechaza porque no trae una aprobación nueva
+  const todoMd = path.join(rd, 'tasks', 'todo.md');
+  fs.writeFileSync(todoMd, '# Pendientes\n\n- [x] [DEF-viejo] algo\n');
+  git('add', '.'); git('commit', '-qm', 'cerrado con su aprobación');
+  fs.writeFileSync(todoMd, '# Pendientes\n\n- [ ] [DEF-viejo] algo\n');
+  const reabierto = chequear(`node ${MARKER} approve-pending --id DEF-viejo --repo ${rd}`);
+  assert.ok(!(reabierto && reabierto.niega && /ya estaba aprobado/.test(reabierto.niega)), `reabierto: ${JSON.stringify(reabierto)}`);
+  // con una aprobación nueva todavía sin commitear, sí estaba aprobado
+  const otra = { ...PA.lineaNueva({ id: 'DEF-viejo', maquina: 'abc', ahora: AHORA + 1000 }), via: 'terminal', quien: 'alguien' };
+  fs.writeFileSync(path.join(rd, PA.archivoDe(otra)), `${JSON.stringify(otra)}\n`);
+  niega(`node ${MARKER} approve-pending --id DEF-viejo --repo ${rd}`, /ya estaba aprobado/);
   fs.rmSync(path.join(rd, PA.RECORD_DIR), { recursive: true });
   // preparar la prueba con navegador con una dirección que no sirve
   niega(`node ${E2E} prepare --repo ${rd} --story specs/story-9.97.md --url ftp://x`, /no es una dirección http/);

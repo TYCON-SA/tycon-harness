@@ -28,7 +28,7 @@ const { NOMBRA_RUTA_DE_HISTORIA, logHookError } = require('./bash-gate-net.js');
 const { ANTES_DEL_PROGRAMA, BORRA_O_MUEVE, CORRE_ARCHIVO, EXTENSION_DE, GUION_TOPE, GUION_TOPE_DURO, INTERPRETE_DE, PREFIJO, Q, RECORRIDO_ARCHIVOS, RECORRIDO_BYTES, RECORRIDO_NIVELES, expandirLlaves, familiaDe, importsLocales, isInsideReal, nativePath, noSeLeeElPrograma, palabraExpandida, palabras, rutaRealDelGuion, sinGrupo, splitSegments, tok, versionadoEnElArbolPropio } = require('./bash-gate-words.js');
 const { CUERPOS_A_JUZGAR, LECTORES_DE_HISTORIA, NO_VA_FUERA_DEL_FOR, interpreteDe, nombreDeComando, programaEscrito, resolveTarget, seguidos, sinRedireccionesDeSalida } = require('./bash-gate-expansions.js');
 const { CONTROL, ENVOLTORIOS, MARKER_LEE, VARIABLE_DEL_SHELL, anotarBorradosDeLaStory, anotarEscriturasConsola, destinosArmados, esteGuion, extractWriteTargets, gitQueLee, gitQueNombra, heredocs, opcionesDelInterprete, origenesMovidos, programaDelSistema, sedQueLee, sinContinuaciones, stripNonCommandText, tramos } = require('./bash-gate-targets.js');
-const { carpetasDelComando, comandosAnidados, comandosPorOtroPrograma, destinosBorrados, guionesDeShellEscritos, sinCuerposDeTexto } = require('./bash-gate-commands.js');
+const { carpetasDelComando, comandosAnidados, comandosPorOtroPrograma, deshacenEnBloque, destinosBorrados, guionesDeShellEscritos, sinCuerposDeTexto } = require('./bash-gate-commands.js');
 
 // programas que no corren sus argumentos: un guion que aparece entre ellos se lee o se nombra, no se ejecuta. Son los
 // lectores y vecinos que el freno ya conoce (LEE_ARCHIVOS, VECINOS, sin los intérpretes ni `cd`) más estos
@@ -341,6 +341,87 @@ function estadoPorOtroPrograma(cmd, cwd, sesion, enElEstado) {
 }
 
 /**
+ * Los archivos que tocaría lo que `deshacenEnBloque` leyó, corrido en `dir`, preguntándole a git o a `find` sin cambiar
+ * nada: `{ archivos: [{ abs, kind, conocidos? }] }` o `{ error }`. El reset (y el cambio de rama forzado) y el stash
+ * deshacen lo seguido que difiere (`restore`); el stash con `-u` o `-a`, `git clean` y `find -delete` borran (`delete`).
+ * `conocidos` dice si git sigue el archivo (`[abs]`) o no (`[]`), para no preguntarlo de a uno. Al ensayar, `git clean`
+ * lleva sólo las opciones que eligen qué borrar, y `find` cambia cada `-delete` por `-print0` y no corre si su expresión
+ * hace otra cosa (`-exec`, `-ok`, `-fprint`, `-fls`) o tiene algo que el shell expande: entonces cuenta la carpeta entera.
+ * La configuración del repo no corre programas acá, y la salida se lee en inglés y sin comillas.
+ */
+function loQueDeshaceEnBloque(b, dir) {
+  // sin las variables de git del proceso padre (un gancho de git las deja puestas) y en inglés, para leer la salida.
+  // Sin la biblioteca (las skills en un clon aparte, sin scripts/), a git no se le pregunta: lo que deshace en bloque
+  // cuenta como «no pude preguntar» y frena; find corre igual
+  let env = null;
+  try { const cge = require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'clean-git-env.js')); env = cge.idiomaFijo(cge.sinGitDelPadre()); } catch (_) { env = null; }
+  const correr = (prog, args, cwd = dir) => {
+    if (prog === 'git' && !env) throw new Error('falta la biblioteca de git del arnés (scripts/lib/clean-git-env.js)');
+    const r = require('child_process').spawnSync(prog, args, { cwd, windowsHide: true, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000, ...(env ? { env } : {}), maxBuffer: 32 * 1024 * 1024 });
+    if (r.error || r.status !== 0) throw new Error((r.error && (r.error.code || r.error.message)) || String(r.stderr || '').trim().split('\n')[0] || `${prog} salió ${r.status}`);
+    return String(r.stdout);
+  };
+  const gitDir = b.gitDir ? ['--git-dir', path.resolve(dir, b.gitDir), '--work-tree', dir] : [];
+  const git = (args) => correr('git', ['-C', dir, ...gitDir, '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', ...args]);
+  try {
+    if (b.op === 'find') {
+      // otra acción (que corre, escribe o imprime algo más) o algo que expande el shell: no se ensaya
+      const peligro = (w) => /^-(?:exec|execdir|ok|okdir|fprint|fprint0|fprintf|fls|print|print0|printf|ls|quit)$/.test(w) || /[$`{~]/.test(w);
+      if (b.expresion.some(peligro) || b.desde.some(peligro)) throw new Error('la expresión de find no se puede ensayar');
+      // `-delete` lleva `-depth`, que hace que `-prune` no pode: el ensayo también
+      const salida = correr('find', [...b.opciones, ...b.desde, '-depth', ...b.expresion.map((w) => (w === '-delete' ? '-print0' : w))]);
+      // por ruta real: el repo puede estar detrás de un enlace (en Mac, /tmp y /var lo son)
+      const realDe = (p) => { try { return fs.realpathSync(p); } catch (_) { return p; } };
+      const archivos = salida.split('\0').filter(Boolean).map((f) => ({ abs: realDe(path.resolve(dir, f)), kind: 'delete' }));
+      // qué sigue git, de una vez: la carpeta puede no ser un repo (y entonces nada es código seguido de la corrida)
+      let seguidosAca = null;
+      try {
+        const top = git(['rev-parse', '--show-toplevel']).trim();
+        seguidosAca = new Set(git(['ls-files', '-z', '--full-name', ':/']).split('\0').filter(Boolean).map((f) => path.join(top, f)));
+      } catch (_) { seguidosAca = null; }
+      if (seguidosAca) for (const a of archivos) if (!fs.statSync(a.abs, { throwIfNoEntry: false })?.isDirectory()) a.conocidos = seguidosAca.has(a.abs) ? [a.abs] : [];
+      return { archivos };
+    }
+    const top = git(['rev-parse', '--show-toplevel']).trim();
+    const desdeArriba = (s) => s.split('\0').filter(Boolean).map((f) => path.join(top, f));
+    if (b.op === 'reset' || b.op === 'stash') {
+      const diff = b.op === 'reset' ? ['diff', '--name-only', '-z', '--no-renames', b.ref, '--']
+        : ['diff', ...(b.staged ? ['--cached'] : []), '--name-only', '-z', '--no-renames', 'HEAD', '--', ...(b.rutas || [])];
+      const archivos = desdeArriba(git(diff)).map((abs) => ({ abs, kind: 'restore', conocidos: [abs] }));
+      if (b.op === 'stash' && b.untracked && !b.staged) {
+        const donde = b.rutas && b.rutas.length ? b.rutas : [':/'];
+        for (const abs of desdeArriba(git(['ls-files', '-z', '--full-name', '--others', '--exclude-standard', '--', ...donde]))) archivos.push({ abs, kind: 'delete', conocidos: [] });
+      }
+      return { archivos };
+    }
+    // git clean: el mismo comando en ensayo, sólo con lo que elige qué borrar (`-d`, `-x`, `-X`, `-e`, las rutas)
+    const args = [];
+    let rutas = false;
+    for (let i = 0; i < b.args.length; i++) {
+      const w = b.args[i];
+      if (rutas || w === '--') { if (w === '--') rutas = true; args.push(w); continue; }
+      if (w === '-e' || w === '--exclude') { args.push('-e', b.args[i + 1]); i++; continue; }
+      if (/^--exclude=/.test(w)) { args.push(w); continue; }
+      if (w.startsWith('--')) continue;
+      if (/^-[a-zA-Z]/.test(w)) {
+        const [letras, ...patron] = w.slice(1).split('e');
+        const quedan = letras.replace(/[^dxX]/g, '');
+        if (quedan) args.push(`-${quedan}`);
+        if (patron.length) { const valor = patron.join('e'); if (valor) args.push('-e', valor); else { args.push('-e', b.args[i + 1]); i++; } }
+        continue;
+      }
+      args.push(w);
+    }
+    const salida = git(['clean', '-n', ...args]);
+    const archivos = salida.split('\n').map((l) => /^Would remove (.+)$/.exec(l)).filter(Boolean)
+      .map((m) => ({ abs: path.join(dir, m[1]), kind: 'delete', ...(m[1].endsWith('/') ? {} : { conocidos: [] }) }));
+    return { archivos };
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+/**
  * Con el pipeline abierto: borrar o deshacer código del repo de la corrida, o escribir desde un intérprete en un destino
  * que no es una ruta literal, frenan como edición invisible. Lo borrado que pasa (node_modules, un archivo que git no
  * sigue) queda en `console-writes` con `kind: "delete"`, para el control al cerrar; si el comando frena, no corre y no se
@@ -351,12 +432,27 @@ function frenoBorrarYArmados({ cmd, cwd, stateDir, sessionId, io, isInside, via,
     const base = d.base ? resolveTarget(expandirRuta(cmd, d.base).valor, cwd, process.platform, { homeVariable: true }) : cwd;
     return { ...d, abs: resolveTarget(expandirRuta(cmd, d.raw).valor, base, process.platform, { homeVariable: true }) };
   }).filter((d) => !d.quizas || fs.existsSync(d.abs));
+  const enBloque = deshacenEnBloque(cmd);
   const todosLosArmados = destinosArmados(cmd);
-  if (!borrados.length && !todosLosArmados.length) return null;
+  if (!borrados.length && !todosLosArmados.length && !enBloque.length) return null;
   const lv = require('./ledger-visible.js');
   const marker = io.readMarker(stateDir, sessionId);
   if (!lv.pipelineAbierto(marker) || !marker.repoPath) return null;
   const repo = marker.repoPath;
+  // lo que se deshace o borra en bloque, archivo por archivo, como si el comando los nombrara; sin poder preguntarle a
+  // git, del lado seguro
+  const sinPreguntar = [];
+  for (const b of enBloque) {
+    const dir = b.base ? resolveTarget(expandirRuta(cmd, b.base).valor, cwd, process.platform, { homeVariable: true }) : cwd;
+    const r = loQueDeshaceEnBloque(b, dir);
+    if (r.error && b.op === 'find') {
+      // sin poder ensayarlo, cuenta cada carpeta donde arranca, como un `rm -r`
+      for (const raw of b.desde) borrados.push({ raw, kind: 'delete', abs: resolveTarget(expandirRuta(cmd, raw).valor, dir, process.platform, { homeVariable: true }) });
+      continue;
+    }
+    if (r.error) { sinPreguntar.push({ dir, op: b.op, error: r.error }); continue; }
+    for (const f of r.archivos) borrados.push({ raw: f.abs, abs: f.abs, kind: f.kind, ...(f.conocidos ? { conocidos: f.conocidos } : {}) });
+  }
   // por ruta real también: `/var` y `/private/var` (o un enlace en el medio) son el mismo repo
   const real = (p) => {
     try { return fs.realpathSync(p); } catch (_) { /* no existe: su carpeta */ }
@@ -422,7 +518,8 @@ function frenoBorrarYArmados({ cmd, cwd, stateDir, sessionId, io, isInside, via,
     let esCarpeta = false;
     try { esCarpeta = fs.statSync(d.abs).isDirectory(); } catch (_) { /* no existe: lo decide su forma */ }
     if (!esCodigo(d.abs) && !esCarpeta && !/[*?[]/.test(d.raw) && path.extname(d.abs)) { pasan.push(d); continue; }
-    const lista = seguidos(repoReal, real(d.abs));
+    // lo que ya se le preguntó a git de una vez (lo deshecho en bloque) no se pregunta de a uno
+    const lista = Array.isArray(d.conocidos) ? d.conocidos : seguidos(repoReal, real(d.abs));
     // un `git rm` de un archivo que la story declara: es parte de la historia, pasa y se anota como tocado
     if (d.git && esCodigo(d.abs) && !esCarpeta && !/[*?[]/.test(d.raw) && lista && lista.length && nombrados().has(real(d.abs))) {
       deLaStory.push(d);
@@ -436,6 +533,9 @@ function frenoBorrarYArmados({ cmd, cwd, stateDir, sessionId, io, isInside, via,
     const codigoAdentro = lista.filter(esCodigo);
     if (codigoAdentro.length) deCodigo.push(`${d.abs} (${codigoAdentro.length} archivo(s) de código que git sigue)`);
     else pasan.push(d);
+  }
+  for (const s of sinPreguntar) {
+    if (enElRepo(s.dir)) deCodigo.push(`${s.dir} (no pude preguntarle a git qué deshace \`git ${s.op}\`: ${s.error})`);
   }
   const frena = [...new Set(deCodigo), ...armados.map((e) => `(destino armado) ${e}`)];
   if (!frena.length) {
